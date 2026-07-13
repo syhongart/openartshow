@@ -138,7 +138,10 @@ const CSS = `
 @font-face{font-family:'Pretendard';font-weight:500;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Medium.woff2') format('woff2')}
 @font-face{font-family:'Pretendard';font-weight:600;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-SemiBold.woff2') format('woff2')}
 @font-face{font-family:'Pretendard';font-weight:700;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Bold.woff2') format('woff2')}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:'Pretendard',"Helvetica Neue",Helvetica,Arial,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+@font-face{font-family:'NanumGothic';font-weight:400;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/NanumGothic-Regular.woff2') format('woff2');unicode-range:U+1100-11FF,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
+@font-face{font-family:'NanumGothic';font-weight:700;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/NanumGothic-Bold.woff2') format('woff2');unicode-range:U+1100-11FF,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
+@font-face{font-family:'NanumGothic';font-weight:800;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/NanumGothic-ExtraBold.woff2') format('woff2');unicode-range:U+1100-11FF,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'NanumGothic','Pretendard',"Helvetica Neue",Helvetica,Arial,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
 font-size:15px;line-height:1.7;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
 a{color:var(--gold-text);text-decoration:none}
 .top{display:flex;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}

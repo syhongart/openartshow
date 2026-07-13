@@ -60,6 +60,13 @@ License: SIL Open Font License 1.1 · https://scripts.sil.org/OFL
 변경: 웹 배포 최적화를 위해 KS X 1001 상용 2350자 + 라틴·자모·구두점·통화로
 서브셋함 (용량 4.4MB → 1.2MB). 원저작물의 글리프 부분집합입니다.
 
+## 6. 나눔고딕 NanumGothic (폰트) — `web/vendor/fonts/NanumGothic-*.woff2`
+Copyright (c) 2010 NHN Corporation. Font designed by Sandoll Communications Inc.
+License: SIL Open Font License 1.1 · https://scripts.sil.org/OFL
+라이선스 전문: `web/vendor/fonts/NanumGothic-OFL.txt` 동봉.
+용도: 한글 본문 폰트(unicode-range로 한글에만 적용, 영문은 Pretendard). weight 400/700/800.
+(fontsource `@fontsource/nanum-gothic`의 Korean 서브셋 woff2 사용 — 원저작물의 부분집합.)
+
 --------------------------------------------------------------------------------
 
 ※ `web/assets/`의 그 밖의 이미지·영상(`neon-vanitas.png`, `neon-motion.mp4`, `og.png`),

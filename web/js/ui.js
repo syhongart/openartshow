@@ -133,6 +133,10 @@ function injectStyles() {
 @font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-Medium.woff2') format('woff2'); }
 @font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-SemiBold.woff2') format('woff2'); }
 @font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-Bold.woff2') format('woff2'); }
+/* 나눔고딕 (SIL OFL) — 한글 전용(unicode-range). 영문은 Pretendard가 담당 */
+@font-face { font-family: 'NanumGothic'; font-weight: 400; font-style: normal; font-display: swap; src: url('./vendor/fonts/NanumGothic-Regular.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
+@font-face { font-family: 'NanumGothic'; font-weight: 700; font-style: normal; font-display: swap; src: url('./vendor/fonts/NanumGothic-Bold.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
+@font-face { font-family: 'NanumGothic'; font-weight: 800; font-style: normal; font-display: swap; src: url('./vendor/fonts/NanumGothic-ExtraBold.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
 :root {
   --lu-gold: ${GOLD};
   --lu-ink: #17140f;
@@ -141,7 +145,7 @@ function injectStyles() {
   --lu-ch-l: 14px;
   --lu-spring: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   --lu-slide: 0.36s cubic-bezier(0.22, 1, 0.36, 1);
-  --lu-font: 'Pretendard', 'Helvetica Neue', Helvetica, Arial, 'Apple SD Gothic Neo',
+  --lu-font: 'NanumGothic', 'Pretendard', 'Helvetica Neue', Helvetica, Arial, 'Apple SD Gothic Neo',
              'Malgun Gothic', sans-serif;
 }
 /* 실루엣 — 라운드 2단계 (챔퍼 컷은 clip-path가 보더를 대각선에서 끊어
