@@ -118,7 +118,13 @@ const CSS = `
 --ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
 --g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
 *{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:"Helvetica Neue",Helvetica,Arial,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+@font-face{font-family:'Pretendard';font-weight:200;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-ExtraLight.woff2') format('woff2')}
+@font-face{font-family:'Pretendard';font-weight:300;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Light.woff2') format('woff2')}
+@font-face{font-family:'Pretendard';font-weight:400;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Regular.woff2') format('woff2')}
+@font-face{font-family:'Pretendard';font-weight:500;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Medium.woff2') format('woff2')}
+@font-face{font-family:'Pretendard';font-weight:600;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-SemiBold.woff2') format('woff2')}
+@font-face{font-family:'Pretendard';font-weight:700;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Bold.woff2') format('woff2')}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Pretendard',"Helvetica Neue",Helvetica,Arial,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
 font-size:15px;line-height:1.7;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
 a{color:var(--gold-text);text-decoration:none}
 .top{display:flex;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}

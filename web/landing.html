@@ -18,6 +18,13 @@
 <meta name="twitter:description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <style>
+  /* Pretendard (SIL OFL) — self-host, 한글+라틴 통합 브랜드 폰트 */
+  @font-face { font-family: 'Pretendard'; font-weight: 200; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-ExtraLight.woff2') format('woff2'); }
+  @font-face { font-family: 'Pretendard'; font-weight: 300; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-Light.woff2') format('woff2'); }
+  @font-face { font-family: 'Pretendard'; font-weight: 400; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-Regular.woff2') format('woff2'); }
+  @font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-Medium.woff2') format('woff2'); }
+  @font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-SemiBold.woff2') format('woff2'); }
+  @font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-Bold.woff2') format('woff2'); }
   :root {
     /* 브랜드 토큰 — 앱 내부(ui.js)와 동일한 크림 종이/잉크/골드 */
     --gold: #5f9e7d;
@@ -69,7 +76,7 @@
     padding: 0;
     background: var(--bg-light);
     color: var(--text-dark);
-    font-family: "Helvetica Neue", Helvetica, Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    font-family: 'Pretendard', "Helvetica Neue", Helvetica, Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
     font-weight: 400;
     word-break: keep-all;      /* 한국어 — 어절 중간 절단 금지 */
     overflow-wrap: break-word;

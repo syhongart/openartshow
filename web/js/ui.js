@@ -121,6 +121,13 @@ let pendingArtworkList = null; // artworks 배열
 // ---------------------------------------------------------------------------
 function injectStyles() {
   const css = `
+/* Pretendard (SIL OFL) — self-host, 한글+라틴 통합 브랜드 폰트 */
+@font-face { font-family: 'Pretendard'; font-weight: 200; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-ExtraLight.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 300; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-Light.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 400; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-Medium.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-SemiBold.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('./vendor/fonts/Pretendard-Bold.woff2') format('woff2'); }
 :root {
   --lu-gold: ${GOLD};
   --lu-ink: #17140f;
@@ -129,7 +136,7 @@ function injectStyles() {
   --lu-ch-l: 14px;
   --lu-spring: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   --lu-slide: 0.36s cubic-bezier(0.22, 1, 0.36, 1);
-  --lu-font: 'Helvetica Neue', Helvetica, Arial, 'Apple SD Gothic Neo',
+  --lu-font: 'Pretendard', 'Helvetica Neue', Helvetica, Arial, 'Apple SD Gothic Neo',
              'Malgun Gothic', sans-serif;
 }
 /* 실루엣 — 라운드 2단계 (챔퍼 컷은 clip-path가 보더를 대각선에서 끊어

@@ -53,6 +53,13 @@ License: CC BY 4.0 · https://creativecommons.org/licenses/by/4.0/
 출처: Poly Haven · https://polyhaven.com
 License: CC0 1.0 (퍼블릭 도메인, 표시 의무 없음 — 감사 표기)
 
+## 5. Pretendard (폰트) — `web/vendor/fonts/Pretendard-*.woff2`
+Copyright (c) 2021 Kil Hyung-jin (길형진), with Reserved Font Name "Pretendard".
+License: SIL Open Font License 1.1 · https://scripts.sil.org/OFL
+라이선스 전문: `web/vendor/fonts/OFL.txt` 동봉.
+변경: 웹 배포 최적화를 위해 KS X 1001 상용 2350자 + 라틴·자모·구두점·통화로
+서브셋함 (용량 4.4MB → 1.2MB). 원저작물의 글리프 부분집합입니다.
+
 --------------------------------------------------------------------------------
 
 ※ `web/assets/`의 그 밖의 이미지·영상(`neon-vanitas.png`, `neon-motion.mp4`, `og.png`),
