@@ -109,6 +109,11 @@ let chibiPreviewRAF = null;
 let chibiPreviewLastT = 0;
 let chibiDragging = false;
 let chibiDragLastX = 0;
+// 프리뷰 자동 회전: 360도 회전 대신 정면 기준 좌우 스윙 (감독 지시)
+let chibiSwingT = 0;
+let chibiSwingBase = Math.PI;
+const CHIBI_SWING_AMPLITUDE = THREE.MathUtils.degToRad(18); // ±18°
+const CHIBI_SWING_SPEED = 0.6; // rad/s, 왕복 주기 ≈10.5초
 
 // initUI() 호출 이전에 setGalleryTitle / initGalleryPicker / initArtworkList가
 // 먼저 불려도 값을 잃지 않도록 대기시켜 두었다가 DOM 생성 직후 적용한다.
@@ -1431,10 +1436,10 @@ function injectStyles() {
 @media (max-width: 720px) {
   #lu-avatar-maker, #lu-chibi-maker { padding: 8px; }
   .lu-am-card { max-width: 92vw; max-height: 88vh; }
-  .lu-am-body { flex-direction: column; overflow-y: auto; padding: 14px; gap: 14px; }
-  .lu-am-preview { width: 100%; max-width: 260px; height: 320px; margin: 0 auto; }
+  .lu-am-body { flex-direction: column; padding: 14px; gap: 12px; }
+  .lu-am-preview { width: auto; max-width: 100%; height: min(26vh, 230px); aspect-ratio: 3 / 4; margin: 0 auto; }
   .lu-am-panel { min-height: 0; }
-  .lu-am-tabpage { max-height: 40vh; }
+  .lu-am-tabpage { min-height: 220px; }
 }
 `;
   const style = document.createElement('style');
@@ -2427,7 +2432,7 @@ function buildChibiMaker() {
     previewScene.background = new THREE.Color('#f6f1e3');
     // 치비 신장(~1.34m)에 맞춘 근접 프레이밍 — DCL 프리뷰(1.8m)보다 낮고 가깝다
     previewCamera = new THREE.PerspectiveCamera(30, 300 / 400, 0.1, 20);
-    previewCamera.position.set(0, 0.82, 2.35);
+    previewCamera.position.set(0, 0.86, 3.12);
     previewCamera.lookAt(0, 0.7, 0);
     previewScene.add(new THREE.HemisphereLight(0xfff1d9, 0x2b1f14, 3.0));
     const key = new THREE.DirectionalLight(0xffd9a0, 3.0);
@@ -2538,7 +2543,10 @@ function buildChibiMaker() {
     chibiPreviewRAF = requestAnimationFrame(previewFrame);
     const delta = chibiPreviewLastT ? Math.min(0.05, (t - chibiPreviewLastT) / 1000) : 0;
     chibiPreviewLastT = t;
-    if (!chibiDragging) previewRotator.rotation.y += delta * 0.35;
+    if (!chibiDragging) {
+      chibiSwingT += delta;
+      previewRotator.rotation.y = chibiSwingBase + Math.sin(chibiSwingT * CHIBI_SWING_SPEED) * CHIBI_SWING_AMPLITUDE;
+    }
     if (chibiPreviewInstance) chibiPreviewInstance.update(delta, 0);
     previewRenderer.render(previewScene, previewCamera);
   }
@@ -2567,6 +2575,9 @@ function buildChibiMaker() {
   const endDrag = () => {
     chibiDragging = false;
     previewBox.classList.remove('lu-dragging');
+    // 멈춘 각도에서 끊김 없이 좌우 스윙 재개 (sin(0)=0)
+    chibiSwingBase = previewRotator.rotation.y;
+    chibiSwingT = 0;
   };
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
@@ -2595,6 +2606,7 @@ function buildChibiMaker() {
     chibiParams = normalizeChibi(Object.assign({}, DEFAULT_CHIBI, readStoredChibi() || {}));
     ensurePreviewRenderer();
     previewRotator.rotation.y = Math.PI; // 정면(카메라 쪽)부터 — 얼굴을 꾸미는 화면이므로
+    chibiSwingBase = Math.PI; chibiSwingT = 0;
     rebuildPreview();
     renderPanel();
     overlay.classList.add('lu-open');
