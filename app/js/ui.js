@@ -14,6 +14,12 @@ import {
   CHIBI_BOTTOM_TYPES,
   CHIBI_ACCESSORIES,
   CHIBI_FACE_SHAPES,
+  CHIBI_SPECIES,
+  CHIBI_GENDERS,
+  CHIBI_TOP_PATTERNS,
+  CHIBI_OUTFITS,
+  CHIBI_PRESETS,
+  SPECIES_PRESET,
   encodeChibi,
   normalizeChibi,
 } from './chibi.js';
@@ -2392,8 +2398,13 @@ const HAIR_COLORS = ['#2b2b33', '#6b4530', '#8a5a3b', '#c9a227', '#d96c2c', '#8a
 const EYE_COLORS = ['#2b2b33', '#7a4a2f', '#3f6f8f', '#4f7a3a', '#b02e2e', '#6a4c93'];
 
 const CHIBI_CLOTH_COLORS = [
-  '#ff8fab', '#ffd166', '#7ec4cf', '#95d5b2', '#5468c4',
-  '#b799ff', '#fffdf7', '#3a3f4a', '#e0596e', '#d96c2c',
+  // 파스텔
+  '#ff8fab', '#ffb3c1', '#a9d6e8', '#bfe3ec', '#c8ecd9',
+  '#95d5b2', '#ffe08a', '#ffd166', '#d9c9f5', '#b799ff',
+  // 선명
+  '#5468c4', '#7a9cc4', '#e0596e', '#d96c2c', '#4f7a3a',
+  // 무채·정장
+  '#fffdf7', '#c7ccd4', '#7d7d54', '#39414f', '#2c3038',
 ];
 
 // (사진→아야모 휴리스틱 분석기는 감독 판단으로 철회 — "색만 맞춰서는 큰 의미가
@@ -2456,10 +2467,35 @@ function buildChibiMaker() {
   function setParam(key, value) {
     if (!chibiParams) return;
     chibiParams[key] = value;
+    // 종족을 동물로 바꾸면 그 종족 기본 팔레트(털색·포인트색)를 함께 적용 — 사람 피부색이
+    // 동물에 남아 어색해지는 걸 방지.
+    if (key === 'species' && value !== 'human' && SPECIES_PRESET[value]) {
+      Object.assign(chibiParams, SPECIES_PRESET[value]);
+    }
     chibiParams = normalizeChibi(chibiParams);
     rebuildPreview();
     renderPanel();
   }
+
+  // 프리셋 적용 — 완성 룩을 통째로 로드해 시작점으로. 이후 세부 커스터마이즈 가능.
+  function applyPreset(look) {
+    chibiParams = normalizeChibi(Object.assign({}, look));
+    rebuildPreview();
+    renderPanel();
+  }
+
+  function presetRow() {
+    page.appendChild(el('div', { className: 'lu-am-section-title', text: '프리셋 — 골라서 시작' }));
+    const row = el('div', { className: 'lu-am-tabs lu-am-presets' });
+    CHIBI_PRESETS.forEach((pre) => {
+      const btn = el('button', { type: 'button', className: 'lu-am-tab', text: pre.name });
+      btn.addEventListener('click', () => applyPreset(pre.look));
+      row.appendChild(btn);
+    });
+    page.appendChild(row);
+  }
+
+  const boolOpts = (a, b) => [{ id: false, name: a }, { id: true, name: b }];
 
   function chipRow(labelText, options, key) {
     page.appendChild(el('div', { className: 'lu-am-section-title', text: labelText }));
@@ -2500,25 +2536,45 @@ function buildChibiMaker() {
   function renderPanel() {
     page.textContent = '';
     if (!chibiParams) return;
-    // 모양 옵션과 관련 색을 같은 그룹으로 묶어 스캔성 향상 (디자이너 감사)
+    const isAnimal = chibiParams.species && chibiParams.species !== 'human';
+
+    presetRow();
+
+    groupTitle('종족 · 성별');
+    chipRow('종족', CHIBI_SPECIES, 'species');
+    if (!isAnimal) chipRow('성별', CHIBI_GENDERS, 'gender');
+
     groupTitle('얼굴');
     chipRow('얼굴형', CHIBI_FACE_SHAPES, 'face');
     chipRow('눈', CHIBI_EYE_STYLES, 'eyeStyle');
     chipRow('입', CHIBI_MOUTH_STYLES, 'mouth');
-    chipRow('볼터치', [{ id: true, name: '있음' }, { id: false, name: '없음' }], 'blush');
-    swatchRow('피부색', SKIN_TONES, 'skin');
+    chipRow('볼터치', boolOpts('없음', '있음'), 'blush');
+    swatchRow(isAnimal ? '털 색' : '피부색', SKIN_TONES, 'skin');
     swatchRow('눈동자 색', EYE_COLORS, 'eyeColor');
 
-    groupTitle('헤어');
-    chipRow('헤어', CHIBI_HAIR_STYLES, 'hairStyle');
-    swatchRow('머리 색', HAIR_COLORS, 'hairColor');
+    if (!isAnimal) {
+      groupTitle('헤어');
+      chipRow('헤어', CHIBI_HAIR_STYLES, 'hairStyle');
+      swatchRow('머리 색', HAIR_COLORS, 'hairColor');
+    } else {
+      groupTitle('포인트');
+      swatchRow('귀·꼬리 색', HAIR_COLORS, 'hairColor');
+    }
 
     groupTitle('의상');
+    chipRow('상의 패턴', CHIBI_TOP_PATTERNS, 'pattern');
+    chipRow('의상 세트', CHIBI_OUTFITS, 'outfit');
     chipRow('하의', CHIBI_BOTTOM_TYPES, 'bottomType');
-    chipRow('액세서리', CHIBI_ACCESSORIES, 'acc');
     swatchRow('상의 색', CHIBI_CLOTH_COLORS, 'top');
     swatchRow('하의 색', CHIBI_CLOTH_COLORS, 'bottom');
     swatchRow('신발 색', CHIBI_CLOTH_COLORS, 'shoes');
+
+    groupTitle('장식');
+    chipRow('머리 장식', CHIBI_ACCESSORIES, 'acc');
+    chipRow('안경', boolOpts('없음', '착용'), 'glasses');
+    chipRow('헤일로', boolOpts('없음', '있음'), 'halo');
+    chipRow('날개', boolOpts('없음', '있음'), 'wings');
+    chipRow('가슴 하트', boolOpts('없음', '있음'), 'heart');
   }
 
   // 치비 조립은 동기·저비용이라 디바운스 없이 즉시 재조립한다
