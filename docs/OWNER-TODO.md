@@ -6,32 +6,27 @@
 
 **상태 범례**: ✅ 완료 · 🔄 진행중 · ⬜ 대기(감독 차례) · 💤 나중
 
-**진행 현황 (2026-07-13): 완료 3 · 진행중 1 · 대기 6 · 나중 3**
+**진행 현황 (2026-07-13): 완료 5 · 진행중 0 · 대기 5 · 나중 3**
 
 ---
 
 ## 🔴 대규모 공개 전 필수 (블로커)
 
-- 🔄 **라이브로 올리기 (go-live)** — 개명·새 히어로·보안·청소 전부 한 번에
-  부팀장: **배포본 완성** ✅ (lifeunity의 clean-pages=바로 서빙 가능한 배포본,
-  clean-main=소스). 감독: **openartshow에서 Claude 새 세션 열고** 아래 붙여넣기:
-  ```bash
-  git fetch https://github.com/syhongart/lifeunity clean-pages
-  git push --force origin FETCH_HEAD:gh-pages   # ← 라이브 사이트 1~2분 후 갱신
-  git fetch https://github.com/syhongart/lifeunity clean-main
-  git push --force origin FETCH_HEAD:main       # ← 소스 갱신
-  ```
-  → 실행하면 https://syhongart.github.io/openartshow/ 에 최신이 다 보임 = ✅.
-  (지금 라이브가 옛날인 이유: 부팀장이 openartshow에 직접 못 밈 — 게이트 403.
-  이 한 번이 라이브와 작업본을 동기화하는 유일한 다리.)
+- ✅ **라이브로 올리기 (go-live)** — 개명·새 히어로·보안·청소 전부 한 번에 (2026-07-13 완료)
+  부팀장 세션에서 실행 완료: `clean-main`→`main`(f3dcab3), `clean-pages`→`gh-pages` 강제푸시.
+  **자동배포 파이프라인 구축**: `.github/workflows/deploy.yml` 추가 → 이제 `main`에 push하면
+  자동 빌드·gh-pages 재배포(실행 #1·#2 모두 success). **다리 영구 철거** — 앞으로 수동 동기화 불필요.
+  헤드리스 QA 통과: 로고 "OpenArtShow.", 히어로 "링크 하나로, 나만의 미술관.", 콘솔 에러 0, 가로넘침 0.
+  · 남은 확인(감독): 브라우저에서 https://syhongart.github.io/openartshow/ 200·최신 화면 한 번 눈으로 확인.
 - ⬜ **상표 출원 — 아야모(셀프) / OpenArtShow(변리사 상담)**
   리서치 완료 ✅ → 이제 감독 차례. 아래 §상표 절차 체크리스트대로.
   · **아야모(문자+도형)**: 조어라 등록 무난 → **셀프 출원 진행**
   · **OpenArtShow**: 'art show=미술전시' 식별력 거절 위험 → **출원 전 변리사
     무료상담**으로 등록 가능성 점검 후 (로고 결합/아야모 보강 전략).
-- ⬜ **LICENSE 파일 추가** (openartshow 루트)
-  "All rights reserved(무단 사용 금지)" 명시. 문구는 부팀장이 제공함 —
-  openartshow 세션에서 파일 생성·커밋만 하면 됨.
+- ✅ **LICENSE 파일 추가** (openartshow 루트) (2026-07-13 완료, 커밋 1876c97)
+  루트 `LICENSE` 추가 — "All Rights Reserved(무단 사용 금지)" 한/영 병기, public 노출이
+  이용 허락 아님 명시. 저작권자는 **"OpenArtShow"** 브랜드명으로 표기 — 감독 실명(법적
+  저작권자) 표기를 원하면 부팀장에게 알려주면 교체.
 
 ## 🟡 곧
 
