@@ -12,21 +12,13 @@
 <meta property="og:description" content="감독 피드백: "라운드박스가 현대적이지 않다. 글도 박스도 눈에 안 들어온다."">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-12-8adc9e.html">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"랜딩 \"갤러리 플레이트\" 개편 — 라운드박스 현대화 + 타이포 대비 복구","datePublished":"2026-07-12","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-12-8adc9e.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
 --ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
 --g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
 *{box-sizing:border-box}
-@font-face{font-family:'Pretendard';font-weight:200;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-ExtraLight.woff2') format('woff2')}
-@font-face{font-family:'Pretendard';font-weight:300;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Light.woff2') format('woff2')}
-@font-face{font-family:'Pretendard';font-weight:400;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Regular.woff2') format('woff2')}
-@font-face{font-family:'Pretendard';font-weight:500;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Medium.woff2') format('woff2')}
-@font-face{font-family:'Pretendard';font-weight:600;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-SemiBold.woff2') format('woff2')}
-@font-face{font-family:'Pretendard';font-weight:700;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/Pretendard-Bold.woff2') format('woff2')}
-@font-face{font-family:'NanumGothic';font-weight:400;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/NanumGothic-Regular.woff2') format('woff2');unicode-range:U+1100-11FF,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
-@font-face{font-family:'NanumGothic';font-weight:700;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/NanumGothic-Bold.woff2') format('woff2');unicode-range:U+1100-11FF,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
-@font-face{font-family:'NanumGothic';font-weight:800;font-style:normal;font-display:swap;src:url('../app/vendor/fonts/NanumGothic-ExtraBold.woff2') format('woff2');unicode-range:U+1100-11FF,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:'NanumGothic','Pretendard',"Helvetica Neue",Helvetica,Arial,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
 font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
 a{color:var(--gold-text);text-decoration:none}
 .top{display:flex;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}

@@ -13,12 +13,13 @@
 | **영문·숫자** | **Pretendard** | 200~700 | SIL OFL 1.1 | 로고·얇은 weight 완성도 |
 | 폴백 | 시스템 스택 | — | — | `Helvetica Neue…Apple SD Gothic Neo…` |
 
-- **적용 스택**: `font-family: 'NanumGothic', 'Pretendard', "Helvetica Neue", Helvetica, Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;`
-  - 나눔고딕 @font-face에 `unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF`(한글) → **한글은 나눔고딕**, 라틴은 unicode-range 밖이라 **Pretendard**로 자동 폴백.
-- **self-host**: `web/vendor/fonts/*.woff2`. 앱 CSP(`default-src 'self'`)와 정합(외부 CDN 미사용). `font-display: swap`(FOUT — 텍스트 즉시 표시 후 폰트 교체).
+- **단일 진실원본(SSOT)**: `@font-face`와 폰트 스택은 **`web/vendor/fonts/fonts.css` 한 곳에만** 정의한다(`:root { --app-font: … }`). 정책 변경은 이 파일만 고친다. 절대 다른 파일에 `@font-face`나 스택 문자열을 복붙하지 않는다.
+  - **DOM**: 모든 화면(landing/guide/studio/index/design)과 생성기(team/valuation/devlog)는 fonts.css를 `<link rel="stylesheet">`로 참조하고 `font-family: var(--app-font)`만 쓴다. ui.js의 `--lu-font`도 `var(--app-font)`로 잇는다.
+  - **캔버스/WebGL**(3D 씬 라벨 — 플라크·이름표·워터마크·의성어): `web/js/fonts.js`의 `getCanvasFont()`가 런타임에 `--app-font`(SSOT)를 읽어 쓴다(스택 재정의 없음). 캔버스는 그리는 시점에 폰트가 없으면 시스템 폰트로 폴백해 그대로 텍스처에 구워지므로(이후 교체 안 됨), 텍스처를 굽기 전 `ensureCanvasFonts()`(한글 프로브 `'가'`로 나눔 400/700/800 로드 보장)를 **await**한다 — `createArtworks()` 앞. **순서 주의**: fonts.css는 index.html `<head>`의 정적 `<link>`라 main.js 실행 전 이미 문서에 존재해야 한다(런타임 주입 시 `document.fonts.load`가 @font-face를 못 찾는 콜드 로드 레이스 발생 — 검수 반려 사례).
+- **매칭**: 나눔고딕 `unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF`(한글) → **한글은 나눔고딕**, 라틴은 범위 밖이라 **Pretendard**로 자동 폴백.
+- **self-host**: `web/vendor/fonts/*.woff2`. 앱 CSP(`default-src 'self'`, `style-src 'self' 'unsafe-inline'`)와 정합(외부 CDN 미사용, 동일 출처 `<link>` 허용). `font-display: swap`. fonts.css의 `src: url()`은 그 파일 기준 상대경로라 페이지 위치와 무관하게 동일 해석 — `<link href>` 접두(루트=`./app/…`, 앱=`./…`, 생성기=`../app/…`)만 위치별로 다르다.
 - **성능**: 상용(KS X 1001 2350자) 서브셋으로 용량 최소화.
-- **한계(인지)**: 나눔고딕은 굵기가 Regular/Bold/ExtraBold뿐이라, 얇은~중간 한글 weight(200/300/500/600)는 나눔에서 400/700로 근사된다. 영문은 Pretendard라 전 weight 유지.
-- 배포 경로 주의: 파일 위치별 상대경로 다름 — 루트(landing/guide)=`./app/vendor/fonts/`, 앱(index/studio/ui.js)=`./vendor/fonts/`, 생성기(team/valuation/devlog)=`../app/vendor/fonts/`.
+- **한계(인지)**: 나눔고딕은 Regular/Bold/ExtraBold뿐이라 얇은~중간 한글 weight(200/300/500/600)는 400/700로 근사된다. 영문은 Pretendard라 전 weight 유지.
 
 ## 2. 색 — 청자 그린 시스템
 

@@ -1,0 +1,31 @@
+/* fonts.css — 폰트 정책 단일 진실원본(SSOT).
+ *
+ * @font-face와 폰트 스택(--app-font)을 이 파일 "한 곳"에만 정의한다. 모든 화면
+ * (landing/guide/studio/index/design)과 생성기(team/valuation/devlog) 출력은 이
+ * 파일을 <link rel="stylesheet">로 참조하고, 캔버스 텍스트(web/js/fonts.js)는
+ * --app-font를 런타임에 읽는다. 폰트 정책 변경은 이 파일만 고치면 된다.
+ *
+ * 경로: src url은 "이 CSS 파일" 기준 상대경로(같은 폴더의 woff2)라, 페이지가 어느
+ * 깊이에 있든 동일하게 해석된다 — 기존의 위치별 경로 3종(`./app/` `./` `../app/`)
+ * 중복 문제를 제거한다. 페이지는 <link href>의 접두만 위치에 맞추면 된다.
+ *
+ * 정책: 한글=NanumGothic(unicode-range로 한글에만 매칭) · 영문·숫자=Pretendard.
+ *       라이선스: 둘 다 SIL OFL 1.1 (THIRD-PARTY-NOTICES.md §5·§6).
+ */
+
+@font-face { font-family: 'Pretendard'; font-weight: 200; font-style: normal; font-display: swap; src: url('Pretendard-ExtraLight.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 300; font-style: normal; font-display: swap; src: url('Pretendard-Light.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 400; font-style: normal; font-display: swap; src: url('Pretendard-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('Pretendard-Medium.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('Pretendard-SemiBold.woff2') format('woff2'); }
+@font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('Pretendard-Bold.woff2') format('woff2'); }
+
+@font-face { font-family: 'NanumGothic'; font-weight: 400; font-style: normal; font-display: swap; src: url('NanumGothic-Regular.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
+@font-face { font-family: 'NanumGothic'; font-weight: 700; font-style: normal; font-display: swap; src: url('NanumGothic-Bold.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
+@font-face { font-family: 'NanumGothic'; font-weight: 800; font-style: normal; font-display: swap; src: url('NanumGothic-ExtraBold.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
+
+/* 애플리케이션 전역 폰트 스택 — 이 변수 하나가 유일한 정의. DOM은 var(--app-font),
+ * 캔버스는 getComputedStyle로 이 값을 읽는다. */
+:root {
+  --app-font: 'NanumGothic', 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
