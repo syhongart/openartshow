@@ -84,13 +84,13 @@ openartshow/
 
 ## 라이선스 · 저작권 · 상표
 
-- **저작권**: © 2026 OpenArtShow. All rights reserved. 무단 복제·배포·상업적 이용을 금합니다.
-  자세한 조건은 [LICENSE](./LICENSE)를 참조하세요.
+- **저작권**: © 2026 홍성용 (Hong Seong-yong). All rights reserved. 무단 복제·배포·상업적
+  이용을 금합니다. 자세한 조건은 [LICENSE](./LICENSE)를 참조하세요.
 - **제3자 구성요소**: `web/vendor/`의 라이브러리(Three.js · PeerJS = MIT)와 크레딧 에셋
   (ESO = CC BY 4.0, Poly Haven = CC0)은 각 라이선스를 따릅니다 —
   [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md).
-- **상표**: **OpenArtShow™** 및 마스코트 **아야모™(Ayamo™)**는 OpenArtShow가 사용하는
-  상표입니다(미등록 · 출원 준비 중). 무단 사용을 금합니다.
+- **상표**: **OpenArtShow™** 및 마스코트 **아야모™(Ayamo™)**는 홍성용(OpenArtShow)이
+  사용하는 상표입니다(미등록 · 출원 준비 중). 무단 사용을 금합니다.
   ※ 아직 미등록 상태이므로 등록상표 기호(®)는 사용하지 않습니다.
 
 문의 · 신고: syhongartist@gmail.com

@@ -57,4 +57,4 @@ License: CC0 1.0 (퍼블릭 도메인, 표시 의무 없음 — 감사 표기)
 
 ※ `web/assets/`의 그 밖의 이미지·영상(`neon-vanitas.png`, `neon-motion.mp4`, `og.png`),
   절차적으로 생성되는 앰비언트 오디오(Web Audio API), 그리고 `web/js/`의 애플리케이션
-  코드는 OpenArtShow의 자체 제작 저작물입니다.
+  코드는 홍성용(OpenArtShow)의 자체 제작 저작물입니다.
