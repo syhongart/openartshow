@@ -16,6 +16,7 @@ jobs:
           rm -rf _site && mkdir -p _site/app
           cp web/landing.html _site/index.html
           cp web/guide.html   _site/guide.html
+          cp web/design.html  _site/design.html
           cp -r web/.          _site/app/
           cp -r devlog team valuation _site/
           cp sitemap.xml robots.txt _site/ 2>/dev/null || true
