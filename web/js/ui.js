@@ -377,17 +377,25 @@ function injectStyles() {
   transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
 }
 .lu-am-tab:hover { border-color: rgba(0,0,0,0.25); }
-.lu-am-tab.lu-selected { border-color: var(--lu-gold); color: #111; background: #f6f3ea; }
+.lu-am-tab.lu-selected { border-color: var(--lu-gold); color: #111; background: rgba(95,158,125,0.12); font-weight: 500; }
 .lu-am-tabpage {
   flex: 1 1 auto; min-height: 0;
   overflow-y: auto;
   padding-top: 14px;
 }
+.lu-am-group-title {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.1em;
+  color: var(--lu-gold);
+  margin: 22px 0 4px; padding-top: 14px;
+  border-top: 1px solid #eee;
+  position: sticky; top: 0; z-index: 1;
+  background: rgba(255,255,255,0.98);
+}
+.lu-am-group-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
 .lu-am-section-title {
   font-size: 10px; letter-spacing: 0.14em; color: #999;
   margin: 14px 0 8px;
 }
-.lu-am-section-title:first-child { margin-top: 0; }
 .lu-am-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
@@ -400,7 +408,7 @@ function injectStyles() {
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 .lu-am-thumb:hover { border-color: rgba(0,0,0,0.25); }
-.lu-am-thumb.lu-selected { border-color: var(--lu-gold); background: #f6f3ea; }
+.lu-am-thumb.lu-selected { border-color: var(--lu-gold); background: rgba(95,158,125,0.12); }
 .lu-am-thumb img {
   width: 48px; height: 48px; object-fit: contain;
   background: #fff; border: 1px solid #f0f0ee;
@@ -2479,19 +2487,29 @@ function buildChibiMaker() {
     page.appendChild(row);
   }
 
+  function groupTitle(text) {
+    page.appendChild(el('div', { className: 'lu-am-group-title', text }));
+  }
+
   function renderPanel() {
     page.textContent = '';
     if (!chibiParams) return;
-    chipRow('헤어', CHIBI_HAIR_STYLES, 'hairStyle');
+    // 모양 옵션과 관련 색을 같은 그룹으로 묶어 스캔성 향상 (디자이너 감사)
+    groupTitle('얼굴');
     chipRow('얼굴형', CHIBI_FACE_SHAPES, 'face');
     chipRow('눈', CHIBI_EYE_STYLES, 'eyeStyle');
     chipRow('입', CHIBI_MOUTH_STYLES, 'mouth');
     chipRow('볼터치', [{ id: true, name: '있음' }, { id: false, name: '없음' }], 'blush');
+    swatchRow('피부색', SKIN_TONES, 'skin');
+    swatchRow('눈동자 색', EYE_COLORS, 'eyeColor');
+
+    groupTitle('헤어');
+    chipRow('헤어', CHIBI_HAIR_STYLES, 'hairStyle');
+    swatchRow('머리 색', HAIR_COLORS, 'hairColor');
+
+    groupTitle('의상');
     chipRow('하의', CHIBI_BOTTOM_TYPES, 'bottomType');
     chipRow('액세서리', CHIBI_ACCESSORIES, 'acc');
-    swatchRow('피부색', SKIN_TONES, 'skin');
-    swatchRow('머리 색', HAIR_COLORS, 'hairColor');
-    swatchRow('눈동자 색', EYE_COLORS, 'eyeColor');
     swatchRow('상의 색', CHIBI_CLOTH_COLORS, 'top');
     swatchRow('하의 색', CHIBI_CLOTH_COLORS, 'bottom');
     swatchRow('신발 색', CHIBI_CLOTH_COLORS, 'shoes');
