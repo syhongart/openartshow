@@ -106,6 +106,19 @@ export class MultiplayerManager {
   }
 
   /**
+   * 로컬 플레이어의 캐릭터(치비 룩)를 교체한다 — 입장 후 아바타 편집 시 호출.
+   * 호스트: this.char만 갱신하면 다음 states 브로드캐스트가 새 룩을 전파한다.
+   * 게스트: 호스트에 갱신된 hello를 다시 보내 playerInfo를 갱신 → 이후 states에 반영.
+   * @param {string} char - 'chibi:'+JSON 형식의 캐릭터 인코딩
+   */
+  setChar(char) {
+    this.char = String(char || 'chibi:{}').slice(0, 512);
+    if (!this.isHost && this.hostConn && this.hostConn.open) {
+      this.hostConn.send({ type: 'hello', nickname: this.nickname, color: this.color, char: this.char });
+    }
+  }
+
+  /**
    * 관람 캡처 공유 — 같은 방 전원에게 썸네일을 전파한다 (방명록과 같은
    * 로컬 우선 피드 규약: 수신 측이 feed.js 검증 후 localStorage에 병합).
    */
@@ -345,11 +358,18 @@ export class MultiplayerManager {
       if (!this._checkRate(conn.peer)) return;
 
       if (data.type === 'hello') {
+        // hello는 최초 핸드셰이크뿐 아니라 입장 후 아바타 교체(setChar) 시에도 재전송된다.
+        // 기존 항목이 있으면 좌표(x/y/z/ry)를 보존해야 — 그렇지 않으면 옷을 갈아입는 순간
+        // 해당 게스트가 다른 화면에서 원점으로 순간이동했다 복귀하는 결함이 생긴다.
+        const prev = this.playerInfo.get(conn.peer);
         this.playerInfo.set(conn.peer, {
           nickname: String(data.nickname || '게스트').slice(0, GB_NAME_MAX),
           color: String(data.color || '#3498db').slice(0, 32),
           char: String(data.char || 'chibi:{}').slice(0, 512), // 하위호환: char 없는 구버전 게스트도 기본 치비
-          x: 0, y: EYE_HEIGHT, z: 0, ry: 0,
+          x: prev ? prev.x : 0,
+          y: prev ? prev.y : EYE_HEIGHT,
+          z: prev ? prev.z : 0,
+          ry: prev ? prev.ry : 0,
         });
         this._updateCount();
       } else if (data.type === 'state') {
@@ -577,6 +597,7 @@ export class MultiplayerManager {
       av = {
         inst,
         group,
+        char: info.char || 'chibi:{}',
         targetPos: group.position.clone(),
         targetRy: group.rotation.y,
         prevPos: group.position.clone(),
@@ -585,6 +606,19 @@ export class MultiplayerManager {
       this.remoteAvatars.set(id, av);
       if (this.isHost) this._updateCount();
       if (!info.npc && !id.startsWith('npc-')) this.onVisitor(id, info);
+    } else if (info.char && av.char !== info.char) {
+      // 원격 플레이어가 입장 후 모습을 바꿨다 — 아바타를 재빌드(위치·시점 유지).
+      try {
+        const inst = createAvatarInstance(info.char, info.color || '#3498db', info.nickname || '게스트');
+        inst.group.position.copy(av.group.position);
+        inst.group.rotation.y = av.group.rotation.y;
+        this.scene.remove(av.group);
+        av.inst.dispose();
+        av.inst = inst;
+        av.group = inst.group;
+        av.char = info.char;
+        this.scene.add(inst.group);
+      } catch (_) { /* 재빌드 실패는 기존 아바타 유지 */ }
     }
 
     av.targetPos.set(ix, iy, iz);
