@@ -17,7 +17,7 @@ const OUT = join(ROOT, 'team');
 // 새 인원/기여가 생기면 이 배열만 갱신하고 재생성한다.
 // ---------------------------------------------------------------------------
 const ROSTER = {
-  updated: '2026-07-12',
+  updated: '2026-07-13',
   fulltime: [
     {
       emoji: '🎬', name: '감독', handle: 'syhongart', role: '창업자 · 총괄 디렉터',
@@ -48,6 +48,16 @@ const ROSTER = {
         "'데구리' 적신호 적발 (포켓몬 데구리)",
         '아야모 🟢 청신호 — 최종 채택 근거',
         '코인 보상 규제 검토 (가상자산법·전금법)',
+      ],
+    },
+    {
+      emoji: '🛡️', name: '보안담당자', role: '위협모델 · 취약점',
+      tier: '계약직', tierClass: 'contract', joined: '2026-07', works: 3,
+      note: '대규모 공개 전 위협모델 수립 — "코드 은닉은 연극, public 무방". 블로커 3종을 걸러 안전하게 공개.',
+      items: [
+        'P2P 메시지 검증 — 64KB 상한·초당 30건 레이트리밋·좌표 클램프',
+        '공유링크 미디어 URL 화이트리스트(safeMediaUrl)',
+        'CSP 메타 — script-src 해시·object-src none·base-uri none',
       ],
     },
     {

@@ -11,7 +11,7 @@
 <meta property="og:title" content="팀 · 인사기록 — OpenArtShow">
 <meta property="og:description" content="정규직과 계약직의 인사기록과 기여도 — 사람과 AI가 함께 만드는 미술관.">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/team/">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"OpenArtShow","url":"https://syhongart.github.io/openartshow/","member":[{"@type":"Person","name":"감독","jobTitle":"창업자 · 총괄 디렉터"},{"@type":"Person","name":"Fable 5","jobTitle":"개발 총괄 · 심층 판단"},{"@type":"Person","name":"Opus 4.8","jobTitle":"개발 실무"},{"@type":"Person","name":"법무팀","jobTitle":"상표 · 규제 실사"},{"@type":"Person","name":"디자이너","jobTitle":"VFX · HUD · 랜딩"},{"@type":"Person","name":"카피라이터","jobTitle":"네이밍 · 카피"},{"@type":"Person","name":"성능 전문가","jobTitle":"렌더링 진단"},{"@type":"Person","name":"리서처","jobTitle":"지원금 · 시장 조사"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"OpenArtShow","url":"https://syhongart.github.io/openartshow/","member":[{"@type":"Person","name":"감독","jobTitle":"창업자 · 총괄 디렉터"},{"@type":"Person","name":"Fable 5","jobTitle":"개발 총괄 · 심층 판단"},{"@type":"Person","name":"Opus 4.8","jobTitle":"개발 실무"},{"@type":"Person","name":"법무팀","jobTitle":"상표 · 규제 실사"},{"@type":"Person","name":"보안담당자","jobTitle":"위협모델 · 취약점"},{"@type":"Person","name":"디자이너","jobTitle":"VFX · HUD · 랜딩"},{"@type":"Person","name":"카피라이터","jobTitle":"네이밍 · 카피"},{"@type":"Person","name":"성능 전문가","jobTitle":"렌더링 진단"},{"@type":"Person","name":"리서처","jobTitle":"지원금 · 시장 조사"}]}</script>
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
 --ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
@@ -76,8 +76,8 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
   <div class="stat-row">
     <div class="stat"><div class="n">3</div><div class="l">정규직 · 창업자</div></div>
-    <div class="stat"><div class="n">5</div><div class="l">전문 계약직</div></div>
-    <div class="stat"><div class="n">80</div><div class="l">누적 기여 건수</div></div>
+    <div class="stat"><div class="n">6</div><div class="l">전문 계약직</div></div>
+    <div class="stat"><div class="n">83</div><div class="l">누적 기여 건수</div></div>
     <div class="stat"><div class="n">42</div><div class="l">공개 개발일지</div></div>
   </div>
 
@@ -150,6 +150,22 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 </div>
 <div class="member">
   <div class="m-top">
+    <span class="m-emoji" aria-hidden="true">🛡️</span>
+    <div class="m-id">
+      <div class="m-name">보안담당자</div>
+      <div class="m-role">위협모델 · 취약점</div>
+    </div>
+    <span class="m-badge contract">계약직</span>
+  </div>
+  <p class="m-note">대규모 공개 전 위협모델 수립 — "코드 은닉은 연극, public 무방". 블로커 3종을 걸러 안전하게 공개.</p>
+  <div class="m-bar" role="img" aria-label="기여 3건">
+    <span class="m-bar-fill" style="width:7%"></span>
+    <span class="m-bar-num">3건</span>
+  </div>
+  <ul class="m-items"><li>P2P 메시지 검증 — 64KB 상한·초당 30건 레이트리밋·좌표 클램프</li><li>공유링크 미디어 URL 화이트리스트(safeMediaUrl)</li><li>CSP 메타 — script-src 해시·object-src none·base-uri none</li></ul>
+</div>
+<div class="member">
+  <div class="m-top">
     <span class="m-emoji" aria-hidden="true">🎨</span>
     <div class="m-id">
       <div class="m-name">디자이너</div>
@@ -217,7 +233,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
     기여 건수는 <a href="../devlog/">공개 개발일지</a>의 실제 항목·태그에서 집계한 값입니다.
     막대는 팀 내 최대 기여자 대비 상대치입니다. 계약직은 사안이 생길 때 고용되어 실사·감사·자문을
     수행하며, 결과는 개발일지에 근거와 함께 남습니다.<br>
-    <span style="color:var(--ink-dim)">최종 갱신 2026-07-12</span>
+    <span style="color:var(--ink-dim)">최종 갱신 2026-07-13</span>
   </p>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 사람과 AI가 함께 만드는 미술관.</footer>
