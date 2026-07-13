@@ -1,0 +1,27 @@
+name: build-and-deploy
+on: { push: { branches: [main] }, workflow_dispatch: {} }
+permissions: { contents: write }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: |
+          node scripts/build-devlog.mjs
+          node scripts/build-team.mjs
+          node scripts/build-valuation.mjs
+      - run: |
+          rm -rf _site && mkdir -p _site/app
+          cp web/landing.html _site/index.html
+          cp web/guide.html   _site/guide.html
+          cp -r web/.          _site/app/
+          cp -r devlog team valuation _site/
+          cp sitemap.xml robots.txt _site/ 2>/dev/null || true
+          touch _site/.nojekyll
+      - uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          publish_branch: gh-pages
