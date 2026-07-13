@@ -117,7 +117,7 @@ const CSS = `
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
 font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
 a{color:var(--gold-text);text-decoration:none}
-.top{display:flex;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
 .top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
 .top .logo .dot{color:var(--gold)}
 .top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
