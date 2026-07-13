@@ -72,6 +72,10 @@
     --fs-label: 13px;                    /* 라벨 대 */
     --shadow-card-hover: 0 16px 32px rgba(20, 38, 29, 0.08);
     --shadow-card-hover-deep: 0 20px 40px rgba(63, 122, 92, 0.18);
+    /* 비비드 액센트 — 포인트(CTA·라이브 강조)에만. 배경/톤은 청자 그린 유지 */
+    --accent: #1fd677;
+    --accent-hover: #25e481;
+    --accent-ink: #0d2417;   /* 비비드 배경 위 텍스트(밝은 배경엔 대비 부족하므로 반전) */
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -214,15 +218,15 @@
   }
   .btn:active { transform: translateY(1px) scale(0.98); box-shadow: none; }
   .btn-gold {
-    background: var(--green-800);
-    color: #eef7f1;
-    border: 1px solid var(--green-800);
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: 1px solid var(--accent);
   }
   .btn-gold:hover {
-    background: var(--green-600);
-    border-color: var(--green-600);
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(44, 88, 68, 0.35);
+    box-shadow: 0 8px 20px rgba(31, 214, 119, 0.35);
   }
   .btn-outline {
     background: transparent;
@@ -538,12 +542,12 @@
     transition: opacity 0.3s ease, transform 0.3s ease, background 0.2s ease;
     margin-left: 14px;
     padding: 9px 20px; border-radius: var(--r-card);
-    background: var(--green-800); color: #eef7f1; font-size: 13.5px; font-weight: 600;
+    background: var(--accent); color: var(--accent-ink); font-size: 13.5px; font-weight: 600;
     text-decoration: none; letter-spacing: 0.03em;
     transition: background 0.2s ease;
   }
   .topnav .nav-cta.is-shown { opacity: 1; pointer-events: auto; transform: none; }
-  .topnav .nav-cta:hover { background: var(--green-600); }
+  .topnav .nav-cta:hover { background: var(--accent-hover); }
   @media (max-width: 720px) {
     .topnav { gap: 12px; padding: 12px 16px; }
   }
@@ -724,7 +728,7 @@
     .ns-auth .nav-auth-profile { font-size: 14px; }
     .ns-enter {
       display: block; margin-top: 10px; padding: 13px;
-      background: var(--green-800); color: #eef7f1; text-align: center;
+      background: var(--accent); color: var(--accent-ink); text-align: center;
       border-radius: var(--r-card); font-size: 14px; font-weight: 600;
     }
     section[id] { scroll-margin-top: 72px; }

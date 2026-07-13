@@ -39,6 +39,8 @@
     --text-dim: #9a9a9a;
     --text-dimmer: #6b6b6b;
     --danger: #e0645a;
+    --accent: #1fd677;        /* 비비드 액센트 — 주 액션 버튼만 */
+    --accent-hover: #25e481;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -391,14 +393,14 @@
   .btn:disabled:hover { border-color: var(--border); color: var(--text); }
 
   .btn-gold {
-    background: var(--gold);
-    border: 1px solid var(--gold);
+    background: var(--accent);
+    border: 1px solid var(--accent);
     color: #111;
   }
   .btn-gold:hover {
-    background: #e6c358;
+    background: var(--accent-hover);
     color: #111;
-    border-color: #e6c358;
+    border-color: var(--accent-hover);
   }
   .btn-gold:disabled {
     background: var(--border);
