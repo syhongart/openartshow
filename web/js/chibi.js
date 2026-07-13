@@ -11,7 +11,7 @@
 // - 전방 +Z 저작: KayKit/DCL과 동일하게 π 래퍼로 감싸 게임 관례(yaw=0 → -Z)에 맞춘다.
 
 import * as THREE from 'three';
-import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from '../utils/BufferGeometryUtils.js';
 
 // ---------------------------------------------------------------------------
 // 파라미터 정의 (UI와 공유하는 단일 진실 소스)
@@ -36,6 +36,21 @@ export const CHIBI_MOUTH_STYLES = [
 export const CHIBI_BOTTOM_TYPES = [
   { id: 'skirt', name: '치마' },
   { id: 'pants', name: '바지' },
+  { id: 'dress', name: '원피스' },
+  { id: 'overall', name: '멜빵바지' },
+];
+// 상의 패턴 — 무지/줄무늬/물방울(땡땡이)/하트프린트 (torso·소매 캔버스 텍스처)
+export const CHIBI_TOP_PATTERNS = [
+  { id: 'plain', name: '무지' },
+  { id: 'stripe', name: '줄무늬' },
+  { id: 'dot', name: '땡땡이' },
+  { id: 'heart', name: '하트' },
+];
+// 의상 세트 — 추가 파츠(칼라·넥타이·단추·교련모)가 붙는 특수 복장
+export const CHIBI_OUTFITS = [
+  { id: 'none', name: '기본' },
+  { id: 'suit', name: '정장' },
+  { id: 'gyoryeon', name: '교련복' },
 ];
 export const CHIBI_ACCESSORIES = [
   { id: 'none', name: '없음' },
@@ -49,6 +64,118 @@ export const CHIBI_FACE_SHAPES = [
   { id: 'square', name: '각짐' },
   { id: 'vline', name: '브이라인' },
 ];
+// 종족 — 사람 + 동물 7종. 사람은 헤어, 동물은 귀/코/꼬리(헤어 대체).
+export const CHIBI_SPECIES = [
+  { id: 'human', name: '사람' },
+  { id: 'cat', name: '고양이' },
+  { id: 'dog', name: '강아지' },
+  { id: 'rabbit', name: '토끼' },
+  { id: 'bear', name: '곰' },
+  { id: 'sheep', name: '양' },
+  { id: 'fox', name: '여우' },
+  { id: 'panda', name: '판다' },
+  { id: 'tiger', name: '호랑이' },
+  { id: 'lion', name: '사자' },
+  { id: 'penguin', name: '펭귄' },
+  { id: 'chick', name: '병아리' },
+  { id: 'frog', name: '개구리' },
+  { id: 'hamster', name: '햄스터' },
+  { id: 'raccoon', name: '너구리' },
+  { id: 'koala', name: '코알라' },
+  { id: 'pig', name: '돼지' },
+];
+// 성별 — 지오메트리 분기 아님. 진입 시 기본 프리셋 선택자(이후 자유 커스터마이즈).
+export const CHIBI_GENDERS = [
+  { id: 'girl', name: '여아' },
+  { id: 'boy', name: '남아' },
+  { id: 'neutral', name: '중성' },
+];
+// 종족별 기본 팔레트(진입 시 프리셋으로 적용). skin=기본 털색, hairColor=포인트색(귀 안쪽·꼬리 끝 등).
+export const SPECIES_PRESET = {
+  cat: { skin: '#f5e6c8', hairColor: '#e8a15c' },
+  dog: { skin: '#f0c869', hairColor: '#8a5a3b' },
+  rabbit: { skin: '#fdfaf3', hairColor: '#ead9d6' },
+  bear: { skin: '#d9a066', hairColor: '#f5e6c8' },
+  sheep: { skin: '#fdfaf3', hairColor: '#f3d9cf' },
+  fox: { skin: '#e8834f', hairColor: '#3a2c22' },
+  panda: { skin: '#fbfaf7', hairColor: '#2a2724' },
+  tiger: { skin: '#f0a24a', hairColor: '#3a2c22' },
+  lion: { skin: '#e6b25e', hairColor: '#b5732e' },
+  penguin: { skin: '#3b4652', hairColor: '#f4a83a' },
+  chick: { skin: '#ffe066', hairColor: '#f4a83a' },
+  frog: { skin: '#8fce6b', hairColor: '#5fa03f' },
+  hamster: { skin: '#f0d6a8', hairColor: '#c98f5a' },
+  raccoon: { skin: '#b8b2a6', hairColor: '#3a352f' },
+  koala: { skin: '#aeb0b2', hairColor: '#7d7f82' },
+  pig: { skin: '#f4b6c2', hairColor: '#e58ba0' },
+};
+// 성별 기본 룩 프리셋(사람). girl은 기존 DEFAULT_CHIBI와 동일 → 기존 사용자 시각 변화 0.
+export const GENDER_PRESET = {
+  girl: { gender: 'girl', hairStyle: 'twintail', hairColor: '#6b4530', top: '#ff8fab', bottom: '#5468c4', bottomType: 'skirt', acc: 'ribbon', eyeStyle: 'sparkle' },
+  boy: { gender: 'boy', hairStyle: 'short', hairColor: '#3a2c22', top: '#7ec4cf', bottom: '#3a3f4a', bottomType: 'pants', acc: 'none', eyeStyle: 'round' },
+  neutral: { gender: 'neutral', hairStyle: 'bob', hairColor: '#8a5a3b', top: '#95d5b2', bottom: '#ffd166', bottomType: 'pants', acc: 'flower', eyeStyle: 'happy' },
+};
+// 완성 룩 프리셋 — 고객이 골라서 바로 적용 후 세부 커스터마이즈하는 시작점.
+// 종족별 의상 색 배합 (동물의 숲 참고: 털 바탕 + 포인트 + 보색/대비 의상). _sp() 프리셋에 병합.
+export const SPECIES_OUTFIT = {
+  cat: { top: '#e0a45c', bottom: '#6b4530' },
+  dog: { top: '#5c7fa6', bottom: '#a68a5c' },
+  rabbit: { top: '#b7a4d1', bottom: '#f3e6d8' },
+  bear: { top: '#4f7a5c', bottom: '#6b4530' },
+  sheep: { top: '#8fb8d6', bottom: '#f3e6d8' },
+  fox: { top: '#d97b3f', bottom: '#f3e6d8' },
+  panda: { top: '#c0392b', bottom: '#39352f' },
+  tiger: { top: '#3f8f8a', bottom: '#8a6d4a' },
+  lion: { top: '#3a5faa', bottom: '#f3e6d8' },
+  penguin: { top: '#7ec4cf', bottom: '#fbfaf7' },
+  chick: { top: '#7ec4cf', bottom: '#fbfaf7' },
+  frog: { top: '#ffd166', bottom: '#6b4530' },
+  hamster: { top: '#8fd6b4', bottom: '#f3e6d8' },
+  raccoon: { top: '#e0a45c', bottom: '#4a6fa5' },
+  koala: { top: '#7fa88f', bottom: '#444548' },
+  pig: { top: '#8fd6b4', bottom: '#fbead0' },
+};
+const _sp = (id, name, extra) => ({ id, name, look: Object.assign({ species: id, eyeStyle: 'happy' }, SPECIES_PRESET[id] || {}, SPECIES_OUTFIT[id] || {}, extra || {}) });
+// 종족 색 변형 프리셋(같은 종 다른 개체 — 동물의 숲식). id는 고유해야 하므로 별도 지정.
+const _spv = (id, species, name, over) => ({ id, name, look: Object.assign({ species, eyeStyle: 'happy' }, SPECIES_PRESET[species] || {}, SPECIES_OUTFIT[species] || {}, over || {}) });
+export const CHIBI_PRESETS = [
+  // ── 사람 완성 룩 ──
+  { id: 'girl', name: '기본 여아', look: {} },
+  { id: 'boy', name: '기본 남아', look: Object.assign({}, GENDER_PRESET.boy) },
+  { id: 'angel', name: '엔젤이', look: { hairStyle: 'bob', hairColor: '#6e4632', skin: '#f7e7d2', eyeStyle: 'happy', top: '#a9d6e8', bottom: '#a9d6e8', bottomType: 'dress', acc: 'none', halo: true, wings: true, heart: true } },
+  { id: 'angel_pink', name: '핑크 엔젤', look: { hairStyle: 'twintail', hairColor: '#6b4530', top: '#ffb3c1', bottom: '#ffb3c1', bottomType: 'dress', halo: true, wings: true, heart: true, eyeStyle: 'happy', acc: 'none' } },
+  { id: 'dots', name: '땡땡이 원피스', look: { top: '#ff8fab', pattern: 'dot', bottomType: 'dress', eyeStyle: 'happy', acc: 'ribbon' } },
+  { id: 'dots_blue', name: '하늘 땡땡이', look: { top: '#a9d6e8', pattern: 'dot', bottomType: 'skirt', bottom: '#5468c4', hairStyle: 'bob', eyeStyle: 'sparkle' } },
+  { id: 'heart_girl', name: '하트 소녀', look: { top: '#ff8fab', pattern: 'heart', bottomType: 'dress', acc: 'ribbon', eyeStyle: 'happy' } },
+  { id: 'stripe_girl', name: '줄무늬 소녀', look: { top: '#7ec4cf', pattern: 'stripe', bottomType: 'skirt', bottom: '#3a3f4a', hairStyle: 'twintail', eyeStyle: 'sparkle' } },
+  { id: 'mint_dress', name: '민트 원피스', look: { top: '#c8ecd9', bottomType: 'dress', hairStyle: 'bob', eyeStyle: 'happy', acc: 'flower' } },
+  { id: 'lavender', name: '라벤더 소녀', look: { top: '#d9c9f5', bottomType: 'skirt', bottom: '#b799ff', hairStyle: 'ponytail', acc: 'flower', eyeStyle: 'happy' } },
+  { id: 'sunny', name: '햇살 소녀', look: { top: '#ffd166', bottomType: 'skirt', bottom: '#ff8fab', hairStyle: 'buns', acc: 'ribbon', eyeStyle: 'sparkle' } },
+  { id: 'suit', name: '정장', look: { gender: 'boy', hairStyle: 'short', hairColor: '#2a2320', top: '#39414f', bottom: '#2c3038', bottomType: 'pants', outfit: 'suit', acc: 'none', eyeStyle: 'round' } },
+  { id: 'gyoryeon', name: '교련복', look: { gender: 'boy', hairStyle: 'short', hairColor: '#2a2320', top: '#7d7d54', bottom: '#6b6b47', bottomType: 'pants', outfit: 'gyoryeon', acc: 'none', eyeStyle: 'round' } },
+  { id: 'overall_boy', name: '멜빵 소년', look: { gender: 'boy', hairStyle: 'short', top: '#ffe08a', bottom: '#7a9cc4', bottomType: 'overall', acc: 'none', eyeStyle: 'round' } },
+  { id: 'glasses', name: '안경 소녀', look: { glasses: true, eyeStyle: 'round', top: '#c8ecd9', bottomType: 'skirt' } },
+  { id: 'glasses_boy', name: '안경 소년', look: { gender: 'boy', hairStyle: 'short', top: '#5468c4', bottom: '#2c3038', bottomType: 'pants', glasses: true, eyeStyle: 'round', acc: 'none' } },
+  // ── 동물 (기본) ──
+  _sp('cat', '고양이'), _sp('dog', '강아지', { mouth: 'open' }), _sp('rabbit', '토끼', { eyeStyle: 'sparkle' }),
+  _sp('bear', '곰'), _sp('sheep', '양'), _sp('panda', '판다'),
+  _sp('fox', '여우', { mouth: 'cat' }), _sp('tiger', '호랑이'), _sp('lion', '사자'), _sp('penguin', '펭귄'),
+  _sp('chick', '병아리'), _sp('frog', '개구리', { mouth: 'open' }), _sp('hamster', '햄스터', { eyeStyle: 'sparkle' }),
+  _sp('raccoon', '너구리', { eyeStyle: 'round' }), _sp('koala', '코알라'), _sp('pig', '돼지'),
+  // ── 동물 색 변형(같은 종 다른 개체) ──
+  _spv('cat_black', 'cat', '검은 고양이', { skin: '#3a352f', hairColor: '#f5e6c8', eyeStyle: 'round' }),
+  _spv('cat_grey', 'cat', '회색 고양이', { skin: '#c9c3ba', hairColor: '#8a8078' }),
+  _spv('cat_calico', 'cat', '삼색 고양이', { skin: '#f0ddc0', hairColor: '#c96b3b', mouth: 'cat' }),
+  _spv('dog_cream', 'dog', '크림 강아지', { skin: '#f5ede0', hairColor: '#6b4530', mouth: 'open' }),
+  _spv('dog_choco', 'dog', '초코 강아지', { skin: '#a06a44', hairColor: '#5a3a26' }),
+  _spv('bear_black', 'bear', '흑곰', { skin: '#4a3a2c', hairColor: '#c9a876' }),
+  _spv('bear_polar', 'bear', '백곰', { skin: '#f2efe8', hairColor: '#d8d0c4' }),
+  _spv('rabbit_brown', 'rabbit', '갈색 토끼', { skin: '#d9b48c', hairColor: '#8a5a3b', eyeStyle: 'sparkle' }),
+  _spv('rabbit_grey', 'rabbit', '회색 토끼', { skin: '#cfc9c0', hairColor: '#9a9088' }),
+  _spv('fox_arctic', 'fox', '흰 여우', { skin: '#eef0f2', hairColor: '#c8ccd0', mouth: 'cat' }),
+  _spv('hamster_grey', 'hamster', '회색 햄스터', { skin: '#cfc7bb', hairColor: '#9a9088' }),
+  _spv('pig_choco', 'pig', '초코 돼지', { skin: '#c98f8f', hairColor: '#b06a6a' }),
+];
 // 두상 변형 정의 — 스케일(x,y,z 배수) + 턱 테이퍼 + 턱 플랫(각진 턱)
 // 감독 지시: 뚱뚱하게 만들지 않는다 — 전 형태 은은한 변형만, 살찌는 확대 금지.
 const FACE_SHAPE_DEF = {
@@ -57,8 +184,32 @@ const FACE_SHAPE_DEF = {
   square: { sx: 1.03, sy: 0.97, sz: 1.0, taper: 0, flat: 0.5 },
   vline: { sx: 0.97, sy: 1.03, sz: 0.98, taper: 0.3, flat: 0 },
 };
+// 종족별 기본 두상 — "얼굴이 다 동그라미가 아니어도" (동물의 숲 참고). 사용자가 고르는
+// FACE_SHAPE_DEF는 이 위에 미세 보정으로 얹힌다. human은 기존 하드코딩값(1/0.95/0.97)과
+// 동일 → 기존 사용자 시각 변화 0.
+const SPECIES_HEAD_BASE = {
+  human: { sx: 1.0, sy: 0.95, sz: 0.97, taper: 0, flat: 0 },
+  cat: { sx: 1.0, sy: 0.97, sz: 0.96, taper: 0.14, flat: 0 },
+  dog: { sx: 1.02, sy: 0.94, sz: 1.05, taper: 0.08, flat: 0.12 },
+  rabbit: { sx: 0.95, sy: 1.07, sz: 0.98, taper: 0.1, flat: 0 },
+  bear: { sx: 1.06, sy: 0.96, sz: 1.02, taper: 0, flat: 0.22 },
+  sheep: { sx: 1.0, sy: 0.97, sz: 0.95, taper: 0, flat: 0.18 },
+  fox: { sx: 0.96, sy: 1.0, sz: 1.04, taper: 0.22, flat: 0 },
+  panda: { sx: 1.05, sy: 0.98, sz: 0.99, taper: 0, flat: 0.1 },
+  tiger: { sx: 1.05, sy: 0.95, sz: 1.0, taper: 0, flat: 0.32 },
+  lion: { sx: 1.06, sy: 0.94, sz: 1.0, taper: 0, flat: 0.32 },
+  penguin: { sx: 0.95, sy: 1.06, sz: 0.96, taper: 0.05, flat: 0 },
+  chick: { sx: 1.0, sy: 1.02, sz: 0.98, taper: 0, flat: 0 },
+  frog: { sx: 1.1, sy: 0.85, sz: 0.93, taper: 0, flat: 0.4 },
+  hamster: { sx: 1.04, sy: 0.97, sz: 1.0, taper: 0, flat: 0.14 },
+  raccoon: { sx: 0.98, sy: 0.99, sz: 1.03, taper: 0.14, flat: 0 },
+  koala: { sx: 1.07, sy: 0.97, sz: 0.97, taper: 0, flat: 0.1 },
+  pig: { sx: 1.03, sy: 0.96, sz: 1.0, taper: 0, flat: 0.28 },
+};
 
 export const DEFAULT_CHIBI = {
+  species: 'human',
+  gender: 'girl',
   skin: '#ffd9bd',
   hairStyle: 'twintail',
   hairColor: '#6b4530',
@@ -68,10 +219,16 @@ export const DEFAULT_CHIBI = {
   face: 'round',
   blush: true,
   top: '#ff8fab',
+  pattern: 'plain',
+  outfit: 'none',
   bottom: '#5468c4',
   bottomType: 'skirt',
   shoes: '#fffdf7',
   acc: 'ribbon',
+  halo: false,
+  wings: false,
+  heart: false,
+  glasses: false,
 };
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
@@ -81,7 +238,11 @@ const FACE_IDS = ID_OF(CHIBI_FACE_SHAPES);
 const EYE_IDS = ID_OF(CHIBI_EYE_STYLES);
 const MOUTH_IDS = ID_OF(CHIBI_MOUTH_STYLES);
 const BOTTOM_IDS = ID_OF(CHIBI_BOTTOM_TYPES);
+const PATTERN_IDS = ID_OF(CHIBI_TOP_PATTERNS);
+const OUTFIT_IDS = ID_OF(CHIBI_OUTFITS);
 const ACC_IDS = ID_OF(CHIBI_ACCESSORIES);
+const SPECIES_IDS = ID_OF(CHIBI_SPECIES);
+const GENDER_IDS = ID_OF(CHIBI_GENDERS);
 
 /** 임의 입력을 안전한 치비 파라미터로 정규화한다. */
 export function normalizeChibi(p) {
@@ -89,6 +250,8 @@ export function normalizeChibi(p) {
   const hex = (v, d) => (typeof v === 'string' && HEX_RE.test(v) ? v : d);
   const pick = (v, ids, d) => (typeof v === 'string' && ids.has(v) ? v : d);
   return {
+    species: pick(src.species, SPECIES_IDS, DEFAULT_CHIBI.species),
+    gender: pick(src.gender, GENDER_IDS, DEFAULT_CHIBI.gender),
     skin: hex(src.skin, DEFAULT_CHIBI.skin),
     hairStyle: pick(src.hairStyle, HAIR_IDS, DEFAULT_CHIBI.hairStyle),
     hairColor: hex(src.hairColor, DEFAULT_CHIBI.hairColor),
@@ -98,10 +261,16 @@ export function normalizeChibi(p) {
     face: pick(src.face === 'chubby' ? 'square' : src.face, FACE_IDS, DEFAULT_CHIBI.face),
     blush: src.blush !== false,
     top: hex(src.top, DEFAULT_CHIBI.top),
+    pattern: pick(src.pattern, PATTERN_IDS, DEFAULT_CHIBI.pattern),
+    outfit: pick(src.outfit, OUTFIT_IDS, DEFAULT_CHIBI.outfit),
     bottom: hex(src.bottom, DEFAULT_CHIBI.bottom),
     bottomType: pick(src.bottomType, BOTTOM_IDS, DEFAULT_CHIBI.bottomType),
     shoes: hex(src.shoes, DEFAULT_CHIBI.shoes),
     acc: pick(src.acc, ACC_IDS, DEFAULT_CHIBI.acc),
+    halo: src.halo === true,
+    wings: src.wings === true,
+    heart: src.heart === true,
+    glasses: src.glasses === true,
   };
 }
 
@@ -131,15 +300,31 @@ function shade(hexColor, factor) {
   return `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`;
 }
 
+// 4쪽 별 반짝임 — 왕눈이 초롱초롱 트윈클
+function drawSparkle(ctx, x, y, r) {
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.beginPath();
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x + r * 0.28, y - r * 0.28);
+  ctx.lineTo(x + r, y);
+  ctx.lineTo(x + r * 0.28, y + r * 0.28);
+  ctx.lineTo(x, y + r);
+  ctx.lineTo(x - r * 0.28, y + r * 0.28);
+  ctx.lineTo(x - r, y);
+  ctx.lineTo(x - r * 0.28, y - r * 0.28);
+  ctx.closePath();
+  ctx.fill();
+}
+
 function drawEye(ctx, cx, cy, p) {
-  const EW = 42, EH = 60; // 반지름 (가로/세로)
+  const EW = 44, EH = 64; // 반지름 (가로/세로) — 대두 리튠에 맞춰 왕눈이 확대
   if (p.eyeStyle === 'happy') {
-    // 감은 웃는 눈 (∩)
+    // 감은 웃는 눈 (∩) — 엔젤이식, 더 두껍고 둥글게
     ctx.strokeStyle = '#2a2320';
     ctx.lineCap = 'round';
-    ctx.lineWidth = 16;
+    ctx.lineWidth = 20;
     ctx.beginPath();
-    ctx.arc(cx, cy + 26, EW + 4, Math.PI * 1.15, Math.PI * 1.85);
+    ctx.arc(cx, cy + 26, EW + 6, Math.PI * 1.12, Math.PI * 1.88);
     ctx.stroke();
     return;
   }
@@ -170,6 +355,8 @@ function drawEye(ctx, cx, cy, p) {
   ctx.beginPath();
   ctx.ellipse(cx + 13, cy + 20, 7, 8, 0, 0, Math.PI * 2);
   ctx.fill();
+  // 반짝 스타일 — 4쪽 별 트윈클 추가 (초롱초롱)
+  if (p.eyeStyle === 'sparkle') drawSparkle(ctx, cx + 21, cy - 34, 7);
   // 윗눈꺼풀 라인 (속눈썹 느낌)
   ctx.strokeStyle = '#2a2320';
   ctx.lineCap = 'round';
@@ -177,6 +364,82 @@ function drawEye(ctx, cx, cy, p) {
   ctx.beginPath();
   ctx.arc(cx, cy - 4, EW + 9, Math.PI * 1.15, Math.PI * 1.85);
   ctx.stroke();
+}
+
+// 동물 코/부리/주둥이 + 수염 — 3D 귀/꼬리와 함께 종족 정체성을 캔버스에서 보강.
+function drawAnimalFace(ctx, species, MY) {
+  const NY = 302; // 코 y (눈과 입 사이)
+
+  // 부리(병아리·펭귄)·돼지 주둥이는 이제 3D 파츠라 캔버스에선 그리지 않음(겹침 방지).
+  if (species === 'chick' || species === 'penguin' || species === 'pig') return;
+
+  // 3D 코끝/주둥이가 붙는 종은 캔버스 코·인중 생략.
+  const NOSE_3D = species === 'dog' || species === 'fox' || species === 'bear'
+    || species === 'raccoon' || species === 'panda' || species === 'rabbit';
+  if (!NOSE_3D) {
+    const bigNose = species === 'koala';
+    const pinkNose = species === 'cat' || species === 'hamster';
+    const noseCol = pinkNose ? '#e88ba0' : '#2a2724';
+    const nk = bigNose ? 2.0 : 1;
+    ctx.fillStyle = noseCol;
+    ctx.beginPath();
+    ctx.moveTo(256 - 15 * nk, NY - 8 * nk);
+    ctx.quadraticCurveTo(256 - 17 * nk, NY + 6 * nk, 256, NY + 15 * nk);
+    ctx.quadraticCurveTo(256 + 17 * nk, NY + 6 * nk, 256 + 15 * nk, NY - 8 * nk);
+    ctx.quadraticCurveTo(256, NY - 13 * nk, 256 - 15 * nk, NY - 8 * nk);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(70,58,48,0.5)';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(256, NY + 14);
+    ctx.lineTo(256, MY - 18);
+    ctx.stroke();
+  }
+  // 호랑이 이마·볼 줄무늬 (몸 털 줄무늬 텍스처와 함께 확실한 호랑이 인상)
+  if (species === 'tiger') {
+    ctx.strokeStyle = 'rgba(38,26,18,0.85)';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 10;
+    for (const [x, y1, y2] of [[256 - 44, 148, 196], [256 + 44, 148, 196], [256 - 88, 166, 206], [256 + 88, 166, 206]]) {
+      ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x, y2); ctx.stroke();
+    }
+    ctx.lineWidth = 8;
+    for (const s of [-1, 1]) for (const dy of [0, 26]) {
+      ctx.beginPath();
+      ctx.moveTo(256 + s * 128, 300 + dy);
+      ctx.lineTo(256 + s * 172, 296 + dy);
+      ctx.stroke();
+    }
+  }
+  // 수염 — 고양이·여우·호랑이
+  if (species === 'cat' || species === 'fox' || species === 'tiger') {
+    ctx.strokeStyle = 'rgba(70,58,48,0.45)';
+    ctx.lineWidth = 4;
+    for (const s of [-1, 1]) {
+      for (const [dy, len, curve] of [[-10, 96, -14], [4, 104, 0], [18, 96, 14]]) {
+        ctx.beginPath();
+        ctx.moveTo(256 + s * 30, NY + dy);
+        ctx.quadraticCurveTo(256 + s * (30 + len * 0.5), NY + dy + curve * 0.3, 256 + s * (30 + len), NY + dy + curve);
+        ctx.stroke();
+      }
+    }
+  }
+  // 토끼 앞니 — 입 아래 흰 사각
+  if (species === 'rabbit') {
+    ctx.fillStyle = '#fffdf7';
+    ctx.strokeStyle = 'rgba(70,58,48,0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(256 - 13, MY + 2, 26, 22, 5) : ctx.rect(256 - 13, MY + 2, 26, 22);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(256, MY + 2);
+    ctx.lineTo(256, MY + 24);
+    ctx.stroke();
+  }
 }
 
 /**
@@ -191,13 +454,64 @@ function drawFaceInto(canvas, p, fx) {
   ctx.clearRect(0, 0, 512, 512);
 
   const EYE_Y = 252;
+  const EYE_X = 84; // 눈 간격 — 살짝 좁혀 유아형 인상 (대두 리튠)
+  const isAnimal = p.species && p.species !== 'human';
+
+  // 호랑이 — 몸통 줄무늬 텍스처가 얼굴 정면까지 번지지 않게, 얼굴 중앙을 깔끔한 주황으로
+  // 채운다(가장자리는 투명 → 옆머리 줄무늬가 자연스레 이어짐). 그 위에 이마·볼 줄무늬만.
+  if (p.species === 'tiger' && !ouch) {
+    const oc = vivid(p.skin).getStyle();
+    const g = ctx.createRadialGradient(256, 300, 70, 256, 300, 250);
+    g.addColorStop(0, oc);
+    g.addColorStop(0.68, oc);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+  }
+
+  // 종족 얼굴 배경 (눈보다 먼저) — 판다 눈패치 / 너구리 밴딧 마스크 / 펭귄 흰 얼굴
+  if (!ouch) {
+    if (p.species === 'panda') {
+      ctx.fillStyle = '#2a2724';
+      for (const s of [-1, 1]) {
+        ctx.save();
+        ctx.translate(256 + s * EYE_X, EYE_Y + 4);
+        ctx.rotate(s * 0.32);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 58, 72, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if (p.species === 'raccoon') {
+      // 밴딧 마스크 — 눈마다 짙은 패치(콧대는 밝게 비움) + 이마 쪽 살짝 위로
+      ctx.fillStyle = '#43392f';
+      for (const s of [-1, 1]) {
+        ctx.save();
+        ctx.translate(256 + s * (EYE_X + 6), EYE_Y);
+        ctx.rotate(s * 0.28);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 50, 60, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if (p.species === 'penguin') {
+      // 흰 얼굴 판 — 어두운 머리색 위에 크림 얼굴
+      ctx.fillStyle = '#fbfaf7';
+      ctx.beginPath();
+      ctx.ellipse(256, EYE_Y + 60, 150, 168, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 개구리는 눈이 3D 돌출(머리 위)이라 캔버스 눈을 생략
+  const canvasEyes = p.species !== 'frog';
   if (ouch) {
     // >_< 눈 — 아픔의 만국 공통어
     ctx.strokeStyle = '#2a2320';
     ctx.lineCap = 'round';
     ctx.lineWidth = 15;
     for (const s of [-1, 1]) {
-      const cx = 256 + s * 88;
+      const cx = 256 + s * EYE_X;
       ctx.beginPath();
       ctx.moveTo(cx - s * 34, EYE_Y - 30);
       ctx.lineTo(cx + s * 24, EYE_Y + 2);
@@ -207,31 +521,34 @@ function drawFaceInto(canvas, p, fx) {
       ctx.lineTo(cx + s * 24, EYE_Y + 2);
       ctx.stroke();
     }
-  } else {
-    drawEye(ctx, 256 - 88, EYE_Y, p);
-    drawEye(ctx, 256 + 88, EYE_Y, p);
+  } else if (canvasEyes) {
+    drawEye(ctx, 256 - EYE_X, EYE_Y, p);
+    drawEye(ctx, 256 + EYE_X, EYE_Y, p);
   }
 
-  // 눈썹 — 평소 아치, 상처 2+ 는 팔자(슬픔), 아픔 순간은 안쪽으로 찌푸림
-  ctx.strokeStyle = shade(p.hairColor, 0.8);
-  ctx.lineCap = 'round';
-  ctx.lineWidth = 9;
-  for (const s of [-1, 1]) {
-    ctx.beginPath();
-    if (ouch) {
-      ctx.moveTo(256 + s * 58, EYE_Y - 92);
-      ctx.lineTo(256 + s * 112, EYE_Y - 72);
-    } else if (wound >= 2) {
-      ctx.moveTo(256 + s * 60, EYE_Y - 74);
-      ctx.lineTo(256 + s * 112, EYE_Y - 94);
-    } else {
-      ctx.arc(256 + s * 88, EYE_Y - 58, 36, Math.PI * 1.25, Math.PI * 1.75);
+  // 눈썹 — 평소 아치, 상처 2+ 는 팔자(슬픔), 아픔 순간은 안쪽으로 찌푸림.
+  // 동물은 원색 눈썹이 어색해 털색(skin) 기준 은은하게, 판다·개구리는 생략.
+  if (canvasEyes && !(p.species === 'panda' && !ouch && !(wound >= 2))) {
+    ctx.strokeStyle = isAnimal ? shade(p.skin, 0.55) : shade(p.hairColor, 0.8);
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 9;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      if (ouch) {
+        ctx.moveTo(256 + s * 58, EYE_Y - 92);
+        ctx.lineTo(256 + s * 112, EYE_Y - 72);
+      } else if (wound >= 2) {
+        ctx.moveTo(256 + s * 60, EYE_Y - 74);
+        ctx.lineTo(256 + s * 112, EYE_Y - 94);
+      } else {
+        ctx.arc(256 + s * EYE_X, EYE_Y - 58, 36, Math.PI * 1.25, Math.PI * 1.75);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
   }
 
-  // 입
-  const MY = 368;
+  // 입 — 대두 리튠에 맞춰 작게(귀여움), 살짝 위로
+  const MY = 364;
   ctx.strokeStyle = '#b0605a';
   ctx.lineCap = 'round';
   if (ouch) {
@@ -245,34 +562,37 @@ function drawFaceInto(canvas, p, fx) {
     ctx.ellipse(256, MY + 12, 20, 12, 0, 0, Math.PI * 2);
     ctx.fill();
   } else if (p.mouth === 'cat') {
-    ctx.lineWidth = 9;
+    ctx.lineWidth = 8;
     for (const s of [-1, 1]) {
       ctx.beginPath();
-      ctx.arc(256 + s * 14, MY - 8, 15, s === -1 ? 0.15 * Math.PI : 0.35 * Math.PI, s === -1 ? 0.65 * Math.PI : 0.85 * Math.PI);
+      ctx.arc(256 + s * 12, MY - 6, 13, s === -1 ? 0.15 * Math.PI : 0.35 * Math.PI, s === -1 ? 0.65 * Math.PI : 0.85 * Math.PI);
       ctx.stroke();
     }
   } else if (p.mouth === 'open') {
     ctx.fillStyle = '#a14a44';
     ctx.beginPath();
-    ctx.ellipse(256, MY, 24, 20, 0, 0, Math.PI * 2);
+    ctx.ellipse(256, MY, 19, 16, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#e58a80';
     ctx.beginPath();
-    ctx.ellipse(256, MY + 8, 14, 9, 0, 0, Math.PI * 2);
+    ctx.ellipse(256, MY + 7, 11, 7, 0, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    ctx.lineWidth = 10;
+    ctx.lineWidth = 8;
     ctx.beginPath();
-    ctx.arc(256, MY - 14, 26, 0.2 * Math.PI, 0.8 * Math.PI);
+    ctx.arc(256, MY - 10, 20, 0.22 * Math.PI, 0.78 * Math.PI);
     ctx.stroke();
   }
 
-  // 볼터치
+  // 동물 코·수염 (사람 아님). 코는 눈과 입 사이, 3D 귀·꼬리와 함께 종족을 읽게 한다.
+  if (isAnimal && !ouch) drawAnimalFace(ctx, p.species, MY);
+
+  // 볼터치 — 더 크고 진하게(엔젤이식), 눈 아래 밀착
   if (p.blush && !ouch) {
-    ctx.fillStyle = 'rgba(255,140,140,0.38)';
+    ctx.fillStyle = 'rgba(255,120,120,0.5)';
     for (const s of [-1, 1]) {
       ctx.beginPath();
-      ctx.ellipse(256 + s * 158, 330, 40, 24, 0, 0, Math.PI * 2);
+      ctx.ellipse(256 + s * 150, 338, 46, 30, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -317,24 +637,193 @@ function drawFaceCanvas(p) {
 // ---------------------------------------------------------------------------
 // 파츠 빌더
 // ---------------------------------------------------------------------------
+// 플랫 셀셰이딩 램프 — 레퍼런스(엔젤이)식 "단색 채움 + 그림자 1겹" 룩.
+// 2톤(그림자/본색) hard step: 3D 그라디언트를 없애 스티커 일러스트처럼 평면화한다.
+// 모듈 1회 생성·공유(개체별 dispose 대상 아님).
+let _toonRamp = null;
+function toonRamp() {
+  if (_toonRamp) return _toonRamp;
+  // 스티커 인쇄물처럼 거의 평면 — 그림자를 아주 얕게(0.9)만 남겨 형태 힌트만.
+  const data = new Uint8Array([230, 255]); // 2스텝(RedFormat): 그림자 0.9 / 본색 1.0
+  const tex = new THREE.DataTexture(data, 2, 1, THREE.RedFormat);
+  tex.minFilter = tex.magFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  _toonRamp = tex;
+  return tex;
+}
+// 채도 부스트 — 스티커 톤 유지하며 색만 또렷하게. HSL의 S만 올려 흰/회색(저채도)은
+// 거의 그대로, 유채색만 선명해진다(감독: "채도 더 올려"). L·H는 보존.
+const SAT_BOOST = 1.5;
+function vivid(color, mul) {
+  const c = new THREE.Color(color);
+  const hsl = {};
+  c.getHSL(hsl);
+  c.setHSL(hsl.h, Math.min(1, hsl.s * (mul || SAT_BOOST)), hsl.l);
+  return c;
+}
 function toon(color, doubleSide) {
   // 회전체(치마/꽁지머리)와 열린 구 세그먼트(뒷머리 커튼)는 프로파일 방향에 따라
   // 법선이 안쪽을 향할 수 있어 DoubleSide가 필수다 — 앞면 컬링으로 "안 보이는
   // 치마" 버그가 났던 실측 교훈.
-  return new THREE.MeshToonMaterial({ color, side: doubleSide ? THREE.DoubleSide : THREE.FrontSide });
+  return new THREE.MeshToonMaterial({
+    color: vivid(color),
+    gradientMap: toonRamp(),
+    side: doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+  });
 }
 
-/** 뒷면 확장 셸 방식 외곽선 — 셀룩의 마감 (머리·몸 등 큰 파츠에만). */
-function addOutline(mesh, thickness, collect) {
-  const mat = new THREE.MeshBasicMaterial({ color: '#463a30', side: THREE.BackSide });
-  const outline = new THREE.Mesh(mesh.geometry, mat);
-  outline.scale.setScalar(thickness);
+/**
+ * 외곽선 — 법선 방향으로 "고정 두께"만큼 밀어낸 백페이스 셸. 스케일 배수 방식과 달리
+ * 파츠 크기와 무관하게 일정한 선 두께를 만들어(스티커 일러스트식 균일 외곽선), 큰 파츠와
+ * 작은 파츠의 외곽선이 같은 굵기로 보인다. thickness는 월드 단위(≈0.012 = 굵은 만화 선).
+ */
+function addOutline(mesh, thickness, matCollect, geoCollect) {
+  let g = mesh.geometry.clone();
+  // 하드에지 저폴리(고깔 등)에서 면법선이 갈라지면 오프셋 셸이 뾰족뾰족 찢어진다.
+  // 위치 기준으로 정점을 용접(법선/uv 제거 후 mergeVertices)하고 부드러운 법선을
+  // 재계산해, 오프셋 셸이 연속된 매끈한 외곽선이 되도록 한다(마감 정리).
+  try {
+    g.deleteAttribute('normal');
+    g.deleteAttribute('uv');
+    const welded = mergeVertices(g);
+    welded.computeVertexNormals();
+    g.dispose();       // 용접 성공 시 용접 전 클론은 버린다(GPU/메모리 누수 방지)
+    g = welded;
+  } catch (_) {
+    if (!g.attributes.normal) g.computeVertexNormals();
+  }
+  const pos = g.attributes.position;
+  const nor = g.attributes.normal;
+  if (nor) {
+    for (let i = 0; i < pos.count; i++) {
+      pos.setXYZ(
+        i,
+        pos.getX(i) + nor.getX(i) * thickness,
+        pos.getY(i) + nor.getY(i) * thickness,
+        pos.getZ(i) + nor.getZ(i) * thickness
+      );
+    }
+    pos.needsUpdate = true;
+  }
+  // 외곽선 색 = 파츠 자기 색을 어둡게(밝기 차등). 흰 얼굴→회색, 파란 옷→짙은 파랑 등.
+  // 패턴 상의처럼 재질색이 흰색인 경우 userData.outlineBase 힌트로 실제 옷색을 쓴다.
+  const base = mesh.userData && mesh.userData.outlineBase
+    ? new THREE.Color(mesh.userData.outlineBase)
+    : mesh.material && mesh.material.color ? mesh.material.color.clone() : new THREE.Color('#3f2d22');
+  const lum = 0.2126 * base.r + 0.7152 * base.g + 0.0722 * base.b;
+  base.multiplyScalar(lum > 0.6 ? 0.5 : lum > 0.3 ? 0.55 : 0.65);
+  const mat = new THREE.MeshBasicMaterial({ color: base, side: THREE.BackSide });
+  const outline = new THREE.Mesh(g, mat);
   mesh.add(outline);
-  collect.push(mat);
+  matCollect.push(mat);
+  if (geoCollect) geoCollect.push(g);
 }
 
 function lathePoints(pairs) {
   return pairs.map(([x, y]) => new THREE.Vector2(x, y));
+}
+
+// 작은 하트(하트 프린트용)
+function drawMiniHeart(x, cx, cy, r) {
+  x.beginPath();
+  x.moveTo(cx, cy + r * 0.85);
+  x.bezierCurveTo(cx - r * 1.4, cy - r * 0.35, cx - r * 0.5, cy - r * 1.2, cx, cy - r * 0.35);
+  x.bezierCurveTo(cx + r * 0.5, cy - r * 1.2, cx + r * 1.4, cy - r * 0.35, cx, cy + r * 0.85);
+  x.closePath();
+  x.fill();
+}
+
+// 상의 패턴 텍스처 — bg=옷색, 위에 흰 줄무늬/물방울/하트. 반복 래핑으로 몸통·소매에 감싼다.
+function shirtTexture(topHex, pattern) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  x.fillStyle = vivid(topHex).getStyle(); // 무지 상의와 동일 채도 부스트
+  x.fillRect(0, 0, 128, 128);
+  if (pattern === 'stripe') {
+    x.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let y = 0; y < 128; y += 34) x.fillRect(0, y, 128, 17);
+  } else if (pattern === 'dot') {
+    x.fillStyle = 'rgba(255,255,255,0.72)';
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 4; col++) {
+        const cx = (col * 32 + (row % 2 ? 16 : 0) + 16) % 128;
+        x.beginPath();
+        x.arc(cx, row * 32 + 16, 7, 0, Math.PI * 2);
+        x.fill();
+      }
+    }
+  } else if (pattern === 'heart') {
+    x.fillStyle = 'rgba(255,255,255,0.82)';
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        const cx = (col * 43 + (row % 2 ? 21 : 0) + 14) % 128;
+        drawMiniHeart(x, cx, row * 43 + 22, 8);
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2.4, 2.4);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// 호랑이 털 줄무늬 텍스처 — 오렌지 바탕 + 물결 세로 검정 줄. skull·팔·다리·귀에 감긴다.
+function furStripeTexture(baseHex) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  x.fillStyle = vivid(baseHex).getStyle();
+  x.fillRect(0, 0, 128, 128);
+  x.fillStyle = 'rgba(40,28,20,0.5)';
+  // 얇은 세로 줄 3개(살짝 물결). 너무 촘촘하면 수박처럼 보임 — 성기게·연하게.
+  for (let i = 0; i < 3; i++) {
+    const bx = i * 42 + 14;
+    const w = 5;
+    x.beginPath();
+    x.moveTo(bx, 0);
+    x.quadraticCurveTo(bx + 7, 64, bx, 128);
+    x.lineTo(bx + w, 128);
+    x.quadraticCurveTo(bx + 7 + w, 64, bx + w, 0);
+    x.closePath();
+    x.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1.6, 1.2);
+  tex.offset.set(0.28, 0); // 정면 중앙에 줄이 딱 걸리지 않게 오프셋
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// 종족별 주둥이 지오메트리 (skull 로컬 좌표, 털색 병합용). 없으면 null.
+function buildMuzzleGeo(species, R) {
+  let g = null;
+  if (species === 'dog') {
+    // 뾰족한 강아지 코 — 얇고 긴 캡슐(taper와 합쳐 더 뾰족)
+    g = new THREE.CapsuleGeometry(0.11 * R, 0.34 * R, 4, 10);
+    g.rotateX(Math.PI / 2);
+    g.translate(0, -0.13 * R, 0.74 * R);
+  } else if (species === 'fox') {
+    g = new THREE.ConeGeometry(0.15 * R, 0.4 * R, 14);
+    g.rotateX(-Math.PI / 2);
+    g.translate(0, -0.06 * R, 0.74 * R);
+  } else if (species === 'bear') {
+    g = new THREE.SphereGeometry(0.24 * R, 16, 12);
+    g.scale(1, 0.85, 1.25);
+    g.translate(0, -0.1 * R, 0.74 * R);
+  } else if (species === 'raccoon') {
+    g = new THREE.SphereGeometry(0.2 * R, 14, 12);
+    g.scale(0.9, 0.8, 1.2);
+    g.translate(0, -0.08 * R, 0.76 * R);
+  } else if (species === 'panda') {
+    g = new THREE.SphereGeometry(0.14 * R, 12, 10);
+    g.scale(1, 0.82, 0.95);
+    g.translate(0, -0.05 * R, 0.74 * R);
+  }
+  return g;
 }
 
 /**
@@ -363,59 +852,114 @@ export function buildChibi(params) {
   wrapper.rotation.y = Math.PI;
   group.add(wrapper);
 
-  const skinMat = mkMat(toon(p.skin));
+  let skinMat;
+  if (p.species === 'tiger') {
+    const tex = furStripeTexture(p.skin);
+    texs.push(tex);
+    skinMat = mkMat(new THREE.MeshToonMaterial({ map: tex, gradientMap: toonRamp() }));
+  } else {
+    skinMat = mkMat(toon(p.skin));
+  }
   const hairMat = mkMat(toon(p.hairColor, true));
-  const topMat = mkMat(toon(p.top));
+  let topMat;
+  if (p.pattern && p.pattern !== 'plain') {
+    const tex = shirtTexture(p.top, p.pattern);
+    texs.push(tex);
+    topMat = mkMat(new THREE.MeshToonMaterial({ map: tex, gradientMap: toonRamp() }));
+  } else {
+    topMat = mkMat(toon(p.top));
+  }
   const bottomMat = mkMat(toon(p.bottom, true));
   const shoeMat = mkMat(toon(p.shoes));
 
   // ---- 하반신: 다리 피벗(고관절) ----
-  const HIP_Y = 0.44;
+  // 대두(1.8등신) 리튠 — 다리·몸통·팔을 줄이고 머리를 키운다.
+  const HIP_Y = 0.375;
   const legPivots = [];
   for (const s of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(s * 0.085, HIP_Y, 0);
-    const legMat = p.bottomType === 'pants' ? bottomMat : skinMat;
-    const leg = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.055, 0.2, 6, 12)), legMat);
-    leg.position.y = -0.19;
+    const legMat = p.bottomType === 'pants' || p.bottomType === 'overall' ? bottomMat : skinMat;
+    const leg = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.055, 0.145, 6, 12)), legMat);
+    leg.position.y = -0.155;
+    if (p.species === 'tiger' && legMat === skinMat) leg.userData.outlineBase = p.skin;
+    addOutline(leg, 0.011, mats, geos);
     pivot.add(leg);
     const foot = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.082, 16, 12)), shoeMat);
     foot.scale.set(1, 0.72, 1.25);
-    foot.position.set(0, -0.375, 0.03);
+    foot.position.set(0, -0.305, 0.03);
+    addOutline(foot, 0.011, mats, geos);
     pivot.add(foot);
     wrapper.add(pivot);
     legPivots.push(pivot);
   }
 
   // ---- 몸통 ----
-  const torso = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.155, 0.17, 8, 16)), topMat);
-  torso.position.y = 0.585;
+  const torso = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.155, 0.115, 8, 16)), topMat);
+  torso.position.y = 0.52;
   torso.scale.set(1, 1, 0.9);
-  addOutline(torso, 1.05, mats);
+  torso.userData.outlineBase = vivid(p.top); // 패턴 상의(재질색 흰색)여도 외곽선은 옷색 기준
+  addOutline(torso, 0.013, mats, geos);
   wrapper.add(torso);
 
-  if (p.bottomType === 'skirt') {
+  if (p.bottomType === 'skirt' || p.bottomType === 'dress') {
+    const isDress = p.bottomType === 'dress';
     const skirt = new THREE.Mesh(
-      mkGeo(new THREE.LatheGeometry(lathePoints([[0.165, 0.03], [0.22, -0.03], [0.29, -0.13], [0.3, -0.155]]), 24)),
-      bottomMat
+      mkGeo(new THREE.LatheGeometry(lathePoints(isDress
+        ? [[0.15, 0.09], [0.2, 0.02], [0.27, -0.12], [0.31, -0.24], [0.3, -0.27]]  // 원피스 — 길게
+        : [[0.165, 0.03], [0.22, -0.03], [0.29, -0.13], [0.3, -0.155]]), 24)),
+      isDress ? topMat : bottomMat // 원피스는 상의와 한 벌
     );
-    skirt.position.y = 0.56;
+    skirt.position.y = isDress ? 0.53 : 0.50;
+    skirt.userData.outlineBase = isDress ? vivid(p.top) : vivid(p.bottom);
+    addOutline(skirt, 0.012, mats, geos);
     wrapper.add(skirt);
   } else {
-    // 바지: 골반 덮개
+    // 바지/멜빵바지: 골반 덮개
     const shorts = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.16, 16, 12, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.35)), bottomMat);
-    shorts.position.y = 0.5;
+    shorts.position.y = 0.44;
     wrapper.add(shorts);
+    if (p.bottomType === 'overall') {
+      // 멜빵 2가닥 — 허리 앞에서 어깨로
+      for (const s of [-1, 1]) {
+        const strap = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.035, 0.22, 0.022)), bottomMat);
+        strap.position.set(s * 0.07, 0.56, 0.135);
+        strap.rotation.z = s * 0.1;
+        addOutline(strap, 0.009, mats, geos);
+        wrapper.add(strap);
+      }
+    }
+  }
+
+  // ---- 가슴 하트 (옵션) — 레퍼런스 원피스 하트 모티프 ----
+  if (p.heart) {
+    const heartMat = mkMat(toon('#e8619a'));
+    const hg = new THREE.Group();
+    hg.position.set(0, 0.55, 0.15); // 몸통 전면
+    for (const s of [-1, 1]) {
+      const lobe = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.042, 12, 10)), heartMat);
+      lobe.position.set(s * 0.03, 0.018, 0);
+      lobe.scale.set(1, 1, 0.5);
+      hg.add(lobe);
+    }
+    const tip = new THREE.Mesh(mkGeo(new THREE.ConeGeometry(0.058, 0.085, 14)), heartMat);
+    tip.rotation.x = Math.PI; // 아래로 뾰족
+    tip.position.set(0, -0.028, 0);
+    tip.scale.set(1, 1, 0.5);
+    hg.add(tip);
+    wrapper.add(hg);
   }
 
   // ---- 팔 피벗(어깨) ----
   const armPivots = [];
   for (const s of [-1, 1]) {
     const pivot = new THREE.Group();
-    pivot.position.set(s * 0.172, 0.7, 0);
+    pivot.position.set(s * 0.172, 0.625, 0);
     pivot.rotation.z = s * 0.5; // 살짝 벌린 기본 자세
-    const arm = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.05, 0.15, 6, 12)), skinMat);
-    arm.position.y = -0.115;
+    const arm = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.05, 0.115, 6, 12)), skinMat);
+    arm.position.y = -0.095;
+    if (p.species === 'tiger') arm.userData.outlineBase = p.skin;
+    addOutline(arm, 0.011, mats, geos);
     pivot.add(arm);
     // 소매 캡 (상의색)
     const sleeve = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.07, 12, 10)), topMat);
@@ -428,36 +972,51 @@ export function buildChibi(params) {
 
   // ---- 머리 피벗(목) ----
   const headPivot = new THREE.Group();
-  headPivot.position.y = 0.78;
+  headPivot.position.y = 0.70;
   wrapper.add(headPivot);
 
-  const HEAD_R = 0.3;
+  const HEAD_R = 0.35;
   const fsDef = FACE_SHAPE_DEF[p.face] || FACE_SHAPE_DEF.round;
-  // 턱 성형 — 테이퍼(아래 반구 조임 → 브이라인/갸름)와 플랫(하단 눌러 각진 턱)
+  const headBase = SPECIES_HEAD_BASE[p.species] || SPECIES_HEAD_BASE.human;
+  // 종족 기본 두상 × 사용자 얼굴형. human은 headBase.taper/flat=0이라 기존과 동일(회귀 0).
+  const sX = headBase.sx * fsDef.sx, sY = headBase.sy * fsDef.sy, sZ = headBase.sz * fsDef.sz;
+  const effTaper = p.species === 'human' ? fsDef.taper : Math.min(0.42, headBase.taper + fsDef.taper * 0.6);
+  const effFlat = p.species === 'human' ? fsDef.flat : Math.max(headBase.flat, fsDef.flat * 0.7);
+  // 턱 성형 — 테이퍼(아래 반구 조임)와 플랫(하단 눌러 각진 턱). 종족×얼굴형 합성값 사용.
   const taperJaw = (geo) => {
-    if (!fsDef.taper && !fsDef.flat) return geo;
+    if (!effTaper && !effFlat) return geo;
     const pos = geo.attributes.position;
-    const FLAT_Y = -HEAD_R * 0.72; // 이 깊이 아래를 눌러 평평한 턱선을 만든다
+    const FLAT_Y = -HEAD_R * 0.72;
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i);
       if (y >= 0) continue;
-      if (fsDef.taper) {
-        const f = 1 - fsDef.taper * Math.min(1, -y / HEAD_R);
+      if (effTaper) {
+        const f = 1 - effTaper * Math.min(1, -y / HEAD_R);
         pos.setX(i, pos.getX(i) * f);
         pos.setZ(i, pos.getZ(i) * f);
       }
-      if (fsDef.flat && y < FLAT_Y) {
-        pos.setY(i, FLAT_Y + (y - FLAT_Y) * (1 - fsDef.flat));
+      if (effFlat && y < FLAT_Y) {
+        pos.setY(i, FLAT_Y + (y - FLAT_Y) * (1 - effFlat));
       }
     }
     pos.needsUpdate = true;
     geo.computeVertexNormals();
     return geo;
   };
-  const skull = new THREE.Mesh(mkGeo(taperJaw(new THREE.SphereGeometry(HEAD_R, 32, 24))), skinMat);
-  skull.scale.set(1 * fsDef.sx, 0.95 * fsDef.sy, 0.97 * fsDef.sz);
+  // 종족별 주둥이를 skull에 병합 — 같은 털색이라 드로우콜 증가 0 (동물의 숲식 두상 다양화).
+  const skullGeo = new THREE.SphereGeometry(HEAD_R, 32, 24);
+  const muzzleGeo = buildMuzzleGeo(p.species, HEAD_R);
+  let mergedSkull = skullGeo;
+  if (muzzleGeo) {
+    mergedSkull = mergeGeometries([skullGeo, muzzleGeo]);
+    skullGeo.dispose();
+    muzzleGeo.dispose();
+  }
+  const skull = new THREE.Mesh(mkGeo(taperJaw(mergedSkull)), skinMat);
+  skull.scale.set(sX, sY, sZ);
   skull.position.y = 0.25;
-  addOutline(skull, 1.045, mats);
+  if (p.species === 'tiger') skull.userData.outlineBase = p.skin; // 줄무늬 텍스처(흰 재질색) 외곽선 보정
+  addOutline(skull, 0.013, mats, geos);
   headPivot.add(skull);
 
   // 얼굴 캡 (+Z 전면) — 캔버스 텍스처 (상처/아픔 시 제자리에서 다시 그린다)
@@ -470,7 +1029,7 @@ export function buildChibi(params) {
     taperJaw(new THREE.SphereGeometry(HEAD_R * 1.012, 32, 24, Math.PI / 2 - FACE_PHI / 2, FACE_PHI, Math.PI * 0.33, Math.PI * 0.4))
   );
   const faceMat = mkMat(
-    new THREE.MeshToonMaterial({ map: faceTex, transparent: true, alphaTest: 0.02 })
+    new THREE.MeshToonMaterial({ map: faceTex, gradientMap: toonRamp(), transparent: true, alphaTest: 0.02 })
   );
   const face = new THREE.Mesh(faceGeo, faceMat);
   face.scale.copy(skull.scale);
@@ -483,16 +1042,19 @@ export function buildChibi(params) {
   hairRoot.position.copy(skull.position);
   // 헤어(셸·꼬리·액세서리 전부 hairRoot 자식)는 두상 스케일을 따라간다 —
   // 안 그러면 통통/갸름에서 두피가 헤어를 뚫는다
-  hairRoot.scale.set(fsDef.sx, fsDef.sy, fsDef.sz);
+  // 사람은 기존 그대로(회귀 0), 동물은 종족 두상 스케일을 따라가 귀/털이 얼굴 형태에 맞게.
+  if (p.species === 'human') hairRoot.scale.set(fsDef.sx, fsDef.sy, fsDef.sz);
+  else hairRoot.scale.set(sX, sY, sZ);
   headPivot.add(hairRoot);
   const tailPivots = []; // 찰랑임 애니메이션 대상
 
+  if (p.species === 'human') {
   // 공통 헬멧 셸 (앞이마 위 ~ 뒤통수)
   const shell = new THREE.Mesh(
     mkGeo(new THREE.SphereGeometry(HAIR_R, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.44)),
     hairMat
   );
-  addOutline(shell, 1.04, mats);
+  addOutline(shell, 0.012, mats, geos);
   hairRoot.add(shell);
   // 뒷머리 커튼 + 앞머리(뱅) — 같은 재질의 정적 파츠라 지오메트리 병합으로
   // 1드로우콜에 그린다 (아바타당 3~4콜 절약, 관객 7명이면 25콜+).
@@ -512,6 +1074,7 @@ export function buildChibi(params) {
   if (staticHairGeos.length) {
     const mergedHair = new THREE.Mesh(mkGeo(mergeGeometries(staticHairGeos)), hairMat);
     staticHairGeos.forEach((g) => g.dispose());
+    addOutline(mergedHair, 0.011, mats, geos);
     hairRoot.add(mergedHair);
   }
 
@@ -523,6 +1086,7 @@ export function buildChibi(params) {
       pivot.rotation.z = s * 0.35;
       const tail = new THREE.Mesh(mkGeo(new THREE.LatheGeometry(tailProfile, 16)), hairMat);
       tail.scale.setScalar(1.15);
+      addOutline(tail, 0.011, mats, geos);
       pivot.add(tail);
       // 묶은 자리 방울
       const tie = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.06, 10, 8)), mkMat(toon('#ffd166')));
@@ -537,6 +1101,7 @@ export function buildChibi(params) {
     pivot.rotation.x = -0.5;
     const tail = new THREE.Mesh(mkGeo(new THREE.LatheGeometry(tailProfile, 16)), hairMat);
     tail.scale.setScalar(1.25);
+    addOutline(tail, 0.011, mats, geos);
     pivot.add(tail);
     hairRoot.add(pivot);
     tailPivots.push({ pivot, baseZ: 0, baseX: pivot.rotation.x });
@@ -544,11 +1109,264 @@ export function buildChibi(params) {
     for (const s of [-1, 1]) {
       const bun = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.1, 14, 12)), hairMat);
       bun.position.set(s * 0.2, 0.26, -0.04);
-      addOutline(bun, 1.07, mats);
+      addOutline(bun, 0.012, mats, geos);
       hairRoot.add(bun);
     }
   }
   // 'bob'/'short'는 셸+커튼(+뱅)으로 완성
+  } else {
+    // ---- 동물 종족: 헤어 대신 귀/털/꼬리 (머리는 skin=털색 그대로 노출) ----
+    const sp = p.species;
+    const furMat = skinMat;                 // 기본 털색
+    const pointMat = hairMat;               // 포인트색(귀 안쪽·꼬리 끝)
+    const R = HEAD_R;                        // 로컬 기준 반지름 (hairRoot 중심)
+
+    // 귀 부착 헬퍼 — geo를 만들어 위치/회전 후 hairRoot에 추가
+    const addPart = (geo, mat, x, y, z, rz, rx, sc, outline) => {
+      const m = new THREE.Mesh(mkGeo(geo), mat);
+      m.position.set(x, y, z);
+      if (rz) m.rotation.z = rz;
+      if (rx) m.rotation.x = rx;
+      if (sc) m.scale.setScalar(sc);
+      if (outline !== false) addOutline(m, 0.011, mats, geos);
+      hairRoot.add(m);
+      return m;
+    };
+
+    const M = (col) => mkMat(toon(col)); // 즉석 재질
+    const PINK_INNER = '#f2b3c4'; // 귀여운 분홍 안쪽 귀
+    // 귀 헬퍼 — 뾰족(고깔): 둥근 귀끝 캡 + 큼직한 안쪽 귀(분홍/포인트)
+    const coneEars = (earR, earH, x, y, z, tilt, innerScale, outerMat, innerCol) => {
+      const inMat = innerCol ? M(innerCol) : pointMat;
+      for (const s of [-1, 1]) {
+        addPart(new THREE.ConeGeometry(earR, earH, 16), outerMat || furMat, s * x, y, z, -s * tilt, -0.12);
+        // 큼직한 안쪽 귀(분홍/포인트) — 앞으로 도드라지게, 외곽선 없이
+        if (innerScale) addPart(new THREE.ConeGeometry(earR * innerScale, earH * 0.72, 16), inMat, s * x, y - earH * 0.02, z + R * 0.1, -s * tilt, -0.12, undefined, false);
+      }
+    };
+    // 둥근 귀 — 겉귀 + 앞쪽 안쪽 귀(분홍/밝은색)
+    const roundEars = (er, x, y, z, m, innerCol) => {
+      for (const s of [-1, 1]) {
+        addPart(new THREE.SphereGeometry(er, 14, 12), m || furMat, s * x, y, z);
+        if (innerCol) addPart(new THREE.SphereGeometry(er * 0.62, 12, 10), M(innerCol), s * x, y, z + er * 0.6, 0, 0, 0, false).scale.set(1, 1, 0.55);
+      }
+    };
+    // 갈기/털 링 — 상반구 퍼프 병합(양·사자 공용)
+    const puffMass = (count, cover, base, yOff, col, dbl) => {
+      const puffs = [];
+      for (let i = 0; i < count; i++) {
+        const phi = Math.acos(1 - cover * (i + 0.5) / count);
+        const theta = i * 2.399963;
+        const rr = R * 1.04;
+        const g = new THREE.SphereGeometry(R * base * (1 + (i % 3) * 0.12), 8, 6);
+        g.translate(rr * Math.sin(phi) * Math.cos(theta), rr * Math.cos(phi) + R * yOff, rr * Math.sin(phi) * Math.sin(theta));
+        puffs.push(g);
+      }
+      const mesh = new THREE.Mesh(mkGeo(mergeGeometries(puffs)), mkMat(toon(col, dbl)));
+      puffs.forEach((g) => g.dispose());
+      addOutline(mesh, 0.012, mats, geos);
+      hairRoot.add(mesh);
+      return mesh;
+    };
+
+    if (sp === 'sheep') {
+      puffMass(24, 0.82, 0.24, 0.08, p.skin, true); // 뭉게 털
+      for (const s of [-1, 1]) {
+        addPart(new THREE.SphereGeometry(R * 0.18, 12, 10), pointMat, s * R * 0.72, R * 0.22, R * 0.08, -s * 0.62).scale.set(1, 0.5, 0.44);
+        addPart(new THREE.SphereGeometry(R * 0.1, 10, 8), M('#f2c4c4'), s * R * 0.66, R * 0.2, R * 0.16, -s * 0.62, 0, 0, false).scale.set(1, 0.5, 0.3);
+      }
+    } else if (sp === 'lion') {
+      // 갈기 — 얼굴 둘레를 고르게 감싸는 퍼프 링(정면 평면). 얼굴 중앙은 비운다.
+      const maneGeos = [];
+      const MN = 14;
+      for (let i = 0; i < MN; i++) {
+        const a = (i / MN) * Math.PI * 2 - Math.PI / 2;
+        const rr = R * 1.04;
+        const g = new THREE.SphereGeometry(R * (0.24 + (i % 2) * 0.03), 8, 6);
+        g.translate(Math.cos(a) * rr, Math.sin(a) * rr + R * 0.04, R * 0.1);
+        maneGeos.push(g);
+      }
+      const mane = new THREE.Mesh(mkGeo(mergeGeometries(maneGeos)), mkMat(toon(p.hairColor, true)));
+      maneGeos.forEach((g) => g.dispose());
+      addOutline(mane, 0.012, mats, geos);
+      hairRoot.add(mane);
+      roundEars(R * 0.16, R * 0.52, R * 0.8, R * 0.05, furMat, '#e8c9a0'); // 작은 둥근 귀 + 크림 안쪽
+    } else if (sp === 'cat' || sp === 'tiger') {
+      coneEars(R * 0.3, sp === 'tiger' ? R * 0.46 : R * 0.54, R * 0.58, R * 0.86, R * 0.05, 0.3, 0.62, undefined, PINK_INNER);
+    } else if (sp === 'fox') {
+      coneEars(R * 0.27, R * 0.6, R * 0.58, R * 0.88, R * 0.05, 0.3, 0.55, undefined, '#fff1e0');
+    } else if (sp === 'raccoon') {
+      coneEars(R * 0.26, R * 0.56, R * 0.6, R * 0.88, R * 0.05, 0.3, 0.5, undefined, '#d8d0c4');
+    } else if (sp === 'dog') {
+      // 크고 축 늘어진 귀 — 강아지의 포인트. 옆에서 아래로 늘어지는 갈색 겉귀 + 분홍 안쪽.
+      for (const s of [-1, 1]) {
+        const ear = addPart(new THREE.SphereGeometry(R * 0.34, 14, 12), pointMat, s * R * 0.72, R * 0.3, R * 0.0, -s * 0.12, 0.05);
+        ear.scale.set(0.55, 1.7, 0.42); // 세로로 길게 → 뺨 옆으로 축 늘어짐
+        addPart(new THREE.SphereGeometry(R * 0.19, 12, 10), M('#f2c4c0'), s * R * 0.68, R * 0.26, R * 0.09, -s * 0.12, 0.05, 0, false).scale.set(0.5, 1.55, 0.26);
+      }
+    } else if (sp === 'rabbit') {
+      for (const s of [-1, 1]) {
+        addPart(new THREE.CapsuleGeometry(R * 0.12, R * 0.82, 4, 8), furMat, s * R * 0.34, R * 1.08, 0, -s * 0.1);
+        addPart(new THREE.CapsuleGeometry(R * 0.065, R * 0.62, 4, 8), M(PINK_INNER), s * R * 0.34, R * 1.11, R * 0.07, -s * 0.1, 0, 0, false);
+      }
+    } else if (sp === 'koala') {
+      roundEars(R * 0.36, R * 0.76, R * 0.44, 0, furMat, '#f2c4d0'); // 크고 복슬한 귀 + 분홍 안쪽
+      // 복슬 퍼프 — 귀 둘레 작은 털뭉치
+      for (const s of [-1, 1]) for (const [ox, oy] of [[-0.12, 0.14], [0.12, 0.1], [0, -0.16]]) {
+        addPart(new THREE.SphereGeometry(R * 0.11, 8, 6), furMat, s * (R * 0.76 + ox * R), R * 0.44 + oy * R, R * 0.02, 0, 0, 0, false);
+      }
+    } else if (sp === 'hamster') {
+      roundEars(R * 0.19, R * 0.5, R * 0.9, R * 0.05, furMat, PINK_INNER); // 둥근 귀 + 분홍 안쪽
+    } else if (sp === 'pig') {
+      for (const s of [-1, 1]) {
+        addPart(new THREE.ConeGeometry(R * 0.17, R * 0.28, 12), furMat, s * R * 0.5, R * 0.9, R * 0.12, -s * 0.15, -0.7); // 앞으로 접힌 삼각 귀
+        addPart(new THREE.ConeGeometry(R * 0.09, R * 0.18, 10), M('#efa0b2'), s * R * 0.5, R * 0.86, R * 0.19, -s * 0.15, -0.7, 0, false);
+      }
+    } else if (sp === 'chick') {
+      for (const dx of [-1, 0, 1]) addPart(new THREE.ConeGeometry(R * 0.07, R * 0.22, 12), furMat, dx * R * 0.13, R * 1.0, 0, dx * 0.25, -0.1); // 정수리 솜털
+    } else if (sp === 'frog') {
+      // 눈이 머리 위로 튀어나온 개구리 — 흰 구 + 검은 동공(캔버스 눈은 생략됨)
+      for (const s of [-1, 1]) {
+        addPart(new THREE.SphereGeometry(R * 0.26, 14, 12), skinMat, s * R * 0.42, R * 0.62, R * 0.34);
+        addPart(new THREE.SphereGeometry(R * 0.15, 12, 10), mkMat(toon('#fbfbfa')), s * R * 0.42, R * 0.66, R * 0.5, 0, 0, 0, false);
+        addPart(new THREE.SphereGeometry(R * 0.075, 10, 8), mkMat(toon('#1a1a1a')), s * R * 0.42, R * 0.66, R * 0.62, 0, 0, 0, false);
+      }
+    } else if (sp === 'penguin') {
+      // 귀 없음 — 정수리 살짝 각진 머리깃만
+      addPart(new THREE.SphereGeometry(R * 0.14, 10, 8), furMat, 0, R * 0.98, -R * 0.1).scale.set(0.8, 0.6, 0.8);
+    } else if (sp === 'panda') {
+      roundEars(R * 0.26, R * 0.68, R * 0.82, R * 0.05, pointMat); // 검정 둥근 귀
+    } else {
+      // bear — 둥근 테디 귀 + 크림 안쪽
+      roundEars(R * 0.26, R * 0.68, R * 0.82, R * 0.05, furMat, '#f0d6b8');
+    }
+
+    // ---- 종족 코끝/부리/주둥이 디테일 (3D 주둥이 종은 캔버스 코를 drawAnimalFace에서 생략) ----
+    const darkNose = () => mkMat(toon('#2a2724'));
+    // 코끝/작은 파츠 — 외곽선 없이(주둥이 실루엣이 이미 외곽선 있음)
+    const tip = (geo, mat, x, y, z) => addPart(geo, mat, x, y, z, 0, 0, 0, false);
+    if (sp === 'dog') tip(new THREE.SphereGeometry(R * 0.06, 10, 8), darkNose(), 0, -0.12 * R, 1.0 * R);
+    else if (sp === 'fox') tip(new THREE.SphereGeometry(R * 0.055, 10, 8), mkMat(toon('#fff6ea')), 0, -0.06 * R, 1.12 * R);
+    else if (sp === 'bear') tip(new THREE.SphereGeometry(R * 0.07, 10, 8), darkNose(), 0, -0.1 * R, 1.02 * R);
+    else if (sp === 'raccoon') tip(new THREE.SphereGeometry(R * 0.055, 10, 8), darkNose(), 0, -0.08 * R, 1.0 * R);
+    else if (sp === 'panda') tip(new THREE.SphereGeometry(R * 0.05, 10, 8), darkNose(), 0, -0.05 * R, 0.9 * R);
+    else if (sp === 'rabbit') tip(new THREE.SphereGeometry(R * 0.075, 10, 8), mkMat(toon('#e88ba0')), 0, 0.02 * R, 0.9 * R);
+    else if (sp === 'pig') {
+      const disc = addPart(new THREE.CylinderGeometry(R * 0.18, R * 0.18, R * 0.09, 16), mkMat(toon('#efa0b2')), 0, -0.04 * R, 0.92 * R, 0, Math.PI / 2, 0, true);
+      disc.userData.outlineBase = '#c07a90';
+      for (const s of [-1, 1]) tip(new THREE.SphereGeometry(R * 0.025, 8, 6), mkMat(toon('#b0607a')), s * 0.05 * R, -0.04 * R, 0.99 * R);
+    } else if (sp === 'chick' || sp === 'penguin') {
+      const beak = addPart(new THREE.ConeGeometry(sp === 'penguin' ? R * 0.11 : R * 0.1, sp === 'penguin' ? R * 0.16 : R * 0.17, 4), mkMat(toon('#f4a83a')), 0, -0.02 * R, 0.86 * R, 0, -Math.PI / 2, 0, false);
+      beak.scale.set(sp === 'penguin' ? 1.6 : 1.4, 0.6, 1);
+    } else if (sp === 'hamster') {
+      for (const s of [-1, 1]) addPart(new THREE.SphereGeometry(R * 0.16, 12, 10), furMat, s * 0.6 * R, -0.06 * R, 0.55 * R, 0, 0, 0, true).scale.set(1, 0.8, 0.7);
+    }
+
+    // ---- 동물 꼬리 (몸 뒤 · wrapper) ----
+    const STUB = new Set(['bear', 'panda', 'hamster', 'koala', 'penguin', 'chick']);
+    const LATHE = new Set(['cat', 'dog', 'fox', 'sheep', 'tiger', 'lion', 'raccoon']);
+    const TIP = new Set(['fox', 'lion', 'raccoon']); // 끝에 포인트색 뭉치
+    if (sp !== 'frog') {
+      const tailPivot = new THREE.Group();
+      tailPivot.position.set(0, 0.44, -0.15);
+      let baseX = -0.4;
+      if (sp === 'rabbit') {
+        const puff = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(HEAD_R * 0.22, 12, 10)), furMat);
+        addOutline(puff, 0.011, mats, geos);
+        tailPivot.add(puff);
+        baseX = 0;
+      } else if (sp === 'pig') {
+        const curl = new THREE.Mesh(mkGeo(new THREE.TorusGeometry(HEAD_R * 0.11, HEAD_R * 0.035, 8, 16, Math.PI * 1.6)), furMat);
+        tailPivot.add(curl);
+        baseX = 0;
+      } else if (STUB.has(sp)) {
+        const stub = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(HEAD_R * 0.12, 10, 8)), sp === 'panda' ? pointMat : furMat);
+        addOutline(stub, 0.011, mats, geos);
+        tailPivot.add(stub);
+        baseX = 0;
+      } else if (LATHE.has(sp)) {
+        const prof = lathePoints([[0.015, 0.03], [0.075, -0.03], [0.085, -0.14], [0.055, -0.26], [0.008, -0.36]]);
+        const tail = new THREE.Mesh(mkGeo(new THREE.LatheGeometry(prof, 14)), furMat);
+        const sc = sp === 'fox' ? 1.6 : sp === 'sheep' ? 0.7 : sp === 'lion' ? 1.3 : 1.05;
+        tail.scale.setScalar(sc);
+        addOutline(tail, 0.011, mats, geos);
+        tailPivot.add(tail);
+        if (TIP.has(sp)) {
+          const tip = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.05, 10, 8)), pointMat);
+          tip.position.y = -0.36 * sc;
+          tailPivot.add(tip);
+        }
+      }
+      tailPivot.rotation.x = baseX;
+      wrapper.add(tailPivot);
+      tailPivots.push({ pivot: tailPivot, baseZ: 0, baseX });
+    }
+  }
+
+  // ---- 안경 (옵션) — 얼굴 앞 두 렌즈 + 브리지. 눈 높이(≈y0.21)·얼굴 표면 앞으로. ----
+  if (p.glasses) {
+    const frameMat = mkMat(toon('#3a352f'));
+    const gGroup = new THREE.Group();
+    gGroup.position.set(0, 0.21, HEAD_R * 1.05); // 눈 높이, 얼굴 구 표면 바로 앞
+    gGroup.scale.copy(skull.scale);
+    for (const s of [-1, 1]) {
+      const lens = new THREE.Mesh(mkGeo(new THREE.TorusGeometry(0.086, 0.011, 12, 28)), frameMat);
+      lens.position.set(s * 0.104, 0, 0);
+      gGroup.add(lens);
+    }
+    const bridge = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.06, 0.016, 0.016)), frameMat);
+    gGroup.add(bridge);
+    headPivot.add(gGroup);
+  }
+
+  // ---- 의상 세트 (정장 / 교련복) ----
+  if (p.outfit === 'suit') {
+    // 흰 셔츠 V칼라 + 넥타이 (몸통 전면)
+    const collarMat = mkMat(toon('#fbfbfa'));
+    for (const s of [-1, 1]) {
+      const flap = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.05, 0.11, 0.02)), collarMat);
+      flap.position.set(s * 0.035, 0.6, 0.145);
+      flap.rotation.z = s * 0.5;
+      addOutline(flap, 0.008, mats, geos);
+      wrapper.add(flap);
+    }
+    const tieMat = mkMat(toon('#c0392b'));
+    const knot = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.03, 0.03, 0.02)), tieMat);
+    knot.position.set(0, 0.605, 0.15);
+    wrapper.add(knot);
+    const tie = new THREE.Mesh(mkGeo(new THREE.ConeGeometry(0.028, 0.14, 4)), tieMat);
+    tie.rotation.x = Math.PI;
+    tie.position.set(0, 0.52, 0.15);
+    tie.scale.set(1, 1, 0.4);
+    addOutline(tie, 0.007, mats, geos);
+    wrapper.add(tie);
+  } else if (p.outfit === 'gyoryeon') {
+    // 교련복 — 단추 세로줄 + 스탠드 칼라 + 교련모
+    const trimMat = mkMat(toon(shade(p.top, 0.75)));
+    const btnMat = mkMat(toon('#3a352f'));
+    for (let i = 0; i < 4; i++) {
+      const btn = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.016, 8, 6)), btnMat);
+      btn.position.set(0, 0.585 - i * 0.038, 0.152);
+      wrapper.add(btn);
+    }
+    for (const s of [-1, 1]) {
+      const collar = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.07, 0.03, 0.02)), trimMat);
+      collar.position.set(s * 0.05, 0.62, 0.14);
+      collar.rotation.z = s * 0.2;
+      wrapper.add(collar);
+    }
+    // 교련모 — 올리브 납작 군모 (머리 위)
+    const crown = new THREE.Mesh(mkGeo(new THREE.CylinderGeometry(HEAD_R * 0.82, HEAD_R * 0.9, 0.11, 20)), mkMat(toon(p.top)));
+    crown.position.set(0, skull.position.y + HEAD_R * 0.72, -0.01);
+    crown.userData.outlineBase = vivid(p.top);
+    addOutline(crown, 0.012, mats, geos);
+    headPivot.add(crown);
+    const brim = new THREE.Mesh(mkGeo(new THREE.CylinderGeometry(HEAD_R * 0.5, HEAD_R * 0.5, 0.02, 18, 1, false, 0, Math.PI)), mkMat(toon(shade(p.top, 0.8))));
+    brim.position.set(0, skull.position.y + HEAD_R * 0.66, HEAD_R * 0.62);
+    brim.rotation.x = -0.15;
+    addOutline(brim, 0.01, mats, geos);
+    headPivot.add(brim);
+  }
 
   // ---- 액세서리 ----
   if (p.acc === 'ribbon') {
@@ -571,7 +1389,7 @@ export function buildChibi(params) {
       const horn = new THREE.Mesh(mkGeo(new THREE.ConeGeometry(0.055, 0.17, 10)), hornMat);
       horn.position.set(s * 0.17, 0.33, 0.04);
       horn.rotation.z = -s * 0.42; // 바깥쪽으로 벌어진 도깨비 뿔
-      addOutline(horn, 1.12, mats);
+      addOutline(horn, 0.012, mats, geos);
       hairRoot.add(horn);
     }
   } else if (p.acc === 'flower') {
@@ -591,12 +1409,54 @@ export function buildChibi(params) {
     hairRoot.add(fl);
   }
 
+  // ---- 엔젤 키트 (옵션 · 리본/뿔/꽃과 동시 장착 가능) ----
+  let haloPivot = null;
+  const wingPivots = [];
+  if (p.halo) {
+    haloPivot = new THREE.Group();
+    haloPivot.position.set(0, skull.position.y + HEAD_R * 1.5, 0); // headPivot 직속(얼굴형 왜곡 회피)
+    haloPivot.rotation.x = -0.35;
+    const halo = new THREE.Mesh(
+      mkGeo(new THREE.TorusGeometry(HEAD_R * 0.52, HEAD_R * 0.06, 10, 24)),
+      mkMat(new THREE.MeshBasicMaterial({ color: '#ffd166' }))
+    );
+    haloPivot.add(halo);
+    headPivot.add(haloPivot);
+  }
+  if (p.wings) {
+    const wingMat = mkMat(toon('#fff8ef', true));
+    for (const s of [-1, 1]) {
+      const feathers = [];
+      for (const [x, y, z, r, sy, sz] of [
+        [0, 0, 0, 0.05, 0.6, 1.4],
+        [s * 0.05, 0.03, -0.05, 0.045, 0.55, 1.3],
+        [s * 0.1, 0.05, -0.11, 0.038, 0.5, 1.2],
+        [s * 0.14, 0.06, -0.17, 0.03, 0.45, 1.1],
+      ]) {
+        const f = new THREE.SphereGeometry(r, 10, 8);
+        f.scale(1, sy, sz);
+        f.translate(x, y, z);
+        feathers.push(f);
+      }
+      const wing = new THREE.Mesh(mkGeo(mergeGeometries(feathers)), wingMat);
+      feathers.forEach((g) => g.dispose());
+      const wp = new THREE.Group();
+      wp.position.set(s * 0.02, 0.56, -0.14);
+      wp.rotation.y = s * 0.5;
+      wp.rotation.z = s * 0.15;
+      wp.add(wing);
+      wrapper.add(wp);
+      wingPivots.push({ pivot: wp, s, baseZ: s * 0.15 });
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // 절차 애니메이션 — 사인파 워크사이클 + 아이들 호흡/살랑임
   // ---------------------------------------------------------------------------
   let t = Math.random() * 10; // 개체별 위상 오프셋 (군집 동기화 방지)
   let walkPhase = 0;
-  const HEIGHT = 1.34;
+  const HEIGHT = 1.18; // 대두 리튠 반영 (기존 1.34)
+  const haloBaseY = haloPivot ? haloPivot.position.y : 0;
 
   // ---- 맞기 리액션 상태 ----
   const SQUASH_DUR = 0.55;
@@ -667,12 +1527,22 @@ export function buildChibi(params) {
     headPivot.rotation.z = Math.sin(t * 1.1) * 0.05 * idle;
     headPivot.rotation.x = 0.06 * w + Math.sin(t * 2.1) * 0.012 * idle;
 
-    // 꽁지머리 찰랑임 — 아이들은 느긋하게, 걸을 땐 통통
+    // 꽁지머리/꼬리 찰랑임 — 아이들은 느긋하게, 걸을 땐 통통
     for (let i = 0; i < tailPivots.length; i++) {
       const tp = tailPivots[i];
       const sway = Math.sin(t * 2.3 + i * 2.1) * 0.09 * idle + Math.sin(walkPhase * 2 + i) * 0.14 * w;
       tp.pivot.rotation.z = tp.baseZ + sway;
       tp.pivot.rotation.x = tp.baseX + Math.abs(Math.cos(walkPhase * 2)) * 0.12 * w;
+    }
+
+    // 헤일로 — 머리 위 부유(살짝 상하 + 기울임 흔들)
+    if (haloPivot) {
+      haloPivot.position.y = haloBaseY + Math.sin(t * 1.3) * 0.008;
+      haloPivot.rotation.z = Math.sin(t * 0.7) * 0.05;
+    }
+    // 날개 — 아이들 팔락 + 걷기 시 크게
+    for (const wp of wingPivots) {
+      wp.pivot.rotation.z = wp.baseZ + Math.sin(t * 2.4 + wp.s) * (0.08 + 0.12 * w);
     }
   }
 
