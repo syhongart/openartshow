@@ -24,8 +24,9 @@ OpenArtShow는 **웹 브라우저만으로 접속하는 3D 가상 전시 플랫�
 
 ## 크레딧
 
-- 밤하늘 은하수 파노라마: [ESO/S. Brunier](https://www.eso.org/public/images/eso0932a/) (CC BY 4.0)
+- 밤하늘 은하수 파노라마: [ESO/S. Brunier](https://www.eso.org/public/images/eso0932a/) (CC BY 4.0, 웹 배포용 크기 조정함)
 - 낮/석양 하늘 HDRI: [Poly Haven](https://polyhaven.com) (CC0)
+- 번들 라이브러리·에셋의 전체 라이선스 고지는 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md) 참조
 
 ## 기술 스택
 
@@ -37,7 +38,7 @@ OpenArtShow는 **웹 브라우저만으로 접속하는 3D 가상 전시 플랫�
 ## 폴더 구조
 
 ```
-artshow/
+openartshow/
 ├── web/                        # 개발 소스
 │   ├── index.html              # 3D 전시장 (app/로 배포)
 │   ├── landing.html            # 랜딩 페이지 (루트의 index.html로 배포)
@@ -64,7 +65,8 @@ artshow/
 
 - 개발 저장소의 `web/landing.html`, `web/guide.html` → 루트(`index.html`, `guide.html`)로 배포
 - `web/index.html`, `web/studio.html` → `app/`로 배포
-- `gh-pages` 브랜치에서 자동으로 GitHub Pages 업데이트
+- **자동배포**: `main`에 push하면 GitHub Actions(`.github/workflows/deploy.yml`)가 빌드 후
+  `gh-pages` 브랜치로 배포 → GitHub Pages 자동 갱신 (수동 조작 불필요)
 
 ## 새 전시 열기
 
@@ -78,4 +80,17 @@ artshow/
 ### 방법 B — 저장소 상설 등록 (전시 디렉터리에 노출)
 1. 스튜디오에서 **[JSON 다운로드]**
 2. 파일을 `web/galleries/`에 추가하고 `web/galleries/index.json`에 메타데이터 등록
-3. `gh-pages` 브랜치로 배포
+3. `main`에 커밋·push → 자동배포(위 "배포 구조" 참조)
+
+## 라이선스 · 저작권 · 상표
+
+- **저작권**: © 2026 OpenArtShow. All rights reserved. 무단 복제·배포·상업적 이용을 금합니다.
+  자세한 조건은 [LICENSE](./LICENSE)를 참조하세요.
+- **제3자 구성요소**: `web/vendor/`의 라이브러리(Three.js · PeerJS = MIT)와 크레딧 에셋
+  (ESO = CC BY 4.0, Poly Haven = CC0)은 각 라이선스를 따릅니다 —
+  [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md).
+- **상표**: **OpenArtShow™** 및 마스코트 **아야모™(Ayamo™)**는 OpenArtShow가 사용하는
+  상표입니다(미등록 · 출원 준비 중). 무단 사용을 금합니다.
+  ※ 아직 미등록 상태이므로 등록상표 기호(®)는 사용하지 않습니다.
+
+문의 · 신고: syhongartist@gmail.com

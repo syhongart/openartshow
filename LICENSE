@@ -43,3 +43,18 @@ holder, any and all use is prohibited, including but not limited to:
 Public visibility of this repository does not constitute a waiver of these rights
 or a grant of any license. For inquiries regarding use, please contact the address
 above.
+
+--------------------------------------------------------------------------------
+
+예외 / Exception
+
+[한국어]
+본 저작물 중 `web/vendor/` 디렉터리의 제3자 라이브러리(Three.js, PeerJS 등)와
+크레딧에 표기된 외부 에셋(ESO, Poly Haven 등)은 위 "All Rights Reserved"의 적용을
+받지 않으며, 각 원저작권자의 라이선스를 따릅니다. 상세는 THIRD-PARTY-NOTICES.md 참조.
+
+[English]
+The third-party libraries in the `web/vendor/` directory (Three.js, PeerJS, etc.)
+and the credited external assets (ESO, Poly Haven, etc.) are NOT covered by the
+"All Rights Reserved" terms above and remain under their respective licenses.
+See THIRD-PARTY-NOTICES.md for details.
