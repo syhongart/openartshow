@@ -12,6 +12,7 @@
 //   파묻히지 않는 오버레이 (닉네임 라벨과 동일 철학).
 
 import * as THREE from 'three';
+import { getCanvasFont } from './fonts.js';
 
 const INK = '#463a30';          // chibi 외곽선과 동일 잉크 브라운 — 한 그림처럼
 const GOLD = '#5f9e7d'; // 브랜드 그린 (구 골드 — 변수명은 하위 호환상 유지)
@@ -222,7 +223,8 @@ function texDust() {
 
 // T6~T8. 의성어 — 글자별 기울임 + 잉크/크림/골드 3중 스트로크
 function texWord(word, emphasis) {
-  const font = '900 128px Pretendard, "Apple SD Gothic Neo", sans-serif';
+  // 의성어는 한글 — 정책상 나눔고딕(최대 800) 우선, 라틴/기호는 Pretendard로 폴백.
+  const font = `900 128px ${getCanvasFont()}`;
   const probe = cv(8).getContext('2d');
   probe.font = font;
   const w = Math.ceil(probe.measureText(word).width) + 140;

@@ -18,6 +18,7 @@ import { MultiplayerManager } from './multiplayer.js';
 import { createAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
 import { playOuch } from './hitfx.js';
+import { ensureCanvasFonts, getCanvasFont } from './fonts.js';
 import { loadNotes, saveNotes, mergeNotes, makeNote } from './guestbook.js';
 import { GalleryStats } from './stats.js';
 import { VisitorLog, PhotoWall } from './feed.js';
@@ -117,7 +118,7 @@ function showGpuNotice(gpuName, fatal) {
     'max-width:min(92vw,600px);background:linear-gradient(180deg,#fffdf8,#f6f1e4);' +
     'color:#17140f;border:1px solid rgba(95,158,125,0.55);border-radius:14px;' +
     'padding:14px 44px 14px 18px;box-shadow:0 12px 32px rgba(20,15,8,0.35);' +
-    "font:13px/1.75 'Helvetica Neue',Helvetica,Arial,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;";
+    `font:13px/1.75 ${getCanvasFont()};`;
   const head = fatal
     ? '<b>이 브라우저에서 3D 그래픽 기능을 사용할 수 없습니다</b><br>'
     : '<b>이 브라우저가 그래픽카드(GPU) 없이 화면을 그리고 있어요</b> — 그래서 몹시 느립니다.<br>';
@@ -586,6 +587,9 @@ async function init() {
   // 다운라이트(포인트 15개)는 정상 GPU에서만 — 화질은 다수를 위해 유지하고,
   // 소프트웨어 렌더링/저사양 학습 기기만 웜 앰비언트 1개로 대체한다.
   createMuseum(scene, resolvedTheme, { fullLights: !gpuInfo.soft && spec !== 'low' });
+  // 작품 플라크 텍스처를 굽기 전에 한글(나눔고딕) 폰트 로드를 보장한다 — 캔버스는
+  // 그리는 시점에 폰트가 없으면 시스템 폰트로 폴백해 그대로 텍스처에 구워지기 때문.
+  await ensureCanvasFonts();
   await createArtworks(scene);
   if (gpuInfo.soft) scene.fog = null; // 프래그먼트당 fog 연산 삭감 (포테이토 모드)
 
@@ -671,7 +675,7 @@ async function init() {
       badge.style.cssText =
         'position:fixed;left:12px;bottom:12px;z-index:890;padding:6px 12px;border-radius:999px;' +
         'background:rgba(23,20,15,0.88);color:#8fd0ab;border:1px solid rgba(95,158,125,0.5);' +
-        "font:600 11px/1.5 'Helvetica Neue',Helvetica,Arial,'Apple SD Gothic Neo',sans-serif;pointer-events:none;";
+        `font:600 11px/1.5 ${getCanvasFont()};pointer-events:none;`;
       document.body.appendChild(badge);
     }
   }, 0);
@@ -861,18 +865,18 @@ function drawWatermark(ctx, w, h, galleryName) {
   // 좌하단 — 전시명
   ctx.textAlign = 'left';
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.font = `300 ${Math.round(18 * s)}px Helvetica, Arial, sans-serif`;
+  ctx.font = `300 ${Math.round(18 * s)}px ${getCanvasFont()}`;
   ctx.fillText(galleryName || 'OpenArtShow 전시', pad, h - pad - 6 * s);
 
   // 우하단 — OpenArtShow(골드, letter-spacing) + 사이트 URL
   ctx.fillStyle = '#5f9e7d';
-  ctx.font = `300 ${Math.round(16 * s)}px Helvetica, Arial, sans-serif`;
+  ctx.font = `300 ${Math.round(16 * s)}px ${getCanvasFont()}`;
   drawLetterSpacedRight(ctx, 'OpenArtShow', w - pad, h - pad - 22 * s, 2.5 * s);
 
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.font = `300 ${Math.round(12 * s)}px Helvetica, Arial, sans-serif`;
-  ctx.fillText('syhongart.github.io/artshow', w - pad, h - pad - 4 * s);
+  ctx.font = `300 ${Math.round(12 * s)}px ${getCanvasFont()}`;
+  ctx.fillText('syhongart.github.io/openartshow', w - pad, h - pad - 4 * s);
 }
 
 // canvas 2D는 표준 letter-spacing을 지원하지 않는 브라우저가 많아, 글자를 하나씩
@@ -1364,7 +1368,7 @@ init().catch((err) => {
     // ui.js 조차 로드되지 않은 경우 최소한의 안내
     document.body.insertAdjacentHTML(
       'beforeend',
-      '<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-family:Helvetica,Arial,sans-serif;font-size:16px;text-align:center;">초기화 중 오류가 발생했습니다.<br>페이지를 새로고침해 주세요.</div>'
+      `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-family:${getCanvasFont()};font-size:16px;text-align:center;">초기화 중 오류가 발생했습니다.<br>페이지를 새로고침해 주세요.</div>`
     );
   }
 });

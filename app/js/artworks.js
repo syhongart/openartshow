@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { BUILDING, EYE_HEIGHT } from './config.js';
+import { getCanvasFont } from './fonts.js';
 
 // ---------------------------------------------------------------------------
 // 폴백 갤러리 데이터 — 루이지애나 스타일 레이아웃 (syhongart 개인전)
@@ -424,7 +425,7 @@ function makePlaceholderTexture() {
     ctx.stroke();
   }
   ctx.fillStyle = '#b8b5b0';
-  ctx.font = '500 22px Helvetica, Arial, sans-serif';
+  ctx.font = `500 22px ${getCanvasFont()}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('Loading…', c.width / 2, c.height / 2);
@@ -453,17 +454,17 @@ function makePlaqueTexture(art) {
 
   // 제목 (이탤릭 세리프 느낌 대신 미니멀 산세리프 볼드)
   ctx.fillStyle = '#111111';
-  ctx.font = '700 34px Helvetica, Arial, sans-serif';
+  ctx.font = `700 34px ${getCanvasFont()}`;
   ctx.fillText(art.title, 36, 92, c.width - 72);
 
   // 작가
   ctx.fillStyle = '#333333';
-  ctx.font = '400 26px Helvetica, Arial, sans-serif';
+  ctx.font = `400 26px ${getCanvasFont()}`;
   ctx.fillText(art.artist, 36, 148, c.width - 72);
 
   // 연도
   ctx.fillStyle = '#777777';
-  ctx.font = '400 24px Helvetica, Arial, sans-serif';
+  ctx.font = `400 24px ${getCanvasFont()}`;
   ctx.fillText(String(art.year), 36, 196, c.width - 72);
 
   const tex = new THREE.CanvasTexture(c);

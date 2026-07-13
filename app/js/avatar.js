@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { buildChibi, decodeChibi, CHIBI_CHAR_PREFIX } from './chibi.js';
 import { attachHitFx } from './hitfx.js';
+import { getCanvasFont } from './fonts.js';
 
 /**
  * @param {string} nickname
@@ -20,7 +21,7 @@ function createNicknameSprite(nickname, colorHex) {
   const ctx = canvas.getContext('2d');
 
   const fontSize = 48;
-  const font = `${fontSize}px Helvetica, Arial, sans-serif`;
+  const font = `${fontSize}px ${getCanvasFont()}`;
   ctx.font = font;
 
   const text = nickname || '???';
