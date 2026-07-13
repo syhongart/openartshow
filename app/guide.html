@@ -25,6 +25,10 @@
   @font-face { font-family: 'Pretendard'; font-weight: 500; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-Medium.woff2') format('woff2'); }
   @font-face { font-family: 'Pretendard'; font-weight: 600; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-SemiBold.woff2') format('woff2'); }
   @font-face { font-family: 'Pretendard'; font-weight: 700; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/Pretendard-Bold.woff2') format('woff2'); }
+  /* 나눔고딕 (SIL OFL) — 한글 전용(unicode-range). 영문은 Pretendard가 담당 */
+  @font-face { font-family: 'NanumGothic'; font-weight: 400; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/NanumGothic-Regular.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
+  @font-face { font-family: 'NanumGothic'; font-weight: 700; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/NanumGothic-Bold.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
+  @font-face { font-family: 'NanumGothic'; font-weight: 800; font-style: normal; font-display: swap; src: url('./app/vendor/fonts/NanumGothic-ExtraBold.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
   :root {
     --gold: #5f9e7d;
     --ink: #0a0a0b;
@@ -44,7 +48,7 @@
     margin: 0;
     background: var(--paper);
     color: var(--text);
-    font-family: 'Pretendard', "Helvetica Neue", Helvetica, Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    font-family: 'NanumGothic', 'Pretendard', "Helvetica Neue", Helvetica, Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
     font-weight: 300;
     line-height: 1.7;
     -webkit-font-smoothing: antialiased;
@@ -84,6 +88,8 @@
     font-weight: 400;
   }
   .brand b { color: var(--gold); font-weight: 400; }
+  .brand .w-lead { color: var(--gold); }
+  .brand .dot { color: var(--gold); }
 
   .topnav {
     display: flex;
@@ -468,7 +474,7 @@
 <body>
 
 <div class="topbar">
-  <a class="brand" href="./index.html">LIFE<b>UNITY</b></a>
+  <a class="brand" href="./index.html"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
   <nav class="topnav">
     <a href="./index.html">랜딩</a>
     <a href="./app/">전시장 입장</a>
@@ -815,7 +821,7 @@
 </div>
 
 <footer>
-  <a class="brand" href="./index.html">LIFE<b>UNITY</b></a>
+  <a class="brand" href="./index.html"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
   <p>문의 · <a class="mail" href="mailto:syhongartist@gmail.com">syhongartist@gmail.com</a></p>
 </footer>
 
