@@ -333,6 +333,36 @@ function toggleSelfView() {
   }
 }
 
+// 입장 후 꾸미기 창에서 [저장하고 사용]을 누르면 호출 — 월드의 내 아바타를 새 룩으로
+// 교체하고 멀티플레이로 전파한다(다른 관람객 화면에도 반영). 저장 자체는 ui.js가 담당.
+function handleAvatarChange(char) {
+  if (!char) return;
+  selfInfo = selfInfo ? Object.assign({}, selfInfo, { char }) : { char };
+  // 3인칭 아바타가 이미 생성돼 있으면 즉시 재빌드(위치·시점 유지)
+  if (selfAvatar) {
+    const prevGroup = selfAvatar.group;
+    const wasVisible = prevGroup.visible;
+    const pos = prevGroup.position.clone();
+    const ry = prevGroup.rotation.y;
+    try {
+      const next = createAvatarInstance(char, selfInfo.color || '#3498db', ' ');
+      next.group.traverse((o) => { if (o.isSprite) o.visible = false; });
+      next.group.position.copy(pos);
+      next.group.rotation.y = ry;
+      next.group.visible = wasVisible;
+      scene.add(next.group);
+      scene.remove(prevGroup);
+      selfAvatar.dispose();
+      selfAvatar = next;
+    } catch (err) {
+      console.warn('내 아바타 갱신 실패:', err);
+    }
+  }
+  // 멀티플레이 전파 — 접속 중이면 다른 사람 화면에도 새 모습이 퍼진다
+  if (mp && typeof mp.setChar === 'function') mp.setChar(char);
+  setStatus('아야모 모습을 바꿨어요 ✨');
+}
+
 function applySelfCamOffset() {
   _selfCamSaved.copy(camera.position);
   _selfCamQuatSaved.copy(camera.quaternion);
@@ -683,6 +713,14 @@ async function init() {
   initUI({
     onEnter: handleEnter,
     onChatSend: handleChatSend,
+    onAvatarChange: handleAvatarChange,
+    // 입장 후 꾸미기 모달 열림/닫힘 — 라이트박스·투어와 동일하게 플레이어를 멈춘다.
+    // 로비(입장 전)에서 여는 경우는 이미 비활성이므로 무시.
+    onMakerToggle: (isOpen) => {
+      if (!entered) return;
+      if (isOpen) player.disable();
+      else if (!touring) player.enable();
+    },
   });
   showLoading(false);
 
