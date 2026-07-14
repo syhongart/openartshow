@@ -1468,16 +1468,21 @@ export function buildChibi(params) {
   // ---- 액세서리 ----
   if (p.acc === 'ribbon') {
     const rib = new THREE.Group();
-    rib.position.set(0.17, 0.27, 0.13);
-    rib.rotation.z = -0.25;
+    // 헤어 표면(HAIR_R=HEAD_R*1.07) 바깥에 얹히도록 반경을 키우고, 바깥(방사)을
+    // 향하게 틸트한다 — 기존엔 반경이 머리보다 작고(≈0.344<0.374) 안쪽 날개가
+    // 머리를 향해 리본이 머리에 박혀 보였다(감독 보고).
+    rib.position.set(0.205, 0.315, 0.205);
+    rib.rotation.set(0.12, 0.62, -0.2);
     const ribMat = mkMat(toon('#ff5d73'));
     for (const s of [-1, 1]) {
       const wing = new THREE.Mesh(mkGeo(new THREE.ConeGeometry(0.05, 0.1, 10)), ribMat);
       wing.rotation.z = s * (Math.PI / 2);
       wing.position.x = s * 0.055;
+      addOutline(wing, 0.007, mats, geos);
       rib.add(wing);
     }
     const knot = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.032, 10, 8)), ribMat);
+    addOutline(knot, 0.007, mats, geos);
     rib.add(knot);
     hairRoot.add(rib);
   } else if (p.acc === 'horns') {
