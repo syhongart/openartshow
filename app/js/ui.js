@@ -2831,9 +2831,25 @@ function buildChibiMaker() {
   let activeCat = 'species';
   const nav = el('div', { className: 'lu-am-nav', role: 'tablist', 'aria-label': '캐릭터 디자인 카테고리' });
   const panel = el('div', { className: 'lu-am-panel' });
-  const page = el('div', { className: 'lu-am-tabpage' });
+  const page = el('div', { className: 'lu-am-tabpage', id: 'lu-am-tabpanel', role: 'tabpanel', tabindex: '0' });
   panel.appendChild(nav);
   panel.appendChild(page);
+  // WAI-ARIA tablist 로빙 — ←/→(및 Home/End)로 탭 포커스·활성 이동.
+  nav.addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    const tabs = [...nav.querySelectorAll('.lu-am-navtab')];
+    if (!tabs.length) return;
+    const cur = tabs.findIndex((t) => t.getAttribute('aria-selected') === 'true');
+    let next = cur < 0 ? 0 : cur;
+    if (e.key === 'ArrowLeft') next = (cur - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'ArrowRight') next = (cur + 1) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+    e.preventDefault();
+    tabs[next].click();      // 활성 탭 전환(renderNav가 aria-selected·tabindex 갱신)
+    const after = nav.querySelectorAll('.lu-am-navtab')[next];
+    if (after) after.focus();
+  });
   const body = el('div', { className: 'lu-am-body' }, [previewBox, panel]);
 
   const saveBtn = el('button', { className: 'lu-am-btn lu-am-btn-primary', type: 'button', text: '저장하고 사용' });
@@ -3035,8 +3051,11 @@ function buildChibiMaker() {
       const btn = el('button', {
         type: 'button',
         role: 'tab',
+        id: 'lu-am-tab-' + cat.id,
         className: 'lu-am-navtab' + (selected ? ' lu-selected' : ''),
         'aria-selected': selected ? 'true' : 'false',
+        'aria-controls': 'lu-am-tabpanel',
+        tabindex: selected ? '0' : '-1',   // 로빙 탭인덱스 — 선택 탭만 Tab 포커스 대상
         'aria-label': cat.label,
       });
       btn.innerHTML = cat.icon;
@@ -3049,6 +3068,7 @@ function buildChibiMaker() {
       });
       nav.appendChild(btn);
     });
+    page.setAttribute('aria-labelledby', 'lu-am-tab-' + activeCat); // 패널 ↔ 활성 탭 연결
   }
 
   function renderPanel() {
