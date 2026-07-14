@@ -464,7 +464,7 @@ function injectStyles() {
 }
 #lu-avatar-maker.lu-open, #lu-chibi-maker.lu-open { opacity: 1; pointer-events: auto; }
 .lu-am-card {
-  width: 100%; max-width: 860px; max-height: 92vh;
+  width: 100%; max-width: 860px; max-height: 94vh;
   background-image: var(--am-grain), linear-gradient(165deg, var(--am-cream) 0%, #fffaee 40%, var(--am-cream-2) 100%);
   background-repeat: repeat, no-repeat;
   color: var(--am-ink);
@@ -677,13 +677,13 @@ function injectStyles() {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 800; letter-spacing: 0.04em;
   color: var(--am-leaf-dark);
-  margin: 0 0 16px;
+  margin: 0 0 11px;
 }
 .lu-am-group-icon { display: flex; width: 14px; height: 14px; flex: 0 0 auto; }
 .lu-am-group-icon svg { width: 100%; height: 100%; }
 .lu-am-section-title {
   font-size: 11px; font-weight: 800; letter-spacing: 0.08em; color: var(--am-ink-dim);
-  margin: 16px 0 8px;
+  margin: 13px 0 7px;
 }
 /* 내 옷장 (로그인 전용) */
 .lu-closet-save {
@@ -3082,17 +3082,20 @@ function buildChibiMaker() {
     const isAnimal = chibiParams.species && chibiParams.species !== 'human';
 
     if (activeCat === 'species') {
+      // 프리셋(빠른 시작)을 맨 위에 둔다 — 감독 지시. 피부/털색은 "몸" 속성이라
+      // 종족과 같은 탭에 둬 얼굴 탭 6줄 세로 넘침을 해소한다(감독 보고: 얼굴 탭
+      // 피부색 줄이 아래에 끼여 잘림).
       presetRow();
-      groupTitle('종족 · 성별');
+      groupTitle(isAnimal ? '종족 · 털색' : '종족 · 성별 · 피부색');
       chipRow('종족', CHIBI_SPECIES, 'species');
       if (!isAnimal) chipRow('성별', CHIBI_GENDERS, 'gender');
+      swatchRow(isAnimal ? '털 색' : '피부색', SKIN_TONES, 'skin');
     } else if (activeCat === 'face') {
       groupTitle('얼굴');
       chipRow('얼굴형', CHIBI_FACE_SHAPES, 'face');
       chipRow('눈', CHIBI_EYE_STYLES, 'eyeStyle');
       chipRow('입', CHIBI_MOUTH_STYLES, 'mouth');
       chipRow('볼터치', boolOpts('없음', '있음'), 'blush');
-      swatchRow(isAnimal ? '털 색' : '피부색', SKIN_TONES, 'skin');
       swatchRow('눈동자 색', EYE_COLORS, 'eyeColor');
     } else if (activeCat === 'hair') {
       if (!isAnimal) {
