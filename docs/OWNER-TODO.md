@@ -30,9 +30,9 @@
 
 ## 🟡 곧
 
-- ⬜ **내부 전략 문서 2개 openartshow에서 제거**
-  `docs/BACKLOG.md`(연봉 메모 포함)·`docs/BUSINESS-PLAN-DRAFT.md` public 노출 중.
-  로컬 백업 후 삭제 + `.gitignore` 추가.
+- ⬜ **내부 전략 문서 3개 openartshow에서 제거**
+  `docs/BACKLOG.md`(연봉 메모 포함)·`docs/BUSINESS-PLAN-DRAFT.md`·`docs/SCALING.md`
+  (인프라 갭·비용 노출) public 노출 중. 로컬 백업 후 삭제 + `.gitignore` 추가.
 - ⬜ **감독 실제 작품 이미지 준비** → 첫 전시 채우기
   지금은 플레이스홀더 스톡 사진. 이미지 주면 부팀장이 `galleries/syhongart.json`에
   넣어 진짜 개인전으로. **← 감독이 이미지만 주면 됨.**
