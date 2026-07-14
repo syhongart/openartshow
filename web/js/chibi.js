@@ -106,7 +106,11 @@ export const CHIBI_SPECIES = [
   { id: 'raccoon', name: '너구리' },
   { id: 'koala', name: '코알라' },
   { id: 'pig', name: '돼지' },
+  { id: 'robot', name: '로봇' },
+  { id: 'ghost', name: '귀신' },
 ];
+// 사람도 동물도 아닌 제3종족 — 동물 귀/코/꼬리·사람 헤어 분기에 진입하지 않는다.
+const NONHUMAN = new Set(['robot', 'ghost']);
 // 성별 — 지오메트리 분기 아님. 진입 시 기본 프리셋 선택자(이후 자유 커스터마이즈).
 export const CHIBI_GENDERS = [
   { id: 'girl', name: '여아' },
@@ -130,6 +134,8 @@ export const SPECIES_PRESET = {
   raccoon: { skin: '#b8b2a6', hairColor: '#3a352f' },
   koala: { skin: '#aeb0b2', hairColor: '#7d7f82' },
   pig: { skin: '#f4b6c2', hairColor: '#e58ba0' },
+  robot: { skin: '#aab0ba', hairColor: '#5fd0e0' }, // 본체 스틸그레이 + 사이언 LED 포인트
+  ghost: { skin: '#eef6f5', hairColor: '#bfe3ec' }, // 반투명 몸체 + 옷단 트림색
 };
 // 성별 기본 룩 프리셋(사람). girl은 기존 DEFAULT_CHIBI와 동일 → 기존 사용자 시각 변화 0.
 export const GENDER_PRESET = {
@@ -155,6 +161,8 @@ export const SPECIES_OUTFIT = {
   raccoon: { top: '#e0a45c', bottom: '#4a6fa5' },
   koala: { top: '#7fa88f', bottom: '#444548' },
   pig: { top: '#8fd6b4', bottom: '#fbead0' },
+  robot: { top: '#39414f', bottom: '#2c3038' }, // 무채 패널 계열(기존 옷색 재사용)
+  ghost: { top: '#eef6f5', bottom: '#dcefee' },   // 실사용 거의 없음(시트가 대체)
 };
 const _sp = (id, name, extra) => ({ id, name, look: Object.assign({ species: id, eyeStyle: 'happy' }, SPECIES_PRESET[id] || {}, SPECIES_OUTFIT[id] || {}, extra || {}) });
 // 종족 색 변형 프리셋(같은 종 다른 개체 — 자연 배색식). id는 고유해야 하므로 별도 지정.
@@ -183,6 +191,9 @@ export const CHIBI_PRESETS = [
   _sp('fox', '여우', { mouth: 'cat' }), _sp('lion', '사자'), _sp('penguin', '펭귄'),
   _sp('chick', '병아리'), _sp('frog', '개구리', { mouth: 'open' }), _sp('hamster', '햄스터', { eyeStyle: 'sparkle' }),
   _sp('raccoon', '너구리', { eyeStyle: 'round' }), _sp('koala', '코알라'), _sp('pig', '돼지'),
+  // ── 제3종족 ──
+  _sp('robot', '로봇', { bottomType: 'pants', shoes: '#2c3038', hairStyle: 'bald', mouth: 'smile' }),
+  _sp('ghost', '귀신', { mouth: 'open', hairStyle: 'bald' }),
   // ── 동물 색 변형(같은 종 다른 개체) ──
   _spv('cat_black', 'cat', '검은 고양이', { skin: '#3a352f', hairColor: '#f5e6c8', eyeStyle: 'round' }),
   _spv('cat_grey', 'cat', '회색 고양이', { skin: '#c9c3ba', hairColor: '#8a8078' }),
@@ -225,6 +236,8 @@ const SPECIES_HEAD_BASE = {
   raccoon: { sx: 0.98, sy: 0.99, sz: 1.03, taper: 0.14, flat: 0 },
   koala: { sx: 1.07, sy: 0.97, sz: 0.97, taper: 0, flat: 0.1 },
   pig: { sx: 1.03, sy: 0.96, sz: 1.0, taper: 0, flat: 0.28 },
+  robot: { sx: 1.05, sy: 0.97, sz: 1.0, taper: 0, flat: 0.45 }, // 각진 금속 두상
+  ghost: { sx: 0.97, sy: 1.05, sz: 0.97, taper: 0, flat: 0 },   // 매끈한 타원(턱선 없음)
 };
 
 export const DEFAULT_CHIBI = {
@@ -590,6 +603,48 @@ function drawAnimalFace(ctx, species, MY) {
   }
 }
 
+// 라운드 사각 헬퍼 (roundRect 미지원 시 rect 폴백)
+function rrect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+}
+// 로봇 눈 — 각진 렌즈(소켓+발광 렌즈+스캔라인+하이라이트). 사이언 hairColor 포인트.
+function drawRobotEyes(ctx, p) {
+  const EYE_Y = 252, EYE_X = 84;
+  for (const s of [-1, 1]) {
+    const cx = 256 + s * EYE_X, cy = EYE_Y;
+    ctx.fillStyle = shade(p.skin, 0.45);
+    rrect(ctx, cx - 38, cy - 46, 76, 92, 16); ctx.fill();
+    const g = ctx.createLinearGradient(cx, cy - 38, cx, cy + 38);
+    g.addColorStop(0, shade(p.hairColor, 1.3));
+    g.addColorStop(1, vivid(p.hairColor).getStyle());
+    ctx.fillStyle = g;
+    rrect(ctx, cx - 30, cy - 38, 60, 76, 12); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx - 26, cy); ctx.lineTo(cx + 26, cy); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.ellipse(cx - 12, cy - 20, 8, 10, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+// 로봇 입 — 스피커 그릴(가로 슬릿 3줄)
+function drawRobotMouth(ctx, p) {
+  const MY = 364;
+  ctx.fillStyle = shade(p.skin, 0.4);
+  for (const y of [MY - 14, MY, MY + 14]) { rrect(ctx, 256 - 26, y - 4, 52, 8, 4); ctx.fill(); }
+}
+// 귀신 눈 — 흰자 없는 큰 단색 동글눈 + 하이라이트
+function drawGhostEyes(ctx) {
+  const EYE_Y = 252, EYE_X = 84;
+  for (const s of [-1, 1]) {
+    const cx = 256 + s * EYE_X;
+    ctx.fillStyle = '#3a3f4a';
+    ctx.beginPath(); ctx.ellipse(cx, EYE_Y, 34, 40, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.beginPath(); ctx.ellipse(cx - 10, EYE_Y - 14, 9, 11, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 /**
  * 얼굴을 캔버스에 그린다. fx로 아픔/상처 상태를 표현한다:
  *   fx.ouch  — 맞은 직후 >_< 표정 (눈·입 오버라이드)
@@ -603,7 +658,7 @@ function drawFaceInto(canvas, p, fx) {
 
   const EYE_Y = 252;
   const EYE_X = 84; // 눈 간격 — 살짝 좁혀 유아형 인상 (대두 리튠)
-  const isAnimal = p.species && p.species !== 'human';
+  const isAnimal = p.species && p.species !== 'human' && !NONHUMAN.has(p.species);
 
   // 호랑이 — 몸통 줄무늬 텍스처가 얼굴 정면까지 번지지 않게, 얼굴 중앙을 깔끔한 주황으로
   // 채운다(가장자리는 투명 → 옆머리 줄무늬가 자연스레 이어짐). 그 위에 이마·볼 줄무늬만.
@@ -673,13 +728,17 @@ function drawFaceInto(canvas, p, fx) {
       ctx.stroke();
     }
   } else if (canvasEyes) {
-    drawEye(ctx, 256 - EYE_X, EYE_Y, p);
-    drawEye(ctx, 256 + EYE_X, EYE_Y, p);
+    if (p.species === 'robot') drawRobotEyes(ctx, p);
+    else if (p.species === 'ghost') drawGhostEyes(ctx);
+    else {
+      drawEye(ctx, 256 - EYE_X, EYE_Y, p);
+      drawEye(ctx, 256 + EYE_X, EYE_Y, p);
+    }
   }
 
   // 눈썹 — 평소 아치, 상처 2+ 는 팔자(슬픔), 아픔 순간은 안쪽으로 찌푸림.
   // 동물은 원색 눈썹이 어색해 털색(skin) 기준 은은하게, 판다·개구리는 생략.
-  if (canvasEyes && !(p.species === 'panda' && !ouch && !(wound >= 2))) {
+  if (canvasEyes && !NONHUMAN.has(p.species) && !(p.species === 'panda' && !ouch && !(wound >= 2))) {
     ctx.strokeStyle = isAnimal ? shade(p.skin, 0.55) : shade(p.hairColor, 0.8);
     ctx.lineCap = 'round';
     ctx.lineWidth = 9;
@@ -702,7 +761,9 @@ function drawFaceInto(canvas, p, fx) {
   const MY = 364;
   ctx.strokeStyle = '#b0605a';
   ctx.lineCap = 'round';
-  if (ouch) {
+  if (!ouch && p.species === 'robot') {
+    drawRobotMouth(ctx, p); // 스피커 그릴
+  } else if (ouch) {
     // 크게 벌린 울상
     ctx.fillStyle = '#a14a44';
     ctx.beginPath();
@@ -741,8 +802,8 @@ function drawFaceInto(canvas, p, fx) {
   // 사람 수염 (얼굴 캔버스). 피격 시 입이 크게 벌어지므로 그리지 않는다.
   if (!ouch) drawBeard(ctx, p);
 
-  // 볼터치 — 더 크고 진하게(엔젤이식), 눈 아래 밀착
-  if (p.blush && !ouch) {
+  // 볼터치 — 더 크고 진하게(엔젤이식), 눈 아래 밀착. 로봇은 홍조 어색해서 제외.
+  if (p.blush && !ouch && p.species !== 'robot') {
     ctx.fillStyle = 'rgba(255,120,120,0.5)';
     for (const s of [-1, 1]) {
       ctx.beginPath();
@@ -1024,6 +1085,11 @@ export function buildChibi(params) {
   const bottomMat = mkMat(toon(p.bottom, true));
   const shoeMat = mkMat(toon(p.shoes));
 
+  // 귀신 전용 반투명 재질 (몸/팔/시트) — 얼굴 텍스처는 불투명 유지해 안 뭉개진다.
+  const isGhost = p.species === 'ghost';
+  const ghostSkinMat = isGhost ? mkMat(new THREE.MeshToonMaterial({ color: vivid(p.skin), gradientMap: toonRamp(), side: THREE.DoubleSide, transparent: true, opacity: 0.74 })) : null;
+  const ghostTrimMat = isGhost ? mkMat(new THREE.MeshToonMaterial({ color: vivid(p.hairColor), gradientMap: toonRamp(), side: THREE.DoubleSide, transparent: true, opacity: 0.8 })) : null;
+
   // ---- 하반신: 다리 피벗(고관절) ----
   // 대두(1.8등신) 리튠 — 다리·몸통·팔을 줄이고 머리를 키운다.
   const HIP_Y = 0.375;
@@ -1031,30 +1097,56 @@ export function buildChibi(params) {
   for (const s of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(s * 0.085, HIP_Y, 0);
-    const legMat = p.bottomType === 'pants' || p.bottomType === 'overall' ? bottomMat : skinMat;
-    const leg = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.055, 0.145, 6, 12)), legMat);
-    leg.position.y = -0.155;
-    if (p.species === 'tiger' && legMat === skinMat) leg.userData.outlineBase = p.skin;
-    addOutline(leg, 0.011, mats, geos);
-    pivot.add(leg);
-    const foot = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.082, 16, 12)), shoeMat);
-    foot.scale.set(1, 0.72, 1.25);
-    foot.position.set(0, -0.305, 0.03);
-    addOutline(foot, 0.011, mats, geos);
-    pivot.add(foot);
+    if (!isGhost) { // 귀신은 다리 없음 — 빈 피벗만(걷기 애니 인덱스 안전)
+      const legMat = p.bottomType === 'pants' || p.bottomType === 'overall' ? bottomMat : skinMat;
+      const leg = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.055, 0.145, 6, 12)), legMat);
+      leg.position.y = -0.155;
+      if (p.species === 'tiger' && legMat === skinMat) leg.userData.outlineBase = p.skin; // (호랑이 제외됨—사장코드지만 torso/skull과 일관 유지)
+      addOutline(leg, 0.011, mats, geos);
+      pivot.add(leg);
+      const foot = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.082, 16, 12)), shoeMat);
+      foot.scale.set(1, 0.72, 1.25);
+      foot.position.set(0, -0.305, 0.03);
+      addOutline(foot, 0.011, mats, geos);
+      pivot.add(foot);
+    }
     wrapper.add(pivot);
     legPivots.push(pivot);
   }
 
-  // ---- 몸통 ----
-  const torso = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.155, 0.115, 8, 16)), topMat);
-  torso.position.y = 0.52;
-  torso.scale.set(1, 1, 0.9);
-  torso.userData.outlineBase = vivid(p.top); // 패턴 상의(재질색 흰색)여도 외곽선은 옷색 기준
-  addOutline(torso, 0.013, mats, geos);
-  wrapper.add(torso);
+  // ---- 몸통 (귀신은 몸-하반신 겸용 시트로 대체) ----
+  if (isGhost) {
+    const sheet = new THREE.Mesh(
+      mkGeo(new THREE.LatheGeometry(lathePoints([[0.17, 0.10], [0.20, 0.02], [0.235, -0.10], [0.24, -0.22], [0.20, -0.32], [0.15, -0.38]]), 24)),
+      ghostSkinMat
+    );
+    sheet.position.y = 0.50;
+    addOutline(sheet, 0.013, mats, geos);
+    wrapper.add(sheet);
+    // 하단 물결단(스캘럽 힘) 5개 — 병합 1드로우콜, 트림색
+    const hemGeos = [];
+    for (let i = 0; i < 5; i++) {
+      const th = i * (Math.PI * 2 / 5);
+      const nub = new THREE.SphereGeometry(0.045, 10, 8);
+      nub.scale(1, 1.3, 1);
+      nub.translate(0.15 * Math.cos(th), -0.38, 0.15 * Math.sin(th));
+      hemGeos.push(nub);
+    }
+    const hem = new THREE.Mesh(mkGeo(mergeGeometries(hemGeos)), ghostTrimMat);
+    hemGeos.forEach((g) => g.dispose());
+    hem.position.y = 0.50;
+    addOutline(hem, 0.009, mats, geos);
+    wrapper.add(hem);
+  } else {
+    const torso = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.155, 0.115, 8, 16)), topMat);
+    torso.position.y = 0.52;
+    torso.scale.set(1, 1, 0.9);
+    torso.userData.outlineBase = vivid(p.top); // 패턴 상의(재질색 흰색)여도 외곽선은 옷색 기준
+    addOutline(torso, 0.013, mats, geos);
+    wrapper.add(torso);
+  }
 
-  if (p.bottomType === 'skirt' || p.bottomType === 'dress' || p.bottomType === 'swimsuit') {
+  if (!isGhost && (p.bottomType === 'skirt' || p.bottomType === 'dress' || p.bottomType === 'swimsuit')) {
     const isDress = p.bottomType === 'dress';
     const isSwim = p.bottomType === 'swimsuit';
     const profile = isDress
@@ -1085,8 +1177,8 @@ export function buildChibi(params) {
       addOutline(frill, 0.007, mats, geos);
       wrapper.add(frill);
     }
-  } else {
-    // 바지/멜빵바지: 골반 덮개
+  } else if (!isGhost) {
+    // 바지/멜빵바지: 골반 덮개 (귀신은 하반신이 시트라 없음)
     const shorts = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.16, 16, 12, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.35)), bottomMat);
     shorts.position.y = 0.44;
     wrapper.add(shorts);
@@ -1127,16 +1219,25 @@ export function buildChibi(params) {
     const pivot = new THREE.Group();
     pivot.position.set(s * 0.172, 0.625, 0);
     pivot.rotation.z = s * 0.5; // 살짝 벌린 기본 자세
-    const arm = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.05, 0.115, 6, 12)), skinMat);
-    arm.position.y = -0.095;
-    if (p.species === 'tiger') arm.userData.outlineBase = p.skin;
-    addOutline(arm, 0.011, mats, geos);
-    pivot.add(arm);
-    // 소매 캡 (상의색)
-    const sleeve = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.07, 12, 10)), topMat);
-    sleeve.position.y = -0.02;
-    sleeve.scale.set(1, 0.8, 1);
-    pivot.add(sleeve);
+    if (isGhost) {
+      // 귀신 — 뭉툭 nub 팔(소매·손 없음)
+      const nub = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.06, 12, 10)), ghostSkinMat);
+      nub.scale.set(1, 1.3, 1);
+      nub.position.y = -0.05;
+      addOutline(nub, 0.010, mats, geos);
+      pivot.add(nub);
+    } else {
+      const arm = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.05, 0.115, 6, 12)), skinMat);
+      arm.position.y = -0.095;
+      if (p.species === 'tiger') arm.userData.outlineBase = p.skin; // (호랑이 제외됨—사장코드지만 일관 유지)
+      addOutline(arm, 0.011, mats, geos);
+      pivot.add(arm);
+      // 소매 캡 (상의색)
+      const sleeve = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.07, 12, 10)), topMat);
+      sleeve.position.y = -0.02;
+      sleeve.scale.set(1, 0.8, 1);
+      pivot.add(sleeve);
+    }
     wrapper.add(pivot);
     armPivots.push(pivot);
   }
@@ -1298,6 +1399,38 @@ export function buildChibi(params) {
     shine.position.set(-0.04, HEAD_R * 0.88, HEAD_R * 0.22);
     hairRoot.add(shine);
   }
+  } else if (p.species === 'robot') {
+    // ---- 로봇: 안테나 + 목칼라 + 어깨볼트 + 가슴패널 (몸/팔다리는 기본 파츠 재사용) ----
+    const rod = new THREE.Mesh(mkGeo(new THREE.CylinderGeometry(0.011, 0.014, 0.15, 8)), skinMat);
+    rod.position.set(0, 0.432, -0.02);
+    addOutline(rod, 0.008, mats, geos);
+    hairRoot.add(rod);
+    const bead = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.034, 12, 10)), hairMat); // 사이언 발광 — 아웃라인 생략
+    bead.position.set(0, 0.541, -0.02);
+    hairRoot.add(bead);
+    const collar = new THREE.Mesh(mkGeo(new THREE.TorusGeometry(0.31, 0.016, 8, 20)), mkMat(toon(shade(p.skin, 0.55))));
+    collar.rotation.x = Math.PI / 2;
+    collar.position.set(0, -0.06, 0);
+    addOutline(collar, 0.010, mats, geos);
+    headPivot.add(collar);
+    const boltMat = mkMat(toon(shade(p.skin, 0.5)));
+    for (const s of [-1, 1]) for (const z of [0.06, -0.06]) {
+      const bolt = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.02, 8, 8)), boltMat);
+      bolt.position.set(s * 0.172, 0.66, z);
+      wrapper.add(bolt);
+    }
+    const panel = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.09, 0.07, 0.012)), mkMat(toon(shade(p.skin, 0.6))));
+    panel.position.set(0, 0.56, 0.135);
+    addOutline(panel, 0.007, mats, geos);
+    wrapper.add(panel);
+    for (const bx of [-0.025, 0.025]) {
+      const btn = new THREE.Mesh(mkGeo(new THREE.CylinderGeometry(0.012, 0.012, 0.01, 10)), hairMat);
+      btn.rotation.x = Math.PI / 2;
+      btn.position.set(bx, 0.56, 0.145);
+      wrapper.add(btn);
+    }
+  } else if (p.species === 'ghost') {
+    // 귀신 — 헤어/귀 없음. 시트·nub·머리는 몸통·머리 섹션에서 이미 생성됨(추가 파츠 없음).
   } else {
     // ---- 동물 종족: 헤어 대신 귀/털/꼬리 (머리는 skin=털색 그대로 노출) ----
     const sp = p.species;
@@ -1757,8 +1890,10 @@ export function buildChibi(params) {
     walkPhase += d * (3 + 8.5 * Math.min(spd, 2.4));
 
     const swing = Math.sin(walkPhase);
-    legPivots[0].rotation.x = swing * 0.78 * w;
-    legPivots[1].rotation.x = -swing * 0.78 * w;
+    if (legPivots.length) { // 귀신은 다리 없음(빈 피벗) — 방어 가드
+      legPivots[0].rotation.x = swing * 0.78 * w;
+      legPivots[1].rotation.x = -swing * 0.78 * w;
+    }
     armPivots[0].rotation.x = -swing * 0.5 * w;
     armPivots[1].rotation.x = swing * 0.5 * w;
     // 아이들: 팔 살짝 흔들 + 호흡
