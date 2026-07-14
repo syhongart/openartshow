@@ -88,7 +88,6 @@ export const CHIBI_SPECIES = [
   { id: 'sheep', name: '양' },
   { id: 'fox', name: '여우' },
   { id: 'panda', name: '판다' },
-  { id: 'tiger', name: '호랑이' },
   { id: 'lion', name: '사자' },
   { id: 'penguin', name: '펭귄' },
   { id: 'chick', name: '병아리' },
@@ -113,7 +112,6 @@ export const SPECIES_PRESET = {
   sheep: { skin: '#fdfaf3', hairColor: '#f3d9cf' },
   fox: { skin: '#e8834f', hairColor: '#3a2c22' },
   panda: { skin: '#fbfaf7', hairColor: '#2a2724' },
-  tiger: { skin: '#f0a24a', hairColor: '#3a2c22' },
   lion: { skin: '#e6b25e', hairColor: '#b5732e' },
   penguin: { skin: '#3b4652', hairColor: '#f4a83a' },
   chick: { skin: '#ffe066', hairColor: '#f4a83a' },
@@ -139,7 +137,6 @@ export const SPECIES_OUTFIT = {
   sheep: { top: '#8fb8d6', bottom: '#f3e6d8' },
   fox: { top: '#d97b3f', bottom: '#f3e6d8' },
   panda: { top: '#c0392b', bottom: '#39352f' },
-  tiger: { top: '#3f8f8a', bottom: '#8a6d4a' },
   lion: { top: '#3a5faa', bottom: '#f3e6d8' },
   penguin: { top: '#7ec4cf', bottom: '#fbfaf7' },
   chick: { top: '#7ec4cf', bottom: '#fbfaf7' },
@@ -173,7 +170,7 @@ export const CHIBI_PRESETS = [
   // ── 동물 (기본) ──
   _sp('cat', '고양이'), _sp('dog', '강아지', { mouth: 'open' }), _sp('rabbit', '토끼', { eyeStyle: 'sparkle' }),
   _sp('bear', '곰'), _sp('sheep', '양'), _sp('panda', '판다'),
-  _sp('fox', '여우', { mouth: 'cat' }), _sp('tiger', '호랑이'), _sp('lion', '사자'), _sp('penguin', '펭귄'),
+  _sp('fox', '여우', { mouth: 'cat' }), _sp('lion', '사자'), _sp('penguin', '펭귄'),
   _sp('chick', '병아리'), _sp('frog', '개구리', { mouth: 'open' }), _sp('hamster', '햄스터', { eyeStyle: 'sparkle' }),
   _sp('raccoon', '너구리', { eyeStyle: 'round' }), _sp('koala', '코알라'), _sp('pig', '돼지'),
   // ── 동물 색 변형(같은 종 다른 개체) ──
@@ -210,7 +207,6 @@ const SPECIES_HEAD_BASE = {
   sheep: { sx: 1.0, sy: 0.97, sz: 0.95, taper: 0, flat: 0.18 },
   fox: { sx: 0.96, sy: 1.0, sz: 1.04, taper: 0.22, flat: 0 },
   panda: { sx: 1.05, sy: 0.98, sz: 0.99, taper: 0, flat: 0.1 },
-  tiger: { sx: 1.05, sy: 0.95, sz: 1.0, taper: 0, flat: 0.32 },
   lion: { sx: 1.06, sy: 0.94, sz: 1.0, taper: 0, flat: 0.32 },
   penguin: { sx: 0.95, sy: 1.06, sz: 0.96, taper: 0.05, flat: 0 },
   chick: { sx: 1.0, sy: 1.02, sz: 0.98, taper: 0, flat: 0 },
@@ -553,10 +549,11 @@ function drawFaceInto(canvas, p, fx) {
         ctx.restore();
       }
     } else if (p.species === 'penguin') {
-      // 흰 얼굴 판 — 어두운 머리색 위에 크림 얼굴
+      // 흰 얼굴 판 — 어두운 머리색(후드) 위에 크게 크림 얼굴을 얹어 "펭귄"으로 확실히
+      // 읽히게(감독 보고: 검은 덩어리로 보임). 이마~턱을 넉넉히 덮는다.
       ctx.fillStyle = '#fbfaf7';
       ctx.beginPath();
-      ctx.ellipse(256, EYE_Y + 60, 150, 168, 0, 0, Math.PI * 2);
+      ctx.ellipse(256, EYE_Y + 44, 188, 210, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -837,23 +834,21 @@ function furStripeTexture(baseHex) {
   const x = c.getContext('2d');
   x.fillStyle = vivid(baseHex).getStyle();
   x.fillRect(0, 0, 128, 128);
-  x.fillStyle = 'rgba(40,28,20,0.5)';
-  // 얇은 세로 줄 3개(살짝 물결). 너무 촘촘하면 수박처럼 보임 — 성기게·연하게.
-  for (let i = 0; i < 3; i++) {
-    const bx = i * 42 + 14;
-    const w = 5;
+  x.fillStyle = 'rgba(46,28,14,0.72)'; // 더 진하게 — 줄무늬가 탁하지 않고 또렷하게(감독 보고)
+  // 굵기 변주 세로 줄 5개(살짝 물결). 성기되 대비를 살려 "호랑이"로 확실히 읽히게.
+  for (const [bx, w] of [[8, 6], [33, 9], [59, 5], [85, 9], [110, 6]]) {
     x.beginPath();
     x.moveTo(bx, 0);
-    x.quadraticCurveTo(bx + 7, 64, bx, 128);
+    x.quadraticCurveTo(bx + 6, 64, bx, 128);
     x.lineTo(bx + w, 128);
-    x.quadraticCurveTo(bx + 7 + w, 64, bx + w, 0);
+    x.quadraticCurveTo(bx + 6 + w, 64, bx + w, 0);
     x.closePath();
     x.fill();
   }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1.6, 1.2);
-  tex.offset.set(0.28, 0); // 정면 중앙에 줄이 딱 걸리지 않게 오프셋
+  tex.repeat.set(1.4, 1.1);
+  tex.offset.set(0.2, 0); // 정면 중앙에 줄이 딱 걸리지 않게 오프셋
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
@@ -1241,14 +1236,18 @@ export function buildChibi(params) {
         addPart(new THREE.SphereGeometry(R * 0.1, 10, 8), M('#f2c4c4'), s * R * 0.66, R * 0.2, R * 0.16, -s * 0.62, 0, 0, false).scale.set(1, 0.5, 0.3);
       }
     } else if (sp === 'lion') {
-      // 갈기 — 얼굴 둘레를 고르게 감싸는 퍼프 링(정면 평면). 얼굴 중앙은 비운다.
+      // 갈기 — 얼굴 둘레 2겹(안/바깥) 스태거 퍼프로 빈틈 없이 풍성하게. 크기를 변주해
+      // "기어/톱니"처럼 딱딱해 보이던 균일 링 문제를 없앤다(감독 보고). 얼굴 중앙은 비운다.
       const maneGeos = [];
-      const MN = 14;
+      const MN = 18;
       for (let i = 0; i < MN; i++) {
         const a = (i / MN) * Math.PI * 2 - Math.PI / 2;
-        const rr = R * 1.04;
-        const g = new THREE.SphereGeometry(R * (0.24 + (i % 2) * 0.03), 8, 6);
-        g.translate(Math.cos(a) * rr, Math.sin(a) * rr + R * 0.04, R * 0.1);
+        const outer = i % 2 === 0;
+        const rr = R * (outer ? 1.12 : 0.98);
+        const sz = R * (outer ? 0.26 : 0.205) * (0.88 + 0.22 * (((i * 7) % 5) / 4));
+        const g = new THREE.SphereGeometry(sz, 8, 6);
+        g.scale(1, 1, 0.82);
+        g.translate(Math.cos(a) * rr, Math.sin(a) * rr + R * 0.04, R * 0.06);
         maneGeos.push(g);
       }
       const mane = new THREE.Mesh(mkGeo(mergeGeometries(maneGeos)), mkMat(toon(p.hairColor, true)));
@@ -1407,11 +1406,11 @@ export function buildChibi(params) {
     gGroup.position.set(0, 0.21, HEAD_R * 1.05); // 눈 높이, 얼굴 구 표면 바로 앞
     gGroup.scale.copy(skull.scale);
     for (const s of [-1, 1]) {
-      const lens = new THREE.Mesh(mkGeo(new THREE.TorusGeometry(0.086, 0.011, 12, 28)), frameMat);
-      lens.position.set(s * 0.104, 0, 0);
+      const lens = new THREE.Mesh(mkGeo(new THREE.TorusGeometry(0.072, 0.0095, 12, 28)), frameMat);
+      lens.position.set(s * 0.09, 0, 0);
       gGroup.add(lens);
     }
-    const bridge = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.06, 0.016, 0.016)), frameMat);
+    const bridge = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.05, 0.014, 0.014)), frameMat);
     gGroup.add(bridge);
     headPivot.add(gGroup);
   }
@@ -1495,18 +1494,23 @@ export function buildChibi(params) {
       hairRoot.add(horn);
     }
   } else if (p.acc === 'flower') {
+    // 리본과 동일 교정 — 헤어 표면(HAIR_R) 바깥에 얹히도록 반경을 키우고 바깥을 향하게
+    // 틸트 + 아웃라인. 기존엔 반경이 작아(0.18,0.25,0.15≈0.34) 꽃이 머리에 박혀 뭉개졌다.
     const fl = new THREE.Group();
-    fl.position.set(0.18, 0.25, 0.15);
+    fl.position.set(0.205, 0.315, 0.205);
+    fl.rotation.set(0.12, 0.62, -0.15);
     const petalMat = mkMat(toon('#ffd166'));
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI * 2;
-      const petal = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.032, 8, 6)), petalMat);
-      petal.position.set(Math.cos(a) * 0.045, Math.sin(a) * 0.045, 0);
+      const petal = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.038, 8, 6)), petalMat);
+      petal.position.set(Math.cos(a) * 0.05, Math.sin(a) * 0.05, 0);
       petal.scale.z = 0.5;
+      addOutline(petal, 0.006, mats, geos);
       fl.add(petal);
     }
-    const core = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.026, 8, 6)), mkMat(toon('#ff8c42')));
-    core.position.z = 0.012;
+    const core = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.03, 8, 6)), mkMat(toon('#ff8c42')));
+    core.position.z = 0.02;
+    addOutline(core, 0.006, mats, geos);
     fl.add(core);
     hairRoot.add(fl);
   }
