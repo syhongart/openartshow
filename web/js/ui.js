@@ -595,7 +595,9 @@ function injectStyles() {
 .lu-am-nav {
   flex: 0 0 auto;
   display: flex; gap: 8px;
-  padding-bottom: 12px; margin-bottom: 16px;
+  /* overflow-x:auto가 세로도 auto로 만들어, 선택 탭이 떠오를 때(translateY/pop 애니메이션)
+     상단이 잘리던 문제 → 위쪽 여백으로 떠오르는 만큼의 공간 확보(감독 보고: 종족 칸 위 잘림). */
+  padding: 6px 0 12px; margin-bottom: 16px;
   border-bottom: 2px dashed var(--am-line);
   overflow-x: auto;
   scrollbar-width: none;
@@ -1808,7 +1810,7 @@ function injectStyles() {
   .lu-am-preview { width: 168px; max-width: 52vw; margin: 0 auto; padding: 7px 7px 22px; border-radius: 20px; }
   .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
   .lu-am-panel { min-height: 0; }
-  .lu-am-nav { padding-bottom: 6px; margin-bottom: 8px; gap: 4px; }
+  .lu-am-nav { padding: 5px 0 6px; margin-bottom: 8px; gap: 4px; }
   .lu-am-navtab { min-width: 50px; padding: 6px 6px 5px; font-size: 9.5px; }
   .lu-am-navtab svg { width: 16px; height: 16px; }
   .lu-am-tabpage { min-height: 180px; }

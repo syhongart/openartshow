@@ -1524,29 +1524,34 @@ export function buildChibi(params) {
     headPivot.add(haloPivot);
   }
   if (p.wings) {
+    // 깃털 부챗살 천사 날개 — 뿌리(어깨뼈)에서 위·바깥으로 펼쳐지고 위로 갈수록
+    // 긴 깃털이 날개 끝(뾰족)을 이룬다. (기존엔 작은 흰 솜뭉치라 날개로 안 보였음.)
     const wingMat = mkMat(toon('#fff8ef', true));
+    const N = 6;
     for (const s of [-1, 1]) {
       const feathers = [];
-      for (const [x, y, z, r, sy, sz] of [
-        [0, 0, 0, 0.05, 0.6, 1.4],
-        [s * 0.05, 0.03, -0.05, 0.045, 0.55, 1.3],
-        [s * 0.1, 0.05, -0.11, 0.038, 0.5, 1.2],
-        [s * 0.14, 0.06, -0.17, 0.03, 0.45, 1.1],
-      ]) {
-        const f = new THREE.SphereGeometry(r, 10, 8);
-        f.scale(1, sy, sz);
-        f.translate(x, y, z);
-        feathers.push(f);
+      for (let k = 0; k < N; k++) {
+        const t = k / (N - 1);                          // 0 아래(짧음) → 1 위(날개끝·김)
+        const len = 0.24 + 0.34 * t;                    // 위로 갈수록 긴 깃털
+        const wid = 0.09 - 0.03 * t;                    // 끝으로 갈수록 좁게(뾰족)
+        const ang = (94 - 74 * t) * Math.PI / 180;      // 아래=수평 바깥, 위=세움
+        const g = new THREE.SphereGeometry(1, 12, 8);
+        g.scale(wid, len, wid * 0.5);                   // 납작·길쭉한 깃털
+        g.translate(0, len * 0.9, 0);                   // 뿌리를 원점에(+y로 뻗음)
+        g.rotateZ(-s * ang);                            // 좌우 대칭 부챗살
+        g.translate(0, 0, -0.02 * (N - 1 - k));         // 아래 깃털일수록 뒤로 — 겹층 깊이
+        feathers.push(g);
       }
       const wing = new THREE.Mesh(mkGeo(mergeGeometries(feathers)), wingMat);
       feathers.forEach((g) => g.dispose());
       const wp = new THREE.Group();
-      wp.position.set(s * 0.02, 0.56, -0.14);
-      wp.rotation.y = s * 0.5;
-      wp.rotation.z = s * 0.15;
+      wp.position.set(s * 0.05, 0.64, -0.12);           // 어깨뼈 높이, 등 뒤
+      wp.rotation.y = s * 0.5;                          // 바깥으로 펼침
+      const baseZ = s * -0.06;                          // 살짝 위로 세움
+      wp.rotation.z = baseZ;
       wp.add(wing);
       wrapper.add(wp);
-      wingPivots.push({ pivot: wp, s, baseZ: s * 0.15 });
+      wingPivots.push({ pivot: wp, s, baseZ });
     }
   }
 
