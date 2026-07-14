@@ -24,15 +24,12 @@
 @font-face { font-family: 'NanumGothic'; font-weight: 700; font-style: normal; font-display: swap; src: url('NanumGothic-Bold.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
 @font-face { font-family: 'NanumGothic'; font-weight: 800; font-style: normal; font-display: swap; src: url('NanumGothic-ExtraBold.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF; }
 
-/* Noto Serif KR (SIL OFL 1.1, Google 빌드 — RFN 없음). 에세이형 장문(큐레이터 평문·
- * 작가 노트) 전용 세리프. 한글=KS X 1001 상용 2350자 서브셋, 라틴=별도 서브셋.
- * 라이선스: THIRD-PARTY-NOTICES.md §7 · NotoSerifKR-OFL.txt. UI 전역은 --app-font 유지. */
-@font-face { font-family: 'NotoSerifKR'; font-weight: 400; font-style: normal; font-display: swap; src: url('NotoSerifKR-Korean-Regular.woff2') format('woff2'); unicode-range: U+1100-11FF, U+3130-318F, U+AC00-D7A3, U+D7B0-D7FF; }
-@font-face { font-family: 'NotoSerifKR'; font-weight: 400; font-style: normal; font-display: swap; src: url('NotoSerifKR-Latin-Regular.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+2000-206F, U+20A0-20CF, U+2122; }
+/* (NotoSerifKR 제거 — 2026-07-14: '에세이 장문 전용'으로 배선했으나 var(--font-serif)
+ * 소비처가 전무한 죽은 자산(파일 322KB)이었다. 에세이/큐레이터 평문 기능을 실제
+ * 구현할 때 폰트 재조달 + @font-face + --font-serif를 함께 되살린다.) */
 
 /* 애플리케이션 전역 폰트 스택 — 이 변수 하나가 유일한 정의. DOM은 var(--app-font),
- * 캔버스는 getComputedStyle로 이 값을 읽는다. --font-serif는 에세이 장문 전용. */
+ * 캔버스는 getComputedStyle로 이 값을 읽는다. */
 :root {
   --app-font: 'NanumGothic', 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-serif: 'NotoSerifKR', 'Apple SD Gothic Neo', Georgia, 'Times New Roman', serif;
 }
