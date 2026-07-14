@@ -562,7 +562,9 @@ function drawFaceInto(canvas, p, fx) {
 
   // 개구리는 눈이 3D 돌출(머리 위)이라 캔버스 눈을 생략
   const canvasEyes = p.species !== 'frog';
-  if (ouch) {
+  // ouch >_< 도 캔버스 눈을 쓰는 종만 — 3D 눈(개구리)은 눈 메쉬가 따로 찡긋하므로
+  // 여기서 또 그리면 눈이 4개가 된다(감독 지적 버그). canvasEyes로 게이트한다.
+  if (ouch && canvasEyes) {
     // >_< 눈 — 아픔의 만국 공통어
     ctx.strokeStyle = '#2a2320';
     ctx.lineCap = 'round';
@@ -1104,6 +1106,7 @@ export function buildChibi(params) {
   else hairRoot.scale.set(sX, sY, sZ);
   headPivot.add(hairRoot);
   const tailPivots = []; // 찰랑임 애니메이션 대상
+  const ouchEyes = [];   // 3D 눈(개구리) — ouch 때 찡긋(납작). {mesh, baseY} 저장
 
   if (p.species === 'human') {
   // 공통 헬멧 셸 (앞이마 위 ~ 뒤통수)
@@ -1193,7 +1196,10 @@ export function buildChibi(params) {
     const M = (col) => mkMat(toon(col)); // 즉석 재질
     const PINK_INNER = '#f2b3c4'; // 귀여운 분홍 안쪽 귀
     // 귀 헬퍼 — 뾰족(고깔): 둥근 귀끝 캡 + 큼직한 안쪽 귀(분홍/포인트)
+    // 귀 확대 배율 — 감독 지시("동물 귀 더 과장"). cone·round 귀 공통(토끼는 직접 생성이라 무관).
+    const EAR_K = 1.34;
     const coneEars = (earR, earH, x, y, z, tilt, innerScale, outerMat, innerCol) => {
+      earR *= EAR_K; earH *= EAR_K;
       const inMat = innerCol ? M(innerCol) : pointMat;
       for (const s of [-1, 1]) {
         addPart(new THREE.ConeGeometry(earR, earH, 16), outerMat || furMat, s * x, y, z, -s * tilt, -0.12);
@@ -1203,6 +1209,7 @@ export function buildChibi(params) {
     };
     // 둥근 귀 — 겉귀 + 앞쪽 안쪽 귀(분홍/밝은색)
     const roundEars = (er, x, y, z, m, innerCol) => {
+      er *= EAR_K;
       for (const s of [-1, 1]) {
         addPart(new THREE.SphereGeometry(er, 14, 12), m || furMat, s * x, y, z);
         if (innerCol) addPart(new THREE.SphereGeometry(er * 0.62, 12, 10), M(innerCol), s * x, y, z + er * 0.6, 0, 0, 0, false).scale.set(1, 1, 0.55);
@@ -1284,9 +1291,11 @@ export function buildChibi(params) {
     } else if (sp === 'frog') {
       // 눈이 머리 위로 튀어나온 개구리 — 흰 구 + 검은 동공(캔버스 눈은 생략됨)
       for (const s of [-1, 1]) {
-        addPart(new THREE.SphereGeometry(R * 0.26, 14, 12), skinMat, s * R * 0.42, R * 0.62, R * 0.34);
-        addPart(new THREE.SphereGeometry(R * 0.15, 12, 10), mkMat(toon('#fbfbfa')), s * R * 0.42, R * 0.66, R * 0.5, 0, 0, 0, false);
-        addPart(new THREE.SphereGeometry(R * 0.075, 10, 8), mkMat(toon('#1a1a1a')), s * R * 0.42, R * 0.66, R * 0.62, 0, 0, 0, false);
+        const ball = addPart(new THREE.SphereGeometry(R * 0.26, 14, 12), skinMat, s * R * 0.42, R * 0.62, R * 0.34);
+        const white = addPart(new THREE.SphereGeometry(R * 0.15, 12, 10), mkMat(toon('#fbfbfa')), s * R * 0.42, R * 0.66, R * 0.5, 0, 0, 0, false);
+        const pup = addPart(new THREE.SphereGeometry(R * 0.075, 10, 8), mkMat(toon('#1a1a1a')), s * R * 0.42, R * 0.66, R * 0.62, 0, 0, 0, false);
+        // ouch 때 통째로 세로 납작 → 질끈 감은 눈. 위치도 살짝 내려 눌린 느낌.
+        for (const m of [ball, white, pup]) ouchEyes.push({ mesh: m, baseY: m.position.y });
       }
     } else if (sp === 'penguin') {
       // 귀 없음 — 정수리 살짝 각진 머리깃만
@@ -1472,10 +1481,13 @@ export function buildChibi(params) {
   if (p.halo) {
     haloPivot = new THREE.Group();
     haloPivot.position.set(0, skull.position.y + HEAD_R * 1.5, 0); // headPivot 직속(얼굴형 왜곡 회피)
-    haloPivot.rotation.x = -0.35;
+    // 링을 바닥과 나란히 눕힌다(≈ -78°). 살짝만 앞으로 틸트해 정면·3/4에서 '떠 있는 고리'로 보이게.
+    // (기존 -0.35는 거의 수직 → 머리에 꽂힌 것처럼 보였음)
+    haloPivot.rotation.x = -Math.PI / 2 + 0.2;
     const halo = new THREE.Mesh(
-      mkGeo(new THREE.TorusGeometry(HEAD_R * 0.52, HEAD_R * 0.06, 10, 24)),
-      mkMat(new THREE.MeshBasicMaterial({ color: '#ffd166' }))
+      mkGeo(new THREE.TorusGeometry(HEAD_R * 0.52, HEAD_R * 0.055, 12, 28)),
+      // 무조명 MeshBasic은 어두운 공간에서 홀로 쨍(떠 보임). 은은한 발광 스탠다드로 → 빛도 받고 살짝 빛난다.
+      mkMat(new THREE.MeshStandardMaterial({ color: '#caa23a', emissive: '#ffcf4d', emissiveIntensity: 0.5, roughness: 0.45, metalness: 0.1 }))
     );
     haloPivot.add(halo);
     headPivot.add(haloPivot);
@@ -1551,7 +1563,12 @@ export function buildChibi(params) {
       if (ouchT <= 0) {
         ouchT = 0;
         refreshFace();
+        for (const e of ouchEyes) { e.mesh.scale.y = 1; e.mesh.position.y = e.baseY; } // 3D 눈 원복
       }
+    }
+    // 3D 눈(개구리) 찡긋 — ouch 동안 세로로 질끈 눌러 감는다(캔버스 >_<는 안 그리므로 4개 안 됨)
+    if (ouchEyes.length && ouchT > 0) {
+      for (const e of ouchEyes) { e.mesh.scale.y = 0.32; e.mesh.position.y = e.baseY - HEAD_R * 0.05; }
     }
     // 움찔 스쿼시 — 눌렸다 통통 복귀
     if (squashT > 0) {
