@@ -101,6 +101,18 @@ function saveStoredChibiThumb(dataUrl, uid) {
   try { localStorage.setItem(chibiThumbKey(uid), dataUrl); } catch (_) { /* 무시 */ }
 }
 
+// 세션 룩 — 게스트가 "이번 세션에만" 쓰는 캐릭터(저장 안 됨). 캐릭터 저장은 회원가입 필요.
+// 로그인 사용자는 저장분을 sessionChibi에도 반영해 세션 내내 일관되게 쓴다.
+let sessionChibi = null;
+// 지금 세션에서 실제로 쓸 룩 — 세션 룩 우선, 없으면 저장된 룩(로그인/게스트 네임스페이스).
+function readActiveChibi() {
+  return sessionChibi || readStoredChibi();
+}
+// 로그인/로그아웃/계정 전환 시 세션 룩을 폐기한다. 그러지 않으면 앞 유저(또는 게스트)의
+// 미저장 세션 룩이 다음 유저 네임스페이스로 새어나가 계정 간 캐릭터가 오염된다(검수 반려 사례).
+// 이후엔 새 유저의 저장 룩(readStoredChibi) 또는 기본 아야모가 활성 룩이 된다.
+onAuthChange(() => { sessionChibi = null; });
+
 // 옷장(로그인 전용) — [{ id, name, look, thumb, ts }]
 function readCloset(uid) {
   try {
@@ -385,6 +397,27 @@ function injectStyles() {
   transition: color 0.2s ease;
 }
 .lu-char-edit-link:hover { color: var(--lu-gold); }
+
+/* 로비 "캐릭터 디자인" 메뉴 버튼 — 입장 폼과 분리된, 명확히 라벨된 진입점 */
+.lu-char-design-btn {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  margin-top: 8px; padding: 12px 14px;
+  background: #fff; border: 1px solid #e4e0d6; border-radius: 14px;
+  cursor: pointer; text-align: left; font-family: var(--lu-font);
+  transition: border-color 0.18s ease, transform 0.1s ease, box-shadow 0.18s ease;
+}
+.lu-char-design-btn:hover { border-color: var(--lu-gold); transform: translateY(-1px); box-shadow: 0 6px 16px rgba(20,38,29,0.06); }
+.lu-char-design-btn:focus-visible { outline: 2px solid var(--lu-gold); outline-offset: 2px; }
+.lu-char-design-media {
+  flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center; font-size: 20px;
+  background: #f4f1e8 center/cover no-repeat; border: 1px solid #e4e0d6;
+}
+.lu-char-design-media.lu-has-thumb { background-color: #f6f1e3; }
+.lu-char-design-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lu-char-design-txt b { font-size: 14px; font-weight: 700; color: var(--lu-ink, #17140f); }
+.lu-char-design-txt span { font-size: 11.5px; color: #8a8577; }
+.lu-char-design-arrow { flex: 0 0 auto; font-size: 20px; color: #bdb8a8; }
 
 /* -------------------------- 아바타 커스터마이저 모달 -------------------------- */
 /* 자연/크래프트 톤 재스킨(2026-07 감독 지시, 2026-07-14 고급감 리파인) — 카테고리
@@ -738,10 +771,33 @@ function injectStyles() {
 #lu-am-cute { width: 100%; accent-color: var(--lu-gold); }
 .lu-am-footer {
   flex: 0 0 auto;
-  display: flex; gap: 10px; justify-content: flex-end; align-items: center;
+  display: flex; flex-direction: column; gap: 12px;
   padding: 16px 24px 20px;
   border-top: 2px solid var(--am-line);
   background: linear-gradient(0deg, rgba(255,255,255,0.5), rgba(255,255,255,0));
+}
+.lu-am-footer-btns { display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+/* 회원가입 게이트 — 게스트에게만 노출(저장하려면 회원가입) */
+.lu-am-guest-gate {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px; border-radius: 12px;
+  background: rgba(191,161,74,0.06); border: 1px solid rgba(191,161,74,0.28);
+}
+.lu-am-gate-note { font-size: 12px; line-height: 1.55; color: var(--am-ink-body); word-break: keep-all; }
+.lu-am-signup-providers { display: flex; flex-wrap: wrap; gap: 8px; }
+.lu-am-social {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font-family: var(--lu-font); font-weight: 700; font-size: 11.5px;
+  color: var(--am-ink-body); background: #fff;
+  border: 1px solid var(--am-line); border-radius: 999px; padding: 7px 12px;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+.lu-am-social:hover { border-color: var(--lu-gold); transform: translateY(-1px); }
+.lu-am-social:disabled { opacity: 0.55; cursor: default; }
+.lu-am-social .lu-social-badge {
+  width: 16px; height: 16px; border-radius: 50%; font-size: 10px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #f0ece0; color: #6b6459;
 }
 .lu-am-btn {
   font-family: var(--lu-font); font-weight: 700;
@@ -1881,41 +1937,30 @@ function buildLobby() {
   });
   const nickHint = el('div', { className: 'lu-field-hint', text: `최대 ${MAX_NICKNAME_LEN}자 · 비워두면 '게스트'로 입장합니다` });
 
-  // 캐릭터 — 자체 제작 치비 단일 (서드파티 캐릭터 전면 삭제, 저작권 완전 보유)
-  const charLabel = el('div', { className: 'lu-field-label', text: '캐릭터 (선택)', style: 'margin-top:26px;' });
-  const charHint = el('div', { className: 'lu-field-hint', text: '기본 아야모로 바로 입장하거나, 눌러서 꾸며 보세요 · 입장 후 C키로도 가능' });
-  const charsRow = el('div', { className: 'lu-chars' });
-
-  const chibiBtn = el('button', {
-    className: 'lu-char-btn lu-char-custom lu-selected',
+  // 캐릭터 — 입장 폼에 편집을 끼워넣지 않고, "캐릭터 디자인" 메뉴 버튼으로 분리한다.
+  // 누가 봐도 캐릭터 디자인임이 드러나게 라벨·아이콘을 명확히. 입장은 선택(기본 아야모 가능).
+  const charLabel = el('div', { className: 'lu-field-label', text: '캐릭터', style: 'margin-top:26px;' });
+  const designBtn = el('button', {
+    id: 'lu-char-design',
+    className: 'lu-char-design-btn',
     type: 'button',
-    'aria-label': '아야모 꾸미기',
+    'aria-label': '캐릭터 디자인 — 나만의 아야모 만들기',
   });
   function syncChibiButtonVisual() {
     const thumb = readStoredChibiThumb();
-    if (thumb) {
-      chibiBtn.style.backgroundImage = `url('${thumb}')`;
-      chibiBtn.classList.add('lu-has-thumb');
-      chibiBtn.textContent = '';
-      chibiBtn.appendChild(el('span', { text: '아야모' }));
-    } else {
-      chibiBtn.style.backgroundImage = '';
-      chibiBtn.classList.remove('lu-has-thumb');
-      chibiBtn.textContent = '🧸 아야모';
-    }
+    designBtn.textContent = '';
+    const media = el('span', { className: 'lu-char-design-media' });
+    if (thumb) { media.classList.add('lu-has-thumb'); media.style.backgroundImage = `url('${thumb}')`; }
+    else { media.textContent = '🎨'; }
+    const txt = el('span', { className: 'lu-char-design-txt' }, [
+      el('b', { text: '캐릭터 디자인' }),
+      el('span', { text: thumb ? '내 아야모 편집하기' : '나만의 아야모 만들기 (선택)' }),
+    ]);
+    designBtn.append(media, txt, el('span', { className: 'lu-char-design-arrow', text: '›' }));
   }
   syncChibiButtonVisual();
-  chibiBtn.addEventListener('click', () => openChibiMaker()); // 클릭 = 꾸미기
-  charsRow.appendChild(chibiBtn);
+  designBtn.addEventListener('click', () => openChibiMaker());
 
-  const editLink = el('button', {
-    className: 'lu-char-edit-link',
-    type: 'button',
-    text: '꾸미기 ✎',
-  });
-  editLink.addEventListener('click', () => openChibiMaker());
-
-  // 색상 스와치
   const enterBtn = el('button', { id: 'lu-enter-btn', type: 'button', text: '입장하기' });
 
   // 전시 선택 섹션 — initGalleryPicker() 호출 전에는 빈 컨테이너
@@ -1934,7 +1979,7 @@ function buildLobby() {
   const card = el('div', { className: 'lu-lobby-card' }, [
     title, sub, rule,
     nickLabel, nickInput, nickHint,
-    charLabel, charHint, charsRow, editLink,
+    charLabel, designBtn,
     enterBtn,
     orDivider, authBox,
     pickerBox,
@@ -1954,8 +1999,8 @@ function buildLobby() {
     let colorHash = 0;
     for (let i = 0; i < nickname.length; i++) colorHash = (colorHash * 31 + nickname.charCodeAt(i)) >>> 0;
     selectedColor = AVATAR_COLORS[colorHash % AVATAR_COLORS.length];
-    // 캐릭터는 치비 단일 — 저장된 꾸미기(없으면 기본 룩)로 인코딩
-    const char = encodeChibi(Object.assign({}, DEFAULT_CHIBI, readStoredChibi() || {}));
+    // 캐릭터는 치비 단일 — 이번 세션 룩(게스트 세션 편집 포함, 없으면 저장분/기본)로 인코딩
+    const char = encodeChibi(Object.assign({}, DEFAULT_CHIBI, readActiveChibi() || {}));
     if (typeof callbacks.onEnter === 'function') {
       callbacks.onEnter({ nickname, color: selectedColor, char });
     }
@@ -1993,7 +2038,7 @@ function buildControls() {
         ['T', '투어'],
         ['G', '방명록'],
         ['V', '내 모습 보기'],
-        ['C', '아야모 꾸미기'],
+        ['C', '캐릭터 디자인'],
         ['P', '사진 촬영'],
         ['클릭', '캐릭터 콕 찌르기'],
       ];
@@ -2113,7 +2158,7 @@ function buildMobileDock() {
     sheetBtn('self', '내 모습', () => {
       if (typeof actionHandlers.onSelfView === 'function') actionHandlers.onSelfView();
     }),
-    sheetBtn('dress', '꾸미기', () => openChibiMaker()),
+    sheetBtn('dress', '캐릭터 디자인', () => openChibiMaker()),
     sheetBtn('chat', '채팅', toggleChat),
     sheetBtn('help', '조작법', () => {
       const panel = document.getElementById('lu-controls');
@@ -2737,7 +2782,7 @@ function buildChibiMaker() {
   const closeX = el('button', { id: 'lu-am-close', type: 'button', 'aria-label': '닫기', text: '×' });
   const titleIcon = el('span', { className: 'lu-am-title-icon', 'aria-hidden': 'true' });
   titleIcon.innerHTML = ICON_LEAF;
-  const title = el('div', { className: 'lu-am-title' }, [titleIcon, el('span', { text: '아야모 꾸미기' })]);
+  const title = el('div', { className: 'lu-am-title' }, [titleIcon, el('span', { text: '캐릭터 디자인' })]);
   const head = el('div', { className: 'lu-am-head' }, [title, closeX]);
 
   // 프리뷰 "무대" — 300×400 백킹 해상도(ensurePreviewRenderer의 setSize와 정합)는 그대로 두고,
@@ -2784,7 +2829,7 @@ function buildChibiMaker() {
 
   // 카테고리 내비 — 종족·얼굴·헤어·의상·장식·옷장 섹션 전환(스크롤 지옥 대신 탭 전환)
   let activeCat = 'species';
-  const nav = el('div', { className: 'lu-am-nav', role: 'tablist', 'aria-label': '꾸미기 카테고리' });
+  const nav = el('div', { className: 'lu-am-nav', role: 'tablist', 'aria-label': '캐릭터 디자인 카테고리' });
   const panel = el('div', { className: 'lu-am-panel' });
   const page = el('div', { className: 'lu-am-tabpage' });
   panel.appendChild(nav);
@@ -2793,7 +2838,40 @@ function buildChibiMaker() {
 
   const saveBtn = el('button', { className: 'lu-am-btn lu-am-btn-primary', type: 'button', text: '저장하고 사용' });
   const closeBtn = el('button', { className: 'lu-am-btn', type: 'button', text: '닫기' });
-  const footer = el('div', { className: 'lu-am-footer' }, [closeBtn, saveBtn]);
+  const btnRow = el('div', { className: 'lu-am-footer-btns' }, [closeBtn, saveBtn]);
+
+  // 회원가입 게이트 — 캐릭터 저장은 회원가입 필요(감독 방침). 게스트는 저장 없이 이번
+  // 세션에만 쓸 수 있고, 회원가입하면 지금 캐릭터가 계정에 저장된다.
+  const signupProviders = el('div', { className: 'lu-am-signup-providers' });
+  Object.keys(AUTH_PROVIDERS).forEach((key) => {
+    const p = AUTH_PROVIDERS[key];
+    const b = el('button', { className: `lu-am-social lu-social-${key}`, type: 'button', 'aria-label': p.label }, [
+      el('span', { className: 'lu-social-badge', text: p.short }),
+      el('span', { text: p.label }),
+    ]);
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try { await authLoginWith(key); } catch (_) { /* mock 실패 없음 */ }
+      b.disabled = false;
+      // 회원가입 성공 → 지금 만든 캐릭터를 새 계정에 저장하고 닫는다
+      if (authGetProfile() && chibiParams) {
+        const look = JSON.parse(JSON.stringify(chibiParams));
+        sessionChibi = look;
+        saveStoredChibi(look);
+        const t = snapshotThumb(150, 200); if (t) saveStoredChibiThumb(t);
+        if (els && els.lobby) els.lobby.onChibiSaved();
+        if (entered && typeof callbacks.onAvatarChange === 'function') callbacks.onAvatarChange(encodeChibi(look));
+        setStatus('회원가입 완료 — 캐릭터가 저장됐어요 ✨');
+        closeChibiMaker();
+      }
+    });
+    signupProviders.appendChild(b);
+  });
+  const guestGate = el('div', { className: 'lu-am-guest-gate' }, [
+    el('div', { className: 'lu-am-gate-note', text: '캐릭터를 저장하려면 회원가입이 필요해요. 회원가입 없이도 지금 이 캐릭터로 바로 쓸 수 있어요.' }),
+    signupProviders,
+  ]);
+  const footer = el('div', { className: 'lu-am-footer' }, [guestGate, btnRow]);
   const card = el('div', { className: 'lu-am-card' }, [head, body, footer]);
   const overlay = el('div', { id: 'lu-chibi-maker', className: 'lu' }, [card]);
   document.body.appendChild(overlay);
@@ -3090,25 +3168,38 @@ function buildChibiMaker() {
     } catch (_) { return ''; }
   }
 
+  // 로그인 여부에 따라 저장 버튼 라벨·회원가입 게이트 노출을 갱신한다.
+  function syncSaveGate() {
+    const loggedIn = !!authGetProfile();
+    saveBtn.textContent = loggedIn ? '저장하고 사용' : '이 캐릭터 사용';
+    guestGate.style.display = loggedIn ? 'none' : '';
+  }
+
   saveBtn.addEventListener('click', () => {
     if (!chibiParams) return;
-    const ok = saveStoredChibi(chibiParams);            // 현재 유저 네임스페이스에 저장
-    const thumb = snapshotThumb(150, 200);
-    if (thumb) saveStoredChibiThumb(thumb);
+    const look = JSON.parse(JSON.stringify(chibiParams));
+    sessionChibi = look;                       // 항상 이번 세션에 적용(게스트 포함)
+    const loggedIn = !!authGetProfile();
+    if (loggedIn) {
+      const ok = saveStoredChibi(look);        // 계정(유저 네임스페이스)에 저장
+      const thumb = snapshotThumb(150, 200);
+      if (thumb) saveStoredChibiThumb(thumb);
+      if (!ok) setStatus('저장 공간이 부족해요 — 옷장에서 몇 벌을 지워 주세요');
+    }
     if (els && els.lobby) els.lobby.onChibiSaved();
     // 입장 후 편집이면 월드의 내 아바타에도 즉시 반영(+멀티플레이 전파)
     if (entered && typeof callbacks.onAvatarChange === 'function') {
-      callbacks.onAvatarChange(encodeChibi(chibiParams));
+      callbacks.onAvatarChange(encodeChibi(look));
     }
-    // 저장 실패(용량 초과) 안내는 마지막에 — onAvatarChange의 성공 토스트에 가려지지
-    // 않도록 순서를 뒤로 둔다. 실패해도 월드 반영은 이뤄지되 저장 안 됨을 알린다.
-    if (!ok) setStatus('저장 공간이 부족해요 — 옷장에서 몇 벌을 지워 주세요');
+    // 게스트 안내는 마지막에(성공 토스트에 가려지지 않게)
+    if (!loggedIn) setStatus('이 캐릭터로 적용했어요 · 회원가입하면 저장돼요');
     closeChibiMaker();
   });
 
   function open() {
     activeCat = 'species'; // 새로 열 때는 항상 첫 카테고리(종족)부터 — 이전 탭 유지 방지
-    chibiParams = normalizeChibi(Object.assign({}, DEFAULT_CHIBI, readStoredChibi() || {}));
+    chibiParams = normalizeChibi(Object.assign({}, DEFAULT_CHIBI, readActiveChibi() || {}));
+    syncSaveGate(); // 로그인 여부에 따라 저장/회원가입 버튼 상태 갱신
     ensurePreviewRenderer();
     previewRotator.rotation.y = Math.PI; // 정면(카메라 쪽)부터 — 얼굴을 꾸미는 화면이므로
     chibiSwingBase = Math.PI; chibiSwingT = 0;
