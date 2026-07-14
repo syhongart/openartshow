@@ -430,9 +430,10 @@ function drawAnimalFace(ctx, species, MY) {
   // 부리(병아리·펭귄)·돼지 주둥이는 이제 3D 파츠라 캔버스에선 그리지 않음(겹침 방지).
   if (species === 'chick' || species === 'penguin' || species === 'pig') return;
 
-  // 3D 코끝/주둥이가 붙는 종은 캔버스 코·인중 생략.
+  // 3D 코끝/주둥이가 붙는 종은 캔버스 코·인중 생략(고양이·코알라도 3D 코로 승격 — 감독 지적).
   const NOSE_3D = species === 'dog' || species === 'fox' || species === 'bear'
-    || species === 'raccoon' || species === 'panda' || species === 'rabbit';
+    || species === 'raccoon' || species === 'panda' || species === 'rabbit'
+    || species === 'cat' || species === 'koala';
   if (!NOSE_3D) {
     const bigNose = species === 'koala';
     const pinkNose = species === 'cat' || species === 'hamster';
@@ -1317,10 +1318,13 @@ export function buildChibi(params) {
     else if (sp === 'raccoon') tip(new THREE.SphereGeometry(R * 0.055, 10, 8), darkNose(), 0, -0.08 * R, 1.0 * R);
     else if (sp === 'panda') tip(new THREE.SphereGeometry(R * 0.05, 10, 8), darkNose(), 0, -0.05 * R, 0.9 * R);
     else if (sp === 'rabbit') tip(new THREE.SphereGeometry(R * 0.075, 10, 8), mkMat(toon('#e88ba0')), 0, 0.02 * R, 0.9 * R);
+    else if (sp === 'cat') tip(new THREE.SphereGeometry(R * 0.045, 10, 8), mkMat(toon('#e88ba0')), 0, -0.02 * R, 1.0 * R).scale.set(1.4, 0.85, 1);
+    else if (sp === 'koala') tip(new THREE.SphereGeometry(R * 0.13, 12, 10), darkNose(), 0, -0.03 * R, 0.98 * R).scale.set(1.05, 1.3, 0.95);
     else if (sp === 'pig') {
-      const disc = addPart(new THREE.CylinderGeometry(R * 0.18, R * 0.18, R * 0.09, 16), mkMat(toon('#efa0b2')), 0, -0.04 * R, 0.92 * R, 0, Math.PI / 2, 0, true);
-      disc.userData.outlineBase = '#c07a90';
-      for (const s of [-1, 1]) tip(new THREE.SphereGeometry(R * 0.025, 8, 6), mkMat(toon('#b0607a')), s * 0.05 * R, -0.04 * R, 0.99 * R);
+      // 돌출 스노우트 — 납작 디스크(구버전, 얼굴에 묻혀 안 보임)를 앞으로 튀어나온 원통으로.
+      const snout = addPart(new THREE.CylinderGeometry(R * 0.2, R * 0.21, R * 0.18, 18), mkMat(toon('#efa0b2')), 0, -0.05 * R, 0.98 * R, 0, Math.PI / 2, 0, true);
+      snout.userData.outlineBase = '#c07a90';
+      for (const s of [-1, 1]) tip(new THREE.SphereGeometry(R * 0.032, 8, 6), mkMat(toon('#a85670')), s * 0.06 * R, -0.05 * R, 1.08 * R);
     } else if (sp === 'chick' || sp === 'penguin') {
       const beak = addPart(new THREE.ConeGeometry(sp === 'penguin' ? R * 0.11 : R * 0.1, sp === 'penguin' ? R * 0.16 : R * 0.17, 4), mkMat(toon('#f4a83a')), 0, -0.02 * R, 0.86 * R, 0, -Math.PI / 2, 0, false);
       beak.scale.set(sp === 'penguin' ? 1.6 : 1.4, 0.6, 1);
@@ -1331,10 +1335,10 @@ export function buildChibi(params) {
     // ---- 동물 꼬리 (몸 뒤 · wrapper) ----
     const STUB = new Set(['bear', 'panda', 'hamster', 'koala', 'penguin', 'chick']);
     const LATHE = new Set(['cat', 'dog', 'fox', 'sheep', 'tiger', 'lion', 'raccoon']);
-    const TIP = new Set(['fox', 'lion', 'raccoon']); // 끝에 포인트색 뭉치
+    // (끝뭉치 포인트색은 종별 spec.tip으로 이동 — 구 TIP set 제거)
     if (sp !== 'frog') {
       const tailPivot = new THREE.Group();
-      tailPivot.position.set(0, 0.44, -0.15);
+      tailPivot.position.set(0, 0.46, -0.2);
       let baseX = -0.4;
       if (sp === 'rabbit') {
         const puff = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(HEAD_R * 0.22, 12, 10)), furMat);
@@ -1351,17 +1355,44 @@ export function buildChibi(params) {
         tailPivot.add(stub);
         baseX = 0;
       } else if (LATHE.has(sp)) {
-        const prof = lathePoints([[0.015, 0.03], [0.075, -0.03], [0.085, -0.14], [0.055, -0.26], [0.008, -0.36]]);
-        const tail = new THREE.Mesh(mkGeo(new THREE.LatheGeometry(prof, 14)), furMat);
-        const sc = sp === 'fox' ? 1.6 : sp === 'sheep' ? 0.7 : sp === 'lion' ? 1.3 : 1.05;
-        tail.scale.setScalar(sc);
-        addOutline(tail, 0.011, mats, geos);
-        tailPivot.add(tail);
-        if (TIP.has(sp)) {
-          const tip = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.05, 10, 8)), pointMat);
-          tip.position.y = -0.36 * sc;
-          tailPivot.add(tip);
+        // 위로 휜 테이퍼 꼬리 — 구버전(프로필 회전 = 아래로 늘어진 물방울)을 폐기하고
+        // 곡선(CatmullRom)을 따라 감긴 튜브 + 둥근 끝뭉치로 자연스러운 꼬리를 만든다.
+        const spec = ({
+          fox:     { rad: R * 0.17, len: 1.55, up: 1.0, tip: '#fff6ea', bushy: true },
+          cat:     { rad: R * 0.075, len: 1.25, up: 1.15 },
+          tiger:   { rad: R * 0.095, len: 1.35, up: 0.85, tip: shade(p.skin, 0.5) },
+          lion:    { rad: R * 0.085, len: 1.4, up: 0.75, tip: p.hairColor },
+          raccoon: { rad: R * 0.13, len: 1.3, up: 0.72, tip: '#3a3632', bushy: true },
+          dog:     { rad: R * 0.09, len: 1.1, up: 1.0 },
+          sheep:   { rad: R * 0.1, len: 0.72, up: 0.5 },
+        })[sp] || { rad: R * 0.09, len: 1.15, up: 0.9 };
+        const L = spec.len;
+        // 꼬리가 몸 뒤로 크게 뻗었다가 위로 휘어 올라간다(치마·상의에 묻히지 않게 뒤로 충분히).
+        const curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0.10 * L, -0.16 * L),
+          new THREE.Vector3(0, 0.26 * L * spec.up, -0.20 * L),
+          new THREE.Vector3(0, 0.42 * L * spec.up, -0.12 * L),
+        ]);
+        const tube = new THREE.Mesh(mkGeo(new THREE.TubeGeometry(curve, 22, spec.rad, 12, false)), furMat);
+        addOutline(tube, 0.011, mats, geos);
+        tailPivot.add(tube);
+        if (spec.bushy) { // 여우·너구리 — 볼륨 퍼프 몇 덩이
+          for (const tt of [0.45, 0.68, 0.86]) {
+            const pp = curve.getPoint(tt);
+            const puff = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(spec.rad * 1.3, 12, 10)), furMat);
+            puff.position.copy(pp); addOutline(puff, 0.011, mats, geos); tailPivot.add(puff);
+          }
         }
+        // 끝뭉치(둥근 마감 + 포인트색 옵션)
+        const endBall = new THREE.Mesh(
+          mkGeo(new THREE.SphereGeometry(spec.rad * (spec.bushy ? 1.55 : 1.2), 12, 10)),
+          spec.tip ? mkMat(toon(spec.tip)) : furMat
+        );
+        endBall.position.copy(curve.getPoint(1));
+        addOutline(endBall, 0.011, mats, geos);
+        tailPivot.add(endBall);
+        baseX = 0; // 곡선이 방향을 정의하므로 pivot 틸트 제거
       }
       tailPivot.rotation.x = baseX;
       wrapper.add(tailPivot);
