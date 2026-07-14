@@ -1,0 +1,303 @@
+<title>OpenArtShow — 팔레트 B안 파일럿 · 라이트 작품 상세</title>
+<style>
+  :root{
+    /* === §3-1 라이트 에디토리얼 표면 앵커 === */
+    --bg-light:#F3F0E9;
+    --text-dark:#202124;
+    --text-light:#F5F5F2;
+
+    /* === §13-2 레거시 중립 스케일(카드 내부 — §3-1에 의해 그대로 유지) === */
+    --neutral-white:#ffffff;
+    --neutral-sand-100:#efe6d3;
+    --neutral-sand-300:#ddccae;
+    --neutral-warm-gray-300:#cfc6b8;
+    --neutral-warm-gray-500:#a49a8c;
+    --ink:#17140f;
+    --ink-body:#57503f;
+    --ink-dim:#6b6459;
+
+    /* === §3-4 라이트 표면용 -ink 액센트(원색 대신) === */
+    --violet-ink:#5733FF;   /* = --violet-700, 선택/링크 */
+    --violet-900:#170080;
+    --violet-100:#EAE5FF;
+    --cyan-ink:#136C68;     /* = --cyan-800, 라이브/상태 */
+    --cyan-100:#E9FBFA;
+    --coral-ink:#CC1700;    /* = --coral-800, 가격/CTA 텍스트 */
+    --coral-900:#660B00;    /* CTA hover(라이트, 한 단계 짙게) */
+
+    /* === §5 spacing / radius / shadow === */
+    --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+    --space-5:24px; --space-6:32px; --space-7:64px; --space-8:96px;
+    --r-plate:3px; --r-control:10px; --r-panel:12px; --r-pill:999px;
+    --shadow-whisper:0 2px 6px rgba(20,21,26,.05);
+    --shadow-card-hover:0 6px 16px rgba(20,21,26,.06);
+    --shadow-panel:0 8px 20px rgba(20,21,26,.10);
+
+    /* === §4 typography === */
+    --fs-h2: clamp(30px, 4.5vw, 42px);
+    --fs-title-artwork: clamp(20px, 2.6vw, 26px);
+    --fs-body-lg:17px; --fs-body:15px; --fs-label:13px; --fs-caption:12px; --fs-meta:14px;
+    --lh-body:1.7; --lh-body-loose:1.85;
+
+    --app-font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", Helvetica, Arial, sans-serif;
+    --font-serif: Georgia, 'Nanum Myeongjo', serif; /* 실제는 Noto Serif KR self-host, §4-3 */
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{max-width:100%; overflow-x:hidden;}
+  body{
+    background:var(--bg-light);
+    color:var(--text-dark);
+    font-family:var(--app-font);
+    line-height:var(--lh-body);
+    word-break:keep-all;
+    -webkit-font-smoothing:antialiased;
+  }
+  img,svg{display:block; max-width:100%;}
+  a{color:inherit; text-decoration:none;}
+  button{font-family:inherit; cursor:pointer;}
+  :focus-visible{outline:2px solid var(--violet-ink); outline-offset:2px;}
+
+  .wrap{max-width:1040px; margin:0 auto; padding:0 var(--space-5) var(--space-8);}
+
+  /* ---------- 상단 바 ---------- */
+  .topbar{border-bottom:1px solid var(--neutral-warm-gray-300); background:var(--bg-light);}
+  .topbar-inner{
+    max-width:1040px; margin:0 auto; padding:16px var(--space-5);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .wordmark{font-size:17px; font-weight:800; letter-spacing:-.01em;}
+  .wordmark .w-lead{color:var(--violet-ink);}
+  .wordmark .dot{color:var(--ink-dim);}
+
+  /* 뒤로가기 — 텍스트 버튼(§7-3): 바이올렛, 선택/정체성 축이 아니라 링크류라 동일 규율 */
+  .back-link{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:var(--fs-label); font-weight:700; color:var(--violet-ink);
+    padding:10px 0; margin-top:var(--space-5);
+  }
+  .back-link:hover{color:var(--violet-900); text-decoration:underline;}
+  .back-link svg{width:14px; height:14px;}
+
+  /* ---------- 레이아웃 ---------- */
+  .detail{
+    display:grid; grid-template-columns:1fr; gap:var(--space-6);
+    margin-top:var(--space-4);
+  }
+  @media (min-width:860px){
+    .detail{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr); gap:var(--space-8); align-items:start;}
+  }
+
+  /* ---------- 작품 이미지 프레임(중립만 — 액센트 절대 금지, §3-6/§3-8) ---------- */
+  .art-frame{
+    background:var(--neutral-white);
+    border:1px solid var(--neutral-warm-gray-300);
+    border-radius:var(--r-plate);
+    padding:var(--space-3);
+    box-shadow:var(--shadow-whisper);
+  }
+  .art-image{
+    width:100%; aspect-ratio:4/3;
+    border-radius:1px;
+    background:
+      radial-gradient(120% 90% at 25% 20%, #cfcac0 0%, transparent 60%),
+      linear-gradient(165deg, #e9e4da 0%, #cfc9bd 45%, #a9a296 100%);
+    position:relative; overflow:hidden;
+  }
+  .art-image::after{
+    content:"";
+    position:absolute; inset:0;
+    background:linear-gradient(0deg, rgba(23,20,15,.10), transparent 40%);
+  }
+  .art-caption{
+    display:flex; justify-content:space-between; gap:var(--space-3);
+    padding:10px 4px 2px; font-size:11px; color:var(--ink-dim);
+  }
+
+  /* ---------- 텍스트 컬럼 ---------- */
+  .badge{
+    display:inline-flex; align-items:center; gap:6px;
+    background:var(--cyan-100); color:var(--cyan-ink);
+    font-size:var(--fs-caption); font-weight:700;
+    border-radius:var(--r-pill); padding:5px 12px;
+    margin-bottom:var(--space-4);
+  }
+  .badge .dot{width:6px; height:6px; border-radius:50%; background:var(--cyan-ink);}
+
+  h1.title{font-size:var(--fs-title-artwork); font-weight:700; margin-bottom:6px;}
+  .meta-line{font-size:var(--fs-meta); color:var(--ink-body); margin-bottom:var(--space-4);}
+  .spec-row{
+    display:flex; gap:var(--space-2) var(--space-4); flex-wrap:wrap;
+    font-size:var(--fs-meta); color:var(--ink-dim);
+    padding:var(--space-3) 0; border-top:1px solid var(--neutral-sand-300);
+    margin-bottom:var(--space-5);
+  }
+
+  .desc{
+    font-family:var(--font-serif);
+    font-size:var(--fs-body-lg);
+    line-height:var(--lh-body-loose);
+    color:var(--ink);
+    max-width:52ch;
+    padding-bottom:var(--space-5);
+    border-bottom:1px solid var(--neutral-sand-300);
+    margin-bottom:var(--space-5);
+  }
+
+  .price-row{display:flex; align-items:baseline; gap:var(--space-3); margin-bottom:4px; flex-wrap:wrap;}
+  .price-label{font-size:var(--fs-label); color:var(--ink-dim);}
+  .price-value{font-size:24px; font-weight:800; color:var(--coral-ink);}
+  .price-note{font-size:11px; color:var(--ink-dim); margin-bottom:var(--space-5);}
+
+  .actions{display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; margin-bottom:var(--space-6);}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    border-radius:var(--r-control); font-weight:700; font-size:var(--fs-label);
+    min-height:44px; padding:0 20px; border:1.5px solid transparent;
+    transition:transform .15s ease-out, box-shadow .15s ease-out, background-color .15s ease-out;
+  }
+  .btn:active{transform:translateY(1px) scale(.98);}
+  @media (prefers-reduced-motion: reduce){ .btn{transition:none;} .btn:hover,.btn:active{transform:none;} }
+
+  /* Primary(코랄) — §7-1 라이트: bg coral-ink / text text-light. 입장(3D로 보기) = 코랄 CTA 역할 그대로 */
+  .btn-primary{background:var(--coral-ink); color:var(--text-light); border-color:transparent;}
+  .btn-primary:hover{background:var(--coral-900); transform:translateY(-2px); box-shadow:var(--shadow-card-hover);}
+
+  /* Secondary(바이올렛 아웃라인) — §7-2 */
+  .btn-secondary{background:transparent; border-color:var(--violet-ink); color:var(--violet-ink);}
+  .btn-secondary:hover{background:var(--violet-100); transform:translateY(-2px);}
+
+  /* 아이콘 버튼(관심) — §7-17 */
+  .icon-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:44px; height:44px; border-radius:var(--r-control);
+    background:transparent; border:1.5px solid var(--neutral-warm-gray-300);
+    color:var(--ink-body);
+    transition:background-color .15s ease-out, color .15s ease-out, border-color .15s ease-out;
+  }
+  .icon-btn svg{width:19px; height:19px;}
+  .icon-btn:hover{background:var(--violet-100); color:var(--violet-ink); border-color:var(--violet-100);}
+  .icon-btn.is-selected{background:var(--violet-ink); border-color:var(--violet-ink); color:var(--text-light);}
+  .icon-btn.is-selected svg{fill:currentColor;}
+
+  /* AI 감상 링크 — §7-3 텍스트 버튼(바이올렛) */
+  .ai-link{
+    display:inline-flex; align-items:center; gap:6px;
+    color:var(--violet-ink); font-weight:700; font-size:var(--fs-body);
+    padding:var(--space-2) 0;
+  }
+  .ai-link:hover{color:var(--violet-900); text-decoration:underline;}
+  .ai-link svg{width:14px; height:14px;}
+
+  /* ---------- 다른 관람객 감상 ---------- */
+  .section-title{font-size:var(--fs-label); font-weight:700; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.04em; margin:var(--space-6) 0 var(--space-4);}
+  .review{
+    display:flex; gap:var(--space-3);
+    padding:var(--space-4) 0;
+    border-top:1px solid var(--neutral-sand-300);
+  }
+  .review .avatar{
+    width:36px; height:36px; border-radius:50%; flex:none;
+    background:var(--neutral-sand-100); color:var(--ink-dim);
+    display:flex; align-items:center; justify-content:center;
+    font-size:12px; font-weight:700;
+  }
+  .review .body{font-size:var(--fs-body); color:var(--ink-body);}
+  .review .who{font-size:12px; color:var(--ink-dim); margin-top:2px;}
+  .review-note{font-size:11px; color:var(--ink-dim); margin-top:var(--space-2);}
+
+  footer{
+    margin-top:var(--space-8);
+    padding-top:var(--space-5);
+    border-top:1px solid var(--neutral-warm-gray-300);
+    font-size:var(--fs-caption); color:var(--ink-dim);
+  }
+
+  @media (max-width:640px){
+    .price-value{font-size:21px;}
+    .actions{gap:var(--space-2);}
+  }
+</style>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="wordmark"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <a class="back-link" href="#">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    전시로 돌아가기
+  </a>
+
+  <div class="detail">
+    <div>
+      <div class="art-frame">
+        <div class="art-image" role="img" aria-label="Alpine Silence 작품 이미지(중립 프레임 예시)"></div>
+      </div>
+      <div class="art-caption">
+        <span>이미지는 팔레트 검증용 예시 프레임입니다</span>
+        <span>1200 × 900</span>
+      </div>
+    </div>
+
+    <div>
+      <span class="badge"><span class="dot" aria-hidden="true"></span>전시 중</span>
+
+      <h1 class="title">Alpine Silence</h1>
+      <div class="meta-line">Mara Ellingsen · 2024</div>
+
+      <div class="spec-row">
+        <span>캔버스에 유채</span>
+        <span>130 × 97 cm</span>
+        <span style="color:var(--ink-dim); opacity:.8;">(재료·크기는 예시 값)</span>
+      </div>
+
+      <p class="desc">고요한 산악 풍경 속에서 인간의 부재가 만들어내는 긴장을 포착한 작품입니다.
+        차가운 공기와 빛의 결을 통해 자연의 숭고함을 응시하게 합니다.</p>
+
+      <div class="price-row">
+        <span class="price-label">가격</span>
+        <span class="price-value">₩ 2,400,000</span>
+      </div>
+      <div class="price-note">예시 가격입니다 — 실제 판매 정보가 아닙니다</div>
+
+      <div class="actions">
+        <a class="btn btn-primary" href="#">3D 전시에서 보기</a>
+        <a class="btn btn-secondary" href="#">작가에게 문의</a>
+        <button class="icon-btn" type="button" aria-pressed="false" aria-label="관심 등록(기본)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.6-10-9.2C.6 8.3 2.4 5 5.8 5c2 0 3.6 1.1 4.2 2.6C10.6 6.1 12.2 5 14.2 5c3.4 0 5.2 3.3 3.8 6.8C15.5 16.4 12 21 12 21z"/></svg>
+        </button>
+        <button class="icon-btn is-selected" type="button" aria-pressed="true" aria-label="관심 등록(선택됨 예시)">
+          <svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-10-9.2C.6 8.3 2.4 5 5.8 5c2 0 3.6 1.1 4.2 2.6C10.6 6.1 12.2 5 14.2 5c3.4 0 5.2 3.3 3.8 6.8C15.5 16.4 12 21 12 21z"/></svg>
+        </button>
+      </div>
+
+      <a class="ai-link" href="#">
+        AI 감상 요약 보기
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </a>
+
+      <div class="section-title">다른 관람객 감상</div>
+      <div class="review">
+        <div class="avatar">A</div>
+        <div>
+          <div class="body">차분한 색감이 오래 눈에 머무릅니다.</div>
+          <div class="who">관람객 A</div>
+        </div>
+      </div>
+      <div class="review">
+        <div class="avatar">B</div>
+        <div>
+          <div class="body">고요한 구성이 인상적이에요.</div>
+          <div class="who">관람객 B</div>
+        </div>
+      </div>
+      <div class="review-note">감상은 팔레트 검증용 예시 문구입니다</div>
+    </div>
+  </div>
+
+  <footer>© 2026 홍성용 (Hong Sungyong)</footer>
+</div>

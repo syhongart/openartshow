@@ -1,0 +1,315 @@
+<title>OpenArtShow — 팔레트 B안 파일럿 · 다크 몰입 홈</title>
+<style>
+  :root{
+    /* === §3-1 다크 몰입 표면 앵커 === */
+    --bg-dark:#14151A;
+    --text-light:#F5F5F2;
+    --text-light-dim:#9A9EB1;
+    --text-dark:#202124;
+
+    /* === §3-7 다크 표면 중립 스케일 === */
+    --surface-dark-1:#1F2128;
+    --surface-dark-2:#2A2C37;
+    --border-dark:#3A3D4B;
+
+    /* === §3-2 / §3-5 액센트 원색(다크 전용 직접 사용) === */
+    --violet-500:#8B72FF;
+    --violet-300:#AB99FF;
+    --violet-600:#6C4DFF;
+    --violet-100:#EAE5FF;
+    --cyan-500:#72E6E1;
+    --cyan-600:#26D9D1;
+    --coral-500:#FF705E;
+    --coral-600:#FF331A;
+
+    /* === §5 spacing / radius / shadow === */
+    --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+    --space-5:24px; --space-6:32px; --space-7:64px; --space-8:96px;
+    --r-plate:3px; --r-control:10px; --r-panel:12px; --r-pill:999px;
+    --shadow-card-hover:0 6px 16px rgba(20,21,26,.06);
+    --shadow-panel:0 8px 20px rgba(20,21,26,.10);
+
+    /* === §4 typography === */
+    --fs-h1: clamp(34px, 8.5vw, 60px);
+    --fs-h2: clamp(30px, 4.5vw, 42px);
+    --fs-title-exhibition: clamp(22px, 3vw, 32px);
+    --fs-body-lg:17px; --fs-body:15px; --fs-label:13px; --fs-caption:12px; --fs-meta:14px;
+    --lh-body:1.7; --lh-h2:1.2;
+
+    /* §1 폰트 정책 플레이스홀더(실제는 나눔고딕+Pretendard self-host) */
+    --app-font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{max-width:100%; overflow-x:hidden;}
+  body{
+    background:var(--bg-dark);
+    color:var(--text-light);
+    font-family:var(--app-font);
+    line-height:var(--lh-body);
+    word-break:keep-all;
+    -webkit-font-smoothing:antialiased;
+  }
+  img,svg{display:block; max-width:100%;}
+  a{color:inherit; text-decoration:none;}
+  button{font-family:inherit; cursor:pointer;}
+
+  :focus-visible{outline:2px solid var(--violet-500); outline-offset:2px;}
+
+  .wrap{max-width:1120px; margin:0 auto; padding:0 var(--space-5);}
+
+  /* ---------- 상단 바 ---------- */
+  .topbar{
+    position:sticky; top:0; z-index:20;
+    background:rgba(20,21,26,.86);
+    backdrop-filter: blur(8px);
+    border-bottom:1px solid var(--border-dark);
+  }
+  .topbar-inner{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px var(--space-5);
+    max-width:1120px; margin:0 auto;
+  }
+  .wordmark{font-size:19px; font-weight:800; letter-spacing:-.01em;}
+  .wordmark .w-lead{color:var(--violet-500);}
+  .wordmark .dot{color:var(--text-light-dim);}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    border:none; border-radius:var(--r-control);
+    font-weight:700; font-size:var(--fs-label);
+    min-height:44px; padding:0 20px;
+    transition:transform .15s ease-out, box-shadow .15s ease-out, background-color .15s ease-out;
+  }
+  .btn:active{transform:translateY(1px) scale(.98);}
+  @media (prefers-reduced-motion: reduce){ .btn{transition:none;} .btn:hover,.btn:active{transform:none;} }
+
+  /* Primary(코랄) — §7-1 다크: bg coral-500 / text text-dark */
+  .btn-primary{background:var(--coral-500); color:var(--text-dark);}
+  .btn-primary:hover{background:var(--coral-600); transform:translateY(-2px); box-shadow:var(--shadow-card-hover);}
+
+  /* §6 UX 원칙: 터치 타겟 44px 이하로 낮추지 않음 — 폭/폰트만 축소 */
+  .btn-primary.btn-sm{min-height:44px; padding:0 16px; font-size:13px;}
+
+  /* ---------- 히어로 ---------- */
+  .hero{
+    padding: var(--space-8) 0 var(--space-7);
+    border-bottom:1px solid var(--border-dark);
+  }
+  .hero-eyebrow{
+    font-size:var(--fs-caption); font-weight:700; letter-spacing:.06em;
+    color:var(--text-light-dim); text-transform:uppercase; margin-bottom:var(--space-4);
+  }
+  .hero h1{
+    font-size:var(--fs-h1); line-height:1.18; font-weight:800; letter-spacing:-.01em;
+    max-width:14ch; margin-bottom:var(--space-4);
+  }
+  .hero p{
+    font-size:var(--fs-body-lg); color:var(--text-light-dim);
+    max-width:44ch; margin-bottom:var(--space-6); line-height:var(--lh-body);
+  }
+  .hero-actions{display:flex; align-items:center; gap:var(--space-4); flex-wrap:wrap;}
+
+  /* 라이브 배지 — 시안 원색 직접(다크 전용), §3-2 온라인/라이브 역할 */
+  .live-badge{
+    display:inline-flex; align-items:center; gap:8px;
+    background:var(--surface-dark-2);
+    border:1px solid var(--border-dark);
+    border-radius:var(--r-pill);
+    padding:8px 14px 8px 10px;
+    font-size:var(--fs-label); color:var(--text-light);
+  }
+  .live-dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--cyan-500);
+    box-shadow:0 0 0 3px rgba(114,230,225,.16);
+  }
+  .live-badge b{color:var(--cyan-500); font-weight:700;}
+  .live-note{
+    display:block; margin-top:var(--space-2);
+    font-size:var(--fs-caption); color:var(--text-light-dim); opacity:.8;
+  }
+
+  /* ---------- 섹션 공통 ---------- */
+  section.block{padding:var(--space-7) 0;}
+  section.block + section.block{border-top:1px solid var(--border-dark);}
+  .block h2{font-size:var(--fs-h2); font-weight:800; margin-bottom:var(--space-2);}
+  .block .lead{font-size:var(--fs-body); color:var(--text-light-dim); margin-bottom:var(--space-5);}
+
+  /* ---------- 전시 카드(중립 프레임 — 액센트 절대 금지) ---------- */
+  .exh-card{
+    display:grid; grid-template-columns:1fr; gap:0;
+    background:var(--surface-dark-1);
+    border:1px solid var(--border-dark);
+    border-radius:var(--r-plate);
+    overflow:hidden;
+    max-width:640px;
+    transition:transform .18s ease-out, box-shadow .18s ease-out;
+  }
+  .exh-card:hover{transform:translateY(-4px); box-shadow:var(--shadow-card-hover);}
+  @media (prefers-reduced-motion: reduce){ .exh-card{transition:none;} .exh-card:hover{transform:none;} }
+  .exh-thumb{
+    aspect-ratio:16/10; width:100%;
+    /* 작품/전시 썸네일 = 중립 계열만. 액센트 색 사용 금지(§3-6·§3-8) */
+    background:
+      radial-gradient(120% 140% at 20% 15%, #34363f 0%, transparent 55%),
+      linear-gradient(155deg, #2A2C37 0%, #1c1e26 60%, #14151A 100%);
+    position:relative;
+  }
+  .exh-thumb::after{
+    content:"";
+    position:absolute; inset:0;
+    background-image:
+      linear-gradient(rgba(245,245,242,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(245,245,242,.05) 1px, transparent 1px);
+    background-size:28px 28px;
+  }
+  .exh-body{padding:var(--space-5);}
+  .exh-title{font-size:var(--fs-title-exhibition); font-weight:700; margin-bottom:4px;}
+  .exh-meta{font-size:var(--fs-meta); color:var(--text-light-dim); margin-bottom:var(--space-3);}
+  .exh-stats{
+    display:flex; align-items:center; gap:8px;
+    font-size:var(--fs-label); color:var(--text-light-dim);
+    margin-bottom:var(--space-4);
+  }
+  .exh-stats b{color:var(--cyan-500); font-weight:700;}
+  .exh-footer{display:flex; align-items:center; justify-content:space-between; gap:var(--space-4); flex-wrap:wrap;}
+  .exh-footer .fine{font-size:11px; color:var(--text-light-dim); opacity:.75;}
+
+  /* ---------- AI 관객 ---------- */
+  .ai-row{display:flex; gap:var(--space-4); flex-wrap:wrap; align-items:flex-start;}
+  .ai-avatar-group{display:flex; gap:14px; flex-wrap:wrap;}
+  .ai-avatar{
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    width:76px;
+  }
+  .ai-avatar .circle{
+    width:52px; height:52px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--surface-dark-2);
+    border:2px solid var(--border-dark);
+    font-weight:700; font-size:14px; color:var(--text-light-dim);
+  }
+  /* 선택 상태 — §7-0 공통 규칙: 테두리 2px --violet-500(다크 표면) */
+  .ai-avatar.is-selected .circle{
+    border-color:var(--violet-500);
+    color:var(--text-light);
+    box-shadow:0 0 0 3px rgba(139,114,255,.14);
+  }
+  .ai-avatar .label{font-size:11px; color:var(--text-light-dim); text-align:center;}
+  .ai-avatar.is-selected .label{color:var(--violet-300);}
+  .ai-copy{max-width:38ch; font-size:var(--fs-body); color:var(--text-light-dim); flex:1; min-width:220px;}
+  .ai-copy strong{color:var(--text-light); font-weight:700;}
+
+  /* ---------- 푸터 ---------- */
+  footer{
+    padding:var(--space-6) 0 calc(var(--space-6) + 72px);
+    border-top:1px solid var(--border-dark);
+    font-size:var(--fs-caption); color:var(--text-light-dim);
+  }
+
+  /* ---------- 모바일 하단 sticky CTA (§8-1 와이어프레임) ---------- */
+  .sticky-cta{
+    display:none;
+    position:fixed; left:0; right:0; bottom:0; z-index:30;
+    padding:12px var(--space-4) calc(12px + env(safe-area-inset-bottom));
+    background:rgba(20,21,26,.92);
+    backdrop-filter:blur(10px);
+    border-top:1px solid var(--border-dark);
+  }
+  .sticky-cta .btn{width:100%;}
+
+  @media (max-width:640px){
+    .sticky-cta{display:block;}
+    .hero{padding:var(--space-7) 0 var(--space-6);}
+    .exh-footer{align-items:flex-start;}
+  }
+
+  @media (min-width:641px){
+    .hero-actions .btn-primary{padding:0 28px;}
+  }
+</style>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="wordmark"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></div>
+    <a class="btn btn-primary btn-sm" href="#enter">입장하기</a>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <section class="hero">
+    <div class="hero-eyebrow">Web 3D 갤러리</div>
+    <h1>화면이 아니라,<br>전시장을 걷습니다.</h1>
+    <p>실제 3D 공간 안에서 작품 사이를 직접 이동하며 관람하는 온라인 전시입니다.
+      로그인 없이 지금 바로 들어갈 수 있습니다.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" id="enter" href="#">지금 입장하기</a>
+      <span class="live-badge">
+        <span class="live-dot" aria-hidden="true"></span>
+        실시간 관람객 <b>3명</b> · AI 관객 <b>2명</b>
+      </span>
+    </div>
+    <span class="live-note">* 라이브 배지 수치는 팔레트 검증용 예시 값입니다(실연동 아님)</span>
+  </section>
+
+  <section class="block">
+    <h2>지금 입장할 수 있는 전시</h2>
+    <p class="lead">현재 1건의 전시가 진행 중입니다.</p>
+
+    <div class="exh-card">
+      <div class="exh-thumb" role="img" aria-label="syhongart 개인전 대표 이미지(예시 프레임)"></div>
+      <div class="exh-body">
+        <div class="exh-title">syhongart 개인전</div>
+        <div class="exh-meta">작가 syhongart · 상시 관람 가능</div>
+        <div class="exh-stats">
+          <span class="live-dot" aria-hidden="true" style="width:6px;height:6px;"></span>
+          현재 관람객 <b>3명</b> · AI 관객 <b>2명</b>
+        </div>
+        <div class="exh-footer">
+          <a class="btn btn-primary btn-sm" href="#">입장하기</a>
+          <span class="fine">이미지·인원 수치는 목업 예시입니다</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>AI 관객이 함께 있습니다</h2>
+    <p class="lead">호스트가 되면 AI 관객이 전시장에 함께 입장해 작품을 감상합니다 — 순서·관심사는 매번 달라집니다.</p>
+    <div class="ai-row">
+      <div class="ai-avatar-group">
+        <div class="ai-avatar">
+          <div class="circle">AI</div>
+          <div class="label">큐레이터</div>
+        </div>
+        <div class="ai-avatar is-selected">
+          <div class="circle">AI</div>
+          <div class="label">미술사형</div>
+        </div>
+        <div class="ai-avatar">
+          <div class="circle">AI</div>
+          <div class="label">감성형</div>
+        </div>
+        <div class="ai-avatar">
+          <div class="circle">AI</div>
+          <div class="label">컬렉터형</div>
+        </div>
+      </div>
+      <p class="ai-copy">
+        <strong>선택된 관점 — 미술사형.</strong> 각 AI 관객은 저마다 다른 시선으로 작품을
+        감상하고 짧은 감상평을 남깁니다. 점수나 순위가 아니라 관점의 차이를 보여줍니다.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <div>OpenArtShow™ · 아야모™(Ayamo™) — 미등록, 출원 준비 중</div>
+    <div>© 2026 홍성용 (Hong Sungyong)</div>
+  </footer>
+</main>
+
+<div class="sticky-cta">
+  <a class="btn btn-primary" href="#enter">입장하기</a>
+</div>
