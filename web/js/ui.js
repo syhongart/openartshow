@@ -310,20 +310,36 @@ function injectStyles() {
   margin: 6px 0 0 2px;
 }
 .lu-swatches {
-  display: flex; flex-wrap: wrap; justify-content: center;
+  display: flex; flex-wrap: wrap;
   gap: 12px; margin-top: 4px;
 }
 .lu-swatch {
-  width: 28px; height: 28px; border-radius: 50%;
+  width: 32px; height: 32px; border-radius: 50%;
   border: none; cursor: pointer; padding: 0;
-  outline: 2px solid transparent; outline-offset: 3px;
+  /* 캔디 페블 입체감 — 상단 하이라이트 + 하단 음영 베벨, 그 위에 근접 드롭섀도 */
+  box-shadow:
+    inset 0 0 0 1px rgba(47,35,19,0.16),
+    inset 0 2px 3px rgba(255,255,255,0.5),
+    inset 0 -3px 4px rgba(40,30,10,0.14),
+    0 2px 3px rgba(40,30,10,0.18);
   transform: scale(1);
-  transition: outline-color 0.2s ease, transform 0.2s ease;
+  transition: box-shadow 0.18s ease, transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.lu-swatch:hover { transform: scale(1.12); }
+.lu-swatch:hover { transform: scale(1.16); box-shadow: inset 0 0 0 1px rgba(47,35,19,0.16), inset 0 2px 3px rgba(255,255,255,0.5), inset 0 -3px 4px rgba(40,30,10,0.14), 0 4px 8px rgba(40,30,10,0.24); }
+.lu-swatch:active { transform: scale(0.94); }
 .lu-swatch.lu-selected {
-  outline-color: var(--lu-gold);
-  transform: scale(1.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(47,35,19,0.16), inset 0 2px 3px rgba(255,255,255,0.5),
+    0 0 0 2px #fff, 0 0 0 4px var(--am-leaf-dark, var(--lu-gold)), 0 4px 8px rgba(40,30,10,0.28);
+  animation: lu-swatchpop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes lu-swatchpop {
+  0% { transform: scale(0.75); }
+  60% { transform: scale(1.24); }
+  100% { transform: scale(1.16); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lu-swatch, .lu-swatch:hover, .lu-swatch.lu-selected { transition: none; animation: none; }
 }
 .lu-chars {
   display: flex; flex-wrap: wrap; justify-content: center;
@@ -367,139 +383,320 @@ function injectStyles() {
 .lu-char-edit-link:hover { color: var(--lu-gold); }
 
 /* -------------------------- 아바타 커스터마이저 모달 -------------------------- */
+/* 자연/크래프트 톤 재스킨(2026-07 감독 지시, 2026-07-14 고급감 리파인) — 카테고리
+   탭·프리뷰 무대·프리셋/옷장 카드·원형 스와치 구조는 유지, 비주얼만 자연 감성으로.
+   잎사귀·접힌 종이·나무결 모티프는 전부 오리지널 SVG/CSS — 특정 브랜드 아이콘·
+   마크·서체·캐릭터 미사용, 특정 게임 카피 아님. 팔레트는 브랜드 그린 램프
+   (scripts/build-*.mjs g100~g900)를 기반으로 샌디 크림·우드 브라운을 더해
+   "볕 좋은 공방 오후" 톤으로 정합. */
+#lu-chibi-maker {
+  --am-cream: #fff8e8;
+  --am-cream-2: #fbe8bb;
+  --am-ink: #2f2313;
+  --am-ink-body: #6b5636;
+  --am-ink-dim: #a68f68;
+  --am-line: #e8cf9c;
+  --am-g100: #dcf0dc;
+  --am-leaf: #8fd0ab;
+  --am-leaf-dark: #4e8a6a;
+  --am-wood: #d3a765;
+  --am-wood-dark: #a97c42;
+  /* 종이 그레인 — 자체 SVG feTurbulence(중회색 스펙클, 저알파) data-URI, 외부 요청 0.
+     소스오버 합성이라 밝은 면 위에선 살짝 어둡게, 어두운 면 위에선 살짝 밝게 읽혀
+     어느 톤이든 결이 보인다(카드·프레임·오버레이 공용). */
+  --am-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.14 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* 우드 프레임 전용 — 배경이 더 진하고 채도가 높아 은은한 결이 묻히므로 살짝 더 진한 그레인 */
+  --am-grain-wood: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.2 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
 #lu-avatar-maker, #lu-chibi-maker {
   position: fixed; inset: 0; z-index: 985;
-  background: rgba(4,4,5,0.96);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
   opacity: 0; pointer-events: none;
   transition: opacity 0.3s ease;
 }
+#lu-avatar-maker { background: rgba(20,16,9,0.76); }
+#lu-chibi-maker {
+  /* 다층 깊이감 — 은은한 상단 광원 + 종이 그레인을 어둑한 스크림 위에 얹어
+     배경 자체가 평면 단색이 아니라 하나의 무대처럼 읽히게 한다. */
+  background-image: var(--am-grain), radial-gradient(120% 90% at 50% 6%, rgba(74,58,30,0.22), rgba(32,26,12,0) 55%);
+  background-repeat: repeat, no-repeat;
+  background-color: rgba(20,16,9,0.76);
+}
 #lu-avatar-maker.lu-open, #lu-chibi-maker.lu-open { opacity: 1; pointer-events: auto; }
 .lu-am-card {
-  width: 100%; max-width: 780px; max-height: 92vh;
-  background: rgba(255,255,255,0.98);
-  color: #111;
-  box-shadow: 0 30px 90px rgba(0,0,0,0.5);
+  width: 100%; max-width: 860px; max-height: 92vh;
+  background-image: var(--am-grain), linear-gradient(165deg, var(--am-cream) 0%, #fffaee 40%, var(--am-cream-2) 100%);
+  background-repeat: repeat, no-repeat;
+  color: var(--am-ink);
+  border-radius: 30px;
+  border: 3px solid rgba(211,167,101,0.5);
+  /* 근접 접지 그림자 + 원거리 앰비언트 그림자를 겹쳐 카드가 배경 위에 실제로
+     "떠 있는" 다층 깊이감을 낸다(평면 단일 그림자 금지). */
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.7) inset,
+    0 2px 4px rgba(40,30,10,0.16),
+    0 10px 20px rgba(40,30,10,0.18),
+    0 32px 64px rgba(40,30,10,0.32),
+    0 72px 120px rgba(20,15,6,0.28);
   display: flex; flex-direction: column;
-  transform: scale(0.97); opacity: 0;
-  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.32s ease;
+  overflow: hidden;
+  transform: scale(0.96) translateY(6px); opacity: 0;
+  transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
 }
-#lu-avatar-maker.lu-open .lu-am-card, #lu-chibi-maker.lu-open .lu-am-card { transform: scale(1); opacity: 1; }
+#lu-avatar-maker.lu-open .lu-am-card, #lu-chibi-maker.lu-open .lu-am-card { transform: scale(1) translateY(0); opacity: 1; }
 .lu-am-head {
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid #eee;
+  padding: 20px 24px 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0));
+  border-bottom: 2px solid var(--am-line);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.5);
 }
-.lu-am-title { font-size: 13px; letter-spacing: 0.16em; text-indent: 0.16em; color: #111; }
+.lu-am-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 16px; font-weight: 800; letter-spacing: 0.04em;
+  color: var(--am-ink);
+}
+.lu-am-title-icon {
+  display: flex; width: 24px; height: 24px; flex: 0 0 auto;
+  color: var(--am-leaf-dark);
+  filter: drop-shadow(0 1px 0 rgba(255,255,255,0.55)) drop-shadow(0 2px 3px rgba(78,138,106,0.22));
+}
+.lu-am-title-icon svg { width: 100%; height: 100%; }
 #lu-am-close {
   flex: 0 0 auto;
-  width: 30px; height: 30px;
+  width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
-  background: transparent; border: 1px solid #ddd; border-radius: 50%;
-  color: #999; font-size: 15px; font-weight: 300; line-height: 1;
+  background: var(--am-cream-2);
+  border: 2px solid var(--am-wood);
+  border-radius: 50%;
+  color: var(--am-wood-dark); font-size: 17px; font-weight: 400; line-height: 1;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 3px 0 rgba(169,124,66,0.45), 0 6px 12px rgba(40,30,10,0.2);
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-#lu-am-close:hover { border-color: var(--lu-gold); color: var(--lu-gold); transform: rotate(90deg); }
+#lu-am-close:hover { border-color: var(--am-leaf-dark); color: #fff; background: var(--lu-gold); transform: translateY(1px) rotate(90deg); box-shadow: 0 2px 0 rgba(78,138,106,0.5), 0 4px 8px rgba(40,30,10,0.18); }
+#lu-am-close:active { transform: translateY(3px) rotate(90deg); box-shadow: none; }
 .lu-am-body {
   flex: 1 1 auto; min-height: 0;
-  display: flex; gap: 20px;
-  padding: 20px;
+  display: flex; gap: 24px;
+  padding: 24px;
   overflow: hidden;
 }
+/* ---- 프리뷰 무대 — 300×400 백킹 해상도(ensurePreviewRenderer)는 불변, 바깥 프레임만 장식 ----
+   바깥 padding 링을 우드 톤 다층 그라디언트 + 결 스트라이프로 채워 "액자" 느낌을 낸다. */
 .lu-am-preview {
   flex: 0 0 auto;
-  width: 300px; height: 400px;
-  background: #f2efe6;
-  border: 1px solid #eee;
+  align-self: flex-start;   /* 긴 탭에서 프레임이 패널 높이만큼 늘어나 아래 빈 나무 슬래브가 생기지 않게 — 스테이지에 맞춰 감싼다 */
+  width: 320px;
+  padding: 16px 16px 40px;
+  border-radius: 26px;
   position: relative;
   touch-action: none;
+  background-image:
+    var(--am-grain-wood),
+    repeating-linear-gradient(4deg, rgba(255,244,220,0.14) 0 2px, rgba(94,61,20,0.06) 2px 4px, transparent 4px 8px),
+    linear-gradient(155deg, #eecb92 0%, var(--am-wood) 48%, var(--am-wood-dark) 130%);
+  background-repeat: repeat, repeat, no-repeat;
+  border: 3px solid var(--am-wood-dark);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,244,220,0.35),
+    inset 0 3px 4px rgba(255,244,220,0.4),
+    inset 0 -5px 10px rgba(58,38,10,0.32),
+    0 2px 4px rgba(40,30,10,0.14),
+    0 16px 30px rgba(40,30,10,0.2),
+    0 36px 64px rgba(40,30,10,0.18);
 }
-.lu-am-preview canvas { display: block; width: 100%; height: 100%; cursor: grab; }
-.lu-am-preview.lu-dragging canvas { cursor: grabbing; }
+.lu-am-stage {
+  width: 100%; aspect-ratio: 3 / 4;
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #f6f1e3;
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,0.6), inset 0 0 0 3px rgba(211,167,101,0.3), inset 0 2px 10px rgba(40,30,10,0.12);
+}
+.lu-am-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.lu-am-preview.lu-dragging .lu-am-stage canvas { cursor: grabbing; }
+/* 부드러운 비네트 + 접지 그림자 + 은은한 종이 결 — canvas가 불투명(scene.background)이라
+   위에 멀티플라이로 얹는다 */
+.lu-am-stage::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: var(--am-grain), radial-gradient(120% 100% at 50% 24%, rgba(255,247,222,0) 48%, rgba(70,50,20,0.2) 100%);
+  background-repeat: repeat, no-repeat;
+  mix-blend-mode: multiply;
+}
+.lu-am-stage::after {
+  content: ''; position: absolute; left: 50%; bottom: 7%;
+  width: 58%; height: 8%;
+  transform: translateX(-50%);
+  border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, rgba(58,42,16,0.44), rgba(58,42,16,0) 72%);
+  mix-blend-mode: multiply;
+  filter: blur(1.5px);
+}
 .lu-am-preview-hint {
-  position: absolute; left: 0; right: 0; bottom: 8px;
-  text-align: center;
-  font-size: 9px; letter-spacing: 0.06em; color: #b0aca4;
+  position: absolute; left: 50%; bottom: 10px;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: rgba(37,27,14,0.68);
+  color: #fff8e8;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(20,14,6,0.3);
   pointer-events: none;
 }
+.lu-am-preview-hint svg { width: 11px; height: 11px; flex: 0 0 auto; }
+/* ---- 카테고리 내비 — 종족·얼굴·헤어·의상·장식·옷장 섹션 전환 ---- */
 .lu-am-panel {
-  flex: 1 1 auto; min-width: 0;
+  flex: 1 1 auto; min-width: 0; min-height: 0;
   display: flex; flex-direction: column;
 }
-.lu-am-tabs {
+.lu-am-nav {
   flex: 0 0 auto;
-  display: flex; flex-wrap: wrap; gap: 6px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #eee;
+  display: flex; gap: 8px;
+  padding-bottom: 12px; margin-bottom: 16px;
+  border-bottom: 2px dashed var(--am-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.lu-am-nav::-webkit-scrollbar { display: none; }
+.lu-am-navtab {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  min-width: 58px;
+  font-family: var(--lu-font); font-weight: 700;
+  font-size: 10.5px; letter-spacing: 0.01em;
+  color: var(--am-ink-dim); background: #fff;
+  border: 2px solid transparent; border-radius: 18px;
+  padding: 8px 12px 7px; cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease;
+}
+.lu-am-navtab svg { width: 19px; height: 19px; }
+.lu-am-navtab:hover { color: var(--am-ink); background: var(--am-cream-2); transform: translateY(-1px); }
+.lu-am-navtab:active { transform: scale(0.94); }
+/* 선택 탭 — 통통하게 떠오른 raised pill + 재렌더마다 살짝 튀는 마이크로 팝
+   (매 렌더 시 새 DOM 노드로 재생성되므로 애니메이션이 자연히 재생된다) */
+.lu-am-navtab.lu-selected {
+  color: var(--am-ink); background: var(--am-g100);
+  border-color: var(--am-leaf);
+  border-radius: 22px 26px 24px 28px;
+  box-shadow: 0 3px 0 rgba(78,138,106,0.35), 0 8px 14px rgba(78,138,106,0.18), inset 0 0 0 1px rgba(255,255,255,0.6);
+  animation: lu-navpop 0.34s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.lu-am-navtab.lu-selected svg { color: var(--am-leaf-dark); }
+@keyframes lu-navpop {
+  0% { transform: translateY(0) scale(0.84); }
+  55% { transform: translateY(-4px) scale(1.06); }
+  100% { transform: translateY(-2px) scale(1); }
+}
+.lu-am-tabs {
+  display: flex; flex-wrap: wrap; gap: 8px;
 }
 .lu-am-tab {
-  font-family: var(--lu-font); font-weight: 300;
-  font-size: 11px; letter-spacing: 0.04em;
-  color: #666; background: #fafafa;
-  border: 1px solid #eee; border-radius: 2px;
-  padding: 6px 11px; cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  font-family: var(--lu-font); font-weight: 600;
+  font-size: 12px; letter-spacing: 0.01em;
+  color: var(--am-ink-body); background: #fffdf6;
+  border: 2px solid var(--am-line); border-radius: 16px;
+  padding: 8px 16px; cursor: pointer;
+  box-shadow: 0 2px 0 rgba(232,207,156,0.7);
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease, transform 0.1s ease, box-shadow 0.16s ease;
 }
-.lu-am-tab:hover { border-color: rgba(0,0,0,0.25); }
-.lu-am-tab.lu-selected { border-color: var(--lu-gold); color: #111; background: rgba(95,158,125,0.12); font-weight: 500; }
+.lu-am-tab:hover { border-color: var(--am-leaf); color: var(--am-ink); background: var(--am-cream-2); transform: translateY(-1px); }
+.lu-am-tab:active { transform: translateY(1px) scale(0.98); box-shadow: none; }
+.lu-am-tab.lu-selected {
+  border-color: var(--am-leaf-dark); color: var(--am-ink); background: var(--am-g100);
+  font-weight: 800;
+  box-shadow: 0 2px 0 rgba(78,138,106,0.4), 0 5px 10px rgba(78,138,106,0.16), inset 0 0 0 1px rgba(143,208,171,0.5);
+  animation: lu-chippop 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes lu-chippop {
+  0% { transform: scale(0.88); }
+  60% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+/* 프리셋 카드 — 스킨/포인트 색 미리보기 도트가 붙은 쇼케이스 칩 */
+.lu-am-presets { gap: 10px; }
+.lu-am-presets .lu-am-tab { display: flex; align-items: center; gap: 9px; padding: 6px 16px 6px 6px; }
+.lu-am-preset-dot {
+  width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow:
+    inset 0 0 0 1px rgba(47,35,19,0.18),
+    inset 0 2px 3px rgba(255,255,255,0.55),
+    inset 0 -3px 4px rgba(40,30,10,0.16),
+    0 2px 3px rgba(40,30,10,0.2);
+}
 .lu-am-tabpage {
   flex: 1 1 auto; min-height: 0;
   overflow-y: auto;
-  padding-top: 14px;
+  padding: 2px 4px 6px 2px;
 }
+.lu-am-tabpage::-webkit-scrollbar { width: 7px; }
+.lu-am-tabpage::-webkit-scrollbar-thumb { background: var(--am-line); border-radius: 8px; }
 .lu-am-group-title {
-  font-size: 12px; font-weight: 600; letter-spacing: 0.1em;
-  color: var(--lu-gold);
-  margin: 22px 0 4px; padding-top: 14px;
-  border-top: 1px solid #eee;
-  position: sticky; top: 0; z-index: 1;
-  background: rgba(255,255,255,0.98);
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.04em;
+  color: var(--am-leaf-dark);
+  margin: 0 0 16px;
 }
-.lu-am-group-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.lu-am-group-icon { display: flex; width: 14px; height: 14px; flex: 0 0 auto; }
+.lu-am-group-icon svg { width: 100%; height: 100%; }
 .lu-am-section-title {
-  font-size: 10px; letter-spacing: 0.14em; color: #999;
-  margin: 14px 0 8px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.08em; color: var(--am-ink-dim);
+  margin: 16px 0 8px;
 }
 /* 내 옷장 (로그인 전용) */
 .lu-closet-save {
-  width: 100%; margin: 4px 0 10px;
-  border: 1px dashed var(--lu-gold); background: rgba(191,161,74,0.06);
-  color: var(--lu-gold); font-weight: 600;
+  width: 100%; margin: 2px 0 16px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  border: 2px dashed var(--am-leaf-dark); background: rgba(143,208,171,0.14);
+  color: var(--am-leaf-dark); font-weight: 800; border-radius: 18px;
+  padding: 12px 16px;
 }
-.lu-closet-save:hover { background: rgba(191,161,74,0.14); }
-.lu-closet-empty { font-size: 12px; color: #aaa; padding: 2px 0 6px; }
+.lu-closet-save:hover { background: rgba(143,208,171,0.26); border-color: var(--am-leaf-dark); }
+.lu-closet-empty { font-size: 12px; color: var(--am-ink-dim); padding: 6px 2px 10px; }
 .lu-closet-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
-  gap: 8px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 12px;
 }
 .lu-closet-cell { position: relative; }
 .lu-closet-load {
   width: 100%; aspect-ratio: 3 / 4;
-  border: 1px solid #e3ddca; border-radius: 10px;
-  background-color: #f6f1e3; background-size: cover; background-position: center;
+  border: 2px solid var(--am-line); border-radius: 16px;
+  background-color: var(--am-cream-2); background-size: cover; background-position: center;
   display: flex; align-items: flex-end; justify-content: center;
-  padding: 0; overflow: hidden; cursor: pointer;
-  transition: border-color .15s, transform .1s;
+  padding: 0; overflow: hidden; cursor: pointer; position: relative;
+  box-shadow: 0 2px 0 rgba(232,207,156,0.6), 0 5px 12px rgba(40,30,10,0.1);
+  transition: border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
 }
-.lu-closet-load:hover { border-color: var(--lu-gold); transform: translateY(-1px); }
+/* 접힌 종이 모서리 — 카탈로그 카드 느낌(오리지널 CSS 그라디언트 폴드, 특정 게임 UI 카피 아님) */
+.lu-closet-load::before {
+  content: ''; position: absolute; top: 0; right: 0; z-index: 2;
+  width: 20px; height: 20px;
+  background: linear-gradient(135deg, #fffefa 0%, #fffefa 48%, #ecdcac 52%, #cdb787 100%);
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
+  filter: drop-shadow(-1.5px 1.5px 1.5px rgba(40,30,10,0.22));
+}
+.lu-closet-load:hover { border-color: var(--am-leaf); transform: translateY(-3px); box-shadow: 0 4px 0 rgba(232,207,156,0.6), 0 14px 26px rgba(40,30,10,0.2); }
 .lu-closet-name {
-  width: 100%; font-size: 10px; font-weight: 600; color: #fff;
-  padding: 8px 4px 4px; text-align: center;
-  background: linear-gradient(to top, rgba(0,0,0,0.55), rgba(0,0,0,0));
+  width: 100%; font-size: 10px; font-weight: 700; color: #fff;
+  padding: 8px 4px 5px; text-align: center;
+  background: linear-gradient(to top, rgba(40,30,10,0.66), rgba(40,30,10,0));
+  letter-spacing: 0.02em;
 }
 .lu-closet-del {
-  position: absolute; top: -6px; right: -6px;
-  width: 20px; height: 20px; line-height: 18px; padding: 0;
-  border-radius: 50%; border: 1px solid #e3ddca; background: #fff;
-  color: #b44; font-size: 14px; cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  position: absolute; top: -8px; right: -8px; z-index: 3;
+  width: 24px; height: 24px; line-height: 21px; padding: 0;
+  border-radius: 50%; border: 2px solid #fff; background: #e8735c;
+  color: #fff; font-size: 14px; cursor: pointer;
+  box-shadow: 0 2px 0 rgba(160,60,40,0.4), 0 3px 6px rgba(40,30,10,0.2);
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-.lu-closet-del:hover { background: #b44; color: #fff; border-color: #b44; }
+.lu-closet-del:hover { background: #d85f47; transform: scale(1.08); }
+.lu-closet-del:active { transform: translateY(1px) scale(1.02); box-shadow: 0 1px 0 rgba(160,60,40,0.4); }
 .lu-am-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
@@ -507,53 +704,71 @@ function injectStyles() {
 }
 .lu-am-thumb {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
-  background: #fafafa; border: 1px solid #eee; border-radius: 2px;
+  background: #fffdf6; border: 2px solid var(--am-line); border-radius: 14px;
   padding: 6px 4px 7px; cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
-.lu-am-thumb:hover { border-color: rgba(0,0,0,0.25); }
-.lu-am-thumb.lu-selected { border-color: var(--lu-gold); background: rgba(95,158,125,0.12); }
+.lu-am-thumb:hover { border-color: var(--am-leaf); }
+.lu-am-thumb.lu-selected { border-color: var(--am-leaf-dark); background: var(--am-g100); }
 .lu-am-thumb img {
   width: 48px; height: 48px; object-fit: contain;
-  background: #fff; border: 1px solid #f0f0ee;
+  background: #fff; border: 1px solid var(--am-line);
 }
 .lu-am-thumb-none {
   width: 48px; height: 48px;
   display: flex; align-items: center; justify-content: center;
-  background: #fff; border: 1px solid #f0f0ee;
-  font-size: 10px; color: #bbb; letter-spacing: 0.02em;
+  background: #fff; border: 1px solid var(--am-line);
+  font-size: 10px; color: var(--am-ink-dim); letter-spacing: 0.02em;
 }
 .lu-am-thumb-label {
-  font-size: 9px; letter-spacing: 0.01em; color: #777;
+  font-size: 9px; letter-spacing: 0.01em; color: var(--am-ink-dim);
   text-align: center;
   max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lu-am-cute-row { margin-top: 4px; }
 .lu-am-cute-label {
   display: flex; justify-content: space-between;
-  font-size: 11px; color: #666; margin-bottom: 8px;
+  font-size: 11px; color: var(--am-ink-body); margin-bottom: 8px;
 }
-.lu-am-cute-label b { color: var(--lu-gold); font-weight: 400; }
+.lu-am-cute-label b { color: var(--am-leaf-dark); font-weight: 700; }
 #lu-am-cute { width: 100%; accent-color: var(--lu-gold); }
 .lu-am-footer {
   flex: 0 0 auto;
-  display: flex; gap: 10px; justify-content: flex-end;
-  padding: 14px 20px 18px;
-  border-top: 1px solid #eee;
+  display: flex; gap: 10px; justify-content: flex-end; align-items: center;
+  padding: 16px 24px 20px;
+  border-top: 2px solid var(--am-line);
+  background: linear-gradient(0deg, rgba(255,255,255,0.5), rgba(255,255,255,0));
 }
 .lu-am-btn {
-  font-family: var(--lu-font); font-weight: 300;
-  font-size: 12px; letter-spacing: 0.1em;
-  color: #666; background: transparent;
-  border: 1px solid #ddd; border-radius: 2px;
-  padding: 10px 18px; cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  font-family: var(--lu-font); font-weight: 700;
+  font-size: 12.5px; letter-spacing: 0.02em;
+  color: var(--am-ink-body); background: #fffdf6;
+  border: 2px solid var(--am-line); border-radius: 999px;
+  padding: 12px 20px; cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 3px 0 rgba(232,207,156,0.7), 0 6px 12px rgba(40,30,10,0.08);
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease, transform 0.12s ease, box-shadow 0.15s ease;
 }
-.lu-am-btn:hover { border-color: rgba(0,0,0,0.35); color: #222; }
+.lu-am-btn:hover { border-color: var(--am-leaf); color: var(--am-ink); transform: translateY(-1px); }
+.lu-am-btn:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 0 rgba(232,207,156,0.7); }
+/* 저장 CTA — 캔디 셸 상단 하이라이트("립") + 하단 음영으로 통통한 눌림감을 강조 */
 .lu-am-btn-primary {
-  color: #111; background: var(--lu-gold); border-color: var(--lu-gold);
+  color: #fff; background: linear-gradient(180deg, #8fd0ab, var(--lu-gold) 60%, #4e8a6a);
+  border-color: #3f7a5c;
+  font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -10px 14px rgba(37,74,55,0.3), 0 4px 0 #3f7a5c, 0 10px 22px rgba(78,138,106,0.4);
 }
-.lu-am-btn-primary:hover { background: #4e8a6a; border-color: #4e8a6a; color: #111; }
+.lu-am-btn-primary:hover { background: linear-gradient(180deg, #a0dab9, #6bab86 60%, #4e8a6a); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -10px 14px rgba(37,74,55,0.32), 0 5px 0 #3f7a5c, 0 12px 26px rgba(78,138,106,0.44); }
+.lu-am-btn-primary:active { transform: translateY(3px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 1px 0 #3f7a5c, 0 3px 8px rgba(78,138,106,0.3); }
+#lu-chibi-maker button:focus-visible {
+  outline: 2px solid var(--am-leaf-dark); outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  #lu-avatar-maker, #lu-chibi-maker, .lu-am-card, #lu-am-close, .lu-am-navtab, .lu-am-tab, .lu-am-btn, .lu-closet-load, .lu-closet-del,
+  .lu-am-navtab.lu-selected, .lu-am-tab.lu-selected {
+    transition: none !important;
+    animation: none !important;
+  }
+}
 
 #lu-enter-btn {
   width: 100%; margin-top: 30px;
@@ -1527,11 +1742,18 @@ function injectStyles() {
 /* --------------------- 아바타 커스터마이저: 세로 배치 폴백 --------------------- */
 @media (max-width: 720px) {
   #lu-avatar-maker, #lu-chibi-maker { padding: 8px; }
-  .lu-am-card { max-width: 92vw; max-height: 88vh; }
-  .lu-am-body { flex-direction: column; padding: 14px; gap: 12px; }
-  .lu-am-preview { width: auto; max-width: 100%; height: min(26vh, 230px); aspect-ratio: 3 / 4; margin: 0 auto; }
+  .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
+  .lu-am-head { padding: 14px 16px 12px; }
+  .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
+  .lu-am-preview { width: 168px; max-width: 52vw; margin: 0 auto; padding: 7px 7px 22px; border-radius: 20px; }
+  .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
   .lu-am-panel { min-height: 0; }
-  .lu-am-tabpage { min-height: 220px; }
+  .lu-am-nav { padding-bottom: 6px; margin-bottom: 8px; gap: 4px; }
+  .lu-am-navtab { min-width: 50px; padding: 6px 6px 5px; font-size: 9.5px; }
+  .lu-am-navtab svg { width: 16px; height: 16px; }
+  .lu-am-tabpage { min-height: 180px; }
+  .lu-am-footer { padding: 12px 16px 16px; }
+  .lu-am-btn { padding: 10px 16px; font-size: 12px; }
 }
 `;
   const style = document.createElement('style');
@@ -2508,14 +2730,34 @@ const CHIBI_CLOTH_COLORS = [
 // (사진→아야모 휴리스틱 분석기는 감독 판단으로 철회 — "색만 맞춰서는 큰 의미가
 // 없다". 비전 AI 버전은 백엔드 확보 후 재도전. 구현은 git 이력 b2ff2f3b 참조.)
 
+// 카테고리 내비 아이콘 — 인라인 SVG(외부 에셋 0), currentColor로 탭 색상 상속
+const ICON_ROTATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 12a8 8 0 1 1 2.4 5.7"/><path d="M4 17v-5h5"/></svg>';
+// 잎사귀 모티프 — 오리지널 실루엣(눈물방울 잎 + 잎맥 한 줄). 특정 브랜드 아이콘 카피 아님.
+const ICON_LEAF = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.5 19.5C4.5 10 11 4 20 4c0 9-6 15.5-15.5 15.5A1 1 0 0 1 4.5 19.5Z"/><path d="M6.7 17.3C10.2 13.3 14.2 9.3 18 5.5" stroke="rgba(255,255,255,0.55)" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>';
+const CHIBI_NAV_CATS = [
+  { id: 'species', label: '종족', icon: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="7" cy="8.3" r="2.1"/><circle cx="12" cy="6.1" r="2.1"/><circle cx="17" cy="8.3" r="2.1"/><path d="M12 11.6c-3.4 0-6.1 2.4-6.1 5.2 0 2 1.8 3.3 3.7 2.6.9-.3 1.7-.3 2.6 0 1.9.7 3.7-.6 3.7-2.6 0-2.8-2.5-5.2-5.9-5.2Z"/></svg>' },
+  { id: 'face', label: '얼굴', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10.6" r="0.9" fill="currentColor" stroke="none"/><circle cx="15" cy="10.6" r="0.9" fill="currentColor" stroke="none"/><path d="M8.6 14.6c1 1.1 2.1 1.7 3.4 1.7s2.4-.6 3.4-1.7"/></svg>' },
+  { id: 'hair', label: '헤어', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M5 12.5C5 8 8.1 4.5 12 4.5s7 3.5 7 8"/><path d="M6.3 12.5v3.2M10.1 12.5v4.2M13.9 12.5v4.2M17.7 12.5v3.2"/></svg>' },
+  { id: 'outfit', label: '의상', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M8.3 4.2 4.3 7.3l2 3 2-1.1v9.6h7.4V9.2l2 1.1 2-3-4-3.1c-.7 1-1.8 1.6-3.7 1.6s-3-.6-3.7-1.6Z"/></svg>' },
+  { id: 'acc', label: '장식', icon: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3c.5 3.5 1.7 6.3 5.2 7.6-3.5 1.3-4.7 4.1-5.2 7.6-.5-3.5-1.7-6.3-5.2-7.6C10.3 9.3 11.5 6.5 12 3Z"/><circle cx="19" cy="5.2" r="1.2"/></svg>' },
+  { id: 'closet', label: '옷장', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.6" r="1.3"/><path d="M12 5.9v1.8"/><path d="M12 7.7 4.3 13.4h15.4L12 7.7Z"/><path d="M4.3 17.4h15.4"/></svg>' },
+];
+
 function buildChibiMaker() {
   const closeX = el('button', { id: 'lu-am-close', type: 'button', 'aria-label': '닫기', text: '×' });
-  const title = el('div', { className: 'lu-am-title', text: '아야모 꾸미기' });
+  const titleIcon = el('span', { className: 'lu-am-title-icon', 'aria-hidden': 'true' });
+  titleIcon.innerHTML = ICON_LEAF;
+  const title = el('div', { className: 'lu-am-title' }, [titleIcon, el('span', { text: '아야모 꾸미기' })]);
   const head = el('div', { className: 'lu-am-head' }, [title, closeX]);
 
+  // 프리뷰 "무대" — 300×400 백킹 해상도(ensurePreviewRenderer의 setSize와 정합)는 그대로 두고,
+  // 바깥 lu-am-preview 프레임을 장식용 여백으로 감싸 게임 캐릭터 크리에이터급 무대감을 낸다.
   const canvas = el('canvas', { width: '300', height: '400' });
-  const previewHint = el('div', { className: 'lu-am-preview-hint', text: '드래그해서 회전' });
-  const previewBox = el('div', { className: 'lu-am-preview' }, [canvas, previewHint]);
+  const stage = el('div', { className: 'lu-am-stage' }, [canvas]);
+  const previewHint = el('div', { className: 'lu-am-preview-hint' });
+  previewHint.innerHTML = ICON_ROTATE;
+  previewHint.appendChild(el('span', { text: '드래그해서 회전' }));
+  const previewBox = el('div', { className: 'lu-am-preview' }, [stage, previewHint]);
 
 
   let previewRenderer = null;
@@ -2550,8 +2792,12 @@ function buildChibiMaker() {
     previewScene.add(previewRotator);
   }
 
+  // 카테고리 내비 — 종족·얼굴·헤어·의상·장식·옷장 섹션 전환(스크롤 지옥 대신 탭 전환)
+  let activeCat = 'species';
+  const nav = el('div', { className: 'lu-am-nav', role: 'tablist', 'aria-label': '꾸미기 카테고리' });
   const panel = el('div', { className: 'lu-am-panel' });
   const page = el('div', { className: 'lu-am-tabpage' });
+  panel.appendChild(nav);
   panel.appendChild(page);
   const body = el('div', { className: 'lu-am-body' }, [previewBox, panel]);
 
@@ -2586,7 +2832,13 @@ function buildChibiMaker() {
     page.appendChild(el('div', { className: 'lu-am-section-title', text: '프리셋 — 골라서 시작' }));
     const row = el('div', { className: 'lu-am-tabs lu-am-presets' });
     CHIBI_PRESETS.forEach((pre) => {
-      const btn = el('button', { type: 'button', className: 'lu-am-tab', text: pre.name });
+      const btn = el('button', { type: 'button', className: 'lu-am-tab lu-am-preset' });
+      const c1 = pre.look.skin || DEFAULT_CHIBI.skin;
+      const c2 = pre.look.top || pre.look.hairColor || DEFAULT_CHIBI.top;
+      const dot = el('span', { className: 'lu-am-preset-dot', 'aria-hidden': 'true' });
+      dot.style.background = `conic-gradient(${c1} 0deg 180deg, ${c2} 180deg 360deg)`;
+      btn.appendChild(dot);
+      btn.appendChild(el('span', { className: 'lu-am-preset-label', text: pre.name }));
       btn.addEventListener('click', () => applyPreset(pre.look));
       row.appendChild(btn);
     });
@@ -2695,52 +2947,88 @@ function buildChibiMaker() {
   }
 
   function groupTitle(text) {
-    page.appendChild(el('div', { className: 'lu-am-group-title', text }));
+    const row = el('div', { className: 'lu-am-group-title' });
+    const icon = el('span', { className: 'lu-am-group-icon', 'aria-hidden': 'true' });
+    icon.innerHTML = ICON_LEAF;
+    row.appendChild(icon);
+    row.appendChild(el('span', { text }));
+    page.appendChild(row);
+  }
+
+  // 카테고리 내비 재구성 — 매 렌더마다 새로 그리되(기존 전체-리렌더 패턴과 동일 비용),
+  // 로그인 여부에 따라 옷장 탭 노출을 즉시 반영한다.
+  function renderNav() {
+    nav.textContent = '';
+    const showCloset = !!authGetProfile();
+    const cats = CHIBI_NAV_CATS.filter((c) => c.id !== 'closet' || showCloset);
+    if (!cats.some((c) => c.id === activeCat)) activeCat = 'species';
+    cats.forEach((cat) => {
+      const selected = activeCat === cat.id;
+      const btn = el('button', {
+        type: 'button',
+        role: 'tab',
+        className: 'lu-am-navtab' + (selected ? ' lu-selected' : ''),
+        'aria-selected': selected ? 'true' : 'false',
+        'aria-label': cat.label,
+      });
+      btn.innerHTML = cat.icon;
+      btn.appendChild(el('span', { className: 'lu-am-navtab-label', text: cat.label }));
+      btn.addEventListener('click', () => {
+        if (activeCat === cat.id) return;
+        activeCat = cat.id;
+        renderPanel();
+        page.scrollTop = 0;
+      });
+      nav.appendChild(btn);
+    });
   }
 
   function renderPanel() {
+    renderNav();
     page.textContent = '';
     if (!chibiParams) return;
     const isAnimal = chibiParams.species && chibiParams.species !== 'human';
 
-    presetRow();
-    closetRow();
-
-    groupTitle('종족 · 성별');
-    chipRow('종족', CHIBI_SPECIES, 'species');
-    if (!isAnimal) chipRow('성별', CHIBI_GENDERS, 'gender');
-
-    groupTitle('얼굴');
-    chipRow('얼굴형', CHIBI_FACE_SHAPES, 'face');
-    chipRow('눈', CHIBI_EYE_STYLES, 'eyeStyle');
-    chipRow('입', CHIBI_MOUTH_STYLES, 'mouth');
-    chipRow('볼터치', boolOpts('없음', '있음'), 'blush');
-    swatchRow(isAnimal ? '털 색' : '피부색', SKIN_TONES, 'skin');
-    swatchRow('눈동자 색', EYE_COLORS, 'eyeColor');
-
-    if (!isAnimal) {
-      groupTitle('헤어');
-      chipRow('헤어', CHIBI_HAIR_STYLES, 'hairStyle');
-      swatchRow('머리 색', HAIR_COLORS, 'hairColor');
-    } else {
-      groupTitle('포인트');
-      swatchRow('귀·꼬리 색', HAIR_COLORS, 'hairColor');
+    if (activeCat === 'species') {
+      presetRow();
+      groupTitle('종족 · 성별');
+      chipRow('종족', CHIBI_SPECIES, 'species');
+      if (!isAnimal) chipRow('성별', CHIBI_GENDERS, 'gender');
+    } else if (activeCat === 'face') {
+      groupTitle('얼굴');
+      chipRow('얼굴형', CHIBI_FACE_SHAPES, 'face');
+      chipRow('눈', CHIBI_EYE_STYLES, 'eyeStyle');
+      chipRow('입', CHIBI_MOUTH_STYLES, 'mouth');
+      chipRow('볼터치', boolOpts('없음', '있음'), 'blush');
+      swatchRow(isAnimal ? '털 색' : '피부색', SKIN_TONES, 'skin');
+      swatchRow('눈동자 색', EYE_COLORS, 'eyeColor');
+    } else if (activeCat === 'hair') {
+      if (!isAnimal) {
+        groupTitle('헤어');
+        chipRow('헤어', CHIBI_HAIR_STYLES, 'hairStyle');
+        swatchRow('머리 색', HAIR_COLORS, 'hairColor');
+      } else {
+        groupTitle('포인트');
+        swatchRow('귀·꼬리 색', HAIR_COLORS, 'hairColor');
+      }
+    } else if (activeCat === 'outfit') {
+      groupTitle('의상');
+      chipRow('상의 패턴', CHIBI_TOP_PATTERNS, 'pattern');
+      chipRow('의상 세트', CHIBI_OUTFITS, 'outfit');
+      chipRow('하의', CHIBI_BOTTOM_TYPES, 'bottomType');
+      swatchRow('상의 색', CHIBI_CLOTH_COLORS, 'top');
+      swatchRow('하의 색', CHIBI_CLOTH_COLORS, 'bottom');
+      swatchRow('신발 색', CHIBI_CLOTH_COLORS, 'shoes');
+    } else if (activeCat === 'acc') {
+      groupTitle('장식');
+      chipRow('머리 장식', CHIBI_ACCESSORIES, 'acc');
+      chipRow('안경', boolOpts('없음', '착용'), 'glasses');
+      chipRow('헤일로', boolOpts('없음', '있음'), 'halo');
+      chipRow('날개', boolOpts('없음', '있음'), 'wings');
+      chipRow('가슴 하트', boolOpts('없음', '있음'), 'heart');
+    } else if (activeCat === 'closet') {
+      closetRow();
     }
-
-    groupTitle('의상');
-    chipRow('상의 패턴', CHIBI_TOP_PATTERNS, 'pattern');
-    chipRow('의상 세트', CHIBI_OUTFITS, 'outfit');
-    chipRow('하의', CHIBI_BOTTOM_TYPES, 'bottomType');
-    swatchRow('상의 색', CHIBI_CLOTH_COLORS, 'top');
-    swatchRow('하의 색', CHIBI_CLOTH_COLORS, 'bottom');
-    swatchRow('신발 색', CHIBI_CLOTH_COLORS, 'shoes');
-
-    groupTitle('장식');
-    chipRow('머리 장식', CHIBI_ACCESSORIES, 'acc');
-    chipRow('안경', boolOpts('없음', '착용'), 'glasses');
-    chipRow('헤일로', boolOpts('없음', '있음'), 'halo');
-    chipRow('날개', boolOpts('없음', '있음'), 'wings');
-    chipRow('가슴 하트', boolOpts('없음', '있음'), 'heart');
   }
 
   // 치비 조립은 동기·저비용이라 디바운스 없이 즉시 재조립한다
@@ -2829,6 +3117,7 @@ function buildChibiMaker() {
   });
 
   function open() {
+    activeCat = 'species'; // 새로 열 때는 항상 첫 카테고리(종족)부터 — 이전 탭 유지 방지
     chibiParams = normalizeChibi(Object.assign({}, DEFAULT_CHIBI, readStoredChibi() || {}));
     ensurePreviewRenderer();
     previewRotator.rotation.y = Math.PI; // 정면(카메라 쪽)부터 — 얼굴을 꾸미는 화면이므로
