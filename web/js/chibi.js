@@ -1484,15 +1484,16 @@ export function buildChibi(params) {
       } else if (LATHE.has(sp)) {
         // 위로 휜 테이퍼 꼬리 — 구버전(프로필 회전 = 아래로 늘어진 물방울)을 폐기하고
         // 곡선(CatmullRom)을 따라 감긴 튜브 + 둥근 끝뭉치로 자연스러운 꼬리를 만든다.
+        // 뿌리를 몸통 뒤로 더 밀어 여유를 준다 — 찰랑임 스윙 시 몸을 뚫지 않게(감독 보고).
+        tailPivot.position.z = -0.28;
         const spec = ({
-          fox:     { rad: R * 0.17, len: 1.55, up: 1.0, tip: '#fff6ea', bushy: true },
-          cat:     { rad: R * 0.075, len: 1.25, up: 1.15 },
-          tiger:   { rad: R * 0.095, len: 1.35, up: 0.85, tip: shade(p.skin, 0.5) },
-          lion:    { rad: R * 0.085, len: 1.4, up: 0.75, tip: p.hairColor },
-          raccoon: { rad: R * 0.13, len: 1.3, up: 0.72, tip: '#3a3632', bushy: true },
-          dog:     { rad: R * 0.09, len: 1.1, up: 1.0 },
-          sheep:   { rad: R * 0.1, len: 0.72, up: 0.5 },
-        })[sp] || { rad: R * 0.09, len: 1.15, up: 0.9 };
+          fox:     { rad: R * 0.17, len: 1.35, up: 1.0, tip: '#fff6ea', bushy: true },
+          cat:     { rad: R * 0.075, len: 1.1, up: 1.15 },
+          lion:    { rad: R * 0.085, len: 1.22, up: 0.75, tip: p.hairColor },
+          raccoon: { rad: R * 0.13, len: 1.15, up: 0.72, tip: '#3a3632', bushy: true },
+          dog:     { rad: R * 0.09, len: 1.0, up: 1.0 },
+          sheep:   { rad: R * 0.1, len: 0.68, up: 0.5 },
+        })[sp] || { rad: R * 0.09, len: 1.05, up: 0.9 };
         const L = spec.len;
         // 꼬리가 몸 뒤로 크게 뻗었다가 위로 휘어 올라간다(치마·상의에 묻히지 않게 뒤로 충분히).
         const curve = new THREE.CatmullRomCurve3([
