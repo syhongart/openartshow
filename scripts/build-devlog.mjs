@@ -17,13 +17,21 @@ const OUT = join(ROOT, 'devlog');
 const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8');
 const blocks = src.split(/\n(?=## )/);
 const entries = [];
+let pinCount = 0;
 for (const b of blocks) {
   const m = b.match(/^## (\d{4}-\d{2}-\d{2}) · (.+)\n([\s\S]*)$/);
   if (!m) continue;
-  const [, date, title] = m;
+  const [, date, rawTitle] = m;
   let body = m[3].replace(/\n---\s*$/,'').trim();
-  entries.push({ date, title: title.trim(), body, slug: `${date}-${hash6(title)}` });
+  const isPin = rawTitle.trim().startsWith('★');            // '★' 접두 = 최상단 고정(철학 등)
+  const title = rawTitle.trim().replace(/^★\s*/, '');
+  const slug = isPin ? (pinCount++ === 0 ? 'philosophy' : `philosophy-${pinCount}`)
+                     : `${date}-${hash6(title)}`;
+  entries.push({ date, title, body, pinned: isPin, slug });
 }
+// 고정(철학) 항목과 일반 로그를 분리 — 고정은 날짜와 무관하게 인덱스 최상단·연대기 nav 제외
+const pinned = entries.filter(e => e.pinned);
+const logs = entries.filter(e => !e.pinned);
 
 function hash6(s) { // djb2 — 제목이 같으면 영구 동일 슬러그 (SEO 안정성)
   let h = 5381;
@@ -33,6 +41,7 @@ function hash6(s) { // djb2 — 제목이 같으면 영구 동일 슬러그 (SEO
 
 // 제목 키워드 → 주제 이모티콘 (첫 매치 승리, 슬러그·SEO 타이틀에는 미포함)
 const EMOJI_RULES = [
+  [/철학|philosophy/i, '🧭'],
   [/법무/, '⚖️'],
   [/블로그|일지 공개/, '📝'],
   [/네이밍|마스코트|아야모|치비|캐릭터 전면/, '🧸'],
@@ -61,9 +70,10 @@ function inline(s) {
 function mdToHtml(md) {
   const lines = md.split('\n');
   const out = [];
-  let list = null, para = [], table = null, fence = null;
+  let list = null, para = [], table = null, fence = null, quote = null;
   const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; } };
   const flushList = () => { if (list) { out.push('<ul>' + list.map(i => `<li>${inline(i.join(' '))}</li>`).join('') + '</ul>'); list = null; } };
+  const flushQuote = () => { if (quote) { out.push('<blockquote>' + quote.map(l => inline(l)).join('<br>') + '</blockquote>'); quote = null; } };
   const flushTable = () => {
     if (!table) return;
     const [head, ...rows] = table.filter(r => !/^\|[\s:-]+\|/.test(r));
@@ -79,31 +89,33 @@ function mdToHtml(md) {
       else fence.push(raw);
       continue;
     }
-    if (/^```/.test(raw)) { flushPara(); flushList(); flushTable(); fence = []; continue; }
+    if (/^```/.test(raw)) { flushPara(); flushList(); flushQuote(); flushTable(); fence = []; continue; }
     const img = raw.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (img) {
-      flushPara(); flushList(); flushTable();
+      flushPara(); flushList(); flushQuote(); flushTable();
       const isrc = img[2].replace('../devlog/img/', './img/'); // DEVLOG.md(docs/) 기준 → 블로그 기준 경로
       out.push(`<figure class="shot"><img src="${esc(isrc)}" alt="${esc(img[1])}" loading="lazy">` +
         (img[1] ? `<figcaption>${inline(img[1])}</figcaption>` : '') + `</figure>`);
       continue;
     }
-    if (/^\|/.test(raw.trim())) { flushPara(); flushList(); (table ||= []).push(raw.trim()); continue; }
+    if (/^\|/.test(raw.trim())) { flushPara(); flushList(); flushQuote(); (table ||= []).push(raw.trim()); continue; }
     flushTable();
     const h3 = raw.match(/^### (.+)/);
-    if (h3) { flushPara(); flushList(); out.push(`<h3>${inline(h3[1])}</h3>`); continue; }
+    if (h3) { flushPara(); flushList(); flushQuote(); out.push(`<h3>${inline(h3[1])}</h3>`); continue; }
+    const bq = raw.match(/^>\s?(.*)/);
+    if (bq) { flushPara(); flushList(); (quote ||= []).push(bq[1]); continue; }
     const li = raw.match(/^- (.+)/);
-    if (li) { flushPara(); (list ||= []).push([li[1]]); continue; }
+    if (li) { flushPara(); flushQuote(); (list ||= []).push([li[1]]); continue; }
     if (/^\s{2,}\S/.test(raw) && list) { list[list.length - 1].push(raw.trim()); continue; }
-    if (!raw.trim()) { flushPara(); flushList(); continue; }
-    flushList(); para.push(raw.trim());
+    if (!raw.trim()) { flushPara(); flushList(); flushQuote(); continue; }
+    flushList(); flushQuote(); para.push(raw.trim());
   }
-  flushPara(); flushList(); flushTable();
+  flushPara(); flushList(); flushQuote(); flushTable();
   return out.join('\n');
 }
 
 function excerpt(body, n = 120) {
-  const line = body.split('\n').map(l => l.replace(/^[-#\s]+/, '').trim()).find(l => l.length > 10) || '';
+  const line = body.split('\n').map(l => l.replace(/^[-#>\s]+/, '').trim()).find(l => l.length > 10) || '';
   const t = line.replace(/\*\*|`/g, '');
   return t.length > n ? t.slice(0, n - 1) + '…' : t;
 }
@@ -133,6 +145,14 @@ transition:border-color .2s,transform .2s}
 .card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
 .card p{margin:0;font-size:13.5px;color:var(--ink-body)}
 .emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
 .shot{margin:22px 0}
 .shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
 .shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
@@ -141,6 +161,8 @@ article ul{margin:0 0 16px;padding-left:20px}
 article li{margin:0 0 6px;color:var(--ink-body)}
 article p{color:var(--ink-body)}
 article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
 article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
 article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
 article pre code{background:none;border:none;color:inherit;padding:0}
@@ -201,20 +223,20 @@ ${bodyHtml}
 mkdirSync(OUT, { recursive: true });
 for (const f of readdirSync(OUT)) if (f.endsWith('.html')) unlinkSync(join(OUT, f)); // 슬러그 변경 잔재 제거
 
-entries.forEach((e, i) => {
-  const newer = entries[i - 1], older = entries[i + 1];
-  const pn = [];
-  if (older) pn.push(`<a href="./${older.slug}.html"><span class="lbl">← 이전 기록</span>${esc(older.title)}</a>`);
-  if (newer) pn.push(`<a href="./${newer.slug}.html" style="text-align:right"><span class="lbl">다음 기록 →</span>${esc(newer.title)}</a>`);
+function writeEntryPage(e, pn, isPin) {
+  const eyebrow = isPin ? 'OpenArtShow · 철학' : e.date;
+  const meta = isPin
+    ? `방향을 잃을 때 돌아오는 자리 — 새겨둔 날 ${e.date}`
+    : 'OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과';
   const body = `
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
-<div class="eyebrow">${e.date}</div>
+<div class="eyebrow">${eyebrow}</div>
 <h1><span class="emo">${emojiFor(e.title)}</span>${esc(e.title)}</h1>
-<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p class="meta">${meta}</p>
 ${mdToHtml(e.body)}
 </article>
-${pn.length ? `<div class="pn">${pn.join('')}</div>` : ''}`;
+${pn && pn.length ? `<div class="pn">${pn.join('')}</div>` : ''}`;
   writeFileSync(join(OUT, `${e.slug}.html`), shell({
     title: `${e.title} — ${SITE} 개발일지`,
     desc: excerpt(e.body, 150),
@@ -229,9 +251,26 @@ ${pn.length ? `<div class="pn">${pn.join('')}</div>` : ''}`;
     },
     bodyHtml: body,
   }));
-});
+}
 
-const cards = entries.map(e => `<a class="card" href="./${e.slug}.html">
+// 로그 페이지 — 연대기 이전/다음 nav은 logs 안에서만(고정 철학은 제외)
+logs.forEach((e, i) => {
+  const newer = logs[i - 1], older = logs[i + 1];
+  const pn = [];
+  if (older) pn.push(`<a href="./${older.slug}.html"><span class="lbl">← 이전 기록</span>${esc(older.title)}</a>`);
+  if (newer) pn.push(`<a href="./${newer.slug}.html" style="text-align:right"><span class="lbl">다음 기록 →</span>${esc(newer.title)}</a>`);
+  writeEntryPage(e, pn, false);
+});
+// 고정 철학 페이지 — 연대기 nav 없음
+pinned.forEach(e => writeEntryPage(e, null, true));
+
+const pinCards = pinned.map(e => `<a class="pin-card" href="./${e.slug}.html">
+  <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
+  <h2>${esc(e.title)}</h2>
+  <p>${esc(excerpt(e.body))}</p>
+</a>`).join('\n');
+
+const cards = logs.map(e => `<a class="card" href="./${e.slug}.html">
   <span class="d">${e.date}</span>
   <h2><span class="emo">${emojiFor(e.title)}</span>${esc(e.title)}</h2>
   <p>${esc(excerpt(e.body))}</p>
@@ -245,13 +284,14 @@ writeFileSync(join(OUT, 'index.html'), shell({
   jsonld: {
     '@context': 'https://schema.org', '@type': 'Blog',
     name: `${SITE} 개발일지`, url: `${BASE_URL}/devlog/`, inLanguage: 'ko',
-    blogPost: entries.slice(0, 10).map(e => ({ '@type': 'BlogPosting', headline: e.title, datePublished: e.date, url: `${BASE_URL}/devlog/${e.slug}.html` })),
+    blogPost: logs.slice(0, 10).map(e => ({ '@type': 'BlogPosting', headline: e.title, datePublished: e.date, url: `${BASE_URL}/devlog/${e.slug}.html` })),
   },
   bodyHtml: `
 <div class="eyebrow">Devlog</div>
 <h1>개발일지</h1>
-<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — ${entries.length}건의 기록.<br>
+<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — ${logs.length}건의 기록.<br>
 문제의 원인, 분석, 개선, 결과를 그대로 남깁니다.</p>
+${pinCards}
 ${cards}`,
 }));
 
