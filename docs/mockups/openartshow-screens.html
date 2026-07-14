@@ -1,0 +1,1308 @@
+<title>OpenArtShow — 화면 목업 (조용한 럭셔리)</title>
+<meta name="description" content="DESIGN.md SSOT 기반 주요 화면 비주얼 목업 — 홈·전시선택·3D관람·작품상세·AI감상·작가·관리">
+<style>
+/* =====================================================================
+   OpenArtShow 화면 목업 — docs/DESIGN.md SSOT 토큰 그대로 구현
+   외부 리소스 요청 0. 폰트는 self-host 정책의 자리표시 시스템 스택.
+   ===================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* ---- 3-2 중립 베이스 ---- */
+  --neutral-white: #ffffff;
+  --paper: #fdfbf5;
+  --paper-deep: #f6f1e4;
+  --neutral-sand-100: #efe6d3;
+  --neutral-sand-300: #ddccae;
+  --neutral-warm-gray-300: #cfc6b8;
+  --neutral-warm-gray-500: #a49a8c;
+  --ink-dim: #6b6459;
+  --ink: #17140f;
+  --ink-body: #57503f;
+
+  /* ---- 3-3 그린 스케일 ---- */
+  --green-100: #e3efe7;
+  --green-200: #b9e0c9;
+  --green-300: #8fd0ab;
+  --green-400: #77b794;
+  --green-500: #5f9e7d;
+  --green-600: #4f8c6d;
+  --green-700: #3f7a5c;
+  --green-800: #2c5844;
+  --green-900: #14261d;
+  --gold-text: #3d6b50; /* 크림 위 그린 텍스트 전용 (레거시 명칭 유지) */
+
+  /* ---- 3-4 포인트 컬러 #2 골드 (가치 신호 전용) ---- */
+  --accent-gold-300: #d9c193;
+  --accent-gold-500: #b08a4e;
+  --accent-gold-700: #8a6a37;
+
+  /* ---- 7-0 상태 색 ---- */
+  --error: #b0503f;
+  --error-bg: #f7e9e4;
+
+  /* ---- 4 타이포 스케일 ---- */
+  --fs-h1: clamp(34px, 8.5vw, 60px);
+  --fs-h2: clamp(30px, 4.5vw, 42px);
+  --fs-body-lg: 17px;
+  --fs-body: 15px;
+  --fs-label: 13px;
+  --fs-caption: 12px;
+  --lh-body: 1.7;
+  --lh-body-loose: 1.85;
+  --lh-h2: 1.2;
+  --fs-title-exhibition: clamp(22px, 3vw, 32px);
+  --fs-title-artwork: clamp(20px, 2.6vw, 26px);
+  --fs-meta: 14px;
+
+  /* 폰트 정책(§1) 자리표시 — 실배포는 self-host 나눔고딕(한글)+Pretendard(영문/숫자).
+     이 목업은 외부 요청 0 제약상 시스템 스택으로 대체하되 위계·자간은 동일 규격 적용. */
+  --font-sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", -apple-system,
+    BlinkMacSystemFont, "Noto Sans KR", "Helvetica Neue", Arial, sans-serif;
+  /* §4-3 세리프 — 에세이형 장문 전용, 문서 지정 플레이스홀더 스택 그대로 사용 */
+  --font-serif: Georgia, "Nanum Myeongjo", "Apple SD Gothic Neo", serif;
+
+  /* ---- 5-1 스페이싱 ---- */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 64px; --space-8: 96px;
+
+  /* ---- 5-2 radius 역할분리 ---- */
+  --r-plate: 3px;
+  --r-control: 10px;
+  --r-panel: 12px;
+  --r-sheet: 20px;
+  --r-pill: 999px;
+
+  /* ---- 5-3 그림자(하향) ---- */
+  --shadow-whisper: 0 2px 6px rgba(20,38,29,.05);
+  --shadow-card-hover: 0 6px 16px rgba(20,38,29,.06);
+  --shadow-card-hover-deep: 0 10px 24px rgba(63,122,92,.12);
+  --shadow-panel: 0 8px 20px rgba(20,38,29,.10);
+
+  --border-hair: 1px solid var(--neutral-warm-gray-300);
+  --focus-ring: var(--gold-text);
+}
+
+/* ---- 다크 대응 — DESIGN.md는 라이트 기준 SSOT이므로, green-900을 근거로 한
+   보수적 다크 표면을 새로 파생한다(문서에 다크 표 없음, 톤 원칙만 계승) ---- */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --neutral-white: #211d16;
+  --paper: #17140f;
+  --paper-deep: #1e1a12;
+  --neutral-sand-100: #2a2419;
+  --neutral-sand-300: #35301f;
+  --neutral-warm-gray-300: #4a4433;
+  --neutral-warm-gray-500: #948a76;
+  --ink-dim: #b6ab97;
+  --ink: #f6f1e4;
+  --ink-body: #e4dcc9;
+  --green-100: #1c2c22;
+  --gold-text: #9fd7b7;
+  --focus-ring: var(--green-300);
+  --shadow-whisper: 0 2px 8px rgba(0,0,0,.35);
+  --shadow-card-hover: 0 8px 20px rgba(0,0,0,.4);
+  --shadow-card-hover-deep: 0 12px 28px rgba(0,0,0,.5);
+  --shadow-panel: 0 10px 26px rgba(0,0,0,.5);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --neutral-white: #211d16;
+    --paper: #17140f;
+    --paper-deep: #1e1a12;
+    --neutral-sand-100: #2a2419;
+    --neutral-sand-300: #35301f;
+    --neutral-warm-gray-300: #4a4433;
+    --neutral-warm-gray-500: #948a76;
+    --ink-dim: #b6ab97;
+    --ink: #f6f1e4;
+    --ink-body: #e4dcc9;
+    --green-100: #1c2c22;
+    --gold-text: #9fd7b7;
+    --focus-ring: var(--green-300);
+    --shadow-whisper: 0 2px 8px rgba(0,0,0,.35);
+    --shadow-card-hover: 0 8px 20px rgba(0,0,0,.4);
+    --shadow-card-hover-deep: 0 12px 28px rgba(0,0,0,.5);
+    --shadow-panel: 0 10px 26px rgba(0,0,0,.5);
+  }
+}
+
+* { box-sizing: border-box; }
+.oas-root {
+  font-family: var(--font-sans);
+  background: var(--paper-deep);
+  color: var(--ink-body);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  line-height: var(--lh-body);
+  padding-bottom: var(--space-8);
+}
+.oas-root * { min-width: 0; }
+.oas-root img, .oas-root svg { max-width: 100%; }
+.oas-icon { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* prefers-reduced-motion — §6 접근성 규칙 */
+@media (prefers-reduced-motion: reduce) {
+  .oas-root * { transition: none !important; }
+}
+
+/* ---------------------------------------------------------------------
+   페이지 헤더
+--------------------------------------------------------------------- */
+.oas-page-head {
+  position: sticky; top: 0; z-index: 40;
+  background: var(--paper); border-bottom: var(--border-hair);
+  padding: var(--space-4) var(--space-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.oas-brand { display: flex; align-items: baseline; gap: var(--space-2); }
+.oas-brand .word { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+.oas-brand .word .lead { color: var(--green-500); }
+.oas-brand .word .dot { color: var(--accent-gold-500); }
+.oas-brand .tag { font-size: var(--fs-caption); color: var(--ink-dim); }
+.oas-theme-toggle {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  border: var(--border-hair); background: var(--neutral-white);
+  border-radius: var(--r-control); padding: var(--space-2) var(--space-4);
+  font-size: var(--fs-label); color: var(--ink-body); cursor: pointer;
+  min-height: 44px;
+}
+.oas-theme-toggle:hover { border-color: var(--green-500); }
+
+.oas-intro {
+  max-width: 920px; margin: var(--space-7) auto var(--space-6); padding: 0 var(--space-6);
+}
+.oas-intro h1 { font-size: var(--fs-h1); line-height: 1.15; color: var(--ink); margin: 0 0 var(--space-3); letter-spacing: -0.01em; }
+.oas-intro p { font-size: var(--fs-body-lg); color: var(--ink-dim); margin: 0 0 var(--space-2); }
+.oas-intro .oas-meta-note { font-size: var(--fs-caption); color: var(--ink-dim); }
+
+/* ---------------------------------------------------------------------
+   공통 컴포넌트
+--------------------------------------------------------------------- */
+.oas-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  font-family: var(--font-sans); font-size: var(--fs-label); font-weight: 600;
+  border-radius: var(--r-control); min-height: 44px; padding: 0 var(--space-5);
+  cursor: pointer; border: none; transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
+  white-space: nowrap;
+}
+.oas-btn:active { transform: translateY(1px) scale(.98); }
+.oas-btn-primary { background: var(--green-800); color: var(--paper); }
+.oas-btn-primary:hover { background: var(--green-700); transform: translateY(-2px); box-shadow: var(--shadow-card-hover); }
+.oas-btn-primary:disabled { opacity: .45; background: var(--neutral-warm-gray-300); cursor: not-allowed; }
+.oas-btn-secondary { background: transparent; color: var(--gold-text); border: 1.5px solid var(--green-500); }
+.oas-btn-secondary:hover { background: var(--green-100); transform: translateY(-2px); }
+.oas-btn-secondary.is-selected { background: var(--green-100); border-color: var(--green-700); }
+.oas-btn-text { background: none; border: none; font-family: var(--font-sans); font-size: var(--fs-label); cursor: pointer; color: var(--gold-text); padding: 0 var(--space-1); min-height: auto; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+.oas-btn-text:hover { color: var(--green-700); text-decoration: underline; }
+.oas-btn-sm { min-height: 36px; padding: 0 var(--space-4); font-size: var(--fs-caption); }
+
+.oas-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: var(--r-control);
+  background: transparent; border: var(--border-hair); color: var(--ink-body);
+  cursor: pointer; transition: background-color .15s ease, color .15s ease;
+}
+.oas-icon-btn:hover { background: var(--green-100); color: var(--green-800); border-color: transparent; }
+.oas-icon-btn.is-selected { background: var(--green-500); color: var(--paper); border-color: transparent; }
+
+.oas-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: var(--fs-caption); font-weight: 600; padding: 3px 10px;
+  border-radius: var(--r-pill); background: var(--green-100); color: var(--gold-text);
+}
+.oas-badge-gold { background: color-mix(in srgb, var(--accent-gold-300) 55%, transparent); color: var(--accent-gold-700); }
+.oas-badge-muted { background: var(--neutral-sand-300); color: var(--ink-dim); }
+.oas-badge-error { background: var(--error-bg); color: var(--error); }
+
+.oas-chip {
+  display: inline-flex; align-items: center; font-size: var(--fs-caption); font-weight: 600;
+  padding: 6px 14px; border-radius: var(--r-pill); border: 1px solid var(--neutral-warm-gray-300);
+  color: var(--ink-body); background: var(--neutral-white);
+}
+.oas-chip.is-active { background: var(--green-500); color: var(--paper); border-color: transparent; }
+
+.oas-hr { border: none; border-top: var(--border-hair); margin: var(--space-4) 0; }
+
+.oas-plate-frame {
+  background: var(--neutral-white); border: var(--border-hair); border-radius: var(--r-plate);
+  overflow: hidden; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.oas-plate-frame:hover { transform: translateY(-4px); box-shadow: var(--shadow-card-hover); border-color: var(--green-500); }
+
+/* 작품 이미지 placeholder — 무채색 프레임 + 저채도 추상 그라디언트(작품 내용 자리표시).
+   프레임 자체(테두리/배경)에는 색 틴트 없음(§3-1 작품 비충돌 원칙). */
+.oas-art-ph { position: relative; width: 100%; aspect-ratio: 4/5; background: var(--neutral-sand-100); overflow:hidden; }
+.oas-art-ph::after { content: attr(data-tag); position:absolute; left:8px; bottom:8px; font-size:10px; letter-spacing:.06em; color: rgba(0,0,0,.32); background: rgba(255,255,255,.55); padding:2px 6px; border-radius: 4px; }
+.oas-art-ph.wide { aspect-ratio: 16/10; }
+.ph1 { background: linear-gradient(155deg,#e7e1d2 0%,#c9c2ae 45%,#9a9686 100%); }
+.ph2 { background: linear-gradient(160deg,#dfe3dd 0%,#b9c3ba 50%,#8a9690 100%); }
+.ph3 { background: linear-gradient(150deg,#e9dfd6 0%,#cbb9a3 55%,#a68f76 100%); }
+.ph4 { background: linear-gradient(165deg,#dde2e3 0%,#b7c2c4 50%,#8b989a 100%); }
+.ph5 { background: linear-gradient(145deg,#eae4da 0%,#cdbfa8 45%,#8f7d63 100%); }
+.ph6 { background: linear-gradient(160deg,#e2e6df 0%,#bcc7bb 50%,#828f80 100%); }
+
+.oas-avatar-ph {
+  width: 56px; height: 56px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; color: var(--paper);
+  background: linear-gradient(155deg, var(--green-600), var(--green-800));
+}
+
+/* ---------------------------------------------------------------------
+   프레임 섹션(화면 단위) 레이아웃
+--------------------------------------------------------------------- */
+.oas-section {
+  max-width: 1320px; margin: 0 auto; padding: var(--space-8) var(--space-6) 0;
+}
+.oas-section-head { margin-bottom: var(--space-5); }
+.oas-section-eyebrow { font-size: var(--fs-caption); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--green-700); margin: 0 0 6px; }
+.oas-section-head h2 { font-size: var(--fs-h2); line-height: var(--lh-h2); color: var(--ink); margin: 0 0 var(--space-2); }
+.oas-section-head p { font-size: var(--fs-body); color: var(--ink-dim); margin: 0; max-width: 760px; }
+
+.oas-frame-row {
+  display: flex; align-items: flex-start; gap: var(--space-6);
+  overflow-x: auto; padding: var(--space-2) var(--space-1) var(--space-6);
+  scrollbar-width: thin;
+}
+.oas-device {
+  flex: none; background: var(--paper-deep); border: 1px solid var(--neutral-sand-300);
+  border-radius: 18px; padding: 10px;
+  box-shadow: var(--shadow-panel);
+}
+.oas-device-label {
+  font-size: var(--fs-caption); color: var(--ink-dim); text-align: center; padding: 4px 0 8px;
+  font-weight: 600; letter-spacing: .03em;
+}
+.oas-device-desktop { width: 1040px; }
+.oas-device-desktop .oas-device-screen { width: 100%; height: 700px; overflow-y: auto; }
+.oas-device-mobile { width: 390px; }
+.oas-device-mobile .oas-device-screen { width: 100%; height: 760px; overflow-y: auto; }
+.oas-device-screen {
+  background: var(--paper); border-radius: 12px; border: var(--border-hair); position: relative;
+}
+.oas-browser-bar { display:flex; align-items:center; gap:6px; padding: 8px 12px; }
+.oas-browser-bar span { width:8px; height:8px; border-radius:50%; background: var(--neutral-warm-gray-300); display:block; }
+.oas-phone-notch { width: 90px; height: 18px; background: var(--paper-deep); border-radius: 0 0 12px 12px; margin: 0 auto; }
+
+.oas-caption-note {
+  font-size: var(--fs-caption); color: var(--ink-dim); background: var(--neutral-white);
+  border: var(--border-hair); border-radius: var(--r-control); padding: var(--space-3) var(--space-4);
+  margin-top: 0; display: flex; gap: 8px; align-items: flex-start;
+}
+.oas-caption-note b { color: var(--green-700); font-weight: 700; }
+.oas-caption-note .oas-icon { color: var(--green-600); margin-top:1px; }
+
+/* ---------------------------------------------------------------------
+   0. 디자인 토큰 범례
+--------------------------------------------------------------------- */
+.oas-legend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: var(--space-5); }
+.oas-legend-card { background: var(--neutral-white); border: var(--border-hair); border-radius: var(--r-panel); padding: var(--space-5); }
+.oas-legend-card h3 { font-size: 15px; margin: 0 0 var(--space-3); color: var(--ink); }
+.oas-swatch-row { display:flex; flex-wrap:wrap; gap: 6px; }
+.oas-swatch { width: 46px; }
+.oas-swatch i { display:block; width:46px; height:32px; border-radius:6px; border:1px solid rgba(0,0,0,.06); }
+.oas-swatch span { display:block; font-size:10px; color: var(--ink-dim); text-align:center; margin-top:3px; }
+.oas-radius-row, .oas-shadow-row { display:flex; gap: var(--space-3); flex-wrap:wrap; }
+.oas-radius-box { width:64px; height:64px; background: var(--green-100); border: 1px solid var(--neutral-warm-gray-300); display:flex; align-items:center; justify-content:center; font-size:10px; color:var(--gold-text); text-align:center; }
+.oas-shadow-box { width:110px; height:64px; background: var(--neutral-white); display:flex; align-items:center; justify-content:center; font-size:10px; color:var(--ink-dim); border-radius: var(--r-panel); text-align:center;}
+.oas-type-row { display:flex; flex-direction:column; gap: 10px; }
+.oas-type-row .sample-h1 { font-size: 28px; font-weight:700; color:var(--ink); }
+.oas-type-row .sample-h2 { font-size: 22px; font-weight:700; color:var(--ink); }
+.oas-type-row .sample-title { font-size: var(--fs-title-artwork); font-weight:700; color:var(--ink); }
+.oas-type-row .sample-body { font-size: var(--fs-body); color: var(--ink-body); }
+.oas-type-row .sample-serif { font-family: var(--font-serif); font-size: var(--fs-body-lg); line-height: var(--lh-body-loose); color: var(--ink-body); }
+.oas-type-row .sample-label { font-size: var(--fs-caption); color: var(--ink-dim); }
+.oas-type-legend-tag { font-size:10px; color:var(--ink-dim); }
+
+/* ---------------------------------------------------------------------
+   1. 홈
+--------------------------------------------------------------------- */
+.home-nav { display:flex; align-items:center; justify-content:space-between; padding: 16px 24px; border-bottom: var(--border-hair); }
+.home-nav .word { font-weight:700; font-size:17px; color:var(--ink); }
+.home-nav .word .lead{color:var(--green-500);} .home-nav .word .dot{color:var(--accent-gold-500);}
+.home-hscroll { display:flex; gap: var(--space-4); overflow-x:auto; padding: 4px 24px 12px; }
+.home-section { padding: var(--space-6) 24px 0; }
+.home-section h3 { font-size: 17px; color: var(--ink); margin: 0 0 var(--space-4); display:flex; align-items:center; justify-content:space-between; }
+.home-section h3 .oas-btn-text { font-size: var(--fs-caption); }
+.exh-card { flex: none; width: 260px; }
+.exh-card .body { padding: var(--space-4); }
+.exh-card .title { font-size: 17px; font-weight:700; color: var(--ink); margin: 0 0 2px; }
+.exh-card .meta { font-size: var(--fs-meta); color: var(--ink-dim); margin: 0 0 6px; }
+.exh-card .badges { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+.grid-4 { display:grid; grid-template-columns: repeat(4,1fr); gap: var(--space-4); }
+.grid-3 { display:grid; grid-template-columns: repeat(3,1fr); gap: var(--space-4); }
+.art-card .body { padding: var(--space-3) var(--space-3) var(--space-4); }
+.art-card .title { font-size: 15px; font-weight:700; color: var(--ink); margin:0 0 2px; }
+.art-card .meta { font-size: var(--fs-caption); color: var(--ink-dim); margin:0; }
+.recent-hscroll { display:flex; gap: var(--space-3); overflow-x:auto; padding: 4px 24px 4px; }
+.recent-card { flex: none; width: 130px; }
+.artist-hscroll { display:flex; gap: var(--space-5); overflow-x:auto; padding: 4px 24px 4px; }
+.artist-mini { flex:none; width: 84px; text-align:center; }
+.artist-mini .oas-avatar-ph { margin: 0 auto 6px; width:56px;height:56px; }
+.artist-mini .name { font-size: var(--fs-caption); color: var(--ink-body); font-weight:600; }
+.ai-feed { padding: var(--space-4); background: var(--neutral-sand-100); border-radius: var(--r-panel); }
+.ai-feed-row { display:flex; gap:8px; align-items:flex-start; padding: 6px 0; font-size: var(--fs-caption); color: var(--ink-dim); }
+.ai-feed-row .oas-icon { width:14px;height:14px; color: var(--green-600); margin-top:2px; }
+.ai-feed-row b { color: var(--ink-body); font-weight:600; }
+.home-sticky-cta { position: sticky; bottom:0; padding: 12px 16px; background: var(--paper); border-top: var(--border-hair); display:flex; }
+.home-sticky-cta .oas-btn { width:100%; }
+
+/* ---------------------------------------------------------------------
+   2. 전시 선택
+--------------------------------------------------------------------- */
+.exh-select-grid { display:grid; grid-template-columns: repeat(3,1fr); gap: var(--space-5); padding: 20px 24px; }
+.exh-select-list { display:flex; flex-direction:column; gap: var(--space-4); padding: 16px; }
+.exh-sel-card .body { padding: var(--space-4); }
+.exh-sel-card .title { font-size: var(--fs-title-exhibition); font-weight:700; color:var(--ink); margin:0 0 4px; line-height:1.25; }
+.exh-sel-card .meta { font-size: var(--fs-meta); color: var(--ink-dim); margin:0 0 4px; }
+.exh-sel-card .dates { font-size: var(--fs-caption); color: var(--ink-dim); margin: 0 0 10px; }
+.exh-sel-card .visitor-row { display:flex; gap:10px; align-items:center; font-size: var(--fs-caption); color: var(--ink-dim); }
+.exh-sel-card .visitor-row .oas-icon { width:14px; height:14px; }
+.exh-sel-card.ended { opacity: .55; }
+
+/* ---------------------------------------------------------------------
+   3. 3D 관람 HUD
+--------------------------------------------------------------------- */
+.viewer-stage {
+  position: relative; height: 100%; overflow:hidden; border-radius: 12px;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 30%, rgba(255,252,240,.55), rgba(255,252,240,0) 60%),
+    linear-gradient(180deg, #efe9d8 0%, #e6ddc6 46%, #cdbfa0 47%, #a99979 100%);
+}
+.viewer-hud-top { position:absolute; top:0; left:0; right:0; display:flex; align-items:center; justify-content:space-between; padding: 14px 16px; }
+.viewer-hud-chip { display:flex; align-items:center; gap:6px; background: rgba(23,20,15,.55); backdrop-filter: blur(2px); color:#fdfbf5; font-size: var(--fs-caption); font-weight:600; padding: 8px 14px; border-radius: var(--r-pill); }
+.viewer-hud-chip .oas-icon { width:15px;height:15px; }
+.viewer-hud-bottom { position:absolute; bottom:0; left:0; right:0; display:flex; align-items:flex-end; justify-content:space-between; padding: 14px 16px; gap: 10px; }
+.viewer-hud-bottom-actions { display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+.viewer-hud-round { width:48px;height:48px; border-radius:50%; background: rgba(23,20,15,.55); color:#fdfbf5; display:flex; align-items:center; justify-content:center; }
+.viewer-safe-zone {
+  position:absolute; inset: 22% 16%; border: 1px dashed rgba(23,20,15,.28); border-radius: 10px;
+  display:flex; align-items:center; justify-content:center;
+}
+.viewer-safe-zone span { font-size:10px; color: rgba(23,20,15,.5); background: rgba(255,252,240,.6); padding: 3px 8px; border-radius: 999px; }
+.viewer-artwork-wall {
+  position:absolute; top: 30%; left:50%; transform: translateX(-50%); width: 34%; aspect-ratio: 4/5;
+  background: linear-gradient(155deg,#f4efe3,#d8cbb0); border: 6px solid #efe9d8; box-shadow: 0 10px 20px rgba(0,0,0,.18);
+}
+.viewer-summary-card {
+  position:absolute; right: 16px; bottom: 152px; width: 300px; background: var(--neutral-white);
+  border-radius: var(--r-panel); box-shadow: var(--shadow-panel); padding: var(--space-4);
+}
+.viewer-summary-card.mobile-pos { right:12px; left:12px; width:auto; bottom:74px; }
+.viewer-summary-card .row { display:flex; gap: var(--space-3); }
+.viewer-summary-card .oas-art-ph { width: 64px; aspect-ratio: 4/5; flex:none; border-radius: var(--r-plate); }
+.viewer-summary-card .title { font-size:15px; font-weight:700; color:var(--ink); margin:0 0 2px; }
+.viewer-summary-card .meta { font-size: var(--fs-caption); color: var(--ink-dim); margin:0 0 6px; }
+
+/* ---------------------------------------------------------------------
+   4. 작품 상세 카드
+--------------------------------------------------------------------- */
+.detail-cards-row { display:flex; gap: var(--space-5); padding: 20px; align-items:flex-start; flex-wrap:wrap; }
+.detail-basic { width: 300px; }
+.detail-basic .body { padding: var(--space-4); text-align:center; }
+.detail-basic .title { font-size: var(--fs-title-artwork); font-weight:700; color:var(--ink); margin:0 0 4px; }
+.detail-basic .meta { font-size: var(--fs-meta); color: var(--ink-dim); margin:0 0 var(--space-3); }
+.detail-full { width: 360px; }
+.detail-full .body { padding: var(--space-5); }
+.detail-full .title-row { margin-bottom: 4px; }
+.detail-full .title { font-size: var(--fs-title-artwork); font-weight:700; color: var(--ink); margin:0; }
+.detail-full .meta { font-size: var(--fs-meta); color: var(--ink-dim); margin: 2px 0 0; }
+.detail-full .material { font-size: var(--fs-caption); color: var(--ink-dim); margin: 6px 0 0; }
+.detail-full .desc {
+  font-family: var(--font-serif); font-size: var(--fs-body); line-height: var(--lh-body-loose);
+  color: var(--ink-body); margin: 0;
+}
+.detail-full .price-row { display:flex; align-items:baseline; justify-content:space-between; gap: 8px; }
+.detail-full .price { font-size: 18px; font-weight:700; color: var(--accent-gold-700); }
+.detail-full .actions-row { display:flex; gap: 8px; }
+.detail-full .other-comment { font-size: var(--fs-caption); color: var(--ink-dim); background: var(--paper-deep); border-radius: var(--r-control); padding: var(--space-3); margin-top:6px; }
+.detail-full .other-comment b { color: var(--ink-body); }
+
+/* ---------------------------------------------------------------------
+   5. AI 관객 반응
+--------------------------------------------------------------------- */
+.ai-persp-grid { display:grid; grid-template-columns: repeat(2,1fr); gap: var(--space-4); padding: 20px 24px; }
+.ai-persp-card { border-radius: var(--r-panel); background: var(--neutral-white); border: var(--border-hair); padding: var(--space-4); box-shadow: var(--shadow-whisper); transition: box-shadow .18s ease; }
+.ai-persp-card:hover { box-shadow: var(--shadow-card-hover); }
+.ai-persp-head { display:flex; align-items:center; gap: 8px; margin-bottom: 8px; }
+.ai-persp-ico { width:32px;height:32px; border-radius:50%; background: var(--green-100); color: var(--green-800); display:flex; align-items:center; justify-content:center; flex:none; }
+.ai-persp-head .name { font-size: var(--fs-label); font-weight:700; color: var(--ink); }
+.ai-persp-quote { font-size: var(--fs-body); color: var(--ink-body); margin: 0 0 8px; }
+.ai-persp-meta { display:flex; flex-wrap:wrap; gap: 6px 14px; font-size: var(--fs-caption); color: var(--ink-dim); }
+.ai-persp-meta .kw { color: var(--gold-text); font-weight:600; }
+.ai-persp-interest { font-size: 11px; color: var(--neutral-warm-gray-500); margin-top: 8px; }
+.ai-divergence { display:flex; gap:10px; align-items:flex-start; background: var(--paper-deep); border-radius: var(--r-panel); padding: var(--space-4); margin: 4px 24px 20px; }
+.ai-divergence .oas-icon { color: var(--accent-gold-700); }
+.ai-divergence p { margin:0; font-size: var(--fs-body); color: var(--ink-body); }
+.ai-divergence .oas-btn-text { font-size: var(--fs-caption); }
+
+/* ---------------------------------------------------------------------
+   6. 작가 프로필
+--------------------------------------------------------------------- */
+.artist-head { display:flex; align-items:center; gap: var(--space-4); padding: 20px 24px 0; flex-wrap:wrap; }
+.artist-head .oas-avatar-ph { width:72px;height:72px; font-size:20px; }
+.artist-head .name { font-size: 22px; font-weight:700; color: var(--ink); margin:0 0 2px; }
+.artist-head .tagline { font-size: var(--fs-body); color: var(--ink-dim); margin:0; }
+.artist-head .actions { margin-left:auto; display:flex; gap:8px; }
+.artist-block { padding: var(--space-6) 24px 0; }
+.artist-block h4 { font-size: 15px; color: var(--ink); margin:0 0 var(--space-3); }
+.artist-block .desc { font-family: var(--font-serif); font-size: var(--fs-body-lg); line-height: var(--lh-body-loose); color: var(--ink-body); margin:0; }
+.artist-timeline { display:flex; align-items:center; gap: 0; }
+.artist-timeline .yr { font-size: var(--fs-caption); color: var(--ink-dim); font-weight:700; background: var(--neutral-white); border: var(--border-hair); border-radius: var(--r-pill); padding: 5px 12px; }
+.artist-timeline .ln { flex:1; height:1px; background: var(--neutral-warm-gray-300); margin: 0 6px; }
+.artist-kw-row { display:flex; gap:8px; flex-wrap:wrap; }
+
+/* ---------------------------------------------------------------------
+   7. 관리 화면
+--------------------------------------------------------------------- */
+.mgmt-head { display:flex; align-items:center; justify-content:space-between; padding: 20px 24px 0; }
+.mgmt-head h3 { font-size: 18px; color: var(--ink); margin:0; }
+.mgmt-grid { display:grid; grid-template-columns: repeat(3,1fr); gap: var(--space-4); padding: 20px 24px 0; }
+.mgmt-card .body { padding: var(--space-3) var(--space-3) var(--space-4); }
+.mgmt-card .title-row { display:flex; align-items:center; justify-content:space-between; gap: 6px; }
+.mgmt-card .title { font-size: 15px; font-weight:700; color: var(--ink); margin: 0; }
+.mgmt-toggle { position: relative; width: 38px; height: 22px; border-radius: 999px; background: var(--neutral-sand-300); flex:none; cursor:pointer; }
+.mgmt-toggle::after { content:""; position:absolute; top:2px; left:2px; width:18px;height:18px; border-radius:50%; background:#fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: left .15s ease; }
+.mgmt-toggle.on { background: var(--green-500); }
+.mgmt-toggle.on::after { left: 18px; }
+.mgmt-card .kv { font-size: var(--fs-caption); color: var(--ink-dim); margin: 4px 0; }
+.mgmt-card .kv b { color: var(--ink-body); font-weight:600; }
+.mgmt-card .row-actions { display:flex; gap:6px; margin-top:8px; }
+.mgmt-stats { margin: var(--space-6) 24px 0; background: var(--neutral-white); border: var(--border-hair); border-radius: var(--r-panel); padding: var(--space-5); display:flex; align-items:center; gap: var(--space-5); flex-wrap:wrap; }
+.mgmt-stats .txt { flex:1; min-width:200px; font-size: var(--fs-body); color: var(--ink-body); }
+.mgmt-stats .txt b { color: var(--green-800); }
+.mgmt-footer-actions { display:flex; gap:10px; padding: var(--space-6) 24px 24px; }
+
+/* footer */
+.oas-footer { max-width:1320px; margin: var(--space-8) auto 0; padding: var(--space-6); border-top: var(--border-hair); font-size: var(--fs-caption); color: var(--ink-dim); text-align:center; }
+</style>
+
+<div class="oas-root" id="oas-root">
+
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+<defs>
+<symbol id="ic-back" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></symbol>
+<symbol id="ic-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.5 2.5 0 0 1 4.9.7c0 1.6-2.4 1.9-2.4 3.3"/><path d="M12 17.2h.01"/></symbol>
+<symbol id="ic-map" viewBox="0 0 24 24"><path d="M9 4 3 6.5v13L9 17l6 3 6-2.5v-13L15 7 9 4Z"/><path d="M9 4v13M15 7v13"/></symbol>
+<symbol id="ic-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+<symbol id="ic-heart" viewBox="0 0 24 24"><path d="M12 20s-7.2-4.6-9.6-9A5.4 5.4 0 0 1 12 5.6 5.4 5.4 0 0 1 21.6 11c-2.4 4.4-9.6 9-9.6 9Z"/></symbol>
+<symbol id="ic-bookmark" viewBox="0 0 24 24"><path d="M6 3.5h12v17l-6-4-6 4v-17Z"/></symbol>
+<symbol id="ic-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7 15.7 6.5M8.3 13.3l7.4 4.2"/></symbol>
+<symbol id="ic-follow" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M3.5 20c1-3.6 3.4-5.4 5.5-5.4S14 16.4 15 20"/><path d="M18.5 8.5v5M21 11h-5"/></symbol>
+<symbol id="ic-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></symbol>
+<symbol id="ic-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="ic-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="ic-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></symbol>
+<symbol id="ic-bolt" viewBox="0 0 24 24"><path d="M13 3 4 14h6l-1 7 9-11h-6l1-7Z"/></symbol>
+<symbol id="ic-check" viewBox="0 0 24 24"><path d="M5 12.5 9.5 17 19 7"/></symbol>
+<symbol id="ic-curator" viewBox="0 0 24 24"><path d="M4 19V9l8-5 8 5v10"/><path d="M9 19v-6h6v6"/></symbol>
+<symbol id="ic-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></symbol>
+<symbol id="ic-feel" viewBox="0 0 24 24"><path d="M12 20s-7.2-4.6-9.6-9A5.4 5.4 0 0 1 12 5.6 5.4 5.4 0 0 1 21.6 11c-2.4 4.4-9.6 9-9.6 9Z"/></symbol>
+<symbol id="ic-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9M9.3 15c.4 1 1.4 1.5 2.7 1.5 1.7 0 2.7-.8 2.7-2 0-3-5.4-1.6-5.4-4.4 0-1.2 1-2 2.7-2 1.3 0 2.3.5 2.7 1.5"/></symbol>
+<symbol id="ic-crowd" viewBox="0 0 24 24"><circle cx="8" cy="9" r="3"/><circle cx="17" cy="9" r="2.6"/><path d="M2.5 20c.8-3.2 3-4.8 5.5-4.8s4.7 1.6 5.5 4.8"/><path d="M15 15.6c2 .2 3.7 1.7 4.3 4.4"/></symbol>
+</defs>
+</svg>
+
+<header class="oas-page-head">
+  <div class="oas-brand">
+    <span class="word"><span class="lead">Open</span>ArtShow<span class="dot">.</span></span>
+    <span class="tag">화면 목업 · docs/DESIGN.md SSOT</span>
+  </div>
+  <button class="oas-theme-toggle" id="oas-theme-btn" type="button">
+    <svg class="oas-icon"><use href="#ic-spark"/></svg>
+    <span id="oas-theme-label">라이트 모드</span>
+  </button>
+</header>
+
+<div class="oas-intro">
+  <h1>OpenArtShow 주요 화면 목업</h1>
+  <p>"게임처럼 쉽지만, 미술관처럼 조용하고, 럭셔리 플랫폼처럼 정제된 UI." — DESIGN.md의 색·타이포·radius·모션 토큰을 그대로 적용한 7개 핵심 화면. 데스크톱/모바일(390px) 프레임을 나란히 배치했다.</p>
+  <p class="oas-meta-note">카피·인물·전시명·작품명은 전부 가상 플레이스홀더입니다(실존 인물·기관·작품 아님). 폰트는 self-host 정책(나눔고딕+Pretendard/세리프)의 자리표시 시스템 스택입니다.</p>
+</div>
+
+<!-- =====================================================================
+     0. 토큰 범례
+===================================================================== -->
+<section class="oas-section" id="tokens">
+  <div class="oas-section-head">
+    <p class="oas-section-eyebrow">Design Tokens</p>
+    <h2>디자인 토큰 범례</h2>
+    <p>색·radius·그림자·타이포 — 모든 화면이 공유하는 SSOT 값.</p>
+  </div>
+  <div class="oas-legend-grid">
+    <div class="oas-legend-card">
+      <h3>중립 베이스</h3>
+      <div class="oas-swatch-row">
+        <div class="oas-swatch"><i style="background:var(--neutral-white);border:1px solid #ddd"></i><span>white</span></div>
+        <div class="oas-swatch"><i style="background:var(--paper)"></i><span>paper</span></div>
+        <div class="oas-swatch"><i style="background:var(--paper-deep)"></i><span>paper-deep</span></div>
+        <div class="oas-swatch"><i style="background:var(--neutral-sand-100)"></i><span>sand-100</span></div>
+        <div class="oas-swatch"><i style="background:var(--neutral-sand-300)"></i><span>sand-300</span></div>
+        <div class="oas-swatch"><i style="background:var(--neutral-warm-gray-300)"></i><span>gray-300</span></div>
+        <div class="oas-swatch"><i style="background:var(--neutral-warm-gray-500)"></i><span>gray-500</span></div>
+        <div class="oas-swatch"><i style="background:var(--ink)"></i><span>ink</span></div>
+      </div>
+    </div>
+    <div class="oas-legend-card">
+      <h3>청자 그린 스케일 (포인트 #1)</h3>
+      <div class="oas-swatch-row">
+        <div class="oas-swatch"><i style="background:var(--green-100)"></i><span>100</span></div>
+        <div class="oas-swatch"><i style="background:var(--green-200)"></i><span>200</span></div>
+        <div class="oas-swatch"><i style="background:var(--green-300)"></i><span>300</span></div>
+        <div class="oas-swatch"><i style="background:var(--green-400)"></i><span>400</span></div>
+        <div class="oas-swatch"><i style="background:var(--green-500)"></i><span>500</span></div>
+        <div class="oas-swatch"><i style="background:var(--green-600)"></i><span>600</span></div>
+        <div class="oas-swatch"><i style="background:var(--green-700)"></i><span>700</span></div>
+        <div class="oas-swatch"><i style="background:var(--green-800)"></i><span>800</span></div>
+        <div class="oas-swatch"><i style="background:var(--green-900)"></i><span>900</span></div>
+      </div>
+    </div>
+    <div class="oas-legend-card">
+      <h3>골드 (포인트 #2 — 가치신호 전용)</h3>
+      <div class="oas-swatch-row">
+        <div class="oas-swatch"><i style="background:var(--accent-gold-300)"></i><span>gold-300</span></div>
+        <div class="oas-swatch"><i style="background:var(--accent-gold-500)"></i><span>gold-500</span></div>
+        <div class="oas-swatch"><i style="background:var(--accent-gold-700)"></i><span>gold-700</span></div>
+        <div class="oas-swatch"><i style="background:var(--error)"></i><span>error</span></div>
+        <div class="oas-swatch"><i style="background:var(--error-bg)"></i><span>error-bg</span></div>
+      </div>
+      <p style="font-size:11px;color:var(--ink-dim);margin:10px 0 0">소장·가격·한정 배지에만 극소량. CTA·내비게이션은 그린 단독.</p>
+    </div>
+    <div class="oas-legend-card">
+      <h3>Radius — 역할 분리</h3>
+      <div class="oas-radius-row">
+        <div class="oas-radius-box" style="border-radius:var(--r-plate)">plate<br>3px<br>작품/전시 프레임</div>
+        <div class="oas-radius-box" style="border-radius:var(--r-control)">control<br>10px<br>버튼/칩</div>
+        <div class="oas-radius-box" style="border-radius:var(--r-panel)">panel<br>12px<br>모달/AI카드</div>
+        <div class="oas-radius-box" style="border-radius:var(--r-sheet) var(--r-sheet) 0 0">sheet<br>20px<br>하단시트</div>
+      </div>
+    </div>
+    <div class="oas-legend-card">
+      <h3>그림자 — 매우 약하게</h3>
+      <div class="oas-shadow-row">
+        <div class="oas-shadow-box" style="box-shadow:var(--shadow-whisper)">whisper</div>
+        <div class="oas-shadow-box" style="box-shadow:var(--shadow-card-hover)">card-hover</div>
+        <div class="oas-shadow-box" style="box-shadow:var(--shadow-card-hover-deep)">hover-deep</div>
+        <div class="oas-shadow-box" style="box-shadow:var(--shadow-panel)">panel</div>
+      </div>
+    </div>
+    <div class="oas-legend-card">
+      <h3>타이포그래피</h3>
+      <div class="oas-type-row">
+        <div class="sample-h1">전시명 타이틀 H1 <span class="oas-type-legend-tag">clamp 34–60px</span></div>
+        <div class="sample-h2">섹션 표제 H2 <span class="oas-type-legend-tag">clamp 30–42px</span></div>
+        <div class="sample-title">무제 No.3 — 작품명 토큰 <span class="oas-type-legend-tag">clamp 20–26px / 700</span></div>
+        <div class="sample-body">본문 산세리프 15px — 갤러리 관람 정보 안내에 쓰이는 기본 문단입니다.</div>
+        <div class="sample-serif">"화면은 소란하지 않다. 정보는 필요한 순간에만 나타난다." — 에세이형 장문 전용 세리프(큐레이터 평문·작가 노트).</div>
+        <div class="sample-label">라벨 13px · 캡션 12px(하한)</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     1. 메인 홈
+===================================================================== -->
+<section class="oas-section" id="screen-1">
+  <div class="oas-section-head">
+    <p class="oas-section-eyebrow">Screen 01</p>
+    <h2>메인 홈</h2>
+    <p>진행 전시 가로 카드 → 추천 작품 그리드 → 최근 본 작품 → 참여 작가 → AI 관객 활동(저채도 라이브 피드) → 입장 CTA. 모바일은 하단 sticky CTA.</p>
+  </div>
+  <div class="oas-frame-row">
+    <div class="oas-device oas-device-desktop">
+      <div class="oas-device-label">데스크톱 · 1280px 기준 축소</div>
+      <div class="oas-device-screen">
+        <div class="home-nav">
+          <span class="word"><span class="lead">Open</span>ArtShow<span class="dot">.</span></span>
+          <button class="oas-btn oas-btn-primary oas-btn-sm">입장하기</button>
+        </div>
+
+        <div class="home-section">
+          <h3>진행 중인 전시 <span class="oas-btn-text">전체 보기</span></h3>
+        </div>
+        <div class="home-hscroll">
+          <div class="oas-plate-frame exh-card">
+            <div class="oas-art-ph wide ph1" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">고요한 파랑</p>
+              <p class="meta">이하람 · 미음 갤러리</p>
+              <div class="badges"><span class="oas-badge">전시중</span><span class="oas-badge oas-badge-muted">관람 25분</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-card">
+            <div class="oas-art-ph wide ph2" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">정원의 침묵</p>
+              <p class="meta">서은재 · 사이 갤러리</p>
+              <div class="badges"><span class="oas-badge">전시중</span><span class="oas-badge oas-badge-muted">관람 18분</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-card">
+            <div class="oas-art-ph wide ph3" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">빛의 층위</p>
+              <p class="meta">박도윤 · 온다 갤러리</p>
+              <div class="badges"><span class="oas-badge">전시중</span><span class="oas-badge oas-badge-muted">관람 30분</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="home-section">
+          <h3>추천 작품 · 전시</h3>
+          <div class="grid-4">
+            <div class="oas-plate-frame art-card"><div class="oas-art-ph ph4" data-tag="작품"></div><div class="body"><p class="title">무제 No.3</p><p class="meta">이하람 · 2025</p></div></div>
+            <div class="oas-plate-frame art-card"><div class="oas-art-ph ph5" data-tag="작품"></div><div class="body"><p class="title">남겨진 자리</p><p class="meta">서은재 · 2024</p></div></div>
+            <div class="oas-plate-frame art-card"><div class="oas-art-ph ph6" data-tag="작품"></div><div class="body"><p class="title">유리창 너머</p><p class="meta">박도윤 · 2026</p></div></div>
+            <div class="oas-plate-frame art-card"><div class="oas-art-ph ph1" data-tag="작품"></div><div class="body"><p class="title">아침의 무게</p><p class="meta">최시안 · 2025</p></div></div>
+          </div>
+        </div>
+
+        <div class="home-section">
+          <h3>최근 본 작품</h3>
+        </div>
+        <div class="recent-hscroll">
+          <div class="oas-plate-frame recent-card"><div class="oas-art-ph ph2" data-tag=""></div></div>
+          <div class="oas-plate-frame recent-card"><div class="oas-art-ph ph3" data-tag=""></div></div>
+          <div class="oas-plate-frame recent-card"><div class="oas-art-ph ph4" data-tag=""></div></div>
+        </div>
+
+        <div class="home-section">
+          <h3>참여 작가</h3>
+        </div>
+        <div class="artist-hscroll">
+          <div class="artist-mini"><div class="oas-avatar-ph">이</div><div class="name">이하람</div></div>
+          <div class="artist-mini"><div class="oas-avatar-ph">서</div><div class="name">서은재</div></div>
+          <div class="artist-mini"><div class="oas-avatar-ph">박</div><div class="name">박도윤</div></div>
+          <div class="artist-mini"><div class="oas-avatar-ph">최</div><div class="name">최시안</div></div>
+        </div>
+
+        <div class="home-section">
+          <h3>AI 관객 활동</h3>
+          <div class="ai-feed">
+            <div class="ai-feed-row"><svg class="oas-icon"><use href="#ic-spark"/></svg><span>AI 큐레이터 3인이 방금 <b>고요한 파랑</b>을 감상했습니다.</span></div>
+            <div class="ai-feed-row"><svg class="oas-icon"><use href="#ic-spark"/></svg><span>AI 관객이 <b>무제 No.3</b>에 "절제된 구성"이라는 키워드를 남겼습니다.</span></div>
+            <div class="ai-feed-row"><svg class="oas-icon"><use href="#ic-spark"/></svg><span>인간 관람객 6명이 <b>정원의 침묵</b>을 관람 중입니다.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="oas-device oas-device-mobile">
+      <div class="oas-device-label">모바일 · 390px</div>
+      <div class="oas-device-screen">
+        <div class="oas-phone-notch"></div>
+        <div class="home-nav" style="padding:12px 16px">
+          <span class="word" style="font-size:15px"><span class="lead">Open</span>ArtShow<span class="dot">.</span></span>
+        </div>
+        <div class="home-section" style="padding:16px 16px 0">
+          <h3 style="font-size:15px">진행 중인 전시</h3>
+        </div>
+        <div class="home-hscroll" style="padding:4px 16px 12px">
+          <div class="oas-plate-frame exh-card" style="width:200px">
+            <div class="oas-art-ph wide ph1" data-tag=""></div>
+            <div class="body"><p class="title" style="font-size:15px">고요한 파랑</p><p class="meta">이하람</p>
+            <div class="badges"><span class="oas-badge">전시중</span></div></div>
+          </div>
+          <div class="oas-plate-frame exh-card" style="width:200px">
+            <div class="oas-art-ph wide ph2" data-tag=""></div>
+            <div class="body"><p class="title" style="font-size:15px">정원의 침묵</p><p class="meta">서은재</p>
+            <div class="badges"><span class="oas-badge">전시중</span></div></div>
+          </div>
+        </div>
+        <div class="home-section" style="padding:16px 16px 0">
+          <h3 style="font-size:15px">추천 작품</h3>
+          <div class="grid-4" style="grid-template-columns:repeat(2,1fr)">
+            <div class="oas-plate-frame art-card"><div class="oas-art-ph ph4" data-tag=""></div><div class="body"><p class="title" style="font-size:13px">무제 No.3</p><p class="meta">이하람</p></div></div>
+            <div class="oas-plate-frame art-card"><div class="oas-art-ph ph5" data-tag=""></div><div class="body"><p class="title" style="font-size:13px">남겨진 자리</p><p class="meta">서은재</p></div></div>
+          </div>
+        </div>
+        <div class="home-section" style="padding:16px 16px 0">
+          <h3 style="font-size:15px">AI 관객 활동</h3>
+          <div class="ai-feed" style="padding:12px">
+            <div class="ai-feed-row"><svg class="oas-icon"><use href="#ic-spark"/></svg><span>AI 큐레이터 3인이 방금 <b>고요한 파랑</b>을 감상했습니다.</span></div>
+          </div>
+        </div>
+        <div style="height:90px"></div>
+        <div class="home-sticky-cta"><button class="oas-btn oas-btn-primary">입장하기</button></div>
+      </div>
+    </div>
+  </div>
+  <p class="oas-caption-note"><svg class="oas-icon"><use href="#ic-info"/></svg><span><b>모션 캡션 —</b> 카드 등장은 아래(12~16px)→위 슬라이드 + 페이드 220~280ms, 리스트는 40~60ms 스태거. 실제 자동재생 없이 캡션으로만 명시(§10).</span></p>
+</section>
+
+<!-- =====================================================================
+     2. 전시 선택
+===================================================================== -->
+<section class="oas-section" id="screen-2">
+  <div class="oas-section-head">
+    <p class="oas-section-eyebrow">Screen 02</p>
+    <h2>전시 선택</h2>
+    <p>전시명·작가/갤러리·기간·예상 관람시간·현재 관람객/AI 수 배지. 데스크톱 2~3열 그리드, 모바일 1열 리스트.</p>
+  </div>
+  <div class="oas-frame-row">
+    <div class="oas-device oas-device-desktop">
+      <div class="oas-device-label">데스크톱 · 3열 그리드</div>
+      <div class="oas-device-screen">
+        <div class="exh-select-grid">
+          <div class="oas-plate-frame exh-sel-card">
+            <div class="oas-art-ph wide ph1" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">고요한 파랑</p>
+              <p class="meta">이하람 · 미음 갤러리</p>
+              <p class="dates">2026.07.01 – 08.31 · 예상 관람시간 25분</p>
+              <hr class="oas-hr">
+              <div class="visitor-row"><svg class="oas-icon"><use href="#ic-eye"/></svg><span>관람객 12명</span><svg class="oas-icon"><use href="#ic-cpu"/></svg><span>AI 5명</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-sel-card">
+            <div class="oas-art-ph wide ph2" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">정원의 침묵</p>
+              <p class="meta">서은재 · 사이 갤러리</p>
+              <p class="dates">2026.06.10 – 07.20 · 예상 관람시간 18분</p>
+              <hr class="oas-hr">
+              <div class="visitor-row"><svg class="oas-icon"><use href="#ic-eye"/></svg><span>관람객 7명</span><svg class="oas-icon"><use href="#ic-cpu"/></svg><span>AI 3명</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-sel-card ended">
+            <div class="oas-art-ph wide ph5" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">겨울 노트</p>
+              <p class="meta">최시안 · 온다 갤러리</p>
+              <p class="dates">2026.03.02 – 04.30 · 예상 관람시간 20분</p>
+              <hr class="oas-hr">
+              <div class="visitor-row"><span class="oas-badge oas-badge-muted">종료</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-sel-card">
+            <div class="oas-art-ph wide ph3" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">빛의 층위</p>
+              <p class="meta">박도윤 · 온다 갤러리</p>
+              <p class="dates">2026.07.05 – 09.10 · 예상 관람시간 30분</p>
+              <hr class="oas-hr">
+              <div class="visitor-row"><svg class="oas-icon"><use href="#ic-eye"/></svg><span>관람객 21명</span><svg class="oas-icon"><use href="#ic-cpu"/></svg><span>AI 8명</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-sel-card">
+            <div class="oas-art-ph wide ph6" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">두 개의 그림자</p>
+              <p class="meta">강유정 · 미음 갤러리</p>
+              <p class="dates">2026.07.14 – 08.14 · 예상 관람시간 15분</p>
+              <hr class="oas-hr">
+              <div class="visitor-row"><svg class="oas-icon"><use href="#ic-eye"/></svg><span>관람객 3명</span><svg class="oas-icon"><use href="#ic-cpu"/></svg><span>AI 2명</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-sel-card">
+            <div class="oas-art-ph wide ph4" data-tag="전시 썸네일"></div>
+            <div class="body">
+              <p class="title">물의 기억</p>
+              <p class="meta">정하늘 · 사이 갤러리</p>
+              <p class="dates">2026.05.20 – 08.20 · 예상 관람시간 22분</p>
+              <hr class="oas-hr">
+              <div class="visitor-row"><svg class="oas-icon"><use href="#ic-eye"/></svg><span>관람객 9명</span><svg class="oas-icon"><use href="#ic-cpu"/></svg><span>AI 4명</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="oas-device oas-device-mobile">
+      <div class="oas-device-label">모바일 · 1열 리스트</div>
+      <div class="oas-device-screen">
+        <div class="oas-phone-notch"></div>
+        <div class="exh-select-list">
+          <div class="oas-plate-frame exh-sel-card">
+            <div class="oas-art-ph wide ph1" data-tag=""></div>
+            <div class="body">
+              <p class="title" style="font-size:20px">고요한 파랑</p>
+              <p class="meta">이하람 · 미음 갤러리</p>
+              <p class="dates">2026.07.01 – 08.31 · 25분</p>
+              <hr class="oas-hr">
+              <div class="visitor-row"><svg class="oas-icon"><use href="#ic-eye"/></svg><span>12명</span><svg class="oas-icon"><use href="#ic-cpu"/></svg><span>AI 5명</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-sel-card">
+            <div class="oas-art-ph wide ph3" data-tag=""></div>
+            <div class="body">
+              <p class="title" style="font-size:20px">빛의 층위</p>
+              <p class="meta">박도윤 · 온다 갤러리</p>
+              <p class="dates">2026.07.05 – 09.10 · 30분</p>
+              <hr class="oas-hr">
+              <div class="visitor-row"><svg class="oas-icon"><use href="#ic-eye"/></svg><span>21명</span><svg class="oas-icon"><use href="#ic-cpu"/></svg><span>AI 8명</span></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame exh-sel-card ended">
+            <div class="oas-art-ph wide ph5" data-tag=""></div>
+            <div class="body">
+              <p class="title" style="font-size:20px">겨울 노트</p>
+              <p class="meta">최시안 · 온다 갤러리</p>
+              <p class="dates">2026.03.02 – 04.30</p>
+              <hr class="oas-hr">
+              <span class="oas-badge oas-badge-muted">종료</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     3. 3D 관람 HUD
+===================================================================== -->
+<section class="oas-section" id="screen-3">
+  <div class="oas-section-head">
+    <p class="oas-section-eyebrow">Screen 03</p>
+    <h2>3D 관람 화면 — 오버레이 HUD</h2>
+    <p>중앙 40~50%는 HUD 비배치 보호 영역. 가장자리에 뒤로·전시명·도움말·지도·작품정보 열기만. 작품 접근 시 하단(모바일)/하단우측(데스크톱)에 요약 카드.</p>
+  </div>
+  <div class="oas-frame-row">
+    <div class="oas-device oas-device-desktop">
+      <div class="oas-device-label">데스크톱 · 작품 접근 상태</div>
+      <div class="oas-device-screen" style="overflow:hidden">
+        <div class="viewer-stage">
+          <div class="viewer-safe-zone"><span>화면 중앙 보호 영역 — HUD 배치 금지</span></div>
+          <div class="viewer-artwork-wall"></div>
+          <div class="viewer-hud-top">
+            <div class="viewer-hud-chip"><svg class="oas-icon"><use href="#ic-back"/></svg><span>뒤로</span></div>
+            <div class="viewer-hud-chip"><span>고요한 파랑</span></div>
+            <div class="viewer-hud-chip"><svg class="oas-icon"><use href="#ic-help"/></svg><span>도움말</span></div>
+          </div>
+          <div class="viewer-hud-bottom">
+            <div></div>
+            <div class="viewer-hud-bottom-actions">
+              <div class="viewer-hud-round"><svg class="oas-icon"><use href="#ic-map"/></svg></div>
+              <div class="viewer-hud-chip"><svg class="oas-icon"><use href="#ic-info"/></svg><span>작품정보 열기</span></div>
+            </div>
+          </div>
+          <div class="viewer-summary-card">
+            <div class="row">
+              <div class="oas-art-ph ph4" data-tag=""></div>
+              <div>
+                <p class="title">무제 No.3</p>
+                <p class="meta">이하람 · 2025 · 캔버스에 유채</p>
+                <span class="oas-badge">전시중</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="oas-device oas-device-mobile">
+      <div class="oas-device-label">모바일 · 작품 접근 상태</div>
+      <div class="oas-device-screen" style="overflow:hidden">
+        <div class="oas-phone-notch" style="position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:2"></div>
+        <div class="viewer-stage" style="border-radius:12px">
+          <div class="viewer-safe-zone" style="inset:20% 8%"><span>중앙 보호 영역</span></div>
+          <div class="viewer-artwork-wall" style="width:46%"></div>
+          <div class="viewer-hud-top">
+            <div class="viewer-hud-round"><svg class="oas-icon"><use href="#ic-back"/></svg></div>
+            <div class="viewer-hud-chip" style="font-size:11px">고요한 파랑</div>
+            <div class="viewer-hud-round"><svg class="oas-icon"><use href="#ic-help"/></svg></div>
+          </div>
+          <div class="viewer-hud-bottom">
+            <div class="viewer-hud-round"><svg class="oas-icon"><use href="#ic-map"/></svg></div>
+            <div class="viewer-hud-round"><svg class="oas-icon"><use href="#ic-info"/></svg></div>
+          </div>
+          <div class="viewer-summary-card mobile-pos">
+            <div class="row">
+              <div class="oas-art-ph ph4" data-tag=""></div>
+              <div>
+                <p class="title" style="font-size:14px">무제 No.3</p>
+                <p class="meta">이하람 · 2025</p>
+                <span class="oas-badge">전시중</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="oas-caption-note"><svg class="oas-icon"><use href="#ic-info"/></svg><span><b>모션 캡션 —</b> 요약 카드는 아래→위 슬라이드+페이드로 등장(오버슈트 없음). HUD 5요소 외 상시 노출 UI 없음(§8-3).</span></p>
+</section>
+
+<!-- =====================================================================
+     4. 작품 상세 카드
+===================================================================== -->
+<section class="oas-section" id="screen-4">
+  <div class="oas-section-head">
+    <p class="oas-section-eyebrow">Screen 04</p>
+    <h2>작품 상세 카드 — 단계적 공개</h2>
+    <p>기본정보(이미지 압도적 비중) → 더보기 탭 시 상세정보(설명·가격·소장·AI감상 링크)로 확장. 설명은 에세이형 세리프.</p>
+  </div>
+  <div class="oas-frame-row">
+    <div class="oas-device oas-device-desktop">
+      <div class="oas-device-label">데스크톱 · 기본정보 + 상세정보 나란히</div>
+      <div class="oas-device-screen">
+        <div class="detail-cards-row">
+          <div class="oas-plate-frame detail-basic">
+            <div class="oas-art-ph ph3" data-tag="작품 이미지"></div>
+            <div class="body">
+              <p class="title">무제 No.3</p>
+              <p class="meta">이하람 · 2025</p>
+              <button class="oas-btn-text">더보기 <svg class="oas-icon" style="width:14px;height:14px"><use href="#ic-chev"/></svg></button>
+            </div>
+          </div>
+          <div class="oas-plate-frame detail-full">
+            <div class="oas-art-ph ph3" data-tag="작품 이미지"></div>
+            <div class="body">
+              <div class="title-row">
+                <p class="title">무제 No.3</p>
+                <p class="meta">이하람 · 2025</p>
+                <p class="material">캔버스에 유채 · 91 × 116cm</p>
+              </div>
+              <hr class="oas-hr">
+              <p class="desc">화면 전체를 낮은 채도의 청회색으로 눌러두고, 오른쪽 아래 한 지점에서만 빛이 새어 나오게 두었다. 색은 다투지 않고 자리를 지킨다 — 이 침묵이 작품의 본론이다.</p>
+              <hr class="oas-hr">
+              <div class="price-row">
+                <span class="price">₩ 4,200,000</span>
+                <span class="oas-badge oas-badge-gold">소장 문의</span>
+              </div>
+              <div class="actions-row" style="margin-top:10px">
+                <button class="oas-icon-btn is-selected" aria-label="관심"><svg class="oas-icon"><use href="#ic-heart"/></svg></button>
+                <button class="oas-icon-btn" aria-label="소장"><svg class="oas-icon"><use href="#ic-bookmark"/></svg></button>
+                <button class="oas-btn oas-btn-secondary oas-btn-sm" style="flex:1">문의하기</button>
+              </div>
+              <hr class="oas-hr">
+              <button class="oas-btn-text"><svg class="oas-icon" style="width:14px;height:14px"><use href="#ic-spark"/></svg> AI 감상 5가지 시선 보기</button>
+              <div class="other-comment"><b>다른 관람객</b> — "오래 보게 되는 그림이에요, 조용히 눌러앉는 느낌."</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="oas-device oas-device-mobile">
+      <div class="oas-device-label">모바일 · 하단 시트로 확장</div>
+      <div class="oas-device-screen">
+        <div class="oas-phone-notch"></div>
+        <div class="oas-art-ph ph3" data-tag="작품 이미지" style="aspect-ratio:4/3"></div>
+        <div style="padding:16px">
+          <p class="title" style="font-size:var(--fs-title-artwork);font-weight:700;color:var(--ink);margin:0">무제 No.3</p>
+          <p class="meta" style="color:var(--ink-dim);font-size:var(--fs-meta);margin:2px 0 0">이하람 · 2025</p>
+        </div>
+        <div style="background:var(--neutral-white);border-top:var(--border-hair);border-radius:var(--r-sheet) var(--r-sheet) 0 0;box-shadow:var(--shadow-panel);margin-top:8px;padding:14px 16px 20px">
+          <div style="width:36px;height:4px;background:var(--neutral-warm-gray-300);border-radius:99px;margin:0 auto 12px"></div>
+          <p class="material" style="font-size:var(--fs-caption);color:var(--ink-dim);margin:0 0 8px">캔버스에 유채 · 91 × 116cm</p>
+          <p class="desc" style="font-family:var(--font-serif);font-size:15px;line-height:var(--lh-body-loose);color:var(--ink-body);margin:0 0 12px">화면 전체를 낮은 채도의 청회색으로 눌러두고, 오른쪽 아래 한 지점에서만 빛이 새어 나오게 두었다.</p>
+          <div class="price-row"><span class="price">₩ 4,200,000</span><span class="oas-badge oas-badge-gold">소장 문의</span></div>
+          <div class="actions-row" style="margin-top:10px">
+            <button class="oas-icon-btn is-selected"><svg class="oas-icon"><use href="#ic-heart"/></svg></button>
+            <button class="oas-icon-btn"><svg class="oas-icon"><use href="#ic-bookmark"/></svg></button>
+            <button class="oas-btn oas-btn-secondary oas-btn-sm" style="flex:1">문의하기</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     5. AI 관객 반응
+===================================================================== -->
+<section class="oas-section" id="screen-5">
+  <div class="oas-section-head">
+    <p class="oas-section-eyebrow">Screen 05</p>
+    <h2>AI 관객 반응 — 5가지 시선</h2>
+    <p>점수표가 아니라 관점 카드. 짧은 감상·주목 요소·해석 키워드·관심도(작게, 마지막). 하단엔 "AI 간 의견차" 콜아웃.</p>
+  </div>
+  <div class="oas-frame-row">
+    <div class="oas-device oas-device-desktop">
+      <div class="oas-device-label">데스크톱 · 2열 카드 그리드</div>
+      <div class="oas-device-screen">
+        <div class="ai-persp-grid">
+          <div class="ai-persp-card">
+            <div class="ai-persp-head"><div class="ai-persp-ico"><svg class="oas-icon"><use href="#ic-curator"/></svg></div><span class="name">AI 큐레이터</span></div>
+            <p class="ai-persp-quote">"구성의 균형이 눈에 띕니다. 여백을 다루는 방식이 절제돼 있어요."</p>
+            <div class="ai-persp-meta"><span>주목 요소: 색면 대비</span><span class="kw">해석 키워드: 절제</span></div>
+            <div class="ai-persp-interest">관심도 보통</div>
+          </div>
+          <div class="ai-persp-card">
+            <div class="ai-persp-head"><div class="ai-persp-ico"><svg class="oas-icon"><use href="#ic-history"/></svg></div><span class="name">미술사형</span></div>
+            <p class="ai-persp-quote">"후기 인상주의의 색채 다루기와 닿아 있는 흔적이 보입니다."</p>
+            <div class="ai-persp-meta"><span>주목 요소: 붓터치</span><span class="kw">해석 키워드: 계보</span></div>
+            <div class="ai-persp-interest">관심도 높음</div>
+          </div>
+          <div class="ai-persp-card">
+            <div class="ai-persp-head"><div class="ai-persp-ico"><svg class="oas-icon"><use href="#ic-feel"/></svg></div><span class="name">감성형</span></div>
+            <p class="ai-persp-quote">"고요한 그리움이 느껴져요. 오래 바라보게 됩니다."</p>
+            <div class="ai-persp-meta"><span>주목 요소: 빛의 방향</span><span class="kw">해석 키워드: 그리움</span></div>
+            <div class="ai-persp-interest">관심도 높음</div>
+          </div>
+          <div class="ai-persp-card">
+            <div class="ai-persp-head"><div class="ai-persp-ico"><svg class="oas-icon"><use href="#ic-coin"/></svg></div><span class="name">컬렉터형</span></div>
+            <p class="ai-persp-quote">"작가 초기작 대비 시장에서 드문 구성입니다."</p>
+            <div class="ai-persp-meta"><span>주목 요소: 화면 비율</span><span class="kw">해석 키워드: 희소성</span></div>
+            <div class="ai-persp-interest">관심도 보통</div>
+          </div>
+          <div class="ai-persp-card" style="grid-column: 1 / -1;">
+            <div class="ai-persp-head"><div class="ai-persp-ico"><svg class="oas-icon"><use href="#ic-crowd"/></svg></div><span class="name">대중형</span></div>
+            <p class="ai-persp-quote">"편안하게 오래 보게 돼요. 어렵지 않은 그림이라 좋아요."</p>
+            <div class="ai-persp-meta"><span>주목 요소: 전체 색감</span><span class="kw">해석 키워드: 편안함</span></div>
+            <div class="ai-persp-interest">관심도 낮음</div>
+          </div>
+        </div>
+        <div class="ai-divergence">
+          <svg class="oas-icon"><use href="#ic-bolt"/></svg>
+          <div>
+            <p><b>AI 간 의견차</b> — 미술사형·컬렉터형은 구성 해석이 엇갈립니다.</p>
+            <button class="oas-btn-text">다른 관점 보기</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="oas-device oas-device-mobile">
+      <div class="oas-device-label">모바일 · 세로 스택</div>
+      <div class="oas-device-screen">
+        <div class="oas-phone-notch"></div>
+        <div class="ai-persp-grid" style="grid-template-columns:1fr;padding:16px">
+          <div class="ai-persp-card">
+            <div class="ai-persp-head"><div class="ai-persp-ico"><svg class="oas-icon"><use href="#ic-curator"/></svg></div><span class="name">AI 큐레이터</span></div>
+            <p class="ai-persp-quote">"구성의 균형이 눈에 띕니다."</p>
+            <div class="ai-persp-meta"><span>주목: 색면 대비</span><span class="kw">키워드: 절제</span></div>
+          </div>
+          <div class="ai-persp-card">
+            <div class="ai-persp-head"><div class="ai-persp-ico"><svg class="oas-icon"><use href="#ic-feel"/></svg></div><span class="name">감성형</span></div>
+            <p class="ai-persp-quote">"고요한 그리움이 느껴져요."</p>
+            <div class="ai-persp-meta"><span>주목: 빛의 방향</span><span class="kw">키워드: 그리움</span></div>
+          </div>
+        </div>
+        <div class="ai-divergence" style="margin:4px 16px 16px">
+          <svg class="oas-icon"><use href="#ic-bolt"/></svg>
+          <div><p><b>AI 간 의견차</b> 있음 — <button class="oas-btn-text">보기</button></p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     6. 작가 프로필
+===================================================================== -->
+<section class="oas-section" id="screen-6">
+  <div class="oas-section-head">
+    <p class="oas-section-eyebrow">Screen 06</p>
+    <h2>작가 프로필</h2>
+    <p>대표작 → 작품세계(세리프 서술) → 주요 전시 타임라인 → 현재 진행작 → AI 분석 키워드 칩 → 팔로우/문의.</p>
+  </div>
+  <div class="oas-frame-row">
+    <div class="oas-device oas-device-desktop">
+      <div class="oas-device-label">데스크톱</div>
+      <div class="oas-device-screen">
+        <div class="artist-head">
+          <div class="oas-avatar-ph">이</div>
+          <div>
+            <p class="name">이하람</p>
+            <p class="tagline">여백과 침묵을 다루는 회화 작가.</p>
+          </div>
+          <div class="actions">
+            <button class="oas-btn oas-btn-secondary oas-btn-sm"><svg class="oas-icon" style="width:14px;height:14px"><use href="#ic-follow"/></svg> 팔로우</button>
+            <button class="oas-btn oas-btn-primary oas-btn-sm">문의하기</button>
+          </div>
+        </div>
+
+        <div class="artist-block">
+          <h4>대표작</h4>
+          <div class="grid-3" style="grid-template-columns:repeat(4,1fr)">
+            <div class="oas-plate-frame"><div class="oas-art-ph ph3" data-tag=""></div></div>
+            <div class="oas-plate-frame"><div class="oas-art-ph ph1" data-tag=""></div></div>
+            <div class="oas-plate-frame"><div class="oas-art-ph ph5" data-tag=""></div></div>
+            <div class="oas-plate-frame"><div class="oas-art-ph ph2" data-tag=""></div></div>
+          </div>
+        </div>
+
+        <div class="artist-block">
+          <h4>작품세계</h4>
+          <p class="desc">이하람은 색을 채우기보다 덜어내는 방식으로 화면을 짓는다. 큰 면을 낮은 채도로 눌러두고, 시선이 오래 머물 단 하나의 지점만 남겨둔다. 이런 절제는 기교가 아니라 태도에 가깝다 — 보는 이에게 서두르지 말라고 말을 건네는 그림들이다.</p>
+        </div>
+
+        <div class="artist-block">
+          <h4>주요 전시</h4>
+          <div class="artist-timeline">
+            <span class="yr">2024 · 첫 개인전</span><span class="ln"></span>
+            <span class="yr">2025 · 단체전 참여</span><span class="ln"></span>
+            <span class="yr">2026 · 고요한 파랑</span>
+          </div>
+        </div>
+
+        <div class="artist-block">
+          <h4>현재 진행작</h4>
+          <div class="oas-plate-frame" style="width:220px"><div class="oas-art-ph ph4" data-tag="작업중"></div></div>
+        </div>
+
+        <div class="artist-block" style="padding-bottom:24px">
+          <h4>AI 분석 키워드</h4>
+          <div class="artist-kw-row">
+            <span class="oas-chip is-active">절제</span>
+            <span class="oas-chip">색면</span>
+            <span class="oas-chip">고요함</span>
+            <span class="oas-chip">균형</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="oas-device oas-device-mobile">
+      <div class="oas-device-label">모바일</div>
+      <div class="oas-device-screen">
+        <div class="oas-phone-notch"></div>
+        <div class="artist-head" style="padding:16px 16px 0">
+          <div class="oas-avatar-ph" style="width:56px;height:56px">이</div>
+          <div><p class="name" style="font-size:18px">이하람</p><p class="tagline" style="font-size:13px">여백과 침묵을 다루는 회화 작가.</p></div>
+        </div>
+        <div style="display:flex;gap:8px;padding:12px 16px 0">
+          <button class="oas-btn oas-btn-secondary oas-btn-sm" style="flex:1">팔로우</button>
+          <button class="oas-btn oas-btn-primary oas-btn-sm" style="flex:1">문의하기</button>
+        </div>
+        <div class="artist-block">
+          <h4>대표작</h4>
+          <div class="grid-3" style="grid-template-columns:repeat(3,1fr)">
+            <div class="oas-plate-frame"><div class="oas-art-ph ph3" data-tag=""></div></div>
+            <div class="oas-plate-frame"><div class="oas-art-ph ph1" data-tag=""></div></div>
+            <div class="oas-plate-frame"><div class="oas-art-ph ph5" data-tag=""></div></div>
+          </div>
+        </div>
+        <div class="artist-block">
+          <h4>작품세계</h4>
+          <p class="desc" style="font-size:14px">색을 채우기보다 덜어내는 방식으로 화면을 짓는다. 시선이 오래 머물 지점만 남겨둔다.</p>
+        </div>
+        <div class="artist-block" style="padding-bottom:24px">
+          <h4>AI 분석 키워드</h4>
+          <div class="artist-kw-row">
+            <span class="oas-chip is-active">절제</span><span class="oas-chip">색면</span><span class="oas-chip">고요함</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =====================================================================
+     7. 작품·전시 관리
+===================================================================== -->
+<section class="oas-section" id="screen-7">
+  <div class="oas-section-head">
+    <p class="oas-section-eyebrow">Screen 07</p>
+    <h2>작품 · 전시 관리 (작가/갤러리용)</h2>
+    <p>관람 화면과 동일한 톤 — 카드형 대시보드. 작품 카드에 관리용 토글만 얹는다. 통계는 숫자 나열이 아니라 요약 문장 + 작은 스파크라인.</p>
+  </div>
+  <div class="oas-frame-row">
+    <div class="oas-device oas-device-desktop">
+      <div class="oas-device-label">데스크톱</div>
+      <div class="oas-device-screen">
+        <div class="mgmt-head">
+          <h3>내 전시 관리 · 고요한 파랑</h3>
+          <button class="oas-btn oas-btn-primary oas-btn-sm">+ 새 작품 등록</button>
+        </div>
+        <div class="mgmt-grid">
+          <div class="oas-plate-frame mgmt-card">
+            <div class="oas-art-ph ph3" data-tag=""></div>
+            <div class="body">
+              <div class="title-row"><p class="title">무제 No.3</p><div class="mgmt-toggle on" title="공개중"></div></div>
+              <p class="kv">배치 위치 — <b>본관 2전시실 A-3</b></p>
+              <p class="kv">가격/판매 — <b>₩4,200,000 · 판매중</b></p>
+              <div class="row-actions">
+                <button class="oas-btn oas-btn-secondary oas-btn-sm">AI 평가 실행</button>
+                <button class="oas-icon-btn" aria-label="수정"><svg class="oas-icon"><use href="#ic-share"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="oas-plate-frame mgmt-card">
+            <div class="oas-art-ph ph5" data-tag="" style="opacity:.7"></div>
+            <div class="body">
+              <div class="title-row"><p class="title">남겨진 자리</p><div class="mgmt-toggle" title="비공개"></div></div>
+              <p class="kv">배치 위치 — <b>미배치</b></p>
+              <p class="kv">가격/판매 — <b>비공개</b></p>
+              <div class="row-actions">
+                <button class="oas-btn oas-btn-secondary oas-btn-sm">AI 평가 실행</button>
+                <span class="oas-badge oas-badge-muted">비공개</span>
+              </div>
+            </div>
+          </div>
+          <div class="oas-plate-frame mgmt-card">
+            <div class="oas-art-ph ph1" data-tag=""></div>
+            <div class="body">
+              <div class="title-row"><p class="title">아침의 무게</p><div class="mgmt-toggle on" title="공개중"></div></div>
+              <p class="kv">배치 위치 — <b>본관 2전시실 B-1</b></p>
+              <p class="kv">가격/판매 — <b>₩2,800,000 · 소장완료</b></p>
+              <div class="row-actions">
+                <span class="oas-badge oas-badge-gold">소장완료</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mgmt-stats">
+          <div class="txt">이번 주 관람객 <b>340명</b>, AI 관객 <b>128명</b>이 전시를 다녀갔습니다. 지난주 대비 완만한 증가세예요.</div>
+          <svg width="160" height="40" viewBox="0 0 160 40" style="flex:none">
+            <polyline points="0,30 20,26 40,28 60,20 80,22 100,14 120,17 140,9 160,11" fill="none" stroke="var(--green-500)" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="mgmt-footer-actions">
+          <button class="oas-btn oas-btn-secondary"><svg class="oas-icon" style="width:16px;height:16px"><use href="#ic-share"/></svg> 공유</button>
+          <button class="oas-btn oas-btn-secondary">전시 페이지 미리보기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="oas-device oas-device-mobile">
+      <div class="oas-device-label">모바일</div>
+      <div class="oas-device-screen">
+        <div class="oas-phone-notch"></div>
+        <div class="mgmt-head" style="padding:16px 16px 0">
+          <h3 style="font-size:15px">내 전시 관리</h3>
+        </div>
+        <div style="padding:12px 16px 0"><button class="oas-btn oas-btn-primary oas-btn-sm" style="width:100%">+ 새 작품 등록</button></div>
+        <div class="mgmt-grid" style="grid-template-columns:1fr;padding:16px">
+          <div class="oas-plate-frame mgmt-card">
+            <div class="oas-art-ph ph3" data-tag="" style="aspect-ratio:16/9"></div>
+            <div class="body">
+              <div class="title-row"><p class="title">무제 No.3</p><div class="mgmt-toggle on"></div></div>
+              <p class="kv">본관 2전시실 A-3 · ₩4,200,000</p>
+              <div class="row-actions"><button class="oas-btn oas-btn-secondary oas-btn-sm">AI 평가 실행</button></div>
+            </div>
+          </div>
+          <div class="oas-plate-frame mgmt-card">
+            <div class="oas-art-ph ph5" data-tag="" style="aspect-ratio:16/9;opacity:.7"></div>
+            <div class="body">
+              <div class="title-row"><p class="title">남겨진 자리</p><div class="mgmt-toggle"></div></div>
+              <p class="kv">미배치 · 비공개</p>
+              <div class="row-actions"><span class="oas-badge oas-badge-muted">비공개</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="mgmt-stats" style="margin:0 16px 16px;flex-direction:column;align-items:flex-start">
+          <div class="txt" style="font-size:13px">이번 주 관람객 <b>340명</b>, AI 관객 <b>128명</b>.</div>
+          <svg width="140" height="34" viewBox="0 0 160 40"><polyline points="0,30 20,26 40,28 60,20 80,22 100,14 120,17 140,9 160,11" fill="none" stroke="var(--green-500)" stroke-width="2"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="oas-footer">
+  OpenArtShow 화면 목업 — docs/DESIGN.md SSOT 반영 · 2026-07-14 · 카피·인물·전시명·작품명은 가상 플레이스홀더
+</footer>
+
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('oas-theme-btn');
+  var label = document.getElementById('oas-theme-label');
+  var root = document.documentElement;
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cur = root.getAttribute('data-theme');
+    var next = cur === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    label.textContent = next === 'dark' ? '다크 모드' : '라이트 모드';
+  });
+})();
+</script>
