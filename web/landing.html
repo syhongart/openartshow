@@ -77,6 +77,10 @@
     --fs-label: 13px;                    /* 라벨 대 */
     --shadow-card-hover: 0 6px 16px rgba(20, 21, 26, 0.28);
     --shadow-card-hover-deep: 0 10px 24px rgba(139, 114, 255, 0.16);
+    /* ---- 모션: CSS linear() 스프링 곡선 (감독 승인 "생기" 데모 재사용, §7 모션 절제 — 상시 아님, 상호작용 순간만) ---- */
+    --spring-soft: linear(0, 0.135, 0.417, 0.708, 0.933, 1.067, 1.122, 1.121, 1.091, 1.053, 1.020, 0.998, 0.987, 0.984, 0.987, 0.991, 0.996, 0.999, 1.001, 1.002, 1.002, 1.001, 1.001, 1, 1);
+    --spring-press: linear(0, 0.163, 0.516, 0.881, 1.144, 1.264, 1.260, 1.178, 1.074, 0.987, 0.937, 0.925, 0.940, 0.967, 0.994, 1.013, 1.020, 1.019, 1.012, 1.005, 0.998, 0.995, 0.994, 0.996, 1);
+    --spring-fallback: cubic-bezier(0.34, 1.56, 0.64, 1);
     /* CTA 전용 액센트 — 코랄(§3-2, 장식 금지). 청자 그린 CTA 폐기 */
     --accent: var(--coral-500);
     --accent-hover: var(--coral-600);
@@ -220,21 +224,36 @@
     text-transform: uppercase;
     border-radius: var(--r-card);
     cursor: pointer;
-    transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease;
+    /* 순서 고정: background, color, border-color, transform, box-shadow — 아래 hover/active 오버라이드가 같은 순서를 유지해야 함 */
+    transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease, transform 0.24s var(--spring-fallback), box-shadow 0.5s ease-out;
     white-space: nowrap;
   }
-  .btn:active { transform: translateY(1px) scale(0.98); box-shadow: none; }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .btn { transition-timing-function: ease, ease, ease, var(--spring-soft), ease-out; }
+  }
+  .btn:hover { transition-duration: .18s, .18s, .18s, .24s, .12s; }
+  .btn:active {
+    transform: translateY(1px) scale(0.98);
+    transition-duration: .14s, .14s, .14s, .14s, .12s;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .btn:active { transition-timing-function: ease, ease, ease, var(--spring-press), ease-out; }
+  }
+  /* CTA = 코랄, hover·active 순간에만 글로우가 즉발했다 잦아든다(상시 발광 아님) */
   .btn-gold {
     background: var(--accent);
     color: var(--accent-ink);
     border: 1px solid var(--accent);
+    box-shadow: 0 0 0 0 rgba(20, 21, 26, 0), 0 0 0 0 rgba(255, 112, 94, 0);
   }
-  .btn-gold:hover {
+  .btn-gold:hover,
+  .btn-gold:active {
     background: var(--accent-hover);
     border-color: var(--accent-hover);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(255, 112, 94, 0.35);
+    box-shadow: 0 8px 20px rgba(20, 21, 26, 0.3), 0 0 28px 6px rgba(255, 112, 94, 0.55);
   }
+  .btn-gold:hover { transform: translateY(-2px); }
+  .btn-gold:active { transform: translateY(1px) scale(0.98); }
   .btn-outline {
     background: transparent;
     color: var(--text-light);
@@ -307,9 +326,20 @@
     flex-direction: column;
     border: 1px solid var(--border-light);
     border-radius: var(--r-card);
-    transition: border-color 0.25s ease, transform 0.3s ease, box-shadow 0.3s ease;
+    box-shadow: 0 0 0 0 rgba(20, 21, 26, 0), 0 0 0 0 rgba(139, 114, 255, 0);
+    /* 순서 고정: border-color, transform, box-shadow */
+    transition: border-color 0.25s ease, transform 0.26s var(--spring-fallback), box-shadow 0.45s ease-out;
   }
-  .feature-card:hover { border-color: var(--green-500); transform: translateY(-4px); box-shadow: var(--shadow-card-hover); }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .feature-card { transition-timing-function: ease, var(--spring-soft), ease-out; }
+  }
+  /* 정체성 액센트인 바이올렛 글로우가 hover 순간에만 즉발했다 잦아든다(상시 발광 아님) */
+  .feature-card:hover {
+    border-color: var(--green-500);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-card-hover), 0 0 22px 2px rgba(139, 114, 255, 0.35);
+    transition-duration: .18s, .26s, .12s;
+  }
   .fc-icon {
     width: 64px;
     height: 64px;
@@ -350,16 +380,26 @@
     display: flex;
     flex-direction: column;
     gap: 18px;
-    transition: border-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+    /* 순서 고정: border-color, transform, box-shadow */
+    transition: border-color 0.3s ease, transform 0.26s var(--spring-fallback), box-shadow 0.3s ease;
     background: var(--bg-panel);
   }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .exh-card { transition-timing-function: ease, var(--spring-soft), ease; }
+  }
   .exh-card:hover {
-    /* 전시 카드는 작품/전시 프레임 — 액센트 금지, 중립만(§3-6·§3-8, home.html .exh-card:hover와 동일) */
+    /* 전시 카드는 작품/전시 프레임 — 액센트 금지, 중립만(§3-6·§3-8, home.html .exh-card:hover와 동일). 스프링 모션만 얹는다 */
     border-color: var(--neutral-warm-gray-500);
     transform: translateY(-4px);
     box-shadow: var(--shadow-card-hover);
   }
-  .exh-card:active { transform: translateY(-1px); }
+  .exh-card:active {
+    transform: translateY(-1px) scale(.98);
+    transition-duration: .18s, .14s, .18s;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .exh-card:active { transition-timing-function: ease, var(--spring-press), ease; }
+  }
   .exh-card .exh-name {
     font-size: var(--fs-body-lg);
     font-weight: 400;
@@ -768,10 +808,17 @@
   .auth-overlay :focus-visible {
     outline-color: var(--green-300);
   }
-  /* 새 hover 리프트/버튼 모션을 reduced-motion에서 무력화 (기존 정책 정신 확장) */
+  /* 새 hover 리프트/버튼 모션을 reduced-motion에서 무력화 (기존 정책 정신 확장) —
+     스프링·글로우 펄스는 무해화(즉시 스냅)하되 색·명암 피드백 자체는 유지한다 */
   @media (prefers-reduced-motion: reduce) {
+    .btn, .btn:hover, .btn:active,
+    .btn-gold, .btn-gold:hover, .btn-gold:active,
+    .feature-card, .feature-card:hover,
+    .exh-card, .exh-card:hover, .exh-card:active {
+      transition-duration: .01ms !important;
+    }
     .feature-card:hover, .exh-card:hover, .plan-card:hover,
-    .btn-gold:hover, .btn-outline:hover, .btn-outline-dark:hover,
+    .btn-gold:hover, .btn-gold:active, .btn-outline:hover, .btn-outline-dark:hover,
     .btn:active, .exh-card:active {
       transform: none;
     }
