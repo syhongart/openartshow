@@ -2816,12 +2816,13 @@ function buildChibiMaker() {
     previewCamera = new THREE.PerspectiveCamera(30, 300 / 400, 0.1, 20);
     previewCamera.position.set(0, 0.86, 3.12);
     previewCamera.lookAt(0, 0.7, 0);
-    // 중립·중강도 스튜디오 조명(살짝만 웜) — 재질색이 스와치대로 나오도록. 클리핑 방지.
-    previewScene.add(new THREE.HemisphereLight(0xfff6ee, 0x6a625a, 1.5));
-    const key = new THREE.DirectionalLight(0xfff8f0, 1.2);
-    key.position.set(1.4, 2.6, 2.0);
+    // 채도 살린 스튜디오 조명 — 회색 앰비언트를 어둡게 낮춰 색이 바래지 않게 하고,
+    // 흰 키라이트로 앞면을 채워 고른 색이 선명하게 그대로 나온다(감독 'B' 확정).
+    previewScene.add(new THREE.HemisphereLight(0xfffaf4, 0x241f18, 0.65));
+    const key = new THREE.DirectionalLight(0xffffff, 1.4);
+    key.position.set(0.7, 2.0, 2.6);
     previewScene.add(key);
-    const fill = new THREE.DirectionalLight(0xfff8f2, 0.32);
+    const fill = new THREE.DirectionalLight(0xfffdf8, 0.4);
     fill.position.set(-1.8, 1.1, 1.6);
     previewScene.add(fill);
     previewRotator = new THREE.Group();
