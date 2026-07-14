@@ -22,6 +22,15 @@ export const CHIBI_HAIR_STYLES = [
   { id: 'ponytail', name: '포니테일' },
   { id: 'buns', name: '경단머리' },
   { id: 'short', name: '숏컷' },
+  { id: 'bald', name: '대머리' },
+];
+// 수염 — 사람 전용, 얼굴 캔버스에 그린다(3D 파츠 0). 성별 무관 자유 선택.
+export const CHIBI_BEARD_STYLES = [
+  { id: 'none', name: '없음' },
+  { id: 'stubble', name: '까칠' },
+  { id: 'mustache', name: '콧수염' },
+  { id: 'goatee', name: '턱수염' },
+  { id: 'full', name: '풍성' },
 ];
 export const CHIBI_EYE_STYLES = [
   { id: 'sparkle', name: '반짝' },
@@ -38,6 +47,7 @@ export const CHIBI_BOTTOM_TYPES = [
   { id: 'pants', name: '바지' },
   { id: 'dress', name: '원피스' },
   { id: 'overall', name: '멜빵바지' },
+  { id: 'swimsuit', name: '수영복' },
 ];
 // 상의 패턴 — 무지/줄무늬/물방울(땡땡이)/하트프린트 (torso·소매 캔버스 텍스처)
 export const CHIBI_TOP_PATTERNS = [
@@ -226,6 +236,7 @@ export const DEFAULT_CHIBI = {
   eyeStyle: 'sparkle',
   eyeColor: '#7a4a2f',
   mouth: 'smile',
+  beardStyle: 'none',
   face: 'round',
   blush: true,
   top: '#ff8fab',
@@ -247,6 +258,7 @@ const HAIR_IDS = ID_OF(CHIBI_HAIR_STYLES);
 const FACE_IDS = ID_OF(CHIBI_FACE_SHAPES);
 const EYE_IDS = ID_OF(CHIBI_EYE_STYLES);
 const MOUTH_IDS = ID_OF(CHIBI_MOUTH_STYLES);
+const BEARD_IDS = ID_OF(CHIBI_BEARD_STYLES);
 const BOTTOM_IDS = ID_OF(CHIBI_BOTTOM_TYPES);
 const PATTERN_IDS = ID_OF(CHIBI_TOP_PATTERNS);
 const OUTFIT_IDS = ID_OF(CHIBI_OUTFITS);
@@ -268,6 +280,7 @@ export function normalizeChibi(p) {
     eyeStyle: pick(src.eyeStyle, EYE_IDS, DEFAULT_CHIBI.eyeStyle),
     eyeColor: hex(src.eyeColor, DEFAULT_CHIBI.eyeColor),
     mouth: pick(src.mouth, MOUTH_IDS, DEFAULT_CHIBI.mouth),
+    beardStyle: pick(src.beardStyle, BEARD_IDS, DEFAULT_CHIBI.beardStyle),
     face: pick(src.face === 'chubby' ? 'square' : src.face, FACE_IDS, DEFAULT_CHIBI.face),
     blush: src.blush !== false,
     top: hex(src.top, DEFAULT_CHIBI.top),
@@ -328,6 +341,7 @@ export function randomChibiLook(opts = {}) {
     eyeStyle: _pick(CHIBI_EYE_STYLES).id,
     eyeColor: _pick(EYE_COLORS),
     mouth: _pick(CHIBI_MOUTH_STYLES).id,
+    beardStyle: Math.random() < 0.15 ? _pick(CHIBI_BEARD_STYLES).id : 'none', // 대부분 무수염
     blush: Math.random() < 0.75,
     top: _pick(CHIBI_CLOTH_COLORS),
     bottom: _pick(CHIBI_CLOTH_COLORS),
@@ -351,6 +365,86 @@ function shade(hexColor, factor) {
   const c = new THREE.Color(hexColor);
   c.multiplyScalar(factor);
   return `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`;
+}
+// 수염색 — 머리색을 어둡게. 피부색과 대비가 약하면 더 어둡게(가독 세이프가드).
+function shadeAlpha(hexColor, factor, alpha) {
+  const c = new THREE.Color(hexColor);
+  c.multiplyScalar(factor);
+  return `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${alpha})`;
+}
+function beardColor(p, alpha) {
+  let factor = 0.6;
+  const hc = new THREE.Color(p.hairColor);
+  const sk = new THREE.Color(p.skin);
+  const lumHC = 0.2126 * hc.r + 0.7152 * hc.g + 0.0722 * hc.b;
+  const lumSK = 0.2126 * sk.r + 0.7152 * sk.g + 0.0722 * sk.b;
+  if (Math.abs(lumHC * factor - lumSK) < 0.15) factor = 0.4; // 피부와 대비 부족 시 더 어둡게
+  return shadeAlpha(p.hairColor, factor, alpha);
+}
+// 수염 (사람 전용, 얼굴 캔버스). ouch(피격) 시엔 입이 크게 벌어지므로 호출부에서 끈다.
+function drawBeard(ctx, p) {
+  if (p.species !== 'human' || !p.beardStyle || p.beardStyle === 'none') return;
+  // 하관을 감싸는 연속 수염 — 좌 구레나룻→턱→우 구레나룻(한 덩어리), 윗선은 입 아래로
+  // 처져 입을 비운다. 분리된 볼 얼룩이 아니라 "수염"으로 3초 안에 읽히게.
+  const drawJawBeard = (alpha) => {
+    ctx.fillStyle = beardColor(p, alpha);
+    ctx.beginPath();
+    ctx.moveTo(256 - 156, 322);
+    ctx.quadraticCurveTo(256 - 168, 420, 256 - 78, 462);
+    ctx.quadraticCurveTo(256, 480, 256 + 78, 462);
+    ctx.quadraticCurveTo(256 + 168, 420, 256 + 156, 322);
+    ctx.quadraticCurveTo(256 + 120, 348, 256 + 52, 392); // 윗 경계(입 비우는 아치)
+    ctx.quadraticCurveTo(256 + 26, 384, 256, 388);
+    ctx.quadraticCurveTo(256 - 26, 384, 256 - 52, 392);
+    ctx.quadraticCurveTo(256 - 120, 348, 256 - 156, 322);
+    ctx.closePath();
+    ctx.fill();
+  };
+  // 턱수염(goatee) — 소울패치(입 아래)에서 턱까지 좁게 연결된 한 덩어리.
+  const drawGoatee = (alpha) => {
+    ctx.fillStyle = beardColor(p, alpha);
+    ctx.beginPath();
+    ctx.moveTo(256 - 34, 392);
+    ctx.quadraticCurveTo(256 - 48, 444, 256, 470);
+    ctx.quadraticCurveTo(256 + 48, 444, 256 + 34, 392);
+    ctx.quadraticCurveTo(256, 404, 256 - 34, 392);
+    ctx.closePath();
+    ctx.fill();
+  };
+  const drawMustache = () => {
+    ctx.strokeStyle = beardColor(p, 0.92);
+    ctx.lineWidth = 11;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(256 - 34, 344);
+    ctx.quadraticCurveTo(256 - 14, 332, 256, 338);
+    ctx.quadraticCurveTo(256 + 14, 332, 256 + 34, 344);
+    ctx.stroke();
+  };
+  if (p.beardStyle === 'stubble') {
+    ctx.fillStyle = beardColor(p, 0.32);
+    for (let row = 0; row < 6; row++) {
+      const t = row / 5;
+      const y = 392 + t * (448 - 392);
+      const halfW = 132 * (1 - t) + 46 * t; // 볼폭132→턱폭46 테이퍼
+      const n = 10 - row;
+      for (let i = 0; i < n; i++) {
+        const jitter = ((i * 7 + row * 13) % 5) - 2;
+        const x = 256 - halfW + (2 * halfW) * (n === 1 ? 0.5 : i / (n - 1)) + jitter;
+        ctx.beginPath();
+        ctx.arc(x, y + jitter * 0.6, 2 + (i % 2), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  } else if (p.beardStyle === 'mustache') {
+    drawMustache();
+  } else if (p.beardStyle === 'goatee') {
+    drawGoatee(0.85);
+    drawMustache();
+  } else if (p.beardStyle === 'full') {
+    drawJawBeard(0.85);
+    drawMustache();
+  }
 }
 
 // 4쪽 별 반짝임 — 왕눈이 초롱초롱 트윈클
@@ -643,6 +737,9 @@ function drawFaceInto(canvas, p, fx) {
 
   // 동물 코·수염 (사람 아님). 코는 눈과 입 사이, 3D 귀·꼬리와 함께 종족을 읽게 한다.
   if (isAnimal && !ouch) drawAnimalFace(ctx, p.species, MY);
+
+  // 사람 수염 (얼굴 캔버스). 피격 시 입이 크게 벌어지므로 그리지 않는다.
+  if (!ouch) drawBeard(ctx, p);
 
   // 볼터치 — 더 크고 진하게(엔젤이식), 눈 아래 밀착
   if (p.blush && !ouch) {
@@ -957,18 +1054,37 @@ export function buildChibi(params) {
   addOutline(torso, 0.013, mats, geos);
   wrapper.add(torso);
 
-  if (p.bottomType === 'skirt' || p.bottomType === 'dress') {
+  if (p.bottomType === 'skirt' || p.bottomType === 'dress' || p.bottomType === 'swimsuit') {
     const isDress = p.bottomType === 'dress';
+    const isSwim = p.bottomType === 'swimsuit';
+    const profile = isDress
+      ? [[0.15, 0.09], [0.2, 0.02], [0.27, -0.12], [0.31, -0.24], [0.3, -0.27]]   // 원피스 — 길게
+      : isSwim
+        ? [[0.15, 0.08], [0.165, 0.0], [0.16, -0.09], [0.135, -0.13]]             // 수영복 — 몸 밀착·하이컷
+        : [[0.165, 0.03], [0.22, -0.03], [0.29, -0.13], [0.3, -0.155]];           // 치마
     const skirt = new THREE.Mesh(
-      mkGeo(new THREE.LatheGeometry(lathePoints(isDress
-        ? [[0.15, 0.09], [0.2, 0.02], [0.27, -0.12], [0.31, -0.24], [0.3, -0.27]]  // 원피스 — 길게
-        : [[0.165, 0.03], [0.22, -0.03], [0.29, -0.13], [0.3, -0.155]]), 24)),
-      isDress ? topMat : bottomMat // 원피스는 상의와 한 벌
+      mkGeo(new THREE.LatheGeometry(lathePoints(profile), 24)),
+      (isDress || isSwim) ? topMat : bottomMat // 원피스·수영복은 상의(색·패턴)와 한 벌
     );
-    skirt.position.y = isDress ? 0.53 : 0.50;
-    skirt.userData.outlineBase = isDress ? vivid(p.top) : vivid(p.bottom);
+    skirt.position.y = isSwim ? 0.50 : (isDress ? 0.53 : 0.50);
+    skirt.userData.outlineBase = (isDress || isSwim) ? vivid(p.top) : vivid(p.bottom);
     addOutline(skirt, 0.012, mats, geos);
     wrapper.add(skirt);
+    if (isSwim) {
+      // 어깨끈 2가닥 + 허리 프릴 트림 — 몸판(topMat)과 같은 톤으로 통일
+      for (const s of [-1, 1]) {
+        const strap = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.03, 0.16, 0.02)), topMat);
+        strap.position.set(s * 0.09, 0.60, 0.10);
+        strap.rotation.z = s * 0.15;
+        addOutline(strap, 0.008, mats, geos);
+        wrapper.add(strap);
+      }
+      const frill = new THREE.Mesh(mkGeo(new THREE.TorusGeometry(0.158, 0.018, 8, 20)), mkMat(toon(shade(p.top, 0.8))));
+      frill.rotation.x = Math.PI / 2;
+      frill.position.y = 0.505;
+      addOutline(frill, 0.007, mats, geos);
+      wrapper.add(frill);
+    }
   } else {
     // 바지/멜빵바지: 골반 덮개
     const shorts = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.16, 16, 12, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.35)), bottomMat);
@@ -1105,6 +1221,7 @@ export function buildChibi(params) {
   const ouchEyes = [];   // 3D 눈(개구리) — ouch 때 찡긋(납작). {mesh, baseY} 저장
 
   if (p.species === 'human') {
+  if (p.hairStyle !== 'bald') {
   // 공통 헬멧 셸 (앞이마 위 ~ 뒤통수)
   const shell = new THREE.Mesh(
     mkGeo(new THREE.SphereGeometry(HAIR_R, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.44)),
@@ -1170,6 +1287,17 @@ export function buildChibi(params) {
     }
   }
   // 'bob'/'short'는 셸+커튼(+뱅)으로 완성
+  } else {
+    // 대머리 — 헤어 파츠 전부 생략, 두피(skinMat 두상)가 그대로 노출된다(skull이 이미
+    // 피부색으로 전체 두상을 덮으므로 셸만 빼면 됨). 만화적 정수리 하이라이트만 얹는다.
+    const shine = new THREE.Mesh(
+      mkGeo(new THREE.SphereGeometry(HEAD_R * 0.16, 12, 8)),
+      mkMat(new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.3 }))
+    );
+    shine.scale.set(1, 0.45, 0.85);
+    shine.position.set(-0.04, HEAD_R * 0.88, HEAD_R * 0.22);
+    hairRoot.add(shine);
+  }
   } else {
     // ---- 동물 종족: 헤어 대신 귀/털/꼬리 (머리는 skin=털색 그대로 노출) ----
     const sp = p.species;
