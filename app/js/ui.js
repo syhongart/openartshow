@@ -2805,8 +2805,10 @@ function buildChibiMaker() {
     previewRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     previewRenderer.setPixelRatio(Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
     previewRenderer.setSize(300, 400, false);
-    previewRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-    previewRenderer.toneMappingExposure = 1.1;
+    // 정직한 색 프리뷰 — 스와치에서 고른 피부/옷색이 실제로 그 색으로 보이게.
+    // (기존 ACES+강한 웜은 어두운 톤을 주황으로 클리핑시켜 팔레트와 어긋났음)
+    previewRenderer.toneMapping = THREE.NoToneMapping;
+    previewRenderer.toneMappingExposure = 1.0;
     previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
     previewScene = new THREE.Scene();
     previewScene.background = new THREE.Color('#f6f1e3');
@@ -2814,11 +2816,12 @@ function buildChibiMaker() {
     previewCamera = new THREE.PerspectiveCamera(30, 300 / 400, 0.1, 20);
     previewCamera.position.set(0, 0.86, 3.12);
     previewCamera.lookAt(0, 0.7, 0);
-    previewScene.add(new THREE.HemisphereLight(0xfff1d9, 0x2b1f14, 3.0));
-    const key = new THREE.DirectionalLight(0xffd9a0, 3.0);
+    // 중립·중강도 스튜디오 조명(살짝만 웜) — 재질색이 스와치대로 나오도록. 클리핑 방지.
+    previewScene.add(new THREE.HemisphereLight(0xfff6ee, 0x6a625a, 1.5));
+    const key = new THREE.DirectionalLight(0xfff8f0, 1.2);
     key.position.set(1.4, 2.6, 2.0);
     previewScene.add(key);
-    const fill = new THREE.DirectionalLight(0xffe8c8, 1.1);
+    const fill = new THREE.DirectionalLight(0xfff8f2, 0.32);
     fill.position.set(-1.8, 1.1, 1.6);
     previewScene.add(fill);
     previewRotator = new THREE.Group();
