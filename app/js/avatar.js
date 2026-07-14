@@ -16,6 +16,12 @@ import { getCanvasFont } from './fonts.js';
  *   테두리로만 표현한다.
  * @returns {THREE.Sprite}
  */
+// 닉네임이 실제로 있는지 — 공백만 있거나 빈 문자열은 "라벨 표시 안 함" 의도로 본다.
+// (꾸미기 프리뷰·본인 아바타는 라벨을 숨기려고 ' '를 넘겨왔다.)
+function hasNickname(nickname) {
+  return typeof nickname === 'string' && nickname.trim().length > 0;
+}
+
 function createNicknameSprite(nickname, colorHex) {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -146,10 +152,12 @@ function createFallbackAvatar(colorHex, nickname) {
   group.add(eyeL, eyeR);
   disposables.push(eyeGeo, eyeMat);
 
-  // ---- 닉네임 라벨: 머리 위 0.5m ----
-  const label = createNicknameSprite(nickname, colorHex);
-  label.position.y = headY + headRadius + 0.5;
-  group.add(label);
+  // ---- 닉네임 라벨: 머리 위 0.5m (공백/빈 닉네임이면 라벨 없음) ----
+  const label = hasNickname(nickname) ? createNicknameSprite(nickname, colorHex) : null;
+  if (label) {
+    label.position.y = headY + headRadius + 0.5;
+    group.add(label);
+  }
 
   return {
     group,
@@ -158,8 +166,10 @@ function createFallbackAvatar(colorHex, nickname) {
     },
     dispose() {
       for (const d of disposables) d.dispose();
-      if (label.material.map) label.material.map.dispose();
-      label.material.dispose();
+      if (label) {
+        if (label.material.map) label.material.map.dispose();
+        label.material.dispose();
+      }
     },
   };
 }
@@ -179,9 +189,14 @@ function createChibiAvatarInstance(charId, colorHex, nickname) {
   }
   const group = new THREE.Group();
   group.add(built.group);
-  const label = createNicknameSprite(nickname, colorHex);
-  label.position.y = built.height + 0.42;
-  group.add(label);
+  // 닉네임 라벨 — 공백/빈 닉네임은 "라벨 없음" 의도(꾸미기 프리뷰·본인 아바타)이므로
+  // 아예 만들지 않는다. (기존엔 ' '를 넘겨도 pill 배경+테두리가 그려져 머리 위에
+  // 초록 반원처럼 보였다 — 감독 보고 blob의 원인.)
+  const label = hasNickname(nickname) ? createNicknameSprite(nickname, colorHex) : null;
+  if (label) {
+    label.position.y = built.height + 0.42;
+    group.add(label);
+  }
   return {
     group,
     update(delta, speed) {
@@ -195,8 +210,10 @@ function createChibiAvatarInstance(charId, colorHex, nickname) {
     },
     dispose() {
       built.dispose();
-      if (label.material.map) label.material.map.dispose();
-      label.material.dispose();
+      if (label) {
+        if (label.material.map) label.material.map.dispose();
+        label.material.dispose();
+      }
     },
   };
 }
