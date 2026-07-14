@@ -77,6 +77,11 @@
     --shadow-panel: 0 8px 20px rgba(20, 21, 26, 0.32);
 
     --content-max-w: 1180px;
+
+    /* ---- 모션: CSS linear() 스프링 곡선 (감독 승인 "생기" 데모 재사용, §7 모션 절제 — 상시 아님, 상호작용 순간만) ---- */
+    --spring-soft: linear(0, 0.135, 0.417, 0.708, 0.933, 1.067, 1.122, 1.121, 1.091, 1.053, 1.020, 0.998, 0.987, 0.984, 0.987, 0.991, 0.996, 0.999, 1.001, 1.002, 1.002, 1.001, 1.001, 1, 1);
+    --spring-press: linear(0, 0.163, 0.516, 0.881, 1.144, 1.264, 1.260, 1.178, 1.074, 0.987, 0.937, 0.925, 0.940, 0.967, 0.994, 1.013, 1.020, 1.019, 1.012, 1.005, 0.998, 0.995, 0.994, 0.996, 1);
+    --spring-fallback: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   * { box-sizing: border-box; }
@@ -110,19 +115,39 @@
     font-family: inherit; font-size: var(--fs-label); font-weight: 700;
     min-height: 44px; padding: 0 24px; border-radius: var(--r-control);
     cursor: pointer; white-space: nowrap; border: none;
-    transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease, color .18s ease;
+    /* 순서 고정: transform, box-shadow, background-color, border-color, color — 아래 hover/active 오버라이드가 같은 순서를 유지해야 함 */
+    transition: transform .24s var(--spring-fallback), box-shadow .5s ease-out, background-color .18s ease, border-color .18s ease, color .18s ease;
   }
-  .btn:active { transform: translateY(1px) scale(.98); }
-  /* Primary = 코랄, CTA·입장 전용(§3-2) */
-  .btn-primary { background: var(--coral-500); color: var(--text-dark); }
-  .btn-primary:hover { background: var(--coral-600); transform: translateY(-2px); box-shadow: var(--shadow-card-hover); }
-  /* Secondary = 바이올렛 아웃라인, 정체성/일반 인터랙션(§3-2) */
+  @supports (transition-timing-function: linear(0, 1)) {
+    .btn { transition-timing-function: var(--spring-soft), ease-out, ease, ease, ease; }
+  }
+  .btn:hover { transition-duration: .24s, .12s, .18s, .18s, .18s; }
+  .btn:active {
+    transform: translateY(1px) scale(.98);
+    transition-duration: .14s, .12s, .12s, .12s, .12s;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .btn:active { transition-timing-function: var(--spring-press), ease-out, ease, ease, ease; }
+  }
+  /* Primary = 코랄, CTA·입장 전용(§3-2) — hover·active 순간에만 코랄 글로우가 즉발했다 잦아든다(상시 발광 아님) */
+  .btn-primary { background: var(--coral-500); color: var(--text-dark); box-shadow: 0 0 0 0 rgba(20, 21, 26, 0), 0 0 0 0 rgba(255, 112, 94, 0); }
+  .btn-primary:hover,
+  .btn-primary:active {
+    background: var(--coral-600);
+    box-shadow: var(--shadow-card-hover), 0 0 26px 6px rgba(255, 112, 94, 0.55);
+  }
+  .btn-primary:hover { transform: translateY(-2px); }
+  .btn-primary:active { transform: translateY(1px) scale(.98); }
+  /* Secondary = 바이올렛 아웃라인, 정체성/일반 인터랙션(§3-2) — 글로우 없이 텍스트/배경 톤만(과하지 않게) */
   .btn-secondary { background: transparent; color: var(--violet-300); border: 1.5px solid var(--violet-500); }
   .btn-secondary:hover { background: rgba(139, 114, 255, 0.12); transform: translateY(-2px); }
   .btn-text { background: none; color: var(--violet-300); font-weight: 700; font-size: var(--fs-label); padding: 0; min-height: auto; display: inline-flex; align-items: center; gap: 4px; }
   .btn-text:hover { color: var(--violet-300); text-decoration: underline; }
   @media (prefers-reduced-motion: reduce) {
-    .btn:hover, .btn:active { transform: none; }
+    .btn, .btn:hover, .btn:active, .btn-primary:hover, .btn-primary:active {
+      transition-duration: .01ms !important;
+    }
+    .btn:hover, .btn:active, .btn-primary:hover, .btn-primary:active { transform: none; }
   }
 
   /* 상태 배지 — "전시중"류는 시안(온라인·라이브 역할, §7-16) */
@@ -190,9 +215,21 @@
     display: flex; flex-direction: column;
     background: var(--surface-dark-1); border: 1px solid var(--border-dark);
     border-radius: var(--r-plate); overflow: hidden;
-    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+    /* 순서 고정: transform, box-shadow, border-color */
+    transition: transform .26s var(--spring-fallback), box-shadow .3s ease, border-color .3s ease;
   }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .exh-card { transition-timing-function: var(--spring-soft), ease, ease; }
+  }
+  /* 전시 카드는 작품 프레임 — 액센트 글로우 금지, 중립만 유지(§3-6·§3-8). 스프링 모션만 얹는다 */
   .exh-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-card-hover); border-color: var(--neutral-warm-gray-500); }
+  .exh-card:active {
+    transform: translateY(-1px) scale(.99);
+    transition-duration: .14s, .18s, .18s;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .exh-card:active { transition-timing-function: var(--spring-press), ease, ease; }
+  }
   .exh-thumb {
     aspect-ratio: 16 / 10; width: 100%;
     /* 작품/전시 썸네일 = 중립 계열만. 액센트 색 사용 금지(§3-6·§3-8) */
@@ -233,9 +270,20 @@
   .feature-card {
     background: var(--surface-dark-1); border: 1px solid var(--border-dark);
     border-radius: var(--r-panel); padding: var(--space-5);
-    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+    box-shadow: 0 0 0 0 rgba(20, 21, 26, 0), 0 0 0 0 rgba(139, 114, 255, 0);
+    /* 순서 고정: transform, box-shadow, border-color */
+    transition: transform .26s var(--spring-fallback), box-shadow .45s ease-out, border-color .3s ease;
   }
-  .feature-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card-hover); border-color: var(--violet-500); }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .feature-card { transition-timing-function: var(--spring-soft), ease-out, ease; }
+  }
+  /* 관람 방식 패널 — 정체성 액센트인 바이올렛 글로우가 hover 순간에만 즉발했다 잦아든다(상시 발광 아님) */
+  .feature-card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-card-hover), 0 0 22px 2px rgba(139, 114, 255, 0.35);
+    border-color: var(--violet-500);
+    transition-duration: .26s, .12s, .18s;
+  }
   .fc-icon { width: 40px; height: 40px; color: var(--text-light-dim); margin-bottom: 14px; }
   .fc-icon svg { width: 100%; height: 100%; display: block; }
   .feature-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 700; color: var(--text-light); }
@@ -304,6 +352,14 @@
       -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
     }
     .mobile-sticky-cta .btn { width: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .exh-card, .exh-card:hover, .exh-card:active,
+    .feature-card, .feature-card:hover {
+      transition-duration: .01ms !important;
+    }
+    .exh-card:hover, .exh-card:active, .feature-card:hover { transform: none; }
   }
 
   /* ---------- 가로 넘침 방지 보강 ---------- */
