@@ -1617,8 +1617,10 @@ export function buildChibi(params) {
       } else if (LATHE.has(sp)) {
         // 위로 휜 테이퍼 꼬리 — 구버전(프로필 회전 = 아래로 늘어진 물방울)을 폐기하고
         // 곡선(CatmullRom)을 따라 감긴 튜브 + 둥근 끝뭉치로 자연스러운 꼬리를 만든다.
-        // 뿌리를 몸통 뒤로 더 밀어 여유를 준다 — 찰랑임 스윙 시 몸을 뚫지 않게(감독 보고).
-        tailPivot.position.z = -0.28;
+        // 뿌리를 엉덩이 뒷면(y≈0.40·z≈-0.13)에 붙인다 — 이전엔 z=-0.28로 과하게 밀어
+        // 몸과 꼬리가 벌어져 "떠 있는"(공중 부양) 버그가 났었다(감독 보고). 클리어런스는
+        // 곡선이 뒤로 뻗는 형태와 스윙 진폭으로 확보하고, 뿌리는 표면에 접하게 둔다.
+        tailPivot.position.set(0, 0.40, -0.13);
         const spec = ({
           fox:     { rad: R * 0.17, len: 1.35, up: 1.0, tip: '#fff6ea', bushy: true },
           cat:     { rad: R * 0.075, len: 1.1, up: 1.15 },
