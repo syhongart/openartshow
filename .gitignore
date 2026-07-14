@@ -58,3 +58,9 @@ sysinfo.txt
 # Crashlytics generated file
 crashlytics-build.properties
 
+# Node — 로컬 개발/테스트 도구(헤드리스 스모크용 playwright 등)만. 배포 산출물은
+# 의존성 0(node 표준 라이브러리만)이라 저장소엔 커밋하지 않는다.
+node_modules/
+package.json
+package-lock.json
+
