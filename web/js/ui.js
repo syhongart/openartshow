@@ -11,6 +11,7 @@ import {
   CHIBI_HAIR_STYLES,
   CHIBI_EYE_STYLES,
   CHIBI_MOUTH_STYLES,
+  CHIBI_BEARD_STYLES,
   CHIBI_BOTTOM_TYPES,
   CHIBI_ACCESSORIES,
   CHIBI_FACE_SHAPES,
@@ -3097,6 +3098,7 @@ function buildChibiMaker() {
       chipRow('얼굴형', CHIBI_FACE_SHAPES, 'face');
       chipRow('눈', CHIBI_EYE_STYLES, 'eyeStyle');
       chipRow('입', CHIBI_MOUTH_STYLES, 'mouth');
+      if (!isAnimal) chipRow('수염', CHIBI_BEARD_STYLES, 'beardStyle'); // 사람 전용
       chipRow('볼터치', boolOpts('없음', '있음'), 'blush');
       swatchRow('눈동자 색', EYE_COLORS, 'eyeColor');
     } else if (activeCat === 'hair') {
