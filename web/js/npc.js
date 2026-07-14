@@ -13,7 +13,13 @@
 // 층간 이동(계단 내비게이션)은 하지 않는다 — NPC마다 담당 층을 배정해
 // 지하 미디어관부터 옥상까지 골고루 살아있게 한다.
 
-import { encodeChibi } from './chibi.js';
+import {
+  encodeChibi,
+  CHIBI_PRESETS,
+  CHIBI_SPECIES,
+  SPECIES_PRESET,
+  SPECIES_OUTFIT,
+} from './chibi.js';
 import { getViewingPose } from './artworks.js';
 
 const NPC_NAMES = ['모네홀릭', '별헤는밤', '느린산책', '점묘덕후', '푸른시간', '수집가K'];
@@ -137,7 +143,19 @@ function randRange(a, b) {
 }
 
 function randomChibiChar() {
-  return encodeChibi({
+  // AI 관객도 확장된 16종(사람 + 동물)을 골고루 보여준다. 예전에는 species를 안 넣어
+  // 전부 기본 '사람'으로만 나왔다 — 월드가 새 종족을 반영하지 못하던 버그.
+  // ⅔은 큐레이트 프리셋(동물 포함)에서 뽑아 완성도 있는 다양성을, ⅓은 랜덤 종족+랜덤
+  // 의상으로 개체 다양성을 준다.
+  if (Math.random() < 0.66 && CHIBI_PRESETS && CHIBI_PRESETS.length) {
+    return encodeChibi(rand(CHIBI_PRESETS).look);
+  }
+  const species = (CHIBI_SPECIES && CHIBI_SPECIES.length ? rand(CHIBI_SPECIES).id : 'human');
+  // 동물이면 종족 팔레트(털색·포인트색)+기본 배색을 얹어야 사람 피부색이 남지 않는다.
+  const speciesBase = species === 'human'
+    ? {}
+    : Object.assign({}, SPECIES_PRESET[species] || {}, SPECIES_OUTFIT[species] || {});
+  return encodeChibi(Object.assign({
     skin: rand(SKINS),
     hairStyle: rand(HAIR_STYLES),
     hairColor: rand(HAIRS),
@@ -150,7 +168,7 @@ function randomChibiChar() {
     bottomType: Math.random() < 0.5 ? 'skirt' : 'pants',
     shoes: rand(['#fffdf7', '#3a3f4a', '#e0596e']),
     acc: rand(ACCS),
-  });
+  }, { species }, speciesBase));
 }
 
 export class NpcCrowd {
