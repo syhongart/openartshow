@@ -20,6 +20,10 @@ import {
   CHIBI_OUTFITS,
   CHIBI_PRESETS,
   SPECIES_PRESET,
+  SKIN_TONES,
+  HAIR_COLORS,
+  EYE_COLORS,
+  CHIBI_CLOTH_COLORS,
   encodeChibi,
   normalizeChibi,
 } from './chibi.js';
@@ -2711,21 +2715,7 @@ function buildShareModal() {
 // 치비 메이커 모달 — chibi.js(자체 코드 생성기)의 파라미터를 칩/스와치로 편집.
 // DCL 커스터마이저와 동일한 모달 CSS(lu-am-*)를 재사용하되 탭 없이 한 화면이다.
 // 프리뷰는 createAvatarInstance('chibi:'+JSON)를 그대로 재사용한다.
-// ---------------------------------------------------------------------------
-// 스와치 팔레트 — 아바타킷(DCL) 삭제로 편입된 자체 상수 (치비 메이커 전용)
-const SKIN_TONES = ['#ffe0c8', '#ffd9bd', '#f0c8a8', '#e0b090', '#c98d66', '#a06844', '#7a4a2f'];
-const HAIR_COLORS = ['#2b2b33', '#6b4530', '#8a5a3b', '#c9a227', '#d96c2c', '#8a4be0', '#4a5568', '#d8d3ca'];
-const EYE_COLORS = ['#2b2b33', '#7a4a2f', '#3f6f8f', '#4f7a3a', '#b02e2e', '#6a4c93'];
-
-const CHIBI_CLOTH_COLORS = [
-  // 파스텔
-  '#ff8fab', '#ffb3c1', '#a9d6e8', '#bfe3ec', '#c8ecd9',
-  '#95d5b2', '#ffe08a', '#ffd166', '#d9c9f5', '#b799ff',
-  // 선명
-  '#5468c4', '#7a9cc4', '#e0596e', '#d96c2c', '#4f7a3a',
-  // 무채·정장
-  '#fffdf7', '#c7ccd4', '#7d7d54', '#39414f', '#2c3038',
-];
+// 스와치 팔레트(SKIN_TONES/HAIR_COLORS/EYE_COLORS/CHIBI_CLOTH_COLORS)는 chibi.js(SSOT)에서 import.
 
 // (사진→아야모 휴리스틱 분석기는 감독 판단으로 철회 — "색만 맞춰서는 큰 의미가
 // 없다". 비전 AI 버전은 백엔드 확보 후 재도전. 구현은 git 이력 b2ff2f3b 참조.)

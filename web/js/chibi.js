@@ -58,6 +58,20 @@ export const CHIBI_ACCESSORIES = [
   { id: 'flower', name: '꽃' },
   { id: 'horns', name: '뿔' },
 ];
+// 색 팔레트 — 꾸미기 스와치와 랜덤 생성기가 공유하는 단일 원본(SSOT).
+// (예전엔 ui.js·npc.js에 흩어져 복제됐다 → chibi.js로 통합.)
+export const SKIN_TONES = ['#ffe0c8', '#ffd9bd', '#f0c8a8', '#e0b090', '#c98d66', '#a06844', '#7a4a2f'];
+export const HAIR_COLORS = ['#2b2b33', '#6b4530', '#8a5a3b', '#c9a227', '#d96c2c', '#8a4be0', '#4a5568', '#d8d3ca'];
+export const EYE_COLORS = ['#2b2b33', '#7a4a2f', '#3f6f8f', '#4f7a3a', '#b02e2e', '#6a4c93'];
+export const CHIBI_CLOTH_COLORS = [
+  // 파스텔
+  '#ff8fab', '#ffb3c1', '#a9d6e8', '#bfe3ec', '#c8ecd9',
+  '#95d5b2', '#ffe08a', '#ffd166', '#d9c9f5', '#b799ff',
+  // 선명
+  '#5468c4', '#7a9cc4', '#e0596e', '#d96c2c', '#4f7a3a',
+  // 무채·정장
+  '#fffdf7', '#c7ccd4', '#7d7d54', '#39414f', '#2c3038',
+];
 export const CHIBI_FACE_SHAPES = [
   { id: 'round', name: '동글' },
   { id: 'slim', name: '갸름' },
@@ -288,6 +302,49 @@ export function decodeChibi(charId) {
   } catch {
     return null;
   }
+}
+
+const _pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+/**
+ * 랜덤 아야모 룩 — "다양한 아야모 만드는 법"의 단일 원본(SSOT).
+ * AI 관객(npc.js) 등 아야모가 필요한 모든 곳이 이 함수를 가져다 쓴다. 종족·프리셋·
+ * 팔레트가 늘어나면 여기 한 곳만 바뀌고 모든 소비자가 자동으로 새 아야모를 반영한다.
+ * @param {{ presetBias?: number, noPreset?: boolean }} [opts]
+ *   presetBias: 큐레이트 프리셋(동물 포함)에서 뽑을 확률(기본 0.66). 나머지는 랜덤 종족.
+ *   noPreset: true면 항상 랜덤 종족 조합.
+ * @returns {object} normalizeChibi를 통과한 look 파라미터
+ */
+export function randomChibiLook(opts = {}) {
+  const presetBias = typeof opts.presetBias === 'number' ? opts.presetBias : 0.66;
+  if (!opts.noPreset && CHIBI_PRESETS.length && Math.random() < presetBias) {
+    return normalizeChibi(Object.assign({}, _pick(CHIBI_PRESETS).look));
+  }
+  const species = _pick(CHIBI_SPECIES).id;
+  // 동물이면 종족 팔레트(털색·포인트색)+기본 배색을 얹어 사람 피부색이 남지 않게 한다.
+  const speciesBase = species === 'human'
+    ? {}
+    : Object.assign({}, SPECIES_PRESET[species] || {}, SPECIES_OUTFIT[species] || {});
+  return normalizeChibi(Object.assign({
+    skin: _pick(SKIN_TONES),
+    hairStyle: _pick(CHIBI_HAIR_STYLES).id,
+    hairColor: _pick(HAIR_COLORS),
+    eyeStyle: _pick(CHIBI_EYE_STYLES).id,
+    eyeColor: _pick(EYE_COLORS),
+    mouth: _pick(CHIBI_MOUTH_STYLES).id,
+    blush: Math.random() < 0.75,
+    top: _pick(CHIBI_CLOTH_COLORS),
+    bottom: _pick(CHIBI_CLOTH_COLORS),
+    bottomType: _pick(CHIBI_BOTTOM_TYPES).id,
+    shoes: _pick(CHIBI_CLOTH_COLORS),
+    acc: _pick(CHIBI_ACCESSORIES).id,
+  }, { species }, speciesBase));
+}
+
+/** 랜덤 아야모를 'chibi:'+JSON 문자열로 — randomChibiLook은 이미 정규화된 룩을
+ *  돌려주므로 여기서 재정규화(encodeChibi)하지 않고 바로 직렬화한다(이중 정규화 방지). */
+export function randomChibiChar(opts) {
+  return CHIBI_CHAR_PREFIX + JSON.stringify(randomChibiLook(opts));
 }
 
 // ---------------------------------------------------------------------------

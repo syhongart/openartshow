@@ -13,26 +13,12 @@
 // 층간 이동(계단 내비게이션)은 하지 않는다 — NPC마다 담당 층을 배정해
 // 지하 미디어관부터 옥상까지 골고루 살아있게 한다.
 
-import {
-  encodeChibi,
-  CHIBI_PRESETS,
-  CHIBI_SPECIES,
-  SPECIES_PRESET,
-  SPECIES_OUTFIT,
-} from './chibi.js';
+// 아야모 생성은 chibi.js(SSOT)에서 가져다 쓴다 — 종족·프리셋·팔레트가 늘어도 자동 반영.
+import { encodeChibi, randomChibiChar } from './chibi.js';
 import { getViewingPose } from './artworks.js';
 
 const NPC_NAMES = ['모네홀릭', '별헤는밤', '느린산책', '점묘덕후', '푸른시간', '수집가K'];
 const NPC_COLORS = ['#e07a5f', '#81b29a', '#f2cc8f', '#8e7dbe', '#6a8caf', '#d68fb8'];
-
-// 랜덤 치비 룩 재료 — 관객답게 차분한 조합 위주
-const SKINS = ['#ffd9bd', '#f0c8a8', '#e0b090', '#c98d66'];
-const HAIRS = ['#6b4530', '#2b2b33', '#8a4be0', '#d96c2c', '#c9a227', '#4a5568'];
-const CLOTHES = ['#ff8fab', '#ffd166', '#7ec4cf', '#95d5b2', '#5468c4', '#b799ff', '#e0596e', '#3a3f4a'];
-const HAIR_STYLES = ['twintail', 'bob', 'ponytail', 'buns', 'short'];
-const EYE_STYLES = ['sparkle', 'round', 'happy'];
-const MOUTHS = ['smile', 'cat', 'open'];
-const ACCS = ['none', 'ribbon', 'flower', 'none'];
 
 const REMARKS = [
   (t) => `『${t}』 앞에서 발이 안 떨어지네요`,
@@ -142,34 +128,7 @@ function randRange(a, b) {
   return a + Math.random() * (b - a);
 }
 
-function randomChibiChar() {
-  // AI 관객도 확장된 16종(사람 + 동물)을 골고루 보여준다. 예전에는 species를 안 넣어
-  // 전부 기본 '사람'으로만 나왔다 — 월드가 새 종족을 반영하지 못하던 버그.
-  // ⅔은 큐레이트 프리셋(동물 포함)에서 뽑아 완성도 있는 다양성을, ⅓은 랜덤 종족+랜덤
-  // 의상으로 개체 다양성을 준다.
-  if (Math.random() < 0.66 && CHIBI_PRESETS && CHIBI_PRESETS.length) {
-    return encodeChibi(rand(CHIBI_PRESETS).look);
-  }
-  const species = (CHIBI_SPECIES && CHIBI_SPECIES.length ? rand(CHIBI_SPECIES).id : 'human');
-  // 동물이면 종족 팔레트(털색·포인트색)+기본 배색을 얹어야 사람 피부색이 남지 않는다.
-  const speciesBase = species === 'human'
-    ? {}
-    : Object.assign({}, SPECIES_PRESET[species] || {}, SPECIES_OUTFIT[species] || {});
-  return encodeChibi(Object.assign({
-    skin: rand(SKINS),
-    hairStyle: rand(HAIR_STYLES),
-    hairColor: rand(HAIRS),
-    eyeStyle: rand(EYE_STYLES),
-    eyeColor: rand(['#7a4a2f', '#3f6f8f', '#4f7a3a', '#2b2b33']),
-    mouth: rand(MOUTHS),
-    blush: Math.random() < 0.75,
-    top: rand(CLOTHES),
-    bottom: rand(CLOTHES),
-    bottomType: Math.random() < 0.5 ? 'skirt' : 'pants',
-    shoes: rand(['#fffdf7', '#3a3f4a', '#e0596e']),
-    acc: rand(ACCS),
-  }, { species }, speciesBase));
-}
+// randomChibiChar는 chibi.js(SSOT)에서 import — AI 관객은 확장된 종족·프리셋을 자동 반영한다.
 
 export class NpcCrowd {
   /**
