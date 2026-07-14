@@ -116,7 +116,7 @@ export const GENDER_PRESET = {
   neutral: { gender: 'neutral', hairStyle: 'bob', hairColor: '#8a5a3b', top: '#95d5b2', bottom: '#ffd166', bottomType: 'pants', acc: 'flower', eyeStyle: 'happy' },
 };
 // 완성 룩 프리셋 — 고객이 골라서 바로 적용 후 세부 커스터마이즈하는 시작점.
-// 종족별 의상 색 배합 (동물의 숲 참고: 털 바탕 + 포인트 + 보색/대비 의상). _sp() 프리셋에 병합.
+// 종족별 의상 색 배합 (자연 배색 참고: 털 바탕 + 포인트 + 보색/대비 의상). _sp() 프리셋에 병합.
 export const SPECIES_OUTFIT = {
   cat: { top: '#e0a45c', bottom: '#6b4530' },
   dog: { top: '#5c7fa6', bottom: '#a68a5c' },
@@ -136,7 +136,7 @@ export const SPECIES_OUTFIT = {
   pig: { top: '#8fd6b4', bottom: '#fbead0' },
 };
 const _sp = (id, name, extra) => ({ id, name, look: Object.assign({ species: id, eyeStyle: 'happy' }, SPECIES_PRESET[id] || {}, SPECIES_OUTFIT[id] || {}, extra || {}) });
-// 종족 색 변형 프리셋(같은 종 다른 개체 — 동물의 숲식). id는 고유해야 하므로 별도 지정.
+// 종족 색 변형 프리셋(같은 종 다른 개체 — 자연 배색식). id는 고유해야 하므로 별도 지정.
 const _spv = (id, species, name, over) => ({ id, name, look: Object.assign({ species, eyeStyle: 'happy' }, SPECIES_PRESET[species] || {}, SPECIES_OUTFIT[species] || {}, over || {}) });
 export const CHIBI_PRESETS = [
   // ── 사람 완성 룩 ──
@@ -184,7 +184,7 @@ const FACE_SHAPE_DEF = {
   square: { sx: 1.03, sy: 0.97, sz: 1.0, taper: 0, flat: 0.5 },
   vline: { sx: 0.97, sy: 1.03, sz: 0.98, taper: 0.3, flat: 0 },
 };
-// 종족별 기본 두상 — "얼굴이 다 동그라미가 아니어도" (동물의 숲 참고). 사용자가 고르는
+// 종족별 기본 두상 — "얼굴이 다 동그라미가 아니어도" (다양한 마스코트 두상 참고). 사용자가 고르는
 // FACE_SHAPE_DEF는 이 위에 미세 보정으로 얹힌다. human은 기존 하드코딩값(1/0.95/0.97)과
 // 동일 → 기존 사용자 시각 변화 0.
 const SPECIES_HEAD_BASE = {
@@ -1003,7 +1003,7 @@ export function buildChibi(params) {
     geo.computeVertexNormals();
     return geo;
   };
-  // 종족별 주둥이를 skull에 병합 — 같은 털색이라 드로우콜 증가 0 (동물의 숲식 두상 다양화).
+  // 종족별 주둥이를 skull에 병합 — 같은 털색이라 드로우콜 증가 0 (자연스러운 두상 다양화).
   const skullGeo = new THREE.SphereGeometry(HEAD_R, 32, 24);
   const muzzleGeo = buildMuzzleGeo(p.species, HEAD_R);
   let mergedSkull = skullGeo;
