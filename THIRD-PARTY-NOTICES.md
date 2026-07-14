@@ -67,6 +67,17 @@ License: SIL Open Font License 1.1 · https://scripts.sil.org/OFL
 용도: 한글 본문 폰트(unicode-range로 한글에만 적용, 영문은 Pretendard). weight 400/700/800.
 (fontsource `@fontsource/nanum-gothic`의 Korean 서브셋 woff2 사용 — 원저작물의 부분집합.)
 
+## 7. Noto Serif KR (폰트) — `web/vendor/fonts/NotoSerifKR-*.woff2`
+Copyright 2012 Google Inc. All Rights Reserved. (Google 빌드 — Reserved Font Name 없음)
+License: SIL Open Font License 1.1 · https://scripts.sil.org/OFL
+라이선스 전문: `web/vendor/fonts/NotoSerifKR-OFL.txt` 동봉.
+용도: 에세이형 장문 텍스트(큐레이터 평문·작가 노트) 전용 세리프. UI 전역은 나눔고딕/
+Pretendard 유지. weight 400.
+변경: 웹 배포 최적화를 위해 한글은 KS X 1001 상용 2350자로 서브셋(971KB → 311KB),
+라틴은 별도 서브셋 woff2. 원저작물의 글리프 부분집합입니다. (조달: fontsource
+`@fontsource/noto-serif-kr` Korean/Latin 서브셋 → pyftsubset 재서브셋.) RFN 없음 →
+family name "NotoSerifKR" 유지.
+
 --------------------------------------------------------------------------------
 
 ※ `web/assets/`의 그 밖의 이미지·영상(`neon-vanitas.png`, `neon-motion.mp4`, `og.png`),

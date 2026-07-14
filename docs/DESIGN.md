@@ -188,12 +188,14 @@ S 90%+ 인 것과 대비). 텍스트 사용 가능 여부는 크림 배경(`--pa
   라이선스 명확·완성도 높음·self-host 가능. woff2 서브셋(KS X 1001 2350자)으로 용량 관리.
   라틴은 Pretendard 유지 또는 짝이 되는 라틴 세리프 1종 검토. **법무 OFL 조건·표시 확인
   후 도입.**
-- **적용 방식**: `--font-serif` 토큰 신설(SSOT `fonts.css`에 `@font-face` 추가, §1 규약
-  동일). 장문 컨테이너에만 `font-family: var(--font-serif)` 적용. `font-display: swap`,
-  한글 `unicode-range`로 매칭. 로딩 부담을 줄이려 **관람 흐름에서 실제 장문이 나타나는
-  화면에서만 지연 로드**하는 것도 검토.
-- **적용 전까지**: 산세리프(나눔고딕 400 + `--lh-body-loose` 1.85)로 처리하고, 폰트
-  조달·법무 실사 완료 후 장문 영역에 스왑한다(구현은 별도 태스크).
+- **조달 완료(2026-07-14)**: Noto Serif KR을 조달·서브셋(한글 KS X 1001 2350자 311KB
+  + 라틴 19KB) 후 `web/vendor/fonts/`에 self-host, `fonts.css`에 `@font-face`(family
+  `NotoSerifKR`, weight 400, `unicode-range` 매칭) + **`--font-serif` 토큰** 추가 완료.
+  라이선스: SIL OFL 1.1, THIRD-PARTY-NOTICES §7 + `NotoSerifKR-OFL.txt` 동봉.
+- **적용 방식**: 에세이 장문 컨테이너에만 `font-family: var(--font-serif)`. `font-display:
+  swap` + `unicode-range`라 **실제 장문(세리프)이 렌더되는 화면에서만 지연 다운로드**된다
+  (현재 UI엔 미적용이라 사용자 다운로드 0). 제목·라벨·UI 전역은 계속 `--app-font`(나눔+
+  Pretendard) 유지.
 
 ### 4-4. 한/영 균형
 
