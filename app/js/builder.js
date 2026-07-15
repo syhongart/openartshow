@@ -6,7 +6,7 @@
 // 테스트 가능성: createBuilder()가 스크립트 API를 반환 → 헤드리스로 전 경로 검증.
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
-import { normalizeSpace, newSpace, PART_TYPES, FINISH, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
+import { normalizeSpace, newSpace, PART_TYPES, FINISH, FOOTPRINT, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
 import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting, bakeShellLightmaps } from './space-render.js';
 import { youtubeId } from './ytembed.js';
 import { SPACE_PRESETS, getPreset, presetThumb } from './space-presets.js';
@@ -318,7 +318,11 @@ export function createBuilder(canvas, opts = {}) {
   function loop() { renderOnce(); raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(loop) : 0; }
 
   // ── HUD 컨트롤 API (프리미엄 글래스 HUD 배선) ──
-  function resetCamera() { orbit.az = 0.5; orbit.pol = 0.82; orbit.rad = 9.5; orbit.target.set(0, 0.9, 0); applyCamera(); }
+  function resetCamera() { // 공간 크기에 맞춰 조망 거리 자동(감독 #1: 큰 방이 한눈에 들어오게)
+    const [fw, fd] = FOOTPRINT[space.shell.footprint] || [9, 7];
+    orbit.az = 0.5; orbit.pol = 0.82; orbit.rad = Math.max(9.5, Math.hypot(fw, fd) * 0.6);
+    orbit.target.set(0, 0.9, 0); applyCamera();
+  }
   function setGridSnap(on) { gridSnap = !!on; return gridSnap; }
   function setLightIntensity(mult) { renderer.toneMappingExposure = 1.16 * Math.max(0.5, Math.min(2, mult || 1)); renderOnce(); } // 조명 강도(노출)
   function setViewMode(mode) { // 'view'=관람 미리보기(배치·선택 종료)
@@ -345,6 +349,16 @@ export function createBuilder(canvas, opts = {}) {
     space = normalizeSpace({ ...space, shell: { ...space.shell, finish: { ...space.shell.finish, [kind]: id } } });
     rebuild(); emit('change', { space });
     return space.shell.finish[kind];
+  }
+  // 공간 크기(footprint) 변경 — 감독 #1: 작품이 다 들어가게 더 큰 방. FOOTPRINT 프리셋 id.
+  const FOOTPRINT_IDS = new Set(Object.keys(FOOTPRINT));
+  function setFootprint(id) {
+    if (!FOOTPRINT_IDS.has(id)) return space.shell.footprint; // 무효 id 무시(현재값 유지)
+    if (baked) { baked = false; emit('unbaked', {}); } // 크기 바뀌면 베이크 무효 → 실시간 복귀
+    pushUndo();
+    space = normalizeSpace({ ...space, shell: { ...space.shell, footprint: id } });
+    rebuild(); resetCamera(); emit('change', { space }); // 새 방 크기에 카메라 맞춤
+    return space.shell.footprint;
   }
   // 프리셋(심즈식 "완성된 방으로 시작", #49) — 기존 파츠·스키마만. 현재 공간 교체(undo 가능).
   function getPresets() { return SPACE_PRESETS.map((p) => ({ id: p.id, name: p.name, desc: p.desc, thumb: presetThumb(p.space) })); }
@@ -376,7 +390,7 @@ export function createBuilder(canvas, opts = {}) {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
     setScreenVideo, getScreenVideo, setArtworkImage, getArtworkImage,
-    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, getPresets, applyPreset, clearSpace, bake, unbake, isBaked: () => baked,
+    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, setFootprint, getPresets, applyPreset, clearSpace, bake, unbake, isBaked: () => baked,
     save, load, exportJSON, importJSON, resize, renderOnce,
     getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
