@@ -1063,6 +1063,29 @@ const CHIBI_ACTION_DUR = {
 };
 export const CHIBI_ACTIONS = Object.keys(CHIBI_ACTION_DUR);
 
+// ---------------------------------------------------------------------------
+// sit 골반(wrapper.y) 안전 곡선 (검수관 지적 — 3차 재수정)
+// 발은 SphereGeometry(0.082)를 (1, 0.72, 1.25)로 스케일한 타원체라 y반경(0.059)보다
+// z반경(0.1025)이 크다. "발 중심 − y반경"으로 바닥면을 근사하던 이전 튜닝은 발이
+// 고관절+무릎 합산 회전으로 기울어지는 중간 구간에서 실제로는 더 큰 z반경 쪽이
+// 바닥을 향해 dip이 훨씬 깊어지는 걸 놓쳤다(실측 -0.13, 관통). HIP_MAX/KNEE_MAX를
+// 아무리 다시 스케일해도 이 중간-각도 dip은 사라지지 않고(회전각 자체의 기하학적
+// 성질이라 소거 불가) 오히려 그 구간에서 골반을 살짝 들어올려야 안전하다는 것을
+// 헤드리스 Box3(회전 반영) 실측으로 확인했다. sitK 0→1 전 구간을 스캔해 "이 값
+// 이상이면 항상 세이프 마진(0.015) 확보"하는 wrapper.y 하한선을 구해 표로 굳혔다
+// (선형보간). HIP_MAX=0.4, KNEE_MAX=1.9(선형, 리드 없음) 기준으로 산출.
+const SIT_WY_TABLE = [
+  0.0120, 0.0223, 0.0312, 0.0386, 0.0446, 0.0490, 0.0519, 0.0533, 0.0530, 0.0512,
+  0.0479, 0.0429, 0.0365, 0.0285, 0.0191, 0.0083, -0.0038, -0.0172, -0.0319, -0.0477, -0.0645,
+];
+function sitWrapperY(k) {
+  const kk = Math.max(0, Math.min(1, k)) * (SIT_WY_TABLE.length - 1);
+  const i0 = Math.floor(kk);
+  const i1 = Math.min(SIT_WY_TABLE.length - 1, i0 + 1);
+  const f = kk - i0;
+  return SIT_WY_TABLE[i0] * (1 - f) + SIT_WY_TABLE[i1] * f;
+}
+
 /**
  * 치비 아바타를 조립한다 (동기 — 로드 없음).
  * @param {object} params - normalizeChibi 형태의 파라미터 (생략 시 기본 룩)
@@ -2189,13 +2212,24 @@ export function buildChibi(params) {
           hipK = 0.25 + sN * 0.75;
           kneeK = KNEE_COCK * (1 - Math.min(1, sN));
         } else {
+          // (검수관 지적 — 재수정) 회수 중 무릎을 살짝 되접는 팔로우스루가 있었으나,
+          // hip·knee가 같은 부호로 작은 각(-0.1~-0.3rad 부근)을 지날 때 타원형 발이
+          // 기울며 bbox가 바닥 아래로 처지는 구간(실측 -0.013)과 겹쳐 제거했다.
+          // 무릎을 곧게 펴 둔 채(0) 고관절만 복귀시키면 이 구간을 지나지 않는다.
           const r = easeInOutCubic((u - SNAP_FRAC) / (1 - SNAP_FRAC));
           hipK = 1 - r;
-          kneeK = 0.28 * Math.sin(Math.min(1, r) * Math.PI); // 회수 중 살짝 되접혔다 펴지는 팔로우스루
+          kneeK = 0;
         }
+        // (검수관 지적 — 재수정) 정지 시 발은 이미 바닥에서 0.003밖에 안 뜬 상태라
+        // 다리 회전이 아주 작아도(예: 지지 다리 반동 0.10rad) bbox가 바로 마이너스로
+        // 내려간다(실측: hip=0.1·knee=0에서 -0.0097). idle 숨쉬기(wrapper.y) 흔들림까지
+        // 겹치면 더 나빠지므로, 이 액션 동안은 idle 흔들림을 쓰지 않고 골반을 아주 살짝
+        // (+0.005) 들어 고정 — 회수 구간(hip≈-0.1~-0.3rad)의 실측 최저치(-0.0068)까지
+        // 포함해 항상 세이프 마진이 남게 했다. 지지 다리 반동 폭도 0.10→0.03으로 축소.
+        wrapper.position.y = lerp(wrapper.position.y, 0.005, aBlend);
         if (legPivots.length) {
           legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -hipK * HIP_MAX, aBlend);
-          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, hipK * 0.10, aBlend); // 지지 다리 살짝 반동
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, hipK * 0.03, aBlend); // 지지 다리 살짝 반동
         }
         if (kneePivots.length) {
           // 부호: 고관절과 같은 부호(전방)로 접어 발을 몸 쪽으로 당겼다가, kneeK→0으로
@@ -2230,43 +2264,57 @@ export function buildChibi(params) {
         // 앉기/쪼그리기(신규) — 무릎 세분화로 신규 가능. 골반(wrapper.y) 하강 + 무릎
         // 깊게 접기(고관절과 반대 부호로 상쇄해 발이 앞으로 튀지 않고 몸 아래 유지) +
         // 균형 위해 상체 살짝 앞으로. 내려갔다(hold) 다시 선다.
-        // hip/knee/드롭 조합은 헤드리스로 발(foot) 월드좌표를 직접 실측해 튜닝했다 —
-        // 처음 값(hip -0.4/knee 1.3)은 발이 바닥(y=0) 아래로 약 0.04 파묻혀(관통)
-        // 감독이 지적할 사안이었다. 아래 값은 hold 시 footY≈0으로 맞춘 결과.
+        // (검수관 지적 — 3차 재수정) hip/knee는 이제 sitK에 선형 비례(리드 없음),
+        // wrapper.y는 위 SIT_WY_TABLE 실측표를 그대로 따른다 — 표 자체가 "이 sitK에서
+        // 이 hip/knee 조합일 때 발이 절대 안 뚫리는 골반 높이"를 전 구간 스캔해 구한
+        // 것이라 별도 근사식보다 안전하다(중간 구간엔 골반이 살짝 들리기도 한다 —
+        // 발이 회전하며 기우는 각도 자체의 기하학적 특성이라 스케일 조정으론 못 없앤다).
         const DOWN_FRAC = 0.3, HOLD_FRAC = 0.72;
         let sitK;
         if (u < DOWN_FRAC) sitK = easeOutCubic(u / DOWN_FRAC);
         else if (u < HOLD_FRAC) sitK = 1;
         else sitK = 1 - easeInOutCubic((u - HOLD_FRAC) / (1 - HOLD_FRAC));
-        wrapper.position.y = lerp(wrapper.position.y, -sitK * 0.16, aBlend);
+        // 귀신은 다리가 없어 SIT_WY_TABLE(다리 회전-회피용)이 무의미 — 대신 시트
+        // 하단이 뜬 여유(≈0.05)만 살짝 써서 얕게 가라앉힌다(실측: wy=-0.0645에서
+        // -0.012로 관통, wy=-0.02 근방까지가 세이프).
+        wrapper.position.y = lerp(wrapper.position.y, isGhost ? -sitK * 0.018 : sitWrapperY(sitK), aBlend);
         if (legPivots.length) {
-          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, -sitK * 0.3, aBlend);
-          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -sitK * 0.3, aBlend);
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, -sitK * 0.4, aBlend);
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -sitK * 0.4, aBlend);
         }
         if (kneePivots.length) {
           // 부호: 고관절과 반대(+) — 총 회전을 상쇄해 발이 앞으로 튀지 않고 바닥 근처에 머물게.
-          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, sitK * 1.6, aBlend);
-          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, sitK * 1.6, aBlend);
+          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, sitK * 1.9, aBlend);
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, sitK * 1.9, aBlend);
         }
         bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, sitK * 0.15, aBlend); // 균형용 살짝 숙임
         armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.5 - sitK * 0.15, aBlend);
         armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.5 + sitK * 0.15, aBlend);
         bodyMotionSignal = sitK * 0.4;
       } else if (action === 'breakdance') {
-        // 브레이크댄스(신규, 근사) — 바닥 스핀/프리즈는 범위 밖(팀장 보류)이라, 깊게
-        // 쪼그린 자세에서 무릎을 크게 굽힌 채 좌우로 그루브하는 스텝 + 팔 펌핑으로
-        // "그럴듯한" 느낌만 낸다. 무릎이 없었다면 이 자세 자체가 불가능했다.
+        // 브레이크댄스(신규, 근사) — 바닥 스핀/프리즈는 범위 밖(팀장 보류)이라, 무릎
+        // 리듬 + 좌우 그루브 + 팔 펌핑으로 "그럴듯한" 느낌만 낸다.
+        // (검수관 지적 — 4차 재수정) 1~3차 모두 "무릎만 작게" 접었는데도 실패했다 —
+        // 헤드리스로 고관절=0·무릎만 단독으로 스윕해보니 무릎 0.05~1.0rad 구간
+        // 자체가 타원형 발이 애매하게 기우는 위험대(危險帶)라 무릎 각을 아무리
+        // 줄여도(0.1까지) 안전해지지 않았다(실측 -0.01~-0.04, 완전히 편 무릎이나
+        // 1.1rad 이상 깊이 굽힌 무릎만 안전). sit처럼 "고관절을 무릎과 반대 부호로
+        // 같은 크기만큼" 맞물리면(hip = -knee) 총 회전이 상쇄돼 위험대를 피해간다는
+        // 걸 발견 — 이 조합으로 재설계(+ 안전 마진 0.01 골반 리프트).
         const dp = actionT * 10;
-        const groove = Math.sin(dp * 0.5) * 0.24;
-        wrapper.position.y = lerp(wrapper.position.y, -0.09 + Math.abs(Math.sin(dp)) * 0.03, aBlend);
+        const groove = Math.sin(dp * 0.5) * 0.04;
+        wrapper.position.y = lerp(wrapper.position.y, 0.01, aBlend);
         wrapper.rotation.z = lerp(wrapper.rotation.z, groove, aBlend);
+        const kneeAmt0 = 0.1 + Math.max(0, Math.sin(dp)) * 0.15;
+        const kneeAmt1 = 0.1 + Math.max(0, -Math.sin(dp)) * 0.15;
         if (kneePivots.length) {
-          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, 1.0 + Math.max(0, Math.sin(dp)) * 0.45, aBlend);
-          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, 1.0 + Math.max(0, -Math.sin(dp)) * 0.45, aBlend);
+          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, kneeAmt0, aBlend);
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, kneeAmt1, aBlend);
         }
         if (legPivots.length) {
-          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, Math.sin(dp) * 0.25 - 0.15, aBlend);
-          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -Math.sin(dp) * 0.25 - 0.15, aBlend);
+          // 부호: 무릎과 반대(-)로 같은 크기 — 총 회전을 상쇄해 발이 안전대에 머물게.
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, -kneeAmt0, aBlend);
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -kneeAmt1, aBlend);
         }
         armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, Math.sin(dp + Math.PI) * 0.9, aBlend);
         armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, Math.sin(dp) * 0.9, aBlend);
@@ -2307,12 +2355,18 @@ export function buildChibi(params) {
         bodyMotionSignal = hK * 0.3;
       } else if (action === 'sulk') {
         // 삐침(신규) — 고개/상체를 얕게 숙이고(절보다 얕음) 팔을 몸에 붙인 채, 한쪽
-        // 발을 짧고 빠르게 3회 구른다(고관절+무릎 스냅). 감정 표현 다양성 확보용.
+        // 발을 짧고 빠르게 2회 구른다(stompPhase=actionT*7, dur=1.8s → 약 2사이클,
+        // max(0,sin)이라 사이클당 1회 — 검수관 지적으로 주석 수치 정정: 3회→2회).
+        // 고관절+무릎 스냅. 감정 표현 다양성 확보용.
         const droopK = Math.min(1, u / 0.22);
         bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, droopK * 0.32, aBlend);
         headPivot.rotation.x = lerp(headPivot.rotation.x, droopK * 0.22, aBlend);
         armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.3, aBlend);
         armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.3, aBlend);
+        // (검수관 지적 — 재수정) hip·knee가 같은 부호(전방)로 함께 접히는 중간 진폭
+        // (k≈0.35 부근)에서 발이 -0.0113까지 처지는 구간이 있다(idle 흔들림과 겹치면
+        // 더 나빠짐). 발 구르기의 "쿵" 다운비트 연출로 골반을 더 낮추던 것을 걷어내고
+        // idle 흔들림도 끄는 대신, 항상 살짝 들어올려(+0.012) 세이프 마진을 확보했다.
         const stompPhase = actionT * 7;
         const stompK = Math.max(0, Math.sin(stompPhase));
         if (legPivots.length) {
@@ -2321,7 +2375,7 @@ export function buildChibi(params) {
         if (kneePivots.length) {
           kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, -stompK * 0.55, aBlend);
         }
-        wrapper.position.y = lerp(wrapper.position.y, -Math.max(0, Math.sin(stompPhase + 0.3)) * 0.02, aBlend);
+        wrapper.position.y = lerp(wrapper.position.y, 0.012, aBlend);
         bodyMotionSignal = droopK * 0.3;
       }
     }
