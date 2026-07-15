@@ -114,6 +114,13 @@ export function createBuilder(canvas, opts = {}) {
     const parts = space.parts.slice(); parts[selected] = p;
     space = normalizeSpace({ ...space, parts }); rebuild(); emit('change', { space });
   }
+  function rotateSelectedFine(deltaRad) { // 미세 각도 조정(스냅 없음) — 감독: 선택 시 각도 수정
+    if (selected < 0) return;
+    pushUndo();
+    const p = { ...space.parts[selected], ry: (space.parts[selected].ry || 0) + deltaRad };
+    const parts = space.parts.slice(); parts[selected] = p;
+    space = normalizeSpace({ ...space, parts }); rebuild(); emit('change', { space });
+  }
   function deleteSelected() {
     if (selected < 0) return;
     pushUndo();
@@ -210,7 +217,9 @@ export function createBuilder(canvas, opts = {}) {
     if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 입력창 타이핑 중엔 단축키 무시(WASD·Del 등)
     const k = e.key.toLowerCase();
     if (e.key === 'Escape') cancelPlace();
-    else if (k === 'r') rotateSelected(e.shiftKey ? -1 : 1);           // 회전 양방향
+    else if (k === 'r') rotateSelected(e.shiftKey ? -1 : 1);           // 회전 그리드 스텝(양방향)
+    else if (k === 'q') rotateSelectedFine(-5 * Math.PI / 180);        // 미세 회전 ±5°
+    else if (k === 'e') rotateSelectedFine(5 * Math.PI / 180);
     else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
     else if ((e.ctrlKey || e.metaKey) && k === 'z') { undo(); e.preventDefault(); }
     else if (k === 'w' || e.key === 'ArrowUp') { panBy(0.5, 0); applyCamera(); e.preventDefault(); }
@@ -237,7 +246,7 @@ export function createBuilder(canvas, opts = {}) {
 
   return {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
-    beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, deleteSelected, undo,
+    beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
     setScreenVideo, getScreenVideo,
     save, load, exportJSON, importJSON, resize, renderOnce,
     getSpace: () => space, getSelected: () => selected,
