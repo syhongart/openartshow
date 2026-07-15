@@ -27,9 +27,13 @@ export function createBuilder(canvas, opts = {}) {
   renderer.setPixelRatio(Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
   renderer.setClearColor(0x15161a);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 접지 그림자(디자이너 P0)
   const scene = new THREE.Scene();
   scene.add(new THREE.HemisphereLight(0xfff6ea, 0x2a2a30, 1.0));
-  const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(3, 6, 4); scene.add(key);
+  const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(3, 6, 4);
+  key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0005;
+  { const c = key.shadow.camera; c.left = -9; c.right = 9; c.top = 7; c.bottom = -7; c.near = 0.5; c.far = 30; c.updateProjectionMatrix(); } // 룸 풋프린트 타이트
+  scene.add(key);
   const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 100);
 
   // 카메라 오빗 상태 (천장 숨긴 방 안이 내려다보이는 3/4 부감 시작)
