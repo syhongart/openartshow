@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { normalizeSpace, newSpace, PART_TYPES, FINISH, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
 import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting, bakeShellLightmaps } from './space-render.js';
 import { youtubeId } from './ytembed.js';
+import { SPACE_PRESETS, getPreset, presetThumb } from './space-presets.js';
 
 const SAVE_KEY = 'openartshow.space.v1';
 
@@ -334,6 +335,16 @@ export function createBuilder(canvas, opts = {}) {
     rebuild(); emit('change', { space });
     return space.shell.finish[kind];
   }
+  // 프리셋(심즈식 "완성된 방으로 시작", #49) — 기존 파츠·스키마만. 현재 공간 교체(undo 가능).
+  function getPresets() { return SPACE_PRESETS.map((p) => ({ id: p.id, name: p.name, desc: p.desc, thumb: presetThumb(p.space) })); }
+  function applyPreset(id) {
+    const pr = getPreset(id); if (!pr) return false;
+    pushUndo(); cancelPlace(); selectIndex(-1);
+    if (baked) { baked = false; emit('unbaked', {}); }
+    space = clampCap(normalizeSpace(pr.space)); // 외부 유입 경계에서 80캡 강제(load/import와 동형)
+    rebuild(); emit('change', { space });
+    return true;
+  }
   function clearSpace() { // 클리어(감독: 지우고 다시) — 파츠 전부 비움, 방 셸은 유지. undo 가능.
     pushUndo(); cancelPlace(); selectIndex(-1);
     space = normalizeSpace({ ...space, parts: [] }); rebuild(); emit('change', { space });
@@ -354,7 +365,7 @@ export function createBuilder(canvas, opts = {}) {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
     setScreenVideo, getScreenVideo,
-    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, clearSpace, bake, unbake, isBaked: () => baked,
+    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, getPresets, applyPreset, clearSpace, bake, unbake, isBaked: () => baked,
     save, load, exportJSON, importJSON, resize, renderOnce,
     getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
