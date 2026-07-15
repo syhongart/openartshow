@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>공간 빌더 · OpenArtShow</title>
+<link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<style>
+  :root{ --bg:#15161A; --panel:#1c1d23; --panel2:#23242c; --line:#31323c; --ink:#e7e5ee; --dim:#9b99a8;
+    --violet:#8b7bd8; --cyan:#6fe3ff; --coral:#ff7a66; --app:var(--app-font, system-ui,sans-serif); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--app);overflow:hidden}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  /* 상단 바 */
+  .topbar{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:center;gap:14px;
+    padding:0 18px;background:linear-gradient(#15161ae6,#15161a99);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);z-index:10}
+  .brand{font-weight:700;letter-spacing:-.01em}.brand b{color:var(--violet)}
+  .spacer{flex:1}
+  .status{font-size:13px;color:var(--dim)}.status .cap{color:var(--cyan)}.status .cap.warn{color:var(--coral)}
+  .btn{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+    font:inherit;font-size:13px;padding:7px 13px;border-radius:9px;cursor:pointer;transition:.12s}
+  .btn:hover{border-color:var(--violet);transform:translateY(-1px)}
+  .btn.cta{background:var(--violet);border-color:var(--violet);color:#fff;font-weight:600}
+  /* 팔레트(우측 도킹) */
+  .palette{position:fixed;top:64px;right:14px;width:250px;max-height:calc(100vh - 150px);display:flex;flex-direction:column;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;z-index:10;box-shadow:0 12px 40px #0007}
+  .tabs{display:flex;border-bottom:1px solid var(--line)}
+  .tabs button{flex:1;appearance:none;border:0;background:transparent;color:var(--dim);font:inherit;font-size:12.5px;padding:11px 4px;cursor:pointer}
+  .tabs button.on{color:var(--ink);box-shadow:inset 0 -2px 0 var(--violet)}
+  .parts{padding:10px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .chip{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:inherit;font-size:12.5px;
+    padding:12px 8px;border-radius:10px;cursor:pointer;text-align:center;transition:.12s}
+  .chip:hover{border-color:var(--violet)}
+  .chip.on{border-color:var(--violet);background:#2b2740;color:#fff}
+  .hint{padding:10px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);line-height:1.5}
+  /* 선택 액션 도크 */
+  .seldock{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:none;gap:8px;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;z-index:11;box-shadow:0 10px 30px #0007}
+  .seldock.on{display:flex}
+  .seldock .lab{font-size:12.5px;color:var(--dim);padding:0 4px}
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%) translateY(10px);opacity:0;transition:.2s;
+    background:#2a2230;border:1px solid var(--coral);color:#ffd9d1;font-size:13px;padding:9px 14px;border-radius:10px;z-index:20;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* 모바일: 편집 크롬 숨김(열람 전용) */
+  .mobwarn{display:none}
+  @media (max-width:640px){
+    .palette,.seldock,.topbar .desk{display:none!important}
+    .mobwarn{display:block;position:fixed;left:12px;right:12px;bottom:14px;z-index:10;
+      background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--dim);text-align:center}
+  }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div class="topbar">
+  <div class="brand">Open<b>ArtShow</b> · 공간 빌더</div>
+  <div class="spacer"></div>
+  <div class="status desk">파츠 <b id="nParts">0</b> · 작품/영상 <span class="cap" id="nCap">0</span>/80</div>
+  <button class="btn desk" id="bUndo">되돌리기</button>
+  <button class="btn desk" id="bExport">내보내기</button>
+  <button class="btn desk" id="bLoad">불러오기</button>
+  <button class="btn cta desk" id="bSave">저장</button>
+</div>
+
+<aside class="palette desk">
+  <div class="tabs" id="tabs"></div>
+  <div class="parts" id="parts"></div>
+  <div class="hint">파츠를 고르고 <b>바닥을 클릭</b>해 놓습니다. 놓은 파츠를 <b>클릭</b>하면 선택 — <b>R</b> 회전, <b>Del</b> 삭제, <b>⌘/Ctrl+Z</b> 되돌리기. 드래그=회전 · 휠=줌.</div>
+</aside>
+
+<div class="seldock" id="seldock">
+  <span class="lab" id="selLab">선택됨</span>
+  <button class="btn" id="bRot">회전 (R)</button>
+  <button class="btn" id="bDel">삭제 (Del)</button>
+</div>
+
+<div class="mobwarn">📱 모바일에서는 <b>감상</b>만 가능합니다. 공간 편집은 데스크톱에서 하세요. (드래그=둘러보기)</div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { createBuilder } from './js/builder.js';
+import { PART_TYPES, PART_CATEGORIES } from './js/space.js';
+
+const canvas = document.getElementById('c');
+const B = createBuilder(canvas, { preserveDrawingBuffer: true });
+function fit(){ B.resize(window.innerWidth, window.innerHeight); }
+window.addEventListener('resize', fit); fit();
+
+// 팔레트 구축 (배치 가능한 3카테고리)
+const CAT_LABEL = { structure:'구조', exhibit:'전시', ambience:'분위기', finish:'마감' };
+const placeCats = ['structure','exhibit','ambience'];
+const tabsEl = document.getElementById('tabs'), partsEl = document.getElementById('parts');
+let curCat = 'structure', curChip = null;
+placeCats.forEach((cat,i)=>{
+  const b=document.createElement('button'); b.textContent=CAT_LABEL[cat]; if(i===0)b.className='on';
+  b.onclick=()=>{ [...tabsEl.children].forEach(c=>c.classList.remove('on')); b.classList.add('on'); curCat=cat; renderParts(); };
+  tabsEl.appendChild(b);
+});
+function renderParts(){
+  partsEl.innerHTML='';
+  Object.entries(PART_TYPES).filter(([,s])=>s.cat===curCat).forEach(([type,spec])=>{
+    const c=document.createElement('button'); c.className='chip'; c.textContent=spec.label;
+    c.onclick=()=>{ [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); c.classList.add('on'); curChip=c; B.beginPlace(type); };
+    partsEl.appendChild(c);
+  });
+}
+renderParts();
+
+// 상태·이벤트 배선
+const nParts=document.getElementById('nParts'), nCap=document.getElementById('nCap');
+function refresh(){ const s=B.getStats(); nParts.textContent=s.parts; nCap.textContent=s.uniqueTex; nCap.classList.toggle('warn', s.uniqueTex>=72); }
+B.on('change', refresh); refresh();
+
+const seldock=document.getElementById('seldock'), selLab=document.getElementById('selLab');
+B.on('select', ({index,part})=>{ if(index>=0){ seldock.classList.add('on'); selLab.textContent=(PART_TYPES[part.t]?.label||'파츠')+' 선택됨'; } else seldock.classList.remove('on'); });
+B.on('mode', ()=>{ seldock.classList.remove('on'); });
+
+const toast=document.getElementById('toast'); let toastT=0;
+function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toast.classList.remove('show'),2600); }
+B.on('cap', ({cap})=>showToast('작품·영상은 '+cap+'점까지 걸 수 있어요. (성능 상한)'));
+B.on('saved', ()=>showToast('저장했습니다.'));
+
+document.getElementById('bSave').onclick=()=>B.save();
+document.getElementById('bLoad').onclick=()=>{ if(!B.load()) showToast('저장된 공간이 없습니다.'); };
+document.getElementById('bUndo').onclick=()=>B.undo();
+document.getElementById('bExport').onclick=()=>{
+  const blob=new Blob([B.exportJSON()],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-space.json'; a.click(); URL.revokeObjectURL(a.href);
+};
+document.getElementById('bRot').onclick=()=>B.rotateSelected(1);
+document.getElementById('bDel').onclick=()=>{ B.deleteSelected(); seldock.classList.remove('on'); };
+
+// 헤드리스 테스트 훅
+window.__builder = B;
+</script>
+</body>
+</html>
