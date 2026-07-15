@@ -173,7 +173,11 @@ export function buildSpaceGroup(space, opts = {}) {
   const { fw, fd, hw, hd, H, t } = spaceDims(space);
 
   // shell: 바닥·천장·4벽 + 피처월 오버레이 (미술관 재질 계승)
+  // shellSurf: 라이트맵 베이크용 내부 표면 기술자(중심·내부법선·업·폭·높이) — 정투영 카메라·uv1 정렬에 사용.
+  const shellSurf = [];
+  const UP_Y = () => new THREE.Vector3(0, 1, 0);
   const floorM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), floorMatTex(space.shell.finish.floor, fw, fd))); floorM.position.set(0, -0.05, 0); floorM.receiveShadow = true; g.add(floorM);
+  shellSurf.push({ mesh: floorM, center: new THREE.Vector3(0, 0.001, 0), normal: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0, 0, -1), width: fw, height: fd });
   if (!opts.hideCeiling) { // 에디터 컷어웨이: 천장 숨김(방 안이 보이게)
     const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('ceiling', space.shell.finish.ceiling))); ceilM.position.set(0, H, 0); g.add(ceilM);
   }
@@ -181,6 +185,8 @@ export function buildSpaceGroup(space, opts = {}) {
     const wallW = Math.max(ww, dd); // 벽면 가로 길이(N/S=fw, E/W=fd)로 텍스처 반복
     const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), wallMat(space.shell.finish.wall, wallW, H)));
     m.position.set(x, H / 2, z); m.receiveShadow = true; g.add(m);
+    const inN = new THREE.Vector3(-x, 0, -z).normalize(); // 방 중심 향한 내부 법선
+    shellSurf.push({ mesh: m, center: new THREE.Vector3(x + inN.x * (t / 2), H / 2, z + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: wallW, height: H });
   }
   const fwSide = space.shell.finish.featureWall;
   if (fwSide && fwSide !== 'none') {
@@ -189,6 +195,9 @@ export function buildSpaceGroup(space, opts = {}) {
     const [px, pz, ry] = map[fwSide] || map.north;
     fwl.position.set(px, H / 2, pz); if (ry) fwl.rotation.y = ry;
     g.add(fwl);
+    const fwN = { north: [0, 0, 1], south: [0, 0, -1], east: [-1, 0, 0], west: [1, 0, 0] }[fwSide] || [0, 0, 1];
+    const fwW = (fwSide === 'east' || fwSide === 'west') ? fd - 0.2 : fw - 0.2;
+    shellSurf.push({ mesh: fwl, center: new THREE.Vector3(px + fwN[0] * 0.02, H / 2, pz + fwN[2] * 0.02), normal: new THREE.Vector3(fwN[0], fwN[1], fwN[2]), up: UP_Y(), width: fwW, height: H - 0.2 });
   }
 
   // 파츠: 타입별 그룹. 인스턴싱 가능 → InstancedMesh, 작품/스크린 → 개별(+자동액자 캔버스).
@@ -231,7 +240,7 @@ export function buildSpaceGroup(space, opts = {}) {
       }
     }
   }
-  g.userData = { dims: { fw, fd, hw, hd, H, t }, partRefs, geos, mats, floor: floorM };
+  g.userData = { dims: { fw, fd, hw, hd, H, t }, partRefs, geos, mats, floor: floorM, shell: shellSurf };
   return g;
 }
 
@@ -280,7 +289,43 @@ export function addRoomLighting(group) {
   }
 }
 
-/** group.userData의 geos/mats 정리 */
+// ── GPU 셸 라이트맵 베이크(팀장 승인 A: 무저장·결정론·방문 즉시) ──────────────
+// 스포트라이트만 셸(바닥·벽·피처월) 표면에 GPU 렌더-투-텍스처로 구움 → material.lightMap(uv1).
+// hemi/key는 실시간 유지(파츠도 계속 밝음). 결정론(난수·시간 미사용) → 동일 기기 재베이크 동일.
+// 하이브리드: lightMap(정적 스포트)=가산, 실시간 라이트(아바타/물)=directDiffuse 가산.
+const LIGHTMAP_INTENSITY = 1.7; // 실시간 스포트 풀 밝기에 맞춘 튜닝
+export function bakeShellLightmaps(group, renderer, opts = {}) {
+  const shell = group.userData.shell || []; if (!shell.length || !renderer) return { ms: 0, surfaces: 0 };
+  const res = opts.res || 512;
+  const spots = []; group.traverse((o) => { if (o.isSpotLight) spots.push(o); });
+  const prevRT = renderer.getRenderTarget(), prevTone = renderer.toneMapping, prevClear = new THREE.Color(); renderer.getClearColor(prevClear); const prevAlpha = renderer.getClearAlpha();
+  renderer.toneMapping = THREE.NoToneMapping; // 라이트맵=톤매핑 전 선형 조사량
+  const rts = [], t0 = (typeof performance !== 'undefined' ? performance.now() : 0);
+  const vpm = new THREE.Matrix4(), v = new THREE.Vector3();
+  for (const s of shell) {
+    const rt = new THREE.WebGLRenderTarget(res, res, { colorSpace: THREE.SRGBColorSpace }); rts.push(rt);
+    const bs = new THREE.Scene();
+    const white = new THREE.Mesh(s.mesh.geometry, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 }));
+    white.position.copy(s.mesh.position); white.quaternion.copy(s.mesh.quaternion); bs.add(white);
+    spots.forEach((sp) => { const c = sp.clone(); c.target = sp.target.clone(); bs.add(c); bs.add(c.target); });
+    const cam = new THREE.OrthographicCamera(-s.width / 2, s.width / 2, s.height / 2, -s.height / 2, 0.05, 60);
+    cam.position.copy(s.center).addScaledVector(s.normal, 20); cam.up.copy(s.up); cam.lookAt(s.center); cam.updateMatrixWorld();
+    renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 1); renderer.clear(); renderer.render(bs, cam);
+    const geo = s.mesh.geometry, pos = geo.attributes.position; s.mesh.updateWorldMatrix(true, false);
+    vpm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    const uv1 = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(s.mesh.matrixWorld).applyMatrix4(vpm); uv1[i * 2] = v.x * 0.5 + 0.5; uv1[i * 2 + 1] = v.y * 0.5 + 0.5; }
+    geo.setAttribute('uv1', new THREE.BufferAttribute(uv1, 2));
+    s.mesh.material.lightMap = rt.texture; s.mesh.material.lightMapIntensity = LIGHTMAP_INTENSITY; s.mesh.material.needsUpdate = true;
+    white.material.dispose();
+  }
+  renderer.setRenderTarget(prevRT); renderer.toneMapping = prevTone; renderer.setClearColor(prevClear, prevAlpha);
+  spots.forEach((sp) => { group.remove(sp); if (sp.target) group.remove(sp.target); });
+  group.userData.baked = true; group.userData.bakedRTs = rts;
+  return { ms: Math.round((typeof performance !== 'undefined' ? performance.now() : 0) - t0), surfaces: shell.length };
+}
+
+/** group.userData의 geos/mats/렌더타깃 정리 */
 export function disposeSpaceGroup(g) {
   const u = g.userData || {};
   (u.geos || []).forEach((x) => x.dispose && x.dispose());
@@ -289,6 +334,7 @@ export function disposeSpaceGroup(g) {
     if (m.normalMap && m.normalMap.dispose) m.normalMap.dispose();
     m.dispose && m.dispose();
   });
+  (u.bakedRTs || []).forEach((rt) => rt.dispose && rt.dispose()); // 라이트맵 렌더타깃 회수
 }
 
 /** 팔레트 썸네일용 — 파츠 1개(본체+accent)를 원점에 세운 Group. 아이콘 렌더 후 dispose 호출부 책임. */
