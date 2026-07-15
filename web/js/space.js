@@ -133,7 +133,7 @@ function normalizePart(raw) {
   }
   if (raw.t === 'screen') {
     p.ratio = pick(raw.ratio, new Set(spec.ratios), spec.ratios[0]);
-    p.src = typeof raw.src === 'string' ? raw.src : '';      // [예약] 유튜브/영상 = §6-5 법무·CSP 게이트 전 미구현
+    p.src = typeof raw.src === 'string' ? raw.src : '';      // 유튜브 영상ID(빌더가 ytembed.youtubeId로 검증한 11자만 기록, 재생 직전 재검증). 공개 노출은 §6-5 법무(개인정보처리방침) 선행.
   }
   if (raw.variant !== undefined && spec.variants) p.variant = pick(raw.variant, new Set(spec.variants), spec.variants[0]);
   if (raw.size !== undefined && spec.sizes) p.size = spec.sizes.includes(raw.size) ? raw.size : spec.sizes[0];
