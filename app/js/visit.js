@@ -48,7 +48,8 @@ export function createVisit({ canvas, space, opts = {} } = {}) {
   const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 200);
 
   // 공간 조립 — 방문자뷰: pickable 없음(인스턴싱 이점)·천장 표시(hideCeiling 미지정).
-  const group = buildSpaceGroup(space, {});
+  // onAsyncTex: 작품 이미지 비동기 로드 완료 시 리렌더(헤드리스=연속 루프 없음 대비). 연속 루프면 자동 반영.
+  const group = buildSpaceGroup(space, { onAsyncTex: () => { if (!disposed) renderOnce(); } });
   addRoomLighting(group);
   scene.add(group);
   const dims = group.userData.dims; // {fw,fd,hw,hd,H,t}

@@ -176,6 +176,7 @@
   .hud-context .del{appearance:none;border:1px solid transparent;background:transparent;color:var(--error);font:inherit;font-size:12.5px;cursor:pointer;padding:5px 9px;border-radius:8px;transition:.12s}
   .hud-context .del:hover{background:rgba(176,80,63,.16);border-color:var(--error)}
   .hud-context .vidwrap{display:none;align-items:center;gap:7px}
+  .hud-context .imgwrap{display:none;align-items:center;gap:7px}
   .hud-context input{background:rgba(0,0,0,.25);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:6px 10px;border-radius:8px;width:180px}
   .hud-context .mini{appearance:none;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font:inherit;font-size:12px;padding:6px 11px;border-radius:8px;cursor:pointer;transition:.12s}
   .hud-context .mini:hover{border-color:var(--violet)}
@@ -317,8 +318,11 @@
   <span class="who" id="selLab">선택</span><span class="bar"></span>
   <div class="step">각도 <button class="sbtn" id="rotDn" title="-5° (Q)">‹</button><b id="rotV">0°</b><button class="sbtn" id="rotUp" title="+5° (E)">›</button></div>
   <span class="vidwrap" id="vidwrap"><span class="bar"></span><input id="vidUrl" type="text" inputmode="url" placeholder="유튜브 링크 붙여넣기"><button class="mini" id="bVidSet">적용</button><button class="mini cta" id="bPlay">▶ 재생</button></span>
+  <span class="imgwrap" id="imgwrap"><span class="bar"></span><button class="mini cta" id="bImgPick">🖼 이미지</button><button class="mini" id="bImgClear">제거</button></span>
   <span class="bar"></span><button class="del" id="bDel">삭제</button>
 </div>
+<input type="file" id="imgFile" accept="image/*" style="display:none">
+
 
 <!-- ↓ 툴바 -->
 <div class="plate hud-toolbar desk">
@@ -446,7 +450,7 @@ const lightRange=document.getElementById('lightRange'), lightVal=document.getEle
 lightRange.oninput=()=>{ const v=parseFloat(lightRange.value); lightVal.textContent=v.toFixed(2).replace(/0$/,'')+'×'; B.setLightIntensity(v); };
 const titleInput=document.getElementById('titleInput'), spaceTitle=document.getElementById('spaceTitle');
 titleInput.oninput=()=>{ const v=titleInput.value||'나의 공간'; spaceTitle.textContent=v; B.setSpaceName(titleInput.value); };
-document.getElementById('bPublish').onclick=()=>{ B.save(); showToast('저장·발행했습니다. (공유 링크는 준비 중)'); };
+document.getElementById('bPublish').onclick=()=>{ if(B.save()) showToast('저장·발행했습니다. (공유 링크는 준비 중)'); else showToast('이미지가 커서 저장 공간을 초과했습니다.'); };
 // 조명 색 — 스와치 + 직접 선택
 const lightSwatches=document.getElementById('lightSwatches'), lightColorInput=document.getElementById('lightColor');
 function pickLightColor(hex, fromSwatch){
@@ -506,6 +510,7 @@ document.getElementById('bFull').onclick=()=>{ const el=document.documentElement
 // 컨텍스트 독
 const context=document.getElementById('context'), selLab=document.getElementById('selLab');
 const vidwrap=document.getElementById('vidwrap'), vidUrl=document.getElementById('vidUrl'), rotV=document.getElementById('rotV');
+const imgwrap=document.getElementById('imgwrap'), imgFile=document.getElementById('imgFile');
 let selIndex=-1;
 function fmtDeg(ry){ let d=Math.round((ry||0)*180/Math.PI)%360; if(d<0)d+=360; return d+'°'; }
 function syncRot(){ if(selIndex<0)return; const p=B.getSpace().parts[selIndex]; if(p) rotV.textContent=fmtDeg(p.ry); }
@@ -513,9 +518,10 @@ B.on('select', ({index,part})=>{
   selIndex=index;
   if(index>=0){ context.classList.add('on'); selLab.textContent=(PART_TYPES[part.t]?.label||'파츠'); rotV.textContent=fmtDeg(part.ry);
     const isScreen=part.t==='screen'; vidwrap.style.display=isScreen?'flex':'none'; if(isScreen) vidUrl.value=B.getScreenVideo(index)||'';
+    const isArt=part.t==='artwork'; imgwrap.style.display=isArt?'flex':'none'; // 작품만 이미지 버튼 노출(스크린 유튜브와 동형 조건부)
   } else context.classList.remove('on');
 });
-B.on('mode', ()=>{ context.classList.remove('on'); vidwrap.style.display='none'; });
+B.on('mode', ()=>{ context.classList.remove('on'); vidwrap.style.display='none'; imgwrap.style.display='none'; });
 document.getElementById('rotDn').onclick=()=>{ B.rotateSelectedFine(-5*Math.PI/180); syncRot(); };
 document.getElementById('rotUp').onclick=()=>{ B.rotateSelectedFine( 5*Math.PI/180); syncRot(); };
 document.getElementById('bDel').onclick=()=>{ B.deleteSelected(); context.classList.remove('on'); }; // 선택 파츠 삭제(마우스 경로)
@@ -529,6 +535,32 @@ function closePlay(){ playOverlay.style.display='none'; playMount.replaceChildre
 document.getElementById('bPlayClose').onclick=closePlay;
 playOverlay.addEventListener('click',(e)=>{ if(e.target===playOverlay) closePlay(); });
 
+// 작품 이미지(파일 업로드 → 브라우저 내장 dataURL). 외부 URL 0(자기완결·CSP img-src data:).
+// 최대 변 1400px로 리사이즈 후 JPEG 0.85로 압축 → setArtworkImage. 저장 용량 한계는 저장 시 경고.
+document.getElementById('bImgPick').onclick=()=>{ if(selIndex<0)return; imgFile.click(); };
+document.getElementById('bImgClear').onclick=()=>{ if(selIndex<0)return; if(B.setArtworkImage(selIndex,'')) showToast('작품 이미지를 제거했습니다.'); };
+imgFile.onchange=()=>{ const f=imgFile.files&&imgFile.files[0]; if(f) loadArtworkImage(f); imgFile.value=''; }; // value 리셋: 같은 파일 재선택 허용
+function loadArtworkImage(file){
+  const idx=selIndex;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=1400, iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+      const scale=Math.min(1, MAX/Math.max(iw,ih,1));
+      const w=Math.max(1,Math.round(iw*scale)), h=Math.max(1,Math.round(ih*scale));
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      const dataURL=cv.toDataURL('image/jpeg',0.85); // JPEG 압축(저장 용량 관리)
+      if(B.setArtworkImage(idx, dataURL)) showToast('작품 이미지를 걸었습니다.'); else showToast('작품 액자에만 이미지를 걸 수 있어요.');
+    };
+    img.onerror=()=>showToast('이미지를 열 수 없습니다.');
+    img.src=reader.result;
+  };
+  reader.onerror=()=>showToast('파일을 읽을 수 없습니다.');
+  reader.readAsDataURL(file);
+}
+
 // 토스트
 const toast=document.getElementById('toast'); let toastT=0;
 function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toast.classList.remove('show'),2600); }
@@ -536,7 +568,7 @@ B.on('cap', ({cap})=>showToast('작품·영상은 '+cap+'점까지 걸 수 있�
 B.on('saved', ()=>{ showToast('저장했습니다.'); setSaveState('saved'); });
 
 // 툴바
-document.getElementById('bSave').onclick=()=>B.save();
+document.getElementById('bSave').onclick=()=>{ if(!B.save()) showToast('이미지가 커서 저장 공간을 초과했습니다.'); };
 document.getElementById('bLoad').onclick=()=>{ if(B.load()){ refresh(); syncFinishChips(); setSaveState('saved'); const nm=B.getSpace().meta?.name; if(nm){ spaceTitle.textContent=nm; titleInput.value=nm; } } else showToast('저장된 공간이 없습니다.'); };
 document.getElementById('bUndo').onclick=()=>B.undo();
 document.getElementById('bExport').onclick=()=>{ const blob=new Blob([B.exportJSON()],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-space.json'; a.click(); URL.revokeObjectURL(a.href); };
