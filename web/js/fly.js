@@ -30,6 +30,7 @@ export function initFly({ player, getSelfAvatar }) {
   let held = false; // 점프 입력 유지 중
   let lift = 0;     // 현재 부양 높이 (m)
   let vy = 0;       // 수직 속도 (m/s)
+  let lastWritten = 0; // fly.js가 마지막에 player.liftOffset에 쓴 값(setPose 등 외부 리셋 감지용)
 
   // --- 데스크탑: Space 홀드 (입장·자유이동 중에만. 모달/라이트박스=player 비활성 시 무시) ---
   const onKeyDown = (e) => {
@@ -65,7 +66,7 @@ export function initFly({ player, getSelfAvatar }) {
       'border-radius:50%', 'border:1.5px solid rgba(255,255,255,0.34)',
       'background:rgba(22,24,30,0.44)', 'color:rgba(255,255,255,0.92)',
       'font-size:20px', 'line-height:1', 'z-index:6',
-      'display:flex', 'align-items:center', 'justify-content:center',
+      'display:none', 'align-items:center', 'justify-content:center',
       'touch-action:none', 'user-select:none', '-webkit-user-select:none',
       'cursor:pointer', 'box-shadow:0 2px 12px rgba(0,0,0,0.32)',
       'transition:background 0.12s, transform 0.12s, opacity 0.2s',
@@ -84,6 +85,10 @@ export function initFly({ player, getSelfAvatar }) {
     const active = !!(player && player.enabled);
     if (!active) held = false; // 비활성(입장 전/모달)이면 잡힘 해제 → 중력으로 착지
 
+    // setPose/투어/텔레포트가 player.liftOffset을 0으로 리셋했으면 내부 물리도 동기화한다
+    // (fly.js가 매 프레임 덮어쓰기 전에 외부 변경을 존중 — 착지 후 공중 잔류 방지).
+    if (player && player.liftOffset !== lastWritten) { lift = player.liftOffset; vy = 0; }
+
     if (held) {
       vy = RISE_SPEED;
     } else {
@@ -94,14 +99,14 @@ export function initFly({ player, getSelfAvatar }) {
     if (lift >= MAX_LIFT) { lift = MAX_LIFT; vy = 0; } // 상한 호버
     if (lift <= 0) { lift = 0; vy = 0; }               // 착지
 
-    if (player) player.liftOffset = lift;
+    if (player) { player.liftOffset = lift; lastWritten = lift; }
 
     // 셀프 아바타(3인칭 셀프뷰에서만 존재) 비행 포즈 — 매 프레임 동기화(지연 생성/교체 대응).
     const flying = active && lift > POSE_LIFT;
     const av = getSelfAvatar && getSelfAvatar();
     if (av && typeof av.setFlying === 'function') av.setFlying(flying);
 
-    if (btn) btn.style.opacity = active ? '1' : '0.35';
+    if (btn) btn.style.display = active ? 'flex' : 'none'; // 로비/비활성 시 완전 숨김
   }
 
   function dispose() {
