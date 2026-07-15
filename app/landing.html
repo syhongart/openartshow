@@ -546,46 +546,7 @@
     align-items: center; justify-content: center;
     background: var(--violet-500); color: var(--text-dark); font-size: 12px; font-weight: 600;
   }
-  .auth-overlay {
-    position: fixed; inset: 0; z-index: 300;
-    background: rgba(20,21,26,0.6); backdrop-filter: blur(6px);
-    display: flex; align-items: center; justify-content: center; padding: 20px;
-  }
-  .auth-overlay[hidden] { display: none; }
-  .auth-card {
-    width: min(92vw, 380px); background: var(--surface-dark-2); color: var(--ink);
-    border: 1px solid var(--border-light); border-radius: var(--r-card);
-    padding: 30px 28px 24px; position: relative; text-align: left;
-  }
-  .auth-card::before {
-    content: ""; display: block; width: 40px; height: 2px;
-    background: linear-gradient(90deg, var(--green-700), var(--green-300));
-    margin-bottom: 18px;
-  }
-  .auth-close {
-    position: absolute; top: 12px; right: 14px; width: 30px; height: 30px;
-    background: none; border: none; font-size: 20px; color: var(--text-dim-light); cursor: pointer;
-  }
-  .auth-title { font-size: 20px; font-weight: 600; }
-  .auth-sub { margin: 6px 0 18px; font-size: 14px; color: var(--ink-body); }
-  .auth-btn {
-    width: 100%; display: flex; align-items: center; gap: 12px;
-    padding: 12px 14px; margin-bottom: 8px;
-    background: var(--surface-dark-1); border: 1px solid var(--border-light); border-radius: var(--r-card);
-    font-family: inherit; font-size: 14px; font-weight: 500; color: var(--ink);
-    cursor: pointer; transition: border-color 0.2s ease, background 0.2s ease;
-  }
-  .auth-btn:hover { border-color: var(--green-500); background: var(--surface-dark-2); }
-  .auth-btn .ab-ic {
-    width: 26px; height: 26px; border-radius: 50%; flex: none;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 13px; font-weight: 700; color: #fff;
-  }
-  /* 소셜 로그인 브랜드색 — Google/Kakao/Naver 실제 브랜드 컬러, 팔레트 B와 무관하게 유지(제공자 식별용) */
-  .ab-ic.g { background: #4285f4; }
-  .ab-ic.k { background: #fee500; color: #191919; }
-  .ab-ic.n { background: #03c75a; }
-  .auth-note { margin: 12px 0 0; font-size: 12px; line-height: 1.7; color: var(--text-dim-light); }
+  /* 로그인/회원가입 모달은 공용 컴포넌트(js/auth-modal.js)가 자체 스타일을 주입한다 — 여기선 정의하지 않음 */
   .topnav .nav-cta {
     /* 히어로의 "지금 입장하기"와 중복 노출 방지 — 히어로를 지나야 나타난다 */
     opacity: 0; pointer-events: none; transform: translateY(-4px);
@@ -804,8 +765,7 @@
   .topnav :focus-visible,
   .community :focus-visible,
   .recruit :focus-visible,
-  footer :focus-visible,
-  .auth-overlay :focus-visible {
+  footer :focus-visible {
     outline-color: var(--green-300);
   }
   /* 새 hover 리프트/버튼 모션을 reduced-motion에서 무력화 (기존 정책 정신 확장) —
@@ -842,9 +802,9 @@
       <a href="./team/">팀</a>
     </div>
     <div class="nav-auth" id="navAuth">
-      <button class="nav-auth-link" type="button" data-auth-open>로그인</button>
+      <button class="nav-auth-link" type="button" data-auth-mode="login">로그인</button>
       <span class="nav-auth-sep"></span>
-      <button class="nav-auth-link" type="button" data-auth-open>회원가입</button>
+      <button class="nav-auth-link" type="button" data-auth-mode="signup">회원가입</button>
     </div>
     <a class="nav-cta" href="./app/">입장하기</a>
     <div class="nav-sheet" id="navSheet">
@@ -1328,112 +1288,90 @@
     }
   }
 </script>
-<div class="auth-overlay" id="authOverlay" hidden>
-  <div class="auth-card" role="dialog" aria-modal="true" aria-label="로그인 또는 회원가입">
-    <button class="auth-close" id="authClose" type="button" aria-label="닫기">×</button>
-    <div class="auth-title">로그인 / 회원가입</div>
-    <p class="auth-sub">소셜 계정으로 간편하게 시작하세요.</p>
-    <button class="auth-btn" type="button" data-provider="google"><span class="ab-ic g">G</span>Google로 계속하기</button>
-    <button class="auth-btn" type="button" data-provider="kakao"><span class="ab-ic k">K</span>카카오로 계속하기</button>
-    <button class="auth-btn" type="button" data-provider="naver"><span class="ab-ic n">N</span>네이버로 계속하기</button>
-    <p class="auth-note">계정 연동 준비 중 — 지금은 프로필 미리보기로 동작하며, 전시장 로비와 자동으로 이어집니다.</p>
-  </div>
-</div>
-<script>
-(function () {
-  // 앱(auth.js)과 동일한 저장 규약 — 랜딩에서 로그인하면 로비가 그대로 이어받는다
-  var KEY = 'lu-auth-profile-v1';
-  var NAMES = { google: '아트러버', kakao: '전시나들이', naver: '갤러리워커' };
-  var overlay = document.getElementById('authOverlay');
-  var navAuth = document.getElementById('navAuth');
+<script type="module">
+  // 로그인/회원가입 모달 배선 — 공용 컴포넌트(js/auth-modal.js)를 사용.
+  // auth.js와 동일한 저장 규약(lu-auth-profile-v1)이라 여기서 로그인하면 로비가 그대로 이어받는다.
+  import { openAuthModal } from './app/js/auth-modal.js';
+  import { getProfile, logout, onAuthChange } from './app/js/auth.js';
 
-  function readProfile() {
-    try {
-      var p = JSON.parse(localStorage.getItem(KEY) || 'null');
-      return p && p.name ? p : null;
-    } catch (e) { return null; }
-  }
-  var nsAuth = document.getElementById('nsAuth');
-  function renderNav() {
-    var p = readProfile();
-    if (nsAuth) nsAuth.innerHTML = p
-      ? '<span class="nav-auth-profile"><span class="ini">' + p.initial + '</span>' + p.name + '님</span>' +
-        '<button class="nav-auth-link" type="button" id="nsLogout">로그아웃</button>'
-      : '<button class="nav-auth-link" type="button" data-auth-open>로그인</button>' +
+  (function () {
+    "use strict";
+
+    var navAuth = document.getElementById('navAuth');
+    var nsAuth = document.getElementById('nsAuth');
+
+    function authButtonsHTML() {
+      return '<button class="nav-auth-link" type="button" data-auth-mode="login">로그인</button>' +
         '<span class="nav-auth-sep"></span>' +
-        '<button class="nav-auth-link" type="button" data-auth-open>회원가입</button>';
-    if (nsAuth && p) {
-      nsAuth.querySelector('#nsLogout').addEventListener('click', function () {
-        try { localStorage.removeItem(KEY); } catch (e) {}
-        renderNav();
+        '<button class="nav-auth-link" type="button" data-auth-mode="signup">회원가입</button>';
+    }
+    function wireAuthButtons(container, onOpen) {
+      Array.prototype.forEach.call(container.querySelectorAll('[data-auth-mode]'), function (b) {
+        b.addEventListener('click', function () {
+          if (onOpen) onOpen();
+          openAuthModal({ mode: b.getAttribute('data-auth-mode') });
+        });
       });
     }
-    if (nsAuth) Array.prototype.forEach.call(nsAuth.querySelectorAll('[data-auth-open]'), function (b) {
-      b.addEventListener('click', function () { closeSheet(); overlay.hidden = false; });
-    });
-    if (p) {
-      navAuth.innerHTML =
-        '<span class="nav-auth-profile"><span class="ini">' + p.initial + '</span>' + p.name + '님</span>' +
-        '<span class="nav-auth-sep"></span>' +
-        '<button class="nav-auth-link" type="button" id="navLogout">로그아웃</button>';
-      document.getElementById('navLogout').addEventListener('click', function () {
-        try { localStorage.removeItem(KEY); } catch (e) {}
-        renderNav();
-      });
-    } else {
-      navAuth.innerHTML =
-        '<button class="nav-auth-link" type="button" data-auth-open>로그인</button>' +
-        '<span class="nav-auth-sep"></span>' +
-        '<button class="nav-auth-link" type="button" data-auth-open>회원가입</button>';
+
+    function renderNav() {
+      var p = getProfile();
+
+      if (nsAuth) {
+        nsAuth.innerHTML = p
+          ? '<span class="nav-auth-profile"><span class="ini">' + p.initial + '</span>' + p.name + '님</span>' +
+            '<button class="nav-auth-link" type="button" id="nsLogout">로그아웃</button>'
+          : authButtonsHTML();
+        if (p) {
+          nsAuth.querySelector('#nsLogout').addEventListener('click', function () { logout(); });
+        } else {
+          wireAuthButtons(nsAuth, closeSheet);
+        }
+      }
+
+      if (navAuth) {
+        navAuth.innerHTML = p
+          ? '<span class="nav-auth-profile"><span class="ini">' + p.initial + '</span>' + p.name + '님</span>' +
+            '<span class="nav-auth-sep"></span>' +
+            '<button class="nav-auth-link" type="button" id="navLogout">로그아웃</button>'
+          : authButtonsHTML();
+        if (p) {
+          navAuth.querySelector('#navLogout').addEventListener('click', function () { logout(); });
+        } else {
+          wireAuthButtons(navAuth);
+        }
+      }
     }
-    Array.prototype.forEach.call(navAuth.querySelectorAll('[data-auth-open]'), function (b) {
-      b.addEventListener('click', function () { overlay.hidden = false; });
-    });
-  }
-  document.getElementById('authClose').addEventListener('click', function () { overlay.hidden = true; });
-  overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.hidden = true; });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') overlay.hidden = true; });
-  Array.prototype.forEach.call(document.querySelectorAll('.auth-btn'), function (b) {
-    b.addEventListener('click', function () {
-      var provider = b.getAttribute('data-provider');
-      b.disabled = true;
-      setTimeout(function () {
-        var name = NAMES[provider] || '관람객';
-        try { localStorage.setItem(KEY, JSON.stringify({ provider: provider, name: name, initial: name.slice(0, 1) })); } catch (e) {}
-        b.disabled = false;
-        overlay.hidden = true;
-        renderNav();
-      }, 450);
-    });
-  });
-  renderNav();
 
-  // 상단 입장하기 CTA — 히어로 CTA가 화면에서 사라진 뒤에만 노출 (중복 방지)
-  var navCta = document.querySelector('.topnav .nav-cta');
-  var hero = document.querySelector('.hero');
-  function syncNavCta() {
-    var passed = window.scrollY > (hero ? hero.offsetHeight * 0.6 : 400);
-    navCta.classList.toggle('is-shown', passed);
-  }
-  window.addEventListener('scroll', syncNavCta, { passive: true });
-  syncNavCta();
+    onAuthChange(renderNav);
+    renderNav();
 
-  // 모바일 햄버거
-  var burger = document.getElementById('navBurger');
-  var sheet = document.getElementById('navSheet');
-  function closeSheet() {
-    sheet.classList.remove('is-open');
-    burger.setAttribute('aria-expanded', 'false');
-  }
-  burger.addEventListener('click', function () {
-    var open = !sheet.classList.contains('is-open');
-    sheet.classList.toggle('is-open', open);
-    burger.setAttribute('aria-expanded', String(open));
-  });
-  Array.prototype.forEach.call(sheet.querySelectorAll('a'), function (a) {
-    a.addEventListener('click', closeSheet);
-  });
-})();
+    // 상단 입장하기 CTA — 히어로 CTA가 화면에서 사라진 뒤에만 노출 (중복 방지)
+    var navCta = document.querySelector('.topnav .nav-cta');
+    var hero = document.querySelector('.hero');
+    function syncNavCta() {
+      var passed = window.scrollY > (hero ? hero.offsetHeight * 0.6 : 400);
+      navCta.classList.toggle('is-shown', passed);
+    }
+    window.addEventListener('scroll', syncNavCta, { passive: true });
+    syncNavCta();
+
+    // 모바일 햄버거
+    var burger = document.getElementById('navBurger');
+    var sheet = document.getElementById('navSheet');
+    function closeSheet() {
+      sheet.classList.remove('is-open');
+      burger.setAttribute('aria-expanded', 'false');
+    }
+    burger.addEventListener('click', function () {
+      var open = !sheet.classList.contains('is-open');
+      sheet.classList.toggle('is-open', open);
+      burger.setAttribute('aria-expanded', String(open));
+    });
+    Array.prototype.forEach.call(sheet.querySelectorAll('a'), function (a) {
+      a.addEventListener('click', closeSheet);
+    });
+  })();
 </script>
 </body>
 </html>
