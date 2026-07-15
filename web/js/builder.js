@@ -80,7 +80,7 @@ export function createBuilder(canvas, opts = {}) {
   function rebuild() {
     if (group) { scene.remove(group); disposeSpaceGroup(group); }
     baked = false; // 재빌드(편집)하면 실시간으로 복귀
-    group = buildSpaceGroup(space, { pickable: true, hideCeiling: true });
+    group = buildSpaceGroup(space, { pickable: true, hideCeiling: true, onAsyncTex: () => renderOnce() }); // 작품 이미지 비동기 로드 시 온디맨드 리렌더
     // 바닥 글로시(거칠기↓·환경반사↑)로 스포트라이트가 반질하게 번지게 — 디자이너 아트디렉션.
     // grass=매트 유지(글로시 강제 제외), water=자체 레시피(roughness 0.1)라 덮어쓰기 제외.
     const floor = group.userData.floor; // userData 참조(자식 순서 결합 제거, 검수 권고)
@@ -188,6 +188,17 @@ export function createBuilder(canvas, opts = {}) {
     return !!id;
   }
   function getScreenVideo(index) { const p = space.parts[index]; return (p && p.t === 'screen') ? (p.src || '') : ''; }
+  // 작품 파츠에 이미지(dataURL) 설정 — 스크린 유튜브 패턴 계승. artwork만(아니면 false).
+  // dataURL이 빈 문자열이면 이미지 제거(src=''). 스키마 신규 필드 0 — 기존 src를 이미지 dataURL 저장에 사용.
+  function setArtworkImage(index, dataURL) {
+    if (index < 0 || !space.parts[index] || space.parts[index].t !== 'artwork') return false;
+    const src = typeof dataURL === 'string' ? dataURL : '';
+    pushUndo();
+    const parts = space.parts.slice(); parts[index] = { ...parts[index], src };
+    space = normalizeSpace({ ...space, parts }); rebuild(); emit('change', { space });
+    return true;
+  }
+  function getArtworkImage(index) { const p = space.parts[index]; return (p && p.t === 'artwork') ? (p.src || '') : ''; }
 
   // ── 저장/불러오기/내보내기 ──
   // 외부 유입 문서(로드/가져오기)는 스키마 경계에서 80캡을 강제 — addPart UI 밖 우회 방지.
@@ -364,13 +375,13 @@ export function createBuilder(canvas, opts = {}) {
   return {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
-    setScreenVideo, getScreenVideo,
+    setScreenVideo, getScreenVideo, setArtworkImage, getArtworkImage,
     resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, getPresets, applyPreset, clearSpace, bake, unbake, isBaked: () => baked,
     save, load, exportJSON, importJSON, resize, renderOnce,
     getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
     on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
-    get renderer() { return renderer; }, get camera() { return camera; }, get orbit() { return orbit; },
+    get renderer() { return renderer; }, get camera() { return camera; }, get orbit() { return orbit; }, getGroup: () => group,
     dispose() {
       if (raf) cancelAnimationFrame(raf);
       cancelPlace(); // ghost 정리
