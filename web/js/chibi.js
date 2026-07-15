@@ -1039,10 +1039,29 @@ function buildMuzzleGeo(species, R) {
   return g;
 }
 
+// ---------------------------------------------------------------------------
+// 이징 곡선 — 사용자 액션(인사/절/박수 등)의 비대칭 모션용. 걷기/숨쉬기의 순수
+// 사인파와 달리, 이 곡선들은 "훅 들어갔다 스르륵 돌아오는" 류의 生동감을 낸다.
+// 모듈 1회 정의 · 상태 없음 · 모든 아바타가 공유.
+// ---------------------------------------------------------------------------
+const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
+const easeInCubic = (x) => x * x * x;
+const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+// 오버슈트 — 목표를 살짝 지나쳤다 안착(백스윙). x>1 근방에서 1을 살짝 넘었다 수렴한다.
+const easeOutBack = (x) => {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+};
+
+// 사용자 액션 목록 — 지속시간(초). playAction(name)이 참조하는 SSOT.
+// ※ 저장 파라미터가 아니라 런타임 재생 상태다 — encodeChibi/normalizeChibi와 무관.
+const CHIBI_ACTION_DUR = { wave: 1.7, jump: 0.72, bow: 1.5, clap: 1.6, dance: 2.6, kick: 0.85 };
+export const CHIBI_ACTIONS = Object.keys(CHIBI_ACTION_DUR);
+
 /**
  * 치비 아바타를 조립한다 (동기 — 로드 없음).
  * @param {object} params - normalizeChibi 형태의 파라미터 (생략 시 기본 룩)
- * @returns {{group: THREE.Group, height: number, update: (delta:number, speed:number)=>void, dispose: ()=>void}}
+ * @returns {{group: THREE.Group, height: number, update: (delta:number, speed:number)=>void, dispose: ()=>void, setWound: (level:number)=>void, ouch: ()=>void, playAction: (name:string)=>boolean}}
  */
 export function buildChibi(params) {
   const p = normalizeChibi(params);
@@ -1114,6 +1133,20 @@ export function buildChibi(params) {
     legPivots.push(pivot);
   }
 
+  // ---- 상체 피벗(허리) — 절(bow) 액션용 회전축. ----
+  // 다리는 위에서 이미 wrapper 직속(고관절 고정)으로 붙였다. 이 아래로 만들어지는
+  // 몸통·팔·머리·헤어·꼬리·의상 파츠는 전부 bodyRoot(=bodyPivot의 자식)에 붙여,
+  // bodyPivot.rotation.x 하나로 "다리는 그대로 서 있고 상체만 허리에서 숙여지는" 절
+  // 동작을 만든다. bodyPivot을 허리 높이(HIP_Y)로 올리고 bodyRoot를 그만큼 다시
+  // 내려 상쇄하므로(회전 중심만 허리로 이동, 정적 좌표는 그대로) 기존 파츠 좌표는
+  // 한 줄도 바꿀 필요가 없다 — 정적 포즈 회귀 0.
+  const bodyPivot = new THREE.Group();
+  bodyPivot.position.set(0, HIP_Y, 0);
+  wrapper.add(bodyPivot);
+  const bodyRoot = new THREE.Group();
+  bodyRoot.position.set(0, -HIP_Y, 0);
+  bodyPivot.add(bodyRoot);
+
   // ---- 몸통 (귀신은 몸-하반신 겸용 시트로 대체) ----
   if (isGhost) {
     const sheet = new THREE.Mesh(
@@ -1122,7 +1155,7 @@ export function buildChibi(params) {
     );
     sheet.position.y = 0.50;
     addOutline(sheet, 0.013, mats, geos);
-    wrapper.add(sheet);
+    bodyRoot.add(sheet);
     // 하단 물결단(스캘럽 힘) 5개 — 병합 1드로우콜, 트림색
     const hemGeos = [];
     for (let i = 0; i < 5; i++) {
@@ -1136,14 +1169,14 @@ export function buildChibi(params) {
     hemGeos.forEach((g) => g.dispose());
     hem.position.y = 0.50;
     addOutline(hem, 0.009, mats, geos);
-    wrapper.add(hem);
+    bodyRoot.add(hem);
   } else {
     const torso = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.155, 0.115, 8, 16)), topMat);
     torso.position.y = 0.52;
     torso.scale.set(1, 1, 0.9);
     torso.userData.outlineBase = vivid(p.top); // 패턴 상의(재질색 흰색)여도 외곽선은 옷색 기준
     addOutline(torso, 0.013, mats, geos);
-    wrapper.add(torso);
+    bodyRoot.add(torso);
   }
 
   if (!isGhost && (p.bottomType === 'skirt' || p.bottomType === 'dress' || p.bottomType === 'swimsuit')) {
@@ -1161,7 +1194,7 @@ export function buildChibi(params) {
     skirt.position.y = isSwim ? 0.50 : (isDress ? 0.53 : 0.50);
     skirt.userData.outlineBase = (isDress || isSwim) ? vivid(p.top) : vivid(p.bottom);
     addOutline(skirt, 0.012, mats, geos);
-    wrapper.add(skirt);
+    bodyRoot.add(skirt);
     if (isSwim) {
       // 어깨끈 2가닥 + 허리 프릴 트림 — 몸판(topMat)과 같은 톤으로 통일
       for (const s of [-1, 1]) {
@@ -1169,19 +1202,19 @@ export function buildChibi(params) {
         strap.position.set(s * 0.09, 0.60, 0.10);
         strap.rotation.z = s * 0.15;
         addOutline(strap, 0.008, mats, geos);
-        wrapper.add(strap);
+        bodyRoot.add(strap);
       }
       const frill = new THREE.Mesh(mkGeo(new THREE.TorusGeometry(0.158, 0.018, 8, 20)), mkMat(toon(shade(p.top, 0.8))));
       frill.rotation.x = Math.PI / 2;
       frill.position.y = 0.505;
       addOutline(frill, 0.007, mats, geos);
-      wrapper.add(frill);
+      bodyRoot.add(frill);
     }
   } else if (!isGhost) {
     // 바지/멜빵바지: 골반 덮개 (귀신은 하반신이 시트라 없음)
     const shorts = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.16, 16, 12, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.35)), bottomMat);
     shorts.position.y = 0.44;
-    wrapper.add(shorts);
+    bodyRoot.add(shorts);
     if (p.bottomType === 'overall') {
       // 멜빵 2가닥 — 허리 앞에서 어깨로
       for (const s of [-1, 1]) {
@@ -1189,7 +1222,7 @@ export function buildChibi(params) {
         strap.position.set(s * 0.07, 0.56, 0.135);
         strap.rotation.z = s * 0.1;
         addOutline(strap, 0.009, mats, geos);
-        wrapper.add(strap);
+        bodyRoot.add(strap);
       }
     }
   }
@@ -1210,7 +1243,7 @@ export function buildChibi(params) {
     tip.position.set(0, -0.028, 0);
     tip.scale.set(1, 1, 0.5);
     hg.add(tip);
-    wrapper.add(hg);
+    bodyRoot.add(hg);
   }
 
   // ---- 팔 피벗(어깨) ----
@@ -1238,14 +1271,14 @@ export function buildChibi(params) {
       sleeve.scale.set(1, 0.8, 1);
       pivot.add(sleeve);
     }
-    wrapper.add(pivot);
+    bodyRoot.add(pivot);
     armPivots.push(pivot);
   }
 
   // ---- 머리 피벗(목) ----
   const headPivot = new THREE.Group();
   headPivot.position.y = 0.70;
-  wrapper.add(headPivot);
+  bodyRoot.add(headPivot);
 
   const HEAD_R = 0.35;
   const fsDef = FACE_SHAPE_DEF[p.face] || FACE_SHAPE_DEF.round;
@@ -1319,6 +1352,7 @@ export function buildChibi(params) {
   else hairRoot.scale.set(sX, sY, sZ);
   headPivot.add(hairRoot);
   const tailPivots = []; // 찰랑임 애니메이션 대상
+  const earPivots = [];  // 귀 2차 모션(액션 중 지연 추종) 대상 — {pivot, s}. 정적 포즈엔 무영향(회전 0 시작).
   const ouchEyes = [];   // 3D 눈(개구리) — ouch 때 찡긋(납작). {mesh, baseY} 저장
 
   if (p.species === 'human') {
@@ -1417,17 +1451,17 @@ export function buildChibi(params) {
     for (const s of [-1, 1]) for (const z of [0.06, -0.06]) {
       const bolt = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.02, 8, 8)), boltMat);
       bolt.position.set(s * 0.172, 0.66, z);
-      wrapper.add(bolt);
+      bodyRoot.add(bolt);
     }
     const panel = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.09, 0.07, 0.012)), mkMat(toon(shade(p.skin, 0.6))));
     panel.position.set(0, 0.56, 0.135);
     addOutline(panel, 0.007, mats, geos);
-    wrapper.add(panel);
+    bodyRoot.add(panel);
     for (const bx of [-0.025, 0.025]) {
       const btn = new THREE.Mesh(mkGeo(new THREE.CylinderGeometry(0.012, 0.012, 0.01, 10)), hairMat);
       btn.rotation.x = Math.PI / 2;
       btn.position.set(bx, 0.56, 0.145);
-      wrapper.add(btn);
+      bodyRoot.add(btn);
     }
   } else if (p.species === 'ghost') {
     // 귀신 — 헤어/귀 없음. 시트·nub·머리는 몸통·머리 섹션에서 이미 생성됨(추가 파츠 없음).
@@ -1438,16 +1472,27 @@ export function buildChibi(params) {
     const pointMat = hairMat;               // 포인트색(귀 안쪽·꼬리 끝)
     const R = HEAD_R;                        // 로컬 기준 반지름 (hairRoot 중심)
 
-    // 귀 부착 헬퍼 — geo를 만들어 위치/회전 후 hairRoot에 추가
-    const addPart = (geo, mat, x, y, z, rz, rx, sc, outline) => {
+    // 파츠 부착 헬퍼 — geo를 만들어 위치/회전 후 지정 부모(기본 hairRoot)에 추가
+    const addPartTo = (parent, geo, mat, x, y, z, rz, rx, sc, outline) => {
       const m = new THREE.Mesh(mkGeo(geo), mat);
       m.position.set(x, y, z);
       if (rz) m.rotation.z = rz;
       if (rx) m.rotation.x = rx;
       if (sc) m.scale.setScalar(sc);
       if (outline !== false) addOutline(m, 0.011, mats, geos);
-      hairRoot.add(m);
+      parent.add(m);
       return m;
+    };
+    const addPart = (geo, mat, x, y, z, rz, rx, sc, outline) => addPartTo(hairRoot, geo, mat, x, y, z, rz, rx, sc, outline);
+    // 귀 피벗 — 앵커에 무회전 그룹을 두고(=정적 포즈는 기존과 완전 동일) earPivots에
+    // 등록한다. update()의 액션 2차 모션이 여기 rotation을 얹어 귀가 몸통보다
+    // 살짝 늦게 따라오는 지연 추종을 만든다(본 없는 캐릭터의 관성감 연출).
+    const earGroup = (x, y, z, s) => {
+      const g = new THREE.Group();
+      g.position.set(x, y, z);
+      hairRoot.add(g);
+      earPivots.push({ pivot: g, s });
+      return g;
     };
 
     const M = (col) => mkMat(toon(col)); // 즉석 재질
@@ -1459,17 +1504,19 @@ export function buildChibi(params) {
       earR *= EAR_K; earH *= EAR_K;
       const inMat = innerCol ? M(innerCol) : pointMat;
       for (const s of [-1, 1]) {
-        addPart(new THREE.ConeGeometry(earR, earH, 16), outerMat || furMat, s * x, y, z, -s * tilt, -0.12);
+        const piv = earGroup(s * x, y, z, s);
+        addPartTo(piv, new THREE.ConeGeometry(earR, earH, 16), outerMat || furMat, 0, 0, 0, -s * tilt, -0.12);
         // 큼직한 안쪽 귀(분홍/포인트) — 앞으로 도드라지게, 외곽선 없이
-        if (innerScale) addPart(new THREE.ConeGeometry(earR * innerScale, earH * 0.72, 16), inMat, s * x, y - earH * 0.02, z + R * 0.1, -s * tilt, -0.12, undefined, false);
+        if (innerScale) addPartTo(piv, new THREE.ConeGeometry(earR * innerScale, earH * 0.72, 16), inMat, 0, -earH * 0.02, R * 0.1, -s * tilt, -0.12, undefined, false);
       }
     };
     // 둥근 귀 — 겉귀 + 앞쪽 안쪽 귀(분홍/밝은색)
     const roundEars = (er, x, y, z, m, innerCol) => {
       er *= EAR_K;
       for (const s of [-1, 1]) {
-        addPart(new THREE.SphereGeometry(er, 14, 12), m || furMat, s * x, y, z);
-        if (innerCol) addPart(new THREE.SphereGeometry(er * 0.62, 12, 10), M(innerCol), s * x, y, z + er * 0.6, 0, 0, 0, false).scale.set(1, 1, 0.55);
+        const piv = earGroup(s * x, y, z, s);
+        addPartTo(piv, new THREE.SphereGeometry(er, 14, 12), m || furMat, 0, 0, 0);
+        if (innerCol) addPartTo(piv, new THREE.SphereGeometry(er * 0.62, 12, 10), M(innerCol), 0, 0, er * 0.6, 0, 0, 0, false).scale.set(1, 1, 0.55);
       }
     };
     // 갈기/털 링 — 상반구 퍼프 병합(양·사자 공용)
@@ -1524,15 +1571,19 @@ export function buildChibi(params) {
       coneEars(R * 0.26, R * 0.56, R * 0.6, R * 0.88, R * 0.05, 0.3, 0.5, undefined, '#d8d0c4');
     } else if (sp === 'dog') {
       // 크고 축 늘어진 귀 — 강아지의 포인트. 옆에서 아래로 늘어지는 갈색 겉귀 + 분홍 안쪽.
+      // (귀 피벗화 — earGroup 앵커는 겉귀 위치, 안쪽 귀는 그 상대 오프셋으로 유지해
+      // 정적 포즈는 이전과 동일하고 액션 시 2차 모션만 얹힌다.)
       for (const s of [-1, 1]) {
-        const ear = addPart(new THREE.SphereGeometry(R * 0.34, 14, 12), pointMat, s * R * 0.72, R * 0.3, R * 0.0, -s * 0.12, 0.05);
+        const piv = earGroup(s * R * 0.72, R * 0.3, 0, s);
+        const ear = addPartTo(piv, new THREE.SphereGeometry(R * 0.34, 14, 12), pointMat, 0, 0, 0, -s * 0.12, 0.05);
         ear.scale.set(0.55, 1.7, 0.42); // 세로로 길게 → 뺨 옆으로 축 늘어짐
-        addPart(new THREE.SphereGeometry(R * 0.19, 12, 10), M('#f2c4c0'), s * R * 0.68, R * 0.26, R * 0.09, -s * 0.12, 0.05, 0, false).scale.set(0.5, 1.55, 0.26);
+        addPartTo(piv, new THREE.SphereGeometry(R * 0.19, 12, 10), M('#f2c4c0'), -s * R * 0.04, -R * 0.04, R * 0.09, -s * 0.12, 0.05, 0, false).scale.set(0.5, 1.55, 0.26);
       }
     } else if (sp === 'rabbit') {
       for (const s of [-1, 1]) {
-        addPart(new THREE.CapsuleGeometry(R * 0.12, R * 0.82, 4, 8), furMat, s * R * 0.34, R * 1.08, 0, -s * 0.1);
-        addPart(new THREE.CapsuleGeometry(R * 0.065, R * 0.62, 4, 8), M(PINK_INNER), s * R * 0.34, R * 1.11, R * 0.07, -s * 0.1, 0, 0, false);
+        const piv = earGroup(s * R * 0.34, R * 1.08, 0, s);
+        addPartTo(piv, new THREE.CapsuleGeometry(R * 0.12, R * 0.82, 4, 8), furMat, 0, 0, 0, -s * 0.1);
+        addPartTo(piv, new THREE.CapsuleGeometry(R * 0.065, R * 0.62, 4, 8), M(PINK_INNER), 0, R * 0.03, R * 0.07, -s * 0.1, 0, 0, false);
       }
     } else if (sp === 'koala') {
       roundEars(R * 0.36, R * 0.76, R * 0.44, 0, furMat, '#f2c4d0'); // 크고 복슬한 귀 + 분홍 안쪽
@@ -1658,7 +1709,7 @@ export function buildChibi(params) {
         baseX = 0; // 곡선이 방향을 정의하므로 pivot 틸트 제거
       }
       tailPivot.rotation.x = baseX;
-      wrapper.add(tailPivot);
+      bodyRoot.add(tailPivot);
       tailPivots.push({ pivot: tailPivot, baseZ: 0, baseX });
     }
   }
@@ -1688,18 +1739,18 @@ export function buildChibi(params) {
       flap.position.set(s * 0.035, 0.6, 0.145);
       flap.rotation.z = s * 0.5;
       addOutline(flap, 0.008, mats, geos);
-      wrapper.add(flap);
+      bodyRoot.add(flap);
     }
     const tieMat = mkMat(toon('#c0392b'));
     const knot = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.03, 0.03, 0.02)), tieMat);
     knot.position.set(0, 0.605, 0.15);
-    wrapper.add(knot);
+    bodyRoot.add(knot);
     const tie = new THREE.Mesh(mkGeo(new THREE.ConeGeometry(0.028, 0.14, 4)), tieMat);
     tie.rotation.x = Math.PI;
     tie.position.set(0, 0.52, 0.15);
     tie.scale.set(1, 1, 0.4);
     addOutline(tie, 0.007, mats, geos);
-    wrapper.add(tie);
+    bodyRoot.add(tie);
   } else if (p.outfit === 'gyoryeon') {
     // 교련복 — 단추 세로줄 + 스탠드 칼라 + 교련모
     const trimMat = mkMat(toon(shade(p.top, 0.75)));
@@ -1707,13 +1758,13 @@ export function buildChibi(params) {
     for (let i = 0; i < 4; i++) {
       const btn = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.016, 8, 6)), btnMat);
       btn.position.set(0, 0.585 - i * 0.038, 0.152);
-      wrapper.add(btn);
+      bodyRoot.add(btn);
     }
     for (const s of [-1, 1]) {
       const collar = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.07, 0.03, 0.02)), trimMat);
       collar.position.set(s * 0.05, 0.62, 0.14);
       collar.rotation.z = s * 0.2;
-      wrapper.add(collar);
+      bodyRoot.add(collar);
     }
     // 교련모 — 올리브 납작 군모 (머리 위)
     const crown = new THREE.Mesh(mkGeo(new THREE.CylinderGeometry(HEAD_R * 0.82, HEAD_R * 0.9, 0.11, 20)), mkMat(toon(p.top)));
@@ -1823,7 +1874,7 @@ export function buildChibi(params) {
       const baseZ = s * -0.06;                          // 살짝 위로 세움
       wp.rotation.z = baseZ;
       wp.add(wing);
-      wrapper.add(wp);
+      bodyRoot.add(wp);
       wingPivots.push({ pivot: wp, s, baseZ });
     }
   }
@@ -1841,6 +1892,34 @@ export function buildChibi(params) {
   let wound = 0;   // 누적 상처 0~3 (얼굴에 반창고/멍/눈물)
   let ouchT = 0;   // >_< 표정 남은 시간
   let squashT = 0; // 움찔 스쿼시 남은 시간
+
+  // ---- 사용자 액션 상태 (인사/점프/절/박수/춤/발차기) ----
+  // 저장 파라미터가 아니라 런타임 재생 상태 — 멀티 동기화·저장에 영향 없음(전제 준수).
+  // 진입/이탈에 짧은 블렌드(BLEND_IN/OUT)를 둬 걷기 중 트리거해도 급발진 없이 전환된다.
+  const BLEND_IN = 0.12, BLEND_OUT = 0.16;
+  // jump/kick은 자체 곡선이 액션 끝에 스스로 중립(착지 스쿼시 복귀·킥 회수)으로 되돌아오는
+  // "페이오프"라, 공용 BLEND_OUT(0.16s)과 겹치면 그 페이오프가 미리 옅어져 버린다
+  // (착지 스쿼시가 죽어 보임 — 실측 확인). 이 둘만 이탈 블렌드를 짧게 둬 페이오프를 살린다.
+  const BLEND_OUT_OVERRIDE = { jump: 0.05, kick: 0.08 };
+  let action = null;   // 현재 재생 중인 액션 이름 (null = idle/walk)
+  let actionT = 0;     // 액션 경과 시간(초)
+  let actionDur = 0;   // 액션 총 길이(초)
+  // 2차 모션(귀·꼬리 지연 추종)용 — "몸통이 지금 얼마나 크게 움직이는가"를 나타내는
+  // 스칼라 신호를 액션이 채우면, 저역통과 필터로 살짝 늦게 따라가며 그 차이(=속도감)를
+  // 귀/꼬리 회전에 얹는다. 액션이 끝나 신호가 0으로 돌아가도 필터가 서서히 수렴하므로
+  // 귀/꼬리도 뚝 끊기지 않고 자연스럽게 안착한다.
+  let bodyMotionSignal = 0;
+  let bodyMotionLag = 0;
+
+  /** 사용자 액션 재생 트리거. 존재하지 않는 이름이면 false. 걷기/idle 중 언제든 호출 가능
+   *  — 이번 프레임부터 블렌드-인 되어 우아하게 전환된다. */
+  function playAction(name) {
+    if (!Object.prototype.hasOwnProperty.call(CHIBI_ACTION_DUR, name)) return false;
+    action = name;
+    actionT = 0;
+    actionDur = CHIBI_ACTION_DUR[name];
+    return true;
+  }
 
   function refreshFace() {
     drawFaceInto(faceCanvas, p, { wound, ouch: ouchT > 0 });
@@ -1911,6 +1990,8 @@ export function buildChibi(params) {
     // 머리: 아이들 갸웃 + 걷기 시 살짝 앞으로
     headPivot.rotation.z = Math.sin(t * 1.1) * 0.05 * idle;
     headPivot.rotation.x = 0.06 * w + Math.sin(t * 2.1) * 0.012 * idle;
+    // 허리(상체 피벗) — 액션(절/발차기 균형)이 없을 땐 매 프레임 0으로 리셋(회귀 0).
+    bodyPivot.rotation.x = 0;
 
     // 꽁지머리/꼬리 찰랑임 — 아이들은 느긋하게, 걸을 땐 통통
     for (let i = 0; i < tailPivots.length; i++) {
@@ -1929,6 +2010,147 @@ export function buildChibi(params) {
     for (const wp of wingPivots) {
       wp.pivot.rotation.z = wp.baseZ + Math.sin(t * 2.4 + wp.s) * (0.08 + 0.12 * w);
     }
+
+    // ---------------------------------------------------------------------
+    // 사용자 액션 상태머신 — 위에서 계산한 걷기/idle 베이스 포즈 위에 블렌드한다.
+    // aBlend(0→1 진입 오버슈트, 1→0 이탈 이징)로 어떤 프레임에도 현재 베이스 포즈에서
+    // 액션 포즈로/액션 포즈에서 베이스 포즈로 매끄럽게 섞인다 — 급발진 없음.
+    // ---------------------------------------------------------------------
+    bodyMotionSignal = 0;
+    if (action) {
+      actionT += d;
+      if (actionT >= actionDur) { action = null; actionT = 0; }
+    }
+    if (action) {
+      const dur = actionDur;
+      const u = Math.min(1, actionT / dur); // 0~1 진행률
+      const lerp = THREE.MathUtils.lerp;
+      // 진입: 오버슈트(백스윙) 이징 — 활기차게 훅 들어간다. 이탈: 오버슈트 없이 매끈하게.
+      const inK = actionT < BLEND_IN ? easeOutBack(actionT / BLEND_IN) : 1;
+      const remain = dur - actionT;
+      const outWin = BLEND_OUT_OVERRIDE[action] || BLEND_OUT;
+      const outK = remain < outWin ? easeInOutCubic(Math.max(0, remain) / outWin) : 1;
+      const aBlend = Math.min(inK, outK);
+
+      if (action === 'wave') {
+        // 손 흔들며 인사 — 오른팔(armPivots[1])을 어깨축(rotation.z)으로 들어올리고,
+        // 든 채로 rotation.x를 빠르게 사인파 진동시켜 좌우로 흔드는 손을 표현한다.
+        const ai = 1;
+        const targetZ = 2.3; // 바깥 위로 들어올린 자세(관통 없이 몸 밖으로 벌어짐)
+        const targetX = Math.sin(actionT * 9.5) * 0.42;
+        armPivots[ai].rotation.z = lerp(armPivots[ai].rotation.z, targetZ, aBlend);
+        armPivots[ai].rotation.x = lerp(armPivots[ai].rotation.x, targetX, aBlend);
+      } else if (action === 'bow') {
+        // 허리 숙여 인사 — bodyPivot(허리 피벗) pitch. "빠르게 숙였다 천천히 복귀"를
+        // 위해 구간을 나눠 앞 28%는 ease-out(빠른 다운), 나머지는 ease-in(느린 복귀)으로 잇는다.
+        const DOWN_FRAC = 0.28;
+        const bowK = u < DOWN_FRAC
+          ? easeOutCubic(u / DOWN_FRAC)
+          : 1 - easeInCubic((u - DOWN_FRAC) / (1 - DOWN_FRAC));
+        const MAX_BOW = 0.95; // 치비 특유의 큰 절(~54°)
+        const targetPitch = bowK * MAX_BOW;
+        bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, targetPitch, aBlend);
+        // 팔은 차렷하듯 몸에 붙으며 살짝 앞으로 — 상체와 동조해 숙여진다.
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.14, aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.14, aBlend);
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, bowK * 0.3, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, bowK * 0.3, aBlend);
+        bodyMotionSignal = targetPitch; // 머리카락/꼬리가 허리 숙임을 지연 추종
+      } else if (action === 'jump') {
+        // 제자리 점프 — 전신 Y 포물선(사인 half-wave) + 이륙 크라우치/착지 스쿼시(넓고 짧게)
+        // + 정점 스트레치(길고 좁게). 착지 스쿼시는 액션이 끝나기 전에 스스로 0으로
+        // 수렴하도록 설계해(landK가 0→1→0) dur 종료 시 wrapper.scale이 정확히 1로
+        // 맞춰진다 — 다음 프레임의 무액션 리셋(scale.set(1,1,1))과 이어져도 뚝 끊기지 않는다.
+        const JUMP_H = 0.24;
+        const h = Math.sin(u * Math.PI) * JUMP_H;
+        const crouchK = u < 0.12 ? (1 - u / 0.12) : 0;
+        const landPhase = u > 0.82 ? (u - 0.82) / 0.18 : -1;
+        const landK = landPhase >= 0 ? Math.sin(Math.min(1, landPhase) * Math.PI) : 0;
+        const squash = Math.max(crouchK, landK);
+        const peakK = Math.max(0, 1 - Math.abs(u - 0.5) / 0.28);
+        wrapper.position.y = lerp(wrapper.position.y, h, aBlend);
+        const scaleY = 1 - 0.24 * squash + 0.16 * peakK;
+        const scaleXZ = 1 + 0.16 * squash - 0.10 * peakK;
+        wrapper.scale.x = lerp(wrapper.scale.x, scaleXZ, aBlend);
+        wrapper.scale.z = lerp(wrapper.scale.z, scaleXZ, aBlend);
+        wrapper.scale.y = lerp(wrapper.scale.y, scaleY, aBlend);
+        // 신나게 위로 든 팔 — 상승/하강과 동조
+        const armUp = Math.sin(u * Math.PI);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -(0.5 + armUp * 1.3), aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, (0.5 + armUp * 1.3), aBlend);
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -armUp * 0.6, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, -armUp * 0.6, aBlend);
+        // 다리 — 공중에서 살짝 접히고 크라우치/착지에서 살짝 굽는다(무릎 없이 통짜 틸트)
+        if (legPivots.length) {
+          const legTuck = peakK * 0.32 - squash * 0.22;
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, legTuck, aBlend);
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, legTuck, aBlend);
+        }
+        bodyMotionSignal = h / JUMP_H; // 귀/머리카락이 도약을 지연 추종(착지 때 살랑 튐)
+      } else if (action === 'clap') {
+        // 박수 — 양팔을 가슴 앞으로 들어올리고(rotation.x), 좌우 벌어짐(rotation.z)을
+        // 사인파로 좁혔다 넓혔다 하며 마주치는 지점까지 모은다. 부호(s)를 유지해
+        // 팔이 몸 중심선을 넘어가 관통하지 않게 한다.
+        const clapPhase = actionT * 10;
+        const clapX = -1.05 + Math.sin(clapPhase) * 0.12;
+        const openZ = 0.12 + Math.max(0, Math.sin(clapPhase)) * 0.12;
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, clapX, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, clapX, aBlend);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -openZ, aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, openZ, aBlend);
+      } else if (action === 'dance') {
+        // 간단 반복 춤 — 걷기 사인파(주기 3~8.5, 진폭 0.045~0.78)를 그대로 키운 버전.
+        // 같은 위상(dp) 하나로 팔·다리·엉덩이·머리를 동조시켜 "리듬"으로 읽히게 한다.
+        const dp = actionT * 8.6;
+        const swingA = Math.sin(dp);
+        const bounce = Math.abs(Math.sin(dp)) * 0.1; // 걷기 바운스(0.045)의 2배+
+        const hipSway = swingA * 0.16;                // 걷기(0.045)의 3배 이상
+        wrapper.position.y = lerp(wrapper.position.y, bounce, aBlend);
+        wrapper.rotation.z = lerp(wrapper.rotation.z, hipSway, aBlend);
+        if (legPivots.length) {
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, swingA * 1.0, aBlend);
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -swingA * 1.0, aBlend);
+        }
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -swingA * 0.85, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, swingA * 0.85, aBlend);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -(0.65 + Math.abs(swingA) * 0.3), aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, (0.65 + Math.abs(swingA) * 0.3), aBlend);
+        headPivot.rotation.z = lerp(headPivot.rotation.z, Math.sin(dp * 0.5) * 0.14, aBlend);
+        bodyMotionSignal = hipSway * 1.4; // 리듬에 맞춰 귀/꼬리도 통통
+      } else if (action === 'kick') {
+        // 근사 발차기 — 다리 전체(허벅지 통짜, 무릎 관절 없음)를 앞으로 크게 스윙.
+        // 빠르게 차올렸다(오버슈트) 부드럽게 내려놓는다. 상체는 반대로 살짝 젖혀 균형.
+        const UP_FRAC = 0.4;
+        const kickK = u < UP_FRAC
+          ? easeOutBack(u / UP_FRAC)
+          : 1 - easeInOutCubic((u - UP_FRAC) / (1 - UP_FRAC));
+        const KICK_MAX = 1.05;
+        if (legPivots.length) {
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -kickK * KICK_MAX, aBlend);
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, kickK * 0.12, aBlend); // 지지 다리 살짝 반동
+        }
+        bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, -Math.max(0, Math.min(1, kickK)) * 0.14, aBlend); // 반동으로 살짝 젖힘
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.75, aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.75, aBlend);
+        bodyMotionSignal = kickK * 0.5;
+      }
+    }
+
+    // ---- 2차 모션: 귀·머리카락·리본·꼬리 지연 추종 (본 없는 캐릭터의 관성감) ----
+    // 저역통과 필터로 bodyMotionSignal을 살짝 늦게 쫓아간다 — 그 차이가 클수록(몸통이
+    // 방금 급하게 움직였을수록) 귀/꼬리가 더 크게 휘청인다. 액션 종료 후에도 신호가
+    // 0으로 돌아가면서 필터가 자연 감쇠하므로 뚝 끊기지 않고 스르륵 안착한다.
+    bodyMotionLag += (bodyMotionSignal - bodyMotionLag) * Math.min(1, d * 9);
+    const secK = bodyMotionSignal - bodyMotionLag;
+    if (secK !== 0 || bodyMotionLag !== 0) {
+      for (const e of earPivots) {
+        e.pivot.rotation.x = secK * 0.32;
+        e.pivot.rotation.z = secK * 0.22 * e.s;
+      }
+      for (const tp of tailPivots) {
+        tp.pivot.rotation.x += secK * 0.24; // 기존 idle/walk sway 위에 가산
+      }
+    }
   }
 
   function dispose() {
@@ -1940,5 +2162,5 @@ export function buildChibi(params) {
     for (const tx of texs) tx.dispose();
   }
 
-  return { group, height: HEIGHT, update, dispose, setWound, ouch };
+  return { group, height: HEIGHT, update, dispose, setWound, ouch, playAction };
 }
