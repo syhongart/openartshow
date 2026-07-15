@@ -71,7 +71,7 @@ export const FRAME_RULES = {
 
 // ── 층고·풋프린트 프리셋 ──────────────────────────────────────────────────
 export const STORY_H = { studio: 2.8, gallery: 3.6, grand: 4.2 };
-export const FOOTPRINT = { small: [6, 6], medium: [9, 7], large: [14, 10] };
+export const FOOTPRINT = { small: [6, 6], medium: [9, 7], large: [14, 10], hall: [20, 14], grand: [28, 18] };
 
 // ── 스타터 방("완성된 방") — 처음 열면 마주하는 완성 공간 ─────────────────────
 // 9×7m 미디엄, 3.6m 층고. 북벽 3작품(피처월 1면) + 좌대·스크린·벤치·러그·화분.

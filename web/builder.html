@@ -260,6 +260,15 @@
     </div>
   </div>
   <div class="fld"><label>전시 타이틀</label><input type="text" id="titleInput" maxlength="60" placeholder="나의 공간" value="나의 공간"></div>
+  <div class="fld"><label>공간 크기 <b style="color:var(--dim);font-weight:400">작품 많으면 크게</b></label>
+    <div class="finchips" data-size id="sizeChips">
+      <button type="button" data-size="small">아담 · 6×6</button>
+      <button type="button" data-size="medium">기본 · 9×7</button>
+      <button type="button" data-size="large">넓은 · 14×10</button>
+      <button type="button" data-size="hall">대형홀 · 20×14</button>
+      <button type="button" data-size="grand">그랜드 · 28×18</button>
+    </div>
+  </div>
   <div class="fld"><label>바닥 마감</label>
     <div class="finchips" data-fin="floor" id="finFloor">
       <button data-id="parquet" class="on"><i style="--sw:#b98a53"></i>파케</button>
@@ -460,7 +469,7 @@ function pickLightColor(hex, fromSwatch){
 [...lightSwatches.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>pickLightColor(b.dataset.c, b); });
 lightColorInput.oninput=()=>pickLightColor(lightColorInput.value, null);
 // 마감(재질) 칩 — 바닥·벽·피처월. B.setFinish(kind,id)로 재빌드, 칩 활성표시.
-const finGroups=[...document.querySelectorAll('.finchips')];
+const finGroups=[...document.querySelectorAll('.finchips[data-fin]')];
 finGroups.forEach(grp=>{ const kind=grp.dataset.fin;
   [...grp.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>{
     const applied=B.setFinish(kind, b.dataset.id);
@@ -470,6 +479,14 @@ finGroups.forEach(grp=>{ const kind=grp.dataset.fin;
 function syncFinishChips(){ const f=B.getSpace().shell.finish; finGroups.forEach(grp=>{ const cur=f[grp.dataset.fin];
   [...grp.querySelectorAll('button')].forEach(x=>x.classList.toggle('on', x.dataset.id===cur)); }); }
 syncFinishChips();
+// 공간 크기 칩 — B.setFootprint(id)로 방 크기 변경(카메라 자동 맞춤·베이크 무효·undo 가능).
+const sizeChips=document.getElementById('sizeChips');
+function syncSizeChips(){ if(!sizeChips)return; const cur=B.getSpace().shell.footprint;
+  [...sizeChips.querySelectorAll('button')].forEach(x=>x.classList.toggle('on', x.dataset.size===cur)); }
+if(sizeChips){ [...sizeChips.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>{
+  B.setFootprint(b.dataset.size); syncSizeChips();
+  showToast('공간 크기: '+b.textContent.split(' · ')[0]+' · Ctrl+Z로 되돌리기'); }; }); }
+syncSizeChips();
 // 프리셋 갤러리(#49) — 썸네일 카드, 클릭 시 현재 공간 교체(undo 가능)
 const presetsEl=document.getElementById('presets');
 B.getPresets().forEach(p=>{
@@ -478,7 +495,7 @@ B.getPresets().forEach(p=>{
   const nm=document.createElement('span'); nm.className='pn'; nm.textContent=p.name;
   b.appendChild(img); b.appendChild(nm);
   b.onclick=()=>{
-    B.applyPreset(p.id); syncFinishChips(); B.resetCamera(); // refresh()는 change 리스너가 처리(중복 제거) · 새 방 크기에 카메라 맞춤(검수 MINOR)
+    B.applyPreset(p.id); syncFinishChips(); syncSizeChips(); B.resetCamera(); // refresh()는 change 리스너가 처리(중복 제거) · 새 방 크기에 카메라 맞춤(검수 MINOR)
     [...presetsEl.querySelectorAll('button')].forEach(x=>x.classList.toggle('on', x===b));
     const title=B.getSpace().meta&&B.getSpace().meta.name; if(title){ spaceTitle.textContent=title; titleInput.value=title; }
     showToast(`'${p.name}' 프리셋 불러옴 · Ctrl+Z로 되돌리기`);
