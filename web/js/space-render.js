@@ -95,7 +95,7 @@ const MATS = {
   charcoal:   () => SM({ color: 0x3a3a40, roughness: 0.7, metalness: 0.1 }),
   deepviolet: () => SM({ color: 0x2b2833, roughness: 0.9, metalness: 0 }), // 저채도 딥중립(작품 배경 규율 §3-6·팀장 조건①)
   frameBlack: () => SM({ color: 0x17181c, roughness: 0.88, metalness: 0 }), // 액자=매트 블랙(크롬 금지, 아트디렉션 스펙)
-  walnut:     () => SM({ color: 0x6b5138, roughness: 0.6, metalness: 0 }),  // 진열장 받침(파케 바닥과 분리)
+  walnut:     () => SM({ color: 0x6b5138, roughness: 0.6, metalness: 0 }),  // 벤치 시트(월넛) — 파케 바닥과 분리
   charcoalCloth: () => SM({ color: 0x2c2c30, roughness: 0.95, metalness: 0 }), // 드레이프 딥차콜
   clothInner: () => SM({ color: 0xd6ccb7, roughness: 0.97, metalness: 0 }), // 러그 내부 필드(보더 대비)
   parquet:    () => SM({ color: 0xb98a53, roughness: 0.5, metalness: 0 }),
@@ -201,6 +201,12 @@ function flutedShaft(R, height, { flutes = 16, per = 3, hs = 5, depth = R * 0.1 
     const a = j * stride + i, b = a + 1, c = a + stride, e = c + 1;
     idx.push(a, c, b, b, c, e);
   }
+  // 상/하단 캡 — open tube 방지(근접 저각에서 속 안 보이게, 검수 MINOR)
+  const y1 = y0 + height, topBase = hs * stride;
+  const cb = pos.length / 3; pos.push(0, y0, 0); uv.push(0.5, 0);
+  for (let i = 0; i < RS; i++) idx.push(cb, i, i + 1);                       // 하단(-y)
+  const ct = pos.length / 3; pos.push(0, y1, 0); uv.push(0.5, 1);
+  for (let i = 0; i < RS; i++) idx.push(ct, topBase + i + 1, topBase + i);   // 상단(+y)
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); // box/cyl과 attribute 일치(merge 요건)
@@ -286,7 +292,7 @@ function partGeo(t) {
 function partAccent(t) {
   const [w, h, d] = PART_TYPES[t].size;
   switch (t) {
-    case 'artwork': return { geo: box(w - 0.16, h - 0.16, 0.015), mat: 'paper', off: [0, 0, 0.03] }; // 캔버스=프레임 안쪽 홈
+    case 'artwork': return { geo: box(w - 0.20, h - 0.20, 0.015), mat: 'paper', off: [0, 0, 0.03] }; // 캔버스=프레임 홀(반폭 0.51/0.71)보다 작게(0.5/0.7)→관통 방지+리빌(검수 BLOCKER)
     case 'screen':  return { geo: box(w - 0.06, h - 0.06, 0.02), mat: 'display', off: [0, 0, 0.035] }; // 슬림 베젤 인셋
     case 'vitrine': { // 골조 사이 유리 케이스(바닥 접지) — off로 프레임 안쪽에 정렬
       const cw = w - 0.06, cd = d - 0.06, cH = h - 0.10;
