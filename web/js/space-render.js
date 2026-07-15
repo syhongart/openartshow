@@ -230,8 +230,53 @@ export function buildSpaceGroup(space, opts = {}) {
       }
     }
   }
-  g.userData = { dims: { fw, fd, hw, hd, H, t }, partRefs, geos, mats };
+  g.userData = { dims: { fw, fd, hw, hd, H, t }, partRefs, geos, mats, floor: floorM };
   return g;
+}
+
+// ── 방 조명 연출(감독: 제미나이급 "멋짐") ────────────────────────────────────
+// group에 (a)작품별 소프트 스포트라이트 (b)천장 다운라이트 (c)접촉그림자 AO를 추가.
+// 전부 group 자식으로 붙어 rebuild 시 함께 정리된다. AO 지오/재질은 userData에 등록해
+// disposeSpaceGroup이 회수(누수 방지). 라이트는 THREE.Light라 별도 dispose 불필요.
+let _aoTex = null;
+function aoTexture() {
+  if (_aoTex) return _aoTex;
+  const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 64, 4, 64, 64, 60);
+  g.addColorStop(0, 'rgba(0,0,0,0.62)'); g.addColorStop(0.55, 'rgba(0,0,0,0.30)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128);
+  _aoTex = new THREE.CanvasTexture(c); _aoTex.colorSpace = THREE.SRGBColorSpace; return _aoTex;
+}
+const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6 };
+const ART_SPOT_CAP = 10; // 실시간 라이트 상한(편집 모드 대표 조명). 초과분은 베이킹 트랙에서 처리 예정.
+export function addRoomLighting(group) {
+  const u = group.userData || {}; const dims = u.dims; if (!dims) return;
+  const { H, hw, hd } = dims;
+  const geos = u.geos || (u.geos = []); const mats = u.mats || (u.mats = []);
+  const refs = u.partRefs || [];
+  // (c) 접촉그림자 — grounded 파츠 밑 소프트 AO 플레인(거의 0 비용). aoMat 1개 공유.
+  const aoMat = new THREE.MeshBasicMaterial({ map: aoTexture().clone(), transparent: true, depthWrite: false });
+  aoMat.map.needsUpdate = true; mats.push(aoMat);
+  refs.forEach(({ part, object }) => {
+    const s = AO_GROUNDED[part.t]; if (!s) return;
+    const geo = new THREE.PlaneGeometry(s, s); geos.push(geo);
+    const pl = new THREE.Mesh(geo, aoMat); pl.rotation.x = -Math.PI / 2;
+    pl.position.set(object.position.x, 0.015, object.position.z); group.add(pl);
+  });
+  // (a) 작품별 소프트 스포트라이트(부드러운 falloff — 감독 피드백). 상한 내에서만.
+  refs.filter(({ part }) => part.t === 'artwork' || part.t === 'screen').slice(0, ART_SPOT_CAP)
+    .forEach(({ object }) => {
+      const p = object.position;
+      const toC = new THREE.Vector3(-p.x, 0, -p.z); if (toC.lengthSq() < 1e-3) toC.set(0, 0, 1); toC.normalize();
+      const sl = new THREE.SpotLight(0xffe3ba, 23, 11, 0.72, 1.0, 1.0); // 웜·각도.72·penumbra1.0(소프트)
+      sl.position.set(p.x + toC.x * 2.1, H - 0.15, p.z + toC.z * 2.1);
+      sl.target.position.set(p.x, p.y, p.z); group.add(sl); group.add(sl.target);
+    });
+  // (b) 천장 다운라이트 — 바닥에 부드러운 웅덩이(글로시 반사와 함께 '멋짐')
+  for (const [dx, dz] of [[-hw * 0.4, -hd * 0.35], [hw * 0.15, hd * 0.1], [hw * 0.5, -hd * 0.1]]) {
+    const dl = new THREE.SpotLight(0xffdcb0, 18, 12, 0.6, 1.0, 1.1);
+    dl.position.set(dx, H - 0.1, dz); dl.target.position.set(dx, 0, dz); group.add(dl); group.add(dl.target);
+  }
 }
 
 /** group.userData의 geos/mats 정리 */
