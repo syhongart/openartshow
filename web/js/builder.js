@@ -67,6 +67,7 @@ export function createBuilder(canvas, opts = {}) {
   let ghostMat = null;      // 고스트 공용 반투명 재질(전 메쉬 공유 → 색 일괄 변경)
   let gridSnap = true;      // 그리드 스냅 on/off(HUD 기즈모 토글)
   let viewMode = 'edit';    // 'edit' | 'view'(관람 미리보기)
+  let lightColor = null;    // 유저 지정 조명 색(THREE.Color) — 키라이트+스포트에 적용
   const applySnap = (type, x, z) => gridSnap ? snapPos(type, x, z) : { x, z }; // 스냅 off면 자유 배치
   let selected = -1;        // 선택된 파츠 index
   let selectMesh = null;    // 선택 하이라이트 아웃라인
@@ -81,9 +82,11 @@ export function createBuilder(canvas, opts = {}) {
     const floor = group.userData.floor; // userData 참조(자식 순서 결합 제거, 검수 권고)
     if (floor && floor.material) { floor.material.roughness = 0.16; floor.material.envMapIntensity = 1.35; }
     addRoomLighting(group); // 작품 스포트라이트·천장 다운라이트·접촉그림자
+    applyLightColorToGroup(); // 유저 지정 조명색을 새 스포트라이트에 재적용
     scene.add(group);
     refreshSelection();
   }
+  function applyLightColorToGroup() { if (lightColor && group) group.traverse((o) => { if (o.isSpotLight) o.color.copy(lightColor); }); }
   function pushUndo() { undoStack.push(JSON.stringify(space)); if (undoStack.length > 50) undoStack.shift(); }
 
   // ── 배치 ──
@@ -292,6 +295,13 @@ export function createBuilder(canvas, opts = {}) {
     space = normalizeSpace({ ...space, meta: { ...space.meta, name: nm } });
     emit('change', { space }); return nm;
   }
+  function setLightColor(hex) { // 조명 색(감독: 색도 정할 수 있게) — 키라이트+스포트에 적용
+    lightColor = new THREE.Color(hex); key.color.copy(lightColor); applyLightColorToGroup(); renderOnce();
+  }
+  function clearSpace() { // 클리어(감독: 지우고 다시) — 파츠 전부 비움, 방 셸은 유지. undo 가능.
+    pushUndo(); cancelPlace(); selectIndex(-1);
+    space = normalizeSpace({ ...space, parts: [] }); rebuild(); emit('change', { space });
+  }
 
   rebuild(); applyCamera();
   if (!opts.headless) loop();
@@ -300,7 +310,7 @@ export function createBuilder(canvas, opts = {}) {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
     setScreenVideo, getScreenVideo,
-    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName,
+    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, clearSpace,
     save, load, exportJSON, importJSON, resize, renderOnce,
     getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
