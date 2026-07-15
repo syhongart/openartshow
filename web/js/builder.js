@@ -6,7 +6,7 @@
 // 테스트 가능성: createBuilder()가 스크립트 API를 반환 → 헤드리스로 전 경로 검증.
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
-import { normalizeSpace, newSpace, PART_TYPES } from './space.js';
+import { normalizeSpace, newSpace, PART_TYPES, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
 import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES } from './space-render.js';
 
 const SAVE_KEY = 'openartshow.space.v1';
@@ -39,7 +39,7 @@ export function createBuilder(canvas, opts = {}) {
     camera.lookAt(target);
   }
 
-  let space = normalizeSpace(opts.space || newSpace());
+  let space; try { space = normalizeSpace(opts.space || newSpace()); } catch { space = newSpace(); } // opts.space 외부 유입 방어(상위버전 등)
   let group = null;
   const undoStack = [];
   let placingType = null;   // 팔레트에서 고른 배치 대기 타입
@@ -123,10 +123,24 @@ export function createBuilder(canvas, opts = {}) {
   }
 
   // ── 저장/불러오기/내보내기 ──
-  function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(space)); emit('saved', {}); return true; } catch { return false; } }
-  function load() { try { const r = localStorage.getItem(SAVE_KEY); if (!r) return false; space = normalizeSpace(JSON.parse(r)); undoStack.length = 0; selected = -1; rebuild(); emit('change', { space }); return true; } catch { return false; } }
+  // 외부 유입 문서(로드/가져오기)는 스키마 경계에서 80캡을 강제 — addPart UI 밖 우회 방지.
+  // scene.js 방문자뷰 통합·파일가져오기 UI 연결 시에도 이 경계가 draw call 예산을 보증한다.
+  function clampCap(sp) {
+    if (uniqueTexCount(sp) <= ART_SCREEN_CAP) return sp;
+    let n = 0; const parts = [];
+    for (const p of sp.parts) { if (UNIQUE_TEX_TYPES.has(p.t)) { if (n >= ART_SCREEN_CAP) continue; n++; } parts.push(p); }
+    const trimmed = normalizeSpace({ ...sp, parts });
+    emit('cap', { type: null, cap: ART_SCREEN_CAP, trimmed: true });
+    return trimmed;
+  }
+  function save() { try { localStorage.setItem(SAVE_KEY, encodeSpace(space)); emit('saved', {}); return true; } catch { return false; } }
+  function load() { const dec = decodeSpace(localStorage.getItem(SAVE_KEY)); if (!dec) return false; space = clampCap(dec); undoStack.length = 0; selected = -1; rebuild(); emit('change', { space }); return true; }
   function exportJSON() { return JSON.stringify(space, null, 0); }
-  function importJSON(str) { try { space = normalizeSpace(JSON.parse(str)); undoStack.length = 0; selected = -1; rebuild(); emit('change', { space }); return true; } catch { return false; } }
+  function importJSON(str) {
+    const s = (typeof str === 'string' && str.startsWith(SPACE_PREFIX)) ? str : SPACE_PREFIX + String(str);
+    const dec = decodeSpace(s); if (!dec) return false; // 파손·상위버전(SPACE_VERSION_AHEAD) → false
+    space = clampCap(dec); undoStack.length = 0; selected = -1; rebuild(); emit('change', { space }); return true;
+  }
 
   // ── 픽킹(포인터 → 파츠/바닥) ──
   function ndc(px, py, rect) { return new THREE.Vector2(((px - rect.left) / rect.width) * 2 - 1, -((py - rect.top) / rect.height) * 2 + 1); }
@@ -194,6 +208,12 @@ export function createBuilder(canvas, opts = {}) {
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
     on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
     get renderer() { return renderer; }, get camera() { return camera; }, get orbit() { return orbit; },
-    dispose() { if (raf) cancelAnimationFrame(raf); if (group) disposeSpaceGroup(group); renderer.dispose(); },
+    dispose() {
+      if (raf) cancelAnimationFrame(raf);
+      cancelPlace(); // ghost 정리
+      if (selectMesh) { scene.remove(selectMesh); selectMesh.geometry.dispose(); selectMesh.material.dispose(); selectMesh = null; }
+      if (group) disposeSpaceGroup(group);
+      renderer.dispose();
+    },
   };
 }
