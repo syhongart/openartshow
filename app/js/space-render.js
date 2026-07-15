@@ -23,7 +23,11 @@ const MATS = {
   plasterW:   () => SM({ color: 0xffffff, roughness: 0.92, metalness: 0 }),
   warmsand:   () => SM({ color: 0xe6d8bf, roughness: 0.9, metalness: 0 }),
   charcoal:   () => SM({ color: 0x3a3a40, roughness: 0.7, metalness: 0.1 }),
-  deepviolet: () => SM({ color: 0x2e2542, roughness: 0.9, metalness: 0 }),
+  deepviolet: () => SM({ color: 0x2b2833, roughness: 0.9, metalness: 0 }), // 저채도 딥중립(작품 배경 규율 §3-6·팀장 조건①)
+  frameBlack: () => SM({ color: 0x17181c, roughness: 0.88, metalness: 0 }), // 액자=매트 블랙(크롬 금지, 아트디렉션 스펙)
+  walnut:     () => SM({ color: 0x6b5138, roughness: 0.6, metalness: 0 }),  // 진열장 받침(파케 바닥과 분리)
+  charcoalCloth: () => SM({ color: 0x2c2c30, roughness: 0.95, metalness: 0 }), // 드레이프 딥차콜
+  clothInner: () => SM({ color: 0xd6ccb7, roughness: 0.97, metalness: 0 }), // 러그 내부 필드(보더 대비)
   parquet:    () => SM({ color: 0xb98a53, roughness: 0.5, metalness: 0 }),
   terrazzo:   () => SM({ color: 0xd8d2c6, roughness: 0.55, metalness: 0 }),
   concrete:   () => SM({ color: 0x8f8d88, roughness: 0.9, metalness: 0 }),
@@ -33,12 +37,12 @@ const MATS = {
   brass:      () => SM({ color: 0xb98d4a, roughness: 0.45, metalness: 0.6 }),
   stone:      () => SM({ color: 0xd9cdb6, roughness: 0.7, metalness: 0 }),
   matteWhite: () => SM({ color: 0xe9e6df, roughness: 0.85, metalness: 0 }),
-  darkScreen: () => SM({ color: 0x14141a, roughness: 0.5, metalness: 0.3 }),
+  darkScreen: () => SM({ color: 0x14141a, roughness: 0.5, metalness: 0.08 }), // 다크 매트 베젤(금속광 억제)
   terracotta: () => SM({ color: 0x9a5b43, roughness: 0.85, metalness: 0 }),
   plant:      () => SM({ color: 0x3d5a3a, roughness: 0.8, metalness: 0 }),
   cloth:      () => SM({ color: 0xc9bfae, roughness: 0.97, metalness: 0 }),
   paper:      () => SM({ color: 0xd8d4cc, roughness: 0.9, metalness: 0 }),
-  glass:      () => SM({ color: 0xcfe6ea, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.2 }),
+  glass:      () => SM({ color: 0xcfe6ea, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.3 }), // 케이스 실루엣 가시성↑
   display:    () => SM({ color: 0x1b1e2a, roughness: 0.32, metalness: 0.2, emissive: 0x10131f, emissiveIntensity: 0.5 }),
   lens:       () => SM({ color: 0xfff3d6, roughness: 0.3, metalness: 0.1, emissive: 0xffe6b0, emissiveIntensity: 0.6 }),
 };
@@ -51,8 +55,8 @@ const FINISH_MAT = {
 // 파츠 → 재질 (미술관 재질 매핑)
 const PART_MAT = {
   wallPanel: MATS.plaster, floorTile: MATS.parquet, ceilingPanel: MATS.plasterW, pillar: MATS.stone, stair: MATS.stone, arch: MATS.plaster,
-  artwork: MATS.darkMetal, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.wood, labelStand: MATS.brass,
-  trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.wood, drape: MATS.cloth,
+  artwork: MATS.frameBlack, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.walnut, labelStand: MATS.brass,
+  trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.wood, drape: MATS.charcoalCloth,
 };
 const partMat = (t) => (PART_MAT[t] || MATS.stone)();
 const finishMat = (kind, id) => ((FINISH_MAT[kind] && FINISH_MAT[kind][id]) || MATS.plasterW)();
@@ -78,10 +82,10 @@ function merged(list) {
 function partGeo(t) {
   const [w, h, d] = PART_TYPES[t].size;
   switch (t) {
-    case 'pillar': // 베이스 + 샤프트 + 캐피탈
-      return merged([[cyl(w * 0.62, w * 0.62, 0.12), [0, -h / 2 + 0.06, 0]], [cyl(w / 2, w / 2, h, 20), null], [cyl(w * 0.62, w * 0.62, 0.12), [0, h / 2 - 0.06, 0]]]);
-    case 'bench': // 시트 + 다리 2슬랩
-      return merged([[box(w, 0.08, d), [0, h / 2 - 0.04, 0]], [box(0.08, h - 0.08, d * 0.8), [-w / 2 + 0.1, -0.04, 0]], [box(0.08, h - 0.08, d * 0.8), [w / 2 - 0.1, -0.04, 0]]]);
+    case 'pillar': // 베이스 + 샤프트 + 캐피탈 (칼라 반경↑=몰딩 가독)
+      return merged([[cyl(w * 0.85, w * 0.85, 0.12), [0, -h / 2 + 0.06, 0]], [cyl(w / 2, w / 2, h, 20), null], [cyl(w * 0.85, w * 0.85, 0.12), [0, h / 2 - 0.06, 0]]]);
+    case 'bench': // 시트만(목재) — 다리는 accent(다크메탈)로 분리
+      return merged([[box(w, 0.08, d), [0, h / 2 - 0.04, 0]]]);
     case 'pedestal': // 베이스 + 몸통 + 상판(몰딩)
       return merged([[box(w, 0.06, d), [0, -h / 2 + 0.03, 0]], [box(w * 0.86, h - 0.12, d * 0.86), null], [box(w, 0.05, d), [0, h / 2 - 0.025, 0]]]);
     case 'stair': { // 5단
@@ -113,6 +117,8 @@ function partAccent(t) {
     case 'vitrine': return { geo: box(w * 0.92, h * 0.78, d * 0.92), mat: 'glass', off: [0, h * 0.48, 0] };
     case 'planter': return { geo: merged([[new THREE.SphereGeometry(w * 0.42, 10, 8), null], [new THREE.SphereGeometry(w * 0.3, 10, 8), [w * 0.28, w * 0.22, 0]], [new THREE.SphereGeometry(w * 0.26, 10, 8), [-w * 0.26, w * 0.16, w * 0.12]]]), mat: 'plant', off: [0, h * 0.52, 0] };
     case 'trackLight': return { geo: cyl(w * 0.24, w * 0.24, 0.02, 12), mat: 'lens', off: [0, -w * 0.1, 0] };
+    case 'bench': return { geo: merged([[box(0.08, h - 0.08, d * 0.8), [-w / 2 + 0.1, -0.04, 0]], [box(0.08, h - 0.08, d * 0.8), [w / 2 - 0.1, -0.04, 0]]]), mat: 'darkMetal', off: [0, 0, 0] };
+    case 'rug': return { geo: box(w - 0.16, 0.021, d - 0.16), mat: 'clothInner', off: [0, 0.006, 0] }; // 내부 필드=보더 대비
     default: return null;
   }
 }
@@ -135,13 +141,13 @@ export function buildSpaceGroup(space, opts = {}) {
   const { fw, fd, hw, hd, H, t } = spaceDims(space);
 
   // shell: 바닥·천장·4벽 + 피처월 오버레이 (미술관 재질 계승)
-  const floorM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('floor', space.shell.finish.floor))); floorM.position.set(0, -0.05, 0); g.add(floorM);
+  const floorM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('floor', space.shell.finish.floor))); floorM.position.set(0, -0.05, 0); floorM.receiveShadow = true; g.add(floorM);
   if (!opts.hideCeiling) { // 에디터 컷어웨이: 천장 숨김(방 안이 보이게)
     const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('ceiling', space.shell.finish.ceiling))); ceilM.position.set(0, H, 0); g.add(ceilM);
   }
   for (const [x, z, ww, dd] of [[0, -hd, fw, t], [0, hd, fw, t], [-hw, 0, t, fd], [hw, 0, t, fd]]) {
     const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), finishMat('wall', space.shell.finish.wall)));
-    m.position.set(x, H / 2, z); g.add(m);
+    m.position.set(x, H / 2, z); m.receiveShadow = true; g.add(m);
   }
   const fwSide = space.shell.finish.featureWall;
   if (fwSide && fwSide !== 'none') {
@@ -161,6 +167,7 @@ export function buildSpaceGroup(space, opts = {}) {
     const canInstance = !UNIQUE_TEX_TYPES.has(type) && list.length > 1 && !opts.pickable;
     if (canInstance) {
       const im = new THREE.InstancedMesh(geo, material, list.length);
+      im.castShadow = true; im.receiveShadow = true;
       list.forEach(({ p }, k) => {
         const m4 = new THREE.Matrix4().compose(new THREE.Vector3(p.x, partY(type, H), p.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, p.ry, 0)), new THREE.Vector3(1, 1, 1));
         im.setMatrixAt(k, m4);
@@ -170,6 +177,7 @@ export function buildSpaceGroup(space, opts = {}) {
       for (const { p, i } of list) {
         const mm = new THREE.Mesh(geo, material);
         mm.position.set(p.x, partY(type, H), p.z); mm.rotation.y = p.ry;
+        mm.castShadow = true; mm.receiveShadow = true;
         if (opts.pickable) mm.userData.partIndex = i;
         g.add(mm); partRefs.push({ part: p, index: i, object: mm });
       }
@@ -182,10 +190,11 @@ export function buildSpaceGroup(space, opts = {}) {
       const place = (p) => { const [ox, oy, oz] = acc.off; return { pos: new THREE.Vector3(p.x + Math.cos(p.ry) * ox + Math.sin(p.ry) * oz, partY(type, H) + oy, p.z - Math.sin(p.ry) * ox + Math.cos(p.ry) * oz), ry: p.ry }; };
       if (list.length > 1) {
         const aim = new THREE.InstancedMesh(acc.geo, accMat, list.length);
+        aim.castShadow = true;
         list.forEach(({ p }, k) => { const pl = place(p); aim.setMatrixAt(k, new THREE.Matrix4().compose(pl.pos, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, pl.ry, 0)), new THREE.Vector3(1, 1, 1))); });
         aim.instanceMatrix.needsUpdate = true; g.add(aim);
       } else {
-        const pl = place(list[0].p); const am = new THREE.Mesh(acc.geo, accMat); am.position.copy(pl.pos); am.rotation.y = pl.ry; g.add(am);
+        const pl = place(list[0].p); const am = new THREE.Mesh(acc.geo, accMat); am.position.copy(pl.pos); am.rotation.y = pl.ry; am.castShadow = true; g.add(am);
       }
     }
   }
