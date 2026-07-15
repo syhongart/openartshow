@@ -32,10 +32,13 @@
   .tabs button{flex:1;appearance:none;border:0;background:transparent;color:var(--dim);font:inherit;font-size:12.5px;padding:11px 4px;cursor:pointer}
   .tabs button.on{color:var(--ink);box-shadow:inset 0 -2px 0 var(--violet)}
   .parts{padding:10px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .chip{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:inherit;font-size:12.5px;
-    padding:12px 8px;border-radius:10px;cursor:pointer;text-align:center;transition:.12s}
-  .chip:hover{border-color:var(--violet)}
-  .chip.on{border-color:var(--violet);background:#2b2740;color:#fff}
+  .chip{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:inherit;font-size:11.5px;
+    padding:7px 5px 8px;border-radius:11px;cursor:pointer;text-align:center;transition:.12s;
+    display:flex;flex-direction:column;align-items:center;gap:3px}
+  .chip .chip-ic{width:46px;height:46px;object-fit:contain;pointer-events:none;
+    background:radial-gradient(120% 100% at 50% 20%,#2b2c37 0%,#212230 100%);border-radius:8px}
+  .chip:hover{border-color:var(--violet);transform:translateY(-1px)}
+  .chip.on{border-color:var(--violet);background:#2b2740;color:#fff;box-shadow:0 0 0 1px var(--violet) inset}
   .hint{padding:10px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);line-height:1.5}
   /* 선택 액션 도크 */
   .seldock{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:none;gap:8px;align-items:center;
@@ -95,9 +98,38 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
+import * as THREE from 'three';
 import { createBuilder } from './js/builder.js';
 import { PART_TYPES, PART_CATEGORIES } from './js/space.js';
 import { createYouTubeSurface } from './js/ytembed.js';
+import { buildPartPreview } from './js/space-render.js';
+
+// 팔레트 썸네일 — 각 파츠 타입을 1회 오프스크린 렌더해 아이콘 dataURL 생성(감독: 그림으로 표시)
+function renderPartIcons(size = 52) {
+  const R = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  R.setSize(size, size); R.setPixelRatio(2); R.setClearColor(0x000000, 0); R.outputColorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Scene();
+  s.add(new THREE.HemisphereLight(0xfff6ea, 0x2a2a30, 1.25));
+  const k = new THREE.DirectionalLight(0xffffff, 1.2); k.position.set(1.4, 2.2, 1.6); s.add(k);
+  const cam = new THREE.PerspectiveCamera(32, 1, 0.05, 40);
+  const icons = {};
+  try {
+    for (const type of Object.keys(PART_TYPES)) {
+      const g = buildPartPreview(type); s.add(g);
+      const box = new THREE.Box3().setFromObject(g); const c = box.getCenter(new THREE.Vector3()); const sz = box.getSize(new THREE.Vector3());
+      const rad = Math.max(sz.x, sz.y, sz.z, 0.3) * 1.5 + 0.35;
+      cam.position.set(c.x + rad * 0.8, c.y + rad * 0.65, c.z + rad * 1.0); cam.lookAt(c);
+      R.render(s, cam); icons[type] = R.domElement.toDataURL();
+      s.remove(g);
+      g.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); if (o.material.normalMap) o.material.normalMap.dispose(); o.material.dispose(); } });
+    }
+  } finally {
+    R.dispose(); // 루프 중간 예외에도 오프스크린 컨텍스트 확실히 회수(검수관 권고)
+  }
+  return icons;
+}
+let PART_ICONS = {};
+try { PART_ICONS = renderPartIcons(); } catch (e) { PART_ICONS = {}; }
 
 const canvas = document.getElementById('c');
 const B = createBuilder(canvas, { preserveDrawingBuffer: true });
@@ -117,7 +149,9 @@ placeCats.forEach((cat,i)=>{
 function renderParts(){
   partsEl.innerHTML='';
   Object.entries(PART_TYPES).filter(([,s])=>s.cat===curCat).forEach(([type,spec])=>{
-    const c=document.createElement('button'); c.className='chip'; c.textContent=spec.label;
+    const c=document.createElement('button'); c.className='chip';
+    if(PART_ICONS[type]){ const im=document.createElement('img'); im.className='chip-ic'; im.src=PART_ICONS[type]; im.alt=''; c.appendChild(im); }
+    const lb=document.createElement('span'); lb.textContent=spec.label; c.appendChild(lb);
     c.onclick=()=>{ [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); c.classList.add('on'); curChip=c; B.beginPlace(type); };
     partsEl.appendChild(c);
   });

@@ -245,6 +245,19 @@ export function disposeSpaceGroup(g) {
   });
 }
 
+/** 팔레트 썸네일용 — 파츠 1개(본체+accent)를 원점에 세운 Group. 아이콘 렌더 후 dispose 호출부 책임. */
+export function buildPartPreview(type) {
+  const g = new THREE.Group();
+  const geo = partGeo(type), m = partMat(type);
+  g.add(new THREE.Mesh(geo, m));
+  const acc = partAccent(type);
+  if (acc) {
+    const am = new THREE.Mesh(acc.geo, (MATS[acc.mat] || MATS.paper)());
+    const [ox, oy, oz] = acc.off; am.position.set(ox, oy, oz); g.add(am);
+  }
+  return g;
+}
+
 /** 현재 작품+스크린 개수 (80캡 판정용) */
 export function uniqueTexCount(space) {
   return space.parts.reduce((n, p) => n + (UNIQUE_TEX_TYPES.has(p.t) ? 1 : 0), 0);
