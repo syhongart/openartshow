@@ -174,12 +174,24 @@ export function createBuilder(canvas, opts = {}) {
 
   // ── 이벤트 바인딩(데스크톱) ──
   let dragging = false, lastX = 0, lastY = 0, moved = false;
-  function onDown(e) { dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY; }
+  // ── 카메라 이동(팬) — 중심 회전만이 아니라 방 안을 돌아다니며 빌드(감독 요청·심즈식) ──
+  function clampTarget() {
+    const dims = group && group.userData.dims; const hw = dims ? dims.hw + 4 : 12, hd = dims ? dims.hd + 4 : 12;
+    orbit.target.x = Math.max(-hw, Math.min(hw, orbit.target.x));
+    orbit.target.z = Math.max(-hd, Math.min(hd, orbit.target.z));
+  }
+  function panBy(fwd, right) { // 화면 기준 전/후·좌/우(카메라 방위각 반영)
+    const fx = -Math.sin(orbit.az), fz = -Math.cos(orbit.az), rx = Math.cos(orbit.az), rz = -Math.sin(orbit.az);
+    orbit.target.x += fwd * fx + right * rx; orbit.target.z += fwd * fz + right * rz; clampTarget();
+  }
+  let panning = false;
+  function onDown(e) { dragging = true; moved = false; panning = e.shiftKey || e.button === 1 || e.button === 2; lastX = e.clientX; lastY = e.clientY; }
   function onMove(e) {
     const rect = canvas.getBoundingClientRect();
     if (dragging) {
       const dx = e.clientX - lastX, dy = e.clientY - lastY; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      orbit.az -= dx * 0.008; orbit.pol = Math.max(0.25, Math.min(1.45, orbit.pol - dy * 0.006));
+      if (panning) { const s = orbit.rad * 0.0016; panBy(dy * s, -dx * s); }
+      else { orbit.az -= dx * 0.008; orbit.pol = Math.max(0.25, Math.min(1.45, orbit.pol - dy * 0.006)); }
       lastX = e.clientX; lastY = e.clientY; applyCamera();
     } else if (placingType) {
       const f = pickFloor(ndc(e.clientX, e.clientY, rect)); if (f) moveGhostTo(f.x, f.z);
@@ -194,16 +206,24 @@ export function createBuilder(canvas, opts = {}) {
   }
   function onWheel(e) { orbit.rad = Math.max(3, Math.min(20, orbit.rad + Math.sign(e.deltaY) * 0.6)); applyCamera(); e.preventDefault(); }
   function onKey(e) {
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 입력창 타이핑 중엔 단축키 무시(WASD·Del 등)
+    const k = e.key.toLowerCase();
     if (e.key === 'Escape') cancelPlace();
-    else if (e.key === 'r' || e.key === 'R') rotateSelected(1);
+    else if (k === 'r') rotateSelected(e.shiftKey ? -1 : 1);           // 회전 양방향
     else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
-    else if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { undo(); e.preventDefault(); }
+    else if ((e.ctrlKey || e.metaKey) && k === 'z') { undo(); e.preventDefault(); }
+    else if (k === 'w' || e.key === 'ArrowUp') { panBy(0.5, 0); applyCamera(); e.preventDefault(); }
+    else if (k === 's' || e.key === 'ArrowDown') { panBy(-0.5, 0); applyCamera(); e.preventDefault(); }
+    else if (k === 'a' || e.key === 'ArrowLeft') { panBy(0, -0.5); applyCamera(); e.preventDefault(); }
+    else if (k === 'd' || e.key === 'ArrowRight') { panBy(0, 0.5); applyCamera(); e.preventDefault(); }
   }
   if (!opts.headless && typeof window !== 'undefined') {
     canvas.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // 우클릭 팬 시 컨텍스트메뉴 억제
     window.addEventListener('keydown', onKey);
   }
 
