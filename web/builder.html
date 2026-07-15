@@ -9,13 +9,18 @@
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 <style>
-  /* 팔레트 B 정본(DESIGN.md §3) — 디자이너 HUD 리디자인 토큰으로 통일 */
+  /* 팔레트 B 정본 + 프리미엄 글래스(감독: 굴절 느끼는 리퀴드 글래스) */
   :root{
     --bg:#14151A; --surface-1:#1F2128; --surface-2:#2A2C37; --line:#3A3D4B;
     --ink:#F5F5F2; --dim:#9A9EB1;
     --violet:#8B72FF; --cyan:#72E6E1; --coral:#FF705E; --error:#B0503F;
-    --r-plate:12px; --r-ctrl:10px;
-    --sh-plate:0 8px 24px rgba(20,21,26,.5);
+    --glass:linear-gradient(180deg, rgba(46,48,61,.72), rgba(20,21,27,.80));
+    --glass-hero:linear-gradient(180deg, rgba(52,54,68,.82), rgba(22,23,30,.88));
+    --glass-hi:inset 0 1px 0 rgba(255,255,255,.13);
+    --glass-lo:inset 0 -1px 0 rgba(0,0,0,.40);
+    --sh-hero:0 26px 52px -14px rgba(0,0,0,.62);
+    --sh-plate:0 14px 32px -12px rgba(0,0,0,.52);
+    --r-xl:18px; --r-lg:14px; --r-md:11px; --r-sm:8px;
     --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
   }
   *{box-sizing:border-box}
@@ -23,76 +28,113 @@
   #stage{position:fixed;inset:0}
   canvas{display:block;width:100%;height:100%;touch-action:none}
 
-  /* ===== 공통 플레이트 — 화면 가장자리를 감싸는 인디케이터 ===== */
-  .plate{position:fixed;z-index:10;background:rgba(31,33,40,.86);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-    border:1px solid var(--line);border-radius:var(--r-plate);box-shadow:var(--sh-plate), inset 0 1px 0 rgba(255,255,255,.05)}
+  /* ===== 리퀴드 글래스 플레이트 — backdrop을 SVG 디스플레이스먼트로 휘게(굴절 느낌) ===== */
+  .plate{position:fixed;z-index:10;background:var(--glass);
+    backdrop-filter:blur(3px) saturate(155%) brightness(1.04) url(#refract);
+    -webkit-backdrop-filter:blur(11px) saturate(150%); /* 사파리 등 굴절 미지원 폴백=블러 */
+    border:1px solid rgba(255,255,255,.10);border-radius:var(--r-lg);
+    box-shadow:var(--sh-plate), var(--glass-hi), var(--glass-lo);overflow:hidden}
+  .plate::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+    background:radial-gradient(135% 68% at 12% 0%, rgba(255,255,255,.14), transparent 56%)} /* 유리 상단 sheen */
+  .plate.hero{background:var(--glass-hero);border-radius:var(--r-xl);box-shadow:var(--sh-hero), var(--glass-hi), var(--glass-lo)}
 
-  /* ↖ 정보 플레이트 */
-  .hud-info{top:16px;left:16px;padding:11px 15px;min-width:186px}
-  .hud-info .brand{font-size:11px;color:var(--dim);letter-spacing:.02em;margin-bottom:6px}
-  .hud-info .brand b{color:var(--violet)}
-  .hud-info .row1{font-size:14px;font-weight:700;margin-bottom:9px;display:flex;align-items:center;gap:8px}
-  .hud-info .row1 .pill{font-size:11.5px;font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums;
-    background:var(--surface-2);border-radius:999px;padding:2px 9px}
-  .hud-info .row1 .pill b{color:var(--ink)}
-  .hud-info .gauge-lab{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:5px}
+  /* ↖ 정보 플레이트(히어로) */
+  .hud-info{top:16px;left:16px;padding:14px 20px 13px 16px;min-width:194px}
+  .hud-info .titlerow{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+  .hud-info .tick{width:3px;height:16px;border-radius:2px;background:var(--coral);flex:none}
+  .hud-info .title{font-size:14.5px;font-weight:700;letter-spacing:-.01em}
+  .hud-info .pill{margin-left:auto;font-size:11px;font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums;
+    background:rgba(255,255,255,.06);border-radius:999px;padding:2px 9px}
+  .hud-info .pill b{color:var(--ink)}
+  .hud-info .gauge-lab{display:flex;justify-content:space-between;font-size:10.5px;letter-spacing:.02em;color:var(--dim);margin-bottom:5px}
   .hud-info .gauge-lab b{color:var(--ink);font-variant-numeric:tabular-nums}
-  .hud-info .track{height:5px;border-radius:999px;background:var(--line);overflow:hidden}
-  .hud-info .fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--violet),var(--cyan));width:5%;transition:width .35s cubic-bezier(.2,.8,.2,1)}
-  .hud-info .fill.warn{background:linear-gradient(90deg,var(--coral),#ffb199);animation:cappulse 1.4s ease-in-out infinite}
-  @keyframes cappulse{0%,100%{box-shadow:0 0 0 0 rgba(255,112,94,0)}50%{box-shadow:0 0 10px 0 rgba(255,112,94,.55)}}
+  .hud-info .track{height:5px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden}
+  .hud-info .fill{height:100%;border-radius:999px;background:var(--violet);width:5%;transition:width .35s cubic-bezier(.2,.8,.2,1)}
+  .hud-info .fill.warn{background:var(--coral)}
 
-  /* ↗ 상태 플레이트 */
-  .hud-status{top:16px;right:16px;padding:9px 12px;display:flex;align-items:center;gap:9px}
-  .hud-status .dot{width:8px;height:8px;border-radius:999px;background:var(--dim);flex:none;transition:.25s}
-  .hud-status .dot.saved{background:var(--cyan);box-shadow:0 0 9px rgba(114,230,225,.75)}
-  .hud-status .dot.dirty{background:var(--coral);box-shadow:0 0 9px rgba(255,112,94,.6);animation:blink 1.6s ease-in-out infinite}
-  @keyframes blink{0%,100%{opacity:1}50%{opacity:.45}}
-  .hud-status .txt{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
-  .hud-status .help{appearance:none;width:22px;height:22px;border-radius:7px;border:1px solid var(--line);background:var(--surface-2);
-    color:var(--dim);font:inherit;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none;transition:.12s}
-  .hud-status .help:hover{border-color:var(--violet);color:var(--ink)}
+  /* ↗ 모드바(편집/관람 + 상태 + 설정) */
+  .hud-modebar{top:16px;right:16px;padding:9px;display:flex;flex-direction:column;gap:9px;width:210px}
+  .modeseg{display:flex;background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:999px;padding:2px;position:relative}
+  .modeseg button{flex:1;border:0;background:transparent;color:var(--dim);font:inherit;font-size:11.5px;font-weight:600;
+    padding:6px 0;border-radius:999px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;position:relative;z-index:1;transition:color .2s}
+  .modeseg button svg{width:13px;height:13px}
+  .modeseg .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:999px;
+    background:var(--surface-2);box-shadow:0 2px 8px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(139,114,255,.5);
+    transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+  .modeseg.view .thumb{transform:translateX(100%);box-shadow:0 2px 8px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(114,230,225,.55)}
+  .modeseg button.on{color:#fff}
+  .hud-modebar .statusrow{display:flex;align-items:center;gap:8px;padding-top:2px}
+  .hud-modebar .dot{width:8px;height:8px;border-radius:999px;background:var(--dim);flex:none;transition:.25s}
+  .hud-modebar .dot.saved{background:var(--cyan);box-shadow:0 0 9px rgba(114,230,225,.7)}
+  .hud-modebar .dot.dirty{background:var(--coral);box-shadow:0 0 9px rgba(255,112,94,.6)}
+  .hud-modebar .stxt{font-size:11px;color:var(--dim)}
+  .hud-modebar .gear{margin-left:auto;appearance:none;width:26px;height:26px;border-radius:8px;border:1px solid var(--line);
+    background:rgba(255,255,255,.05);color:var(--dim);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+  .hud-modebar .gear:hover{color:var(--ink);border-color:var(--violet)}
+  .hud-modebar .gear svg{width:15px;height:15px}
 
-  /* 단축키 팝오버 */
-  .helppop{top:48px;right:16px;width:270px;padding:14px 16px;font-size:12.5px;color:var(--dim);line-height:1.75;display:none}
-  .helppop.on{display:block}
-  .helppop h4{margin:0 0 8px;font-size:12px;color:var(--ink);letter-spacing:.03em;text-transform:uppercase}
-  .helppop kbd{display:inline-block;min-width:16px;text-align:center;background:var(--surface-2);border:1px solid var(--line);
-    border-radius:5px;padding:1px 6px;font-size:11px;color:var(--ink);font-family:inherit}
+  /* 설정 슬라이드 패널 */
+  .hud-settings{top:112px;right:16px;width:262px;padding:16px}
+  .hud-settings{transform:translateX(calc(100% + 20px));opacity:0;pointer-events:none;transition:.22s cubic-bezier(.2,.8,.2,1)}
+  .hud-settings.on{transform:translateX(0);opacity:1;pointer-events:auto}
+  .hud-settings h4{margin:0 0 14px;font-size:13px;letter-spacing:.02em;display:flex;align-items:center;gap:7px}
+  .hud-settings h4 .x{margin-left:auto;cursor:pointer;color:var(--dim);font-size:15px;line-height:1}
+  .hud-settings .fld{margin-bottom:15px}
+  .hud-settings label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim);margin-bottom:7px}
+  .hud-settings label b{color:var(--violet);font-variant-numeric:tabular-nums}
+  .hud-settings input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:999px;background:rgba(255,255,255,.12);outline:none}
+  .hud-settings input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:999px;background:var(--violet);border:2px solid var(--ink);cursor:pointer}
+  .hud-settings input[type=text]{width:100%;background:rgba(0,0,0,.25);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 11px;border-radius:9px}
+  .hud-settings input[type=text]:focus{outline:none;border-color:var(--violet)}
+  .hud-settings .publish{width:100%;appearance:none;border:1px solid var(--violet);color:#fff;font:inherit;font-weight:700;font-size:12.5px;
+    background:rgba(139,114,255,.16);border-radius:10px;padding:10px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.12s}
+  .hud-settings .publish:hover{background:rgba(139,114,255,.28)}
+  .hud-settings .keys{margin-top:13px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;line-height:1.7;color:var(--dim)}
+  .hud-settings .keys b{color:var(--ink);font-weight:600}
 
-  /* → 파츠 도크 */
-  .hud-dock{top:56px;right:16px;width:258px;max-height:calc(100vh - 150px);display:flex;flex-direction:column;overflow:hidden;padding:0}
-  .hud-dock .tabs{display:flex;gap:4px;padding:9px 9px 8px;border-bottom:1px solid var(--line)}
+  /* → 파츠 도크(유리) */
+  .hud-dock{top:120px;right:16px;width:250px;max-height:calc(100vh - 220px);display:flex;flex-direction:column;overflow:hidden;padding:0}
+  .hud-dock .tabs{display:flex;gap:4px;padding:9px 9px 8px;border-bottom:1px solid rgba(255,255,255,.08)}
   .hud-dock .tabs button{flex:1;appearance:none;border:1px solid transparent;background:transparent;color:var(--dim);
-    font:inherit;font-size:12px;padding:8px 2px 6px;border-radius:8px;cursor:pointer;transition:.12s;
+    font:inherit;font-size:11.5px;padding:8px 2px 6px;border-radius:9px;cursor:pointer;transition:.12s;
     display:flex;flex-direction:column;align-items:center;gap:3px}
   .hud-dock .tabs button .tic{width:15px;height:15px;color:currentColor}
   .hud-dock .tabs button:hover{color:var(--ink)}
-  .hud-dock .tabs button.on{color:var(--violet);background:var(--surface-2);box-shadow:0 3px 10px -3px rgba(139,114,255,.5)}
+  .hud-dock .tabs button.on{color:var(--violet);background:rgba(139,114,255,.14)}
   .parts{padding:11px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:9px}
-  .chip{appearance:none;border:1px solid var(--line);background:var(--surface-1);color:var(--dim);font:inherit;font-size:11.5px;
-    padding:7px 5px 8px;border-radius:11px;cursor:pointer;text-align:center;transition:.12s;position:relative;
+  .chip{appearance:none;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);color:var(--dim);font:inherit;font-size:11.5px;
+    padding:7px 5px 8px;border-radius:11px;cursor:pointer;text-align:center;transition:.14s;position:relative;
     display:flex;flex-direction:column;align-items:center;gap:4px}
-  .chip .chip-ic{width:100%;height:52px;object-fit:contain;pointer-events:none;
-    background:radial-gradient(120% 100% at 50% 18%,#2b2c37 0%,#1b1c24 100%);border-radius:8px}
-  .chip:hover{border-color:var(--violet);color:var(--ink);transform:translateY(-1px)}
-  .chip.on{border-color:var(--violet);color:#fff;background:var(--surface-2)}
-  .chip.on::after{content:"";position:absolute;top:6px;right:6px;width:5px;height:5px;border-radius:999px;
-    background:var(--cyan);box-shadow:0 0 5px rgba(114,230,225,.85)}
+  .chip .chip-ic{width:100%;height:50px;object-fit:contain;pointer-events:none;
+    background:radial-gradient(120% 100% at 50% 18%,rgba(43,44,55,.7) 0%,rgba(20,21,30,.7) 100%);border-radius:8px}
+  .chip:hover{border-color:var(--violet);color:var(--ink);transform:translateY(-2px);box-shadow:0 8px 18px -8px rgba(0,0,0,.5)}
+  .chip.on{color:#fff;border-color:var(--violet);background:rgba(139,114,255,.16)}
+  .chip.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2.5px;background:var(--violet);border-radius:2px}
+
+  /* ↙ 카메라·그리드 기즈모 */
+  .hud-gizmo{bottom:16px;left:16px;padding:6px;display:flex;gap:5px}
+  .hud-gizmo button{appearance:none;width:36px;height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.04);color:var(--dim);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+  .hud-gizmo button svg{width:17px;height:17px}
+  .hud-gizmo button:hover{color:var(--ink);border-color:var(--violet)}
+  .hud-gizmo button.on{color:var(--violet);border-color:var(--violet);background:rgba(139,114,255,.14)}
 
   /* ↓ 하단 툴바 */
   .hud-toolbar{bottom:16px;left:50%;transform:translateX(-50%);padding:8px;display:flex;align-items:center;gap:4px;border-radius:16px}
   .hud-toolbar .ic{appearance:none;width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:var(--dim);
     cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
-  .hud-toolbar .ic:hover{background:var(--surface-2);color:var(--ink)}
+  .hud-toolbar .ic:hover{background:rgba(255,255,255,.08);color:var(--ink)}
   .hud-toolbar .ic svg{width:19px;height:19px}
   .hud-toolbar .div{width:1px;height:22px;background:var(--line);margin:0 4px}
   .hud-toolbar .cta{appearance:none;border:0;background:var(--coral);color:#1a120f;font:inherit;font-weight:700;font-size:13.5px;
-    border-radius:10px;padding:0 18px;height:38px;display:flex;align-items:center;gap:6px;cursor:pointer;transition:.12s;
-    box-shadow:0 0 12px rgba(255,112,94,.32)}
-  .hud-toolbar .cta:hover{filter:brightness(1.06);transform:translateY(-1px)}
+    border-radius:10px;padding:0 18px;height:38px;display:flex;align-items:center;gap:6px;cursor:pointer;transition:.12s;position:relative;overflow:hidden;
+    box-shadow:0 0 12px rgba(255,112,94,.3)}
+  .hud-toolbar .cta::after{content:"";position:absolute;top:0;left:0;width:40%;height:100%;transform:translateX(-160%);
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.4),transparent);transition:transform .5s}
+  .hud-toolbar .cta:hover{filter:brightness(1.05);transform:translateX(-50%) translateY(-1px)}
+  .hud-toolbar .cta:hover::after{transform:translateX(320%)}
 
-  /* 선택 컨텍스트 독(툴바 위, 선택 시에만) */
+  /* 선택 컨텍스트 독 */
   .hud-context{bottom:66px;left:50%;transform:translateX(-50%) translateY(8px);opacity:0;pointer-events:none;transition:.18s;
     padding:9px 13px;display:flex;align-items:center;gap:11px;font-size:12.5px;color:var(--dim);white-space:nowrap}
   .hud-context.on{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
@@ -100,62 +142,43 @@
   .hud-context .bar{width:1px;height:18px;background:var(--line)}
   .hud-context .step{display:flex;align-items:center;gap:5px}
   .hud-context .step b{color:var(--ink);min-width:38px;text-align:center;font-variant-numeric:tabular-nums}
-  .hud-context .sbtn{appearance:none;width:24px;height:24px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);
+  .hud-context .sbtn{appearance:none;width:24px;height:24px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);
     font:inherit;font-size:14px;line-height:1;border-radius:7px;cursor:pointer;transition:.12s;display:flex;align-items:center;justify-content:center}
   .hud-context .sbtn:hover{border-color:var(--violet)}
-  .hud-context .del{appearance:none;border:1px solid transparent;background:transparent;color:var(--error);font:inherit;font-size:12.5px;
-    cursor:pointer;padding:5px 9px;border-radius:8px;transition:.12s}
-  .hud-context .del:hover{background:rgba(176,80,63,.14);border-color:var(--error)}
+  .hud-context .del{appearance:none;border:1px solid transparent;background:transparent;color:var(--error);font:inherit;font-size:12.5px;cursor:pointer;padding:5px 9px;border-radius:8px;transition:.12s}
+  .hud-context .del:hover{background:rgba(176,80,63,.16);border-color:var(--error)}
   .hud-context .vidwrap{display:none;align-items:center;gap:7px}
-  .hud-context input{background:var(--surface-1);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;
-    padding:6px 10px;border-radius:8px;width:184px}
-  .hud-context .mini{appearance:none;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font:inherit;
-    font-size:12px;padding:6px 11px;border-radius:8px;cursor:pointer;transition:.12s}
+  .hud-context input{background:rgba(0,0,0,.25);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:6px 10px;border-radius:8px;width:180px}
+  .hud-context .mini{appearance:none;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font:inherit;font-size:12px;padding:6px 11px;border-radius:8px;cursor:pointer;transition:.12s}
   .hud-context .mini:hover{border-color:var(--violet)}
   .hud-context .mini.cta{background:var(--coral);border-color:var(--coral);color:#1a120f;font-weight:700}
 
   /* ↘ 미니맵 */
   .hud-minimap{bottom:16px;right:16px;width:132px;padding:9px 10px 10px}
-  .hud-minimap .lab{font-size:9px;letter-spacing:.08em;color:var(--dim);margin-bottom:6px;text-transform:uppercase;
-    display:flex;justify-content:space-between}
+  .hud-minimap .lab{font-size:9px;letter-spacing:.09em;color:var(--dim);margin-bottom:6px;text-transform:uppercase;display:flex;justify-content:space-between}
   .hud-minimap .lab b{color:var(--cyan);font-weight:600}
-  .hud-minimap .map{position:relative;width:112px;height:96px;background:var(--bg);border:1px solid var(--line);border-radius:7px;overflow:hidden}
-  .hud-minimap .room{position:absolute;inset:11px;border:1px solid var(--line);border-radius:2px}
+  .hud-minimap .map{position:relative;width:112px;height:96px;background:rgba(0,0,0,.32);border:1px solid rgba(255,255,255,.08);border-radius:7px;overflow:hidden}
+  .hud-minimap .room{position:absolute;inset:11px;border:1px solid rgba(255,255,255,.14);border-radius:2px}
   .hud-minimap .dotp{position:absolute;width:4px;height:4px;border-radius:999px;background:var(--dim);transform:translate(-50%,-50%)}
   .hud-minimap .dotp.art{background:var(--cyan);box-shadow:0 0 4px rgba(114,230,225,.8)}
-  .hud-minimap .spawn{position:absolute;width:6px;height:6px;border-radius:999px;background:var(--violet);
-    box-shadow:0 0 6px rgba(139,114,255,.85);transform:translate(-50%,-50%)}
-  .hud-minimap .mbr{position:absolute;width:7px;height:7px;border-color:rgba(154,158,177,.45);pointer-events:none}
-  .hud-minimap .mbr.tl{top:3px;left:3px;border-top:1px solid;border-left:1px solid}
-  .hud-minimap .mbr.tr{top:3px;right:3px;border-top:1px solid;border-right:1px solid}
-  .hud-minimap .mbr.bl{bottom:3px;left:3px;border-bottom:1px solid;border-left:1px solid}
-  .hud-minimap .mbr.br{bottom:3px;right:3px;border-bottom:1px solid;border-right:1px solid}
-
-  /* 화면 4코너 프레이밍 브래킷 + 비네트(장식, 클릭통과) */
-  .frame-bracket{position:fixed;width:26px;height:26px;border-color:rgba(154,158,177,.42);pointer-events:none;z-index:9}
-  .frame-bracket.tl{top:10px;left:10px;border-top:1px solid;border-left:1px solid;border-radius:7px 0 0 0}
-  .frame-bracket.tr{top:10px;right:10px;border-top:1px solid;border-right:1px solid;border-radius:0 7px 0 0}
-  .frame-bracket.bl{bottom:10px;left:10px;border-bottom:1px solid;border-left:1px solid;border-radius:0 0 0 7px}
-  .frame-bracket.br{bottom:10px;right:10px;border-bottom:1px solid;border-right:1px solid;border-radius:0 0 7px 0}
-  .vignette{position:fixed;inset:0;pointer-events:none;z-index:8;
-    background:radial-gradient(ellipse 82% 82% at 50% 48%, transparent 62%, rgba(20,21,26,.42) 100%)}
+  .hud-minimap .spawn{position:absolute;width:6px;height:6px;border-radius:999px;background:var(--violet);box-shadow:0 0 6px rgba(139,114,255,.85);transform:translate(-50%,-50%)}
 
   /* 토스트 */
   .toast{position:fixed;left:50%;bottom:118px;transform:translateX(-50%) translateY(10px);opacity:0;transition:.2s;z-index:20;
-    background:#2a2230;border:1px solid var(--coral);color:#ffd9d1;font-size:13px;padding:9px 14px;border-radius:10px;pointer-events:none}
+    background:rgba(42,34,48,.92);border:1px solid var(--coral);color:#ffd9d1;font-size:13px;padding:9px 14px;border-radius:10px;pointer-events:none;backdrop-filter:blur(8px)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #playOverlay{display:none;position:fixed;inset:0;z-index:40;background:#0a0a0ecc;backdrop-filter:blur(4px);align-items:center;justify-content:center}
 
-  /* 재생 오버레이 */
-  #playOverlay{display:none;position:fixed;inset:0;z-index:40;background:#0a0a0ecc;backdrop-filter:blur(4px);
-    align-items:center;justify-content:center}
+  /* 관람(view) 모드: 편집 크롬 숨김 → 완성 미리보기 */
+  body.viewmode .hud-dock, body.viewmode .hud-gizmo, body.viewmode .hud-toolbar,
+  body.viewmode .hud-context, body.viewmode .hud-settings{display:none!important}
 
-  /* 모바일: 편집 크롬 숨김(열람 전용) */
+  /* 모바일: 편집 크롬 전부 숨김 */
   .mobwarn{display:none}
   @media (max-width:640px){
     .desk{display:none!important}
-    .frame-bracket,.vignette{display:none}
     .mobwarn{display:block;position:fixed;left:12px;right:12px;bottom:14px;z-index:10;
-      background:rgba(31,33,40,.9);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--dim);text-align:center}
+      background:rgba(31,33,40,.9);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--dim);text-align:center;backdrop-filter:blur(8px)}
   }
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
@@ -163,73 +186,76 @@
 <body>
 <div id="stage"><canvas id="c"></canvas></div>
 
-<!-- 4코너 프레이밍(장식) -->
-<div class="frame-bracket tl desk"></div><div class="frame-bracket tr desk"></div>
-<div class="frame-bracket bl desk"></div><div class="frame-bracket br desk"></div>
-<div class="vignette desk"></div>
+<!-- 리퀴드 글래스 굴절 필터(backdrop 왜곡 = IOR 느낌). scale이 유리 두께/굴절 강도. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="refract" x="-20%" y="-20%" width="140%" height="140%">
+  <feTurbulence type="fractalNoise" baseFrequency="0.009 0.012" numOctaves="2" seed="11" result="n"/>
+  <feGaussianBlur in="n" stdDeviation="1.4" result="nb"/>
+  <feDisplacementMap in="SourceGraphic" in2="nb" scale="11" xChannelSelector="R" yChannelSelector="G"/>
+</filter></svg>
 
-<!-- ↖ 정보 플레이트 -->
-<div class="plate hud-info desk">
-  <div class="brand">Open<b>ArtShow</b> · 공간 빌더</div>
-  <div class="row1"><span>나의 공간</span><span class="pill">파츠 <b id="nParts">0</b></span></div>
+<!-- ↖ 정보(히어로) -->
+<div class="plate hero hud-info desk">
+  <div class="titlerow"><span class="tick"></span><span class="title" id="spaceTitle">나의 공간</span><span class="pill">파츠 <b id="nParts">0</b></span></div>
   <div class="gauge-lab"><span>작품 · 영상</span><b><span id="nCap">0</span>/80</b></div>
   <div class="track"><div class="fill" id="capFill"></div></div>
 </div>
 
-<!-- ↗ 상태 플레이트 -->
-<div class="plate hud-status desk">
-  <span class="dot" id="saveDot"></span><span class="txt" id="saveTxt">새 공간</span>
-  <button class="help" id="bHelp" aria-label="단축키 도움말">?</button>
-</div>
-<div class="plate helppop desk" id="helpPop">
-  <h4>단축키</h4>
-  파츠를 고르고 <b style="color:var(--ink)">바닥 클릭</b>으로 배치. 놓은 파츠 <b style="color:var(--ink)">클릭</b>=선택.<br>
-  <kbd>R</kbd>/<kbd>⇧R</kbd> 회전(스텝) · <kbd>Q</kbd>/<kbd>E</kbd> 미세 회전 ±5°<br>
-  <kbd>Del</kbd> 삭제 · <kbd>⌘/Ctrl</kbd>+<kbd>Z</kbd> 되돌리기<br>
-  <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>/방향키 이동 · 드래그 둘러보기<br>
-  <kbd>⇧</kbd>·우클릭 드래그 팬 · 휠 줌
+<!-- ↗ 모드바 -->
+<div class="plate hud-modebar desk">
+  <div class="modeseg" id="modeseg">
+    <span class="thumb"></span>
+    <button id="mEdit" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>편집</button>
+    <button id="mView"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>관람</button>
+  </div>
+  <div class="statusrow">
+    <span class="dot" id="saveDot"></span><span class="stxt" id="saveTxt">새 공간</span>
+    <button class="gear" id="bGear" aria-label="씬 설정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
+  </div>
 </div>
 
-<!-- → 파츠 도크 -->
+<!-- 설정 슬라이드 -->
+<div class="plate hud-settings desk" id="settings">
+  <h4>씬 설정<span class="x" id="bSettingsClose">✕</span></h4>
+  <div class="fld"><label>조명 강도 <b id="lightVal">1.0×</b></label><input type="range" id="lightRange" min="0.6" max="1.6" step="0.05" value="1.0"></div>
+  <div class="fld"><label>전시 타이틀</label><input type="text" id="titleInput" maxlength="60" placeholder="나의 공간" value="나의 공간"></div>
+  <button class="publish" id="bPublish"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="m8 7 4-4 4 4"/></svg>저장 · 발행</button>
+  <div class="keys">파츠 고르고 <b>바닥 클릭</b>=배치 · <b>R</b>/<b>Q</b>/<b>E</b>=회전 · <b>Del</b>=삭제 · <b>Ctrl+Z</b>=되돌리기 · <b>WASD</b>·드래그=이동</div>
+</div>
+
+<!-- → 파츠 도크(유리) -->
 <aside class="plate hud-dock desk">
   <div class="tabs" id="tabs"></div>
   <div class="parts" id="parts"></div>
 </aside>
 
-<!-- 선택 컨텍스트 독 -->
-<div class="plate hud-context desk" id="context">
-  <span class="who" id="selLab">선택</span>
-  <span class="bar"></span>
-  <div class="step">각도
-    <button class="sbtn" id="rotDn" title="-5° (Q)">‹</button>
-    <b id="rotV">0°</b>
-    <button class="sbtn" id="rotUp" title="+5° (E)">›</button>
-  </div>
-  <span class="vidwrap" id="vidwrap">
-    <span class="bar"></span>
-    <input id="vidUrl" type="text" inputmode="url" placeholder="유튜브 링크 붙여넣기">
-    <button class="mini" id="bVidSet">적용</button>
-    <button class="mini cta" id="bPlay">▶ 재생</button>
-  </span>
-  <span class="bar"></span>
-  <button class="del" id="bDel">삭제</button>
+<!-- ↙ 기즈모 -->
+<div class="plate hud-gizmo desk">
+  <button id="bSnap" class="on" title="그리드 스냅"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
+  <button id="bCamReset" title="카메라 리셋"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></button>
+  <button id="bFull" title="전체화면"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
 </div>
 
-<!-- ↓ 하단 툴바 -->
+<!-- ↘ 미니맵 -->
+<div class="plate hud-minimap desk">
+  <div class="lab"><span>MINIMAP</span><b id="miniN">0</b></div>
+  <div class="map"><div class="room" id="miniRoom"></div></div>
+</div>
+
+<!-- 선택 컨텍스트 -->
+<div class="plate hud-context desk" id="context">
+  <span class="who" id="selLab">선택</span><span class="bar"></span>
+  <div class="step">각도 <button class="sbtn" id="rotDn" title="-5° (Q)">‹</button><b id="rotV">0°</b><button class="sbtn" id="rotUp" title="+5° (E)">›</button></div>
+  <span class="vidwrap" id="vidwrap"><span class="bar"></span><input id="vidUrl" type="text" inputmode="url" placeholder="유튜브 링크 붙여넣기"><button class="mini" id="bVidSet">적용</button><button class="mini cta" id="bPlay">▶ 재생</button></span>
+  <span class="bar"></span><button class="del" id="bDel">삭제</button>
+</div>
+
+<!-- ↓ 툴바 -->
 <div class="plate hud-toolbar desk">
   <button class="ic" id="bUndo" title="되돌리기 (⌘/Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg></button>
   <button class="ic" id="bLoad" title="불러오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
   <button class="ic" id="bExport" title="내보내기(JSON)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
   <span class="div"></span>
   <button class="cta" id="bSave">저장</button>
-</div>
-
-<!-- ↘ 미니맵 -->
-<div class="plate hud-minimap desk">
-  <div class="lab"><span>MINIMAP</span><b id="miniN">0</b></div>
-  <div class="map"><div class="room" id="miniRoom">
-    <span class="mbr tl"></span><span class="mbr tr"></span><span class="mbr bl"></span><span class="mbr br"></span>
-  </div></div>
 </div>
 
 <div id="playOverlay">
@@ -249,7 +275,7 @@ import { PART_TYPES } from './js/space.js';
 import { createYouTubeSurface } from './js/ytembed.js';
 import { buildPartPreview } from './js/space-render.js';
 
-// 팔레트 썸네일 — 각 파츠 타입을 1회 오프스크린 렌더해 아이콘 dataURL 생성(감독: 그림으로 표시)
+// 팔레트 썸네일 — 오프스크린 1회 렌더 → 아이콘 dataURL
 function renderPartIcons(size = 60) {
   const R = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   R.setSize(size, size); R.setPixelRatio(2); R.setClearColor(0x000000, 0); R.outputColorSpace = THREE.SRGBColorSpace;
@@ -268,9 +294,7 @@ function renderPartIcons(size = 60) {
       s.remove(g);
       g.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); if (o.material.normalMap) o.material.normalMap.dispose(); o.material.dispose(); } });
     }
-  } finally {
-    R.dispose(); // 루프 중간 예외에도 오프스크린 컨텍스트 확실히 회수(검수관 권고)
-  }
+  } finally { R.dispose(); }
   return icons;
 }
 let PART_ICONS = {};
@@ -281,8 +305,8 @@ const B = createBuilder(canvas, { preserveDrawingBuffer: true });
 function fit(){ B.resize(window.innerWidth, window.innerHeight); }
 window.addEventListener('resize', fit); fit();
 
-// 카테고리 탭 — 아이콘+라벨(구조·전시·분위기)
-const CAT_LABEL = { structure:'구조', exhibit:'전시', ambience:'분위기', finish:'마감' };
+// 카테고리 탭
+const CAT_LABEL = { structure:'구조', exhibit:'전시', ambience:'분위기' };
 const CAT_ICON = {
   structure:'<svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>',
   exhibit:'<svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="1.5"/><path d="m6 15 4-4 3 3 2-2 3 3"/><path d="M12 22v-4"/></svg>',
@@ -290,7 +314,7 @@ const CAT_ICON = {
 };
 const placeCats = ['structure','exhibit','ambience'];
 const tabsEl = document.getElementById('tabs'), partsEl = document.getElementById('parts');
-let curCat = 'structure', curChip = null;
+let curCat = 'structure';
 placeCats.forEach((cat,i)=>{
   const b=document.createElement('button'); b.innerHTML=(CAT_ICON[cat]||'')+'<span>'+CAT_LABEL[cat]+'</span>'; if(i===0)b.className='on';
   b.onclick=()=>{ [...tabsEl.children].forEach(c=>c.classList.remove('on')); b.classList.add('on'); curCat=cat; renderParts(); };
@@ -302,59 +326,63 @@ function renderParts(){
     const c=document.createElement('button'); c.className='chip';
     if(PART_ICONS[type]){ const im=document.createElement('img'); im.className='chip-ic'; im.src=PART_ICONS[type]; im.alt=''; c.appendChild(im); }
     const lb=document.createElement('span'); lb.textContent=spec.label; c.appendChild(lb);
-    c.onclick=()=>{ [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); c.classList.add('on'); curChip=c; B.beginPlace(type); };
+    c.onclick=()=>{ [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); c.classList.add('on'); B.beginPlace(type); };
     partsEl.appendChild(c);
   });
 }
 renderParts();
 
-// ===== 상단 인디케이터: 파츠 수 · N/80 게이지 =====
+// 상단 인디케이터 + 미니맵
 const nParts=document.getElementById('nParts'), nCap=document.getElementById('nCap'), capFill=document.getElementById('capFill');
-const CAP_MAX = 80;
-function refresh(){
-  const s=B.getStats();
-  nParts.textContent=s.parts; nCap.textContent=s.uniqueTex;
-  const pct = Math.max(4, Math.round(s.uniqueTex / CAP_MAX * 100));
-  capFill.style.width = pct + '%';
-  capFill.classList.toggle('warn', s.uniqueTex >= 72); // ≥90%
-  drawMinimap();
-}
-
-// ===== 저장 상태 머신: 새 공간 → 변경됨 → 저장됨 =====
-const saveDot=document.getElementById('saveDot'), saveTxt=document.getElementById('saveTxt');
-function setSaveState(st){ // 'idle' | 'dirty' | 'saved'
-  saveDot.className = 'dot' + (st==='saved'?' saved':st==='dirty'?' dirty':'');
-  saveTxt.textContent = st==='saved'?'저장됨':st==='dirty'?'변경됨':'새 공간';
-}
-setSaveState('idle');
-
-// ===== 미니맵(P1: 평면도 + 파츠 점 + 스폰) =====
 const miniRoom=document.getElementById('miniRoom'), miniN=document.getElementById('miniN');
-const MINI_HALF = 7; // 최대 방 반폭(FOOTPRINT large hw=7)과 정합 — 파츠 좌표는 이 안으로 클램프됨
+const MINI_HALF = 7;
 function drawMinimap(){
-  const sp = B.getSpace();
-  // 기존 점 제거(브래킷 4개는 보존)
+  const sp=B.getSpace();
   [...miniRoom.querySelectorAll('.dotp,.spawn')].forEach(n=>n.remove());
-  const toPct = (v)=> ((v + MINI_HALF) / (2*MINI_HALF)) * 100;
-  const UNIQUE = new Set(['artwork','screen']);
-  let n=0;
-  (sp.parts||[]).forEach(p=>{
-    const d=document.createElement('span'); d.className='dotp'+(UNIQUE.has(p.t)?' art':'');
-    d.style.left=Math.min(98,Math.max(2,toPct(p.x||0)))+'%';
-    d.style.top =Math.min(98,Math.max(2,toPct(p.z||0)))+'%';
-    miniRoom.appendChild(d); n++;
-  });
-  const spwn=document.createElement('span'); spwn.className='spawn';
-  spwn.style.left=Math.min(98,Math.max(2,toPct(sp.spawn?.x||0)))+'%';
-  spwn.style.top =Math.min(98,Math.max(2,toPct(sp.spawn?.z||0)))+'%';
-  miniRoom.appendChild(spwn);
-  miniN.textContent = n;
+  const toPct=(v)=>Math.min(98,Math.max(2,((v+MINI_HALF)/(2*MINI_HALF))*100));
+  const UNIQUE=new Set(['artwork','screen']); let n=0;
+  (sp.parts||[]).forEach(p=>{ const d=document.createElement('span'); d.className='dotp'+(UNIQUE.has(p.t)?' art':''); d.style.left=toPct(p.x||0)+'%'; d.style.top=toPct(p.z||0)+'%'; miniRoom.appendChild(d); n++; });
+  const sp2=document.createElement('span'); sp2.className='spawn'; sp2.style.left=toPct(sp.spawn?.x||0)+'%'; sp2.style.top=toPct(sp.spawn?.z||0)+'%'; miniRoom.appendChild(sp2);
+  miniN.textContent=n;
 }
+function refresh(){ const s=B.getStats(); nParts.textContent=s.parts; nCap.textContent=s.uniqueTex; capFill.style.width=Math.max(4,Math.round(s.uniqueTex/80*100))+'%'; capFill.classList.toggle('warn',s.uniqueTex>=72); drawMinimap(); }
 
-B.on('change', ()=>{ refresh(); setSaveState('dirty'); });
-refresh();
+// 저장 상태
+const saveDot=document.getElementById('saveDot'), saveTxt=document.getElementById('saveTxt');
+function setSaveState(st){ saveDot.className='dot'+(st==='saved'?' saved':st==='dirty'?' dirty':''); saveTxt.textContent=st==='saved'?'저장됨':st==='dirty'?'변경됨':'새 공간'; }
+setSaveState('idle');
+B.on('change', ()=>{ refresh(); setSaveState('dirty'); }); refresh();
 
-// ===== 선택 컨텍스트 독 =====
+// 편집/관람 토글
+const modeseg=document.getElementById('modeseg'), mEdit=document.getElementById('mEdit'), mView=document.getElementById('mView');
+function setMode(mode){
+  B.setViewMode(mode);
+  const view = mode==='view';
+  document.body.classList.toggle('viewmode', view);
+  modeseg.classList.toggle('view', view);
+  mEdit.classList.toggle('on', !view); mView.classList.toggle('on', view);
+}
+mEdit.onclick=()=>setMode('edit'); mView.onclick=()=>setMode('view');
+
+// 설정 패널
+const settings=document.getElementById('settings');
+const bGear=document.getElementById('bGear');
+bGear.onclick=(e)=>{ e.stopPropagation(); settings.classList.toggle('on'); };
+document.getElementById('bSettingsClose').onclick=()=>settings.classList.remove('on');
+document.addEventListener('click',(e)=>{ if(settings.classList.contains('on') && !settings.contains(e.target) && e.target!==bGear && !bGear.contains(e.target)) settings.classList.remove('on'); }); // 외부 클릭 닫힘(UX)
+const lightRange=document.getElementById('lightRange'), lightVal=document.getElementById('lightVal');
+lightRange.oninput=()=>{ const v=parseFloat(lightRange.value); lightVal.textContent=v.toFixed(2).replace(/0$/,'')+'×'; B.setLightIntensity(v); };
+const titleInput=document.getElementById('titleInput'), spaceTitle=document.getElementById('spaceTitle');
+titleInput.oninput=()=>{ const v=titleInput.value||'나의 공간'; spaceTitle.textContent=v; B.setSpaceName(titleInput.value); };
+document.getElementById('bPublish').onclick=()=>{ B.save(); showToast('저장·발행했습니다. (공유 링크는 준비 중)'); };
+
+// 기즈모
+const bSnap=document.getElementById('bSnap');
+bSnap.onclick=()=>{ const on=bSnap.classList.toggle('on'); B.setGridSnap(on); showToast(on?'그리드 스냅 켜짐':'그리드 스냅 꺼짐 (자유 배치)'); };
+document.getElementById('bCamReset').onclick=()=>B.resetCamera();
+document.getElementById('bFull').onclick=()=>{ const el=document.documentElement; if(!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen(); else if(document.exitFullscreen) document.exitFullscreen(); };
+
+// 컨텍스트 독
 const context=document.getElementById('context'), selLab=document.getElementById('selLab');
 const vidwrap=document.getElementById('vidwrap'), vidUrl=document.getElementById('vidUrl'), rotV=document.getElementById('rotV');
 let selIndex=-1;
@@ -362,37 +390,23 @@ function fmtDeg(ry){ let d=Math.round((ry||0)*180/Math.PI)%360; if(d<0)d+=360; r
 function syncRot(){ if(selIndex<0)return; const p=B.getSpace().parts[selIndex]; if(p) rotV.textContent=fmtDeg(p.ry); }
 B.on('select', ({index,part})=>{
   selIndex=index;
-  if(index>=0){ context.classList.add('on'); selLab.textContent=(PART_TYPES[part.t]?.label||'파츠');
-    rotV.textContent=fmtDeg(part.ry);
-    const isScreen = part.t==='screen';
-    vidwrap.style.display = isScreen ? 'flex' : 'none';
-    if(isScreen) vidUrl.value = B.getScreenVideo(index) || '';
+  if(index>=0){ context.classList.add('on'); selLab.textContent=(PART_TYPES[part.t]?.label||'파츠'); rotV.textContent=fmtDeg(part.ry);
+    const isScreen=part.t==='screen'; vidwrap.style.display=isScreen?'flex':'none'; if(isScreen) vidUrl.value=B.getScreenVideo(index)||'';
   } else context.classList.remove('on');
 });
 B.on('mode', ()=>{ context.classList.remove('on'); vidwrap.style.display='none'; });
-
 document.getElementById('rotDn').onclick=()=>{ B.rotateSelectedFine(-5*Math.PI/180); syncRot(); };
 document.getElementById('rotUp').onclick=()=>{ B.rotateSelectedFine( 5*Math.PI/180); syncRot(); };
+document.getElementById('bDel').onclick=()=>{ B.deleteSelected(); context.classList.remove('on'); }; // 선택 파츠 삭제(마우스 경로)
 
-// 유튜브: 링크 적용(검증된 ID만 저장) + 클릭투로드 재생 오버레이
-document.getElementById('bVidSet').onclick=()=>{
-  const ok = B.setScreenVideo(selIndex, vidUrl.value);
-  showToast(ok ? '유튜브 영상을 스크린에 연결했습니다.' : '유효한 유튜브 링크가 아닙니다.');
-};
+// 유튜브
+document.getElementById('bVidSet').onclick=()=>{ const ok=B.setScreenVideo(selIndex, vidUrl.value); showToast(ok?'유튜브 영상을 스크린에 연결했습니다.':'유효한 유튜브 링크가 아닙니다.'); };
 const playOverlay=document.getElementById('playOverlay'), playMount=document.getElementById('playMount');
-document.getElementById('bPlay').onclick=()=>{
-  const src=B.getScreenVideo(selIndex); if(!src){ showToast('먼저 유튜브 링크를 적용하세요.'); return; }
-  const { el } = createYouTubeSurface(src, { width: Math.min(880, window.innerWidth-80), height: Math.min(495, (window.innerWidth-80)*9/16) });
-  playMount.replaceChildren(el); playOverlay.style.display='flex';
-};
+document.getElementById('bPlay').onclick=()=>{ const src=B.getScreenVideo(selIndex); if(!src){ showToast('먼저 유튜브 링크를 적용하세요.'); return; }
+  const { el }=createYouTubeSurface(src,{ width:Math.min(880,window.innerWidth-80), height:Math.min(495,(window.innerWidth-80)*9/16) }); playMount.replaceChildren(el); playOverlay.style.display='flex'; };
 function closePlay(){ playOverlay.style.display='none'; playMount.replaceChildren(); }
 document.getElementById('bPlayClose').onclick=closePlay;
-playOverlay.addEventListener('click', (e)=>{ if(e.target===playOverlay) closePlay(); });
-
-// 단축키 팝오버 토글
-const helpPop=document.getElementById('helpPop');
-document.getElementById('bHelp').onclick=(e)=>{ e.stopPropagation(); helpPop.classList.toggle('on'); };
-document.addEventListener('click',(e)=>{ if(!helpPop.contains(e.target) && e.target.id!=='bHelp') helpPop.classList.remove('on'); });
+playOverlay.addEventListener('click',(e)=>{ if(e.target===playOverlay) closePlay(); });
 
 // 토스트
 const toast=document.getElementById('toast'); let toastT=0;
@@ -400,17 +414,12 @@ function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); cle
 B.on('cap', ({cap})=>showToast('작품·영상은 '+cap+'점까지 걸 수 있어요. (성능 상한)'));
 B.on('saved', ()=>{ showToast('저장했습니다.'); setSaveState('saved'); });
 
-// 하단 툴바 액션
+// 툴바
 document.getElementById('bSave').onclick=()=>B.save();
-document.getElementById('bLoad').onclick=()=>{ if(B.load()){ refresh(); setSaveState('saved'); } else showToast('저장된 공간이 없습니다.'); };
+document.getElementById('bLoad').onclick=()=>{ if(B.load()){ refresh(); setSaveState('saved'); const nm=B.getSpace().meta?.name; if(nm){ spaceTitle.textContent=nm; titleInput.value=nm; } } else showToast('저장된 공간이 없습니다.'); };
 document.getElementById('bUndo').onclick=()=>B.undo();
-document.getElementById('bExport').onclick=()=>{
-  const blob=new Blob([B.exportJSON()],{type:'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-space.json'; a.click(); URL.revokeObjectURL(a.href);
-};
-document.getElementById('bDel').onclick=()=>{ B.deleteSelected(); context.classList.remove('on'); };
+document.getElementById('bExport').onclick=()=>{ const blob=new Blob([B.exportJSON()],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-space.json'; a.click(); URL.revokeObjectURL(a.href); };
 
-// 헤드리스 테스트 훅
 window.__builder = B;
 </script>
 </body>

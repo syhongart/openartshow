@@ -65,6 +65,9 @@ export function createBuilder(canvas, opts = {}) {
   let placingType = null;   // 팔레트에서 고른 배치 대기 타입
   let ghost = null;         // 배치 고스트 프리뷰(실제 파츠 모양)
   let ghostMat = null;      // 고스트 공용 반투명 재질(전 메쉬 공유 → 색 일괄 변경)
+  let gridSnap = true;      // 그리드 스냅 on/off(HUD 기즈모 토글)
+  let viewMode = 'edit';    // 'edit' | 'view'(관람 미리보기)
+  const applySnap = (type, x, z) => gridSnap ? snapPos(type, x, z) : { x, z }; // 스냅 off면 자유 배치
   let selected = -1;        // 선택된 파츠 index
   let selectMesh = null;    // 선택 하이라이트 아웃라인
   const raycaster = new THREE.Raycaster();
@@ -110,7 +113,7 @@ export function createBuilder(canvas, opts = {}) {
   function moveGhostTo(x, z) {
     if (!ghost || !placingType) return;
     const { hw, hd, t, H } = spaceDims(space);
-    const s = snapPos(placingType, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
+    const s = applySnap(placingType, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
     ghost.position.set(s.x, partY(placingType, H), s.z); ghost.visible = true;
     const bad = uniqueTexCapReached(placingType);
     ghostMat.color.setHex(bad ? 0xb0503f : 0x8b7bd8); // 불가=테라코타
@@ -122,7 +125,7 @@ export function createBuilder(canvas, opts = {}) {
     if (!PART_TYPES[type]) return -1;
     if (uniqueTexCapReached(type)) { emit('cap', { type, cap: ART_SCREEN_CAP }); return -1; }
     const { hw, hd, t } = spaceDims(space);
-    const s = snapPos(type, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
+    const s = applySnap(type, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
     pushUndo();
     const part = Object.assign({ t: type, x: s.x, z: s.z, ry: 0 }, extra);
     space = normalizeSpace({ ...space, parts: [...space.parts, part] });
@@ -275,6 +278,21 @@ export function createBuilder(canvas, opts = {}) {
   function renderOnce() { applyCamera(); renderer.render(scene, camera); }
   function loop() { renderOnce(); raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(loop) : 0; }
 
+  // ── HUD 컨트롤 API (프리미엄 글래스 HUD 배선) ──
+  function resetCamera() { orbit.az = 0.5; orbit.pol = 0.82; orbit.rad = 9.5; orbit.target.set(0, 0.9, 0); applyCamera(); }
+  function setGridSnap(on) { gridSnap = !!on; return gridSnap; }
+  function setLightIntensity(mult) { renderer.toneMappingExposure = 1.16 * Math.max(0.5, Math.min(2, mult || 1)); renderOnce(); } // 조명 강도(노출)
+  function setViewMode(mode) { // 'view'=관람 미리보기(배치·선택 종료)
+    viewMode = mode === 'view' ? 'view' : 'edit';
+    if (viewMode === 'view') { cancelPlace(); selectIndex(-1); }
+    emit('viewmode', { mode: viewMode }); return viewMode;
+  }
+  function setSpaceName(name) { // 전시 타이틀 → 스키마 meta.name(저장 시 함께 인코딩)
+    const nm = String(name || '').slice(0, 60);
+    space = normalizeSpace({ ...space, meta: { ...space.meta, name: nm } });
+    emit('change', { space }); return nm;
+  }
+
   rebuild(); applyCamera();
   if (!opts.headless) loop();
 
@@ -282,8 +300,9 @@ export function createBuilder(canvas, opts = {}) {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
     setScreenVideo, getScreenVideo,
+    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName,
     save, load, exportJSON, importJSON, resize, renderOnce,
-    getSpace: () => space, getSelected: () => selected,
+    getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
     on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
     get renderer() { return renderer; }, get camera() { return camera; }, get orbit() { return orbit; },
