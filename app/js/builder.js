@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { normalizeSpace, newSpace, PART_TYPES, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
 import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES } from './space-render.js';
+import { youtubeId } from './ytembed.js';
 
 const SAVE_KEY = 'openartshow.space.v1';
 
@@ -121,6 +122,16 @@ export function createBuilder(canvas, opts = {}) {
     space = normalizeSpace(JSON.parse(undoStack.pop())); selected = -1;
     rebuild(); emit('change', { space }); return true;
   }
+  // 스크린 파츠에 유튜브 영상 설정 — 검증된 11자 ID만 저장(ytembed.youtubeId). 실패 시 '' (지움).
+  function setScreenVideo(index, url) {
+    if (index < 0 || !space.parts[index] || space.parts[index].t !== 'screen') return false;
+    const id = youtubeId(url);
+    pushUndo();
+    const parts = space.parts.slice(); parts[index] = { ...parts[index], src: id || '' };
+    space = normalizeSpace({ ...space, parts }); rebuild(); emit('change', { space });
+    return !!id;
+  }
+  function getScreenVideo(index) { const p = space.parts[index]; return (p && p.t === 'screen') ? (p.src || '') : ''; }
 
   // ── 저장/불러오기/내보내기 ──
   // 외부 유입 문서(로드/가져오기)는 스키마 경계에서 80캡을 강제 — addPart UI 밖 우회 방지.
@@ -203,6 +214,7 @@ export function createBuilder(canvas, opts = {}) {
   return {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, deleteSelected, undo,
+    setScreenVideo, getScreenVideo,
     save, load, exportJSON, importJSON, resize, renderOnce,
     getSpace: () => space, getSelected: () => selected,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },

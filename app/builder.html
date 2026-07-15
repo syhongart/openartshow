@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- 유튜브 임베드는 nocookie 단일 호스트만 프레임 허용(보안담당 실사). 그 외 프레임 차단. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src https://www.youtube-nocookie.com; object-src 'none'; base-uri 'none'">
 <title>공간 빌더 · OpenArtShow</title>
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
@@ -75,6 +77,18 @@
   <span class="lab" id="selLab">선택됨</span>
   <button class="btn" id="bRot">회전 (R)</button>
   <button class="btn" id="bDel">삭제 (Del)</button>
+  <span class="vidwrap" id="vidwrap" style="display:none;align-items:center;gap:6px;border-left:1px solid var(--line);padding-left:8px">
+    <input id="vidUrl" type="text" inputmode="url" placeholder="유튜브 링크 붙여넣기" style="width:190px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:6px 9px;border-radius:8px">
+    <button class="btn" id="bVidSet">적용</button>
+    <button class="btn cta" id="bPlay">▶ 재생</button>
+  </span>
+</div>
+
+<div id="playOverlay" style="display:none;position:fixed;inset:0;z-index:30;background:#0a0a0ecc;backdrop-filter:blur(4px);align-items:center;justify-content:center">
+  <div style="position:relative">
+    <button id="bPlayClose" class="btn" style="position:absolute;top:-44px;right:0">닫기 ✕</button>
+    <div id="playMount"></div>
+  </div>
 </div>
 
 <div class="mobwarn">📱 모바일에서는 <b>감상</b>만 가능합니다. 공간 편집은 데스크톱에서 하세요. (드래그=둘러보기)</div>
@@ -83,6 +97,7 @@
 <script type="module">
 import { createBuilder } from './js/builder.js';
 import { PART_TYPES, PART_CATEGORIES } from './js/space.js';
+import { createYouTubeSurface } from './js/ytembed.js';
 
 const canvas = document.getElementById('c');
 const B = createBuilder(canvas, { preserveDrawingBuffer: true });
@@ -115,8 +130,32 @@ function refresh(){ const s=B.getStats(); nParts.textContent=s.parts; nCap.textC
 B.on('change', refresh); refresh();
 
 const seldock=document.getElementById('seldock'), selLab=document.getElementById('selLab');
-B.on('select', ({index,part})=>{ if(index>=0){ seldock.classList.add('on'); selLab.textContent=(PART_TYPES[part.t]?.label||'파츠')+' 선택됨'; } else seldock.classList.remove('on'); });
-B.on('mode', ()=>{ seldock.classList.remove('on'); });
+const vidwrap=document.getElementById('vidwrap'), vidUrl=document.getElementById('vidUrl');
+let selIndex=-1;
+B.on('select', ({index,part})=>{
+  selIndex=index;
+  if(index>=0){ seldock.classList.add('on'); selLab.textContent=(PART_TYPES[part.t]?.label||'파츠')+' 선택됨';
+    const isScreen = part.t==='screen';
+    vidwrap.style.display = isScreen ? 'flex' : 'none';
+    if(isScreen) vidUrl.value = B.getScreenVideo(index) || '';
+  } else seldock.classList.remove('on');
+});
+B.on('mode', ()=>{ seldock.classList.remove('on'); vidwrap.style.display='none'; });
+
+// 유튜브: 링크 적용(검증된 ID만 저장) + 클릭투로드 재생 오버레이
+document.getElementById('bVidSet').onclick=()=>{
+  const ok = B.setScreenVideo(selIndex, vidUrl.value);
+  showToast(ok ? '유튜브 영상을 스크린에 연결했습니다.' : '유효한 유튜브 링크가 아닙니다.');
+};
+const playOverlay=document.getElementById('playOverlay'), playMount=document.getElementById('playMount');
+document.getElementById('bPlay').onclick=()=>{
+  const src=B.getScreenVideo(selIndex); if(!src){ showToast('먼저 유튜브 링크를 적용하세요.'); return; }
+  const { el } = createYouTubeSurface(src, { width: Math.min(880, window.innerWidth-80), height: Math.min(495, (window.innerWidth-80)*9/16) });
+  playMount.replaceChildren(el); playOverlay.style.display='flex';
+};
+function closePlay(){ playOverlay.style.display='none'; playMount.replaceChildren(); }
+document.getElementById('bPlayClose').onclick=closePlay;
+playOverlay.addEventListener('click', (e)=>{ if(e.target===playOverlay) closePlay(); });
 
 const toast=document.getElementById('toast'); let toastT=0;
 function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toast.classList.remove('show'),2600); }
