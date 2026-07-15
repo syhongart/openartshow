@@ -561,7 +561,7 @@
 
 <header>
   <h1>OpenArtShow <span class="accent">STUDIO</span> — 나만의 전시장 만들기</h1>
-  <p class="sub">작품을 등록하고, 전시 JSON을 만들어 나만의 3D 전시장을 오픈하세요.</p>
+  <p class="sub">작품을 등록하고, 나만의 3D 전시장을 여세요.</p>
 </header>
 
 <main>
@@ -573,9 +573,9 @@
     </div>
 
     <div class="field">
-      <label class="field-label" for="exhibitId">전시장 ID (영소문자, 숫자, 하이픈만 사용)</label>
+      <label class="field-label" for="exhibitId">전시장 주소 이름 (영문 소문자·숫자·하이픈)</label>
       <input type="text" id="exhibitId" placeholder="예: syhongart" autocomplete="off" spellcheck="false">
-      <div class="field-msg" id="exhibitIdMsg">전시장 주소에 사용됩니다. 예: index.html?g=<span id="idPreviewInline">id</span></div>
+      <div class="field-msg" id="exhibitIdMsg">이 이름이 전시장 주소가 됩니다. (예: index.html?g=<span id="idPreviewInline">id</span>)</div>
     </div>
 
     <div class="field">
@@ -653,11 +653,11 @@
   <section class="block">
     <div class="block-title">
       <span class="num">03</span>
-      <h2>전시 JSON 내보내기</h2>
+      <h2>전시 파일 만들기</h2>
     </div>
 
     <div class="action-row">
-      <button class="btn-gold" id="downloadBtn" type="button">JSON 다운로드</button>
+      <button class="btn-gold" id="downloadBtn" type="button">전시 파일 저장</button>
       <button class="btn" id="previewBtn" type="button">내 전시 미리보기</button>
       <span class="action-status" id="downloadStatus"></span>
     </div>
@@ -691,9 +691,9 @@
       <h2>안내</h2>
     </div>
     <div class="instructions">
-      <div>다운로드한 <code>&lt;id&gt;.json</code> 파일을 프로젝트의 <code>galleries/</code> 폴더 안에 넣어주세요.</div>
+      <div>다운로드한 전시 파일(<code>&lt;id&gt;.json</code>)을 프로젝트의 <code>galleries/</code> 폴더 안에 넣어주세요.</div>
       <ol>
-        <li>위 <b>JSON 다운로드</b> 버튼을 눌러 파일을 저장합니다.</li>
+        <li>위 <b>전시 파일 저장</b> 버튼을 눌러 내려받습니다.</li>
         <li>저장된 파일을 <code>web/galleries/</code> 폴더에 복사합니다.</li>
         <li>브라우저에서 아래 주소로 접속하면 전시장이 열립니다.</li>
       </ol>
@@ -837,7 +837,7 @@
     if (showState) {
       $id.classList.toggle('invalid', v.length > 0 && !valid);
       if (v.length === 0) {
-        $idMsg.textContent = '전시장 주소에 사용됩니다. 예: index.html?g=' + 'id';
+        $idMsg.textContent = '이 이름이 전시장 주소가 됩니다. (예: index.html?g=' + 'id)';
         $idMsg.className = 'field-msg';
       } else if (!valid) {
         $idMsg.textContent = '영소문자, 숫자, 하이픈(-)만 사용할 수 있습니다.';
