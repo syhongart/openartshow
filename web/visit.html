@@ -65,6 +65,7 @@
   #looktip{display:none;position:fixed;right:22px;bottom:40px;z-index:20;font-size:11px;color:var(--dim);
     background:rgba(20,21,27,.5);border:1px solid var(--line);border-radius:10px;padding:8px 12px;pointer-events:none}
   .is-touch #enter{display:none}
+  .is-touch #hintDesk{display:none} /* 모바일=데스크톱 조작 안내 숨김(조이스틱 힌트만) */
   .is-touch .mobhint,.is-touch #joy,.is-touch #looktip{display:block}
   .is-touch #joy{display:block}
 
@@ -124,7 +125,6 @@ window.addEventListener('resize', fit); fit();
 
 // 클릭 유도 오버레이 — 포인터락 획득/해제에 따라 표시.
 const enter = document.getElementById('enter');
-canvas.addEventListener('click', ()=>{ /* visit.js가 락 요청 */ });
 V.on('lock', ({locked})=>{ enter.classList.toggle('hide', locked); });
 enter.addEventListener('click', ()=>{ if (canvas.requestPointerLock) canvas.requestPointerLock(); });
 
