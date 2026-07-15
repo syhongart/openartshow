@@ -102,6 +102,12 @@
   .hud-settings .finchips button:hover{border-color:rgba(139,114,255,.6)}
   .hud-settings .finchips button.on{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet);background:rgba(139,114,255,.14)}
   .hud-settings .finchips i{width:13px;height:13px;border-radius:4px;background:var(--sw);box-shadow:inset 0 0 0 1px rgba(0,0,0,.3)}
+  .hud-settings .presets{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+  .hud-settings .presets button{flex:0 0 auto;width:92px;padding:0;border:1px solid var(--line);border-radius:11px;background:rgba(0,0,0,.22);cursor:pointer;overflow:hidden;transition:.12s;text-align:left}
+  .hud-settings .presets button:hover{border-color:rgba(139,114,255,.6);transform:translateY(-1px)}
+  .hud-settings .presets button.on{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet)}
+  .hud-settings .presets img{display:block;width:100%;height:92px;object-fit:cover;background:#14151a}
+  .hud-settings .presets .pn{display:block;font-size:10.5px;font-weight:600;color:var(--ink);padding:5px 7px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .hud-settings .bakebtn{width:100%;appearance:none;border:1px solid rgba(114,230,225,.45);color:#0f1418;font:inherit;font-weight:700;font-size:13px;
     background:linear-gradient(180deg,#8ef0e9,#5fd8d0);border-radius:10px;padding:11px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:.12s;box-shadow:0 6px 16px -6px rgba(114,230,225,.5)}
   .hud-settings .bakebtn:hover{filter:brightness(1.05);transform:translateY(-1px)}
@@ -276,6 +282,9 @@
       <button data-id="charcoal"><i style="--sw:#3a3a40"></i>차콜</button>
       <button data-id="warmsand"><i style="--sw:#e6d8bf"></i>웜샌드</button>
     </div>
+  </div>
+  <div class="fld"><label>프리셋으로 시작 <b style="color:var(--dim);font-weight:400">현재 공간 교체</b></label>
+    <div class="presets" id="presets"></div>
   </div>
   <button class="bakebtn" id="bBake"><span class="bk-ic">✦</span><span id="bakeLabel">굽기 · 완성 미리보기</span></button>
   <div class="bakehint" id="bakeHint">완성하면 조명을 셸에 구워 방문자는 가볍게 봅니다. 편집·조명색 바꾸면 자동 해제.</div>
@@ -457,6 +466,21 @@ finGroups.forEach(grp=>{ const kind=grp.dataset.fin;
 function syncFinishChips(){ const f=B.getSpace().shell.finish; finGroups.forEach(grp=>{ const cur=f[grp.dataset.fin];
   [...grp.querySelectorAll('button')].forEach(x=>x.classList.toggle('on', x.dataset.id===cur)); }); }
 syncFinishChips();
+// 프리셋 갤러리(#49) — 썸네일 카드, 클릭 시 현재 공간 교체(undo 가능)
+const presetsEl=document.getElementById('presets');
+B.getPresets().forEach(p=>{
+  const b=document.createElement('button'); b.title=p.desc; b.dataset.id=p.id;
+  const img=document.createElement('img'); img.alt=p.name; if(p.thumb) img.src=p.thumb;
+  const nm=document.createElement('span'); nm.className='pn'; nm.textContent=p.name;
+  b.appendChild(img); b.appendChild(nm);
+  b.onclick=()=>{
+    B.applyPreset(p.id); syncFinishChips(); B.resetCamera(); // refresh()는 change 리스너가 처리(중복 제거) · 새 방 크기에 카메라 맞춤(검수 MINOR)
+    [...presetsEl.querySelectorAll('button')].forEach(x=>x.classList.toggle('on', x===b));
+    const title=B.getSpace().meta&&B.getSpace().meta.name; if(title){ spaceTitle.textContent=title; titleInput.value=title; }
+    showToast(`'${p.name}' 프리셋 불러옴 · Ctrl+Z로 되돌리기`);
+  };
+  presetsEl.appendChild(b);
+});
 // 라이트 베이킹(GPU 셸 라이트맵) 토글 — 굽기 ↔ 다시 편집
 const bBake=document.getElementById('bBake'), bakeLabel=document.getElementById('bakeLabel'), bakeHint=document.getElementById('bakeHint');
 function setBakeUI(on){ bBake.classList.toggle('on', on); bakeLabel.textContent = on ? '다시 편집' : '굽기 · 완성 미리보기';
