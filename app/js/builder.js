@@ -7,10 +7,22 @@
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { normalizeSpace, newSpace, PART_TYPES, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
-import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES } from './space-render.js';
+import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting } from './space-render.js';
 import { youtubeId } from './ytembed.js';
 
 const SAVE_KEY = 'openartshow.space.v1';
+
+// 환경맵(PMREM) — 은은한 반사로 재질 깊이·고급감. 스포트라이트가 바닥에 반질하게 번지게.
+function makeEnvMap(renderer) {
+  const pm = new THREE.PMREMGenerator(renderer);
+  const es = new THREE.Scene();
+  es.add(new THREE.HemisphereLight(0xdfe4f2, 0x3a3630, 1.0));
+  const hi = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshBasicMaterial({ color: 0xffe9c8 })); hi.position.set(0, 5, -6); es.add(hi);
+  const side = new THREE.Mesh(new THREE.PlaneGeometry(4, 8), new THREE.MeshBasicMaterial({ color: 0x2a2c3a })); side.position.set(-6, 3, 0); side.rotation.y = Math.PI / 2; es.add(side);
+  const tex = pm.fromScene(es, 0.02).texture; pm.dispose();
+  [hi, side].forEach((m) => { m.geometry.dispose(); m.material.dispose(); }); // 임시 씬 자원 정리(검수 권고)
+  return tex;
+}
 
 function snapPos(type, x, z) {
   const step = PART_TYPES[type].grid === 'structure' ? 1.0 : 0.5;
@@ -28,9 +40,12 @@ export function createBuilder(canvas, opts = {}) {
   renderer.setClearColor(0x15161a);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 접지 그림자(디자이너 P0)
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.16; // 필믹 그레이드(디자이너 아트디렉션)
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xfff6ea, 0x2a2a30, 1.0));
-  const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(3, 6, 4);
+  // 앰비언트는 낮게(그림자 깊게·대비↑) — 연출 조명(스포트/다운라이트)이 무드를 주도. 바이올렛 언더톤.
+  scene.add(new THREE.HemisphereLight(0xfff3e6, 0x241f30, 0.58));
+  scene.environment = makeEnvMap(renderer); // 은은한 환경 반사(글로시 바닥·재질 깊이)
+  const key = new THREE.DirectionalLight(0xfff2e0, 0.85); key.position.set(3, 6, 4);
   key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0005;
   { const c = key.shadow.camera; c.left = -9; c.right = 9; c.top = 7; c.bottom = -7; c.near = 0.5; c.far = 30; c.updateProjectionMatrix(); } // 룸 풋프린트 타이트
   scene.add(key);
@@ -48,7 +63,8 @@ export function createBuilder(canvas, opts = {}) {
   let group = null;
   const undoStack = [];
   let placingType = null;   // 팔레트에서 고른 배치 대기 타입
-  let ghost = null;         // 배치 고스트 프리뷰
+  let ghost = null;         // 배치 고스트 프리뷰(실제 파츠 모양)
+  let ghostMat = null;      // 고스트 공용 반투명 재질(전 메쉬 공유 → 색 일괄 변경)
   let selected = -1;        // 선택된 파츠 index
   let selectMesh = null;    // 선택 하이라이트 아웃라인
   const raycaster = new THREE.Raycaster();
@@ -58,6 +74,10 @@ export function createBuilder(canvas, opts = {}) {
   function rebuild() {
     if (group) { scene.remove(group); disposeSpaceGroup(group); }
     group = buildSpaceGroup(space, { pickable: true, hideCeiling: true });
+    // 바닥 글로시(거칠기↓·환경반사↑)로 스포트라이트가 반질하게 번지게 — 디자이너 아트디렉션
+    const floor = group.userData.floor; // userData 참조(자식 순서 결합 제거, 검수 권고)
+    if (floor && floor.material) { floor.material.roughness = 0.16; floor.material.envMapIntensity = 1.35; }
+    addRoomLighting(group); // 작품 스포트라이트·천장 다운라이트·접촉그림자
     scene.add(group);
     refreshSelection();
   }
@@ -65,12 +85,26 @@ export function createBuilder(canvas, opts = {}) {
 
   // ── 배치 ──
   function beginPlace(type) { placingType = PART_TYPES[type] ? type : null; makeGhost(); emit('mode', { placing: placingType }); }
-  function cancelPlace() { placingType = null; if (ghost) { scene.remove(ghost); ghost.geometry.dispose(); ghost.material.dispose(); ghost = null; } }
+  function disposeGhost() {
+    if (!ghost) return;
+    scene.remove(ghost);
+    ghost.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); // 지오메트리 정리
+    if (ghostMat) { ghostMat.dispose(); ghostMat = null; }            // 공용 재질 1개만 정리
+    ghost = null;
+  }
+  function cancelPlace() { placingType = null; disposeGhost(); }
   function makeGhost() {
-    if (ghost) { scene.remove(ghost); ghost.geometry.dispose(); ghost.material.dispose(); ghost = null; }
+    disposeGhost();
     if (!placingType) return;
-    const [w, h, d] = PART_TYPES[placingType].size;
-    ghost = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color: 0x8b7bd8, transparent: true, opacity: 0.5 }));
+    // 실제 파츠 모양(벽·계단 등)을 반투명으로 미리보기(감독: 미리 볼 수 있게). 박스 대체.
+    ghost = buildPartPreview(placingType);
+    ghostMat = new THREE.MeshBasicMaterial({ color: 0x8b7bd8, transparent: true, opacity: 0.42, depthWrite: false });
+    ghost.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = o.material; // buildPartPreview가 만든 실제 재질(텍스처 clone 포함)은 정리 후 고스트 재질로 교체
+      if (m) { if (m.map && m.map.dispose) m.map.dispose(); if (m.normalMap && m.normalMap.dispose) m.normalMap.dispose(); if (m.dispose) m.dispose(); }
+      o.material = ghostMat;
+    });
     ghost.visible = false; scene.add(ghost);
   }
   function moveGhostTo(x, z) {
@@ -79,7 +113,7 @@ export function createBuilder(canvas, opts = {}) {
     const s = snapPos(placingType, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
     ghost.position.set(s.x, partY(placingType, H), s.z); ghost.visible = true;
     const bad = uniqueTexCapReached(placingType);
-    ghost.material.color.setHex(bad ? 0xb0503f : 0x8b7bd8); // 불가=테라코타
+    ghostMat.color.setHex(bad ? 0xb0503f : 0x8b7bd8); // 불가=테라코타
   }
   function uniqueTexCapReached(type) { return UNIQUE_TEX_TYPES.has(type) && uniqueTexCount(space) >= ART_SCREEN_CAP; }
 
@@ -258,6 +292,7 @@ export function createBuilder(canvas, opts = {}) {
       cancelPlace(); // ghost 정리
       if (selectMesh) { scene.remove(selectMesh); selectMesh.geometry.dispose(); selectMesh.material.dispose(); selectMesh = null; }
       if (group) disposeSpaceGroup(group);
+      if (scene.environment) { scene.environment.dispose(); scene.environment = null; } // PMREM envMap 해제(검수 권고)
       renderer.dispose();
     },
   };
