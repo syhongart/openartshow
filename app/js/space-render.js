@@ -95,7 +95,7 @@ const MATS = {
   charcoal:   () => SM({ color: 0x3a3a40, roughness: 0.7, metalness: 0.1 }),
   deepviolet: () => SM({ color: 0x2b2833, roughness: 0.9, metalness: 0 }), // 저채도 딥중립(작품 배경 규율 §3-6·팀장 조건①)
   frameBlack: () => SM({ color: 0x17181c, roughness: 0.88, metalness: 0 }), // 액자=매트 블랙(크롬 금지, 아트디렉션 스펙)
-  walnut:     () => SM({ color: 0x6b5138, roughness: 0.6, metalness: 0 }),  // 진열장 받침(파케 바닥과 분리)
+  walnut:     () => SM({ color: 0x6b5138, roughness: 0.6, metalness: 0 }),  // 벤치 시트(월넛) — 파케 바닥과 분리
   charcoalCloth: () => SM({ color: 0x2c2c30, roughness: 0.95, metalness: 0 }), // 드레이프 딥차콜
   clothInner: () => SM({ color: 0xd6ccb7, roughness: 0.97, metalness: 0 }), // 러그 내부 필드(보더 대비)
   parquet:    () => SM({ color: 0xb98a53, roughness: 0.5, metalness: 0 }),
@@ -107,6 +107,7 @@ const MATS = {
   wood:       () => SM({ color: 0xb99a6f, roughness: 0.6, metalness: 0 }),
   darkMetal:  () => SM({ color: 0x26241f, roughness: 0.4, metalness: 0.75 }),
   brass:      () => SM({ color: 0xb98d4a, roughness: 0.45, metalness: 0.6 }),
+  bronze:     () => SM({ color: 0x3c342a, roughness: 0.35, metalness: 0.55 }), // 진열장 골조(놋쇠보다 어둡고 절제된 금속)
   stone:      () => SM({ color: 0xd9cdb6, roughness: 0.7, metalness: 0 }),
   matteWhite: () => SM({ color: 0xe9e6df, roughness: 0.85, metalness: 0 }),
   darkScreen: () => SM({ color: 0x14141a, roughness: 0.5, metalness: 0.08 }), // 다크 매트 베젤(금속광 억제)
@@ -128,8 +129,8 @@ const FINISH_MAT = {
 // 파츠 → 재질 (미술관 재질 매핑)
 const PART_MAT = {
   wallPanel: MATS.plaster, floorTile: MATS.parquet, ceilingPanel: MATS.plasterW, pillar: MATS.stone, stair: MATS.stone, arch: MATS.plaster,
-  artwork: MATS.frameBlack, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.walnut, labelStand: MATS.brass,
-  trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.wood, drape: MATS.charcoalCloth,
+  artwork: MATS.frameBlack, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.bronze, labelStand: MATS.brass,
+  trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.walnut, drape: MATS.charcoalCloth,
 };
 const partMat = (t) => {
   if (t === 'pillar') return concreteTex(0xd2ccbf, 1.2, 1.5);  // 노출 콘크리트 기둥(감독)
@@ -183,15 +184,65 @@ function merged(list) {
   const m = mergeGeometries(gs, false); gs.forEach((g) => g.dispose());
   return m;
 }
+// 고대 석주 플루팅 샤프트 — F개 세로 홈(고전 컬럼 몸체 패턴) + 미세 배흘림(엔타시스). 단일 지오메트리(인스턴싱).
+function flutedShaft(R, height, { flutes = 16, per = 3, hs = 5, depth = R * 0.1 } = {}) {
+  const RS = flutes * per, y0 = -height / 2, pos = [], uv = [], idx = [];
+  for (let j = 0; j <= hs; j++) {
+    const t = j / hs, y = y0 + t * height;
+    const Ry = R * (1 - 0.1 * t + 0.03 * Math.sin(Math.PI * t)); // 상단 수축 + 중앙 볼록(엔타시스)
+    for (let i = 0; i <= RS; i++) {
+      const th = (i / RS) * Math.PI * 2, groove = 0.5 + 0.5 * Math.cos(flutes * th); // 0=능선,1=홈중심
+      const r = Ry - depth * groove;
+      pos.push(Math.cos(th) * r, y, Math.sin(th) * r); uv.push(i / RS, t); // 원통 언랩(concreteTex 매핑)
+    }
+  }
+  const stride = RS + 1;
+  for (let j = 0; j < hs; j++) for (let i = 0; i < RS; i++) {
+    const a = j * stride + i, b = a + 1, c = a + stride, e = c + 1;
+    idx.push(a, c, b, b, c, e);
+  }
+  // 상/하단 캡 — open tube 방지(근접 저각에서 속 안 보이게, 검수 MINOR)
+  const y1 = y0 + height, topBase = hs * stride;
+  const cb = pos.length / 3; pos.push(0, y0, 0); uv.push(0.5, 0);
+  for (let i = 0; i < RS; i++) idx.push(cb, i, i + 1);                       // 하단(-y)
+  const ct = pos.length / 3; pos.push(0, y1, 0); uv.push(0.5, 1);
+  for (let i = 0; i < RS; i++) idx.push(ct, topBase + i + 1, topBase + i);   // 상단(+y)
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); // box/cyl과 attribute 일치(merge 요건)
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
 function partGeo(t) {
   const [w, h, d] = PART_TYPES[t].size;
   switch (t) {
-    case 'pillar': // 베이스 + 샤프트 + 캐피탈 (칼라 반경↑=몰딩 가독)
-      return merged([[cyl(w * 0.85, w * 0.85, 0.12), [0, -h / 2 + 0.06, 0]], [cyl(w / 2, w / 2, h, 20), null], [cyl(w * 0.85, w * 0.85, 0.12), [0, h / 2 - 0.06, 0]]]);
-    case 'bench': // 시트만(목재) — 다리는 accent(다크메탈)로 분리
-      return merged([[box(w, 0.08, d), [0, h / 2 - 0.04, 0]]]);
-    case 'pedestal': // 베이스 + 몸통 + 상판(몰딩)
-      return merged([[box(w, 0.06, d), [0, -h / 2 + 0.03, 0]], [box(w * 0.86, h - 0.12, d * 0.86), null], [box(w, 0.05, d), [0, h / 2 - 0.025, 0]]]);
+    case 'pillar': { // 고대 석주 — 플루팅 샤프트 + 베이스 몰딩 + 에키누스·아바쿠스 캐피탈(감독: 고대 기둥 패턴)
+      const R = w * 0.5;
+      const shaft = flutedShaft(R * 0.98, h - 0.30, { flutes: 14, per: 3, hs: 5, depth: R * 0.16 }); // 굵고 깊은 세로 홈=패턴 가독(감독)
+      return merged([
+        [cyl(R * 1.34, R * 1.34, 0.06, 16), [0, -h / 2 + 0.03, 0]],  // 플린스 슬랩
+        [cyl(R * 1.04, R * 1.30, 0.09, 16), [0, -h / 2 + 0.105, 0]], // 베이스 토러스 몰딩
+        [shaft, [0, 0, 0]],                                          // 플루팅 샤프트
+        [cyl(R * 0.92, R * 0.88, 0.03, 16), [0, h / 2 - 0.175, 0]],  // 넥(애뉼릿)
+        [cyl(R * 1.30, R * 0.94, 0.1, 16), [0, h / 2 - 0.09, 0]],    // 에키누스(플레어)
+        [box(R * 2.70, 0.05, R * 2.70), [0, h / 2 - 0.025, 0]],      // 아바쿠스(사각 처마)
+      ]);
+    }
+    case 'bench': // 챔퍼 시트(월넛) — 다리·스트레처는 accent(다크메탈)
+      return merged([
+        [box(w - 0.08, 0.02, d - 0.08), [0, h / 2 - 0.01, 0]],
+        [box(w, 0.04, d), [0, h / 2 - 0.04, 0]],
+        [box(w - 0.08, 0.02, d - 0.08), [0, h / 2 - 0.07, 0]],
+      ]);
+    case 'pedestal': // 미술관 좌대 — 플린스·캡 챔퍼 몰딩 + 미세 배흘림
+      return merged([
+        [box(w, 0.05, d), [0, -h / 2 + 0.025, 0]],
+        [box(w * 0.88, 0.04, d * 0.88), [0, -h / 2 + 0.07, 0]],
+        [box(w * 0.80, 0.36, d * 0.80), [0, -0.18, 0]],
+        [box(w * 0.76, 0.36, d * 0.76), [0, 0.18, 0]],
+        [box(w * 0.88, 0.04, d * 0.88), [0, h / 2 - 0.07, 0]],
+        [box(w, 0.05, d), [0, h / 2 - 0.025, 0]],
+      ]);
     case 'stair': { // 단수를 현실적 챌판 높이(~0.19m)에서 파생 — 5단 고정은 계단당 0.84m로 과대(감독 지적)
       const st = []; const n = Math.max(6, Math.min(30, Math.round(h / 0.19)));
       for (let i = 0; i < n; i++) st.push([box(w, h / n, d / n), [0, -h / 2 + (i + 0.5) * (h / n), -d / 2 + (i + 0.5) * (d / n)]]);
@@ -205,11 +256,35 @@ function partGeo(t) {
       const head = cyl(w * 0.5, w * 0.42, w * 0.9, 12); head.rotateX(0.5);
       return merged([[box(w * 0.4, w * 0.3, w * 0.4), [0, w * 0.4, 0]], [head, null]]);
     }
-    case 'pendantLight': // 코드 + 갓
-      return merged([[cyl(0.006, 0.006, h * 0.5), [0, h * 0.25, 0]], [cyl(w * 0.5, w * 0.12, h * 0.4, 14), [0, -h * 0.2, 0]]]);
-    case 'planter': return cyl(w / 2, w / 2 * 0.66, h, 14);   // 화분(테이퍼) — 잎은 accent
-    case 'vitrine': return box(w, h * 0.18, d);                // 받침 — 유리는 accent
-    case 'screen': return box(w, h, 0.06);                     // 베젤 — 화면은 accent
+    case 'pendantLight': { // 코드 + 벨 곡선 갓(Lathe) — 포인트는 Vector2여야(raw 배열=NaN)
+      const V = (r, y) => new THREE.Vector2(r, y);
+      const shade = new THREE.LatheGeometry([V(0.02, -h * 0.2), V(w * 0.14, -h * 0.2), V(w * 0.44, -h * 0.14), V(w * 0.5, -h * 0.02), V(w * 0.16, h * 0.1), V(0.006, h * 0.3)], 16);
+      return merged([[cyl(0.006, 0.006, h * 0.5, 6), [0, h * 0.25, 0]], [shade, null]]);
+    }
+    case 'planter': // 화분: 풋링 + 테이퍼 본체 + 립(플레어) — 잎은 accent
+      return merged([
+        [cyl(w * 0.30, w * 0.36, 0.05, 16), [0, -h / 2 + 0.025, 0]],
+        [cyl(w * 0.5, w * 0.34, h - 0.10, 16), [0, 0, 0]],
+        [cyl(w * 0.52, w * 0.48, 0.06, 16), [0, h / 2 - 0.03, 0]],
+      ]);
+    case 'vitrine': { // 케이스 골조(브론즈) — 바닥 플린스 + 모서리 기둥 + 상단 레일. 유리는 accent. (기존 공중부양 버그 수정)
+      const px = w / 2 - 0.02, pz = d / 2 - 0.02, post = () => box(0.03, h - 0.085, 0.03);
+      return merged([
+        [box(w, 0.06, d), [0, -h / 2 + 0.03, 0]],
+        [post(), [-px, 0.0125, pz]], [post(), [px, 0.0125, pz]], [post(), [-px, 0.0125, -pz]], [post(), [px, 0.0125, -pz]],
+        [box(w * 0.94, 0.025, d * 0.94), [0, h / 2 - 0.0125, 0]],
+      ]);
+    }
+    case 'screen': // 슬림 베젤 + 단차(패널이 얹힌 느낌)
+      return merged([[box(w, h, 0.05), null], [box(w - 0.06, h - 0.06, 0.02), [0, 0, -0.02]]]);
+    case 'artwork': { // 베벨 프로필 액자 프레임(속 빈 링) — 캔버스는 accent가 안쪽에 앉음
+      const fW = 0.09, ow = w / 2, oh = h / 2, iw = ow - fW, ih = oh - fW;
+      const shape = new THREE.Shape(); shape.moveTo(-ow, -oh); shape.lineTo(ow, -oh); shape.lineTo(ow, oh); shape.lineTo(-ow, oh); shape.lineTo(-ow, -oh);
+      const hole = new THREE.Path(); hole.moveTo(-iw, -ih); hole.lineTo(iw, -ih); hole.lineTo(iw, ih); hole.lineTo(-iw, ih); hole.lineTo(-iw, -ih);
+      shape.holes.push(hole);
+      const g = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 1, steps: 1 });
+      g.translate(0, 0, -d / 2); return g;
+    }
     default: return box(w, h, d);
   }
 }
@@ -217,12 +292,35 @@ function partGeo(t) {
 function partAccent(t) {
   const [w, h, d] = PART_TYPES[t].size;
   switch (t) {
-    case 'artwork': return { geo: box(w - 0.18, h - 0.18, 0.02), mat: 'paper', off: [0, 0, 0.06] };
-    case 'screen':  return { geo: box(w - 0.1, h - 0.1, 0.02), mat: 'display', off: [0, 0, 0.04] };
-    case 'vitrine': return { geo: box(w * 0.92, h * 0.78, d * 0.92), mat: 'glass', off: [0, h * 0.48, 0] };
-    case 'planter': return { geo: merged([[new THREE.SphereGeometry(w * 0.42, 10, 8), null], [new THREE.SphereGeometry(w * 0.3, 10, 8), [w * 0.28, w * 0.22, 0]], [new THREE.SphereGeometry(w * 0.26, 10, 8), [-w * 0.26, w * 0.16, w * 0.12]]]), mat: 'plant', off: [0, h * 0.52, 0] };
+    case 'artwork': return { geo: box(w - 0.20, h - 0.20, 0.015), mat: 'paper', off: [0, 0, 0.03] }; // 캔버스=프레임 홀(반폭 0.51/0.71)보다 작게(0.5/0.7)→관통 방지+리빌(검수 BLOCKER)
+    case 'screen':  return { geo: box(w - 0.06, h - 0.06, 0.02), mat: 'display', off: [0, 0, 0.035] }; // 슬림 베젤 인셋
+    case 'vitrine': { // 골조 사이 유리 케이스(바닥 접지) — off로 프레임 안쪽에 정렬
+      const cw = w - 0.06, cd = d - 0.06, cH = h - 0.10;
+      return { geo: merged([
+        [box(cw, cH, 0.012), [0, 0, cd / 2]], [box(cw, cH, 0.012), [0, 0, -cd / 2]],
+        [box(0.012, cH, cd), [cw / 2, 0, 0]], [box(0.012, cH, cd), [-cw / 2, 0, 0]],
+        [box(cw, 0.015, cd), [0, cH / 2, 0]],
+      ]), mat: 'glass', off: [0, 0.02, 0] };
+    }
+    case 'planter': { // 늘인 스피어=잎덩이(포도송이 티 제거)
+      const leaf = (r, sx, sy, sz) => { const s = new THREE.SphereGeometry(r, 8, 6); s.scale(sx, sy, sz); return s; };
+      return { geo: merged([
+        [leaf(w * 0.34, 1, 1.5, 1), [0, w * 0.2, 0]],
+        [leaf(w * 0.26, 1.3, 1.1, 0.9), [w * 0.24, w * 0.1, w * 0.05]],
+        [leaf(w * 0.24, 0.9, 1.2, 1.2), [-w * 0.22, w * 0.14, -w * 0.06]],
+        [leaf(w * 0.2, 1.1, 0.9, 1.1), [w * 0.02, w * 0.32, w * 0.2]],
+      ]), mat: 'plant', off: [0, h * 0.46, 0] };
+    }
     case 'trackLight': return { geo: cyl(w * 0.24, w * 0.24, 0.02, 12), mat: 'lens', off: [0, -w * 0.1, 0] };
-    case 'bench': return { geo: merged([[box(0.08, h - 0.08, d * 0.8), [-w / 2 + 0.1, -0.04, 0]], [box(0.08, h - 0.08, d * 0.8), [w / 2 - 0.1, -0.04, 0]]]), mat: 'darkMetal', off: [0, 0, 0] };
+    case 'pendantLight': return { geo: cyl(w * 0.13, w * 0.13, 0.015, 12), mat: 'lens', off: [0, -h * 0.19, 0] }; // 갓 하단 웜 렌즈
+    case 'pedestal': return { geo: box(w * 0.92, 0.012, d * 0.92), mat: 'brass', off: [0, 0.40, 0] }; // 캡 밑 놋쇠 리빌 라인
+    case 'bench': { // 테이퍼 다리 2 + 스트레처 바(다크메탈)
+      const lx = w / 2 - 0.1;
+      return { geo: merged([
+        [box(0.06, 0.37, 0.34), [-lx, -0.04, 0]], [box(0.06, 0.37, 0.34), [lx, -0.04, 0]],
+        [box(w - 0.32, 0.03, 0.035), [0, -0.16, 0]],
+      ]), mat: 'darkMetal', off: [0, 0, 0] };
+    }
     case 'rug': return { geo: box(w - 0.16, 0.021, d - 0.16), mat: 'clothInner', off: [0, 0.006, 0] }; // 내부 필드=보더 대비
     default: return null;
   }
