@@ -1,0 +1,219 @@
+// builder.js — 공간 빌더 에디터 (MVP 핵심 루프: 배치·스냅·회전·삭제·undo·저장)
+// -----------------------------------------------------------------------------
+// 리서치 확정 심즈 패턴: 그리드 스냅 기본(구조 1m·90° / 오브젝트 0.5m·15°) + 고스트 프리뷰
+// + 표준 단축키(R 회전·Del 삭제·Ctrl+Z undo). 80캡(작품+스크린)은 UI가 강제.
+// 데스크톱 편집 전용(모바일은 builder.html이 크롬을 숨겨 열람만).
+// 테스트 가능성: createBuilder()가 스크립트 API를 반환 → 헤드리스로 전 경로 검증.
+// -----------------------------------------------------------------------------
+import * as THREE from 'three';
+import { normalizeSpace, newSpace, PART_TYPES, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
+import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES } from './space-render.js';
+
+const SAVE_KEY = 'openartshow.space.v1';
+
+function snapPos(type, x, z) {
+  const step = PART_TYPES[type].grid === 'structure' ? 1.0 : 0.5;
+  return { x: Math.round(x / step) * step, z: Math.round(z / step) * step };
+}
+function snapRot(type, ry) {
+  const step = PART_TYPES[type].grid === 'structure' ? Math.PI / 2 : (15 * Math.PI / 180);
+  return Math.round(ry / step) * step;
+}
+const clampToRoom = (v, half, t) => Math.max(-half + t + 0.2, Math.min(half - t - 0.2, v));
+
+export function createBuilder(canvas, opts = {}) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
+  renderer.setPixelRatio(Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
+  renderer.setClearColor(0x15161a);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xfff6ea, 0x2a2a30, 1.0));
+  const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(3, 6, 4); scene.add(key);
+  const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 100);
+
+  // 카메라 오빗 상태 (천장 숨긴 방 안이 내려다보이는 3/4 부감 시작)
+  const orbit = { az: 0.5, pol: 0.82, rad: 9.5, target: new THREE.Vector3(0, 0.9, 0) };
+  function applyCamera() {
+    const { az, pol, rad, target } = orbit;
+    camera.position.set(target.x + rad * Math.sin(pol) * Math.sin(az), target.y + rad * Math.cos(pol), target.z + rad * Math.sin(pol) * Math.cos(az));
+    camera.lookAt(target);
+  }
+
+  let space; try { space = normalizeSpace(opts.space || newSpace()); } catch { space = newSpace(); } // opts.space 외부 유입 방어(상위버전 등)
+  let group = null;
+  const undoStack = [];
+  let placingType = null;   // 팔레트에서 고른 배치 대기 타입
+  let ghost = null;         // 배치 고스트 프리뷰
+  let selected = -1;        // 선택된 파츠 index
+  let selectMesh = null;    // 선택 하이라이트 아웃라인
+  const raycaster = new THREE.Raycaster();
+  const listeners = {};
+  const emit = (ev, d) => (listeners[ev] || []).forEach((f) => f(d));
+
+  function rebuild() {
+    if (group) { scene.remove(group); disposeSpaceGroup(group); }
+    group = buildSpaceGroup(space, { pickable: true, hideCeiling: true });
+    scene.add(group);
+    refreshSelection();
+  }
+  function pushUndo() { undoStack.push(JSON.stringify(space)); if (undoStack.length > 50) undoStack.shift(); }
+
+  // ── 배치 ──
+  function beginPlace(type) { placingType = PART_TYPES[type] ? type : null; makeGhost(); emit('mode', { placing: placingType }); }
+  function cancelPlace() { placingType = null; if (ghost) { scene.remove(ghost); ghost.geometry.dispose(); ghost.material.dispose(); ghost = null; } }
+  function makeGhost() {
+    if (ghost) { scene.remove(ghost); ghost.geometry.dispose(); ghost.material.dispose(); ghost = null; }
+    if (!placingType) return;
+    const [w, h, d] = PART_TYPES[placingType].size;
+    ghost = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color: 0x8b7bd8, transparent: true, opacity: 0.5 }));
+    ghost.visible = false; scene.add(ghost);
+  }
+  function moveGhostTo(x, z) {
+    if (!ghost || !placingType) return;
+    const { hw, hd, t, H } = spaceDims(space);
+    const s = snapPos(placingType, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
+    ghost.position.set(s.x, partY(placingType, H), s.z); ghost.visible = true;
+    const bad = uniqueTexCapReached(placingType);
+    ghost.material.color.setHex(bad ? 0xb0503f : 0x8b7bd8); // 불가=테라코타
+  }
+  function uniqueTexCapReached(type) { return UNIQUE_TEX_TYPES.has(type) && uniqueTexCount(space) >= ART_SCREEN_CAP; }
+
+  /** 파츠 추가. 성공 시 index, 실패(캡 초과) 시 -1 */
+  function addPart(type, x, z, extra = {}) {
+    if (!PART_TYPES[type]) return -1;
+    if (uniqueTexCapReached(type)) { emit('cap', { type, cap: ART_SCREEN_CAP }); return -1; }
+    const { hw, hd, t } = spaceDims(space);
+    const s = snapPos(type, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
+    pushUndo();
+    const part = Object.assign({ t: type, x: s.x, z: s.z, ry: 0 }, extra);
+    space = normalizeSpace({ ...space, parts: [...space.parts, part] });
+    rebuild(); emit('change', { space });
+    return space.parts.length - 1;
+  }
+
+  // ── 선택·회전·삭제 ──
+  function selectIndex(i) { selected = (i >= 0 && i < space.parts.length) ? i : -1; refreshSelection(); emit('select', { index: selected, part: selected >= 0 ? space.parts[selected] : null }); }
+  function refreshSelection() {
+    if (selectMesh) { scene.remove(selectMesh); selectMesh.geometry.dispose(); selectMesh.material.dispose(); selectMesh = null; }
+    if (selected < 0 || selected >= space.parts.length) return;
+    const p = space.parts[selected]; const [w, h, d] = PART_TYPES[p.t].size; const { H } = spaceDims(space);
+    selectMesh = new THREE.Mesh(new THREE.BoxGeometry(w * 1.06 + 0.05, h * 1.06 + 0.05, d * 1.06 + 0.05), new THREE.MeshBasicMaterial({ color: 0x6fe3ff, wireframe: true }));
+    selectMesh.position.set(p.x, partY(p.t, H), p.z); selectMesh.rotation.y = p.ry; scene.add(selectMesh);
+  }
+  function rotateSelected(dir = 1) {
+    if (selected < 0) return;
+    pushUndo();
+    const p = { ...space.parts[selected] };
+    const stepStruct = PART_TYPES[p.t].grid === 'structure';
+    p.ry = snapRot(p.t, p.ry + dir * (stepStruct ? Math.PI / 2 : 15 * Math.PI / 180) + 1e-4);
+    const parts = space.parts.slice(); parts[selected] = p;
+    space = normalizeSpace({ ...space, parts }); rebuild(); emit('change', { space });
+  }
+  function deleteSelected() {
+    if (selected < 0) return;
+    pushUndo();
+    const parts = space.parts.slice(); parts.splice(selected, 1);
+    space = normalizeSpace({ ...space, parts }); selected = -1;
+    rebuild(); emit('change', { space });
+  }
+  function undo() {
+    if (!undoStack.length) return false;
+    space = normalizeSpace(JSON.parse(undoStack.pop())); selected = -1;
+    rebuild(); emit('change', { space }); return true;
+  }
+
+  // ── 저장/불러오기/내보내기 ──
+  // 외부 유입 문서(로드/가져오기)는 스키마 경계에서 80캡을 강제 — addPart UI 밖 우회 방지.
+  // scene.js 방문자뷰 통합·파일가져오기 UI 연결 시에도 이 경계가 draw call 예산을 보증한다.
+  function clampCap(sp) {
+    if (uniqueTexCount(sp) <= ART_SCREEN_CAP) return sp;
+    let n = 0; const parts = [];
+    for (const p of sp.parts) { if (UNIQUE_TEX_TYPES.has(p.t)) { if (n >= ART_SCREEN_CAP) continue; n++; } parts.push(p); }
+    const trimmed = normalizeSpace({ ...sp, parts });
+    emit('cap', { type: null, cap: ART_SCREEN_CAP, trimmed: true });
+    return trimmed;
+  }
+  function save() { try { localStorage.setItem(SAVE_KEY, encodeSpace(space)); emit('saved', {}); return true; } catch { return false; } }
+  function load() { const dec = decodeSpace(localStorage.getItem(SAVE_KEY)); if (!dec) return false; space = clampCap(dec); undoStack.length = 0; selected = -1; rebuild(); emit('change', { space }); return true; }
+  function exportJSON() { return JSON.stringify(space, null, 0); }
+  function importJSON(str) {
+    const s = (typeof str === 'string' && str.startsWith(SPACE_PREFIX)) ? str : SPACE_PREFIX + String(str);
+    const dec = decodeSpace(s); if (!dec) return false; // 파손·상위버전(SPACE_VERSION_AHEAD) → false
+    space = clampCap(dec); undoStack.length = 0; selected = -1; rebuild(); emit('change', { space }); return true;
+  }
+
+  // ── 픽킹(포인터 → 파츠/바닥) ──
+  function ndc(px, py, rect) { return new THREE.Vector2(((px - rect.left) / rect.width) * 2 - 1, -((py - rect.top) / rect.height) * 2 + 1); }
+  function pickPart(v2) {
+    raycaster.setFromCamera(v2, camera);
+    const objs = (group.userData.partRefs || []).map((r) => r.object);
+    const hit = raycaster.intersectObjects(objs, false)[0];
+    return hit ? hit.object.userData.partIndex : -1;
+  }
+  function pickFloor(v2) {
+    raycaster.setFromCamera(v2, camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const pt = new THREE.Vector3();
+    return raycaster.ray.intersectPlane(plane, pt) ? { x: pt.x, z: pt.z } : null;
+  }
+
+  // ── 이벤트 바인딩(데스크톱) ──
+  let dragging = false, lastX = 0, lastY = 0, moved = false;
+  function onDown(e) { dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY; }
+  function onMove(e) {
+    const rect = canvas.getBoundingClientRect();
+    if (dragging) {
+      const dx = e.clientX - lastX, dy = e.clientY - lastY; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      orbit.az -= dx * 0.008; orbit.pol = Math.max(0.25, Math.min(1.45, orbit.pol - dy * 0.006));
+      lastX = e.clientX; lastY = e.clientY; applyCamera();
+    } else if (placingType) {
+      const f = pickFloor(ndc(e.clientX, e.clientY, rect)); if (f) moveGhostTo(f.x, f.z);
+    }
+  }
+  function onUp(e) {
+    dragging = false;
+    if (moved) return;
+    const rect = canvas.getBoundingClientRect(); const v = ndc(e.clientX, e.clientY, rect);
+    if (placingType) { const f = pickFloor(v); if (f) addPart(placingType, f.x, f.z); }
+    else selectIndex(pickPart(v));
+  }
+  function onWheel(e) { orbit.rad = Math.max(3, Math.min(20, orbit.rad + Math.sign(e.deltaY) * 0.6)); applyCamera(); e.preventDefault(); }
+  function onKey(e) {
+    if (e.key === 'Escape') cancelPlace();
+    else if (e.key === 'r' || e.key === 'R') rotateSelected(1);
+    else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
+    else if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { undo(); e.preventDefault(); }
+  }
+  if (!opts.headless && typeof window !== 'undefined') {
+    canvas.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('keydown', onKey);
+  }
+
+  function resize(w, h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  let raf = 0;
+  function renderOnce() { applyCamera(); renderer.render(scene, camera); }
+  function loop() { renderOnce(); raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(loop) : 0; }
+
+  rebuild(); applyCamera();
+  if (!opts.headless) loop();
+
+  return {
+    // 스크립트 API (헤드리스 검증·UI 배선 공용)
+    beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, deleteSelected, undo,
+    save, load, exportJSON, importJSON, resize, renderOnce,
+    getSpace: () => space, getSelected: () => selected,
+    getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
+    on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
+    get renderer() { return renderer; }, get camera() { return camera; }, get orbit() { return orbit; },
+    dispose() {
+      if (raf) cancelAnimationFrame(raf);
+      cancelPlace(); // ghost 정리
+      if (selectMesh) { scene.remove(selectMesh); selectMesh.geometry.dispose(); selectMesh.material.dispose(); selectMesh = null; }
+      if (group) disposeSpaceGroup(group);
+      renderer.dispose();
+    },
+  };
+}
