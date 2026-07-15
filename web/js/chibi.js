@@ -1055,7 +1055,12 @@ const easeOutBack = (x) => {
 
 // 사용자 액션 목록 — 지속시간(초). playAction(name)이 참조하는 SSOT.
 // ※ 저장 파라미터가 아니라 런타임 재생 상태다 — encodeChibi/normalizeChibi와 무관.
-const CHIBI_ACTION_DUR = { wave: 1.7, jump: 0.72, bow: 1.5, clap: 1.6, dance: 2.6, kick: 0.85 };
+const CHIBI_ACTION_DUR = {
+  // 기존 6 — P1~P6
+  wave: 1.7, jump: 0.72, bow: 1.5, clap: 1.6, dance: 2.6, kick: 0.85,
+  // 신규 6 — 무릎 세분화(감독 착수 지시)로 가능해진 동작. 총 12개.
+  breakdance: 2.8, run: 1.8, sit: 1.8, jumpingjack: 1.6, heart: 1.6, sulk: 1.8,
+};
 export const CHIBI_ACTIONS = Object.keys(CHIBI_ACTION_DUR);
 
 /**
@@ -1109,28 +1114,48 @@ export function buildChibi(params) {
   const ghostSkinMat = isGhost ? mkMat(new THREE.MeshToonMaterial({ color: vivid(p.skin), gradientMap: toonRamp(), side: THREE.DoubleSide, transparent: true, opacity: 0.74 })) : null;
   const ghostTrimMat = isGhost ? mkMat(new THREE.MeshToonMaterial({ color: vivid(p.hairColor), gradientMap: toonRamp(), side: THREE.DoubleSide, transparent: true, opacity: 0.8 })) : null;
 
-  // ---- 하반신: 다리 피벗(고관절) ----
+  // ---- 하반신: 다리 피벗(고관절 + 무릎) ----
   // 대두(1.8등신) 리튠 — 다리·몸통·팔을 줄이고 머리를 키운다.
+  // 무릎 세분화(팀장 조건부 승인 → 감독 착수 지시) — 통짜 다리를 허벅지(고관절)/
+  // 정강이(무릎) 2단 피벗으로 승급한다. 무릎 원점(y=-KNEE_Y, hip 로컬)을 기존 단일
+  // 캡슐의 하단 지점과 정확히 겹치게, 발 위치도 기존 절대좌표(-0.305, hip 기준)를
+  // 그대로 역산해 배치했다 — kneePivot.rotation=0(기본)이면 예전 통짜 다리와 발
+  // 위치가 좌표상 완전히 동일하다(정지 포즈 회귀 0, 걷기/기존 6액션은 아래 update()에서
+  // 무릎 항을 "가산"만 하므로 무릎을 안 쓰는 동작엔 영향 없음).
   const HIP_Y = 0.375;
-  const legPivots = [];
+  const KNEE_Y = 0.145; // 고관절→무릎 로컬 거리
+  const legPivots = [];  // 고관절(허벅지) — 기존 의미 그대로 유지
+  const kneePivots = []; // 무릎(정강이) — 신규, 기본 회전 0 = 다리 일자(구 통짜와 동일)
   for (const s of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(s * 0.085, HIP_Y, 0);
-    if (!isGhost) { // 귀신은 다리 없음 — 빈 피벗만(걷기 애니 인덱스 안전)
+    const knee = new THREE.Group();
+    knee.position.set(0, -KNEE_Y, 0);
+    if (!isGhost) { // 귀신은 다리 없음 — 빈 피벗만(걷기/액션 인덱스 안전)
       const legMat = p.bottomType === 'pants' || p.bottomType === 'overall' ? bottomMat : skinMat;
-      const leg = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.055, 0.145, 6, 12)), legMat);
-      leg.position.y = -0.155;
-      if (p.species === 'tiger' && legMat === skinMat) leg.userData.outlineBase = p.skin; // (호랑이 제외됨—사장코드지만 torso/skull과 일관 유지)
-      addOutline(leg, 0.011, mats, geos);
-      pivot.add(leg);
+      // 허벅지 — hip~knee(고정 길이 KNEE_Y). 하단 캡 끝이 정확히 무릎 원점에 닿는다.
+      const thigh = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.054, 0.04, 6, 12)), legMat);
+      thigh.position.y = -KNEE_Y / 2;
+      if (p.species === 'tiger' && legMat === skinMat) thigh.userData.outlineBase = p.skin; // (호랑이 제외됨—사장코드지만 torso/skull과 일관 유지)
+      addOutline(thigh, 0.011, mats, geos);
+      pivot.add(thigh);
+      // 정강이 — knee 로컬 원점에서 아래로. 상단 캡 끝이 무릎 원점에 닿아 허벅지와 이음매 없음.
+      const shin = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.05, 0.05, 6, 12)), legMat);
+      shin.position.y = -0.075;
+      if (p.species === 'tiger' && legMat === skinMat) shin.userData.outlineBase = p.skin;
+      addOutline(shin, 0.011, mats, geos);
+      knee.add(shin);
+      // 발 — 기존 절대좌표(hip 기준 y=-0.305)를 knee 로컬로 역산: -0.305-(-KNEE_Y)=-0.16.
       const foot = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.082, 16, 12)), shoeMat);
       foot.scale.set(1, 0.72, 1.25);
-      foot.position.set(0, -0.305, 0.03);
+      foot.position.set(0, -0.16, 0.03);
       addOutline(foot, 0.011, mats, geos);
-      pivot.add(foot);
+      knee.add(foot);
     }
+    pivot.add(knee);
     wrapper.add(pivot);
     legPivots.push(pivot);
+    kneePivots.push(knee);
   }
 
   // ---- 상체 피벗(허리) — 절(bow) 액션용 회전축. ----
@@ -1974,6 +1999,23 @@ export function buildChibi(params) {
     if (legPivots.length) { // 귀신은 다리 없음(빈 피벗) — 방어 가드
       legPivots[0].rotation.x = swing * 0.78 * w;
       legPivots[1].rotation.x = -swing * 0.78 * w;
+      // 좌우 벌림(rotation.z)은 idle/걷기에선 안 쓴다 — 점프잭 등 액션 전용축이라
+      // 매 프레임 0으로 리셋(액션 종료 후 잔류 회전 방지, bodyPivot과 같은 패턴).
+      legPivots[0].rotation.z = 0;
+      legPivots[1].rotation.z = 0;
+    }
+    // 무릎(정강이) — 다리가 "앞으로 회수"되는 절반 구간에서만 굽혀 발을 살짝 들어올리고,
+    // 뒤로 밀며 지지하는 절반 구간(부호 반대)엔 곧게 편다. 걷기에 없던 무릎 굽힘을
+    // 더해 통짜 다리보다 생동감 있는 보행으로 승격(감독 지시) — w=0(정지)이면 0이라
+    // 기존 idle 포즈엔 영향 없음(회귀 0).
+    if (kneePivots.length) {
+      // 부호 규약(실측 확인): 무릎 회전은 "그 다리의 전방 부호"와 같은 부호일 때
+      // 허벅지+무릎 총 회전이 커져 발이 몸 쪽으로 접히며 위로 들린다(지면 클리어런스↑).
+      // 반대 부호면 오히려 발이 낮아져(역관절처럼) 부자연스럽다 — 헤드리스 좌표 실측으로
+      // 검증 후 확정한 부호.
+      const KNEE_WALK_AMT = 0.7;
+      kneePivots[0].rotation.x = -Math.max(0, -swing) * KNEE_WALK_AMT * w;
+      kneePivots[1].rotation.x = -Math.max(0, swing) * KNEE_WALK_AMT * w;
     }
     armPivots[0].rotation.x = -swing * 0.5 * w;
     armPivots[1].rotation.x = swing * 0.5 * w;
@@ -2080,11 +2122,18 @@ export function buildChibi(params) {
         armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, (0.5 + armUp * 1.3), aBlend);
         armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -armUp * 0.6, aBlend);
         armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, -armUp * 0.6, aBlend);
-        // 다리 — 공중에서 살짝 접히고 크라우치/착지에서 살짝 굽는다(무릎 없이 통짜 틸트)
+        // 다리 — 고관절은 공중에서 살짝 접히고 크라우치/착지에서 살짝 굽는다.
+        // 무릎(신규) — 착지/이륙 스쿼시에 크게 굽혀 충격을 흡수하고(진짜 착지처럼),
+        // 공중 정점에도 살짝 굽혀 신난 점프의 "다리 살짝 접힘"을 더한다.
         if (legPivots.length) {
           const legTuck = peakK * 0.32 - squash * 0.22;
           legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, legTuck, aBlend);
           legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, legTuck, aBlend);
+        }
+        if (kneePivots.length) {
+          const kneeBend = -(squash * 0.85 + peakK * 0.3); // 부호: 정면 스쿼트(무릎이 앞으로)
+          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, kneeBend, aBlend);
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, kneeBend, aBlend);
         }
         bodyMotionSignal = h / JUMP_H; // 귀/머리카락이 도약을 지연 추종(착지 때 살랑 튐)
       } else if (action === 'clap') {
@@ -2111,6 +2160,12 @@ export function buildChibi(params) {
           legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, swingA * 1.0, aBlend);
           legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -swingA * 1.0, aBlend);
         }
+        // 무릎 리듬(신규) — 걷기와 같은 부호 규약(그 다리가 전방일 때 굽혀 든다)으로
+        // 스텝마다 무릎이 들썩여 리듬감을 더한다.
+        if (kneePivots.length) {
+          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, -Math.max(0, -swingA) * 0.8, aBlend);
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, -Math.max(0, swingA) * 0.8, aBlend);
+        }
         armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -swingA * 0.85, aBlend);
         armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, swingA * 0.85, aBlend);
         armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -(0.65 + Math.abs(swingA) * 0.3), aBlend);
@@ -2118,21 +2173,156 @@ export function buildChibi(params) {
         headPivot.rotation.z = lerp(headPivot.rotation.z, Math.sin(dp * 0.5) * 0.14, aBlend);
         bodyMotionSignal = hipSway * 1.4; // 리듬에 맞춰 귀/꼬리도 통통
       } else if (action === 'kick') {
-        // 근사 발차기 — 다리 전체(허벅지 통짜, 무릎 관절 없음)를 앞으로 크게 스윙.
-        // 빠르게 차올렸다(오버슈트) 부드럽게 내려놓는다. 상체는 반대로 살짝 젖혀 균형.
-        const UP_FRAC = 0.4;
-        const kickK = u < UP_FRAC
-          ? easeOutBack(u / UP_FRAC)
-          : 1 - easeInOutCubic((u - UP_FRAC) / (1 - UP_FRAC));
-        const KICK_MAX = 1.05;
-        if (legPivots.length) {
-          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -kickK * KICK_MAX, aBlend);
-          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, kickK * 0.12, aBlend); // 지지 다리 살짝 반동
+        // 근사 발차기 — 무릎 세분화로 "접었다 뻗기"를 실제 구현(감독 지시).
+        // ①감기(cock): 고관절 살짝 전방 + 무릎 크게 접어 발을 몸 쪽으로 당긴다.
+        // ②뻗기(snap): 고관절이 계속 전방으로 나가며 무릎이 급히 펴져(오버슈트) 뻗어찬다.
+        // ③회수(recover): 고관절·무릎 모두 중립 복귀, 무릎은 팔로우스루로 살짝 되접힘.
+        const COCK_FRAC = 0.24, SNAP_FRAC = 0.46;
+        const HIP_MAX = 0.85, KNEE_COCK = 1.15;
+        let hipK, kneeK;
+        if (u < COCK_FRAC) {
+          const c = easeOutCubic(u / COCK_FRAC);
+          hipK = c * 0.25;
+          kneeK = c * KNEE_COCK;
+        } else if (u < SNAP_FRAC) {
+          const sN = easeOutBack((u - COCK_FRAC) / (SNAP_FRAC - COCK_FRAC));
+          hipK = 0.25 + sN * 0.75;
+          kneeK = KNEE_COCK * (1 - Math.min(1, sN));
+        } else {
+          const r = easeInOutCubic((u - SNAP_FRAC) / (1 - SNAP_FRAC));
+          hipK = 1 - r;
+          kneeK = 0.28 * Math.sin(Math.min(1, r) * Math.PI); // 회수 중 살짝 되접혔다 펴지는 팔로우스루
         }
-        bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, -Math.max(0, Math.min(1, kickK)) * 0.14, aBlend); // 반동으로 살짝 젖힘
+        if (legPivots.length) {
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -hipK * HIP_MAX, aBlend);
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, hipK * 0.10, aBlend); // 지지 다리 살짝 반동
+        }
+        if (kneePivots.length) {
+          // 부호: 고관절과 같은 부호(전방)로 접어 발을 몸 쪽으로 당겼다가, kneeK→0으로
+          // 급히 펴지면(=고관절 회전만 남음) 다리가 쭉 뻗어나가는 "스냅"이 된다.
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, -kneeK, aBlend);
+        }
+        bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, -hipK * 0.14, aBlend); // 반동으로 살짝 젖힘
         armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.75, aBlend);
         armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.75, aBlend);
-        bodyMotionSignal = kickK * 0.5;
+        bodyMotionSignal = hipK * 0.5;
+      } else if (action === 'run') {
+        // 달리기(신규) — 걷기보다 훨씬 빠른 주기 + 큰 무릎 리프트 + 상체 앞기울기.
+        // 팔은 걷기와 동일한 반대편-반대다리(contralateral) 규약을 그대로 키워 쓴다.
+        const rp = actionT * 13;
+        const swingR = Math.sin(rp);
+        bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, 0.3, aBlend);
+        if (legPivots.length) {
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, swingR * 0.95, aBlend);
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -swingR * 0.95, aBlend);
+        }
+        if (kneePivots.length) {
+          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, -Math.max(0, -swingR) * 1.3, aBlend);
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, -Math.max(0, swingR) * 1.3, aBlend);
+        }
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -swingR * 0.9, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, swingR * 0.9, aBlend);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.35, aBlend); // 팔꿈치 접은 듯 몸에 붙여 전후로만
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.35, aBlend);
+        wrapper.position.y = lerp(wrapper.position.y, Math.abs(Math.sin(rp)) * 0.07, aBlend);
+        bodyMotionSignal = swingR * 0.5;
+      } else if (action === 'sit') {
+        // 앉기/쪼그리기(신규) — 무릎 세분화로 신규 가능. 골반(wrapper.y) 하강 + 무릎
+        // 깊게 접기(고관절과 반대 부호로 상쇄해 발이 앞으로 튀지 않고 몸 아래 유지) +
+        // 균형 위해 상체 살짝 앞으로. 내려갔다(hold) 다시 선다.
+        // hip/knee/드롭 조합은 헤드리스로 발(foot) 월드좌표를 직접 실측해 튜닝했다 —
+        // 처음 값(hip -0.4/knee 1.3)은 발이 바닥(y=0) 아래로 약 0.04 파묻혀(관통)
+        // 감독이 지적할 사안이었다. 아래 값은 hold 시 footY≈0으로 맞춘 결과.
+        const DOWN_FRAC = 0.3, HOLD_FRAC = 0.72;
+        let sitK;
+        if (u < DOWN_FRAC) sitK = easeOutCubic(u / DOWN_FRAC);
+        else if (u < HOLD_FRAC) sitK = 1;
+        else sitK = 1 - easeInOutCubic((u - HOLD_FRAC) / (1 - HOLD_FRAC));
+        wrapper.position.y = lerp(wrapper.position.y, -sitK * 0.16, aBlend);
+        if (legPivots.length) {
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, -sitK * 0.3, aBlend);
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -sitK * 0.3, aBlend);
+        }
+        if (kneePivots.length) {
+          // 부호: 고관절과 반대(+) — 총 회전을 상쇄해 발이 앞으로 튀지 않고 바닥 근처에 머물게.
+          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, sitK * 1.6, aBlend);
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, sitK * 1.6, aBlend);
+        }
+        bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, sitK * 0.15, aBlend); // 균형용 살짝 숙임
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.5 - sitK * 0.15, aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.5 + sitK * 0.15, aBlend);
+        bodyMotionSignal = sitK * 0.4;
+      } else if (action === 'breakdance') {
+        // 브레이크댄스(신규, 근사) — 바닥 스핀/프리즈는 범위 밖(팀장 보류)이라, 깊게
+        // 쪼그린 자세에서 무릎을 크게 굽힌 채 좌우로 그루브하는 스텝 + 팔 펌핑으로
+        // "그럴듯한" 느낌만 낸다. 무릎이 없었다면 이 자세 자체가 불가능했다.
+        const dp = actionT * 10;
+        const groove = Math.sin(dp * 0.5) * 0.24;
+        wrapper.position.y = lerp(wrapper.position.y, -0.09 + Math.abs(Math.sin(dp)) * 0.03, aBlend);
+        wrapper.rotation.z = lerp(wrapper.rotation.z, groove, aBlend);
+        if (kneePivots.length) {
+          kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, 1.0 + Math.max(0, Math.sin(dp)) * 0.45, aBlend);
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, 1.0 + Math.max(0, -Math.sin(dp)) * 0.45, aBlend);
+        }
+        if (legPivots.length) {
+          legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, Math.sin(dp) * 0.25 - 0.15, aBlend);
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -Math.sin(dp) * 0.25 - 0.15, aBlend);
+        }
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, Math.sin(dp + Math.PI) * 0.9, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, Math.sin(dp) * 0.9, aBlend);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.85, aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.85, aBlend);
+        headPivot.rotation.z = lerp(headPivot.rotation.z, groove * 0.6, aBlend);
+        bodyMotionSignal = groove * 1.3;
+      } else if (action === 'jumpingjack') {
+        // 점프잭(신규) — 팔은 기존처럼 rotation.z로 벌리고, 다리는 이번에 새로 쓰는
+        // legPivot.rotation.z(좌우 벌림 축, 팔의 벌림 축과 동일한 부호 규약)로 진짜
+        // 옆으로 벌어진다. 작은 통통 튐과 함께.
+        const jp = actionT * 9;
+        const openK = Math.max(0, Math.sin(jp));
+        wrapper.position.y = lerp(wrapper.position.y, openK * 0.05, aBlend);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.5 - openK * 1.3, aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.5 + openK * 1.3, aBlend);
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -openK * 0.5, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, -openK * 0.5, aBlend);
+        if (legPivots.length) {
+          legPivots[0].rotation.z = lerp(legPivots[0].rotation.z, -openK * 0.5, aBlend);
+          legPivots[1].rotation.z = lerp(legPivots[1].rotation.z, openK * 0.5, aBlend);
+        }
+        bodyMotionSignal = openK * 0.4;
+      } else if (action === 'heart') {
+        // 하트(신규) — 양손을 머리 위로 들어 안쪽으로 모아 하트 제스처를 근사한다
+        // (손가락 파츠가 없어 문자 그대로의 하트 모양 대신 "머리 위에서 손을 모으는"
+        // 실루엣으로 표현). 살짝 까치발 폴짝임을 더한다.
+        const HOLD_START = 0.25, HOLD_END = 0.78;
+        let hK;
+        if (u < HOLD_START) hK = Math.min(1, easeOutBack(u / HOLD_START));
+        else if (u < HOLD_END) hK = 1;
+        else hK = 1 - easeInOutCubic((u - HOLD_END) / (1 - HOLD_END));
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -2.55 * hK, aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 2.55 * hK, aBlend);
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -0.55 * hK, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, -0.55 * hK, aBlend);
+        wrapper.position.y = lerp(wrapper.position.y, Math.max(0, Math.sin(u * Math.PI)) * 0.03, aBlend);
+        bodyMotionSignal = hK * 0.3;
+      } else if (action === 'sulk') {
+        // 삐침(신규) — 고개/상체를 얕게 숙이고(절보다 얕음) 팔을 몸에 붙인 채, 한쪽
+        // 발을 짧고 빠르게 3회 구른다(고관절+무릎 스냅). 감정 표현 다양성 확보용.
+        const droopK = Math.min(1, u / 0.22);
+        bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, droopK * 0.32, aBlend);
+        headPivot.rotation.x = lerp(headPivot.rotation.x, droopK * 0.22, aBlend);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.3, aBlend);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.3, aBlend);
+        const stompPhase = actionT * 7;
+        const stompK = Math.max(0, Math.sin(stompPhase));
+        if (legPivots.length) {
+          legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, -stompK * 0.4, aBlend);
+        }
+        if (kneePivots.length) {
+          kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, -stompK * 0.55, aBlend);
+        }
+        wrapper.position.y = lerp(wrapper.position.y, -Math.max(0, Math.sin(stompPhase + 0.3)) * 0.02, aBlend);
+        bodyMotionSignal = droopK * 0.3;
       }
     }
 
