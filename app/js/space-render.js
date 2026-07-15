@@ -62,6 +62,21 @@ function kintsugiTexGen() {
     for (let k = 0; k < 5; k++) vein(r() * S, r() * S, r() * 6.29, 26 + (r() * 20 | 0), 2.2 + r() * 1.3);
   });
 }
+// 물(#48 Tier2) — 잔물결 밴드 + 스페클 하이라이트. 가로 방향 정수배 사인이라 타일 이음새 연속.
+// 방문자뷰 RAF에서 map.offset 스크롤 → 연속 흐름감. 비-DOM(canvasTex=null)이면 정적 단색 폴백.
+function waterTexGen() {
+  return canvasTex(256, (x, S) => {
+    const r = seeded(53); x.fillStyle = '#20505f'; x.fillRect(0, 0, S, S);
+    for (let i = 0; i < 60; i++) {
+      const y = r() * S, amp = 3 + r() * 9, k = 1 + (r() * 2 | 0), a = 0.04 + r() * 0.06;
+      x.strokeStyle = `rgba(${150 + (r() * 40 | 0)},${205 + (r() * 40 | 0)},${210 + (r() * 30 | 0)},${a})`;
+      x.lineWidth = 1 + r() * 1.6; x.beginPath();
+      for (let px = 0; px <= S; px += 8) { const py = y + Math.sin((px / S) * 6.2832 * k) * amp; if (px === 0) x.moveTo(px, py); else x.lineTo(px, py); }
+      x.stroke();
+    }
+    for (let i = 0; i < 1300; i++) { x.fillStyle = `rgba(205,236,240,${0.02 + r() * 0.05})`; x.beginPath(); x.arc(r() * S, r() * S, 0.5 + r() * 1.1, 0, 6.2832); x.fill(); }
+  });
+}
 const _genCache = {};
 const genTex = (key, gen) => (key in _genCache ? _genCache[key] : (_genCache[key] = gen()));
 // 캐시 텍스처를 clone 후 repeat 설정(공유 캐시 오염 방지 — texMat와 동일 규율)
@@ -135,7 +150,11 @@ function floorMatTex(id, w, d) {
     const map = cloneRepeat(genTex('grass', grassTexGen), Math.max(2, w / 1.5), Math.max(2, d / 1.5));
     return map ? new THREE.MeshStandardMaterial({ map, roughness: 0.96, metalness: 0 }) : MATS.grass();
   }
-  return finishMat('floor', id); // terrazzo·water=단색(water=Tier1 정적 반사)
+  if (id === 'water') { // 물: 스크롤 가능한 잔물결 텍스처(비-DOM 폴백=정적 단색 반사 MATS.water)
+    const map = cloneRepeat(genTex('water', waterTexGen), Math.max(2, w / 3), Math.max(2, d / 3));
+    return map ? new THREE.MeshStandardMaterial({ map, color: 0x22505f, roughness: 0.12, metalness: 0.18, envMapIntensity: 1.4 }) : MATS.water();
+  }
+  return finishMat('floor', id); // terrazzo=단색
 }
 // 피처월 1면 마감 — kintsugi(금계)는 여기에만 존재(스키마 feature 집합) → 구조적 1면 강제.
 function featureMat(id, w, h) {
@@ -234,6 +253,9 @@ export function buildSpaceGroup(space, opts = {}) {
   shellSurf.push({ mesh: floorM, center: new THREE.Vector3(0, 0.001, 0), normal: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0, 0, -1), width: fw, height: fd });
   if (!opts.hideCeiling) { // 에디터 컷어웨이: 천장 숨김(방 안이 보이게)
     const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('ceiling', space.shell.finish.ceiling))); ceilM.position.set(0, H, 0); g.add(ceilM);
+    // #54 방문자뷰: 천장이 보이므로 셸 라이트맵 베이크 대상에 포함(내부면=아래 향한 법선).
+    // 빌더(hideCeiling:true)에는 이 분기가 안 타므로 shell 미추가 → 기존 베이크 회귀 없음.
+    shellSurf.push({ mesh: ceilM, center: new THREE.Vector3(0, H - 0.051, 0), normal: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1), width: fw, height: fd });
   }
   for (const [x, z, ww, dd] of [[0, -hd, fw, t], [0, hd, fw, t], [-hw, 0, t, fd], [hw, 0, t, fd]]) {
     const wallW = Math.max(ww, dd); // 벽면 가로 길이(N/S=fw, E/W=fd)로 텍스처 반복
