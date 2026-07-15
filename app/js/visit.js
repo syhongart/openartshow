@@ -9,7 +9,7 @@
 //   opts.headless: RAF·포인터락·이벤트 바인딩 비활성(헤드리스에서 walk/update 직접 호출).
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
-import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, addRoomLighting, bakeShellLightmaps } from './space-render.js';
+import { buildSpaceGroup, disposeSpaceGroup, partY, addRoomLighting, bakeShellLightmaps } from './space-render.js';
 import { PART_TYPES } from './space.js';
 
 const EYE = 1.5;            // 시점 높이(m)
@@ -93,11 +93,13 @@ export function createVisit({ canvas, space, opts = {} } = {}) {
   });
 
   function clampRoom(v, half) { return Math.max(-half + dims.t + RADIUS, Math.min(half - dims.t - RADIUS, v)); }
-  // 파츠 침투 여부(반경 R 확장 AABB에 점 포함). y 겹침: 발끝 높이의 낮은 파츠(바닥타일/러그)는
-  // 통과 허용(top<=0.25), 눈높이 몸통과 겹치는 파츠만 차단.
+  // 파츠 침투 여부(반경 R 확장 AABB에 점 포함). y 겹침: 밟고 걷는 바닥면(floorTile top=0.1)만
+  // 통과 허용하고, 그보다 높은 solid는 전부 차단(space.js 계약 "solid=충돌"). 걸림턱 높이 STEP_OVER
+  // 임계 0.12는 floorTile(0.1)만 넘고 wallPanel(top=0.2)·벤치 등은 차단 → 낮은 벽 관통 방지(검수 BLOCKER-2).
+  const STEP_OVER = 0.12;
   function blockedByParts(x, z) {
     for (const b of solids) {
-      if (b.top <= 0.25) continue;      // 바닥에 붙은 낮은 솔리드는 밟고 지나감
+      if (b.top <= STEP_OVER) continue; // 밟고 걷는 바닥면(floorTile)만 통과
       if (b.bottom >= 1.7) continue;    // 머리 위 스택 파츠는 바닥 이동에 영향 없음
       if (Math.abs(x - b.x) <= b.ex + RADIUS && Math.abs(z - b.z) <= b.ez + RADIUS) return true;
     }
