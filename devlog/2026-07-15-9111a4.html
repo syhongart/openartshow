@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기 — OpenArtShow 개발일지</title>
-<meta name="description" content="이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. 왜를 잊을 때 돌아오는 자리다.">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy.html">
+<title>UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인 → 작가·관람객 여정에 마찰이 흩어져 있었고(진입점 파편화·개발용어 노출·재방문 반복), 공간 빌더는 사이트 진입점이 없고 방이 좁았다. 감독 지시로 UX를 여정 관점에서 정비하고 빌더를 확장했다.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-15-9111a4.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기 — OpenArtShow 개발일지">
-<meta property="og:description" content="이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. 왜를 잊을 때 돌아오는 자리다.">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기","datePublished":"2026-07-15","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인 → 작가·관람객 여정에 마찰이 흩어져 있었고(진입점 파편화·개발용어 노출·재방문 반복), 공간 빌더는 사이트 진입점이 없고 방이 좁았다. 감독 지시로 UX를 여정 관점에서 정비하고 빌더를 확장했다.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-15-9111a4.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션)","datePublished":"2026-07-15","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-15-9111a4.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,18 +87,18 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
-<div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-15</p>
-<blockquote>이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. <strong>왜</strong>를 잊을 때 돌아오는 자리다.<br>전문(全文)은 [<code>docs/FOUNDING.md</code>](./FOUNDING.md) — 팀 온보딩 필독.</blockquote>
-<p>감독은 <strong>국제 무대에서 전시해온 작가</strong>이자 <strong>3D 렌더링·머티리얼 파이프라인을 다루는 엔지니어</strong>다. 작가의 아픔을 몸으로 겪었고, 그 아픔을 걷어낼 기술도 안다 — 이 드문 조합이 이 플랫폼의 방향과 완성도 기준의 출처다.</p>
-<p><strong>각성의 순간.</strong> 코로나기, 감독이 가상 공간에 연 개인전에 낯선 아바타가 걸어와 말을 걸었다 — "나, 네 작품 실제로 봤어. 뉴욕에서." 가상이 실제를 대체한 게 아니라 실제의 관계를 공간을 건너 이어붙인 순간. 다른 작가의 오프닝엔 수십 명이 모여 작품이 거의 다 팔렸다 — 팬데믹 한복판에.</p>
-<p><strong>우리가 푸는 문제.</strong> 대관료·액자·오프닝·운송·창고비·부스비 — 작가가 전시 한 번에 짊어지는 이 부담을 기술로 걷어낸다. "파라미터가 곧 공간"(저장 0·정적 호스팅·기기별 굽기)은 곧 *작가에게 돈 받지 않고 전시를 열어주는* 공학적 토대다. 그리고 목적은 판매가 아니라 작품이 일으키는 <strong>울림</strong>이다.</p>
-<p><strong>왜 비주얼·쾌적함에 집착하나.</strong> 작품은 홀로일 때보다 공간 속에서 더 크게 말한다 — 공간이 작품의 이야기를 함께 해줘야 울림이 커진다. 3D·조명 베이킹·대기 원근·글래스 HUD는 '기능'이 아니라 작품이 제 목소리로 말하게 하는 <strong>무대장치</strong>다. 사람들은 신기함엔 몰려왔다 금방 질려 떠난다 → 첫 90초에 <strong>생기(生氣)</strong>를 증명해야 한다. <strong>그래서 발코딩으로는 끝낼 수 없다. 기준은 "출시하고 싶어지는 완성도".</strong></p>
-<p><strong>AI 시대의 답.</strong> AI 에이전트가 공간에 살며 감상·비평·큐레이션·창작을 하면 공간이 죽지 않는다. <strong>비즈니스.</strong> 웬만하면 무료로 쾌적하게 + 지속가능성(영속성)을 위한 과금 — 두 축. <strong>비전.</strong> 뒤처지지 않고 메타버스 붐을 다시 일으키는, 더 큰 무대로 갈 수 있는 플랫폼.</p>
-<blockquote>흔들릴 때의 한 문장: <strong>작품이 공간에서 말하게 하라.</strong></blockquote>
+<div class="eyebrow">2026-07-15</div>
+<h1><span class="emo">🛠️</span>UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>원인 → 작가·관람객 여정에 마찰이 흩어져 있었고(진입점 파편화·개발용어 노출·재방문 반복), 공간 빌더는 사이트 진입점이 없고 방이 좁았다. 감독 지시로 UX를 여정 관점에서 정비하고 빌더를 확장했다.</p>
+<p><strong>라이브 배포 (전 항목 스모크 + 검수관 게이트 통과):</strong></p>
+<ul><li><strong>작품 이미지 넣기 MVP</strong> — 파일 업로드 → 내장(dataURL) → 액자 자동 매핑(원본 비율 contain). 검수에서 draw-call 회귀(작품 80개 87→166콜)를 잡아, 이미지 없는 작품은 InstancedMesh 유지·이미지 있는 작품만 개별 mesh로 분리해 예산 복원.</li><li><strong>로그인·회원가입 모달</strong> — 사이트 전역 공용 컴포넌트(<code>auth-modal.js</code>). 소셜 3종 + '무가입으로 둘러보기' 대등 병존. 회원가입 동의 UI(약관·개인정보 별개 동의·만 14세 확인·베타 고지) — 현재 mock이라 실제 개인정보 0 수집. 법무 실사 반영 + 실 가입 활성화 선행조건(약관 발행·동의로그 백엔드·OAuth 키 등)을 OWNER-TODO에 launch-blocker로 기록.</li><li><strong>작가 언어 순화</strong> — <code>studio.html</code>에서 'JSON'·'전시장 ID(영문)' 등 개발용어 제거('전시 파일 저장'·'전시장 주소 이름' 등). 기능·주소 규약 불변.</li><li><strong>대문 단일화</strong> — 링크·sitemap·배포 어디에도 없던 죽은 <code>home.html</code> 제거(landing이 유일 대문 확정).</li><li><strong>재방문 스마트 입장</strong> — 저장 프로필·아바타가 있으면 입장 로비 상단에 '다시 오셨어요 → 바로 입장' 원클릭, 입장 폼은 접어둠('바꾸기'로 펼침). 첫 방문 온보딩·아야모는 현행 유지. 가산형(입장 로직 불변).</li></ul>
+<p><strong>공간 빌더 확장 (behind-flag):</strong></p>
+<ul><li><strong>공간 크기 확장</strong> — <code>FOOTPRINT</code>에 hall(20×14)·grand(28×18) 추가 + 빌더 '공간 크기' 선택 칩 UI. 크기 변경 시 카메라가 footprint 대각선에 비례해 조망 거리 자동 조절. 감독 '너무 좁아 작품이 다 안 들어감' 대응.</li></ul>
+<p><strong>분석·설계 준비 (감독 검토 대기):</strong> 공간 빌더 파츠 경쟁사 벤치마크(이벤트 소품 화환·케익·현수막·풍선, 화분 다종화, '장식' 독립 축) + 블렌더 임포트·서비스 내부 오픈월드·아야모 액션(춤·점프·인사 등) 기술 타당성 조사 완료. 자기완결 원칙(외부 에셋 0)과의 충돌 지점은 팀장 판정으로 정리해 감독 검토 대기.</p>
+<p>결과 → 관람객·작가 진입 마찰 다수 해소, 빌더 공간 제약 완화. 다음 무대는 파츠 대확충과 아야모 액션.</p>
 </article>
-
+<div class="pn"><a href="./2026-07-14-b7e2cd.html"><span class="lbl">← 이전 기록</span>제너레이티브 캐릭터 대확장 — 완성도 수리 + 새 종족·옵션, 그리고 꼬리 부양 버그</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
