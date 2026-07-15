@@ -119,8 +119,9 @@ function partGeo(t) {
       return merged([[box(w, 0.08, d), [0, h / 2 - 0.04, 0]]]);
     case 'pedestal': // 베이스 + 몸통 + 상판(몰딩)
       return merged([[box(w, 0.06, d), [0, -h / 2 + 0.03, 0]], [box(w * 0.86, h - 0.12, d * 0.86), null], [box(w, 0.05, d), [0, h / 2 - 0.025, 0]]]);
-    case 'stair': { // 5단
-      const st = []; const n = 5; for (let i = 0; i < n; i++) st.push([box(w, h / n, d / n), [0, -h / 2 + (i + 0.5) * (h / n), -d / 2 + (i + 0.5) * (d / n)]]);
+    case 'stair': { // 단수를 현실적 챌판 높이(~0.19m)에서 파생 — 5단 고정은 계단당 0.84m로 과대(감독 지적)
+      const st = []; const n = Math.max(6, Math.min(30, Math.round(h / 0.19)));
+      for (let i = 0; i < n; i++) st.push([box(w, h / n, d / n), [0, -h / 2 + (i + 0.5) * (h / n), -d / 2 + (i + 0.5) * (d / n)]]);
       return merged(st);
     }
     case 'labelStand': { // 포스트 + 경사 플라크

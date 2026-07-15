@@ -89,6 +89,16 @@
   .hud-settings .publish{width:100%;appearance:none;border:1px solid var(--violet);color:#fff;font:inherit;font-weight:700;font-size:12.5px;
     background:rgba(139,114,255,.16);border-radius:10px;padding:10px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.12s}
   .hud-settings .publish:hover{background:rgba(139,114,255,.28)}
+  .hud-settings .swatches{display:flex;gap:7px;align-items:center}
+  .hud-settings .swatches button{width:22px;height:22px;border-radius:999px;border:2px solid transparent;background:var(--sw);cursor:pointer;padding:0;transition:.12s;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+  .hud-settings .swatches button:hover{transform:scale(1.12)}
+  .hud-settings .swatches button.on{border-color:var(--ink);box-shadow:0 0 0 2px var(--violet)}
+  .hud-settings .swatches input[type=color]{width:24px;height:24px;padding:0;border:1px solid var(--line);border-radius:7px;background:transparent;cursor:pointer;margin-left:2px}
+  .hud-settings .swatches input[type=color]::-webkit-color-swatch-wrapper{padding:2px}
+  .hud-settings .swatches input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}
+  .hud-settings .clearbtn{width:100%;margin-top:9px;appearance:none;border:1px solid rgba(176,80,63,.5);color:#e79b8d;font:inherit;font-size:12px;
+    background:rgba(176,80,63,.10);border-radius:10px;padding:9px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.12s}
+  .hud-settings .clearbtn:hover{background:rgba(176,80,63,.22);color:#ffd9d1}
   .hud-settings .keys{margin-top:13px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;line-height:1.7;color:var(--dim)}
   .hud-settings .keys b{color:var(--ink);font-weight:600}
 
@@ -169,6 +179,9 @@
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   #playOverlay{display:none;position:fixed;inset:0;z-index:40;background:#0a0a0ecc;backdrop-filter:blur(4px);align-items:center;justify-content:center}
 
+  .hud-settings{z-index:11} /* 도크 위 */
+  body.settings-open .hud-dock{display:none} /* 설정 열면 도크와 상호배타(progressive disclosure) */
+
   /* 관람(view) 모드: 편집 크롬 숨김 → 완성 미리보기 */
   body.viewmode .hud-dock, body.viewmode .hud-gizmo, body.viewmode .hud-toolbar,
   body.viewmode .hud-context, body.viewmode .hud-settings{display:none!important}
@@ -217,8 +230,19 @@
 <div class="plate hud-settings desk" id="settings">
   <h4>씬 설정<span class="x" id="bSettingsClose">✕</span></h4>
   <div class="fld"><label>조명 강도 <b id="lightVal">1.0×</b></label><input type="range" id="lightRange" min="0.6" max="1.6" step="0.05" value="1.0"></div>
+  <div class="fld colorfld"><label>조명 색</label>
+    <div class="swatches" id="lightSwatches">
+      <button data-c="#fff2e0" style="--sw:#fff2e0" title="웜"></button>
+      <button data-c="#ffffff" style="--sw:#ffffff" title="중립"></button>
+      <button data-c="#dce6ff" style="--sw:#dce6ff" title="쿨"></button>
+      <button data-c="#ffcf9e" style="--sw:#ffcf9e" title="앰버"></button>
+      <button data-c="#c7f2ec" style="--sw:#c7f2ec" title="민트"></button>
+      <input type="color" id="lightColor" value="#fff2e0" title="직접 선택">
+    </div>
+  </div>
   <div class="fld"><label>전시 타이틀</label><input type="text" id="titleInput" maxlength="60" placeholder="나의 공간" value="나의 공간"></div>
   <button class="publish" id="bPublish"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="m8 7 4-4 4 4"/></svg>저장 · 발행</button>
+  <button class="clearbtn" id="bClear"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg>전체 지우기</button>
   <div class="keys">파츠 고르고 <b>바닥 클릭</b>=배치 · <b>R</b>/<b>Q</b>/<b>E</b>=회전 · <b>Del</b>=삭제 · <b>Ctrl+Z</b>=되돌리기 · <b>WASD</b>·드래그=이동</div>
 </div>
 
@@ -367,14 +391,28 @@ mEdit.onclick=()=>setMode('edit'); mView.onclick=()=>setMode('view');
 // 설정 패널
 const settings=document.getElementById('settings');
 const bGear=document.getElementById('bGear');
-bGear.onclick=(e)=>{ e.stopPropagation(); settings.classList.toggle('on'); };
-document.getElementById('bSettingsClose').onclick=()=>settings.classList.remove('on');
-document.addEventListener('click',(e)=>{ if(settings.classList.contains('on') && !settings.contains(e.target) && e.target!==bGear && !bGear.contains(e.target)) settings.classList.remove('on'); }); // 외부 클릭 닫힘(UX)
+function toggleSettings(open){ const on = open===undefined ? !settings.classList.contains('on') : open; settings.classList.toggle('on', on); document.body.classList.toggle('settings-open', on); }
+bGear.onclick=(e)=>{ e.stopPropagation(); toggleSettings(); };
+document.getElementById('bSettingsClose').onclick=()=>toggleSettings(false);
+document.addEventListener('click',(e)=>{ if(settings.classList.contains('on') && !settings.contains(e.target) && e.target!==bGear && !bGear.contains(e.target)) toggleSettings(false); }); // 외부 클릭 닫힘
 const lightRange=document.getElementById('lightRange'), lightVal=document.getElementById('lightVal');
 lightRange.oninput=()=>{ const v=parseFloat(lightRange.value); lightVal.textContent=v.toFixed(2).replace(/0$/,'')+'×'; B.setLightIntensity(v); };
 const titleInput=document.getElementById('titleInput'), spaceTitle=document.getElementById('spaceTitle');
 titleInput.oninput=()=>{ const v=titleInput.value||'나의 공간'; spaceTitle.textContent=v; B.setSpaceName(titleInput.value); };
 document.getElementById('bPublish').onclick=()=>{ B.save(); showToast('저장·발행했습니다. (공유 링크는 준비 중)'); };
+// 조명 색 — 스와치 + 직접 선택
+const lightSwatches=document.getElementById('lightSwatches'), lightColorInput=document.getElementById('lightColor');
+function pickLightColor(hex, fromSwatch){
+  B.setLightColor(hex); lightColorInput.value=hex;
+  [...lightSwatches.querySelectorAll('button')].forEach(b=>b.classList.toggle('on', b===fromSwatch));
+}
+[...lightSwatches.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>pickLightColor(b.dataset.c, b); });
+lightColorInput.oninput=()=>pickLightColor(lightColorInput.value, null);
+// 전체 지우기(확인 후)
+document.getElementById('bClear').onclick=()=>{
+  if(B.getSpace().parts.length===0){ showToast('이미 비어 있습니다.'); return; }
+  if(confirm('배치한 파츠를 전부 지우고 다시 시작할까요? (되돌리기 가능)')){ B.clearSpace(); showToast('전체 지웠습니다. (⌘/Ctrl+Z로 복구)'); } // refresh/dirty는 change 리스너가 처리
+};
 
 // 기즈모
 const bSnap=document.getElementById('bSnap');
