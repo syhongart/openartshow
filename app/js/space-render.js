@@ -11,6 +11,22 @@
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { PART_TYPES, FOOTPRINT, STORY_H } from './space.js';
+import { createPlasterMaps, createParquetMaps, createConcreteMaps } from './scene.js';
+
+// 미술관(scene.js) 프로시저럴 텍스처+노말맵 계승(감독: 노말맵 필수). 생성기는 캐시된
+// 텍스처를 반환하므로 clone 후 repeat 설정 — 공유 캐시(미술관) 오염 방지.
+const _texCache = {};
+function baseMaps(gen, key) { return _texCache[key] || (_texCache[key] = gen()); }
+function texMat({ gen, key, tint = 0xffffff, repeat = [2, 2], normalScale = 0.4, roughness = 0.9, metalness = 0 }) {
+  const base = baseMaps(gen, key);
+  const map = base.map.clone(); map.needsUpdate = true; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(repeat[0], repeat[1]);
+  const normalMap = base.normalMap.clone(); normalMap.needsUpdate = true; normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping; normalMap.repeat.set(repeat[0], repeat[1]);
+  return new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(normalScale, normalScale), color: new THREE.Color(tint), roughness, metalness });
+}
+// 표면 치수 → 텍스처 반복(월 목표 조인트 ~2.5m·바닥 파케 ~2m)
+const plasterTex = (tint, w, h) => texMat({ gen: createPlasterMaps, key: 'plaster', tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.32, roughness: 0.92 });
+const concreteTex = (tint, w, h) => texMat({ gen: createConcreteMaps, key: 'concrete', tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.55, roughness: 0.9 });
+const parquetTex = (w, d) => texMat({ gen: createParquetMaps, key: 'parquet', tint: 0xffffff, repeat: [Math.max(1, w / 2), Math.max(1, d / 2)], normalScale: 0.45, roughness: 0.5 });
 
 export const ART_SCREEN_CAP = 80; // 실측 근거: 92개=draw call 100 도달, 80개=95(여유 15%)
 export const UNIQUE_TEX_TYPES = new Set(['artwork', 'screen']); // draw call에 1:1로 더해지는 타입
@@ -58,8 +74,23 @@ const PART_MAT = {
   artwork: MATS.frameBlack, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.walnut, labelStand: MATS.brass,
   trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.wood, drape: MATS.charcoalCloth,
 };
-const partMat = (t) => (PART_MAT[t] || MATS.stone)();
+const partMat = (t) => {
+  if (t === 'pillar') return concreteTex(0xd2ccbf, 1.2, 1.5);  // 노출 콘크리트 기둥(감독)
+  if (t === 'stair') return concreteTex(0xd2ccbf, 0.9, 1.3);
+  return (PART_MAT[t] || MATS.stone)();
+};
 const finishMat = (kind, id) => ((FINISH_MAT[kind] && FINISH_MAT[kind][id]) || MATS.plasterW)();
+// 마감 텍스처화(벽 석고·바닥 파케/콘크리트) — 단색 마감은 finishMat 유지
+function wallMat(id, w, h) {
+  if (id === 'white') return plasterTex(0xffffff, w, h);
+  if (id === 'warmsand') return plasterTex(0xe6d8bf, w, h);
+  return finishMat('wall', id); // charcoal/deepviolet=단색
+}
+function floorMatTex(id, w, d) {
+  if (id === 'parquet') return parquetTex(w, d);
+  if (id === 'concrete') return concreteTex(0xffffff, w, d);
+  return finishMat('floor', id); // terrazzo=단색
+}
 
 /** 파츠 y 배치 규칙 (벽걸이/바닥/천장) */
 export function partY(t, storyH) {
@@ -141,12 +172,13 @@ export function buildSpaceGroup(space, opts = {}) {
   const { fw, fd, hw, hd, H, t } = spaceDims(space);
 
   // shell: 바닥·천장·4벽 + 피처월 오버레이 (미술관 재질 계승)
-  const floorM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('floor', space.shell.finish.floor))); floorM.position.set(0, -0.05, 0); floorM.receiveShadow = true; g.add(floorM);
+  const floorM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), floorMatTex(space.shell.finish.floor, fw, fd))); floorM.position.set(0, -0.05, 0); floorM.receiveShadow = true; g.add(floorM);
   if (!opts.hideCeiling) { // 에디터 컷어웨이: 천장 숨김(방 안이 보이게)
     const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('ceiling', space.shell.finish.ceiling))); ceilM.position.set(0, H, 0); g.add(ceilM);
   }
   for (const [x, z, ww, dd] of [[0, -hd, fw, t], [0, hd, fw, t], [-hw, 0, t, fd], [hw, 0, t, fd]]) {
-    const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), finishMat('wall', space.shell.finish.wall)));
+    const wallW = Math.max(ww, dd); // 벽면 가로 길이(N/S=fw, E/W=fd)로 텍스처 반복
+    const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), wallMat(space.shell.finish.wall, wallW, H)));
     m.position.set(x, H / 2, z); m.receiveShadow = true; g.add(m);
   }
   const fwSide = space.shell.finish.featureWall;
@@ -206,7 +238,11 @@ export function buildSpaceGroup(space, opts = {}) {
 export function disposeSpaceGroup(g) {
   const u = g.userData || {};
   (u.geos || []).forEach((x) => x.dispose && x.dispose());
-  (u.mats || []).forEach((x) => x.dispose && x.dispose());
+  (u.mats || []).forEach((m) => { // 텍스처 clone(map/normalMap)은 rebuild마다 새로 생기므로 함께 정리(누수 방지)
+    if (m.map && m.map.dispose) m.map.dispose();
+    if (m.normalMap && m.normalMap.dispose) m.normalMap.dispose();
+    m.dispose && m.dispose();
+  });
 }
 
 /** 현재 작품+스크린 개수 (80캡 판정용) */
