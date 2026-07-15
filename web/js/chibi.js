@@ -803,8 +803,9 @@ function drawFaceInto(canvas, p, fx) {
   if (!ouch) drawBeard(ctx, p);
 
   // 볼터치 — 더 크고 진하게(엔젤이식), 눈 아래 밀착. 로봇은 홍조 어색해서 제외.
+  // 감독 결정 B(피부 채도↑ + 생기 강화) — 볼홍조도 한 단계 진하게(더 붉고 더 진하게).
   if (p.blush && !ouch && p.species !== 'robot') {
-    ctx.fillStyle = 'rgba(255,120,120,0.5)';
+    ctx.fillStyle = 'rgba(255,105,110,0.6)';
     for (const s of [-1, 1]) {
       ctx.beginPath();
       ctx.ellipse(256 + s * 150, 338, 46, 30, 0, 0, Math.PI * 2);
@@ -886,6 +887,43 @@ function toon(color, doubleSide) {
     gradientMap: toonRamp(),
     side: doubleSide ? THREE.DoubleSide : THREE.FrontSide,
   });
+}
+
+// ---------------------------------------------------------------------------
+// 피부 전용 채도 강화(감독 최종 결정 B) — 톤매핑(main.js ACES exposure 0.92)은
+// 절대 무변경, "피부만 채도 올려 생기" 요청에 대응. 다른 파츠(머리·옷·눈·
+// 아웃라인)는 위 vivid()/toon()의 기본 SAT_BOOST(1.5)를 그대로 쓰고 무영향.
+//
+// 실측 함정 둘 — 상수는 전부 실제 THREE.Color 계산값으로 보정했다(손계산 sRGB
+// 수치와 안 맞아 처음엔 효과가 전혀 안 보였다):
+// 1) THREE.Color는 ColorManagement가 기본 on이라 getHSL()/c.r,g,b가 "선형" 공간
+//    값을 돌려준다(SRGBColorSpace를 명시해야 눈에 보이는 sRGB 수치가 나옴) — 이
+//    코드베이스의 기존 vivid()도 같은 기본값을 쓰므로 일관성을 위해 그대로 둔다.
+// 2) 그 선형 공간에서 사람 기본 피부(#ffd9bd)는 L≈0.75인데 S가 이미 1.0으로
+//    꽉 차 있다(아주 밝은 파스텔은 RGB 채널의 아주 작은 차이도 HSL 공식상 S=1로
+//    튄다 — HSL의 알려진 한계) — 채도만 곱해선 절대 안 바뀐다. 그래서 "실제 RGB
+//    채널 폭"(chroma=max-min, HSL S와 달리 안 부풀려짐)을 기준으로 chroma가
+//    있는 아주 밝은 색만 그 폭만큼 살짝 중간톤 쪽(L↓)으로 당겨 부스트를 실제로
+//    드러낸다. 흰토끼(#fdfaf3 chroma≈0.09)·회코알라(#aeb0b2 chroma≈0.02)·판다·
+//    귀신 시트처럼 채널 폭이 거의 없는(chroma<0.10, 이 선형 공간 기준 실측치)
+//    무채색은 원본 그대로 반환 — "저채도는 거의 그대로"를 종족별 예외 목록 없이
+//    자동으로 만족한다.
+const SKIN_SAT_BOOST = 1.6;
+const SKIN_ACHROMATIC_GATE = 0.10; // 이 미만 chroma는 사실상 무채색 — 무변경(실측: 흰토끼 0.086은 걸러짐)
+function vividSkin(color) {
+  const c = new THREE.Color(color);
+  const chroma = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+  if (chroma < SKIN_ACHROMATIC_GATE) return c; // 흰/회색 계열은 손대지 않음
+  const hsl = {};
+  c.getHSL(hsl);
+  let l = hsl.l;
+  if (l > 0.65) {
+    // 아주 밝은(창백한) 색만 — chroma가 클수록(원래 색기가 뚜렷했을수록) 더 당김
+    const pull = Math.min(0.14, (l - 0.65) * 1.0) * Math.min(1, chroma * 3);
+    l -= pull;
+  }
+  c.setHSL(hsl.h, Math.min(1, hsl.s * SKIN_SAT_BOOST), l);
+  return c;
 }
 
 /**
@@ -1118,7 +1156,7 @@ export function buildChibi(params) {
     texs.push(tex);
     skinMat = mkMat(new THREE.MeshToonMaterial({ map: tex, gradientMap: toonRamp() }));
   } else {
-    skinMat = mkMat(toon(p.skin));
+    skinMat = mkMat(new THREE.MeshToonMaterial({ color: vividSkin(p.skin), gradientMap: toonRamp(), side: THREE.FrontSide })); // 피부 채도 강화(감독 결정 B)
   }
   const hairMat = mkMat(toon(p.hairColor, true));
   let topMat;
@@ -1134,7 +1172,7 @@ export function buildChibi(params) {
 
   // 귀신 전용 반투명 재질 (몸/팔/시트) — 얼굴 텍스처는 불투명 유지해 안 뭉개진다.
   const isGhost = p.species === 'ghost';
-  const ghostSkinMat = isGhost ? mkMat(new THREE.MeshToonMaterial({ color: vivid(p.skin), gradientMap: toonRamp(), side: THREE.DoubleSide, transparent: true, opacity: 0.74 })) : null;
+  const ghostSkinMat = isGhost ? mkMat(new THREE.MeshToonMaterial({ color: vividSkin(p.skin), gradientMap: toonRamp(), side: THREE.DoubleSide, transparent: true, opacity: 0.74 })) : null;
   const ghostTrimMat = isGhost ? mkMat(new THREE.MeshToonMaterial({ color: vivid(p.hairColor), gradientMap: toonRamp(), side: THREE.DoubleSide, transparent: true, opacity: 0.8 })) : null;
 
   // ---- 하반신: 다리 피벗(고관절 + 무릎) ----
