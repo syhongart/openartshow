@@ -115,6 +115,9 @@ export class PlayerController {
     this.velocity = new THREE.Vector2(0, 0); // 수평 속도 (x, z)
     this.bobPhase = 0;
     this.bobOffset = 0;
+    // 비행 리프트(fly.js가 구동) — 카메라 y에 가산되는 지면 위 부양 높이(m). 0=지면.
+    // fly.js 킬스위치 off거나 미탑재면 항상 0이라 기존 이동과 수치 완전 동등.
+    this.liftOffset = 0;
 
     // 수직 이동(층/계단) 상태 — groundY = 발이 딛고 선 지면의 y (카메라 y = groundY + EYE_HEIGHT + bob)
     this.groundY = this.camera.position.y - EYE_HEIGHT;
@@ -403,7 +406,9 @@ export class PlayerController {
 
     // --- 카메라 y는 groundY를 부드럽게 추종 (계단이 매끄러운 경사처럼 느껴진다) ---
     const yLerp = Math.min(1, GROUND_LERP_RATE * delta);
-    const targetY = this.groundY + EYE_HEIGHT + this.bobOffset;
+    // liftOffset(비행 부양)은 지면 추종 위에 얹는다 — 지면/벽 해석은 그대로 통과하므로
+    // "발밑 지면 기둥 위에서 뜨는" 모델(벽·천장·보이드 관통 없음).
+    const targetY = this.groundY + EYE_HEIGHT + this.bobOffset + this.liftOffset;
     pos.y += (targetY - pos.y) * yLerp;
   }
 
@@ -488,6 +493,7 @@ export class PlayerController {
     this.velocity.set(0, 0);
     this.bobPhase = 0;
     this.bobOffset = 0;
+    this.liftOffset = 0; // 텔레포트/투어/스폰 시 공중 잔류 방지(비행 강제 착지)
   }
 
   enable() {

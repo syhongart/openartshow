@@ -2005,6 +2005,9 @@ export function buildChibi(params) {
   // 귀/꼬리도 뚝 끊기지 않고 자연스럽게 안착한다.
   let bodyMotionSignal = 0;
   let bodyMotionLag = 0;
+  // ---- 비행 상태(fly.js가 setFlying으로 구동 · 로컬 렌더 전용, 저장/멀티 스키마 무관) ----
+  let flying = false; // true면 update가 걷기/액션 결과 위에 비행 포즈를 덮어씀
+  let flyBlend = 0;   // 0~1 부드러운 진입/이탈. 0으로 수렴하면 비행 분기 통째 스킵 = 비-비행 경로 불변
 
   /** 사용자 액션 재생 트리거. 존재하지 않는 이름이면 false. 걷기/idle 중 언제든 호출 가능
    *  — 이번 프레임부터 블렌드-인 되어 우아하게 전환된다. */
@@ -2427,6 +2430,49 @@ export function buildChibi(params) {
       }
     }
 
+    // ---- 비행(fly.js가 setFlying으로 구동) — 걷기/아이들/액션 위에 얹는 지속 포즈 ----
+    // flyBlend가 0으로 수렴하면 이 블록 전체가 스킵되어 비-비행 렌더는 기존과 완전 동일.
+    flyBlend += ((flying ? 1 : 0) - flyBlend) * Math.min(1, d * 6);
+    if (flyBlend > 0.002) {
+      const fb = flyBlend;
+      const lerp = THREE.MathUtils.lerp; // 액션 블록의 lerp는 그 블록 스코프라 여기서 재바인딩
+      const flap = Math.sin(t * 15); // 빠른 날갯짓 위상
+      // 상체 살짝 앞으로 + 다리 뒤로 모아 스트림라인(비행 실루엣)
+      bodyPivot.rotation.x = lerp(bodyPivot.rotation.x, 0.22, fb);
+      if (legPivots.length) {
+        legPivots[0].rotation.x = lerp(legPivots[0].rotation.x, 0.45 + flap * 0.05, fb);
+        legPivots[1].rotation.x = lerp(legPivots[1].rotation.x, 0.45 - flap * 0.05, fb);
+        legPivots[0].rotation.z = lerp(legPivots[0].rotation.z, -0.1, fb);
+        legPivots[1].rotation.z = lerp(legPivots[1].rotation.z, 0.1, fb);
+      }
+      if (kneePivots.length) {
+        kneePivots[0].rotation.x = lerp(kneePivots[0].rotation.x, -0.35, fb);
+        kneePivots[1].rotation.x = lerp(kneePivots[1].rotation.x, -0.35, fb);
+      }
+      if (wingPivots.length) {
+        // 날개 종족 — 큰 진폭·빠른 펄럭임으로 override(기존 아이들 팔락 위). 팔은 벌려 유지.
+        for (const wp of wingPivots) {
+          wp.pivot.rotation.z = lerp(wp.pivot.rotation.z, wp.baseZ + flap * 0.6, fb);
+        }
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -0.9, fb);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 0.9, fb);
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -0.15, fb);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, -0.15, fb);
+      } else {
+        // 날개 없는 종족 — 양팔을 위로 크게 벌려(만세) 엇갈려 휘젓는다(헤엄치듯 나는 추진).
+        // 정지 프레임에서도 "날고 있다"가 읽히도록 벌림각을 크게, 상하 플랩은 좌우 엇갈리게.
+        const armFlap = flap * 0.55;
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -1.35, fb);
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 1.35, fb);
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -0.35 + armFlap, fb);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, -0.35 - armFlap, fb);
+      }
+      // 살짝 상하 부유 + 고개 살짝 듦(전방 응시). 귀/꼬리도 펄럭임 따라 흔들린다.
+      wrapper.position.y = lerp(wrapper.position.y, 0.02 + flap * 0.015, fb);
+      headPivot.rotation.x = lerp(headPivot.rotation.x, -0.08, fb);
+      bodyMotionSignal = flap * 0.4 * fb;
+    }
+
     // ---- 2차 모션: 귀·머리카락·리본·꼬리 지연 추종 (본 없는 캐릭터의 관성감) ----
     // 저역통과 필터로 bodyMotionSignal을 살짝 늦게 쫓아간다 — 그 차이가 클수록(몸통이
     // 방금 급하게 움직였을수록) 귀/꼬리가 더 크게 휘청인다. 액션 종료 후에도 신호가
@@ -2453,5 +2499,8 @@ export function buildChibi(params) {
     for (const tx of texs) tx.dispose();
   }
 
-  return { group, height: HEIGHT, update, dispose, setWound, ouch, playAction };
+  /** 비행 지속 상태 토글(fly.js). true면 다음 프레임부터 비행 포즈로 블렌드-인. */
+  function setFlying(v) { flying = !!v; }
+
+  return { group, height: HEIGHT, update, dispose, setWound, ouch, playAction, setFlying };
 }

@@ -18,6 +18,7 @@ import { MultiplayerManager } from './multiplayer.js';
 import { createAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
 import { playOuch } from './hitfx.js';
+import { initFly } from './fly.js';
 import { ensureCanvasFonts, getCanvasFont } from './fonts.js';
 import { loadNotes, saveNotes, mergeNotes, makeNote } from './guestbook.js';
 import { GalleryStats } from './stats.js';
@@ -60,6 +61,7 @@ let renderer = null;
 let scene = null;
 let camera = null;
 let player = null;
+let flyController = null; // fly.js 비행 컨트롤러(점프 홀드) — 입장 setup에서 초기화
 let mp = null; // MultiplayerManager — 입장 전에는 null (sendState/update 가드)
 let npcCrowd = null; // AI 관객 — 호스트가 될 때 npcProvider 안에서 지연 생성
 let stats = null; // 작가 리포트 (전시별 방문·감상 통계 — stats.js)
@@ -671,6 +673,10 @@ async function init() {
     z: BUILDING.spawn.z,
     ry: BUILDING.spawn.ry,
   });
+
+  // 비행(점프 홀드) — fly.js가 player.liftOffset 훅 구동 + 셀프 아바타 비행 포즈 토글.
+  // selfAvatar는 3인칭 셀프뷰에서 지연 생성되므로 getter로 넘긴다.
+  flyController = initFly({ player, getSelfAvatar: () => selfAvatar });
   player.disable();
 
   // 4. UI 초기화 → 로비 표시
@@ -1240,6 +1246,8 @@ function animate() {
   }
 
   try {
+    // 비행 입력 → player.liftOffset 갱신(카메라 y 조립 전에 실행). fly 미탑재면 no-op.
+    if (flyController) flyController.update(delta);
     // 이동/회전 (트윈/투어 중에는 player.disable 상태이므로 update는 사실상 no-op)
     player.update(delta);
     // 몸 충돌 — 다른 캐릭터(사람+NPC)를 뚫고 지나가지 못하게 밀어낸다
