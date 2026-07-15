@@ -15,14 +15,47 @@ import { PART_TYPES, FOOTPRINT, STORY_H } from './space.js';
 export const ART_SCREEN_CAP = 80; // 실측 근거: 92개=draw call 100 도달, 80개=95(여유 15%)
 export const UNIQUE_TEX_TYPES = new Set(['artwork', 'screen']); // draw call에 1:1로 더해지는 타입
 
-// 마감/파츠 색 (팔레트 B 계열 프록시 — 최종 재질은 디자이너 에셋 단계에서)
-const FINISH_COL = { white: '#efe9df', warmsand: '#e6d8bf', charcoal: '#3a3a40', deepviolet: '#2e2542',
-  parquet: '#b98a53', terrazzo: '#d8d2c6', concrete: '#8f8d88', whiteflat: '#f2efe8', darkmatte: '#26262b', brass: '#b98d4a' };
-const PART_COL = { wallPanel: '#e7e0d4', floorTile: '#b98a53', ceilingPanel: '#f0ede6', pillar: '#d9cdb6', stair: '#c7b48f', arch: '#d8cdbb',
-  artwork: '#1c1c20', pedestal: '#e8e6e0', screen: '#101014', partition: '#d9d2c4', vitrine: '#bfe0e6', labelStand: '#cbb98f',
-  trackLight: '#2a2a2e', pendantLight: '#b98d4a', planter: '#3d5a3a', rug: '#c9bfae', bench: '#7a5236', drape: '#2f2b3a' };
-
-function mat(c) { return new THREE.MeshStandardMaterial({ color: new THREE.Color(c), roughness: 0.9, metalness: 0.0 }); }
+// 재질 팔레트 — 미술관(scene.js)의 MeshStandardMaterial 레시피를 계승해 "한 세계"로.
+// (플래스터 rough0.92 · 파케 · 목재 0xb99a6f · 다크메탈 metal0.75 · 놋쇠 metal0.6)
+const SM = (o) => new THREE.MeshStandardMaterial(o);
+const MATS = {
+  plaster:    () => SM({ color: 0xf1ece2, roughness: 0.92, metalness: 0 }),
+  plasterW:   () => SM({ color: 0xffffff, roughness: 0.92, metalness: 0 }),
+  warmsand:   () => SM({ color: 0xe6d8bf, roughness: 0.9, metalness: 0 }),
+  charcoal:   () => SM({ color: 0x3a3a40, roughness: 0.7, metalness: 0.1 }),
+  deepviolet: () => SM({ color: 0x2e2542, roughness: 0.9, metalness: 0 }),
+  parquet:    () => SM({ color: 0xb98a53, roughness: 0.5, metalness: 0 }),
+  terrazzo:   () => SM({ color: 0xd8d2c6, roughness: 0.55, metalness: 0 }),
+  concrete:   () => SM({ color: 0x8f8d88, roughness: 0.9, metalness: 0 }),
+  darkmatte:  () => SM({ color: 0x26262b, roughness: 0.85, metalness: 0 }),
+  wood:       () => SM({ color: 0xb99a6f, roughness: 0.6, metalness: 0 }),
+  darkMetal:  () => SM({ color: 0x26241f, roughness: 0.4, metalness: 0.75 }),
+  brass:      () => SM({ color: 0xb98d4a, roughness: 0.45, metalness: 0.6 }),
+  stone:      () => SM({ color: 0xd9cdb6, roughness: 0.7, metalness: 0 }),
+  matteWhite: () => SM({ color: 0xe9e6df, roughness: 0.85, metalness: 0 }),
+  darkScreen: () => SM({ color: 0x14141a, roughness: 0.5, metalness: 0.3 }),
+  terracotta: () => SM({ color: 0x9a5b43, roughness: 0.85, metalness: 0 }),
+  plant:      () => SM({ color: 0x3d5a3a, roughness: 0.8, metalness: 0 }),
+  cloth:      () => SM({ color: 0xc9bfae, roughness: 0.97, metalness: 0 }),
+  paper:      () => SM({ color: 0xd8d4cc, roughness: 0.9, metalness: 0 }),
+  glass:      () => SM({ color: 0xcfe6ea, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.2 }),
+  display:    () => SM({ color: 0x1b1e2a, roughness: 0.32, metalness: 0.2, emissive: 0x10131f, emissiveIntensity: 0.5 }),
+  lens:       () => SM({ color: 0xfff3d6, roughness: 0.3, metalness: 0.1, emissive: 0xffe6b0, emissiveIntensity: 0.6 }),
+};
+// 마감 스와치 → 재질
+const FINISH_MAT = {
+  wall:    { white: MATS.plasterW, warmsand: MATS.warmsand, charcoal: MATS.charcoal, deepviolet: MATS.deepviolet },
+  floor:   { parquet: MATS.parquet, terrazzo: MATS.terrazzo, concrete: MATS.concrete },
+  ceiling: { whiteflat: MATS.plasterW, darkmatte: MATS.darkmatte },
+};
+// 파츠 → 재질 (미술관 재질 매핑)
+const PART_MAT = {
+  wallPanel: MATS.plaster, floorTile: MATS.parquet, ceilingPanel: MATS.plasterW, pillar: MATS.stone, stair: MATS.stone, arch: MATS.plaster,
+  artwork: MATS.darkMetal, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.wood, labelStand: MATS.brass,
+  trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.wood, drape: MATS.cloth,
+};
+const partMat = (t) => (PART_MAT[t] || MATS.stone)();
+const finishMat = (kind, id) => ((FINISH_MAT[kind] && FINISH_MAT[kind][id]) || MATS.plasterW)();
 
 /** 파츠 y 배치 규칙 (벽걸이/바닥/천장) */
 export function partY(t, storyH) {
@@ -75,11 +108,11 @@ function partGeo(t) {
 function partAccent(t) {
   const [w, h, d] = PART_TYPES[t].size;
   switch (t) {
-    case 'artwork': return { geo: box(w - 0.18, h - 0.18, 0.02), color: '#d8d4cc', off: [0, 0, 0.06] };
-    case 'screen':  return { geo: box(w - 0.1, h - 0.1, 0.02), color: '#0e0e16', off: [0, 0, 0.04] };
-    case 'vitrine': return { geo: box(w * 0.92, h * 0.78, d * 0.92), color: '#bfe0e6', off: [0, h * 0.48, 0], opacity: 0.22 };
-    case 'planter': return { geo: merged([[new THREE.SphereGeometry(w * 0.42, 10, 8), null], [new THREE.SphereGeometry(w * 0.3, 10, 8), [w * 0.28, w * 0.22, 0]], [new THREE.SphereGeometry(w * 0.26, 10, 8), [-w * 0.26, w * 0.16, w * 0.12]]]), color: '#3d5a3a', off: [0, h * 0.52, 0] };
-    case 'trackLight': return { geo: cyl(w * 0.24, w * 0.24, 0.02, 12), color: '#fff3d6', off: [0, -w * 0.1, 0] };
+    case 'artwork': return { geo: box(w - 0.18, h - 0.18, 0.02), mat: 'paper', off: [0, 0, 0.06] };
+    case 'screen':  return { geo: box(w - 0.1, h - 0.1, 0.02), mat: 'display', off: [0, 0, 0.04] };
+    case 'vitrine': return { geo: box(w * 0.92, h * 0.78, d * 0.92), mat: 'glass', off: [0, h * 0.48, 0] };
+    case 'planter': return { geo: merged([[new THREE.SphereGeometry(w * 0.42, 10, 8), null], [new THREE.SphereGeometry(w * 0.3, 10, 8), [w * 0.28, w * 0.22, 0]], [new THREE.SphereGeometry(w * 0.26, 10, 8), [-w * 0.26, w * 0.16, w * 0.12]]]), mat: 'plant', off: [0, h * 0.52, 0] };
+    case 'trackLight': return { geo: cyl(w * 0.24, w * 0.24, 0.02, 12), mat: 'lens', off: [0, -w * 0.1, 0] };
     default: return null;
   }
 }
@@ -101,18 +134,18 @@ export function buildSpaceGroup(space, opts = {}) {
   const track = (o) => { if (o.geometry) geos.push(o.geometry); if (o.material) mats.push(o.material); return o; };
   const { fw, fd, hw, hd, H, t } = spaceDims(space);
 
-  // shell: 바닥·천장·4벽 + 피처월 오버레이
-  const floorM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), mat(FINISH_COL[space.shell.finish.floor]))); floorM.position.set(0, -0.05, 0); g.add(floorM);
+  // shell: 바닥·천장·4벽 + 피처월 오버레이 (미술관 재질 계승)
+  const floorM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('floor', space.shell.finish.floor))); floorM.position.set(0, -0.05, 0); g.add(floorM);
   if (!opts.hideCeiling) { // 에디터 컷어웨이: 천장 숨김(방 안이 보이게)
-    const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), mat(FINISH_COL[space.shell.finish.ceiling]))); ceilM.position.set(0, H, 0); g.add(ceilM);
+    const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('ceiling', space.shell.finish.ceiling))); ceilM.position.set(0, H, 0); g.add(ceilM);
   }
   for (const [x, z, ww, dd] of [[0, -hd, fw, t], [0, hd, fw, t], [-hw, 0, t, fd], [hw, 0, t, fd]]) {
-    const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), mat(FINISH_COL[space.shell.finish.wall])));
+    const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), finishMat('wall', space.shell.finish.wall)));
     m.position.set(x, H / 2, z); g.add(m);
   }
   const fwSide = space.shell.finish.featureWall;
   if (fwSide && fwSide !== 'none') {
-    const fwl = track(new THREE.Mesh(new THREE.BoxGeometry(fw - 0.2, H - 0.2, 0.02), mat(FINISH_COL.deepviolet)));
+    const fwl = track(new THREE.Mesh(new THREE.BoxGeometry(fw - 0.2, H - 0.2, 0.02), MATS.deepviolet()));
     const map = { north: [0, -hd + t / 2 + 0.02, 0], south: [0, hd - t / 2 - 0.02, 0], east: [hw - t / 2 - 0.02, 0, Math.PI / 2], west: [-hw + t / 2 + 0.02, 0, Math.PI / 2] };
     const [px, pz, ry] = map[fwSide] || map.north;
     fwl.position.set(px, H / 2, pz); if (ry) fwl.rotation.y = ry;
@@ -124,7 +157,7 @@ export function buildSpaceGroup(space, opts = {}) {
   space.parts.forEach((p, i) => { (byType[p.t] = byType[p.t] || []).push({ p, i }); });
   const partRefs = [];
   for (const [type, list] of Object.entries(byType)) {
-    const geo = partGeo(type), material = mat(PART_COL[type]); geos.push(geo); mats.push(material);
+    const geo = partGeo(type), material = partMat(type); geos.push(geo); mats.push(material);
     const canInstance = !UNIQUE_TEX_TYPES.has(type) && list.length > 1 && !opts.pickable;
     if (canInstance) {
       const im = new THREE.InstancedMesh(geo, material, list.length);
@@ -144,9 +177,7 @@ export function buildSpaceGroup(space, opts = {}) {
     // 2색 accent(작품 캔버스·유리·잎·화면·렌즈) — 픽킹 대상 아님. 인스턴싱(장식이라 항상 가능).
     const acc = partAccent(type);
     if (acc) {
-      const accMat = acc.opacity != null
-        ? new THREE.MeshStandardMaterial({ color: new THREE.Color(acc.color), transparent: true, opacity: acc.opacity, roughness: 0.35, metalness: 0 })
-        : mat(acc.color);
+      const accMat = (MATS[acc.mat] || MATS.paper)();
       geos.push(acc.geo); mats.push(accMat);
       const place = (p) => { const [ox, oy, oz] = acc.off; return { pos: new THREE.Vector3(p.x + Math.cos(p.ry) * ox + Math.sin(p.ry) * oz, partY(type, H) + oy, p.z - Math.sin(p.ry) * ox + Math.cos(p.ry) * oz), ry: p.ry }; };
       if (list.length > 1) {
