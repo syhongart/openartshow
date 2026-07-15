@@ -9,87 +9,232 @@
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 <style>
-  :root{ --bg:#15161A; --panel:#1c1d23; --panel2:#23242c; --line:#31323c; --ink:#e7e5ee; --dim:#9b99a8;
-    --violet:#8b7bd8; --cyan:#6fe3ff; --coral:#ff7a66; --app:var(--app-font, system-ui,sans-serif); }
+  /* 팔레트 B 정본(DESIGN.md §3) — 디자이너 HUD 리디자인 토큰으로 통일 */
+  :root{
+    --bg:#14151A; --surface-1:#1F2128; --surface-2:#2A2C37; --line:#3A3D4B;
+    --ink:#F5F5F2; --dim:#9A9EB1;
+    --violet:#8B72FF; --cyan:#72E6E1; --coral:#FF705E; --error:#B0503F;
+    --r-plate:12px; --r-ctrl:10px;
+    --sh-plate:0 8px 24px rgba(20,21,26,.5);
+    --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
+  }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--app);overflow:hidden}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--app);overflow:hidden;-webkit-font-smoothing:antialiased}
   #stage{position:fixed;inset:0}
   canvas{display:block;width:100%;height:100%;touch-action:none}
-  /* 상단 바 */
-  .topbar{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:center;gap:14px;
-    padding:0 18px;background:linear-gradient(#15161ae6,#15161a99);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);z-index:10}
-  .brand{font-weight:700;letter-spacing:-.01em}.brand b{color:var(--violet)}
-  .spacer{flex:1}
-  .status{font-size:13px;color:var(--dim)}.status .cap{color:var(--cyan)}.status .cap.warn{color:var(--coral)}
-  .btn{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);
-    font:inherit;font-size:13px;padding:7px 13px;border-radius:9px;cursor:pointer;transition:.12s}
-  .btn:hover{border-color:var(--violet);transform:translateY(-1px)}
-  .btn.cta{background:var(--violet);border-color:var(--violet);color:#fff;font-weight:600}
-  /* 팔레트(우측 도킹) */
-  .palette{position:fixed;top:64px;right:14px;width:250px;max-height:calc(100vh - 150px);display:flex;flex-direction:column;
-    background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;z-index:10;box-shadow:0 12px 40px #0007}
-  .tabs{display:flex;border-bottom:1px solid var(--line)}
-  .tabs button{flex:1;appearance:none;border:0;background:transparent;color:var(--dim);font:inherit;font-size:12.5px;padding:11px 4px;cursor:pointer}
-  .tabs button.on{color:var(--ink);box-shadow:inset 0 -2px 0 var(--violet)}
-  .parts{padding:10px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .chip{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:inherit;font-size:11.5px;
-    padding:7px 5px 8px;border-radius:11px;cursor:pointer;text-align:center;transition:.12s;
+
+  /* ===== 공통 플레이트 — 화면 가장자리를 감싸는 인디케이터 ===== */
+  .plate{position:fixed;z-index:10;background:rgba(31,33,40,.86);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:var(--r-plate);box-shadow:var(--sh-plate), inset 0 1px 0 rgba(255,255,255,.05)}
+
+  /* ↖ 정보 플레이트 */
+  .hud-info{top:16px;left:16px;padding:11px 15px;min-width:186px}
+  .hud-info .brand{font-size:11px;color:var(--dim);letter-spacing:.02em;margin-bottom:6px}
+  .hud-info .brand b{color:var(--violet)}
+  .hud-info .row1{font-size:14px;font-weight:700;margin-bottom:9px;display:flex;align-items:center;gap:8px}
+  .hud-info .row1 .pill{font-size:11.5px;font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums;
+    background:var(--surface-2);border-radius:999px;padding:2px 9px}
+  .hud-info .row1 .pill b{color:var(--ink)}
+  .hud-info .gauge-lab{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:5px}
+  .hud-info .gauge-lab b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .hud-info .track{height:5px;border-radius:999px;background:var(--line);overflow:hidden}
+  .hud-info .fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--violet),var(--cyan));width:5%;transition:width .35s cubic-bezier(.2,.8,.2,1)}
+  .hud-info .fill.warn{background:linear-gradient(90deg,var(--coral),#ffb199);animation:cappulse 1.4s ease-in-out infinite}
+  @keyframes cappulse{0%,100%{box-shadow:0 0 0 0 rgba(255,112,94,0)}50%{box-shadow:0 0 10px 0 rgba(255,112,94,.55)}}
+
+  /* ↗ 상태 플레이트 */
+  .hud-status{top:16px;right:16px;padding:9px 12px;display:flex;align-items:center;gap:9px}
+  .hud-status .dot{width:8px;height:8px;border-radius:999px;background:var(--dim);flex:none;transition:.25s}
+  .hud-status .dot.saved{background:var(--cyan);box-shadow:0 0 9px rgba(114,230,225,.75)}
+  .hud-status .dot.dirty{background:var(--coral);box-shadow:0 0 9px rgba(255,112,94,.6);animation:blink 1.6s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.45}}
+  .hud-status .txt{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .hud-status .help{appearance:none;width:22px;height:22px;border-radius:7px;border:1px solid var(--line);background:var(--surface-2);
+    color:var(--dim);font:inherit;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none;transition:.12s}
+  .hud-status .help:hover{border-color:var(--violet);color:var(--ink)}
+
+  /* 단축키 팝오버 */
+  .helppop{top:48px;right:16px;width:270px;padding:14px 16px;font-size:12.5px;color:var(--dim);line-height:1.75;display:none}
+  .helppop.on{display:block}
+  .helppop h4{margin:0 0 8px;font-size:12px;color:var(--ink);letter-spacing:.03em;text-transform:uppercase}
+  .helppop kbd{display:inline-block;min-width:16px;text-align:center;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:5px;padding:1px 6px;font-size:11px;color:var(--ink);font-family:inherit}
+
+  /* → 파츠 도크 */
+  .hud-dock{top:56px;right:16px;width:258px;max-height:calc(100vh - 150px);display:flex;flex-direction:column;overflow:hidden;padding:0}
+  .hud-dock .tabs{display:flex;gap:4px;padding:9px 9px 8px;border-bottom:1px solid var(--line)}
+  .hud-dock .tabs button{flex:1;appearance:none;border:1px solid transparent;background:transparent;color:var(--dim);
+    font:inherit;font-size:12px;padding:8px 2px 6px;border-radius:8px;cursor:pointer;transition:.12s;
     display:flex;flex-direction:column;align-items:center;gap:3px}
-  .chip .chip-ic{width:46px;height:46px;object-fit:contain;pointer-events:none;
-    background:radial-gradient(120% 100% at 50% 20%,#2b2c37 0%,#212230 100%);border-radius:8px}
-  .chip:hover{border-color:var(--violet);transform:translateY(-1px)}
-  .chip.on{border-color:var(--violet);background:#2b2740;color:#fff;box-shadow:0 0 0 1px var(--violet) inset}
-  .hint{padding:10px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--dim);line-height:1.5}
-  /* 선택 액션 도크 */
-  .seldock{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:none;gap:8px;align-items:center;
-    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;z-index:11;box-shadow:0 10px 30px #0007}
-  .seldock.on{display:flex}
-  .seldock .lab{font-size:12.5px;color:var(--dim);padding:0 4px}
-  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%) translateY(10px);opacity:0;transition:.2s;
-    background:#2a2230;border:1px solid var(--coral);color:#ffd9d1;font-size:13px;padding:9px 14px;border-radius:10px;z-index:20;pointer-events:none}
+  .hud-dock .tabs button .tic{width:15px;height:15px;color:currentColor}
+  .hud-dock .tabs button:hover{color:var(--ink)}
+  .hud-dock .tabs button.on{color:var(--violet);background:var(--surface-2);box-shadow:0 3px 10px -3px rgba(139,114,255,.5)}
+  .parts{padding:11px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .chip{appearance:none;border:1px solid var(--line);background:var(--surface-1);color:var(--dim);font:inherit;font-size:11.5px;
+    padding:7px 5px 8px;border-radius:11px;cursor:pointer;text-align:center;transition:.12s;position:relative;
+    display:flex;flex-direction:column;align-items:center;gap:4px}
+  .chip .chip-ic{width:100%;height:52px;object-fit:contain;pointer-events:none;
+    background:radial-gradient(120% 100% at 50% 18%,#2b2c37 0%,#1b1c24 100%);border-radius:8px}
+  .chip:hover{border-color:var(--violet);color:var(--ink);transform:translateY(-1px)}
+  .chip.on{border-color:var(--violet);color:#fff;background:var(--surface-2)}
+  .chip.on::after{content:"";position:absolute;top:6px;right:6px;width:5px;height:5px;border-radius:999px;
+    background:var(--cyan);box-shadow:0 0 5px rgba(114,230,225,.85)}
+
+  /* ↓ 하단 툴바 */
+  .hud-toolbar{bottom:16px;left:50%;transform:translateX(-50%);padding:8px;display:flex;align-items:center;gap:4px;border-radius:16px}
+  .hud-toolbar .ic{appearance:none;width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:var(--dim);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+  .hud-toolbar .ic:hover{background:var(--surface-2);color:var(--ink)}
+  .hud-toolbar .ic svg{width:19px;height:19px}
+  .hud-toolbar .div{width:1px;height:22px;background:var(--line);margin:0 4px}
+  .hud-toolbar .cta{appearance:none;border:0;background:var(--coral);color:#1a120f;font:inherit;font-weight:700;font-size:13.5px;
+    border-radius:10px;padding:0 18px;height:38px;display:flex;align-items:center;gap:6px;cursor:pointer;transition:.12s;
+    box-shadow:0 0 12px rgba(255,112,94,.32)}
+  .hud-toolbar .cta:hover{filter:brightness(1.06);transform:translateY(-1px)}
+
+  /* 선택 컨텍스트 독(툴바 위, 선택 시에만) */
+  .hud-context{bottom:66px;left:50%;transform:translateX(-50%) translateY(8px);opacity:0;pointer-events:none;transition:.18s;
+    padding:9px 13px;display:flex;align-items:center;gap:11px;font-size:12.5px;color:var(--dim);white-space:nowrap}
+  .hud-context.on{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+  .hud-context .who{color:var(--ink);font-weight:600}
+  .hud-context .bar{width:1px;height:18px;background:var(--line)}
+  .hud-context .step{display:flex;align-items:center;gap:5px}
+  .hud-context .step b{color:var(--ink);min-width:38px;text-align:center;font-variant-numeric:tabular-nums}
+  .hud-context .sbtn{appearance:none;width:24px;height:24px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);
+    font:inherit;font-size:14px;line-height:1;border-radius:7px;cursor:pointer;transition:.12s;display:flex;align-items:center;justify-content:center}
+  .hud-context .sbtn:hover{border-color:var(--violet)}
+  .hud-context .del{appearance:none;border:1px solid transparent;background:transparent;color:var(--error);font:inherit;font-size:12.5px;
+    cursor:pointer;padding:5px 9px;border-radius:8px;transition:.12s}
+  .hud-context .del:hover{background:rgba(176,80,63,.14);border-color:var(--error)}
+  .hud-context .vidwrap{display:none;align-items:center;gap:7px}
+  .hud-context input{background:var(--surface-1);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;
+    padding:6px 10px;border-radius:8px;width:184px}
+  .hud-context .mini{appearance:none;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);font:inherit;
+    font-size:12px;padding:6px 11px;border-radius:8px;cursor:pointer;transition:.12s}
+  .hud-context .mini:hover{border-color:var(--violet)}
+  .hud-context .mini.cta{background:var(--coral);border-color:var(--coral);color:#1a120f;font-weight:700}
+
+  /* ↘ 미니맵 */
+  .hud-minimap{bottom:16px;right:16px;width:132px;padding:9px 10px 10px}
+  .hud-minimap .lab{font-size:9px;letter-spacing:.08em;color:var(--dim);margin-bottom:6px;text-transform:uppercase;
+    display:flex;justify-content:space-between}
+  .hud-minimap .lab b{color:var(--cyan);font-weight:600}
+  .hud-minimap .map{position:relative;width:112px;height:96px;background:var(--bg);border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .hud-minimap .room{position:absolute;inset:11px;border:1px solid var(--line);border-radius:2px}
+  .hud-minimap .dotp{position:absolute;width:4px;height:4px;border-radius:999px;background:var(--dim);transform:translate(-50%,-50%)}
+  .hud-minimap .dotp.art{background:var(--cyan);box-shadow:0 0 4px rgba(114,230,225,.8)}
+  .hud-minimap .spawn{position:absolute;width:6px;height:6px;border-radius:999px;background:var(--violet);
+    box-shadow:0 0 6px rgba(139,114,255,.85);transform:translate(-50%,-50%)}
+  .hud-minimap .mbr{position:absolute;width:7px;height:7px;border-color:rgba(154,158,177,.45);pointer-events:none}
+  .hud-minimap .mbr.tl{top:3px;left:3px;border-top:1px solid;border-left:1px solid}
+  .hud-minimap .mbr.tr{top:3px;right:3px;border-top:1px solid;border-right:1px solid}
+  .hud-minimap .mbr.bl{bottom:3px;left:3px;border-bottom:1px solid;border-left:1px solid}
+  .hud-minimap .mbr.br{bottom:3px;right:3px;border-bottom:1px solid;border-right:1px solid}
+
+  /* 화면 4코너 프레이밍 브래킷 + 비네트(장식, 클릭통과) */
+  .frame-bracket{position:fixed;width:26px;height:26px;border-color:rgba(154,158,177,.42);pointer-events:none;z-index:9}
+  .frame-bracket.tl{top:10px;left:10px;border-top:1px solid;border-left:1px solid;border-radius:7px 0 0 0}
+  .frame-bracket.tr{top:10px;right:10px;border-top:1px solid;border-right:1px solid;border-radius:0 7px 0 0}
+  .frame-bracket.bl{bottom:10px;left:10px;border-bottom:1px solid;border-left:1px solid;border-radius:0 0 0 7px}
+  .frame-bracket.br{bottom:10px;right:10px;border-bottom:1px solid;border-right:1px solid;border-radius:0 0 7px 0}
+  .vignette{position:fixed;inset:0;pointer-events:none;z-index:8;
+    background:radial-gradient(ellipse 82% 82% at 50% 48%, transparent 62%, rgba(20,21,26,.42) 100%)}
+
+  /* 토스트 */
+  .toast{position:fixed;left:50%;bottom:118px;transform:translateX(-50%) translateY(10px);opacity:0;transition:.2s;z-index:20;
+    background:#2a2230;border:1px solid var(--coral);color:#ffd9d1;font-size:13px;padding:9px 14px;border-radius:10px;pointer-events:none}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* 재생 오버레이 */
+  #playOverlay{display:none;position:fixed;inset:0;z-index:40;background:#0a0a0ecc;backdrop-filter:blur(4px);
+    align-items:center;justify-content:center}
+
   /* 모바일: 편집 크롬 숨김(열람 전용) */
   .mobwarn{display:none}
   @media (max-width:640px){
-    .palette,.seldock,.topbar .desk{display:none!important}
+    .desk{display:none!important}
+    .frame-bracket,.vignette{display:none}
     .mobwarn{display:block;position:fixed;left:12px;right:12px;bottom:14px;z-index:10;
-      background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--dim);text-align:center}
+      background:rgba(31,33,40,.9);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--dim);text-align:center}
   }
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
 </head>
 <body>
 <div id="stage"><canvas id="c"></canvas></div>
 
-<div class="topbar">
+<!-- 4코너 프레이밍(장식) -->
+<div class="frame-bracket tl desk"></div><div class="frame-bracket tr desk"></div>
+<div class="frame-bracket bl desk"></div><div class="frame-bracket br desk"></div>
+<div class="vignette desk"></div>
+
+<!-- ↖ 정보 플레이트 -->
+<div class="plate hud-info desk">
   <div class="brand">Open<b>ArtShow</b> · 공간 빌더</div>
-  <div class="spacer"></div>
-  <div class="status desk">파츠 <b id="nParts">0</b> · 작품/영상 <span class="cap" id="nCap">0</span>/80</div>
-  <button class="btn desk" id="bUndo">되돌리기</button>
-  <button class="btn desk" id="bExport">내보내기</button>
-  <button class="btn desk" id="bLoad">불러오기</button>
-  <button class="btn cta desk" id="bSave">저장</button>
+  <div class="row1"><span>나의 공간</span><span class="pill">파츠 <b id="nParts">0</b></span></div>
+  <div class="gauge-lab"><span>작품 · 영상</span><b><span id="nCap">0</span>/80</b></div>
+  <div class="track"><div class="fill" id="capFill"></div></div>
 </div>
 
-<aside class="palette desk">
+<!-- ↗ 상태 플레이트 -->
+<div class="plate hud-status desk">
+  <span class="dot" id="saveDot"></span><span class="txt" id="saveTxt">새 공간</span>
+  <button class="help" id="bHelp" aria-label="단축키 도움말">?</button>
+</div>
+<div class="plate helppop desk" id="helpPop">
+  <h4>단축키</h4>
+  파츠를 고르고 <b style="color:var(--ink)">바닥 클릭</b>으로 배치. 놓은 파츠 <b style="color:var(--ink)">클릭</b>=선택.<br>
+  <kbd>R</kbd>/<kbd>⇧R</kbd> 회전(스텝) · <kbd>Q</kbd>/<kbd>E</kbd> 미세 회전 ±5°<br>
+  <kbd>Del</kbd> 삭제 · <kbd>⌘/Ctrl</kbd>+<kbd>Z</kbd> 되돌리기<br>
+  <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>/방향키 이동 · 드래그 둘러보기<br>
+  <kbd>⇧</kbd>·우클릭 드래그 팬 · 휠 줌
+</div>
+
+<!-- → 파츠 도크 -->
+<aside class="plate hud-dock desk">
   <div class="tabs" id="tabs"></div>
   <div class="parts" id="parts"></div>
-  <div class="hint">파츠를 고르고 <b>바닥을 클릭</b>해 놓습니다. 놓은 파츠 <b>클릭</b>=선택 — <b>R</b>/<b>Shift+R</b> 회전, <b>Del</b> 삭제, <b>⌘/Ctrl+Z</b> 되돌리기.<br><b>WASD</b>/방향키=이동 · 드래그=둘러보기 · <b>Shift·우클릭</b>드래그=팬 · 휠=줌.</div>
 </aside>
 
-<div class="seldock" id="seldock">
-  <span class="lab" id="selLab">선택됨</span>
-  <button class="btn" id="bRot">회전 (R)</button>
-  <button class="btn" id="bDel">삭제 (Del)</button>
-  <span class="vidwrap" id="vidwrap" style="display:none;align-items:center;gap:6px;border-left:1px solid var(--line);padding-left:8px">
-    <input id="vidUrl" type="text" inputmode="url" placeholder="유튜브 링크 붙여넣기" style="width:190px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:6px 9px;border-radius:8px">
-    <button class="btn" id="bVidSet">적용</button>
-    <button class="btn cta" id="bPlay">▶ 재생</button>
+<!-- 선택 컨텍스트 독 -->
+<div class="plate hud-context desk" id="context">
+  <span class="who" id="selLab">선택</span>
+  <span class="bar"></span>
+  <div class="step">각도
+    <button class="sbtn" id="rotDn" title="-5° (Q)">‹</button>
+    <b id="rotV">0°</b>
+    <button class="sbtn" id="rotUp" title="+5° (E)">›</button>
+  </div>
+  <span class="vidwrap" id="vidwrap">
+    <span class="bar"></span>
+    <input id="vidUrl" type="text" inputmode="url" placeholder="유튜브 링크 붙여넣기">
+    <button class="mini" id="bVidSet">적용</button>
+    <button class="mini cta" id="bPlay">▶ 재생</button>
   </span>
+  <span class="bar"></span>
+  <button class="del" id="bDel">삭제</button>
 </div>
 
-<div id="playOverlay" style="display:none;position:fixed;inset:0;z-index:30;background:#0a0a0ecc;backdrop-filter:blur(4px);align-items:center;justify-content:center">
+<!-- ↓ 하단 툴바 -->
+<div class="plate hud-toolbar desk">
+  <button class="ic" id="bUndo" title="되돌리기 (⌘/Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg></button>
+  <button class="ic" id="bLoad" title="불러오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+  <button class="ic" id="bExport" title="내보내기(JSON)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
+  <span class="div"></span>
+  <button class="cta" id="bSave">저장</button>
+</div>
+
+<!-- ↘ 미니맵 -->
+<div class="plate hud-minimap desk">
+  <div class="lab"><span>MINIMAP</span><b id="miniN">0</b></div>
+  <div class="map"><div class="room" id="miniRoom">
+    <span class="mbr tl"></span><span class="mbr tr"></span><span class="mbr bl"></span><span class="mbr br"></span>
+  </div></div>
+</div>
+
+<div id="playOverlay">
   <div style="position:relative">
-    <button id="bPlayClose" class="btn" style="position:absolute;top:-44px;right:0">닫기 ✕</button>
+    <button id="bPlayClose" class="mini" style="position:absolute;top:-44px;right:0;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit">닫기 ✕</button>
     <div id="playMount"></div>
   </div>
 </div>
@@ -100,12 +245,12 @@
 <script type="module">
 import * as THREE from 'three';
 import { createBuilder } from './js/builder.js';
-import { PART_TYPES, PART_CATEGORIES } from './js/space.js';
+import { PART_TYPES } from './js/space.js';
 import { createYouTubeSurface } from './js/ytembed.js';
 import { buildPartPreview } from './js/space-render.js';
 
 // 팔레트 썸네일 — 각 파츠 타입을 1회 오프스크린 렌더해 아이콘 dataURL 생성(감독: 그림으로 표시)
-function renderPartIcons(size = 52) {
+function renderPartIcons(size = 60) {
   const R = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   R.setSize(size, size); R.setPixelRatio(2); R.setClearColor(0x000000, 0); R.outputColorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Scene();
@@ -136,13 +281,18 @@ const B = createBuilder(canvas, { preserveDrawingBuffer: true });
 function fit(){ B.resize(window.innerWidth, window.innerHeight); }
 window.addEventListener('resize', fit); fit();
 
-// 팔레트 구축 (배치 가능한 3카테고리)
+// 카테고리 탭 — 아이콘+라벨(구조·전시·분위기)
 const CAT_LABEL = { structure:'구조', exhibit:'전시', ambience:'분위기', finish:'마감' };
+const CAT_ICON = {
+  structure:'<svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>',
+  exhibit:'<svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="1.5"/><path d="m6 15 4-4 3 3 2-2 3 3"/><path d="M12 22v-4"/></svg>',
+  ambience:'<svg class="tic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0-4 10.5c.7.6 1 1 1 2V17h6v-1.5c0-1 .3-1.4 1-2A6 6 0 0 0 12 3Z"/><path d="M9 21h6"/></svg>'
+};
 const placeCats = ['structure','exhibit','ambience'];
 const tabsEl = document.getElementById('tabs'), partsEl = document.getElementById('parts');
 let curCat = 'structure', curChip = null;
 placeCats.forEach((cat,i)=>{
-  const b=document.createElement('button'); b.textContent=CAT_LABEL[cat]; if(i===0)b.className='on';
+  const b=document.createElement('button'); b.innerHTML=(CAT_ICON[cat]||'')+'<span>'+CAT_LABEL[cat]+'</span>'; if(i===0)b.className='on';
   b.onclick=()=>{ [...tabsEl.children].forEach(c=>c.classList.remove('on')); b.classList.add('on'); curCat=cat; renderParts(); };
   tabsEl.appendChild(b);
 });
@@ -158,23 +308,71 @@ function renderParts(){
 }
 renderParts();
 
-// 상태·이벤트 배선
-const nParts=document.getElementById('nParts'), nCap=document.getElementById('nCap');
-function refresh(){ const s=B.getStats(); nParts.textContent=s.parts; nCap.textContent=s.uniqueTex; nCap.classList.toggle('warn', s.uniqueTex>=72); }
-B.on('change', refresh); refresh();
+// ===== 상단 인디케이터: 파츠 수 · N/80 게이지 =====
+const nParts=document.getElementById('nParts'), nCap=document.getElementById('nCap'), capFill=document.getElementById('capFill');
+const CAP_MAX = 80;
+function refresh(){
+  const s=B.getStats();
+  nParts.textContent=s.parts; nCap.textContent=s.uniqueTex;
+  const pct = Math.max(4, Math.round(s.uniqueTex / CAP_MAX * 100));
+  capFill.style.width = pct + '%';
+  capFill.classList.toggle('warn', s.uniqueTex >= 72); // ≥90%
+  drawMinimap();
+}
 
-const seldock=document.getElementById('seldock'), selLab=document.getElementById('selLab');
-const vidwrap=document.getElementById('vidwrap'), vidUrl=document.getElementById('vidUrl');
+// ===== 저장 상태 머신: 새 공간 → 변경됨 → 저장됨 =====
+const saveDot=document.getElementById('saveDot'), saveTxt=document.getElementById('saveTxt');
+function setSaveState(st){ // 'idle' | 'dirty' | 'saved'
+  saveDot.className = 'dot' + (st==='saved'?' saved':st==='dirty'?' dirty':'');
+  saveTxt.textContent = st==='saved'?'저장됨':st==='dirty'?'변경됨':'새 공간';
+}
+setSaveState('idle');
+
+// ===== 미니맵(P1: 평면도 + 파츠 점 + 스폰) =====
+const miniRoom=document.getElementById('miniRoom'), miniN=document.getElementById('miniN');
+const MINI_HALF = 7; // 최대 방 반폭(FOOTPRINT large hw=7)과 정합 — 파츠 좌표는 이 안으로 클램프됨
+function drawMinimap(){
+  const sp = B.getSpace();
+  // 기존 점 제거(브래킷 4개는 보존)
+  [...miniRoom.querySelectorAll('.dotp,.spawn')].forEach(n=>n.remove());
+  const toPct = (v)=> ((v + MINI_HALF) / (2*MINI_HALF)) * 100;
+  const UNIQUE = new Set(['artwork','screen']);
+  let n=0;
+  (sp.parts||[]).forEach(p=>{
+    const d=document.createElement('span'); d.className='dotp'+(UNIQUE.has(p.t)?' art':'');
+    d.style.left=Math.min(98,Math.max(2,toPct(p.x||0)))+'%';
+    d.style.top =Math.min(98,Math.max(2,toPct(p.z||0)))+'%';
+    miniRoom.appendChild(d); n++;
+  });
+  const spwn=document.createElement('span'); spwn.className='spawn';
+  spwn.style.left=Math.min(98,Math.max(2,toPct(sp.spawn?.x||0)))+'%';
+  spwn.style.top =Math.min(98,Math.max(2,toPct(sp.spawn?.z||0)))+'%';
+  miniRoom.appendChild(spwn);
+  miniN.textContent = n;
+}
+
+B.on('change', ()=>{ refresh(); setSaveState('dirty'); });
+refresh();
+
+// ===== 선택 컨텍스트 독 =====
+const context=document.getElementById('context'), selLab=document.getElementById('selLab');
+const vidwrap=document.getElementById('vidwrap'), vidUrl=document.getElementById('vidUrl'), rotV=document.getElementById('rotV');
 let selIndex=-1;
+function fmtDeg(ry){ let d=Math.round((ry||0)*180/Math.PI)%360; if(d<0)d+=360; return d+'°'; }
+function syncRot(){ if(selIndex<0)return; const p=B.getSpace().parts[selIndex]; if(p) rotV.textContent=fmtDeg(p.ry); }
 B.on('select', ({index,part})=>{
   selIndex=index;
-  if(index>=0){ seldock.classList.add('on'); selLab.textContent=(PART_TYPES[part.t]?.label||'파츠')+' 선택됨';
+  if(index>=0){ context.classList.add('on'); selLab.textContent=(PART_TYPES[part.t]?.label||'파츠');
+    rotV.textContent=fmtDeg(part.ry);
     const isScreen = part.t==='screen';
     vidwrap.style.display = isScreen ? 'flex' : 'none';
     if(isScreen) vidUrl.value = B.getScreenVideo(index) || '';
-  } else seldock.classList.remove('on');
+  } else context.classList.remove('on');
 });
-B.on('mode', ()=>{ seldock.classList.remove('on'); vidwrap.style.display='none'; });
+B.on('mode', ()=>{ context.classList.remove('on'); vidwrap.style.display='none'; });
+
+document.getElementById('rotDn').onclick=()=>{ B.rotateSelectedFine(-5*Math.PI/180); syncRot(); };
+document.getElementById('rotUp').onclick=()=>{ B.rotateSelectedFine( 5*Math.PI/180); syncRot(); };
 
 // 유튜브: 링크 적용(검증된 ID만 저장) + 클릭투로드 재생 오버레이
 document.getElementById('bVidSet').onclick=()=>{
@@ -191,20 +389,26 @@ function closePlay(){ playOverlay.style.display='none'; playMount.replaceChildre
 document.getElementById('bPlayClose').onclick=closePlay;
 playOverlay.addEventListener('click', (e)=>{ if(e.target===playOverlay) closePlay(); });
 
+// 단축키 팝오버 토글
+const helpPop=document.getElementById('helpPop');
+document.getElementById('bHelp').onclick=(e)=>{ e.stopPropagation(); helpPop.classList.toggle('on'); };
+document.addEventListener('click',(e)=>{ if(!helpPop.contains(e.target) && e.target.id!=='bHelp') helpPop.classList.remove('on'); });
+
+// 토스트
 const toast=document.getElementById('toast'); let toastT=0;
 function showToast(msg){ toast.textContent=msg; toast.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toast.classList.remove('show'),2600); }
 B.on('cap', ({cap})=>showToast('작품·영상은 '+cap+'점까지 걸 수 있어요. (성능 상한)'));
-B.on('saved', ()=>showToast('저장했습니다.'));
+B.on('saved', ()=>{ showToast('저장했습니다.'); setSaveState('saved'); });
 
+// 하단 툴바 액션
 document.getElementById('bSave').onclick=()=>B.save();
-document.getElementById('bLoad').onclick=()=>{ if(!B.load()) showToast('저장된 공간이 없습니다.'); };
+document.getElementById('bLoad').onclick=()=>{ if(B.load()){ refresh(); setSaveState('saved'); } else showToast('저장된 공간이 없습니다.'); };
 document.getElementById('bUndo').onclick=()=>B.undo();
 document.getElementById('bExport').onclick=()=>{
   const blob=new Blob([B.exportJSON()],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-space.json'; a.click(); URL.revokeObjectURL(a.href);
 };
-document.getElementById('bRot').onclick=()=>B.rotateSelected(1);
-document.getElementById('bDel').onclick=()=>{ B.deleteSelected(); seldock.classList.remove('on'); };
+document.getElementById('bDel').onclick=()=>{ B.deleteSelected(); context.classList.remove('on'); };
 
 // 헤드리스 테스트 훅
 window.__builder = B;
