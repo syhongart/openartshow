@@ -51,9 +51,13 @@
 - ⬜ **내부 전략 문서 3개 openartshow에서 제거**
   `docs/BACKLOG.md`(연봉 메모 포함)·`docs/BUSINESS-PLAN-DRAFT.md`·`docs/SCALING.md`
   (인프라 갭·비용 노출) public 노출 중. 로컬 백업 후 삭제 + `.gitignore` 추가.
-- ⬜ **감독 실제 작품 이미지 준비** → 첫 전시 채우기
-  지금은 플레이스홀더 스톡 사진. 이미지 주면 부팀장이 `galleries/syhongart.json`에
-  넣어 진짜 개인전으로. **← 감독이 이미지만 주면 됨.**
+- ⬜ **감독 실제 작품 이미지 준비** → 첫 전시 채우기 + 자기완결 마감
+  지금은 플레이스홀더 스톡 사진(`web/js/artworks.js`의 `picsum.photos` 외부 이미지). 이미지 주면
+  부팀장이 `galleries/syhongart.json`에 넣어 진짜 개인전으로. **← 감독이 이미지만 주면 됨.**
+  · **[자기완결 마감 — 팀장 지시 2026-07-15]** 실작품 교체 시 **동시에**: ① `artworks.js`의
+    picsum 외부 이미지 URL 제거(CLAUDE.md "외부 호스트 0" 위반), ② `index.html` CSP
+    `img-src … https`를 `'self'`로 되돌리기(drift 복원). 보호파일·CSP 변경이라 감독 승인 게이트에서
+    같은 배치로 닫는다. 그때까지 신규 코드에 외부 이미지 URL 유입 금지(리뷰 체크 항목).
 - ⬜ **검색 등록** (SEO)
   구글 서치 콘솔 + 네이버 서치어드바이저에 openartshow 등록 (각 5분).
 - ⬜ **lifeunity 저장소 숨기기** (선택)
