@@ -360,7 +360,7 @@ function canvasToNormalTexture(canvas, strength) {
 // 플랭크의 톤/결/옹이를 (행, 열 mod N) 시드로 결정 → 오른쪽 경계를 넘는 플랭크가
 // 왼쪽 첫 플랭크와 완전히 동일해져 타일 경계가 보이지 않는다.
 // ---------------------------------------------------------------------------
-function createParquetMaps() {
+export function createParquetMaps() {
   const size = 1024;
   const plankW = 256; // 4 plank/행 (N=4)
   const plankH = 64;  // 16행 정확히 — 상하 경계도 심리스
@@ -481,7 +481,7 @@ function createParquetMaps() {
 // 절차적 텍스처: 뮤지엄 화이트 벽 (미세 회반죽 노이즈)
 // ---------------------------------------------------------------------------
 let plasterMapsCache = null;
-function createPlasterMaps() {
+export function createPlasterMaps() {
   if (plasterMapsCache) return plasterMapsCache;
   const size = 512;
   const canvas = document.createElement('canvas');
@@ -534,7 +534,7 @@ function createPlasterMaps() {
 // 절차적 텍스처: 노출 콘크리트 (기둥/커브용) — 거푸집 조인트 + 얼룩 + 타이홀
 // ---------------------------------------------------------------------------
 let concreteMapsCache = null;
-function createConcreteMaps() {
+export function createConcreteMaps() {
   if (concreteMapsCache) return concreteMapsCache;
   const size = 512;
   const canvas = document.createElement('canvas');
