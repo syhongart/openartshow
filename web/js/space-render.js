@@ -9,6 +9,7 @@
 // (교체 시 이 파일의 partGeo/PART_COL만 바꾸면 되고, 스키마·빌더 로직은 무영향.)
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
+import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { PART_TYPES, FOOTPRINT, STORY_H } from './space.js';
 
 export const ART_SCREEN_CAP = 80; // 실측 근거: 92개=draw call 100 도달, 80개=95(여유 15%)
@@ -33,12 +34,54 @@ export function partY(t, storyH) {
   if (t === 'ceilingPanel') return storyH - 0.05;
   return spec.size[1] / 2;
 }
+// 합성 지오메트리 헬퍼 — [geo,[x,y,z]] 목록을 하나로 머지(단일 재질·인스턴싱 유지)
+const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+const cyl = (rt, rb, h, s = 16) => new THREE.CylinderGeometry(rt, rb, h, s);
+function merged(list) {
+  const gs = list.map(([g, t]) => { if (t) g.translate(t[0], t[1], t[2]); return g; });
+  const m = mergeGeometries(gs, false); gs.forEach((g) => g.dispose());
+  return m;
+}
 function partGeo(t) {
   const [w, h, d] = PART_TYPES[t].size;
-  if (t === 'pillar') return new THREE.CylinderGeometry(w / 2, w / 2, h, 16);
-  if (t === 'planter') return new THREE.CylinderGeometry(w / 2, w / 2 * 0.7, h, 12);
-  if (t === 'trackLight' || t === 'pendantLight') return new THREE.SphereGeometry(Math.max(w, h) / 2, 12, 10);
-  return new THREE.BoxGeometry(w, h, d);
+  switch (t) {
+    case 'pillar': // 베이스 + 샤프트 + 캐피탈
+      return merged([[cyl(w * 0.62, w * 0.62, 0.12), [0, -h / 2 + 0.06, 0]], [cyl(w / 2, w / 2, h, 20), null], [cyl(w * 0.62, w * 0.62, 0.12), [0, h / 2 - 0.06, 0]]]);
+    case 'bench': // 시트 + 다리 2슬랩
+      return merged([[box(w, 0.08, d), [0, h / 2 - 0.04, 0]], [box(0.08, h - 0.08, d * 0.8), [-w / 2 + 0.1, -0.04, 0]], [box(0.08, h - 0.08, d * 0.8), [w / 2 - 0.1, -0.04, 0]]]);
+    case 'pedestal': // 베이스 + 몸통 + 상판(몰딩)
+      return merged([[box(w, 0.06, d), [0, -h / 2 + 0.03, 0]], [box(w * 0.86, h - 0.12, d * 0.86), null], [box(w, 0.05, d), [0, h / 2 - 0.025, 0]]]);
+    case 'stair': { // 5단
+      const st = []; const n = 5; for (let i = 0; i < n; i++) st.push([box(w, h / n, d / n), [0, -h / 2 + (i + 0.5) * (h / n), -d / 2 + (i + 0.5) * (d / n)]]);
+      return merged(st);
+    }
+    case 'labelStand': { // 포스트 + 경사 플라크
+      const plaque = box(w, 0.02, d * 0.9); plaque.rotateX(-0.5);
+      return merged([[box(0.04, h, 0.04), null], [plaque, [0, h / 2 - 0.02, 0]]]);
+    }
+    case 'trackLight': { // 레일 마운트 + 각진 헤드
+      const head = cyl(w * 0.5, w * 0.42, w * 0.9, 12); head.rotateX(0.5);
+      return merged([[box(w * 0.4, w * 0.3, w * 0.4), [0, w * 0.4, 0]], [head, null]]);
+    }
+    case 'pendantLight': // 코드 + 갓
+      return merged([[cyl(0.006, 0.006, h * 0.5), [0, h * 0.25, 0]], [cyl(w * 0.5, w * 0.12, h * 0.4, 14), [0, -h * 0.2, 0]]]);
+    case 'planter': return cyl(w / 2, w / 2 * 0.66, h, 14);   // 화분(테이퍼) — 잎은 accent
+    case 'vitrine': return box(w, h * 0.18, d);                // 받침 — 유리는 accent
+    case 'screen': return box(w, h, 0.06);                     // 베젤 — 화면은 accent
+    default: return box(w, h, d);
+  }
+}
+// 2색 accent(부속 색면) — 파츠 위에 얹는 장식(픽킹 대상 아님). off는 ry로 회전.
+function partAccent(t) {
+  const [w, h, d] = PART_TYPES[t].size;
+  switch (t) {
+    case 'artwork': return { geo: box(w - 0.18, h - 0.18, 0.02), color: '#d8d4cc', off: [0, 0, 0.06] };
+    case 'screen':  return { geo: box(w - 0.1, h - 0.1, 0.02), color: '#0e0e16', off: [0, 0, 0.04] };
+    case 'vitrine': return { geo: box(w * 0.92, h * 0.78, d * 0.92), color: '#bfe0e6', off: [0, h * 0.48, 0], opacity: 0.22 };
+    case 'planter': return { geo: merged([[new THREE.SphereGeometry(w * 0.42, 10, 8), null], [new THREE.SphereGeometry(w * 0.3, 10, 8), [w * 0.28, w * 0.22, 0]], [new THREE.SphereGeometry(w * 0.26, 10, 8), [-w * 0.26, w * 0.16, w * 0.12]]]), color: '#3d5a3a', off: [0, h * 0.52, 0] };
+    case 'trackLight': return { geo: cyl(w * 0.24, w * 0.24, 0.02, 12), color: '#fff3d6', off: [0, -w * 0.1, 0] };
+    default: return null;
+  }
 }
 
 /** 공간 치수 (footprint·storyH 프리셋 해석) */
@@ -98,12 +141,20 @@ export function buildSpaceGroup(space, opts = {}) {
         g.add(mm); partRefs.push({ part: p, index: i, object: mm });
       }
     }
-    if (type === 'artwork') { // 자동 액자(프록시): 밝은 캔버스 오버레이
-      for (const { p } of list) {
-        const [w, h] = PART_TYPES.artwork.size;
-        const cv = track(new THREE.Mesh(new THREE.BoxGeometry(w - 0.18, h - 0.18, 0.02), mat('#d8d4cc')));
-        cv.position.set(p.x + Math.sin(p.ry) * 0.06, partY('artwork', H), p.z + Math.cos(p.ry) * 0.06);
-        cv.rotation.y = p.ry; g.add(cv);
+    // 2색 accent(작품 캔버스·유리·잎·화면·렌즈) — 픽킹 대상 아님. 인스턴싱(장식이라 항상 가능).
+    const acc = partAccent(type);
+    if (acc) {
+      const accMat = acc.opacity != null
+        ? new THREE.MeshStandardMaterial({ color: new THREE.Color(acc.color), transparent: true, opacity: acc.opacity, roughness: 0.35, metalness: 0 })
+        : mat(acc.color);
+      geos.push(acc.geo); mats.push(accMat);
+      const place = (p) => { const [ox, oy, oz] = acc.off; return { pos: new THREE.Vector3(p.x + Math.cos(p.ry) * ox + Math.sin(p.ry) * oz, partY(type, H) + oy, p.z - Math.sin(p.ry) * ox + Math.cos(p.ry) * oz), ry: p.ry }; };
+      if (list.length > 1) {
+        const aim = new THREE.InstancedMesh(acc.geo, accMat, list.length);
+        list.forEach(({ p }, k) => { const pl = place(p); aim.setMatrixAt(k, new THREE.Matrix4().compose(pl.pos, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, pl.ry, 0)), new THREE.Vector3(1, 1, 1))); });
+        aim.instanceMatrix.needsUpdate = true; g.add(aim);
+      } else {
+        const pl = place(list[0].p); const am = new THREE.Mesh(acc.geo, accMat); am.position.copy(pl.pos); am.rotation.y = pl.ry; g.add(am);
       }
     }
   }
