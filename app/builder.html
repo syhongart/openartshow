@@ -96,6 +96,12 @@
   .hud-settings .swatches input[type=color]{width:24px;height:24px;padding:0;border:1px solid var(--line);border-radius:7px;background:transparent;cursor:pointer;margin-left:2px}
   .hud-settings .swatches input[type=color]::-webkit-color-swatch-wrapper{padding:2px}
   .hud-settings .swatches input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}
+  .hud-settings .bakebtn{width:100%;appearance:none;border:1px solid rgba(114,230,225,.45);color:#0f1418;font:inherit;font-weight:700;font-size:13px;
+    background:linear-gradient(180deg,#8ef0e9,#5fd8d0);border-radius:10px;padding:11px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:.12s;box-shadow:0 6px 16px -6px rgba(114,230,225,.5)}
+  .hud-settings .bakebtn:hover{filter:brightness(1.05);transform:translateY(-1px)}
+  .hud-settings .bakebtn.on{background:linear-gradient(180deg,#3a3d4b,#2a2c37);color:var(--cyan);border-color:var(--cyan)}
+  .hud-settings .bakebtn .bk-ic{font-size:14px}
+  .hud-settings .bakehint{font-size:10px;color:var(--dim);line-height:1.6;margin:7px 2px 13px}
   .hud-settings .clearbtn{width:100%;margin-top:9px;appearance:none;border:1px solid rgba(176,80,63,.5);color:#e79b8d;font:inherit;font-size:12px;
     background:rgba(176,80,63,.10);border-radius:10px;padding:9px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.12s}
   .hud-settings .clearbtn:hover{background:rgba(176,80,63,.22);color:#ffd9d1}
@@ -241,6 +247,8 @@
     </div>
   </div>
   <div class="fld"><label>전시 타이틀</label><input type="text" id="titleInput" maxlength="60" placeholder="나의 공간" value="나의 공간"></div>
+  <button class="bakebtn" id="bBake"><span class="bk-ic">✦</span><span id="bakeLabel">굽기 · 완성 미리보기</span></button>
+  <div class="bakehint" id="bakeHint">완성하면 조명을 셸에 구워 방문자는 가볍게 봅니다. 편집·조명색 바꾸면 자동 해제.</div>
   <button class="publish" id="bPublish"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="m8 7 4-4 4 4"/></svg>저장 · 발행</button>
   <button class="clearbtn" id="bClear"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg>전체 지우기</button>
   <div class="keys">파츠 고르고 <b>바닥 클릭</b>=배치 · <b>R</b>/<b>Q</b>/<b>E</b>=회전 · <b>Del</b>=삭제 · <b>Ctrl+Z</b>=되돌리기 · <b>WASD</b>·드래그=이동</div>
@@ -375,7 +383,7 @@ function refresh(){ const s=B.getStats(); nParts.textContent=s.parts; nCap.textC
 const saveDot=document.getElementById('saveDot'), saveTxt=document.getElementById('saveTxt');
 function setSaveState(st){ saveDot.className='dot'+(st==='saved'?' saved':st==='dirty'?' dirty':''); saveTxt.textContent=st==='saved'?'저장됨':st==='dirty'?'변경됨':'새 공간'; }
 setSaveState('idle');
-B.on('change', ()=>{ refresh(); setSaveState('dirty'); }); refresh();
+B.on('change', ()=>{ refresh(); setSaveState('dirty'); if(!B.isBaked()) setBakeUI(false); }); refresh();
 
 // 편집/관람 토글
 const modeseg=document.getElementById('modeseg'), mEdit=document.getElementById('mEdit'), mView=document.getElementById('mView');
@@ -408,6 +416,16 @@ function pickLightColor(hex, fromSwatch){
 }
 [...lightSwatches.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>pickLightColor(b.dataset.c, b); });
 lightColorInput.oninput=()=>pickLightColor(lightColorInput.value, null);
+// 라이트 베이킹(GPU 셸 라이트맵) 토글 — 굽기 ↔ 다시 편집
+const bBake=document.getElementById('bBake'), bakeLabel=document.getElementById('bakeLabel'), bakeHint=document.getElementById('bakeHint');
+function setBakeUI(on){ bBake.classList.toggle('on', on); bakeLabel.textContent = on ? '다시 편집' : '굽기 · 완성 미리보기';
+  bBake.querySelector('.bk-ic').textContent = on ? '✎' : '✦';
+  bakeHint.textContent = on ? '지금은 구운(방문자) 화면. 편집하려면 다시 편집을 누르세요.' : '완성하면 조명을 셸에 구워 방문자는 가볍게 봅니다. 편집·조명색 바꾸면 자동 해제.'; }
+bBake.onclick=()=>{
+  if(B.isBaked()){ B.unbake(); setBakeUI(false); showToast('편집 모드로 돌아왔습니다.'); }
+  else { const r=B.bake(); if(r.ok){ setBakeUI(true); showToast(`구웠습니다 — 셸 ${r.surfaces}면 라이트맵, 실시간 스포트→0 (${r.ms}ms). 방문자는 이 화면을 가볍게 봅니다.`); } }
+};
+B.on('unbaked', ()=>setBakeUI(false)); // 조명색 변경 등으로 자동 해제 시 버튼도 리셋(검수 조건1: UI 정합)
 // 전체 지우기(확인 후)
 document.getElementById('bClear').onclick=()=>{
   if(B.getSpace().parts.length===0){ showToast('이미 비어 있습니다.'); return; }

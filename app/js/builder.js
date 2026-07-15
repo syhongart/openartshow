@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { normalizeSpace, newSpace, PART_TYPES, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
-import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting } from './space-render.js';
+import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting, bakeShellLightmaps } from './space-render.js';
 import { youtubeId } from './ytembed.js';
 
 const SAVE_KEY = 'openartshow.space.v1';
@@ -68,6 +68,7 @@ export function createBuilder(canvas, opts = {}) {
   let gridSnap = true;      // 그리드 스냅 on/off(HUD 기즈모 토글)
   let viewMode = 'edit';    // 'edit' | 'view'(관람 미리보기)
   let lightColor = null;    // 유저 지정 조명 색(THREE.Color) — 키라이트+스포트에 적용
+  let baked = false;        // GPU 셸 라이트맵 베이크 상태(굽기 완료 = 방문자 화면)
   const applySnap = (type, x, z) => gridSnap ? snapPos(type, x, z) : { x, z }; // 스냅 off면 자유 배치
   let selected = -1;        // 선택된 파츠 index
   let selectMesh = null;    // 선택 하이라이트 아웃라인
@@ -77,6 +78,7 @@ export function createBuilder(canvas, opts = {}) {
 
   function rebuild() {
     if (group) { scene.remove(group); disposeSpaceGroup(group); }
+    baked = false; // 재빌드(편집)하면 실시간으로 복귀
     group = buildSpaceGroup(space, { pickable: true, hideCeiling: true });
     // 바닥 글로시(거칠기↓·환경반사↑)로 스포트라이트가 반질하게 번지게 — 디자이너 아트디렉션
     const floor = group.userData.floor; // userData 참조(자식 순서 결합 제거, 검수 권고)
@@ -296,12 +298,22 @@ export function createBuilder(canvas, opts = {}) {
     emit('change', { space }); return nm;
   }
   function setLightColor(hex) { // 조명 색(감독: 색도 정할 수 있게) — 키라이트+스포트에 적용
-    lightColor = new THREE.Color(hex); key.color.copy(lightColor); applyLightColorToGroup(); renderOnce();
+    lightColor = new THREE.Color(hex);
+    if (baked) { baked = false; rebuild(); emit('unbaked', {}); } // 베이크 중 색 변경 → 실시간 복귀(검수 조건1). renderOnce는 아래 1회로 통합(검수 권고1)
+    key.color.copy(lightColor); applyLightColorToGroup(); renderOnce();
   }
   function clearSpace() { // 클리어(감독: 지우고 다시) — 파츠 전부 비움, 방 셸은 유지. undo 가능.
     pushUndo(); cancelPlace(); selectIndex(-1);
     space = normalizeSpace({ ...space, parts: [] }); rebuild(); emit('change', { space });
   }
+  // ── GPU 셸 라이트맵 베이크(팀장 승인: 무저장·방문 즉시·하이브리드) ──
+  function bake() {
+    if (!group || baked) return { ok: false };
+    cancelPlace(); selectIndex(-1);
+    const r = bakeShellLightmaps(group, renderer, {});
+    baked = true; renderOnce(); emit('baked', r); return { ok: true, ...r };
+  }
+  function unbake() { if (baked) { baked = false; rebuild(); renderOnce(); emit('unbaked', {}); } } // 다시 편집(실시간 복귀)
 
   rebuild(); applyCamera();
   if (!opts.headless) loop();
@@ -310,7 +322,7 @@ export function createBuilder(canvas, opts = {}) {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
     setScreenVideo, getScreenVideo,
-    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, clearSpace,
+    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, clearSpace, bake, unbake, isBaked: () => baked,
     save, load, exportJSON, importJSON, resize, renderOnce,
     getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
