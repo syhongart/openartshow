@@ -9,7 +9,7 @@
 //   opts.headless: RAF·포인터락·이벤트 바인딩 비활성(헤드리스에서 walk/update 직접 호출).
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
-import { buildSpaceGroup, disposeSpaceGroup, partY, addRoomLighting, bakeShellLightmaps } from './space-render.js';
+import { buildSpaceGroup, disposeSpaceGroup, partY, addRoomLighting, bakeShellLightmapsAsync } from './space-render.js';
 import { PART_TYPES } from './space.js';
 
 const EYE = 1.5;            // 시점 높이(m)
@@ -191,7 +191,17 @@ export function createVisit({ canvas, space, opts = {} } = {}) {
   // ── 설정 ──
   function setFog(on) { scene.fog = on ? fogObj : null; return !!scene.fog; }
   function toggleFog() { return setFog(!scene.fog); }
-  function bake(o = {}) { const r = bakeShellLightmaps(group, renderer, o); renderOnce(); emit('baked', r); return r; }
+  // 비동기 베이크(#54): 첫 방문을 막지 않는다. 표면을 프레임에 나눠 구우며 라이트맵이 점진적으로
+  // 채워진다(렌더 루프가 매 프레임 그려 진행이 보인다). 소프트 GPU는 256² 폴백(space-render bakeRes).
+  // 반환은 Promise — 헤드리스는 await로 완료를 관측. dispose 시 진행 중 베이크를 cancel.
+  let bakeCtl = null, baking = false, disposed = false;
+  function bake(o = {}) {
+    if (baking || (group.userData && group.userData.baked)) return bakeCtl ? bakeCtl.promise : Promise.resolve({ surfaces: 0 });
+    baking = true;
+    bakeCtl = bakeShellLightmapsAsync(group, renderer, { ...o, onProgress: (d, t) => { if (disposed) return; emit('bakeprogress', { done: d, total: t }); if (headless) renderOnce(); } });
+    bakeCtl.promise.then((r) => { baking = false; if (disposed || r.cancelled) return; renderOnce(); emit('baked', r); }); // dispose/취소 후 좀비 콜백 방지(검수 MINOR)
+    return bakeCtl.promise;
+  }
 
   return {
     // 컨트롤러 API(헤드리스 검증·HTML 배선 공용)
@@ -211,6 +221,8 @@ export function createVisit({ canvas, space, opts = {} } = {}) {
     get scene() { return scene; }, get camera() { return camera; }, get renderer() { return renderer; }, get group() { return group; },
     getScene: () => scene, getCamera: () => camera, getRenderer: () => renderer, getGroup: () => group,
     dispose() {
+      disposed = true; // 사후 bake 콜백(renderOnce/emit) 무력화 — disposed 렌더러 접근 방지(검수 MINOR)
+      if (bakeCtl) bakeCtl.cancel(); // 진행 중 비동기 베이크 중단(dispose된 지오메트리 접근 방지)
       if (raf) cancelAnimationFrame(raf);
       if (!headless && typeof window !== 'undefined') {
         canvas.removeEventListener('click', onCanvasClick);
