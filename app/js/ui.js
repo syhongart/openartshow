@@ -833,7 +833,7 @@ function injectStyles() {
   }
 }
 
-#lu-enter-btn {
+#lu-enter-btn, .lu-quick-btn {
   width: 100%; margin-top: 30px;
   font-family: var(--lu-font); font-weight: 600;
   font-size: 14px; letter-spacing: 0.24em; text-indent: 0.24em;
@@ -843,7 +843,17 @@ function injectStyles() {
   box-shadow: 0 6px 20px rgba(95,158,125,0.35);
   transition: transform 0.15s ease, box-shadow 0.25s ease;
 }
-#lu-enter-btn:hover { transform: translateY(-1px); box-shadow: 0 9px 26px rgba(95,158,125,0.45); }
+#lu-enter-btn:hover, .lu-quick-btn:hover { transform: translateY(-1px); box-shadow: 0 9px 26px rgba(95,158,125,0.45); }
+/* 재방문 스마트 입장(A) — 저장된 프로필·아바타가 있으면 '바로 입장' 원클릭 */
+.lu-quick-enter { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 8px; }
+.lu-quick-avatar { width: 66px; height: 66px; border-radius: 50%; background: #f0ede8 center/cover no-repeat; display: flex; align-items: center; justify-content: center; font-size: 32px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
+.lu-quick-greet { text-align: center; }
+.lu-quick-greet b { display: block; font-size: 17px; color: #17140f; }
+.lu-quick-greet span { display: block; margin-top: 3px; font-size: 13px; color: #8a857c; }
+.lu-quick-enter .lu-quick-btn { margin-top: 6px; }
+.lu-quick-change { background: none; border: none; color: #8a857c; font-size: 13px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-family: var(--lu-font); }
+.lu-quick-change:hover { color: #17140f; }
+.lu-lobby-form.lu-collapsed { display: none; }
 
 /* ------------------------------ 전시 선택 ------------------------------ */
 .lu-picker-note {
@@ -1979,12 +1989,44 @@ function buildLobby() {
     text: '작가 스튜디오에서 나만의 전시 만들기 →',
   });
 
-  const card = el('div', { className: 'lu-lobby-card' }, [
-    title, sub, rule,
+  // 입장 폼(닉네임·캐릭터·소셜) — 재방문자에겐 접어두고 '바꾸기'로 펼친다 (A: 재방문 스마트 입장)
+  const formWrap = el('div', { className: 'lu-lobby-form' }, [
     nickLabel, nickInput, nickHint,
     charLabel, designBtn,
     enterBtn,
     orDivider, authBox,
+  ]);
+
+  // 저장된 로그인 프로필 또는 아바타 룩이 있으면 '다시 오셨어요' 원클릭 입장을 상단에 노출
+  const quickEnter = el('div', { className: 'lu-quick-enter' });
+  function buildQuickEnter() {
+    quickEnter.textContent = '';
+    const prof = authGetProfile();
+    const thumb = readStoredChibiThumb();
+    const avatar = el('span', { className: 'lu-quick-avatar' });
+    if (thumb) avatar.style.backgroundImage = `url('${thumb}')`; else avatar.textContent = '🙂';
+    const greet = el('div', { className: 'lu-quick-greet' }, [
+      el('b', { text: (prof ? `${prof.name}님, ` : '') + '다시 오셨어요' }),
+      el('span', { text: '저장한 모습으로 바로 입장할 수 있어요' }),
+    ]);
+    const goBtn = el('button', { className: 'lu-quick-btn', type: 'button', text: '바로 입장' });
+    goBtn.addEventListener('click', submit);
+    const changeBtn = el('button', { className: 'lu-quick-change', type: 'button', text: '닉네임·캐릭터 바꾸기' });
+    changeBtn.addEventListener('click', () => {
+      formWrap.classList.remove('lu-collapsed');
+      quickEnter.style.display = 'none';
+      try { nickInput.focus(); } catch (_) {}
+    });
+    quickEnter.append(avatar, greet, goBtn, changeBtn);
+  }
+  const isReturning = !!(authGetProfile() || readStoredChibi());
+  if (isReturning) { buildQuickEnter(); formWrap.classList.add('lu-collapsed'); }
+  else { quickEnter.style.display = 'none'; }
+
+  const card = el('div', { className: 'lu-lobby-card' }, [
+    title, sub, rule,
+    quickEnter,
+    formWrap,
     pickerBox,
     divider, studioLink,
   ]);
