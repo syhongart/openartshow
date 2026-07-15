@@ -1168,6 +1168,15 @@ export function buildChibi(params) {
       if (p.species === 'tiger' && legMat === skinMat) shin.userData.outlineBase = p.skin;
       addOutline(shin, 0.011, mats, geos);
       knee.add(shin);
+      // 무릎 관절 볼(감독 지시) — 허벅지 하단=종아리 상단이 만나는 지점(knee 로컬
+      // 원점)을 채우는 작은 구. knee 그룹의 자식이라 무릎이 굽을 때 종아리와 함께
+      // 돈다 — 편 상태(회전 0)에선 허벅지·종아리 캡과 거의 같은 반경이라 이음매만
+      // 매끈히 메우고, 굽힌 상태(sit/kick/breakdance)에선 허벅지가 떨어져 나가며
+      // 이 볼만 그 자리에 남아 관절처럼 볼록하게 드러난다.
+      const kneeJoint = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.056, 14, 12)), legMat);
+      if (p.species === 'tiger' && legMat === skinMat) kneeJoint.userData.outlineBase = p.skin;
+      addOutline(kneeJoint, 0.011, mats, geos);
+      knee.add(kneeJoint);
       // 발 — 기존 절대좌표(hip 기준 y=-0.305)를 knee 로컬로 역산: -0.305-(-KNEE_Y)=-0.16.
       const foot = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.082, 16, 12)), shoeMat);
       foot.scale.set(1, 0.72, 1.25);
