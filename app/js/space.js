@@ -16,7 +16,7 @@
 // 데이터 모델만 정의(렌더/UX는 별건). 스크린 sourceUrl은 예약만(유튜브=§6-5 법무·CSP 게이트).
 // -----------------------------------------------------------------------------
 
-export const SPACE_VERSION = 1;
+export const SPACE_VERSION = 2;
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -52,8 +52,10 @@ export const PART_TYPE_IDS = new Set(Object.keys(PART_TYPES));
 
 // ── 마감(스와치) — 오브젝트가 아니라 shell 표면에 적용 ───────────────────────
 export const FINISH = {
-  wall:    { ids: ['white', 'warmsand', 'charcoal', 'deepviolet'], def: 'white' }, // deepviolet=피처월 1면 한정(디자이너 재확정 대상)
-  floor:   { ids: ['parquet', 'terrazzo', 'concrete'], def: 'parquet' },
+  wall:    { ids: ['white', 'warmsand', 'charcoal'], def: 'white' }, // 4벽 공통 마감(중립 배경 규율 §3-6)
+  // feature=피처월 1면 전용 마감. kintsugi(금계)는 여기에만 존재 → 스키마 차원에서 "1면 강제"(팀장 조건).
+  feature: { ids: ['deepviolet', 'kintsugi', 'charcoal', 'warmsand'], def: 'deepviolet' },
+  floor:   { ids: ['parquet', 'terrazzo', 'concrete', 'grass', 'water'], def: 'parquet' }, // grass·water=v2 신재질(Tier1: water는 정적 반사 폴백, 스크롤은 방문자뷰 플래그)
   ceiling: { ids: ['whiteflat', 'darkmatte'], def: 'whiteflat' },
   trim:    { ids: ['brass', 'charcoal'], def: 'brass' },
 };
@@ -81,7 +83,7 @@ export const DEFAULT_SPACE = Object.freeze({
     footprint: 'medium',      // 9×7m
     storyH: 'gallery',        // 3.6m
     wallT: 0.2,
-    finish: { wall: 'white', floor: 'parquet', ceiling: 'whiteflat', trim: 'brass', featureWall: 'north' },
+    finish: { wall: 'white', floor: 'parquet', ceiling: 'whiteflat', trim: 'brass', featureWall: 'north', featureFinish: 'deepviolet' },
   },
   spawn: { x: 0, z: 3.0, ry: 0 }, // 입구 아치 앞, 북벽(작품) 정면
   parts: [
@@ -125,6 +127,11 @@ function normalizePart(raw) {
   // [floor 예약 필드 의미론 — 팀장 재판정 확정] 0-기반 층 인덱스. 생략=0(1층).
   // v1 소비자는 무시(단일 룸). v2 다층에서 이 의미로 재해석(재정의 아님).
   if (Number.isInteger(raw.floor)) p.floor = raw.floor;
+  // [y — v2 스택 배치] 절대 월드 Y(파츠 중심). 생략=0=렌더러 기본 y(바닥/벽걸이 규칙).
+  // "위에 쌓기"는 아래 파츠 윗면 + 내 절반높이를 y로 기록. 0은 무의미(바닥에 묻힘)라 직렬화 생략.
+  // 상한 20m: 최대 층고(grand 4.2m) 대비 넉넉한 스택 여유 + importJSON 천장관통 값 방어(검수 MINOR).
+  const y = clamp(raw.y, 0, 20, 0);
+  if (y > 0) p.y = y;
   if (raw.color !== undefined) p.color = hex(raw.color, undefined);
   if (spec.art) {                                            // 작품: 자동 액자
     p.frame = pick(raw.frame, FRAME_IDS, FRAME_STYLES.def);
@@ -162,6 +169,7 @@ export function normalizeSpace(raw) {
         ceiling: pick(shf.ceiling, FIN('ceiling'), FINISH.ceiling.def),
         trim: pick(shf.trim, FIN('trim'), FINISH.trim.def),
         featureWall: pick(shf.featureWall, new Set(['none', 'north', 'south', 'east', 'west']), 'north'),
+        featureFinish: pick(shf.featureFinish, FIN('feature'), FINISH.feature.def), // 피처월 1면 전용(kintsugi 포함)
       },
     },
     spawn: { x: num(sp.x, DEFAULT_SPACE.spawn.x), z: num(sp.z, DEFAULT_SPACE.spawn.z), ry: num(sp.ry, DEFAULT_SPACE.spawn.ry) },
@@ -182,7 +190,19 @@ export function migrateSpace(doc) {
     throw e;
   }
   if (v === 0) d = { ...d, version: 1 };   // v0(무버전) → v1: 필드명 불변, 버전만 부여
-  // 이후 버전: if (d.version === 1) { ...→2; d.version = 2 } 형태로 누적 상향 추가
+  if (d.version === 1) {
+    // v1 → v2: 스택(y)·피처월 마감(featureFinish)·신재질(grass/water) 추가. 기존 필드 불변 —
+    // 신규 필드는 normalizeSpace가 기본값 자동채움(y 생략=바닥, featureFinish=deepviolet).
+    // [명시 규칙] deepviolet은 v1 주석부터 "피처월 1면 한정" 의도였으나 wall 집합에 섞여 있었다.
+    // v2에서 wall→feature 집합으로 이관하므로, v1의 wall:'deepviolet' 문서는 조용히 white로
+    // 대체(유실)하지 않고 wall=중립(white) + featureFinish=deepviolet로 의도를 명시 이관한다.
+    const sh = d.shell && typeof d.shell === 'object' ? d.shell : null;
+    const f = sh && sh.finish && typeof sh.finish === 'object' ? sh.finish : null;
+    if (f && f.wall === 'deepviolet') {
+      d = { ...d, shell: { ...sh, finish: { ...f, wall: 'white', featureFinish: f.featureFinish || 'deepviolet' } } };
+    }
+    d = { ...d, version: 2 };
+  }
   return d;
 }
 

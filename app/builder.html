@@ -96,6 +96,12 @@
   .hud-settings .swatches input[type=color]{width:24px;height:24px;padding:0;border:1px solid var(--line);border-radius:7px;background:transparent;cursor:pointer;margin-left:2px}
   .hud-settings .swatches input[type=color]::-webkit-color-swatch-wrapper{padding:2px}
   .hud-settings .swatches input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}
+  .hud-settings .finchips{display:flex;flex-wrap:wrap;gap:6px}
+  .hud-settings .finchips button{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11px;color:var(--ink);
+    background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:999px;padding:5px 10px 5px 7px;cursor:pointer;transition:.12s}
+  .hud-settings .finchips button:hover{border-color:rgba(139,114,255,.6)}
+  .hud-settings .finchips button.on{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet);background:rgba(139,114,255,.14)}
+  .hud-settings .finchips i{width:13px;height:13px;border-radius:4px;background:var(--sw);box-shadow:inset 0 0 0 1px rgba(0,0,0,.3)}
   .hud-settings .bakebtn{width:100%;appearance:none;border:1px solid rgba(114,230,225,.45);color:#0f1418;font:inherit;font-weight:700;font-size:13px;
     background:linear-gradient(180deg,#8ef0e9,#5fd8d0);border-radius:10px;padding:11px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:.12s;box-shadow:0 6px 16px -6px rgba(114,230,225,.5)}
   .hud-settings .bakebtn:hover{filter:brightness(1.05);transform:translateY(-1px)}
@@ -247,6 +253,30 @@
     </div>
   </div>
   <div class="fld"><label>전시 타이틀</label><input type="text" id="titleInput" maxlength="60" placeholder="나의 공간" value="나의 공간"></div>
+  <div class="fld"><label>바닥 마감</label>
+    <div class="finchips" data-fin="floor" id="finFloor">
+      <button data-id="parquet" class="on"><i style="--sw:#b98a53"></i>파케</button>
+      <button data-id="terrazzo"><i style="--sw:#d8d2c6"></i>테라조</button>
+      <button data-id="concrete"><i style="--sw:#8f8d88"></i>콘크리트</button>
+      <button data-id="grass"><i style="--sw:#5b8746"></i>잔디</button>
+      <button data-id="water"><i style="--sw:#22505f"></i>물</button>
+    </div>
+  </div>
+  <div class="fld"><label>벽 마감</label>
+    <div class="finchips" data-fin="wall" id="finWall">
+      <button data-id="white" class="on"><i style="--sw:#ffffff"></i>화이트</button>
+      <button data-id="warmsand"><i style="--sw:#e6d8bf"></i>웜샌드</button>
+      <button data-id="charcoal"><i style="--sw:#3a3a40"></i>차콜</button>
+    </div>
+  </div>
+  <div class="fld"><label>피처월(1면)</label>
+    <div class="finchips" data-fin="featureFinish" id="finFeature">
+      <button data-id="deepviolet" class="on"><i style="--sw:#2b2833"></i>딥바이올렛</button>
+      <button data-id="kintsugi"><i style="--sw:linear-gradient(135deg,#171317 40%,#c39a4a)"></i>금계</button>
+      <button data-id="charcoal"><i style="--sw:#3a3a40"></i>차콜</button>
+      <button data-id="warmsand"><i style="--sw:#e6d8bf"></i>웜샌드</button>
+    </div>
+  </div>
   <button class="bakebtn" id="bBake"><span class="bk-ic">✦</span><span id="bakeLabel">굽기 · 완성 미리보기</span></button>
   <div class="bakehint" id="bakeHint">완성하면 조명을 셸에 구워 방문자는 가볍게 봅니다. 편집·조명색 바꾸면 자동 해제.</div>
   <button class="publish" id="bPublish"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="m8 7 4-4 4 4"/></svg>저장 · 발행</button>
@@ -416,6 +446,17 @@ function pickLightColor(hex, fromSwatch){
 }
 [...lightSwatches.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>pickLightColor(b.dataset.c, b); });
 lightColorInput.oninput=()=>pickLightColor(lightColorInput.value, null);
+// 마감(재질) 칩 — 바닥·벽·피처월. B.setFinish(kind,id)로 재빌드, 칩 활성표시.
+const finGroups=[...document.querySelectorAll('.finchips')];
+finGroups.forEach(grp=>{ const kind=grp.dataset.fin;
+  [...grp.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>{
+    const applied=B.setFinish(kind, b.dataset.id);
+    [...grp.querySelectorAll('button')].forEach(x=>x.classList.toggle('on', x.dataset.id===applied));
+  }; });
+});
+function syncFinishChips(){ const f=B.getSpace().shell.finish; finGroups.forEach(grp=>{ const cur=f[grp.dataset.fin];
+  [...grp.querySelectorAll('button')].forEach(x=>x.classList.toggle('on', x.dataset.id===cur)); }); }
+syncFinishChips();
 // 라이트 베이킹(GPU 셸 라이트맵) 토글 — 굽기 ↔ 다시 편집
 const bBake=document.getElementById('bBake'), bakeLabel=document.getElementById('bakeLabel'), bakeHint=document.getElementById('bakeHint');
 function setBakeUI(on){ bBake.classList.toggle('on', on); bakeLabel.textContent = on ? '다시 편집' : '굽기 · 완성 미리보기';
@@ -472,7 +513,7 @@ B.on('saved', ()=>{ showToast('저장했습니다.'); setSaveState('saved'); });
 
 // 툴바
 document.getElementById('bSave').onclick=()=>B.save();
-document.getElementById('bLoad').onclick=()=>{ if(B.load()){ refresh(); setSaveState('saved'); const nm=B.getSpace().meta?.name; if(nm){ spaceTitle.textContent=nm; titleInput.value=nm; } } else showToast('저장된 공간이 없습니다.'); };
+document.getElementById('bLoad').onclick=()=>{ if(B.load()){ refresh(); syncFinishChips(); setSaveState('saved'); const nm=B.getSpace().meta?.name; if(nm){ spaceTitle.textContent=nm; titleInput.value=nm; } } else showToast('저장된 공간이 없습니다.'); };
 document.getElementById('bUndo').onclick=()=>B.undo();
 document.getElementById('bExport').onclick=()=>{ const blob=new Blob([B.exportJSON()],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-space.json'; a.click(); URL.revokeObjectURL(a.href); };
 

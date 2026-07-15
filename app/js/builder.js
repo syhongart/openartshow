@@ -6,7 +6,7 @@
 // 테스트 가능성: createBuilder()가 스크립트 API를 반환 → 헤드리스로 전 경로 검증.
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
-import { normalizeSpace, newSpace, PART_TYPES, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
+import { normalizeSpace, newSpace, PART_TYPES, FINISH, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
 import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting, bakeShellLightmaps } from './space-render.js';
 import { youtubeId } from './ytembed.js';
 
@@ -80,9 +80,11 @@ export function createBuilder(canvas, opts = {}) {
     if (group) { scene.remove(group); disposeSpaceGroup(group); }
     baked = false; // 재빌드(편집)하면 실시간으로 복귀
     group = buildSpaceGroup(space, { pickable: true, hideCeiling: true });
-    // 바닥 글로시(거칠기↓·환경반사↑)로 스포트라이트가 반질하게 번지게 — 디자이너 아트디렉션
+    // 바닥 글로시(거칠기↓·환경반사↑)로 스포트라이트가 반질하게 번지게 — 디자이너 아트디렉션.
+    // grass=매트 유지(글로시 강제 제외), water=자체 레시피(roughness 0.1)라 덮어쓰기 제외.
     const floor = group.userData.floor; // userData 참조(자식 순서 결합 제거, 검수 권고)
-    if (floor && floor.material) { floor.material.roughness = 0.16; floor.material.envMapIntensity = 1.35; }
+    const fkind = space.shell.finish.floor;
+    if (floor && floor.material && fkind !== 'grass' && fkind !== 'water') { floor.material.roughness = 0.16; floor.material.envMapIntensity = 1.35; }
     addRoomLighting(group); // 작품 스포트라이트·천장 다운라이트·접촉그림자
     applyLightColorToGroup(); // 유저 지정 조명색을 새 스포트라이트에 재적용
     scene.add(group);
@@ -115,11 +117,11 @@ export function createBuilder(canvas, opts = {}) {
     });
     ghost.visible = false; scene.add(ghost);
   }
-  function moveGhostTo(x, z) {
+  function moveGhostTo(x, z, y) {
     if (!ghost || !placingType) return;
     const { hw, hd, t, H } = spaceDims(space);
     const s = applySnap(placingType, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
-    ghost.position.set(s.x, partY(placingType, H), s.z); ghost.visible = true;
+    ghost.position.set(s.x, (y != null ? y : partY(placingType, H)), s.z); ghost.visible = true; // v2 스택: y 있으면 위로
     const bad = uniqueTexCapReached(placingType);
     ghostMat.color.setHex(bad ? 0xb0503f : 0x8b7bd8); // 불가=테라코타
   }
@@ -145,7 +147,7 @@ export function createBuilder(canvas, opts = {}) {
     if (selected < 0 || selected >= space.parts.length) return;
     const p = space.parts[selected]; const [w, h, d] = PART_TYPES[p.t].size; const { H } = spaceDims(space);
     selectMesh = new THREE.Mesh(new THREE.BoxGeometry(w * 1.06 + 0.05, h * 1.06 + 0.05, d * 1.06 + 0.05), new THREE.MeshBasicMaterial({ color: 0x6fe3ff, wireframe: true }));
-    selectMesh.position.set(p.x, partY(p.t, H), p.z); selectMesh.rotation.y = p.ry; scene.add(selectMesh);
+    selectMesh.position.set(p.x, (p.y != null ? p.y : partY(p.t, H)), p.z); selectMesh.rotation.y = p.ry; scene.add(selectMesh); // v2 스택: p.y 우선
   }
   function rotateSelected(dir = 1) {
     if (selected < 0) return;
@@ -220,6 +222,26 @@ export function createBuilder(canvas, opts = {}) {
     const pt = new THREE.Vector3();
     return raycaster.ray.intersectPlane(plane, pt) ? { x: pt.x, z: pt.z } : null;
   }
+  // v2 스택: 파츠 위로 레이가 맞으면 그 파츠 윗면 좌표 반환 → "위에 쌓기"(감독 #46).
+  function pickStack(v2) {
+    raycaster.setFromCamera(v2, camera);
+    const objs = (group.userData.partRefs || []).map((r) => r.object);
+    const hit = raycaster.intersectObjects(objs, false)[0];
+    if (!hit) return null;
+    const idx = hit.object.userData.partIndex; const p = space.parts[idx];
+    if (!p) return null;
+    const { H } = spaceDims(space);
+    const cy = (p.y != null) ? p.y : partY(p.t, H);      // 아래 파츠 중심 y
+    const topY = cy + PART_TYPES[p.t].size[1] / 2;         // 아래 파츠 윗면
+    return { index: idx, x: p.x, z: p.z, topY };
+  }
+  // 배치 대상 좌표 결정: 파츠 위(스택) 우선, 없으면 바닥. 반환에 y(스택 시)를 포함.
+  function pickPlacement(v2, type) {
+    const st = pickStack(v2);
+    if (st) return { x: st.x, z: st.z, y: st.topY + PART_TYPES[type].size[1] / 2 };
+    const f = pickFloor(v2);
+    return f ? { x: f.x, z: f.z } : null;
+  }
 
   // ── 이벤트 바인딩(데스크톱) ──
   let dragging = false, lastX = 0, lastY = 0, moved = false;
@@ -243,14 +265,14 @@ export function createBuilder(canvas, opts = {}) {
       else { orbit.az -= dx * 0.008; orbit.pol = Math.max(0.25, Math.min(1.45, orbit.pol - dy * 0.006)); }
       lastX = e.clientX; lastY = e.clientY; applyCamera();
     } else if (placingType) {
-      const f = pickFloor(ndc(e.clientX, e.clientY, rect)); if (f) moveGhostTo(f.x, f.z);
+      const pl = pickPlacement(ndc(e.clientX, e.clientY, rect), placingType); if (pl) moveGhostTo(pl.x, pl.z, pl.y);
     }
   }
   function onUp(e) {
     dragging = false;
     if (moved) return;
     const rect = canvas.getBoundingClientRect(); const v = ndc(e.clientX, e.clientY, rect);
-    if (placingType) { const f = pickFloor(v); if (f) addPart(placingType, f.x, f.z); }
+    if (placingType) { const pl = pickPlacement(v, placingType); if (pl) addPart(placingType, pl.x, pl.z, pl.y != null ? { y: pl.y } : {}); }
     else selectIndex(pickPart(v));
   }
   function onWheel(e) { orbit.rad = Math.max(3, Math.min(20, orbit.rad + Math.sign(e.deltaY) * 0.6)); applyCamera(); e.preventDefault(); }
@@ -302,6 +324,16 @@ export function createBuilder(canvas, opts = {}) {
     if (baked) { baked = false; rebuild(); emit('unbaked', {}); } // 베이크 중 색 변경 → 실시간 복귀(검수 조건1). renderOnce는 아래 1회로 통합(검수 권고1)
     key.color.copy(lightColor); applyLightColorToGroup(); renderOnce();
   }
+  // 마감(재질) 변경 — kind ∈ {wall,floor,ceiling,featureFinish,featureWall}. normalizeSpace가 검증·클램프.
+  const FINISH_SET = { wall: FINISH.wall.ids, floor: FINISH.floor.ids, ceiling: FINISH.ceiling.ids, trim: FINISH.trim.ids, featureFinish: FINISH.feature.ids, featureWall: ['none', 'north', 'south', 'east', 'west'] };
+  function setFinish(kind, id) {
+    const set = FINISH_SET[kind];
+    if (!set || !set.includes(id)) return space.shell.finish[kind]; // 무효 id 무시(현재값 유지) — 기본값 리셋 방지. kintsugi를 벽에 넣는 등 오용 차단(1면 강제 보강).
+    if (baked) { baked = false; emit('unbaked', {}); } // 베이크 상태에서 재질 바꾸면 실시간 복귀(색 변경 규율과 동일)
+    space = normalizeSpace({ ...space, shell: { ...space.shell, finish: { ...space.shell.finish, [kind]: id } } });
+    rebuild(); emit('change', { space });
+    return space.shell.finish[kind];
+  }
   function clearSpace() { // 클리어(감독: 지우고 다시) — 파츠 전부 비움, 방 셸은 유지. undo 가능.
     pushUndo(); cancelPlace(); selectIndex(-1);
     space = normalizeSpace({ ...space, parts: [] }); rebuild(); emit('change', { space });
@@ -322,7 +354,7 @@ export function createBuilder(canvas, opts = {}) {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
     setScreenVideo, getScreenVideo,
-    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, clearSpace, bake, unbake, isBaked: () => baked,
+    resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, clearSpace, bake, unbake, isBaked: () => baked,
     save, load, exportJSON, importJSON, resize, renderOnce,
     getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },

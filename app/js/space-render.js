@@ -28,6 +28,45 @@ const plasterTex = (tint, w, h) => texMat({ gen: createPlasterMaps, key: 'plaste
 const concreteTex = (tint, w, h) => texMat({ gen: createConcreteMaps, key: 'concrete', tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.55, roughness: 0.9 });
 const parquetTex = (w, d) => texMat({ gen: createParquetMaps, key: 'parquet', tint: 0xffffff, repeat: [Math.max(1, w / 2), Math.max(1, d / 2)], normalScale: 0.45, roughness: 0.5 });
 
+// ── v2 신재질 프로시저럴 텍스처(자작·외부에셋 0 — §6 IP 게이트 준수) ──────────
+// 결정적 시드 PRNG(mulberry32) — 로드마다 동일 결과(프로젝트 결정성 규율·베이크 정합).
+function seeded(s) { return () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function canvasTex(size, draw) {
+  const c = (typeof document !== 'undefined') ? document.createElement('canvas') : null;
+  if (!c) return null;
+  c.width = c.height = size; draw(c.getContext('2d'), size);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t;
+}
+// 잔디 — 2색 스페클(방향성 없는 점 노이즈 → 타일 이음새 최소). 매트.
+function grassTexGen() {
+  return canvasTex(256, (x, S) => {
+    const r = seeded(7); x.fillStyle = '#527f3d'; x.fillRect(0, 0, S, S);
+    for (let i = 0; i < 5200; i++) { const g = 90 + (r() * 80 | 0); x.fillStyle = `rgba(${44 + (r() * 26 | 0)},${g},${34 + (r() * 24 | 0)},${0.35 + r() * 0.4})`; x.beginPath(); x.arc(r() * S, r() * S, 0.7 + r() * 1.4, 0, 6.29); x.fill(); }
+  });
+}
+// 금계(kintsugi) — 검은 옻칠 바탕 + 금빛 갈라짐 정맥(가지치기). 피처월 1면 전용.
+function kintsugiTexGen() {
+  return canvasTex(512, (x, S) => {
+    const r = seeded(21); x.fillStyle = '#171317'; x.fillRect(0, 0, S, S);
+    for (let i = 0; i < 900; i++) { x.fillStyle = `rgba(${28 + (r() * 20 | 0)},${20 + (r() * 12 | 0)},${26 + (r() * 16 | 0)},0.22)`; x.beginPath(); x.arc(r() * S, r() * S, 6 + r() * 42, 0, 6.29); x.fill(); }
+    const vein = (px, py, a, steps, w) => {
+      for (let s = 0; s < steps; s++) {
+        a += (r() - 0.5) * 0.6; const nx = px + Math.cos(a) * (9 + r() * 8), ny = py + Math.sin(a) * (9 + r() * 8);
+        x.lineCap = 'round';
+        x.strokeStyle = '#c39a4a'; x.lineWidth = w; x.beginPath(); x.moveTo(px, py); x.lineTo(nx, ny); x.stroke();
+        x.strokeStyle = 'rgba(244,220,150,0.65)'; x.lineWidth = Math.max(0.5, w * 0.4); x.beginPath(); x.moveTo(px, py); x.lineTo(nx, ny); x.stroke();
+        px = nx; py = ny;
+        if (r() < 0.11 && w > 1.3 && steps - s > 4) vein(px, py, a + (r() < 0.5 ? 1 : -1) * 0.9, (steps - s) >> 1, w * 0.6);
+      }
+    };
+    for (let k = 0; k < 5; k++) vein(r() * S, r() * S, r() * 6.29, 26 + (r() * 20 | 0), 2.2 + r() * 1.3);
+  });
+}
+const _genCache = {};
+const genTex = (key, gen) => (key in _genCache ? _genCache[key] : (_genCache[key] = gen()));
+// 캐시 텍스처를 clone 후 repeat 설정(공유 캐시 오염 방지 — texMat와 동일 규율)
+function cloneRepeat(base, rx, ry) { if (!base) return null; const t = base.clone(); t.needsUpdate = true; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry); return t; }
+
 export const ART_SCREEN_CAP = 80; // 실측 근거: 92개=draw call 100 도달, 80개=95(여유 15%)
 export const UNIQUE_TEX_TYPES = new Set(['artwork', 'screen']); // draw call에 1:1로 더해지는 타입
 
@@ -47,6 +86,8 @@ const MATS = {
   parquet:    () => SM({ color: 0xb98a53, roughness: 0.5, metalness: 0 }),
   terrazzo:   () => SM({ color: 0xd8d2c6, roughness: 0.55, metalness: 0 }),
   concrete:   () => SM({ color: 0x8f8d88, roughness: 0.9, metalness: 0 }),
+  grass:      () => SM({ color: 0x5b8746, roughness: 0.96, metalness: 0 }),   // 텍스처 미가용(비-DOM) 폴백
+  water:      () => SM({ color: 0x22505f, roughness: 0.1, metalness: 0.18, envMapIntensity: 1.4 }), // Tier1: 정적 반사(스크롤=방문자뷰 플래그)
   darkmatte:  () => SM({ color: 0x26262b, roughness: 0.85, metalness: 0 }),
   wood:       () => SM({ color: 0xb99a6f, roughness: 0.6, metalness: 0 }),
   darkMetal:  () => SM({ color: 0x26241f, roughness: 0.4, metalness: 0.75 }),
@@ -64,8 +105,9 @@ const MATS = {
 };
 // 마감 스와치 → 재질
 const FINISH_MAT = {
-  wall:    { white: MATS.plasterW, warmsand: MATS.warmsand, charcoal: MATS.charcoal, deepviolet: MATS.deepviolet },
-  floor:   { parquet: MATS.parquet, terrazzo: MATS.terrazzo, concrete: MATS.concrete },
+  wall:    { white: MATS.plasterW, warmsand: MATS.warmsand, charcoal: MATS.charcoal },
+  feature: { deepviolet: MATS.deepviolet, charcoal: MATS.charcoal, warmsand: MATS.warmsand }, // kintsugi는 featureMat에서 텍스처 처리
+  floor:   { parquet: MATS.parquet, terrazzo: MATS.terrazzo, concrete: MATS.concrete, grass: MATS.grass, water: MATS.water },
   ceiling: { whiteflat: MATS.plasterW, darkmatte: MATS.darkmatte },
 };
 // 파츠 → 재질 (미술관 재질 매핑)
@@ -89,7 +131,19 @@ function wallMat(id, w, h) {
 function floorMatTex(id, w, d) {
   if (id === 'parquet') return parquetTex(w, d);
   if (id === 'concrete') return concreteTex(0xffffff, w, d);
-  return finishMat('floor', id); // terrazzo=단색
+  if (id === 'grass') { // 잔디: 스페클 텍스처 + 매트(비-DOM 폴백=단색 grass)
+    const map = cloneRepeat(genTex('grass', grassTexGen), Math.max(2, w / 1.5), Math.max(2, d / 1.5));
+    return map ? new THREE.MeshStandardMaterial({ map, roughness: 0.96, metalness: 0 }) : MATS.grass();
+  }
+  return finishMat('floor', id); // terrazzo·water=단색(water=Tier1 정적 반사)
+}
+// 피처월 1면 마감 — kintsugi(금계)는 여기에만 존재(스키마 feature 집합) → 구조적 1면 강제.
+function featureMat(id, w, h) {
+  if (id === 'kintsugi') {
+    const map = cloneRepeat(genTex('kintsugi', kintsugiTexGen), Math.max(1, w / 2.6), Math.max(1, h / 2.6));
+    if (map) return new THREE.MeshStandardMaterial({ map, roughness: 0.5, metalness: 0.2, envMapIntensity: 1.1 });
+  }
+  return finishMat('feature', id); // deepviolet(기본)·charcoal·warmsand, kintsugi 폴백
 }
 
 /** 파츠 y 배치 규칙 (벽걸이/바닥/천장) */
@@ -190,13 +244,13 @@ export function buildSpaceGroup(space, opts = {}) {
   }
   const fwSide = space.shell.finish.featureWall;
   if (fwSide && fwSide !== 'none') {
-    const fwl = track(new THREE.Mesh(new THREE.BoxGeometry(fw - 0.2, H - 0.2, 0.02), MATS.deepviolet()));
+    const fwW = (fwSide === 'east' || fwSide === 'west') ? fd - 0.2 : fw - 0.2;
+    const fwl = track(new THREE.Mesh(new THREE.BoxGeometry(fw - 0.2, H - 0.2, 0.02), featureMat(space.shell.finish.featureFinish, fwW, H - 0.2)));
     const map = { north: [0, -hd + t / 2 + 0.02, 0], south: [0, hd - t / 2 - 0.02, 0], east: [hw - t / 2 - 0.02, 0, Math.PI / 2], west: [-hw + t / 2 + 0.02, 0, Math.PI / 2] };
     const [px, pz, ry] = map[fwSide] || map.north;
     fwl.position.set(px, H / 2, pz); if (ry) fwl.rotation.y = ry;
     g.add(fwl);
     const fwN = { north: [0, 0, 1], south: [0, 0, -1], east: [-1, 0, 0], west: [1, 0, 0] }[fwSide] || [0, 0, 1];
-    const fwW = (fwSide === 'east' || fwSide === 'west') ? fd - 0.2 : fw - 0.2;
     shellSurf.push({ mesh: fwl, center: new THREE.Vector3(px + fwN[0] * 0.02, H / 2, pz + fwN[2] * 0.02), normal: new THREE.Vector3(fwN[0], fwN[1], fwN[2]), up: UP_Y(), width: fwW, height: H - 0.2 });
   }
 
@@ -204,6 +258,8 @@ export function buildSpaceGroup(space, opts = {}) {
   const byType = {};
   space.parts.forEach((p, i) => { (byType[p.t] = byType[p.t] || []).push({ p, i }); });
   const partRefs = [];
+  // v2 스택: p.y(절대 월드 Y·파츠 중심)가 있으면 그 값, 없으면 타입별 기본 y(바닥/벽걸이).
+  const pY = (p, type) => (p.y != null ? p.y : partY(type, H));
   for (const [type, list] of Object.entries(byType)) {
     const geo = partGeo(type), material = partMat(type); geos.push(geo); mats.push(material);
     const canInstance = !UNIQUE_TEX_TYPES.has(type) && list.length > 1 && !opts.pickable;
@@ -211,14 +267,14 @@ export function buildSpaceGroup(space, opts = {}) {
       const im = new THREE.InstancedMesh(geo, material, list.length);
       im.castShadow = true; im.receiveShadow = true;
       list.forEach(({ p }, k) => {
-        const m4 = new THREE.Matrix4().compose(new THREE.Vector3(p.x, partY(type, H), p.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, p.ry, 0)), new THREE.Vector3(1, 1, 1));
+        const m4 = new THREE.Matrix4().compose(new THREE.Vector3(p.x, pY(p, type), p.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, p.ry, 0)), new THREE.Vector3(1, 1, 1));
         im.setMatrixAt(k, m4);
       });
       im.instanceMatrix.needsUpdate = true; g.add(im);
     } else {
       for (const { p, i } of list) {
         const mm = new THREE.Mesh(geo, material);
-        mm.position.set(p.x, partY(type, H), p.z); mm.rotation.y = p.ry;
+        mm.position.set(p.x, pY(p, type), p.z); mm.rotation.y = p.ry;
         mm.castShadow = true; mm.receiveShadow = true;
         if (opts.pickable) mm.userData.partIndex = i;
         g.add(mm); partRefs.push({ part: p, index: i, object: mm });
@@ -229,7 +285,7 @@ export function buildSpaceGroup(space, opts = {}) {
     if (acc) {
       const accMat = (MATS[acc.mat] || MATS.paper)();
       geos.push(acc.geo); mats.push(accMat);
-      const place = (p) => { const [ox, oy, oz] = acc.off; return { pos: new THREE.Vector3(p.x + Math.cos(p.ry) * ox + Math.sin(p.ry) * oz, partY(type, H) + oy, p.z - Math.sin(p.ry) * ox + Math.cos(p.ry) * oz), ry: p.ry }; };
+      const place = (p) => { const [ox, oy, oz] = acc.off; return { pos: new THREE.Vector3(p.x + Math.cos(p.ry) * ox + Math.sin(p.ry) * oz, pY(p, type) + oy, p.z - Math.sin(p.ry) * ox + Math.cos(p.ry) * oz), ry: p.ry }; };
       if (list.length > 1) {
         const aim = new THREE.InstancedMesh(acc.geo, accMat, list.length);
         aim.castShadow = true;
@@ -271,7 +327,9 @@ export function addRoomLighting(group) {
     const s = AO_GROUNDED[part.t]; if (!s) return;
     const geo = new THREE.PlaneGeometry(s, s); geos.push(geo);
     const pl = new THREE.Mesh(geo, aoMat); pl.rotation.x = -Math.PI / 2;
-    pl.position.set(object.position.x, 0.015, object.position.z); group.add(pl);
+    // 스택 파츠(p.y>0)는 접촉그림자를 파츠 밑면(아래 파츠 윗면)에 붙인다 — 바닥 고정 시 스택과 분리(검수 MINOR).
+    const baseY = object.position.y - PART_TYPES[part.t].size[1] / 2 + 0.015;
+    pl.position.set(object.position.x, Math.max(0.015, baseY), object.position.z); group.add(pl);
   });
   // (a) 작품별 소프트 스포트라이트(부드러운 falloff — 감독 피드백). 상한 내에서만.
   refs.filter(({ part }) => part.t === 'artwork' || part.t === 'screen').slice(0, ART_SPOT_CAP)
