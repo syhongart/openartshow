@@ -51,6 +51,7 @@
     font-family: var(--app-font);
     font-weight: 300;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden; /* 기존 페이지 모바일 규율(landing.html·design.html과 동형) — 가로넘침 방어 */
   }
   a { color: var(--violet-ink); }
 
@@ -78,6 +79,65 @@
     color: var(--ink-body);
     font-weight: 300;
   }
+
+  /* 빌더 진입 카드 — behind-flag 해제(studio→builder 링크가 곧 정식 노출) */
+  .builder-promo-wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 24px 28px 0;
+  }
+  .builder-promo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    border: 1px solid var(--violet-ink);
+    background: var(--neutral-white);
+    box-shadow: var(--shadow-whisper);
+    border-radius: 3px;
+    padding: 20px 24px;
+    text-decoration: none;
+    color: inherit;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+  }
+  .builder-promo:hover { box-shadow: var(--shadow-panel); transform: translateY(-1px); }
+  .builder-promo-badge {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--violet-ink);
+    border: 1px solid var(--violet-ink);
+    border-radius: 999px;
+    padding: 2px 8px;
+    margin-bottom: 8px;
+  }
+  .builder-promo-title {
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    color: var(--text-dark);
+  }
+  .builder-promo-desc {
+    margin: 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.02em;
+  }
+  .builder-promo-cta {
+    flex: none;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-light);
+    background: var(--coral-ink);
+    border-radius: 2px;
+    padding: 10px 18px;
+    white-space: nowrap;
+    transition: background 0.15s ease;
+  }
+  .builder-promo:hover .builder-promo-cta { background: var(--coral-900); }
 
   main {
     max-width: 980px;
@@ -554,6 +614,9 @@
     .share-row { flex-direction: column; align-items: stretch; }
     .share-row .btn { width: 100%; text-align: center; }
     .save-indicator { left: 14px; right: 14px; text-align: center; }
+    .builder-promo-wrap { padding: 18px 14px 0; }
+    .builder-promo { flex-direction: column; align-items: flex-start; padding: 18px; }
+    .builder-promo-cta { width: 100%; text-align: center; }
   }
 </style>
 </head>
@@ -563,6 +626,17 @@
   <h1>OpenArtShow <span class="accent">STUDIO</span> — 나만의 전시장 만들기</h1>
   <p class="sub">작품을 등록하고, 나만의 3D 전시장을 여세요.</p>
 </header>
+
+<div class="builder-promo-wrap">
+  <a class="builder-promo" href="./builder.html">
+    <div class="builder-promo-body">
+      <span class="builder-promo-badge">베타</span>
+      <h2 class="builder-promo-title">전시 공간 직접 꾸미기 (베타)</h2>
+      <p class="builder-promo-desc">템플릿 고르고 1분 만에 나만의 전시장</p>
+    </div>
+    <span class="builder-promo-cta">시작하기 →</span>
+  </a>
+</div>
 
 <main>
 
