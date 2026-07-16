@@ -73,6 +73,9 @@ export function createBuilder(canvas, opts = {}) {
   const applySnap = (type, x, z) => gridSnap ? snapPos(type, x, z) : { x, z }; // 스냅 off면 자유 배치
   let selected = -1;        // 선택된 파츠 index
   let selectMesh = null;    // 선택 하이라이트 아웃라인
+  let moveMode = false;     // 이동 모드(모바일 경량 신규) — on이면 단일 드래그가 오빗 대신 선택 파츠를 이동
+  let moveDragActive = false;
+  let moveTargetXZ = null;  // 드래그 중 스냅된 목표 xz(포인터업에서 1회 커밋)
   const raycaster = new THREE.Raycaster();
   const listeners = {};
   const emit = (ev, d) => (listeners[ev] || []).forEach((f) => f(d));
@@ -103,7 +106,7 @@ export function createBuilder(canvas, opts = {}) {
     if (ghostMat) { ghostMat.dispose(); ghostMat = null; }            // 공용 재질 1개만 정리
     ghost = null;
   }
-  function cancelPlace() { placingType = null; disposeGhost(); }
+  function cancelPlace() { placingType = null; disposeGhost(); emit('mode', { placing: placingType }); } // beginPlace와 대칭으로 emit(모바일 취소버튼 UI 동기화)
   function makeGhost() {
     disposeGhost();
     if (!placingType) return;
@@ -142,7 +145,11 @@ export function createBuilder(canvas, opts = {}) {
   }
 
   // ── 선택·회전·삭제 ──
-  function selectIndex(i) { selected = (i >= 0 && i < space.parts.length) ? i : -1; refreshSelection(); emit('select', { index: selected, part: selected >= 0 ? space.parts[selected] : null }); }
+  function selectIndex(i) {
+    selected = (i >= 0 && i < space.parts.length) ? i : -1;
+    if (moveMode) { moveMode = false; moveDragActive = false; moveTargetXZ = null; emit('movemode', { moveMode }); } // 선택 바뀌면 이동모드 해제(안전)
+    refreshSelection(); emit('select', { index: selected, part: selected >= 0 ? space.parts[selected] : null });
+  }
   function refreshSelection() {
     if (selectMesh) { scene.remove(selectMesh); selectMesh.geometry.dispose(); selectMesh.material.dispose(); selectMesh = null; }
     if (selected < 0 || selected >= space.parts.length) return;
@@ -166,16 +173,54 @@ export function createBuilder(canvas, opts = {}) {
     const parts = space.parts.slice(); parts[selected] = p;
     space = normalizeSpace({ ...space, parts }); rebuild(); emit('change', { space });
   }
+  // ── 이동(모바일 경량 신규 — 기존엔 파츠 이동 API가 없었음, 배치/삭제만 존재) ──
+  // moveMode on 상태에서 단일 포인터 드래그 = 오빗 대신 선택 파츠를 xz로 이동.
+  // 라이브 프리뷰는 선택 아웃라인(selectMesh)만 옮긴다(accent 메쉬가 partRefs와 분리돼 있어
+  // 실제 파츠를 프레임마다 재조립하면 무겁고 액자/유리 등 부속이 따로 놀 수 있음) → 가볍게, 확정은 포인터업 1회 커밋.
+  function setMoveMode(on) {
+    moveMode = !!on && selected >= 0;
+    if (!moveMode) { moveDragActive = false; moveTargetXZ = null; }
+    emit('movemode', { moveMode });
+    return moveMode;
+  }
+  function beginMoveDrag() {
+    if (!moveMode || selected < 0) return false;
+    moveDragActive = true; moveTargetXZ = null;
+    return true;
+  }
+  function updateMoveDrag(x, z) {
+    if (!moveDragActive || selected < 0 || !selectMesh) return;
+    const p = space.parts[selected]; if (!p) return;
+    const { hw, hd, t } = spaceDims(space);
+    const s = applySnap(p.t, clampToRoom(x, hw, t), clampToRoom(z, hd, t));
+    selectMesh.position.x = s.x; selectMesh.position.z = s.z;
+    moveTargetXZ = s;
+  }
+  function endMoveDrag() {
+    const wasActive = moveDragActive; moveDragActive = false;
+    if (!wasActive || !moveTargetXZ || selected < 0) { moveTargetXZ = null; return; }
+    const idx = selected; const { x, z } = moveTargetXZ; moveTargetXZ = null;
+    const p = space.parts[idx]; if (!p) return;
+    if (p.x !== x || p.z !== z) {
+      pushUndo();
+      const parts = space.parts.slice(); parts[idx] = { ...parts[idx], x, z };
+      space = normalizeSpace({ ...space, parts });
+      rebuild(); emit('change', { space });
+    }
+    moveMode = false; emit('movemode', { moveMode }); // 1회 이동 후 자동 해제 → 다음 드래그는 다시 오빗(모바일 UX 안전장치)
+  }
   function deleteSelected() {
     if (selected < 0) return;
     pushUndo();
     const parts = space.parts.slice(); parts.splice(selected, 1);
     space = normalizeSpace({ ...space, parts }); selected = -1;
+    if (moveMode) { moveMode = false; moveDragActive = false; moveTargetXZ = null; emit('movemode', { moveMode }); }
     rebuild(); emit('change', { space });
   }
   function undo() {
     if (!undoStack.length) return false;
     space = normalizeSpace(JSON.parse(undoStack.pop())); selected = -1;
+    if (moveMode) { moveMode = false; moveDragActive = false; moveTargetXZ = null; emit('movemode', { moveMode }); }
     rebuild(); emit('change', { space }); return true;
   }
   // 스크린 파츠에 유튜브 영상 설정 — 검증된 11자 ID만 저장(ytembed.youtubeId). 실패 시 '' (지움).
@@ -255,8 +300,13 @@ export function createBuilder(canvas, opts = {}) {
     return f ? { x: f.x, z: f.z } : null;
   }
 
-  // ── 이벤트 바인딩(데스크톱) ──
+  // ── 이벤트 바인딩(데스크톱 + 터치) ──
+  // pointerdown/move/up은 마우스·터치 공용(Pointer Events). 멀티터치는 activePointers로 손가락별 추적해
+  // 핀치줌+2손가락팬을 얹는다 — 1손가락 흐름(오빗/배치/선택)은 그대로 두고 손가락이 2개가 될 때만 분기.
   let dragging = false, lastX = 0, lastY = 0, moved = false;
+  let movingPart = false;   // 이번 드래그가 오빗이 아니라 moveMode 파츠 이동인지
+  const activePointers = new Map(); // pointerId → {x,y}
+  let pinch = null;         // { startDist, startRad, startMid } — 2손가락째부터 존재
   // ── 카메라 이동(팬) — 중심 회전만이 아니라 방 안을 돌아다니며 빌드(감독 요청·심즈식) ──
   function clampTarget() {
     const dims = group && group.userData.dims; const hw = dims ? dims.hw + 4 : 12, hd = dims ? dims.hd + 4 : 12;
@@ -267,13 +317,43 @@ export function createBuilder(canvas, opts = {}) {
     const fx = -Math.sin(orbit.az), fz = -Math.cos(orbit.az), rx = Math.cos(orbit.az), rz = -Math.sin(orbit.az);
     orbit.target.x += fwd * fx + right * rx; orbit.target.z += fwd * fz + right * rz; clampTarget();
   }
+  const ptDist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const ptMid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
   let panning = false;
-  function onDown(e) { dragging = true; moved = false; panning = e.shiftKey || e.button === 1 || e.button === 2; lastX = e.clientX; lastY = e.clientY; }
+  function onDown(e) {
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (activePointers.size >= 2) { // 2번째 손가락 → 핀치 시작(진행 중이던 단일 드래그는 취소)
+      dragging = false; movingPart = false;
+      const pts = [...activePointers.values()];
+      pinch = { startDist: Math.max(1, ptDist(pts[0], pts[1])), startRad: orbit.rad, startMid: ptMid(pts[0], pts[1]) };
+      return;
+    }
+    dragging = true; moved = false;
+    if (moveMode && selected >= 0 && !placingType && !e.shiftKey && e.button !== 1 && e.button !== 2) {
+      movingPart = beginMoveDrag(); panning = false; // 이동모드: 드래그=선택 파츠 이동(오빗 대신)
+    } else {
+      movingPart = false;
+      panning = e.shiftKey || e.button === 1 || e.button === 2;
+    }
+    lastX = e.clientX; lastY = e.clientY;
+  }
   function onMove(e) {
+    if (activePointers.has(e.pointerId)) activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && activePointers.size >= 2) { // 핀치 줌(onWheel과 동일 orbit.rad 범위) + 2손가락 팬
+      const pts = [...activePointers.values()];
+      const d = Math.max(1, ptDist(pts[0], pts[1])), mid = ptMid(pts[0], pts[1]);
+      orbit.rad = Math.max(3, Math.min(20, pinch.startRad * (pinch.startDist / d)));
+      const dx = mid.x - pinch.startMid.x, dy = mid.y - pinch.startMid.y;
+      const s = orbit.rad * 0.0016; panBy(dy * s, -dx * s);
+      pinch.startMid = mid; applyCamera();
+      e.preventDefault(); return;
+    }
     const rect = canvas.getBoundingClientRect();
     if (dragging) {
       const dx = e.clientX - lastX, dy = e.clientY - lastY; if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      if (panning) { const s = orbit.rad * 0.0016; panBy(dy * s, -dx * s); }
+      if (movingPart) {
+        const f = pickFloor(ndc(e.clientX, e.clientY, rect)); if (f) updateMoveDrag(f.x, f.z);
+      } else if (panning) { const s = orbit.rad * 0.0016; panBy(dy * s, -dx * s); }
       else { orbit.az -= dx * 0.008; orbit.pol = Math.max(0.25, Math.min(1.45, orbit.pol - dy * 0.006)); }
       lastX = e.clientX; lastY = e.clientY; applyCamera();
     } else if (placingType) {
@@ -281,11 +361,26 @@ export function createBuilder(canvas, opts = {}) {
     }
   }
   function onUp(e) {
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) pinch = null;
+    if (activePointers.size >= 1) { // 두 손가락 중 하나만 뗌 — 남은 손가락 기준으로 이어감(점프 방지), 탭 판정은 생략
+      const [rem] = activePointers.values(); if (rem) { lastX = rem.x; lastY = rem.y; moved = true; }
+      return;
+    }
     dragging = false;
+    if (movingPart) { endMoveDrag(); movingPart = false; return; }
     if (moved) return;
     const rect = canvas.getBoundingClientRect(); const v = ndc(e.clientX, e.clientY, rect);
     if (placingType) { const pl = pickPlacement(v, placingType); if (pl) addPart(placingType, pl.x, pl.z, pl.y != null ? { y: pl.y } : {}); }
     else selectIndex(pickPart(v));
+  }
+  function onCancel(e) { // 브라우저가 제스처를 가로챌 때(pointercancel) — 커밋 없이 정리만
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) pinch = null;
+    if (activePointers.size === 0) {
+      dragging = false;
+      if (movingPart) { movingPart = false; moveDragActive = false; moveTargetXZ = null; refreshSelection(); } // 아웃라인 원위치 복귀
+    }
   }
   function onWheel(e) { orbit.rad = Math.max(3, Math.min(20, orbit.rad + Math.sign(e.deltaY) * 0.6)); applyCamera(); e.preventDefault(); }
   function onKey(e) {
@@ -307,6 +402,7 @@ export function createBuilder(canvas, opts = {}) {
     canvas.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // 우클릭 팬 시 컨텍스트메뉴 억제
     window.addEventListener('keydown', onKey);
@@ -389,6 +485,7 @@ export function createBuilder(canvas, opts = {}) {
   return {
     // 스크립트 API (헤드리스 검증·UI 배선 공용)
     beginPlace, cancelPlace, addPart, selectIndex, rotateSelected, rotateSelectedFine, deleteSelected, undo,
+    setMoveMode, isMoveMode: () => moveMode,
     setScreenVideo, getScreenVideo, setArtworkImage, getArtworkImage,
     resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, setFootprint, getPresets, applyPreset, clearSpace, bake, unbake, isBaked: () => baked,
     save, load, exportJSON, importJSON, resize, renderOnce,

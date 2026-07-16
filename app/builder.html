@@ -222,7 +222,7 @@
   .fr-grid .fr-blank{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:126px;color:var(--dim);font-size:11px;gap:5px;text-align:center}
   .fr-grid .fr-blank b{font-size:18px;font-weight:400;color:var(--violet)}
   .fr-hint{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;color:var(--dim);line-height:1.6}
-  @media (max-width:640px){ #firstRunOverlay{display:none!important} }
+  @media (max-width:640px){ .fr-card{max-height:92vh;padding:24px 18px 20px} } /* 모바일: 세로 스크롤 그리드(팀장 지시 A-2) */
 
   .hud-settings{z-index:11} /* 도크 위 */
   body.settings-open .hud-dock{display:none} /* 설정 열면 도크와 상호배타(progressive disclosure) */
@@ -231,13 +231,45 @@
   body.viewmode .hud-dock, body.viewmode .hud-gizmo, body.viewmode .hud-toolbar,
   body.viewmode .hud-context, body.viewmode .hud-settings{display:none!important}
 
-  /* 모바일: 편집 크롬 전부 숨김 */
+  /* 모바일: 경량 편집 허용 — 팔레트(도크)·선택 액션바·툴바만 남기고 나머지 정밀 패널(설정·미니맵·모드바)은 숨김 */
   .mobwarn{display:none}
+  .mstep,.mmove{display:none} /* 모바일 전용 이동/그리드회전 컨트롤 — 데스크톱 기본 숨김 */
+  .mcancel{display:none} /* 모바일 배치취소 — 키보드 Escape가 없는 터치 환경의 유일한 탈출구(데스크톱은 Escape로 충분) */
   @media (max-width:640px){
-    .desk{display:none!important}
-    .mobwarn{display:block;position:fixed;left:12px;right:12px;bottom:14px;z-index:10;
-      background:rgba(31,33,40,.9);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;color:var(--dim);text-align:center;backdrop-filter:blur(8px)}
+    .desk:not(.m-show){display:none!important}
+
+    .m-show.hud-toolbar{top:12px;left:12px;right:12px;bottom:auto;transform:none;width:auto;
+      justify-content:space-between;border-radius:14px;padding:9px 10px}
+    .m-show.hud-toolbar .ic{width:42px;height:42px}
+    .m-show.hud-toolbar .cta{padding:0 18px;height:42px}
+
+    .m-show.hud-dock{top:auto;right:0;left:0;bottom:0;width:100%;max-height:36vh;
+      border-radius:18px 18px 0 0;border-left:0;border-right:0;border-bottom:0}
+    .m-show.hud-dock .tabs{padding:10px 10px 6px}
+    .m-show.hud-dock .tabs button{font-size:11.5px;padding:9px 2px 6px}
+    body.placing .m-show.hud-dock .mcancel{display:flex;align-items:center;justify-content:center;gap:6px;
+      margin:0 10px 8px;padding:9px 0;border-radius:10px;border:1px solid var(--coral);color:#ffd9d1;
+      background:rgba(255,112,94,.16);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+    .m-show .parts{grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px 16px}
+    .m-show .chip{padding:10px 6px 11px;font-size:12px;min-height:80px}
+    .m-show .chip .chip-ic{height:42px}
+
+    .m-show.hud-context{left:10px;right:10px;bottom:calc(36vh + 10px);width:auto;transform:translateY(6px);
+      justify-content:center;flex-wrap:wrap;gap:10px;padding:10px 14px}
+    .m-show.hud-context.on{transform:translateY(0)}
+    .m-show.hud-context .step.fine{display:none} /* 미세(5°) 회전은 정밀작업 — PC 전용 유지 */
+    .m-show.hud-context .vidwrap,.m-show.hud-context .imgwrap{display:none!important} /* 영상·이미지 편집은 A 범위 밖 */
+    .m-show.hud-context .mstep{display:flex}
+    .m-show.hud-context .mmove{display:inline-flex}
+    .m-show.hud-context .sbtn{width:30px;height:30px;font-size:16px}
+    .m-show.hud-context .del{padding:8px 12px}
+
+    .mobwarn{display:block;position:fixed;top:64px;left:12px;right:12px;bottom:auto;z-index:9;
+      background:rgba(31,33,40,.85);border:1px solid var(--line);border-radius:10px;padding:7px 12px;
+      font-size:11px;color:var(--dim);text-align:center;backdrop-filter:blur(8px)}
   }
+  @media (max-width:480px){ .fr-grid{grid-template-columns:repeat(2,1fr)} } /* 좁은 폰: 프리셋 그리드 2열(세로 스크롤) */
+  .hud-context .mini.on{background:var(--violet);border-color:var(--violet);color:#fff} /* 이동 토글 활성 표시 */
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
 </head>
@@ -331,8 +363,9 @@
 </div>
 
 <!-- → 파츠 도크(유리) -->
-<aside class="plate hud-dock desk">
+<aside class="plate hud-dock desk m-show">
   <div class="tabs" id="tabs"></div>
+  <button type="button" class="mcancel" id="bCancelPlace">✕ 배치 취소 · 탭해서 선택 모드로</button>
   <div class="parts" id="parts"></div>
 </aside>
 
@@ -350,9 +383,11 @@
 </div>
 
 <!-- 선택 컨텍스트 -->
-<div class="plate hud-context desk" id="context">
+<div class="plate hud-context desk m-show" id="context">
   <span class="who" id="selLab">선택</span><span class="bar"></span>
-  <div class="step">각도 <button class="sbtn" id="rotDn" title="-5° (Q)">‹</button><b id="rotV">0°</b><button class="sbtn" id="rotUp" title="+5° (E)">›</button></div>
+  <div class="step fine">각도 <button class="sbtn" id="rotDn" title="-5° (Q)">‹</button><b id="rotV">0°</b><button class="sbtn" id="rotUp" title="+5° (E)">›</button></div>
+  <div class="step mstep"><button class="sbtn" id="mRotDn" title="회전">↺</button><button class="sbtn" id="mRotUp" title="회전">↻</button></div>
+  <button class="mini mmove" id="bMove">✥ 이동</button>
   <span class="vidwrap" id="vidwrap"><span class="bar"></span><input id="vidUrl" type="text" inputmode="url" placeholder="유튜브 링크 붙여넣기"><button class="mini" id="bVidSet">적용</button><button class="mini cta" id="bPlay">▶ 재생</button></span>
   <span class="imgwrap" id="imgwrap"><span class="bar"></span><button class="mini cta" id="bImgPick">🖼 이미지</button><button class="mini" id="bImgClear">제거</button></span>
   <span class="bar"></span><button class="del" id="bDel">삭제</button>
@@ -361,7 +396,7 @@
 
 
 <!-- ↓ 툴바 -->
-<div class="plate hud-toolbar desk">
+<div class="plate hud-toolbar desk m-show">
   <button class="ic" id="bUndo" title="되돌리기 (⌘/Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg></button>
   <button class="ic" id="bLoad" title="불러오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
   <button class="ic" id="bExport" title="내보내기(JSON)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
@@ -378,7 +413,7 @@
 
 <div id="firstRunOverlay"><div class="plate hero fr-card" id="frBody"></div></div>
 
-<div class="mobwarn">📱 모바일에서는 <b>감상</b>만 가능합니다. 공간 편집은 데스크톱에서 하세요. (드래그=둘러보기)</div>
+<div class="mobwarn">📱 가벼운 편집 모드 · 미세회전·쌓기 등 정밀 작업은 PC를 권장합니다</div>
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -440,11 +475,17 @@ function renderParts(){
     const c=document.createElement('button'); c.className='chip';
     if(PART_ICONS[type]){ const im=document.createElement('img'); im.className='chip-ic'; im.src=PART_ICONS[type]; im.alt=''; c.appendChild(im); }
     const lb=document.createElement('span'); lb.textContent=spec.label; c.appendChild(lb);
-    c.onclick=()=>{ [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); c.classList.add('on'); B.beginPlace(type); };
+    c.onclick=()=>{
+      if(c.classList.contains('on')){ B.cancelPlace(); c.classList.remove('on'); return; } // 같은 칩 재탭=배치취소(키보드 Escape 없는 터치 대체)
+      [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); c.classList.add('on'); B.beginPlace(type);
+    };
     partsEl.appendChild(c);
   });
 }
 renderParts();
+// 배치 대기 상태를 body 클래스로 노출 — 모바일 배치취소 버튼(#bCancelPlace) 표시에 사용(Escape 키가 없는 터치 환경 대체)
+B.on('mode', ({placing})=>{ document.body.classList.toggle('placing', !!placing); if(!placing) [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); });
+document.getElementById('bCancelPlace').onclick=()=>{ B.cancelPlace(); [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); };
 
 // 상단 인디케이터 + 미니맵
 const nParts=document.getElementById('nParts'), nCap=document.getElementById('nCap'), capFill=document.getElementById('capFill');
@@ -572,6 +613,14 @@ B.on('mode', ()=>{ context.classList.remove('on'); vidwrap.style.display='none';
 document.getElementById('rotDn').onclick=()=>{ B.rotateSelectedFine(-5*Math.PI/180); syncRot(); };
 document.getElementById('rotUp').onclick=()=>{ B.rotateSelectedFine( 5*Math.PI/180); syncRot(); };
 document.getElementById('bDel').onclick=()=>{ B.deleteSelected(); context.classList.remove('on'); }; // 선택 파츠 삭제(마우스 경로)
+
+// 모바일 선택 액션 — 그리드 스텝 회전(↺↻)·이동 토글(경량 신규, 감독 지시 A)
+const mRotDn=document.getElementById('mRotDn'), mRotUp=document.getElementById('mRotUp'), bMove=document.getElementById('bMove');
+mRotDn.onclick=()=>{ B.rotateSelected(-1); syncRot(); };
+mRotUp.onclick=()=>{ B.rotateSelected(1); syncRot(); };
+function syncMoveBtn(){ const on=B.isMoveMode(); bMove.classList.toggle('on', on); bMove.textContent = on ? '✥ 드래그로 옮기기' : '✥ 이동'; }
+bMove.onclick=()=>{ const on=B.setMoveMode(!B.isMoveMode()); syncMoveBtn(); if(on) showToast('캔버스를 드래그해서 파츠를 옮기세요.'); };
+B.on('movemode', syncMoveBtn); syncMoveBtn();
 
 // 유튜브
 document.getElementById('bVidSet').onclick=()=>{ const ok=B.setScreenVideo(selIndex, vidUrl.value); showToast(ok?'유튜브 영상을 스크린에 연결했습니다.':'유효한 유튜브 링크가 아닙니다.'); };
