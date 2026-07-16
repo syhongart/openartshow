@@ -89,6 +89,7 @@ export const UNIQUE_TEX_TYPES = new Set(['artwork', 'screen']); // draw call에 
 // 초록 계열은 세이지·올리브로 절제(형광 지양, "조용한 럭셔리" §DESIGN.md).
 const FESTIVE_FLOWER_PALETTE = [0xe7b9ab, 0xf1e4c9, 0xe3d3c3, 0xb9c2a0]; // 블러시·크림·샌드·세이지
 const FOLIAGE_PALETTE = [0x3d5a3a, 0x4c6b46, 0x5e7a52, 0x6f8a5e]; // 딥그린→올리브 그라데이션(잎)
+const LOUNGE_PALETTE = [0xb49d85, 0xcdbb9f, 0x8c7860]; // 배치4 — 웜 타프 쿠션(본체) + 라이터 톤(스로우 필로/스툴 패드) + 다크 웰트 트림, 정점색 공용
 
 // 재질 팔레트 — 미술관(scene.js)의 MeshStandardMaterial 레시피를 계승해 "한 세계"로.
 // (플래스터 rough0.92 · 파케 · 목재 0xb99a6f · 다크메탈 metal0.75 · 놋쇠 metal0.6)
@@ -133,6 +134,10 @@ const MATS = {
   // 배치3(구조·조명·장식) 전용
   velvet:     () => SM({ color: 0x6b2430, roughness: 0.82, metalness: 0 }), // 스탠션 로프 — 더스티 버건디 벨벳(매트 천)
   mirror:     () => SM({ color: 0xdfeaf0, roughness: 0.07, metalness: 0.22 }), // 거울면 — 실반사 없이 밝은 유광 + 살짝 하늘빛(감독 스펙)
+  // 배치4(좌석·안내·구조 세트) 전용
+  lounge:     () => SM({ color: 0xffffff, roughness: 0.72, metalness: 0, vertexColors: true }), // 라운지 쿠션 — 정점색 패브릭 투톤(LOUNGE_PALETTE), 스툴 패드와 공유
+  reception:  () => SM({ color: 0xffffff, roughness: 0.55, metalness: 0, vertexColors: true }),  // 안내데스크 몸체 — 정점색 2톤(스톤 플린스+우드 전면 패널)
+  windowGlass: () => SM({ color: 0xe4eef1, roughness: 0.12, metalness: 0.04, transparent: true, opacity: 0.34, emissive: 0xfff0cf, emissiveIntensity: 0.28 }), // 창 유리 — opacity 반투명 + 옅은 emissive("빛 든" 느낌, 실제 THREE.Light 0, transmission 금지)
 };
 // 마감 스와치 → 재질
 const FINISH_MAT = {
@@ -149,6 +154,7 @@ const PART_MAT = {
   wreath: MATS.brass, cake: MATS.cakeCream, banner: MATS.darkMetal, balloon: MATS.matteWhite,
   bigplant: MATS.terracotta, palm: MATS.terracotta, hangplant: MATS.wood, succulent: MATS.terracotta, vase: MATS.ceramic,
   floorlamp: MATS.darkMetal, stanchion: MATS.brass, mirror: MATS.brass, sign: MATS.wood, railing: MATS.brass,
+  lounge: MATS.walnut, reception: MATS.wood, window: MATS.matteWhite, glasspanel: MATS.brass, stool: MATS.walnut,
 };
 const partMat = (t) => {
   if (t === 'pillar') return concreteTex(0xd2ccbf, 1.2, 1.5);  // 노출 콘크리트 기둥(감독)
@@ -191,6 +197,7 @@ export function partY(t, storyH) {
   if (t === 'trackLight') return storyH - 0.3;
   if (t === 'pendantLight') return storyH - 0.7;
   if (t === 'hangplant') return storyH - 1.0; // 천장/선반 부착 기본 높이 — p.y로 재배치 가능(v2 스택)
+  if (t === 'window') return storyH * 0.58; // 벽 부착(배치4) — 층고 비례로 중앙보다 살짝 위(눈높이~상단)
   if (t === 'rug') return 0.012;
   if (t === 'ceilingPanel') return storyH - 0.05;
   return spec.size[1] / 2;
@@ -513,6 +520,60 @@ function partGeo(t) {
       for (let i = 1; i < N; i++) { const x = THREE.MathUtils.lerp(xL, xR, i / N); parts.push([cyl(0.010, 0.010, topY - floorY - 0.02, 8), [x, (topY + floorY) / 2 + 0.01, 0]]); }
       return merged(parts);
     }
+    case 'lounge': { // 라운지 소파 — 월넛 프레임(다리4+팔걸이 윙2+베이스 데크). 쿠션은 accent(정점색 패브릭, 아래 lDeck 상수는 accent와 동일해야 함).
+      const legH = 0.11, legR = 0.030;
+      const lx = w / 2 - 0.09, lz = d / 2 - 0.08;
+      const leg = (x, z) => [cyl(legR, legR * 0.72, legH, 10), [x, -h / 2 + legH / 2, z]];
+      const armW = 0.14, armH = h * 0.60, armY = -h / 2 + legH + armH / 2;
+      const deckY = -h / 2 + legH + 0.03;
+      return merged([
+        leg(-lx, lz), leg(lx, lz), leg(-lx, -lz), leg(lx, -lz),
+        [box(armW, armH, d - 0.04), [-(w / 2 - armW / 2), armY, 0]],
+        [box(armW, armH, d - 0.04), [(w / 2 - armW / 2), armY, 0]],
+        [box(w - armW * 2 + 0.03, 0.05, d - 0.06), [0, deckY, 0]], // 쿠션 아래 데크(살짝 보임)
+      ]);
+    }
+    case 'reception': { // 안내데스크 — 전면 패널(우드, Shape+Extrude로 살짝 볼록). 플린스·상판은 accent(box 2톤 — Extrude는 box와 merge 불가라 분리, mirror 부재와 동일 회피 규율).
+      const bw = w / 2 - 0.02, bd = d / 2, bow = 0.05; // bow=전면 볼록량
+      const shape = new THREE.Shape();
+      shape.moveTo(-bw, -bd); shape.quadraticCurveTo(0, -bd - bow, bw, -bd);
+      shape.lineTo(bw, bd); shape.lineTo(-bw, bd); shape.lineTo(-bw, -bd);
+      const bodyH = h - 0.09; // 상판(0.05, accent)+베이스 플린스(0.04, accent) 제외
+      const body = new THREE.ExtrudeGeometry(shape, { depth: bodyH, bevelEnabled: false, steps: 1 });
+      body.rotateX(-Math.PI / 2); body.translate(0, -h / 2 + 0.04, 0);
+      return body;
+    }
+    case 'window': { // 벽걸이 창 — 네모 프레임(4바)+십자 멀리언+하단 창틀(sill), 전부 box(화이트 트림). 유리는 accent(opacity+옅은 emissive).
+      const fW = 0.06, fd2 = d * 0.5, ow = w / 2, oh = h / 2;
+      return merged([
+        [box(w, fW, fd2), [0, oh - fW / 2, 0]],                          // 상단 바
+        [box(w, fW, fd2), [0, -oh + fW / 2, 0]],                         // 하단 바
+        [box(fW, h - fW * 2, fd2), [-ow + fW / 2, 0, 0]],                // 좌측 바
+        [box(fW, h - fW * 2, fd2), [ow - fW / 2, 0, 0]],                 // 우측 바
+        [box(0.028, h - fW * 2, fd2 * 0.7), null],                      // 세로 멀리언
+        [box(w - fW * 2, 0.028, fd2 * 0.7), null],                      // 가로 멀리언
+        [box(w + 0.05, fW * 0.75, fd2 * 1.3), [0, -oh - fW * 0.32, 0]], // 하단 창틀(sill) — 살짝 돌출
+      ]);
+    }
+    case 'glasspanel': { // 유리 파티션 — 얇은 브라스 프레임(양끝 포스트+상하 레일), 1m 세그먼트. 유리는 accent(반투명 opacity, transmission 금지).
+      const postW = 0.03, railH = 0.04, px = w / 2 - postW / 2;
+      return merged([
+        [box(postW, h, d), [-px, 0, 0]], [box(postW, h, d), [px, 0, 0]],
+        [box(w, railH, d), [0, h / 2 - railH / 2, 0]],
+        [box(w, railH, d), [0, -h / 2 + railH / 2, 0]],
+      ]);
+    }
+    case 'stool': { // 스툴 — 원형 좌판(월넛) + 3다리 트라이포드(살짝 벌어짐). 패드는 accent(정점색, 라운지 팔레트 공유).
+      const seatH = 0.05, legR = 0.018;
+      const apex = new THREE.Vector3(0, h / 2 - seatH - 0.02, 0);
+      const R = w * 0.42;
+      const feet = [0, 1, 2].map((i) => { const a = (i / 3) * Math.PI * 2; return new THREE.Vector3(Math.cos(a) * R, -h / 2, Math.sin(a) * R); });
+      return merged([
+        [cyl(w * 0.5, w * 0.48, seatH, 20), [0, h / 2 - seatH / 2, 0]], // 좌판
+        ...feet.map((f) => [alignedCyl(legR, legR * 1.3, apex, f, 8), null]),
+        [cyl(legR * 1.6, legR * 1.6, 0.035, 10), [apex.x, apex.y, apex.z]], // 조인트 캡
+      ]);
+    }
     default: return box(w, h, d);
   }
 }
@@ -766,6 +827,44 @@ function partAccent(t) {
       const board = box(w * 0.86, h * 0.5, 0.018); board.rotateX(-0.18);
       return { geo: board, mat: 'bannerCloth', off: [0, h * 0.14, d * 0.24] };
     }
+    case 'lounge': { // 좌석 쿠션2+웰트 트림 + 등받이 쿠션2(롤톱 볼스터) + 스로우 필로2 — 정점색 패브릭(LOUNGE_PALETTE). legH/armW은 partGeo와 반드시 동일.
+      const legH = 0.11, armW = 0.14;
+      const deckTopY = -h / 2 + legH + 0.03 + 0.025; // 데크(partGeo) 상면
+      const seatH = 0.16, seatD = d - 0.10, seatW = (w - armW * 2 - 0.04) / 2 - 0.01, seatY = deckTopY + seatH / 2;
+      const backH = h * 0.58, backD = 0.16, backY = deckTopY + backH / 2; // 등받이는 좌석보다 높게(팔걸이보다도 살짝 높게 — 실제 소파 비례)
+      const pieces = [];
+      [-1, 1].forEach((side) => {
+        const cx = side * (seatW / 2 + 0.01);
+        const s = box(seatW, seatH, seatD); paintGeo(s, LOUNGE_PALETTE[0]);
+        pieces.push([s, [cx, seatY, 0.01]]);
+        const welt = box(seatW - 0.02, 0.02, 0.02); paintGeo(welt, LOUNGE_PALETTE[2]); // 앞단 웰트(피핑) 트림
+        pieces.push([welt, [cx, seatY - seatH / 2 + 0.01, seatD / 2 + 0.005]]);
+        const bk = box(seatW, backH, backD); paintGeo(bk, LOUNGE_PALETTE[0]); // 등받이 쿠션(좌석과 동일 폭 정렬)
+        pieces.push([bk, [cx, backY, -d / 2 + backD / 2 + 0.015]]);
+        const roll = cyl(backD * 0.42, backD * 0.42, seatW - 0.02, 12); roll.rotateZ(Math.PI / 2); paintGeo(roll, LOUNGE_PALETTE[0]); // 롤톱 볼스터(푹신함 디테일)
+        pieces.push([roll, [cx, backY + backH / 2, -d / 2 + backD / 2 + 0.015]]);
+      });
+      [-1, 1].forEach((side) => { // 스로우 필로 — 백코너에 기대어 살짝 회전(디테일, 라이터 톤)
+        const p = box(0.22, 0.20, 0.09); p.rotateY(side * 0.45); p.rotateZ(side * 0.10); paintGeo(p, LOUNGE_PALETTE[1]);
+        pieces.push([p, [side * (w * 0.30), seatY + seatH * 0.5 + 0.06, -d * 0.18]]);
+      });
+      return { geo: merged(pieces), mat: 'lounge', off: [0, 0, 0] };
+    }
+    case 'reception': { // 상판(우드)+베이스 플린스(스톤) — 정점색 2톤(box만 merge, Extrude 전면 패널은 body에서 별도)
+      const plinth = box(w, 0.04, d); plinth.translate(0, -h / 2 + 0.02, 0); paintGeo(plinth, 0xd9cdb6); // 스톤
+      const slab = box(w + 0.04, 0.05, d + 0.06); slab.translate(0, h / 2 - 0.025, 0.02); paintGeo(slab, 0xb99a6f); // 우드(전면 볼록보다 살짝 오버행)
+      return { geo: merged([[plinth, null], [slab, null]]), mat: 'reception', off: [0, 0, 0] };
+    }
+    case 'window': { // 유리 — opacity 반투명 + 옅은 emissive("빛 든" 느낌). fW은 partGeo와 반드시 동일.
+      const fW = 0.06, iw = w / 2 - fW, ih = h / 2 - fW;
+      return { geo: box(iw * 2 - 0.01, ih * 2 - 0.01, 0.01), mat: 'windowGlass', off: [0, 0, 0] };
+    }
+    case 'glasspanel': // 유리 면 — 반투명 opacity(케이스 vitrine과 동일 'glass' 재질 재사용, transmission 금지)
+      return { geo: box(w - 0.08, h - 0.10, 0.012), mat: 'glass', off: [0, 0, 0] };
+    case 'stool': { // 좌판 위 패브릭 패드 — 정점색(LOUNGE_PALETTE 공유, 라운지 세트와 통일감). 좌판 윗면(h/2)은 partGeo와 반드시 동일.
+      const pad = cyl(w * 0.46, w * 0.46, 0.02, 20); paintGeo(pad, LOUNGE_PALETTE[0]);
+      return { geo: pad, mat: 'lounge', off: [0, h / 2 + 0.01, 0] };
+    }
     default: return null;
   }
 }
@@ -936,7 +1035,7 @@ function aoTexture() {
   x.fillStyle = g; x.fillRect(0, 0, 128, 128);
   _aoTex = new THREE.CanvasTexture(c); _aoTex.colorSpace = THREE.SRGBColorSpace; return _aoTex;
 }
-const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6, wreath: 1.1, cake: 1.0, banner: 1.1, bigplant: 1.3, palm: 1.2, succulent: 0.5, vase: 0.5, floorlamp: 1.0, stanchion: 1.6, mirror: 1.1, sign: 1.1, railing: 1.3 }; // balloon·hangplant 제외: 중심이 허공(아치/천장 부착)이라 접촉그림자 부적합
+const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6, wreath: 1.1, cake: 1.0, banner: 1.1, bigplant: 1.3, palm: 1.2, succulent: 0.5, vase: 0.5, floorlamp: 1.0, stanchion: 1.6, mirror: 1.1, sign: 1.1, railing: 1.3, lounge: 1.9, reception: 2.0, glasspanel: 1.3, stool: 0.55 }; // balloon·hangplant·window 제외: 중심이 허공(아치/천장/벽 부착)이라 접촉그림자 부적합
 const ART_SPOT_CAP = 10; // 실시간 라이트 상한(편집 모드 대표 조명). 초과분은 베이킹 트랙에서 처리 예정.
 export function addRoomLighting(group) {
   const u = group.userData || {}; const dims = u.dims; if (!dims) return;

@@ -65,6 +65,13 @@ export const PART_TYPES = {
   mirror:       { cat: 'ambience', grid: 'object', solid: true,  size: [0.62, 1.72, 0.16], label: '거울' }, // 스탠딩 전신 거울(자립형)
   sign:         { cat: 'exhibit',  grid: 'object', solid: false, size: [0.5, 1.05, 0.4],   label: '안내 스탠드' }, // A자형 이젤(labelStand보다 큰 안내판)
   railing:      { cat: 'structure', grid: 'structure', solid: true, size: [1.0, 1.05, 0.08], label: '난간' }, // 1m 스냅 세그먼트(구획/발코니 연속 배치)
+  // 좌석·안내·구조 5 — 배치4 "좌석·안내·구조 세트". 창문(window)은 벽 부착이라 partY로 별도 높이
+  // 배치(space-render.js), 유리는 opacity 반투명(transmission 금지)+옅은 emissive만(실제 THREE.Light 0).
+  lounge:       { cat: 'ambience',  grid: 'object',    solid: true,  size: [1.7, 0.80, 0.78],  label: '라운지 소파' },
+  reception:    { cat: 'exhibit',   grid: 'object',    solid: true,  size: [1.8, 1.05, 0.62],  label: '안내데스크' },
+  window:       { cat: 'structure', grid: 'structure', solid: false, size: [1.4, 1.5, 0.22],   label: '창문' }, // 벽 부착(partY로 벽 높이 배치)
+  glasspanel:   { cat: 'structure', grid: 'structure', solid: false, size: [1.0, 2.2, 0.06],   label: '유리 파티션' }, // 1m 스냅 세그먼트, 통행 가능(반투명 칸막이)
+  stool:        { cat: 'ambience',  grid: 'object',    solid: true,  size: [0.36, 0.46, 0.36], label: '스툴' },
 };
 export const PART_TYPE_IDS = new Set(Object.keys(PART_TYPES));
 
