@@ -257,12 +257,12 @@ export function createBuilder(canvas, opts = {}) {
     return trimmed;
   }
   function save() { try { localStorage.setItem(SAVE_KEY, encodeSpace(space)); emit('saved', {}); return true; } catch { return false; } }
-  function load() { const dec = decodeSpace(localStorage.getItem(SAVE_KEY)); if (!dec) return false; space = clampCap(dec); undoStack.length = 0; selected = -1; rebuild(); emit('change', { space }); return true; }
+  function load() { const dec = decodeSpace(localStorage.getItem(SAVE_KEY)); if (!dec) return false; space = clampCap(dec); undoStack.length = 0; selected = -1; rebuild(); resetCamera(); emit('change', { space }); return true; }
   function exportJSON() { return JSON.stringify(space, null, 0); }
   function importJSON(str) {
     const s = (typeof str === 'string' && str.startsWith(SPACE_PREFIX)) ? str : SPACE_PREFIX + String(str);
     const dec = decodeSpace(s); if (!dec) return false; // 파손·상위버전(SPACE_VERSION_AHEAD) → false
-    space = clampCap(dec); undoStack.length = 0; selected = -1; rebuild(); emit('change', { space }); return true;
+    space = clampCap(dec); undoStack.length = 0; selected = -1; rebuild(); resetCamera(); emit('change', { space }); return true;
   }
 
   // ── 픽킹(포인터 → 파츠/바닥) ──
@@ -309,9 +309,16 @@ export function createBuilder(canvas, opts = {}) {
   let pinch = null;         // { startDist, startRad, startMid } — 2손가락째부터 존재
   // ── 카메라 이동(팬) — 중심 회전만이 아니라 방 안을 돌아다니며 빌드(감독 요청·심즈식) ──
   function clampTarget() {
-    const dims = group && group.userData.dims; const hw = dims ? dims.hw + 4 : 12, hd = dims ? dims.hd + 4 : 12;
+    const dims = group && group.userData.dims; const hw = dims ? dims.hw + 1 : 6, hd = dims ? dims.hd + 1 : 6;
     orbit.target.x = Math.max(-hw, Math.min(hw, orbit.target.x));
     orbit.target.z = Math.max(-hd, Math.min(hd, orbit.target.z));
+  }
+  // 줌 거리 상한을 공간 크기에 비례로 묶는다 — 모바일 터치(큰 폭)에서 카메라가 공간 밖으로
+  // 멀어져 회색만 보이던 이탈 버그 방지. resetCamera 초기 rad와 동일 식 기반(초기 rad < 상한 보장).
+  function clampRad(r) {
+    const [fw, fd] = FOOTPRINT[space.shell.footprint] || [9, 7];
+    const radMax = Math.min(20, Math.max(9.5, Math.hypot(fw, fd) * 0.6) * 1.5);
+    return Math.max(3, Math.min(radMax, r));
   }
   function panBy(fwd, right) { // 화면 기준 전/후·좌/우(카메라 방위각 반영)
     const fx = -Math.sin(orbit.az), fz = -Math.cos(orbit.az), rx = Math.cos(orbit.az), rz = -Math.sin(orbit.az);
@@ -342,7 +349,7 @@ export function createBuilder(canvas, opts = {}) {
     if (pinch && activePointers.size >= 2) { // 핀치 줌(onWheel과 동일 orbit.rad 범위) + 2손가락 팬
       const pts = [...activePointers.values()];
       const d = Math.max(1, ptDist(pts[0], pts[1])), mid = ptMid(pts[0], pts[1]);
-      orbit.rad = Math.max(3, Math.min(20, pinch.startRad * (pinch.startDist / d)));
+      orbit.rad = clampRad(pinch.startRad * (pinch.startDist / d));
       const dx = mid.x - pinch.startMid.x, dy = mid.y - pinch.startMid.y;
       const s = orbit.rad * 0.0016; panBy(dy * s, -dx * s);
       pinch.startMid = mid; applyCamera();
@@ -354,7 +361,7 @@ export function createBuilder(canvas, opts = {}) {
       if (movingPart) {
         const f = pickFloor(ndc(e.clientX, e.clientY, rect)); if (f) updateMoveDrag(f.x, f.z);
       } else if (panning) { const s = orbit.rad * 0.0016; panBy(dy * s, -dx * s); }
-      else { orbit.az -= dx * 0.008; orbit.pol = Math.max(0.25, Math.min(1.45, orbit.pol - dy * 0.006)); }
+      else { orbit.az -= dx * 0.008; orbit.pol = Math.max(0.35, Math.min(1.45, orbit.pol - dy * 0.006)); }
       lastX = e.clientX; lastY = e.clientY; applyCamera();
     } else if (placingType) {
       const pl = pickPlacement(ndc(e.clientX, e.clientY, rect), placingType); if (pl) moveGhostTo(pl.x, pl.z, pl.y);
@@ -382,7 +389,7 @@ export function createBuilder(canvas, opts = {}) {
       if (movingPart) { movingPart = false; moveDragActive = false; moveTargetXZ = null; refreshSelection(); } // 아웃라인 원위치 복귀
     }
   }
-  function onWheel(e) { orbit.rad = Math.max(3, Math.min(20, orbit.rad + Math.sign(e.deltaY) * 0.6)); applyCamera(); e.preventDefault(); }
+  function onWheel(e) { orbit.rad = clampRad(orbit.rad + Math.sign(e.deltaY) * 0.6); applyCamera(); e.preventDefault(); }
   function onKey(e) {
     const tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 입력창 타이핑 중엔 단축키 무시(WASD·Del 등)

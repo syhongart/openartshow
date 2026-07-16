@@ -400,6 +400,7 @@
   <button class="ic" id="bUndo" title="되돌리기 (⌘/Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg></button>
   <button class="ic" id="bLoad" title="불러오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
   <button class="ic" id="bExport" title="내보내기(JSON)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
+  <button class="ic" id="bResetCam" title="카메라 리셋 (공간 전체 보기)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
   <span class="div"></span>
   <button class="cta" id="bSave">저장</button>
 </div>
@@ -665,6 +666,7 @@ B.on('saved', ()=>{ showToast('저장했습니다.'); setSaveState('saved'); });
 
 // 툴바
 document.getElementById('bSave').onclick=()=>{ if(!B.save()) showToast('이미지가 커서 저장 공간을 초과했습니다.'); };
+document.getElementById('bResetCam').onclick=()=>{ B.resetCamera(); }; // 카메라 이탈 복구(모바일 안전망) — 공간 전체 조망으로 복원
 document.getElementById('bLoad').onclick=()=>{ if(B.load()){ refresh(); syncFinishChips(); setSaveState('saved'); const nm=B.getSpace().meta?.name; if(nm){ spaceTitle.textContent=nm; titleInput.value=nm; } } else showToast('저장된 공간이 없습니다.'); };
 document.getElementById('bUndo').onclick=()=>B.undo();
 document.getElementById('bExport').onclick=()=>{ const blob=new Blob([B.exportJSON()],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-space.json'; a.click(); URL.revokeObjectURL(a.href); };
