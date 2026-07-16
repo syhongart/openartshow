@@ -23,7 +23,7 @@ const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 // ── 파츠 레지스트리 — 디자이너 아트보드 22종(가칭, 카피 확정 전) ──────────────
 // grid: 'structure'=1m·90°스냅 / 'object'=0.5m·15°자유회전 (이중 그리드)
 // solid: player 충돌 대상 여부.  cat: 팔레트 카테고리 탭.
-export const PART_CATEGORIES = ['structure', 'exhibit', 'ambience', 'finish'];
+export const PART_CATEGORIES = ['structure', 'exhibit', 'ambience', 'finish', 'event'];
 
 export const PART_TYPES = {
   // 구조 6 (structure grid, 대부분 solid)
@@ -47,6 +47,11 @@ export const PART_TYPES = {
   rug:          { cat: 'ambience', grid: 'object', solid: false, size: [2.0, 0.02, 3.0], label: '러그', variants: ['rect', 'round'] },
   bench:        { cat: 'ambience', grid: 'object', solid: true,  size: [1.2, 0.45, 0.5], label: '벤치', sizes: [1.2, 1.8] },
   drape:        { cat: 'ambience', grid: 'object', solid: false, size: [1.2, 2.6, 0.1], label: '커튼 드레이프' },
+  // 이벤트 4 (object grid) — 배치1 "오프닝 축하 세트"(개업·축하 톤, 근조 아님)
+  wreath:       { cat: 'event', grid: 'object', solid: true,  size: [0.72, 1.95, 0.5],  label: '축하 화환' },
+  cake:         { cat: 'event', grid: 'object', solid: true,  size: [0.5, 0.85, 0.5],   label: '축하 케이크' },
+  banner:       { cat: 'event', grid: 'object', solid: true,  size: [0.62, 1.85, 0.45], label: '배너 스탠드' },
+  balloon:      { cat: 'event', grid: 'object', solid: false, size: [2.2, 2.3, 0.5],    label: '풍선 아치' }, // 아치 아래 통행 가능(구조 arch와 동형 규율)
 };
 export const PART_TYPE_IDS = new Set(Object.keys(PART_TYPES));
 
