@@ -130,6 +130,9 @@ const MATS = {
   // 배치2(식물 다종화) 전용 — foliage는 잎·덩굴·다육 등 초록 계열 다색 accent 공용(정점색, matte)
   foliage:    () => SM({ color: 0xffffff, roughness: 0.82, metalness: 0, vertexColors: true }),
   ceramic:    () => SM({ color: 0xece7dc, roughness: 0.28, metalness: 0.05 }), // 화병 — 유광 세라믹(테라코타 화분과 구분)
+  // 배치3(구조·조명·장식) 전용
+  velvet:     () => SM({ color: 0x6b2430, roughness: 0.82, metalness: 0 }), // 스탠션 로프 — 더스티 버건디 벨벳(매트 천)
+  mirror:     () => SM({ color: 0xdfeaf0, roughness: 0.07, metalness: 0.22 }), // 거울면 — 실반사 없이 밝은 유광 + 살짝 하늘빛(감독 스펙)
 };
 // 마감 스와치 → 재질
 const FINISH_MAT = {
@@ -145,6 +148,7 @@ const PART_MAT = {
   trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.walnut, drape: MATS.charcoalCloth,
   wreath: MATS.brass, cake: MATS.cakeCream, banner: MATS.darkMetal, balloon: MATS.matteWhite,
   bigplant: MATS.terracotta, palm: MATS.terracotta, hangplant: MATS.wood, succulent: MATS.terracotta, vase: MATS.ceramic,
+  floorlamp: MATS.darkMetal, stanchion: MATS.brass, mirror: MATS.brass, sign: MATS.wood, railing: MATS.brass,
 };
 const partMat = (t) => {
   if (t === 'pillar') return concreteTex(0xd2ccbf, 1.2, 1.5);  // 노출 콘크리트 기둥(감독)
@@ -209,6 +213,24 @@ function alignedCyl(rt, rb, from, to, segs = 8) {
   const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
   g.translate(mid.x, mid.y, mid.z);
   return g;
+}
+// 늘어진 로프/체인 — catenary(y=a·cosh(x/a)) 근사를 세그먼트 체인(alignedCyl N개)으로 표현.
+// a는 목표 처짐(sag)에서 역산(얕은 처짐 근사식). seed 지정 시 세그먼트 두께를 결정적으로 미세
+// 변주(수제 로프 느낌) — 배치3 스탠션 로프에 사용, 다른 늘어짐 표현에도 재사용 가능.
+function catenaryChain(fromX, toX, topY, sag, segs, r0, r1, seed) {
+  const half = (toX - fromX) / 2, a = Math.max(0.12, (half * half) / (2 * Math.max(0.02, sag))), midX = (fromX + toX) / 2;
+  const rnd = seed != null ? seeded(seed) : null;
+  const pts = [];
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs, x = THREE.MathUtils.lerp(fromX, toX, t), xr = x - midX;
+    pts.push(new THREE.Vector3(x, topY - a * (Math.cosh(xr / a) - 1), 0));
+  }
+  const pieces = [];
+  for (let i = 0; i < segs; i++) {
+    const j = rnd ? 1 + (rnd() - 0.5) * 0.16 : 1;
+    pieces.push([alignedCyl(r0 * j, r1 * j, pts[i], pts[i + 1], 6), null]);
+  }
+  return pieces;
 }
 // 정점색 단색 도포 — vertexColors accent(잎·꽃·리본·풍선 등 다색 디테일)를 merge하기 전 호출.
 // mergeGeometries는 병합 목록 전원이 동일 attribute 집합을 가져야 하므로(색 없는 지오와 섞으면 실패),
@@ -426,6 +448,70 @@ function partGeo(t) {
         [cyl(0.035, 0.045, poleH, 10), [-bx, -h / 2 + 0.05 + poleH / 2, 0]],
         [cyl(0.035, 0.045, poleH, 10), [bx, -h / 2 + 0.05 + poleH / 2, 0]],
       ]);
+    }
+    case 'floorlamp': { // 플로어 스탠드 조명 — 트라이포드 다리 + 폴(다크메탈). 갓은 accent(emissive, 실제 광원 0).
+      const apex = new THREE.Vector3(0, -h / 2 + 0.30, 0);
+      const feet = [
+        new THREE.Vector3(-w * 0.46, -h / 2, w * 0.32),
+        new THREE.Vector3(w * 0.46, -h / 2, w * 0.32),
+        new THREE.Vector3(0, -h / 2, -w * 0.50),
+      ];
+      const poleTop = new THREE.Vector3(0, h * 0.30, 0);
+      return merged([
+        ...feet.map((f) => [alignedCyl(0.016, 0.024, apex, f, 8), null]),
+        [cyl(0.03, 0.03, 0.05, 10), [apex.x, apex.y, apex.z]], // 다리 조인트 캡
+        [alignedCyl(0.016, 0.016, apex, poleTop, 8), null],    // 폴
+      ]);
+    }
+    case 'stanchion': { // 벨벳 로프 스탠션 — 브라스 기둥 2개(베이스+테이퍼 샤프트+넥칼라+볼 피니얼). 로프는 accent(벨벳, catenary).
+      const px = w / 2 - 0.06;
+      const post = (x) => merged([
+        [cyl(0.05, 0.056, 0.03, 14), [x, -h / 2 + 0.015, 0]],
+        [cyl(0.024, 0.030, h - 0.20, 16), [x, -h / 2 + 0.03 + (h - 0.20) / 2, 0]],
+        [cyl(0.032, 0.032, 0.025, 14), [x, h / 2 - 0.155, 0]],
+        [new THREE.SphereGeometry(0.042, 12, 10), [x, h / 2 - 0.08, 0]],
+      ]);
+      return merged([[post(-px), null], [post(px), null]]);
+    }
+    case 'mirror': { // 스탠딩 전신 거울 — 브라스 프레임(4바 박스 링 — ExtrudeGeometry는 non-indexed라 box/cyl과 merge 불가, BLOCKER 회피) + 뒷받침 다리. 거울면은 accent.
+      const mH = h * 0.80, ow = w / 2, oh = mH / 2, fW = 0.045, fd2 = 0.045;
+      const frameCY = -h / 2 + 0.12 + oh; // 베이스 플린스(0.12) 위에 프레임 하단이 얹힘 — accent 'mirror'와 반드시 동일 식
+      const baseY = -h / 2 + 0.03;
+      const legFrom = new THREE.Vector3(0, -h / 2 + 0.09, -d / 2 * 0.7);
+      const legTo = (sx) => new THREE.Vector3(sx * ow * 0.55, frameCY - oh * 0.45, -fd2 / 2 - 0.01);
+      return merged([
+        [box(w, fW, fd2), [0, frameCY + oh - fW / 2, 0]],              // 상단 바
+        [box(w, fW, fd2), [0, frameCY - oh + fW / 2, 0]],              // 하단 바
+        [box(fW, mH - fW * 2, fd2), [-ow + fW / 2, frameCY, 0]],       // 좌측 바
+        [box(fW, mH - fW * 2, fd2), [ow - fW / 2, frameCY, 0]],        // 우측 바
+        [box(w * 0.5, 0.06, d), [0, baseY, 0]],                       // 베이스 플린스
+        [alignedCyl(0.02, 0.024, legFrom, legTo(-1), 8), null],       // 뒷받침 다리 좌
+        [alignedCyl(0.02, 0.024, legFrom, legTo(1), 8), null],        // 뒷받침 다리 우
+      ]);
+    }
+    case 'sign': { // 안내 스탠드 — A자형 이젤(우드). 사인 보드는 accent(크림).
+      const apex = new THREE.Vector3(0, h * 0.42, d * 0.06);
+      const flFront = new THREE.Vector3(-w * 0.34, -h / 2, d * 0.30), frFront = new THREE.Vector3(w * 0.34, -h / 2, d * 0.30);
+      const flBack = new THREE.Vector3(-w * 0.20, -h / 2, -d * 0.34), frBack = new THREE.Vector3(w * 0.20, -h / 2, -d * 0.34);
+      return merged([
+        [alignedCyl(0.018, 0.024, apex, flFront, 8), null], [alignedCyl(0.018, 0.024, apex, frFront, 8), null],
+        [alignedCyl(0.016, 0.020, apex, flBack, 8), null], [alignedCyl(0.016, 0.020, apex, frBack, 8), null],
+        [cyl(0.03, 0.03, 0.04, 10), [apex.x, apex.y, apex.z]],        // 힌지 캡
+        [box(0.03, 0.02, d * 0.5), [0, -h / 2 + 0.01, -d * 0.02]],    // 안정화 크로스브레이스
+      ]);
+    }
+    case 'railing': { // 난간 — 1m 세그먼트 발루스터(브라스): 양끝 포스트 + 상/중 레일 + 세로 살 4.
+      const postR = 0.024, floorY = -h / 2, topY = h / 2 - 0.02, botY = -h / 2 + h * 0.22;
+      const xL = -w / 2 + 0.02, xR = w / 2 - 0.02;
+      const parts = [
+        [alignedCyl(postR, postR, new THREE.Vector3(xL, floorY, 0), new THREE.Vector3(xL, topY, 0), 10), null],
+        [alignedCyl(postR, postR, new THREE.Vector3(xR, floorY, 0), new THREE.Vector3(xR, topY, 0), 10), null],
+        [alignedCyl(0.020, 0.020, new THREE.Vector3(xL, topY, 0), new THREE.Vector3(xR, topY, 0), 10), null],
+        [alignedCyl(0.015, 0.015, new THREE.Vector3(xL, botY, 0), new THREE.Vector3(xR, botY, 0), 10), null],
+      ];
+      const N = 5;
+      for (let i = 1; i < N; i++) { const x = THREE.MathUtils.lerp(xL, xR, i / N); parts.push([cyl(0.010, 0.010, topY - floorY - 0.02, 8), [x, (topY + floorY) / 2 + 0.01, 0]]); }
+      return merged(parts);
     }
     default: return box(w, h, d);
   }
@@ -658,6 +744,28 @@ function partAccent(t) {
       }
       return { geo: merged(pieces), mat: 'festive', off: [0, 0, 0] };
     }
+    case 'floorlamp': { // 벨(드럼) 갓 — Lathe, emissive 'lens' 재질로 "켜진" 느낌(실제 THREE.Light 0).
+      const V = (r, y) => new THREE.Vector2(r, y);
+      const shadeH = h * 0.24;
+      const shade = new THREE.LatheGeometry([V(0.02, -shadeH * 0.5), V(w * 0.30, -shadeH * 0.5), V(w * 0.34, -shadeH * 0.10), V(w * 0.30, shadeH * 0.40), V(w * 0.26, shadeH * 0.5)], 18);
+      return { geo: shade, mat: 'lens', off: [0, h * 0.30 + shadeH * 0.48, 0] }; // poleTop(h*0.30) 바로 위 — partGeo 'floorlamp'와 정합
+    }
+    case 'stanchion': { // 로프 — catenary 처짐(볼 피니얼 바로 아래 부착). 기둥 x/높이 식은 partGeo 'stanchion'과 반드시 동일.
+      const px = w / 2 - 0.06;
+      const ropeY = h / 2 - 0.115; // 피니얼(중심 h/2-0.08, 반경 0.042) 바로 아래
+      const pieces = catenaryChain(-px, px, ropeY, 0.11, 14, 0.010, 0.010, 61);
+      return { geo: merged(pieces), mat: 'velvet', off: [0, 0, 0] };
+    }
+    case 'mirror': { // 거울면 — 프레임 홀 안쪽(실제 반사 없이 밝은 유광+하늘빛). frameCY 식은 partGeo 'mirror'와 반드시 동일.
+      const mH = h * 0.80, oh = mH / 2, fW = 0.045, fd2 = 0.045;
+      const iw = w / 2 - fW, ih = oh - fW;
+      const frameCY = -h / 2 + 0.12 + oh;
+      return { geo: box(iw * 2 - 0.01, ih * 2 - 0.01, 0.01), mat: 'mirror', off: [0, frameCY, fd2 / 2 - 0.004] };
+    }
+    case 'sign': { // 사인 보드 — 이젤 다리 사이, 살짝 기울여(가독성) 크림 마감(배너와 동일 재질 재사용).
+      const board = box(w * 0.86, h * 0.5, 0.018); board.rotateX(-0.18);
+      return { geo: board, mat: 'bannerCloth', off: [0, h * 0.14, d * 0.24] };
+    }
     default: return null;
   }
 }
@@ -828,7 +936,7 @@ function aoTexture() {
   x.fillStyle = g; x.fillRect(0, 0, 128, 128);
   _aoTex = new THREE.CanvasTexture(c); _aoTex.colorSpace = THREE.SRGBColorSpace; return _aoTex;
 }
-const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6, wreath: 1.1, cake: 1.0, banner: 1.1, bigplant: 1.3, palm: 1.2, succulent: 0.5, vase: 0.5 }; // balloon·hangplant 제외: 중심이 허공(아치/천장 부착)이라 접촉그림자 부적합
+const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6, wreath: 1.1, cake: 1.0, banner: 1.1, bigplant: 1.3, palm: 1.2, succulent: 0.5, vase: 0.5, floorlamp: 1.0, stanchion: 1.6, mirror: 1.1, sign: 1.1, railing: 1.3 }; // balloon·hangplant 제외: 중심이 허공(아치/천장 부착)이라 접촉그림자 부적합
 const ART_SPOT_CAP = 10; // 실시간 라이트 상한(편집 모드 대표 조명). 초과분은 베이킹 트랙에서 처리 예정.
 export function addRoomLighting(group) {
   const u = group.userData || {}; const dims = u.dims; if (!dims) return;

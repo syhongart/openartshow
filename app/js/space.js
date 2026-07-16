@@ -58,6 +58,13 @@ export const PART_TYPES = {
   hangplant:    { cat: 'ambience', grid: 'object', solid: false, size: [0.42, 1.0, 0.42], label: '행잉 플랜터' }, // 천장/선반 부착 — 기본 y는 상단부, p.y로 재배치 가능
   succulent:    { cat: 'ambience', grid: 'object', solid: false, size: [0.3, 0.36, 0.3],  label: '다육 화분' },
   vase:         { cat: 'ambience', grid: 'object', solid: false, size: [0.26, 0.55, 0.26], label: '꽃병 부케' },
+  // 구조·조명·장식 5 — 배치3 "구조·조명·장식 세트"(카테고리 혼합: 분위기3·전시1·구조1). 조명(floorlamp)은
+  // emissive 갓만 사용 — 실제 THREE.Light 0(성능·라이트베이킹 보호, 감독 지시).
+  floorlamp:    { cat: 'ambience', grid: 'object', solid: true,  size: [0.42, 1.72, 0.42], label: '플로어 스탠드 조명' },
+  stanchion:    { cat: 'ambience', grid: 'object', solid: true,  size: [1.0, 1.0, 0.28],   label: '벨벳 로프 스탠션' }, // 기둥 2개 + catenary 로프(단일 파츠)
+  mirror:       { cat: 'ambience', grid: 'object', solid: true,  size: [0.62, 1.72, 0.16], label: '거울' }, // 스탠딩 전신 거울(자립형)
+  sign:         { cat: 'exhibit',  grid: 'object', solid: false, size: [0.5, 1.05, 0.4],   label: '안내 스탠드' }, // A자형 이젤(labelStand보다 큰 안내판)
+  railing:      { cat: 'structure', grid: 'structure', solid: true, size: [1.0, 1.05, 0.08], label: '난간' }, // 1m 스냅 세그먼트(구획/발코니 연속 배치)
 };
 export const PART_TYPE_IDS = new Set(Object.keys(PART_TYPES));
 
