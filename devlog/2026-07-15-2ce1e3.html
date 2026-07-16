@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인 → 작가·관람객 여정에 마찰이 흩어져 있었고(진입점 파편화·개발용어 노출·재방문 반복), 공간 빌더는 사이트 진입점이 없고 방이 좁았다. 감독 지시로 UX를 여정 관점에서 정비하고 빌더를 확장했다.">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-15-9111a4.html">
+<title>아야모 심야 세션 — 피부 채도·비행 + 무릎/12액션 (부팀장 자율, 팀장 주도) — OpenArtShow 개발일지</title>
+<meta name="description" content="감독 지시를 감독 부재(6시간) 중 자율 완결. 전 항목 §10 게이트(독립 executor 스모크 + 검수관 교차리뷰) 통과, 감독 룩 승인 후 배포 대기.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-15-2ce1e3.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인 → 작가·관람객 여정에 마찰이 흩어져 있었고(진입점 파편화·개발용어 노출·재방문 반복), 공간 빌더는 사이트 진입점이 없고 방이 좁았다. 감독 지시로 UX를 여정 관점에서 정비하고 빌더를 확장했다.">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-15-9111a4.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션)","datePublished":"2026-07-15","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-15-9111a4.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="아야모 심야 세션 — 피부 채도·비행 + 무릎/12액션 (부팀장 자율, 팀장 주도) — OpenArtShow 개발일지">
+<meta property="og:description" content="감독 지시를 감독 부재(6시간) 중 자율 완결. 전 항목 §10 게이트(독립 executor 스모크 + 검수관 교차리뷰) 통과, 감독 룩 승인 후 배포 대기.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-15-2ce1e3.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"아야모 심야 세션 — 피부 채도·비행 + 무릎/12액션 (부팀장 자율, 팀장 주도)","datePublished":"2026-07-15","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-15-2ce1e3.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,17 +88,19 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-15</div>
-<h1><span class="emo">🛠️</span>UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션)</h1>
+<h1><span class="emo">🧸</span>아야모 심야 세션 — 피부 채도·비행 + 무릎/12액션 (부팀장 자율, 팀장 주도)</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p>원인 → 작가·관람객 여정에 마찰이 흩어져 있었고(진입점 파편화·개발용어 노출·재방문 반복), 공간 빌더는 사이트 진입점이 없고 방이 좁았다. 감독 지시로 UX를 여정 관점에서 정비하고 빌더를 확장했다.</p>
-<p><strong>라이브 배포 (전 항목 스모크 + 검수관 게이트 통과):</strong></p>
-<ul><li><strong>작품 이미지 넣기 MVP</strong> — 파일 업로드 → 내장(dataURL) → 액자 자동 매핑(원본 비율 contain). 검수에서 draw-call 회귀(작품 80개 87→166콜)를 잡아, 이미지 없는 작품은 InstancedMesh 유지·이미지 있는 작품만 개별 mesh로 분리해 예산 복원.</li><li><strong>로그인·회원가입 모달</strong> — 사이트 전역 공용 컴포넌트(<code>auth-modal.js</code>). 소셜 3종 + '무가입으로 둘러보기' 대등 병존. 회원가입 동의 UI(약관·개인정보 별개 동의·만 14세 확인·베타 고지) — 현재 mock이라 실제 개인정보 0 수집. 법무 실사 반영 + 실 가입 활성화 선행조건(약관 발행·동의로그 백엔드·OAuth 키 등)을 OWNER-TODO에 launch-blocker로 기록.</li><li><strong>작가 언어 순화</strong> — <code>studio.html</code>에서 'JSON'·'전시장 ID(영문)' 등 개발용어 제거('전시 파일 저장'·'전시장 주소 이름' 등). 기능·주소 규약 불변.</li><li><strong>대문 단일화</strong> — 링크·sitemap·배포 어디에도 없던 죽은 <code>home.html</code> 제거(landing이 유일 대문 확정).</li><li><strong>재방문 스마트 입장</strong> — 저장 프로필·아바타가 있으면 입장 로비 상단에 '다시 오셨어요 → 바로 입장' 원클릭, 입장 폼은 접어둠('바꾸기'로 펼침). 첫 방문 온보딩·아야모는 현행 유지. 가산형(입장 로직 불변).</li></ul>
-<p><strong>공간 빌더 확장 (behind-flag):</strong></p>
-<ul><li><strong>공간 크기 확장</strong> — <code>FOOTPRINT</code>에 hall(20×14)·grand(28×18) 추가 + 빌더 '공간 크기' 선택 칩 UI. 크기 변경 시 카메라가 footprint 대각선에 비례해 조망 거리 자동 조절. 감독 '너무 좁아 작품이 다 안 들어감' 대응.</li></ul>
-<p><strong>분석·설계 준비 (감독 검토 대기):</strong> 공간 빌더 파츠 경쟁사 벤치마크(이벤트 소품 화환·케익·현수막·풍선, 화분 다종화, '장식' 독립 축) + 블렌더 임포트·서비스 내부 오픈월드·아야모 액션(춤·점프·인사 등) 기술 타당성 조사 완료. 자기완결 원칙(외부 에셋 0)과의 충돌 지점은 팀장 판정으로 정리해 감독 검토 대기.</p>
-<p>결과 → 관람객·작가 진입 마찰 다수 해소, 빌더 공간 제약 완화. 다음 무대는 파츠 대확충과 아야모 액션.</p>
+<p>감독 지시를 감독 부재(6시간) 중 자율 완결. 전 항목 §10 게이트(독립 executor 스모크 + 검수관 교차리뷰) 통과, <strong>감독 룩 승인 후 배포</strong> 대기.</p>
+<h3>1. 피부 채도 강화 (감독 결정 B — "채도만 올려 생기")</h3>
+<ul><li><code>chibi.js</code>에 피부 전용 <code>vividSkin()</code>: <code>SKIN_SAT_BOOST=1.6</code> + <code>chroma-gate(0.10)</code>. 무채색(흰토끼·회코알라·판다·귀신)은 자동 제외, 유채색 살구/갈색만 생기. 아주 밝은(창백) 색만 chroma폭만큼 L 하향해 실제 채도 상승을 드러냄. 볼홍조 <code>(255,120,120,0.5)→(255,105,110,0.6)</code>. 톤매핑(ACES 0.92) 무접촉.</li><li>실측 함정: <code>THREE.Color</code> 기본 선형공간이라 손계산 sRGB와 불일치 → 헤드리스 렌더로 상수 보정. 사람 기본 <code>#ffd9bd</code>는 이미 S=1.0(파스텔 HSL 한계)이라 채도 곱셈 무효 → chroma 기준 L하향으로 해결.</li><li>검증: footcheck PASS · 18종족×12액션 NaN 234/234 nonFinite=0 · 걷기 형상 무변화. (커밋 <code>83f6d07</code>)</li></ul>
+<h3>2. 점프 홀드 비행 + 날개 펄럭임 (감독 신규 지시 · 팀장 설계)</h3>
+<ul><li>팀장 판정: <strong>하이브리드</strong>(<code>player.js</code> 최소훅 3점 + 가산형 <code>fly.js</code>). "발밑 지면 위에서 뜨는" 모델 — 지면/벽 해석 그대로 통과라 벽·천장·보이드 관통 원천 불가.</li><li><code>player.js</code>(보호) 3점 훅만: <code>liftOffset</code> 필드 + 카메라 y 가산 + setPose 리셋. <code>liftOffset=0</code>이면 기존 이동과 수치 완전 동등.</li><li><code>fly.js</code>(신규): 킬스위치 <code>FLY_ENABLED</code> + Space홀드/모바일 HUD버튼 + 중력/상승/상한(+2.2m). 멀티는 기존 y채널 무임승차(프로토콜 무변경).</li><li><code>chibi.js setFlying(bool)</code>: 날개종족=날개 펄럭 증폭, 무날개=양팔 날개짓. <code>flyBlend</code> 0수렴 시 분기 통째 스킵 = 비-비행 렌더 불변.</li><li>게이트: executor 스모크 3/3(footcheck·비행 NaN 9종족·18종족 회귀) + 검수관 조건부 승인(회귀계약 6종 PASS). 검수관 권고 2건(setPose 경합 동기화·로비 HUD 숨김) 반영. (커밋 <code>e143c4e</code>, <code>21cbe6c</code>)</li></ul>
+<h3>3. 무릎 2단 관절 + 12액션 + 무릎볼 (앞선 커밋 77f4acb~3f6e897)</h3>
+<ul><li>이전 세션 구현분, 이번에 피부·비행과 함께 배포 대기.</li></ul>
+<h3>배포 상태</h3>
+<p>전 항목 로컬 커밋 완료·게이트 통과. 라이브 아바타 룩/이동 변경이라 감독이 실제로 날아보고 색을 확인한 뒤 배포한다. (커밋 서명 미검증은 환경 GPG 키 부재 한계 — push·배포와 무관)</p>
 </article>
-<div class="pn"><a href="./2026-07-14-b7e2cd.html"><span class="lbl">← 이전 기록</span>제너레이티브 캐릭터 대확장 — 완성도 수리 + 새 종족·옵션, 그리고 꼬리 부양 버그</a><a href="./2026-07-15-2ce1e3.html" style="text-align:right"><span class="lbl">다음 기록 →</span>아야모 심야 세션 — 피부 채도·비행 + 무릎/12액션 (부팀장 자율, 팀장 주도)</a></div>
+<div class="pn"><a href="./2026-07-15-9111a4.html"><span class="lbl">← 이전 기록</span>UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션)</a><a href="./2026-07-16-c06aed.html" style="text-align:right"><span class="lbl">다음 기록 →</span>빌더 개방 — 소품 4배치·진입점·모바일 경량 빌더 (부팀장 자율, 감독·팀장 게이트)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>

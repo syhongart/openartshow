@@ -56,13 +56,24 @@
   },
   {
     "date": "2026-07-16",
-    "devlogs": 54,
+    "devlogs": 55,
     "galleries": 0,
     "mau": 0,
     "mrr": 0,
-    "asset": 13400,
-    "realized": 13400,
-    "mktLow": 53600,
-    "mktHigh": 160800
+    "asset": 13500,
+    "realized": 13500,
+    "mktLow": 54000,
+    "mktHigh": 162000
+  },
+  {
+    "date": "2026-07-17",
+    "devlogs": 56,
+    "galleries": 0,
+    "mau": 0,
+    "mrr": 0,
+    "asset": 13600,
+    "realized": 13600,
+    "mktLow": 54400,
+    "mktHigh": 163200
   }
 ]
