@@ -85,6 +85,11 @@ function cloneRepeat(base, rx, ry) { if (!base) return null; const t = base.clon
 export const ART_SCREEN_CAP = 80; // 실측 근거: 92개=draw call 100 도달, 80개=95(여유 15%)
 export const UNIQUE_TEX_TYPES = new Set(['artwork', 'screen']); // draw call에 1:1로 더해지는 타입
 
+// 다색 accent 공유 팔레트 — 배치1(화환)에서 만든 파스텔 꽃 팔레트를 배치2(꽃병 부케)도 재사용.
+// 초록 계열은 세이지·올리브로 절제(형광 지양, "조용한 럭셔리" §DESIGN.md).
+const FESTIVE_FLOWER_PALETTE = [0xe7b9ab, 0xf1e4c9, 0xe3d3c3, 0xb9c2a0]; // 블러시·크림·샌드·세이지
+const FOLIAGE_PALETTE = [0x3d5a3a, 0x4c6b46, 0x5e7a52, 0x6f8a5e]; // 딥그린→올리브 그라데이션(잎)
+
 // 재질 팔레트 — 미술관(scene.js)의 MeshStandardMaterial 레시피를 계승해 "한 세계"로.
 // (플래스터 rough0.92 · 파케 · 목재 0xb99a6f · 다크메탈 metal0.75 · 놋쇠 metal0.6)
 const SM = (o) => new THREE.MeshStandardMaterial(o);
@@ -122,6 +127,9 @@ const MATS = {
   festive:    () => SM({ color: 0xffffff, roughness: 0.62, metalness: 0.04, vertexColors: true }),
   cakeCream:  () => SM({ color: 0xf6ecd9, roughness: 0.5, metalness: 0 }), // 케이크 프로스팅(버터크림)
   bannerCloth: () => SM({ color: 0xf5efe4, roughness: 0.72, metalness: 0 }), // 배너 면 — 크림/오프화이트(감독 지적: 칙칙한 카키 탈피, 밝고 깨끗하게)
+  // 배치2(식물 다종화) 전용 — foliage는 잎·덩굴·다육 등 초록 계열 다색 accent 공용(정점색, matte)
+  foliage:    () => SM({ color: 0xffffff, roughness: 0.82, metalness: 0, vertexColors: true }),
+  ceramic:    () => SM({ color: 0xece7dc, roughness: 0.28, metalness: 0.05 }), // 화병 — 유광 세라믹(테라코타 화분과 구분)
 };
 // 마감 스와치 → 재질
 const FINISH_MAT = {
@@ -136,6 +144,7 @@ const PART_MAT = {
   artwork: MATS.frameBlack, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.bronze, labelStand: MATS.brass,
   trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.walnut, drape: MATS.charcoalCloth,
   wreath: MATS.brass, cake: MATS.cakeCream, banner: MATS.darkMetal, balloon: MATS.matteWhite,
+  bigplant: MATS.terracotta, palm: MATS.terracotta, hangplant: MATS.wood, succulent: MATS.terracotta, vase: MATS.ceramic,
 };
 const partMat = (t) => {
   if (t === 'pillar') return concreteTex(0xd2ccbf, 1.2, 1.5);  // 노출 콘크리트 기둥(감독)
@@ -177,6 +186,7 @@ export function partY(t, storyH) {
   if (t === 'artwork' || t === 'screen') return 1.6;
   if (t === 'trackLight') return storyH - 0.3;
   if (t === 'pendantLight') return storyH - 0.7;
+  if (t === 'hangplant') return storyH - 1.0; // 천장/선반 부착 기본 높이 — p.y로 재배치 가능(v2 스택)
   if (t === 'rug') return 0.012;
   if (t === 'ceilingPanel') return storyH - 0.05;
   return spec.size[1] / 2;
@@ -294,6 +304,61 @@ function partGeo(t) {
         [cyl(w * 0.5, w * 0.34, h - 0.10, 16), [0, 0, 0]],
         [cyl(w * 0.52, w * 0.48, 0.06, 16), [0, h / 2 - 0.03, 0]],
       ]);
+    case 'bigplant': { // 대형 관엽 화분 — 화분+굵은 줄기(단일 테라코타), 잎은 accent(정점색 그린 그라데이션)
+      const potH = h * 0.24, potTopY = -h / 2 + potH;
+      const trunkTopY = h * 0.05, trunkH = trunkTopY - potTopY, trunkCY = potTopY + trunkH / 2;
+      return merged([
+        [cyl(w * 0.30, w * 0.38, 0.05, 18), [0, -h / 2 + 0.025, 0]],
+        [cyl(w * 0.44, w * 0.34, potH - 0.09, 18), [0, -h / 2 + 0.05 + (potH - 0.09) / 2, 0]],
+        [cyl(w * 0.46, w * 0.44, 0.05, 18), [0, potTopY - 0.025, 0]],
+        [cyl(0.045, 0.07, trunkH, 10), [0, trunkCY, 0]],
+      ]);
+    }
+    case 'palm': { // 키 큰 야자/드라세나 — 화분+캐인 3(높이 변주, 단일 테라코타), 잎다발은 accent(정점색)
+      const potH = h * 0.14, potTopY = -h / 2 + potH;
+      const canes = [
+        { x: -w * 0.12, z: w * 0.06, topY: h * 0.40, r: 0.028 },
+        { x: w * 0.10, z: -w * 0.08, topY: h * 0.30, r: 0.024 },
+        { x: w * 0.02, z: w * 0.14, topY: h * 0.46, r: 0.022 },
+      ];
+      const parts = [
+        [cyl(w * 0.28, w * 0.36, 0.05, 16), [0, -h / 2 + 0.025, 0]],
+        [cyl(w * 0.40, w * 0.32, potH - 0.08, 16), [0, -h / 2 + 0.05 + (potH - 0.08) / 2, 0]],
+        [cyl(w * 0.42, w * 0.40, 0.05, 16), [0, potTopY - 0.025, 0]],
+      ];
+      canes.forEach((c) => {
+        const from = new THREE.Vector3(c.x * 0.4, potTopY, c.z * 0.4), to = new THREE.Vector3(c.x, c.topY, c.z);
+        parts.push([alignedCyl(c.r * 0.8, c.r, from, to, 8), null]);
+      });
+      return merged(parts);
+    }
+    case 'hangplant': { // 행잉 플랜터 — 고리+체인+바스켓(단일 라탄톤), 늘어지는 덩굴은 accent(정점색)
+      const hookY = h / 2 - 0.02, basketTopY = h / 2 - 0.14, basketH = 0.14;
+      return merged([
+        [cyl(0.012, 0.012, 0.02, 8), [0, hookY, 0]],
+        [alignedCyl(0.006, 0.006, new THREE.Vector3(0, hookY - 0.01, 0), new THREE.Vector3(0, basketTopY + 0.02, 0), 6), null],
+        [cyl(w * 0.30, w * 0.40, basketH, 16), [0, basketTopY - basketH / 2, 0]],
+        [cyl(w * 0.32, w * 0.32, 0.025, 16), [0, basketTopY, 0]],
+      ]);
+    }
+    case 'succulent': { // 미니 다육 화분 — 작은 테라코타 포트(단일), 다육·선인장 군집은 accent(정점색)
+      const footH = 0.025, bodyH = 0.09, rimH = 0.02;
+      return merged([
+        [cyl(w * 0.34, w * 0.42, footH, 14), [0, -h / 2 + footH / 2, 0]],
+        [cyl(w * 0.46, w * 0.40, bodyH, 14), [0, -h / 2 + footH + bodyH / 2, 0]],
+        [cyl(w * 0.48, w * 0.46, rimH, 14), [0, -h / 2 + footH + bodyH + rimH / 2, 0]],
+      ]);
+    }
+    case 'vase': { // 화병 — Lathe 프로필(단일 유광 세라믹), 부케는 accent(정점색, 화환 꽃 팔레트 재사용)
+      const vaseH = h * 0.62;
+      const V = (r, y) => new THREE.Vector2(r, y);
+      const g = new THREE.LatheGeometry([
+        V(0.01, -vaseH / 2), V(w * 0.22, -vaseH / 2 + 0.02), V(w * 0.34, -vaseH * 0.18),
+        V(w * 0.30, vaseH * 0.10), V(w * 0.14, vaseH * 0.34), V(w * 0.17, vaseH * 0.42), V(w * 0.15, vaseH * 0.46),
+      ], 20);
+      g.translate(0, -h / 2 + vaseH / 2, 0);
+      return g;
+    }
     case 'vitrine': { // 케이스 골조(브론즈) — 바닥 플린스 + 모서리 기둥 + 상단 레일. 유리는 accent. (기존 공중부양 버그 수정)
       const px = w / 2 - 0.02, pz = d / 2 - 0.02, post = () => box(0.03, h - 0.085, 0.03);
       return merged([
@@ -388,6 +453,107 @@ function partAccent(t) {
         [leaf(w * 0.2, 1.1, 0.9, 1.1), [w * 0.02, w * 0.32, w * 0.2]],
       ]), mat: 'plant', off: [0, h * 0.46, 0] };
     }
+    case 'bigplant': { // 넓은 파들형 잎 — 줄기 상단을 따라 높이·각도를 흩어 부착(정점색 그린 그라데이션).
+      // seeded 지터로 비대칭 배치 — 균등 방사(로제트/꽃 형태로 오독)를 피하고 자연스러운 관엽 캐노피로.
+      const trunkTopY = h * 0.05;
+      const N = 7, pieces = [];
+      const rnd = seeded(43);
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2 + rnd() * 0.6;
+        const tilt = 0.45 + rnd() * 0.55;               // 26°~57° — 어린잎(꼿꼿)·늘어진 잎 혼재
+        const len = w * (0.60 + rnd() * 0.22);
+        const attachY = trunkTopY + rnd() * (h * 0.10);  // 부착 높이도 변주(단일점 방사 방지)
+        const leaf = new THREE.SphereGeometry(len * 0.5, 8, 6); leaf.scale(0.40 + rnd() * 0.08, 1, 0.15);
+        leaf.translate(0, len * 0.44, 0); leaf.rotateX(tilt); leaf.rotateY(a);
+        paintGeo(leaf, FOLIAGE_PALETTE[i % FOLIAGE_PALETTE.length]);
+        pieces.push([leaf, [0, attachY, 0]]);
+      }
+      return { geo: merged(pieces), mat: 'foliage', off: [0, 0, 0] };
+    }
+    case 'palm': { // 캐인 상단마다 뾰족한 잎다발(스트랩형) 버스트 — 정점색 세이지 그라데이션
+      const canes = [
+        { x: -w * 0.12, z: w * 0.06, topY: h * 0.40 },
+        { x: w * 0.10, z: -w * 0.08, topY: h * 0.30 },
+        { x: w * 0.02, z: w * 0.14, topY: h * 0.46 },
+      ];
+      const pieces = [];
+      canes.forEach((c, ci) => {
+        const M = 10;
+        for (let i = 0; i < M; i++) {
+          const a = (i / M) * Math.PI * 2 + ci * 0.5;
+          const len = w * (0.5 + (i % 3) * 0.08);
+          const blade = box(0.045, len, 0.01);
+          blade.translate(0, len * 0.5, 0); blade.rotateX(0.9 + (i % 2) * 0.15); blade.rotateY(a);
+          paintGeo(blade, FOLIAGE_PALETTE[(i + ci) % FOLIAGE_PALETTE.length]);
+          pieces.push([blade, [c.x, c.topY, c.z]]);
+        }
+      });
+      return { geo: merged(pieces), mat: 'foliage', off: [0, 0, 0] };
+    }
+    case 'hangplant': { // 바스켓 밑에서 늘어지는 덩굴 6가닥 — 마디마다 작은 잎(정점색), seeded로 결정론적 변주
+      const basketBotY = h / 2 - 0.28;
+      const pieces = [];
+      const V = 6, rnd = seeded(37);
+      for (let v = 0; v < V; v++) {
+        const a = (v / V) * Math.PI * 2 + rnd() * 0.4;
+        const r0 = w * 0.22;
+        const vineLen = (h * 0.60) * (0.75 + rnd() * 0.4);
+        const segs = 5;
+        let px = Math.cos(a) * r0, py = basketBotY, pz = Math.sin(a) * r0;
+        for (let s = 0; s < segs; s++) {
+          const t1 = (s + 1) / segs;
+          const sway = Math.sin(t1 * 3.1 + v) * 0.05;
+          const nx = Math.cos(a) * r0 * (1 - t1 * 0.6) + sway, nz = Math.sin(a) * r0 * (1 - t1 * 0.6) + sway * 0.6;
+          const ny = basketBotY - vineLen * t1;
+          const stem = alignedCyl(0.006, 0.008, new THREE.Vector3(px, py, pz), new THREE.Vector3(nx, ny, nz), 5);
+          paintGeo(stem, FOLIAGE_PALETTE[0]); pieces.push([stem, null]);
+          const leaf = new THREE.SphereGeometry(0.022 + rnd() * 0.012, 6, 5); leaf.scale(1, 0.55, 1.3);
+          paintGeo(leaf, FOLIAGE_PALETTE[1 + (s % (FOLIAGE_PALETTE.length - 1))]);
+          leaf.translate(nx + (rnd() - 0.5) * 0.03, ny, nz + (rnd() - 0.5) * 0.03);
+          pieces.push([leaf, null]);
+          px = nx; py = ny; pz = nz;
+        }
+      }
+      return { geo: merged(pieces), mat: 'foliage', off: [0, 0, 0] };
+    }
+    case 'succulent': { // 로제트·배럴·스파이어 3종 군집 + 작은 꽃 포인트(정점색)
+      const potTopY = -h / 2 + 0.025 + 0.09 + 0.02;
+      const pieces = [];
+      // 3종을 좌·우·중앙뒤(더 큰 원주형)로 벌리고 색도 뚜렷이 갈라 정면에서도 셋이 구분되게
+      // (검수: 스파이어가 배럴과 색·위치 둘 다 비슷해 하나로 오독 — 색 대비·간격 확대로 수정)
+      const rosette = new THREE.SphereGeometry(0.07, 8, 6); rosette.scale(1, 0.46, 1); paintGeo(rosette, FOLIAGE_PALETTE[2]);
+      pieces.push([rosette, [-w * 0.26, potTopY + 0.032, w * 0.12]]);
+      const barrelBody = cyl(0.055, 0.06, 0.09, 10); paintGeo(barrelBody, FOLIAGE_PALETTE[0]);
+      pieces.push([barrelBody, [w * 0.24, potTopY + 0.045, w * 0.10]]);
+      const barrelCap = new THREE.SphereGeometry(0.058, 8, 6); barrelCap.scale(1, 0.5, 1); paintGeo(barrelCap, FOLIAGE_PALETTE[0]);
+      pieces.push([barrelCap, [w * 0.24, potTopY + 0.09, w * 0.10]]);
+      const spireBody = cyl(0.032, 0.038, 0.17, 8); paintGeo(spireBody, FOLIAGE_PALETTE[3]); // 밝은 올리브 — 배럴(진초록)과 색 대비
+      pieces.push([spireBody, [0, potTopY + 0.085, -w * 0.26]]);
+      const spireCap = new THREE.SphereGeometry(0.034, 7, 5); paintGeo(spireCap, FOLIAGE_PALETTE[3]);
+      pieces.push([spireCap, [0, potTopY + 0.17, -w * 0.26]]);
+      const bloom = new THREE.SphereGeometry(0.012, 6, 5); paintGeo(bloom, FESTIVE_FLOWER_PALETTE[0]);
+      pieces.push([bloom, [w * 0.24, potTopY + 0.135, w * 0.10]]);
+      return { geo: merged(pieces), mat: 'foliage', off: [0, 0, 0] };
+    }
+    case 'vase': { // 화병목에서 방사하는 조화 부케 — 줄기(초록)+파스텔 꽃송이(배치1 화환 팔레트 재사용)
+      const vaseH = h * 0.62, neckTopY = -h / 2 + vaseH * 0.92;
+      const pieces = [];
+      const N = 11, rnd = seeded(19);
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * Math.PI * 2;
+        const spread = 0.30 + rnd() * 0.40;
+        const stemLen = h * (0.16 + rnd() * 0.14);
+        const tipDir = new THREE.Vector3(Math.cos(a) * spread, 1, Math.sin(a) * spread).normalize();
+        const from = new THREE.Vector3(0, neckTopY, 0);
+        const to = new THREE.Vector3().copy(from).addScaledVector(tipDir, stemLen);
+        const stem = alignedCyl(0.005, 0.007, from, to, 5); paintGeo(stem, FOLIAGE_PALETTE[0]);
+        pieces.push([stem, null]);
+        const bloom = new THREE.SphereGeometry(0.024 + rnd() * 0.012, 7, 6);
+        paintGeo(bloom, FESTIVE_FLOWER_PALETTE[i % FESTIVE_FLOWER_PALETTE.length]);
+        pieces.push([bloom, [to.x, to.y, to.z]]);
+      }
+      return { geo: merged(pieces), mat: 'festive', off: [0, 0, 0] };
+    }
     case 'trackLight': return { geo: cyl(w * 0.24, w * 0.24, 0.02, 12), mat: 'lens', off: [0, -w * 0.1, 0] };
     case 'pendantLight': return { geo: cyl(w * 0.13, w * 0.13, 0.015, 12), mat: 'lens', off: [0, -h * 0.19, 0] }; // 갓 하단 웜 렌즈
     case 'pedestal': return { geo: box(w * 0.92, 0.012, d * 0.92), mat: 'brass', off: [0, 0.40, 0] }; // 캡 밑 놋쇠 리빌 라인
@@ -403,7 +569,7 @@ function partAccent(t) {
       const RC = new THREE.Vector3(0, h * 0.30, -d * 0.05);
       const ringR = w * 0.40;
       const leafGreen = 0x3d5a3a;
-      const flowerPalette = [0xe7b9ab, 0xf1e4c9, 0xe3d3c3, 0xb9c2a0]; // 블러시·크림·샌드·세이지 파스텔(꽃 위주 — 잎은 사이사이 소량만)
+      const flowerPalette = FESTIVE_FLOWER_PALETTE; // 블러시·크림·샌드·세이지 파스텔(꽃 위주 — 잎은 사이사이 소량만). 배치2 vase와 공유.
       const ribbon = 0xe0b48a; // 블러시·골드 축하 리본(더스티레드 → 개업 톤으로 교체, 브라스 프레임과 명도 대비로 구분)
       const N = 20, pieces = [];
       let fi = 0;
@@ -662,7 +828,7 @@ function aoTexture() {
   x.fillStyle = g; x.fillRect(0, 0, 128, 128);
   _aoTex = new THREE.CanvasTexture(c); _aoTex.colorSpace = THREE.SRGBColorSpace; return _aoTex;
 }
-const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6, wreath: 1.1, cake: 1.0, banner: 1.1 }; // balloon 제외: 아치 중심이 허공이라 접촉그림자 부적합
+const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6, wreath: 1.1, cake: 1.0, banner: 1.1, bigplant: 1.3, palm: 1.2, succulent: 0.5, vase: 0.5 }; // balloon·hangplant 제외: 중심이 허공(아치/천장 부착)이라 접촉그림자 부적합
 const ART_SPOT_CAP = 10; // 실시간 라이트 상한(편집 모드 대표 조명). 초과분은 베이킹 트랙에서 처리 예정.
 export function addRoomLighting(group) {
   const u = group.userData || {}; const dims = u.dims; if (!dims) return;
