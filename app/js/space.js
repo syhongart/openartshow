@@ -52,6 +52,12 @@ export const PART_TYPES = {
   cake:         { cat: 'event', grid: 'object', solid: true,  size: [0.5, 0.85, 0.5],   label: '축하 케이크' },
   banner:       { cat: 'event', grid: 'object', solid: true,  size: [0.62, 1.85, 0.45], label: '배너 스탠드' },
   balloon:      { cat: 'event', grid: 'object', solid: false, size: [2.2, 2.3, 0.5],    label: '풍선 아치' }, // 아치 아래 통행 가능(구조 arch와 동형 규율)
+  // 식물 5 (object grid) — 배치2 "식물·화분 다종화"(기존 planter와 조화)
+  bigplant:     { cat: 'ambience', grid: 'object', solid: true,  size: [0.7, 1.6, 0.7],   label: '대형 관엽 식물' },
+  palm:         { cat: 'ambience', grid: 'object', solid: true,  size: [0.5, 2.4, 0.5],   label: '키 큰 야자' },
+  hangplant:    { cat: 'ambience', grid: 'object', solid: false, size: [0.42, 1.0, 0.42], label: '행잉 플랜터' }, // 천장/선반 부착 — 기본 y는 상단부, p.y로 재배치 가능
+  succulent:    { cat: 'ambience', grid: 'object', solid: false, size: [0.3, 0.36, 0.3],  label: '다육 화분' },
+  vase:         { cat: 'ambience', grid: 'object', solid: false, size: [0.26, 0.55, 0.26], label: '꽃병 부케' },
 };
 export const PART_TYPE_IDS = new Set(Object.keys(PART_TYPES));
 
