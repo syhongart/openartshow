@@ -114,6 +114,7 @@
   .hud-settings .bakebtn.on{background:linear-gradient(180deg,#3a3d4b,#2a2c37);color:var(--cyan);border-color:var(--cyan)}
   .hud-settings .bakebtn .bk-ic{font-size:14px}
   .hud-settings .bakehint{font-size:10px;color:var(--dim);line-height:1.6;margin:7px 2px 13px}
+  .hud-settings .pubhint{font-size:10px;color:var(--dim);line-height:1.6;margin:7px 2px 4px}
   .hud-settings .clearbtn{width:100%;margin-top:9px;appearance:none;border:1px solid rgba(176,80,63,.5);color:#e79b8d;font:inherit;font-size:12px;
     background:rgba(176,80,63,.10);border-radius:10px;padding:9px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.12s}
   .hud-settings .clearbtn:hover{background:rgba(176,80,63,.22);color:#ffd9d1}
@@ -197,6 +198,31 @@
     background:rgba(42,34,48,.92);border:1px solid var(--coral);color:#ffd9d1;font-size:13px;padding:9px 14px;border-radius:10px;pointer-events:none;backdrop-filter:blur(8px)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   #playOverlay{display:none;position:fixed;inset:0;z-index:40;background:#0a0a0ecc;backdrop-filter:blur(4px);align-items:center;justify-content:center}
+
+  /* 첫 진입 오버레이 — 프리셋 선택 / 이어서 만들기(팀장 설계: behind-flag 해제 후크) */
+  #firstRunOverlay{display:none;position:fixed;inset:0;z-index:50;background:#0a0a0ecc;backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:20px}
+  #firstRunOverlay.show{display:flex}
+  .fr-card{max-width:640px;width:100%;max-height:88vh;overflow-y:auto;padding:28px 26px 22px}
+  .fr-card h3{margin:0 0 6px;font-size:17px;letter-spacing:-.01em}
+  .fr-card .fr-sub{margin:0 0 20px;font-size:12.5px;color:var(--dim);line-height:1.5}
+  .fr-continue{display:flex;align-items:center;gap:14px;border:1px solid var(--violet);border-radius:12px;
+    background:rgba(139,114,255,.10);padding:16px 18px;cursor:pointer;text-align:left;width:100%;margin-bottom:16px;transition:.12s;font:inherit;color:var(--ink)}
+  .fr-continue:hover{background:rgba(139,114,255,.18)}
+  .fr-continue .fr-c-title{display:block;font-size:13.5px;font-weight:700;color:#fff;margin-bottom:3px}
+  .fr-continue .fr-c-desc{display:block;font-size:11.5px;color:var(--dim)}
+  .fr-continue .fr-c-arrow{margin-left:auto;font-size:18px;color:var(--violet);flex:none}
+  .fr-divider{display:flex;align-items:center;gap:10px;margin:4px 0 16px;font-size:10.5px;color:var(--dim);letter-spacing:.04em}
+  .fr-divider::before,.fr-divider::after{content:"";flex:1;height:1px;background:var(--line)}
+  .fr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .fr-grid button{padding:0;border:1px solid var(--line);border-radius:11px;background:rgba(0,0,0,.22);cursor:pointer;overflow:hidden;text-align:left;transition:.12s;font:inherit;color:var(--ink)}
+  .fr-grid button:hover{border-color:rgba(139,114,255,.6);transform:translateY(-1px)}
+  .fr-grid img{display:block;width:100%;height:92px;object-fit:cover;background:#14151a}
+  .fr-grid .fr-name{display:block;font-size:11px;font-weight:600;color:var(--ink);padding:6px 8px 2px}
+  .fr-grid .fr-desc{display:block;font-size:9.5px;color:var(--dim);padding:0 8px 8px;line-height:1.4}
+  .fr-grid .fr-blank{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:126px;color:var(--dim);font-size:11px;gap:5px;text-align:center}
+  .fr-grid .fr-blank b{font-size:18px;font-weight:400;color:var(--violet)}
+  .fr-hint{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;color:var(--dim);line-height:1.6}
+  @media (max-width:640px){ #firstRunOverlay{display:none!important} }
 
   .hud-settings{z-index:11} /* 도크 위 */
   body.settings-open .hud-dock{display:none} /* 설정 열면 도크와 상호배타(progressive disclosure) */
@@ -299,6 +325,7 @@
   <button class="bakebtn" id="bBake"><span class="bk-ic">✦</span><span id="bakeLabel">굽기 · 완성 미리보기</span></button>
   <div class="bakehint" id="bakeHint">완성하면 조명을 셸에 구워 방문자는 가볍게 봅니다. 편집·조명색 바꾸면 자동 해제.</div>
   <button class="publish" id="bPublish"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="m8 7 4-4 4 4"/></svg>저장 · 발행</button>
+  <div class="pubhint">이 기기(브라우저)에 저장됩니다. 다른 기기·다른 사람과 공유하려면 내보내기로 JSON 파일을 받으세요.</div>
   <button class="clearbtn" id="bClear"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg>전체 지우기</button>
   <div class="keys">파츠 고르고 <b>바닥 클릭</b>=배치 · <b>R</b>/<b>Q</b>/<b>E</b>=회전 · <b>Del</b>=삭제 · <b>Ctrl+Z</b>=되돌리기 · <b>WASD</b>·드래그=이동</div>
 </div>
@@ -349,13 +376,15 @@
   </div>
 </div>
 
+<div id="firstRunOverlay"><div class="plate hero fr-card" id="frBody"></div></div>
+
 <div class="mobwarn">📱 모바일에서는 <b>감상</b>만 가능합니다. 공간 편집은 데스크톱에서 하세요. (드래그=둘러보기)</div>
 <div class="toast" id="toast"></div>
 
 <script type="module">
 import * as THREE from 'three';
 import { createBuilder } from './js/builder.js';
-import { PART_TYPES } from './js/space.js';
+import { PART_TYPES, decodeSpace } from './js/space.js';
 import { createYouTubeSurface } from './js/ytembed.js';
 import { buildPartPreview } from './js/space-render.js';
 
@@ -590,6 +619,64 @@ document.getElementById('bSave').onclick=()=>{ if(!B.save()) showToast('이미�
 document.getElementById('bLoad').onclick=()=>{ if(B.load()){ refresh(); syncFinishChips(); setSaveState('saved'); const nm=B.getSpace().meta?.name; if(nm){ spaceTitle.textContent=nm; titleInput.value=nm; } } else showToast('저장된 공간이 없습니다.'); };
 document.getElementById('bUndo').onclick=()=>B.undo();
 document.getElementById('bExport').onclick=()=>{ const blob=new Blob([B.exportJSON()],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='my-space.json'; a.click(); URL.revokeObjectURL(a.href); };
+
+// 첫 진입 오버레이 — 프리셋 선택 또는 "이어서 만들기"(팀장 설계: behind-flag 해제 후크)
+// SAVE_KEY는 builder.js가 SSOT. 여기서는 저장된 공간 존재 여부만 판별(값 자체는 B.load()가 로드).
+const SAVE_KEY_MIRROR = 'openartshow.space.v1';
+let savedDoc = null;
+try { savedDoc = decodeSpace(localStorage.getItem(SAVE_KEY_MIRROR)); } catch (e) { savedDoc = null; }
+
+const frOverlay = document.getElementById('firstRunOverlay'), frBody = document.getElementById('frBody');
+function closeFirstRun(){ frOverlay.classList.remove('show'); }
+function afterFirstRunPick(){
+  refresh(); syncFinishChips(); syncSizeChips();
+  const nm = B.getSpace().meta && B.getSpace().meta.name;
+  if (nm) { spaceTitle.textContent = nm; titleInput.value = nm; }
+  closeFirstRun();
+}
+function renderPresetGrid(container){
+  const grid = document.createElement('div'); grid.className = 'fr-grid';
+  B.getPresets().forEach(p => {
+    const b = document.createElement('button'); b.type = 'button'; b.title = p.desc;
+    const img = document.createElement('img'); img.alt = p.name; if (p.thumb) img.src = p.thumb;
+    const nm = document.createElement('span'); nm.className = 'fr-name'; nm.textContent = p.name;
+    const ds = document.createElement('span'); ds.className = 'fr-desc'; ds.textContent = p.desc;
+    b.appendChild(img); b.appendChild(nm); b.appendChild(ds);
+    b.onclick = () => { B.applyPreset(p.id); B.resetCamera(); afterFirstRunPick(); showToast(`'${p.name}' 프리셋으로 시작합니다.`); };
+    grid.appendChild(b);
+  });
+  const blank = document.createElement('button'); blank.type = 'button'; blank.title = '빈 공간에서 시작';
+  blank.innerHTML = '<span class="fr-blank"><b>+</b>빈 공간에서<br>시작</span>';
+  blank.onclick = () => { afterFirstRunPick(); showToast('빈 공간에서 시작합니다.'); };
+  grid.appendChild(blank);
+  container.appendChild(grid);
+}
+function renderFirstRun(){
+  frBody.innerHTML = '';
+  if (savedDoc) {
+    const h = document.createElement('h3'); h.textContent = '다시 오셨네요';
+    const sub = document.createElement('p'); sub.className = 'fr-sub'; sub.textContent = '이전에 만들던 공간이 이 기기에 저장되어 있어요.';
+    frBody.appendChild(h); frBody.appendChild(sub);
+    const cont = document.createElement('button'); cont.type = 'button'; cont.className = 'fr-continue';
+    const savedName = (savedDoc.meta && savedDoc.meta.name) || '나의 공간';
+    cont.innerHTML = '<span><span class="fr-c-title">이어서 만들기</span><span class="fr-c-desc">저장된 \'' + savedName + '\' 공간을 불러옵니다</span></span><span class="fr-c-arrow">→</span>';
+    cont.onclick = () => { B.load(); setSaveState('saved'); afterFirstRunPick(); showToast('이어서 만듭니다.'); };
+    frBody.appendChild(cont);
+    const div = document.createElement('div'); div.className = 'fr-divider'; div.textContent = '또는 새로 시작';
+    frBody.appendChild(div);
+    renderPresetGrid(frBody);
+  } else {
+    const h = document.createElement('h3'); h.textContent = '어떻게 시작할까요?';
+    const sub = document.createElement('p'); sub.className = 'fr-sub'; sub.textContent = '템플릿을 고르면 완성된 방으로 바로 시작합니다.';
+    frBody.appendChild(h); frBody.appendChild(sub);
+    renderPresetGrid(frBody);
+  }
+  const hint = document.createElement('div'); hint.className = 'fr-hint';
+  hint.textContent = '만든 공간은 이 기기(브라우저)에 저장됩니다. 다른 기기·다른 사람과 공유하려면 내보내기로 JSON 파일을 받으세요.';
+  frBody.appendChild(hint);
+  frOverlay.classList.add('show');
+}
+renderFirstRun();
 
 window.__builder = B;
 </script>
