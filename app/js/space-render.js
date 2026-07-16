@@ -118,6 +118,10 @@ const MATS = {
   glass:      () => SM({ color: 0xcfe6ea, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.3 }), // 케이스 실루엣 가시성↑
   display:    () => SM({ color: 0x1b1e2a, roughness: 0.32, metalness: 0.2, emissive: 0x10131f, emissiveIntensity: 0.5 }),
   lens:       () => SM({ color: 0xfff3d6, roughness: 0.3, metalness: 0.1, emissive: 0xffe6b0, emissiveIntensity: 0.6 }),
+  // 이벤트 세트(배치1) 전용 — festive는 잎·꽃·리본·풍선 등 다색 accent 공용(정점색, base는 흰색이라 vertexColors 그대로 노출)
+  festive:    () => SM({ color: 0xffffff, roughness: 0.62, metalness: 0.04, vertexColors: true }),
+  cakeCream:  () => SM({ color: 0xf6ecd9, roughness: 0.5, metalness: 0 }), // 케이크 프로스팅(버터크림)
+  bannerCloth: () => SM({ color: 0xf5efe4, roughness: 0.72, metalness: 0 }), // 배너 면 — 크림/오프화이트(감독 지적: 칙칙한 카키 탈피, 밝고 깨끗하게)
 };
 // 마감 스와치 → 재질
 const FINISH_MAT = {
@@ -131,6 +135,7 @@ const PART_MAT = {
   wallPanel: MATS.plaster, floorTile: MATS.parquet, ceilingPanel: MATS.plasterW, pillar: MATS.stone, stair: MATS.stone, arch: MATS.plaster,
   artwork: MATS.frameBlack, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.bronze, labelStand: MATS.brass,
   trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.walnut, drape: MATS.charcoalCloth,
+  wreath: MATS.brass, cake: MATS.cakeCream, banner: MATS.darkMetal, balloon: MATS.matteWhite,
 };
 const partMat = (t) => {
   if (t === 'pillar') return concreteTex(0xd2ccbf, 1.2, 1.5);  // 노출 콘크리트 기둥(감독)
@@ -183,6 +188,28 @@ function merged(list) {
   const gs = list.map(([g, t]) => { if (t) g.translate(t[0], t[1], t[2]); return g; });
   const m = mergeGeometries(gs, false); gs.forEach((g) => g.dispose());
   return m;
+}
+// 두 점을 잇는 원기둥 — 이젤 다리·X배너 프레임처럼 기울어진 부재를 쿼터니언으로 정확히 정렬.
+// (화환/케이크/배너의 다리·리본류에 사용 — 근사 회전 대신 정확 정렬로 "디테일" 품질 확보.)
+function alignedCyl(rt, rb, from, to, segs = 8) {
+  const len = from.distanceTo(to) || 1e-4;
+  const g = cyl(rt, rb, len, segs);
+  const dir = new THREE.Vector3().subVectors(to, from).normalize();
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+  const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
+  g.translate(mid.x, mid.y, mid.z);
+  return g;
+}
+// 정점색 단색 도포 — vertexColors accent(잎·꽃·리본·풍선 등 다색 디테일)를 merge하기 전 호출.
+// mergeGeometries는 병합 목록 전원이 동일 attribute 집합을 가져야 하므로(색 없는 지오와 섞으면 실패),
+// 같은 merged() 호출 안에서는 전부 paintGeo를 거쳐야 한다(부분 적용 금지).
+function paintGeo(g, hex) {
+  const c = new THREE.Color(hex);
+  const n = g.attributes.position.count;
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3));
+  return g;
 }
 // 고대 석주 플루팅 샤프트 — F개 세로 홈(고전 컬럼 몸체 패턴) + 미세 배흘림(엔타시스). 단일 지오메트리(인스턴싱).
 function flutedShaft(R, height, { flutes = 16, per = 3, hs = 5, depth = R * 0.1 } = {}) {
@@ -285,6 +312,56 @@ function partGeo(t) {
       const g = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 1, steps: 1 });
       g.translate(0, 0, -d / 2); return g;
     }
+    case 'wreath': { // 개업 축하 화환 — 이젤형 삼각대(브론즈/브라스) + 링 프레임. 잎·꽃·리본은 accent(정점색).
+      const A = new THREE.Vector3(0, h * 0.04, -d * 0.10);   // 다리 모이는 지점
+      const RC = new THREE.Vector3(0, h * 0.30, -d * 0.05);  // 링 중심
+      const feet = [
+        new THREE.Vector3(-w * 0.34, -h / 2, d * 0.30),
+        new THREE.Vector3(w * 0.34, -h / 2, d * 0.30),
+        new THREE.Vector3(0, -h / 2, -d * 0.38),
+      ];
+      const ring = new THREE.TorusGeometry(w * 0.40, 0.02, 8, 24);
+      ring.rotateX(-0.16); // 살짝 뒤로 눕혀 정면 시인성(이젤처럼)
+      return merged([
+        ...feet.map((f) => [alignedCyl(0.022, 0.03, A, f), null]),
+        [cyl(0.038, 0.038, 0.05, 10), [A.x, A.y, A.z]],            // 조인트 캡
+        [alignedCyl(0.026, 0.026, A, RC), null],                   // 마운트 포스트
+        [ring, [RC.x, RC.y, RC.z]],
+      ]);
+    }
+    case 'cake': { // 2~3단 축하 케이크 — 좌대(pedestal)보다 아담(감독 지정). 크림 톤 단일(body), 스탠드·장식은 accent.
+      // plateY(스탠드 상판=티어1 밑면) — accent 'cake' case와 반드시 동일 식 유지(스탠드·케이크 높이 정합, 검수 감독 지적: 삼각대 탈피 후 낮은 케이크 스탠드로 교체)
+      const plateY = -h / 2 + h * 0.13;
+      const t1H = h * 0.17, t2H = h * 0.14, t3H = h * 0.115;
+      const r1 = w * 0.40, r2 = w * 0.29, r3 = w * 0.20;
+      const yc1 = plateY + t1H / 2, yc2 = plateY + t1H + t2H / 2, yc3 = plateY + t1H + t2H + t3H / 2;
+      return merged([
+        [cyl(r1 * 0.94, r1, t1H, 20), [0, yc1, 0]],
+        [cyl(r2 * 0.94, r2, t2H, 18), [0, yc2, 0]],
+        [cyl(r3 * 0.92, r3, t3H, 16), [0, yc3, 0]],
+      ]);
+    }
+    case 'banner': { // X배너 스탠드 — 교차 다리 프레임(다크메탈). 현수막 면은 accent(천 재질, 텍스트 커스텀은 후속).
+      const bl = new THREE.Vector3(-w * 0.46, -h / 2, 0), br = new THREE.Vector3(w * 0.46, -h / 2, 0);
+      const tl = new THREE.Vector3(-w * 0.40, h * 0.40, 0), tr = new THREE.Vector3(w * 0.40, h * 0.40, 0);
+      const diag = (a, b) => alignedCyl(0.018, 0.018, a, b);
+      const footPad = (p) => [box(0.09, 0.02, 0.16), [p.x, p.y + 0.01, 0]];
+      return merged([
+        [diag(bl, tr), null], [diag(br, tl), null],
+        [box(tr.x - tl.x + 0.03, 0.03, 0.03), [0, tr.y, 0]], // 상단 레일
+        footPad(bl), footPad(br),
+      ]);
+    }
+    case 'balloon': { // 풍선 아치 — 좌우 베이스·폴은 body(중립), 풍선 군집은 accent(다색). 아치 아래는 통행 가능(solid:false).
+      const poleH = h * 0.30, padW = 0.16;
+      const bx = w / 2 - padW * 1.1;
+      return merged([
+        [box(padW * 1.6, 0.05, padW * 1.6), [-bx, -h / 2 + 0.025, 0]],
+        [box(padW * 1.6, 0.05, padW * 1.6), [bx, -h / 2 + 0.025, 0]],
+        [cyl(0.035, 0.045, poleH, 10), [-bx, -h / 2 + 0.05 + poleH / 2, 0]],
+        [cyl(0.035, 0.045, poleH, 10), [bx, -h / 2 + 0.05 + poleH / 2, 0]],
+      ]);
+    }
     default: return box(w, h, d);
   }
 }
@@ -322,6 +399,99 @@ function partAccent(t) {
       ]), mat: 'darkMetal', off: [0, 0, 0] };
     }
     case 'rug': return { geo: box(w - 0.16, 0.021, d - 0.16), mat: 'clothInner', off: [0, 0.006, 0] }; // 내부 필드=보더 대비
+    case 'wreath': { // 잎·꽃·리본 — 링 프레임(body) 위에 얹는 다색 오버레이(정점색, 개업 축하 톤 — 성탄 리스 배색 지양)
+      const RC = new THREE.Vector3(0, h * 0.30, -d * 0.05);
+      const ringR = w * 0.40;
+      const leafGreen = 0x3d5a3a;
+      const flowerPalette = [0xe7b9ab, 0xf1e4c9, 0xe3d3c3, 0xb9c2a0]; // 블러시·크림·샌드·세이지 파스텔(꽃 위주 — 잎은 사이사이 소량만)
+      const ribbon = 0xe0b48a; // 블러시·골드 축하 리본(더스티레드 → 개업 톤으로 교체, 브라스 프레임과 명도 대비로 구분)
+      const N = 20, pieces = [];
+      let fi = 0;
+      for (let i = 0; i < N; i++) { // 외곽 링 — 꽃 75%·잎 25%(개업화환은 꽃 비중이 커야 리스와 구분)
+        const a = (i / N) * Math.PI * 2;
+        const rx = Math.cos(a) * ringR, ry = Math.sin(a) * ringR * 0.98;
+        const isLeaf = i % 4 === 0;
+        let s;
+        if (isLeaf) { s = new THREE.SphereGeometry(0.048, 6, 5); s.scale(1, 1.6, 0.8); s.rotateZ(a); paintGeo(s, leafGreen); }
+        else { s = new THREE.SphereGeometry(0.044 + (i % 3) * 0.007, 7, 6); paintGeo(s, flowerPalette[fi % flowerPalette.length]); fi++; }
+        s.translate(rx, ry, isLeaf ? 0.03 : 0.038);
+        pieces.push([s, null]);
+      }
+      for (let j = 0; j < 10; j++) { // 안쪽 보조 링 — 작은 꽃송이를 촘촘히 채워 밀도감(감독: "촘촘히")
+        const a = ((j + 0.5) / 10) * Math.PI * 2;
+        const rx = Math.cos(a) * ringR * 0.90, ry = Math.sin(a) * ringR * 0.88;
+        const s = new THREE.SphereGeometry(0.03 + (j % 2) * 0.006, 6, 5);
+        paintGeo(s, flowerPalette[(j + 1) % flowerPalette.length]);
+        s.translate(rx, ry, 0.05);
+        pieces.push([s, null]);
+      }
+      const bowKnot = new THREE.SphereGeometry(0.05, 8, 6); bowKnot.scale(1.1, 0.75, 0.7); paintGeo(bowKnot, ribbon);
+      pieces.push([bowKnot, [0, ringR * 0.98, 0.03]]);
+      [1, -1].forEach((sx) => { // 리본 테일 — 얇고 길게, 아래로 갈수록 살짝 벌어져 나부끼는 느낌
+        const st = box(0.03, 0.30, 0.01); st.translate(0, -0.15, 0); st.rotateZ(sx * 0.20); paintGeo(st, ribbon);
+        pieces.push([st, [sx * 0.045, ringR * 0.80, 0.028]]);
+      });
+      const geo = merged(pieces);
+      geo.rotateX(-0.16); geo.translate(RC.x, RC.y, RC.z);
+      return { geo, mat: 'festive', off: [0, 0, 0] };
+    }
+    case 'cake': { // 낮은 케이크 스탠드(도자기 화이트+골드 림)·티어 트림 리본·촛불·토퍼 — 전부 정점색 accent(body=크림 케이크 본체)
+      // plateY — partGeo 'cake' case와 반드시 동일 식(스탠드 상판=티어1 밑면 높이 정합)
+      const plateY = -h / 2 + h * 0.13;
+      const t1H = h * 0.17, t2H = h * 0.14, t3H = h * 0.115;
+      const r1 = w * 0.40, r2 = w * 0.29, r3 = w * 0.20;
+      const topY = plateY + t1H + t2H + t3H;
+      const gold = 0xcf9a4a, blush = 0xe7b9ab, candleCream = 0xf1e4c9, flame = 0xffcf7a, porcelain = 0xf2f0ea;
+      const pieces = [];
+      // 케이크 스탠드 — 삼각대 대신 낮은 굽(발+짧은 스템+넓은 상판), 도자기 화이트 + 골드 림(감독 지적: "공중에 뜬" 느낌 제거)
+      const footH = 0.028, footR = w * 0.22;
+      const plateH = 0.022, plateR = r1 * 1.15;
+      const stemH = Math.max(0.03, h * 0.13 - footH - plateH), stemR = w * 0.09;
+      const footCY = -h / 2 + footH / 2, stemCY = -h / 2 + footH + stemH / 2, plateCY = plateY - plateH / 2;
+      const foot = cyl(footR * 0.94, footR, footH, 20); paintGeo(foot, porcelain); pieces.push([foot, [0, footCY, 0]]);
+      const stem = cyl(stemR * 0.86, stemR, stemH, 16); paintGeo(stem, porcelain); pieces.push([stem, [0, stemCY, 0]]);
+      const plate = cyl(plateR, plateR * 1.03, plateH, 24); paintGeo(plate, porcelain); pieces.push([plate, [0, plateCY, 0]]);
+      const rim = new THREE.TorusGeometry(plateR * 0.99, 0.008, 6, 24); rim.rotateX(Math.PI / 2); paintGeo(rim, gold);
+      pieces.push([rim, [0, plateY - 0.004, 0]]);
+      [[r1, plateY], [r2, plateY + t1H], [r3, plateY + t1H + t2H]].forEach(([r, y]) => {
+        const trim = new THREE.TorusGeometry(r, 0.012, 6, 20); trim.rotateX(Math.PI / 2); paintGeo(trim, blush);
+        pieces.push([trim, [0, y + 0.012, 0]]);
+      });
+      [-1, 0, 1].forEach((k) => {
+        const cx = k * r3 * 0.5;
+        const stick = cyl(0.006, 0.006, 0.09, 6); paintGeo(stick, candleCream); pieces.push([stick, [cx, topY + 0.045, 0]]);
+        const tip = new THREE.SphereGeometry(0.012, 6, 5); paintGeo(tip, flame); pieces.push([tip, [cx, topY + 0.10, 0]]);
+      });
+      // 토퍼(작은 골드 젬) — Octahedron/Icosahedron 등 Polyhedron계는 비인덱스라 merge 불가(BLOCKER 회귀 방지: box로 대체)
+      const topper = box(0.05, 0.09, 0.05); topper.rotateY(Math.PI / 4); paintGeo(topper, gold);
+      pieces.push([topper, [0, topY + 0.15, 0]]);
+      return { geo: merged(pieces), mat: 'festive', off: [0, 0, 0] };
+    }
+    case 'banner': { // 현수막 면 — 프레임(body) 안쪽 팽팽한 천. 크림/오프화이트 기본 마감(감독 지적: 칙칙한 톤 → 밝게), 텍스트 커스텀은 후속 마일스톤
+      const topRailY = h * 0.40, bottomEdgeY = -h / 2 + 0.07;
+      const bh = topRailY - bottomEdgeY, bw = w * 0.74;
+      return { geo: box(bw, bh, 0.014), mat: 'bannerCloth', off: [0, (topRailY + bottomEdgeY) / 2, 0.025] };
+    }
+    case 'balloon': { // 풍선 군집 — 좌우 폴 사이를 잇는 아치, 크고 작은 구 + 절제된 파스텔 색 변주(정점색)
+      const poleH = h * 0.30, padW = 0.16;
+      const bx = w / 2 - padW * 1.1;
+      const baseY = -h / 2 + 0.05 + poleH, archTop = h * 0.46;
+      const palette = [0xd7c3b0, 0xc9a58f, 0x9fae95, 0xa9bfc9, 0xe3d3c3]; // 블러시·테라코타·세이지·더스티블루·샌드(절제된 파스텔)
+      const rnd = seeded(88);
+      const N = 34, pieces = [];
+      for (let i = 0; i < N; i++) {
+        const t = i / (N - 1);
+        const x = THREE.MathUtils.lerp(-bx, bx, t);
+        const arcY = baseY + (archTop - baseY) * Math.sin(Math.PI * t * 0.98 + 0.01);
+        const jx = (rnd() - 0.5) * 0.10, jy = (rnd() - 0.5) * 0.08, jz = (rnd() - 0.5) * 0.16;
+        const r = 0.075 + rnd() * 0.075;
+        const s = new THREE.SphereGeometry(r, 9, 7);
+        paintGeo(s, palette[(i + (rnd() * palette.length | 0)) % palette.length]);
+        s.translate(x + jx, arcY + jy, jz);
+        pieces.push([s, null]);
+      }
+      return { geo: merged(pieces), mat: 'festive', off: [0, 0, 0] };
+    }
     default: return null;
   }
 }
@@ -492,7 +662,7 @@ function aoTexture() {
   x.fillStyle = g; x.fillRect(0, 0, 128, 128);
   _aoTex = new THREE.CanvasTexture(c); _aoTex.colorSpace = THREE.SRGBColorSpace; return _aoTex;
 }
-const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6 };
+const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6, wreath: 1.1, cake: 1.0, banner: 1.1 }; // balloon 제외: 아치 중심이 허공이라 접촉그림자 부적합
 const ART_SPOT_CAP = 10; // 실시간 라이트 상한(편집 모드 대표 조명). 초과분은 베이킹 트랙에서 처리 예정.
 export function addRoomLighting(group) {
   const u = group.userData || {}; const dims = u.dims; if (!dims) return;

@@ -137,7 +137,7 @@ export function getPreset(id) { return SPACE_PRESETS.find((p) => p.id === id) ||
 
 // ── 탑다운 미니 플랜 썸네일 (런타임 캔버스, 외부 이미지 0) ─────────────────────
 const FLOOR_COL = { parquet: '#b98a53', terrazzo: '#d8d2c6', concrete: '#8f8d88', grass: '#5b8746', water: '#22505f' };
-const CAT_COL = { structure: '#9aa0aa', exhibit: '#8b72ff', ambience: '#72e6e1', finish: '#cbb994' };
+const CAT_COL = { structure: '#9aa0aa', exhibit: '#8b72ff', ambience: '#72e6e1', event: '#f4a3ab', finish: '#cbb994' };
 const FEATURE_COL = { deepviolet: '#4a4560', kintsugi: '#c39a4a', charcoal: '#3a3a40', warmsand: '#e6d8bf' };
 
 /** space 문서 → 탑다운 플랜 dataURL(정사각 size). 비-DOM이면 null. */
