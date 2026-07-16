@@ -208,6 +208,9 @@ function createChibiAvatarInstance(charId, colorHex, nickname) {
     setWound(level) {
       built.setWound(level); // 반창고/멍/눈물 얼굴 반영
     },
+    setFlying(v) {
+      if (typeof built.setFlying === 'function') built.setFlying(v); // 비행 포즈 토글(치비 전용)
+    },
     dispose() {
       built.dispose();
       if (label) {
@@ -296,6 +299,9 @@ export function createAvatarInstance(charId, colorHex, nickname) {
     /** 상처 단계만 반영 (자연 회복 감쇠용 — 리액션 없음) */
     setWound(level) {
       if (typeof inst.setWound === 'function') inst.setWound(level);
+    },
+    setFlying: (v) => {
+      if (typeof inst.setFlying === 'function') inst.setFlying(v); // fly.js → 셀프 아바타 비행 포즈
     },
     dispose: () => {
       fx.dispose();
