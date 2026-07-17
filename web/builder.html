@@ -233,30 +233,45 @@
 
   /* 모바일: 경량 편집 허용 — 팔레트(도크)·선택 액션바·툴바만 남기고 나머지 정밀 패널(설정·미니맵·모드바)은 숨김 */
   .mobwarn{display:none}
+  .mhelp{display:none} /* 모바일 안내 재열람 진입점("?") — 데스크톱 기본 숨김 */
+  .dockhandle{display:none} /* 파츠 팔레트 접기 핸들 — 데스크톱 기본 숨김 */
   .mstep,.mmove{display:none} /* 모바일 전용 이동/그리드회전 컨트롤 — 데스크톱 기본 숨김 */
   .mcancel{display:none} /* 모바일 배치취소 — 키보드 Escape가 없는 터치 환경의 유일한 탈출구(데스크톱은 Escape로 충분) */
   @media (max-width:640px){
     .desk:not(.m-show){display:none!important}
 
-    .m-show.hud-toolbar{top:12px;left:12px;right:12px;bottom:auto;transform:none;width:auto;
-      justify-content:space-between;border-radius:14px;padding:9px 10px}
-    .m-show.hud-toolbar .ic{width:42px;height:42px}
-    .m-show.hud-toolbar .cta{padding:0 18px;height:42px}
+    /* 툴바: 아이콘·플레이트 높이만 축소(버튼 자동숨김은 반려됨 — 팀장 판정 4) */
+    .m-show.hud-toolbar{top:10px;left:10px;right:10px;bottom:auto;transform:none;width:auto;
+      justify-content:space-between;border-radius:13px;padding:7px 8px}
+    .m-show.hud-toolbar .ic{width:38px;height:38px}
+    .m-show.hud-toolbar .ic svg{width:17px;height:17px}
+    .m-show.hud-toolbar .cta{padding:0 16px;height:38px;font-size:13px}
 
-    .m-show.hud-dock{top:auto;right:0;left:0;bottom:0;width:100%;max-height:36vh;
-      border-radius:18px 18px 0 0;border-left:0;border-right:0;border-bottom:0}
-    .m-show.hud-dock .tabs{padding:10px 10px 6px}
+    /* 파츠 팔레트(도크): 26~30vh + 접기 토글(팀장 판정 2). 펼침이 기본, 접으면 3D뷰 최대화 */
+    .m-show.hud-dock{top:auto;right:0;left:0;bottom:0;width:100%;max-height:28vh;
+      border-radius:18px 18px 0 0;border-left:0;border-right:0;border-bottom:0;
+      transition:max-height .22s cubic-bezier(.2,.8,.2,1)}
+    .m-show.hud-dock .dockhandle{display:flex;flex:none;justify-content:center;align-items:center;padding:11px 0 9px;cursor:pointer;touch-action:manipulation} /* 패딩 포함 탭 타깃 ~30px(그립 자체는 얇게 유지) */
+    .m-show.hud-dock .dockhandle .grip{width:36px;height:4px;border-radius:999px;background:var(--line)}
+    .m-show.hud-dock .tabs{flex:none;padding:2px 10px 6px}
     .m-show.hud-dock .tabs button{font-size:11.5px;padding:9px 2px 6px}
     body.placing .m-show.hud-dock .mcancel{display:flex;align-items:center;justify-content:center;gap:6px;
       margin:0 10px 8px;padding:9px 0;border-radius:10px;border:1px solid var(--coral);color:#ffd9d1;
-      background:rgba(255,112,94,.16);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
-    .m-show .parts{grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px 16px}
+      background:rgba(255,112,94,.16);font:inherit;font-size:12px;font-weight:600;cursor:pointer;flex:none}
+    .m-show .parts{grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px 16px;flex:1;min-height:0;overflow-y:auto}
     .m-show .chip{padding:10px 6px 11px;font-size:12px;min-height:80px}
     .m-show .chip .chip-ic{height:42px}
 
-    .m-show.hud-context{left:10px;right:10px;bottom:calc(36vh + 10px);width:auto;transform:translateY(6px);
-      justify-content:center;flex-wrap:wrap;gap:10px;padding:10px 14px}
+    /* 접힘: 핸들만 남기고 탭/목록/배치취소 숨김. 배치 시작 시 JS가 강제로 펼침(배치취소 도달성 유지) */
+    body.dock-collapsed .m-show.hud-dock{max-height:38px}
+    body.dock-collapsed .m-show.hud-dock .tabs,
+    body.dock-collapsed .m-show.hud-dock .parts,
+    body.dock-collapsed .m-show.hud-dock .mcancel{display:none}
+
+    .m-show.hud-context{left:10px;right:10px;bottom:calc(28vh + 10px);width:auto;transform:translateY(6px);
+      justify-content:center;flex-wrap:wrap;gap:10px;padding:10px 14px;transition:bottom .22s cubic-bezier(.2,.8,.2,1),transform .18s,opacity .18s}
     .m-show.hud-context.on{transform:translateY(0)}
+    body.dock-collapsed .m-show.hud-context{bottom:56px}
     .m-show.hud-context .step.fine{display:none} /* 미세(5°) 회전은 정밀작업 — PC 전용 유지 */
     .m-show.hud-context .vidwrap,.m-show.hud-context .imgwrap{display:none!important} /* 영상·이미지 편집은 A 범위 밖 */
     .m-show.hud-context .mstep{display:flex}
@@ -264,9 +279,18 @@
     .m-show.hud-context .sbtn{width:30px;height:30px;font-size:16px}
     .m-show.hud-context .del{padding:8px 12px}
 
-    .mobwarn{display:block;position:fixed;top:64px;left:12px;right:12px;bottom:auto;z-index:9;
+    /* 안내(.mobwarn): 최초 1회만 자동 노출 + 페이드(팀장 판정 1). JS가 .show 토글, localStorage로 재노출 억제 */
+    .mobwarn{display:block;position:fixed;top:70px;left:12px;right:46px;bottom:auto;z-index:9;
       background:rgba(31,33,40,.85);border:1px solid var(--line);border-radius:10px;padding:7px 12px;
-      font-size:11px;color:var(--dim);text-align:center;backdrop-filter:blur(8px)}
+      font-size:11px;color:var(--dim);text-align:center;backdrop-filter:blur(8px);
+      opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .5s ease,transform .5s ease}
+    .mobwarn.show{opacity:1;transform:translateY(0);pointer-events:auto}
+
+    /* 재열람 진입점 — 탭하면 안내를 다시 보여줌(팀장 판정 1) */
+    .mhelp{display:flex;position:fixed;top:70px;right:12px;z-index:9;width:26px;height:26px;
+      align-items:center;justify-content:center;border-radius:999px;border:1px solid var(--line);
+      background:rgba(31,33,40,.75);color:var(--dim);font:inherit;font-size:13px;font-weight:700;
+      backdrop-filter:blur(8px);cursor:pointer;padding:0}
   }
   @media (max-width:480px){ .fr-grid{grid-template-columns:repeat(2,1fr)} } /* 좁은 폰: 프리셋 그리드 2열(세로 스크롤) */
   .hud-context .mini.on{background:var(--violet);border-color:var(--violet);color:#fff} /* 이동 토글 활성 표시 */
@@ -364,6 +388,7 @@
 
 <!-- → 파츠 도크(유리) -->
 <aside class="plate hud-dock desk m-show">
+  <div class="dockhandle" id="bDockToggle" role="button" tabindex="0" aria-label="파츠 팔레트 접기·펼치기" aria-expanded="true"><span class="grip"></span></div>
   <div class="tabs" id="tabs"></div>
   <button type="button" class="mcancel" id="bCancelPlace">✕ 배치 취소 · 탭해서 선택 모드로</button>
   <div class="parts" id="parts"></div>
@@ -414,7 +439,8 @@
 
 <div id="firstRunOverlay"><div class="plate hero fr-card" id="frBody"></div></div>
 
-<div class="mobwarn">📱 가벼운 편집 모드 · 미세회전·쌓기 등 정밀 작업은 PC를 권장합니다</div>
+<button type="button" class="mhelp" id="bMobHelp" aria-label="모바일 안내 다시 보기">?</button>
+<div class="mobwarn" id="mobwarn">📱 가벼운 편집 모드 · 미세회전·쌓기 등 정밀 작업은 PC를 권장합니다</div>
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -484,9 +510,33 @@ function renderParts(){
   });
 }
 renderParts();
+
+// 모바일 파츠 팔레트 접기/펼치기(팀장 판정 2) — 펼침이 기본, 접으면 3D 편집 영역 최대화
+const dockToggle = document.getElementById('bDockToggle');
+function setDockCollapsed(on){ document.body.classList.toggle('dock-collapsed', !!on); if(dockToggle) dockToggle.setAttribute('aria-expanded', on?'false':'true'); }
+if(dockToggle) dockToggle.onclick=()=> setDockCollapsed(!document.body.classList.contains('dock-collapsed'));
+
 // 배치 대기 상태를 body 클래스로 노출 — 모바일 배치취소 버튼(#bCancelPlace) 표시에 사용(Escape 키가 없는 터치 환경 대체)
-B.on('mode', ({placing})=>{ document.body.classList.toggle('placing', !!placing); if(!placing) [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); });
+B.on('mode', ({placing})=>{ document.body.classList.toggle('placing', !!placing); if(!placing) [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); if(placing) setDockCollapsed(false); }); // 배치 시작 시 팔레트 강제 펼침(배치취소 배너 도달성 유지)
 document.getElementById('bCancelPlace').onclick=()=>{ B.cancelPlace(); [...partsEl.querySelectorAll('.chip')].forEach(x=>x.classList.remove('on')); };
+
+// 모바일 안내(.mobwarn) — 최초 1회 + 페이드(팀장 판정 1). localStorage로 재노출 억제, 재열람은 "?"(.mhelp)
+const MOBWARN_KEY = 'openartshow.mobwarn.seen.v1';
+const mobwarnEl = document.getElementById('mobwarn');
+const mhelpBtn = document.getElementById('bMobHelp');
+let mobwarnTimer = 0;
+function showMobwarn(autoHideMs){
+  if(!mobwarnEl) return;
+  clearTimeout(mobwarnTimer);
+  mobwarnEl.classList.add('show');
+  if(autoHideMs) mobwarnTimer = setTimeout(()=>mobwarnEl.classList.remove('show'), autoHideMs);
+}
+if(window.matchMedia('(max-width:640px)').matches){
+  let seen = false;
+  try { seen = localStorage.getItem(MOBWARN_KEY) === '1'; } catch(e){ seen = false; }
+  if(!seen){ showMobwarn(4500); try { localStorage.setItem(MOBWARN_KEY, '1'); } catch(e){} }
+}
+if(mhelpBtn) mhelpBtn.onclick=()=>showMobwarn(4500);
 
 // 상단 인디케이터 + 미니맵
 const nParts=document.getElementById('nParts'), nCap=document.getElementById('nCap'), capFill=document.getElementById('capFill');
