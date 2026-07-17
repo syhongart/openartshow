@@ -163,6 +163,30 @@
   .hud-toolbar .cta:hover{filter:brightness(1.05);transform:translateX(-50%) translateY(-1px)}
   .hud-toolbar .cta:hover::after{transform:translateX(320%)}
 
+  /* ── 걸어서 빌드 모드 HUD(신규 가산 — 팀장 설계 MVP) ── */
+  .hud-toolbar .ic.walkon{color:var(--violet);background:rgba(139,114,255,.16)}
+  body.walking .hud-info, body.walking .hud-modebar, body.walking .hud-dock, body.walking .hud-gizmo,
+  body.walking .hud-minimap, body.walking .hud-context, body.walking .hud-settings,
+  body.walking .mobwarn, body.walking .mhelp{display:none!important} /* 조망 전용 UI 숨김. 툴바(토글 포함)는 유지 */
+  .hud-walkhint{display:none;top:16px;left:50%;transform:translateX(-50%);padding:9px 18px;font-size:12px;color:var(--dim);white-space:nowrap}
+  .hud-walkhint b{color:var(--ink);font-weight:600}
+  body.walking .hud-walkhint{display:block}
+  .walk-mobile-hud{display:none;position:fixed;inset:0;z-index:15;pointer-events:none}
+  body.walking .walk-mobile-hud{display:block}
+  .walk-mobile-hud .yawzone{position:absolute;inset:0;left:42%;pointer-events:auto;touch-action:none}
+  .walk-mobile-hud .joy{position:absolute;left:18px;bottom:22px;width:112px;height:112px;border-radius:999px;
+    background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.14);pointer-events:auto;touch-action:none}
+  .walk-mobile-hud .joy .stick{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
+    border-radius:999px;background:rgba(139,114,255,.6);border:1px solid rgba(255,255,255,.45);transition:transform .06s linear}
+  .walk-mobile-hud .wbtn{position:absolute;pointer-events:auto;appearance:none;border:1px solid var(--line);color:var(--ink);
+    font:inherit;font-weight:700;border-radius:12px;cursor:pointer;box-shadow:0 8px 18px -8px rgba(0,0,0,.5)}
+  .walk-mobile-hud .place{right:18px;bottom:24px;width:96px;height:96px;border-radius:999px;font-size:12.5px;
+    background:linear-gradient(180deg,#ff8a7a,#e6604e);border-color:rgba(255,112,94,.5);color:#1a120f}
+  .walk-mobile-hud .place:disabled{filter:grayscale(.6);opacity:.55;cursor:default}
+  .walk-mobile-hud .exit{top:14px;right:14px;padding:9px 14px;font-size:12.5px;background:rgba(20,21,27,.78);backdrop-filter:blur(8px)}
+  @media (min-width:641px){ .walk-mobile-hud{display:none!important} } /* 모바일 전용(데스크탑은 힌트 텍스트만) */
+  @media (max-width:640px){ body.walking .hud-toolbar{display:none!important} } /* 모바일 툴바가 상단으로 올라와 나가기 버튼과 겹침 — 걸어서 중엔 전용 HUD에 위임 */
+
   /* 선택 컨텍스트 독 */
   .hud-context{bottom:66px;left:50%;transform:translateX(-50%) translateY(8px);opacity:0;pointer-events:none;transition:.18s;
     padding:9px 13px;display:flex;align-items:center;gap:11px;font-size:12.5px;color:var(--dim);white-space:nowrap}
@@ -426,8 +450,18 @@
   <button class="ic" id="bLoad" title="불러오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
   <button class="ic" id="bExport" title="내보내기(JSON)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
   <button class="ic" id="bResetCam" title="카메라 리셋 (공간 전체 보기)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  <button class="ic" id="bWalkToggle" title="걸어서 둘러보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="m10 22 1-6-2-2 1-5-3 1-1 4"/><path d="m14 22-1-6 3-2-1-6 3 1 2 5"/></svg></button>
   <span class="div"></span>
   <button class="cta" id="bSave">저장</button>
+</div>
+
+<!-- 걸어서 빌드 모드 HUD(신규 가산) -->
+<div class="plate hud-walkhint desk" id="walkHint"><b>WASD</b> 이동 · <b>Space</b> 놓기 · <b>Esc</b> 나가기</div>
+<div class="walk-mobile-hud" id="walkMobHud">
+  <div class="yawzone" id="walkYawZone"></div>
+  <div class="joy" id="walkJoy"><div class="stick" id="walkJoyStick"></div></div>
+  <button type="button" class="wbtn place" id="walkPlaceBtn">여기<br>놓기</button>
+  <button type="button" class="wbtn exit" id="walkExitBtn">나가기 ✕</button>
 </div>
 
 <div id="playOverlay">
@@ -778,6 +812,63 @@ function renderFirstRun(){
   frOverlay.classList.add('show');
 }
 renderFirstRun();
+
+// ── 걸어서 빌드 모드 토글 + HUD 배선(신규 가산 — 팀장 설계 MVP. 로직은 builder.js/builder-walk.js, 여기는 배선만) ──
+const bWalkToggle=document.getElementById('bWalkToggle');
+const walkPlaceBtn=document.getElementById('walkPlaceBtn');
+function setWalkUI(walking){
+  document.body.classList.toggle('walking', walking);
+  if(bWalkToggle){ bWalkToggle.classList.toggle('walkon', walking); bWalkToggle.title = walking ? '조망으로 돌아가기 (Esc)' : '걸어서 둘러보기'; }
+  if(!walking && walkJoyStick) walkJoyStick.style.transform='translate(0,0)'; // 나가면 조이스틱 스틱 원위치
+}
+if(bWalkToggle) bWalkToggle.onclick=()=>{ B.isWalking() ? B.exitWalk() : B.enterWalk(); };
+B.on('walkmode', ({walking})=>setWalkUI(!!walking));
+// 배치 대기 파츠 유무에 따라 "여기 놓기" 버튼 활성/비활성(걸어서 진입 전 고른 파츠를 걸어서에서 놓는 흐름 — 팀장 MVP 최소 범위)
+B.on('mode', ({placing})=>{ if(walkPlaceBtn) walkPlaceBtn.disabled = !placing; });
+if(walkPlaceBtn) walkPlaceBtn.disabled = true;
+
+// 좌 조이스틱 → B.walkMove(vx,vz). 정규화 벡터(반경 내 상대 위치), 놓으면 (0,0).
+const walkJoy=document.getElementById('walkJoy'), walkJoyStick=document.getElementById('walkJoyStick');
+if(walkJoy && walkJoyStick){
+  let joyId=null, joyCx=0, joyCy=0, joyR=50;
+  walkJoy.addEventListener('pointerdown',(e)=>{
+    if(joyId!==null) return;
+    joyId=e.pointerId; try{ walkJoy.setPointerCapture(joyId); }catch(err){}
+    const r=walkJoy.getBoundingClientRect(); joyCx=r.left+r.width/2; joyCy=r.top+r.height/2; joyR=r.width/2;
+    e.preventDefault();
+  });
+  walkJoy.addEventListener('pointermove',(e)=>{
+    if(e.pointerId!==joyId) return;
+    let dx=e.clientX-joyCx, dy=e.clientY-joyCy;
+    const d=Math.hypot(dx,dy); if(d>joyR){ dx=dx/d*joyR; dy=dy/d*joyR; }
+    walkJoyStick.style.transform=`translate(${dx}px,${dy}px)`;
+    B.walkMove(dx/joyR, dy/joyR); // vx=좌우, vz=전후(아래+=후진) — builder-walk.js applyMove 관례와 동일
+    e.preventDefault();
+  });
+  function joyEnd(e){ if(e.pointerId!==joyId) return; joyId=null; walkJoyStick.style.transform='translate(0,0)'; B.walkMove(0,0); }
+  walkJoy.addEventListener('pointerup', joyEnd);
+  walkJoy.addEventListener('pointercancel', joyEnd);
+}
+
+// 우측 화면 드래그 → B.walkYaw(dy)
+const walkYawZone=document.getElementById('walkYawZone');
+if(walkYawZone){
+  let yawId=null, lastX=0;
+  walkYawZone.addEventListener('pointerdown',(e)=>{ if(yawId!==null) return; yawId=e.pointerId; lastX=e.clientX; try{ walkYawZone.setPointerCapture(yawId); }catch(err){} e.preventDefault(); });
+  walkYawZone.addEventListener('pointermove',(e)=>{
+    if(e.pointerId!==yawId) return;
+    const dx=e.clientX-lastX; lastX=e.clientX;
+    B.walkYaw(-dx*0.01);
+    e.preventDefault();
+  });
+  function yawEnd(e){ if(e.pointerId!==yawId) return; yawId=null; }
+  walkYawZone.addEventListener('pointerup', yawEnd);
+  walkYawZone.addEventListener('pointercancel', yawEnd);
+}
+
+// "여기 놓기" / "나가기" 버튼
+if(walkPlaceBtn) walkPlaceBtn.onclick=()=>{ B.walkPlaceForward(); };
+document.getElementById('walkExitBtn')?.addEventListener('click', ()=>B.exitWalk());
 
 window.__builder = B;
 </script>
