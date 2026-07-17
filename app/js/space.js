@@ -162,6 +162,11 @@ function normalizePart(raw) {
     p.frame = pick(raw.frame, FRAME_IDS, FRAME_STYLES.def);
     p.src = typeof raw.src === 'string' ? raw.src : '';      // 이미지 URL/데이터(업로드=백엔드 게이트)
     if (raw.featured) p.featured = true;
+    // [ar — 종횡비 자동비율] 업로드 이미지 naturalWidth/naturalHeight 비(iw/ih). 옵션필드(p.featured/p.y 패턴).
+    // 렌더러(space-render buildSpaceGroup)가 소비해 액자 W/H를 산출. 생략=레거시 고정 1.2×1.6 폴백.
+    // 하한/상한 0.1~10으로 극단 방어(importJSON 우회 값). SPACE_VERSION 불변(완전 하위호환).
+    const arv = clamp(raw.ar, 0.1, 10, undefined);
+    if (arv !== undefined) p.ar = arv;
   }
   if (raw.t === 'screen') {
     p.ratio = pick(raw.ratio, new Set(spec.ratios), spec.ratios[0]);
