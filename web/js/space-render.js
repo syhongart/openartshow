@@ -980,7 +980,10 @@ export function buildSpaceGroup(space, opts = {}) {
     // 빌더(hideCeiling:true)에는 이 분기가 안 타므로 shell 미추가 → 기존 베이크 회귀 없음.
     shellSurf.push({ mesh: ceilM, center: new THREE.Vector3(0, H - 0.051, 0), normal: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1), width: fw, height: fd });
   }
-  for (const [x, z, ww, dd] of [[0, -hd, fw, t], [0, hd, fw, t], [-hw, 0, t, fd], [hw, 0, t, fd]]) {
+  // 코너 정합(#62): N/S 벽을 두께만큼 양옆 연장(fw+t)해 외곽 빈틈을 덮고, E/W 벽을 fd-t로 줄여
+  // 끝이 N/S 내부면(z=±(fd-t)/2)에 정확히 맞닿게 함 → 코너 노치(외곽 빈틈)·겹침(내곽 z-fighting) 동시 제거.
+  // 벽 중심(x,z)·내부면 위치 불변 → featureWall·shellSurf·라이트맵 정합 유지.
+  for (const [x, z, ww, dd] of [[0, -hd, fw + t, t], [0, hd, fw + t, t], [-hw, 0, t, fd - t], [hw, 0, t, fd - t]]) {
     const wallW = Math.max(ww, dd); // 벽면 가로 길이(N/S=fw, E/W=fd)로 텍스처 반복
     const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), wallMat(space.shell.finish.wall, wallW, H)));
     m.position.set(x, H / 2, z); m.receiveShadow = true; g.add(m);
