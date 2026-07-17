@@ -10,6 +10,7 @@ import { normalizeSpace, newSpace, PART_TYPES, FINISH, FOOTPRINT, encodeSpace, d
 import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting, bakeShellLightmaps } from './space-render.js';
 import { youtubeId } from './ytembed.js';
 import { SPACE_PRESETS, getPreset, presetThumb } from './space-presets.js';
+import { createBuilderWalk } from './builder-walk.js';
 
 const SAVE_KEY = 'openartshow.space.v1';
 
@@ -76,6 +77,12 @@ export function createBuilder(canvas, opts = {}) {
   let moveMode = false;     // 이동 모드(모바일 경량 신규) — on이면 단일 드래그가 오빗 대신 선택 파츠를 이동
   let moveDragActive = false;
   let moveTargetXZ = null;  // 드래그 중 스냅된 목표 xz(포인터업에서 1회 커밋)
+  // ── 걸어서 빌드 모드(신규 가산 — 팀장 설계) ──
+  // orbit과 병존: walkOn일 때만 렌더 루프가 walkInstance.update()로 카메라를 대신 구동한다.
+  // orbit 상태 객체(orbit.az/pol/rad/target)는 이 블록 어디에서도 쓰지 않는다.
+  let walkOn = false;
+  let walkInstance = null;
+  const clock = new THREE.Clock(); // walkOn 델타타임 전용(orbit 경로는 델타 불필요·무영향)
   const raycaster = new THREE.Raycaster();
   const listeners = {};
   const emit = (ev, d) => (listeners[ev] || []).forEach((f) => f(d));
@@ -328,6 +335,7 @@ export function createBuilder(canvas, opts = {}) {
   const ptMid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
   let panning = false;
   function onDown(e) {
+    if (walkOn) return; // 걸어서 모드: 포인터로 오빗/선택/배치 조작 안 함(orbit 상태 불변 보장)
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (activePointers.size >= 2) { // 2번째 손가락 → 핀치 시작(진행 중이던 단일 드래그는 취소)
       dragging = false; movingPart = false;
@@ -345,6 +353,7 @@ export function createBuilder(canvas, opts = {}) {
     lastX = e.clientX; lastY = e.clientY;
   }
   function onMove(e) {
+    if (walkOn) return; // 걸어서 모드: 오빗 팬/줌·고스트 포인터 추적 비활성(orbit 상태 불변 보장)
     if (activePointers.has(e.pointerId)) activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && activePointers.size >= 2) { // 핀치 줌(onWheel과 동일 orbit.rad 범위) + 2손가락 팬
       const pts = [...activePointers.values()];
@@ -368,7 +377,8 @@ export function createBuilder(canvas, opts = {}) {
     }
   }
   function onUp(e) {
-    activePointers.delete(e.pointerId);
+    activePointers.delete(e.pointerId); // 걸어서 모드에서도 포인터 추적 정합성만 유지(추가 동작 없음)
+    if (walkOn) return;
     if (activePointers.size < 2) pinch = null;
     if (activePointers.size >= 1) { // 두 손가락 중 하나만 뗌 — 남은 손가락 기준으로 이어감(점프 방지), 탭 판정은 생략
       const [rem] = activePointers.values(); if (rem) { lastX = rem.x; lastY = rem.y; moved = true; }
@@ -389,13 +399,26 @@ export function createBuilder(canvas, opts = {}) {
       if (movingPart) { movingPart = false; moveDragActive = false; moveTargetXZ = null; refreshSelection(); } // 아웃라인 원위치 복귀
     }
   }
-  function onWheel(e) { orbit.rad = clampRad(orbit.rad + Math.sign(e.deltaY) * 0.6); applyCamera(); e.preventDefault(); }
+  function onWheel(e) {
+    if (walkOn) { e.preventDefault(); return; } // 걸어서 모드: 휠 줌 비활성(orbit.rad 불변 보장)
+    orbit.rad = clampRad(orbit.rad + Math.sign(e.deltaY) * 0.6); applyCamera(); e.preventDefault();
+  }
   function onKey(e) {
     const tag = (e.target && e.target.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA') return; // 입력창 타이핑 중엔 단축키 무시(WASD·Del 등)
+    if (e.key === 'Escape') { if (walkOn) exitWalk(); else cancelPlace(); return; }
+    if (walkOn) {
+      // 걸어서 모드: 이동은 builder-walk.js 자체 리스너가 처리. 여기서는 "놓기"만 담당하고
+      // 조망 전용 단축키(WASD팬·R/Q/E회전·Del삭제·Ctrl+Z undo)는 전부 비활성(조망에 위임, MVP 제외 범위).
+      const k = e.key.toLowerCase();
+      if ((e.key === ' ' || e.key === 'Enter' || k === 'f') && placingType && walkInstance) {
+        walkPlaceForward();
+        e.preventDefault();
+      }
+      return;
+    }
     const k = e.key.toLowerCase();
-    if (e.key === 'Escape') cancelPlace();
-    else if (k === 'r') rotateSelected(e.shiftKey ? -1 : 1);           // 회전 그리드 스텝(양방향)
+    if (k === 'r') rotateSelected(e.shiftKey ? -1 : 1);           // 회전 그리드 스텝(양방향)
     else if (k === 'q') rotateSelectedFine(-5 * Math.PI / 180);        // 미세 회전 ±5°
     else if (k === 'e') rotateSelectedFine(5 * Math.PI / 180);
     else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
@@ -417,8 +440,51 @@ export function createBuilder(canvas, opts = {}) {
 
   function resize(w, h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
   let raf = 0;
-  function renderOnce() { applyCamera(); renderer.render(scene, camera); }
+  function renderOnce() {
+    const dt = clock.getDelta(); // walkOn 여부와 무관하게 매 프레임 소비 — 재진입 시 델타 점프 방지
+    if (walkOn && walkInstance) {
+      walkInstance.update(dt);
+      if (placingType) { // 걸어서 모드에서도 고스트는 기존 applySnap+clampToRoom 경로(moveGhostTo)로 표시
+        const pt = walkInstance.getForwardPoint(1.2);
+        if (pt) moveGhostTo(pt.x, pt.z);
+      }
+    } else {
+      applyCamera();
+    }
+    renderer.render(scene, camera);
+  }
   function loop() { renderOnce(); raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(loop) : 0; }
+
+  // ── 걸어서 빌드 모드 진입/이탈(신규 훅) ──
+  function enterWalk() {
+    if (walkOn) return true;
+    if (!walkInstance) walkInstance = createBuilderWalk({ scene, camera, clampToRoom, getSpace: () => space });
+    walkInstance.enter();
+    walkOn = true;
+    clock.getDelta(); // 진입 직전까지의 편집 경과시간을 버려 첫 walk 프레임 델타 급증 방지
+    emit('walkmode', { walking: true });
+    return true;
+  }
+  function exitWalk() {
+    if (!walkOn) return false;
+    if (walkInstance) walkInstance.exit();
+    walkOn = false;
+    clock.getDelta(); // walk 경과시간을 버려 조망 복귀 직후 델타 급증 방지(조망은 델타 미사용이라 안전장치 성격)
+    applyCamera(); // orbit 상태(변경 없음)로 즉시 원상 복귀
+    renderOnce();
+    emit('walkmode', { walking: false });
+    return true;
+  }
+
+  // ── 걸어서 모드 모바일 입력 프록시(신규 가산 — builder.html 조이스틱/드래그 HUD가 호출) ──
+  // walkInstance.setMove/setYaw/getForwardPoint를 그대로 위임. 시그니처·로직은 builder-walk.js 원본 불변.
+  function walkMove(vx, vz) { if (walkOn && walkInstance) walkInstance.setMove(vx, vz); }
+  function walkYaw(dy) { if (walkOn && walkInstance) walkInstance.setYaw(dy); }
+  function walkPlaceForward() { // "여기 놓기" — 걸어서 모드의 Space/Enter/F 키와 동일 배치 경로(단일 지점화)
+    if (!walkOn || !walkInstance || !placingType) return -1;
+    const pt = walkInstance.getForwardPoint(1.2);
+    return pt ? addPart(placingType, pt.x, pt.z) : -1;
+  }
 
   // ── HUD 컨트롤 API (프리미엄 글래스 HUD 배선) ──
   function resetCamera() { // 공간 크기에 맞춰 조망 거리 자동(감독 #1: 큰 방이 한눈에 들어오게)
@@ -496,12 +562,15 @@ export function createBuilder(canvas, opts = {}) {
     setScreenVideo, getScreenVideo, setArtworkImage, getArtworkImage,
     resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, setFootprint, getPresets, applyPreset, clearSpace, bake, unbake, isBaked: () => baked,
     save, load, exportJSON, importJSON, resize, renderOnce,
+    enterWalk, exitWalk, isWalking: () => walkOn, // 걸어서 빌드 모드(신규 가산)
+    walkMove, walkYaw, walkPlaceForward, // 걸어서 모드 모바일 입력 프록시(신규 가산 — HUD 배선용)
     getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
     on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
     get renderer() { return renderer; }, get camera() { return camera; }, get orbit() { return orbit; }, getGroup: () => group,
     dispose() {
       if (raf) cancelAnimationFrame(raf);
+      if (walkInstance) walkInstance.dispose(); // 걸어서 아바타·리스너 정리
       cancelPlace(); // ghost 정리
       if (selectMesh) { scene.remove(selectMesh); selectMesh.geometry.dispose(); selectMesh.material.dispose(); selectMesh = null; }
       if (group) disposeSpaceGroup(group);
