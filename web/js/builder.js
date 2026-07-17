@@ -242,11 +242,15 @@ export function createBuilder(canvas, opts = {}) {
   function getScreenVideo(index) { const p = space.parts[index]; return (p && p.t === 'screen') ? (p.src || '') : ''; }
   // 작품 파츠에 이미지(dataURL) 설정 — 스크린 유튜브 패턴 계승. artwork만(아니면 false).
   // dataURL이 빈 문자열이면 이미지 제거(src=''). 스키마 신규 필드 0 — 기존 src를 이미지 dataURL 저장에 사용.
-  function setArtworkImage(index, dataURL) {
+  function setArtworkImage(index, dataURL, ar) {
     if (index < 0 || !space.parts[index] || space.parts[index].t !== 'artwork') return false;
     const src = typeof dataURL === 'string' ? dataURL : '';
     pushUndo();
-    const parts = space.parts.slice(); parts[index] = { ...parts[index], src };
+    const parts = space.parts.slice();
+    const next = { ...parts[index], src };
+    // ar(종횡비): 이미지 있을 때만 기록 → 자동비율. 제거 시 ar도 제거(빈 액자=고정 1.2×1.6 폴백).
+    if (src && typeof ar === 'number' && isFinite(ar) && ar > 0) next.ar = ar; else delete next.ar;
+    parts[index] = next;
     space = normalizeSpace({ ...space, parts }); rebuild(); emit('change', { space });
     return true;
   }

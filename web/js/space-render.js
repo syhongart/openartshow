@@ -10,7 +10,7 @@
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
-import { PART_TYPES, FOOTPRINT, STORY_H } from './space.js';
+import { PART_TYPES, FOOTPRINT, STORY_H, FRAME_RULES } from './space.js';
 import { createPlasterMaps, createParquetMaps, createConcreteMaps } from './scene.js';
 
 // 미술관(scene.js) 프로시저럴 텍스처+노말맵 계승(감독: 노말맵 필수). 생성기는 캐시된
@@ -100,7 +100,9 @@ const MATS = {
   warmsand:   () => SM({ color: 0xe6d8bf, roughness: 0.9, metalness: 0 }),
   charcoal:   () => SM({ color: 0x3a3a40, roughness: 0.7, metalness: 0.1 }),
   deepviolet: () => SM({ color: 0x2b2833, roughness: 0.9, metalness: 0 }), // 저채도 딥중립(작품 배경 규율 §3-6·팀장 조건①)
-  frameBlack: () => SM({ color: 0x17181c, roughness: 0.88, metalness: 0 }), // 액자=매트 블랙(크롬 금지, 아트디렉션 스펙)
+  frameBlack: () => SM({ color: 0x17181c, roughness: 0.88, metalness: 0 }), // 액자=매트 블랙(크롬 금지, 아트디렉션 스펙) — minimal 스타일
+  frameWalnut: () => SM({ color: 0x4a3423, roughness: 0.55, metalness: 0.05 }), // classic 스타일 외곽 몰딩(월넛톤, 단순화 채택: 라이너 생략 단일 재질)
+  frameShadow: () => SM({ color: 0x1c1c1e, roughness: 0.95 }), // frameless 스타일 백킹(링 없음·매트없음, 그림자 틴트)
   walnut:     () => SM({ color: 0x6b5138, roughness: 0.6, metalness: 0 }),  // 벤치 시트(월넛) — 파케 바닥과 분리
   charcoalCloth: () => SM({ color: 0x2c2c30, roughness: 0.95, metalness: 0 }), // 드레이프 딥차콜
   clothInner: () => SM({ color: 0xd6ccb7, roughness: 0.97, metalness: 0 }), // 러그 내부 필드(보더 대비)
@@ -210,6 +212,54 @@ function merged(list) {
   const m = mergeGeometries(gs, false); gs.forEach((g) => g.dispose());
   return m;
 }
+
+// ── 자동 액자: 3스타일 + 종횡비 자동비율(디자이너 §자동 액자) ──────────────────
+// fW=프레임 변폭(스타일별). 두께 d는 3스타일 공통(FRAME_RULES.thickness=0.1) — accent z오프셋·
+// 스포트라이트 오프셋이 이에 의존하므로 스타일 무관 고정. frameless는 링 없음(fW=0).
+const FRAME_FW = { minimal: 0.045, classic: 0.11, frameless: 0 };
+const FRAME_MAT_ID = { minimal: 'frameBlack', classic: 'frameWalnut', frameless: 'frameShadow' };
+// p.ar → 액자 W/H. 디자이너 실측 공식(FRAME_RULES 소비). ar 없으면 레거시 고정 1.2×1.6 폴백.
+function artworkSize(ar) {
+  const [dw, dh] = PART_TYPES.artwork.size; // 폴백(빈 액자·구버전 저장분)
+  if (!(typeof ar === 'number' && isFinite(ar) && ar > 0)) return { W: dw, H: dh };
+  const BASE = 1.6, minSize = FRAME_RULES.minSize, clampW = FRAME_RULES.landscape.clampW, clampH = FRAME_RULES.portrait.clampH;
+  const cl = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const r = ar;
+  let W, H;
+  if (r >= 1) { W = BASE; H = BASE / r; } else { H = BASE; W = BASE * r; }
+  const W0 = W, H0 = H;
+  W = cl(W, minSize, clampW); H = cl(H, minSize, clampH);
+  if (W !== W0) H = cl(W / r, minSize, clampH); // 폭이 clamp로 잘리면 높이를 비율 재산출
+  if (H !== H0) W = cl(H * r, minSize, clampW); // 높이가 clamp로 잘리면 폭을 비율 재산출
+  return { W, H };
+}
+// 액자 프레임 지오 — style별 분기. 캔버스(accent)는 partAccent가 안쪽에 앉음.
+// minimal/classic: 속 빈 사각 베벨 링(기존 단일 링 기법 재사용, fW·베벨만 스타일별).
+// frameless: 링 없이 얇은 백킹 박스만(매트보드 없음).
+function artworkFrameGeo(style, W, H, d) {
+  if (style === 'frameless') return box(W, H, 0.02); // 링 없음·백킹만(box 중심원점)
+  const fW = FRAME_FW[style] || FRAME_FW.minimal;
+  const bevel = style === 'classic'
+    ? { bevelThickness: 0.02, bevelSize: 0.014, bevelSegments: 2 }  // classic: 두꺼운 몰딩·부드러운 라운드
+    : { bevelThickness: 0.01, bevelSize: 0.008, bevelSegments: 1 }; // minimal: 슬림
+  const ow = W / 2, oh = H / 2, iw = ow - fW, ih = oh - fW;
+  const shape = new THREE.Shape(); shape.moveTo(-ow, -oh); shape.lineTo(ow, -oh); shape.lineTo(ow, oh); shape.lineTo(-ow, oh); shape.lineTo(-ow, -oh);
+  const hole = new THREE.Path(); hole.moveTo(-iw, -ih); hole.lineTo(iw, -ih); hole.lineTo(iw, ih); hole.lineTo(-iw, ih); hole.lineTo(-iw, -ih);
+  shape.holes.push(hole);
+  const g = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: true, ...bevel, steps: 1 });
+  g.translate(0, 0, -d / 2); return g;
+}
+// 액자 캔버스(accent) 치수 — 프레임 홀 안쪽. 3중 인셋: 홀(W-2fW) → 캔버스(홀-0.01/변, 관통방지).
+// 매트margin은 텍스처 내부 여백으로 표현(artworkImageMaterial). frameless는 fW=0(백킹 전면).
+function artworkCanvasDims(style, W, H) {
+  const fW = FRAME_FW[style] || 0;
+  return { cw: Math.max(0.1, W - 2 * fW - 0.02), ch: Math.max(0.1, H - 2 * fW - 0.02) };
+}
+// 매트보드 여백(변당). frameless는 매트 없음(0). 디자이너 실측.
+function matteMarginFor(style, W, H) {
+  if (style === 'frameless') return 0;
+  return Math.min(0.14, Math.max(0.04, Math.min(W, H) * 0.08));
+}
 // 두 점을 잇는 원기둥 — 이젤 다리·X배너 프레임처럼 기울어진 부재를 쿼터니언으로 정확히 정렬.
 // (화환/케이크/배너의 다리·리본류에 사용 — 근사 회전 대신 정확 정렬로 "디테일" 품질 확보.)
 function alignedCyl(rt, rb, from, to, segs = 8) {
@@ -279,7 +329,7 @@ function flutedShaft(R, height, { flutes = 16, per = 3, hs = 5, depth = R * 0.1 
   g.setIndex(idx); g.computeVertexNormals();
   return g;
 }
-function partGeo(t) {
+function partGeo(t, opts) {
   const [w, h, d] = PART_TYPES[t].size;
   switch (t) {
     case 'pillar': { // 고대 석주 — 플루팅 샤프트 + 베이스 몰딩 + 에키누스·아바쿠스 캐피탈(감독: 고대 기둥 패턴)
@@ -398,13 +448,10 @@ function partGeo(t) {
     }
     case 'screen': // 슬림 베젤 + 단차(패널이 얹힌 느낌)
       return merged([[box(w, h, 0.05), null], [box(w - 0.06, h - 0.06, 0.02), [0, 0, -0.02]]]);
-    case 'artwork': { // 베벨 프로필 액자 프레임(속 빈 링) — 캔버스는 accent가 안쪽에 앉음
-      const fW = 0.09, ow = w / 2, oh = h / 2, iw = ow - fW, ih = oh - fW;
-      const shape = new THREE.Shape(); shape.moveTo(-ow, -oh); shape.lineTo(ow, -oh); shape.lineTo(ow, oh); shape.lineTo(-ow, oh); shape.lineTo(-ow, -oh);
-      const hole = new THREE.Path(); hole.moveTo(-iw, -ih); hole.lineTo(iw, -ih); hole.lineTo(iw, ih); hole.lineTo(-iw, ih); hole.lineTo(-iw, -ih);
-      shape.holes.push(hole);
-      const g = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 1, steps: 1 });
-      g.translate(0, 0, -d / 2); return g;
+    case 'artwork': { // 자동 액자: style·동적 W/H(opts). opts 없으면 minimal·고정 1.2×1.6(팔레트 썸네일 폴백)
+      const style = (opts && opts.style) || 'minimal';
+      const W = (opts && opts.w) || w, H = (opts && opts.h) || h, D = (opts && opts.d) || d;
+      return artworkFrameGeo(style, W, H, D);
     }
     case 'wreath': { // 개업 축하 화환 — 이젤형 삼각대(브론즈/브라스) + 링 프레임. 잎·꽃·리본은 accent(정점색).
       const A = new THREE.Vector3(0, h * 0.04, -d * 0.10);   // 다리 모이는 지점
@@ -873,11 +920,15 @@ function partAccent(t) {
 // 그려 CanvasTexture로 매핑. 외부 URL 0(자기완결·CSP img-src data: 준수). 이미지 로드는 비동기 —
 // 완료 시 texture.needsUpdate + onAsyncTex()로 온디맨드 리렌더(빌더) 유도. 방문자뷰는 연속 루프라 자동 반영.
 // dispose: 반환 material을 buildSpaceGroup의 mats에 등록 → disposeSpaceGroup이 map(CanvasTexture)·material 회수.
-function artworkImageMaterial(src, faceW, faceH, onAsyncTex) {
+function artworkImageMaterial(src, faceW, faceH, onAsyncTex, matteMargin = 0) {
   if (typeof document === 'undefined') return MATS.paper(); // 비-DOM 폴백(빈 캔버스 재질)
-  const LONG = 1024; // 캔버스를 액자면 종횡비에 맞춰(정사각 왜곡 방지) → UV 1:1 매핑
+  const LONG = 1024; // 캔버스를 액자면(캔버스mesh) 종횡비에 맞춰(왜곡 방지) → UV 1:1 매핑
   const cw = faceW >= faceH ? LONG : Math.max(1, Math.round(LONG * faceW / faceH));
   const ch = faceH >= faceW ? LONG : Math.max(1, Math.round(LONG * faceH / faceW));
+  // 매트 여백(월드 길이)을 캔버스 픽셀로 환산 → 이미지는 안쪽 가용영역에만 contain(사방 매트지 노출).
+  const mmx = faceW > 0 ? cw * (matteMargin / faceW) : 0;
+  const mmy = faceH > 0 ? ch * (matteMargin / faceH) : 0;
+  const availW = Math.max(1, cw - 2 * mmx), availH = Math.max(1, ch - 2 * mmy);
   const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
   const ctx = canvas.getContext('2d');
   const paintMat = () => { ctx.fillStyle = '#efece6'; ctx.fillRect(0, 0, cw, ch); }; // 매트보드(off-white)
@@ -888,8 +939,8 @@ function artworkImageMaterial(src, faceW, faceH, onAsyncTex) {
   img.onload = () => {
     paintMat();
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-    if (iw > 0 && ih > 0) { // contain: 액자 안 중앙, 남는 부분=매트보드
-      const s = Math.min(cw / iw, ch / ih), dw = iw * s, dh = ih * s;
+    if (iw > 0 && ih > 0) { // contain: 매트 안쪽 가용영역 중앙, 남는 부분=매트보드
+      const s = Math.min(availW / iw, availH / ih), dw = iw * s, dh = ih * s;
       ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
     }
     tex.needsUpdate = true;
@@ -955,6 +1006,51 @@ export function buildSpaceGroup(space, opts = {}) {
   // v2 스택: p.y(절대 월드 Y·파츠 중심)가 있으면 그 값, 없으면 타입별 기본 y(바닥/벽걸이).
   const pY = (p, type) => (p.y != null ? p.y : partY(type, H));
   for (const [type, list] of Object.entries(byType)) {
+    if (type === 'artwork') {
+      // ── 자동 액자: (스타일 × 이미지유무) 세분화. 두께 D·캔버스 z오프셋은 스타일 무관 고정. ──
+      const D = PART_TYPES.artwork.size[2];       // 0.1 — 스포트라이트 오프셋 의존
+      const ART_OFF_Z = 0.03;                     // 캔버스 accent z오프셋(기존 partAccent off와 동일)
+      const canvasPos = (p, cz) => new THREE.Vector3(p.x + Math.sin(p.ry) * cz, pY(p, 'artwork'), p.z + Math.cos(p.ry) * cz);
+      const addFrameMesh = (geo, mat, p, i) => {
+        const fm = new THREE.Mesh(geo, mat);
+        fm.position.set(p.x, pY(p, 'artwork'), p.z); fm.rotation.y = p.ry;
+        fm.castShadow = true; fm.receiveShadow = true;
+        if (opts.pickable) fm.userData.partIndex = i;
+        g.add(fm); partRefs.push({ part: p, index: i, object: fm });
+        return fm;
+      };
+      const byStyle = { minimal: [], classic: [], frameless: [] };
+      for (const it of list) (byStyle[it.p.frame] || byStyle.minimal).push(it);
+      for (const style of ['minimal', 'classic', 'frameless']) {
+        const items = byStyle[style]; if (!items.length) continue;
+        const frameMat = (MATS[FRAME_MAT_ID[style]] || MATS.frameBlack)(); mats.push(frameMat);
+        const withSrc = items.filter(({ p }) => p.src);
+        const noSrc = items.filter(({ p }) => !p.src);
+        // 빈 액자(noSrc): 스타일별 공유 지오(고정 1.2×1.6) — draw-call 예산·회귀 없음.
+        if (noSrc.length) {
+          const [dw, dh] = PART_TYPES.artwork.size;
+          const frameGeo = partGeo('artwork', { style, w: dw, h: dh, d: D }); geos.push(frameGeo);
+          const { cw, ch } = artworkCanvasDims(style, dw, dh);
+          const canvasGeo = box(cw, ch, 0.015); geos.push(canvasGeo);
+          const paperMat = MATS.paper(); mats.push(paperMat);
+          for (const { p, i } of noSrc) {
+            addFrameMesh(frameGeo, frameMat, p, i);
+            const cm = new THREE.Mesh(canvasGeo, paperMat); cm.position.copy(canvasPos(p, ART_OFF_Z)); cm.rotation.y = p.ry; cm.castShadow = true; g.add(cm);
+          }
+        }
+        // 이미지 작품(withSrc): 파츠별 개별 지오(ar 크기·고유 텍스처) — geos 등록 필수(누수 방지).
+        for (const { p, i } of withSrc) {
+          const { W, H } = artworkSize(p.ar);
+          const frameGeo = partGeo('artwork', { style, w: W, h: H, d: D }); geos.push(frameGeo); // ★ 개별 프레임 지오 회수 등록
+          addFrameMesh(frameGeo, frameMat, p, i);
+          const { cw, ch } = artworkCanvasDims(style, W, H);
+          const canvasGeo = box(cw, ch, 0.015); geos.push(canvasGeo);                            // ★ 개별 캔버스 지오 회수 등록
+          const cMat = artworkImageMaterial(p.src, cw, ch, opts.onAsyncTex, matteMarginFor(style, W, H)); mats.push(cMat);
+          const cm = new THREE.Mesh(canvasGeo, cMat); cm.position.copy(canvasPos(p, ART_OFF_Z)); cm.rotation.y = p.ry; cm.castShadow = true; g.add(cm);
+        }
+      }
+      continue;
+    }
     const geo = partGeo(type), material = partMat(type); geos.push(geo); mats.push(material);
     const canInstance = !UNIQUE_TEX_TYPES.has(type) && list.length > 1 && !opts.pickable;
     if (canInstance) {
@@ -975,46 +1071,19 @@ export function buildSpaceGroup(space, opts = {}) {
       }
     }
     // 2색 accent(작품 캔버스·유리·잎·화면·렌즈) — 픽킹 대상 아님.
+    // 2색 accent(유리·잎·화면·렌즈 등) — 픽킹 대상 아님. (작품 캔버스는 위 artwork 분기가 전담)
     const acc = partAccent(type);
     if (acc) {
       geos.push(acc.geo); // 공유 지오(동일 타입=동일 크기)
       const place = (p) => { const [ox, oy, oz] = acc.off; return { pos: new THREE.Vector3(p.x + Math.cos(p.ry) * ox + Math.sin(p.ry) * oz, pY(p, type) + oy, p.z - Math.sin(p.ry) * ox + Math.cos(p.ry) * oz), ry: p.ry }; };
-      if (type === 'artwork') {
-        // 작품 캔버스: 이미지(src) 있는 작품만 개별 mesh+개별 CanvasTexture로 분리하고,
-        // 이미지 없는 작품은 공유 paper 재질로 InstancedMesh 1개(draw-call 예산 보존).
-        // ─ 검수 반영(BLOCKER): accent 전량 개별화 시 80개=166콜(예산 붕괴) → 분리로 회귀 제거.
-        const withSrc = list.filter(({ p }) => p.src);
-        const noSrc = list.filter(({ p }) => !p.src);
-        if (noSrc.length) { // 이미지 없는 작품 = 빈 매트보드(공유 paper) → 인스턴싱
-          const paperMat = MATS.paper(); mats.push(paperMat);
-          if (noSrc.length > 1) {
-            const aim = new THREE.InstancedMesh(acc.geo, paperMat, noSrc.length);
-            aim.castShadow = true;
-            noSrc.forEach(({ p }, k) => { const pl = place(p); aim.setMatrixAt(k, new THREE.Matrix4().compose(pl.pos, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, pl.ry, 0)), new THREE.Vector3(1, 1, 1))); });
-            aim.instanceMatrix.needsUpdate = true; g.add(aim);
-          } else {
-            const pl = place(noSrc[0].p); const am = new THREE.Mesh(acc.geo, paperMat); am.position.copy(pl.pos); am.rotation.y = pl.ry; am.castShadow = true; g.add(am);
-          }
-        }
-        if (withSrc.length) { // 이미지 있는 작품 = 작품별 고유 텍스처라 개별 mesh 불가피
-          const [aw, ah] = PART_TYPES.artwork.size; const faceW = aw - 0.20, faceH = ah - 0.20;
-          for (const { p } of withSrc) {
-            const m = artworkImageMaterial(p.src, faceW, faceH, opts.onAsyncTex); mats.push(m);
-            const pl = place(p);
-            const am = new THREE.Mesh(acc.geo, m); am.position.copy(pl.pos); am.rotation.y = pl.ry; am.castShadow = true;
-            g.add(am);
-          }
-        }
+      const accMat = (MATS[acc.mat] || MATS.paper)(); mats.push(accMat);
+      if (list.length > 1) { // 장식 accent는 인스턴싱(텍스처 공유 무해)
+        const aim = new THREE.InstancedMesh(acc.geo, accMat, list.length);
+        aim.castShadow = true;
+        list.forEach(({ p }, k) => { const pl = place(p); aim.setMatrixAt(k, new THREE.Matrix4().compose(pl.pos, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, pl.ry, 0)), new THREE.Vector3(1, 1, 1))); });
+        aim.instanceMatrix.needsUpdate = true; g.add(aim);
       } else {
-        const accMat = (MATS[acc.mat] || MATS.paper)(); mats.push(accMat);
-        if (list.length > 1) { // 장식 accent는 인스턴싱(텍스처 공유 무해)
-          const aim = new THREE.InstancedMesh(acc.geo, accMat, list.length);
-          aim.castShadow = true;
-          list.forEach(({ p }, k) => { const pl = place(p); aim.setMatrixAt(k, new THREE.Matrix4().compose(pl.pos, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, pl.ry, 0)), new THREE.Vector3(1, 1, 1))); });
-          aim.instanceMatrix.needsUpdate = true; g.add(aim);
-        } else {
-          const pl = place(list[0].p); const am = new THREE.Mesh(acc.geo, accMat); am.position.copy(pl.pos); am.rotation.y = pl.ry; am.castShadow = true; g.add(am);
-        }
+        const pl = place(list[0].p); const am = new THREE.Mesh(acc.geo, accMat); am.position.copy(pl.pos); am.rotation.y = pl.ry; am.castShadow = true; g.add(am);
       }
     }
   }
