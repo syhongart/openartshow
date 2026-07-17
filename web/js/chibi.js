@@ -856,16 +856,23 @@ function drawFaceCanvas(p) {
 // 플랫 셀셰이딩 램프 — 레퍼런스(엔젤이)식 "단색 채움 + 그림자 1겹" 룩.
 // 2톤(그림자/본색) hard step: 3D 그라디언트를 없애 스티커 일러스트처럼 평면화한다.
 // 모듈 1회 생성·공유(개체별 dispose 대상 아님).
-let _toonRamp = null;
+let _toonRamp = null, _toonRampKey = null;
 function toonRamp() {
-  if (_toonRamp) return _toonRamp;
+  // A/B 토글(아야모 마일스톤 A) — window.__ayamoAB.ramp3=true면 3스텝 램프.
+  // 라이브(플래그 없음)에선 기존 2스텝 [230,255] 그대로(회귀 0). 저장 스키마 무관.
+  const ramp3 = (typeof window !== 'undefined' && window.__ayamoAB && window.__ayamoAB.ramp3);
+  const key = ramp3 ? 3 : 2;
+  if (_toonRamp && _toonRampKey === key) return _toonRamp;
   // 스티커 인쇄물처럼 거의 평면 — 그림자를 아주 얕게(0.9)만 남겨 형태 힌트만.
-  const data = new Uint8Array([230, 255]); // 2스텝(RedFormat): 그림자 0.9 / 본색 1.0
-  const tex = new THREE.DataTexture(data, 2, 1, THREE.RedFormat);
+  const data = ramp3
+    ? new Uint8Array([200, 235, 255]) // 3스텝: 그림자 0.78 / 중간 0.92 / 본색 1.0
+    : new Uint8Array([230, 255]);     // 2스텝(RedFormat): 그림자 0.9 / 본색 1.0
+  const tex = new THREE.DataTexture(data, key, 1, THREE.RedFormat);
   tex.minFilter = tex.magFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
   tex.needsUpdate = true;
   _toonRamp = tex;
+  _toonRampKey = key;
   return tex;
 }
 // 채도 부스트 — 스티커 톤 유지하며 색만 또렷하게. HSL의 S만 올려 흰/회색(저채도)은
@@ -875,7 +882,12 @@ function vivid(color, mul) {
   const c = new THREE.Color(color);
   const hsl = {};
   c.getHSL(hsl);
-  c.setHSL(hsl.h, Math.min(1, hsl.s * (mul || SAT_BOOST)), hsl.l);
+  // A/B 토글 — 명시 mul이 최우선, 없으면 window.__ayamoAB.sat(예: 1.35) 오버라이드,
+  // 그것도 없으면 라이브 기본 SAT_BOOST(1.5)(회귀 0).
+  const boost = mul
+    || (typeof window !== 'undefined' && window.__ayamoAB && window.__ayamoAB.sat)
+    || SAT_BOOST;
+  c.setHSL(hsl.h, Math.min(1, hsl.s * boost), hsl.l);
   return c;
 }
 function toon(color, doubleSide) {
@@ -931,12 +943,20 @@ function vividSkin(color) {
  * 파츠 크기와 무관하게 일정한 선 두께를 만들어(스티커 일러스트식 균일 외곽선), 큰 파츠와
  * 작은 파츠의 외곽선이 같은 굵기로 보인다. thickness는 월드 단위(≈0.012 = 굵은 만화 선).
  */
-function addOutline(mesh, thickness, matCollect, geoCollect) {
+function addOutline(mesh, thickness, matCollect, geoCollect, flatOutline) {
+  // A/B 토글(아야모) — flat=true면 용접·스무스를 건너뛰고 몸체 페이싯 노멀을 그대로
+  // 밀어내 "각진 아웃라인"을 만든다. 명시 인자 우선, 없으면 window.__ayamoAB.flatOutline.
+  // 라이브(플래그·인자 없음)에선 기존 용접 스무스 경로 그대로(additive, 회귀 0).
+  const flat = flatOutline
+    || (typeof window !== 'undefined' && window.__ayamoAB && window.__ayamoAB.flatOutline);
   let g = mesh.geometry.clone();
   // 하드에지 저폴리(고깔 등)에서 면법선이 갈라지면 오프셋 셸이 뾰족뾰족 찢어진다.
   // 위치 기준으로 정점을 용접(법선/uv 제거 후 mergeVertices)하고 부드러운 법선을
   // 재계산해, 오프셋 셸이 연속된 매끈한 외곽선이 되도록 한다(마감 정리).
-  try {
+  if (flat) {
+    // 페이싯 아웃라인 — clone된 면법선(몸체 페이싯)을 그대로 사용해 각진 셸.
+    if (!g.attributes.normal) g.computeVertexNormals();
+  } else try {
     g.deleteAttribute('normal');
     g.deleteAttribute('uv');
     const welded = mergeVertices(g);
@@ -1139,6 +1159,17 @@ export function buildChibi(params) {
     geos.push(g);
     return g;
   };
+  // 페이싯(각진 저폴리) — THREE 프리미티브의 자동 스무스 정점법선을 면법선으로 강제.
+  // toNonIndexed()로 삼각형마다 정점 복제 → computeVertexNormals()로 진짜 플랫 면법선.
+  // 원본(인덱스) 지오는 여기서 dispose(아직 geos 미등록이라 안전). 새 non-indexed
+  // 지오만 반환되어 mkGeo로 geos에 편입 → 기존 dispose() 경로가 자동 처리(계약 6).
+  const facet = (geo) => {
+    const g = geo.index ? geo.toNonIndexed() : geo;
+    if (g !== geo) geo.dispose();
+    g.computeVertexNormals();
+    return g;
+  };
+  const mkGeoFlat = (g) => mkGeo(facet(g));
   const mkMat = (m) => {
     mats.push(m);
     return m;
@@ -1195,13 +1226,13 @@ export function buildChibi(params) {
     if (!isGhost) { // 귀신은 다리 없음 — 빈 피벗만(걷기/액션 인덱스 안전)
       const legMat = p.bottomType === 'pants' || p.bottomType === 'overall' ? bottomMat : skinMat;
       // 허벅지 — hip~knee(고정 길이 KNEE_Y). 하단 캡 끝이 정확히 무릎 원점에 닿는다.
-      const thigh = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.054, 0.04, 6, 12)), legMat);
+      const thigh = new THREE.Mesh(mkGeoFlat(new THREE.CapsuleGeometry(0.054, 0.04, 3, 6)), legMat);
       thigh.position.y = -KNEE_Y / 2;
       if (p.species === 'tiger' && legMat === skinMat) thigh.userData.outlineBase = p.skin; // (호랑이 제외됨—사장코드지만 torso/skull과 일관 유지)
       addOutline(thigh, 0.011, mats, geos);
       pivot.add(thigh);
       // 정강이 — knee 로컬 원점에서 아래로. 상단 캡 끝이 무릎 원점에 닿아 허벅지와 이음매 없음.
-      const shin = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.05, 0.05, 6, 12)), legMat);
+      const shin = new THREE.Mesh(mkGeoFlat(new THREE.CapsuleGeometry(0.05, 0.05, 3, 6)), legMat);
       shin.position.y = -0.075;
       if (p.species === 'tiger' && legMat === skinMat) shin.userData.outlineBase = p.skin;
       addOutline(shin, 0.011, mats, geos);
@@ -1211,12 +1242,12 @@ export function buildChibi(params) {
       // 돈다 — 편 상태(회전 0)에선 허벅지·종아리 캡과 거의 같은 반경이라 이음매만
       // 매끈히 메우고, 굽힌 상태(sit/kick/breakdance)에선 허벅지가 떨어져 나가며
       // 이 볼만 그 자리에 남아 관절처럼 볼록하게 드러난다.
-      const kneeJoint = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.056, 14, 12)), legMat);
+      const kneeJoint = new THREE.Mesh(mkGeoFlat(new THREE.SphereGeometry(0.056, 6, 5)), legMat);
       if (p.species === 'tiger' && legMat === skinMat) kneeJoint.userData.outlineBase = p.skin;
       addOutline(kneeJoint, 0.011, mats, geos);
       knee.add(kneeJoint);
       // 발 — 기존 절대좌표(hip 기준 y=-0.305)를 knee 로컬로 역산: -0.305-(-KNEE_Y)=-0.16.
-      const foot = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.082, 16, 12)), shoeMat);
+      const foot = new THREE.Mesh(mkGeoFlat(new THREE.SphereGeometry(0.082, 7, 6)), shoeMat);
       foot.scale.set(1, 0.72, 1.25);
       foot.position.set(0, -0.16, 0.03);
       addOutline(foot, 0.011, mats, geos);
@@ -1266,7 +1297,7 @@ export function buildChibi(params) {
     addOutline(hem, 0.009, mats, geos);
     bodyRoot.add(hem);
   } else {
-    const torso = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.155, 0.115, 8, 16)), topMat);
+    const torso = new THREE.Mesh(mkGeoFlat(new THREE.CapsuleGeometry(0.155, 0.115, 3, 7)), topMat);
     torso.position.y = 0.52;
     torso.scale.set(1, 1, 0.9);
     torso.userData.outlineBase = vivid(p.top); // 패턴 상의(재질색 흰색)여도 외곽선은 옷색 기준
@@ -1355,13 +1386,13 @@ export function buildChibi(params) {
       addOutline(nub, 0.010, mats, geos);
       pivot.add(nub);
     } else {
-      const arm = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.05, 0.115, 6, 12)), skinMat);
+      const arm = new THREE.Mesh(mkGeoFlat(new THREE.CapsuleGeometry(0.05, 0.115, 3, 7)), skinMat);
       arm.position.y = -0.095;
       if (p.species === 'tiger') arm.userData.outlineBase = p.skin; // (호랑이 제외됨—사장코드지만 일관 유지)
       addOutline(arm, 0.011, mats, geos);
       pivot.add(arm);
       // 소매 캡 (상의색)
-      const sleeve = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.07, 12, 10)), topMat);
+      const sleeve = new THREE.Mesh(mkGeoFlat(new THREE.SphereGeometry(0.07, 7, 5)), topMat);
       sleeve.position.y = -0.02;
       sleeve.scale.set(1, 0.8, 1);
       pivot.add(sleeve);
@@ -1400,11 +1431,12 @@ export function buildChibi(params) {
       }
     }
     pos.needsUpdate = true;
-    geo.computeVertexNormals();
+    // 노멀 재계산은 호출부에 위임 — skull은 facet(플랫), face는 스무스로 각각 처리.
+    // (여기서 스무스를 계산하면 skull 조립부에서 다시 덮어써 낭비이므로 제거.)
     return geo;
   };
   // 종족별 주둥이를 skull에 병합 — 같은 털색이라 드로우콜 증가 0 (자연스러운 두상 다양화).
-  const skullGeo = new THREE.SphereGeometry(HEAD_R, 32, 24);
+  const skullGeo = new THREE.SphereGeometry(HEAD_R, 7, 6);
   const muzzleGeo = buildMuzzleGeo(p.species, HEAD_R);
   let mergedSkull = skullGeo;
   if (muzzleGeo) {
@@ -1412,7 +1444,7 @@ export function buildChibi(params) {
     skullGeo.dispose();
     muzzleGeo.dispose();
   }
-  const skull = new THREE.Mesh(mkGeo(taperJaw(mergedSkull)), skinMat);
+  const skull = new THREE.Mesh(mkGeoFlat(taperJaw(mergedSkull)), skinMat);
   skull.scale.set(sX, sY, sZ);
   skull.position.y = 0.25;
   if (p.species === 'tiger') skull.userData.outlineBase = p.skin; // 줄무늬 텍스처(흰 재질색) 외곽선 보정
@@ -1425,9 +1457,12 @@ export function buildChibi(params) {
   faceTex.colorSpace = THREE.SRGBColorSpace;
   texs.push(faceTex);
   const FACE_PHI = 1.85;
+  // 얼굴 캡은 페이싯 예외 — 512² 캔버스 UV/텍스처 보호를 위해 스무스 유지. 세그먼트만
+  // 32×24 → 16×12로 소폭 감량하고, taperJaw(노멀 미갱신)를 거쳤으므로 스무스 노멀 재계산.
   const faceGeo = mkGeo(
-    taperJaw(new THREE.SphereGeometry(HEAD_R * 1.012, 32, 24, Math.PI / 2 - FACE_PHI / 2, FACE_PHI, Math.PI * 0.33, Math.PI * 0.4))
+    taperJaw(new THREE.SphereGeometry(HEAD_R * 1.012, 16, 12, Math.PI / 2 - FACE_PHI / 2, FACE_PHI, Math.PI * 0.33, Math.PI * 0.4))
   );
+  faceGeo.computeVertexNormals();
   const faceMat = mkMat(
     new THREE.MeshToonMaterial({ map: faceTex, gradientMap: toonRamp(), transparent: true, alphaTest: 0.02 })
   );
@@ -1454,7 +1489,7 @@ export function buildChibi(params) {
   if (p.hairStyle !== 'bald') {
   // 공통 헬멧 셸 (앞이마 위 ~ 뒤통수)
   const shell = new THREE.Mesh(
-    mkGeo(new THREE.SphereGeometry(HAIR_R, 32, 20, 0, Math.PI * 2, 0, Math.PI * 0.44)),
+    mkGeoFlat(new THREE.SphereGeometry(HAIR_R, 7, 6, 0, Math.PI * 2, 0, Math.PI * 0.44)),
     hairMat
   );
   addOutline(shell, 0.012, mats, geos);
@@ -1465,17 +1500,17 @@ export function buildChibi(params) {
   if (p.hairStyle !== 'short') {
     const FRONT_OPEN = 1.95;
     staticHairGeos.push(
-      new THREE.SphereGeometry(HAIR_R * 0.995, 32, 16, Math.PI / 2 + FRONT_OPEN / 2, Math.PI * 2 - FRONT_OPEN, Math.PI * 0.3, Math.PI * (p.hairStyle === 'bob' ? 0.42 : 0.34))
+      new THREE.SphereGeometry(HAIR_R * 0.995, 7, 6, Math.PI / 2 + FRONT_OPEN / 2, Math.PI * 2 - FRONT_OPEN, Math.PI * 0.3, Math.PI * (p.hairStyle === 'bob' ? 0.42 : 0.34))
     );
   }
   for (const [bx, bs] of [[-0.13, 0.105], [0.0, 0.12], [0.13, 0.105]]) {
-    const bang = new THREE.SphereGeometry(bs, 14, 10);
+    const bang = new THREE.SphereGeometry(bs, 7, 5);
     bang.scale(1, 0.52, 0.5);
     bang.translate(bx, 0.21, 0.235);
     staticHairGeos.push(bang);
   }
   if (staticHairGeos.length) {
-    const mergedHair = new THREE.Mesh(mkGeo(mergeGeometries(staticHairGeos)), hairMat);
+    const mergedHair = new THREE.Mesh(mkGeoFlat(mergeGeometries(staticHairGeos)), hairMat);
     staticHairGeos.forEach((g) => g.dispose());
     addOutline(mergedHair, 0.011, mats, geos);
     hairRoot.add(mergedHair);
@@ -1510,7 +1545,7 @@ export function buildChibi(params) {
     tailPivots.push({ pivot, baseZ: 0, baseX: pivot.rotation.x });
   } else if (p.hairStyle === 'buns') {
     for (const s of [-1, 1]) {
-      const bun = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.1, 14, 12)), hairMat);
+      const bun = new THREE.Mesh(mkGeoFlat(new THREE.SphereGeometry(0.1, 6, 5)), hairMat);
       bun.position.set(s * 0.2, 0.26, -0.04);
       addOutline(bun, 0.012, mats, geos);
       hairRoot.add(bun);
