@@ -1319,7 +1319,7 @@
 
       if (nsAuth) {
         nsAuth.innerHTML = p
-          ? '<span class="nav-auth-profile"><span class="ini">' + p.initial + '</span>' + p.name + '님</span>' +
+          ? '<span class="nav-auth-profile"><span class="ini">' + escapeHtml(p.initial) + '</span>' + escapeHtml(p.name) + '님</span>' +
             '<button class="nav-auth-link" type="button" id="nsLogout">로그아웃</button>'
           : authButtonsHTML();
         if (p) {
@@ -1331,7 +1331,7 @@
 
       if (navAuth) {
         navAuth.innerHTML = p
-          ? '<span class="nav-auth-profile"><span class="ini">' + p.initial + '</span>' + p.name + '님</span>' +
+          ? '<span class="nav-auth-profile"><span class="ini">' + escapeHtml(p.initial) + '</span>' + escapeHtml(p.name) + '님</span>' +
             '<span class="nav-auth-sep"></span>' +
             '<button class="nav-auth-link" type="button" id="navLogout">로그아웃</button>'
           : authButtonsHTML();
