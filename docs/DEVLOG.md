@@ -82,6 +82,48 @@ OpenArtShow는 '프리미엄 다크 몰입'을 브랜드의 무대로 삼는다.
 
 ---
 
+## 2026-07-18 · ★★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319)
+
+감독 방향전환: "걸어서 빌드"(아바타가 공간을 걸으며 배치)를 여러 차례 다듬다(벽 파묻힘·시야각·아바타 반투명·1인칭) 결국 접었다. 아바타를 시야에서 치우고 **조망(orbit) 카메라 자유이동 + 마우스/터치 배치**로 조작을 통일. 걸어서빌드 코드는 진입 버튼(#bWalkToggle)만 숨겨 behind-flag로 보존(플래그 한 줄로 복원 가능).
+
+### 통일된 조작
+- **배치**: 마우스(PC)/터치(폰) 클릭 (기존 pickPlacement→addPart 재사용)
+- **PC 시점**: 방향키 카메라 팬 + 휠 거리줌 (기존)
+- **폰 시점**: 조이스틱 카메라 팬(`orbitJoy` 신규 — 렌더루프 연속 팬) + 핀치 거리줌
+- 줌은 PC·폰 모두 거리(rad) 줌으로 통일(FOV 줌 미도입).
+
+### 게이트
+팀장 헤드리스 검증(walk 버튼 숨김·orbitJoy 팬·모바일 조이스틱 팔레트 비겹침) + executor 스모크 6/6 + release-reviewer 승인. 라이브 배포 완료.
+
+---
+
+## 2026-07-18 · ★ 보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결)
+
+security-officer 종합 감사 결과 **블로커·치명 0**. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.
+
+- **A-1 landing 프로필명 XSS 이스케이프** (30cf0db): `renderNav`가 `p.name`·`p.initial`을 `innerHTML`에 직접 삽입 → 같은 파일 갤러리 카드처럼 `escapeHtml()` 적용. 실 OAuth 연동·`lu-auth-profile-v1` localStorage 조작 시의 **잠복(저장형) XSS** 차단(순수 출력 이스케이프, 회귀 없음).
+- **A-2 deploy.yml 서드파티 액션 SHA 핀** (8001ade): `actions/checkout`·`actions/setup-node`·`peaceiris/actions-gh-pages`의 태그핀(@v4)을 **커밋 SHA 핀**으로 교체(태그 탈취·강제이동에 의한 배포 파이프라인 오염 차단). 배포 성공으로 무결성 실증.
+- **B-3 CSP 메타 5페이지** (9f3c19a): CSP 없던 landing·studio·guide·about·design에 CSP 추가(`default-src 'self'`, 인라인 script는 sha256 핀, `object-src 'none'`·`base-uri 'none'`). 검수관이 studio의 `img-src https:` 누락(작가 외부이미지 미리보기 회귀) blocker를 발견·수정.
+
+**감독 결정 대기(B-1·B-2)**: artworks.js 데모 갤러리의 picsum 외부이미지(B-1, 보호파일), safeMediaUrl의 외부 URL 허용 + index.html CSP `https:` 완화(B-2, 위험수용§8-5) — "외부호스트0" 규율·외부 이미지 정책 변경이라 감독 판정 사안.
+
+---
+
+## 2026-07-18 · ★ QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)
+
+프런트엔드 SOLID 감사. **아키텍처 경계·의존구조는 모범**(보호↔비보호 import 0·순환 0·`normalizeSpace`/`normalizeChibi` SSOT 전량 경유). 부채는 두 축에 집중.
+
+- **SRP(초거대 함수)**: `chibi.js buildChibi`(1374줄)·`ui.js injectStyles`(CSS 1636줄)·`builder.js createBuilder`(557줄) 등.
+- **OCP/DRY(형태 지오메트리)**: `space-render.js partGeo`↔`partAccent`의 **형상 상수 수기 이중보유**(cake·mirror 등 6+쌍, 한쪽만 고치면 정합 붕괴)·거대 switch·chibi 종족 문자열 하드코딩·tiger 死코드.
+
+### 4단계 계획(ROI·리스크 순)
+1. **안전망**(선행): 순수함수 단위테스트(normalize·snap·artworkSize 등) + 헤드리스 렌더 스모크 재사용화 — 리팩터 전 회귀 그물.
+2. **(A) 저리스크 국소**(비보호): tiger 死코드 제거·이동상수/저장키 SSOT 추출·injectStyles CSS 외부화 등.
+3. **(B) 구조**(게이트): partGeo↔partAccent 형상상수 공유 spec(최우선)·switch→디스패치·chibi 종족 레지스트리·createBuilder 분해.
+4. **(C) 보호4파일**(감사·사전서명): main.js init/animate 분해·config artworkSlots 좌표 파생화.
+
+---
+
 ## 2026-07-16 · 빌더 개방 — 소품 4배치·진입점·모바일 경량 빌더 (부팀장 자율, 감독·팀장 게이트)
 
 빌더를 유저에게 완전히 열었다. 이전엔 behind-flag라 아무도 못 썼는데, 이제 **PC·모바일 모두 프리셋 골라 31종 소품으로 전시장을 만들고 공유**한다. "룸 빌드가 UI에 없다"던 지점이 해소됐다.

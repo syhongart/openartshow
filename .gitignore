@@ -64,3 +64,5 @@ node_modules/
 package.json
 package-lock.json
 
+# Jekyll CI 빌드 산출물 (deploy.yml 생성, 헤드리스 검증 하네스가 로컬 생성)
+_site/
