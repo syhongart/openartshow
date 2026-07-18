@@ -27,17 +27,17 @@ export const PART_CATEGORIES = ['structure', 'exhibit', 'ambience', 'finish', 'e
 
 export const PART_TYPES = {
   // 구조 6 (structure grid, 대부분 solid)
-  wallPanel:    { cat: 'structure', grid: 'structure', solid: true,  size: [1.0, 0.2, 3.6], label: '벽 패널' },
+  wallPanel:    { cat: 'structure', grid: 'structure', solid: true,  size: [1.0, 0.2, 3.6], label: '벽 패널', mats: ['plaster', 'wood', 'metal'] },
   floorTile:    { cat: 'structure', grid: 'structure', solid: true,  size: [1.0, 0.1, 1.0], label: '바닥 타일', floor: true },
   ceilingPanel: { cat: 'structure', grid: 'structure', solid: false, size: [1.0, 0.1, 1.0], label: '천장 패널', variants: ['flat', 'coffer'] },
-  pillar:       { cat: 'structure', grid: 'structure', solid: true,  size: [0.4, 3.6, 0.4], label: '원형 기둥' },
+  pillar:       { cat: 'structure', grid: 'structure', solid: true,  size: [0.4, 3.6, 0.4], label: '원형 기둥', mats: ['concrete', 'marble', 'stone', 'wood'] },
   stair:        { cat: 'structure', grid: 'structure', solid: true,  size: [2.0, 4.2, 3.0], label: '직선 계단' },
   arch:         { cat: 'structure', grid: 'structure', solid: false, size: [2.0, 2.6, 0.2], label: '아치 개구부' },
   // 전시 6 (object grid)
   artwork:      { cat: 'exhibit', grid: 'object', solid: false, size: [1.2, 1.6, 0.1], label: '작품 액자', art: true },
   pedestal:     { cat: 'exhibit', grid: 'object', solid: true,  size: [0.5, 0.9, 0.5], label: '조각 좌대' },
   screen:       { cat: 'exhibit', grid: 'object', solid: false, size: [1.6, 0.9, 0.1], label: '영상 스크린', ratios: ['16:9', '9:16'] },
-  partition:    { cat: 'exhibit', grid: 'object', solid: true,  size: [1.2, 2.4, 0.1], label: '파티션 벽' },
+  partition:    { cat: 'exhibit', grid: 'object', solid: true,  size: [1.2, 2.4, 0.1], label: '파티션 벽', mats: ['plaster', 'wood', 'metal'] },
   vitrine:      { cat: 'exhibit', grid: 'object', solid: true,  size: [0.8, 1.0, 0.5], label: '진열장' },
   labelStand:   { cat: 'exhibit', grid: 'object', solid: true,  size: [0.4, 1.1, 0.3], label: '라벨 스탠드' },
   // 분위기 6 (object grid)
@@ -83,6 +83,14 @@ export const FINISH = {
   floor:   { ids: ['parquet', 'terrazzo', 'concrete', 'grass', 'water'], def: 'parquet' }, // grass·water=v2 신재질(Tier1: water는 정적 반사 폴백, 스크롤은 방문자뷰 플래그)
   ceiling: { ids: ['whiteflat', 'darkmatte'], def: 'whiteflat' },
   trim:    { ids: ['brass', 'charcoal'], def: 'brass' },
+};
+
+// ── 인스턴스 틴트 팔레트(#56/#43) — rug·drape 색 UI 퀵픽/기본값 목록(SSOT) ───────
+// index0 = 기본색(무색 저장분 폴백 = 기존 단색 재질과 동색, 하위호환 보증).
+// 이 목록은 UI 퀵픽 제안·기본값용일 뿐, p.color 자유 hex 입력은 그대로 허용(normalizePart color 검증은 HEX_RE, 팔레트로 제한하지 않음).
+export const TINT_PALETTES = {
+  rug:   ['#c9bfae', '#e4ddd0', '#4a4844', '#a9705a', '#8a9481'],           // sand(기본)/ivory/charcoal/terracotta/sage
+  drape: ['#2c2c30', '#4a4038', '#242c38', '#4a2b30', '#e4ddd0', '#8a9481'], // charcoal(기본)/taupe/navy/burgundy + ivory·sage(밝은톤 추가, rug와 톤 정합·갤러리 중립)
 };
 
 // ── 자동 액자 3스타일 + 비율 규칙 (디자이너 §자동 액자) ──────────────────────
@@ -173,6 +181,7 @@ function normalizePart(raw) {
     p.src = typeof raw.src === 'string' ? raw.src : '';      // 유튜브 영상ID(빌더가 ytembed.youtubeId로 검증한 11자만 기록, 재생 직전 재검증). 공개 노출은 §6-5 법무(개인정보처리방침) 선행.
   }
   if (raw.variant !== undefined && spec.variants) p.variant = pick(raw.variant, new Set(spec.variants), spec.variants[0]);
+  if (raw.mat !== undefined && spec.mats) p.mat = pick(raw.mat, new Set(spec.mats), spec.mats[0]); // 재질 배리언트(index0=현행 고정 재질 → 구버전 저장분 하위호환)
   if (raw.size !== undefined && spec.sizes) p.size = spec.sizes.includes(raw.size) ? raw.size : spec.sizes[0];
   return p;
 }
