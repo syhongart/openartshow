@@ -10,7 +10,7 @@
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
-import { PART_TYPES, FOOTPRINT, STORY_H, FRAME_RULES } from './space.js';
+import { PART_TYPES, FOOTPRINT, STORY_H, FRAME_RULES, TINT_PALETTES } from './space.js';
 import { createPlasterMaps, createParquetMaps, createConcreteMaps } from './scene.js';
 
 // 미술관(scene.js) 프로시저럴 텍스처+노말맵 계승(감독: 노말맵 필수). 생성기는 캐시된
@@ -117,6 +117,14 @@ const MATS = {
   brass:      () => SM({ color: 0xb98d4a, roughness: 0.45, metalness: 0.6 }),
   bronze:     () => SM({ color: 0x3c342a, roughness: 0.35, metalness: 0.55 }), // 진열장 골조(놋쇠보다 어둡고 절제된 금속)
   stone:      () => SM({ color: 0xd9cdb6, roughness: 0.7, metalness: 0 }),
+  // 기둥 재질 배리언트(#56) — concrete(index0)는 concreteTex 유지, 아래 3종은 pillar 전용 단색(디자이너 실측)
+  pillarMarble: () => SM({ color: 0xe8e3d8, roughness: 0.22, metalness: 0.05 }),
+  pillarStone:  () => SM({ color: 0xc7b89a, roughness: 0.85, metalness: 0 }),
+  pillarWood:   () => SM({ color: 0x6b4a30, roughness: 0.55, metalness: 0 }),
+  // 러그 인스턴스 틴트(#56) — 흰색 base + InstancedMesh.setColorAt(instanceColor). 색 없으면 sand(#c9bfae) 폴백=기존 cloth와 동색(하위호환)
+  rugTint:    () => SM({ color: 0xffffff, roughness: 0.97, metalness: 0 }),
+  drapeTint:  () => SM({ color: 0xffffff, roughness: 0.95, metalness: 0 }), // 커튼 인스턴스 틴트(#43) — 흰색 base, 색 없으면 charcoal(#2c2c30) 폴백=기존 charcoalCloth 동색
+  panelWood:  () => SM({ color: 0x9c7a4e, roughness: 0.5, metalness: 0 }),  // 벽패널·파티션 wood 배리언트(#43)
   matteWhite: () => SM({ color: 0xe9e6df, roughness: 0.85, metalness: 0 }),
   darkScreen: () => SM({ color: 0x14141a, roughness: 0.5, metalness: 0.08 }), // 다크 매트 베젤(금속광 억제)
   terracotta: () => SM({ color: 0x9a5b43, roughness: 0.85, metalness: 0 }),
@@ -152,14 +160,26 @@ const FINISH_MAT = {
 const PART_MAT = {
   wallPanel: MATS.plaster, floorTile: MATS.parquet, ceilingPanel: MATS.plasterW, pillar: MATS.stone, stair: MATS.stone, arch: MATS.plaster,
   artwork: MATS.frameBlack, pedestal: MATS.matteWhite, screen: MATS.darkScreen, partition: MATS.plaster, vitrine: MATS.bronze, labelStand: MATS.brass,
-  trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.cloth, bench: MATS.walnut, drape: MATS.charcoalCloth,
+  trackLight: MATS.darkMetal, pendantLight: MATS.brass, planter: MATS.terracotta, rug: MATS.rugTint, bench: MATS.walnut, drape: MATS.drapeTint,
   wreath: MATS.brass, cake: MATS.cakeCream, banner: MATS.darkMetal, balloon: MATS.matteWhite,
   bigplant: MATS.terracotta, palm: MATS.terracotta, hangplant: MATS.wood, succulent: MATS.terracotta, vase: MATS.ceramic,
   floorlamp: MATS.darkMetal, stanchion: MATS.brass, mirror: MATS.brass, sign: MATS.wood, railing: MATS.brass,
   lounge: MATS.walnut, reception: MATS.wood, window: MATS.matteWhite, glasspanel: MATS.brass, stool: MATS.walnut,
 };
-const partMat = (t) => {
-  if (t === 'pillar') return concreteTex(0xd2ccbf, 1.2, 1.5);  // 노출 콘크리트 기둥(감독)
+// partMat(t, opts) — opts.mat: 재질 배리언트(#56). opts 없으면 기존 호출부와 100% 동형(index0=현행 재질).
+const partMat = (t, opts) => {
+  const mat = opts && opts.mat;
+  if (t === 'pillar') { // concrete(index0)=노출 콘크리트 텍스처(감독), marble/stone/wood=단색 배리언트
+    if (mat === 'marble') return MATS.pillarMarble();
+    if (mat === 'stone') return MATS.pillarStone();
+    if (mat === 'wood') return MATS.pillarWood();
+    return concreteTex(0xd2ccbf, 1.2, 1.5);
+  }
+  if (t === 'wallPanel' || t === 'partition') { // plaster(index0)=현행, wood/metal 배리언트(#43)
+    if (mat === 'wood') return MATS.panelWood();
+    if (mat === 'metal') return MATS.darkMetal();
+    return MATS.plaster();
+  }
   if (t === 'stair') return concreteTex(0xd2ccbf, 0.9, 1.3);
   return (PART_MAT[t] || MATS.stone)();
 };
@@ -323,6 +343,35 @@ function flutedShaft(R, height, { flutes = 16, per = 3, hs = 5, depth = R * 0.1 
   for (let i = 0; i < RS; i++) idx.push(cb, i, i + 1);                       // 하단(-y)
   const ct = pos.length / 3; pos.push(0, y1, 0); uv.push(0.5, 1);
   for (let i = 0; i < RS; i++) idx.push(ct, topBase + i + 1, topBase + i);   // 상단(+y)
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); // box/cyl과 attribute 일치(merge 요건)
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+// 주름 커튼 시트(#43) — flutedShaft 수기 BufferGeometry를 폭방향 사인파로 치환. folds 겹주름 + 바닥 개더(Wt)·상단 진폭감쇠(amp).
+function drapeSheet(w, h, d, { folds = 6, segsPerFold = 4, hs = 5 } = {}) {
+  const RS = folds * segsPerFold, y0 = -h / 2, pos = [], uv = [], idx = [];
+  const lerp = (a, b, t) => a + (b - a) * t;
+  for (let j = 0; j <= hs; j++) {
+    const t = j / hs, y = lerp(y0, h / 2, t), Wt = lerp(1.06, 0.90, t), amp = lerp(1.0, 0.8, t);
+    for (let i = 0; i <= RS; i++) {
+      const u = i / RS;
+      pos.push((u - 0.5) * w * Wt, y, d * 0.42 * amp * Math.sin(folds * u * Math.PI)); // 폭 사인파=주름
+      uv.push(u, t);
+    }
+  }
+  const stride = RS + 1;
+  for (let j = 0; j < hs; j++) for (let i = 0; i < RS; i++) {
+    const a = j * stride + i, b = a + 1, c = a + stride, e = c + 1;
+    idx.push(a, c, b, b, c, e);
+  }
+  // 상/하단 캡(오픈 가장자리 팬) — 열린 시트 뒷면 관통 방지(flutedShaft 캡 계승)
+  const topBase = hs * stride;
+  const cb = pos.length / 3; pos.push(0, y0, 0); uv.push(0.5, 0);
+  for (let i = 0; i < RS; i++) idx.push(cb, i, i + 1);
+  const ct = pos.length / 3; pos.push(0, h / 2, 0); uv.push(0.5, 1);
+  for (let i = 0; i < RS; i++) idx.push(ct, topBase + i + 1, topBase + i);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); // box/cyl과 attribute 일치(merge 요건)
@@ -621,11 +670,78 @@ function partGeo(t, opts) {
         [cyl(legR * 1.6, legR * 1.6, 0.035, 10), [apex.x, apex.y, apex.z]], // 조인트 캡
       ]);
     }
+    case 'arch': { // 통행 아치 개구부(#43) — 사각 outer + 반원머리 hole ExtrudeGeometry(artworkFrameGeo 계열 재사용)
+      const jambW = 0.18, halfOpenW = (w - 2 * jambW) / 2, springY = -h / 2 + h * 0.62; // apex = springY + halfOpenW(absarc 반경으로 자동)
+      const shape = new THREE.Shape();
+      shape.moveTo(-w / 2, -h / 2); shape.lineTo(w / 2, -h / 2); shape.lineTo(w / 2, h / 2); shape.lineTo(-w / 2, h / 2); shape.closePath();
+      const hole = new THREE.Path();
+      hole.moveTo(-halfOpenW, -h / 2);
+      hole.lineTo(-halfOpenW, springY);
+      hole.absarc(0, springY, halfOpenW, Math.PI, 0, true); // 반원머리(왼→apex→오른, 위로 볼록)
+      hole.lineTo(halfOpenW, -h / 2);
+      hole.closePath();
+      shape.holes.push(hole);
+      const g = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.01, bevelSegments: 2, steps: 1 });
+      g.translate(0, 0, -d / 2); return g;
+    }
+    case 'rug': { // 러그(#56) — underlay + pile 머지(body). 색은 인스턴스 틴트(setColorAt), 보더는 partAccent.
+      const variant = (opts && opts.variant) || 'rect';
+      const pileY = -h / 2 + 0.010 + (h - 0.010) / 2;
+      if (variant === 'round') {
+        const R = Math.min(w, d) / 2;
+        return merged([
+          [cyl(R, R, 0.010, 32), [0, -h / 2 + 0.005, 0]],
+          [cyl(R - 0.03, R - 0.03, h - 0.010, 32), [0, pileY, 0]],
+        ]);
+      }
+      return merged([
+        [box(w, 0.010, d), [0, -h / 2 + 0.005, 0]],
+        [box(w - 0.03, h - 0.010, d - 0.03), [0, pileY, 0]],
+      ]);
+    }
+    case 'wallPanel': // 무릎높이 커브 프로파일(#43) — base/body/cap 3단(cap 양옆 오버행 립)
+      return merged([
+        [box(w, 0.03, d), [0, -h / 2 + 0.015, 0]],
+        [box(w - 0.02, h - 0.055, d), [0, -h / 2 + 0.03 + (h - 0.055) / 2, 0]],
+        [box(w + 0.02, 0.025, d), [0, h / 2 - 0.0125, 0]],
+      ]);
+    case 'floorTile': // 그라우트 조인트(0.015 마진) + 베벨탑(#43)
+      return merged([
+        [box(w, h * 0.55, d), [0, -h / 2 + h * 0.275, 0]],
+        [box(w - 0.03, h * 0.45, d - 0.03), [0, -h / 2 + h * 0.55 + h * 0.225, 0]],
+      ]);
+    case 'ceilingPanel': { // flat/coffer(#43) — 스텝박스 겹침으로 리세스 착시(아래에서만 보임, Extrude+hole 불필요)
+      const variant = (opts && opts.variant) || 'flat';
+      if (variant === 'coffer') {
+        return merged([
+          [box(w, 0.09, d), [0, h / 2 - 0.045, 0]],
+          [box(w - 0.20, 0.03, d - 0.20), [0, h / 2 - 0.02, 0]],
+        ]);
+      }
+      return merged([
+        [box(w, 0.05, d), [0, h / 2 - 0.025, 0]],
+        [box(w - 0.16, 0.03, d - 0.16), [0, h / 2 - 0.015, 0]],
+      ]);
+    }
+    case 'partition': { // 프레임(stile×2 + rail×2) + 인셋 패널(#43)
+      const sx = w / 2 - 0.045, ry2 = h / 2 - 0.045;
+      return merged([
+        [box(0.09, h, d), [-sx, 0, 0]], [box(0.09, h, d), [sx, 0, 0]],
+        [box(w - 0.18, 0.09, d), [0, ry2, 0]], [box(w - 0.18, 0.09, d), [0, -ry2, 0]],
+        [box(w - 0.22, h - 0.22, d * 0.55), [0, 0, 0]],
+      ]);
+    }
+    case 'drape': { // 주름 커튼(#43) — 파형 시트 + 로드포켓(x축 원통). 색은 인스턴스 틴트.
+      const sheet = drapeSheet(w, h, d);
+      const pocket = cyl(0.025, 0.025, w * 0.98, 8); pocket.rotateZ(Math.PI / 2);
+      return merged([[sheet, null], [pocket, [0, h / 2 - 0.03, 0]]]);
+    }
     default: return box(w, h, d);
   }
 }
 // 2색 accent(부속 색면) — 파츠 위에 얹는 장식(픽킹 대상 아님). off는 ry로 회전.
-function partAccent(t) {
+// opts.variant/opts.mat: 배리언트별 accent 분기(#56 rug round/rect 등).
+function partAccent(t, opts) {
   const [w, h, d] = PART_TYPES[t].size;
   switch (t) {
     case 'artwork': return { geo: box(w - 0.20, h - 0.20, 0.015), mat: 'paper', off: [0, 0, 0.03] }; // 캔버스=프레임 홀(반폭 0.51/0.71)보다 작게(0.5/0.7)→관통 방지+리빌(검수 BLOCKER)
@@ -758,7 +874,14 @@ function partAccent(t) {
         [box(w - 0.32, 0.03, 0.035), [0, -0.16, 0]],
       ]), mat: 'darkMetal', off: [0, 0, 0] };
     }
-    case 'rug': return { geo: box(w - 0.16, 0.021, d - 0.16), mat: 'clothInner', off: [0, 0.006, 0] }; // 내부 필드=보더 대비
+    case 'rug': { // 러그 보더(#56) — variant 분기(rect box / round cyl) + 인스턴스 색 틴트(본체색 35% 화이트 블렌드)
+      const variant = (opts && opts.variant) || 'rect';
+      if (variant === 'round') {
+        const R = Math.min(w, d) / 2;
+        return { geo: cyl(R - 0.16, R - 0.16, 0.021, 32), mat: 'rugTint', off: [0, 0.006, 0], tint: 'rugAccent' };
+      }
+      return { geo: box(w - 0.16, 0.021, d - 0.16), mat: 'rugTint', off: [0, 0.006, 0], tint: 'rugAccent' };
+    }
     case 'wreath': { // 잎·꽃·리본 — 링 프레임(body) 위에 얹는 다색 오버레이(정점색, 개업 축하 톤 — 성탄 리스 배색 지양)
       const RC = new THREE.Vector3(0, h * 0.30, -d * 0.05);
       const ringR = w * 0.40;
@@ -957,6 +1080,15 @@ export function spaceDims(space) {
   return { fw, fd, hw: fw / 2, hd: fd / 2, H: STORY_H[space.shell.storyH], t: space.shell.wallT };
 }
 
+// 인스턴스 색 틴트(#56/#43) — 서브그룹 분리 없이 InstancedMesh.setColorAt(instanceColor)로 파츠별 색.
+// 색 없으면 타입별 기본 폴백(팔레트 index0) = 기존 단색 재질 동색(하위호환). rug 보더는 본체색 35% 화이트 블렌드.
+const TINT_TYPES = new Set(['rug', 'drape']);
+const TINT_DEFAULT = { rug: TINT_PALETTES.rug[0], drape: TINT_PALETTES.drape[0] }; // 팔레트 SSOT에서 파생
+const RUG_ACCENT_DEFAULT = '#d6ccb7'; // 무색(기본) 러그 보더 = 기존 clothInner 고정색(구버전 100% 동일 — 검수 권고②)
+const tintColor = (p) => new THREE.Color(p.color || TINT_DEFAULT[p.t] || '#ffffff');
+// 색 지정 시 본체색 35% 화이트 블렌드, 무색(기본)이면 기존 고정 보더색 유지(회귀 방지)
+const rugAccentColor = (p) => (p.color ? tintColor(p).lerp(new THREE.Color(0xffffff), 0.35) : new THREE.Color(RUG_ACCENT_DEFAULT));
+
 /**
  * 공간 문서 → THREE.Group. 반환 group.userData:
  *   { dims, partRefs: [{part, index, object}], geos:[], mats:[] } (dispose·픽킹용)
@@ -1003,12 +1135,17 @@ export function buildSpaceGroup(space, opts = {}) {
   }
 
   // 파츠: 타입별 그룹. 인스턴싱 가능 → InstancedMesh, 작품/스크린 → 개별(+자동액자 캔버스).
-  const byType = {};
-  space.parts.forEach((p, i) => { (byType[p.t] = byType[p.t] || []).push({ p, i }); });
+  // 서브그룹 키 = 타입×variant×mat (#56). color는 키에 넣지 않는다 → 같은 지오/재질 InstancedMesh 공유 + 인스턴스 틴트.
+  const byKey = {};
+  space.parts.forEach((p, i) => {
+    const key = `${p.t}:${p.variant || ''}:${p.mat || ''}`;
+    (byKey[key] = byKey[key] || { type: p.t, variant: p.variant, mat: p.mat, list: [] }).list.push({ p, i });
+  });
   const partRefs = [];
   // v2 스택: p.y(절대 월드 Y·파츠 중심)가 있으면 그 값, 없으면 타입별 기본 y(바닥/벽걸이).
   const pY = (p, type) => (p.y != null ? p.y : partY(type, H));
-  for (const [type, list] of Object.entries(byType)) {
+  for (const grp of Object.values(byKey)) {
+    const { type, variant, mat, list } = grp;
     if (type === 'artwork') {
       // ── 자동 액자: (스타일 × 이미지유무) 세분화. 두께 D·캔버스 z오프셋은 스타일 무관 고정. ──
       const D = PART_TYPES.artwork.size[2];       // 0.1 — 스포트라이트 오프셋 의존
@@ -1054,7 +1191,8 @@ export function buildSpaceGroup(space, opts = {}) {
       }
       continue;
     }
-    const geo = partGeo(type), material = partMat(type); geos.push(geo); mats.push(material);
+    const geo = partGeo(type, { variant, mat }), material = partMat(type, { mat }); geos.push(geo); mats.push(material);
+    const isTint = TINT_TYPES.has(type); // 인스턴스 색 틴트(rug) — 서브그룹 분리 없이 색만 인스턴스별
     const canInstance = !UNIQUE_TEX_TYPES.has(type) && list.length > 1 && !opts.pickable;
     if (canInstance) {
       const im = new THREE.InstancedMesh(geo, material, list.length);
@@ -1062,11 +1200,15 @@ export function buildSpaceGroup(space, opts = {}) {
       list.forEach(({ p }, k) => {
         const m4 = new THREE.Matrix4().compose(new THREE.Vector3(p.x, pY(p, type), p.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, p.ry, 0)), new THREE.Vector3(1, 1, 1));
         im.setMatrixAt(k, m4);
+        if (isTint) im.setColorAt(k, tintColor(p)); // instanceColor(USE_INSTANCING_COLOR 자동) — vertexColors 불필요
       });
+      if (isTint && im.instanceColor) im.instanceColor.needsUpdate = true;
       im.instanceMatrix.needsUpdate = true; g.add(im);
     } else {
       for (const { p, i } of list) {
-        const mm = new THREE.Mesh(geo, material);
+        const useMat = isTint ? material.clone() : material; // 비인스턴싱(에디터/단일): 재질 클론 후 color 폴백
+        if (isTint) { useMat.color.copy(tintColor(p)); mats.push(useMat); }
+        const mm = new THREE.Mesh(geo, useMat);
         mm.position.set(p.x, pY(p, type), p.z); mm.rotation.y = p.ry;
         mm.castShadow = true; mm.receiveShadow = true;
         if (opts.pickable) mm.userData.partIndex = i;
@@ -1075,17 +1217,20 @@ export function buildSpaceGroup(space, opts = {}) {
     }
     // 2색 accent(작품 캔버스·유리·잎·화면·렌즈) — 픽킹 대상 아님.
     // 2색 accent(유리·잎·화면·렌즈 등) — 픽킹 대상 아님. (작품 캔버스는 위 artwork 분기가 전담)
-    const acc = partAccent(type);
+    const acc = partAccent(type, { variant, mat });
     if (acc) {
-      geos.push(acc.geo); // 공유 지오(동일 타입=동일 크기)
+      geos.push(acc.geo); // 공유 지오(동일 서브그룹=동일 크기)
       const place = (p) => { const [ox, oy, oz] = acc.off; return { pos: new THREE.Vector3(p.x + Math.cos(p.ry) * ox + Math.sin(p.ry) * oz, pY(p, type) + oy, p.z - Math.sin(p.ry) * ox + Math.cos(p.ry) * oz), ry: p.ry }; };
       const accMat = (MATS[acc.mat] || MATS.paper)(); mats.push(accMat);
+      const accTint = acc.tint === 'rugAccent'; // 보더 인스턴스 색 틴트(rug)
       if (list.length > 1) { // 장식 accent는 인스턴싱(텍스처 공유 무해)
         const aim = new THREE.InstancedMesh(acc.geo, accMat, list.length);
         aim.castShadow = true;
-        list.forEach(({ p }, k) => { const pl = place(p); aim.setMatrixAt(k, new THREE.Matrix4().compose(pl.pos, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, pl.ry, 0)), new THREE.Vector3(1, 1, 1))); });
+        list.forEach(({ p }, k) => { const pl = place(p); aim.setMatrixAt(k, new THREE.Matrix4().compose(pl.pos, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, pl.ry, 0)), new THREE.Vector3(1, 1, 1))); if (accTint) aim.setColorAt(k, rugAccentColor(p)); });
+        if (accTint && aim.instanceColor) aim.instanceColor.needsUpdate = true;
         aim.instanceMatrix.needsUpdate = true; g.add(aim);
       } else {
+        if (accTint) accMat.color.copy(rugAccentColor(list[0].p));
         const pl = place(list[0].p); const am = new THREE.Mesh(acc.geo, accMat); am.position.copy(pl.pos); am.rotation.y = pl.ry; am.castShadow = true; g.add(am);
       }
     }
@@ -1242,10 +1387,13 @@ export function disposeSpaceGroup(g) {
 export function buildPartPreview(type) {
   const g = new THREE.Group();
   const geo = partGeo(type), m = partMat(type);
+  if (TINT_TYPES.has(type)) m.color.copy(tintColor({ t: type })); // 썸네일=타입 기본 색(rug sand / drape charcoal) — 흰색 base 방지
   g.add(new THREE.Mesh(geo, m));
   const acc = partAccent(type);
   if (acc) {
-    const am = new THREE.Mesh(acc.geo, (MATS[acc.mat] || MATS.paper)());
+    const accMat = (MATS[acc.mat] || MATS.paper)();
+    if (acc.tint === 'rugAccent') accMat.color.copy(rugAccentColor({ t: type }));
+    const am = new THREE.Mesh(acc.geo, accMat);
     const [ox, oy, oz] = acc.off; am.position.set(ox, oy, oz); g.add(am);
   }
   return g;
