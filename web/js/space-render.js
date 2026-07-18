@@ -234,8 +234,9 @@ function merged(list) {
 }
 
 // ── 자동 액자: 3스타일 + 종횡비 자동비율(디자이너 §자동 액자) ──────────────────
-// fW=프레임 변폭(스타일별). 두께 d는 3스타일 공통(FRAME_RULES.thickness=0.1) — accent z오프셋·
-// 스포트라이트 오프셋이 이에 의존하므로 스타일 무관 고정. frameless는 링 없음(fW=0).
+// fW=프레임 변폭(스타일별). 두께 d는 3스타일 공통 0.1 — 실값은 액자 조립부의 D=PART_TYPES.artwork.size[2]에서 하드코딩.
+// FRAME_RULES.thickness(=0.1)와 값은 우연히 일치하나 코드는 이 필드를 참조하지 않는다. accent z오프셋·
+// 스포트라이트 오프셋이 이 두께에 의존하므로 스타일 무관 고정. frameless는 링 없음(fW=0).
 const FRAME_FW = { minimal: 0.045, classic: 0.11, frameless: 0 };
 const FRAME_MAT_ID = { minimal: 'frameBlack', classic: 'frameWalnut', frameless: 'frameShadow' };
 // p.ar → 액자 W/H. 디자이너 실측 공식(FRAME_RULES 소비). ar 없으면 레거시 고정 1.2×1.6 폴백.
