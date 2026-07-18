@@ -188,6 +188,19 @@
   @media (pointer:fine){ .walk-mobile-hud{display:none!important} } /* 마우스 기기(데스크탑)는 힌트 텍스트+툴바 — 폭/높이 무관, 가로 폰(터치)은 표시 */
   @media (pointer:coarse){ body.walking .hud-toolbar{display:none!important} } /* 터치 기기는 걸어서 중 전용 HUD에 위임(툴바가 상단 나가기와 겹침) — 세로·가로 공통 */
 
+  /* ── 조작통일(감독 방향전환): 걸어서빌드 진입점 숨김 + 모바일 조망 조이스틱 상시 노출 ── */
+  #bWalkToggle{display:none!important} /* 걸어서 진입점 숨김(behind-flag·코드 보존 — 걷기 복원 시 이 규칙만 제거) */
+  @media (pointer:coarse){
+    .walk-mobile-hud{display:block!important} /* 걷기 진입 없이도 조이스틱 노출(조망 카메라 이동용) */
+    .walk-mobile-hud .yawzone,
+    .walk-mobile-hud .place,
+    .walk-mobile-hud .exit{display:none!important} /* 걷기 전용 위젯 숨김 — 좌측 조이스틱만 남김 */
+  }
+  @media (pointer:coarse) and (max-width:640px){ /* 좁은 화면만: 하단 팔레트가 시트(28vh)로 올라오므로 조이스틱을 그 위로. 넓은 터치기기(우측 도크)는 기본 좌하단 유지 */
+    .walk-mobile-hud .joy{left:14px;bottom:calc(28vh + 16px);width:96px;height:96px} /* 하단 파츠 팔레트 위로 올려 카드 가림 방지 */
+    .walk-mobile-hud .joy .stick{width:40px;height:40px;margin:-20px 0 0 -20px}
+  }
+
   /* 선택 컨텍스트 독 */
   .hud-context{bottom:66px;left:50%;transform:translateX(-50%) translateY(8px);opacity:0;pointer-events:none;transition:.18s;
     padding:9px 13px;display:flex;align-items:center;gap:11px;font-size:12.5px;color:var(--dim);white-space:nowrap}
@@ -846,10 +859,11 @@ if(walkJoy && walkJoyStick){
     let dx=e.clientX-joyCx, dy=e.clientY-joyCy;
     const d=Math.hypot(dx,dy); if(d>joyR){ dx=dx/d*joyR; dy=dy/d*joyR; }
     walkJoyStick.style.transform=`translate(${dx}px,${dy}px)`;
-    B.walkMove(dx/joyR, dy/joyR); // vx=좌우, vz=전후(아래+=후진) — builder-walk.js applyMove 관례와 동일
+    // 조작통일: 조망이면 카메라 팬(orbitJoy), 걷기(복원 시)면 아바타 이동(walkMove). 걷기 진입 숨김이라 사실상 항상 조망.
+    if(B.isWalking()) B.walkMove(dx/joyR, dy/joyR); else B.orbitJoy(dx/joyR, dy/joyR); // vx=좌우, vz=전후(아래+=후진)
     e.preventDefault();
   });
-  function joyEnd(e){ if(e.pointerId!==joyId) return; joyId=null; walkJoyStick.style.transform='translate(0,0)'; B.walkMove(0,0); }
+  function joyEnd(e){ if(e.pointerId!==joyId) return; joyId=null; walkJoyStick.style.transform='translate(0,0)'; if(B.isWalking()) B.walkMove(0,0); else B.orbitJoy(0,0); }
   walkJoy.addEventListener('pointerup', joyEnd);
   walkJoy.addEventListener('pointercancel', joyEnd);
 }
