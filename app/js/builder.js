@@ -248,8 +248,11 @@ export function createBuilder(canvas, opts = {}) {
     pushUndo();
     const parts = space.parts.slice();
     const next = { ...parts[index], src };
-    // ar(종횡비): 이미지 있을 때만 기록 → 자동비율. 제거 시 ar도 제거(빈 액자=고정 1.2×1.6 폴백).
-    if (src && typeof ar === 'number' && isFinite(ar) && ar > 0) next.ar = ar; else delete next.ar;
+    // ar(종횡비): next는 기존 파츠 스프레드라 기존 ar을 이미 품고 있다. 아래 규칙으로 갱신·유지·제거를 가른다.
+    if (!src) delete next.ar;                                     // 이미지 제거 → ar 제거(빈 액자=고정 1.2×1.6 폴백)
+    else if (typeof ar === 'number' && isFinite(ar) && ar > 0) next.ar = ar; // 유효 종횡비 → 갱신
+    else if (ar !== undefined) delete next.ar;                    // 무효값(NaN·0·음수·비수치) 명시 전달 → 제거(기존 동작 보존)
+    // else(ar===undefined): 기존 next.ar 유지 — 이미지만 교체하고 비율 생략해도 종횡비 무손실(신규 방어)
     parts[index] = next;
     space = normalizeSpace({ ...space, parts }); rebuild(); emit('change', { space });
     return true;
