@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 1블록 sha256 핀, 배경 data: URI 허용, 외부호스트 0 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-PSc22TnjIPfygFx2X8X8ddpajozSAPeJyuEORw0kQ5o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-ID+vACi+zKH4IwbVepvj9CWKFVdTlB9Ooi44SksfOy0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>OpenArtShow STUDIO — 나만의 전시장 만들기</title>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="OpenArtShow">
@@ -600,6 +600,79 @@
     letter-spacing: 0.08em;
   }
 
+  /* 작품 이미지 — URL 입력 + 파일 업로드 + 도움말/실패 모달 */
+  .url-row { display: flex; gap: 8px; align-items: stretch; }
+  .url-row input[type="url"] { flex: 1 1 auto; min-width: 0; }
+  .btn-upload {
+    flex: 0 0 auto;
+    padding: 0 12px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--violet-ink);
+    background: var(--neutral-white);
+    border: 1px solid var(--violet-ink);
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-upload:hover { background: var(--neutral-sand-100); }
+  .info-dot {
+    margin-left: 6px;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--violet-ink);
+    background: none;
+    border: none;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .info-dot:hover { opacity: 0.7; }
+  .img-status { min-height: 14px; }
+  .img-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(28, 24, 18, 0.5);
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px;
+    z-index: 100;
+  }
+  .img-modal {
+    background: var(--neutral-white);
+    border: 1px solid var(--neutral-warm-gray-300);
+    border-radius: 4px;
+    max-width: 400px; width: 100%;
+    padding: 22px 22px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.28);
+  }
+  .img-modal-title {
+    font-size: 14px; font-weight: 600;
+    color: var(--ink-body);
+    margin-bottom: 10px;
+  }
+  .img-modal-body {
+    font-size: 12.5px; line-height: 1.6;
+    color: var(--ink-dim);
+    margin-bottom: 18px;
+  }
+  .img-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .img-modal-actions button {
+    padding: 8px 14px;
+    font-size: 12px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .img-modal-actions .btn-up {
+    color: var(--neutral-white);
+    background: var(--violet-ink);
+    border: 1px solid var(--violet-ink);
+  }
+  .img-modal-actions .btn-close {
+    color: var(--ink-dim);
+    background: var(--neutral-white);
+    border: 1px solid var(--neutral-warm-gray-300);
+  }
+
   @media (max-width: 640px) {
     header { padding: 18px 16px 14px; }
     header h1 { font-size: 13px; letter-spacing: 0.22em; }
@@ -898,6 +971,8 @@
           year: a.year || '',
           desc: a.desc || '',
           imageUrl: a.imageUrl || '',
+          ar: (typeof a.ar === 'number' && isFinite(a.ar) && a.ar > 0) ? a.ar : undefined,
+          _srcUrl: typeof a._srcUrl === 'string' ? a._srcUrl : '',
           featured: !!a.featured
         };
       }) : [];
@@ -981,6 +1056,76 @@
     $addBtn.disabled = count >= MAX_ARTWORKS;
   }
 
+  // ── 작품 이미지: 외부 URL → 브라우저 내장(dataURL) · 실패 시 직접 업로드 폴백 ──
+  // builder.html의 canvas 내장 블록(최대 1400px·매트 #efece6·JPEG 0.85)을 studio에 이식.
+  // 목적: 원본 URL이 사라져도 전시가 유지되고, 관람객 접속 정보가 외부 호스트로 새지 않음(프라이버시).
+  var IMG_MAX = 1400, IMG_MATTE = '#efece6';
+  var INFO_TEXT = '이미지 주소를 넣으면 그림을 내려받아 전시 데이터에 함께 담아요. 원본이 사라져도 전시가 그대로 유지되고, 관람객의 접속 정보가 바깥 사이트로 새지 않게 지켜줍니다.';
+  var FAIL_TEXT = '이 이미지는 자동으로 가져올 수 없어요(그림이 있는 사이트가 외부 저장을 막아둔 경우예요). 아래 ‘직접 업로드’로 파일을 올려 주세요.';
+
+  function embedFromImageEl(img) {
+    // 성공 시 {dataURL, ar} 반환. tainted(CORS 거부) canvas면 toDataURL이 throw → 호출부 catch.
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    var scale = Math.min(1, IMG_MAX / Math.max(iw, ih, 1));
+    var w = Math.max(1, Math.round(iw * scale)), h = Math.max(1, Math.round(ih * scale));
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = IMG_MATTE; ctx.fillRect(0, 0, w, h); // 투명 PNG 매트 프리필(space-render와 동일)
+    ctx.drawImage(img, 0, 0, w, h);
+    var dataURL = cv.toDataURL('image/jpeg', 0.85); // tainted면 SecurityError throw
+    return { dataURL: dataURL, ar: iw / ih };
+  }
+  function downloadImageToDataURL(url, onOk, onFail) {
+    var img = new Image(), done = false; // onload/onerror 중복 발화 방어(콜백 1회 보장)
+    img.crossOrigin = 'anonymous'; // CORS 허용 서버여야 canvas 내장 가능
+    img.onload = function () { if (done) return; done = true; try { onOk(embedFromImageEl(img)); } catch (e) { onFail('tainted'); } };
+    img.onerror = function () { if (done) return; done = true; onFail('load'); }; // 404·CSP·네트워크·CORS 거부
+    img.src = url;
+  }
+  function fileToDataURL(file, onOk, onFail) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image(), done = false;
+      img.onload = function () { if (done) return; done = true; try { onOk(embedFromImageEl(img)); } catch (e) { onFail('tainted'); } };
+      img.onerror = function () { if (done) return; done = true; onFail('decode'); };
+      img.src = reader.result;
+    };
+    reader.onerror = function () { onFail('read'); };
+    reader.readAsDataURL(file);
+  }
+  // scheme 판별: http(s)·프로토콜상대(//)는 외부 → 다운로드 필요. data:·상대경로·기존 dataURL은 통과.
+  function isExternalUrl(u) { return /^https?:\/\//i.test(u) || /^\/\//.test(u); }
+
+  // 공용 모달(도움말 · 실패 안내) — DOM은 최초 1회 JS로 생성(CSP: 인라인 핸들러 없음, addEventListener만).
+  var _modal = null, _modalUploadCb = null;
+  function ensureModal() {
+    if (_modal) return _modal;
+    var ov = document.createElement('div'); ov.className = 'img-modal-overlay';
+    var box = document.createElement('div'); box.className = 'img-modal';
+    var title = document.createElement('div'); title.className = 'img-modal-title';
+    var bodyEl = document.createElement('div'); bodyEl.className = 'img-modal-body';
+    var actions = document.createElement('div'); actions.className = 'img-modal-actions';
+    var upBtn = document.createElement('button'); upBtn.type = 'button'; upBtn.className = 'btn-up'; upBtn.textContent = '직접 업로드';
+    var closeBtn = document.createElement('button'); closeBtn.type = 'button'; closeBtn.className = 'btn-close'; closeBtn.textContent = '닫기';
+    upBtn.addEventListener('click', function () { var cb = _modalUploadCb; hideModal(); if (cb) cb(); });
+    closeBtn.addEventListener('click', hideModal);
+    ov.addEventListener('click', function (e) { if (e.target === ov) hideModal(); });
+    actions.appendChild(upBtn); actions.appendChild(closeBtn);
+    box.appendChild(title); box.appendChild(bodyEl); box.appendChild(actions);
+    ov.appendChild(box); document.body.appendChild(ov);
+    _modal = { ov: ov, title: title, body: bodyEl, upBtn: upBtn };
+    return _modal;
+  }
+  function showModal(titleText, bodyText, uploadCb) {
+    var m = ensureModal();
+    m.title.textContent = titleText;
+    m.body.textContent = bodyText;
+    m.upBtn.style.display = uploadCb ? '' : 'none';
+    _modalUploadCb = uploadCb || null;
+    m.ov.style.display = 'flex';
+  }
+  function hideModal() { if (_modal) _modal.ov.style.display = 'none'; _modalUploadCb = null; }
+
   function buildArtworkRow(aw, index) {
     var row = document.createElement('div');
     row.className = 'aw-row' + (aw.featured ? ' featured' : '');
@@ -1047,44 +1192,120 @@
     var imageCell = document.createElement('div');
     imageCell.className = 'field-cell image-cell';
 
+    var isEmbedded = !!(aw.imageUrl && aw.imageUrl.indexOf('data:') === 0);
+
     var urlWrap = document.createElement('div');
     var urlLabel = document.createElement('label');
     urlLabel.className = 'field-label';
     urlLabel.textContent = '이미지 URL';
+    // 도움말 ⓘ — 데스크탑은 title 툴팁, 모바일은 클릭 시 안내 모달
+    var infoBtn = document.createElement('button');
+    infoBtn.type = 'button';
+    infoBtn.className = 'info-dot';
+    infoBtn.textContent = 'ⓘ';
+    infoBtn.title = INFO_TEXT;
+    infoBtn.setAttribute('aria-label', '이미지 저장 방식 도움말');
+    infoBtn.addEventListener('click', function () { showModal('이미지는 이렇게 보관해요', INFO_TEXT, null); });
+    urlLabel.appendChild(infoBtn);
+
     var urlInput = document.createElement('input');
     urlInput.type = 'url';
     urlInput.placeholder = 'https://... 또는 ./assets/파일.png';
-    urlInput.value = aw.imageUrl;
+    // 내장 완료(dataURL)면 입력창엔 원본 주소를 표시(수만 자 dataURL을 노출하지 않음)
+    urlInput.value = isEmbedded ? (aw._srcUrl || '') : (aw.imageUrl || '');
     urlInput.spellcheck = false;
+
+    // 파일 업로드(상시 노출) + 숨은 file input(행 스코프)
+    var fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+    var uploadBtn = document.createElement('button');
+    uploadBtn.type = 'button';
+    uploadBtn.className = 'btn-upload';
+    uploadBtn.textContent = '파일';
+    uploadBtn.addEventListener('click', function () { fileInput.click(); });
+
+    var urlRow = document.createElement('div');
+    urlRow.className = 'url-row';
+    urlRow.appendChild(urlInput);
+    urlRow.appendChild(uploadBtn);
+
+    var statusEl = document.createElement('div');
+    statusEl.className = 'field-msg img-status';
+
     urlWrap.appendChild(urlLabel);
-    urlWrap.appendChild(urlInput);
+    urlWrap.appendChild(urlRow);
+    urlWrap.appendChild(statusEl);
+    urlWrap.appendChild(fileInput);
 
     var thumbWrap = document.createElement('div');
     thumbWrap.className = 'thumb-wrap';
     thumbWrap.id = 'thumb-' + aw._uid;
 
+    function setStatus(txt, cls) {
+      statusEl.textContent = txt || '';
+      statusEl.className = 'field-msg img-status' + (cls ? ' ' + cls : '');
+    }
     function refreshThumb() {
       thumbWrap.innerHTML = '';
-      var url = urlInput.value.trim();
-      if (!url) {
-        thumbWrap.textContent = '미리보기';
-        return;
-      }
+      var src = (aw.imageUrl && aw.imageUrl.trim()) || urlInput.value.trim();
+      if (!src) { thumbWrap.textContent = '미리보기'; return; }
       var img = document.createElement('img');
-      img.src = url;
+      img.src = src;
       img.alt = '미리보기';
-      img.onerror = function () {
-        thumbWrap.innerHTML = '';
-        thumbWrap.textContent = '이미지를 불러올 수 없습니다';
-      };
+      img.onerror = function () { thumbWrap.innerHTML = ''; thumbWrap.textContent = '미리보기'; };
       thumbWrap.appendChild(img);
     }
+    function markSavedIfEmbedded() {
+      if (aw.imageUrl && aw.imageUrl.indexOf('data:') === 0) setStatus('✓ 저장됨 · 원본이 사라져도 전시가 유지돼요', 'ok');
+    }
     refreshThumb();
+    markSavedIfEmbedded();
 
+    function onEmbedOk(res) {
+      aw.imageUrl = res.dataURL;
+      aw.ar = res.ar;
+      refreshThumb();
+      setStatus('✓ 저장됨 · 원본이 사라져도 전시가 유지돼요', 'ok');
+      scheduleSave();
+    }
+
+    // 파일 선택 → 내장(builder와 동일 경로)
+    fileInput.addEventListener('change', function () {
+      var f = fileInput.files && fileInput.files[0];
+      fileInput.value = ''; // 같은 파일 재선택 허용
+      if (!f) return;
+      setStatus('불러오는 중…');
+      aw._srcUrl = '';
+      urlInput.value = '';
+      fileToDataURL(f, onEmbedOk, function () { setStatus('이미지를 열 수 없어요', 'error'); });
+    });
+
+    // 타이핑 중: imageUrl만 갱신·미리보기(다운로드는 확정 시)
     urlInput.addEventListener('input', function () {
-      aw.imageUrl = urlInput.value;
+      aw.imageUrl = urlInput.value.trim();
+      aw.ar = undefined;
+      aw._srcUrl = '';
+      setStatus('');
       refreshThumb();
       scheduleSave();
+    });
+
+    // 확정(blur/Enter): 외부 URL이면 다운로드→내장, 아니면 그대로 통과
+    urlInput.addEventListener('change', function () {
+      var v = urlInput.value.trim();
+      if (!v) { aw.imageUrl = ''; aw.ar = undefined; aw._srcUrl = ''; refreshThumb(); scheduleSave(); return; }
+      if (!isExternalUrl(v)) { // data:·상대경로(./assets…)는 다운로드 불필요
+        aw.imageUrl = v; aw.ar = undefined; aw._srcUrl = ''; refreshThumb(); scheduleSave(); return;
+      }
+      if (v === aw._srcUrl && aw.imageUrl && aw.imageUrl.indexOf('data:') === 0) return; // 이미 이 원본을 내장함
+      aw._srcUrl = v;
+      setStatus('불러오는 중…');
+      downloadImageToDataURL(v, onEmbedOk, function () {
+        setStatus('자동 저장 실패 — 직접 업로드가 필요해요', 'error');
+        showModal('이미지를 자동으로 가져올 수 없어요', FAIL_TEXT, function () { fileInput.click(); });
+      });
     });
 
     imageCell.appendChild(urlWrap);
@@ -1241,6 +1462,8 @@
       year: new Date().getFullYear(),
       desc: '',
       imageUrl: '',
+      ar: undefined,
+      _srcUrl: '',
       featured: false
     });
     renderArtworks();
@@ -1269,6 +1492,14 @@
     }
     if (featuredCount() > MAX_FEATURED) {
       $downloadStatus.textContent = '대표작은 최대 ' + MAX_FEATURED + '점까지만 지정할 수 있습니다.';
+      $downloadStatus.className = 'action-status error';
+      return false;
+    }
+    // 이미지 내장 미완료 차단(프라이버시): imageUrl이 아직 외부 URL(다운로드 진행 중·실패)이면
+    // 발행 시 그 URL이 공유물에 새어 관람객 접속 정보가 외부로 유출된다 → 저장 완료(dataURL) 전까지 발행 차단.
+    var pendingImg = state.artworks.filter(function (a) { return a.imageUrl && isExternalUrl(a.imageUrl.trim()); });
+    if (pendingImg.length > 0) {
+      $downloadStatus.textContent = '아직 저장되지 않은 이미지가 있어요. "✓ 저장됨" 표시를 기다리거나, 안 되면 직접 업로드해 주세요.';
       $downloadStatus.className = 'action-status error';
       return false;
     }
@@ -1442,8 +1673,12 @@
       artist: a.artist.trim(),
       year: typeof a.year === 'number' ? a.year : (parseInt(a.year, 10) || new Date().getFullYear()),
       desc: a.desc.trim(),
-      imageUrl: a.imageUrl.trim()
+      // 방어심층: 미내장 외부 URL(http(s)://·//)은 발행물에서 비운다 — validateForExport가 1차 차단하나,
+      // 어떤 경로로도 외부 URL이 공유 JSON에 새어 관람객 IP가 유출되지 않게 하는 최후 관문(캡션 폴백).
+      imageUrl: isExternalUrl(a.imageUrl.trim()) ? '' : a.imageUrl.trim()
     };
+    // 종횡비(내장 시 산출) — 현재 gallery 렌더(artworks.js)는 고정 슬롯이라 미소비이나 미래 호환 위해 보존
+    if (typeof a.ar === 'number' && isFinite(a.ar) && a.ar > 0) entry.ar = a.ar;
     if (featured) entry.featured = true;
     return entry;
   }
