@@ -347,7 +347,7 @@ function injectStyles() {
 .lu-swatch.lu-selected {
   box-shadow:
     inset 0 0 0 1px rgba(47,35,19,0.16), inset 0 2px 3px rgba(255,255,255,0.5),
-    0 0 0 2px #fff, 0 0 0 4px var(--am-leaf-dark, var(--lu-gold)), 0 4px 8px rgba(40,30,10,0.28);
+    0 0 0 2px #fff, 0 0 0 4px var(--am-accent, var(--lu-gold)), 0 4px 8px rgba(40,30,10,0.28);
   animation: lu-swatchpop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 @keyframes lu-swatchpop {
@@ -421,12 +421,14 @@ function injectStyles() {
 .lu-char-design-arrow { flex: 0 0 auto; font-size: 20px; color: #bdb8a8; }
 
 /* -------------------------- 아바타 커스터마이저 모달 -------------------------- */
-/* 자연/크래프트 톤 재스킨(2026-07 감독 지시, 2026-07-14 고급감 리파인) — 카테고리
-   탭·프리뷰 무대·프리셋/옷장 카드·원형 스와치 구조는 유지, 비주얼만 자연 감성으로.
-   잎사귀·접힌 종이·나무결 모티프는 전부 오리지널 SVG/CSS — 특정 브랜드 아이콘·
-   마크·서체·캐릭터 미사용, 특정 게임 카피 아님. 팔레트는 브랜드 그린 램프
-   (scripts/build-*.mjs g100~g900)를 기반으로 샌디 크림·우드 브라운을 더해
-   "볕 좋은 공방 오후" 톤으로 정합. */
+/* 따뜻한 프리미엄 리톤(#74, 2026-07-18) — DESIGN.md §2/§3-1: 꾸미기 모달은 라이트/다크와
+   무관한 "따뜻함 예외" 표면으로 유지(배포 대상, 조용한 럭셔리 리톤은 폐기). 샌디 크림·
+   우드 브라운·프리셋/옷장 카드 구조는 그대로 두고, 액센트만 팔레트 B안(§3-2·§3-4)과
+   정합시킨다 — 구 청자 그린 램프(g100~g900) 잔재를 걷어내고 §12 마스코트 규정("UI가
+   아야모를 강조할 때 쓰는 액센트는 주조 1색, 권장 바이올렛")에 따라 바이올렛 1색으로
+   통일했다. 라이트 표면(크림 배경)이므로 원색(--violet-500)이 아닌 AA 통과 다크 변형
+   --violet-ink(§3-4, 라이트 BG 대비 5.55:1)를 메인 액센트로 쓴다. 잎사귀·접힌 종이·
+   나무결 모티프는 전부 오리지널 SVG/CSS — 특정 브랜드 아이콘·마크·서체·캐릭터 미사용. */
 #lu-chibi-maker {
   --am-cream: #fff8e8;
   --am-cream-2: #fbe8bb;
@@ -434,9 +436,9 @@ function injectStyles() {
   --am-ink-body: #6b5636;
   --am-ink-dim: #a68f68;
   --am-line: #e8cf9c;
-  --am-g100: #dcf0dc;
-  --am-leaf: #8fd0ab;
-  --am-leaf-dark: #4e8a6a;
+  --am-accent-wash: #EAE5FF;  /* --violet-100 — 선택 배경 워시 */
+  --am-accent-soft: #AB99FF;  /* --violet-300 — 장식용 밝은 보더/호버(비텍스트) */
+  --am-accent: #5733FF;       /* --violet-ink(=--violet-700) — 정체성 액센트, 라이트 BG AA 5.55:1 */
   --am-wood: #d3a765;
   --am-wood-dark: #a97c42;
   /* 종이 그레인 — 자체 SVG feTurbulence(중회색 스펙클, 저알파) data-URI, 외부 요청 0.
@@ -500,8 +502,8 @@ function injectStyles() {
 }
 .lu-am-title-icon {
   display: flex; width: 24px; height: 24px; flex: 0 0 auto;
-  color: var(--am-leaf-dark);
-  filter: drop-shadow(0 1px 0 rgba(255,255,255,0.55)) drop-shadow(0 2px 3px rgba(78,138,106,0.22));
+  color: var(--am-accent);
+  filter: drop-shadow(0 1px 0 rgba(255,255,255,0.55)) drop-shadow(0 2px 3px rgba(87,51,255,0.22));
 }
 .lu-am-title-icon svg { width: 100%; height: 100%; }
 #lu-am-close {
@@ -516,7 +518,7 @@ function injectStyles() {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 3px 0 rgba(169,124,66,0.45), 0 6px 12px rgba(40,30,10,0.2);
   transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
-#lu-am-close:hover { border-color: var(--am-leaf-dark); color: #fff; background: var(--lu-gold); transform: translateY(1px) rotate(90deg); box-shadow: 0 2px 0 rgba(78,138,106,0.5), 0 4px 8px rgba(40,30,10,0.18); }
+#lu-am-close:hover { border-color: var(--am-accent); color: #fff; background: var(--am-accent); transform: translateY(1px) rotate(90deg); box-shadow: 0 2px 0 rgba(87,51,255,0.5), 0 4px 8px rgba(40,30,10,0.18); }
 #lu-am-close:active { transform: translateY(3px) rotate(90deg); box-shadow: none; }
 .lu-am-body {
   flex: 1 1 auto; min-height: 0;
@@ -621,13 +623,13 @@ function injectStyles() {
 /* 선택 탭 — 통통하게 떠오른 raised pill + 재렌더마다 살짝 튀는 마이크로 팝
    (매 렌더 시 새 DOM 노드로 재생성되므로 애니메이션이 자연히 재생된다) */
 .lu-am-navtab.lu-selected {
-  color: var(--am-ink); background: var(--am-g100);
-  border-color: var(--am-leaf);
+  color: var(--am-ink); background: var(--am-accent-wash);
+  border-color: var(--am-accent-soft);
   border-radius: 22px 26px 24px 28px;
-  box-shadow: 0 3px 0 rgba(78,138,106,0.35), 0 8px 14px rgba(78,138,106,0.18), inset 0 0 0 1px rgba(255,255,255,0.6);
+  box-shadow: 0 3px 0 rgba(87,51,255,0.35), 0 8px 14px rgba(87,51,255,0.18), inset 0 0 0 1px rgba(255,255,255,0.6);
   animation: lu-navpop 0.34s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
-.lu-am-navtab.lu-selected svg { color: var(--am-leaf-dark); }
+.lu-am-navtab.lu-selected svg { color: var(--am-accent); }
 @keyframes lu-navpop {
   0% { transform: translateY(0) scale(0.84); }
   55% { transform: translateY(-4px) scale(1.06); }
@@ -645,12 +647,12 @@ function injectStyles() {
   box-shadow: 0 2px 0 rgba(232,207,156,0.7);
   transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease, transform 0.1s ease, box-shadow 0.16s ease;
 }
-.lu-am-tab:hover { border-color: var(--am-leaf); color: var(--am-ink); background: var(--am-cream-2); transform: translateY(-1px); }
+.lu-am-tab:hover { border-color: var(--am-accent-soft); color: var(--am-ink); background: var(--am-cream-2); transform: translateY(-1px); }
 .lu-am-tab:active { transform: translateY(1px) scale(0.98); box-shadow: none; }
 .lu-am-tab.lu-selected {
-  border-color: var(--am-leaf-dark); color: var(--am-ink); background: var(--am-g100);
+  border-color: var(--am-accent); color: var(--am-ink); background: var(--am-accent-wash);
   font-weight: 800;
-  box-shadow: 0 2px 0 rgba(78,138,106,0.4), 0 5px 10px rgba(78,138,106,0.16), inset 0 0 0 1px rgba(143,208,171,0.5);
+  box-shadow: 0 2px 0 rgba(87,51,255,0.4), 0 5px 10px rgba(87,51,255,0.16), inset 0 0 0 1px rgba(171,153,255,0.5);
   animation: lu-chippop 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 @keyframes lu-chippop {
@@ -679,7 +681,7 @@ function injectStyles() {
 .lu-am-group-title {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 800; letter-spacing: 0.04em;
-  color: var(--am-leaf-dark);
+  color: var(--am-accent);
   margin: 0 0 11px;
 }
 .lu-am-group-icon { display: flex; width: 14px; height: 14px; flex: 0 0 auto; }
@@ -692,11 +694,11 @@ function injectStyles() {
 .lu-closet-save {
   width: 100%; margin: 2px 0 16px;
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  border: 2px dashed var(--am-leaf-dark); background: rgba(143,208,171,0.14);
-  color: var(--am-leaf-dark); font-weight: 800; border-radius: 18px;
+  border: 2px dashed var(--am-accent); background: rgba(171,153,255,0.14);
+  color: var(--am-accent); font-weight: 800; border-radius: 18px;
   padding: 12px 16px;
 }
-.lu-closet-save:hover { background: rgba(143,208,171,0.26); border-color: var(--am-leaf-dark); }
+.lu-closet-save:hover { background: rgba(171,153,255,0.26); border-color: var(--am-accent); }
 .lu-closet-empty { font-size: 12px; color: var(--am-ink-dim); padding: 6px 2px 10px; }
 .lu-closet-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
@@ -720,7 +722,7 @@ function injectStyles() {
   clip-path: polygon(100% 0, 0 0, 100% 100%);
   filter: drop-shadow(-1.5px 1.5px 1.5px rgba(40,30,10,0.22));
 }
-.lu-closet-load:hover { border-color: var(--am-leaf); transform: translateY(-3px); box-shadow: 0 4px 0 rgba(232,207,156,0.6), 0 14px 26px rgba(40,30,10,0.2); }
+.lu-closet-load:hover { border-color: var(--am-accent-soft); transform: translateY(-3px); box-shadow: 0 4px 0 rgba(232,207,156,0.6), 0 14px 26px rgba(40,30,10,0.2); }
 .lu-closet-name {
   width: 100%; font-size: 10px; font-weight: 700; color: #fff;
   padding: 8px 4px 5px; text-align: center;
@@ -748,8 +750,8 @@ function injectStyles() {
   padding: 6px 4px 7px; cursor: pointer;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
-.lu-am-thumb:hover { border-color: var(--am-leaf); }
-.lu-am-thumb.lu-selected { border-color: var(--am-leaf-dark); background: var(--am-g100); }
+.lu-am-thumb:hover { border-color: var(--am-accent-soft); }
+.lu-am-thumb.lu-selected { border-color: var(--am-accent); background: var(--am-accent-wash); }
 .lu-am-thumb img {
   width: 48px; height: 48px; object-fit: contain;
   background: #fff; border: 1px solid var(--am-line);
@@ -770,8 +772,8 @@ function injectStyles() {
   display: flex; justify-content: space-between;
   font-size: 11px; color: var(--am-ink-body); margin-bottom: 8px;
 }
-.lu-am-cute-label b { color: var(--am-leaf-dark); font-weight: 700; }
-#lu-am-cute { width: 100%; accent-color: var(--lu-gold); }
+.lu-am-cute-label b { color: var(--am-accent); font-weight: 700; }
+#lu-am-cute { width: 100%; accent-color: var(--am-accent); }
 .lu-am-footer {
   flex: 0 0 auto;
   display: flex; flex-direction: column; gap: 12px;
@@ -795,7 +797,7 @@ function injectStyles() {
   border: 1px solid var(--am-line); border-radius: 999px; padding: 7px 12px;
   transition: border-color 0.15s ease, transform 0.1s ease;
 }
-.lu-am-social:hover { border-color: var(--lu-gold); transform: translateY(-1px); }
+.lu-am-social:hover { border-color: var(--am-accent); transform: translateY(-1px); }
 .lu-am-social:disabled { opacity: 0.55; cursor: default; }
 .lu-am-social .lu-social-badge {
   width: 16px; height: 16px; border-radius: 50%; font-size: 10px; font-weight: 800;
@@ -811,19 +813,20 @@ function injectStyles() {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 3px 0 rgba(232,207,156,0.7), 0 6px 12px rgba(40,30,10,0.08);
   transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease, transform 0.12s ease, box-shadow 0.15s ease;
 }
-.lu-am-btn:hover { border-color: var(--am-leaf); color: var(--am-ink); transform: translateY(-1px); }
+.lu-am-btn:hover { border-color: var(--am-accent-soft); color: var(--am-ink); transform: translateY(-1px); }
 .lu-am-btn:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 0 rgba(232,207,156,0.7); }
-/* 저장 CTA — 캔디 셸 상단 하이라이트("립") + 하단 음영으로 통통한 눌림감을 강조 */
+/* 저장 CTA — 캔디 셸 상단 하이라이트("립") + 하단 음영으로 통통한 눌림감을 강조.
+   §3-4 라벨 규칙(라이트 표면 -ink 채움 위엔 --text-light 라벨)에 따라 흰 텍스트 유지. */
 .lu-am-btn-primary {
-  color: #fff; background: linear-gradient(180deg, #8fd0ab, var(--lu-gold) 60%, #4e8a6a);
-  border-color: #3f7a5c;
+  color: #fff; background: linear-gradient(180deg, #9680FF, var(--am-accent) 60%, #170080);
+  border-color: #170080;
   font-weight: 800;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -10px 14px rgba(37,74,55,0.3), 0 4px 0 #3f7a5c, 0 10px 22px rgba(78,138,106,0.4);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -10px 14px rgba(23,0,128,0.3), 0 4px 0 #170080, 0 10px 22px rgba(87,51,255,0.4);
 }
-.lu-am-btn-primary:hover { background: linear-gradient(180deg, #a0dab9, #6bab86 60%, #4e8a6a); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -10px 14px rgba(37,74,55,0.32), 0 5px 0 #3f7a5c, 0 12px 26px rgba(78,138,106,0.44); }
-.lu-am-btn-primary:active { transform: translateY(3px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 1px 0 #3f7a5c, 0 3px 8px rgba(78,138,106,0.3); }
+.lu-am-btn-primary:hover { background: linear-gradient(180deg, #AB99FF, #6C4DFF 60%, #170080); transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -10px 14px rgba(23,0,128,0.32), 0 5px 0 #170080, 0 12px 26px rgba(87,51,255,0.44); }
+.lu-am-btn-primary:active { transform: translateY(3px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 1px 0 #170080, 0 3px 8px rgba(87,51,255,0.3); }
 #lu-chibi-maker button:focus-visible {
-  outline: 2px solid var(--am-leaf-dark); outline-offset: 2px;
+  outline: 2px solid var(--am-accent); outline-offset: 2px;
 }
 @media (prefers-reduced-motion: reduce) {
   #lu-avatar-maker, #lu-chibi-maker, .lu-am-card, #lu-am-close, .lu-am-navtab, .lu-am-tab, .lu-am-btn, .lu-closet-load, .lu-closet-del,
