@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 1블록 sha256 핀, 배경 data: URI 허용, 외부호스트 0 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-PSc22TnjIPfygFx2X8X8ddpajozSAPeJyuEORw0kQ5o='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>OpenArtShow STUDIO — 나만의 전시장 만들기</title>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="OpenArtShow">

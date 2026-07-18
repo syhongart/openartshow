@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 4블록은 sha256 핀, 외부호스트 0 정합(fetch·img 모두 self) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vxDtJ3aOqaEjtJzonrd6PKRpB0ynWKodJTFLctZaBgI=' 'sha256-kBmO7OoxO9Zo4P//dunmFD64rYjjSHwnJarrxkCgOWM=' 'sha256-/Qo/zlhZsu0yEflWsE2OzbUKS1ytU5JcWVMoRnIkx3E=' 'sha256-hMYZjptLS7E8GvPqB8g9sHSixA//OtkvdXv1ngSOCGU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>OpenArtShow — 링크 하나로 열리는 나만의 미술관</title>
 <meta name="description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta property="og:type" content="website">

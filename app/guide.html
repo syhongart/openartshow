@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 1블록 sha256 핀, 외부호스트 0 정합 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-M+ntGHwJgREfxaA8brubvfzH0s20th2exp85JYGb7Tc='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>이용 안내 — OpenArtShow</title>
 <meta name="description" content="OpenArtShow 3D 가상 전시 플랫폼 이용 안내 — 관람객 조작법과 작가 스튜디오 사용법, 자주 묻는 질문">
 <meta property="og:type" content="website">
