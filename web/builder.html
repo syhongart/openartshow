@@ -171,6 +171,7 @@
   .hud-walkhint{display:none;top:16px;left:50%;transform:translateX(-50%);padding:9px 18px;font-size:12px;color:var(--dim);white-space:nowrap}
   .hud-walkhint b{color:var(--ink);font-weight:600}
   body.walking .hud-walkhint{display:block}
+  @media (pointer:coarse){ body.walking .hud-walkhint{display:none!important} } /* 터치 기기는 WASD/Esc 키가 없어 힌트 부적합 — 세로·가로 공통 숨김(전용 HUD 사용) */
   .walk-mobile-hud{display:none;position:fixed;inset:0;z-index:15;pointer-events:none}
   body.walking .walk-mobile-hud{display:block}
   .walk-mobile-hud .yawzone{position:absolute;inset:0;left:42%;pointer-events:auto;touch-action:none}
@@ -184,8 +185,8 @@
     background:linear-gradient(180deg,#ff8a7a,#e6604e);border-color:rgba(255,112,94,.5);color:#1a120f}
   .walk-mobile-hud .place:disabled{filter:grayscale(.6);opacity:.55;cursor:default}
   .walk-mobile-hud .exit{top:14px;right:14px;padding:9px 14px;font-size:12.5px;background:rgba(20,21,27,.78);backdrop-filter:blur(8px)}
-  @media (min-width:641px){ .walk-mobile-hud{display:none!important} } /* 모바일 전용(데스크탑은 힌트 텍스트만) */
-  @media (max-width:640px){ body.walking .hud-toolbar{display:none!important} } /* 모바일 툴바가 상단으로 올라와 나가기 버튼과 겹침 — 걸어서 중엔 전용 HUD에 위임 */
+  @media (pointer:fine){ .walk-mobile-hud{display:none!important} } /* 마우스 기기(데스크탑)는 힌트 텍스트+툴바 — 폭/높이 무관, 가로 폰(터치)은 표시 */
+  @media (pointer:coarse){ body.walking .hud-toolbar{display:none!important} } /* 터치 기기는 걸어서 중 전용 HUD에 위임(툴바가 상단 나가기와 겹침) — 세로·가로 공통 */
 
   /* 선택 컨텍스트 독 */
   .hud-context{bottom:66px;left:50%;transform:translateX(-50%) translateY(8px);opacity:0;pointer-events:none;transition:.18s;
