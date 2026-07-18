@@ -321,6 +321,7 @@ export function createBuilder(canvas, opts = {}) {
   let movingPart = false;   // 이번 드래그가 오빗이 아니라 moveMode 파츠 이동인지
   const activePointers = new Map(); // pointerId → {x,y}
   let pinch = null;         // { startDist, startRad, startMid } — 2손가락째부터 존재
+  let orbitJoyVec = null;   // 모바일 조망 조이스틱 팬 입력(정규화 {x,z}) — renderOnce에서 연속 소비(방향키 팬의 아날로그판)
   // ── 카메라 이동(팬) — 중심 회전만이 아니라 방 안을 돌아다니며 빌드(감독 요청·심즈식) ──
   function clampTarget() {
     const dims = group && group.userData.dims; const hw = dims ? dims.hw + 1 : 6, hd = dims ? dims.hd + 1 : 6;
@@ -334,6 +335,7 @@ export function createBuilder(canvas, opts = {}) {
     const radMax = Math.min(20, Math.max(9.5, Math.hypot(fw, fd) * 0.6) * 1.5);
     return Math.max(3, Math.min(radMax, r));
   }
+  const ORBIT_JOY_SPEED = 0.85; // 모바일 조이스틱 팬 감도(orbit.rad·dt 곱 — 멀리서 볼수록 빨리, 방 크기 무관 일관)
   function panBy(fwd, right) { // 화면 기준 전/후·좌/우(카메라 방위각 반영)
     const fx = -Math.sin(orbit.az), fz = -Math.cos(orbit.az), rx = Math.cos(orbit.az), rz = -Math.sin(orbit.az);
     orbit.target.x += fwd * fx + right * rx; orbit.target.z += fwd * fz + right * rz; clampTarget();
@@ -456,6 +458,10 @@ export function createBuilder(canvas, opts = {}) {
         if (pt) moveGhostTo(pt.x, pt.z);
       }
     } else {
+      if (orbitJoyVec) { // 모바일 조망 조이스틱 연속 팬(방향키 이산 팬의 아날로그판) — 거리 비례 감도·프레임 독립(dt)
+        const s = orbit.rad * ORBIT_JOY_SPEED * dt;
+        panBy(-orbitJoyVec.z * s, orbitJoyVec.x * s); // 위로 밀면(z<0) 전진(fwd>0), 우로 밀면(x>0) 우측 팬
+      }
       applyCamera();
     }
     renderer.render(scene, camera);
@@ -492,6 +498,8 @@ export function createBuilder(canvas, opts = {}) {
     const pt = walkInstance.getForwardPoint(1.2);
     return pt ? addPart(placingType, pt.x, pt.z) : -1;
   }
+  // 모바일 조망 조이스틱 → 카메라 팬(연속). vx=좌우, vz=전후(아래+=후진). renderOnce 조망 분기에서 소비(조작통일: 걷기 대신 조망 이동).
+  function orbitJoy(vx, vz) { orbitJoyVec = (vx || vz) ? { x: vx, z: vz } : null; }
 
   // ── HUD 컨트롤 API (프리미엄 글래스 HUD 배선) ──
   function resetCamera() { // 공간 크기에 맞춰 조망 거리 자동(감독 #1: 큰 방이 한눈에 들어오게)
@@ -570,7 +578,7 @@ export function createBuilder(canvas, opts = {}) {
     resetCamera, setGridSnap, setLightIntensity, setViewMode, setSpaceName, setLightColor, setFinish, setFootprint, getPresets, applyPreset, clearSpace, bake, unbake, isBaked: () => baked,
     save, load, exportJSON, importJSON, resize, renderOnce,
     enterWalk, exitWalk, isWalking: () => walkOn, // 걸어서 빌드 모드(신규 가산)
-    walkMove, walkYaw, walkPlaceForward, // 걸어서 모드 모바일 입력 프록시(신규 가산 — HUD 배선용)
+    walkMove, walkYaw, walkPlaceForward, orbitJoy, // 걸어서 모드 프록시 + 조망 조이스틱 팬(조작통일 신규)
     getSpace: () => space, getSelected: () => selected, getViewMode: () => viewMode,
     getStats: () => { renderOnce(); return { parts: space.parts.length, uniqueTex: uniqueTexCount(space), calls: renderer.info.render.calls }; },
     on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
