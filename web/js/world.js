@@ -26,6 +26,9 @@ import { NpcCrowd } from './npc.js';
 import { buildDetailedTree, bakeGroupByMaterial } from './scene.js';
 import { PEER_ROOM_ID, EYE_HEIGHT } from './config.js';
 import { MultiplayerManager } from './multiplayer.js';
+// [하늘 엔진] 승인된 독립 모듈(sky.js) — sun/hemi/sky 돔을 주입해 시간대·날씨·이벤트 연출.
+// 배선은 3접점(생성·update·getSunDir 태양방위)만, sky.js가 조명·fog·clearColor·크로스페이드를 자기소유로 제어.
+import { createSkySystem } from './sky.js';
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;         // 이동 속도(m/s)
@@ -35,6 +38,37 @@ const STEP_OVER = 0.12;    // 걸림턱(바닥타일만 통과) — visit.js 계
 const STEP_TOLERANCE = 0.65; // [다층] 프레임당 허용 고저차(계단 등반·추락 방지) — player.js 이식
 const GROUND_LERP_RATE = 12; // [다층] 지면 y 추종 보간(계단이 매끄러운 경사로)
 // DOOR_W(문틀 통로 폭)는 space-render.js에서 import — 렌더/통과 판정 단일 상수(드리프트 방지).
+
+// ── [저사양 방어] GPU 자가 진단 — main.js:83·89 동형 복제 ─────────────────────
+// main.js는 라이브 보호 파일이라 import 대신 사본을 둔다(원본 변경 시 이 블록도 동기화).
+// 소프트웨어 렌더링(SwiftShader/WARP/llvmpipe 등) 감지 시 오픈월드도 미술관과 동일한
+// 포테이토 폴백(AA off·픽셀비율 0.7 캡·섀도 off·무톤매핑·fog null·~30fps 프레임 캡)을 건다.
+// 성능 전문가 확정 실측: 이식 전 오픈월드는 4x 스로틀+swiftshader에서 100프레임 420초 미완주(정지 1.4fps).
+const SOFT_GPU_RE = /swiftshader|llvmpipe|softpipe|software (?:rasterizer|renderer|adapter)|microsoft basic render|\bwarp\b|gdi generic|mesa offscreen|apple software renderer/i;
+// GPU 프로브 — 렌더러 생성 "전"에 1회용 캔버스로 판별(antialias 등 컨텍스트 생성 옵션을 결과에 따라 정해야 함).
+// 2차 신호: failIfMajorPerformanceCaveat 컨텍스트가 거부되면 브라우저 스스로 "심각한 성능 제약"을 인정한 것.
+function probeGpu() {
+  const out = { name: '', soft: false };
+  try {
+    const c1 = document.createElement('canvas');
+    const strict =
+      c1.getContext('webgl2', { failIfMajorPerformanceCaveat: true }) ||
+      c1.getContext('webgl', { failIfMajorPerformanceCaveat: true });
+    const caveat = !strict;
+
+    const c2 = document.createElement('canvas');
+    const gl = c2.getContext('webgl2') || c2.getContext('webgl');
+    if (!gl) return { name: '', soft: true }; // WebGL 자체 불가 직전 상태
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    out.name = String(
+      (ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || ''
+    );
+    out.soft = SOFT_GPU_RE.test(out.name) || caveat;
+    const lose = gl.getExtension('WEBGL_lose_context');
+    if (lose) lose.loseContext(); // 프로브 컨텍스트 즉시 반납
+  } catch (_) { /* 판별 실패 시 정상 GPU로 간주 */ }
+  return out;
+}
 
 // 빌더/방문자뷰 계승 — 은은한 PMREM 환경 반사(글로시 바닥·재질 깊이).
 function makeEnvMap(renderer) {
@@ -56,15 +90,28 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const CELLZ = opts.cellZ || opts.cell || 32;
   const CELL_MAX = Math.max(CELLX, CELLZ); // fog 스케일 대표값
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
-  renderer.setPixelRatio(Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
+  // [저사양 방어] 렌더러 생성 "전" GPU 프로브 — antialias는 생성 시점 옵션이라 결과를 먼저 알아야 한다(main.js:555).
+  const gpuInfo = probeGpu();
+  if (typeof console !== 'undefined') console.info('[OpenArtShow/World] GPU:', gpuInfo.name || '(unknown)', gpuInfo.soft ? '— SOFTWARE RENDERING' : '');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !gpuInfo.soft, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
+  // 픽셀비율 상한 — 정상 GPU는 최대 2, 소프트웨어 렌더는 0.7 캡(main.js:604 동형).
+  const dprBase = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  renderer.setPixelRatio(gpuInfo.soft ? Math.min(dprBase, 0.7) : Math.min(2, dprBase));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
-  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // ACES 톤매핑은 프래그먼트당 수십 ALU — 소프트웨어 렌더에서는 그대로 비용이라 끈다(main.js:613).
+  renderer.toneMapping = gpuInfo.soft ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
+  renderer.shadowMap.enabled = !gpuInfo.soft; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // [섀도 프리즈] 정적 씬 — 섀도맵을 매 프레임이 아니라 이벤트 기반으로만 재베이크(하드웨어 GPU 포함 전체 적용).
+  // 미술관(main.js:634)은 완전 프리즈지만 오픈월드는 태양이 플레이어 추종이라 완전 프리즈 불가 →
+  // 초기 1회·파셀 로드/언로드·마지막 베이크에서 8m 이상 이동에만 1프레임 재베이크(needsUpdate).
+  // 움직이는 캐스터는 아바타뿐이고 아바타 그림자는 blob이라 섀도맵과 무관 → 정적 씬 품질 손실 경미.
+  renderer.shadowMap.autoUpdate = false;
 
   // [복셀스] 야외 낮 씬 — 하늘색 헤미 + 태양 디렉셔널(플레이어 추종 타이트 섀도) + 스카이돔.
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xcfe4f7, 0x8fa385, 1.0)); // 그림자 대비 완화(야외 앰비언트)
+  // [하늘 엔진] hemi 참조를 보관 — sky.js가 시간대/날씨에 따라 색·강도를 직접 제어(주입 대상).
+  const hemi = new THREE.HemisphereLight(0xcfe4f7, 0x8fa385, 1.0); // 그림자 대비 완화(야외 앰비언트)
+  scene.add(hemi);
   scene.environment = makeEnvMap(renderer);
   const sun = new THREE.DirectionalLight(0xfff2dc, 0.95);
   sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -0.0005;
@@ -75,7 +122,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // 하늘 — 캔버스 그라디언트 스카이돔(자기완결·외부 텍스처 0, fog 미적용) + 밝은 대기 fog.
   const FOG_COLOR = 0xcfe0ee;
-  scene.fog = new THREE.Fog(FOG_COLOR, CELL_MAX * 1.1, CELL_MAX * 3.4);
+  // 소프트웨어 렌더는 프래그먼트당 fog 연산도 삭감(main.js:629). 스카이돔은 fog:false라 하늘은 그대로 유지.
+  if (!gpuInfo.soft) scene.fog = new THREE.Fog(FOG_COLOR, CELL_MAX * 1.1, CELL_MAX * 3.4);
   renderer.setClearColor(FOG_COLOR, 1);
   function makeSkyDome() {
     const c = document.createElement('canvas'); c.width = 4; c.height = 256;
@@ -90,6 +138,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     return m;
   }
   const sky = makeSkyDome(); scene.add(sky);
+  // [하늘 엔진] skySystem은 pos 초기화 이후 생성(getPos가 pos 참조). SUN_DIST=기존 태양 거리(√(34²+58²+20²)≈70).
+  // applyPose가 이 거리를 getSunDir() 방향으로 곱해 태양을 배치 → 하늘 그림의 해·달 방위와 조명 방향 일치.
+  let skySystem = null;
+  const SUN_DIST = 70;
 
   // 물 잔물결 텍스처(자작 소형·자기완결 — space-render waterTexGen 비공개라 라이브 공유파일
   // 무수정 위해 world.js에 소형 자작). 가로 정수배 사인이라 타일 이음새 연속 → update에서
@@ -305,6 +357,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     }
     scene.add(group);
     loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz });
+    requestShadowBake(); // [섀도 프리즈] 파셀 로드로 씬 지오가 바뀜 → 다음 프레임 1회 재베이크
   }
 
   function unloadParcel(k) {
@@ -320,6 +373,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (L.streetMeshes) for (const sm of L.streetMeshes) if (sm.dispose) sm.dispose();
     for (const g of L.own) g.dispose(); // 파셀 소유 지오(공유 재질 T는 dispose에서 일괄)
     loaded.delete(k);
+    if (!disposed) requestShadowBake(); // [섀도 프리즈] 파셀 언로드도 씬 변화 → 재베이크(dispose 일괄 정리 중엔 불필요)
   }
 
   // ── [복셀스] 바다(월드 전체 아래 고정 물 평면 — 월드 밖·강 파셀에서 드러남) + 월드 소프트 경계 ──
@@ -356,7 +410,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   function applyPose() {
     // [복셀스] 태양·스카이돔 플레이어 추종 — 모든 렌더 경로(walk/renderOnce/setPosition)에서 조명 정합.
-    sun.position.set(pos.x + 34, 58, pos.z + 20);
+    // [하늘 엔진] 태양 방향은 sky.js getSunDir()가 결정(그림 속 해·달 방위와 빛 방향 일치). 거리·플레이어 추종은 유지.
+    if (skySystem) {
+      const sd = skySystem.getSunDir();
+      sun.position.set(pos.x + sd.x * SUN_DIST, sd.y * SUN_DIST, pos.z + sd.z * SUN_DIST);
+    } else {
+      sun.position.set(pos.x + 34, 58, pos.z + 20);
+    }
     sun.target.position.set(pos.x, 0, pos.z); sun.target.updateMatrixWorld();
     sky.position.set(pos.x, 0, pos.z);
     camera.position.set(pos.x, pos.y, pos.z);
@@ -366,6 +426,35 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
 
   const currentParcel = () => ({ px: Math.round(pos.x / CELLX), pz: Math.round(pos.z / CELLZ) });
+
+  // ── [섀도 프리즈] 섀도맵 1프레임 재베이크 요청 ──
+  // needsUpdate=true는 다음 렌더 1회만 섀도 패스를 돌리고 three.js가 자동으로 false 복귀(autoUpdate=false 조건).
+  // soft 모드는 shadowMap.enabled=false라 이 호출이 사실상 no-op(섀도 패스 자체가 스킵됨).
+  let shadowBakeAt = null; // 마지막 재베이크 시점의 플레이어 XZ(8m 이동 트리거 기준점)
+  function requestShadowBake() {
+    renderer.shadowMap.needsUpdate = true;
+    shadowBakeAt = { x: pos.x, z: pos.z };
+  }
+  // 마지막 베이크에서 8m 이상 이동했으면 재베이크(태양이 플레이어 추종 → 그림자 방향/범위 갱신).
+  function maybeRebakeShadow() {
+    if (!shadowBakeAt) return;
+    const ddx = pos.x - shadowBakeAt.x, ddz = pos.z - shadowBakeAt.z;
+    if (ddx * ddx + ddz * ddz > 64) requestShadowBake(); // 8m² = 64
+  }
+
+  // [하늘 엔진] 생성 — sun/hemi/sky 주입. 생성자가 돔을 고해상 구로 교체하고 set(day/clear,{fade:0})을
+  // 내부 수행하며 조명·fog·clearColor를 덮는다(world.js 고정 fog/clearColor는 초기 프레임용, 덮여도 무방 — 지시 §작업1-4).
+  // soft: 소프트웨어 렌더는 크로스페이드 스냅·저해상 돔·강수 입자 축소(sky.js 내부 분기).
+  // [P1 교차리뷰] onApply=섀도 리베이크 훅 — 섀도 프리즈(autoUpdate=false)라 神 모드/URL로 시간대·날씨를
+  // 바꿔 태양 방위가 바뀌어도 8m 걷기 전엔 그림자가 옛 방향에 고착된다. sky.js set() 완료 시 onApply가
+  // requestShadowBake()를 호출해 다음 프레임 1회 재베이크 → 조명-그림자 방위 즉시 정합(회귀 방어).
+  // requestShadowBake/shadowBakeAt 선언 이후에 생성해야 초기 set(fade0)의 즉시 onApply가 TDZ를 피한다.
+  skySystem = createSkySystem({
+    scene, renderer, sun, hemi, sky,
+    getPos: () => ({ x: pos.x, z: pos.z }),
+    soft: gpuInfo.soft,
+    onApply: () => requestShadowBake(),
+  });
 
   // ── 스트리밍: 현재 파셀 3×3. 직교 인접(맨해튼≤1)=풀디테일, 대각=shell 임포스터. ──
   function updateStreaming() {
@@ -511,13 +600,23 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const emit = (ev, d) => (listeners[ev] || []).forEach((f) => f(d));
 
   // ── RAF ──
-  let raf = 0, last = 0, disposed = false;
+  let raf = 0, last = 0, disposed = false, potatoAccum = 0;
   function step(now) {
-    const t = now || 0;
-    const dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016;
-    last = t;
-    update(dt);
+    // RAF 재예약을 먼저 — 프레임 캡 return 후에도 루프가 끊기지 않게 한다(미술관 main.js는
+    // setAnimationLoop이라 return해도 다음 프레임이 오지만, RAF 재귀 경로는 명시 재예약이 필요).
     raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(step) : 0;
+    const t = now || 0;
+    let dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016;
+    last = t;
+    // [저사양 방어] 포테이토 프레임 캡(~30fps) — 소프트웨어 렌더는 프레임 시간이 널뛰어 일정 캡이
+    // 오히려 입력 지연 체감이 낫다. 건너뛴 시간은 누적해 다음 delta로 넘긴다(시뮬 시간 보존, main.js:1236 동형).
+    if (gpuInfo.soft) {
+      potatoAccum += dt;
+      if (potatoAccum < 0.034) return; // ~30fps 캡
+      dt = potatoAccum;
+      potatoAccum = 0;
+    }
+    update(dt);
   }
   function update(dt) {
     const d = (typeof dt === 'number' && isFinite(dt)) ? dt : 0.016;
@@ -528,13 +627,15 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 카메라 y를 groundY 추종(계단·강 경사 부드럽게). 태양·스카이 추종은 applyPose 안.
     pos.y += ((groundY + EYE) - pos.y) * Math.min(1, GROUND_LERP_RATE * d);
     applyPose();
+    if (skySystem) skySystem.update(d); // [하늘 엔진] 크로스페이드·강수·오로라·번개 진행(조명·clearColor 갱신)
+    maybeRebakeShadow(); // [섀도 프리즈] 8m 이동 시 그림자 재베이크(태양 추종 정합)
     stepNpcs(d);
     stepWalkers(d); // 거리 배회 NPC 앰비언트 시뮬
     // 원격 아바타 발바닥 = groundY(다층·강 반영). 원격 간 충돌은 데모 스코프 아웃.
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
     renderer.render(scene, camera);
   }
-  function renderOnce() { applyPose(); renderer.render(scene, camera); }
+  function renderOnce() { applyPose(); maybeRebakeShadow(); renderer.render(scene, camera); }
 
   // ── 포인터락 + 이벤트(데스크톱) ──
   let locked = false;
@@ -573,6 +674,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 초기 로드 — 첫 파셀 주변 스트리밍
   updateStreaming();
   applyPose();
+  requestShadowBake(); // [섀도 프리즈] 초기 1회 베이크 + 8m 이동 기준점 설정
   if (!headless) {
     resize((typeof window !== 'undefined' ? window.innerWidth : 1280), (typeof window !== 'undefined' ? window.innerHeight : 720));
     raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(step) : 0;
@@ -580,6 +682,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   return {
     walk, update, renderOnce, resize, lookDelta,
+    sky: skySystem, // [하늘 엔진] 신 모드 패널이 set()/get()으로 시간대·날씨·이벤트 제어
+    getSkyState: () => (skySystem ? skySystem.get() : null),
     setTouchMove: (fwd, right) => { tmov.fwd = fwd || 0; tmov.right = right || 0; },
     setKey: (k, v) => { keys[String(k).toLowerCase()] = !!v; recomputeKeyMove(); },
     getPosition: () => pos.clone(),
@@ -588,6 +692,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getGroundY: () => groundY, // [다층] 현재 발 높이(검증·디버그용)
     getPitch: () => pitch,
     getCurrentParcel: () => currentParcel(),
+    getGpuInfo: () => ({ ...gpuInfo }), // [저사양 방어] 검증·디버그용 프로브 결과
     getLoadedKeys: () => Array.from(loaded.keys()),
     isLocked: () => locked,
     on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
@@ -605,7 +710,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       }
       if (mp) { mp.dispose(); mp = null; }
       for (const k of Array.from(loaded.keys())) unloadParcel(k);
-      // [복셀스] 하늘·바다·공유 재질 회수
+      // [하늘 엔진] 강수·무지개·오로라·페이드돔·교체된 고해상 돔 지오/텍스처 회수(sky 돔 자식 fadeDome 포함).
+      if (skySystem) { skySystem.dispose(); skySystem = null; }
+      // [복셀스] 하늘·바다·공유 재질 회수(skySystem이 교체·소유한 지오/맵은 이미 dispose됨 — 재호출은 무해 idempotent)
       scene.remove(sky); sky.geometry.dispose(); if (sky.material.map) sky.material.map.dispose(); sky.material.dispose();
       scene.remove(sea); seaGeo.dispose();
       if (T.water.map) T.water.map.dispose(); // 물결 텍스처(재질 dispose는 map 미회수)
