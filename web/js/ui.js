@@ -20,6 +20,9 @@ import {
   CHIBI_TOP_PATTERNS,
   CHIBI_OUTFITS,
   CHIBI_PRESETS,
+  CHIBI_PRESET_GROUPS,
+  CHIBI_ACTIONS,
+  CHIBI_ACTION_LABELS,
   SPECIES_PRESET,
   SKIN_TONES,
   HAIR_COLORS,
@@ -577,6 +580,23 @@ function injectStyles() {
   mix-blend-mode: multiply;
   filter: blur(1.5px);
 }
+/* 액션 테스트 컬럼 — 스테이지 우측 세로 이모지 버튼 12개 (26px + gap 4 = 356px) */
+.lu-am-actions {
+  position: absolute; top: 24px; right: 24px; z-index: 3;
+  display: flex; flex-direction: column; gap: 4px;
+  pointer-events: auto;
+}
+.lu-am-action-btn {
+  width: 26px; height: 26px; padding: 0;
+  border-radius: 50%; border: 1px solid rgba(120, 90, 40, 0.25);
+  background: rgba(255, 253, 247, 0.88);
+  font-size: 14px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(40, 30, 10, 0.15);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.lu-am-action-btn:hover { transform: scale(1.15); background: #fff; }
+.lu-am-action-btn:active { transform: scale(0.92); }
 .lu-am-preview-hint {
   position: absolute; left: 50%; bottom: 10px;
   transform: translateX(-50%);
@@ -1821,7 +1841,9 @@ function injectStyles() {
   .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
   .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
-  .lu-am-preview { width: 168px; max-width: 52vw; margin: 0 auto; padding: 7px 7px 22px; border-radius: 20px; }
+  .lu-am-preview { width: 168px; max-width: 52vw; margin: 0 auto; padding: 7px 7px 22px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; }
+  .lu-am-actions { position: static; display: flex; flex-direction: row; flex-wrap: wrap; gap: 3px; margin-top: 8px; justify-content: center; }
+  .lu-am-action-btn { width: 20px; height: 20px; font-size: 11px; }
   .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
   .lu-am-panel { min-height: 0; }
   .lu-am-nav { padding: 5px 0 6px; margin-bottom: 8px; gap: 4px; }
@@ -2837,10 +2859,28 @@ function buildChibiMaker() {
   // 바깥 lu-am-preview 프레임을 장식용 여백으로 감싸 게임 캐릭터 크리에이터급 무대감을 낸다.
   const canvas = el('canvas', { width: '300', height: '400' });
   const stage = el('div', { className: 'lu-am-stage' }, [canvas]);
+  // 액션 테스트 — 캐릭터 오른쪽 세로 이모지 컬럼(감독 지시). 클릭 시 프리뷰 재생.
+  // 라벨·목록은 chibi.js SSOT(CHIBI_ACTIONS/CHIBI_ACTION_LABELS).
+  const ACTION_EMOJI = {
+    wave: '👋', jump: '🦘', bow: '🙇', clap: '👏', dance: '💃', kick: '🦵',
+    breakdance: '🕺', run: '🏃', sit: '🪑', jumpingjack: '🤸', heart: '❤️', sulk: '😤',
+  };
+  const actionCol = el('div', { className: 'lu-am-actions', role: 'group', 'aria-label': '액션 테스트' });
+  for (const actName of CHIBI_ACTIONS) {
+    const actLabel = CHIBI_ACTION_LABELS[actName] || actName;
+    const actBtn = el('button', {
+      type: 'button', className: 'lu-am-action-btn',
+      title: actLabel, 'aria-label': `액션 — ${actLabel}`, text: ACTION_EMOJI[actName] || '▶',
+    });
+    actBtn.addEventListener('click', () => {
+      if (chibiPreviewInstance && typeof chibiPreviewInstance.playAction === 'function') chibiPreviewInstance.playAction(actName);
+    });
+    actionCol.appendChild(actBtn);
+  }
   const previewHint = el('div', { className: 'lu-am-preview-hint' });
   previewHint.innerHTML = ICON_ROTATE;
   previewHint.appendChild(el('span', { text: '드래그해서 회전' }));
-  const previewBox = el('div', { className: 'lu-am-preview' }, [stage, previewHint]);
+  const previewBox = el('div', { className: 'lu-am-preview' }, [stage, actionCol, previewHint]);
 
 
   let previewRenderer = null;
@@ -2860,10 +2900,12 @@ function buildChibiMaker() {
     previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
     previewScene = new THREE.Scene();
     previewScene.background = new THREE.Color('#f6f1e3');
-    // 치비 신장(~1.34m)에 맞춘 근접 프레이밍 — DCL 프리뷰(1.8m)보다 낮고 가깝다
+    // 프레이밍 — 하트머리 정점(≈1.53m)까지 여유 있게 담고 살짝 내려다본다.
+    // (기존 0.86/3.12는 가시 상한 ≈1.537라 하트머리가 프레임을 넘었고, 피치 ≈3°
+    //  수평 시선이라 발밑 그림자 원판이 옆면으로 보였다 — 감독 피드백 2건 동시 해소)
     previewCamera = new THREE.PerspectiveCamera(30, 300 / 400, 0.1, 20);
-    previewCamera.position.set(0, 0.86, 3.12);
-    previewCamera.lookAt(0, 0.7, 0);
+    previewCamera.position.set(0, 1.1, 3.75);
+    previewCamera.lookAt(0, 0.64, 0);
     // 채도 살린 스튜디오 조명 — 회색 앰비언트를 어둡게 낮춰 색이 바래지 않게 하고,
     // 흰 키라이트로 앞면을 채워 고른 색이 선명하게 그대로 나온다(감독 'B' 확정).
     previewScene.add(new THREE.HemisphereLight(0xfffaf4, 0x241f18, 0.65));
@@ -2965,20 +3007,27 @@ function buildChibiMaker() {
   }
 
   function presetRow() {
-    page.appendChild(el('div', { className: 'lu-am-section-title', text: '프리셋 — 골라서 시작' }));
-    const row = el('div', { className: 'lu-am-tabs lu-am-presets' });
-    CHIBI_PRESETS.forEach((pre) => {
-      const btn = el('button', { type: 'button', className: 'lu-am-tab lu-am-preset' });
-      const c1 = pre.look.skin || DEFAULT_CHIBI.skin;
-      const c2 = pre.look.top || pre.look.hairColor || DEFAULT_CHIBI.top;
-      const dot = el('span', { className: 'lu-am-preset-dot', 'aria-hidden': 'true' });
-      dot.style.background = `conic-gradient(${c1} 0deg 180deg, ${c2} 180deg 360deg)`;
-      btn.appendChild(dot);
-      btn.appendChild(el('span', { className: 'lu-am-preset-label', text: pre.name }));
-      btn.addEventListener('click', () => applyPreset(pre.look));
-      row.appendChild(btn);
-    });
-    page.appendChild(row);
+    // 카테고리 섹션 렌더 — 56장 평면 나열은 훑기 어렵다는 감독 피드백으로
+    // CHIBI_PRESET_GROUPS(chibi.js SSOT) 순서대로 소제목 + wrap 행을 그린다.
+    // cat 미지정 프리셋은 'human'으로 귀속(신규 필드 하위호환).
+    for (const grp of CHIBI_PRESET_GROUPS) {
+      const items = CHIBI_PRESETS.filter((pre) => (pre.cat || 'human') === grp.id);
+      if (!items.length) continue;
+      page.appendChild(el('div', { className: 'lu-am-section-title', text: `${grp.name} (${items.length})` }));
+      const row = el('div', { className: 'lu-am-tabs lu-am-presets' });
+      for (const pre of items) {
+        const btn = el('button', { type: 'button', className: 'lu-am-tab lu-am-preset' });
+        const c1 = pre.look.skin || DEFAULT_CHIBI.skin;
+        const c2 = pre.look.top || pre.look.hairColor || DEFAULT_CHIBI.top;
+        const dot = el('span', { className: 'lu-am-preset-dot', 'aria-hidden': 'true' });
+        dot.style.background = `conic-gradient(${c1} 0deg 180deg, ${c2} 180deg 360deg)`;
+        btn.appendChild(dot);
+        btn.appendChild(el('span', { className: 'lu-am-preset-label', text: pre.name }));
+        btn.addEventListener('click', () => applyPreset(pre.look));
+        row.appendChild(btn);
+      }
+      page.appendChild(row);
+    }
   }
 
   // 종족 한글 라벨 — 옷장 슬롯 자동 이름에 사용.
@@ -3183,7 +3232,9 @@ function buildChibiMaker() {
       chibiPreviewInstance.dispose();
       chibiPreviewInstance = null;
     }
-    chibiPreviewInstance = createAvatarInstance(encodeChibi(chibiParams), GOLD, ' ');
+    // blobShadow:false — 수평 원판 그림자가 프리뷰의 얕은 카메라에서 발에 겹쳐 보임
+    // (감독 신고). 프리뷰 접지감은 액자 CSS 그림자(.lu-am-stage::after)가 담당.
+    chibiPreviewInstance = createAvatarInstance(encodeChibi(chibiParams), GOLD, ' ', { blobShadow: false });
     previewRotator.add(chibiPreviewInstance.group);
   }
 
