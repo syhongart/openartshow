@@ -112,10 +112,11 @@ function paintCloudLayer(ctx, rnd, W, Hh, o) {
   const D = new Float32Array(LW * LH);
   for (let y = 0; y < LH; y++) {
     const v = y / LH; // 0=천정 → 1=지평선
-    // 종 모양 분포 — 시점에서 실제로 보이는 중간 고도(v 0.3~0.75)에 구름이 오도록
+    // 종 모양 분포 — 시점에서 실제로 보이는 중간 고도(v 0.3~0.75)에 구름이 오도록.
+    // 천정 15%(고도 76°+)는 비움 — 극점 수렴으로 구름이 부챗살·체크무늬로 뭉개진다(상방 실측).
     const prof = o.mode === 'cumulus'
-      ? Math.min(1, Math.max(0, (v - 0.05) / 0.2)) * (1 - Math.max(0, (v - 0.9) / 0.1) * 0.55)
-      : 1 - Math.max(0, (v - 0.78) / 0.22) * 0.85; // 지평선 부근은 fog로 소멸
+      ? Math.min(1, Math.max(0, (v - 0.15) / 0.2)) * (1 - Math.max(0, (v - 0.9) / 0.1) * 0.55)
+      : (1 - Math.max(0, (v - 0.78) / 0.22) * 0.85) * Math.min(1, Math.max(0, (v - 0.02) / 0.1));
     if (prof <= 0) continue;
     for (let x = 0; x < LW; x++) {
       const u = x / LW, yl = y / LW;
@@ -158,13 +159,15 @@ function paintCloudLayer(ctx, rnd, W, Hh, o) {
 }
 
 // ② 밴딩 파괴 디더링 — 미세 모노 노이즈를 낮은 알파로 1패스(저사양은 스킵).
+// 최상단(천정 극점 부근)은 제외 — 극점에서 픽셀 노이즈가 방사 부챗살로 늘어난다(상방 실측).
 function dither(ctx, rnd, W, H) {
-  const img = ctx.getImageData(0, 0, W, H); const d = img.data;
+  const y0 = (H * 0.05) | 0;
+  const img = ctx.getImageData(0, y0, W, H - y0); const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
     const n = ((rnd() * 8) | 0) - 4; // ±4
     d[i] += n; d[i + 1] += n; d[i + 2] += n;
   }
-  ctx.putImageData(img, 0, 0);
+  ctx.putImageData(img, 0, y0);
 }
 
 // ── 하늘돔 리페인트 ──
@@ -238,19 +241,38 @@ function paintSky(ctx, W, H, time, weather, opts) {
 
   // 3) 밤하늘 ④ — 별밭·은하수(암흑대)·광망 별·달(크레이터+위상)
   if (time === 'night' && !cloudy) {
-    for (let i = 0; i < 1300; i++) { // 별밭 — 지평선 근처 희박
-      const x = rnd() * W, y = Math.pow(rnd(), 1.7) * Hh * 0.92;
-      const a = 0.2 + rnd() * 0.75, r = rnd() < 0.05 ? 1.7 : 0.6 + rnd() * 0.6;
-      ctx.fillStyle = `rgba(${215 + (rnd() * 40 | 0)},${218 + (rnd() * 34 | 0)},255,${a.toFixed(2)})`;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    // 별밭 — 균등 분포 + 천정 왜곡 보정.
+    // pow 편향으로 천정에 별을 몰면 equirect 확대율이 최대인 천정에서 별이 눈송이 같은
+    // 보케로 뭉개진다(실화면 상방 시선 검수에서 적출). 균등 분포로 두고 천정 근처는
+    // 화면 확대에 맞춰 크기·알파를 줄인다. 저해상 돔(soft 512)은 확대 뭉개짐이 심해
+    // "성기고 또렷한 별" 방향: 개수 1/3, 소프트 도트(사각 픽셀 방지), 천정 감쇠 강화.
+    const starN = opts.lowRes ? 450 : 1300;
+    const yMin = opts.lowRes ? 0.12 : 0.06, zcDen = opts.lowRes ? 0.5 : 0.35;
+    for (let i = 0; i < starN; i++) {
+      const x = rnd() * W, y = Hh * (yMin + rnd() * (0.92 - yMin));
+      const zc = Math.min(1, y / (Hh * zcDen)); // 0=천정 → 1=중간 고도 이하
+      const a = (0.2 + rnd() * 0.75) * (0.3 + 0.7 * zc);
+      const r = (rnd() < 0.05 ? 1.7 : 0.6 + rnd() * 0.6) * (0.45 + 0.55 * zc);
+      const cc = `${215 + (rnd() * 40 | 0)},${218 + (rnd() * 34 | 0)},255`;
+      if (opts.lowRes) {
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r * 1.4);
+        g.addColorStop(0, `rgba(${cc},${Math.min(1, a * 1.2).toFixed(2)})`); g.addColorStop(1, `rgba(${cc},0)`);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 1.4, 0, 7); ctx.fill();
+      } else {
+        ctx.fillStyle = `rgba(${cc},${a.toFixed(2)})`;
+        ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+      }
     }
-    // 은하수 밴드(대각) — 웜 코어/쿨 엣지 + 암흑대 균열
+    // 은하수 밴드(대각) — 웜 코어/쿨 엣지 + 암흑대 균열.
+    // 천정 상부는 클립 — 극점에 닿으면 equirect 수렴으로 방사 줄무늬가 된다(상방 실측).
     ctx.save();
+    ctx.beginPath(); ctx.rect(0, Hh * 0.14, W, Hh * 0.86); ctx.clip();
     ctx.translate(W * 0.5, Hh * 0.66); ctx.rotate(-0.42);
-    for (let i = 0; i < 900; i++) { // 성운 얼룩 — 작고 많게(큰 반경은 흐린 보케 원반처럼 보인다)
+    const nebN = opts.lowRes ? 600 : 900, nebK = opts.lowRes ? 0.7 : 1;
+    for (let i = 0; i < nebN; i++) { // 성운 얼룩 — 작고 많게(큰 반경은 흐린 보케 원반처럼 보인다)
       const bx = (rnd() - 0.5) * W * 1.35;
       const by = (rnd() - 0.5) * Hh * 0.34 * (1 + Math.cos((bx / W) * 3.1) * 0.45);
-      const rr = 4 + rnd() * 13, aa = 0.014 + rnd() * 0.032;
+      const rr = (4 + rnd() * 13) * nebK, aa = 0.014 + rnd() * 0.032;
       const core = Math.abs(by) < Hh * 0.09;
       const huv = core ? (rnd() < 0.45 ? '235,220,200' : '228,225,240') : (rnd() < 0.3 ? '185,175,225' : '205,210,240');
       const g2 = ctx.createRadialGradient(bx, by, 0, bx, by, rr);
@@ -272,9 +294,9 @@ function paintSky(ctx, W, H, time, weather, opts) {
       rx += rr * (0.6 + rnd() * 0.5); ry0 += (rnd() - 0.5) * Hh * 0.04;
     }
     ctx.restore();
-    // 광망 별 — 밝은 별 소수: 글로우 + 십자 스파이크
+    // 광망 별 — 밝은 별 소수: 글로우 + 십자 스파이크(천정 편향 제거 — 위 별밭과 동일 사유)
     for (let i = 0; i < 7; i++) {
-      const x = rnd() * W, y = Math.pow(rnd(), 1.4) * Hh * 0.75;
+      const x = rnd() * W, y = Hh * (0.18 + rnd() * 0.6);
       const g4 = ctx.createRadialGradient(x, y, 0, x, y, 7);
       g4.addColorStop(0, 'rgba(255,255,255,0.95)'); g4.addColorStop(0.3, 'rgba(230,235,255,0.4)'); g4.addColorStop(1, 'rgba(230,235,255,0)');
       ctx.fillStyle = g4; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
@@ -282,19 +304,32 @@ function paintSky(ctx, W, H, time, weather, opts) {
       const s = 6 + rnd() * 5;
       ctx.beginPath(); ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.moveTo(x, y - s); ctx.lineTo(x, y + s); ctx.stroke();
     }
-    // 달 ④ — 원반 + 크레이터 + 위상 터미네이터 + 넓은 글로우
+    // 천정 캡 — 극점 부근 성분(별·은하수 자락)을 하늘 top색 소프트 페이드로 덮어
+    // equirect 극점 수렴이 만드는 방사 스트릭을 봉인(상방 실측). 달(y 0.46Hh)은 안 걸린다.
+    const cap = ctx.createLinearGradient(0, 0, 0, Hh * 0.2);
+    cap.addColorStop(0, 'rgba(7,10,22,1)'); cap.addColorStop(0.55, 'rgba(7,10,22,0.7)'); cap.addColorStop(1, 'rgba(7,10,22,0)');
+    ctx.fillStyle = cap; ctx.fillRect(0, 0, W, Hh * 0.2);
+
+    // 달 ④ — 원반 + 크레이터 + 위상 터미네이터 + 넓은 글로우.
+    // 낮 태양과 동일한 equirect 위도 보정(가로 타원) — 안 하면 상방 시선에서 타원 접시로 왜곡.
     const mx = MOON_AZ * W, my = Hh * 0.46, mr = Hh * 0.055;
-    glowWrapped(ctx, W, mx, my, mr * 5, glowStops([226, 232, 224], [226, 232, 224], 0.3, 2.2));
-    ctx.fillStyle = 'rgba(236,239,232,0.96)'; ctx.beginPath(); ctx.arc(mx, my, mr, 0, 7); ctx.fill();
+    const mel = (1 - my / Hh) * Math.PI / 2;
+    const mst = 1 / Math.max(0.35, Math.cos(mel));
+    ctx.save();
+    ctx.translate(mx, my); ctx.scale(mst, 1);
+    const mg = ctx.createRadialGradient(0, 0, 0, 0, 0, mr * 5);
+    for (const [t, c] of glowStops([226, 232, 224], [226, 232, 224], 0.3, 2.2)) mg.addColorStop(t, c);
+    ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(0, 0, mr * 5, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(236,239,232,0.96)'; ctx.beginPath(); ctx.arc(0, 0, mr, 0, 7); ctx.fill();
     for (let i = 0; i < 8; i++) { // 크레이터(달면 안쪽 어두운 얼룩)
       const a = rnd() * 6.28, dd = rnd() * mr * 0.66, cr = mr * (0.08 + rnd() * 0.16);
       ctx.fillStyle = `rgba(190,196,188,${0.35 + rnd() * 0.25})`;
-      ctx.beginPath(); ctx.arc(mx + Math.cos(a) * dd, my + Math.sin(a) * dd, cr, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(Math.cos(a) * dd, Math.sin(a) * dd, cr, 0, 7); ctx.fill();
     }
-    ctx.save(); // 위상 — 한쪽 가장자리를 살짝 덮는 터미네이터(과하면 잘린 원판처럼 보인다)
-    ctx.beginPath(); ctx.arc(mx, my, mr + 0.5, 0, 7); ctx.clip();
+    // 위상 — 한쪽 가장자리를 살짝 덮는 터미네이터(과하면 잘린 원판처럼 보인다)
+    ctx.beginPath(); ctx.arc(0, 0, mr + 0.5, 0, 7); ctx.clip();
     ctx.fillStyle = 'rgba(10,14,26,0.62)';
-    ctx.beginPath(); ctx.arc(mx - mr * 1.25, my, mr * 1.06, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(-mr * 1.25, 0, mr * 1.06, 0, 7); ctx.fill();
     ctx.restore();
   }
 
@@ -524,15 +559,22 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     if (typeof s.flashSafe === 'boolean') state.flashSafe = s.flashSafe;
     const L = LIGHT[state.time][state.weather];
     const fade = (o.fade === undefined ? 1.8 : o.fade) * (soft ? 0 : 1); // 저사양은 스냅
+    // 저사양 돔은 1024×512이지만 야간 맑음만은 2048 풀해상으로 페인트 — 512 텍스처에
+    // 1px 별을 찍으면 화면 확대로 눈송이처럼 뭉개진다(실화면 적출). 밤 전환 1회 비용 수용.
+    // soft는 fade=0이라 항상 domeA 단일 경로 → 크로스페이드 스왑과 크기 불일치 없음.
+    const wantW = (!soft || (state.time === 'night' && state.weather === 'clear')) ? 2048 : DOME_W;
+    const wantH = wantW >> 1;
+    const pOpts = { soft, lowRes: wantW < 2048 };
     if (changedDome && fade > 0) {
-      paintSky(domeB.ctx, DOME_W, DOME_H, state.time, state.weather, { soft });
+      paintSky(domeB.ctx, DOME_W, DOME_H, state.time, state.weather, pOpts);
       domeB.tex.needsUpdate = true;
       fadeDome.material.map = domeB.tex; fadeDome.material.opacity = 0; fadeDome.visible = true;
       lerpState.from = { ...cur, sun: cur.sun.clone(), hemiS: cur.hemiS.clone(), hemiG: cur.hemiG.clone(), fog: cur.fog.clone() };
       lerpState.to = asVec(L); lerpState.t = 0; lerpState.dur = fade;
       phase = 1;
     } else {
-      paintSky(domeA.ctx, DOME_W, DOME_H, state.time, state.weather, { soft });
+      if (domeA.c.width !== wantW) { domeA.c.width = wantW; domeA.c.height = wantH; }
+      paintSky(domeA.ctx, wantW, wantH, state.time, state.weather, pOpts);
       domeA.tex.needsUpdate = true;
       Object.assign(cur, asVec(L)); applyLighting(cur);
       lerpState.t = 1; phase = 0;
