@@ -103,6 +103,8 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <ul><li><strong>독립 executor 스모크 6/6 PASS</strong>(생성기·매니페스트·링크·콘솔·가로넘침·CSP).</li><li><strong>검수관 교차리뷰</strong>: P1 블로커 1건(섀도 고착) 적출 → 수정·재검증 후 해소. P2 권고 2건은 후속: ① "神 모드=감독 전용" 라벨과 달리 접근 게이트 없음(로컬 렌더 전용이라 보안 치명 아님 — 라벨/정책은 감독 확인 사안) ② onApply 향후 가로등·창 발광 연동 여지(P1 수정으로 훅은 이미 배선됨).</li></ul>
 <h3>배운 것</h3>
 <p>시각검토와 코드 교차리뷰는 <strong>상호 보완</strong>이다. "코드가 맞아 보인다"의 함정 2건(z-index로 패널이 오버레이에 덮임 / 스폰 실내로 하늘 검증 불가)은 diff론 안 잡히고 <strong>실제 화면 스크린샷</strong>에서만 드러났다. 반대로 P1 섀도 고착은 soft 모드에 그림자가 없어 스크린샷으론 안 드러나고 검수관의 <strong>vendor three.js 소스 추적</strong>으로만 잡혔다. 어느 한쪽만으로는 통과시켰을 결함들이다.</p>
+<h3>병합·배포 (감독 결재 2026-07-19)</h3>
+<p>감독 결재로 <strong>신 모드 전체 공개 + 기본 하늘 야간 맑음</strong>(별하늘) 확정 — 검수관 P2(감독 전용 라벨 vs 접근 게이트 없음)는 "전체 공개"로 해소. 팀장 후속 3건(야간 별하늘 품질 결함 3건 수정 등) 반영해 main 병합. <code>origin/main</code> 역병합으로 생성물 충돌(valuation) 선해소(브랜치 최신값 취함 + 재빌드), 병합 전 게이트 재실행 — executor 독립 스모크 6/6, world.html 하늘 4종+기본진입 야간맑음 실화면 시각검토 통과, 라이브 진입점(main/player/artworks/config/visit/builder/ui/index) 바이트 무변경 → visit/builder 픽셀· index 씬그래프 회귀 0. <code>--no-ff</code> 병합(단일 revert 롤백 유지) <code>43fc2e7</code> → <code>deploy.yml</code> Actions success.</p>
 </article>
 <div class="pn"><a href="./2026-07-19-cd3302.html"><span class="lbl">← 이전 기록</span>오픈월드 저사양 방어 이식 — 포테이토 폴백 + 섀도 이벤트 베이크 (팀장 지시, 부팀장 완결)</a></div>
 </div>
