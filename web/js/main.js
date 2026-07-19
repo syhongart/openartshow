@@ -112,6 +112,9 @@ function probeGpu() {
 // 소프트웨어 렌더링 안내 배너 — 원인은 이 기기의 브라우저 설정이므로,
 // 화질을 깎는 대신 사용자가 스스로 고칠 수 있게 경로를 알려준다.
 // fatal=true: WebGL 생성 자체가 실패한 경우(Chrome M133+ 블랙리스트).
+// ※ 현재는 fatal=true 경로에서만 호출된다 — "느림" 경고(fatal=false)는
+//   감상을 가려 감독 지시로 비활성화(호출 제거). 복원 시 포테이토 모드
+//   블록에서 showGpuNotice(gpuInfo.name, false) 한 줄을 되살리면 된다.
 function showGpuNotice(gpuName, fatal) {
   const box = document.createElement('div');
   box.id = 'lu-gpu-notice';
@@ -594,11 +597,11 @@ async function init() {
   ratio = Math.min(ratio, Math.sqrt(budget / (window.innerWidth * window.innerHeight)));
 
   // ---- 포테이토 모드 — 소프트웨어 렌더링에서도 걷게 하는 최후 폴백 --------
-  // 원인은 이 기기의 브라우저 설정이므로 안내 배너로 자가 수리를 유도하되,
-  // 이번 세션도 저해상도·그림자 off·무톤매핑·린 조명·프레임 캡으로 버티게 한다.
+  // 원인은 이 기기의 브라우저 설정이지만, "느림" 안내 배너는 감상을 가려
+  // 노출하지 않는다(감독 지시). 저해상도·그림자 off·무톤매핑·린 조명·프레임
+  // 캡으로 조용히 버틴다. (WebGL 자체 불가 시의 치명 안내는 유지 — 위 catch절.)
   if (gpuInfo.soft) {
     ratio = Math.min(ratio, 0.7); // 지오메트리 병합 후 상향 (0.5는 뿌옇다는 실기기 제보)
-    showGpuNotice(gpuInfo.name, false);
     document.documentElement.classList.add('lu-potato'); // HUD blur 해제 (CPU 컴포지팅 절약)
   }
 
