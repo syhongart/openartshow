@@ -584,7 +584,6 @@ function injectStyles() {
 .lu-am-actions {
   position: absolute; top: 24px; right: 24px; z-index: 3;
   display: flex; flex-direction: column; gap: 4px;
-  pointer-events: auto;
 }
 .lu-am-action-btn {
   width: 26px; height: 26px; padding: 0;
