@@ -97,5 +97,16 @@
     "realized": 14200,
     "mktLow": 56800,
     "mktHigh": 170400
+  },
+  {
+    "date": "2026-07-20",
+    "devlogs": 64,
+    "galleries": 0,
+    "mau": 0,
+    "mrr": 0,
+    "asset": 14400,
+    "realized": 14400,
+    "mktLow": 57600,
+    "mktHigh": 172800
   }
 ]

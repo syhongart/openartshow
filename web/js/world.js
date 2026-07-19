@@ -26,6 +26,9 @@ import { NpcCrowd } from './npc.js';
 import { buildDetailedTree, bakeGroupByMaterial } from './scene.js';
 import { PEER_ROOM_ID, EYE_HEIGHT } from './config.js';
 import { MultiplayerManager } from './multiplayer.js';
+// [하늘 엔진] 승인된 독립 모듈(sky.js) — sun/hemi/sky 돔을 주입해 시간대·날씨·이벤트 연출.
+// 배선은 3접점(생성·update·getSunDir 태양방위)만, sky.js가 조명·fog·clearColor·크로스페이드를 자기소유로 제어.
+import { createSkySystem } from './sky.js';
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;         // 이동 속도(m/s)
@@ -106,7 +109,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // [복셀스] 야외 낮 씬 — 하늘색 헤미 + 태양 디렉셔널(플레이어 추종 타이트 섀도) + 스카이돔.
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xcfe4f7, 0x8fa385, 1.0)); // 그림자 대비 완화(야외 앰비언트)
+  // [하늘 엔진] hemi 참조를 보관 — sky.js가 시간대/날씨에 따라 색·강도를 직접 제어(주입 대상).
+  const hemi = new THREE.HemisphereLight(0xcfe4f7, 0x8fa385, 1.0); // 그림자 대비 완화(야외 앰비언트)
+  scene.add(hemi);
   scene.environment = makeEnvMap(renderer);
   const sun = new THREE.DirectionalLight(0xfff2dc, 0.95);
   sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -0.0005;
@@ -133,6 +138,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     return m;
   }
   const sky = makeSkyDome(); scene.add(sky);
+  // [하늘 엔진] skySystem은 pos 초기화 이후 생성(getPos가 pos 참조). SUN_DIST=기존 태양 거리(√(34²+58²+20²)≈70).
+  // applyPose가 이 거리를 getSunDir() 방향으로 곱해 태양을 배치 → 하늘 그림의 해·달 방위와 조명 방향 일치.
+  let skySystem = null;
+  const SUN_DIST = 70;
 
   // 물 잔물결 텍스처(자작 소형·자기완결 — space-render waterTexGen 비공개라 라이브 공유파일
   // 무수정 위해 world.js에 소형 자작). 가로 정수배 사인이라 타일 이음새 연속 → update에서
@@ -401,7 +410,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   function applyPose() {
     // [복셀스] 태양·스카이돔 플레이어 추종 — 모든 렌더 경로(walk/renderOnce/setPosition)에서 조명 정합.
-    sun.position.set(pos.x + 34, 58, pos.z + 20);
+    // [하늘 엔진] 태양 방향은 sky.js getSunDir()가 결정(그림 속 해·달 방위와 빛 방향 일치). 거리·플레이어 추종은 유지.
+    if (skySystem) {
+      const sd = skySystem.getSunDir();
+      sun.position.set(pos.x + sd.x * SUN_DIST, sd.y * SUN_DIST, pos.z + sd.z * SUN_DIST);
+    } else {
+      sun.position.set(pos.x + 34, 58, pos.z + 20);
+    }
     sun.target.position.set(pos.x, 0, pos.z); sun.target.updateMatrixWorld();
     sky.position.set(pos.x, 0, pos.z);
     camera.position.set(pos.x, pos.y, pos.z);
@@ -426,6 +441,20 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const ddx = pos.x - shadowBakeAt.x, ddz = pos.z - shadowBakeAt.z;
     if (ddx * ddx + ddz * ddz > 64) requestShadowBake(); // 8m² = 64
   }
+
+  // [하늘 엔진] 생성 — sun/hemi/sky 주입. 생성자가 돔을 고해상 구로 교체하고 set(day/clear,{fade:0})을
+  // 내부 수행하며 조명·fog·clearColor를 덮는다(world.js 고정 fog/clearColor는 초기 프레임용, 덮여도 무방 — 지시 §작업1-4).
+  // soft: 소프트웨어 렌더는 크로스페이드 스냅·저해상 돔·강수 입자 축소(sky.js 내부 분기).
+  // [P1 교차리뷰] onApply=섀도 리베이크 훅 — 섀도 프리즈(autoUpdate=false)라 神 모드/URL로 시간대·날씨를
+  // 바꿔 태양 방위가 바뀌어도 8m 걷기 전엔 그림자가 옛 방향에 고착된다. sky.js set() 완료 시 onApply가
+  // requestShadowBake()를 호출해 다음 프레임 1회 재베이크 → 조명-그림자 방위 즉시 정합(회귀 방어).
+  // requestShadowBake/shadowBakeAt 선언 이후에 생성해야 초기 set(fade0)의 즉시 onApply가 TDZ를 피한다.
+  skySystem = createSkySystem({
+    scene, renderer, sun, hemi, sky,
+    getPos: () => ({ x: pos.x, z: pos.z }),
+    soft: gpuInfo.soft,
+    onApply: () => requestShadowBake(),
+  });
 
   // ── 스트리밍: 현재 파셀 3×3. 직교 인접(맨해튼≤1)=풀디테일, 대각=shell 임포스터. ──
   function updateStreaming() {
@@ -598,6 +627,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 카메라 y를 groundY 추종(계단·강 경사 부드럽게). 태양·스카이 추종은 applyPose 안.
     pos.y += ((groundY + EYE) - pos.y) * Math.min(1, GROUND_LERP_RATE * d);
     applyPose();
+    if (skySystem) skySystem.update(d); // [하늘 엔진] 크로스페이드·강수·오로라·번개 진행(조명·clearColor 갱신)
     maybeRebakeShadow(); // [섀도 프리즈] 8m 이동 시 그림자 재베이크(태양 추종 정합)
     stepNpcs(d);
     stepWalkers(d); // 거리 배회 NPC 앰비언트 시뮬
@@ -652,6 +682,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   return {
     walk, update, renderOnce, resize, lookDelta,
+    sky: skySystem, // [하늘 엔진] 신 모드 패널이 set()/get()으로 시간대·날씨·이벤트 제어
+    getSkyState: () => (skySystem ? skySystem.get() : null),
     setTouchMove: (fwd, right) => { tmov.fwd = fwd || 0; tmov.right = right || 0; },
     setKey: (k, v) => { keys[String(k).toLowerCase()] = !!v; recomputeKeyMove(); },
     getPosition: () => pos.clone(),
@@ -678,7 +710,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       }
       if (mp) { mp.dispose(); mp = null; }
       for (const k of Array.from(loaded.keys())) unloadParcel(k);
-      // [복셀스] 하늘·바다·공유 재질 회수
+      // [하늘 엔진] 강수·무지개·오로라·페이드돔·교체된 고해상 돔 지오/텍스처 회수(sky 돔 자식 fadeDome 포함).
+      if (skySystem) { skySystem.dispose(); skySystem = null; }
+      // [복셀스] 하늘·바다·공유 재질 회수(skySystem이 교체·소유한 지오/맵은 이미 dispose됨 — 재호출은 무해 idempotent)
       scene.remove(sky); sky.geometry.dispose(); if (sky.material.map) sky.material.map.dispose(); sky.material.dispose();
       scene.remove(sea); seaGeo.dispose();
       if (T.water.map) T.water.map.dispose(); // 물결 텍스처(재질 dispose는 map 미회수)
