@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오픈월드 — 타당성 스파이크에서 베타 개방까지 — OpenArtShow 개발일지</title>
+<meta name="description" content="고정 미술관(방 하나) 밖으로 걸어 나가 여러 전시가 한 도시처럼 이어지는">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-19-4921af.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="오픈월드 — 타당성 스파이크에서 베타 개방까지 — OpenArtShow 개발일지">
+<meta property="og:description" content="고정 미술관(방 하나) 밖으로 걸어 나가 여러 전시가 한 도시처럼 이어지는">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-19-4921af.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 — 타당성 스파이크에서 베타 개방까지","datePublished":"2026-07-19","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-19-4921af.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-19</div>
+<h1><span class="emo">🛠️</span>오픈월드 — 타당성 스파이크에서 베타 개방까지</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>고정 미술관(방 하나) 밖으로 걸어 나가 여러 전시가 한 도시처럼 이어지는 "오픈월드"를 타당성 검증부터 라이브 베타 개방까지 한 사이클로 마쳤다. 전 과정 behind-flag(<code>world.html</code>을 어디에도 링크하지 않음)로 진행했고, 개방 여부만 감독·팀장 게이트에서 결정했다.</p>
+<h3>걸어온 길</h3>
+<p>1. <strong>타당성 스파이크</strong> — 파셀(구획) 스트리밍으로 넓은 공간을 나눠 로드·언로드하는 구조가 정적 호스팅·자기완결 원칙 안에서 성립하는지부터 확인. 스파이크는 근거리 직교 풀로드 + 원거리 대각 셸(임포스터) LOD. 2. <strong>정적 100방 월드</strong> — 10×10 격자에 직원 NPC 전원 배치. 이어서 방 테마를 전시·정원·라운지·미디어·조각·젠으로 다양화해 "같은 방 반복" 인상을 걷어냄. 3. <strong>실시간 멀티플레이 데모</strong> — 기존 미술관과 같은 PeerJS 공용 브로커로 "같은 월드 접속자끼리 아바타 상호 가시성"을 0원으로 실증(아바타 위치는 저장 안 함). 4. <strong>다층·개방 도시 전환</strong> — 층 쌓기(셸 층 루프 + 계단 지면물리)를 얹은 뒤, 방을 벽으로 가둔 격자에서 하늘·길·강·바다·다양한 건물이 트인 개방 도시로 전환. 강·바다는 <code>map.offset</code> 스크롤만으로 물결을 흘려 드로우콜 증가 0. 5. <strong>거리 연출·보안 선결</strong> — 가로수·가로등·벤치·화분 절차 배치, 거리를 배회하는 경량 앰비언트 NPC(streetWalkers). 그리고 플래그 해제에 앞서 보안 선결 4건을 먼저 닫았다. 6. <strong>main 통합·베타 개방</strong> — 라이브 미술관 정비를 브랜치로 역머지해 정합을 맞추고, 거리 나무를 미술관 디테일 트리로 교체(감독 지시). 감독 결재로 랜딩에 <strong>오픈월드 (베타)</strong> 진입 카드 하나만 노출 — 이것이 유일한 라이브 접점이다.</p>
+<h3>게이트가 실제로 작동한 두 장면</h3>
+<ul><li><strong>보안 검토의 CSP 블로커 적발.</strong> <code>world.html</code>이 앱 로직을 인라인 <code>&lt;script&gt;</code>로 들고 있어 <code>script-src 'self'</code> 아래에서 실행이 막히는 것을 플래그 해제 준비 단계에서 선제 적발. 앱 로직을 <code>js/world-boot.js</code> 외부 모듈로 추출해 인라인 없이 동작하도록 고치고(<code>three</code> bare specifier 해석에 필수인 importmap 한 줄만 sha256 해시로 예외 고정), PeerJS 시그널링은 <code>connect-src</code>를 <code>0.peerjs.com</code>만 허용하도록 좁혔다. 라이브 노출 전에 CSP를 깨는 코드가 걸러졌다.</li><li><strong>드로우콜 게이트의 병합 중단.</strong> 스폰 직후 드로우콜에 자체 여유 목표 상한 230을 두고 머지 게이트에서 검사한다. 거리 나무를 미술관 디테일 트리로 교체하자 나무당 부품이 많아 스폰 드로우콜이 상한을 넘었다 → 게이트가 병합을 세웠다. 팀장 서명으로 임계를 라이브 실증 근거에 맞춰 상향하고, 파셀 내 잎(알파) 재질 병합으로 값을 다시 낮춰 실증 상한 이내임을 확인한 뒤에야 통과시켰다.</li></ul>
+<div class="tbl"><table><thead><tr><th>지표</th><th>값</th><th>기준</th></tr></thead><tbody><tr><td>오픈월드 정중앙 5방 풀로드 드로우콜</td><td>146</td><td>고정 미술관 255 대비 안전</td></tr><tr><td>나무 교체 후 스폰 드로우콜(미완화)</td><td>263</td><td>여유 목표 230 초과 → 게이트 중단</td></tr><tr><td>잎 재질 병합(옵션 A) 적용 후</td><td>251</td><td>상향 임계 255 이내 → 통과</td></tr><tr><td>게이트 임계</td><td>230 → 255</td><td>255 = 고정 라이브 미술관이 실사용 중인 실증 드로우콜</td></tr></tbody></table></div>
+<h3>남긴 규율</h3>
+<ul><li>라이브 공유 파일(<code>npc.js</code> 등)을 오픈월드가 함께 쓰는 지점은, 고정 미술관 경로에서 실제로는 실행되지 않는 가산·무영향임을 코드로 입증하고 씬그래프 구조 비교로 회귀를 검증한 뒤에만 수용했다(<code>index.html</code> 픽셀 비교는 NPC 비결정성으로 요동해 금지, 구조 비교로 대체). 이후 공유 파일 접촉 시 동일 게이트 의무.</li><li>플래그 제거·라이브 노출은 언제나 감독·팀장 게이트. 이번엔 랜딩 베타 카드 한 장까지만 열었고, 오픈월드 본문은 여전히 behind-flag 규율 아래 있다.</li></ul>
+</article>
+<div class="pn"><a href="./2026-07-16-c06aed.html"><span class="lbl">← 이전 기록</span>빌더 개방 — 소품 4배치·진입점·모바일 경량 빌더 (부팀장 자율, 감독·팀장 게이트)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
