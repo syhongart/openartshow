@@ -20,6 +20,10 @@ import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, 
 import { PART_TYPES } from './space.js';
 import { createAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
+// [나무 교체] 거리 가로수를 미술관과 동일한 디테일 트리로. scene.js(계열 A)에서 순수 export
+// 가산한 트리 빌더·머티리얼별 병합을 재사용(로직 복제 0). 공유 재질(sharedTreeMats)은 scene.js
+// 모듈 클로저 소유라 파셀 언로드에서 dispose하지 않는다(병합 지오만 own 배열로 회수).
+import { buildDetailedTree, bakeGroupByMaterial } from './scene.js';
 import { PEER_ROOM_ID, EYE_HEIGHT } from './config.js';
 import { MultiplayerManager } from './multiplayer.js';
 
@@ -115,16 +119,12 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     bridge: new THREE.MeshStandardMaterial({ color: 0x8a7a64, roughness: 0.9, metalness: 0 }),
     water: new THREE.MeshStandardMaterial({ color: 0x3f6f8f, roughness: 0.32, metalness: 0.12, transparent: true, opacity: 0.92 }),
     // 거리 가구 공유 재질 — 파스텔 중채도(치비 세계관). dispose()에서 일괄 회수.
-    treeTrunk: new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.95, metalness: 0 }),
-    treeCanopy: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 }), // instanceColor로 톤 틴트
+    // (가로수 수피/잎 재질은 scene.js sharedTreeMats가 소유 — 여기서 만들지 않는다.)
     lampPost: new THREE.MeshStandardMaterial({ color: 0x353842, roughness: 0.6, metalness: 0.3 }), // 진회색 기둥
     lampHead: new THREE.MeshStandardMaterial({ color: 0x6b5836, roughness: 0.5, metalness: 0.2, emissive: 0xffcf8a, emissiveIntensity: 0.8 }), // 웜톤 갓(실제 THREE.Light 0 — 라이브 규율 계승)
     benchWood: new THREE.MeshStandardMaterial({ color: 0x9a8461, roughness: 0.85, metalness: 0 }),
     planterVC: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }), // 테라코타 화분 + 녹색 관목(정점색)
   };
-  // 캐노피 톤 — 채도 낮은 녹색 2~3톤(잔디 0x7fa46a보다 진하게). setColorAt으로 인스턴스별 지정.
-  const CANOPY_TONES = [new THREE.Color(0x4c6b42), new THREE.Color(0x3d5a36), new THREE.Color(0x5f7d4e)];
-
   // 거리 가구 공유 지오메트리(파셀 간 재사용 — InstancedMesh/개별 Mesh가 참조). createWorld dispose에서 회수.
   const paintGeo = (g, hex) => {
     const c = new THREE.Color(hex), n = g.attributes.position.count, arr = new Float32Array(n * 3);
@@ -132,10 +132,6 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
   };
   const SG = (() => {
-    const trunk = new THREE.CylinderGeometry(0.16, 0.22, 2.0, 7); trunk.translate(0, 1.0, 0);
-    const cLo = new THREE.SphereGeometry(1.05, 10, 8); cLo.scale(1, 0.82, 1); cLo.translate(0, 2.5, 0);
-    const cHi = new THREE.ConeGeometry(0.82, 1.3, 9); cHi.translate(0, 3.42, 0);
-    const canopy = mergeGeometries([cLo, cHi]); cLo.dispose(); cHi.dispose();
     const lampPost = new THREE.CylinderGeometry(0.06, 0.09, 3.0, 8); lampPost.translate(0, 1.5, 0);
     const lampHead = new THREE.SphereGeometry(0.22, 10, 8); lampHead.scale(1, 0.8, 1); lampHead.translate(0, 3.06, 0);
     const seat = new THREE.BoxGeometry(1.4, 0.09, 0.44); seat.translate(0, 0.45, 0);
@@ -145,28 +141,43 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const pot = new THREE.CylinderGeometry(0.28, 0.2, 0.42, 12); pot.translate(0, 0.21, 0);
     const bush = new THREE.SphereGeometry(0.3, 10, 8); bush.scale(1, 0.92, 1); bush.translate(0, 0.62, 0);
     const planter = mergeGeometries([paintGeo(pot, 0x9a5b43), paintGeo(bush, 0x4c6b42)]); pot.dispose(); bush.dispose();
-    return { trunk, canopy, lampPost, lampHead, bench, planter };
+    return { lampPost, lampHead, bench, planter };
   })();
-  const _tmpM = new THREE.Matrix4(), _tmpC = new THREE.Color();
 
   // 거리 가구 배치 배열(def.street) → 렌더 Mesh + solid AABB(같은 데이터 파생 = 렌더-물리 정합).
   // shellOnly(대각 임포스터) 파셀은 생략(원거리 draw call 절약). 반환: 회수 대상 Mesh 배열.
-  function buildStreet(street, group, ox, oz, solids) {
+  function buildStreet(street, group, ox, oz, solids, own) {
     const meshes = [];
+    // 가로수 — 미술관과 동일한 디테일 트리(scene.js buildDetailedTree: 수피 텍스처 + 재귀 가지
+    // + 알파 잎 클러스터). 나무당 부품이 많아 그대로 두면 드로우콜이 폭발하므로, 파셀의 전 그루를
+    // 한 forest 그룹에 모아 월드 변환을 굽고 머티리얼별(수피 1 + 잎 최대 3)로 병합한다
+    // (scene.js 숲 병합 기법 재사용). 병합 지오는 파셀 소유 → own에 담아 언로드에서 dispose.
     const trees = street.filter((s) => s.kind === 'tree');
     if (trees.length) {
-      const trunkIM = new THREE.InstancedMesh(SG.trunk, T.treeTrunk, trees.length);
-      const canopyIM = new THREE.InstancedMesh(SG.canopy, T.treeCanopy, trees.length);
+      const forest = new THREE.Group();
       trees.forEach((s, i) => {
-        _tmpM.makeTranslation(ox + s.x, 0, oz + s.z);
-        trunkIM.setMatrixAt(i, _tmpM); canopyIM.setMatrixAt(i, _tmpM);
-        canopyIM.setColorAt(i, _tmpC.copy(CANOPY_TONES[(s.tone | 0) % 3]));
+        // 외형·회전 시드 결정론(파셀 오프셋 ⊕ 인덱스) — 모든 방문자 동일 세계(무저장 규율).
+        const tseed = (((ox * 73856093) ^ (oz * 19349663) ^ ((i + 1) * 83492791)) >>> 0);
+        const dt = buildDetailedTree(tseed, { trunkLen: 2.6, trunkRad: 0.22, maxLevel: 2, leafScale: 0.85 });
+        dt.position.set(ox + s.x, 0, oz + s.z);
+        dt.rotation.y = (tseed % 6283) / 1000; // 0~2π 결정론
+        forest.add(dt);
         solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.25, ez: 0.25, bottom: 0, top: 2.0 }); // 줄기 충돌
       });
-      trunkIM.castShadow = true; canopyIM.castShadow = true;
-      trunkIM.instanceMatrix.needsUpdate = true; canopyIM.instanceMatrix.needsUpdate = true;
-      if (canopyIM.instanceColor) canopyIM.instanceColor.needsUpdate = true;
-      group.add(trunkIM, canopyIM); meshes.push(trunkIM, canopyIM);
+      // 드로우콜 절감: 파셀 내 잎(알파 재질)을 단일 참조로 통일 → bakeGroupByMaterial의 잎 버킷
+      // 3→1(파셀당 나무 = 수피 1 + 잎 1). 파셀 간·나무 간 형태 다양성은 시드로 유지되고, 잎 색 변주만
+      // 파셀 내에서 단일화(원경 가로수라 손실 미미). scene.js 무접촉 — 공유 잎 재질(sharedTreeMats)의
+      // 참조를 world.js가 좁힐 뿐이라 미술관 나무는 3종 유지(팀장 서명: 옵션 A).
+      let leafMat = null;
+      forest.traverse((o) => {
+        if (o.isMesh && o.material && o.material.alphaTest > 0) { // 잎(alphaTest 0.35) — 수피(bark)는 alphaTest 없음
+          if (!leafMat) leafMat = o.material; else o.material = leafMat;
+        }
+      });
+      // 파셀 단위 재질별 병합 → 파셀당 수피 1 + 잎 1 드로우콜(나무 그루수와 무관).
+      for (const m of bakeGroupByMaterial(forest)) {
+        group.add(m); meshes.push(m); own.push(m.geometry); // 병합 지오 = 파셀 소유(언로드 dispose)
+      }
     }
     for (const s of street) {
       if (s.kind === 'lamp') {
@@ -280,7 +291,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     }
     // 거리 가구 — 풀디테일 파셀만(대각 shell 임포스터는 생략). 배치·solid 동일 데이터 파생.
     let streetMeshes = null;
-    if (!shellOnly && def.street && def.street.length) streetMeshes = buildStreet(def.street, group, ox, oz, solids);
+    if (!shellOnly && def.street && def.street.length) streetMeshes = buildStreet(def.street, group, ox, oz, solids, own);
     // 거리 배회 NPC — 풀디테일 파셀 + 총원 ≤6. 라벨 없음(빈 닉네임 규약). 외형 시드 결정론.
     let walker = null;
     if (!shellOnly && def.walker && walkerTotal() < 6) {
@@ -302,11 +313,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (L.walker) { scene.remove(L.walker.inst.group); L.walker.inst.dispose(); } // 거리 배회 NPC 정리(씬 잔존 0)
     scene.remove(L.group);
     if (L.bldGroup) disposeSpaceGroup(L.bldGroup);
-    // 거리 가구 정리: 씬 그래프에서 떼는 건 group.remove(아래 scene.remove(L.group)이 부모째 제거).
-    // dispose 자체는 사실상 no-op에 가깝다 — 개별 Mesh(lamp/bench/planter)는 Object3D라 dispose 메서드가 없어
-    // 가드로 건너뛰고, InstancedMesh.dispose()는 공유 지오(SG)·재질(T)을 건드리지 않고 인스턴스 속성 GPU 버퍼
-    // (instanceMatrix/instanceColor)만 정리한다. 스트리밍 재로드 규모가 작아 이 미미한 잔여는 수용(공유 자원은
-    // createWorld dispose에서 일괄 회수). 정확히는 InstancedMesh dispose만 의미가 있고 그마저 경미.
+    // 거리 가구/가로수 정리: 씬 그래프에서 떼는 건 scene.remove(L.group)이 부모째 처리.
+    // 병합 나무 메시·개별 가구(lamp/bench/planter)는 THREE.Mesh(Object3D)라 dispose 메서드가 없어
+    // 아래 루프는 no-op 가드로 건너뛴다 — 나무 병합 BufferGeometry는 파셀 소유라 L.own에서 dispose하고,
+    // 가구 공유 지오(SG)·재질(T·나무 sharedTreeMats)은 파셀 간 공유라 여기서 건드리지 않는다(createWorld dispose 일괄).
     if (L.streetMeshes) for (const sm of L.streetMeshes) if (sm.dispose) sm.dispose();
     for (const g of L.own) g.dispose(); // 파셀 소유 지오(공유 재질 T는 dispose에서 일괄)
     loaded.delete(k);
