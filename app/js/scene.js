@@ -1623,7 +1623,9 @@ function sharedTreeMats() {
 
 // 그룹의 모든 메시를 월드 변환으로 구워 머티리얼별 병합 메시로 반환.
 // 나무처럼 "많은 부품 × 공유 재질" 정적 구조 전용 — 원본 그룹은 버린다.
-function bakeGroupByMaterial(group) {
+// [순수 export 가산] world.js(오픈월드, 계열 B)가 거리 나무 파셀 병합에 재사용
+// (northArt 전례와 동형: export 외 동작 변경 0). docs/OPENWORLD.md 수용 기록 참조.
+export function bakeGroupByMaterial(group) {
   group.updateMatrixWorld(true);
   const buckets = new Map();
   group.traverse((o) => {
@@ -1642,7 +1644,9 @@ function bakeGroupByMaterial(group) {
 }
 
 // 재귀 분기 나무: level이 깊어질수록 가늘고 짧아지며, 말단에 잎 클러스터
-function buildDetailedTree(seed, opts) {
+// [순수 export 가산] world.js(오픈월드, 계열 B)가 거리 가로수로 재사용
+// (sharedTreeMats·bark/leaf 재질 함수는 이 모듈 클로저로 딸려옴 — 추가 export 불필요).
+export function buildDetailedTree(seed, opts) {
   const rand = makeRand(seed);
   const { bark: barkMat, leaves: leafMats } = sharedTreeMats();
   const maxLevel = opts.maxLevel;

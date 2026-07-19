@@ -366,6 +366,65 @@
     color: var(--ink-body);
   }
 
+  /* ---------- 오픈월드 진입 (베타) ---------- */
+  .ow-card {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-top: 34px;
+    padding: 22px 26px;
+    background: var(--surface-dark-1);
+    border: 1px solid var(--border-dark);
+    border-radius: var(--r-card);
+    color: var(--ink);
+    transition: transform 0.5s var(--spring-fallback), box-shadow 0.4s ease, border-color 0.4s ease;
+  }
+  .ow-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--cyan-500);
+    box-shadow: var(--shadow-card-hover);
+  }
+  .ow-badge {
+    flex: none;
+    align-self: flex-start;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--bg-dark);
+    background: var(--cyan-500);      /* 상태·라이브 역할 = 시안(§3-2) */
+    padding: 4px 9px;
+    border-radius: var(--r-card);
+  }
+  .ow-body { flex: 1 1 auto; min-width: 0; }
+  .ow-body h3 {
+    margin: 0 0 5px;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .ow-body p {
+    margin: 0;
+    font-size: var(--fs-body);
+    line-height: var(--lh-body);
+    color: var(--ink-body);
+  }
+  .ow-enter {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: var(--cyan-500);
+  }
+  .ow-enter svg { width: 22px; height: 22px; transition: transform 0.4s var(--spring-fallback); }
+  .ow-card:hover .ow-enter svg { transform: translateX(4px); }
+  @media (max-width: 720px) {
+    .ow-card { gap: 14px; padding: 18px 18px; margin-top: 26px; }
+    .ow-body h3 { font-size: 17px; }
+  }
+
   /* ---------- Exhibitions ---------- */
   .exhibitions {
     background: var(--bg-dark); /* 다크 앵커 — home.html #exhibitions와 동일(별도 면 없이 카드로 구조화) */
@@ -892,6 +951,18 @@
         </div>
 
       </div>
+
+      <!-- 오픈월드 (베타) 진입 — 의도된 라이브 노출(감독 결재). sitemap 미등록 유지. 링크는 배포 구조 기준(랜딩=루트, 앱=./app/). -->
+      <a class="ow-card reveal" href="./app/world.html" aria-label="오픈월드 베타 입장">
+        <span class="ow-badge">BETA</span>
+        <div class="ow-body">
+          <h3>오픈월드</h3>
+          <p>미술관 밖으로 —<br class="m-only"> 여러 전시가 늘어선 거리를 함께 걸어 보세요.</p>
+        </div>
+        <span class="ow-enter" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </span>
+      </a>
     </div>
   </section>
 
