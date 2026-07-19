@@ -33,6 +33,10 @@
   .hud-info .hint b{color:var(--ink);font-weight:600}
   .hud-info .pcell{margin-top:6px;font-size:11px;color:var(--cyan)}
 
+  /* 미니맵(우상단) */
+  .hud-map{top:16px;right:16px;padding:7px;line-height:0}
+  #minimap{display:block;width:128px;height:128px;opacity:.92}
+
   /* 클릭 유도 오버레이(데스크톱) */
   #enter{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;
     background:radial-gradient(120% 90% at 50% 40%, rgba(20,21,26,.35), rgba(10,10,14,.72));cursor:pointer;text-align:center;padding:24px}
@@ -74,55 +78,82 @@
   <div class="sub">WASD 이동 · 마우스로 시선 · 옆 방으로 걸어서 이동</div>
 </div>
 
+<div class="plate hud-map"><canvas id="minimap" width="128" height="128"></canvas></div>
+
 <div id="chat"></div>
 <div id="joy"><div class="nub" id="joyNub"></div></div>
 
 <script type="module">
-import { SPACE_PRESETS } from './js/space-presets.js';
-import { normalizeSpace } from './js/space.js';
-import { encodeChibi, randomChibiChar } from './js/chibi.js';
+import { genRoom } from './js/world-gen.js';
 import { createWorld } from './js/world.js';
 
-// ── 정적 파셀 2개(프리셋 재사용) — 공유 경계에 개구부. behind-flag 스파이크. ──
-// shell.entries는 space.js 가산 옵션(하위호환). withEntries가 프리셋 위에 얹는다.
-function withEntries(preset, entries) {
-  return normalizeSpace(Object.assign({}, preset.space, {
-    shell: Object.assign({}, preset.space.shell, { entries }),
-  }));
+// ── 월드 매니페스트 로드 → 절차생성 100방 구성 (behind-flag 1단계) ──
+// 방은 world-gen이 시드로 절차생성(결정론=모든 방문자 동일 세계), 개구부는 격자 경계로 자동 대칭.
+// NPC는 매니페스트 home 파셀에 소환. 이름표는 핸들/역할(모델 브랜드명 노출 금지 §6).
+// fetch 실패(404·파싱오류) 시 먹통+무피드백 방지 — 오버레이에 가시적 안내(release-reviewer 지적).
+let M;
+try {
+  const res = await fetch('./world/manifest.json');
+  if (!res.ok) throw new Error('manifest HTTP ' + res.status);
+  M = await res.json();
+} catch (e) {
+  const ov = document.getElementById('enter');
+  if (ov) { ov.classList.remove('hide'); ov.innerHTML = '<div class="big">월드를 불러오지 못했어요</div><div class="sub">잠시 후 새로고침해 주세요</div>'; }
+  throw e;
 }
-const spaceA = withEntries(SPACE_PRESETS[0], ['east']); // 미니멀 화이트 → 동쪽 문
-const spaceB = withEntries(SPACE_PRESETS[1], ['west']); // 금계 라운지 → 서쪽 문
+const grid = M.grid;
 
-// ── 직원 AI NPC(파셀 0,0에 소환). 이름표는 핸들/역할(모델 브랜드명 노출 금지 §6). ──
-const staff = [
-  { id: 'npc-ayamo', nickname: '아야모', color: '#7ec8a0', char: randomChibiChar(),
-    greetings: ['어서 오세요! 제가 안내할게요 ☺️', '반가워요~ 천천히 둘러보세요', '아야모예요! 같이 봐요'],
-    remarks: [(t) => `『${t}』, 이 방의 자랑이에요`, (t) => `『${t}』 앞에 서면 마음이 편해져요`, () => '여긴 언제 와도 좋아요 🌿'] },
-  { id: 'npc-lead', nickname: '팀장', color: '#8e7dbe', char: encodeChibi({ outfit: 'suit', hairStyle: 'short', glasses: true, top: '#39414f', bottom: '#2c3038' }),
-    greetings: ['둘러보시는군요. 편하게 보세요.', '안녕하세요.'],
-    remarks: [(t) => `『${t}』… 구성이 탄탄하네요`, (t) => `『${t}』 조명 각이 좋습니다`, () => '동선이 잘 잡혔네요'] },
-  { id: 'npc-deputy', nickname: '부팀장', color: '#6a8caf', char: encodeChibi({ hairStyle: 'bob', top: '#5468c4', bottomType: 'pants', bottom: '#39414f' }),
-    greetings: ['오세요~ 편하게 보시면 돼요', '안녕하세요!'],
-    remarks: [(t) => `『${t}』 디테일 보세요, 좋아요`, () => '이 방 마감이 깔끔하죠'] },
-];
+// remarks 템플릿 문자열 → 함수 (npc.js 계약: (t)=>string). greetings는 순수 문자열.
+const toRemarks = (arr) => (arr || []).map((tpl) => (t) => tpl.replace('{t}', t));
 
-const parcels = [
-  { px: 0, pz: 0, space: spaceA, npc: { roster: staff, count: staff.length } },
-  { px: 1, pz: 0, space: spaceB },
-];
+// NPC를 home 파셀 키로 그룹핑(같은 방 여러 명 = 한 crowd)
+const npcByHome = new Map();
+for (const n of M.npcs) {
+  const k = n.home[0] + ',' + n.home[1];
+  if (!npcByHome.has(k)) npcByHome.set(k, []);
+  npcByHome.get(k).push({ id: n.id, nickname: n.nickname, char: n.char, color: n.color, greetings: n.greetings, remarks: toRemarks(n.remarks) });
+}
+
+// 그리드 순회 → 파셀 100개(방=절차생성, entries=자동 대칭). spawn 파셀을 배열 선두로(world.js는 parcels[0]을 스폰 기준).
+const parcels = [];
+const [sx, sz] = M.spawn || [0, 0];
+for (let pz = 0; pz < grid.h; pz++) for (let px = 0; px < grid.w; px++) {
+  const space = genRoom(px, pz, M.seed, grid);
+  const roster = npcByHome.get(px + ',' + pz);
+  const parcel = roster ? { px, pz, space, npc: { roster, count: roster.length } } : { px, pz, space };
+  if (px === sx && pz === sz) parcels.unshift(parcel); else parcels.push(parcel);
+}
 
 const canvas = document.getElementById('c');
-// 셀 크기 = medium footprint 폭(9m) → 두 방의 경계 벽이 정확히 맞닿아 문끼리 정렬(스파이크 배치).
-const V = createWorld({ canvas, parcels, opts: { cell: 9, preserveDrawingBuffer: true } });
+const V = createWorld({ canvas, parcels, opts: { cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true } });
 window.__world = V;
 
 function fit() { V.resize(window.innerWidth, window.innerHeight); }
 window.addEventListener('resize', fit); fit();
 
-// 현재 파셀 표시
+// ── 미니맵(우상단) — 현재 셀 하이라이트 + NPC home 점 + 방문 셀 음영. 순수 2D 캔버스(CSP 무영향). ──
+const mmap = document.getElementById('minimap'), mctx = mmap.getContext('2d');
+const CPX = Math.floor(mmap.width / Math.max(grid.w, grid.h));
+const homes = new Set(M.npcs.map((n) => n.home[0] + ',' + n.home[1]));
+const visited = new Set();
+function drawMinimap() {
+  const p = V.getCurrentParcel();
+  visited.add(p.px + ',' + p.pz);
+  mctx.clearRect(0, 0, mmap.width, mmap.height);
+  for (let z = 0; z < grid.h; z++) for (let x = 0; x < grid.w; x++) {
+    const k = x + ',' + z, X = x * CPX, Y = z * CPX;
+    mctx.fillStyle = visited.has(k) ? 'rgba(114,230,225,.16)' : 'rgba(255,255,255,.05)';
+    mctx.fillRect(X + 1, Y + 1, CPX - 2, CPX - 2);
+    if (homes.has(k)) { mctx.fillStyle = 'rgba(139,114,255,.9)'; mctx.beginPath(); mctx.arc(X + CPX / 2, Y + CPX / 2, 2.2, 0, 7); mctx.fill(); }
+  }
+  mctx.strokeStyle = '#72E6E1'; mctx.lineWidth = 2;
+  mctx.strokeRect(p.px * CPX + 1, p.pz * CPX + 1, CPX - 2, CPX - 2);
+}
+
+// 현재 파셀 표시 + 미니맵 갱신
 const pcell = document.getElementById('pcell');
-function refreshCell() { const p = V.getCurrentParcel(); pcell.textContent = `파셀 (${p.px},${p.pz})`; }
-setInterval(refreshCell, 400);
+function refreshCell() { const p = V.getCurrentParcel(); pcell.textContent = `파셀 (${p.px},${p.pz}) · ${grid.w}×${grid.h} 월드`; drawMinimap(); }
+setInterval(refreshCell, 300); refreshCell();
 
 // 클릭 유도 오버레이
 const enter = document.getElementById('enter');

@@ -7,8 +7,8 @@
 // -----------------------------------------------------------------------------
 import { FOOTPRINT, PART_TYPES } from './space.js';
 
-// 북벽(z<0) 3작품 헬퍼
-const northArt = (z = -3.4) => ([
+// 북벽(z<0) 3작품 헬퍼 (world-gen.js 절차생성도 재사용 — export)
+export const northArt = (z = -3.4) => ([
   { t: 'artwork', x: -3.0, z, ry: 0, frame: 'minimal', src: '' },
   { t: 'artwork', x: 0.0, z, ry: 0, frame: 'minimal', src: '', featured: true },
   { t: 'artwork', x: 3.0, z, ry: 0, frame: 'minimal', src: '' },

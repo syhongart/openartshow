@@ -86,6 +86,23 @@
 - 문 통과: 파셀 0↔1 왕복 성공 / 문 밖(z=2.5) 동진 시 벽 clamp(파셀 0 유지) — 개구부·충돌 정확
 - 회귀: `visit.html`·`builder.html` 콘솔 에러 0
 
+## 1단계 구현 · 정적 10×10 = 100방 (2026-07-19)
+
+스파이크 위에 **손저작 없는 100방 세계**를 얹었다. 방은 시드 절차생성(결정론=무저장 유지), 개구부는 격자 경계로 자동 대칭, 직원 10명을 중앙 로비에 소환. 동시 로드는 여전히 **3×3(9방)뿐**이라 부하는 스파이크와 동일.
+
+**파일**:
+- `web/js/world.js` — CELL 스칼라 → **cellX/cellZ**(비정사각 셀). medium(9×7) 통일 시 cellX=9/cellZ=7로 벽 정합(북벽 월드z `pz*7-3.5` = 북쪽 이웃 남벽). `opts.cell` 폴백 유지(스파이크 무회귀).
+- `web/js/world-gen.js`(신규) — `mulberry32`/`cellSeed`(정수 해시, 브라우저 무관 결정론), `computeEntries`(격자 경계 자동 대칭 — A.east ⟺ 이웃 B.west 구조적 보장), `genRoom`(마감 192조합 + rng 가구 + 15% 랜드마크 프리셋 방, 방당 파츠 ~10-15).
+- `web/world/manifest.json`(신규) — grid 10×10, cell{9,7}, seed, spawn[4,4], **NPC 10명**(아야모 + 팀장·부팀장·실행[정규직 handle] + 법무팀·보안담당자·디자이너·카피라이터·성능 전문가·리서처[계약직 역할명]). char는 결정론 위해 고정 chibi 문자열, remarks는 `{t}` 템플릿.
+- `web/world.html` — 하드코딩 → `fetch('./world/manifest.json')` → `genRoom` 100파셀 + home NPC 그룹핑 → `createWorld({cellX,cellZ})`. **미니맵 HUD**(현재 셀·NPC home·방문 셀) 추가.
+- `web/js/space-presets.js` — `northArt` export(world-gen 재사용).
+
+**개구부 자동 대칭**: 100방 손저작 불가 → `computeEntries`가 격자 경계로 이웃 존재 방향을 산출해 `shell.entries`에 주입. "인접 쌍은 대응 방향 문을 함께 선언" 불변식(위 스키마 절)이 코드로 구조적 보장됨.
+
+**성능 논증**: `updateStreaming`은 현재 파셀 3×3만 순회 → 100방이든 10000방이든 동시 로드 최대 9방(맨해튼≤1 풀 5 + 대각 shell 4). 대각은 `shellOnly` 임포스터로 파츠 생략.
+
+**헤드리스 QA(swiftshader)**: 스폰 [4,4] 3×3=9방 로드 / NPC 5명(full 5방의 home — 대각 4방은 shell라 미스폰, 정확) / (9,9) 모서리 로드셋 4(≤9 상한) / 대각선 종주 (0,0)→(9,9) 에러 0 / 정중앙 5-full 드로우콜 **146**(고정 미술관 255 대비 안전) / 문 통과 [4,4]→[5,4] / `genRoom` 결정론 deep-equal / 미니맵 렌더 / 콘솔 에러 0. **회귀**: `index.html`(고정 미술관·npc.js 공유)·`visit.html`·`builder.html` 콘솔 에러 0.
+
 ## 리스크
 
 - **드로우콜**: 파셀 9개 풀로드 시 `ART_SCREEN_CAP=80` 초과 → `shellOnly` 임포스터 LOD로 완화(스파이크는 직교 풀/대각 shell).

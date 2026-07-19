@@ -5,14 +5,14 @@
 // 자체 완결 컨트롤러. visit.js의 검증된 이동·충돌 로직을 "여러 파셀(단칸 공간)을 그리드에
 // 타일링하고 인접분만 스트리밍"하도록 확장한다. "파라미터가 곧 공간"을 파셀 단위로 확장.
 //
-// 파셀 모델: 각 공간은 정수 그리드 좌표 (px,pz)에 놓인다. 월드 오프셋 = (px*CELL, 0, pz*CELL).
+// 파셀 모델: 각 공간은 정수 그리드 좌표 (px,pz)에 놓인다. 월드 오프셋 = (px*cellX, 0, pz*cellZ).
 //   이웃 참조는 저장하지 않고 (px±1, pz±1) 계산으로 조회(그리드의 핵심 이점).
 //   shell.entries(space.js 가산)에 든 방향 + 이웃 파셀 로드 시 문틀 통로로 통과 허용.
 //
 // createWorld({ canvas, parcels, opts }) → 스크립트 API(헤드리스 검증 가능):
 //   parcels: [{ px, pz, space, npc? }]  (npc: { roster, count } — 그 파셀에 직원 NPC 소환)
 //   walk/update/renderOnce/lookDelta/getPosition/getLoadedKeys/dispose/on ...
-//   opts.cell: 파셀 셀 크기(m, 기본 32). opts.headless: RAF·이벤트 바인딩 비활성.
+//   opts.cellX/cellZ: 축별 파셀 셀 크기(m). opts.cell: 정사각 폴백(기본 32). opts.headless: RAF·이벤트 바인딩 비활성.
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W } from './space-render.js';
@@ -41,7 +41,11 @@ function makeEnvMap(renderer) {
 
 export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const headless = !!opts.headless;
-  const CELL = opts.cell || 32;
+  // 비정사각 셀(cellX/cellZ) — 통일 footprint(medium 9×7)면 cellX=9,cellZ=7로 벽 정확 정합.
+  // opts.cell(스칼라) 폴백 유지 → 스파이크(createWorld({cell:9}))·정사각 그리드 무회귀.
+  const CELLX = opts.cellX || opts.cell || 32;
+  const CELLZ = opts.cellZ || opts.cell || 32;
+  const CELL_MAX = Math.max(CELLX, CELLZ); // fog 스케일 대표값
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
   renderer.setPixelRatio(Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
@@ -61,7 +65,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // 대기 원근(fog) — 파셀 스케일. 방들이 보이도록 near/far를 넉넉히.
   const FOG_COLOR = 0x20232b;
-  scene.fog = new THREE.Fog(FOG_COLOR, CELL * 0.9, CELL * 3.0);
+  scene.fog = new THREE.Fog(FOG_COLOR, CELL_MAX * 0.9, CELL_MAX * 3.0);
   scene.background = new THREE.Color(FOG_COLOR);
   renderer.setClearColor(FOG_COLOR, 1);
 
@@ -92,7 +96,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const k = keyOf(px, pz); const def = index.get(k); if (!def) return;
     const ex = loaded.get(k);
     if (ex) { if (ex.lod === lod) return; unloadParcel(k); } // LOD 변경 시 재로드
-    const ox = px * CELL, oz = pz * CELL;
+    const ox = px * CELLX, oz = pz * CELLZ;
     const shellOnly = lod === 'shell';
     const group = buildSpaceGroup(def.space, { shellOnly, onAsyncTex: () => { if (!disposed) renderOnce(); } });
     group.position.set(ox, 0, oz);
@@ -119,7 +123,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const first = parcels[0] || null;
   const pos = new THREE.Vector3(0, EYE, 0);
   let yaw = 0, pitch = 0;
-  if (first) { const s = first.space.spawn || { x: 0, z: 0, ry: 0 }; pos.set(first.px * CELL + (s.x || 0), EYE, first.pz * CELL + (s.z || 0)); yaw = s.ry || 0; }
+  if (first) { const s = first.space.spawn || { x: 0, z: 0, ry: 0 }; pos.set(first.px * CELLX + (s.x || 0), EYE, first.pz * CELLZ + (s.z || 0)); yaw = s.ry || 0; }
 
   function applyPose() {
     camera.position.set(pos.x, pos.y, pos.z);
@@ -128,7 +132,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     camera.lookAt(pos.x + dir.x, pos.y + dir.y, pos.z + dir.z);
   }
 
-  const currentParcel = () => ({ px: Math.round(pos.x / CELL), pz: Math.round(pos.z / CELL) });
+  const currentParcel = () => ({ px: Math.round(pos.x / CELLX), pz: Math.round(pos.z / CELLZ) });
 
   // ── 스트리밍: 현재 파셀 3×3. 직교 인접(맨해튼≤1)=풀디테일, 대각=shell 임포스터. ──
   function updateStreaming() {
@@ -154,10 +158,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
   // 파셀 경계 clamp — 벽 안쪽에 가두되, shell.entries 개구부 방향 + 이웃 로드 + 문 폭 범위면 통과.
   function clampPos(x, z) {
-    const px = Math.round(x / CELL), pz = Math.round(z / CELL);
+    const px = Math.round(x / CELLX), pz = Math.round(z / CELLZ);
     const L = loaded.get(keyOf(px, pz));
     if (!L) return { x, z }; // 로드 안 된 파셀 위(경계 넘는 순간) — 다음 프레임 이웃 파셀 기준으로 재판정
-    const ox = px * CELL, oz = pz * CELL, dims = L.dims;
+    const ox = px * CELLX, oz = pz * CELLZ, dims = L.dims;
     let lx = x - ox, lz = z - oz;
     const xlim = dims.hw - dims.t - RADIUS, zlim = dims.hd - dims.t - RADIUS;
     const entries = new Set(L.def.space.shell.entries || []);
