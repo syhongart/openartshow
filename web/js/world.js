@@ -5,9 +5,9 @@
 // 자체 완결 컨트롤러. visit.js의 검증된 이동·충돌 로직을 "여러 파셀(단칸 공간)을 그리드에
 // 타일링하고 인접분만 스트리밍"하도록 확장한다. "파라미터가 곧 공간"을 파셀 단위로 확장.
 //
-// 파셀 모델: 각 공간은 정수 그리드 좌표 (px,pz)에 놓인다. 월드 오프셋 = (px*cellX, 0, pz*cellZ).
-//   이웃 참조는 저장하지 않고 (px±1, pz±1) 계산으로 조회(그리드의 핵심 이점).
-//   shell.entries(space.js 가산)에 든 방향 + 이웃 파셀 로드 시 문틀 통로로 통과 허용.
+// 파셀 모델(복셀스): 파셀 = 하늘 아래 대지. 정수 그리드 (px,pz), 월드 오프셋 = (px*cellX, 0, pz*cellZ).
+//   대지 중앙부에 건물(footprint·층고·층수 자유), 가장자리는 길. 이동은 개방(월드 소프트 클램프만),
+//   건물 벽 = solid 세그먼트(computeShellSolids, 문 구간 비움) → 출입은 문으로만.
 //
 // createWorld({ canvas, parcels, opts }) → 스크립트 API(헤드리스 검증 가능):
 //   parcels: [{ px, pz, space, npc? }]  (npc: { roster, count } — 그 파셀에 직원 NPC 소환)
@@ -45,7 +45,7 @@ function makeEnvMap(renderer) {
 
 export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const headless = !!opts.headless;
-  // 비정사각 셀(cellX/cellZ) — 통일 footprint(medium 9×7)면 cellX=9,cellZ=7로 벽 정확 정합.
+  // 비정사각 셀(cellX/cellZ) — 복셀스 개방 도시는 정사각 24×24(셀 > 건물 → 가장자리가 길).
   // opts.cell(스칼라) 폴백 유지 → 스파이크(createWorld({cell:9}))·정사각 그리드 무회귀.
   const CELLX = opts.cellX || opts.cell || 32;
   const CELLZ = opts.cellZ || opts.cell || 32;
@@ -123,6 +123,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
           const sx = x + (horiz ? s * off : 0), sz = z + (horiz ? 0 : s * off);
           out.push({ x: cx + sx, z: cz + sz, ex: (horiz ? side : thick) / 2, ez: (horiz ? thick : side) / 2, bottom: 0, top: totalH });
         }
+        // [다층] 문은 지면층(f=0)에만 렌더됨(buildSpaceGroup) — 문 상공의 상층 벽(H~totalH)을 물리에도 복제(렌더-물리 정합, 검증 MINOR).
+        if (dims.floors > 1) out.push({ x: cx + x, z: cz + z, ex: (horiz ? DOOR_W : thick) / 2, ez: (horiz ? thick : DOOR_W) / 2, bottom: dims.H, top: totalH });
       } else {
         out.push({ x: cx + x, z: cz + z, ex: ww / 2, ez: dd / 2, bottom: 0, top: totalH });
       }
@@ -281,7 +283,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     return best;
   }
 
-  // ── 충돌 (1) 파셀 경계 clamp + 개구부 통과 (2) solid 파츠 AABB ──
+  // ── 충돌 — solid AABB(파츠 + 건물 벽 세그먼트). 개방 세계라 파셀 경계 clamp 없음. ──
   function blocked(x, z) {
     for (const L of loaded.values()) for (const b of L.solids) {
       if (b.top <= groundY + STEP_OVER) continue;   // 현재 발높이 기준 걸림턱(바닥타일 통과)
@@ -292,6 +294,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
   /** [복셀스] yaw 기준 전/우 이동 — 개방 세계: 월드 소프트 클램프 + 벽·파츠 solid 충돌(축분리 슬라이딩). */
   function walk(fwdAmt, rightAmt, dt) {
+    dt = Math.min(0.05, Math.abs(dt) || 0); // 공개 API 보호: 큰 dt로 벽 터널링 방지(RAF 경로와 동일 클램프 — 검증 MINOR)
     const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
     let dx = fwdAmt * fx + rightAmt * rx, dz = fwdAmt * fz + rightAmt * rz;
     const len = Math.hypot(dx, dz);

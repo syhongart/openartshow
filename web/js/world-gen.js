@@ -45,7 +45,7 @@ const pickR = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
 const chance = (rng, p) => rng() < p;
 
 // ── 테마 — finish 팔레트 + furnish(rng, parts, d). 좌표는 dims 기반(footprint 자유).
-// d = { hw, hd, artZ, cx, cz, southOk }  (cx/cz=코너존, southOk=남쪽 대형가구 허용 폭)
+// d = { hw, hd, cx, cz, southOk }  (cx/cz=코너존, southOk=남쪽 대형가구 허용 폭)
 // 남문 통로 x∈[-1.3,1.3]은 남쪽 절반(z>0)에서 solid 금지 — cx≥1.5 보장, 대형은 southOk 가드.
 const THEMES = [
   {
@@ -172,7 +172,7 @@ export function genParcel(px, pz, seed, grid, cell = { x: 24, z: 24 }) {
   };
   const artZ = -(hd - 0.1);              // 북벽 벽걸이(footprint 무관)
   const ax = Math.min(3, fw / 3);        // 작품 x 간격
-  const d = { hw, hd, artZ, cx: hw - 1.3, cz: hd - 1.3, southOk: hw >= 3.5 };
+  const d = { hw, hd, cx: hw - 1.3, cz: hd - 1.3, southOk: hw >= 3.5 };
 
   const parts = [
     { t: 'artwork', x: -ax, z: artZ, ry: 0, frame: 'minimal', src: '' },
