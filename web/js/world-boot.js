@@ -144,23 +144,25 @@ if (isTouch) {
   canvas.addEventListener('touchend', (e) => { for (const t of e.changedTouches) { if (t.identifier === lookId) lookId = null; } });
 }
 
-// ── 神 모드 연출 패널(감독 전용) — 하늘 시간대/날씨/이벤트/광과민성 제어 + URL 초기 하늘 ──
+// ── 神 모드 연출 패널(전체 공개 — 감독 결재 2026-07-19) — 하늘 시간대/날씨/이벤트/광과민성 제어 + URL 초기 하늘 ──
+// 방문자 누구나 조작 가능. 변경은 자기 화면(로컬 렌더)에만 적용되어 타 방문자 무영향.
 // V.sky = sky.js skySystem(set/get). 조합 보정(무지개=주간·일몰 맑음, 오로라=야간 맑음 등)은 sky.js가
 // 내부 강제하므로 UI는 요청만 보내고 반영 결과는 get()으로 되읽어 활성 표시(요청≠반영 드리프트 방지).
 const SKY = V.sky;
 if (SKY) {
   // URL 초기 하늘: ?sky=sunset&weather=rain&fx=aurora,rainbow — 화이트리스트 밖 값은 무시(보안: 무검증 반영 금지).
+  // 서비스 기본 하늘 = 야간 맑음(은하수·별·달 — 감독 확정 2026-07-19). URL 파라미터가 있으면 그것이 우선.
   const q = new URLSearchParams(location.search);
   const qTime = q.get('sky'), qWeather = q.get('weather');
   const qFx = (q.get('fx') || '').split(',').map((s) => s.trim());
-  const init = {};
+  const init = { time: 'night', weather: 'clear' };
   if (SKY_TIMES.includes(qTime)) init.time = qTime;
   if (SKY_WEATHERS.includes(qWeather)) init.weather = qWeather;
   const initFx = {};
   if (qFx.includes('rainbow')) initFx.rainbow = true;
   if (qFx.includes('aurora')) initFx.aurora = true;
   if (Object.keys(initFx).length) init.fx = initFx;
-  if (Object.keys(init).length) SKY.set(init, { fade: 0 }); // 첫 진입은 스냅(크로스페이드 없이 즉시)
+  SKY.set(init, { fade: 0 }); // 첫 진입은 스냅(크로스페이드 없이 즉시)
 
   const panel = document.getElementById('godPanel');
   const toggle = document.getElementById('godToggle');

@@ -69,8 +69,8 @@
   .is-touch #enter{display:none}
   .is-touch #joy{display:block}
 
-  /* 神 모드 연출 패널(우하단) — 감독 전용 하늘 제어. HUD .plate 계열과 통일, 접이식. */
-  /* z-index 40 — 클릭 유도 오버레이(#enter z30) 위에 떠서 포인터락 해제 상태에서도 조작 가능(감독 상시 접근). */
+  /* 神 모드 연출 패널(우하단) — 전체 공개 하늘 제어(감독 결재, 로컬 렌더 전용). HUD .plate 계열과 통일, 접이식. */
+  /* z-index 40 — 클릭 유도 오버레이(#enter z30) 위에 떠서 포인터락 해제 상태에서도 조작 가능. */
   .god{right:16px;bottom:16px;z-index:40;padding:0;overflow:hidden;max-width:min(92vw,300px)}
   .god-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:11px 15px;background:none;border:0;color:var(--ink);
     font-family:var(--app);font-size:13px;font-weight:700;letter-spacing:-.01em;cursor:pointer}
@@ -114,7 +114,7 @@
 <div id="chat"></div>
 <div id="joy"><div class="nub" id="joyNub"></div></div>
 
-<!-- 神 모드 연출 패널 — 감독 전용 하늘 제어. 로직은 world-boot.js(인라인 스크립트 금지). 기본 접힘. -->
+<!-- 神 모드 연출 패널 — 전체 공개 하늘 제어(로컬 렌더 전용). 로직은 world-boot.js(인라인 스크립트 금지). 기본 접힘. -->
 <div class="plate god" id="godPanel">
   <button class="god-toggle" id="godToggle" type="button" aria-expanded="false" aria-controls="godBody">
     <span class="god-ico" aria-hidden="true">☀</span><span class="god-lbl">神 모드 · 하늘</span><span class="god-caret" aria-hidden="true">▾</span>
