@@ -1,9 +1,14 @@
-// world-gen.js — 시드 절차적 방 생성기 (behind-flag 오픈월드 1단계)
+// world-gen.js — 시드 절차적 방 생성기 (behind-flag 오픈월드)
 // -----------------------------------------------------------------------------
-// 100방(10×10)을 손저작 없이 생성한다. 결정론(seeded PRNG)이라 모든 방문자가 동일 세계를
+// 100방+를 손저작 없이 생성한다. 결정론(seeded PRNG)이라 모든 방문자가 동일 세계를
 // 본다(무저장 유지). 각 방은 medium(9×7) 통일 — cellX=9/cellZ=7 그리드에서 벽이 정확히
 // 맞닿는다(북벽 월드z = pz*7-3.5 = 북쪽 이웃 남벽). 개구부(shell.entries)는 격자 경계로
 // 자동 대칭(computeEntries) → "인접 쌍은 대응 방향 문을 함께 선언" 불변식을 구조적 보장.
+//
+// 테마: medium 통일을 유지하면서 finish(마감) 편향 + 파츠 팔레트로 방 성격을 부여한다
+// (전시실/정원/라운지/미디어/조각/젠). **solid 파츠는 중앙 십자 통로(문 폭) 밖 코너존에만**
+// 배치해 어느 방향 문으로도 통행이 막히지 않게 한다(SAFE 좌표 규칙).
+//
 // 재사용: space-presets의 northArt·SPACE_PRESETS, space.js normalizeSpace(검증·기본값 폴백).
 // -----------------------------------------------------------------------------
 import { normalizeSpace } from './space.js';
@@ -35,14 +40,81 @@ export function computeEntries(px, pz, grid) {
   return out;
 }
 
-// 조화로운 마감 팔레트(space.js FINISH 부분집합 — 큐레이션). 조합 3×4×2×2×4 = 192종.
-const WALLS = ['white', 'warmsand', 'charcoal'];
-const FLOORS = ['parquet', 'terrazzo', 'concrete', 'grass']; // water는 정적 반사 폴백이라 제외
-const CEILS = ['whiteflat', 'darkmatte'];
 const TRIMS = ['brass', 'charcoal'];
-const FEATS = ['deepviolet', 'kintsugi', 'charcoal', 'warmsand'];
 const RUG_COLORS = ['#c9bfae', '#e4ddd0', '#a9705a', '#8a9481'];
 const pickR = (rng, arr) => arr[Math.floor(rng() * arr.length) % arr.length];
+const chance = (rng, p) => rng() < p;
+
+// medium(hw=4.5, hd=3.5) 안전 코너존 — |x|≥1.5 & |z|≥1.5 → 중앙 십자(문 폭 2.6) 통로 밖.
+// solid 파츠는 이 좌표들만 사용해 어느 문으로도 통행이 막히지 않게 한다.
+const CORNER = { nw: [-2.7, -1.9], ne: [2.7, -1.9], sw: [-2.7, 1.9], se: [2.7, 1.9] };
+const NWALL = { l: [-2.7, -1.5], r: [2.7, -1.5] }; // 북벽 작품 아래 좌대 위치(통로 밖)
+
+// ── 테마 — finish 팔레트 + 파츠 furnish(rng, parts). medium 통일 유지. ──
+const THEMES = [
+  {
+    id: 'gallery', name: '전시실',
+    walls: ['white', 'warmsand'], floors: ['parquet', 'terrazzo'], ceils: ['whiteflat'], feats: ['deepviolet', 'kintsugi'],
+    furnish(rng, p) {
+      p.push({ t: 'pedestal', x: NWALL.l[0], z: NWALL.l[1], ry: 0 });
+      if (chance(rng, 0.6)) p.push({ t: 'pedestal', x: NWALL.r[0], z: NWALL.r[1], ry: 0 });
+      if (chance(rng, 0.7)) p.push({ t: 'rug', x: 0, z: 0.3, ry: 0, variant: 'rect', color: pickR(rng, RUG_COLORS) }); // non-solid 중앙 OK
+      if (chance(rng, 0.5)) p.push({ t: 'bench', x: CORNER.se[0], z: CORNER.se[1], ry: Math.PI / 2, size: 1.2 });
+      if (chance(rng, 0.4)) p.push({ t: 'planter', x: CORNER.sw[0], z: CORNER.sw[1], ry: 0 });
+    },
+  },
+  {
+    id: 'garden', name: '정원 갤러리',
+    walls: ['white', 'warmsand'], floors: ['grass'], ceils: ['whiteflat'], feats: ['warmsand', 'kintsugi'],
+    furnish(rng, p) {
+      p.push({ t: 'planter', x: CORNER.nw[0], z: CORNER.nw[1], ry: 0 });
+      p.push({ t: 'planter', x: CORNER.ne[0], z: CORNER.ne[1], ry: 0 });
+      p.push({ t: chance(rng, 0.5) ? 'bigplant' : 'palm', x: CORNER.sw[0], z: CORNER.sw[1], ry: 0 });
+      if (chance(rng, 0.7)) p.push({ t: 'succulent', x: CORNER.se[0], z: CORNER.se[1], ry: 0 });
+      if (chance(rng, 0.5)) p.push({ t: 'bench', x: 0, z: 1.0, ry: 0, size: 1.2 }); // 짧은 벤치, 통로폭 여유
+    },
+  },
+  {
+    id: 'lounge', name: '라운지',
+    walls: ['warmsand', 'white'], floors: ['terrazzo', 'parquet'], ceils: ['whiteflat'], feats: ['kintsugi', 'warmsand'],
+    furnish(rng, p) {
+      p.push({ t: 'lounge', x: CORNER.se[0] - 0.2, z: CORNER.se[1], ry: -Math.PI / 2 });
+      if (chance(rng, 0.7)) p.push({ t: 'stool', x: CORNER.sw[0], z: CORNER.sw[1], ry: 0 });
+      if (chance(rng, 0.6)) p.push({ t: 'pendantLight', x: 0, z: 0, ry: 0 }); // 천장 부착(partY)
+      if (chance(rng, 0.7)) p.push({ t: 'rug', x: 0, z: 0.6, ry: 0, variant: 'round', color: pickR(rng, RUG_COLORS) });
+    },
+  },
+  {
+    id: 'media', name: '미디어룸',
+    walls: ['charcoal'], floors: ['concrete'], ceils: ['darkmatte'], feats: ['charcoal', 'deepviolet'],
+    furnish(rng, p) {
+      // 스크린은 non-solid 벽걸이 — 측벽에. (src 빈 문자열 = 검은 화면 플레이스홀더, §6-5 유튜브 게이트 무관)
+      p.push({ t: 'screen', x: -4.3, z: -0.4, ry: Math.PI / 2, ratio: '16:9', src: '' });
+      if (chance(rng, 0.6)) p.push({ t: 'screen', x: 4.3, z: -0.4, ry: -Math.PI / 2, ratio: '16:9', src: '' });
+      if (chance(rng, 0.6)) p.push({ t: 'bench', x: 0, z: 1.2, ry: 0, size: 1.2 });
+      if (chance(rng, 0.4)) p.push({ t: 'floorlamp', x: CORNER.ne[0], z: CORNER.ne[1], ry: 0 });
+    },
+  },
+  {
+    id: 'sculpture', name: '조각실',
+    walls: ['white', 'charcoal'], floors: ['concrete', 'terrazzo'], ceils: ['whiteflat', 'darkmatte'], feats: ['charcoal', 'deepviolet'],
+    furnish(rng, p) {
+      p.push({ t: 'pedestal', x: CORNER.nw[0], z: CORNER.nw[1], ry: 0 });
+      p.push({ t: 'pedestal', x: CORNER.ne[0], z: CORNER.ne[1], ry: 0 });
+      if (chance(rng, 0.6)) p.push({ t: 'vitrine', x: CORNER.sw[0], z: CORNER.sw[1], ry: 0 });
+      if (chance(rng, 0.5)) p.push({ t: 'stanchion', x: CORNER.se[0], z: CORNER.se[1], ry: 0 });
+    },
+  },
+  {
+    id: 'zen', name: '명상실',
+    walls: ['charcoal', 'warmsand'], floors: ['water'], ceils: ['darkmatte'], feats: ['charcoal', 'kintsugi'],
+    furnish(rng, p) {
+      if (chance(rng, 0.8)) p.push({ t: 'succulent', x: CORNER.nw[0], z: CORNER.nw[1], ry: 0 });
+      if (chance(rng, 0.6)) p.push({ t: 'vase', x: CORNER.ne[0], z: CORNER.ne[1], ry: 0 });
+      if (chance(rng, 0.5)) p.push({ t: 'bench', x: 0, z: 1.0, ry: 0, size: 1.2 });
+    },
+  },
+];
 
 // 랜드마크 방은 medium 프리셋만(좌표가 medium 기준이라 벽 밖 배치 방지). small/large 프리셋 제외.
 const MEDIUM_PRESETS = SPACE_PRESETS.filter((p) => p.space.shell.footprint === 'medium');
@@ -55,8 +127,8 @@ export function genRoom(px, pz, seed, grid) {
   const rng = mulberry32(cellSeed(seed, px, pz));
   const entries = computeEntries(px, pz, grid);
 
-  // 랜드마크 방(15%) — medium 프리셋 deep-clone, entries만 격자 대칭으로 덮어씀(다양성 보강).
-  if (rng() < 0.15 && MEDIUM_PRESETS.length) {
+  // 랜드마크 방(12%) — medium 프리셋 deep-clone, entries만 격자 대칭으로 덮어씀.
+  if (rng() < 0.12 && MEDIUM_PRESETS.length) {
     const preset = MEDIUM_PRESETS[Math.floor(rng() * MEDIUM_PRESETS.length) % MEDIUM_PRESETS.length];
     const base = JSON.parse(JSON.stringify(preset.space));
     base.shell.entries = entries;
@@ -64,28 +136,24 @@ export function genRoom(px, pz, seed, grid) {
     return normalizeSpace(base);
   }
 
-  // 절차 방 — 마감 조합 + rng 가구 팔레트(방당 파츠 ~10-15, ART_SCREEN_CAP=80 여유).
-  const wall = pickR(rng, WALLS);
-  const floor = pickR(rng, FLOORS);
-  const ceiling = wall === 'charcoal' ? 'darkmatte' : pickR(rng, CEILS); // 어두운 벽엔 어두운 천장
-  const trim = pickR(rng, TRIMS);
-  const feature = pickR(rng, FEATS);
-
-  const parts = northArt(-3.4); // 북벽 작품 3(featured 중앙) — 프리셋 헬퍼 재사용
-  if (rng() < 0.7) parts.push({ t: 'bench', x: 0, z: 1.0, ry: 0, size: 1.8 });
-  if (rng() < 0.6) parts.push({ t: 'rug', x: 0, z: 0.2, ry: 0, variant: rng() < 0.5 ? 'rect' : 'round', color: pickR(rng, RUG_COLORS) });
-  if (rng() < 0.5) parts.push({ t: 'pedestal', x: rng() < 0.5 ? -1.4 : 1.4, z: -0.4, ry: 0 });
-  if (rng() < 0.4) { parts.push({ t: 'planter', x: -3.6, z: 2.2, ry: 0 }); parts.push({ t: 'planter', x: 3.6, z: 2.2, ry: 0 }); }
-  for (const x of [-3, 0, 3]) parts.push({ t: 'trackLight', x, z: -3.0, ry: 0 }); // 작품 트랙 조명 고정
+  // 테마 방 — 테마별 finish 팔레트 + 파츠 furnish(코너존 solid, 중앙 십자 통로 보존).
+  const theme = THEMES[Math.floor(rng() * THEMES.length) % THEMES.length];
+  const finish = {
+    wall: pickR(rng, theme.walls),
+    floor: pickR(rng, theme.floors),
+    ceiling: pickR(rng, theme.ceils),
+    trim: pickR(rng, TRIMS),
+    featureWall: 'north',
+    featureFinish: pickR(rng, theme.feats),
+  };
+  const parts = northArt(-3.4);                                  // 북벽 작품 3(featured 중앙)
+  for (const x of [-3, 0, 3]) parts.push({ t: 'trackLight', x, z: -3.0, ry: 0 }); // 작품 트랙 조명
+  theme.furnish(rng, parts);                                     // 테마 파츠(코너존)
 
   return normalizeSpace({
     version: 2,
-    meta: { name: `전시실 ${px}-${pz}`, author: '' },
-    shell: {
-      footprint: 'medium', storyH: 'gallery', wallT: 0.2,
-      entries,
-      finish: { wall, floor, ceiling, trim, featureWall: 'north', featureFinish: feature },
-    },
+    meta: { name: `${theme.name} ${px}-${pz}`, author: '' },
+    shell: { footprint: 'medium', storyH: 'gallery', wallT: 0.2, entries, finish },
     spawn: { x: 0, z: 3.0, ry: 0 }, // 첫 파셀에서만 사용됨(world.js)
     parts,
   });
