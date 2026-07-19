@@ -69,6 +69,26 @@
   .is-touch #enter{display:none}
   .is-touch #joy{display:block}
 
+  /* 神 모드 연출 패널(우하단) — 전체 공개 하늘 제어(감독 결재, 로컬 렌더 전용). HUD .plate 계열과 통일, 접이식. */
+  /* z-index 40 — 클릭 유도 오버레이(#enter z30) 위에 떠서 포인터락 해제 상태에서도 조작 가능. */
+  .god{right:16px;bottom:16px;z-index:40;padding:0;overflow:hidden;max-width:min(92vw,300px)}
+  .god-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:11px 15px;background:none;border:0;color:var(--ink);
+    font-family:var(--app);font-size:13px;font-weight:700;letter-spacing:-.01em;cursor:pointer}
+  .god-ico{color:var(--cyan);font-size:14px}
+  .god-caret{margin-left:auto;color:var(--dim);transition:transform .2s;font-size:10px}
+  .god[data-open="1"] .god-caret{transform:rotate(180deg)}
+  .god-body{padding:5px 13px 13px;display:flex;flex-direction:column;gap:9px;border-top:1px solid rgba(255,255,255,.08)}
+  .god-body[hidden]{display:none}
+  .god-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+  .god-cap{font-size:10.5px;color:var(--dim);width:44px;flex:none;letter-spacing:-.01em}
+  .god-row button{font-family:var(--app);font-size:11.5px;padding:6px 10px;border-radius:9px;cursor:pointer;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--dim);transition:background .15s,color .15s,border-color .15s}
+  .god-row button:hover{background:rgba(255,255,255,.12);color:var(--ink)}
+  .god-row button.on{background:rgba(139,114,255,.28);border-color:var(--violet);color:var(--ink);font-weight:600}
+  .god-row[data-group="fx"] button.on{background:rgba(114,230,225,.24);border-color:var(--cyan)}
+  .god-row[data-group="safe"] button.on{background:rgba(255,112,94,.24);border-color:var(--coral)}
+  @media (max-width:560px){ .god{right:10px;bottom:10px;max-width:min(94vw,258px)} .god-cap{width:38px} .god-row button{padding:5px 8px;font-size:11px} }
+
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
 </head>
@@ -93,6 +113,38 @@
 
 <div id="chat"></div>
 <div id="joy"><div class="nub" id="joyNub"></div></div>
+
+<!-- 神 모드 연출 패널 — 전체 공개 하늘 제어(로컬 렌더 전용). 로직은 world-boot.js(인라인 스크립트 금지). 기본 접힘. -->
+<div class="plate god" id="godPanel">
+  <button class="god-toggle" id="godToggle" type="button" aria-expanded="false" aria-controls="godBody">
+    <span class="god-ico" aria-hidden="true">☀</span><span class="god-lbl">神 모드 · 하늘</span><span class="god-caret" aria-hidden="true">▾</span>
+  </button>
+  <div class="god-body" id="godBody" hidden>
+    <div class="god-row" data-group="time">
+      <span class="god-cap">시간</span>
+      <button type="button" data-time="day">주간</button>
+      <button type="button" data-time="sunset">일몰</button>
+      <button type="button" data-time="night">야간</button>
+      <button type="button" data-auto="1">자동</button>
+    </div>
+    <div class="god-row" data-group="weather">
+      <span class="god-cap">날씨</span>
+      <button type="button" data-weather="clear">맑음</button>
+      <button type="button" data-weather="overcast">먹구름</button>
+      <button type="button" data-weather="rain">비</button>
+      <button type="button" data-weather="snow">눈</button>
+    </div>
+    <div class="god-row" data-group="fx">
+      <span class="god-cap">이벤트</span>
+      <button type="button" data-fx="rainbow">무지개</button>
+      <button type="button" data-fx="aurora">오로라</button>
+    </div>
+    <div class="god-row" data-group="safe">
+      <span class="god-cap">접근성</span>
+      <button type="button" data-flash="1">광과민성 보호</button>
+    </div>
+  </div>
+</div>
 
 <script type="module" src="./js/world-boot.js"></script>
 </body>
