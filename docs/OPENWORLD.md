@@ -180,6 +180,15 @@
 **헤드리스 QA(swiftshader)**: world.html 로드 정상(외부 모듈 top-level await) / CSP 위반 콘솔 에러 0 / 오버레이 P2P 고지 렌더 /
 미니맵·채팅·조이스틱·__world API 무회귀 / galleries assert 통과.
 
+## 라이브 런타임 접촉 기록 · npc.js (2026-07-19, 팀장 서명 수용)
+
+`npc.js`는 CLAUDE.md 라이브 보호 명시 목록(main·player·artworks·config) **밖**이지만 index.html이
+로드하는 라이브 런타임 파일이다. 오픈월드 파셀 스파이크(`8211fff`)가 `NpcCrowd(artworks, count, opts)`에
+`opts.roster` 가산 경로(직원 페르소나)를 추가했다. **미주입 시 기존 익명 관객 경로와 동등**하며,
+`main.js`는 `new NpcCrowd(getPlacedArtworks())`로 1인자 호출(roster=null)이라 index에서 신규 경로가
+실행되지 않음을 머지 게이트에서 검증(런타임 모듈 바이트 동일 + visit/builder diff 0 + 셸 합동 동일).
+→ **가산·무영향으로 수용**. 이후 `npc.js` 접촉 시 동일 게이트(index 씬 그래프 구조 비교) 의무.
+
 ## 리스크
 
 - **드로우콜**: 파셀 9개 풀로드 시 `ART_SCREEN_CAP=80` 초과 → `shellOnly` 임포스터 LOD로 완화(스파이크는 직교 풀/대각 shell).
