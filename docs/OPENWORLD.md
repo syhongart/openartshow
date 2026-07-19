@@ -35,10 +35,15 @@
 - `web/js/world.js`(신규): `loaded: Map<"px,pz">` + 3×3 스트리밍(직교=풀디테일, 대각=shell). visit.js의 검증된
   이동·충돌을 파셀 다중으로 확장. `clampPos`가 개구부+이웃로드+문범위일 때만 경계 통과 허용(아니면 벽 clamp).
 
-### 실시간 (호스트릴레이 폐기)
-- 현 `multiplayer.js` 호스트릴레이는 용량 천장(방당 N≈13~51, `SCALING.md`)·호스트 소멸 문제로 지속 세계와 모순.
-- 오픈월드는 **디스트릭트 샤딩 + Supabase Realtime Presence**(또는 과도기 자체 PeerServer+TURN, `LU_PEER_OPTS` 훅).
-  서버 중계라 호스트 소멸 없음. `multiplayer.js`의 검증·레이트리밋·클램프 계약은 그대로 이식.
+### 실시간 (2단계: 데모=단일 룸 / 확장=디스트릭트 샤딩)
+- **2단계 데모(구현됨, behind-flag)**: 기존 `multiplayer.js`(PeerJS 호스트릴레이)를 무수정 재사용해 **단일 월드 룸**
+  (`PEER_ROOM_ID-openworld`)으로 배선. "같은 월드 접속자끼리 아바타 상호 가시성"을 0원(공용 브로커)으로 실증.
+  소규모 데모엔 단일 룸이 적정하다(디스트릭트 경계 인스턴스 교체는 복잡·버그 위험 = 조기 최적화, `SCALING.md` 0단계 정신).
+- **확장 트리거(동시 접속 증가 시)**: 호스트릴레이는 방당 용량 천장(N≈13~51, `SCALING.md`)·호스트 소멸 한계가 있으므로,
+  트래픽이 붙으면 **디스트릭트 샤딩(4×4 파셀=1룸, roomId suffix + 경계 시 mp 인스턴스 교체)** 또는 **Supabase Realtime
+  Presence**(서버 중계라 호스트 소멸 없음)로 이행. `multiplayer.js` 검증·레이트리밋·클램프 계약은 그대로 이식.
+- **플래그 해제 전 보안 선결(security-officer 29259bf)**: world.html 인라인 스크립트 sha256 해시 고정(`'unsafe-inline'` 제거),
+  P2P IP 노출 UI 고지, `connect-src`를 `wss://0.peerjs.com`로 축소, `openworld` 룸 예약어 등록.
 
 ### 지속 백엔드 (CSP 무변경)
 - Supabase(Postgres+Auth+RLS+Realtime). 저장: 공간 문서 / 파셀 배치(`(px,pz)` 유니크=중복 점유 방지) / 방명록.

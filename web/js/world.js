@@ -246,7 +246,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
     if (f || r) walk(f, r, d);
     stepNpcs(d);
-    if (mp) { mp.sendState({ x: pos.x, y: EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); } // 원격 아바타 발바닥 정합: y=EYE_HEIGHT(1.7)
+    // TODO(다층): y=EYE_HEIGHT는 단층(바닥 y=0) 가정. 고저차/계단 도입 시 groundY 기반 발바닥 y로 교체(현재는 footY=0 정합).
+    // 원격 플레이어 간 충돌은 미배선(blocked는 solids만) — 데모 스코프. 후속 이터레이션에 mp.getAvatarPositions() 반영 검토.
+    if (mp) { mp.sendState({ x: pos.x, y: EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
     renderer.render(scene, camera);
   }
   function renderOnce() { applyPose(); renderer.render(scene, camera); }
