@@ -25,6 +25,7 @@ export const CHIBI_HAIR_STYLES = [
   { id: 'long', name: '롱' },
   { id: 'wave', name: '웨이브' },
   { id: 'halfup', name: '반묶음' },
+  { id: 'heart', name: '하트' },
   { id: 'bald', name: '대머리' },
 ];
 // 수염 — 사람 전용, 얼굴 캔버스에 그린다(3D 파츠 0). 성별 무관 자유 선택.
@@ -200,6 +201,8 @@ export const CHIBI_PRESETS = [
   { id: 'hanbok_m', name: '한복(남)', look: { gender: 'boy', outfit: 'hanbok', top: '#a9d6e8', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#2b2b33', eyeStyle: 'round' } },
   { id: 'hoodie', name: '후드', look: { outfit: 'hoodie', top: '#5468c4', bottom: '#2c3038', bottomType: 'pants', hairStyle: 'short', hairColor: '#2a2320', eyeStyle: 'round', acc: 'none' } },
   { id: 'hoodie_pink', name: '핑크 후드', look: { outfit: 'hoodie', top: '#ff8fab', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#6b4530', eyeStyle: 'happy' } },
+  { id: 'heart_head', name: '하트 머리', look: { hairStyle: 'heart', hairColor: '#ff8fab', top: '#fffdf7', bottom: '#95d5b2', bottomType: 'skirt', eyeStyle: 'happy', mouth: 'open' } },
+  { id: 'heart_head_orange', name: '주황 하트 머리', look: { hairStyle: 'heart', hairColor: '#f0a05c', top: '#ffb3c1', bottom: '#ff8fab', bottomType: 'dress', eyeStyle: 'happy', mouth: 'smile' } },
   // ── 동물 (기본) ──
   _sp('cat', '고양이'), _sp('dog', '강아지', { mouth: 'open' }), _sp('rabbit', '토끼', { eyeStyle: 'sparkle' }),
   _sp('bear', '곰'), _sp('sheep', '양'), _sp('panda', '판다'),
@@ -1556,6 +1559,22 @@ export function buildChibi(params) {
       tie.position.set(0, 0.22, 0.0);
       hairRoot.add(tie);
     }
+  } else if (p.hairStyle === 'heart') {
+    // 하트형 머리 실루엣 — 정수리 위로 솟은 둥근 봉우리 2개(하트 상단, 바깥 위로 기울여 곡선) +
+    // 봉우리 사이 상단만 연결(가운데 골은 V로 남김). 얼굴은 하트 하부에 위치.
+    // 특정 브랜드 복제가 아닌 일반화된 하트 형태.
+    for (const s of [-1, 1]) {
+      const lobe = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.205, 22, 18)), hairMat);
+      lobe.position.set(s * 0.135, 0.35, -0.02);
+      lobe.scale.set(1.0, 1.12, 1.0);
+      lobe.rotation.z = s * 0.25;
+      addOutline(lobe, 0.012, mats, geos);
+      hairRoot.add(lobe);
+    }
+    const bridge = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.12, 18, 14)), hairMat);
+    bridge.position.set(0, 0.32, -0.02);
+    addOutline(bridge, 0.012, mats, geos);
+    hairRoot.add(bridge);
   }
   // 'bob'/'short'는 셸+커튼(+뱅)으로 완성
   } else {
