@@ -19,6 +19,8 @@ import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, 
 import { PART_TYPES } from './space.js';
 import { createAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
+import { PEER_ROOM_ID, EYE_HEIGHT } from './config.js';
+import { MultiplayerManager } from './multiplayer.js';
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;         // 이동 속도(m/s)
@@ -74,6 +76,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const index = new Map();  // "px,pz" → def({px,pz,space,npc?})
   for (const d of parcels) index.set(keyOf(d.px, d.pz), d);
   const loaded = new Map(); // "px,pz" → { group, def, ox, oz, dims, solids, crowd, avatars, lod }
+  let mp = null; // 실시간 멀티플레이어(opts.mp 지정 + window.Peer 존재 시 생성)
 
   function parcelArts(def, ox, oz) {
     return (def.space.parts || []).filter((p) => p.t === 'artwork').map((p) => ({
@@ -243,6 +246,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
     if (f || r) walk(f, r, d);
     stepNpcs(d);
+    if (mp) { mp.sendState({ x: pos.x, y: EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); } // 원격 아바타 발바닥 정합: y=EYE_HEIGHT(1.7)
     renderer.render(scene, camera);
   }
   function renderOnce() { applyPose(); renderer.render(scene, camera); }
@@ -269,6 +273,17 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
 
   function resize(w, h) { renderer.setSize(w, h, false); camera.aspect = w / (h || 1); camera.updateProjectionMatrix(); }
+
+  // ── 실시간 멀티플레이어(2단계) — 같은 월드 접속자끼리 아바타 상호 가시성 ──
+  // 기존 multiplayer.js(PeerJS 호스트릴레이) 재사용. 단일 월드 룸(디스트릭트 샤딩은 확장 시).
+  // window.Peer(vendor/peerjs) 없으면(헤드리스 등) 조용히 미배선 — 오픈월드는 1인 모드로 정상 동작.
+  if (opts.mp && typeof window !== 'undefined' && window.Peer) {
+    mp = new MultiplayerManager(scene, { nickname: opts.mp.nickname, color: opts.mp.color, char: opts.mp.char, roomId: PEER_ROOM_ID + '-openworld' });
+    mp.onStatus = (s) => emit('mpstatus', s);
+    mp.onPlayerCount = (n) => emit('players', n);
+    mp.onChat = (name, text) => emit('chat', { name, text });
+    mp.connect();
+  }
 
   // 초기 로드 — 첫 파셀 주변 스트리밍
   updateStreaming();
@@ -302,6 +317,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         window.removeEventListener('keydown', onKeyDown);
         window.removeEventListener('keyup', onKeyUp);
       }
+      if (mp) { mp.dispose(); mp = null; }
       for (const k of Array.from(loaded.keys())) unloadParcel(k);
       if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
       renderer.dispose();

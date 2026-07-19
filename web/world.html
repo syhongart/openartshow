@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <!-- 오픈월드(파셀 스트리밍) 스파이크: 자기완결(외부 호스트 0). CSP default-src 'self'. behind-flag: 어디에도 링크하지 않음. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'">
+<!-- 2단계 실시간: PeerJS 시그널링(wss)·TURN 위해 connect-src 완화 — 무운영비·자기완결 부분 완화(감독 2단계 승인). 나머지는 default-src 'self' 유지. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'none'">
 <title>오픈월드 · OpenArtShow</title>
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<script src="./vendor/peerjs.min.js"></script>
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 <style>
   :root{
@@ -86,6 +88,7 @@
 <script type="module">
 import { genRoom } from './js/world-gen.js';
 import { createWorld } from './js/world.js';
+import { randomChibiChar } from './js/chibi.js';
 
 // ── 월드 매니페스트 로드 → 절차생성 100방 구성 (behind-flag 1단계) ──
 // 방은 world-gen이 시드로 절차생성(결정론=모든 방문자 동일 세계), 개구부는 격자 경계로 자동 대칭.
@@ -124,9 +127,20 @@ for (let pz = 0; pz < grid.h; pz++) for (let px = 0; px < grid.w; px++) {
   if (px === sx && pz === sz) parcels.unshift(parcel); else parcels.push(parcel);
 }
 
+// ── 2단계 실시간: 내 아바타(랜덤 방문자) — 같은 월드 접속자끼리 상호 가시성 ──
+const nick = '방문자' + Math.floor(Math.random() * 900 + 100);
+const PALETTE = ['#7ec8a0', '#8e7dbe', '#6a8caf', '#e0596e', '#ffd166', '#72e6e1', '#95d5b2'];
+const myColor = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+
 const canvas = document.getElementById('c');
-const V = createWorld({ canvas, parcels, opts: { cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true } });
+const V = createWorld({ canvas, parcels, opts: {
+  cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true,
+  mp: { nickname: nick, color: myColor, char: randomChibiChar() }, // window.Peer 없으면 world.js가 조용히 1인 모드
+} });
 window.__world = V;
+
+let playerCount = 1;
+V.on('players', (n) => { playerCount = n; });
 
 function fit() { V.resize(window.innerWidth, window.innerHeight); }
 window.addEventListener('resize', fit); fit();
@@ -152,7 +166,7 @@ function drawMinimap() {
 
 // 현재 파셀 표시 + 미니맵 갱신
 const pcell = document.getElementById('pcell');
-function refreshCell() { const p = V.getCurrentParcel(); pcell.textContent = `파셀 (${p.px},${p.pz}) · ${grid.w}×${grid.h} 월드`; drawMinimap(); }
+function refreshCell() { const p = V.getCurrentParcel(); pcell.textContent = `파셀 (${p.px},${p.pz}) · ${grid.w}×${grid.h} 월드 · 👤 ${playerCount}`; drawMinimap(); }
 setInterval(refreshCell, 300); refreshCell();
 
 // 클릭 유도 오버레이
