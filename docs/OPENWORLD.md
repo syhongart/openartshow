@@ -108,6 +108,20 @@
 
 **헤드리스 QA(swiftshader)**: 스폰 [4,4] 3×3=9방 로드 / NPC 5명(full 5방의 home — 대각 4방은 shell라 미스폰, 정확) / (9,9) 모서리 로드셋 4(≤9 상한) / 대각선 종주 (0,0)→(9,9) 에러 0 / 정중앙 5-full 드로우콜 **146**(고정 미술관 255 대비 안전) / 문 통과 [4,4]→[5,4] / `genRoom` 결정론 deep-equal / 미니맵 렌더 / 콘솔 에러 0. **회귀**: `index.html`(고정 미술관·npc.js 공유)·`visit.html`·`builder.html` 콘솔 에러 0.
 
+## 다층 구현 · 층 쌓기 (2026-07-19)
+
+방을 위로 여러 층 쌓는다. **불변식 "floors=1이면 기존과 바이트 동일"** 로 라이브 방문자뷰·빌더(space-render 공유) 회귀를 봉쇄한다. 계단은 `parts`가 아니라 **`shell.stairs[]` 밴드**(config.js `BUILDING.stairs`·player.js `stairGroundAt`과 동형)로 정의해 검증된 지면물리를 그대로 이식한다.
+
+**파일**:
+- `space.js` — `shell.floors`(1~4)·`shell.stairs`(`{x0,x1,z0,z1,yFrom,yTo}` 밴드) 가산(entries 패턴, SPACE_VERSION 불변, 생략=단층).
+- `space-render.js` — `buildSpaceGroup` 셸 층 루프: 슬래브 `f*H-0.05`, 천장 `totalH`, 4벽 `baseY=f*H`(문틀은 지면층 f=0만 = 파셀 통행), 피처월 f=0, 계단 램프 지오. `spaceDims`에 `floors/totalH`, `pY`에 `p.floor` 오프셋. **floors=1이면 f=0 1회로 현행 합동**.
+- `world.js` — 지면물리 이식(player.js): `stairGroundAt`/`groundCandidatesAt`/`resolveGround`/`groundY`, `blocked`·`walk`를 groundY 상대로, 카메라 y가 계단 경사 추종(`GROUND_LERP_RATE`), `setPosition` 지면 리셋. floors=1이면 groundY=0 → 현행 수치 동일.
+- `world-gen.js` — 20% 방을 2층(SW 서벽 계단 + 상층 동벽 작품, 계단-파츠 충돌 회피 위해 furnish 생략).
+
+**Stop B/C 수준**: 계단으로 실제 등반. 슬래브는 통짜(계단 상부 개구부 없음 → 램프가 슬래브 관통, 시각 클리핑 감수). 중앙 보이드(내려다보기)·NPC 다층 인식·원격 플레이어 다층은 스코프 아웃(후속).
+
+**헤드리스 QA(swiftshader)**: floors=1 자식 7개(=현행)·floors=2 자식 13/totalH 7.2 / visit·builder 콘솔 에러 0(회귀) / 계단 등반 groundY 0→3.6 / 단층 groundY 0 유지 / 문 통과 12/12 / 결정론.
+
 ## 리스크
 
 - **드로우콜**: 파셀 9개 풀로드 시 `ART_SCREEN_CAP=80` 초과 → `shellOnly` 임포스터 LOD로 완화(스파이크는 직교 풀/대각 shell).

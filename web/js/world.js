@@ -27,6 +27,8 @@ const SPEED = 3.0;         // 이동 속도(m/s)
 const RADIUS = 0.3;        // 플레이어 반경(충돌 마진)
 const PITCH_LIMIT = 1.45;  // 상하 시선 클램프(rad)
 const STEP_OVER = 0.12;    // 걸림턱(바닥타일만 통과) — visit.js 계약 계승
+const STEP_TOLERANCE = 0.65; // [다층] 프레임당 허용 고저차(계단 등반·추락 방지) — player.js 이식
+const GROUND_LERP_RATE = 12; // [다층] 지면 y 추종 보간(계단이 매끄러운 경사로)
 // DOOR_W(문틀 통로 폭)는 space-render.js에서 import — 렌더/통과 판정 단일 상수(드리프트 방지).
 
 // 빌더/방문자뷰 계승 — 은은한 PMREM 환경 반사(글로시 바닥·재질 깊이).
@@ -90,7 +92,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const [w, h, d] = PART_TYPES[p.t].size;
       const c = Math.abs(Math.cos(p.ry || 0)), s = Math.abs(Math.sin(p.ry || 0));
       const ex = (w / 2) * c + (d / 2) * s, ez = (w / 2) * s + (d / 2) * c;
-      const cy = (p.y != null) ? p.y : partY(p.t, dims.H);
+      const cy = (p.y != null) ? p.y : partY(p.t, dims.H) + (p.floor || 0) * dims.H; // [다층] p.floor 층 오프셋
       return { x: ox + p.x, z: oz + p.z, ex, ez, bottom: cy - h / 2, top: cy + h / 2 };
     });
   }
@@ -107,12 +109,18 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     scene.add(group);
     const dims = spaceDims(def.space);
     const solids = shellOnly ? [] : computeSolids(def, ox, oz, dims);
+    // [다층] 지면 후보 프리컴퓨트 — 각 층 슬래브 상면 y + 계단 밴드(월드 좌표). floors=1이면 floorsY=[0], stairBands=[].
+    const floorsY = []; for (let f = 0; f < dims.floors; f++) floorsY.push(f * dims.H);
+    const stairBands = (def.space.shell.stairs || []).map((s) => ({
+      xMin: ox + Math.min(s.x0, s.x1), xMax: ox + Math.max(s.x0, s.x1),
+      z0: oz + s.z0, z1: oz + s.z1, yFrom: s.yFrom, yTo: s.yTo,
+    }));
     let crowd = null; const avatars = new Map();
     if (!shellOnly && def.npc) {
       const arts = parcelArts(def, ox, oz);
       if (arts.length) crowd = new NpcCrowd(arts, def.npc.count || null, { roster: def.npc.roster });
     }
-    loaded.set(k, { group, def, ox, oz, dims, solids, crowd, avatars, lod, px, pz });
+    loaded.set(k, { group, def, ox, oz, dims, solids, floorsY, stairBands, crowd, avatars, lod, px, pz });
   }
 
   function unloadParcel(k) {
@@ -126,6 +134,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const first = parcels[0] || null;
   const pos = new THREE.Vector3(0, EYE, 0);
   let yaw = 0, pitch = 0;
+  let groundY = 0; // [다층] 발이 딛는 지면 y. floors=1이면 항상 0(회귀 0). 카메라 y = groundY + EYE.
   if (first) { const s = first.space.spawn || { x: 0, z: 0, ry: 0 }; pos.set(first.px * CELLX + (s.x || 0), EYE, first.pz * CELLZ + (s.z || 0)); yaw = s.ry || 0; }
 
   function applyPose() {
@@ -150,11 +159,40 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     for (const [k, lod] of want) { const [qx, qz] = k.split(',').map(Number); loadParcel(qx, qz, lod); }
   }
 
+  // ── [다층] 지면 해석 (player.js stairGroundAt/groundCandidatesAt/resolveGround 이식, 파셀 오프셋 인지) ──
+  function stairGroundAt(x, z) {
+    for (const L of loaded.values()) for (const s of L.stairBands) {
+      if (x < s.xMin || x > s.xMax) continue;
+      const zMin = Math.min(s.z0, s.z1), zMax = Math.max(s.z0, s.z1);
+      if (z < zMin || z > zMax) continue;
+      const t = Math.max(0, Math.min(1, (z - s.z0) / (s.z1 - s.z0)));
+      return s.yFrom + t * (s.yTo - s.yFrom); // 경사 밴드 선형 보간
+    }
+    return null;
+  }
+  function groundCandidatesAt(x, z) {
+    const c = [];
+    const sy = stairGroundAt(x, z); if (sy !== null) c.push(sy);
+    const L = loaded.get(keyOf(Math.round(x / CELLX), Math.round(z / CELLZ)));
+    if (L && L.floorsY) for (const fy of L.floorsY) c.push(fy); // 각 층 슬래브 상면(Stop B: 통짜 슬래브)
+    else c.push(0); // 미로드 파셀 위 — 지반
+    return c;
+  }
+  // 후보 중 현재 지면 + STEP_TOLERANCE 안 넘는 최고. 급락(추락)은 null(이동 취소).
+  function resolveGround(x, z, cur) {
+    const cands = groundCandidatesAt(x, z);
+    let best = null;
+    for (const v of cands) if (v <= cur + STEP_TOLERANCE && (best === null || v > best)) best = v;
+    if (best === null) return null;
+    if (cur - best > STEP_TOLERANCE) return null;
+    return best;
+  }
+
   // ── 충돌 (1) 파셀 경계 clamp + 개구부 통과 (2) solid 파츠 AABB ──
   function blocked(x, z) {
     for (const L of loaded.values()) for (const b of L.solids) {
-      if (b.top <= STEP_OVER) continue;   // 바닥타일만 통과
-      if (b.bottom >= 1.7) continue;      // 머리 위 스택은 바닥 이동 무영향
+      if (b.top <= groundY + STEP_OVER) continue;   // 현재 발높이 기준 걸림턱(바닥타일 통과)
+      if (b.bottom >= groundY + 1.7) continue;      // 머리 위 스택은 이동 무영향
       if (Math.abs(x - b.x) <= b.ex + RADIUS && Math.abs(z - b.z) <= b.ez + RADIUS) return true;
     }
     return false;
@@ -185,9 +223,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (len > 1e-6) { dx /= len; dz /= len; } else return;
     dx *= SPEED * dt; dz *= SPEED * dt;
     let c = clampPos(pos.x + dx, pos.z);
-    if (!blocked(c.x, pos.z)) pos.x = c.x;
+    if (!blocked(c.x, pos.z) && resolveGround(c.x, pos.z, groundY) !== null) pos.x = c.x;
     c = clampPos(pos.x, pos.z + dz);
-    if (!blocked(pos.x, c.z)) pos.z = c.z;
+    if (!blocked(pos.x, c.z) && resolveGround(pos.x, c.z, groundY) !== null) pos.z = c.z;
+    const g = resolveGround(pos.x, pos.z, groundY); // [다층] 지면 갱신(계단 상승/하강, 급턱이면 유지)
+    if (g !== null) groundY = g;
     updateStreaming();
     applyPose();
   }
@@ -245,6 +285,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const d = (typeof dt === 'number' && isFinite(dt)) ? dt : 0.016;
     const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
     if (f || r) walk(f, r, d);
+    // [다층] 카메라 y를 groundY 추종(계단 경사 부드럽게). floors=1이면 groundY=0 → pos.y=EYE 유지(회귀 0).
+    pos.y += ((groundY + EYE) - pos.y) * Math.min(1, GROUND_LERP_RATE * d);
+    applyPose();
     stepNpcs(d);
     // TODO(다층): y=EYE_HEIGHT는 단층(바닥 y=0) 가정. 고저차/계단 도입 시 groundY 기반 발바닥 y로 교체(현재는 footY=0 정합).
     // 원격 플레이어 간 충돌은 미배선(blocked는 solids만) — 데모 스코프. 후속 이터레이션에 mp.getAvatarPositions() 반영 검토.
@@ -300,8 +343,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     setTouchMove: (fwd, right) => { tmov.fwd = fwd || 0; tmov.right = right || 0; },
     setKey: (k, v) => { keys[String(k).toLowerCase()] = !!v; recomputeKeyMove(); },
     getPosition: () => pos.clone(),
-    setPosition: (x, y, z) => { pos.set(x, y == null ? EYE : y, z); updateStreaming(); applyPose(); },
+    setPosition: (x, y, z) => { pos.set(x, y == null ? EYE : y, z); groundY = 0; updateStreaming(); applyPose(); }, // 순간이동=지면층 리셋(스테일 급락 판정 방지)
     getYaw: () => yaw, setYaw: (v) => { yaw = v; applyPose(); },
+    getGroundY: () => groundY, // [다층] 현재 발 높이(검증·디버그용)
     getPitch: () => pitch,
     getCurrentParcel: () => currentParcel(),
     getLoadedKeys: () => Array.from(loaded.keys()),

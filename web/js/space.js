@@ -160,6 +160,24 @@ function normEntries(v) {
   return out;
 }
 
+// [오픈월드 다층 가산 · SPACE_VERSION 불변] shell.floors(층수 1~4) · shell.stairs(층간 경사 밴드).
+// 생략 = floors:1 / stairs:[] = 기존 단층 100% 동일(visit·builder 무영향). stairs는 config.js
+// BUILDING.stairs와 동형({x0,x1,z0,z1,yFrom,yTo}): x0..x1 밴드에서 z0(yFrom)→z1(yTo) 선형 상승.
+// world.js가 지면 후보로 소비(등반), space-render가 램프 지오/슬래브 개구부 생성.
+const clampInt = (v, lo, hi, d) => (Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : d);
+function normStairs(v) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const s of v) {
+    if (!s || typeof s !== 'object') continue;
+    const x0 = num(s.x0, 0), x1 = num(s.x1, 0), z0 = num(s.z0, 0), z1 = num(s.z1, 0);
+    const yFrom = clamp(s.yFrom, 0, 20, 0), yTo = clamp(s.yTo, 0, 20, 0);
+    if (x0 === x1 || z0 === z1 || yFrom === yTo) continue; // 퇴화 밴드 폐기
+    out.push({ x0, x1, z0, z1, yFrom, yTo });
+  }
+  return out;
+}
+
 function normalizePart(raw) {
   if (!raw || typeof raw !== 'object' || !PART_TYPE_IDS.has(raw.t)) return null; // 미지 타입 폐기
   const spec = PART_TYPES[raw.t];
@@ -215,6 +233,8 @@ export function normalizeSpace(raw) {
       storyH: pick(sh.storyH, new Set(Object.keys(STORY_H)), DEFAULT_SPACE.shell.storyH),
       wallT: clamp(sh.wallT, 0.1, 0.4, DEFAULT_SPACE.shell.wallT),
       entries: normEntries(sh.entries), // 오픈월드 파셀 개구부(생략=빈배열=폐쇄, 하위호환)
+      floors: clampInt(sh.floors, 1, 4, 1), // 오픈월드 다층(생략=1=단층, 하위호환)
+      stairs: normStairs(sh.stairs),        // 층간 경사 밴드(생략=빈배열)
       finish: {
         wall: pick(shf.wall, FIN('wall'), FINISH.wall.def),
         floor: pick(shf.floor, FIN('floor'), FINISH.floor.def),

@@ -148,12 +148,22 @@ export function genRoom(px, pz, seed, grid) {
   };
   const parts = northArt(-3.4);                                  // 북벽 작품 3(featured 중앙)
   for (const x of [-3, 0, 3]) parts.push({ t: 'trackLight', x, z: -3.0, ry: 0 }); // 작품 트랙 조명
-  theme.furnish(rng, parts);                                     // 테마 파츠(코너존)
+  // [다층] 20% 방은 2층 — SW 서벽 계단(z 남→중앙, 문 통로 z≈0 무간섭) + 상층 동벽 작품 2.
+  // 다층 방은 theme.furnish를 건너뛴다(코너 파츠가 계단 경로를 막지 않도록). 단층은 기존대로.
+  let floors = 1, stairs = [];
+  if (rng() < 0.2) {
+    floors = 2;
+    stairs = [{ x0: -4.0, x1: -2.6, z0: 3.0, z1: 0.5, yFrom: 0, yTo: 3.6 }];
+    for (const z of [-1.4, 1.4]) parts.push({ t: 'artwork', x: 3.4, z, ry: -Math.PI / 2, floor: 1, frame: 'minimal', src: '' });
+    parts.push({ t: 'trackLight', x: 3.0, z: 0, ry: 0, floor: 1 });
+  } else {
+    theme.furnish(rng, parts);                                   // 단층: 테마 파츠(코너존)
+  }
 
   return normalizeSpace({
     version: 2,
-    meta: { name: `${theme.name} ${px}-${pz}`, author: '' },
-    shell: { footprint: 'medium', storyH: 'gallery', wallT: 0.2, entries, finish },
+    meta: { name: `${theme.name} ${px}-${pz}${floors > 1 ? ' ▲2F' : ''}`, author: '' },
+    shell: { footprint: 'medium', storyH: 'gallery', wallT: 0.2, entries, floors, stairs, finish },
     spawn: { x: 0, z: 3.0, ry: 0 }, // 첫 파셀에서만 사용됨(world.js)
     parts,
   });

@@ -1078,7 +1078,24 @@ function artworkImageMaterial(src, faceW, faceH, onAsyncTex, matteMargin = 0) {
 /** 공간 치수 (footprint·storyH 프리셋 해석) */
 export function spaceDims(space) {
   const [fw, fd] = FOOTPRINT[space.shell.footprint];
-  return { fw, fd, hw: fw / 2, hd: fd / 2, H: STORY_H[space.shell.storyH], t: space.shell.wallT };
+  const H = STORY_H[space.shell.storyH];
+  const floors = Math.max(1, Math.min(4, (space.shell.floors | 0) || 1)); // 다층(가산). 생략=1=단층
+  return { fw, fd, hw: fw / 2, hd: fd / 2, H, t: space.shell.wallT, floors, totalH: floors * H };
+}
+
+// [오픈월드 다층] shell.stairs 밴드 → 오를 수 있는 경사 램프 지오. 물리(등반 y)는 world.js 밴드가 담당하므로
+// 지오는 근사 경사면(밟는 느낌)이면 충분. z0(yFrom)→z1(yTo) 방향으로 기울인 슬래브.
+function buildStairRamp(track, s) {
+  const w = Math.abs(s.x1 - s.x0);
+  const run = Math.hypot(s.z1 - s.z0, s.yTo - s.yFrom); // 경사면 길이
+  const geo = new THREE.BoxGeometry(w, 0.18, run);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x9a968e, roughness: 0.92, metalness: 0 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set((s.x0 + s.x1) / 2, (s.yFrom + s.yTo) / 2, (s.z0 + s.z1) / 2);
+  mesh.rotation.x = Math.atan2(s.yTo - s.yFrom, s.z1 - s.z0); // z-y 평면 경사
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  track(mesh); // geo·mat dispose 등록
+  return mesh;
 }
 
 // 인스턴스 색 틴트(#56/#43) — 서브그룹 분리 없이 InstancedMesh.setColorAt(instanceColor)로 파츠별 색.
@@ -1102,19 +1119,26 @@ export function buildSpaceGroup(space, opts = {}) {
   const g = new THREE.Group();
   const geos = [], mats = [];
   const track = (o) => { if (o.geometry) geos.push(o.geometry); if (o.material) mats.push(o.material); return o; };
-  const { fw, fd, hw, hd, H, t } = spaceDims(space);
+  const { fw, fd, hw, hd, H, t, floors, totalH } = spaceDims(space);
 
   // shell: 바닥·천장·4벽 + 피처월 오버레이 (미술관 재질 계승)
   // shellSurf: 라이트맵 베이크용 내부 표면 기술자(중심·내부법선·업·폭·높이) — 정투영 카메라·uv1 정렬에 사용.
   const shellSurf = [];
   const UP_Y = () => new THREE.Vector3(0, 1, 0);
-  const floorM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), floorMatTex(space.shell.finish.floor, fw, fd))); floorM.position.set(0, -0.05, 0); floorM.receiveShadow = true; g.add(floorM);
-  shellSurf.push({ mesh: floorM, center: new THREE.Vector3(0, 0.001, 0), normal: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0, 0, -1), width: fw, height: fd });
-  if (!opts.hideCeiling) { // 에디터 컷어웨이: 천장 숨김(방 안이 보이게)
-    const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('ceiling', space.shell.finish.ceiling))); ceilM.position.set(0, H, 0); g.add(ceilM);
+  // [다층] 슬래브: f=0 바닥(y=-0.05, 현행 동일) + f>=1 층간 바닥(=아래층 천장 공유). floors=1이면 루프 1회로 현행 합동.
+  // Stop B: 슬래브는 통짜(계단 상부 개구부는 후속) — 램프가 관통(시각 클리핑 감수).
+  let floorM = null;
+  for (let f = 0; f < floors; f++) {
+    const sm = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), floorMatTex(space.shell.finish.floor, fw, fd)));
+    sm.position.set(0, f * H - 0.05, 0); sm.receiveShadow = true; g.add(sm);
+    shellSurf.push({ mesh: sm, center: new THREE.Vector3(0, f * H + 0.001, 0), normal: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0, 0, -1), width: fw, height: fd });
+    if (f === 0) floorM = sm;
+  }
+  if (!opts.hideCeiling) { // 에디터 컷어웨이: 천장 숨김(방 안이 보이게). 최상층 천장 y=totalH(floors=1이면 H, 현행 동일).
+    const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat('ceiling', space.shell.finish.ceiling))); ceilM.position.set(0, totalH, 0); g.add(ceilM);
     // #54 방문자뷰: 천장이 보이므로 셸 라이트맵 베이크 대상에 포함(내부면=아래 향한 법선).
     // 빌더(hideCeiling:true)에는 이 분기가 안 타므로 shell 미추가 → 기존 베이크 회귀 없음.
-    shellSurf.push({ mesh: ceilM, center: new THREE.Vector3(0, H - 0.051, 0), normal: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1), width: fw, height: fd });
+    shellSurf.push({ mesh: ceilM, center: new THREE.Vector3(0, totalH - 0.051, 0), normal: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1), width: fw, height: fd });
   }
   // 코너 정합(#62): N/S 벽을 두께만큼 양옆 연장(fw+t)해 외곽 빈틈을 덮고, E/W 벽을 fd-t로 줄여
   // 끝이 N/S 내부면(z=±(fd-t)/2)에 정확히 맞닿게 함 → 코너 노치(외곽 빈틈)·겹침(내곽 z-fighting) 동시 제거.
@@ -1122,33 +1146,37 @@ export function buildSpaceGroup(space, opts = {}) {
   // [오픈월드] shell.entries에 든 방향은 통짜 벽 대신 문틀(좌우 세그먼트+상단 인방)로 뚫어 파셀 통행로를 낸다.
   // entries 빈배열(기존 v2 문서 전부)이면 이 분기가 안 타므로 회귀 0. 방향 인덱스 = WALL_DIRS 순서.
   const WALL_DIRS = ['north', 'south', 'west', 'east'];
-  const openSet = new Set(space.shell.entries || []);
   const DOOR_H = 2.4;                     // 문틀 통로 높이(m). DOOR_W는 모듈 상수(world.js 공유)
   const wallFin = space.shell.finish.wall;
-  [[0, -hd, fw + t, t], [0, hd, fw + t, t], [-hw, 0, t, fd - t], [hw, 0, t, fd - t]].forEach(([x, z, ww, dd], wi) => {
-    const wallW = Math.max(ww, dd); // 벽면 가로 길이(N/S=fw, E/W=fd)로 텍스처 반복
-    const inN = new THREE.Vector3(-x, 0, -z).normalize(); // 방 중심 향한 내부 법선
-    const horiz = ww >= dd;               // N/S=수평(길이축 x) / W/E=수직(길이축 z)
-    const len = horiz ? ww : dd, thick = horiz ? dd : ww;
-    if (openSet.has(WALL_DIRS[wi]) && len > DOOR_W + 0.8) {
-      // 문틀: 좌·우 세그먼트 + 상단 인방(가운데 통로). shellSurf는 세그먼트만(인방 생략 — 베이크 근사).
-      const side = (len - DOOR_W) / 2, lintelH = Math.max(0.001, H - DOOR_H), off = DOOR_W / 2 + side / 2;
-      for (const s of [-1, 1]) {
-        const sw = horiz ? side : thick, sd = horiz ? thick : side;
-        const sx = x + (horiz ? s * off : 0), sz = z + (horiz ? 0 : s * off);
-        const seg = track(new THREE.Mesh(new THREE.BoxGeometry(sw, H, sd), wallMat(wallFin, side, H)));
-        seg.position.set(sx, H / 2, sz); seg.receiveShadow = true; g.add(seg);
-        shellSurf.push({ mesh: seg, center: new THREE.Vector3(sx + inN.x * (t / 2), H / 2, sz + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: side, height: H });
+  // [다층] 4벽을 층별(baseY=f*H, 높이 H)로. 문틀(entries)은 지면층(f=0)만 — 파셀 통행. floors=1이면 현행 합동.
+  for (let f = 0; f < floors; f++) {
+    const baseY = f * H;
+    const openSet = (f === 0) ? new Set(space.shell.entries || []) : new Set();
+    [[0, -hd, fw + t, t], [0, hd, fw + t, t], [-hw, 0, t, fd - t], [hw, 0, t, fd - t]].forEach(([x, z, ww, dd], wi) => {
+      const wallW = Math.max(ww, dd); // 벽면 가로 길이(N/S=fw, E/W=fd)로 텍스처 반복
+      const inN = new THREE.Vector3(-x, 0, -z).normalize(); // 방 중심 향한 내부 법선
+      const horiz = ww >= dd;               // N/S=수평(길이축 x) / W/E=수직(길이축 z)
+      const len = horiz ? ww : dd, thick = horiz ? dd : ww;
+      if (openSet.has(WALL_DIRS[wi]) && len > DOOR_W + 0.8) {
+        // 문틀: 좌·우 세그먼트 + 상단 인방(가운데 통로). shellSurf는 세그먼트만(인방 생략 — 베이크 근사).
+        const side = (len - DOOR_W) / 2, lintelH = Math.max(0.001, H - DOOR_H), off = DOOR_W / 2 + side / 2;
+        for (const s of [-1, 1]) {
+          const sw = horiz ? side : thick, sd = horiz ? thick : side;
+          const sx = x + (horiz ? s * off : 0), sz = z + (horiz ? 0 : s * off);
+          const seg = track(new THREE.Mesh(new THREE.BoxGeometry(sw, H, sd), wallMat(wallFin, side, H)));
+          seg.position.set(sx, baseY + H / 2, sz); seg.receiveShadow = true; g.add(seg);
+          shellSurf.push({ mesh: seg, center: new THREE.Vector3(sx + inN.x * (t / 2), baseY + H / 2, sz + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: side, height: H });
+        }
+        const lw = horiz ? DOOR_W : thick, ld = horiz ? thick : DOOR_W;
+        const lintel = track(new THREE.Mesh(new THREE.BoxGeometry(lw, lintelH, ld), wallMat(wallFin, DOOR_W, lintelH)));
+        lintel.position.set(x, baseY + DOOR_H + lintelH / 2, z); lintel.receiveShadow = true; g.add(lintel);
+      } else {
+        const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), wallMat(wallFin, wallW, H)));
+        m.position.set(x, baseY + H / 2, z); m.receiveShadow = true; g.add(m);
+        shellSurf.push({ mesh: m, center: new THREE.Vector3(x + inN.x * (t / 2), baseY + H / 2, z + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: wallW, height: H });
       }
-      const lw = horiz ? DOOR_W : thick, ld = horiz ? thick : DOOR_W;
-      const lintel = track(new THREE.Mesh(new THREE.BoxGeometry(lw, lintelH, ld), wallMat(wallFin, DOOR_W, lintelH)));
-      lintel.position.set(x, DOOR_H + lintelH / 2, z); lintel.receiveShadow = true; g.add(lintel);
-    } else {
-      const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), wallMat(wallFin, wallW, H)));
-      m.position.set(x, H / 2, z); m.receiveShadow = true; g.add(m);
-      shellSurf.push({ mesh: m, center: new THREE.Vector3(x + inN.x * (t / 2), H / 2, z + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: wallW, height: H });
-    }
-  });
+    });
+  }
   const fwSide = space.shell.finish.featureWall;
   if (fwSide && fwSide !== 'none') {
     const fwW = (fwSide === 'east' || fwSide === 'west') ? fd - 0.2 : fw - 0.2;
@@ -1161,6 +1189,9 @@ export function buildSpaceGroup(space, opts = {}) {
     shellSurf.push({ mesh: fwl, center: new THREE.Vector3(px + fwN[0] * 0.02, H / 2, pz + fwN[2] * 0.02), normal: new THREE.Vector3(fwN[0], fwN[1], fwN[2]), up: UP_Y(), width: fwW, height: H - 0.2 });
   }
 
+  // [다층] 계단 램프 — shell.stairs 밴드를 오를 수 있는 경사로 렌더(물리 등반은 world.js 밴드). 빈배열이면 미생성.
+  for (const s of (space.shell.stairs || [])) g.add(buildStairRamp(track, s));
+
   // 파츠: 타입별 그룹. 인스턴싱 가능 → InstancedMesh, 작품/스크린 → 개별(+자동액자 캔버스).
   // 서브그룹 키 = 타입×variant×mat (#56). color는 키에 넣지 않는다 → 같은 지오/재질 InstancedMesh 공유 + 인스턴스 틴트.
   // [오픈월드] shellOnly: 원거리/대각 파셀 임포스터 — 셸만 그리고 파츠 생략(draw-call 절감,
@@ -1172,7 +1203,7 @@ export function buildSpaceGroup(space, opts = {}) {
   });
   const partRefs = [];
   // v2 스택: p.y(절대 월드 Y·파츠 중심)가 있으면 그 값, 없으면 타입별 기본 y(바닥/벽걸이).
-  const pY = (p, type) => (p.y != null ? p.y : partY(type, H));
+  const pY = (p, type) => (p.y != null ? p.y : partY(type, H) + (p.floor || 0) * H); // [다층] p.floor 층 오프셋(생략=0=지면층)
   for (const grp of Object.values(byKey)) {
     const { type, variant, mat, list } = grp;
     if (type === 'artwork') {
@@ -1264,7 +1295,7 @@ export function buildSpaceGroup(space, opts = {}) {
       }
     }
   }
-  g.userData = { dims: { fw, fd, hw, hd, H, t }, partRefs, geos, mats, floor: floorM, shell: shellSurf };
+  g.userData = { dims: { fw, fd, hw, hd, H, t, floors, totalH }, partRefs, geos, mats, floor: floorM, shell: shellSurf };
   return g;
 }
 
