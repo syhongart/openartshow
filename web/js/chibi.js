@@ -944,12 +944,16 @@ function vividSkin(color) {
   return c;
 }
 
+// 외곽선 전역 두께 배수 — 1=기존, <1 얇게. 감독 지시(조금 얇게)로 하향.
+// addOutline의 모든 호출부(월드 단위 thickness)에 일괄 적용된다(SSOT 1지점 조정).
+const OUTLINE_SCALE = 0.8;
 /**
  * 외곽선 — 법선 방향으로 "고정 두께"만큼 밀어낸 백페이스 셸. 스케일 배수 방식과 달리
  * 파츠 크기와 무관하게 일정한 선 두께를 만들어(스티커 일러스트식 균일 외곽선), 큰 파츠와
  * 작은 파츠의 외곽선이 같은 굵기로 보인다. thickness는 월드 단위(≈0.012 = 굵은 만화 선).
  */
 function addOutline(mesh, thickness, matCollect, geoCollect) {
+  thickness *= OUTLINE_SCALE;
   let g = mesh.geometry.clone();
   // 하드에지 저폴리(고깔 등)에서 면법선이 갈라지면 오프셋 셸이 뾰족뾰족 찢어진다.
   // 위치 기준으로 정점을 용접(법선/uv 제거 후 mergeVertices)하고 부드러운 법선을
