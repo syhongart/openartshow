@@ -42,8 +42,9 @@
 - **확장 트리거(동시 접속 증가 시)**: 호스트릴레이는 방당 용량 천장(N≈13~51, `SCALING.md`)·호스트 소멸 한계가 있으므로,
   트래픽이 붙으면 **디스트릭트 샤딩(4×4 파셀=1룸, roomId suffix + 경계 시 mp 인스턴스 교체)** 또는 **Supabase Realtime
   Presence**(서버 중계라 호스트 소멸 없음)로 이행. `multiplayer.js` 검증·레이트리밋·클램프 계약은 그대로 이식.
-- **플래그 해제 전 보안 선결(security-officer 29259bf)**: world.html 인라인 스크립트 sha256 해시 고정(`'unsafe-inline'` 제거),
-  P2P IP 노출 UI 고지, `connect-src`를 `wss://0.peerjs.com`로 축소, `openworld` 룸 예약어 등록.
+- **플래그 해제 전 보안 선결(security-officer 29259bf)** → **완료(아래 "플래그 해제 준비" 절)**: 인라인 스크립트를
+  외부 모듈(`js/world-boot.js`)로 추출해 `'unsafe-inline'` 제거(해시 대신 파일 분리 — 유지보수 우위), P2P IP 노출 UI 고지,
+  `connect-src`를 `'self' wss://0.peerjs.com`로 축소, `openworld` 룸 예약어 문서 게이트.
 
 ### 지속 백엔드 (CSP 무변경)
 - Supabase(Postgres+Auth+RLS+Realtime). 저장: 공간 문서 / 파셀 배치(`(px,pz)` 유니크=중복 점유 방지) / 방명록.
@@ -134,6 +135,42 @@
 - 파일: `world-gen.js`(genParcel/riverColAt/좌표 일반화), `world.js`(스카이·지면·다리·바다·shellSolids·개방 이동), `world.html`(강 회피 fixLand·미니맵 강), `manifest.json`(cell 24). **space-render/space.js 무수정**(라이브 공유 리스크 0).
 
 **헤드리스 QA(swiftshader)**: 거리 자유 이동(파셀 전환, clamp 없음) / 남문 진입(로컬 z=-2.6) / 북벽 차단(z=-3.4 정지) / 강 첨벙 groundY -0.4·다리 0 / 2층 계단 등반 3.6 / NPC 5 스폰 / 하늘 렌더 / 콘솔 0. world-gen 전수 assert: footprint 3종 배치 안전(통로·벽 안) 0건, 강 연속성(행당 ±1), 결정론.
+
+## 거리 연출·물결·거리 NPC 고도화 (2026-07-19)
+
+복셀스 개방 도시에 거리 디테일 3종을 가산(전부 결정론·behind-flag·라이브 무수정).
+
+- **거리 가구**(`world-gen.genStreet` + `world.js buildStreet`): 육지 파셀에 가로수(줄기+2단 캐노피 InstancedMesh, 저채도 녹색 3톤)·
+  가로등(진회색 기둥 + 웜톤 emissive 갓, 실제 THREE.Light 0)·벤치·화분(정점색)을 시드 절차 배치. 장식 시드(`STREET_SALT` XOR)로
+  건물/강 생성과 독립. 도로 통행 스트립·건물 풋프린트·남문 접근로(3m)·강 회피, 파셀당 ≤6. 배치와 solid를 같은 배열에서 파생(렌더-물리 정합).
+- **물결 애니메이션**(`world.js`): `T.water`(강/바다 공용 sea 평면)에 자작 소형 잔물결 캔버스 텍스처 + `update`에서 `map.offset` 스크롤.
+  저사양(버텍스 변형·셰이더 0, 드로우콜 증가 0). `space-render.waterTexGen`은 비공개라 라이브 공유파일 무수정 위해 소형 자작.
+- **거리 배회 NPC**(`world-gen.genWalker` + `world.js streetWalkers`): 작품 중심 `NpcCrowd`와 별개 경량 앰비언트. 도로 라인(파셀
+  가장자리=건물 밖)만 왕복 → 건물 관통·강 침입 구조 차단. 외형은 시드 결정론(`CHIBI_PRESETS` 선택 후 `encodeChibi`), 목표 재설정은 로컬 시뮬.
+  `createAvatarInstance` 재사용·빈 닉네임(라벨 없음), 로드 파셀당 0~1명·총원 ≤6, 언로드 시 dispose.
+
+**헤드리스 QA(swiftshader)**: 스폰 드로우콜 218(≤230) / genStreet·genWalker 결정론 deep-equal / 가로수 walk 충돌 0.60m /
+남문 접근로 진입 성공 / 물 map.offset 3초 Δ(0.024,0.015)·드로우콜 증가 0 / walker 배회 이동·언로드 잔존 0 / 콘솔 0.
+
+## 플래그 해제 준비 · 보안 선결 4건 (2026-07-19)
+
+`security-officer 29259bf` 지적 4건을 해소해 플래그 해제(라이브 노출)의 보안 선결을 마친다. **해제 자체는 감독·팀장 게이트** — 본 절은 준비만.
+
+1. **`'unsafe-inline'` 제거**: world.html 인라인 `<script type="module">`을 `web/js/world-boot.js` 신규 외부 모듈로 추출하고
+   `<script type="module" src="./js/world-boot.js">`로 로드 → CSP `script-src 'self'`만으로 동작(sha256 해시 대신 파일 분리 — 코드 변경마다 해시
+   재계산 불필요, 유지보수 우위). module script는 기본 defer라 DOM 로드 후 실행·top-level await 정상. `style-src 'unsafe-inline'`는 유지(index.html 관행).
+2. **P2P IP 고지**: 입장 오버레이(`#enter`)에 1줄 — "동시 접속 데모는 P2P라 접속자 간 네트워크 주소가 노출될 수 있어요."(§6 담백 톤).
+3. **`connect-src` 축소**: `'self' https: wss:` → `'self' wss://0.peerjs.com`. STUN/TURN ICE는 WebRTC라 connect-src 통제 밖 → 불필요.
+   manifest fetch는 `'self'`로 커버. 셀프호스팅 시그널링 전환(`window.LU_PEER_OPTS`) 시 이 도메인을 실제 시그널링 호스트로 교체(주석 명시).
+4. **`openworld` 룸 예약어**: 라이브(config/main) 무수정 제약이 있어 코드 등록 대신 **문서 게이트**로 처리한다. `galleryId 'openworld'`는
+   **라이브 갤러리 슬러그로 사용 금지**(`world.js`가 `PEER_ROOM_ID + '-openworld'` 룸을 점유 — 동명 갤러리가 생기면 룸 충돌). 갤러리 발행은 저장소 커밋
+   경유라 문서 게이트로 충분. 배포 전 스모크에 다음 assert를 추가:
+   ```
+   node -e "const g=require('./web/galleries/index.json'); if(g.some(x=>x.id==='openworld')) throw new Error('openworld 예약어 충돌'); console.log('OK: openworld 예약 준수')"
+   ```
+
+**헤드리스 QA(swiftshader)**: world.html 로드 정상(외부 모듈 top-level await) / CSP 위반 콘솔 에러 0 / 오버레이 P2P 고지 렌더 /
+미니맵·채팅·조이스틱·__world API 무회귀 / galleries assert 통과.
 
 ## 리스크
 
