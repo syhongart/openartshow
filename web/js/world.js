@@ -281,13 +281,24 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 거리 가구 — 풀디테일 파셀만(대각 shell 임포스터는 생략). 배치·solid 동일 데이터 파생.
     let streetMeshes = null;
     if (!shellOnly && def.street && def.street.length) streetMeshes = buildStreet(def.street, group, ox, oz, solids);
+    // 거리 배회 NPC — 풀디테일 파셀 + 총원 ≤6. 라벨 없음(빈 닉네임 규약). 외형 시드 결정론.
+    let walker = null;
+    if (!shellOnly && def.walker && walkerTotal() < 6) {
+      const wd = def.walker;
+      const inst = createAvatarInstance(wd.char, '#ffffff', ''); // 빈 닉네임 → 라벨 미생성
+      inst.group.position.set(ox + wd.x, 0, oz + wd.z);
+      scene.add(inst.group);
+      walker = { inst, line: wd.line, ox, oz, x: ox + wd.x, z: oz + wd.z, tx: ox + wd.x, tz: oz + wd.z, ry: 0, state: 'walk', timer: 0, speed: 0.7 + Math.random() * 0.3 };
+      pickWalkerTarget(walker);
+    }
     scene.add(group);
-    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, lod, px, pz });
+    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz });
   }
 
   function unloadParcel(k) {
     const L = loaded.get(k); if (!L) return;
     if (L.crowd) { for (const a of L.avatars.values()) { scene.remove(a.inst.group); a.inst.dispose(); } }
+    if (L.walker) { scene.remove(L.walker.inst.group); L.walker.inst.dispose(); } // 거리 배회 NPC 정리(씬 잔존 0)
     scene.remove(L.group);
     if (L.bldGroup) disposeSpaceGroup(L.bldGroup);
     // 거리 가구: InstancedMesh는 인스턴스 버퍼 회수(공유 지오 SG·재질 T는 유지 → createWorld dispose에서 일괄).
@@ -446,6 +457,33 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     }
   }
 
+  // ── 거리 배회 NPC(streetWalkers) — 작품 중심 NpcCrowd와 별개의 경량 앰비언트 시스템. ──
+  // 도로 라인(파셀 가장자리 = 건물 밖)만 왕복 → 건물 관통·강 침입 없음. 외형은 시드 결정론
+  // (def.walker), 목표 재설정은 로컬 시뮬(Math.random 허용 — 앰비언트). 총원 ≤6(성능).
+  function walkerTotal() { let n = 0; for (const L of loaded.values()) if (L.walker) n++; return n; }
+  function pickWalkerTarget(w) {
+    const roadS = w.oz + CELLZ / 2 - 1.25, roadE = w.ox + CELLX / 2 - 1.25, t = Math.random();
+    if (w.line === 'south') { w.tx = w.ox - CELLX / 2 + 2.5 + t * (CELLX - 5); w.tz = roadS; }
+    else { w.tx = roadE; w.tz = w.oz - CELLZ / 2 + 2.5 + t * (CELLZ - 5); }
+  }
+  function stepWalkers(d) {
+    for (const L of loaded.values()) {
+      const w = L.walker; if (!w) continue;
+      if (w.state === 'pause') {
+        w.timer -= d; if (w.timer <= 0) { w.state = 'walk'; pickWalkerTarget(w); }
+        w.inst.update(d, 0); continue;
+      }
+      const dx = w.tx - w.x, dz = w.tz - w.z, dist = Math.hypot(dx, dz);
+      if (dist < 0.15) { w.state = 'pause'; w.timer = 1.4 + Math.random() * 2.6; w.inst.update(d, 0); continue; }
+      const step = Math.min(dist, w.speed * d);
+      w.x += (dx / dist) * step; w.z += (dz / dist) * step;
+      w.ry = Math.atan2(-dx / dist, -dz / dist); // yaw=0 → -Z 관례
+      w.inst.group.position.set(w.x, 0, w.z);
+      w.inst.group.rotation.y = w.ry;
+      w.inst.update(d, w.speed);
+    }
+  }
+
   // ── 입력(키/터치) ──
   const kmov = { fwd: 0, right: 0 }, tmov = { fwd: 0, right: 0 }, keys = {};
   function recomputeKeyMove() {
@@ -474,6 +512,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     pos.y += ((groundY + EYE) - pos.y) * Math.min(1, GROUND_LERP_RATE * d);
     applyPose();
     stepNpcs(d);
+    stepWalkers(d); // 거리 배회 NPC 앰비언트 시뮬
     // 원격 아바타 발바닥 = groundY(다층·강 반영). 원격 간 충돌은 데모 스코프 아웃.
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
     renderer.render(scene, camera);

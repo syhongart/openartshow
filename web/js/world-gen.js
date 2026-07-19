@@ -13,6 +13,7 @@
 // -----------------------------------------------------------------------------
 import { normalizeSpace, FOOTPRINT, STORY_H, PART_TYPES } from './space.js';
 import { SPACE_PRESETS } from './space-presets.js';
+import { encodeChibi, CHIBI_PRESETS } from './chibi.js';
 
 // ── seeded PRNG (mulberry32) — Math.random 금지: 모든 방문자 동일 세계 ──
 export function mulberry32(a) {
@@ -265,4 +266,28 @@ export function genStreet(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel) {
     if (furn < furnMax && roll && safe(pxp, pzp, 0.35)) { items.push({ kind: 'planter', x: pxp, z: pzp }); furn++; }
   }
   return items;
+}
+
+// ── 거리 배회 NPC(streetWalker) 초기 배치(결정론) ─────────────────────────────
+// 외형(chibi 룩)·라인·초기 위치를 파셀 시드로 결정(randomChibiLook은 Math.random이라 금지 —
+// CHIBI_PRESETS에서 시드 선택 후 encodeChibi). 실제 스폰 여부·목표 재설정(로컬 시뮬)은 world.js가
+// 총원≤6 제약·Math.random으로 담당(앰비언트). world.html이 def.walker에 실어준다.
+const WALKER_SALT = 0x9e3779;
+
+/**
+ * 파셀 (px,pz)의 거리 배회 NPC 후보(0 또는 1). 강 파셀·건물 없는 파셀은 null.
+ * @returns {{char:string, line:'south'|'east', x:number, z:number}|null}  좌표는 로컬(파셀 중심 원점, 도로 라인 위)
+ */
+export function genWalker(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel) {
+  if (!parcel || parcel.water || !parcel.space) return null;
+  const rng = mulberry32(cellSeed((seed ^ WALKER_SALT) >>> 0, px, pz));
+  if (rng() > 0.6) return null;              // 60% 파셀에만 1명(총원 상한은 world.js)
+  const line = rng() < 0.58 ? 'south' : 'east';
+  const preset = CHIBI_PRESETS[Math.floor(rng() * CHIBI_PRESETS.length) % CHIBI_PRESETS.length];
+  const char = encodeChibi(Object.assign({}, preset.look));
+  const cx = cell.x, cz = cell.z, t = rng();
+  const roadS = cz / 2 - 1.25, roadE = cx / 2 - 1.25; // 도로 중심선(가장자리 = 건물 밖 → 건물 관통 없음)
+  const x = line === 'south' ? (-cx / 2 + 2.5) + t * (cx - 5) : roadE;
+  const z = line === 'south' ? roadS : (-cz / 2 + 2.5) + t * (cz - 5);
+  return { char, line, x, z };
 }
