@@ -33,10 +33,10 @@ const azWorld = (u) => u * Math.PI * 2 - Math.PI / 2;
 // 시간대×날씨 → 조명·안개 테이블. fog는 ⑨규칙에 따라 돔 최하단색과 동일하게 유지할 것.
 const LIGHT = {
   day: {
-    clear:    { sun: 0xfff2dc, sunI: 0.95, hemiS: 0xcfe4f7, hemiG: 0x8fa385, hemiI: 1.0,  fog: 0xe9eef2, sunEl: 0.62 },
-    overcast: { sun: 0xdfe3e8, sunI: 0.35, hemiS: 0xb9c2cc, hemiG: 0x7d8578, hemiI: 0.9,  fog: 0xc3cad2, sunEl: 0.62 },
-    rain:     { sun: 0xc9d2dc, sunI: 0.25, hemiS: 0x9fa9b5, hemiG: 0x6d7570, hemiI: 0.85, fog: 0xa7b0ba, sunEl: 0.62 },
-    snow:     { sun: 0xe8ecf2, sunI: 0.4,  hemiS: 0xcdd6e0, hemiG: 0x9aa39c, hemiI: 0.95, fog: 0xd4dbe3, sunEl: 0.62 },
+    clear:    { sun: 0xfff2dc, sunI: 0.95, hemiS: 0xcfe4f7, hemiG: 0x8fa385, hemiI: 1.0,  fog: 0xe9eef2, sunEl: 0.45 },
+    overcast: { sun: 0xdfe3e8, sunI: 0.35, hemiS: 0xb9c2cc, hemiG: 0x7d8578, hemiI: 0.9,  fog: 0xc3cad2, sunEl: 0.45 },
+    rain:     { sun: 0xc9d2dc, sunI: 0.25, hemiS: 0x9fa9b5, hemiG: 0x6d7570, hemiI: 0.85, fog: 0xa7b0ba, sunEl: 0.45 },
+    snow:     { sun: 0xe8ecf2, sunI: 0.4,  hemiS: 0xcdd6e0, hemiG: 0x9aa39c, hemiI: 0.95, fog: 0xd4dbe3, sunEl: 0.45 },
   },
   sunset: {
     clear:    { sun: 0xffa25e, sunI: 0.9,  hemiS: 0xe8b48a, hemiG: 0x7a6a58, hemiI: 0.85, fog: 0xf2c9a2, sunEl: 0.06 },
@@ -78,28 +78,83 @@ function glowStops(c0, c1, a0, gamma = 2.2, n = 10) {
   return st;
 }
 
-// 뭉게구름 클러스터 — ③ 2패스 음영: 회색 하부 퍼프(평탄 밑면) 먼저, 밝은 상부 퍼프 나중.
-// u=0/1 경계에서 잘리지 않도록 wrap 3회 그리기(초기 1회 페인트라 비용 무시 가능).
-function cumulus(ctx, rnd, W, cx, cy, s, tint, shade) {
-  const baseY = cy + s * 0.34; // 평탄한 밑면 기준선
-  const puffs = [];
-  for (let p = 0; p < 14; p++) {
-    const px = cx + (rnd() - 0.5) * s * 2.8;
-    const py = Math.min(baseY, cy + (rnd() - 0.5) * s * 0.9);
-    puffs.push([px, py, s * (0.34 + rnd() * 0.6)]);
-  }
-  for (const ox of [-W, 0, W]) {
-    for (const [px, py, rr] of puffs) { // 하부 음영(살짝 아래로)
-      const g = ctx.createRadialGradient(px + ox, py + rr * 0.35, 0, px + ox, py + rr * 0.35, rr);
-      g.addColorStop(0, `rgba(${shade.join(',')},0.20)`); g.addColorStop(1, `rgba(${shade.join(',')},0)`);
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px + ox, py + rr * 0.35, rr, 0, 7); ctx.fill();
+// ── 절차 노이즈(값 노이즈 fBm) ────────────────────────────────────────────────
+// 원반(radial) 붓질 구름은 동그라미 뭉침이 얼굴처럼 보이고(파레이돌리아) 에어브러시처럼
+// 인위적이라는 감독 지적 — 프랙탈 노이즈 밀도장 기반으로 근본 교체. 수평 주기는 격자
+// 인덱스 모듈로로 정확히 wrap(u=0/1 이음새 0).
+function makeNoise(rnd, size) {
+  const g = new Float32Array(size * size);
+  for (let i = 0; i < g.length; i++) g[i] = rnd();
+  return (x, y, xper) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const sx = xf * xf * (3 - 2 * xf), sy = yf * yf * (3 - 2 * yf);
+    const i0 = ((xi % xper) + xper) % xper, i1 = (i0 + 1) % xper;
+    const j0 = ((yi % size) + size) % size, j1 = (j0 + 1) % size;
+    const a = g[j0 * size + (i0 % size)], b = g[j0 * size + (i1 % size)];
+    const c = g[j1 * size + (i0 % size)], d = g[j1 * size + (i1 % size)];
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+  };
+}
+// u∈[0,1) 가로 1회 wrap 기준 fBm. P = 기본 옥타브의 격자 주기(정수 — 이음새 보장).
+function fbm(n, u, v, oct, P) {
+  let s = 0, amp = 0.5, f = 1, norm = 0;
+  for (let o = 0; o < oct; o++) { s += amp * n(u * P * f, v * P * f, P * f); norm += amp; amp *= 0.5; f *= 2; }
+  return s / norm;
+}
+
+// 노이즈 구름장 — 저해상 밀도장(D)을 만들고 상하 밀도차로 자기음영(위가 옅으면 = 구름
+// 윗면 = 밝음)한 뒤 돔 상반부에 확대 합성. mode: 'cumulus'(맑은 하늘 조각구름 밴드) /
+// 'layer'(먹구름·눈구름 전천 구조).
+function paintCloudLayer(ctx, rnd, W, Hh, o) {
+  const LW = o.soft ? 256 : 512, LH = LW >> 1;
+  const n = makeNoise(rnd, 64);
+  const D = new Float32Array(LW * LH);
+  for (let y = 0; y < LH; y++) {
+    const v = y / LH; // 0=천정 → 1=지평선
+    // 종 모양 분포 — 시점에서 실제로 보이는 중간 고도(v 0.3~0.75)에 구름이 오도록
+    const prof = o.mode === 'cumulus'
+      ? Math.min(1, Math.max(0, (v - 0.05) / 0.2)) * (1 - Math.max(0, (v - 0.9) / 0.1) * 0.55)
+      : 1 - Math.max(0, (v - 0.78) / 0.22) * 0.85; // 지평선 부근은 fog로 소멸
+    if (prof <= 0) continue;
+    for (let x = 0; x < LW; x++) {
+      const u = x / LW, yl = y / LW;
+      let field;
+      if (o.mode === 'cumulus') {
+        const mask = fbm(n, u, yl + 37, 3, 5);  // 저주파 — 구름 덩어리 배치(중형 다수)
+        const det = fbm(n, u, yl, 5, 9);        // 고주파 — 가장자리 디테일
+        // 저고도 커버리지 보너스 — 지평선 근처는 투시 압축으로 구름이 겹겹이 보이는 실제 하늘 모사
+        field = mask * 0.6 + det * 0.4 + Math.max(0, v - 0.35) * 0.14;
+      } else {
+        field = fbm(n, u, yl, 5, 5);
+      }
+      let d = Math.max(0, Math.min(1, (field - o.thr) / o.softEdge));
+      d = d * d * (3 - 2 * d);
+      D[y * LW + x] = d * prof;
     }
-    for (const [px, py, rr] of puffs) { // 상부 하이라이트(살짝 위로·작게)
-      const g = ctx.createRadialGradient(px + ox, py - rr * 0.22, 0, px + ox, py - rr * 0.22, rr * 0.92);
-      g.addColorStop(0, `rgba(${tint.join(',')},0.30)`); g.addColorStop(0.6, `rgba(${tint.join(',')},0.14)`); g.addColorStop(1, `rgba(${tint.join(',')},0)`);
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px + ox, py - rr * 0.22, rr * 0.92, 0, 7); ctx.fill();
+  }
+  const off = document.createElement('canvas'); off.width = LW; off.height = LH;
+  const octx = off.getContext('2d');
+  const im = octx.createImageData(LW, LH);
+  const px = im.data;
+  for (let y = 0; y < LH; y++) {
+    const yu = Math.max(0, y - 2);
+    for (let x = 0; x < LW; x++) {
+      const i = y * LW + x, here = D[i];
+      if (here <= 0.003) continue;
+      const light = Math.max(0, Math.min(1, 0.55 + (here - D[yu * LW + x]) * 2.6));
+      const j = i * 4;
+      px[j] = o.shade[0] + (o.tint[0] - o.shade[0]) * light;
+      px[j + 1] = o.shade[1] + (o.tint[1] - o.shade[1]) * light;
+      px[j + 2] = o.shade[2] + (o.tint[2] - o.shade[2]) * light;
+      px[j + 3] = Math.min(255, here * o.alphaMax * 255);
     }
   }
+  octx.putImageData(im, 0, 0);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(off, 0, 0, LW, LH, 0, 0, W, Hh);
+  ctx.restore();
 }
 
 // ② 밴딩 파괴 디더링 — 미세 모노 노이즈를 낮은 알파로 1패스(저사양은 스킵).
@@ -123,18 +178,23 @@ function paintSky(ctx, W, H, time, weather, opts) {
   const cloudy = weather !== 'clear';
   const horizon = hex(L.fog); // ⑨ 지평선 = fog색 — 이음새 제거의 핵
 
+  // 구름 하늘 톤(그라디언트·구름장 공용)
+  const snowy = weather === 'snow';
+  const cloudK = weather === 'rain' ? 0.8 : 1.0;
+  const snowTop = { day: [168, 176, 186], sunset: [172, 150, 136], night: [40, 46, 58] };
+  const cloudTop = !cloudy ? null : snowy ? snowTop[time]
+    : time === 'night' ? [22, 26, 36] : time === 'sunset' ? [110, 96, 88] : [118, 128, 140];
+
   // 1) 베이스 수직 그라디언트(천정→지평) + 하반부 fog색
   const grd = ctx.createLinearGradient(0, 0, 0, Hh);
   if (cloudy) {
-    const snowTop = { day: [168, 176, 186], sunset: [172, 150, 136], night: [40, 46, 58] };
-    const k = weather === 'rain' ? 0.8 : 1.0;
-    const top = weather === 'snow' ? snowTop[time]
-      : time === 'night' ? [22, 26, 36] : time === 'sunset' ? [110, 96, 88] : [118, 128, 140];
-    grd.addColorStop(0, `rgb(${top.map((v) => (v * k) | 0).join(',')})`);
-    grd.addColorStop(0.62, `rgb(${top.map((v) => (v * k * 1.22) | 0).join(',')})`);
+    grd.addColorStop(0, `rgb(${cloudTop.map((v) => (v * cloudK) | 0).join(',')})`);
+    grd.addColorStop(0.62, `rgb(${cloudTop.map((v) => (v * cloudK * 1.22) | 0).join(',')})`);
     grd.addColorStop(1, horizon);
   } else if (time === 'day') {
-    grd.addColorStop(0, '#3f86c8'); grd.addColorStop(0.5, '#8fbce2'); grd.addColorStop(0.82, '#cfe2ef'); grd.addColorStop(1, horizon);
+    // 파랑을 지평선 가까이까지 끌어내려 하늘이 비어 보이지 않게 — 흰 헤이즈가 이르면
+    // 저고도(시점에서 보이는 대부분의 하늘)에서 흰 구름이 배경에 묻힌다
+    grd.addColorStop(0, '#3f86c8'); grd.addColorStop(0.62, '#8cbae0'); grd.addColorStop(0.93, '#bdd6ea'); grd.addColorStop(1, horizon);
   } else if (time === 'sunset') {
     // 베이스는 차분하게 — 타오르는 부분은 태양 방위 글로우가 담당(방위 비대칭 ①)
     grd.addColorStop(0, '#2e3d6b'); grd.addColorStop(0.45, '#6a5a8e'); grd.addColorStop(0.72, '#a06a74'); grd.addColorStop(1, horizon);
@@ -162,10 +222,18 @@ function paintSky(ctx, W, H, time, weather, opts) {
     glowWrapped(ctx, W, bx, Hh * 0.97, Hh * 0.55, glowStops([70, 80, 140], [90, 90, 150], 0.24, 1.6, 20));
   }
   if (!cloudy && time === 'day') {
+    // equirect 위도 보정 — 고도가 높을수록 가로가 압축되므로 텍스처엔 가로 타원으로
+    // 그려야 화면에서 원형(안 하면 태양이 세로로 길쭉한 기둥처럼 보인다).
     const sy = Hh * (1 - L.sunEl);
-    glowWrapped(ctx, W, sunX, sy, Hh * 0.7, glowStops([255, 252, 240], [255, 248, 220], 0.85, 3.2));
+    const stretch = 1 / Math.max(0.35, Math.cos(L.sunEl * Math.PI / 2));
+    ctx.save();
+    ctx.translate(sunX, sy); ctx.scale(stretch, 1);
+    const gg = ctx.createRadialGradient(0, 0, 0, 0, 0, Hh * 0.55);
+    for (const [t, c] of glowStops([255, 252, 240], [255, 248, 220], 0.85, 3.2)) gg.addColorStop(t, c);
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(0, 0, Hh * 0.55, 0, 7); ctx.fill();
     const sr = Hh * 0.04;
-    ctx.fillStyle = 'rgba(255,253,244,0.98)'; ctx.beginPath(); ctx.arc(sunX, sy, sr, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,253,244,0.98)'; ctx.beginPath(); ctx.arc(0, 0, sr, 0, 7); ctx.fill();
+    ctx.restore();
   }
 
   // 3) 밤하늘 ④ — 별밭·은하수(암흑대)·광망 별·달(크레이터+위상)
@@ -230,11 +298,11 @@ function paintSky(ctx, W, H, time, weather, opts) {
     ctx.restore();
   }
 
-  // 4) 구름 ③ — 맑음: 뭉게구름 + 원경 층운
+  // 4) 구름 ③ — 맑음: fBm 노이즈 조각구름(원반 붓질 아님 — 파레이돌리아·에어브러시 제거)
   if (!cloudy && time !== 'night') {
-    const tint = time === 'sunset' ? [255, 210, 172] : [255, 255, 255];
-    const shade = time === 'sunset' ? [150, 110, 120] : [148, 162, 178];
-    for (let c = 0; c < 6; c++) cumulus(ctx, rnd, W, rnd() * W, Hh * (0.3 + rnd() * 0.42), 20 + rnd() * 40, tint, shade);
+    const tint = time === 'sunset' ? [255, 216, 182] : [255, 255, 255];
+    const shade = time === 'sunset' ? [172, 126, 132] : [138, 154, 172];
+    paintCloudLayer(ctx, rnd, W, Hh, { mode: 'cumulus', thr: 0.5, softEdge: 0.15, alphaMax: 0.92, tint, shade, soft: opts.soft });
     for (let i = 0; i < 5; i++) { // 원경 층운 — 납작 타원 radial(수평 하드엣지는 돔에서 위도 원호로 도드라진다)
       const y = Hh * (0.74 + rnd() * 0.16), len = W * (0.1 + rnd() * 0.16), x = rnd() * W;
       const hgt = 2.4 + rnd() * 3;
@@ -249,23 +317,10 @@ function paintSky(ctx, W, H, time, weather, opts) {
     }
   }
   if (cloudy) {
-    // ③ 구름층 — 층 밴드 구조(수평 밴드 + 어두운 밑면 + 밝은 틈). 눈구름은 밝고 부드럽게.
-    const snowy = weather === 'snow';
-    for (let b = 0; b < 5; b++) {
-      const bandY = Hh * (0.12 + b * 0.2), th = Hh * (0.1 + rnd() * 0.08);
-      for (let i = 0; i < 26; i++) {
-        const x = rnd() * W, y = bandY + (rnd() - 0.3) * th, rr = 26 + rnd() * 60;
-        const dark = rnd() < (snowy ? 0.35 : 0.6);
-        const col = dark ? [24, 28, 36] : (snowy ? [236, 240, 246] : [215, 222, 230]);
-        const a0 = dark ? (snowy ? 0.11 : 0.16) : (snowy ? 0.08 : 0.09);
-        // 그라디언트 중심 = 원 중심(어긋나면 하드엣지 원반) + u경계 wrap 3회
-        for (const ox of [-W, 0, W]) {
-          const g = ctx.createRadialGradient(x + ox, y, 0, x + ox, y, rr);
-          g.addColorStop(0, `rgba(${col.join(',')},${a0})`); g.addColorStop(0.55, `rgba(${col.join(',')},${(a0 * 0.55).toFixed(3)})`); g.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x + ox, y, rr, 0, 7); ctx.fill();
-        }
-      }
-    }
+    // ③ 구름층 — fBm 전천 구조(밝은 틈·어두운 밑면이 노이즈 밀도장에서 자연 발생)
+    const lit = cloudTop.map((v) => Math.min(255, (v * cloudK * 1.45 + 26) | 0));
+    const shd = cloudTop.map((v) => (v * cloudK * 0.5) | 0);
+    paintCloudLayer(ctx, rnd, W, Hh, { mode: 'layer', thr: 0.34, softEdge: 0.3, alphaMax: snowy ? 0.6 : 0.66, tint: lit, shade: shd, soft: opts.soft });
     if (weather === 'rain') { // 지평선 비 커튼(사선 얼룩)
       ctx.save(); ctx.globalAlpha = 0.1;
       for (let i = 0; i < 9; i++) {
