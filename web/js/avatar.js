@@ -211,6 +211,10 @@ function createChibiAvatarInstance(charId, colorHex, nickname) {
     setFlying(v) {
       if (typeof built.setFlying === 'function') built.setFlying(v); // 비행 포즈 토글(치비 전용)
     },
+    playAction(name) {
+      // 액션 재생 패스스루 — 꾸미기 프리뷰 액션 테스트가 사용 (chibi.js 12종)
+      return typeof built.playAction === 'function' ? built.playAction(name) : false;
+    },
     dispose() {
       built.dispose();
       if (label) {
@@ -263,14 +267,17 @@ function attachBlobShadow(group, radius) {
   return { mat, geo };
 }
 
-export function createAvatarInstance(charId, colorHex, nickname) {
+export function createAvatarInstance(charId, colorHex, nickname, opts) {
   const inst = createAvatarInstanceInner(charId, colorHex, nickname);
   // 발밑 그림자 — 치비는 작게, 휴머노이드는 표준. 그룹 원점(발바닥)에 부착되므로
   // 걷기 바운스(내부 래퍼의 y 움직임)와 무관하게 항상 바닥에 붙어 있다.
   const isChibi = typeof charId === 'string' && charId.startsWith(CHIBI_CHAR_PREFIX);
   // 반경은 몸 실루엣보다 확실히 크게 — 치비 치마 폭(~0.6m)이 원반을 다 가리면
   // 그림자가 그려져도 보이지 않는다(픽셀 실측으로 확인한 함정).
-  const shadow = attachBlobShadow(inst.group, isChibi ? 0.5 : 0.55);
+  // opts.blobShadow:false — 꾸미기 프리뷰처럼 거의 수평 카메라에서는 수평 원판이
+  // 옆면으로 보여 발에 겹치므로(감독 신고) 프리뷰는 CSS 접지 그림자만 쓴다.
+  const wantShadow = !opts || opts.blobShadow !== false;
+  const shadow = wantShadow ? attachBlobShadow(inst.group, isChibi ? 0.5 : 0.55) : null;
   // 만화식 타격 이펙트 — 최상위 group에 부착 (내부 래퍼는 회전·스쿼시 대상이라 금지)
   const fx = attachHitFx(inst.group);
   const origDispose = inst.dispose;
@@ -303,10 +310,15 @@ export function createAvatarInstance(charId, colorHex, nickname) {
     setFlying: (v) => {
       if (typeof inst.setFlying === 'function') inst.setFlying(v); // fly.js → 셀프 아바타 비행 포즈
     },
+    playAction: (name) => {
+      return typeof inst.playAction === 'function' ? inst.playAction(name) : false;
+    },
     dispose: () => {
       fx.dispose();
-      shadow.mat.dispose();
-      shadow.geo.dispose();
+      if (shadow) {
+        shadow.mat.dispose();
+        shadow.geo.dispose();
+      }
       origDispose.call(inst);
     },
   };
