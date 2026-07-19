@@ -580,10 +580,11 @@ function injectStyles() {
   mix-blend-mode: multiply;
   filter: blur(1.5px);
 }
-/* 액션 테스트 컬럼 — 스테이지 우측 세로 이모지 버튼 12개 (26px + gap 4 = 356px < 스테이지 높이) */
+/* 액션 테스트 컬럼 — 스테이지 우측 세로 이모지 버튼 12개 (26px + gap 4 = 356px) */
 .lu-am-actions {
-  position: absolute; top: 8px; right: 8px; z-index: 3;
+  position: absolute; top: 24px; right: 24px; z-index: 3;
   display: flex; flex-direction: column; gap: 4px;
+  pointer-events: auto;
 }
 .lu-am-action-btn {
   width: 26px; height: 26px; padding: 0;
@@ -1840,7 +1841,9 @@ function injectStyles() {
   .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
   .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
-  .lu-am-preview { width: 168px; max-width: 52vw; margin: 0 auto; padding: 7px 7px 22px; border-radius: 20px; }
+  .lu-am-preview { width: 168px; max-width: 52vw; margin: 0 auto; padding: 7px 7px 22px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; }
+  .lu-am-actions { position: static; display: flex; flex-direction: row; flex-wrap: wrap; gap: 3px; margin-top: 8px; justify-content: center; }
+  .lu-am-action-btn { width: 20px; height: 20px; font-size: 11px; }
   .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
   .lu-am-panel { min-height: 0; }
   .lu-am-nav { padding: 5px 0 6px; margin-bottom: 8px; gap: 4px; }
@@ -2874,11 +2877,10 @@ function buildChibiMaker() {
     });
     actionCol.appendChild(actBtn);
   }
-  stage.appendChild(actionCol);
   const previewHint = el('div', { className: 'lu-am-preview-hint' });
   previewHint.innerHTML = ICON_ROTATE;
   previewHint.appendChild(el('span', { text: '드래그해서 회전' }));
-  const previewBox = el('div', { className: 'lu-am-preview' }, [stage, previewHint]);
+  const previewBox = el('div', { className: 'lu-am-preview' }, [stage, actionCol, previewHint]);
 
 
   let previewRenderer = null;
