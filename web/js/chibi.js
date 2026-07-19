@@ -22,6 +22,9 @@ export const CHIBI_HAIR_STYLES = [
   { id: 'ponytail', name: '포니테일' },
   { id: 'buns', name: '경단머리' },
   { id: 'short', name: '숏컷' },
+  { id: 'long', name: '롱' },
+  { id: 'wave', name: '웨이브' },
+  { id: 'halfup', name: '반묶음' },
   { id: 'bald', name: '대머리' },
 ];
 // 수염 — 사람 전용, 얼굴 캔버스에 그린다(3D 파츠 0). 성별 무관 자유 선택.
@@ -61,6 +64,9 @@ export const CHIBI_OUTFITS = [
   { id: 'none', name: '기본' },
   { id: 'suit', name: '정장' },
   { id: 'gyoryeon', name: '교련복' },
+  { id: 'artist', name: '화가' },
+  { id: 'hanbok', name: '한복' },
+  { id: 'hoodie', name: '후드' },
 ];
 export const CHIBI_ACCESSORIES = [
   { id: 'none', name: '없음' },
@@ -185,6 +191,15 @@ export const CHIBI_PRESETS = [
   { id: 'overall_boy', name: '멜빵 소년', look: { gender: 'boy', hairStyle: 'short', top: '#ffe08a', bottom: '#7a9cc4', bottomType: 'overall', acc: 'none', eyeStyle: 'round' } },
   { id: 'glasses', name: '안경 소녀', look: { glasses: true, eyeStyle: 'round', top: '#c8ecd9', bottomType: 'skirt' } },
   { id: 'glasses_boy', name: '안경 소년', look: { gender: 'boy', hairStyle: 'short', top: '#5468c4', bottom: '#2c3038', bottomType: 'pants', glasses: true, eyeStyle: 'round', acc: 'none' } },
+  { id: 'long_girl', name: '긴 머리 소녀', look: { hairStyle: 'wave', hairColor: '#6b4530', top: '#ffb3c1', bottomType: 'dress', eyeStyle: 'sparkle', acc: 'flower' } },
+  { id: 'long_black', name: '흑발 롱', look: { hairStyle: 'long', hairColor: '#2b2b33', top: '#a9d6e8', bottom: '#39414f', bottomType: 'skirt', eyeStyle: 'happy' } },
+  { id: 'halfup_girl', name: '반묶음 소녀', look: { hairStyle: 'halfup', hairColor: '#8a5a3b', top: '#c8ecd9', bottomType: 'skirt', bottom: '#95d5b2', eyeStyle: 'happy', acc: 'ribbon' } },
+  { id: 'artist', name: '화가', look: { outfit: 'artist', top: '#c7ccd4', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#3a2c22', eyeStyle: 'round' } },
+  { id: 'artist_girl', name: '화가 소녀', look: { outfit: 'artist', top: '#a9d6e8', bottom: '#5468c4', bottomType: 'skirt', hairStyle: 'wave', hairColor: '#6b4530', eyeStyle: 'happy' } },
+  { id: 'hanbok_f', name: '한복(여)', look: { outfit: 'hanbok', top: '#c8ecd9', bottom: '#e0596e', bottomType: 'dress', hairStyle: 'buns', hairColor: '#2b2b33', eyeStyle: 'happy', acc: 'flower' } },
+  { id: 'hanbok_m', name: '한복(남)', look: { gender: 'boy', outfit: 'hanbok', top: '#a9d6e8', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#2b2b33', eyeStyle: 'round' } },
+  { id: 'hoodie', name: '후드', look: { outfit: 'hoodie', top: '#5468c4', bottom: '#2c3038', bottomType: 'pants', hairStyle: 'short', hairColor: '#2a2320', eyeStyle: 'round', acc: 'none' } },
+  { id: 'hoodie_pink', name: '핑크 후드', look: { outfit: 'hoodie', top: '#ff8fab', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#6b4530', eyeStyle: 'happy' } },
   // ── 동물 (기본) ──
   _sp('cat', '고양이'), _sp('dog', '강아지', { mouth: 'open' }), _sp('rabbit', '토끼', { eyeStyle: 'sparkle' }),
   _sp('bear', '곰'), _sp('sheep', '양'), _sp('panda', '판다'),
@@ -1465,7 +1480,7 @@ export function buildChibi(params) {
   if (p.hairStyle !== 'short') {
     const FRONT_OPEN = 1.95;
     staticHairGeos.push(
-      new THREE.SphereGeometry(HAIR_R * 0.995, 32, 16, Math.PI / 2 + FRONT_OPEN / 2, Math.PI * 2 - FRONT_OPEN, Math.PI * 0.3, Math.PI * (p.hairStyle === 'bob' ? 0.42 : 0.34))
+      new THREE.SphereGeometry(HAIR_R * 0.995, 32, 16, Math.PI / 2 + FRONT_OPEN / 2, Math.PI * 2 - FRONT_OPEN, Math.PI * 0.3, Math.PI * (p.hairStyle === 'bob' ? 0.42 : (p.hairStyle === 'long' || p.hairStyle === 'wave' || p.hairStyle === 'halfup') ? 0.5 : 0.34))
     );
   }
   for (const [bx, bs] of [[-0.13, 0.105], [0.0, 0.12], [0.13, 0.105]]) {
@@ -1514,6 +1529,32 @@ export function buildChibi(params) {
       bun.position.set(s * 0.2, 0.26, -0.04);
       addOutline(bun, 0.012, mats, geos);
       hairRoot.add(bun);
+    }
+  } else if (p.hairStyle === 'long' || p.hairStyle === 'wave' || p.hairStyle === 'halfup') {
+    // 등 뒤로 흐르는 긴 머리 — 뒤통수·양옆만 감싸는 반원통 커튼(앞은 얼굴이라 열어 둔다).
+    // 롱: 매끈, 웨이브: 프로파일 굴곡. 찰랑임은 tailPivots 등록으로 update()가 자동 구동.
+    const longProfile = (p.hairStyle === 'wave')
+      ? [[0.08, 0.14], [0.18, 0.02], [0.13, -0.14], [0.19, -0.3], [0.12, -0.46], [0.18, -0.6], [0.07, -0.75]]
+      : [[0.08, 0.14], [0.17, 0.0], [0.19, -0.22], [0.17, -0.45], [0.12, -0.62], [0.05, -0.75]];
+    const pivot = new THREE.Group();
+    pivot.position.set(0, 0.06, -0.02);
+    const curtain = new THREE.Mesh(
+      mkGeo(new THREE.LatheGeometry(lathePoints(longProfile), p.hairStyle === 'wave' ? 28 : 22, Math.PI * 0.45, Math.PI * 1.1)),
+      hairMat
+    );
+    addOutline(curtain, 0.011, mats, geos);
+    pivot.add(curtain);
+    hairRoot.add(pivot);
+    tailPivots.push({ pivot, baseZ: 0, baseX: 0 });
+    if (p.hairStyle === 'halfup') {
+      // 정수리 반묶음 — 위로 올린 작은 번 + 방울
+      const bun = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.085, 14, 12)), hairMat);
+      bun.position.set(0, 0.28, -0.03);
+      addOutline(bun, 0.012, mats, geos);
+      hairRoot.add(bun);
+      const tie = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.045, 10, 8)), mkMat(toon('#ff8fab')));
+      tie.position.set(0, 0.22, 0.0);
+      hairRoot.add(tie);
     }
   }
   // 'bob'/'short'는 셸+커튼(+뱅)으로 완성
@@ -1872,6 +1913,88 @@ export function buildChibi(params) {
     brim.rotation.x = -0.15;
     addOutline(brim, 0.01, mats, geos);
     headPivot.add(brim);
+  } else if (p.outfit === 'artist') {
+    // 화가 — 비스듬한 베레모 + 아이보리 앞치마 (일반화된 물감 점 포인트)
+    const beretMat = mkMat(toon('#39414f'));
+    const beret = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(HEAD_R * 0.78, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5)), beretMat);
+    beret.scale.set(1, 0.42, 1);
+    beret.position.set(0.03, skull.position.y + HEAD_R * 0.74, -0.02);
+    beret.rotation.z = -0.18;
+    addOutline(beret, 0.011, mats, geos);
+    headPivot.add(beret);
+    const nub = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.022, 8, 6)), beretMat);
+    nub.position.set(0.03, skull.position.y + HEAD_R * 0.88, -0.02);
+    headPivot.add(nub);
+    const apronMat = mkMat(toon('#f3ece0'));
+    const apron = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.19, 0.26, 0.02)), apronMat);
+    apron.position.set(0, 0.5, 0.145);
+    addOutline(apron, 0.009, mats, geos);
+    bodyRoot.add(apron);
+    for (const s of [-1, 1]) {
+      const strap = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.025, 0.14, 0.02)), apronMat);
+      strap.position.set(s * 0.06, 0.63, 0.14);
+      strap.rotation.z = -s * 0.2;
+      bodyRoot.add(strap);
+    }
+    const daubs = [['#e0596e', -0.05, 0.46], ['#5468c4', 0.04, 0.52], ['#ffd166', 0.02, 0.42]];
+    for (const [col, dx, dy] of daubs) {
+      const daub = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.018, 8, 6)), mkMat(toon(col)));
+      daub.position.set(dx, dy, 0.157);
+      daub.scale.set(1, 1, 0.4);
+      bodyRoot.add(daub);
+    }
+  } else if (p.outfit === 'hanbok') {
+    // 한복 — 짧은 저고리(상의색) + 흰 동정(깃) + 대비색 옷고름. 치마 볼륨은 프리셋 bottomType:'dress'가 담당.
+    const jeogori = new THREE.Mesh(mkGeo(new THREE.CapsuleGeometry(0.162, 0.06, 8, 16)), topMat);
+    jeogori.position.set(0, 0.55, 0);
+    jeogori.scale.set(1, 1, 0.92);
+    jeogori.userData.outlineBase = vivid(p.top);
+    addOutline(jeogori, 0.012, mats, geos);
+    bodyRoot.add(jeogori);
+    const gitMat = mkMat(toon('#fbfbfa'));
+    for (const s of [-1, 1]) {
+      const git = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.045, 0.16, 0.02)), gitMat);
+      git.position.set(s * 0.04, 0.6, 0.15);
+      git.rotation.z = s * 0.42;
+      addOutline(git, 0.007, mats, geos);
+      bodyRoot.add(git);
+    }
+    const goreumMat = mkMat(toon(p.bottom || '#e0596e'));
+    const knot = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.035, 0.035, 0.02)), goreumMat);
+    knot.position.set(-0.02, 0.57, 0.16);
+    addOutline(knot, 0.006, mats, geos);
+    bodyRoot.add(knot);
+    for (let i = 0; i < 2; i++) {
+      const ribbon = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.022, 0.14, 0.018)), goreumMat);
+      ribbon.position.set(-0.02 - i * 0.02, 0.49 - i * 0.015, 0.16);
+      ribbon.rotation.z = 0.12 + i * 0.18;
+      addOutline(ribbon, 0.006, mats, geos);
+      bodyRoot.add(ribbon);
+    }
+  } else if (p.outfit === 'hoodie') {
+    // 후드 — 뒤통수를 감싸는 셸(뒤로 열림, 상의색) + 목뒤 롤 + 드로스트링 + 배 앞 포켓
+    const hoodMat = mkMat(toon(p.top));
+    const hood = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(HAIR_R * 1.18, 24, 16, Math.PI, Math.PI, 0, Math.PI * 0.62)), hoodMat);
+    hood.position.set(0, skull.position.y + HEAD_R * 0.1, -0.05);
+    hood.userData.outlineBase = vivid(p.top);
+    addOutline(hood, 0.013, mats, geos);
+    headPivot.add(hood);
+    const roll = new THREE.Mesh(mkGeo(new THREE.SphereGeometry(0.09, 14, 10)), hoodMat);
+    roll.scale.set(1.3, 0.5, 0.7);
+    roll.position.set(0, 0.66, -0.08);
+    addOutline(roll, 0.009, mats, geos);
+    bodyRoot.add(roll);
+    const stringMat = mkMat(toon('#fbfbfa'));
+    for (const s of [-1, 1]) {
+      const str = new THREE.Mesh(mkGeo(new THREE.CylinderGeometry(0.008, 0.008, 0.12, 6)), stringMat);
+      str.position.set(s * 0.03, 0.6, 0.15);
+      addOutline(str, 0.005, mats, geos);
+      bodyRoot.add(str);
+    }
+    const pocket = new THREE.Mesh(mkGeo(new THREE.BoxGeometry(0.16, 0.08, 0.03)), mkMat(toon(shade(p.top, 0.9))));
+    pocket.position.set(0, 0.45, 0.14);
+    addOutline(pocket, 0.008, mats, geos);
+    bodyRoot.add(pocket);
   }
 
   // ---- 액세서리 ----
