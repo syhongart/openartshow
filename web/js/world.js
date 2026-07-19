@@ -287,6 +287,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const wd = def.walker;
       const inst = createAvatarInstance(wd.char, '#ffffff', ''); // 빈 닉네임 → 라벨 미생성
       inst.group.position.set(ox + wd.x, 0, oz + wd.z);
+      inst.group.userData.isWalker = true; // 검증·계수용 태그(스폰 시 walker 실측 등)
       scene.add(inst.group);
       walker = { inst, line: wd.line, ox, oz, x: ox + wd.x, z: oz + wd.z, tx: ox + wd.x, tz: oz + wd.z, ry: 0, state: 'walk', timer: 0, speed: 0.7 + Math.random() * 0.3 };
       pickWalkerTarget(walker);
@@ -301,7 +302,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (L.walker) { scene.remove(L.walker.inst.group); L.walker.inst.dispose(); } // 거리 배회 NPC 정리(씬 잔존 0)
     scene.remove(L.group);
     if (L.bldGroup) disposeSpaceGroup(L.bldGroup);
-    // 거리 가구: InstancedMesh는 인스턴스 버퍼 회수(공유 지오 SG·재질 T는 유지 → createWorld dispose에서 일괄).
+    // 거리 가구 정리: 씬 그래프에서 떼는 건 group.remove(아래 scene.remove(L.group)이 부모째 제거).
+    // dispose 자체는 사실상 no-op에 가깝다 — 개별 Mesh(lamp/bench/planter)는 Object3D라 dispose 메서드가 없어
+    // 가드로 건너뛰고, InstancedMesh.dispose()는 공유 지오(SG)·재질(T)을 건드리지 않고 인스턴스 속성 GPU 버퍼
+    // (instanceMatrix/instanceColor)만 정리한다. 스트리밍 재로드 규모가 작아 이 미미한 잔여는 수용(공유 자원은
+    // createWorld dispose에서 일괄 회수). 정확히는 InstancedMesh dispose만 의미가 있고 그마저 경미.
     if (L.streetMeshes) for (const sm of L.streetMeshes) if (sm.dispose) sm.dispose();
     for (const g of L.own) g.dispose(); // 파셀 소유 지오(공유 재질 T는 dispose에서 일괄)
     loaded.delete(k);
@@ -318,8 +323,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 강/바다 공용 재질(T.water=sea 평면 하나) — 잔물결 텍스처 붙이고 offset 스크롤로 흐름 연출.
   const waterTex = makeWaterTex();
   if (waterTex) {
-    const wr = Math.max(12, Math.round(((maxPx - minPx + 40) * CELLX) / 6)); // 타일 ~6m
-    waterTex.repeat.set(wr, wr);
+    // 타일 ~6m. 축별로 셀 크기가 다른 비정사각 월드(CELLX≠CELLZ) 대비 U·V 반복을 각각 산출(정사각이면 동일).
+    const wrx = Math.max(12, Math.round(((maxPx - minPx + 40) * CELLX) / 6));
+    const wrz = Math.max(12, Math.round(((maxPz - minPz + 40) * CELLZ) / 6));
+    waterTex.repeat.set(wrx, wrz);
     T.water.map = waterTex; T.water.color.set(0xffffff); T.water.needsUpdate = true;
   }
   const wMinX = (minPx - 0.9) * CELLX, wMaxX = (maxPx + 0.9) * CELLX;

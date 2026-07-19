@@ -46,11 +46,14 @@ for (const n of M.npcs) {
 // 그리드 순회 → 파셀 100개(대지=절차생성: 건물/강/오프셋). spawn 파셀(육지 보정)을 배열 선두로.
 const parcels = [];
 const [sx, sz] = fixLand(M.spawn || [0, 0]);
+// 첫 화면(스폰 3×3 중 풀디테일 = 스폰 파셀 + 직교 인접)에 행인이 반드시 보이도록 walker 강제(확률 무관).
+// genWalker 40% 스폰 확률 × 소수 파셀이면 스폰 순간 walker 0명이 나올 수 있어(고객 첫인상 텅 빈 거리) 보정.
+const forceWalker = (px, pz) => (Math.abs(px - sx) + Math.abs(pz - sz)) <= 1;
 for (let pz = 0; pz < grid.h; pz++) for (let px = 0; px < grid.w; px++) {
   const P = genParcel(px, pz, M.seed, grid, M.cell);
   const roster = P.space ? npcByHome.get(px + ',' + pz) : null;
   const street = genStreet(px, pz, M.seed, grid, M.cell, P); // 거리 가구 배치(결정론) — def.street
-  const walker = genWalker(px, pz, M.seed, grid, M.cell, P); // 거리 배회 NPC 후보(결정론) — def.walker
+  const walker = genWalker(px, pz, M.seed, grid, M.cell, P, forceWalker(px, pz)); // 거리 배회 NPC 후보(결정론) — def.walker
   const parcel = Object.assign({ px, pz }, P, { street }, walker ? { walker } : {}, roster ? { npc: { roster, count: roster.length } } : {});
   if (px === sx && pz === sz) parcels.unshift(parcel); else parcels.push(parcel);
 }

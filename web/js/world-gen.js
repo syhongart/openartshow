@@ -250,7 +250,9 @@ export function genStreet(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel) {
     const roll = rng() < 0.6, tone = (rng() * 3) | 0;
     if (trees < TREE_MAX && roll && safe(treeX, z, 0.35)) { items.push({ kind: 'tree', x: treeX, z, tone }); trees++; }
   }
-  // ── 가로등(1) — 남동 코너 도로 교차부. 도로 위 허용(반경 작음, 통행 우회 가능). ──
+  // ── 가로등(1) — 남동 코너 도로 교차부. 의도적으로 safe() 미경유(safe는 도로 통행 스트립을 배제하지만
+  //    가로등은 도로 위 배치가 정상 — 반경 0.22로 작아 통행 우회 가능). 전제조건: 좌표 cx/2-1.25는
+  //    파셀 경계 안쪽(EDGE 0.6 여유)이고 건물은 북쪽 치우침(bz<0)이라 남동 코너에서 건물과 겹치지 않음. ──
   items.push({ kind: 'lamp', x: cx / 2 - 1.25, z: cz / 2 - 1.25 });
   // ── 벤치·화분(0~n) — 마당. 파셀당 가구 총 6개 이하(가로등1 + 가로수 + 가구 ≤ 6). ──
   const furnMax = Math.max(0, 5 - trees);
@@ -276,12 +278,14 @@ const WALKER_SALT = 0x9e3779;
 
 /**
  * 파셀 (px,pz)의 거리 배회 NPC 후보(0 또는 1). 강 파셀·건물 없는 파셀은 null.
+ * @param {boolean} [force] - 스폰 파셀·직교 인접처럼 "첫 화면에 반드시 행인이 보여야 하는" 파셀에서 확률 게이트를 건너뛰고
+ *   무조건 1명 배치(외형·라인·위치는 여전히 시드 결정론). 게이트용 rng()는 force여도 동일하게 소비해 후속 결정론 무영향.
  * @returns {{char:string, line:'south'|'east', x:number, z:number}|null}  좌표는 로컬(파셀 중심 원점, 도로 라인 위)
  */
-export function genWalker(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel) {
-  if (!parcel || parcel.water || !parcel.space) return null;
+export function genWalker(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel, force = false) {
+  if (!parcel || parcel.water || !parcel.space) return null; // 강·빈 파셀은 놓을 도로가 없어 force여도 예외(물리적 불가)
   const rng = mulberry32(cellSeed((seed ^ WALKER_SALT) >>> 0, px, pz));
-  if (rng() > 0.6) return null;              // 60% 파셀에만 1명(총원 상한은 world.js)
+  if (rng() > 0.6 && !force) return null;    // 60% 파셀에만 1명(force면 게이트 무시 — rng는 이미 소비해 결정론 유지). 총원 상한은 world.js
   const line = rng() < 0.58 ? 'south' : 'east';
   const preset = CHIBI_PRESETS[Math.floor(rng() * CHIBI_PRESETS.length) % CHIBI_PRESETS.length];
   const char = encodeChibi(Object.assign({}, preset.look));

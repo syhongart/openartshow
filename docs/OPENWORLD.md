@@ -148,6 +148,14 @@
 - **거리 배회 NPC**(`world-gen.genWalker` + `world.js streetWalkers`): 작품 중심 `NpcCrowd`와 별개 경량 앰비언트. 도로 라인(파셀
   가장자리=건물 밖)만 왕복 → 건물 관통·강 침입 구조 차단. 외형은 시드 결정론(`CHIBI_PRESETS` 선택 후 `encodeChibi`), 목표 재설정은 로컬 시뮬.
   `createAvatarInstance` 재사용·빈 닉네임(라벨 없음), 로드 파셀당 0~1명·총원 ≤6, 언로드 시 dispose.
+  - **결정론 예외 조항(명문화)**: "무저장·시드 결정론(모든 방문자 동일 세계)" 규율은 **관측 가능한 세계의 구성**에 적용된다 —
+    walker의 존재 여부·외형(`CHIBI_PRESETS`)·초기 배치(`genWalker`)는 시드로 완전 결정론이다. 반면 **로컬 전용 앰비언트 이동
+    시뮬**(walker의 걷기 목표 `pickWalkerTarget`·정지 타이머)은 각 클라이언트가 `Math.random`으로 독립 진행하는 **결정론 예외**다.
+    이는 무저장 원칙과 충돌하지 않는다: 이동 상태는 저장·동기화 대상이 아니고(멀티플레이어 상태에도 미포함), 어느 클라이언트든
+    같은 세계·같은 행인 구성을 보되 걸음의 위상만 다를 뿐이다. 시드 결정론이 요구되는 범위(외형·배치)는 유지한다.
+  - **스폰 근방 walker 보장**: `genWalker(...,force)` — 스폰 파셀과 직교 인접(맨해튼≤1, world-boot `forceWalker`)에서는 확률
+    게이트를 건너뛰고 walker를 무조건 배치(첫 화면 텅 빈 거리 방지). 게이트용 `rng()`는 force여도 동일 소비 → 후속 배치 결정론 무영향.
+    강·빈 파셀은 도로가 없어 force여도 제외. 검증 계수용으로 walker 아바타 group에 `userData.isWalker=true` 태그.
 
 **헤드리스 QA(swiftshader)**: 스폰 드로우콜 218(≤230) / genStreet·genWalker 결정론 deep-equal / 가로수 walk 충돌 0.60m /
 남문 접근로 진입 성공 / 물 map.offset 3초 Δ(0.024,0.015)·드로우콜 증가 0 / walker 배회 이동·언로드 잔존 0 / 콘솔 0.

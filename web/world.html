@@ -8,9 +8,11 @@
 <!--  · 앱 스크립트는 js/world-boot.js 외부 모듈로 추출 → 'unsafe-inline' 제거. importmap만 예외로 sha256 해시 고정 -->
 <!--    (importmap은 브라우저 제약상 인라인 전용 + three bare specifier 해석에 필수. 내용 불변(three 매핑 1줄)이라 -->
 <!--     해시 유지보수 부담 0. 앱 로직은 외부 모듈이라 코드 변경 시 해시 재계산 불필요). style은 인라인 유지(index.html 관행). -->
-<!--  · connect-src 'self' wss://0.peerjs.com — PeerJS 시그널링만 허용(STUN/TURN ICE는 WebRTC라 connect-src 통제 밖 → 불필요). manifest fetch는 'self'로 커버. -->
+<!--  · connect-src 'self' https://0.peerjs.com wss://0.peerjs.com — PeerJS 시그널링. 게스트 합류(new Peer(undefined,…) — multiplayer.js:474)는 -->
+<!--    wss 소켓을 열기 전에 https REST(GET /peerjs/…/id)로 랜덤 peer id를 먼저 조회하므로 https·wss 둘 다 허용해야 한다(https 누락 시 게스트 id 조회가 CSP 위반으로 실패). -->
+<!--    STUN/TURN ICE는 WebRTC라 connect-src 통제 밖 → 불필요. manifest fetch는 'self'로 커버. -->
 <!--    ※ 셀프호스팅 시그널링 전환(window.LU_PEER_OPTS) 시 이 도메인을 실제 시그널링 호스트로 교체해야 한다. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-GqsWfEjHm73zbHa7lGbVXfv95jxypKuCtjd6kntjIRA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://0.peerjs.com; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-GqsWfEjHm73zbHa7lGbVXfv95jxypKuCtjd6kntjIRA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'none'">
 <title>오픈월드 · OpenArtShow</title>
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <script src="./vendor/peerjs.min.js"></script>
