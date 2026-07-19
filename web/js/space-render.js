@@ -1090,6 +1090,9 @@ const tintColor = (p) => new THREE.Color(p.color || TINT_DEFAULT[p.t] || '#fffff
 // 색 지정 시 본체색 35% 화이트 블렌드, 무색(기본)이면 기존 고정 보더색 유지(회귀 방지)
 const rugAccentColor = (p) => (p.color ? tintColor(p).lerp(new THREE.Color(0xffffff), 0.35) : new THREE.Color(RUG_ACCENT_DEFAULT));
 
+// [오픈월드] 문틀 통로 폭 — world.js clampPos 통과 판정과 공유해 렌더/통과 경계 드리프트 방지.
+export const DOOR_W = 2.6;
+
 /**
  * 공간 문서 → THREE.Group. 반환 group.userData:
  *   { dims, partRefs: [{part, index, object}], geos:[], mats:[] } (dispose·픽킹용)
@@ -1116,13 +1119,36 @@ export function buildSpaceGroup(space, opts = {}) {
   // 코너 정합(#62): N/S 벽을 두께만큼 양옆 연장(fw+t)해 외곽 빈틈을 덮고, E/W 벽을 fd-t로 줄여
   // 끝이 N/S 내부면(z=±(fd-t)/2)에 정확히 맞닿게 함 → 코너 노치(외곽 빈틈)·겹침(내곽 z-fighting) 동시 제거.
   // 벽 중심(x,z)·내부면 위치 불변 → featureWall·shellSurf·라이트맵 정합 유지.
-  for (const [x, z, ww, dd] of [[0, -hd, fw + t, t], [0, hd, fw + t, t], [-hw, 0, t, fd - t], [hw, 0, t, fd - t]]) {
+  // [오픈월드] shell.entries에 든 방향은 통짜 벽 대신 문틀(좌우 세그먼트+상단 인방)로 뚫어 파셀 통행로를 낸다.
+  // entries 빈배열(기존 v2 문서 전부)이면 이 분기가 안 타므로 회귀 0. 방향 인덱스 = WALL_DIRS 순서.
+  const WALL_DIRS = ['north', 'south', 'west', 'east'];
+  const openSet = new Set(space.shell.entries || []);
+  const DOOR_H = 2.4;                     // 문틀 통로 높이(m). DOOR_W는 모듈 상수(world.js 공유)
+  const wallFin = space.shell.finish.wall;
+  [[0, -hd, fw + t, t], [0, hd, fw + t, t], [-hw, 0, t, fd - t], [hw, 0, t, fd - t]].forEach(([x, z, ww, dd], wi) => {
     const wallW = Math.max(ww, dd); // 벽면 가로 길이(N/S=fw, E/W=fd)로 텍스처 반복
-    const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), wallMat(space.shell.finish.wall, wallW, H)));
-    m.position.set(x, H / 2, z); m.receiveShadow = true; g.add(m);
     const inN = new THREE.Vector3(-x, 0, -z).normalize(); // 방 중심 향한 내부 법선
-    shellSurf.push({ mesh: m, center: new THREE.Vector3(x + inN.x * (t / 2), H / 2, z + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: wallW, height: H });
-  }
+    const horiz = ww >= dd;               // N/S=수평(길이축 x) / W/E=수직(길이축 z)
+    const len = horiz ? ww : dd, thick = horiz ? dd : ww;
+    if (openSet.has(WALL_DIRS[wi]) && len > DOOR_W + 0.8) {
+      // 문틀: 좌·우 세그먼트 + 상단 인방(가운데 통로). shellSurf는 세그먼트만(인방 생략 — 베이크 근사).
+      const side = (len - DOOR_W) / 2, lintelH = Math.max(0.001, H - DOOR_H), off = DOOR_W / 2 + side / 2;
+      for (const s of [-1, 1]) {
+        const sw = horiz ? side : thick, sd = horiz ? thick : side;
+        const sx = x + (horiz ? s * off : 0), sz = z + (horiz ? 0 : s * off);
+        const seg = track(new THREE.Mesh(new THREE.BoxGeometry(sw, H, sd), wallMat(wallFin, side, H)));
+        seg.position.set(sx, H / 2, sz); seg.receiveShadow = true; g.add(seg);
+        shellSurf.push({ mesh: seg, center: new THREE.Vector3(sx + inN.x * (t / 2), H / 2, sz + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: side, height: H });
+      }
+      const lw = horiz ? DOOR_W : thick, ld = horiz ? thick : DOOR_W;
+      const lintel = track(new THREE.Mesh(new THREE.BoxGeometry(lw, lintelH, ld), wallMat(wallFin, DOOR_W, lintelH)));
+      lintel.position.set(x, DOOR_H + lintelH / 2, z); lintel.receiveShadow = true; g.add(lintel);
+    } else {
+      const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), wallMat(wallFin, wallW, H)));
+      m.position.set(x, H / 2, z); m.receiveShadow = true; g.add(m);
+      shellSurf.push({ mesh: m, center: new THREE.Vector3(x + inN.x * (t / 2), H / 2, z + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: wallW, height: H });
+    }
+  });
   const fwSide = space.shell.finish.featureWall;
   if (fwSide && fwSide !== 'none') {
     const fwW = (fwSide === 'east' || fwSide === 'west') ? fd - 0.2 : fw - 0.2;
@@ -1137,8 +1163,10 @@ export function buildSpaceGroup(space, opts = {}) {
 
   // 파츠: 타입별 그룹. 인스턴싱 가능 → InstancedMesh, 작품/스크린 → 개별(+자동액자 캔버스).
   // 서브그룹 키 = 타입×variant×mat (#56). color는 키에 넣지 않는다 → 같은 지오/재질 InstancedMesh 공유 + 인스턴스 틴트.
+  // [오픈월드] shellOnly: 원거리/대각 파셀 임포스터 — 셸만 그리고 파츠 생략(draw-call 절감,
+  // ART_SCREEN_CAP=80이 방당이므로 다중 파셀 스트리밍 시 필수). 빈 목록이면 파츠 루프가 안 돈다.
   const byKey = {};
-  space.parts.forEach((p, i) => {
+  (opts.shellOnly ? [] : space.parts).forEach((p, i) => {
     const key = `${p.t}:${p.variant || ''}:${p.mat || ''}`;
     (byKey[key] = byKey[key] || { type: p.t, variant: p.variant, mat: p.mat, list: [] }).list.push({ p, i });
   });

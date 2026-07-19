@@ -148,6 +148,18 @@ const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
 const FIN = (k) => new Set(FINISH[k].ids);
 const FRAME_IDS = new Set(FRAME_STYLES.ids);
 
+// [오픈월드 가산 · SPACE_VERSION 불변] shell.entries — 파셀 경계 개구부(문) 방향 목록.
+// 생략/빈배열 = 사방 폐쇄(기존 v2 문서 100% 동일 동작). world.js(파셀 스트리밍)가
+// 인접 파셀 존재 시 이 방향 벽에 문틀을 뚫어 통과로를 만든다. 단일 공간(visit.js)은
+// 소비하지 않으므로 영향 없음(p.y/p.featured/p.ar과 동일한 옵션 필드 패턴).
+const ENTRY_DIRS = new Set(['north', 'south', 'east', 'west']);
+function normEntries(v) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const d of v) { if (ENTRY_DIRS.has(d) && !out.includes(d)) out.push(d); }
+  return out;
+}
+
 function normalizePart(raw) {
   if (!raw || typeof raw !== 'object' || !PART_TYPE_IDS.has(raw.t)) return null; // 미지 타입 폐기
   const spec = PART_TYPES[raw.t];
@@ -202,6 +214,7 @@ export function normalizeSpace(raw) {
       footprint: pick(sh.footprint, new Set(Object.keys(FOOTPRINT)), DEFAULT_SPACE.shell.footprint),
       storyH: pick(sh.storyH, new Set(Object.keys(STORY_H)), DEFAULT_SPACE.shell.storyH),
       wallT: clamp(sh.wallT, 0.1, 0.4, DEFAULT_SPACE.shell.wallT),
+      entries: normEntries(sh.entries), // 오픈월드 파셀 개구부(생략=빈배열=폐쇄, 하위호환)
       finish: {
         wall: pick(shf.wall, FIN('wall'), FINISH.wall.def),
         floor: pick(shf.floor, FIN('floor'), FINISH.floor.def),

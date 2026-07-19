@@ -135,7 +135,7 @@ export class NpcCrowd {
    * @param {Array} artworks - getPlacedArtworks() 결과 (pos/rotY/floorY/title)
    * @param {number} count - NPC 수 (작품 있는 층 수에 맞춰 자동 감축)
    */
-  constructor(artworks, count = null) {
+  constructor(artworks, count = null, opts = {}) {
     this._chatQueue = [];
     this._chatCooldown = 10; // 입장 직후 잠깐은 조용히
     this.npcs = [];
@@ -153,17 +153,23 @@ export class NpcCrowd {
     if (floors.length === 0) return;
 
     // 인원 자동 조절: 작품이 있는 층당 2명, 최소 3 최대 6 (명시 count가 우선)
+    // [오픈월드] opts.roster 주입 시 익명 관객 대신 직원 페르소나(이름표=핸들·char·색·대사)로 배치.
+    // 미주입이면 기존 익명 관객 경로 그대로(회귀 0). roster 원소: {id?,nickname,char?,color?,remarks?,greetings?}.
+    const roster = Array.isArray(opts.roster) && opts.roster.length ? opts.roster : null;
     const auto = Math.max(3, Math.min(6, floors.length * 2));
-    const n = Math.min(count || auto, NPC_NAMES.length);
+    const n = roster ? Math.min(count || roster.length, roster.length) : Math.min(count || auto, NPC_NAMES.length);
     for (let i = 0; i < n; i++) {
       const floorArts = floors[i % floors.length];
       const art = rand(floorArts);
+      const r = roster ? roster[i] : null;
       this.npcs.push({
-        id: `npc-${i + 1}`,
-        nickname: NPC_NAMES[i],
-        color: NPC_COLORS[i % NPC_COLORS.length],
-        char: randomChibiChar(),
-        persona: 'normal',
+        id: (r && r.id) || `npc-${i + 1}`,
+        nickname: r ? r.nickname : NPC_NAMES[i],
+        color: (r && r.color) || NPC_COLORS[i % NPC_COLORS.length],
+        char: (r && r.char) || randomChibiChar(),
+        persona: r ? 'staff' : 'normal',
+        remarks: (r && r.remarks) || null,   // 함수 배열 (t)=>string, 없으면 공용 REMARKS
+        greetings: (r && r.greetings) || null, // 문자열 배열, 없으면 공용 GREETINGS
         floorArts,
         art,
         state: 'view',
@@ -184,7 +190,9 @@ export class NpcCrowd {
       npc.ry = npc.try_ = pose.ry;
     }
 
-    // 꼬마악마 — 작품이 가장 많은 층에 상주하는 심술 평론가 (+1명, 별도 정원)
+    // 꼬마악마 — 작품이 가장 많은 층에 상주하는 심술 평론가 (+1명, 별도 정원).
+    // [오픈월드] 직원 세계(roster 주입)엔 악마를 넣지 않는다 — 익명 관객 경로에서만 등장.
+    if (!roster) {
     const impFloor = floors.reduce((a, b) => (b.length > a.length ? b : a), floors[0]);
     const impArt = rand(impFloor);
     this.npcs.push({
@@ -211,6 +219,7 @@ export class NpcCrowd {
     imp.y = impPose.y;
     imp.z = imp.tz = impPose.z;
     imp.ry = imp.try_ = impPose.ry;
+    } // end if(!roster) — 꼬마악마
 
     this._t = 0;             // 누적 시뮬레이션 시간(초) — 대화 타이머용
     this._convoCd = 15;      // 첫 대화는 입장 15초 후부터
@@ -290,7 +299,7 @@ export class NpcCrowd {
           if (npc.greetCd <= 0 && this._chatCooldown <= 0) {
             npc.greetCd = GREET_COOLDOWN;
             this._chatCooldown = CHAT_COOLDOWN * 0.5; // 인사는 조금 더 자주 허용
-            this._chatQueue.push({ name: npc.nickname, text: rand(npc.persona === 'imp' ? IMP_GREETINGS : GREETINGS) });
+            this._chatQueue.push({ name: npc.nickname, text: rand(npc.greetings && npc.greetings.length ? npc.greetings : (npc.persona === 'imp' ? IMP_GREETINGS : GREETINGS)) });
           }
         } else if (npc.facePt && this._t < npc.faceUntil) {
           // 대화 중 — 상대를 마주본다
@@ -484,7 +493,8 @@ export class NpcCrowd {
     if (this._chatCooldown > 0 || Math.random() > (imp ? 0.55 : CHAT_CHANCE)) return;
     this._chatCooldown = imp ? CHAT_COOLDOWN * 0.6 : CHAT_COOLDOWN;
     const title = (npc.art && npc.art.title) || '이 작품';
-    this._chatQueue.push({ name: npc.nickname, text: rand(imp ? IMP_REMARKS : REMARKS)(title) });
+    const pool = npc.remarks && npc.remarks.length ? npc.remarks : (imp ? IMP_REMARKS : REMARKS);
+    this._chatQueue.push({ name: npc.nickname, text: rand(pool)(title) });
   }
 
   /** 맞았을 때 — 때린 사람을 쳐다보며 아파한다 (호스트 전용, multiplayer.onNpcHit) */
