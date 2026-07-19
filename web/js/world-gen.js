@@ -201,3 +201,68 @@ export function genParcel(px, pz, seed, grid, cell = { x: 24, z: 24 }) {
   });
   return { water: false, space, bx, bz };
 }
+
+// ── 거리 가구 절차 배치(결정론) ──────────────────────────────────────────────
+// world.js는 seed를 모르므로 배치 계산을 여기서 수행하고 world.html이 def.street에 실어준다
+// (결정론·테스트 용이). 장식 시드는 genParcel 메인 rng와 독립(STREET_SALT XOR) — 건물/강
+// 절차생성에 영향 0. 배치와 solid는 world.js가 이 같은 배열에서 파생한다(렌더-물리 정합).
+const STREET_SALT = 0x5721a3;
+
+/**
+ * 파셀 (px,pz)의 거리 가구 배치. 강 파셀·건물 없는 파셀은 빈 배열.
+ * @param {object} parcel - genParcel 결과 { water, space, bx, bz } (건물 회피에 필요)
+ * @returns {Array<{kind:'tree'|'lamp'|'bench'|'planter', x:number, z:number, ry?:number, tone?:number}>}
+ *   좌표는 파셀 중심 원점(로컬). world.js가 월드 오프셋을 더해 배치.
+ */
+export function genStreet(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel) {
+  if (!parcel || parcel.water || !parcel.space) return [];
+  const rng = mulberry32(cellSeed((seed ^ STREET_SALT) >>> 0, px, pz));
+  const cx = cell.x, cz = cell.z;
+  const fp = (parcel.space.shell && parcel.space.shell.footprint) || 'small';
+  const [fw, fd] = FOOTPRINT[fp] || FOOTPRINT.small;
+  const bhw = fw / 2, bhd = fd / 2;                 // 건물 half-extent
+  const bx = parcel.bx || 0, bz = parcel.bz || 0;   // 건물 오프셋
+
+  const roadS = cz / 2 - 2.5;  // 남 도로 안쪽 경계 z(도로는 z≥roadS)
+  const roadE = cx / 2 - 2.5;  // 동 도로 안쪽 경계 x
+  const APPROACH = 1.5;        // 남문 접근로 반폭(통행 3m 확보)
+  const EDGE = 0.6;            // 파셀 가장자리 여백(월드 밖·이웃 침범 방지)
+  // 배치 안전: 도로 통행 스트립·건물 풋프린트(+마진)·남문 접근로·파셀 경계와 겹치면 배제.
+  const safe = (x, z, r) => {
+    if (Math.abs(x) > cx / 2 - EDGE - r || Math.abs(z) > cz / 2 - EDGE - r) return false;
+    if (z >= roadS - r || x >= roadE - r) return false;                                  // 도로 통행 스트립
+    if (Math.abs(x - bx) < bhw + 0.4 + r && Math.abs(z - bz) < bhd + 0.4 + r) return false; // 건물+마진
+    if (Math.abs(x) < APPROACH + r && z > bz) return false;                              // 남문 앞 접근로
+    return true;
+  };
+
+  const items = [];
+  // ── 가로수(2~4) — 남 도로 안쪽 라인 + 동 도로 안쪽 라인. rng 소비는 후보당 2회로 고정(결정론). ──
+  const treeZ = roadS - 0.95, treeX = roadE - 0.95;
+  const TREE_MAX = 4;
+  let trees = 0;
+  for (const x of [-8, -4, 4, 8]) {          // 남 라인(문 접근로는 safe가 배제)
+    const roll = rng() < 0.72, tone = (rng() * 3) | 0;
+    if (trees < TREE_MAX && roll && safe(x, treeZ, 0.35)) { items.push({ kind: 'tree', x, z: treeZ, tone }); trees++; }
+  }
+  for (const z of [-8, -4, 0]) {             // 동 라인(건물이 크면 safe가 배제)
+    const roll = rng() < 0.6, tone = (rng() * 3) | 0;
+    if (trees < TREE_MAX && roll && safe(treeX, z, 0.35)) { items.push({ kind: 'tree', x: treeX, z, tone }); trees++; }
+  }
+  // ── 가로등(1) — 남동 코너 도로 교차부. 도로 위 허용(반경 작음, 통행 우회 가능). ──
+  items.push({ kind: 'lamp', x: cx / 2 - 1.25, z: cz / 2 - 1.25 });
+  // ── 벤치·화분(0~n) — 마당. 파셀당 가구 총 6개 이하(가로등1 + 가로수 + 가구 ≤ 6). ──
+  const furnMax = Math.max(0, 5 - trees);
+  let furn = 0;
+  const yardZ = Math.min(roadS - 1.3, bz + bhd + 1.6);
+  for (const bx2 of [-(APPROACH + 1.6), APPROACH + 1.6]) {   // 접근로 양옆 벤치
+    const roll = rng() < 0.42;
+    if (furn < furnMax && roll && safe(bx2, yardZ, 0.7)) { items.push({ kind: 'bench', x: bx2, z: yardZ, ry: 0 }); furn++; }
+  }
+  for (const s of [-1, 1]) {                                  // 건물 남측 모서리 화분
+    const roll = rng() < 0.4;
+    const pxp = bx + s * (bhw + 0.8), pzp = bz + bhd + 0.8;
+    if (furn < furnMax && roll && safe(pxp, pzp, 0.35)) { items.push({ kind: 'planter', x: pxp, z: pzp }); furn++; }
+  }
+  return items;
+}

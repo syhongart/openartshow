@@ -86,7 +86,7 @@
 <div id="joy"><div class="nub" id="joyNub"></div></div>
 
 <script type="module">
-import { genParcel, riverColAt } from './js/world-gen.js';
+import { genParcel, riverColAt, genStreet } from './js/world-gen.js';
 import { createWorld } from './js/world.js';
 import { randomChibiChar } from './js/chibi.js';
 
@@ -133,7 +133,8 @@ const [sx, sz] = fixLand(M.spawn || [0, 0]);
 for (let pz = 0; pz < grid.h; pz++) for (let px = 0; px < grid.w; px++) {
   const P = genParcel(px, pz, M.seed, grid, M.cell);
   const roster = P.space ? npcByHome.get(px + ',' + pz) : null;
-  const parcel = Object.assign({ px, pz }, P, roster ? { npc: { roster, count: roster.length } } : {});
+  const street = genStreet(px, pz, M.seed, grid, M.cell, P); // 거리 가구 배치(결정론) — def.street
+  const parcel = Object.assign({ px, pz }, P, { street }, roster ? { npc: { roster, count: roster.length } } : {});
   if (px === sx && pz === sz) parcels.unshift(parcel); else parcels.push(parcel);
 }
 

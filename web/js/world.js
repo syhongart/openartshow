@@ -15,6 +15,7 @@
 //   opts.cellX/cellZ: 축별 파셀 셀 크기(m). opts.cell: 정사각 폴백(기본 32). opts.headless: RAF·이벤트 바인딩 비활성.
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
+import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W } from './space-render.js';
 import { PART_TYPES } from './space.js';
 import { createAvatarInstance } from './avatar.js';
@@ -93,7 +94,79 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     road: new THREE.MeshStandardMaterial({ color: 0x5b5e66, roughness: 0.98, metalness: 0 }),
     bridge: new THREE.MeshStandardMaterial({ color: 0x8a7a64, roughness: 0.9, metalness: 0 }),
     water: new THREE.MeshStandardMaterial({ color: 0x3f6f8f, roughness: 0.32, metalness: 0.12, transparent: true, opacity: 0.92 }),
+    // 거리 가구 공유 재질 — 파스텔 중채도(치비 세계관). dispose()에서 일괄 회수.
+    treeTrunk: new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.95, metalness: 0 }),
+    treeCanopy: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 }), // instanceColor로 톤 틴트
+    lampPost: new THREE.MeshStandardMaterial({ color: 0x353842, roughness: 0.6, metalness: 0.3 }), // 진회색 기둥
+    lampHead: new THREE.MeshStandardMaterial({ color: 0x6b5836, roughness: 0.5, metalness: 0.2, emissive: 0xffcf8a, emissiveIntensity: 0.8 }), // 웜톤 갓(실제 THREE.Light 0 — 라이브 규율 계승)
+    benchWood: new THREE.MeshStandardMaterial({ color: 0x9a8461, roughness: 0.85, metalness: 0 }),
+    planterVC: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }), // 테라코타 화분 + 녹색 관목(정점색)
   };
+  // 캐노피 톤 — 채도 낮은 녹색 2~3톤(잔디 0x7fa46a보다 진하게). setColorAt으로 인스턴스별 지정.
+  const CANOPY_TONES = [new THREE.Color(0x4c6b42), new THREE.Color(0x3d5a36), new THREE.Color(0x5f7d4e)];
+
+  // 거리 가구 공유 지오메트리(파셀 간 재사용 — InstancedMesh/개별 Mesh가 참조). createWorld dispose에서 회수.
+  const paintGeo = (g, hex) => {
+    const c = new THREE.Color(hex), n = g.attributes.position.count, arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
+  };
+  const SG = (() => {
+    const trunk = new THREE.CylinderGeometry(0.16, 0.22, 2.0, 7); trunk.translate(0, 1.0, 0);
+    const cLo = new THREE.SphereGeometry(1.05, 10, 8); cLo.scale(1, 0.82, 1); cLo.translate(0, 2.5, 0);
+    const cHi = new THREE.ConeGeometry(0.82, 1.3, 9); cHi.translate(0, 3.42, 0);
+    const canopy = mergeGeometries([cLo, cHi]); cLo.dispose(); cHi.dispose();
+    const lampPost = new THREE.CylinderGeometry(0.06, 0.09, 3.0, 8); lampPost.translate(0, 1.5, 0);
+    const lampHead = new THREE.SphereGeometry(0.22, 10, 8); lampHead.scale(1, 0.8, 1); lampHead.translate(0, 3.06, 0);
+    const seat = new THREE.BoxGeometry(1.4, 0.09, 0.44); seat.translate(0, 0.45, 0);
+    const bLegL = new THREE.BoxGeometry(0.12, 0.42, 0.4); bLegL.translate(-0.58, 0.21, 0);
+    const bLegR = new THREE.BoxGeometry(0.12, 0.42, 0.4); bLegR.translate(0.58, 0.21, 0);
+    const bench = mergeGeometries([seat, bLegL, bLegR]); [seat, bLegL, bLegR].forEach((g) => g.dispose());
+    const pot = new THREE.CylinderGeometry(0.28, 0.2, 0.42, 12); pot.translate(0, 0.21, 0);
+    const bush = new THREE.SphereGeometry(0.3, 10, 8); bush.scale(1, 0.92, 1); bush.translate(0, 0.62, 0);
+    const planter = mergeGeometries([paintGeo(pot, 0x9a5b43), paintGeo(bush, 0x4c6b42)]); pot.dispose(); bush.dispose();
+    return { trunk, canopy, lampPost, lampHead, bench, planter };
+  })();
+  const _tmpM = new THREE.Matrix4(), _tmpC = new THREE.Color();
+
+  // 거리 가구 배치 배열(def.street) → 렌더 Mesh + solid AABB(같은 데이터 파생 = 렌더-물리 정합).
+  // shellOnly(대각 임포스터) 파셀은 생략(원거리 draw call 절약). 반환: 회수 대상 Mesh 배열.
+  function buildStreet(street, group, ox, oz, solids) {
+    const meshes = [];
+    const trees = street.filter((s) => s.kind === 'tree');
+    if (trees.length) {
+      const trunkIM = new THREE.InstancedMesh(SG.trunk, T.treeTrunk, trees.length);
+      const canopyIM = new THREE.InstancedMesh(SG.canopy, T.treeCanopy, trees.length);
+      trees.forEach((s, i) => {
+        _tmpM.makeTranslation(ox + s.x, 0, oz + s.z);
+        trunkIM.setMatrixAt(i, _tmpM); canopyIM.setMatrixAt(i, _tmpM);
+        canopyIM.setColorAt(i, _tmpC.copy(CANOPY_TONES[(s.tone | 0) % 3]));
+        solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.25, ez: 0.25, bottom: 0, top: 2.0 }); // 줄기 충돌
+      });
+      trunkIM.castShadow = true; canopyIM.castShadow = true;
+      trunkIM.instanceMatrix.needsUpdate = true; canopyIM.instanceMatrix.needsUpdate = true;
+      if (canopyIM.instanceColor) canopyIM.instanceColor.needsUpdate = true;
+      group.add(trunkIM, canopyIM); meshes.push(trunkIM, canopyIM);
+    }
+    for (const s of street) {
+      if (s.kind === 'lamp') {
+        const post = new THREE.Mesh(SG.lampPost, T.lampPost); post.position.set(ox + s.x, 0, oz + s.z); post.castShadow = true;
+        const head = new THREE.Mesh(SG.lampHead, T.lampHead); head.position.set(ox + s.x, 0, oz + s.z);
+        group.add(post, head); meshes.push(post, head);
+        solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.22, ez: 0.22, bottom: 0, top: 3.0 }); // 기둥 충돌
+      } else if (s.kind === 'bench') {
+        const b = new THREE.Mesh(SG.bench, T.benchWood); b.position.set(ox + s.x, 0, oz + s.z); b.rotation.y = s.ry || 0;
+        b.castShadow = true; b.receiveShadow = true; group.add(b); meshes.push(b);
+        const c = Math.abs(Math.cos(s.ry || 0)), sn = Math.abs(Math.sin(s.ry || 0));
+        solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.7 * c + 0.22 * sn, ez: 0.7 * sn + 0.22 * c, bottom: 0, top: 0.5 }); // top 0.5 > STEP_OVER
+      } else if (s.kind === 'planter') {
+        const p = new THREE.Mesh(SG.planter, T.planterVC); p.position.set(ox + s.x, 0, oz + s.z); p.castShadow = true;
+        group.add(p); meshes.push(p);
+        solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.3, ez: 0.3, bottom: 0, top: 0.9 });
+      }
+    }
+    return meshes;
+  }
 
   // ── 파셀 인덱스 / 로드 상태 ──
   const keyOf = (px, pz) => px + ',' + pz;
@@ -185,8 +258,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         if (arts.length) crowd = new NpcCrowd(arts, def.npc.count || null, { roster: def.npc.roster });
       }
     }
+    // 거리 가구 — 풀디테일 파셀만(대각 shell 임포스터는 생략). 배치·solid 동일 데이터 파생.
+    let streetMeshes = null;
+    if (!shellOnly && def.street && def.street.length) streetMeshes = buildStreet(def.street, group, ox, oz, solids);
     scene.add(group);
-    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, lod, px, pz });
+    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, lod, px, pz });
   }
 
   function unloadParcel(k) {
@@ -194,6 +270,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (L.crowd) { for (const a of L.avatars.values()) { scene.remove(a.inst.group); a.inst.dispose(); } }
     scene.remove(L.group);
     if (L.bldGroup) disposeSpaceGroup(L.bldGroup);
+    // 거리 가구: InstancedMesh는 인스턴스 버퍼 회수(공유 지오 SG·재질 T는 유지 → createWorld dispose에서 일괄).
+    if (L.streetMeshes) for (const sm of L.streetMeshes) if (sm.dispose) sm.dispose();
     for (const g of L.own) g.dispose(); // 파셀 소유 지오(공유 재질 T는 dispose에서 일괄)
     loaded.delete(k);
   }
@@ -445,6 +523,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       // [복셀스] 하늘·바다·공유 재질 회수
       scene.remove(sky); sky.geometry.dispose(); if (sky.material.map) sky.material.map.dispose(); sky.material.dispose();
       scene.remove(sea); seaGeo.dispose();
+      for (const key3 in SG) SG[key3].dispose(); // 거리 가구 공유 지오
       for (const key2 in T) T[key2].dispose();
       if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
       renderer.dispose();
