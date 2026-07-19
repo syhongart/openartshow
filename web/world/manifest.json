@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "grid": { "w": 10, "h": 10 },
+  "cell": { "x": 24, "z": 24 },
+  "seed": 20260719,
+  "spawn": [4, 4],
+  "npcs": [
+    {
+      "id": "npc-ayamo", "nickname": "아야모", "home": [4, 4], "color": "#7ec8a0",
+      "char": "chibi:{\"skin\":\"#ffe0c8\",\"hairStyle\":\"twintail\",\"hairColor\":\"#7ec8a0\",\"eyeStyle\":\"sparkle\",\"mouth\":\"smile\",\"top\":\"#c8ecd9\",\"bottomType\":\"dress\",\"bottom\":\"#95d5b2\",\"acc\":\"ribbon\"}",
+      "greetings": ["어서 오세요! 제가 안내할게요 ☺️", "반가워요~ 천천히 둘러보세요", "아야모예요! 같이 봐요"],
+      "remarks": ["『{t}』, 이 방의 자랑이에요", "『{t}』 앞에 서면 마음이 편해져요", "여긴 언제 와도 좋아요 🌿"]
+    },
+    {
+      "id": "npc-lead", "nickname": "팀장", "home": [5, 4], "color": "#8e7dbe",
+      "char": "chibi:{\"outfit\":\"suit\",\"hairStyle\":\"short\",\"glasses\":true,\"eyeStyle\":\"round\",\"top\":\"#39414f\",\"bottom\":\"#2c3038\"}",
+      "greetings": ["둘러보시는군요. 편하게 보세요.", "안녕하세요."],
+      "remarks": ["『{t}』… 구성이 탄탄하네요", "『{t}』 조명 각이 좋습니다", "동선이 잘 잡혔네요"]
+    },
+    {
+      "id": "npc-deputy", "nickname": "부팀장", "home": [3, 4], "color": "#6a8caf",
+      "char": "chibi:{\"hairStyle\":\"bob\",\"top\":\"#5468c4\",\"bottomType\":\"pants\",\"bottom\":\"#39414f\"}",
+      "greetings": ["오세요~ 편하게 보시면 돼요", "안녕하세요!"],
+      "remarks": ["『{t}』 디테일 보세요, 좋아요", "이 방 마감이 깔끔하죠", "『{t}』 배치가 좋네요"]
+    },
+    {
+      "id": "npc-exec", "nickname": "실행", "home": [4, 5], "color": "#95d5b2",
+      "char": "chibi:{\"hairStyle\":\"ponytail\",\"top\":\"#95d5b2\",\"bottomType\":\"overall\",\"bottom\":\"#7a9cc4\"}",
+      "greetings": ["안녕하세요! 점검 중이에요", "어서 오세요~"],
+      "remarks": ["『{t}』 체크 완료, 좋습니다", "『{t}』 이상 없네요", "깔끔하게 걸렸네요"]
+    },
+    {
+      "id": "npc-legal", "nickname": "법무팀", "home": [5, 5], "color": "#c7ccd4",
+      "char": "chibi:{\"outfit\":\"suit\",\"hairStyle\":\"buns\",\"glasses\":true,\"top\":\"#2c3038\",\"bottom\":\"#39414f\"}",
+      "greetings": ["안녕하세요. 살펴보고 계시네요.", "천천히 보세요."],
+      "remarks": ["『{t}』 출처는 확인됐나요?", "『{t}』… 문제될 건 없어 보여요", "안전한 전시네요"]
+    },
+    {
+      "id": "npc-sec", "nickname": "보안담당자", "home": [3, 5], "color": "#5468c4",
+      "char": "chibi:{\"hairStyle\":\"short\",\"eyeStyle\":\"round\",\"top\":\"#39414f\",\"bottomType\":\"pants\",\"bottom\":\"#2c3038\"}",
+      "greetings": ["어서 오세요. 이 구역은 안전합니다.", "안녕하세요."],
+      "remarks": ["『{t}』 잘 지켜지고 있네요", "이 구역은 안전합니다", "『{t}』 이상 징후 없음"]
+    },
+    {
+      "id": "npc-design", "nickname": "디자이너", "home": [4, 3], "color": "#e0596e",
+      "char": "chibi:{\"hairStyle\":\"ponytail\",\"hairColor\":\"#8a4be0\",\"top\":\"#e0596e\",\"bottomType\":\"skirt\",\"bottom\":\"#d9c9f5\",\"acc\":\"flower\"}",
+      "greetings": ["와, 오셨네요! 이 톤 보세요 ✨", "어서 오세요~"],
+      "remarks": ["『{t}』 색 조합이 예술이에요", "『{t}』 이 톤 정말 좋다", "공간이 작품을 살리네요 ✨"]
+    },
+    {
+      "id": "npc-copy", "nickname": "카피라이터", "home": [5, 3], "color": "#ffd166",
+      "char": "chibi:{\"hairStyle\":\"bob\",\"glasses\":true,\"top\":\"#ffe08a\",\"bottomType\":\"pants\",\"bottom\":\"#8a5a3b\"}",
+      "greetings": ["안녕하세요~ 이 방, 한 줄로 표현하자면…", "오셨군요!"],
+      "remarks": ["『{t}』… 이 작품엔 이름을 붙이고 싶네요", "『{t}』 한 줄로 표현하자면…", "여운이 남는 작품이에요"]
+    },
+    {
+      "id": "npc-perf", "nickname": "성능 전문가", "home": [3, 3], "color": "#72e6e1",
+      "char": "chibi:{\"hairStyle\":\"short\",\"eyeStyle\":\"round\",\"top\":\"#72E6E1\",\"bottomType\":\"pants\",\"bottom\":\"#39414f\"}",
+      "greetings": ["부드럽게 잘 그려지죠? 편하게 보세요", "안녕하세요!"],
+      "remarks": ["『{t}』 부드럽게 잘 그려지네요", "프레임 걱정 없이 감상하세요", "『{t}』 렌더 깔끔합니다"]
+    },
+    {
+      "id": "npc-research", "nickname": "리서처", "home": [6, 4], "color": "#a9d6e8",
+      "char": "chibi:{\"hairStyle\":\"buns\",\"glasses\":true,\"top\":\"#a9d6e8\",\"bottomType\":\"skirt\",\"bottom\":\"#4a5568\"}",
+      "greetings": ["안녕하세요. 흥미로운 방이죠?", "어서 오세요~"],
+      "remarks": ["『{t}』 비슷한 사조를 본 적 있어요", "『{t}』 배경이 궁금해지네요", "공부가 되는 전시예요"]
+    }
+  ]
+}

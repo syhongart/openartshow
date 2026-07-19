@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- 오픈월드(파셀 스트리밍) 스파이크: 자기완결(외부 호스트 0). CSP default-src 'self'. behind-flag: 어디에도 링크하지 않음. -->
+<!-- 보안 선결(플래그 해제 준비, security-officer 29259bf): -->
+<!--  · 앱 스크립트는 js/world-boot.js 외부 모듈로 추출 → 'unsafe-inline' 제거. importmap만 예외로 sha256 해시 고정 -->
+<!--    (importmap은 브라우저 제약상 인라인 전용 + three bare specifier 해석에 필수. 내용 불변(three 매핑 1줄)이라 -->
+<!--     해시 유지보수 부담 0. 앱 로직은 외부 모듈이라 코드 변경 시 해시 재계산 불필요). style은 인라인 유지(index.html 관행). -->
+<!--  · connect-src 'self' https://0.peerjs.com wss://0.peerjs.com — PeerJS 시그널링. 게스트 합류(new Peer(undefined,…) — multiplayer.js:474)는 -->
+<!--    wss 소켓을 열기 전에 https REST(GET /peerjs/…/id)로 랜덤 peer id를 먼저 조회하므로 https·wss 둘 다 허용해야 한다(https 누락 시 게스트 id 조회가 CSP 위반으로 실패). -->
+<!--    STUN/TURN ICE는 WebRTC라 connect-src 통제 밖 → 불필요. manifest fetch는 'self'로 커버. -->
+<!--    ※ 셀프호스팅 시그널링 전환(window.LU_PEER_OPTS) 시 이 도메인을 실제 시그널링 호스트로 교체해야 한다. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-GqsWfEjHm73zbHa7lGbVXfv95jxypKuCtjd6kntjIRA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'none'">
+<title>오픈월드 · OpenArtShow</title>
+<link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<script src="./vendor/peerjs.min.js"></script>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<style>
+  :root{
+    --bg:#14151A; --ink:#F5F5F2; --dim:#9A9EB1; --line:#3A3D4B;
+    --violet:#8B72FF; --cyan:#72E6E1; --coral:#FF705E;
+    --glass:linear-gradient(180deg, rgba(46,48,61,.72), rgba(20,21,27,.82));
+    --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;width:100%;background:var(--bg);color:var(--ink);font-family:var(--app);overflow:hidden;-webkit-font-smoothing:antialiased}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  .plate{position:fixed;z-index:10;background:var(--glass);
+    -webkit-backdrop-filter:blur(11px) saturate(150%);backdrop-filter:blur(11px) saturate(150%);
+    border:1px solid rgba(255,255,255,.10);border-radius:14px;
+    box-shadow:0 14px 32px -12px rgba(0,0,0,.52), inset 0 1px 0 rgba(255,255,255,.13)}
+
+  .hud-info{top:16px;left:16px;padding:13px 18px;max-width:min(72vw,340px)}
+  .hud-info .titlerow{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .hud-info .tick{width:3px;height:16px;border-radius:2px;background:var(--cyan);flex:none}
+  .hud-info .title{font-size:14.5px;font-weight:700;letter-spacing:-.01em}
+  .hud-info .hint{font-size:11.5px;color:var(--dim);line-height:1.6}
+  .hud-info .hint b{color:var(--ink);font-weight:600}
+  .hud-info .pcell{margin-top:6px;font-size:11px;color:var(--cyan)}
+
+  /* 미니맵(우상단) */
+  .hud-map{top:16px;right:16px;padding:7px;line-height:0}
+  #minimap{display:block;width:128px;height:128px;opacity:.92}
+
+  /* 클릭 유도 오버레이(데스크톱) */
+  #enter{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;
+    background:radial-gradient(120% 90% at 50% 40%, rgba(20,21,26,.35), rgba(10,10,14,.72));cursor:pointer;text-align:center;padding:24px}
+  #enter .big{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  #enter .sub{font-size:12.5px;color:var(--dim);line-height:1.7}
+  #enter .note{margin-top:14px;font-size:11px;color:var(--dim);opacity:.82;max-width:min(80vw,420px);line-height:1.6}
+  #enter.hide{display:none}
+
+  /* NPC 말풍선 토스트(하단 중앙) */
+  #chat{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:20;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;max-width:88vw}
+  #chat .bub{background:rgba(20,21,27,.82);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:8px 14px;font-size:12.5px;line-height:1.5;
+    opacity:0;transform:translateY(8px);transition:.25s cubic-bezier(.2,.8,.2,1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:88vw}
+  #chat .bub.on{opacity:1;transform:translateY(0)}
+  #chat .bub .nm{color:var(--cyan);font-weight:700;margin-right:7px}
+
+  /* 모바일 조이스틱 */
+  #joy{display:none;position:fixed;left:20px;bottom:26px;z-index:20;width:112px;height:112px;border-radius:999px;
+    background:rgba(20,21,27,.42);border:1px solid rgba(255,255,255,.12);touch-action:none}
+  #joy .nub{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:999px;
+    background:rgba(139,114,255,.55);border:1px solid rgba(255,255,255,.35);box-shadow:0 4px 12px -4px rgba(0,0,0,.6)}
+  .is-touch #enter{display:none}
+  .is-touch #joy{display:block}
+
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div class="plate hud-info">
+  <div class="titlerow"><span class="tick"></span><span class="title">오픈월드 · 파셀 스트리밍</span></div>
+  <div class="hint" id="hintDesk"><b>클릭</b>해 둘러보기 · <b>WASD</b> 이동 · 마우스 시선 · <b>ESC</b> 커서 해제</div>
+  <div class="hint mobhint" style="display:none">왼쪽 <b>조이스틱</b> 이동 · 오른쪽 <b>드래그</b> 시선</div>
+  <div class="hint">하늘 아래 거리를 걷다, 마음에 드는 건물로 들어가 보세요. 강에는 다리가 있어요.</div>
+  <div class="pcell" id="pcell">파셀 (0,0)</div>
+</div>
+
+<div id="enter">
+  <div class="big">클릭해 둘러보기</div>
+  <div class="sub">WASD 이동 · 마우스로 시선 · 옆 방으로 걸어서 이동</div>
+  <div class="note">동시 접속 데모는 P2P라 접속자 간 네트워크 주소가 노출될 수 있어요.</div>
+</div>
+
+<div class="plate hud-map"><canvas id="minimap" width="128" height="128"></canvas></div>
+
+<div id="chat"></div>
+<div id="joy"><div class="nub" id="joyNub"></div></div>
+
+<script type="module" src="./js/world-boot.js"></script>
+</body>
+</html>
