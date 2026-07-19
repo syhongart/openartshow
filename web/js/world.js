@@ -87,6 +87,26 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
   const sky = makeSkyDome(); scene.add(sky);
 
+  // 물 잔물결 텍스처(자작 소형·자기완결 — space-render waterTexGen 비공개라 라이브 공유파일
+  // 무수정 위해 world.js에 소형 자작). 가로 정수배 사인이라 타일 이음새 연속 → update에서
+  // map.offset 스크롤로 잔잔한 흐름(저사양: 버텍스 변형·셰이더 0, 드로우콜 증가 0). 비-DOM 폴백=단색.
+  function makeWaterTex() {
+    if (typeof document === 'undefined') return null;
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const x = c.getContext('2d'); if (!x) return null;
+    let s = 53; const rnd = () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    x.fillStyle = '#3f6f8f'; x.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 44; i++) {
+      const y = rnd() * 128, amp = 2 + rnd() * 6, k = 1 + (rnd() * 2 | 0), a = 0.05 + rnd() * 0.07;
+      x.strokeStyle = `rgba(${175 + (rnd() * 40 | 0)},${212 + (rnd() * 35 | 0)},${216 + (rnd() * 30 | 0)},${a})`;
+      x.lineWidth = 1 + rnd() * 1.4; x.beginPath();
+      for (let px = 0; px <= 128; px += 6) { const py = y + Math.sin((px / 128) * 6.2832 * k) * amp; if (px === 0) x.moveTo(px, py); else x.lineTo(px, py); }
+      x.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.anisotropy = 4;
+    return tex;
+  }
+
   // 지면·도로·물·다리 공유 재질(파셀 복제 방지) — dispose()에서 일괄 회수.
   const T = {
     grass: new THREE.MeshStandardMaterial({ color: 0x7fa46a, roughness: 1.0, metalness: 0 }),
@@ -284,6 +304,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const sea = new THREE.Mesh(seaGeo, T.water);
   sea.position.set(((minPx + maxPx) / 2) * CELLX, -0.3, ((minPz + maxPz) / 2) * CELLZ);
   scene.add(sea);
+  // 강/바다 공용 재질(T.water=sea 평면 하나) — 잔물결 텍스처 붙이고 offset 스크롤로 흐름 연출.
+  const waterTex = makeWaterTex();
+  if (waterTex) {
+    const wr = Math.max(12, Math.round(((maxPx - minPx + 40) * CELLX) / 6)); // 타일 ~6m
+    waterTex.repeat.set(wr, wr);
+    T.water.map = waterTex; T.water.color.set(0xffffff); T.water.needsUpdate = true;
+  }
   const wMinX = (minPx - 0.9) * CELLX, wMaxX = (maxPx + 0.9) * CELLX;
   const wMinZ = (minPz - 0.9) * CELLZ, wMaxZ = (maxPz + 0.9) * CELLZ;
   const clampWorld = (x, z) => ({ x: Math.max(wMinX, Math.min(wMaxX, x)), z: Math.max(wMinZ, Math.min(wMaxZ, z)) });
@@ -439,6 +466,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
   function update(dt) {
     const d = (typeof dt === 'number' && isFinite(dt)) ? dt : 0.016;
+    // 물결 흐름 — map.offset 스크롤(잔잔하게). 강/바다 공용이라 한 곳만.
+    if (waterTex) { waterTex.offset.x = (waterTex.offset.x + 0.008 * d) % 1; waterTex.offset.y = (waterTex.offset.y + 0.005 * d) % 1; }
     const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
     if (f || r) walk(f, r, d);
     // 카메라 y를 groundY 추종(계단·강 경사 부드럽게). 태양·스카이 추종은 applyPose 안.
@@ -523,6 +552,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       // [복셀스] 하늘·바다·공유 재질 회수
       scene.remove(sky); sky.geometry.dispose(); if (sky.material.map) sky.material.map.dispose(); sky.material.dispose();
       scene.remove(sea); seaGeo.dispose();
+      if (T.water.map) T.water.map.dispose(); // 물결 텍스처(재질 dispose는 map 미회수)
       for (const key3 in SG) SG[key3].dispose(); // 거리 가구 공유 지오
       for (const key2 in T) T[key2].dispose();
       if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
