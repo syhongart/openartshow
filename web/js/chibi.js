@@ -171,26 +171,35 @@ export const SPECIES_OUTFIT = {
   robot: { top: '#39414f', bottom: '#2c3038' }, // 무채 패널 계열(기존 옷색 재사용)
   ghost: { top: '#eef6f5', bottom: '#dcefee' },   // 실사용 거의 없음(시트가 대체)
 };
-const _sp = (id, name, extra) => ({ id, name, look: Object.assign({ species: id, eyeStyle: 'happy' }, SPECIES_PRESET[id] || {}, SPECIES_OUTFIT[id] || {}, extra || {}) });
+// cat = 프리셋 줄 카테고리(UI 전용 메타 — look 직렬화·정규화와 무관). 미지정은 'human'.
+const _sp = (id, name, extra, cat) => ({ id, name, cat: cat || 'animal', look: Object.assign({ species: id, eyeStyle: 'happy' }, SPECIES_PRESET[id] || {}, SPECIES_OUTFIT[id] || {}, extra || {}) });
 // 종족 색 변형 프리셋(같은 종 다른 개체 — 자연 배색식). id는 고유해야 하므로 별도 지정.
-const _spv = (id, species, name, over) => ({ id, name, look: Object.assign({ species, eyeStyle: 'happy' }, SPECIES_PRESET[species] || {}, SPECIES_OUTFIT[species] || {}, over || {}) });
+const _spv = (id, species, name, over) => ({ id, name, cat: 'variant', look: Object.assign({ species, eyeStyle: 'happy' }, SPECIES_PRESET[species] || {}, SPECIES_OUTFIT[species] || {}, over || {}) });
+// 프리셋 줄 카테고리 정의 — presetRow(ui.js)가 이 순서대로 섹션을 그린다.
+export const CHIBI_PRESET_GROUPS = [
+  { id: 'new', name: '✨ 신작' },
+  { id: 'human', name: '사람' },
+  { id: 'animal', name: '동물 친구' },
+  { id: 'special', name: '로봇 · 귀신' },
+  { id: 'variant', name: '동물 색 변형' },
+];
 export const CHIBI_PRESETS = [
   // ── 사람 완성 룩 ──
   { id: 'girl', name: '기본 여아', look: {} },
   { id: 'boy', name: '기본 남아', look: Object.assign({}, GENDER_PRESET.boy) },
   // 신작 룩 — 줄 앞쪽 배치(발견성). 모달 패널은 세로 스크롤이라 뒤쪽 카드는 폴드에
   // 잘려 "새 캐릭터가 없다"로 인지됨(감독 신고) → 기본 2종 바로 뒤가 정위치.
-  { id: 'long_girl', name: '긴 머리 소녀', look: { hairStyle: 'wave', hairColor: '#6b4530', top: '#ffb3c1', bottomType: 'dress', eyeStyle: 'sparkle', acc: 'flower' } },
-  { id: 'long_black', name: '흑발 롱', look: { hairStyle: 'long', hairColor: '#2b2b33', top: '#a9d6e8', bottom: '#39414f', bottomType: 'skirt', eyeStyle: 'happy' } },
-  { id: 'halfup_girl', name: '반묶음 소녀', look: { hairStyle: 'halfup', hairColor: '#8a5a3b', top: '#c8ecd9', bottomType: 'skirt', bottom: '#95d5b2', eyeStyle: 'happy', acc: 'ribbon' } },
-  { id: 'heart_head', name: '하트 머리', look: { hairStyle: 'heart', hairColor: '#ff8fab', top: '#fffdf7', bottom: '#95d5b2', bottomType: 'skirt', eyeStyle: 'happy', mouth: 'open' } },
-  { id: 'heart_head_orange', name: '주황 하트 머리', look: { hairStyle: 'heart', hairColor: '#f0a05c', top: '#ffb3c1', bottom: '#ff8fab', bottomType: 'dress', eyeStyle: 'happy', mouth: 'smile' } },
-  { id: 'artist', name: '화가', look: { outfit: 'artist', top: '#c7ccd4', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#3a2c22', eyeStyle: 'round' } },
-  { id: 'artist_girl', name: '화가 소녀', look: { outfit: 'artist', top: '#a9d6e8', bottom: '#5468c4', bottomType: 'skirt', hairStyle: 'wave', hairColor: '#6b4530', eyeStyle: 'happy' } },
-  { id: 'hanbok_f', name: '한복(여)', look: { outfit: 'hanbok', top: '#c8ecd9', bottom: '#e0596e', bottomType: 'dress', hairStyle: 'buns', hairColor: '#2b2b33', eyeStyle: 'happy', acc: 'flower' } },
-  { id: 'hanbok_m', name: '한복(남)', look: { gender: 'boy', outfit: 'hanbok', top: '#a9d6e8', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#2b2b33', eyeStyle: 'round' } },
-  { id: 'hoodie', name: '후드', look: { outfit: 'hoodie', top: '#5468c4', bottom: '#2c3038', bottomType: 'pants', hairStyle: 'short', hairColor: '#2a2320', eyeStyle: 'round', acc: 'none' } },
-  { id: 'hoodie_pink', name: '핑크 후드', look: { outfit: 'hoodie', top: '#ff8fab', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#6b4530', eyeStyle: 'happy' } },
+  { id: 'long_girl', name: '긴 머리 소녀', cat: 'new', look: { hairStyle: 'wave', hairColor: '#6b4530', top: '#ffb3c1', bottomType: 'dress', eyeStyle: 'sparkle', acc: 'flower' } },
+  { id: 'long_black', name: '흑발 롱', cat: 'new', look: { hairStyle: 'long', hairColor: '#2b2b33', top: '#a9d6e8', bottom: '#39414f', bottomType: 'skirt', eyeStyle: 'happy' } },
+  { id: 'halfup_girl', name: '반묶음 소녀', cat: 'new', look: { hairStyle: 'halfup', hairColor: '#8a5a3b', top: '#c8ecd9', bottomType: 'skirt', bottom: '#95d5b2', eyeStyle: 'happy', acc: 'ribbon' } },
+  { id: 'heart_head', name: '하트 머리', cat: 'new', look: { hairStyle: 'heart', hairColor: '#ff8fab', top: '#fffdf7', bottom: '#95d5b2', bottomType: 'skirt', eyeStyle: 'happy', mouth: 'open' } },
+  { id: 'heart_head_orange', name: '주황 하트 머리', cat: 'new', look: { hairStyle: 'heart', hairColor: '#f0a05c', top: '#ffb3c1', bottom: '#ff8fab', bottomType: 'dress', eyeStyle: 'happy', mouth: 'smile' } },
+  { id: 'artist', name: '화가', cat: 'new', look: { outfit: 'artist', top: '#c7ccd4', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#3a2c22', eyeStyle: 'round' } },
+  { id: 'artist_girl', name: '화가 소녀', cat: 'new', look: { outfit: 'artist', top: '#a9d6e8', bottom: '#5468c4', bottomType: 'skirt', hairStyle: 'wave', hairColor: '#6b4530', eyeStyle: 'happy' } },
+  { id: 'hanbok_f', name: '한복(여)', cat: 'new', look: { outfit: 'hanbok', top: '#c8ecd9', bottom: '#e0596e', bottomType: 'dress', hairStyle: 'buns', hairColor: '#2b2b33', eyeStyle: 'happy', acc: 'flower' } },
+  { id: 'hanbok_m', name: '한복(남)', cat: 'new', look: { gender: 'boy', outfit: 'hanbok', top: '#a9d6e8', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#2b2b33', eyeStyle: 'round' } },
+  { id: 'hoodie', name: '후드', cat: 'new', look: { outfit: 'hoodie', top: '#5468c4', bottom: '#2c3038', bottomType: 'pants', hairStyle: 'short', hairColor: '#2a2320', eyeStyle: 'round', acc: 'none' } },
+  { id: 'hoodie_pink', name: '핑크 후드', cat: 'new', look: { outfit: 'hoodie', top: '#ff8fab', bottom: '#39414f', bottomType: 'pants', hairStyle: 'short', hairColor: '#6b4530', eyeStyle: 'happy' } },
   { id: 'angel', name: '엔젤이', look: { hairStyle: 'bob', hairColor: '#6e4632', skin: '#f7e7d2', eyeStyle: 'happy', top: '#a9d6e8', bottom: '#a9d6e8', bottomType: 'dress', acc: 'none', halo: true, wings: true, heart: true } },
   { id: 'angel_pink', name: '핑크 엔젤', look: { hairStyle: 'twintail', hairColor: '#6b4530', top: '#ffb3c1', bottom: '#ffb3c1', bottomType: 'dress', halo: true, wings: true, heart: true, eyeStyle: 'happy', acc: 'none' } },
   { id: 'dots', name: '땡땡이 원피스', look: { top: '#ff8fab', pattern: 'dot', bottomType: 'dress', eyeStyle: 'happy', acc: 'ribbon' } },
@@ -212,8 +221,8 @@ export const CHIBI_PRESETS = [
   _sp('chick', '병아리'), _sp('frog', '개구리', { mouth: 'open' }), _sp('hamster', '햄스터', { eyeStyle: 'sparkle' }),
   _sp('raccoon', '너구리', { eyeStyle: 'round' }), _sp('koala', '코알라'), _sp('pig', '돼지'),
   // ── 제3종족 ──
-  _sp('robot', '로봇', { bottomType: 'pants', shoes: '#2c3038', hairStyle: 'bald', mouth: 'smile' }),
-  _sp('ghost', '귀신', { mouth: 'open', hairStyle: 'bald' }),
+  _sp('robot', '로봇', { bottomType: 'pants', shoes: '#2c3038', hairStyle: 'bald', mouth: 'smile' }, 'special'),
+  _sp('ghost', '귀신', { mouth: 'open', hairStyle: 'bald' }, 'special'),
   // ── 동물 색 변형(같은 종 다른 개체) ──
   _spv('cat_black', 'cat', '검은 고양이', { skin: '#3a352f', hairColor: '#f5e6c8', eyeStyle: 'round' }),
   _spv('cat_grey', 'cat', '회색 고양이', { skin: '#c9c3ba', hairColor: '#8a8078' }),
@@ -1124,6 +1133,11 @@ const CHIBI_ACTION_DUR = {
   breakdance: 2.8, run: 1.8, sit: 1.8, jumpingjack: 1.6, heart: 1.6, sulk: 1.8,
 };
 export const CHIBI_ACTIONS = Object.keys(CHIBI_ACTION_DUR);
+// 액션 한글 라벨 — 꾸미기 프리뷰 액션 테스트 버튼 등 UI가 공유하는 SSOT.
+export const CHIBI_ACTION_LABELS = {
+  wave: '인사', jump: '점프', bow: '절', clap: '박수', dance: '춤', kick: '발차기',
+  breakdance: '브레이크댄스', run: '달리기', sit: '앉기', jumpingjack: '팔벌려뛰기', heart: '하트', sulk: '삐짐',
+};
 
 // ---------------------------------------------------------------------------
 // sit 골반(wrapper.y) 안전 곡선 (검수관 지적 — 3차 재수정)
