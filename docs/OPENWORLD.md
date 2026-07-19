@@ -122,6 +122,19 @@
 
 **헤드리스 QA(swiftshader)**: floors=1 자식 7개(=현행)·floors=2 자식 13/totalH 7.2 / visit·builder 콘솔 에러 0(회귀) / 계단 등반 groundY 0→3.6 / 단층 groundY 0 유지 / 문 통과 12/12 / 결정론.
 
+## 복셀스 전환 · 개방 도시 월드 (2026-07-19, 감독 방향 전환)
+
+감독 피드백 "밀폐된 방의 연속은 답답하다 — voxels.com처럼 길·다양한 크기/층고·하늘·바다·강" → **"파셀=방"을 "파셀=하늘 아래 대지"로 전환**. 핵심 통찰: 방 크기를 통일했던 유일한 이유(인접 벽 정합)가 개방 세계에선 소멸 → **footprint·층고·층수 전부 자유**.
+
+- **월드**: 셀 24×24m, 10×10=240×240m 도시. 파셀 중앙부 건물 + 가장자리 도로 스트립(남·동, 이웃과 5m 도로망). 건물 오프셋 지터로 거리 리듬.
+- **건물**: footprint small/medium/large 가중 + storyH 3종 + 1~2층 → 스카이라인 2.8~8.4m. 입구는 남쪽 문틀(`entries:['south']`). 내부는 기존 테마·작품·계단 유지(좌표는 dims 기반 일반화).
+- **하늘/물**: 캔버스 그라디언트 스카이돔(자기완결) + 태양 디렉셔널(플레이어 추종 섀도) + 밝은 fog. 바다=월드 아래 고정 물 평면(y=-0.3). 강=시드 랜덤워크 열(`riverColAt`, 행당 ±1) — 지면 생략으로 바다 노출 + 동서 다리. 물 지반 -0.4(첨벙 가능, STEP_TOLERANCE 이내 복귀).
+- **충돌 반전**: "방에 가두기"(clampPos) 제거 → "벽이 막기". 건물 4벽을 solid AABB 세그먼트(`computeShellSolids`, 문 구간 비움)로 등록해 기존 `blocked()`가 처리. 월드는 소프트 클램프만.
+- **원격 아바타**: sendState y=groundY+EYE_HEIGHT (다층·강 반영 — 기존 단층 TODO 해소).
+- 파일: `world-gen.js`(genParcel/riverColAt/좌표 일반화), `world.js`(스카이·지면·다리·바다·shellSolids·개방 이동), `world.html`(강 회피 fixLand·미니맵 강), `manifest.json`(cell 24). **space-render/space.js 무수정**(라이브 공유 리스크 0).
+
+**헤드리스 QA(swiftshader)**: 거리 자유 이동(파셀 전환, clamp 없음) / 남문 진입(로컬 z=-2.6) / 북벽 차단(z=-3.4 정지) / 강 첨벙 groundY -0.4·다리 0 / 2층 계단 등반 3.6 / NPC 5 스폰 / 하늘 렌더 / 콘솔 0. world-gen 전수 assert: footprint 3종 배치 안전(통로·벽 안) 0건, 강 연속성(행당 ±1), 결정론.
+
 ## 리스크
 
 - **드로우콜**: 파셀 9개 풀로드 시 `ART_SCREEN_CAP=80` 초과 → `shellOnly` 임포스터 LOD로 완화(스파이크는 직교 풀/대각 shell).

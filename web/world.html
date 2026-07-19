@@ -71,7 +71,7 @@
   <div class="titlerow"><span class="tick"></span><span class="title">오픈월드 · 파셀 스트리밍</span></div>
   <div class="hint" id="hintDesk"><b>클릭</b>해 둘러보기 · <b>WASD</b> 이동 · 마우스 시선 · <b>ESC</b> 커서 해제</div>
   <div class="hint mobhint" style="display:none">왼쪽 <b>조이스틱</b> 이동 · 오른쪽 <b>드래그</b> 시선</div>
-  <div class="hint">문(개구부)을 지나 옆 전시실로 걸어서 넘어가 보세요.</div>
+  <div class="hint">하늘 아래 거리를 걷다, 마음에 드는 건물로 들어가 보세요. 강에는 다리가 있어요.</div>
   <div class="pcell" id="pcell">파셀 (0,0)</div>
 </div>
 
@@ -86,7 +86,7 @@
 <div id="joy"><div class="nub" id="joyNub"></div></div>
 
 <script type="module">
-import { genRoom } from './js/world-gen.js';
+import { genParcel, riverColAt } from './js/world-gen.js';
 import { createWorld } from './js/world.js';
 import { randomChibiChar } from './js/chibi.js';
 
@@ -109,21 +109,31 @@ const grid = M.grid;
 // remarks 템플릿 문자열 → 함수 (npc.js 계약: (t)=>string). greetings는 순수 문자열.
 const toRemarks = (arr) => (arr || []).map((tpl) => (t) => tpl.replace('{t}', t));
 
-// NPC를 home 파셀 키로 그룹핑(같은 방 여러 명 = 한 crowd)
+// [복셀스] 강 파셀 조회 + 육지 보정 — NPC home·spawn이 강이면 동쪽으로 민다(강은 행당 1칸).
+const isRiver = (px, pz) => riverColAt(pz, M.seed, grid) === px;
+const fixLand = ([px, pz]) => {
+  let x = px;
+  while (x < grid.w - 1 && isRiver(x, pz)) x++;
+  if (isRiver(x, pz)) { x = px; while (x > 0 && isRiver(x, pz)) x--; }
+  return [x, pz];
+};
+
+// NPC를 home 파셀 키로 그룹핑(같은 건물 여러 명 = 한 crowd)
 const npcByHome = new Map();
 for (const n of M.npcs) {
-  const k = n.home[0] + ',' + n.home[1];
+  const [hx, hz] = fixLand(n.home);
+  const k = hx + ',' + hz;
   if (!npcByHome.has(k)) npcByHome.set(k, []);
   npcByHome.get(k).push({ id: n.id, nickname: n.nickname, char: n.char, color: n.color, greetings: n.greetings, remarks: toRemarks(n.remarks) });
 }
 
-// 그리드 순회 → 파셀 100개(방=절차생성, entries=자동 대칭). spawn 파셀을 배열 선두로(world.js는 parcels[0]을 스폰 기준).
+// 그리드 순회 → 파셀 100개(대지=절차생성: 건물/강/오프셋). spawn 파셀(육지 보정)을 배열 선두로.
 const parcels = [];
-const [sx, sz] = M.spawn || [0, 0];
+const [sx, sz] = fixLand(M.spawn || [0, 0]);
 for (let pz = 0; pz < grid.h; pz++) for (let px = 0; px < grid.w; px++) {
-  const space = genRoom(px, pz, M.seed, grid);
-  const roster = npcByHome.get(px + ',' + pz);
-  const parcel = roster ? { px, pz, space, npc: { roster, count: roster.length } } : { px, pz, space };
+  const P = genParcel(px, pz, M.seed, grid, M.cell);
+  const roster = P.space ? npcByHome.get(px + ',' + pz) : null;
+  const parcel = Object.assign({ px, pz }, P, roster ? { npc: { roster, count: roster.length } } : {});
   if (px === sx && pz === sz) parcels.unshift(parcel); else parcels.push(parcel);
 }
 
@@ -148,7 +158,8 @@ window.addEventListener('resize', fit); fit();
 // ── 미니맵(우상단) — 현재 셀 하이라이트 + NPC home 점 + 방문 셀 음영. 순수 2D 캔버스(CSP 무영향). ──
 const mmap = document.getElementById('minimap'), mctx = mmap.getContext('2d');
 const CPX = Math.floor(mmap.width / Math.max(grid.w, grid.h));
-const homes = new Set(M.npcs.map((n) => n.home[0] + ',' + n.home[1]));
+const homes = new Set([...npcByHome.keys()]);
+const riverSet = new Set(); for (let z = 0; z < grid.h; z++) riverSet.add(riverColAt(z, M.seed, grid) + ',' + z);
 const visited = new Set();
 function drawMinimap() {
   const p = V.getCurrentParcel();
@@ -156,7 +167,7 @@ function drawMinimap() {
   mctx.clearRect(0, 0, mmap.width, mmap.height);
   for (let z = 0; z < grid.h; z++) for (let x = 0; x < grid.w; x++) {
     const k = x + ',' + z, X = x * CPX, Y = z * CPX;
-    mctx.fillStyle = visited.has(k) ? 'rgba(114,230,225,.16)' : 'rgba(255,255,255,.05)';
+    mctx.fillStyle = riverSet.has(k) ? 'rgba(90,150,210,.6)' : (visited.has(k) ? 'rgba(114,230,225,.16)' : 'rgba(255,255,255,.05)');
     mctx.fillRect(X + 1, Y + 1, CPX - 2, CPX - 2);
     if (homes.has(k)) { mctx.fillStyle = 'rgba(139,114,255,.9)'; mctx.beginPath(); mctx.arc(X + CPX / 2, Y + CPX / 2, 2.2, 0, 7); mctx.fill(); }
   }
