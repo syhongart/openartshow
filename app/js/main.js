@@ -707,16 +707,8 @@ async function init() {
         } catch (_) { console.info('[OpenArtShow diag]', report); }
       });
     }
-    if (gpuInfo.soft && !document.getElementById('lu-potato-badge')) {
-      const badge = document.createElement('div');
-      badge.id = 'lu-potato-badge';
-      badge.textContent = '소프트웨어 렌더링 모드 — 그래픽 가속이 꺼져 있거나 지원되지 않아요';
-      badge.style.cssText =
-        'position:fixed;left:12px;bottom:12px;z-index:890;padding:6px 12px;border-radius:999px;' +
-        'background:rgba(23,20,15,0.88);color:#8fd0ab;border:1px solid rgba(95,158,125,0.5);' +
-        `font:600 11px/1.5 ${getCanvasFont()};pointer-events:none;`;
-      document.body.appendChild(badge);
-    }
+    // (소프트웨어 렌더링 배지도 감독 지시로 비활성 — 위 '느림' 경고 배너와
+    //  같은 취지. potato 모드 최적화(해상도·그림자·톤매핑)는 그대로 작동한다.)
   }, 0);
 
   initUI({
