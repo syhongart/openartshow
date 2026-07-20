@@ -1314,7 +1314,7 @@ function aoTexture() {
 }
 const AO_GROUNDED = { pedestal: 1.2, pillar: 1.5, bench: 2.0, planter: 1.3, vitrine: 1.4, labelStand: 1.0, stair: 1.6, wreath: 1.1, cake: 1.0, banner: 1.1, bigplant: 1.3, palm: 1.2, succulent: 0.5, vase: 0.5, floorlamp: 1.0, stanchion: 1.6, mirror: 1.1, sign: 1.1, railing: 1.3, lounge: 1.9, reception: 2.0, glasspanel: 1.3, stool: 0.55 }; // balloon·hangplant·window 제외: 중심이 허공(아치/천장/벽 부착)이라 접촉그림자 부적합
 const ART_SPOT_CAP = 10; // 실시간 라이트 상한(편집 모드 대표 조명). 초과분은 베이킹 트랙에서 처리 예정.
-export function addRoomLighting(group) {
+export function addRoomLighting(group, opts = {}) {
   const u = group.userData || {}; const dims = u.dims; if (!dims) return;
   const { H, hw, hd } = dims;
   const geos = u.geos || (u.geos = []); const mats = u.mats || (u.mats = []);
@@ -1330,6 +1330,11 @@ export function addRoomLighting(group) {
     const baseY = object.position.y - PART_TYPES[part.t].size[1] / 2 + 0.015;
     pl.position.set(object.position.x, Math.max(0.015, baseY), object.position.z); group.add(pl);
   });
+  // [단계2 라이트 풀] opts.noSpots(오픈월드 전용): SpotLight 생성부(a·b)만 스킵하고 AO 접촉그림자(c)는 유지.
+  // 오픈월드는 파셀 경계 통과마다 조명 개수가 급변해 셰이더 프로그램이 매번 재컴파일되던 문제(히칭 총량 급증)를
+  // world.js 라이트 풀(개수 고정)로 해소한다 — 스포트 배정은 world.js가 풀에서 수행. 기본값(noSpots 미지정)은
+  // 라이브(index/visit/builder) 경로 완전 불변(스포트 배치·개수·색·강도 동일). 라이브 접촉은 이 게이트 1줄뿐.
+  if (opts.noSpots) return;
   // (a) 작품별 소프트 스포트라이트(부드러운 falloff — 감독 피드백). 상한 내에서만.
   refs.filter(({ part }) => part.t === 'artwork' || part.t === 'screen').slice(0, ART_SPOT_CAP)
     .forEach(({ object }) => {

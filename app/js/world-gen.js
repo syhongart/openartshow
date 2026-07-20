@@ -295,3 +295,76 @@ export function genWalker(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel, f
   const z = line === 'south' ? roadS : (-cz / 2 + 2.5) + t * (cz - 5);
   return { char, line, x, z };
 }
+
+// ── [해안 패키지] 경계 파셀 물가 연출 배치(결정론) ────────────────────────────────
+// 월드 경계(그리드 테두리) 육지 파셀만 물가를 접한다 → 부두·테트라포드는 여기에 시드 배치.
+// 각 요소는 독립 SALT로 genParcel 메인 rng와 분리(건물 절차생성 무영향). world.js가 렌더/물리 파생.
+const PIER_SALT = 0x3b9a71;
+const TETRA_SALT = 0x6d5f21;
+
+// 파셀이 접한 바깥 경계 방향 목록(N/S/E/W). 강·빈 파셀·내부 파셀은 [].
+function edgeDirs(px, pz, grid, parcel) {
+  if (!parcel || parcel.water || !parcel.space) return [];
+  const e = [];
+  if (px === 0) e.push('W');
+  if (px === grid.w - 1) e.push('E');
+  if (pz === 0) e.push('N');
+  if (pz === grid.h - 1) e.push('S');
+  return e;
+}
+
+/**
+ * 경계 육지 파셀의 부두 배치(0 또는 1). 강·내부 파셀은 null.
+ * @returns {{dir:'N'|'S'|'E'|'W'}|null}  dir = 데크가 바다로 돌출하는 바깥 경계 방향.
+ */
+export function genPier(px, pz, seed, grid, cell, parcel) {
+  const edges = edgeDirs(px, pz, grid, parcel);
+  if (!edges.length) return null;
+  const rng = mulberry32(cellSeed((seed ^ PIER_SALT) >>> 0, px, pz));
+  if (rng() > 0.32) return null;                 // ~32% 경계 파셀에 부두(해안이 산만하지 않게 소수)
+  const dir = edges[Math.floor(rng() * edges.length) % edges.length]; // 코너면 한 방향 선택
+  return { dir };
+}
+
+/**
+ * 경계 육지 파셀의 테트라포드 방파제 클러스터(배치 배열 또는 null). 강·내부 파셀은 null.
+ * 좌표는 파셀 로컬(원점=중심). y는 바다수면 대비 상대(yRel) — world.js가 SEA_Y를 더한다(상수 단일 소스).
+ * @returns {Array<{x,z,yRel,rx,ry,rz,s}>|null}
+ */
+export function genTetrapods(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel) {
+  const edges = edgeDirs(px, pz, grid, parcel);
+  if (!edges.length) return null;
+  const rng = mulberry32(cellSeed((seed ^ TETRA_SALT) >>> 0, px, pz));
+  if (rng() > 0.5) return null;                  // ~50% 경계 파셀에 방파제 무더기
+  const dir = edges[Math.floor(rng() * edges.length) % edges.length];
+  const horiz = (dir === 'N' || dir === 'S'), sign = (dir === 'S' || dir === 'E') ? 1 : -1;
+  const edge = horiz ? cell.z / 2 : cell.x / 2;
+  const count = 8 + Math.floor(rng() * 7);       // 8~14개(InstancedMesh 1드로우콜이라 부담 적음)
+  const arr = [];
+  for (let i = 0; i < count; i++) {
+    const along = (rng() * 2 - 1) * (edge - 2);  // 가장자리 길이축 분산(파셀 폭 안)
+    const out = 6 + rng() * 6;                    // 가장자리 바깥 6~12m(물가~외해)
+    const jit = (rng() * 2 - 1) * 1.2;
+    const x = horiz ? (along + jit) : (sign * (edge + out));
+    const z = horiz ? (sign * (edge + out)) : (along + jit);
+    const yRel = -0.3 + rng() * 0.7;              // 반쯤 잠김(수면 아래~약간 위, 무더기 적층)
+    arr.push({ x, z, yRel, rx: rng() * 6.283, ry: rng() * 6.283, rz: rng() * 6.283, s: 0.8 + rng() * 0.5 });
+  }
+  return arr;
+}
+
+// [해안 2단계] 등대 — 경계 육지 파셀 중 소수에 랜드마크. 부두와 배타(한 파셀에 랜드마크 하나).
+const LIGHTHOUSE_SALT = 0x4e1d7b;
+/**
+ * 경계 육지 파셀의 등대(0 또는 1). 부두가 이미 있으면 null(랜드마크 중복 방지). 강·내부 파셀 null.
+ * @returns {{dir:'N'|'S'|'E'|'W'}|null}  dir = 물가 바깥 경계 방향(등대가 접한 바다 쪽).
+ */
+export function genLighthouse(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel, pier) {
+  if (pier) return null;                          // 부두 있는 파셀엔 등대 없음(랜드마크 겹침 방지 — 우선순위)
+  const edges = edgeDirs(px, pz, grid, parcel);
+  if (!edges.length) return null;
+  const rng = mulberry32(cellSeed((seed ^ LIGHTHOUSE_SALT) >>> 0, px, pz));
+  if (rng() > 0.15) return null;                  // ~15% 경계 파셀에 등대(랜드마크라 소수)
+  const dir = edges[Math.floor(rng() * edges.length) % edges.length]; // 코너면 한 방향 선택
+  return { dir };
+}
