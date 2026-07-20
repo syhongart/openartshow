@@ -471,7 +471,10 @@ function injectStyles() {
 }
 #lu-avatar-maker.lu-open, #lu-chibi-maker.lu-open { opacity: 1; pointer-events: auto; }
 .lu-am-card {
-  width: 100%; max-width: 860px; max-height: 94vh;
+  width: 100%; max-width: 860px;
+  max-height: 94vh; max-height: 94dvh;  /* iOS Safari 동적 툴바 — vh(주소창 포함 큰 값)면
+     주소창 보일 때 카드가 실제 가시영역보다 커져 footer가 밀리고 body 스크롤이 깨진다.
+     dvh(가시영역 실측)로 보정, 미지원 브라우저는 앞 vh 폴백. */
   background-image: var(--am-grain), linear-gradient(165deg, var(--am-cream) 0%, #fffaee 40%, var(--am-cream-2) 100%);
   background-repeat: repeat, no-repeat;
   color: var(--am-ink);
@@ -1855,13 +1858,13 @@ function injectStyles() {
   #lu-avatar-maker, #lu-chibi-maker { padding: 8px; }
   .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
-  .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
+  .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
   /* 모바일 — 데스크톱의 가로(사진+우측 액션) 배치는 세로 화면에서 무대를 좁히고
      previewBox 높이 고정이 body 세로 스크롤을 깨뜨려(iOS Safari) 탭·프리셋 접근이
      막혔다(감독 신고). 모바일에서는 사진 "위" + 액션 이모지 원형을 그 "아래" 가로로
      흐르게 세로 스택으로 되돌린다 — 무대가 커지고 body 스크롤이 정상화된다. */
   .lu-am-preview { flex-direction: column; align-items: center; width: auto; max-width: 320px; margin: 0 auto; padding: 10px; border-radius: 20px; gap: 10px; }
-  .lu-am-stagewrap { width: 190px; max-width: 58vw; height: auto; }  /* aspect 3/4는 .lu-am-stage가 유지 */
+  .lu-am-stagewrap { width: 172px; max-width: 54vw; height: auto; }  /* aspect 3/4는 .lu-am-stage가 유지 */
   .lu-am-actions { flex-flow: row wrap; height: auto; width: 100%; justify-content: center; gap: 5px; }
   .lu-am-action-btn { width: 34px; height: 34px; }
   .lu-am-act-emoji { font-size: 16px; }
