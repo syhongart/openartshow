@@ -1853,48 +1853,83 @@ function injectStyles() {
   .lu-share-preview { max-height: 42vh; }
 }
 
-/* --------------------- 아바타 커스터마이저: 세로 배치 폴백 --------------------- */
+/* 플라이아웃 닫기 버튼 — 전역 기본 숨김(데스크톱 미사용), 모바일 @media에서만 표시 */
+.lu-flyout-close { display: none; }
+/* --------------------- 아바타 커스터마이저: 모바일 D안(책갈피 + 캐러셀 플라이아웃) --------------------- */
 @media (max-width: 720px) {
   #lu-avatar-maker, #lu-chibi-maker { padding: 8px; }
-  .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
+  /* dvh 폴백 — iOS 주소창 포함 vh가 카드를 가시영역보다 크게 만드는 문제(hotfix #12 계열) */
+  .lu-am-card { max-width: 96vw; max-height: 92vh; max-height: 92dvh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
-  .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-  /* 모바일 — 고객 UX 개선(감독 "아주 불편"): 프리뷰(캐릭터)를 상단에 sticky로 고정해
-     옷·헤어·색을 고르는 스크롤 중에도 캐릭터 변화를 실시간으로 본다. 프리뷰는 가로 미니
-     (무대 + 액션 컴팩트)로 높이를 줄이고, 탭(nav)도 그 바로 아래 sticky로 붙인다.
-     tabpage의 자체 스크롤을 없애 body 하나만 스크롤(이중 스크롤 제거). nav 오프셋은
-     프리뷰 실측 높이를 JS가 --lu-am-nav-top에 주입(매직넘버 금지). */
+  /* 모바일 D안(감독 선택) — 캐릭터 크게(무대 200) 유지. 우측 "책갈피" 탭을 누르면 하단에서
+     옵션 "캐러셀" 시트가 올라오되 얼굴은 계속 보인다(하단 58%만 덮음). body는 플라이아웃
+     absolute의 기준(relative + overflow hidden으로 닫힘 시트 클리핑). */
+  .lu-am-body { flex-direction: column; padding: 10px 0 0; gap: 0; position: relative; overflow: hidden; }
   .lu-am-preview {
-    position: sticky; top: 0; z-index: 5;
     flex-direction: row; align-items: center; justify-content: center;
-    width: 100%; max-width: none; margin: 0; padding: 8px 10px; gap: 10px;
-    border-radius: 0 0 18px 18px;
+    width: 100%; max-width: none; margin: 0 auto; padding: 4px 46px 8px 8px; gap: 8px; border-radius: 0;
   }
-  .lu-am-stagewrap { width: 96px; height: 128px; max-width: none; flex: 0 0 auto; }
-  .lu-am-actions { flex-flow: row wrap; width: auto; max-width: 120px; height: auto; justify-content: center; gap: 4px; }
-  .lu-am-action-btn { width: 25px; height: 25px; }
-  .lu-am-act-emoji { font-size: 12px; }
-  .lu-am-preview-hint { display: none; }   /* 미니 모드 — 회전 힌트 생략(공간 우선) */
-  /* panel·tabpage를 자연 높이(flex 0 0 auto)로 풀어야 body가 유일한 스크롤 컨테이너가
-     되고 프리뷰/nav sticky가 작동한다(구: tabpage flex 1 1 + overflow auto가 panel
-     높이에 갇혀 자체 스크롤 = 이중 스크롤). */
-  .lu-am-panel { flex: 0 0 auto; min-height: 0; }
+  .lu-am-stagewrap { width: 200px; height: 267px; max-width: none; flex: 0 0 auto; }
+  .lu-am-actions { flex-flow: column wrap; width: auto; max-width: none; height: 267px; justify-content: center; gap: 4px; }
+  .lu-am-action-btn { width: 30px; height: 30px; }
+  .lu-am-act-emoji { font-size: 14px; }
+  .lu-am-preview-hint { display: flex; font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
+  /* 책갈피 탭 — nav를 우측 가장자리 세로로(JS가 nav를 body 직속으로 이동해 플라이아웃과
+     함께 사라지지 않게). 라벨 숨기고 아이콘만. */
   .lu-am-nav {
-    position: sticky; top: var(--lu-am-nav-top, 150px); z-index: 4;
-    background: var(--am-cream); padding: 8px 0 8px; margin-bottom: 8px; gap: 4px;
+    position: absolute; right: 0; top: 54px; bottom: auto; flex-direction: column;
+    width: auto; padding: 0; margin: 0; border: none; gap: 3px; overflow: visible; z-index: 7;
   }
-  .lu-am-navtab { min-width: 50px; padding: 6px 6px 5px; font-size: 9.5px; }
-  .lu-am-navtab svg { width: 16px; height: 16px; }
-  .lu-am-tabpage { flex: 0 0 auto; overflow: visible; min-height: 0; max-height: none; }   /* 자체 스크롤 제거 — body 단일 스크롤 */
-  .lu-am-footer { padding: 12px 16px 16px; }
+  .lu-am-navtab {
+    flex-direction: row; min-width: 0; width: 46px; padding: 8px 5px;
+    border-radius: 14px 0 0 14px; background: #fff; border: 2px solid var(--am-line); border-right: none;
+    box-shadow: -3px 3px 8px rgba(40,30,10,0.14);
+  }
+  .lu-am-navtab svg { width: 18px; height: 18px; }
+  .lu-am-navtab span { display: none; }   /* 책갈피엔 아이콘만 */
+  /* 하단 플라이아웃 시트 — panel을 body 하단에 absolute, translateY로 슬라이드 업 */
+  .lu-am-panel {
+    position: absolute; left: 0; right: 0; bottom: 0; top: auto; height: 58%;
+    background: var(--am-cream); border-radius: 20px 20px 0 0;
+    box-shadow: 0 -8px 24px rgba(40,30,10,0.28);
+    transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    z-index: 6; padding: 12px 14px 8px; display: flex; flex-direction: column; min-height: 0;
+  }
+  .lu-am-panel.lu-flyout-open { transform: translateY(0); }
+  .lu-am-nav { /* 책갈피는 flex 0 0 유지(위 정의 병합) */ }
+  .lu-am-tabpage { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: none; -webkit-overflow-scrolling: touch; }
+  /* 옵션은 가로 캐러셀(다이얼 정신) — 세로 공간 절약, 옆으로 밀어 고른다 */
+  .lu-am-tabs, .lu-swatches, .lu-am-presets {
+    display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x proximity; padding-bottom: 6px; gap: 8px; -webkit-overflow-scrolling: touch;
+  }
+  .lu-am-tabs .lu-am-tab, .lu-am-presets .lu-am-tab { flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap; }
+  .lu-swatches .lu-swatch { flex: 0 0 auto; scroll-snap-align: start; }
+  .lu-flyout-close {
+    position: absolute; top: 8px; right: 12px; width: 30px; height: 30px; padding: 0;
+    border-radius: 50%; background: var(--am-cream-2); border: 2px solid var(--am-wood);
+    color: var(--am-wood-dark); font-size: 15px; line-height: 1; cursor: pointer; z-index: 8;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* footer(로그인 게이트)를 모바일에서 크게 축소 — 옵션 플라이아웃(body 하단 58%)이
+     들어갈 세로 공간을 확보한다(designer: footer 223px가 최대 고정비용). 회원가입 안내는
+     한 줄로 줄이고 소셜 버튼은 뱃지+짧은 라벨의 컴팩트 행으로. */
+  .lu-am-footer { padding: 8px 14px 12px; }
+  .lu-am-guest-gate { margin-bottom: 6px; }
+  .lu-am-gate-note {
+    font-size: 10px; line-height: 1.3; margin-bottom: 6px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .lu-am-signup-providers { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .lu-am-social { flex: 1 1 auto; min-width: 0; padding: 8px 8px; font-size: 10.5px; justify-content: center; }
   .lu-am-btn { padding: 10px 16px; font-size: 12px; }
 }
-/* 초소형 폭(320px대) — sticky 미니 프리뷰의 액션 그리드만 살짝 줄여 가로 넘침 방지. */
+/* 초소형 폭(320px대) — 무대·책갈피 살짝 축소해 가로 넘침 방지. */
 @media (max-width: 360px) {
-  .lu-am-preview { padding: 7px 8px; gap: 8px; }
-  .lu-am-actions { max-width: 104px; }
-  .lu-am-action-btn { width: 23px; height: 23px; }
-  .lu-am-act-emoji { font-size: 11px; }
+  .lu-am-stagewrap { width: 168px; height: 224px; }
+  .lu-am-actions { height: 224px; }
+  .lu-am-action-btn { width: 27px; height: 27px; }
+  .lu-am-preview { padding: 4px 44px 6px 6px; }
 }
 `;
   const style = document.createElement('style');
@@ -3045,19 +3080,23 @@ function buildChibiMaker() {
   const overlay = el('div', { id: 'lu-chibi-maker', className: 'lu' }, [card]);
   document.body.appendChild(overlay);
 
-  // 모바일 sticky 레이아웃 — nav(탭)가 sticky로 붙는 top 오프셋을 프리뷰의 "실측" 높이로
-  // 맞춘다(매직넘버 금지 — 프리뷰 높이는 폭·콘텐츠에 따라 달라진다). 720px 초과(데스크톱)
-  // 에선 sticky 미적용이라 변수를 지운다.
-  function syncStickyOffsets() {
+  // 모바일 D안 — nav(카테고리)를 "책갈피"로 body 직속에 두어 하단 플라이아웃 패널이
+  // 슬라이드될 때 함께 사라지지 않게 한다(designer 실증 함정). 데스크톱(>720)에선 nav를
+  // panel 상단으로 되돌리고 플라이아웃 상태를 해제한다. open·resize 시 뷰포트에 맞춰 재배치.
+  function applyResponsiveNav() {
     if (typeof window === 'undefined') return;
     if (window.innerWidth <= 720) {
-      const h = Math.round(previewBox.getBoundingClientRect().height);
-      if (h > 0) panel.style.setProperty('--lu-am-nav-top', h + 'px');
+      if (nav.parentElement !== body) body.appendChild(nav);
     } else {
-      panel.style.removeProperty('--lu-am-nav-top');
+      if (nav.parentElement !== panel) panel.insertBefore(nav, page);
+      panel.classList.remove('lu-flyout-open');
     }
   }
-  window.addEventListener('resize', syncStickyOffsets);
+  window.addEventListener('resize', applyResponsiveNav);
+  // 플라이아웃(옵션 시트) 닫기 버튼 — CSS로 모바일에서만 보인다.
+  const flyoutClose = el('button', { type: 'button', className: 'lu-flyout-close', 'aria-label': '옵션 닫기', text: '×' });
+  flyoutClose.addEventListener('click', () => panel.classList.remove('lu-flyout-open'));
+  panel.insertBefore(flyoutClose, panel.firstChild);
 
   function setParam(key, value) {
     if (!chibiParams) return;
@@ -3235,6 +3274,9 @@ function buildChibiMaker() {
       btn.innerHTML = cat.icon;
       btn.appendChild(el('span', { className: 'lu-am-navtab-label', text: cat.label }));
       btn.addEventListener('click', () => {
+        // 모바일 D안 — 책갈피 탭을 누르면 하단 옵션 시트(플라이아웃)를 연다.
+        // 이미 활성 탭을 다시 눌러도 시트는 열려야 하므로 early-return보다 먼저 처리.
+        if (window.innerWidth <= 720) panel.classList.add('lu-flyout-open');
         if (activeCat === cat.id) return;
         activeCat = cat.id;
         renderPanel();
@@ -3407,9 +3449,8 @@ function buildChibiMaker() {
     renderPanel();
     overlay.classList.add('lu-open');
     chibiOpen = true;
-    // 레이아웃 확정 후 sticky nav 오프셋 주입(프리뷰 실측 높이). 폰트/이미지 로드로
-    // 높이가 미세 변동할 수 있어 다음 프레임에 한 번 더 맞춘다.
-    requestAnimationFrame(() => { syncStickyOffsets(); requestAnimationFrame(syncStickyOffsets); });
+    panel.classList.remove('lu-flyout-open');   // 새로 열 땐 옵션 시트 닫힌 상태(캐릭터 크게)
+    applyResponsiveNav();                        // 뷰포트에 맞춰 책갈피/탭 배치
     startLoop();
     // 입장 후 편집이면 모달이 화면을 덮는 동안 플레이어 이동·포인터락을 멈춘다
     // (라이트박스/투어와 동일한 확립된 패턴). 로비에서는 이미 비활성이라 main.js가 무시.
