@@ -99,6 +99,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <p>헤드리스 swiftshader 7파셀 동진(경계 6회, streamAsync, 재현 2회 + 결정론 대조):</p>
 <ul><li><strong>프로그램 캐시(renderer.info.programs.length)가 스폰 후 상수화</strong> — BEFORE 경계마다 증가(10→48), 단계1(큐만) 폭증(10→121), <strong>단계2(큐+풀) 상수(10→12, 경계 통과에도 불변)</strong>. 재컴파일 근본 제거.</li><li><strong>소진 총량(전체 프레임타임 합) 21,114ms(BEFORE) / 64,243ms(단계1) → 2,253ms(단계2)</strong> — BEFORE의 10.7%로 회복(단계1 큐의 부작용까지 역전). 경계 통과 프레임 max 3290 → 46ms.</li><li>결정론: before/단계1/단계2-큐/단계2-동기 최종 getLoadedKeys() 집합 동일(라이트 배정은 렌더 결과·로드 집합 무관).</li></ul>
 <p>게이트: executor 배포 스모크(라이브 접촉이라 콘솔0·회귀 필수) · release-reviewer 교차리뷰 · 부팀장 직접 벤치(§10-3 팀장승인). 브랜치 커밋만 — 감독 확인 후 단계1+2+해안 묶어 배포. main 병합 보류.</p>
+<p>교차리뷰 조건(결함 1건) 해소: 라이트 풀 크기를 <code>MAX_FULL</code>(동시 full 파셀 수)로 잡는데 이를 soft에서 3으로 줄여, 실제 동시 로드되는 십자 5파셀(soft 무관)에 대해 풀(3×7=21)이 고갈 → 일부 건물 무조명이 되던 실제 결함. 수정: MAX_FULL은 soft·일반 모두 5(실제 십자 수와 일치)로 고정, 조명 총량 완화는 파셀당 작품 수(OW_ART_CAP soft 4)로만. soft 풀=5×7=35(고갈 0). soft(swiftshader) 5파셀 동시 로드 실측: before(MAX_FULL 3) 무조명 건물 1·활성스포트 21 → after(5) 무조명 0·활성스포트 34, programs 12 상수 유지·콘솔 0·결정론 불변. DOWNLIGHTS는 다운라이트 팩터 배열 length에서 유도(드리프트 방지).</p>
 </article>
 <div class="pn"><a href="./2026-07-20-0c9a7a.html"><span class="lbl">← 이전 기록</span>오픈월드 스트리밍 히칭 개선 1단계 — 로드 시간분할 큐 (world.js)</a></div>
 </div>
