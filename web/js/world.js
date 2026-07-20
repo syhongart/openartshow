@@ -37,6 +37,17 @@ const PITCH_LIMIT = 1.45;  // 상하 시선 클램프(rad)
 const STEP_OVER = 0.12;    // 걸림턱(바닥타일만 통과) — visit.js 계약 계승
 const STEP_TOLERANCE = 0.65; // [다층] 프레임당 허용 고저차(계단 등반·추락 방지) — player.js 이식
 const GROUND_LERP_RATE = 12; // [다층] 지면 y 추종 보간(계단이 매끄러운 경사로)
+// ── [해안 패키지] 바다 단차·해변·부두·테트라포드 상수 ─────────────────────────
+// 감독 지시: "바다는 땅과 같은 높이면 어색" → 바다를 지면(0)보다 확실히 낮춰 단차를 만들고,
+// 경계 파셀 가장자리를 모래 해변으로 완만히 하강시켜 물가로 이어지게 한다. 강(도시 운하)은
+// 얕게 유지(파셀 소유 물타일)해 바다와 분리. 부두·테트라포드는 물가(경계 파셀)에 시드 배치.
+const SEA_Y = -1.2;        // 바다 수면 y — 지면 0 대비 1.2m 단차(외해). 강 수면(-0.3)과 분리.
+const BEACH_W = 8;         // 경계 파셀 바깥 모래 해변 경사 폭(m). 기울기 1.2/8=0.15 → 도보 하강 매끈.
+const BEACH_TOE = -1.35;   // 해변 발끝 y(수면 -1.2 아래 모래 — 물가 첨벙 접지).
+const RIVER_Y = -0.3;      // 강(내수면) 수면 y — 기존 sea 높이 계승(도시 운하: 얕게).
+const PIER_LEN = 12;       // 부두 데크가 바다로 돌출하는 길이(m).
+const PIER_W = 3.2;        // 부두 데크 폭(m).
+const PIER_DECK_Y = 0.08;  // 데크 상면 y — 지면 0 대비 STEP_OVER(0.12) 미만이라 걸림 없이 진입.
 // DOOR_W(문틀 통로 폭)는 space-render.js에서 import — 렌더/통과 판정 단일 상수(드리프트 방지).
 
 // ── [저사양 방어] GPU 자가 진단 — main.js:83·89 동형 복제 ─────────────────────
@@ -118,6 +129,59 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   { const c = sun.shadow.camera; c.left = -22; c.right = 22; c.top = 22; c.bottom = -22; c.near = 0.5; c.far = 130; c.updateProjectionMatrix(); }
   scene.add(sun); scene.add(sun.target);
 
+  // ── [단계2 라이트 풀] 셰이더 재컴파일 제거 — 씬 SpotLight 총개수 고정 ──────────────
+  // space-render addRoomLighting은 파셀 로드마다 실제 SpotLight(작품+다운라이트)를 씬에 추가/제거해,
+  // three.js가 조명 개수 변동 시 영향 머티리얼 프로그램을 전부 재컴파일 → 경계 통과 히칭 총량이 급증
+  // (단계1 큐가 순간 스파이크는 분산했으나, 과도상태를 매 프레임 render해 재컴파일 총량은 오히려 증가).
+  // 대책: MAX_FULL*SPOTS_PER개 SpotLight를 미리 확보(개수 불변). 로드 시 풀에서 배정(위치·색·강도 설정),
+  // 언로드 시 intensity=0으로 끄고 반납. 미사용 라이트도 visible=true 유지(false면 개수 변동→재컴파일).
+  // placement 상수는 space-render.js addRoomLighting 스포트 생성부(1338·1344 근처)의 미러 — 드리프트 시 동기화.
+  // [교차리뷰 결함 수정] MAX_FULL은 soft·일반 모두 5 — 실제 동시 로드되는 full 파셀 수(3×3 직교인접
+  // 맨해튼≤1 = 십자 5개)와 반드시 일치해야 풀 고갈(무조명 파셀)이 없다. soft 축소는 조명 총량을
+  // 파셀당 작품 수(OW_ART_CAP)로만 완화한다(풀 파셀 수 MAX_FULL을 줄이면 5파셀 로드 시 고갈).
+  const MAX_FULL = 5;                        // 동시 full 파셀 수(십자 5) — soft·일반 동일(고갈 방지).
+  const OW_ART_CAP = gpuInfo.soft ? 4 : 10; // 파셀당 작품 스포트 상한(space-render ART_SPOT_CAP=10 미러). soft 축소=조명 총량 완화.
+  // 천장 다운라이트 위치 팩터(hw/hd에 곱). space-render addRoomLighting (b) 미러. 개수는 배열에서 유도(드리프트 방지).
+  const DOWNLIGHT_FACTORS = [[-0.4, -0.35], [0.15, 0.1], [0.5, -0.1]];
+  const DOWNLIGHTS = DOWNLIGHT_FACTORS.length;
+  const SPOTS_PER = OW_ART_CAP + DOWNLIGHTS; // soft 7(4+3)·일반 13(10+3) → 풀 soft 35·일반 65(둘 다 5파셀 고갈 0).
+  const lightPool = [];
+  for (let i = 0; i < MAX_FULL * SPOTS_PER; i++) {
+    const sl = new THREE.SpotLight(0xffffff, 0, 11, 0.72, 1.0, 1.0);
+    sl.visible = true; sl._inUse = false;   // visible 항상 true(개수 고정), intensity=0로 소등.
+    scene.add(sl); scene.add(sl.target);
+    lightPool.push(sl);
+  }
+  const takeLight = () => { for (const sl of lightPool) if (!sl._inUse) { sl._inUse = true; return sl; } return null; };
+  const releaseLight = (sl) => { sl.intensity = 0; sl._inUse = false; };
+  // 파셀 건물 조명 배정 — addRoomLighting(noSpots)이 AO만 만들고, 스포트는 여기서 풀 라이트로 설정.
+  // bx,bz=건물 월드 오프셋, dims=userData.dims, refs=userData.partRefs(로컬 위치). 반환=배정 라이트(언로드 반납).
+  function assignParcelLights(bx, bz, dims, refs) {
+    const { H, hw, hd } = dims;
+    const out = [];
+    // (a) 작품 스포트 — space-render addRoomLighting (a) 미러(색 0xffe3ba·강도23·거리11·각0.72·penumbra1·decay1).
+    const arts = refs.filter(({ part }) => part.t === 'artwork' || part.t === 'screen').slice(0, OW_ART_CAP);
+    for (const { object } of arts) {
+      const sl = takeLight(); if (!sl) break; // 풀 고갈(soft 방어) → 조명 스킵
+      const p = object.position;
+      const toC = new THREE.Vector3(-p.x, 0, -p.z); if (toC.lengthSq() < 1e-3) toC.set(0, 0, 1); toC.normalize();
+      sl.color.setHex(0xffe3ba); sl.intensity = 23; sl.distance = 11; sl.angle = 0.72; sl.penumbra = 1.0; sl.decay = 1.0;
+      sl.position.set(bx + p.x + toC.x * 2.1, H - 0.15, bz + p.z + toC.z * 2.1);
+      sl.target.position.set(bx + p.x, p.y, bz + p.z); sl.target.updateMatrixWorld();
+      out.push(sl);
+    }
+    // (b) 천장 다운라이트 — space-render addRoomLighting (b) 미러(색 0xffdcb0·강도18·거리12·각0.6·penumbra1·decay1.1).
+    for (const [fx, fz] of DOWNLIGHT_FACTORS) {
+      const dx = hw * fx, dz = hd * fz;
+      const sl = takeLight(); if (!sl) break;
+      sl.color.setHex(0xffdcb0); sl.intensity = 18; sl.distance = 12; sl.angle = 0.6; sl.penumbra = 1.0; sl.decay = 1.1;
+      sl.position.set(bx + dx, H - 0.1, bz + dz);
+      sl.target.position.set(bx + dx, 0, bz + dz); sl.target.updateMatrixWorld();
+      out.push(sl);
+    }
+    return out;
+  }
+
   const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 900);
 
   // 하늘 — 캔버스 그라디언트 스카이돔(자기완결·외부 텍스처 0, fog 미적용) + 밝은 대기 fog.
@@ -170,17 +234,34 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     road: new THREE.MeshStandardMaterial({ color: 0x5b5e66, roughness: 0.98, metalness: 0 }),
     bridge: new THREE.MeshStandardMaterial({ color: 0x8a7a64, roughness: 0.9, metalness: 0 }),
     water: new THREE.MeshStandardMaterial({ color: 0x3f6f8f, roughness: 0.32, metalness: 0.12, transparent: true, opacity: 0.92 }),
+    // [해안] 모래 해변(경계 파셀 경사) — 따뜻한 베이지, 완전 무광. dispose()에서 일괄 회수.
+    sand: new THREE.MeshStandardMaterial({ color: 0xd8c79a, roughness: 1.0, metalness: 0 }),
+    // [부두] 목재 데크·기둥·난간 공용 — 잔교 목조 톤(가로등 진회색과 대비). vertexColors로 판/기둥 명암 변주.
+    pierWood: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0 }),
+    // [테트라포드] 회색 콘크리트 소파블록 — 거친 무광. InstancedMesh 단일 재질(드로우콜 1).
+    concrete: new THREE.MeshStandardMaterial({ color: 0x9ea3a6, roughness: 0.95, metalness: 0 }),
     // 거리 가구 공유 재질 — 파스텔 중채도(치비 세계관). dispose()에서 일괄 회수.
     // (가로수 수피/잎 재질은 scene.js sharedTreeMats가 소유 — 여기서 만들지 않는다.)
     lampPost: new THREE.MeshStandardMaterial({ color: 0x353842, roughness: 0.6, metalness: 0.3 }), // 진회색 기둥
     lampHead: new THREE.MeshStandardMaterial({ color: 0x6b5836, roughness: 0.5, metalness: 0.2, emissive: 0xffcf8a, emissiveIntensity: 0.8 }), // 웜톤 갓(실제 THREE.Light 0 — 라이브 규율 계승)
     benchWood: new THREE.MeshStandardMaterial({ color: 0x9a8461, roughness: 0.85, metalness: 0 }),
     planterVC: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }), // 테라코타 화분 + 녹색 관목(정점색)
+    // [해안 2단계 등대] 탑 홍백 줄무늬(정점색) · 등롱 유리방(발광) · 회전 서치라이트 콘(가산 발광, 조명 0).
+    lighthouseVC: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05 }),
+    lantern: new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffe08a, emissiveIntensity: 1.4, roughness: 0.3, metalness: 0 }),
+    // 회전 빛 = 발광 콘 메시(additive·depthWrite false) — 실제 THREE.Light 0(라이트 풀 개수 불변 원칙 계승, 재컴파일 0).
+    beam: new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
   };
   // 거리 가구 공유 지오메트리(파셀 간 재사용 — InstancedMesh/개별 Mesh가 참조). createWorld dispose에서 회수.
   const paintGeo = (g, hex) => {
     const c = new THREE.Color(hex), n = g.attributes.position.count, arr = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
+  };
+  // [등대] 높이(y) 밴드 정점색 — 홍백 줄무늬(band 짝/홀 hexA/hexB). 머지 호환 위해 color 속성 부여.
+  const paintBandsY = (g, y0, bandH, hexA, hexB) => {
+    const ca = new THREE.Color(hexA), cb = new THREE.Color(hexB), pos = g.attributes.position, n = pos.count, arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { const band = Math.floor((pos.getY(i) - y0) / bandH); const c = (band % 2 === 0) ? ca : cb; arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
     g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
   };
   const SG = (() => {
@@ -194,6 +275,27 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const bush = new THREE.SphereGeometry(0.3, 10, 8); bush.scale(1, 0.92, 1); bush.translate(0, 0.62, 0);
     const planter = mergeGeometries([paintGeo(pot, 0x9a5b43), paintGeo(bush, 0x4c6b42)]); pot.dispose(); bush.dispose();
     return { lampPost, lampHead, bench, planter };
+  })();
+
+  // [테트라포드] 방파제 소파블록 공유 지오 — 중심 허브(정이십면체) + 정사면체 4방향 다리(원뿔대).
+  // 실물 테트라포드처럼 4발이 서로 109.5° 벌어진다(정사면체 꼭지점 방향). InstancedMesh가 이 단일
+  // 지오를 위치·회전·스케일 변주로 대량 배치 → 드로우콜 1(파셀당). 자작 지오·자기완결(외부 에셋 0).
+  const TETRA_GEO = (() => {
+    const dirs = [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map((v) => new THREE.Vector3(v[0], v[1], v[2]).normalize());
+    const parts = [new THREE.IcosahedronGeometry(0.44, 0)]; // 중심 허브
+    const up = new THREE.Vector3(0, 1, 0);
+    for (const d of dirs) {
+      const len = 1.15;
+      // toNonIndexed — 허브(Icosahedron)는 non-indexed, Cylinder는 indexed라 머지 호환 위해 통일.
+      const leg = new THREE.CylinderGeometry(0.17, 0.34, len, 6).toNonIndexed(); // 끝 가늘게·뿌리 굵게
+      leg.translate(0, len / 2, 0);                              // 뿌리를 원점에
+      const q = new THREE.Quaternion().setFromUnitVectors(up, d); // +Y → 다리 방향
+      leg.applyQuaternion(q);
+      parts.push(leg);
+    }
+    const g = mergeGeometries(parts); parts.forEach((p) => p.dispose());
+    g.computeBoundingSphere(); g.computeBoundingBox(); // InstancedMesh.computeBoundingSphere가 지오 bound를 참조
+    return g; // 발끝~발끝 반경 ~1.3m
   })();
 
   // 거리 가구 배치 배열(def.street) → 렌더 Mesh + solid AABB(같은 데이터 파생 = 렌더-물리 정합).
@@ -251,12 +353,182 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     return meshes;
   }
 
+  // ── [해안 패키지] 해변·부두·테트라포드 빌더 (경계 파셀 물가) ────────────────────
+  // 공통: 파셀 로컬 좌표(원점=파셀 중심)에 ox/oz를 더해 월드 배치. dir ∈ {N,S,E,W} = 바깥 경계 방향.
+  const edgeSign = (dir) => (dir === 'S' || dir === 'E') ? 1 : -1;      // 바깥 방향 부호
+  const edgeHoriz = (dir) => (dir === 'N' || dir === 'S');             // 가장자리가 x축과 평행(경사=z)
+
+  // 위 향한 quad(A,B 안쪽 y=0 / C,D 바깥 y낮음) → 두 삼각형. computeVertexNormals로 조명·그림자.
+  // [교차리뷰 결함 수정] winding [A,C,B]+[A,D,C] — 기존 [A,B,C]+[A,C,D]는 4방향(N/S/E/W) 모두
+  // 아래(-y) 법선을 생성(three computeVertexNormals 공식 (C-B)×(A-B)로 검산: sign>0 (0,-192,-32.4)
+  // / sign<0 (0,-192,32.4), y음수). T.sand는 FrontSide라 위에서 보면 백페이스 컬링으로 해변 슬로프가
+  // 렌더되지 않았다. quad는 평면이라 삼각형 winding 반전 = 법선 반전 → 4방향 모두 +y(위) 법선.
+  function quadGeo(A, B, C, D) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([...A, ...C, ...B, ...A, ...D, ...C]), 3));
+    g.computeVertexNormals();
+    return g;
+  }
+
+  // [해안] 경계 파셀 바깥 가장자리 모래 해변 — 지면(0)에서 물가(BEACH_TOE)로 완만히 하강.
+  // 지오는 파셀 소유(own) 머지(T.sand), 물리는 beachBands가 소유(groundGroundAt 참조 — 도보 하강/상승).
+  function buildBeach(edges, group, ox, oz, own, beachBands) {
+    const geos = [];
+    for (const dir of edges) {
+      const horiz = edgeHoriz(dir), sign = edgeSign(dir);
+      if (horiz) {
+        const ez = oz + sign * CELLZ / 2, outZ = ez + sign * BEACH_W, x0 = ox - CELLX / 2, x1 = ox + CELLX / 2;
+        // winding: 위(+y) 법선이 나오도록 sign에 따라 정점 순서 뒤집기.
+        geos.push(sign > 0
+          ? quadGeo([x0, 0, ez], [x1, 0, ez], [x1, BEACH_TOE, outZ], [x0, BEACH_TOE, outZ])
+          : quadGeo([x1, 0, ez], [x0, 0, ez], [x0, BEACH_TOE, outZ], [x1, BEACH_TOE, outZ]));
+        beachBands.push({ horiz: true, sign, lo: x0, hi: x1, edge: ez, width: BEACH_W });
+      } else {
+        const ex = ox + sign * CELLX / 2, outX = ex + sign * BEACH_W, z0 = oz - CELLZ / 2, z1 = oz + CELLZ / 2;
+        geos.push(sign > 0
+          ? quadGeo([ex, 0, z1], [ex, 0, z0], [outX, BEACH_TOE, z0], [outX, BEACH_TOE, z1])
+          : quadGeo([ex, 0, z0], [ex, 0, z1], [outX, BEACH_TOE, z1], [outX, BEACH_TOE, z0]));
+        beachBands.push({ horiz: false, sign, lo: z0, hi: z1, edge: ex, width: BEACH_W });
+      }
+    }
+    if (!geos.length) return null;
+    const merged = geos.length > 1 ? mergeGeometries(geos) : geos[0];
+    if (geos.length > 1) geos.forEach((g) => g.dispose());
+    const m = new THREE.Mesh(merged, T.sand); m.receiveShadow = true;
+    group.add(m); own.push(merged);
+    return m;
+  }
+
+  // [부두] 목재 데크가 바다로 돌출 — 데크판 + 기둥(파일) + 양옆 난간. 전부 머지 → 드로우콜 1.
+  // 데크 위 도보(pierDecks 물리), 난간은 solid(추락 방지, 끝단은 열려 바다 급락으로 자연 정지).
+  function buildPier(dir, group, ox, oz, own, solids, pierDecks) {
+    const horiz = edgeHoriz(dir), sign = edgeSign(dir);
+    const edge = horiz ? CELLZ / 2 : CELLX / 2;
+    // 데크 중심(파셀 로컬) — 가장자리에서 바깥으로 PIER_LEN/2.
+    const dcx = horiz ? 0 : sign * (edge + PIER_LEN / 2);
+    const dcz = horiz ? sign * (edge + PIER_LEN / 2) : 0;
+    const spanW = horiz ? PIER_W : PIER_LEN;  // x폭
+    const spanD = horiz ? PIER_LEN : PIER_W;  // z폭
+    const parts = [];
+    // 데크판 — 상면 PIER_DECK_Y, 두께 0.16.
+    const deck = new THREE.BoxGeometry(spanW, 0.16, spanD); deck.translate(dcx, PIER_DECK_Y - 0.08, dcz);
+    parts.push(paintGeo(deck, 0x9a7d55));
+    // 기둥(파일) — 데크 양옆 세로줄, 바다바닥(SEA_Y-0.6)까지. 길이축으로 4쌍.
+    const railHalf = (horiz ? spanW : spanD) / 2 - 0.18; // 난간/기둥 반폭(데크 가장자리 안쪽)
+    const pileTop = PIER_DECK_Y, pileBot = SEA_Y - 0.6, pileH = pileTop - pileBot;
+    const along = PIER_LEN, N = 4;
+    for (let i = 0; i < N; i++) {
+      const t = (i + 0.5) / N; // 0..1 데크 길이 위치
+      const a = -PIER_LEN / 2 + t * PIER_LEN; // 로컬 길이축(중심 기준)
+      for (const s of [-1, 1]) {
+        const px2 = horiz ? (dcx + s * railHalf) : (dcx + a);
+        const pz2 = horiz ? (dcz + a) : (dcz + s * railHalf);
+        const pile = new THREE.CylinderGeometry(0.13, 0.15, pileH, 6);
+        pile.translate(px2, pileBot + pileH / 2, pz2);
+        parts.push(paintGeo(pile, 0x6f5636));
+        // 난간 세로기둥(데크 위 1.0m)
+        const post = new THREE.CylinderGeometry(0.05, 0.05, 1.0, 5);
+        post.translate(px2, PIER_DECK_Y + 0.5, pz2);
+        parts.push(paintGeo(post, 0x8a6f4c));
+      }
+    }
+    // 난간 가로레일 — 양옆 상단(데크 위 0.95). 길이축 방향 긴 박스.
+    for (const s of [-1, 1]) {
+      const rx = horiz ? (dcx + s * railHalf) : dcx;
+      const rz = horiz ? dcz : (dcz + s * railHalf);
+      const rail = new THREE.BoxGeometry(horiz ? 0.08 : along, 0.08, horiz ? along : 0.08);
+      rail.translate(rx, PIER_DECK_Y + 0.95, rz);
+      parts.push(paintGeo(rail, 0x8a6f4c));
+      // 난간 solid(추락 방지) — 데크 상면부터 위로. 끝단은 열림.
+      solids.push({
+        x: ox + rx, z: oz + rz,
+        ex: (horiz ? 0.12 : along / 2), ez: (horiz ? along / 2 : 0.12),
+        bottom: PIER_DECK_Y, top: PIER_DECK_Y + 1.05,
+      });
+    }
+    const merged = mergeGeometries(parts); parts.forEach((p) => p.dispose());
+    const m = new THREE.Mesh(merged, T.pierWood); m.castShadow = true; m.receiveShadow = true;
+    m.position.set(ox, 0, oz); group.add(m); own.push(merged);
+    // 데크 도보 물리 — AABB(끝단 여유 -0.2로 난간 안쪽만 걷도록).
+    pierDecks.push({ cx: ox + dcx, cz: oz + dcz, ex: spanW / 2, ez: spanD / 2, y: PIER_DECK_Y });
+    return m;
+  }
+
+  // [테트라포드] 물가 방파제 클러스터 — 단일 지오(TETRA_GEO)를 InstancedMesh로 대량(드로우콜 1).
+  // 배치 배열(def.tetra)은 world-gen이 시드 결정론으로 산출(위치·회전·스케일). 반쯤 잠긴 배치(팀장).
+  function buildTetrapods(arr, group, ox, oz) {
+    const inst = new THREE.InstancedMesh(TETRA_GEO, T.concrete, arr.length);
+    inst.castShadow = true; inst.receiveShadow = true;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sv = new THREE.Vector3(), pv = new THREE.Vector3();
+    arr.forEach((t, i) => {
+      e.set(t.rx || 0, t.ry || 0, t.rz || 0); q.setFromEuler(e);
+      // world-gen은 바다수면 대비 상대 y(yRel)를 넘김 → SEA_Y를 더해 절대 배치(SEA_Y 단일 소스, 드리프트 방지).
+      sv.set(t.s || 1, t.s || 1, t.s || 1); pv.set(ox + t.x, SEA_Y + (t.yRel || 0), oz + t.z);
+      m.compose(pv, q, sv); inst.setMatrixAt(i, m);
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    inst.computeBoundingSphere();
+    group.add(inst);
+    return inst;
+  }
+
+  // [해안 2단계 등대] 물가 육지 모서리에 랜드마크 — 테이퍼 원통 탑(홍백 줄무늬) + 갤러리 난간 + 갓 +
+  // 등롱(유리방 발광) + 회전 서치라이트 콘. 정적부는 머지(드로우콜 1), 등롱·회전빔은 별도 재질.
+  // 회전 빛은 발광 콘 메시(additive)라 실제 THREE.Light 0 → 라이트 풀 개수 불변 원칙 훼손 없음(재컴파일 0).
+  // dir = 접한 바다 경계 방향. 자작 지오·자기완결(외부 에셋 0). 반환: { beam }(update 회전 대상).
+  function buildLighthouse(dir, group, ox, oz, own, solids) {
+    const horiz = edgeHoriz(dir), sign = edgeSign(dir);
+    // 경계(물가) 가장자리 안쪽 2.4m에 배치 — 탑 발치가 육지, 등롱이 바다를 향한다.
+    const lx = ox + (horiz ? 0 : sign * (CELLX / 2 - 2.4));
+    const lz = oz + (horiz ? sign * (CELLZ / 2 - 2.4) : 0);
+    const TH = 9, botR = 1.5, topR = 1.0;         // 탑 높이·하단/상단 반경(테이퍼)
+    const parts = [];
+    // 탑(측벽만 open-ended) — 홍백 줄무늬(밴드 1.5m). heightSegments로 밴드 경계 정점 확보.
+    const tower = new THREE.CylinderGeometry(topR, botR, TH, 16, 12, true); tower.translate(0, TH / 2, 0);
+    parts.push(paintBandsY(tower, 0, 1.5, 0xd94b4b, 0xf4f0ea));
+    // 갤러리 바닥 디스크(등롱 받침)
+    const gallery = new THREE.CylinderGeometry(topR + 0.55, topR + 0.55, 0.22, 16); gallery.translate(0, TH + 0.11, 0);
+    parts.push(paintGeo(gallery, 0x3c4048));
+    // 갤러리 난간(토러스 링)
+    const rail = new THREE.TorusGeometry(topR + 0.5, 0.06, 6, 20); rail.rotateX(Math.PI / 2); rail.translate(0, TH + 0.7, 0);
+    parts.push(paintGeo(rail, 0x2a2d34));
+    // 갓(원뿔 지붕) — 등롱 위
+    const roof = new THREE.ConeGeometry(topR + 0.35, 1.3, 16); roof.translate(0, TH + 2.75, 0);
+    parts.push(paintGeo(roof, 0x8a2f2f));
+    const merged = mergeGeometries(parts); parts.forEach((p) => p.dispose());
+    const body = new THREE.Mesh(merged, T.lighthouseVC); body.castShadow = true; body.receiveShadow = true;
+    body.position.set(lx, 0, lz); group.add(body); own.push(merged);
+    // 등롱(유리방 발광) — 별도 재질(emissive)
+    const lanternGeo = new THREE.CylinderGeometry(topR, topR, 1.5, 16); own.push(lanternGeo);
+    const lantern = new THREE.Mesh(lanternGeo, T.lantern); lantern.position.set(lx, TH + 1.55, lz); group.add(lantern);
+    // 회전 서치라이트 콘 — 옆으로 누운 발광 콘(등롱에서 수평 방출). update에서 y축 회전(무료).
+    // 길이 26m(감독: 바다 멀리 뻗는 등대감) — ConeGeometry 꼭지점 수렴이라 끝으로 갈수록 자연 페이드.
+    // 지오 1개 스케일이라 드로우콜·programs 불변(THREE.Light 0 — 라이트 풀 원칙 유지).
+    const beamGeo = new THREE.ConeGeometry(1.9, 26, 4, 1, true); beamGeo.rotateZ(Math.PI / 2); beamGeo.translate(13, 0, 0); own.push(beamGeo);
+    const beam = new THREE.Mesh(beamGeo, T.beam); beam.position.set(lx, TH + 1.55, lz); beam.renderOrder = 2; group.add(beam);
+    // solid(탑 충돌) — 원통 근사 AABB
+    solids.push({ x: lx, z: lz, ex: botR, ez: botR, bottom: 0, top: TH });
+    return { beam };
+  }
+
   // ── 파셀 인덱스 / 로드 상태 ──
   const keyOf = (px, pz) => px + ',' + pz;
   const index = new Map();  // "px,pz" → def({px,pz,space,npc?})
   for (const d of parcels) index.set(keyOf(d.px, d.pz), d);
   const loaded = new Map(); // "px,pz" → { group, def, ox, oz, dims, solids, crowd, avatars, lod }
   let mp = null; // 실시간 멀티플레이어(opts.mp 지정 + window.Peer 존재 시 생성)
+
+  // ── [스트리밍 큐] 로드 시간분할(성능 단계1) — 히칭 완화 상태 ─────────────────────
+  // 파셀 경계 통과 프레임에 신규 로드(나무·조명·섀도 재베이크)를 몰지 않고 큐에 넣어 update()
+  // 프레임당 예산 내에서만 처리 → 스파이크 분산. 언로드는 즉시(저비용) 유지. 스폰·텔레포트·헤드리스
+  // (기본)는 동기 즉시(빈 화면·결정론 테스트·getLoadedKeys 계약 무회귀). 큐는 렌더 순서만 바꾸고
+  // 생성 결과는 동일 → 결정론 무영향(동기 경로의 최종 로드집합과 일치).
+  const loadQueue = [];        // 지연 로드 job [{ k, px, pz, lod, prio }]
+  const queued = new Set();    // 큐 중복 방지(파셀 키)
+  const LOAD_BUDGET_MS = gpuInfo.soft ? 2.5 : 6; // 프레임당 큐 처리 예산(ms). 소프트웨어 렌더는 보수적.
+  // 헤드리스는 기본 동기(결정론 무회귀). opts.streamAsync=true면 헤드리스도 큐 경로(성능 벤치 측정용 게이트).
+  const streamAsync = !!opts.streamAsync;
+  const perfNow = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
   function parcelArts(def, ox, oz) {
     // NPC는 지면층 작품만 감상(상층 p.floor>0 제외 — NPC 단층 고정 계약)
@@ -308,6 +580,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const group = new THREE.Group();
     const own = [];
     if (def.water) {
+      // [해안] 강(내수면) — 파셀 소유 얕은 물타일(상면 RIVER_Y=-0.3). 바다(sea, SEA_Y=-1.2)와 분리해
+      // 도시 운하는 얕게 유지(다리 0·강물 첨벙 -0.4 물리 정합). 재질은 바다와 공용(T.water 잔물결).
+      const wg = new THREE.BoxGeometry(CELLX, 0.1, CELLZ); own.push(wg);
+      const wm = new THREE.Mesh(wg, T.water); wm.position.set(ox, RIVER_Y - 0.05, oz); wm.receiveShadow = true; group.add(wm);
       const bg = new THREE.BoxGeometry(CELLX, 0.12, 3); own.push(bg); // 동서 다리(강 z 중앙)
       const bm = new THREE.Mesh(bg, T.bridge); bm.position.set(ox, -0.02, oz); bm.receiveShadow = true; group.add(bm);
     } else {
@@ -319,13 +595,15 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const rgE = new THREE.BoxGeometry(2.5, 0.1, CELLZ); own.push(rgE); // 동 가장자리 도로
       const re = new THREE.Mesh(rgE, T.road); re.position.set(ox + CELLX / 2 - 1.25, -0.05, oz); re.receiveShadow = true; group.add(re);
     }
-    let bldGroup = null, bld = null, dims = null, solids = [], floorsY = [0], stairBands = [], crowd = null;
+    let bldGroup = null, bld = null, dims = null, solids = [], floorsY = [0], stairBands = [], crowd = null, parcelLights = null;
     const avatars = new Map();
     if (def.space) {
       const bx = ox + (def.bx || 0), bz = oz + (def.bz || 0);
       bldGroup = buildSpaceGroup(def.space, { shellOnly, onAsyncTex: () => { if (!disposed) renderOnce(); } });
       bldGroup.position.set(bx, 0, bz);
-      if (!shellOnly) addRoomLighting(bldGroup);
+      // [단계2 라이트 풀] AO 접촉그림자는 addRoomLighting(noSpots)이, 작품·다운라이트 스포트는 풀에서 배정
+      // (씬 SpotLight 개수 고정 → 셰이더 재컴파일 0). 배정 라이트는 언로드 시 반납.
+      if (!shellOnly) { addRoomLighting(bldGroup, { noSpots: true }); parcelLights = assignParcelLights(bx, bz, bldGroup.userData.dims, bldGroup.userData.partRefs || []); }
       group.add(bldGroup);
       dims = spaceDims(def.space);
       bld = { cx: bx, cz: bz, hw: dims.hw, hd: dims.hd }; // 건물 내부 판정용(지면 후보)
@@ -344,6 +622,24 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 거리 가구 — 풀디테일 파셀만(대각 shell 임포스터는 생략). 배치·solid 동일 데이터 파생.
     let streetMeshes = null;
     if (!shellOnly && def.street && def.street.length) streetMeshes = buildStreet(def.street, group, ox, oz, solids, own);
+    // [해안 패키지] 경계 파셀 물가 연출 — 해변(모든 경계방향, shell 포함해 원경 단차 연속) /
+    //   부두·테트라포드(full 파셀만, 원경 shell은 드로우콜 절약 위해 생략). 배치는 시드 결정론(def.pier/tetra).
+    let tetraMesh = null, lighthouse = null;
+    const beachBands = [], pierDecks = [];
+    if (!def.water) {
+      const edges = [];
+      if (px === minPx) edges.push('W');
+      if (px === maxPx) edges.push('E');
+      if (pz === minPz) edges.push('N');
+      if (pz === maxPz) edges.push('S');
+      if (edges.length) {
+        buildBeach(edges, group, ox, oz, own, beachBands);
+        if (!shellOnly && def.pier && edges.includes(def.pier.dir)) buildPier(def.pier.dir, group, ox, oz, own, solids, pierDecks);
+        if (!shellOnly && def.tetra && def.tetra.length) tetraMesh = buildTetrapods(def.tetra, group, ox, oz);
+        // [해안 2단계] 등대 — full 파셀만(원경 shell은 드로우콜 절약). 접한 경계 방향에만 배치.
+        if (!shellOnly && def.lighthouse && edges.includes(def.lighthouse.dir)) lighthouse = buildLighthouse(def.lighthouse.dir, group, ox, oz, own, solids);
+      }
+    }
     // 거리 배회 NPC — 풀디테일 파셀 + 총원 ≤6. 라벨 없음(빈 닉네임 규약). 외형 시드 결정론.
     let walker = null;
     if (!shellOnly && def.walker && walkerTotal() < 6) {
@@ -356,12 +652,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       pickWalkerTarget(walker);
     }
     scene.add(group);
-    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz });
+    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz, beachBands, pierDecks, tetraMesh, lights: parcelLights, lighthouse });
     requestShadowBake(); // [섀도 프리즈] 파셀 로드로 씬 지오가 바뀜 → 다음 프레임 1회 재베이크
   }
 
   function unloadParcel(k) {
     const L = loaded.get(k); if (!L) return;
+    if (L.lights) for (const sl of L.lights) releaseLight(sl); // [단계2 라이트 풀] 스포트 소등·반납(개수 불변 — 재컴파일 0)
     if (L.crowd) { for (const a of L.avatars.values()) { scene.remove(a.inst.group); a.inst.dispose(); } }
     if (L.walker) { scene.remove(L.walker.inst.group); L.walker.inst.dispose(); } // 거리 배회 NPC 정리(씬 잔존 0)
     scene.remove(L.group);
@@ -371,7 +668,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 아래 루프는 no-op 가드로 건너뛴다 — 나무 병합 BufferGeometry는 파셀 소유라 L.own에서 dispose하고,
     // 가구 공유 지오(SG)·재질(T·나무 sharedTreeMats)은 파셀 간 공유라 여기서 건드리지 않는다(createWorld dispose 일괄).
     if (L.streetMeshes) for (const sm of L.streetMeshes) if (sm.dispose) sm.dispose();
-    for (const g of L.own) g.dispose(); // 파셀 소유 지오(공유 재질 T는 dispose에서 일괄)
+    // [테트라포드] InstancedMesh — instanceMatrix 버퍼만 회수(지오 TETRA_GEO·재질 concrete는 파셀 간 공유).
+    if (L.tetraMesh) L.tetraMesh.dispose();
+    for (const g of L.own) g.dispose(); // 파셀 소유 지오(해변·부두 머지 포함, 공유 재질 T는 dispose에서 일괄)
     loaded.delete(k);
     if (!disposed) requestShadowBake(); // [섀도 프리즈] 파셀 언로드도 씬 변화 → 재베이크(dispose 일괄 정리 중엔 불필요)
   }
@@ -382,7 +681,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   if (!parcels.length) { minPx = maxPx = minPz = maxPz = 0; }
   const seaGeo = new THREE.BoxGeometry((maxPx - minPx + 40) * CELLX, 0.1, (maxPz - minPz + 40) * CELLZ);
   const sea = new THREE.Mesh(seaGeo, T.water);
-  sea.position.set(((minPx + maxPx) / 2) * CELLX, -0.3, ((minPz + maxPz) / 2) * CELLZ);
+  // [해안] 바다(외해)를 지면 0보다 SEA_Y(-1.2)만큼 낮춰 확실한 단차(감독: "바다=땅 높이 어색").
+  // 상면 = SEA_Y+0.05. 강(내수면)은 파셀 소유 물타일(RIVER_Y)로 분리 — loadParcel에서 렌더.
+  sea.position.set(((minPx + maxPx) / 2) * CELLX, SEA_Y, ((minPz + maxPz) / 2) * CELLZ);
   scene.add(sea);
   // 강/바다 공용 재질(T.water=sea 평면 하나) — 잔물결 텍스처 붙이고 offset 스크롤로 흐름 연출.
   const waterTex = makeWaterTex();
@@ -454,11 +755,21 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getPos: () => ({ x: pos.x, z: pos.z }),
     soft: gpuInfo.soft,
     onApply: () => requestShadowBake(),
-    waterY: -0.25, // sea 상면(-0.3+0.05) — 수면 빛반사(달빛·노을·태양) 활성화
+    waterY: SEA_Y + 0.05, // [해안] 바다 상면 — 수면 빛반사(달빛·노을·태양) 활성화(외해 기준, 넓은 면).
   });
 
   // ── 스트리밍: 현재 파셀 3×3. 직교 인접(맨해튼≤1)=풀디테일, 대각=shell 임포스터. ──
-  function updateStreaming() {
+  // 진행방향 보너스 — 플레이어가 향하는 쪽(kmov/tmov ⊕ yaw 월드벡터)과 파셀 상대방향 내적>0이면
+  // 우선순위 가산(먼저 로드). 정지 시 0. (kmov/tmov/yaw는 런타임 참조라 정의 시점 TDZ 무관.)
+  function dirBonus(rx, rz) {
+    const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
+    if (!f && !r) return 0;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rgx = Math.cos(yaw), rgz = -Math.sin(yaw);
+    const mvx = f * fx + r * rgx, mvz = f * fz + r * rgz;
+    return (mvx * rx + mvz * rz) > 0 ? 5 : 0;
+  }
+  // sync=true(스폰·텔레포트) 또는 헤드리스 기본(streamAsync 미설정)은 즉시 동기 로드. 그 외는 큐잉.
+  function updateStreaming(sync = false) {
     const { px, pz } = currentParcel();
     const want = new Map();
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
@@ -466,8 +777,50 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (!index.has(k)) continue;
       want.set(k, (Math.abs(dx) + Math.abs(dz)) <= 1 ? 'full' : 'shell');
     }
+    // 언로드는 즉시(저비용) — 기존대로. 큐에 남은 불필요분(떠난 방향)도 함께 제거.
     for (const k of Array.from(loaded.keys())) if (!want.has(k)) unloadParcel(k);
-    for (const [k, lod] of want) { const [qx, qz] = k.split(',').map(Number); loadParcel(qx, qz, lod); }
+    for (let i = loadQueue.length - 1; i >= 0; i--) {
+      if (!want.has(loadQueue[i].k)) { queued.delete(loadQueue[i].k); loadQueue.splice(i, 1); }
+    }
+    const immediate = sync || (headless && !streamAsync);
+    for (const [k, lod] of want) {
+      const ex = loaded.get(k);
+      if (ex && ex.lod === lod) continue; // 이미 정확 LOD → skip
+      const [qx, qz] = k.split(',').map(Number);
+      if (immediate) { loadParcel(qx, qz, lod); continue; }
+      // 큐잉 — 우선순위 = 맨해튼거리*10 - 진행방향보너스(작을수록 먼저).
+      const prio = (Math.abs(qx - px) + Math.abs(qz - pz)) * 10 - dirBonus(qx - px, qz - pz);
+      if (queued.has(k)) {
+        const job = loadQueue.find((j) => j.k === k); // 이미 큐에 있으면 LOD·우선순위 갱신(shell→full 승격 등)
+        if (job) { job.lod = lod; job.prio = prio; }
+      } else {
+        loadQueue.push({ k, px: qx, pz: qz, lod, prio });
+        queued.add(k);
+      }
+    }
+  }
+  // [스트리밍 큐] 프레임당 예산 내에서 큐 소진 — update()의 renderer.render 직전에 호출.
+  // prio 오름차순 정렬 후 최소 1개 빌드, 이후 예산(LOAD_BUDGET_MS) 초과 시 중단. soft는 프레임당 1개.
+  // 떠난 파셀(현재 기준 맨해튼>2 또는 LOD 조건 변동) job은 빌드 없이 폐기 — 다음 updateStreaming이 재평가.
+  function processLoadQueue() {
+    if (!loadQueue.length) return;
+    const { px, pz } = currentParcel();
+    loadQueue.sort((a, b) => a.prio - b.prio);
+    const t0 = perfNow();
+    let built = 0;
+    while (loadQueue.length) {
+      const job = loadQueue[0];
+      const man = Math.abs(job.px - px) + Math.abs(job.pz - pz);
+      const wantLod = man <= 1 ? 'full' : 'shell';
+      if (man > 2 || wantLod !== job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // 떠난 파셀 폐기
+      const exist = loaded.get(job.k);
+      if (exist && exist.lod === job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // 이미 로드됨
+      loadParcel(job.px, job.pz, job.lod);
+      loadQueue.shift(); queued.delete(job.k);
+      built++;
+      if (gpuInfo.soft) break;                       // soft: 프레임당 엄격 1개
+      if (perfNow() - t0 > LOAD_BUDGET_MS) break;    // 최소 1개 빌드 후 예산 초과 시 중단
+    }
   }
 
   // ── [다층] 지면 해석 (player.js stairGroundAt/groundCandidatesAt/resolveGround 이식, 파셀 오프셋 인지) ──
@@ -481,14 +834,42 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     }
     return null;
   }
-  // [복셀스] 지면 후보: 거리·마당 0 / 건물 내부 층 슬래브 f*H / 강 다리 0·강물 -0.4(첨벙) / 미로드·월드 밖 -0.4(바다).
+  // [해안] 해변 경사 지면 — 경계 파셀 바깥 가장자리 스트립에서 지면(0)→물가(BEACH_TOE) 선형보간.
+  // stairGroundAt과 동형(전 로드 파셀 순회) — 플레이어가 파셀 밖(미로드) 스트립에 있어도 인접 경계 파셀이 커버.
+  function beachGroundAt(x, z) {
+    for (const L of loaded.values()) for (const b of L.beachBands) {
+      if (b.horiz) {
+        if (x < b.lo || x > b.hi) continue;
+        const t = (z - b.edge) * b.sign;              // 바깥으로 0..width
+        if (t < 0 || t > b.width) continue;
+        return BEACH_TOE * (t / b.width);             // 0 → BEACH_TOE
+      } else {
+        if (z < b.lo || z > b.hi) continue;
+        const t = (x - b.edge) * b.sign;
+        if (t < 0 || t > b.width) continue;
+        return BEACH_TOE * (t / b.width);
+      }
+    }
+    return null;
+  }
+  // [부두] 데크 도보 지면 — 데크 AABB 안이면 데크 상면(PIER_DECK_Y). 전 로드 파셀 순회(데크는 파셀 밖으로 돌출).
+  function pierGroundAt(x, z) {
+    for (const L of loaded.values()) for (const d of L.pierDecks) {
+      if (Math.abs(x - d.cx) <= d.ex && Math.abs(z - d.cz) <= d.ez) return d.y;
+    }
+    return null;
+  }
+  // [복셀스+해안] 지면 후보: 부두 데크 / 해변 경사 / 거리·마당 0 / 건물 층 슬래브 / 강 다리 0·강물 -0.4 /
+  //   미로드·월드 밖 = 바다 SEA_Y(첨벙) 단, 해변 스트립이 커버하면 그 경사값 우선.
   function groundCandidatesAt(x, z) {
     const c = [];
     const sy = stairGroundAt(x, z); if (sy !== null) c.push(sy);
+    const py = pierGroundAt(x, z); if (py !== null) c.push(py);   // 부두 데크 위(최우선 지면)
+    const by = beachGroundAt(x, z); if (by !== null) c.push(by);  // 해변 경사
     const L = loaded.get(keyOf(Math.round(x / CELLX), Math.round(z / CELLZ)));
-    if (!L) { c.push(-0.4); return c; }
+    if (!L) { if (by === null) c.push(SEA_Y); return c; }         // 미로드=바다(해변 스트립이면 by가 이미 담김)
     if (L.def.water) {
-      c.push(Math.abs(z - L.oz) < 1.5 ? 0 : -0.4); // 다리 폭 3m / 그 밖은 강물
+      c.push(Math.abs(z - L.oz) < 1.5 ? 0 : -0.4); // 다리 폭 3m / 그 밖은 강물(첨벙, RIVER_Y 수면)
     } else if (L.bld && Math.abs(x - L.bld.cx) < L.bld.hw && Math.abs(z - L.bld.cz) < L.bld.hd) {
       for (const fy of L.floorsY) c.push(fy);      // 건물 내부: 각 층 슬래브 상면
     } else {
@@ -591,6 +972,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     }
   }
 
+  // [해안 2단계 등대] 회전 서치라이트 — 발광 콘 y축 회전(무료, 조명 개수 불변). 야간에 additive로 도드라진다.
+  function stepLighthouses(d) {
+    for (const L of loaded.values()) if (L.lighthouse) L.lighthouse.beam.rotation.y += d * 0.8;
+  }
+
   // ── 입력(키/터치) ──
   const kmov = { fwd: 0, right: 0 }, tmov = { fwd: 0, right: 0 }, keys = {};
   function recomputeKeyMove() {
@@ -634,8 +1020,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     maybeRebakeShadow(); // [섀도 프리즈] 8m 이동 시 그림자 재베이크(태양 추종 정합)
     stepNpcs(d);
     stepWalkers(d); // 거리 배회 NPC 앰비언트 시뮬
+    stepLighthouses(d); // [해안 2단계] 등대 서치라이트 회전
     // 원격 아바타 발바닥 = groundY(다층·강 반영). 원격 간 충돌은 데모 스코프 아웃.
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
+    processLoadQueue(); // [스트리밍 큐] 프레임 예산 내 지연 로드 소진(렌더 직전 — 이번 프레임 빌드분 반영)
     renderer.render(scene, camera);
   }
   function renderOnce() { applyPose(); maybeRebakeShadow(); renderer.render(scene, camera); }
@@ -674,8 +1062,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     mp.connect();
   }
 
-  // 초기 로드 — 첫 파셀 주변 스트리밍
-  updateStreaming();
+  // 초기 로드 — 첫 파셀 주변 스트리밍(스폰은 동기 즉시: 빈 화면 방지·결정론 무회귀)
+  updateStreaming(true);
   applyPose();
   requestShadowBake(); // [섀도 프리즈] 초기 1회 베이크 + 8m 이동 기준점 설정
   if (!headless) {
@@ -690,12 +1078,19 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     setTouchMove: (fwd, right) => { tmov.fwd = fwd || 0; tmov.right = right || 0; },
     setKey: (k, v) => { keys[String(k).toLowerCase()] = !!v; recomputeKeyMove(); },
     getPosition: () => pos.clone(),
-    setPosition: (x, y, z) => { pos.set(x, y == null ? EYE : y, z); groundY = 0; updateStreaming(); applyPose(); }, // 순간이동=지면층 리셋(스테일 급락 판정 방지)
+    setPosition: (x, y, z) => { pos.set(x, y == null ? EYE : y, z); groundY = 0; updateStreaming(true); applyPose(); }, // 순간이동=지면층 리셋 + 동기 로드(빈 화면 방지)
     getYaw: () => yaw, setYaw: (v) => { yaw = v; applyPose(); },
     getGroundY: () => groundY, // [다층] 현재 발 높이(검증·디버그용)
     getPitch: () => pitch,
     getCurrentParcel: () => currentParcel(),
     getGpuInfo: () => ({ ...gpuInfo }), // [저사양 방어] 검증·디버그용 프로브 결과
+    // [스트리밍 큐] 계측 게터(순수 가산) — 히칭 벤치·HUD 디버그. 드로우콜·프로그램 수·로드/큐 상태.
+    getStats: () => {
+      let loadedFull = 0, loadedShell = 0;
+      for (const L of loaded.values()) { if (L.lod === 'shell') loadedShell++; else loadedFull++; }
+      return { drawCalls: renderer.info.render.calls, programs: renderer.info.programs.length, loadedFull, loadedShell, queue: loadQueue.length };
+    },
+    getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
     isLocked: () => locked,
     on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
@@ -713,6 +1108,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       }
       if (mp) { mp.dispose(); mp = null; }
       for (const k of Array.from(loaded.keys())) unloadParcel(k);
+      for (const sl of lightPool) { scene.remove(sl); scene.remove(sl.target); } // [단계2 라이트 풀] 씬 회수(Light는 dispose 불필요)
       // [하늘 엔진] 강수·무지개·오로라·페이드돔·교체된 고해상 돔 지오/텍스처 회수(sky 돔 자식 fadeDome 포함).
       if (skySystem) { skySystem.dispose(); skySystem = null; }
       // [복셀스] 하늘·바다·공유 재질 회수(skySystem이 교체·소유한 지오/맵은 이미 dispose됨 — 재호출은 무해 idempotent)
@@ -720,6 +1116,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       scene.remove(sea); seaGeo.dispose();
       if (T.water.map) T.water.map.dispose(); // 물결 텍스처(재질 dispose는 map 미회수)
       for (const key3 in SG) SG[key3].dispose(); // 거리 가구 공유 지오
+      TETRA_GEO.dispose(); // [테트라포드] 공유 지오(InstancedMesh들이 참조 — 파셀 dispose는 instance 버퍼만 회수)
       for (const key2 in T) T[key2].dispose();
       if (scene.environment) { scene.environment.dispose(); scene.environment = null; }
       renderer.dispose();
