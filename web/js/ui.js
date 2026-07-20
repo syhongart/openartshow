@@ -2988,6 +2988,7 @@ function buildChibiMaker() {
   const overlay = el('div', { id: 'lu-chibi-maker', className: 'lu' }, [card]);
   document.body.appendChild(overlay);
 
+
   function setParam(key, value) {
     if (!chibiParams) return;
     chibiParams[key] = value;
