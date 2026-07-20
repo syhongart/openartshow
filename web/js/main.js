@@ -626,6 +626,9 @@ async function init() {
   // 그리는 시점에 폰트가 없으면 시스템 폰트로 폴백해 그대로 텍스처에 구워지기 때문.
   await ensureCanvasFonts();
   await createArtworks(scene);
+  // [정문 포털] portal.js(가산형 독립)가 씬에 접근하는 유일 훅 — 순수 노출 1줄(팀장 §10-4 게이트).
+  // 라이브 런타임 로직은 무변경. portal.js가 이 객체를 폴링해 입구 게이트를 씬에 더한다.
+  window.__museum = { scene, camera, renderer };
   if (gpuInfo.soft) scene.fog = null; // 프래그먼트당 fog 연산 삭감 (포테이토 모드)
 
   // 섀도맵 프리즈 — 씬이 정적(아바타는 블롭 그림자)이므로 그림자를 1회만 굽고
