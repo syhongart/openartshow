@@ -535,9 +535,9 @@ function injectStyles() {
 .lu-am-preview {
   flex: 0 0 auto;
   align-self: flex-start;   /* 긴 탭에서 프레임이 패널 높이만큼 늘어나 아래 빈 나무 슬래브가 생기지 않게 — 스테이지에 맞춰 감싼다 */
-  display: flex; flex-direction: column; gap: 10px;  /* 무대(사진) 위, 액션 바 아래 */
-  width: 244px;                                      /* 사진+액션 바 12개가 카드 높이에 다 담기게 */
-  padding: 14px 14px 14px;
+  display: flex; flex-direction: row; align-items: flex-start; gap: 9px;  /* 사진(왼) + 액션 컬럼(오른쪽) */
+  width: auto;
+  padding: 14px;
   border-radius: 26px;
   position: relative;
   touch-action: none;
@@ -586,30 +586,31 @@ function injectStyles() {
   filter: blur(1.5px);
 }
 /* 무대 래퍼 — 사진(캔버스) + 회전 힌트를 한 프레임으로. 힌트 absolute의 기준. */
-.lu-am-stagewrap { position: relative; width: 100%; }
-/* 액션 테스트 바 — 무대(사진) "아래" 별도 영역(사진 위에 얹지 않음, UX 감사 반영).
-   이모지 + 한글 라벨 칩을 가로로 감싸 흐른다. 사진 감상 프레임을 보존한다. */
+.lu-am-stagewrap { position: relative; width: 244px; height: 325px; flex: 0 0 auto; }  /* 3:4 명시 — 액션 컬럼 wrap 높이 기준 */
+/* 액션 테스트 컬럼 — 무대(사진) "오른쪽" 세로(감독 지시 "동작을 옆에"). 사진 밖이라
+   캐릭터를 안 가린다. 높이를 무대(325px)에 맞추고 column wrap으로 12개가 넘치면 왼쪽에
+   열을 더해 전부 보이게 한다. 이모지 원형 버튼(라벨은 aria/title). */
 .lu-am-actions {
-  display: flex; flex-wrap: wrap; justify-content: center;
-  gap: 4px; width: 100%;
+  display: flex; flex-flow: column wrap; align-content: flex-start;
+  gap: 6px; flex: 0 0 auto; height: 325px;
 }
 .lu-am-action-btn {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 3px 7px; min-height: 24px;
-  border-radius: 999px; border: 1px solid rgba(120, 90, 40, 0.25);
+  width: 34px; height: 34px; padding: 0; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid rgba(120, 90, 40, 0.25);
   background: rgba(255, 253, 247, 0.92);
-  font-size: 10.5px; line-height: 1; color: #4a3f2a; cursor: pointer;
-  box-shadow: 0 1px 2px rgba(40, 30, 10, 0.1);
-  transition: transform 0.1s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+  line-height: 1; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(40, 30, 10, 0.15);
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
-.lu-am-act-emoji { font-size: 12px; line-height: 1; }
-.lu-am-act-label { font-weight: 700; white-space: nowrap; letter-spacing: -0.01em; }
-.lu-am-action-btn:hover { background: #fff; border-color: rgba(95, 158, 125, 0.55); transform: translateY(-1px); }
-.lu-am-action-btn:active { transform: translateY(0) scale(0.96); }
+.lu-am-act-emoji { font-size: 16px; line-height: 1; }
+.lu-am-act-label { display: none; }  /* 우측 세로 모드: 이모지만 노출(라벨은 aria-label로 스크린리더 제공) */
+.lu-am-action-btn:hover { background: #fff; border-color: rgba(95, 158, 125, 0.55); transform: scale(1.12); }
+.lu-am-action-btn:active { transform: scale(0.92); }
 /* 재생 중 강조 — 청자 그린 링 (어느 동작을 눌렀는지 재생 동안 표시) */
 .lu-am-action-btn.lu-am-playing {
-  background: #e3efe7; border-color: #5f9e7d; color: #2c5844;
-  box-shadow: 0 0 0 2px rgba(95, 158, 125, 0.35);
+  background: #e3efe7; border-color: #5f9e7d;
+  box-shadow: 0 0 0 2px rgba(95, 158, 125, 0.45);
 }
 .lu-am-preview-hint {
   position: absolute; left: 50%; bottom: 10px;
@@ -1855,12 +1856,13 @@ function injectStyles() {
   .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
   .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
-  /* 모바일 — 무대는 좁게, 액션 바는 넓게(칩 라벨 수용). 무대만 max-width 제한. */
-  .lu-am-preview { width: 100%; max-width: 300px; margin: 0 auto; padding: 8px 8px 12px; border-radius: 20px; gap: 9px; }
-  .lu-am-stagewrap { width: 172px; max-width: 60vw; align-self: center; }
-  .lu-am-actions { gap: 4px; }
-  .lu-am-action-btn { padding: 4px 8px; min-height: 28px; font-size: 10.5px; }
-  .lu-am-act-emoji { font-size: 12px; }
+  /* 모바일 — 사진(왼) + 액션 컬럼(오른쪽) 가로 유지. 사진을 조금 키워 세로 높이를
+     확보하면 우측 12개가 2열로 다 보인다. */
+  .lu-am-preview { width: auto; margin: 0 auto; padding: 9px; border-radius: 20px; gap: 8px; }
+  .lu-am-stagewrap { width: 200px; height: 267px; }        /* 3:4 명시 */
+  .lu-am-actions { gap: 5px; height: 267px; }              /* 무대 높이에 맞춰 wrap */
+  .lu-am-action-btn { width: 32px; height: 32px; }
+  .lu-am-act-emoji { font-size: 15px; }
   .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
   .lu-am-panel { min-height: 0; }
   .lu-am-nav { padding: 5px 0 6px; margin-bottom: 8px; gap: 4px; }
@@ -2876,10 +2878,10 @@ function buildChibiMaker() {
   // 바깥 lu-am-preview 프레임을 장식용 여백으로 감싸 게임 캐릭터 크리에이터급 무대감을 낸다.
   const canvas = el('canvas', { width: '300', height: '400' });
   const stage = el('div', { className: 'lu-am-stage' }, [canvas]);
-  // 액션 테스트 — 프리뷰 무대 "아래" 별도 바(사진 위에 얹지 않아 감상 프레임을 보존,
-  // UX 감사 반영). 각 버튼은 이모지 + 한글 라벨을 상시 노출(title만 있으면 모바일
-  // 터치에서 안 뜸)해 식별성을 높이고, 클릭 시 재생 동안 버튼을 강조한다.
-  // 라벨·목록·지속시간은 chibi.js SSOT(CHIBI_ACTIONS/CHIBI_ACTION_LABELS/CHIBI_ACTION_DUR).
+  // 액션 테스트 — 프리뷰 무대 "오른쪽" 세로 컬럼(감독 지시 "동작을 옆에"). 무대 사진
+  // 바깥에 두어 캐릭터를 가리지 않고(UX 감사 반영), 12개가 다 보이게 높이에 맞춰 열이
+  // 접힌다(column wrap). 이모지 원형 버튼 + 한글 라벨(aria/title, 접근성)이며 클릭 시
+  // 재생 동안 버튼을 강조한다. 목록·라벨·지속시간은 chibi.js SSOT.
   const ACTION_EMOJI = {
     wave: '👋', jump: '⬆️', bow: '🙇', clap: '👏', dance: '💃', kick: '🦵',
     breakdance: '🕺', run: '🏃', sit: '🪑', jumpingjack: '🤸', heart: '❤️', sulk: '😤',
@@ -2909,7 +2911,7 @@ function buildChibiMaker() {
   const previewHint = el('div', { className: 'lu-am-preview-hint' });
   previewHint.innerHTML = ICON_ROTATE;
   previewHint.appendChild(el('span', { text: '드래그해서 회전' }));
-  // 무대(stage) + 힌트를 한 묶음으로 감싸 사진 프레임을 이루고, 액션 바는 그 아래에 둔다.
+  // 무대(stage) + 힌트를 한 묶음으로 감싸 사진 프레임을 이루고, 액션 컬럼은 그 오른쪽에 둔다.
   const stageWrap = el('div', { className: 'lu-am-stagewrap' }, [stage, previewHint]);
   const previewBox = el('div', { className: 'lu-am-preview' }, [stageWrap, actionCol]);
 
