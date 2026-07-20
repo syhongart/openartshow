@@ -502,7 +502,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const lanternGeo = new THREE.CylinderGeometry(topR, topR, 1.5, 16); own.push(lanternGeo);
     const lantern = new THREE.Mesh(lanternGeo, T.lantern); lantern.position.set(lx, TH + 1.55, lz); group.add(lantern);
     // 회전 서치라이트 콘 — 옆으로 누운 발광 콘(등롱에서 수평 방출). update에서 y축 회전(무료).
-    const beamGeo = new THREE.ConeGeometry(1.7, 15, 4, 1, true); beamGeo.rotateZ(Math.PI / 2); beamGeo.translate(7.5, 0, 0); own.push(beamGeo);
+    // 길이 26m(감독: 바다 멀리 뻗는 등대감) — ConeGeometry 꼭지점 수렴이라 끝으로 갈수록 자연 페이드.
+    // 지오 1개 스케일이라 드로우콜·programs 불변(THREE.Light 0 — 라이트 풀 원칙 유지).
+    const beamGeo = new THREE.ConeGeometry(1.9, 26, 4, 1, true); beamGeo.rotateZ(Math.PI / 2); beamGeo.translate(13, 0, 0); own.push(beamGeo);
     const beam = new THREE.Mesh(beamGeo, T.beam); beam.position.set(lx, TH + 1.55, lz); beam.renderOrder = 2; group.add(beam);
     // solid(탑 충돌) — 원통 근사 AABB
     solids.push({ x: lx, z: lz, ex: botR, ez: botR, bottom: 0, top: TH });
