@@ -22,7 +22,6 @@ import {
   CHIBI_PRESETS,
   CHIBI_PRESET_GROUPS,
   CHIBI_ACTIONS,
-  CHIBI_ACTION_LABELS,
   CHIBI_ACTION_DUR,
   SPECIES_PRESET,
   SKIN_TONES,
@@ -538,7 +537,7 @@ function injectStyles() {
 .lu-am-preview {
   flex: 0 0 auto;
   align-self: flex-start;   /* 긴 탭에서 프레임이 패널 높이만큼 늘어나 아래 빈 나무 슬래브가 생기지 않게 — 스테이지에 맞춰 감싼다 */
-  display: flex; flex-direction: row; align-items: flex-start; gap: 9px;  /* 사진(왼) + 액션 컬럼(오른쪽) */
+  display: flex; align-items: flex-start;
   width: auto;
   padding: 14px;
   border-radius: 26px;
@@ -589,32 +588,7 @@ function injectStyles() {
   filter: blur(1.5px);
 }
 /* 무대 래퍼 — 사진(캔버스) + 회전 힌트를 한 프레임으로. 힌트 absolute의 기준. */
-.lu-am-stagewrap { position: relative; width: 244px; height: 325px; flex: 0 0 auto; }  /* 3:4 명시 — 액션 컬럼 wrap 높이 기준 */
-/* 액션 테스트 컬럼 — 무대(사진) "오른쪽" 세로(감독 지시 "동작을 옆에"). 사진 밖이라
-   캐릭터를 안 가린다. 높이를 무대(325px)에 맞추고 column wrap으로 12개가 넘치면 왼쪽에
-   열을 더해 전부 보이게 한다. 이모지 원형 버튼(라벨은 aria/title). */
-.lu-am-actions {
-  display: flex; flex-flow: column wrap; align-content: flex-start;
-  gap: 6px; flex: 0 0 auto; height: 325px;
-}
-.lu-am-action-btn {
-  width: 34px; height: 34px; padding: 0; flex: 0 0 auto;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 50%; border: 1px solid rgba(120, 90, 40, 0.25);
-  background: rgba(255, 253, 247, 0.92);
-  line-height: 1; cursor: pointer;
-  box-shadow: 0 1px 3px rgba(40, 30, 10, 0.15);
-  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
-}
-.lu-am-act-emoji { font-size: 16px; line-height: 1; }
-.lu-am-act-label { display: none; }  /* 우측 세로 모드: 이모지만 노출(라벨은 aria-label로 스크린리더 제공) */
-.lu-am-action-btn:hover { background: #fff; border-color: rgba(95, 158, 125, 0.55); transform: scale(1.12); }
-.lu-am-action-btn:active { transform: scale(0.92); }
-/* 재생 중 강조 — 청자 그린 링 (어느 동작을 눌렀는지 재생 동안 표시) */
-.lu-am-action-btn.lu-am-playing {
-  background: #e3efe7; border-color: #5f9e7d;
-  box-shadow: 0 0 0 2px rgba(95, 158, 125, 0.45);
-}
+.lu-am-stagewrap { position: relative; width: 244px; height: 325px; flex: 0 0 auto; }  /* 3:4 명시 */
 .lu-am-preview-hint {
   position: absolute; left: 50%; bottom: 10px;
   transform: translateX(-50%);
@@ -1853,93 +1827,39 @@ function injectStyles() {
   .lu-share-preview { max-height: 42vh; }
 }
 
-/* 플라이아웃 닫기 버튼 — 전역 기본 숨김(데스크톱 미사용), 모바일 @media에서만 표시 */
-.lu-flyout-close { display: none; }
-/* --------------------- 아바타 커스터마이저: 모바일 D안(책갈피 + 캐러셀 플라이아웃) --------------------- */
+/* --------------------- 아바타 커스터마이저: 모바일(세로 스택) --------------------- */
 @media (max-width: 720px) {
   #lu-avatar-maker, #lu-chibi-maker { padding: 8px; }
   /* dvh 폴백 — iOS 주소창 포함 vh가 카드를 가시영역보다 크게 만드는 문제(hotfix #12 계열) */
   .lu-am-card { max-width: 96vw; max-height: 92vh; max-height: 92dvh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
-  /* 모바일 D안(감독 선택) — 캐릭터 크게(무대 200) 유지. 우측 "책갈피" 탭을 누르면 하단에서
-     옵션 "캐러셀" 시트가 올라오되 얼굴은 계속 보인다(하단 58%만 덮음). body는 플라이아웃
-     absolute의 기준(relative + overflow hidden으로 닫힘 시트 클리핑). */
-  .lu-am-body { flex-direction: column; padding: 10px 0 0; gap: 0; position: relative; overflow: hidden; z-index: 2; }  /* footer(z1)보다 위 — 플라이아웃/책갈피가 footer에 안 가리게 */
-  .lu-am-preview {
-    flex-direction: row; align-items: center; justify-content: center;
-    width: 100%; max-width: none; margin: 0 auto; padding: 4px 46px 8px 8px; gap: 8px; border-radius: 0;
+  /* 프리뷰(큰 캐릭터)를 위, 옵션 패널을 아래로 세로 쌓기. body 하나만 세로 스크롤해
+     이중 스크롤·플라이아웃 없이 밑으로 자연스럽게 내려간다(감독: 단순하게). 캐릭터는
+     그 자리에서 혼자 신나게 움직인다(자동 연기). */
+  .lu-am-body {
+    flex-direction: column; gap: 14px; padding: 12px 14px 4px;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   }
-  .lu-am-stagewrap { width: 200px; height: 267px; max-width: none; flex: 0 0 auto; }
-  .lu-am-actions { flex-flow: column wrap; width: auto; max-width: none; height: 267px; justify-content: center; gap: 4px; }
-  .lu-am-action-btn { width: 30px; height: 30px; }
-  .lu-am-act-emoji { font-size: 14px; }
-  .lu-am-preview-hint { display: flex; font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
-  /* 책갈피 탭 — nav를 우측 가장자리 세로로(JS가 nav를 body 직속으로 이동해 플라이아웃과
-     함께 사라지지 않게). 라벨 숨기고 아이콘만. */
-  .lu-am-nav {
-    position: absolute; right: 0; top: 54px; bottom: auto; flex-direction: column;
-    width: auto; padding: 0; margin: 0; border: none; gap: 3px; overflow: visible; z-index: 7;
-  }
-  .lu-am-navtab {
-    flex-direction: row; min-width: 0; width: 46px; padding: 8px 5px;
-    border-radius: 14px 0 0 14px; background: #fff; border: 2px solid var(--am-line); border-right: none;
-    box-shadow: -3px 3px 8px rgba(40,30,10,0.14);
-  }
+  .lu-am-preview { width: auto; max-width: none; align-self: center; padding: 12px; }
+  .lu-am-stagewrap { width: 200px; height: 267px; max-width: none; margin: 0 auto; }
+  .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 6px; }
+  /* 패널은 자연 높이(스크롤은 body가 담당) — 탭 내비는 가로 스크롤로 한 줄 유지 */
+  .lu-am-panel { flex: 0 0 auto; }
+  .lu-am-nav { margin-bottom: 12px; padding: 4px 0 10px; }
+  .lu-am-navtab { min-width: 52px; font-size: 10px; padding: 7px 10px 6px; }
   .lu-am-navtab svg { width: 18px; height: 18px; }
-  .lu-am-navtab span { display: none; }   /* 책갈피엔 아이콘만 */
-  /* 하단 플라이아웃 시트 — panel을 body 하단에 absolute, translateY로 슬라이드 업 */
-  .lu-am-panel {
-    position: absolute; left: 0; right: 0; bottom: 0; top: auto; height: 60%;
-    background: var(--am-cream); border-radius: 20px 20px 0 0;
-    box-shadow: 0 -8px 24px rgba(40,30,10,0.28);
-    transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-    /* z 순서: footer(1) < 시트(6) < 책갈피 nav(7) — 시트는 footer 위(옵션 보임),
-       책갈피는 시트 위(가림 없이 탭 전환). body(z2)가 footer(z1) 위라 body 내 시트도 footer 위. */
-    z-index: 6; padding: 8px 14px 8px; display: flex; flex-direction: column; min-height: 0;
-  }
-  .lu-am-panel.lu-flyout-open { transform: translateY(0); }
-  .lu-am-nav { /* 책갈피는 flex 0 0 유지(위 정의 병합) */ }
-  .lu-am-tabpage { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: none; -webkit-overflow-scrolling: touch; }
-  /* 옵션은 가로 캐러셀(다이얼 정신) — 세로 공간 절약, 옆으로 밀어 고른다 */
-  .lu-am-tabs, .lu-swatches, .lu-am-presets {
-    display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
-    scroll-snap-type: x proximity; padding-bottom: 6px; gap: 8px; -webkit-overflow-scrolling: touch;
-  }
-  .lu-am-tabs .lu-am-tab, .lu-am-presets .lu-am-tab { flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap; }
-  .lu-swatches .lu-swatch { flex: 0 0 auto; scroll-snap-align: start; }
-  /* 닫기 = 시트 상단 중앙 그랩 핸들. 시트(panel) 내부 "흐름"의 첫 요소로 두어(absolute가
-     아니라 flex item) footer와 좌표 충돌 없이 시트 최상단에 얹힌다(구 우상단 absolute ×는
-     책갈피에 가려 클릭 불가 — 교차리뷰 반려). 우측 책갈피와 위치가 겹치지 않는 중앙. */
-  .lu-flyout-close {
-    position: static; align-self: center; flex: 0 0 auto;
-    width: 72px; height: 22px; padding: 0; margin: 0 0 6px;
-    background: transparent; border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .lu-flyout-close::before {
-    content: ''; width: 44px; height: 5px; border-radius: 3px;
-    background: var(--am-line); transition: background 0.15s ease;
-  }
-  .lu-flyout-close:active::before { background: var(--am-wood); }
-  /* footer(로그인 게이트)를 모바일에서 크게 축소 — 옵션 플라이아웃(body 하단 58%)이
-     들어갈 세로 공간을 확보한다(designer: footer 223px가 최대 고정비용). 회원가입 안내는
-     한 줄로 줄이고 소셜 버튼은 뱃지+짧은 라벨의 컴팩트 행으로. */
-  .lu-am-footer { padding: 8px 14px 12px; position: relative; z-index: 1; }  /* body(z2)·시트(z6) 아래 스택 */
+  .lu-am-tabpage { flex: 0 0 auto; overflow: visible; max-height: none; }
+  /* footer(로그인 게이트) 컴팩트 */
+  .lu-am-footer { padding: 10px 14px 12px; }
   .lu-am-guest-gate { margin-bottom: 6px; }
-  .lu-am-gate-note {
-    font-size: 10px; line-height: 1.3; margin-bottom: 6px;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  }
+  .lu-am-gate-note { font-size: 10.5px; line-height: 1.35; margin-bottom: 6px; }
   .lu-am-signup-providers { flex-direction: row; flex-wrap: wrap; gap: 6px; }
-  .lu-am-social { flex: 1 1 auto; min-width: 0; padding: 8px 8px; font-size: 10.5px; justify-content: center; }
+  .lu-am-social { flex: 1 1 auto; min-width: 0; padding: 9px 8px; font-size: 10.5px; justify-content: center; }
   .lu-am-btn { padding: 10px 16px; font-size: 12px; }
 }
-/* 초소형 폭(320px대) — 무대·책갈피 살짝 축소해 가로 넘침 방지. */
+/* 초소형 폭(320px대) — 무대 살짝 축소해 가로 넘침 방지. */
 @media (max-width: 360px) {
   .lu-am-stagewrap { width: 168px; height: 224px; }
-  .lu-am-actions { height: 224px; }
-  .lu-am-action-btn { width: 27px; height: 27px; }
-  .lu-am-preview { padding: 4px 44px 6px 6px; }
 }
 `;
   const style = document.createElement('style');
@@ -2947,42 +2867,20 @@ function buildChibiMaker() {
   // 바깥 lu-am-preview 프레임을 장식용 여백으로 감싸 게임 캐릭터 크리에이터급 무대감을 낸다.
   const canvas = el('canvas', { width: '300', height: '400' });
   const stage = el('div', { className: 'lu-am-stage' }, [canvas]);
-  // 액션 테스트 — 프리뷰 무대 "오른쪽" 세로 컬럼(감독 지시 "동작을 옆에"). 무대 사진
-  // 바깥에 두어 캐릭터를 가리지 않고(UX 감사 반영), 12개가 다 보이게 높이에 맞춰 열이
-  // 접힌다(column wrap). 이모지 원형 버튼 + 한글 라벨(aria/title, 접근성)이며 클릭 시
-  // 재생 동안 버튼을 강조한다. 목록·라벨·지속시간은 chibi.js SSOT.
-  const ACTION_EMOJI = {
-    wave: '👋', jump: '⬆️', bow: '🙇', clap: '👏', dance: '💃', kick: '🦵',
-    breakdance: '🕺', run: '🏃', sit: '🪑', jumpingjack: '🤸', heart: '❤️', sulk: '😤',
-  };
-  const actionCol = el('div', { className: 'lu-am-actions', role: 'group', 'aria-label': '액션 테스트' });
-  let actionPlayTimer = null;
-  for (const actName of CHIBI_ACTIONS) {
-    const actLabel = CHIBI_ACTION_LABELS[actName] || actName;
-    const actBtn = el('button', {
-      type: 'button', className: 'lu-am-action-btn',
-      title: actLabel, 'aria-label': `액션 — ${actLabel}`,
-    });
-    actBtn.appendChild(el('span', { className: 'lu-am-act-emoji', 'aria-hidden': 'true', text: ACTION_EMOJI[actName] || '▶' }));
-    actBtn.appendChild(el('span', { className: 'lu-am-act-label', text: actLabel }));
-    actBtn.addEventListener('click', () => {
-      if (!chibiPreviewInstance || typeof chibiPreviewInstance.playAction !== 'function') return;
-      chibiPreviewInstance.playAction(actName);
-      // 재생 강조 — 이전 강조/타이머 정리 후 이 버튼만 playing, 지속시간 뒤 해제.
-      if (actionPlayTimer) clearTimeout(actionPlayTimer);
-      for (const b of actionCol.children) b.classList.remove('lu-am-playing');
-      actBtn.classList.add('lu-am-playing');
-      const durMs = (CHIBI_ACTION_DUR[actName] || 1.5) * 1000;
-      actionPlayTimer = setTimeout(() => { actBtn.classList.remove('lu-am-playing'); actionPlayTimer = null; }, durMs);
-    });
-    actionCol.appendChild(actBtn);
-  }
+  // 아바타를 만드는 화면이라 동작 테스트 버튼은 두지 않는다(감독 지시). 대신 캐릭터가
+  // 프리뷰 안에서 혼자 신나게 움직인다(자동 연기 — previewFrame 루프에서 랜덤 재생).
   const previewHint = el('div', { className: 'lu-am-preview-hint' });
   previewHint.innerHTML = ICON_ROTATE;
   previewHint.appendChild(el('span', { text: '드래그해서 회전' }));
-  // 무대(stage) + 힌트를 한 묶음으로 감싸 사진 프레임을 이루고, 액션 컬럼은 그 오른쪽에 둔다.
+  // 무대(stage) + 힌트를 한 묶음으로 감싸 사진 프레임을 이룬다.
   const stageWrap = el('div', { className: 'lu-am-stagewrap' }, [stage, previewHint]);
-  const previewBox = el('div', { className: 'lu-am-preview' }, [stageWrap, actionCol]);
+  const previewBox = el('div', { className: 'lu-am-preview' }, [stageWrap]);
+
+  // 자동 연기 — 캐릭터가 스스로 밝은 동작을 번갈아 재생한다("혼자 신나게 움직임", 감독
+  // 지시). 삐짐·앉기 같은 가라앉는 동작은 빼고 활기찬 것만 고른다. chibiAutoActClock이
+  // 0 이하가 되면 랜덤 동작을 재생하고, 동작 길이 + 짧은 휴식만큼 시계를 다시 채운다.
+  const CHIBI_AUTO_ACTIONS = ['wave', 'jump', 'clap', 'dance', 'breakdance', 'run', 'jumpingjack', 'heart', 'kick'];
+  let chibiAutoActClock = 1.0;
 
 
   let previewRenderer = null;
@@ -3090,34 +2988,6 @@ function buildChibiMaker() {
   const overlay = el('div', { id: 'lu-chibi-maker', className: 'lu' }, [card]);
   document.body.appendChild(overlay);
 
-  // 모바일 D안 — nav(카테고리)를 "책갈피"로 body 직속에 두어 하단 플라이아웃 패널이
-  // 슬라이드될 때 함께 사라지지 않게 한다(designer 실증 함정). 데스크톱(>720)에선 nav를
-  // panel 상단으로 되돌리고 플라이아웃 상태를 해제한다. open·resize 시 뷰포트에 맞춰 재배치.
-  function applyResponsiveNav() {
-    if (typeof window === 'undefined') return;
-    if (window.innerWidth <= 720) {
-      if (nav.parentElement !== body) body.appendChild(nav);
-    } else {
-      if (nav.parentElement !== panel) panel.insertBefore(nav, page);
-      panel.classList.remove('lu-flyout-open');
-    }
-  }
-  window.addEventListener('resize', applyResponsiveNav);
-  // 플라이아웃(옵션 시트) 닫기 — 시트 상단 중앙 "그랩 핸들"(바텀시트 관례). 우상단 ×는
-  // 우측 책갈피 nav(z-index 상위 형제)에 가려 클릭 불가였다(교차리뷰 실측) → 중앙으로 옮겨
-  // 책갈피와 위치가 겹치지 않게 한다. CSS로 모바일에서만 보인다.
-  const flyoutClose = el('button', { type: 'button', className: 'lu-flyout-close', 'aria-label': '옵션 시트 닫기' });
-  flyoutClose.addEventListener('click', () => panel.classList.remove('lu-flyout-open'));
-  panel.insertBefore(flyoutClose, panel.firstChild);
-  // 무대(캐릭터) 영역 탭 → 옵션 시트 닫기(백드롭 관례). 단 시트(높이 60%)가 무대 하단을
-  // 덮으므로 이 탭은 "노출된 상단(얼굴) 슬리버"에서만 닫힌다(하단 탭은 시트로 전달됨,
-  // 교차리뷰 실측). 확실한 닫기는 그랩 핸들·책갈피 토글이고 무대 탭은 보조 수단.
-  // 회전 드래그는 pointermove가 커서 click이 발생하지 않으므로 "탭"에만 반응한다.
-  stageWrap.addEventListener('click', () => {
-    if (window.innerWidth <= 720 && panel.classList.contains('lu-flyout-open')) {
-      panel.classList.remove('lu-flyout-open');
-    }
-  });
 
   function setParam(key, value) {
     if (!chibiParams) return;
@@ -3295,15 +3165,6 @@ function buildChibiMaker() {
       btn.innerHTML = cat.icon;
       btn.appendChild(el('span', { className: 'lu-am-navtab-label', text: cat.label }));
       btn.addEventListener('click', () => {
-        // 모바일 D안 — 책갈피 탭으로 하단 옵션 시트(플라이아웃)를 연다. 이미 열려 있는
-        // 활성 탭을 다시 누르면 닫는다(토글) — close 핸들과 더불어 확실한 닫기 수단.
-        if (window.innerWidth <= 720) {
-          if (activeCat === cat.id && panel.classList.contains('lu-flyout-open')) {
-            panel.classList.remove('lu-flyout-open');
-            return;
-          }
-          panel.classList.add('lu-flyout-open');
-        }
         if (activeCat === cat.id) return;
         activeCat = cat.id;
         renderPanel();
@@ -3382,11 +3243,23 @@ function buildChibiMaker() {
 
   function previewFrame(t) {
     chibiPreviewRAF = requestAnimationFrame(previewFrame);
-    const delta = chibiPreviewLastT ? Math.min(0.05, (t - chibiPreviewLastT) / 1000) : 0;
+    // raw = 실제 경과(벽시계, 초). delta는 애니 진행용으로만 캡한다(큰 프레임드랍 시
+    // 위상이 한 번에 너무 많이 튀는 것 방지). 프리뷰는 물리 관성이 없어 캡을 0.1까지
+    // 완화해도 안전하고, 저프레임 기기에서 동작이 과하게 느려지지 않는다.
+    const raw = chibiPreviewLastT ? (t - chibiPreviewLastT) / 1000 : 0;
+    const delta = Math.min(0.1, raw);
     chibiPreviewLastT = t;
     if (!chibiDragging) {
       chibiSwingT += delta;
       previewRotator.rotation.y = chibiSwingBase + Math.sin(chibiSwingT * CHIBI_SWING_SPEED) * CHIBI_SWING_AMPLITUDE;
+      // 자동 연기 — 드래그로 돌려보는 중이 아닐 때만. 다음 동작 시점은 벽시계(raw)로 세어
+      // 저프레임에서도 제때 트리거된다. 한 동작이 끝나면 잠깐 쉬고 다음 랜덤 동작.
+      chibiAutoActClock -= raw;
+      if (chibiAutoActClock <= 0 && chibiPreviewInstance && typeof chibiPreviewInstance.playAction === 'function') {
+        const name = CHIBI_AUTO_ACTIONS[Math.floor(Math.random() * CHIBI_AUTO_ACTIONS.length)];
+        chibiPreviewInstance.playAction(name);
+        chibiAutoActClock = (CHIBI_ACTION_DUR[name] || 1.5) + 0.6 + Math.random() * 0.9;
+      }
     }
     if (chibiPreviewInstance) chibiPreviewInstance.update(delta, 0);
     previewRenderer.render(previewScene, previewCamera);
@@ -3472,12 +3345,11 @@ function buildChibiMaker() {
     ensurePreviewRenderer();
     previewRotator.rotation.y = Math.PI; // 정면(카메라 쪽)부터 — 얼굴을 꾸미는 화면이므로
     chibiSwingBase = Math.PI; chibiSwingT = 0;
+    chibiAutoActClock = 1.0; // 열고 잠깐 뒤 첫 동작(자동 연기)
     rebuildPreview();
     renderPanel();
     overlay.classList.add('lu-open');
     chibiOpen = true;
-    panel.classList.remove('lu-flyout-open');   // 새로 열 땐 옵션 시트 닫힌 상태(캐릭터 크게)
-    applyResponsiveNav();                        // 뷰포트에 맞춰 책갈피/탭 배치
     startLoop();
     // 입장 후 편집이면 모달이 화면을 덮는 동안 플레이어 이동·포인터락을 멈춘다
     // (라이트박스/투어와 동일한 확립된 패턴). 로비에서는 이미 비활성이라 main.js가 무시.
