@@ -122,10 +122,10 @@ function paintCloudLayer(ctx, rnd, W, Hh, o) {
       const u = x / LW, yl = y / LW;
       let field;
       if (o.mode === 'cumulus') {
-        const mask = fbm(n, u, yl + 37, 3, 5);  // 저주파 — 구름 덩어리 배치(중형 다수)
-        const det = fbm(n, u, yl, 5, 9);        // 고주파 — 가장자리 디테일
-        // 저고도 커버리지 보너스 — 지평선 근처는 투시 압축으로 구름이 겹겹이 보이는 실제 하늘 모사
-        field = mask * 0.6 + det * 0.4 + Math.max(0, v - 0.35) * 0.14;
+        const mask = fbm(n, u, yl + 37, 3, 6);  // 저주파 — 구름 덩어리 배치(중형 다수)
+        const det = fbm(n, u, yl, 5, 11);       // 고주파 — 가장자리 디테일(더 잘게 부숴 조각감)
+        // 저고도 커버리지 보너스 축소 — 지평선을 다 덮어 "뭉친" 느낌 주던 것(감독 지적) 완화.
+        field = mask * 0.64 + det * 0.36 + Math.max(0, v - 0.45) * 0.05;
       } else {
         field = fbm(n, u, yl, 5, 5);
       }
@@ -246,40 +246,25 @@ function paintSky(ctx, W, H, time, weather, opts) {
     // 보케로 뭉개진다(실화면 상방 시선 검수에서 적출). 균등 분포로 두고 천정 근처는
     // 화면 확대에 맞춰 크기·알파를 줄인다. 저해상 돔(soft 512)은 확대 뭉개짐이 심해
     // "성기고 또렷한 별" 방향: 개수 1/3, 소프트 도트(사각 픽셀 방지), 천정 감쇠 강화.
-    // 별 색온도 팔레트(항성 실제 색) — 흰색 다수 + 따뜻한/차가운 별 소수(감독: "색도 다르게").
-    const starCol = () => { const t = rnd();
-      return t < 0.14 ? [255, 198, 152]   // 주황(저온성)
-        : t < 0.30 ? [255, 228, 190]      // 노랑(태양형)
-          : t < 0.74 ? [246, 248, 255]    // 흰색(다수)
-            : t < 0.90 ? [200, 214, 255]  // 청백
-              : [168, 196, 255];          // 청색(고온성)
-    };
+    // 별밭(정적) — 어두운/중간 별. 밝은 별(십자 스파이크)은 트윙클 레이어로 분리되어 반짝인다.
+    // 밝기 2등급 차등(감독: "밝기 동일하게 하지 말고") + 색온도 다양화(starColor).
     const starN = opts.lowRes ? 500 : 1400;
     const yMin = opts.lowRes ? 0.12 : 0.06, zcDen = opts.lowRes ? 0.5 : 0.35;
     for (let i = 0; i < starN; i++) {
       const x = rnd() * W, y = Hh * (yMin + rnd() * (0.92 - yMin));
       const zc = Math.min(1, y / (Hh * zcDen)); // 0=천정 → 1=중간 고도 이하
-      // 밝기 3등급(감독: "밝기 동일하게 하지 말고. 밝은 별. 어두운 별") — 어두운 별 다수, 밝은 별 소수.
-      const grade = rnd(); const bright = grade > 0.94, mid = !bright && grade > 0.74;
-      const a = (bright ? 0.85 + rnd() * 0.15 : mid ? 0.5 + rnd() * 0.3 : 0.14 + rnd() * 0.3) * (0.35 + 0.65 * zc);
-      const r = (bright ? 1.5 + rnd() * 0.8 : mid ? 0.9 + rnd() * 0.5 : 0.5 + rnd() * 0.5) * (0.45 + 0.55 * zc);
-      const [cr, cg, cb] = starCol();
+      const mid = rnd() > 0.72;
+      const a = (mid ? 0.5 + rnd() * 0.3 : 0.14 + rnd() * 0.3) * (0.35 + 0.65 * zc);
+      const r = (mid ? 0.9 + rnd() * 0.5 : 0.5 + rnd() * 0.5) * (0.45 + 0.55 * zc);
+      const [cr, cg, cb] = starColor(rnd);
       const cc = `${cr},${cg},${cb}`;
-      if (opts.lowRes || bright) { // 소프트 도트(밝은 별은 글로우 헤일로)
-        const g = ctx.createRadialGradient(x, y, 0, x, y, r * (bright ? 2.4 : 1.4));
-        g.addColorStop(0, `rgba(${cc},${Math.min(1, a * 1.15).toFixed(2)})`);
-        if (bright) g.addColorStop(0.35, `rgba(${cc},${(a * 0.5).toFixed(2)})`);
-        g.addColorStop(1, `rgba(${cc},0)`);
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * (bright ? 2.4 : 1.4), 0, 7); ctx.fill();
+      if (opts.lowRes) { // 저해상 돔은 소프트 도트(사각 픽셀 방지)
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r * 1.4);
+        g.addColorStop(0, `rgba(${cc},${Math.min(1, a * 1.15).toFixed(2)})`); g.addColorStop(1, `rgba(${cc},0)`);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 1.4, 0, 7); ctx.fill();
       } else {
         ctx.fillStyle = `rgba(${cc},${a.toFixed(2)})`;
         ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
-      }
-      // 밝은 별 십자 회절 스파이크(감독: "별의 텍스처 보이게") — 색을 물려 또렷하게.
-      if (bright) {
-        ctx.strokeStyle = `rgba(${cc},${(a * 0.6).toFixed(2)})`; ctx.lineWidth = 0.8;
-        const s = 4 + r * 3.2;
-        ctx.beginPath(); ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.moveTo(x, y - s); ctx.lineTo(x, y + s); ctx.stroke();
       }
     }
     // 은하수 밴드(대각) — 웜 코어/쿨 엣지 + 암흑대 균열.
@@ -333,17 +318,38 @@ function paintSky(ctx, W, H, time, weather, opts) {
     ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(0, 0, mr * 5.5, 0, 7); ctx.fill();
     // 원반 — 살짝 방사 그라디언트(가장자리로 갈수록 톤 짙어져 구체감)
     const md = ctx.createRadialGradient(-mr * 0.25, -mr * 0.25, 0, 0, 0, mr);
-    md.addColorStop(0, 'rgba(255,244,196,0.98)'); md.addColorStop(0.7, 'rgba(250,226,150,0.97)'); md.addColorStop(1, 'rgba(238,206,128,0.96)');
+    md.addColorStop(0, 'rgba(255,246,204,0.99)'); md.addColorStop(0.68, 'rgba(249,228,156,0.98)'); md.addColorStop(1, 'rgba(232,200,124,0.97)');
     ctx.fillStyle = md; ctx.beginPath(); ctx.arc(0, 0, mr, 0, 7); ctx.fill();
-    for (let i = 0; i < 8; i++) { // 크레이터(달면 안쪽 어두운 얼룩 — 노란 달에 맞춰 황갈)
-      const a = rnd() * 6.28, dd = rnd() * mr * 0.66, cr = mr * (0.08 + rnd() * 0.16);
-      ctx.fillStyle = `rgba(214,182,116,${0.3 + rnd() * 0.22})`;
-      ctx.beginPath(); ctx.arc(Math.cos(a) * dd, Math.sin(a) * dd, cr, 0, 7); ctx.fill();
+    // 표면 무늬 — 원반 안쪽으로 클립해 밖으로 새지 않게
+    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, mr, 0, 7); ctx.clip();
+    for (let i = 0; i < 5; i++) { // 마리아(달의 바다) — 큰 저채도 황회색 패치(실제 달 무늬)
+      const a = rnd() * 6.28, dd = rnd() * mr * 0.55, mrr = mr * (0.24 + rnd() * 0.3);
+      const cx = Math.cos(a) * dd, cy = Math.sin(a) * dd;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, mrr);
+      g.addColorStop(0, `rgba(206,178,120,${0.28 + rnd() * 0.14})`); g.addColorStop(0.7, 'rgba(206,178,120,0.08)'); g.addColorStop(1, 'rgba(206,178,120,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, mrr, 0, 7); ctx.fill();
     }
+    for (let i = 0; i < 11; i++) { // 크레이터 — 입체(어두운 우묵 + 광원쪽 밝은 림)
+      const a = rnd() * 6.28, dd = rnd() * mr * 0.82, cr = mr * (0.05 + rnd() * 0.13);
+      const cx = Math.cos(a) * dd, cy = Math.sin(a) * dd;
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
+      cg.addColorStop(0, `rgba(198,166,104,${0.4 + rnd() * 0.2})`); cg.addColorStop(0.8, 'rgba(210,180,120,0.12)'); cg.addColorStop(1, 'rgba(210,180,120,0)');
+      ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx, cy, cr, 0, 7); ctx.fill();
+      ctx.strokeStyle = `rgba(255,248,214,${0.22 + rnd() * 0.16})`; ctx.lineWidth = 0.7; // 상단 밝은 림
+      ctx.beginPath(); ctx.arc(cx, cy, cr * 0.86, Math.PI * 1.15, Math.PI * 1.95); ctx.stroke();
+    }
+    for (let i = 0; i < 90; i++) { // 표면 미세 알갱이(레골리스 질감)
+      const a = rnd() * 6.28, dd = rnd() * mr * 0.96;
+      ctx.fillStyle = `rgba(${rnd() < 0.5 ? '255,250,220' : '200,170,110'},${(0.05 + rnd() * 0.1).toFixed(2)})`;
+      ctx.fillRect(Math.cos(a) * dd, Math.sin(a) * dd, 1, 1);
+    }
+    ctx.restore();
     // 위상 — 한쪽 가장자리를 살짝 덮는 터미네이터(과하면 잘린 원판처럼 보인다)
+    ctx.save();
     ctx.beginPath(); ctx.arc(0, 0, mr + 0.5, 0, 7); ctx.clip();
     ctx.fillStyle = 'rgba(10,14,26,0.62)';
     ctx.beginPath(); ctx.arc(-mr * 1.25, 0, mr * 1.06, 0, 7); ctx.fill();
+    ctx.restore();
     ctx.restore();
   }
 
@@ -369,6 +375,35 @@ function paintSky(ctx, W, H, time, weather, opts) {
   if (!opts.soft) dither(ctx, rnd, W, Hh); // ② 밴딩 파괴 — 하늘(상반부)만(하반부는 단색)
 }
 
+// 별 색온도 팔레트(항성 실제 색) — 흰색 다수 + 따뜻한/차가운 별 소수.
+function starColor(rnd) {
+  const t = rnd();
+  return t < 0.14 ? [255, 198, 152] : t < 0.30 ? [255, 228, 190]
+    : t < 0.74 ? [246, 248, 255] : t < 0.90 ? [200, 214, 255] : [168, 196, 255];
+}
+
+// 반짝이는 밝은 별(십자 스파이크) 전용 페인터 — 홀짝으로 두 캔버스에 나눠 그린다.
+// 두 레이어를 반대 위상으로 opacity 진동시키면 별이 "생겼다 사라졌다" 반짝인다(감독 지시).
+// 위치·색은 결정론(시드 고정) — 시간대 무관 동일, opacity만 런타임 제어.
+function paintTwinkleStars(ctxA, ctxB, W, Hh) {
+  const rnd = seeded(0x7a1e);
+  ctxA.clearRect(0, 0, W, Hh * 2); ctxB.clearRect(0, 0, W, Hh * 2);
+  for (let i = 0; i < 34; i++) {
+    const ctx = (i % 2 === 0) ? ctxA : ctxB;
+    const x = rnd() * W, y = Hh * (0.06 + rnd() * 0.62);
+    const zc = Math.min(1, y / (Hh * 0.35));
+    const r = (1.5 + rnd() * 0.9) * (0.5 + 0.5 * zc);
+    const a = 0.85 + rnd() * 0.15;
+    const [cr, cg, cb] = starColor(rnd); const cc = `${cr},${cg},${cb}`;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.4);
+    g.addColorStop(0, `rgba(${cc},${a.toFixed(2)})`); g.addColorStop(0.35, `rgba(${cc},${(a * 0.5).toFixed(2)})`); g.addColorStop(1, `rgba(${cc},0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2.4, 0, 7); ctx.fill();
+    ctx.strokeStyle = `rgba(${cc},${(a * 0.6).toFixed(2)})`; ctx.lineWidth = 0.8;
+    const s = 5 + r * 3.4;
+    ctx.beginPath(); ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.moveTo(x, y - s); ctx.lineTo(x, y + s); ctx.stroke();
+  }
+}
+
 // 맑음 뭉게구름 전용 페인터 — 투명 배경 캔버스에 구름만. 흐르는 구름 레이어(가로 스크롤)용.
 // 시드를 시간대 무관 고정(0xC10D) → 낮↔일몰 전환 시 구름 형태 유지되고 톤만 바뀌어 자연스럽다.
 function paintClearClouds(ctx, W, Hh, time, soft) {
@@ -376,7 +411,8 @@ function paintClearClouds(ctx, W, Hh, time, soft) {
   const rnd = seeded(0xc10d);
   const tint = time === 'sunset' ? [255, 216, 182] : [255, 255, 255];
   const shade = time === 'sunset' ? [172, 126, 132] : [138, 154, 172];
-  paintCloudLayer(ctx, rnd, W, Hh, { mode: 'cumulus', thr: 0.5, softEdge: 0.15, alphaMax: 0.92, tint, shade, soft });
+  // thr 상향(구름 면적 축소 — 파란 하늘이 조각구름 사이로 보이게, 감독 "뭉쳐진 느낌" 해소)
+  paintCloudLayer(ctx, rnd, W, Hh, { mode: 'cumulus', thr: 0.56, softEdge: 0.13, alphaMax: 0.92, tint, shade, soft });
   for (let i = 0; i < 5; i++) { // 원경 층운
     const y = Hh * (0.74 + rnd() * 0.16), len = W * (0.1 + rnd() * 0.16), x = rnd() * W;
     const hgt = 2.4 + rnd() * 3;
@@ -458,6 +494,21 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
   cloudMesh.renderOrder = -0.95; cloudMesh.visible = false;
   sky.add(cloudMesh);
   const cloudFade = { from: 0, to: 0 }; // crossfade 동안 opacity 보간(하늘 배경과 병렬)
+
+  // ── 반짝이는 별 레이어(감독 지시) — 밝은 별 2세트를 반대 위상 opacity 진동 → 트윙클 ──
+  const twkR = (sky.geometry.parameters && sky.geometry.parameters.radius || 520) * 0.97;
+  const mkTwk = () => {
+    const c = document.createElement('canvas'); c.width = DOME_W; c.height = DOME_H;
+    const tex = track(new THREE.CanvasTexture(c)); tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(track(new THREE.SphereGeometry(twkR, 40, 24)),
+      track(new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, transparent: true, opacity: 0, depthWrite: false, fog: false, blending: THREE.AdditiveBlending })));
+    m.renderOrder = -0.92; m.visible = false; sky.add(m);
+    return { c, ctx: c.getContext('2d'), tex, mesh: m };
+  };
+  const twk = [mkTwk(), mkTwk()];
+  paintTwinkleStars(twk[0].ctx, twk[1].ctx, DOME_W, DOME_H / 2); // 결정론 1회 페인트
+  twk[0].tex.needsUpdate = twk[1].tex.needsUpdate = true;
+  let twkBase = 0, twkTarget = 0; // 야간 맑음=1로 lerp, 그 외 0(별 반짝임 페이드)
 
   // 조명 lerp 상태(⑧) — from→to를 fade 동안 보간
   const lerpState = { t: 1, dur: 0, from: null, to: null };
@@ -683,6 +734,12 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     cloudFade.from = cloudMesh.material.opacity;
     cloudFade.to = wantCloud ? 1 : 0;
     if (phase !== 1) { cloudMesh.material.opacity = cloudFade.to; cloudMesh.visible = cloudFade.to > 0; }
+
+    // 별 반짝임 — 야간 맑음만. update가 twkBase를 목표로 부드럽게 올리고 opacity를 진동시킨다.
+    const wantTwk = state.time === 'night' && state.weather === 'clear';
+    twkTarget = wantTwk ? 1 : 0;
+    for (const w of twk) w.mesh.visible = wantTwk || twkBase > 0.01;
+    if (soft) twkBase = twkTarget; // 저사양은 스냅
     if (onApply) { try { onApply(get(), L); } catch (_) {} } // ⑩ 가로등·창·envMap 연동 훅
     return get();
   }
@@ -715,6 +772,13 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     }
     // 흐르는 구름 — 가로 offset 스크롤(바람). 셰이더·버텍스변형 0. soft도 스크롤은 무료(offset만).
     if (cloudMesh.visible) cloudTex.offset.x = (cloudTex.offset.x + 0.006 * dt) % 1;
+    // 별 반짝임 — 두 레이어 반대 위상 진동(다른 속도로 어긋나 자연스러운 트윙클). 항상 일부는 밝다.
+    twkBase += (twkTarget - twkBase) * Math.min(1, 3 * dt);
+    if (twk[0].mesh.visible) {
+      twk[0].mesh.material.opacity = twkBase * (0.22 + 0.78 * (0.5 + 0.5 * Math.sin(t * 1.7)));
+      twk[1].mesh.material.opacity = twkBase * (0.22 + 0.78 * (0.5 + 0.5 * Math.sin(t * 2.3 + 2.4)));
+      if (twkBase < 0.01 && twkTarget === 0) for (const w of twk) w.mesh.visible = false;
+    }
     // 강수
     if (rain.visible) {
       const arr = rainGeo.attributes.position.array;
@@ -790,6 +854,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     scene.remove(rain); scene.remove(snow); scene.remove(rainbowGrp); for (const a of auroras) scene.remove(a);
     if (glint) scene.remove(glint);
     sky.remove(cloudMesh);
+    for (const w of twk) sky.remove(w.mesh);
     sky.remove(fadeDome);
     for (const o of disposables) { try { o.dispose(); } catch (_) {} }
   }
