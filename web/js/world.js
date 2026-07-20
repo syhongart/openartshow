@@ -129,6 +129,53 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   { const c = sun.shadow.camera; c.left = -22; c.right = 22; c.top = 22; c.bottom = -22; c.near = 0.5; c.far = 130; c.updateProjectionMatrix(); }
   scene.add(sun); scene.add(sun.target);
 
+  // ── [단계2 라이트 풀] 셰이더 재컴파일 제거 — 씬 SpotLight 총개수 고정 ──────────────
+  // space-render addRoomLighting은 파셀 로드마다 실제 SpotLight(작품+다운라이트)를 씬에 추가/제거해,
+  // three.js가 조명 개수 변동 시 영향 머티리얼 프로그램을 전부 재컴파일 → 경계 통과 히칭 총량이 급증
+  // (단계1 큐가 순간 스파이크는 분산했으나, 과도상태를 매 프레임 render해 재컴파일 총량은 오히려 증가).
+  // 대책: MAX_FULL*SPOTS_PER개 SpotLight를 미리 확보(개수 불변). 로드 시 풀에서 배정(위치·색·강도 설정),
+  // 언로드 시 intensity=0으로 끄고 반납. 미사용 라이트도 visible=true 유지(false면 개수 변동→재컴파일).
+  // placement 상수는 space-render.js addRoomLighting 스포트 생성부(1338·1344 근처)의 미러 — 드리프트 시 동기화.
+  const MAX_FULL = gpuInfo.soft ? 3 : 5;    // 동시 조명 파셀 수(soft 축소=조명 바닥 상승·프래그먼트 비용 완화). 일반=3×3 직교인접 5.
+  const OW_ART_CAP = gpuInfo.soft ? 4 : 10; // 파셀당 작품 스포트 상한(space-render ART_SPOT_CAP=10 미러).
+  const DOWNLIGHTS = 3;                      // 천장 다운라이트(고정 3).
+  const SPOTS_PER = OW_ART_CAP + DOWNLIGHTS;
+  const lightPool = [];
+  for (let i = 0; i < MAX_FULL * SPOTS_PER; i++) {
+    const sl = new THREE.SpotLight(0xffffff, 0, 11, 0.72, 1.0, 1.0);
+    sl.visible = true; sl._inUse = false;   // visible 항상 true(개수 고정), intensity=0로 소등.
+    scene.add(sl); scene.add(sl.target);
+    lightPool.push(sl);
+  }
+  const takeLight = () => { for (const sl of lightPool) if (!sl._inUse) { sl._inUse = true; return sl; } return null; };
+  const releaseLight = (sl) => { sl.intensity = 0; sl._inUse = false; };
+  // 파셀 건물 조명 배정 — addRoomLighting(noSpots)이 AO만 만들고, 스포트는 여기서 풀 라이트로 설정.
+  // bx,bz=건물 월드 오프셋, dims=userData.dims, refs=userData.partRefs(로컬 위치). 반환=배정 라이트(언로드 반납).
+  function assignParcelLights(bx, bz, dims, refs) {
+    const { H, hw, hd } = dims;
+    const out = [];
+    // (a) 작품 스포트 — space-render addRoomLighting (a) 미러(색 0xffe3ba·강도23·거리11·각0.72·penumbra1·decay1).
+    const arts = refs.filter(({ part }) => part.t === 'artwork' || part.t === 'screen').slice(0, OW_ART_CAP);
+    for (const { object } of arts) {
+      const sl = takeLight(); if (!sl) break; // 풀 고갈(soft 방어) → 조명 스킵
+      const p = object.position;
+      const toC = new THREE.Vector3(-p.x, 0, -p.z); if (toC.lengthSq() < 1e-3) toC.set(0, 0, 1); toC.normalize();
+      sl.color.setHex(0xffe3ba); sl.intensity = 23; sl.distance = 11; sl.angle = 0.72; sl.penumbra = 1.0; sl.decay = 1.0;
+      sl.position.set(bx + p.x + toC.x * 2.1, H - 0.15, bz + p.z + toC.z * 2.1);
+      sl.target.position.set(bx + p.x, p.y, bz + p.z); sl.target.updateMatrixWorld();
+      out.push(sl);
+    }
+    // (b) 천장 다운라이트 — space-render addRoomLighting (b) 미러(색 0xffdcb0·강도18·거리12·각0.6·penumbra1·decay1.1).
+    for (const [dx, dz] of [[-hw * 0.4, -hd * 0.35], [hw * 0.15, hd * 0.1], [hw * 0.5, -hd * 0.1]]) {
+      const sl = takeLight(); if (!sl) break;
+      sl.color.setHex(0xffdcb0); sl.intensity = 18; sl.distance = 12; sl.angle = 0.6; sl.penumbra = 1.0; sl.decay = 1.1;
+      sl.position.set(bx + dx, H - 0.1, bz + dz);
+      sl.target.position.set(bx + dx, 0, bz + dz); sl.target.updateMatrixWorld();
+      out.push(sl);
+    }
+    return out;
+  }
+
   const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 900);
 
   // 하늘 — 캔버스 그라디언트 스카이돔(자기완결·외부 텍스처 0, fog 미적용) + 밝은 대기 fog.
@@ -492,13 +539,15 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const rgE = new THREE.BoxGeometry(2.5, 0.1, CELLZ); own.push(rgE); // 동 가장자리 도로
       const re = new THREE.Mesh(rgE, T.road); re.position.set(ox + CELLX / 2 - 1.25, -0.05, oz); re.receiveShadow = true; group.add(re);
     }
-    let bldGroup = null, bld = null, dims = null, solids = [], floorsY = [0], stairBands = [], crowd = null;
+    let bldGroup = null, bld = null, dims = null, solids = [], floorsY = [0], stairBands = [], crowd = null, parcelLights = null;
     const avatars = new Map();
     if (def.space) {
       const bx = ox + (def.bx || 0), bz = oz + (def.bz || 0);
       bldGroup = buildSpaceGroup(def.space, { shellOnly, onAsyncTex: () => { if (!disposed) renderOnce(); } });
       bldGroup.position.set(bx, 0, bz);
-      if (!shellOnly) addRoomLighting(bldGroup);
+      // [단계2 라이트 풀] AO 접촉그림자는 addRoomLighting(noSpots)이, 작품·다운라이트 스포트는 풀에서 배정
+      // (씬 SpotLight 개수 고정 → 셰이더 재컴파일 0). 배정 라이트는 언로드 시 반납.
+      if (!shellOnly) { addRoomLighting(bldGroup, { noSpots: true }); parcelLights = assignParcelLights(bx, bz, bldGroup.userData.dims, bldGroup.userData.partRefs || []); }
       group.add(bldGroup);
       dims = spaceDims(def.space);
       bld = { cx: bx, cz: bz, hw: dims.hw, hd: dims.hd }; // 건물 내부 판정용(지면 후보)
@@ -545,12 +594,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       pickWalkerTarget(walker);
     }
     scene.add(group);
-    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz, beachBands, pierDecks, tetraMesh });
+    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz, beachBands, pierDecks, tetraMesh, lights: parcelLights });
     requestShadowBake(); // [섀도 프리즈] 파셀 로드로 씬 지오가 바뀜 → 다음 프레임 1회 재베이크
   }
 
   function unloadParcel(k) {
     const L = loaded.get(k); if (!L) return;
+    if (L.lights) for (const sl of L.lights) releaseLight(sl); // [단계2 라이트 풀] 스포트 소등·반납(개수 불변 — 재컴파일 0)
     if (L.crowd) { for (const a of L.avatars.values()) { scene.remove(a.inst.group); a.inst.dispose(); } }
     if (L.walker) { scene.remove(L.walker.inst.group); L.walker.inst.dispose(); } // 거리 배회 NPC 정리(씬 잔존 0)
     scene.remove(L.group);
@@ -994,6 +1044,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       }
       if (mp) { mp.dispose(); mp = null; }
       for (const k of Array.from(loaded.keys())) unloadParcel(k);
+      for (const sl of lightPool) { scene.remove(sl); scene.remove(sl.target); } // [단계2 라이트 풀] 씬 회수(Light는 dispose 불필요)
       // [하늘 엔진] 강수·무지개·오로라·페이드돔·교체된 고해상 돔 지오/텍스처 회수(sky 돔 자식 fadeDome 포함).
       if (skySystem) { skySystem.dispose(); skySystem = null; }
       // [복셀스] 하늘·바다·공유 재질 회수(skySystem이 교체·소유한 지오/맵은 이미 dispose됨 — 재호출은 무해 idempotent)
