@@ -299,6 +299,7 @@ ${cards}`,
 const urls = [
   { loc: `${BASE_URL}/`, mod: entries[0].date },
   { loc: `${BASE_URL}/guide.html`, mod: entries[0].date },
+  { loc: `${BASE_URL}/app/world.html`, mod: '2026-07-20' }, // 오픈월드 정식 승격일 고정(감독 결재) — 배포 구조상 app/
   { loc: `${BASE_URL}/team/`, mod: entries[0].date },
   { loc: `${BASE_URL}/valuation/`, mod: entries[0].date },
   { loc: `${BASE_URL}/devlog/`, mod: entries[0].date },

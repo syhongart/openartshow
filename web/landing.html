@@ -366,7 +366,7 @@
     color: var(--ink-body);
   }
 
-  /* ---------- 오픈월드 진입 (베타) ---------- */
+  /* ---------- 오픈월드 진입 ---------- */
   .ow-card {
     display: flex;
     align-items: center;
@@ -383,17 +383,6 @@
     transform: translateY(-2px);
     border-color: var(--cyan-500);
     box-shadow: var(--shadow-card-hover);
-  }
-  .ow-badge {
-    flex: none;
-    align-self: flex-start;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    color: var(--bg-dark);
-    background: var(--cyan-500);      /* 상태·라이브 역할 = 시안(§3-2) */
-    padding: 4px 9px;
-    border-radius: var(--r-card);
   }
   .ow-body { flex: 1 1 auto; min-width: 0; }
   .ow-body h3 {
@@ -952,9 +941,8 @@
 
       </div>
 
-      <!-- 오픈월드 (베타) 진입 — 의도된 라이브 노출(감독 결재). sitemap 미등록 유지. 링크는 배포 구조 기준(랜딩=루트, 앱=./app/). -->
-      <a class="ow-card reveal" href="./app/world.html" aria-label="오픈월드 베타 입장">
-        <span class="ow-badge">BETA</span>
+      <!-- 오픈월드 진입 — 정식 서비스, 의도된 라이브 노출(감독 결재). sitemap 등록됨(app/world.html). 링크는 배포 구조 기준(랜딩=루트, 앱=./app/). -->
+      <a class="ow-card reveal" href="./app/world.html" aria-label="오픈월드 입장">
         <div class="ow-body">
           <h3>오픈월드</h3>
           <p>미술관 밖으로 —<br class="m-only"> 여러 전시가 늘어선 거리를 함께 걸어 보세요.</p>
