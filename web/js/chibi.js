@@ -1126,7 +1126,8 @@ const easeOutBack = (x) => {
 
 // 사용자 액션 목록 — 지속시간(초). playAction(name)이 참조하는 SSOT.
 // ※ 저장 파라미터가 아니라 런타임 재생 상태다 — encodeChibi/normalizeChibi와 무관.
-const CHIBI_ACTION_DUR = {
+// UI(꾸미기 프리뷰 재생 강조 타이머)도 이 값을 공유하도록 export한다.
+export const CHIBI_ACTION_DUR = {
   // 기존 6 — P1~P6
   wave: 1.7, jump: 0.72, bow: 1.5, clap: 1.6, dance: 2.6, kick: 0.85,
   // 신규 6 — 무릎 세분화(감독 착수 지시)로 가능해진 동작. 총 12개.
@@ -2313,7 +2314,7 @@ export function buildChibi(params) {
         // 손 흔들며 인사 — 오른팔(armPivots[1])을 어깨축(rotation.z)으로 들어올리고,
         // 든 채로 rotation.x를 빠르게 사인파 진동시켜 좌우로 흔드는 손을 표현한다.
         const ai = 1;
-        const targetZ = 2.3; // 바깥 위로 들어올린 자세(관통 없이 몸 밖으로 벌어짐)
+        const targetZ = 2.0; // 바깥 위로 든 자세 — 흔들며(rot.x±0.42) 기울어도 머리 여유(FK 최소 dHead 0.43>0.374)
         const targetX = Math.sin(actionT * 9.5) * 0.42;
         armPivots[ai].rotation.z = lerp(armPivots[ai].rotation.z, targetZ, aBlend);
         armPivots[ai].rotation.x = lerp(armPivots[ai].rotation.x, targetX, aBlend);
@@ -2372,16 +2373,20 @@ export function buildChibi(params) {
         }
         bodyMotionSignal = h / JUMP_H; // 귀/머리카락이 도약을 지연 추종(착지 때 살랑 튐)
       } else if (action === 'clap') {
-        // 박수 — 양팔을 가슴 앞으로 들어올리고(rotation.x), 좌우 벌어짐(rotation.z)을
-        // 사인파로 좁혔다 넓혔다 하며 마주치는 지점까지 모은다. 부호(s)를 유지해
-        // 팔이 몸 중심선을 넘어가 관통하지 않게 한다.
-        const clapPhase = actionT * 10;
-        const clapX = -1.05 + Math.sin(clapPhase) * 0.12;
-        const openZ = 0.12 + Math.max(0, Math.sin(clapPhase)) * 0.12;
+        // 박수 — 팔을 가슴 앞으로 확실히 들고(rotation.x≈-1.5, 정면), 좌우 벌림(rotation.z)을
+        // 크게 여닫아 손끝이 몸 중앙에서 확실히 마주쳤다(손간격≈0.03) 벌어진다(≈0.2).
+        // ※ 구현: rot.x -1.05 + rot.z 0.12~0.24라 손끝이 ±0.2(간격 0.4)로 벌어진 채
+        // 손목만 ±7° 까딱였다(감독 지적 "손바닥이 안 닿고 손목만 깔짝"). FK 실측(어깨
+        // ±0.172, 팔길이 0.2025)으로 "손끝 x≈0"이 되는 조합(rot.x=-1.5, rot.z=±0.9)을
+        // 역산해, 팔 전체를 크게 여닫는 명확한 박수로 재설계.
+        const clapPhase = actionT * 9;
+        const meet = Math.pow(Math.max(0, Math.sin(clapPhase)), 0.7); // 0 열림 ~ 1 모음
+        const clapX = -1.5;                    // 팔 앞으로(가슴 앞 정면)
+        const clapZ = 0.34 + meet * 0.56;      // 열림 0.34 → 모음 0.90 (안쪽으로 모음)
         armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, clapX, aBlend);
         armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, clapX, aBlend);
-        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -openZ, aBlend);
-        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, openZ, aBlend);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, clapZ, aBlend);   // L 안쪽=양수
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, -clapZ, aBlend);  // R 안쪽=음수
       } else if (action === 'dance') {
         // 간단 반복 춤 — 걷기 사인파(주기 3~8.5, 진폭 0.045~0.78)를 그대로 키운 버전.
         // 같은 위상(dp) 하나로 팔·다리·엉덩이·머리를 동조시켜 "리듬"으로 읽히게 한다.
@@ -2551,18 +2556,23 @@ export function buildChibi(params) {
         }
         bodyMotionSignal = openK * 0.4;
       } else if (action === 'heart') {
-        // 하트(신규) — 양손을 머리 위로 들어 안쪽으로 모아 하트 제스처를 근사한다
-        // (손가락 파츠가 없어 문자 그대로의 하트 모양 대신 "머리 위에서 손을 모으는"
-        // 실루엣으로 표현). 살짝 까치발 폴짝임을 더한다.
+        // 하트(신규) — 팔 길이(0.20)가 어깨→정수리 거리(0.68)보다 훨씬 짧아 "머리 위에서
+        // 손 모으기"는 물리적으로 불가능하다: 구 rot.z=2.55는 손끝이 머리를 파고들었다
+        // (FK 실측 dHead 0.349 < HAIR_R 0.374 — 감독 지적 "손이 머리 안에 들어간다").
+        // 대신 얼굴/가슴 앞에서 양손을 안쪽으로 모아 하트를 만든다(관통 0, dHead≈0.44).
+        // 손 사이에 하트 공간이 남게 살짝만 벌려 모으고, 고개를 갸웃해 하트다움을 더한다.
         const HOLD_START = 0.25, HOLD_END = 0.78;
         let hK;
         if (u < HOLD_START) hK = Math.min(1, easeOutBack(u / HOLD_START));
         else if (u < HOLD_END) hK = 1;
         else hK = 1 - easeInOutCubic((u - HOLD_END) / (1 - HOLD_END));
-        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, -2.55 * hK, aBlend);
-        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, 2.55 * hK, aBlend);
-        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -0.55 * hK, aBlend);
-        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, -0.55 * hK, aBlend);
+        // rot.x=-1.1(가슴 앞, 얼굴보다 살짝 낮게)로 손끝을 머리에서 떨어뜨려 손 캡슐
+        // 반경(0.05)까지 고려해도 여유(손끝 dHead≈0.44, 표면 0.39>0.374) 확보.
+        armPivots[0].rotation.x = lerp(armPivots[0].rotation.x, -1.1 * hK, aBlend);
+        armPivots[1].rotation.x = lerp(armPivots[1].rotation.x, -1.1 * hK, aBlend);
+        armPivots[0].rotation.z = lerp(armPivots[0].rotation.z, 0.66 * hK, aBlend);   // L 안쪽=양수
+        armPivots[1].rotation.z = lerp(armPivots[1].rotation.z, -0.66 * hK, aBlend);  // R 안쪽=음수
+        headPivot.rotation.z = lerp(headPivot.rotation.z, Math.sin(t * 2.2) * 0.10 * hK, aBlend); // 하트 갸웃
         wrapper.position.y = lerp(wrapper.position.y, Math.max(0, Math.sin(u * Math.PI)) * 0.03, aBlend);
         bodyMotionSignal = hK * 0.3;
       } else if (action === 'sulk') {

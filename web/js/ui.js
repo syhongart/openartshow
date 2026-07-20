@@ -23,6 +23,7 @@ import {
   CHIBI_PRESET_GROUPS,
   CHIBI_ACTIONS,
   CHIBI_ACTION_LABELS,
+  CHIBI_ACTION_DUR,
   SPECIES_PRESET,
   SKIN_TONES,
   HAIR_COLORS,
@@ -534,8 +535,9 @@ function injectStyles() {
 .lu-am-preview {
   flex: 0 0 auto;
   align-self: flex-start;   /* 긴 탭에서 프레임이 패널 높이만큼 늘어나 아래 빈 나무 슬래브가 생기지 않게 — 스테이지에 맞춰 감싼다 */
-  width: 320px;
-  padding: 16px 16px 40px;
+  display: flex; flex-direction: column; gap: 10px;  /* 무대(사진) 위, 액션 바 아래 */
+  width: 244px;                                      /* 사진+액션 바 12개가 카드 높이에 다 담기게 */
+  padding: 14px 14px 14px;
   border-radius: 26px;
   position: relative;
   touch-action: none;
@@ -572,31 +574,43 @@ function injectStyles() {
   mix-blend-mode: multiply;
 }
 .lu-am-stage::after {
-  content: ''; position: absolute; left: 50%; bottom: 7%;
-  width: 58%; height: 8%;
+  /* 접지 그림자 — 카메라 프레이밍(0,1.0,4.0/lookAt 0,0.85) 후 발 최하단이 스테이지
+     세로 89.1%(하단 10.9%) 지점에 온다(FK 투영 실측, 전 프리셋 공통). 그림자를 그
+     발밑에 맞춰 bottom 5%(범위 하단 5~12%)로 두어 발이 그림자 상반부를 딛게 한다. */
+  content: ''; position: absolute; left: 50%; bottom: 5%;
+  width: 52%; height: 7%;
   transform: translateX(-50%);
   border-radius: 50%; pointer-events: none;
   background: radial-gradient(closest-side, rgba(58,42,16,0.44), rgba(58,42,16,0) 72%);
   mix-blend-mode: multiply;
   filter: blur(1.5px);
 }
-/* 액션 테스트 컬럼 — 스테이지 우측 세로 이모지 버튼 12개 (26px + gap 4 = 356px) */
+/* 무대 래퍼 — 사진(캔버스) + 회전 힌트를 한 프레임으로. 힌트 absolute의 기준. */
+.lu-am-stagewrap { position: relative; width: 100%; }
+/* 액션 테스트 바 — 무대(사진) "아래" 별도 영역(사진 위에 얹지 않음, UX 감사 반영).
+   이모지 + 한글 라벨 칩을 가로로 감싸 흐른다. 사진 감상 프레임을 보존한다. */
 .lu-am-actions {
-  position: absolute; top: 24px; right: 24px; z-index: 3;
-  display: flex; flex-direction: column; gap: 4px;
-  pointer-events: auto;
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 4px; width: 100%;
 }
 .lu-am-action-btn {
-  width: 26px; height: 26px; padding: 0;
-  border-radius: 50%; border: 1px solid rgba(120, 90, 40, 0.25);
-  background: rgba(255, 253, 247, 0.88);
-  font-size: 14px; line-height: 1; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 1px 3px rgba(40, 30, 10, 0.15);
-  transition: transform 0.12s ease, background 0.12s ease;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 7px; min-height: 24px;
+  border-radius: 999px; border: 1px solid rgba(120, 90, 40, 0.25);
+  background: rgba(255, 253, 247, 0.92);
+  font-size: 10.5px; line-height: 1; color: #4a3f2a; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(40, 30, 10, 0.1);
+  transition: transform 0.1s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
-.lu-am-action-btn:hover { transform: scale(1.15); background: #fff; }
-.lu-am-action-btn:active { transform: scale(0.92); }
+.lu-am-act-emoji { font-size: 12px; line-height: 1; }
+.lu-am-act-label { font-weight: 700; white-space: nowrap; letter-spacing: -0.01em; }
+.lu-am-action-btn:hover { background: #fff; border-color: rgba(95, 158, 125, 0.55); transform: translateY(-1px); }
+.lu-am-action-btn:active { transform: translateY(0) scale(0.96); }
+/* 재생 중 강조 — 청자 그린 링 (어느 동작을 눌렀는지 재생 동안 표시) */
+.lu-am-action-btn.lu-am-playing {
+  background: #e3efe7; border-color: #5f9e7d; color: #2c5844;
+  box-shadow: 0 0 0 2px rgba(95, 158, 125, 0.35);
+}
 .lu-am-preview-hint {
   position: absolute; left: 50%; bottom: 10px;
   transform: translateX(-50%);
@@ -1841,9 +1855,12 @@ function injectStyles() {
   .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
   .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
-  .lu-am-preview { width: 168px; max-width: 52vw; margin: 0 auto; padding: 7px 7px 22px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; }
-  .lu-am-actions { position: static; display: flex; flex-direction: row; flex-wrap: wrap; gap: 3px; margin-top: 8px; justify-content: center; }
-  .lu-am-action-btn { width: 20px; height: 20px; font-size: 11px; }
+  /* 모바일 — 무대는 좁게, 액션 바는 넓게(칩 라벨 수용). 무대만 max-width 제한. */
+  .lu-am-preview { width: 100%; max-width: 300px; margin: 0 auto; padding: 8px 8px 12px; border-radius: 20px; gap: 9px; }
+  .lu-am-stagewrap { width: 172px; max-width: 60vw; align-self: center; }
+  .lu-am-actions { gap: 4px; }
+  .lu-am-action-btn { padding: 4px 8px; min-height: 28px; font-size: 10.5px; }
+  .lu-am-act-emoji { font-size: 12px; }
   .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
   .lu-am-panel { min-height: 0; }
   .lu-am-nav { padding: 5px 0 6px; margin-bottom: 8px; gap: 4px; }
@@ -2859,28 +2876,42 @@ function buildChibiMaker() {
   // 바깥 lu-am-preview 프레임을 장식용 여백으로 감싸 게임 캐릭터 크리에이터급 무대감을 낸다.
   const canvas = el('canvas', { width: '300', height: '400' });
   const stage = el('div', { className: 'lu-am-stage' }, [canvas]);
-  // 액션 테스트 — 캐릭터 오른쪽 세로 이모지 컬럼(감독 지시). 클릭 시 프리뷰 재생.
-  // 라벨·목록은 chibi.js SSOT(CHIBI_ACTIONS/CHIBI_ACTION_LABELS).
+  // 액션 테스트 — 프리뷰 무대 "아래" 별도 바(사진 위에 얹지 않아 감상 프레임을 보존,
+  // UX 감사 반영). 각 버튼은 이모지 + 한글 라벨을 상시 노출(title만 있으면 모바일
+  // 터치에서 안 뜸)해 식별성을 높이고, 클릭 시 재생 동안 버튼을 강조한다.
+  // 라벨·목록·지속시간은 chibi.js SSOT(CHIBI_ACTIONS/CHIBI_ACTION_LABELS/CHIBI_ACTION_DUR).
   const ACTION_EMOJI = {
-    wave: '👋', jump: '🦘', bow: '🙇', clap: '👏', dance: '💃', kick: '🦵',
+    wave: '👋', jump: '⬆️', bow: '🙇', clap: '👏', dance: '💃', kick: '🦵',
     breakdance: '🕺', run: '🏃', sit: '🪑', jumpingjack: '🤸', heart: '❤️', sulk: '😤',
   };
   const actionCol = el('div', { className: 'lu-am-actions', role: 'group', 'aria-label': '액션 테스트' });
+  let actionPlayTimer = null;
   for (const actName of CHIBI_ACTIONS) {
     const actLabel = CHIBI_ACTION_LABELS[actName] || actName;
     const actBtn = el('button', {
       type: 'button', className: 'lu-am-action-btn',
-      title: actLabel, 'aria-label': `액션 — ${actLabel}`, text: ACTION_EMOJI[actName] || '▶',
+      title: actLabel, 'aria-label': `액션 — ${actLabel}`,
     });
+    actBtn.appendChild(el('span', { className: 'lu-am-act-emoji', 'aria-hidden': 'true', text: ACTION_EMOJI[actName] || '▶' }));
+    actBtn.appendChild(el('span', { className: 'lu-am-act-label', text: actLabel }));
     actBtn.addEventListener('click', () => {
-      if (chibiPreviewInstance && typeof chibiPreviewInstance.playAction === 'function') chibiPreviewInstance.playAction(actName);
+      if (!chibiPreviewInstance || typeof chibiPreviewInstance.playAction !== 'function') return;
+      chibiPreviewInstance.playAction(actName);
+      // 재생 강조 — 이전 강조/타이머 정리 후 이 버튼만 playing, 지속시간 뒤 해제.
+      if (actionPlayTimer) clearTimeout(actionPlayTimer);
+      for (const b of actionCol.children) b.classList.remove('lu-am-playing');
+      actBtn.classList.add('lu-am-playing');
+      const durMs = (CHIBI_ACTION_DUR[actName] || 1.5) * 1000;
+      actionPlayTimer = setTimeout(() => { actBtn.classList.remove('lu-am-playing'); actionPlayTimer = null; }, durMs);
     });
     actionCol.appendChild(actBtn);
   }
   const previewHint = el('div', { className: 'lu-am-preview-hint' });
   previewHint.innerHTML = ICON_ROTATE;
   previewHint.appendChild(el('span', { text: '드래그해서 회전' }));
-  const previewBox = el('div', { className: 'lu-am-preview' }, [stage, actionCol, previewHint]);
+  // 무대(stage) + 힌트를 한 묶음으로 감싸 사진 프레임을 이루고, 액션 바는 그 아래에 둔다.
+  const stageWrap = el('div', { className: 'lu-am-stagewrap' }, [stage, previewHint]);
+  const previewBox = el('div', { className: 'lu-am-preview' }, [stageWrap, actionCol]);
 
 
   let previewRenderer = null;
@@ -2900,12 +2931,14 @@ function buildChibiMaker() {
     previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
     previewScene = new THREE.Scene();
     previewScene.background = new THREE.Color('#f6f1e3');
-    // 프레이밍 — 하트머리 정점(≈1.53m)까지 여유 있게 담고 살짝 내려다본다.
-    // (기존 0.86/3.12는 가시 상한 ≈1.537라 하트머리가 프레임을 넘었고, 피치 ≈3°
-    //  수평 시선이라 발밑 그림자 원판이 옆면으로 보였다 — 감독 피드백 2건 동시 해소)
+    // 프레이밍 — 발이 프레임 바닥(화면 세로 89%)을 딛고, 하트머리 정점(≈1.59m)도
+    // 담기게 잡는다. lookAt.y를 0.85로 올려 캐릭터를 화면 아래로 내려 "바닥에 선"
+    // 구도를 만든다(구 lookAt 0.64는 발이 세로 80%에 떠 발밑 여백이 넓어 공중부양처럼
+    // 보였다 — 감독 신고). FK 투영 실측으로 발 89%/하트머리 상단 15.5%/정장머리 27%
+    // 를 만족하는 (dist 4.0, camY 1.0, lookAtY 0.85) 조합 확정.
     previewCamera = new THREE.PerspectiveCamera(30, 300 / 400, 0.1, 20);
-    previewCamera.position.set(0, 1.1, 3.75);
-    previewCamera.lookAt(0, 0.64, 0);
+    previewCamera.position.set(0, 1.0, 4.0);
+    previewCamera.lookAt(0, 0.85, 0);
     // 채도 살린 스튜디오 조명 — 회색 앰비언트를 어둡게 낮춰 색이 바래지 않게 하고,
     // 흰 키라이트로 앞면을 채워 고른 색이 선명하게 그대로 나온다(감독 'B' 확정).
     previewScene.add(new THREE.HemisphereLight(0xfffaf4, 0x241f18, 0.65));
