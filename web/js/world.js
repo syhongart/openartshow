@@ -454,6 +454,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getPos: () => ({ x: pos.x, z: pos.z }),
     soft: gpuInfo.soft,
     onApply: () => requestShadowBake(),
+    waterY: -0.25, // sea 상면(-0.3+0.05) — 수면 빛반사(달빛·노을·태양) 활성화
   });
 
   // ── 스트리밍: 현재 파셀 3×3. 직교 인접(맨해튼≤1)=풀디테일, 대각=shell 임포스터. ──
@@ -621,7 +622,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   function update(dt) {
     const d = (typeof dt === 'number' && isFinite(dt)) ? dt : 0.016;
     // 물결 흐름 — map.offset 스크롤(잔잔하게). 강/바다 공용이라 한 곳만.
-    if (waterTex) { waterTex.offset.x = (waterTex.offset.x + 0.008 * d) % 1; waterTex.offset.y = (waterTex.offset.y + 0.005 * d) % 1; }
+    // 감독 지시: 물결이 "옆으로" 흐르지 않게 — 무늬(가로 사인 줄)와 수직인 z방향으로만 전진.
+    // 줄무늬가 앞으로 밀려오는 파도감 + 강(남북 열)은 순류 방향과 정합. x 스크롤은 제거.
+    if (waterTex) { waterTex.offset.y = (waterTex.offset.y + 0.012 * d) % 1; }
     const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
     if (f || r) walk(f, r, d);
     // 카메라 y를 groundY 추종(계단·강 경사 부드럽게). 태양·스카이 추종은 applyPose 안.

@@ -396,11 +396,15 @@ function synthThunder(delayS) {
   } catch (_) { /* 무음 폴백 */ }
 }
 
-export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null }) {
+export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null }) {
   const state = { time: 'day', weather: 'clear', fx: { rainbow: false, aurora: false }, flashSafe: false, precip: 1 };
   const disposables = [];
   const track = (o) => { disposables.push(o); return o; };
-  const DOME_W = soft ? 1024 : 2048, DOME_H = soft ? 512 : 1024;
+  // 돔 텍스처는 전 기기 2048 고정. ①저해상(512) 하늘은 별이 화면 확대로 뭉개지고(실측)
+  // ②캔버스 크기를 도중에 바꾸면 three가 텍스처를 불변 스토리지로 잡아 needsUpdate로도
+  // 재업로드되지 않는다(전환 후 하늘이 안 바뀌는 버그 — 진단 실측). soft 절약은 디더 스킵과
+  // 구름 밀도장 저해상으로 충분하고, 페인트는 전환 시 1회 비용이다.
+  const DOME_W = 2048, DOME_H = 1024;
 
   // 저폴리 돔(24×12)은 위도 링을 따라 UV 보간이 절곡돼 그라디언트에 마하 밴드 원호가 생긴다
   // (하네스 실측). 주입받은 돔의 지오메트리를 고해상 구로 교체 — 정점 ~1.6k, 비용 무시 가능.
@@ -521,6 +525,65 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
   }
   const auroras = [makeAurora(-300, 0), makeAurora(-345, 2.4)];
 
+  // ── 수면 빛반사(글린트) — 달빛 띠·노을 반사·태양 글리터(감독 지시) ──
+  // 광원 방위로 뻗는 수면 위 가산합성 띠 1장(드로우콜 +1). 지면(y=0)이 수면(waterY)보다
+  // 높아 depth 테스트로 자연 차폐 → 바다·강 수면에서만 보인다. waterY 미주입 시 비활성.
+  const GLINT_LEN = 340, GLINT_W = 9; // 수평선(fog 원단)까지 닿는 빛기둥
+  let glint = null;
+  if (waterY !== null && typeof document !== 'undefined') {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+    const gx = c.getContext('2d'); const gr = seeded(4171);
+    const img = gx.createImageData(64, 256);
+    // 텍스처 v0=플레인 로컬 +z(광원 쪽) — flipY 기본이라 캔버스 하단(yy=255)이 v0.
+    // 실제 반사 띠는 광원 아래 수평선 쪽이 가장 밝고 관찰자 근처에서 잔물결로 부서져 소멸한다
+    // (반대로 하면 발밑이 밝은 안개처럼 보임 — 실측 적출).
+    for (let yy = 0; yy < 256; yy++) {
+      const toSrc = yy / 256;                       // 0=관찰자 근경 → 1=광원(수평선) 쪽
+      // 중경(10~60m)까지 걸치는 완만한 프로파일 — 원단에만 집중하면 수평선 몇 픽셀로
+      // 사라져 기둥이 안 보인다(실측). 원근이 원단 폭을 자연히 좁혀 기둥 형태를 만든다.
+      const fall = 0.5 + 0.5 * Math.pow(toSrc, 1.3);
+      const nearFade = Math.min(1, yy / 52);        // 발밑 완전 소멸
+      const farFade = 1 - Math.max(0, (toSrc - 0.93) / 0.07) * 0.9; // 원단 끝 서서히(끊김 라인 방지)
+      const row = 0.3 + gr() * 0.7;                 // 행별 랜덤 세기 — 잔물결에 부서지는 끊김
+      for (let xx = 0; xx < 64; xx++) {
+        const lat = Math.pow(Math.max(0, 1 - Math.abs(xx - 32) / 30), 1.6); // 중심 밝고 가장자리 소멸
+        const i = (yy * 64 + xx) * 4;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+        img.data[i + 3] = 255 * fall * nearFade * farFade * lat * row;
+      }
+    }
+    gx.putImageData(img, 0, 0);
+    const gtex = track(new THREE.CanvasTexture(c));
+    gtex.wrapT = THREE.RepeatWrapping; // offset.y 스크롤(끊김 무늬 흐름)용
+    const ggeo = track(new THREE.PlaneGeometry(GLINT_W, GLINT_LEN));
+    ggeo.rotateX(-Math.PI / 2); // 수평(XZ) — 길이축=로컬 z, 텍스처 v=길이 방향
+    { // 원단(광원 쪽) 폭 보상 — 원근 축소로 수평선에서 기둥이 소멸하지 않게 사다리꼴화
+      const pa = ggeo.attributes.position;
+      for (let i = 0; i < pa.count; i++) if (pa.getZ(i) > 0) pa.setX(i, pa.getX(i) * 2.6);
+      pa.needsUpdate = true;
+    }
+    glint = new THREE.Mesh(ggeo, track(new THREE.MeshBasicMaterial({
+      map: gtex, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending,
+      depthWrite: false, fog: false, color: 0xffffff,
+    })));
+    // renderOrder 양수 — 바다 평면(transparent, order 0)보다 나중에 그려야 한다.
+    // 음수로 먼저 그리면 92% 불투명 수면이 위에 덮여 반사가 안 보인다(실측 적출).
+    glint.visible = false; glint.renderOrder = 2;
+    scene.add(glint);
+  }
+  // 시간대별 반사 스타일 — 야간=달빛 은백 띠 / 일몰=노을 금빛 기둥 / 주간=옅은 태양 글리터
+  function glintStyle() {
+    if (!glint) return;
+    glint.visible = state.weather === 'clear'; // 흐림·강수는 반사 없음
+    if (!glint.visible) return;
+    const conf = state.time === 'night' ? { col: 0xd8e0ee, op: 0.42, len: 1 }
+      : state.time === 'sunset' ? { col: 0xffae62, op: 0.62, len: 1.1 }
+        : { col: 0xfff3d0, op: 0.3, len: 0.6 };
+    glint.material.color.set(conf.col);
+    glint.material.opacity = conf.op;
+    glint.scale.set(1, 1, conf.len);
+  }
+
   // ── 번개 ──
   let boltTimer = 8, flashT = 0;
   const cur = asVec(LIGHT.day.clear); // 현재 적용값(플래시 기준·lerp 결과 보관)
@@ -559,12 +622,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     if (typeof s.flashSafe === 'boolean') state.flashSafe = s.flashSafe;
     const L = LIGHT[state.time][state.weather];
     const fade = (o.fade === undefined ? 1.8 : o.fade) * (soft ? 0 : 1); // 저사양은 스냅
-    // 저사양 돔은 1024×512이지만 야간 맑음만은 2048 풀해상으로 페인트 — 512 텍스처에
-    // 1px 별을 찍으면 화면 확대로 눈송이처럼 뭉개진다(실화면 적출). 밤 전환 1회 비용 수용.
-    // soft는 fade=0이라 항상 domeA 단일 경로 → 크로스페이드 스왑과 크기 불일치 없음.
-    const wantW = (!soft || (state.time === 'night' && state.weather === 'clear')) ? 2048 : DOME_W;
-    const wantH = wantW >> 1;
-    const pOpts = { soft, lowRes: wantW < 2048 };
+    const pOpts = { soft, lowRes: false }; // 돔 2048 고정(위 주석) — 저해상 별 경로 사용 안 함
     if (changedDome && fade > 0) {
       paintSky(domeB.ctx, DOME_W, DOME_H, state.time, state.weather, pOpts);
       domeB.tex.needsUpdate = true;
@@ -573,8 +631,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
       lerpState.to = asVec(L); lerpState.t = 0; lerpState.dur = fade;
       phase = 1;
     } else {
-      if (domeA.c.width !== wantW) { domeA.c.width = wantW; domeA.c.height = wantH; }
-      paintSky(domeA.ctx, wantW, wantH, state.time, state.weather, pOpts);
+      paintSky(domeA.ctx, DOME_W, DOME_H, state.time, state.weather, pOpts);
       domeA.tex.needsUpdate = true;
       Object.assign(cur, asVec(L)); applyLighting(cur);
       lerpState.t = 1; phase = 0;
@@ -584,6 +641,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     rainbowGrp.visible = !!state.fx.rainbow;
     for (const a of auroras) a.visible = !!state.fx.aurora;
     boltTimer = 6 + Math.random() * 8;
+    glintStyle(); // 수면 빛반사 — 시간대·날씨에 맞는 색·강도로
     if (onApply) { try { onApply(get(), L); } catch (_) {} } // ⑩ 가로등·창·envMap 연동 훅
     return get();
   }
@@ -634,6 +692,14 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
       snowGeo.attributes.position.needsUpdate = true;
       snow.position.set(pos.x, 0, pos.z);
     }
+    // 수면 빛반사 — 광원(밤=달) 방위로 관찰자 앞에 뻗는 띠. 잔물결 스크롤과 동조해 흐르는 느낌.
+    if (glint && glint.visible) {
+      const az = azWorld(LIGHT[state.time][state.weather].moon ? MOON_AZ : SUN_AZ);
+      const halfL = GLINT_LEN * glint.scale.z * 0.5;
+      glint.position.set(pos.x + Math.sin(az) * (halfL - 6), waterY + 0.05, pos.z + Math.cos(az) * (halfL - 6));
+      glint.rotation.y = az;
+      glint.material.map.offset.y = (t * 0.014) % 1; // 띠 위 끊김 무늬가 천천히 흐름
+    }
     // 무지개 — 태양 반대 방위(광학적으로 정확: 무지개는 항상 해를 등질 때 보인다)
     if (rainbowGrp.visible) {
       const az = azWorld(SUN_AZ) + Math.PI;
@@ -677,6 +743,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
 
   function dispose() {
     scene.remove(rain); scene.remove(snow); scene.remove(rainbowGrp); for (const a of auroras) scene.remove(a);
+    if (glint) scene.remove(glint);
     sky.remove(fadeDome);
     for (const o of disposables) { try { o.dispose(); } catch (_) {} }
   }
