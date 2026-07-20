@@ -3109,9 +3109,10 @@ function buildChibiMaker() {
   const flyoutClose = el('button', { type: 'button', className: 'lu-flyout-close', 'aria-label': '옵션 시트 닫기' });
   flyoutClose.addEventListener('click', () => panel.classList.remove('lu-flyout-open'));
   panel.insertBefore(flyoutClose, panel.firstChild);
-  // 무대(캐릭터) 영역 탭 → 옵션 시트 닫기(백드롭 관례). 무대는 시트 위 노출 영역이라
-  // footer/책갈피 스택과 무관하게 확실히 눌린다. 회전 드래그는 pointermove가 커서 click이
-  // 발생하지 않으므로 "탭"에만 반응한다(닫기 수단: 무대 탭 + 책갈피 토글 + 핸들).
+  // 무대(캐릭터) 영역 탭 → 옵션 시트 닫기(백드롭 관례). 단 시트(높이 60%)가 무대 하단을
+  // 덮으므로 이 탭은 "노출된 상단(얼굴) 슬리버"에서만 닫힌다(하단 탭은 시트로 전달됨,
+  // 교차리뷰 실측). 확실한 닫기는 그랩 핸들·책갈피 토글이고 무대 탭은 보조 수단.
+  // 회전 드래그는 pointermove가 커서 click이 발생하지 않으므로 "탭"에만 반응한다.
   stageWrap.addEventListener('click', () => {
     if (window.innerWidth <= 720 && panel.classList.contains('lu-flyout-open')) {
       panel.classList.remove('lu-flyout-open');
