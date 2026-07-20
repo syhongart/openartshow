@@ -1864,7 +1864,7 @@ function injectStyles() {
   /* 모바일 D안(감독 선택) — 캐릭터 크게(무대 200) 유지. 우측 "책갈피" 탭을 누르면 하단에서
      옵션 "캐러셀" 시트가 올라오되 얼굴은 계속 보인다(하단 58%만 덮음). body는 플라이아웃
      absolute의 기준(relative + overflow hidden으로 닫힘 시트 클리핑). */
-  .lu-am-body { flex-direction: column; padding: 10px 0 0; gap: 0; position: relative; overflow: hidden; }
+  .lu-am-body { flex-direction: column; padding: 10px 0 0; gap: 0; position: relative; overflow: hidden; z-index: 2; }  /* footer(z1)보다 위 — 플라이아웃/책갈피가 footer에 안 가리게 */
   .lu-am-preview {
     flex-direction: row; align-items: center; justify-content: center;
     width: 100%; max-width: none; margin: 0 auto; padding: 4px 46px 8px 8px; gap: 8px; border-radius: 0;
@@ -1889,11 +1889,13 @@ function injectStyles() {
   .lu-am-navtab span { display: none; }   /* 책갈피엔 아이콘만 */
   /* 하단 플라이아웃 시트 — panel을 body 하단에 absolute, translateY로 슬라이드 업 */
   .lu-am-panel {
-    position: absolute; left: 0; right: 0; bottom: 0; top: auto; height: 58%;
+    position: absolute; left: 0; right: 0; bottom: 0; top: auto; height: 60%;
     background: var(--am-cream); border-radius: 20px 20px 0 0;
     box-shadow: 0 -8px 24px rgba(40,30,10,0.28);
     transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-    z-index: 6; padding: 12px 14px 8px; display: flex; flex-direction: column; min-height: 0;
+    /* z 순서: footer(1) < 시트(6) < 책갈피 nav(7) — 시트는 footer 위(옵션 보임),
+       책갈피는 시트 위(가림 없이 탭 전환). body(z2)가 footer(z1) 위라 body 내 시트도 footer 위. */
+    z-index: 6; padding: 8px 14px 8px; display: flex; flex-direction: column; min-height: 0;
   }
   .lu-am-panel.lu-flyout-open { transform: translateY(0); }
   .lu-am-nav { /* 책갈피는 flex 0 0 유지(위 정의 병합) */ }
@@ -1905,16 +1907,24 @@ function injectStyles() {
   }
   .lu-am-tabs .lu-am-tab, .lu-am-presets .lu-am-tab { flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap; }
   .lu-swatches .lu-swatch { flex: 0 0 auto; scroll-snap-align: start; }
+  /* 닫기 = 시트 상단 중앙 그랩 핸들. 시트(panel) 내부 "흐름"의 첫 요소로 두어(absolute가
+     아니라 flex item) footer와 좌표 충돌 없이 시트 최상단에 얹힌다(구 우상단 absolute ×는
+     책갈피에 가려 클릭 불가 — 교차리뷰 반려). 우측 책갈피와 위치가 겹치지 않는 중앙. */
   .lu-flyout-close {
-    position: absolute; top: 8px; right: 12px; width: 30px; height: 30px; padding: 0;
-    border-radius: 50%; background: var(--am-cream-2); border: 2px solid var(--am-wood);
-    color: var(--am-wood-dark); font-size: 15px; line-height: 1; cursor: pointer; z-index: 8;
+    position: static; align-self: center; flex: 0 0 auto;
+    width: 72px; height: 22px; padding: 0; margin: 0 0 6px;
+    background: transparent; border: none; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
   }
+  .lu-flyout-close::before {
+    content: ''; width: 44px; height: 5px; border-radius: 3px;
+    background: var(--am-line); transition: background 0.15s ease;
+  }
+  .lu-flyout-close:active::before { background: var(--am-wood); }
   /* footer(로그인 게이트)를 모바일에서 크게 축소 — 옵션 플라이아웃(body 하단 58%)이
      들어갈 세로 공간을 확보한다(designer: footer 223px가 최대 고정비용). 회원가입 안내는
      한 줄로 줄이고 소셜 버튼은 뱃지+짧은 라벨의 컴팩트 행으로. */
-  .lu-am-footer { padding: 8px 14px 12px; }
+  .lu-am-footer { padding: 8px 14px 12px; position: relative; z-index: 1; }  /* body(z2)·시트(z6) 아래 스택 */
   .lu-am-guest-gate { margin-bottom: 6px; }
   .lu-am-gate-note {
     font-size: 10px; line-height: 1.3; margin-bottom: 6px;
@@ -3093,10 +3103,20 @@ function buildChibiMaker() {
     }
   }
   window.addEventListener('resize', applyResponsiveNav);
-  // 플라이아웃(옵션 시트) 닫기 버튼 — CSS로 모바일에서만 보인다.
-  const flyoutClose = el('button', { type: 'button', className: 'lu-flyout-close', 'aria-label': '옵션 닫기', text: '×' });
+  // 플라이아웃(옵션 시트) 닫기 — 시트 상단 중앙 "그랩 핸들"(바텀시트 관례). 우상단 ×는
+  // 우측 책갈피 nav(z-index 상위 형제)에 가려 클릭 불가였다(교차리뷰 실측) → 중앙으로 옮겨
+  // 책갈피와 위치가 겹치지 않게 한다. CSS로 모바일에서만 보인다.
+  const flyoutClose = el('button', { type: 'button', className: 'lu-flyout-close', 'aria-label': '옵션 시트 닫기' });
   flyoutClose.addEventListener('click', () => panel.classList.remove('lu-flyout-open'));
   panel.insertBefore(flyoutClose, panel.firstChild);
+  // 무대(캐릭터) 영역 탭 → 옵션 시트 닫기(백드롭 관례). 무대는 시트 위 노출 영역이라
+  // footer/책갈피 스택과 무관하게 확실히 눌린다. 회전 드래그는 pointermove가 커서 click이
+  // 발생하지 않으므로 "탭"에만 반응한다(닫기 수단: 무대 탭 + 책갈피 토글 + 핸들).
+  stageWrap.addEventListener('click', () => {
+    if (window.innerWidth <= 720 && panel.classList.contains('lu-flyout-open')) {
+      panel.classList.remove('lu-flyout-open');
+    }
+  });
 
   function setParam(key, value) {
     if (!chibiParams) return;
@@ -3274,9 +3294,15 @@ function buildChibiMaker() {
       btn.innerHTML = cat.icon;
       btn.appendChild(el('span', { className: 'lu-am-navtab-label', text: cat.label }));
       btn.addEventListener('click', () => {
-        // 모바일 D안 — 책갈피 탭을 누르면 하단 옵션 시트(플라이아웃)를 연다.
-        // 이미 활성 탭을 다시 눌러도 시트는 열려야 하므로 early-return보다 먼저 처리.
-        if (window.innerWidth <= 720) panel.classList.add('lu-flyout-open');
+        // 모바일 D안 — 책갈피 탭으로 하단 옵션 시트(플라이아웃)를 연다. 이미 열려 있는
+        // 활성 탭을 다시 누르면 닫는다(토글) — close 핸들과 더불어 확실한 닫기 수단.
+        if (window.innerWidth <= 720) {
+          if (activeCat === cat.id && panel.classList.contains('lu-flyout-open')) {
+            panel.classList.remove('lu-flyout-open');
+            return;
+          }
+          panel.classList.add('lu-flyout-open');
+        }
         if (activeCat === cat.id) return;
         activeCat = cat.id;
         renderPanel();
