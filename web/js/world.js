@@ -136,10 +136,15 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 대책: MAX_FULL*SPOTS_PER개 SpotLight를 미리 확보(개수 불변). 로드 시 풀에서 배정(위치·색·강도 설정),
   // 언로드 시 intensity=0으로 끄고 반납. 미사용 라이트도 visible=true 유지(false면 개수 변동→재컴파일).
   // placement 상수는 space-render.js addRoomLighting 스포트 생성부(1338·1344 근처)의 미러 — 드리프트 시 동기화.
-  const MAX_FULL = gpuInfo.soft ? 3 : 5;    // 동시 조명 파셀 수(soft 축소=조명 바닥 상승·프래그먼트 비용 완화). 일반=3×3 직교인접 5.
-  const OW_ART_CAP = gpuInfo.soft ? 4 : 10; // 파셀당 작품 스포트 상한(space-render ART_SPOT_CAP=10 미러).
-  const DOWNLIGHTS = 3;                      // 천장 다운라이트(고정 3).
-  const SPOTS_PER = OW_ART_CAP + DOWNLIGHTS;
+  // [교차리뷰 결함 수정] MAX_FULL은 soft·일반 모두 5 — 실제 동시 로드되는 full 파셀 수(3×3 직교인접
+  // 맨해튼≤1 = 십자 5개)와 반드시 일치해야 풀 고갈(무조명 파셀)이 없다. soft 축소는 조명 총량을
+  // 파셀당 작품 수(OW_ART_CAP)로만 완화한다(풀 파셀 수 MAX_FULL을 줄이면 5파셀 로드 시 고갈).
+  const MAX_FULL = 5;                        // 동시 full 파셀 수(십자 5) — soft·일반 동일(고갈 방지).
+  const OW_ART_CAP = gpuInfo.soft ? 4 : 10; // 파셀당 작품 스포트 상한(space-render ART_SPOT_CAP=10 미러). soft 축소=조명 총량 완화.
+  // 천장 다운라이트 위치 팩터(hw/hd에 곱). space-render addRoomLighting (b) 미러. 개수는 배열에서 유도(드리프트 방지).
+  const DOWNLIGHT_FACTORS = [[-0.4, -0.35], [0.15, 0.1], [0.5, -0.1]];
+  const DOWNLIGHTS = DOWNLIGHT_FACTORS.length;
+  const SPOTS_PER = OW_ART_CAP + DOWNLIGHTS; // soft 7(4+3)·일반 13(10+3) → 풀 soft 35·일반 65(둘 다 5파셀 고갈 0).
   const lightPool = [];
   for (let i = 0; i < MAX_FULL * SPOTS_PER; i++) {
     const sl = new THREE.SpotLight(0xffffff, 0, 11, 0.72, 1.0, 1.0);
@@ -166,7 +171,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       out.push(sl);
     }
     // (b) 천장 다운라이트 — space-render addRoomLighting (b) 미러(색 0xffdcb0·강도18·거리12·각0.6·penumbra1·decay1.1).
-    for (const [dx, dz] of [[-hw * 0.4, -hd * 0.35], [hw * 0.15, hd * 0.1], [hw * 0.5, -hd * 0.1]]) {
+    for (const [fx, fz] of DOWNLIGHT_FACTORS) {
+      const dx = hw * fx, dz = hd * fz;
       const sl = takeLight(); if (!sl) break;
       sl.color.setHex(0xffdcb0); sl.intensity = 18; sl.distance = 12; sl.angle = 0.6; sl.penumbra = 1.0; sl.decay = 1.1;
       sl.position.set(bx + dx, H - 0.1, bz + dz);
