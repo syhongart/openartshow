@@ -572,8 +572,11 @@ function injectStyles() {
   mix-blend-mode: multiply;
 }
 .lu-am-stage::after {
-  content: ''; position: absolute; left: 50%; bottom: 7%;
-  width: 58%; height: 8%;
+  /* 접지 그림자 — 카메라 재프레이밍(0,1.1,3.75/lookAt 0,0.64) 후 발 최하단이 스테이지
+     세로 80.5% 지점에 온다(FK 투영 실측, 전 프리셋 공통). 그림자를 그 발밑에 맞춰
+     bottom 13%로 올려 접지시킨다(구 7%는 발보다 18px 아래라 캐릭터가 떠 보였음 — 감독 신고). */
+  content: ''; position: absolute; left: 50%; bottom: 13%;
+  width: 52%; height: 7%;
   transform: translateX(-50%);
   border-radius: 50%; pointer-events: none;
   background: radial-gradient(closest-side, rgba(58,42,16,0.44), rgba(58,42,16,0) 72%);
