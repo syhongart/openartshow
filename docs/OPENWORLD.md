@@ -209,6 +209,18 @@
 외형·회전은 파셀 오프셋⊕인덱스 시드로 결정론(무저장 규율). 병합 지오는 파셀 소유로 언로드 시 `own` 배열에서
 dispose하고, 공유 재질(`sharedTreeMats`)·거리 가구 공유 지오/재질은 파셀 간 공유라 `createWorld` dispose에서 일괄 회수한다.
 
+## 라이브 런타임 접촉 기록 · space-render.js (2026-07-20, 팀장 판정 수용)
+
+`space-render.js`는 CLAUDE.md 라이브 보호 명시 목록(main·player·artworks·config) **밖**이지만 index/visit/
+builder가 로드하는 라이브 공유 렌더 파일이다. 오픈월드 스트리밍 히칭 개선 2단계(라이트 풀)가
+`addRoomLighting(group)` → `addRoomLighting(group, opts={})`로 서명을 확장하고, AO 접촉그림자 블록 뒤에
+`if (opts.noSpots) return;` **순수 가산 게이트**를 넣었다. 기본값(noSpots 미지정)이면 함수 앞부분 AO 블록과
+이후 SpotLight 생성부(작품·다운라이트)가 기존과 완전 동일 — `visit.js:53`·`builder.js:99`는 opts 없이
+호출하므로 라이브 픽셀/씬그래프 회귀 0. `noSpots:true`(world.js 전용)일 때만 SpotLight 생성을 스킵하고,
+조명은 world.js 라이트 풀이 개수 고정으로 배정한다(파셀 경계 통과 시 셰이더 재컴파일 제거가 목적).
+→ **가산·무영향으로 수용**(release-reviewer 교차리뷰 승인 + 감독 성능계획 승인 — `npc.js`·`scene.js`
+순수 export 가산 전례와 동형). 이후 `space-render.js` 접촉 시 동일 게이트(기본경로 불변·교차리뷰) 의무.
+
 **게이트 임계 조정(팀장 서명)**: 스폰 드로우콜 상한을 **230 → 255**로 상향한다. 근거 — 255는 고정 라이브
 미술관의 실증 드로우콜(고객이 문제없이 사용 중인 검증 수준, 위 1단계 QA "고정 미술관 255" 참조)이고, 230은
 자체 여유 목표였다. 디테일 트리 교체 후 옵션 A 적용 스폰값 251은 이 실증 상한 이내다.
