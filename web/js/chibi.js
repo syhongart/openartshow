@@ -1126,7 +1126,8 @@ const easeOutBack = (x) => {
 
 // 사용자 액션 목록 — 지속시간(초). playAction(name)이 참조하는 SSOT.
 // ※ 저장 파라미터가 아니라 런타임 재생 상태다 — encodeChibi/normalizeChibi와 무관.
-const CHIBI_ACTION_DUR = {
+// UI(꾸미기 프리뷰 재생 강조 타이머)도 이 값을 공유하도록 export한다.
+export const CHIBI_ACTION_DUR = {
   // 기존 6 — P1~P6
   wave: 1.7, jump: 0.72, bow: 1.5, clap: 1.6, dance: 2.6, kick: 0.85,
   // 신규 6 — 무릎 세분화(감독 착수 지시)로 가능해진 동작. 총 12개.
