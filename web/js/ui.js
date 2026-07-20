@@ -1859,31 +1859,42 @@ function injectStyles() {
   .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
   .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-  /* 모바일 — 데스크톱의 가로(사진+우측 액션) 배치는 세로 화면에서 무대를 좁히고
-     previewBox 높이 고정이 body 세로 스크롤을 깨뜨려(iOS Safari) 탭·프리셋 접근이
-     막혔다(감독 신고). 모바일에서는 사진 "위" + 액션 이모지 원형을 그 "아래" 가로로
-     흐르게 세로 스택으로 되돌린다 — 무대가 커지고 body 스크롤이 정상화된다. */
-  .lu-am-preview { flex-direction: column; align-items: center; width: auto; max-width: 320px; margin: 0 auto; padding: 10px; border-radius: 20px; gap: 10px; }
-  .lu-am-stagewrap { width: 172px; max-width: 54vw; height: auto; }  /* aspect 3/4는 .lu-am-stage가 유지 */
-  .lu-am-actions { flex-flow: row wrap; height: auto; width: 100%; justify-content: center; gap: 5px; }
-  .lu-am-action-btn { width: 34px; height: 34px; }
-  .lu-am-act-emoji { font-size: 16px; }
-  .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
-  .lu-am-panel { min-height: 0; }
-  .lu-am-nav { padding: 5px 0 6px; margin-bottom: 8px; gap: 4px; }
+  /* 모바일 — 고객 UX 개선(감독 "아주 불편"): 프리뷰(캐릭터)를 상단에 sticky로 고정해
+     옷·헤어·색을 고르는 스크롤 중에도 캐릭터 변화를 실시간으로 본다. 프리뷰는 가로 미니
+     (무대 + 액션 컴팩트)로 높이를 줄이고, 탭(nav)도 그 바로 아래 sticky로 붙인다.
+     tabpage의 자체 스크롤을 없애 body 하나만 스크롤(이중 스크롤 제거). nav 오프셋은
+     프리뷰 실측 높이를 JS가 --lu-am-nav-top에 주입(매직넘버 금지). */
+  .lu-am-preview {
+    position: sticky; top: 0; z-index: 5;
+    flex-direction: row; align-items: center; justify-content: center;
+    width: 100%; max-width: none; margin: 0; padding: 8px 10px; gap: 10px;
+    border-radius: 0 0 18px 18px;
+  }
+  .lu-am-stagewrap { width: 96px; height: 128px; max-width: none; flex: 0 0 auto; }
+  .lu-am-actions { flex-flow: row wrap; width: auto; max-width: 120px; height: auto; justify-content: center; gap: 4px; }
+  .lu-am-action-btn { width: 25px; height: 25px; }
+  .lu-am-act-emoji { font-size: 12px; }
+  .lu-am-preview-hint { display: none; }   /* 미니 모드 — 회전 힌트 생략(공간 우선) */
+  /* panel·tabpage를 자연 높이(flex 0 0 auto)로 풀어야 body가 유일한 스크롤 컨테이너가
+     되고 프리뷰/nav sticky가 작동한다(구: tabpage flex 1 1 + overflow auto가 panel
+     높이에 갇혀 자체 스크롤 = 이중 스크롤). */
+  .lu-am-panel { flex: 0 0 auto; min-height: 0; }
+  .lu-am-nav {
+    position: sticky; top: var(--lu-am-nav-top, 150px); z-index: 4;
+    background: var(--am-cream); padding: 8px 0 8px; margin-bottom: 8px; gap: 4px;
+  }
   .lu-am-navtab { min-width: 50px; padding: 6px 6px 5px; font-size: 9.5px; }
   .lu-am-navtab svg { width: 16px; height: 16px; }
-  .lu-am-tabpage { min-height: 180px; }
+  .lu-am-tabpage { flex: 0 0 auto; overflow: visible; min-height: 0; max-height: none; }   /* 자체 스크롤 제거 — body 단일 스크롤 */
   .lu-am-footer { padding: 12px 16px 16px; }
   .lu-am-btn { padding: 10px 16px; font-size: 12px; }
 }
-/* 초소형 폭(320px대) — 세로 스택(사진 위 + 액션 아래 가로)에서 버튼만 조금 줄여
-   가로 한 줄에 더 담고 무대도 살짝 축소. 가로 넘침 방지. */
+/* 초소형 폭(320px대) — sticky 미니 프리뷰의 액션 그리드만 살짝 줄여 가로 넘침 방지. */
 @media (max-width: 360px) {
-  .lu-am-preview { padding: 8px; gap: 8px; }
-  .lu-am-stagewrap { width: 168px; }
-  .lu-am-action-btn { width: 31px; height: 31px; }
-  .lu-am-act-emoji { font-size: 15px; }
+  .lu-am-preview { padding: 7px 8px; gap: 8px; }
+  .lu-am-actions { max-width: 104px; }
+  .lu-am-action-btn { width: 23px; height: 23px; }
+  .lu-am-act-emoji { font-size: 11px; }
 }
 `;
   const style = document.createElement('style');
@@ -3034,6 +3045,20 @@ function buildChibiMaker() {
   const overlay = el('div', { id: 'lu-chibi-maker', className: 'lu' }, [card]);
   document.body.appendChild(overlay);
 
+  // 모바일 sticky 레이아웃 — nav(탭)가 sticky로 붙는 top 오프셋을 프리뷰의 "실측" 높이로
+  // 맞춘다(매직넘버 금지 — 프리뷰 높이는 폭·콘텐츠에 따라 달라진다). 720px 초과(데스크톱)
+  // 에선 sticky 미적용이라 변수를 지운다.
+  function syncStickyOffsets() {
+    if (typeof window === 'undefined') return;
+    if (window.innerWidth <= 720) {
+      const h = Math.round(previewBox.getBoundingClientRect().height);
+      if (h > 0) panel.style.setProperty('--lu-am-nav-top', h + 'px');
+    } else {
+      panel.style.removeProperty('--lu-am-nav-top');
+    }
+  }
+  window.addEventListener('resize', syncStickyOffsets);
+
   function setParam(key, value) {
     if (!chibiParams) return;
     chibiParams[key] = value;
@@ -3382,6 +3407,9 @@ function buildChibiMaker() {
     renderPanel();
     overlay.classList.add('lu-open');
     chibiOpen = true;
+    // 레이아웃 확정 후 sticky nav 오프셋 주입(프리뷰 실측 높이). 폰트/이미지 로드로
+    // 높이가 미세 변동할 수 있어 다음 프레임에 한 번 더 맞춘다.
+    requestAnimationFrame(() => { syncStickyOffsets(); requestAnimationFrame(syncStickyOffsets); });
     startLoop();
     // 입장 후 편집이면 모달이 화면을 덮는 동안 플레이어 이동·포인터락을 멈춘다
     // (라이트박스/투어와 동일한 확립된 패턴). 로비에서는 이미 비활성이라 main.js가 무시.
