@@ -23,6 +23,7 @@ import {
   CHIBI_PRESET_GROUPS,
   CHIBI_ACTIONS,
   CHIBI_ACTION_LABELS,
+  CHIBI_ACTION_DUR,
   SPECIES_PRESET,
   SKIN_TONES,
   HAIR_COLORS,
@@ -534,8 +535,9 @@ function injectStyles() {
 .lu-am-preview {
   flex: 0 0 auto;
   align-self: flex-start;   /* 긴 탭에서 프레임이 패널 높이만큼 늘어나 아래 빈 나무 슬래브가 생기지 않게 — 스테이지에 맞춰 감싼다 */
-  width: 320px;
-  padding: 16px 16px 40px;
+  display: flex; flex-direction: column; gap: 10px;  /* 무대(사진) 위, 액션 바 아래 */
+  width: 244px;                                      /* 사진+액션 바 12개가 카드 높이에 다 담기게 */
+  padding: 14px 14px 14px;
   border-radius: 26px;
   position: relative;
   touch-action: none;
@@ -583,22 +585,32 @@ function injectStyles() {
   mix-blend-mode: multiply;
   filter: blur(1.5px);
 }
-/* 액션 테스트 컬럼 — 스테이지 우측 세로 이모지 버튼 12개 (26px + gap 4 = 356px) */
+/* 무대 래퍼 — 사진(캔버스) + 회전 힌트를 한 프레임으로. 힌트 absolute의 기준. */
+.lu-am-stagewrap { position: relative; width: 100%; }
+/* 액션 테스트 바 — 무대(사진) "아래" 별도 영역(사진 위에 얹지 않음, UX 감사 반영).
+   이모지 + 한글 라벨 칩을 가로로 감싸 흐른다. 사진 감상 프레임을 보존한다. */
 .lu-am-actions {
-  position: absolute; top: 24px; right: 24px; z-index: 3;
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 4px; width: 100%;
 }
 .lu-am-action-btn {
-  width: 26px; height: 26px; padding: 0;
-  border-radius: 50%; border: 1px solid rgba(120, 90, 40, 0.25);
-  background: rgba(255, 253, 247, 0.88);
-  font-size: 14px; line-height: 1; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 1px 3px rgba(40, 30, 10, 0.15);
-  transition: transform 0.12s ease, background 0.12s ease;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 3px 7px; min-height: 24px;
+  border-radius: 999px; border: 1px solid rgba(120, 90, 40, 0.25);
+  background: rgba(255, 253, 247, 0.92);
+  font-size: 10.5px; line-height: 1; color: #4a3f2a; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(40, 30, 10, 0.1);
+  transition: transform 0.1s ease, background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
-.lu-am-action-btn:hover { transform: scale(1.15); background: #fff; }
-.lu-am-action-btn:active { transform: scale(0.92); }
+.lu-am-act-emoji { font-size: 12px; line-height: 1; }
+.lu-am-act-label { font-weight: 700; white-space: nowrap; letter-spacing: -0.01em; }
+.lu-am-action-btn:hover { background: #fff; border-color: rgba(95, 158, 125, 0.55); transform: translateY(-1px); }
+.lu-am-action-btn:active { transform: translateY(0) scale(0.96); }
+/* 재생 중 강조 — 청자 그린 링 (어느 동작을 눌렀는지 재생 동안 표시) */
+.lu-am-action-btn.lu-am-playing {
+  background: #e3efe7; border-color: #5f9e7d; color: #2c5844;
+  box-shadow: 0 0 0 2px rgba(95, 158, 125, 0.35);
+}
 .lu-am-preview-hint {
   position: absolute; left: 50%; bottom: 10px;
   transform: translateX(-50%);
@@ -1843,9 +1855,12 @@ function injectStyles() {
   .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
   .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
-  .lu-am-preview { width: 168px; max-width: 52vw; margin: 0 auto; padding: 7px 7px 22px; border-radius: 20px; display: flex; flex-direction: column; align-items: center; }
-  .lu-am-actions { position: static; display: flex; flex-direction: row; flex-wrap: wrap; gap: 3px; margin-top: 8px; justify-content: center; }
-  .lu-am-action-btn { width: 20px; height: 20px; font-size: 11px; }
+  /* 모바일 — 무대는 좁게, 액션 바는 넓게(칩 라벨 수용). 무대만 max-width 제한. */
+  .lu-am-preview { width: 100%; max-width: 300px; margin: 0 auto; padding: 8px 8px 12px; border-radius: 20px; gap: 9px; }
+  .lu-am-stagewrap { width: 172px; max-width: 60vw; align-self: center; }
+  .lu-am-actions { gap: 4px; }
+  .lu-am-action-btn { padding: 4px 8px; min-height: 28px; font-size: 10.5px; }
+  .lu-am-act-emoji { font-size: 12px; }
   .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
   .lu-am-panel { min-height: 0; }
   .lu-am-nav { padding: 5px 0 6px; margin-bottom: 8px; gap: 4px; }
@@ -2861,28 +2876,42 @@ function buildChibiMaker() {
   // 바깥 lu-am-preview 프레임을 장식용 여백으로 감싸 게임 캐릭터 크리에이터급 무대감을 낸다.
   const canvas = el('canvas', { width: '300', height: '400' });
   const stage = el('div', { className: 'lu-am-stage' }, [canvas]);
-  // 액션 테스트 — 캐릭터 오른쪽 세로 이모지 컬럼(감독 지시). 클릭 시 프리뷰 재생.
-  // 라벨·목록은 chibi.js SSOT(CHIBI_ACTIONS/CHIBI_ACTION_LABELS).
+  // 액션 테스트 — 프리뷰 무대 "아래" 별도 바(사진 위에 얹지 않아 감상 프레임을 보존,
+  // UX 감사 반영). 각 버튼은 이모지 + 한글 라벨을 상시 노출(title만 있으면 모바일
+  // 터치에서 안 뜸)해 식별성을 높이고, 클릭 시 재생 동안 버튼을 강조한다.
+  // 라벨·목록·지속시간은 chibi.js SSOT(CHIBI_ACTIONS/CHIBI_ACTION_LABELS/CHIBI_ACTION_DUR).
   const ACTION_EMOJI = {
-    wave: '👋', jump: '🦘', bow: '🙇', clap: '👏', dance: '💃', kick: '🦵',
+    wave: '👋', jump: '⬆️', bow: '🙇', clap: '👏', dance: '💃', kick: '🦵',
     breakdance: '🕺', run: '🏃', sit: '🪑', jumpingjack: '🤸', heart: '❤️', sulk: '😤',
   };
   const actionCol = el('div', { className: 'lu-am-actions', role: 'group', 'aria-label': '액션 테스트' });
+  let actionPlayTimer = null;
   for (const actName of CHIBI_ACTIONS) {
     const actLabel = CHIBI_ACTION_LABELS[actName] || actName;
     const actBtn = el('button', {
       type: 'button', className: 'lu-am-action-btn',
-      title: actLabel, 'aria-label': `액션 — ${actLabel}`, text: ACTION_EMOJI[actName] || '▶',
+      title: actLabel, 'aria-label': `액션 — ${actLabel}`,
     });
+    actBtn.appendChild(el('span', { className: 'lu-am-act-emoji', 'aria-hidden': 'true', text: ACTION_EMOJI[actName] || '▶' }));
+    actBtn.appendChild(el('span', { className: 'lu-am-act-label', text: actLabel }));
     actBtn.addEventListener('click', () => {
-      if (chibiPreviewInstance && typeof chibiPreviewInstance.playAction === 'function') chibiPreviewInstance.playAction(actName);
+      if (!chibiPreviewInstance || typeof chibiPreviewInstance.playAction !== 'function') return;
+      chibiPreviewInstance.playAction(actName);
+      // 재생 강조 — 이전 강조/타이머 정리 후 이 버튼만 playing, 지속시간 뒤 해제.
+      if (actionPlayTimer) clearTimeout(actionPlayTimer);
+      for (const b of actionCol.children) b.classList.remove('lu-am-playing');
+      actBtn.classList.add('lu-am-playing');
+      const durMs = (CHIBI_ACTION_DUR[actName] || 1.5) * 1000;
+      actionPlayTimer = setTimeout(() => { actBtn.classList.remove('lu-am-playing'); actionPlayTimer = null; }, durMs);
     });
     actionCol.appendChild(actBtn);
   }
   const previewHint = el('div', { className: 'lu-am-preview-hint' });
   previewHint.innerHTML = ICON_ROTATE;
   previewHint.appendChild(el('span', { text: '드래그해서 회전' }));
-  const previewBox = el('div', { className: 'lu-am-preview' }, [stage, actionCol, previewHint]);
+  // 무대(stage) + 힌트를 한 묶음으로 감싸 사진 프레임을 이루고, 액션 바는 그 아래에 둔다.
+  const stageWrap = el('div', { className: 'lu-am-stagewrap' }, [stage, previewHint]);
+  const previewBox = el('div', { className: 'lu-am-preview' }, [stageWrap, actionCol]);
 
 
   let previewRenderer = null;
