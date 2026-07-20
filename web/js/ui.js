@@ -1872,6 +1872,15 @@ function injectStyles() {
   .lu-am-footer { padding: 12px 16px 16px; }
   .lu-am-btn { padding: 10px 16px; font-size: 12px; }
 }
+/* 초소형 폭(320px대) — 사진+우측 2열이 카드 콘텐츠 폭(≈274px)을 넘어 잘리던 회귀
+   방지(교차리뷰 실측). 사진·버튼을 더 줄여 사진168+간격6+액션2열61+패딩16=251<274. */
+@media (max-width: 360px) {
+  .lu-am-preview { padding: 8px; gap: 6px; }
+  .lu-am-stagewrap { width: 168px; height: 224px; }
+  .lu-am-actions { height: 224px; gap: 4px; }
+  .lu-am-action-btn { width: 28px; height: 28px; }
+  .lu-am-act-emoji { font-size: 13px; }
+}
 `;
   const style = document.createElement('style');
   style.id = 'lu-styles';
