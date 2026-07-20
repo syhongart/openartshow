@@ -1856,13 +1856,15 @@ function injectStyles() {
   .lu-am-card { max-width: 96vw; max-height: 92vh; border-radius: 24px; }
   .lu-am-head { padding: 14px 16px 12px; }
   .lu-am-body { flex-direction: column; padding: 12px; gap: 10px; overflow-y: auto; }
-  /* 모바일 — 사진(왼) + 액션 컬럼(오른쪽) 가로 유지. 사진을 조금 키워 세로 높이를
-     확보하면 우측 12개가 2열로 다 보인다. */
-  .lu-am-preview { width: auto; margin: 0 auto; padding: 9px; border-radius: 20px; gap: 8px; }
-  .lu-am-stagewrap { width: 200px; height: 267px; }        /* 3:4 명시 */
-  .lu-am-actions { gap: 5px; height: 267px; }              /* 무대 높이에 맞춰 wrap */
-  .lu-am-action-btn { width: 32px; height: 32px; }
-  .lu-am-act-emoji { font-size: 15px; }
+  /* 모바일 — 데스크톱의 가로(사진+우측 액션) 배치는 세로 화면에서 무대를 좁히고
+     previewBox 높이 고정이 body 세로 스크롤을 깨뜨려(iOS Safari) 탭·프리셋 접근이
+     막혔다(감독 신고). 모바일에서는 사진 "위" + 액션 이모지 원형을 그 "아래" 가로로
+     흐르게 세로 스택으로 되돌린다 — 무대가 커지고 body 스크롤이 정상화된다. */
+  .lu-am-preview { flex-direction: column; align-items: center; width: auto; max-width: 320px; margin: 0 auto; padding: 10px; border-radius: 20px; gap: 10px; }
+  .lu-am-stagewrap { width: 190px; max-width: 58vw; height: auto; }  /* aspect 3/4는 .lu-am-stage가 유지 */
+  .lu-am-actions { flex-flow: row wrap; height: auto; width: 100%; justify-content: center; gap: 5px; }
+  .lu-am-action-btn { width: 34px; height: 34px; }
+  .lu-am-act-emoji { font-size: 16px; }
   .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 5px; }
   .lu-am-panel { min-height: 0; }
   .lu-am-nav { padding: 5px 0 6px; margin-bottom: 8px; gap: 4px; }
@@ -1872,14 +1874,13 @@ function injectStyles() {
   .lu-am-footer { padding: 12px 16px 16px; }
   .lu-am-btn { padding: 10px 16px; font-size: 12px; }
 }
-/* 초소형 폭(320px대) — 사진+우측 2열이 카드 콘텐츠 폭(≈274px)을 넘어 잘리던 회귀
-   방지(교차리뷰 실측). 사진·버튼을 더 줄여 사진168+간격6+액션2열61+패딩16=251<274. */
+/* 초소형 폭(320px대) — 세로 스택(사진 위 + 액션 아래 가로)에서 버튼만 조금 줄여
+   가로 한 줄에 더 담고 무대도 살짝 축소. 가로 넘침 방지. */
 @media (max-width: 360px) {
-  .lu-am-preview { padding: 8px; gap: 6px; }
-  .lu-am-stagewrap { width: 168px; height: 224px; }
-  .lu-am-actions { height: 224px; gap: 4px; }
-  .lu-am-action-btn { width: 28px; height: 28px; }
-  .lu-am-act-emoji { font-size: 13px; }
+  .lu-am-preview { padding: 8px; gap: 8px; }
+  .lu-am-stagewrap { width: 168px; }
+  .lu-am-action-btn { width: 31px; height: 31px; }
+  .lu-am-act-emoji { font-size: 15px; }
 }
 `;
   const style = document.createElement('style');
