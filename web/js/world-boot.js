@@ -120,10 +120,21 @@ const pcell = document.getElementById('pcell');
 function refreshCell() { const p = V.getCurrentParcel(); pcell.textContent = `파셀 (${p.px},${p.pz}) · ${grid.w}×${grid.h} 월드 · 👤 ${playerCount}`; drawMinimap(); }
 setInterval(refreshCell, 300); refreshCell();
 
-// 클릭 유도 오버레이
+// ── 입장 게이트(데스크톱·모바일 공용) — IP 노출 고지 후 사용자 선택으로만 연결 여부 결정 ──
+// "함께 둘러보기"에서만 P2P 연결(IP 노출), "혼자 둘러보기"는 외부 연결 0. connect 트리거는 버튼 핸들러 전용
+// (lock 이벤트에 걸면 "혼자" 선택자도 연결돼 재발 — security-officer 설계). 모바일은 pointerlock이 없어 버튼 탭이 유일 경로.
 const enter = document.getElementById('enter');
-V.on('lock', ({ locked }) => { enter.classList.toggle('hide', locked); });
-enter.addEventListener('click', () => { if (canvas.requestPointerLock) canvas.requestPointerLock(); });
+const isTouch = (typeof window !== 'undefined') && ('ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0);
+V.on('lock', ({ locked }) => { enter.classList.toggle('hide', locked); }); // 오버레이 숨김/표시 전용(데스크톱 pointerlock)
+function doEnter(multi) {
+  document.body.classList.add('entered');          // 모바일 조이스틱 활성 게이트
+  if (multi) V.connectMultiplayer();               // P2P 최초·유일 연결 지점(world.js 내부 1회 가드)
+  enter.classList.add('hide');
+  if (!isTouch && canvas.requestPointerLock) canvas.requestPointerLock(); // 데스크톱만 포인터락
+}
+enter.querySelectorAll('button[data-enter]').forEach((b) => {
+  b.addEventListener('click', (e) => { e.stopPropagation(); doEnter(b.dataset.enter === 'multi'); });
+});
 
 // NPC 말풍선 토스트 — 최근 한 건만 부드럽게 표시(3.6초 후 소멸).
 const chat = document.getElementById('chat');
@@ -138,7 +149,6 @@ V.on('chat', ({ name, text }) => {
 });
 
 // ── 모바일: 터치 감지 → 좌 조이스틱 + 우 드래그 시선 ──
-const isTouch = (typeof window !== 'undefined') && ('ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0);
 if (isTouch) {
   document.body.classList.add('is-touch');
   const joy = document.getElementById('joy'), nub = document.getElementById('joyNub');

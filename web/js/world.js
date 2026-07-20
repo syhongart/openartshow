@@ -517,6 +517,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   for (const d of parcels) index.set(keyOf(d.px, d.pz), d);
   const loaded = new Map(); // "px,pz" → { group, def, ox, oz, dims, solids, crowd, avatars, lod }
   let mp = null; // 실시간 멀티플레이어(opts.mp 지정 + window.Peer 존재 시 생성)
+  let mpConnected = false; // [프라이버시 게이트] 사용자가 "함께 둘러보기" 입장 동의 전엔 connect 금지 → peer=null, IP 노출 0
 
   // ── [스트리밍 큐] 로드 시간분할(성능 단계1) — 히칭 완화 상태 ─────────────────────
   // 파셀 경계 통과 프레임에 신규 로드(나무·조명·섀도 재베이크)를 몰지 않고 큐에 넣어 update()
@@ -1059,7 +1060,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     mp.onStatus = (s) => emit('mpstatus', s);
     mp.onPlayerCount = (n) => emit('players', n);
     mp.onChat = (name, text) => emit('chat', { name, text });
-    mp.connect();
+    // [프라이버시 게이트] 자동 연결 금지 — mp 인스턴스만 생성(peer=null이라 네트워크 활동 0).
+    // 실제 connect()는 사용자가 "함께 둘러보기"로 입장 동의한 뒤 connectMultiplayer()에서만 1회 실행.
   }
 
   // 초기 로드 — 첫 파셀 주변 스트리밍(스폰은 동기 즉시: 빈 화면 방지·결정론 무회귀)
@@ -1073,6 +1075,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   return {
     walk, update, renderOnce, resize, lookDelta,
+    // [프라이버시 게이트] 사용자 입장 동의("함께 둘러보기") 시에만 호출 — 내부 1회 가드로 중복 connect(ESC→재입장 등) 봉쇄.
+    connectMultiplayer: () => { if (mp && !mpConnected) { mpConnected = true; mp.connect(); } return mpConnected; },
+    isMultiplayer: () => mpConnected,
     sky: skySystem, // [하늘 엔진] 신 모드 패널이 set()/get()으로 시간대·날씨·이벤트 제어
     getSkyState: () => (skySystem ? skySystem.get() : null),
     setTouchMove: (fwd, right) => { tmov.fwd = fwd || 0; tmov.right = right || 0; },
