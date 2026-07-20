@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크) — OpenArtShow 개발일지</title>
-<meta name="description" content="감독 결정: 등대(해안 2단계)까지 완성 후 해안 전체 + 성능(스트리밍 히칭 개선)을 한 번에 배포. 부두·">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-20-8e801f.html">
+<title>오픈월드 해안+히칭 개선 통합 라이브 배포 (감독 승인) — OpenArtShow 개발일지</title>
+<meta name="description" content="감독 결정("등대까지 하고 배포")에 따라 해안 연출 1+2단계(바다 단차·해변·부두·테트라포드·등대)와">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-20-f4def7.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크) — OpenArtShow 개발일지">
-<meta property="og:description" content="감독 결정: 등대(해안 2단계)까지 완성 후 해안 전체 + 성능(스트리밍 히칭 개선)을 한 번에 배포. 부두·">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-20-8e801f.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크)","datePublished":"2026-07-20","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-20-8e801f.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="오픈월드 해안+히칭 개선 통합 라이브 배포 (감독 승인) — OpenArtShow 개발일지">
+<meta property="og:description" content="감독 결정("등대까지 하고 배포")에 따라 해안 연출 1+2단계(바다 단차·해변·부두·테트라포드·등대)와">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-20-f4def7.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 해안+히칭 개선 통합 라이브 배포 (감독 승인)","datePublished":"2026-07-20","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-20-f4def7.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,16 +88,12 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-20</div>
-<h1><span class="emo">🛠️</span>해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크)</h1>
+<h1><span class="emo">📱</span>오픈월드 해안+히칭 개선 통합 라이브 배포 (감독 승인)</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p>감독 결정: 등대(해안 2단계)까지 완성 후 해안 전체 + 성능(스트리밍 히칭 개선)을 한 번에 배포. 부두· 테트라포드와 동형 가산 패턴. world.js/world-gen.js/world-boot.js(오픈월드 전용)만 — 라이브 보호· 방문자뷰·빌더·랜딩·하늘(sky.js)·space-render 무접촉.</p>
-<h3>구현</h3>
-<ul><li><strong>world-gen.js</strong> <code>genLighthouse</code>: 경계 육지 파셀 ~15%(독립 LIGHTHOUSE_SALT, 기존 salt와 비충돌)에 등대 배치 결정. <strong>부두 있는 파셀엔 배치 안 함</strong>(랜드마크 중복 방지 우선순위). 시드 결정론(Math.random 0).</li><li><strong>world.js</strong> <code>buildLighthouse</code>: 테이퍼 원통 탑(홍백 줄무늬 정점색) + 갤러리 난간(토러스) + 갓(원뿔)을 머지(드로우콜 1) + 등롱(유리방 발광 재질) + <strong>회전 서치라이트</strong>. 물가 경계 방향 모서리에 배치, 탑은 solid(충돌). shellOnly(원경)는 생략(드로우콜 절약).</li><li><strong>회전 빛(핵심)</strong>: 실제 SpotLight를 추가하면 방금 만든 라이트 풀(조명 개수 불변) 원칙을 훼손하므로, <strong>발광 콘 메시(additive·depthWrite false, THREE.Light 0)</strong>로 구현. update 루프에서 y축 회전만(무료). 야간에 additive로 도드라지고 주간엔 은은. 조명 개수 불변 → 셰이더 재컴파일 0.</li><li>world-boot.js: def.lighthouse 배선(부두 인자 전달) + 미니맵 등대 마커.</li></ul>
-<h3>결과</h3>
-<p>헤드리스 swiftshader(등대 파셀 스폰): <strong>drawCalls 39(≤255 여유)</strong>, <strong>programs 13</strong>(라이트풀 12 + 등대 재질 1회 컴파일, 조명 개수 불변 — 라이트 풀 원칙 유지), 콘솔 0. 시각 3각도 확인 — 주간 정면(홍백 탑·발광 등롱·갓·회전빔), 야간(별밤 + 발광 등롱 + 바다로 뻗는 회전 서치라이트), 원경 해안 실루엣. 자작 지오· 절차 텍스처만(외부 에셋 0·실존 상표 0). 결정론(시드 기반).</p>
-<p>게이트: executor 배포 스모크 6항 · release-reviewer 교차리뷰 · 부팀장 직접 시각/드로우콜 검증. 브랜치 커밋만 — 팀장 검수 후 감독께 스크린샷 상신, 감독 최종 확인 시 해안1+2+성능 묶어 배포.</p>
+<p>감독 결정("등대까지 하고 배포")에 따라 해안 연출 1+2단계(바다 단차·해변·부두·테트라포드·등대)와 스트리밍 히칭 개선 1+2단계(로드 시간분할 큐·라이트 풀)를 묶어 main 병합·배포.</p>
+<ul><li>역병합(main→브랜치): main 유입분(web/js/ui.js — 모바일 캐릭터·모달 hotfix)만, 오픈월드 브랜치와 충돌 파일 0. 생성물 재빌드로 결정론 정합.</li><li>게이트: executor 배포 스모크 6/6 · 라이브 진입점(main/player/artworks/config/index/visit/builder/ landing/ui.js) origin/main 대비 <strong>바이트 무변경</strong> 입증 · space-render는 addRoomLighting noSpots 게이트 1줄 순수 가산(기본경로 불변, 팀장 수용·OPENWORLD.md) · world.html 실화면(부두·등대·야간 스폰) 정상 · 히칭 실측(경계통과 프레임 median 1600→15ms·p99 2060→1170·max 2114→1634, 2회 재현) · 결정론 최종집합 불변.</li><li>병합: --no-ff(단일 revert 롤백 가능) 커밋 08c272a → main push → deploy.yml Actions <strong>success</strong> (run 29752408333). 오픈월드는 여전히 behind-flag(어디에도 미링크) — 라이브 미술관 서비스 무영향.</li></ul>
 </article>
-<div class="pn"><a href="./2026-07-20-ec7a10.html"><span class="lbl">← 이전 기록</span>오픈월드 스트리밍 히칭 개선 2단계 — 라이트 풀 (셰이더 재컴파일 제거)</a><a href="./2026-07-20-f4def7.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 해안+히칭 개선 통합 라이브 배포 (감독 승인)</a></div>
+<div class="pn"><a href="./2026-07-20-8e801f.html"><span class="lbl">← 이전 기록</span>해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
