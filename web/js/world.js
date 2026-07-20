@@ -246,11 +246,22 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     lampHead: new THREE.MeshStandardMaterial({ color: 0x6b5836, roughness: 0.5, metalness: 0.2, emissive: 0xffcf8a, emissiveIntensity: 0.8 }), // 웜톤 갓(실제 THREE.Light 0 — 라이브 규율 계승)
     benchWood: new THREE.MeshStandardMaterial({ color: 0x9a8461, roughness: 0.85, metalness: 0 }),
     planterVC: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }), // 테라코타 화분 + 녹색 관목(정점색)
+    // [해안 2단계 등대] 탑 홍백 줄무늬(정점색) · 등롱 유리방(발광) · 회전 서치라이트 콘(가산 발광, 조명 0).
+    lighthouseVC: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05 }),
+    lantern: new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffe08a, emissiveIntensity: 1.4, roughness: 0.3, metalness: 0 }),
+    // 회전 빛 = 발광 콘 메시(additive·depthWrite false) — 실제 THREE.Light 0(라이트 풀 개수 불변 원칙 계승, 재컴파일 0).
+    beam: new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
   };
   // 거리 가구 공유 지오메트리(파셀 간 재사용 — InstancedMesh/개별 Mesh가 참조). createWorld dispose에서 회수.
   const paintGeo = (g, hex) => {
     const c = new THREE.Color(hex), n = g.attributes.position.count, arr = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
+  };
+  // [등대] 높이(y) 밴드 정점색 — 홍백 줄무늬(band 짝/홀 hexA/hexB). 머지 호환 위해 color 속성 부여.
+  const paintBandsY = (g, y0, bandH, hexA, hexB) => {
+    const ca = new THREE.Color(hexA), cb = new THREE.Color(hexB), pos = g.attributes.position, n = pos.count, arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { const band = Math.floor((pos.getY(i) - y0) / bandH); const c = (band % 2 === 0) ? ca : cb; arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
     g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
   };
   const SG = (() => {
@@ -461,6 +472,43 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     return inst;
   }
 
+  // [해안 2단계 등대] 물가 육지 모서리에 랜드마크 — 테이퍼 원통 탑(홍백 줄무늬) + 갤러리 난간 + 갓 +
+  // 등롱(유리방 발광) + 회전 서치라이트 콘. 정적부는 머지(드로우콜 1), 등롱·회전빔은 별도 재질.
+  // 회전 빛은 발광 콘 메시(additive)라 실제 THREE.Light 0 → 라이트 풀 개수 불변 원칙 훼손 없음(재컴파일 0).
+  // dir = 접한 바다 경계 방향. 자작 지오·자기완결(외부 에셋 0). 반환: { beam }(update 회전 대상).
+  function buildLighthouse(dir, group, ox, oz, own, solids) {
+    const horiz = edgeHoriz(dir), sign = edgeSign(dir);
+    // 경계(물가) 가장자리 안쪽 2.4m에 배치 — 탑 발치가 육지, 등롱이 바다를 향한다.
+    const lx = ox + (horiz ? 0 : sign * (CELLX / 2 - 2.4));
+    const lz = oz + (horiz ? sign * (CELLZ / 2 - 2.4) : 0);
+    const TH = 9, botR = 1.5, topR = 1.0;         // 탑 높이·하단/상단 반경(테이퍼)
+    const parts = [];
+    // 탑(측벽만 open-ended) — 홍백 줄무늬(밴드 1.5m). heightSegments로 밴드 경계 정점 확보.
+    const tower = new THREE.CylinderGeometry(topR, botR, TH, 16, 12, true); tower.translate(0, TH / 2, 0);
+    parts.push(paintBandsY(tower, 0, 1.5, 0xd94b4b, 0xf4f0ea));
+    // 갤러리 바닥 디스크(등롱 받침)
+    const gallery = new THREE.CylinderGeometry(topR + 0.55, topR + 0.55, 0.22, 16); gallery.translate(0, TH + 0.11, 0);
+    parts.push(paintGeo(gallery, 0x3c4048));
+    // 갤러리 난간(토러스 링)
+    const rail = new THREE.TorusGeometry(topR + 0.5, 0.06, 6, 20); rail.rotateX(Math.PI / 2); rail.translate(0, TH + 0.7, 0);
+    parts.push(paintGeo(rail, 0x2a2d34));
+    // 갓(원뿔 지붕) — 등롱 위
+    const roof = new THREE.ConeGeometry(topR + 0.35, 1.3, 16); roof.translate(0, TH + 2.75, 0);
+    parts.push(paintGeo(roof, 0x8a2f2f));
+    const merged = mergeGeometries(parts); parts.forEach((p) => p.dispose());
+    const body = new THREE.Mesh(merged, T.lighthouseVC); body.castShadow = true; body.receiveShadow = true;
+    body.position.set(lx, 0, lz); group.add(body); own.push(merged);
+    // 등롱(유리방 발광) — 별도 재질(emissive)
+    const lanternGeo = new THREE.CylinderGeometry(topR, topR, 1.5, 16); own.push(lanternGeo);
+    const lantern = new THREE.Mesh(lanternGeo, T.lantern); lantern.position.set(lx, TH + 1.55, lz); group.add(lantern);
+    // 회전 서치라이트 콘 — 옆으로 누운 발광 콘(등롱에서 수평 방출). update에서 y축 회전(무료).
+    const beamGeo = new THREE.ConeGeometry(1.7, 15, 4, 1, true); beamGeo.rotateZ(Math.PI / 2); beamGeo.translate(7.5, 0, 0); own.push(beamGeo);
+    const beam = new THREE.Mesh(beamGeo, T.beam); beam.position.set(lx, TH + 1.55, lz); beam.renderOrder = 2; group.add(beam);
+    // solid(탑 충돌) — 원통 근사 AABB
+    solids.push({ x: lx, z: lz, ex: botR, ez: botR, bottom: 0, top: TH });
+    return { beam };
+  }
+
   // ── 파셀 인덱스 / 로드 상태 ──
   const keyOf = (px, pz) => px + ',' + pz;
   const index = new Map();  // "px,pz" → def({px,pz,space,npc?})
@@ -574,7 +622,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (!shellOnly && def.street && def.street.length) streetMeshes = buildStreet(def.street, group, ox, oz, solids, own);
     // [해안 패키지] 경계 파셀 물가 연출 — 해변(모든 경계방향, shell 포함해 원경 단차 연속) /
     //   부두·테트라포드(full 파셀만, 원경 shell은 드로우콜 절약 위해 생략). 배치는 시드 결정론(def.pier/tetra).
-    let tetraMesh = null;
+    let tetraMesh = null, lighthouse = null;
     const beachBands = [], pierDecks = [];
     if (!def.water) {
       const edges = [];
@@ -586,6 +634,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         buildBeach(edges, group, ox, oz, own, beachBands);
         if (!shellOnly && def.pier && edges.includes(def.pier.dir)) buildPier(def.pier.dir, group, ox, oz, own, solids, pierDecks);
         if (!shellOnly && def.tetra && def.tetra.length) tetraMesh = buildTetrapods(def.tetra, group, ox, oz);
+        // [해안 2단계] 등대 — full 파셀만(원경 shell은 드로우콜 절약). 접한 경계 방향에만 배치.
+        if (!shellOnly && def.lighthouse && edges.includes(def.lighthouse.dir)) lighthouse = buildLighthouse(def.lighthouse.dir, group, ox, oz, own, solids);
       }
     }
     // 거리 배회 NPC — 풀디테일 파셀 + 총원 ≤6. 라벨 없음(빈 닉네임 규약). 외형 시드 결정론.
@@ -600,7 +650,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       pickWalkerTarget(walker);
     }
     scene.add(group);
-    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz, beachBands, pierDecks, tetraMesh, lights: parcelLights });
+    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz, beachBands, pierDecks, tetraMesh, lights: parcelLights, lighthouse });
     requestShadowBake(); // [섀도 프리즈] 파셀 로드로 씬 지오가 바뀜 → 다음 프레임 1회 재베이크
   }
 
@@ -920,6 +970,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     }
   }
 
+  // [해안 2단계 등대] 회전 서치라이트 — 발광 콘 y축 회전(무료, 조명 개수 불변). 야간에 additive로 도드라진다.
+  function stepLighthouses(d) {
+    for (const L of loaded.values()) if (L.lighthouse) L.lighthouse.beam.rotation.y += d * 0.8;
+  }
+
   // ── 입력(키/터치) ──
   const kmov = { fwd: 0, right: 0 }, tmov = { fwd: 0, right: 0 }, keys = {};
   function recomputeKeyMove() {
@@ -963,6 +1018,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     maybeRebakeShadow(); // [섀도 프리즈] 8m 이동 시 그림자 재베이크(태양 추종 정합)
     stepNpcs(d);
     stepWalkers(d); // 거리 배회 NPC 앰비언트 시뮬
+    stepLighthouses(d); // [해안 2단계] 등대 서치라이트 회전
     // 원격 아바타 발바닥 = groundY(다층·강 반영). 원격 간 충돌은 데모 스코프 아웃.
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
     processLoadQueue(); // [스트리밍 큐] 프레임 예산 내 지연 로드 소진(렌더 직전 — 이번 프레임 빌드분 반영)

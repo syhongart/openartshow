@@ -352,3 +352,19 @@ export function genTetrapods(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel
   }
   return arr;
 }
+
+// [해안 2단계] 등대 — 경계 육지 파셀 중 소수에 랜드마크. 부두와 배타(한 파셀에 랜드마크 하나).
+const LIGHTHOUSE_SALT = 0x4e1d7b;
+/**
+ * 경계 육지 파셀의 등대(0 또는 1). 부두가 이미 있으면 null(랜드마크 중복 방지). 강·내부 파셀 null.
+ * @returns {{dir:'N'|'S'|'E'|'W'}|null}  dir = 물가 바깥 경계 방향(등대가 접한 바다 쪽).
+ */
+export function genLighthouse(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel, pier) {
+  if (pier) return null;                          // 부두 있는 파셀엔 등대 없음(랜드마크 겹침 방지 — 우선순위)
+  const edges = edgeDirs(px, pz, grid, parcel);
+  if (!edges.length) return null;
+  const rng = mulberry32(cellSeed((seed ^ LIGHTHOUSE_SALT) >>> 0, px, pz));
+  if (rng() > 0.15) return null;                  // ~15% 경계 파셀에 등대(랜드마크라 소수)
+  const dir = edges[Math.floor(rng() * edges.length) % edges.length]; // 코너면 한 방향 선택
+  return { dir };
+}

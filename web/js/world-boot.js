@@ -2,7 +2,7 @@
 // 외부 모듈로 추출(보안 선결: CSP 'unsafe-inline' 제거 → script-src 'self'만으로 동작, 해시 불필요·
 // 유지보수 우위 — security-officer 29259bf 지적①). module script는 기본 defer라 DOM 로드 후 실행,
 // top-level await 정상. DOM 참조·fetch는 문서(world.html) 기준 상대경로 유지, import는 이 파일(web/js/) 기준.
-import { genParcel, riverColAt, genStreet, genWalker, genPier, genTetrapods } from './world-gen.js';
+import { genParcel, riverColAt, genStreet, genWalker, genPier, genTetrapods, genLighthouse } from './world-gen.js';
 import { createWorld } from './world.js';
 import { randomChibiChar } from './chibi.js';
 // [神 모드] 하늘 화이트리스트·자동 시간대 — URL 파라미터 살균(SKY_TIMES/SKY_WEATHERS 밖 값 무시)에 사용.
@@ -58,7 +58,8 @@ for (let pz = 0; pz < grid.h; pz++) for (let px = 0; px < grid.w; px++) {
   const walker = genWalker(px, pz, M.seed, grid, M.cell, P, forceWalker(px, pz)); // 거리 배회 NPC 후보(결정론) — def.walker
   const pier = genPier(px, pz, M.seed, grid, M.cell, P);     // [해안] 경계 파셀 부두(결정론) — def.pier
   const tetra = genTetrapods(px, pz, M.seed, grid, M.cell, P); // [해안] 경계 파셀 테트라포드 클러스터 — def.tetra
-  const parcel = Object.assign({ px, pz }, P, { street }, walker ? { walker } : {}, pier ? { pier } : {}, tetra ? { tetra } : {}, roster ? { npc: { roster, count: roster.length } } : {});
+  const lighthouse = genLighthouse(px, pz, M.seed, grid, M.cell, P, pier); // [해안 2단계] 경계 파셀 등대(부두와 배타) — def.lighthouse
+  const parcel = Object.assign({ px, pz }, P, { street }, walker ? { walker } : {}, pier ? { pier } : {}, tetra ? { tetra } : {}, lighthouse ? { lighthouse } : {}, roster ? { npc: { roster, count: roster.length } } : {});
   if (px === sx && pz === sz) parcels.unshift(parcel); else parcels.push(parcel);
 }
 
@@ -89,6 +90,7 @@ const homes = new Set([...npcByHome.keys()]);
 const riverSet = new Set(); for (let z = 0; z < grid.h; z++) riverSet.add(riverColAt(z, M.seed, grid) + ',' + z);
 // [해안] 부두 셀 집합 — 미니맵 마커. genPier 결과(def.pier)를 파셀에서 수집.
 const pierSet = new Set(); for (const pc of parcels) if (pc.pier) pierSet.add(pc.px + ',' + pc.pz);
+const lighthouseSet = new Set(); for (const pc of parcels) if (pc.lighthouse) lighthouseSet.add(pc.px + ',' + pc.pz); // [해안 2단계] 등대 셀
 const visited = new Set();
 function drawMinimap() {
   const p = V.getCurrentParcel();
@@ -107,6 +109,7 @@ function drawMinimap() {
     mctx.fillRect(X + 1, Y + 1, CPX - 2, CPX - 2);
     if (homes.has(k)) { mctx.fillStyle = 'rgba(139,114,255,.9)'; mctx.beginPath(); mctx.arc(X + CPX / 2, Y + CPX / 2, 2.2, 0, 7); mctx.fill(); }
     if (pierSet.has(k)) { mctx.fillStyle = 'rgba(154,125,85,.95)'; mctx.fillRect(X + CPX / 2 - 1.5, Y + CPX / 2 - 1.5, 3, 3); } // 부두 마커
+    if (lighthouseSet.has(k)) { mctx.fillStyle = 'rgba(255,224,138,.98)'; mctx.beginPath(); mctx.arc(X + CPX / 2, Y + CPX / 2, 1.8, 0, 7); mctx.fill(); } // [해안 2단계] 등대 마커(발광색)
   }
   mctx.strokeStyle = '#72E6E1'; mctx.lineWidth = 2;
   mctx.strokeRect(MOFF + p.px * CPX + 1, MOFF + p.pz * CPX + 1, CPX - 2, CPX - 2);
