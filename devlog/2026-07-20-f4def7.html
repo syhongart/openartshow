@@ -93,7 +93,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <p>감독 결정("등대까지 하고 배포")에 따라 해안 연출 1+2단계(바다 단차·해변·부두·테트라포드·등대)와 스트리밍 히칭 개선 1+2단계(로드 시간분할 큐·라이트 풀)를 묶어 main 병합·배포.</p>
 <ul><li>역병합(main→브랜치): main 유입분(web/js/ui.js — 모바일 캐릭터·모달 hotfix)만, 오픈월드 브랜치와 충돌 파일 0. 생성물 재빌드로 결정론 정합.</li><li>게이트: executor 배포 스모크 6/6 · 라이브 진입점(main/player/artworks/config/index/visit/builder/ landing/ui.js) origin/main 대비 <strong>바이트 무변경</strong> 입증 · space-render는 addRoomLighting noSpots 게이트 1줄 순수 가산(기본경로 불변, 팀장 수용·OPENWORLD.md) · world.html 실화면(부두·등대·야간 스폰) 정상 · 히칭 실측(경계통과 프레임 median 1600→15ms·p99 2060→1170·max 2114→1634, 2회 재현) · 결정론 최종집합 불변.</li><li>병합: --no-ff(단일 revert 롤백 가능) 커밋 08c272a → main push → deploy.yml Actions <strong>success</strong> (run 29752408333). 오픈월드는 여전히 behind-flag(어디에도 미링크) — 라이브 미술관 서비스 무영향.</li></ul>
 </article>
-<div class="pn"><a href="./2026-07-20-8e801f.html"><span class="lbl">← 이전 기록</span>해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크)</a></div>
+<div class="pn"><a href="./2026-07-20-8e801f.html"><span class="lbl">← 이전 기록</span>해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크)</a><a href="./2026-07-20-12cedf.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 정식 서비스 승격 — 베타 제거 + 검색 노출 + P2P IP 노출 고지 3결함 수정</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
