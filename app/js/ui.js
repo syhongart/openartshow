@@ -572,8 +572,11 @@ function injectStyles() {
   mix-blend-mode: multiply;
 }
 .lu-am-stage::after {
-  content: ''; position: absolute; left: 50%; bottom: 7%;
-  width: 58%; height: 8%;
+  /* 접지 그림자 — 카메라 프레이밍(0,1.0,4.0/lookAt 0,0.85) 후 발 최하단이 스테이지
+     세로 89.1%(하단 10.9%) 지점에 온다(FK 투영 실측, 전 프리셋 공통). 그림자를 그
+     발밑에 맞춰 bottom 5%(범위 하단 5~12%)로 두어 발이 그림자 상반부를 딛게 한다. */
+  content: ''; position: absolute; left: 50%; bottom: 5%;
+  width: 52%; height: 7%;
   transform: translateX(-50%);
   border-radius: 50%; pointer-events: none;
   background: radial-gradient(closest-side, rgba(58,42,16,0.44), rgba(58,42,16,0) 72%);
@@ -2899,12 +2902,14 @@ function buildChibiMaker() {
     previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
     previewScene = new THREE.Scene();
     previewScene.background = new THREE.Color('#f6f1e3');
-    // 프레이밍 — 하트머리 정점(≈1.53m)까지 여유 있게 담고 살짝 내려다본다.
-    // (기존 0.86/3.12는 가시 상한 ≈1.537라 하트머리가 프레임을 넘었고, 피치 ≈3°
-    //  수평 시선이라 발밑 그림자 원판이 옆면으로 보였다 — 감독 피드백 2건 동시 해소)
+    // 프레이밍 — 발이 프레임 바닥(화면 세로 89%)을 딛고, 하트머리 정점(≈1.59m)도
+    // 담기게 잡는다. lookAt.y를 0.85로 올려 캐릭터를 화면 아래로 내려 "바닥에 선"
+    // 구도를 만든다(구 lookAt 0.64는 발이 세로 80%에 떠 발밑 여백이 넓어 공중부양처럼
+    // 보였다 — 감독 신고). FK 투영 실측으로 발 89%/하트머리 상단 15.5%/정장머리 27%
+    // 를 만족하는 (dist 4.0, camY 1.0, lookAtY 0.85) 조합 확정.
     previewCamera = new THREE.PerspectiveCamera(30, 300 / 400, 0.1, 20);
-    previewCamera.position.set(0, 1.1, 3.75);
-    previewCamera.lookAt(0, 0.64, 0);
+    previewCamera.position.set(0, 1.0, 4.0);
+    previewCamera.lookAt(0, 0.85, 0);
     // 채도 살린 스튜디오 조명 — 회색 앰비언트를 어둡게 낮춰 색이 바래지 않게 하고,
     // 흰 키라이트로 앞면을 채워 고른 색이 선명하게 그대로 나온다(감독 'B' 확정).
     previewScene.add(new THREE.HemisphereLight(0xfffaf4, 0x241f18, 0.65));
