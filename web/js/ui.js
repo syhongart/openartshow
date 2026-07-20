@@ -589,19 +589,6 @@ function injectStyles() {
 }
 /* 무대 래퍼 — 사진(캔버스) + 회전 힌트를 한 프레임으로. 힌트 absolute의 기준. */
 .lu-am-stagewrap { position: relative; width: 244px; height: 325px; flex: 0 0 auto; }  /* 3:4 명시 */
-.lu-am-preview-hint {
-  position: absolute; left: 50%; bottom: 10px;
-  transform: translateX(-50%);
-  display: flex; align-items: center; gap: 5px;
-  padding: 5px 13px;
-  border-radius: 999px;
-  background: rgba(37,27,14,0.68);
-  color: #fff8e8;
-  font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; white-space: nowrap;
-  box-shadow: 0 3px 8px rgba(20,14,6,0.3);
-  pointer-events: none;
-}
-.lu-am-preview-hint svg { width: 11px; height: 11px; flex: 0 0 auto; }
 /* ---- 카테고리 내비 — 종족·얼굴·헤어·의상·장식·옷장 섹션 전환 ---- */
 .lu-am-panel {
   flex: 1 1 auto; min-width: 0; min-height: 0;
@@ -1842,7 +1829,6 @@ function injectStyles() {
   }
   .lu-am-preview { width: auto; max-width: none; align-self: center; padding: 12px; }
   .lu-am-stagewrap { width: 200px; height: 267px; max-width: none; margin: 0 auto; }
-  .lu-am-preview-hint { font-size: 8.5px; padding: 3px 8px; bottom: 6px; }
   /* 패널은 자연 높이(스크롤은 body가 담당) — 탭 내비는 가로 스크롤로 한 줄 유지 */
   .lu-am-panel { flex: 0 0 auto; }
   .lu-am-nav { margin-bottom: 12px; padding: 4px 0 10px; }
@@ -2844,7 +2830,6 @@ function buildShareModal() {
 // 없다". 비전 AI 버전은 백엔드 확보 후 재도전. 구현은 git 이력 b2ff2f3b 참조.)
 
 // 카테고리 내비 아이콘 — 인라인 SVG(외부 에셋 0), currentColor로 탭 색상 상속
-const ICON_ROTATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 12a8 8 0 1 1 2.4 5.7"/><path d="M4 17v-5h5"/></svg>';
 // 잎사귀 모티프 — 오리지널 실루엣(눈물방울 잎 + 잎맥 한 줄). 특정 브랜드 아이콘 카피 아님.
 const ICON_LEAF = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4.5 19.5C4.5 10 11 4 20 4c0 9-6 15.5-15.5 15.5A1 1 0 0 1 4.5 19.5Z"/><path d="M6.7 17.3C10.2 13.3 14.2 9.3 18 5.5" stroke="rgba(255,255,255,0.55)" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>';
 const CHIBI_NAV_CATS = [
@@ -2869,11 +2854,7 @@ function buildChibiMaker() {
   const stage = el('div', { className: 'lu-am-stage' }, [canvas]);
   // 아바타를 만드는 화면이라 동작 테스트 버튼은 두지 않는다(감독 지시). 대신 캐릭터가
   // 프리뷰 안에서 혼자 신나게 움직인다(자동 연기 — previewFrame 루프에서 랜덤 재생).
-  const previewHint = el('div', { className: 'lu-am-preview-hint' });
-  previewHint.innerHTML = ICON_ROTATE;
-  previewHint.appendChild(el('span', { text: '드래그해서 회전' }));
-  // 무대(stage) + 힌트를 한 묶음으로 감싸 사진 프레임을 이룬다.
-  const stageWrap = el('div', { className: 'lu-am-stagewrap' }, [stage, previewHint]);
+  const stageWrap = el('div', { className: 'lu-am-stagewrap' }, [stage]);
   const previewBox = el('div', { className: 'lu-am-preview' }, [stageWrap]);
 
   // 자동 연기 — 캐릭터가 스스로 밝은 동작을 번갈아 재생한다("혼자 신나게 움직임", 감독
