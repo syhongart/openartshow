@@ -415,6 +415,18 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const loaded = new Map(); // "px,pz" → { group, def, ox, oz, dims, solids, crowd, avatars, lod }
   let mp = null; // 실시간 멀티플레이어(opts.mp 지정 + window.Peer 존재 시 생성)
 
+  // ── [스트리밍 큐] 로드 시간분할(성능 단계1) — 히칭 완화 상태 ─────────────────────
+  // 파셀 경계 통과 프레임에 신규 로드(나무·조명·섀도 재베이크)를 몰지 않고 큐에 넣어 update()
+  // 프레임당 예산 내에서만 처리 → 스파이크 분산. 언로드는 즉시(저비용) 유지. 스폰·텔레포트·헤드리스
+  // (기본)는 동기 즉시(빈 화면·결정론 테스트·getLoadedKeys 계약 무회귀). 큐는 렌더 순서만 바꾸고
+  // 생성 결과는 동일 → 결정론 무영향(동기 경로의 최종 로드집합과 일치).
+  const loadQueue = [];        // 지연 로드 job [{ k, px, pz, lod, prio }]
+  const queued = new Set();    // 큐 중복 방지(파셀 키)
+  const LOAD_BUDGET_MS = gpuInfo.soft ? 2.5 : 6; // 프레임당 큐 처리 예산(ms). 소프트웨어 렌더는 보수적.
+  // 헤드리스는 기본 동기(결정론 무회귀). opts.streamAsync=true면 헤드리스도 큐 경로(성능 벤치 측정용 게이트).
+  const streamAsync = !!opts.streamAsync;
+  const perfNow = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+
   function parcelArts(def, ox, oz) {
     // NPC는 지면층 작품만 감상(상층 p.floor>0 제외 — NPC 단층 고정 계약)
     return (def.space.parts || []).filter((p) => p.t === 'artwork' && !(p.floor > 0)).map((p) => ({
@@ -639,7 +651,17 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   });
 
   // ── 스트리밍: 현재 파셀 3×3. 직교 인접(맨해튼≤1)=풀디테일, 대각=shell 임포스터. ──
-  function updateStreaming() {
+  // 진행방향 보너스 — 플레이어가 향하는 쪽(kmov/tmov ⊕ yaw 월드벡터)과 파셀 상대방향 내적>0이면
+  // 우선순위 가산(먼저 로드). 정지 시 0. (kmov/tmov/yaw는 런타임 참조라 정의 시점 TDZ 무관.)
+  function dirBonus(rx, rz) {
+    const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
+    if (!f && !r) return 0;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rgx = Math.cos(yaw), rgz = -Math.sin(yaw);
+    const mvx = f * fx + r * rgx, mvz = f * fz + r * rgz;
+    return (mvx * rx + mvz * rz) > 0 ? 5 : 0;
+  }
+  // sync=true(스폰·텔레포트) 또는 헤드리스 기본(streamAsync 미설정)은 즉시 동기 로드. 그 외는 큐잉.
+  function updateStreaming(sync = false) {
     const { px, pz } = currentParcel();
     const want = new Map();
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
@@ -647,8 +669,50 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (!index.has(k)) continue;
       want.set(k, (Math.abs(dx) + Math.abs(dz)) <= 1 ? 'full' : 'shell');
     }
+    // 언로드는 즉시(저비용) — 기존대로. 큐에 남은 불필요분(떠난 방향)도 함께 제거.
     for (const k of Array.from(loaded.keys())) if (!want.has(k)) unloadParcel(k);
-    for (const [k, lod] of want) { const [qx, qz] = k.split(',').map(Number); loadParcel(qx, qz, lod); }
+    for (let i = loadQueue.length - 1; i >= 0; i--) {
+      if (!want.has(loadQueue[i].k)) { queued.delete(loadQueue[i].k); loadQueue.splice(i, 1); }
+    }
+    const immediate = sync || (headless && !streamAsync);
+    for (const [k, lod] of want) {
+      const ex = loaded.get(k);
+      if (ex && ex.lod === lod) continue; // 이미 정확 LOD → skip
+      const [qx, qz] = k.split(',').map(Number);
+      if (immediate) { loadParcel(qx, qz, lod); continue; }
+      // 큐잉 — 우선순위 = 맨해튼거리*10 - 진행방향보너스(작을수록 먼저).
+      const prio = (Math.abs(qx - px) + Math.abs(qz - pz)) * 10 - dirBonus(qx - px, qz - pz);
+      if (queued.has(k)) {
+        const job = loadQueue.find((j) => j.k === k); // 이미 큐에 있으면 LOD·우선순위 갱신(shell→full 승격 등)
+        if (job) { job.lod = lod; job.prio = prio; }
+      } else {
+        loadQueue.push({ k, px: qx, pz: qz, lod, prio });
+        queued.add(k);
+      }
+    }
+  }
+  // [스트리밍 큐] 프레임당 예산 내에서 큐 소진 — update()의 renderer.render 직전에 호출.
+  // prio 오름차순 정렬 후 최소 1개 빌드, 이후 예산(LOAD_BUDGET_MS) 초과 시 중단. soft는 프레임당 1개.
+  // 떠난 파셀(현재 기준 맨해튼>2 또는 LOD 조건 변동) job은 빌드 없이 폐기 — 다음 updateStreaming이 재평가.
+  function processLoadQueue() {
+    if (!loadQueue.length) return;
+    const { px, pz } = currentParcel();
+    loadQueue.sort((a, b) => a.prio - b.prio);
+    const t0 = perfNow();
+    let built = 0;
+    while (loadQueue.length) {
+      const job = loadQueue[0];
+      const man = Math.abs(job.px - px) + Math.abs(job.pz - pz);
+      const wantLod = man <= 1 ? 'full' : 'shell';
+      if (man > 2 || wantLod !== job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // 떠난 파셀 폐기
+      const exist = loaded.get(job.k);
+      if (exist && exist.lod === job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // 이미 로드됨
+      loadParcel(job.px, job.pz, job.lod);
+      loadQueue.shift(); queued.delete(job.k);
+      built++;
+      if (gpuInfo.soft) break;                       // soft: 프레임당 엄격 1개
+      if (perfNow() - t0 > LOAD_BUDGET_MS) break;    // 최소 1개 빌드 후 예산 초과 시 중단
+    }
   }
 
   // ── [다층] 지면 해석 (player.js stairGroundAt/groundCandidatesAt/resolveGround 이식, 파셀 오프셋 인지) ──
@@ -845,6 +909,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     stepWalkers(d); // 거리 배회 NPC 앰비언트 시뮬
     // 원격 아바타 발바닥 = groundY(다층·강 반영). 원격 간 충돌은 데모 스코프 아웃.
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
+    processLoadQueue(); // [스트리밍 큐] 프레임 예산 내 지연 로드 소진(렌더 직전 — 이번 프레임 빌드분 반영)
     renderer.render(scene, camera);
   }
   function renderOnce() { applyPose(); maybeRebakeShadow(); renderer.render(scene, camera); }
@@ -883,8 +948,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     mp.connect();
   }
 
-  // 초기 로드 — 첫 파셀 주변 스트리밍
-  updateStreaming();
+  // 초기 로드 — 첫 파셀 주변 스트리밍(스폰은 동기 즉시: 빈 화면 방지·결정론 무회귀)
+  updateStreaming(true);
   applyPose();
   requestShadowBake(); // [섀도 프리즈] 초기 1회 베이크 + 8m 이동 기준점 설정
   if (!headless) {
@@ -899,12 +964,19 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     setTouchMove: (fwd, right) => { tmov.fwd = fwd || 0; tmov.right = right || 0; },
     setKey: (k, v) => { keys[String(k).toLowerCase()] = !!v; recomputeKeyMove(); },
     getPosition: () => pos.clone(),
-    setPosition: (x, y, z) => { pos.set(x, y == null ? EYE : y, z); groundY = 0; updateStreaming(); applyPose(); }, // 순간이동=지면층 리셋(스테일 급락 판정 방지)
+    setPosition: (x, y, z) => { pos.set(x, y == null ? EYE : y, z); groundY = 0; updateStreaming(true); applyPose(); }, // 순간이동=지면층 리셋 + 동기 로드(빈 화면 방지)
     getYaw: () => yaw, setYaw: (v) => { yaw = v; applyPose(); },
     getGroundY: () => groundY, // [다층] 현재 발 높이(검증·디버그용)
     getPitch: () => pitch,
     getCurrentParcel: () => currentParcel(),
     getGpuInfo: () => ({ ...gpuInfo }), // [저사양 방어] 검증·디버그용 프로브 결과
+    // [스트리밍 큐] 계측 게터(순수 가산) — 히칭 벤치·HUD 디버그. 드로우콜·프로그램 수·로드/큐 상태.
+    getStats: () => {
+      let loadedFull = 0, loadedShell = 0;
+      for (const L of loaded.values()) { if (L.lod === 'shell') loadedShell++; else loadedFull++; }
+      return { drawCalls: renderer.info.render.calls, programs: renderer.info.programs.length, loadedFull, loadedShell, queue: loadQueue.length };
+    },
+    getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
     isLocked: () => locked,
     on: (ev, f) => { (listeners[ev] = listeners[ev] || []).push(f); },
