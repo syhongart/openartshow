@@ -295,9 +295,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const edgeHoriz = (dir) => (dir === 'N' || dir === 'S');             // 가장자리가 x축과 평행(경사=z)
 
   // 위 향한 quad(A,B 안쪽 y=0 / C,D 바깥 y낮음) → 두 삼각형. computeVertexNormals로 조명·그림자.
+  // [교차리뷰 결함 수정] winding [A,C,B]+[A,D,C] — 기존 [A,B,C]+[A,C,D]는 4방향(N/S/E/W) 모두
+  // 아래(-y) 법선을 생성(three computeVertexNormals 공식 (C-B)×(A-B)로 검산: sign>0 (0,-192,-32.4)
+  // / sign<0 (0,-192,32.4), y음수). T.sand는 FrontSide라 위에서 보면 백페이스 컬링으로 해변 슬로프가
+  // 렌더되지 않았다. quad는 평면이라 삼각형 winding 반전 = 법선 반전 → 4방향 모두 +y(위) 법선.
   function quadGeo(A, B, C, D) {
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([...A, ...B, ...C, ...A, ...C, ...D]), 3));
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([...A, ...C, ...B, ...A, ...D, ...C]), 3));
     g.computeVertexNormals();
     return g;
   }
