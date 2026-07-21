@@ -542,7 +542,7 @@ function injectStyles() {
   padding: 14px;
   border-radius: 26px;
   position: relative;
-  touch-action: none;
+  touch-action: pan-y;  /* 좌우 드래그=캐릭터 회전(앱), 상하 스와이프=화면 스크롤(브라우저) — 감독 지시 */
   background-image:
     var(--am-grain-wood),
     repeating-linear-gradient(4deg, rgba(255,244,220,0.14) 0 2px, rgba(94,61,20,0.06) 2px 4px, transparent 4px 8px),
@@ -1807,15 +1807,22 @@ function injectStyles() {
 /* --------------------- 아바타 커스터마이저: 모바일(세로 스택) --------------------- */
 @media (max-width: 720px) {
   #lu-avatar-maker, #lu-chibi-maker { padding: 8px; }
-  /* dvh 폴백 — iOS 주소창 포함 vh가 카드를 가시영역보다 크게 만드는 문제(hotfix #12 계열) */
-  .lu-am-card { max-width: 96vw; max-height: 92vh; max-height: 92dvh; border-radius: 24px; }
-  .lu-am-head { padding: 14px 16px 12px; }
-  /* 프리뷰(큰 캐릭터)를 위, 옵션 패널을 아래로 세로 쌓기. body 하나만 세로 스크롤해
-     이중 스크롤·플라이아웃 없이 밑으로 자연스럽게 내려간다(감독: 단순하게). 캐릭터는
-     그 자리에서 혼자 신나게 움직인다(자동 연기). */
-  .lu-am-body {
-    flex-direction: column; gap: 14px; padding: 12px 14px 4px;
+  /* 모바일 스크롤 — 카드 전체가 하나로 세로 스크롤한다(감독: 위아래로 화면 전체가 움직이고
+     저장 칸까지 밀려 사라지게). head만 상단 sticky로 고정(닫기 버튼 항상 접근), 프리뷰·옵션·
+     footer(저장 칸)는 흐름에 실려 함께 스크롤된다. dvh 폴백은 iOS 주소창 vh 문제(hotfix #12). */
+  .lu-am-card {
+    max-width: 96vw; max-height: 92vh; max-height: 92dvh; border-radius: 24px;
     overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  }
+  .lu-am-head {
+    padding: 14px 16px 12px;
+    position: sticky; top: 0; z-index: 5; background: var(--am-cream);  /* 스크롤 시 상단 고정 + 뒤 비침 방지(불투명) */
+  }
+  /* 프리뷰(큰 캐릭터) 위, 옵션 패널 아래로 세로 쌓기. body는 자연 높이(flex 0 0)라 스크롤은
+     카드가 담당 — 이중 스크롤 없음. 캐릭터는 그 자리에서 혼자 신나게 움직인다(자동 연기). */
+  .lu-am-body {
+    flex: 0 0 auto; flex-direction: column; gap: 14px; padding: 12px 14px 4px;
+    overflow: visible;
   }
   .lu-am-preview { width: auto; max-width: none; align-self: center; padding: 12px; }
   .lu-am-stagewrap { width: 200px; height: 267px; max-width: none; margin: 0 auto; }
