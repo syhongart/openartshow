@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-3.html">
+<title>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시) — OpenArtShow 개발일지</title>
+<meta name="description" content="프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-10.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-3.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)","datePublished":"2026-07-21","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-3.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시) — OpenArtShow 개발일지">
+<meta property="og:description" content="프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-10.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)","datePublished":"2026-07-18","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-10.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,12 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-21</p>
-<p><strong>원인.</strong> 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI 부재(수동 검증 의존)"를 지적. 감독(소프트웨어 아키텍트 관점) 결정: <strong>(1) 전면 TypeScript+Vite 전환, (2) 회귀 안전망을 먼저 구축.</strong> team-lead 판정 — 이 평가는 우리 QA/SOLID 트랙(#87~#90)의 시점을 앞당기라는 독립 확인. 리팩터/TS 전환은 회귀를 잡을 그물 없이는 위험하므로 <strong>안전망이 전제</strong>.</p>
-<p><strong>개선(A단계, 소스 로직 무수정·라이브 리스크 0).</strong></p>
-<ul><li>A-1 인프라: vitest(러너)·eslint(v9 flat, 관대한 baseline)·tsconfig(allowJs·checkJs:false· strict, B단계 파일단위 점진 전환용). package.json에 test/lint/typecheck/smoke 스크립트, puppeteer·jsdom을 devDependencies로 이동(런타임 배포물 npm 의존 0 유지).</li><li>A-2 단위테스트 <strong>108개</strong>(tests/, web/ 밖 → 배포 오염 방지): space(마이그레이션·정규화· 라운드트립·스키마 자기정합)·ytembed·guestbook·stats·feed·space-presets. TS 전환의 "before" 스냅샷.</li><li>A-3 스모크 하네스: <code>npm run smoke</code> 한 번으로 6항+가드(생성기·파일수·필수파일·console.error· 가로넘침 320/375/1280·CSP violation·인라인script·내부링크) 자동. skill 대체 아닌 실행 보조.</li><li>A-4 <code>ci.yml</code>: lint·typecheck·test 게이트(2스텝 롤인 — 독립 워크플로로 시작, 안정화 후 deploy에 needs:ci). 최소권한 명시.</li></ul>
-<p><strong>안전망이 착수 즉시 잡은 라이브 버그 3개(수정).</strong> ① avatar 라벨 머티리얼 중복 depthWrite 키 (eslint no-dupe-keys) ② about.html CTA 2개 404 ③ about 폰트 404. ②③ 근본원인은 about이 landing/guide 급 "루트 배포 가정" 상대경로인데 deploy.yml이 app/에만 배포한 불일치 → <strong>about을 루트 배포로 승격</strong>(deploy.yml 1줄 + 폰트경로 정합, about.html 로직 무수정)해 해결.</p>
-<p><strong>결과.</strong> 게이트 통과 — executor 독립 스모크 6/6 + A단계 특화 7/7, 검수관 cross-review 조건부 승인(블로커 0, 권고 5). 검수관이 avatar 건을 "안전망이 실제로 유효함을 보여주는 사례"로 평가. 보호4파일(main/player/artworks/config.js) 무변경. main 배포. <strong>다음: B단계 TS+Vite 전환 (space.js부터 leaf 순차, Vite 산출물이 자기완결·CSP self 유지 — vendor 번들흡수로 importmap sha256 핀 소멸).</strong> 승인된 로드맵: 3단계(안전망→TS+Vite→SOLID 분해) 3 불변식(소스트리 항상 배포가능·1커밋 롤백·자기완결 불완화).</p>
-<p><strong>교훈.</strong> 리팩터보다 안전망을 먼저 깐 판단이 즉시 회수됐다 — 그물을 치자마자 기존 버그 3개가 걸렸다. "구조 투자는 완성도의 경쟁자가 아니라 가속기"(회귀 공포 없이 전환·실험 가능).</p>
+<h1><span class="emo">📱</span>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-18</p>
+<p>프런트엔드 SOLID 감사. <strong>아키텍처 경계·의존구조는 모범</strong>(보호↔비보호 import 0·순환 0·<code>normalizeSpace</code>/<code>normalizeChibi</code> SSOT 전량 경유). 부채는 두 축에 집중.</p>
+<ul><li><strong>SRP(초거대 함수)</strong>: <code>chibi.js buildChibi</code>(1374줄)·<code>ui.js injectStyles</code>(CSS 1636줄)·<code>builder.js createBuilder</code>(557줄) 등.</li><li><strong>OCP/DRY(형태 지오메트리)</strong>: <code>space-render.js partGeo</code>↔<code>partAccent</code>의 <strong>형상 상수 수기 이중보유</strong>(cake·mirror 등 6+쌍, 한쪽만 고치면 정합 붕괴)·거대 switch·chibi 종족 문자열 하드코딩·tiger 死코드.</li></ul>
+<h3>4단계 계획(ROI·리스크 순)</h3>
+<p>1. <strong>안전망</strong>(선행): 순수함수 단위테스트(normalize·snap·artworkSize 등) + 헤드리스 렌더 스모크 재사용화 — 리팩터 전 회귀 그물. 2. <strong>(A) 저리스크 국소</strong>(비보호): tiger 死코드 제거·이동상수/저장키 SSOT 추출·injectStyles CSS 외부화 등. 3. <strong>(B) 구조</strong>(게이트): partGeo↔partAccent 형상상수 공유 spec(최우선)·switch→디스패치·chibi 종족 레지스트리·createBuilder 분해. 4. <strong>(C) 보호4파일</strong>(감사·사전서명): main.js init/animate 분해·config artworkSlots 좌표 파생화.</p>
 </article>
 
 </div>

@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI">
+<title>아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-2.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI">
+<meta property="og:title" content="아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-2.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)","datePublished":"2026-07-21","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-2.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정)","datePublished":"2026-07-21","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-2.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)</h1>
+<h1><span class="emo">📱</span>아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정)</h1>
 <p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-21</p>
-<p><strong>원인.</strong> 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI 부재(수동 검증 의존)"를 지적. 감독(소프트웨어 아키텍트 관점) 결정: <strong>(1) 전면 TypeScript+Vite 전환, (2) 회귀 안전망을 먼저 구축.</strong> team-lead 판정 — 이 평가는 우리 QA/SOLID 트랙(#87~#90)의 시점을 앞당기라는 독립 확인. 리팩터/TS 전환은 회귀를 잡을 그물 없이는 위험하므로 <strong>안전망이 전제</strong>.</p>
-<p><strong>개선(A단계, 소스 로직 무수정·라이브 리스크 0).</strong></p>
-<ul><li>A-1 인프라: vitest(러너)·eslint(v9 flat, 관대한 baseline)·tsconfig(allowJs·checkJs:false· strict, B단계 파일단위 점진 전환용). package.json에 test/lint/typecheck/smoke 스크립트, puppeteer·jsdom을 devDependencies로 이동(런타임 배포물 npm 의존 0 유지).</li><li>A-2 단위테스트 <strong>108개</strong>(tests/, web/ 밖 → 배포 오염 방지): space(마이그레이션·정규화· 라운드트립·스키마 자기정합)·ytembed·guestbook·stats·feed·space-presets. TS 전환의 "before" 스냅샷.</li><li>A-3 스모크 하네스: <code>npm run smoke</code> 한 번으로 6항+가드(생성기·파일수·필수파일·console.error· 가로넘침 320/375/1280·CSP violation·인라인script·내부링크) 자동. skill 대체 아닌 실행 보조.</li><li>A-4 <code>ci.yml</code>: lint·typecheck·test 게이트(2스텝 롤인 — 독립 워크플로로 시작, 안정화 후 deploy에 needs:ci). 최소권한 명시.</li></ul>
-<p><strong>안전망이 착수 즉시 잡은 라이브 버그 3개(수정).</strong> ① avatar 라벨 머티리얼 중복 depthWrite 키 (eslint no-dupe-keys) ② about.html CTA 2개 404 ③ about 폰트 404. ②③ 근본원인은 about이 landing/guide 급 "루트 배포 가정" 상대경로인데 deploy.yml이 app/에만 배포한 불일치 → <strong>about을 루트 배포로 승격</strong>(deploy.yml 1줄 + 폰트경로 정합, about.html 로직 무수정)해 해결.</p>
-<p><strong>결과.</strong> 게이트 통과 — executor 독립 스모크 6/6 + A단계 특화 7/7, 검수관 cross-review 조건부 승인(블로커 0, 권고 5). 검수관이 avatar 건을 "안전망이 실제로 유효함을 보여주는 사례"로 평가. 보호4파일(main/player/artworks/config.js) 무변경. main 배포. <strong>다음: B단계 TS+Vite 전환 (space.js부터 leaf 순차, Vite 산출물이 자기완결·CSP self 유지 — vendor 번들흡수로 importmap sha256 핀 소멸).</strong> 승인된 로드맵: 3단계(안전망→TS+Vite→SOLID 분해) 3 불변식(소스트리 항상 배포가능·1커밋 롤백·자기완결 불완화).</p>
-<p><strong>교훈.</strong> 리팩터보다 안전망을 먼저 깐 판단이 즉시 회수됐다 — 그물을 치자마자 기존 버그 3개가 걸렸다. "구조 투자는 완성도의 경쟁자가 아니라 가속기"(회귀 공포 없이 전환·실험 가능).</p>
+<p><strong>원인.</strong> A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가 자기완결·CSP self·인라인0을 지켜 빌드 가능함을 검증기로 실증. B-2b는 그 Vite 산출물을 실제 배포 경로(_site)로 승격 — "소스 직서빙"에서 "빌드 산출물 배포"로 전환하되 라이브 미술관을 한 번도 깨지 않고 URL·자기완결·CSP·보호4파일 규율을 완화하지 않는 것이 핵심 난제.</p>
+<p><strong>개선.</strong></p>
+<ul><li><strong>base 절대전환</strong> <code>'/openartshow/'</code>: rollup 멀티페이지 공유 <code>_bundle</code> 을 깊이 다른 랜딩(루트)· 앱(app/)이 공유하려면 절대 base 필수. 손으로 쓴 런타임 참조(<code>fetch("./app/…")</code>·<code>href</code>·og· peerjs classic)는 문자열이라 미변경 — 절대 base가 안 깬다(빌드 실측 확인).</li><li><strong>HTML rename 플러그인</strong>(generateBundle 2-pass): landing→<code>index.html</code>, 미술관→<code>app/index.html</code>, studio/world/builder/visit→<code>app/*</code>, guide/design/about→루트 불변. <strong>최종 배포 URL 전부 불변</strong> (공유링크·SEO·sitemap 무영향).</li><li><strong>CSP 자동정합 플러그인</strong>: 인라인 sha256 을 빌드 후단 디스크 실측 재계산→script-src 재작성. 수작업 핀 관리 폐지(드리프트 소멸). importmap 제거로 미술관/world 핀 dead→<code>'self'</code> 수렴.</li><li><strong>랜딩군 소스 8줄</strong>: 빌드대상(import·link)만 소스경로로 교정, 런타임(fetch·href·og)은 <code>./app/</code> 유지. design.html:549 깨진 <code>./landing.html</code>→<code>./index.html</code> 교정.</li><li><strong>deploy.yml 교체</strong>: 소스 재배치 cp 로직 삭제 → <code>npm ci</code>+<code>npx vite build</code>+<code>cp -r dist/. _site/</code> +생성기/sitemap/robots. assemble.mjs ASSEMBLE_VITE_SH 와 1:1.</li></ul>
+<p><strong>⚠️ 롤백 단위(중요).</strong> 이 전환의 안전한 롤백 단위는 <strong>B-2b 4커밋 전체(또는 병합 커밋)</strong> 이다. deploy.yml(85f2880) <strong>단독 revert 는 불충분</strong> — 랜딩군 소스 8줄(<code>./app/vendor/…</code>→<code>./vendor/…</code> 등)이 vite 전제로 조정돼 있어, deploy 만 web직서빙으로 되돌리면 랜딩군 fonts/import 가 404 로 깨진다(§검수관 지적). 회귀 시 반드시 4커밋(또는 main 병합 커밋) 전체를 되돌릴 것.</p>
+<p><strong>결과.</strong> 게이트 통과 — executor 독립 스모크 기본6항 6/6 + B-2b특화 6/6(smoke:vite 10항: 6항+ 가드A/B/C+E1/E2 동등성 전부 PASS, URL회귀0, npm test 108/108), 검수관 cross-review 조건부 승인(블로커0 — 실제 vite build 실행+CSP 해시 디스크 실측 일치 검증). 보호4파일 무변경. 권고 3건(utils 死파일 복사·peerjs 미사용 devDep·three caret 동기화 문서화)은 #94 로 이월.</p>
+<p><strong>교훈.</strong> "빌드 없는 자기완결 직서빙"을 "빌드 산출물 배포"로 옮기는 최대 위험(외부호스트 유입· CSP 핀 파손·URL 회귀)을, Vite 를 먼저 "검증기"(B-2a)로만 태우고 자기완결·CSP·인라인0 을 실증한 뒤에야 "배포기"(B-2b)로 승격하는 2페이즈 롤인으로 전부 관문 통과시켰다. 롤백 단위를 커밋이 아닌 "원자 변경 집합"으로 인식하는 것이 안전 전환의 핵심.</p>
 </article>
 
 </div>

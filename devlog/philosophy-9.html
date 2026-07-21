@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시) — OpenArtShow 개발일지</title>
-<meta name="description" content="프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.">
+<title>보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결) — OpenArtShow 개발일지</title>
+<meta name="description" content="security-officer 종합 감사 결과 블로커·치명 0. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-9.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시) — OpenArtShow 개발일지">
-<meta property="og:description" content="프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.">
+<meta property="og:title" content="보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결) — OpenArtShow 개발일지">
+<meta property="og:description" content="security-officer 종합 감사 결과 블로커·치명 0. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-9.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)","datePublished":"2026-07-18","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-9.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결)","datePublished":"2026-07-18","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-9.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,12 +88,11 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)</h1>
+<h1><span class="emo">📱</span>보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결)</h1>
 <p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-18</p>
-<p>프런트엔드 SOLID 감사. <strong>아키텍처 경계·의존구조는 모범</strong>(보호↔비보호 import 0·순환 0·<code>normalizeSpace</code>/<code>normalizeChibi</code> SSOT 전량 경유). 부채는 두 축에 집중.</p>
-<ul><li><strong>SRP(초거대 함수)</strong>: <code>chibi.js buildChibi</code>(1374줄)·<code>ui.js injectStyles</code>(CSS 1636줄)·<code>builder.js createBuilder</code>(557줄) 등.</li><li><strong>OCP/DRY(형태 지오메트리)</strong>: <code>space-render.js partGeo</code>↔<code>partAccent</code>의 <strong>형상 상수 수기 이중보유</strong>(cake·mirror 등 6+쌍, 한쪽만 고치면 정합 붕괴)·거대 switch·chibi 종족 문자열 하드코딩·tiger 死코드.</li></ul>
-<h3>4단계 계획(ROI·리스크 순)</h3>
-<p>1. <strong>안전망</strong>(선행): 순수함수 단위테스트(normalize·snap·artworkSize 등) + 헤드리스 렌더 스모크 재사용화 — 리팩터 전 회귀 그물. 2. <strong>(A) 저리스크 국소</strong>(비보호): tiger 死코드 제거·이동상수/저장키 SSOT 추출·injectStyles CSS 외부화 등. 3. <strong>(B) 구조</strong>(게이트): partGeo↔partAccent 형상상수 공유 spec(최우선)·switch→디스패치·chibi 종족 레지스트리·createBuilder 분해. 4. <strong>(C) 보호4파일</strong>(감사·사전서명): main.js init/animate 분해·config artworkSlots 좌표 파생화.</p>
+<p>security-officer 종합 감사 결과 <strong>블로커·치명 0</strong>. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.</p>
+<ul><li><strong>A-1 landing 프로필명 XSS 이스케이프</strong> (30cf0db): <code>renderNav</code>가 <code>p.name</code>·<code>p.initial</code>을 <code>innerHTML</code>에 직접 삽입 → 같은 파일 갤러리 카드처럼 <code>escapeHtml()</code> 적용. 실 OAuth 연동·<code>lu-auth-profile-v1</code> localStorage 조작 시의 <strong>잠복(저장형) XSS</strong> 차단(순수 출력 이스케이프, 회귀 없음).</li><li><strong>A-2 deploy.yml 서드파티 액션 SHA 핀</strong> (8001ade): <code>actions/checkout</code>·<code>actions/setup-node</code>·<code>peaceiris/actions-gh-pages</code>의 태그핀(@v4)을 <strong>커밋 SHA 핀</strong>으로 교체(태그 탈취·강제이동에 의한 배포 파이프라인 오염 차단). 배포 성공으로 무결성 실증.</li><li><strong>B-3 CSP 메타 5페이지</strong> (9f3c19a): CSP 없던 landing·studio·guide·about·design에 CSP 추가(<code>default-src 'self'</code>, 인라인 script는 sha256 핀, <code>object-src 'none'</code>·<code>base-uri 'none'</code>). 검수관이 studio의 <code>img-src https:</code> 누락(작가 외부이미지 미리보기 회귀) blocker를 발견·수정.</li></ul>
+<p><strong>감독 결정 대기(B-1·B-2)</strong>: artworks.js 데모 갤러리의 picsum 외부이미지(B-1, 보호파일), safeMediaUrl의 외부 URL 허용 + index.html CSP <code>https:</code> 완화(B-2, 위험수용§8-5) — "외부호스트0" 규율·외부 이미지 정책 변경이라 감독 판정 사안.</p>
 </article>
 
 </div>
