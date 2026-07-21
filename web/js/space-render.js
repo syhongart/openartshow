@@ -17,6 +17,15 @@ import { createPlasterMaps, createParquetMaps, createConcreteMaps } from './scen
 // 텍스처를 반환하므로 clone 후 repeat 설정 — 공유 캐시(미술관) 오염 방지.
 const _texCache = {};
 function baseMaps(gen, key) { return _texCache[key] || (_texCache[key] = gen()); }
+// [world 스폰 워밍] world 초기 로드(로딩 화면 중)에서 1회 호출해 마감 3종 base(512² 절차 베이크)를
+// _texCache에 미리 데워둔다. 이렇게 하면 세션 중 그 마감을 "처음" 요구하는 파셀이 로드되는 프레임의
+// 동기 베이크(LOAD_BUDGET_MS 예산 밖 실행 → 파셀 경계 히칭)가 사라진다(스폰은 로딩 화면 중이라 히칭 비가시).
+// world 전용 경로에서만 호출 → 고정 미술관(방문뷰·빌더) 무영향. 공용 baseMaps 재사용(중복 로직 0). 텍스처 생성 X(캐시만).
+export function warmBuildingTexCache() {
+  baseMaps(createPlasterMaps, 'plaster');
+  baseMaps(createConcreteMaps, 'concrete');
+  baseMaps(createParquetMaps, 'parquet');
+}
 function texMat({ gen, key, tint = 0xffffff, repeat = [2, 2], normalScale = 0.4, roughness = 0.9, metalness = 0 }) {
   const base = baseMaps(gen, key);
   const map = base.map.clone(); map.needsUpdate = true; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(repeat[0], repeat[1]);
