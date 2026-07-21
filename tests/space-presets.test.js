@@ -10,7 +10,7 @@ import {
   northArt,
   presetThumb,
 } from '../web/js/space-presets.js';
-import { normalizeSpace, PART_TYPE_IDS, FOOTPRINT, STORY_H, FINISH } from '../web/js/space.js';
+import { normalizeSpace, PART_TYPE_IDS, FOOTPRINT, STORY_H, FINISH } from '../web/js/space';
 
 describe('PRESET_IDS / getPreset — 조회 계약', () => {
   it('PRESET_IDS는 SPACE_PRESETS의 id 집합과 정확히 일치', () => {

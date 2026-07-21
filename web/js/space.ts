@@ -1,8 +1,14 @@
-// space.js — 사용자 공간 문서 스키마 (SSOT · "파라미터가 곧 공간")
+// space.ts — 사용자 공간 문서 스키마 (SSOT · "파라미터가 곧 공간")
 // -----------------------------------------------------------------------------
 // config.js의 BUILDING 청사진(단일 고정 미술관)을 사용자 편집 가능한 "공간 문서"로 일반화.
 // chibi.js의 normalizeChibi 패턴을 그대로 계승: 버전 필드 + 기본값 자동채움 + 마이그레이션 →
 // 하위호환·저장·공유가 자동.
+//
+// [B-5-① leaf TS 전환] 순수 스키마 leaf 파일을 strict TypeScript로 전환. 런타임 로직·값은
+// 무변경(순수 타입 첨가만). 공개 export 심볼 시그니처·주요 타입(Space/SpacePart/PartSpec)만
+// 명시하고 내부 헬퍼는 strict 통과 수준으로만 주석. [리졸브] vite/rollup 빌드 resolver는
+// 확장자 명시된 .js import를 .ts로 치환하지 않으므로(tsc Bundler 모드와 상이), 소비자 import는
+// 확장자 없는 './space'(resolve.extensions가 .ts로 리졸브)로 통일. 배포기(vite.config) 무수정.
 //
 // [저장/공유 계약 — 팀장 재판정 확정] 공간은 수 KB(스타터 실측 930B)라 아바타처럼
 // URL(512자)에 담지 않는다. MVP 공유 경로는 **localStorage/JSON 파일만**. URL 공유가
@@ -16,6 +22,90 @@
 // 데이터 모델만 정의(렌더/UX는 별건). 스크린 sourceUrl은 예약만(유튜브=§6-5 법무·CSP 게이트).
 // -----------------------------------------------------------------------------
 
+// ── 타입 정의 (공개 스키마 계약) ─────────────────────────────────────────────
+export type PartCategory = 'structure' | 'exhibit' | 'ambience' | 'finish' | 'event';
+export type PartGrid = 'structure' | 'object';
+
+/** 파츠 레지스트리 요소 타입 — PART_TYPES 각 값의 형태. */
+export interface PartSpec {
+  cat: PartCategory;
+  grid: PartGrid;
+  solid: boolean;
+  size: number[];
+  label: string;
+  floor?: boolean;
+  art?: boolean;
+  mats?: string[];
+  variants?: string[];
+  ratios?: string[];
+  sizes?: number[];
+}
+
+/** 마감(스와치) 그룹 — FINISH 각 값의 형태. */
+export interface FinishGroup {
+  ids: string[];
+  def: string;
+}
+
+/** 정규화된 파츠 인스턴스 — normalizePart 산출·space.parts 요소. */
+export interface SpacePart {
+  t: string;
+  x: number;
+  z: number;
+  ry: number;
+  floor?: number;
+  y?: number;
+  color?: string;
+  frame?: string;
+  src?: string;
+  featured?: boolean;
+  ar?: number;
+  ratio?: string;
+  variant?: string;
+  mat?: string;
+  size?: number;
+}
+
+/** 층간 경사 밴드 — shell.stairs 요소. */
+export interface Stair {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+  yFrom: number;
+  yTo: number;
+}
+
+/** shell 마감 세트 — 정규화 후 형태. */
+export interface SpaceFinish {
+  wall: string;
+  floor: string;
+  ceiling: string;
+  trim: string;
+  featureWall: string;
+  featureFinish: string;
+}
+
+/** 공간 셸(구조 파라미터) — 정규화 후 형태. */
+export interface SpaceShell {
+  footprint: string;
+  storyH: string;
+  wallT: number;
+  entries: string[];
+  floors: number;
+  stairs: Stair[];
+  finish: SpaceFinish;
+}
+
+/** 공간 문서(SSOT) — normalizeSpace/newSpace 산출 형태. */
+export interface Space {
+  version: number;
+  meta: { name: string; author: string };
+  shell: SpaceShell;
+  spawn: { x: number; z: number; ry: number };
+  parts: SpacePart[];
+}
+
 export const SPACE_VERSION = 2;
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
@@ -23,9 +113,9 @@ const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 // ── 파츠 레지스트리 — 디자이너 아트보드 22종(가칭, 카피 확정 전) ──────────────
 // grid: 'structure'=1m·90°스냅 / 'object'=0.5m·15°자유회전 (이중 그리드)
 // solid: player 충돌 대상 여부.  cat: 팔레트 카테고리 탭.
-export const PART_CATEGORIES = ['structure', 'exhibit', 'ambience', 'finish', 'event'];
+export const PART_CATEGORIES: PartCategory[] = ['structure', 'exhibit', 'ambience', 'finish', 'event'];
 
-export const PART_TYPES = {
+export const PART_TYPES: Record<string, PartSpec> = {
   // 구조 6 (structure grid, 대부분 solid)
   wallPanel:    { cat: 'structure', grid: 'structure', solid: true,  size: [1.0, 0.2, 3.6], label: '벽 패널', mats: ['plaster', 'wood', 'metal'] },
   floorTile:    { cat: 'structure', grid: 'structure', solid: true,  size: [1.0, 0.1, 1.0], label: '바닥 타일', floor: true },
@@ -76,7 +166,7 @@ export const PART_TYPES = {
 export const PART_TYPE_IDS = new Set(Object.keys(PART_TYPES));
 
 // ── 마감(스와치) — 오브젝트가 아니라 shell 표면에 적용 ───────────────────────
-export const FINISH = {
+export const FINISH: Record<'wall' | 'feature' | 'floor' | 'ceiling' | 'trim', FinishGroup> = {
   wall:    { ids: ['white', 'warmsand', 'charcoal'], def: 'white' }, // 4벽 공통 마감(중립 배경 규율 §3-6)
   // feature=피처월 1면 전용 마감. kintsugi(금계)는 여기에만 존재 → 스키마 차원에서 "1면 강제"(팀장 조건).
   feature: { ids: ['deepviolet', 'kintsugi', 'charcoal', 'warmsand'], def: 'deepviolet' },
@@ -88,13 +178,13 @@ export const FINISH = {
 // ── 인스턴스 틴트 팔레트(#56/#43) — rug·drape 색 UI 퀵픽/기본값 목록(SSOT) ───────
 // index0 = 기본색(무색 저장분 폴백 = 기존 단색 재질과 동색, 하위호환 보증).
 // 이 목록은 UI 퀵픽 제안·기본값용일 뿐, p.color 자유 hex 입력은 그대로 허용(normalizePart color 검증은 HEX_RE, 팔레트로 제한하지 않음).
-export const TINT_PALETTES = {
+export const TINT_PALETTES: Record<string, string[]> = {
   rug:   ['#c9bfae', '#e4ddd0', '#4a4844', '#a9705a', '#8a9481'],           // sand(기본)/ivory/charcoal/terracotta/sage
   drape: ['#2c2c30', '#4a4038', '#242c38', '#4a2b30', '#e4ddd0', '#8a9481'], // charcoal(기본)/taupe/navy/burgundy + ivory·sage(밝은톤 추가, rug와 톤 정합·갤러리 중립)
 };
 
 // ── 자동 액자 3스타일 + 비율 규칙 (디자이너 §자동 액자) ──────────────────────
-export const FRAME_STYLES = { ids: ['minimal', 'classic', 'frameless'], def: 'minimal' };
+export const FRAME_STYLES: { ids: string[]; def: string } = { ids: ['minimal', 'classic', 'frameless'], def: 'minimal' };
 export const FRAME_RULES = {
   portrait:  { clampH: 2.6 },   // 세로장: 높이 우선 clamp
   landscape: { clampW: 3.2 },   // 가로장: 폭 우선 clamp
@@ -103,8 +193,8 @@ export const FRAME_RULES = {
 };
 
 // ── 층고·풋프린트 프리셋 ──────────────────────────────────────────────────
-export const STORY_H = { studio: 2.8, gallery: 3.6, grand: 4.2 };
-export const FOOTPRINT = { small: [6, 6], medium: [9, 7], large: [14, 10], hall: [20, 14], grand: [28, 18] };
+export const STORY_H: Record<string, number> = { studio: 2.8, gallery: 3.6, grand: 4.2 };
+export const FOOTPRINT: Record<string, number[]> = { small: [6, 6], medium: [9, 7], large: [14, 10], hall: [20, 14], grand: [28, 18] };
 
 // ── 스타터 방("완성된 방") — 처음 열면 마주하는 완성 공간 ─────────────────────
 // 9×7m 미디엄, 3.6m 층고. 북벽 3작품(피처월 1면) + 좌대·스크린·벤치·러그·화분.
@@ -140,12 +230,12 @@ export const DEFAULT_SPACE = Object.freeze({
 });
 
 // ── 정규화 — 없는 키 기본값 채움, 파츠 검증·클램프 (normalizeChibi 계승) ─────
-const clamp = (v, lo, hi, d) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
-const pick = (v, ids, d) => (typeof v === 'string' && ids.has(v) ? v : d);
-const hex = (v, d) => (typeof v === 'string' && HEX_RE.test(v) ? v : d);
-const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+const clamp = <T>(v: any, lo: number, hi: number, d: T): number | T => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+const pick = <T>(v: any, ids: Set<string>, d: T): string | T => (typeof v === 'string' && ids.has(v) ? v : d);
+const hex = <T>(v: any, d: T): string | T => (typeof v === 'string' && HEX_RE.test(v) ? v : d);
+const num = (v: any, d: number): number => (typeof v === 'number' && isFinite(v) ? v : d);
 
-const FIN = (k) => new Set(FINISH[k].ids);
+const FIN = (k: keyof typeof FINISH): Set<string> => new Set(FINISH[k].ids);
 const FRAME_IDS = new Set(FRAME_STYLES.ids);
 
 // [오픈월드 가산 · SPACE_VERSION 불변] shell.entries — 파셀 경계 개구부(문) 방향 목록.
@@ -153,9 +243,9 @@ const FRAME_IDS = new Set(FRAME_STYLES.ids);
 // 인접 파셀 존재 시 이 방향 벽에 문틀을 뚫어 통과로를 만든다. 단일 공간(visit.js)은
 // 소비하지 않으므로 영향 없음(p.y/p.featured/p.ar과 동일한 옵션 필드 패턴).
 const ENTRY_DIRS = new Set(['north', 'south', 'east', 'west']);
-function normEntries(v) {
+function normEntries(v: any): string[] {
   if (!Array.isArray(v)) return [];
-  const out = [];
+  const out: string[] = [];
   for (const d of v) { if (ENTRY_DIRS.has(d) && !out.includes(d)) out.push(d); }
   return out;
 }
@@ -164,10 +254,10 @@ function normEntries(v) {
 // 생략 = floors:1 / stairs:[] = 기존 단층 100% 동일(visit·builder 무영향). stairs는 config.js
 // BUILDING.stairs와 동형({x0,x1,z0,z1,yFrom,yTo}): x0..x1 밴드에서 z0(yFrom)→z1(yTo) 선형 상승.
 // world.js가 지면 후보로 소비(등반), space-render가 램프 지오/슬래브 개구부 생성.
-const clampInt = (v, lo, hi, d) => (Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : d);
-function normStairs(v) {
+const clampInt = (v: any, lo: number, hi: number, d: number): number => (Number.isInteger(v) ? Math.min(hi, Math.max(lo, v)) : d);
+function normStairs(v: any): Stair[] {
   if (!Array.isArray(v)) return [];
-  const out = [];
+  const out: Stair[] = [];
   for (const s of v) {
     if (!s || typeof s !== 'object') continue;
     const x0 = num(s.x0, 0), x1 = num(s.x1, 0), z0 = num(s.z0, 0), z1 = num(s.z1, 0);
@@ -178,10 +268,10 @@ function normStairs(v) {
   return out;
 }
 
-function normalizePart(raw) {
+function normalizePart(raw: any): SpacePart | null {
   if (!raw || typeof raw !== 'object' || !PART_TYPE_IDS.has(raw.t)) return null; // 미지 타입 폐기
   const spec = PART_TYPES[raw.t];
-  const p = {
+  const p: SpacePart = {
     t: raw.t,
     x: num(raw.x, 0),
     z: num(raw.z, 0),
@@ -207,7 +297,7 @@ function normalizePart(raw) {
     if (arv !== undefined) p.ar = arv;
   }
   if (raw.t === 'screen') {
-    p.ratio = pick(raw.ratio, new Set(spec.ratios), spec.ratios[0]);
+    p.ratio = pick(raw.ratio, new Set(spec.ratios), spec.ratios![0]);
     p.src = typeof raw.src === 'string' ? raw.src : '';      // 유튜브 영상ID(빌더가 ytembed.youtubeId로 검증한 11자만 기록, 재생 직전 재검증). 공개 노출은 §6-5 법무(개인정보처리방침) 선행.
   }
   if (raw.variant !== undefined && spec.variants) p.variant = pick(raw.variant, new Set(spec.variants), spec.variants[0]);
@@ -216,12 +306,12 @@ function normalizePart(raw) {
   return p;
 }
 
-export function normalizeSpace(raw) {
+export function normalizeSpace(raw: any): Space {
   const src = raw && typeof raw === 'object' ? migrateSpace(raw) : {};
   const sh = src.shell && typeof src.shell === 'object' ? src.shell : {};
   const shf = sh.finish && typeof sh.finish === 'object' ? sh.finish : {};
   const sp = src.spawn && typeof src.spawn === 'object' ? src.spawn : {};
-  const parts = Array.isArray(src.parts) ? src.parts.map(normalizePart).filter(Boolean) : [];
+  const parts = Array.isArray(src.parts) ? src.parts.map(normalizePart).filter(Boolean) as SpacePart[] : [];
   return {
     version: SPACE_VERSION,
     meta: {
@@ -253,11 +343,11 @@ export function normalizeSpace(raw) {
 // [팀장 재판정 확정] 상향(v0→현재)만 보장. 상위 버전(v>현재) 문서는 조용히 파싱하지
 // 않고 거부한다 — 하향 마이그레이션은 불가능하고, 조용히 열면 필드 유실·오해석 사고가 난다.
 // 호출부(decodeSpace)가 catch해 "이 버전으로는 못 여는 공간" 안내로 처리한다.
-export function migrateSpace(doc) {
+export function migrateSpace(doc: any): any {
   let d = doc;
   const v = typeof d.version === 'number' ? d.version : 0;
   if (v > SPACE_VERSION) {
-    const e = new Error('space version ' + v + ' > supported ' + SPACE_VERSION);
+    const e: Error & { code?: string } = new Error('space version ' + v + ' > supported ' + SPACE_VERSION);
     e.code = 'SPACE_VERSION_AHEAD';
     throw e;
   }
@@ -280,9 +370,9 @@ export function migrateSpace(doc) {
 
 // ── 인코딩 — localStorage/파일 (URL 아님: 저장/공유 계약 주석 참조) ────────────
 export const SPACE_PREFIX = 'space:';
-export function encodeSpace(p) { return SPACE_PREFIX + JSON.stringify(normalizeSpace(p)); }
-export function decodeSpace(str) {
+export function encodeSpace(p: any): string { return SPACE_PREFIX + JSON.stringify(normalizeSpace(p)); }
+export function decodeSpace(str: unknown): Space | null {
   if (typeof str !== 'string' || !str.startsWith(SPACE_PREFIX)) return null;
   try { return normalizeSpace(JSON.parse(str.slice(SPACE_PREFIX.length))); } catch { return null; } // 버전초과/파손 → null
 }
-export function newSpace() { return normalizeSpace(DEFAULT_SPACE); }
+export function newSpace(): Space { return normalizeSpace(DEFAULT_SPACE); }

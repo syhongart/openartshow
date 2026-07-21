@@ -11,7 +11,7 @@
 //   bx,bz: 파셀 중심 대비 건물 오프셋(지터 — 스카이라인 리듬)
 // 재사용: space-presets SPACE_PRESETS(랜드마크), space.js normalizeSpace(검증·폴백).
 // -----------------------------------------------------------------------------
-import { normalizeSpace, FOOTPRINT, STORY_H, PART_TYPES } from './space.js';
+import { normalizeSpace, FOOTPRINT, STORY_H, PART_TYPES } from './space';
 import { SPACE_PRESETS } from './space-presets.js';
 import { encodeChibi, CHIBI_PRESETS } from './chibi.js';
 

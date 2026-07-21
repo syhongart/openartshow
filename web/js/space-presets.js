@@ -5,7 +5,7 @@
 // (하위호환·검증 자동). 좌표는 방 중심 원점·바닥 y=0(BUILDING/DEFAULT_SPACE 계승).
 // 썸네일은 런타임 캔버스 탑다운 플랜(외부 이미지 0) — presetThumb.
 // -----------------------------------------------------------------------------
-import { FOOTPRINT, PART_TYPES } from './space.js';
+import { FOOTPRINT, PART_TYPES } from './space';
 
 // 북벽(z<0) 3작품 헬퍼 (world-gen.js 절차생성도 재사용 — export)
 export const northArt = (z = -3.4) => ([

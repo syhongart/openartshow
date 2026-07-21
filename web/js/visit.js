@@ -10,7 +10,7 @@
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { buildSpaceGroup, disposeSpaceGroup, partY, addRoomLighting, bakeShellLightmapsAsync } from './space-render.js';
-import { PART_TYPES } from './space.js';
+import { PART_TYPES } from './space';
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;          // 이동 속도(m/s)
