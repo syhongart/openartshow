@@ -1111,6 +1111,28 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const listeners = {};
   const emit = (ev, d) => (listeners[ev] || []).forEach((f) => f(d));
 
+  // ── [FPS 적응] 실시간 해상도 스케일링 (오픈월드 전용 · 세션 한정 비저장) ──────────────
+  // 감독 실기기 제보: 모바일 오픈월드가 "매끄럽지 않다"(지속 저FPS). 스폰 시 setPixelRatio를
+  // 1회(109-110) 고정만 해서, 프레임이 떨어져도 해상도가 유지돼 회복 기회가 없다. main.js:1300-1360
+  // 적응 루프를 이식하되 — main.js는 writeSpec(SPEC_KEY 'lu-spec-v2')로 영구 학습하지만, world는
+  // (1) 그 키가 고정 미술관과 공유돼 오픈월드 세션 성능이 미술관 시작 품질을 오염시키고,
+  // (2) 파셀 스트리밍이라는 부하 구조 자체가 미술관과 달라 학습 이전이 부적절하므로 —
+  // 저장을 쓰지 않고 이 세션 한정으로만 배율을 조정한다(비저장 단순화). gpuInfo.soft(SwiftShader 등)는
+  // 이미 포테이토 고정(0.7 캡·30fps 프레임 캡)이라 적응 대상에서 제외한다.
+  const ADAPT_ENTER_FPS = 24;   // 이 밑 → 즉시 강등(main.js LITE_ENTER_FPS 계승)
+  const ADAPT_EXIT_FPS = 48;    // 이 위 지속 → 단계 승급. main.js(45)보다 소폭 높여 스트리밍 여유 확보(히스테리시스 갭 24↔48).
+  const ADAPT_COOLDOWN = 10;    // 재전환 쿨다운(초) — 깜빡임/배율 진동 방지(main.js 동일).
+  const ADAPT_UP_STEP = 0.25;   // 승급 폭(+0.25씩, main.js 동일).
+  const ADAPT_UP_HOLD = 20;     // 승급 전 고FPS 연속 틱(0.5s 집계 × 20 = 10초 지속).
+  const ADAPT_WARMUP = 3;       // 스폰 후 이 초 동안 강등 보류(파셀/텍스처 로딩 스파이크 오판 방지).
+  const dprAdapt = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  // 상한 = 스폰 초기값(109-110과 동일식). 하한 = dpr*0.75(단 최소 1) — OS 배율(dpr>1) 화면에서
+  // 1.0 밑돌면 뿌옇게 보인다는 감독 제보 → 그 이하로는 절대 내리지 않는다.
+  const RATIO_CEIL = gpuInfo.soft ? Math.min(dprAdapt, 0.7) : Math.min(2, dprAdapt);
+  const RATIO_FLOOR = Math.max(1, dprAdapt * 0.75);
+  let liteMode = false;
+  let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
+
   // ── RAF ──
   let raf = 0, last = 0, disposed = false, potatoAccum = 0;
   function step(now) {
@@ -1150,6 +1172,41 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
     processLoadQueue(); // [스트리밍 큐] 프레임 예산 내 지연 로드 소진(렌더 직전 — 이번 프레임 빌드분 반영)
     renderer.render(scene, camera);
+    adaptQuality(d); // [FPS 적응] 실측 프레임률로 해상도 배율 조정(soft 제외 — 아래에서 자체 가드)
+  }
+  // [FPS 적응] 0.5초마다 FPS를 집계해 저FPS→즉시 강등(하한까지), 고FPS 지속→단계 승급(+0.25).
+  // 히스테리시스(ENTER 24 ↔ EXIT 48) + 10초 쿨다운으로 배율 진동을 막는다. main.js:1300-1360 이식.
+  // d는 update의 clamp(min 0.05)된 delta라 최저 20fps로 측정된다 — 강등 임계 24fps는 이 상한보다
+  // 높아 트리거는 정상 작동하고(실측 5~20fps는 모두 20fps로 보여 즉시 강등엔 충분), 승급 임계 48fps는
+  // clamp에 걸리지 않아 정확하다. soft는 이미 포테이토 고정이라 여기서 제외한다.
+  function adaptQuality(d) {
+    if (gpuInfo.soft) return;
+    adaptAge += d; adaptFrames += 1; adaptElapsed += d;
+    if (adaptElapsed < 0.5) return;
+    const fpsNow = adaptFrames / adaptElapsed;
+    adaptFrames = 0; adaptElapsed = 0;
+    adaptCooldown = Math.max(0, adaptCooldown - 0.5);
+    emit('fps', Math.round(fpsNow)); // 순수 가산 계측(HUD/디버그·헤드리스 검증)
+    if (adaptCooldown > 0) return;   // 쿨다운 중 재전환 금지(진동 방지)
+    const cur = renderer.getPixelRatio();
+    const streaming = loadQueue.length > 0; // 파셀 스트리밍 중 스파이크는 강등 판단에서 배제
+    if (fpsNow < ADAPT_ENTER_FPS && adaptAge >= ADAPT_WARMUP && !streaming && cur > RATIO_FLOOR) {
+      // 즉시 강등 — 하한(RATIO_FLOOR)까지 한 번에 내려 빠르게 보호한다. lite 진입.
+      renderer.setPixelRatio(RATIO_FLOOR);
+      liteMode = true; adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
+      emit('adapt', { mode: 'lite', ratio: RATIO_FLOOR, fps: Math.round(fpsNow) });
+    } else if (fpsNow > ADAPT_EXIT_FPS) {
+      // 승급 — 고FPS가 ADAPT_UP_HOLD틱(10초) 지속돼야 +0.25씩 상한까지(느린 승급).
+      adaptUpTicks += 1;
+      if (adaptUpTicks >= ADAPT_UP_HOLD && cur < RATIO_CEIL) {
+        renderer.setPixelRatio(Math.min(RATIO_CEIL, cur + ADAPT_UP_STEP));
+        adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
+        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) liteMode = false; // 상한 복귀 시 lite 해제
+        emit('adapt', { mode: 'up', ratio: renderer.getPixelRatio(), fps: Math.round(fpsNow) });
+      }
+    } else {
+      adaptUpTicks = 0; // 중간대(24~48fps) — 승급 카운트 리셋(안정 유지)
+    }
   }
   function renderOnce() { applyPose(); maybeRebakeShadow(); renderer.render(scene, camera); }
 
@@ -1213,6 +1270,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getPitch: () => pitch,
     getCurrentParcel: () => currentParcel(),
     getGpuInfo: () => ({ ...gpuInfo }), // [저사양 방어] 검증·디버그용 프로브 결과
+    // [FPS 적응] 현재 적응 상태(검증·HUD 디버그용 순수 가산) — 강등/승급·하한·쿨다운 준수 확인.
+    getAdaptState: () => ({ liteMode, pixelRatio: renderer.getPixelRatio(), floor: RATIO_FLOOR, ceil: RATIO_CEIL, cooldown: adaptCooldown }),
     // [스트리밍 큐] 계측 게터(순수 가산) — 히칭 벤치·HUD 디버그. 드로우콜·프로그램 수·로드/큐 상태.
     getStats: () => {
       let loadedFull = 0, loadedShell = 0;
