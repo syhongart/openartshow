@@ -20,11 +20,11 @@
 <meta name="twitter:description" content="작품이 공간에서 말하게 하라 — 대관료도, 액자값도, 창고비도 없이 브라우저 하나로 여는 3D 미술관 OpenArtShow 소개">
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
-<!-- 경로 규칙(미링크 준비 상태 한정): about.html은 deploy.yml에 cp 미추가 → web 전체가 /app/ 아래 통째 복사되는
-     `cp -r web/. _site/app/` 규칙만 적용되어 실제로는 _site/app/about.html에 위치(guide.html처럼 _site/ 루트가 아님).
-     그래서 여기 기준 상대경로는 ./vendor/fonts/fonts.css. 훗날 감독 승인으로 about.html이 루트(_site/about.html)로
-     승격 배포되면(=deploy.yml에 cp 추가) guide.html과 동일하게 ./app/vendor/fonts/fonts.css로 되돌려야 한다. -->
-<link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<!-- 경로 규칙: about.html은 deploy.yml에서 루트(_site/about.html)로 승격 배포된다(landing/guide/design 급 공개 페이지).
+     따라서 vendor 폰트는 루트 기준 ./app/vendor/fonts/fonts.css로 참조(guide.html과 동일). 나머지 상대경로(브랜드·
+     랜딩 ./index.html, 전시장 ./app/, 가이드 ./guide.html)도 전부 루트 기준으로 정합. 이 승격은 A단계 스모크 하네스가
+     app/ 배포 시 CTA 404를 발견해 근본 해결한 것(deploy.yml에 cp web/about.html _site/about.html 추가). -->
+<link rel="stylesheet" href="./app/vendor/fonts/fonts.css">
 <style>
   :root {
     /* 팔레트 B — 액센트: 콘텐츠 영역(라이트/다크 전환) vs 톱바·히어로(항상 다크 몰입 고정) — guide.html과 동일 SSOT */
