@@ -2913,26 +2913,40 @@ function buildChibiMaker() {
     return t;
   }
 
-  // 벽지 텍스처 — 절차 생성(외부 에셋 0). 세로 줄은 X만 변하고 Y로는 균일해 캔버스 높이는 극소.
-  // 심리스: 밴드 주기가 캔버스 폭을 정수로 나누고 repeatX가 정수라 좌우 이음새가 없다.
-  function makeWallpaperTex(draw, { repeatX = 1, repeatY = 1, w = 256, h = 8 } = {}) {
+  // 벽 텍스처 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드) + 중앙 원형 글로우를 한 장에 베이크.
+  // 절차 CanvasTexture(외부 에셋 0). 중앙 글로우는 반복되면 안 되므로 벽 전체를 큰 캔버스 non-repeat
+  // 한 장으로 굽는다(실시간 라이트 추가 0 — 조명 리그 무변경, 비용 그대로).
+  function makeWallTex(base, stripe, glowFn) {
     if (typeof document === 'undefined') return null;
-    const c = document.createElement('canvas');
+    const w = 512, h = 307, c = document.createElement('canvas'); // 512:307≈벽 plane 10:6 비율(왜곡 방지)
     c.width = w; c.height = h;
-    draw(c.getContext('2d'), w, h);
+    const x = c.getContext('2d');
+    x.fillStyle = base; x.fillRect(0, 0, w, h);
+    const count = 28, period = w / count;   // 세로 밴드 28개(등폭 V1 톤 유지)
+    x.fillStyle = stripe;
+    for (let i = 0; i < count; i++) x.fillRect(i * period, 0, period / 2, h);
+    glowFn(x, w, h);                        // 중앙 라디얼 글로우 합성(베이크)
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(repeatX, repeatY);
     t.anisotropy = 4;
-    return t;
+    return t;                              // repeat 없음(벽 전체 1장)
   }
-  // 톤온톤 세로 줄무늬 벽지 — base 위에 stripe 밴드(폭=주기 절반)를 교대로. 감독 선택 V1(등폭 밴드).
-  const drawStripes = (base, stripe) => (x, W, H) => {
-    const count = 8, period = W / count;   // 256/8=32px 주기(정수 → 심리스)
-    x.fillStyle = base; x.fillRect(0, 0, W, H);
-    x.fillStyle = stripe;
-    for (let i = 0; i < count; i++) x.fillRect(i * period, 0, period / 2, H);
+  // 중앙 원형 조명(감독 요청) — 그늘(비네트)+중앙 스팟 2겹. 벽 베이스가 이미 밝아(휘도 ~214)
+  // '밝기 추가'만으론 중앙이 안 도드라진다(감독 "안 먹는다"). 대비의 주역은 그늘 — 가장자리를
+  // 웜브라운으로 부드럽게 그늘지게 해 중앙 조명감을 확실히 만든다(중앙 대비 가장자리 ~59% 밝음).
+  const glowW2 = (x, w, h) => {
+    const cx = w / 2, cy = h * 0.62;   // cy=머리~어깨 뒤
+    // 그늘 비네트 — 안쪽 35%까지 투명, 바깥으로 갈수록 웜브라운 그늘(부드러운 감쇠)
+    const shade = x.createRadialGradient(cx, cy, 0, cx, cy, w * 0.52);
+    shade.addColorStop(0, 'rgba(70,55,35,0)');
+    shade.addColorStop(0.35, 'rgba(70,55,35,0)');
+    shade.addColorStop(1, 'rgba(70,55,35,0.55)'); // 세기: 은은↓0.40 / 강함↑0.70
+    x.fillStyle = shade; x.fillRect(0, 0, w, h);
+    // 중앙 웜 스팟 — 조명 핵
+    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, w * 0.28);
+    spot.addColorStop(0, 'rgba(255,242,210,0.6)');
+    spot.addColorStop(1, 'rgba(255,242,210,0)');
+    x.fillStyle = spot; x.fillRect(0, 0, w, h);
   };
 
   function ensurePreviewRenderer() {
@@ -3015,9 +3029,9 @@ function buildChibiMaker() {
     shadowCatcher.material.polygonOffsetFactor = -1;
     shadowCatcher.receiveShadow = true;
     previewScene.add(shadowCatcher);
-    // 뒤 벽 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드). PlaneGeometry 법선이 +Z(카메라 방향)라
-    // 회전 불필요. 포그(near 5.5)에 살짝 잠겨 백드롭과 이어지되 무늬는 또렷하다.
-    const wallpaperTex = makeWallpaperTex(drawStripes('#e2d7bf', '#efe7d3'), { repeatX: 4, repeatY: 1 });
+    // 뒤 벽 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1) + 중앙 원형 글로우 베이크. PlaneGeometry 법선이
+    // +Z(카메라 방향)라 회전 불필요. 포그(near 5.5)에 살짝 잠겨 백드롭과 이어지되 무늬·글로우는 또렷하다.
+    const wallpaperTex = makeWallTex('#e2d7bf', '#efe7d3', glowW2);
     const wall = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 6),
       new THREE.MeshStandardMaterial({ map: wallpaperTex, roughness: 0.9, metalness: 0 }),
