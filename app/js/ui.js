@@ -2918,17 +2918,18 @@ function buildChibiMaker() {
   // 맞춘 값 — cx=256(중앙), cy=168(머리~어깨 뒤). 배경이 밝아 대비 주역은 그늘.
   const wallGlowFn = (x, w, h) => {
     const cx = w / 2, cy = h * 0.547;   // 512×307 → (256, 168)
-    // 그늘 비네트 — 웜브라운으로 프레임 가장자리를 낮춰 중앙 스포트라이트를 세운다
-    const shade = x.createRadialGradient(cx, cy, 25, cx, cy, 145);
-    shade.addColorStop(0, 'rgba(45,34,20,0)');
-    shade.addColorStop(0.5, 'rgba(45,34,20,0)');
-    shade.addColorStop(1, 'rgba(45,34,20,0.58)'); // 세기: 은은↓0.42 / 강함↑0.70
+    // 그늘 비네트(연하게) — 중립 웜그레이로 가장자리를 살짝만 낮춰, 흰 조명이 은은히 인지될
+    // 최소 대비만 준다(감독 "더 연하게"). 이전 웜브라운 0.58 → 0.24로 낮춤.
+    const shade = x.createRadialGradient(cx, cy, 35, cx, cy, 150);
+    shade.addColorStop(0, 'rgba(58,52,44,0)');
+    shade.addColorStop(0.5, 'rgba(58,52,44,0)');
+    shade.addColorStop(1, 'rgba(58,52,44,0.24)'); // 세기: 은은↓0.16 / 강함↑0.38
     x.fillStyle = shade; x.fillRect(0, 0, w, h);
-    // 중앙 웜 스팟 — 조명 핵(캐릭터 머리 뒤 헤일로)
-    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, 85);
-    spot.addColorStop(0, 'rgba(255,241,205,1)');
-    spot.addColorStop(0.5, 'rgba(255,235,180,0.85)');
-    spot.addColorStop(1, 'rgba(255,235,180,0)');
+    // 중앙 흰 스팟 — 살짝 있는 흰 조명(감독 지시: 흰색). 웜톤 제거, 코어 alpha 1.0 → 0.45로 연하게.
+    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, 92);
+    spot.addColorStop(0, 'rgba(255,255,255,0.45)');
+    spot.addColorStop(0.5, 'rgba(255,255,255,0.18)');
+    spot.addColorStop(1, 'rgba(255,255,255,0)');
     x.fillStyle = spot; x.fillRect(0, 0, w, h);
   };
 
