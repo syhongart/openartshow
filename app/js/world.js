@@ -145,15 +145,22 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const DOWNLIGHT_FACTORS = [[-0.4, -0.35], [0.15, 0.1], [0.5, -0.1]];
   const DOWNLIGHTS = DOWNLIGHT_FACTORS.length;
   const SPOTS_PER = OW_ART_CAP + DOWNLIGHTS; // soft 7(4+3)·일반 13(10+3) → 풀 soft 35·일반 65(둘 다 5파셀 고갈 0).
+  // [팝인 완화 — 조명 페이드업] shell→full 승격 시 조명 intensity가 0→23을 한 프레임에 하드 스냅해
+  // "불이 확 켜지는" 팝인이 됐다. sl._target(목표강도)로 두고 매 프레임 intensity를 목표로 lerp한다.
+  // FADE_K=6 → 시상수 ≈1/6초, 목표 근접(≈98%)까지 ≈0.65초. visible·풀 개수는 불변이라 셰이더 재컴파일 churn 없음.
+  // 페이드다운(꺼짐)은 생략 — 풀이 정확히 5파셀분(MAX_FULL=5, 고갈0 설계)이라 언로드-로드 겹침 시 풀 고갈
+  // 위험이 있고, 언로드는 3×3 밖(등 뒤·원거리)이라 즉시 꺼도 보이지 않는다.
+  const FADE_K = 6; // 조명 페이드업 계수(초당). 클수록 빠르게 켜짐. 팀장 실기 튜닝 여지.
   const lightPool = [];
   for (let i = 0; i < MAX_FULL * SPOTS_PER; i++) {
     const sl = new THREE.SpotLight(0xffffff, 0, 11, 0.72, 1.0, 1.0);
     sl.visible = true; sl._inUse = false;   // visible 항상 true(개수 고정), intensity=0로 소등.
+    sl._target = 0;                         // 페이드 목표강도(미사용 라이트는 0·intensity 0이라 무해).
     scene.add(sl); scene.add(sl.target);
     lightPool.push(sl);
   }
   const takeLight = () => { for (const sl of lightPool) if (!sl._inUse) { sl._inUse = true; return sl; } return null; };
-  const releaseLight = (sl) => { sl.intensity = 0; sl._inUse = false; };
+  const releaseLight = (sl) => { sl.intensity = 0; sl._target = 0; sl._inUse = false; }; // 소등·목표0·반납(개수 불변).
   // 파셀 건물 조명 배정 — addRoomLighting(noSpots)이 AO만 만들고, 스포트는 여기서 풀 라이트로 설정.
   // bx,bz=건물 월드 오프셋, dims=userData.dims, refs=userData.partRefs(로컬 위치). 반환=배정 라이트(언로드 반납).
   function assignParcelLights(bx, bz, dims, refs) {
@@ -165,7 +172,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const sl = takeLight(); if (!sl) break; // 풀 고갈(soft 방어) → 조명 스킵
       const p = object.position;
       const toC = new THREE.Vector3(-p.x, 0, -p.z); if (toC.lengthSq() < 1e-3) toC.set(0, 0, 1); toC.normalize();
-      sl.color.setHex(0xffe3ba); sl.intensity = 23; sl.distance = 11; sl.angle = 0.72; sl.penumbra = 1.0; sl.decay = 1.0;
+      sl.color.setHex(0xffe3ba); sl._target = 23; sl.intensity = 0; sl.distance = 11; sl.angle = 0.72; sl.penumbra = 1.0; sl.decay = 1.0; // [팝인 완화] 0에서 시작해 update에서 목표23으로 페이드업(하드 스냅 제거).
       sl.position.set(bx + p.x + toC.x * 2.1, H - 0.15, bz + p.z + toC.z * 2.1);
       sl.target.position.set(bx + p.x, p.y, bz + p.z); sl.target.updateMatrixWorld();
       out.push(sl);
@@ -174,7 +181,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     for (const [fx, fz] of DOWNLIGHT_FACTORS) {
       const dx = hw * fx, dz = hd * fz;
       const sl = takeLight(); if (!sl) break;
-      sl.color.setHex(0xffdcb0); sl.intensity = 18; sl.distance = 12; sl.angle = 0.6; sl.penumbra = 1.0; sl.decay = 1.1;
+      sl.color.setHex(0xffdcb0); sl._target = 18; sl.intensity = 0; sl.distance = 12; sl.angle = 0.6; sl.penumbra = 1.0; sl.decay = 1.1; // [팝인 완화] 0에서 시작해 update에서 목표18으로 페이드업.
       sl.position.set(bx + dx, H - 0.1, bz + dz);
       sl.target.position.set(bx + dx, 0, bz + dz); sl.target.updateMatrixWorld();
       out.push(sl);
@@ -186,8 +193,16 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // 하늘 — 캔버스 그라디언트 스카이돔(자기완결·외부 텍스처 0, fog 미적용) + 밝은 대기 fog.
   const FOG_COLOR = 0xcfe0ee;
-  // 소프트웨어 렌더는 프래그먼트당 fog 연산도 삭감(main.js:629). 스카이돔은 fog:false라 하늘은 그대로 유지.
-  if (!gpuInfo.soft) scene.fog = new THREE.Fog(FOG_COLOR, CELL_MAX * 1.1, CELL_MAX * 3.4);
+  // [팝인 완화] fog near/far를 로드경계로 당겨 파셀 shell→full 승격(팝인·원거리 노출)을 은은한 안개로 덮는다.
+  // 기존 far=CELL_MAX*3.4(≈109m)는 로드거리(≤50m)보다 한참 밖이라 팝인(경계 통과 27~36m대)을 전혀 못 가렸다.
+  // near=인접 파셀 경계 안쪽부터 은은히 시작, far=3×3 대각 shell 거리 부근에서 완전 안개 → 팝인대를 안개 안으로.
+  // near/far를 명명 상수로 노출 — 팀장 실기기 스윕 튜닝용. 실기 피드백에 따라 계수만 조정하면 된다.
+  const FOG_NEAR = CELL_MAX * 0.9; // 인접 파셀 경계 안쪽부터 페이드 시작(가벼운 안개, 근경은 선명 유지)
+  const FOG_FAR  = CELL_MAX * 1.9; // 3×3 대각 shell 거리 부근 완전 안개 — 팝인·원거리 하드 노출 은폐
+  // soft GPU에도 fog 적용(기존 `if(!gpuInfo.soft)` 가드 제거) — 선형 fog는 프래그먼트당 저비용이고,
+  // 팝인은 soft 실기에서 특히 두드러진다. 스카이돔은 fog:false라 하늘은 그대로, sky.js:679는 scene.fog
+  // 존재 시 fog.color만 시간대별로 갱신(near/far 불변)하므로 무충돌.
+  scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);
   renderer.setClearColor(FOG_COLOR, 1);
   function makeSkyDome() {
     const c = document.createElement('canvas'); c.width = 4; c.height = 256;
@@ -1168,6 +1183,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     pos.y += ((groundY + EYE) - pos.y) * Math.min(1, GROUND_LERP_RATE * d);
     applyPose();
     if (skySystem) skySystem.update(d); // [하늘 엔진] 크로스페이드·강수·오로라·번개 진행(조명·clearColor 갱신)
+    // [팝인 완화 — 조명 페이드업] 라이트풀 intensity를 목표(_target)로 lerp. 갓 배정된 스포트(intensity 0)는
+    // 목표23/18로 부드럽게 켜지고, 미사용/반납(_target 0)은 이미 0이라 무변. 개수·visible 불변(재컴파일 0).
+    for (const sl of lightPool) sl.intensity += (sl._target - sl.intensity) * Math.min(1, d * FADE_K);
     maybeRebakeShadow(); // [섀도 프리즈] 8m 이동 시 그림자 재베이크(태양 추종 정합)
     stepNpcs(d);
     stepWalkers(d); // 거리 배회 NPC 앰비언트 시뮬
