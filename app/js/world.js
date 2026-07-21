@@ -16,7 +16,7 @@
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
-import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W } from './space-render.js';
+import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W, warmBuildingTexCache } from './space-render.js';
 import { PART_TYPES } from './space.js';
 import { createAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
@@ -248,7 +248,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const S = gpuInfo.soft ? 128 : 256;
     let s = seed | 0; const rnd = () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const dc = document.createElement('canvas'); dc.width = dc.height = S; const d = dc.getContext('2d');
-    const hc = document.createElement('canvas'); hc.width = hc.height = S; const h = hc.getContext('2d');
+    const hc = document.createElement('canvas'); hc.width = hc.height = S; const h = hc.getContext('2d', { willReadFrequently: true }); // heightToNormal이 이 캔버스를 getImageData 리드백 → willReadFrequently
     h.fillStyle = '#808080'; h.fillRect(0, 0, S, S); // 높이 중립(회색)
     let strength = 2.2;
     // [P1] 3×3 토러스 중복 드로우 — 프리미티브를 (dx,dy)∈{-S,0,S} 오프셋으로 겹쳐 그려 RepeatWrapping 타일 이음새 제거. 생성 1회라 9배 비용 무관.
@@ -355,6 +355,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   applyGroundTex(T.sand, 'sand', 0x9a44c, 6, 0.9);     // [P4]
   applyGroundTex(T.bridge, 'bridge', 0x8a7c1, 2, 0.8); // [P4]
   T.grass.color.setHex(0xffffff); T.plaza.color.setHex(0xffffff); T.road.color.setHex(0xffffff); T.sand.color.setHex(0xffffff); T.bridge.color.setHex(0xffffff); // 텍스처가 색 담당(color=흰=텍스처 원색)
+  // [A-2 스폰 워밍] 지면 텍스처 준비와 같은 초기 로드(로딩 화면 중) 구간에서 건물 마감 3종(plaster/concrete/parquet)
+  // base 텍스처를 미리 베이크해 space-render _texCache를 데워둔다. → 세션 중 그 마감을 처음 요구하는 파셀 로드
+  // 프레임의 동기 512² 베이크(예산 밖 히칭)를 제거. 비-DOM(순수 node)에서는 캔버스 생성 불가라 스킵(폴백 무영향).
+  if (typeof document !== 'undefined') warmBuildingTexCache();
   // 거리 가구 공유 지오메트리(파셀 간 재사용 — InstancedMesh/개별 Mesh가 참조). createWorld dispose에서 회수.
   const paintGeo = (g, hex) => {
     const c = new THREE.Color(hex), n = g.attributes.position.count, arr = new Float32Array(n * 3);
