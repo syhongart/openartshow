@@ -4,7 +4,7 @@
 // 순수함수(youtubeId·embedUrl)만 고정한다. createYouTubeSurface는 DOM 렌더라 제외.
 // TS 전환의 "before" 스냅샷 — 전환 후에도 전부 녹색이면 무회귀 증명.
 import { describe, it, expect } from 'vitest';
-import { youtubeId, embedUrl, YT_ID } from '../web/js/ytembed.js';
+import { youtubeId, embedUrl, YT_ID } from '../web/js/ytembed';
 
 const VALID = 'dQw4w9WgXcQ'; // 정확히 11자
 

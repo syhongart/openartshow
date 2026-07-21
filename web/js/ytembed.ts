@@ -1,4 +1,4 @@
-// ytembed.js — 유튜브 임베드 안전 계층 (격리 모듈)
+// ytembed.ts — 유튜브 임베드 안전 계층 (격리 모듈)
 // -----------------------------------------------------------------------------
 // 감독 결정(2026-07-14): 법무(개인정보처리방침·약관)는 런치 게이트에서 해결, 미해결 시
 // 런치 전 제거. 이 모듈은 그 "통째로 빼기"가 쉽도록 유튜브 관련 전부를 한 파일에 격리한다.
@@ -7,19 +7,24 @@
 //  - 사용자 URL을 iframe src에 직접 넣지 않는다. 영상 ID(11자 화이트리스트)만 추출·재조립.
 //  - youtube-nocookie 도메인 고정, sandbox 최소권한, autoplay=0, 저장은 ID만·재생 직전 재검증.
 // 법무 강제조건(런치 전 충족 필요 — 여기 표시만): 개인정보처리방침 선행·클릭투로드·약관 면책.
+//
+// [B-5-② leaf TS 전환] 순수 함수 leaf 파일을 strict TypeScript로 전환. 런타임 로직·값은
+// 무변경(순수 타입 첨가만). 공개 export(YT_ID/youtubeId/embedUrl/createYouTubeSurface)
+// 시그니처 타입만 명시. [리졸브] vite/rollup resolver는 확장자 명시 .js import를 .ts로 치환
+// 하지 않으므로(B-5-① space.ts와 동형), 소비자 import는 확장자 없는 './ytembed'로 통일.
 // -----------------------------------------------------------------------------
 
 export const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 
 /** 신뢰불가 입력(URL 또는 ID) → 검증된 11자 영상 ID. 실패 시 null. */
-export function youtubeId(input) {
+export function youtubeId(input: unknown): string | null {
   if (typeof input !== 'string') return null;
   const s = input.trim();
   if (YT_ID.test(s)) return s;                         // 이미 ID면 통과
   let u; try { u = new URL(s); } catch { return null; }
   if (u.protocol !== 'https:') return null;            // http/javascript/data 거부
   const host = u.hostname.toLowerCase();
-  let id = null;
+  let id: string | null | undefined = null;
   if (host === 'youtu.be') id = u.pathname.slice(1);
   else if (host === 'www.youtube.com' || host === 'youtube.com' || host === 'm.youtube.com' || host === 'www.youtube-nocookie.com') {
     if (u.pathname === '/watch') id = u.searchParams.get('v');
@@ -30,16 +35,16 @@ export function youtubeId(input) {
 }
 
 /** 검증된 ID → 안전한 nocookie 임베드 URL (우리가 조립, 사용자 문자열 미사용). */
-export function embedUrl(id) {
+export function embedUrl(id: string): string | null {
   return YT_ID.test(id) ? `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1&playsinline=1` : null;
 }
 
 /**
  * 클릭투로드(법무·개인정보 요건): 재생 버튼 누르기 전엔 iframe을 만들지 않는다(로드 시 추적 차단).
  * 반환: { el } — 컨테이너 DOM. 재생 클릭 시에만 샌드박스 iframe 주입.
- * @param {string} rawSrc 저장된 값(ID 기대) — 재생 직전 재검증한다.
+ * @param rawSrc 저장된 값(ID 기대) — 재생 직전 재검증한다.
  */
-export function createYouTubeSurface(rawSrc, { width = 640, height = 360 } = {}) {
+export function createYouTubeSurface(rawSrc: string, { width = 640, height = 360 }: { width?: number; height?: number } = {}): { el: HTMLDivElement } {
   const el = document.createElement('div');
   el.style.cssText = `position:relative;width:${width}px;height:${height}px;background:#0e0e16;overflow:hidden;border-radius:6px`;
   const id = youtubeId(rawSrc);
