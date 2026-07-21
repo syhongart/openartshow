@@ -251,21 +251,24 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const hc = document.createElement('canvas'); hc.width = hc.height = S; const h = hc.getContext('2d');
     h.fillStyle = '#808080'; h.fillRect(0, 0, S, S); // 높이 중립(회색)
     let strength = 2.2;
-    const blob = (ctx, x, y, r, col) => { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, col.replace(/[\d.]+\)$/, '0)')); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+    // [P1] 3×3 토러스 중복 드로우 — 프리미티브를 (dx,dy)∈{-S,0,S} 오프셋으로 겹쳐 그려 RepeatWrapping 타일 이음새 제거. 생성 1회라 9배 비용 무관.
+    const tile = (fn) => { for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) fn(dx, dy); };
+    const blob = (ctx, x, y, r, col) => tile((ox, oy) => { const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); g.addColorStop(0, col); g.addColorStop(1, col.replace(/[\d.]+\)$/, '0)')); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x + ox, y + oy, r, 0, 7); ctx.fill(); }); // [P1] blob도 seamless(잔디·모래·광장 공용)
+    const strokeSeam = (ctx, x1, y1, x2, y2) => tile((ox, oy) => { ctx.beginPath(); ctx.moveTo(x1 + ox, y1 + oy); ctx.lineTo(x2 + ox, y2 + oy); ctx.stroke(); }); // [P1] 선분 seamless
+    const rectSeam = (ctx, x, y, w, hh) => tile((ox, oy) => ctx.fillRect(x + ox, y + oy, w, hh)); // [P1] 반점·알갱이 seamless
     if (kind === 'grass') {
       d.fillStyle = '#7fa46a'; d.fillRect(0, 0, S, S);
       for (let i = 0; i < 90; i++) { const t = rnd(); blob(d, rnd() * S, rnd() * S, S * (0.04 + rnd() * 0.1), t < 0.5 ? `rgba(${96 + (rnd() * 30 | 0)},${132 + (rnd() * 26 | 0)},${88 + (rnd() * 20 | 0)},0.5)` : `rgba(${140 + (rnd() * 26 | 0)},${170 + (rnd() * 24 | 0)},${110 + (rnd() * 20 | 0)},0.4)`); }
-      for (let i = 0; i < 420; i++) { const x = rnd() * S, y = rnd() * S, a = rnd() * 6.28, ln = 2 + rnd() * 4; // 풀 결
-        d.strokeStyle = `rgba(${70 + (rnd() * 60 | 0)},${110 + (rnd() * 60 | 0)},${64 + (rnd() * 40 | 0)},0.5)`; d.lineWidth = 0.8;
-        d.beginPath(); d.moveTo(x, y); d.lineTo(x + Math.cos(a) * ln, y + Math.sin(a) * ln); d.stroke();
-        h.strokeStyle = `rgba(255,255,255,${0.12 + rnd() * 0.12})`; h.lineWidth = 0.8; h.beginPath(); h.moveTo(x, y); h.lineTo(x + Math.cos(a) * ln, y + Math.sin(a) * ln); h.stroke(); }
+      for (let i = 0; i < 420; i++) { const x = rnd() * S, y = rnd() * S, a = rnd() * 6.28, ln = 2 + rnd() * 4, x2 = x + Math.cos(a) * ln, y2 = y + Math.sin(a) * ln; // 풀 결
+        d.strokeStyle = `rgba(${70 + (rnd() * 60 | 0)},${110 + (rnd() * 60 | 0)},${64 + (rnd() * 40 | 0)},0.6)`; d.lineWidth = 1.15; strokeSeam(d, x, y, x2, y2); // [P1]seamless [P2]선명도 lineWidth 0.8→1.15·alpha 0.5→0.6
+        h.strokeStyle = `rgba(255,255,255,${0.12 + rnd() * 0.12})`; h.lineWidth = 0.8; strokeSeam(h, x, y, x2, y2); } // height stroke 현행 유지
       strength = 1.6;
     } else if (kind === 'sand') {
       d.fillStyle = '#d8c79a'; d.fillRect(0, 0, S, S);
       for (let i = 0; i < 60; i++) blob(d, rnd() * S, rnd() * S, S * (0.05 + rnd() * 0.12), rnd() < 0.5 ? `rgba(200,184,140,0.4)` : `rgba(224,210,170,0.4)`);
       for (let i = 0; i < 1400; i++) { const x = rnd() * S, y = rnd() * S, br = rnd(); // 알갱이
-        d.fillStyle = br < 0.5 ? `rgba(180,164,120,0.5)` : `rgba(240,228,190,0.5)`; d.fillRect(x, y, 1, 1);
-        h.fillStyle = `rgba(255,255,255,${(br * 0.3).toFixed(2)})`; h.fillRect(x, y, 1, 1); }
+        d.fillStyle = br < 0.5 ? `rgba(180,164,120,0.5)` : `rgba(240,228,190,0.5)`; rectSeam(d, x, y, 1, 1); // [P1] 알갱이 seamless
+        h.fillStyle = `rgba(255,255,255,${(br * 0.3).toFixed(2)})`; rectSeam(h, x, y, 1, 1); }
       strength = 1.2;
     } else if (kind === 'plaza') {
       d.fillStyle = '#cac3b6'; d.fillRect(0, 0, S, S);
@@ -277,9 +280,23 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     } else if (kind === 'road') {
       d.fillStyle = '#5b5e66'; d.fillRect(0, 0, S, S);
       for (let i = 0; i < 2000; i++) { const x = rnd() * S, y = rnd() * S, br = rnd(); // 아스팔트 반점
-        d.fillStyle = br < 0.5 ? `rgba(70,72,80,0.5)` : `rgba(108,112,120,0.4)`; d.fillRect(x, y, 1, 1);
-        h.fillStyle = `rgba(${br < 0.5 ? '40,40,40' : '210,210,210'},0.25)`; h.fillRect(x, y, 1, 1); }
-      strength = 1.4;
+        d.fillStyle = br < 0.5 ? `rgba(70,72,80,0.5)` : `rgba(108,112,120,0.4)`; rectSeam(d, x, y, 1, 1); // [P1] 반점 seamless
+        h.fillStyle = `rgba(${br < 0.5 ? '40,40,40' : '210,210,210'},0.25)`; rectSeam(h, x, y, 1, 1); }
+      // [P3] 저대비 크랙선 6~8개(약간 구부러진 폴리라인) — diffuse+height, tile()로 seamless
+      const nCrack = 6 + (rnd() * 3 | 0);
+      for (let i = 0; i < nCrack; i++) {
+        const segs = 3 + (rnd() * 3 | 0); let cx = rnd() * S, cy = rnd() * S, ang = rnd() * 6.28; const pts = [[cx, cy]];
+        for (let j = 0; j < segs; j++) { ang += (rnd() - 0.5) * 1.2; const len = 6 + rnd() * 14; cx += Math.cos(ang) * len; cy += Math.sin(ang) * len; pts.push([cx, cy]); }
+        const crack = (ctx, style, lw) => { ctx.strokeStyle = style; ctx.lineWidth = lw; tile((ox, oy) => { ctx.beginPath(); ctx.moveTo(pts[0][0] + ox, pts[0][1] + oy); for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0] + ox, pts[k][1] + oy); ctx.stroke(); }); };
+        crack(d, 'rgba(38,40,46,0.5)', 1); crack(h, 'rgba(30,30,30,0.5)', 1.5); // 어두운 저대비 = 얕은 파임
+      }
+      // [P3] 타이어 자국 띠 2개(세로, 아주 옅은 명도차) — 세로 전체라 x축 3중 오프셋만(dy 중복 시 alpha 누적 방지)
+      for (let i = 0; i < 2; i++) {
+        const bx = (0.22 + i * 0.4 + rnd() * 0.16) * S, bw = S * (0.05 + rnd() * 0.03);
+        d.fillStyle = 'rgba(40,42,48,0.13)'; for (const ox of [-S, 0, S]) d.fillRect(bx + ox, 0, bw, S);
+        h.fillStyle = 'rgba(40,40,40,0.10)'; for (const ox of [-S, 0, S]) h.fillRect(bx + ox, 0, bw, S);
+      }
+      strength = 1.8; // [P3] 형태감 보강 1.4→1.8
     } else if (kind === 'bridge') {
       d.fillStyle = '#8a7a64'; d.fillRect(0, 0, S, S);
       const planks = 5, pw = S / planks; // 판자 세로 줄
@@ -295,9 +312,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     return { map, normalMap: nMap };
   }
   // 지면 재질에 텍스처 주입(kind별 repeat = 24m 셀 / 타일 미터). 실패(비-DOM)면 단색 유지.
-  function applyGroundTex(mat, kind, seed, repeat) {
+  function applyGroundTex(mat, kind, seed, repeat, nScale) {
     const t = makeGroundTex(kind, seed, repeat); if (!t) return;
-    mat.map = t.map; mat.normalMap = t.normalMap; mat.normalScale = new THREE.Vector2(0.8, 0.8); mat.needsUpdate = true;
+    const ns = (nScale == null) ? 0.8 : nScale; // [P4] kind별 normalScale(기본 0.8 유지)
+    mat.map = t.map; mat.normalMap = t.normalMap; mat.normalScale = new THREE.Vector2(ns, ns); mat.needsUpdate = true;
   }
 
   // 지면·도로·물·다리 공유 재질(파셀 복제 방지) — dispose()에서 일괄 회수.
@@ -327,11 +345,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   };
   // [그래픽 1단계] 지면 절차 텍스처+노멀 주입 — repeat = 24m 셀 / 타일 미터(잔디 4m·모래 4m·광장 6m·도로 8m).
   // 도로 strip(24×2.5)은 폭 방향 왜곡이 있으나 아스팔트라 방향성 약해 무해(스크린샷 확인). 색은 텍스처가 대체.
-  applyGroundTex(T.grass, 'grass', 0x6721a, 6);
-  applyGroundTex(T.plaza, 'plaza', 0x51b3c, 4);
-  applyGroundTex(T.road, 'road', 0x3d0e7, 3);
-  applyGroundTex(T.sand, 'sand', 0x9a44c, 6);
-  applyGroundTex(T.bridge, 'bridge', 0x8a7c1, 2);
+  applyGroundTex(T.grass, 'grass', 0x6721a, 6, 1.0);   // [P4] 잔디 요철 강조
+  applyGroundTex(T.plaza, 'plaza', 0x51b3c, 4, 0.7);   // [P4] 광장 매끈
+  applyGroundTex(T.road, 'road', 0x3d0e7, 3, 0.9);     // [P4]
+  applyGroundTex(T.sand, 'sand', 0x9a44c, 6, 0.9);     // [P4]
+  applyGroundTex(T.bridge, 'bridge', 0x8a7c1, 2, 0.8); // [P4]
   T.grass.color.setHex(0xffffff); T.plaza.color.setHex(0xffffff); T.road.color.setHex(0xffffff); T.sand.color.setHex(0xffffff); T.bridge.color.setHex(0xffffff); // 텍스처가 색 담당(color=흰=텍스처 원색)
   // 거리 가구 공유 지오메트리(파셀 간 재사용 — InstancedMesh/개별 Mesh가 참조). createWorld dispose에서 회수.
   const paintGeo = (g, hex) => {
