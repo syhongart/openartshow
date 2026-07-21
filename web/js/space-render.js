@@ -22,6 +22,9 @@ function baseMaps(gen, key) { return _texCache[key] || (_texCache[key] = gen());
 // 동기 베이크(LOAD_BUDGET_MS 예산 밖 실행 → 파셀 경계 히칭)가 사라진다(스폰은 로딩 화면 중이라 히칭 비가시).
 // world 전용 경로에서만 호출 → 고정 미술관(방문뷰·빌더) 무영향. 공용 baseMaps 재사용(중복 로직 0). 텍스처 생성 X(캐시만).
 export function warmBuildingTexCache() {
+  // [방어 가드] 순수 node(비-DOM)에서는 canvas 베이크 불가 → 아무것도 안 하고 반환(폴백 무영향).
+  // 호출부(world.js)도 가드하지만, 텍스처 생성기가 document를 전제하므로 내부에서도 이중 방어.
+  if (typeof document === 'undefined') return;
   baseMaps(createPlasterMaps, 'plaster');
   baseMaps(createConcreteMaps, 'concrete');
   baseMaps(createParquetMaps, 'parquet');
