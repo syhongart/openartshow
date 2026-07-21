@@ -2921,7 +2921,7 @@ function buildChibiMaker() {
   // screen은 그늘 없이 중앙만 밝히고 주변은 건드리지 않는다(디자이너 실렌더: 헤드존 +17.5,
   // 주변부 Δ≈0). 반경 55·코어 순백이라야 주변 벽까지 안 번진다.
   const wallGlowFn = (x, w, h) => {
-    const cx = w / 2, cy = h * 0.547;   // 512×307 → (256, 168)
+    const cx = w / 2, cy = h * 0.63;   // 얼굴보다 살짝 아래(감독) — 512×307 → (256, ~193)
     const spot = x.createRadialGradient(cx, cy, 0, cx, cy, 55);
     spot.addColorStop(0, 'rgba(255,255,255,1)');
     spot.addColorStop(0.5, 'rgba(255,255,255,0.6)');
