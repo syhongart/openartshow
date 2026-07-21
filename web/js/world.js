@@ -186,8 +186,16 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // 하늘 — 캔버스 그라디언트 스카이돔(자기완결·외부 텍스처 0, fog 미적용) + 밝은 대기 fog.
   const FOG_COLOR = 0xcfe0ee;
-  // 소프트웨어 렌더는 프래그먼트당 fog 연산도 삭감(main.js:629). 스카이돔은 fog:false라 하늘은 그대로 유지.
-  if (!gpuInfo.soft) scene.fog = new THREE.Fog(FOG_COLOR, CELL_MAX * 1.1, CELL_MAX * 3.4);
+  // [팝인 완화] fog near/far를 로드경계로 당겨 파셀 shell→full 승격(팝인·원거리 노출)을 은은한 안개로 덮는다.
+  // 기존 far=CELL_MAX*3.4(≈109m)는 로드거리(≤50m)보다 한참 밖이라 팝인(경계 통과 27~36m대)을 전혀 못 가렸다.
+  // near=인접 파셀 경계 안쪽부터 은은히 시작, far=3×3 대각 shell 거리 부근에서 완전 안개 → 팝인대를 안개 안으로.
+  // near/far를 명명 상수로 노출 — 팀장 실기기 스윕 튜닝용. 실기 피드백에 따라 계수만 조정하면 된다.
+  const FOG_NEAR = CELL_MAX * 0.9; // 인접 파셀 경계 안쪽부터 페이드 시작(가벼운 안개, 근경은 선명 유지)
+  const FOG_FAR  = CELL_MAX * 1.9; // 3×3 대각 shell 거리 부근 완전 안개 — 팝인·원거리 하드 노출 은폐
+  // soft GPU에도 fog 적용(기존 `if(!gpuInfo.soft)` 가드 제거) — 선형 fog는 프래그먼트당 저비용이고,
+  // 팝인은 soft 실기에서 특히 두드러진다. 스카이돔은 fog:false라 하늘은 그대로, sky.js:679는 scene.fog
+  // 존재 시 fog.color만 시간대별로 갱신(near/far 불변)하므로 무충돌.
+  scene.fog = new THREE.Fog(FOG_COLOR, FOG_NEAR, FOG_FAR);
   renderer.setClearColor(FOG_COLOR, 1);
   function makeSkyDome() {
     const c = document.createElement('canvas'); c.width = 4; c.height = 256;
