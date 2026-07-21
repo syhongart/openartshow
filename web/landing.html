@@ -1280,7 +1280,7 @@
 <script type="module">
   // 커뮤니티 피드 렌더 — feed.js(로컬 우선 스토어)를 그대로 읽는다.
   // 사용자 입력(닉네임/전시명)은 전부 textContent 경유 — 마크업 주입 차단.
-  import { PhotoWall, VisitorLog } from './js/feed.js';
+  import { PhotoWall, VisitorLog } from './js/feed';
 
   const timeAgo = (ts) => {
     const s = Math.max(1, Math.round((Date.now() - ts) / 1000));

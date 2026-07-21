@@ -22,7 +22,7 @@ import { initFly } from './fly.js';
 import { ensureCanvasFonts, getCanvasFont } from './fonts.js';
 import { loadNotes, saveNotes, mergeNotes, makeNote } from './guestbook';
 import { GalleryStats } from './stats';
-import { VisitorLog, PhotoWall } from './feed.js';
+import { VisitorLog, PhotoWall } from './feed';
 import {
   initUI,
   showLoading,
