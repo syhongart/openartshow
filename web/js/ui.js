@@ -2900,22 +2900,42 @@ function buildChibiMaker() {
 
   // 프리뷰 배경용 세로 그라데이션 텍스처 — 절차 생성(외부 에셋 0, CSP 'self' 준수). 폭 2px로
   // 메모리 최소. NoToneMapping+SRGB 파이프라인이라 colorSpace를 SRGB로 지정해야 딥톤이 밝게 안 뜬다.
-  function makePreviewBackdrop(topHex, bottomHex) {
+  function makePreviewBackdrop(topHex, bottomHex, glowFn) {
     if (typeof document === 'undefined') return null;
-    const c = document.createElement('canvas');
-    c.width = 2; c.height = 256;
+    // 프리뷰 canvas(300×400)와 같은 3:4 비율 — background는 화면에 stretch되므로 비율을 맞춰야
+    // 중앙 원형 글로우가 타원으로 늘어나지 않고 원형을 유지한다.
+    const w = 192, h = 256, c = document.createElement('canvas');
+    c.width = w; c.height = h;
     const ctx = c.getContext('2d');
-    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, topHex); g.addColorStop(1, bottomHex);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 256);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    if (glowFn) glowFn(ctx, w, h);   // 중앙 원형 조명 합성(베이크, 실시간 라이트 0)
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
   }
+  // 뒷배경 중앙 원형 조명(감독 요청) — 그늘 비네트 + 중앙 스팟 2겹. 배경이 이미 밝아(top≈240)
+  // '밝기 추가'만으론 중앙이 안 도드라진다(감독 "안 먹는다"). 대비의 주역은 그늘 — 4모서리를
+  // 웜브라운으로 낮춰 중앙 스포트라이트를 세운다. 배경은 화면 전체·fog무관·비가림이라 확실히 보인다.
+  const backdropGlow = (x, w, h) => {
+    const cx = w / 2;
+    // 그늘 비네트 — 안쪽 42%까지 투명, 바깥(모서리)으로 갈수록 웜브라운 그늘(부드러운 감쇠)
+    const shade = x.createRadialGradient(cx, h * 0.45, 0, cx, h * 0.45, w * 0.8);
+    shade.addColorStop(0, 'rgba(55,44,28,0)');
+    shade.addColorStop(0.42, 'rgba(55,44,28,0)');
+    shade.addColorStop(1, 'rgba(55,44,28,0.42)'); // 세기: 은은↓0.30 / 강함↑0.55
+    x.fillStyle = shade; x.fillRect(0, 0, w, h);
+    // 중앙 상부 웜 스팟 — 조명 핵(캐릭터 머리 위 헤일로). cy 위(0.40)로 캐릭터 가림 회피.
+    const spot = x.createRadialGradient(cx, h * 0.40, 0, cx, h * 0.40, w * 0.55);
+    spot.addColorStop(0, 'rgba(255,244,215,0.7)');
+    spot.addColorStop(1, 'rgba(255,244,215,0)');
+    x.fillStyle = spot; x.fillRect(0, 0, w, h);
+  };
 
-  // 벽 텍스처 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드) + 중앙 원형 글로우를 한 장에 베이크.
-  // 절차 CanvasTexture(외부 에셋 0). 중앙 글로우는 반복되면 안 되므로 벽 전체를 큰 캔버스 non-repeat
-  // 한 장으로 굽는다(실시간 라이트 추가 0 — 조명 리그 무변경, 비용 그대로).
+  // 벽 텍스처 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드). 절차 CanvasTexture(외부 에셋 0).
+  // non-repeat 큰 캔버스 한 장(벽 전체). 중앙 원형 조명은 벽이 fog·캐릭터 가림으로 안 보이는
+  // 자리여서 씬 background(backdropGlow)로 이전했다 — 벽은 줄무늬만.
   function makeWallTex(base, stripe, glowFn) {
     if (typeof document === 'undefined') return null;
     const w = 512, h = 307, c = document.createElement('canvas'); // 512:307≈벽 plane 10:6 비율(왜곡 방지)
@@ -2925,29 +2945,12 @@ function buildChibiMaker() {
     const count = 28, period = w / count;   // 세로 밴드 28개(등폭 V1 톤 유지)
     x.fillStyle = stripe;
     for (let i = 0; i < count; i++) x.fillRect(i * period, 0, period / 2, h);
-    glowFn(x, w, h);                        // 중앙 라디얼 글로우 합성(베이크)
+    if (glowFn) glowFn(x, w, h);            // 선택적 글로우(현재 미사용 — 뒷배경 background로 이전)
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
     return t;                              // repeat 없음(벽 전체 1장)
   }
-  // 중앙 원형 조명(감독 요청) — 그늘(비네트)+중앙 스팟 2겹. 벽 베이스가 이미 밝아(휘도 ~214)
-  // '밝기 추가'만으론 중앙이 안 도드라진다(감독 "안 먹는다"). 대비의 주역은 그늘 — 가장자리를
-  // 웜브라운으로 부드럽게 그늘지게 해 중앙 조명감을 확실히 만든다(중앙 대비 가장자리 ~59% 밝음).
-  const glowW2 = (x, w, h) => {
-    const cx = w / 2, cy = h * 0.62;   // cy=머리~어깨 뒤
-    // 그늘 비네트 — 안쪽 35%까지 투명, 바깥으로 갈수록 웜브라운 그늘(부드러운 감쇠)
-    const shade = x.createRadialGradient(cx, cy, 0, cx, cy, w * 0.52);
-    shade.addColorStop(0, 'rgba(70,55,35,0)');
-    shade.addColorStop(0.35, 'rgba(70,55,35,0)');
-    shade.addColorStop(1, 'rgba(70,55,35,0.55)'); // 세기: 은은↓0.40 / 강함↑0.70
-    x.fillStyle = shade; x.fillRect(0, 0, w, h);
-    // 중앙 웜 스팟 — 조명 핵
-    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, w * 0.28);
-    spot.addColorStop(0, 'rgba(255,242,210,0.6)');
-    spot.addColorStop(1, 'rgba(255,242,210,0)');
-    x.fillStyle = spot; x.fillRect(0, 0, w, h);
-  };
 
   function ensurePreviewRenderer() {
     if (previewRenderer) return;
@@ -2969,7 +2972,7 @@ function buildChibiMaker() {
     previewScene = new THREE.Scene();
     // 방 배경 — 벽지 벽 뒤/위쪽 여백을 채우는 웜 라이트 그라데(위 밝게→아래 벽 톤). 벽지 방으로
     // 액자 안을 "다른 공간"으로 만든다(감독 지시). 텍스처는 절차 생성(외부 에셋 0, CSP 'self').
-    previewScene.background = makePreviewBackdrop('#f0ead9', '#ddd2bd') || new THREE.Color('#ddd2bd');
+    previewScene.background = makePreviewBackdrop('#f0ead9', '#ddd2bd', backdropGlow) || new THREE.Color('#ddd2bd');
     // 포그(벽 베이스 근사색)로 바닥·벽 원경을 배경색으로 녹여 이음매를 없앤다. near 5.5는 캐릭터
     // (카메라 거리 ≈4.1) 뒤에서 시작해 본체는 안 잠긴다. 배경 텍스처는 포그 무관.
     previewScene.fog = new THREE.Fog(0xded3bf, 5.5, 10);
@@ -3029,9 +3032,9 @@ function buildChibiMaker() {
     shadowCatcher.material.polygonOffsetFactor = -1;
     shadowCatcher.receiveShadow = true;
     previewScene.add(shadowCatcher);
-    // 뒤 벽 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1) + 중앙 원형 글로우 베이크. PlaneGeometry 법선이
-    // +Z(카메라 방향)라 회전 불필요. 포그(near 5.5)에 살짝 잠겨 백드롭과 이어지되 무늬·글로우는 또렷하다.
-    const wallpaperTex = makeWallTex('#e2d7bf', '#efe7d3', glowW2);
+    // 뒤 벽 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1). PlaneGeometry 법선이 +Z(카메라 방향)라 회전
+    // 불필요. 포그(near 5.5)에 살짝 잠겨 백드롭과 이어진다. 중앙 원형 조명은 씬 background 담당.
+    const wallpaperTex = makeWallTex('#e2d7bf', '#efe7d3');
     const wall = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 6),
       new THREE.MeshStandardMaterial({ map: wallpaperTex, roughness: 0.9, metalness: 0 }),
