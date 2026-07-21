@@ -1,0 +1,29 @@
+name: ci
+# 회귀 안전망 — lint·typecheck·단위테스트를 PR/푸시마다 자동 실행.
+# (헤드리스 렌더 스모크는 브라우저 설치가 무거워 별도 스텝으로 추가 예정 — A-3.)
+# 2스텝 롤인: 초기엔 독립·정보용(배포 무영향). 안정화 후 deploy.yml에 needs:ci로
+# 선행 게이트화한다(그 변경은 배포 구조 변경이라 §10-4 cross-review).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+env:
+  # 배포물은 자기완결(npm 런타임 의존 0). 개발 도구만 설치하며, playwright 브라우저는
+  # 이 job에서 불필요(단위·린트·타입체크 전용)하므로 postinstall 다운로드를 막는다.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - run: npm ci
+      - name: Lint (baseline)
+        run: npm run lint
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+      - name: Unit tests (vitest)
+        run: npm test
