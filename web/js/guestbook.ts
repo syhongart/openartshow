@@ -1,23 +1,29 @@
-// guestbook.js — 방명록 데이터 계층 (localStorage 영속화 + 병합)
-// 소유자: guestbook.js / multiplayer.js 담당 에이전트
+// guestbook.ts — 방명록 데이터 계층 (localStorage 영속화 + 병합)
+// 소유자: guestbook / multiplayer 담당 에이전트
+//
+// [B-5-⑤ leaf TS 전환] 순수 로직 leaf를 strict TypeScript로 전환. 런타임 로직·값은
+// 무변경(순수 타입 첨가만). [리졸브] vite/rollup resolver는 확장자 명시 .js import를
+// .ts로 치환하지 않으므로, 소비자 import는 확장자 없는 './guestbook'로 통일. 배포기 무수정.
 
 const MAX_NOTES = 200;
 const MAX_TEXT_LEN = 120;
 
-/**
- * @typedef {{id: string, name: string, text: string, ts: number}} Note
- */
+/** 방명록 노트 한 건. */
+export interface Note {
+  id: string;
+  name: string;
+  text: string;
+  ts: number;
+}
 
-function storageKey(galleryId) {
+function storageKey(galleryId: string | null | undefined): string {
   return `lu-guestbook-${galleryId ?? 'shared'}`;
 }
 
 /**
  * 갤러리의 방명록 노트를 localStorage에서 불러온다.
- * @param {string|null|undefined} galleryId
- * @returns {Note[]}
  */
-export function loadNotes(galleryId) {
+export function loadNotes(galleryId: string | null | undefined): Note[] {
   try {
     const raw = localStorage.getItem(storageKey(galleryId));
     if (!raw) return [];
@@ -31,11 +37,8 @@ export function loadNotes(galleryId) {
 
 /**
  * 노트 배열을 ts 내림차순 정렬, 최대 MAX_NOTES개로 절단 후 저장한다.
- * @param {string|null|undefined} galleryId
- * @param {Note[]} notes
- * @returns {void}
  */
-export function saveNotes(galleryId, notes) {
+export function saveNotes(galleryId: string | null | undefined, notes: Note[]): void {
   const sorted = [...notes].sort((a, b) => b.ts - a.ts).slice(0, MAX_NOTES);
   try {
     localStorage.setItem(storageKey(galleryId), JSON.stringify(sorted));
@@ -46,12 +49,9 @@ export function saveNotes(galleryId, notes) {
 
 /**
  * 두 노트 배열을 id 기준으로 중복 제거하며 병합, ts 내림차순으로 반환한다.
- * @param {Note[]} a
- * @param {Note[]} b
- * @returns {Note[]}
  */
-export function mergeNotes(a, b) {
-  const map = new Map();
+export function mergeNotes(a: Note[], b: Note[]): Note[] {
+  const map = new Map<string, Note>();
   for (const n of [...a, ...b]) {
     if (!n || typeof n.id !== 'string') continue;
     map.set(n.id, n);
@@ -61,11 +61,8 @@ export function mergeNotes(a, b) {
 
 /**
  * 새 방명록 노트를 생성한다.
- * @param {string} name
- * @param {string} text
- * @returns {Note}
  */
-export function makeNote(name, text) {
+export function makeNote(name: string, text: string): Note {
   return {
     id: randomHexId(8),
     name: String(name || '익명').slice(0, 40),
@@ -74,7 +71,7 @@ export function makeNote(name, text) {
   };
 }
 
-function randomHexId(len) {
+function randomHexId(len: number): string {
   const bytes = new Uint8Array(Math.ceil(len / 2));
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
     crypto.getRandomValues(bytes);

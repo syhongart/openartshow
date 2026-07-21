@@ -3,7 +3,7 @@
 // 병합(id 멱등·ts 내림차순)·정규화(slice 상한)·localStorage 라운드트립을 케이스로 고정.
 // jsdom: loadNotes/saveNotes가 localStorage에 의존(crypto.getRandomValues도 jsdom 제공).
 import { describe, it, expect, beforeEach } from 'vitest';
-import { loadNotes, saveNotes, mergeNotes, makeNote } from '../web/js/guestbook.js';
+import { loadNotes, saveNotes, mergeNotes, makeNote } from '../web/js/guestbook';
 
 beforeEach(() => {
   localStorage.clear();

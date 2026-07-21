@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { PEER_ROOM_ID, EYE_HEIGHT } from './config.js';
 import { createAvatarInstance } from './avatar.js';
-import { mergeNotes } from './guestbook.js';
+import { mergeNotes } from './guestbook';
 import { isValidPhotoItem } from './feed.js';
 
 // 룸 id는 전시별로 분리된다(같은 전시를 보는 사람끼리만 만난다) — 생성자 옵션으로
