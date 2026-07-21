@@ -20,6 +20,12 @@ GitHub Pages 정적 호스팅. "파라미터가 곧 공간/아바타" (무저장
 - **커밋**: `git config user.email noreply@anthropic.com` / `user.name Claude`. push는 `-u origin <branch>` + 실패 시 지수백오프 재시도. **모델 식별자를 커밋·PR·코드·아티팩트에 넣지 않는다**(채팅 한정).
 - **스크래치**: 임시 파일은 세션 스크래치패드에. 헤드리스 QA 하네스는 `/opt/pw-browsers` 크로미움 + swiftshader.
 
+## 토큰 효율 규율 (재작업·대형응답 차단)
+- **브랜치 위생 선제**: 작업 *착수 전* `git fetch origin && git merge origin/main`으로 최신 정렬부터 한다. 낡은 base로 진행하면 라이브 회귀가 섞여 교차리뷰 반려→재게이트(스모크·리뷰·병합검증 전면 재실행)로 토큰이 배로 나간다. 정렬은 착수의 첫 스텝.
+- **대형 MCP 응답 차단**: 목록형 조회(`actions_list` 등)는 컨텍스트를 수십만 자로 오염시킨다. 특정 `run_id`로 좁혀 조회하고, 파싱은 Bash/python으로 컨텍스트 밖에서. 가능하면 `minimal_output`·`per_page` 최소화. 거대 결과가 파일로 떨어지면 슬라이스는 서브에이전트에 위임.
+- **모델 계층 엄수**: 정형 작업(스모크·재빌드·명단/sitemap 갱신·패턴 스캔)은 executor(haiku) 전용. 상위 모델(팀장·부팀장·검수 계약직)은 판단이 필요한 일에만. 시각 검수 등 무거운 발주는 "필요한 각도·파일만" 스코프를 좁혀 발주한다.
+- **hook 소음 억제**: `valuation` 자동 산출물 등 배포와 무관한 자동생성물은 게이트 중 워킹트리에 두지 말고 착수 시 정리(별도 커밋 or checkout)해 uncommitted/서명 경고 반복 누적을 막는다.
+
 ## 공간 빌더 스키마
 - `web/js/space.js` = SSOT("파라미터가 곧 공간"). 버전 필드 + `normalizeSpace`/`migrateSpace`(하위호환). 저장은 localStorage/JSON만(URL 인코딩 금지).
 - 렌더 조립기 `web/js/space-render.js`(빌더·방문 공용): `buildSpaceGroup`·`addRoomLighting`·`bakeShellLightmaps(Async)`·`partGeo`/`partAccent`/`MATS`.
