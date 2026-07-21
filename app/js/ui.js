@@ -2900,15 +2900,15 @@ function buildChibiMaker() {
     const shadowLight = new THREE.DirectionalLight(0xffffff, 0.0);
     shadowLight.position.set(0.4, 5, 1.0);
     shadowLight.castShadow = true;
-    shadowLight.shadow.mapSize.set(1024, 1024); // VSM은 저해상도서 새는 빛이 있어 1024로
+    shadowLight.shadow.mapSize.set(512, 512); // 저해상도 + 큰 blur라야 penumbra가 넓게 번진다
     shadowLight.shadow.camera.near = 0.5;
     shadowLight.shadow.camera.far = 9;
     shadowLight.shadow.camera.left = -1.3;
     shadowLight.shadow.camera.right = 1.3;
     shadowLight.shadow.camera.top = 1.3;
     shadowLight.shadow.camera.bottom = -1.3;
-    shadowLight.shadow.radius = 9;         // 반그림자 흐림 반경(경계를 부드럽게)
-    shadowLight.shadow.blurSamples = 16;   // VSM 흐림 표본 수
+    shadowLight.shadow.radius = 35;        // 반그림자 흐림 크게 — 경계를 더 부드럽게(감독 재요청)
+    shadowLight.shadow.blurSamples = 24;   // VSM 흐림 표본 수(큰 반경에 맞춰 늘림)
     shadowLight.shadow.bias = -0.0005;     // VSM은 acne가 적어 작은 바이어스로 충분
     previewScene.add(shadowLight);
     previewScene.add(shadowLight.target); // target 기본 (0,0,0) — 캐릭터 발밑을 향함
@@ -2916,7 +2916,7 @@ function buildChibiMaker() {
     // 없는 곳은 완전 투명(scene.background만 보임), 그림자 진 곳만 어둡게 얹힌다.
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(6, 6),
-      new THREE.ShadowMaterial({ opacity: 0.3 }),
+      new THREE.ShadowMaterial({ opacity: 0.34 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0;
