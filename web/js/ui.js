@@ -2912,28 +2912,9 @@ function buildChibiMaker() {
     t.colorSpace = THREE.SRGBColorSpace;
     return t;
   }
-  // 벽 중앙 원형 조명(감독 요청) — 그늘 비네트 + 중앙 스팟 2겹. 벽(10×6, z=-2.3)이 카메라
-  // 프러스텀을 완전히 덮어 화면에 보이는 유일한 면이라, 조명은 background가 아니라 벽 텍스처에
-  // 넣어야 실제로 보인다(디자이너 실렌더 확정). 좌표는 벽 캔버스 512×307에서 가시 창(하단부)에
-  // 맞춘 값 — cx=256(중앙), cy=168(머리~어깨 뒤).
-  // 조명 표현은 'screen' 블렌드(=포토샵 스크린, 감독 통찰)로 — 단순 알파(source-over)는 밝은
-  // base(226) 위 흰색이 대비가 안 났고, 그늘로 주변을 낮추면 감독이 "왜 어둡냐"고 반려했다.
-  // screen은 그늘 없이 중앙만 밝히고 주변은 건드리지 않는다(디자이너 실렌더: 헤드존 +17.5,
-  // 주변부 Δ≈0). 반경 55·코어 순백이라야 주변 벽까지 안 번진다.
-  const wallGlowFn = (x, w, h) => {
-    const cx = w / 2, cy = h * 0.63;   // 얼굴보다 살짝 아래(감독) — 512×307 → (256, ~193)
-    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, 55);
-    spot.addColorStop(0, 'rgba(255,255,255,1)');
-    spot.addColorStop(0.5, 'rgba(255,255,255,0.6)');
-    spot.addColorStop(1, 'rgba(255,255,255,0)');
-    x.globalCompositeOperation = 'screen';        // 스팟만 스크린 블렌드(주변 무영향)
-    x.fillStyle = spot; x.fillRect(0, 0, w, h);
-    x.globalCompositeOperation = 'source-over';    // 즉시 복원 — base/줄무늬에 영향 없음
-  };
-
-  // 벽 텍스처 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드) + 중앙 원형 조명(wallGlowFn).
-  // 절차 CanvasTexture(외부 에셋 0). non-repeat 큰 캔버스 한 장(벽 전체). 실시간 라이트 추가 0.
-  function makeWallTex(base, stripe, glowFn) {
+  // 벽 텍스처 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드). 절차 CanvasTexture(외부 에셋 0).
+  // non-repeat 큰 캔버스 한 장(벽 전체).
+  function makeWallTex(base, stripe) {
     if (typeof document === 'undefined') return null;
     const w = 512, h = 307, c = document.createElement('canvas'); // 512:307≈벽 plane 10:6 비율(왜곡 방지)
     c.width = w; c.height = h;
@@ -2942,7 +2923,6 @@ function buildChibiMaker() {
     const count = 28, period = w / count;   // 세로 밴드 28개(등폭 V1 톤 유지)
     x.fillStyle = stripe;
     for (let i = 0; i < count; i++) x.fillRect(i * period, 0, period / 2, h);
-    if (glowFn) glowFn(x, w, h);            // 중앙 원형 조명 합성(베이크)
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
@@ -3029,9 +3009,8 @@ function buildChibiMaker() {
     shadowCatcher.material.polygonOffsetFactor = -1;
     shadowCatcher.receiveShadow = true;
     previewScene.add(shadowCatcher);
-    // 뒤 벽 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1) + 중앙 원형 조명(wallGlowFn). PlaneGeometry
-    // 법선이 +Z(카메라 방향)라 회전 불필요. 벽이 화면(프러스텀)을 채우는 유일한 면이라 조명을 여기 굽는다.
-    const wallpaperTex = makeWallTex('#e2d7bf', '#efe7d3', wallGlowFn);
+    // 뒤 벽 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1). PlaneGeometry 법선이 +Z(카메라 방향)라 회전 불필요.
+    const wallpaperTex = makeWallTex('#e2d7bf', '#efe7d3');
     const wall = new THREE.Mesh(
       new THREE.PlaneGeometry(10, 6),
       new THREE.MeshStandardMaterial({ map: wallpaperTex, roughness: 0.9, metalness: 0 }),
