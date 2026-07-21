@@ -2915,23 +2915,20 @@ function buildChibiMaker() {
   // 벽 중앙 원형 조명(감독 요청) — 그늘 비네트 + 중앙 스팟 2겹. 벽(10×6, z=-2.3)이 카메라
   // 프러스텀을 완전히 덮어 화면에 보이는 유일한 면이라, 조명은 background가 아니라 벽 텍스처에
   // 넣어야 실제로 보인다(디자이너 실렌더 확정). 좌표는 벽 캔버스 512×307에서 가시 창(하단부)에
-  // 맞춘 값 — cx=256(중앙), cy=168(머리~어깨 뒤). 배경이 밝아 대비 주역은 그늘.
+  // 맞춘 값 — cx=256(중앙), cy=168(머리~어깨 뒤).
+  // 조명 표현은 'screen' 블렌드(=포토샵 스크린, 감독 통찰)로 — 단순 알파(source-over)는 밝은
+  // base(226) 위 흰색이 대비가 안 났고, 그늘로 주변을 낮추면 감독이 "왜 어둡냐"고 반려했다.
+  // screen은 그늘 없이 중앙만 밝히고 주변은 건드리지 않는다(디자이너 실렌더: 헤드존 +17.5,
+  // 주변부 Δ≈0). 반경 55·코어 순백이라야 주변 벽까지 안 번진다.
   const wallGlowFn = (x, w, h) => {
     const cx = w / 2, cy = h * 0.547;   // 512×307 → (256, 168)
-    // 그늘 비네트 — 흰 조명이 "티 안 난다"(감독): 벽 base가 이미 밝아 흰색만으론 대비가 안 난다.
-    // 스포트라이트는 주변이 어두워야 밝아 보이므로, 그늘을 스팟 falloff(r≈90) 바로 밖에서 조기
-    // 시작하고 최대치를 올려(0.24 → 0.42) 중심 대비를 세운다(중심 대비 ~18% → ~41%).
-    const shade = x.createRadialGradient(cx, cy, 50, cx, cy, 140);
-    shade.addColorStop(0, 'rgba(58,52,44,0)');
-    shade.addColorStop(0.5, 'rgba(58,52,44,0.18)');
-    shade.addColorStop(1, 'rgba(58,52,44,0.42)'); // 세기: 은은↓0.30 / 강함↑0.52
-    x.fillStyle = shade; x.fillRect(0, 0, w, h);
-    // 중앙 흰 스팟 — 흰 조명(감독 지시: 흰색), 순백에 근접(코어 0.85)해 중심을 확실히 밝게.
-    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, 90);
-    spot.addColorStop(0, 'rgba(255,255,255,0.85)');
-    spot.addColorStop(0.5, 'rgba(255,255,255,0.45)');
+    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, 55);
+    spot.addColorStop(0, 'rgba(255,255,255,1)');
+    spot.addColorStop(0.5, 'rgba(255,255,255,0.6)');
     spot.addColorStop(1, 'rgba(255,255,255,0)');
+    x.globalCompositeOperation = 'screen';        // 스팟만 스크린 블렌드(주변 무영향)
     x.fillStyle = spot; x.fillRect(0, 0, w, h);
+    x.globalCompositeOperation = 'source-over';    // 즉시 복원 — base/줄무늬에 영향 없음
   };
 
   // 벽 텍스처 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드) + 중앙 원형 조명(wallGlowFn).
