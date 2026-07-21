@@ -19,6 +19,17 @@ export const ROOT = path.resolve(__dirname, '..', '..');
 // 조립 산출물 위치 — deploy.yml 과 동일하게 루트의 _site (이미 .gitignore 됨).
 export const SITE_DIR = path.join(ROOT, '_site');
 
+// 동등성 판정(B-2b-2)용 web직조립 baseline 산출물 위치. vite 모드에서 vite 조립본과
+// 대조하기 위해 web직조립본을 여기 별도로 만든다. (.gitignore: _site* 로 커버)
+export const SITE_DIR_BASELINE = path.join(ROOT, '_site_baseline');
+
+// ── 배포 서브패스(vite 모드) ─────────────────────────────────────────
+// vite.config 의 base '/openartshow/' 와 1:1. vite 산출물의 자산참조는 절대경로
+// /openartshow/_bundle/… 이므로, vite 모드에서는 서버가 이 프리픽스를 strip 하고
+// 브라우저는 이 프리픽스를 붙여 접근한다(= github.io/openartshow/ 배포 재현).
+// baseline(web직조립) 모드는 서브패스 없이 루트 서빙(deploy.yml 현행과 동일).
+export const BASE_PATH = '/openartshow/';
+
 // ── 검사1: deploy.yml 이 실행하는 생성기 3종 (exit 0 요구) ─────────────
 export const GENERATORS = [
   'scripts/build-devlog.mjs',
@@ -31,27 +42,57 @@ export const GENERATORS = [
 // null 이면 "baseline 미설정"으로 현재값만 기록(INFO). 최초 통과 후 실측값을 채운다.
 // 실측: 2026-07-21 arch-safety-net 브랜치 = 175 파일(about.html 루트 배포 +1 반영).
 // (DEVLOG 항목 추가 등으로 늘어나는 것은 정상 — 급증은 PASS, 급감만 FAIL)
-export const BASELINE_FILE_COUNT = 175;
+//
+// vite 모드는 파일수가 다르다: web직조립은 `cp -r web/. _site/app/` 로 js/폰트를
+// 통째 복사하지만, vite 는 js 를 번들해 _bundle 로 dedup(중복 제거)하고 app/js 폴더가
+// 없다. → vite 조립본은 더 적다. 실측: 2026-07-21 vite 조립본 = 148 파일.
+// (_bundle 해시파일명은 빌드마다 바뀌나 개수는 동일 → 값 안정. devlog 증가는 급증=PASS)
+export const BASELINE_FILE_COUNT = 175;      // web직조립(baseline) 모드
+export const BASELINE_FILE_COUNT_VITE = 148; // vite 조립 모드
+export const BASELINE_FILE_COUNT_BY_MODE = {
+  baseline: BASELINE_FILE_COUNT,
+  vite: BASELINE_FILE_COUNT_VITE,
+};
 export const DROP_THRESHOLD = 5; // baseline - 5 미만이면 FAIL (급감)
 
 // ── 검사3: 조립 결과에 반드시 존재해야 하는 핵심 파일 (SITE_DIR 상대) ──
-export const REQUIRED_FILES = [
-  'index.html',            // 랜딩 (deploy: landing.html → _site/index.html)
+// 두 조립 방식은 레이아웃이 다르다:
+//  · web직조립(baseline): app/ 아래 web 전체 사본 → app/js/main.js 존재.
+//  · vite 조립: js 는 _bundle 로 번들(app/js 폴더 없음) → _bundle 디렉토리 존재.
+// 공통 정본 공개 페이지는 양쪽 동일 위치. 모드별 차이만 분기한다.
+const REQUIRED_FILES_COMMON = [
+  'index.html',            // 랜딩 (landing.html → 루트 index.html)
   'guide.html',            // 가이드 루트 (과거 404 사고 지점)
   'design.html',           // 디자인 루트
-  'about.html',            // 소개 루트 (deploy: about.html → _site/about.html, 공개 페이지 정본)
+  'about.html',            // 소개 루트 (공개 페이지 정본)
   'app/index.html',        // 미술관
   'app/studio.html',       // 스튜디오
-  'app/js/main.js',        // 라이브 런타임 진입
+  'app/world.html',        // 월드 (정식 노출 — sitemap 등재)
   'devlog/index.html',
   'team/index.html',
   'valuation/index.html',
   'sitemap.xml',
 ];
+export const REQUIRED_FILES_BASELINE = [
+  ...REQUIRED_FILES_COMMON,
+  'app/js/main.js',        // 라이브 런타임 진입 (web직조립 사본)
+];
+export const REQUIRED_FILES_VITE = [
+  ...REQUIRED_FILES_COMMON,
+  '_bundle',               // vite 번들 폴더 (js·폰트 dedup 산출물)
+];
+export const REQUIRED_FILES_BY_MODE = {
+  baseline: REQUIRED_FILES_BASELINE,
+  vite: REQUIRED_FILES_VITE,
+};
+// 하위호환: 기존 import 명 유지(baseline 기본).
+export const REQUIRED_FILES = REQUIRED_FILES_BASELINE;
 
 // ── 라이브 페이지 목록 (검사4/5/6 + 가드A/B 대상) ────────────────────
-// behind-flag 페이지(builder.html·visit.html·world.html)는 라이브 미노출이라 제외.
-// url 은 SITE_DIR(=http 루트) 기준 "정본 배포 URL". webgl:true 는 swiftshader 부팅 대기 필요.
+// behind-flag 페이지(builder.html·visit.html)는 라이브 미노출이라 제외.
+// world.html 은 B-2b 에서 정식 노출(sitemap 등재)로 편입 → 검사 대상에 포함.
+// url 은 SITE_DIR(=http 루트) 기준 "정본 배포 URL"(vite 모드는 서버가 BASE_PATH strip).
+// webgl:true 는 swiftshader 부팅 대기 필요.
 //
 // ※ app/landing.html 은 검사 대상이 아니다: landing.html 의 정본 배포 URL 은 루트
 //   /index.html 이며(deploy.yml: landing.html→_site/index.html) 아래에 이미 포함돼 있다.
@@ -68,6 +109,8 @@ export const LIVE_PAGES = [
   // 전시장 ./app/)라 루트 배포에서 정합. _site/app/about.html은 app/landing.html과 같은
   // `cp -r web/. _site/app/` 부산물 사본(어떤 페이지도 링크 안 함)이라 검사하지 않는다.
   { name: 'about',             url: '/about.html',      webgl: false },
+  // world: B-2b 정식 노출(sitemap 등재). WebGL 씬(top-level await manifest fetch).
+  { name: 'app/world',         url: '/app/world.html',  webgl: true },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──

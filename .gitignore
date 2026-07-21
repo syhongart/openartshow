@@ -64,7 +64,9 @@ crashlytics-build.properties
 node_modules/
 
 # Jekyll CI 빌드 산출물 (deploy.yml 생성, 헤드리스 검증 하네스가 로컬 생성)
+# _site_baseline 은 스모크 vite 모드의 동등성 대조용 web직조립본.
 _site/
+_site_baseline/
 
 # 계약직 에이전트 격리 워크트리(임시, 자동 정리)
 .claude/worktrees/

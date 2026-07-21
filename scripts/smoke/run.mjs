@@ -17,16 +17,29 @@ import path from 'node:path';
 import {
   ROOT,
   SITE_DIR,
+  SITE_DIR_BASELINE,
+  BASE_PATH,
   GENERATORS,
-  BASELINE_FILE_COUNT,
+  BASELINE_FILE_COUNT_BY_MODE,
   DROP_THRESHOLD,
-  REQUIRED_FILES,
+  REQUIRED_FILES_BY_MODE,
   LIVE_PAGES,
   VIEWPORTS,
 } from './config.mjs';
-import { assembleSite, countFiles } from './assemble.mjs';
+import { ASSEMBLERS, countFiles } from './assemble.mjs';
 import { startServer } from './server.mjs';
 import { launchBrowser, collectPage } from './browser-checks.mjs';
+import { checkEquivalence } from './equivalence.mjs';
+
+// ── 모드 선택 ────────────────────────────────────────────────────────
+// `node run.mjs`      → baseline(web직조립, 현행 deploy.yml 복제)
+// `node run.mjs vite` → vite 조립(교체 deploy.yml) + 동등성 판정(E1/E2)
+const MODE = process.argv[2] === 'vite' ? 'vite' : 'baseline';
+const IS_VITE = MODE === 'vite';
+const BASELINE_FILE_COUNT = BASELINE_FILE_COUNT_BY_MODE[MODE];
+const REQUIRED_FILES = REQUIRED_FILES_BY_MODE[MODE];
+const URL_PREFIX = IS_VITE ? BASE_PATH.replace(/\/$/, '') : ''; // '/openartshow'
+const SERVE_BASE = IS_VITE ? BASE_PATH : null;                  // 서버 마운트 프리픽스
 
 const results = []; // { id, label, status: 'PASS'|'FAIL'|'INFO', evidence }
 const record = (id, label, status, evidence) => results.push({ id, label, status, evidence });
@@ -99,7 +112,8 @@ function evalCsp(content) {
 }
 
 // 가드B: 페이지 내부 링크가 _site 안 실제 파일로 존재하는지 (동일오리진·상대만)
-function verifyLinks(pageResults, origin) {
+// vite 모드는 링크가 절대경로 /openartshow/… 이므로 basePath 프리픽스를 strip 해 매핑.
+function verifyLinks(pageResults, origin, basePath) {
   let checked = 0;
   const missing = [];
   for (const pr of pageResults) {
@@ -114,6 +128,8 @@ function verifyLinks(pageResults, origin) {
       if (u.protocol !== 'http:' && u.protocol !== 'https:') continue; // mailto/tel 제외
       if (u.origin !== origin) continue; // 외부 오리진 제외
       let p = decodeURIComponent(u.pathname);
+      if (basePath && p.startsWith(basePath)) p = '/' + p.slice(basePath.length);
+      else if (basePath && p + '/' === basePath) p = '/';
       if (p.endsWith('/')) p += 'index.html';
       if (seen.has(p)) continue;
       seen.add(p);
@@ -182,11 +198,21 @@ function aggregateBrowser(pageResults, origin) {
     `실행 인라인 합 ${inlineTotal} (data블록 ${dataTotal} 별도) — ${inlineReport}`);
 
   // 가드B: 내부 링크 200(파일 존재)
-  const { checked, missing } = verifyLinks(pageResults, origin);
+  const { checked, missing } = verifyLinks(pageResults, origin, SERVE_BASE);
   if (missing.length) {
     record('B', '내부 링크 존재', 'FAIL', `${missing.length}/${checked} 누락 — ${missing.slice(0, 4).join(' | ')}`);
   } else {
     record('B', '내부 링크 존재', 'PASS', `${checked}개 동일오리진 링크 모두 _site 내 존재`);
+  }
+
+  // 가드C: 외부요청 0 (자기완결 — CDN·폰트·이미지 외부호스트 0). 시도 자체를 포착.
+  const extAgg = pageResults.filter((p) => (p.externalRequests?.length || 0) > 0);
+  if (extAgg.length) {
+    const first = extAgg[0];
+    record('C', '외부요청 0(자기완결)', 'FAIL',
+      `${extAgg.length}개 페이지 외부요청 — 예: [${first.name}] ${first.externalRequests[0]}`);
+  } else {
+    record('C', '외부요청 0(자기완결)', 'PASS', `${pageResults.length}페이지 외부호스트 요청 0`);
   }
 }
 
@@ -208,16 +234,17 @@ function printReport() {
 }
 
 async function main() {
-  console.log('스모크 하네스 시작 — deploy.yml 조립 재현 + 헤드리스 6항 검증');
+  const modeLabel = IS_VITE ? 'vite 조립(교체 deploy) + 동등성' : 'web직조립(baseline, 현행 deploy)';
+  console.log(`스모크 하네스 시작 — [${MODE}] ${modeLabel} + 헤드리스 6항 검증`);
 
   // 1) 생성기
   checkGenerators();
 
   // 조립 (deploy.yml 재현). 실패하면 이후 검사 불가 → 즉시 종료.
   try {
-    assembleSite();
+    ASSEMBLERS[MODE](SITE_DIR);
   } catch (e) {
-    record('*', '_site 조립', 'FAIL', `조립 실패 — ${(e.stderr?.toString() || e.message || '').slice(0, 200)}`);
+    record('*', '_site 조립', 'FAIL', `조립 실패(${MODE}) — ${(e.stderr?.toString() || e.message || '').slice(0, 200)}`);
     printReport();
     process.exit(1);
   }
@@ -226,15 +253,16 @@ async function main() {
   checkManifestCount();
   checkRequiredFiles();
 
-  // 4/5/6/A/B — 서버 + 헤드리스
-  const srv = await startServer(SITE_DIR);
+  // 4/5/6/A/B/C — 서버 + 헤드리스. vite 모드는 BASE_PATH 서브패스에 마운트.
+  const srv = await startServer(SITE_DIR, SERVE_BASE);
   let browser;
+  let ok;
   try {
     browser = await launchBrowser();
     const pageResults = [];
     for (const spec of LIVE_PAGES) {
       try {
-        pageResults.push(await collectPage(browser, srv.origin, spec));
+        pageResults.push(await collectPage(browser, srv.origin, spec, URL_PREFIX));
       } catch (e) {
         // 로드 자체 실패는 pageerror 로 간주(검사4 FAIL 유발) + CSP 데이터 없음(검사6 FAIL).
         pageResults.push({
@@ -247,16 +275,28 @@ async function main() {
           inline: { execInline: 0, dataBlock: 0, importmap: 0 },
           links: [],
           overflow: [],
+          externalRequests: [],
         });
       }
     }
     aggregateBrowser(pageResults, srv.origin);
+
+    // 동등성 판정(E1/E2) — vite 모드 전용. baseline(web직조립)을 별도 조립·로드해 대조.
+    if (IS_VITE) {
+      const eq = await checkEquivalence({
+        browser,
+        vitePageResults: pageResults,
+        viteSiteDir: SITE_DIR,
+        baselineSiteDir: SITE_DIR_BASELINE,
+      });
+      for (const r of eq) record(r.id, r.label, r.status, r.evidence);
+    }
   } finally {
     if (browser) await browser.close().catch(() => {});
     await srv.close().catch(() => {});
   }
 
-  const ok = printReport();
+  ok = printReport();
   process.exit(ok ? 0 : 1);
 }
 

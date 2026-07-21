@@ -1,31 +1,100 @@
 // scripts/smoke/assemble.mjs
-// deploy.yml 의 _site 조립 레시피를 로컬에서 그대로 재현한다.
-// (생성기 실행은 run.mjs 의 검사1 에서 별도 수행 — 여기서는 파일 배치만.)
+// _site 조립 레시피를 로컬에서 재현한다. 두 방식 모두 지원:
+//  · assembleSite()     = web직조립(baseline) — 현행 deploy.yml 의 cp 재배치 복제.
+//  · assembleSiteVite() = vite 조립 — 교체될 deploy.yml(B-2b-3) 의 vite build 기반.
+// (생성기 실행은 run.mjs 의 검사1 에서 선행 — 여기서는 파일 배치만.)
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, SITE_DIR } from './config.mjs';
 
-// deploy.yml `run:` 조립 스텝과 1:1 대응하는 bash 스크립트.
+// ── baseline: web직조립 (현행 deploy.yml `run:` 조립 스텝과 1:1) ──────
 // 유지보수 시 .github/workflows/deploy.yml 의 조립 스텝과 함께 갱신할 것.
-const ASSEMBLE_SH = `
+// $OUT 은 대상 디렉토리(기본 _site, 동등성 대조 시 _site_baseline).
+const ASSEMBLE_BASELINE_SH = `
 set -euo pipefail
-rm -rf _site && mkdir -p _site/app
-cp web/landing.html _site/index.html
-cp web/guide.html   _site/guide.html
-cp web/design.html  _site/design.html
-cp web/about.html   _site/about.html
-cp -r web/.          _site/app/
-cp -r devlog team valuation _site/
-cp sitemap.xml robots.txt _site/ 2>/dev/null || true
-touch _site/.nojekyll
+rm -rf "$OUT" && mkdir -p "$OUT/app"
+cp web/landing.html "$OUT/index.html"
+cp web/guide.html   "$OUT/guide.html"
+cp web/design.html  "$OUT/design.html"
+cp web/about.html   "$OUT/about.html"
+cp -r web/.          "$OUT/app/"
+cp -r devlog team valuation "$OUT/"
+cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true
+touch "$OUT/.nojekyll"
 `;
 
-// _site 를 deploy.yml 방식으로 조립. 실패 시 예외 전파.
-export function assembleSite() {
-  execFileSync('bash', ['-c', ASSEMBLE_SH], { cwd: ROOT, stdio: 'pipe' });
+// ── vite 조립 (교체될 deploy.yml B-2b-3 과 1:1) ──────────────────────
+// vite build → dist(base /openartshow/, HTML rename·CSP정합·자기완결 플러그인 적용) →
+// dist 를 통째 $OUT 으로 복사 → 생성기/정적(devlog·team·valuation·sitemap·robots·.nojekyll)
+// 을 얹는다. 즉 vite _site = dist + 생성기 + 정적. (rename 은 vite 플러그인이 수행 —
+// baseline 의 cp 재배치 로직이 사라진다.)
+const ASSEMBLE_VITE_SH = `
+set -euo pipefail
+./node_modules/.bin/vite build
+rm -rf "$OUT" && mkdir -p "$OUT"
+cp -r dist/.          "$OUT/"
+cp -r devlog team valuation "$OUT/"
+cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true
+touch "$OUT/.nojekyll"
+`;
+
+// _site 를 web직조립(baseline) 방식으로 조립. 실패 시 예외 전파.
+export function assembleSite(targetDir = SITE_DIR) {
+  execFileSync('bash', ['-c', ASSEMBLE_BASELINE_SH], {
+    cwd: ROOT,
+    stdio: 'pipe',
+    env: { ...process.env, OUT: targetDir },
+  });
 }
+
+// _site 를 vite 조립 방식으로 조립(vite build 포함). 실패 시 예외 전파.
+export function assembleSiteVite(targetDir = SITE_DIR) {
+  execFileSync('bash', ['-c', ASSEMBLE_VITE_SH], {
+    cwd: ROOT,
+    stdio: 'pipe',
+    env: { ...process.env, OUT: targetDir },
+  });
+}
+
+// ── 동등성 baseline: origin/main 의 web직조립 (= 현행 라이브 배포) ────
+// ⚠️ 이 브랜치의 web/ 랜딩군 소스는 vite 전제로 조정(ab2ce53: ./app/js→./js)돼
+//    web직서빙 시 랜딩군 스크립트가 깨진다(의도적, deploy 교체 근거). 따라서
+//    "web직서빙 vs vite산출물"의 동등성 대조 기준은 이 브랜치 web/ 가 아니라
+//    "현행 라이브 배포" = origin/main 의 web직조립이어야 한다. git archive 로 main
+//    web/ 을 추출해 현행 deploy.yml 레시피대로 조립(생성기/정적은 현재 워킹트리 공용).
+//    → 대조가 "vite 로 바꿔도 현행 라이브 배포가 동일한가"를 정확히 증명한다.
+const ASSEMBLE_MAIN_BASELINE_SH = `
+set -euo pipefail
+TMPWEB="$(mktemp -d)"
+trap 'rm -rf "$TMPWEB"' EXIT
+git archive origin/main web | tar -x -C "$TMPWEB"
+rm -rf "$OUT" && mkdir -p "$OUT/app"
+cp "$TMPWEB/web/landing.html" "$OUT/index.html"
+cp "$TMPWEB/web/guide.html"   "$OUT/guide.html"
+cp "$TMPWEB/web/design.html"  "$OUT/design.html"
+cp "$TMPWEB/web/about.html"   "$OUT/about.html"
+cp -r "$TMPWEB/web/."          "$OUT/app/"
+cp -r devlog team valuation "$OUT/"
+cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true
+touch "$OUT/.nojekyll"
+`;
+
+// origin/main web직조립(현행 라이브 배포 재현). 동등성 대조 baseline 전용.
+export function assembleSiteBaselineFromMain(targetDir = SITE_DIR) {
+  execFileSync('bash', ['-c', ASSEMBLE_MAIN_BASELINE_SH], {
+    cwd: ROOT,
+    stdio: 'pipe',
+    env: { ...process.env, OUT: targetDir },
+  });
+}
+
+// 모드별 조립 함수 선택기.
+export const ASSEMBLERS = {
+  baseline: assembleSite,
+  vite: assembleSiteVite,
+};
 
 // SITE_DIR 하위 일반 파일 개수를 재귀로 센다 (find -type f | wc -l 과 동치).
 export function countFiles(dir = SITE_DIR) {

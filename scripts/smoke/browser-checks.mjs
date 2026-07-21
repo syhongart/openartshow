@@ -20,12 +20,17 @@ export async function launchBrowser() {
 }
 
 // 한 페이지를 로드해 원시 데이터를 수집한다.
-// 반환: { consoleErrors, pageErrors, cspMeta, cspViolations, inline, links, overflow }
-export async function collectPage(browser, origin, pageSpec) {
+// urlPrefix: 서브패스 마운트 프리픽스(vite 모드 '/openartshow', baseline '') — 정본
+//   배포 URL(github.io/openartshow/…)을 재현해 절대경로 자산참조가 실제로 해소되는지 검증.
+// 반환: { consoleErrors, pageErrors, cspMeta, cspViolations, inline, links, overflow, externalRequests }
+export async function collectPage(browser, origin, pageSpec, urlPrefix = '') {
   const context = await browser.newContext({ viewport: { width: VIEWPORTS[VIEWPORTS.length - 1], height: 900 } });
 
   const consoleErrors = [];
   const pageErrors = [];
+  // 외부요청(자기완결 위반) 수집: 로컬 서버 origin·data:·blob: 이외의 네트워크 요청.
+  // CSP default-src 'self' 로 대부분 차단되나, 시도 자체를 직접 포착해 0 을 증명한다.
+  const externalRequests = [];
 
   // CSP 위반(securitypolicyviolation)은 DOM 이벤트다 — goto 전에 리스너를 심어
   // 초기 로드 위반까지 잡는다. 수집 배열은 window 에 둔다.
@@ -41,8 +46,13 @@ export async function collectPage(browser, origin, pageSpec) {
     if (m.type() === 'error') consoleErrors.push(m.text());
   });
   page.on('pageerror', (e) => pageErrors.push(e.message || String(e)));
+  page.on('request', (r) => {
+    const u = r.url();
+    if (u.startsWith('data:') || u.startsWith('blob:')) return;
+    if (!u.startsWith(origin + '/')) externalRequests.push(u.slice(0, 120));
+  });
 
-  const url = origin + pageSpec.url;
+  const url = origin + urlPrefix + pageSpec.url;
   await page.goto(url, { waitUntil: 'load', timeout: PAGE_TIMEOUT_MS });
 
   // 네트워크 안정 대기 + WebGL 씬은 부팅 시간 추가 확보(swiftshader 느림).
@@ -101,5 +111,6 @@ export async function collectPage(browser, origin, pageSpec) {
     inline: dom.inline,
     links: dom.links,
     overflow,
+    externalRequests,
   };
 }

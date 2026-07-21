@@ -32,7 +32,12 @@ const MIME = {
 };
 
 // rootDir 를 오리진 루트로 서빙. resolve → { server, port, origin, close }.
-export function startServer(rootDir) {
+//
+// basePath(예 '/openartshow/')가 주어지면 그 서브패스에 rootDir 를 마운트한다:
+// vite 산출물은 자산을 절대경로 /openartshow/_bundle/… 로 참조하므로, 서버가
+// 프리픽스를 strip 해 rootDir 하위로 매핑한다(= github.io/openartshow/ 배포 재현).
+// basePath 밖 요청(예 브라우저 자동 /favicon.ico)은 strip 없이 통과 → 아래 404/204 로직.
+export function startServer(rootDir, basePath = null) {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
       let urlPath;
@@ -42,6 +47,12 @@ export function startServer(rootDir) {
         res.writeHead(400);
         res.end('bad request');
         return;
+      }
+      // 서브패스 마운트: 프리픽스 strip. '/openartshow/' → '/', '/openartshow/app/x'
+      // → '/app/x'. 프리픽스 없는 정확히 '/openartshow'(끝슬래시 없음)도 '/' 로 흡수.
+      if (basePath) {
+        if (urlPath.startsWith(basePath)) urlPath = '/' + urlPath.slice(basePath.length);
+        else if (urlPath + '/' === basePath) urlPath = '/';
       }
       if (urlPath.endsWith('/')) urlPath += 'index.html';
 
