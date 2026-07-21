@@ -2925,10 +2925,11 @@ function buildChibiMaker() {
     shade.addColorStop(0.5, 'rgba(58,52,44,0)');
     shade.addColorStop(1, 'rgba(58,52,44,0.24)'); // 세기: 은은↓0.16 / 강함↑0.38
     x.fillStyle = shade; x.fillRect(0, 0, w, h);
-    // 중앙 흰 스팟 — 살짝 있는 흰 조명(감독 지시: 흰색). 웜톤 제거, 코어 alpha 1.0 → 0.45로 연하게.
-    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, 92);
-    spot.addColorStop(0, 'rgba(255,255,255,0.45)');
-    spot.addColorStop(0.5, 'rgba(255,255,255,0.18)');
+    // 중앙 흰 스팟 — 흰 조명(감독 지시: 흰색). 감독 "좀 더 밝게" → 코어 alpha 0.45 → 0.62,
+    // 중간 0.18 → 0.32, 반경 92 → 100으로 상향(밝은 영역 확대). 세기: 은은↓0.45 / 강함↑0.75.
+    const spot = x.createRadialGradient(cx, cy, 0, cx, cy, 100);
+    spot.addColorStop(0, 'rgba(255,255,255,0.62)');
+    spot.addColorStop(0.5, 'rgba(255,255,255,0.32)');
     spot.addColorStop(1, 'rgba(255,255,255,0)');
     x.fillStyle = spot; x.fillRect(0, 0, w, h);
   };
