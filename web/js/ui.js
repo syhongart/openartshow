@@ -526,6 +526,22 @@ function injectStyles() {
 }
 #lu-am-close:hover { border-color: var(--am-accent); color: #fff; background: var(--am-accent); transform: translateY(1px) rotate(90deg); box-shadow: 0 2px 0 rgba(87,51,255,0.5), 0 4px 8px rgba(40,30,10,0.18); }
 #lu-am-close:active { transform: translateY(3px) rotate(90deg); box-shadow: none; }
+/* 상단 액션 — 저장(✓, 강조) + 닫기(×)를 헤더 우측에 나란히(하단 버튼 통합) */
+.lu-am-head-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+#lu-am-save {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--am-accent);
+  border: 2px solid var(--am-accent);
+  border-radius: 50%;
+  color: #fff; font-size: 18px; font-weight: 800; line-height: 1;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 3px 0 rgba(60,36,180,0.5), 0 6px 12px rgba(40,30,10,0.2);
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+#lu-am-save:hover { background: #6a4bff; transform: translateY(1px); box-shadow: 0 2px 0 rgba(60,36,180,0.5), 0 4px 8px rgba(40,30,10,0.18); }
+#lu-am-save:active { transform: translateY(3px); box-shadow: none; }
 .lu-am-body {
   flex: 1 1 auto; min-height: 0;
   display: flex; gap: 24px;
@@ -565,7 +581,9 @@ function injectStyles() {
   background: #ddd2bd;  /* 방 배경 하단색 — WebGL 첫 렌더 전/둥근모서리 밖 플래시 방지 */
   box-shadow: inset 0 0 0 2px rgba(255,255,255,0.6), inset 0 0 0 3px rgba(211,167,101,0.3), inset 0 2px 10px rgba(40,30,10,0.12);
 }
-.lu-am-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+/* touch-action은 비상속이라 부모(.lu-am-preview)의 pan-y가 캔버스에 안 내려온다 → 캔버스에
+   직접 지정해야 세로 스와이프가 화면 스크롤로 통과한다(좌우 드래그=회전 유지). */
+.lu-am-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: pan-y; }
 .lu-am-preview.lu-dragging .lu-am-stage canvas { cursor: grabbing; }
 /* 부드러운 비네트 + 접지 그림자 + 은은한 종이 결 — canvas가 불투명(scene.background)이라
    위에 멀티플라이로 얹는다 */
@@ -2839,11 +2857,15 @@ const CHIBI_NAV_CATS = [
 ];
 
 function buildChibiMaker() {
+  // 상단 액션 — 저장(✓)·닫기(×)를 헤더 한 곳에 통합(감독 지시). 하단 저장 칸을 없애
+  // 위아래 분리를 통합, 스크롤 없이 바로 저장·닫기 할 수 있다.
+  const saveV = el('button', { id: 'lu-am-save', type: 'button', 'aria-label': '이 캐릭터 사용', title: '이 캐릭터 사용', text: '✓' });
   const closeX = el('button', { id: 'lu-am-close', type: 'button', 'aria-label': '닫기', text: '×' });
   const titleIcon = el('span', { className: 'lu-am-title-icon', 'aria-hidden': 'true' });
   titleIcon.innerHTML = ICON_LEAF;
   const title = el('div', { className: 'lu-am-title' }, [titleIcon, el('span', { text: '캐릭터 디자인' })]);
-  const head = el('div', { className: 'lu-am-head' }, [title, closeX]);
+  const headActions = el('div', { className: 'lu-am-head-actions' }, [saveV, closeX]);
+  const head = el('div', { className: 'lu-am-head' }, [title, headActions]);
 
   // 프리뷰 "무대" — 300×400 백킹 해상도(ensurePreviewRenderer의 setSize와 정합)는 그대로 두고,
   // 바깥 lu-am-preview 프레임을 장식용 여백으로 감싸 게임 캐릭터 크리에이터급 무대감을 낸다.
@@ -3023,43 +3045,9 @@ function buildChibiMaker() {
   });
   const body = el('div', { className: 'lu-am-body' }, [previewBox, panel]);
 
-  const saveBtn = el('button', { className: 'lu-am-btn lu-am-btn-primary', type: 'button', text: '저장하고 사용' });
-  const closeBtn = el('button', { className: 'lu-am-btn', type: 'button', text: '닫기' });
-  const btnRow = el('div', { className: 'lu-am-footer-btns' }, [closeBtn, saveBtn]);
-
-  // 회원가입 게이트 — 캐릭터 저장은 회원가입 필요(감독 방침). 게스트는 저장 없이 이번
-  // 세션에만 쓸 수 있고, 회원가입하면 지금 캐릭터가 계정에 저장된다.
-  const signupProviders = el('div', { className: 'lu-am-signup-providers' });
-  Object.keys(AUTH_PROVIDERS).forEach((key) => {
-    const p = AUTH_PROVIDERS[key];
-    const b = el('button', { className: `lu-am-social lu-social-${key}`, type: 'button', 'aria-label': p.label }, [
-      el('span', { className: 'lu-social-badge', text: p.short }),
-      el('span', { text: p.label }),
-    ]);
-    b.addEventListener('click', async () => {
-      b.disabled = true;
-      try { await authLoginWith(key); } catch (_) { /* mock 실패 없음 */ }
-      b.disabled = false;
-      // 회원가입 성공 → 지금 만든 캐릭터를 새 계정에 저장하고 닫는다
-      if (authGetProfile() && chibiParams) {
-        const look = JSON.parse(JSON.stringify(chibiParams));
-        sessionChibi = look;
-        saveStoredChibi(look);
-        const t = snapshotThumb(150, 200); if (t) saveStoredChibiThumb(t);
-        if (els && els.lobby) els.lobby.onChibiSaved();
-        if (entered && typeof callbacks.onAvatarChange === 'function') callbacks.onAvatarChange(encodeChibi(look));
-        setStatus('회원가입 완료 — 캐릭터가 저장됐어요 ✨');
-        closeChibiMaker();
-      }
-    });
-    signupProviders.appendChild(b);
-  });
-  const guestGate = el('div', { className: 'lu-am-guest-gate' }, [
-    el('div', { className: 'lu-am-gate-note', text: '캐릭터를 저장하려면 회원가입이 필요해요. 회원가입 없이도 지금 이 캐릭터로 바로 쓸 수 있어요.' }),
-    signupProviders,
-  ]);
-  const footer = el('div', { className: 'lu-am-footer' }, [guestGate, btnRow]);
-  const card = el('div', { className: 'lu-am-card' }, [head, body, footer]);
+  // 하단 저장 칸(닫기/저장 버튼 + 회원가입 게이트)은 제거 — 저장·닫기는 상단 헤더(✓/×)로
+  // 통합, 회원가입 유도는 캐릭터 화면에서 빼 로비 등으로 옮긴다(감독 지시).
+  const card = el('div', { className: 'lu-am-card' }, [head, body]);
   const overlay = el('div', { id: 'lu-chibi-maker', className: 'lu' }, [card]);
   document.body.appendChild(overlay);
 
@@ -3374,7 +3362,6 @@ function buildChibiMaker() {
   canvas.addEventListener('pointercancel', endDrag);
 
   closeX.addEventListener('click', () => closeChibiMaker());
-  closeBtn.addEventListener('click', () => closeChibiMaker());
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeChibiMaker(); });
 
   // 현재 프리뷰를 렌더 직후 스냅샷해 축소 썸네일(dataURL)을 만든다.
@@ -3387,14 +3374,15 @@ function buildChibiMaker() {
     } catch (_) { return ''; }
   }
 
-  // 로그인 여부에 따라 저장 버튼 라벨·회원가입 게이트 노출을 갱신한다.
+  // 로그인 여부에 따라 상단 저장(✓) 버튼의 접근성 라벨을 갱신한다(로그인=계정 저장, 게스트=세션 적용).
   function syncSaveGate() {
     const loggedIn = !!authGetProfile();
-    saveBtn.textContent = loggedIn ? '저장하고 사용' : '이 캐릭터 사용';
-    guestGate.style.display = loggedIn ? 'none' : '';
+    const label = loggedIn ? '저장하고 사용' : '이 캐릭터 사용';
+    saveV.setAttribute('aria-label', label);
+    saveV.title = label;
   }
 
-  saveBtn.addEventListener('click', () => {
+  saveV.addEventListener('click', () => {
     if (!chibiParams) return;
     const look = JSON.parse(JSON.stringify(chibiParams));
     sessionChibi = look;                       // 항상 이번 세션에 적용(게스트 포함)
