@@ -454,6 +454,18 @@ function synthThunder(delayS) {
 
 export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null }) {
   const state = { time: 'day', weather: 'clear', fx: { rainbow: false, aurora: false }, flashSafe: false, precip: 1 };
+  // ── B-2 저사양 오버드로우 축소 ──
+  // 모바일 타일드 GPU는 불투명 오브젝트의 오버드로우는 제거하지만 transparent·가산블렌딩 레이어
+  // (강수·오로라·수면 빛기둥·반짝이 별)는 그 최적화가 무력화돼 fill 비용이 그대로 쌓인다.
+  // world.js의 liteMode 진입 시 setLite(true)로 이 레이어들의 "양"만 축소한다 — 강수는
+  // draw-range(그리는 입자 수)를, 보조 투명 레이어는 opacity를 낮춘다. 연출 톤(색·움직임)과
+  // 개수·재질은 그대로 두고(재생성·재컴파일 0) draw-range/opacity로만 제어(팀장 설계 톤 보존).
+  let lite = false;
+  const LITE_PRECIP_MUL = 0.45; // 강수(비·눈) 그리는 입자 비율
+  const LITE_AUR_MUL = 0.5;     // 오로라 opacity 배수
+  const LITE_GLINT_MUL = 0.55;  // 수면 빛기둥 opacity 배수
+  const LITE_TWK_MUL = 0.5;     // 반짝이 별 opacity 배수
+  const AUR_BASE_OPACITY = 0.5; // 오로라 기준 opacity(생성값 — 복원 기준)
   const disposables = [];
   const track = (o) => { disposables.push(o); return o; };
   // 돔 텍스처는 전 기기 2048 고정. ①저해상(512) 하늘은 별이 화면 확대로 뭉개지고(실측)
@@ -665,7 +677,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
       : state.time === 'sunset' ? { col: 0xffae62, op: 0.62, len: 1.1 }
         : { col: 0xfff3d0, op: 0.3, len: 0.6 };
     glint.material.color.set(conf.col);
-    glint.material.opacity = conf.op;
+    glint.material.opacity = conf.op * (lite ? LITE_GLINT_MUL : 1); // B-2 저사양 축소
     glint.scale.set(1, 1, conf.len);
   }
 
@@ -697,6 +709,40 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     if (weather === 'rain' || weather === 'snow') fx.rainbow = false;
     if (!(time === 'night' && weather === 'clear')) fx.aurora = false;
     return { time, weather, fx };
+  }
+
+  // ── B-2 저사양 오버드로우 축소 API ──
+  // 강수는 draw-range로 그리는 입자 수를 줄인다(물리 풀·버퍼는 전체 유지 — update는 전 입자를
+  // 계속 굴려 lite 해제 시 즉시 정상 복원). 보조 투명 레이어(오로라·빛기둥·반짝이 별)는 opacity만
+  // 낮춘다. 반환값은 검증·계측용 스냅샷(draw-range·opacity 실측).
+  function applyPrecipDrawRange() {
+    // 비: LineSegments(선분당 2정점) — 앞쪽 N선분만 그린다(짝수 정점 보장).
+    const rSeg = lite ? Math.floor(R_COUNT * LITE_PRECIP_MUL) : R_COUNT;
+    rainGeo.setDrawRange(0, rSeg * 2);
+    // 눈: Points(정점당 1점).
+    const sN = lite ? Math.floor(S_COUNT * LITE_PRECIP_MUL) : S_COUNT;
+    snowGeo.setDrawRange(0, sN);
+  }
+  function liteSnapshot() {
+    return {
+      lite,
+      rainDraw: rainGeo.drawRange.count, rainMax: R_COUNT * 2,
+      snowDraw: snowGeo.drawRange.count, snowMax: S_COUNT,
+      auroraOpacity: auroras[0].material.opacity,
+      glintMul: lite ? LITE_GLINT_MUL : 1,
+      twkMul: lite ? LITE_TWK_MUL : 1,
+    };
+  }
+  function setLite(on) {
+    on = !!on;
+    if (on === lite) return liteSnapshot(); // idempotent
+    lite = on;
+    applyPrecipDrawRange();
+    // 오로라 — 기준 opacity에 배수 적용(update가 opacity를 안 건드리므로 여기서 확정·복원).
+    for (const a of auroras) a.material.opacity = AUR_BASE_OPACITY * (lite ? LITE_AUR_MUL : 1);
+    glintStyle(); // 빛기둥 — lite 배수 반영해 재적용
+    // 반짝이 별은 update에서 매 프레임 twkMul을 곱해 반영(여기선 상태만 전환)
+    return liteSnapshot();
   }
 
   let phase = 0; // 크로스페이드 진행(0=없음)
@@ -775,8 +821,9 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     // 별 반짝임 — 두 레이어 반대 위상 진동(다른 속도로 어긋나 자연스러운 트윙클). 항상 일부는 밝다.
     twkBase += (twkTarget - twkBase) * Math.min(1, 3 * dt);
     if (twk[0].mesh.visible) {
-      twk[0].mesh.material.opacity = twkBase * (0.22 + 0.78 * (0.5 + 0.5 * Math.sin(t * 1.7)));
-      twk[1].mesh.material.opacity = twkBase * (0.22 + 0.78 * (0.5 + 0.5 * Math.sin(t * 2.3 + 2.4)));
+      const twkMul = lite ? LITE_TWK_MUL : 1; // B-2 저사양 축소(진동 파형·색은 유지, 세기만 하향)
+      twk[0].mesh.material.opacity = twkBase * (0.22 + 0.78 * (0.5 + 0.5 * Math.sin(t * 1.7))) * twkMul;
+      twk[1].mesh.material.opacity = twkBase * (0.22 + 0.78 * (0.5 + 0.5 * Math.sin(t * 2.3 + 2.4))) * twkMul;
       if (twkBase < 0.01 && twkTarget === 0) for (const w of twk) w.mesh.visible = false;
     }
     // 강수
@@ -860,7 +907,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
   }
 
   set({ time: 'day', weather: 'clear' }, { fade: 0 });
-  return { set, get, update, getSunDir, dispose, SKY_TIMES, SKY_WEATHERS };
+  return { set, get, update, getSunDir, setLite, dispose, SKY_TIMES, SKY_WEATHERS };
 }
 
 /** 방문자 실제 시각 → 시간대 자동 매핑(신 모드 '자동' 버튼용) */

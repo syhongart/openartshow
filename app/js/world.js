@@ -1216,6 +1216,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       // 즉시 강등 — 하한(RATIO_FLOOR)까지 한 번에 내려 빠르게 보호한다. lite 진입.
       renderer.setPixelRatio(RATIO_FLOOR);
       liteMode = true; adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
+      if (skySystem) skySystem.setLite(true); // [하늘 엔진] B-2 하늘 투명 레이어 오버드로우 축소
       emit('adapt', { mode: 'lite', ratio: RATIO_FLOOR, fps: Math.round(fpsNow) });
     } else if (fpsNow > ADAPT_EXIT_FPS) {
       // 승급 — 고FPS가 ADAPT_UP_HOLD틱(10초) 지속돼야 +0.25씩 상한까지(느린 승급).
@@ -1223,7 +1224,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (adaptUpTicks >= ADAPT_UP_HOLD && cur < RATIO_CEIL) {
         renderer.setPixelRatio(Math.min(RATIO_CEIL, cur + ADAPT_UP_STEP));
         adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
-        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) liteMode = false; // 상한 복귀 시 lite 해제
+        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) { liteMode = false; if (skySystem) skySystem.setLite(false); } // 상한 복귀 시 lite 해제(하늘 레이어 복원)
         emit('adapt', { mode: 'up', ratio: renderer.getPixelRatio(), fps: Math.round(fpsNow) });
       }
     } else {
