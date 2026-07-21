@@ -1131,7 +1131,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // Pro·최신 안드로이드 dpr=3 등)에서 하한이 상한(2)을 넘어 강등·승급 게이트가 영구 false가 되어
   // 적응이 no-op가 된다(교차리뷰 지적). 상한 상대값(≤2 캡)으로 잡아 모든 dpr에서 하한<상한을 보장.
   const RATIO_CEIL = gpuInfo.soft ? Math.min(dprAdapt, 0.7) : Math.min(2, dprAdapt);
-  const RATIO_FLOOR = Math.max(1, RATIO_CEIL * 0.6);
+  // min(CEIL, …)로 한 번 더 감싸 dpr<1(데스크톱 축소 화면 등 devicePixelRatio<1)에서도
+  // FLOOR>CEIL(→ 게이트 영구 false·no-op)이 생기지 않도록 구조적으로 FLOOR≤CEIL 보장(교차리뷰 권고).
+  const RATIO_FLOOR = Math.min(RATIO_CEIL, Math.max(1, RATIO_CEIL * 0.6));
   let liteMode = false;
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
 
