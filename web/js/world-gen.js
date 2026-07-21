@@ -12,7 +12,7 @@
 // 재사용: space-presets SPACE_PRESETS(랜드마크), space.js normalizeSpace(검증·폴백).
 // -----------------------------------------------------------------------------
 import { normalizeSpace, FOOTPRINT, STORY_H, PART_TYPES } from './space';
-import { SPACE_PRESETS } from './space-presets.js';
+import { SPACE_PRESETS } from './space-presets';
 import { encodeChibi, CHIBI_PRESETS } from './chibi.js';
 
 // ── seeded PRNG (mulberry32) — Math.random 금지: 모든 방문자 동일 세계 ──

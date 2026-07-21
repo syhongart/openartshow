@@ -1,20 +1,44 @@
-// space-presets.js — 방/공간 프리셋 (심즈식 "완성된 방으로 시작") [빌더 behind-flag]
+// space-presets.ts — 방/공간 프리셋 (심즈식 "완성된 방으로 시작") [빌더 behind-flag]
 // -----------------------------------------------------------------------------
 // [팀장 조건] 기존 스키마(space.js v2)·기존 PART_TYPES/FINISH만 사용 — 신규 필드 0.
 // 각 프리셋은 그냥 space 문서다. 빌더가 normalizeSpace로 정규화해 로드하면 끝
 // (하위호환·검증 자동). 좌표는 방 중심 원점·바닥 y=0(BUILDING/DEFAULT_SPACE 계승).
 // 썸네일은 런타임 캔버스 탑다운 플랜(외부 이미지 0) — presetThumb.
+//
+// [B-5-③ leaf TS 전환] 순수 leaf 파일을 strict TypeScript로 전환. 런타임 로직·값은
+// 무변경(순수 타입 첨가만). 공개 export(northArt/SPACE_PRESETS/PRESET_IDS/getPreset/
+// presetThumb) 시그니처 타입만 명시. 프리셋 space는 정규화 전 문서라 shell에 entries·
+// floors·stairs가 없으므로(빌더 normalizeSpace가 보정) Space 대신 PresetSpace로 표기.
+// [리졸브] vite/rollup resolver는 확장자 명시 .js import를 .ts로 치환하지 않으므로
+// (B-5-①/② space.ts·ytembed.ts와 동형), 소비자 import는 확장자 없는 './space-presets'로 통일.
 // -----------------------------------------------------------------------------
-import { FOOTPRINT, PART_TYPES } from './space';
+import { FOOTPRINT, PART_TYPES, type SpacePart, type SpaceFinish } from './space';
+
+/** 프리셋의 정규화 전 space 문서(빌더 normalizeSpace가 entries·floors·stairs 등 보정). */
+export interface PresetSpace {
+  version: number;
+  meta: { name: string; author: string };
+  shell: { footprint: string; storyH: string; wallT: number; finish: SpaceFinish };
+  spawn: { x: number; z: number; ry: number };
+  parts: SpacePart[];
+}
+
+/** 프리셋 카드 한 장 — 빌더 갤러리 항목. */
+export interface SpacePreset {
+  id: string;
+  name: string;
+  desc: string;
+  space: PresetSpace;
+}
 
 // 북벽(z<0) 3작품 헬퍼 (world-gen.js 절차생성도 재사용 — export)
-export const northArt = (z = -3.4) => ([
+export const northArt = (z = -3.4): SpacePart[] => ([
   { t: 'artwork', x: -3.0, z, ry: 0, frame: 'minimal', src: '' },
   { t: 'artwork', x: 0.0, z, ry: 0, frame: 'minimal', src: '', featured: true },
   { t: 'artwork', x: 3.0, z, ry: 0, frame: 'minimal', src: '' },
 ]);
 
-export const SPACE_PRESETS = [
+export const SPACE_PRESETS: SpacePreset[] = [
   {
     id: 'minimal-white',
     name: '미니멀 화이트',
@@ -133,24 +157,24 @@ export const SPACE_PRESETS = [
 ];
 
 export const PRESET_IDS = new Set(SPACE_PRESETS.map((p) => p.id));
-export function getPreset(id) { return SPACE_PRESETS.find((p) => p.id === id) || null; }
+export function getPreset(id: string): SpacePreset | null { return SPACE_PRESETS.find((p) => p.id === id) || null; }
 
 // ── 탑다운 미니 플랜 썸네일 (런타임 캔버스, 외부 이미지 0) ─────────────────────
-const FLOOR_COL = { parquet: '#b98a53', terrazzo: '#d8d2c6', concrete: '#8f8d88', grass: '#5b8746', water: '#22505f' };
-const CAT_COL = { structure: '#9aa0aa', exhibit: '#8b72ff', ambience: '#72e6e1', event: '#f4a3ab', finish: '#cbb994' };
-const FEATURE_COL = { deepviolet: '#4a4560', kintsugi: '#c39a4a', charcoal: '#3a3a40', warmsand: '#e6d8bf' };
+const FLOOR_COL: Record<string, string> = { parquet: '#b98a53', terrazzo: '#d8d2c6', concrete: '#8f8d88', grass: '#5b8746', water: '#22505f' };
+const CAT_COL: Record<string, string> = { structure: '#9aa0aa', exhibit: '#8b72ff', ambience: '#72e6e1', event: '#f4a3ab', finish: '#cbb994' };
+const FEATURE_COL: Record<string, string> = { deepviolet: '#4a4560', kintsugi: '#c39a4a', charcoal: '#3a3a40', warmsand: '#e6d8bf' };
 
 /** space 문서 → 탑다운 플랜 dataURL(정사각 size). 비-DOM이면 null. */
-export function presetThumb(space, size = 132) {
+export function presetThumb(space: PresetSpace, size = 132): string | null {
   if (typeof document === 'undefined') return null;
   const c = document.createElement('canvas'); c.width = c.height = size;
-  const x = c.getContext('2d');
+  const x = c.getContext('2d')!;
   const [fw, fd] = FOOTPRINT[space.shell.footprint] || [9, 7];
   x.fillStyle = '#14151a'; x.fillRect(0, 0, size, size);            // 배경
   const pad = 12, span = size - pad * 2;
   const s = span / Math.max(fw, fd);                                // 월드→픽셀 스케일(방 비율 유지)
   const rw = fw * s, rh = fd * s, ox = (size - rw) / 2, oy = (size - rh) / 2;
-  const wx = (wx0) => ox + (wx0 + fw / 2) * s, wz = (wz0) => oy + (wz0 + fd / 2) * s;
+  const wx = (wx0: number) => ox + (wx0 + fw / 2) * s, wz = (wz0: number) => oy + (wz0 + fd / 2) * s;
   // 바닥
   x.fillStyle = FLOOR_COL[space.shell.finish.floor] || '#b98a53'; x.fillRect(ox, oy, rw, rh);
   // 벽 테두리
