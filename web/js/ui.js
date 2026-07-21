@@ -562,7 +562,7 @@ function injectStyles() {
   position: relative;
   border-radius: 18px;
   overflow: hidden;
-  background: #201e28;  /* 딥 백드롭 하단색 — WebGL 첫 렌더 전/둥근모서리 밖 크림 플래시 방지 */
+  background: #ddd2bd;  /* 방 배경 하단색 — WebGL 첫 렌더 전/둥근모서리 밖 플래시 방지 */
   box-shadow: inset 0 0 0 2px rgba(255,255,255,0.6), inset 0 0 0 3px rgba(211,167,101,0.3), inset 0 2px 10px rgba(40,30,10,0.12);
 }
 .lu-am-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
@@ -571,7 +571,7 @@ function injectStyles() {
    위에 멀티플라이로 얹는다 */
 .lu-am-stage::before {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background-image: var(--am-grain), radial-gradient(120% 100% at 50% 24%, rgba(255,247,222,0) 48%, rgba(60,45,20,0.10) 100%);
+  background-image: var(--am-grain), radial-gradient(120% 100% at 50% 24%, rgba(255,247,222,0) 48%, rgba(60,45,20,0.08) 100%);
   background-repeat: repeat, no-repeat;
   mix-blend-mode: multiply;
 }
@@ -2874,6 +2874,28 @@ function buildChibiMaker() {
     return t;
   }
 
+  // 벽지 텍스처 — 절차 생성(외부 에셋 0). 세로 줄은 X만 변하고 Y로는 균일해 캔버스 높이는 극소.
+  // 심리스: 밴드 주기가 캔버스 폭을 정수로 나누고 repeatX가 정수라 좌우 이음새가 없다.
+  function makeWallpaperTex(draw, { repeatX = 1, repeatY = 1, w = 256, h = 8 } = {}) {
+    if (typeof document === 'undefined') return null;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeatX, repeatY);
+    t.anisotropy = 4;
+    return t;
+  }
+  // 톤온톤 세로 줄무늬 벽지 — base 위에 stripe 밴드(폭=주기 절반)를 교대로. 감독 선택 V1(등폭 밴드).
+  const drawStripes = (base, stripe) => (x, W, H) => {
+    const count = 8, period = W / count;   // 256/8=32px 주기(정수 → 심리스)
+    x.fillStyle = base; x.fillRect(0, 0, W, H);
+    x.fillStyle = stripe;
+    for (let i = 0; i < count; i++) x.fillRect(i * period, 0, period / 2, H);
+  };
+
   function ensurePreviewRenderer() {
     if (previewRenderer) return;
     previewRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -2892,13 +2914,12 @@ function buildChibiMaker() {
     previewRenderer.toneMappingExposure = 1.0;
     previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
     previewScene = new THREE.Scene();
-    // 갤러리 백드롭 — 액자 안을 저채도 딥톤 전시 공간으로(감독 선택). 배경이 모달과 같은
-    // 크림 단색이면 "빈 액자"로 보였다. 세로 그라데(위 살짝 밝게→아래 깊게)로 깊이를 주고,
-    // 딥뉴트럴이라 유채색 캐릭터가 돋보인다. 텍스처는 절차 생성(외부 에셋 0, CSP 'self').
-    previewScene.background = makePreviewBackdrop('#34303e', '#201e28') || new THREE.Color('#201e28');
-    // 포그(배경 하단색과 동색)로 바닥 원경을 배경에 녹여 이음매 없는 사이클로라마를 만든다.
-    // near 4.5는 캐릭터(카메라 거리 ≈4.1) 뒤에서 시작해 본체는 안 잠긴다. 배경 텍스처는 포그 무관.
-    previewScene.fog = new THREE.Fog(0x201e28, 4.5, 8.5);
+    // 방 배경 — 벽지 벽 뒤/위쪽 여백을 채우는 웜 라이트 그라데(위 밝게→아래 벽 톤). 벽지 방으로
+    // 액자 안을 "다른 공간"으로 만든다(감독 지시). 텍스처는 절차 생성(외부 에셋 0, CSP 'self').
+    previewScene.background = makePreviewBackdrop('#f0ead9', '#ddd2bd') || new THREE.Color('#ddd2bd');
+    // 포그(벽 베이스 근사색)로 바닥·벽 원경을 배경색으로 녹여 이음매를 없앤다. near 5.5는 캐릭터
+    // (카메라 거리 ≈4.1) 뒤에서 시작해 본체는 안 잠긴다. 배경 텍스처는 포그 무관.
+    previewScene.fog = new THREE.Fog(0xded3bf, 5.5, 10);
     // 프레이밍 — 발이 프레임 바닥(화면 세로 89%)을 딛고, 하트머리 정점(≈1.59m)도
     // 담기게 잡는다. lookAt.y를 0.85로 올려 캐릭터를 화면 아래로 내려 "바닥에 선"
     // 구도를 만든다(구 lookAt 0.64는 발이 세로 80%에 떠 발밑 여백이 넓어 공중부양처럼
@@ -2933,17 +2954,37 @@ function buildChibiMaker() {
     shadowLight.shadow.bias = -0.0005;     // VSM은 acne가 적어 작은 바이어스로 충분
     previewScene.add(shadowLight);
     previewScene.add(shadowLight.target); // target 기본 (0,0,0) — 캐릭터 발밑을 향함
-    // 보이는 저채도 바닥(발 최하단 y≈0). 배경 하단(#201e28)보다 약간 밝은 무광 전시장 바닥이라
-    // 발밑 접지 그림자가 읽히고, 포그가 원경을 배경색으로 녹여 백드롭과 이어진다. receiveShadow로
-    // 그림자를 그대로 받는다(그림자맵은 shadowLight가 담당, 정합 불변).
+    // 우드 바닥(발 최하단 y≈0) — 벽지 웜샌드와 동계. 무광이라 하이라이트 없이 매트한 방 바닥.
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(6, 6),
-      new THREE.MeshStandardMaterial({ color: 0x423e4c, roughness: 0.98, metalness: 0 }),
+      new THREE.MeshStandardMaterial({ color: 0xb9a06f, roughness: 0.9, metalness: 0 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0;
     ground.receiveShadow = true;
     previewScene.add(ground);
+    // 그림자 캐처 — 불투명 바닥은 그림자 라이트 intensity 0이라 그림자가 안 진다(그림자계수×0=0).
+    // ShadowMaterial은 라이트 세기를 무시하고 커버리지×opacity로만 칠하므로 intensity 0으로도
+    // 접지 그림자가 우드 바닥 위에 다시 뜬다(조명 'B' 무변경 원칙 유지). y 오프셋+polygonOffset으로 z-fighting 회피.
+    const shadowCatcher = new THREE.Mesh(
+      new THREE.PlaneGeometry(6, 6),
+      new THREE.ShadowMaterial({ opacity: 0.3 }),
+    );
+    shadowCatcher.rotation.x = -Math.PI / 2;
+    shadowCatcher.position.y = 0.002;
+    shadowCatcher.material.polygonOffset = true;
+    shadowCatcher.material.polygonOffsetFactor = -1;
+    shadowCatcher.receiveShadow = true;
+    previewScene.add(shadowCatcher);
+    // 뒤 벽 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드). PlaneGeometry 법선이 +Z(카메라 방향)라
+    // 회전 불필요. 포그(near 5.5)에 살짝 잠겨 백드롭과 이어지되 무늬는 또렷하다.
+    const wallpaperTex = makeWallpaperTex(drawStripes('#e2d7bf', '#efe7d3'), { repeatX: 4, repeatY: 1 });
+    const wall = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 6),
+      new THREE.MeshStandardMaterial({ map: wallpaperTex, roughness: 0.9, metalness: 0 }),
+    );
+    wall.position.set(0, 2.2, -2.3);
+    previewScene.add(wall);
     previewRotator = new THREE.Group();
     // 치비는 +Z 저작 + π 래퍼로 -Z를 본다 — 카메라(+Z)에서 정면이 보이게 π 시작
     previewRotator.rotation.y = Math.PI;
