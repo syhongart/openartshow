@@ -258,14 +258,16 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const rectSeam = (ctx, x, y, w, hh) => tile((ox, oy) => ctx.fillRect(x + ox, y + oy, w, hh)); // [P1] 반점·알갱이 seamless
     if (kind === 'grass') {
       d.fillStyle = '#7fa46a'; d.fillRect(0, 0, S, S);
-      for (let i = 0; i < 90; i++) { const t = rnd(); blob(d, rnd() * S, rnd() * S, S * (0.04 + rnd() * 0.1), t < 0.5 ? `rgba(${96 + (rnd() * 30 | 0)},${132 + (rnd() * 26 | 0)},${88 + (rnd() * 20 | 0)},0.5)` : `rgba(${140 + (rnd() * 26 | 0)},${170 + (rnd() * 24 | 0)},${110 + (rnd() * 20 | 0)},0.4)`); }
+      // [타일링 저감] 저주파 blob 반경·대비·alpha 축소(개수 90 유지 → rnd 소비 순서 보존). 베이스(127,164,106)에 근접시켜 "얼룩"→"은은한 변주". 고주파 풀결은 아래 유지.
+      for (let i = 0; i < 90; i++) { const t = rnd(); blob(d, rnd() * S, rnd() * S, S * (0.03 + rnd() * 0.04), t < 0.5 ? `rgba(${110 + (rnd() * 20 | 0)},${142 + (rnd() * 18 | 0)},${96 + (rnd() * 16 | 0)},0.26)` : `rgba(${136 + (rnd() * 20 | 0)},${172 + (rnd() * 18 | 0)},${114 + (rnd() * 14 | 0)},0.22)`); }
       for (let i = 0; i < 420; i++) { const x = rnd() * S, y = rnd() * S, a = rnd() * 6.28, ln = 2 + rnd() * 4, x2 = x + Math.cos(a) * ln, y2 = y + Math.sin(a) * ln; // 풀 결
         d.strokeStyle = `rgba(${70 + (rnd() * 60 | 0)},${110 + (rnd() * 60 | 0)},${64 + (rnd() * 40 | 0)},0.6)`; d.lineWidth = 1.15; strokeSeam(d, x, y, x2, y2); // [P1]seamless [P2]선명도 lineWidth 0.8→1.15·alpha 0.5→0.6
         h.strokeStyle = `rgba(255,255,255,${0.12 + rnd() * 0.12})`; h.lineWidth = 0.8; strokeSeam(h, x, y, x2, y2); } // height stroke 현행 유지
       strength = 1.6;
     } else if (kind === 'sand') {
       d.fillStyle = '#d8c79a'; d.fillRect(0, 0, S, S);
-      for (let i = 0; i < 60; i++) blob(d, rnd() * S, rnd() * S, S * (0.05 + rnd() * 0.12), rnd() < 0.5 ? `rgba(200,184,140,0.4)` : `rgba(224,210,170,0.4)`);
+      // [타일링 저감] 모래 blob 반경·대비·alpha 축소(개수 60 유지 → rnd 소비 순서 보존). 고주파 알갱이는 아래 유지.
+      for (let i = 0; i < 60; i++) blob(d, rnd() * S, rnd() * S, S * (0.04 + rnd() * 0.05), rnd() < 0.5 ? `rgba(206,190,146,0.22)` : `rgba(222,206,166,0.20)`);
       for (let i = 0; i < 1400; i++) { const x = rnd() * S, y = rnd() * S, br = rnd(); // 알갱이
         d.fillStyle = br < 0.5 ? `rgba(180,164,120,0.5)` : `rgba(240,228,190,0.5)`; rectSeam(d, x, y, 1, 1); // [P1] 알갱이 seamless
         h.fillStyle = `rgba(255,255,255,${(br * 0.3).toFixed(2)})`; rectSeam(h, x, y, 1, 1); }
@@ -320,8 +322,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // 지면·도로·물·다리 공유 재질(파셀 복제 방지) — dispose()에서 일괄 회수.
   const T = {
-    grass: new THREE.MeshStandardMaterial({ color: 0x7fa46a, roughness: 1.0, metalness: 0 }),
-    plaza: new THREE.MeshStandardMaterial({ color: 0xcac3b6, roughness: 0.95, metalness: 0 }),
+    // [타일링 저감] vertexColors=파셀별 지면 색 미세 변주(대면적 통짜 반복 은폐). 재질 공유·드로우콜 불변.
+    // 사용처는 대지 박스 gm(loadParcel) 단 한 곳 — 모든 gm에 color attribute 주입(정점색 누락 시 검은 지면 회귀 방지).
+    grass: new THREE.MeshStandardMaterial({ color: 0x7fa46a, vertexColors: true, roughness: 1.0, metalness: 0 }),
+    plaza: new THREE.MeshStandardMaterial({ color: 0xcac3b6, vertexColors: true, roughness: 0.95, metalness: 0 }),
     road: new THREE.MeshStandardMaterial({ color: 0x5b5e66, roughness: 0.98, metalness: 0 }),
     bridge: new THREE.MeshStandardMaterial({ color: 0x8a7a64, roughness: 0.9, metalness: 0 }),
     water: new THREE.MeshStandardMaterial({ color: 0x3f6f8f, roughness: 0.32, metalness: 0.12, transparent: true, opacity: 0.92 }),
@@ -356,6 +360,21 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const c = new THREE.Color(hex), n = g.attributes.position.count, arr = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
     g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
+  };
+  // [타일링 저감] 파셀 지면 정점색 미세 변주 — 흰(1,1,1) 근처 RGB 스케일을 지오 전체에 균일 주입(map 색과 곱).
+  // 파셀 (px,pz) 좌표 해시 시드 → mulberry32(결정론·Math.random 금지). 잔디는 초록쪽 살짝 편향.
+  const tintGeo = (g, r, gg, b) => {
+    const n = g.attributes.position.count, arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { arr[i * 3] = r; arr[i * 3 + 1] = gg; arr[i * 3 + 2] = b; }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
+  };
+  const parcelTint = (px, pz, isPlaza) => {
+    let s = (Math.imul(px, 374761393) ^ Math.imul(pz, 668265263)) >>> 0; // 좌표 해시(음수 px/pz 안전)
+    const rn = () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const base = 0.95 + rn() * 0.10; // 전체 밝기 0.95~1.05
+    let r = base + (rn() - 0.5) * 0.06, g = base + (rn() - 0.5) * 0.06, b = base + (rn() - 0.5) * 0.06; // 채널 미세차 → 대략 0.92~1.08
+    if (!isPlaza) { g += 0.03; b -= 0.02; } // 잔디 초록 편향
+    return [r, g, b];
   };
   // [등대] 높이(y) 밴드 정점색 — 홍백 줄무늬(band 짝/홀 hexA/hexB). 머지 호환 위해 color 속성 부여.
   const paintBandsY = (g, y0, bandH, hexA, hexB) => {
@@ -688,7 +707,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const bm = new THREE.Mesh(bg, T.bridge); bm.position.set(ox, -0.02, oz); bm.receiveShadow = true; group.add(bm);
     } else {
       const gg = new THREE.BoxGeometry(CELLX, 0.1, CELLZ); own.push(gg); // 대지(잔디/광장 — 결정론 믹스)
-      const gm = new THREE.Mesh(gg, ((px * 7 + pz * 13) % 4 === 0) ? T.plaza : T.grass);
+      const isPlaza = ((px * 7 + pz * 13) % 4 === 0);
+      const tc = parcelTint(px, pz, isPlaza); tintGeo(gg, tc[0], tc[1], tc[2]); // [타일링 저감] 파셀별 색조 변주(정점색·map과 곱)
+      const gm = new THREE.Mesh(gg, isPlaza ? T.plaza : T.grass);
       gm.position.set(ox, -0.056, oz); gm.receiveShadow = true; group.add(gm);
       const rgS = new THREE.BoxGeometry(CELLX, 0.1, 2.5); own.push(rgS); // 남 가장자리 도로(이웃 북측과 5m 도로망)
       const rs = new THREE.Mesh(rgS, T.road); rs.position.set(ox, -0.05, oz + CELLZ / 2 - 1.25); rs.receiveShadow = true; group.add(rs);
