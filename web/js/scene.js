@@ -368,7 +368,7 @@ export function createParquetMaps() {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }); // 노이즈 getImageData + canvasToNormalTexture 리드백 최적화
 
   ctx.fillStyle = '#b98d5f';
   ctx.fillRect(0, 0, size, size);
@@ -487,7 +487,7 @@ export function createPlasterMaps() {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }); // 노이즈 getImageData + canvasToNormalTexture 리드백 최적화
 
   ctx.fillStyle = '#f7f6f2';
   ctx.fillRect(0, 0, size, size);
@@ -540,7 +540,7 @@ export function createConcreteMaps() {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }); // 노이즈 getImageData + canvasToNormalTexture 리드백 최적화
 
   ctx.fillStyle = '#8f8b84';
   ctx.fillRect(0, 0, size, size);
@@ -611,7 +611,7 @@ function createGrassMaps() {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }); // canvasToNormalTexture 리드백 최적화
 
   ctx.fillStyle = '#5f8a3e';
   ctx.fillRect(0, 0, size, size);
@@ -1481,7 +1481,7 @@ function createBarkTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }); // 노이즈 getImageData + canvasToNormalTexture 리드백 최적화
 
   ctx.fillStyle = '#6b5138';
   ctx.fillRect(0, 0, w, h);

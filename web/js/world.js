@@ -248,7 +248,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const S = gpuInfo.soft ? 128 : 256;
     let s = seed | 0; const rnd = () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const dc = document.createElement('canvas'); dc.width = dc.height = S; const d = dc.getContext('2d');
-    const hc = document.createElement('canvas'); hc.width = hc.height = S; const h = hc.getContext('2d');
+    const hc = document.createElement('canvas'); hc.width = hc.height = S; const h = hc.getContext('2d', { willReadFrequently: true }); // heightToNormal이 이 캔버스를 getImageData 리드백 → willReadFrequently
     h.fillStyle = '#808080'; h.fillRect(0, 0, S, S); // 높이 중립(회색)
     let strength = 2.2;
     // [P1] 3×3 토러스 중복 드로우 — 프리미티브를 (dx,dy)∈{-S,0,S} 오프셋으로 겹쳐 그려 RepeatWrapping 타일 이음새 제거. 생성 1회라 9배 비용 무관.

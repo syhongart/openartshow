@@ -471,7 +471,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
   }
 
   // ⑧ 이중 돔 크로스페이드 — 주 돔(sky, 주입) + 페이드 돔(복제, 위에 겹쳐 opacity 0→1 후 스왑)
-  const mkDomeTex = () => { const c = document.createElement('canvas'); c.width = DOME_W; c.height = DOME_H; return { c, ctx: c.getContext('2d'), tex: track(new THREE.CanvasTexture(c)) }; };
+  const mkDomeTex = () => { const c = document.createElement('canvas'); c.width = DOME_W; c.height = DOME_H; return { c, ctx: c.getContext('2d', { willReadFrequently: true }), tex: track(new THREE.CanvasTexture(c)) }; };
   const domeA = mkDomeTex(), domeB = mkDomeTex();
   domeA.tex.colorSpace = domeB.tex.colorSpace = THREE.SRGBColorSpace;
   const oldMap = sky.material.map;
