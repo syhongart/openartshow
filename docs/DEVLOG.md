@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-07-21 · ★ 아키텍처 안정화 B-5단계 — leaf TypeScript 전환 개시 (space.js→.ts, 감독 결정)
+
+**원인.** B-2b(배포 경로 Vite 전환)로 이제 소스가 Vite 번들을 거치므로 .ts 파일 전환이 가능해졌다.
+승인 로드맵 B-5: leaf·순수·비보호·소형 모듈부터 파일단위로 점진 전환(각 1커밋·독립배포·파일단위
+롤백). 첫 대상은 **`space.js`**(공간 빌더 스키마 SSOT — A-2 단위테스트 29개가 이미 두껍게 감싸
+"before" 스냅샷 확보, 하류 타입이득 최대).
+
+**개선(B-5-①).**
+- `web/js/space.js` → `web/js/space.ts` 리네임 + strict 타입 첨가. **런타임 로직·값은 1바이트도
+  불변**(타입주석·interface·제네릭·`as`·non-null assertion은 tsc가 컴파일 시 제거하는 타입전용 구문).
+- **`.js→.ts` 리졸브 이슈**: vite/rollup 빌드 resolver는 확장자 명시된 `.js` import를 `.ts`로 치환
+  하지 않는다(tsc Bundler 모드와 상이). 커스텀 resolveId 플러그인은 방금 배포된 배포기 침습이라
+  기각 → **대안: 소비자 import를 확장자 없는 `./space`로 통일**(9소비자+2테스트=11곳, 각 1줄 확장자
+  제거만). vite.config/tsconfig 무수정 — 배포기 무침습.
+
+**결과.** 게이트 통과 — 독립 스모크 6/6(app/world·app/index 라이브 콘솔0·CSP0)·typecheck 0·
+`npm test` 108/108, 검수관 **승인**(블로커0). 검수관 결정적 증거: **origin/main vs 이 브랜치를 각각
+`vite build`해 `dist/` 트리 전체 `diff -rq` → 100% 바이트 동일**(해시 파일명·전 청크·모든 HTML) —
+space.ts 전환이 배포 산출물에 어떤 영향도 없음을 실증. 감독 GO 후 main 배포(run success).
+보호4파일 무변경. **이후 leaf(ytembed·space-presets·stats·guestbook·feed)는 감독 지시로 동일
+게이트 통과 시 팀장 재량 연속배포.**
+
+**부수 발견(#94 이월).** smoke:vite의 **E2 동등성 검사가 B-2b 배포로 무효화**됐다: E2는 "origin/main
+web직조립(=B-2b 이전 라이브) vs vite조립"을 비교하는데, B-2b가 origin/main 랜딩군을 vite전제로
+조정해 web직조립이 의도적으로 깨진다(B-2b 설계 근거 그 자체). 즉 "전환 증명" 전용 검사가 전환완료로
+baseline을 상실 — 폐기/재정의 필요(검수관이 origin/main worktree 독립 실행으로 사전존재 확인).
+
+**교훈.** leaf 전환의 안전성은 "타입은 런타임에서 사라진다"는 성질에서 나온다 — dist 바이트 동일이
+그 수학적 증거. 확장자 리졸브처럼 도구 경계에서 막히면 배포기를 침습하는 커스텀 플러그인보다
+소비자측 국소 조정(확장자 생략)이 롤백단위를 작게 유지한다.
+
+---
+
 ## 2026-07-21 · ★ 아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정)
 
 **원인.** A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가
