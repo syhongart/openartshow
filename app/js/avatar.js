@@ -75,7 +75,6 @@ function createNicknameSprite(nickname, colorHex) {
   const material = new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
-    depthWrite: false,
     // 라벨은 순수 오버레이 — 투명 픽셀이 깊이를 기록하면 뒤에 그려지는
     // 블롭 그림자(renderOrder 1)가 빌보드 사각형 영역에서 통째로 지워진다
     // (QA 이분 탐색으로 확정된 가림 사고).
