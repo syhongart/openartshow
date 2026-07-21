@@ -4,6 +4,42 @@
 
 ---
 
+## 2026-07-21 · ★ 아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)
+
+**원인.** 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI
+부재(수동 검증 의존)"를 지적. 감독(소프트웨어 아키텍트 관점) 결정: **(1) 전면 TypeScript+Vite
+전환, (2) 회귀 안전망을 먼저 구축.** team-lead 판정 — 이 평가는 우리 QA/SOLID 트랙(#87~#90)의
+시점을 앞당기라는 독립 확인. 리팩터/TS 전환은 회귀를 잡을 그물 없이는 위험하므로 **안전망이
+전제**.
+
+**개선(A단계, 소스 로직 무수정·라이브 리스크 0).**
+- A-1 인프라: vitest(러너)·eslint(v9 flat, 관대한 baseline)·tsconfig(allowJs·checkJs:false·
+  strict, B단계 파일단위 점진 전환용). package.json에 test/lint/typecheck/smoke 스크립트,
+  puppeteer·jsdom을 devDependencies로 이동(런타임 배포물 npm 의존 0 유지).
+- A-2 단위테스트 **108개**(tests/, web/ 밖 → 배포 오염 방지): space(마이그레이션·정규화·
+  라운드트립·스키마 자기정합)·ytembed·guestbook·stats·feed·space-presets. TS 전환의 "before" 스냅샷.
+- A-3 스모크 하네스: `npm run smoke` 한 번으로 6항+가드(생성기·파일수·필수파일·console.error·
+  가로넘침 320/375/1280·CSP violation·인라인script·내부링크) 자동. skill 대체 아닌 실행 보조.
+- A-4 `ci.yml`: lint·typecheck·test 게이트(2스텝 롤인 — 독립 워크플로로 시작, 안정화 후
+  deploy에 needs:ci). 최소권한 명시.
+
+**안전망이 착수 즉시 잡은 라이브 버그 3개(수정).** ① avatar 라벨 머티리얼 중복 depthWrite 키
+(eslint no-dupe-keys) ② about.html CTA 2개 404 ③ about 폰트 404. ②③ 근본원인은 about이
+landing/guide 급 "루트 배포 가정" 상대경로인데 deploy.yml이 app/에만 배포한 불일치 → **about을
+루트 배포로 승격**(deploy.yml 1줄 + 폰트경로 정합, about.html 로직 무수정)해 해결.
+
+**결과.** 게이트 통과 — executor 독립 스모크 6/6 + A단계 특화 7/7, 검수관 cross-review 조건부
+승인(블로커 0, 권고 5). 검수관이 avatar 건을 "안전망이 실제로 유효함을 보여주는 사례"로 평가.
+보호4파일(main/player/artworks/config.js) 무변경. main 배포. **다음: B단계 TS+Vite 전환
+(space.js부터 leaf 순차, Vite 산출물이 자기완결·CSP self 유지 — vendor 번들흡수로 importmap
+sha256 핀 소멸).** 승인된 로드맵: 3단계(안전망→TS+Vite→SOLID 분해) 3 불변식(소스트리 항상
+배포가능·1커밋 롤백·자기완결 불완화).
+
+**교훈.** 리팩터보다 안전망을 먼저 깐 판단이 즉시 회수됐다 — 그물을 치자마자 기존 버그 3개가
+걸렸다. "구조 투자는 완성도의 경쟁자가 아니라 가속기"(회귀 공포 없이 전환·실험 가능).
+
+---
+
 ## 2026-07-21 · 오픈월드 그래픽·모바일 성능·팝인 개선 (감독 실기기 피드백 루프, 연속 배포)
 
 감독 실기기 피드백을 받아 오픈월드 품질을 주제별로 연속 개선·배포. 모두 `world.js`(오픈월드 전용) 위주,
