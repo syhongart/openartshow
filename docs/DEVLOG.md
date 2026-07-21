@@ -26,6 +26,16 @@ space.ts 전환이 배포 산출물에 어떤 영향도 없음을 실증. 감독
 보호4파일 무변경. **이후 leaf(ytembed·space-presets·stats·guestbook·feed)는 감독 지시로 동일
 게이트 통과 시 팀장 재량 연속배포.**
 
+**연속배포 진행(감독 재량 위임).** 동일 패턴으로 후속 leaf 전환·배포:
+- **B-5-② `ytembed.js`→`.ts`**(커밋 bcd60aa, run success): 소비자=builder(behind-flag)+테스트만
+  → 라이브 영향 0. 경량 게이트(dist 바이트 동일 대조+6항 스모크)로 배포 무영향 실증.
+- **B-5-③ `space-presets.js`→`.ts`**: 소비자=builder + **world-gen(→world.html 오픈월드 정식노출
+  라이브 소비)** + 테스트. 프리셋은 정규화 전 문서라 `PresetSpace`/`SpacePreset` interface 신설로
+  표기. 게이트: **dist 바이트 동일 + app/world 콘솔0·CSP0 회귀0** 실증 → 배포.
+- 게이트 경량화 근거: leaf TS 전환은 "타입은 런타임에서 사라진다" → **origin/main vs 브랜치 dist
+  `diff -rq` 0(바이트 동일)** 이 배포 무영향의 수학적 증명. 이를 독립 스모크에 통합해 매 leaf 검수관
+  풀리뷰를 대체(dist가 예상외로 다르면 검수관 에스컬레이션). typecheck·test 108·보호4파일 무변경 병행.
+
 **부수 발견(#94 이월).** smoke:vite의 **E2 동등성 검사가 B-2b 배포로 무효화**됐다: E2는 "origin/main
 web직조립(=B-2b 이전 라이브) vs vite조립"을 비교하는데, B-2b가 origin/main 랜딩군을 vite전제로
 조정해 web직조립이 의도적으로 깨진다(B-2b 설계 근거 그 자체). 즉 "전환 증명" 전용 검사가 전환완료로
