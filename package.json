@@ -1,0 +1,22 @@
+{
+  "name": "openartshow",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "브라우저 기반 3D 가상 미술관 — 정적 호스팅·자기완결. 런타임 배포물은 npm 의존 0(vendor 직서빙). 아래 의존성은 전부 개발·검증 도구.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "smoke": "node scripts/smoke/run.mjs"
+  },
+  "devDependencies": {
+    "eslint": "^9.18.0",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.61.1",
+    "puppeteer": "^25.3.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.9"
+  }
+}

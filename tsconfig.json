@@ -1,0 +1,17 @@
+{
+  "//": "A단계: 설정만 존재(checkJs:false). JS는 아직 타입체크 안 함. B단계에서 모듈을 .ts로 전환하면 그 파일만 strict 적용받는다(allowJs로 JS/TS 공존, 파일 단위 점진). 번들은 Vite/esbuild가 하고 tsc는 타입체크 전용(noEmit).",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["web/js/**/*", "tests/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "web/vendor"]
+}

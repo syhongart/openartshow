@@ -58,11 +58,10 @@ sysinfo.txt
 # Crashlytics generated file
 crashlytics-build.properties
 
-# Node — 로컬 개발/테스트 도구(헤드리스 스모크용 playwright 등)만. 배포 산출물은
-# 의존성 0(node 표준 라이브러리만)이라 저장소엔 커밋하지 않는다.
+# Node — 로컬 개발/테스트 도구(vitest·eslint·tsc·playwright)만. 배포 "산출물"은
+# 의존성 0(vendor 직서빙·자기완결)이라 런타임 번들엔 npm이 없다. 단 package.json·
+# lock은 CI(테스트/린트/타입체크)의 재현성을 위해 커밋한다. node_modules만 무시.
 node_modules/
-package.json
-package-lock.json
 
 # Jekyll CI 빌드 산출물 (deploy.yml 생성, 헤드리스 검증 하네스가 로컬 생성)
 _site/
