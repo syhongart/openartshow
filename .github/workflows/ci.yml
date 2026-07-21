@@ -8,6 +8,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch: {}
+# 최소권한 — 검증 전용(체크아웃·설치·테스트)이라 쓰기 불요. (검수관 R4)
+permissions:
+  contents: read
 env:
   # 배포물은 자기완결(npm 런타임 의존 0). 개발 도구만 설치하며, playwright 브라우저는
   # 이 job에서 불필요(단위·린트·타입체크 전용)하므로 postinstall 다운로드를 막는다.
