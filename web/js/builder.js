@@ -122,8 +122,9 @@ export function createBuilder(canvas, opts = {}) {
     ghostMat = new THREE.MeshBasicMaterial({ color: 0x8b7bd8, transparent: true, opacity: 0.42, depthWrite: false });
     ghost.traverse((o) => {
       if (!o.isMesh) return;
-      const m = o.material; // buildPartPreview가 만든 실제 재질(텍스처 clone 포함)은 정리 후 고스트 재질로 교체
-      if (m) { if (m.map && m.map.dispose) m.map.dispose(); if (m.normalMap && m.normalMap.dispose) m.normalMap.dispose(); if (m.dispose) m.dispose(); }
+      const m = o.material; // buildPartPreview가 만든 실제 재질은 정리 후 고스트 재질로 교체
+      // [A-3] 마감 텍스처(concrete 등)는 세션 공유(userData.shared) — 여기서 dispose하면 _sharedMaps 싱글톤 파괴 → 타 그룹 회귀. 공유만 skip, 나머지는 그대로 회수.
+      if (m) { if (m.map && m.map.dispose && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); if (m.normalMap && m.normalMap.dispose && !(m.normalMap.userData && m.normalMap.userData.shared)) m.normalMap.dispose(); if (m.dispose) m.dispose(); }
       o.material = ghostMat;
     });
     ghost.visible = false; scene.add(ghost);

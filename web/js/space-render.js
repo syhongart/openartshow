@@ -13,10 +13,38 @@ import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { PART_TYPES, FOOTPRINT, STORY_H, FRAME_RULES, TINT_PALETTES } from './space.js';
 import { createPlasterMaps, createParquetMaps, createConcreteMaps } from './scene.js';
 
-// 미술관(scene.js) 프로시저럴 텍스처+노말맵 계승(감독: 노말맵 필수). 생성기는 캐시된
-// 텍스처를 반환하므로 clone 후 repeat 설정 — 공유 캐시(미술관) 오염 방지.
+// 미술관(scene.js) 프로시저럴 텍스처+노말맵 계승(감독: 노말맵 필수). 생성기(createPlasterMaps 등)는
+// 내부 싱글톤 캐시를 반환 → _texCache[key]는 scene.js 고정 미술관(라이브)과 "같은 base 객체". 절대 mutate 금지.
 const _texCache = {};
 function baseMaps(gen, key) { return _texCache[key] || (_texCache[key] = gen()); }
+
+// [A-3 텍스처 메모리 최적화] 마감 key당 공유 텍스처 1쌍(map+normalMap)만 세션 전역 유지.
+// 과거: texMat이 벽 세그먼트/바닥마다 base.map.clone()+repeat.set() → 같은 마감 벽 5~7면이 각자 독립 512²
+// (힙 THREE.Texture 174개·204MB). 개선: 세그먼트별 repeat은 지오 uv attribute에 굽고(bakeUVRepeat), 텍스처는
+// repeat=1로 공유 → 마감당 1쌍(3마감=6텍스처, <10MB). uv*=repeat은 map.repeat.set(offset0·rotation0·center0)과
+// 수학적으로 동일 연산이라 픽셀 불변. base는 미술관 공유라 무접촉 — clone 1쌍만 space-render 소유(userData.shared).
+const _sharedMaps = {};
+function sharedMaps(gen, key) {
+  if (_sharedMaps[key]) return _sharedMaps[key];
+  const base = baseMaps(gen, key);
+  const mk = (src) => { // base를 clone 후 repeat=1 초기화(base의 repeat 4×1.5 등을 상속하므로 반드시 리셋). shared 표식.
+    const t = src.clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(1, 1); t.offset.set(0, 0);
+    t.userData = { ...(t.userData || {}), shared: true }; t.needsUpdate = true;
+    return t;
+  };
+  return (_sharedMaps[key] = { map: mk(base.map), normalMap: mk(base.normalMap) });
+}
+// 세그먼트별 UV 스케일을 지오 uv attribute에 직접 굽는다(=map.repeat과 동등). 지오는 세그먼트마다 개별
+// BoxGeometry라 공유 없음 — 그래도 이중 굽기 방어로 1회 가드. 공유 텍스처 오염 없이 세그먼트별 타일 스케일 보존.
+function bakeUVRepeat(geo, rx, ry) {
+  if (!geo || !geo.attributes || !geo.attributes.uv) return;
+  const ud = geo.userData || (geo.userData = {});
+  if (ud.uvRepeatBaked) return;
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * rx, uv.getY(i) * ry);
+  uv.needsUpdate = true; ud.uvRepeatBaked = true;
+}
 // [world 스폰 워밍] world 초기 로드(로딩 화면 중)에서 1회 호출해 마감 3종 base(512² 절차 베이크)를
 // _texCache에 미리 데워둔다. 이렇게 하면 세션 중 그 마감을 "처음" 요구하는 파셀이 로드되는 프레임의
 // 동기 베이크(LOAD_BUDGET_MS 예산 밖 실행 → 파셀 경계 히칭)가 사라진다(스폰은 로딩 화면 중이라 히칭 비가시).
@@ -30,10 +58,10 @@ export function warmBuildingTexCache() {
   baseMaps(createParquetMaps, 'parquet');
 }
 function texMat({ gen, key, tint = 0xffffff, repeat = [2, 2], normalScale = 0.4, roughness = 0.9, metalness = 0 }) {
-  const base = baseMaps(gen, key);
-  const map = base.map.clone(); map.needsUpdate = true; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(repeat[0], repeat[1]);
-  const normalMap = base.normalMap.clone(); normalMap.needsUpdate = true; normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping; normalMap.repeat.set(repeat[0], repeat[1]);
-  return new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(normalScale, normalScale), color: new THREE.Color(tint), roughness, metalness });
+  const { map, normalMap } = sharedMaps(gen, key); // 마감당 공유 텍스처(repeat=1) — clone 안 함
+  const mat = new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(normalScale, normalScale), color: new THREE.Color(tint), roughness, metalness });
+  mat.userData.uvRepeat = [repeat[0], repeat[1]]; // 세그먼트 repeat은 track에서 지오 uv에 굽는다(bakeUVRepeat)
+  return mat;
 }
 // 표면 치수 → 텍스처 반복(월 목표 조인트 ~2.5m·바닥 파케 ~2m)
 const plasterTex = (tint, w, h) => texMat({ gen: createPlasterMaps, key: 'plaster', tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.32, roughness: 0.92 });
@@ -1130,7 +1158,12 @@ export const DOOR_W = 2.6;
 export function buildSpaceGroup(space, opts = {}) {
   const g = new THREE.Group();
   const geos = [], mats = [];
-  const track = (o) => { if (o.geometry) geos.push(o.geometry); if (o.material) mats.push(o.material); return o; };
+  const track = (o) => {
+    if (o.material && o.material.userData && o.material.userData.uvRepeat && o.geometry) { // 공유 텍스처 마감: 세그먼트 repeat을 지오 uv에 굽기
+      const [rx, ry] = o.material.userData.uvRepeat; bakeUVRepeat(o.geometry, rx, ry);
+    }
+    if (o.geometry) geos.push(o.geometry); if (o.material) mats.push(o.material); return o;
+  };
   const { fw, fd, hw, hd, H, t, floors, totalH } = spaceDims(space);
 
   // shell: 바닥·천장·4벽 + 피처월 오버레이 (미술관 재질 계승)
@@ -1452,9 +1485,10 @@ export function bakeShellLightmapsAsync(group, renderer, opts = {}) {
 export function disposeSpaceGroup(g) {
   const u = g.userData || {};
   (u.geos || []).forEach((x) => x.dispose && x.dispose());
-  (u.mats || []).forEach((m) => { // 텍스처 clone(map/normalMap)은 rebuild마다 새로 생기므로 함께 정리(누수 방지)
-    if (m.map && m.map.dispose) m.map.dispose();
-    if (m.normalMap && m.normalMap.dispose) m.normalMap.dispose();
+  (u.mats || []).forEach((m) => { // 텍스처 정리(누수 방지). 단 공유 텍스처(userData.shared)는 방문뷰·빌더·world 공용이라
+    // 여기서 dispose하면 타 그룹이 참조 중인 걸 파괴 → 라이브 회귀. shared는 skip(세션 캐시 영구 유지). kintsugi/water/grass clone은 skip 아님 → 정상 회수.
+    if (m.map && m.map.dispose && !(m.map.userData && m.map.userData.shared)) m.map.dispose();
+    if (m.normalMap && m.normalMap.dispose && !(m.normalMap.userData && m.normalMap.userData.shared)) m.normalMap.dispose();
     m.dispose && m.dispose();
   });
   (u.bakedRTs || []).forEach((rt) => rt.dispose && rt.dispose()); // 라이트맵 렌더타깃 회수

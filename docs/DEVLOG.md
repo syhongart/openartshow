@@ -20,8 +20,15 @@ release-reviewer 교차리뷰 게이트 통과 후 main 배포.
 - 성능 전문가 실측 진단: ① 파셀 첫 진입 시 마감 텍스처 베이크(`getImageData`)가 로드 예산 밖에서 동기
   블로킹(히칭), ② `world.js`에 실시간 FPS→해상도 적응 루프 부재(main.js엔 있음) → 저FPS에도 해상도 유지.
 - **A-1** `willReadFrequently:true`(리드백 스톨 완화) + **A-2** 스폰 시 마감 텍스처 3종 워밍 → 파셀 첫 로드
-  프레임 30.8ms→6.0ms(약 80%↓). **A-3**(clone 텍스처 공유로 204MB→~20-30MB)는 방문뷰·빌더 공용
-  `disposeSpaceGroup` 리스크로 참조카운팅 안전설계 별도 트랙 상신(부팀장).
+  프레임 30.8ms→6.0ms(약 80%↓).
+- **A-3** 벽·바닥 마감 텍스처 공유 캐시 → 힙 THREE.Texture **-88%(50→6)**. base(scene.js·미술관 공유 싱글톤)
+  무접촉·전용 공유 clone + repeat을 지오메트리 UV에 bake(`uv*=repeat` = `map.repeat.set` 수학적 동일 → 픽셀
+  비트 불변 실측). 공유 텍스처 `userData.shared` + `disposeSpaceGroup` skip으로 방문뷰·빌더 공용 dispose 회귀
+  차단. 교차리뷰가 빌더 프리뷰 dispose 2곳(구 clone-소유 계약 가정, 공유 싱글톤 직접 파괴) 블로커 포착 →
+  shared 가드 추가로 해소. **run #149 배포**(세션 한도로 재게이트 서브에이전트 불가 → 팀장 직접 Bash 재스모크·
+  코드 확인으로 갈음).
+- **B-2** 하늘 오버드로우 축소 — lite(B-1 FPS 적응 연동) 시 sky.js 강수 draw-range 45%↓·오로라/빛기둥/별
+  opacity 하향(재생성·재컴파일 0, 색·움직임 톤 보존, 양만 축소). sky.js는 world 전용(미술관 미사용). run #149 배포.
 - **B-1** FPS→pixelRatio 적응 루프 이식(저FPS 강등·회복 승급, 히스테리시스+쿨다운, dpr 비례 하한). 교차리뷰가
   **고dpr no-op 결함** 포착 — `RATIO_FLOOR=dpr*0.75`가 dpr>2.667(아이폰 Pro·최신 안드로이드 dpr=3)에서
   상한(min(2,dpr)=2)을 넘어 강등/승급이 영구 false = 정작 저FPS 제보 기기에서 무효. → `RATIO_FLOOR`를
