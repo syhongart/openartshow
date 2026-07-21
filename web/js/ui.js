@@ -575,19 +575,9 @@ function injectStyles() {
   background-repeat: repeat, no-repeat;
   mix-blend-mode: multiply;
 }
-.lu-am-stage::after {
-  /* 접지 그림자 — 카메라 프레이밍(0,1.0,4.0/lookAt 0,0.85) 후 발 최하단이 스테이지
-     세로 89.1%(하단 10.9%) 지점에 온다(FK 투영 실측, 전 프리셋 공통). 그림자를 그
-     발밑에 맞춰 bottom 5%(범위 하단 5~12%)로 두어 발이 그림자 상반부를 딛게 한다. */
-  content: ''; position: absolute; left: 50%; bottom: 5%;
-  width: 52%; height: 7%;
-  transform: translateX(-50%);
-  border-radius: 50%; pointer-events: none;
-  background: radial-gradient(closest-side, rgba(58,42,16,0.44), rgba(58,42,16,0) 72%);
-  mix-blend-mode: multiply;
-  filter: blur(1.5px);
-}
-/* 무대 래퍼 — 사진(캔버스) + 회전 힌트를 한 프레임으로. 힌트 absolute의 기준. */
+/* 접지 그림자는 3D 실시간 그림자맵(ensurePreviewRenderer)이 담당한다 — 캐릭터가 자동
+   연기로 움직이면 그림자도 따라가므로 정적 CSS 타원(구 ::after)은 제거했다. */
+/* 무대 래퍼 — 사진(캔버스)을 감싸는 프레임. */
 .lu-am-stagewrap { position: relative; width: 244px; height: 325px; flex: 0 0 auto; }  /* 3:4 명시 */
 /* ---- 카테고리 내비 — 종족·얼굴·헤어·의상·장식·옷장 섹션 전환 ---- */
 .lu-am-panel {
@@ -2874,6 +2864,13 @@ function buildChibiMaker() {
     previewRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     previewRenderer.setPixelRatio(Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
     previewRenderer.setSize(300, 400, false);
+    // 실시간 접지 그림자 — 캐릭터가 자동 연기로 점프·춤을 추면 정적 CSS 그림자는 발과
+    // 어긋나 떠 보였다(감독 신고). 저해상도(512) 그림자맵 한 장으로 동작을 따라가는
+    // 접지 그림자를 바닥에 실시간으로 뿌린다. 프리뷰는 캐릭터 하나뿐이라 비용이 작다.
+    previewRenderer.shadowMap.enabled = true;
+    // VSM(분산 그림자맵) — 경계가 딱딱하지 않게 반그림자(penumbra)를 부드럽게 번지게
+    // 한다(감독 지시). radius/blurSamples로 흐림 정도를 준다. 접지 그림자에 적합.
+    previewRenderer.shadowMap.type = THREE.VSMShadowMap;
     // 정직한 색 프리뷰 — 스와치에서 고른 피부/옷색이 실제로 그 색으로 보이게.
     // (기존 ACES+강한 웜은 어두운 톤을 주황으로 클리핑시켜 팔레트와 어긋났음)
     previewRenderer.toneMapping = THREE.NoToneMapping;
@@ -2898,6 +2895,33 @@ function buildChibiMaker() {
     const fill = new THREE.DirectionalLight(0xfffdf8, 0.4);
     fill.position.set(-1.8, 1.1, 1.6);
     previewScene.add(fill);
+    // 그림자 전용 라이트 — 거의 수직 위에서 내려 발밑에 접지 그림자를 만든다. 빛 기여는
+    // 0(캐릭터 색·음영은 위 조명이 담당, 감독 'B' 확정 유지)이고 그림자맵만 생성한다.
+    const shadowLight = new THREE.DirectionalLight(0xffffff, 0.0);
+    shadowLight.position.set(0.4, 5, 1.0);
+    shadowLight.castShadow = true;
+    shadowLight.shadow.mapSize.set(1024, 1024); // VSM은 저해상도서 새는 빛이 있어 1024로
+    shadowLight.shadow.camera.near = 0.5;
+    shadowLight.shadow.camera.far = 9;
+    shadowLight.shadow.camera.left = -1.3;
+    shadowLight.shadow.camera.right = 1.3;
+    shadowLight.shadow.camera.top = 1.3;
+    shadowLight.shadow.camera.bottom = -1.3;
+    shadowLight.shadow.radius = 9;         // 반그림자 흐림 반경(경계를 부드럽게)
+    shadowLight.shadow.blurSamples = 16;   // VSM 흐림 표본 수
+    shadowLight.shadow.bias = -0.0005;     // VSM은 acne가 적어 작은 바이어스로 충분
+    previewScene.add(shadowLight);
+    previewScene.add(shadowLight.target); // target 기본 (0,0,0) — 캐릭터 발밑을 향함
+    // 그림자만 받는 투명 바닥 — 발 최하단(y≈0)에 맞춰 y=0. ShadowMaterial이라 그림자
+    // 없는 곳은 완전 투명(scene.background만 보임), 그림자 진 곳만 어둡게 얹힌다.
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(6, 6),
+      new THREE.ShadowMaterial({ opacity: 0.3 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    ground.receiveShadow = true;
+    previewScene.add(ground);
     previewRotator = new THREE.Group();
     // 치비는 +Z 저작 + π 래퍼로 -Z를 본다 — 카메라(+Z)에서 정면이 보이게 π 시작
     previewRotator.rotation.y = Math.PI;
@@ -3216,9 +3240,11 @@ function buildChibiMaker() {
       chibiPreviewInstance.dispose();
       chibiPreviewInstance = null;
     }
-    // blobShadow:false — 수평 원판 그림자가 프리뷰의 얕은 카메라에서 발에 겹쳐 보임
-    // (감독 신고). 프리뷰 접지감은 액자 CSS 그림자(.lu-am-stage::after)가 담당.
+    // blobShadow:false — 수평 원판 그림자는 프리뷰의 얕은 카메라에서 발에 겹쳐 보였다
+    // (감독 신고). 대신 실시간 그림자맵으로 바닥에 접지 그림자를 뿌린다(ensurePreviewRenderer).
     chibiPreviewInstance = createAvatarInstance(encodeChibi(chibiParams), GOLD, ' ', { blobShadow: false });
+    // 캐릭터 메쉬가 그림자를 드리우게 한다(그림자맵에 렌더될 대상). 재조립마다 새 그룹이라 매번.
+    chibiPreviewInstance.group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     previewRotator.add(chibiPreviewInstance.group);
   }
 
