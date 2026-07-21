@@ -526,6 +526,22 @@ function injectStyles() {
 }
 #lu-am-close:hover { border-color: var(--am-accent); color: #fff; background: var(--am-accent); transform: translateY(1px) rotate(90deg); box-shadow: 0 2px 0 rgba(87,51,255,0.5), 0 4px 8px rgba(40,30,10,0.18); }
 #lu-am-close:active { transform: translateY(3px) rotate(90deg); box-shadow: none; }
+/* 상단 액션 — 저장(✓, 강조) + 닫기(×)를 헤더 우측에 나란히(하단 버튼 통합) */
+.lu-am-head-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+#lu-am-save {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--am-accent);
+  border: 2px solid var(--am-accent);
+  border-radius: 50%;
+  color: #fff; font-size: 18px; font-weight: 800; line-height: 1;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 3px 0 rgba(60,36,180,0.5), 0 6px 12px rgba(40,30,10,0.2);
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+#lu-am-save:hover { background: #6a4bff; transform: translateY(1px); box-shadow: 0 2px 0 rgba(60,36,180,0.5), 0 4px 8px rgba(40,30,10,0.18); }
+#lu-am-save:active { transform: translateY(3px); box-shadow: none; }
 .lu-am-body {
   flex: 1 1 auto; min-height: 0;
   display: flex; gap: 24px;
@@ -542,7 +558,7 @@ function injectStyles() {
   padding: 14px;
   border-radius: 26px;
   position: relative;
-  touch-action: none;
+  touch-action: pan-y;  /* 좌우 드래그=캐릭터 회전(앱), 상하 스와이프=화면 스크롤(브라우저) — 감독 지시 */
   background-image:
     var(--am-grain-wood),
     repeating-linear-gradient(4deg, rgba(255,244,220,0.14) 0 2px, rgba(94,61,20,0.06) 2px 4px, transparent 4px 8px),
@@ -562,16 +578,18 @@ function injectStyles() {
   position: relative;
   border-radius: 18px;
   overflow: hidden;
-  background: #f6f1e3;
+  background: #ddd2bd;  /* 방 배경 하단색 — WebGL 첫 렌더 전/둥근모서리 밖 플래시 방지 */
   box-shadow: inset 0 0 0 2px rgba(255,255,255,0.6), inset 0 0 0 3px rgba(211,167,101,0.3), inset 0 2px 10px rgba(40,30,10,0.12);
 }
-.lu-am-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+/* touch-action은 비상속이라 부모(.lu-am-preview)의 pan-y가 캔버스에 안 내려온다 → 캔버스에
+   직접 지정해야 세로 스와이프가 화면 스크롤로 통과한다(좌우 드래그=회전 유지). */
+.lu-am-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: pan-y; }
 .lu-am-preview.lu-dragging .lu-am-stage canvas { cursor: grabbing; }
 /* 부드러운 비네트 + 접지 그림자 + 은은한 종이 결 — canvas가 불투명(scene.background)이라
    위에 멀티플라이로 얹는다 */
 .lu-am-stage::before {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background-image: var(--am-grain), radial-gradient(120% 100% at 50% 24%, rgba(255,247,222,0) 48%, rgba(70,50,20,0.2) 100%);
+  background-image: var(--am-grain), radial-gradient(120% 100% at 50% 24%, rgba(255,247,222,0) 48%, rgba(60,45,20,0.08) 100%);
   background-repeat: repeat, no-repeat;
   mix-blend-mode: multiply;
 }
@@ -1807,15 +1825,32 @@ function injectStyles() {
 /* --------------------- 아바타 커스터마이저: 모바일(세로 스택) --------------------- */
 @media (max-width: 720px) {
   #lu-avatar-maker, #lu-chibi-maker { padding: 8px; }
-  /* dvh 폴백 — iOS 주소창 포함 vh가 카드를 가시영역보다 크게 만드는 문제(hotfix #12 계열) */
-  .lu-am-card { max-width: 96vw; max-height: 92vh; max-height: 92dvh; border-radius: 24px; }
-  .lu-am-head { padding: 14px 16px 12px; }
-  /* 프리뷰(큰 캐릭터)를 위, 옵션 패널을 아래로 세로 쌓기. body 하나만 세로 스크롤해
-     이중 스크롤·플라이아웃 없이 밑으로 자연스럽게 내려간다(감독: 단순하게). 캐릭터는
-     그 자리에서 혼자 신나게 움직인다(자동 연기). */
+  /* 모바일 스크롤 — 카드 전체가 하나로 세로 스크롤한다(감독: 위아래로 화면 전체가 움직이고
+     저장 칸까지 밀려 사라지게). head만 상단 sticky로 고정(닫기 버튼 항상 접근), 프리뷰·옵션·
+     footer(저장 칸)는 흐름에 실려 함께 스크롤된다. dvh 폴백은 iOS 주소창 vh 문제(hotfix #12). */
+  .lu-am-card {
+    max-width: 96vw; max-height: 92vh; max-height: 92dvh; border-radius: 24px;
+    /* -webkit-overflow-scrolling:touch 제거 — iOS Safari에서 이 레거시 플래그가 스크롤러를
+       별도 레이어로 승격해 sticky 헤더 z-index를 무시(콘텐츠가 헤더 위로 새고 깜빡). iOS 13+는
+       overflow:auto에 관성 스크롤 기본 제공이라 제거해도 관성 유지. */
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  .lu-am-head {
+    padding: 14px 16px 12px;
+    position: sticky; top: 0; z-index: 20; background: var(--am-cream);  /* 불투명 배경, 뒤 비침 방지 */
+    /* iOS Safari sticky 깜빡 방지 — 헤더를 자체 컴포지터 레이어로 승격해 관성 스크롤 중에도 콘텐츠
+       위에 안정적으로 고정한다. sticky containing block은 스크롤 조상(카드)이라 자기 transform은
+       고정 동작을 안 깬다. z-index 20으로 프리셋 칩 스택보다 확실히 위. */
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    box-shadow: 0 6px 10px -4px rgba(40,30,10,0.22);  /* 아래 메뉴와 뚜렷이 분리(감독 "완벽 분리") */
+  }
+  /* 프리뷰(큰 캐릭터) 위, 옵션 패널 아래로 세로 쌓기. body는 자연 높이(flex 0 0)라 스크롤은
+     카드가 담당 — 이중 스크롤 없음. 캐릭터는 그 자리에서 혼자 신나게 움직인다(자동 연기). */
   .lu-am-body {
-    flex-direction: column; gap: 14px; padding: 12px 14px 4px;
-    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    flex: 0 0 auto; flex-direction: column; gap: 14px; padding: 12px 14px 4px;
+    overflow: visible;
+    position: relative; z-index: 0;  /* 헤더(z20) 아래로 못박아 칩이 transform 컨텍스트가 돼도 위로 안 새게 */
   }
   .lu-am-preview { width: auto; max-width: none; align-self: center; padding: 12px; }
   .lu-am-stagewrap { width: 200px; height: 267px; max-width: none; margin: 0 auto; }
@@ -2832,11 +2867,15 @@ const CHIBI_NAV_CATS = [
 ];
 
 function buildChibiMaker() {
+  // 상단 액션 — 저장(✓)·닫기(×)를 헤더 한 곳에 통합(감독 지시). 하단 저장 칸을 없애
+  // 위아래 분리를 통합, 스크롤 없이 바로 저장·닫기 할 수 있다.
+  const saveV = el('button', { id: 'lu-am-save', type: 'button', 'aria-label': '이 캐릭터 사용', title: '이 캐릭터 사용', text: '✓' });
   const closeX = el('button', { id: 'lu-am-close', type: 'button', 'aria-label': '닫기', text: '×' });
   const titleIcon = el('span', { className: 'lu-am-title-icon', 'aria-hidden': 'true' });
   titleIcon.innerHTML = ICON_LEAF;
   const title = el('div', { className: 'lu-am-title' }, [titleIcon, el('span', { text: '캐릭터 디자인' })]);
-  const head = el('div', { className: 'lu-am-head' }, [title, closeX]);
+  const headActions = el('div', { className: 'lu-am-head-actions' }, [saveV, closeX]);
+  const head = el('div', { className: 'lu-am-head' }, [title, headActions]);
 
   // 프리뷰 "무대" — 300×400 백킹 해상도(ensurePreviewRenderer의 setSize와 정합)는 그대로 두고,
   // 바깥 lu-am-preview 프레임을 장식용 여백으로 감싸 게임 캐릭터 크리에이터급 무대감을 낸다.
@@ -2859,6 +2898,43 @@ function buildChibiMaker() {
   let previewCamera = null;
   let previewRotator = null;
 
+  // 프리뷰 배경용 세로 그라데이션 텍스처 — 절차 생성(외부 에셋 0, CSP 'self' 준수). 폭 2px로
+  // 메모리 최소. NoToneMapping+SRGB 파이프라인이라 colorSpace를 SRGB로 지정해야 딥톤이 밝게 안 뜬다.
+  function makePreviewBackdrop(topHex, bottomHex) {
+    if (typeof document === 'undefined') return null;
+    const c = document.createElement('canvas');
+    c.width = 2; c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, topHex); g.addColorStop(1, bottomHex);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 256);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  // 벽지 텍스처 — 절차 생성(외부 에셋 0). 세로 줄은 X만 변하고 Y로는 균일해 캔버스 높이는 극소.
+  // 심리스: 밴드 주기가 캔버스 폭을 정수로 나누고 repeatX가 정수라 좌우 이음새가 없다.
+  function makeWallpaperTex(draw, { repeatX = 1, repeatY = 1, w = 256, h = 8 } = {}) {
+    if (typeof document === 'undefined') return null;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeatX, repeatY);
+    t.anisotropy = 4;
+    return t;
+  }
+  // 톤온톤 세로 줄무늬 벽지 — base 위에 stripe 밴드(폭=주기 절반)를 교대로. 감독 선택 V1(등폭 밴드).
+  const drawStripes = (base, stripe) => (x, W, H) => {
+    const count = 8, period = W / count;   // 256/8=32px 주기(정수 → 심리스)
+    x.fillStyle = base; x.fillRect(0, 0, W, H);
+    x.fillStyle = stripe;
+    for (let i = 0; i < count; i++) x.fillRect(i * period, 0, period / 2, H);
+  };
+
   function ensurePreviewRenderer() {
     if (previewRenderer) return;
     previewRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -2877,7 +2953,12 @@ function buildChibiMaker() {
     previewRenderer.toneMappingExposure = 1.0;
     previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
     previewScene = new THREE.Scene();
-    previewScene.background = new THREE.Color('#f6f1e3');
+    // 방 배경 — 벽지 벽 뒤/위쪽 여백을 채우는 웜 라이트 그라데(위 밝게→아래 벽 톤). 벽지 방으로
+    // 액자 안을 "다른 공간"으로 만든다(감독 지시). 텍스처는 절차 생성(외부 에셋 0, CSP 'self').
+    previewScene.background = makePreviewBackdrop('#f0ead9', '#ddd2bd') || new THREE.Color('#ddd2bd');
+    // 포그(벽 베이스 근사색)로 바닥·벽 원경을 배경색으로 녹여 이음매를 없앤다. near 5.5는 캐릭터
+    // (카메라 거리 ≈4.1) 뒤에서 시작해 본체는 안 잠긴다. 배경 텍스처는 포그 무관.
+    previewScene.fog = new THREE.Fog(0xded3bf, 5.5, 10);
     // 프레이밍 — 발이 프레임 바닥(화면 세로 89%)을 딛고, 하트머리 정점(≈1.59m)도
     // 담기게 잡는다. lookAt.y를 0.85로 올려 캐릭터를 화면 아래로 내려 "바닥에 선"
     // 구도를 만든다(구 lookAt 0.64는 발이 세로 80%에 떠 발밑 여백이 넓어 공중부양처럼
@@ -2912,16 +2993,37 @@ function buildChibiMaker() {
     shadowLight.shadow.bias = -0.0005;     // VSM은 acne가 적어 작은 바이어스로 충분
     previewScene.add(shadowLight);
     previewScene.add(shadowLight.target); // target 기본 (0,0,0) — 캐릭터 발밑을 향함
-    // 그림자만 받는 투명 바닥 — 발 최하단(y≈0)에 맞춰 y=0. ShadowMaterial이라 그림자
-    // 없는 곳은 완전 투명(scene.background만 보임), 그림자 진 곳만 어둡게 얹힌다.
+    // 우드 바닥(발 최하단 y≈0) — 벽지 웜샌드와 동계. 무광이라 하이라이트 없이 매트한 방 바닥.
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(6, 6),
-      new THREE.ShadowMaterial({ opacity: 0.34 }),
+      new THREE.MeshStandardMaterial({ color: 0xb9a06f, roughness: 0.9, metalness: 0 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0;
     ground.receiveShadow = true;
     previewScene.add(ground);
+    // 그림자 캐처 — 불투명 바닥은 그림자 라이트 intensity 0이라 그림자가 안 진다(그림자계수×0=0).
+    // ShadowMaterial은 라이트 세기를 무시하고 커버리지×opacity로만 칠하므로 intensity 0으로도
+    // 접지 그림자가 우드 바닥 위에 다시 뜬다(조명 'B' 무변경 원칙 유지). y 오프셋+polygonOffset으로 z-fighting 회피.
+    const shadowCatcher = new THREE.Mesh(
+      new THREE.PlaneGeometry(6, 6),
+      new THREE.ShadowMaterial({ opacity: 0.3 }),
+    );
+    shadowCatcher.rotation.x = -Math.PI / 2;
+    shadowCatcher.position.y = 0.002;
+    shadowCatcher.material.polygonOffset = true;
+    shadowCatcher.material.polygonOffsetFactor = -1;
+    shadowCatcher.receiveShadow = true;
+    previewScene.add(shadowCatcher);
+    // 뒤 벽 — 톤온톤 세로 줄무늬 벽지(감독 선택 V1 등폭 밴드). PlaneGeometry 법선이 +Z(카메라 방향)라
+    // 회전 불필요. 포그(near 5.5)에 살짝 잠겨 백드롭과 이어지되 무늬는 또렷하다.
+    const wallpaperTex = makeWallpaperTex(drawStripes('#e2d7bf', '#efe7d3'), { repeatX: 4, repeatY: 1 });
+    const wall = new THREE.Mesh(
+      new THREE.PlaneGeometry(10, 6),
+      new THREE.MeshStandardMaterial({ map: wallpaperTex, roughness: 0.9, metalness: 0 }),
+    );
+    wall.position.set(0, 2.2, -2.3);
+    previewScene.add(wall);
     previewRotator = new THREE.Group();
     // 치비는 +Z 저작 + π 래퍼로 -Z를 본다 — 카메라(+Z)에서 정면이 보이게 π 시작
     previewRotator.rotation.y = Math.PI;
@@ -2953,43 +3055,9 @@ function buildChibiMaker() {
   });
   const body = el('div', { className: 'lu-am-body' }, [previewBox, panel]);
 
-  const saveBtn = el('button', { className: 'lu-am-btn lu-am-btn-primary', type: 'button', text: '저장하고 사용' });
-  const closeBtn = el('button', { className: 'lu-am-btn', type: 'button', text: '닫기' });
-  const btnRow = el('div', { className: 'lu-am-footer-btns' }, [closeBtn, saveBtn]);
-
-  // 회원가입 게이트 — 캐릭터 저장은 회원가입 필요(감독 방침). 게스트는 저장 없이 이번
-  // 세션에만 쓸 수 있고, 회원가입하면 지금 캐릭터가 계정에 저장된다.
-  const signupProviders = el('div', { className: 'lu-am-signup-providers' });
-  Object.keys(AUTH_PROVIDERS).forEach((key) => {
-    const p = AUTH_PROVIDERS[key];
-    const b = el('button', { className: `lu-am-social lu-social-${key}`, type: 'button', 'aria-label': p.label }, [
-      el('span', { className: 'lu-social-badge', text: p.short }),
-      el('span', { text: p.label }),
-    ]);
-    b.addEventListener('click', async () => {
-      b.disabled = true;
-      try { await authLoginWith(key); } catch (_) { /* mock 실패 없음 */ }
-      b.disabled = false;
-      // 회원가입 성공 → 지금 만든 캐릭터를 새 계정에 저장하고 닫는다
-      if (authGetProfile() && chibiParams) {
-        const look = JSON.parse(JSON.stringify(chibiParams));
-        sessionChibi = look;
-        saveStoredChibi(look);
-        const t = snapshotThumb(150, 200); if (t) saveStoredChibiThumb(t);
-        if (els && els.lobby) els.lobby.onChibiSaved();
-        if (entered && typeof callbacks.onAvatarChange === 'function') callbacks.onAvatarChange(encodeChibi(look));
-        setStatus('회원가입 완료 — 캐릭터가 저장됐어요 ✨');
-        closeChibiMaker();
-      }
-    });
-    signupProviders.appendChild(b);
-  });
-  const guestGate = el('div', { className: 'lu-am-guest-gate' }, [
-    el('div', { className: 'lu-am-gate-note', text: '캐릭터를 저장하려면 회원가입이 필요해요. 회원가입 없이도 지금 이 캐릭터로 바로 쓸 수 있어요.' }),
-    signupProviders,
-  ]);
-  const footer = el('div', { className: 'lu-am-footer' }, [guestGate, btnRow]);
-  const card = el('div', { className: 'lu-am-card' }, [head, body, footer]);
+  // 하단 저장 칸(닫기/저장 버튼 + 회원가입 게이트)은 제거 — 저장·닫기는 상단 헤더(✓/×)로
+  // 통합, 회원가입 유도는 캐릭터 화면에서 빼 로비 등으로 옮긴다(감독 지시).
+  const card = el('div', { className: 'lu-am-card' }, [head, body]);
   const overlay = el('div', { id: 'lu-chibi-maker', className: 'lu' }, [card]);
   document.body.appendChild(overlay);
 
@@ -3304,7 +3372,6 @@ function buildChibiMaker() {
   canvas.addEventListener('pointercancel', endDrag);
 
   closeX.addEventListener('click', () => closeChibiMaker());
-  closeBtn.addEventListener('click', () => closeChibiMaker());
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeChibiMaker(); });
 
   // 현재 프리뷰를 렌더 직후 스냅샷해 축소 썸네일(dataURL)을 만든다.
@@ -3317,14 +3384,15 @@ function buildChibiMaker() {
     } catch (_) { return ''; }
   }
 
-  // 로그인 여부에 따라 저장 버튼 라벨·회원가입 게이트 노출을 갱신한다.
+  // 로그인 여부에 따라 상단 저장(✓) 버튼의 접근성 라벨을 갱신한다(로그인=계정 저장, 게스트=세션 적용).
   function syncSaveGate() {
     const loggedIn = !!authGetProfile();
-    saveBtn.textContent = loggedIn ? '저장하고 사용' : '이 캐릭터 사용';
-    guestGate.style.display = loggedIn ? 'none' : '';
+    const label = loggedIn ? '저장하고 사용' : '이 캐릭터 사용';
+    saveV.setAttribute('aria-label', label);
+    saveV.title = label;
   }
 
-  saveBtn.addEventListener('click', () => {
+  saveV.addEventListener('click', () => {
     if (!chibiParams) return;
     const look = JSON.parse(JSON.stringify(chibiParams));
     sessionChibi = look;                       // 항상 이번 세션에 적용(게스트 포함)
