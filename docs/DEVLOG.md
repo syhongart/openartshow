@@ -4,6 +4,44 @@
 
 ---
 
+## 2026-07-21 · ★ 아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정)
+
+**원인.** A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가
+자기완결·CSP self·인라인0을 지켜 빌드 가능함을 검증기로 실증. B-2b는 그 Vite 산출물을 실제
+배포 경로(_site)로 승격 — "소스 직서빙"에서 "빌드 산출물 배포"로 전환하되 라이브 미술관을
+한 번도 깨지 않고 URL·자기완결·CSP·보호4파일 규율을 완화하지 않는 것이 핵심 난제.
+
+**개선.**
+- **base 절대전환** `'/openartshow/'`: rollup 멀티페이지 공유 `_bundle` 을 깊이 다른 랜딩(루트)·
+  앱(app/)이 공유하려면 절대 base 필수. 손으로 쓴 런타임 참조(`fetch("./app/…")`·`href`·og·
+  peerjs classic)는 문자열이라 미변경 — 절대 base가 안 깬다(빌드 실측 확인).
+- **HTML rename 플러그인**(generateBundle 2-pass): landing→`index.html`, 미술관→`app/index.html`,
+  studio/world/builder/visit→`app/*`, guide/design/about→루트 불변. **최종 배포 URL 전부 불변**
+  (공유링크·SEO·sitemap 무영향).
+- **CSP 자동정합 플러그인**: 인라인 sha256 을 빌드 후단 디스크 실측 재계산→script-src 재작성.
+  수작업 핀 관리 폐지(드리프트 소멸). importmap 제거로 미술관/world 핀 dead→`'self'` 수렴.
+- **랜딩군 소스 8줄**: 빌드대상(import·link)만 소스경로로 교정, 런타임(fetch·href·og)은 `./app/`
+  유지. design.html:549 깨진 `./landing.html`→`./index.html` 교정.
+- **deploy.yml 교체**: 소스 재배치 cp 로직 삭제 → `npm ci`+`npx vite build`+`cp -r dist/. _site/`
+  +생성기/sitemap/robots. assemble.mjs ASSEMBLE_VITE_SH 와 1:1.
+
+**⚠️ 롤백 단위(중요).** 이 전환의 안전한 롤백 단위는 **B-2b 4커밋 전체(또는 병합 커밋)** 이다.
+deploy.yml(85f2880) **단독 revert 는 불충분** — 랜딩군 소스 8줄(`./app/vendor/…`→`./vendor/…`
+등)이 vite 전제로 조정돼 있어, deploy 만 web직서빙으로 되돌리면 랜딩군 fonts/import 가 404 로
+깨진다(§검수관 지적). 회귀 시 반드시 4커밋(또는 main 병합 커밋) 전체를 되돌릴 것.
+
+**결과.** 게이트 통과 — executor 독립 스모크 기본6항 6/6 + B-2b특화 6/6(smoke:vite 10항: 6항+
+가드A/B/C+E1/E2 동등성 전부 PASS, URL회귀0, npm test 108/108), 검수관 cross-review 조건부
+승인(블로커0 — 실제 vite build 실행+CSP 해시 디스크 실측 일치 검증). 보호4파일 무변경. 권고
+3건(utils 死파일 복사·peerjs 미사용 devDep·three caret 동기화 문서화)은 #94 로 이월.
+
+**교훈.** "빌드 없는 자기완결 직서빙"을 "빌드 산출물 배포"로 옮기는 최대 위험(외부호스트 유입·
+CSP 핀 파손·URL 회귀)을, Vite 를 먼저 "검증기"(B-2a)로만 태우고 자기완결·CSP·인라인0 을 실증한
+뒤에야 "배포기"(B-2b)로 승격하는 2페이즈 롤인으로 전부 관문 통과시켰다. 롤백 단위를 커밋이 아닌
+"원자 변경 집합"으로 인식하는 것이 안전 전환의 핵심.
+
+---
+
 ## 2026-07-21 · ★ 아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)
 
 **원인.** 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI
