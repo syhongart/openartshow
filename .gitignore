@@ -68,3 +68,6 @@ _site/
 
 # 계약직 에이전트 격리 워크트리(임시, 자동 정리)
 .claude/worktrees/
+
+# Vite 검증기(B-2a) 빌드 산출물 — 커밋 제외(정적 배포는 deploy.yml 의 _site 조립이 담당)
+/dist/
