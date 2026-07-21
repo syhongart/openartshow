@@ -1830,17 +1830,27 @@ function injectStyles() {
      footer(저장 칸)는 흐름에 실려 함께 스크롤된다. dvh 폴백은 iOS 주소창 vh 문제(hotfix #12). */
   .lu-am-card {
     max-width: 96vw; max-height: 92vh; max-height: 92dvh; border-radius: 24px;
-    overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    /* -webkit-overflow-scrolling:touch 제거 — iOS Safari에서 이 레거시 플래그가 스크롤러를
+       별도 레이어로 승격해 sticky 헤더 z-index를 무시(콘텐츠가 헤더 위로 새고 깜빡). iOS 13+는
+       overflow:auto에 관성 스크롤 기본 제공이라 제거해도 관성 유지. */
+    overflow-y: auto; overscroll-behavior: contain;
   }
   .lu-am-head {
     padding: 14px 16px 12px;
-    position: sticky; top: 0; z-index: 5; background: var(--am-cream);  /* 스크롤 시 상단 고정 + 뒤 비침 방지(불투명) */
+    position: sticky; top: 0; z-index: 20; background: var(--am-cream);  /* 불투명 배경, 뒤 비침 방지 */
+    /* iOS Safari sticky 깜빡 방지 — 헤더를 자체 컴포지터 레이어로 승격해 관성 스크롤 중에도 콘텐츠
+       위에 안정적으로 고정한다. sticky containing block은 스크롤 조상(카드)이라 자기 transform은
+       고정 동작을 안 깬다. z-index 20으로 프리셋 칩 스택보다 확실히 위. */
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    box-shadow: 0 6px 10px -4px rgba(40,30,10,0.22);  /* 아래 메뉴와 뚜렷이 분리(감독 "완벽 분리") */
   }
   /* 프리뷰(큰 캐릭터) 위, 옵션 패널 아래로 세로 쌓기. body는 자연 높이(flex 0 0)라 스크롤은
      카드가 담당 — 이중 스크롤 없음. 캐릭터는 그 자리에서 혼자 신나게 움직인다(자동 연기). */
   .lu-am-body {
     flex: 0 0 auto; flex-direction: column; gap: 14px; padding: 12px 14px 4px;
     overflow: visible;
+    position: relative; z-index: 0;  /* 헤더(z20) 아래로 못박아 칩이 transform 컨텍스트가 돼도 위로 안 새게 */
   }
   .lu-am-preview { width: auto; max-width: none; align-self: center; padding: 12px; }
   .lu-am-stagewrap { width: 200px; height: 267px; max-width: none; margin: 0 auto; }
