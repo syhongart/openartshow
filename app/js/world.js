@@ -227,10 +227,105 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     return tex;
   }
 
+  // ── [그래픽 향상 1단계] 절차 지면 텍스처 + 노멀맵 (감독 지시: "AO·노멀·땅 재질이 밋밋") ──
+  // 자기완결(외부 이미지 0) — sky.js처럼 캔버스 절차 생성. diffuse(색·패턴) + 높이맵→노멀맵(요철 라이팅).
+  // 생성 1회(런타임 0), 타일 repeat. 저사양은 텍스처 128(정상 256). 비-DOM 폴백=null(단색 유지).
+  function heightToNormal(hc, S, strength) {
+    const hx = hc.getContext('2d'); const src = hx.getImageData(0, 0, S, S).data;
+    const out = document.createElement('canvas'); out.width = out.height = S; const ox = out.getContext('2d');
+    const dst = ox.createImageData(S, S);
+    const h = (x, y) => src[((((y % S) + S) % S) * S + (((x % S) + S) % S)) * 4] / 255; // R=높이, wrap(타일 이음새 연속)
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const dhx = (h(x + 1, y) - h(x - 1, y)) * strength, dhy = (h(x, y + 1) - h(x, y - 1)) * strength;
+      let nx = -dhx, ny = -dhy, nz = 1; const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+      const i = (y * S + x) * 4;
+      dst.data[i] = (nx * 0.5 + 0.5) * 255; dst.data[i + 1] = (ny * 0.5 + 0.5) * 255; dst.data[i + 2] = (nz * 0.5 + 0.5) * 255; dst.data[i + 3] = 255;
+    }
+    ox.putImageData(dst, 0, 0); return out;
+  }
+  function makeGroundTex(kind, seed, repeat) {
+    if (typeof document === 'undefined') return null;
+    const S = gpuInfo.soft ? 128 : 256;
+    let s = seed | 0; const rnd = () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const dc = document.createElement('canvas'); dc.width = dc.height = S; const d = dc.getContext('2d');
+    const hc = document.createElement('canvas'); hc.width = hc.height = S; const h = hc.getContext('2d');
+    h.fillStyle = '#808080'; h.fillRect(0, 0, S, S); // 높이 중립(회색)
+    let strength = 2.2;
+    // [P1] 3×3 토러스 중복 드로우 — 프리미티브를 (dx,dy)∈{-S,0,S} 오프셋으로 겹쳐 그려 RepeatWrapping 타일 이음새 제거. 생성 1회라 9배 비용 무관.
+    const tile = (fn) => { for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) fn(dx, dy); };
+    const blob = (ctx, x, y, r, col) => tile((ox, oy) => { const g = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); g.addColorStop(0, col); g.addColorStop(1, col.replace(/[\d.]+\)$/, '0)')); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x + ox, y + oy, r, 0, 7); ctx.fill(); }); // [P1] blob도 seamless(잔디·모래·광장 공용)
+    const strokeSeam = (ctx, x1, y1, x2, y2) => tile((ox, oy) => { ctx.beginPath(); ctx.moveTo(x1 + ox, y1 + oy); ctx.lineTo(x2 + ox, y2 + oy); ctx.stroke(); }); // [P1] 선분 seamless
+    const rectSeam = (ctx, x, y, w, hh) => tile((ox, oy) => ctx.fillRect(x + ox, y + oy, w, hh)); // [P1] 반점·알갱이 seamless
+    if (kind === 'grass') {
+      d.fillStyle = '#7fa46a'; d.fillRect(0, 0, S, S);
+      // [타일링 저감] 저주파 blob 반경·대비·alpha 축소(개수 90 유지 → rnd 소비 순서 보존). 베이스(127,164,106)에 근접시켜 "얼룩"→"은은한 변주". 고주파 풀결은 아래 유지.
+      for (let i = 0; i < 90; i++) { const t = rnd(); blob(d, rnd() * S, rnd() * S, S * (0.03 + rnd() * 0.04), t < 0.5 ? `rgba(${110 + (rnd() * 20 | 0)},${142 + (rnd() * 18 | 0)},${96 + (rnd() * 16 | 0)},0.26)` : `rgba(${136 + (rnd() * 20 | 0)},${172 + (rnd() * 18 | 0)},${114 + (rnd() * 14 | 0)},0.22)`); }
+      for (let i = 0; i < 420; i++) { const x = rnd() * S, y = rnd() * S, a = rnd() * 6.28, ln = 2 + rnd() * 4, x2 = x + Math.cos(a) * ln, y2 = y + Math.sin(a) * ln; // 풀 결
+        d.strokeStyle = `rgba(${70 + (rnd() * 60 | 0)},${110 + (rnd() * 60 | 0)},${64 + (rnd() * 40 | 0)},0.6)`; d.lineWidth = 1.15; strokeSeam(d, x, y, x2, y2); // [P1]seamless [P2]선명도 lineWidth 0.8→1.15·alpha 0.5→0.6
+        h.strokeStyle = `rgba(255,255,255,${0.12 + rnd() * 0.12})`; h.lineWidth = 0.8; strokeSeam(h, x, y, x2, y2); } // height stroke 현행 유지
+      strength = 1.6;
+    } else if (kind === 'sand') {
+      d.fillStyle = '#d8c79a'; d.fillRect(0, 0, S, S);
+      // [타일링 저감] 모래 blob 반경·대비·alpha 축소(개수 60 유지 → rnd 소비 순서 보존). 고주파 알갱이는 아래 유지.
+      for (let i = 0; i < 60; i++) blob(d, rnd() * S, rnd() * S, S * (0.04 + rnd() * 0.05), rnd() < 0.5 ? `rgba(206,190,146,0.22)` : `rgba(222,206,166,0.20)`);
+      for (let i = 0; i < 1400; i++) { const x = rnd() * S, y = rnd() * S, br = rnd(); // 알갱이
+        d.fillStyle = br < 0.5 ? `rgba(180,164,120,0.5)` : `rgba(240,228,190,0.5)`; rectSeam(d, x, y, 1, 1); // [P1] 알갱이 seamless
+        h.fillStyle = `rgba(255,255,255,${(br * 0.3).toFixed(2)})`; rectSeam(h, x, y, 1, 1); }
+      strength = 1.2;
+    } else if (kind === 'plaza') {
+      d.fillStyle = '#cac3b6'; d.fillRect(0, 0, S, S);
+      for (let i = 0; i < 40; i++) blob(d, rnd() * S, rnd() * S, S * (0.06 + rnd() * 0.1), `rgba(${180 + (rnd() * 30 | 0)},${174 + (rnd() * 26 | 0)},${160 + (rnd() * 24 | 0)},0.35)`);
+      const tiles = 4, ts = S / tiles; // 타일 격자(이음새 홈)
+      d.strokeStyle = 'rgba(120,114,104,0.5)'; d.lineWidth = 1.5; h.strokeStyle = 'rgba(60,60,60,0.9)'; h.lineWidth = 2.2;
+      for (let i = 0; i <= tiles; i++) { const p = i * ts; d.beginPath(); d.moveTo(p, 0); d.lineTo(p, S); d.moveTo(0, p); d.lineTo(S, p); d.stroke(); h.beginPath(); h.moveTo(p, 0); h.lineTo(p, S); h.moveTo(0, p); h.lineTo(S, p); h.stroke(); }
+      strength = 2.6;
+    } else if (kind === 'road') {
+      d.fillStyle = '#5b5e66'; d.fillRect(0, 0, S, S);
+      for (let i = 0; i < 2000; i++) { const x = rnd() * S, y = rnd() * S, br = rnd(); // 아스팔트 반점
+        d.fillStyle = br < 0.5 ? `rgba(70,72,80,0.5)` : `rgba(108,112,120,0.4)`; rectSeam(d, x, y, 1, 1); // [P1] 반점 seamless
+        h.fillStyle = `rgba(${br < 0.5 ? '40,40,40' : '210,210,210'},0.25)`; rectSeam(h, x, y, 1, 1); }
+      // [P3] 저대비 크랙선 6~8개(약간 구부러진 폴리라인) — diffuse+height, tile()로 seamless
+      const nCrack = 6 + (rnd() * 3 | 0);
+      for (let i = 0; i < nCrack; i++) {
+        const segs = 3 + (rnd() * 3 | 0); let cx = rnd() * S, cy = rnd() * S, ang = rnd() * 6.28; const pts = [[cx, cy]];
+        for (let j = 0; j < segs; j++) { ang += (rnd() - 0.5) * 1.2; const len = 6 + rnd() * 14; cx += Math.cos(ang) * len; cy += Math.sin(ang) * len; pts.push([cx, cy]); }
+        const crack = (ctx, style, lw) => { ctx.strokeStyle = style; ctx.lineWidth = lw; tile((ox, oy) => { ctx.beginPath(); ctx.moveTo(pts[0][0] + ox, pts[0][1] + oy); for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0] + ox, pts[k][1] + oy); ctx.stroke(); }); };
+        crack(d, 'rgba(38,40,46,0.5)', 1); crack(h, 'rgba(30,30,30,0.5)', 1.5); // 어두운 저대비 = 얕은 파임
+      }
+      // [P3] 타이어 자국 띠 2개(세로, 아주 옅은 명도차) — 세로 전체라 x축 3중 오프셋만(dy 중복 시 alpha 누적 방지)
+      for (let i = 0; i < 2; i++) {
+        const bx = (0.22 + i * 0.4 + rnd() * 0.16) * S, bw = S * (0.05 + rnd() * 0.03);
+        d.fillStyle = 'rgba(40,42,48,0.13)'; for (const ox of [-S, 0, S]) d.fillRect(bx + ox, 0, bw, S);
+        h.fillStyle = 'rgba(40,40,40,0.10)'; for (const ox of [-S, 0, S]) h.fillRect(bx + ox, 0, bw, S);
+      }
+      strength = 1.8; // [P3] 형태감 보강 1.4→1.8
+    } else if (kind === 'bridge') {
+      d.fillStyle = '#8a7a64'; d.fillRect(0, 0, S, S);
+      const planks = 5, pw = S / planks; // 판자 세로 줄
+      for (let i = 0; i < planks; i++) { const x0 = i * pw; d.fillStyle = `rgba(${130 + (rnd() * 30 | 0)},${112 + (rnd() * 26 | 0)},${88 + (rnd() * 20 | 0)},0.5)`; d.fillRect(x0, 0, pw, S);
+        for (let j = 0; j < 40; j++) { const yy = rnd() * S; d.strokeStyle = `rgba(90,76,56,0.3)`; d.lineWidth = 0.6; d.beginPath(); d.moveTo(x0 + 1, yy); d.lineTo(x0 + pw - 1, yy + (rnd() - 0.5) * 4); d.stroke(); } }
+      h.strokeStyle = 'rgba(40,40,40,0.9)'; h.lineWidth = 2; // 판자 사이 홈
+      for (let i = 0; i <= planks; i++) { const p = i * pw; h.beginPath(); h.moveTo(p, 0); h.lineTo(p, S); h.stroke(); }
+      strength = 2.4;
+    } else { d.fillStyle = '#888'; d.fillRect(0, 0, S, S); }
+    const map = new THREE.CanvasTexture(dc); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.anisotropy = gpuInfo.soft ? 1 : 4;
+    const nMap = new THREE.CanvasTexture(heightToNormal(hc, S, strength)); nMap.wrapS = nMap.wrapT = THREE.RepeatWrapping; nMap.anisotropy = gpuInfo.soft ? 1 : 4;
+    if (repeat) { map.repeat.set(repeat, repeat); nMap.repeat.set(repeat, repeat); }
+    return { map, normalMap: nMap };
+  }
+  // 지면 재질에 텍스처 주입(kind별 repeat = 24m 셀 / 타일 미터). 실패(비-DOM)면 단색 유지.
+  function applyGroundTex(mat, kind, seed, repeat, nScale) {
+    const t = makeGroundTex(kind, seed, repeat); if (!t) return;
+    const ns = (nScale == null) ? 0.8 : nScale; // [P4] kind별 normalScale(기본 0.8 유지)
+    mat.map = t.map; mat.normalMap = t.normalMap; mat.normalScale = new THREE.Vector2(ns, ns); mat.needsUpdate = true;
+  }
+
   // 지면·도로·물·다리 공유 재질(파셀 복제 방지) — dispose()에서 일괄 회수.
   const T = {
-    grass: new THREE.MeshStandardMaterial({ color: 0x7fa46a, roughness: 1.0, metalness: 0 }),
-    plaza: new THREE.MeshStandardMaterial({ color: 0xcac3b6, roughness: 0.95, metalness: 0 }),
+    // [타일링 저감] vertexColors=파셀별 지면 색 미세 변주(대면적 통짜 반복 은폐). 재질 공유·드로우콜 불변.
+    // 사용처는 대지 박스 gm(loadParcel) 단 한 곳 — 모든 gm에 color attribute 주입(정점색 누락 시 검은 지면 회귀 방지).
+    grass: new THREE.MeshStandardMaterial({ color: 0x7fa46a, vertexColors: true, roughness: 1.0, metalness: 0 }),
+    plaza: new THREE.MeshStandardMaterial({ color: 0xcac3b6, vertexColors: true, roughness: 0.95, metalness: 0 }),
     road: new THREE.MeshStandardMaterial({ color: 0x5b5e66, roughness: 0.98, metalness: 0 }),
     bridge: new THREE.MeshStandardMaterial({ color: 0x8a7a64, roughness: 0.9, metalness: 0 }),
     water: new THREE.MeshStandardMaterial({ color: 0x3f6f8f, roughness: 0.32, metalness: 0.12, transparent: true, opacity: 0.92 }),
@@ -252,11 +347,34 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 회전 빛 = 발광 콘 메시(additive·depthWrite false) — 실제 THREE.Light 0(라이트 풀 개수 불변 원칙 계승, 재컴파일 0).
     beam: new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
   };
+  // [그래픽 1단계] 지면 절차 텍스처+노멀 주입 — repeat = 24m 셀 / 타일 미터(잔디 4m·모래 4m·광장 6m·도로 8m).
+  // 도로 strip(24×2.5)은 폭 방향 왜곡이 있으나 아스팔트라 방향성 약해 무해(스크린샷 확인). 색은 텍스처가 대체.
+  applyGroundTex(T.grass, 'grass', 0x6721a, 6, 1.0);   // [P4] 잔디 요철 강조
+  applyGroundTex(T.plaza, 'plaza', 0x51b3c, 4, 0.7);   // [P4] 광장 매끈
+  applyGroundTex(T.road, 'road', 0x3d0e7, 3, 0.9);     // [P4]
+  applyGroundTex(T.sand, 'sand', 0x9a44c, 6, 0.9);     // [P4]
+  applyGroundTex(T.bridge, 'bridge', 0x8a7c1, 2, 0.8); // [P4]
+  T.grass.color.setHex(0xffffff); T.plaza.color.setHex(0xffffff); T.road.color.setHex(0xffffff); T.sand.color.setHex(0xffffff); T.bridge.color.setHex(0xffffff); // 텍스처가 색 담당(color=흰=텍스처 원색)
   // 거리 가구 공유 지오메트리(파셀 간 재사용 — InstancedMesh/개별 Mesh가 참조). createWorld dispose에서 회수.
   const paintGeo = (g, hex) => {
     const c = new THREE.Color(hex), n = g.attributes.position.count, arr = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
     g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
+  };
+  // [타일링 저감] 파셀 지면 정점색 미세 변주 — 흰(1,1,1) 근처 RGB 스케일을 지오 전체에 균일 주입(map 색과 곱).
+  // 파셀 (px,pz) 좌표 해시 시드 → mulberry32(결정론·Math.random 금지). 잔디는 초록쪽 살짝 편향.
+  const tintGeo = (g, r, gg, b) => {
+    const n = g.attributes.position.count, arr = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { arr[i * 3] = r; arr[i * 3 + 1] = gg; arr[i * 3 + 2] = b; }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(arr, 3)); return g;
+  };
+  const parcelTint = (px, pz, isPlaza) => {
+    let s = (Math.imul(px, 374761393) ^ Math.imul(pz, 668265263)) >>> 0; // 좌표 해시(음수 px/pz 안전)
+    const rn = () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const base = 0.95 + rn() * 0.10; // 전체 밝기 0.95~1.05
+    let r = base + (rn() - 0.5) * 0.06, g = base + (rn() - 0.5) * 0.06, b = base + (rn() - 0.5) * 0.06; // 채널 미세차 → 대략 0.92~1.08
+    if (!isPlaza) { g += 0.03; b -= 0.02; } // 잔디 초록 편향
+    return [r, g, b];
   };
   // [등대] 높이(y) 밴드 정점색 — 홍백 줄무늬(band 짝/홀 hexA/hexB). 머지 호환 위해 color 속성 부여.
   const paintBandsY = (g, y0, bandH, hexA, hexB) => {
@@ -517,6 +635,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   for (const d of parcels) index.set(keyOf(d.px, d.pz), d);
   const loaded = new Map(); // "px,pz" → { group, def, ox, oz, dims, solids, crowd, avatars, lod }
   let mp = null; // 실시간 멀티플레이어(opts.mp 지정 + window.Peer 존재 시 생성)
+  let mpConnected = false; // [프라이버시 게이트] 사용자가 "함께 둘러보기" 입장 동의 전엔 connect 금지 → peer=null, IP 노출 0
 
   // ── [스트리밍 큐] 로드 시간분할(성능 단계1) — 히칭 완화 상태 ─────────────────────
   // 파셀 경계 통과 프레임에 신규 로드(나무·조명·섀도 재베이크)를 몰지 않고 큐에 넣어 update()
@@ -588,7 +707,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const bm = new THREE.Mesh(bg, T.bridge); bm.position.set(ox, -0.02, oz); bm.receiveShadow = true; group.add(bm);
     } else {
       const gg = new THREE.BoxGeometry(CELLX, 0.1, CELLZ); own.push(gg); // 대지(잔디/광장 — 결정론 믹스)
-      const gm = new THREE.Mesh(gg, ((px * 7 + pz * 13) % 4 === 0) ? T.plaza : T.grass);
+      const isPlaza = ((px * 7 + pz * 13) % 4 === 0);
+      const tc = parcelTint(px, pz, isPlaza); tintGeo(gg, tc[0], tc[1], tc[2]); // [타일링 저감] 파셀별 색조 변주(정점색·map과 곱)
+      const gm = new THREE.Mesh(gg, isPlaza ? T.plaza : T.grass);
       gm.position.set(ox, -0.056, oz); gm.receiveShadow = true; group.add(gm);
       const rgS = new THREE.BoxGeometry(CELLX, 0.1, 2.5); own.push(rgS); // 남 가장자리 도로(이웃 북측과 5m 도로망)
       const rs = new THREE.Mesh(rgS, T.road); rs.position.set(ox, -0.05, oz + CELLZ / 2 - 1.25); rs.receiveShadow = true; group.add(rs);
@@ -1059,7 +1180,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     mp.onStatus = (s) => emit('mpstatus', s);
     mp.onPlayerCount = (n) => emit('players', n);
     mp.onChat = (name, text) => emit('chat', { name, text });
-    mp.connect();
+    // [프라이버시 게이트] 자동 연결 금지 — mp 인스턴스만 생성(peer=null이라 네트워크 활동 0).
+    // 실제 connect()는 사용자가 "함께 둘러보기"로 입장 동의한 뒤 connectMultiplayer()에서만 1회 실행.
   }
 
   // 초기 로드 — 첫 파셀 주변 스트리밍(스폰은 동기 즉시: 빈 화면 방지·결정론 무회귀)
@@ -1073,6 +1195,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   return {
     walk, update, renderOnce, resize, lookDelta,
+    // [프라이버시 게이트] 사용자 입장 동의("함께 둘러보기") 시에만 호출 — 내부 1회 가드로 중복 connect(ESC→재입장 등) 봉쇄.
+    connectMultiplayer: () => { if (mp && !mpConnected) { mpConnected = true; mp.connect(); } return mpConnected; },
+    isMultiplayer: () => mpConnected,
     sky: skySystem, // [하늘 엔진] 신 모드 패널이 set()/get()으로 시간대·날씨·이벤트 제어
     getSkyState: () => (skySystem ? skySystem.get() : null),
     setTouchMove: (fwd, right) => { tmov.fwd = fwd || 0; tmov.right = right || 0; },
@@ -1115,6 +1240,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       scene.remove(sky); sky.geometry.dispose(); if (sky.material.map) sky.material.map.dispose(); sky.material.dispose();
       scene.remove(sea); seaGeo.dispose();
       if (T.water.map) T.water.map.dispose(); // 물결 텍스처(재질 dispose는 map 미회수)
+      // [그래픽 1단계] 지면 절차 텍스처+노멀 회수(재질 dispose는 map/normalMap 미회수) — 공유 1장씩이라 여기서 일괄.
+      for (const k of ['grass', 'plaza', 'road', 'sand', 'bridge']) { if (T[k].map) T[k].map.dispose(); if (T[k].normalMap) T[k].normalMap.dispose(); }
       for (const key3 in SG) SG[key3].dispose(); // 거리 가구 공유 지오
       TETRA_GEO.dispose(); // [테트라포드] 공유 지오(InstancedMesh들이 참조 — 파셀 dispose는 instance 버퍼만 회수)
       for (const key2 in T) T[key2].dispose();
