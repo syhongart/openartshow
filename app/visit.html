@@ -4,10 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <!-- 방문자뷰: 자기완결(외부 호스트 0). CSP default-src 'self'. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'">
 <title>관람 · OpenArtShow</title>
-<link rel="stylesheet" href="./vendor/fonts/fonts.css">
-<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 <style>
   :root{
     --bg:#14151A; --ink:#F5F5F2; --dim:#9A9EB1; --line:#3A3D4B;
@@ -71,6 +69,11 @@
 
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
+  <script type="module" crossorigin src="/openartshow/_bundle/visit-BNgwejxU.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-B0rKCWya.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/scene-CihSpfzO.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-render-cH-obFqA.js">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-Dd13zEDU.css">
 </head>
 <body>
 <div id="stage"><canvas id="c"></canvas></div>
@@ -99,70 +102,5 @@
 <div id="joy"><div class="nub" id="joyNub"></div></div>
 <div id="looktip">오른쪽 드래그 = 시선</div>
 
-<script type="module">
-import { decodeSpace, newSpace } from './js/space.js';
-import { createVisit } from './js/visit.js';
-
-// 로드 소스: ?src=local(또는 미지정) → localStorage 빌더 저장 키 → decodeSpace, 실패 시 DEFAULT.
-// URL에 space 데이터 인코딩 금지(space.js 계약) — 로컬 저장/기본 공간만.
-function loadSpace() {
-  const src = new URLSearchParams(location.search).get('src');
-  if (src === null || src === 'local') {
-    try { const raw = localStorage.getItem('openartshow.space.v1'); const dec = raw && decodeSpace(raw); if (dec) return dec; } catch (e) {}
-  }
-  return newSpace();
-}
-const space = loadSpace();
-
-const canvas = document.getElementById('c');
-const V = createVisit({ canvas, space, opts: { preserveDrawingBuffer: true } });
-window.__visit = V;
-
-document.getElementById('spaceTitle').textContent = (space.meta && space.meta.name) || '나의 전시실';
-
-function fit(){ V.resize(window.innerWidth, window.innerHeight); }
-window.addEventListener('resize', fit); fit();
-
-// 클릭 유도 오버레이 — 포인터락 획득/해제에 따라 표시.
-const enter = document.getElementById('enter');
-V.on('lock', ({locked})=>{ enter.classList.toggle('hide', locked); });
-enter.addEventListener('click', ()=>{ if (canvas.requestPointerLock) canvas.requestPointerLock(); });
-
-// 설정 패널
-const settings = document.getElementById('settings'), bGear = document.getElementById('bGear');
-bGear.addEventListener('click', (e)=>{ e.stopPropagation(); settings.classList.toggle('on'); });
-document.addEventListener('click', (e)=>{ if(settings.classList.contains('on') && !settings.contains(e.target) && !bGear.contains(e.target)) settings.classList.remove('on'); });
-const swFog = document.getElementById('swFog');
-swFog.addEventListener('click', ()=>{ const on = V.toggleFog(); swFog.classList.toggle('on', on); swFog.setAttribute('aria-checked', on); });
-const swBake = document.getElementById('swBake');
-swBake.addEventListener('click', ()=>{ if(swBake.classList.contains('on')) return; V.bake(); swBake.classList.add('on'); swBake.setAttribute('aria-checked','true'); });
-
-// ── 모바일: 터치 감지 → 좌 조이스틱(이동) + 우 드래그(시선) ──
-const isTouch = (typeof window !== 'undefined') && ('ontouchstart' in window || (navigator.maxTouchPoints||0) > 0);
-if (isTouch) {
-  document.body.classList.add('is-touch');
-  // 조이스틱
-  const joy = document.getElementById('joy'), nub = document.getElementById('joyNub');
-  let joyId = null, jcx = 0, jcy = 0;
-  const JR = 40; // 최대 반경(px)
-  function joyStart(e){ const t=e.changedTouches[0]; joyId=t.identifier; const r=joy.getBoundingClientRect(); jcx=r.left+r.width/2; jcy=r.top+r.height/2; joyMove(e); }
-  function joyMove(e){
-    for(const t of e.changedTouches){ if(t.identifier!==joyId) continue;
-      let dx=t.clientX-jcx, dy=t.clientY-jcy; const d=Math.hypot(dx,dy)||1; const cl=Math.min(1,d/JR);
-      const ux=dx/d*cl, uy=dy/d*cl; nub.style.transform=`translate(${ux*JR}px,${uy*JR}px)`;
-      V.setTouchMove(-uy, ux); // 위로 밀면 전진(-uy), 오른쪽=우측 스트레이프
-    }
-  }
-  function joyEnd(e){ for(const t of e.changedTouches){ if(t.identifier!==joyId) continue; joyId=null; nub.style.transform='translate(0,0)'; V.setTouchMove(0,0); } }
-  joy.addEventListener('touchstart', (e)=>{ e.preventDefault(); joyStart(e); }, {passive:false});
-  joy.addEventListener('touchmove', (e)=>{ e.preventDefault(); joyMove(e); }, {passive:false});
-  joy.addEventListener('touchend', joyEnd); joy.addEventListener('touchcancel', joyEnd);
-  // 우측 드래그 = 시선(조이스틱 영역 밖의 터치)
-  let lookId=null, lx=0, ly=0;
-  canvas.addEventListener('touchstart', (e)=>{ const t=e.changedTouches[0]; if(t.clientX < window.innerWidth*0.4) return; lookId=t.identifier; lx=t.clientX; ly=t.clientY; }, {passive:true});
-  canvas.addEventListener('touchmove', (e)=>{ for(const t of e.changedTouches){ if(t.identifier!==lookId) continue; V.lookDelta((t.clientX-lx)*0.004, (t.clientY-ly)*0.004); lx=t.clientX; ly=t.clientY; } }, {passive:true});
-  canvas.addEventListener('touchend', (e)=>{ for(const t of e.changedTouches){ if(t.identifier===lookId) lookId=null; } });
-}
-</script>
 </body>
 </html>

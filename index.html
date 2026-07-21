@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 4블록은 sha256 핀, 외부호스트 0 정합(fetch·img 모두 self) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vxDtJ3aOqaEjtJzonrd6PKRpB0ynWKodJTFLctZaBgI=' 'sha256-kBmO7OoxO9Zo4P//dunmFD64rYjjSHwnJarrxkCgOWM=' 'sha256-/Qo/zlhZsu0yEflWsE2OzbUKS1ytU5JcWVMoRnIkx3E=' 'sha256-hMYZjptLS7E8GvPqB8g9sHSixA//OtkvdXv1ngSOCGU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vxDtJ3aOqaEjtJzonrd6PKRpB0ynWKodJTFLctZaBgI=' 'sha256-kBmO7OoxO9Zo4P//dunmFD64rYjjSHwnJarrxkCgOWM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>OpenArtShow — 링크 하나로 열리는 나만의 미술관</title>
 <meta name="description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta property="og:type" content="website">
@@ -20,7 +20,6 @@
 <meta name="twitter:description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
-<link rel="stylesheet" href="./app/vendor/fonts/fonts.css">
 <style>
   :root {
     /* 브랜드 토큰 — 다크 몰입 팔레트 B (DESIGN.md §3, home.html과 완전 통일 — 2026-07-14 랜딩 전면 리페인트) */
@@ -834,6 +833,10 @@
     }
   }
 </style>
+  <script type="module" crossorigin src="/openartshow/_bundle/landing-B6phDNYX.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/feed-DBwIok8B.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-aZ7HCW1S.js">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-Dd13zEDU.css">
 </head>
 <body>
 
@@ -1275,163 +1278,6 @@
     });
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') btn.click(); });
     renderState();
-  })();
-</script>
-<script type="module">
-  // 커뮤니티 피드 렌더 — feed.js(로컬 우선 스토어)를 그대로 읽는다.
-  // 사용자 입력(닉네임/전시명)은 전부 textContent 경유 — 마크업 주입 차단.
-  import { PhotoWall, VisitorLog } from './app/js/feed.js';
-
-  const timeAgo = (ts) => {
-    const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
-    if (s < 60) return '방금';
-    if (s < 3600) return Math.floor(s / 60) + '분 전';
-    if (s < 86400) return Math.floor(s / 3600) + '시간 전';
-    return Math.floor(s / 86400) + '일 전';
-  };
-  const CHIP_COLORS = ['#e07a5f', '#81b29a', '#f2cc8f', '#8e7dbe', '#6a8caf', '#d68fb8'];
-
-  const strip = document.getElementById('visitorStrip');
-  const grid = document.getElementById('photoGrid');
-  if (strip && grid) {
-    const visitors = new VisitorLog().list().slice(0, 8);
-    if (visitors.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'visitor-chip';
-      empty.textContent = '아직 조용한 아침입니다 — 오늘의 첫 관람객이 되어 주세요.';
-      strip.appendChild(empty);
-    } else {
-      visitors.forEach((v, i) => {
-        const chip = document.createElement('span');
-        chip.className = 'visitor-chip';
-        const dot = document.createElement('span');
-        dot.className = 'vdot';
-        dot.style.background = CHIP_COLORS[i % CHIP_COLORS.length];
-        const label = document.createElement('span');
-        label.textContent = v.g ? `${v.name} · ${v.g}` : v.name;
-        const time = document.createElement('span');
-        time.className = 'vtime';
-        time.textContent = timeAgo(v.ts);
-        chip.append(dot, label, time);
-        strip.appendChild(chip);
-      });
-    }
-
-    const photos = new PhotoWall().list();
-    if (photos.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'feed-empty';
-      empty.style.gridColumn = '1 / -1';
-      empty.textContent = '아직 첫 사진이 걸리지 않았습니다. 전시장 안의 카메라 버튼으로 마음에 남는 장면을 담아 보세요.';
-      grid.appendChild(empty);
-    } else {
-      photos.forEach((ph, i) => {
-        const card = document.createElement('figure');
-        card.className = 'photo-card';
-        card.style.setProperty('--tilt', ((i % 3) - 1) * 0.8 + 'deg');
-        card.style.margin = '0';
-        const img = document.createElement('img');
-        img.src = ph.thumb;
-        img.alt = `${ph.name}님의 관람 사진`;
-        img.loading = 'lazy';
-        const meta = document.createElement('figcaption');
-        meta.className = 'pmeta';
-        const name = document.createElement('span');
-        name.className = 'pname';
-        name.textContent = ph.name;
-        const time = document.createElement('span');
-        time.className = 'ptime';
-        time.textContent = (ph.g ? ph.g + ' · ' : '') + timeAgo(ph.ts);
-        meta.append(name, time);
-        card.append(img, meta);
-        grid.appendChild(card);
-      });
-    }
-  }
-</script>
-<script type="module">
-  // 로그인/회원가입 모달 배선 — 공용 컴포넌트(js/auth-modal.js)를 사용.
-  // auth.js와 동일한 저장 규약(lu-auth-profile-v1)이라 여기서 로그인하면 로비가 그대로 이어받는다.
-  import { openAuthModal } from './app/js/auth-modal.js';
-  import { getProfile, logout, onAuthChange } from './app/js/auth.js';
-
-  (function () {
-    "use strict";
-
-    var navAuth = document.getElementById('navAuth');
-    var nsAuth = document.getElementById('nsAuth');
-
-    function authButtonsHTML() {
-      return '<button class="nav-auth-link" type="button" data-auth-mode="login">로그인</button>' +
-        '<span class="nav-auth-sep"></span>' +
-        '<button class="nav-auth-link" type="button" data-auth-mode="signup">회원가입</button>';
-    }
-    function wireAuthButtons(container, onOpen) {
-      Array.prototype.forEach.call(container.querySelectorAll('[data-auth-mode]'), function (b) {
-        b.addEventListener('click', function () {
-          if (onOpen) onOpen();
-          openAuthModal({ mode: b.getAttribute('data-auth-mode') });
-        });
-      });
-    }
-
-    function renderNav() {
-      var p = getProfile();
-
-      if (nsAuth) {
-        nsAuth.innerHTML = p
-          ? '<span class="nav-auth-profile"><span class="ini">' + escapeHtml(p.initial) + '</span>' + escapeHtml(p.name) + '님</span>' +
-            '<button class="nav-auth-link" type="button" id="nsLogout">로그아웃</button>'
-          : authButtonsHTML();
-        if (p) {
-          nsAuth.querySelector('#nsLogout').addEventListener('click', function () { logout(); });
-        } else {
-          wireAuthButtons(nsAuth, closeSheet);
-        }
-      }
-
-      if (navAuth) {
-        navAuth.innerHTML = p
-          ? '<span class="nav-auth-profile"><span class="ini">' + escapeHtml(p.initial) + '</span>' + escapeHtml(p.name) + '님</span>' +
-            '<span class="nav-auth-sep"></span>' +
-            '<button class="nav-auth-link" type="button" id="navLogout">로그아웃</button>'
-          : authButtonsHTML();
-        if (p) {
-          navAuth.querySelector('#navLogout').addEventListener('click', function () { logout(); });
-        } else {
-          wireAuthButtons(navAuth);
-        }
-      }
-    }
-
-    onAuthChange(renderNav);
-    renderNav();
-
-    // 상단 입장하기 CTA — 히어로 CTA가 화면에서 사라진 뒤에만 노출 (중복 방지)
-    var navCta = document.querySelector('.topnav .nav-cta');
-    var hero = document.querySelector('.hero');
-    function syncNavCta() {
-      var passed = window.scrollY > (hero ? hero.offsetHeight * 0.6 : 400);
-      navCta.classList.toggle('is-shown', passed);
-    }
-    window.addEventListener('scroll', syncNavCta, { passive: true });
-    syncNavCta();
-
-    // 모바일 햄버거
-    var burger = document.getElementById('navBurger');
-    var sheet = document.getElementById('navSheet');
-    function closeSheet() {
-      sheet.classList.remove('is-open');
-      burger.setAttribute('aria-expanded', 'false');
-    }
-    burger.addEventListener('click', function () {
-      var open = !sheet.classList.contains('is-open');
-      sheet.classList.toggle('is-open', open);
-      burger.setAttribute('aria-expanded', String(open));
-    });
-    Array.prototype.forEach.call(sheet.querySelectorAll('a'), function (a) {
-      a.addEventListener('click', closeSheet);
-    });
   })();
 </script>
 </body>

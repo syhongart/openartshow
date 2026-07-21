@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결) — OpenArtShow 개발일지</title>
-<meta name="description" content="security-officer 종합 감사 결과 블로커·치명 0. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.">
+<title>★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319) — OpenArtShow 개발일지</title>
+<meta name="description" content="감독 방향전환: "걸어서 빌드"(아바타가 공간을 걸으며 배치)를 여러 차례 다듬다(벽 파묻힘·시야각·아바타 반투명·1인칭) 결국 접었다. 아바타를 시야에서 치우고 조망(orbit) 카메라 자유이동 + 마우스/터치 배치로 조작을 통일. 걸어서빌드 코드는 진입 버튼(#b…">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-7.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결) — OpenArtShow 개발일지">
-<meta property="og:description" content="security-officer 종합 감사 결과 블로커·치명 0. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.">
+<meta property="og:title" content="★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319) — OpenArtShow 개발일지">
+<meta property="og:description" content="감독 방향전환: "걸어서 빌드"(아바타가 공간을 걸으며 배치)를 여러 차례 다듬다(벽 파묻힘·시야각·아바타 반투명·1인칭) 결국 접었다. 아바타를 시야에서 치우고 조망(orbit) 카메라 자유이동 + 마우스/터치 배치로 조작을 통일. 걸어서빌드 코드는 진입 버튼(#b…">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-7.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결)","datePublished":"2026-07-18","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-7.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319)","datePublished":"2026-07-18","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-7.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,11 +88,13 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결)</h1>
+<h1><span class="emo">🛠️</span>★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319)</h1>
 <p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-18</p>
-<p>security-officer 종합 감사 결과 <strong>블로커·치명 0</strong>. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.</p>
-<ul><li><strong>A-1 landing 프로필명 XSS 이스케이프</strong> (30cf0db): <code>renderNav</code>가 <code>p.name</code>·<code>p.initial</code>을 <code>innerHTML</code>에 직접 삽입 → 같은 파일 갤러리 카드처럼 <code>escapeHtml()</code> 적용. 실 OAuth 연동·<code>lu-auth-profile-v1</code> localStorage 조작 시의 <strong>잠복(저장형) XSS</strong> 차단(순수 출력 이스케이프, 회귀 없음).</li><li><strong>A-2 deploy.yml 서드파티 액션 SHA 핀</strong> (8001ade): <code>actions/checkout</code>·<code>actions/setup-node</code>·<code>peaceiris/actions-gh-pages</code>의 태그핀(@v4)을 <strong>커밋 SHA 핀</strong>으로 교체(태그 탈취·강제이동에 의한 배포 파이프라인 오염 차단). 배포 성공으로 무결성 실증.</li><li><strong>B-3 CSP 메타 5페이지</strong> (9f3c19a): CSP 없던 landing·studio·guide·about·design에 CSP 추가(<code>default-src 'self'</code>, 인라인 script는 sha256 핀, <code>object-src 'none'</code>·<code>base-uri 'none'</code>). 검수관이 studio의 <code>img-src https:</code> 누락(작가 외부이미지 미리보기 회귀) blocker를 발견·수정.</li></ul>
-<p><strong>감독 결정 대기(B-1·B-2)</strong>: artworks.js 데모 갤러리의 picsum 외부이미지(B-1, 보호파일), safeMediaUrl의 외부 URL 허용 + index.html CSP <code>https:</code> 완화(B-2, 위험수용§8-5) — "외부호스트0" 규율·외부 이미지 정책 변경이라 감독 판정 사안.</p>
+<p>감독 방향전환: "걸어서 빌드"(아바타가 공간을 걸으며 배치)를 여러 차례 다듬다(벽 파묻힘·시야각·아바타 반투명·1인칭) 결국 접었다. 아바타를 시야에서 치우고 <strong>조망(orbit) 카메라 자유이동 + 마우스/터치 배치</strong>로 조작을 통일. 걸어서빌드 코드는 진입 버튼(#bWalkToggle)만 숨겨 behind-flag로 보존(플래그 한 줄로 복원 가능).</p>
+<h3>통일된 조작</h3>
+<ul><li><strong>배치</strong>: 마우스(PC)/터치(폰) 클릭 (기존 pickPlacement→addPart 재사용)</li><li><strong>PC 시점</strong>: 방향키 카메라 팬 + 휠 거리줌 (기존)</li><li><strong>폰 시점</strong>: 조이스틱 카메라 팬(<code>orbitJoy</code> 신규 — 렌더루프 연속 팬) + 핀치 거리줌</li><li>줌은 PC·폰 모두 거리(rad) 줌으로 통일(FOV 줌 미도입).</li></ul>
+<h3>게이트</h3>
+<p>팀장 헤드리스 검증(walk 버튼 숨김·orbitJoy 팬·모바일 조이스틱 팔레트 비겹침) + executor 스모크 6/6 + release-reviewer 승인. 라이브 배포 완료.</p>
 </article>
 
 </div>

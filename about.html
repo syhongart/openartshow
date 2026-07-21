@@ -24,7 +24,6 @@
      따라서 vendor 폰트는 루트 기준 ./app/vendor/fonts/fonts.css로 참조(guide.html과 동일). 나머지 상대경로(브랜드·
      랜딩 ./index.html, 전시장 ./app/, 가이드 ./guide.html)도 전부 루트 기준으로 정합. 이 승격은 A단계 스모크 하네스가
      app/ 배포 시 CTA 404를 발견해 근본 해결한 것(deploy.yml에 cp web/about.html _site/about.html 추가). -->
-<link rel="stylesheet" href="./app/vendor/fonts/fonts.css">
 <style>
   :root {
     /* 팔레트 B — 액센트: 콘텐츠 영역(라이트/다크 전환) vs 톱바·히어로(항상 다크 몰입 고정) — guide.html과 동일 SSOT */
@@ -299,6 +298,7 @@
   }
   :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(87,51,255,0.4); }
 </style>
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-Dd13zEDU.css">
 </head>
 <body>
 
