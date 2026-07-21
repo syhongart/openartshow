@@ -1126,10 +1126,12 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const ADAPT_UP_HOLD = 20;     // 승급 전 고FPS 연속 틱(0.5s 집계 × 20 = 10초 지속).
   const ADAPT_WARMUP = 3;       // 스폰 후 이 초 동안 강등 보류(파셀/텍스처 로딩 스파이크 오판 방지).
   const dprAdapt = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-  // 상한 = 스폰 초기값(109-110과 동일식). 하한 = dpr*0.75(단 최소 1) — OS 배율(dpr>1) 화면에서
-  // 1.0 밑돌면 뿌옇게 보인다는 감독 제보 → 그 이하로는 절대 내리지 않는다.
+  // 상한 = 스폰 초기값(109-110과 동일식, 비soft는 min(2,dpr)로 캡). 하한 = 상한의 60%(단 최소 1.0)
+  // — 1.0 밑돌면 뿌옇다는 감독 제보로 하한을 1.0 이상 고정하되, dpr*0.75로 잡으면 dpr>2.667(아이폰
+  // Pro·최신 안드로이드 dpr=3 등)에서 하한이 상한(2)을 넘어 강등·승급 게이트가 영구 false가 되어
+  // 적응이 no-op가 된다(교차리뷰 지적). 상한 상대값(≤2 캡)으로 잡아 모든 dpr에서 하한<상한을 보장.
   const RATIO_CEIL = gpuInfo.soft ? Math.min(dprAdapt, 0.7) : Math.min(2, dprAdapt);
-  const RATIO_FLOOR = Math.max(1, dprAdapt * 0.75);
+  const RATIO_FLOOR = Math.max(1, RATIO_CEIL * 0.6);
   let liteMode = false;
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
 
