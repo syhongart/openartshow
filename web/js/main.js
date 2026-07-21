@@ -21,7 +21,7 @@ import { playOuch } from './hitfx.js';
 import { initFly } from './fly.js';
 import { ensureCanvasFonts, getCanvasFont } from './fonts.js';
 import { loadNotes, saveNotes, mergeNotes, makeNote } from './guestbook.js';
-import { GalleryStats } from './stats.js';
+import { GalleryStats } from './stats';
 import { VisitorLog, PhotoWall } from './feed.js';
 import {
   initUI,
