@@ -562,7 +562,7 @@ function injectStyles() {
   position: relative;
   border-radius: 18px;
   overflow: hidden;
-  background: #f6f1e3;
+  background: #201e28;  /* 딥 백드롭 하단색 — WebGL 첫 렌더 전/둥근모서리 밖 크림 플래시 방지 */
   box-shadow: inset 0 0 0 2px rgba(255,255,255,0.6), inset 0 0 0 3px rgba(211,167,101,0.3), inset 0 2px 10px rgba(40,30,10,0.12);
 }
 .lu-am-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
@@ -571,7 +571,7 @@ function injectStyles() {
    위에 멀티플라이로 얹는다 */
 .lu-am-stage::before {
   content: ''; position: absolute; inset: 0; pointer-events: none;
-  background-image: var(--am-grain), radial-gradient(120% 100% at 50% 24%, rgba(255,247,222,0) 48%, rgba(70,50,20,0.2) 100%);
+  background-image: var(--am-grain), radial-gradient(120% 100% at 50% 24%, rgba(255,247,222,0) 48%, rgba(60,45,20,0.10) 100%);
   background-repeat: repeat, no-repeat;
   mix-blend-mode: multiply;
 }
@@ -2859,6 +2859,21 @@ function buildChibiMaker() {
   let previewCamera = null;
   let previewRotator = null;
 
+  // 프리뷰 배경용 세로 그라데이션 텍스처 — 절차 생성(외부 에셋 0, CSP 'self' 준수). 폭 2px로
+  // 메모리 최소. NoToneMapping+SRGB 파이프라인이라 colorSpace를 SRGB로 지정해야 딥톤이 밝게 안 뜬다.
+  function makePreviewBackdrop(topHex, bottomHex) {
+    if (typeof document === 'undefined') return null;
+    const c = document.createElement('canvas');
+    c.width = 2; c.height = 256;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, topHex); g.addColorStop(1, bottomHex);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 256);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
   function ensurePreviewRenderer() {
     if (previewRenderer) return;
     previewRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -2877,7 +2892,13 @@ function buildChibiMaker() {
     previewRenderer.toneMappingExposure = 1.0;
     previewRenderer.outputColorSpace = THREE.SRGBColorSpace;
     previewScene = new THREE.Scene();
-    previewScene.background = new THREE.Color('#f6f1e3');
+    // 갤러리 백드롭 — 액자 안을 저채도 딥톤 전시 공간으로(감독 선택). 배경이 모달과 같은
+    // 크림 단색이면 "빈 액자"로 보였다. 세로 그라데(위 살짝 밝게→아래 깊게)로 깊이를 주고,
+    // 딥뉴트럴이라 유채색 캐릭터가 돋보인다. 텍스처는 절차 생성(외부 에셋 0, CSP 'self').
+    previewScene.background = makePreviewBackdrop('#34303e', '#201e28') || new THREE.Color('#201e28');
+    // 포그(배경 하단색과 동색)로 바닥 원경을 배경에 녹여 이음매 없는 사이클로라마를 만든다.
+    // near 4.5는 캐릭터(카메라 거리 ≈4.1) 뒤에서 시작해 본체는 안 잠긴다. 배경 텍스처는 포그 무관.
+    previewScene.fog = new THREE.Fog(0x201e28, 4.5, 8.5);
     // 프레이밍 — 발이 프레임 바닥(화면 세로 89%)을 딛고, 하트머리 정점(≈1.59m)도
     // 담기게 잡는다. lookAt.y를 0.85로 올려 캐릭터를 화면 아래로 내려 "바닥에 선"
     // 구도를 만든다(구 lookAt 0.64는 발이 세로 80%에 떠 발밑 여백이 넓어 공중부양처럼
@@ -2912,11 +2933,12 @@ function buildChibiMaker() {
     shadowLight.shadow.bias = -0.0005;     // VSM은 acne가 적어 작은 바이어스로 충분
     previewScene.add(shadowLight);
     previewScene.add(shadowLight.target); // target 기본 (0,0,0) — 캐릭터 발밑을 향함
-    // 그림자만 받는 투명 바닥 — 발 최하단(y≈0)에 맞춰 y=0. ShadowMaterial이라 그림자
-    // 없는 곳은 완전 투명(scene.background만 보임), 그림자 진 곳만 어둡게 얹힌다.
+    // 보이는 저채도 바닥(발 최하단 y≈0). 배경 하단(#201e28)보다 약간 밝은 무광 전시장 바닥이라
+    // 발밑 접지 그림자가 읽히고, 포그가 원경을 배경색으로 녹여 백드롭과 이어진다. receiveShadow로
+    // 그림자를 그대로 받는다(그림자맵은 shadowLight가 담당, 정합 불변).
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(6, 6),
-      new THREE.ShadowMaterial({ opacity: 0.34 }),
+      new THREE.MeshStandardMaterial({ color: 0x423e4c, roughness: 0.98, metalness: 0 }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.y = 0;
