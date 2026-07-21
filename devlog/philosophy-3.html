@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시) — OpenArtShow 개발일지</title>
-<meta name="description" content="두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.">
+<title>OpenArtShow의 철학 — 어둠은 프레임, 즐거움은 콘텐츠 — OpenArtShow 개발일지</title>
+<meta name="description" content=""밤하늘이 어두운 건 별을 빛나게 하기 위해서다 — 어둠은 우리의 프레임이고, 즐거움은 그 안에서 빛나는 것들(작품·아야모·사람)이다."">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-3.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시) — OpenArtShow 개발일지">
-<meta property="og:description" content="두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.">
+<meta property="og:title" content="OpenArtShow의 철학 — 어둠은 프레임, 즐거움은 콘텐츠 — OpenArtShow 개발일지">
+<meta property="og:description" content=""밤하늘이 어두운 건 별을 빛나게 하기 위해서다 — 어둠은 우리의 프레임이고, 즐거움은 그 안에서 빛나는 것들(작품·아야모·사람)이다."">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-3.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)","datePublished":"2026-07-19","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-3.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"OpenArtShow의 철학 — 어둠은 프레임, 즐거움은 콘텐츠","datePublished":"2026-07-14","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-3.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,23 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-19</p>
-<p>두 건을 라이브 고정 미술관(<code>syhongart 개인전</code>)에 반영했다.</p>
-<h3>1) 작품 12점 외부 이미지 → 자작 절차적 로컬 아트 (bbc8290)</h3>
-<p><strong>원인.</strong> 작품 aw-01~12가 외부 스톡사진 <code>https://picsum.photos/...</code>를 쓰고 있어 "외부 호스트 0"(자기완결)·프라이버시(방문자 브라우저가 외부 도메인으로 직접 요청 → 관람객 접속정보 유출) 규율을 위반. 조사 결과 위반은 picsum 12개가 유일(HDRI·폰트·벤더· featured 2점은 이미 로컬)이었다. <strong>개선.</strong> 감독 결정으로 자작 절차적 추상 아트 12점을 캔버스로 생성(각 작품 제목·설명 무드 기반 팔레트 — 능선·강줄기·안개·항구·노을 등, DESIGN.md 팔레트 B 조화). 5단 파이프라인(그라디언트→다중 워시→구조 모티프→그레인→비네트)으로 "한 작가의 연작" 통일감. <code>web/assets/gallery/aw-01~12.jpg</code>(각 ≤180KB). <code>artworks.js</code>(폴백)·<code>syhongart.json</code>(1순위) 두 파일의 imageUrl을 로컬 상대경로로 동시 교체 — 보호파일 artworks.js는 값·PICSUM 정의 제거만, 로직 무변경. <strong>교훈.</strong> 공용 함수(비네트)의 방사 감쇠가 구조 약한 1점(aw-05)에서 "중앙 원"으로 노출돼 플레이스홀더처럼 읽혔다 → 공용 함수는 두고 그 호출부만 비대칭 선형으로 교체 + 전용 모티프 추가로 해결(팀장 육안 판정 → 리튠).</p>
-<h3>2) 소프트웨어 렌더링 GPU 경고(모달·배지) 제거 (74058bd·53933a6)</h3>
-<p><strong>원인.</strong> GPU 가속 꺼짐/원격데스크톱 등 소프트웨어 렌더링 감지 시 "그래픽카드 없이 그리고 있어요 — 몹시 느립니다" 큰 모달 + 좌하단 "소프트웨어 렌더링 모드" 배지가 작품 감상을 가렸다. <strong>개선.</strong> 감독 지시로 둘 다 비활성(<code>showGpuNotice(…,false)</code> 호출 + <code>#lu-potato-badge</code> 생성 블록 제거). <strong>유지</strong>: (a) WebGL 자체 불가 시 치명 안내(fatal=true) — 없애면 3D가 안 뜨는 빈 화면만 남음, (b) <code>gpuInfo.soft</code> 기반 저사양 자동 경량화(해상도 배율·그림자 off· 무톤매핑·fog 삭감·potato 모드) — 경고 표시만 껐고 성능 최적화는 그대로.</p>
-<p><strong>게이트(공통).</strong> 감독 승인(보호파일 팀장 서명) → executor 독립 스모크(picsum 외부요청 0· 12액자 로드·배너/배지 미표시·potato 유지·fatal 온전 실측) → 검수관 교차리뷰 승인(보호파일 로직 무변경·2파일 동기화·최적화 무손상) → 팀장 실물 육안(컨택트시트·미술관 액자) → 감독 실물 보고 → deploy Actions success.</p>
+<h1><span class="emo">🧭</span>OpenArtShow의 철학 — 어둠은 프레임, 즐거움은 콘텐츠</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-14</p>
+<blockquote>"밤하늘이 어두운 건 별을 빛나게 하기 위해서다 — 어둠은 우리의 프레임이고, 즐거움은 그 안에서 빛나는 것들(작품·아야모·사람)이다."</blockquote>
+<p>이 장은 날짜가 지나도 위로 흘려보내지 않는다. <strong>방향을 잃을 때 돌아오는 자리</strong>다.</p>
+<h3>우리가 선택한 것 — 프리미엄 다크라는 무대</h3>
+<p>OpenArtShow는 '프리미엄 다크 몰입'을 브랜드의 무대로 삼는다. 몰입 공간(홈·대문·3D)의 앵커는 깊은 남색빛 다크(<code>#14151A</code>)다. 다만 이건 <strong>무대의 색이지, 화면을 온통 검정으로 칠하라는 뜻이 아니다.</strong> 읽는 화면(스튜디오·가이드)은 밝은 아이보리로 간다. 시스템은 처음부터 두 모드다.</p>
+<h3>왜 어둠(무대)인가</h3>
+<ul><li><strong>작품이 빛난다.</strong> 어두운 벽 위에서 이미지와 색이 스스로 발광한다. 미술관이 벽을 어둡게 칠하고 작품에만 빛을 쏘는 것과 같은 원리다.</li><li><strong>이것이 차별화다.</strong> 대부분의 메타버스는 가볍고 밝고 네온으로 간다. 우리가 정제된 무대를 선택하는 순간 "이 메타버스는 뭔가 다르다"가 된다.</li><li><strong>예술을 진지하게 대한다는 약속.</strong> 정제된 무대는 "여기서는 작품이 주인공"이라는 태도다.</li></ul>
+<h3>즐거움은 어디에 사는가 — 무대가 아니라 그 위의 빛</h3>
+<p>무대를 더 어둡게 만드는 것으로 생기를 얻는 게 아니다. 생기는 <strong>무대 위에서 빛나는 것들</strong>에서 온다:</p>
+<ul><li><strong>키포인트 컬러</strong> — 코랄·시안·바이올렛이 조우·축하·입장의 순간에 짧고 강하게 터진다. 상시 밝기가 아니라 순간 채도다(액센트 면적은 절제, 순간엔 과감).</li><li><strong>아야모(캐릭터)</strong> — 무대 위에서 더 또렷하고 사랑스럽게 튄다.</li><li><strong>작품과 사람</strong> — 대비가 만든 발광, 함께 걷는 순간.</li></ul>
+<h3>지켜야 할 운영 원칙</h3>
+<ul><li><strong>첫 90초에 생기를 증명한다.</strong> 입장·온보딩의 순간에 아야모와 경쾌한 모션을 최전면에. 첫인상에서 생명력을 보이면 무대는 '무게'가 아니라 '무대'가 된다.</li><li><strong>모션은 살아 있어야 한다.</strong> 이징에 탄성·바운스를 허용한다. 럭셔리는 느림이 아니다.</li><li><strong>즐거움의 순간엔 키포인트 컬러를 순간 투하한다.</strong> 조우·축하·입장에 코랄·시안을 0.3~0.6초 짧고 강하게.</li><li><strong>온기의 예외는 함부로 늘리지 않는다.</strong> 꾸미기(캐릭터 디자인) 모달의 따뜻한 무드는 의도된 예외다.</li></ul>
+<h3>흔들릴 때의 규칙</h3>
+<p>톤을 바꾸고 싶은 충동이 올 때, 먼저 맨 위의 한 문장으로 우리를 붙잡는다. 방향 전환은 <strong>감이 아니라 데이터로만</strong> 연다 — "무거워서 떠난다"를 실측(첫 세션 이탈률·체류시간)이 보여줄 때 재심한다.</p>
+<h3>이 결정의 출처</h3>
+<p>2026-07-14, 감독의 물음("다크가 고급스러운데 즐거움엔 무겁지 않을까")에서 출발해 부팀장·디자이너·리서처의 검토를 거쳐 팀장이 판정했다. 어둠은 무대, 화면의 생기는 키포인트 컬러 — 이 둘을 섞지 않는다.</p>
 </article>
 
 </div>
