@@ -1,7 +1,76 @@
 // OpenArtShow Metaverse — 공통 설정
 // 소유자: config.js / scene.js 담당 에이전트
 
-export const ROOM = { size: 50, wallHeight: 6, bound: 24 }; // (구) 단층 홀 — 실외 지형 스케일 기준으로만 사용
+// ---------------------------------------------------------------------------
+// 타입 정의 — P1-④(main-* 컨트롤러 타입화)가 import해 재사용한다.
+// floors id는 유니온(FloorId)으로 좁혀 slabHoles 키·spawn.floor·artworkSlots[].floor가
+// 전부 동일 유니온을 공유하도록 강제(불일치 시 tsc 에러). 데이터가 4개 층으로 완전 일관.
+// ---------------------------------------------------------------------------
+export type FloorId = 'b1' | 'f1' | 'f2' | 'roof';
+
+export interface Room {
+  size: number;
+  wallHeight: number;
+  bound: number;
+}
+
+export interface Floor {
+  id: FloorId;
+  y: number;
+  name: string;
+}
+
+export interface Stair {
+  id: string;
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+  yFrom: number;
+  yTo: number;
+}
+
+export interface SlabHole {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
+export interface ArtworkSlot {
+  floor: FloorId;
+  x: number;
+  z: number;
+  rotY: number;
+  featured?: boolean;
+  size?: { w: number; h: number };
+}
+
+export interface Spawn {
+  x: number;
+  z: number;
+  floor: FloorId;
+  ry: number;
+}
+
+export interface Building {
+  // 풋프린트 (모든 층 공통, 벽 중심선 기준)
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  wallT: number;
+  slabT: number;
+  storyH: number;
+  clearH: number;
+  floors: Floor[];
+  stairs: Stair[];
+  slabHoles: Record<FloorId, SlabHole[]>;
+  artworkSlots: ArtworkSlot[];
+  spawn: Spawn;
+}
+
+export const ROOM: Room = { size: 50, wallHeight: 6, bound: 24 }; // (구) 단층 홀 — 실외 지형 스케일 기준으로만 사용
 export const EYE_HEIGHT = 1.7;
 
 // ---------------------------------------------------------------------------
@@ -9,7 +78,7 @@ export const EYE_HEIGHT = 1.7;
 // scene.js(건축), player.js(이동/충돌), artworks.js(작품 슬롯), main.js(스폰/투어)가
 // 전부 이 데이터를 소비한다. 좌표계: 바닥 y=층 slab 상면, 실내 x/z는 벽 안쪽 기준.
 // ---------------------------------------------------------------------------
-export const BUILDING = {
+export const BUILDING: Building = {
   // 풋프린트 (모든 층 공통, 벽 중심선 기준)
   minX: -11, maxX: 11, minZ: -8, maxZ: 8,
   wallT: 0.3,       // 벽 두께
