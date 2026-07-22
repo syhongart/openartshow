@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-07-22 · P1-② 보안 — CSP connect-src 축소 + valuation.yml 액션 SHA핀
+
+**원인.** 9축 점검의 보안축(A 92) 권고 2건. ①미술관(index) CSP `connect-src 'self' https: wss:`가
+과도(동일 P2P 쓰는 world.html은 `0.peerjs.com`만으로 타이트) ②valuation.yml 액션 가변태그(공급망 표면).
+팀장 판정으로 5번 내부(CSP+SHA핀)는 1PR 허용(워크플로 파일이라 라이브 렌더 격리 무관).
+
+**개선.** ①`web/index.html`의 CSP meta `connect-src`를 `'self' https://0.peerjs.com wss://0.peerjs.com`
+로 축소(world.html과 문자열 동일). ②valuation.yml `checkout@v4`·`setup-node@v4`를 deploy.yml·ci.yml과
+동일 SHA로 핀(v4.2.2·v4.4.0, 주석 병기). connect 정의는 소스 meta가 SSOT(vite reconcileHtmlCsp는
+script-src만 재작성).
+
+**결과.** 게이트 통과 — 검수관 승인(**connect 대상 전수: PeerJS 시그널링만·STUN/TURN은 WebRTC라 CSP
+통제 밖·외부 이미지/영상은 img/media-src 관할·galleries fetch는 self·기타 connect API 0건 → 축소가 기능
+차단 0**, dist 정합 실측, SHA핀 3워크플로 바이트 일치, 타 CSP 지시어 무변경), 독립 스모크(6/6 — app/index
+CSP violation 0, dist index·world connect-src 동일, 콘솔0). 권고(비블로커): LU_PEER_OPTS 셀프호스팅 전환
+시 connect-src 갱신(기존 패턴, world.html에도 경고).
+
+**교훈.** CSP 축소는 "무엇을 막느냐"가 아니라 "정상 트래픽 전부를 여전히 허용하느냐"의 전수 증명이다 —
+connect-src는 fetch/XHR/WS/EventSource/beacon만 통제하고 WebRTC ICE(STUN/TURN)·이미지(img-src)·비디오
+(media-src)는 별도 지시어 관할임을 정확히 구분해야 광역 `https:`를 안전하게 좁힌다. 이미 타이트하게
+라이브 동작 중인 대조군(world.html)이 있으면 그게 검증된 정답값이다.
+
+---
+
 ## 2026-07-22 · P1-① 접근성 — skip-link + landmark (9축 점검 후속)
 
 **원인.** 9축 종합 점검에서 접근성(C+)의 [중] 결함으로 "skip-link 전 페이지 부재·landmark role 부재"가
