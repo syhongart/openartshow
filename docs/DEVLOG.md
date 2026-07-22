@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-07-22 · ★★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독)
+
+**원인.** studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 `<script>`가 CSP
+`script-src` sha256 핀을 요구. 감독 "C-2→C-3" 지시.
+
+**개선(S0 + S1~S4).**
+- **S0(인라인 외부화 + CSP 핀 제거)**: 인라인 `<script>` IIFE(834줄)를 `studio-main.ts`로 통째
+  이동 + `<script type=module src>` 1줄 교체. 인라인 실행 script 0 → **CSP `script-src 'self'` 수렴**
+  (핀 제거·cspReconcile 자동 재작성). = SRP + CSP 단순화 이중이득.
+- **S1~S4(재분해 + DI)**: studio-main.ts(835줄 통째)를 **5모듈로 분해** — `studio-plan.ts`(45,
+  플랜·한도)·`studio-image.ts`(71, 내장·모달)·`studio-storage.ts`(166, 저장·**갤러리 코덱 SSOT**)·
+  `studio-form.ts`(605, 렌더·이벤트)·`studio-main.ts`(64, 엔트리). **StudioContext DI**로 단일 `state`
+  참조 공유(복사0 — form 변이를 storage가 같은 참조로 직렬화).
+
+**⚠️ 로드맵 정정(space.ts 부적합).** 로드맵 C-2 문구는 "저장을 space.ts 계약 재사용"이라 했으나,
+실측 결과 space.ts는 **3D 빌더 "공간" 모델**(shell/parts)이고 studio는 **"갤러리 JSON"**(id/name/
+artworks)이라 무관 — space.ts import 안 함. **진짜 DRY 대상은 갤러리 코덱**(studio 인코더 ↔
+artworks.js 디코더의 `#gz=`/`#gd=` wire format). artworks.js가 **보호4파일**이라 이번엔 studio-storage가
+코덱 SSOT를 소유하되 **바이트 호환 계약만 고정**(단위테스트 파리티), 공유 코덱 이관은 보호해제 후 별건.
+
+**결과.** S0 + S1~S4 게이트 전부 통과(독립 스모크 + 검수관, 각 배포). studio.html 1,697줄 인라인
+혼재 → **6파일(html+5 .ts)** SRP 분해 + `script-src 'self'`. `STORAGE_KEY`·`PLAN_KEY`·코덱 wire
+format **1바이트 불변**(사용자 드래프트·공유링크 보호), **보호4파일(artworks.js 포함) 무변경**. 단위
+테스트 108→**116**(+8: 코덱 라운드트립·loadDraft 정규화). 라이브 studio 콘솔0·CSP0.
+
+**후속(비블로커).** studio 5모듈 전부 `@ts-nocheck`(순수 이동+DI 우선, strict화 별도) — C-1 ui-hud와
+함께 strict 정리 트랙(#96 계열). 공유 코덱 artworks.js 이관은 보호4파일 개선(C-3/#90)과 결합.
+
+**교훈.** 로드맵 문구도 실측 앞에선 정정 대상 — "space.ts 재사용"을 맹종했으면 무관한 스키마를 억지
+결합할 뻔했다. 인라인 추출은 SRP뿐 아니라 CSP 핀 소멸(공격면·유지보수 이중 감소)을 덤으로 준다.
+
+---
+
 ## 2026-07-22 · ★★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C")
 
 **원인.** 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = `ui.js` 단일 파일에 HUD·아바타 편집기·
