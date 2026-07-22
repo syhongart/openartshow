@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-07-22 · ★★ C단계 C-3(2) — chibi.js(2,678줄) 6분해 + 검수관이 라이브 크래시 차단
+
+**원인.** chibi.js = 아바타 3D 생성(사람·동물·robot·ghost·의상). 초대형 SRP 위반. 소비자 7곳
+(world-gen·world-boot·ui-hud·builder-walk·avatar·npc·ui-avatar-editor) — **보호4파일 무소비**.
+
+**개선(6분해 + 배럴).** `chibi-schema.ts`(390, 저장 look SSOT)·`chibi-color.ts`(16)·`chibi-anim.ts`
+(56)·`chibi-materials.ts`(237, `_toonRamp` 싱글턴)·`chibi-face.ts`(475, Canvas2D)·`chibi-builder.ts`
+(1,525, buildChibi+update 클로저) + 배럴 `chibi.ts`(명시 31 re-export). 저장 look(DEFAULT_CHIBI·
+normalizeChibi·encode/decode·`chibi:` 프리픽스) 1바이트 불변, 순환0, 소비자 무수정.
+
+**★ 검수관이 라이브 아바타 전체 크래시를 사전 차단(핵심 사건).** 분해 시 비export 상수 3개
+(`NONHUMAN`·`FACE_SHAPE_DEF`·`SPECIES_HEAD_BASE`)가 **export 승격 누락** → face/builder가 참조하는데
+import 안 됨 → `buildChibi()`/`drawFaceCanvas()` **런타임 ReferenceError(아바타 생성 100% 크래시)**.
+정의 라인은 이동됐으나 **참조 연결이 끊긴** 케이스라 byte 멀티셋 대조는 통과했다. 결정적으로 이 회귀는
+**@ts-nocheck(tsc 스킵) + eslint `no-undef:off` + `vite build` 성공 + 정적 대체 스모크** 어느 것도
+못 잡았다 — 검수관이 **6모듈에 no-undef 스코프를 임시 활성**(정확히 6건 검출)하고 **buildChibi를 실제
+호출**해 반려로 잡았다. 수정(export 3 + import 2, 로직 무변경)→ no-undef 0·런타임 9/9 재실증→ 재검수
+승인→ 배포.
+
+**게이트 규율 강화(이 사건의 산물).** ① **@ts-nocheck 모듈 분해는 no-undef 스코프 전수 검사를 게이트에
+편입**(정적 사각 차단). ② **렌더 모듈 스모크는 "정적 대체" 금지 — 실제 buildChibi/씬 생성 런타임 호출**
+필수. (이미 배포된 space-render/studio/ui는 실제 헤드리스 렌더 콘솔0 통과 → 이 유형 회귀 없음 확인.
+chibi만 스모크가 정적 대체라 놓쳤고 검수관이 잡았다.)
+
+**교훈.** "byte 무결성"은 라인이 어딘가 존재함만 증명하지 **cross-module 참조가 연결됐는지는 증명하지
+않는다.** 순수 이동 분해의 진짜 위험은 로직 변조가 아니라 **끊긴 참조** — @ts-nocheck가 그 안전망(tsc)을
+끈 상태였다. 제3자 교차검수(구현자≠검증자)가 정적 게이트의 사각을 메운 정확한 실례.
+
+---
+
 ## 2026-07-22 · ★★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)
 
 **원인.** space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질
