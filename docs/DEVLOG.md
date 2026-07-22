@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-07-22 · C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)
+
+**원인.** 3차 두 번째 군(도슨트 투어). 사진 군(격리 단발함수)과 달리 투어는 **animate 게임루프에
+매 프레임 결합**돼 있다(자동진행 판정 `tourStayElapsed += delta`). 감독 판단으로 남은 기능군(투어·
+셀프뷰·멀티플레이어)이 전부 게임루프 결합임이 드러나, "읽기 getter + 위임 wrapper" 패턴이 통하지
+않는다. 상태를 write하므로 **상태 소유권을 컨트롤러로 이전**하는 SOLID 정석으로 진행(감독 확정).
+
+**개선.** `main-tour.ts`(`createTourController(ctx)`)로 투어를 분리(main.js 1,191→1,158). 핵심:
+- **상태 SSOT 이전**: `touring`·`tourIndex`·`tourAutoOn`·`tourWaiting`·`tourStayElapsed` + 임계
+  상수 `TOUR_STAY_SECONDS`를 main.js에서 **제거**하고 컨트롤러 클로저가 유일 소유. 외부는 `isTouring()`·
+  `getIndex()` getter로만 조회 → main.js에 투어 상태 코드 참조 0(이중 상태 불가).
+- **게임루프 tick 위임**: animate의 자동진행 블록을 `tourController.tick(delta)` 한 줄로 치환.
+  판정식(`touring && tourWaiting && tourAutoOn && !getTween() && !isLightboxOpen()`)·delta 누적·
+  임계·`next()` 호출 순서 **원본과 1바이트 동치**. `!tween`은 `getTween()` getter로 최신값 재조회
+  (stale 방지), **tick 본문 내 객체·클로저 할당 0**(프레임 GC 압박 없음).
+- **write 위임**: `exitTour`의 `tween=null` 즉시정지는 getter로 쓰기 불가 → `clearTween()` 함수 주입.
+- **공통 경로 협조**: `handleArtworkSelect`의 투어 분기를 `syncOnSelect`(트윈 전 idx·대기 세팅)/
+  `onArrive`(도착 콜백 tourBar+대기+카운트리셋)로 위임, startTween 전후 순서 원본 보존.
+- exports/HUD 콜백(`onNext:tourNext` 등)은 wrapper 5개로 심볼·시그니처 무변경.
+
+**결과.** 게이트 통과 — 검수관 **승인**(상태 이전 정확·tick 1바이트 동치·clearTween 클로저 정합·
+handleArtworkSelect 전이 보존·exports 시그니처·초기화 순서 전부 통과, 블로커 0), 독립 스모크
+(**6/6 + 투어 경로 7/7**, app/index·world 실렌더 콘솔0, tick 매 프레임·자동진행·exit·next/prev·
+카드 동기화 크래시 0). player/artworks/config.js·index.html·CSP 무수정, test 116/116.
+
+**교훈.** 게임루프 결합 함수의 분리는 "위임 wrapper"가 아니라 **상태 소유권 이전**이 정답이다 —
+매 프레임 실행 코드를 컨트롤러 밖에 값 캡처로 두면 stale로 자동진행이 멈춘다. 두 규율을 못 박았다:
+①tick 판정식은 원본과 **1바이트 동치**로 증명(게임루프 미묘한 조건 변화가 최악의 회귀). ②컨트롤러가
+소유 못 하는 외부 상태(tween)의 **읽기는 getter·쓰기는 함수**로 명확히 나눈다(양방향을 getter 하나로
+뭉개면 안 됨). "완전 위임" 리팩터답게 stale 주석(main.js:660 `touring`)도 amend로 정리했다.
+
+---
+
 ## 2026-07-22 · C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)
 
 **원인.** 감독 로드맵 3단계(기능별 컨트롤러). 3차 함수 14개는 2차 핸들러와 달리 전역 상태를
