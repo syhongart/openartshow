@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 2차: DOM 이벤트 핸들러 모듈화. strict 타입은 후속.
 // main-events.js — DOM 이벤트 핸들러(onKeyDown·onWindowResize·onBeforeUnload)를
 //   main.js에서 추출. 순수 이동이 아니라 "핸들러 로직 모듈화 + ctx 주입" 방식:
 //   재대입되는 module-scope let(camera·renderer·mp·entered·touring)은 값 캡처가
@@ -7,9 +6,35 @@
 //   ⚠️ viewCurrentArtwork·capturePhoto·toggleSelfView·toggleTour·exitTour 등
 //   "기능 컨트롤러"는 main.js에 그대로 두고 ctx로 참조만 받는다(3차 이동 대상).
 //   키 매핑·조건·분기 순서, 리사이즈 계산, 언로드 정리 순서는 원본과 1바이트 동일.
-export function createEventHandlers(ctx) {
+//   strict 타입 부여(P1-④ PR-1): ctx 주입 계약을 구조적 최소 인터페이스로 명시.
+//   three/config 구상 타입에 의존하지 않고 실제로 호출하는 멤버만 선언 → 런타임 무변경.
+
+// main.js의 eventsCtx가 주입하는 계약(사용 멤버만 최소 선언).
+interface EventsCtx {
+  getCamera(): { aspect: number; updateProjectionMatrix(): void };
+  getRenderer(): { setSize(width: number, height: number): void };
+  getMp(): { dispose(): void } | null | undefined;
+  isEntered(): boolean;
+  isTouring(): boolean;
+  isLightboxOpen(): boolean;
+  isShareModalOpen(): boolean;
+  isArtworkListOpen(): boolean;
+  isGuestbookOpen(): boolean;
+  viewCurrentArtwork(): void;
+  toggleArtworkList(): void;
+  toggleTour(): void;
+  toggleGuestbook(): void;
+  flashShutter(): void;
+  capturePhoto(): void;
+  toggleSelfView(): void;
+  tourPrev(): void;
+  tourNext(): void;
+  exitTour(): void;
+}
+
+export function createEventHandlers(ctx: EventsCtx) {
   // 키보드 단축키 디스패처
-  function onKeyDown(e) {
+  function onKeyDown(e: KeyboardEvent) {
     if (e.code === 'KeyE') {
       ctx.viewCurrentArtwork();
       return;

@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 1차 순수 leaf 이동, strict 타입은 후속.
 // main-gpu.js — GPU 자가 진단 프로브(순수 조회: 1회용 캔버스로 렌더러명·소프트
 //   웨어 판별만 하고 결과 객체를 반환, DOM/전역 상태 미수정). main.js에서 추출.
 //   ⚠️ showGpuNotice(DOM 배너 생성·body 삽입)는 순수 아님 → main.js 잔류(1차 제외).
@@ -12,7 +11,7 @@ const SOFT_GPU_RE = /swiftshader|llvmpipe|softpipe|software (?:rasterizer|render
 // 컨텍스트 생성 시점 옵션을 결과에 따라 정해야 하므로).
 // 2차 신호: failIfMajorPerformanceCaveat 컨텍스트가 거부되면 브라우저 스스로
 // "심각한 성능 제약"을 인정한 것 — 렌더러명이 가려진 환경도 잡는다.
-export function probeGpu() {
+export function probeGpu(): { name: string; soft: boolean } {
   const out = { name: '', soft: false };
   try {
     const c1 = document.createElement('canvas');

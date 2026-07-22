@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 1차 순수 leaf 이동, strict 타입은 후속.
 // main-photo-util.js — 사진 캡처 후처리 순수 유틸: dataURL→Blob 동기 변환,
 //   하단 워터마크 합성, canvas 자간 렌더, 공유 URL 산출. 인자(ctx/dataUrl)와
 //   window.location 조회만 쓰고 렌더러/scene/전역 상태 미접근. main.js에서 추출.
@@ -6,7 +5,7 @@
 import { getCanvasFont } from './fonts.js';
 
 // dataURL(base64 PNG) → Blob 동기 변환 — toBlob 콜백 미발화 환경 대응
-export function dataUrlToBlob(dataUrl) {
+export function dataUrlToBlob(dataUrl: string): Blob {
   const base64 = dataUrl.split(',')[1];
   const bin = atob(base64);
   const bytes = new Uint8Array(bin.length);
@@ -15,7 +14,7 @@ export function dataUrlToBlob(dataUrl) {
 }
 
 // 캡처 이미지 하단에 그라디언트 + 전시명(좌) + OpenArtShow 브랜드/URL(우) 워터마크를 합성한다.
-export function drawWatermark(ctx, w, h, galleryName) {
+export function drawWatermark(ctx: CanvasRenderingContext2D, w: number, h: number, galleryName: string): void {
   const bandHeight = Math.max(90, Math.round(h * 0.14));
   const grad = ctx.createLinearGradient(0, h - bandHeight, 0, h);
   grad.addColorStop(0, 'rgba(0,0,0,0)');
@@ -47,7 +46,7 @@ export function drawWatermark(ctx, w, h, galleryName) {
 
 // canvas 2D는 표준 letter-spacing을 지원하지 않는 브라우저가 많아, 글자를 하나씩
 // 그려서 우측 정렬 기준으로 자간을 직접 적용한다.
-function drawLetterSpacedRight(ctx, text, rightX, y, spacing) {
+function drawLetterSpacedRight(ctx: CanvasRenderingContext2D, text: string, rightX: number, y: number, spacing: number): void {
   const chars = Array.from(text);
   const widths = chars.map((ch) => ctx.measureText(ch).width);
   const total = widths.reduce((sum, cw) => sum + cw, 0) + spacing * (chars.length - 1);
@@ -64,7 +63,7 @@ function drawLetterSpacedRight(ctx, text, rightX, y, spacing) {
 
 // 공유용 URL — 기본은 현재 주소(#gd= 공유 링크 포함). 해시에 인코딩된 전시 데이터가
 // 너무 길면(2000자+) SNS 인텐트/미리보기에서 깨지기 쉬우므로 같은 경로의 landing.html로 대체한다.
-export function getShareUrl() {
+export function getShareUrl(): string {
   const href = window.location.href;
   if (href.length < 2000) return href;
   return window.location.origin + window.location.pathname.replace(/index\.html$/, 'landing.html');

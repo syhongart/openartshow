@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 1차 순수 leaf 이동(byte 무결성), strict 타입은 후속.
 // main-spec.js — 품질 사다리 학습(localStorage)·저사양(lite) FPS 임계·렌더 픽셀
 //   예산 상수. main.js에서 verbatim 추출(C-3 main 분해 1차). 공유 상태 무접근 leaf.
 //   ※ spec 승급 카운터 specFastTicks는 4차 A군에서 perfGovernor(main-perf.js) 소유로 이전됨.
@@ -20,7 +19,7 @@ const SPEC_KEY = 'lu-spec-v2';
 // gen3: 소프트웨어 렌더링(WARP) 세션에서 학습된 low가 가속을 켠 뒤에도 남아
 // 화면이 뿌옇던 문제 + 천장/나무 지오메트리 병합(드로우콜 -60%) 반영 재평가.
 const PERF_GEN = 4;
-export function readSpec() {
+export function readSpec(): 'low' | 'high' | null {
   try {
     const raw = localStorage.getItem(SPEC_KEY);
     if (raw) {
@@ -33,7 +32,7 @@ export function readSpec() {
     return null;
   }
 }
-export function writeSpec(v) {
+export function writeSpec(v: 'low' | 'high' | null): void {
   try {
     if (v) localStorage.setItem(SPEC_KEY, JSON.stringify({ v, gen: PERF_GEN }));
     else localStorage.removeItem(SPEC_KEY);
