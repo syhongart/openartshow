@@ -1,8 +1,7 @@
-// @ts-nocheck — 개명 전 원본(ui.js)은 tsconfig checkJs:false 로 타입 미검사였다.
-//   .ts 개명으로 strict 대상이 되나, 대형 HUD 셸의 strict 정리는 C-1(ui.js 분해)
-//   범위 밖 후속 과제다. 순수 개명 시점엔 파일 단위로 타입체크를 보류한다
-//   (tsconfig 주석의 "파일 단위 점진"과 정합). 로직·값 1바이트 무변경.
 // web/js/ui-hud.ts (C-1 단계4에서 ui.js → ui-hud.ts 로 개명. 셸 + HUD 빌더 + Public API)
+// 타입: 후속 #96에서 @ts-nocheck 제거 완료 — strict 통과. 타입 주석·지역 캐스팅만
+//   더했고 런타임 로직은 무변경이다. els는 15개 빌더 결과가 런타임 조립되고 프로퍼티가
+//   추가 주입되는 이질 컨테이너라 any로 표현한다(각 빌더 반환은 지역에서 타입 검증됨).
 // OpenArtShow Museum — UI 모듈 (DOM/CSS 전부 JS에서 동적 생성)
 // MoMA 미니멀 미학: Helvetica, 화이트/블랙, 골드(#5f9e7d) 포인트
 
@@ -861,7 +860,9 @@ function buildGuestbookPanel() {
   // 탭을 원하는 높이로 치울 수 있게 한다. 6px 미만 이동은 탭(열기)으로 처리.
   const GBTAB_TOP_KEY = 'lu-gbtab-top-v1';
   try {
-    const saved = parseFloat(localStorage.getItem(GBTAB_TOP_KEY));
+    // getItem은 string|null — null이면 '' 로 대체(parseFloat(null)·parseFloat('') 모두
+    // NaN이라 아래 Number.isFinite 가드에서 동일하게 걸러진다. 런타임 결과 불변).
+    const saved = parseFloat(localStorage.getItem(GBTAB_TOP_KEY) ?? '');
     if (Number.isFinite(saved)) tab.style.top = clampTabTop(saved) + 'px';
   } catch (_) { /* 무시 */ }
 
