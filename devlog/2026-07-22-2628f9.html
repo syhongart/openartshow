@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 감독 결정: SOLID(유지보수) 본질인 C단계(초대형 파일 분해) 착수 전, 그 대규모 분해를 잡을">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-eb7dcb.html">
+<title>C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-2628f9.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 감독 결정: SOLID(유지보수) 본질인 C단계(초대형 파일 분해) 착수 전, 그 대규모 분해를 잡을">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-eb7dcb.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-eb7dcb.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-2628f9.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-2628f9.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,17 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">🛠️</span>안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행)</h1>
+<h1><span class="emo">📱</span>C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 감독 결정: SOLID(유지보수) 본질인 C단계(초대형 파일 분해) 착수 전, 그 대규모 분해를 잡을 <strong>회귀 안전망(스모크 게이트)부터 정확히</strong>. C-1 ui.js는 3,842줄 — 회귀 위험 최대라 게이트가 헐거우면 분해가 위험하다.</p>
-<p><strong>개선.</strong></p>
-<ul><li><strong>E2/E1 동등성 검사 폐기</strong>(<code>scripts/smoke/equivalence.mjs</code> 삭제 + run/assemble/config 정리). E2는 "web직조립(구 라이브) vs vite조립" 동등성으로 Vite 전환을 증명하는 <strong>전환 증명 전용</strong> 검사였는데, B-2b 배포로 라이브가 vite가 되고 origin/main 랜딩군이 vite전제라 web직조립이 의도적으로 깨져 <strong>baseline 무효화 → 항상 FAIL</strong>(매 게이트 소음). 목적 달성했으니 제거. E1(sitemap)도 같은 baseline 의존이라 함께 제거 — URL 검증은 검사3(핵심파일)·가드B(내부링크 200)가 대체. scripts/smoke는 _site 미포함 → <strong>라이브 무영향</strong>.</li><li><strong>리졸브 방식 일원화</strong>(소비자 12파일 <code>.js</code> 확장자 재부착). space/ytembed/space-presets 비보호 소비자의 확장자 없는 import를 <code>.js</code>로 통일 → 전 web/js 상대 import가 <strong>확장자 유지+<code>tsJsFallback</code> 폴백 경유</strong>로 일관. 확장자 유지 방향인 이유: main.js(보호파일)가 이 방식이라 <strong>유일하게 보호4파일 무변경</strong>인 통일 방향(확장자 제거 통일은 main.js 수정 필요=불가).</li></ul>
-<p><strong>결과.</strong> 독립 스모크 — 보호4파일 무변경, <strong>smoke:vite 전항 PASS(FAIL 항목 0</strong> — E2 소음 소멸), <strong>dist 바이트 동일</strong>(리졸브 일원화 무영향 실증), 라이브 3페이지 콘솔0·CSP0, typecheck 0·test 108/108. 게이트가 clean해져 C단계 대규모 분해의 회귀 감지 신뢰 확보. <strong>다음: C단계 SOLID 분해</strong>(C-1 ui.js 3,842줄 → ui-hud/ui-avatar-editor/ui-dom + 배럴 ui.ts로 main.js 무수정 보존).</p>
-<p><strong>교훈.</strong> "SOLID로 유지보수"를 안전하게 하려면 분해 자체보다 <strong>분해를 검증할 그물</strong>을 먼저 정확히. 낡은 검사(E2)의 만성 FAIL은 진짜 회귀를 가리는 소음 — 목적을 다한 검사는 폐기가 곧 게이트 품질.</p>
-<p><strong>부수 발견(#94 이월).</strong> smoke:vite의 <strong>E2 동등성 검사가 B-2b 배포로 무효화</strong>됐다: E2는 "origin/main web직조립(=B-2b 이전 라이브) vs vite조립"을 비교하는데, B-2b가 origin/main 랜딩군을 vite전제로 조정해 web직조립이 의도적으로 깨진다(B-2b 설계 근거 그 자체). 즉 "전환 증명" 전용 검사가 전환완료로 baseline을 상실 — 폐기/재정의 필요(검수관이 origin/main worktree 독립 실행으로 사전존재 확인).</p>
-<p><strong>교훈.</strong> leaf 전환의 안전성은 "타입은 런타임에서 사라진다"는 성질에서 나온다 — dist 바이트 동일이 그 수학적 증거. 확장자 리졸브처럼 도구 경계에서 막히면 배포기를 침습하는 커스텀 플러그인보다 소비자측 국소 조정(확장자 생략)이 롤백단위를 작게 유지한다.</p>
+<p><strong>원인.</strong> main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분. 감사 결과 <strong>코어 분해는 위험≫가치</strong>(export 0=소비자 없음, 공유 let ~40개, 미술관 전체다운 리스크). 감독 결정: 보류가 아니라 <strong>4단계 점진 로드맵</strong> — 1차 순수유틸 → 2차 이벤트핸들러 → 3차 기능컨트롤러 → 4차 "초기화·조립만 main.js 잔류"(Composition Root 이상형).</p>
+<p><strong>개선(1차, 순수 함수만).</strong> <code>main-math.ts</code>(easeInOutCubic·lerpAngle·djb2·resolveAutoTheme)· <code>main-spec.ts</code>(readSpec·writeSpec·품질 상수)·<code>main-gpu.ts</code>(probeGpu)·<code>main-photo-util.ts</code>(dataUrlToBlob· drawWatermark·drawLetterSpacedRight·getShareUrl) = 162줄 추출(1,418→1,256). <strong>순수 기준 엄격</strong>: DOM 미수정·모듈 let 미접근·scene/renderer/player 미참조·이벤트 미등록·입력→반환만. <strong>showGpuNotice(DOM 배너)·capturePhoto(렌더러 결합)·specFastTicks(공유 let)는 순수 아니라 잔류</strong>(2차 이후).</p>
+<p><strong>감독의 검증 용어 교정(중요).</strong> "byte 무결성"은 부정확한 표현(파일 분리하면 바이트는 당연히 달라짐) → <strong>"동작 동일성(입력·출력·사용자 동작) 회귀 검증"</strong>으로 정정. 실제 게이트 기준을 감독이 명시: ①동작 동일성 ②<strong>초기화 순서·이벤트 등록 횟수 불변</strong>(main.js 분해 최다 오류 지점) ③신규 콘솔 error· unhandledrejection 0 ④정상/네트워크제한/소프트웨어GPU 3환경 진입·렌더 ⑤추출 기능 결과 동일 ⑥재입장 리스너 중복 없음 ⑦성능 악화 없음. 하나라도 실패 시 롤백. 또 <strong>AI 역할명(팀장 서명 등)의 자기선언은 실질 없음</strong> — 실제 게이트는 "작업 전 범위승인(감독)→작업 후 검증→실패 시 롤백"으로 단순화.</p>
+<p><strong>결과.</strong> 게이트 통과 — 독립 스모크(소프트웨어GPU 헤드리스 렌더 콘솔0·unhandledrejection0, addEventListener 8→8·setAnimationLoop 2→2 불변, 이동 11함수 본문 동일) + 검수관 승인(순수성 전수·동작 동일성·잔류 정당· no-undef 0). player/artworks/config.js·index.html·CSP 무수정. test 116/116.</p>
+<p><strong>교훈.</strong> 모든 큰 파일을 쪼개는 게 SOLID가 아니다 — 진입점(Composition Root)은 조립 특성상 큰 게 자연스럽다. main.js는 "무조건 분해"가 아니라 <strong>감사로 위험/가치를 재고 → 순수 leaf부터 점진 → 최종 조립만 잔류"라는 정교한 경로를 택했다. 검증은 "소스 보존"이 아니라 </strong>동작 동일성 + 초기화 순서·이벤트 횟수 불변**이 본질(감독 교정).</p>
 </article>
-<div class="pn"><a href="./2026-07-21-dfc674.html"><span class="lbl">← 이전 기록</span>오픈월드 그래픽·모바일 성능·팝인 개선 (감독 실기기 피드백 루프, 연속 배포)</a><a href="./2026-07-22-2628f9.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)</a></div>
+<div class="pn"><a href="./2026-07-22-eb7dcb.html"><span class="lbl">← 이전 기록</span>안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
