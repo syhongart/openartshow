@@ -693,9 +693,38 @@
     .builder-promo { flex-direction: column; align-items: flex-start; padding: 18px; }
     .builder-promo-cta { width: 100%; text-align: center; }
   }
+
+  /* ---------- P1-①: skip-link + focus-visible 보강 ---------- */
+  .skip-link {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    transform: translateY(-120%);
+    background: var(--text-dark);
+    color: var(--text-light);
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    border-bottom: 2px solid var(--violet-ink);
+    transition: transform 0.2s ease;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--violet-ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 </style>
 </head>
 <body>
+
+<a class="skip-link" href="#main">본문 바로가기</a>
 
 <header>
   <h1>OpenArtShow <span class="accent">STUDIO</span> — 나만의 전시장 만들기</h1>
@@ -713,7 +742,7 @@
   </a>
 </div>
 
-<main>
+<main id="main">
 
   <section class="block">
     <div class="block-title">
