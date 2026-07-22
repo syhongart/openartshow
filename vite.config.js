@@ -16,11 +16,40 @@
 //    등)는 원문 보존. importmap 잔재·무효 핀 제거.
 
 import { defineConfig } from 'vite';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
 import { copyFileSync, mkdirSync, cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
 const r = (p) => resolve(import.meta.dirname, p);
+
+// ── 플러그인0: .js→.ts 폴백 resolve(감독 B안) ───────────────────────
+// 배경(B-5): leaf 모듈을 .ts로 전환하되 소비자 import 는 `.js` 확장자를 유지한다.
+// 특히 라이브 보호파일(main.js·player.js·artworks.js·config.js)을 무수정으로 두는 것이
+// 이 방식의 목표다. vite/rollup 기본 resolver 는 확장자 명시 `./stats.js` 를 `.ts` 로
+// 치환하지 않으므로, "실재하는 .js 가 없고 대응 .ts 가 있을 때만" .ts 절대경로로
+// 폴백하는 pre-resolver 를 1회 얹는다.
+//   · web/js 상대 import 에만 적용: source 가 `./`·`../` 상대경로 + `.js` 로 끝날 때만.
+//   · node_modules·vendor 무개입: bare specifier(three·peerjs)는 상대경로가 아니라
+//     애초에 매치 안 됨. importer 가 node_modules 안이면 즉시 스킵. vendor/ 의 실재
+//     .js 는 existsSync 로 걸러져 그대로 통과(폴백 안 함).
+//   · dev/build 공용(플러그인은 양쪽에서 동작). vitest 는 별도 config 라 거기서도 재사용.
+export function tsJsFallback() {
+  return {
+    name: 'oas-ts-js-fallback',
+    enforce: 'pre', // vite 기본 resolver 보다 먼저 개입해 .ts 로 리다이렉트
+    resolveId(source, importer) {
+      if (!importer) return null;                       // 진입점 자체는 대상 아님
+      if (importer.includes('node_modules')) return null; // 의존성 내부 상대 import 무개입
+      if (!source.startsWith('./') && !source.startsWith('../')) return null; // 상대경로만
+      if (!source.endsWith('.js')) return null;         // .js 명시 import 만
+      const abs = resolve(dirname(importer), source);
+      if (existsSync(abs)) return null;                 // 실재 .js → 폴백 불필요(그대로)
+      const tsAbs = abs.slice(0, -3) + '.ts';
+      if (existsSync(tsAbs)) return tsAbs;              // .js 부재 + .ts 존재 → .ts 로 해소
+      return null;
+    },
+  };
+}
 
 // root=web 기준 emit fileName → 배포구조 경로. (맵 미포함 HTML 은 루트 불변)
 const HTML_RENAME = {
@@ -148,8 +177,8 @@ function cspReconcile() {
 }
 
 export default defineConfig({
-  // 순서: rename → CSP(rename 후 fileName 기준). self-contained 는 closeBundle(후처리).
-  plugins: [selfContained(), htmlRename(), cspReconcile()],
+  // 순서: ts폴백(pre) → rename → CSP(rename 후 fileName 기준). self-contained 는 closeBundle(후처리).
+  plugins: [tsJsFallback(), selfContained(), htmlRename(), cspReconcile()],
   root: 'web',
   // 배포 서브패스(github.io/openartshow/) 영구 고정 — 절대 base 로 깊이 무관 공유.
   base: '/openartshow/',
