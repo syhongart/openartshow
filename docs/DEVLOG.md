@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-07-22 · C단계 C-3(9) — main.js 3차 멀티플레이어 컨트롤러 (P2P 오케스트레이션 · 3차 완결)
+
+**원인.** 3차 마지막이자 최고위험 군(P2P). 비동기·네트워크·다인 상태라 **헤드리스 스모크로 2인 세션을
+재현할 수 없다** — 검증 커버리지가 구조적으로 낮다. `mp`(MultiplayerManager)는 입장(enter) 흐름에서
+생성되고 콜백 9종이 배선돼, 입장 로직과 깊게 얽혀 있다. 검증이 약한 만큼 **정적 정확성을 유일 방어선**으로.
+
+**개선.** `main-multiplayer.ts`(`createMultiplayerController(ctx)`)로 오케스트레이션만 분리(main.js
+1,104→1,108, **격리가 목적이라 라인은 +4**). 핵심:
+- **상태 이전**: `mp`·`guestbookSentOnce`(연결 생명주기 전용)를 컨트롤러 소유. **`myNickname`은 main.js
+  잔류** — 이전된 콜백 9종이 하나도 myNickname을 안 쓰고(닉네임은 connect opts로 전달), 채팅·방명록·
+  사진 4개 도메인이 쓰므로 컨트롤러로 끌면 결합만 증가. SSOT를 쓰는 쪽(main.js)에 둔다.
+- **입장 로직 경계 엄수**: 입장 핵심(selfInfo·player.enable·hideLobby·startAmbient·stats)은 남기고,
+  `connect()`·9개 콜백 배선·`mp.connect()`·게임루프 `tick`(sendState+update)만 이전. handleEnter는
+  `connect()`를 **호출만** 하고 실패(false) 시 원본 try/catch와 동일하게 stats/timer 미생성.
+- **콜백 재배선 누락 0**: onVisitor·onPhoto·onChat·onPlayerCount·onStatus·onGuestbook·onSelfHit·
+  onNpcHit·npcProvider 9종을 **원본 대비 1:1 체크리스트로 대조**(문자열 하나 안 바뀜). 조립점 재배선
+  (photoCtx·eventsCtx의 `getMp`)으로 main-photo.ts·main-events.ts **무수정**.
+- **mp=null 가드 7곳 보존**: 입장 전 tick·beforeunload·sendPhoto·applyNpcCulling·resolveBodyCollisions
+  전부 no-op. tick은 `if(!mp) return`.
+
+**결과.** 게이트 통과 — 검수관 **승인**(콜백 9종 누락0·null 가드 7곳 정합·myNickname 판단 타당·두 파일
+무수정·계약 보존, 블로커 0), 독립 스모크(**8항**, mp=null 게임루프 안전·입장/connect 경로 크래시0·
+PeerJS 콘솔error0). player/artworks/config.js·main-photo.ts·main-events.ts·index.html·CSP 무수정,
+test 116/116. **3차(위험도별 분할) 4군 완결.**
+
+**교훈.** 검증이 약한 도메인일수록 정적 정확성이 유일한 방어선이다 — 콜백 재배선은 "누락 0"을 **원본
+대비 체크리스트로 증명**해야 한다(조용히 죽는 원격 기능이 최악). 그리고 초기화 순서가 코드상 뒤집혀도
+(stats 생성 vs connect 호출) **비동기 특성으로 무해할 수 있으나, 그 판정은 실제 연결 코드까지 읽어야
+확증된다** — 검수관이 `multiplayer.js`의 onVisitor가 PeerJS `data` 핸들러(반드시 비동기)임을 소스로
+확인해, 동기 발화로 stats=null을 참조할 경로가 원천 부재임을 증명하고 통과시켰다. "동작 동일성"의
+증명은 리팩터한 파일이 아니라 그것이 부르는 곳까지 따라가야 완성된다.
+
+### main.js 3차 분해 총괄 (원본 1,418 → 1,108줄, -310 / -22%)
+순수유틸(1차) → 이벤트핸들러(2차) → **사진·투어·셀프뷰·멀티플레이어(3차 4군)**. 게임루프 결합 함수는
+"위임 wrapper"가 아니라 **상태 소유권 이전 + tick 위임**으로, 컨트롤러 간 의존은 **조립점(main.js)이
+getter로 중재**해 분리했다. 남은 4차는 main.js를 **초기화·조립(Composition Root)만** 남기는 단계.
+
+---
+
 ## 2026-07-22 · C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)
 
 **원인.** 3차 세 번째 군(3인칭 자기시점). 게임루프 결합이 가장 깊다 — 아바타 위치·회전·`update`가
