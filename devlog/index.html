@@ -11,7 +11,7 @@
 <meta property="og:title" content="개발일지 — OpenArtShow">
 <meta property="og:description" content="OpenArtShow를 만드는 과정의 공개 기록. 웹 3D 미술관의 성능·디자인·법무·브랜드 결정을 원인-분석-개선-결과로 남깁니다.">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-3a820c.html"},{"@type":"BlogPosting","headline":"C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b7d6d8.html"},{"@type":"BlogPosting","headline":"C단계 C-4(A) — main.js 4차 착수: 성능/렌더 거버너(PerfGovernor) 분리","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-3b6cb6.html"},{"@type":"BlogPosting","headline":"C단계 C-3(9) — main.js 3차 멀티플레이어 컨트롤러 (P2P 오케스트레이션 · 3차 완결)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-60a49a.html"},{"@type":"BlogPosting","headline":"C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b437a9.html"},{"@type":"BlogPosting","headline":"C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-069373.html"},{"@type":"BlogPosting","headline":"C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b75440.html"},{"@type":"BlogPosting","headline":"C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-ad8695.html"},{"@type":"BlogPosting","headline":"C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-2628f9.html"},{"@type":"BlogPosting","headline":"안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-eb7dcb.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"C단계 후속 — 분해 게이트 비블로커 권고 2건 정리","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html"},{"@type":"BlogPosting","headline":"C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-3a820c.html"},{"@type":"BlogPosting","headline":"C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b7d6d8.html"},{"@type":"BlogPosting","headline":"C단계 C-4(A) — main.js 4차 착수: 성능/렌더 거버너(PerfGovernor) 분리","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-3b6cb6.html"},{"@type":"BlogPosting","headline":"C단계 C-3(9) — main.js 3차 멀티플레이어 컨트롤러 (P2P 오케스트레이션 · 3차 완결)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-60a49a.html"},{"@type":"BlogPosting","headline":"C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b437a9.html"},{"@type":"BlogPosting","headline":"C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-069373.html"},{"@type":"BlogPosting","headline":"C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b75440.html"},{"@type":"BlogPosting","headline":"C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-ad8695.html"},{"@type":"BlogPosting","headline":"C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)","datePublished":"2026-07-22","url":"https://syhongart.github.io/openartshow/devlog/2026-07-22-2628f9.html"}]}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,7 +87,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <div class="eyebrow">Devlog</div>
 <h1>개발일지</h1>
-<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 76건의 기록.<br>
+<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 77건의 기록.<br>
 문제의 원인, 분석, 개선, 결과를 그대로 남깁니다.</p>
 <a class="pin-card" href="./philosophy.html">
   <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
@@ -168,6 +168,11 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
   <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
   <h2>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)</h2>
   <p>프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.</p>
+</a>
+<a class="card" href="./2026-07-22-0cbffb.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🛠️</span>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리</h2>
+  <p>원인. 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는</p>
 </a>
 <a class="card" href="./2026-07-22-3a820c.html">
   <span class="d">2026-07-22</span>

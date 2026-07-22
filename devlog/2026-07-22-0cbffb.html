@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 4차 세 번째 단위(C). handleEnter의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats)">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-3a820c.html">
+<title>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 4차 세 번째 단위(C). handleEnter의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats)">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-3a820c.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-3a820c.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="C단계 후속 — 분해 게이트 비블로커 권고 2건 정리 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 후속 — 분해 게이트 비블로커 권고 2건 정리","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,17 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">🛠️</span>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리</h1>
+<h1><span class="emo">🛠️</span>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 4차 세 번째 단위(C). <code>handleEnter</code>의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats) 생성·2초 dwell 타이머·원격 방문 기록. 게임루프가 아니라 입장 도메인이라 D(심장) 전 저리스크 단계.</p>
-<p><strong>개선.</strong> <code>main-enterflow.ts</code>(<code>createEnterFlow(ctx)</code>)로 분리(main.js 918→919, <strong>응집 목적이라 라인 +1</strong>).</p>
-<ul><li><strong>stats 소유 이전</strong>: 참조처 전수 grep 결과 <strong>2곳뿐</strong>(handleEnter 생성+dwellTimer / mpCtx.onVisitor의 addVisit)이고 위임면이 좁아 EnterFlow가 SSOT로 소유. onVisitor는 콜백 본체(visitorLog.add)는 main 잔류하고 stats 부분만 <code>recordVisit</code> 1개로 위임. (3차 myNickname은 4개 도메인이 읽어 <strong>잔류</strong>했던 것과 대비 — 소유 이전 판단은 "참조처 위임면의 넓이"로 갈린다.)</li><li><strong>메서드</strong>: <code>computeRoomSuffix</code>(gallery id ∨ djb2 hash — connect roomId·stats 키 공유)·<code>begin</code>(stats+ dwell 타이머, connect 성공 후)·<code>recordVisit</code>(onVisitor 위임).</li><li><strong>handleEnter 잔류</strong>: entered·player.enable·connect·startAmbient·startOnboarding. entered는 게임루프· hitTap·floor 다수 게이트가 읽는 전역이자 입장 진입 계약이라 조립점에 남긴다. ambient/onboarding을 옮기면 EnterFlow가 두 도메인을 더 알게 돼 God 경향 → 잔류.</li><li><strong>입장 순서 1바이트 보존</strong>: myNickname→selfInfo→entered→hideLobby→player.enable→ambient→onboarding→ computeRoomSuffix→connect→(실패 시 return)→begin. connect 실패(혼자 관람) 시 begin 미호출로 stats/ timer 미생성·onVisitor 미발생 → 원본 try/catch와 동치.</li></ul>
-<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(stats 재배선 누락0·입장 순서 동치·connect 실패 경로·dwellTimer verbatim·<strong>게임루프 무수정</strong>, 블로커 0), 독립 스모크(6/6 — computeRoomSuffix·connect 실패 혼자관람· begin/dwell 콘솔0). <strong>recordVisit는 P2P 연결 후에만 발생해 헤드리스 단독 사각 → verbatim 논증 의존</strong>. 보호4파일·main-multiplayer.ts·CSP·animate 무수정, test 116/116.</p>
-<p><strong>교훈.</strong> 상태 소유 이전 vs 잔류는 <strong>참조처 위임면의 넓이</strong>가 가른다 — stats처럼 참조처 2곳·위임면 좁으면 이전이 응집을 늘리고, myNickname처럼 다수 도메인이 읽으면 잔류가 결합을 줄인다. 기계적으로 "다 옮긴다"가 아니라 케이스별로 저울질한다.</p>
-<h3>4차 로드맵 진척 (A→B→C 완료, D 최후 남음)</h3>
-<p>A(PerfGovernor)·B(ViewFx)·C(EnterFlow) 배포 완료. main.js 1,418→919(-35%). 남은 <strong>D(GameLoop 골격 + 잔여 포테이토캡·근접안내 흡수)</strong>는 render 분기·setAnimationLoop·try/catch 오류복구 경계를 다루는 심장·최후 단위 — 팀장 지정 회귀 위험점(setAnimationLoop 등록/해제·오류복구 setStatus)을 검증에 명시해 진행 예정.</p>
+<p><strong>원인.</strong> 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는 분리 보류). 완주 후 정리.</p>
+<p><strong>개선.</strong> ① <strong>투어 tick 유닛테스트</strong>(<code>tests/main-tour.test.js</code>, 4케이스): 자동진행 판정식의 4분기 — 정상 누적→next, 트윈 진행 중 미누적, 라이트박스 열림 미누적, 대기 아님 미누적 — 을 mock ctx로 검증 (vitest 116→<strong>120</strong>). ② <strong>EnterFlow recordVisit 방어 가드</strong>: <code>stats.addVisit(id)</code>→<code>stats?.addVisit(id)</code>. 정상 경로(connect 성공→stats 생성 후에만 onVisitor 발생)에선 옵셔널 체이닝이 일반 호출과 1바이트 동치, connect 실패(혼자 관람·stats=null)에서 콜백이 이론상 도달해도 무해 no-op(방어 심층). stats 소유가 4차 C군에서 EnterFlow로 이전됐으므로 가드 위치도 recordVisit이 정확.</p>
+<p><strong>결과.</strong> 스모크 6/6 + vitest 120 통과, 입장·투어 정상 회귀 없음. 라이브 코드 변경은 recordVisit 1줄뿐, main.js·게임루프·기타 무수정.</p>
+<p><strong>교훈.</strong> 방어 가드는 "정상 경로 1바이트 동치 + 비정상 경로만 무해화"가 성립할 때만 동작 동일성을 지키며 심층 방어가 된다. 단 null을 조용히 삼키는 트레이드오프(실버그 진단 지연 가능)를 주석에 명시해 뒀다.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-b7d6d8.html"><span class="lbl">← 이전 기록</span>C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리</a><a href="./2026-07-22-0cbffb.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리</a></div>
+<div class="pn"><a href="./2026-07-22-3a820c.html"><span class="lbl">← 이전 기록</span>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
