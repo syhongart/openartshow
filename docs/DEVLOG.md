@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-07-22 · C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)
+
+**원인.** 3차 세 번째 군(3인칭 자기시점). 게임루프 결합이 가장 깊다 — 아바타 위치·회전·`update`가
+**매 프레임** 돌고, 이동속도를 EMA로 평활한다. 게다가 **이미 배포된 사진 컨트롤러**(main-photo.ts)가
+셀프뷰 상태·함수 4개(`isThirdPerson`·`getSelfAvatar`·`applySelfCamOffset`·`restoreSelfCamOffset`)를
+ctx로 쓰고 있어(3인칭 사진의 셀프캠 오프셋), 소유권을 옮기면 사진 컨트롤러 배선까지 흔든다.
+
+**개선.** `main-selfview.ts`(`createSelfViewController(ctx)`)로 분리(main.js 1,158→1,104). 핵심:
+- **상태 SSOT 이전**: `thirdPerson`·`selfAvatar`·`selfPrev`·`selfSpeed` + 셀프캠 상수 3개 +
+  재사용 THREE 객체 3개(`_selfCamSaved`/`_selfCamBack`/`_selfCamQuatSaved`, 모듈 클로저 1회 생성).
+  `selfSpeed`는 외부 주입이 아니라 **tick 내부에서 selfPrev 대비 프레임 이동거리로 자체 EMA 계산**
+  → 완전 내부 상태라 컨트롤러가 소유. **tick 본문 내 THREE 신규 할당 0**(프레임 GC 압박 차단).
+- **컨트롤러 간 의존은 조립점(main.js)이 중재**: photoCtx의 4개를 `()=>selfViewController.<메서드>()`로
+  재배선 → 두 컨트롤러가 서로 직접 import하지 않고 main.js(Composition Root)가 getter로 연결.
+  **main-photo.ts 자체는 무수정**(ctx 계약 동일). 4차 "조립만 남기기" 방향과 정합.
+- **숨은 교차결합 4건**을 grep이 아니라 사용처 추적으로 발견·처리: `flyController`(비행 중 아바타),
+  **`bindHitTap`의 때리기 레이캐스터 사거리**(3인칭 카메라 후퇴분 `SELF_CAM_DIST` 보정 — 명세 밖 결합),
+  `onSelfHit`(null 가드), `handleAvatarChange`→`rebuildAvatar` 커맨드 위임.
+- 읽기/쓰기 분리: 읽기는 getter(`isThirdPerson`/`getSelfAvatar`), 상수 단방향은 getter(`getSelfCamDist`),
+  전체 생명주기 쓰기(생성·scene add/remove·dispose)는 **커맨드 메서드**(`rebuildAvatar`)로.
+
+**결과.** 게이트 통과 — 검수관 **승인**(상태 이전·tick 동일성·photoCtx 재배선·숨은 결합 4건·초기화
+순서 전부 통과, `SELF_CAM_DIST=3.0` 사거리 불변·`rebuildAvatar` dispose 순서 1:1 대응 확인, 블로커 0),
+독립 스모크(**6/6 + 셀프뷰 3경로** 토글·3인칭이동·3인칭사진 콘솔0). player/artworks/config.js·
+main-photo.ts·index.html·CSP 무수정, test 116/116.
+
+**교훈.** 컨트롤러를 여럿 쪼갤 때 서로 직접 참조하게 두면 결합이 그물처럼 얽힌다 — **조립점 하나가
+getter로 중재**하면 컨트롤러는 서로를 모른 채 독립적으로 검증·교체된다(Composition Root의 실익).
+그리고 리팩터 범위는 **심볼 grep이 아니라 실제 사용처 추적**으로 잡아야 한다: 때리기 사거리가 3인칭
+카메라 후퇴를 보정하던 숨은 결합은 `SELF_CAM_DIST` 참조를 따라가야만 드러났다.
+
+---
+
 ## 2026-07-22 · C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)
 
 **원인.** 3차 두 번째 군(도슨트 투어). 사진 군(격리 단발함수)과 달리 투어는 **animate 게임루프에
