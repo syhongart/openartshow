@@ -36,6 +36,24 @@ space.ts 전환이 배포 산출물에 어떤 영향도 없음을 실증. 감독
   `diff -rq` 0(바이트 동일)** 이 배포 무영향의 수학적 증명. 이를 독립 스모크에 통합해 매 leaf 검수관
   풀리뷰를 대체(dist가 예상외로 다르면 검수관 에스컬레이션). typecheck·test 108·보호4파일 무변경 병행.
 
+**B-5-④⑤⑥ `stats`·`guestbook`·`feed` — 보호파일 결합 → 감독 B안(폴백 resolve).** 이 3개는 앞
+leaf들과 달리 **라이브 `main.js`(보호4파일)가 직접 소비자**다(방명록·통계·포토월). 대안b(소비자
+확장자 제거)를 쓰면 main.js import 3줄을 고쳐야 해 보호파일 게이트에 걸린다. 감독 판정 **B안 채택**:
+- **vite `tsJsFallback()` 폴백 플러그인**(vite.config+vitest.config): 상대·`.js`·실재.js없음·대응.ts존재
+  4조건 AND에서만 `.js`→`.ts` 리졸브. `existsSync` 순서로 실재 .js 무개입, bare specifier(three·
+  peerjs)·node_modules·vendor 제외. → **모든 소비자 import는 `.js` 유지 = main.js 포함 무수정**.
+- stats/guestbook/feed 는 .ts 리네임+타입만. **보호4파일 diff 완전 공백**(재작업의 핵심 목표) 실증.
+- 게이트: 배포기(vite.config) 수정이라 경량 아닌 **풀 게이트** — 독립 스모크(보호4파일 무변경·라이브
+  3페이지 콘솔0·CSP0·dist 청크 런타임 동일) + 검수관 **승인**(폴백 안전성·롤백단위·혼재공존 실증).
+- **⚠️ 롤백 단위 = 이 4커밋 전체**(폴백 플러그인 e8f9135 + 3 리네임). 폴백만 revert하면 stats/
+  guestbook/feed 소비자가 `.js` 유지+폴백 의존이라 `vite build`가 깨진다(검수관이 worktree revert로
+  실증). 파일단위 독립 롤백 불가 — 회귀 시 4커밋(또는 병합 커밋) 전체를 되돌릴 것.
+
+**혼재 부채(#94 이월).** space/ytembed/space-presets(소비자 확장자 **제거**) vs stats/guestbook/feed
+(확장자 **유지**+폴백)의 두 리졸브 방식 혼재. 조건 분기(확장자 유/무)로 겹침 0·기능 안전하나
+유지보수 부채 → 향후 방식 일원화 검토(#94). B-5 leaf 6개 전환 완료 — 순수 leaf 소진, 초대형·보호
+파일은 C단계.
+
 **부수 발견(#94 이월).** smoke:vite의 **E2 동등성 검사가 B-2b 배포로 무효화**됐다: E2는 "origin/main
 web직조립(=B-2b 이전 라이브) vs vite조립"을 비교하는데, B-2b가 origin/main 랜딩군을 vite전제로
 조정해 web직조립이 의도적으로 깨진다(B-2b 설계 근거 그 자체). 즉 "전환 증명" 전용 검사가 전환완료로
