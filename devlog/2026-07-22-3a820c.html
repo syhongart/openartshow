@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 4차 두 번째 단위(B). 게임루프에 흩어진 카메라 뷰 보조 3종 — 트윈(텔레포트/투어 보간)·">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-b7d6d8.html">
+<title>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 4차 세 번째 단위(C). handleEnter의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats)">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-3a820c.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 4차 두 번째 단위(B). 게임루프에 흩어진 카메라 뷰 보조 3종 — 트윈(텔레포트/투어 보간)·">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-b7d6d8.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b7d6d8.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 4차 세 번째 단위(C). handleEnter의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats)">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-3a820c.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-3a820c.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,15 +88,17 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">🛠️</span>C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리</h1>
+<h1><span class="emo">🛠️</span>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 4차 두 번째 단위(B). 게임루프에 흩어진 카메라 뷰 보조 3종 — 트윈(텔레포트/투어 보간)· 층안내(camera.y 판정)·온보딩(터치 힌트). A(PerfGovernor)와 달리 <strong><code>tween</code>이 이미 배포된 tour 컨트롤러와 얽혀</strong> 있다(tour가 getTween/clearTween/startTween을 ctx로 사용) — 셀프뷰↔사진 때처럼 조립점 재배선이 필요.</p>
-<p><strong>개선.</strong> <code>main-viewfx.ts</code>(<code>createViewFx(ctx)</code>) 1모듈로 분리(main.js 1,033→918, <strong>-115</strong>). 판단:</p>
-<ul><li><strong>1모듈 응집</strong>: 세 도메인이 "카메라 뷰 보조" 공통결 + 상태가 서로 독립(데이터 의존 0)이라 God object가 아니다. tour와 얽히는 건 트윈뿐이라 재배선면도 좁다.</li><li><strong>개별 메서드 위임(단일 tick 아님)</strong>: A군은 3블록이 게임루프에 <strong>연속</strong>이라 tick 하나로 몰았지만, B군은 세 항목이 게임루프에 <strong>흩어져</strong>(updateTween=물리 뒤·tour.tick 앞 / updateFloorIndicator / tickOnboarding) 있다. 원문 위치를 1바이트 보존하려 <code>updateTween</code>/<code>updateFloorIndicator</code>/<code>tickOnboarding</code> 개별 메서드로 노출 — 무리하게 하나로 묶으면 프레임 내 실행 순서가 바뀐다.</li><li><strong>tween 소유 일원화 + tour 재배선</strong>: tween을 viewfx가 단독 소유하고, tourCtx의 getTween·clearTween· startTween을 <code>()=&gt;viewfxController.&lt;메서드&gt;()</code>로 재배선. tour tick의 <code>!getTween()</code>과 exitTour의 clearTween이 <strong>동일 tween 인스턴스</strong>를 viewfx 경유로 공유(인스턴스가 갈리면 자동진행 영구대기 회귀). <strong>main-tour.ts 무수정</strong>(0바이트 diff 확인).</li></ul>
-<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(상태 이전·tour 재배선 단일참조·startTween 호출처 누락0·게임루프 순서 1바이트 동치·render 골격 무변경·tick verbatim, 블로커 0), 독립 스모크(6/6 — 트윈·투어 자동진행· exitTour 즉시정지·층안내 콘솔0). <strong>온보딩은 pointer:coarse 터치 전용이라 헤드리스 검증 사각 → verbatim 이식 논증 + 검수관 코드 동치 대조로 방어</strong>(실기기 QA는 후속). 보호4파일·main-tour.ts·CSP 무수정, test 116/116.</p>
-<p><strong>교훈.</strong> "tick 위임"의 형태는 원본 게임루프 구조가 정한다 — 연속 블록은 단일 tick, 흩어진 항목은 개별 메서드다. 하나로 묶으면 깔끔해 보이나 프레임 내 실행 순서가 바뀌어 회귀한다. 그리고 공유 상태 (tween)는 소유를 한 곳에 두고 다른 컨트롤러는 조립점 재배선으로 <strong>같은 인스턴스</strong>를 공유해야 한다 — 값을 복제하면 상태가 갈린다.</p>
+<p><strong>원인.</strong> 4차 세 번째 단위(C). <code>handleEnter</code>의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats) 생성·2초 dwell 타이머·원격 방문 기록. 게임루프가 아니라 입장 도메인이라 D(심장) 전 저리스크 단계.</p>
+<p><strong>개선.</strong> <code>main-enterflow.ts</code>(<code>createEnterFlow(ctx)</code>)로 분리(main.js 918→919, <strong>응집 목적이라 라인 +1</strong>).</p>
+<ul><li><strong>stats 소유 이전</strong>: 참조처 전수 grep 결과 <strong>2곳뿐</strong>(handleEnter 생성+dwellTimer / mpCtx.onVisitor의 addVisit)이고 위임면이 좁아 EnterFlow가 SSOT로 소유. onVisitor는 콜백 본체(visitorLog.add)는 main 잔류하고 stats 부분만 <code>recordVisit</code> 1개로 위임. (3차 myNickname은 4개 도메인이 읽어 <strong>잔류</strong>했던 것과 대비 — 소유 이전 판단은 "참조처 위임면의 넓이"로 갈린다.)</li><li><strong>메서드</strong>: <code>computeRoomSuffix</code>(gallery id ∨ djb2 hash — connect roomId·stats 키 공유)·<code>begin</code>(stats+ dwell 타이머, connect 성공 후)·<code>recordVisit</code>(onVisitor 위임).</li><li><strong>handleEnter 잔류</strong>: entered·player.enable·connect·startAmbient·startOnboarding. entered는 게임루프· hitTap·floor 다수 게이트가 읽는 전역이자 입장 진입 계약이라 조립점에 남긴다. ambient/onboarding을 옮기면 EnterFlow가 두 도메인을 더 알게 돼 God 경향 → 잔류.</li><li><strong>입장 순서 1바이트 보존</strong>: myNickname→selfInfo→entered→hideLobby→player.enable→ambient→onboarding→ computeRoomSuffix→connect→(실패 시 return)→begin. connect 실패(혼자 관람) 시 begin 미호출로 stats/ timer 미생성·onVisitor 미발생 → 원본 try/catch와 동치.</li></ul>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(stats 재배선 누락0·입장 순서 동치·connect 실패 경로·dwellTimer verbatim·<strong>게임루프 무수정</strong>, 블로커 0), 독립 스모크(6/6 — computeRoomSuffix·connect 실패 혼자관람· begin/dwell 콘솔0). <strong>recordVisit는 P2P 연결 후에만 발생해 헤드리스 단독 사각 → verbatim 논증 의존</strong>. 보호4파일·main-multiplayer.ts·CSP·animate 무수정, test 116/116.</p>
+<p><strong>교훈.</strong> 상태 소유 이전 vs 잔류는 <strong>참조처 위임면의 넓이</strong>가 가른다 — stats처럼 참조처 2곳·위임면 좁으면 이전이 응집을 늘리고, myNickname처럼 다수 도메인이 읽으면 잔류가 결합을 줄인다. 기계적으로 "다 옮긴다"가 아니라 케이스별로 저울질한다.</p>
+<h3>4차 로드맵 진척 (A→B→C 완료, D 최후 남음)</h3>
+<p>A(PerfGovernor)·B(ViewFx)·C(EnterFlow) 배포 완료. main.js 1,418→919(-35%). 남은 <strong>D(GameLoop 골격 + 잔여 포테이토캡·근접안내 흡수)</strong>는 render 분기·setAnimationLoop·try/catch 오류복구 경계를 다루는 심장·최후 단위 — 팀장 지정 회귀 위험점(setAnimationLoop 등록/해제·오류복구 setStatus)을 검증에 명시해 진행 예정.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-3b6cb6.html"><span class="lbl">← 이전 기록</span>C단계 C-4(A) — main.js 4차 착수: 성능/렌더 거버너(PerfGovernor) 분리</a><a href="./2026-07-22-3a820c.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리</a></div>
+<div class="pn"><a href="./2026-07-22-b7d6d8.html"><span class="lbl">← 이전 기록</span>C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
