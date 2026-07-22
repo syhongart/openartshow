@@ -37,8 +37,13 @@ const MAX_NICKNAME_LEN = 12;
 // ---------------------------------------------------------------------------
 // 내부 상태
 // ---------------------------------------------------------------------------
-let els = null;              // 생성된 DOM 요소 캐시
-let callbacks = { onEnter: null, onChatSend: null, onAvatarChange: null, onMakerToggle: null };
+// els는 15개 빌더 결과가 런타임 조립되고 이후 프로퍼티(chibiMaker·topRight.count 등)가
+// 추가 주입되는 이질 컨테이너다. 각 빌더 반환은 지역에서 타입 검증되므로 여기선 any로 표현한다.
+let els: any = null;              // 생성된 DOM 요소 캐시
+// initUI 콜백 배선 — 함수 또는 null (typeof 가드로 호출)
+type UICallback = ((...args: any[]) => void) | null;
+let callbacks: { onEnter: UICallback; onChatSend: UICallback; onAvatarChange: UICallback; onMakerToggle: UICallback } =
+  { onEnter: null, onChatSend: null, onAvatarChange: null, onMakerToggle: null };
 let selectedColor = AVATAR_COLORS[0];
 // chibi(아야모) 퍼시스턴스 스토어는 중립 leaf `ui-chibi-store.js`로 분리됨(C-1 단계2).
 // localStorage 키 생성·세션 룩·옷장·썸네일 — HUD 빌더/아바타 편집기 공용.
@@ -47,26 +52,28 @@ let selectedColor = AVATAR_COLORS[0];
 //   entered  : HUD(hideLobby)가 씀 · 편집기(저장 시 월드 아바타 반영 여부)와 HUD가 읽음.
 // ui.js가 소유·생성해 편집기에 ctx.state로 참조 주입한다(양방향 결합을 단일 객체로 해소).
 const uiState = { chibiOpen: false, entered: false };
-let currentArtworkId = null; // 작품 패널 재렌더 생략용
+let currentArtworkId: string | null = null; // 작품 패널 재렌더 생략용
 let initialized = false;
 
 // 라이트박스 상태
 let lightboxOpen = false;
-let onLightboxClose = null;
-let lightboxCloseTimer = null;
+let onLightboxClose: (() => void) | null = null;
+let lightboxCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 작품 목록 패널 상태
 let artworkListOpen = false;
-let onArtworkSelect = null; // initArtworkList(artworks, onSelect)의 onSelect
+let onArtworkSelect: ((art: any) => void) | null = null; // initArtworkList(artworks, onSelect)의 onSelect
 
 // 방명록 패널 상태
 let guestbookOpen = false;
-let onGuestbookSubmit = null; // initGuestbook({ onSubmit })의 onSubmit
-let pendingGuestbookNotes = null; // initUI() 이전에 setGuestbookNotes()가 불렸을 때 대기시켜 둘 값
+let onGuestbookSubmit: ((text: string) => void) | null = null; // initGuestbook({ onSubmit })의 onSubmit
+let pendingGuestbookNotes: any[] | null = null; // initUI() 이전에 setGuestbookNotes()가 불렸을 때 대기시켜 둘 값
 const MAX_GUESTBOOK_TEXT = 120;
 
 // 투어 바 버튼 콜백 (setTourHandlers로 배선)
-let tourHandlers = { onPrev: null, onNext: null, onExit: null, onToggleAuto: null };
+type TourHandler = (() => void) | null;
+let tourHandlers: { onPrev: TourHandler; onNext: TourHandler; onExit: TourHandler; onToggleAuto: TourHandler } =
+  { onPrev: null, onNext: null, onExit: null, onToggleAuto: null };
 
 // 터치 기기 여부 — 조작 안내/액션 버튼 구성이 달라진다
 const IS_TOUCH =
@@ -74,21 +81,26 @@ const IS_TOUCH =
   (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
 
 // 터치 액션 버튼 콜백 (setActionHandlers로 배선) — 키보드 없는 기기의 M/T/E/G/P 대체
-let actionHandlers = { onTour: null, onViewArtwork: null, onGuestbook: null, onCapture: null, onSelfView: null };
+type ActionHandler = (() => void) | null;
+let actionHandlers: {
+  onTour: ActionHandler; onViewArtwork: ActionHandler; onGuestbook: ActionHandler;
+  onCapture: ActionHandler; onSelfView: ActionHandler;
+} = { onTour: null, onViewArtwork: null, onGuestbook: null, onCapture: null, onSelfView: null };
 
 // 공유 모달 상태 (SNS 공유 — 포토 모드)
 let shareModalOpen = false;
-let shareData = { blob: null, dataUrl: '', galleryName: '', shareUrl: '' };
-let shareCopyTimer = null;
+let shareData: { blob: Blob | null; dataUrl: string; galleryName: string; shareUrl: string } =
+  { blob: null, dataUrl: '', galleryName: '', shareUrl: '' };
+let shareCopyTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 치비 메이커(아바타 편집기) 전용 상태·프리뷰 렌더러·상수는 ui-avatar-editor.ts로
 // 순수 이동됨(C-1 단계3). 크로스 결합 플래그 chibiOpen 은 위 uiState.chibiOpen 으로 승격.
 
 // initUI() 호출 이전에 setGalleryTitle / initGalleryPicker / initArtworkList가
 // 먼저 불려도 값을 잃지 않도록 대기시켜 두었다가 DOM 생성 직후 적용한다.
-let pendingGalleryTitle = null;
-let pendingPicker = null; // { galleries, currentId, onPick }
-let pendingArtworkList = null; // artworks 배열
+let pendingGalleryTitle: string | null = null;
+let pendingPicker: { galleries: any[]; currentId: any; onPick: any } | null = null; // { galleries, currentId, onPick }
+let pendingArtworkList: any[] | null = null; // artworks 배열
 
 
 // ---------------------------------------------------------------------------
@@ -117,7 +129,7 @@ function buildLobby() {
   const buildSocialButtons = () => {
     socialWrap.textContent = '';
     for (const key of Object.keys(AUTH_PROVIDERS)) {
-      const p = AUTH_PROVIDERS[key];
+      const p = AUTH_PROVIDERS[key as keyof typeof AUTH_PROVIDERS];
       const btn = el('button', {
         className: `lu-social-btn lu-social-${key}`,
         type: 'button',
@@ -126,14 +138,14 @@ function buildLobby() {
         el('span', { text: p.label }),
       ]);
       btn.addEventListener('click', async () => {
-        btn.disabled = true;
+        (btn as HTMLButtonElement).disabled = true;
         btn.classList.add('lu-social-busy');
         try {
           await authLoginWith(key);
         } catch (_) {
           /* mock에서는 실패 없음 */
         }
-        btn.disabled = false;
+        (btn as HTMLButtonElement).disabled = false;
         btn.classList.remove('lu-social-busy');
       });
       socialWrap.appendChild(btn);
@@ -144,17 +156,17 @@ function buildLobby() {
     }));
   };
 
-  const buildLoggedChip = (p) => {
+  const buildLoggedChip = (p: any) => {
     loggedWrap.textContent = '';
     const avatar = el('span', { className: 'lu-logged-avatar', text: p.initial || p.name.slice(0, 1) });
     const name = el('span', { className: 'lu-logged-name', text: `${p.name}님` });
-    const via = el('span', { className: 'lu-logged-via', text: AUTH_PROVIDERS[p.provider] ? AUTH_PROVIDERS[p.provider].short : '' });
+    const via = el('span', { className: 'lu-logged-via', text: AUTH_PROVIDERS[p.provider as keyof typeof AUTH_PROVIDERS] ? AUTH_PROVIDERS[p.provider as keyof typeof AUTH_PROVIDERS].short : '' });
     const logoutBtn = el('button', { className: 'lu-logout-btn', type: 'button', text: '로그아웃' });
     logoutBtn.addEventListener('click', () => authLogout());
     loggedWrap.appendChild(el('div', { className: 'lu-logged-chip' }, [avatar, name, via, logoutBtn]));
   };
 
-  const syncAuthUI = (p) => {
+  const syncAuthUI = (p: any) => {
     if (p) {
       buildLoggedChip(p);
       socialWrap.style.display = 'none';
@@ -189,7 +201,7 @@ function buildLobby() {
     value: '게스트',
     autocomplete: 'off',
     spellcheck: 'false',
-  });
+  }) as HTMLInputElement;
   const nickHint = el('div', { className: 'lu-field-hint', text: `최대 ${MAX_NICKNAME_LEN}자 · 비워두면 '게스트'로 입장합니다` });
 
   // 캐릭터 — 입장 폼에 편집을 끼워넣지 않고, "캐릭터 디자인" 메뉴 버튼으로 분리한다.
@@ -385,12 +397,12 @@ function buildMobileDock() {
     help: '<path d="M9.2 9a2.9 2.9 0 1 1 4.2 2.6c-.9.45-1.4 1.05-1.4 2.1"/><circle cx="12" cy="17.4" r="1" fill="currentColor" stroke="none"/>',
     dress: '<path d="M9 4l3 3 3-3M9 4l-1.5 5 4.5 3 4.5-3L18 4M7.5 9l-2 8h13l-2-8"/>',
   };
-  function svgIcon(name) {
+  function svgIcon(name: string) {
     const span = document.createElement('span');
-    span.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[name] + '</svg>';
-    return span.firstChild;
+    span.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONS[name as keyof typeof ICONS] + '</svg>';
+    return span.firstChild as Node; // innerHTML로 svg를 세팅하므로 항상 존재
   }
-  function dockBtn(cls, aria, icon, label) {
+  function dockBtn(cls: string, aria: string, icon: string, label: string) {
     const b = el('button', { className: cls, type: 'button', 'aria-label': aria });
     b.appendChild(svgIcon(icon));
     b.appendChild(el('span', { className: 'lu-dock-label', text: label }));
@@ -430,7 +442,7 @@ function buildMobileDock() {
     sheet.classList.remove('lu-open');
     backdrop.classList.remove('lu-open');
   }
-  function sheetBtn(icon, label, fn) {
+  function sheetBtn(icon: string, label: string, fn: () => void) {
     const b = el('button', { className: 'lu-sheet-btn', type: 'button' });
     b.appendChild(svgIcon(icon));
     b.appendChild(el('span', { text: label }));
@@ -469,8 +481,8 @@ function buildMobileDock() {
 }
 
 // 독 활성 상태 표시 — main.js가 투어/3인칭 토글 시점에 호출한다
-let dockRefs = null;
-export function setDockActive(key, on) {
+let dockRefs: any = null;
+export function setDockActive(key: string, on: boolean) {
   if (!dockRefs) return;
   if (key === 'tour' && dockRefs.tourBtn) dockRefs.tourBtn.classList.toggle('lu-on', !!on);
   // 'self'는 시트 안 버튼이라 상태 뱃지 대상 아님 — 상태바 문구가 담당
@@ -504,7 +516,7 @@ function buildChat() {
     placeholder: IS_TOUCH ? '탭하여 채팅…' : 'Enter 키로 채팅…',
     autocomplete: 'off',
     spellcheck: 'false',
-  });
+  }) as HTMLInputElement;
   const wrap = el('div', { id: 'lu-chat', className: 'lu lu-hud' }, [log, input]);
   if (IS_TOUCH) wrap.classList.add('lu-chat-collapsed');
   document.body.appendChild(wrap);
@@ -572,8 +584,9 @@ function buildGalleryTitle() {
     countWrap,
   ]);
   document.body.appendChild(bar);
-  bar._count = count;
-  bar._countWrap = countWrap;
+  // setPlayerCount가 참조하는 카운트 엘리먼트를 DOM 노드에 커스텀 프로퍼티로 실어 보낸다
+  (bar as any)._count = count;
+  (bar as any)._countWrap = countWrap;
   return bar;
 }
 
@@ -609,10 +622,10 @@ function buildLightbox() {
   let lastTapT = 0;
   let lastTapX = 0;
   let lastTapY = 0;
-  let swipe0 = null;
+  let swipe0: { x: number; y: number; t: number } | null = null;
 
   function mediaEl() {
-    return stage.querySelector('.lu-lightbox-media');
+    return stage.querySelector('.lu-lightbox-media') as HTMLElement | null;
   }
   function applyZoom() {
     const media = mediaEl();
@@ -652,7 +665,7 @@ function buildLightbox() {
       applyZoom();
     }
   });
-  function endPointer(e) {
+  function endPointer(e: PointerEvent) {
     pointers.delete(e.pointerId);
     if (pointers.size !== 0 || !swipe0) return;
     const dt = performance.now() - swipe0.t;
@@ -694,8 +707,8 @@ function buildLightbox() {
 }
 
 // 라이트박스 이전/다음 작품 — 배치 순서 기준 순환
-let lightboxCurrentArt = null;
-function navLightbox(dir) {
+let lightboxCurrentArt: any = null;
+function navLightbox(dir: number) {
   const list = getPlacedArtworks();
   if (!lightboxCurrentArt || list.length < 2) return;
   const idx = list.indexOf(lightboxCurrentArt);
@@ -710,20 +723,20 @@ const ARTLIST_THUMB_FALLBACK =
     '<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56"><rect width="56" height="56" fill="#eaeae6"/></svg>'
   );
 
-function renderArtworkList(artworks) {
+function renderArtworkList(artworks: any[]) {
   const body = els.artworkList.body;
   body.innerHTML = '';
   if (!Array.isArray(artworks) || artworks.length === 0) {
     body.appendChild(el('div', { className: 'lu-artlist-empty', text: '표시할 작품이 없습니다' }));
     return;
   }
-  artworks.forEach((art) => {
+  artworks.forEach((art: any) => {
     const thumb = el('img', {
       className: 'lu-artlist-thumb',
       src: art.imageUrl || ARTLIST_THUMB_FALLBACK,
       alt: art.title || '',
       loading: 'lazy',
-    });
+    }) as HTMLImageElement;
     thumb.addEventListener('error', () => { thumb.src = ARTLIST_THUMB_FALLBACK; }, { once: true });
 
     const info = el('div', { className: 'lu-artlist-info' }, [
@@ -759,7 +772,7 @@ function buildArtworkList() {
 // ---------------------------------------------------------------------------
 
 // '3분 전' / '2시간 전' / '어제' / 'YYYY.MM.DD' — 노트 작성 시각을 사람이 읽기 쉬운 형태로.
-function formatRelativeTime(ts) {
+function formatRelativeTime(ts: number) {
   const now = Date.now();
   const diffMs = Math.max(0, now - ts);
   const min = Math.floor(diffMs / 60000);
@@ -770,7 +783,7 @@ function formatRelativeTime(ts) {
 
   const d = new Date(ts);
   const n = new Date(now);
-  const startOfDay = (dt) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+  const startOfDay = (dt: Date) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
   const dayDiff = Math.round((startOfDay(n) - startOfDay(d)) / 86400000);
   if (dayDiff <= 1) return '어제';
 
@@ -780,7 +793,7 @@ function formatRelativeTime(ts) {
   return `${yy}.${mm}.${dd}`;
 }
 
-function renderGuestbookNotes(notes) {
+function renderGuestbookNotes(notes: any[]) {
   const body = els.guestbook.body;
   body.innerHTML = '';
   if (!Array.isArray(notes) || notes.length === 0) {
@@ -788,7 +801,7 @@ function renderGuestbookNotes(notes) {
     return;
   }
   const DOT_COLORS = ['#e07a5f', '#81b29a', '#5f9e7d', '#8e7dbe', '#6a8caf', '#d68fb8'];
-  notes.forEach((note) => {
+  notes.forEach((note: any) => {
     const name = note.name || '게스트';
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
@@ -822,9 +835,9 @@ function buildGuestbookPanel() {
     maxlength: String(MAX_GUESTBOOK_TEXT),
     placeholder: '전시에 한 줄 메모를 남겨보세요…',
     spellcheck: 'false',
-  });
+  }) as HTMLTextAreaElement;
   const count = el('span', { className: 'lu-gbook-count', text: `0/${MAX_GUESTBOOK_TEXT}` });
-  const submitBtn = el('button', { id: 'lu-gbook-submit', type: 'button', text: '남기기' });
+  const submitBtn = el('button', { id: 'lu-gbook-submit', type: 'button', text: '남기기' }) as HTMLButtonElement;
   submitBtn.disabled = true;
   const footerRow = el('div', { className: 'lu-gbook-footer-row' }, [count, submitBtn]);
   const statsLine = el('div', {
@@ -852,12 +865,12 @@ function buildGuestbookPanel() {
     if (Number.isFinite(saved)) tab.style.top = clampTabTop(saved) + 'px';
   } catch (_) { /* 무시 */ }
 
-  function clampTabTop(px) {
+  function clampTabTop(px: number) {
     const max = Math.max(80, (window.innerHeight || 800) - 140);
     return Math.min(max, Math.max(60, px));
   }
 
-  let tabDrag = null; // { startY, startTop, moved }
+  let tabDrag: { startY: number; startTop: number; moved: boolean } | null = null; // { startY, startTop, moved }
   tab.addEventListener('pointerdown', (e) => {
     const rect = tab.getBoundingClientRect();
     tabDrag = { startY: e.clientY, startTop: rect.top, moved: false };
@@ -1129,7 +1142,10 @@ function bindGlobalKeys() {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle } = {}) {
+export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle }: {
+  onEnter?: (...a: any[]) => void; onChatSend?: (...a: any[]) => void;
+  onAvatarChange?: (...a: any[]) => void; onMakerToggle?: (...a: any[]) => void;
+} = {}) {
   if (initialized) {
     callbacks.onEnter = onEnter || callbacks.onEnter;
     callbacks.onChatSend = onChatSend || callbacks.onChatSend;
@@ -1179,7 +1195,7 @@ export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle } = 
   if (pendingGuestbookNotes) renderGuestbookNotes(pendingGuestbookNotes);
 }
 
-export function showLoading(show) {
+export function showLoading(show: boolean) {
   if (!els) return;
   els.loading.classList.toggle('lu-hidden', !show);
 }
@@ -1202,7 +1218,7 @@ export function hideLobby() {
   if (controlsToggle) controlsToggle.classList.add('lu-visible');
 }
 
-export function showArtworkInfo(art) {
+export function showArtworkInfo(art: any) {
   if (!els || !art) return;
   if (currentArtworkId === art.id && els.artwork.panel.classList.contains('lu-open')) {
     return; // 같은 작품이면 재렌더 생략
@@ -1220,7 +1236,7 @@ export function hideArtworkInfo() {
   els.artwork.panel.classList.remove('lu-open');
 }
 
-export function addChatMessage(name, text, isSelf) {
+export function addChatMessage(name: string, text: string, isSelf: boolean) {
   if (!els) return;
   const msg = el('div', { className: 'lu-chat-msg' + (isSelf ? ' lu-self' : '') }, [
     el('span', { className: 'lu-chat-name', text: name }),
@@ -1232,7 +1248,7 @@ export function addChatMessage(name, text, isSelf) {
   }
 }
 
-export function setPlayerCount(n) {
+export function setPlayerCount(n: number) {
   if (!els) return;
   const prev = els.topRight.count.textContent;
   els.topRight.count.textContent = String(n);
@@ -1246,12 +1262,12 @@ export function setPlayerCount(n) {
   if (dockRefs && dockRefs.chatWrap) dockRefs.chatWrap.style.display = n >= 2 ? '' : 'none';
 }
 
-export function setStatus(text) {
+export function setStatus(text: string) {
   if (!els) return;
   els.status.textContent = text || '';
 }
 
-export function setFPS(n) {
+export function setFPS(n: number) {
   if (!els) return;
   els.topRight.fps.textContent = String(Math.round(n));
 }
@@ -1260,12 +1276,12 @@ export function setFPS(n) {
 // 전시 제목
 // ---------------------------------------------------------------------------
 
-function applyGalleryTitle(name) {
+function applyGalleryTitle(name: string) {
   els.galleryTitle.querySelector('.lu-topbar-title').textContent = name || '';
   els.galleryTitle.classList.toggle('lu-empty', !name);
 }
 
-export function setGalleryTitle(name) {
+export function setGalleryTitle(name: string) {
   pendingGalleryTitle = name || '';
   if (!els) return; // initUI() 호출 시 pendingGalleryTitle이 적용됨
   applyGalleryTitle(pendingGalleryTitle);
@@ -1275,7 +1291,7 @@ export function setGalleryTitle(name) {
 // 전시 디렉터리 (로비 내 전시 선택)
 // ---------------------------------------------------------------------------
 
-function applyGalleryPicker(galleries, currentId, onPick) {
+function applyGalleryPicker(galleries: any[], currentId: any, onPick: any) {
   const box = els.lobby.pickerBox;
   box.innerHTML = '';
   if (!Array.isArray(galleries) || galleries.length === 0) return;
@@ -1305,7 +1321,7 @@ function applyGalleryPicker(galleries, currentId, onPick) {
           .filter(Boolean).join(' · '),
       }),
     ]);
-    if (isCurrent) item.disabled = true;
+    if (isCurrent) (item as HTMLButtonElement).disabled = true;
     item.addEventListener('click', () => {
       if (isCurrent) return;
       if (typeof onPick === 'function') onPick(g.id);
@@ -1315,7 +1331,7 @@ function applyGalleryPicker(galleries, currentId, onPick) {
   box.appendChild(list);
 }
 
-export function initGalleryPicker(galleries, currentId, onPick) {
+export function initGalleryPicker(galleries: any[], currentId: any, onPick: any) {
   pendingPicker = { galleries, currentId: currentId ?? null, onPick };
   if (!els) return; // initUI() 호출 시 pendingPicker가 적용됨
   applyGalleryPicker(pendingPicker.galleries, pendingPicker.currentId, pendingPicker.onPick);
@@ -1336,7 +1352,7 @@ function clearLightboxMedia() {
   stage.innerHTML = '';
 }
 
-export function showLightbox(art) {
+export function showLightbox(art: any) {
   if (!els || !art) return;
   lightboxCurrentArt = art;
   if (els.lightbox.resetZoom) els.lightbox.resetZoom();
@@ -1358,7 +1374,7 @@ export function showLightbox(art) {
       muted: 'muted',
       playsinline: 'playsinline',
     });
-    media.muted = true; // 일부 브라우저는 속성만으로 부족
+    (media as HTMLVideoElement).muted = true; // 일부 브라우저는 속성만으로 부족
   } else {
     media = el('img', {
       className: 'lu-lightbox-media',
@@ -1395,7 +1411,7 @@ export function isLightboxOpen() {
   return lightboxOpen;
 }
 
-export function setOnLightboxClose(cb) {
+export function setOnLightboxClose(cb: any) {
   onLightboxClose = typeof cb === 'function' ? cb : null;
 }
 
@@ -1405,7 +1421,7 @@ export function setOnLightboxClose(cb) {
 
 // artworks: getPlacedArtworks()가 반환하는 작품 배열. onSelect(art)는 카드 클릭 시
 // (패널이 자동으로 닫힌 뒤) 호출된다. createArtworks() 완료 후 호출해야 한다.
-export function initArtworkList(artworks, onSelect) {
+export function initArtworkList(artworks: any[], onSelect: any) {
   onArtworkSelect = typeof onSelect === 'function' ? onSelect : null;
   pendingArtworkList = artworks;
   if (!els) return; // initUI() 호출 시 pendingArtworkList가 적용됨
@@ -1437,10 +1453,12 @@ export function isArtworkListOpen() {
 // ---------------------------------------------------------------------------
 
 // index는 0-based (현재 작품의 배열 인덱스) — 화면에는 index+1 / total로 표시된다.
-export function showTourBar({ index, total, title, autoOn } = {}) {
+export function showTourBar({ index, total, title, autoOn }: {
+  index?: number; total?: number; title?: string; autoOn?: boolean;
+} = {}) {
   if (!els) return;
   const t = els.tourBar;
-  const pos = Number.isFinite(index) ? index + 1 : 1;
+  const pos = Number.isFinite(index) ? (index as number) + 1 : 1;
   const tot = Number.isFinite(total) ? total : 0;
   t.countEl.textContent = `● ${pos} / ${tot}`;
   t.titleEl.textContent = ` — ${title || ''}`;
@@ -1457,7 +1475,10 @@ export function hideTourBar() {
 // 터치 액션 독/작품 패널 버튼 콜백 — 키보드 없는 기기에서 T(투어)/E(크게 보기)/G(방명록)/P(캡처) 대체.
 // main.js가 배선한다. 방명록 독 버튼 자체는 ui.js 내부에서 toggleGuestbook()을 직접 호출하므로
 // onGuestbook은 현재 ui.js 내부에서 호출하지 않지만, 계약대로 인터페이스에 포함해 둔다.
-export function setActionHandlers({ onTour, onViewArtwork, onGuestbook, onCapture, onSelfView } = {}) {
+export function setActionHandlers({ onTour, onViewArtwork, onGuestbook, onCapture, onSelfView }: {
+  onTour?: () => void; onViewArtwork?: () => void; onGuestbook?: () => void;
+  onCapture?: () => void; onSelfView?: () => void;
+} = {}) {
   actionHandlers = {
     onTour: typeof onTour === 'function' ? onTour : null,
     onViewArtwork: typeof onViewArtwork === 'function' ? onViewArtwork : null,
@@ -1473,7 +1494,9 @@ export function setActionHandlers({ onTour, onViewArtwork, onGuestbook, onCaptur
 
 // { blob, dataUrl, galleryName, shareUrl } — blob/dataUrl은 워터마크 합성이 끝난 PNG
 // (main.js의 capturePhoto()가 canvas.toBlob + toDataURL로 만들어 전달한다).
-export function showShareModal({ blob, dataUrl, galleryName, shareUrl } = {}) {
+export function showShareModal({ blob, dataUrl, galleryName, shareUrl }: {
+  blob?: Blob | null; dataUrl?: string; galleryName?: string; shareUrl?: string;
+} = {}) {
   if (!els) return;
   shareData = {
     blob: blob || null,
@@ -1532,7 +1555,9 @@ export function flashShutter() {
 
 // onPrev/onNext/onExit/onToggleAuto — 투어 바 버튼 클릭 시 호출될 콜백.
 // main.js가 T 키 진입 시(또는 이후 필요 시점에) 배선한다.
-export function setTourHandlers({ onPrev, onNext, onExit, onToggleAuto } = {}) {
+export function setTourHandlers({ onPrev, onNext, onExit, onToggleAuto }: {
+  onPrev?: () => void; onNext?: () => void; onExit?: () => void; onToggleAuto?: () => void;
+} = {}) {
   tourHandlers = {
     onPrev: typeof onPrev === 'function' ? onPrev : null,
     onNext: typeof onNext === 'function' ? onNext : null,
@@ -1548,12 +1573,12 @@ export function setTourHandlers({ onPrev, onNext, onExit, onToggleAuto } = {}) {
 // onSubmit(text) — 입력창에서 [남기기] 또는 Ctrl/Cmd+Enter로 제출된 본문(트림·120자 이내).
 // 닉네임 결합(makeNote) 및 저장/브로드캐스트는 main.js 담당.
 /** 방명록 패널 하단 통계 요약 한 줄 갱신 (작가 리포트 — main.js가 주기 호출) */
-export function setGuestbookStats(text) {
+export function setGuestbookStats(text: string) {
   const line = document.getElementById('lu-gbook-stats');
   if (line) line.textContent = text || '';
 }
 
-export function initGuestbook({ onSubmit } = {}) {
+export function initGuestbook({ onSubmit }: { onSubmit?: (text: string) => void } = {}) {
   onGuestbookSubmit = typeof onSubmit === 'function' ? onSubmit : null;
 }
 
@@ -1578,7 +1603,7 @@ export function isGuestbookOpen() {
 }
 
 // notes: note[] (id/name/text/ts) — 전체 교체 렌더. 최신순으로 전달되어야 한다.
-export function setGuestbookNotes(notes) {
+export function setGuestbookNotes(notes: any) {
   pendingGuestbookNotes = Array.isArray(notes) ? notes : [];
   if (!els) return; // initUI() 호출 시 pendingGuestbookNotes가 적용됨
   renderGuestbookNotes(pendingGuestbookNotes);
