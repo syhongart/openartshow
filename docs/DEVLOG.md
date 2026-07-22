@@ -4,6 +4,44 @@
 
 ---
 
+## 2026-07-22 · ★★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C")
+
+**원인.** 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = `ui.js` 단일 파일에 HUD·아바타 편집기·
+CSS·저수준 헬퍼가 혼재(실측 3,977줄). 감독(아키텍트 관점) "SOLID가 유지보수의 전제". #94 게이트
+정비(회귀 안전망 clean)를 선행한 뒤 착수.
+
+**개선(4단계, 각 독립 커밋·게이트·배포).** ui.js를 **5파일로 분해**하되 **소비자 main.js(보호파일)는
+한 번도 안 건드림**(배럴로 export 표면 보존):
+- **단계1 `ui-dom.ts`**(1,701줄): `el`·`injectStyles`(CSS-in-JS 1,675줄)·`GOLD` 순수 이동. 검수관이
+  CSS 1,670줄 diff 바이트 동일 실증.
+- **단계2 `ui-chibi-store.ts`**(108줄): chibi 퍼시스턴스(키생성·read/save·closet). **localStorage 키
+  불변**(사용자 저장 유실 방지). ESM live-binding 제약으로 `sessionChibi` 재할당을 setter로 교체.
+- **단계3 `ui-avatar-editor.ts`**(687줄, **최고위험**): 편집기 클러스터를 `createChibiMaker(ctx)`
+  팩토리화. 양방향 결합(setStatus·callbacks·chibiOpen)을 **ctx 주입 + uiState 객체 승격**으로 풀어
+  순환 차단(편집기가 HUD를 import 안 함). 저장/RAF/ESC·c키 배선 보존. three-ambient.d.ts(`declare
+  module 'three'`) 신설(빌드타임 타입만·배포 미유출).
+- **단계4 배럴**: `ui.js`→`ui-hud.ts` 개명(1,585줄) + `ui.ts` 배럴(`export * from './ui-hud.js'`).
+  main.js의 `./ui.js` import를 `tsJsFallback` **2단계 폴백**(→ui.ts→ui-hud.ts)이 해소 → **main.js
+  무수정**으로 34 export 표면 보존. negative test로 배럴 필수성 확인.
+
+**결과.** 4단계 전부 게이트 통과(독립 스모크 + 검수관 교차리뷰, 각 배포 Actions success). 보호4파일
+무변경(전 단계 diff 공백)·라이브(app/index 미술관) 콘솔0·CSP0·test 108/108·자기완결 유지. ui.js
+3,977줄 단일 파일이 **HUD 셸(1,585)/편집기(687)/스토어(108)/DOM(1,701)/배럴(1)** SRP 5파일로 분해.
+
+**게이트 규율 조정(팀장).** leaf TS 전환과 달리 구조 분해는 번들러 모듈 재배치로 "dist 바이트 동일"이
+불성립 → **"의미 동등(라이브 스모크 콘솔0·CSP0) 1차 + dist 정규화 diff 리뷰 + 검수관 필수"**로 게이트
+완화. 매 단계 검수관 교차리뷰 필수로 안전 담보.
+
+**후속(비블로커).** ①`ui-hud.ts` `@ts-nocheck` — 대형 HUD 셸 strict화는 "순수 개명" 제약상 별도
+과제로 보류(로직 무변경 우선). 방치 시 미검사 지대 고착 위험 → strict 정리 티켓 필요. ②chibi.js·
+builder-walk.js의 `ui.js` 옛 주석 → `ui-hud.js` 갱신. ③`ui-avatar-editor` 유닛테스트 부재.
+
+**교훈.** 3,977줄 초대형 파일도 **배럴 + 소비자 무수정**이면 보호파일을 안 건드리고 분해할 수 있다.
+자연 경계(CSS/편집기/스토어)를 순수 이동으로 먼저 떼고, 마지막에 개명+배럴로 표면을 봉인하는 순서가
+"라이브 안 깨는 대분해"의 핵심. 결합(양방향 참조)은 ctx 주입으로 끊어 순환을 원천 차단.
+
+---
+
 ## 2026-07-21 · ★ 아키텍처 안정화 B-5단계 — leaf TypeScript 전환 개시 (space.js→.ts, 감독 결정)
 
 **원인.** B-2b(배포 경로 Vite 전환)로 이제 소스가 Vite 번들을 거치므로 .ts 파일 전환이 가능해졌다.
