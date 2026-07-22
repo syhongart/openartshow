@@ -96,7 +96,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <p><strong>결과.</strong> 게이트 통과 — 검수관 <strong>승인</strong>(상태 이전·tick 동일성·photoCtx 재배선·숨은 결합 4건·초기화 순서 전부 통과, <code>SELF_CAM_DIST=3.0</code> 사거리 불변·<code>rebuildAvatar</code> dispose 순서 1:1 대응 확인, 블로커 0), 독립 스모크(<strong>6/6 + 셀프뷰 3경로</strong> 토글·3인칭이동·3인칭사진 콘솔0). player/artworks/config.js· main-photo.ts·index.html·CSP 무수정, test 116/116.</p>
 <p><strong>교훈.</strong> 컨트롤러를 여럿 쪼갤 때 서로 직접 참조하게 두면 결합이 그물처럼 얽힌다 — <strong>조립점 하나가 getter로 중재</strong>하면 컨트롤러는 서로를 모른 채 독립적으로 검증·교체된다(Composition Root의 실익). 그리고 리팩터 범위는 <strong>심볼 grep이 아니라 실제 사용처 추적</strong>으로 잡아야 한다: 때리기 사거리가 3인칭 카메라 후퇴를 보정하던 숨은 결합은 <code>SELF_CAM_DIST</code> 참조를 따라가야만 드러났다.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-069373.html"><span class="lbl">← 이전 기록</span>C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)</a></div>
+<div class="pn"><a href="./2026-07-22-069373.html"><span class="lbl">← 이전 기록</span>C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)</a><a href="./2026-07-22-60a49a.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 C-3(9) — main.js 3차 멀티플레이어 컨트롤러 (P2P 오케스트레이션 · 3차 완결)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
