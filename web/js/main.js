@@ -61,6 +61,7 @@ import { readSpec, writeSpec, PX_BUDGET, LITE_ENTER_FPS, LITE_EXIT_FPS, LITE_VIS
 import { probeGpu } from './main-gpu.js';
 import { createEventHandlers } from './main-events.js';
 import { createPhotoController } from './main-photo.js';
+import { createTourController } from './main-tour.js';
 
 let renderer = null;
 let scene = null;
@@ -70,6 +71,7 @@ let flyController = null; // fly.js 비행 컨트롤러(점프 홀드) — 입�
 let mp = null; // MultiplayerManager — 입장 전에는 null (sendState/update 가드)
 let eventHandlers = null; // createEventHandlers(eventsCtx) 반환 — init에서 세팅, 아래 wrapper가 위임
 let photoController = null; // createPhotoController(photoCtx) 반환 — init에서 세팅, capturePhoto wrapper가 위임
+let tourController = null; // createTourController(tourCtx) 반환 — init에서 세팅, 투어 상태 5개 SSOT 소유 + tick 위임
 let npcCrowd = null; // AI 관객 — 호스트가 될 때 npcProvider 안에서 지연 생성
 let stats = null; // 작가 리포트 (전시별 방문·감상 통계 — stats.js)
 const visitorLog = new VisitorLog(); // 랜딩 "최근 관람객" 피드
@@ -442,14 +444,11 @@ function updateTween(delta) {
 }
 
 // ---------------------------------------------------------------------------
-// 도슨트 투어 상태
+// 도슨트 투어 상태 — main-tour.js(createTourController) 클로저가 SSOT로 소유(3차).
+// touring·tourIndex·tourAutoOn·tourWaiting·tourStayElapsed와 임계 상수
+// TOUR_STAY_SECONDS는 컨트롤러가 소유하며, main.js는 tourController.isTouring()·
+// getIndex() 등 getter로만 투어 상태를 읽는다.
 // ---------------------------------------------------------------------------
-let touring = false;
-let tourIndex = 0;
-let tourAutoOn = true;
-let tourWaiting = false; // 목적지 도착 후 머무름 카운트 중인지
-let tourStayElapsed = 0;
-const TOUR_STAY_SECONDS = 6;
 
 async function init() {
   showLoading(true);
@@ -646,7 +645,7 @@ async function init() {
     onMakerToggle: (isOpen) => {
       if (!entered) return;
       if (isOpen) player.disable();
-      else if (!touring) player.enable();
+      else if (!tourController.isTouring()) player.enable();
     },
   });
   showLoading(false);
@@ -654,11 +653,11 @@ async function init() {
   // 라이트박스가 닫히면(ESC/X/배경 클릭 모두) 플레이어 이동을 재활성화.
   // 단, 투어 진행 중에는 카메라를 투어가 계속 통제해야 하므로 재활성화하지 않는다.
   setOnLightboxClose(() => {
-    if (entered && !touring) player.enable();
+    if (entered && !tourController.isTouring()) player.enable();
   });
 
   // DOM 이벤트 핸들러 구현은 main-events.js로 분리(2차). 공유 상태를 읽고 쓰므로
-  // ctx 주입: 재대입되는 let(camera·renderer·mp·entered·touring)은 값 캡처가 아니라
+  // ctx 주입: 재대입되는 let(camera·renderer·mp·entered)은 값 캡처가 아니라
   // getter로 넘겨 stale 참조를 막고, 기능 함수(3차 대상)는 main.js 참조 그대로 전달한다.
   // 리스너 등록(아래 addEventListener 3곳)은 main.js에 그대로 유지 — 등록 지점·횟수·순서 불변.
   const eventsCtx = {
@@ -666,7 +665,7 @@ async function init() {
     getRenderer: () => renderer,
     getMp: () => mp,
     isEntered: () => entered,
-    isTouring: () => touring,
+    isTouring: () => tourController.isTouring(),
     viewCurrentArtwork,
     toggleArtworkList,
     toggleTour,
@@ -704,6 +703,29 @@ async function init() {
     setStatus,
   };
   photoController = createPhotoController(photoCtx);
+
+  // 도슨트(투어) 컨트롤러 구현은 main-tour.js로 분리(3차). 투어 상태 5개 +
+  // 임계 상수를 이 컨트롤러가 SSOT로 소유하고, animate 게임루프는 tick(delta)
+  // 한 줄로 위임한다. 재대입 let(placedArtworks·player·entered·tween)은 getter로,
+  // tween 즉시정지(exitTour)는 clearTween 위임으로, 안정 참조(startTween·
+  // getViewingPose·투어바/독 UI)는 값으로 주입한다. 아래 투어 wrapper 5개와
+  // handleArtworkSelect의 투어 분기가 이 컨트롤러에 위임한다.
+  const tourCtx = {
+    getPlacedArtworks: () => placedArtworks,
+    getPlayer: () => player,
+    isEntered: () => entered,
+    getTween: () => tween,
+    clearTween: () => { tween = null; },
+    startTween,
+    getViewingPose,
+    showTourBar,
+    hideTourBar,
+    setDockActive,
+    isLightboxOpen,
+    isArtworkListOpen,
+    hideArtworkList,
+  };
+  tourController = createTourController(tourCtx);
 
   // 리사이즈 대응
   window.addEventListener('resize', onWindowResize);
@@ -763,7 +785,7 @@ function updateFloorIndicator() {
 // 거리보다 살짝 멀 수 있어 직접 지정).
 function viewCurrentArtwork() {
   if (!entered || isLightboxOpen()) return;
-  const art = touring ? placedArtworks[tourIndex] : getNearbyArtwork(camera.position);
+  const art = tourController.isTouring() ? placedArtworks[tourController.getIndex()] : getNearbyArtwork(camera.position);
   if (!art) return;
   showLightbox(art);
   player.disable();
@@ -793,18 +815,13 @@ function onKeyDown(e) {
 function handleArtworkSelect(art) {
   if (!art || !entered) return;
   const pose = getViewingPose(art);
-  const wasTouring = touring;
-  if (wasTouring) {
-    const idx = placedArtworks.indexOf(art);
-    if (idx !== -1) tourIndex = idx;
-    tourWaiting = false;
-  }
+  const wasTouring = tourController.isTouring();
+  // 투어 중이면 트윈 "전"에 인덱스·대기상태를 컨트롤러에 동기화(원본 순서 보존).
+  if (wasTouring) tourController.syncOnSelect(art);
   startTween(pose, () => {
     player.setPose(pose);
     if (wasTouring) {
-      updateTourBar(art);
-      tourWaiting = true;
-      tourStayElapsed = 0;
+      tourController.onArrive(art);
     } else if (entered && !isLightboxOpen()) {
       player.enable();
     }
@@ -812,76 +829,30 @@ function handleArtworkSelect(art) {
 }
 
 // ---------------------------------------------------------------------------
-// 도슨트 투어 오케스트레이션
+// 도슨트 투어 오케스트레이션 — 구현은 main-tour.js(createTourController)로 이동(3차).
+// 아래 함수선언들은 호출 지점(setTourHandlers·setActionHandlers·eventsCtx의 콜백
+// 계약)을 1바이트도 바꾸지 않기 위해 심볼을 유지하는 위임 wrapper다. updateTourBar·
+// goToTourIndex·startTour는 외부 호출부가 없어(컨트롤러 내부 전용) 완전히 이동했다.
 // ---------------------------------------------------------------------------
 
-function updateTourBar(art) {
-  showTourBar({
-    index: tourIndex, // ui.js가 0-based를 받아 +1하여 표시한다 (계약)
-    total: placedArtworks.length,
-    title: art ? art.title || '' : '',
-    autoOn: tourAutoOn,
-  });
-}
-
-function goToTourIndex(index) {
-  const art = placedArtworks[index];
-  if (!art) return;
-  tourIndex = index;
-  tourWaiting = false;
-  tourStayElapsed = 0;
-  updateTourBar(art);
-  const pose = getViewingPose(art);
-  startTween(pose, () => {
-    player.setPose(pose);
-    tourWaiting = true;
-    tourStayElapsed = 0;
-  });
-}
-
-function startTour() {
-  if (!entered || isLightboxOpen() || touring) return;
-  if (!placedArtworks || placedArtworks.length === 0) return;
-  if (isArtworkListOpen()) hideArtworkList();
-  touring = true;
-  setDockActive('tour', true);
-  tourAutoOn = true;
-  player.disable();
-  goToTourIndex(0);
-}
-
 function exitTour() {
-  if (!touring) return;
-  touring = false;
-  setDockActive('tour', false);
-  tourWaiting = false;
-  tween = null; // 이동 중이었다면 현재 카메라 위치에서 즉시 정지
-  hideTourBar();
-  const state = player.getState();
-  player.setPose({ x: state.x, z: state.z, ry: state.ry });
-  if (entered && !isLightboxOpen()) player.enable();
+  tourController.exitTour();
 }
 
 function toggleTour() {
-  if (touring) exitTour();
-  else startTour();
+  tourController.toggleTour();
 }
 
 function tourNext() {
-  if (!touring || placedArtworks.length === 0) return;
-  goToTourIndex((tourIndex + 1) % placedArtworks.length);
+  tourController.next();
 }
 
 function tourPrev() {
-  if (!touring || placedArtworks.length === 0) return;
-  goToTourIndex((tourIndex - 1 + placedArtworks.length) % placedArtworks.length);
+  tourController.prev();
 }
 
 function tourToggleAuto() {
-  if (!touring) return;
-  tourAutoOn = !tourAutoOn;
-  tourStayElapsed = 0;
-  updateTourBar(placedArtworks[tourIndex]);
+  tourController.toggleAuto();
 }
 
 function handleEnter({ nickname, color, char }) {
@@ -1033,13 +1004,9 @@ function animate() {
     updateTween(delta);
 
     // 도슨트 투어 자동진행 — 목적지 도착 후 머무름 중 && 라이트박스가 닫혀 있고
-    // 새 트윈이 진행 중이 아닐 때만 카운트한다 (라이트박스 여는 동안 일시정지)
-    if (touring && tourWaiting && tourAutoOn && !tween && !isLightboxOpen()) {
-      tourStayElapsed += delta;
-      if (tourStayElapsed >= TOUR_STAY_SECONDS) {
-        tourNext();
-      }
-    }
+    // 새 트윈이 진행 중이 아닐 때만 카운트한다 (라이트박스 여는 동안 일시정지).
+    // 판정식·임계·delta 누적·다음전환 호출은 컨트롤러 tick이 원본과 1바이트 동치로 소유.
+    tourController.tick(delta);
 
     // 나비·새 애니메이션
     sceneTick(delta);
