@@ -54,10 +54,12 @@ export function createEnterFlow(ctx) {
     }, 2000);
   }
 
-  // mpCtx.onVisitor 위임 — 원격 방문자 입장 시 방문 기록. 원본 `stats.addVisit(id)`와
-  // 동치(connect 성공 후에만 onVisitor가 발생하므로 stats는 이미 생성돼 있다 — 원본도 null 가드 없음).
+  // mpCtx.onVisitor 위임 — 원격 방문자 입장 시 방문 기록. 정상 경로(connect 성공 후에만
+  // onVisitor가 발생 → stats는 이미 생성됨)에서는 stats?.addVisit(id) === stats.addVisit(id)로
+  // 동작 무변경. connect 실패(혼자 관람 모드, begin 미호출 → stats=null)에서 콜백이 이론상
+  // 도달해도 옵셔널 체이닝으로 무해 no-op — 검수관 권고(C-3(9) 우려1) 방어 심층 가드.
   function recordVisit(id) {
-    stats.addVisit(id);
+    stats?.addVisit(id);
   }
 
   return {
