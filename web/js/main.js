@@ -639,6 +639,7 @@ async function init() {
     setStatus,
   });
   perfGovernor.setShadowInterval(resolvedTheme === 'cycle' ? 2 : 0);
+  if (location.search.includes('debug=perf')) import('./debug-perf.js').then((m) => m.mountPerfHud(renderer, 'index', { getSpec: readSpec, getLite: () => perfGovernor?.getLite?.() })); // ?debug=perf 게이트 뒤 동적 import(behind-flag) — 실기기 성능 계측 HUD
 
   // 리사이즈 대응
   window.addEventListener('resize', onWindowResize);

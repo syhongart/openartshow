@@ -168,5 +168,6 @@ export function createPerfGovernor(ctx: PerfCtx) {
   return {
     tick,
     setShadowInterval,
+    getLite: () => liteMode, // ?debug=perf HUD 전용 접근자 — 적응형 저사양(lite) 실시간 상태 노출(로직 무변경, 순수 getter)
   };
 }

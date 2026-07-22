@@ -74,6 +74,7 @@ const V = createWorld({ canvas, parcels, opts: {
   mp: { nickname: nick, color: myColor, char: randomChibiChar() }, // window.Peer 없으면 world.js가 조용히 1인 모드
 } });
 window.__world = V;
+if (location.search.includes('debug=perf')) import('./debug-perf.js').then((m) => m.mountPerfHud(V.getRenderer(), 'world')); // ?debug=perf 게이트 뒤 동적 import(behind-flag) — 진입 즉시 프레임 계측(world.js 무접촉)
 
 let playerCount = 1;
 V.on('players', (n) => { playerCount = n; });

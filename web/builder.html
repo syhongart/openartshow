@@ -526,6 +526,7 @@ try { PART_ICONS = renderPartIcons(); } catch (e) { PART_ICONS = {}; }
 
 const canvas = document.getElementById('c');
 const B = createBuilder(canvas, { preserveDrawingBuffer: true });
+if (location.search.includes('debug=perf')) import('./js/debug-perf.js').then((m) => m.mountPerfHud(B.renderer, 'builder')); // ?debug=perf 게이트 뒤 동적 import(behind-flag) — builder.js 무접촉(인라인 부트 경유)
 function fit(){ B.resize(window.innerWidth, window.innerHeight); }
 window.addEventListener('resize', fit); fit();
 
