@@ -53,12 +53,16 @@ License: CC BY 4.0 · https://creativecommons.org/licenses/by/4.0/
 출처: Poly Haven · https://polyhaven.com
 License: CC0 1.0 (퍼블릭 도메인, 표시 의무 없음 — 감사 표기)
 
-## 5. Pretendard (폰트) — `web/vendor/fonts/Pretendard-*.woff2`
+## 5. Pretendard (폰트) — `web/vendor/fonts/PretendardVariable-subset.woff2`
 Copyright (c) 2021 Kil Hyung-jin (길형진), with Reserved Font Name "Pretendard".
 License: SIL Open Font License 1.1 · https://scripts.sil.org/OFL
 라이선스 전문: `web/vendor/fonts/OFL.txt` 동봉.
-변경: 웹 배포 최적화를 위해 KS X 1001 상용 2350자 + 라틴·자모·구두점·통화로
-서브셋함 (용량 4.4MB → 1.2MB). 원저작물의 글리프 부분집합입니다.
+변경(2026-07-22): 공식 배포 PretendardVariable(가변 폰트, 1.3.9)에서 한글 5개
+블록(U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF — 이 프로젝트
+에서는 NanumGothic이 담당·unicode-range로 우선 매칭됨)을 제외한 라틴·숫자·구두점·
+통화 등 311자만 서브셋함(fvar wght 축 45-930 보존, 원본 6.7MB → 서브셋 60KB).
+원저작물의 글리프 부분집합이며 font-family명 "Pretendard"는 원본 그대로 유지해
+Reserved Font Name 조항을 위반하지 않습니다.
 
 ## 6. 나눔고딕 NanumGothic (폰트) — `web/vendor/fonts/NanumGothic-*.woff2`
 Copyright (c) 2010 NHN Corporation. Font designed by Sandoll Communications Inc.
