@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시) — OpenArtShow 개발일지</title>
-<meta name="description" content="두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-10.html">
+<title>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시) — OpenArtShow 개발일지</title>
+<meta name="description" content="프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-14.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시) — OpenArtShow 개발일지">
-<meta property="og:description" content="두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-10.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)","datePublished":"2026-07-19","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-10.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시) — OpenArtShow 개발일지">
+<meta property="og:description" content="프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-14.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)","datePublished":"2026-07-18","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-14.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,12 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-19</p>
-<p>두 건을 라이브 고정 미술관(<code>syhongart 개인전</code>)에 반영했다.</p>
-<h3>1) 작품 12점 외부 이미지 → 자작 절차적 로컬 아트 (bbc8290)</h3>
-<p><strong>원인.</strong> 작품 aw-01~12가 외부 스톡사진 <code>https://picsum.photos/...</code>를 쓰고 있어 "외부 호스트 0"(자기완결)·프라이버시(방문자 브라우저가 외부 도메인으로 직접 요청 → 관람객 접속정보 유출) 규율을 위반. 조사 결과 위반은 picsum 12개가 유일(HDRI·폰트·벤더· featured 2점은 이미 로컬)이었다. <strong>개선.</strong> 감독 결정으로 자작 절차적 추상 아트 12점을 캔버스로 생성(각 작품 제목·설명 무드 기반 팔레트 — 능선·강줄기·안개·항구·노을 등, DESIGN.md 팔레트 B 조화). 5단 파이프라인(그라디언트→다중 워시→구조 모티프→그레인→비네트)으로 "한 작가의 연작" 통일감. <code>web/assets/gallery/aw-01~12.jpg</code>(각 ≤180KB). <code>artworks.js</code>(폴백)·<code>syhongart.json</code>(1순위) 두 파일의 imageUrl을 로컬 상대경로로 동시 교체 — 보호파일 artworks.js는 값·PICSUM 정의 제거만, 로직 무변경. <strong>교훈.</strong> 공용 함수(비네트)의 방사 감쇠가 구조 약한 1점(aw-05)에서 "중앙 원"으로 노출돼 플레이스홀더처럼 읽혔다 → 공용 함수는 두고 그 호출부만 비대칭 선형으로 교체 + 전용 모티프 추가로 해결(팀장 육안 판정 → 리튠).</p>
-<h3>2) 소프트웨어 렌더링 GPU 경고(모달·배지) 제거 (74058bd·53933a6)</h3>
-<p><strong>원인.</strong> GPU 가속 꺼짐/원격데스크톱 등 소프트웨어 렌더링 감지 시 "그래픽카드 없이 그리고 있어요 — 몹시 느립니다" 큰 모달 + 좌하단 "소프트웨어 렌더링 모드" 배지가 작품 감상을 가렸다. <strong>개선.</strong> 감독 지시로 둘 다 비활성(<code>showGpuNotice(…,false)</code> 호출 + <code>#lu-potato-badge</code> 생성 블록 제거). <strong>유지</strong>: (a) WebGL 자체 불가 시 치명 안내(fatal=true) — 없애면 3D가 안 뜨는 빈 화면만 남음, (b) <code>gpuInfo.soft</code> 기반 저사양 자동 경량화(해상도 배율·그림자 off· 무톤매핑·fog 삭감·potato 모드) — 경고 표시만 껐고 성능 최적화는 그대로.</p>
-<p><strong>게이트(공통).</strong> 감독 승인(보호파일 팀장 서명) → executor 독립 스모크(picsum 외부요청 0· 12액자 로드·배너/배지 미표시·potato 유지·fatal 온전 실측) → 검수관 교차리뷰 승인(보호파일 로직 무변경·2파일 동기화·최적화 무손상) → 팀장 실물 육안(컨택트시트·미술관 액자) → 감독 실물 보고 → deploy Actions success.</p>
+<h1><span class="emo">📱</span>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-18</p>
+<p>프런트엔드 SOLID 감사. <strong>아키텍처 경계·의존구조는 모범</strong>(보호↔비보호 import 0·순환 0·<code>normalizeSpace</code>/<code>normalizeChibi</code> SSOT 전량 경유). 부채는 두 축에 집중.</p>
+<ul><li><strong>SRP(초거대 함수)</strong>: <code>chibi.js buildChibi</code>(1374줄)·<code>ui.js injectStyles</code>(CSS 1636줄)·<code>builder.js createBuilder</code>(557줄) 등.</li><li><strong>OCP/DRY(형태 지오메트리)</strong>: <code>space-render.js partGeo</code>↔<code>partAccent</code>의 <strong>형상 상수 수기 이중보유</strong>(cake·mirror 등 6+쌍, 한쪽만 고치면 정합 붕괴)·거대 switch·chibi 종족 문자열 하드코딩·tiger 死코드.</li></ul>
+<h3>4단계 계획(ROI·리스크 순)</h3>
+<p>1. <strong>안전망</strong>(선행): 순수함수 단위테스트(normalize·snap·artworkSize 등) + 헤드리스 렌더 스모크 재사용화 — 리팩터 전 회귀 그물. 2. <strong>(A) 저리스크 국소</strong>(비보호): tiger 死코드 제거·이동상수/저장키 SSOT 추출·injectStyles CSS 외부화 등. 3. <strong>(B) 구조</strong>(게이트): partGeo↔partAccent 형상상수 공유 spec(최우선)·switch→디스패치·chibi 종족 레지스트리·createBuilder 분해. 4. <strong>(C) 보호4파일</strong>(감사·사전서명): main.js init/animate 분해·config artworkSlots 좌표 파생화.</p>
 </article>
 
 </div>
