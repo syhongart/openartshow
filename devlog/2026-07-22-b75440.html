@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 감독 로드맵 2단계. main.js의 DOM 이벤트 핸들러(onKeyDown·onWindowResize·beforeunload)를">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-ad8695.html">
+<title>C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 감독 로드맵 3단계(기능별 컨트롤러). 3차 함수 14개는 2차 핸들러와 달리 전역 상태를">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-b75440.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 감독 로드맵 2단계. main.js의 DOM 이벤트 핸들러(onKeyDown·onWindowResize·beforeunload)를">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-ad8695.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-ad8695.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 감독 로드맵 3단계(기능별 컨트롤러). 3차 함수 14개는 2차 핸들러와 달리 전역 상태를">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-b75440.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b75440.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,15 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">🛠️</span>C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)</h1>
+<h1><span class="emo">🌌</span>C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 감독 로드맵 2단계. main.js의 DOM 이벤트 핸들러(onKeyDown·onWindowResize·beforeunload)를 분리. 1차(순수 이동)와 달리 공유 상태를 읽고 쓰므로 순수 이동 불가.</p>
-<p><strong>개선.</strong> <code>main-events.ts</code>(90줄, <code>createEventHandlers(ctx)</code>→{onKeyDown·onWindowResize·onBeforeUnload}) 로 <strong>핸들러 로직만</strong> 추출(main.js 1,256→1,231). 핵심 원칙:</p>
-<ul><li><strong>리스너 등록은 main.js에 그대로 유지</strong>(addEventListener 8회·순서·핸들러 심볼 1바이트 불변 — 분해 최다 오류 지점). onKeyDown·onWindowResize는 wrapper 함수선언으로 hoisting·등록라인 보존.</li><li><strong>ctx 주입 + 재대입 let getter</strong>: camera·renderer·mp·entered·touring은 init에서 재대입되는 module let이라 <strong>값 캡처가 아니라 getter 클로저</strong>로 주입(호출 시점 최신 값 재조회 — stale 참조 방지).</li><li>기능함수 14개(capturePhoto·투어군·셀프뷰 등)는 <strong>3차 대상이라 main.js 잔류</strong>, ctx로 참조만 전달.</li></ul>
-<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(리스너 불변·getter stale 방지·키분기 1바이트 동치·기능함수 잔류 정당·no-undef 0), 독립 스모크(<strong>app/index·world swiftshader 실제 렌더 콘솔0·씬부팅</strong>, addEventListener 8회 불변, 재입장 리스너 중복 없음). player/artworks/config.js·index.html·CSP 무수정, test 116/116.</p>
-<p><strong>교훈.</strong> 이벤트 핸들러 분리의 함정 2가지를 방어했다 — ①리스너 <strong>등록</strong>은 옮기지 않고 <strong>구현</strong>만 옮겨 "등록 횟수·순서 불변"을 지킨다(중복 등록=메모리 누수·이중 반응 방지). ②재대입되는 공유 상태는 값이 아니라 <strong>getter로 주입</strong>해야 stale 참조를 피한다(입장 전 camera=null 캡처 시 리사이즈 크래시 같은 버그 원천 차단). 이 두 원칙이 감독이 지목한 "초기화 순서·이벤트 등록 횟수" 게이트의 실체다.</p>
+<p><strong>원인.</strong> 감독 로드맵 3단계(기능별 컨트롤러). 3차 함수 14개는 2차 핸들러와 달리 전역 상태를 직접 변이하고 side effect(사진 캡처·투어 전이·P2P)를 낸다. 감독이 <strong>"위험도별 분할"</strong>을 승인 — 한 번에 다 옮기지 않고 가장 안전한 <strong>사진 컨트롤러 1개 군부터</strong> 분리·게이트·배포한다.</p>
+<p><strong>개선.</strong> <code>main-photo.ts</code>(<code>createPhotoController(ctx)</code>→{capturePhoto})로 <code>capturePhoto</code> 본체를 이전(파이프라인 로직 1바이트 불변, main.js 1,231→1,191). 핵심 원칙(2차 승계):</p>
+<ul><li><strong>재대입 let 8개는 getter 주입</strong>: renderer·scene·camera·thirdPerson·selfAvatar·galleryInfo· myNickname·mp 전부 init/토글/입장에서 재대입되는 module let → 값 캡처 시 stale/undefined 참조로 캡처 시점 크래시. <code>getX:()=&gt;x</code> 클로저로 주입. 안정 참조(photoWall const·함수선언·ui import)는 값.</li><li><strong>capturePhoto는 위임 wrapper로 잔류</strong> → 호출지점(P키·캡처버튼 onCapture·exports 객체) 1바이트 무변경. 초기화 순서·리스너 등록 횟수 불변(photoController 생성만 eventHandlers 직후 삽입).</li><li><strong>ctx 이름 충돌 방어</strong>: 주입 <code>ctx</code> 파라미터를 모듈 최상단에서 즉시 구조분해해 개별 심볼로 고정 → <code>img.onload</code> 내부 <code>const ctx = canvas.getContext('2d')</code>(캔버스 2D)와 섀도잉 혼선 차단.</li></ul>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 조건부승인(getter 8개 주입정확·wrapper 계약·초기화순서·이름충돌· 파이프라인 인자 동일, 조건=분리로 죽은 import 3개 제거 → 이행), 독립 스모크(<strong>6/6 PASS</strong>, app/index· world swiftshader 실렌더 콘솔0, capturePhoto 런타임 ReferenceError 없이 위임 호출). player/artworks/ config.js·index.html·CSP 무수정.</p>
+<p><strong>교훈.</strong> side effect 있는 기능함수 분리도 2차의 두 원칙(등록 아닌 구현만 이전, 재대입 let은 getter)이 그대로 방어선이다. 추가로 <strong>"완전 위임" 리팩터는 원본의 죽은 import까지 정리해야 취지가 완결</strong>된다 — 검수관이 base엔 없던 신규 no-unused-vars 3건을 잡아 조건으로 걸었고, 이를 amend로 흡수했다.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-2628f9.html"><span class="lbl">← 이전 기록</span>C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)</a><a href="./2026-07-22-b75440.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)</a></div>
+<div class="pn"><a href="./2026-07-22-ad8695.html"><span class="lbl">← 이전 기록</span>C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
