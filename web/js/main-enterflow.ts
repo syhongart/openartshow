@@ -1,0 +1,68 @@
+// @ts-nocheck — main.js 분해 4차 C군: 입장 세션 셋업(EnterFlow) 모듈화. strict 타입은 후속.
+// main-enterflow.js — handleEnter 안에서 "전시별 입장 세션 셋업"(mp 오케스트레이션이
+//   아닌 도메인)을 main.js에서 추출한다: 멀티플레이 룸 키(roomSuffix) 산출 + 작가 리포트
+//   통계(GalleryStats) 생성 + 2초 dwell 타이머(체류 통계 + 방명록 통계 갱신).
+//
+//   소유 판단(3차 myNickname 선례): stats는 handleEnter(생성·타이머)와 mpCtx.onVisitor
+//   (addVisit) 두 곳에서만 참조된다. onVisitor 콜백 본체(visitorLog 등)는 main.js 도메인이라
+//   잔류하고 stats 부분만 recordVisit()로 위임하면 되므로, stats 이전이 결합을 최소로 늘린다
+//   → EnterFlow가 stats·statsDwellTimer를 SSOT로 소유. 반대로 startAmbient·startOnboarding·
+//   entered·player.enable·connect·hideLobby·myNickname·selfInfo는 handleEnter에 잔류한다
+//   (제스처 타이밍·입장 진입 계약·다수 게이트가 읽는 전역 — 옮기면 ambient/viewfx 두 도메인을
+//   더 알게 되어 God 경향). C는 handleEnter 도메인만 만지고 animate 게임루프는 무수정.
+//
+//   ctx: 동적 참조(mp·방명록 노트 수)는 getter, UI(setGuestbookStats)는 값. GalleryStats·djb2·
+//   getPlacedArtworks는 순수 leaf라 직접 import(자기완결). connect 실패(false) 시 handleEnter가
+//   begin()을 호출하지 않으므로 stats/timer 미생성 경로는 원본 try/catch와 동치로 보존된다.
+
+import { GalleryStats } from './stats.js';
+import { djb2 } from './main-math.js';
+import { getPlacedArtworks } from './artworks.js';
+
+export function createEnterFlow(ctx) {
+  const {
+    getMp,                    // getter — dwell 타이머가 원격 아바타 위치를 읽음
+    getGuestbookNotesLength,  // getter — 방명록 통계에 노트 수 반영 (main.js 방명록 소유)
+    setGuestbookStats,        // 값 — UI
+  } = ctx;
+
+  // --- 입장 세션 상태 SSOT (main.js에서 이전) ---
+  let stats = null;            // 작가 리포트 (전시별 방문·감상 통계 — stats.js)
+  let statsDwellTimer = null;
+
+  // 전시별 멀티플레이 룸 키 — 같은 전시 링크로 들어온 사람끼리만 만난다.
+  // 디렉터리 전시는 id, 공유 링크(#gd=/#gz=) 전시는 해시 데이터의 djb2 요약을 쓴다.
+  // (connect의 roomId 재료 + stats 전시 키로 동일 규약 공유 — handleEnter가 받아서 쓴다.)
+  function computeRoomSuffix(galleryInfo) {
+    return (galleryInfo && galleryInfo.id) || 'link-' + djb2(window.location.hash || '');
+  }
+
+  // connect 성공 후 handleEnter가 호출 — 작가 리포트 통계 + 2초 dwell 타이머 시작.
+  // 전시 키는 룸 suffix와 동일 규약.
+  function begin(roomSuffix) {
+    stats = new GalleryStats(roomSuffix);
+    if (statsDwellTimer) clearInterval(statsDwellTimer);
+    statsDwellTimer = setInterval(() => {
+      const mp = getMp();
+      if (!mp || !stats) return;
+      const humans = [];
+      for (const [rid, av] of mp.remoteAvatars) {
+        if (!rid.startsWith('npc-')) humans.push({ x: av.group.position.x, z: av.group.position.z });
+      }
+      stats.addDwell(humans, getPlacedArtworks(), 2);
+      setGuestbookStats(stats.summary(getGuestbookNotesLength()));
+    }, 2000);
+  }
+
+  // mpCtx.onVisitor 위임 — 원격 방문자 입장 시 방문 기록. 원본 `stats.addVisit(id)`와
+  // 동치(connect 성공 후에만 onVisitor가 발생하므로 stats는 이미 생성돼 있다 — 원본도 null 가드 없음).
+  function recordVisit(id) {
+    stats.addVisit(id);
+  }
+
+  return {
+    computeRoomSuffix,
+    begin,
+    recordVisit,
+  };
+}

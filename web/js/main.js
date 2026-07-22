@@ -20,7 +20,6 @@ import { playOuch } from './hitfx.js';
 import { initFly } from './fly.js';
 import { ensureCanvasFonts, getCanvasFont } from './fonts.js';
 import { loadNotes, saveNotes, mergeNotes, makeNote } from './guestbook.js';
-import { GalleryStats } from './stats.js';
 import { VisitorLog, PhotoWall } from './feed.js';
 import {
   initUI,
@@ -55,7 +54,7 @@ import {
   isShareModalOpen,
   flashShutter,
 } from './ui.js';
-import { resolveAutoTheme, djb2 } from './main-math.js'; // easeInOutCubic·lerpAngle은 viewfx(트윈)로 이동(4차 B군)
+import { resolveAutoTheme } from './main-math.js'; // easeInOutCubic·lerpAngle은 viewfx(B군)·djb2는 enterflow(C군)로 이동
 import { readSpec, PX_BUDGET } from './main-spec.js'; // writeSpec·LITE_*·PX_BUDGET 일부는 perfGovernor로 이동(4차 A군)
 import { probeGpu } from './main-gpu.js';
 import { createEventHandlers } from './main-events.js';
@@ -65,6 +64,7 @@ import { createSelfViewController } from './main-selfview.js';
 import { createMultiplayerController } from './main-multiplayer.js';
 import { createPerfGovernor } from './main-perf.js';
 import { createViewFx } from './main-viewfx.js';
+import { createEnterFlow } from './main-enterflow.js';
 
 let renderer = null;
 let scene = null;
@@ -78,8 +78,9 @@ let tourController = null; // createTourController(tourCtx) 반환 — init에�
 let selfViewController = null; // createSelfViewController(selfViewCtx) 반환 — init에서 세팅, 셀프뷰 상태 SSOT 소유 + tick 위임
 let perfGovernor = null; // createPerfGovernor(perfCtx) 반환 — init에서 세팅, 성능/렌더 상태 9개 SSOT 소유 + tick 위임 (4차 A군)
 let viewfxController = null; // createViewFx(viewfxCtx) 반환 — init에서 세팅, 트윈·온보딩·층안내 상태 SSOT 소유 + 뷰보조 메서드 위임 (4차 B군)
+let enterFlow = null; // createEnterFlow(enterCtx) 반환 — init에서 세팅, 입장 세션 셋업(stats·dwellTimer·roomSuffix) SSOT 소유 (4차 C군)
 let npcCrowd = null; // AI 관객 — 호스트가 될 때 npcProvider 안에서 지연 생성
-let stats = null; // 작가 리포트 (전시별 방문·감상 통계 — stats.js)
+// stats(작가 리포트)·statsDwellTimer는 enterFlow(main-enterflow.js)가 SSOT로 소유(4차 C군).
 const visitorLog = new VisitorLog(); // 랜딩 "최근 관람객" 피드
 // 적응형 저사양(lite) 모드·섀도 재베이크·FPS 집계 상태 9개는 perfGovernor(main-perf.js)가
 // SSOT로 소유한다(4차 A군). 게임루프는 perfGovernor.tick(delta) 한 줄로 위임한다.
@@ -146,7 +147,6 @@ function showGpuNotice(gpuName, fatal) {
 // applyNpcCulling(저사양 시 원거리 NPC 숨김)은 perfGovernor(main-perf.js)로 이전(4차 A군).
 // 호출처(lite 진입/이탈·2초 주기)가 전부 컨트롤러 tick 안이라 외부 노출 없이 내부 메서드로 소유.
 const photoWall = new PhotoWall(); // 랜딩 "라이브 포토월" 피드
-let statsDwellTimer = null;
 
 // ---------------------------------------------------------------------------
 // 3인칭 '내 모습 보기' (V키 / 터치 독 '시점' 버튼)
@@ -459,6 +459,18 @@ async function init() {
     if (entered && !tourController.isTouring()) player.enable();
   });
 
+  // 입장 세션 셋업(EnterFlow) 컨트롤러 구현은 main-enterflow.js로 분리(4차 C군). stats·
+  // statsDwellTimer를 SSOT로 소유하고 roomSuffix 산출·dwell 타이머를 담당한다. 아래 mpCtx의
+  // onVisitor가 enterFlow.recordVisit(stats.addVisit 위임)를 참조하므로 그보다 먼저 생성한다.
+  // 동적(mp·방명록 노트 수)은 getter, UI(setGuestbookStats)는 값. GalleryStats·djb2·
+  // getPlacedArtworks는 컨트롤러가 직접 import(자기완결). handleEnter가 connect 성공 후
+  // begin()을 호출한다(실패 시 미호출 → stats/timer 미생성, 원본 try/catch 경로 동치).
+  enterFlow = createEnterFlow({
+    getMp: () => multiplayerController.getMp(),
+    getGuestbookNotesLength: () => guestbookNotes.length,
+    setGuestbookStats,
+  });
+
   // 멀티플레이어(P2P) 오케스트레이션 컨트롤러 구현은 main-multiplayer.js로 분리(3차 마지막 군).
   // mp(MultiplayerManager 인스턴스)의 생성·콜백 배선·게임루프 tick·연결 직후 방명록 1회 동기화를
   // 이 컨트롤러가 SSOT로 소유한다. main.js에는 mp let이 남지 않는다(getMp()로 읽고 각자 null 가드).
@@ -473,7 +485,7 @@ async function init() {
     setStatus,
     getGuestbookNotes: () => guestbookNotes,
     onVisitor: (id, info) => {
-      stats.addVisit(id);
+      enterFlow.recordVisit(id); // stats.addVisit 위임(4차 C군) — stats 소유가 enterFlow로 이전
       visitorLog.add(info && info.nickname, galleryInfo ? galleryInfo.name : '');
     },
     onPhoto: (item) => {
@@ -750,9 +762,9 @@ function handleEnter({ nickname, color, char }) {
   startAmbient();
   viewfxController.startOnboarding();
 
-  // 전시별 멀티플레이 룸 — 같은 전시 링크로 들어온 사람끼리만 만난다.
-  // 디렉터리 전시는 id, 공유 링크(#gd=/#gz=) 전시는 해시 데이터의 djb2 요약을 쓴다.
-  const roomSuffix = (galleryInfo && galleryInfo.id) || 'link-' + djb2(window.location.hash || '');
+  // 전시별 멀티플레이 룸 키(gallery id 또는 해시 djb2) — connect roomId 재료 + stats 전시
+  // 키로 동일 규약 공유. 산출은 enterFlow가 소유(4차 C군), 여기서 connect에 넘긴다.
+  const roomSuffix = enterFlow.computeRoomSuffix(galleryInfo);
   // mp 생성·콜백 배선·피어 연결은 multiplayerController가 담당(오케스트레이션 이전).
   // 실패 시 false를 반환 — 통계/타이머를 세우지 않고 '혼자 관람 모드'로 안내한다(원본 catch 경로 동치).
   const connected = multiplayerController.connect({
@@ -762,20 +774,9 @@ function handleEnter({ nickname, color, char }) {
     setStatus('멀티플레이어 연결에 실패했습니다. 혼자 관람 모드로 진행합니다.');
     return;
   }
-  // 작가 리포트 — 방문자·인기작(체류) 통계. 전시 키는 룸 suffix와 동일 규약.
-  // (mp 오케스트레이션이 아닌 별개 도메인이라 main.js 잔류 — mp 데이터는 getMp()로 읽는다.)
-  stats = new GalleryStats(roomSuffix);
-  if (statsDwellTimer) clearInterval(statsDwellTimer);
-  statsDwellTimer = setInterval(() => {
-    const mp = multiplayerController.getMp();
-    if (!mp || !stats) return;
-    const humans = [];
-    for (const [rid, av] of mp.remoteAvatars) {
-      if (!rid.startsWith('npc-')) humans.push({ x: av.group.position.x, z: av.group.position.z });
-    }
-    stats.addDwell(humans, getPlacedArtworks(), 2);
-    setGuestbookStats(stats.summary(guestbookNotes.length));
-  }, 2000);
+  // 작가 리포트(방문자·인기작 체류 통계) + 2초 dwell 타이머 — enterFlow가 소유(4차 C군).
+  // connect 성공 후에만 호출하므로 실패 시 stats/timer 미생성 경로가 원본과 동치.
+  enterFlow.begin(roomSuffix);
 }
 
 // 방명록 입력창 제출(ui.js initGuestbook의 onSubmit) — 노트 생성 → 로컬 병합/저장/렌더 →
