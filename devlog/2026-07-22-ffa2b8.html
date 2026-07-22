@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>P1-⑤ 가변폰트 서브셋 — 첫 방문 폰트 페이로드 1.16MB → 60KB (-95%) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 9축 성능점검 톱1 = 첫 방문 폰트 페이로드. Pretendard 6웨이트 개별 woff2 합 1.16MB인데,">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-ee5745.html">
+<title>실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 감독이 실기기에서 버벅임을 제보했다 — index 걷기, world 오픈월드 진입 즉시, builder 로드">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-ffa2b8.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="P1-⑤ 가변폰트 서브셋 — 첫 방문 폰트 페이로드 1.16MB → 60KB (-95%) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 9축 성능점검 톱1 = 첫 방문 폰트 페이로드. Pretendard 6웨이트 개별 woff2 합 1.16MB인데,">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-ee5745.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"P1-⑤ 가변폰트 서브셋 — 첫 방문 폰트 페이로드 1.16MB → 60KB (-95%)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-ee5745.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 감독이 실기기에서 버벅임을 제보했다 — index 걷기, world 오픈월드 진입 즉시, builder 로드">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-ffa2b8.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-ffa2b8.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">🛠️</span>P1-⑤ 가변폰트 서브셋 — 첫 방문 폰트 페이로드 1.16MB → 60KB (-95%)</h1>
+<h1><span class="emo">⚡</span>실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 9축 성능점검 톱1 = 첫 방문 폰트 페이로드. Pretendard 6웨이트 개별 woff2 합 1.16MB인데, 각 파일 cmap을 실측하니 <strong>87%(2,350자)가 한글 음절</strong>이었다. 그러나 폰트 정책상 한글은 NanumGothic이 unicode-range로 우선 렌더하므로 Pretendard의 한글 글리프는 <strong>스택상 도달 불가한 죽은 글리프</strong> — 1.16MB의 대부분이 실제로 화면에 한 번도 안 쓰이는 자산이었다.</p>
-<p><strong>개선.</strong> 공식 PretendardVariable(1.3.9, npm 배포·OFL)을 한글 5블록 제외 <strong>비한글 311자</strong>(라틴·숫자· 구두점·통화)로 pyftsubset + <strong>fvar 가변축(wght 45–930) 보존</strong> → 1파일(60,056 bytes). <code>fonts.css</code> @font-face 6→1(<code>font-weight 45 930</code>·<code>display swap</code>·unicode-range 무명시). <strong>C1 검증</strong>: (구 6파일 cmap 합집합 − 한글 5블록) − 신규 서브셋 cmap = <strong>공집합</strong>(비한글 커버리지 손실 0). 나눔·폰트스택·JS 무변경.</p>
-<p><strong>결과.</strong> 1.16MB → 60,056 bytes(<strong>-95%, −1.11MB</strong>). 전/후 시각 스윕(landing·guide·about·웨이트 래더 300~800, 데스크톱+모바일): 300~700 픽셀 동일, 800만 진짜 렌더(라이브 미사용 잠재 개선), 한글 나눔 유지, 모바일 오버플로 0. THIRD-PARTY-NOTICES §5 갱신. 게이트 전량 통과(팀장 서명·디자이너 검수·executor 스모크 6/6+A~E·검수관 무조건 승인·감독 확인).</p>
-<p><strong>교훈.</strong> 서브셋 커버리지는 파일 cmap이 아니라 <strong>"실제 렌더 스택"으로 판정한다</strong> — 파일이 글리프를 실어도 스택 우선순위상 안 쓰이면 죽은 자산이다. 초기 추정(-60~70%)은 파일이 무엇을 담았는지만 봤고, cmap 실측이 스택상 도달 불가 글리프를 드러내며 진짜 지렛대(<strong>-95%</strong>)를 열었다. 페이로드 최적화는 담긴 것이 아니라 도달하는 것을 센다.</p>
+<p><strong>원인.</strong> 감독이 실기기에서 버벅임을 제보했다 — index 걷기, world 오픈월드 진입 즉시, builder 로드 구간. 원인 확정을 위해 헤드리스로 4회 측정(저사양·고사양·world·세 페이지 base 정정 <code>ab60080</code>)했으나 <strong>전부 리팩토링 무회귀로 수렴</strong>했다. swiftshader 소프트웨어 렌더러는 실기기 GPU 병목과 열 스로틀을 재현하지 못하는 것이 원천 한계 — 렌더 산술·드로우콜·텍스처힙이 변경 전후로 동치여도 실기기 체감은 다를 수 있다. 원인 확정에는 실기기 실수치가 필요하다.</p>
+<p><strong>개선.</strong> <code>?debug=perf</code> 게이트로만 켜지는 임시 디버그 HUD(<code>web/js/debug-perf.js</code>, 가산형 독립 모듈)를 3진입점(index·world·builder)에 붙였다. FPS(최상단 대형·worst·min)·spec·pixelRatio·lite·드로우콜· 삼각형·텍스처힙을 실기기 화면에 직접 표출한다. 훅은 최소 침습 — <code>main.js</code> 1줄·<code>main-perf.ts</code> getLite 1줄·world-boot/builder 각 1줄. 플래그 off 시 동적 import가 실행되지 않아 정적 참조 0·네트워크 0(라이브 무영향). + 레퍼런스 분석가(🧭) 상설 역할 신설 — <code>REFERENCES.md</code> 4종 지식베이스(hyperfy·Hubs· Decentraland SDK7·Catalyst)에서 성능 처방 5순위·백엔드 3단계를 도출.</p>
+<p><strong>결과.</strong> 스모크 6/6+A~D, 검수관 승인(off 무영향·보호 런타임 무변경·CSP 빌드 재현 실증). 배포 후 감독 실기기 스크린샷으로 원인을 확정할 예정.</p>
+<p><strong>교훈.</strong> 헤드리스(swiftshader)는 실 GPU 병목·열 스로틀을 원천 재현하지 못한다 — 렌더 산술·드로우콜· 텍스처가 두 지점에서 동치여도 실기기 체감은 다를 수 있어, 실기기 계측 HUD가 유일한 확정 경로다. 그리고 회귀 의심 시 측정 base는 반드시 "진짜 변경 전"(공유 모듈 분해 전 <code>ab60080</code>)으로 잡아야 한다 — <code>2598e64</code>는 이미 분해 후라 회귀를 못 잡았다.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-6b5ce1.html"><span class="lbl">← 이전 기록</span>P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료</a><a href="./2026-07-22-ffa2b8.html" style="text-align:right"><span class="lbl">다음 기록 →</span>실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다</a></div>
+<div class="pn"><a href="./2026-07-22-ee5745.html"><span class="lbl">← 이전 기록</span>P1-⑤ 가변폰트 서브셋 — 첫 방문 폰트 페이로드 1.16MB → 60KB (-95%)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
