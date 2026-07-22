@@ -4,6 +4,38 @@
 
 ---
 
+## 2026-07-22 · ★★ C단계 C-3(3) — scene.js(2,059줄) 6분해 = 비보호 초대형 SOLID 완료
+
+**원인.** scene.js = **라이브 미술관(app/index) 씬 핵심**(재질맵·조명·환경·나무·조립). 초대형 SRP
+위반. 소비자 3곳: **main.js(보호, createMuseum·sceneTick)**·space-parts.ts(재질맵3)·world.js(나무2).
+
+**개선(6분해 + 배럴, chibi 교훈 방어).** `scene-textures.ts`(529, 재질맵·**캐시8 단일소유**)·
+`scene-themes.ts`(277)·`scene-trees.ts`(99)·`scene-building.ts`(603)·`scene-scenery.ts`(483,
+creatures[] 사유)·`scene-assembly.ts`(88, createMuseum·sceneTick·cycleState) + 배럴 `scene.ts`(명시
+8 re-export). **main.js는 배럴+폴백으로 무수정**(보호4파일 불가침), 순환0(scene은 space 미참조).
+
+**chibi 교훈 방어 적용(핵심).** 직전 chibi에서 비export 상수 cross-module 참조 누락이 런타임 크래시를
+냈던 걸 받아, scene은 구현·게이트 양쪽에서 **no-undef 스코프 전수 검사(미해결 참조 0, 음성 대조로
+하네스 유효성 확인)** + **createMuseum 4테마 실제 런타임 렌더(ReferenceError 0)**를 필수화. 검수관도
+직접 no-undef 0 실증. byte 무결성: top-level 58선언 verbatim 매칭, 유일 차이=의도된 `updateCreatures`
+전환 1줄, 캐시 시드·SpotLight 파라미터 1:1.
+
+**결과 — C단계 비보호 초대형 SOLID 분해 완료.** ui(3,977)·studio(1,697)·space-render(1,516)·
+chibi(2,678)·scene(2,059) = **총 11,927줄 초대형 5개를 27개 SRP 모듈 + 배럴로 분해**, 전부 라이브
+배포. **보호4파일 무수정**(전부 배럴+폴백)·라이브 무회귀·byte/런타임 무결성. 외부 코드평가가 지목한
+"구조 급속 복잡화"의 초대형 핫스팟이 사실상 해소됐다.
+
+**남은 것.** 초대형 중 **main.js(1,415, 보호4파일)만 미분해** — 로드맵대로 감사·분해설계 문서만
+작성하고 실착수는 팀장 사전서명 + 감독 확인 이중 게이트. 그 외: dead 상수 정리·strict화(#96)·게이트
+강화 상시편입(no-undef 스코프·실제 렌더).
+
+**교훈.** 미술관 렌더처럼 회귀 위험 최고인 초대형도 "leaf(캐시·테마) → 중간(나무·건축·환경) →
+조립기 → 배럴" 순서 + "캐시 싱글톤 단일소유(분산=힙 2배 회귀)" + "byte 무결성·no-undef·실제 렌더
+삼중 게이트"면 라이브 안 깨고 분해된다. C-3는 chibi의 런타임 회귀를 게이트 강화로 흡수해 마지막
+scene을 무사고로 착지시킨 학습 사이클이었다.
+
+---
+
 ## 2026-07-22 · ★★ C단계 C-3(2) — chibi.js(2,678줄) 6분해 + 검수관이 라이브 크래시 차단
 
 **원인.** chibi.js = 아바타 3D 생성(사람·동물·robot·ghost·의상). 초대형 SRP 위반. 소비자 7곳
