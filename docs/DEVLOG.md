@@ -4,6 +4,38 @@
 
 ---
 
+## 2026-07-22 · ★★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)
+
+**원인.** space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질
+팩토리·조립기·라이트맵이 한 파일에 혼재. CLAUDE.md의 OCP 3지점(`partGeo`/`partAccent`/`MATS`)이
+자연 분해 경계.
+
+**개선(고도 기준 3분해 + 배럴, S1~S4).**
+- **`space-parts.ts`(1,117, leaf)**: 지오/재질 팩토리 — 텍스처 캐시·`MATS`·`partMat`·지오헬퍼·액자·
+  **`partGeo`/`partAccent`(OCP 3지점 전부)**. three·space·scene만 의존(assembler/lightmap 미참조).
+- **`space-lightmap.ts`(87, leaf)**: 라이트맵 베이크(`bakeShellLightmaps(Async)`·`detectSoftGPU`).
+  three만 의존.
+- **`space-assembler.ts`(323)**: 조립·조명 — `buildSpaceGroup`·`addRoomLighting`·`disposeSpaceGroup`·
+  틴트헬퍼. space-parts를 단방향 import.
+- **`space-render.ts`(8, 배럴)**: **명시 named re-export**(export * 금지 — 이름 충돌 조용한 drop
+  위험 회피) 14심볼. 소비자 5곳(builder·visit·world·builder-walk·builder.html) `./space-render.js`
+  import 유지 → tsJsFallback이 배럴로 해소 → **소비자 무수정**.
+
+**결과.** 게이트 통과(독립 스모크 world/index/studio 콘솔0·CSP0·씬부팅 + 검수관 조건부승인, 블로커0).
+검수관 byte 무결성 실증: origin 원본 vs 3모듈 **라인 멀티셋 대조 누락0·SequenceMatcher 순수 재배치**,
+**shared 텍스처 skip·addRoomLighting 스포트값(0xffe3ba,23,11,0.72…)·userData 스키마 1바이트 불변**.
+순환0(parts leaf), **world.js(스포트 미러 상수 보유) 무수정**, 보호4파일 무변경. test 116/116. 롤백성:
+S1~S3은 space-render.js 0-diff 병존, S4만 삭제+배럴(단일 revert 원복).
+
+**남은 C-3.** chibi.js(2,652)·scene.js(2,055) 분해 + **main.js는 보호4파일이라 감사·분해설계 문서만**
+(실착수는 팀장 사전서명 + 감독 확인 이중 게이트).
+
+**교훈.** 렌더 조립기처럼 회귀 위험이 큰 초대형도 "고도(팩토리/조립/베이크) + OCP 경계"로 자르고
+**byte 무결성(라인 멀티셋 대조)**을 게이트로 삼으면 픽셀비교 없이도 순수 이동을 증명할 수 있다.
+배럴은 `export *`가 아니라 명시 재노출 — 병합 시 이름 충돌 조용한 유실을 원천 차단.
+
+---
+
 ## 2026-07-22 · ★★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독)
 
 **원인.** studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 `<script>`가 CSP
