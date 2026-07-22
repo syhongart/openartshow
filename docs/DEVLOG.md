@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-07-22 · C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리
+
+**원인.** 4차 두 번째 단위(B). 게임루프에 흩어진 카메라 뷰 보조 3종 — 트윈(텔레포트/투어 보간)·
+층안내(camera.y 판정)·온보딩(터치 힌트). A(PerfGovernor)와 달리 **`tween`이 이미 배포된 tour
+컨트롤러와 얽혀** 있다(tour가 getTween/clearTween/startTween을 ctx로 사용) — 셀프뷰↔사진 때처럼
+조립점 재배선이 필요.
+
+**개선.** `main-viewfx.ts`(`createViewFx(ctx)`) 1모듈로 분리(main.js 1,033→918, **-115**). 판단:
+- **1모듈 응집**: 세 도메인이 "카메라 뷰 보조" 공통결 + 상태가 서로 독립(데이터 의존 0)이라 God object가
+  아니다. tour와 얽히는 건 트윈뿐이라 재배선면도 좁다.
+- **개별 메서드 위임(단일 tick 아님)**: A군은 3블록이 게임루프에 **연속**이라 tick 하나로 몰았지만,
+  B군은 세 항목이 게임루프에 **흩어져**(updateTween=물리 뒤·tour.tick 앞 / updateFloorIndicator / 
+  tickOnboarding) 있다. 원문 위치를 1바이트 보존하려 `updateTween`/`updateFloorIndicator`/`tickOnboarding`
+  개별 메서드로 노출 — 무리하게 하나로 묶으면 프레임 내 실행 순서가 바뀐다.
+- **tween 소유 일원화 + tour 재배선**: tween을 viewfx가 단독 소유하고, tourCtx의 getTween·clearTween·
+  startTween을 `()=>viewfxController.<메서드>()`로 재배선. tour tick의 `!getTween()`과 exitTour의
+  clearTween이 **동일 tween 인스턴스**를 viewfx 경유로 공유(인스턴스가 갈리면 자동진행 영구대기 회귀).
+  **main-tour.ts 무수정**(0바이트 diff 확인).
+
+**결과.** 게이트 통과 — 검수관 승인(상태 이전·tour 재배선 단일참조·startTween 호출처 누락0·게임루프
+순서 1바이트 동치·render 골격 무변경·tick verbatim, 블로커 0), 독립 스모크(6/6 — 트윈·투어 자동진행·
+exitTour 즉시정지·층안내 콘솔0). **온보딩은 pointer:coarse 터치 전용이라 헤드리스 검증 사각 → verbatim
+이식 논증 + 검수관 코드 동치 대조로 방어**(실기기 QA는 후속). 보호4파일·main-tour.ts·CSP 무수정, test 116/116.
+
+**교훈.** "tick 위임"의 형태는 원본 게임루프 구조가 정한다 — 연속 블록은 단일 tick, 흩어진 항목은
+개별 메서드다. 하나로 묶으면 깔끔해 보이나 프레임 내 실행 순서가 바뀌어 회귀한다. 그리고 공유 상태
+(tween)는 소유를 한 곳에 두고 다른 컨트롤러는 조립점 재배선으로 **같은 인스턴스**를 공유해야 한다 —
+값을 복제하면 상태가 갈린다.
+
+---
+
 ## 2026-07-22 · C단계 C-4(A) — main.js 4차 착수: 성능/렌더 거버너(PerfGovernor) 분리
 
 **원인.** 4차(Composition Root化) 착수. 감독이 "게임루프까지 완주"를 선택하되 "심장이라 위험하니
