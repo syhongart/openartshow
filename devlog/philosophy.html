@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ C단계 C-3(3) — scene.js(2,059줄) 6분해 = 비보호 초대형 SOLID 완료 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. scene.js = 라이브 미술관(app/index) 씬 핵심(재질맵·조명·환경·나무·조립). 초대형 SRP">
+<title>C단계 C-4(D) — main.js 4차 게임루프(GameLoop) 분리 · 4차 완결(Composition Root) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 4차 마지막이자 심장 단위. animate 게임루프 전체(포테이토 프레임 캡·11개 위임 tick·근접 작품">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ C단계 C-3(3) — scene.js(2,059줄) 6분해 = 비보호 초대형 SOLID 완료 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. scene.js = 라이브 미술관(app/index) 씬 핵심(재질맵·조명·환경·나무·조립). 초대형 SRP">
+<meta property="og:title" content="C단계 C-4(D) — main.js 4차 게임루프(GameLoop) 분리 · 4차 완결(Composition Root) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 4차 마지막이자 심장 단위. animate 게임루프 전체(포테이토 프레임 캡·11개 위임 tick·근접 작품">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-3(3) — scene.js(2,059줄) 6분해 = 비보호 초대형 SOLID 완료","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-4(D) — main.js 4차 게임루프(GameLoop) 분리 · 4차 완결(Composition Root)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ C단계 C-3(3) — scene.js(2,059줄) 6분해 = 비보호 초대형 SOLID 완료</h1>
+<h1><span class="emo">🛠️</span>C단계 C-4(D) — main.js 4차 게임루프(GameLoop) 분리 · 4차 완결(Composition Root)</h1>
 <p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
-<p><strong>원인.</strong> scene.js = <strong>라이브 미술관(app/index) 씬 핵심</strong>(재질맵·조명·환경·나무·조립). 초대형 SRP 위반. 소비자 3곳: <strong>main.js(보호, createMuseum·sceneTick)</strong>·space-parts.ts(재질맵3)·world.js(나무2).</p>
-<p><strong>개선(6분해 + 배럴, chibi 교훈 방어).</strong> <code>scene-textures.ts</code>(529, 재질맵·<strong>캐시8 단일소유</strong>)· <code>scene-themes.ts</code>(277)·<code>scene-trees.ts</code>(99)·<code>scene-building.ts</code>(603)·<code>scene-scenery.ts</code>(483, creatures[] 사유)·<code>scene-assembly.ts</code>(88, createMuseum·sceneTick·cycleState) + 배럴 <code>scene.ts</code>(명시 8 re-export). <strong>main.js는 배럴+폴백으로 무수정</strong>(보호4파일 불가침), 순환0(scene은 space 미참조).</p>
-<p><strong>chibi 교훈 방어 적용(핵심).</strong> 직전 chibi에서 비export 상수 cross-module 참조 누락이 런타임 크래시를 냈던 걸 받아, scene은 구현·게이트 양쪽에서 <strong>no-undef 스코프 전수 검사(미해결 참조 0, 음성 대조로 하네스 유효성 확인)</strong> + <strong>createMuseum 4테마 실제 런타임 렌더(ReferenceError 0)</strong>를 필수화. 검수관도 직접 no-undef 0 실증. byte 무결성: top-level 58선언 verbatim 매칭, 유일 차이=의도된 <code>updateCreatures</code> 전환 1줄, 캐시 시드·SpotLight 파라미터 1:1.</p>
-<p><strong>결과 — C단계 비보호 초대형 SOLID 분해 완료.</strong> ui(3,977)·studio(1,697)·space-render(1,516)· chibi(2,678)·scene(2,059) = <strong>총 11,927줄 초대형 5개를 27개 SRP 모듈 + 배럴로 분해</strong>, 전부 라이브 배포. <strong>보호4파일 무수정</strong>(전부 배럴+폴백)·라이브 무회귀·byte/런타임 무결성. 외부 코드평가가 지목한 "구조 급속 복잡화"의 초대형 핫스팟이 사실상 해소됐다.</p>
-<p><strong>남은 것.</strong> 초대형 중 <strong>main.js(1,415, 보호4파일)만 미분해</strong> — 로드맵대로 감사·분해설계 문서만 작성하고 실착수는 팀장 사전서명 + 감독 확인 이중 게이트. 그 외: dead 상수 정리·strict화(#96)·게이트 강화 상시편입(no-undef 스코프·실제 렌더).</p>
-<p><strong>교훈.</strong> 미술관 렌더처럼 회귀 위험 최고인 초대형도 "leaf(캐시·테마) → 중간(나무·건축·환경) → 조립기 → 배럴" 순서 + "캐시 싱글톤 단일소유(분산=힙 2배 회귀)" + "byte 무결성·no-undef·실제 렌더 삼중 게이트"면 라이브 안 깨고 분해된다. C-3는 chibi의 런타임 회귀를 게이트 강화로 흡수해 마지막 scene을 무사고로 착지시킨 학습 사이클이었다.</p>
+<p><strong>원인.</strong> 4차 마지막이자 심장 단위. <code>animate</code> 게임루프 전체(포테이토 프레임 캡·11개 위임 tick·근접 작품 안내·render 분기·try/catch 오류복구·setAnimationLoop 등록)를 옮긴다. 팀장 순서 원칙대로 A·B·C를 먼저 착지시킨 뒤 최후에 밟았다 — animate가 이미 "위임 tick 나열 + render 분기 + try/catch"인 얇은 껍데기라 이관이 기계적 이동에 가까워졌다(A·B·C가 D의 안전판이 된다는 팀장 판단의 실현).</p>
+<p><strong>개선.</strong> <code>main-gameloop.ts</code>(<code>createGameLoop(ctx)</code> → <code>{ start }</code>)로 분리(main.js 919→<strong>867</strong>).</p>
+<ul><li><strong>프레임 상태 소유</strong>: <code>clock</code>(THREE.Clock)·<code>potatoAccum</code>을 GameLoop가 소유(루프 밖 참조 0 → 캡슐화만 개선). <code>start()</code>가 <code>clock=new Clock()</code> 후 <code>renderer.setAnimationLoop(loop)</code> 등록.</li><li><strong>ctx 전량 값 주입</strong>: 안정 참조(renderer·scene·camera·player·gpuInfo) + 위임 컨트롤러 6개(fly·tour· mp·selfview·viewfx·perf) + UI 함수 — <strong>전부 값</strong>. 근거: 전부 init에서 gameLoop 생성 <strong>전에 1회 대입 완료·재대입 없음</strong>(grep 전수 확인). 프레임당 getter 0·신규 객체 할당 0.</li><li><strong>animate→loop 1바이트 동치</strong>: 함수 본문을 공백 제거 후 diff → 함수명 외 <strong>0바이트 차</strong>. tick 순서· render 3연속 원자성·try/catch 3연속·포테이토 early-return 전부 verbatim.</li></ul>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(diff 1바이트 동치·<strong>클로저 캡처 stale 없음</strong>·setAnimationLoop 등록/ 해제 타이밍·clock 순서·render 원자성 전부 확인, <strong>실제 vite build로 산출물에 setAnimationLoop 2회· animate 0회 검증</strong>, 블로커 0), 독립 스모크(6/6 — <strong>setAnimationLoop 등록→렌더 루프 실동작</strong>, swiftshader 포테이토 캡 경로 자동 진입, 위임 tick·try/catch 정상). 보호4파일·CSP·index.html 무수정, test 116/116.</p>
+<p><strong>교훈.</strong> 게임루프(심장) 이전의 유일한 새 위험은 render/setAnimationLoop 경계와 <strong>클로저 캡처</strong>다. "안정 참조 값 주입"이 성립하려면 "루프 생성 전 모든 참조가 1회 대입 완료"라는 불변식을 grep으로 <strong>증명</strong>해야 한다(하나라도 뒤에 재대입되면 stale). 그리고 심장의 동작 동일성 증명은 소스 diff 0에 그치지 않고 <strong>실제 빌드 산출물에서 setAnimationLoop 호출 횟수까지 세어</strong> 확인했다 — 심장일수록 증명의 층을 더 쌓는다.</p>
+<h3>★ main.js 분해 4단계 완결 — 1,418 → 867줄 (-551, -38.9%)</h3>
+<ul><li><strong>1차</strong> 순수 유틸 leaf(main-math·spec·gpu·photo-util) → <strong>2차</strong> DOM 이벤트 핸들러(main-events) → <strong>3차</strong> 기능 컨트롤러 4군(photo·tour·selfview·multiplayer) → <strong>4차</strong> Composition Root(perf·viewfx· enterflow·gameloop).</li><li>main.js는 이제 <strong>순수 조립점</strong>에 근접: 컨트롤러 생성 + ctx 배선 + init 부트스트랩(렌더러·씬·await 로드) + <code>gameLoop.start()</code> + <code>init().catch()</code>. 게임루프·기능·성능·입장·뷰보조가 전부 독립 모듈로, 서로를 모른 채 조립점(main.js)이 getter/값으로 중재한다.</li><li>전 과정 매 단위 검수관 승인 + 독립 스모크 통과, 보호4파일(player·artworks·config)·CSP·자기완결 규율 무완화, test 116/116 불변, 라이브 미술관 무중단. 감독 로드맵(SOLID/아키텍처 축) 완주.</li></ul>
 </article>
 
 </div>
