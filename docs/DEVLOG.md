@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-07-22 · P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료
+
+**원인.** P1-④ 2분할의 두 번째. PR-1(leaf 5)에 이어 게임루프 결합 대형군 8개(`main-photo`·`main-tour`·
+`main-selfview`·`main-multiplayer`·`main-perf`·`main-viewfx`·`main-enterflow`·`main-gameloop`) — 라이브
+미술관 런타임 전부(게임루프·P2P·셀프뷰·투어)에 걸침. PR-1 절차(dist diff 0·최소 인터페이스)를 적용하되
+무변경 절대 우선.
+
+**개선.** 8개 **전량 소거**(무리한 nocheck 잔존 0). three는 vendor js라 타입 정의가 없어 `THREE.Clock/
+Vector3` 등을 **실제 호출 메서드만 담은 구조적 인터페이스**로 대체(값 사용은 그대로), ctx는 로컬 최소
+인터페이스(`GameLoopCtx`·`MpInstance` 등), config는 `import type {Floor,FloorId}`(P1-③ export 재사용).
+**런타임 무변경**: 지역 캐스팅(`as`·non-null `!`)만 — `clock!`·`onboardPos0!`은 대입 직후라 불변식 성립,
+`getGalleryInfo()!`은 원본 truthy 패턴, `MpInstance`는 multiplayer.js 공개 멤버와 1:1.
+
+**결과.** 게이트 통과 — 검수관 승인(**"런타임 토큰 무변경: 확인" 별도 명시**, 검수관 자체 재현
+`diff -rq dist`=바이트 동일, 지역 캐스팅 각 지점 불변식 검증, 보호 .js·leaf·deploy 미접촉), 독립 스모크
+(9/9 — dist diff 0, app/index·world 대형군 소비 콘솔0). test 146.
+
+**★ P1-④ 완료 — main-* 13개(leaf 5 + 대형 8) 전량 @ts-nocheck 소거.** 9축 점검 P0 "타입 실효 29%"의
+핵심 부채를 신규 코드(4차 컨트롤러)부터 닫았다. @ts-expect-error 1곳(main-photo 썸네일 getContext null
+가드 부재 — 진짜 결함, 로직 무변경 유예 후 후속 티켓 #105) 외 클린.
+
+**교훈.** 라이브 런타임 전부에 걸친 대형 strict화도 **dist diff 0이 무변경의 유일·최종 심판**이다 —
+검수관이 스모크 보고를 신뢰만 하지 않고 자체 재현한 것이 §10 구현자≠검증자의 실천이다. 그리고
+vendor(타입 없는) three는 `@types/three`를 끌어오는 대신 **실제 호출 메서드만 담은 구조적 인터페이스**로
+타이핑하면 자기완결(외부 의존 0)을 지키며 strict를 통과한다. 진짜 결함은 로직으로 덮지 말고
+@ts-expect-error+티켓으로 가시화한다(무변경 보증 > 전량 소거).
+
+---
+
 ## 2026-07-22 · P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)
 
 **원인.** 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck.
