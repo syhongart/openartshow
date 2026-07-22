@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-07-22 · C-1 후속 — ui-hud.ts strict화 (@ts-nocheck 소거 착수)
+
+**원인.** 9축 종합 점검에서 "TS 전환했으나 @ts-nocheck 70%(실효 타입 커버 ~29%)"가 아키텍처 약점으로
+지목됐다. 그 소거의 첫 실착수로 초대형 HUD 모듈 ui-hud.ts(1,611줄)를 strict화.
+
+**개선.** @ts-nocheck 제거, 타입오류 182개 → 0. **런타임 로직 1바이트 무변경**이 원칙 — 추가한 것은
+타입 주석·지역 캐스팅(`as HTMLInputElement` 등)·콜백 인터페이스(`UICallback`/`TourHandler`/
+`ActionHandler`)·null 가드 1건뿐. 2단계 커밋(타입 인프라 → getItem null 방어+@ts-nocheck 제거). 
+**el()(ui-dom.ts) 시그니처는 무수정** — 제네릭화하면 소비자 파급이 나므로 ui-hud 지역 캐스팅으로만
+닫아 파급 0. 편집기(ui-avatar-editor)는 이미 strict 통과·순수로직 chibi.ts 커버라 제외.
+
+**결과.** 게이트 통과 — 검수관 승인(런타임 로직 무변경 라인 대조·null 가드 동치[`parseFloat(null)`=
+`parseFloat('')`=NaN·`Number.isFinite`로 동일 소거]·export 표면 34개 불변·el() 무수정), 독립 스모크
+(vitest 146·tsc 0·check:refs 0·smoke 9항·app/index·world HUD 초기화 콘솔0). 라이브 HUD 무회귀.
+
+**교훈.** strict화의 핵심은 "타입만 바뀌고 런타임은 1바이트도 안 바뀜"의 증명이다 — diff가 타입 주석·
+캐스팅·null 가드로만 구성됨을 라인 대조하고, null 가드는 기존 동작과 동치임을 각 지점 논증한다.
+공유 헬퍼(el())를 제네릭화해 소비자로 파급을 내기보다, 소비 지점 지역 캐스팅으로 파급을 0으로 가둔다.
+(남은 @ts-nocheck 33개 중 main-* 13개가 P1 다음 소거 대상.)
+
+---
+
 ## 2026-07-22 · 안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5)
 
 **원인.** #87(QA 안전망) 검수관 권고 R2·R5. 3·4차 분해 내내 @ts-nocheck 모듈의 "끊긴 참조"(export
