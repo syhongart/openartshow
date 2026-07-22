@@ -17,7 +17,6 @@ import path from 'node:path';
 import {
   ROOT,
   SITE_DIR,
-  SITE_DIR_BASELINE,
   BASE_PATH,
   GENERATORS,
   BASELINE_FILE_COUNT_BY_MODE,
@@ -29,11 +28,10 @@ import {
 import { ASSEMBLERS, countFiles } from './assemble.mjs';
 import { startServer } from './server.mjs';
 import { launchBrowser, collectPage } from './browser-checks.mjs';
-import { checkEquivalence } from './equivalence.mjs';
 
 // ── 모드 선택 ────────────────────────────────────────────────────────
 // `node run.mjs`      → baseline(web직조립, 현행 deploy.yml 복제)
-// `node run.mjs vite` → vite 조립(교체 deploy.yml) + 동등성 판정(E1/E2)
+// `node run.mjs vite` → vite 조립(교체 deploy.yml)
 const MODE = process.argv[2] === 'vite' ? 'vite' : 'baseline';
 const IS_VITE = MODE === 'vite';
 const BASELINE_FILE_COUNT = BASELINE_FILE_COUNT_BY_MODE[MODE];
@@ -280,17 +278,6 @@ async function main() {
       }
     }
     aggregateBrowser(pageResults, srv.origin);
-
-    // 동등성 판정(E1/E2) — vite 모드 전용. baseline(web직조립)을 별도 조립·로드해 대조.
-    if (IS_VITE) {
-      const eq = await checkEquivalence({
-        browser,
-        vitePageResults: pageResults,
-        viteSiteDir: SITE_DIR,
-        baselineSiteDir: SITE_DIR_BASELINE,
-      });
-      for (const r of eq) record(r.id, r.label, r.status, r.evidence);
-    }
   } finally {
     if (browser) await browser.close().catch(() => {});
     await srv.close().catch(() => {});

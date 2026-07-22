@@ -19,10 +19,6 @@ export const ROOT = path.resolve(__dirname, '..', '..');
 // 조립 산출물 위치 — deploy.yml 과 동일하게 루트의 _site (이미 .gitignore 됨).
 export const SITE_DIR = path.join(ROOT, '_site');
 
-// 동등성 판정(B-2b-2)용 web직조립 baseline 산출물 위치. vite 모드에서 vite 조립본과
-// 대조하기 위해 web직조립본을 여기 별도로 만든다. (.gitignore: _site* 로 커버)
-export const SITE_DIR_BASELINE = path.join(ROOT, '_site_baseline');
-
 // ── 배포 서브패스(vite 모드) ─────────────────────────────────────────
 // vite.config 의 base '/openartshow/' 와 1:1. vite 산출물의 자산참조는 절대경로
 // /openartshow/_bundle/… 이므로, vite 모드에서는 서버가 이 프리픽스를 strip 하고

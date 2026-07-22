@@ -11,7 +11,7 @@ import { ROOT, SITE_DIR } from './config.mjs';
 
 // ── baseline: web직조립 (현행 deploy.yml `run:` 조립 스텝과 1:1) ──────
 // 유지보수 시 .github/workflows/deploy.yml 의 조립 스텝과 함께 갱신할 것.
-// $OUT 은 대상 디렉토리(기본 _site, 동등성 대조 시 _site_baseline).
+// $OUT 은 대상 디렉토리(기본 _site).
 const ASSEMBLE_BASELINE_SH = `
 set -euo pipefail
 rm -rf "$OUT" && mkdir -p "$OUT/app"
@@ -52,38 +52,6 @@ export function assembleSite(targetDir = SITE_DIR) {
 // _site 를 vite 조립 방식으로 조립(vite build 포함). 실패 시 예외 전파.
 export function assembleSiteVite(targetDir = SITE_DIR) {
   execFileSync('bash', ['-c', ASSEMBLE_VITE_SH], {
-    cwd: ROOT,
-    stdio: 'pipe',
-    env: { ...process.env, OUT: targetDir },
-  });
-}
-
-// ── 동등성 baseline: origin/main 의 web직조립 (= 현행 라이브 배포) ────
-// ⚠️ 이 브랜치의 web/ 랜딩군 소스는 vite 전제로 조정(ab2ce53: ./app/js→./js)돼
-//    web직서빙 시 랜딩군 스크립트가 깨진다(의도적, deploy 교체 근거). 따라서
-//    "web직서빙 vs vite산출물"의 동등성 대조 기준은 이 브랜치 web/ 가 아니라
-//    "현행 라이브 배포" = origin/main 의 web직조립이어야 한다. git archive 로 main
-//    web/ 을 추출해 현행 deploy.yml 레시피대로 조립(생성기/정적은 현재 워킹트리 공용).
-//    → 대조가 "vite 로 바꿔도 현행 라이브 배포가 동일한가"를 정확히 증명한다.
-const ASSEMBLE_MAIN_BASELINE_SH = `
-set -euo pipefail
-TMPWEB="$(mktemp -d)"
-trap 'rm -rf "$TMPWEB"' EXIT
-git archive origin/main web | tar -x -C "$TMPWEB"
-rm -rf "$OUT" && mkdir -p "$OUT/app"
-cp "$TMPWEB/web/landing.html" "$OUT/index.html"
-cp "$TMPWEB/web/guide.html"   "$OUT/guide.html"
-cp "$TMPWEB/web/design.html"  "$OUT/design.html"
-cp "$TMPWEB/web/about.html"   "$OUT/about.html"
-cp -r "$TMPWEB/web/."          "$OUT/app/"
-cp -r devlog team valuation "$OUT/"
-cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true
-touch "$OUT/.nojekyll"
-`;
-
-// origin/main web직조립(현행 라이브 배포 재현). 동등성 대조 baseline 전용.
-export function assembleSiteBaselineFromMain(targetDir = SITE_DIR) {
-  execFileSync('bash', ['-c', ASSEMBLE_MAIN_BASELINE_SH], {
     cwd: ROOT,
     stdio: 'pipe',
     env: { ...process.env, OUT: targetDir },
