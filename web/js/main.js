@@ -14,7 +14,6 @@ import {
 } from './artworks.js';
 import { startAmbient } from './ambient.js';
 import { PlayerController } from './player.js';
-import { MultiplayerManager } from './multiplayer.js';
 import { createAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
 import { playOuch } from './hitfx.js';
@@ -63,13 +62,14 @@ import { createEventHandlers } from './main-events.js';
 import { createPhotoController } from './main-photo.js';
 import { createTourController } from './main-tour.js';
 import { createSelfViewController } from './main-selfview.js';
+import { createMultiplayerController } from './main-multiplayer.js';
 
 let renderer = null;
 let scene = null;
 let camera = null;
 let player = null;
 let flyController = null; // fly.js 비행 컨트롤러(점프 홀드) — 입장 setup에서 초기화
-let mp = null; // MultiplayerManager — 입장 전에는 null (sendState/update 가드)
+let multiplayerController = null; // createMultiplayerController(mpCtx) 반환 — init에서 세팅, mp(및 연결 생명주기) SSOT 소유 + connect/tick 위임
 let eventHandlers = null; // createEventHandlers(eventsCtx) 반환 — init에서 세팅, 아래 wrapper가 위임
 let photoController = null; // createPhotoController(photoCtx) 반환 — init에서 세팅, capturePhoto wrapper가 위임
 let tourController = null; // createTourController(tourCtx) 반환 — init에서 세팅, 투어 상태 5개 SSOT 소유 + tick 위임
@@ -208,6 +208,7 @@ function tickOnboarding() {
 }
 
 function applyNpcCulling() {
+  const mp = multiplayerController.getMp();
   if (!mp) return;
   const npcs = [];
   for (const [rid, av] of mp.remoteAvatars) {
@@ -248,6 +249,7 @@ function handleAvatarChange(char) {
   // 3인칭 아바타가 이미 생성돼 있으면 즉시 재빌드(위치·시점 유지) — 컨트롤러 위임
   selfViewController.rebuildAvatar(char);
   // 멀티플레이 전파 — 접속 중이면 다른 사람 화면에도 새 모습이 퍼진다
+  const mp = multiplayerController.getMp();
   if (mp && typeof mp.setChar === 'function') mp.setChar(char);
   setStatus('아야모 모습을 바꿨어요 ✨');
 }
@@ -270,6 +272,7 @@ function bindHitTap(dom) {
   dom.addEventListener('pointerup', (e) => {
     const down = _tapDown;
     _tapDown = null;
+    const mp = multiplayerController.getMp();
     if (!down || !e.isPrimary || !entered || !mp) return;
     if (performance.now() - down.t > 450) return;
     if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 7) return;
@@ -312,7 +315,7 @@ let placedArtworks = []; // getPlacedArtworks() 캐시 — 작품 목록/투어 
 // 방명록 상태 — 갤러리별 localStorage 키(gbKey) + 현재 렌더 중인 병합본(guestbookNotes) 캐시
 let gbKey = 'shared';
 let guestbookNotes = [];
-let guestbookSentOnce = false; // mp 연결 성공 직후 로컬 노트를 1회만 전송하기 위한 플래그
+// (연결 직후 방명록 1회 동기화 플래그 guestbookSentOnce는 multiplayerController가 소유 — mp 연결 생명주기 전용 상태)
 
 // FPS 집계
 let fpsFrames = 0;
@@ -590,14 +593,60 @@ async function init() {
     if (entered && !tourController.isTouring()) player.enable();
   });
 
+  // 멀티플레이어(P2P) 오케스트레이션 컨트롤러 구현은 main-multiplayer.js로 분리(3차 마지막 군).
+  // mp(MultiplayerManager 인스턴스)의 생성·콜백 배선·게임루프 tick·연결 직후 방명록 1회 동기화를
+  // 이 컨트롤러가 SSOT로 소유한다. main.js에는 mp let이 남지 않는다(getMp()로 읽고 각자 null 가드).
+  // 배선만 컨트롤러 책임이고 각 콜백의 도메인 본체(stats·visitorLog·photoWall·npcCrowd·셀프 아바타
+  // hit)는 아래 ctx 인라인(main.js 도메인 상태를 클로저로 참조)으로 주입한다 — 컨트롤러가 여러
+  // 도메인을 알게 되는 God object가 되지 않도록 경계를 도메인에 둔다. 재대입 let(scene·player)은
+  // getter로, 안정 참조(setStatus)와 콜백 본체는 값으로 주입한다. 아래 eventsCtx·photoCtx의
+  // getMp가 이 컨트롤러를 참조하므로 그보다 먼저 생성한다(조립점이 mp 소유 이전을 중재).
+  multiplayerController = createMultiplayerController({
+    getScene: () => scene,
+    getPlayer: () => player,
+    setStatus,
+    getGuestbookNotes: () => guestbookNotes,
+    onVisitor: (id, info) => {
+      stats.addVisit(id);
+      visitorLog.add(info && info.nickname, galleryInfo ? galleryInfo.name : '');
+    },
+    onPhoto: (item) => {
+      photoWall.addRemote(item);
+      setStatus(`${item.name || '누군가'}님이 관람 사진을 남겼어요 📸`);
+    },
+    onChat: (name, text) => addChatMessage(name, text, false),
+    onPlayerCount: (n) => setPlayerCount(n),
+    onRemoteGuestbook: handleRemoteGuestbook,
+    // 내가 맞았을 때 — 상태바 + (3인칭이면) 내 아바타에도 상처 반영
+    onSelfHit: (level) => {
+      setStatus(level >= 3 ? '아야!! 너무해요 😭' : '아야! 누가 때렸어요 😣');
+      const sa = selfViewController.getSelfAvatar();
+      if (sa) sa.hit(level); // hitfx가 "아얏" 사운드까지 담당
+      else playOuch(level); // 3인칭 아바타가 없어도 소리는 난다
+    },
+    // NPC가 맞았을 때 — 아파하는 한마디 + 때린 사람 쳐다보기
+    onNpcHit: (id, level, hitter) => {
+      if (npcCrowd) npcCrowd.onHit(id, level, hitter);
+    },
+    // AI 관객 — 호스트가 된 클라이언트만 mp.update()가 매 프레임 호출한다.
+    // 작품 배치는 입장 전에 끝나므로 getPlacedArtworks()는 여기서 항상 유효하다.
+    npcProvider: (delta, humans) => {
+      if (!npcCrowd) npcCrowd = new NpcCrowd(getPlacedArtworks());
+      const states = npcCrowd.update(delta, humans);
+      const remark = npcCrowd.takeChat();
+      if (remark) multiplayerController.getMp().sendNpcChat(remark.name, remark.text); // 호스트 화면 표시 포함
+      return states;
+    },
+  });
+
   // DOM 이벤트 핸들러 구현은 main-events.js로 분리(2차). 공유 상태를 읽고 쓰므로
-  // ctx 주입: 재대입되는 let(camera·renderer·mp·entered)은 값 캡처가 아니라
-  // getter로 넘겨 stale 참조를 막고, 기능 함수(3차 대상)는 main.js 참조 그대로 전달한다.
+  // ctx 주입: 재대입되는 let(camera·renderer·entered)은 값 캡처가 아니라 getter로 넘겨
+  // stale 참조를 막고, mp는 multiplayerController.getMp() 경유로, 기능 함수는 참조 그대로 전달한다.
   // 리스너 등록(아래 addEventListener 3곳)은 main.js에 그대로 유지 — 등록 지점·횟수·순서 불변.
   const eventsCtx = {
     getCamera: () => camera,
     getRenderer: () => renderer,
-    getMp: () => mp,
+    getMp: () => multiplayerController.getMp(),
     isEntered: () => entered,
     isTouring: () => tourController.isTouring(),
     viewCurrentArtwork,
@@ -653,7 +702,7 @@ async function init() {
     getGalleryInfo: () => galleryInfo,
     photoWall,
     getMyNickname: () => myNickname,
-    getMp: () => mp,
+    getMp: () => multiplayerController.getMp(),
     showShareModal,
     setStatus,
   };
@@ -821,78 +870,32 @@ function handleEnter({ nickname, color, char }) {
   startAmbient();
   startOnboarding();
 
-  try {
-    // 전시별 멀티플레이 룸 — 같은 전시 링크로 들어온 사람끼리만 만난다.
-    // 디렉터리 전시는 id, 공유 링크(#gd=/#gz=) 전시는 해시 데이터의 djb2 요약을 쓴다.
-    const roomSuffix = (galleryInfo && galleryInfo.id) || 'link-' + djb2(window.location.hash || '');
-    mp = new MultiplayerManager(scene, { nickname, color, char, roomId: `${PEER_ROOM_ID}-${roomSuffix}` });
-    // 작가 리포트 — 방문자·인기작(체류) 통계. 전시 키는 룸 suffix와 동일 규약.
-    stats = new GalleryStats(roomSuffix);
-    mp.onVisitor = (id, info) => {
-      stats.addVisit(id);
-      visitorLog.add(info && info.nickname, galleryInfo ? galleryInfo.name : '');
-    };
-    mp.onPhoto = (item) => {
-      photoWall.addRemote(item);
-      setStatus(`${item.name || '누군가'}님이 관람 사진을 남겼어요 📸`);
-    };
-    if (statsDwellTimer) clearInterval(statsDwellTimer);
-    statsDwellTimer = setInterval(() => {
-      if (!mp || !stats) return;
-      const humans = [];
-      for (const [rid, av] of mp.remoteAvatars) {
-        if (!rid.startsWith('npc-')) humans.push({ x: av.group.position.x, z: av.group.position.z });
-      }
-      stats.addDwell(humans, getPlacedArtworks(), 2);
-      setGuestbookStats(stats.summary(guestbookNotes.length));
-    }, 2000);
-    // onChat은 원격 메시지 전용 (자기 메시지는 handleChatSend가 로컬 표시,
-    // 에코는 senderId 필터로 차단됨) — 닉네임이 겹쳐도 안전
-    mp.onChat = (name, text) => addChatMessage(name, text, false);
-    mp.onPlayerCount = (n) => setPlayerCount(n);
-    mp.onStatus = handleMultiplayerStatus;
-    mp.onGuestbook = handleRemoteGuestbook;
-    // 내가 맞았을 때 — 상태바 + (3인칭이면) 내 아바타에도 상처 반영
-    mp.onSelfHit = (level) => {
-      setStatus(level >= 3 ? '아야!! 너무해요 😭' : '아야! 누가 때렸어요 😣');
-      const sa = selfViewController.getSelfAvatar();
-      if (sa) sa.hit(level); // hitfx가 "아얏" 사운드까지 담당
-      else playOuch(level); // 3인칭 아바타가 없어도 소리는 난다
-    };
-    // NPC가 맞았을 때 — 아파하는 한마디 + 때린 사람 쳐다보기
-    mp.onNpcHit = (id, level, hitter) => {
-      if (npcCrowd) npcCrowd.onHit(id, level, hitter);
-    };
-    // AI 관객 — 호스트가 된 클라이언트만 mp.update()가 매 프레임 호출한다.
-    // 작품 배치는 입장 전에 끝나므로 getPlacedArtworks()는 여기서 항상 유효하다.
-    mp.npcProvider = (delta, humans) => {
-      if (!npcCrowd) npcCrowd = new NpcCrowd(getPlacedArtworks());
-      const states = npcCrowd.update(delta, humans);
-      const remark = npcCrowd.takeChat();
-      if (remark) mp.sendNpcChat(remark.name, remark.text); // 호스트 화면 표시 포함
-      return states;
-    };
-    mp.connect();
-  } catch (err) {
-    console.error('멀티플레이어 초기화 실패:', err);
-    mp = null;
+  // 전시별 멀티플레이 룸 — 같은 전시 링크로 들어온 사람끼리만 만난다.
+  // 디렉터리 전시는 id, 공유 링크(#gd=/#gz=) 전시는 해시 데이터의 djb2 요약을 쓴다.
+  const roomSuffix = (galleryInfo && galleryInfo.id) || 'link-' + djb2(window.location.hash || '');
+  // mp 생성·콜백 배선·피어 연결은 multiplayerController가 담당(오케스트레이션 이전).
+  // 실패 시 false를 반환 — 통계/타이머를 세우지 않고 '혼자 관람 모드'로 안내한다(원본 catch 경로 동치).
+  const connected = multiplayerController.connect({
+    nickname, color, char, roomId: `${PEER_ROOM_ID}-${roomSuffix}`,
+  });
+  if (!connected) {
     setStatus('멀티플레이어 연결에 실패했습니다. 혼자 관람 모드로 진행합니다.');
+    return;
   }
-}
-
-// mp.onStatus 래퍼 — 상태 표시는 그대로 위임하되, 연결이 처음 성립되는 시점
-// ('호스트로 개설됨' 또는 '접속됨(게스트)')에 로컬 방명록 전체를 1회만 전송한다.
-function handleMultiplayerStatus(statusText) {
-  setStatus(statusText);
-  if (guestbookSentOnce || !mp) return;
-  if (statusText === '호스트로 개설됨' || statusText.startsWith('접속됨')) {
-    guestbookSentOnce = true;
-    try {
-      mp.sendGuestbook(guestbookNotes);
-    } catch (err) {
-      console.error('방명록 동기화 전송 실패:', err);
+  // 작가 리포트 — 방문자·인기작(체류) 통계. 전시 키는 룸 suffix와 동일 규약.
+  // (mp 오케스트레이션이 아닌 별개 도메인이라 main.js 잔류 — mp 데이터는 getMp()로 읽는다.)
+  stats = new GalleryStats(roomSuffix);
+  if (statsDwellTimer) clearInterval(statsDwellTimer);
+  statsDwellTimer = setInterval(() => {
+    const mp = multiplayerController.getMp();
+    if (!mp || !stats) return;
+    const humans = [];
+    for (const [rid, av] of mp.remoteAvatars) {
+      if (!rid.startsWith('npc-')) humans.push({ x: av.group.position.x, z: av.group.position.z });
     }
-  }
+    stats.addDwell(humans, getPlacedArtworks(), 2);
+    setGuestbookStats(stats.summary(guestbookNotes.length));
+  }, 2000);
 }
 
 // 방명록 입력창 제출(ui.js initGuestbook의 onSubmit) — 노트 생성 → 로컬 병합/저장/렌더 →
@@ -903,6 +906,7 @@ function handleGuestbookSubmit(text) {
   guestbookNotes = mergeNotes(guestbookNotes, [note]);
   saveNotes(gbKey, guestbookNotes);
   setGuestbookNotes(guestbookNotes);
+  const mp = multiplayerController.getMp();
   if (mp) {
     try {
       mp.sendGuestbook([note]);
@@ -923,6 +927,7 @@ function handleChatSend(text) {
   if (!text) return;
   // 내 메시지는 항상 로컬에 즉시 표시 (원격 에코는 senderId 필터로 차단됨)
   addChatMessage(myNickname, text, true);
+  const mp = multiplayerController.getMp();
   if (mp) {
     try {
       mp.sendChat(text);
@@ -954,6 +959,7 @@ function animate() {
     // 이동/회전 (트윈/투어 중에는 player.disable 상태이므로 update는 사실상 no-op)
     player.update(delta);
     // 몸 충돌 — 다른 캐릭터(사람+NPC)를 뚫고 지나가지 못하게 밀어낸다
+    const mp = multiplayerController.getMp();
     if (mp) player.resolveBodyCollisions(mp.getAvatarPositions());
 
     // 카메라 트윈(텔레포트/투어) 갱신 — 별도 루프 없이 기존 animate 루프에 포함
@@ -970,11 +976,9 @@ function animate() {
     // 층 이동 안내 — 카메라 y로 현재 층 판정, 바뀔 때 1회 표시
     updateFloorIndicator();
 
-    // 멀티플레이어 (입장 후에만) — 트윈/투어 중에도 카메라 기준으로 계속 전송
-    if (mp) {
-      mp.sendState(player.getState());
-      mp.update(delta);
-    }
+    // 멀티플레이어 (입장 후에만) — 트윈/투어 중에도 카메라 기준으로 계속 전송.
+    // mp 생성·null 가드·sendState/update는 컨트롤러 tick이 원본과 동치로 소유(mp=null이면 no-op).
+    multiplayerController.tick(delta);
 
     tickOnboarding();
 
