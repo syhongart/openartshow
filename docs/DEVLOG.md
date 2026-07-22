@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-07-22 · P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명)
+
+**원인.** 9축 점검 P1. 보호4파일(main·player·artworks·config .js)이 tsc·no-undef·eslint 3중 정적
+사각. 그중 **로직 0·순수 상수뿐인 config.js(72줄)**가 가장 안전한 진입점 — 게이트 파이프라인을 검증하며
+보호파일에 첫발. 팀장 사전서명(risk-op-gate 5항) + 조건 3개 하 승인.
+
+**개선.** config.js → **config.ts**(git rename). 팀장 조건대로 **interface 명시 타입**(`as const` 금지):
+`Room`·`Floor`·`Stair`·`SlabHole`·`ArtworkSlot`·`Spawn`·`Building` + `FloorId`('b1'|'f1'|'f2'|'roof')
+유니온을 export — P1-④(main-* 컨트롤러 타입화)가 import할 참조 기반. FloorId를 Floor.id·slabHoles 키
+(`Record<FloorId,SlabHole[]>`)·spawn.floor·artworkSlots[].floor에 일관 적용. **런타임 값·export 이름
+1바이트 무변경**(타입 주석만, esbuild가 emit에서 제거). 소비자 **9곳**(player·main·multiplayer·world·
+artworks·scene-assembly·scene-building·ui-hud·main-viewfx)은 `from './config.js'` 그대로 — vite
+tsJsFallback이 .js→.ts 해소.
+
+**결과.** 게이트 통과 — 검수관 승인(팀장 조건 3개 **전항 실증**: 상수 바이트 동일·`as const` 미사용, 
+**tsJsFallback 9곳 해소 실증**[config.js 부재에서 build 성공·번들에 config 리터럴 인라인 grep], interface·
+FloorId 일관 tsc 0), 독립 스모크(6/6 — **dist 전체 `diff -r` = 0**[base vs 브랜치 바이트 동일], app/index·
+world BUILDING 소비 콘솔0). 다른 보호3파일 미접촉, test 146.
+
+**교훈.** 보호4파일 전환의 안전 증명은 소스 diff가 아니라 **빌드 산출물 바이트 동일(`diff -r dist`)**이다 —
+타입만 얹었으면 dist가 1바이트도 안 변해야 하고, 그게 상수 오타이핑까지 기계적으로 배제한다. 그리고
+`.js`→`.ts` 전환에서 **소비자 무수정의 근거는 "설정에 있다"가 아니라 config.js를 지운 상태에서 실제
+빌드가 성공하고 번들에 값이 박히는 것**까지 실증해야 한다(보호 런타임 파일이 그 해소에 걸려 있으므로).
+가장 작은 보호파일로 이 파이프라인을 검증했으니, 더 큰 보호파일(#90)로 갈 발판이 섰다.
+
+---
+
 ## 2026-07-22 · P1-② 보안 — CSP connect-src 축소 + valuation.yml 액션 SHA핀
 
 **원인.** 9축 점검의 보안축(A 92) 권고 2건. ①미술관(index) CSP `connect-src 'self' https: wss:`가
