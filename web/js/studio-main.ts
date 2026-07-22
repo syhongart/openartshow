@@ -1,38 +1,20 @@
-// @ts-nocheck — S0(C-2) 순수 외부화 단계: studio.html 인라인 IIFE를 로직 1바이트 불변으로 이동.
-// strict 타입 정합(암시적 any·null 가드·HTMLElement 캐스팅)은 재분해 단계(S1~S4)에서 수행. (C-1 ui-hud 선례)
+// @ts-nocheck — C단계 C-2: studio.html 외부화(S0) + SRP 재분해(S1~S4). 로직 1바이트 불변.
+// strict 타입 정합은 별도 후속(studio strict화). 현 단계는 순수 이동+DI 배선.
+import { readPlan, computeLimits, injectPlanBadge } from './studio-plan.js';
+
 (function () {
   'use strict';
 
   var STORAGE_KEY = 'artshow-studio-draft-v1';
-  // ---- 플랜 (P2 임시 운영: 결제 대신 활성화 코드 — 랜딩 요금제 섹션에서 등록) ----
-  var PLAN_KEY = 'artshow-plan-v1';
-  function planIsPremium() {
-    try { return localStorage.getItem(PLAN_KEY) === 'premium'; } catch (e) { return false; }
-  }
-  var PREMIUM = planIsPremium();
-  var FREE_THEMES = ['daylight', 'auto'];
-
-  var MAX_ARTWORKS = PREMIUM ? 14 : 6;
-  var MAX_FEATURED = PREMIUM ? 2 : 1;
-  var THEMES = ['daylight', 'sunset', 'night', 'auto', 'cycle'];
-
-  // 플랜 배지 — 헤더 h1 옆
-  (function () {
-    var h1 = document.querySelector('h1');
-    if (!h1) return;
-    var badge = document.createElement('span');
-    badge.id = 'planBadge';
-    badge.textContent = PREMIUM ? 'PREMIUM' : 'FREE';
-    badge.style.cssText = 'font-size:12px;vertical-align:middle;margin-left:10px;padding:3px 10px;border:1px solid #cfc6b8;border-radius:999px;color:#5733FF;letter-spacing:0.08em;';
-    h1.appendChild(badge);
-    if (!PREMIUM) {
-      var up = document.createElement('a');
-      up.href = '../#pricing';
-      up.textContent = '업그레이드 ↗';
-      up.style.cssText = 'font-size:12px;margin-left:8px;color:#5733FF;vertical-align:middle;';
-      h1.appendChild(up);
-    }
-  })();
+  // ---- 플랜 (studio-plan.ts로 분리 — 한도/테마 상수 계산·배지 주입) ----
+  var _plan = readPlan();
+  var _limits = computeLimits(_plan.premium);
+  var PREMIUM = _limits.PREMIUM;
+  var FREE_THEMES = _limits.FREE_THEMES;
+  var MAX_ARTWORKS = _limits.MAX_ARTWORKS;
+  var MAX_FEATURED = _limits.MAX_FEATURED;
+  var THEMES = _limits.THEMES;
+  injectPlanBadge(PREMIUM);
 
   var state = {
     id: '',
