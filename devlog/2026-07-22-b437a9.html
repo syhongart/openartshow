@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 3차 세 번째 군(3인칭 자기시점). 게임루프 결합이 가장 깊다 — 아바타 위치·회전·update가">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-b437a9.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 3차 세 번째 군(3인칭 자기시점). 게임루프 결합이 가장 깊다 — 아바타 위치·회전·update가">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-b437a9.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-b437a9.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-22</div>
+<h1><span class="emo">🛠️</span>C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 3차 세 번째 군(3인칭 자기시점). 게임루프 결합이 가장 깊다 — 아바타 위치·회전·<code>update</code>가 <strong>매 프레임</strong> 돌고, 이동속도를 EMA로 평활한다. 게다가 <strong>이미 배포된 사진 컨트롤러</strong>(main-photo.ts)가 셀프뷰 상태·함수 4개(<code>isThirdPerson</code>·<code>getSelfAvatar</code>·<code>applySelfCamOffset</code>·<code>restoreSelfCamOffset</code>)를 ctx로 쓰고 있어(3인칭 사진의 셀프캠 오프셋), 소유권을 옮기면 사진 컨트롤러 배선까지 흔든다.</p>
+<p><strong>개선.</strong> <code>main-selfview.ts</code>(<code>createSelfViewController(ctx)</code>)로 분리(main.js 1,158→1,104). 핵심:</p>
+<ul><li><strong>상태 SSOT 이전</strong>: <code>thirdPerson</code>·<code>selfAvatar</code>·<code>selfPrev</code>·<code>selfSpeed</code> + 셀프캠 상수 3개 + 재사용 THREE 객체 3개(<code>_selfCamSaved</code>/<code>_selfCamBack</code>/<code>_selfCamQuatSaved</code>, 모듈 클로저 1회 생성). <code>selfSpeed</code>는 외부 주입이 아니라 <strong>tick 내부에서 selfPrev 대비 프레임 이동거리로 자체 EMA 계산</strong> → 완전 내부 상태라 컨트롤러가 소유. <strong>tick 본문 내 THREE 신규 할당 0</strong>(프레임 GC 압박 차단).</li><li><strong>컨트롤러 간 의존은 조립점(main.js)이 중재</strong>: photoCtx의 4개를 <code>()=&gt;selfViewController.&lt;메서드&gt;()</code>로 재배선 → 두 컨트롤러가 서로 직접 import하지 않고 main.js(Composition Root)가 getter로 연결. <strong>main-photo.ts 자체는 무수정</strong>(ctx 계약 동일). 4차 "조립만 남기기" 방향과 정합.</li><li><strong>숨은 교차결합 4건</strong>을 grep이 아니라 사용처 추적으로 발견·처리: <code>flyController</code>(비행 중 아바타), <strong><code>bindHitTap</code>의 때리기 레이캐스터 사거리</strong>(3인칭 카메라 후퇴분 <code>SELF_CAM_DIST</code> 보정 — 명세 밖 결합), <code>onSelfHit</code>(null 가드), <code>handleAvatarChange</code>→<code>rebuildAvatar</code> 커맨드 위임.</li><li>읽기/쓰기 분리: 읽기는 getter(<code>isThirdPerson</code>/<code>getSelfAvatar</code>), 상수 단방향은 getter(<code>getSelfCamDist</code>), 전체 생명주기 쓰기(생성·scene add/remove·dispose)는 <strong>커맨드 메서드</strong>(<code>rebuildAvatar</code>)로.</li></ul>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 <strong>승인</strong>(상태 이전·tick 동일성·photoCtx 재배선·숨은 결합 4건·초기화 순서 전부 통과, <code>SELF_CAM_DIST=3.0</code> 사거리 불변·<code>rebuildAvatar</code> dispose 순서 1:1 대응 확인, 블로커 0), 독립 스모크(<strong>6/6 + 셀프뷰 3경로</strong> 토글·3인칭이동·3인칭사진 콘솔0). player/artworks/config.js· main-photo.ts·index.html·CSP 무수정, test 116/116.</p>
+<p><strong>교훈.</strong> 컨트롤러를 여럿 쪼갤 때 서로 직접 참조하게 두면 결합이 그물처럼 얽힌다 — <strong>조립점 하나가 getter로 중재</strong>하면 컨트롤러는 서로를 모른 채 독립적으로 검증·교체된다(Composition Root의 실익). 그리고 리팩터 범위는 <strong>심볼 grep이 아니라 실제 사용처 추적</strong>으로 잡아야 한다: 때리기 사거리가 3인칭 카메라 후퇴를 보정하던 숨은 결합은 <code>SELF_CAM_DIST</code> 참조를 따라가야만 드러났다.</p>
+</article>
+<div class="pn"><a href="./2026-07-22-069373.html"><span class="lbl">← 이전 기록</span>C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

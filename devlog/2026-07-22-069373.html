@@ -96,7 +96,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <p><strong>결과.</strong> 게이트 통과 — 검수관 <strong>승인</strong>(상태 이전 정확·tick 1바이트 동치·clearTween 클로저 정합· handleArtworkSelect 전이 보존·exports 시그니처·초기화 순서 전부 통과, 블로커 0), 독립 스모크 (<strong>6/6 + 투어 경로 7/7</strong>, app/index·world 실렌더 콘솔0, tick 매 프레임·자동진행·exit·next/prev· 카드 동기화 크래시 0). player/artworks/config.js·index.html·CSP 무수정, test 116/116.</p>
 <p><strong>교훈.</strong> 게임루프 결합 함수의 분리는 "위임 wrapper"가 아니라 <strong>상태 소유권 이전</strong>이 정답이다 — 매 프레임 실행 코드를 컨트롤러 밖에 값 캡처로 두면 stale로 자동진행이 멈춘다. 두 규율을 못 박았다: ①tick 판정식은 원본과 <strong>1바이트 동치</strong>로 증명(게임루프 미묘한 조건 변화가 최악의 회귀). ②컨트롤러가 소유 못 하는 외부 상태(tween)의 <strong>읽기는 getter·쓰기는 함수</strong>로 명확히 나눈다(양방향을 getter 하나로 뭉개면 안 됨). "완전 위임" 리팩터답게 stale 주석(main.js:660 <code>touring</code>)도 amend로 정리했다.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-b75440.html"><span class="lbl">← 이전 기록</span>C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)</a></div>
+<div class="pn"><a href="./2026-07-22-b75440.html"><span class="lbl">← 이전 기록</span>C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)</a><a href="./2026-07-22-b437a9.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
