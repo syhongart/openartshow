@@ -4,6 +4,44 @@
 
 ---
 
+## 2026-07-22 · ★ C단계 C-4(D) — main.js 4차 게임루프(GameLoop) 분리 · 4차 완결(Composition Root)
+
+**원인.** 4차 마지막이자 심장 단위. `animate` 게임루프 전체(포테이토 프레임 캡·11개 위임 tick·근접 작품
+안내·render 분기·try/catch 오류복구·setAnimationLoop 등록)를 옮긴다. 팀장 순서 원칙대로 A·B·C를 먼저
+착지시킨 뒤 최후에 밟았다 — animate가 이미 "위임 tick 나열 + render 분기 + try/catch"인 얇은 껍데기라
+이관이 기계적 이동에 가까워졌다(A·B·C가 D의 안전판이 된다는 팀장 판단의 실현).
+
+**개선.** `main-gameloop.ts`(`createGameLoop(ctx)` → `{ start }`)로 분리(main.js 919→**867**). 
+- **프레임 상태 소유**: `clock`(THREE.Clock)·`potatoAccum`을 GameLoop가 소유(루프 밖 참조 0 → 캡슐화만
+  개선). `start()`가 `clock=new Clock()` 후 `renderer.setAnimationLoop(loop)` 등록.
+- **ctx 전량 값 주입**: 안정 참조(renderer·scene·camera·player·gpuInfo) + 위임 컨트롤러 6개(fly·tour·
+  mp·selfview·viewfx·perf) + UI 함수 — **전부 값**. 근거: 전부 init에서 gameLoop 생성 **전에 1회 대입
+  완료·재대입 없음**(grep 전수 확인). 프레임당 getter 0·신규 객체 할당 0.
+- **animate→loop 1바이트 동치**: 함수 본문을 공백 제거 후 diff → 함수명 외 **0바이트 차**. tick 순서·
+  render 3연속 원자성·try/catch 3연속·포테이토 early-return 전부 verbatim.
+
+**결과.** 게이트 통과 — 검수관 승인(diff 1바이트 동치·**클로저 캡처 stale 없음**·setAnimationLoop 등록/
+해제 타이밍·clock 순서·render 원자성 전부 확인, **실제 vite build로 산출물에 setAnimationLoop 2회·
+animate 0회 검증**, 블로커 0), 독립 스모크(6/6 — **setAnimationLoop 등록→렌더 루프 실동작**, swiftshader
+포테이토 캡 경로 자동 진입, 위임 tick·try/catch 정상). 보호4파일·CSP·index.html 무수정, test 116/116.
+
+**교훈.** 게임루프(심장) 이전의 유일한 새 위험은 render/setAnimationLoop 경계와 **클로저 캡처**다. "안정
+참조 값 주입"이 성립하려면 "루프 생성 전 모든 참조가 1회 대입 완료"라는 불변식을 grep으로 **증명**해야
+한다(하나라도 뒤에 재대입되면 stale). 그리고 심장의 동작 동일성 증명은 소스 diff 0에 그치지 않고 **실제
+빌드 산출물에서 setAnimationLoop 호출 횟수까지 세어** 확인했다 — 심장일수록 증명의 층을 더 쌓는다.
+
+### ★ main.js 분해 4단계 완결 — 1,418 → 867줄 (-551, -38.9%)
+- **1차** 순수 유틸 leaf(main-math·spec·gpu·photo-util) → **2차** DOM 이벤트 핸들러(main-events) →
+  **3차** 기능 컨트롤러 4군(photo·tour·selfview·multiplayer) → **4차** Composition Root(perf·viewfx·
+  enterflow·gameloop).
+- main.js는 이제 **순수 조립점**에 근접: 컨트롤러 생성 + ctx 배선 + init 부트스트랩(렌더러·씬·await
+  로드) + `gameLoop.start()` + `init().catch()`. 게임루프·기능·성능·입장·뷰보조가 전부 독립 모듈로,
+  서로를 모른 채 조립점(main.js)이 getter/값으로 중재한다.
+- 전 과정 매 단위 검수관 승인 + 독립 스모크 통과, 보호4파일(player·artworks·config)·CSP·자기완결
+  규율 무완화, test 116/116 불변, 라이브 미술관 무중단. 감독 로드맵(SOLID/아키텍처 축) 완주.
+
+---
+
 ## 2026-07-22 · C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리
 
 **원인.** 4차 세 번째 단위(C). `handleEnter`의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats)
