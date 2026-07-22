@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-07-22 · P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)
+
+**원인.** 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck.
+팀장 조건부 서명으로 **2분할**(PR-1 leaf군 5개 → PR-2 게임루프 결합 대형군 8개) — 1PR 수천 줄 diff가
+교차리뷰를 형식화시켜 보호파일 준용 취지를 무너뜨리는 것 방지. PR-1이 검증 절차의 템플릿.
+
+**개선.** leaf군 5개(`main-math`·`main-spec`·`main-gpu`·`main-photo-util`·`main-events`) @ts-nocheck
+**전량 소거** + strict 타입. 순수 함수라 구조적 타입만으로 무결하게 닫힘(진짜 결함 0·@ts-expect-error 0).
+`main-events`는 config/three 구상 타입에 의존하지 않는 **`EventsCtx` 최소 인터페이스**(실제 호출 멤버만)로
+저결합 — PR-2 ctx 주입 모듈의 템플릿. **런타임 로직 1바이트 무변경**(타입 주석·interface만).
+
+**결과.** 게이트 통과 — 검수관 승인(**팀장 조건4 "런타임 토큰 무변경: 확인" 별도 명시** — diff가
+@ts-nocheck 제거·타입 주석·interface뿐, 실행 토큰 0변경·`as` 캐스팅 0·결함 우회 0, EventsCtx 18멤버가
+main.js eventsCtx 리터럴과 정확 일치), 독립 스모크(9/9 — **dist `diff -r` = 0**[청크 해시까지 base와 동일],
+app/index·world 콘솔0). 대형군 8개·보호 .js 미접촉, test 146.
+
+**교훈.** @ts-nocheck 소거의 무변경 증명은 config.ts와 같은 **dist diff 0**이 최종 심판이다(청크 해시까지
+동일 = esbuild가 타입을 전량 스트립). 그리고 ctx 주입 계약은 config interface를 `import type`으로 끌어오기
+보다 **실제 호출 멤버만 담은 로컬 최소 인터페이스**가 결합도가 낮다(main-events의 EventsCtx). 대형군(PR-2)은
+구상 타입 의존·재대입 let·null 위험이 있어 이 절차가 그대로 안 통할 수 있으니, 로직 수정 대신
+@ts-expect-error/nocheck 잔존을 택해 무변경을 절대 우선한다.
+
+---
+
 ## 2026-07-22 · P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명)
 
 **원인.** 9축 점검 P1. 보호4파일(main·player·artworks·config .js)이 tsc·no-undef·eslint 3중 정적
