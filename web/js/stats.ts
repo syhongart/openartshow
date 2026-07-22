@@ -1,4 +1,4 @@
-// stats.js — 작가 리포트 (서버 없는 방문·감상 통계)
+// stats.ts — 작가 리포트 (서버 없는 방문·감상 통계)
 // OpenArtShow Metaverse — 내 브라우저가 접속해 있는 동안 관측한 것을 전시별
 // localStorage에 누적한다. 작가가 자기 전시에 들어와 있는 동안의 방문자와
 // "관람객이 어느 작품 앞에 오래 머물렀는가"(인기작)를 기록한다.
@@ -6,22 +6,43 @@
 // 한계(정직한 스코프): 서버가 없으므로 "내가 접속해 있지 않은 동안"의 방문은
 // 셀 수 없다. 이후 경량 백엔드를 붙이면 이 모듈의 기록 지점(addVisit/addDwell)에
 // 전송 한 줄씩만 추가하면 된다.
+//
+// [B-5-④ leaf TS 전환] 순수 로직 leaf를 strict TypeScript로 전환. 런타임 로직·값은
+// 무변경(순수 타입 첨가만). [리졸브] vite.config의 .js→.ts 폴백 resolve 플러그인(감독 B안)이
+// 확장자 명시 .js import를 대응 .ts로 해소하므로, 소비자 import는 .js 확장자 그대로 유지한다
+// (라이브 보호파일 main.js 포함 무수정 — 이 재작업의 핵심 목표).
+
+/** 방문·체류 누적 데이터 형태(localStorage 직렬화 대상). */
+interface StatsData {
+  totalVisits: number;
+  days: Record<string, number>;
+  dwell: Record<string, number>;
+}
+/** addDwell이 받는 사람 아바타 평면 좌표. */
+interface HumanPos { x: number; z: number; }
+/** addDwell이 받는 작품 참조(위치+제목). */
+interface ArtRef { pos: { x: number; z: number }; title: string; }
 
 const STATS_PREFIX = 'lu-stats-v1-';
 const DWELL_RADIUS = 3.0; // 작품 앞 "감상 중" 판정 반경(m)
 
-function todayKey() {
+function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function emptyStats() {
+function emptyStats(): StatsData {
   return { totalVisits: 0, days: {}, dwell: {} };
 }
 
 export class GalleryStats {
-  /** @param {string} galleryKey - 전시별 키 (룸 suffix와 동일 규약) */
-  constructor(galleryKey) {
+  key: string;
+  _seen: Set<string>;
+  data: StatsData;
+  _saveTimer: ReturnType<typeof setTimeout> | null;
+
+  /** @param galleryKey - 전시별 키 (룸 suffix와 동일 규약) */
+  constructor(galleryKey: string) {
     this.key = STATS_PREFIX + String(galleryKey || 'default');
     this._seen = new Set(); // 이 세션에서 이미 센 방문자 id (재집계 방지)
     this.data = emptyStats();
@@ -56,7 +77,7 @@ export class GalleryStats {
   }
 
   /** 새 방문자 관측 (원격 사람 아바타 생성 시 1회) */
-  addVisit(visitorId) {
+  addVisit(visitorId: string) {
     if (!visitorId || this._seen.has(visitorId)) return;
     this._seen.add(visitorId);
     this.data.totalVisits += 1;
@@ -64,22 +85,22 @@ export class GalleryStats {
     this.data.days[day] = (this.data.days[day] | 0) + 1;
     // 일자 기록은 최근 60일만 유지
     const keys = Object.keys(this.data.days).sort();
-    while (keys.length > 60) delete this.data.days[keys.shift()];
+    while (keys.length > 60) delete this.data.days[keys.shift()!];
     this._save();
   }
 
   /**
    * 감상 체류 적립 — 주기 호출. 원격 사람 아바타들의 위치를 받아 가장 가까운
    * 작품(반경 내)에 seconds를 더한다.
-   * @param {Array<{x:number,z:number}>} humanPositions
-   * @param {Array<{pos:{x:number,z:number}, title:string}>} artworks
-   * @param {number} seconds
+   * @param humanPositions
+   * @param artworks
+   * @param seconds
    */
-  addDwell(humanPositions, artworks, seconds) {
+  addDwell(humanPositions: HumanPos[], artworks: ArtRef[], seconds: number) {
     if (!humanPositions || !humanPositions.length || !artworks || !artworks.length) return;
     let changed = false;
     for (const h of humanPositions) {
-      let best = null;
+      let best: ArtRef | null = null;
       let bestD = DWELL_RADIUS;
       for (const art of artworks) {
         const d = Math.hypot(art.pos.x - h.x, art.pos.z - h.z);
@@ -97,7 +118,7 @@ export class GalleryStats {
   }
 
   /** 방명록 패널용 요약 한 줄. guestbookCount는 호출부(main.js)가 넘긴다. */
-  summary(guestbookCount) {
+  summary(guestbookCount?: number) {
     const today = this.data.days[todayKey()] | 0;
     const parts = [`오늘 방문 ${today}`, `누적 ${this.data.totalVisits}`];
     if (typeof guestbookCount === 'number') parts.push(`방명록 ${guestbookCount}`);
