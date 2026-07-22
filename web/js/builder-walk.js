@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import { buildChibi } from './chibi.js';
 import { spaceDims } from './space-render.js';
-import { PART_TYPES } from './space';
+import { PART_TYPES } from './space.js';
 import { getProfile } from './auth.js';
 
 const LU_CHIBI_LOOK_PREFIX = 'lu-chibi-look::'; // ui.js LU_CHIBI_LOOK_PREFIX와 동일 상수(저장 포맷 SSOT는 ui.js)

@@ -6,10 +6,10 @@
 // 테스트 가능성: createBuilder()가 스크립트 API를 반환 → 헤드리스로 전 경로 검증.
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
-import { normalizeSpace, newSpace, PART_TYPES, FINISH, FOOTPRINT, encodeSpace, decodeSpace, SPACE_PREFIX } from './space';
+import { normalizeSpace, newSpace, PART_TYPES, FINISH, FOOTPRINT, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
 import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting, bakeShellLightmaps } from './space-render.js';
-import { youtubeId } from './ytembed';
-import { SPACE_PRESETS, getPreset, presetThumb } from './space-presets';
+import { youtubeId } from './ytembed.js';
+import { SPACE_PRESETS, getPreset, presetThumb } from './space-presets.js';
 import { createBuilderWalk } from './builder-walk.js';
 
 const SAVE_KEY = 'openartshow.space.v1';

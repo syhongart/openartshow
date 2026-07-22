@@ -10,9 +10,9 @@
 // presetThumb) 시그니처 타입만 명시. 프리셋 space는 정규화 전 문서라 shell에 entries·
 // floors·stairs가 없으므로(빌더 normalizeSpace가 보정) Space 대신 PresetSpace로 표기.
 // [리졸브] vite/rollup resolver는 확장자 명시 .js import를 .ts로 치환하지 않으므로
-// (B-5-①/② space.ts·ytembed.ts와 동형), 소비자 import는 확장자 없는 './space-presets'로 통일.
+// (B-5-①/② space.ts·ytembed.ts와 동형), 소비자 import는 확장자 없는 './space-presets.js'로 통일.
 // -----------------------------------------------------------------------------
-import { FOOTPRINT, PART_TYPES, type SpacePart, type SpaceFinish } from './space';
+import { FOOTPRINT, PART_TYPES, type SpacePart, type SpaceFinish } from './space.js';
 
 /** 프리셋의 정규화 전 space 문서(빌더 normalizeSpace가 entries·floors·stairs 등 보정). */
 export interface PresetSpace {

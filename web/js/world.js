@@ -17,7 +17,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W, warmBuildingTexCache } from './space-render.js';
-import { PART_TYPES } from './space';
+import { PART_TYPES } from './space.js';
 import { createAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
 // [나무 교체] 거리 가로수를 미술관과 동일한 디테일 트리로. scene.js(계열 A)에서 순수 export

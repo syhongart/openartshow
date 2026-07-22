@@ -10,7 +10,7 @@
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
-import { PART_TYPES, FOOTPRINT, STORY_H, FRAME_RULES, TINT_PALETTES } from './space';
+import { PART_TYPES, FOOTPRINT, STORY_H, FRAME_RULES, TINT_PALETTES } from './space.js';
 import { createPlasterMaps, createParquetMaps, createConcreteMaps } from './scene.js';
 
 // 미술관(scene.js) 프로시저럴 텍스처+노말맵 계승(감독: 노말맵 필수). 생성기(createPlasterMaps 등)는
