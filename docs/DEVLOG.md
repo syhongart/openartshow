@@ -4,6 +4,37 @@
 
 ---
 
+## 2026-07-22 · C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)
+
+**원인.** main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.
+감사 결과 **코어 분해는 위험≫가치**(export 0=소비자 없음, 공유 let ~40개, 미술관 전체다운 리스크).
+감독 결정: 보류가 아니라 **4단계 점진 로드맵** — 1차 순수유틸 → 2차 이벤트핸들러 → 3차 기능컨트롤러
+→ 4차 "초기화·조립만 main.js 잔류"(Composition Root 이상형).
+
+**개선(1차, 순수 함수만).** `main-math.ts`(easeInOutCubic·lerpAngle·djb2·resolveAutoTheme)·
+`main-spec.ts`(readSpec·writeSpec·품질 상수)·`main-gpu.ts`(probeGpu)·`main-photo-util.ts`(dataUrlToBlob·
+drawWatermark·drawLetterSpacedRight·getShareUrl) = 162줄 추출(1,418→1,256). **순수 기준 엄격**: DOM
+미수정·모듈 let 미접근·scene/renderer/player 미참조·이벤트 미등록·입력→반환만. **showGpuNotice(DOM
+배너)·capturePhoto(렌더러 결합)·specFastTicks(공유 let)는 순수 아니라 잔류**(2차 이후).
+
+**감독의 검증 용어 교정(중요).** "byte 무결성"은 부정확한 표현(파일 분리하면 바이트는 당연히 달라짐)
+→ **"동작 동일성(입력·출력·사용자 동작) 회귀 검증"**으로 정정. 실제 게이트 기준을 감독이 명시:
+①동작 동일성 ②**초기화 순서·이벤트 등록 횟수 불변**(main.js 분해 최다 오류 지점) ③신규 콘솔 error·
+unhandledrejection 0 ④정상/네트워크제한/소프트웨어GPU 3환경 진입·렌더 ⑤추출 기능 결과 동일 ⑥재입장
+리스너 중복 없음 ⑦성능 악화 없음. 하나라도 실패 시 롤백. 또 **AI 역할명(팀장 서명 등)의 자기선언은
+실질 없음** — 실제 게이트는 "작업 전 범위승인(감독)→작업 후 검증→실패 시 롤백"으로 단순화.
+
+**결과.** 게이트 통과 — 독립 스모크(소프트웨어GPU 헤드리스 렌더 콘솔0·unhandledrejection0, addEventListener
+8→8·setAnimationLoop 2→2 불변, 이동 11함수 본문 동일) + 검수관 승인(순수성 전수·동작 동일성·잔류 정당·
+no-undef 0). player/artworks/config.js·index.html·CSP 무수정. test 116/116.
+
+**교훈.** 모든 큰 파일을 쪼개는 게 SOLID가 아니다 — 진입점(Composition Root)은 조립 특성상 큰 게
+자연스럽다. main.js는 "무조건 분해"가 아니라 **감사로 위험/가치를 재고 → 순수 leaf부터 점진 → 최종
+조립만 잔류"라는 정교한 경로를 택했다. 검증은 "소스 보존"이 아니라 **동작 동일성 + 초기화 순서·이벤트
+횟수 불변**이 본질(감독 교정).
+
+---
+
 ## 2026-07-22 · ★★ C단계 C-3(3) — scene.js(2,059줄) 6분해 = 비보호 초대형 SOLID 완료
 
 **원인.** scene.js = **라이브 미술관(app/index) 씬 핵심**(재질맵·조명·환경·나무·조립). 초대형 SRP
