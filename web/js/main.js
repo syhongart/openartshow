@@ -59,8 +59,8 @@ import {
 import { easeInOutCubic, lerpAngle, resolveAutoTheme, djb2 } from './main-math.js';
 import { readSpec, writeSpec, PX_BUDGET, LITE_ENTER_FPS, LITE_EXIT_FPS, LITE_VISIBLE_NPCS } from './main-spec.js';
 import { probeGpu } from './main-gpu.js';
-import { dataUrlToBlob, drawWatermark, getShareUrl } from './main-photo-util.js';
 import { createEventHandlers } from './main-events.js';
+import { createPhotoController } from './main-photo.js';
 
 let renderer = null;
 let scene = null;
@@ -69,6 +69,7 @@ let player = null;
 let flyController = null; // fly.js 비행 컨트롤러(점프 홀드) — 입장 setup에서 초기화
 let mp = null; // MultiplayerManager — 입장 전에는 null (sendState/update 가드)
 let eventHandlers = null; // createEventHandlers(eventsCtx) 반환 — init에서 세팅, 아래 wrapper가 위임
+let photoController = null; // createPhotoController(photoCtx) 반환 — init에서 세팅, capturePhoto wrapper가 위임
 let npcCrowd = null; // AI 관객 — 호스트가 될 때 npcProvider 안에서 지연 생성
 let stats = null; // 작가 리포트 (전시별 방문·감상 통계 — stats.js)
 const visitorLog = new VisitorLog(); // 랜딩 "최근 관람객" 피드
@@ -683,6 +684,27 @@ async function init() {
   };
   eventHandlers = createEventHandlers(eventsCtx);
 
+  // 사진(포토 모드) 컨트롤러 구현은 main-photo.js로 분리(3차). eventsCtx와 동일하게
+  // 재대입 let(renderer·scene·camera·thirdPerson·selfAvatar·galleryInfo·myNickname·mp)은
+  // getter로, 안정 참조(photoWall·함수)는 값으로 주입한다. 위 capturePhoto wrapper가
+  // 이 컨트롤러에 위임하며, 실제 호출(P키/캡처버튼)은 init 완료 후에만 발생한다.
+  const photoCtx = {
+    getRenderer: () => renderer,
+    getScene: () => scene,
+    getCamera: () => camera,
+    isThirdPerson: () => thirdPerson,
+    getSelfAvatar: () => selfAvatar,
+    applySelfCamOffset,
+    restoreSelfCamOffset,
+    getGalleryInfo: () => galleryInfo,
+    photoWall,
+    getMyNickname: () => myNickname,
+    getMp: () => mp,
+    showShareModal,
+    setStatus,
+  };
+  photoController = createPhotoController(photoCtx);
+
   // 리사이즈 대응
   window.addEventListener('resize', onWindowResize);
   window.addEventListener('keydown', onKeyDown);
@@ -751,73 +773,11 @@ function viewCurrentArtwork() {
 // SNS 공유 — 포토 모드 (P키 / 터치 독 '캡처' 버튼)
 // ---------------------------------------------------------------------------
 
-// 현재 3D 화면을 캡처해 워터마크를 합성한 뒤 공유 모달을 연다.
-// WebGL 컨텍스트는 preserveDrawingBuffer:false이므로, renderer.render() 직후
-// 같은 동기 흐름 안에서 toDataURL을 호출해야 화면이 지워지기 전에 픽셀을 읽을 수 있다.
+// 구현은 main-photo.js(createPhotoController)로 이동(3차). 이 함수선언은 호출 지점
+// (onCapture·eventsCtx)을 1바이트도 바꾸지 않기 위해 capturePhoto 심볼을 유지하는
+// 위임 wrapper다 — 실제 캡처 파이프라인은 photoController.capturePhoto가 담당.
 function capturePhoto() {
-  if (!renderer || !scene || !camera) return;
-  try {
-    if (thirdPerson && selfAvatar) applySelfCamOffset();
-    renderer.render(scene, camera);
-    if (thirdPerson && selfAvatar) restoreSelfCamOffset();
-    const rawDataUrl = renderer.domElement.toDataURL('image/png');
-
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0);
-      // 화면과 동일한 비네팅을 사진에도 — 라이브 무드 그대로 저장
-      const vg = ctx.createRadialGradient(
-        canvas.width / 2, canvas.height * 0.46, Math.min(canvas.width, canvas.height) * 0.4,
-        canvas.width / 2, canvas.height * 0.46, Math.max(canvas.width, canvas.height) * 0.72
-      );
-      vg.addColorStop(0, 'rgba(8,6,4,0)');
-      vg.addColorStop(0.24, 'rgba(8,6,4,0.03)');
-      vg.addColorStop(0.44, 'rgba(8,6,4,0.09)');
-      vg.addColorStop(0.64, 'rgba(8,6,4,0.17)');
-      vg.addColorStop(0.82, 'rgba(8,6,4,0.26)');
-      vg.addColorStop(1, 'rgba(8,6,4,0.34)');
-      ctx.fillStyle = vg;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      drawWatermark(ctx, canvas.width, canvas.height, galleryInfo ? galleryInfo.name : '');
-
-      // canvas.toBlob은 일부 환경에서 콜백이 오지 않는 사례가 있어,
-      // 어차피 미리보기용으로 만드는 dataURL에서 동기적으로 Blob을 만든다.
-      const outDataUrl = canvas.toDataURL('image/png');
-
-      // 포토월 썸네일(360px JPEG) — 랜딩 피드 + 같은 방 전원에게 전파
-      try {
-        const tw = 360;
-        const th = Math.round((canvas.height / canvas.width) * tw);
-        const thumbCanvas = document.createElement('canvas');
-        thumbCanvas.width = tw;
-        thumbCanvas.height = th;
-        thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
-        const thumb = thumbCanvas.toDataURL('image/jpeg', 0.72);
-        const item = photoWall.addLocal(myNickname, galleryInfo ? galleryInfo.name : '', thumb);
-        if (item && mp) mp.sendPhoto(item);
-      } catch (err) {
-        console.warn('포토월 썸네일 생성 실패 (캡처 자체는 정상):', err);
-      }
-      showShareModal({
-        blob: dataUrlToBlob(outDataUrl),
-        dataUrl: outDataUrl,
-        galleryName: (galleryInfo && galleryInfo.name) || 'OpenArtShow 전시',
-        shareUrl: getShareUrl(),
-      });
-    };
-    img.onerror = () => {
-      setStatus('사진 촬영에 실패했습니다.');
-    };
-    img.src = rawDataUrl;
-  } catch (err) {
-    console.error('사진 촬영 실패:', err);
-    setStatus('사진 촬영에 실패했습니다.');
-  }
+  photoController.capturePhoto();
 }
 
 // 구현은 main-events.js(createEventHandlers)로 이동. 이 함수선언은 keydown 리스너
