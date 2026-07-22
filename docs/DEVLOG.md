@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-07-22 · C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)
+
+**원인.** 감독 로드맵 2단계. main.js의 DOM 이벤트 핸들러(onKeyDown·onWindowResize·beforeunload)를
+분리. 1차(순수 이동)와 달리 공유 상태를 읽고 쓰므로 순수 이동 불가.
+
+**개선.** `main-events.ts`(90줄, `createEventHandlers(ctx)`→{onKeyDown·onWindowResize·onBeforeUnload})
+로 **핸들러 로직만** 추출(main.js 1,256→1,231). 핵심 원칙:
+- **리스너 등록은 main.js에 그대로 유지**(addEventListener 8회·순서·핸들러 심볼 1바이트 불변 — 분해
+  최다 오류 지점). onKeyDown·onWindowResize는 wrapper 함수선언으로 hoisting·등록라인 보존.
+- **ctx 주입 + 재대입 let getter**: camera·renderer·mp·entered·touring은 init에서 재대입되는 module
+  let이라 **값 캡처가 아니라 getter 클로저**로 주입(호출 시점 최신 값 재조회 — stale 참조 방지).
+- 기능함수 14개(capturePhoto·투어군·셀프뷰 등)는 **3차 대상이라 main.js 잔류**, ctx로 참조만 전달.
+
+**결과.** 게이트 통과 — 검수관 승인(리스너 불변·getter stale 방지·키분기 1바이트 동치·기능함수 잔류
+정당·no-undef 0), 독립 스모크(**app/index·world swiftshader 실제 렌더 콘솔0·씬부팅**, addEventListener
+8회 불변, 재입장 리스너 중복 없음). player/artworks/config.js·index.html·CSP 무수정, test 116/116.
+
+**교훈.** 이벤트 핸들러 분리의 함정 2가지를 방어했다 — ①리스너 **등록**은 옮기지 않고 **구현**만 옮겨
+"등록 횟수·순서 불변"을 지킨다(중복 등록=메모리 누수·이중 반응 방지). ②재대입되는 공유 상태는 값이
+아니라 **getter로 주입**해야 stale 참조를 피한다(입장 전 camera=null 캡처 시 리사이즈 크래시 같은
+버그 원천 차단). 이 두 원칙이 감독이 지목한 "초기화 순서·이벤트 등록 횟수" 게이트의 실체다.
+
+---
+
 ## 2026-07-22 · C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)
 
 **원인.** main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.
