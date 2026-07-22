@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-07-22 · C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)
+
+**원인.** 감독 로드맵 3단계(기능별 컨트롤러). 3차 함수 14개는 2차 핸들러와 달리 전역 상태를
+직접 변이하고 side effect(사진 캡처·투어 전이·P2P)를 낸다. 감독이 **"위험도별 분할"**을 승인 —
+한 번에 다 옮기지 않고 가장 안전한 **사진 컨트롤러 1개 군부터** 분리·게이트·배포한다.
+
+**개선.** `main-photo.ts`(`createPhotoController(ctx)`→{capturePhoto})로 `capturePhoto` 본체를
+이전(파이프라인 로직 1바이트 불변, main.js 1,231→1,191). 핵심 원칙(2차 승계):
+- **재대입 let 8개는 getter 주입**: renderer·scene·camera·thirdPerson·selfAvatar·galleryInfo·
+  myNickname·mp 전부 init/토글/입장에서 재대입되는 module let → 값 캡처 시 stale/undefined 참조로
+  캡처 시점 크래시. `getX:()=>x` 클로저로 주입. 안정 참조(photoWall const·함수선언·ui import)는 값.
+- **capturePhoto는 위임 wrapper로 잔류** → 호출지점(P키·캡처버튼 onCapture·exports 객체) 1바이트
+  무변경. 초기화 순서·리스너 등록 횟수 불변(photoController 생성만 eventHandlers 직후 삽입).
+- **ctx 이름 충돌 방어**: 주입 `ctx` 파라미터를 모듈 최상단에서 즉시 구조분해해 개별 심볼로 고정 →
+  `img.onload` 내부 `const ctx = canvas.getContext('2d')`(캔버스 2D)와 섀도잉 혼선 차단.
+
+**결과.** 게이트 통과 — 검수관 조건부승인(getter 8개 주입정확·wrapper 계약·초기화순서·이름충돌·
+파이프라인 인자 동일, 조건=분리로 죽은 import 3개 제거 → 이행), 독립 스모크(**6/6 PASS**, app/index·
+world swiftshader 실렌더 콘솔0, capturePhoto 런타임 ReferenceError 없이 위임 호출). player/artworks/
+config.js·index.html·CSP 무수정.
+
+**교훈.** side effect 있는 기능함수 분리도 2차의 두 원칙(등록 아닌 구현만 이전, 재대입 let은 getter)이
+그대로 방어선이다. 추가로 **"완전 위임" 리팩터는 원본의 죽은 import까지 정리해야 취지가 완결**된다 —
+검수관이 base엔 없던 신규 no-unused-vars 3건을 잡아 조건으로 걸었고, 이를 amend로 흡수했다.
+
+---
+
 ## 2026-07-22 · C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)
 
 **원인.** 감독 로드맵 2단계. main.js의 DOM 이벤트 핸들러(onKeyDown·onWindowResize·beforeunload)를
