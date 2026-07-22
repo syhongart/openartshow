@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 3차: 도슨트(투어) 컨트롤러 모듈화. strict 타입은 후속.
 // main-tour.js — 도슨트 투어를 main.js에서 추출. 사진 군(main-photo.js, 격리 단발
 //   함수)과 달리 투어는 animate 게임루프에 매 프레임 결합돼 있어 "상태 소유권 이전"
 //   방식으로 분리한다: 투어 상태 5개(touring·tourIndex·tourAutoOn·tourWaiting·
@@ -14,7 +13,30 @@
 //   getTween() getter, exitTour의 즉시정지(tween=null 대입)는 clearTween() 위임으로
 //   처리한다 — tick 판정식은 원본 animate 블록과 1바이트 동치를 유지한다.
 
-export function createTourController(ctx) {
+// main.js의 tourCtx가 주입하는 계약(재대입 참조는 getter, 안정 참조는 값).
+interface TourArt { title?: string }
+interface TourCtx {
+  getPlacedArtworks(): TourArt[];
+  getPlayer(): {
+    setPose(pose: unknown): void;
+    disable(): void;
+    enable(): void;
+    getState(): { x: number; z: number; ry: number };
+  };
+  isEntered(): boolean;
+  getTween(): unknown;
+  clearTween(): void;
+  startTween(pose: unknown, onDone: () => void): void;
+  getViewingPose(art: TourArt): unknown;
+  showTourBar(bar: { index: number; total: number; title: string; autoOn: boolean }): void;
+  hideTourBar(): void;
+  setDockActive(name: string, active: boolean): void;
+  isLightboxOpen(): boolean;
+  isArtworkListOpen(): boolean;
+  hideArtworkList(): void;
+}
+
+export function createTourController(ctx: TourCtx) {
   const {
     getPlacedArtworks,
     getPlayer,
@@ -39,7 +61,7 @@ export function createTourController(ctx) {
   let tourStayElapsed = 0;
   const TOUR_STAY_SECONDS = 6;
 
-  function updateTourBar(art) {
+  function updateTourBar(art: TourArt) {
     showTourBar({
       index: tourIndex, // ui.js가 0-based를 받아 +1하여 표시한다 (계약)
       total: getPlacedArtworks().length,
@@ -48,7 +70,7 @@ export function createTourController(ctx) {
     });
   }
 
-  function goToTourIndex(index) {
+  function goToTourIndex(index: number) {
     const art = getPlacedArtworks()[index];
     if (!art) return;
     tourIndex = index;
@@ -114,14 +136,14 @@ export function createTourController(ctx) {
 
   // 작품 선택(작품 목록 카드 클릭) 공통 경로에서 투어 중일 때의 협조.
   // handleArtworkSelect가 startTween 호출 "전"에 인덱스·대기상태를 맞춘다.
-  function syncOnSelect(art) {
+  function syncOnSelect(art: TourArt) {
     const idx = getPlacedArtworks().indexOf(art);
     if (idx !== -1) tourIndex = idx;
     tourWaiting = false;
   }
 
   // 위 startTween 도착 콜백에서 투어 중일 때 머무름 카운트를 새로 시작한다.
-  function onArrive(art) {
+  function onArrive(art: TourArt) {
     updateTourBar(art);
     tourWaiting = true;
     tourStayElapsed = 0;
@@ -130,7 +152,7 @@ export function createTourController(ctx) {
   // 게임루프 위임 — animate 매 프레임 호출. 판정식은 원본과 1바이트 동치:
   //   touring && tourWaiting && tourAutoOn && !tween && !isLightboxOpen()
   // tween·isLightboxOpen만 컨트롤러 비소유(ctx 주입). 프레임 안에서 할당·객체 생성 없음.
-  function tick(delta) {
+  function tick(delta: number) {
     if (touring && tourWaiting && tourAutoOn && !getTween() && !isLightboxOpen()) {
       tourStayElapsed += delta;
       if (tourStayElapsed >= TOUR_STAY_SECONDS) {

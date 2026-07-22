@@ -1,5 +1,5 @@
-// @ts-nocheck — main.js 분해 3차(세 번째 군, 최종): 멀티플레이어(P2P) 오케스트레이션
-// 컨트롤러 모듈화. strict 타입은 후속.
+// main.js 분해 3차(세 번째 군, 최종): 멀티플레이어(P2P) 오케스트레이션
+// 컨트롤러 모듈화.
 // main-multiplayer.js — MultiplayerManager 인스턴스(mp)의 "생성 · 콜백 배선 · 게임루프
 //   tick(sendState/update) · 연결 직후 방명록 1회 동기화"를 main.js에서 추출한다. 투어·
 //   셀프뷰 군과 동일한 "상태 소유권 이전 + tick 위임 + 조립점 재배선" 패턴이되, mp는 여러
@@ -36,7 +36,42 @@
 //     myNickname이 main.js 소유로 남으므로 재배선하지 않는다.
 import { MultiplayerManager } from './multiplayer.js';
 
-export function createMultiplayerController(ctx) {
+// mp 인스턴스가 노출하는(이 컨트롤러가 배선·호출하는) 멤버만 최소 선언.
+// MultiplayerManager는 JS 모듈이라 npcProvider=null 등으로 추론돼 콜백 재대입이 막히므로
+// 로컬 인터페이스로 mp를 타이핑한다(재대입 let·콜백 배선 → 최소 인터페이스, 팀장 조건1).
+interface MpInstance {
+  onVisitor: (id: string, info: unknown) => void;
+  onPhoto: (item: unknown) => void;
+  onChat: (name: string, text: string) => void;
+  onPlayerCount: (n: number) => void;
+  onStatus: (statusText: string) => void;
+  onGuestbook: (notes: unknown) => void;
+  onSelfHit: (level: unknown) => void;
+  onNpcHit: (id: string, level: unknown, hitter: unknown) => void;
+  npcProvider: (delta: number, humans: unknown) => void;
+  sendState(state: unknown): void;
+  update(delta: number): void;
+  sendGuestbook(notes: unknown): void;
+  connect(): void;
+}
+
+// main.js의 mpCtx가 주입하는 계약(재대입 module-scope는 getter, 도메인 콜백은 값).
+interface MultiplayerCtx {
+  getScene(): object;
+  getPlayer(): { getState(): unknown };
+  setStatus(statusText: string): void;
+  getGuestbookNotes(): unknown;
+  onVisitor(id: string, info: unknown): void;
+  onPhoto(item: unknown): void;
+  onChat(name: string, text: string): void;
+  onPlayerCount(n: number): void;
+  onRemoteGuestbook(notes: unknown): void;
+  onSelfHit(level: unknown): void;
+  onNpcHit(id: string, level: unknown, hitter: unknown): void;
+  npcProvider(delta: number, humans: unknown): void;
+}
+
+export function createMultiplayerController(ctx: MultiplayerCtx) {
   const {
     getScene,
     getPlayer,
@@ -52,13 +87,13 @@ export function createMultiplayerController(ctx) {
     npcProvider,
   } = ctx;
 
-  let mp = null; // MultiplayerManager — 입장(connect) 전에는 null
+  let mp: MpInstance | null = null; // MultiplayerManager — 입장(connect) 전에는 null
   let guestbookSentOnce = false; // 연결 성공 직후 로컬 방명록을 1회만 전송하기 위한 플래그
 
   // mp.onStatus 래퍼 — 상태 표시는 그대로 위임하되, 연결이 처음 성립되는 시점
   // ('호스트로 개설됨' 또는 '접속됨(게스트)')에 로컬 방명록 전체를 1회만 전송한다.
   // 방명록 노트는 main.js 소유이므로 getGuestbookNotes()로 읽는다.
-  function handleMultiplayerStatus(statusText) {
+  function handleMultiplayerStatus(statusText: string) {
     setStatus(statusText);
     if (guestbookSentOnce || !mp) return;
     if (statusText === '호스트로 개설됨' || statusText.startsWith('접속됨')) {
@@ -76,9 +111,14 @@ export function createMultiplayerController(ctx) {
   // 도메인 함수를 호출한다(배선만 이 컨트롤러 책임, 로직은 main.js 도메인). roomId는 main.js가
   // PEER_ROOM_ID+roomSuffix로 합성해 넘긴다(통계 키가 동일 suffix를 공유하므로 조립점에서 계산).
   // 반환값: 연결 성공 여부(false면 main.js가 '혼자 관람 모드' 안내를 띄운다).
-  function connect({ nickname, color, char, roomId }) {
+  function connect({ nickname, color, char, roomId }: { nickname: string; color: string; char: string; roomId: string }) {
     try {
-      mp = new MultiplayerManager(getScene(), { nickname, color, char, roomId });
+      // roomId는 MultiplayerManager JSDoc이 누락했으나 생성자가 실제 구조분해해 쓰므로(원본 무변경)
+      //   객체 리터럴을 실인자 형태로 단언해 excess-property 검사만 우회한다(지역 캐스팅).
+      mp = new MultiplayerManager(
+        getScene(),
+        { nickname, color, char, roomId } as { nickname: string; color: string; char: string; roomId: string }
+      ) as unknown as MpInstance;
       mp.onVisitor = (id, info) => onVisitor(id, info);
       mp.onPhoto = (item) => onPhoto(item);
       // onChat은 원격 메시지 전용 (자기 메시지는 handleChatSend가 로컬 표시,
@@ -104,7 +144,7 @@ export function createMultiplayerController(ctx) {
 
   // 게임루프 위임 — 입장 전(mp=null)이면 즉시 no-op(원본 `if (mp)` 가드와 동치).
   // 매 프레임 호출이므로 내부 객체 할당은 없다(player.getState()만 원본 그대로).
-  function tick(delta) {
+  function tick(delta: number) {
     if (!mp) return;
     mp.sendState(getPlayer().getState());
     mp.update(delta);

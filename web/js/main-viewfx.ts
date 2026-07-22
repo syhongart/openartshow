@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 4차 B군: 카메라 뷰 보조(ViewFx) 모듈화. strict 타입은 후속.
 // main-viewfx.js — animate 게임루프에 매 프레임 결합된 "카메라 뷰 보조" 세 도메인을
 //   main.js에서 추출한다. A군(perf)·투어·셀프뷰와 동일한 "상태 소유 이전 + tick 위임"
 //   패턴이되, 세 항목이 게임루프에 흩어져(트윈은 tour.tick 앞, 층/온보딩은 그 뒤) 있어
@@ -26,8 +25,27 @@
 import * as THREE from 'three';
 import { easeInOutCubic, lerpAngle } from './main-math.js';
 import { BUILDING, EYE_HEIGHT } from './config.js';
+import type { Floor, FloorId } from './config.js';
 
-export function createViewFx(ctx) {
+// 트윈(카메라 보간) 상태 형태.
+interface TweenState {
+  fromX: number; fromY: number; fromZ: number; fromRy: number;
+  toX: number; toY: number; toZ: number; toRy: number;
+  duration: number; elapsed: number; onDone: (() => void) | null;
+}
+// main.js의 viewfxCtx가 주입하는 계약(안정 참조는 값, 동적 참조는 getter).
+// three는 타입 정의가 없어 THREE.* 타입 참조 불가 → 카메라는 호출 메서드만 담은 구조 인터페이스로.
+interface ViewFxCtx {
+  camera: {
+    position: { set(x: number, y: number, z: number): void; y: number };
+    quaternion: { setFromEuler(e: unknown): void };
+  };
+  player: { getState(): { x: number; y: number; z: number; ry: number }; disable(): void };
+  isEntered(): boolean;
+  setStatus(s: string): void;
+}
+
+export function createViewFx(ctx: ViewFxCtx) {
   const {
     camera,     // 값 — init 1회 대입 후 안정
     player,     // 값 — init 1회 대입 후 안정
@@ -38,7 +56,7 @@ export function createViewFx(ctx) {
   // ---------------------------------------------------------------------------
   // 트윈 (텔레포트/투어 공용) — 게임루프 안에서 매 프레임 갱신된다.
   // ---------------------------------------------------------------------------
-  let tween = null; // { fromX, fromZ, fromRy, toX, toZ, toRy, duration, elapsed, onDone }
+  let tween: TweenState | null = null; // { fromX, fromZ, fromRy, toX, toZ, toRy, duration, elapsed, onDone }
 
   const TWEEN_MIN_DURATION = 0.8; // s
   const TWEEN_MAX_DURATION = 2.2; // s
@@ -46,7 +64,7 @@ export function createViewFx(ctx) {
 
   // 현재 카메라 pose → 목표 pose로 부드럽게 이동을 시작한다. 이동 중에는
   // player.disable()을 유지하고, 완료 시 onDone(목표 pose)을 호출한다.
-  function startTween(toPose, onDone) {
+  function startTween(toPose: { x: number; y?: number; z: number; ry: number }, onDone: (() => void) | null | undefined) {
     const cur = player.getState();
     const toY = typeof toPose.y === 'number' ? toPose.y : cur.y;
     const dx = toPose.x - cur.x;
@@ -74,7 +92,7 @@ export function createViewFx(ctx) {
     };
   }
 
-  function updateTween(delta) {
+  function updateTween(delta: number) {
     if (!tween) return;
     tween.elapsed += delta;
     const t = Math.min(1, tween.elapsed / tween.duration);
@@ -104,11 +122,11 @@ export function createViewFx(ctx) {
   // ---------------------------------------------------------------------------
   // 층안내 — 카메라 y가 어느 층 대역에 있는지 (계단 중간은 아래층 유지)
   // ---------------------------------------------------------------------------
-  let currentFloorId = null;
+  let currentFloorId: FloorId | null = null;
   function updateFloorIndicator() {
     if (!isEntered()) return;
     const y = camera.position.y - EYE_HEIGHT;
-    let best = null;
+    let best: Floor | null = null;
     for (const f of BUILDING.floors) {
       if (y >= f.y - 0.9 && (best === null || f.y > best.y)) best = f;
     }
@@ -130,8 +148,8 @@ export function createViewFx(ctx) {
   // ---------------------------------------------------------------------------
   const ONBOARD_KEY = 'lu-onboard-v1';
   let onboardStep = -1; // -1: 비활성
-  let onboardRing = null;
-  let onboardPos0 = null;
+  let onboardRing: HTMLDivElement | null = null;
+  let onboardPos0: { x: number; z: number } | null = null;
   let onboardYaw0 = 0;
   let onboardDoneT = 0;
 
@@ -160,7 +178,8 @@ export function createViewFx(ctx) {
     if (onboardStep < 0) return;
     const st = player.getState();
     if (onboardStep === 0) {
-      if (Math.hypot(st.x - onboardPos0.x, st.z - onboardPos0.z) > 1.5) {
+      // onboardStep===0이면 startOnboarding에서 onboardPos0가 함께 설정됨(원본 상태 상관관계) — 지역 단언.
+      if (Math.hypot(st.x - onboardPos0!.x, st.z - onboardPos0!.z) > 1.5) {
         onboardStep = 1;
         onboardYaw0 = st.ry;
         if (onboardRing) {

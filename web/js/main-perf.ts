@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 4차 A군: 성능/렌더 거버너(PerfGovernor) 모듈화. strict 타입은 후속.
 // main-perf.js — animate 게임루프에서 "매 프레임 성능/렌더 관리" 응집 덩어리를 추출한다.
 //   투어·셀프뷰 컨트롤러와 동일한 "상태 소유권 이전 + tick 위임" 방식이되, 이 덩어리는
 //   render()·프레임 순서와 독립(A군은 render 무관)이라 가장 안전한 첫 단위다.
@@ -23,7 +22,19 @@
 
 import { readSpec, writeSpec, PX_BUDGET, LITE_ENTER_FPS, LITE_EXIT_FPS, LITE_VISIBLE_NPCS } from './main-spec.js';
 
-export function createPerfGovernor(ctx) {
+// main.js의 perfCtx가 주입하는 계약(안정 참조는 값, 동적 참조는 getter — 사용 멤버만 최소 선언).
+interface PerfAvatar { group: { visible: boolean; position: { distanceTo(p: object): number } } }
+interface PerfCtx {
+  renderer: { setPixelRatio(r: number): void; getPixelRatio(): number; shadowMap: { needsUpdate: boolean } };
+  camera: { position: object };
+  gpuInfo: { soft: boolean };
+  getMp(): { remoteAvatars: Map<string, PerfAvatar> } | null;
+  isEntered(): boolean;
+  setFPS(n: number): void;
+  setStatus(s: string): void;
+}
+
+export function createPerfGovernor(ctx: PerfCtx) {
   const {
     renderer,   // 값 — init 1회 대입 후 안정
     camera,     // 값 — init 1회 대입 후 안정 (applyNpcCulling 거리 정렬용)
@@ -52,7 +63,7 @@ export function createPerfGovernor(ctx) {
   function applyNpcCulling() {
     const mp = getMp();
     if (!mp) return;
-    const npcs = [];
+    const npcs: PerfAvatar[] = [];
     for (const [rid, av] of mp.remoteAvatars) {
       if (rid.startsWith('npc-')) npcs.push(av);
     }
@@ -67,14 +78,14 @@ export function createPerfGovernor(ctx) {
   }
 
   // 섀도 초기 재베이크 주기 결선 — init에서 resolvedTheme('cycle'이면 2, 아니면 0)로 호출.
-  function setShadowInterval(seconds) {
+  function setShadowInterval(seconds: number) {
     shadowRebakeInterval = seconds;
   }
 
   // 게임루프 위임 — animate 매 프레임 호출. 원본 #13→#14→#15 블록과 순서·조건·임계·
   // 부작용(setFPS·writeSpec(localStorage)·renderer.setPixelRatio·setStatus·
   // shadowMap.needsUpdate) 1바이트 동치. render()는 소유하지 않는다.
-  function tick(delta) {
+  function tick(delta: number) {
     const entered = isEntered();
 
     // #13 FPS 집계 (0.5초마다 갱신)

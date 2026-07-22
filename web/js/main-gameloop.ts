@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 4차 D군(최종): 게임루프 골격(GameLoop) 모듈화. strict 타입은 후속.
 // main-gameloop.js — animate 게임루프 전체를 main.js에서 추출한다. 4차의 마지막·최고난도
 //   단위("미술관 심장"). A·B·C는 "상태 소유 이전 + tick 위임"이었지만, D는 성격이 다르다:
 //   이건 도메인 상태 컨트롤러가 아니라 "프레임 순서 + render() + setAnimationLoop 콜백 경계를
@@ -19,7 +18,33 @@
 
 import * as THREE from 'three';
 
-export function createGameLoop(ctx) {
+// main.js가 주입하는 게임루프 계약(전량 값 주입 — 위임 tick 컨트롤러는 호출 멤버만 최소 선언).
+interface GameLoopCtx {
+  renderer: { render(scene: object, camera: object): void; setAnimationLoop(fn: (() => void) | null): void };
+  scene: object;
+  camera: { position: object };
+  player: { update(delta: number): void; resolveBodyCollisions(positions: unknown): void };
+  gpuInfo: { soft: boolean };
+  flyController: { update(delta: number): void } | null;
+  tourController: { tick(delta: number): void };
+  multiplayerController: { getMp(): { getAvatarPositions(): unknown } | null; tick(delta: number): void };
+  selfViewController: {
+    tick(delta: number): void;
+    isThirdPerson(): boolean;
+    getSelfAvatar(): unknown;
+    applySelfCamOffset(): void;
+    restoreSelfCamOffset(): void;
+  };
+  viewfxController: { updateTween(delta: number): void; updateFloorIndicator(): void; tickOnboarding(): void };
+  perfGovernor: { tick(delta: number): void };
+  sceneTick(delta: number): void;
+  getNearbyArtwork(position: object): unknown;
+  showArtworkInfo(art: unknown): void;
+  hideArtworkInfo(): void;
+  setStatus(msg: string): void;
+}
+
+export function createGameLoop(ctx: GameLoopCtx) {
   const {
     renderer, scene, camera, player, gpuInfo,   // 안정 값
     flyController,                               // 안정 값 (null 가드 유지)
@@ -36,11 +61,12 @@ export function createGameLoop(ctx) {
   } = ctx;
 
   // --- 프레임 상태 SSOT (main.js에서 이전) ---
-  let clock = null;        // start()에서 생성 (원본 setAnimationLoop 직전 생성 순서 재현)
+  let clock: { getDelta(): number } | null = null;   // start()에서 생성 (원본 setAnimationLoop 직전 생성 순서 재현)
   let potatoAccum = 0;
 
   function loop() {
-    let delta = clock.getDelta();
+    // loop는 start()에서 clock 대입 후에만 setAnimationLoop로 등록되므로 여기서 clock은 항상 non-null.
+    let delta = clock!.getDelta();
 
     // 포테이토 모드 프레임 캡(~20fps) — 소프트웨어 렌더는 프레임 시간이 널뛰어
     // 입력 지연 체감이 더 나쁘다. 일정한 20fps가 오히려 안정적으로 걸린다.

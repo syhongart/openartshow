@@ -1,4 +1,3 @@
-// @ts-nocheck — main.js 분해 3차(세 번째 군): 셀프뷰(3인칭 자기시점) 컨트롤러 모듈화. strict 타입은 후속.
 // main-selfview.js — 3인칭 '내 모습 보기'를 main.js에서 추출. 투어 군(main-tour.js)과
 //   동일한 "상태 소유권 이전 + 게임루프 tick 위임" 방식. 셀프뷰 상태(thirdPerson·
 //   selfAvatar·selfPrev·selfSpeed)와 셀프캠 임계 상수(SELF_CAM_DIST/RISE/TILT), 셀프캠
@@ -22,7 +21,37 @@
 
 import * as THREE from 'three';
 
-export function createSelfViewController(ctx) {
+// 아바타 인스턴스가 노출하는(이 컨트롤러가 쓰는) 멤버만 최소 선언.
+// three는 프로젝트에 타입 정의가 없어(vendor js) THREE.* 를 타입 위치에서 못 쓴다 →
+//   Vector3/Euler/Quaternion은 실제로 호출하는 메서드만 담은 구조적 인터페이스로 대체한다.
+interface SelfAvatar {
+  group: {
+    traverse(cb: (o: { isSprite?: boolean; visible: boolean }) => void): void;
+    position: { set(x: number, y: number, z: number): void; clone(): unknown; copy(v: unknown): void };
+    rotation: { y: number };
+    visible: boolean;
+  };
+  update(delta: number, speed: number): void;
+  dispose(): void;
+}
+// main.js의 selfCtx가 주입하는 계약(재대입 참조는 getter, 안정 참조는 값).
+interface SelfViewCtx {
+  getScene(): { add(o: unknown): void; remove(o: unknown): void };
+  getCamera(): {
+    position: { copy(v: unknown): void; addScaledVector(v: unknown, s: number): void; y: number };
+    quaternion: { copy(q: unknown): void };
+    rotateX(angle: number): void;
+  };
+  getPlayer(): { getState(): { x: number; y: number; z: number; ry: number } };
+  getSelfInfo(): { char: string; color: string } | null;
+  isEntered(): boolean;
+  createAvatarInstance(char: string, color: string, label: string): SelfAvatar;
+  EYE_HEIGHT: number;
+  setStatus(s: string): void;
+  setDockActive(name: string, active: boolean): void;
+}
+
+export function createSelfViewController(ctx: SelfViewCtx) {
   const {
     getScene,
     getCamera,
@@ -45,8 +74,8 @@ export function createSelfViewController(ctx) {
 
   // --- 셀프뷰 상태 SSOT (main.js에서 이전) ---
   let thirdPerson = false;
-  let selfAvatar = null;  // createAvatarInstance() 결과 — 최초 토글 시 지연 생성
-  let selfPrev = null;    // 자기 속도 산출용 직전 (x,z)
+  let selfAvatar: SelfAvatar | null = null;   // createAvatarInstance() 결과 — 최초 토글 시 지연 생성
+  let selfPrev: { x: number; z: number } | null = null;   // 자기 속도 산출용 직전 (x,z)
   let selfSpeed = 0;
 
   // 셀프캠 오프셋 저장용 재사용 객체 — 매 프레임 render 직전 apply/restore에서 쓰인다.
@@ -95,7 +124,7 @@ export function createSelfViewController(ctx) {
   // 3인칭 아바타가 이미 생성돼 있으면 즉시 재빌드(위치·시점 유지). selfAvatar를 소유하므로
   // main.js가 아니라 컨트롤러가 dispose·재대입을 처리한다. 원본 handleAvatarChange의
   // selfAvatar 재빌드 블록과 1바이트 동치(색은 getSelfInfo().color로 읽는다).
-  function rebuildAvatar(char) {
+  function rebuildAvatar(char: string) {
     if (!selfAvatar) return;
     const prevGroup = selfAvatar.group;
     const wasVisible = prevGroup.visible;
@@ -137,7 +166,7 @@ export function createSelfViewController(ctx) {
   //   thirdPerson && selfAvatar 일 때 눈 위치/yaw를 발밑 기준으로 반영 + 속도 평활(EMA).
   // selfSpeed는 여기서 selfPrev(직전 x,z) 대비 이동거리를 delta로 나눠 자체 산출한다.
   // 프레임 내 THREE 객체 신규 할당 없음(selfPrev = {x,z}는 셀프뷰 진입당 최초 1회, 매 프레임 아님).
-  function tick(delta) {
+  function tick(delta: number) {
     if (thirdPerson && selfAvatar) {
       const st = getPlayer().getState();
       selfAvatar.group.position.set(st.x, st.y - EYE_HEIGHT, st.z);
