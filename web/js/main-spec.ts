@@ -1,7 +1,7 @@
 // @ts-nocheck — main.js 분해 1차 순수 leaf 이동(byte 무결성), strict 타입은 후속.
 // main-spec.js — 품질 사다리 학습(localStorage)·저사양(lite) FPS 임계·렌더 픽셀
 //   예산 상수. main.js에서 verbatim 추출(C-3 main 분해 1차). 공유 상태 무접근 leaf.
-//   ⚠️ specFastTicks(공유 let)는 순수 leaf 아님 → main.js 잔류(1차 제외).
+//   ※ spec 승급 카운터 specFastTicks는 4차 A군에서 perfGovernor(main-perf.js) 소유로 이전됨.
 
 export const LITE_ENTER_FPS = 24;
 export const LITE_EXIT_FPS = 45;

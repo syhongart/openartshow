@@ -56,13 +56,14 @@ import {
   flashShutter,
 } from './ui.js';
 import { easeInOutCubic, lerpAngle, resolveAutoTheme, djb2 } from './main-math.js';
-import { readSpec, writeSpec, PX_BUDGET, LITE_ENTER_FPS, LITE_EXIT_FPS, LITE_VISIBLE_NPCS } from './main-spec.js';
+import { readSpec, PX_BUDGET } from './main-spec.js'; // writeSpec·LITE_*·PX_BUDGET 일부는 perfGovernor로 이동(4차 A군)
 import { probeGpu } from './main-gpu.js';
 import { createEventHandlers } from './main-events.js';
 import { createPhotoController } from './main-photo.js';
 import { createTourController } from './main-tour.js';
 import { createSelfViewController } from './main-selfview.js';
 import { createMultiplayerController } from './main-multiplayer.js';
+import { createPerfGovernor } from './main-perf.js';
 
 let renderer = null;
 let scene = null;
@@ -74,19 +75,13 @@ let eventHandlers = null; // createEventHandlers(eventsCtx) 반환 — init에�
 let photoController = null; // createPhotoController(photoCtx) 반환 — init에서 세팅, capturePhoto wrapper가 위임
 let tourController = null; // createTourController(tourCtx) 반환 — init에서 세팅, 투어 상태 5개 SSOT 소유 + tick 위임
 let selfViewController = null; // createSelfViewController(selfViewCtx) 반환 — init에서 세팅, 셀프뷰 상태 SSOT 소유 + tick 위임
+let perfGovernor = null; // createPerfGovernor(perfCtx) 반환 — init에서 세팅, 성능/렌더 상태 9개 SSOT 소유 + tick 위임 (4차 A군)
 let npcCrowd = null; // AI 관객 — 호스트가 될 때 npcProvider 안에서 지연 생성
 let stats = null; // 작가 리포트 (전시별 방문·감상 통계 — stats.js)
 const visitorLog = new VisitorLog(); // 랜딩 "최근 관람객" 피드
-// 적응형 저사양 모드 — 실측 FPS가 낮으면 화면에서 먼 AI 관객을 잠시 숨긴다.
-// (시뮬레이션·다른 접속자에게는 영향 없음 — 순수 로컬 렌더 절약)
-let liteMode = false;
-let liteToggleCooldown = 0;
-let liteCullAccum = 0;
-// 섀도맵 재베이크 주기(초) — 0이면 정적 테마(프리즈 유지), cycle 테마는 2초
-let shadowRebakeInterval = 0;
-let shadowRebakeAccum = 0;
-let shadowWarmupDone = false; // 입장 직후 텍스처/지오메트리 지연 생성분 1회 재베이크
-let gpuInfo = { name: '', soft: false }; // GPU 자가 진단 결과 (init에서 채움)
+// 적응형 저사양(lite) 모드·섀도 재베이크·FPS 집계 상태 9개는 perfGovernor(main-perf.js)가
+// SSOT로 소유한다(4차 A군). 게임루프는 perfGovernor.tick(delta) 한 줄로 위임한다.
+let gpuInfo = { name: '', soft: false }; // GPU 자가 진단 결과 (init에서 채움) — perfGovernor에 값 주입
 
 // 소프트웨어 렌더링 안내 배너 — 원인은 이 기기의 브라우저 설정이므로,
 // 화질을 깎는 대신 사용자가 스스로 고칠 수 있게 경로를 알려준다.
@@ -142,7 +137,6 @@ function showGpuNotice(gpuName, fatal) {
   box.appendChild(close);
   document.body.appendChild(box);
 }
-let specFastTicks = 0; // 승급용 고FPS 연속 카운트
 
 // ---------------------------------------------------------------------------
 // 첫 방문 행동 온보딩 (터치 전용, UX 감사 §3 경량판) — 모달 대신 "행동으로
@@ -207,22 +201,8 @@ function tickOnboarding() {
   }
 }
 
-function applyNpcCulling() {
-  const mp = multiplayerController.getMp();
-  if (!mp) return;
-  const npcs = [];
-  for (const [rid, av] of mp.remoteAvatars) {
-    if (rid.startsWith('npc-')) npcs.push(av);
-  }
-  if (!liteMode) {
-    for (const av of npcs) av.group.visible = true;
-    return;
-  }
-  npcs.sort((a, b) => a.group.position.distanceTo(camera.position) - b.group.position.distanceTo(camera.position));
-  npcs.forEach((av, i) => {
-    av.group.visible = i < LITE_VISIBLE_NPCS;
-  });
-}
+// applyNpcCulling(저사양 시 원거리 NPC 숨김)은 perfGovernor(main-perf.js)로 이전(4차 A군).
+// 호출처(lite 진입/이탈·2초 주기)가 전부 컨트롤러 tick 안이라 외부 노출 없이 내부 메서드로 소유.
 const photoWall = new PhotoWall(); // 랜딩 "라이브 포토월" 피드
 let statsDwellTimer = null;
 
@@ -317,9 +297,7 @@ let gbKey = 'shared';
 let guestbookNotes = [];
 // (연결 직후 방명록 1회 동기화 플래그 guestbookSentOnce는 multiplayerController가 소유 — mp 연결 생명주기 전용 상태)
 
-// FPS 집계
-let fpsFrames = 0;
-let fpsElapsed = 0;
+// (FPS 집계 fpsFrames·fpsElapsed는 perfGovernor가 소유 — 4차 A군)
 
 // ---------------------------------------------------------------------------
 // 카메라 트윈 (텔레포트/투어 공용) — animate 루프 안에서 매 프레임 갱신된다.
@@ -495,7 +473,8 @@ async function init() {
   // cycle 테마만 태양이 움직이므로 저빈도(2초)로 재베이크한다.
   renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.needsUpdate = true;
-  shadowRebakeInterval = resolvedTheme === 'cycle' ? 2 : 0;
+  // 섀도 재베이크 주기(cycle 테마만 2초, 정적은 0)는 perfGovernor 생성 후
+  // setShadowInterval()로 결선한다(4차 A군) — resolvedTheme은 init 스코프에서 유효.
 
 
   // 전시 제목 표시 + 전시 디렉터리 picker 배선 (ginfo 재사용)
@@ -730,6 +709,22 @@ async function init() {
     hideArtworkList,
   };
   tourController = createTourController(tourCtx);
+
+  // 성능/렌더 거버너 구현은 main-perf.js로 분리(4차 A군). 저사양(lite) 히스테리시스·
+  // NPC 컬링·섀도 재베이크·FPS 집계·spec 학습 상태 9개 + applyNpcCulling을 SSOT로 소유하고,
+  // animate 게임루프는 tick(delta) 한 줄로 위임한다. 안정 참조(renderer·camera·gpuInfo)는
+  // 값으로(프레임당 getter 회피), 동적(mp·entered)은 getter로 주입한다. render()는 A군 무관.
+  // 섀도 초기 주기는 resolvedTheme으로 결선(원본 init의 shadowRebakeInterval 대입 경로 보존).
+  perfGovernor = createPerfGovernor({
+    renderer,
+    camera,
+    gpuInfo,
+    getMp: () => multiplayerController.getMp(),
+    isEntered: () => entered,
+    setFPS,
+    setStatus,
+  });
+  perfGovernor.setShadowInterval(resolvedTheme === 'cycle' ? 2 : 0);
 
   // 리사이즈 대응
   window.addEventListener('resize', onWindowResize);
@@ -993,80 +988,10 @@ function animate() {
       hideArtworkInfo();
     }
 
-    // FPS 집계 (0.5초마다 갱신)
-    fpsFrames += 1;
-    fpsElapsed += delta;
-    if (fpsElapsed >= 0.5) {
-      const fpsNow = fpsFrames / fpsElapsed;
-      setFPS(Math.round(fpsNow));
-      fpsFrames = 0;
-      fpsElapsed = 0;
-      // 저사양 자동 전환 (히스테리시스 + 10초 재전환 금지로 깜빡임 방지)
-      liteToggleCooldown = Math.max(0, liteToggleCooldown - 0.5);
-      if (liteToggleCooldown === 0 && entered) {
-        if (!liteMode && fpsNow < LITE_ENTER_FPS) {
-          liteMode = true;
-          liteToggleCooldown = 10;
-          // 영구 학습(다음 접속 AA off)은 진짜 바닥에서만 — 20fps대 기기가
-          // 다음 방문부터 계속 뿌옇게 시작하는 부작용 방지 (실기기 제보)
-          if (fpsNow < 16) writeSpec('low');
-          // 즉시 응급 처치 — 재접속 없이 해상도 배율을 강등하되, OS 배율
-          // (dpr>1) 화면에서 1.0 밑돌면 뿌옇게 보이므로 dpr 비례 하한을 둔다
-          const dprNow = window.devicePixelRatio || 1;
-          renderer.setPixelRatio(Math.min(renderer.getPixelRatio(), Math.max(1, dprNow * 0.75)));
-          setStatus('원활한 관람을 위해 화질을 잠시 낮췄어요');
-        } else if (liteMode && fpsNow > LITE_EXIT_FPS) {
-          liteMode = false;
-          liteToggleCooldown = 10;
-          applyNpcCulling();
-        }
-        // 품질 승급 — 고FPS(55+)가 10초(0.5s 틱 × 20) 지속되면 한 단계 위로
-        // (low → 기본 → high). 다음 접속부터 적용된다.
-        if (!liteMode && fpsNow > 55) {
-          specFastTicks += 1;
-          if (specFastTicks >= 20) {
-            const cur = readSpec();
-            if (cur === 'low') writeSpec(null);
-            else if (cur === null) writeSpec('high');
-            // 라이브 샤프닝 — 재접속을 기다리지 않고 배율을 한 단계(+0.25)씩
-            // 상향한다. 55fps+가 유지되는 한 10초마다 반복되고, 떨어지면
-            // lite 강등이 되돌리므로 히스테리시스로 안전 (알리아싱 제보 대응).
-            const maxHigh = Math.min(
-              2.5,
-              Math.sqrt(PX_BUDGET.high / (window.innerWidth * window.innerHeight))
-            );
-            const nowRatio = renderer.getPixelRatio();
-            if (!gpuInfo.soft && nowRatio < maxHigh) {
-              renderer.setPixelRatio(Math.min(maxHigh, nowRatio + 0.25));
-              setStatus('화질을 한 단계 높였어요 ✨');
-            }
-            specFastTicks = 0;
-          }
-        } else {
-          specFastTicks = 0;
-        }
-      }
-    }
-    // 저사양 모드 컬링 — 2초마다 가까운 관객 3명만 표시
-    liteCullAccum += delta;
-    if (liteCullAccum >= 2) {
-      liteCullAccum = 0;
-      if (liteMode) applyNpcCulling();
-    }
-
-    // 섀도맵 재베이크 — cycle 테마는 태양이 움직이므로 저빈도 갱신,
-    // 정적 테마는 입장 직후 1회(지연 로드된 액자 등 반영)로 끝.
-    if (shadowRebakeInterval > 0) {
-      shadowRebakeAccum += delta;
-      if (shadowRebakeAccum >= shadowRebakeInterval) {
-        shadowRebakeAccum = 0;
-        renderer.shadowMap.needsUpdate = true;
-      }
-    }
-    if (!shadowWarmupDone && entered) {
-      shadowWarmupDone = true;
-      renderer.shadowMap.needsUpdate = true;
-    }
+    // 성능/렌더 거버너 — FPS 집계+저사양 히스테리시스+spec 학습+pixelRatio 라이브 조정,
+    // NPC 컬링(2초), 섀도 재베이크+입장 warmup을 perfGovernor.tick이 원본과 1바이트 동치로
+    // 소유(4차 A군). render()는 여기서 건드리지 않는다(아래 분기가 그대로 소유).
+    perfGovernor.tick(delta);
 
     if (selfViewController.isThirdPerson() && selfViewController.getSelfAvatar()) {
       selfViewController.applySelfCamOffset();
