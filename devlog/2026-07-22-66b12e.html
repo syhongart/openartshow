@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html">
+<title>안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. #87(QA 안전망) 검수관 권고 R2·R5. 3·4차 분해 내내 @ts-nocheck 모듈의 "끊긴 참조"(export">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-66b12e.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="C단계 후속 — 분해 게이트 비블로커 권고 2건 정리 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 후속 — 분해 게이트 비블로커 권고 2건 정리","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. #87(QA 안전망) 검수관 권고 R2·R5. 3·4차 분해 내내 @ts-nocheck 모듈의 "끊긴 참조"(export">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-66b12e.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-66b12e.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">🛠️</span>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리</h1>
+<h1><span class="emo">🛠️</span>안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5)</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는 분리 보류). 완주 후 정리.</p>
-<p><strong>개선.</strong> ① <strong>투어 tick 유닛테스트</strong>(<code>tests/main-tour.test.js</code>, 4케이스): 자동진행 판정식의 4분기 — 정상 누적→next, 트윈 진행 중 미누적, 라이트박스 열림 미누적, 대기 아님 미누적 — 을 mock ctx로 검증 (vitest 116→<strong>120</strong>). ② <strong>EnterFlow recordVisit 방어 가드</strong>: <code>stats.addVisit(id)</code>→<code>stats?.addVisit(id)</code>. 정상 경로(connect 성공→stats 생성 후에만 onVisitor 발생)에선 옵셔널 체이닝이 일반 호출과 1바이트 동치, connect 실패(혼자 관람·stats=null)에서 콜백이 이론상 도달해도 무해 no-op(방어 심층). stats 소유가 4차 C군에서 EnterFlow로 이전됐으므로 가드 위치도 recordVisit이 정확.</p>
-<p><strong>결과.</strong> 스모크 6/6 + vitest 120 통과, 입장·투어 정상 회귀 없음. 라이브 코드 변경은 recordVisit 1줄뿐, main.js·게임루프·기타 무수정.</p>
-<p><strong>교훈.</strong> 방어 가드는 "정상 경로 1바이트 동치 + 비정상 경로만 무해화"가 성립할 때만 동작 동일성을 지키며 심층 방어가 된다. 단 null을 조용히 삼키는 트레이드오프(실버그 진단 지연 가능)를 주석에 명시해 뒀다.</p>
+<p><strong>원인.</strong> #87(QA 안전망) 검수관 권고 R2·R5. 3·4차 분해 내내 @ts-nocheck 모듈의 "끊긴 참조"(export 누락 → 런타임 ReferenceError, C-3(2) chibi 사건의 근본 원인)를 <strong>수동 no-undef 스코프 검사</strong>로 잡아왔다. tsc(checkJs·@ts-nocheck)·eslint(.js는 no-undef:off) 정적 게이트의 사각이라, 이를 자동 상시 게이트로 승격.</p>
+<p><strong>개선.</strong> (R2) <code>scripts/smoke/check-refs.mjs</code> — @ts-nocheck/eslint-disable 억제 지시어를 <strong>벗긴 메모리 사본</strong>으로 TS 프로그램을 만들어 TS2304(이름 미해결)류만 추출. 새 의존성 0(기존 typescript 재사용). 스모크 6항의 [0] 참조무결성 + CI 스텝(typecheck 다음·vitest 이전)으로 상시 편입. (R5) 순수함수 테스트 보강(main-math 14 + chibi-schema 12 → vitest 120→<strong>146</strong>). (R1) 별도 렌더 하네스는 목적(끊긴 참조 크래시 방지)을 no-undef 검사 + 헤드리스 실부팅이 이미 커버해 보류. <strong>라이브 미술관 코드 무수정</strong>(변경은 tests·scripts/smoke·package.json·ci.yml 6파일).</p>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(<strong>회귀 유도 실험으로 검출력 실증</strong>: chibi-face의 NONHUMAN import 제거 시 TS2304 정확 검출·오타 시 TS2552 검출·@ts-nocheck 억제 해제 실동작, false positive 0 — window· THREE 오탐 없음, 테스트 경계값 소스 대조로 껍데기 아님 확인), 독립 스모크(9/0 — 정상 0·음성대조 2건 검출). deploy.yml 무변경(라이브 배포 경로 불변).</p>
+<p><strong>교훈.</strong> <code>@ts-nocheck</code>는 tsc·eslint 정적 게이트를 통째로 무력화하는 사각이다 — 분해에서 옮긴 모듈이 export 하나 빠뜨리면 빌드·타입체크·린트 다 통과하고 런타임에서만 죽는다(chibi 사건). 억제 지시어를 <strong>벗긴 사본으로 재검사</strong>하는 이 하네스가 그 사각을 정적으로 닫았고, 수동으로 반복하던 게이트가 CI·스모크 자동화로 승격됐다. (남은 사각: <code>.js</code> 모듈은 여전히 no-undef:off — 별도 후속 #100.)</p>
 </article>
-<div class="pn"><a href="./2026-07-22-3a820c.html"><span class="lbl">← 이전 기록</span>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리</a><a href="./2026-07-22-66b12e.html" style="text-align:right"><span class="lbl">다음 기록 →</span>안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5)</a></div>
+<div class="pn"><a href="./2026-07-22-0cbffb.html"><span class="lbl">← 이전 기록</span>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
