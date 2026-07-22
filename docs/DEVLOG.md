@@ -4,6 +4,31 @@
 
 ---
 
+## 2026-07-22 · 안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5)
+
+**원인.** #87(QA 안전망) 검수관 권고 R2·R5. 3·4차 분해 내내 @ts-nocheck 모듈의 "끊긴 참조"(export
+누락 → 런타임 ReferenceError, C-3(2) chibi 사건의 근본 원인)를 **수동 no-undef 스코프 검사**로 잡아왔다.
+tsc(checkJs·@ts-nocheck)·eslint(.js는 no-undef:off) 정적 게이트의 사각이라, 이를 자동 상시 게이트로 승격.
+
+**개선.** (R2) `scripts/smoke/check-refs.mjs` — @ts-nocheck/eslint-disable 억제 지시어를 **벗긴 메모리
+사본**으로 TS 프로그램을 만들어 TS2304(이름 미해결)류만 추출. 새 의존성 0(기존 typescript 재사용).
+스모크 6항의 [0] 참조무결성 + CI 스텝(typecheck 다음·vitest 이전)으로 상시 편입. (R5) 순수함수 테스트
+보강(main-math 14 + chibi-schema 12 → vitest 120→**146**). (R1) 별도 렌더 하네스는 목적(끊긴 참조
+크래시 방지)을 no-undef 검사 + 헤드리스 실부팅이 이미 커버해 보류. **라이브 미술관 코드 무수정**(변경은
+tests·scripts/smoke·package.json·ci.yml 6파일).
+
+**결과.** 게이트 통과 — 검수관 승인(**회귀 유도 실험으로 검출력 실증**: chibi-face의 NONHUMAN import
+제거 시 TS2304 정확 검출·오타 시 TS2552 검출·@ts-nocheck 억제 해제 실동작, false positive 0 — window·
+THREE 오탐 없음, 테스트 경계값 소스 대조로 껍데기 아님 확인), 독립 스모크(9/0 — 정상 0·음성대조 2건
+검출). deploy.yml 무변경(라이브 배포 경로 불변).
+
+**교훈.** `@ts-nocheck`는 tsc·eslint 정적 게이트를 통째로 무력화하는 사각이다 — 분해에서 옮긴 모듈이
+export 하나 빠뜨리면 빌드·타입체크·린트 다 통과하고 런타임에서만 죽는다(chibi 사건). 억제 지시어를
+**벗긴 사본으로 재검사**하는 이 하네스가 그 사각을 정적으로 닫았고, 수동으로 반복하던 게이트가 CI·스모크
+자동화로 승격됐다. (남은 사각: `.js` 모듈은 여전히 no-undef:off — 별도 후속 #100.)
+
+---
+
 ## 2026-07-22 · C단계 후속 — 분해 게이트 비블로커 권고 2건 정리
 
 **원인.** 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는
