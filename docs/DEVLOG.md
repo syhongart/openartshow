@@ -4,6 +4,45 @@
 
 ---
 
+## 2026-07-22 · C단계 C-4(A) — main.js 4차 착수: 성능/렌더 거버너(PerfGovernor) 분리
+
+**원인.** 4차(Composition Root化) 착수. 감독이 "게임루프까지 완주"를 선택하되 "심장이라 위험하니
+설계 먼저·팀장과 수시 상의"를 지시. 부팀장 설계 감사 + 팀장 판정으로 **분해 순서 A→B→C→D 고정,
+D(게임루프 골격·render 경계)는 최후, A·B가 D의 안전판** 원칙 확정. 가장 안전한 첫 발이 A(PerfGovernor):
+게임루프에서 가장 크고 얽힌 덩어리이나 **render 타이밍과 독립**이고 상태가 자기완결이라 리스크 최저·실익 최대.
+
+**개선.** `main-perf.ts`(`createPerfGovernor(ctx)`)로 분리(main.js 1,108→1,033, **-75**). 게임루프
+3블록(#13 FPS집계·lite 히스테리시스·spec 학습·pixelRatio 라이브조정, #14 NPC컬링, #15 섀도 재베이크)을
+`perfGovernor.tick(delta)` 한 줄로 위임. 핵심:
+- **상태 SSOT 이전 9개**: liteMode·liteToggleCooldown·liteCullAccum·shadowRebakeInterval·
+  shadowRebakeAccum·shadowWarmupDone·specFastTicks·fpsFrames·fpsElapsed. `applyNpcCulling`도 이전
+  (외부 호출처 0 → 미노출).
+- **안정 참조 값 주입**(부팀장 감사 핵심): renderer·camera·gpuInfo는 init에서 1회 대입 후 재대입이
+  없어 **값으로** 주입 → 프레임당 getter 오버헤드 0. 동적(entered·mp)만 getter. 3차가 재대입 방지용
+  getter를 쓴 것과 달리, 여기선 안정 참조라 값이 더 옳다.
+- **tick 1바이트 동치**: lite 임계(ENTER24/EXIT45·쿨다운10s·fps<16→writeSpec('low')·pixelRatio dpr
+  하한)·spec 승급(specFastTicks≥20·>55fps·low→null→high·+0.25 샤프닝·!gpuInfo.soft)·컬링(2초·거리정렬·
+  상위3)·섀도(재베이크+입장1회 warmup) 전부 조건·순서·부작용 동일. **render 분기(#16)·setAnimationLoop·
+  try/catch는 1바이트도 안 건드림**(팀장 조건: D 착수 전까지 render 골격 무수정).
+- **entered 1회 캡처**: tick 진입 시 `const entered = isEntered()` — entered는 handleEnter에서만
+  동기 전환되고 프레임 실행 중 비동기 변경이 없어 원본(블록마다 재읽기)과 동치.
+
+**결과.** 게이트 통과 — 검수관 승인(상태 이전·tick 동치·entered 캡처·gpuInfo 주입·**render 골격
+무변경**·setShadowInterval 결선 전부 통과, 블로커 0), 독립 스모크(6/6 — **swiftshader 저FPS(~4fps)라
+오히려 lite 강등/승급·컬링·섀도·writeSpec·setPixelRatio 경로를 실제로 밟고 콘솔0**). 보호4파일·CSP·
+index.html 무수정, test 116/116.
+
+**교훈.** 3차 컨트롤러는 "재대입 stale 방지"로 getter를 썼지만, 게임루프가 매 프레임 참조하는
+renderer·camera·gpuInfo는 init 1회 대입 후 불변이라 **값 주입이 프레임당 오버헤드도 없고 더 정확**하다
+— "무조건 getter"가 아니라 재대입 여부로 판단한다. 그리고 4차는 게임루프를 처음 건드리는 단계라,
+**A는 render를 1바이트도 안 건드린다는 선을 명시적 게이트로 세워** 심장(D)과 그 주변(A)을 분리했다.
+
+### 4차 로드맵 (A→B→C→D, D 최후·A·B 안전판)
+**A. PerfGovernor(완료)** → B. 트윈·온보딩·층안내 → C. 입장 EnterFlow → D. GameLoop 골격(render·
+setAnimationLoop, 심장·최후). A·B 착지 후 animate 잔여가 "얇은 오케스트레이터" 예상과 다르면 팀장 재상신.
+
+---
+
 ## 2026-07-22 · C단계 C-3(9) — main.js 3차 멀티플레이어 컨트롤러 (P2P 오케스트레이션 · 3차 완결)
 
 **원인.** 3차 마지막이자 최고위험 군(P2P). 비동기·네트워크·다인 상태라 **헤드리스 스모크로 2인 세션을
