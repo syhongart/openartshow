@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from '../utils/BufferGeometryUtils.js';
+import { shade, shadeAlpha } from './chibi-color.js';
 
 // ---------------------------------------------------------------------------
 // 파라미터 정의 (UI와 공유하는 단일 진실 소스)
@@ -403,17 +404,6 @@ export function randomChibiChar(opts) {
 // 얼굴 캔버스 — 귀여움의 8할. 512² 투명 캔버스에 왕눈이/입/볼터치를 그려
 // 머리 구의 전면 캡에 매핑한다.
 // ---------------------------------------------------------------------------
-function shade(hexColor, factor) {
-  const c = new THREE.Color(hexColor);
-  c.multiplyScalar(factor);
-  return `rgb(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)})`;
-}
-// 수염색 — 머리색을 어둡게. 피부색과 대비가 약하면 더 어둡게(가독 세이프가드).
-function shadeAlpha(hexColor, factor, alpha) {
-  const c = new THREE.Color(hexColor);
-  c.multiplyScalar(factor);
-  return `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${alpha})`;
-}
 function beardColor(p, alpha) {
   let factor = 0.6;
   const hc = new THREE.Color(p.hairColor);
