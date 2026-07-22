@@ -1,24 +1,14 @@
-// chibi.js — 자체 제작 치비(SD) 캐릭터 생성기
-// OpenArtShow Metaverse — 외부 에셋 0: three.js 프리미티브 + 캔버스 얼굴 텍스처만으로
-// "애니멀 크로싱 공식"(큰 머리 + 왕눈이 + 단순한 몸)을 코드로 조립한다.
-//
-// 설계 원칙
-// - 스키닝/리타게팅 없음: 뼈 대신 피벗 Group 계층에 파츠를 강체로 붙이고,
-//   걷기/숨쉬기/찰랑임은 update()에서 사인파로 직접 구동한다. GLB 리깅 계열
-//   버그(스프링본 동결·문워크·손목 붕괴)가 구조적으로 발생하지 않는다.
-// - 파라미터가 곧 아바타: look 객체(JSON)만 주고받으면 어디서든 동일하게 재조립
-//   가능 — 멀티플레이 동기화는 'chibi:'+JSON 문자열 하나로 끝난다.
-// - 전방 +Z 저작: KayKit/DCL과 동일하게 π 래퍼로 감싸 게임 관례(yaw=0 → -Z)에 맞춘다.
-
+// @ts-nocheck — 순수 이동(C-3 chibi 분해), strict 타입은 후속 작업.
+// chibi-builder.js — buildChibi: 파라미터→THREE.Group 아바타 조립 + update/dispose/
+//   playAction/refreshFace/setWound/ouch/setFlying 클로저(faceCanvas·파츠그룹 캡처).
+//   chibi.js에서 분해(C-3 S6). schema/color/face/materials/anim import.
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
-import { shade } from './chibi-color.js';
 import { normalizeChibi } from './chibi-schema.js';
-import { easeOutCubic, easeInCubic, easeInOutCubic, easeOutBack, CHIBI_ACTION_DUR, SIT_WY_TABLE, sitWrapperY } from './chibi-anim.js';
-import { toonRamp, vivid, toon, vividSkin, addOutline, lathePoints, shirtTexture, furStripeTexture, buildMuzzleGeo } from './chibi-materials.js';
+import { shade } from './chibi-color.js';
 import { drawFaceCanvas, drawFaceInto } from './chibi-face.js';
-export { CHIBI_HAIR_STYLES, CHIBI_BEARD_STYLES, CHIBI_EYE_STYLES, CHIBI_MOUTH_STYLES, CHIBI_BOTTOM_TYPES, CHIBI_TOP_PATTERNS, CHIBI_OUTFITS, CHIBI_ACCESSORIES, SKIN_TONES, HAIR_COLORS, EYE_COLORS, CHIBI_CLOTH_COLORS, CHIBI_FACE_SHAPES, CHIBI_SPECIES, CHIBI_GENDERS, SPECIES_PRESET, GENDER_PRESET, SPECIES_OUTFIT, CHIBI_PRESET_GROUPS, CHIBI_PRESETS, DEFAULT_CHIBI, normalizeChibi, CHIBI_CHAR_PREFIX, encodeChibi, decodeChibi, randomChibiLook, randomChibiChar } from './chibi-schema.js';
-export { CHIBI_ACTION_DUR, CHIBI_ACTIONS, CHIBI_ACTION_LABELS } from './chibi-anim.js';
+import { toonRamp, vivid, toon, vividSkin, addOutline, lathePoints, shirtTexture, furStripeTexture, buildMuzzleGeo } from './chibi-materials.js';
+import { easeOutCubic, easeInCubic, easeInOutCubic, easeOutBack, CHIBI_ACTION_DUR, SIT_WY_TABLE, sitWrapperY } from './chibi-anim.js';
 
 /**
  * 치비 아바타를 조립한다 (동기 — 로드 없음).
