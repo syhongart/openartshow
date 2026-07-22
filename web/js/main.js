@@ -62,6 +62,7 @@ import { probeGpu } from './main-gpu.js';
 import { createEventHandlers } from './main-events.js';
 import { createPhotoController } from './main-photo.js';
 import { createTourController } from './main-tour.js';
+import { createSelfViewController } from './main-selfview.js';
 
 let renderer = null;
 let scene = null;
@@ -72,6 +73,7 @@ let mp = null; // MultiplayerManager — 입장 전에는 null (sendState/update
 let eventHandlers = null; // createEventHandlers(eventsCtx) 반환 — init에서 세팅, 아래 wrapper가 위임
 let photoController = null; // createPhotoController(photoCtx) 반환 — init에서 세팅, capturePhoto wrapper가 위임
 let tourController = null; // createTourController(tourCtx) 반환 — init에서 세팅, 투어 상태 5개 SSOT 소유 + tick 위임
+let selfViewController = null; // createSelfViewController(selfViewCtx) 반환 — init에서 세팅, 셀프뷰 상태 SSOT 소유 + tick 위임
 let npcCrowd = null; // AI 관객 — 호스트가 될 때 npcProvider 안에서 지연 생성
 let stats = null; // 작가 리포트 (전시별 방문·감상 통계 — stats.js)
 const visitorLog = new VisitorLog(); // 랜딩 "최근 관람객" 피드
@@ -225,97 +227,29 @@ let statsDwellTimer = null;
 
 // ---------------------------------------------------------------------------
 // 3인칭 '내 모습 보기' (V키 / 터치 독 '시점' 버튼)
-// 플레이어 제어는 1인칭 그대로 두고, 렌더 직전에만 카메라를 시선 반대 방향으로
-// 당겼다가 복원한다 — player.js가 camera.position을 눈 위치로 소유하는 계약을
-// 깨지 않는다(이동·충돌·상태 전송 모두 눈 위치 기준 유지).
+// 구현은 main-selfview.js(createSelfViewController)로 분리(3차 세 번째 군). 셀프뷰
+// 상태(thirdPerson·selfAvatar·selfPrev·selfSpeed)와 셀프캠 상수를 컨트롤러가 SSOT로
+// 소유하고, animate 게임루프는 tick(delta) 한 줄 + render 분기로 위임한다. main.js에는
+// 셀프뷰 상태 let이 남지 않는다. selfInfo(입장 시 캡처)만 main.js가 소유하고 getter로 넘긴다.
 // ---------------------------------------------------------------------------
-const SELF_CAM_DIST = 3.0;
-const SELF_CAM_RISE = 0.7;
-const SELF_CAM_TILT = -0.2; // 살짝 내려다보는 오버숄더 앵글(rad)
-let thirdPerson = false;
-let selfAvatar = null;  // createAvatarInstance() 결과 — 최초 토글 시 지연 생성
-let selfInfo = null;    // { nickname, color, char } — 입장 시 캡처
-let selfPrev = null;    // 자기 속도 산출용 직전 (x,z)
-let selfSpeed = 0;
-const _selfCamSaved = new THREE.Vector3();
-const _selfCamBack = new THREE.Vector3();
-const _selfCamQuatSaved = new THREE.Quaternion();
+let selfInfo = null;    // { nickname, color, char } — 입장 시 캡처. 컨트롤러가 getSelfInfo()로 읽는다.
 
+// V키/터치 독 '시점' 트리거 위임 wrapper — exports·HUD 콜백 시그니처 불변 유지.
 function toggleSelfView() {
-  if (!entered) return;
-  thirdPerson = !thirdPerson;
-  if (thirdPerson) {
-    if (!selfAvatar && selfInfo) {
-      try {
-        selfAvatar = createAvatarInstance(selfInfo.char, selfInfo.color, ' ');
-        // 닉네임 라벨 스프라이트 숨김 — 3인칭 화면 중앙을 빈 알약이 가리지 않게
-        selfAvatar.group.traverse((o) => {
-          if (o.isSprite) o.visible = false;
-        });
-        scene.add(selfAvatar.group);
-      } catch (err) {
-        console.warn('내 아바타 생성 실패:', err);
-        selfAvatar = null;
-        thirdPerson = false;
-        return;
-      }
-    }
-    if (!selfAvatar) {
-      thirdPerson = false;
-      return;
-    }
-    selfAvatar.group.visible = true;
-    setDockActive('self', true);
-    selfPrev = null;
-    selfSpeed = 0;
-    setStatus('내 모습 보기 — V키 또는 [시점] 버튼으로 복귀');
-  } else if (selfAvatar) {
-    selfAvatar.group.visible = false;
-    setDockActive('self', false);
-  }
+  selfViewController.toggle();
 }
 
 // 입장 후 꾸미기 창에서 [저장하고 사용]을 누르면 호출 — 월드의 내 아바타를 새 룩으로
 // 교체하고 멀티플레이로 전파한다(다른 관람객 화면에도 반영). 저장 자체는 ui.js가 담당.
+// selfAvatar는 컨트롤러 소유이므로 재빌드는 selfViewController.rebuildAvatar에 위임한다.
 function handleAvatarChange(char) {
   if (!char) return;
   selfInfo = selfInfo ? Object.assign({}, selfInfo, { char }) : { char };
-  // 3인칭 아바타가 이미 생성돼 있으면 즉시 재빌드(위치·시점 유지)
-  if (selfAvatar) {
-    const prevGroup = selfAvatar.group;
-    const wasVisible = prevGroup.visible;
-    const pos = prevGroup.position.clone();
-    const ry = prevGroup.rotation.y;
-    try {
-      const next = createAvatarInstance(char, selfInfo.color || '#3498db', ' ');
-      next.group.traverse((o) => { if (o.isSprite) o.visible = false; });
-      next.group.position.copy(pos);
-      next.group.rotation.y = ry;
-      next.group.visible = wasVisible;
-      scene.add(next.group);
-      scene.remove(prevGroup);
-      selfAvatar.dispose();
-      selfAvatar = next;
-    } catch (err) {
-      console.warn('내 아바타 갱신 실패:', err);
-    }
-  }
+  // 3인칭 아바타가 이미 생성돼 있으면 즉시 재빌드(위치·시점 유지) — 컨트롤러 위임
+  selfViewController.rebuildAvatar(char);
   // 멀티플레이 전파 — 접속 중이면 다른 사람 화면에도 새 모습이 퍼진다
   if (mp && typeof mp.setChar === 'function') mp.setChar(char);
   setStatus('아야모 모습을 바꿨어요 ✨');
-}
-
-function applySelfCamOffset() {
-  _selfCamSaved.copy(camera.position);
-  _selfCamQuatSaved.copy(camera.quaternion);
-  _selfCamBack.set(0, 0, 1).applyQuaternion(camera.quaternion);
-  camera.position.addScaledVector(_selfCamBack, SELF_CAM_DIST);
-  camera.position.y += SELF_CAM_RISE;
-  camera.rotateX(SELF_CAM_TILT);
-}
-function restoreSelfCamOffset() {
-  camera.position.copy(_selfCamSaved);
-  camera.quaternion.copy(_selfCamQuatSaved);
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +279,7 @@ function bindHitTap(dom) {
       -((e.clientY - rect.top) / rect.height) * 2 + 1
     );
     _tapRaycaster.setFromCamera(_tapNdc, camera);
-    _tapRaycaster.far = HIT_REACH + SELF_CAM_DIST; // 3인칭이면 카메라가 뒤로 빠져 있음
+    _tapRaycaster.far = HIT_REACH + selfViewController.getSelfCamDist(); // 3인칭이면 카메라가 뒤로 빠져 있음
     const entries = [...mp.remoteAvatars.entries()];
     if (!entries.length) return;
     const groups = entries.map(([, av]) => av.group);
@@ -604,7 +538,7 @@ async function init() {
 
   // 비행(점프 홀드) — fly.js가 player.liftOffset 훅 구동 + 셀프 아바타 비행 포즈 토글.
   // selfAvatar는 3인칭 셀프뷰에서 지연 생성되므로 getter로 넘긴다.
-  flyController = initFly({ player, getSelfAvatar: () => selfAvatar });
+  flyController = initFly({ player, getSelfAvatar: () => selfViewController.getSelfAvatar() });
   player.disable();
 
   // 4. UI 초기화 → 로비 표시
@@ -683,18 +617,39 @@ async function init() {
   };
   eventHandlers = createEventHandlers(eventsCtx);
 
+  // 셀프뷰(3인칭 자기시점) 컨트롤러 구현은 main-selfview.js로 분리(3차 세 번째 군).
+  // 셀프뷰 상태(thirdPerson·selfAvatar·selfPrev·selfSpeed)와 셀프캠 상수를 SSOT로 소유하고,
+  // animate 게임루프는 tick(delta) + render 분기로 위임한다. 재대입 let(scene·camera·player·
+  // selfInfo·entered)은 getter로, 안정 참조(createAvatarInstance·EYE_HEIGHT·setStatus·
+  // setDockActive)는 값으로 주입한다. 아래 photoCtx가 이 컨트롤러의 셀프캠 4개 메서드를
+  // 참조하므로 photoController보다 먼저 생성한다(조립점이 컨트롤러 간 의존을 중재).
+  const selfViewCtx = {
+    getScene: () => scene,
+    getCamera: () => camera,
+    getPlayer: () => player,
+    getSelfInfo: () => selfInfo,
+    isEntered: () => entered,
+    createAvatarInstance,
+    EYE_HEIGHT,
+    setStatus,
+    setDockActive,
+  };
+  selfViewController = createSelfViewController(selfViewCtx);
+
   // 사진(포토 모드) 컨트롤러 구현은 main-photo.js로 분리(3차). eventsCtx와 동일하게
-  // 재대입 let(renderer·scene·camera·thirdPerson·selfAvatar·galleryInfo·myNickname·mp)은
-  // getter로, 안정 참조(photoWall·함수)는 값으로 주입한다. 위 capturePhoto wrapper가
-  // 이 컨트롤러에 위임하며, 실제 호출(P키/캡처버튼)은 init 완료 후에만 발생한다.
+  // 재대입 let(renderer·scene·camera·galleryInfo·myNickname·mp)은 getter로, 안정 참조
+  // (photoWall·함수)는 값으로 주입한다. 셀프캠 4개(isThirdPerson·getSelfAvatar·
+  // applySelfCamOffset·restoreSelfCamOffset)는 selfViewController 메서드로 재배선한다
+  // (셀프뷰 상태가 컨트롤러로 이전됨 — 조립점이 중재, main-photo.js ctx 계약은 불변).
+  // 위 capturePhoto wrapper가 이 컨트롤러에 위임하며, 실제 호출(P키/캡처버튼)은 init 완료 후에만 발생한다.
   const photoCtx = {
     getRenderer: () => renderer,
     getScene: () => scene,
     getCamera: () => camera,
-    isThirdPerson: () => thirdPerson,
-    getSelfAvatar: () => selfAvatar,
-    applySelfCamOffset,
-    restoreSelfCamOffset,
+    isThirdPerson: () => selfViewController.isThirdPerson(),
+    getSelfAvatar: () => selfViewController.getSelfAvatar(),
+    applySelfCamOffset: () => selfViewController.applySelfCamOffset(),
+    restoreSelfCamOffset: () => selfViewController.restoreSelfCamOffset(),
     getGalleryInfo: () => galleryInfo,
     photoWall,
     getMyNickname: () => myNickname,
@@ -900,7 +855,8 @@ function handleEnter({ nickname, color, char }) {
     // 내가 맞았을 때 — 상태바 + (3인칭이면) 내 아바타에도 상처 반영
     mp.onSelfHit = (level) => {
       setStatus(level >= 3 ? '아야!! 너무해요 😭' : '아야! 누가 때렸어요 😣');
-      if (selfAvatar) selfAvatar.hit(level); // hitfx가 "아얏" 사운드까지 담당
+      const sa = selfViewController.getSelfAvatar();
+      if (sa) sa.hit(level); // hitfx가 "아얏" 사운드까지 담당
       else playOuch(level); // 3인칭 아바타가 없어도 소리는 난다
     };
     // NPC가 맞았을 때 — 아파하는 한마디 + 때린 사람 쳐다보기
@@ -1022,18 +978,8 @@ function animate() {
 
     tickOnboarding();
 
-    // 3인칭 자기 아바타 — 눈 위치/yaw를 발밑 기준으로 반영 + 속도 평활
-    if (thirdPerson && selfAvatar) {
-      const st = player.getState();
-      selfAvatar.group.position.set(st.x, st.y - EYE_HEIGHT, st.z);
-      selfAvatar.group.rotation.y = st.ry;
-      if (!selfPrev) selfPrev = { x: st.x, z: st.z };
-      const raw = delta > 0 ? Math.hypot(st.x - selfPrev.x, st.z - selfPrev.z) / delta : 0;
-      selfSpeed += (raw - selfSpeed) * Math.min(1, 10 * delta);
-      selfPrev.x = st.x;
-      selfPrev.z = st.z;
-      selfAvatar.update(delta, selfSpeed);
-    }
+    // 3인칭 자기 아바타 — 눈 위치/yaw를 발밑 기준으로 반영 + 속도 평활 (컨트롤러 tick 위임)
+    selfViewController.tick(delta);
 
     // 근접 작품 안내 — ui.js가 중복 렌더를 막으므로 매 프레임 호출해도 안전
     const nearby = getNearbyArtwork(camera.position);
@@ -1118,10 +1064,10 @@ function animate() {
       renderer.shadowMap.needsUpdate = true;
     }
 
-    if (thirdPerson && selfAvatar) {
-      applySelfCamOffset();
+    if (selfViewController.isThirdPerson() && selfViewController.getSelfAvatar()) {
+      selfViewController.applySelfCamOffset();
       renderer.render(scene, camera);
-      restoreSelfCamOffset();
+      selfViewController.restoreSelfCamOffset();
     } else {
       renderer.render(scene, camera);
     }
