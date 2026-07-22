@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck.">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-ee94c2.html">
+<title>P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. P1-④ 2분할의 두 번째. PR-1(leaf 5)에 이어 게임루프 결합 대형군 8개(main-photo·main-tour·">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-6b5ce1.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck.">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-ee94c2.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-ee94c2.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. P1-④ 2분할의 두 번째. PR-1(leaf 5)에 이어 게임루프 결합 대형군 8개(main-photo·main-tour·">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-6b5ce1.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-6b5ce1.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">🛠️</span>P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)</h1>
+<h1><span class="emo">🛠️</span>P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck. 팀장 조건부 서명으로 <strong>2분할</strong>(PR-1 leaf군 5개 → PR-2 게임루프 결합 대형군 8개) — 1PR 수천 줄 diff가 교차리뷰를 형식화시켜 보호파일 준용 취지를 무너뜨리는 것 방지. PR-1이 검증 절차의 템플릿.</p>
-<p><strong>개선.</strong> leaf군 5개(<code>main-math</code>·<code>main-spec</code>·<code>main-gpu</code>·<code>main-photo-util</code>·<code>main-events</code>) @ts-nocheck <strong>전량 소거</strong> + strict 타입. 순수 함수라 구조적 타입만으로 무결하게 닫힘(진짜 결함 0·@ts-expect-error 0). <code>main-events</code>는 config/three 구상 타입에 의존하지 않는 <strong><code>EventsCtx</code> 최소 인터페이스</strong>(실제 호출 멤버만)로 저결합 — PR-2 ctx 주입 모듈의 템플릿. <strong>런타임 로직 1바이트 무변경</strong>(타입 주석·interface만).</p>
-<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(<strong>팀장 조건4 "런타임 토큰 무변경: 확인" 별도 명시</strong> — diff가 @ts-nocheck 제거·타입 주석·interface뿐, 실행 토큰 0변경·<code>as</code> 캐스팅 0·결함 우회 0, EventsCtx 18멤버가 main.js eventsCtx 리터럴과 정확 일치), 독립 스모크(9/9 — <strong>dist <code>diff -r</code> = 0</strong>[청크 해시까지 base와 동일], app/index·world 콘솔0). 대형군 8개·보호 .js 미접촉, test 146.</p>
-<p><strong>교훈.</strong> @ts-nocheck 소거의 무변경 증명은 config.ts와 같은 <strong>dist diff 0</strong>이 최종 심판이다(청크 해시까지 동일 = esbuild가 타입을 전량 스트립). 그리고 ctx 주입 계약은 config interface를 <code>import type</code>으로 끌어오기 보다 <strong>실제 호출 멤버만 담은 로컬 최소 인터페이스</strong>가 결합도가 낮다(main-events의 EventsCtx). 대형군(PR-2)은 구상 타입 의존·재대입 let·null 위험이 있어 이 절차가 그대로 안 통할 수 있으니, 로직 수정 대신 @ts-expect-error/nocheck 잔존을 택해 무변경을 절대 우선한다.</p>
+<p><strong>원인.</strong> P1-④ 2분할의 두 번째. PR-1(leaf 5)에 이어 게임루프 결합 대형군 8개(<code>main-photo</code>·<code>main-tour</code>· <code>main-selfview</code>·<code>main-multiplayer</code>·<code>main-perf</code>·<code>main-viewfx</code>·<code>main-enterflow</code>·<code>main-gameloop</code>) — 라이브 미술관 런타임 전부(게임루프·P2P·셀프뷰·투어)에 걸침. PR-1 절차(dist diff 0·최소 인터페이스)를 적용하되 무변경 절대 우선.</p>
+<p><strong>개선.</strong> 8개 <strong>전량 소거</strong>(무리한 nocheck 잔존 0). three는 vendor js라 타입 정의가 없어 <code>THREE.Clock/ Vector3</code> 등을 <strong>실제 호출 메서드만 담은 구조적 인터페이스</strong>로 대체(값 사용은 그대로), ctx는 로컬 최소 인터페이스(<code>GameLoopCtx</code>·<code>MpInstance</code> 등), config는 <code>import type {Floor,FloorId}</code>(P1-③ export 재사용). <strong>런타임 무변경</strong>: 지역 캐스팅(<code>as</code>·non-null <code>!</code>)만 — <code>clock!</code>·<code>onboardPos0!</code>은 대입 직후라 불변식 성립, <code>getGalleryInfo()!</code>은 원본 truthy 패턴, <code>MpInstance</code>는 multiplayer.js 공개 멤버와 1:1.</p>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(<strong>"런타임 토큰 무변경: 확인" 별도 명시</strong>, 검수관 자체 재현 <code>diff -rq dist</code>=바이트 동일, 지역 캐스팅 각 지점 불변식 검증, 보호 .js·leaf·deploy 미접촉), 독립 스모크 (9/9 — dist diff 0, app/index·world 대형군 소비 콘솔0). test 146.</p>
+<p>**★ P1-④ 완료 — main-* 13개(leaf 5 + 대형 8) 전량 @ts-nocheck 소거.** 9축 점검 P0 "타입 실효 29%"의 핵심 부채를 신규 코드(4차 컨트롤러)부터 닫았다. @ts-expect-error 1곳(main-photo 썸네일 getContext null 가드 부재 — 진짜 결함, 로직 무변경 유예 후 후속 티켓 #105) 외 클린.</p>
+<p><strong>교훈.</strong> 라이브 런타임 전부에 걸친 대형 strict화도 <strong>dist diff 0이 무변경의 유일·최종 심판</strong>이다 — 검수관이 스모크 보고를 신뢰만 하지 않고 자체 재현한 것이 §10 구현자≠검증자의 실천이다. 그리고 vendor(타입 없는) three는 <code>@types/three</code>를 끌어오는 대신 <strong>실제 호출 메서드만 담은 구조적 인터페이스</strong>로 타이핑하면 자기완결(외부 의존 0)을 지키며 strict를 통과한다. 진짜 결함은 로직으로 덮지 말고 @ts-expect-error+티켓으로 가시화한다(무변경 보증 &gt; 전량 소거).</p>
 </article>
-<div class="pn"><a href="./2026-07-22-9259c9.html"><span class="lbl">← 이전 기록</span>P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명)</a><a href="./2026-07-22-6b5ce1.html" style="text-align:right"><span class="lbl">다음 기록 →</span>P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료</a></div>
+<div class="pn"><a href="./2026-07-22-ee94c2.html"><span class="lbl">← 이전 기록</span>P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
