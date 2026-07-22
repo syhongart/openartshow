@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-07-22 · P1-① 접근성 — skip-link + landmark (9축 점검 후속)
+
+**원인.** 9축 종합 점검에서 접근성(C+)의 [중] 결함으로 "skip-link 전 페이지 부재·landmark role 부재"가
+지목. 감독이 P1 착수를 지시("무섭다·팀장 신중하게"), 팀장 판정으로 리스크 오름차순 전건 분할 게이트 확정 →
+최저위험인 skip-link부터.
+
+**개선.** 라이브 정적 4페이지(landing·guide·about·studio)에 skip-link("본문 바로가기")+`<main id="main">`
+landmark+최소 focus-visible. skip-link는 평소 `translateY(-120%)`(화면 밖)·`:focus`에만 노출, 각 페이지
+기존 팔레트 B 토큰 재사용(새 색값 0). **기존 `<main>`엔 id만 부여**(landing만 신규 main으로 section 5개
+래핑)해 태그 셀렉터 무영향. 3D 미술관(index)은 canvas 전용이라 삽입점 없어 제외. **인라인 script 0**(CSP
+무영향).
+
+**결과.** 게이트 통과 — 검수관 승인(레이아웃 회귀 0·중복 landmark 0·깨진 앵커 0·CSP 영향 0·index 제외
+타당), 독립 스모크(9/9 — dist CSP violation 0·skip-link 4페이지 포커스 노출·`#main` 점프·가로넘침 0).
+about `.essay-cta`가 main 밖에 남은 것은 최소범위 절충으로 후속 P1 티켓.
+
+**교훈.** 접근성 시맨틱 보강은 "기존 시각 1픽셀도 안 바꾸고 의미(landmark)만 얹는다"가 관건 — 기존 `<main>`엔
+id만, 신규 래핑은 태그 셀렉터·인접형제 콤비네이터에 안 걸리는 곳만 확인 후. skip-link는 sr-only가 아니라
+포커스 시 노출이 정답(키보드 사용자에게만 보이되 실재).
+
+---
+
 ## 2026-07-22 · C-1 후속 — ui-hud.ts strict화 (@ts-nocheck 소거 착수)
 
 **원인.** 9축 종합 점검에서 "TS 전환했으나 @ts-nocheck 70%(실효 타입 커버 ~29%)"가 아키텍처 약점으로
