@@ -4,6 +4,41 @@
 
 ---
 
+## 2026-07-22 · C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리
+
+**원인.** 4차 세 번째 단위(C). `handleEnter`의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats)
+생성·2초 dwell 타이머·원격 방문 기록. 게임루프가 아니라 입장 도메인이라 D(심장) 전 저리스크 단계.
+
+**개선.** `main-enterflow.ts`(`createEnterFlow(ctx)`)로 분리(main.js 918→919, **응집 목적이라 라인 +1**).
+- **stats 소유 이전**: 참조처 전수 grep 결과 **2곳뿐**(handleEnter 생성+dwellTimer / mpCtx.onVisitor의
+  addVisit)이고 위임면이 좁아 EnterFlow가 SSOT로 소유. onVisitor는 콜백 본체(visitorLog.add)는 main
+  잔류하고 stats 부분만 `recordVisit` 1개로 위임. (3차 myNickname은 4개 도메인이 읽어 **잔류**했던 것과
+  대비 — 소유 이전 판단은 "참조처 위임면의 넓이"로 갈린다.)
+- **메서드**: `computeRoomSuffix`(gallery id ∨ djb2 hash — connect roomId·stats 키 공유)·`begin`(stats+
+  dwell 타이머, connect 성공 후)·`recordVisit`(onVisitor 위임).
+- **handleEnter 잔류**: entered·player.enable·connect·startAmbient·startOnboarding. entered는 게임루프·
+  hitTap·floor 다수 게이트가 읽는 전역이자 입장 진입 계약이라 조립점에 남긴다. ambient/onboarding을
+  옮기면 EnterFlow가 두 도메인을 더 알게 돼 God 경향 → 잔류.
+- **입장 순서 1바이트 보존**: myNickname→selfInfo→entered→hideLobby→player.enable→ambient→onboarding→
+  computeRoomSuffix→connect→(실패 시 return)→begin. connect 실패(혼자 관람) 시 begin 미호출로 stats/
+  timer 미생성·onVisitor 미발생 → 원본 try/catch와 동치.
+
+**결과.** 게이트 통과 — 검수관 승인(stats 재배선 누락0·입장 순서 동치·connect 실패 경로·dwellTimer
+verbatim·**게임루프 무수정**, 블로커 0), 독립 스모크(6/6 — computeRoomSuffix·connect 실패 혼자관람·
+begin/dwell 콘솔0). **recordVisit는 P2P 연결 후에만 발생해 헤드리스 단독 사각 → verbatim 논증 의존**.
+보호4파일·main-multiplayer.ts·CSP·animate 무수정, test 116/116.
+
+**교훈.** 상태 소유 이전 vs 잔류는 **참조처 위임면의 넓이**가 가른다 — stats처럼 참조처 2곳·위임면 좁으면
+이전이 응집을 늘리고, myNickname처럼 다수 도메인이 읽으면 잔류가 결합을 줄인다. 기계적으로 "다 옮긴다"가
+아니라 케이스별로 저울질한다.
+
+### 4차 로드맵 진척 (A→B→C 완료, D 최후 남음)
+A(PerfGovernor)·B(ViewFx)·C(EnterFlow) 배포 완료. main.js 1,418→919(-35%). 남은 **D(GameLoop 골격 +
+잔여 포테이토캡·근접안내 흡수)**는 render 분기·setAnimationLoop·try/catch 오류복구 경계를 다루는 심장·최후
+단위 — 팀장 지정 회귀 위험점(setAnimationLoop 등록/해제·오류복구 setStatus)을 검증에 명시해 진행 예정.
+
+---
+
 ## 2026-07-22 · C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리
 
 **원인.** 4차 두 번째 단위(B). 게임루프에 흩어진 카메라 뷰 보조 3종 — 트윈(텔레포트/투어 보간)·
