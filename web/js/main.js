@@ -60,6 +60,7 @@ import { easeInOutCubic, lerpAngle, resolveAutoTheme, djb2 } from './main-math.j
 import { readSpec, writeSpec, PX_BUDGET, LITE_ENTER_FPS, LITE_EXIT_FPS, LITE_VISIBLE_NPCS } from './main-spec.js';
 import { probeGpu } from './main-gpu.js';
 import { dataUrlToBlob, drawWatermark, getShareUrl } from './main-photo-util.js';
+import { createEventHandlers } from './main-events.js';
 
 let renderer = null;
 let scene = null;
@@ -67,6 +68,7 @@ let camera = null;
 let player = null;
 let flyController = null; // fly.js 비행 컨트롤러(점프 홀드) — 입장 setup에서 초기화
 let mp = null; // MultiplayerManager — 입장 전에는 null (sendState/update 가드)
+let eventHandlers = null; // createEventHandlers(eventsCtx) 반환 — init에서 세팅, 아래 wrapper가 위임
 let npcCrowd = null; // AI 관객 — 호스트가 될 때 npcProvider 안에서 지연 생성
 let stats = null; // 작가 리포트 (전시별 방문·감상 통계 — stats.js)
 const visitorLog = new VisitorLog(); // 랜딩 "최근 관람객" 피드
@@ -654,6 +656,33 @@ async function init() {
     if (entered && !touring) player.enable();
   });
 
+  // DOM 이벤트 핸들러 구현은 main-events.js로 분리(2차). 공유 상태를 읽고 쓰므로
+  // ctx 주입: 재대입되는 let(camera·renderer·mp·entered·touring)은 값 캡처가 아니라
+  // getter로 넘겨 stale 참조를 막고, 기능 함수(3차 대상)는 main.js 참조 그대로 전달한다.
+  // 리스너 등록(아래 addEventListener 3곳)은 main.js에 그대로 유지 — 등록 지점·횟수·순서 불변.
+  const eventsCtx = {
+    getCamera: () => camera,
+    getRenderer: () => renderer,
+    getMp: () => mp,
+    isEntered: () => entered,
+    isTouring: () => touring,
+    viewCurrentArtwork,
+    toggleArtworkList,
+    toggleTour,
+    toggleGuestbook,
+    flashShutter,
+    capturePhoto,
+    toggleSelfView,
+    tourPrev,
+    tourNext,
+    exitTour,
+    isLightboxOpen,
+    isShareModalOpen,
+    isArtworkListOpen,
+    isGuestbookOpen,
+  };
+  eventHandlers = createEventHandlers(eventsCtx);
+
   // 리사이즈 대응
   window.addEventListener('resize', onWindowResize);
   window.addEventListener('keydown', onKeyDown);
@@ -791,60 +820,11 @@ function capturePhoto() {
   }
 }
 
+// 구현은 main-events.js(createEventHandlers)로 이동. 이 함수선언은 keydown 리스너
+// 등록 지점을 1바이트도 바꾸지 않기 위해 onKeyDown 심볼을 유지하는 위임 wrapper다
+// — 실제 키 분기 로직은 eventHandlers.onKeyDown이 담당.
 function onKeyDown(e) {
-  if (e.code === 'KeyE') {
-    viewCurrentArtwork();
-    return;
-  }
-
-  if (e.code === 'KeyM') {
-    if (!entered || isLightboxOpen()) return;
-    toggleArtworkList();
-    return;
-  }
-
-  if (e.code === 'KeyT') {
-    if (!entered) return;
-    toggleTour();
-    return;
-  }
-
-  if (e.code === 'KeyG') {
-    if (!entered || isLightboxOpen()) return;
-    toggleGuestbook();
-    return;
-  }
-
-  if (e.code === 'KeyP') {
-    // 라이트박스/투어 중에도 촬영 허용 — 캔버스에는 DOM UI가 찍히지 않으므로
-    // 지금 보이는 3D 화면 그대로 캡처된다. 공유 모달이 열려 있을 때만 막는다.
-    if (!entered || isShareModalOpen()) return;
-    flashShutter();
-    capturePhoto();
-    return;
-  }
-
-  if (e.code === 'KeyV') {
-    if (!entered || isShareModalOpen()) return;
-    toggleSelfView();
-    return;
-  }
-
-  if (touring && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
-    if (isLightboxOpen()) return;
-    e.preventDefault();
-    if (e.code === 'ArrowLeft') tourPrev();
-    else tourNext();
-    return;
-  }
-
-  if (e.code === 'Escape') {
-    // 라이트박스/작품목록/방명록은 ui.js가 자체 ESC 핸들러로 닫는다. 셋 다 닫혀 있을 때만
-    // 투어 종료를 담당한다 (ui.js ESC 우선순위 규약과 합치).
-    if (touring && !isLightboxOpen() && !isArtworkListOpen() && !isGuestbookOpen()) {
-      exitTour();
-    }
-  }
+  eventHandlers.onKeyDown(e);
 }
 
 // 작품 목록 카드 클릭 → 트윈 텔레포트. 도착 후 player.setPose로 확정하고,
@@ -1225,21 +1205,16 @@ function animate() {
   }
 }
 
+// 구현은 main-events.js로 이동. resize 리스너 등록 지점을 불변으로 유지하기 위해
+// onWindowResize 심볼을 유지하는 위임 wrapper — aspect·setSize 계산은 eventHandlers.onWindowResize가 담당.
 function onWindowResize() {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  eventHandlers.onWindowResize();
 }
 
-// 페이지 이탈 시 피어 연결 정리
+// 페이지 이탈 시 피어 연결 정리 — 등록 지점·횟수·순서 불변, 콜백 구현만 main-events.js로 위임.
+// 초기화 극초기 이탈(eventHandlers 미설정) 시 옵셔널 체이닝으로 no-op(원본은 mp=null이라 no-op과 동일).
 window.addEventListener('beforeunload', () => {
-  if (mp) {
-    try {
-      mp.dispose();
-    } catch (_) {
-      /* 무시 */
-    }
-  }
+  eventHandlers?.onBeforeUnload();
 });
 
 init().catch((err) => {
