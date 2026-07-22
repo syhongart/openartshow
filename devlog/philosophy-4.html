@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기 — OpenArtShow 개발일지</title>
-<meta name="description" content="이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. 왜를 잊을 때 돌아오는 자리다.">
+<title>아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기 — OpenArtShow 개발일지">
-<meta property="og:description" content="이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. 왜를 잊을 때 돌아오는 자리다.">
+<meta property="og:title" content="아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기","datePublished":"2026-07-15","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-4.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)","datePublished":"2026-07-21","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-4.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,15 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-15</p>
-<blockquote>이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. <strong>왜</strong>를 잊을 때 돌아오는 자리다.<br>전문(全文)은 [<code>docs/FOUNDING.md</code>](./FOUNDING.md) — 팀 온보딩 필독.</blockquote>
-<p>감독은 <strong>국제 무대에서 전시해온 작가</strong>이자 <strong>3D 렌더링·머티리얼 파이프라인을 다루는 엔지니어</strong>다. 작가의 아픔을 몸으로 겪었고, 그 아픔을 걷어낼 기술도 안다 — 이 드문 조합이 이 플랫폼의 방향과 완성도 기준의 출처다.</p>
-<p><strong>각성의 순간.</strong> 코로나기, 감독이 가상 공간에 연 개인전에 낯선 아바타가 걸어와 말을 걸었다 — "나, 네 작품 실제로 봤어. 뉴욕에서." 가상이 실제를 대체한 게 아니라 실제의 관계를 공간을 건너 이어붙인 순간. 다른 작가의 오프닝엔 수십 명이 모여 작품이 거의 다 팔렸다 — 팬데믹 한복판에.</p>
-<p><strong>우리가 푸는 문제.</strong> 대관료·액자·오프닝·운송·창고비·부스비 — 작가가 전시 한 번에 짊어지는 이 부담을 기술로 걷어낸다. "파라미터가 곧 공간"(저장 0·정적 호스팅·기기별 굽기)은 곧 *작가에게 돈 받지 않고 전시를 열어주는* 공학적 토대다. 그리고 목적은 판매가 아니라 작품이 일으키는 <strong>울림</strong>이다.</p>
-<p><strong>왜 비주얼·쾌적함에 집착하나.</strong> 작품은 홀로일 때보다 공간 속에서 더 크게 말한다 — 공간이 작품의 이야기를 함께 해줘야 울림이 커진다. 3D·조명 베이킹·대기 원근·글래스 HUD는 '기능'이 아니라 작품이 제 목소리로 말하게 하는 <strong>무대장치</strong>다. 사람들은 신기함엔 몰려왔다 금방 질려 떠난다 → 첫 90초에 <strong>생기(生氣)</strong>를 증명해야 한다. <strong>그래서 발코딩으로는 끝낼 수 없다. 기준은 "출시하고 싶어지는 완성도".</strong></p>
-<p><strong>AI 시대의 답.</strong> AI 에이전트가 공간에 살며 감상·비평·큐레이션·창작을 하면 공간이 죽지 않는다. <strong>비즈니스.</strong> 웬만하면 무료로 쾌적하게 + 지속가능성(영속성)을 위한 과금 — 두 축. <strong>비전.</strong> 뒤처지지 않고 메타버스 붐을 다시 일으키는, 더 큰 무대로 갈 수 있는 플랫폼.</p>
-<blockquote>흔들릴 때의 한 문장: <strong>작품이 공간에서 말하게 하라.</strong></blockquote>
+<h1><span class="emo">📱</span>아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-21</p>
+<p><strong>원인.</strong> 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI 부재(수동 검증 의존)"를 지적. 감독(소프트웨어 아키텍트 관점) 결정: <strong>(1) 전면 TypeScript+Vite 전환, (2) 회귀 안전망을 먼저 구축.</strong> team-lead 판정 — 이 평가는 우리 QA/SOLID 트랙(#87~#90)의 시점을 앞당기라는 독립 확인. 리팩터/TS 전환은 회귀를 잡을 그물 없이는 위험하므로 <strong>안전망이 전제</strong>.</p>
+<p><strong>개선(A단계, 소스 로직 무수정·라이브 리스크 0).</strong></p>
+<ul><li>A-1 인프라: vitest(러너)·eslint(v9 flat, 관대한 baseline)·tsconfig(allowJs·checkJs:false· strict, B단계 파일단위 점진 전환용). package.json에 test/lint/typecheck/smoke 스크립트, puppeteer·jsdom을 devDependencies로 이동(런타임 배포물 npm 의존 0 유지).</li><li>A-2 단위테스트 <strong>108개</strong>(tests/, web/ 밖 → 배포 오염 방지): space(마이그레이션·정규화· 라운드트립·스키마 자기정합)·ytembed·guestbook·stats·feed·space-presets. TS 전환의 "before" 스냅샷.</li><li>A-3 스모크 하네스: <code>npm run smoke</code> 한 번으로 6항+가드(생성기·파일수·필수파일·console.error· 가로넘침 320/375/1280·CSP violation·인라인script·내부링크) 자동. skill 대체 아닌 실행 보조.</li><li>A-4 <code>ci.yml</code>: lint·typecheck·test 게이트(2스텝 롤인 — 독립 워크플로로 시작, 안정화 후 deploy에 needs:ci). 최소권한 명시.</li></ul>
+<p><strong>안전망이 착수 즉시 잡은 라이브 버그 3개(수정).</strong> ① avatar 라벨 머티리얼 중복 depthWrite 키 (eslint no-dupe-keys) ② about.html CTA 2개 404 ③ about 폰트 404. ②③ 근본원인은 about이 landing/guide 급 "루트 배포 가정" 상대경로인데 deploy.yml이 app/에만 배포한 불일치 → <strong>about을 루트 배포로 승격</strong>(deploy.yml 1줄 + 폰트경로 정합, about.html 로직 무수정)해 해결.</p>
+<p><strong>결과.</strong> 게이트 통과 — executor 독립 스모크 6/6 + A단계 특화 7/7, 검수관 cross-review 조건부 승인(블로커 0, 권고 5). 검수관이 avatar 건을 "안전망이 실제로 유효함을 보여주는 사례"로 평가. 보호4파일(main/player/artworks/config.js) 무변경. main 배포. <strong>다음: B단계 TS+Vite 전환 (space.js부터 leaf 순차, Vite 산출물이 자기완결·CSP self 유지 — vendor 번들흡수로 importmap sha256 핀 소멸).</strong> 승인된 로드맵: 3단계(안전망→TS+Vite→SOLID 분해) 3 불변식(소스트리 항상 배포가능·1커밋 롤백·자기완결 불완화).</p>
+<p><strong>교훈.</strong> 리팩터보다 안전망을 먼저 깐 판단이 즉시 회수됐다 — 그물을 치자마자 기존 버그 3개가 걸렸다. "구조 투자는 완성도의 경쟁자가 아니라 가속기"(회귀 공포 없이 전환·실험 가능).</p>
 </article>
 
 </div>
