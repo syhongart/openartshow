@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>아키텍처 안정화 B-5단계 — leaf TypeScript 전환 개시 (space.js→.ts, 감독 결정) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. B-2b(배포 경로 Vite 전환)로 이제 소스가 Vite 번들을 거치므로 .ts 파일 전환이 가능해졌다.">
+<title>★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C") — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = ui.js 단일 파일에 HUD·아바타 편집기·">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-2.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="아키텍처 안정화 B-5단계 — leaf TypeScript 전환 개시 (space.js→.ts, 감독 결정) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. B-2b(배포 경로 Vite 전환)로 이제 소스가 Vite 번들을 거치므로 .ts 파일 전환이 가능해졌다.">
+<meta property="og:title" content="★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C") — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = ui.js 단일 파일에 HUD·아바타 편집기·">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-2.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"아키텍처 안정화 B-5단계 — leaf TypeScript 전환 개시 (space.js→.ts, 감독 결정)","datePublished":"2026-07-21","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-2.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 \"게이트 정비→C\")","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-2.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,17 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>아키텍처 안정화 B-5단계 — leaf TypeScript 전환 개시 (space.js→.ts, 감독 결정)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-21</p>
-<p><strong>원인.</strong> B-2b(배포 경로 Vite 전환)로 이제 소스가 Vite 번들을 거치므로 .ts 파일 전환이 가능해졌다. 승인 로드맵 B-5: leaf·순수·비보호·소형 모듈부터 파일단위로 점진 전환(각 1커밋·독립배포·파일단위 롤백). 첫 대상은 <strong><code>space.js</code></strong>(공간 빌더 스키마 SSOT — A-2 단위테스트 29개가 이미 두껍게 감싸 "before" 스냅샷 확보, 하류 타입이득 최대).</p>
-<p><strong>개선(B-5-①).</strong></p>
-<ul><li><code>web/js/space.js</code> → <code>web/js/space.ts</code> 리네임 + strict 타입 첨가. <strong>런타임 로직·값은 1바이트도 불변</strong>(타입주석·interface·제네릭·<code>as</code>·non-null assertion은 tsc가 컴파일 시 제거하는 타입전용 구문).</li><li><strong><code>.js→.ts</code> 리졸브 이슈</strong>: vite/rollup 빌드 resolver는 확장자 명시된 <code>.js</code> import를 <code>.ts</code>로 치환 하지 않는다(tsc Bundler 모드와 상이). 커스텀 resolveId 플러그인은 방금 배포된 배포기 침습이라 기각 → <strong>대안: 소비자 import를 확장자 없는 <code>./space</code>로 통일</strong>(9소비자+2테스트=11곳, 각 1줄 확장자 제거만). vite.config/tsconfig 무수정 — 배포기 무침습.</li></ul>
-<p><strong>결과.</strong> 게이트 통과 — 독립 스모크 6/6(app/world·app/index 라이브 콘솔0·CSP0)·typecheck 0· <code>npm test</code> 108/108, 검수관 <strong>승인</strong>(블로커0). 검수관 결정적 증거: <strong>origin/main vs 이 브랜치를 각각 <code>vite build</code>해 <code>dist/</code> 트리 전체 <code>diff -rq</code> → 100% 바이트 동일</strong>(해시 파일명·전 청크·모든 HTML) — space.ts 전환이 배포 산출물에 어떤 영향도 없음을 실증. 감독 GO 후 main 배포(run success). 보호4파일 무변경. <strong>이후 leaf(ytembed·space-presets·stats·guestbook·feed)는 감독 지시로 동일 게이트 통과 시 팀장 재량 연속배포.</strong></p>
-<p><strong>연속배포 진행(감독 재량 위임).</strong> 동일 패턴으로 후속 leaf 전환·배포:</p>
-<ul><li><strong>B-5-② <code>ytembed.js</code>→<code>.ts</code></strong>(커밋 bcd60aa, run success): 소비자=builder(behind-flag)+테스트만 → 라이브 영향 0. 경량 게이트(dist 바이트 동일 대조+6항 스모크)로 배포 무영향 실증.</li><li><strong>B-5-③ <code>space-presets.js</code>→<code>.ts</code></strong>: 소비자=builder + <strong>world-gen(→world.html 오픈월드 정식노출 라이브 소비)</strong> + 테스트. 프리셋은 정규화 전 문서라 <code>PresetSpace</code>/<code>SpacePreset</code> interface 신설로 표기. 게이트: <strong>dist 바이트 동일 + app/world 콘솔0·CSP0 회귀0</strong> 실증 → 배포.</li><li>게이트 경량화 근거: leaf TS 전환은 "타입은 런타임에서 사라진다" → <strong>origin/main vs 브랜치 dist <code>diff -rq</code> 0(바이트 동일)</strong> 이 배포 무영향의 수학적 증명. 이를 독립 스모크에 통합해 매 leaf 검수관 풀리뷰를 대체(dist가 예상외로 다르면 검수관 에스컬레이션). typecheck·test 108·보호4파일 무변경 병행.</li></ul>
-<p><strong>B-5-④⑤⑥ <code>stats</code>·<code>guestbook</code>·<code>feed</code> — 보호파일 결합 → 감독 B안(폴백 resolve).</strong> 이 3개는 앞 leaf들과 달리 <strong>라이브 <code>main.js</code>(보호4파일)가 직접 소비자</strong>다(방명록·통계·포토월). 대안b(소비자 확장자 제거)를 쓰면 main.js import 3줄을 고쳐야 해 보호파일 게이트에 걸린다. 감독 판정 <strong>B안 채택</strong>:</p>
-<ul><li><strong>vite <code>tsJsFallback()</code> 폴백 플러그인</strong>(vite.config+vitest.config): 상대·<code>.js</code>·실재.js없음·대응.ts존재 4조건 AND에서만 <code>.js</code>→<code>.ts</code> 리졸브. <code>existsSync</code> 순서로 실재 .js 무개입, bare specifier(three· peerjs)·node_modules·vendor 제외. → <strong>모든 소비자 import는 <code>.js</code> 유지 = main.js 포함 무수정</strong>.</li><li>stats/guestbook/feed 는 .ts 리네임+타입만. <strong>보호4파일 diff 완전 공백</strong>(재작업의 핵심 목표) 실증.</li><li>게이트: 배포기(vite.config) 수정이라 경량 아닌 <strong>풀 게이트</strong> — 독립 스모크(보호4파일 무변경·라이브 3페이지 콘솔0·CSP0·dist 청크 런타임 동일) + 검수관 <strong>승인</strong>(폴백 안전성·롤백단위·혼재공존 실증).</li><li><strong>⚠️ 롤백 단위 = 이 4커밋 전체</strong>(폴백 플러그인 e8f9135 + 3 리네임). 폴백만 revert하면 stats/ guestbook/feed 소비자가 <code>.js</code> 유지+폴백 의존이라 <code>vite build</code>가 깨진다(검수관이 worktree revert로 실증). 파일단위 독립 롤백 불가 — 회귀 시 4커밋(또는 병합 커밋) 전체를 되돌릴 것.</li></ul>
-<p><strong>혼재 부채(#94 이월).</strong> space/ytembed/space-presets(소비자 확장자 <strong>제거</strong>) vs stats/guestbook/feed (확장자 <strong>유지</strong>+폴백)의 두 리졸브 방식 혼재. 조건 분기(확장자 유/무)로 겹침 0·기능 안전하나 유지보수 부채 → 향후 방식 일원화 검토(#94). B-5 leaf 6개 전환 완료 — 순수 leaf 소진, 초대형·보호 파일은 C단계.</p>
+<h1><span class="emo">📱</span>★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C")</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
+<p><strong>원인.</strong> 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = <code>ui.js</code> 단일 파일에 HUD·아바타 편집기· CSS·저수준 헬퍼가 혼재(실측 3,977줄). 감독(아키텍트 관점) "SOLID가 유지보수의 전제". #94 게이트 정비(회귀 안전망 clean)를 선행한 뒤 착수.</p>
+<p><strong>개선(4단계, 각 독립 커밋·게이트·배포).</strong> ui.js를 <strong>5파일로 분해</strong>하되 <strong>소비자 main.js(보호파일)는 한 번도 안 건드림</strong>(배럴로 export 표면 보존):</p>
+<ul><li><strong>단계1 <code>ui-dom.ts</code></strong>(1,701줄): <code>el</code>·<code>injectStyles</code>(CSS-in-JS 1,675줄)·<code>GOLD</code> 순수 이동. 검수관이 CSS 1,670줄 diff 바이트 동일 실증.</li><li><strong>단계2 <code>ui-chibi-store.ts</code></strong>(108줄): chibi 퍼시스턴스(키생성·read/save·closet). <strong>localStorage 키 불변</strong>(사용자 저장 유실 방지). ESM live-binding 제약으로 <code>sessionChibi</code> 재할당을 setter로 교체.</li><li><strong>단계3 <code>ui-avatar-editor.ts</code></strong>(687줄, <strong>최고위험</strong>): 편집기 클러스터를 <code>createChibiMaker(ctx)</code> 팩토리화. 양방향 결합(setStatus·callbacks·chibiOpen)을 <strong>ctx 주입 + uiState 객체 승격</strong>으로 풀어 순환 차단(편집기가 HUD를 import 안 함). 저장/RAF/ESC·c키 배선 보존. three-ambient.d.ts(<code>declare module 'three'</code>) 신설(빌드타임 타입만·배포 미유출).</li><li><strong>단계4 배럴</strong>: <code>ui.js</code>→<code>ui-hud.ts</code> 개명(1,585줄) + <code>ui.ts</code> 배럴(<code>export * from './ui-hud.js'</code>). main.js의 <code>./ui.js</code> import를 <code>tsJsFallback</code> <strong>2단계 폴백</strong>(→ui.ts→ui-hud.ts)이 해소 → <strong>main.js 무수정</strong>으로 34 export 표면 보존. negative test로 배럴 필수성 확인.</li></ul>
+<p><strong>결과.</strong> 4단계 전부 게이트 통과(독립 스모크 + 검수관 교차리뷰, 각 배포 Actions success). 보호4파일 무변경(전 단계 diff 공백)·라이브(app/index 미술관) 콘솔0·CSP0·test 108/108·자기완결 유지. ui.js 3,977줄 단일 파일이 <strong>HUD 셸(1,585)/편집기(687)/스토어(108)/DOM(1,701)/배럴(1)</strong> SRP 5파일로 분해.</p>
+<p><strong>게이트 규율 조정(팀장).</strong> leaf TS 전환과 달리 구조 분해는 번들러 모듈 재배치로 "dist 바이트 동일"이 불성립 → <strong>"의미 동등(라이브 스모크 콘솔0·CSP0) 1차 + dist 정규화 diff 리뷰 + 검수관 필수"</strong>로 게이트 완화. 매 단계 검수관 교차리뷰 필수로 안전 담보.</p>
+<p><strong>후속(비블로커).</strong> ①<code>ui-hud.ts</code> <code>@ts-nocheck</code> — 대형 HUD 셸 strict화는 "순수 개명" 제약상 별도 과제로 보류(로직 무변경 우선). 방치 시 미검사 지대 고착 위험 → strict 정리 티켓 필요. ②chibi.js· builder-walk.js의 <code>ui.js</code> 옛 주석 → <code>ui-hud.js</code> 갱신. ③<code>ui-avatar-editor</code> 유닛테스트 부재.</p>
+<p><strong>교훈.</strong> 3,977줄 초대형 파일도 <strong>배럴 + 소비자 무수정</strong>이면 보호파일을 안 건드리고 분해할 수 있다. 자연 경계(CSS/편집기/스토어)를 순수 이동으로 먼저 떼고, 마지막에 개명+배럴로 표면을 봉인하는 순서가 "라이브 안 깨는 대분해"의 핵심. 결합(양방향 참조)은 ctx 주입으로 끊어 순환을 원천 차단.</p>
 </article>
 
 </div>

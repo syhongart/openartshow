@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C") — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = ui.js 단일 파일에 HUD·아바타 편집기·">
+<title>★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 &lt;script&gt;가 CSP">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C") — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = ui.js 단일 파일에 HUD·아바타 편집기·">
+<meta property="og:title" content="★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 &lt;script&gt;가 CSP">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 \"게이트 정비→C\")","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,15 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C")</h1>
+<h1><span class="emo">🛠️</span>★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독)</h1>
 <p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
-<p><strong>원인.</strong> 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = <code>ui.js</code> 단일 파일에 HUD·아바타 편집기· CSS·저수준 헬퍼가 혼재(실측 3,977줄). 감독(아키텍트 관점) "SOLID가 유지보수의 전제". #94 게이트 정비(회귀 안전망 clean)를 선행한 뒤 착수.</p>
-<p><strong>개선(4단계, 각 독립 커밋·게이트·배포).</strong> ui.js를 <strong>5파일로 분해</strong>하되 <strong>소비자 main.js(보호파일)는 한 번도 안 건드림</strong>(배럴로 export 표면 보존):</p>
-<ul><li><strong>단계1 <code>ui-dom.ts</code></strong>(1,701줄): <code>el</code>·<code>injectStyles</code>(CSS-in-JS 1,675줄)·<code>GOLD</code> 순수 이동. 검수관이 CSS 1,670줄 diff 바이트 동일 실증.</li><li><strong>단계2 <code>ui-chibi-store.ts</code></strong>(108줄): chibi 퍼시스턴스(키생성·read/save·closet). <strong>localStorage 키 불변</strong>(사용자 저장 유실 방지). ESM live-binding 제약으로 <code>sessionChibi</code> 재할당을 setter로 교체.</li><li><strong>단계3 <code>ui-avatar-editor.ts</code></strong>(687줄, <strong>최고위험</strong>): 편집기 클러스터를 <code>createChibiMaker(ctx)</code> 팩토리화. 양방향 결합(setStatus·callbacks·chibiOpen)을 <strong>ctx 주입 + uiState 객체 승격</strong>으로 풀어 순환 차단(편집기가 HUD를 import 안 함). 저장/RAF/ESC·c키 배선 보존. three-ambient.d.ts(<code>declare module 'three'</code>) 신설(빌드타임 타입만·배포 미유출).</li><li><strong>단계4 배럴</strong>: <code>ui.js</code>→<code>ui-hud.ts</code> 개명(1,585줄) + <code>ui.ts</code> 배럴(<code>export * from './ui-hud.js'</code>). main.js의 <code>./ui.js</code> import를 <code>tsJsFallback</code> <strong>2단계 폴백</strong>(→ui.ts→ui-hud.ts)이 해소 → <strong>main.js 무수정</strong>으로 34 export 표면 보존. negative test로 배럴 필수성 확인.</li></ul>
-<p><strong>결과.</strong> 4단계 전부 게이트 통과(독립 스모크 + 검수관 교차리뷰, 각 배포 Actions success). 보호4파일 무변경(전 단계 diff 공백)·라이브(app/index 미술관) 콘솔0·CSP0·test 108/108·자기완결 유지. ui.js 3,977줄 단일 파일이 <strong>HUD 셸(1,585)/편집기(687)/스토어(108)/DOM(1,701)/배럴(1)</strong> SRP 5파일로 분해.</p>
-<p><strong>게이트 규율 조정(팀장).</strong> leaf TS 전환과 달리 구조 분해는 번들러 모듈 재배치로 "dist 바이트 동일"이 불성립 → <strong>"의미 동등(라이브 스모크 콘솔0·CSP0) 1차 + dist 정규화 diff 리뷰 + 검수관 필수"</strong>로 게이트 완화. 매 단계 검수관 교차리뷰 필수로 안전 담보.</p>
-<p><strong>후속(비블로커).</strong> ①<code>ui-hud.ts</code> <code>@ts-nocheck</code> — 대형 HUD 셸 strict화는 "순수 개명" 제약상 별도 과제로 보류(로직 무변경 우선). 방치 시 미검사 지대 고착 위험 → strict 정리 티켓 필요. ②chibi.js· builder-walk.js의 <code>ui.js</code> 옛 주석 → <code>ui-hud.js</code> 갱신. ③<code>ui-avatar-editor</code> 유닛테스트 부재.</p>
-<p><strong>교훈.</strong> 3,977줄 초대형 파일도 <strong>배럴 + 소비자 무수정</strong>이면 보호파일을 안 건드리고 분해할 수 있다. 자연 경계(CSS/편집기/스토어)를 순수 이동으로 먼저 떼고, 마지막에 개명+배럴로 표면을 봉인하는 순서가 "라이브 안 깨는 대분해"의 핵심. 결합(양방향 참조)은 ctx 주입으로 끊어 순환을 원천 차단.</p>
+<p><strong>원인.</strong> studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 <code>&lt;script&gt;</code>가 CSP <code>script-src</code> sha256 핀을 요구. 감독 "C-2→C-3" 지시.</p>
+<p><strong>개선(S0 + S1~S4).</strong></p>
+<ul><li><strong>S0(인라인 외부화 + CSP 핀 제거)</strong>: 인라인 <code>&lt;script&gt;</code> IIFE(834줄)를 <code>studio-main.ts</code>로 통째 이동 + <code>&lt;script type=module src&gt;</code> 1줄 교체. 인라인 실행 script 0 → <strong>CSP <code>script-src 'self'</code> 수렴</strong> (핀 제거·cspReconcile 자동 재작성). = SRP + CSP 단순화 이중이득.</li><li><strong>S1~S4(재분해 + DI)</strong>: studio-main.ts(835줄 통째)를 <strong>5모듈로 분해</strong> — <code>studio-plan.ts</code>(45, 플랜·한도)·<code>studio-image.ts</code>(71, 내장·모달)·<code>studio-storage.ts</code>(166, 저장·<strong>갤러리 코덱 SSOT</strong>)· <code>studio-form.ts</code>(605, 렌더·이벤트)·<code>studio-main.ts</code>(64, 엔트리). <strong>StudioContext DI</strong>로 단일 <code>state</code> 참조 공유(복사0 — form 변이를 storage가 같은 참조로 직렬화).</li></ul>
+<p><strong>⚠️ 로드맵 정정(space.ts 부적합).</strong> 로드맵 C-2 문구는 "저장을 space.ts 계약 재사용"이라 했으나, 실측 결과 space.ts는 <strong>3D 빌더 "공간" 모델</strong>(shell/parts)이고 studio는 <strong>"갤러리 JSON"</strong>(id/name/ artworks)이라 무관 — space.ts import 안 함. <strong>진짜 DRY 대상은 갤러리 코덱</strong>(studio 인코더 ↔ artworks.js 디코더의 <code>#gz=</code>/<code>#gd=</code> wire format). artworks.js가 <strong>보호4파일</strong>이라 이번엔 studio-storage가 코덱 SSOT를 소유하되 <strong>바이트 호환 계약만 고정</strong>(단위테스트 파리티), 공유 코덱 이관은 보호해제 후 별건.</p>
+<p><strong>결과.</strong> S0 + S1~S4 게이트 전부 통과(독립 스모크 + 검수관, 각 배포). studio.html 1,697줄 인라인 혼재 → <strong>6파일(html+5 .ts)</strong> SRP 분해 + <code>script-src 'self'</code>. <code>STORAGE_KEY</code>·<code>PLAN_KEY</code>·코덱 wire format <strong>1바이트 불변</strong>(사용자 드래프트·공유링크 보호), <strong>보호4파일(artworks.js 포함) 무변경</strong>. 단위 테스트 108→<strong>116</strong>(+8: 코덱 라운드트립·loadDraft 정규화). 라이브 studio 콘솔0·CSP0.</p>
+<p><strong>후속(비블로커).</strong> studio 5모듈 전부 <code>@ts-nocheck</code>(순수 이동+DI 우선, strict화 별도) — C-1 ui-hud와 함께 strict 정리 트랙(#96 계열). 공유 코덱 artworks.js 이관은 보호4파일 개선(C-3/#90)과 결합.</p>
+<p><strong>교훈.</strong> 로드맵 문구도 실측 앞에선 정정 대상 — "space.ts 재사용"을 맹종했으면 무관한 스키마를 억지 결합할 뻔했다. 인라인 추출은 SRP뿐 아니라 CSP 핀 소멸(공격면·유지보수 이중 감소)을 덤으로 준다.</p>
 </article>
 
 </div>
