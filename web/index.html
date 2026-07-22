@@ -30,8 +30,11 @@
   </style>
   <!-- 콘텐츠 보안 정책 (보안 검토 §지금 반드시) — XSS가 뚫려도 외부 스크립트
        반입을 원천 차단. 인라인 importmap은 sha256 해시로만 허용('unsafe-inline' 금지).
-       connect-src: PeerJS 시그널링/TURN. img·media: https·data 허용(공유 작품). -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-i3xI/A/WTquSlQaPUPKKX+yS3fB3tVynZxQRlJy+8fA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'">
+       connect-src: PeerJS 시그널링(0.peerjs.com https+wss)만 — world.html과 동일 스코프.
+       STUN/TURN ICE는 WebRTC라 connect-src 통제 밖 → 불필요. galleries/*.json fetch·
+       워커는 'self'로 커버. 외부 공유 작품 이미지·영상은 img-src·media-src https:로 로드
+       (three TextureLoader의 <img>·VideoTexture의 <video> — connect-src와 무관, 유지). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-i3xI/A/WTquSlQaPUPKKX+yS3fB3tVynZxQRlJy+8fA='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'">
   <!-- 폰트 정책 단일 진실원본(SSOT) — @font-face·--app-font는 이 CSS 한 곳에만.
        main.js 실행 전 <head>에서 정적 로드돼야 캔버스 폰트(fonts.js)가 콜드 로드
        타이밍에 @font-face를 찾을 수 있다(런타임 주입 시 순서 레이스 발생). -->
