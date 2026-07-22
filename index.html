@@ -801,6 +801,28 @@
     .hero-caption { display: none; }
   }
 
+  /* ---------- P1-①: skip-link (본문 바로가기) — 평소 화면 밖, 키보드 포커스 시에만 노출 ---------- */
+  .skip-link {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    transform: translateY(-120%);
+    background: var(--surface-dark-2);
+    color: var(--text-light);
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    border: 1px solid var(--violet-500);
+    border-radius: 0 0 var(--r-card) 0;
+    transition: transform 0.2s ease;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+
   /* ---------- 마감: focus-visible 접근성 + reduced-motion (디자이너 감사 §4·§3) ---------- */
   a:focus-visible,
   button:focus-visible,
@@ -840,6 +862,8 @@
 </head>
 <body>
 
+  <a class="skip-link" href="#main">본문 바로가기</a>
+
   <!-- ============ HERO ============ -->
   <nav class="topnav" aria-label="주 메뉴">
     <a class="nav-logo" href="#top"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
@@ -874,6 +898,8 @@
       <a class="ns-enter" href="./app/">입장하기</a>
     </div>
   </nav>
+
+  <main id="main">
 
   <section class="hero" id="top">
     <canvas id="heroCanvas" aria-hidden="true"></canvas>
@@ -1035,6 +1061,8 @@
       </div>
     </div>
   </section>
+
+  </main>
 
   <!-- ============ FOOTER ============ -->
   <footer>

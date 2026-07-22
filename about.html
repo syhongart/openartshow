@@ -298,10 +298,39 @@
     --text-dim: #6b6459;
   }
   :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(87,51,255,0.4); }
+
+  /* ---------- P1-①: skip-link + focus-visible (기존 focus 스타일 0 — 최소 보강) ---------- */
+  .skip-link {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    transform: translateY(-120%);
+    background: var(--ink);
+    color: #fff;
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    border-bottom: 2px solid var(--accent-dark);
+    transition: transform 0.2s ease;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--accent-dark);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 </style>
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-Dd13zEDU.css">
 </head>
 <body>
+
+<a class="skip-link" href="#main">본문 바로가기</a>
 
 <div class="topbar">
   <a class="brand" href="./index.html"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
@@ -322,7 +351,7 @@
   </div>
 </header>
 
-<main class="essay-main">
+<main class="essay-main" id="main">
 
   <section class="essay-section" id="s1">
     <span class="section-num">01</span>
