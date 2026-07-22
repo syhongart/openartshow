@@ -8,6 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "check:refs": "node scripts/smoke/check-refs.mjs",
     "lint": "eslint .",
     "smoke": "node scripts/smoke/run.mjs",
     "smoke:vite": "node scripts/smoke/run.mjs vite"

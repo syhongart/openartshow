@@ -28,5 +28,9 @@ jobs:
         run: npm run lint
       - name: Typecheck (tsc --noEmit)
         run: npm run typecheck
+      # no-undef 스코프 — @ts-nocheck 모듈의 끊긴 cross-module 참조를 상시 검출
+      # (C-3(2) chibi 런타임 크래시가 정적 게이트 사각을 빠져나간 사건의 산물).
+      - name: Reference integrity (no-undef scope)
+        run: npm run check:refs
       - name: Unit tests (vitest)
         run: npm test

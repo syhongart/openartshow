@@ -28,6 +28,7 @@ import {
 import { ASSEMBLERS, countFiles } from './assemble.mjs';
 import { startServer } from './server.mjs';
 import { launchBrowser, collectPage } from './browser-checks.mjs';
+import { checkRefs } from './check-refs.mjs';
 
 // ── 모드 선택 ────────────────────────────────────────────────────────
 // `node run.mjs`      → baseline(web직조립, 현행 deploy.yml 복제)
@@ -41,6 +42,15 @@ const SERVE_BASE = IS_VITE ? BASE_PATH : null;                  // 서버 마운
 
 const results = []; // { id, label, status: 'PASS'|'FAIL'|'INFO', evidence }
 const record = (id, label, status, evidence) => results.push({ id, label, status, evidence });
+
+// ── 검사0: 참조 무결성 (no-undef 스코프 — 끊긴 cross-module 참조) ──────
+// @ts-nocheck 모듈이 tsc·eslint 정적 게이트의 사각이 되는 문제(C-3(2) chibi 런타임
+// 크래시 사건)를 상시 자동화로 막는다. 억제 지시어를 벗긴 사본에서 미해결 참조만 검출.
+function checkReferences() {
+  const r = checkRefs();
+  record('0', '참조 무결성(no-undef)', r.ok ? 'PASS' : 'FAIL', r.evidence);
+  return r.ok;
+}
 
 // ── 검사1: 생성기 3종 exit 0 ─────────────────────────────────────────
 function checkGenerators() {
@@ -234,6 +244,9 @@ function printReport() {
 async function main() {
   const modeLabel = IS_VITE ? 'vite 조립(교체 deploy) + 동등성' : 'web직조립(baseline, 현행 deploy)';
   console.log(`스모크 하네스 시작 — [${MODE}] ${modeLabel} + 헤드리스 6항 검증`);
+
+  // 0) 참조 무결성(no-undef 스코프 — 정적 사각 방어)
+  checkReferences();
 
   // 1) 생성기
   checkGenerators();
