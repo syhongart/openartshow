@@ -107,7 +107,7 @@ export const CHIBI_SPECIES = [
   { id: 'ghost', name: '귀신' },
 ];
 // 사람도 동물도 아닌 제3종족 — 동물 귀/코/꼬리·사람 헤어 분기에 진입하지 않는다.
-const NONHUMAN = new Set(['robot', 'ghost']);
+export const NONHUMAN = new Set(['robot', 'ghost']);
 // 성별 — 지오메트리 분기 아님. 진입 시 기본 프리셋 선택자(이후 자유 커스터마이즈).
 export const CHIBI_GENDERS = [
   { id: 'girl', name: '여아' },
@@ -229,7 +229,7 @@ export const CHIBI_PRESETS = [
 ];
 // 두상 변형 정의 — 스케일(x,y,z 배수) + 턱 테이퍼 + 턱 플랫(각진 턱)
 // 감독 지시: 뚱뚱하게 만들지 않는다 — 전 형태 은은한 변형만, 살찌는 확대 금지.
-const FACE_SHAPE_DEF = {
+export const FACE_SHAPE_DEF = {
   round: { sx: 1, sy: 1, sz: 1, taper: 0, flat: 0 },
   slim: { sx: 0.95, sy: 1.05, sz: 0.98, taper: 0.05, flat: 0 },
   square: { sx: 1.03, sy: 0.97, sz: 1.0, taper: 0, flat: 0.5 },
@@ -238,7 +238,7 @@ const FACE_SHAPE_DEF = {
 // 종족별 기본 두상 — "얼굴이 다 동그라미가 아니어도" (다양한 마스코트 두상 참고). 사용자가 고르는
 // FACE_SHAPE_DEF는 이 위에 미세 보정으로 얹힌다. human은 기존 하드코딩값(1/0.95/0.97)과
 // 동일 → 기존 사용자 시각 변화 0.
-const SPECIES_HEAD_BASE = {
+export const SPECIES_HEAD_BASE = {
   human: { sx: 1.0, sy: 0.95, sz: 0.97, taper: 0, flat: 0 },
   cat: { sx: 1.0, sy: 0.97, sz: 0.96, taper: 0.14, flat: 0 },
   dog: { sx: 1.02, sy: 0.94, sz: 1.05, taper: 0.08, flat: 0.12 },

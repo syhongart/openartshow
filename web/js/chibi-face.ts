@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { shade, shadeAlpha } from './chibi-color.js';
 import { vivid } from './chibi-materials.js';
+import { NONHUMAN } from './chibi-schema.js';
 
 // ---------------------------------------------------------------------------
 // 얼굴 캔버스 — 귀여움의 8할. 512² 투명 캔버스에 왕눈이/입/볼터치를 그려

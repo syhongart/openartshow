@@ -4,7 +4,7 @@
 //   chibi.js에서 분해(C-3 S6). schema/color/face/materials/anim import.
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
-import { normalizeChibi } from './chibi-schema.js';
+import { normalizeChibi, FACE_SHAPE_DEF, SPECIES_HEAD_BASE } from './chibi-schema.js';
 import { shade } from './chibi-color.js';
 import { drawFaceCanvas, drawFaceInto } from './chibi-face.js';
 import { toonRamp, vivid, toon, vividSkin, addOutline, lathePoints, shirtTexture, furStripeTexture, buildMuzzleGeo } from './chibi-materials.js';
