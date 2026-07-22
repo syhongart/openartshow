@@ -56,6 +56,7 @@ import {
   isShareModalOpen,
   flashShutter,
 } from './ui.js';
+import { easeInOutCubic, lerpAngle, resolveAutoTheme, djb2 } from './main-math.js';
 
 let renderer = null;
 let scene = null;
@@ -455,18 +456,6 @@ let tween = null; // { fromX, fromZ, fromRy, toX, toZ, toRy, duration, elapsed, 
 const TWEEN_MIN_DURATION = 0.8; // s
 const TWEEN_MAX_DURATION = 2.2; // s
 
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
-// 최단 각도 보간 (라디안). yaw가 -PI..PI 경계를 도는 방향으로 자연스럽게 회전한다.
-function lerpAngle(a, b, t) {
-  let diff = (b - a) % (Math.PI * 2);
-  if (diff > Math.PI) diff -= Math.PI * 2;
-  if (diff < -Math.PI) diff += Math.PI * 2;
-  return a + diff * t;
-}
-
 // 현재 카메라 pose → 목표 pose로 부드럽게 이동을 시작한다. 이동 중에는
 // player.disable()을 유지하고, 완료 시 onDone(목표 pose)을 호출한다.
 function startTween(toPose, onDone) {
@@ -767,16 +756,6 @@ function loadGalleryDirectory() {
 // 전역 키 입력 — E(라이트박스) / M(작품 목록) / T(투어) / ←→(투어 이전·다음) / ESC(투어 종료).
 // 채팅 입력창 포커스 중에는 ui.js의 입력 핸들러가 keydown을 stopPropagation하므로
 // 여기까지 도달하지 않는다.
-// 'auto' 테마 → 관람객의 현지 시각으로 실제 테마 결정 (입장 시점 1회 — 추가 부하 없음).
-// 06~16시 daylight / 16~19시 sunset / 그 외 night.
-function resolveAutoTheme(theme) {
-  if (theme !== 'auto') return theme;
-  const h = new Date().getHours();
-  if (h >= 6 && h < 16) return 'daylight';
-  if (h >= 16 && h < 19) return 'sunset';
-  return 'night';
-}
-
 // 현재 층 판정/안내 — 카메라 y가 어느 층 대역에 있는지 (계단 중간은 아래층 유지)
 let currentFloorId = null;
 function updateFloorIndicator() {
@@ -1097,13 +1076,6 @@ function tourToggleAuto() {
   tourAutoOn = !tourAutoOn;
   tourStayElapsed = 0;
   updateTourBar(placedArtworks[tourIndex]);
-}
-
-// 짧은 문자열 요약 (공유 링크 전시의 룸 키용 — 같은 링크 = 같은 방)
-function djb2(str) {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
-  return h.toString(36);
 }
 
 function handleEnter({ nickname, color, char }) {
