@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 9축 점검 P1. 보호4파일(main·player·artworks·config .js)이 tsc·no-undef·eslint 3중 정적">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-9259c9.html">
+<title>P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-ee94c2.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 9축 점검 P1. 보호4파일(main·player·artworks·config .js)이 tsc·no-undef·eslint 3중 정적">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-9259c9.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-9259c9.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-ee94c2.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-ee94c2.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">🛠️</span>P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명)</h1>
+<h1><span class="emo">🛠️</span>P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 9축 점검 P1. 보호4파일(main·player·artworks·config .js)이 tsc·no-undef·eslint 3중 정적 사각. 그중 <strong>로직 0·순수 상수뿐인 config.js(72줄)</strong>가 가장 안전한 진입점 — 게이트 파이프라인을 검증하며 보호파일에 첫발. 팀장 사전서명(risk-op-gate 5항) + 조건 3개 하 승인.</p>
-<p><strong>개선.</strong> config.js → <strong>config.ts</strong>(git rename). 팀장 조건대로 <strong>interface 명시 타입</strong>(<code>as const</code> 금지): <code>Room</code>·<code>Floor</code>·<code>Stair</code>·<code>SlabHole</code>·<code>ArtworkSlot</code>·<code>Spawn</code>·<code>Building</code> + <code>FloorId</code>('b1'|'f1'|'f2'|'roof') 유니온을 export — P1-④(main-* 컨트롤러 타입화)가 import할 참조 기반. FloorId를 Floor.id·slabHoles 키 (<code>Record&lt;FloorId,SlabHole[]&gt;</code>)·spawn.floor·artworkSlots[].floor에 일관 적용. <strong>런타임 값·export 이름 1바이트 무변경</strong>(타입 주석만, esbuild가 emit에서 제거). 소비자 <strong>9곳</strong>(player·main·multiplayer·world· artworks·scene-assembly·scene-building·ui-hud·main-viewfx)은 <code>from './config.js'</code> 그대로 — vite tsJsFallback이 .js→.ts 해소.</p>
-<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(팀장 조건 3개 <strong>전항 실증</strong>: 상수 바이트 동일·<code>as const</code> 미사용, <strong>tsJsFallback 9곳 해소 실증</strong>[config.js 부재에서 build 성공·번들에 config 리터럴 인라인 grep], interface· FloorId 일관 tsc 0), 독립 스모크(6/6 — <strong>dist 전체 <code>diff -r</code> = 0</strong>[base vs 브랜치 바이트 동일], app/index· world BUILDING 소비 콘솔0). 다른 보호3파일 미접촉, test 146.</p>
-<p><strong>교훈.</strong> 보호4파일 전환의 안전 증명은 소스 diff가 아니라 <strong>빌드 산출물 바이트 동일(<code>diff -r dist</code>)</strong>이다 — 타입만 얹었으면 dist가 1바이트도 안 변해야 하고, 그게 상수 오타이핑까지 기계적으로 배제한다. 그리고 <code>.js</code>→<code>.ts</code> 전환에서 <strong>소비자 무수정의 근거는 "설정에 있다"가 아니라 config.js를 지운 상태에서 실제 빌드가 성공하고 번들에 값이 박히는 것</strong>까지 실증해야 한다(보호 런타임 파일이 그 해소에 걸려 있으므로). 가장 작은 보호파일로 이 파이프라인을 검증했으니, 더 큰 보호파일(#90)로 갈 발판이 섰다.</p>
+<p><strong>원인.</strong> 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck. 팀장 조건부 서명으로 <strong>2분할</strong>(PR-1 leaf군 5개 → PR-2 게임루프 결합 대형군 8개) — 1PR 수천 줄 diff가 교차리뷰를 형식화시켜 보호파일 준용 취지를 무너뜨리는 것 방지. PR-1이 검증 절차의 템플릿.</p>
+<p><strong>개선.</strong> leaf군 5개(<code>main-math</code>·<code>main-spec</code>·<code>main-gpu</code>·<code>main-photo-util</code>·<code>main-events</code>) @ts-nocheck <strong>전량 소거</strong> + strict 타입. 순수 함수라 구조적 타입만으로 무결하게 닫힘(진짜 결함 0·@ts-expect-error 0). <code>main-events</code>는 config/three 구상 타입에 의존하지 않는 <strong><code>EventsCtx</code> 최소 인터페이스</strong>(실제 호출 멤버만)로 저결합 — PR-2 ctx 주입 모듈의 템플릿. <strong>런타임 로직 1바이트 무변경</strong>(타입 주석·interface만).</p>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(<strong>팀장 조건4 "런타임 토큰 무변경: 확인" 별도 명시</strong> — diff가 @ts-nocheck 제거·타입 주석·interface뿐, 실행 토큰 0변경·<code>as</code> 캐스팅 0·결함 우회 0, EventsCtx 18멤버가 main.js eventsCtx 리터럴과 정확 일치), 독립 스모크(9/9 — <strong>dist <code>diff -r</code> = 0</strong>[청크 해시까지 base와 동일], app/index·world 콘솔0). 대형군 8개·보호 .js 미접촉, test 146.</p>
+<p><strong>교훈.</strong> @ts-nocheck 소거의 무변경 증명은 config.ts와 같은 <strong>dist diff 0</strong>이 최종 심판이다(청크 해시까지 동일 = esbuild가 타입을 전량 스트립). 그리고 ctx 주입 계약은 config interface를 <code>import type</code>으로 끌어오기 보다 <strong>실제 호출 멤버만 담은 로컬 최소 인터페이스</strong>가 결합도가 낮다(main-events의 EventsCtx). 대형군(PR-2)은 구상 타입 의존·재대입 let·null 위험이 있어 이 절차가 그대로 안 통할 수 있으니, 로직 수정 대신 @ts-expect-error/nocheck 잔존을 택해 무변경을 절대 우선한다.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-0e2445.html"><span class="lbl">← 이전 기록</span>P1-② 보안 — CSP connect-src 축소 + valuation.yml 액션 SHA핀</a><a href="./2026-07-22-ee94c2.html" style="text-align:right"><span class="lbl">다음 기록 →</span>P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)</a></div>
+<div class="pn"><a href="./2026-07-22-9259c9.html"><span class="lbl">← 이전 기록</span>P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
