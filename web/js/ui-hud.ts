@@ -1,4 +1,8 @@
-// web/js/ui.js
+// @ts-nocheck — 개명 전 원본(ui.js)은 tsconfig checkJs:false 로 타입 미검사였다.
+//   .ts 개명으로 strict 대상이 되나, 대형 HUD 셸의 strict 정리는 C-1(ui.js 분해)
+//   범위 밖 후속 과제다. 순수 개명 시점엔 파일 단위로 타입체크를 보류한다
+//   (tsconfig 주석의 "파일 단위 점진"과 정합). 로직·값 1바이트 무변경.
+// web/js/ui-hud.ts (C-1 단계4에서 ui.js → ui-hud.ts 로 개명. 셸 + HUD 빌더 + Public API)
 // OpenArtShow Museum — UI 모듈 (DOM/CSS 전부 JS에서 동적 생성)
 // MoMA 미니멀 미학: Helvetica, 화이트/블랙, 골드(#5f9e7d) 포인트
 
