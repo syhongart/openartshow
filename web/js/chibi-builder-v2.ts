@@ -260,8 +260,8 @@ export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
     faceTexture.colorSpace = THREE.SRGBColorSpace;
     faceTexture.anisotropy = 4;
 
-    // 바디에 적용
-    material.uniforms.map.value = faceTexture;
+    // MeshPhongMaterial에 직접 적용
+    material.map = faceTexture;
 
     // 5. 모듈 부착 (헤어, 의상) — TODO: 비동기 로드
     // attachModules(bodyMesh, params);
@@ -284,30 +284,19 @@ export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
     };
 
     const setColor = (part: string, hex: number) => {
-      const color = vivid(new THREE.Color(hex));
-      switch (part) {
-        case 'skin':
-          material.uniforms.skinColor.value.setHex(hex);
-          break;
-        case 'hair':
-          material.uniforms.hairColor.value.setHex(hex);
-          break;
-        case 'cloth':
-          material.uniforms.clothColor.value.setHex(hex);
-          break;
-        case 'accessory':
-          material.uniforms.accessoryColor.value.setHex(hex);
-          break;
+      // MeshPhongMaterial의 color 프로퍼티 직접 수정
+      if (part === 'skin' || part === 'cloth' || part === 'hair') {
+        material.color.setHex(hex);
+        material.needsUpdate = true;
       }
-      material.uniforms[part + 'Color'].needsUpdate = true;
     };
 
     const refreshFace = (expr?: any, wound?: number) => {
       const newCanvas = drawFaceCanvas(params, expr, wound);
       const newTexture = new THREE.CanvasTexture(newCanvas);
       newTexture.colorSpace = THREE.SRGBColorSpace;
-      material.uniforms.map.value = newTexture;
-      material.uniforms.map.needsUpdate = true;
+      material.map = newTexture;
+      material.needsUpdate = true;
     };
 
     const dispose = () => {
