@@ -1422,7 +1422,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // ── 포인터락 + 이벤트(데스크톱) ──
   let locked = false;
-  function onMouseMove(e) { if (locked) lookDelta((e.movementX || 0) * 0.0025, (e.movementY || 0) * 0.0025); }
+  const MOUSE_SENS = 0.0015; // 마우스룩 감도(구 0.0025 — 고DPI 마우스 과민 완화). 재조정은 이 한 곳.
+  const clampMove = (v) => Math.max(-100, Math.min(100, v || 0)); // 포인터락 movement 스파이크 컷(Chrome 폭주 시 시야 홱 돎 방어)
+  function onMouseMove(e) { if (locked) lookDelta(clampMove(e.movementX) * MOUSE_SENS, clampMove(e.movementY) * MOUSE_SENS); }
   function onLockChange() { locked = (typeof document !== 'undefined') && document.pointerLockElement === canvas; emit('lock', { locked }); }
   function onCanvasClick() { if (canvas.requestPointerLock) canvas.requestPointerLock(); }
   function onKeyDown(e) {
