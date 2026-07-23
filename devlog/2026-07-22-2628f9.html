@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
+<title>C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-2628f9.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-4.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-2628f9.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-2628f9.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,17 +87,16 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
-<div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
-<p><strong>원인.</strong> space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질 팩토리·조립기·라이트맵이 한 파일에 혼재. CLAUDE.md의 OCP 3지점(<code>partGeo</code>/<code>partAccent</code>/<code>MATS</code>)이 자연 분해 경계.</p>
-<p><strong>개선(고도 기준 3분해 + 배럴, S1~S4).</strong></p>
-<ul><li><strong><code>space-parts.ts</code>(1,117, leaf)</strong>: 지오/재질 팩토리 — 텍스처 캐시·<code>MATS</code>·<code>partMat</code>·지오헬퍼·액자· <strong><code>partGeo</code>/<code>partAccent</code>(OCP 3지점 전부)</strong>. three·space·scene만 의존(assembler/lightmap 미참조).</li><li><strong><code>space-lightmap.ts</code>(87, leaf)</strong>: 라이트맵 베이크(<code>bakeShellLightmaps(Async)</code>·<code>detectSoftGPU</code>). three만 의존.</li><li><strong><code>space-assembler.ts</code>(323)</strong>: 조립·조명 — <code>buildSpaceGroup</code>·<code>addRoomLighting</code>·<code>disposeSpaceGroup</code>· 틴트헬퍼. space-parts를 단방향 import.</li><li><strong><code>space-render.ts</code>(8, 배럴)</strong>: <strong>명시 named re-export</strong>(export * 금지 — 이름 충돌 조용한 drop 위험 회피) 14심볼. 소비자 5곳(builder·visit·world·builder-walk·builder.html) <code>./space-render.js</code> import 유지 → tsJsFallback이 배럴로 해소 → <strong>소비자 무수정</strong>.</li></ul>
-<p><strong>결과.</strong> 게이트 통과(독립 스모크 world/index/studio 콘솔0·CSP0·씬부팅 + 검수관 조건부승인, 블로커0). 검수관 byte 무결성 실증: origin 원본 vs 3모듈 <strong>라인 멀티셋 대조 누락0·SequenceMatcher 순수 재배치</strong>, <strong>shared 텍스처 skip·addRoomLighting 스포트값(0xffe3ba,23,11,0.72…)·userData 스키마 1바이트 불변</strong>. 순환0(parts leaf), <strong>world.js(스포트 미러 상수 보유) 무수정</strong>, 보호4파일 무변경. test 116/116. 롤백성: S1~S3은 space-render.js 0-diff 병존, S4만 삭제+배럴(단일 revert 원복).</p>
-<p><strong>남은 C-3.</strong> chibi.js(2,652)·scene.js(2,055) 분해 + <strong>main.js는 보호4파일이라 감사·분해설계 문서만</strong> (실착수는 팀장 사전서명 + 감독 확인 이중 게이트).</p>
-<p><strong>교훈.</strong> 렌더 조립기처럼 회귀 위험이 큰 초대형도 "고도(팩토리/조립/베이크) + OCP 경계"로 자르고 <strong>byte 무결성(라인 멀티셋 대조)</strong>을 게이트로 삼으면 픽셀비교 없이도 순수 이동을 증명할 수 있다. 배럴은 <code>export *</code>가 아니라 명시 재노출 — 병합 시 이름 충돌 조용한 유실을 원천 차단.</p>
+<div class="eyebrow">2026-07-22</div>
+<h1><span class="emo">📱</span>C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분. 감사 결과 <strong>코어 분해는 위험≫가치</strong>(export 0=소비자 없음, 공유 let ~40개, 미술관 전체다운 리스크). 감독 결정: 보류가 아니라 <strong>4단계 점진 로드맵</strong> — 1차 순수유틸 → 2차 이벤트핸들러 → 3차 기능컨트롤러 → 4차 "초기화·조립만 main.js 잔류"(Composition Root 이상형).</p>
+<p><strong>개선(1차, 순수 함수만).</strong> <code>main-math.ts</code>(easeInOutCubic·lerpAngle·djb2·resolveAutoTheme)· <code>main-spec.ts</code>(readSpec·writeSpec·품질 상수)·<code>main-gpu.ts</code>(probeGpu)·<code>main-photo-util.ts</code>(dataUrlToBlob· drawWatermark·drawLetterSpacedRight·getShareUrl) = 162줄 추출(1,418→1,256). <strong>순수 기준 엄격</strong>: DOM 미수정·모듈 let 미접근·scene/renderer/player 미참조·이벤트 미등록·입력→반환만. <strong>showGpuNotice(DOM 배너)·capturePhoto(렌더러 결합)·specFastTicks(공유 let)는 순수 아니라 잔류</strong>(2차 이후).</p>
+<p><strong>감독의 검증 용어 교정(중요).</strong> "byte 무결성"은 부정확한 표현(파일 분리하면 바이트는 당연히 달라짐) → <strong>"동작 동일성(입력·출력·사용자 동작) 회귀 검증"</strong>으로 정정. 실제 게이트 기준을 감독이 명시: ①동작 동일성 ②<strong>초기화 순서·이벤트 등록 횟수 불변</strong>(main.js 분해 최다 오류 지점) ③신규 콘솔 error· unhandledrejection 0 ④정상/네트워크제한/소프트웨어GPU 3환경 진입·렌더 ⑤추출 기능 결과 동일 ⑥재입장 리스너 중복 없음 ⑦성능 악화 없음. 하나라도 실패 시 롤백. 또 <strong>AI 역할명(팀장 서명 등)의 자기선언은 실질 없음</strong> — 실제 게이트는 "작업 전 범위승인(감독)→작업 후 검증→실패 시 롤백"으로 단순화.</p>
+<p><strong>결과.</strong> 게이트 통과 — 독립 스모크(소프트웨어GPU 헤드리스 렌더 콘솔0·unhandledrejection0, addEventListener 8→8·setAnimationLoop 2→2 불변, 이동 11함수 본문 동일) + 검수관 승인(순수성 전수·동작 동일성·잔류 정당· no-undef 0). player/artworks/config.js·index.html·CSP 무수정. test 116/116.</p>
+<p><strong>교훈.</strong> 모든 큰 파일을 쪼개는 게 SOLID가 아니다 — 진입점(Composition Root)은 조립 특성상 큰 게 자연스럽다. main.js는 "무조건 분해"가 아니라 <strong>감사로 위험/가치를 재고 → 순수 leaf부터 점진 → 최종 조립만 잔류"라는 정교한 경로를 택했다. 검증은 "소스 보존"이 아니라 </strong>동작 동일성 + 초기화 순서·이벤트 횟수 불변**이 본질(감독 교정).</p>
 </article>
-
+<div class="pn"><a href="./2026-07-22-eb7dcb.html"><span class="lbl">← 이전 기록</span>안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행)</a><a href="./2026-07-22-ad8695.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>

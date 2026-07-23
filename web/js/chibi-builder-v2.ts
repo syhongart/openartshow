@@ -19,7 +19,7 @@ import { ChibiAnimationV2 } from './chibi-animation-v2';
 type ChibiParams = any;
 
 const gltfLoader = new GLTFLoader();
-const MODEL_BASE_PATH = './assets/models';
+const MODEL_BASE_PATH = '/app/assets/models';
 
 /**
  * 프로토타입 저폴리 메시 생성 (GLB 없을 때)

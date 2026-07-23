@@ -302,7 +302,7 @@ function createGltfJson(mesh, skeleton) {
       { buffer: 0, byteOffset: posSize + normSize, byteLength: colorSize }
     ],
     buffers: [
-      { byteLength: totalSize }
+      { byteLength: totalSize, uri: 'body-base.bin' }
     ],
     skins: [
       {

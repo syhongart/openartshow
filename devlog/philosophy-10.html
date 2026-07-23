@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
+<title>★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기 — OpenArtShow 개발일지</title>
+<meta name="description" content="이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. 왜를 잊을 때 돌아오는 자리다.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-10.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-4.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기 — OpenArtShow 개발일지">
+<meta property="og:description" content="이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. 왜를 잊을 때 돌아오는 자리다.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-10.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기","datePublished":"2026-07-15","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-10.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
-<p><strong>원인.</strong> space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질 팩토리·조립기·라이트맵이 한 파일에 혼재. CLAUDE.md의 OCP 3지점(<code>partGeo</code>/<code>partAccent</code>/<code>MATS</code>)이 자연 분해 경계.</p>
-<p><strong>개선(고도 기준 3분해 + 배럴, S1~S4).</strong></p>
-<ul><li><strong><code>space-parts.ts</code>(1,117, leaf)</strong>: 지오/재질 팩토리 — 텍스처 캐시·<code>MATS</code>·<code>partMat</code>·지오헬퍼·액자· <strong><code>partGeo</code>/<code>partAccent</code>(OCP 3지점 전부)</strong>. three·space·scene만 의존(assembler/lightmap 미참조).</li><li><strong><code>space-lightmap.ts</code>(87, leaf)</strong>: 라이트맵 베이크(<code>bakeShellLightmaps(Async)</code>·<code>detectSoftGPU</code>). three만 의존.</li><li><strong><code>space-assembler.ts</code>(323)</strong>: 조립·조명 — <code>buildSpaceGroup</code>·<code>addRoomLighting</code>·<code>disposeSpaceGroup</code>· 틴트헬퍼. space-parts를 단방향 import.</li><li><strong><code>space-render.ts</code>(8, 배럴)</strong>: <strong>명시 named re-export</strong>(export * 금지 — 이름 충돌 조용한 drop 위험 회피) 14심볼. 소비자 5곳(builder·visit·world·builder-walk·builder.html) <code>./space-render.js</code> import 유지 → tsJsFallback이 배럴로 해소 → <strong>소비자 무수정</strong>.</li></ul>
-<p><strong>결과.</strong> 게이트 통과(독립 스모크 world/index/studio 콘솔0·CSP0·씬부팅 + 검수관 조건부승인, 블로커0). 검수관 byte 무결성 실증: origin 원본 vs 3모듈 <strong>라인 멀티셋 대조 누락0·SequenceMatcher 순수 재배치</strong>, <strong>shared 텍스처 skip·addRoomLighting 스포트값(0xffe3ba,23,11,0.72…)·userData 스키마 1바이트 불변</strong>. 순환0(parts leaf), <strong>world.js(스포트 미러 상수 보유) 무수정</strong>, 보호4파일 무변경. test 116/116. 롤백성: S1~S3은 space-render.js 0-diff 병존, S4만 삭제+배럴(단일 revert 원복).</p>
-<p><strong>남은 C-3.</strong> chibi.js(2,652)·scene.js(2,055) 분해 + <strong>main.js는 보호4파일이라 감사·분해설계 문서만</strong> (실착수는 팀장 사전서명 + 감독 확인 이중 게이트).</p>
-<p><strong>교훈.</strong> 렌더 조립기처럼 회귀 위험이 큰 초대형도 "고도(팩토리/조립/베이크) + OCP 경계"로 자르고 <strong>byte 무결성(라인 멀티셋 대조)</strong>을 게이트로 삼으면 픽셀비교 없이도 순수 이동을 증명할 수 있다. 배럴은 <code>export *</code>가 아니라 명시 재노출 — 병합 시 이름 충돌 조용한 유실을 원천 차단.</p>
+<h1><span class="emo">🛠️</span>★ 우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-15</p>
+<blockquote>이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. <strong>왜</strong>를 잊을 때 돌아오는 자리다.<br>전문(全文)은 [<code>docs/FOUNDING.md</code>](./FOUNDING.md) — 팀 온보딩 필독.</blockquote>
+<p>감독은 <strong>국제 무대에서 전시해온 작가</strong>이자 <strong>3D 렌더링·머티리얼 파이프라인을 다루는 엔지니어</strong>다. 작가의 아픔을 몸으로 겪었고, 그 아픔을 걷어낼 기술도 안다 — 이 드문 조합이 이 플랫폼의 방향과 완성도 기준의 출처다.</p>
+<p><strong>각성의 순간.</strong> 코로나기, 감독이 가상 공간에 연 개인전에 낯선 아바타가 걸어와 말을 걸었다 — "나, 네 작품 실제로 봤어. 뉴욕에서." 가상이 실제를 대체한 게 아니라 실제의 관계를 공간을 건너 이어붙인 순간. 다른 작가의 오프닝엔 수십 명이 모여 작품이 거의 다 팔렸다 — 팬데믹 한복판에.</p>
+<p><strong>우리가 푸는 문제.</strong> 대관료·액자·오프닝·운송·창고비·부스비 — 작가가 전시 한 번에 짊어지는 이 부담을 기술로 걷어낸다. "파라미터가 곧 공간"(저장 0·정적 호스팅·기기별 굽기)은 곧 *작가에게 돈 받지 않고 전시를 열어주는* 공학적 토대다. 그리고 목적은 판매가 아니라 작품이 일으키는 <strong>울림</strong>이다.</p>
+<p><strong>왜 비주얼·쾌적함에 집착하나.</strong> 작품은 홀로일 때보다 공간 속에서 더 크게 말한다 — 공간이 작품의 이야기를 함께 해줘야 울림이 커진다. 3D·조명 베이킹·대기 원근·글래스 HUD는 '기능'이 아니라 작품이 제 목소리로 말하게 하는 <strong>무대장치</strong>다. 사람들은 신기함엔 몰려왔다 금방 질려 떠난다 → 첫 90초에 <strong>생기(生氣)</strong>를 증명해야 한다. <strong>그래서 발코딩으로는 끝낼 수 없다. 기준은 "출시하고 싶어지는 완성도".</strong></p>
+<p><strong>AI 시대의 답.</strong> AI 에이전트가 공간에 살며 감상·비평·큐레이션·창작을 하면 공간이 죽지 않는다. <strong>비즈니스.</strong> 웬만하면 무료로 쾌적하게 + 지속가능성(영속성)을 위한 과금 — 두 축. <strong>비전.</strong> 뒤처지지 않고 메타버스 붐을 다시 일으키는, 더 큰 무대로 갈 수 있는 플랫폼.</p>
+<blockquote>흔들릴 때의 한 문장: <strong>작품이 공간에서 말하게 하라.</strong></blockquote>
 </article>
 
 </div>

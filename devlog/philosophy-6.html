@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결) — OpenArtShow 개발일지</title>
-<meta name="description" content="security-officer 종합 감사 결과 블로커·치명 0. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.">
+<title>★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C") — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = ui.js 단일 파일에 HUD·아바타 편집기·">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-6.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결) — OpenArtShow 개발일지">
-<meta property="og:description" content="security-officer 종합 감사 결과 블로커·치명 0. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.">
+<meta property="og:title" content="★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C") — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = ui.js 단일 파일에 HUD·아바타 편집기·">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-6.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결)","datePublished":"2026-07-18","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-6.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 \"게이트 정비→C\")","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-6.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,11 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-18</p>
-<p>security-officer 종합 감사 결과 <strong>블로커·치명 0</strong>. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.</p>
-<ul><li><strong>A-1 landing 프로필명 XSS 이스케이프</strong> (30cf0db): <code>renderNav</code>가 <code>p.name</code>·<code>p.initial</code>을 <code>innerHTML</code>에 직접 삽입 → 같은 파일 갤러리 카드처럼 <code>escapeHtml()</code> 적용. 실 OAuth 연동·<code>lu-auth-profile-v1</code> localStorage 조작 시의 <strong>잠복(저장형) XSS</strong> 차단(순수 출력 이스케이프, 회귀 없음).</li><li><strong>A-2 deploy.yml 서드파티 액션 SHA 핀</strong> (8001ade): <code>actions/checkout</code>·<code>actions/setup-node</code>·<code>peaceiris/actions-gh-pages</code>의 태그핀(@v4)을 <strong>커밋 SHA 핀</strong>으로 교체(태그 탈취·강제이동에 의한 배포 파이프라인 오염 차단). 배포 성공으로 무결성 실증.</li><li><strong>B-3 CSP 메타 5페이지</strong> (9f3c19a): CSP 없던 landing·studio·guide·about·design에 CSP 추가(<code>default-src 'self'</code>, 인라인 script는 sha256 핀, <code>object-src 'none'</code>·<code>base-uri 'none'</code>). 검수관이 studio의 <code>img-src https:</code> 누락(작가 외부이미지 미리보기 회귀) blocker를 발견·수정.</li></ul>
-<p><strong>감독 결정 대기(B-1·B-2)</strong>: artworks.js 데모 갤러리의 picsum 외부이미지(B-1, 보호파일), safeMediaUrl의 외부 URL 허용 + index.html CSP <code>https:</code> 완화(B-2, 위험수용§8-5) — "외부호스트0" 규율·외부 이미지 정책 변경이라 감독 판정 사안.</p>
+<h1><span class="emo">📱</span>★ C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C")</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
+<p><strong>원인.</strong> 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = <code>ui.js</code> 단일 파일에 HUD·아바타 편집기· CSS·저수준 헬퍼가 혼재(실측 3,977줄). 감독(아키텍트 관점) "SOLID가 유지보수의 전제". #94 게이트 정비(회귀 안전망 clean)를 선행한 뒤 착수.</p>
+<p><strong>개선(4단계, 각 독립 커밋·게이트·배포).</strong> ui.js를 <strong>5파일로 분해</strong>하되 <strong>소비자 main.js(보호파일)는 한 번도 안 건드림</strong>(배럴로 export 표면 보존):</p>
+<ul><li><strong>단계1 <code>ui-dom.ts</code></strong>(1,701줄): <code>el</code>·<code>injectStyles</code>(CSS-in-JS 1,675줄)·<code>GOLD</code> 순수 이동. 검수관이 CSS 1,670줄 diff 바이트 동일 실증.</li><li><strong>단계2 <code>ui-chibi-store.ts</code></strong>(108줄): chibi 퍼시스턴스(키생성·read/save·closet). <strong>localStorage 키 불변</strong>(사용자 저장 유실 방지). ESM live-binding 제약으로 <code>sessionChibi</code> 재할당을 setter로 교체.</li><li><strong>단계3 <code>ui-avatar-editor.ts</code></strong>(687줄, <strong>최고위험</strong>): 편집기 클러스터를 <code>createChibiMaker(ctx)</code> 팩토리화. 양방향 결합(setStatus·callbacks·chibiOpen)을 <strong>ctx 주입 + uiState 객체 승격</strong>으로 풀어 순환 차단(편집기가 HUD를 import 안 함). 저장/RAF/ESC·c키 배선 보존. three-ambient.d.ts(<code>declare module 'three'</code>) 신설(빌드타임 타입만·배포 미유출).</li><li><strong>단계4 배럴</strong>: <code>ui.js</code>→<code>ui-hud.ts</code> 개명(1,585줄) + <code>ui.ts</code> 배럴(<code>export * from './ui-hud.js'</code>). main.js의 <code>./ui.js</code> import를 <code>tsJsFallback</code> <strong>2단계 폴백</strong>(→ui.ts→ui-hud.ts)이 해소 → <strong>main.js 무수정</strong>으로 34 export 표면 보존. negative test로 배럴 필수성 확인.</li></ul>
+<p><strong>결과.</strong> 4단계 전부 게이트 통과(독립 스모크 + 검수관 교차리뷰, 각 배포 Actions success). 보호4파일 무변경(전 단계 diff 공백)·라이브(app/index 미술관) 콘솔0·CSP0·test 108/108·자기완결 유지. ui.js 3,977줄 단일 파일이 <strong>HUD 셸(1,585)/편집기(687)/스토어(108)/DOM(1,701)/배럴(1)</strong> SRP 5파일로 분해.</p>
+<p><strong>게이트 규율 조정(팀장).</strong> leaf TS 전환과 달리 구조 분해는 번들러 모듈 재배치로 "dist 바이트 동일"이 불성립 → <strong>"의미 동등(라이브 스모크 콘솔0·CSP0) 1차 + dist 정규화 diff 리뷰 + 검수관 필수"</strong>로 게이트 완화. 매 단계 검수관 교차리뷰 필수로 안전 담보.</p>
+<p><strong>후속(비블로커).</strong> ①<code>ui-hud.ts</code> <code>@ts-nocheck</code> — 대형 HUD 셸 strict화는 "순수 개명" 제약상 별도 과제로 보류(로직 무변경 우선). 방치 시 미검사 지대 고착 위험 → strict 정리 티켓 필요. ②chibi.js· builder-walk.js의 <code>ui.js</code> 옛 주석 → <code>ui-hud.js</code> 갱신. ③<code>ui-avatar-editor</code> 유닛테스트 부재.</p>
+<p><strong>교훈.</strong> 3,977줄 초대형 파일도 <strong>배럴 + 소비자 무수정</strong>이면 보호파일을 안 건드리고 분해할 수 있다. 자연 경계(CSS/편집기/스토어)를 순수 이동으로 먼저 떼고, 마지막에 개명+배럴로 표면을 봉인하는 순서가 "라이브 안 깨는 대분해"의 핵심. 결합(양방향 참조)은 ctx 주입으로 끊어 순환을 원천 차단.</p>
 </article>
 
 </div>

@@ -399,7 +399,8 @@
   ],
   "buffers": [
     {
-      "byteLength": 60264
+      "byteLength": 60264,
+      "uri": "body-base.bin"
     }
   ],
   "skins": [

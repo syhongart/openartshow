@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
+<title>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-4.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="C단계 후속 — 분해 게이트 비블로커 권고 2건 정리 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 후속 — 분해 게이트 비블로커 권고 2건 정리","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-0cbffb.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,17 +87,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
-<div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
-<p><strong>원인.</strong> space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질 팩토리·조립기·라이트맵이 한 파일에 혼재. CLAUDE.md의 OCP 3지점(<code>partGeo</code>/<code>partAccent</code>/<code>MATS</code>)이 자연 분해 경계.</p>
-<p><strong>개선(고도 기준 3분해 + 배럴, S1~S4).</strong></p>
-<ul><li><strong><code>space-parts.ts</code>(1,117, leaf)</strong>: 지오/재질 팩토리 — 텍스처 캐시·<code>MATS</code>·<code>partMat</code>·지오헬퍼·액자· <strong><code>partGeo</code>/<code>partAccent</code>(OCP 3지점 전부)</strong>. three·space·scene만 의존(assembler/lightmap 미참조).</li><li><strong><code>space-lightmap.ts</code>(87, leaf)</strong>: 라이트맵 베이크(<code>bakeShellLightmaps(Async)</code>·<code>detectSoftGPU</code>). three만 의존.</li><li><strong><code>space-assembler.ts</code>(323)</strong>: 조립·조명 — <code>buildSpaceGroup</code>·<code>addRoomLighting</code>·<code>disposeSpaceGroup</code>· 틴트헬퍼. space-parts를 단방향 import.</li><li><strong><code>space-render.ts</code>(8, 배럴)</strong>: <strong>명시 named re-export</strong>(export * 금지 — 이름 충돌 조용한 drop 위험 회피) 14심볼. 소비자 5곳(builder·visit·world·builder-walk·builder.html) <code>./space-render.js</code> import 유지 → tsJsFallback이 배럴로 해소 → <strong>소비자 무수정</strong>.</li></ul>
-<p><strong>결과.</strong> 게이트 통과(독립 스모크 world/index/studio 콘솔0·CSP0·씬부팅 + 검수관 조건부승인, 블로커0). 검수관 byte 무결성 실증: origin 원본 vs 3모듈 <strong>라인 멀티셋 대조 누락0·SequenceMatcher 순수 재배치</strong>, <strong>shared 텍스처 skip·addRoomLighting 스포트값(0xffe3ba,23,11,0.72…)·userData 스키마 1바이트 불변</strong>. 순환0(parts leaf), <strong>world.js(스포트 미러 상수 보유) 무수정</strong>, 보호4파일 무변경. test 116/116. 롤백성: S1~S3은 space-render.js 0-diff 병존, S4만 삭제+배럴(단일 revert 원복).</p>
-<p><strong>남은 C-3.</strong> chibi.js(2,652)·scene.js(2,055) 분해 + <strong>main.js는 보호4파일이라 감사·분해설계 문서만</strong> (실착수는 팀장 사전서명 + 감독 확인 이중 게이트).</p>
-<p><strong>교훈.</strong> 렌더 조립기처럼 회귀 위험이 큰 초대형도 "고도(팩토리/조립/베이크) + OCP 경계"로 자르고 <strong>byte 무결성(라인 멀티셋 대조)</strong>을 게이트로 삼으면 픽셀비교 없이도 순수 이동을 증명할 수 있다. 배럴은 <code>export *</code>가 아니라 명시 재노출 — 병합 시 이름 충돌 조용한 유실을 원천 차단.</p>
+<div class="eyebrow">2026-07-22</div>
+<h1><span class="emo">🛠️</span>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는 분리 보류). 완주 후 정리.</p>
+<p><strong>개선.</strong> ① <strong>투어 tick 유닛테스트</strong>(<code>tests/main-tour.test.js</code>, 4케이스): 자동진행 판정식의 4분기 — 정상 누적→next, 트윈 진행 중 미누적, 라이트박스 열림 미누적, 대기 아님 미누적 — 을 mock ctx로 검증 (vitest 116→<strong>120</strong>). ② <strong>EnterFlow recordVisit 방어 가드</strong>: <code>stats.addVisit(id)</code>→<code>stats?.addVisit(id)</code>. 정상 경로(connect 성공→stats 생성 후에만 onVisitor 발생)에선 옵셔널 체이닝이 일반 호출과 1바이트 동치, connect 실패(혼자 관람·stats=null)에서 콜백이 이론상 도달해도 무해 no-op(방어 심층). stats 소유가 4차 C군에서 EnterFlow로 이전됐으므로 가드 위치도 recordVisit이 정확.</p>
+<p><strong>결과.</strong> 스모크 6/6 + vitest 120 통과, 입장·투어 정상 회귀 없음. 라이브 코드 변경은 recordVisit 1줄뿐, main.js·게임루프·기타 무수정.</p>
+<p><strong>교훈.</strong> 방어 가드는 "정상 경로 1바이트 동치 + 비정상 경로만 무해화"가 성립할 때만 동작 동일성을 지키며 심층 방어가 된다. 단 null을 조용히 삼키는 트레이드오프(실버그 진단 지연 가능)를 주석에 명시해 뒀다.</p>
 </article>
-
+<div class="pn"><a href="./2026-07-22-3a820c.html"><span class="lbl">← 이전 기록</span>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리</a><a href="./2026-07-22-66b12e.html" style="text-align:right"><span class="lbl">다음 기록 →</span>안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>

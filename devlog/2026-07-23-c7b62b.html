@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
+<title>모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. rfps 계측으로 45캡이 실제 걸림을 확인(가벼운 구간 화면 fps 60 / rfps 30~40)했으나, 감독">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-4.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. rfps 계측으로 45캡이 실제 걸림을 확인(가벼운 구간 화면 fps 60 / rfps 30~40)했으나, 감독">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,17 +87,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
-<div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
-<p><strong>원인.</strong> space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질 팩토리·조립기·라이트맵이 한 파일에 혼재. CLAUDE.md의 OCP 3지점(<code>partGeo</code>/<code>partAccent</code>/<code>MATS</code>)이 자연 분해 경계.</p>
-<p><strong>개선(고도 기준 3분해 + 배럴, S1~S4).</strong></p>
-<ul><li><strong><code>space-parts.ts</code>(1,117, leaf)</strong>: 지오/재질 팩토리 — 텍스처 캐시·<code>MATS</code>·<code>partMat</code>·지오헬퍼·액자· <strong><code>partGeo</code>/<code>partAccent</code>(OCP 3지점 전부)</strong>. three·space·scene만 의존(assembler/lightmap 미참조).</li><li><strong><code>space-lightmap.ts</code>(87, leaf)</strong>: 라이트맵 베이크(<code>bakeShellLightmaps(Async)</code>·<code>detectSoftGPU</code>). three만 의존.</li><li><strong><code>space-assembler.ts</code>(323)</strong>: 조립·조명 — <code>buildSpaceGroup</code>·<code>addRoomLighting</code>·<code>disposeSpaceGroup</code>· 틴트헬퍼. space-parts를 단방향 import.</li><li><strong><code>space-render.ts</code>(8, 배럴)</strong>: <strong>명시 named re-export</strong>(export * 금지 — 이름 충돌 조용한 drop 위험 회피) 14심볼. 소비자 5곳(builder·visit·world·builder-walk·builder.html) <code>./space-render.js</code> import 유지 → tsJsFallback이 배럴로 해소 → <strong>소비자 무수정</strong>.</li></ul>
-<p><strong>결과.</strong> 게이트 통과(독립 스모크 world/index/studio 콘솔0·CSP0·씬부팅 + 검수관 조건부승인, 블로커0). 검수관 byte 무결성 실증: origin 원본 vs 3모듈 <strong>라인 멀티셋 대조 누락0·SequenceMatcher 순수 재배치</strong>, <strong>shared 텍스처 skip·addRoomLighting 스포트값(0xffe3ba,23,11,0.72…)·userData 스키마 1바이트 불변</strong>. 순환0(parts leaf), <strong>world.js(스포트 미러 상수 보유) 무수정</strong>, 보호4파일 무변경. test 116/116. 롤백성: S1~S3은 space-render.js 0-diff 병존, S4만 삭제+배럴(단일 revert 원복).</p>
-<p><strong>남은 C-3.</strong> chibi.js(2,652)·scene.js(2,055) 분해 + <strong>main.js는 보호4파일이라 감사·분해설계 문서만</strong> (실착수는 팀장 사전서명 + 감독 확인 이중 게이트).</p>
-<p><strong>교훈.</strong> 렌더 조립기처럼 회귀 위험이 큰 초대형도 "고도(팩토리/조립/베이크) + OCP 경계"로 자르고 <strong>byte 무결성(라인 멀티셋 대조)</strong>을 게이트로 삼으면 픽셀비교 없이도 순수 이동을 증명할 수 있다. 배럴은 <code>export *</code>가 아니라 명시 재노출 — 병합 시 이름 충돌 조용한 유실을 원천 차단.</p>
+<div class="eyebrow">2026-07-23</div>
+<h1><span class="emo">⚡</span>모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> rfps 계측으로 45캡이 실제 걸림을 확인(가벼운 구간 화면 fps 60 / rfps 30~40)했으나, 감독 실기기 로그에서 후반 열 스로틀(47초+ fps·rfps 둘 다 10~15 붕괴)이 여전했다. 감독이 캡을 30으로 더 낮춰 발열을 추가 억제하라 지시(A안, 성능55:그래픽45, 그림자는 유지).</p>
+<p><strong>개선.</strong> 캡을 낮추면 adaptQuality의 fpsNow(update 호출 빈도)가 캡값에 고정돼 적응 임계와 충돌한다 — 캡 30이면 (1)승급 임계 42에 못 닿아 px 하한 고정 (2)그림자 조기적응 ENTER 30 상시 발동으로 그림자 거의 상시 off(감독 "그림자 유지"와 충돌). 팀장 판정 (b)로 정합: <strong>① 캡 45→30</strong>, <strong>② px 승급 임계만 캡 아래로</strong>(모바일 ADAPT_EXIT 42→27)로 화질 회복 경로 유지, <strong>③ 그림자를 캡과 분리</strong> — 모바일 그림자 조기적응 비활성(!coarsePointer 가드), 기본 on 유지·긴급강등(fps&lt;24)에서만 off·상한복귀에서 on, <strong>④ 승급 지속 강화</strong>(모바일 ADAPT_UP_HOLD 20→30틱=15초)로 좁아진 승급 갭(24~27) 진동 방어. 검수관이 잡은 진단 로그 캡 값 하드코딩('45fps' 잔존, 실기기 검증 오염 위험)은 <strong>캡 값을 단일 상수 MOBILE_CAP_FPS로 묶어</strong>(진단·FRAME_CAP_S·주석 공유) 재발 구조 자체를 제거했다.</p>
+<p><strong>결과.</strong> 독립 executor 스모크 6/6·vitest, 검수관 교차리뷰 승인(승급 열림·그림자 on 유지·데스크톱 무영향 실측, 캡값 SSOT화로 조건 근본 해소). 팀장 조건 실기기 확인 3항(가벼운 구간 px 승급·그림자 on·47초+ 열 완화)은 배포 후 감독 재측정 — (iii) 미충족 시 캡 36안 재브리프 에스컬레이션 경로 명시.</p>
+<p><strong>교훈.</strong> 프레임 캡 값은 적응 시스템(승급·그림자 임계)과 얽혀 있어, 값 하나를 바꾸면 여러 임계가 연쇄로 재설계돼야 한다 — 팀장 설계 판정으로 감독의 두 지시(캡 30 + 그림자 유지)를 양립시켰다. 그리고 같은 값(캡 fps)을 여러 곳에 하드코딩하면 한 곳만 바꿔 불일치가 남는다(검수관 포착) — 단일 상수(SSOT)로 묶으면 재발 구조가 사라진다. 이번 세션의 반복 실수(값 산재)를 구조로 종결했다.</p>
 </article>
-
+<div class="pn"><a href="./2026-07-23-fbcbdb.html"><span class="lbl">← 이전 기록</span>계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가)</a><a href="./2026-07-23-27331b.html" style="text-align:right"><span class="lbl">다음 기록 →</span>스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 감독이 C-2b(아바타 LOD) 배포 직후 실기기 로그를 다시 채집하며 "아야모 문제가 아닌 것">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-27ad7f.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 감독이 C-2b(아바타 LOD) 배포 직후 실기기 로그를 다시 채집하며 "아야모 문제가 아닌 것">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-27ad7f.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-27ad7f.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-23</div>
+<h1><span class="emo">🌗</span>오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 감독이 C-2b(아바타 LOD) 배포 직후 실기기 로그를 다시 채집하며 <strong>"아야모 문제가 아닌 것 같다"</strong>고 반박했다. 로그가 이를 정확히 뒷받침했다 — C-2b는 진입 tri를 80k→40k(절반)로 줄였으나 fps는 25→26-27로 사실상 제자리였다. <strong>삼각형을 절반 깎아도 fps가 안 오른다는 것은 병목이 vertex(지오메트리)가 아니라 fragment(픽셀 셰이딩)라는 결정적 신호다.</strong> 성능전문가 코드 감사가 이를 확증했다: 유일한 castShadow 광원(sun)이 화면 대부분(receiveShadow 148개 — 바닥·모래·다리·도로·강)에 PCFSoft 9~25탭 샘플링을 가해 픽셀당 비용이 지배적(<code>world.js:895-896</code> 기존 실측 "+70.9% 해상도 비례"). 게다가 그림자를 끄는 <code>setShadowLite(true)</code>가 해상도 강등과 한 임계(<code>ADAPT_ENTER_FPS=24</code>)에 묶여 있어, 25~27fps "낀 구간"에서는 발동하지 않고 그림자가 계속 켜진 채였다 — fill-rate 완화 장치가 정작 이 구간에서 잠들어 있었다.</p>
+<p><strong>개선.</strong> 두 갈래다. (1) <strong>C-2b 원복</strong> — 아바타 LOD는 옳은 기법이나 이 씬의 병목(그림자)을 겨냥하지 못해 fps 이득이 0이었다. 성능 이득 없이 world.js에 LOD swap 상태기계·<code>createLodAvatarInstance</code> 래퍼(103줄)를 남기는 것은 순손실이므로 6055dea를 그대로 되돌렸다(감사 결과 LOD swap 자체에 메모리 누수는 없었다 — 원복은 누수 제거가 아니라 효과 없는 복잡도 제거). (2) <strong>그림자 조기 적응</strong> — 그림자 강등을 해상도에서 떼어내 이른 임계(<code>SHADOW_LITE_ENTER=30</code>)에서 그림자만 먼저 끄고, 충분히 회복 (<code>SHADOW_LITE_EXIT=46</code>, 승급 48보다 먼저)되면 되살린다. 그림자는 이 씬에서 룩 손실이 작고(소품 발치 옅은 그림자뿐) fill-rate 절감은 최대라 해상도(선명도)보다 먼저 내주는 것이 체감 이득이 크다. 셰이더 재컴파일(USE_SHADOWMAP 캐시키) 진동은 지속틱(끄기 2틱/켜기 10초)·히스테리시스 갭16·쿨다운 공유로 3중 방어했다.</p>
+<p><strong>결과.</strong> 검수관이 <strong>해상도 긴급 강등 기아(starvation) 블로커를 포착</strong>했다 — 그림자 블록이 공유 쿨다운을 세팅한 직후 <code>if(adaptCooldown&gt;0) return</code>에 걸려, fps&lt;24로 떨어진 같은 tick의 긴급 해상도 강등이 스킵돼 사용자가 그림자만 꺼진 채 sub-24fps를 10초간 그대로 겪던 결함이었다. 해상도 긴급 강등을 그림자·쿨다운 게이트보다 앞으로 옮기고(쿨다운 무관, 처리 후 즉시 return) 해소했다 — 긴급 강등은 <code>cur&gt;RATIO_FLOOR</code>에서만 발동해 하한 도달로 자연 종료하므로 쿨다운 없이도 진동하지 않는다. 재스모크· 재리뷰로 승인했다(독립 executor 스모크 6/6, 검수관 세트 승인, tsc·vitest 146 통과). world.js는 비보호 파일이라 팀장 서명 불요.</p>
+<p><strong>교훈.</strong> <strong>tri→fps 디커플링은 프래그먼트 병목의 결정적 신호다</strong> — 삼각형을 줄여도 fps가 안 오르면 병목은 vertex가 아니라 픽셀 셰이딩(그림자·오버드로우·fill-rate)이다. 감독의 육안 직관("아야모 문제가 아니다")이 이를 정확히 짚었고, LOD는 옳은 기법이나 병목 진단이 선행돼야 함을 확인했다. 완화 장치를 "만들어 두는 것"과 "올바른 임계에서 실제로 발동하는 것"은 별개 — C-1 그림자 lite는 존재했으나 임계 설계상 문제 구간에서 잠들어 있었다. 정적 스모크가 못 잡는 제어흐름 결함(starvation)을 검수관 코드리뷰가 막았다. 남은 과제: 세션 후반(70초+) tri와 무관한 극심 저하는 코드 누수가 아님이 확인됐고(감사) <strong>열 스로틀이 유력</strong> — 실기기 계측(GPU 클럭·프레임타임 트레이스)으로만 최종 확증 가능하다.</p>
+</article>
+<div class="pn"><a href="./2026-07-23-d61e7e.html"><span class="lbl">← 이전 기록</span>오픈월드 원거리 아바타 LOD(C-2b) — NPC/워커 거리 임포스터 전환</a><a href="./2026-07-23-0cda96.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
+<title>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시) — OpenArtShow 개발일지</title>
+<meta name="description" content="두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-12.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-4.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-4.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시) — OpenArtShow 개발일지">
+<meta property="og:description" content="두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-12.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)","datePublished":"2026-07-19","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-12.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
-<p><strong>원인.</strong> space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질 팩토리·조립기·라이트맵이 한 파일에 혼재. CLAUDE.md의 OCP 3지점(<code>partGeo</code>/<code>partAccent</code>/<code>MATS</code>)이 자연 분해 경계.</p>
-<p><strong>개선(고도 기준 3분해 + 배럴, S1~S4).</strong></p>
-<ul><li><strong><code>space-parts.ts</code>(1,117, leaf)</strong>: 지오/재질 팩토리 — 텍스처 캐시·<code>MATS</code>·<code>partMat</code>·지오헬퍼·액자· <strong><code>partGeo</code>/<code>partAccent</code>(OCP 3지점 전부)</strong>. three·space·scene만 의존(assembler/lightmap 미참조).</li><li><strong><code>space-lightmap.ts</code>(87, leaf)</strong>: 라이트맵 베이크(<code>bakeShellLightmaps(Async)</code>·<code>detectSoftGPU</code>). three만 의존.</li><li><strong><code>space-assembler.ts</code>(323)</strong>: 조립·조명 — <code>buildSpaceGroup</code>·<code>addRoomLighting</code>·<code>disposeSpaceGroup</code>· 틴트헬퍼. space-parts를 단방향 import.</li><li><strong><code>space-render.ts</code>(8, 배럴)</strong>: <strong>명시 named re-export</strong>(export * 금지 — 이름 충돌 조용한 drop 위험 회피) 14심볼. 소비자 5곳(builder·visit·world·builder-walk·builder.html) <code>./space-render.js</code> import 유지 → tsJsFallback이 배럴로 해소 → <strong>소비자 무수정</strong>.</li></ul>
-<p><strong>결과.</strong> 게이트 통과(독립 스모크 world/index/studio 콘솔0·CSP0·씬부팅 + 검수관 조건부승인, 블로커0). 검수관 byte 무결성 실증: origin 원본 vs 3모듈 <strong>라인 멀티셋 대조 누락0·SequenceMatcher 순수 재배치</strong>, <strong>shared 텍스처 skip·addRoomLighting 스포트값(0xffe3ba,23,11,0.72…)·userData 스키마 1바이트 불변</strong>. 순환0(parts leaf), <strong>world.js(스포트 미러 상수 보유) 무수정</strong>, 보호4파일 무변경. test 116/116. 롤백성: S1~S3은 space-render.js 0-diff 병존, S4만 삭제+배럴(단일 revert 원복).</p>
-<p><strong>남은 C-3.</strong> chibi.js(2,652)·scene.js(2,055) 분해 + <strong>main.js는 보호4파일이라 감사·분해설계 문서만</strong> (실착수는 팀장 사전서명 + 감독 확인 이중 게이트).</p>
-<p><strong>교훈.</strong> 렌더 조립기처럼 회귀 위험이 큰 초대형도 "고도(팩토리/조립/베이크) + OCP 경계"로 자르고 <strong>byte 무결성(라인 멀티셋 대조)</strong>을 게이트로 삼으면 픽셀비교 없이도 순수 이동을 증명할 수 있다. 배럴은 <code>export *</code>가 아니라 명시 재노출 — 병합 시 이름 충돌 조용한 유실을 원천 차단.</p>
+<h1><span class="emo">📱</span>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-19</p>
+<p>두 건을 라이브 고정 미술관(<code>syhongart 개인전</code>)에 반영했다.</p>
+<h3>1) 작품 12점 외부 이미지 → 자작 절차적 로컬 아트 (bbc8290)</h3>
+<p><strong>원인.</strong> 작품 aw-01~12가 외부 스톡사진 <code>https://picsum.photos/...</code>를 쓰고 있어 "외부 호스트 0"(자기완결)·프라이버시(방문자 브라우저가 외부 도메인으로 직접 요청 → 관람객 접속정보 유출) 규율을 위반. 조사 결과 위반은 picsum 12개가 유일(HDRI·폰트·벤더· featured 2점은 이미 로컬)이었다. <strong>개선.</strong> 감독 결정으로 자작 절차적 추상 아트 12점을 캔버스로 생성(각 작품 제목·설명 무드 기반 팔레트 — 능선·강줄기·안개·항구·노을 등, DESIGN.md 팔레트 B 조화). 5단 파이프라인(그라디언트→다중 워시→구조 모티프→그레인→비네트)으로 "한 작가의 연작" 통일감. <code>web/assets/gallery/aw-01~12.jpg</code>(각 ≤180KB). <code>artworks.js</code>(폴백)·<code>syhongart.json</code>(1순위) 두 파일의 imageUrl을 로컬 상대경로로 동시 교체 — 보호파일 artworks.js는 값·PICSUM 정의 제거만, 로직 무변경. <strong>교훈.</strong> 공용 함수(비네트)의 방사 감쇠가 구조 약한 1점(aw-05)에서 "중앙 원"으로 노출돼 플레이스홀더처럼 읽혔다 → 공용 함수는 두고 그 호출부만 비대칭 선형으로 교체 + 전용 모티프 추가로 해결(팀장 육안 판정 → 리튠).</p>
+<h3>2) 소프트웨어 렌더링 GPU 경고(모달·배지) 제거 (74058bd·53933a6)</h3>
+<p><strong>원인.</strong> GPU 가속 꺼짐/원격데스크톱 등 소프트웨어 렌더링 감지 시 "그래픽카드 없이 그리고 있어요 — 몹시 느립니다" 큰 모달 + 좌하단 "소프트웨어 렌더링 모드" 배지가 작품 감상을 가렸다. <strong>개선.</strong> 감독 지시로 둘 다 비활성(<code>showGpuNotice(…,false)</code> 호출 + <code>#lu-potato-badge</code> 생성 블록 제거). <strong>유지</strong>: (a) WebGL 자체 불가 시 치명 안내(fatal=true) — 없애면 3D가 안 뜨는 빈 화면만 남음, (b) <code>gpuInfo.soft</code> 기반 저사양 자동 경량화(해상도 배율·그림자 off· 무톤매핑·fog 삭감·potato 모드) — 경고 표시만 껐고 성능 최적화는 그대로.</p>
+<p><strong>게이트(공통).</strong> 감독 승인(보호파일 팀장 서명) → executor 독립 스모크(picsum 외부요청 0· 12액자 로드·배너/배지 미표시·potato 유지·fatal 온전 실측) → 검수관 교차리뷰 승인(보호파일 로직 무변경·2파일 동기화·최적화 무손상) → 팀장 실물 육안(컨택트시트·미술관 액자) → 감독 실물 보고 → deploy Actions success.</p>
 </article>
 
 </div>

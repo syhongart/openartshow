@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319) — OpenArtShow 개발일지</title>
-<meta name="description" content="감독 방향전환: "걸어서 빌드"(아바타가 공간을 걸으며 배치)를 여러 차례 다듬다(벽 파묻힘·시야각·아바타 반투명·1인칭) 결국 접었다. 아바타를 시야에서 치우고 조망(orbit) 카메라 자유이동 + 마우스/터치 배치로 조작을 통일. 걸어서빌드 코드는 진입 버튼(#b…">
+<title>★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 &lt;script&gt;가 CSP">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-5.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319) — OpenArtShow 개발일지">
-<meta property="og:description" content="감독 방향전환: "걸어서 빌드"(아바타가 공간을 걸으며 배치)를 여러 차례 다듬다(벽 파묻힘·시야각·아바타 반투명·1인칭) 결국 접었다. 아바타를 시야에서 치우고 조망(orbit) 카메라 자유이동 + 마우스/터치 배치로 조작을 통일. 걸어서빌드 코드는 진입 버튼(#b…">
+<meta property="og:title" content="★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 &lt;script&gt;가 CSP">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-5.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319)","datePublished":"2026-07-18","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-5.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-5.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,13 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">🛠️</span>★ 빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-18</p>
-<p>감독 방향전환: "걸어서 빌드"(아바타가 공간을 걸으며 배치)를 여러 차례 다듬다(벽 파묻힘·시야각·아바타 반투명·1인칭) 결국 접었다. 아바타를 시야에서 치우고 <strong>조망(orbit) 카메라 자유이동 + 마우스/터치 배치</strong>로 조작을 통일. 걸어서빌드 코드는 진입 버튼(#bWalkToggle)만 숨겨 behind-flag로 보존(플래그 한 줄로 복원 가능).</p>
-<h3>통일된 조작</h3>
-<ul><li><strong>배치</strong>: 마우스(PC)/터치(폰) 클릭 (기존 pickPlacement→addPart 재사용)</li><li><strong>PC 시점</strong>: 방향키 카메라 팬 + 휠 거리줌 (기존)</li><li><strong>폰 시점</strong>: 조이스틱 카메라 팬(<code>orbitJoy</code> 신규 — 렌더루프 연속 팬) + 핀치 거리줌</li><li>줌은 PC·폰 모두 거리(rad) 줌으로 통일(FOV 줌 미도입).</li></ul>
-<h3>게이트</h3>
-<p>팀장 헤드리스 검증(walk 버튼 숨김·orbitJoy 팬·모바일 조이스틱 팔레트 비겹침) + executor 스모크 6/6 + release-reviewer 승인. 라이브 배포 완료.</p>
+<h1><span class="emo">🛠️</span>★ C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독)</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
+<p><strong>원인.</strong> studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 <code>&lt;script&gt;</code>가 CSP <code>script-src</code> sha256 핀을 요구. 감독 "C-2→C-3" 지시.</p>
+<p><strong>개선(S0 + S1~S4).</strong></p>
+<ul><li><strong>S0(인라인 외부화 + CSP 핀 제거)</strong>: 인라인 <code>&lt;script&gt;</code> IIFE(834줄)를 <code>studio-main.ts</code>로 통째 이동 + <code>&lt;script type=module src&gt;</code> 1줄 교체. 인라인 실행 script 0 → <strong>CSP <code>script-src 'self'</code> 수렴</strong> (핀 제거·cspReconcile 자동 재작성). = SRP + CSP 단순화 이중이득.</li><li><strong>S1~S4(재분해 + DI)</strong>: studio-main.ts(835줄 통째)를 <strong>5모듈로 분해</strong> — <code>studio-plan.ts</code>(45, 플랜·한도)·<code>studio-image.ts</code>(71, 내장·모달)·<code>studio-storage.ts</code>(166, 저장·<strong>갤러리 코덱 SSOT</strong>)· <code>studio-form.ts</code>(605, 렌더·이벤트)·<code>studio-main.ts</code>(64, 엔트리). <strong>StudioContext DI</strong>로 단일 <code>state</code> 참조 공유(복사0 — form 변이를 storage가 같은 참조로 직렬화).</li></ul>
+<p><strong>⚠️ 로드맵 정정(space.ts 부적합).</strong> 로드맵 C-2 문구는 "저장을 space.ts 계약 재사용"이라 했으나, 실측 결과 space.ts는 <strong>3D 빌더 "공간" 모델</strong>(shell/parts)이고 studio는 <strong>"갤러리 JSON"</strong>(id/name/ artworks)이라 무관 — space.ts import 안 함. <strong>진짜 DRY 대상은 갤러리 코덱</strong>(studio 인코더 ↔ artworks.js 디코더의 <code>#gz=</code>/<code>#gd=</code> wire format). artworks.js가 <strong>보호4파일</strong>이라 이번엔 studio-storage가 코덱 SSOT를 소유하되 <strong>바이트 호환 계약만 고정</strong>(단위테스트 파리티), 공유 코덱 이관은 보호해제 후 별건.</p>
+<p><strong>결과.</strong> S0 + S1~S4 게이트 전부 통과(독립 스모크 + 검수관, 각 배포). studio.html 1,697줄 인라인 혼재 → <strong>6파일(html+5 .ts)</strong> SRP 분해 + <code>script-src 'self'</code>. <code>STORAGE_KEY</code>·<code>PLAN_KEY</code>·코덱 wire format <strong>1바이트 불변</strong>(사용자 드래프트·공유링크 보호), <strong>보호4파일(artworks.js 포함) 무변경</strong>. 단위 테스트 108→<strong>116</strong>(+8: 코덱 라운드트립·loadDraft 정규화). 라이브 studio 콘솔0·CSP0.</p>
+<p><strong>후속(비블로커).</strong> studio 5모듈 전부 <code>@ts-nocheck</code>(순수 이동+DI 우선, strict화 별도) — C-1 ui-hud와 함께 strict 정리 트랙(#96 계열). 공유 코덱 artworks.js 이관은 보호4파일 개선(C-3/#90)과 결합.</p>
+<p><strong>교훈.</strong> 로드맵 문구도 실측 앞에선 정정 대상 — "space.ts 재사용"을 맹종했으면 무관한 스키마를 억지 결합할 뻔했다. 인라인 추출은 SRP뿐 아니라 CSP 핀 소멸(공격면·유지보수 이중 감소)을 덤으로 준다.</p>
 </article>
 
 </div>
