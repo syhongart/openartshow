@@ -266,6 +266,109 @@ function attachBlobShadow(group, radius) {
   return { mat, geo };
 }
 
+// ---------------------------------------------------------------------------
+// [C-2b 오픈월드 원거리 아바타 LOD] 거리 기반 2단계 LOD — world.js의 NpcCrowd(작품 중심
+// NPC)·streetWalkers(거리 배회) 전용 래퍼. 미술관·빌더·플레이어는 createAvatarInstance()를
+// 그대로 쓰고 이 함수를 호출하지 않으므로 코드경로·룩 무변화.
+//
+// 근거리(임계 미만): 풀 치비(createAvatarInstance) — 기존과 동일한 39~51메시.
+// 원거리(임계 초과): 저폴리 임포스터(createFallbackAvatar 재활용 — 캡슐+구 ~500-800tri).
+// 전환 순간 하드 스왑은 팝을 유발하므로 짧은 opacity 크로스페이드로 감춘다. 임계 경계에서의
+// 왕복 깜빡임은 진입/복귀 임계에 여유대역(히스테리시스)을 둬 방지한다.
+// ---------------------------------------------------------------------------
+// 룩 스윕 결론(헤드리스 swiftshader, 무거운 파셀 스폰(4,4) 기준 renderer.info 실측):
+// 20/25/30m 후보는 이 씬의 실제 원거리 분포(캐릭터 대부분 15~20m대에 몰림)에서 tri 절감이
+// -26.8%(61,878)에 그쳐 목표(-51%, hubs 50k 하회)에 미달. 반면 16m/10m은 -48.6%(43,462,
+// <50k 여유 13%)로 목표에 근접 — 채택. 치비는 이미 저폴리 스타일이라 16m 거리에서 실루엣
+// 단순화가 튀지 않음(질감·헤어 디테일이 애초에 그 거리에서 식별 안 됨) — 근거리(≤10m,
+// 실측 최근접 5.9m 개체)는 이 값들로는 항상 풀 디테일 유지.
+const LOD_FAR_ENTER = 16;  // 초과 지속 시 폴백 전환(m)
+const LOD_NEAR_ENTER = 10; // 미만 복귀 시 풀 치비 전환(m) — 갭 6m 히스테리시스(플레이어 3m/s 기준 왕복에 여유)
+const LOD_FADE_DUR = 0.35; // 크로스페이드 소요(초) — 짧게 눈에 띄지 않게
+
+// 그룹 전체 메시/스프라이트 재질의 opacity를 일괄 설정. 메시(치비 본체)는 alpha<1일 때만
+// transparent=true로 켜고 정착 시(alpha===1) false로 되돌려 평상시 렌더 경로를 원본과 동일하게
+// 유지한다(불필요한 블렌딩·정렬 비용 없음). 스프라이트(닉네임 라벨·hitfx)는 캔버스 알파(둥근
+// 모서리·반투명 배경) 전제로 항상 transparent:true여야 정상 렌더되므로 — 검수관 지적(블로커,
+// alpha=1 정착 시 transparent:false로 되돌리면 텍스처 알파가 무시돼 검은 사각 블록으로 렌더됨
+// — NpcCrowd 전원 결정론적 재현) — transparent는 건드리지 않고 opacity만 조절한다.
+function setGroupOpacity(root, alpha) {
+  root.traverse((obj) => {
+    if (!obj.isMesh && !obj.isSprite) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const m of mats) {
+      if (!m) continue;
+      if (obj.isSprite) { m.opacity = alpha; continue; } // transparent 불변(항상 true 전제)
+      m.transparent = alpha < 0.999;
+      m.opacity = alpha;
+    }
+  });
+}
+
+/**
+ * 오픈월드 NPC/워커 전용 — 거리 기반 2단계 LOD 아바타. world.js가 매프레임 카메라-아바타
+ * 거리(dist)를 update()로 전달하면 내부에서 풀 치비 ↔ 저폴리 폴백을 크로스페이드 전환한다.
+ * dist를 생략하면(하위호환) 항상 풀 디테일로 동작 — 이 함수를 다른 곳에서 호출해도 회귀 없음.
+ * @returns {{group: THREE.Group, update: Function, dispose: Function}}
+ */
+export function createLodAvatarInstance(charId, colorHex, nickname, opts) {
+  const full = createAvatarInstance(charId, colorHex, nickname, opts); // 기존 경로 그대로(라벨·블롭 그림자·hitfx 포함)
+  const fallback = createFallbackAvatar(colorHex, nickname); // 저폴리 임포스터(캡슐+구, ~500-800tri)
+  const group = new THREE.Group();
+  group.add(full.group, fallback.group);
+
+  let isNear = true;          // 현재(정착) LOD 상태 — 시작은 풀 디테일
+  let fadeT = 0;               // 0=정착, >0이면 전환 진행 중(남은 시간)
+  let fadeToNear = true;       // 진행 중인 전환의 목적지
+
+  function settle() {
+    full.group.visible = isNear;
+    fallback.group.visible = !isNear;
+    setGroupOpacity(full.group, 1);
+    setGroupOpacity(fallback.group, 1);
+    fadeT = 0;
+  }
+  settle(); // 초기 상태 확정(풀 디테일, opacity 1, transparent 미설정 — 원본과 동일)
+
+  function beginFade(toNear) {
+    if (toNear === isNear) return; // 이미 목표 상태거나 전환 중 동일 방향 재호출 — no-op
+    fadeToNear = toNear;
+    full.group.visible = true; fallback.group.visible = true; // 전환 중엔 둘 다 노출(크로스페이드)
+    fadeT = LOD_FADE_DUR;
+    isNear = toNear;
+  }
+
+  return {
+    group,
+    /**
+     * @param {number} delta
+     * @param {number} speed
+     * @param {number} [dist] - 카메라-아바타 수평거리(m). 생략 시 LOD 판정 스킵(항상 풀 디테일).
+     */
+    update(delta, speed, dist) {
+      if (typeof dist === 'number') {
+        if (isNear && dist > LOD_FAR_ENTER) beginFade(false);
+        else if (!isNear && dist < LOD_NEAR_ENTER) beginFade(true);
+      }
+      if (fadeT > 0) {
+        fadeT = Math.max(0, fadeT - (delta || 0));
+        const k = 1 - fadeT / LOD_FADE_DUR; // 0→1 진행률
+        const inAlpha = fadeToNear ? k : 1 - k;   // full의 목표 알파
+        setGroupOpacity(full.group, inAlpha);
+        setGroupOpacity(fallback.group, 1 - inAlpha);
+        if (fadeT === 0) settle();
+      }
+      full.update(delta, speed);
+      // 폴백은 애니메이션 없음(createFallbackAvatar.update는 no-op) — 호출은 대칭성 유지 목적.
+      fallback.update(delta, speed);
+    },
+    dispose() {
+      full.dispose();
+      fallback.dispose();
+    },
+  };
+}
+
 export function createAvatarInstance(charId, colorHex, nickname, opts) {
   const inst = createAvatarInstanceInner(charId, colorHex, nickname);
   // 발밑 그림자 — 치비는 작게, 휴머노이드는 표준. 그룹 원점(발바닥)에 부착되므로

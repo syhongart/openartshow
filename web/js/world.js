@@ -18,7 +18,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W, warmBuildingTexCache } from './space-render.js';
 import { PART_TYPES } from './space.js';
-import { createAvatarInstance } from './avatar.js';
+import { createLodAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
 // [나무 교체] 거리 가로수를 미술관과 동일한 디테일 트리로. scene.js(계열 A)에서 순수 export
 // 가산한 트리 빌더·머티리얼별 병합을 재사용(로직 복제 0). 공유 재질(sharedTreeMats)은 scene.js
@@ -792,7 +792,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     let walker = null;
     if (!shellOnly && def.walker && walkerTotal() < 6) {
       const wd = def.walker;
-      const inst = createAvatarInstance(wd.char, '#ffffff', ''); // 빈 닉네임 → 라벨 미생성
+      // [C-2b 오픈월드 원거리 LOD] 거리 배회 NPC는 카메라에서 멀어지는 경우가 잦아(거리 왕복)
+      // LOD 래퍼로 생성 — stepWalkers()가 매프레임 실측 거리를 update()에 전달.
+      const inst = createLodAvatarInstance(wd.char, '#ffffff', ''); // 빈 닉네임 → 라벨 미생성
       inst.group.position.set(ox + wd.x, 0, oz + wd.z);
       inst.group.userData.isWalker = true; // 검증·계수용 태그(스폰 시 walker 실측 등)
       scene.add(inst.group);
@@ -1101,8 +1103,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       for (const id in states) {
         const s = states[id];
         let a = L.avatars.get(id);
+        // [C-2b 오픈월드 원거리 LOD] 작품 중심 NPC(NpcCrowd)도 LOD 래퍼로 생성 — 카메라-NPC
+        // 거리(camDist)를 매프레임 update()에 실어 근거리(풀 치비)/원거리(임포스터) 전환.
+        const camDist = Math.hypot(pos.x - s.x, pos.z - s.z);
         if (!a) {
-          const inst = createAvatarInstance(s.char, s.color, s.nickname);
+          const inst = createLodAvatarInstance(s.char, s.color, s.nickname);
           inst.group.position.set(s.x, 0, s.z); inst.group.rotation.y = s.ry; // floorY=0 발바닥
           scene.add(inst.group); a = { inst }; L.avatars.set(id, a);
         } else {
@@ -1110,7 +1115,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
           const spd = Math.hypot(dxm, dzm) / Math.max(1e-3, d);
           a.inst.group.position.set(s.x, 0, s.z);
           a.inst.group.rotation.y = s.ry;
-          a.inst.update(d, spd);
+          a.inst.update(d, spd, camDist);
         }
       }
       let chat; while ((chat = L.crowd.takeChat())) emit('chat', chat);
@@ -1129,18 +1134,20 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   function stepWalkers(d) {
     for (const L of loaded.values()) {
       const w = L.walker; if (!w) continue;
+      // [C-2b 오픈월드 원거리 LOD] 카메라-워커 거리 — walk/pause 분기 모두에서 매프레임 갱신.
+      const camDist = Math.hypot(pos.x - w.x, pos.z - w.z);
       if (w.state === 'pause') {
         w.timer -= d; if (w.timer <= 0) { w.state = 'walk'; pickWalkerTarget(w); }
-        w.inst.update(d, 0); continue;
+        w.inst.update(d, 0, camDist); continue;
       }
       const dx = w.tx - w.x, dz = w.tz - w.z, dist = Math.hypot(dx, dz);
-      if (dist < 0.15) { w.state = 'pause'; w.timer = 1.4 + Math.random() * 2.6; w.inst.update(d, 0); continue; }
+      if (dist < 0.15) { w.state = 'pause'; w.timer = 1.4 + Math.random() * 2.6; w.inst.update(d, 0, camDist); continue; }
       const step = Math.min(dist, w.speed * d);
       w.x += (dx / dist) * step; w.z += (dz / dist) * step;
       w.ry = Math.atan2(-dx / dist, -dz / dist); // yaw=0 → -Z 관례
       w.inst.group.position.set(w.x, 0, w.z);
       w.inst.group.rotation.y = w.ry;
-      w.inst.update(d, w.speed);
+      w.inst.update(d, w.speed, camDist);
     }
   }
 
