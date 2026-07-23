@@ -1421,9 +1421,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // ── 포인터락 + 이벤트(데스크톱) ──
   let locked = false;
-  const MOUSE_SENS = 0.0015; // 마우스룩 감도(구 0.0025 — 고DPI 마우스 과민 완화). 재조정은 이 한 곳.
-  const clampMove = (v) => Math.max(-100, Math.min(100, v || 0)); // 포인터락 movement 스파이크 컷(Chrome 폭주 시 시야 홱 돎 방어)
-  function onMouseMove(e) { if (locked) lookDelta(clampMove(e.movementX) * MOUSE_SENS, clampMove(e.movementY) * MOUSE_SENS); }
+  const MOUSE_SENS = 0.0015; // 마우스룩 감도. 재조정은 이 한 곳.
+  const MAX_LOOK_STEP = 0.03; // 이벤트당 회전각 상한(rad ≈1.7°) — OS 마우스가속·포인터락 델타누적 스파이크가 시야를 홱 돌리는 것 방어. 궤적 계측상 짐벌락 아닌 입력 스파이크가 원인(구 ±100px 클램프는 0.15rad까지 허용해 못 걸렀음). 재조정은 이 한 곳.
+  const clampStep = (v) => Math.max(-MAX_LOOK_STEP, Math.min(MAX_LOOK_STEP, v));
+  function onMouseMove(e) { if (locked) lookDelta(clampStep((e.movementX || 0) * MOUSE_SENS), clampStep((e.movementY || 0) * MOUSE_SENS)); }
   function onLockChange() { locked = (typeof document !== 'undefined') && document.pointerLockElement === canvas; emit('lock', { locked }); }
   function onCanvasClick() { if (canvas.requestPointerLock) canvas.requestPointerLock(); }
   function onKeyDown(e) {
