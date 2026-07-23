@@ -90,8 +90,9 @@ const lodPreset = LOD_PRESETS[new URLSearchParams(location.search).get('lod')] |
 
 const canvas = document.getElementById('c');
 console.log('[world-boot] parcels count:', parcels.length, 'canvas:', canvas ? 'OK' : 'MISSING');
+let V;
 try {
-  const V = createWorld({ canvas, parcels, opts: {
+  V = createWorld({ canvas, parcels, opts: {
     cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true,
     mp: { nickname: nick, color: myColor, char: randomChibiChar() }, // window.Peer 없으면 world.js가 조용히 1인 모드
     ...lodPreset, // fogNearK/fogFarK/shellFlat — 미지정(a)이면 현행값과 동일
