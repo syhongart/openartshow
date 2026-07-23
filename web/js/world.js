@@ -1172,6 +1172,15 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const ADAPT_UP_STEP = 0.25;   // 승급 폭(+0.25씩, main.js 동일).
   const ADAPT_UP_HOLD = 20;     // 승급 전 고FPS 연속 틱(0.5s 집계 × 20 = 10초 지속).
   const ADAPT_WARMUP = 3;       // 스폰 후 이 초 동안 강등 보류(파셀/텍스처 로딩 스파이크 오판 방지).
+  // [그림자 조기 적응] 그림자(실시간 PCFSoftShadowMap)는 이 씬 저FPS의 지배 요인(fill-rate, 895-896)
+  // 이라 해상도 강등(ADAPT_ENTER_FPS=24)보다 이른 임계에서 그림자만 먼저 끈다. 실기기 로그의 25~27fps
+  // "낀 구간"(tri를 절반 깎아도 fps가 안 오르던 프래그먼트 병목 — 해상도 강등엔 미달하나 여전히 버벅임)을
+  // 이것으로 뚫는다. 복원(EXIT)은 승급 임계(48)보다 살짝 낮게 둬 그림자를 해상도보다 먼저 되살리고,
+  // 갭 16 + 각 방향 지속 틱 + 쿨다운으로 경계 왕복 셰이더 재컴파일(USE_SHADOWMAP 캐시키 변동, 908행)을
+  // 3중 방어한다. liteMode 구간은 기존 토글(1255·1263 계열)이 이미 그림자를 관리하므로 이 블록은 그
+  // 사이 중간대(24~48fps)만 담당한다.
+  const SHADOW_LITE_ENTER = 30; // 이 밑 1초 지속 → 그림자만 강등(해상도 유지)
+  const SHADOW_LITE_EXIT = 46;  // 이 위 10초 지속 → 그림자 복원(승급 48보다 먼저)
   const dprAdapt = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
   // 상한 = 스폰 초기값(109-110과 동일식, 비soft는 min(2,dpr)로 캡). 하한 = 상한의 60%(단 최소 1.0)
   // — 1.0 밑돌면 뿌옇다는 감독 제보로 하한을 1.0 이상 고정하되, dpr*0.75로 잡으면 dpr>2.667(아이폰
@@ -1186,6 +1195,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const RATIO_FLOOR = Math.min(ratioCeilBase, Math.max(1, ratioCeilBase * 0.6));
   let liteMode = false;
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
+  let shadowDownTicks = 0, shadowUpTicks = 0; // [그림자 조기 적응] 방향별 연속 저/고FPS 틱(0.5s 집계 단위)
 
   // ── RAF ──
   let raf = 0, last = 0, disposed = false, potatoAccum = 0;
@@ -1244,23 +1254,55 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     adaptFrames = 0; adaptElapsed = 0;
     adaptCooldown = Math.max(0, adaptCooldown - 0.5);
     emit('fps', Math.round(fpsNow)); // 순수 가산 계측(HUD/디버그·헤드리스 검증)
-    if (adaptCooldown > 0) return;   // 쿨다운 중 재전환 금지(진동 방지)
     const cur = renderer.getPixelRatio();
     const streaming = loadQueue.length > 0; // 파셀 스트리밍 중 스파이크는 강등 판단에서 배제
+
+    // [해상도 긴급 강등] 최우선·쿨다운 무관. fps가 강등 임계(24) 밑으로 떨어지면 그림자 조기 적응이나
+    // 공유 쿨다운에 밀리지 않고 즉시 하한(RATIO_FLOOR)까지 내려 사용자를 보호한다(그림자도 함께 끔).
+    // cur>RATIO_FLOOR에서만 발동해 하한 도달로 자연 종료하므로 쿨다운 없이도 연속 발동·진동이 없다.
+    // (교차리뷰 블로커 수정: 그림자 블록이 adaptCooldown을 세팅해 같은 tick의 긴급 강등이 굶던
+    //  starvation 제거 — 긴급 강등을 그림자·쿨다운 게이트보다 앞에 두고 처리 후 즉시 return.)
     if (fpsNow < ADAPT_ENTER_FPS && adaptAge >= ADAPT_WARMUP && !streaming && cur > RATIO_FLOOR) {
-      // 즉시 강등 — 하한(RATIO_FLOOR)까지 한 번에 내려 빠르게 보호한다. lite 진입.
       renderer.setPixelRatio(RATIO_FLOOR);
       liteMode = true; adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
+      shadowDownTicks = 0; shadowUpTicks = 0; // 그림자 조기 적응 상태 리셋 — lite 진입이 그림자를 인수(1286)
       if (skySystem) skySystem.setLite(true); // [하늘 엔진] B-2 하늘 투명 레이어 오버드로우 축소
       setShadowLite(true); // [C-1] 저사양 그림자 강등 — lite 진입과 연동(shadowMap.enabled=false)
       emit('adapt', { mode: 'lite', ratio: RATIO_FLOOR, fps: Math.round(fpsNow) });
-    } else if (fpsNow > ADAPT_EXIT_FPS) {
+      return; // 긴급 강등 처리 완료 — 이 tick의 그림자/승급 판정 불필요
+    }
+
+    // [그림자 조기 적응] 해상도 긴급 강등(24)에 해당하지 않는 중간대(24~30fps)에서 그림자만 먼저 양보
+    // (위 SHADOW_LITE_* 주석). liteMode 구간은 제외(그림자는 lite 진입/해제가 관리). 해상도 쿨다운을
+    // 공유해 그림자·해상도가 번갈아 진동하지 않게 하고, 파셀 스트리밍 스파이크는 배제한다. 긴급 강등이
+    // 위에서 return으로 먼저 처리되므로 이 블록은 fps≥24이거나 이미 하한인 경우에만 도달한다.
+    if (!liteMode && adaptCooldown <= 0 && adaptAge >= ADAPT_WARMUP && !streaming) {
+      if (renderer.shadowMap.enabled && fpsNow < SHADOW_LITE_ENTER) {
+        shadowDownTicks += 1; shadowUpTicks = 0;
+        if (shadowDownTicks >= 2) { // 연속 2틱(1초) 지속 — 순간 스파이크 오판 방지
+          setShadowLite(true); shadowDownTicks = 0; adaptCooldown = ADAPT_COOLDOWN;
+          emit('adapt', { mode: 'shadow-lite', fps: Math.round(fpsNow) });
+        }
+      } else if (!renderer.shadowMap.enabled && fpsNow > SHADOW_LITE_EXIT) {
+        shadowUpTicks += 1; shadowDownTicks = 0;
+        if (shadowUpTicks >= ADAPT_UP_HOLD) { // 10초 지속 — 켜기(셰이더 재컴파일)는 매우 보수적으로만
+          setShadowLite(false); shadowUpTicks = 0; adaptCooldown = ADAPT_COOLDOWN;
+          emit('adapt', { mode: 'shadow-up', fps: Math.round(fpsNow) });
+        }
+      } else {
+        if (fpsNow >= SHADOW_LITE_ENTER) shadowDownTicks = 0;
+        if (fpsNow <= SHADOW_LITE_EXIT) shadowUpTicks = 0;
+      }
+    }
+
+    if (adaptCooldown > 0) return;   // 승급은 쿨다운 존중(진동 방지)
+    if (fpsNow > ADAPT_EXIT_FPS) {
       // 승급 — 고FPS가 ADAPT_UP_HOLD틱(10초) 지속돼야 +0.25씩 상한까지(느린 승급).
       adaptUpTicks += 1;
       if (adaptUpTicks >= ADAPT_UP_HOLD && cur < RATIO_CEIL) {
         renderer.setPixelRatio(Math.min(RATIO_CEIL, cur + ADAPT_UP_STEP));
         adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
-        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) { liteMode = false; if (skySystem) skySystem.setLite(false); setShadowLite(false); } // 상한 복귀 시 lite 해제(하늘 레이어·그림자 복원)
+        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) { liteMode = false; shadowDownTicks = 0; shadowUpTicks = 0; if (skySystem) skySystem.setLite(false); setShadowLite(false); } // 상한 복귀 시 lite 해제(하늘 레이어·그림자 복원)
         emit('adapt', { mode: 'up', ratio: renderer.getPixelRatio(), fps: Math.round(fpsNow) });
       }
     } else {
