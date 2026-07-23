@@ -5,7 +5,7 @@
 // 기본 치비로 폴백해 하위호환을 유지한다.
 
 import * as THREE from 'three';
-import { buildChibi, decodeChibi, CHIBI_CHAR_PREFIX } from './chibi.js';
+import { buildChibi, buildChibiV2, decodeChibi, CHIBI_CHAR_PREFIX, USE_SKINNED_MESH_V2 } from './chibi.js';
 import { attachHitFx } from './hitfx.js';
 import { getCanvasFont } from './fonts.js';
 
@@ -174,14 +174,20 @@ function createFallbackAvatar(colorHex, nickname) {
 }
 
 /**
- * 자체 치비 아바타 인스턴스 생성 ('chibi:'+JSON). buildChibi()는 동기(로드 없음)라
- * 폴백 교체 패턴이 필요 없다 — 실패 시에만 캡슐 폴백.
+ * 자체 치비 아바타 인스턴스 생성 ('chibi:'+JSON).
+ * USE_SKINNED_MESH_V2가 true면 buildChibiV2 (동기, 프로토타입) 사용, 아니면 buildChibi (동기) 사용.
  */
 function createChibiAvatarInstance(charId, colorHex, nickname) {
   const params = decodeChibi(charId); // null이면 기본 룩으로 조립
   let built;
   try {
-    built = buildChibi(params || undefined);
+    if (USE_SKINNED_MESH_V2) {
+      // 저폴리 스킨드 메시 (v2)
+      built = buildChibiV2(params || undefined);
+    } else {
+      // 기존 치비 (v1)
+      built = buildChibi(params || undefined);
+    }
   } catch (err) {
     console.warn('치비 아바타 생성 실패, 캡슐 폴백 사용:', err);
     return createFallbackAvatar(colorHex, nickname);

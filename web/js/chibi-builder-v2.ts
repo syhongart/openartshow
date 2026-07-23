@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils';
 import {
   createChibiShaderMaterial,
   assignPartColor,
@@ -14,9 +15,150 @@ import { drawFaceCanvas } from './chibi-face';
 import { toonRamp, vivid, vividSkin } from './chibi-materials';
 import type { ChibiParams } from './chibi-schema';
 import { CHIBI_ACTION_DUR } from './chibi-anim';
+import { ChibiAnimationV2 } from './chibi-animation-v2';
 
 const gltfLoader = new GLTFLoader();
 const MODEL_BASE_PATH = './assets/models';
+
+/**
+ * 프로토타입 저폴리 메시 생성 (GLB 없을 때)
+ * 기본 형태: 머리(구) + 몸통(캡슐) + 팔×2 + 다리×2
+ */
+function createPrototypeChibiMesh(): THREE.SkinnedMesh {
+  const geometries: THREE.BufferGeometry[] = [];
+  const materials: THREE.Material[] = [];
+
+  // 1. 머리 (구)
+  const headGeo = new THREE.SphereGeometry(0.15, 16, 16);
+  headGeo.translate(0, 0.5, 0);
+  geometries.push(headGeo);
+
+  // 2. 몸통 (캡슐)
+  const torsoGeo = new THREE.CapsuleGeometry(0.08, 0.25, 8, 8);
+  torsoGeo.translate(0, 0.2, 0);
+  geometries.push(torsoGeo);
+
+  // 3. 왼쪽 팔
+  const leftArmGeo = new THREE.CapsuleGeometry(0.04, 0.2, 4, 8);
+  leftArmGeo.translate(-0.12, 0.35, 0);
+  geometries.push(leftArmGeo);
+
+  // 4. 오른쪽 팔
+  const rightArmGeo = new THREE.CapsuleGeometry(0.04, 0.2, 4, 8);
+  rightArmGeo.translate(0.12, 0.35, 0);
+  geometries.push(rightArmGeo);
+
+  // 5. 왼쪽 다리
+  const leftLegGeo = new THREE.CapsuleGeometry(0.05, 0.3, 4, 8);
+  leftLegGeo.translate(-0.06, -0.05, 0);
+  geometries.push(leftLegGeo);
+
+  // 6. 오른쪽 다리
+  const rightLegGeo = new THREE.CapsuleGeometry(0.05, 0.3, 4, 8);
+  rightLegGeo.translate(0.06, -0.05, 0);
+  geometries.push(rightLegGeo);
+
+  // 통합 지오메트리
+  const mergedGeo = THREE.BufferGeometryUtils.mergeGeometries(geometries);
+  mergedGeo.computeVertexNormals();
+  initializeVertexColors(mergedGeo);
+
+  // 기본 스켈레톤 생성
+  const bones: THREE.Bone[] = [];
+  const boneData = createPrototypeSkeleton();
+
+  // SkinnedMesh 생성
+  const material = createChibiShaderMaterial({
+    gradientMap: toonRamp(),
+    skinColor: new THREE.Color(
+      vividSkin(new THREE.Color(0xffdbac))
+    ),
+    hairColor: new THREE.Color(vivid(new THREE.Color(0x2c2c2c))),
+    clothColor: new THREE.Color(vivid(new THREE.Color(0x4488cc))),
+  });
+
+  const skinnedMesh = new THREE.SkinnedMesh(mergedGeo, material as any);
+  skinnedMesh.add(boneData.armature);
+  skinnedMesh.bind(boneData.skeleton);
+
+  return skinnedMesh;
+}
+
+/**
+ * 프로토타입 스켈레톤 생성
+ */
+function createPrototypeSkeleton() {
+  const armature = new THREE.Bone();
+  const bones: { [key: string]: THREE.Bone } = {};
+
+  // 계층 구조
+  const hips = new THREE.Bone();
+  bones['Hips'] = hips;
+  armature.add(hips);
+
+  const spine = new THREE.Bone();
+  bones['Spine'] = spine;
+  hips.add(spine);
+
+  const chest = new THREE.Bone();
+  bones['Chest'] = chest;
+  spine.add(chest);
+
+  const neck = new THREE.Bone();
+  bones['Neck'] = neck;
+  chest.add(neck);
+
+  const head = new THREE.Bone();
+  bones['Head'] = head;
+  head.position.y = 0.5;
+  neck.add(head);
+
+  // 왼쪽 팔
+  const leftShoulder = new THREE.Bone();
+  bones['LeftShoulder'] = leftShoulder;
+  leftShoulder.position.set(-0.12, 0.35, 0);
+  chest.add(leftShoulder);
+
+  const leftUpperArm = new THREE.Bone();
+  bones['LeftUpperArm'] = leftUpperArm;
+  leftShoulder.add(leftUpperArm);
+
+  // 오른쪽 팔
+  const rightShoulder = new THREE.Bone();
+  bones['RightShoulder'] = rightShoulder;
+  rightShoulder.position.set(0.12, 0.35, 0);
+  chest.add(rightShoulder);
+
+  const rightUpperArm = new THREE.Bone();
+  bones['RightUpperArm'] = rightUpperArm;
+  rightShoulder.add(rightUpperArm);
+
+  // 왼쪽 다리
+  const leftUpperLeg = new THREE.Bone();
+  bones['LeftUpperLeg'] = leftUpperLeg;
+  leftUpperLeg.position.set(-0.06, -0.05, 0);
+  hips.add(leftUpperLeg);
+
+  const leftLowerLeg = new THREE.Bone();
+  bones['LeftLowerLeg'] = leftLowerLeg;
+  leftUpperLeg.add(leftLowerLeg);
+
+  // 오른쪽 다리
+  const rightUpperLeg = new THREE.Bone();
+  bones['RightUpperLeg'] = rightUpperLeg;
+  rightUpperLeg.position.set(0.06, -0.05, 0);
+  hips.add(rightUpperLeg);
+
+  const rightLowerLeg = new THREE.Bone();
+  bones['RightLowerLeg'] = rightLowerLeg;
+  rightUpperLeg.add(rightLowerLeg);
+
+  // 스켈레톤 생성
+  const allBones = Object.values(bones);
+  const skeleton = new THREE.Skeleton(allBones);
+
+  return { armature, skeleton, bones };
+}
 
 interface ChibiV2Instance {
   group: THREE.Group;
@@ -44,22 +186,17 @@ async function loadGLB(path: string): Promise<THREE.Group> {
 }
 
 /**
- * 저폴리 스킨드 메시 캐릭터 생성
+ * 저폴리 스킨드 메시 캐릭터 생성 (동기)
+ * 프로토타입: 즉시 메시 반환 (GLB는 나중에 비동기로 로드 가능)
  *
  * @param params 캐릭터 파라미터 (색상, 헤어스타일 등)
  * @returns ChibiV2Instance
  */
-export async function buildChibiV2(params: ChibiParams): Promise<ChibiV2Instance> {
+export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
   try {
-    // 1. Body GLB 로드
-    const bodyGroup = await loadGLB(`${MODEL_BASE_PATH}/body-base.glb`);
-    const bodyMesh = bodyGroup.children.find(
-      (c) => c instanceof THREE.SkinnedMesh
-    ) as THREE.SkinnedMesh;
-
-    if (!bodyMesh) {
-      throw new Error('Body SkinnedMesh not found in GLB');
-    }
+    // 1. Body 메시 생성 (프로토타입: 프로그래매틱)
+    // TODO: GLB 비동기 로드는 나중에 별도 함수로 처리
+    const bodyMesh = createPrototypeChibiMesh();
 
     // 2. 셰이더 머티리얼 생성
     const material = createChibiShaderMaterial({
@@ -83,62 +220,27 @@ export async function buildChibiV2(params: ChibiParams): Promise<ChibiV2Instance
     faceTexture.colorSpace = THREE.SRGBColorSpace;
     faceTexture.anisotropy = 4;
 
-    // Head 메시에 얼굴 텍스처 적용 (또는 별도 메시)
-    const headMesh = bodyMesh.children?.find(
-      (c) => (c as any).name === 'Head' || (c as any).name === 'head'
-    ) as THREE.Mesh | undefined;
+    // 바디에 적용
+    material.uniforms.map.value = faceTexture;
 
-    if (headMesh) {
-      (headMesh.material as THREE.MeshToonMaterial).map = faceTexture;
-    } else {
-      // 바디 자체에 적용 (모든 폴리곤이 통합된 경우)
-      material.uniforms.map.value = faceTexture;
-    }
+    // 5. 모듈 부착 (헤어, 의상) — TODO: 비동기 로드
+    // attachModules(bodyMesh, params);
 
-    // 5. 모듈 부착 (헤어, 의상)
-    await attachModules(bodyMesh, params);
-
-    // 6. 애니메이션 설정
-    const mixer = new THREE.AnimationMixer(bodyMesh);
-    const animationClips = setupAnimations(bodyMesh, params);
+    // 6. 스켈레톤 기반 애니메이션 컨트롤러 생성
+    const animController = new ChibiAnimationV2(bodyMesh.skeleton, bodyMesh.position);
 
     // 7. 루트 그룹 구성
     const group = new THREE.Group();
     group.add(bodyMesh);
 
-    // 8. 업데이트 루프 (걷기, 호흡 등)
-    let walkPhase = 0;
-    let currentAction: string | null = null;
-    let actionTime = 0;
-
-    const update = (delta: number) => {
-      mixer.update(delta);
-
-      // 걷기/호흡 루프 (액션 중이 아닐 때)
-      if (!currentAction) {
-        walkPhase += delta * 3; // 걷기 주기
-        const bob = Math.sin(walkPhase) * 0.02;
-        bodyMesh.position.y = bob;
-
-        // 가슴 회전 (호흡)
-        const breathing = Math.sin(walkPhase * 0.5) * 0.05;
-        if (bodyMesh.skeleton) {
-          const chestBone = findBone(bodyMesh.skeleton, 'Chest');
-          if (chestBone) {
-            chestBone.rotation.x = breathing;
-          }
-        }
-      }
+    // 8. 업데이트 루프
+    const update = (delta: number, speed: number = 0) => {
+      animController.setSpeed(speed);
+      animController.update(delta);
     };
 
     const playAction = (name: string) => {
-      const clip = THREE.AnimationClip.findByName(animationClips, name);
-      if (clip) {
-        const action = mixer.clipAction(clip);
-        action.play();
-        currentAction = name;
-        actionTime = 0;
-      }
+      animController.playAction(name);
     };
 
     const setColor = (part: string, hex: number) => {
@@ -171,7 +273,6 @@ export async function buildChibiV2(params: ChibiParams): Promise<ChibiV2Instance
     const dispose = () => {
       bodyMesh.geometry.dispose();
       (material as any).dispose();
-      mixer.stopAllAction();
     };
 
     return {
@@ -179,13 +280,14 @@ export async function buildChibiV2(params: ChibiParams): Promise<ChibiV2Instance
       mesh: bodyMesh,
       material: material as any,
       skeleton: bodyMesh.skeleton,
-      animations: animationClips,
-      mixer,
+      animations: [], // v2는 skeleton FK 기반이므로 clips 불필요
+      mixer: null, // 호환성을 위해 null
       update,
       playAction,
       setColor,
       refreshFace,
       dispose,
+      animController,
     };
   } catch (error) {
     console.error('Failed to build ChibiV2:', error);
