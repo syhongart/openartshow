@@ -31,11 +31,10 @@ export interface ChibiShaderUniforms {
 }
 
 /**
- * 정점 셰이더: 스킨드 메시 + 정점 색상 전달
+ * 정점 셰이더: 정점 색상 기반 부위 판별
  */
 const vertexShader = `
 #include <common>
-#include <skinning_pars_vertex>
 #include <fog_pars_vertex>
 
 varying vec2 vUv;
@@ -44,9 +43,7 @@ varying vec3 vViewPosition;
 varying vec3 vPartColor;
 
 void main() {
-  #include <skinning_vertex>
-
-  vec4 mvPosition = vec4(transformed, 1.0);
+  vec4 mvPosition = vec4(position, 1.0);
   mvPosition = modelViewMatrix * mvPosition;
   gl_Position = projectionMatrix * mvPosition;
 
@@ -158,15 +155,12 @@ export function createChibiShaderMaterial(uniforms: ChibiShaderUniforms = {}) {
   const material = new THREE.ShaderMaterial({
     uniforms: THREE.UniformsUtils.merge([
       THREE.UniformsLib.common,
-      THREE.UniformsLib.lights,
       THREE.UniformsLib.fog,
       defaultUniforms,
     ]),
     vertexShader,
     fragmentShader,
-    skinning: true,
     fog: true,
-    lights: true,
     side: THREE.FrontSide,
     transparent: false,
     wireframe: false,
@@ -197,7 +191,7 @@ export function assignPartColor(
   const colorData = colorAttr.array as Float32Array;
 
   // 부위별 색상 설정
-  const partColors = {
+  const partColors: Record<number, number[]> = {
     [PART_SKIN]: [0, 0, 0],
     [PART_HAIR]: [1, 0, 0],
     [PART_CLOTH]: [0, 1, 0],

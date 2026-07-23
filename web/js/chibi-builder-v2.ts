@@ -78,11 +78,12 @@ function createPrototypeChibiMesh(): THREE.SkinnedMesh {
     clothColor: new THREE.Color(vivid(new THREE.Color(0x4488cc))),
   });
 
-  const skinnedMesh = new THREE.SkinnedMesh(mergedGeo, material as any);
-  skinnedMesh.add(boneData.armature);
-  skinnedMesh.bind(boneData.skeleton);
+  // SkinnedMesh 대신 일반 Mesh 사용 (skinning 제거)
+  // 애니메이션은 그룹 피벗 회전으로 처리 (기존 v1 방식과 동일)
+  const mesh = new THREE.Mesh(mergedGeo, material as any);
+  mesh.add(boneData.armature);
 
-  return skinnedMesh;
+  return mesh as any;
 }
 
 /**
