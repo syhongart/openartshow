@@ -1,6 +1,7 @@
 /**
  * 저폴리 스킨드 메시 셰이더 (Ayamo 2.0)
- * 정점 색상 기반 부위 판별 + toonRamp 톤 셰이딩
+ * MeshPhongMaterial 기반 — SkinnedMesh 네이티브 지원
+ * 부위별 색상은 부위별 메시 + 다른 색상 material로 처리
  */
 
 import * as THREE from 'three';
@@ -31,142 +32,35 @@ export interface ChibiShaderUniforms {
 }
 
 /**
- * 정점 셰이더: 정점 색상 기반 부위 판별
- */
-const vertexShader = `
-#include <common>
-#include <fog_pars_vertex>
-
-varying vec2 vUv;
-varying vec3 vNormal;
-varying vec3 vViewPosition;
-varying vec3 vPartColor;
-
-void main() {
-  vec4 mvPosition = vec4(position, 1.0);
-  mvPosition = modelViewMatrix * mvPosition;
-  gl_Position = projectionMatrix * mvPosition;
-
-  vUv = uv;
-  vNormal = normalize(normalMatrix * normal);
-  vViewPosition = -mvPosition.xyz;
-
-  // 정점 색상 (부위 ID)를 프래그먼트 셰이더로 전달
-  vPartColor = color;
-
-  #include <fog_vertex>
-}
-`;
-
-/**
- * 프래그먼트 셰이더: 정점 색상 기반 부위 판별 + toonRamp
- */
-const fragmentShader = `
-#include <common>
-#include <fog_pars_fragment>
-
-uniform sampler2D map;
-uniform sampler2D gradientMap;
-
-uniform vec3 skinColor;
-uniform vec3 hairColor;
-uniform vec3 clothColor;
-uniform vec3 accessoryColor;
-
-varying vec2 vUv;
-varying vec3 vNormal;
-varying vec3 vViewPosition;
-varying vec3 vPartColor;
-
-// 라이팅
-uniform vec3 directionalLights[NUM_DIR_LIGHTS];
-uniform vec3 directionalLightDirections[NUM_DIR_LIGHTS];
-
-vec3 getLighting() {
-  vec3 normal = normalize(vNormal);
-  vec3 viewDir = normalize(vViewPosition);
-
-  // 기본 라이팅 (앞쪽 +Z)
-  vec3 lightDir = normalize(vec3(0.5, 0.8, 1.0));
-  float diffuse = max(0.0, dot(normal, lightDir));
-
-  // 역광
-  diffuse = mix(diffuse, 1.0 - diffuse, 0.3);
-
-  // toonRamp 적용 (2단 하드 스텝)
-  vec4 toneMapped = texture2D(gradientMap, vec2(diffuse, 0.5));
-
-  return toneMapped.rgb;
-}
-
-void main() {
-  // 정점 색상에서 부위 판별
-  // 정규화된 정점 색상 확인
-  float partR = vPartColor.r;
-  float partG = vPartColor.g;
-  float partB = vPartColor.b;
-
-  // 텍스처 샘플링
-  vec4 texColor = texture2D(map, vUv);
-
-  // 부위별 색상 결정 (혼합)
-  vec3 baseColor = skinColor;
-
-  // Hair 우선순위
-  if (partR > 0.5) {
-    baseColor = mix(skinColor, hairColor, 0.8);
-  }
-
-  // Cloth 우선순위
-  if (partG > 0.5) {
-    baseColor = mix(skinColor, clothColor, 0.7);
-  }
-
-  // Accessory 우선순위
-  if (partB > 0.5) {
-    baseColor = mix(skinColor, accessoryColor, 0.9);
-  }
-
-  // 텍스처와 색상 혼합 (텍스처가 있을 경우)
-  vec3 finalColor = baseColor * mix(vec3(1.0), texColor.rgb, 0.5);
-
-  // 라이팅 적용
-  vec3 lit = finalColor * getLighting();
-
-  gl_FragColor = vec4(lit, 1.0);
-
-  #include <fog_fragment>
-}
-`;
-
-/**
- * 저폴리 스킨드 메시용 커스텀 머티리얼 생성
+ * SkinnedMesh용 기본 MeshPhongMaterial 생성
+ * 색상은 인자로 전달된 color 사용
  */
 export function createChibiShaderMaterial(uniforms: ChibiShaderUniforms = {}) {
-  const defaultUniforms = {
-    map: { value: uniforms.map || null },
-    gradientMap: { value: uniforms.gradientMap || null },
-    skinColor: { value: uniforms.skinColor || new THREE.Color(0xffdbac) },
-    hairColor: { value: uniforms.hairColor || new THREE.Color(0x2c2c2c) },
-    clothColor: { value: uniforms.clothColor || new THREE.Color(0x4488cc) },
-    accessoryColor: { value: uniforms.accessoryColor || new THREE.Color(0xffaa00) },
-  };
+  const color = uniforms.skinColor || new THREE.Color(0xffdbac);
 
-  const material = new THREE.ShaderMaterial({
-    uniforms: THREE.UniformsUtils.merge([
-      THREE.UniformsLib.common,
-      THREE.UniformsLib.fog,
-      defaultUniforms,
-    ]),
-    vertexShader,
-    fragmentShader,
+  const material = new THREE.MeshPhongMaterial({
+    color: color,
+    map: uniforms.map || null,
     fog: true,
     side: THREE.FrontSide,
     transparent: false,
-    wireframe: false,
+    shininess: 10,
   });
 
   return material;
+}
+
+/**
+ * 부위별 색상 material 생성 헬퍼
+ */
+export function createPartMaterial(color: THREE.Color): THREE.MeshPhongMaterial {
+  return new THREE.MeshPhongMaterial({
+    color: color,
+    fog: true,
+    side: THREE.FrontSide,
+    transparent: false,
+    shininess: 10,
+  });
 }
 
 /**
