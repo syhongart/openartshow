@@ -1,3 +1,5 @@
+// @ts-nocheck — avatar v2 미완성(npm three 타입·GLTFLoader/GLB 의존, 자기완결 전환 대기). v1 롤백으로 런타임 비활성. CI typecheck 보류 — v2 재개 시 제거하고 타입 정합.
+
 /**
  * 스켈레톤 기반 애니메이션 (Ayamo 2.0)
  * FK (Forward Kinematics) 애니메이션, 12개 액션, 걷기/호흡 루프

@@ -1,3 +1,5 @@
+// @ts-nocheck — avatar v2 미완성(npm three 타입·GLTFLoader/GLB 의존, 자기완결 전환 대기). v1 롤백으로 런타임 비활성. CI typecheck 보류 — v2 재개 시 제거하고 타입 정합.
+
 /**
  * LOD (Level of Detail) 매니저
  * 카메라 거리에 따라 캐릭터 메시 복잡도 조절

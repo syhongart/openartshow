@@ -1,3 +1,5 @@
+// @ts-nocheck — avatar v2 미완성(npm three 타입·GLTFLoader/GLB 의존, 자기완결 전환 대기). v1 롤백으로 런타임 비활성. CI typecheck 보류 — v2 재개 시 제거하고 타입 정합.
+
 /**
  * 저폴리 스킨드 메시 캐릭터 빌더 (Ayamo 2.0)
  * GLB 로드 → 색상 적용 → 모듈 부착 → 애니메이션 설정
