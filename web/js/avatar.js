@@ -181,17 +181,17 @@ function createChibiAvatarInstance(charId, colorHex, nickname) {
   const params = decodeChibi(charId); // null이면 기본 룩으로 조립
   let built;
   try {
-    if (USE_SKINNED_MESH_V2) {
-      // 저폴리 스킨드 메시 (v2)
-      built = buildChibiV2(params || undefined);
-      console.log('✨ Ayamo 2.0 (v2) 활성화 — 저폴리 스킨드 메시');
-      built.version = 'v2';
-    } else {
+    // 임시: v2 비활성화. v1만 사용. (v2 shader 아키텍처 재설계 필요)
+    // if (USE_SKINNED_MESH_V2) {
+    //   built = buildChibiV2(params || undefined);
+    //   console.log('✨ Ayamo 2.0 (v2) 활성화 — 저폴리 스킨드 메시');
+    //   built.version = 'v2';
+    // } else {
       // 기존 치비 (v1)
       built = buildChibi(params || undefined);
       console.log('🎭 기존 아야모 (v1) 사용');
       built.version = 'v1';
-    }
+    // }
   } catch (err) {
     console.warn('치비 아바타 생성 실패, 캡슐 폴백 사용:', err);
     return createFallbackAvatar(colorHex, nickname);
