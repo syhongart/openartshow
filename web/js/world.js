@@ -883,6 +883,30 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (ddx * ddx + ddz * ddz > 64) requestShadowBake(); // 8m² = 64
   }
 
+  // ── [C-1 저사양 그림자 강등] ──────────────────────────────────────────────
+  // 성능감사: world 저FPS 주범은 실시간 PCFSoftShadowMap 샘플링 — receiveShadow가 148개(바닥·모래·
+  // 다리·도로·강, 화면 대부분)라 매픽셀 9~25탭이 그대로 fill-rate 오버헤드(해상도 비례 +70.9%).
+  // gpuInfo.soft(SW렌더)는 이미 114에서 shadowMap.enabled=false로 시작하지만, 그건 "소프트웨어 렌더"
+  // 판정 1회성이고 — 실GPU인데 지속 저FPS인 기기는 adaptQuality가 liteMode(해상도↓·하늘 축소)만 켜고
+  // 그림자는 그대로 PCFSoft라 정작 가장 큰 비용은 안 줄어든다. 이 축을 lite 진입/복귀에 연동한다
+  // (새 판정 만들지 않고 기존 liteMode 신호 재사용).
+  // [방식 선택 — 룩 검수 결론] (a)PCFShadowMap 1탭+512 vs (b)shadowMap.enabled=false 완전 제거 중 (b) 채택.
+  // 근거: 이 씬의 castShadow 캐스터는 램프포스트·벤치·플랜터·부두목재·등대 등 소품뿐(건물·나무는 애초
+  // castShadow 미설정 — 481·475·485·587·636행). 즉 지금도 화면을 지배하는 큰 그림자는 없고 소품 발치의
+  // 옅은 블롭 수준이라 완전 제거해도 "붕 뜬" 느낌이 거의 없는 반면, 512 해상도 1탭 하드섀도는 벤치
+  // 다리처럼 얇은 형상 경계에서 계단 앨리어싱이 오히려 더 도드라져 "조용한 럭셔리" 톤에 이질적이다.
+  // 완전 제거가 fill-rate 절감도 최대(섀도 패스 자체가 스킵 — 873행 주석과 동일 근거)이고 코드도
+  // 최소침습(mapSize/type 불변, dispose 불필요)이라 채택.
+  // shadowMap.enabled 토글은 receiveShadow 머티리얼의 프로그램 캐시키(USE_SHADOWMAP)를 바꿔 셰이더
+  // 재컴파일을 유발한다 → liteMode enter/exit(히스테리시스 24↔48fps + 10초 쿨다운)에서만 호출해
+  // 매프레임 재호출을 원천 차단(idempotent 가드로 이중 방어).
+  function setShadowLite(lite) {
+    const want = !lite;
+    if (renderer.shadowMap.enabled === want) return; // 이미 목표 상태 — 재컴파일 재유발 방지(1회성 보장)
+    renderer.shadowMap.enabled = want;
+    if (want) requestShadowBake(); // 그림자 복귀 시 1프레임 재베이크(lite 동안 이동한 플레이어 위치로 정합)
+  }
+
   // [하늘 엔진] 생성 — sun/hemi/sky 주입. 생성자가 돔을 고해상 구로 교체하고 set(day/clear,{fade:0})을
   // 내부 수행하며 조명·fog·clearColor를 덮는다(world.js 고정 fog/clearColor는 초기 프레임용, 덮여도 무방 — 지시 §작업1-4).
   // soft: 소프트웨어 렌더는 크로스페이드 스냅·저해상 돔·강수 입자 축소(sky.js 내부 분기).
@@ -1217,6 +1241,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       renderer.setPixelRatio(RATIO_FLOOR);
       liteMode = true; adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
       if (skySystem) skySystem.setLite(true); // [하늘 엔진] B-2 하늘 투명 레이어 오버드로우 축소
+      setShadowLite(true); // [C-1] 저사양 그림자 강등 — lite 진입과 연동(shadowMap.enabled=false)
       emit('adapt', { mode: 'lite', ratio: RATIO_FLOOR, fps: Math.round(fpsNow) });
     } else if (fpsNow > ADAPT_EXIT_FPS) {
       // 승급 — 고FPS가 ADAPT_UP_HOLD틱(10초) 지속돼야 +0.25씩 상한까지(느린 승급).
@@ -1224,7 +1249,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (adaptUpTicks >= ADAPT_UP_HOLD && cur < RATIO_CEIL) {
         renderer.setPixelRatio(Math.min(RATIO_CEIL, cur + ADAPT_UP_STEP));
         adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
-        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) { liteMode = false; if (skySystem) skySystem.setLite(false); } // 상한 복귀 시 lite 해제(하늘 레이어 복원)
+        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) { liteMode = false; if (skySystem) skySystem.setLite(false); setShadowLite(false); } // 상한 복귀 시 lite 해제(하늘 레이어·그림자 복원)
         emit('adapt', { mode: 'up', ratio: renderer.getPixelRatio(), fps: Math.round(fpsNow) });
       }
     } else {
