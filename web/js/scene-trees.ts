@@ -24,6 +24,12 @@ export function bakeGroupByMaterial(group) {
     const m = new THREE.Mesh(mergeGeometries(geos), mat);
     m.castShadow = !(mat.alphaTest > 0); // 알파 잎은 그림자 생략 (아티팩트 방지)
     meshes.push(m);
+    // mergeGeometries는 독립된 새 BufferGeometry를 반환하므로 입력 clone(16행에서 파츠마다 clone)은
+    // 더 이상 참조되지 않는다. 병합 직후 폐기해 world.js의 다른 병합부(buildPier·buildLighthouse 등)의
+    // dispose 관행과 정합시킨다 — 오픈월드는 파셀 로드마다 이 경로를 반복(나무 최대 4그루/파셀)해
+    // clone들이 파셀당 수백 개 단위로 순간 쌓이던 JS힙 버스트(파셀 로드 히칭 pcl 마커 가중 요인)를 제거.
+    // 공유 재질(mat, sharedTreeMats)은 건드리지 않는다.
+    for (const g of geos) g.dispose();
   }
   return meshes;
 }
