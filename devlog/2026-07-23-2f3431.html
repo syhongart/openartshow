@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 감독이 실기기에서 버벅임을 제보했다 — index 걷기, world 오픈월드 진입 즉시, builder 로드">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-ffa2b8.html">
+<title>모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 감독 실기기 HUD(?debug=perf) 스크린샷으로 원인을 확정했다 — index(미술관) 모바일에서">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-2f3431.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 감독이 실기기에서 버벅임을 제보했다 — index 걷기, world 오픈월드 진입 즉시, builder 로드">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-ffa2b8.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-ffa2b8.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 감독 실기기 HUD(?debug=perf) 스크린샷으로 원인을 확정했다 — index(미술관) 모바일에서">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-2f3431.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-2f3431.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,15 +87,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
-<div class="eyebrow">2026-07-22</div>
-<h1><span class="emo">⚡</span>실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다</h1>
+<div class="eyebrow">2026-07-23</div>
+<h1><span class="emo">⚡</span>모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 감독이 실기기에서 버벅임을 제보했다 — index 걷기, world 오픈월드 진입 즉시, builder 로드 구간. 원인 확정을 위해 헤드리스로 4회 측정(저사양·고사양·world·세 페이지 base 정정 <code>ab60080</code>)했으나 <strong>전부 리팩토링 무회귀로 수렴</strong>했다. swiftshader 소프트웨어 렌더러는 실기기 GPU 병목과 열 스로틀을 재현하지 못하는 것이 원천 한계 — 렌더 산술·드로우콜·텍스처힙이 변경 전후로 동치여도 실기기 체감은 다를 수 있다. 원인 확정에는 실기기 실수치가 필요하다.</p>
-<p><strong>개선.</strong> <code>?debug=perf</code> 게이트로만 켜지는 임시 디버그 HUD(<code>web/js/debug-perf.js</code>, 가산형 독립 모듈)를 3진입점(index·world·builder)에 붙였다. FPS(최상단 대형·worst·min)·spec·pixelRatio·lite·드로우콜· 삼각형·텍스처힙을 실기기 화면에 직접 표출한다. 훅은 최소 침습 — <code>main.js</code> 1줄·<code>main-perf.ts</code> getLite 1줄·world-boot/builder 각 1줄. 플래그 off 시 동적 import가 실행되지 않아 정적 참조 0·네트워크 0(라이브 무영향). + 레퍼런스 분석가(🧭) 상설 역할 신설 — <code>REFERENCES.md</code> 4종 지식베이스(hyperfy·Hubs· Decentraland SDK7·Catalyst)에서 성능 처방 5순위·백엔드 3단계를 도출.</p>
-<p><strong>결과.</strong> 스모크 6/6+A~D, 검수관 승인(off 무영향·보호 런타임 무변경·CSP 빌드 재현 실증). 배포 후 감독 실기기 스크린샷으로 원인을 확정할 예정.</p>
-<p><strong>교훈.</strong> 헤드리스(swiftshader)는 실 GPU 병목·열 스로틀을 원천 재현하지 못한다 — 렌더 산술·드로우콜· 텍스처가 두 지점에서 동치여도 실기기 체감은 다를 수 있어, 실기기 계측 HUD가 유일한 확정 경로다. 그리고 회귀 의심 시 측정 base는 반드시 "진짜 변경 전"(공유 모듈 분해 전 <code>ab60080</code>)으로 잡아야 한다 — <code>2598e64</code>는 이미 분해 후라 회귀를 못 잡았다.</p>
+<p><strong>원인.</strong> 감독 실기기 HUD(<code>?debug=perf</code>) 스크린샷으로 원인을 확정했다 — index(미술관) 모바일에서 <strong>spec high·lite ON·pixelRatio 2.25가 동시에 성립하는 충돌 버그</strong>였다. 저사양 모드(lite)에 진입했는데도 슈퍼샘플 배율이 유지된 것. 구 lite 하한 산식 <code>max(1, dpr*0.75)</code>가 아이폰 dpr3에서 2.25로 계산되어, lite가 spec high가 세팅한 pixelRatio를 못 덮었다. draw 142·tri 59.5k로 지오메트리는 적은데 저FPS — 전형적 픽셀(fill-rate) 병목이다. 헤드리스 4회 측정이 못 잡은 실기기 GPU fill-rate 병목으로, spec 학습값 (localStorage)과 실시간 lite가 pixelRatio를 두 축에서 다투며 하한 산식이 어긋난 결과였다.</p>
+<p><strong>개선.</strong> 3파일(<code>web/js/main.js</code>·<code>main-spec.ts</code>·<code>main-perf.ts</code>)에 <code>MOBILE_PX_CAP=1.5</code>를 SSOT 상수로 도입했다. (B) 모바일(<code>pointer: coarse</code>) 초기 렌더러 배율에 상한 1.5 적용 — <code>min(계산값, MOBILE_PX_CAP)</code>. (A) lite 진입 시 하드가드로 spec 학습값과 무관하게 pixelRatio ≤1.5 강제 — 기존 <code>dpr*0.75</code> 하한이 고DPR 폰에서 캡을 무력화하던 경로를 차단. 추가로 모바일에서 spec 'high' 승급과 샤프닝을 차단해 lite exit 후 배율이 2.x로 다시 기어오르는 재상승도 막았다. 데스크톱(<code>pointer: fine</code>)은 전 경로 무변화 — 캡을 타지 않아 화질 그대로.</p>
+<p><strong>결과.</strong> 헤드리스 vitest 통과(모바일 high+lite 강제 시 px 2.25→1.5 하향, 데스크톱 dpr1→1.0·레티나 dpr2→1.5 기존 동치로 회귀 0, 모바일 high 미기록), 독립 executor 스모크 6/6+A~D, 검수관 승인(하드가드· lite exit 재상승 방지·데스크톱 회귀 0 코드 확인). 레퍼런스 정합(hyperfy DPR-first). 실 FPS 개선의 최종 확정은 감독 실기기 재스크린샷이다.</p>
+<p><strong>교훈.</strong> 헤드리스(swiftshader)는 GPU fill-rate 병목을 원천 재현하지 못한다 — 실기기 계측 HUD가 원인 확정의 유일 경로였다. spec 학습(localStorage)과 실시간 lite가 pixelRatio를 두 축에서 다투면 하한 산식이 어긋나 저사양인데 슈퍼샘플이 남는다. 캡은 두 축 모두에서 SSOT 상수 하나로 강제해야 한다.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-ee5745.html"><span class="lbl">← 이전 기록</span>P1-⑤ 가변폰트 서브셋 — 첫 방문 폰트 페이로드 1.16MB → 60KB (-95%)</a><a href="./2026-07-23-2f3431.html" style="text-align:right"><span class="lbl">다음 기록 →</span>모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한</a></div>
+<div class="pn"><a href="./2026-07-22-ffa2b8.html"><span class="lbl">← 이전 기록</span>실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
