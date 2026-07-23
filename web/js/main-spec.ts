@@ -42,3 +42,10 @@ export function writeSpec(v: 'low' | 'high' | null): void {
 }
 // 총 렌더 픽셀 예산(px) — low: 1080p×2, base: ≈1440p×3, high: 4K×2.2 상당
 export const PX_BUDGET = { low: 8.3e6, base: 11e6, high: 18e6 };
+
+// 모바일(터치) 픽셀비 상한 — 처방 A+B의 SSOT. 실기기 계측(아이폰): 저사양 lite
+// 모드인데 spec 'high' 학습분이 슈퍼샘플 2.25를 유지해 fill-rate 병목으로 30fps에
+// 묶이던 버그를 차단한다. 초기 렌더러 배율(main.js)과 lite 진입 런타임 하드가드
+// (main-perf.js) 양쪽에서 이 값으로 상한을 강제한다. 데스크톱(fine pointer)은 이
+// 상한을 적용하지 않아 화질 무변화.
+export const MOBILE_PX_CAP = 1.5;

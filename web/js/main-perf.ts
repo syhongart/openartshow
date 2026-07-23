@@ -20,7 +20,12 @@
 //   부작용 1바이트 동치로 소유한다. render()는 건드리지 않는다(A군은 render 독립).
 //   섀도 초기 주기(resolvedTheme로 결정)는 setShadowInterval()로 결선한다.
 
-import { readSpec, writeSpec, PX_BUDGET, LITE_ENTER_FPS, LITE_EXIT_FPS, LITE_VISIBLE_NPCS } from './main-spec.js';
+import { readSpec, writeSpec, PX_BUDGET, MOBILE_PX_CAP, LITE_ENTER_FPS, LITE_EXIT_FPS, LITE_VISIBLE_NPCS } from './main-spec.js';
+
+// 모바일(터치) 판정 — 주 포인터가 coarse일 때만 true(진짜 폰/태블릿). 마우스가 주
+// 입력인 터치 노트북·데스크톱은 fine이라 false → 데스크톱 런타임 경로 무변화.
+// 처방 A: lite 하드가드·high 승급 차단을 모바일에만 적용하는 게이트.
+const IS_MOBILE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
 // main.js의 perfCtx가 주입하는 계약(안정 참조는 값, 동적 참조는 getter — 사용 멤버만 최소 선언).
 interface PerfAvatar { group: { visible: boolean; position: { distanceTo(p: object): number } } }
@@ -105,10 +110,15 @@ export function createPerfGovernor(ctx: PerfCtx) {
           // 영구 학습(다음 접속 AA off)은 진짜 바닥에서만 — 20fps대 기기가
           // 다음 방문부터 계속 뿌옇게 시작하는 부작용 방지 (실기기 제보)
           if (fpsNow < 16) writeSpec('low');
-          // 즉시 응급 처치 — 재접속 없이 해상도 배율을 강등하되, OS 배율
-          // (dpr>1) 화면에서 1.0 밑돌면 뿌옇게 보이므로 dpr 비례 하한을 둔다
+          // 즉시 응급 처치 — 재접속 없이 해상도 배율을 강등한다.
+          // [처방 A 하드가드] 모바일(터치)은 spec 'high' 학습값과 무관하게
+          // MOBILE_PX_CAP(≤1.5)로 강제 상한. 기존 dpr*0.75 하한이 고DPR 폰(dpr3→
+          // 2.25)에서 lite가 배율을 못 내리던 실측 버그(index 30fps·px2.25)를 차단.
+          // 데스크톱은 OS 배율(dpr>1)에서 1.0 밑돌면 뿌옇던 제보대로 dpr 비례 하한
+          // (Math.max(1, dpr*0.75))을 그대로 유지 — 회귀 없음.
           const dprNow = window.devicePixelRatio || 1;
-          renderer.setPixelRatio(Math.min(renderer.getPixelRatio(), Math.max(1, dprNow * 0.75)));
+          const liteCap = IS_MOBILE ? MOBILE_PX_CAP : Math.max(1, dprNow * 0.75);
+          renderer.setPixelRatio(Math.min(renderer.getPixelRatio(), liteCap));
           setStatus('원활한 관람을 위해 화질을 잠시 낮췄어요');
         } else if (liteMode && fpsNow > LITE_EXIT_FPS) {
           liteMode = false;
@@ -121,8 +131,11 @@ export function createPerfGovernor(ctx: PerfCtx) {
           specFastTicks += 1;
           if (specFastTicks >= 20) {
             const cur = readSpec();
-            if (cur === 'low') writeSpec(null);
-            else if (cur === null) writeSpec('high');
+            if (cur === 'low') writeSpec(null); // 저사양 벗어남 → 기본 복귀는 모바일도 허용(뿌옇게 남지 않게)
+            // [처방 A] 모바일(터치)은 'high' 승급 차단 — 순간 고FPS(저전력 캡 해제
+            // 등)로 학습해 다음 접속부터 슈퍼샘플 2.x를 이고 시작하는 fill-rate
+            // 병목을 원천 차단. 데스크톱은 기존대로 high 승급 허용(무변화).
+            else if (cur === null && !IS_MOBILE) writeSpec('high');
             // 라이브 샤프닝 — 재접속을 기다리지 않고 배율을 한 단계(+0.25)씩
             // 상향한다. 55fps+가 유지되는 한 10초마다 반복되고, 떨어지면
             // lite 강등이 되돌리므로 히스테리시스로 안전 (알리아싱 제보 대응).
@@ -131,7 +144,10 @@ export function createPerfGovernor(ctx: PerfCtx) {
               Math.sqrt(PX_BUDGET.high / (window.innerWidth * window.innerHeight))
             );
             const nowRatio = renderer.getPixelRatio();
-            if (!gpuInfo.soft && nowRatio < maxHigh) {
+            // [처방 A] 모바일은 라이브 샤프닝(+0.25)도 차단 — 켜두면 처방 B의
+            // MOBILE_PX_CAP(≤1.5) 상한이 무력화되어 배율이 다시 2.x로 기어오른다.
+            // 데스크톱(!IS_MOBILE)은 기존 샤프닝 그대로(무변화).
+            if (!gpuInfo.soft && !IS_MOBILE && nowRatio < maxHigh) {
               renderer.setPixelRatio(Math.min(maxHigh, nowRatio + 0.25));
               setStatus('화질을 한 단계 높였어요 ✨');
             }

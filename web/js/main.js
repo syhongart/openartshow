@@ -55,7 +55,7 @@ import {
   flashShutter,
 } from './ui.js';
 import { resolveAutoTheme } from './main-math.js'; // easeInOutCubic·lerpAngle은 viewfx(B군)·djb2는 enterflow(C군)로 이동
-import { readSpec, PX_BUDGET } from './main-spec.js'; // writeSpec·LITE_*·PX_BUDGET 일부는 perfGovernor로 이동(4차 A군)
+import { readSpec, PX_BUDGET, MOBILE_PX_CAP } from './main-spec.js'; // writeSpec·LITE_*·PX_BUDGET 일부는 perfGovernor로 이동(4차 A군)
 import { probeGpu } from './main-gpu.js';
 import { createEventHandlers } from './main-events.js';
 import { createPhotoController } from './main-photo.js';
@@ -320,6 +320,12 @@ async function init() {
   // -62%) 후 상향 — 60fps 달성 기기의 "알리아싱 필요해" 제보 반영.
   const budget = spec === 'high' ? PX_BUDGET.high : spec === 'low' ? PX_BUDGET.low : PX_BUDGET.base;
   ratio = Math.min(ratio, Math.sqrt(budget / (window.innerWidth * window.innerHeight)));
+
+  // [처방 B] 모바일(터치) 초기 배율 상한 — spec 'high'로 학습된 폰이 슈퍼샘플
+  // 2.0~2.5를 그대로 이고 시작해 fill-rate 병목으로 버벅이던 문제(실기기 계측)를
+  // 막는다. 계산값이 상한보다 낮으면(예: low=1.25) 그대로 둔다. 데스크톱(fine
+  // pointer)은 이 캡을 타지 않아 화질 무변화.
+  if (coarsePointer) ratio = Math.min(ratio, MOBILE_PX_CAP);
 
   // ---- 포테이토 모드 — 소프트웨어 렌더링에서도 걷게 하는 최후 폴백 --------
   // 원인은 이 기기의 브라우저 설정이지만, "느림" 안내 배너는 감상을 가려
