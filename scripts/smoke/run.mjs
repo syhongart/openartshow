@@ -151,18 +151,12 @@ function verifyLinks(pageResults, origin, basePath) {
 
 // ── 브라우저 기반 검사(4/5/6/A/B) 집계 ───────────────────────────────
 function aggregateBrowser(pageResults, origin) {
-  // 검사4: 콘솔 에러 0 (DEBUG: 실패 요청 보기)
-  const errAgg = pageResults.map((p) => {
-    const allErrs = [...(p.consoleErrors || []), ...(p.pageErrors || []), ...(p.failedRequests || [])];
-    if (process.env.DEBUG_SMOKE && p.failedRequests?.length > 0) {
-      console.log(`[DEBUG] ${p.name} failedRequests:`, p.failedRequests);
-    }
-    return {
-      name: p.name,
-      n: (p.consoleErrors?.length || 0) + (p.pageErrors?.length || 0) + (p.failedRequests?.length || 0),
-      sample: allErrs[0],
-    };
-  });
+  // 검사4: 콘솔 에러 0
+  const errAgg = pageResults.map((p) => ({
+    name: p.name,
+    n: (p.consoleErrors?.length || 0) + (p.pageErrors?.length || 0) + (p.failedRequests?.length || 0),
+    sample: [...(p.consoleErrors || []), ...(p.pageErrors || []), ...(p.failedRequests || [])][0],
+  }));
   const errPages = errAgg.filter((e) => e.n > 0);
   if (errPages.length) {
     const first = errPages[0];

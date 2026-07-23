@@ -49,10 +49,6 @@ export async function collectPage(browser, origin, pageSpec, urlPrefix = '') {
     if (m.type() === 'error') {
       consoleErrors.push(text);
     }
-    // 디버그: THREE.WebGLProgram 에러 감지
-    if (text.includes('THREE.WebGLProgram') && process.env.DEBUG_SMOKE) {
-      console.log(`[DEBUG-CONSOLE] ${m.type()}: ${text.slice(0, 120)}`);
-    }
   });
   page.on('pageerror', (e) => pageErrors.push(e.message || String(e)));
   page.on('request', (r) => {
