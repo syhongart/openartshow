@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP(방어심층, 보안감사 B-3) — 인라인 실행 script 0(S0/C-2: studio-main.ts 외부화), 배경 data: URI 허용, 외부호스트 0. style-src unsafe-inline 은 인라인 <style> 잔존(S5에서 외부화 예정) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<title>OpenArtShow STUDIO — 나만의 전시장 만들기</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="OpenArtShow STUDIO — 나만의 전시장 만들기">
+<meta property="og:description" content="작품을 업로드하고 나만의 3D 가상 전시장을 만들어 링크 하나로 공유하세요.">
+<meta property="og:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/app/studio.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="OpenArtShow STUDIO — 나만의 전시장 만들기">
+<meta name="twitter:description" content="작품을 업로드하고 나만의 3D 가상 전시장을 만들어 링크 하나로 공유하세요.">
+<meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
+<!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
+<style>
+  :root {
+    /* === 팔레트 B '라이트 에디토리얼' — docs/mockups/pilot-artwork-light.html SSOT === */
+    --bg-light: #F3F0E9;
+    --text-dark: #202124;
+    --text-light: #F5F5F2;
+
+    --neutral-white: #ffffff;
+    --neutral-sand-100: #efe6d3;
+    --neutral-sand-300: #ddccae;
+    --neutral-warm-gray-300: #cfc6b8;
+    --neutral-warm-gray-500: #a49a8c;
+    --ink-body: #57503f;
+    --ink-dim: #6b6459;
+
+    --violet-ink: #5733FF;   /* 선택·링크·정체성 축 (구 --gold) */
+    --coral-ink: #CC1700;    /* CTA 전용 — 다운로드·공유 (구 --accent). 에러·삭제는 --danger로 분리 */
+    --coral-900: #660B00;    /* CTA hover (구 --accent-hover) */
+
+    --shadow-whisper: 0 2px 6px rgba(20,21,26,.05);
+    --shadow-panel: 0 8px 20px rgba(20,21,26,.10);
+
+    --danger: #b0503f;       /* 에러·삭제(§7-0 error 테라코타) — 텍스트·테두리 전용. CTA 코랄과 색 분리 */
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg-light);
+    color: var(--text-dark);
+    font-family: var(--app-font);
+    font-weight: 300;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden; /* 기존 페이지 모바일 규율(landing.html·design.html과 동형) — 가로넘침 방어 */
+  }
+  a { color: var(--violet-ink); }
+
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(243,240,233,0.92);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--neutral-warm-gray-300);
+    padding: 22px 28px 18px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 300;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+  }
+  header h1 .accent { color: var(--violet-ink); }
+  header p.sub {
+    margin: 8px 0 0;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--ink-body);
+    font-weight: 300;
+  }
+
+  /* 빌더 진입 카드 — behind-flag 해제(studio→builder 링크가 곧 정식 노출) */
+  .builder-promo-wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 24px 28px 0;
+  }
+  .builder-promo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    border: 1px solid var(--violet-ink);
+    background: var(--neutral-white);
+    box-shadow: var(--shadow-whisper);
+    border-radius: 3px;
+    padding: 20px 24px;
+    text-decoration: none;
+    color: inherit;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+  }
+  .builder-promo:hover { box-shadow: var(--shadow-panel); transform: translateY(-1px); }
+  .builder-promo-badge {
+    display: inline-block;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--violet-ink);
+    border: 1px solid var(--violet-ink);
+    border-radius: 999px;
+    padding: 2px 8px;
+    margin-bottom: 8px;
+  }
+  .builder-promo-title {
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    color: var(--text-dark);
+  }
+  .builder-promo-desc {
+    margin: 0;
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.02em;
+  }
+  .builder-promo-cta {
+    flex: none;
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-light);
+    background: var(--coral-ink);
+    border-radius: 2px;
+    padding: 10px 18px;
+    white-space: nowrap;
+    transition: background 0.15s ease;
+  }
+  .builder-promo:hover .builder-promo-cta { background: var(--coral-900); }
+
+  main {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 40px 28px 100px;
+  }
+
+  section.block {
+    margin-bottom: 56px;
+  }
+
+  .block-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--neutral-warm-gray-300);
+  }
+  .block-title .num {
+    color: var(--violet-ink);
+    font-size: 12px;
+    letter-spacing: 0.15em;
+  }
+  .block-title h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 300;
+    letter-spacing: 0.02em;
+  }
+  .block-title .hint {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.03em;
+  }
+
+  label.field-label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-body);
+    margin-bottom: 6px;
+  }
+
+  input[type="text"],
+  input[type="number"],
+  input[type="url"],
+  textarea {
+    width: 100%;
+    background: var(--neutral-sand-100);
+    border: 1px solid var(--neutral-warm-gray-300);
+    color: var(--text-dark);
+    padding: 10px 12px;
+    font-family: inherit;
+    font-weight: 300;
+    font-size: 13px;
+    border-radius: 2px;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  input[type="text"]:focus,
+  input[type="number"]:focus,
+  input[type="url"]:focus,
+  textarea:focus {
+    border-color: var(--violet-ink);
+  }
+  textarea {
+    resize: vertical;
+    min-height: 56px;
+    line-height: 1.5;
+  }
+  input.invalid {
+    border-color: var(--danger);
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+
+  /* Theme picker */
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+  }
+  .theme-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border: 1px solid var(--neutral-warm-gray-300);
+    background: var(--neutral-sand-100);
+    border-radius: 3px;
+    padding: 14px;
+    cursor: pointer;
+    position: relative;
+    transition: border-color 0.15s ease;
+  }
+  .theme-card:hover { border-color: var(--neutral-warm-gray-500); }
+  .theme-card input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+  .theme-card.selected {
+    border-color: var(--violet-ink);
+  }
+  .theme-card.selected .theme-card-title {
+    color: var(--violet-ink);
+  }
+  .theme-swatch {
+    display: block;
+    width: 100%;
+    height: 44px;
+    border-radius: 2px;
+    border: 1px solid var(--neutral-sand-300);
+  }
+  .theme-swatch-daylight {
+    background: linear-gradient(180deg, #8fcdf0 0%, #d8f0ff 55%, #f5f9fb 100%);
+  }
+  .theme-swatch-sunset {
+    background: linear-gradient(180deg, #ffb26b 0%, #e8654f 45%, #5b3b82 100%);
+  }
+  .theme-swatch-night {
+    background:
+      radial-gradient(circle at 22% 28%, rgba(255,255,255,0.85) 1px, transparent 1.6px),
+      radial-gradient(circle at 68% 55%, rgba(255,255,255,0.6) 1px, transparent 1.6px),
+      radial-gradient(circle at 45% 75%, rgba(255,255,255,0.7) 1px, transparent 1.6px),
+      radial-gradient(circle at 85% 20%, rgba(255,255,255,0.5) 1px, transparent 1.6px),
+      linear-gradient(180deg, #0a0e28 0%, #171d42 55%, #232a52 100%);
+  }
+  .theme-swatch-auto {
+    background: linear-gradient(90deg,
+      #8fcdf0 0%, #d8f0ff 30%,
+      #ffb26b 38%, #e8654f 62%,
+      #171d42 72%, #0a0e28 100%);
+  }
+  .theme-swatch-cycle {
+    background: linear-gradient(90deg,
+      #7fb2e0 0%, #d8f0ff 22%,
+      #ffb26b 40%, #c96a5e 55%,
+      #0a0e28 72%, #232a52 88%, #e8654f 100%);
+  }
+  .theme-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .theme-card-title {
+    font-size: 13px;
+    letter-spacing: 0.03em;
+    color: var(--text-dark);
+  }
+  .theme-card-desc {
+    font-size: 11px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+  }
+
+  .field {
+    margin-bottom: 18px;
+  }
+
+  .field-msg {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.02em;
+  }
+  .field-msg.error {
+    color: var(--danger);
+  }
+  .field-msg.ok {
+    color: var(--violet-ink);
+  }
+
+  #exhibitUrlPreview {
+    font-size: 11px;
+    color: var(--ink-dim);
+    margin-top: 6px;
+    letter-spacing: 0.02em;
+  }
+  #exhibitUrlPreview span {
+    color: var(--violet-ink);
+  }
+
+  /* Artwork rows */
+  #artworkList {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .aw-row {
+    border: 1px solid var(--neutral-warm-gray-300);
+    background: var(--neutral-white);
+    box-shadow: var(--shadow-whisper);
+    border-radius: 3px;
+    padding: 18px;
+    position: relative;
+  }
+  .aw-row.featured {
+    border-color: var(--violet-ink);
+  }
+
+  .aw-row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .aw-row-head .aw-index {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+  }
+  .aw-row-head .aw-index .featured-tag {
+    color: var(--violet-ink);
+    margin-left: 8px;
+  }
+
+  .aw-row-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr 100px;
+    gap: 14px;
+  }
+  .aw-row-body .desc-cell {
+    grid-column: 1 / -1;
+  }
+  .aw-row-body .image-cell {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 84px;
+    gap: 14px;
+    align-items: start;
+  }
+
+  .thumb-wrap {
+    width: 84px;
+    height: 84px;
+    border: 1px solid var(--neutral-warm-gray-300);
+    background: var(--neutral-sand-100) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="84" height="84"><rect width="84" height="84" fill="%23efe6d3"/></svg>');
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-size: 9px;
+    color: var(--ink-dim);
+    text-align: center;
+    line-height: 1.4;
+    padding: 4px;
+  }
+  .thumb-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .aw-row-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--neutral-sand-300);
+  }
+
+  .checkbox-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ink-body);
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    user-select: none;
+  }
+  .checkbox-field input {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--violet-ink);
+    cursor: pointer;
+  }
+
+  button {
+    font-family: inherit;
+    font-weight: 300;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--neutral-warm-gray-300);
+    color: var(--ink-body);
+    padding: 10px 18px;
+    font-size: 12px;
+    text-transform: uppercase;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .btn:hover { border-color: var(--violet-ink); color: var(--violet-ink); }
+  .btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .btn:disabled:hover { border-color: var(--neutral-warm-gray-300); color: var(--ink-body); }
+
+  .btn-gold {
+    background: var(--coral-ink);
+    border: 1px solid var(--coral-ink);
+    color: var(--text-light);
+  }
+  .btn-gold:hover {
+    background: var(--coral-900);
+    color: var(--text-light);
+    border-color: var(--coral-900);
+  }
+  .btn-gold:disabled {
+    background: var(--neutral-warm-gray-300);
+    border-color: var(--neutral-warm-gray-300);
+    color: var(--ink-dim);
+    opacity: 1;
+  }
+  .btn-gold:disabled:hover {
+    background: var(--neutral-warm-gray-300);
+    color: var(--ink-dim);
+    border-color: var(--neutral-warm-gray-300);
+  }
+
+  .btn-danger {
+    background: transparent;
+    border: 1px solid var(--neutral-warm-gray-300);
+    color: var(--ink-dim);
+    padding: 6px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+  .btn-danger:hover { border-color: var(--danger); color: var(--danger); }
+
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 11px;
+  }
+
+  .add-row-wrap {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .add-row-wrap .count-hint {
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.03em;
+  }
+  .add-row-wrap .count-hint .warn {
+    color: var(--danger);
+  }
+
+  .empty-state {
+    border: 1px dashed var(--neutral-warm-gray-300);
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--ink-dim);
+    font-size: 13px;
+  }
+
+  /* Download / preview actions */
+  .action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+  }
+  .action-status {
+    font-size: 12px;
+    color: var(--ink-dim);
+  }
+  .action-status.error { color: var(--danger); }
+  .action-status.ok { color: var(--violet-ink); }
+
+  .share-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .share-row input[type="text"] {
+    flex: 1;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+
+  .instructions {
+    border: 1px solid var(--neutral-warm-gray-300);
+    background: var(--neutral-white);
+    box-shadow: var(--shadow-whisper);
+    padding: 22px;
+    border-radius: 3px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--ink-body);
+  }
+  .instructions code {
+    background: var(--neutral-sand-100);
+    border: 1px solid var(--neutral-warm-gray-300);
+    padding: 2px 7px;
+    border-radius: 2px;
+    color: var(--violet-ink);
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .instructions ol {
+    margin: 10px 0 0;
+    padding-left: 20px;
+  }
+  .instructions li { margin-bottom: 6px; }
+
+  .save-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 24px;
+    font-size: 11px;
+    color: var(--ink-dim);
+    letter-spacing: 0.06em;
+    background: rgba(255,255,255,0.95);
+    box-shadow: var(--shadow-panel);
+    border: 1px solid var(--neutral-warm-gray-300);
+    padding: 8px 14px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+  .save-indicator.show { opacity: 1; }
+  .save-indicator .dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--violet-ink);
+    margin-right: 8px;
+  }
+
+  footer {
+    text-align: center;
+    padding: 30px 20px 50px;
+    color: var(--ink-dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  /* 작품 이미지 — URL 입력 + 파일 업로드 + 도움말/실패 모달 */
+  .url-row { display: flex; gap: 8px; align-items: stretch; }
+  .url-row input[type="url"] { flex: 1 1 auto; min-width: 0; }
+  .btn-upload {
+    flex: 0 0 auto;
+    padding: 0 12px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--violet-ink);
+    background: var(--neutral-white);
+    border: 1px solid var(--violet-ink);
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-upload:hover { background: var(--neutral-sand-100); }
+  .info-dot {
+    margin-left: 6px;
+    padding: 0;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--violet-ink);
+    background: none;
+    border: none;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .info-dot:hover { opacity: 0.7; }
+  .img-status { min-height: 14px; }
+  .img-modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(28, 24, 18, 0.5);
+    display: none;
+    align-items: center; justify-content: center;
+    padding: 24px;
+    z-index: 100;
+  }
+  .img-modal {
+    background: var(--neutral-white);
+    border: 1px solid var(--neutral-warm-gray-300);
+    border-radius: 4px;
+    max-width: 400px; width: 100%;
+    padding: 22px 22px 18px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.28);
+  }
+  .img-modal-title {
+    font-size: 14px; font-weight: 600;
+    color: var(--ink-body);
+    margin-bottom: 10px;
+  }
+  .img-modal-body {
+    font-size: 12.5px; line-height: 1.6;
+    color: var(--ink-dim);
+    margin-bottom: 18px;
+  }
+  .img-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .img-modal-actions button {
+    padding: 8px 14px;
+    font-size: 12px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .img-modal-actions .btn-up {
+    color: var(--neutral-white);
+    background: var(--violet-ink);
+    border: 1px solid var(--violet-ink);
+  }
+  .img-modal-actions .btn-close {
+    color: var(--ink-dim);
+    background: var(--neutral-white);
+    border: 1px solid var(--neutral-warm-gray-300);
+  }
+
+  @media (max-width: 640px) {
+    header { padding: 18px 16px 14px; }
+    header h1 { font-size: 13px; letter-spacing: 0.22em; }
+    main { padding: 28px 14px 90px; }
+    .grid-2 { grid-template-columns: 1fr; gap: 0; }
+    .theme-grid { grid-template-columns: 1fr; }
+    .aw-row-body { grid-template-columns: 1fr; }
+    .aw-row-body .image-cell { grid-template-columns: 1fr; }
+    .thumb-wrap { width: 100%; height: 140px; }
+    .block-title { flex-wrap: wrap; }
+    .block-title .hint { margin-left: 0; width: 100%; }
+    .action-row { flex-direction: column; align-items: stretch; }
+    .action-row .btn, .action-row .btn-gold { width: 100%; text-align: center; }
+    .share-row { flex-direction: column; align-items: stretch; }
+    .share-row .btn { width: 100%; text-align: center; }
+    .save-indicator { left: 14px; right: 14px; text-align: center; }
+    .builder-promo-wrap { padding: 18px 14px 0; }
+    .builder-promo { flex-direction: column; align-items: flex-start; padding: 18px; }
+    .builder-promo-cta { width: 100%; text-align: center; }
+  }
+
+  /* ---------- P1-①: skip-link + focus-visible 보강 ---------- */
+  .skip-link {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    transform: translateY(-120%);
+    background: var(--text-dark);
+    color: var(--text-light);
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    border-bottom: 2px solid var(--violet-ink);
+    transition: transform 0.2s ease;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--violet-ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+</style>
+  <script type="module" crossorigin src="/openartshow/_bundle/studio-CCuOOXo6.js"></script>
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">본문 바로가기</a>
+
+<header>
+  <h1>OpenArtShow <span class="accent">STUDIO</span> — 나만의 전시장 만들기</h1>
+  <p class="sub">작품을 등록하고, 나만의 3D 전시장을 여세요.</p>
+</header>
+
+<div class="builder-promo-wrap">
+  <a class="builder-promo" href="./builder.html">
+    <div class="builder-promo-body">
+      <span class="builder-promo-badge">베타</span>
+      <h2 class="builder-promo-title">전시 공간 직접 꾸미기 (베타)</h2>
+      <p class="builder-promo-desc">템플릿 고르고 1분 만에 나만의 전시장</p>
+    </div>
+    <span class="builder-promo-cta">시작하기 →</span>
+  </a>
+</div>
+
+<main id="main">
+
+  <section class="block">
+    <div class="block-title">
+      <span class="num">01</span>
+      <h2>전시 정보</h2>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="exhibitId">전시장 주소 이름 (영문 소문자·숫자·하이픈)</label>
+      <input type="text" id="exhibitId" placeholder="예: syhongart" autocomplete="off" spellcheck="false">
+      <div class="field-msg" id="exhibitIdMsg">이 이름이 전시장 주소가 됩니다. (예: index.html?g=<span id="idPreviewInline">id</span>)</div>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="exhibitName">전시 제목</label>
+      <input type="text" id="exhibitName" placeholder="예: syhongart 개인전" autocomplete="off">
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="exhibitDesc">전시 소개</label>
+      <textarea id="exhibitDesc" placeholder="전시에 대한 소개 문구를 입력하세요." rows="4"></textarea>
+    </div>
+
+    <div class="field">
+      <label class="field-label">전시 분위기 (테마)</label>
+      <div class="theme-grid" id="themeGrid">
+        <label class="theme-card" data-theme="daylight">
+          <input type="radio" name="theme" value="daylight" checked>
+          <span class="theme-swatch theme-swatch-daylight"></span>
+          <span class="theme-card-body">
+            <span class="theme-card-title">맑은 오후</span>
+            <span class="theme-card-desc">파란 하늘, 자연광이 가득한 기본 전시장</span>
+          </span>
+        </label>
+        <label class="theme-card" data-theme="sunset">
+          <input type="radio" name="theme" value="sunset">
+          <span class="theme-swatch theme-swatch-sunset"></span>
+          <span class="theme-card-body">
+            <span class="theme-card-title">황혼</span>
+            <span class="theme-card-desc">노을빛 감도는 웜톤 분위기의 전시장</span>
+          </span>
+        </label>
+        <label class="theme-card" data-theme="night">
+          <input type="radio" name="theme" value="night">
+          <span class="theme-swatch theme-swatch-night"></span>
+          <span class="theme-card-body">
+            <span class="theme-card-title">야간 개장</span>
+            <span class="theme-card-desc">별빛 하늘 아래 스포트라이트가 작품을 비추는 밤</span>
+          </span>
+        </label>
+        <label class="theme-card" data-theme="auto">
+          <input type="radio" name="theme" value="auto">
+          <span class="theme-swatch theme-swatch-auto"></span>
+          <span class="theme-card-body">
+            <span class="theme-card-title">시간대별 자동</span>
+            <span class="theme-card-desc">관람객의 현지 시각에 따라 낮·황혼·밤이 자동 적용</span>
+          </span>
+        </label>
+        <label class="theme-card" data-theme="cycle">
+          <input type="radio" name="theme" value="cycle">
+          <span class="theme-swatch theme-swatch-cycle"></span>
+          <span class="theme-card-body">
+            <span class="theme-card-title">실시간 낮밤</span>
+            <span class="theme-card-desc">태양이 실제로 뜨고 지는 살아있는 전시장 (12분 주기)</span>
+          </span>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-title">
+      <span class="num">02</span>
+      <h2>작품 목록</h2>
+      <span class="hint">최대 14점 · 대표작(featured)은 최대 2점</span>
+    </div>
+
+    <div id="artworkList"></div>
+
+    <div class="add-row-wrap">
+      <button class="btn" id="addArtworkBtn" type="button">+ 작품 추가</button>
+      <span class="count-hint" id="artworkCountHint"></span>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-title">
+      <span class="num">03</span>
+      <h2>전시 파일 만들기</h2>
+    </div>
+
+    <div class="action-row">
+      <button class="btn-gold" id="downloadBtn" type="button">전시 파일 저장</button>
+      <button class="btn" id="previewBtn" type="button">내 전시 미리보기</button>
+      <span class="action-status" id="downloadStatus"></span>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-title">
+      <span class="num">04</span>
+      <h2>공유 링크</h2>
+      <span class="hint">파일 업로드 없이 URL 하나로 전시를 공유합니다</span>
+    </div>
+
+    <div class="action-row">
+      <button class="btn-gold" id="shareLinkBtn" type="button">공유 링크 만들기</button>
+      <span class="action-status" id="shareStatus"></span>
+    </div>
+
+    <div class="field" id="shareResultWrap" style="display:none; margin-top:18px;">
+      <label class="field-label" for="shareUrlInput">전시 공유 URL</label>
+      <div class="share-row">
+        <input type="text" id="shareUrlInput" readonly spellcheck="false">
+        <button class="btn btn-sm" id="copyShareBtn" type="button">복사</button>
+      </div>
+      <div class="field-msg" id="shareLenMsg"></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-title">
+      <span class="num">05</span>
+      <h2>안내</h2>
+    </div>
+    <div class="instructions">
+      <div>다운로드한 전시 파일(<code>&lt;id&gt;.json</code>)을 프로젝트의 <code>galleries/</code> 폴더 안에 넣어주세요.</div>
+      <ol>
+        <li>위 <b>전시 파일 저장</b> 버튼을 눌러 내려받습니다.</li>
+        <li>저장된 파일을 <code>web/galleries/</code> 폴더에 복사합니다.</li>
+        <li>브라우저에서 아래 주소로 접속하면 전시장이 열립니다.</li>
+      </ol>
+      <div id="exhibitUrlPreview">예시 주소: <span id="urlPreviewFull">./index.html?g=id</span></div>
+      <div style="margin-top:14px;">파일 업로드가 번거롭다면 <b>공유 링크</b>를 사용하세요. 전시 데이터가 주소 안에 담기므로 링크만 전달해도 바로 관람할 수 있습니다.</div>
+    </div>
+  </section>
+
+</main>
+
+<footer>OpenArtShow STUDIO — 작가를 위한 3D 전시장 제작 도구</footer>
+
+<div class="save-indicator" id="saveIndicator"><span class="dot"></span>임시 저장됨</div>
+
+
+</body>
+</html>

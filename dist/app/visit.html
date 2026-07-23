@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- 방문자뷰: 자기완결(외부 호스트 0). CSP default-src 'self'. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'">
+<title>관람 · OpenArtShow</title>
+<style>
+  :root{
+    --bg:#14151A; --ink:#F5F5F2; --dim:#9A9EB1; --line:#3A3D4B;
+    --violet:#8B72FF; --cyan:#72E6E1; --coral:#FF705E;
+    --glass:linear-gradient(180deg, rgba(46,48,61,.72), rgba(20,21,27,.82));
+    --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;width:100%;background:var(--bg);color:var(--ink);font-family:var(--app);overflow:hidden;-webkit-font-smoothing:antialiased}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  .plate{position:fixed;z-index:10;background:var(--glass);
+    -webkit-backdrop-filter:blur(11px) saturate(150%);backdrop-filter:blur(11px) saturate(150%);
+    border:1px solid rgba(255,255,255,.10);border-radius:14px;
+    box-shadow:0 14px 32px -12px rgba(0,0,0,.52), inset 0 1px 0 rgba(255,255,255,.13)}
+
+  /* ↖ 정보 플레이트 */
+  .hud-info{top:16px;left:16px;padding:13px 18px;max-width:min(72vw,320px)}
+  .hud-info .titlerow{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .hud-info .tick{width:3px;height:16px;border-radius:2px;background:var(--cyan);flex:none}
+  .hud-info .title{font-size:14.5px;font-weight:700;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hud-info .hint{font-size:11.5px;color:var(--dim);line-height:1.6}
+  .hud-info .hint b{color:var(--ink);font-weight:600}
+
+  /* ↗ 설정 */
+  .hud-gear{top:16px;right:16px;width:40px;height:40px;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .hud-gear svg{width:18px;height:18px;color:var(--dim)}
+  .hud-gear:hover svg{color:var(--ink)}
+  .hud-settings{top:66px;right:16px;width:min(84vw,244px);padding:14px}
+  .hud-settings{transform:translateX(calc(100% + 26px));opacity:0;pointer-events:none;transition:.2s cubic-bezier(.2,.8,.2,1)}
+  .hud-settings.on{transform:translateX(0);opacity:1;pointer-events:auto}
+  .hud-settings h4{margin:0 0 12px;font-size:12.5px;letter-spacing:.02em;color:var(--dim)}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:11px}
+  .row:last-child{margin-bottom:0}
+  .row span{font-size:12.5px}
+  .sw{appearance:none;width:42px;height:24px;border-radius:999px;border:1px solid var(--line);background:rgba(0,0,0,.3);position:relative;cursor:pointer;flex:none;transition:.15s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:999px;background:var(--dim);transition:.15s}
+  .sw.on{background:rgba(114,230,225,.22);border-color:var(--cyan)}
+  .sw.on::after{transform:translateX(18px);background:var(--cyan)}
+
+  /* 클릭 유도 오버레이(데스크톱) */
+  #enter{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;
+    background:radial-gradient(120% 90% at 50% 40%, rgba(20,21,26,.35), rgba(10,10,14,.72));cursor:pointer;text-align:center;padding:24px}
+  #enter .big{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  #enter .sub{font-size:12.5px;color:var(--dim);line-height:1.7}
+  #enter.hide{display:none}
+
+  /* 모바일 조작 힌트 + 조이스틱 */
+  .mobhint{display:none}
+  #joy{display:none;position:fixed;left:20px;bottom:26px;z-index:20;width:112px;height:112px;border-radius:999px;
+    background:rgba(20,21,27,.42);border:1px solid rgba(255,255,255,.12);touch-action:none}
+  #joy .nub{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:999px;
+    background:rgba(139,114,255,.55);border:1px solid rgba(255,255,255,.35);box-shadow:0 4px 12px -4px rgba(0,0,0,.6)}
+  #looktip{display:none;position:fixed;right:22px;bottom:40px;z-index:20;font-size:11px;color:var(--dim);
+    background:rgba(20,21,27,.5);border:1px solid var(--line);border-radius:10px;padding:8px 12px;pointer-events:none}
+  .is-touch #enter{display:none}
+  .is-touch #hintDesk{display:none} /* 모바일=데스크톱 조작 안내 숨김(조이스틱 힌트만) */
+  .is-touch .mobhint,.is-touch #joy,.is-touch #looktip{display:block}
+  .is-touch #joy{display:block}
+
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+
+  /* v2 배지 */
+  .v2-badge{position:fixed;top:16px;right:66px;z-index:10;
+    background:rgba(139,114,255,.25);border:1px solid rgba(139,114,255,.45);
+    border-radius:6px;padding:5px 11px;font-size:11px;font-weight:600;
+    color:#8B72FF;letter-spacing:.02em;pointer-events:none}
+</style>
+  <script type="module" crossorigin src="/openartshow/_bundle/visit-C1BbE3Dm.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-CssyzYF3.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/scene-textures-BTEEDlD5.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-assembler-F2E4aT3Y.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-lightmap-ibB-5O9T.js">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div class="v2-badge">✨ v2</div>
+
+<div class="plate hud-info">
+  <div class="titlerow"><span class="tick"></span><span class="title" id="spaceTitle">나의 전시실</span></div>
+  <div class="hint" id="hintDesk"><b>클릭</b>해 둘러보기 · <b>WASD</b> 이동 · 마우스 시선 · <b>ESC</b> 커서 해제</div>
+  <div class="hint mobhint">왼쪽 <b>조이스틱</b> 이동 · 오른쪽 <b>드래그</b> 시선</div>
+</div>
+
+<div class="plate hud-gear" id="bGear" aria-label="설정">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+</div>
+
+<div class="plate hud-settings" id="settings">
+  <h4>관람 설정</h4>
+  <div class="row"><span>깊이 · 안개</span><button class="sw on" id="swFog" role="switch" aria-checked="true"></button></div>
+  <div class="row"><span>라이트맵 굽기</span><button class="sw" id="swBake" role="switch" aria-checked="false"></button></div>
+</div>
+
+<div id="enter">
+  <div class="big">클릭해 둘러보기</div>
+  <div class="sub">WASD 이동 · 마우스로 시선 · ESC로 커서 해제</div>
+</div>
+
+<div id="joy"><div class="nub" id="joyNub"></div></div>
+<div id="looktip">오른쪽 드래그 = 시선</div>
+
+</body>
+</html>

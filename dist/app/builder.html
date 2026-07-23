@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- 유튜브 임베드는 nocookie 단일 호스트만 프레임 허용(보안담당 실사). 그 외 프레임 차단. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src https://www.youtube-nocookie.com; object-src 'none'; base-uri 'none'">
+<title>공간 빌더 · OpenArtShow</title>
+<style>
+  /* 팔레트 B 정본 + 프리미엄 글래스(감독: 굴절 느끼는 리퀴드 글래스) */
+  :root{
+    --bg:#14151A; --surface-1:#1F2128; --surface-2:#2A2C37; --line:#3A3D4B;
+    --ink:#F5F5F2; --dim:#9A9EB1;
+    --violet:#8B72FF; --cyan:#72E6E1; --coral:#FF705E; --error:#B0503F;
+    --glass:linear-gradient(180deg, rgba(46,48,61,.72), rgba(20,21,27,.80));
+    --glass-hero:linear-gradient(180deg, rgba(52,54,68,.82), rgba(22,23,30,.88));
+    --glass-hi:inset 0 1px 0 rgba(255,255,255,.13);
+    --glass-lo:inset 0 -1px 0 rgba(0,0,0,.40);
+    --sh-hero:0 26px 52px -14px rgba(0,0,0,.62);
+    --sh-plate:0 14px 32px -12px rgba(0,0,0,.52);
+    --r-xl:18px; --r-lg:14px; --r-md:11px; --r-sm:8px;
+    --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--app);overflow:hidden;-webkit-font-smoothing:antialiased}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  /* ===== 리퀴드 글래스 플레이트 — backdrop을 SVG 디스플레이스먼트로 휘게(굴절 느낌) ===== */
+  .plate{position:fixed;z-index:10;background:var(--glass);
+    backdrop-filter:blur(3px) saturate(155%) brightness(1.04) url(#refract);
+    -webkit-backdrop-filter:blur(11px) saturate(150%); /* 사파리 등 굴절 미지원 폴백=블러 */
+    border:1px solid rgba(255,255,255,.10);border-radius:var(--r-lg);
+    box-shadow:var(--sh-plate), var(--glass-hi), var(--glass-lo);overflow:hidden}
+  .plate::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+    background:radial-gradient(135% 68% at 12% 0%, rgba(255,255,255,.14), transparent 56%)} /* 유리 상단 sheen */
+  .plate.hero{background:var(--glass-hero);border-radius:var(--r-xl);box-shadow:var(--sh-hero), var(--glass-hi), var(--glass-lo)}
+
+  /* ↖ 정보 플레이트(히어로) */
+  .hud-info{top:16px;left:16px;padding:14px 20px 13px 16px;min-width:194px}
+  .hud-info .titlerow{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+  .hud-info .tick{width:3px;height:16px;border-radius:2px;background:var(--coral);flex:none}
+  .hud-info .title{font-size:14.5px;font-weight:700;letter-spacing:-.01em}
+  .hud-info .pill{margin-left:auto;font-size:11px;font-weight:600;color:var(--dim);font-variant-numeric:tabular-nums;
+    background:rgba(255,255,255,.06);border-radius:999px;padding:2px 9px}
+  .hud-info .pill b{color:var(--ink)}
+  .hud-info .gauge-lab{display:flex;justify-content:space-between;font-size:10.5px;letter-spacing:.02em;color:var(--dim);margin-bottom:5px}
+  .hud-info .gauge-lab b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .hud-info .track{height:5px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden}
+  .hud-info .fill{height:100%;border-radius:999px;background:var(--violet);width:5%;transition:width .35s cubic-bezier(.2,.8,.2,1)}
+  .hud-info .fill.warn{background:var(--coral)}
+
+  /* ↗ 모드바(편집/관람 + 상태 + 설정) */
+  .hud-modebar{top:16px;right:16px;padding:9px;display:flex;flex-direction:column;gap:9px;width:210px}
+  .modeseg{display:flex;background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:999px;padding:2px;position:relative}
+  .modeseg button{flex:1;border:0;background:transparent;color:var(--dim);font:inherit;font-size:11.5px;font-weight:600;
+    padding:6px 0;border-radius:999px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;position:relative;z-index:1;transition:color .2s}
+  .modeseg button svg{width:13px;height:13px}
+  .modeseg .thumb{position:absolute;top:2px;bottom:2px;left:2px;width:calc(50% - 2px);border-radius:999px;
+    background:var(--surface-2);box-shadow:0 2px 8px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(139,114,255,.5);
+    transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+  .modeseg.view .thumb{transform:translateX(100%);box-shadow:0 2px 8px -2px rgba(0,0,0,.5), inset 0 0 0 1px rgba(114,230,225,.55)}
+  .modeseg button.on{color:#fff}
+  .hud-modebar .statusrow{display:flex;align-items:center;gap:8px;padding-top:2px}
+  .hud-modebar .dot{width:8px;height:8px;border-radius:999px;background:var(--dim);flex:none;transition:.25s}
+  .hud-modebar .dot.saved{background:var(--cyan);box-shadow:0 0 9px rgba(114,230,225,.7)}
+  .hud-modebar .dot.dirty{background:var(--coral);box-shadow:0 0 9px rgba(255,112,94,.6)}
+  .hud-modebar .stxt{font-size:11px;color:var(--dim)}
+  .hud-modebar .gear{margin-left:auto;appearance:none;width:26px;height:26px;border-radius:8px;border:1px solid var(--line);
+    background:rgba(255,255,255,.05);color:var(--dim);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+  .hud-modebar .gear:hover{color:var(--ink);border-color:var(--violet)}
+  .hud-modebar .gear svg{width:15px;height:15px}
+
+  /* 설정 슬라이드 패널 */
+  .hud-settings{top:112px;right:16px;width:262px;padding:16px}
+  .hud-settings{transform:translateX(calc(100% + 20px));opacity:0;pointer-events:none;transition:.22s cubic-bezier(.2,.8,.2,1)}
+  .hud-settings.on{transform:translateX(0);opacity:1;pointer-events:auto}
+  .hud-settings h4{margin:0 0 14px;font-size:13px;letter-spacing:.02em;display:flex;align-items:center;gap:7px}
+  .hud-settings h4 .x{margin-left:auto;cursor:pointer;color:var(--dim);font-size:15px;line-height:1}
+  .hud-settings .fld{margin-bottom:15px}
+  .hud-settings label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim);margin-bottom:7px}
+  .hud-settings label b{color:var(--violet);font-variant-numeric:tabular-nums}
+  .hud-settings input[type=range]{-webkit-appearance:none;width:100%;height:4px;border-radius:999px;background:rgba(255,255,255,.12);outline:none}
+  .hud-settings input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:999px;background:var(--violet);border:2px solid var(--ink);cursor:pointer}
+  .hud-settings input[type=text]{width:100%;background:rgba(0,0,0,.25);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:8px 11px;border-radius:9px}
+  .hud-settings input[type=text]:focus{outline:none;border-color:var(--violet)}
+  .hud-settings .publish{width:100%;appearance:none;border:1px solid var(--violet);color:#fff;font:inherit;font-weight:700;font-size:12.5px;
+    background:rgba(139,114,255,.16);border-radius:10px;padding:10px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.12s}
+  .hud-settings .publish:hover{background:rgba(139,114,255,.28)}
+  .hud-settings .swatches{display:flex;gap:7px;align-items:center}
+  .hud-settings .swatches button{width:22px;height:22px;border-radius:999px;border:2px solid transparent;background:var(--sw);cursor:pointer;padding:0;transition:.12s;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+  .hud-settings .swatches button:hover{transform:scale(1.12)}
+  .hud-settings .swatches button.on{border-color:var(--ink);box-shadow:0 0 0 2px var(--violet)}
+  .hud-settings .swatches input[type=color]{width:24px;height:24px;padding:0;border:1px solid var(--line);border-radius:7px;background:transparent;cursor:pointer;margin-left:2px}
+  .hud-settings .swatches input[type=color]::-webkit-color-swatch-wrapper{padding:2px}
+  .hud-settings .swatches input[type=color]::-webkit-color-swatch{border:0;border-radius:5px}
+  .hud-settings .finchips{display:flex;flex-wrap:wrap;gap:6px}
+  .hud-settings .finchips button{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:11px;color:var(--ink);
+    background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:999px;padding:5px 10px 5px 7px;cursor:pointer;transition:.12s}
+  .hud-settings .finchips button:hover{border-color:rgba(139,114,255,.6)}
+  .hud-settings .finchips button.on{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet);background:rgba(139,114,255,.14)}
+  .hud-settings .finchips i{width:13px;height:13px;border-radius:4px;background:var(--sw);box-shadow:inset 0 0 0 1px rgba(0,0,0,.3)}
+  .hud-settings .presets{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+  .hud-settings .presets button{flex:0 0 auto;width:92px;padding:0;border:1px solid var(--line);border-radius:11px;background:rgba(0,0,0,.22);cursor:pointer;overflow:hidden;transition:.12s;text-align:left}
+  .hud-settings .presets button:hover{border-color:rgba(139,114,255,.6);transform:translateY(-1px)}
+  .hud-settings .presets button.on{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet)}
+  .hud-settings .presets img{display:block;width:100%;height:92px;object-fit:cover;background:#14151a}
+  .hud-settings .presets .pn{display:block;font-size:10.5px;font-weight:600;color:var(--ink);padding:5px 7px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hud-settings .bakebtn{width:100%;appearance:none;border:1px solid rgba(114,230,225,.45);color:#0f1418;font:inherit;font-weight:700;font-size:13px;
+    background:linear-gradient(180deg,#8ef0e9,#5fd8d0);border-radius:10px;padding:11px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:.12s;box-shadow:0 6px 16px -6px rgba(114,230,225,.5)}
+  .hud-settings .bakebtn:hover{filter:brightness(1.05);transform:translateY(-1px)}
+  .hud-settings .bakebtn.on{background:linear-gradient(180deg,#3a3d4b,#2a2c37);color:var(--cyan);border-color:var(--cyan)}
+  .hud-settings .bakebtn .bk-ic{font-size:14px}
+  .hud-settings .bakehint{font-size:10px;color:var(--dim);line-height:1.6;margin:7px 2px 13px}
+  .hud-settings .pubhint{font-size:10px;color:var(--dim);line-height:1.6;margin:7px 2px 4px}
+  .hud-settings .clearbtn{width:100%;margin-top:9px;appearance:none;border:1px solid rgba(176,80,63,.5);color:#e79b8d;font:inherit;font-size:12px;
+    background:rgba(176,80,63,.10);border-radius:10px;padding:9px 0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:.12s}
+  .hud-settings .clearbtn:hover{background:rgba(176,80,63,.22);color:#ffd9d1}
+  .hud-settings .keys{margin-top:13px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;line-height:1.7;color:var(--dim)}
+  .hud-settings .keys b{color:var(--ink);font-weight:600}
+
+  /* → 파츠 도크(유리) */
+  .hud-dock{top:120px;right:16px;width:250px;max-height:calc(100vh - 220px);display:flex;flex-direction:column;overflow:hidden;padding:0}
+  .hud-dock .tabs{display:flex;gap:4px;padding:9px 9px 8px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .hud-dock .tabs button{flex:1;appearance:none;border:1px solid transparent;background:transparent;color:var(--dim);
+    font:inherit;font-size:11.5px;padding:8px 2px 6px;border-radius:9px;cursor:pointer;transition:.12s;
+    display:flex;flex-direction:column;align-items:center;gap:3px}
+  .hud-dock .tabs button .tic{width:15px;height:15px;color:currentColor}
+  .hud-dock .tabs button:hover{color:var(--ink)}
+  .hud-dock .tabs button.on{color:var(--violet);background:rgba(139,114,255,.14)}
+  .parts{padding:11px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .chip{appearance:none;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);color:var(--dim);font:inherit;font-size:11.5px;
+    padding:7px 5px 8px;border-radius:11px;cursor:pointer;text-align:center;transition:.14s;position:relative;
+    display:flex;flex-direction:column;align-items:center;gap:4px}
+  .chip .chip-ic{width:100%;height:50px;object-fit:contain;pointer-events:none;
+    background:radial-gradient(120% 100% at 50% 18%,rgba(43,44,55,.7) 0%,rgba(20,21,30,.7) 100%);border-radius:8px}
+  .chip:hover{border-color:var(--violet);color:var(--ink);transform:translateY(-2px);box-shadow:0 8px 18px -8px rgba(0,0,0,.5)}
+  .chip.on{color:#fff;border-color:var(--violet);background:rgba(139,114,255,.16)}
+  .chip.on::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2.5px;background:var(--violet);border-radius:2px}
+
+  /* ↙ 카메라·그리드 기즈모 */
+  .hud-gizmo{bottom:16px;left:16px;padding:6px;display:flex;gap:5px}
+  .hud-gizmo button{appearance:none;width:36px;height:36px;border-radius:9px;border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.04);color:var(--dim);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+  .hud-gizmo button svg{width:17px;height:17px}
+  .hud-gizmo button:hover{color:var(--ink);border-color:var(--violet)}
+  .hud-gizmo button.on{color:var(--violet);border-color:var(--violet);background:rgba(139,114,255,.14)}
+
+  /* ↓ 하단 툴바 */
+  .hud-toolbar{bottom:16px;left:50%;transform:translateX(-50%);padding:8px;display:flex;align-items:center;gap:4px;border-radius:16px}
+  .hud-toolbar .ic{appearance:none;width:38px;height:38px;border:0;border-radius:10px;background:transparent;color:var(--dim);
+    cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.12s}
+  .hud-toolbar .ic:hover{background:rgba(255,255,255,.08);color:var(--ink)}
+  .hud-toolbar .ic svg{width:19px;height:19px}
+  .hud-toolbar .div{width:1px;height:22px;background:var(--line);margin:0 4px}
+  .hud-toolbar .cta{appearance:none;border:0;background:var(--coral);color:#1a120f;font:inherit;font-weight:700;font-size:13.5px;
+    border-radius:10px;padding:0 18px;height:38px;display:flex;align-items:center;gap:6px;cursor:pointer;transition:.12s;position:relative;overflow:hidden;
+    box-shadow:0 0 12px rgba(255,112,94,.3)}
+  .hud-toolbar .cta::after{content:"";position:absolute;top:0;left:0;width:40%;height:100%;transform:translateX(-160%);
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.4),transparent);transition:transform .5s}
+  .hud-toolbar .cta:hover{filter:brightness(1.05);transform:translateX(-50%) translateY(-1px)}
+  .hud-toolbar .cta:hover::after{transform:translateX(320%)}
+
+  /* ── 걸어서 빌드 모드 HUD(신규 가산 — 팀장 설계 MVP) ── */
+  .hud-toolbar .ic.walkon{color:var(--violet);background:rgba(139,114,255,.16)}
+  body.walking .hud-info, body.walking .hud-modebar, body.walking .hud-dock, body.walking .hud-gizmo,
+  body.walking .hud-minimap, body.walking .hud-context, body.walking .hud-settings,
+  body.walking .mobwarn, body.walking .mhelp{display:none!important} /* 조망 전용 UI 숨김. 툴바(토글 포함)는 유지 */
+  .hud-walkhint{display:none;top:16px;left:50%;transform:translateX(-50%);padding:9px 18px;font-size:12px;color:var(--dim);white-space:nowrap}
+  .hud-walkhint b{color:var(--ink);font-weight:600}
+  body.walking .hud-walkhint{display:block}
+  @media (pointer:coarse){ body.walking .hud-walkhint{display:none!important} } /* 터치 기기는 WASD/Esc 키가 없어 힌트 부적합 — 세로·가로 공통 숨김(전용 HUD 사용) */
+  .walk-mobile-hud{display:none;position:fixed;inset:0;z-index:15;pointer-events:none}
+  body.walking .walk-mobile-hud{display:block}
+  .walk-mobile-hud .yawzone{position:absolute;inset:0;left:42%;pointer-events:auto;touch-action:none}
+  .walk-mobile-hud .joy{position:absolute;left:18px;bottom:22px;width:112px;height:112px;border-radius:999px;
+    background:rgba(0,0,0,.34);border:1px solid rgba(255,255,255,.14);pointer-events:auto;touch-action:none}
+  .walk-mobile-hud .joy .stick{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
+    border-radius:999px;background:rgba(139,114,255,.6);border:1px solid rgba(255,255,255,.45);transition:transform .06s linear}
+  .walk-mobile-hud .wbtn{position:absolute;pointer-events:auto;appearance:none;border:1px solid var(--line);color:var(--ink);
+    font:inherit;font-weight:700;border-radius:12px;cursor:pointer;box-shadow:0 8px 18px -8px rgba(0,0,0,.5)}
+  .walk-mobile-hud .place{right:18px;bottom:24px;width:96px;height:96px;border-radius:999px;font-size:12.5px;
+    background:linear-gradient(180deg,#ff8a7a,#e6604e);border-color:rgba(255,112,94,.5);color:#1a120f}
+  .walk-mobile-hud .place:disabled{filter:grayscale(.6);opacity:.55;cursor:default}
+  .walk-mobile-hud .exit{top:14px;right:14px;padding:9px 14px;font-size:12.5px;background:rgba(20,21,27,.78);backdrop-filter:blur(8px)}
+  @media (pointer:fine){ .walk-mobile-hud{display:none!important} } /* 마우스 기기(데스크탑)는 힌트 텍스트+툴바 — 폭/높이 무관, 가로 폰(터치)은 표시 */
+  @media (pointer:coarse){ body.walking .hud-toolbar{display:none!important} } /* 터치 기기는 걸어서 중 전용 HUD에 위임(툴바가 상단 나가기와 겹침) — 세로·가로 공통 */
+
+  /* ── 조작통일(감독 방향전환): 걸어서빌드 진입점 숨김 + 모바일 조망 조이스틱 상시 노출 ── */
+  #bWalkToggle{display:none!important} /* 걸어서 진입점 숨김(behind-flag·코드 보존 — 걷기 복원 시 이 규칙만 제거) */
+  @media (pointer:coarse){
+    .walk-mobile-hud{display:block!important} /* 걷기 진입 없이도 조이스틱 노출(조망 카메라 이동용) */
+    .walk-mobile-hud .yawzone,
+    .walk-mobile-hud .place,
+    .walk-mobile-hud .exit{display:none!important} /* 걷기 전용 위젯 숨김 — 좌측 조이스틱만 남김 */
+  }
+  @media (pointer:coarse) and (max-width:640px){ /* 좁은 화면만: 하단 팔레트가 시트(28vh)로 올라오므로 조이스틱을 그 위로. 넓은 터치기기(우측 도크)는 기본 좌하단 유지 */
+    .walk-mobile-hud .joy{left:14px;bottom:calc(28vh + 16px);width:96px;height:96px} /* 하단 파츠 팔레트 위로 올려 카드 가림 방지 */
+    .walk-mobile-hud .joy .stick{width:40px;height:40px;margin:-20px 0 0 -20px}
+  }
+
+  /* 선택 컨텍스트 독 */
+  .hud-context{bottom:66px;left:50%;transform:translateX(-50%) translateY(8px);opacity:0;pointer-events:none;transition:.18s;
+    padding:9px 13px;display:flex;align-items:center;gap:11px;font-size:12.5px;color:var(--dim);white-space:nowrap}
+  .hud-context.on{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+  .hud-context .who{color:var(--ink);font-weight:600}
+  .hud-context .bar{width:1px;height:18px;background:var(--line)}
+  .hud-context .step{display:flex;align-items:center;gap:5px}
+  .hud-context .step b{color:var(--ink);min-width:38px;text-align:center;font-variant-numeric:tabular-nums}
+  .hud-context .sbtn{appearance:none;width:24px;height:24px;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);
+    font:inherit;font-size:14px;line-height:1;border-radius:7px;cursor:pointer;transition:.12s;display:flex;align-items:center;justify-content:center}
+  .hud-context .sbtn:hover{border-color:var(--violet)}
+  .hud-context .del{appearance:none;border:1px solid transparent;background:transparent;color:var(--error);font:inherit;font-size:12.5px;cursor:pointer;padding:5px 9px;border-radius:8px;transition:.12s}
+  .hud-context .del:hover{background:rgba(176,80,63,.16);border-color:var(--error)}
+  .hud-context .vidwrap{display:none;align-items:center;gap:7px}
+  .hud-context .imgwrap{display:none;align-items:center;gap:7px}
+  .hud-context input{background:rgba(0,0,0,.25);border:1px solid var(--line);color:var(--ink);font:inherit;font-size:12.5px;padding:6px 10px;border-radius:8px;width:180px}
+  .hud-context .mini{appearance:none;border:1px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);font:inherit;font-size:12px;padding:6px 11px;border-radius:8px;cursor:pointer;transition:.12s}
+  .hud-context .mini:hover{border-color:var(--violet)}
+  .hud-context .mini.cta{background:var(--coral);border-color:var(--coral);color:#1a120f;font-weight:700}
+
+  /* ↘ 미니맵 */
+  .hud-minimap{bottom:16px;right:16px;width:132px;padding:9px 10px 10px}
+  .hud-minimap .lab{font-size:9px;letter-spacing:.09em;color:var(--dim);margin-bottom:6px;text-transform:uppercase;display:flex;justify-content:space-between}
+  .hud-minimap .lab b{color:var(--cyan);font-weight:600}
+  .hud-minimap .map{position:relative;width:112px;height:96px;background:rgba(0,0,0,.32);border:1px solid rgba(255,255,255,.08);border-radius:7px;overflow:hidden}
+  .hud-minimap .room{position:absolute;inset:11px;border:1px solid rgba(255,255,255,.14);border-radius:2px}
+  .hud-minimap .dotp{position:absolute;width:4px;height:4px;border-radius:999px;background:var(--dim);transform:translate(-50%,-50%)}
+  .hud-minimap .dotp.art{background:var(--cyan);box-shadow:0 0 4px rgba(114,230,225,.8)}
+  .hud-minimap .spawn{position:absolute;width:6px;height:6px;border-radius:999px;background:var(--violet);box-shadow:0 0 6px rgba(139,114,255,.85);transform:translate(-50%,-50%)}
+
+  /* 토스트 */
+  .toast{position:fixed;left:50%;bottom:118px;transform:translateX(-50%) translateY(10px);opacity:0;transition:.2s;z-index:20;
+    background:rgba(42,34,48,.92);border:1px solid var(--coral);color:#ffd9d1;font-size:13px;padding:9px 14px;border-radius:10px;pointer-events:none;backdrop-filter:blur(8px)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #playOverlay{display:none;position:fixed;inset:0;z-index:40;background:#0a0a0ecc;backdrop-filter:blur(4px);align-items:center;justify-content:center}
+
+  /* 첫 진입 오버레이 — 프리셋 선택 / 이어서 만들기(팀장 설계: behind-flag 해제 후크) */
+  #firstRunOverlay{display:none;position:fixed;inset:0;z-index:50;background:#0a0a0ecc;backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:20px}
+  #firstRunOverlay.show{display:flex}
+  .fr-card{max-width:640px;width:100%;max-height:88vh;overflow-y:auto;padding:28px 26px 22px}
+  .fr-card h3{margin:0 0 6px;font-size:17px;letter-spacing:-.01em}
+  .fr-card .fr-sub{margin:0 0 20px;font-size:12.5px;color:var(--dim);line-height:1.5}
+  .fr-continue{display:flex;align-items:center;gap:14px;border:1px solid var(--violet);border-radius:12px;
+    background:rgba(139,114,255,.10);padding:16px 18px;cursor:pointer;text-align:left;width:100%;margin-bottom:16px;transition:.12s;font:inherit;color:var(--ink)}
+  .fr-continue:hover{background:rgba(139,114,255,.18)}
+  .fr-continue .fr-c-title{display:block;font-size:13.5px;font-weight:700;color:#fff;margin-bottom:3px}
+  .fr-continue .fr-c-desc{display:block;font-size:11.5px;color:var(--dim)}
+  .fr-continue .fr-c-arrow{margin-left:auto;font-size:18px;color:var(--violet);flex:none}
+  .fr-divider{display:flex;align-items:center;gap:10px;margin:4px 0 16px;font-size:10.5px;color:var(--dim);letter-spacing:.04em}
+  .fr-divider::before,.fr-divider::after{content:"";flex:1;height:1px;background:var(--line)}
+  .fr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .fr-grid button{padding:0;border:1px solid var(--line);border-radius:11px;background:rgba(0,0,0,.22);cursor:pointer;overflow:hidden;text-align:left;transition:.12s;font:inherit;color:var(--ink)}
+  .fr-grid button:hover{border-color:rgba(139,114,255,.6);transform:translateY(-1px)}
+  .fr-grid img{display:block;width:100%;height:92px;object-fit:cover;background:#14151a}
+  .fr-grid .fr-name{display:block;font-size:11px;font-weight:600;color:var(--ink);padding:6px 8px 2px}
+  .fr-grid .fr-desc{display:block;font-size:9.5px;color:var(--dim);padding:0 8px 8px;line-height:1.4}
+  .fr-grid .fr-blank{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:126px;color:var(--dim);font-size:11px;gap:5px;text-align:center}
+  .fr-grid .fr-blank b{font-size:18px;font-weight:400;color:var(--violet)}
+  .fr-hint{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);font-size:10.5px;color:var(--dim);line-height:1.6}
+  @media (max-width:640px){ .fr-card{max-height:92vh;padding:24px 18px 20px} } /* 모바일: 세로 스크롤 그리드(팀장 지시 A-2) */
+
+  .hud-settings{z-index:11} /* 도크 위 */
+  body.settings-open .hud-dock{display:none} /* 설정 열면 도크와 상호배타(progressive disclosure) */
+
+  /* 관람(view) 모드: 편집 크롬 숨김 → 완성 미리보기 */
+  body.viewmode .hud-dock, body.viewmode .hud-gizmo, body.viewmode .hud-toolbar,
+  body.viewmode .hud-context, body.viewmode .hud-settings{display:none!important}
+
+  /* 모바일: 경량 편집 허용 — 팔레트(도크)·선택 액션바·툴바만 남기고 나머지 정밀 패널(설정·미니맵·모드바)은 숨김 */
+  .mobwarn{display:none}
+  .mhelp{display:none} /* 모바일 안내 재열람 진입점("?") — 데스크톱 기본 숨김 */
+  .dockhandle{display:none} /* 파츠 팔레트 접기 핸들 — 데스크톱 기본 숨김 */
+  .mstep,.mmove{display:none} /* 모바일 전용 이동/그리드회전 컨트롤 — 데스크톱 기본 숨김 */
+  .mcancel{display:none} /* 모바일 배치취소 — 키보드 Escape가 없는 터치 환경의 유일한 탈출구(데스크톱은 Escape로 충분) */
+  @media (max-width:640px){
+    .desk:not(.m-show){display:none!important}
+
+    /* 툴바: 아이콘·플레이트 높이만 축소(버튼 자동숨김은 반려됨 — 팀장 판정 4) */
+    .m-show.hud-toolbar{top:10px;left:10px;right:10px;bottom:auto;transform:none;width:auto;
+      justify-content:space-between;border-radius:13px;padding:7px 8px}
+    .m-show.hud-toolbar .ic{width:38px;height:38px}
+    .m-show.hud-toolbar .ic svg{width:17px;height:17px}
+    .m-show.hud-toolbar .cta{padding:0 16px;height:38px;font-size:13px}
+
+    /* 파츠 팔레트(도크): 26~30vh + 접기 토글(팀장 판정 2). 펼침이 기본, 접으면 3D뷰 최대화 */
+    .m-show.hud-dock{top:auto;right:0;left:0;bottom:0;width:100%;max-height:28vh;
+      border-radius:18px 18px 0 0;border-left:0;border-right:0;border-bottom:0;
+      transition:max-height .22s cubic-bezier(.2,.8,.2,1)}
+    .m-show.hud-dock .dockhandle{display:flex;flex:none;justify-content:center;align-items:center;padding:11px 0 9px;cursor:pointer;touch-action:manipulation} /* 패딩 포함 탭 타깃 ~30px(그립 자체는 얇게 유지) */
+    .m-show.hud-dock .dockhandle .grip{width:36px;height:4px;border-radius:999px;background:var(--line)}
+    .m-show.hud-dock .tabs{flex:none;padding:2px 10px 6px}
+    .m-show.hud-dock .tabs button{font-size:11.5px;padding:9px 2px 6px}
+    body.placing .m-show.hud-dock .mcancel{display:flex;align-items:center;justify-content:center;gap:6px;
+      margin:0 10px 8px;padding:9px 0;border-radius:10px;border:1px solid var(--coral);color:#ffd9d1;
+      background:rgba(255,112,94,.16);font:inherit;font-size:12px;font-weight:600;cursor:pointer;flex:none}
+    .m-show .parts{grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px 16px;flex:1;min-height:0;overflow-y:auto}
+    .m-show .chip{padding:10px 6px 11px;font-size:12px;min-height:80px}
+    .m-show .chip .chip-ic{height:42px}
+
+    /* 접힘: 핸들만 남기고 탭/목록/배치취소 숨김. 배치 시작 시 JS가 강제로 펼침(배치취소 도달성 유지) */
+    body.dock-collapsed .m-show.hud-dock{max-height:38px}
+    body.dock-collapsed .m-show.hud-dock .tabs,
+    body.dock-collapsed .m-show.hud-dock .parts,
+    body.dock-collapsed .m-show.hud-dock .mcancel{display:none}
+
+    .m-show.hud-context{left:10px;right:10px;bottom:calc(28vh + 10px);width:auto;transform:translateY(6px);
+      justify-content:center;flex-wrap:wrap;gap:10px;padding:10px 14px;transition:bottom .22s cubic-bezier(.2,.8,.2,1),transform .18s,opacity .18s}
+    .m-show.hud-context.on{transform:translateY(0)}
+    body.dock-collapsed .m-show.hud-context{bottom:56px}
+    .m-show.hud-context .step.fine{display:none} /* 미세(5°) 회전은 정밀작업 — PC 전용 유지 */
+    .m-show.hud-context .vidwrap,.m-show.hud-context .imgwrap{display:none!important} /* 영상·이미지 편집은 A 범위 밖 */
+    .m-show.hud-context .mstep{display:flex}
+    .m-show.hud-context .mmove{display:inline-flex}
+    .m-show.hud-context .sbtn{width:30px;height:30px;font-size:16px}
+    .m-show.hud-context .del{padding:8px 12px}
+
+    /* 안내(.mobwarn): 최초 1회만 자동 노출 + 페이드(팀장 판정 1). JS가 .show 토글, localStorage로 재노출 억제 */
+    .mobwarn{display:block;position:fixed;top:70px;left:12px;right:46px;bottom:auto;z-index:9;
+      background:rgba(31,33,40,.85);border:1px solid var(--line);border-radius:10px;padding:7px 12px;
+      font-size:11px;color:var(--dim);text-align:center;backdrop-filter:blur(8px);
+      opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .5s ease,transform .5s ease}
+    .mobwarn.show{opacity:1;transform:translateY(0);pointer-events:auto}
+
+    /* 재열람 진입점 — 탭하면 안내를 다시 보여줌(팀장 판정 1) */
+    .mhelp{display:flex;position:fixed;top:70px;right:12px;z-index:9;width:26px;height:26px;
+      align-items:center;justify-content:center;border-radius:999px;border:1px solid var(--line);
+      background:rgba(31,33,40,.75);color:var(--dim);font:inherit;font-size:13px;font-weight:700;
+      backdrop-filter:blur(8px);cursor:pointer;padding:0}
+  }
+  @media (max-width:480px){ .fr-grid{grid-template-columns:repeat(2,1fr)} } /* 좁은 폰: 프리셋 그리드 2열(세로 스크롤) */
+  .hud-context .mini.on{background:var(--violet);border-color:var(--violet);color:#fff} /* 이동 토글 활성 표시 */
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+  <script type="module" crossorigin src="/openartshow/_bundle/builder-CCuiaPXF.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-CssyzYF3.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/scene-textures-BTEEDlD5.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/chibi-builder-v2-BVU7G2PD.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-assembler-F2E4aT3Y.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-lightmap-ibB-5O9T.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-presets-DIdJ8sXn.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-aZ7HCW1S.js">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<!-- 리퀴드 글래스 굴절 필터(backdrop 왜곡 = IOR 느낌). scale이 유리 두께/굴절 강도. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="refract" x="-20%" y="-20%" width="140%" height="140%">
+  <feTurbulence type="fractalNoise" baseFrequency="0.009 0.012" numOctaves="2" seed="11" result="n"/>
+  <feGaussianBlur in="n" stdDeviation="1.4" result="nb"/>
+  <feDisplacementMap in="SourceGraphic" in2="nb" scale="11" xChannelSelector="R" yChannelSelector="G"/>
+</filter></svg>
+
+<!-- ↖ 정보(히어로) -->
+<div class="plate hero hud-info desk">
+  <div class="titlerow"><span class="tick"></span><span class="title" id="spaceTitle">나의 공간</span><span class="pill">파츠 <b id="nParts">0</b></span></div>
+  <div class="gauge-lab"><span>작품 · 영상</span><b><span id="nCap">0</span>/80</b></div>
+  <div class="track"><div class="fill" id="capFill"></div></div>
+</div>
+
+<!-- ↗ 모드바 -->
+<div class="plate hud-modebar desk">
+  <div class="modeseg" id="modeseg">
+    <span class="thumb"></span>
+    <button id="mEdit" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>편집</button>
+    <button id="mView"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>관람</button>
+  </div>
+  <div class="statusrow">
+    <span class="dot" id="saveDot"></span><span class="stxt" id="saveTxt">새 공간</span>
+    <button class="gear" id="bGear" aria-label="씬 설정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></button>
+  </div>
+</div>
+
+<!-- 설정 슬라이드 -->
+<div class="plate hud-settings desk" id="settings">
+  <h4>씬 설정<span class="x" id="bSettingsClose">✕</span></h4>
+  <div class="fld"><label>조명 강도 <b id="lightVal">1.0×</b></label><input type="range" id="lightRange" min="0.6" max="1.6" step="0.05" value="1.0"></div>
+  <div class="fld colorfld"><label>조명 색</label>
+    <div class="swatches" id="lightSwatches">
+      <button data-c="#fff2e0" style="--sw:#fff2e0" title="웜"></button>
+      <button data-c="#ffffff" style="--sw:#ffffff" title="중립"></button>
+      <button data-c="#dce6ff" style="--sw:#dce6ff" title="쿨"></button>
+      <button data-c="#ffcf9e" style="--sw:#ffcf9e" title="앰버"></button>
+      <button data-c="#c7f2ec" style="--sw:#c7f2ec" title="민트"></button>
+      <input type="color" id="lightColor" value="#fff2e0" title="직접 선택">
+    </div>
+  </div>
+  <div class="fld"><label>전시 타이틀</label><input type="text" id="titleInput" maxlength="60" placeholder="나의 공간" value="나의 공간"></div>
+  <div class="fld"><label>공간 크기 <b style="color:var(--dim);font-weight:400">작품 많으면 크게</b></label>
+    <div class="finchips" data-size id="sizeChips">
+      <button type="button" data-size="small">아담 · 6×6</button>
+      <button type="button" data-size="medium">기본 · 9×7</button>
+      <button type="button" data-size="large">넓은 · 14×10</button>
+      <button type="button" data-size="hall">대형홀 · 20×14</button>
+      <button type="button" data-size="grand">그랜드 · 28×18</button>
+    </div>
+  </div>
+  <div class="fld"><label>바닥 마감</label>
+    <div class="finchips" data-fin="floor" id="finFloor">
+      <button data-id="parquet" class="on"><i style="--sw:#b98a53"></i>파케</button>
+      <button data-id="terrazzo"><i style="--sw:#d8d2c6"></i>테라조</button>
+      <button data-id="concrete"><i style="--sw:#8f8d88"></i>콘크리트</button>
+      <button data-id="grass"><i style="--sw:#5b8746"></i>잔디</button>
+      <button data-id="water"><i style="--sw:#22505f"></i>물</button>
+    </div>
+  </div>
+  <div class="fld"><label>벽 마감</label>
+    <div class="finchips" data-fin="wall" id="finWall">
+      <button data-id="white" class="on"><i style="--sw:#ffffff"></i>화이트</button>
+      <button data-id="warmsand"><i style="--sw:#e6d8bf"></i>웜샌드</button>
+      <button data-id="charcoal"><i style="--sw:#3a3a40"></i>차콜</button>
+    </div>
+  </div>
+  <div class="fld"><label>피처월(1면)</label>
+    <div class="finchips" data-fin="featureFinish" id="finFeature">
+      <button data-id="deepviolet" class="on"><i style="--sw:#2b2833"></i>딥바이올렛</button>
+      <button data-id="kintsugi"><i style="--sw:linear-gradient(135deg,#171317 40%,#c39a4a)"></i>금계</button>
+      <button data-id="charcoal"><i style="--sw:#3a3a40"></i>차콜</button>
+      <button data-id="warmsand"><i style="--sw:#e6d8bf"></i>웜샌드</button>
+    </div>
+  </div>
+  <div class="fld"><label>프리셋으로 시작 <b style="color:var(--dim);font-weight:400">현재 공간 교체</b></label>
+    <div class="presets" id="presets"></div>
+  </div>
+  <button class="bakebtn" id="bBake"><span class="bk-ic">✦</span><span id="bakeLabel">굽기 · 완성 미리보기</span></button>
+  <div class="bakehint" id="bakeHint">완성하면 조명을 셸에 구워 방문자는 가볍게 봅니다. 편집·조명색 바꾸면 자동 해제.</div>
+  <button class="publish" id="bPublish"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M12 15V3"/><path d="m8 7 4-4 4 4"/></svg>저장 · 발행</button>
+  <div class="pubhint">이 기기(브라우저)에 저장됩니다. 다른 기기·다른 사람과 공유하려면 내보내기로 JSON 파일을 받으세요.</div>
+  <button class="clearbtn" id="bClear"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg>전체 지우기</button>
+  <div class="keys">파츠 고르고 <b>바닥 클릭</b>=배치 · <b>R</b>/<b>Q</b>/<b>E</b>=회전 · <b>Del</b>=삭제 · <b>Ctrl+Z</b>=되돌리기 · <b>WASD</b>·드래그=이동</div>
+</div>
+
+<!-- → 파츠 도크(유리) -->
+<aside class="plate hud-dock desk m-show">
+  <div class="dockhandle" id="bDockToggle" role="button" tabindex="0" aria-label="파츠 팔레트 접기·펼치기" aria-expanded="true"><span class="grip"></span></div>
+  <div class="tabs" id="tabs"></div>
+  <button type="button" class="mcancel" id="bCancelPlace">✕ 배치 취소 · 탭해서 선택 모드로</button>
+  <div class="parts" id="parts"></div>
+</aside>
+
+<!-- ↙ 기즈모 -->
+<div class="plate hud-gizmo desk">
+  <button id="bSnap" class="on" title="그리드 스냅"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></button>
+  <button id="bCamReset" title="카메라 리셋"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></button>
+  <button id="bFull" title="전체화면"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+</div>
+
+<!-- ↘ 미니맵 -->
+<div class="plate hud-minimap desk">
+  <div class="lab"><span>MINIMAP</span><b id="miniN">0</b></div>
+  <div class="map"><div class="room" id="miniRoom"></div></div>
+</div>
+
+<!-- 선택 컨텍스트 -->
+<div class="plate hud-context desk m-show" id="context">
+  <span class="who" id="selLab">선택</span><span class="bar"></span>
+  <div class="step fine">각도 <button class="sbtn" id="rotDn" title="-5° (Q)">‹</button><b id="rotV">0°</b><button class="sbtn" id="rotUp" title="+5° (E)">›</button></div>
+  <div class="step mstep"><button class="sbtn" id="mRotDn" title="회전">↺</button><button class="sbtn" id="mRotUp" title="회전">↻</button></div>
+  <button class="mini mmove" id="bMove">✥ 이동</button>
+  <span class="vidwrap" id="vidwrap"><span class="bar"></span><input id="vidUrl" type="text" inputmode="url" placeholder="유튜브 링크 붙여넣기"><button class="mini" id="bVidSet">적용</button><button class="mini cta" id="bPlay">▶ 재생</button></span>
+  <span class="imgwrap" id="imgwrap"><span class="bar"></span><button class="mini cta" id="bImgPick">🖼 이미지</button><button class="mini" id="bImgClear">제거</button></span>
+  <span class="bar"></span><button class="del" id="bDel">삭제</button>
+</div>
+<input type="file" id="imgFile" accept="image/*" style="display:none">
+
+
+<!-- ↓ 툴바 -->
+<div class="plate hud-toolbar desk m-show">
+  <button class="ic" id="bUndo" title="되돌리기 (⌘/Ctrl+Z)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg></button>
+  <button class="ic" id="bLoad" title="불러오기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+  <button class="ic" id="bExport" title="내보내기(JSON)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
+  <button class="ic" id="bResetCam" title="카메라 리셋 (공간 전체 보기)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  <button class="ic" id="bWalkToggle" title="걸어서 둘러보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="m10 22 1-6-2-2 1-5-3 1-1 4"/><path d="m14 22-1-6 3-2-1-6 3 1 2 5"/></svg></button>
+  <span class="div"></span>
+  <button class="cta" id="bSave">저장</button>
+</div>
+
+<!-- 걸어서 빌드 모드 HUD(신규 가산) -->
+<div class="plate hud-walkhint desk" id="walkHint"><b>WASD</b> 이동 · <b>Space</b> 놓기 · <b>Esc</b> 나가기</div>
+<div class="walk-mobile-hud" id="walkMobHud">
+  <div class="yawzone" id="walkYawZone"></div>
+  <div class="joy" id="walkJoy"><div class="stick" id="walkJoyStick"></div></div>
+  <button type="button" class="wbtn place" id="walkPlaceBtn">여기<br>놓기</button>
+  <button type="button" class="wbtn exit" id="walkExitBtn">나가기 ✕</button>
+</div>
+
+<div id="playOverlay">
+  <div style="position:relative">
+    <button id="bPlayClose" class="mini" style="position:absolute;top:-44px;right:0;background:var(--surface-2);border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit">닫기 ✕</button>
+    <div id="playMount"></div>
+  </div>
+</div>
+
+<div id="firstRunOverlay"><div class="plate hero fr-card" id="frBody"></div></div>
+
+<button type="button" class="mhelp" id="bMobHelp" aria-label="모바일 안내 다시 보기">?</button>
+<div class="mobwarn" id="mobwarn">📱 가벼운 편집 모드 · 미세회전·쌓기 등 정밀 작업은 PC를 권장합니다</div>
+<div class="toast" id="toast"></div>
+
+</body>
+</html>

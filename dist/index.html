@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 4블록은 sha256 핀, 외부호스트 0 정합(fetch·img 모두 self) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-vxDtJ3aOqaEjtJzonrd6PKRpB0ynWKodJTFLctZaBgI=' 'sha256-kBmO7OoxO9Zo4P//dunmFD64rYjjSHwnJarrxkCgOWM='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<title>OpenArtShow — 링크 하나로 열리는 나만의 미술관</title>
+<meta name="description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="OpenArtShow — 링크 하나로 열리는 나만의 미술관">
+<meta property="og:description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
+<meta property="og:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="OpenArtShow — 링크 하나로 열리는 나만의 미술관">
+<meta name="twitter:description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
+<meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
+<!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
+<link rel="stylesheet" href="./app/vendor/fonts/fonts.css">
+<style>
+  :root {
+    /* 브랜드 토큰 — 다크 몰입 팔레트 B (DESIGN.md §3, home.html과 완전 통일 — 2026-07-14 랜딩 전면 리페인트) */
+    --violet-500: #8B72FF;
+    --violet-300: #AB99FF;
+    --violet-600: #6C4DFF;
+    --violet-100: #EAE5FF;
+    --cyan-500: #72E6E1;
+    --cyan-600: #26D9D1;
+    --coral-500: #FF705E;
+    --coral-600: #FF331A;
+    --coral-900: #660B00;
+    --neutral-warm-gray-300: #cfc6b8;
+    --neutral-warm-gray-500: #a49a8c;
+    --surface-dark-1: #1F2128;
+    --surface-dark-2: #2A2C37;
+
+    /* 구 청자 그린/골드 토큰 — 삭제하지 않고 팔레트 B 값으로 이관(§3-9, 변수명 하위호환 유지) */
+    --gold: var(--violet-500);
+    --gold-deep: var(--violet-600);
+    --gold-soft: rgba(139,114,255,0.5);
+    --paper: var(--bg-dark);
+    --r-card: 3px;        /* 갤러리 플레이트 — 유일한 radius */
+    --green-100: var(--violet-100);
+    --green-300: var(--violet-300);
+    --green-500: var(--violet-500);
+    --green-600: var(--violet-500);
+    --green-700: var(--violet-600);
+    --green-800: var(--violet-600);
+    --green-900: var(--surface-dark-2);  /* 커뮤니티 섹션 — 다크 표면 2단 상승 */
+    --gold-text: var(--cyan-500);        /* 라벨/이어브로우 — 상태·라이브 역할은 시안(§3-2) */
+    --ink-body: var(--text-dim-light);
+    --paper-deep: var(--surface-dark-1);
+    --ink: var(--text-light);
+    --ink-dim: var(--text-dim-light);
+    --bg-dark: #14151A;        /* 다크 앵커(§3-1) — home.html과 동일 */
+    --bg-dark-2: #14151A;
+    --bg-light: var(--bg-dark);         /* 전면 다크 리페인트 — 라이트 표면 앵커 폐기 */
+    --bg-panel: var(--surface-dark-1);
+    --text-dark: #202124;      /* 다크 표면 원색 채움 위 라벨 전용(§3-4) — body 기본 텍스트 아님, 아래 참고 */
+    --text-dim-dark: var(--ink-dim);
+    --text-light: #F5F5F2;
+    --text-dim-light: #9A9EB1;
+    --border-light: var(--border-dark);
+    --border-dark: #3A3D4B;
+    --section-pad: clamp(80px, 10vw, 120px);
+    /* 타이포 스케일 — 모듈러 계단 (디자이너 감사: 혼재값 흡수, 색과 직교 — 유지) */
+    --fs-h1: clamp(34px, 8.5vw, 60px);   /* 히어로 표제 (감독 이력 존중 — 크기 유지) */
+    --fs-h2: clamp(30px, 4.5vw, 42px);   /* 섹션 표제 (28~44 혼재값 흡수, h1과 1.43배 대비) */
+    --lh-h2: 1.2;
+    --fs-body: 15px;
+    --fs-body-lg: 17px;                  /* 섹션 인트로·리드 문단 */
+    --lh-body: 1.7;
+    --lh-body-loose: 1.85;
+    --fs-caption: 12px;                  /* 캡션·메타·라벨 소 */
+    --fs-label: 13px;                    /* 라벨 대 */
+    --shadow-card-hover: 0 6px 16px rgba(20, 21, 26, 0.28);
+    --shadow-card-hover-deep: 0 10px 24px rgba(139, 114, 255, 0.16);
+    /* ---- 모션: CSS linear() 스프링 곡선 (감독 승인 "생기" 데모 재사용, §7 모션 절제 — 상시 아님, 상호작용 순간만) ---- */
+    --spring-soft: linear(0, 0.135, 0.417, 0.708, 0.933, 1.067, 1.122, 1.121, 1.091, 1.053, 1.020, 0.998, 0.987, 0.984, 0.987, 0.991, 0.996, 0.999, 1.001, 1.002, 1.002, 1.001, 1.001, 1, 1);
+    --spring-press: linear(0, 0.163, 0.516, 0.881, 1.144, 1.264, 1.260, 1.178, 1.074, 0.987, 0.937, 0.925, 0.940, 0.967, 0.994, 1.013, 1.020, 1.019, 1.012, 1.005, 0.998, 0.995, 0.994, 0.996, 1);
+    --spring-fallback: cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* CTA 전용 액센트 — 코랄(§3-2, 장식 금지). 청자 그린 CTA 폐기 */
+    --accent: var(--coral-500);
+    --accent-hover: var(--coral-600);
+    --accent-ink: var(--text-dark);   /* 코랄 채움 위 라벨 — §3-4 규칙(다크 표면 원색 fill엔 text-dark) */
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg-light);
+    color: var(--text-light);
+    font-family: var(--app-font);
+    font-weight: 400;
+    word-break: keep-all;      /* 한국어 — 어절 중간 절단 금지 */
+    overflow-wrap: break-word;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    width: 100%;
+  }
+  a { text-decoration: none; }
+  img, canvas { max-width: 100%; }
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--text-dim-light);
+    font-weight: 600;
+  }
+  /* 역할별 이어브로우 색 분리(§3-2) — 라이브/상태 섹션만 시안, 정체성 섹션은 바이올렛, 나머지는 중립 dim.
+     home.html 컨벤션과 통일: .intro .eyebrow=dim, .for-artists .eyebrow=violet-300 */
+  .community .eyebrow { color: var(--cyan-500); }
+  .recruit .eyebrow { color: var(--violet-300); }
+
+  /* ---------- Reveal-on-scroll ---------- */
+  .reveal {
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--bg-dark);
+    color: var(--text-light);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+    padding: 100px 24px 60px;
+  }
+  .hero canvas#heroCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    opacity: 0.9;
+  }
+  .hero::after {
+    /* soft vignette so text stays legible over particles */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, rgba(20,21,26,0) 0%, rgba(20,21,26,0.55) 78%, rgba(20,21,26,0.9) 100%);
+    pointer-events: none;
+  }
+  .hero-content {
+    position: relative;
+    z-index: 2;
+    max-width: 760px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .hero .eyebrow {
+    margin-bottom: 24px;
+    opacity: 0;
+    animation: heroFadeUp 0.9s ease 0.1s forwards;
+  }
+  .hero h1 {
+    margin: 0;
+    font-weight: 200;
+    letter-spacing: 0.02em;               /* 0.14→0.02: 폭 축소 최대 지렛대 */
+    line-height: 1;
+    color: var(--text-light);
+    opacity: 0;
+    animation: heroFadeUp 1s ease 0.25s forwards;
+  }
+  .hero h1 .w-lead { color: var(--violet-300); font-weight: 300; } /* 'Open' 톤 분리 → 두 덩어리로 파싱, 바이올렛(§3-2 정체성) */
+  .hero h1 .dot { color: var(--text-dim-light); } /* 방점은 액센트 아님 — home.html .logo .dot과 동일하게 dim */
+  .hero .tagline-ko {
+    margin: 24px 0 0;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    color: var(--text-light);
+    opacity: 0;
+    animation: heroFadeUp 1s ease 0.5s forwards;
+  }
+  .hero .tagline-ko .tagline-sub {
+    display: block;
+    margin-top: 8px;
+    font-size: 15px;
+    font-weight: 400;
+    color: var(--text-dim-light);
+    letter-spacing: 0.02em;
+  }
+  @keyframes heroFadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .hero-cta {
+    margin-top: 48px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    opacity: 0;
+    animation: heroFadeUp 1s ease 0.8s forwards;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px 34px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    border-radius: var(--r-card);
+    cursor: pointer;
+    /* 순서 고정: background, color, border-color, transform, box-shadow — 아래 hover/active 오버라이드가 같은 순서를 유지해야 함 */
+    transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease, transform 0.24s var(--spring-fallback), box-shadow 0.5s ease-out;
+    white-space: nowrap;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .btn { transition-timing-function: ease, ease, ease, var(--spring-soft), ease-out; }
+  }
+  .btn:hover { transition-duration: .18s, .18s, .18s, .24s, .12s; }
+  .btn:active {
+    transform: translateY(1px) scale(0.98);
+    transition-duration: .14s, .14s, .14s, .14s, .12s;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .btn:active { transition-timing-function: ease, ease, ease, var(--spring-press), ease-out; }
+  }
+  /* CTA = 코랄, hover·active 순간에만 글로우가 즉발했다 잦아든다(상시 발광 아님) */
+  .btn-gold {
+    background: var(--accent);
+    color: var(--accent-ink);
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 0 0 rgba(20, 21, 26, 0), 0 0 0 0 rgba(255, 112, 94, 0);
+  }
+  .btn-gold:hover,
+  .btn-gold:active {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+    box-shadow: 0 8px 20px rgba(20, 21, 26, 0.3), 0 0 28px 6px rgba(255, 112, 94, 0.55);
+  }
+  .btn-gold:hover { transform: translateY(-2px); }
+  .btn-gold:active { transform: translateY(1px) scale(0.98); }
+  .btn-outline {
+    background: transparent;
+    color: var(--text-light);
+    border: 1px solid rgba(242,242,240,0.35);
+  }
+  .btn-outline:hover {
+    border-color: var(--gold);
+    color: var(--violet-300);   /* 다크 표면(예: .recruit surface-dark-2)에서 violet-500은 3.93:1 미달 → 밝은 violet-300로 AA 확보 */
+    transform: translateY(-2px);
+  }
+  .btn-outline-dark {
+    /* 라이트 표면 전용 변형(사용처 없음 — 전면 다크 리페인트로 미사용, 하위호환만 유지) */
+    background: transparent;
+    color: var(--text-light);
+    border: 1px solid rgba(20,21,26,0.25);
+  }
+  .btn-outline-dark:hover {
+    border-color: var(--gold);
+    color: var(--violet-300);
+    transform: translateY(-2px);
+  }
+
+  /* ---------- Section shell ---------- */
+  section { position: relative; }
+  .section-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: var(--section-pad) 28px;
+  }
+  @media (max-width: 720px) {
+    .section-inner { padding: 80px 22px; }
+  }
+  .section-head {
+    text-align: center;
+    margin-bottom: 64px;
+  }
+  .section-head h2 {
+    margin: 16px 0 0;
+    font-size: var(--fs-h2);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: var(--lh-h2);
+  }
+  .section-head p {
+    margin: 16px auto 0;
+    max-width: 520px;
+    font-size: var(--fs-body-lg);
+    font-weight: 400;
+    line-height: var(--lh-body-loose);
+    color: var(--ink-body);
+  }
+
+  /* ---------- Features ---------- */
+  .features {
+    background: var(--paper-deep); /* 카드(surface-dark-2)와의 다크 표면 단차 대비 — 그림자 없이 분리 */
+  }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 22px;
+  }
+  @media (max-width: 860px) {
+    .feature-grid { grid-template-columns: 1fr; }
+  }
+  .feature-card {
+    /* 타이포 주도 미니멀 카드 — 아이콘이 앵커, 선 장식 없음. 다크 표면 2단 상승(§3-7) */
+    background: var(--surface-dark-2);
+    padding: 38px 32px 38px;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-card);
+    box-shadow: 0 0 0 0 rgba(20, 21, 26, 0), 0 0 0 0 rgba(139, 114, 255, 0);
+    /* 순서 고정: border-color, transform, box-shadow */
+    transition: border-color 0.25s ease, transform 0.26s var(--spring-fallback), box-shadow 0.45s ease-out;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .feature-card { transition-timing-function: ease, var(--spring-soft), ease-out; }
+  }
+  /* 정체성 액센트인 바이올렛 글로우가 hover 순간에만 즉발했다 잦아든다(상시 발광 아님) */
+  .feature-card:hover {
+    border-color: var(--green-500);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-card-hover), 0 0 22px 2px rgba(139, 114, 255, 0.35);
+    transition-duration: .18s, .26s, .12s;
+  }
+  .fc-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--text-dim-light);
+    margin-bottom: 18px;
+  }
+  .fc-icon svg { width: 100%; height: 100%; display: block; }
+  .feature-card:hover .fc-icon { color: var(--text-light); }
+  .feature-card h3 {
+    margin: 0 0 8px;
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    line-height: 1.3;
+    color: var(--ink);
+  }
+  .feature-card p {
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 400;
+    line-height: var(--lh-body);
+    color: var(--ink-body);
+  }
+
+  /* ---------- 오픈월드 진입 ---------- */
+  .ow-card {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    margin-top: 34px;
+    padding: 22px 26px;
+    background: var(--surface-dark-1);
+    border: 1px solid var(--border-dark);
+    border-radius: var(--r-card);
+    color: var(--ink);
+    transition: transform 0.5s var(--spring-fallback), box-shadow 0.4s ease, border-color 0.4s ease;
+  }
+  .ow-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--cyan-500);
+    box-shadow: var(--shadow-card-hover);
+  }
+  .ow-body { flex: 1 1 auto; min-width: 0; }
+  .ow-body h3 {
+    margin: 0 0 5px;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .ow-body p {
+    margin: 0;
+    font-size: var(--fs-body);
+    line-height: var(--lh-body);
+    color: var(--ink-body);
+  }
+  .ow-enter {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: var(--cyan-500);
+  }
+  .ow-enter svg { width: 22px; height: 22px; transition: transform 0.4s var(--spring-fallback); }
+  .ow-card:hover .ow-enter svg { transform: translateX(4px); }
+  @media (max-width: 720px) {
+    .ow-card { gap: 14px; padding: 18px 18px; margin-top: 26px; }
+    .ow-body h3 { font-size: 17px; }
+  }
+
+  /* ---------- Exhibitions ---------- */
+  .exhibitions {
+    background: var(--bg-dark); /* 다크 앵커 — home.html #exhibitions와 동일(별도 면 없이 카드로 구조화) */
+    border-top: 1px solid var(--border-light);
+  }
+  .exh-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 22px;
+  }
+  .exh-card {
+    border: 1px solid var(--border-light);
+    padding: 30px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    /* 순서 고정: border-color, transform, box-shadow */
+    transition: border-color 0.3s ease, transform 0.26s var(--spring-fallback), box-shadow 0.3s ease;
+    background: var(--bg-panel);
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .exh-card { transition-timing-function: ease, var(--spring-soft), ease; }
+  }
+  .exh-card:hover {
+    /* 전시 카드는 작품/전시 프레임 — 액센트 금지, 중립만(§3-6·§3-8, home.html .exh-card:hover와 동일). 스프링 모션만 얹는다 */
+    border-color: var(--neutral-warm-gray-500);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-card-hover);
+  }
+  .exh-card:active {
+    transform: translateY(-1px) scale(.98);
+    transition-duration: .18s, .14s, .18s;
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .exh-card:active { transition-timing-function: ease, var(--spring-press), ease; }
+  }
+  .exh-card .exh-name {
+    font-size: var(--fs-body-lg);
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+  }
+  .exh-card .exh-meta {
+    font-size: var(--fs-caption);
+    letter-spacing: 0.04em;
+    color: var(--text-dim-dark);
+    display: flex;
+    justify-content: space-between;
+  }
+  .exh-card .exh-enter {
+    margin-top: auto;
+    font-size: var(--fs-caption);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--violet-300);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .exh-card .exh-enter svg {
+    width: 13px; height: 13px;
+    transition: transform 0.25s ease;
+  }
+  .exh-card:hover .exh-enter svg { transform: translateX(4px); }
+
+  /* ---------- Recruit ---------- */
+  .recruit {
+    background: var(--surface-dark-2); /* 커뮤니티·푸터 사이 계조 — 다크 표면 2단 상승 */
+    color: var(--text-light);
+    text-align: center;
+  }
+  .recruit h2 {
+    margin: 16px 0 0;
+    font-size: var(--fs-h2);
+    font-weight: 300;
+    line-height: var(--lh-h2);
+  }
+  .recruit p {
+    margin: 20px auto 0;
+    max-width: 480px;
+    font-size: var(--fs-body-lg);
+    font-weight: 400;
+    line-height: var(--lh-body-loose);
+    color: rgba(242,242,240,0.75);
+  }
+  .recruit .hero-cta { margin-top: 40px; animation: none; opacity: 1; }
+  .recruit .guide-link {
+    display: block;
+    margin-top: 28px;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--text-dim-light);
+    border-bottom: 1px solid transparent;
+  }
+  .recruit .guide-link:hover { color: var(--violet-300); border-color: var(--gold); }  /* surface-dark-2 위 violet-500 3.93:1 미달 → violet-300로 AA */
+
+  /* ---------- Footer ---------- */
+  footer {
+    background: var(--bg-dark-2);
+    color: var(--text-dim-light);
+    border-top: 1px solid var(--border-dark);
+    padding: 44px 28px 34px;
+  }
+  .footer-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+  }
+  .footer-brand {
+    font-size: var(--fs-label);
+    letter-spacing: 0.28em;
+    color: var(--text-light);
+    text-transform: uppercase;
+  }
+  .footer-brand .dot { color: var(--gold); }
+  .footer-links {
+    display: flex;
+    gap: 26px;
+    flex-wrap: wrap;
+    font-size: var(--fs-label);
+    letter-spacing: 0.03em;
+  }
+  .footer-links a { color: var(--text-dim-light); transition: color 0.25s ease; }
+  .footer-links a:hover { color: var(--gold); }
+  .footer-copy {
+    width: 100%;
+    text-align: center;
+    margin-top: 26px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border-dark);
+    font-size: var(--fs-caption);
+    letter-spacing: 0.04em;
+    color: var(--text-dim-light);
+  }
+
+  /* ================= 2026 리프레시 오버레이 =================
+     기존 규칙을 지우지 않고 위에 얹는 현대화 레이어 — 큰 타이포(clamp),
+     글래스 내비, 포토월/관람객 피드, 모바일 우선 그리드. */
+  html { scroll-behavior: smooth; }
+  section[id] { scroll-margin-top: 72px; }
+
+  .topnav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; gap: 26px;
+    padding: 14px clamp(16px, 4vw, 40px);
+    background: rgba(20,21,26,0.55);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .topnav .nav-logo {
+    font-weight: 500; letter-spacing: 0.06em; color: var(--text-light);   /* 700→500: "무겁다" 인상 해소 */
+    text-decoration: none; font-size: 15px;
+  }
+  .topnav .nav-logo .w-lead { color: var(--violet-500); }    /* home.html .logo .w-lead와 통일 */
+  .topnav .nav-logo .dot { color: var(--text-dim-light); }   /* 방점은 dim — home.html .logo .dot과 통일 */
+  .topnav .nav-links { display: flex; gap: 22px; margin-left: 6px; }
+  .topnav .nav-links a {
+    color: rgba(255,255,255,0.72); text-decoration: none; font-size: 13.5px;
+    letter-spacing: 0.04em; transition: color 0.2s;
+  }
+  .topnav .nav-links a:hover { color: var(--text-light); }
+  .nav-burger { display: none; }
+  .nav-sheet { display: none; }
+  .nav-auth { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .nav-auth-link {
+    background: none; border: none; cursor: pointer; font-family: inherit;
+    font-size: 13px; font-weight: 500; letter-spacing: 0.02em;
+    color: rgba(242,242,240,0.75); padding: 4px 2px;
+    transition: color 0.2s ease;
+  }
+  .nav-auth-link:hover { color: var(--text-light); }
+  .nav-auth-sep { width: 1px; height: 12px; background: rgba(242,242,240,0.25); }
+  .nav-auth-profile { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(242,242,240,0.9); }
+  .nav-auth-profile .ini {
+    width: 24px; height: 24px; border-radius: 50%; display: inline-flex;
+    align-items: center; justify-content: center;
+    background: var(--violet-500); color: var(--text-dark); font-size: 12px; font-weight: 600;
+  }
+  /* 로그인/회원가입 모달은 공용 컴포넌트(js/auth-modal.js)가 자체 스타일을 주입한다 — 여기선 정의하지 않음 */
+  .topnav .nav-cta {
+    /* 히어로의 "지금 입장하기"와 중복 노출 방지 — 히어로를 지나야 나타난다 */
+    opacity: 0; pointer-events: none; transform: translateY(-4px);
+    transition: opacity 0.3s ease, transform 0.3s ease, background 0.2s ease;
+    margin-left: 14px;
+    padding: 9px 20px; border-radius: var(--r-card);
+    background: var(--accent); color: var(--accent-ink); font-size: 13.5px; font-weight: 600;
+    text-decoration: none; letter-spacing: 0.03em;
+    transition: background 0.2s ease;
+  }
+  .topnav .nav-cta.is-shown { opacity: 1; pointer-events: auto; transform: none; }
+  .topnav .nav-cta:hover { background: var(--accent-hover); }
+  @media (max-width: 720px) {
+    .topnav { gap: 12px; padding: 12px 16px; }
+  }
+
+  .hero h1 { font-size: var(--fs-h1); letter-spacing: 0.02em; }
+  .hero .tagline-ko { font-size: clamp(17px, 2.6vw, 21px); }
+
+  /* ---------- 라이브 포토월 & 최근 관람객 ---------- */
+  .community {
+    background: var(--green-900); color: var(--text-light); /* 다크 표면 2단 상승 — 페이지 리듬 */
+    padding: clamp(64px, 10vw, 120px) 0;
+  }
+  .community .section-inner { max-width: 1080px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px); }
+  .community h2 { font-size: var(--fs-h2); font-weight: 500; letter-spacing: -0.01em; line-height: var(--lh-h2); margin: 8px 0 6px; }
+  .community .sub { color: rgba(255,255,255,0.68); font-size: var(--fs-body); line-height: var(--lh-body); margin-bottom: 30px; }
+
+  .visitor-strip {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 34px;
+  }
+  .visitor-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: var(--r-card);
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    font-size: var(--fs-label); color: rgba(255,255,255,0.85);
+  }
+  .visitor-chip .vdot { width: 8px; height: 8px; border-radius: 50%; }
+  .visitor-chip .vtime { color: rgba(255,255,255,0.4); font-size: 11.5px; }
+
+  .photo-grid {
+    display: grid; gap: 18px;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+  .photo-card {
+    background: #fffdf7; border-radius: 2px; padding: 10px 10px 14px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+    transform: rotate(var(--tilt, 0deg));
+    transition: transform 0.25s ease;
+  }
+  .photo-card:hover { transform: rotate(0deg) translateY(-4px) scale(1.02); }
+  .photo-card img {
+    display: block; width: 100%; border-radius: 1px;
+    aspect-ratio: 4 / 3; object-fit: cover; background: #ddd6c6;
+  }
+  .photo-card .pmeta {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-top: 10px; color: #4a453c; font-size: var(--fs-caption);
+  }
+  .photo-card .pmeta .pname { font-weight: 600; color: #1c1a16; }
+  .photo-card .pmeta .ptime { color: #8a8172; font-size: 11px; }
+  .feed-empty {
+    border: 1px dashed rgba(255,255,255,0.2); border-radius: var(--r-card);
+    padding: 34px 20px; text-align: center; color: rgba(255,255,255,0.5);
+    font-size: 14px; line-height: 1.8;
+  }
+
+
+  /* 요금제 — 캡션 카드 모티프 (디자이너 감사 ②) */
+  .pricing { background: var(--paper-deep); color: var(--ink); text-align: center; }
+  .pricing h2 { font-size: var(--fs-h2); font-weight: 300; line-height: var(--lh-h2); margin: 8px 0 6px; }
+  .pricing-sub { color: var(--ink-dim); font-size: var(--fs-body); }
+  .plan-grid {
+    display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;
+    margin: 44px 0 28px; text-align: left;
+  }
+  .plan-card {
+    flex: 1; min-width: 250px; max-width: 320px;
+    padding: 28px 26px 30px;
+    background: var(--surface-dark-2);
+    border: 1px solid var(--border-light);
+    border-radius: var(--r-card);
+    position: relative;
+    text-align: left;
+    transition: border-color 0.25s ease, transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  .plan-card::before {
+    content: ""; display: block;
+    width: 40px; height: 2px;
+    background: linear-gradient(90deg, var(--green-700), var(--green-300));
+    margin-bottom: 18px;
+    transition: width 0.25s ease;
+  }
+  .plan-card:hover { border-color: var(--gold); transform: translateY(-4px); box-shadow: var(--shadow-card-hover); }
+  .plan-card--featured { border-color: var(--gold-deep); }
+  .plan-card--featured:hover { box-shadow: var(--shadow-card-hover-deep); }
+  .plan-card--featured::before { width: 64px; }
+  .plan-badge {
+    position: absolute; top: -11px; right: 18px;
+    background: var(--violet-500); color: var(--text-dark); /* 다크 표면 원색 채움 위 라벨(§3-4) */
+    font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+    padding: 3px 12px; border-radius: var(--r-card);
+  }
+  .plan-tier { font-size: 12px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold-text); }
+  .plan-price { font-size: 36px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin: 8px 0 16px; color: var(--ink); }
+  .plan-price small { font-size: 13px; font-weight: 400; color: var(--ink-body); white-space: nowrap; }
+  .plan-list { list-style: none; padding: 0; margin: 0; font-size: var(--fs-body); font-weight: 400; line-height: var(--lh-body); color: var(--ink-body); }
+  .plan-list li::before { content: "✓"; color: var(--gold-text); margin-right: 8px; }
+  .code-box { max-width: 560px; margin: 0 auto; font-size: 14px; color: var(--ink-dim); }
+  .code-box a { color: var(--violet-300); }  /* pricing surface-dark-1 위 상시 링크 — violet-600 3.17:1 미달 → violet-300로 AA */
+  .code-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+  .code-row input {
+    flex: 1 1 200px; max-width: 260px;
+    padding: 12px 16px; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase;
+    border: 1px solid var(--border-light); border-radius: var(--r-card); background: var(--surface-dark-1);
+    color: var(--text-light);
+    font-family: inherit;
+  }
+  .code-row input:focus-visible { outline: none; border-color: var(--gold-deep); box-shadow: 0 0 0 1px var(--gold-deep); }
+  .code-msg { margin-top: 12px; font-size: 13px; min-height: 18px; }
+
+  /* 톤 전환 디바이더 — 전시실이 바뀌는 신호 */
+  .tone-shift { position: relative; }
+  .tone-shift::before {
+    content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: min(200px, 40vw); height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+  .recruit { background: var(--surface-dark-2); border-top: 1px solid var(--border-dark); }
+  .features { background: linear-gradient(180deg, var(--paper) 0%, var(--paper-deep) 100%); }
+
+  /* 히어로 — 헤어라인 액자 + 좌하단 캡션 카드 (디자이너 감사 §3, 다크 몰입 리페인트) */
+  .hero::before {
+    content: "";
+    position: absolute; inset: clamp(14px, 2.5vw, 28px);
+    border: 1px solid rgba(245,245,242,0.14); /* 중립 헤어라인 — 액자 장식은 액센트 미사용(§3-6) */
+    pointer-events: none; z-index: 1;
+  }
+  .hero-caption {
+    position: absolute; z-index: 2;
+    left: clamp(28px, 5vw, 56px); bottom: clamp(28px, 5vw, 56px);
+    min-width: 210px; padding: 14px 18px 15px;
+    background: rgba(42,44,55,0.92);
+    border-top: 2px solid var(--gold);
+    border-radius: 0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    text-align: left; color: var(--ink);
+    opacity: 0; animation: heroFadeUp 1s ease 1.1s forwards;
+  }
+  .hero-caption .cap-title { font-size: 14px; font-weight: 700; letter-spacing: 0.02em; }
+  .hero-caption .cap-sub { margin-top: 3px; font-size: 11px; letter-spacing: 0.05em; color: var(--ink-dim); }
+  .hero-caption .cap-live { margin-top: 6px; font-size: 11px; color: var(--cyan-500); letter-spacing: 0.08em; } /* 실시간 카운트 — 라이브 상태는 시안(§3-2) */
+
+  /* 모바일 — 내비 pill 행 유지 + 히어로 CTA 스택 (디자이너 감사 ⑥) */
+  @media (min-width: 721px) { br.m-only { display: none; } }
+  @media (max-width: 720px) {
+    /* 모바일 — 심플 햄버거 (감독 지시). 링크 필로우/인증/CTA는 시트 안으로 */
+    .topnav { padding: 12px 16px; }
+    .topnav .nav-links, .topnav .nav-auth, .topnav .nav-cta { display: none; }
+    .nav-burger {
+      display: inline-flex; flex-direction: column; justify-content: center; gap: 5px;
+      margin-left: auto; width: 40px; height: 40px; padding: 9px;
+      background: none; border: none; cursor: pointer;
+    }
+    .nav-burger span {
+      display: block; height: 1.5px; width: 100%;
+      background: rgba(242,242,240,0.9);
+      transition: transform 0.25s ease, opacity 0.2s ease;
+    }
+    .nav-burger[aria-expanded="true"] span:nth-child(1) { transform: translateY(6.5px) rotate(45deg); }
+    .nav-burger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+    .nav-burger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6.5px) rotate(-45deg); }
+    .nav-sheet {
+      display: block; position: fixed; left: 0; right: 0; top: 56px; z-index: 90;
+      background: rgba(20,21,26,0.96);
+      border-bottom: 1px solid var(--border-dark);
+      padding: 8px 20px 18px;
+      transform: translateY(-8px); opacity: 0; pointer-events: none;
+      transition: transform 0.25s ease, opacity 0.25s ease;
+    }
+    .nav-sheet.is-open { transform: none; opacity: 1; pointer-events: auto; }
+    .nav-sheet > a {
+      display: block; padding: 13px 2px;
+      font-size: 15px; font-weight: 500; color: rgba(242,242,240,0.9);
+      border-bottom: 1px solid rgba(242,242,240,0.08);
+    }
+    .nav-sheet > a:last-of-type { border-bottom: none; }
+    .ns-divider { height: 1px; background: rgba(242,242,240,0.14); margin: 6px 0; }
+    .ns-auth { display: flex; align-items: center; gap: 14px; padding: 12px 2px; }
+    .ns-auth .nav-auth-link { font-size: 14px; padding: 0; }
+    .ns-auth .nav-auth-profile { font-size: 14px; }
+    .ns-enter {
+      display: block; margin-top: 10px; padding: 13px;
+      background: var(--accent); color: var(--accent-ink); text-align: center;
+      border-radius: var(--r-card); font-size: 14px; font-weight: 600;
+    }
+    section[id] { scroll-margin-top: 72px; }
+    /* 1열 전폭 카드에서 좌측 정렬은 오른쪽이 비어 기울어 보인다 — 중앙 구성 */
+    .feature-card { align-items: center; text-align: center; padding: 34px 24px 34px; }
+    .fc-icon { width: 56px; height: 56px; margin-bottom: 14px; }
+    .hero-cta { width: 100%; max-width: 340px; flex-direction: column; gap: 12px; }
+    .hero-cta .btn { width: 100%; }
+    .hero-caption { display: none; }
+  }
+
+  /* ---------- P1-①: skip-link (본문 바로가기) — 평소 화면 밖, 키보드 포커스 시에만 노출 ---------- */
+  .skip-link {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    transform: translateY(-120%);
+    background: var(--surface-dark-2);
+    color: var(--text-light);
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    border: 1px solid var(--violet-500);
+    border-radius: 0 0 var(--r-card) 0;
+    transition: transform 0.2s ease;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+
+  /* ---------- 마감: focus-visible 접근성 + reduced-motion (디자이너 감사 §4·§3) ---------- */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--violet-500);   /* home.html과 통일 — 다크 표면 전용 포커스 링(§3-2) */
+    outline-offset: 3px;
+    border-radius: var(--r-card);
+  }
+  /* 전면 다크 리페인트로 라이트/다크 구분 불필요 — 동일 톤 유지(하위호환 셀렉터만 보존) */
+  .hero :focus-visible,
+  .topnav :focus-visible,
+  .community :focus-visible,
+  .recruit :focus-visible,
+  footer :focus-visible {
+    outline-color: var(--green-300);
+  }
+  /* 새 hover 리프트/버튼 모션을 reduced-motion에서 무력화 (기존 정책 정신 확장) —
+     스프링·글로우 펄스는 무해화(즉시 스냅)하되 색·명암 피드백 자체는 유지한다 */
+  @media (prefers-reduced-motion: reduce) {
+    .btn, .btn:hover, .btn:active,
+    .btn-gold, .btn-gold:hover, .btn-gold:active,
+    .feature-card, .feature-card:hover,
+    .exh-card, .exh-card:hover, .exh-card:active {
+      transition-duration: .01ms !important;
+    }
+    .feature-card:hover, .exh-card:hover, .plan-card:hover,
+    .btn-gold:hover, .btn-gold:active, .btn-outline:hover, .btn-outline-dark:hover,
+    .btn:active, .exh-card:active {
+      transform: none;
+    }
+  }
+
+  /* v2 배지 */
+  .v2-badge{position:fixed;top:clamp(12px, 2vw, 20px);right:clamp(12px, 2vw, 20px);z-index:999;
+    background:rgba(139,114,255,.2);border:1px solid rgba(139,114,255,.4);
+    border-radius:6px;padding:6px 12px;font-size:clamp(11px, 1.5vw, 13px);font-weight:600;
+    color:#8B72FF;letter-spacing:.02em;pointer-events:none}
+</style>
+  <script type="module" crossorigin src="/openartshow/_bundle/landing-QCtIR7hg.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/feed-yvp1pENn.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-aZ7HCW1S.js">
+</head>
+<body>
+
+  <div class="v2-badge">✨ v2</div>
+
+  <a class="skip-link" href="#main">본문 바로가기</a>
+
+  <!-- ============ HERO ============ -->
+  <nav class="topnav" aria-label="주 메뉴">
+    <a class="nav-logo" href="#top"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
+    <button class="nav-burger" id="navBurger" type="button" aria-label="메뉴 열기" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="nav-links">
+      <a href="#exhibitions">전시</a>
+      <a href="#photowall">포토월</a>
+      <a href="#pricing">요금제</a>
+      <a href="./about.html">소개</a>
+      <a href="./guide.html">가이드</a>
+      <a href="./devlog/">개발일지</a>
+      <a href="./team/">팀</a>
+    </div>
+    <div class="nav-auth" id="navAuth">
+      <button class="nav-auth-link" type="button" data-auth-mode="login">로그인</button>
+      <span class="nav-auth-sep"></span>
+      <button class="nav-auth-link" type="button" data-auth-mode="signup">회원가입</button>
+    </div>
+    <a class="nav-cta" href="./app/">입장하기</a>
+    <div class="nav-sheet" id="navSheet">
+      <a href="#exhibitions">전시</a>
+      <a href="#photowall">포토월</a>
+      <a href="#pricing">요금제</a>
+      <a href="./about.html">소개</a>
+      <a href="./guide.html">가이드</a>
+      <a href="./devlog/">개발일지</a>
+      <a href="./team/">팀</a>
+      <div class="ns-divider"></div>
+      <div class="ns-auth" id="nsAuth"></div>
+      <a class="ns-enter" href="./app/">입장하기</a>
+    </div>
+  </nav>
+
+  <main id="main">
+
+  <section class="hero" id="top">
+    <canvas id="heroCanvas" aria-hidden="true"></canvas>
+    <div class="hero-content">
+      <div class="eyebrow">Your Museum, One Link</div>
+      <h1><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></h1>
+      <p class="tagline-ko">링크 하나로, 나만의 미술관.<span class="tagline-sub">설치도 가입도 없이,<br class="m-only"> 브라우저에서 바로 거니는 3D 전시.</span></p>
+      <div class="hero-cta">
+        <a class="btn btn-gold" href="./app/">지금 입장하기</a>
+        <a class="btn btn-outline" href="./app/studio.html">내 전시 만들기</a>
+      </div>
+    </div>
+    <aside class="hero-caption" aria-label="전시 정보">
+      <div class="cap-title">OpenArtShow, 2026</div>
+      <div class="cap-sub">Web · 3D Virtual Museum · B1–Rooftop</div>
+      <div class="cap-live" id="heroLiveCount">지금 열린 전시 — 집계 중</div>
+    </aside>
+  </section>
+
+  <!-- ============ FEATURES ============ -->
+  <section class="features tone-shift">
+    <div class="section-inner">
+      <div class="section-head reveal">
+        <div class="eyebrow">Experience</div>
+        <h2>스크롤하지 말고,<br class="m-only"> 걸어 들어오세요</h2>
+        <p>화면 속 이미지가 아니라,<br class="m-only"> 벽에 걸린 작품 앞에 서게 됩니다.</p>
+      </div>
+      <div class="feature-grid">
+
+        <div class="feature-card reveal">
+          <div class="fc-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 56V26L32 8l24 18v30" />
+              <path d="M8 26a24 18 0 0 1 48 0" />
+              <path d="M20 56V38h24v18" />
+              <path d="M32 56V44" />
+              <path d="M4 56h56" />
+            </svg>
+          </div>
+          <h3>네 개 층의 미술관</h3>
+          <p>지하 미디어관부터 옥상 테라스까지,<br class="m-only"> 걸어서.</p>
+        </div>
+
+        <div class="feature-card reveal">
+          <div class="fc-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="22" cy="22" r="9" />
+              <circle cx="45" cy="25" r="7.5" />
+              <path d="M8 56v-3a14 14 0 0 1 14-14h1a14 14 0 0 1 12.6 8" />
+              <path d="M34 56v-2a12 12 0 0 1 12-12h1a12 12 0 0 1 11 7.4" />
+              <path d="M14 10h10M19 5v10" opacity="0.55" />
+            </svg>
+          </div>
+          <h3>함께 걷는 관람</h3>
+          <p>낯선 이와 같은 작품 앞에,<br class="m-only"> 나란히.</p>
+        </div>
+
+        <div class="feature-card reveal">
+          <div class="fc-icon" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="10" y="14" width="30" height="22" rx="1.5" />
+              <path d="M14 42h22M14 48h14" />
+              <path d="M40 26h8a6 6 0 0 1 6 6v20" opacity="0.55" />
+              <path d="M47 45l7 7 7-7" opacity="0.55" />
+            </svg>
+          </div>
+          <h3>링크 하나로 초대</h3>
+          <p>가입 없이,<br class="m-only"> 누르는 순간 당신의 미술관.</p>
+        </div>
+
+      </div>
+
+      <!-- 오픈월드 진입 — 정식 서비스, 의도된 라이브 노출(감독 결재). sitemap 등록됨(app/world.html). 링크는 배포 구조 기준(랜딩=루트, 앱=./app/). -->
+      <a class="ow-card reveal" href="./app/world.html" aria-label="오픈월드 입장">
+        <div class="ow-body">
+          <h3>오픈월드</h3>
+          <p>미술관 밖으로 —<br class="m-only"> 여러 전시가 늘어선 거리를 함께 걸어 보세요.</p>
+        </div>
+        <span class="ow-enter" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </span>
+      </a>
+    </div>
+  </section>
+
+  <!-- ============ EXHIBITIONS ============ -->
+  <section class="exhibitions" id="exhibitions" style="display:none;">
+    <div class="section-inner">
+      <div class="section-head reveal">
+        <div class="eyebrow">Now Showing</div>
+        <h2>지금 열려 있는 전시</h2>
+        <p>문은 열려 있습니다.<br class="m-only"> 마음에 드는 전시부터 들어가 보세요.</p>
+      </div>
+      <div class="exh-grid" id="exhGrid"></div>
+    </div>
+  </section>
+
+  <!-- ============ RECRUIT ============ -->
+  <!-- ============ COMMUNITY: 최근 관람객 + 라이브 포토월 ============ -->
+  <section class="community tone-shift" id="photowall">
+    <div class="section-inner">
+      <div class="eyebrow reveal" style="color:var(--cyan-500);">Live from the Museum</div>
+      <h2 class="reveal">오늘,<br class="m-only"> 전시장에 다녀간 사람들</h2>
+      <p class="sub reveal">방명록에 남긴 이름과 전시장에서 찍은 사진이 이 자리에 차곡차곡 쌓입니다.</p>
+      <div id="visitorStrip" class="visitor-strip reveal"></div>
+      <div id="photoGrid" class="photo-grid reveal"></div>
+    </div>
+  </section>
+
+  <section class="recruit">
+    <div class="section-inner">
+      <div class="eyebrow reveal">For Artists</div>
+      <h2 class="reveal">첫 개인전,<br class="m-only"> 오늘 열 수 있습니다</h2>
+      <p class="reveal">작품 몇 점과 소개 한 줄이면 충분합니다. 무료로 여섯 점까지 걸 수 있고, 스튜디오에서 미리 걸어 보며 다듬은 뒤 링크 하나로 공개하세요.<br><span style="opacity:0.7;">작품은 당신이 만들었으니, 미술관은 저희가 지었습니다.</span></p>
+      <div class="hero-cta reveal">
+        <a class="btn btn-gold" href="./app/studio.html">무료로 전시 만들기</a>
+        <a class="btn btn-outline" href="./guide.html">이용 안내 보기</a>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============ PRICING (P2 임시 운영: 결제 대신 활성화 코드) ============ -->
+  <section class="pricing tone-shift" id="pricing">
+    <div class="section-inner">
+      <div class="eyebrow reveal">Pricing</div>
+      <h2 class="reveal">요금제</h2>
+      <p class="reveal pricing-sub">무료로 시작하세요. 전시가 커지면 그때 프리미엄으로 넓히면 됩니다.</p>
+      <div class="plan-grid reveal">
+        <div class="plan-card">
+          <div class="plan-tier">Free</div>
+          <div class="plan-price">0원</div>
+          <ul class="plan-list">
+            <li>전시 공유 링크 무제한</li>
+            <li>작품 6점 · 대표작 1점</li>
+            <li>기본 테마 2종 — 맑은 오후 · 시간 연동</li>
+            <li>멀티플레이 · 방명록 · AI 관객</li>
+          </ul>
+        </div>
+        <div class="plan-card plan-card--featured">
+          <div class="plan-badge">EARLY BIRD</div>
+          <div class="plan-tier">Premium</div>
+          <div class="plan-price">월 4,900원 <small>정식 출시 예정가</small></div>
+          <ul class="plan-list">
+            <li>작품 14점 · 대표작 2점</li>
+            <li>모든 전시 테마 — 석양 · 야간 · 시네마틱</li>
+            <li>커스텀 도메인 연결 <small>(준비 중)</small></li>
+            <li>우선 지원</li>
+          </ul>
+        </div>
+      </div>
+      <div class="reveal code-box">
+        <p>결제 기능은 준비 중입니다. 그동안은 활성화 코드로 프리미엄을 무료로 이용하실 수 있어요 — 코드는 <a href="mailto:syhongartist@gmail.com">메일로 요청</a>해 주세요.</p>
+        <div class="code-row">
+          <input id="planCodeInput" type="text" placeholder="ART-XXXX-XXXX" spellcheck="false" autocomplete="off">
+          <button id="planCodeBtn" type="button" class="btn btn-gold">코드 등록</button>
+        </div>
+        <p id="planCodeMsg" class="code-msg"></p>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- ============ FOOTER ============ -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-brand">OpenArtShow<span class="dot">.</span></div>
+      <div class="footer-links">
+        <a href="./about.html">소개</a>
+        <a href="./guide.html">이용 안내</a>
+        <a href="./app/">전시 입장</a>
+        <a href="./app/studio.html">내 전시 만들기</a>
+        <a href="./devlog/">개발일지</a>
+        <a href="./team/">팀</a>
+        <a href="mailto:syhongartist@gmail.com">문의하기</a>
+      </div>
+      <div class="footer-copy">&copy; 2026 OpenArtShow. · <a href="mailto:syhongartist@gmail.com" style="color:inherit;">문의 및 신고</a></div>
+    </div>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------- Scroll reveal ---------------- */
+  var revealEls = document.querySelectorAll(".reveal");
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: "0px 0px -40px 0px" });
+    revealEls.forEach(function (el) { io.observe(el); });
+  } else {
+    revealEls.forEach(function (el) { el.classList.add("is-visible"); });
+  }
+
+  /* ---------------- Hero particle field ---------------- */
+  var canvas = document.getElementById("heroCanvas");
+  var ctx = canvas.getContext("2d");
+  var particles = [];
+  var W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var MAX_PARTICLES = 70;
+
+  function sizeCanvas() {
+    var rect = canvas.parentElement.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  function makeParticle() {
+    return {
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: 0.6 + Math.random() * 1.6,
+      baseAlpha: 0.15 + Math.random() * 0.45,
+      speedY: -(0.06 + Math.random() * 0.16),
+      speedX: (Math.random() - 0.5) * 0.05,
+      twinkleSpeed: 0.0006 + Math.random() * 0.0012,
+      twinklePhase: Math.random() * Math.PI * 2
+    };
+  }
+
+  function initParticles() {
+    var count = W < 640 ? Math.round(MAX_PARTICLES * 0.55) : MAX_PARTICLES;
+    particles = [];
+    for (var i = 0; i < count; i++) particles.push(makeParticle());
+  }
+
+  function drawBeams(t) {
+    // a couple of very faint, slowly shifting violet light rays (팔레트 B — 정체성 액센트)
+    var cx = W * 0.5;
+    var beams = [
+      { angle: -0.32, width: W * 0.5, drift: Math.sin(t * 0.00006) * 40 },
+      { angle: 0.22, width: W * 0.4, drift: Math.cos(t * 0.00005) * 30 }
+    ];
+    beams.forEach(function (b) {
+      var x = cx + b.drift;
+      var grad = ctx.createLinearGradient(x, -H * 0.1, x + Math.sin(b.angle) * H, H * 0.9);
+      grad.addColorStop(0, "rgba(139,114,255,0.05)");
+      grad.addColorStop(1, "rgba(139,114,255,0)");
+      ctx.save();
+      ctx.translate(x, 0);
+      ctx.rotate(b.angle);
+      ctx.fillStyle = grad;
+      ctx.fillRect(-b.width / 2, -H * 0.2, b.width, H * 1.6);
+      ctx.restore();
+    });
+  }
+
+  var rafId = null;
+  function tick(t) {
+    ctx.clearRect(0, 0, W, H);
+    drawBeams(t);
+    for (var i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      p.y += p.speedY;
+      p.x += p.speedX;
+      if (p.y < -10) { p.y = H + 10; p.x = Math.random() * W; }
+      if (p.x < -10) p.x = W + 10;
+      if (p.x > W + 10) p.x = -10;
+      var tw = 0.7 + 0.3 * Math.sin(t * p.twinkleSpeed + p.twinklePhase);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(139,114,255," + (p.baseAlpha * tw).toFixed(3) + ")";
+      ctx.fill();
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function startAnim() {
+    if (rafId === null) rafId = requestAnimationFrame(tick);
+  }
+  function stopAnim() {
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  }
+
+  sizeCanvas();
+  initParticles();
+
+  if (reduceMotion) {
+    // draw a single static-ish frame, no continuous animation
+    tick(0);
+  } else {
+    startAnim();
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) stopAnim(); else startAnim();
+    });
+  }
+
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      sizeCanvas();
+      initParticles();
+    }, 150);
+  });
+
+  /* ---------------- Exhibition list ---------------- */
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+    });
+  }
+
+  fetch("./app/galleries/index.json")
+    .then(function (res) {
+      if (!res.ok) throw new Error("gallery index unavailable");
+      return res.json();
+    })
+    .then(function (list) {
+      if (!Array.isArray(list) || list.length === 0) return;
+      var live = document.getElementById("heroLiveCount");
+      if (live) live.textContent = "지금 열린 전시 — " + list.length + "곳";
+      var grid = document.getElementById("exhGrid");
+      var frag = document.createDocumentFragment();
+      list.forEach(function (g) {
+        var id = g.id || "";
+        var name = g.name || id || "무제 (Untitled)";
+        var artist = g.artist || "";
+        var count = (typeof g.count === "number") ? g.count : null;
+
+        var card = document.createElement("a");
+        card.className = "exh-card reveal";
+        card.href = "./app/?g=" + encodeURIComponent(id);
+
+        var metaRight = count !== null ? (count + "점") : "";
+        card.innerHTML =
+          '<div class="exh-name">' + escapeHtml(name) + '</div>' +
+          '<div class="exh-meta"><span>' + escapeHtml(artist) + '</span><span>' + escapeHtml(metaRight) + '</span></div>' +
+          '<div class="exh-enter">입장하기' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg>' +
+          '</div>';
+        frag.appendChild(card);
+      });
+      grid.appendChild(frag);
+      var section = document.getElementById("exhibitions");
+      section.style.display = "";
+
+      // observe the freshly-added reveal cards
+      if ("IntersectionObserver" in window) {
+        var io2 = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("is-visible");
+              io2.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+        grid.querySelectorAll(".reveal").forEach(function (el) { io2.observe(el); });
+      } else {
+        grid.querySelectorAll(".reveal").forEach(function (el) { el.classList.add("is-visible"); });
+      }
+    })
+    .catch(function () {
+      // silently keep the section hidden
+    });
+
+})();
+</script>
+<script>
+  (function () {
+    var PLAN_KEY = 'artshow-plan-v1';
+    var input = document.getElementById('planCodeInput');
+    var btn = document.getElementById('planCodeBtn');
+    var msg = document.getElementById('planCodeMsg');
+    if (!input || !btn || !msg) return;
+
+    function isPremium() {
+      try { return localStorage.getItem(PLAN_KEY) === 'premium'; } catch (e) { return false; }
+    }
+    function codeValid(code) {
+      code = String(code || '').trim().toUpperCase();
+      if (!/^ART-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) return false;
+      var h = 5381;
+      for (var i = 0; i < code.length; i++) h = ((h << 5) + h + code.charCodeAt(i)) >>> 0;
+      return h % 9973 === 777;
+    }
+    function renderState() {
+      if (isPremium()) {
+        msg.textContent = '✓ 이 브라우저에서 프리미엄이 활성화되어 있습니다. 스튜디오에서 모든 기능을 사용할 수 있어요.';
+        msg.style.color = '#72E6E1'; /* 활성 상태 — 시안(§3-2 라이브/상태 역할), 다크 표면 대비 12.26:1 */
+        btn.textContent = '활성화됨';
+        btn.disabled = true;
+        input.disabled = true;
+      }
+    }
+    btn.addEventListener('click', function () {
+      if (codeValid(input.value)) {
+        try { localStorage.setItem(PLAN_KEY, 'premium'); } catch (e) { /* 무시 */ }
+        renderState();
+      } else {
+        msg.textContent = '코드를 다시 확인해 주세요. ART-XXXX-XXXX 형식이어야 합니다.';
+        msg.style.color = '#FF8A75'; /* 오류 상태 — 다크 표면에서 읽히는 밝은 레드, 코랄(CTA 전용)과는 구분되는 톤 */
+      }
+    });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') btn.click(); });
+    renderState();
+  })();
+</script>
+</body>
+</html>
