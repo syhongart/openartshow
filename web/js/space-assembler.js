@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "../utils/BufferGeometryUtils.js";
 import { FOOTPRINT, STORY_H, PART_TYPES, TINT_PALETTES } from "./space.js";
 import {
   bakeUVRepeat,
@@ -6,6 +7,7 @@ import {
   finishMat,
   wallMat,
   featureMat,
+  shellFlatMat,
   partY,
   MATS,
   FRAME_MAT_ID,
@@ -58,6 +60,11 @@ function buildSpaceGroup(space, opts = {}) {
   };
   const { fw, fd, hw, hd, H, t, floors, totalH } = spaceDims(space);
   const shellSurf = [];
+  // [오픈월드 LOD] flatShell: shellOnly 원경 파셀의 셸 표면을 단색 임포스터로 후처리(fill-rate·draw call 절감).
+  // shellOnly와 함께일 때만 활성 — flat=false면 아래 flatSegs.push가 전부 스킵되어 씬그래프·바이트 100% 현행 동일
+  // (라이브 3면 main/visit/builder는 flatShell을 넘기지 않으므로 무영향 — noSpots 순수 가산 전례와 동형).
+  const flat = !!(opts.flatShell && opts.shellOnly);
+  const flatSegs = [];
   const UP_Y = () => new THREE.Vector3(0, 1, 0);
   let floorM = null;
   for (let f = 0; f < floors; f++) {
@@ -65,6 +72,7 @@ function buildSpaceGroup(space, opts = {}) {
     sm.position.set(0, f * H - 0.05, 0);
     sm.receiveShadow = true;
     g.add(sm);
+    if (flat) flatSegs.push({ mesh: sm, kind: "floor", id: space.shell.finish.floor });
     shellSurf.push({ mesh: sm, center: new THREE.Vector3(0, f * H + 1e-3, 0), normal: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(0, 0, -1), width: fw, height: fd });
     if (f === 0) floorM = sm;
   }
@@ -72,6 +80,7 @@ function buildSpaceGroup(space, opts = {}) {
     const ceilM = track(new THREE.Mesh(new THREE.BoxGeometry(fw, 0.1, fd), finishMat("ceiling", space.shell.finish.ceiling)));
     ceilM.position.set(0, totalH, 0);
     g.add(ceilM);
+    if (flat) flatSegs.push({ mesh: ceilM, kind: "ceiling", id: space.shell.finish.ceiling });
     shellSurf.push({ mesh: ceilM, center: new THREE.Vector3(0, totalH - 0.051, 0), normal: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 0, 1), width: fw, height: fd });
   }
   const WALL_DIRS = ["north", "south", "west", "east"];
@@ -94,6 +103,7 @@ function buildSpaceGroup(space, opts = {}) {
           seg.position.set(sx, baseY + H / 2, sz);
           seg.receiveShadow = true;
           g.add(seg);
+          if (flat) flatSegs.push({ mesh: seg, kind: "wall", id: wallFin });
           shellSurf.push({ mesh: seg, center: new THREE.Vector3(sx + inN.x * (t / 2), baseY + H / 2, sz + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: side, height: H });
         }
         const lw = horiz ? DOOR_W : thick, ld = horiz ? thick : DOOR_W;
@@ -101,11 +111,13 @@ function buildSpaceGroup(space, opts = {}) {
         lintel.position.set(x, baseY + DOOR_H + lintelH / 2, z);
         lintel.receiveShadow = true;
         g.add(lintel);
+        if (flat) flatSegs.push({ mesh: lintel, kind: "wall", id: wallFin });
       } else {
         const m = track(new THREE.Mesh(new THREE.BoxGeometry(ww, H, dd), wallMat(wallFin, wallW, H)));
         m.position.set(x, baseY + H / 2, z);
         m.receiveShadow = true;
         g.add(m);
+        if (flat) flatSegs.push({ mesh: m, kind: "wall", id: wallFin });
         shellSurf.push({ mesh: m, center: new THREE.Vector3(x + inN.x * (t / 2), baseY + H / 2, z + inN.z * (t / 2)), normal: inN, up: UP_Y(), width: wallW, height: H });
       }
     });
@@ -119,6 +131,7 @@ function buildSpaceGroup(space, opts = {}) {
     fwl.position.set(px, H / 2, pz);
     if (ry) fwl.rotation.y = ry;
     g.add(fwl);
+    if (flat) flatSegs.push({ mesh: fwl, kind: "feature", id: space.shell.finish.featureFinish });
     const fwN = { north: [0, 0, 1], south: [0, 0, -1], east: [-1, 0, 0], west: [1, 0, 0] }[fwSide] || [0, 0, 1];
     shellSurf.push({ mesh: fwl, center: new THREE.Vector3(px + fwN[0] * 0.02, H / 2, pz + fwN[2] * 0.02), normal: new THREE.Vector3(fwN[0], fwN[1], fwN[2]), up: UP_Y(), width: fwW, height: H - 0.2 });
   }
@@ -257,6 +270,28 @@ function buildSpaceGroup(space, opts = {}) {
         am.castShadow = true;
         g.add(am);
       }
+    }
+  }
+  if (flat && flatSegs.length) {
+    // [오픈월드 LOD] 셸 세그먼트를 계열(kind:id)별로 병합 → 파셀당 draw call 60→소수, 단색 공유재질로 텍스처 페치 0.
+    // 원본 텍스처 mesh는 씬에서만 remove(원본 지오/재질은 geos/mats에 남아 unload 시 정상 dispose — 회귀 없는 회수 경로).
+    const buckets = /* @__PURE__ */ new Map();
+    for (const seg of flatSegs) {
+      const key = seg.kind + ":" + seg.id;
+      let b = buckets.get(key);
+      if (!b) buckets.set(key, b = { kind: seg.kind, id: seg.id, geos: [] });
+      seg.mesh.updateMatrix();
+      b.geos.push(seg.mesh.geometry.clone().applyMatrix4(seg.mesh.matrix));
+      g.remove(seg.mesh);
+    }
+    for (const b of buckets.values()) {
+      const merged = mergeGeometries(b.geos, false);
+      b.geos.forEach((x) => x.dispose()); // 병합용 clone 회수(merged는 독립 복사본)
+      if (!merged) continue;
+      geos.push(merged); // 병합 지오는 파셀 소유(unload dispose 대상)
+      const fm = new THREE.Mesh(merged, shellFlatMat(b.kind, b.id)); // 공유 단색재질(userData.shared → dispose 스킵, mats에 안 넣음)
+      fm.receiveShadow = true;
+      g.add(fm);
     }
   }
   g.userData = { dims: { fw, fd, hw, hd, H, t, floors, totalH }, partRefs, geos, mats, floor: floorM, shell: shellSurf };

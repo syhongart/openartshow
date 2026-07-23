@@ -253,6 +253,44 @@ export function featureMat(id, w, h) {
   return finishMat('feature', id); // deepviolet(기본)·charcoal·warmsand, kintsugi 폴백
 }
 
+// ── [오픈월드 LOD] 원거리 shell 파셀용 단색 임포스터 재질 ──────────────────────
+// 배경: fog에 가려진 원경 shell이 벽/바닥 텍스처를 풀로 그려 fill-rate를 낭비(성능팀 실측:
+//   텍스처 페치 54회·고유재질 56개). flatShell 모드는 셸 표면을 텍스처·노멀맵 없는 단색으로 대체.
+// 색은 각 마감의 원 대표색(위 MATS base와 정합)을 저채도·약간 어둡게 눌러 — 완전 회색이 아니라
+//   원 색조를 유지한 채 fog(FOG_COLOR 0xcfe0ee)에 자연스럽게 녹는 실루엣으로 만든다.
+// 대표색을 명시 테이블로 두는 이유: 텍스처 재질(parquet/terrazzo/concrete/kintsugi)은 map에 색이
+//   있어 material.color만으로는 대표색을 못 얻는다(헤드리스 평균 추출도 불가). MATS base int와 정합.
+const SHELL_FLAT_BASE = {
+  wall: { white: 16777215, warmsand: 15128767, charcoal: 3816e3 },
+  floor: { parquet: 12159571, terrazzo: 14209734, concrete: 9407880, grass: 6257214, water: 2248799 },
+  ceiling: { whiteflat: 16777215, darkmatte: 2500139 },
+  feature: { deepviolet: 2828339, charcoal: 3816e3, warmsand: 15128767, kintsugi: 2760728 }
+};
+// 눌림: 채도 0.55배·명도 0.82배 — 색조는 남기되 채도를 죽여 fog에 녹이고, 살짝 어둡게 실루엣화.
+// (계수·MeshLambertMaterial vs MeshBasicMaterial 선택은 디자이너 검수 여지 — CLAUDE.md 시각판단 위임)
+export function shellFlatColor(kind, id) {
+  const base = (SHELL_FLAT_BASE[kind] && SHELL_FLAT_BASE[kind][id]);
+  const c = new THREE.Color(base != null ? base : 13421772);
+  const hsl: { h: number; s: number; l: number } = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  c.setHSL(hsl.h, hsl.s * 0.55, hsl.l * 0.82);
+  return c;
+}
+// 계열별 공유 단색 재질(캐시) — 같은 마감의 여러 파셀/표면이 한 재질을 공유(프로그램·메모리 절약).
+// userData.shared=true → disposeSpaceGroup이 회수하지 않는다(공유 규약). 조명(hemi/sun)에 실루엣
+//   음영이 살도록 Lambert 채택. scene.fog에 자동 반응(MeshLambertMaterial 기본 fog:true).
+const _shellFlatCache = new Map();
+export function shellFlatMat(kind, id) {
+  const key = kind + ':' + id;
+  let m = _shellFlatCache.get(key);
+  if (!m) {
+    m = new THREE.MeshLambertMaterial({ color: shellFlatColor(kind, id) });
+    m.userData.shared = true;
+    _shellFlatCache.set(key, m);
+  }
+  return m;
+}
+
 /** 파츠 y 배치 규칙 (벽걸이/바닥/천장) */
 export function partY(t, storyH) {
   const spec = PART_TYPES[t];

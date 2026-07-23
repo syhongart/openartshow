@@ -68,10 +68,21 @@ const nick = '방문자' + Math.floor(Math.random() * 900 + 100);
 const PALETTE = ['#7ec8a0', '#8e7dbe', '#6a8caf', '#e0596e', '#ffd166', '#72e6e1', '#95d5b2'];
 const myColor = PALETTE[Math.floor(Math.random() * PALETTE.length)];
 
+// ── [오픈월드 LOD 스윕] ?lod= 프리셋 — 원경 shell 단색 임포스터 + fog 밴드 정렬(감독 실기기 a/b/c 비교용) ──
+// 화이트리스트 밖 값은 무시(?sky= 살균 전례와 동형 — 무검증 반영 금지). 파라미터 없으면 a=현행 완전 동일 → 라이브 무해.
+//   a: 현행 대조군(shellFlat off, fog 0.9/1.9)  b: 중간(0.7/1.6, 단색 shell)  c: 강하게 당김(0.55/1.4, 단색 shell)
+const LOD_PRESETS = {
+  a: { fogNearK: 0.9,  fogFarK: 1.9, shellFlat: false },
+  b: { fogNearK: 0.7,  fogFarK: 1.6, shellFlat: true },
+  c: { fogNearK: 0.55, fogFarK: 1.4, shellFlat: true },
+};
+const lodPreset = LOD_PRESETS[new URLSearchParams(location.search).get('lod')] || LOD_PRESETS.a;
+
 const canvas = document.getElementById('c');
 const V = createWorld({ canvas, parcels, opts: {
   cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true,
   mp: { nickname: nick, color: myColor, char: randomChibiChar() }, // window.Peer 없으면 world.js가 조용히 1인 모드
+  ...lodPreset, // fogNearK/fogFarK/shellFlat — 미지정(a)이면 현행값과 동일
 } });
 window.__world = V;
 if (location.search.includes('debug=perf')) import('./debug-perf.js').then((m) => m.mountPerfHud(V.getRenderer(), 'world')); // ?debug=perf 게이트 뒤 동적 import(behind-flag) — 진입 즉시 프레임 계측(world.js 무접촉)

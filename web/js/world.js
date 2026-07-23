@@ -223,8 +223,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 기존 far=CELL_MAX*3.4(≈109m)는 로드거리(≤50m)보다 한참 밖이라 팝인(경계 통과 27~36m대)을 전혀 못 가렸다.
   // near=인접 파셀 경계 안쪽부터 은은히 시작, far=3×3 대각 shell 거리 부근에서 완전 안개 → 팝인대를 안개 안으로.
   // near/far를 명명 상수로 노출 — 팀장 실기기 스윕 튜닝용. 실기 피드백에 따라 계수만 조정하면 된다.
-  const FOG_NEAR = CELL_MAX * 0.9; // 인접 파셀 경계 안쪽부터 페이드 시작(가벼운 안개, 근경은 선명 유지)
-  const FOG_FAR  = CELL_MAX * 1.9; // 3×3 대각 shell 거리 부근 완전 안개 — 팝인·원거리 하드 노출 은폐
+  // [오픈월드 LOD] near/far 계수를 opts로 파라미터화(기본값 유지 시 현행 0.9/1.9 완전 동일 — 라이브 무회귀).
+  // 감독 지적: 기본 far(1.9·CELL≈45.6m)가 로드 대각(48m)과 붙어 LOD 저하가 안개에 완전히 묻힌다. far를 당기면
+  // "안개가 옅어지는 구간에 단색 shell 실루엣이 드러나는" LOD 연출이 살아난다(?lod= 프리셋으로 실기 스윕).
+  const FOG_NEAR = CELL_MAX * (opts.fogNearK ?? 0.9); // 인접 파셀 경계 안쪽부터 페이드 시작(가벼운 안개, 근경은 선명 유지)
+  const FOG_FAR  = CELL_MAX * (opts.fogFarK ?? 1.9);  // shell 거리 부근 완전 안개 — 팝인·원거리 하드 노출 은폐
   // soft GPU에도 fog 적용(기존 `if(!gpuInfo.soft)` 가드 제거) — 선형 fog는 프래그먼트당 저비용이고,
   // 팝인은 soft 실기에서 특히 두드러진다. 스카이돔은 fog:false라 하늘은 그대로, sky.js:679는 scene.fog
   // 존재 시 fog.color만 시간대별로 갱신(near/far 불변)하므로 무충돌.
@@ -765,7 +768,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const avatars = new Map();
     if (def.space) {
       const bx = ox + (def.bx || 0), bz = oz + (def.bz || 0);
-      bldGroup = buildSpaceGroup(def.space, { shellOnly, onAsyncTex: () => { if (!disposed) renderOnce(); } });
+      bldGroup = buildSpaceGroup(def.space, { shellOnly, flatShell: !!opts.shellFlat, onAsyncTex: () => { if (!disposed) renderOnce(); } });
       bldGroup.position.set(bx, 0, bz);
       // [단계2 라이트 풀] AO 접촉그림자는 addRoomLighting(noSpots)이, 작품·다운라이트 스포트는 풀에서 배정
       // (씬 SpotLight 개수 고정 → 셰이더 재컴파일 0). 배정 라이트는 언로드 시 반납.
@@ -1483,7 +1486,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getStats: () => {
       let loadedFull = 0, loadedShell = 0;
       for (const L of loaded.values()) { if (L.lod === 'shell') loadedShell++; else loadedFull++; }
-      return { drawCalls: renderer.info.render.calls, programs: renderer.info.programs.length, loadedFull, loadedShell, queue: loadQueue.length };
+      return { drawCalls: renderer.info.render.calls, programs: renderer.info.programs.length, loadedFull, loadedShell, queue: loadQueue.length, shellFlat: !!opts.shellFlat };
     },
     getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
