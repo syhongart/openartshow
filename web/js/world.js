@@ -1247,9 +1247,15 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // [C-2a] pointer:coarse는 적응 상한에도 MOBILE_PX_CAP(1.5)을 씌운다 — 스폰 캡(110)과 정합해
   // 승급 루프가 배율을 다시 2.0으로 끌어올리지 못하게 한다. 데스크톱(fine)은 캡 미적용(무변화).
   const RATIO_CEIL = coarsePointer ? Math.min(ratioCeilBase, MOBILE_PX_CAP) : ratioCeilBase;
-  // 하한은 캡 "전" 상한(ratioCeilBase) 기준으로 산정 — RATIO_FLOOR(dpr≥2에서 1.20)를 무변경 유지
-  // (팀장 확정: 하한 인하 금지·캡과 독립). min(base, …)로 감싸 dpr<1에서도 FLOOR≤CEIL 구조 보장(교차리뷰 권고).
-  const RATIO_FLOOR = Math.min(ratioCeilBase, Math.max(1, ratioCeilBase * 0.6));
+  // 하한은 캡 "전" 상한(ratioCeilBase) 기준으로 산정. [팀장 재판정 — 저사양 데스크톱 실효화]
+  // 기존 max(1, base*0.6)은 dpr=1 일반 모니터에서 FLOOR=CEIL=1이 되어 긴급강등이 no-op였다(4자 조사:
+  // 저사양 데스크톱이 모바일보다 더 버벅이는 직접 원인 — 유일한 해상도 레버가 구조적으로 죽어 있었다).
+  // 절대하한 0.85를 도입해 dpr=1에서도 해상도 강등 여지(-28% fill-rate)를 확보한다. 평상시 1.0 유지·
+  // 긴급강등(fps<24) 위기에서만 0.85로 내려가 위기 탈출 후 승급 복귀하므로, 감독 "1.0밑 뿌옇다" 제보와
+  // 충돌은 심각 저하 순간에 한정된다(감독 55:45 — 쾌적성 우선). dpr≥2는 max로 1.20 이상 유지(레티나
+  // 무변경). min(base,…)로 감싸 dpr<1·soft에서도 FLOOR≤CEIL 구조 보장(교차리뷰 권고).
+  const RATIO_ABS_FLOOR = 0.85;
+  const RATIO_FLOOR = Math.min(ratioCeilBase, Math.max(RATIO_ABS_FLOOR, ratioCeilBase * 0.6));
   // [열 감안 프레임 캡] 모바일(coarse)은 30fps로 상한을 둔다. 60fps 풀가동은 GPU 듀티사이클을 100%로
   // 유지해 발열을 계속 쌓고, 결국 스로틀(장시간 세션에서 삼각형 수와 무관한 fps 저하 — 감독 실기기 로그)로
   // 추락한다. 30캡은 프레임마다 GPU에 큰 여유를 남겨 발열·스로틀을 선제 완화한다(모바일 3D 표준 관행).
@@ -1257,7 +1263,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 감독 지시로 45→30으로 더 낮춰 발열을 추가 억제한다(A안, 감독 성능55:그래픽45). 데스크톱(fine)은
   // 여유가 있어 무캡. soft(SwiftShader)는 별도 30fps 캡(step 내부)이 이미 담당하므로 이 캡은 실GPU
   // 모바일 전용. 승급 임계(27)를 이 캡 밑으로 정합해 갇힘을 막고, 그림자는 캡과 분리(위 SHADOW_LITE 주석).
-  const FRAME_CAP_S = coarsePointer ? (1 / MOBILE_CAP_FPS) : 0; // 프레임 최소 간격(초). 0=무캡. 캡값=MOBILE_CAP_FPS(SSOT)
+  // [팀장 재판정 — 데스크톱 확장] 데스크톱(fine)은 진입 시 무캡이나, 저사양 실GPU가 지속 저fps(발열·
+  // tri 부하)면 adaptQuality에서 30캡을 동적 진입한다(아래 DESK_CAP_* 로직) — 그래서 const가 아닌 let.
+  // 모바일은 종전대로 진입 즉시 캡. soft(SwiftShader)는 step 내부 포테이토 캡이 담당(무관).
+  let frameCapS = coarsePointer ? (1 / MOBILE_CAP_FPS) : 0; // 프레임 최소 간격(초). 0=무캡. 캡값=MOBILE_CAP_FPS(SSOT)
+  const DESK_CAP_ENTER_FPS = 34; // 데스크톱 이 fps 밑이 DESK_CAP_HOLD만큼 지속되면 발열예방 30캡 진입
+  const DESK_CAP_HOLD = 6;       // 0.5초 집계 단위 × 6 = 약 3초 지속 확인(순간 스파이크 오진 방지)
+  let deskCapTicks = 0;          // 데스크톱 저fps 연속 집계
   let liteMode = false;
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
   let shadowDownTicks = 0, shadowUpTicks = 0; // [그림자 조기 적응] 방향별 연속 저/고FPS 틱(0.5s 집계 단위)
@@ -1278,11 +1290,11 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (potatoAccum < 0.034) return; // ~30fps 캡
       dt = potatoAccum;
       potatoAccum = 0;
-    } else if (FRAME_CAP_S > 0) {
-      // [열 감안 프레임 캡] 모바일 프레임 캡 상한(위 FRAME_CAP_S 주석, MOBILE_CAP_FPS=30). 건너뛴 시간은
-      // 누적해 다음 delta로 넘겨 시뮬 시간을 보존한다(물리·애니메이션이 캡 때문에 느려지지 않음).
+    } else if (frameCapS > 0) {
+      // [열 감안 프레임 캡] 모바일 즉시 캡 + 데스크톱 동적 진입(위 frameCapS 주석, MOBILE_CAP_FPS=30).
+      // 건너뛴 시간은 누적해 다음 delta로 넘겨 시뮬 시간을 보존한다(물리·애니메이션이 캡 때문에 느려지지 않음).
       capAccum += dt;
-      if (capAccum < FRAME_CAP_S) return;
+      if (capAccum < frameCapS) return;
       dt = capAccum;      // 누적 경과 전체를 넘겨 시뮬 시간을 정확히 보존(sim/real=1.0).
       capAccum = 0;       // 리셋 — 잔여를 이월하지 않는다. 이월(capAccum-=FRAME_CAP_S)은 이미 방출한
                           // 시간을 다음 프레임 dt에 재포함해 시뮬 시간을 이중계산한다(정상 60/120Hz에서도
@@ -1334,6 +1346,18 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const cur = renderer.getPixelRatio();
     const streaming = loadQueue.length > 0; // 파셀 스트리밍 중 스파이크는 강등 판단에서 배제
 
+    // [데스크톱 발열예방 캡 — 팀장 재판정] 저사양 데스크톱(무캡)이 워밍업 후 지속 저fps(발열·tri 부하)면
+    // 30캡을 진입한다(모바일과 동형: 캡+해상도 독립 관리). 진입은 비가역(세션 유지) — 발열 예방이 목적이라
+    // 30fps 안정이 60fps 발열추락보다 쾌적하다(감독 "열 감안"·55:45). 캡이 걸리면 fpsNow가 캡값에 붙어
+    // 승급(fps>48)이 자연히 막히고 해상도는 현상 유지되는데, 저사양엔 이 안정 상태가 옳다. !streaming으로
+    // 파셀 로드 스파이크 오진을 배제하고, DESK_CAP_HOLD(3초) 지속으로 순간 저하 오진을 막는다.
+    if (!coarsePointer && frameCapS === 0 && adaptAge >= ADAPT_WARMUP && !streaming) {
+      if (fpsNow < DESK_CAP_ENTER_FPS) {
+        deskCapTicks += 1;
+        if (deskCapTicks >= DESK_CAP_HOLD) { frameCapS = 1 / MOBILE_CAP_FPS; emit('adapt', { mode: 'framecap', fps: Math.round(fpsNow) }); }
+      } else deskCapTicks = 0;
+    }
+
     // [해상도 긴급 강등] 최우선·쿨다운 무관. fps가 강등 임계(24) 밑으로 떨어지면 그림자 조기 적응이나
     // 공유 쿨다운에 밀리지 않고 즉시 하한(RATIO_FLOOR)까지 내려 사용자를 보호한다(그림자도 함께 끔).
     // cur>RATIO_FLOOR에서만 발동해 하한 도달로 자연 종료하므로 쿨다운 없이도 연속 발동·진동이 없다.
@@ -1355,7 +1379,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // [팀장 판정 (b)] 모바일(coarse)은 프레임 캡(30)으로 fpsNow가 캡값에 고정돼 ENTER 30이 상시 발동,
     // 그림자가 거의 상시 꺼져 감독 "그림자 유지(55:45)"와 충돌하므로 이 조기적응을 비활성한다(!coarsePointer).
     // 모바일 그림자는 긴급강등(fps<24)에서만 off·상한복귀에서 on으로 관리 = 기본 on 유지.
-    if (!coarsePointer && !liteMode && adaptCooldown <= 0 && adaptAge >= ADAPT_WARMUP && !streaming) {
+    // [팀장 재판정] 데스크톱도 발열예방 캡(frameCapS>0) 진입 후엔 fpsNow가 30(=SHADOW_LITE_ENTER)에
+    // 붙어 그림자가 껐다 켰다 진동하므로 동일하게 비활성한다(frameCapS===0 조건) — 캡 데스크톱 그림자도
+    // 긴급강등에서만 off. 캡 미진입 데스크톱은 종전대로 중간대에서 그림자 먼저 양보.
+    if (!coarsePointer && frameCapS === 0 && !liteMode && adaptCooldown <= 0 && adaptAge >= ADAPT_WARMUP && !streaming) {
       if (renderer.shadowMap.enabled && fpsNow < SHADOW_LITE_ENTER) {
         shadowDownTicks += 1; shadowUpTicks = 0;
         if (shadowDownTicks >= 2) { // 연속 2틱(1초) 지속 — 순간 스파이크 오판 방지
@@ -1451,7 +1478,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getCurrentParcel: () => currentParcel(),
     getGpuInfo: () => ({ ...gpuInfo }), // [저사양 방어] 검증·디버그용 프로브 결과
     // [FPS 적응] 현재 적응 상태(검증·HUD 디버그용 순수 가산) — 강등/승급·하한·쿨다운 준수 확인.
-    getAdaptState: () => ({ liteMode, pixelRatio: renderer.getPixelRatio(), floor: RATIO_FLOOR, ceil: RATIO_CEIL, cooldown: adaptCooldown }),
+    getAdaptState: () => ({ liteMode, pixelRatio: renderer.getPixelRatio(), floor: RATIO_FLOOR, ceil: RATIO_CEIL, cooldown: adaptCooldown, frameCap: frameCapS > 0 ? Math.round(1 / frameCapS) : 0 }),
     // [스트리밍 큐] 계측 게터(순수 가산) — 히칭 벤치·HUD 디버그. 드로우콜·프로그램 수·로드/큐 상태.
     getStats: () => {
       let loadedFull = 0, loadedShell = 0;

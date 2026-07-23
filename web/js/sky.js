@@ -742,6 +742,10 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     for (const a of auroras) a.material.opacity = AUR_BASE_OPACITY * (lite ? LITE_AUR_MUL : 1);
     glintStyle(); // 빛기둥 — lite 배수 반영해 재적용
     // 반짝이 별은 update에서 매 프레임 twkMul을 곱해 반영(여기선 상태만 전환)
+    // 흐르는 구름 — lite 상태를 visible에 즉시 반영(크로스페이드 중이라도 boolean visible만 갱신 —
+    // opacity 보간은 update가 계속 담당하므로 무해). phase!==1로 가드하면 크로스페이드 중 lite 해제가
+    // 완료 분기(update)의 비대칭 때문에 구름이 영구 은닉되던 회귀(교차리뷰 블로커)라 무조건 반영으로 차단.
+    cloudMesh.visible = cloudFade.to > 0 && !lite;
     return liteSnapshot();
   }
 
@@ -776,10 +780,13 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
 
     // 흐르는 구름 레이어 — 맑은 낮/일몰만. 시간대 바뀌면 재페인트(시드 고정→형태 유지·톤만 변경).
     const wantCloud = state.weather === 'clear' && state.time !== 'night';
-    if (wantCloud) { paintClearClouds(cloudCtx, DOME_W, DOME_H / 2, state.time, soft); cloudTex.needsUpdate = true; cloudMesh.visible = true; }
+    // [B-2 오버드로우 축소 — 팀장 재판정/부팀장] lite(저사양 위기)에선 구름을 숨긴다(visible=false).
+    // opacity 배수는 alpha-blend fill을 못 줄이지만(픽셀은 그대로 셰이딩·블렌딩) visible=false는 이 대형
+    // 상반부 레이어를 아예 안 그려 실제 fill을 던다. 위기 한정이라 평상시 룩 무영향, 해제 시 setLite가 복원.
+    if (wantCloud) { paintClearClouds(cloudCtx, DOME_W, DOME_H / 2, state.time, soft); cloudTex.needsUpdate = true; cloudMesh.visible = !lite; }
     cloudFade.from = cloudMesh.material.opacity;
     cloudFade.to = wantCloud ? 1 : 0;
-    if (phase !== 1) { cloudMesh.material.opacity = cloudFade.to; cloudMesh.visible = cloudFade.to > 0; }
+    if (phase !== 1) { cloudMesh.material.opacity = cloudFade.to; cloudMesh.visible = cloudFade.to > 0 && !lite; }
 
     // 별 반짝임 — 야간 맑음만. update가 twkBase를 목표로 부드럽게 올리고 opacity를 진동시킨다.
     const wantTwk = state.time === 'night' && state.weather === 'clear';
@@ -812,7 +819,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
         domeA.ctx.drawImage(domeB.c, 0, 0);
         domeA.tex.needsUpdate = true;
         fadeDome.visible = false; fadeDome.material.opacity = 0;
-        if (cloudFade.to === 0) cloudMesh.visible = false;
+        cloudMesh.visible = cloudFade.to > 0 && !lite; // 완료 시 visible 확정(대칭) — 구름 있어야 하고 lite 아니면 표시, 아니면 숨김. 복원 분기 부재로 크로스페이드 중 lite 해제 시 영구 은닉되던 회귀 차단(교차리뷰 블로커)
         phase = 0;
       }
     }
