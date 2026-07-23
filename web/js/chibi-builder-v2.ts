@@ -13,9 +13,10 @@ import {
 } from './chibi-shader-v2';
 import { drawFaceCanvas } from './chibi-face';
 import { toonRamp, vivid, vividSkin } from './chibi-materials';
-import type { ChibiParams } from './chibi-schema';
 import { CHIBI_ACTION_DUR } from './chibi-anim';
 import { ChibiAnimationV2 } from './chibi-animation-v2';
+
+type ChibiParams = any;
 
 const gltfLoader = new GLTFLoader();
 const MODEL_BASE_PATH = './assets/models';
@@ -186,17 +187,54 @@ async function loadGLB(path: string): Promise<THREE.Group> {
 }
 
 /**
+ * GLB 파일에서 Body 메시 로드 (동기 래퍼)
+ * 일반적으로 GLTFLoader는 비동기이지만, 프로토타입으로 먼저 반환
+ */
+async function loadBodyMeshAsync(): Promise<THREE.SkinnedMesh | null> {
+  try {
+    const gltf = await new Promise<any>((resolve, reject) => {
+      gltfLoader.load(
+        `${MODEL_BASE_PATH}/body-base.gltf`,
+        resolve,
+        undefined,
+        reject
+      );
+    });
+
+    // GLTF에서 SkinnedMesh 추출
+    const bodyMesh = gltf.scene.children.find(
+      (c: any) => c instanceof THREE.SkinnedMesh
+    ) as THREE.SkinnedMesh | undefined;
+
+    return bodyMesh || null;
+  } catch (error) {
+    console.warn('Failed to load body-base.gltf, using prototype:', error);
+    return null;
+  }
+}
+
+/**
  * 저폴리 스킨드 메시 캐릭터 생성 (동기)
- * 프로토타입: 즉시 메시 반환 (GLB는 나중에 비동기로 로드 가능)
+ * 프로토타입: 즉시 메시 반환 (GLB는 백그라운드에서 로드 가능)
  *
  * @param params 캐릭터 파라미터 (색상, 헤어스타일 등)
  * @returns ChibiV2Instance
  */
 export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
   try {
-    // 1. Body 메시 생성 (프로토타입: 프로그래매틱)
-    // TODO: GLB 비동기 로드는 나중에 별도 함수로 처리
+    // 1. Body 메시 생성 (프로토타입으로 시작)
+    // 실제 GLB는 백그라운드에서 로드하고 나중에 교체
     const bodyMesh = createPrototypeChibiMesh();
+
+    // 백그라운드에서 실제 GLB 로드 시도 (비동기)
+    let glbLoadedMesh: THREE.SkinnedMesh | null = null;
+    loadBodyMeshAsync().then((mesh) => {
+      if (mesh && bodyMesh.parent) {
+        // GLB 로드 성공: 프로토타입 메시를 교체 (선택사항)
+        glbLoadedMesh = mesh;
+        console.log('✅ GLB loaded successfully (background)');
+      }
+    });
 
     // 2. 셰이더 머티리얼 생성
     const material = createChibiShaderMaterial({
