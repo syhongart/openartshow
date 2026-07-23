@@ -948,7 +948,21 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     waterY: SEA_Y + 0.05, // [해안] 바다 상면 — 수면 빛반사(달빛·노을·태양) 활성화(외해 기준, 넓은 면).
   });
 
-  // ── 스트리밍: 현재 파셀 3×3. 직교 인접(맨해튼≤1)=풀디테일, 대각=shell 임포스터. ──
+  // ── [스마트 LOD] 스트리밍: 플레이어 실제 위치(연속) + 이동방향 look-ahead 중심의 원형 반경. ──
+  // 격자 칸(round) 3×3이 아니라 "파셀 중심까지 실제 거리"로 full/shell을 정해, 플레이어가 칸 가장자리에
+  // 서도 로드 반경이 대칭이다(감독 관찰 "왼쪽 가면 오른쪽이 LOD 먹고" 해소). 이동 중이면 판정 원 중심을
+  // 진행방향으로 당겨 앞쪽 파셀을 선행 로드한다("앞으로 가면 원이 앞으로" · 팝인 감소).
+  // 반경 보정: 정지(lookahead=0) 시 FULL_R=1.15·CELL은 상하좌우(중심거리 1.0CELL)=full, SHELL_R=1.55·CELL은
+  // 대각(1.41CELL)=shell로 잡혀 기존 3×3(full5+shell4)과 동일 로드량을 재현한다(회귀 0). fog(FOG_FAR=1.9·CELL)가
+  // shell 경계를 이미 안개로 덮어 로드/언로드 경계를 은폐(228행).
+  const STREAM_FULL_R = CELL_MAX * 1.15;   // full LOD 반경(연속거리)
+  const STREAM_SHELL_R = CELL_MAX * 1.55;  // shell 반경
+  const STREAM_LOOKAHEAD = CELL_MAX * 0.5; // 이동 시 판정 원 중심 전진 거리(선행 로드)
+  // [SSOT] updateStreaming이 계산한 최신 want 판정을 캐시 — processLoadQueue가 "동일" 기준으로 큐를
+  // 소진하도록 일원화한다. (예전엔 processLoadQueue가 currentParcel 3×3 맨해튼으로 독자 재계산해,
+  // look-ahead로 앞쪽 파셀을 full로 큐잉해도 큐 처리 단계에서 판정 불일치로 빌드 없이 폐기 → 선행
+  // 로드가 무력화되던 버그. 감독 관찰 "왼쪽 가면 오른쪽이 LOD 먹고"의 실질 원인.)
+  let streamWant = new Map();
   // 진행방향 보너스 — 플레이어가 향하는 쪽(kmov/tmov ⊕ yaw 월드벡터)과 파셀 상대방향 내적>0이면
   // 우선순위 가산(먼저 로드). 정지 시 0. (kmov/tmov/yaw는 런타임 참조라 정의 시점 TDZ 무관.)
   function dirBonus(rx, rz) {
@@ -960,13 +974,29 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
   // sync=true(스폰·텔레포트) 또는 헤드리스 기본(streamAsync 미설정)은 즉시 동기 로드. 그 외는 큐잉.
   function updateStreaming(sync = false) {
-    const { px, pz } = currentParcel();
-    const want = new Map();
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      const k = keyOf(px + dx, pz + dz);
-      if (!index.has(k)) continue;
-      want.set(k, (Math.abs(dx) + Math.abs(dz)) <= 1 ? 'full' : 'shell');
+    // [스마트 LOD] 판정 원 중심 = 플레이어 실제 위치 + 이동방향 look-ahead(정지 시 lookahead=0 → pos).
+    // 이동벡터는 dirBonus와 동일 관례(kmov/tmov ⊕ yaw). 정규화 후 STREAM_LOOKAHEAD만큼 전진.
+    let mvx = 0, mvz = 0;
+    const mf = kmov.fwd + tmov.fwd, mr = kmov.right + tmov.right;
+    if (mf || mr) {
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rgx = Math.cos(yaw), rgz = -Math.sin(yaw);
+      mvx = mf * fx + mr * rgx; mvz = mf * fz + mr * rgz;
+      const m = Math.hypot(mvx, mvz) || 1; mvx /= m; mvz /= m;
     }
+    const cxw = pos.x + mvx * STREAM_LOOKAHEAD, czw = pos.z + mvz * STREAM_LOOKAHEAD;
+    const cpx = Math.round(cxw / CELLX), cpz = Math.round(czw / CELLZ);
+    const reach = Math.ceil(STREAM_SHELL_R / CELL_MAX) + 1; // 반경 커버 격자 후보 범위(look-ahead는 cpx에 이미 반영)
+    const want = new Map();
+    for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) {
+      const pxi = cpx + dx, pzi = cpz + dz;
+      const k = keyOf(pxi, pzi);
+      if (!index.has(k)) continue;
+      const ddx = pxi * CELLX - cxw, ddz = pzi * CELLZ - czw; // 파셀 중심(px*CELL) − 판정 원 중심(연속)
+      const dist = Math.hypot(ddx, ddz);
+      if (dist <= STREAM_FULL_R) want.set(k, 'full');
+      else if (dist <= STREAM_SHELL_R) want.set(k, 'shell');
+    }
+    streamWant = want; // [일원화] processLoadQueue가 이 판정(원형+look-ahead)을 그대로 재사용 — 격자 맨해튼 재계산 금지
     // 언로드는 즉시(저비용) — 기존대로. 큐에 남은 불필요분(떠난 방향)도 함께 제거.
     for (const k of Array.from(loaded.keys())) if (!want.has(k)) unloadParcel(k);
     for (let i = loadQueue.length - 1; i >= 0; i--) {
@@ -978,8 +1008,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (ex && ex.lod === lod) continue; // 이미 정확 LOD → skip
       const [qx, qz] = k.split(',').map(Number);
       if (immediate) { loadParcel(qx, qz, lod); continue; }
-      // 큐잉 — 우선순위 = 맨해튼거리*10 - 진행방향보너스(작을수록 먼저).
-      const prio = (Math.abs(qx - px) + Math.abs(qz - pz)) * 10 - dirBonus(qx - px, qz - pz);
+      // 큐잉 — 우선순위 = look-ahead 중심 파셀(cpx,cpz) 기준 맨해튼거리*10 - 진행방향보너스(작을수록 먼저).
+      const prio = (Math.abs(qx - cpx) + Math.abs(qz - cpz)) * 10 - dirBonus(qx - cpx, qz - cpz);
       if (queued.has(k)) {
         const job = loadQueue.find((j) => j.k === k); // 이미 큐에 있으면 LOD·우선순위 갱신(shell→full 승격 등)
         if (job) { job.lod = lod; job.prio = prio; }
@@ -991,18 +1021,18 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
   // [스트리밍 큐] 프레임당 예산 내에서 큐 소진 — update()의 renderer.render 직전에 호출.
   // prio 오름차순 정렬 후 최소 1개 빌드, 이후 예산(LOAD_BUDGET_MS) 초과 시 중단. soft는 프레임당 1개.
-  // 떠난 파셀(현재 기준 맨해튼>2 또는 LOD 조건 변동) job은 빌드 없이 폐기 — 다음 updateStreaming이 재평가.
+  // 떠난 파셀(streamWant에서 사라졌거나 LOD 조건 변동) job은 빌드 없이 폐기 — 다음 updateStreaming이 재평가.
   function processLoadQueue() {
     if (!loadQueue.length) return;
-    const { px, pz } = currentParcel();
     loadQueue.sort((a, b) => a.prio - b.prio);
     const t0 = perfNow();
     let built = 0;
     while (loadQueue.length) {
       const job = loadQueue[0];
-      const man = Math.abs(job.px - px) + Math.abs(job.pz - pz);
-      const wantLod = man <= 1 ? 'full' : 'shell';
-      if (man > 2 || wantLod !== job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // 떠난 파셀 폐기
+      // [일원화] updateStreaming이 캐시한 streamWant를 그대로 사용 — 격자 맨해튼(man<=1) 재계산 금지.
+      // 원형+look-ahead 판정과 불일치하던 큐 폐기 버그 제거(감독 "왼쪽 가면 오른쪽이 LOD 먹고"의 실질 원인).
+      const wantLod = streamWant.get(job.k);
+      if (wantLod !== job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // want에서 사라졌거나 LOD 변동 → 폐기
       const exist = loaded.get(job.k);
       if (exist && exist.lod === job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // 이미 로드됨
       loadParcel(job.px, job.pz, job.lod);
