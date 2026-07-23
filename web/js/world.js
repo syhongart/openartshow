@@ -1167,7 +1167,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 저장을 쓰지 않고 이 세션 한정으로만 배율을 조정한다(비저장 단순화). gpuInfo.soft(SwiftShader 등)는
   // 이미 포테이토 고정(0.7 캡·30fps 프레임 캡)이라 적응 대상에서 제외한다.
   const ADAPT_ENTER_FPS = 24;   // 이 밑 → 즉시 강등(main.js LITE_ENTER_FPS 계승)
-  const ADAPT_EXIT_FPS = 48;    // 이 위 지속 → 단계 승급. main.js(45)보다 소폭 높여 스트리밍 여유 확보(히스테리시스 갭 24↔48).
+  // 이 위 지속 → 단계 승급. 데스크톱은 48(스트리밍 여유). 모바일(coarse)은 42 — 아래 프레임 캡(45fps)
+  // 밑으로 둬야 캡 상태에서도 fps가 승급 임계에 도달해 하한에 영구히 갇히지 않는다(캡↔승급 정합).
+  const ADAPT_EXIT_FPS = coarsePointer ? 42 : 48;
   const ADAPT_COOLDOWN = 10;    // 재전환 쿨다운(초) — 깜빡임/배율 진동 방지(main.js 동일).
   const ADAPT_UP_STEP = 0.25;   // 승급 폭(+0.25씩, main.js 동일).
   const ADAPT_UP_HOLD = 20;     // 승급 전 고FPS 연속 틱(0.5s 집계 × 20 = 10초 지속).
@@ -1180,7 +1182,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 3중 방어한다. liteMode 구간은 기존 토글(1255·1263 계열)이 이미 그림자를 관리하므로 이 블록은 그
   // 사이 중간대(24~48fps)만 담당한다.
   const SHADOW_LITE_ENTER = 30; // 이 밑 1초 지속 → 그림자만 강등(해상도 유지)
-  const SHADOW_LITE_EXIT = 46;  // 이 위 10초 지속 → 그림자 복원(승급 48보다 먼저)
+  // 이 위 10초 지속 → 그림자 복원(승급보다 먼저). 데스크톱 46. 모바일은 40 — 프레임 캡(45) 밑이자
+  // 승급(42) 밑으로 둬 캡 상태에서 그림자가 해상도보다 먼저 복원되고, ENTER 30과 갭 10을 유지한다.
+  const SHADOW_LITE_EXIT = coarsePointer ? 40 : 46;
   const dprAdapt = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
   // 상한 = 스폰 초기값(109-110과 동일식, 비soft는 min(2,dpr)로 캡). 하한 = 상한의 60%(단 최소 1.0)
   // — 1.0 밑돌면 뿌옇다는 감독 제보로 하한을 1.0 이상 고정하되, dpr*0.75로 잡으면 dpr>2.667(아이폰
@@ -1193,12 +1197,19 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 하한은 캡 "전" 상한(ratioCeilBase) 기준으로 산정 — RATIO_FLOOR(dpr≥2에서 1.20)를 무변경 유지
   // (팀장 확정: 하한 인하 금지·캡과 독립). min(base, …)로 감싸 dpr<1에서도 FLOOR≤CEIL 구조 보장(교차리뷰 권고).
   const RATIO_FLOOR = Math.min(ratioCeilBase, Math.max(1, ratioCeilBase * 0.6));
+  // [열 감안 프레임 캡] 모바일(coarse)은 45fps로 상한을 둔다. 60fps 풀가동은 GPU 듀티사이클을 100%로
+  // 유지해 발열을 계속 쌓고, 결국 스로틀(장시간 세션에서 삼각형 수와 무관한 fps 저하 — 감독 실기기 로그)로
+  // 추락한다. 45캡은 프레임마다 GPU에 여유(~7ms)를 남겨 발열·스로틀을 선제적으로 완화한다(모바일 3D의
+  // 표준 관행 — 30~45fps 캡). 데스크톱(fine)은 여유가 있어 무캡. soft(SwiftShader)는 별도 30fps 캡
+  // (step 내부)이 이미 담당하므로 이 캡은 실GPU 모바일 전용. 승급/그림자 복원 임계(42·40)를 이 캡 밑으로
+  // 정합해 캡 상태에서도 적응이 갇히지 않는다.
+  const FRAME_CAP_S = coarsePointer ? (1 / 45) : 0; // 프레임 최소 간격(초). 0=무캡
   let liteMode = false;
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
   let shadowDownTicks = 0, shadowUpTicks = 0; // [그림자 조기 적응] 방향별 연속 저/고FPS 틱(0.5s 집계 단위)
 
   // ── RAF ──
-  let raf = 0, last = 0, disposed = false, potatoAccum = 0;
+  let raf = 0, last = 0, disposed = false, potatoAccum = 0, capAccum = 0;
   function step(now) {
     // RAF 재예약을 먼저 — 프레임 캡 return 후에도 루프가 끊기지 않게 한다(미술관 main.js는
     // setAnimationLoop이라 return해도 다음 프레임이 오지만, RAF 재귀 경로는 명시 재예약이 필요).
@@ -1213,6 +1224,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (potatoAccum < 0.034) return; // ~30fps 캡
       dt = potatoAccum;
       potatoAccum = 0;
+    } else if (FRAME_CAP_S > 0) {
+      // [열 감안 프레임 캡] 모바일 45fps 상한(위 FRAME_CAP_S 주석). 건너뛴 시간은 누적해 다음 delta로
+      // 넘겨 시뮬 시간을 보존한다(soft 포테이토 캡과 동형 — 물리·애니메이션이 캡 때문에 느려지지 않음).
+      capAccum += dt;
+      if (capAccum < FRAME_CAP_S) return;
+      dt = capAccum;
+      capAccum = 0;
     }
     update(dt);
   }
