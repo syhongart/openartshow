@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 감독이 파셀 스트리밍(감독은 "LOD")의 3가지를 지시했다: (1)로드 반경 중심을 격자 칸이">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-27331b.html">
+<title>오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 감독이 실기기 재측정에서 "오픈월드가 모바일뿐 아니라 저사양 PC에서 더 버벅인다"고">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-62bb8c.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 감독이 파셀 스트리밍(감독은 "LOD")의 3가지를 지시했다: (1)로드 반경 중심을 격자 칸이">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-27331b.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-27331b.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 감독이 실기기 재측정에서 "오픈월드가 모바일뿐 아니라 저사양 PC에서 더 버벅인다"고">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-62bb8c.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-62bb8c.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,15 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-23</div>
-<h1><span class="emo">🛠️</span>스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead</h1>
+<h1><span class="emo">⚡</span>오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 감독이 파셀 스트리밍(감독은 "LOD")의 3가지를 지시했다: (1)로드 반경 중심을 격자 칸이 아니라 플레이어 실제 위치 대칭으로 (2)이동방향 선행 로딩("앞으로 가면 원이 앞으로") (3)fog로 경계 은폐. 비대칭 원인은 <code>updateStreaming</code>이 <code>currentParcel</code>(round)의 칸 인덱스 3×3을 로드 대상으로 잡아, 플레이어가 칸 가장자리에 서면 실제 위치 기준 로드 반경이 한쪽으로 쏠린 것이었다(감독: "왼쪽 가면 오른쪽이 LOD 먹고").</p>
-<p><strong>개선.</strong> <code>updateStreaming</code>을 연속거리+look-ahead로 재작성했다 — 판정 원 중심 = 플레이어 위치 + 이동방향(dirBonus 관례)×look-ahead(0.5·CELL), 각 파셀 중심(px·CELL)까지 실제 거리로 full(≤1.15·CELL)· shell(≤1.55·CELL). 칸 어디에 서든 대칭(가까운 쪽 full·먼 쪽 shell)이고, 이동 시 원이 앞으로 이동해 선행 로드. 정지 시 상하좌우(32m)=full·대각(45.3m)=shell로 기존 3×3 로드 개수를 재현(회귀 0). fog는 기존(FOG_FAR=1.9·CELL)가 이미 shell 경계를 안개로 덮음.</p>
-<p><strong>결과.</strong> 레퍼런스 분석가에게 hyperfy·Hubs·Decentraland 예측 스트리밍 대조를 발주했고, <strong>레퍼런스와 검수관이 독립적으로 같은 블로커를 포착</strong>했다: <code>updateStreaming</code>은 새 방식으로 바꿨으나 큐 소비부 <code>processLoadQueue</code>가 옛 격자 맨해튼 판정으로 독자 재계산해, look-ahead로 full 큐잉된 파셀을 큐 단계에서 매 프레임 폐기(선행 로드 무력화)하고 있었다 — <strong>이것이 감독 관찰의 실질 원인</strong>이며 헤드리스가 sync/ immediate로 큐 경로를 우회해 못 잡던 버그다. <code>updateStreaming</code>이 계산한 want를 <code>streamWant</code>에 캐시하고 <code>processLoadQueue</code>가 그대로 재사용(맨해튼 재계산 폐기)하도록 일원화했다. 레퍼런스 판정: 원형 연속거리= hyperfy LOD 정합, look-ahead=UE5 World Partition 정석 확장(SSOT 4종엔 예측 스트리밍 없음). 검수관 재검토 승인(코드 정합), vitest 146·smoke:vite 9/0. 실동작은 감독 실기기 재측정으로 최종 확인.</p>
-<p><strong>교훈.</strong> 로직의 한쪽(생산부 updateStreaming)만 바꾸고 소비부(processLoadQueue)를 그대로 두면 두 기준이 어긋나 조용히 무력화된다 — SSOT(streamWant 캐시)로 판정을 일원화해야 한다. 그리고 <strong>헤드리스 QA의 사각</strong>을 재확인했다: sync/immediate 경로만 타는 헤드리스는 비헤드리스 walk 전용 버그를 구조적으로 못 잡는다. 레퍼런스 대조가 이 버그를 코드리뷰와 독립적으로 짚어, "검증된 오픈소스 참고"가 회귀 방어에도 기여함을 보였다. 후속 트랙: 로드/언로드 히스테리시스(hyperfy도 없는 개선)·적응형 fog+tri 예산(후반 열 스로틀 근본책).</p>
+<p><strong>원인.</strong> 감독이 실기기 재측정에서 "오픈월드가 모바일뿐 아니라 <strong>저사양 PC에서 더 버벅인다</strong>"고 보고했다. 지금까지의 처방(모바일 프레임캡, coarsePointer 견고화, 스마트 LOD)은 버벅임의 근본을 못 잡았다. 감독 지시로 부팀장이 계약직 4인(탐색·성능·레퍼런스·디자이너)을 총동원해 원인을 조사했다.</p>
+<p><strong>분석(4자 합의).</strong> ① <strong>저사양 PC 무방비</strong> — 프레임캡·픽셀캡이 전부 <code>coarsePointer</code>(모바일) 게이트 뒤라 데스크톱 미적용. 게다가 데스크톱에서 도는 <code>adaptQuality</code>조차 dpr=1 일반 모니터에서 <code>RATIO_CEIL==RATIO_FLOOR==1</code>이 되어 해상도 강등이 구조적 no-op이었다(긴급강등이 발동해도 1→1 "강등"뿐). 프레임캡도 없어 무캡 렌더 → 발열/스로틀. 이것이 "모바일보다 더 버벅"의 직접 원인. ② <strong>tri 지배 = AI 관객(NPC 치비 아바타)</strong> — 1체가 파츠 83+아웃라인 54를 개별 메시로 그려 ~7,500 tri, 동시 ~10체 ≈ 75,000 tri로 감독 실측 "후반 77k"와 일치(이건 2·3단계 대상). ③ 감독 지시 "fog로 가볍게"는 three.js fog가 색 블렌딩이라 tri를 못 줄인다 — 실제 레버는 로드반경 축소(2단계, 감독 재가 완료).</p>
+<p><strong>개선(1단계, 팀장 판정·감독 승인).</strong></p>
+<ul><li><strong>RATIO_FLOOR 절대하한 0.85</strong>(world.js): dpr=1에서 죽어 있던 해상도 강등 레버를 부활. 평상시 1.0 유지, 긴급강등(fps&lt;24) 위기에서만 0.85(-28% fill-rate)로 내려가 위기 탈출 후 승급 복귀. dpr≥2 레티나·일반 모바일은 1.20 이상 유지(무변경).</li><li><strong>데스크톱 발열예방 캡</strong>(world.js): <code>FRAME_CAP_S</code>→<code>frameCapS</code>로 바꿔, 저사양 데스크톱이 워밍업 후 fps&lt;34를 3초 지속하면 30fps 캡에 비가역 진입(발열·듀티 완화). 승급 갇힘·그림자 진동은 비가역 진입 + 그림자 조기적응 <code>frameCapS===0</code> 가드로 차단(모바일 비활성 로직과 동형).</li><li><strong>저사양 위기 구름 제거</strong>(sky.js): lite 진입 시 흐르는 구름을 <code>visible=false</code>로 숨겨 대형 alpha-blend 상반부 레이어의 fill을 절감. (opacity 배수는 블렌딩 픽셀이 그대로라 fill 무이득 → visible 토글로 재설계.) 위기 한정이라 평상시 룩 무영향.</li></ul>
+<p><strong>결과.</strong> dpr=1 저사양 데스크톱의 유일한 해상도 레버가 부활하고, 발열 기인 저하에 예방 캡이 걸린다. 독립 executor 스모크(렌더 회귀 0) + release-reviewer 교차리뷰 통과(크로스페이드 중 구름 영구 은닉 블로커 1건 수정). 이번 단계는 <strong>데스크톱 무방비 축</strong>만 해소 — tri 지배 요인(NPC)은 2단계(로드반경↓ +fog+tri 예산 가드레일)·3단계(NPC 원경 LOD)에서 잡는다.</p>
 </article>
-<div class="pn"><a href="./2026-07-23-c7b62b.html"><span class="lbl">← 이전 기록</span>모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)</a><a href="./2026-07-23-62bb8c.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거</a></div>
+<div class="pn"><a href="./2026-07-23-27331b.html"><span class="lbl">← 이전 기록</span>스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>

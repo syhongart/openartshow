@@ -11,7 +11,7 @@
 <meta property="og:title" content="개발일지 — OpenArtShow">
 <meta property="og:description" content="OpenArtShow를 만드는 과정의 공개 기록. 웹 3D 미술관의 성능·디자인·법무·브랜드 결정을 원인-분석-개선-결과로 남깁니다.">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-27331b.html"},{"@type":"BlogPosting","headline":"모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html"},{"@type":"BlogPosting","headline":"계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가)","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-fbcbdb.html"},{"@type":"BlogPosting","headline":"프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사)","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-c1f59e.html"},{"@type":"BlogPosting","headline":"오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-0cda96.html"},{"@type":"BlogPosting","headline":"오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-27ad7f.html"},{"@type":"BlogPosting","headline":"오픈월드 원거리 아바타 LOD(C-2b) — NPC/워커 거리 임포스터 전환","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-d61e7e.html"},{"@type":"BlogPosting","headline":"성능 세션 로거(?debug=perf&rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-23b28c.html"},{"@type":"BlogPosting","headline":"오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html"},{"@type":"BlogPosting","headline":"오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-fefb77.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-62bb8c.html"},{"@type":"BlogPosting","headline":"스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-27331b.html"},{"@type":"BlogPosting","headline":"모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html"},{"@type":"BlogPosting","headline":"계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가)","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-fbcbdb.html"},{"@type":"BlogPosting","headline":"프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사)","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-c1f59e.html"},{"@type":"BlogPosting","headline":"오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-0cda96.html"},{"@type":"BlogPosting","headline":"오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-27ad7f.html"},{"@type":"BlogPosting","headline":"오픈월드 원거리 아바타 LOD(C-2b) — NPC/워커 거리 임포스터 전환","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-d61e7e.html"},{"@type":"BlogPosting","headline":"성능 세션 로거(?debug=perf&rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-23b28c.html"},{"@type":"BlogPosting","headline":"오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html"}]}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,7 +87,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <div class="eyebrow">Devlog</div>
 <h1>개발일지</h1>
-<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 97건의 기록.<br>
+<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 98건의 기록.<br>
 문제의 원인, 분석, 개선, 결과를 그대로 남깁니다.</p>
 <a class="pin-card" href="./philosophy.html">
   <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
@@ -168,6 +168,11 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
   <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
   <h2>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)</h2>
   <p>프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.</p>
+</a>
+<a class="card" href="./2026-07-23-62bb8c.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거</h2>
+  <p>원인. 감독이 실기기 재측정에서 "오픈월드가 모바일뿐 아니라 저사양 PC에서 더 버벅인다"고</p>
 </a>
 <a class="card" href="./2026-07-23-27331b.html">
   <span class="d">2026-07-23</span>
