@@ -1,4 +1,4 @@
-const USE_SKINNED_MESH_V2 = false;
+const USE_SKINNED_MESH_V2 = true;
 const CHIBI_HAIR_STYLES = [
   { id: "twintail", name: "\uD2B8\uC708\uD14C\uC77C" },
   { id: "bob", name: "\uB2E8\uBC1C" },
