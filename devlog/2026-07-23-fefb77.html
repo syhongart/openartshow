@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 감독 실기기 HUD(?debug=perf) 스크린샷으로 원인을 확정했다 — index(미술관) 모바일에서">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-2f3431.html">
+<title>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 감독 실기기에서 오픈월드(world)가 9fps로 버벅였다. 성능감사로 주범을 확정했다 —">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-fefb77.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 감독 실기기 HUD(?debug=perf) 스크린샷으로 원인을 확정했다 — index(미술관) 모바일에서">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-2f3431.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-2f3431.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 감독 실기기에서 오픈월드(world)가 9fps로 버벅였다. 성능감사로 주범을 확정했다 —">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-fefb77.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-fefb77.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-23</div>
-<h1><span class="emo">⚡</span>모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한</h1>
+<h1><span class="emo">⚡</span>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 감독 실기기 HUD(<code>?debug=perf</code>) 스크린샷으로 원인을 확정했다 — index(미술관) 모바일에서 <strong>spec high·lite ON·pixelRatio 2.25가 동시에 성립하는 충돌 버그</strong>였다. 저사양 모드(lite)에 진입했는데도 슈퍼샘플 배율이 유지된 것. 구 lite 하한 산식 <code>max(1, dpr*0.75)</code>가 아이폰 dpr3에서 2.25로 계산되어, lite가 spec high가 세팅한 pixelRatio를 못 덮었다. draw 142·tri 59.5k로 지오메트리는 적은데 저FPS — 전형적 픽셀(fill-rate) 병목이다. 헤드리스 4회 측정이 못 잡은 실기기 GPU fill-rate 병목으로, spec 학습값 (localStorage)과 실시간 lite가 pixelRatio를 두 축에서 다투며 하한 산식이 어긋난 결과였다.</p>
-<p><strong>개선.</strong> 3파일(<code>web/js/main.js</code>·<code>main-spec.ts</code>·<code>main-perf.ts</code>)에 <code>MOBILE_PX_CAP=1.5</code>를 SSOT 상수로 도입했다. (B) 모바일(<code>pointer: coarse</code>) 초기 렌더러 배율에 상한 1.5 적용 — <code>min(계산값, MOBILE_PX_CAP)</code>. (A) lite 진입 시 하드가드로 spec 학습값과 무관하게 pixelRatio ≤1.5 강제 — 기존 <code>dpr*0.75</code> 하한이 고DPR 폰에서 캡을 무력화하던 경로를 차단. 추가로 모바일에서 spec 'high' 승급과 샤프닝을 차단해 lite exit 후 배율이 2.x로 다시 기어오르는 재상승도 막았다. 데스크톱(<code>pointer: fine</code>)은 전 경로 무변화 — 캡을 타지 않아 화질 그대로.</p>
-<p><strong>결과.</strong> 헤드리스 vitest 통과(모바일 high+lite 강제 시 px 2.25→1.5 하향, 데스크톱 dpr1→1.0·레티나 dpr2→1.5 기존 동치로 회귀 0, 모바일 high 미기록), 독립 executor 스모크 6/6+A~D, 검수관 승인(하드가드· lite exit 재상승 방지·데스크톱 회귀 0 코드 확인). 레퍼런스 정합(hyperfy DPR-first). 실 FPS 개선의 최종 확정은 감독 실기기 재스크린샷이다.</p>
-<p><strong>교훈.</strong> 헤드리스(swiftshader)는 GPU fill-rate 병목을 원천 재현하지 못한다 — 실기기 계측 HUD가 원인 확정의 유일 경로였다. spec 학습(localStorage)과 실시간 lite가 pixelRatio를 두 축에서 다투면 하한 산식이 어긋나 저사양인데 슈퍼샘플이 남는다. 캡은 두 축 모두에서 SSOT 상수 하나로 강제해야 한다.</p>
+<p><strong>원인.</strong> 감독 실기기에서 오픈월드(world)가 9fps로 버벅였다. 성능감사로 주범을 확정했다 — 실시간 <code>PCFSoftShadowMap</code> 그림자 샘플링이다. <code>receiveShadow</code> 표면이 148개(바닥·모래·다리·도로·강)로 화면 대부분을 덮고, PCFSoft는 매 픽셀 9~25탭을 뽑아 fill-rate 병목을 해상도에 비례해 +70.9% 가중시켰다. 미술관(<code>space-render</code>)은 셸 라이트맵 베이크라 이 경로가 아예 없고, world만 실시간 그림자를 썼다. draw 87·tri 31.7k로 지오메트리는 저폴리인데도 9fps — 전형적 프래그먼트(픽셀) 병목 시그니처다.</p>
+<p><strong>개선.</strong> <code>web/js/world.js</code>에 <code>setShadowLite()</code>를 도입했다 — 저사양(lite) 진입 시 <code>renderer.shadowMap.enabled=false</code>로 그림자를 완전 제거해 섀도 패스 자체를 스킵하고, 고사양 복귀 시 <code>requestShadowBake</code>로 재베이크한다. 완전 제거(방식 b)는 디자이너 룩 판정을 거쳤다 — 캐스터가 소품(램프·벤치·플랜터·부두·등대)뿐이고 건물셸·나무는 <code>castShadow</code>가 없어, 제거해도 오브젝트가 붕뜨는 이질감이 없고 PCF 1탭 열화보다 오히려 자연스럽다. 고사양은 PCFSoft·1024 그대로 유지. lite 진입/복귀는 기존 <code>adaptQuality</code> 히스테리시스(24↔48fps·쿨다운)에 종속시켜 경계 플리커를 막았다. 미술관 경로 무접촉.</p>
+<p><strong>결과.</strong> 독립 executor 스모크 6/6+A~E 통과, 검수관 무조건 승인(강등/복귀 로직·재베이크 정확·플리커 없음·고사양 회귀 0·미술관 무영향을 코드로 확정). 실 저사양 fps 개선의 최종 확정은 감독 실기기 재스크린샷이다.</p>
+<p><strong>교훈.</strong> 오픈월드가 미술관과 달리 라이트맵 베이크 없이 실시간 그림자를 써 무거웠다. <code>shadowMap.autoUpdate=false</code>로 그림자맵 "생성"을 베이크로 돌려도 PCFSoft "샘플링"은 매 프레임 상시 프래그먼트 비용이다 — 저사양은 샘플링 자체를 꺼야 한다. 헤드리스(swiftshader)는 fill-rate 병목을 재현하지 못하므로 실기기 계측이 최종 확정 경로다.</p>
 </article>
-<div class="pn"><a href="./2026-07-22-ffa2b8.html"><span class="lbl">← 이전 기록</span>실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다</a><a href="./2026-07-23-fefb77.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거</a></div>
+<div class="pn"><a href="./2026-07-23-2f3431.html"><span class="lbl">← 이전 기록</span>모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
