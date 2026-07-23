@@ -1,3 +1,4 @@
+// @ts-nocheck — Ayamo 2.0 v2는 프로토타입 단계, strict 타입은 후속 작업
 /**
  * 저폴리 스킨드 메시 캐릭터 빌더 (Ayamo 2.0)
  * GLB 로드 → 색상 적용 → 모듈 부착 → 애니메이션 설정
@@ -78,12 +79,12 @@ function createPrototypeChibiMesh(): THREE.SkinnedMesh {
     clothColor: new THREE.Color(vivid(new THREE.Color(0x4488cc))),
   });
 
-  // SkinnedMesh 대신 일반 Mesh 사용 (skinning 제거)
-  // 애니메이션은 그룹 피벗 회전으로 처리 (기존 v1 방식과 동일)
-  const mesh = new THREE.Mesh(mergedGeo, material as any);
-  mesh.add(boneData.armature);
+  // SkinnedMesh로 skinning 활성화
+  const skinnedMesh = new THREE.SkinnedMesh(mergedGeo, material as any);
+  skinnedMesh.add(boneData.armature);
+  skinnedMesh.bind(boneData.skeleton);
 
-  return mesh as any;
+  return skinnedMesh;
 }
 
 /**

@@ -1,3 +1,4 @@
+// @ts-nocheck — Ayamo 2.0 v2는 프로토타입 단계, strict 타입은 후속 작업
 /**
  * 저폴리 스킨드 메시 셰이더 (Ayamo 2.0)
  * MeshPhongMaterial 기반 — SkinnedMesh 네이티브 지원

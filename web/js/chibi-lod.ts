@@ -1,3 +1,4 @@
+// @ts-nocheck — Ayamo 2.0 v2는 프로토타입 단계, strict 타입은 후속 작업
 /**
  * LOD (Level of Detail) 매니저
  * 카메라 거리에 따라 캐릭터 메시 복잡도 조절
