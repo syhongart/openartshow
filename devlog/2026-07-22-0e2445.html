@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-② 보안 — CSP connect-src 축소 + valuation.yml 액션 SHA핀 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 9축 점검의 보안축(A 92) 권고 2건. ①미술관(index) CSP connect-src 'self' https: wss:가">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-22-0e2445.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="P1-② 보안 — CSP connect-src 축소 + valuation.yml 액션 SHA핀 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 9축 점검의 보안축(A 92) 권고 2건. ①미술관(index) CSP connect-src 'self' https: wss:가">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-22-0e2445.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"P1-② 보안 — CSP connect-src 축소 + valuation.yml 액션 SHA핀","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-22-0e2445.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-22</div>
+<h1><span class="emo">🛠️</span>P1-② 보안 — CSP connect-src 축소 + valuation.yml 액션 SHA핀</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 9축 점검의 보안축(A 92) 권고 2건. ①미술관(index) CSP <code>connect-src 'self' https: wss:</code>가 과도(동일 P2P 쓰는 world.html은 <code>0.peerjs.com</code>만으로 타이트) ②valuation.yml 액션 가변태그(공급망 표면). 팀장 판정으로 5번 내부(CSP+SHA핀)는 1PR 허용(워크플로 파일이라 라이브 렌더 격리 무관).</p>
+<p><strong>개선.</strong> ①<code>web/index.html</code>의 CSP meta <code>connect-src</code>를 <code>'self' https://0.peerjs.com wss://0.peerjs.com</code> 로 축소(world.html과 문자열 동일). ②valuation.yml <code>checkout@v4</code>·<code>setup-node@v4</code>를 deploy.yml·ci.yml과 동일 SHA로 핀(v4.2.2·v4.4.0, 주석 병기). connect 정의는 소스 meta가 SSOT(vite reconcileHtmlCsp는 script-src만 재작성).</p>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(<strong>connect 대상 전수: PeerJS 시그널링만·STUN/TURN은 WebRTC라 CSP 통제 밖·외부 이미지/영상은 img/media-src 관할·galleries fetch는 self·기타 connect API 0건 → 축소가 기능 차단 0</strong>, dist 정합 실측, SHA핀 3워크플로 바이트 일치, 타 CSP 지시어 무변경), 독립 스모크(6/6 — app/index CSP violation 0, dist index·world connect-src 동일, 콘솔0). 권고(비블로커): LU_PEER_OPTS 셀프호스팅 전환 시 connect-src 갱신(기존 패턴, world.html에도 경고).</p>
+<p><strong>교훈.</strong> CSP 축소는 "무엇을 막느냐"가 아니라 "정상 트래픽 전부를 여전히 허용하느냐"의 전수 증명이다 — connect-src는 fetch/XHR/WS/EventSource/beacon만 통제하고 WebRTC ICE(STUN/TURN)·이미지(img-src)·비디오 (media-src)는 별도 지시어 관할임을 정확히 구분해야 광역 <code>https:</code>를 안전하게 좁힌다. 이미 타이트하게 라이브 동작 중인 대조군(world.html)이 있으면 그게 검증된 정답값이다.</p>
+</article>
+<div class="pn"><a href="./2026-07-22-e1372e.html"><span class="lbl">← 이전 기록</span>P1-① 접근성 — skip-link + landmark (9축 점검 후속)</a><a href="./2026-07-22-9259c9.html" style="text-align:right"><span class="lbl">다음 기록 →</span>P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

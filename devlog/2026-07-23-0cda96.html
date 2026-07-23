@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 그림자 처방 배포 후 감독 실기기 로그에서 삼각형 수와 완전히 무관한 시간 누적 저하가">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-0cda96.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 그림자 처방 배포 후 감독 실기기 로그에서 삼각형 수와 완전히 무관한 시간 누적 저하가">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-0cda96.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-0cda96.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-23</div>
+<h1><span class="emo">⚡</span>오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 그림자 처방 배포 후 감독 실기기 로그에서 <strong>삼각형 수와 완전히 무관한 시간 누적 저하</strong>가 드러났다 — 진입 0.4초 tri 82,972 @ 18.9fps인데, 40초엔 tri 9,524(1/9)인데 13.3fps, 68초엔 7.6fps. 그림자가 이미 자동 off된 세션이라 fill-rate도 tri도 아니었다. 성능 전문가 장시간 세션 심층 감사로 <strong>무한 성장 누수는 없음</strong>을 재확인(이벤트·타이머·rAF·라이트풀·배열 전부 언로드 대칭)하고, <strong>열 스로틀이 1차 원인</strong>으로 판정했다. 부수로 <code>bakeGroupByMaterial</code>(scene-trees.ts)의 dispose 누락 — 파셀 로드마다 나무 병합 clone(파셀당 수백 개)이 정리 안 돼 로드 순간 fps 급락(<code>pcl</code> 마커)을 가중 — 을 새로 특정했다.</p>
+<p><strong>개선.</strong> 감독 지시("열은 사용하다 보면 나는 것 — 그걸 감안하자")를 받아 두 갈래. (1) <strong>나무 clone dispose</strong>: <code>mergeGeometries</code>가 독립 geometry를 반환하므로 병합 직후 입력 clone을 폐기(다른 병합부 관행 정합). 파셀 로드당 0.1~0.3MB JS힙 버스트 제거. (2) <strong>모바일 45fps 프레임 캡</strong>: 열은 코드로 없앨 수 없으나(물리) "열이 나도 견디게" 설계할 수 있다. 60fps 풀가동은 GPU 듀티 100%로 발열을 쌓아 결국 스로틀 추락하므로, 모바일(coarse)에 45fps 상한을 둬 프레임마다 GPU에 여유(~7ms)를 남겨 발열·스로틀을 <strong>선제 완화</strong>한다(모바일 3D 표준). 그림자·해상도는 그대로(감독 방향 성능55:그래픽45 — 프레임 상한만 양보, 그래픽은 유지). 데스크톱은 무캡. 45캡이 승급(48)·그림자복원(46) 임계보다 낮으면 하한에 갇히므로 모바일 한정 ADAPT_EXIT 42·SHADOW_LITE_EXIT 40으로 캡 밑에 재배치(정합).</p>
+<p><strong>결과.</strong> 독립 executor 스모크 6/6(vitest 146/146, 미술관·오픈월드 나무 렌더 회귀 0), 검수관 교차리뷰 승인(병합 결과 독립성·호출처 3곳 무재사용·캡↔임계 정합·capAccum 시뮬시간 보존·soft/실GPU 상호배타 분기 모두 검증, 블로커 0). 프레임 캡의 <strong>실GPU 실동작은 헤드리스(swiftshader)로 재현 불가</strong>해 감독 실기기 재측정으로 최종 확인 예정(사후 추적 항목).</p>
+<p><strong>교훈.</strong> 열 스로틀은 삼각형·해상도·그림자 어느 축으로도 설명 안 되는 "시간 누적" 저하로 나타난다 — 초반 tri 82k보다 후반 tri 9k가 더 느린 역상관이 그 지문이다. 감독의 "열을 감안하자"가 정확한 방향이었다: 원인을 없애려 하기보다 열이 나도 무너지지 않게 프레임 캡으로 GPU 듀티를 선제적으로 낮추는 것이 정석 (60→추락 대신 45→안정). 헤드리스 QA는 fill-rate·실GPU 스로틀을 재현 못 하므로 이 축의 최종 검증은 실기기 계측만 유효하다.</p>
+</article>
+<div class="pn"><a href="./2026-07-23-27ad7f.html"><span class="lbl">← 이전 기록</span>오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복</a><a href="./2026-07-23-c1f59e.html" style="text-align:right"><span class="lbl">다음 기록 →</span>프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

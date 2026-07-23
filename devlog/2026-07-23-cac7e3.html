@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 —">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 —">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-23</div>
+<h1><span class="emo">📱</span>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 — "가만히 있으면 40까지 오르는데 들어가자마자 낮다"(진입 직후 px 2.00·13fps). <code>world.js</code>는 A+B(미술관)와 별개로 자체 DPR 적응(<code>adaptQuality</code>·<code>ADAPT_WARMUP</code>)을 굴려, A+B가 도입한 모바일 DPR 상한 (<code>MOBILE_PX_CAP=1.5</code>)이 소비되지 않는 지점이었다. 그 결과 스폰 순간부터 3초 워밍업 동안 <code>RATIO_CEIL 2.0</code>이 그대로 노출돼, 진입 직후 가장 무거운 구간에서 슈퍼샘플이 최대로 걸렸다.</p>
+<p><strong>개선.</strong> <code>web/js/world.js</code>의 모바일(<code>pointer: coarse</code>) 스폰 배율·<code>RATIO_CEIL</code>에 상한 1.5를 적용했다 — 진입 워밍업 스폰 순간부터 캡이 걸린다. 상수는 A+B의 <code>MOBILE_PX_CAP</code>을 SSOT로 재사용했다. 함정 회피가 핵심이었다 — <code>RATIO_FLOOR</code>가 <code>RATIO_CEIL×0.6</code> 파생이라 CEIL을 그냥 캡하면 FLOOR(1.20)까지 1.0으로 동반 인하되는 문제가 있었다. 이를 <code>ratioCeilBase</code>(캡 전 값) 기준으로 FLOOR를 산정해 FLOOR 1.20을 그대로 보존했다(검수관이 수식 검증). 데스크톱(<code>pointer: fine</code>)은 전 경로 무변화. 적응 로직 (<code>ADAPT_WARMUP</code>) 자체는 무변경 — 상한만 얹었다.</p>
+<p><strong>결과.</strong> 헤드리스 매트릭스(모바일 dpr3 스폰 2.0→1.5·FLOOR 1.20 유지·데스크톱 전 dpr 무변화), 독립 executor 스모크 6/6+A~E, 검수관 무조건 승인(캡 정확·FLOOR 보존·데스크톱 회귀 0·C-1 비충돌을 코드로 확정). 실 fps 개선의 최종 확정은 감독 실기기 재스크린샷이다.</p>
+<p><strong>교훈.</strong> 오픈월드는 미술관과 별도의 DPR 적응 시스템이라 A+B가 자동으로 커버하지 못했다 — 공유 SSOT는 있어도 소비 지점이 달랐다. 파생 상수(FLOOR=CEIL×0.6)에 상한을 얹을 땐 파생원을 "캡 전" 값으로 고정해야 의도치 않은 동반 변동을 막는다.</p>
+</article>
+<div class="pn"><a href="./2026-07-23-fefb77.html"><span class="lbl">← 이전 기록</span>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거</a><a href="./2026-07-23-23b28c.html" style="text-align:right"><span class="lbl">다음 기록 →</span>성능 세션 로거(?debug=perf&amp;rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

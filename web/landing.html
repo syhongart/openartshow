@@ -20,7 +20,7 @@
 <meta name="twitter:description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
-<link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<link rel="stylesheet" href="./app/vendor/fonts/fonts.css">
 <style>
   :root {
     /* 브랜드 토큰 — 다크 몰입 팔레트 B (DESIGN.md §3, home.html과 완전 통일 — 2026-07-14 랜딩 전면 리페인트) */
@@ -855,9 +855,17 @@
       transform: none;
     }
   }
+
+  /* v2 배지 */
+  .v2-badge{position:fixed;top:clamp(12px, 2vw, 20px);right:clamp(12px, 2vw, 20px);z-index:999;
+    background:rgba(139,114,255,.2);border:1px solid rgba(139,114,255,.4);
+    border-radius:6px;padding:6px 12px;font-size:clamp(11px, 1.5vw, 13px);font-weight:600;
+    color:#8B72FF;letter-spacing:.02em;pointer-events:none}
 </style>
 </head>
 <body>
+
+  <div class="v2-badge">✨ v2</div>
 
   <a class="skip-link" href="#main">본문 바로가기</a>
 
@@ -1311,7 +1319,7 @@
 <script type="module">
   // 커뮤니티 피드 렌더 — feed.js(로컬 우선 스토어)를 그대로 읽는다.
   // 사용자 입력(닉네임/전시명)은 전부 textContent 경유 — 마크업 주입 차단.
-  import { PhotoWall, VisitorLog } from './js/feed.js';
+  import { PhotoWall, VisitorLog } from './app/js/feed.js';
 
   const timeAgo = (ts) => {
     const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
@@ -1383,8 +1391,8 @@
 <script type="module">
   // 로그인/회원가입 모달 배선 — 공용 컴포넌트(js/auth-modal.js)를 사용.
   // auth.js와 동일한 저장 규약(lu-auth-profile-v1)이라 여기서 로그인하면 로비가 그대로 이어받는다.
-  import { openAuthModal } from './js/auth-modal.js';
-  import { getProfile, logout, onAuthChange } from './js/auth.js';
+  import { openAuthModal } from './app/js/auth-modal.js';
+  import { getProfile, logout, onAuthChange } from './app/js/auth.js';
 
   (function () {
     "use strict";

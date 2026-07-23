@@ -70,10 +70,18 @@
   .is-touch #joy{display:block}
 
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+
+  /* v2 배지 */
+  .v2-badge{position:fixed;top:16px;right:66px;z-index:10;
+    background:rgba(139,114,255,.25);border:1px solid rgba(139,114,255,.45);
+    border-radius:6px;padding:5px 11px;font-size:11px;font-weight:600;
+    color:#8B72FF;letter-spacing:.02em;pointer-events:none}
 </style>
 </head>
 <body>
 <div id="stage"><canvas id="c"></canvas></div>
+
+<div class="v2-badge">✨ v2</div>
 
 <div class="plate hud-info">
   <div class="titlerow"><span class="tick"></span><span class="title" id="spaceTitle">나의 전시실</span></div>

@@ -2,9 +2,9 @@
 // chibi-face.js — 2D 캔버스 얼굴 텍스처(왕눈이/입/수염/동물·로봇·유령 페이스).
 //   chibi.js에서 분해(C-3 S4). color(shade/shadeAlpha)·materials(vivid) 참조.
 import * as THREE from 'three';
-import { shade, shadeAlpha } from './chibi-color.js';
-import { vivid } from './chibi-materials.js';
-import { NONHUMAN } from './chibi-schema.js';
+import { shade, shadeAlpha } from './chibi-color.ts';
+import { vivid } from './chibi-materials.ts';
+import { NONHUMAN } from './chibi-schema.ts';
 
 // ---------------------------------------------------------------------------
 // 얼굴 캔버스 — 귀여움의 8할. 512² 투명 캔버스에 왕눈이/입/볼터치를 그려

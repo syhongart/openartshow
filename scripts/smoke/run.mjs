@@ -154,8 +154,8 @@ function aggregateBrowser(pageResults, origin) {
   // 검사4: 콘솔 에러 0
   const errAgg = pageResults.map((p) => ({
     name: p.name,
-    n: (p.consoleErrors?.length || 0) + (p.pageErrors?.length || 0),
-    sample: [...(p.consoleErrors || []), ...(p.pageErrors || [])][0],
+    n: (p.consoleErrors?.length || 0) + (p.pageErrors?.length || 0) + (p.failedRequests?.length || 0),
+    sample: [...(p.consoleErrors || []), ...(p.pageErrors || []), ...(p.failedRequests || [])][0],
   }));
   const errPages = errAgg.filter((e) => e.n > 0);
   if (errPages.length) {

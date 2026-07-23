@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시) — OpenArtShow 개발일지</title>
-<meta name="description" content="두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.">
+<title>★ C단계 C-3(2) — chibi.js(2,678줄) 6분해 + 검수관이 라이브 크래시 차단 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. chibi.js = 아바타 3D 생성(사람·동물·robot·ghost·의상). 초대형 SRP 위반. 소비자 7곳">
 <link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/philosophy-3.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시) — OpenArtShow 개발일지">
-<meta property="og:description" content="두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.">
+<meta property="og:title" content="★ C단계 C-3(2) — chibi.js(2,678줄) 6분해 + 검수관이 라이브 크래시 차단 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. chibi.js = 아바타 3D 생성(사람·동물·robot·ghost·의상). 초대형 SRP 위반. 소비자 7곳">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/philosophy-3.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)","datePublished":"2026-07-19","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-3.html","inLanguage":"ko"}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"★ C단계 C-3(2) — chibi.js(2,678줄) 6분해 + 검수관이 라이브 크래시 차단","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/philosophy-3.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,13 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">OpenArtShow · 철학</div>
-<h1><span class="emo">📱</span>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)</h1>
-<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-19</p>
-<p>두 건을 라이브 고정 미술관(<code>syhongart 개인전</code>)에 반영했다.</p>
-<h3>1) 작품 12점 외부 이미지 → 자작 절차적 로컬 아트 (bbc8290)</h3>
-<p><strong>원인.</strong> 작품 aw-01~12가 외부 스톡사진 <code>https://picsum.photos/...</code>를 쓰고 있어 "외부 호스트 0"(자기완결)·프라이버시(방문자 브라우저가 외부 도메인으로 직접 요청 → 관람객 접속정보 유출) 규율을 위반. 조사 결과 위반은 picsum 12개가 유일(HDRI·폰트·벤더· featured 2점은 이미 로컬)이었다. <strong>개선.</strong> 감독 결정으로 자작 절차적 추상 아트 12점을 캔버스로 생성(각 작품 제목·설명 무드 기반 팔레트 — 능선·강줄기·안개·항구·노을 등, DESIGN.md 팔레트 B 조화). 5단 파이프라인(그라디언트→다중 워시→구조 모티프→그레인→비네트)으로 "한 작가의 연작" 통일감. <code>web/assets/gallery/aw-01~12.jpg</code>(각 ≤180KB). <code>artworks.js</code>(폴백)·<code>syhongart.json</code>(1순위) 두 파일의 imageUrl을 로컬 상대경로로 동시 교체 — 보호파일 artworks.js는 값·PICSUM 정의 제거만, 로직 무변경. <strong>교훈.</strong> 공용 함수(비네트)의 방사 감쇠가 구조 약한 1점(aw-05)에서 "중앙 원"으로 노출돼 플레이스홀더처럼 읽혔다 → 공용 함수는 두고 그 호출부만 비대칭 선형으로 교체 + 전용 모티프 추가로 해결(팀장 육안 판정 → 리튠).</p>
-<h3>2) 소프트웨어 렌더링 GPU 경고(모달·배지) 제거 (74058bd·53933a6)</h3>
-<p><strong>원인.</strong> GPU 가속 꺼짐/원격데스크톱 등 소프트웨어 렌더링 감지 시 "그래픽카드 없이 그리고 있어요 — 몹시 느립니다" 큰 모달 + 좌하단 "소프트웨어 렌더링 모드" 배지가 작품 감상을 가렸다. <strong>개선.</strong> 감독 지시로 둘 다 비활성(<code>showGpuNotice(…,false)</code> 호출 + <code>#lu-potato-badge</code> 생성 블록 제거). <strong>유지</strong>: (a) WebGL 자체 불가 시 치명 안내(fatal=true) — 없애면 3D가 안 뜨는 빈 화면만 남음, (b) <code>gpuInfo.soft</code> 기반 저사양 자동 경량화(해상도 배율·그림자 off· 무톤매핑·fog 삭감·potato 모드) — 경고 표시만 껐고 성능 최적화는 그대로.</p>
-<p><strong>게이트(공통).</strong> 감독 승인(보호파일 팀장 서명) → executor 독립 스모크(picsum 외부요청 0· 12액자 로드·배너/배지 미표시·potato 유지·fatal 온전 실측) → 검수관 교차리뷰 승인(보호파일 로직 무변경·2파일 동기화·최적화 무손상) → 팀장 실물 육안(컨택트시트·미술관 액자) → 감독 실물 보고 → deploy Actions success.</p>
+<h1><span class="emo">🛠️</span>★ C단계 C-3(2) — chibi.js(2,678줄) 6분해 + 검수관이 라이브 크래시 차단</h1>
+<p class="meta">방향을 잃을 때 돌아오는 자리 — 새겨둔 날 2026-07-22</p>
+<p><strong>원인.</strong> chibi.js = 아바타 3D 생성(사람·동물·robot·ghost·의상). 초대형 SRP 위반. 소비자 7곳 (world-gen·world-boot·ui-hud·builder-walk·avatar·npc·ui-avatar-editor) — <strong>보호4파일 무소비</strong>.</p>
+<p><strong>개선(6분해 + 배럴).</strong> <code>chibi-schema.ts</code>(390, 저장 look SSOT)·<code>chibi-color.ts</code>(16)·<code>chibi-anim.ts</code> (56)·<code>chibi-materials.ts</code>(237, <code>_toonRamp</code> 싱글턴)·<code>chibi-face.ts</code>(475, Canvas2D)·<code>chibi-builder.ts</code> (1,525, buildChibi+update 클로저) + 배럴 <code>chibi.ts</code>(명시 31 re-export). 저장 look(DEFAULT_CHIBI· normalizeChibi·encode/decode·<code>chibi:</code> 프리픽스) 1바이트 불변, 순환0, 소비자 무수정.</p>
+<p><strong>★ 검수관이 라이브 아바타 전체 크래시를 사전 차단(핵심 사건).</strong> 분해 시 비export 상수 3개 (<code>NONHUMAN</code>·<code>FACE_SHAPE_DEF</code>·<code>SPECIES_HEAD_BASE</code>)가 <strong>export 승격 누락</strong> → face/builder가 참조하는데 import 안 됨 → <code>buildChibi()</code>/<code>drawFaceCanvas()</code> <strong>런타임 ReferenceError(아바타 생성 100% 크래시)</strong>. 정의 라인은 이동됐으나 <strong>참조 연결이 끊긴</strong> 케이스라 byte 멀티셋 대조는 통과했다. 결정적으로 이 회귀는 <strong>@ts-nocheck(tsc 스킵) + eslint <code>no-undef:off</code> + <code>vite build</code> 성공 + 정적 대체 스모크</strong> 어느 것도 못 잡았다 — 검수관이 <strong>6모듈에 no-undef 스코프를 임시 활성</strong>(정확히 6건 검출)하고 <strong>buildChibi를 실제 호출</strong>해 반려로 잡았다. 수정(export 3 + import 2, 로직 무변경)→ no-undef 0·런타임 9/9 재실증→ 재검수 승인→ 배포.</p>
+<p><strong>게이트 규율 강화(이 사건의 산물).</strong> ① <strong>@ts-nocheck 모듈 분해는 no-undef 스코프 전수 검사를 게이트에 편입</strong>(정적 사각 차단). ② <strong>렌더 모듈 스모크는 "정적 대체" 금지 — 실제 buildChibi/씬 생성 런타임 호출</strong> 필수. (이미 배포된 space-render/studio/ui는 실제 헤드리스 렌더 콘솔0 통과 → 이 유형 회귀 없음 확인. chibi만 스모크가 정적 대체라 놓쳤고 검수관이 잡았다.)</p>
+<p><strong>교훈.</strong> "byte 무결성"은 라인이 어딘가 존재함만 증명하지 <strong>cross-module 참조가 연결됐는지는 증명하지 않는다.</strong> 순수 이동 분해의 진짜 위험은 로직 변조가 아니라 <strong>끊긴 참조</strong> — @ts-nocheck가 그 안전망(tsc)을 끈 상태였다. 제3자 교차검수(구현자≠검증자)가 정적 게이트의 사각을 메운 정확한 실례.</p>
 </article>
 
 </div>

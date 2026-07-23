@@ -28,6 +28,7 @@ export async function collectPage(browser, origin, pageSpec, urlPrefix = '') {
 
   const consoleErrors = [];
   const pageErrors = [];
+  const failedRequests = []; // 404 및 기타 실패 요청
   // 외부요청(자기완결 위반) 수집: 로컬 서버 origin·data:·blob: 이외의 네트워크 요청.
   // CSP default-src 'self' 로 대부분 차단되나, 시도 자체를 직접 포착해 0 을 증명한다.
   const externalRequests = [];
@@ -43,13 +44,24 @@ export async function collectPage(browser, origin, pageSpec, urlPrefix = '') {
 
   const page = await context.newPage();
   page.on('console', (m) => {
-    if (m.type() === 'error') consoleErrors.push(m.text());
+    const text = m.text();
+    // console.error 캡처 (가장 흔함)
+    if (m.type() === 'error') {
+      consoleErrors.push(text);
+    }
   });
   page.on('pageerror', (e) => pageErrors.push(e.message || String(e)));
   page.on('request', (r) => {
     const u = r.url();
     if (u.startsWith('data:') || u.startsWith('blob:')) return;
     if (!u.startsWith(origin + '/')) externalRequests.push(u.slice(0, 120));
+  });
+  page.on('response', (r) => {
+    // ≥400 응답 모두 캡처 (404 외에도 403, 500 등)
+    if (r.status() >= 400) {
+      const url = r.url().replace(origin, '').slice(0, 120);
+      failedRequests.push(`${r.status()} ${url}`);
+    }
   });
 
   const url = origin + urlPrefix + pageSpec.url;
@@ -106,6 +118,7 @@ export async function collectPage(browser, origin, pageSpec, urlPrefix = '') {
     url: pageSpec.url,
     consoleErrors,
     pageErrors,
+    failedRequests,
     cspMeta: dom.cspMeta,
     cspViolations: dom.cspViolations,
     inline: dom.inline,
