@@ -18,8 +18,8 @@ try {
   // import.meta.url은 module 번들링 후 절대경로가 되므로, document.location으로부터 계산
   const basePath = import.meta.env.BASE_URL || '/';
   const manifestUrl = basePath.endsWith('/')
-    ? basePath.slice(0, -1) + '/world/manifest.json'
-    : basePath + '/world/manifest.json';
+    ? basePath.slice(0, -1) + '/app/world/manifest.json'
+    : basePath + '/app/world/manifest.json';
   console.log('[world-boot] manifest URL:', manifestUrl);
   const res = await fetch(manifestUrl);
   console.log('[world-boot] manifest response:', res.status, res.ok);
