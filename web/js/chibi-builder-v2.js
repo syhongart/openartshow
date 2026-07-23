@@ -1,13 +1,14 @@
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { GLTFLoader } from "../vendor/GLTFLoader.js";
+import { mergeGeometries } from "../utils/BufferGeometryUtils.js";
 import {
   createChibiShaderMaterial,
   initializeVertexColors
-} from "./chibi-shader-v2";
-import { drawFaceCanvas } from "./chibi-face";
-import { toonRamp, vivid, vividSkin } from "./chibi-materials";
-import { CHIBI_ACTION_DUR } from "./chibi-anim";
-import { ChibiAnimationV2 } from "./chibi-animation-v2";
+} from "./chibi-shader-v2.js";
+import { drawFaceCanvas } from "./chibi-face.js";
+import { toonRamp, vivid, vividSkin } from "./chibi-materials.js";
+import { CHIBI_ACTION_DUR } from "./chibi-anim.js";
+import { ChibiAnimationV2 } from "./chibi-animation-v2.js";
 const gltfLoader = new GLTFLoader();
 const MODEL_BASE_PATH = "/app/assets/models";
 function createPrototypeChibiMesh() {
@@ -31,7 +32,7 @@ function createPrototypeChibiMesh() {
   const rightLegGeo = new THREE.CapsuleGeometry(0.05, 0.3, 4, 8);
   rightLegGeo.translate(0.06, -0.05, 0);
   geometries.push(rightLegGeo);
-  const mergedGeo = THREE.BufferGeometryUtils.mergeGeometries(geometries);
+  const mergedGeo = mergeGeometries(geometries);
   mergedGeo.computeVertexNormals();
   initializeVertexColors(mergedGeo);
   const bones = [];

@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { mergeGeometries } from "../utils/BufferGeometryUtils.js";
-import { normalizeChibi, FACE_SHAPE_DEF, SPECIES_HEAD_BASE } from "./chibi-schema.ts";
-import { shade } from "./chibi-color.ts";
-import { drawFaceCanvas, drawFaceInto } from "./chibi-face.ts";
-import { toonRamp, vivid, toon, vividSkin, addOutline, lathePoints, shirtTexture, furStripeTexture, buildMuzzleGeo } from "./chibi-materials.ts";
-import { easeOutCubic, easeInCubic, easeInOutCubic, easeOutBack, CHIBI_ACTION_DUR, sitWrapperY } from "./chibi-anim.ts";
+import { normalizeChibi, FACE_SHAPE_DEF, SPECIES_HEAD_BASE } from "./chibi-schema.js";
+import { shade } from "./chibi-color.js";
+import { drawFaceCanvas, drawFaceInto } from "./chibi-face.js";
+import { toonRamp, vivid, toon, vividSkin, addOutline, lathePoints, shirtTexture, furStripeTexture, buildMuzzleGeo } from "./chibi-materials.js";
+import { easeOutCubic, easeInCubic, easeInOutCubic, easeOutBack, CHIBI_ACTION_DUR, sitWrapperY } from "./chibi-anim.js";
 function buildChibi(params) {
   const p = normalizeChibi(params);
   const mats = [];

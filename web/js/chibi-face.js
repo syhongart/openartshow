@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import { shade, shadeAlpha } from "./chibi-color.ts";
-import { vivid } from "./chibi-materials.ts";
-import { NONHUMAN } from "./chibi-schema.ts";
+import { shade, shadeAlpha } from "./chibi-color.js";
+import { vivid } from "./chibi-materials.js";
+import { NONHUMAN } from "./chibi-schema.js";
 function beardColor(p, alpha) {
   let factor = 0.6;
   const hc = new THREE.Color(p.hairColor);

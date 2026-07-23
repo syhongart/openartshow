@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CHIBI_ACTION_DUR } from "./chibi-anim";
+import { CHIBI_ACTION_DUR } from "./chibi-anim.js";
 class ChibiAnimationV2 {
   skeleton;
   state = {
