@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가) — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 프레임 캡을 세 번 배포하며 매번 실기기 로그의 "fps 62"를 근거로 "캡 미작동"이라 판독했다.">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-fbcbdb.html">
+<title>모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. rfps 계측으로 45캡이 실제 걸림을 확인(가벼운 구간 화면 fps 60 / rfps 30~40)했으나, 감독">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가) — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 프레임 캡을 세 번 배포하며 매번 실기기 로그의 "fps 62"를 근거로 "캡 미작동"이라 판독했다.">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-fbcbdb.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가)","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-fbcbdb.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. rfps 계측으로 45캡이 실제 걸림을 확인(가벼운 구간 화면 fps 60 / rfps 30~40)했으나, 감독">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-23</div>
-<h1><span class="emo">⚡</span>계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가)</h1>
+<h1><span class="emo">⚡</span>모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 프레임 캡을 세 번 배포하며 매번 실기기 로그의 "fps 62"를 근거로 "캡 미작동"이라 판독했다. 부팀장이 감독의 네 번째 로그를 판독하다 근본 결함을 발견했다: <code>debug-perf.js</code>의 fps는 자체 <code>requestAnimationFrame</code>(독립 tick 루프)의 틱 빈도, 즉 <strong>브라우저 화면 주사율(60/120Hz)</strong>을 재는 것이었다. world.js의 프레임 캡은 <code>update</code>→<code>renderer.render()</code> 호출만 건너뛸 뿐 브라우저 rAF는 못 막으므로, <strong>캡이 실제로 걸려도 이 fps는 60을 유지</strong>한다 — 캡 작동을 이 지표로는 영영 확인할 수 없었다. 반면 같은 CSV의 draw/tri는 <code>renderer.info</code> 실측이라 출처가 달랐다(불일치).</p>
-<p><strong>개선.</strong> 실제 3D 렌더 fps(<code>rfps</code>)를 추가했다: <code>renderer.info.render.frame</code>(three가 <code>renderer.render()</code> 호출마다 +1하는 누적 카운터, three.module.js:29588)의 250ms 구간 증가량 / 구간시간. 이제 CSV에서 <code>rfps ≤ 45</code>면 캡이 실제로 걸린 것이고(화면 fps는 60이어도), rfps로 캡의 발열 완화 효과까지 판독한다. 저부하 규율 유지(구간 마감 시 숫자 대입만), behind-flag라 라이브 무영향. CSV 헤더: <code>t_ms,fps,rfps,fps_min,px,draw,tri,tex,evt,page</code>.</p>
-<p><strong>결과.</strong> 독립 executor 스모크 6/6, 검수관 교차리뷰 승인 — rfps 계산 정확성(render()당 정확히 1회 증가, 코드베이스 render() 호출처 2곳 확인, 첫 샘플·non-rec·링버퍼 정합·CSV 컬럼 시프트) 전 항목 검증. 폴백 객체에 <code>frame:0</code> 방어 추가(권고 반영).</p>
-<p><strong>교훈.</strong> <strong>측정 도구가 틀리면 그 위의 모든 판단이 헛돈다</strong> — 세 번의 헛배포는 잘못된 지표(화면 rAF를 3D 렌더 fps로 오인)에서 비롯됐다. 한 CSV 안에서 fps(자체 rAF)와 draw/tri(renderer.info)의 출처가 다른 것 자체가 경고였는데 놓쳤다. 성능 최적화는 "지표가 그 최적화를 실제로 관측하는가"를 먼저 확인해야 한다. 프레임 캡의 실제 작동 여부는 이제 rfps 재측정으로 비로소 확정한다.</p>
+<p><strong>원인.</strong> rfps 계측으로 45캡이 실제 걸림을 확인(가벼운 구간 화면 fps 60 / rfps 30~40)했으나, 감독 실기기 로그에서 후반 열 스로틀(47초+ fps·rfps 둘 다 10~15 붕괴)이 여전했다. 감독이 캡을 30으로 더 낮춰 발열을 추가 억제하라 지시(A안, 성능55:그래픽45, 그림자는 유지).</p>
+<p><strong>개선.</strong> 캡을 낮추면 adaptQuality의 fpsNow(update 호출 빈도)가 캡값에 고정돼 적응 임계와 충돌한다 — 캡 30이면 (1)승급 임계 42에 못 닿아 px 하한 고정 (2)그림자 조기적응 ENTER 30 상시 발동으로 그림자 거의 상시 off(감독 "그림자 유지"와 충돌). 팀장 판정 (b)로 정합: <strong>① 캡 45→30</strong>, <strong>② px 승급 임계만 캡 아래로</strong>(모바일 ADAPT_EXIT 42→27)로 화질 회복 경로 유지, <strong>③ 그림자를 캡과 분리</strong> — 모바일 그림자 조기적응 비활성(!coarsePointer 가드), 기본 on 유지·긴급강등(fps&lt;24)에서만 off·상한복귀에서 on, <strong>④ 승급 지속 강화</strong>(모바일 ADAPT_UP_HOLD 20→30틱=15초)로 좁아진 승급 갭(24~27) 진동 방어. 검수관이 잡은 진단 로그 캡 값 하드코딩('45fps' 잔존, 실기기 검증 오염 위험)은 <strong>캡 값을 단일 상수 MOBILE_CAP_FPS로 묶어</strong>(진단·FRAME_CAP_S·주석 공유) 재발 구조 자체를 제거했다.</p>
+<p><strong>결과.</strong> 독립 executor 스모크 6/6·vitest, 검수관 교차리뷰 승인(승급 열림·그림자 on 유지·데스크톱 무영향 실측, 캡값 SSOT화로 조건 근본 해소). 팀장 조건 실기기 확인 3항(가벼운 구간 px 승급·그림자 on·47초+ 열 완화)은 배포 후 감독 재측정 — (iii) 미충족 시 캡 36안 재브리프 에스컬레이션 경로 명시.</p>
+<p><strong>교훈.</strong> 프레임 캡 값은 적응 시스템(승급·그림자 임계)과 얽혀 있어, 값 하나를 바꾸면 여러 임계가 연쇄로 재설계돼야 한다 — 팀장 설계 판정으로 감독의 두 지시(캡 30 + 그림자 유지)를 양립시켰다. 그리고 같은 값(캡 fps)을 여러 곳에 하드코딩하면 한 곳만 바꿔 불일치가 남는다(검수관 포착) — 단일 상수(SSOT)로 묶으면 재발 구조가 사라진다. 이번 세션의 반복 실수(값 산재)를 구조로 종결했다.</p>
 </article>
-<div class="pn"><a href="./2026-07-23-c1f59e.html"><span class="lbl">← 이전 기록</span>프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사)</a><a href="./2026-07-23-c7b62b.html" style="text-align:right"><span class="lbl">다음 기록 →</span>모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)</a></div>
+<div class="pn"><a href="./2026-07-23-fbcbdb.html"><span class="lbl">← 이전 기록</span>계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
