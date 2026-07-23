@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 감독 실기기에서 오픈월드(world)가 9fps로 버벅였다. 성능감사로 주범을 확정했다 —">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-fefb77.html">
+<title>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 —">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 감독 실기기에서 오픈월드(world)가 9fps로 버벅였다. 성능감사로 주범을 확정했다 —">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-fefb77.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-fefb77.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 —">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-23</div>
-<h1><span class="emo">⚡</span>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거</h1>
+<h1><span class="emo">📱</span>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 감독 실기기에서 오픈월드(world)가 9fps로 버벅였다. 성능감사로 주범을 확정했다 — 실시간 <code>PCFSoftShadowMap</code> 그림자 샘플링이다. <code>receiveShadow</code> 표면이 148개(바닥·모래·다리·도로·강)로 화면 대부분을 덮고, PCFSoft는 매 픽셀 9~25탭을 뽑아 fill-rate 병목을 해상도에 비례해 +70.9% 가중시켰다. 미술관(<code>space-render</code>)은 셸 라이트맵 베이크라 이 경로가 아예 없고, world만 실시간 그림자를 썼다. draw 87·tri 31.7k로 지오메트리는 저폴리인데도 9fps — 전형적 프래그먼트(픽셀) 병목 시그니처다.</p>
-<p><strong>개선.</strong> <code>web/js/world.js</code>에 <code>setShadowLite()</code>를 도입했다 — 저사양(lite) 진입 시 <code>renderer.shadowMap.enabled=false</code>로 그림자를 완전 제거해 섀도 패스 자체를 스킵하고, 고사양 복귀 시 <code>requestShadowBake</code>로 재베이크한다. 완전 제거(방식 b)는 디자이너 룩 판정을 거쳤다 — 캐스터가 소품(램프·벤치·플랜터·부두·등대)뿐이고 건물셸·나무는 <code>castShadow</code>가 없어, 제거해도 오브젝트가 붕뜨는 이질감이 없고 PCF 1탭 열화보다 오히려 자연스럽다. 고사양은 PCFSoft·1024 그대로 유지. lite 진입/복귀는 기존 <code>adaptQuality</code> 히스테리시스(24↔48fps·쿨다운)에 종속시켜 경계 플리커를 막았다. 미술관 경로 무접촉.</p>
-<p><strong>결과.</strong> 독립 executor 스모크 6/6+A~E 통과, 검수관 무조건 승인(강등/복귀 로직·재베이크 정확·플리커 없음·고사양 회귀 0·미술관 무영향을 코드로 확정). 실 저사양 fps 개선의 최종 확정은 감독 실기기 재스크린샷이다.</p>
-<p><strong>교훈.</strong> 오픈월드가 미술관과 달리 라이트맵 베이크 없이 실시간 그림자를 써 무거웠다. <code>shadowMap.autoUpdate=false</code>로 그림자맵 "생성"을 베이크로 돌려도 PCFSoft "샘플링"은 매 프레임 상시 프래그먼트 비용이다 — 저사양은 샘플링 자체를 꺼야 한다. 헤드리스(swiftshader)는 fill-rate 병목을 재현하지 못하므로 실기기 계측이 최종 확정 경로다.</p>
+<p><strong>원인.</strong> C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 — "가만히 있으면 40까지 오르는데 들어가자마자 낮다"(진입 직후 px 2.00·13fps). <code>world.js</code>는 A+B(미술관)와 별개로 자체 DPR 적응(<code>adaptQuality</code>·<code>ADAPT_WARMUP</code>)을 굴려, A+B가 도입한 모바일 DPR 상한 (<code>MOBILE_PX_CAP=1.5</code>)이 소비되지 않는 지점이었다. 그 결과 스폰 순간부터 3초 워밍업 동안 <code>RATIO_CEIL 2.0</code>이 그대로 노출돼, 진입 직후 가장 무거운 구간에서 슈퍼샘플이 최대로 걸렸다.</p>
+<p><strong>개선.</strong> <code>web/js/world.js</code>의 모바일(<code>pointer: coarse</code>) 스폰 배율·<code>RATIO_CEIL</code>에 상한 1.5를 적용했다 — 진입 워밍업 스폰 순간부터 캡이 걸린다. 상수는 A+B의 <code>MOBILE_PX_CAP</code>을 SSOT로 재사용했다. 함정 회피가 핵심이었다 — <code>RATIO_FLOOR</code>가 <code>RATIO_CEIL×0.6</code> 파생이라 CEIL을 그냥 캡하면 FLOOR(1.20)까지 1.0으로 동반 인하되는 문제가 있었다. 이를 <code>ratioCeilBase</code>(캡 전 값) 기준으로 FLOOR를 산정해 FLOOR 1.20을 그대로 보존했다(검수관이 수식 검증). 데스크톱(<code>pointer: fine</code>)은 전 경로 무변화. 적응 로직 (<code>ADAPT_WARMUP</code>) 자체는 무변경 — 상한만 얹었다.</p>
+<p><strong>결과.</strong> 헤드리스 매트릭스(모바일 dpr3 스폰 2.0→1.5·FLOOR 1.20 유지·데스크톱 전 dpr 무변화), 독립 executor 스모크 6/6+A~E, 검수관 무조건 승인(캡 정확·FLOOR 보존·데스크톱 회귀 0·C-1 비충돌을 코드로 확정). 실 fps 개선의 최종 확정은 감독 실기기 재스크린샷이다.</p>
+<p><strong>교훈.</strong> 오픈월드는 미술관과 별도의 DPR 적응 시스템이라 A+B가 자동으로 커버하지 못했다 — 공유 SSOT는 있어도 소비 지점이 달랐다. 파생 상수(FLOOR=CEIL×0.6)에 상한을 얹을 땐 파생원을 "캡 전" 값으로 고정해야 의도치 않은 동반 변동을 막는다.</p>
 </article>
-<div class="pn"><a href="./2026-07-23-2f3431.html"><span class="lbl">← 이전 기록</span>모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한</a><a href="./2026-07-23-cac7e3.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡</a></div>
+<div class="pn"><a href="./2026-07-23-fefb77.html"><span class="lbl">← 이전 기록</span>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
