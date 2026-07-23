@@ -125,14 +125,16 @@ export function mountPerfHud(renderer, page = '?', extra = {}) {
   //   최근 ~5분(1200샘플 × 250ms = 300초) 상한. 초과 시 head가 회전하며 오래된 것 덮어씀.
   //   필드: t(상대ms)·fps·fpsMin·px·draw·tri·tex + evt(마커코드). page는 마운트 고정 라벨.
   const CAP = 1200;
-  let bufT, bufFps, bufMin, bufPx, bufDraw, bufTri, bufTex, bufEvt;
+  let bufT, bufFps, bufRfps, bufMin, bufPx, bufDraw, bufTri, bufTex, bufEvt;
   let head = 0, count = 0;              // 링버퍼 write 커서 / 채워진 샘플 수
   let segAcc = 0, segFrames = 0, segWorstDt = 0; // 250ms 구간 누적 상태
   let prevDraw = 0, prevMin = 0;        // 직전 샘플과의 급변 비교용
+  let prevRenderFrame = -1;             // 직전 샘플의 renderer.info.render.frame(실제 렌더 fps 산출용, -1=미초기화)
   let seededPage = false;               // 세션 시작(page) 마커 1회 부여
   if (REC) {
     bufT = new Float64Array(CAP);
     bufFps = new Float32Array(CAP);
+    bufRfps = new Float32Array(CAP);
     bufMin = new Float32Array(CAP);
     bufPx = new Float32Array(CAP);
     bufDraw = new Int32Array(CAP);
@@ -145,6 +147,13 @@ export function mountPerfHud(renderer, page = '?', extra = {}) {
   //   (문자열화·DOM·console 없음 → 프레임 오버헤드 최소)
   function pushSample(now, rInfo, mInfo, prNum) {
     const fps = segAcc > 0 ? (segFrames * 1000) / segAcc : 0;
+    // [실제 렌더 fps] 위 fps는 debug-perf 자체 rAF(브라우저 화면 주사율) 틱 빈도라 world의 프레임 캡
+    // (update/render 호출 제한)을 반영하지 못한다. rfps는 renderer.info.render.frame(three가
+    // renderer.render() 호출마다 +1하는 누적 카운터)의 구간 증가량/구간시간 = 실제 3D 렌더 호출 빈도라
+    // 프레임 캡 작동·효과를 직접 드러낸다(캡 45면 rfps≤45, 화면 fps는 그대로 60일 수 있다).
+    const rframe = rInfo.frame | 0;
+    const rfps = (prevRenderFrame >= 0 && segAcc > 0) ? ((rframe - prevRenderFrame) * 1000) / segAcc : 0;
+    prevRenderFrame = rframe;
     const fmin = segWorstDt > 0 ? 1000 / segWorstDt : fps;
     const draw = rInfo.calls | 0;
     const tri = rInfo.triangles | 0;
@@ -158,6 +167,7 @@ export function mountPerfHud(renderer, page = '?', extra = {}) {
     }
     bufT[head] = now - startT;
     bufFps[head] = fps;
+    bufRfps[head] = rfps;
     bufMin[head] = fmin;
     bufPx[head] = prNum;
     bufDraw[head] = draw;
@@ -198,7 +208,7 @@ export function mountPerfHud(renderer, page = '?', extra = {}) {
   }
 
   function draw() {
-    const rInfo = renderer.info && renderer.info.render ? renderer.info.render : { calls: 0, triangles: 0 };
+    const rInfo = renderer.info && renderer.info.render ? renderer.info.render : { calls: 0, triangles: 0, frame: 0 };
     const mInfo = renderer.info && renderer.info.memory ? renderer.info.memory : { textures: 0 };
     const pr = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : (renderer.getPixelRatio || 0);
     const prTxt = typeof pr === 'number' ? pr.toFixed(2) : String(pr);
@@ -251,7 +261,7 @@ export function mountPerfHud(renderer, page = '?', extra = {}) {
       segAcc += dt; segFrames++;
       if (dt > segWorstDt) segWorstDt = dt;
       if (segAcc >= 250) {
-        const rInfo = renderer.info && renderer.info.render ? renderer.info.render : { calls: 0, triangles: 0 };
+        const rInfo = renderer.info && renderer.info.render ? renderer.info.render : { calls: 0, triangles: 0, frame: 0 };
         const mInfo = renderer.info && renderer.info.memory ? renderer.info.memory : { textures: 0 };
         const prNum = typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : +renderer.getPixelRatio || 0;
         pushSample(now, rInfo, mInfo, prNum);
@@ -272,12 +282,13 @@ export function mountPerfHud(renderer, page = '?', extra = {}) {
   const EVT_TXT = ['', 'pcl', 'page'];   // 0/1/2 → CSV evt 열 텍스트(pcl=파셀로드 추정)
   function buildCsv() {
     // 시간순으로 링버퍼를 훑어 한 번에 조립(내보내기 순간의 일회성 비용)
-    const lines = ['t_ms,fps,fps_min,px,draw,tri,tex,evt,page'];
+    const lines = ['t_ms,fps,rfps,fps_min,px,draw,tri,tex,evt,page'];
     for (let i = 0; i < count; i++) {
       const idx = count < CAP ? i : (head + i) % CAP;
       lines.push(
         bufT[idx].toFixed(0) + ',' +
         bufFps[idx].toFixed(1) + ',' +
+        bufRfps[idx].toFixed(1) + ',' +
         bufMin[idx].toFixed(1) + ',' +
         bufPx[idx].toFixed(2) + ',' +
         bufDraw[idx] + ',' +
