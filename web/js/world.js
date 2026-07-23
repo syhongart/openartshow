@@ -104,8 +104,16 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // [저사양 방어] 렌더러 생성 "전" GPU 프로브 — antialias는 생성 시점 옵션이라 결과를 먼저 알아야 한다(main.js:555).
   const gpuInfo = probeGpu();
-  // [C-2a] pointer:coarse(터치) 판정 — main.js:272 동형. 모바일 DPR 상한 캡(스폰·적응)의 공통 게이트.
-  const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  // [모바일 판정 — SPOF 정합] 터치 판정은 모바일 최적화(px 캡·프레임 캡·적응 임계)의 공통 게이트다.
+  // pointer:coarse 미디어쿼리 "단독"으로 잡으면 고주사율폰 + '데스크톱 사이트 요청' 등에서 false가 되어
+  // 모든 모바일 최적화가 통째로 무력화되는 단일 지점 실패였다(감독 실기기 로그: fps 62 = 캡 미작동 =
+  // coarse false). world-boot.js:128(ontouchstart‖maxTouchPoints)·ui-hud.ts:79(ontouchstart‖coarse)의
+  // 부분 터치 판정을 3신호 합집합(coarse ‖ ontouchstart ‖ maxTouchPoints)으로 강화한다 — 한 신호가
+  // 실패해도 나머지가 잡는다(세 파일 신호 완전 통일은 후속 과제). 데스크톱(전부 false)은 여전히 false
+  // → 무캡·화질 무변화.
+  const coarsePointer = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+    || (typeof window !== 'undefined' && 'ontouchstart' in window)
+    || (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0);
   if (typeof console !== 'undefined') console.info('[OpenArtShow/World] GPU:', gpuInfo.name || '(unknown)', gpuInfo.soft ? '— SOFTWARE RENDERING' : '');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !gpuInfo.soft, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
   // 픽셀비율 상한 — 정상 GPU는 최대 2, 소프트웨어 렌더는 0.7 캡(main.js:604 동형).
@@ -116,6 +124,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   let spawnRatio = gpuInfo.soft ? Math.min(dprBase, 0.7) : Math.min(2, dprBase);
   if (coarsePointer) spawnRatio = Math.min(spawnRatio, MOBILE_PX_CAP);
   renderer.setPixelRatio(spawnRatio);
+  // [진단] 모바일 판정·적용된 캡을 진입 시 1회 기록 — coarsePointer 오판(SPOF)이 재발하면 원격
+  // 디버깅으로 즉시 확인. mobile=false인데 실제 폰이면 판정 실패 신호(프레임 캡·px 캡 미적용).
+  if (typeof console !== 'undefined') console.info('[OpenArtShow/World] input:',
+    coarsePointer ? 'mobile(touch)' : 'desktop(fine)',
+    '· dpr', dprBase, '· px', spawnRatio.toFixed(2),
+    '· frameCap', coarsePointer ? '45fps' : 'off',
+    '· maxTouchPoints', (typeof navigator !== 'undefined' && navigator.maxTouchPoints) || 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // ACES 톤매핑은 프래그먼트당 수십 ALU — 소프트웨어 렌더에서는 그대로 비용이라 끈다(main.js:613).
   renderer.toneMapping = gpuInfo.soft ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
@@ -1226,11 +1241,16 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       potatoAccum = 0;
     } else if (FRAME_CAP_S > 0) {
       // [열 감안 프레임 캡] 모바일 45fps 상한(위 FRAME_CAP_S 주석). 건너뛴 시간은 누적해 다음 delta로
-      // 넘겨 시뮬 시간을 보존한다(soft 포테이토 캡과 동형 — 물리·애니메이션이 캡 때문에 느려지지 않음).
+      // 넘겨 시뮬 시간을 보존한다(물리·애니메이션이 캡 때문에 느려지지 않음).
       capAccum += dt;
       if (capAccum < FRAME_CAP_S) return;
-      dt = capAccum;
-      capAccum = 0;
+      dt = capAccum;      // 누적 경과 전체를 넘겨 시뮬 시간을 정확히 보존(sim/real=1.0).
+      capAccum = 0;       // 리셋 — 잔여를 이월하지 않는다. 이월(capAccum-=FRAME_CAP_S)은 이미 방출한
+                          // 시간을 다음 프레임 dt에 재포함해 시뮬 시간을 이중계산한다(정상 60/120Hz에서도
+                          // 1.25~1.5배, 네이티브 fps<45 저사양에선 무제한 폭주 → 씬 붕괴, 검수관 실측).
+                          // 그 대가로 update 호출 빈도는 화면 주사율의 약수로 근사된다(120Hz→~40fps·
+                          // 60Hz→~30fps). 45 정밀도보다 시간 정확·안정이 우선이고, 40/30도 GPU 듀티를
+                          // 낮춰 발열 예방엔 충분하다(감독 55:45에도 오히려 성능 쪽).
     }
     update(dt);
   }
