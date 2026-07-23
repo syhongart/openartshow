@@ -14,10 +14,20 @@ import { SKY_TIMES, SKY_WEATHERS, autoTimeOfDay } from './sky.js';
 // fetch 실패(404·파싱오류) 시 먹통+무피드백 방지 — 오버레이에 가시적 안내(release-reviewer 지적).
 let M;
 try {
-  const res = await fetch('./world/manifest.json'); // 문서(world.html) 기준 경로
+  // Document 기준 절대경로(base 설정과 무관하게 정확한 해석)
+  // import.meta.url은 module 번들링 후 절대경로가 되므로, document.location으로부터 계산
+  const basePath = import.meta.env.BASE_URL || '/';
+  const manifestUrl = basePath.endsWith('/')
+    ? basePath.slice(0, -1) + '/world/manifest.json'
+    : basePath + '/world/manifest.json';
+  console.log('[world-boot] manifest URL:', manifestUrl);
+  const res = await fetch(manifestUrl);
+  console.log('[world-boot] manifest response:', res.status, res.ok);
   if (!res.ok) throw new Error('manifest HTTP ' + res.status);
   M = await res.json();
+  console.log('[world-boot] manifest loaded, npcs:', M.npcs?.length || 0);
 } catch (e) {
+  console.error('[world-boot] manifest fetch failed:', e.message);
   const ov = document.getElementById('enter');
   if (ov) { ov.classList.remove('hide'); ov.innerHTML = '<div class="big">월드를 불러오지 못했어요</div><div class="sub">잠시 후 새로고침해 주세요</div>'; }
   throw e;
@@ -79,12 +89,19 @@ const LOD_PRESETS = {
 const lodPreset = LOD_PRESETS[new URLSearchParams(location.search).get('lod')] || LOD_PRESETS.a;
 
 const canvas = document.getElementById('c');
-const V = createWorld({ canvas, parcels, opts: {
-  cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true,
-  mp: { nickname: nick, color: myColor, char: randomChibiChar() }, // window.Peer 없으면 world.js가 조용히 1인 모드
-  ...lodPreset, // fogNearK/fogFarK/shellFlat — 미지정(a)이면 현행값과 동일
-} });
-window.__world = V;
+console.log('[world-boot] parcels count:', parcels.length, 'canvas:', canvas ? 'OK' : 'MISSING');
+try {
+  const V = createWorld({ canvas, parcels, opts: {
+    cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true,
+    mp: { nickname: nick, color: myColor, char: randomChibiChar() }, // window.Peer 없으면 world.js가 조용히 1인 모드
+    ...lodPreset, // fogNearK/fogFarK/shellFlat — 미지정(a)이면 현행값과 동일
+  } });
+  window.__world = V;
+  console.log('[world-boot] createWorld succeeded, world object created');
+} catch (err) {
+  console.error('[world-boot] createWorld failed:', err.message);
+  throw err;
+}
 if (location.search.includes('debug=perf')) import('./debug-perf.js').then((m) => m.mountPerfHud(V.getRenderer(), 'world')); // ?debug=perf 게이트 뒤 동적 import(behind-flag) — 진입 즉시 프레임 계측(world.js 무접촉)
 
 let playerCount = 1;
