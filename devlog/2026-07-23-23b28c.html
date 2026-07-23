@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 —">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html">
+<title>성능 세션 로거(?debug=perf&amp;rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 성능 진단이 지금까지 HUD 스크린샷 순간값 1장씩이라 번거롭고, 이동 중 순간적으로 fps가">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-23b28c.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 —">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-cac7e3.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="성능 세션 로거(?debug=perf&amp;rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 성능 진단이 지금까지 HUD 스크린샷 순간값 1장씩이라 번거롭고, 이동 중 순간적으로 fps가">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-23b28c.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"성능 세션 로거(?debug=perf&rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-23b28c.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-23</div>
-<h1><span class="emo">📱</span>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡</h1>
+<h1><span class="emo">⚡</span>성능 세션 로거(?debug=perf&amp;rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 — "가만히 있으면 40까지 오르는데 들어가자마자 낮다"(진입 직후 px 2.00·13fps). <code>world.js</code>는 A+B(미술관)와 별개로 자체 DPR 적응(<code>adaptQuality</code>·<code>ADAPT_WARMUP</code>)을 굴려, A+B가 도입한 모바일 DPR 상한 (<code>MOBILE_PX_CAP=1.5</code>)이 소비되지 않는 지점이었다. 그 결과 스폰 순간부터 3초 워밍업 동안 <code>RATIO_CEIL 2.0</code>이 그대로 노출돼, 진입 직후 가장 무거운 구간에서 슈퍼샘플이 최대로 걸렸다.</p>
-<p><strong>개선.</strong> <code>web/js/world.js</code>의 모바일(<code>pointer: coarse</code>) 스폰 배율·<code>RATIO_CEIL</code>에 상한 1.5를 적용했다 — 진입 워밍업 스폰 순간부터 캡이 걸린다. 상수는 A+B의 <code>MOBILE_PX_CAP</code>을 SSOT로 재사용했다. 함정 회피가 핵심이었다 — <code>RATIO_FLOOR</code>가 <code>RATIO_CEIL×0.6</code> 파생이라 CEIL을 그냥 캡하면 FLOOR(1.20)까지 1.0으로 동반 인하되는 문제가 있었다. 이를 <code>ratioCeilBase</code>(캡 전 값) 기준으로 FLOOR를 산정해 FLOOR 1.20을 그대로 보존했다(검수관이 수식 검증). 데스크톱(<code>pointer: fine</code>)은 전 경로 무변화. 적응 로직 (<code>ADAPT_WARMUP</code>) 자체는 무변경 — 상한만 얹었다.</p>
-<p><strong>결과.</strong> 헤드리스 매트릭스(모바일 dpr3 스폰 2.0→1.5·FLOOR 1.20 유지·데스크톱 전 dpr 무변화), 독립 executor 스모크 6/6+A~E, 검수관 무조건 승인(캡 정확·FLOOR 보존·데스크톱 회귀 0·C-1 비충돌을 코드로 확정). 실 fps 개선의 최종 확정은 감독 실기기 재스크린샷이다.</p>
-<p><strong>교훈.</strong> 오픈월드는 미술관과 별도의 DPR 적응 시스템이라 A+B가 자동으로 커버하지 못했다 — 공유 SSOT는 있어도 소비 지점이 달랐다. 파생 상수(FLOOR=CEIL×0.6)에 상한을 얹을 땐 파생원을 "캡 전" 값으로 고정해야 의도치 않은 동반 변동을 막는다.</p>
+<p><strong>원인.</strong> 성능 진단이 지금까지 HUD 스크린샷 순간값 1장씩이라 번거롭고, 이동 중 순간적으로 fps가 떨어지는 지점을 포착하기가 어려웠다. 감독이 "개발자가 언제든 로그를 뽑을 수 있는 법"을 요청했고, 동시에 "로그를 남기는 것 자체가 부하로 작용해 측정을 왜곡하지 않느냐"는 관찰자 효과 우려를 제기했다.</p>
+<p><strong>개선.</strong> <code>debug-perf.js</code>에 세션 로거를 얹었다. <code>?debug=perf&amp;rec</code>일 때만 250ms 링버퍼(typed 배열, 약 5분 분량)로 기록한다 — rAF 틱에서는 숫자 대입만 하고 문자열화·DOM·console을 전혀 쓰지 않는다. draw/tri 급변과 fpsMin 급락을 겹쳐 파셀 드랍을 자동 마커로 남기고, 복사(clipboard)·저장(.csv Blob) 버튼과 요약 오버레이(avg·min·p95·최악 순간)를 제공한다. <code>rec</code>가 없으면 표시만 하고 기록 오버헤드는 0이다. 무백엔드·자기완결 구조라 서버 전송은 0 — 클립보드와 로컬 Blob으로만 내보낸다. 보호 런타임 훅은 무변경.</p>
+<p><strong>결과.</strong> 독립 executor 스모크 6/6+A~E, 검수관 무조건 승인. 기록 오버헤드는 실측 674ns/프레임으로 60fps 예산의 0.004%(무부하 수준)다. importmap 해시 불일치 경고는 vite <code>selfContained</code>가 dist에서 importmap을 제거하고 <code>cspReconcile</code>이 실측 재계산하는 구조라 소스의 dead 값(검수관이 실제 vite build로 "소스 노이즈·무해" 실증)일 뿐이었다.</p>
+<p><strong>교훈.</strong> 관찰자 효과는 실재하나, 저빈도 샘플·typed 링버퍼·문자열화 지연·console 무사용을 겹치면 무시할 수준까지 낮출 수 있다. 무백엔드 정적 호스팅에선 로그를 기기에 쌓아두고 사용자가 직접 내보내는 구조가 자기완결 원칙에 맞는 해법이다.</p>
 </article>
-<div class="pn"><a href="./2026-07-23-fefb77.html"><span class="lbl">← 이전 기록</span>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거</a><a href="./2026-07-23-23b28c.html" style="text-align:right"><span class="lbl">다음 기록 →</span>성능 세션 로거(?debug=perf&amp;rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기</a></div>
+<div class="pn"><a href="./2026-07-23-cac7e3.html"><span class="lbl">← 이전 기록</span>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
