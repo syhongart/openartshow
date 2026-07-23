@@ -20,6 +20,7 @@
 <meta name="twitter:description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
+<link rel="stylesheet" href="./app/vendor/fonts/fonts.css">
 <style>
   :root {
     /* 브랜드 토큰 — 다크 몰입 팔레트 B (DESIGN.md §3, home.html과 완전 통일 — 2026-07-14 랜딩 전면 리페인트) */
@@ -854,13 +855,20 @@
       transform: none;
     }
   }
+
+  /* v2 배지 */
+  .v2-badge{position:fixed;top:clamp(12px, 2vw, 20px);right:clamp(12px, 2vw, 20px);z-index:999;
+    background:rgba(139,114,255,.2);border:1px solid rgba(139,114,255,.4);
+    border-radius:6px;padding:6px 12px;font-size:clamp(11px, 1.5vw, 13px);font-weight:600;
+    color:#8B72FF;letter-spacing:.02em;pointer-events:none}
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/landing-CeKVCYy6.js"></script>
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/feed-Cm56rHm1.js">
+  <script type="module" crossorigin src="/openartshow/_bundle/landing-QCtIR7hg.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/feed-yvp1pENn.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-aZ7HCW1S.js">
-  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
 </head>
 <body>
+
+  <div class="v2-badge">✨ v2</div>
 
   <a class="skip-link" href="#main">본문 바로가기</a>
 
