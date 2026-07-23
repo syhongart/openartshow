@@ -1,0 +1,432 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Claude GLB Generator"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "skin": 0,
+      "name": "ChibiMesh"
+    },
+    {
+      "name": "Hips",
+      "translation": [
+        0,
+        -0.1,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        2,
+        14,
+        17
+      ]
+    },
+    {
+      "name": "Spine",
+      "translation": [
+        0,
+        0.12,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        3
+      ]
+    },
+    {
+      "name": "Chest",
+      "translation": [
+        0,
+        0.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        4,
+        6,
+        10
+      ]
+    },
+    {
+      "name": "Neck",
+      "translation": [
+        0,
+        0.18,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        5
+      ]
+    },
+    {
+      "name": "Head",
+      "translation": [
+        0,
+        0.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": []
+    },
+    {
+      "name": "LeftShoulder",
+      "translation": [
+        -0.18,
+        0.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        7
+      ]
+    },
+    {
+      "name": "LeftUpperArm",
+      "translation": [
+        -0.08,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        8
+      ]
+    },
+    {
+      "name": "LeftForeArm",
+      "translation": [
+        -0.08,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        9
+      ]
+    },
+    {
+      "name": "LeftHand",
+      "translation": [
+        -0.08,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": []
+    },
+    {
+      "name": "RightShoulder",
+      "translation": [
+        0.18,
+        0.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        11
+      ]
+    },
+    {
+      "name": "RightUpperArm",
+      "translation": [
+        0.08,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        12
+      ]
+    },
+    {
+      "name": "RightForeArm",
+      "translation": [
+        0.08,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        13
+      ]
+    },
+    {
+      "name": "RightHand",
+      "translation": [
+        0.08,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": []
+    },
+    {
+      "name": "LeftUpperLeg",
+      "translation": [
+        -0.08,
+        -0.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        15
+      ]
+    },
+    {
+      "name": "LeftLowerLeg",
+      "translation": [
+        0,
+        -0.3,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        16
+      ]
+    },
+    {
+      "name": "LeftFoot",
+      "translation": [
+        0,
+        -0.3,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": []
+    },
+    {
+      "name": "RightUpperLeg",
+      "translation": [
+        0.08,
+        -0.15,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        18
+      ]
+    },
+    {
+      "name": "RightLowerLeg",
+      "translation": [
+        0,
+        -0.3,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": [
+        19
+      ]
+    },
+    {
+      "name": "RightFoot",
+      "translation": [
+        0,
+        -0.3,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "children": []
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Mesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "COLOR_0": 2
+          },
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 1674,
+      "type": "VEC3",
+      "min": [
+        -0.3,
+        -1,
+        -0.3
+      ],
+      "max": [
+        0.3,
+        1,
+        0.3
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 1674,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 1674,
+      "type": "VEC3"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 20088
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 20088,
+      "byteLength": 20088
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 40176,
+      "byteLength": 20088
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 60264
+    }
+  ],
+  "skins": [
+    {
+      "inverseBindMatrices": 3,
+      "joints": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "skeleton": 1
+    }
+  ]
+}
