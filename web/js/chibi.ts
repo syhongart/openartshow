@@ -10,3 +10,9 @@ export {
 export { CHIBI_ACTION_DUR, CHIBI_ACTIONS, CHIBI_ACTION_LABELS } from './chibi-anim.js';
 export { buildChibi } from './chibi-builder.js';
 
+// Ayamo 2.0: 저폴리 스킨드 메시 캐릭터
+export { buildChibiV2 } from './chibi-builder-v2.js';
+export { createChibiShaderMaterial, assignPartColor, initializeVertexColors, PART_SKIN, PART_HAIR, PART_CLOTH, PART_ACCESSORY } from './chibi-shader-v2.js';
+export { ChibiLODManager, ChibiLODGroup, LODStats, DEFAULT_LOD_CONFIG } from './chibi-lod.js';
+export { ChibiAnimationV2 } from './chibi-animation-v2.js';
+
