@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-07-23 · 모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한
+
+**원인.** 감독 실기기 HUD(`?debug=perf`) 스크린샷으로 원인을 확정했다 — index(미술관) 모바일에서
+**spec high·lite ON·pixelRatio 2.25가 동시에 성립하는 충돌 버그**였다. 저사양 모드(lite)에 진입했는데도
+슈퍼샘플 배율이 유지된 것. 구 lite 하한 산식 `max(1, dpr*0.75)`가 아이폰 dpr3에서 2.25로 계산되어,
+lite가 spec high가 세팅한 pixelRatio를 못 덮었다. draw 142·tri 59.5k로 지오메트리는 적은데 저FPS —
+전형적 픽셀(fill-rate) 병목이다. 헤드리스 4회 측정이 못 잡은 실기기 GPU fill-rate 병목으로, spec 학습값
+(localStorage)과 실시간 lite가 pixelRatio를 두 축에서 다투며 하한 산식이 어긋난 결과였다.
+
+**개선.** 3파일(`web/js/main.js`·`main-spec.ts`·`main-perf.ts`)에 `MOBILE_PX_CAP=1.5`를 SSOT 상수로
+도입했다. (B) 모바일(`pointer: coarse`) 초기 렌더러 배율에 상한 1.5 적용 — `min(계산값, MOBILE_PX_CAP)`.
+(A) lite 진입 시 하드가드로 spec 학습값과 무관하게 pixelRatio ≤1.5 강제 — 기존 `dpr*0.75` 하한이
+고DPR 폰에서 캡을 무력화하던 경로를 차단. 추가로 모바일에서 spec 'high' 승급과 샤프닝을 차단해 lite
+exit 후 배율이 2.x로 다시 기어오르는 재상승도 막았다. 데스크톱(`pointer: fine`)은 전 경로 무변화 —
+캡을 타지 않아 화질 그대로.
+
+**결과.** 헤드리스 vitest 통과(모바일 high+lite 강제 시 px 2.25→1.5 하향, 데스크톱 dpr1→1.0·레티나
+dpr2→1.5 기존 동치로 회귀 0, 모바일 high 미기록), 독립 executor 스모크 6/6+A~D, 검수관 승인(하드가드·
+lite exit 재상승 방지·데스크톱 회귀 0 코드 확인). 레퍼런스 정합(hyperfy DPR-first). 실 FPS 개선의 최종
+확정은 감독 실기기 재스크린샷이다.
+
+**교훈.** 헤드리스(swiftshader)는 GPU fill-rate 병목을 원천 재현하지 못한다 — 실기기 계측 HUD가 원인
+확정의 유일 경로였다. spec 학습(localStorage)과 실시간 lite가 pixelRatio를 두 축에서 다투면 하한 산식이
+어긋나 저사양인데 슈퍼샘플이 남는다. 캡은 두 축 모두에서 SSOT 상수 하나로 강제해야 한다.
+
+---
+
 ## 2026-07-22 · 실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다
 
 **원인.** 감독이 실기기에서 버벅임을 제보했다 — index 걷기, world 오픈월드 진입 즉시, builder 로드
