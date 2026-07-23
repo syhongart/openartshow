@@ -216,6 +216,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 900);
+  camera.rotation.order = 'YXZ'; // 1인칭 마우스룩: yaw(Y)→pitch(X)→roll(Z)=0 순. lookAt 대신 Euler 직접 설정(짐벌락 회피, three PointerLockControls 방식)
 
   // 하늘 — 캔버스 그라디언트 스카이돔(자기완결·외부 텍스처 0, fog 미적용) + 밝은 대기 fog.
   const FOG_COLOR = 0xcfe0ee;
@@ -890,9 +891,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     sun.target.position.set(pos.x, 0, pos.z); sun.target.updateMatrixWorld();
     sky.position.set(pos.x, 0, pos.z);
     camera.position.set(pos.x, pos.y, pos.z);
-    const cp = Math.cos(pitch);
-    const dir = new THREE.Vector3(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
-    camera.lookAt(pos.x + dir.x, pos.y + dir.y, pos.z + dir.z);
+    camera.rotation.set(pitch, yaw, 0); // Euler YXZ(order는 생성 시 지정). 구 dir/lookAt과 수식 동치이나 pitch→±90° 짐벌락 급회전 제거
   }
 
   const currentParcel = () => ({ px: Math.round(pos.x / CELLX), pz: Math.round(pos.z / CELLZ) });
@@ -1422,7 +1421,10 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // ── 포인터락 + 이벤트(데스크톱) ──
   let locked = false;
-  function onMouseMove(e) { if (locked) lookDelta((e.movementX || 0) * 0.0025, (e.movementY || 0) * 0.0025); }
+  const MOUSE_SENS = 0.0015; // 마우스룩 감도. 재조정은 이 한 곳.
+  const MAX_LOOK_STEP = 0.03; // 이벤트당 회전각 상한(rad ≈1.7°) — OS 마우스가속·포인터락 델타누적 스파이크가 시야를 홱 돌리는 것 방어. 궤적 계측상 짐벌락 아닌 입력 스파이크가 원인(구 ±100px 클램프는 0.15rad까지 허용해 못 걸렀음). 재조정은 이 한 곳.
+  const clampStep = (v) => Math.max(-MAX_LOOK_STEP, Math.min(MAX_LOOK_STEP, v));
+  function onMouseMove(e) { if (locked) lookDelta(clampStep((e.movementX || 0) * MOUSE_SENS), clampStep((e.movementY || 0) * MOUSE_SENS)); }
   function onLockChange() { locked = (typeof document !== 'undefined') && document.pointerLockElement === canvas; emit('lock', { locked }); }
   function onCanvasClick() { if (canvas.requestPointerLock) canvas.requestPointerLock(); }
   function onKeyDown(e) {
