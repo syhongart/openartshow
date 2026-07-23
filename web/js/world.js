@@ -114,6 +114,9 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const coarsePointer = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
     || (typeof window !== 'undefined' && 'ontouchstart' in window)
     || (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0);
+  // [SSOT] 모바일 프레임 캡 목표 fps — 진단 로그(아래)와 FRAME_CAP_S(적응부)가 이 한 값을 공유해
+  // 값 불일치(캡 45↔30 잔존 오류, 검수관 지적)를 원천 차단한다. 캡 조정은 이 상수만 고친다.
+  const MOBILE_CAP_FPS = 30;
   if (typeof console !== 'undefined') console.info('[OpenArtShow/World] GPU:', gpuInfo.name || '(unknown)', gpuInfo.soft ? '— SOFTWARE RENDERING' : '');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !gpuInfo.soft, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
   // 픽셀비율 상한 — 정상 GPU는 최대 2, 소프트웨어 렌더는 0.7 캡(main.js:604 동형).
@@ -129,7 +132,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   if (typeof console !== 'undefined') console.info('[OpenArtShow/World] input:',
     coarsePointer ? 'mobile(touch)' : 'desktop(fine)',
     '· dpr', dprBase, '· px', spawnRatio.toFixed(2),
-    '· frameCap', coarsePointer ? '45fps' : 'off',
+    '· frameCap', coarsePointer ? (MOBILE_CAP_FPS + 'fps') : 'off',
     '· maxTouchPoints', (typeof navigator !== 'undefined' && navigator.maxTouchPoints) || 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // ACES 톤매핑은 프래그먼트당 수십 ALU — 소프트웨어 렌더에서는 그대로 비용이라 끈다(main.js:613).
@@ -1182,12 +1185,15 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 저장을 쓰지 않고 이 세션 한정으로만 배율을 조정한다(비저장 단순화). gpuInfo.soft(SwiftShader 등)는
   // 이미 포테이토 고정(0.7 캡·30fps 프레임 캡)이라 적응 대상에서 제외한다.
   const ADAPT_ENTER_FPS = 24;   // 이 밑 → 즉시 강등(main.js LITE_ENTER_FPS 계승)
-  // 이 위 지속 → 단계 승급. 데스크톱은 48(스트리밍 여유). 모바일(coarse)은 42 — 아래 프레임 캡(45fps)
-  // 밑으로 둬야 캡 상태에서도 fps가 승급 임계에 도달해 하한에 영구히 갇히지 않는다(캡↔승급 정합).
-  const ADAPT_EXIT_FPS = coarsePointer ? 42 : 48;
+  // 이 위 지속 → 단계 승급. 데스크톱은 48(스트리밍 여유). 모바일(coarse)은 27 — 프레임 캡(30fps) 밑으로
+  // 둬야 캡 상태의 fpsNow(≈캡값)가 승급 임계에 도달해 px가 하한에 영구히 갇히지 않는다(캡↔승급 정합,
+  // 팀장 판정 (b)). 승급 갭이 24~27로 좁아지므로 아래 ADAPT_UP_HOLD를 모바일에서 강화해 진동을 막는다.
+  const ADAPT_EXIT_FPS = coarsePointer ? 27 : 48;
   const ADAPT_COOLDOWN = 10;    // 재전환 쿨다운(초) — 깜빡임/배율 진동 방지(main.js 동일).
   const ADAPT_UP_STEP = 0.25;   // 승급 폭(+0.25씩, main.js 동일).
-  const ADAPT_UP_HOLD = 20;     // 승급 전 고FPS 연속 틱(0.5s 집계 × 20 = 10초 지속).
+  // 승급 전 고FPS 연속 틱(0.5s 집계). 데스크톱 20(10초). 모바일은 30(15초) — 캡 30에서 승급 갭(24~27)이
+  // 좁아 진동 위험이 커 지속 조건을 강화한다(팀장 판정 조건).
+  const ADAPT_UP_HOLD = coarsePointer ? 30 : 20;
   const ADAPT_WARMUP = 3;       // 스폰 후 이 초 동안 강등 보류(파셀/텍스처 로딩 스파이크 오판 방지).
   // [그림자 조기 적응] 그림자(실시간 PCFSoftShadowMap)는 이 씬 저FPS의 지배 요인(fill-rate, 895-896)
   // 이라 해상도 강등(ADAPT_ENTER_FPS=24)보다 이른 임계에서 그림자만 먼저 끈다. 실기기 로그의 25~27fps
@@ -1196,10 +1202,12 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 갭 16 + 각 방향 지속 틱 + 쿨다운으로 경계 왕복 셰이더 재컴파일(USE_SHADOWMAP 캐시키 변동, 908행)을
   // 3중 방어한다. liteMode 구간은 기존 토글(1255·1263 계열)이 이미 그림자를 관리하므로 이 블록은 그
   // 사이 중간대(24~48fps)만 담당한다.
-  const SHADOW_LITE_ENTER = 30; // 이 밑 1초 지속 → 그림자만 강등(해상도 유지)
-  // 이 위 10초 지속 → 그림자 복원(승급보다 먼저). 데스크톱 46. 모바일은 40 — 프레임 캡(45) 밑이자
-  // 승급(42) 밑으로 둬 캡 상태에서 그림자가 해상도보다 먼저 복원되고, ENTER 30과 갭 10을 유지한다.
-  const SHADOW_LITE_EXIT = coarsePointer ? 40 : 46;
+  const SHADOW_LITE_ENTER = 30; // 이 밑 1초 지속 → 그림자만 강등(해상도 유지) — 데스크톱 전용(아래 가드)
+  // 이 위 10초 지속 → 그림자 복원. 데스크톱 전용(46). [팀장 판정 (b)] 모바일(캡 30)은 그림자를 캡과
+  // 분리해 이 조기적응을 비활성한다(adaptQuality 블록에 !coarsePointer 가드) — 캡이 걸리면 fpsNow가
+  // 캡값에 고정돼 ENTER 30이 상시 발동해 그림자가 거의 상시 꺼지는데, 이는 감독 "그림자 유지(55:45)"와
+  // 충돌하기 때문. 모바일 그림자는 기본 on 유지·긴급강등(fps<24)에서만 off·상한복귀에서 on으로만 관리한다.
+  const SHADOW_LITE_EXIT = 46;
   const dprAdapt = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
   // 상한 = 스폰 초기값(109-110과 동일식, 비soft는 min(2,dpr)로 캡). 하한 = 상한의 60%(단 최소 1.0)
   // — 1.0 밑돌면 뿌옇다는 감독 제보로 하한을 1.0 이상 고정하되, dpr*0.75로 잡으면 dpr>2.667(아이폰
@@ -1212,13 +1220,14 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 하한은 캡 "전" 상한(ratioCeilBase) 기준으로 산정 — RATIO_FLOOR(dpr≥2에서 1.20)를 무변경 유지
   // (팀장 확정: 하한 인하 금지·캡과 독립). min(base, …)로 감싸 dpr<1에서도 FLOOR≤CEIL 구조 보장(교차리뷰 권고).
   const RATIO_FLOOR = Math.min(ratioCeilBase, Math.max(1, ratioCeilBase * 0.6));
-  // [열 감안 프레임 캡] 모바일(coarse)은 45fps로 상한을 둔다. 60fps 풀가동은 GPU 듀티사이클을 100%로
+  // [열 감안 프레임 캡] 모바일(coarse)은 30fps로 상한을 둔다. 60fps 풀가동은 GPU 듀티사이클을 100%로
   // 유지해 발열을 계속 쌓고, 결국 스로틀(장시간 세션에서 삼각형 수와 무관한 fps 저하 — 감독 실기기 로그)로
-  // 추락한다. 45캡은 프레임마다 GPU에 여유(~7ms)를 남겨 발열·스로틀을 선제적으로 완화한다(모바일 3D의
-  // 표준 관행 — 30~45fps 캡). 데스크톱(fine)은 여유가 있어 무캡. soft(SwiftShader)는 별도 30fps 캡
-  // (step 내부)이 이미 담당하므로 이 캡은 실GPU 모바일 전용. 승급/그림자 복원 임계(42·40)를 이 캡 밑으로
-  // 정합해 캡 상태에서도 적응이 갇히지 않는다.
-  const FRAME_CAP_S = coarsePointer ? (1 / 45) : 0; // 프레임 최소 간격(초). 0=무캡
+  // 추락한다. 30캡은 프레임마다 GPU에 큰 여유를 남겨 발열·스로틀을 선제 완화한다(모바일 3D 표준 관행).
+  // rfps 계측으로 45캡이 실제로 걸림을 확인했으나(가벼운 구간 rfps 30~40) 후반 열 스로틀이 여전해,
+  // 감독 지시로 45→30으로 더 낮춰 발열을 추가 억제한다(A안, 감독 성능55:그래픽45). 데스크톱(fine)은
+  // 여유가 있어 무캡. soft(SwiftShader)는 별도 30fps 캡(step 내부)이 이미 담당하므로 이 캡은 실GPU
+  // 모바일 전용. 승급 임계(27)를 이 캡 밑으로 정합해 갇힘을 막고, 그림자는 캡과 분리(위 SHADOW_LITE 주석).
+  const FRAME_CAP_S = coarsePointer ? (1 / MOBILE_CAP_FPS) : 0; // 프레임 최소 간격(초). 0=무캡. 캡값=MOBILE_CAP_FPS(SSOT)
   let liteMode = false;
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
   let shadowDownTicks = 0, shadowUpTicks = 0; // [그림자 조기 적응] 방향별 연속 저/고FPS 틱(0.5s 집계 단위)
@@ -1240,17 +1249,17 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       dt = potatoAccum;
       potatoAccum = 0;
     } else if (FRAME_CAP_S > 0) {
-      // [열 감안 프레임 캡] 모바일 45fps 상한(위 FRAME_CAP_S 주석). 건너뛴 시간은 누적해 다음 delta로
-      // 넘겨 시뮬 시간을 보존한다(물리·애니메이션이 캡 때문에 느려지지 않음).
+      // [열 감안 프레임 캡] 모바일 프레임 캡 상한(위 FRAME_CAP_S 주석, MOBILE_CAP_FPS=30). 건너뛴 시간은
+      // 누적해 다음 delta로 넘겨 시뮬 시간을 보존한다(물리·애니메이션이 캡 때문에 느려지지 않음).
       capAccum += dt;
       if (capAccum < FRAME_CAP_S) return;
       dt = capAccum;      // 누적 경과 전체를 넘겨 시뮬 시간을 정확히 보존(sim/real=1.0).
       capAccum = 0;       // 리셋 — 잔여를 이월하지 않는다. 이월(capAccum-=FRAME_CAP_S)은 이미 방출한
                           // 시간을 다음 프레임 dt에 재포함해 시뮬 시간을 이중계산한다(정상 60/120Hz에서도
-                          // 1.25~1.5배, 네이티브 fps<45 저사양에선 무제한 폭주 → 씬 붕괴, 검수관 실측).
-                          // 그 대가로 update 호출 빈도는 화면 주사율의 약수로 근사된다(120Hz→~40fps·
-                          // 60Hz→~30fps). 45 정밀도보다 시간 정확·안정이 우선이고, 40/30도 GPU 듀티를
-                          // 낮춰 발열 예방엔 충분하다(감독 55:45에도 오히려 성능 쪽).
+                          // 1.25~1.5배, 네이티브 fps<캡 저사양에선 무제한 폭주 → 씬 붕괴, 검수관 실측).
+                          // 그 대가로 update 호출 빈도는 화면 주사율의 약수로 근사된다(캡 30 기준 120Hz·
+                          // 60Hz 모두 ~30fps). 정밀도보다 시간 정확·안정이 우선이고, ~30도 GPU 듀티를
+                          // 낮춰 발열 예방엔 충분하다(감독 55:45에서 성능 쪽).
     }
     update(dt);
   }
@@ -1310,11 +1319,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       return; // 긴급 강등 처리 완료 — 이 tick의 그림자/승급 판정 불필요
     }
 
-    // [그림자 조기 적응] 해상도 긴급 강등(24)에 해당하지 않는 중간대(24~30fps)에서 그림자만 먼저 양보
-    // (위 SHADOW_LITE_* 주석). liteMode 구간은 제외(그림자는 lite 진입/해제가 관리). 해상도 쿨다운을
-    // 공유해 그림자·해상도가 번갈아 진동하지 않게 하고, 파셀 스트리밍 스파이크는 배제한다. 긴급 강등이
-    // 위에서 return으로 먼저 처리되므로 이 블록은 fps≥24이거나 이미 하한인 경우에만 도달한다.
-    if (!liteMode && adaptCooldown <= 0 && adaptAge >= ADAPT_WARMUP && !streaming) {
+    // [그림자 조기 적응] 데스크톱(무캡) 전용 — 해상도 긴급 강등(24)에 해당하지 않는 중간대(24~48fps)에서
+    // 그림자만 먼저 양보(위 SHADOW_LITE_* 주석). liteMode 구간은 제외(그림자는 lite 진입/해제가 관리).
+    // 해상도 쿨다운을 공유해 그림자·해상도가 번갈아 진동하지 않게 하고, 파셀 스트리밍 스파이크는 배제한다.
+    // [팀장 판정 (b)] 모바일(coarse)은 프레임 캡(30)으로 fpsNow가 캡값에 고정돼 ENTER 30이 상시 발동,
+    // 그림자가 거의 상시 꺼져 감독 "그림자 유지(55:45)"와 충돌하므로 이 조기적응을 비활성한다(!coarsePointer).
+    // 모바일 그림자는 긴급강등(fps<24)에서만 off·상한복귀에서 on으로 관리 = 기본 on 유지.
+    if (!coarsePointer && !liteMode && adaptCooldown <= 0 && adaptAge >= ADAPT_WARMUP && !streaming) {
       if (renderer.shadowMap.enabled && fpsNow < SHADOW_LITE_ENTER) {
         shadowDownTicks += 1; shadowUpTicks = 0;
         if (shadowDownTicks >= 2) { // 연속 2틱(1초) 지속 — 순간 스파이크 오판 방지
