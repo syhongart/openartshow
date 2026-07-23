@@ -175,7 +175,6 @@ interface ChibiV2Instance {
   playAction: (name: string) => void;
   setColor: (part: string, hex: number) => void;
   refreshFace: (expr?: any, wound?: number) => void;
-  height: number;
 }
 
 /**
@@ -305,11 +304,6 @@ export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
       (material as any).dispose();
     };
 
-    // 캐릭터 높이 계산
-    bodyMesh.geometry.computeBoundingBox();
-    const bbox = bodyMesh.geometry.boundingBox;
-    const height = bbox ? bbox.max.y - bbox.min.y : 0.85;
-
     return {
       group,
       mesh: bodyMesh,
@@ -323,7 +317,6 @@ export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
       refreshFace,
       dispose,
       animController,
-      height,
     };
   } catch (error) {
     console.error('Failed to build ChibiV2:', error);
