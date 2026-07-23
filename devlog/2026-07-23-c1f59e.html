@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 그림자 처방 배포 후 감독 실기기 로그에서 삼각형 수와 완전히 무관한 시간 누적 저하가">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-0cda96.html">
+<title>프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 직전 배포한 모바일 45fps 프레임 캡이 감독 실기기(모바일, 시크릿 탭)에서 두 번 다">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-23-c1f59e.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 그림자 처방 배포 후 감독 실기기 로그에서 삼각형 수와 완전히 무관한 시간 누적 저하가">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-0cda96.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-0cda96.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 직전 배포한 모바일 45fps 프레임 캡이 감독 실기기(모바일, 시크릿 탭)에서 두 번 다">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-23-c1f59e.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사)","datePublished":"2026-07-23","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-23-c1f59e.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -88,14 +88,14 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">2026-07-23</div>
-<h1><span class="emo">⚡</span>오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose</h1>
+<h1><span class="emo">⚡</span>프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사)</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 그림자 처방 배포 후 감독 실기기 로그에서 <strong>삼각형 수와 완전히 무관한 시간 누적 저하</strong>가 드러났다 — 진입 0.4초 tri 82,972 @ 18.9fps인데, 40초엔 tri 9,524(1/9)인데 13.3fps, 68초엔 7.6fps. 그림자가 이미 자동 off된 세션이라 fill-rate도 tri도 아니었다. 성능 전문가 장시간 세션 심층 감사로 <strong>무한 성장 누수는 없음</strong>을 재확인(이벤트·타이머·rAF·라이트풀·배열 전부 언로드 대칭)하고, <strong>열 스로틀이 1차 원인</strong>으로 판정했다. 부수로 <code>bakeGroupByMaterial</code>(scene-trees.ts)의 dispose 누락 — 파셀 로드마다 나무 병합 clone(파셀당 수백 개)이 정리 안 돼 로드 순간 fps 급락(<code>pcl</code> 마커)을 가중 — 을 새로 특정했다.</p>
-<p><strong>개선.</strong> 감독 지시("열은 사용하다 보면 나는 것 — 그걸 감안하자")를 받아 두 갈래. (1) <strong>나무 clone dispose</strong>: <code>mergeGeometries</code>가 독립 geometry를 반환하므로 병합 직후 입력 clone을 폐기(다른 병합부 관행 정합). 파셀 로드당 0.1~0.3MB JS힙 버스트 제거. (2) <strong>모바일 45fps 프레임 캡</strong>: 열은 코드로 없앨 수 없으나(물리) "열이 나도 견디게" 설계할 수 있다. 60fps 풀가동은 GPU 듀티 100%로 발열을 쌓아 결국 스로틀 추락하므로, 모바일(coarse)에 45fps 상한을 둬 프레임마다 GPU에 여유(~7ms)를 남겨 발열·스로틀을 <strong>선제 완화</strong>한다(모바일 3D 표준). 그림자·해상도는 그대로(감독 방향 성능55:그래픽45 — 프레임 상한만 양보, 그래픽은 유지). 데스크톱은 무캡. 45캡이 승급(48)·그림자복원(46) 임계보다 낮으면 하한에 갇히므로 모바일 한정 ADAPT_EXIT 42·SHADOW_LITE_EXIT 40으로 캡 밑에 재배치(정합).</p>
-<p><strong>결과.</strong> 독립 executor 스모크 6/6(vitest 146/146, 미술관·오픈월드 나무 렌더 회귀 0), 검수관 교차리뷰 승인(병합 결과 독립성·호출처 3곳 무재사용·캡↔임계 정합·capAccum 시뮬시간 보존·soft/실GPU 상호배타 분기 모두 검증, 블로커 0). 프레임 캡의 <strong>실GPU 실동작은 헤드리스(swiftshader)로 재현 불가</strong>해 감독 실기기 재측정으로 최종 확인 예정(사후 추적 항목).</p>
-<p><strong>교훈.</strong> 열 스로틀은 삼각형·해상도·그림자 어느 축으로도 설명 안 되는 "시간 누적" 저하로 나타난다 — 초반 tri 82k보다 후반 tri 9k가 더 느린 역상관이 그 지문이다. 감독의 "열을 감안하자"가 정확한 방향이었다: 원인을 없애려 하기보다 열이 나도 무너지지 않게 프레임 캡으로 GPU 듀티를 선제적으로 낮추는 것이 정석 (60→추락 대신 45→안정). 헤드리스 QA는 fill-rate·실GPU 스로틀을 재현 못 하므로 이 축의 최종 검증은 실기기 계측만 유효하다.</p>
+<p><strong>원인.</strong> 직전 배포한 모바일 45fps 프레임 캡이 감독 실기기(모바일, 시크릿 탭)에서 <strong>두 번 다 미작동</strong>했다 — 로그에 fps 62.3·61.8이 찍혔다(45캡이면 45 초과 불가). 감독이 팀장 직접 조사를 지시했다. 코드 논리로 원인을 확정했다: <code>world.js:108</code>의 <code>coarsePointer</code>가 <code>matchMedia('(pointer: coarse)')</code> <strong>단독</strong>으로 판정돼, 고주사율폰(fps 62 = 90/120Hz) + '데스크톱 사이트 요청' 등에서 false가 되면 프레임 캡뿐 아니라 <strong>px 캡·적응 임계까지 모든 모바일 최적화가 통째로 무력화</strong>되는 단일 지점 실패였다. 결정적으로 같은 오픈월드 진입 경로의 <code>world-boot.js:128</code>은 이미 견고한 터치 판정 (<code>ontouchstart‖maxTouchPoints</code>)을 쓰는데 <code>world.js</code>만 취약한 단독 판정이었다(불일치).</p>
+<p><strong>개선.</strong> <code>coarsePointer</code>를 다중 신호 합집합(<code>matchMedia pointer:coarse ‖ 'ontouchstart' in window ‖ navigator.maxTouchPoints&gt;0</code>)으로 강화했다 — 한 신호가 실패해도 나머지가 잡는다. 한 곳 수정으로 소비처(px 캡·RATIO_CEIL·FRAME_CAP_S·적응 임계)가 <strong>전부 함께 정상화</strong>된다(SPOF를 정합점으로 전환). 새 유틸 없이 코드베이스 기존 패턴 재사용. 진입 시 진단 <code>console.info</code>(mobile 판정·dpr·적용 px· frameCap·maxTouchPoints)를 더해 재발 시 원격 디버깅으로 즉시 확인하게 했다.</p>
+<p><strong>결과.</strong> 캡 정밀도(45fps 정확)를 위해 <code>capAccum</code> 잔여 이월을 시도했으나 <strong>검수관이 Python 시뮬로 치명적 결함을 실측·포착</strong>했다 — <code>dt=capAccum</code>(전체 방출) + <code>capAccum-=FRAME_CAP_S</code>(고정 차감)는 이미 방출한 시간을 재포함해 시뮬 시간을 이중계산한다(정상 60/120Hz에서도 1.25~1.5배, <strong>네이티브 fps&lt;45 저사양(=발열 스로틀, 이 핫픽스가 보호하려던 바로 그 조건)에선 무제한 폭주 → 씬 붕괴</strong>). 45 정밀도를 포기하고 시간 보존이 정확한 <code>capAccum=0</code> 리셋으로 되돌렸다(call rate는 주사율 약수로 근사 — 120Hz→~40·60Hz→~30, 발열 예방엔 충분). 독립 executor 스모크 6/6·vitest 146·검수관 재검토 승인.</p>
+<p><strong>교훈.</strong> <strong>단일 미디어쿼리 판정은 SPOF다</strong> — 한 신호가 기기·브라우저 설정으로 뒤집히면 그에 매달린 모든 최적화가 조용히 통째로 죽는다. 같은 판정을 코드베이스 여러 곳이 서로 다른 신호로 하고 있었던 것 자체가 경고였다(정합 필요). 그리고 <strong>"최적화를 만드는 것"과 "그게 실제로 걸리는 것"은 별개</strong> — 캡 로직은 정확했으나 게이트가 꺼져 있어 두 번의 배포가 헛돌았다. 정밀도 욕심(캡 이월)이 안정성을 깨는 전형도 봤다: call rate 정밀도보다 시뮬 시간 정확·안정이 우선이며, 교차리뷰의 정량 시뮬이 정적 스모크가 못 잡는 시간축 붕괴를 막았다.</p>
 </article>
-<div class="pn"><a href="./2026-07-23-27ad7f.html"><span class="lbl">← 이전 기록</span>오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복</a><a href="./2026-07-23-c1f59e.html" style="text-align:right"><span class="lbl">다음 기록 →</span>프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사)</a></div>
+<div class="pn"><a href="./2026-07-23-0cda96.html"><span class="lbl">← 이전 기록</span>오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
