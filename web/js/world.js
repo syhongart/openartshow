@@ -25,6 +25,7 @@ import { NpcCrowd } from './npc.js';
 // 모듈 클로저 소유라 파셀 언로드에서 dispose하지 않는다(병합 지오만 own 배열로 회수).
 import { buildDetailedTree, bakeGroupByMaterial } from './scene.js';
 import { PEER_ROOM_ID, EYE_HEIGHT } from './config.js';
+import { MOBILE_PX_CAP } from './main-spec.js'; // 모바일 pixelRatio 상한(SSOT: main-spec.ts — main.js·main-perf.ts와 동일 상수 재사용, 값 중복 신설 금지)
 import { MultiplayerManager } from './multiplayer.js';
 // [하늘 엔진] 승인된 독립 모듈(sky.js) — sun/hemi/sky 돔을 주입해 시간대·날씨·이벤트 연출.
 // 배선은 3접점(생성·update·getSunDir 태양방위)만, sky.js가 조명·fog·clearColor·크로스페이드를 자기소유로 제어.
@@ -103,11 +104,18 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // [저사양 방어] 렌더러 생성 "전" GPU 프로브 — antialias는 생성 시점 옵션이라 결과를 먼저 알아야 한다(main.js:555).
   const gpuInfo = probeGpu();
+  // [C-2a] pointer:coarse(터치) 판정 — main.js:272 동형. 모바일 DPR 상한 캡(스폰·적응)의 공통 게이트.
+  const coarsePointer = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   if (typeof console !== 'undefined') console.info('[OpenArtShow/World] GPU:', gpuInfo.name || '(unknown)', gpuInfo.soft ? '— SOFTWARE RENDERING' : '');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: !gpuInfo.soft, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
   // 픽셀비율 상한 — 정상 GPU는 최대 2, 소프트웨어 렌더는 0.7 캡(main.js:604 동형).
   const dprBase = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-  renderer.setPixelRatio(gpuInfo.soft ? Math.min(dprBase, 0.7) : Math.min(2, dprBase));
+  // [C-2a 모바일 DPR 캡] pointer:coarse는 진입 직후 스폰 배율도 MOBILE_PX_CAP(1.5)로 상한 —
+  // world는 자체 적응이라 A+B(main.js:328)의 모바일 캡이 미적용인 사각이었다(진입 직후 실측 px 2.00 노출).
+  // 데스크톱(pointer:fine)은 캡 미적용 → 화질 무변화. gpuInfo.soft는 이미 0.7 캡이라 캡이 무영향.
+  let spawnRatio = gpuInfo.soft ? Math.min(dprBase, 0.7) : Math.min(2, dprBase);
+  if (coarsePointer) spawnRatio = Math.min(spawnRatio, MOBILE_PX_CAP);
+  renderer.setPixelRatio(spawnRatio);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // ACES 톤매핑은 프래그먼트당 수십 ALU — 소프트웨어 렌더에서는 그대로 비용이라 끈다(main.js:613).
   renderer.toneMapping = gpuInfo.soft ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
@@ -1169,10 +1177,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // — 1.0 밑돌면 뿌옇다는 감독 제보로 하한을 1.0 이상 고정하되, dpr*0.75로 잡으면 dpr>2.667(아이폰
   // Pro·최신 안드로이드 dpr=3 등)에서 하한이 상한(2)을 넘어 강등·승급 게이트가 영구 false가 되어
   // 적응이 no-op가 된다(교차리뷰 지적). 상한 상대값(≤2 캡)으로 잡아 모든 dpr에서 하한<상한을 보장.
-  const RATIO_CEIL = gpuInfo.soft ? Math.min(dprAdapt, 0.7) : Math.min(2, dprAdapt);
-  // min(CEIL, …)로 한 번 더 감싸 dpr<1(데스크톱 축소 화면 등 devicePixelRatio<1)에서도
-  // FLOOR>CEIL(→ 게이트 영구 false·no-op)이 생기지 않도록 구조적으로 FLOOR≤CEIL 보장(교차리뷰 권고).
-  const RATIO_FLOOR = Math.min(RATIO_CEIL, Math.max(1, RATIO_CEIL * 0.6));
+  const ratioCeilBase = gpuInfo.soft ? Math.min(dprAdapt, 0.7) : Math.min(2, dprAdapt);
+  // [C-2a] pointer:coarse는 적응 상한에도 MOBILE_PX_CAP(1.5)을 씌운다 — 스폰 캡(110)과 정합해
+  // 승급 루프가 배율을 다시 2.0으로 끌어올리지 못하게 한다. 데스크톱(fine)은 캡 미적용(무변화).
+  const RATIO_CEIL = coarsePointer ? Math.min(ratioCeilBase, MOBILE_PX_CAP) : ratioCeilBase;
+  // 하한은 캡 "전" 상한(ratioCeilBase) 기준으로 산정 — RATIO_FLOOR(dpr≥2에서 1.20)를 무변경 유지
+  // (팀장 확정: 하한 인하 금지·캡과 독립). min(base, …)로 감싸 dpr<1에서도 FLOOR≤CEIL 구조 보장(교차리뷰 권고).
+  const RATIO_FLOOR = Math.min(ratioCeilBase, Math.max(1, ratioCeilBase * 0.6));
   let liteMode = false;
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
 
