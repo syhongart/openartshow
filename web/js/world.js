@@ -216,6 +216,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.05, 900);
+  camera.rotation.order = 'YXZ'; // 1인칭 마우스룩: yaw(Y)→pitch(X)→roll(Z)=0 순. lookAt 대신 Euler 직접 설정(짐벌락 회피, three PointerLockControls 방식)
 
   // 하늘 — 캔버스 그라디언트 스카이돔(자기완결·외부 텍스처 0, fog 미적용) + 밝은 대기 fog.
   const FOG_COLOR = 0xcfe0ee;
@@ -890,9 +891,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     sun.target.position.set(pos.x, 0, pos.z); sun.target.updateMatrixWorld();
     sky.position.set(pos.x, 0, pos.z);
     camera.position.set(pos.x, pos.y, pos.z);
-    const cp = Math.cos(pitch);
-    const dir = new THREE.Vector3(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
-    camera.lookAt(pos.x + dir.x, pos.y + dir.y, pos.z + dir.z);
+    camera.rotation.set(pitch, yaw, 0); // Euler YXZ(order는 생성 시 지정). 구 dir/lookAt과 수식 동치이나 pitch→±90° 짐벌락 급회전 제거
   }
 
   const currentParcel = () => ({ px: Math.round(pos.x / CELLX), pz: Math.round(pos.z / CELLZ) });
