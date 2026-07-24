@@ -46,9 +46,14 @@ const fixLand = ([px, pz]) => {
   return [x, pz];
 };
 
+// [실험 격리 — ablation] URL ?off=ayamo,npc,… 로 요소를 하나씩 꺼 스파이크 원인을 실증 격리(감독 지시).
+// 기본(플래그 없음) 빈 Set → 기존 동작 완전 불변(무회귀).
+const OFF = new Set((new URLSearchParams(location.search).get('off') || '').split(',').map((s) => s.trim()).filter(Boolean));
+// off=npc → 모든 배치 NPC 제외 / off=ayamo → 스폰 안내 NPC(npc-ayamo)만 제외 / walker(거리 배회)는 아래 genWalker에서 별도 억제.
+const npcSrc = OFF.has('npc') ? [] : (OFF.has('ayamo') ? M.npcs.filter((n) => n.id !== 'npc-ayamo') : M.npcs);
 // NPC를 home 파셀 키로 그룹핑(같은 건물 여러 명 = 한 crowd)
 const npcByHome = new Map();
-for (const n of M.npcs) {
+for (const n of npcSrc) {
   const [hx, hz] = fixLand(n.home);
   const k = hx + ',' + hz;
   if (!npcByHome.has(k)) npcByHome.set(k, []);
@@ -65,7 +70,7 @@ for (let pz = 0; pz < grid.h; pz++) for (let px = 0; px < grid.w; px++) {
   const P = genParcel(px, pz, M.seed, grid, M.cell);
   const roster = P.space ? npcByHome.get(px + ',' + pz) : null;
   const street = genStreet(px, pz, M.seed, grid, M.cell, P); // 거리 가구 배치(결정론) — def.street
-  const walker = genWalker(px, pz, M.seed, grid, M.cell, P, forceWalker(px, pz)); // 거리 배회 NPC 후보(결정론) — def.walker
+  const walker = OFF.has('npc') ? null : genWalker(px, pz, M.seed, grid, M.cell, P, forceWalker(px, pz)); // 거리 배회 NPC 후보(결정론) — def.walker. [ablation] off=npc면 억제
   const pier = genPier(px, pz, M.seed, grid, M.cell, P);     // [해안] 경계 파셀 부두(결정론) — def.pier
   const tetra = genTetrapods(px, pz, M.seed, grid, M.cell, P); // [해안] 경계 파셀 테트라포드 클러스터 — def.tetra
   const lighthouse = genLighthouse(px, pz, M.seed, grid, M.cell, P, pier); // [해안 2단계] 경계 파셀 등대(부두와 배타) — def.lighthouse
