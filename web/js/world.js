@@ -968,8 +968,12 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 반경 보정: 정지(lookahead=0) 시 FULL_R=1.15·CELL은 상하좌우(중심거리 1.0CELL)=full, SHELL_R=1.55·CELL은
   // 대각(1.41CELL)=shell로 잡혀 기존 3×3(full5+shell4)과 동일 로드량을 재현한다(회귀 0). fog(FOG_FAR=1.9·CELL)가
   // shell 경계를 이미 안개로 덮어 로드/언로드 경계를 은폐(228행).
-  const STREAM_FULL_R = CELL_MAX * 1.15;   // full LOD 반경(연속거리)
-  const STREAM_SHELL_R = CELL_MAX * 1.55;  // shell 반경
+  // [히스테리시스] 진입/해제 반경 분리 — 경계 왕복 시 로드/언로드(파셀 재생성) 반복을 억제한다.
+  // 진입값(ENTER)은 현행 반경과 동일 → 빈 상태 첫 판정의 최초 로드집합 무회귀. 이미 로드된 파셀만 EXIT까지 유지.
+  const STREAM_FULL_ENTER = CELL_MAX * 1.15;   // full 승격 반경(=현행)
+  const STREAM_FULL_EXIT  = CELL_MAX * 1.30;   // full 유지 반경(이 밖이면 shell 강등)
+  const STREAM_SHELL_ENTER = CELL_MAX * 1.55;  // shell 진입 반경(=현행)
+  const STREAM_SHELL_EXIT  = CELL_MAX * 1.75;  // shell 유지 반경(이 밖이면 unload)
   const STREAM_LOOKAHEAD = CELL_MAX * 0.5; // 이동 시 판정 원 중심 전진 거리(선행 로드)
   // [SSOT] updateStreaming이 계산한 최신 want 판정을 캐시 — processLoadQueue가 "동일" 기준으로 큐를
   // 소진하도록 일원화한다. (예전엔 processLoadQueue가 currentParcel 3×3 맨해튼으로 독자 재계산해,
@@ -998,7 +1002,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     }
     const cxw = pos.x + mvx * STREAM_LOOKAHEAD, czw = pos.z + mvz * STREAM_LOOKAHEAD;
     const cpx = Math.round(cxw / CELLX), cpz = Math.round(czw / CELLZ);
-    const reach = Math.ceil(STREAM_SHELL_R / CELL_MAX) + 1; // 반경 커버 격자 후보 범위(look-ahead는 cpx에 이미 반영)
+    const reach = Math.ceil(STREAM_SHELL_EXIT / CELL_MAX) + 1; // 반경 커버 격자 후보 범위(해제 반경 기준, look-ahead는 cpx에 이미 반영)
     const want = new Map();
     for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) {
       const pxi = cpx + dx, pzi = cpz + dz;
@@ -1006,8 +1010,19 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (!index.has(k)) continue;
       const ddx = pxi * CELLX - cxw, ddz = pzi * CELLZ - czw; // 파셀 중심(px*CELL) − 판정 원 중심(연속)
       const dist = Math.hypot(ddx, ddz);
-      if (dist <= STREAM_FULL_R) want.set(k, 'full');
-      else if (dist <= STREAM_SHELL_R) want.set(k, 'shell');
+      // [히스테리시스] 현재 tier(로드됨 or 큐 대기) 참조 — 이미 있는 파셀은 EXIT까지 유지, 미로드는 ENTER로 진입.
+      let cur = loaded.get(k)?.lod;
+      if (cur === undefined && queued.has(k)) { const j = loadQueue.find((q) => q.k === k); if (j) cur = j.lod; }
+      if (cur === 'full') {
+        if (dist <= STREAM_FULL_EXIT) want.set(k, 'full');
+        else if (dist <= STREAM_SHELL_EXIT) want.set(k, 'shell');
+      } else if (cur === 'shell') {
+        if (dist <= STREAM_FULL_ENTER) want.set(k, 'full');
+        else if (dist <= STREAM_SHELL_EXIT) want.set(k, 'shell');
+      } else {
+        if (dist <= STREAM_FULL_ENTER) want.set(k, 'full');
+        else if (dist <= STREAM_SHELL_ENTER) want.set(k, 'shell');
+      }
     }
     streamWant = want; // [일원화] processLoadQueue가 이 판정(원형+look-ahead)을 그대로 재사용 — 격자 맨해튼 재계산 금지
     // 언로드는 즉시(저비용) — 기존대로. 큐에 남은 불필요분(떠난 방향)도 함께 제거.
