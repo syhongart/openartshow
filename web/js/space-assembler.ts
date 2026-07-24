@@ -48,7 +48,10 @@ export const DOOR_W = 2.6;
  *   { dims, partRefs: [{part, index, object}], geos:[], mats:[] } (dispose·픽킹용)
  * opts.pickable: 파츠에 userData.partIndex 부여(빌더 선택용).
  */
-export function buildSpaceGroup(space, opts = {}) {
+// [오픈월드 청크] 파츠 생성을 프레임 분산하기 위한 내부 제너레이터. 본문은 종전 buildSpaceGroup과
+// 문장 순서·부작용 100% 동일 — 셸 완성 직후 `yield g`(청크0), 파츠 그룹 경계마다 예산-가드 yield만 가산.
+// 드레인(budget=Infinity)이면 가드가 발화하지 않아 직선 실행 = 종전과 바이트동일(미술관/빌더/방문 무회귀).
+function* _spaceGroupGen(space, opts = {}) {
   const g = new THREE.Group();
   const geos = [], mats = [];
   const track = (o) => {
@@ -141,6 +144,12 @@ export function buildSpaceGroup(space, opts = {}) {
   // [다층] 계단 램프 — shell.stairs 밴드를 오를 수 있는 경사로 렌더(물리 등반은 world.js 밴드). 빈배열이면 미생성.
   for (const s of (space.shell.stairs || [])) g.add(buildStairRamp(track, s));
 
+  // [청크] partRefs를 셸 시점에 빈 배열로 만들어 userData에 참조로 넣고, 파츠 루프가 이 배열에 push한다.
+  // 종전에도 userData.partRefs는 파츠 루프가 채우던 배열 — 참조 시점만 셸로 당겨 청크0에서 dims/partRefs 노출.
+  const partRefs = [];
+  g.userData = { dims: { fw, fd, hw, hd, H, t, floors, totalH }, partRefs, geos, mats, floor: floorM, shell: shellSurf };
+  const budget0 = (yield g); // 셸 완성(청크0). 재개 시 step()의 chunkParts를 첫 예산으로 수령(드레인=Infinity면 가드 미발화).
+
   // 파츠: 타입별 그룹. 인스턴싱 가능 → InstancedMesh, 작품/스크린 → 개별(+자동액자 캔버스).
   // 서브그룹 키 = 타입×variant×mat (#56). color는 키에 넣지 않는다 → 같은 지오/재질 InstancedMesh 공유 + 인스턴스 틴트.
   // [오픈월드] shellOnly: 원거리/대각 파셀 임포스터 — 셸만 그리고 파츠 생략(draw-call 절감,
@@ -150,9 +159,9 @@ export function buildSpaceGroup(space, opts = {}) {
     const key = `${p.t}:${p.variant || ''}:${p.mat || ''}`;
     (byKey[key] = byKey[key] || { type: p.t, variant: p.variant, mat: p.mat, list: [] }).list.push({ p, i });
   });
-  const partRefs = [];
   // v2 스택: p.y(절대 월드 Y·파츠 중심)가 있으면 그 값, 없으면 타입별 기본 y(바닥/벽걸이).
   const pY = (p, type) => (p.y != null ? p.y : partY(type, H) + (p.floor || 0) * H); // [다층] p.floor 층 오프셋(생략=0=지면층)
+  let chunkAcc = 0, budget = budget0 ?? Infinity; // 그룹 경계 예산 가드(파츠 루프 내부 const acc와 이름 분리). budget0=Infinity(드레인) → 전량 직선 실행.
   for (const grp of Object.values(byKey)) {
     const { type, variant, mat, list } = grp;
     if (type === 'artwork') {
@@ -243,6 +252,8 @@ export function buildSpaceGroup(space, opts = {}) {
         const pl = place(list[0].p); const am = new THREE.Mesh(acc.geo, accMat); am.position.copy(pl.pos); am.rotation.y = pl.ry; am.castShadow = true; g.add(am);
       }
     }
+    chunkAcc += grp.list.length; // [청크] 파츠 개수 누계 — 예산 도달 시 그룹 경계에서 프레임 양보.
+    if (chunkAcc >= budget) { budget = (yield) ?? Infinity; chunkAcc = 0; }
   }
   if (flat && flatSegs.length) {
     // [오픈월드 LOD] 셸 세그먼트를 계열(kind:id)별로 병합 → 파셀당 draw call 60→소수, 단색 공유재질로 텍스처 페치 0.
@@ -265,8 +276,20 @@ export function buildSpaceGroup(space, opts = {}) {
       fm.receiveShadow = true; g.add(fm);
     }
   }
-  g.userData = { dims: { fw, fd, hw, hd, H, t, floors, totalH }, partRefs, geos, mats, floor: floorM, shell: shellSurf };
+}
+// 기존 시그니처 보존 — 전량 드레인(budget=Infinity → yield 가드 미발화 → 직선 실행 = 종전 바이트동일).
+export function buildSpaceGroup(space, opts = {}) {
+  const gen = _spaceGroupGen(space, opts);
+  const g = gen.next().value;         // 셸
+  while (!gen.next(Infinity).done) {} // 파츠 전량(가드 미발화)
   return g;
+}
+// 순수가산 신규 export — 오픈월드 전용 청크 빌더. group은 셸만(파츠 0) 즉시, step(chunkParts)으로 파츠 프레임 분산.
+export function buildSpaceGroupChunked(space, opts = {}) {
+  const gen = _spaceGroupGen(space, opts);
+  const group = gen.next().value;     // 셸 즉시(파츠 0)
+  let done = false;
+  return { group, step(chunkParts) { if (done) return true; done = !!gen.next(chunkParts).done; return done; }, get done() { return done; } };
 }
 
 // ── 방 조명 연출(감독: 제미나이급 "멋짐") ────────────────────────────────────

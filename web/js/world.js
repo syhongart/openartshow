@@ -27,7 +27,7 @@ import { WebGLRenderer, PMREMGenerator as PMREMGeneratorGL } from 'three';
 // clustered/tiled 라이트 컬링 — WebGPU 백엔드에서만 활성. vite가 node_modules addons 번들.
 import { TiledLighting } from 'three/addons/lighting/TiledLighting.js';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
-import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W, warmBuildingTexCache } from './space-render.js';
+import { buildSpaceGroupChunked, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W, warmBuildingTexCache } from './space-render.js';
 import { PART_TYPES } from './space.js';
 import { createAvatarInstance } from './avatar.js';
 import { NpcCrowd } from './npc.js';
@@ -854,27 +854,35 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const ctx = {
       k, px, pz, lod, ox, oz, shellOnly, reload: !!reload, stage: 0, ready: false,
       group, own, def, dims, bld, solids, floorsY, stairBands, bx, bz,
-      bldGroup: null, crowd: null, avatars: new Map(), streetMeshes: null,
+      bldGroup: null, bldStep: null, crowd: null, avatars: new Map(), streetMeshes: null,
       walker: null, tetraMesh: null, lighthouse: null, beachBands: [], pierDecks: [], lights: null,
     };
     if (!reload) { scene.add(group); loaded.set(k, ctx); requestShadowBake(); } // fresh: 지면·벽 즉시(reload는 finalize에서 원자 스왑)
     return ctx;
   }
 
-  function stageBuilding(ctx) { // S1: 건물 파츠(buildSpaceGroup=무거움) + 조명 배정 + crowd
+  const OW_CHUNK_PARTS = 10; // [청크] buildSpaceGroupChunked step당 파츠 개수 예산(8~12). 파셀 로드 히칭 제거용 프레임 분산.
+  function stageBuilding(ctx) { // S1: 건물 파츠(청크 분산) + 조명 배정 + crowd. 반환 false=파츠 청크 더 남음, 그 외=완료
     const { def, shellOnly, bx, bz } = ctx;
-    if (!def.space) return;
-    const bldGroup = buildSpaceGroup(def.space, { shellOnly, flatShell: !!opts.shellFlat, onAsyncTex: () => { if (!disposed) renderOnce(); } });
-    bldGroup.position.set(bx, 0, bz);
-    // [라이트 풀] AO 접촉그림자는 addRoomLighting(noSpots)이, 작품·다운라이트 스포트는 풀에서 배정(개수 고정).
-    if (!shellOnly) { addRoomLighting(bldGroup, { noSpots: true }); ctx.lights = assignParcelLights(bx, bz, bldGroup.userData.dims, bldGroup.userData.partRefs || []); }
-    ctx.group.add(bldGroup);
-    ctx.bldGroup = bldGroup;
-    if (!shellOnly && def.npc) {
-      const arts = parcelArts(def, bx, bz);
-      if (arts.length) ctx.crowd = new NpcCrowd(arts, def.npc.count || null, { roster: def.npc.roster });
+    if (!def.space) return true;
+    if (!ctx.bldStep) {
+      const h = buildSpaceGroupChunked(def.space, { shellOnly, flatShell: !!opts.shellFlat, onAsyncTex: () => { if (!disposed) renderOnce(); } });
+      ctx.bldStep = h; ctx.bldGroup = h.group; // 조기 배정 — 중도폐기 시 disposeCtx가 disposeSpaceGroup으로 회수
+      h.group.position.set(bx, 0, bz);
+      ctx.group.add(h.group);                  // 셸 즉시(벽 충돌은 S0에 이미 존재)
+      requestShadowBake();
+    }
+    const done = ctx.bldStep.step(OW_CHUNK_PARTS);
+    if (!done) { requestShadowBake(); return false; } // 파츠 청크 더 남음 — 다음 프레임 재진입
+    // [라이트 풀] 파츠 완성 후에만 조명·crowd 1회(매 청크 재실행 시 SpotLight 풀 고갈 방지).
+    // AO 접촉그림자는 addRoomLighting(noSpots)이, 작품·다운라이트 스포트는 풀에서 배정(개수 고정).
+    if (!shellOnly) {
+      addRoomLighting(ctx.bldGroup, { noSpots: true });
+      ctx.lights = assignParcelLights(bx, bz, ctx.bldGroup.userData.dims, ctx.bldGroup.userData.partRefs || []);
+      if (def.npc) { const arts = parcelArts(def, bx, bz); if (arts.length) ctx.crowd = new NpcCrowd(arts, def.npc.count || null, { roster: def.npc.roster }); }
     }
     requestShadowBake();
+    return true;
   }
 
   function stageStreet(ctx) { // S2: 거리 가구·가로수(재귀 지오+병합=무거움) — solids·own에 additive append
@@ -924,7 +932,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const k = keyOf(px, pz); const ex = loaded.get(k);
     if (ex) { if (ex.lod === lod) return; unloadParcel(k); } // 현행 선-언로드(LOD 변경 시 재로드)
     const ctx = beginParcel(px, pz, lod, false); if (!ctx) return;
-    for (const s of STAGES) s(ctx);
+    for (const s of STAGES) { while (s(ctx) === false) {} } // 청크 스테이지(stageBuilding)를 완전 드레인 → 무회귀 비트동일
     finalizeParcel(ctx);
   }
 
@@ -1172,7 +1180,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         job.ctx = beginParcel(job.px, job.pz, job.lod, !!exist && exist.lod !== job.lod);
         if (!job.ctx) { loadQueue.shift(); queued.delete(job.k); continue; } // def 없음
         job.stage = 0;
-      } else { STAGES[job.stage](job.ctx); job.stage++; } // S1~S4 하나씩(no-op guard면 ~0ms)
+      } else { const d = STAGES[job.stage](job.ctx); if (d !== false) job.stage++; } // S1~S4 하나씩(no-op guard면 ~0ms). stageBuilding이 false면 파츠 청크 잔여 → 스테이지 유지(다음 루프 재진입)
       if (job.stage >= STAGES.length) { finalizeParcel(job.ctx); loadQueue.shift(); queued.delete(job.k); } // 완성
       if (gpuInfo.soft) break;                       // soft: 프레임당 1스테이지
       if (perfNow() - t0 > LOAD_BUDGET_MS) break;    // 최소 1스테이지 후 예산 초과 시 중단
