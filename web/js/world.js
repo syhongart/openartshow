@@ -1171,21 +1171,32 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // [히칭] 프레임당 스테이지 처리 상한 — 여러 파셀이 동시에 로딩될 때(loadedFull 6·queue) 여러 무거운 스테이지가
     // 한 프레임에 몰려 급락하던 것을 방지. 예산(LOAD_BUDGET_MS)과 병행 — 둘 중 먼저 걸리는 쪽에서 중단.
     const MAX_STAGES_PER_FRAME = gpuInfo.soft ? 1 : 3;
-    while (loadQueue.length) {
-      const job = loadQueue[0];
+    // [승격 직렬화] 무거운 full 빌드는 한 번에 1파셀만 in-flight. prio 재정렬로 맨 앞 job이 프레임마다 바뀌면
+    // 여러 승격 job이 각자 ctx를 든 채 인터리브 진행되어 fps가 급락하던 것을 차단(감독 iPhone 실측 근거, 백엔드 무관).
+    // 게이트 대상은 loaded에 shell record가 있는 승격(reload) full뿐 — fresh full(신규 파셀 물리·시각 공백 방지)·shell은 면제.
+    // 큐 앞쪽 승격 job이 게이트에 걸려도 뒤의 shell/진행중 job은 흘려보내야 하므로 shift 고정 대신 인덱스 순회.
+    const MAX_INFLIGHT_FULL = 1;
+    let inflightFull = 0;
+    for (const j of loadQueue) if (j.ctx && !j.ctx.shellOnly) inflightFull++;
+    let i = 0;
+    while (i < loadQueue.length) {
+      const job = loadQueue[i];
       const wantLod = streamWant.get(job.k);
       if (wantLod !== job.lod) { // want 이탈 or LOD 변동 → 폐기
         if (job.ctx && job.ctx.reload) disposeCtx(job.ctx); // reload side-ctx 폐기(fresh ctx는 loaded에 있어 updateStreaming이 언로드)
-        loadQueue.shift(); queued.delete(job.k); continue;
+        if (job.ctx && !job.ctx.shellOnly) inflightFull--; // 진행중이던 full 폐기 → 카운트 회수
+        loadQueue.splice(i, 1); queued.delete(job.k); continue;
       }
       const exist = loaded.get(job.k);
-      if (exist && exist.lod === job.lod && exist.ready && !job.ctx) { loadQueue.shift(); queued.delete(job.k); continue; } // 이미 완성
+      if (exist && exist.lod === job.lod && exist.ready && !job.ctx) { loadQueue.splice(i, 1); queued.delete(job.k); continue; } // 이미 완성
       if (!job.ctx) { // S0: base+물리 완결 + fresh record 삽입(지면·벽 즉시)
+        if (job.lod === 'full' && loaded.has(job.k) && inflightFull >= MAX_INFLIGHT_FULL) { i++; continue; } // [승격 직렬화] in-flight full 한도 → 승격 보류(순번·shell 유지, 다음 프레임 재평가)
         job.ctx = beginParcel(job.px, job.pz, job.lod, !!exist && exist.lod !== job.lod);
-        if (!job.ctx) { loadQueue.shift(); queued.delete(job.k); continue; } // def 없음
+        if (!job.ctx) { loadQueue.splice(i, 1); queued.delete(job.k); continue; } // def 없음
         job.stage = 0;
+        if (!job.ctx.shellOnly) inflightFull++; // full S0 시작 → in-flight 등재
       } else { const d = STAGES[job.stage](job.ctx); if (d !== false) job.stage++; } // S1~S4 하나씩(no-op guard면 ~0ms). stageBuilding이 false면 파츠 청크 잔여 → 스테이지 유지(다음 루프 재진입)
-      if (job.stage >= STAGES.length) { finalizeParcel(job.ctx); loadQueue.shift(); queued.delete(job.k); } // 완성
+      if (job.stage >= STAGES.length) { finalizeParcel(job.ctx); if (!job.ctx.shellOnly) inflightFull--; loadQueue.splice(i, 1); queued.delete(job.k); } // 완성 → full이면 in-flight 회수
       stagesRun++;
       if (gpuInfo.soft) break;                          // soft: 프레임당 1스테이지
       if (stagesRun >= MAX_STAGES_PER_FRAME) break;     // [히칭] 프레임당 스테이지 캡(여러 파셀 동시 급락 완화)
