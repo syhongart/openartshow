@@ -99,7 +99,7 @@ const canvas = document.getElementById('c');
 console.log('[world-boot] parcels count:', parcels.length, 'canvas:', canvas ? 'OK' : 'MISSING');
 let V;
 try {
-  V = createWorld({ canvas, parcels, opts: {
+  V = await createWorld({ canvas, parcels, opts: { // WebGPURenderer.init()이 async라 createWorld가 async(module top-level await)
     cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true,
     mp: { nickname: nick, color: myColor, char: randomChibiChar() }, // window.Peer 없으면 world.js가 조용히 1인 모드
     ...fogOpts, // 기본: D 평소+C 바다 자동전환(fogSea·grid 포함). ?lod= 스윕: 정적 프리셋(fogSea 없음→자동 OFF, 무회귀)

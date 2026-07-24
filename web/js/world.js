@@ -14,7 +14,18 @@
 //   walk/update/renderOnce/lookDelta/getPosition/getLoadedKeys/dispose/on ...
 //   opts.cellX/cellZ: 축별 파셀 셀 크기(m). opts.cell: 정사각 폴백(기본 32). opts.headless: RAF·이벤트 바인딩 비활성.
 // -----------------------------------------------------------------------------
-import * as THREE from 'three';
+// [WebGPU 전환] 오픈월드 전용 — three/webgpu(=three.webgpu.js)를 import해 THREE.WebGPURenderer를 얻는다.
+// three(=three.module.js)엔 WebGPURenderer가 없다(r171). 두 번들은 동일 three.core.js를 상대 import하므로
+// vite가 코어를 1벌로 dedup → scene.js 등 공유모듈('three')이 만드는 Scene/Mesh/Light와 동일 생성자(realm 단일).
+// 미술관(main.js 등)은 'three'(WebGLRenderer) 그대로 무접촉 — vite 멀티페이지 번들이라 페이지별 자연 격리.
+import * as THREE from 'three/webgpu';
+// WebGPU 미지원 기기용 "검증된" 폴백 렌더러 — three.webgpu엔 구식 WebGLRenderer가 없다(r171).
+// WebGPURenderer의 내장 WebGL2 폴백은 불안정(헤드리스·일부 기기서 getContext null 크래시)해 신뢰하지 않고,
+// requestAdapter로 사전판정해 WebGPU 확실할 때만 WebGPURenderer, 아니면 이 검증된 WebGLRenderer로 간다(무회귀).
+// three(three.module)와 three/webgpu는 동일 three.core를 공유(vite dedup) → WebGLRenderer가 THREE 객체와 호환.
+import { WebGLRenderer, PMREMGenerator as PMREMGeneratorGL } from 'three';
+// clustered/tiled 라이트 컬링 — WebGPU 백엔드에서만 활성. vite가 node_modules addons 번들.
+import { TiledLighting } from 'three/addons/lighting/TiledLighting.js';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { buildSpaceGroup, disposeSpaceGroup, addRoomLighting, spaceDims, partY, DOOR_W, warmBuildingTexCache } from './space-render.js';
 import { PART_TYPES } from './space.js';
@@ -84,18 +95,27 @@ function probeGpu() {
 }
 
 // 빌더/방문자뷰 계승 — 은은한 PMREM 환경 반사(글로시 바닥·재질 깊이).
-function makeEnvMap(renderer) {
-  const pm = new THREE.PMREMGenerator(renderer);
-  const es = new THREE.Scene();
-  es.add(new THREE.HemisphereLight(0xdfe4f2, 0x3a3630, 1.0));
-  const hi = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshBasicMaterial({ color: 0xffe9c8 })); hi.position.set(0, 5, -6); es.add(hi);
-  const side = new THREE.Mesh(new THREE.PlaneGeometry(4, 8), new THREE.MeshBasicMaterial({ color: 0x2a2c3a })); side.position.set(-6, 3, 0); side.rotation.y = Math.PI / 2; es.add(side);
-  const tex = pm.fromScene(es, 0.02).texture; pm.dispose();
-  [hi, side].forEach((m) => { m.geometry.dispose(); m.material.dispose(); });
-  return tex;
+function makeEnvMap(renderer, isWebGPU) {
+  // PMREMGenerator는 렌더러 종속 유틸 — 백엔드에 맞는 realm을 써야 한다(webgpu PMREM은 WebGPURenderer의
+  // hasInitialized() 등 신 API를 기대해 구식 WebGLRenderer에 넘기면 크래시). WebGL 폴백은 three(module)의
+  // PMREMGenerator, WebGPU는 THREE(webgpu)의 것. 실패 시 envMap 생략(반사 디테일만 약화, 렌더는 정상).
+  try {
+    const PM = isWebGPU ? THREE.PMREMGenerator : PMREMGeneratorGL;
+    const pm = new PM(renderer);
+    const es = new THREE.Scene();
+    es.add(new THREE.HemisphereLight(0xdfe4f2, 0x3a3630, 1.0));
+    const hi = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshBasicMaterial({ color: 0xffe9c8 })); hi.position.set(0, 5, -6); es.add(hi);
+    const side = new THREE.Mesh(new THREE.PlaneGeometry(4, 8), new THREE.MeshBasicMaterial({ color: 0x2a2c3a })); side.position.set(-6, 3, 0); side.rotation.y = Math.PI / 2; es.add(side);
+    const tex = pm.fromScene(es, 0.02).texture; pm.dispose();
+    [hi, side].forEach((m) => { m.geometry.dispose(); m.material.dispose(); });
+    return tex;
+  } catch (e) {
+    if (typeof console !== 'undefined') console.warn('[OpenArtShow/World] envMap(PMREM) 생략:', e && e.message);
+    return null;
+  }
 }
 
-export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
+export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const headless = !!opts.headless;
   // 비정사각 셀(cellX/cellZ) — 복셀스 개방 도시는 정사각 24×24(셀 > 건물 → 가장자리가 길).
   // opts.cell(스칼라) 폴백 유지 → 스파이크(createWorld({cell:9}))·정사각 그리드 무회귀.
@@ -119,7 +139,42 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 값 불일치(캡 45↔30 잔존 오류, 검수관 지적)를 원천 차단한다. 캡 조정은 이 상수만 고친다.
   const MOBILE_CAP_FPS = 30;
   if (typeof console !== 'undefined') console.info('[OpenArtShow/World] GPU:', gpuInfo.name || '(unknown)', gpuInfo.soft ? '— SOFTWARE RENDERING' : '');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !gpuInfo.soft, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
+  // [WebGPU 전환] WebGPU 지원 시 WebGPURenderer + clustered(TiledLighting)로 65 SpotLight fragment 병목 완화.
+  // 폴백 설계(무회귀 핵심): WebGPURenderer의 내장 WebGL2 폴백은 불안정(getContext null 크래시 사례)하므로,
+  //   navigator.gpu.requestAdapter()로 "사전 판정" → 어댑터 있을 때만 WebGPURenderer(canvas를 webgpu로 점유),
+  //   없으면 canvas를 건드리지 않고 검증된 WebGLRenderer로 직행(WebGPU 미지원 방문자=기존과 100% 동일).
+  //   ?webgl=1은 WebGPU 있어도 강제 WebGL(비상탈출·룩 대조). preserveDrawingBuffer는 WebGL 경로에서만 유효.
+  // WebGPU 가용성은 "별도(detached) 프로브 캔버스"로 완전 검증한 뒤에만 라이브 canvas에 확정 렌더러를 만든다.
+  // requestAdapter만으론 부족 — 어댑터가 있어도 init 중 context.configure가 실패(모바일 부분 WebGPU 구현)하면
+  // 그 canvas는 이미 'webgpu' 컨텍스트로 영구 커밋돼, 뒤이은 WebGLRenderer의 getContext('webgl2')가 null→크래시.
+  // 프로브 canvas(8px, DOM 미부착)에서 init 성공을 확인한 경우에만 라이브 canvas로 WebGPURenderer를 생성한다.
+  const forceWebGL = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').has('webgl');
+  let isWebGPU = false;
+  if (!forceWebGL && typeof navigator !== 'undefined' && navigator.gpu && typeof document !== 'undefined') {
+    try {
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) {
+        const probe = document.createElement('canvas'); probe.width = probe.height = 8;
+        const pr = new THREE.WebGPURenderer({ canvas: probe });
+        await pr.init(); // configure 실패는 여기서 프로브 canvas만 오염(라이브 canvas 무관)
+        isWebGPU = !!(pr.backend && pr.backend.isWebGPUBackend);
+        if (typeof pr.dispose === 'function') pr.dispose();
+      }
+    } catch (e) {
+      isWebGPU = false;
+      if (typeof console !== 'undefined') console.warn('[OpenArtShow/World] WebGPU 프로브 실패 → WebGLRenderer:', e && e.message);
+    }
+  }
+  let renderer;
+  if (isWebGPU) {
+    renderer = new THREE.WebGPURenderer({ canvas, antialias: !gpuInfo.soft });
+    await renderer.init();
+    renderer.lighting = new TiledLighting(); // clustered 라이트 컬링(WebGPU 백엔드 전용)
+  } else {
+    // WebGPU 미지원/프로브 실패 → 검증된 WebGLRenderer(라이브 canvas는 위에서 미접촉이라 무오염). ?webgl=1도 이 경로.
+    renderer = new WebGLRenderer({ canvas, antialias: !gpuInfo.soft, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
+  }
+  if (typeof console !== 'undefined') console.info('[OpenArtShow/World] backend:', isWebGPU ? 'WebGPU + TiledLighting(clustered)' : 'WebGL (forward, 무회귀 폴백)');
   // 픽셀비율 상한 — 정상 GPU는 최대 2, 소프트웨어 렌더는 0.7 캡(main.js:604 동형).
   const dprBase = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
   // [C-2a 모바일 DPR 캡] pointer:coarse는 진입 직후 스폰 배율도 MOBILE_PX_CAP(1.5)로 상한 —
@@ -150,9 +205,13 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // [하늘 엔진] hemi 참조를 보관 — sky.js가 시간대/날씨에 따라 색·강도를 직접 제어(주입 대상).
   const hemi = new THREE.HemisphereLight(0xcfe4f7, 0x8fa385, 1.0); // 그림자 대비 완화(야외 앰비언트)
   scene.add(hemi);
-  scene.environment = makeEnvMap(renderer);
+  scene.environment = makeEnvMap(renderer, isWebGPU);
   const sun = new THREE.DirectionalLight(0xfff2dc, 0.95);
   sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -0.0005;
+  // [섀도 프리즈 — 양 백엔드] renderer.shadowMap.autoUpdate(위 192)는 WebGL 전용 시맨틱. WebGPU 노드 섀도는
+  // light.shadow.autoUpdate/needsUpdate만 참조(ShadowNode) → sun.shadow에도 프리즈를 미러링해야 WebGPU에서도
+  // 매 프레임 재베이크가 아니라 이벤트 기반 1회 재베이크가 실효된다(FPS 목적 상쇄 방지, 검수관 지적).
+  sun.shadow.autoUpdate = false;
   { const c = sun.shadow.camera; c.left = -22; c.right = 22; c.top = 22; c.bottom = -22; c.near = 0.5; c.far = 130; c.updateProjectionMatrix(); }
   scene.add(sun); scene.add(sun.target);
 
@@ -912,7 +971,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // soft 모드는 shadowMap.enabled=false라 이 호출이 사실상 no-op(섀도 패스 자체가 스킵됨).
   let shadowBakeAt = null; // 마지막 재베이크 시점의 플레이어 XZ(8m 이동 트리거 기준점)
   function requestShadowBake() {
-    renderer.shadowMap.needsUpdate = true;
+    renderer.shadowMap.needsUpdate = true;         // WebGL 백엔드
+    if (sun.shadow) sun.shadow.needsUpdate = true; // WebGPU 노드 섀도 미러링(양 백엔드 프리즈 실효)
     shadowBakeAt = { x: pos.x, z: pos.z };
   }
   // 마지막 베이크에서 8m 이상 이동했으면 재베이크(태양이 플레이어 추종 → 그림자 방향/범위 갱신).
@@ -1523,7 +1583,8 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getStats: () => {
       let loadedFull = 0, loadedShell = 0;
       for (const L of loaded.values()) { if (L.lod === 'shell') loadedShell++; else loadedFull++; }
-      return { drawCalls: renderer.info.render.calls, programs: renderer.info.programs.length, loadedFull, loadedShell, queue: loadQueue.length, shellFlat: !!opts.shellFlat };
+      // renderer.info.programs는 WebGL 전용(WebGPU Info엔 없음) → 가드해 WebGPU 실기 계측(debug-hud)이 통째로 비지 않게.
+      return { drawCalls: renderer.info.render.calls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, shellFlat: !!opts.shellFlat };
     },
     getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
