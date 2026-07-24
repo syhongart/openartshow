@@ -11,7 +11,7 @@
 
 const REC_CAP = 3600;       // 0.5초 샘플 × 3600 = 최근 30분 링버퍼(초과 시 오래된 것부터 회전)
 const REC_INTERVAL_MS = 500; // 시계열 샘플 주기(HUD 갱신과 동일)
-const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue';
+const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend';
 
 /**
  * 월드 상태 디버그 HUD + 시계열 로그를 마운트한다.
@@ -99,13 +99,14 @@ export function mountDebugHud(world) {
       fogNear: fog ? fog.near : null, fogFar: fog ? fog.far : null,
       dpr, draw: rinfo ? rinfo.calls : null,
       loadedFull: s.loadedFull, loadedShell: s.loadedShell, queue: s.queue,
+      backend: s.backend || '?', // WebGPU/WebGL — 렌더러 백엔드(전환 실동작 확인용)
     };
   }
 
   function render() {
     const d = snapshot();
     bodyEl.textContent =
-      `FPS ${num(d.fps, 0)}\n` +
+      `FPS ${num(d.fps, 0)}   ▶ ${d.backend}\n` +
       `LOD ${d.lod}  shell:${d.shellFlat ? 'flat' : 'off'}\n` +
       `fog ${num(d.fogNear)}/${num(d.fogFar)}  dpr ${num(d.dpr, 2)}\n` +
       `파셀 (${d.px ?? '?'},${d.pz ?? '?'})  y ${num(d.y)} (지면 ${num(d.groundY)})\n` +
@@ -133,7 +134,7 @@ export function mountDebugHud(world) {
       c(d.fogNear, 1), c(d.fogFar, 1), c(d.dpr, 2),
       d.px ?? '', d.pz ?? '', c(d.posx, 1), c(d.posz, 1), c(d.y, 1), c(d.groundY, 1),
       c(d.yawDeg, 0), c(d.pitchDeg, 0), d.draw ?? '',
-      d.loadedFull ?? '', d.loadedShell ?? '', d.queue ?? '',
+      d.loadedFull ?? '', d.loadedShell ?? '', d.queue ?? '', d.backend,
     ].join(',');
   }
 

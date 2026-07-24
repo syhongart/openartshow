@@ -1584,7 +1584,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       let loadedFull = 0, loadedShell = 0;
       for (const L of loaded.values()) { if (L.lod === 'shell') loadedShell++; else loadedFull++; }
       // renderer.info.programs는 WebGL 전용(WebGPU Info엔 없음) → 가드해 WebGPU 실기 계측(debug-hud)이 통째로 비지 않게.
-      return { drawCalls: renderer.info.render.calls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, shellFlat: !!opts.shellFlat };
+      return { drawCalls: renderer.info.render.calls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL' };
     },
     getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
