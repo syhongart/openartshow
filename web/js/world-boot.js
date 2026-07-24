@@ -88,6 +88,12 @@ const LOD_PRESETS = {
   d: { fogNearK: 0.4,  fogFarK: 1.2, shellFlat: true }, // c보다 더 강하게(near9.6/far28.8) — 원경 임포스터 박스를 안개로 더 확실히 감춤(감독 요청)
 };
 const lodPreset = LOD_PRESETS[new URLSearchParams(location.search).get('lod')] || LOD_PRESETS.a;
+// [바다 조망 fog 자동전환] ?lod= 스윕이 있으면 그 정적 프리셋 그대로(자동 OFF). 없으면(기본 라이브)
+// 평소 D + 바다 원경 응시 시 C로 런타임 자동전환(world.js가 opts.fogSea+grid 유무로만 활성).
+const hasLod = new URLSearchParams(location.search).has('lod');
+const fogOpts = hasLod
+  ? lodPreset
+  : { ...LOD_PRESETS.d, fogSea: { nearK: LOD_PRESETS.c.fogNearK, farK: LOD_PRESETS.c.fogFarK }, grid: { w: grid.w, h: grid.h } };
 
 const canvas = document.getElementById('c');
 console.log('[world-boot] parcels count:', parcels.length, 'canvas:', canvas ? 'OK' : 'MISSING');
@@ -96,7 +102,7 @@ try {
   V = createWorld({ canvas, parcels, opts: {
     cellX: M.cell.x, cellZ: M.cell.z, preserveDrawingBuffer: true,
     mp: { nickname: nick, color: myColor, char: randomChibiChar() }, // window.Peer 없으면 world.js가 조용히 1인 모드
-    ...lodPreset, // fogNearK/fogFarK/shellFlat — 미지정(a)이면 현행값과 동일
+    ...fogOpts, // 기본: D 평소+C 바다 자동전환(fogSea·grid 포함). ?lod= 스윕: 정적 프리셋(fogSea 없음→자동 OFF, 무회귀)
   } });
   window.__world = V;
   console.log('[world-boot] createWorld succeeded, world object created');

@@ -30,6 +30,7 @@ import { MultiplayerManager } from './multiplayer.js';
 // [하늘 엔진] 승인된 독립 모듈(sky.js) — sun/hemi/sky 돔을 주입해 시간대·날씨·이벤트 연출.
 // 배선은 3접점(생성·update·getSunDir 태양방위)만, sky.js가 조명·fog·clearColor·크로스페이드를 자기소유로 제어.
 import { createSkySystem } from './sky.js';
+import { isViewingSea } from './fog-view.js'; // [바다 조망 fog] 경계 셀+시선 → 바다 원경 응시 판정(순수 함수)
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;         // 이동 속도(m/s)
@@ -229,6 +230,16 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // "안개가 옅어지는 구간에 단색 shell 실루엣이 드러나는" LOD 연출이 살아난다(?lod= 프리셋으로 실기 스윕).
   const FOG_NEAR = CELL_MAX * (opts.fogNearK ?? 0.9); // 인접 파셀 경계 안쪽부터 페이드 시작(가벼운 안개, 근경은 선명 유지)
   const FOG_FAR  = CELL_MAX * (opts.fogFarK ?? 1.9);  // shell 거리 부근 완전 안개 — 팝인·원거리 하드 노출 은폐
+  // [바다 조망 fog 자동전환] 평소=FOG_NEAR/FAR(기본 D). 플레이어가 바다 원경을 응시하면 목표를
+  // FOG_SEA(기본 C)로 부드럽게 lerp(update 안). opts.fogSea+grid 둘 다 있어야 자동 ON → ?lod= 스윕
+  // 경로는 fogSea 미전달이라 fogAuto=false(현행 정적 프리셋 100% 무회귀). shellFlat은 로드시 baked-in
+  // 이라 안 건드리고 near/far만 보간(C·D 둘 다 shellFlat:true).
+  const FOG_SEA_NEAR = CELL_MAX * (opts.fogSea?.nearK ?? (opts.fogNearK ?? 0.9));
+  const FOG_SEA_FAR  = CELL_MAX * (opts.fogSea?.farK  ?? (opts.fogFarK  ?? 1.9));
+  const FOG_GW = opts.grid?.w | 0, FOG_GH = opts.grid?.h | 0;
+  const fogAuto = !!opts.fogSea && FOG_GW > 0 && FOG_GH > 0;
+  const FOG_LERP_K = 3.5; // near/far 초당 수렴 계수(≈0.3s 시상수, 급전환 방지)
+  let fogSeaOn = false;   // 시선 히스테리시스 상태(fog-view가 유지)
   // soft GPU에도 fog 적용(기존 `if(!gpuInfo.soft)` 가드 제거) — 선형 fog는 프래그먼트당 저비용이고,
   // 팝인은 soft 실기에서 특히 두드러진다. 스카이돔은 fog:false라 하늘은 그대로, sky.js:679는 scene.fog
   // 존재 시 fog.color만 시간대별로 갱신(near/far 불변)하므로 무충돌.
@@ -1318,6 +1329,14 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 카메라 y를 groundY 추종(계단·강 경사 부드럽게). 태양·스카이 추종은 applyPose 안.
     pos.y += ((groundY + EYE) - pos.y) * Math.min(1, GROUND_LERP_RATE * d);
     applyPose();
+    if (fogAuto && scene.fog) { // [바다 조망 fog] 경계+시선 판정 → 목표 near/far로 lerp(아래 조명 페이드와 동형). 정지 시에도 yaw만으로 판정.
+      const pc = currentParcel();
+      fogSeaOn = isViewingSea(pc.px, pc.pz, yaw, FOG_GW, FOG_GH, fogSeaOn);
+      const tn = fogSeaOn ? FOG_SEA_NEAR : FOG_NEAR, tf = fogSeaOn ? FOG_SEA_FAR : FOG_FAR;
+      const fk = Math.min(1, d * FOG_LERP_K);
+      scene.fog.near += (tn - scene.fog.near) * fk;
+      scene.fog.far += (tf - scene.fog.far) * fk;
+    }
     if (skySystem) skySystem.update(d); // [하늘 엔진] 크로스페이드·강수·오로라·번개 진행(조명·clearColor 갱신)
     // [팝인 완화 — 조명 페이드업] 라이트풀 intensity를 목표(_target)로 lerp. 갓 배정된 스포트(intensity 0)는
     // 목표23/18로 부드럽게 켜지고, 미사용/반납(_target 0)은 이미 0이라 무변. 개수·visible 불변(재컴파일 0).
@@ -1481,6 +1500,7 @@ export function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getGroundY: () => groundY, // [다층] 현재 발 높이(검증·디버그용)
     getPitch: () => pitch,
     getCurrentParcel: () => currentParcel(),
+    getFogState: () => ({ near: scene.fog ? scene.fog.near : 0, far: scene.fog ? scene.fog.far : 0, sea: fogSeaOn }), // [바다 조망 fog] 검증·HUD용(순수 가산)
     getGpuInfo: () => ({ ...gpuInfo }), // [저사양 방어] 검증·디버그용 프로브 결과
     // [FPS 적응] 현재 적응 상태(검증·HUD 디버그용 순수 가산) — 강등/승급·하한·쿨다운 준수 확인.
     getAdaptState: () => ({ liteMode, pixelRatio: renderer.getPixelRatio(), floor: RATIO_FLOOR, ceil: RATIO_CEIL, cooldown: adaptCooldown, frameCap: frameCapS > 0 ? Math.round(1 / frameCapS) : 0 }),
