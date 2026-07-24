@@ -194,6 +194,7 @@ function* _spaceGroupGen(space, opts = {}) {
           for (const { p, i } of noSrc) {
             addFrameMesh(frameGeo, frameMat, p, i);
             const cm = new THREE.Mesh(canvasGeo, paperMat); cm.position.copy(canvasPos(p, ART_OFF_Z)); cm.rotation.y = p.ry; cm.castShadow = true; g.add(cm);
+            if (++chunkAcc >= budget) { budget = (yield) ?? Infinity; chunkAcc = 0; } // [청크] 작품 1개마다 예산 체크 — artwork는 단일 그룹이라 아이템 단위 양보 필수(드레인=Infinity면 미발화)
           }
         }
         // 이미지 작품(withSrc): 파츠별 개별 지오(ar 크기·고유 텍스처) — geos 등록 필수(누수 방지).
@@ -205,6 +206,7 @@ function* _spaceGroupGen(space, opts = {}) {
           const canvasGeo = box(cw, ch, 0.015); geos.push(canvasGeo);                            // ★ 개별 캔버스 지오 회수 등록
           const cMat = artworkImageMaterial(p.src, cw, ch, opts.onAsyncTex, matteMarginFor(style, W, H)); mats.push(cMat);
           const cm = new THREE.Mesh(canvasGeo, cMat); cm.position.copy(canvasPos(p, ART_OFF_Z)); cm.rotation.y = p.ry; cm.castShadow = true; g.add(cm);
+          if (++chunkAcc >= budget) { budget = (yield) ?? Infinity; chunkAcc = 0; } // [청크] 이미지 작품(가장 무거운 경로: 개별 지오+텍스처)마다 예산 체크(드레인=Infinity면 미발화)
         }
       }
       continue;

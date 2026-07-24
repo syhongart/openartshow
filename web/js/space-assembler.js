@@ -193,6 +193,7 @@ function* _spaceGroupGen(space, opts = {}) {
             cm.rotation.y = p.ry;
             cm.castShadow = true;
             g.add(cm);
+            if (++chunkAcc >= budget) { budget = (yield) ?? Infinity; chunkAcc = 0; } // [청크] 작품 1개마다 예산 체크 — artwork는 단일 그룹이라 아이템 단위 양보 필수(드레인=Infinity면 미발화)
           }
         }
         for (const { p, i } of withSrc) {
@@ -210,6 +211,7 @@ function* _spaceGroupGen(space, opts = {}) {
           cm.rotation.y = p.ry;
           cm.castShadow = true;
           g.add(cm);
+          if (++chunkAcc >= budget) { budget = (yield) ?? Infinity; chunkAcc = 0; } // [청크] 이미지 작품(가장 무거운 경로: 개별 지오+텍스처)마다 예산 체크(드레인=Infinity면 미발화)
         }
       }
       continue;
