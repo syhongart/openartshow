@@ -808,18 +808,20 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     });
   }
 
-  function loadParcel(px, pz, lod) {
-    const k = keyOf(px, pz); const def = index.get(k); if (!def) return;
-    const ex = loaded.get(k);
-    if (ex) { if (ex.lod === lod) return; unloadParcel(k); } // LOD 변경 시 재로드
+  // [히칭 완화 — 파셀 로드 스테이지 파이프라인] 파셀 하나를 한 프레임에 통째 빌드하면 300~480ms 블록(감독 실기).
+  // 핵심 통찰: 물리(solids/dims/bld/floorsY/stairBands)는 def+dims(spaceDims=싼 순수함수) 파생이고 무거운
+  // bldGroup 메시를 읽지 않는다 → S0(base)에서 물리를 완결하고 record를 loaded에 삽입하면, 로딩 중에도 건물
+  // 벽 충돌·층 지면이 완전(벽 통과 0). 무거운 지오(파츠·가로수·해안·walker)만 이후 스테이지로 프레임 분산한다.
+  // record는 S0에서 부분 삽입 — unloadParcel·소비자 모두 부분 record를 null-guard(무누수). ready=완성 표식.
+  // immediate/headless는 loadParcelSync가 전 스테이지를 순차 실행 → 최종 씬·record 비트동일(무회귀).
+
+  function beginParcel(px, pz, lod, reload) { // S0: base(지면/도로/물) + 물리 완결 + (fresh면 record 삽입)
+    const k = keyOf(px, pz); const def = index.get(k); if (!def) return null;
     const ox = px * CELLX, oz = pz * CELLZ;
     const shellOnly = lod === 'shell';
-    // [복셀스] 파셀 루트 = 지면(또는 다리) + 건물(있으면). own = 파셀 소유 지오(공유 재질 제외 회수).
     const group = new THREE.Group();
     const own = [];
     if (def.water) {
-      // [해안] 강(내수면) — 파셀 소유 얕은 물타일(상면 RIVER_Y=-0.3). 바다(sea, SEA_Y=-1.2)와 분리해
-      // 도시 운하는 얕게 유지(다리 0·강물 첨벙 -0.4 물리 정합). 재질은 바다와 공용(T.water 잔물결).
       const wg = new THREE.BoxGeometry(CELLX, 0.1, CELLZ); own.push(wg);
       const wm = new THREE.Mesh(wg, T.water); wm.position.set(ox, RIVER_Y - 0.05, oz); wm.receiveShadow = true; group.add(wm);
       const bg = new THREE.BoxGeometry(CELLX, 0.12, 3); own.push(bg); // 동서 다리(강 z 중앙)
@@ -827,26 +829,20 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     } else {
       const gg = new THREE.BoxGeometry(CELLX, 0.1, CELLZ); own.push(gg); // 대지(잔디/광장 — 결정론 믹스)
       const isPlaza = ((px * 7 + pz * 13) % 4 === 0);
-      const tc = parcelTint(px, pz, isPlaza); tintGeo(gg, tc[0], tc[1], tc[2]); // [타일링 저감] 파셀별 색조 변주(정점색·map과 곱)
+      const tc = parcelTint(px, pz, isPlaza); tintGeo(gg, tc[0], tc[1], tc[2]);
       const gm = new THREE.Mesh(gg, isPlaza ? T.plaza : T.grass);
       gm.position.set(ox, -0.056, oz); gm.receiveShadow = true; group.add(gm);
-      const rgS = new THREE.BoxGeometry(CELLX, 0.1, 2.5); own.push(rgS); // 남 가장자리 도로(이웃 북측과 5m 도로망)
+      const rgS = new THREE.BoxGeometry(CELLX, 0.1, 2.5); own.push(rgS); // 남 가장자리 도로
       const rs = new THREE.Mesh(rgS, T.road); rs.position.set(ox, -0.05, oz + CELLZ / 2 - 1.25); rs.receiveShadow = true; group.add(rs);
       const rgE = new THREE.BoxGeometry(2.5, 0.1, CELLZ); own.push(rgE); // 동 가장자리 도로
       const re = new THREE.Mesh(rgE, T.road); re.position.set(ox + CELLX / 2 - 1.25, -0.05, oz); re.receiveShadow = true; group.add(re);
     }
-    let bldGroup = null, bld = null, dims = null, solids = [], floorsY = [0], stairBands = [], crowd = null, parcelLights = null;
-    const avatars = new Map();
-    if (def.space) {
-      const bx = ox + (def.bx || 0), bz = oz + (def.bz || 0);
-      bldGroup = buildSpaceGroup(def.space, { shellOnly, flatShell: !!opts.shellFlat, onAsyncTex: () => { if (!disposed) renderOnce(); } });
-      bldGroup.position.set(bx, 0, bz);
-      // [단계2 라이트 풀] AO 접촉그림자는 addRoomLighting(noSpots)이, 작품·다운라이트 스포트는 풀에서 배정
-      // (씬 SpotLight 개수 고정 → 셰이더 재컴파일 0). 배정 라이트는 언로드 시 반납.
-      if (!shellOnly) { addRoomLighting(bldGroup, { noSpots: true }); parcelLights = assignParcelLights(bx, bz, bldGroup.userData.dims, bldGroup.userData.partRefs || []); }
-      group.add(bldGroup);
+    let bld = null, dims = null, solids = [], floorsY = [0], stairBands = [];
+    let bx = ox, bz = oz;
+    if (def.space) { // 물리·지면 메타는 전부 def+dims 파생(싼 연산) — S0에서 완결해 벽 통과 리스크 제거
+      bx = ox + (def.bx || 0); bz = oz + (def.bz || 0);
       dims = spaceDims(def.space);
-      bld = { cx: bx, cz: bz, hw: dims.hw, hd: dims.hd }; // 건물 내부 판정용(지면 후보)
+      bld = { cx: bx, cz: bz, hw: dims.hw, hd: dims.hd };
       floorsY = []; for (let f = 0; f < dims.floors; f++) floorsY.push(f * dims.H);
       stairBands = (def.space.shell.stairs || []).map((s) => ({
         xMin: bx + Math.min(s.x0, s.x1), xMax: bx + Math.max(s.x0, s.x1),
@@ -854,65 +850,102 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       }));
       solids = (shellOnly ? [] : computeSolids(def, bx, bz, dims))
         .concat(computeShellSolids(dims, def.space.shell.entries || [], bx, bz)); // 벽=충돌(문 구간 비움)
-      if (!shellOnly && def.npc) {
-        const arts = parcelArts(def, bx, bz);
-        if (arts.length) crowd = new NpcCrowd(arts, def.npc.count || null, { roster: def.npc.roster });
-      }
     }
-    // 거리 가구 — 풀디테일 파셀만(대각 shell 임포스터는 생략). 배치·solid 동일 데이터 파생.
-    let streetMeshes = null;
-    if (!shellOnly && def.street && def.street.length) streetMeshes = buildStreet(def.street, group, ox, oz, solids, own);
-    // [해안 패키지] 경계 파셀 물가 연출 — 해변(모든 경계방향, shell 포함해 원경 단차 연속) /
-    //   부두·테트라포드(full 파셀만, 원경 shell은 드로우콜 절약 위해 생략). 배치는 시드 결정론(def.pier/tetra).
-    let tetraMesh = null, lighthouse = null;
-    const beachBands = [], pierDecks = [];
-    if (!def.water) {
-      const edges = [];
-      if (px === minPx) edges.push('W');
-      if (px === maxPx) edges.push('E');
-      if (pz === minPz) edges.push('N');
-      if (pz === maxPz) edges.push('S');
-      if (edges.length) {
-        buildBeach(edges, group, ox, oz, own, beachBands);
-        if (!shellOnly && def.pier && edges.includes(def.pier.dir)) buildPier(def.pier.dir, group, ox, oz, own, solids, pierDecks);
-        if (!shellOnly && def.tetra && def.tetra.length) tetraMesh = buildTetrapods(def.tetra, group, ox, oz);
-        // [해안 2단계] 등대 — full 파셀만(원경 shell은 드로우콜 절약). 접한 경계 방향에만 배치.
-        if (!shellOnly && def.lighthouse && edges.includes(def.lighthouse.dir)) lighthouse = buildLighthouse(def.lighthouse.dir, group, ox, oz, own, solids);
-      }
-    }
-    // 거리 배회 NPC — 풀디테일 파셀 + 총원 ≤6. 라벨 없음(빈 닉네임 규약). 외형 시드 결정론.
-    let walker = null;
-    if (!shellOnly && def.walker && walkerTotal() < 6) {
-      const wd = def.walker;
-      const inst = createAvatarInstance(wd.char, '#ffffff', ''); // 빈 닉네임 → 라벨 미생성
-      inst.group.position.set(ox + wd.x, 0, oz + wd.z);
-      inst.group.userData.isWalker = true; // 검증·계수용 태그(스폰 시 walker 실측 등)
-      scene.add(inst.group);
-      walker = { inst, line: wd.line, ox, oz, x: ox + wd.x, z: oz + wd.z, tx: ox + wd.x, tz: oz + wd.z, ry: 0, state: 'walk', timer: 0, speed: 0.7 + Math.random() * 0.3 };
-      pickWalkerTarget(walker);
-    }
-    scene.add(group);
-    loaded.set(k, { group, bldGroup, own, def, ox, oz, dims, bld, solids, floorsY, stairBands, crowd, avatars, streetMeshes, walker, lod, px, pz, beachBands, pierDecks, tetraMesh, lights: parcelLights, lighthouse });
-    requestShadowBake(); // [섀도 프리즈] 파셀 로드로 씬 지오가 바뀜 → 다음 프레임 1회 재베이크
+    const ctx = {
+      k, px, pz, lod, ox, oz, shellOnly, reload: !!reload, stage: 0, ready: false,
+      group, own, def, dims, bld, solids, floorsY, stairBands, bx, bz,
+      bldGroup: null, crowd: null, avatars: new Map(), streetMeshes: null,
+      walker: null, tetraMesh: null, lighthouse: null, beachBands: [], pierDecks: [], lights: null,
+    };
+    if (!reload) { scene.add(group); loaded.set(k, ctx); requestShadowBake(); } // fresh: 지면·벽 즉시(reload는 finalize에서 원자 스왑)
+    return ctx;
   }
 
-  function unloadParcel(k) {
-    const L = loaded.get(k); if (!L) return;
-    if (L.lights) for (const sl of L.lights) releaseLight(sl); // [단계2 라이트 풀] 스포트 소등·반납(개수 불변 — 재컴파일 0)
+  function stageBuilding(ctx) { // S1: 건물 파츠(buildSpaceGroup=무거움) + 조명 배정 + crowd
+    const { def, shellOnly, bx, bz } = ctx;
+    if (!def.space) return;
+    const bldGroup = buildSpaceGroup(def.space, { shellOnly, flatShell: !!opts.shellFlat, onAsyncTex: () => { if (!disposed) renderOnce(); } });
+    bldGroup.position.set(bx, 0, bz);
+    // [라이트 풀] AO 접촉그림자는 addRoomLighting(noSpots)이, 작품·다운라이트 스포트는 풀에서 배정(개수 고정).
+    if (!shellOnly) { addRoomLighting(bldGroup, { noSpots: true }); ctx.lights = assignParcelLights(bx, bz, bldGroup.userData.dims, bldGroup.userData.partRefs || []); }
+    ctx.group.add(bldGroup);
+    ctx.bldGroup = bldGroup;
+    if (!shellOnly && def.npc) {
+      const arts = parcelArts(def, bx, bz);
+      if (arts.length) ctx.crowd = new NpcCrowd(arts, def.npc.count || null, { roster: def.npc.roster });
+    }
+    requestShadowBake();
+  }
+
+  function stageStreet(ctx) { // S2: 거리 가구·가로수(재귀 지오+병합=무거움) — solids·own에 additive append
+    const { def, shellOnly, ox, oz } = ctx;
+    if (shellOnly || !def.street || !def.street.length) return;
+    ctx.streetMeshes = buildStreet(def.street, ctx.group, ox, oz, ctx.solids, ctx.own);
+    requestShadowBake();
+  }
+
+  function stageCoastal(ctx) { // S3: 해안(해변·부두·테트라포드·등대)
+    const { def, shellOnly, px, pz, ox, oz } = ctx;
+    if (def.water) return;
+    const edges = [];
+    if (px === minPx) edges.push('W');
+    if (px === maxPx) edges.push('E');
+    if (pz === minPz) edges.push('N');
+    if (pz === maxPz) edges.push('S');
+    if (!edges.length) return;
+    buildBeach(edges, ctx.group, ox, oz, ctx.own, ctx.beachBands);
+    if (!shellOnly && def.pier && edges.includes(def.pier.dir)) buildPier(def.pier.dir, ctx.group, ox, oz, ctx.own, ctx.solids, ctx.pierDecks);
+    if (!shellOnly && def.tetra && def.tetra.length) ctx.tetraMesh = buildTetrapods(def.tetra, ctx.group, ox, oz);
+    if (!shellOnly && def.lighthouse && edges.includes(def.lighthouse.dir)) ctx.lighthouse = buildLighthouse(def.lighthouse.dir, ctx.group, ox, oz, ctx.own, ctx.solids);
+    requestShadowBake();
+  }
+
+  function stageWalker(ctx) { // S4: 거리 배회 NPC(createAvatarInstance=buildChibi 무거움). 총원 ≤6.
+    const { def, shellOnly, ox, oz } = ctx;
+    if (shellOnly || !def.walker || walkerTotal() >= 6) return;
+    const wd = def.walker;
+    const inst = createAvatarInstance(wd.char, '#ffffff', ''); // 빈 닉네임 → 라벨 미생성
+    inst.group.position.set(ox + wd.x, 0, oz + wd.z);
+    inst.group.userData.isWalker = true;
+    scene.add(inst.group);
+    ctx.walker = { inst, line: wd.line, ox, oz, x: ox + wd.x, z: oz + wd.z, tx: ox + wd.x, tz: oz + wd.z, ry: 0, state: 'walk', timer: 0, speed: 0.7 + Math.random() * 0.3 };
+    pickWalkerTarget(ctx.walker);
+  }
+
+  const STAGES = [stageBuilding, stageStreet, stageCoastal, stageWalker]; // S1~S4 (S0=beginParcel)
+
+  function finalizeParcel(ctx) {
+    if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); scene.add(ctx.group); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
+    ctx.ready = true;
+    requestShadowBake(); // 완성 1회(현행 loadParcel 끝 bake와 정합)
+  }
+
+  function loadParcelSync(px, pz, lod) { // immediate/headless — 전 스테이지 순차(무회귀 비트동일)
+    const k = keyOf(px, pz); const ex = loaded.get(k);
+    if (ex) { if (ex.lod === lod) return; unloadParcel(k); } // 현행 선-언로드(LOD 변경 시 재로드)
+    const ctx = beginParcel(px, pz, lod, false); if (!ctx) return;
+    for (const s of STAGES) s(ctx);
+    finalizeParcel(ctx);
+  }
+
+  // 파셀 dispose 본문(loaded record 또는 reload side-ctx 공용). loaded.delete·bake는 호출자(unloadParcel)가.
+  // 부분 record(스테이지 파이프라인 로딩 중)도 각 필드 null-guard·own 배열이라 안전 dispose(누수·이중해제 0).
+  function disposeCtx(L) {
+    if (L.lights) for (const sl of L.lights) releaseLight(sl); // [라이트 풀] 스포트 소등·반납(개수 불변 — 재컴파일 0)
     if (L.crowd) { for (const a of L.avatars.values()) { scene.remove(a.inst.group); a.inst.dispose(); } }
     if (L.walker) { scene.remove(L.walker.inst.group); L.walker.inst.dispose(); } // 거리 배회 NPC 정리(씬 잔존 0)
     scene.remove(L.group);
     if (L.bldGroup) disposeSpaceGroup(L.bldGroup);
-    // 거리 가구/가로수 정리: 씬 그래프에서 떼는 건 scene.remove(L.group)이 부모째 처리.
-    // 병합 나무 메시·개별 가구(lamp/bench/planter)는 THREE.Mesh(Object3D)라 dispose 메서드가 없어
-    // 아래 루프는 no-op 가드로 건너뛴다 — 나무 병합 BufferGeometry는 파셀 소유라 L.own에서 dispose하고,
-    // 가구 공유 지오(SG)·재질(T·나무 sharedTreeMats)은 파셀 간 공유라 여기서 건드리지 않는다(createWorld dispose 일괄).
+    // 병합 나무 메시·가구는 Object3D라 dispose 없음(no-op 가드) — 나무 병합 지오는 L.own에서, 공유 지오·재질은 createWorld 일괄.
     if (L.streetMeshes) for (const sm of L.streetMeshes) if (sm.dispose) sm.dispose();
-    // [테트라포드] InstancedMesh — instanceMatrix 버퍼만 회수(지오 TETRA_GEO·재질 concrete는 파셀 간 공유).
-    if (L.tetraMesh) L.tetraMesh.dispose();
-    for (const g of L.own) g.dispose(); // 파셀 소유 지오(해변·부두 머지 포함, 공유 재질 T는 dispose에서 일괄)
+    if (L.tetraMesh) L.tetraMesh.dispose(); // InstancedMesh instanceMatrix 회수(지오·재질 공유)
+    for (const g of L.own) g.dispose(); // 파셀 소유 지오(해변·부두 머지 포함, 공유 재질 T는 일괄)
+  }
+  function unloadParcel(k) {
+    const L = loaded.get(k); if (!L) return;
+    disposeCtx(L);
     loaded.delete(k);
-    if (!disposed) requestShadowBake(); // [섀도 프리즈] 파셀 언로드도 씬 변화 → 재베이크(dispose 일괄 정리 중엔 불필요)
+    if (!disposed) requestShadowBake(); // [섀도 프리즈] 파셀 언로드도 씬 변화 → 재베이크(일괄 정리 중엔 불필요)
   }
 
   // ── [복셀스] 바다(월드 전체 아래 고정 물 평면 — 월드 밖·강 파셀에서 드러남) + 월드 소프트 경계 ──
@@ -1088,19 +1121,29 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 언로드는 즉시(저비용) — 기존대로. 큐에 남은 불필요분(떠난 방향)도 함께 제거.
     for (const k of Array.from(loaded.keys())) if (!want.has(k)) unloadParcel(k);
     for (let i = loadQueue.length - 1; i >= 0; i--) {
-      if (!want.has(loadQueue[i].k)) { queued.delete(loadQueue[i].k); loadQueue.splice(i, 1); }
+      const job = loadQueue[i];
+      if (!want.has(job.k)) {
+        if (job.ctx && job.ctx.reload) disposeCtx(job.ctx); // 진행 중 reload side-ctx 폐기(fresh ctx는 위 unloadParcel이 loaded서 회수 — 이중 dispose 방지 위해 reload만)
+        queued.delete(job.k); loadQueue.splice(i, 1);
+      }
     }
     const immediate = sync || (headless && !streamAsync);
     for (const [k, lod] of want) {
       const ex = loaded.get(k);
       if (ex && ex.lod === lod) continue; // 이미 정확 LOD → skip
       const [qx, qz] = k.split(',').map(Number);
-      if (immediate) { loadParcel(qx, qz, lod); continue; }
+      if (immediate) { loadParcelSync(qx, qz, lod); continue; } // sync/headless: 전 스테이지 순차(무회귀 비트동일)
       // 큐잉 — 우선순위 = look-ahead 중심 파셀(cpx,cpz) 기준 맨해튼거리*10 - 진행방향보너스(작을수록 먼저).
       const prio = (Math.abs(qx - cpx) + Math.abs(qz - cpz)) * 10 - dirBonus(qx - cpx, qz - cpz);
       if (queued.has(k)) {
         const job = loadQueue.find((j) => j.k === k); // 이미 큐에 있으면 LOD·우선순위 갱신(shell→full 승격 등)
-        if (job) { job.lod = lod; job.prio = prio; }
+        if (job) {
+          if (job.ctx && job.lod !== lod) { // 진행 중 ctx가 옛 lod로 빌드됨 → 폐기 후 새 lod로 재시작(잘못된 LOD 완주·스래싱 방지)
+            if (job.ctx.reload) disposeCtx(job.ctx); else unloadParcel(k); // fresh는 loaded서 회수, reload는 side-ctx
+            job.ctx = null; job.stage = undefined;
+          }
+          job.lod = lod; job.prio = prio;
+        }
       } else {
         loadQueue.push({ k, px: qx, pz: qz, lod, prio });
         queued.add(k);
@@ -1110,24 +1153,29 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // [스트리밍 큐] 프레임당 예산 내에서 큐 소진 — update()의 renderer.render 직전에 호출.
   // prio 오름차순 정렬 후 최소 1개 빌드, 이후 예산(LOAD_BUDGET_MS) 초과 시 중단. soft는 프레임당 1개.
   // 떠난 파셀(streamWant에서 사라졌거나 LOD 조건 변동) job은 빌드 없이 폐기 — 다음 updateStreaming이 재평가.
+  // [히칭 완화] 스테이지 파이프라인 소진 — job이 ctx(부분 빌드 상태)+stage를 갖고, 프레임 예산 내 여러 job의
+  // 다음 스테이지를 1개씩 진행한다(S0=beginParcel로 시작→S1~S4→finalize). 무거운 파셀도 여러 프레임에 분산.
   function processLoadQueue() {
     if (!loadQueue.length) return;
-    loadQueue.sort((a, b) => a.prio - b.prio);
+    loadQueue.sort((a, b) => a.prio - b.prio); // [일원화] streamWant 재사용(맨해튼 재계산 금지) — 근접 우선
     const t0 = perfNow();
-    let built = 0;
     while (loadQueue.length) {
       const job = loadQueue[0];
-      // [일원화] updateStreaming이 캐시한 streamWant를 그대로 사용 — 격자 맨해튼(man<=1) 재계산 금지.
-      // 원형+look-ahead 판정과 불일치하던 큐 폐기 버그 제거(감독 "왼쪽 가면 오른쪽이 LOD 먹고"의 실질 원인).
       const wantLod = streamWant.get(job.k);
-      if (wantLod !== job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // want에서 사라졌거나 LOD 변동 → 폐기
+      if (wantLod !== job.lod) { // want 이탈 or LOD 변동 → 폐기
+        if (job.ctx && job.ctx.reload) disposeCtx(job.ctx); // reload side-ctx 폐기(fresh ctx는 loaded에 있어 updateStreaming이 언로드)
+        loadQueue.shift(); queued.delete(job.k); continue;
+      }
       const exist = loaded.get(job.k);
-      if (exist && exist.lod === job.lod) { loadQueue.shift(); queued.delete(job.k); continue; } // 이미 로드됨
-      loadParcel(job.px, job.pz, job.lod);
-      loadQueue.shift(); queued.delete(job.k);
-      built++;
-      if (gpuInfo.soft) break;                       // soft: 프레임당 엄격 1개
-      if (perfNow() - t0 > LOAD_BUDGET_MS) break;    // 최소 1개 빌드 후 예산 초과 시 중단
+      if (exist && exist.lod === job.lod && exist.ready && !job.ctx) { loadQueue.shift(); queued.delete(job.k); continue; } // 이미 완성
+      if (!job.ctx) { // S0: base+물리 완결 + fresh record 삽입(지면·벽 즉시)
+        job.ctx = beginParcel(job.px, job.pz, job.lod, !!exist && exist.lod !== job.lod);
+        if (!job.ctx) { loadQueue.shift(); queued.delete(job.k); continue; } // def 없음
+        job.stage = 0;
+      } else { STAGES[job.stage](job.ctx); job.stage++; } // S1~S4 하나씩(no-op guard면 ~0ms)
+      if (job.stage >= STAGES.length) { finalizeParcel(job.ctx); loadQueue.shift(); queued.delete(job.k); } // 완성
+      if (gpuInfo.soft) break;                       // soft: 프레임당 1스테이지
+      if (perfNow() - t0 > LOAD_BUDGET_MS) break;    // 최소 1스테이지 후 예산 초과 시 중단
     }
   }
 
@@ -1590,9 +1638,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // [스트리밍 큐] 계측 게터(순수 가산) — 히칭 벤치·HUD 디버그. 드로우콜·프로그램 수·로드/큐 상태.
     getStats: () => {
       let loadedFull = 0, loadedShell = 0;
-      for (const L of loaded.values()) { if (L.lod === 'shell') loadedShell++; else loadedFull++; }
+      for (const L of loaded.values()) { if (!L.ready) continue; if (L.lod === 'shell') loadedShell++; else loadedFull++; } // ready=완성 파셀만(스테이지 로딩 중 부분 record 제외)
+      let lightsInUse = 0; for (const sl of lightPool) if (sl._inUse) lightsInUse++; // 라이트풀 점유(누수 검증 — 근접·이탈 반복에도 안정해야)
       // renderer.info.programs는 WebGL 전용(WebGPU Info엔 없음) → 가드해 WebGPU 실기 계측(debug-hud)이 통째로 비지 않게.
-      return { drawCalls: renderer.info.render.calls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL' };
+      return { drawCalls: renderer.info.render.calls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL' };
     },
     getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
