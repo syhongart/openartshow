@@ -861,7 +861,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     return ctx;
   }
 
-  const OW_CHUNK_PARTS = 10; // [청크] buildSpaceGroupChunked step당 파츠 개수 예산(8~12). 파셀 로드 히칭 제거용 프레임 분산.
+  const OW_CHUNK_PARTS = gpuInfo.soft ? 4 : 5; // [청크] buildSpaceGroupChunked step당 파츠 개수 예산. 작을수록 스테이지 하나가 가벼워 경계 급락↓(완성은 느려짐). 감독 실기 튜닝값(무거운 작품 파츠 대응 10→5 축소).
   function stageBuilding(ctx) { // S1: 건물 파츠(청크 분산) + 조명 배정 + crowd. 반환 false=파츠 청크 더 남음, 그 외=완료
     const { def, shellOnly, bx, bz } = ctx;
     if (!def.space) return true;
@@ -1167,6 +1167,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (!loadQueue.length) return;
     loadQueue.sort((a, b) => a.prio - b.prio); // [일원화] streamWant 재사용(맨해튼 재계산 금지) — 근접 우선
     const t0 = perfNow();
+    let stagesRun = 0;
+    // [히칭] 프레임당 스테이지 처리 상한 — 여러 파셀이 동시에 로딩될 때(loadedFull 6·queue) 여러 무거운 스테이지가
+    // 한 프레임에 몰려 급락하던 것을 방지. 예산(LOAD_BUDGET_MS)과 병행 — 둘 중 먼저 걸리는 쪽에서 중단.
+    const MAX_STAGES_PER_FRAME = gpuInfo.soft ? 1 : 3;
     while (loadQueue.length) {
       const job = loadQueue[0];
       const wantLod = streamWant.get(job.k);
@@ -1182,8 +1186,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         job.stage = 0;
       } else { const d = STAGES[job.stage](job.ctx); if (d !== false) job.stage++; } // S1~S4 하나씩(no-op guard면 ~0ms). stageBuilding이 false면 파츠 청크 잔여 → 스테이지 유지(다음 루프 재진입)
       if (job.stage >= STAGES.length) { finalizeParcel(job.ctx); loadQueue.shift(); queued.delete(job.k); } // 완성
-      if (gpuInfo.soft) break;                       // soft: 프레임당 1스테이지
-      if (perfNow() - t0 > LOAD_BUDGET_MS) break;    // 최소 1스테이지 후 예산 초과 시 중단
+      stagesRun++;
+      if (gpuInfo.soft) break;                          // soft: 프레임당 1스테이지
+      if (stagesRun >= MAX_STAGES_PER_FRAME) break;     // [히칭] 프레임당 스테이지 캡(여러 파셀 동시 급락 완화)
+      if (perfNow() - t0 > LOAD_BUDGET_MS) break;       // 최소 1스테이지 후 예산 초과 시 중단
     }
   }
 
