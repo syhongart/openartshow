@@ -1,4 +1,4 @@
-const USE_SKINNED_MESH_V2 = true;
+const USE_SKINNED_MESH_V2 = false; // v1(buildChibi) 사용 — v2 셰이더 컴파일 실패로 라이브 아바타 비가시+입장버튼 부트중단(감독 승인 롤백). v2 셰이더/스키닝/gltf/모듈 버그 수정 후 재활성.
 const CHIBI_HAIR_STYLES = [
   { id: "twintail", name: "\uD2B8\uC708\uD14C\uC77C" },
   { id: "bob", name: "\uB2E8\uBC1C" },
