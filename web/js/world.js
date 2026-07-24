@@ -1011,6 +1011,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // needsUpdate=true는 다음 렌더 1회만 섀도 패스를 돌리고 three.js가 자동으로 false 복귀(autoUpdate=false 조건).
   // soft 모드는 shadowMap.enabled=false라 이 호출이 사실상 no-op(섀도 패스 자체가 스킵됨).
   let shadowBakeAt = null; // 마지막 재베이크 시점의 플레이어 XZ(8m 이동 트리거 기준점)
+  let lastFullFinalizeAt = null; // [순차 등장] 마지막 full 승격 완성 시각(perfNow) — 다음 승격 쿨다운 기준. processLoadQueue만 참조(sync 무관)
   function requestShadowBake() {
     renderer.shadowMap.needsUpdate = true;         // WebGL 백엔드
     if (sun.shadow) sun.shadow.needsUpdate = true; // WebGPU 노드 섀도 미러링(양 백엔드 프리즈 실효)
@@ -1176,6 +1177,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 게이트 대상은 loaded에 shell record가 있는 승격(reload) full뿐 — fresh full(신규 파셀 물리·시각 공백 방지)·shell은 면제.
     // 큐 앞쪽 승격 job이 게이트에 걸려도 뒤의 shell/진행중 job은 흘려보내야 하므로 shift 고정 대신 인덱스 순회.
     const MAX_INFLIGHT_FULL = 1;
+    // [순차 등장] 승격 full 하나가 완성된 뒤 이 시간(ms)만큼은 다음 승격 S0을 시작하지 않는다 → 건물·작품이
+    // 연달아 팝업되지 않고 "하나 뜨고 텀 두고 다음 하나" 리듬으로 순차 등장(감독 실기 튜닝값). fresh full·shell은 면제.
+    const PROMOTE_COOLDOWN_MS = 400;
     let inflightFull = 0;
     for (const j of loadQueue) if (j.ctx && !j.ctx.shellOnly) inflightFull++;
     let i = 0;
@@ -1190,13 +1194,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const exist = loaded.get(job.k);
       if (exist && exist.lod === job.lod && exist.ready && !job.ctx) { loadQueue.splice(i, 1); queued.delete(job.k); continue; } // 이미 완성
       if (!job.ctx) { // S0: base+물리 완결 + fresh record 삽입(지면·벽 즉시)
-        if (job.lod === 'full' && loaded.has(job.k) && inflightFull >= MAX_INFLIGHT_FULL) { i++; continue; } // [승격 직렬화] in-flight full 한도 → 승격 보류(순번·shell 유지, 다음 프레임 재평가)
+        if (job.lod === 'full' && loaded.has(job.k) && (inflightFull >= MAX_INFLIGHT_FULL || (lastFullFinalizeAt !== null && t0 - lastFullFinalizeAt < PROMOTE_COOLDOWN_MS))) { i++; continue; } // [승격 직렬화+순차 등장] in-flight full 한도 또는 완성 직후 쿨다운 중 → 승격 보류(순번·shell 유지, 다음 프레임 재평가)
         job.ctx = beginParcel(job.px, job.pz, job.lod, !!exist && exist.lod !== job.lod);
         if (!job.ctx) { loadQueue.splice(i, 1); queued.delete(job.k); continue; } // def 없음
         job.stage = 0;
         if (!job.ctx.shellOnly) inflightFull++; // full S0 시작 → in-flight 등재
       } else { const d = STAGES[job.stage](job.ctx); if (d !== false) job.stage++; } // S1~S4 하나씩(no-op guard면 ~0ms). stageBuilding이 false면 파츠 청크 잔여 → 스테이지 유지(다음 루프 재진입)
-      if (job.stage >= STAGES.length) { finalizeParcel(job.ctx); if (!job.ctx.shellOnly) inflightFull--; loadQueue.splice(i, 1); queued.delete(job.k); } // 완성 → full이면 in-flight 회수
+      if (job.stage >= STAGES.length) { finalizeParcel(job.ctx); if (!job.ctx.shellOnly) { inflightFull--; lastFullFinalizeAt = t0; } loadQueue.splice(i, 1); queued.delete(job.k); } // 완성 → full이면 in-flight 회수 + 쿨다운 기준 갱신(순차 등장)
       stagesRun++;
       if (gpuInfo.soft) break;                          // soft: 프레임당 1스테이지
       if (stagesRun >= MAX_STAGES_PER_FRAME) break;     // [히칭] 프레임당 스테이지 캡(여러 파셀 동시 급락 완화)
