@@ -574,23 +574,39 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         group.add(m); meshes.push(m); own.push(m.geometry); // 병합 지오 = 파셀 소유(언로드 dispose)
       }
     }
+    // [드로우콜 절감] 가로등·벤치·화분은 공유 재질(SG·T)인데도 소품마다 개별 Mesh였다. 나무·부두·테트라포드와
+    // 동일하게 재질별로 지오를 클론해 위치·회전을 베이크(clone→rotateY→translate = Mesh의 T·R·geo와 동치)한 뒤
+    // mergeGeometries로 파셀당 재질별 1버킷 Mesh로 병합 → 드로우콜↓. 픽셀 불변(좌표·회전·재질·섀도 플래그 동일).
+    // 병합 지오는 파셀 소유 → own에 담아 언로드 dispose. 충돌(solids)은 종전과 동일 데이터 파생(렌더-물리 정합 유지).
+    const lampPostGeos = [], lampHeadGeos = [], benchGeos = [], planterGeos = [];
     for (const s of street) {
       if (s.kind === 'lamp') {
-        const post = new THREE.Mesh(SG.lampPost, T.lampPost); post.position.set(ox + s.x, 0, oz + s.z); post.castShadow = true;
-        const head = new THREE.Mesh(SG.lampHead, T.lampHead); head.position.set(ox + s.x, 0, oz + s.z);
-        group.add(post, head); meshes.push(post, head);
+        lampPostGeos.push(SG.lampPost.clone().translate(ox + s.x, 0, oz + s.z));
+        lampHeadGeos.push(SG.lampHead.clone().translate(ox + s.x, 0, oz + s.z));
         solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.22, ez: 0.22, bottom: 0, top: 3.0 }); // 기둥 충돌
       } else if (s.kind === 'bench') {
-        const b = new THREE.Mesh(SG.bench, T.benchWood); b.position.set(ox + s.x, 0, oz + s.z); b.rotation.y = s.ry || 0;
-        b.castShadow = true; b.receiveShadow = true; group.add(b); meshes.push(b);
+        benchGeos.push(SG.bench.clone().rotateY(s.ry || 0).translate(ox + s.x, 0, oz + s.z)); // R 먼저(원점 기준) → T = Mesh(rotation.y+position)와 동치
         const c = Math.abs(Math.cos(s.ry || 0)), sn = Math.abs(Math.sin(s.ry || 0));
         solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.7 * c + 0.22 * sn, ez: 0.7 * sn + 0.22 * c, bottom: 0, top: 0.5 }); // top 0.5 > STEP_OVER
       } else if (s.kind === 'planter') {
-        const p = new THREE.Mesh(SG.planter, T.planterVC); p.position.set(ox + s.x, 0, oz + s.z); p.castShadow = true;
-        group.add(p); meshes.push(p);
+        planterGeos.push(SG.planter.clone().translate(ox + s.x, 0, oz + s.z));
         solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.3, ez: 0.3, bottom: 0, top: 0.9 });
       }
     }
+    // 재질별 버킷을 병합해 파셀당 1 Mesh로. 단일 소품이면 클론 그대로(머지 불필요, buildBeach 관례). 섀도 플래그는 종전 개별 Mesh와 동일.
+    const addBucket = (geos, mat, cast, recv) => {
+      if (!geos.length) return;
+      const merged = geos.length > 1 ? mergeGeometries(geos) : geos[0];
+      if (geos.length > 1) geos.forEach((g) => g.dispose()); // 병합본만 유지 — 클론 회수
+      const m = new THREE.Mesh(merged, mat);
+      if (cast) m.castShadow = true;
+      if (recv) m.receiveShadow = true;
+      group.add(m); meshes.push(m); own.push(merged); // 병합 지오 = 파셀 소유(언로드 dispose)
+    };
+    addBucket(lampPostGeos, T.lampPost, true, false);  // 기둥: castShadow(개별 Mesh와 동일)
+    addBucket(lampHeadGeos, T.lampHead, false, false); // 갓: 섀도 플래그 없음(개별 Mesh와 동일)
+    addBucket(benchGeos, T.benchWood, true, true);     // 벤치: cast+receive
+    addBucket(planterGeos, T.planterVC, true, false);  // 화분: castShadow(정점색 유지)
     return meshes;
   }
 
@@ -861,7 +877,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       bldGroup: null, bldStep: null, crowd: null, avatars: new Map(), streetMeshes: null,
       walker: null, tetraMesh: null, lighthouse: null, beachBands: [], pierDecks: [], lights: null,
     };
-    if (!reload) { scene.add(group); loaded.set(k, ctx); requestShadowBake(); } // fresh: 지면·벽 즉시(reload는 finalize에서 원자 스왑)
+    if (!reload) { scene.add(group); loaded.set(k, ctx); } // fresh: 지면·벽 즉시(reload는 finalize에서 원자 스왑). [C2] 셸·지면은 캐스터 아님(receiver) → 섀도 베이크 불요, finalize 1회로 축약(스테이지마다 1024² 재베이크 제거).
     return ctx;
   }
 
@@ -870,14 +886,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const { def, shellOnly, bx, bz } = ctx;
     if (!def.space) return true;
     if (!ctx.bldStep) {
-      const h = buildSpaceGroupChunked(def.space, { shellOnly, flatShell: !!opts.shellFlat, onAsyncTex: () => { if (!disposed) renderOnce(); } });
+      const h = buildSpaceGroupChunked(def.space, { shellOnly, flatShell: !!opts.shellFlat, onAsyncTex: () => { if (!disposed) needsRender = true; } }); // [C1] 강제 renderOnce → 더티플래그. tex.needsUpdate는 이미 서 있어 다음 렌더에서 업로드(강제 풀패스 제거).
       ctx.bldStep = h; ctx.bldGroup = h.group; // 조기 배정 — 중도폐기 시 disposeCtx가 disposeSpaceGroup으로 회수
       h.group.position.set(bx, 0, bz);
       ctx.group.add(h.group);                  // 셸 즉시(벽 충돌은 S0에 이미 존재)
-      requestShadowBake();
     }
     const done = ctx.bldStep.step(OW_CHUNK_PARTS);
-    if (!done) { requestShadowBake(); return false; } // 파츠 청크 더 남음 — 다음 프레임 재진입
+    if (!done) return false; // 파츠 청크 더 남음 — 다음 프레임 재진입. [C2] 스테이지별 재베이크 제거(finalize 1회)
     // [라이트 풀] 파츠 완성 후에만 조명·crowd 1회(매 청크 재실행 시 SpotLight 풀 고갈 방지).
     // AO 접촉그림자는 addRoomLighting(noSpots)이, 작품·다운라이트 스포트는 풀에서 배정(개수 고정).
     if (!shellOnly) {
@@ -885,15 +900,14 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       ctx.lights = assignParcelLights(bx, bz, ctx.bldGroup.userData.dims, ctx.bldGroup.userData.partRefs || []);
       if (def.npc) { const arts = parcelArts(def, bx, bz); if (arts.length) ctx.crowd = new NpcCrowd(arts, def.npc.count || null, { roster: def.npc.roster }); }
     }
-    requestShadowBake();
-    return true;
+    return true; // [C2] 파츠 완료 재베이크 제거 — finalizeParcel 단일 베이크로 축약
   }
 
   function stageStreet(ctx) { // S2: 거리 가구·가로수(재귀 지오+병합=무거움) — solids·own에 additive append
     const { def, shellOnly, ox, oz } = ctx;
     if (shellOnly || !def.street || !def.street.length) return;
     ctx.streetMeshes = buildStreet(def.street, ctx.group, ox, oz, ctx.solids, ctx.own);
-    requestShadowBake();
+    // [C2] 가구 캐스터(가로등·벤치·화분)의 섀도는 finalizeParcel 단일 베이크가 포착 — 스테이지 재베이크 제거
   }
 
   function stageCoastal(ctx) { // S3: 해안(해변·부두·테트라포드·등대)
@@ -909,7 +923,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (!shellOnly && def.pier && edges.includes(def.pier.dir)) buildPier(def.pier.dir, ctx.group, ox, oz, ctx.own, ctx.solids, ctx.pierDecks);
     if (!shellOnly && def.tetra && def.tetra.length) ctx.tetraMesh = buildTetrapods(def.tetra, ctx.group, ox, oz);
     if (!shellOnly && def.lighthouse && edges.includes(def.lighthouse.dir)) ctx.lighthouse = buildLighthouse(def.lighthouse.dir, ctx.group, ox, oz, ctx.own, ctx.solids);
-    requestShadowBake();
+    // [C2] 해안 캐스터(부두·테트라포드·등대)의 섀도도 finalizeParcel 단일 베이크가 포착 — 스테이지 재베이크 제거
   }
 
   function stageWalker(ctx) { // S4: 거리 배회 NPC(createAvatarInstance=buildChibi 무거움). 총원 ≤6.
@@ -938,6 +952,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const ctx = beginParcel(px, pz, lod, false); if (!ctx) return;
     for (const s of STAGES) { while (s(ctx) === false) {} } // 청크 스테이지(stageBuilding)를 완전 드레인 → 무회귀 비트동일
     finalizeParcel(ctx);
+    flushShadowBake(true); // [H] sync/헤드리스는 RAF flush가 없어 pending이 안 풀리므로 강제 트레일링(섀도 미갱신 방지)
   }
 
   // 파셀 dispose 본문(loaded record 또는 reload side-ctx 공용). loaded.delete·bake는 호출자(unloadParcel)가.
@@ -1016,10 +1031,27 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // soft 모드는 shadowMap.enabled=false라 이 호출이 사실상 no-op(섀도 패스 자체가 스킵됨).
   let shadowBakeAt = null; // 마지막 재베이크 시점의 플레이어 XZ(8m 이동 트리거 기준점)
   let lastFullFinalizeAt = null; // [순차 등장] 마지막 full 승격 완성 시각(perfNow) — 다음 승격 쿨다운 기준. processLoadQueue만 참조(sync 무관)
+  // [H] 섀도 베이크 최소간격 스로틀(150ms 디바운스) — C2 후에도 여러 파셀 finalize가 연프레임에 몰리면
+  // 프레임마다 1024² 재베이크가 나므로 합친다. 최근 150ms 내 요청은 needsUpdate를 세우지 않고 pending으로만
+  // 표시하고, step()의 flushShadowBake가 매 프레임 트레일링으로 흘려보낸다(섀도 영구 미갱신 방지).
+  // 헤드리스(RAF 없음)는 flush 훅이 없으므로 스로틀을 우회해 즉시 베이크 — renderOnce 명시 렌더 경로 보전.
+  let shadowBakePending = false; // 스로틀에 걸려 미뤄진 베이크 대기
+  let lastShadowBakeMs = -1e9;   // 마지막 실제 needsUpdate 시각(perfNow)
   function requestShadowBake() {
+    shadowBakeAt = { x: pos.x, z: pos.z }; // 8m 트리거 기준점은 항상 갱신
+    const nowMs = perfNow();
+    if (!headless && nowMs - lastShadowBakeMs < 150) { shadowBakePending = true; return; } // 최근 베이크 직후 — 트레일링으로 합침
     renderer.shadowMap.needsUpdate = true;         // WebGL 백엔드
     if (sun.shadow) sun.shadow.needsUpdate = true; // WebGPU 노드 섀도 미러링(양 백엔드 프리즈 실효)
-    shadowBakeAt = { x: pos.x, z: pos.z };
+    lastShadowBakeMs = nowMs; shadowBakePending = false;
+  }
+  // [H] 미뤄둔 베이크 플러시 — force면 150ms 게이트 무시(sync/헤드리스 트레일링 보장, RAF 부재 대비).
+  function flushShadowBake(force) {
+    if (!shadowBakePending) return;
+    if (!force && perfNow() - lastShadowBakeMs < 150) return;
+    renderer.shadowMap.needsUpdate = true;
+    if (sun.shadow) sun.shadow.needsUpdate = true;
+    lastShadowBakeMs = perfNow(); shadowBakePending = false;
   }
   // 마지막 베이크에서 8m 이상 이동했으면 재베이크(태양이 플레이어 추종 → 그림자 방향/범위 갱신).
   function maybeRebakeShadow() {
@@ -1453,6 +1485,8 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // ── RAF ──
   let raf = 0, last = 0, disposed = false, potatoAccum = 0, capAccum = 0;
+  let needsRender = false; // [C1] 비동기 텍스처 로드 완료 신호 — 강제 풀렌더(applyPose+베이크+render) 대신 더티플래그로 다음 프레임에 흡수(무예산 렌더 클러스터 제거). tex.needsUpdate는 이미 서 있어 다음 렌더에서 업로드됨.
+  let bgAccum = 0, bgThrottle = false, bgHidden = false, bgBlurred = false; // [비가시 스로틀] 탭 hidden 또는 창 blur면 ~4fps 하드 캡(발열↓). 시뮬 dt는 누적 보존(정지 아님).
   function step(now) {
     // RAF 재예약을 먼저 — 프레임 캡 return 후에도 루프가 끊기지 않게 한다(미술관 main.js는
     // setAnimationLoop이라 return해도 다음 프레임이 오지만, RAF 재귀 경로는 명시 재예약이 필요).
@@ -1460,18 +1494,28 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const t = now || 0;
     let dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016;
     last = t;
+    // [비가시 스로틀] 탭 hidden·창 blur면 ~4fps 하드 캡. 건너뛴 시간은 bgAccum에 누적해 다음 delta로 넘겨
+    // 시뮬 시간을 보존(정지 아님, 저듀티). 포테이토·프레임캡 경로를 우회해 단일 하드캡으로 처리한다.
+    if (bgThrottle) {
+      bgAccum += dt;
+      if (bgAccum < 0.25 && !needsRender) return; // ~4fps(비가시). needsRender면 텍스처 업로드 위해 통과.
+      dt = bgAccum;
+      bgAccum = 0;
+      update(dt);
+      return;
+    }
     // [저사양 방어] 포테이토 프레임 캡(~30fps) — 소프트웨어 렌더는 프레임 시간이 널뛰어 일정 캡이
     // 오히려 입력 지연 체감이 낫다. 건너뛴 시간은 누적해 다음 delta로 넘긴다(시뮬 시간 보존, main.js:1236 동형).
     if (gpuInfo.soft) {
       potatoAccum += dt;
-      if (potatoAccum < 0.034) return; // ~30fps 캡
+      if (potatoAccum < 0.034 && !needsRender) return; // ~30fps 캡. [C1] 비동기 텍스처 대기 프레임은 건너뛰지 않음(누적 dt는 유지).
       dt = potatoAccum;
       potatoAccum = 0;
     } else if (frameCapS > 0) {
       // [열 감안 프레임 캡] 모바일 즉시 캡 + 데스크톱 동적 진입(위 frameCapS 주석, MOBILE_CAP_FPS=30).
       // 건너뛴 시간은 누적해 다음 delta로 넘겨 시뮬 시간을 보존한다(물리·애니메이션이 캡 때문에 느려지지 않음).
       capAccum += dt;
-      if (capAccum < frameCapS) return;
+      if (capAccum < frameCapS && !needsRender) return; // [C1] 비동기 텍스처 대기 프레임은 건너뛰지 않음(누적 dt는 유지).
       dt = capAccum;      // 누적 경과 전체를 넘겨 시뮬 시간을 정확히 보존(sim/real=1.0).
       capAccum = 0;       // 리셋 — 잔여를 이월하지 않는다. 이월(capAccum-=FRAME_CAP_S)은 이미 방출한
                           // 시간을 다음 프레임 dt에 재포함해 시뮬 시간을 이중계산한다(정상 60/120Hz에서도
@@ -1512,7 +1556,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 원격 아바타 발바닥 = groundY(다층·강 반영). 원격 간 충돌은 데모 스코프 아웃.
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
     processLoadQueue(); // [스트리밍 큐] 프레임 예산 내 지연 로드 소진(렌더 직전 — 이번 프레임 빌드분 반영)
+    flushShadowBake(); // [H] 스로틀로 미뤄둔 섀도 재베이크를 프레임마다 트레일링 플러시(150ms 경과 시)
     renderer.render(scene, camera);
+    needsRender = false; // [C1] 렌더 소비 — 비동기 텍스처 더티플래그 리셋
     adaptQuality(d); // [FPS 적응] 실측 프레임률로 해상도 배율 조정(soft 제외 — 아래에서 자체 가드)
   }
   // [FPS 적응] 0.5초마다 FPS를 집계해 저FPS→즉시 강등(하한까지), 고FPS 지속→단계 승급(+0.25).
@@ -1617,6 +1663,12 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) { keys[k] = true; recomputeKeyMove(); e.preventDefault(); }
   }
   function onKeyUp(e) { const k = e.key.toLowerCase(); if (k in keys) { keys[k] = false; recomputeKeyMove(); } }
+  // [비가시 스로틀] 탭이 안 보이거나(hidden) 창이 비활성(blur)이면 렌더를 ~4fps로 하드 캡(발열↓).
+  // hidden·blur를 각각 추적해 합성(recomputeBg) — 둘 중 하나라도 참이면 스로틀. 활성·가시 복귀 시 즉시 해제.
+  const recomputeBg = () => { bgThrottle = bgHidden || bgBlurred; };
+  function onVisibility() { bgHidden = (typeof document !== 'undefined') && !!document.hidden; recomputeBg(); }
+  function onWinBlur() { bgBlurred = true; recomputeBg(); }
+  function onWinFocus() { bgBlurred = false; recomputeBg(); }
 
   if (!headless && typeof window !== 'undefined') {
     canvas.addEventListener('click', onCanvasClick);
@@ -1624,6 +1676,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     document.addEventListener('mousemove', onMouseMove);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    document.addEventListener('visibilitychange', onVisibility); // [비가시 스로틀]
+    window.addEventListener('blur', onWinBlur);                   // [비가시 스로틀]
+    window.addEventListener('focus', onWinFocus);                 // [비가시 스로틀]
   }
 
   function resize(w, h) { renderer.setSize(w, h, false); camera.aspect = w / (h || 1); camera.updateProjectionMatrix(); }
@@ -1691,6 +1746,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         document.removeEventListener('mousemove', onMouseMove);
         window.removeEventListener('keydown', onKeyDown);
         window.removeEventListener('keyup', onKeyUp);
+        document.removeEventListener('visibilitychange', onVisibility); // [비가시 스로틀] 리스너 제거(누수 0)
+        window.removeEventListener('blur', onWinBlur);
+        window.removeEventListener('focus', onWinFocus);
       }
       if (mp) { mp.dispose(); mp = null; }
       for (const k of Array.from(loaded.keys())) unloadParcel(k);
