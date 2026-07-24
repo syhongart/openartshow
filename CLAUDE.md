@@ -29,7 +29,10 @@ GitHub Pages 정적 호스팅. "파라미터가 곧 공간/아바타" (무저장
 - **브랜치 위생 선제**: 작업 *착수 전* `git fetch origin && git merge origin/main`으로 최신 정렬부터 한다. 낡은 base로 진행하면 라이브 회귀가 섞여 교차리뷰 반려→재게이트(스모크·리뷰·병합검증 전면 재실행)로 토큰이 배로 나간다. 정렬은 착수의 첫 스텝.
 - **hook 소음 억제**: `valuation` 자동 산출물 등 배포와 무관한 자동생성물은 게이트 중 워킹트리에 두지 말고 착수 시 정리(별도 커밋 or checkout)해 uncommitted/서명 경고 반복 누적을 막는다.
 
+## 코드 아키텍처
+- **SSOT는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — SOLID 원칙·강제 불변식(보호파일 import 0·순환 0·SSOT 경유)·배럴 패턴·모듈 지도·배포 파이프라인. 새 기능 착수 전 먼저 읽는다.
+
 ## 공간 빌더 스키마
-- `web/js/space.js` = SSOT("파라미터가 곧 공간"). 버전 필드 + `normalizeSpace`/`migrateSpace`(하위호환). 저장은 localStorage/JSON만(URL 인코딩 금지).
-- 렌더 조립기 `web/js/space-render.js`(빌더·방문 공용): `buildSpaceGroup`·`addRoomLighting`·`bakeShellLightmaps(Async)`·`partGeo`/`partAccent`/`MATS`.
-- 파츠 지오메트리 교체는 `partGeo`/`partAccent`/`MATS` 3지점만 손대면 스키마·빌더 로직 무영향.
+- `web/js/space.ts`(소스, `.js`는 산출) = SSOT("파라미터가 곧 공간"). 버전 필드 + `normalizeSpace`/`migrateSpace`(하위호환). 저장은 localStorage/JSON만(URL 인코딩 금지).
+- 렌더 조립: `web/js/space-render.js`는 얇은 **배럴**(재수출)이고, 실제 정의는 `space-parts.ts`(`partGeo`/`partAccent`/`MATS`)·`space-assembler.ts`(`buildSpaceGroup`·`addRoomLighting`)·`space-lightmap.js`(`bakeShellLightmaps(Async)`)에 있다. 소비자는 배럴 경로로 접근.
+- 파츠 지오메트리 교체는 `space-parts.ts`의 `partGeo`/`partAccent`/`MATS` 3지점만 손대면 스키마·빌더 로직 무영향.

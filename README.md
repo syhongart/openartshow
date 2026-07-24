@@ -37,6 +37,10 @@ OpenArtShow는 **웹 브라우저만으로 접속하는 3D 가상 전시 플랫�
 
 ## 폴더 구조
 
+> 아래는 **개요**다. `web/js/`의 실제 모듈은 이후 SOLID 분해로 다수의 하위 모듈로
+> 나뉘었고(예: `scene.js`·`ui.js`·`space-render.js`는 얇은 재수출 배럴), 소스는 TypeScript(`.ts`)로
+> 점진 전환 중이다. **현행 모듈 지도·아키텍처 원칙은 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)가 SSOT.**
+
 ```
 openartshow/
 ├── web/                        # 개발 소스
@@ -44,16 +48,15 @@ openartshow/
 │   ├── landing.html            # 랜딩 페이지 (루트의 index.html로 배포)
 │   ├── guide.html              # 이용 안내 (루트의 guide.html로 배포)
 │   ├── studio.html             # 작가 스튜디오 (app/로 배포)
-│   ├── js/                     # JavaScript 모듈
-│   │   ├── main.js             # 메인 진입점 및 전시장 초기화
-│   │   ├── scene.js            # Three.js 씬 설정 (조명, 카메라, 지오메트리)
+│   ├── js/                     # 프런트엔드 모듈 (.ts 소스 + 컴파일 .js)
+│   │   ├── main.js             # 메인 진입점(Composition Root) 및 전시장 초기화
 │   │   ├── player.js           # 플레이어 이동 및 카메라 제어
-│   │   ├── avatar.js           # 다른 플레이어의 아바타 표시
 │   │   ├── artworks.js         # 작품 로딩 및 정보 패널
+│   │   ├── config.js           # 전역 설정 상수
+│   │   ├── space.ts            # 공간 문서 스키마 SSOT (normalizeSpace/migrateSpace)
+│   │   ├── space-parts.ts      # 파츠 지오메트리·재질 (partGeo/partAccent/MATS)
 │   │   ├── multiplayer.js      # PeerJS 기반 멀티플레이어 (P2P 연결, 채팅)
-│   │   ├── ui.js               # UI 요소 (로비, 정보 패널, 채팅)
-│   │   ├── ambient.js          # Web Audio 앰비언트 사운드 관리
-│   │   └── config.js           # 전역 설정 상수
+│   │   └── …                   # 그 외 다수 (전체 지도는 docs/ARCHITECTURE.md)
 │   ├── galleries/              # 전시 갤러리 데이터
 │   │   └── index.json          # 등록된 전시 목록 및 메타데이터
 │   ├── assets/                 # 자산 (이미지, 리소스)
