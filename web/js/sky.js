@@ -741,11 +741,14 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     // 오로라 — 기준 opacity에 배수 적용(update가 opacity를 안 건드리므로 여기서 확정·복원).
     for (const a of auroras) a.material.opacity = AUR_BASE_OPACITY * (lite ? LITE_AUR_MUL : 1);
     glintStyle(); // 빛기둥 — lite 배수 반영해 재적용
-    // 반짝이 별은 update에서 매 프레임 twkMul을 곱해 반영(여기선 상태만 전환)
     // 흐르는 구름 — lite 상태를 visible에 즉시 반영(크로스페이드 중이라도 boolean visible만 갱신 —
     // opacity 보간은 update가 계속 담당하므로 무해). phase!==1로 가드하면 크로스페이드 중 lite 해제가
     // 완료 분기(update)의 비대칭 때문에 구름이 영구 은닉되던 회귀(교차리뷰 블로커)라 무조건 반영으로 차단.
     cloudMesh.visible = cloudFade.to > 0 && !lite;
+    // 반짝이 별(twk 2겹 AdditiveBlending 풀돔) — 구름과 동일 게이트로 lite 시 visible=false로 숨겨
+    // 실제 fill을 던다(opacity 배수만으론 픽셀 셰이딩·블렌딩 비용이 그대로 남는다). 해제 시 want 상태로 복원.
+    const twkVis = (twkTarget > 0 || twkBase > 0.01) && !lite;
+    for (const w of twk) w.mesh.visible = twkVis;
     return liteSnapshot();
   }
 
@@ -791,7 +794,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     // 별 반짝임 — 야간 맑음만. update가 twkBase를 목표로 부드럽게 올리고 opacity를 진동시킨다.
     const wantTwk = state.time === 'night' && state.weather === 'clear';
     twkTarget = wantTwk ? 1 : 0;
-    for (const w of twk) w.mesh.visible = wantTwk || twkBase > 0.01;
+    for (const w of twk) w.mesh.visible = (wantTwk || twkBase > 0.01) && !lite; // lite 시 별 레이어 숨김(구름과 동형 게이트)
     if (soft) twkBase = twkTarget; // 저사양은 스냅
     if (onApply) { try { onApply(get(), L); } catch (_) {} } // ⑩ 가로등·창·envMap 연동 훅
     return get();
