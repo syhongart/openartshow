@@ -85,6 +85,7 @@ const LOD_PRESETS = {
   a: { fogNearK: 0.9,  fogFarK: 1.9, shellFlat: false },
   b: { fogNearK: 0.7,  fogFarK: 1.6, shellFlat: true },
   c: { fogNearK: 0.55, fogFarK: 1.4, shellFlat: true },
+  d: { fogNearK: 0.4,  fogFarK: 1.2, shellFlat: true }, // c보다 더 강하게(near9.6/far28.8) — 원경 임포스터 박스를 안개로 더 확실히 감춤(감독 요청)
 };
 const lodPreset = LOD_PRESETS[new URLSearchParams(location.search).get('lod')] || LOD_PRESETS.a;
 
@@ -104,6 +105,7 @@ try {
   throw err;
 }
 if (location.search.includes('debug=perf')) import('./debug-perf.js').then((m) => m.mountPerfHud(V.getRenderer(), 'world')); // ?debug=perf 게이트 뒤 동적 import(behind-flag) — 진입 즉시 프레임 계측(world.js 무접촉)
+if (location.search.includes('debug=hud')) import('./debug-hud.js').then((m) => m.mountDebugHud(V)); // ?debug=hud 게이트 뒤 동적 import(behind-flag) — 월드 상태(위치·LOD·fog·FPS) HUD + 복사(world.js 무접촉). 개발자 북마크용
 
 let playerCount = 1;
 V.on('players', (n) => { playerCount = n; });
