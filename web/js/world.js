@@ -1229,7 +1229,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
 
   // ── NPC 렌더/보간 (사람과 완전히 동일한 avatar 경로) ──
+  // [히칭 완화] 파셀 로드 시 NPC(파셀당 최대 7명)를 한 프레임에 동시 생성하면 buildChibi(절차 지오 105회+병합)가
+  // 몰려 단일 프레임 300~480ms 블록(감독 실기 히칭 주범, "아야모 많으면 멈칫"). 프레임당 신규 아바타 생성을
+  // NPC_SPAWN_PER_FRAME으로 캡해 여러 프레임에 분산한다. 미생성 id는 다음 프레임 crowd.update states에 계속
+  // 존재해 순차 생성됨(등장이 수백ms 지연되나 원경·첫 진입이라 체감 무해). 위치/보간 등 기존 갱신은 무제한 유지.
+  const NPC_SPAWN_PER_FRAME = 2;
   function stepNpcs(d) {
+    let spawnBudget = NPC_SPAWN_PER_FRAME; // 이 프레임 전체(모든 파셀 합산) 신규 아바타 생성 상한
     for (const L of loaded.values()) {
       if (!L.crowd) continue;
       const humans = [{ x: pos.x, z: pos.z }]; // y 생략 → NpcCrowd 회피·인사 정상(단층)
@@ -1238,6 +1244,8 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         const s = states[id];
         let a = L.avatars.get(id);
         if (!a) {
+          if (spawnBudget <= 0) continue; // 생성 예산 소진 → 다음 프레임에 생성(히칭 분산). update는 계속 이 id를 반환.
+          spawnBudget--;
           const inst = createAvatarInstance(s.char, s.color, s.nickname);
           inst.group.position.set(s.x, 0, s.z); inst.group.rotation.y = s.ry; // floorY=0 발바닥
           scene.add(inst.group); a = { inst }; L.avatars.set(id, a);
