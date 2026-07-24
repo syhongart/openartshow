@@ -132,9 +132,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 부분 터치 판정을 3신호 합집합(coarse ‖ ontouchstart ‖ maxTouchPoints)으로 강화한다 — 한 신호가
   // 실패해도 나머지가 잡는다(세 파일 신호 완전 통일은 후속 과제). 데스크톱(전부 false)은 여전히 false
   // → 무캡·화질 무변화.
-  const coarsePointer = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+  // [진단 강제] ?desktop=1 → 터치 신호를 무시하고 데스크톱으로 강제(프레임캡·px캡·적응임계 전부 데스크톱 경로).
+  // 터치스크린 PC가 mobile로 오판돼 30fps 캡에 묶이는 것을 풀어 실성능·프로파일링 확인용. 플래그 없으면 기존 판정 불변.
+  const forceDesktop = (typeof location !== 'undefined' && !!location.search
+    && new URLSearchParams(location.search).has('desktop'));
+  const coarsePointer = !forceDesktop && ((typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
     || (typeof window !== 'undefined' && 'ontouchstart' in window)
-    || (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0);
+    || (typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0));
   // [SSOT] 모바일 프레임 캡 목표 fps — 진단 로그(아래)와 FRAME_CAP_S(적응부)가 이 한 값을 공유해
   // 값 불일치(캡 45↔30 잔존 오류, 검수관 지적)를 원천 차단한다. 캡 조정은 이 상수만 고친다.
   const MOBILE_CAP_FPS = 30;
