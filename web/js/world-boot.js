@@ -186,27 +186,122 @@ V.on('chat', ({ name, text }) => {
   while (chat.children.length > 3) chat.removeChild(chat.firstChild);
 });
 
-// ── 모바일: 터치 감지 → 좌 조이스틱 + 우 드래그 시선 ──
+// ── 모바일: 터치 감지 → 좌 조이스틱(갤러리 룩·플로팅 이식) + 우 드래그 시선 ──
+// 갤러리(web/js/player.js 129-176행 스타일, 214-294행 이벤트)를 오픈월드 전용 DOM 인스턴스로 이식.
+// player.js는 수정하지 않는다 — 이 블록은 world-boot.js 전용 클로저 변수(joyBase/joyKnob 등)만 쓰고,
+// 클래스명(lu-joy-*)은 player.js와 같은 이름을 재사용해도 두 페이지가 동시에 로드되지 않아 충돌 없음.
+// 룩: 상시 표시가 아니라 터치한 자리에 base+knob이 나타났다가(lu-live) 손을 떼면 사라진다(스타일 요소, pointer-events:none).
+// 입력 계약(중요): world.js가 기대하는 V.setTouchMove(fwd, right) 시그니처·부호(-uy, ux)는 그대로 유지.
+// 데드존 0.14·조이스틱 반경 60px은 갤러리와 동일 값으로 통일(기존 world 쪽 JR=40 반경/데드존 없음에서 이식).
+// "달리기"(mag>0.85 임계 링+골드 노브+진동)는 갤러리와 동일한 시각/햅틱 피드백으로 이식하되, world.js의 walk()는
+// 항상 이동벡터를 단위벡터로 정규화하고(world.js:1264-1270) tmov 크기(analog magnitude)를 속도에 반영하는
+// 경로가 없다 — 즉 오픈월드엔 갤러리식 "아날로그 달리기"(RUN_SPEED 램프) 입력 경로 자체가 없다. world.js를
+// 수정하지 않는 게 이번 작업의 경계이므로, 달리기 임계 링은 시각 피드백 전용으로 두고 실제 이동 속도는
+// 불변으로 판단(생략보다 갤러리와 동일한 손맛을 주는 편이 UX상 낫고 입력 계약에는 전혀 영향 없음).
 if (isTouch) {
   document.body.classList.add('is-touch');
-  const joy = document.getElementById('joy'), nub = document.getElementById('joyNub');
-  let joyId = null, jcx = 0, jcy = 0; const JR = 40;
-  function joyStart(e) { const t = e.changedTouches[0]; joyId = t.identifier; const r = joy.getBoundingClientRect(); jcx = r.left + r.width / 2; jcy = r.top + r.height / 2; joyMove(e); }
-  function joyMove(e) {
-    for (const t of e.changedTouches) { if (t.identifier !== joyId) continue;
-      let dx = t.clientX - jcx, dy = t.clientY - jcy; const d = Math.hypot(dx, dy) || 1; const cl = Math.min(1, d / JR);
-      const ux = dx / d * cl, uy = dy / d * cl; nub.style.transform = `translate(${ux * JR}px,${uy * JR}px)`;
-      V.setTouchMove(-uy, ux);
+
+  if (!document.getElementById('lu-joy-style')) {
+    const st = document.createElement('style');
+    st.id = 'lu-joy-style';
+    st.textContent = `
+.lu-joy-base { position: fixed; width: 112px; height: 112px; margin: -56px 0 0 -56px;
+  border-radius: 50%; border: 1.5px solid rgba(253,251,245,0.38);
+  background: radial-gradient(circle, rgba(23,20,15,0.10) 55%, rgba(23,20,15,0.34) 100%);
+  box-shadow: 0 2px 12px rgba(10,8,4,0.30), inset 0 0 0 1px rgba(23,20,15,0.20);
+  pointer-events: none; z-index: 40; opacity: 0; transform: scale(0.78);
+  transition: opacity 0.12s ease, transform 0.16s cubic-bezier(0.34,1.56,0.64,1); }
+.lu-joy-base.lu-live { opacity: 1; transform: scale(1); }
+.lu-joy-base::before { content: ''; position: absolute; inset: -1.5px; border-radius: 50%;
+  background:
+    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 50% 0 / 2px 8px no-repeat,
+    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 50% 100% / 2px 8px no-repeat,
+    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 0 50% / 8px 2px no-repeat,
+    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 100% 50% / 8px 2px no-repeat; }
+.lu-joy-base::after { content: ''; position: absolute; inset: 5px; border-radius: 50%;
+  border: 1px dashed rgba(253,251,245,0.22);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+.lu-joy-base.lu-run::after { border-color: rgba(95,158,125,0.9); border-style: solid;
+  box-shadow: 0 0 10px rgba(95,158,125,0.5), inset 0 0 8px rgba(95,158,125,0.25); }
+.lu-joy-knob { position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px;
+  border-radius: 50%; background: radial-gradient(circle at 32% 28%, #fffdf8, #e8e2d2);
+  border: 1px solid rgba(23,20,15,0.28);
+  box-shadow: 0 3px 8px rgba(10,8,4,0.40), inset 0 -2px 4px rgba(23,20,15,0.14);
+  pointer-events: none; z-index: 41; opacity: 0; transition: opacity 0.12s ease; }
+.lu-joy-knob.lu-live { opacity: 1; }
+.lu-joy-knob.lu-run { background: radial-gradient(circle at 32% 28%, #b8e4c9, #5f9e7d);
+  border-color: rgba(32,74,52,0.55);
+  box-shadow: 0 0 0 1px rgba(95,158,125,0.9), 0 0 14px rgba(95,158,125,0.55),
+    inset 0 -2px 4px rgba(32,74,52,0.30); }`;
+    document.head.appendChild(st);
+  }
+  const joyBase = document.createElement('div'); joyBase.className = 'lu-joy-base';
+  const joyKnob = document.createElement('div'); joyKnob.className = 'lu-joy-knob';
+  document.body.appendChild(joyBase);
+  document.body.appendChild(joyKnob);
+
+  const JOYSTICK_RADIUS = 60; // 갤러리(player.js JOYSTICK_RADIUS)와 동일 반경(px)
+  let moveTouch = null; // { id, startX, startY }
+  let lookTouch = null; // { id, lastX, lastY }
+  let wasRunning = false;
+
+  function onTouchStart(e) {
+    for (const t of e.changedTouches) {
+      const half = window.innerWidth * 0.5;
+      if (t.clientX < half && moveTouch === null) {
+        moveTouch = { id: t.identifier, startX: t.clientX, startY: t.clientY };
+        joyBase.style.left = t.clientX + 'px'; joyBase.style.top = t.clientY + 'px';
+        joyKnob.style.left = t.clientX + 'px'; joyKnob.style.top = t.clientY + 'px';
+        joyBase.classList.add('lu-live'); joyKnob.classList.add('lu-live');
+      } else if (t.clientX >= half && lookTouch === null) {
+        lookTouch = { id: t.identifier, lastX: t.clientX, lastY: t.clientY };
+      }
+    }
+    if (e.cancelable) e.preventDefault();
+  }
+
+  function onTouchMove(e) {
+    for (const t of e.changedTouches) {
+      if (moveTouch && t.identifier === moveTouch.id) {
+        const dx = t.clientX - moveTouch.startX, dy = t.clientY - moveTouch.startY;
+        const len = Math.hypot(dx, dy);
+        const scale = len > JOYSTICK_RADIUS ? JOYSTICK_RADIUS / len : 1;
+        let ux = (dx * scale) / JOYSTICK_RADIUS, uy = (dy * scale) / JOYSTICK_RADIUS; // -1~1
+        joyKnob.style.left = moveTouch.startX + dx * scale + 'px';
+        joyKnob.style.top = moveTouch.startY + dy * scale + 'px';
+        const mag = Math.hypot(ux, uy);
+        const running = mag > 0.85; // 갤러리 동일 임계 — 시각/햅틱 전용(위 주석: world.js 달리기 입력 경로 없음)
+        joyBase.classList.toggle('lu-run', running);
+        joyKnob.classList.toggle('lu-run', running);
+        if (running && !wasRunning && navigator.vibrate) navigator.vibrate(10);
+        wasRunning = running;
+        if (mag < 0.14) { ux = 0; uy = 0; } // 데드존(갤러리 동일 0.14) — 엄지 미세 떨림 무시
+        V.setTouchMove(-uy, ux); // 입력 계약 불변: world.js setTouchMove(fwd,right) 시그니처·부호 그대로
+      } else if (lookTouch && t.identifier === lookTouch.id) {
+        V.lookDelta((t.clientX - lookTouch.lastX) * 0.004, (t.clientY - lookTouch.lastY) * 0.004);
+        lookTouch.lastX = t.clientX; lookTouch.lastY = t.clientY;
+      }
+    }
+    if (e.cancelable) e.preventDefault();
+  }
+
+  function onTouchEnd(e) {
+    for (const t of e.changedTouches) {
+      if (moveTouch && t.identifier === moveTouch.id) {
+        moveTouch = null; wasRunning = false;
+        joyBase.classList.remove('lu-live', 'lu-run');
+        joyKnob.classList.remove('lu-live', 'lu-run');
+        V.setTouchMove(0, 0);
+      } else if (lookTouch && t.identifier === lookTouch.id) {
+        lookTouch = null;
+      }
     }
   }
-  function joyEnd(e) { for (const t of e.changedTouches) { if (t.identifier !== joyId) continue; joyId = null; nub.style.transform = 'translate(0,0)'; V.setTouchMove(0, 0); } }
-  joy.addEventListener('touchstart', (e) => { e.preventDefault(); joyStart(e); }, { passive: false });
-  joy.addEventListener('touchmove', (e) => { e.preventDefault(); joyMove(e); }, { passive: false });
-  joy.addEventListener('touchend', joyEnd); joy.addEventListener('touchcancel', joyEnd);
-  let lookId = null, lx = 0, ly = 0;
-  canvas.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; if (t.clientX < window.innerWidth * 0.4) return; lookId = t.identifier; lx = t.clientX; ly = t.clientY; }, { passive: true });
-  canvas.addEventListener('touchmove', (e) => { for (const t of e.changedTouches) { if (t.identifier !== lookId) continue; V.lookDelta((t.clientX - lx) * 0.004, (t.clientY - ly) * 0.004); lx = t.clientX; ly = t.clientY; } }, { passive: true });
-  canvas.addEventListener('touchend', (e) => { for (const t of e.changedTouches) { if (t.identifier === lookId) lookId = null; } });
+
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd);
+  canvas.addEventListener('touchcancel', onTouchEnd);
 }
 
 // ── 神 모드 연출 패널(전체 공개 — 감독 결재 2026-07-19) — 하늘 시간대/날씨/이벤트/광과민성 제어 + URL 초기 하늘 ──
