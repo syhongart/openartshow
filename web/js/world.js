@@ -117,6 +117,11 @@ function makeEnvMap(renderer, isWebGPU) {
 
 export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const headless = !!opts.headless;
+  // [실험 격리 — ablation] URL ?off=ayamo,npc,… 로 요소를 하나씩 꺼 스파이크 원인을 실증 격리(감독 지시).
+  // opts.off(배열) 우선 → 헤드리스 주입 가능. 폴백은 URL. 기본 빈 Set이라 플래그 없으면 기존 동작 완전 불변(무회귀).
+  const OFF = new Set(opts.off || ((typeof location !== 'undefined' && location.search)
+    ? (new URLSearchParams(location.search).get('off')?.split(',').map((s) => s.trim()).filter(Boolean) || [])
+    : []));
   // 비정사각 셀(cellX/cellZ) — 복셀스 개방 도시는 정사각 24×24(셀 > 건물 → 가장자리가 길).
   // opts.cell(스칼라) 폴백 유지 → 스파이크(createWorld({cell:9}))·정사각 그리드 무회귀.
   const CELLX = opts.cellX || opts.cell || 32;
@@ -1627,7 +1632,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // ── 실시간 멀티플레이어(2단계) — 같은 월드 접속자끼리 아바타 상호 가시성 ──
   // 기존 multiplayer.js(PeerJS 호스트릴레이) 재사용. 단일 월드 룸(디스트릭트 샤딩은 확장 시).
   // window.Peer(vendor/peerjs) 없으면(헤드리스 등) 조용히 미배선 — 오픈월드는 1인 모드로 정상 동작.
-  if (opts.mp && typeof window !== 'undefined' && window.Peer) {
+  if (opts.mp && typeof window !== 'undefined' && window.Peer && !OFF.has('ayamo')) { // [ablation] ?off=ayamo → self 아바타(아야모) 렌더 스킵(mp 생성 자체 보류, 참조는 전부 if(mp) guard라 자동 no-op)
     mp = new MultiplayerManager(scene, { nickname: opts.mp.nickname, color: opts.mp.color, char: opts.mp.char, roomId: PEER_ROOM_ID + '-openworld' });
     mp.onStatus = (s) => emit('mpstatus', s);
     mp.onPlayerCount = (n) => emit('players', n);
