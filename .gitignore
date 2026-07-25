@@ -78,3 +78,4 @@ _site_baseline/
 # 실제 배포는 vite가 web/world → dist/app/world 로 복사). 반복 재생성되므로 무시.
 /web/app/
 .qa-tmp/
+qa-tmp/
