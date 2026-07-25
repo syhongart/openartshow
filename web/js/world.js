@@ -1061,7 +1061,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const L = loaded.get(k); if (!L) return;
     disposeCtx(L);
     loaded.delete(k);
-    parcelBehind.delete(k); parcelDemoteAt.delete(k); // [시야 인지] 배후/쿨다운 상태도 함께 정리(누수 방지)
+    parcelBehind.delete(k); // [시야 인지] 각도 히스테리시스만 리셋 — 재진입 시 엄격기준(ENTER) 적용되어 안전.
+    // parcelDemoteAt는 여기서 지우지 않는다: 쿨다운 타임스탬프가 언로드 순간 사라지면
+    // "언로드→(전방 재로드)→재언로드"가 쿨다운 창 안에서도 매번 통과해 스래싱 억제가 무력화된다
+    // (계측 실증: 150ms 왕복 억제율 20%). 파셀셋은 정적 유한(index)이라 잔존 엔트리는 bounded.
     if (!disposed) requestShadowBake(); // [섀도 프리즈] 파셀 언로드도 씬 변화 → 재베이크(일괄 정리 중엔 불필요)
   }
 
