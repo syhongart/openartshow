@@ -1253,6 +1253,20 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const MAX_DEMOTE_PER_FRAME = 1; // 180° 급회전으로 다수 파셀이 동시 배후여도 프레임당 1개만 강등(급락 방지)
   const parcelBehind = new Map();   // key→bool: 파셀별 직전 배후상태(isBehind 히스테리시스용)
   const parcelDemoteAt = new Map(); // key→ms: 배후 강등 실행 시각(재강등 쿨다운 판정)
+  // [제자리 회전 트리거] 배후 강등/승격은 updateStreaming이 하는데, 그 호출은 walk()/setPosition()에만
+  // 걸려 있어 "이동 중"에만 재평가됐다. 제자리에서 시선만 180° 돌리면 파셀 구성이 불변(계측: full/shell
+  // 5/4 고정). 정지 중에도 yaw 변화로 재평가하되, 마구 돌릴 때(도리도리) 로드/언로드가 스래싱하지
+  // 않도록 "충분히 돌았고(임계) + 멈췄다(디바운스)"를 둘 다 만족할 때만 발화한다.
+  // 위 fog(1757행)가 "정지 시에도 yaw만으로 판정"하는 것과 같은 결이나, 스트리밍은 파셀 생성/파괴라
+  // 비용이 커서 즉시 반응 대신 정착(settle) 대기를 둔다.
+  const YAW_STREAM_THRESHOLD = 15 * Math.PI / 180; // 마지막 판정 이후 누적 회전 임계(미세 떨림 무시)
+  const YAW_JITTER_EPS = 1 * Math.PI / 180;        // 이 프레임 순간 회전이 이 미만이면 "정지"로 간주
+  const YAW_SETTLE_MS = 200;                       // 정지가 이만큼 유지돼야 실제 발화(디바운스)
+  let lastStreamYaw = 0;  // 마지막 updateStreaming 판정 시점의 yaw
+  let lastFrameYaw = 0;   // 직전 프레임 yaw(순간 회전량 산출용)
+  let yawSettleMs = 0;    // 시선이 멈춘 채 누적된 시간(ms)
+  /** yaw 차이를 (−π, π]로 정규화한 절대값 — yaw는 무한 누적(walk의 yaw-=dx)이거나 외부 setYaw로 임의값이라 ±π 경계 튐 방지. */
+  function yawDelta(a, b) { return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))); }
   // [SSOT] updateStreaming이 계산한 최신 want 판정을 캐시 — processLoadQueue가 "동일" 기준으로 큐를
   // 소진하도록 일원화한다. (예전엔 processLoadQueue가 currentParcel 3×3 맨해튼으로 독자 재계산해,
   // look-ahead로 앞쪽 파셀을 full로 큐잉해도 큐 처리 단계에서 판정 불일치로 빌드 없이 폐기 → 선행
@@ -1750,7 +1764,22 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     frameCount++; // [원거리·배후 컷] 갱신 프레임 위상 카운터(parcelPhase와 합산)
     if (waterTex) { waterTex.offset.y = (waterTex.offset.y + 0.012 * d) % 1; }
     const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
-    if (f || r) walk(f, r, d);
+    if (f || r) {
+      walk(f, r, d); // 이동 경로 무변경 — walk가 이미 updateStreaming을 호출한다.
+    } else {
+      // [제자리 회전 트리거] 정지 중에만 실행되므로 walk 경로와 상호배타 → 같은 프레임 중복 호출 불가.
+      // update()는 RAF당 1회라 회전 소스(마우스룩 lookDelta·setYaw·향후 API)가 몇 개든 여기 하나로
+      // 커버되고 프레임당 최대 1회 상한이 자연히 선다.
+      const spin = yawDelta(yaw, lastFrameYaw); // 이번 프레임 순간 회전량(각도 wrap 정규화)
+      if (spin < YAW_JITTER_EPS) yawSettleMs += d * 1000; // 사실상 멈춤 → 정착 시간 누적
+      else yawSettleMs = 0;                               // 아직 돌리는 중 → 리셋(회전 도중 발화 금지)
+      if (yawSettleMs >= YAW_SETTLE_MS && yawDelta(yaw, lastStreamYaw) >= YAW_STREAM_THRESHOLD) {
+        updateStreaming();     // 새 시야 기준으로 배후/전방 재평가(ENTER·쿨다운·프레임예산은 걷기와 공용)
+        lastStreamYaw = yaw;
+        yawSettleMs = 0;       // 재발화 방지 — 다음 발화는 다시 "임계만큼 더 돌고 멈춰야" 성립
+      }
+    }
+    lastFrameYaw = yaw; // 이동 중에도 갱신 — 멈춘 직후 첫 프레임이 큰 순간회전으로 오판되지 않게.
     // 카메라 y를 groundY 추종(계단·강 경사 부드럽게). 태양·스카이 추종은 applyPose 안.
     pos.y += ((groundY + EYE) - pos.y) * Math.min(1, GROUND_LERP_RATE * d);
     applyPose();
