@@ -1807,6 +1807,11 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
     processLoadQueue(); // [스트리밍 큐] 프레임 예산 내 지연 로드 소진(렌더 직전 — 이번 프레임 빌드분 반영)
     flushShadowBake(); // [H] 스로틀로 미뤄둔 섀도 재베이크를 프레임마다 트레일링 플러시(150ms 경과 시)
+    // [계측 정합] three r171의 신형 Renderer(WebGPU 포함)는 setAnimationLoop 내부 루프(common/Animation.js)에서만
+    // info.reset()을 자동 호출한다. 오픈월드는 자체 rAF 재귀를 쓰므로(위 주석 참조) 리셋이 한 번도 안 걸려
+    // drawCalls·triangles가 렌더러 생애 내내 누적됐다(실기기 CSV에서 draw가 단조증가한 원인). 렌더 직전 명시 리셋.
+    // WebGL 백엔드는 render() 안에서 자체 리셋하므로 여기서 한 번 더 0으로 만드는 건 멱등 — 백엔드 분기 불요.
+    renderer.info.reset();
     renderer.render(scene, camera);
     needsRender = false; // [C1] 렌더 소비 — 비동기 텍스처 더티플래그 리셋
     adaptQuality(d); // [FPS 적응] 실측 프레임률로 해상도 배율 조정(soft 제외 — 아래에서 자체 가드)
@@ -1897,7 +1902,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       adaptUpTicks = 0; // 중간대(24~48fps) — 승급 카운트 리셋(안정 유지)
     }
   }
-  function renderOnce() { applyPose(); maybeRebakeShadow(); renderer.render(scene, camera); }
+  function renderOnce() { applyPose(); maybeRebakeShadow(); renderer.info.reset(); renderer.render(scene, camera); } // info.reset: 위 update() 렌더 지점과 동일 사유(신형 Renderer 자동리셋 부재)
 
   // ── 포인터락 + 이벤트(데스크톱) ──
   let locked = false;
@@ -1980,7 +1985,8 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       for (const L of loaded.values()) { if (!L.ready) continue; if (L.lod === 'shell') loadedShell++; else loadedFull++; } // ready=완성 파셀만(스테이지 로딩 중 부분 record 제외)
       let lightsInUse = 0; for (const sl of lightPool) if (sl._inUse) lightsInUse++; // 라이트풀 점유(누수 검증 — 근접·이탈 반복에도 안정해야)
       // renderer.info.programs는 WebGL 전용(WebGPU Info엔 없음) → 가드해 WebGPU 실기 계측(debug-hud)이 통째로 비지 않게.
-      return { drawCalls: renderer.info.render.calls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL' };
+      // drawCalls: render.calls는 누적 render() 횟수라 Info.reset() 대상 밖이다 — 프레임당 실제 draw 수는 render.drawCalls.
+      return { drawCalls: renderer.info.render.drawCalls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL' };
     },
     getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
