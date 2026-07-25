@@ -41,7 +41,7 @@ import { MultiplayerManager } from './multiplayer.js';
 // [하늘 엔진] 승인된 독립 모듈(sky.js) — sun/hemi/sky 돔을 주입해 시간대·날씨·이벤트 연출.
 // 배선은 3접점(생성·update·getSunDir 태양방위)만, sky.js가 조명·fog·clearColor·크로스페이드를 자기소유로 제어.
 import { createSkySystem } from './sky.js';
-import { isViewingSea, isBehind } from './fog-view.js'; // [바다 조망 fog] 경계 셀+시선 판정 / [시야 인지 스트리밍] 배후 파셀 판정(순수 함수)
+import { isViewingSea, isBehind, behindExitRadii } from './fog-view.js'; // [바다 조망 fog] 경계 셀+시선 판정 / [시야 인지 스트리밍] 배후 파셀 판정·fog 연동 EXIT 클램프(순수 함수)
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;         // 이동 속도(m/s)
@@ -1207,10 +1207,20 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const STREAM_SHELL_ENTER = CELL_MAX * 1.55;  // shell 진입 반경(=현행)
   const STREAM_SHELL_EXIT  = CELL_MAX * 1.75;  // shell 유지 반경(이 밖이면 unload)
   const STREAM_LOOKAHEAD = CELL_MAX * 0.5; // 이동 시 판정 원 중심 전진 거리(선행 로드)
-  // [시야 인지 스트리밍] 배후(시야 뒤) 파셀은 EXIT 반경만 0.75배로 축소해 더 일찍 강등/언로드한다.
+  // [시야 인지 스트리밍] 배후(시야 뒤) 파셀은 EXIT 반경만 축소해 더 일찍 강등/언로드한다.
   // ENTER(FULL/SHELL_ENTER)는 절대 불변 — 과거 "왼쪽 이동 시 오른쪽 파셀 LOD 강등" 회귀 발생 지점이라 그대로 둔다.
-  const FULL_EXIT_BEHIND  = STREAM_FULL_EXIT * 0.75;  // 배후 파셀 full 유지 반경(이 밖 배후면 shell 강등)
-  const SHELL_EXIT_BEHIND = STREAM_SHELL_EXIT * 0.75; // 배후 파셀 shell 유지 반경(이 밖 배후면 unload)
+  //
+  // [fog 연동 하한 클램프] 축소 반경은 고정 ×0.75가 아니라 현재 fog.far로 클램프해 매 updateStreaming마다
+  // 산출한다(behindExitRadii, fog-view.js). 완전 소멸(SHELL→UNLOAD)이 항상 안개 안에서 일어나도록 보장하고,
+  // fog가 옅은 프리셋에선 상한(정상 EXIT)에 걸려 축소량이 0 = 변경 전 동작으로 자동 후퇴한다.
+  // 프리셋별 실산출(CELL_MAX=24 → STREAM_FULL_EXIT=31.2 / STREAM_SHELL_EXIT=42, 폴백 하한 23.4 / 31.5):
+  //   ?lod  fog.far   shell(=min(42, max(31.5, far)))   full(=min(31.2, max(23.4, far*0.85)))
+  //   d     28.8      31.5   (축소 온전)                24.48
+  //   c     33.6      33.6                              28.56
+  //   b     38.4      38.4                              31.2   (축소 0)
+  //   a     45.6      42     (축소 0=기존 동작)          31.2   (축소 0)
+  //   fog 없음(null·포테이토)  31.5 (×0.75 폴백)         23.4  (×0.75 폴백)
+  // → 라이브 기본 d에서 성능 효과를 온전히 유지하면서, 옅은 프리셋에선 자동으로 안전측으로 물러난다.
   const DEMOTE_COOLDOWN_MS = 500; // 배후 강등 후 이 시간 내 같은 파셀 재강등 억제(스래싱 방지, 승격측 PROMOTE_COOLDOWN과 대칭)
   const MAX_DEMOTE_PER_FRAME = 1; // 180° 급회전으로 다수 파셀이 동시 배후여도 프레임당 1개만 강등(급락 방지)
   const parcelBehind = new Map();   // key→bool: 파셀별 직전 배후상태(isBehind 히스테리시스용)
@@ -1269,6 +1279,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // [시야 인지 스트리밍] 배후 강등 게이트 — 프레임예산(MAX_DEMOTE_PER_FRAME)+쿨다운(DEMOTE_COOLDOWN_MS)
     // 통과 시에만 강등 실행. 승격측(MAX_INFLIGHT_FULL·PROMOTE_COOLDOWN)과 대칭으로 스래싱을 막는다.
     let demoteBudget = MAX_DEMOTE_PER_FRAME;
+    // [fog 연동 배후 EXIT] fog는 프리셋·시간대·바다 조망 lerp로 런타임 변동하므로 캐시하지 않고 매 호출 시
+    // 현재값을 읽되, 루프 안에서 재계산하지 않도록 여기서 1회만 산출해 아래 격자 루프가 재사용한다.
+    const fogFarNow = scene.fog && Number.isFinite(scene.fog.far) ? scene.fog.far : NaN; // fog 없음/비정상 → NaN → ×0.75 폴백
+    const { full: fullExitBehind, shell: shellExitBehind } = behindExitRadii(STREAM_FULL_EXIT, STREAM_SHELL_EXIT, fogFarNow);
     const nowMs = perfNow();
     const tryDemote = (k) => {
       if (demoteBudget <= 0) return false;              // 프레임당 강등 상한(급회전 다수 배후 → 1개만)
@@ -1293,14 +1307,14 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (cur === 'full') {
         if (dist <= STREAM_FULL_EXIT) {
           // 배후 + 축소 EXIT 밖 → shell 강등 시도(예산·쿨다운 게이트). 게이트 실패면 full 유지.
-          if (behindNow && dist > FULL_EXIT_BEHIND && tryDemote(k)) want.set(k, 'shell');
+          if (behindNow && dist > fullExitBehind && tryDemote(k)) want.set(k, 'shell');
           else want.set(k, 'full');
         } else if (dist <= STREAM_SHELL_EXIT) want.set(k, 'shell');
       } else if (cur === 'shell') {
         if (dist <= STREAM_FULL_ENTER) want.set(k, 'full'); // ENTER 불변(승격 조건 그대로)
         else if (dist <= STREAM_SHELL_EXIT) {
           // 배후 + 축소 SHELL EXIT 밖 → want 미설정(=아래 unloadParcel). 게이트 실패면 shell 유지.
-          if (behindNow && dist > SHELL_EXIT_BEHIND && tryDemote(k)) { /* want 제외 → 언로드 */ }
+          if (behindNow && dist > shellExitBehind && tryDemote(k)) { /* want 제외 → 언로드 */ }
           else want.set(k, 'shell');
         }
       } else {

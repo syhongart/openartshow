@@ -1,7 +1,7 @@
 // fog-view.js 순수 판정 단위테스트 — 바다 원경 응시(경계 셀 + 시선 내적 + 히스테리시스).
 // 좌표 관례: yaw=0 = -Z(북). fwd=(-sin yaw, -cos yaw). 바깥 법선 W(-1,0)/E(+1,0)/N(0,-1)/S(0,+1).
 import { describe, it, expect } from 'vitest';
-import { isViewingSea, isBehind } from '../web/js/fog-view.js';
+import { isViewingSea, isBehind, behindExitRadii } from '../web/js/fog-view.js';
 
 const W = 10, H = 10;
 const D2R = Math.PI / 180;
@@ -55,5 +55,48 @@ describe('isBehind — 배후 파셀 판정(각도 히스테리시스)', () => {
   it('중심 겹침(dist≈0)은 직전 상태 유지', () => {
     expect(isBehind(0, 0, 0, true)).toBe(true);
     expect(isBehind(0, 0, 0, false)).toBe(false);
+  });
+});
+
+describe('behindExitRadii — fog 연동 배후 EXIT 하한 클램프', () => {
+  // world.js 실상수(CELL_MAX=24): STREAM_FULL_EXIT=1.30·24, STREAM_SHELL_EXIT=1.75·24
+  const FULL = 24 * 1.30, SHELL = 24 * 1.75; // 31.2 / 42
+  const FOG = { a: 24 * 1.9, b: 24 * 1.6, c: 24 * 1.4, d: 24 * 1.2 }; // 45.6 / 38.4 / 33.6 / 28.8(라이브 기본)
+
+  it('라이브 기본 d(fog 28.8): shell=31.5(축소 온전), full=24.48', () => {
+    const r = behindExitRadii(FULL, SHELL, FOG.d);
+    expect(r.shell).toBeCloseTo(31.5, 6);  // max(31.5, 28.8) → 상한 42 미만
+    expect(r.full).toBeCloseTo(24.48, 6);  // max(23.4, 28.8*0.85)
+  });
+
+  it('c(33.6): shell=33.6 / b(38.4): shell=38.4·full은 상한(31.2)에 걸려 축소 0', () => {
+    expect(behindExitRadii(FULL, SHELL, FOG.c).shell).toBeCloseTo(33.6, 6);
+    expect(behindExitRadii(FULL, SHELL, FOG.c).full).toBeCloseTo(28.56, 6);
+    expect(behindExitRadii(FULL, SHELL, FOG.b).shell).toBeCloseTo(38.4, 6);
+    expect(behindExitRadii(FULL, SHELL, FOG.b).full).toBeCloseTo(FULL, 6); // 상한 클램프 = 축소 0
+  });
+
+  it('가장 옅은 a(45.6): 상·하한 상한에 걸려 정상 EXIT와 동일 = 변경 전 동작(신규 노출 0)', () => {
+    const r = behindExitRadii(FULL, SHELL, FOG.a);
+    expect(r.shell).toBeCloseTo(SHELL, 6); // min(42, 45.6)
+    expect(r.full).toBeCloseTo(FULL, 6);   // min(31.2, 38.76)
+  });
+
+  it('fog 없음(null·NaN·0·음수)은 기존 ×0.75 고정값으로 폴백', () => {
+    for (const bad of [NaN, Infinity, 0, -1, undefined, null]) {
+      const r = behindExitRadii(FULL, SHELL, bad);
+      expect(r.shell).toBeCloseTo(SHELL * 0.75, 6); // 31.5
+      expect(r.full).toBeCloseTo(FULL * 0.75, 6);   // 23.4
+    }
+  });
+
+  it('불변식: 완전 소멸(shell) EXIT ≥ min(fog.far, 정상 EXIT) — 안개 안 소멸이거나 기존 동작', () => {
+    for (const far of Object.values(FOG)) {
+      const r = behindExitRadii(FULL, SHELL, far);
+      expect(r.shell).toBeGreaterThanOrEqual(Math.min(far, SHELL) - 1e-9);
+      expect(r.shell).toBeLessThanOrEqual(SHELL);   // 배후가 정면보다 오래 유지되지 않음
+      expect(r.full).toBeLessThanOrEqual(FULL);
+      expect(r.full).toBeLessThanOrEqual(r.shell);  // full EXIT ≤ shell EXIT 순서 보존
+    }
   });
 });
