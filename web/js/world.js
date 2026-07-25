@@ -148,7 +148,7 @@ function makeTreeBlobGeo(wx, wz) {
   for (let i = 0; i < pos.count; i++) {
     const r = Math.min(1, Math.hypot(pos.getX(i), pos.getY(i)));
     const t = Math.pow(1 - r, 1.5); // 중심 1(그림자 최대) → 가장자리 0(그림자 없음), 완만한 페더(기존과 동일 곡선)
-    const shade = 1 - 0.35 * t; // 중심 0.65(배경을 35% 어둡게 곱함) → 가장자리 1.0(곱해도 무변화). 기존 0.55→0.35(감독 지적: 밝은 잔디 위 진한 검은 타원 완화)
+    const shade = 1 - 0.15 * t; // 중심 0.85(배경을 15%만 어둡게 곱함) → 가장자리 1.0(무변화). 0.35→0.15(감독 "훨씬 옅게 은은하게" — 있는 듯 마는 듯한 접지감만)
     rgba[i * 4 + 0] = shade; rgba[i * 4 + 1] = shade; rgba[i * 4 + 2] = shade; // 무채색 곱셈 — 색조는 배경(지면) 색이 그대로 유지, 명도만 낮춤
     rgba[i * 4 + 3] = 1; // MultiplyBlending은 알파를 블렌딩에 쓰지 않음(dst *= src.rgb) — 항상 1
   }
