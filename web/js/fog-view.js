@@ -92,3 +92,29 @@ export function behindExitRadii(fullExit, shellExit, fogFar) {
     shell: Math.min(shellExit, Math.max(floorShell, fogFar)),
   };
 }
+
+// [시야 인지 스트리밍] 배후 강등 쿨다운 판정 — 강등 직후 같은 파셀이 곧바로 재강등되는 스래싱을 막는다
+// (승격측 PROMOTE_COOLDOWN과 대칭). world.js updateStreaming의 tryDemote가 호출한다.
+//
+// 분리 기준: tryDemote의 게이트는 둘인데 성격이 다르다. 프레임 예산(MAX_DEMOTE_PER_FRAME)은 프레임마다
+// 리셋되는 **가변 카운터**라 world.js에 남기고, 상태 없는 **시간 비교만** 여기로 옮겨 단위테스트 가능하게 했다.
+// (헤드리스 계측으로는 쿨다운 창을 재현할 수 없어 — swiftshader RAF가 JS 스레드를 점유해 요청 지연이
+//  실측과 한 자릿수 어긋난다 — 환경 무관한 상수 증명으로 갈음한다.)
+//
+// 동작 불변 근거 — 추출 전 world.js 원식은 **거부** 조건이었다:
+//   `if (at !== undefined && nowMs - at < DEMOTE_COOLDOWN_MS) return false;`
+// 이 함수는 그 정확한 부정(= 허용 조건)이다:
+//   `at === undefined || now - at >= cooldownMs`
+// 따라서 경과 === cooldownMs인 경계는 **허용**(원식 `<`가 거짓 → 거부 안 됨)이다. 부정 시 `<` → `>=`,
+// `&&` → `||`로 뒤집히는 점에 주의(드모르간).
+/**
+ * 같은 파셀의 재강등이 쿨다운 창을 벗어나 허용되는지 판정한다.
+ * @param {number|undefined} lastAt 이 파셀의 직전 강등 시각(ms). undefined = 한 번도 강등된 적 없음
+ * @param {number} now 현재 시각(ms, perfNow)
+ * @param {number} cooldownMs 재강등 억제 창 길이(DEMOTE_COOLDOWN_MS)
+ * @returns {boolean} 강등 허용이면 true. 쿨다운 창 안이면 false
+ */
+export function canDemoteByCooldown(lastAt, now, cooldownMs) {
+  if (lastAt === undefined) return true;  // 첫 강등 — 억제할 직전 기록이 없다
+  return now - lastAt >= cooldownMs;      // 경계(경과 === cooldownMs)는 허용 — 원식 `< cooldownMs`(거부)의 부정
+}

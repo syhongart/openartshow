@@ -41,7 +41,7 @@ import { MultiplayerManager } from './multiplayer.js';
 // [하늘 엔진] 승인된 독립 모듈(sky.js) — sun/hemi/sky 돔을 주입해 시간대·날씨·이벤트 연출.
 // 배선은 3접점(생성·update·getSunDir 태양방위)만, sky.js가 조명·fog·clearColor·크로스페이드를 자기소유로 제어.
 import { createSkySystem } from './sky.js';
-import { isViewingSea, isBehind, behindExitRadii } from './fog-view.js'; // [바다 조망 fog] 경계 셀+시선 판정 / [시야 인지 스트리밍] 배후 파셀 판정·fog 연동 EXIT 클램프(순수 함수)
+import { isViewingSea, isBehind, behindExitRadii, canDemoteByCooldown } from './fog-view.js'; // [바다 조망 fog] 경계 셀+시선 판정 / [시야 인지 스트리밍] 배후 파셀 판정·fog 연동 EXIT 클램프·강등 쿨다운 판정(순수 함수)
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;         // 이동 속도(m/s)
@@ -1286,8 +1286,8 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const nowMs = perfNow();
     const tryDemote = (k) => {
       if (demoteBudget <= 0) return false;              // 프레임당 강등 상한(급회전 다수 배후 → 1개만)
-      const at = parcelDemoteAt.get(k);
-      if (at !== undefined && nowMs - at < DEMOTE_COOLDOWN_MS) return false; // 쿨다운 내 재강등 억제
+      // 쿨다운 내 재강등 억제 — 시간 비교는 순수함수(fog-view.js). 프레임 예산은 가변 카운터라 여기 남는다.
+      if (!canDemoteByCooldown(parcelDemoteAt.get(k), nowMs, DEMOTE_COOLDOWN_MS)) return false;
       demoteBudget--; parcelDemoteAt.set(k, nowMs);
       return true;
     };

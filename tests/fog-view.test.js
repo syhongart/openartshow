@@ -1,7 +1,7 @@
 // fog-view.js 순수 판정 단위테스트 — 바다 원경 응시(경계 셀 + 시선 내적 + 히스테리시스).
 // 좌표 관례: yaw=0 = -Z(북). fwd=(-sin yaw, -cos yaw). 바깥 법선 W(-1,0)/E(+1,0)/N(0,-1)/S(0,+1).
 import { describe, it, expect } from 'vitest';
-import { isViewingSea, isBehind, behindExitRadii } from '../web/js/fog-view.js';
+import { isViewingSea, isBehind, behindExitRadii, canDemoteByCooldown } from '../web/js/fog-view.js';
 
 const W = 10, H = 10;
 const D2R = Math.PI / 180;
@@ -98,5 +98,39 @@ describe('behindExitRadii — fog 연동 배후 EXIT 하한 클램프', () => {
       expect(r.full).toBeLessThanOrEqual(FULL);
       expect(r.full).toBeLessThanOrEqual(r.shell);  // full EXIT ≤ shell EXIT 순서 보존
     }
+  });
+});
+
+describe('canDemoteByCooldown — 배후 강등 쿨다운 판정(재강등 스래싱 억제)', () => {
+  // world.js 실상수: DEMOTE_COOLDOWN_MS=500. 헤드리스 계측으로는 쿨다운 창을 재현할 수 없어
+  // (swiftshader RAF가 JS 스레드를 점유해 150ms 요청이 실제 1.4~2.8s로 벌어짐) 상수로 증명한다.
+  const CD = 500;
+
+  it('쿨다운 창 안(경과 < 500ms)에서는 재강등을 거부한다', () => {
+    expect(canDemoteByCooldown(1000, 1000, CD)).toBe(false); // 경과 0ms — 같은 프레임 재강등
+    expect(canDemoteByCooldown(1000, 1001, CD)).toBe(false); // 경과 1ms
+    expect(canDemoteByCooldown(1000, 1250, CD)).toBe(false); // 경과 250ms — 창 절반
+    expect(canDemoteByCooldown(1000, 1499, CD)).toBe(false); // 경과 499ms — 창 직전
+  });
+
+  it('쿨다운 창 경과 후(경과 > 500ms)에는 재강등을 허용한다', () => {
+    expect(canDemoteByCooldown(1000, 1501, CD)).toBe(true);  // 경과 501ms — 창 직후
+    expect(canDemoteByCooldown(1000, 2000, CD)).toBe(true);  // 경과 1000ms
+    expect(canDemoteByCooldown(0, 60000, CD)).toBe(true);    // 장시간 경과
+  });
+
+  it('경계값(경과 === cooldownMs)은 허용 — 원식 `< cooldownMs`(거부)의 부정이므로 `>=`', () => {
+    expect(canDemoteByCooldown(1000, 1500, CD)).toBe(true);  // 경과 정확히 500ms
+    expect(canDemoteByCooldown(0, CD, CD)).toBe(true);        // t0=0 기준 경계
+    // 경계 직전/직후와 함께 세 점을 붙여 `<`(거부)→`>=`(허용) 전이 지점을 고정한다.
+    expect(canDemoteByCooldown(1000, 1499.999, CD)).toBe(false);
+    expect(canDemoteByCooldown(1000, 1500.001, CD)).toBe(true);
+  });
+
+  it('lastAt 부재(undefined = 한 번도 강등 안 된 파셀)는 항상 허용', () => {
+    expect(canDemoteByCooldown(undefined, 0, CD)).toBe(true);
+    expect(canDemoteByCooldown(undefined, 1000, CD)).toBe(true);
+    // Map.get 미스가 곧 undefined — parcelDemoteAt에 기록이 없으면 억제할 근거가 없다.
+    expect(canDemoteByCooldown(new Map().get('0,0'), 1000, CD)).toBe(true);
   });
 });
