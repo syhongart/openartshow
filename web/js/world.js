@@ -115,47 +115,21 @@ function makeEnvMap(renderer, isWebGPU) {
   }
 }
 
-// ── [수관 그림자] 나무 발치 가짜 접지 그림자 지오 — 치비 blob(avatar.js attachBlobShadow)과
-// 동일 원리: 텍스처 없는 CircleGeometry + 버텍스컬러 방사형 알파(SwiftShader 실측 — 캔버스
-// 텍스처는 저사양에서 안 그려져 이 경로가 저사양 호환의 핵심, 반드시 유지). 감독 지시(실기기
-// 관찰): 나무 실시간 그림자를 끄고 이 가짜 그림자로 대체한다. 치비(반경 0.5)보다 넓고(수관 폭)
-// 옅게(치비 중심알파 0.78 대비 낮음) + 완만한 페더(지수 1.5 감쇠)로 "수관 그림자다움"을 낸다.
+// ── [나무 pit] 나무 발치 실제 조경 지물(흙 + 테라코타 벽돌 링) 지오 — 예전 "가짜 접지 그림자"
+// (MultiplyBlending 버텍스컬러 blob)를 대체한다. 감독 확정(2026-07-25): 조명·시간대에 반응하는
+// 그림자 흉내 대신, 도시 가로수 밑동에 실제로 있는 흙+벽돌 마감을 정적 지물로 배치 — 재질이 항상
+// 켜져 있는 지물이라 "야간엔 그림자가 없어야 자연스럽다"는 전제 자체가 사라지고, 그 전제 위에 있던
+// 낮/밤 토글·MultiplyBlending 야간역전·fog 믹스 회귀 같은 상태-의존 버그 클래스가 통째로 제거된다.
 // 순수 함수(THREE만 참조) — world.js buildStreet가 파셀별로 호출해 병합(mergeGeometries)한다.
-// [야간 역전 버그 수정 — 감독 실기기 神모드 스크린샷] 기존 NormalBlending + 고정 어두운색·알파 그라디언트는
-// "배경에 색을 알파 덧칠"하는 방식이라, 배경(지면)이 blob 고정색보다 더 어두워지는 야간에는 blob이 배경보다
-// 밝아져 "빛나는 연두색 원판"으로 역전되는 근본 결함이 있었다. MultiplyBlending(result = src.rgb × dst.rgb)으로
-// 전환해 "배경을 곱셈으로 어둡게" 하는 진짜 그림자 방식으로 바꾼다 — 배경이 얼마나 어둡든 곱셈은 항상 그보다
-// 어둡게만 만들어 낮/밤 역전이 구조적으로 불가능하다. MultiplyBlending은 알파를 쓰지 않고 rgb 명도만으로
-// 농도를 표현하므로, 버텍스컬러를 "알파 그라디언트"에서 "rgb 명도 그라디언트"로 변경(중심 회색 0.45=55%
-// 어둡게 → 가장자리 흰색 1.0=무변화).
-// [감독 실기기 神모드 야간 스크린샷 후속 — cycle2] MultiplyBlending 전환(위 커밋)으로 낮/밤 역전은
-// 잡혔으나, 새 문제: 밝은 램프 조명 잔디(dst 밝음) × 중심 shade 0.45(55% 암화)가 대비를 과하게
-// 키워 "진한 검은 타원"으로 도드라짐. 중심 shade를 0.45→0.65(55%→35% 암화)로 완화해 농도를 낮추고,
-// 반경도 1.6→1.4로 소폭 축소해 원경에서 뭉쳐 보이는 인상을 줄인다. 예시(밝은 잔디 dst=0.85):
-// 기존 0.45×0.85=0.3825(대비 0.4675) → 신규 0.65×0.85=0.5525(대비 0.2975), 약 36% 완화.
-// 낮에는 배경이 전반적으로 더 밝아 절대 대비가 더 크게 나올 수 있으나(예: dst=0.95 → 0.6175, 대비
-// 0.3325) 여전히 기존 야간 대비(0.4675)보다 낮아 낮/밤 어느 쪽도 과하지 않은 균형점이다.
-// 원경 페이드는 별도 과제로 남긴다 — treeBlob은 fog:true(기본값)라 이론상 fog 믹스가 걸리지만,
-// MultiplyBlending은 fog로 믹스된 색을 그대로 배경에 곱하므로(가산이 아님) 결과가 흰색(무변화)으로
-// 수렴하지 않고, 야간 fogColor(0x3d4762 등, 흰색과 거리 멀음)로는 그림자가 "옅어져 사라지는" 효과를
-// 내지 못한다. 버텍스별 카메라거리 알파 감쇠는 파셀 병합 구조상 비용 대비 이득이 낮아 이번 조정에서는
-// 보류(무리한 구현 금지 — 요구사항 2순위).
-const TREE_BLOB_RADIUS = 1.4; // 1.6→1.4: 원경에서 뭉쳐 보이는 인상 완화(trunkLen 2.6·leafScale 0.85 캐노피 폭 육안 대응 유지 범위)
-function makeTreeBlobGeo(wx, wz) {
+// 지오는 CircleGeometry(1,20) 그대로 재사용(정점 수 무변화) — 색·질감은 전부 아래 makeTreePitTex()
+// 캔버스 텍스처(흙 베이스 + 벽돌 링, makeGroundTex 절차생성 패턴 재사용)가 담당하므로 버텍스컬러
+// 루프가 필요 없다.
+const PIT_RADIUS = 0.65; // 트렁크 충돌 반경 0.25(아래 solids.push ex/ez)의 약 2.6배 — 실제 tree pit 비례(흙 구역+벽돌 링 1개 폭)
+function makeTreePitGeo(wx, wz) {
   const geo = new THREE.CircleGeometry(1, 20); // 원경 소품 — 24→20 세그로 정점 절감(육안 무차이)
-  const pos = geo.attributes.position;
-  const rgba = new Float32Array(pos.count * 4);
-  for (let i = 0; i < pos.count; i++) {
-    const r = Math.min(1, Math.hypot(pos.getX(i), pos.getY(i)));
-    const t = Math.pow(1 - r, 1.5); // 중심 1(그림자 최대) → 가장자리 0(그림자 없음), 완만한 페더(기존과 동일 곡선)
-    const shade = 1 - 0.15 * t; // 중심 0.85(배경을 15%만 어둡게 곱함) → 가장자리 1.0(무변화). 0.35→0.15(감독 "훨씬 옅게 은은하게" — 있는 듯 마는 듯한 접지감만)
-    rgba[i * 4 + 0] = shade; rgba[i * 4 + 1] = shade; rgba[i * 4 + 2] = shade; // 무채색 곱셈 — 색조는 배경(지면) 색이 그대로 유지, 명도만 낮춤
-    rgba[i * 4 + 3] = 1; // MultiplyBlending은 알파를 블렌딩에 쓰지 않음(dst *= src.rgb) — 항상 1
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(rgba, 4));
-  geo.scale(TREE_BLOB_RADIUS, TREE_BLOB_RADIUS, 1); // 회전 전(XY 평면) 스케일 = 반경 적용
-  geo.rotateX(-Math.PI / 2);                        // 바닥에 눕힘(치비 blob과 동일 컨벤션)
-  geo.translate(wx, 0.015, wz);                     // 월드 좌표로 베이크(아바타 blob 0.02보다 살짝 낮게 — 겹칠 때 아바타 그림자 우선)
+  geo.scale(PIT_RADIUS, PIT_RADIUS, 1); // 회전 전(XY 평면) 스케일 = 반경 적용
+  geo.rotateX(-Math.PI / 2);            // 바닥에 눕힘(치비 blob과 동일 컨벤션)
+  geo.translate(wx, 0.015, wz);         // 월드 좌표로 베이크(아바타 blob 0.02보다 살짝 낮게 — 겹칠 때 아바타 그림자 우선), z-fight 방지 y오프셋
   return geo;
 }
 
@@ -494,6 +468,41 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     mat.map = t.map; mat.normalMap = t.normalMap; mat.normalScale = new THREE.Vector2(ns, ns); mat.needsUpdate = true;
   }
 
+  // [나무 pit] 흙+테라코타 벽돌 링 텍스처 — makeGroundTex와 동일한 캔버스 절차생성 패턴(자기완결,
+  // 외부 에셋 0)이되, 이건 반복 타일링(RepeatWrapping)이 아니라 나무 1그루당 1:1 데칼이라 makeGroundTex의
+  // seamless tile() 헬퍼는 불요(훨씬 단순). createWorld 호출 1회당 1장만 생성해 T.treePit이 전 파셀 공유
+  // (드로우콜·텍스처 메모리 영향 무시 가능 — S=64/128 소형, 공유 1장).
+  // 방사형 구성(중심=나무 밑동, CircleGeometry 기본 UV가 이미 중심(0.5,0.5)·반경 0.5 원형이라 왜곡 없이 정합):
+  //   0~80%  흙 베이스(#4a3a2c, 수피 #6b5138보다 어둡게) + 클럼프 얼룩(뿌리 주변 멀칭 느낌)
+  //   80~82% 모르타르 경계선(어두운 얇은 원)
+  //   82~100% 테라코타 벽돌 링(#9a5b43계, 화분 테라코타 0x9a5b43과 팔레트 통일) — 조각별 2톤 교대로 조적감
+  function makeTreePitTex() {
+    if (typeof document === 'undefined') return null;
+    const S = gpuInfo.soft ? 64 : 128; // 근접 시에만 보이는 소품 — 지면 타일(128/256)보다 더 작게
+    const c = document.createElement('canvas'); c.width = c.height = S;
+    const ctx = c.getContext('2d'); if (!ctx) return null;
+    const cx = S / 2, cy = S / 2, R = S / 2;
+    let seed = 0xC0FFEE | 0;
+    const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    ctx.fillStyle = '#4a3a2c'; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill(); // 흙 베이스(원 밖은 투명 — 벽돌 링이 덮음)
+    for (let i = 0; i < 10; i++) { // 흙 클럼프(적은 개수 — 소형 텍스처·근접 소품이라 지면 얼룩보다 성글게)
+      const rr = rnd() * R * 0.72, ang = rnd() * Math.PI * 2, x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
+      ctx.fillStyle = rnd() < 0.5 ? 'rgba(58,44,32,0.35)' : 'rgba(90,70,50,0.3)';
+      ctx.beginPath(); ctx.arc(x, y, S * (0.05 + rnd() * 0.07), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(35,30,26,0.6)'; ctx.lineWidth = S * 0.02; // 흙/벽돌 경계 모르타르 선
+    ctx.beginPath(); ctx.arc(cx, cy, R * 0.80, 0, Math.PI * 2); ctx.stroke();
+    const nBricks = 11; // 벽돌 링 — 조각별 2톤 교대(교대 색만으로 조적감, 실제 사진 텍스처 아님)
+    for (let i = 0; i < nBricks; i++) {
+      const a0 = (i / nBricks) * Math.PI * 2, a1 = ((i + 0.86) / nBricks) * Math.PI * 2; // 0.86 = 조각 사이 얇은 틈(줄눈)
+      ctx.strokeStyle = i % 2 === 0 ? '#8a4d38' : '#9a5b43'; // 화분 테라코타(0x9a5b43)와 팔레트 통일 + 인접 조각 대비용 어두운 변형
+      ctx.lineWidth = R * 0.18; // 82~100% 대역 폭
+      ctx.beginPath(); ctx.arc(cx, cy, R * 0.91, a0, a1); ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
   // 지면·도로·물·다리 공유 재질(파셀 복제 방지) — dispose()에서 일괄 회수.
   const T = {
     // [타일링 저감] vertexColors=파셀별 지면 색 미세 변주(대면적 통짜 반복 은폐). 재질 공유·드로우콜 불변.
@@ -520,15 +529,12 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     lantern: new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffe08a, emissiveIntensity: 1.4, roughness: 0.3, metalness: 0 }),
     // 회전 빛 = 발광 콘 메시(additive·depthWrite false) — 실제 THREE.Light 0(라이트 풀 개수 불변 원칙 계승, 재컴파일 0).
     beam: new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
-    // [수관 그림자] 나무 발치 가짜 접지 그림자 재질. MultiplyBlending(낮/밤 역전 버그 수정 — makeTreeBlobGeo
-    // 주석 참조)으로 배경을 곱셈으로만 어둡게 한다 — NormalBlending의 "고정색 알파 덧칠"과 달리 배경보다
-    // 밝아지는 경우가 구조적으로 없다. 파셀 전체 나무가 이 재질 하나를 공유(드로우콜 1/파셀).
-    treeBlob: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, fog: false, blending: THREE.MultiplyBlending }),
-    // ↑ [야간 검은 타원 근본 수정 — 총동원 조사] fog:false 필수. MeshBasicMaterial fog 기본 true라 야간
-    //   fogColor(0x3d4762≈0.24)가 three의 fog_fragment(블렌딩 직전 mix)에서 blob src를 눌러, MultiplyBlending이
-    //   지면을 ×0.24로 곱해 원경 나무를 강한 검은 타원으로 만들었다(shade 0.55→0.35→0.15 조정이 fog에 묻혀
-    //   무의미했던 진짜 원인). fog:false로 blob이 fog에 안 눌려 shade(중심 0.85=15%만 암화)가 실제로 먹는다.
-    //   스카이돔·등대빔이 이미 쓰는 검증 패턴. blob은 지면에 붙은 접지 그림자라 fog 페이드 불요(원경도 은은).
+    // [나무 pit] 나무 발치 실제 조경 지물(흙+테라코타 벽돌 링) 재질. 예전 treeBlob(MultiplyBlending
+    // 버텍스컬러 가짜 그림자)을 대체 — 이건 정적 지물이라 불투명(opaque)이면 충분하고, transparent·
+    // depthWrite:false·MultiplyBlending·fog:false 같은 "그림자처럼 보이게" 하던 블렌딩 트릭이 전부
+    // 불요해진다(그 트릭들이 낮/밤 역전·fog 믹스 회귀의 근원이었다 — makeTreePitGeo 주석 참조).
+    // 텍스처는 makeTreePitTex()(위)가 생성 — 파셀 전체 나무가 재질 하나(+텍스처 하나)를 공유(드로우콜 1/파셀).
+    treePit: new THREE.MeshBasicMaterial({ map: makeTreePitTex() }),
   };
   // [그래픽 1단계] 지면 절차 텍스처+노멀 주입 — repeat = 24m 셀 / 타일 미터(잔디 4m·모래 4m·광장 6m·도로 8m).
   // 도로 strip(24×2.5)은 폭 방향 왜곡이 있으나 아스팔트라 방향성 약해 무해(스크린샷 확인). 색은 텍스처가 대체.
@@ -614,7 +620,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const trees = street.filter((s) => s.kind === 'tree');
     if (trees.length) {
       const forest = new THREE.Group();
-      const blobGeos = []; // [수관 그림자] 파셀 내 나무 발치 가짜 그림자 지오(월드좌표 베이크) — 아래서 병합
+      const pitGeos = []; // [나무 pit] 파셀 내 나무 발치 흙+벽돌 링 지오(월드좌표 베이크) — 아래서 병합
       trees.forEach((s, i) => {
         // 외형·회전 시드 결정론(파셀 오프셋 ⊕ 인덱스) — 모든 방문자 동일 세계(무저장 규율).
         const tseed = (((ox * 73856093) ^ (oz * 19349663) ^ ((i + 1) * 83492791)) >>> 0);
@@ -623,7 +629,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         dt.rotation.y = (tseed % 6283) / 1000; // 0~2π 결정론
         forest.add(dt);
         solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.25, ez: 0.25, bottom: 0, top: 2.0 }); // 줄기 충돌
-        blobGeos.push(makeTreeBlobGeo(ox + s.x, oz + s.z)); // 발치 가짜 그림자(월드좌표)
+        pitGeos.push(makeTreePitGeo(ox + s.x, oz + s.z)); // 발치 흙+벽돌 링(월드좌표)
       });
       // 드로우콜 절감: 파셀 내 잎(알파 재질)을 단일 참조로 통일 → bakeGroupByMaterial의 잎 버킷
       // 3→1(파셀당 나무 = 수피 1 + 잎 1). 파셀 간·나무 간 형태 다양성은 시드로 유지되고, 잎 색 변주만
@@ -639,17 +645,16 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       for (const m of bakeGroupByMaterial(forest)) {
         // [감독 지시] 나무 실시간 그림자 off — bakeGroupByMaterial은 수피(bark, alphaTest 없음)에
         // castShadow=true를 매긴다(scene-trees.ts는 미술관과 공용이라 무수정, 여기서만 오버라이드).
-        // 대신 아래 blobGeos(치비 blob 방식 가짜 그림자)가 접지 음영을 대체한다.
+        // 대신 아래 pitGeos(흙+벽돌 링 tree pit)가 접지 마감을 대체한다.
         m.castShadow = false;
         group.add(m); meshes.push(m); own.push(m.geometry); // 병합 지오 = 파셀 소유(언로드 dispose)
       }
-      // [수관 그림자] 파셀 내 전 그루 blob을 1메시로 병합(드로우콜 1, 나무 병합과 동형 패턴).
-      // 공유 재질 T.treeBlob(vertexColors·transparent·depthWrite:false, 텍스처 없음 — SwiftShader 호환).
-      const merged = blobGeos.length > 1 ? mergeGeometries(blobGeos) : blobGeos[0];
-      if (blobGeos.length > 1) blobGeos.forEach((g) => g.dispose()); // 병합본만 유지 — 클론 회수
-      const bm = new THREE.Mesh(merged, T.treeBlob);
-      bm.renderOrder = 1; // 아바타 blob(avatar.js)과 동일 관례 — 반투명 오버드로우 정렬
-      group.add(bm); meshes.push(bm); own.push(merged); // 병합 지오 = 파셀 소유(언로드 dispose)
+      // [나무 pit] 파셀 내 전 그루 pit을 1메시로 병합(드로우콜 1, 나무 병합과 동형 패턴).
+      // 공유 재질 T.treePit(불투명 MeshBasicMaterial+map — 더 이상 블렌딩·야간 토글 불요).
+      const merged = pitGeos.length > 1 ? mergeGeometries(pitGeos) : pitGeos[0];
+      if (pitGeos.length > 1) pitGeos.forEach((g) => g.dispose()); // 병합본만 유지 — 클론 회수
+      const bm = new THREE.Mesh(merged, T.treePit);
+      group.add(bm); meshes.push(bm); own.push(merged); // 병합 지오 = 파셀 소유(언로드 dispose). renderOrder 불요(불투명, 정렬 무관)
     }
     // [드로우콜 절감] 가로등·벤치·화분은 공유 재질(SG·T)인데도 소품마다 개별 Mesh였다. 나무·부두·테트라포드와
     // 동일하게 재질별로 지오를 클론해 위치·회전을 베이크(clone→rotateY→translate = Mesh의 T·R·geo와 동치)한 뒤
@@ -1624,19 +1629,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       scene.fog.far += (tf - scene.fog.far) * fk;
     }
     if (skySystem) skySystem.update(d); // [하늘 엔진] 크로스페이드·강수·오로라·번개 진행(조명·clearColor 갱신)
-    // [수관 그림자 야간 오프 — 감독 지시] 야간엔 나무 발치 접지 그림자(단색 원판)를 끈다. 밤엔 실제로도
-    // 태양광이 없어 그림자가 사라지는 게 자연스럽고, 어두운 지면 위에서 단색 판이 거슬리는 문제(근본)도
-    // 함께 사라진다. 공유 재질 vertexColors 토글 한 번으로 전 파셀 blob 일괄 제어 — night이면 vColor(중심
-    // 0.85) 무시하고 matColor(기본 흰색)만 곱해 MultiplyBlending이 무변화(dst×1=그림자 0)가 된다. day/sunset은
-    // 접지감 유지. userData 캐시로 time 전환 시 1회만 needsUpdate(셰이더 재컴파일) — 매프레임 비용 0.
-    if (skySystem) {
-      const night = skySystem.get().time === 'night';
-      if (T.treeBlob.userData._night !== night) {
-        T.treeBlob.userData._night = night;
-        T.treeBlob.vertexColors = !night;
-        T.treeBlob.needsUpdate = true;
-      }
-    }
+    // [나무 pit] 예전엔 여기서 야간에 T.treeBlob의 vertexColors를 꺼 접지 그림자를 숨겼다(감독 지시).
+    // pit은 조명·시간대와 무관한 정적 조경 지물(흙+벽돌 링)이라 그 토글 자체가 불필요해져 제거됨 —
+    // world-boot.js 기본 하늘이 야간(night/clear)이라 이 토글이 "항상 꺼짐"으로 굳어 있던 것이
+    // 오늘 사건("나무 그림자가 없다")의 실제 원인이었다(주간에도 옅어서 이중으로 안 보이긴 했음).
     // [팝인 완화 — 조명 페이드업] 라이트풀 intensity를 목표(_target)로 lerp. 갓 배정된 스포트(intensity 0)는
     // 목표23/18로 부드럽게 켜지고, 미사용/반납(_target 0)은 이미 0이라 무변. 개수·visible 불변(재컴파일 0).
     for (const sl of lightPool) sl.intensity += (sl._target - sl.intensity) * Math.min(1, d * FADE_K);
@@ -1852,7 +1848,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       scene.remove(sea); seaGeo.dispose();
       if (T.water.map) T.water.map.dispose(); // 물결 텍스처(재질 dispose는 map 미회수)
       // [그래픽 1단계] 지면 절차 텍스처+노멀 회수(재질 dispose는 map/normalMap 미회수) — 공유 1장씩이라 여기서 일괄.
-      for (const k of ['grass', 'plaza', 'road', 'sand', 'bridge']) { if (T[k].map) T[k].map.dispose(); if (T[k].normalMap) T[k].normalMap.dispose(); }
+      for (const k of ['grass', 'plaza', 'road', 'sand', 'bridge', 'treePit']) { if (T[k].map) T[k].map.dispose(); if (T[k].normalMap) T[k].normalMap.dispose(); } // treePit: makeTreePitTex CanvasTexture 회수(재질 dispose는 map 미회수) — createWorld 재호출 누수 방지
       for (const key3 in SG) SG[key3].dispose(); // 거리 가구 공유 지오
       TETRA_GEO.dispose(); // [테트라포드] 공유 지오(InstancedMesh들이 참조 — 파셀 dispose는 instance 버퍼만 회수)
       for (const key2 in T) T[key2].dispose();
