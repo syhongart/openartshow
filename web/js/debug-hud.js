@@ -18,7 +18,7 @@ const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y
  * @param {object} world world.js가 반환한 월드 객체(공개 API만 사용)
  * @returns {{el:HTMLElement, getCsv:Function, getText:Function, dispose:Function}|undefined}
  */
-export function mountDebugHud(world) {
+export function mountDebugHud(world, opts) {
   if (typeof window === 'undefined' || typeof document === 'undefined' || !world) return;
   if (window.__debugHudMounted) return window.__debugHudMounted; // 중복 마운트 방지
 
@@ -68,9 +68,13 @@ export function mountDebugHud(world) {
   btnSave.type = 'button'; btnSave.textContent = '저장'; btnSave.style.cssText = btnCss;
   const btnClear = document.createElement('button');
   btnClear.type = 'button'; btnClear.textContent = '지움'; btnClear.style.cssText = btnCss;
+  // [고정 해제] HUD가 켠 상태로 계속 따라오므로(world-boot의 sticky), 주소를 고치지 않고 여기서 끌 수 있어야 한다.
+  const btnOff = document.createElement('button');
+  btnOff.type = 'button'; btnOff.textContent = '끄기';
+  btnOff.style.cssText = btnCss.replace('rgba(120,230,225,0.6)', 'rgba(230,150,150,0.6)').replace('#bfe3ec', '#f0c8c8');
   const hint = document.createElement('span');
   hint.style.cssText = 'font-size:10px;font-weight:700;opacity:0.9;color:#CFFFC0;';
-  bar.appendChild(btnCopy); bar.appendChild(btnSave); bar.appendChild(btnClear); bar.appendChild(hint);
+  bar.appendChild(btnCopy); bar.appendChild(btnSave); bar.appendChild(btnClear); bar.appendChild(btnOff); bar.appendChild(hint);
   el.appendChild(bar);
   (document.body || document.documentElement).appendChild(el);
 
@@ -140,7 +144,8 @@ export function mountDebugHud(world) {
 
   function buildCsv() { return CSV_HEADER + '\n' + rec.join('\n'); }
 
-  function flash(msg) { hint.textContent = msg; clearTimeout(flash._t); flash._t = setTimeout(render, 2000); }
+  // 복사·저장 결과는 화면을 보며 확인해야 하므로 종전 2초는 너무 짧았다(감독 지시) → 8초 유지.
+  function flash(msg) { hint.textContent = msg; clearTimeout(flash._t); flash._t = setTimeout(render, 8000); }
 
   // 클립보드 쓰기(보안컨텍스트 우선, execCommand·textarea 폴백 — perf HUD 패턴)
   async function clipboardWrite(txt) {
@@ -184,9 +189,19 @@ export function mountDebugHud(world) {
 
   function onClear() { rec.length = 0; flash('로그 지움'); }
 
+  // [끄기] sticky 기억(localStorage)을 지우고 오버레이를 즉시 제거 — 주소를 고치지 않고 끌 수 있어야 한다.
+  function onOff() {
+    try { if (opts && typeof opts.onOff === 'function') opts.onOff(); } catch (_) { /* 저장소 접근 불가 — 제거는 계속 */ }
+    if (raf) cancelAnimationFrame(raf);
+    clearTimeout(flash._t);
+    el.remove();
+    window.__debugHudMounted = null; // 재마운트(?debug=hud) 가능하게 해제
+  }
+
   btnCopy.addEventListener('click', onCopyLog);
   btnSave.addEventListener('click', onSaveLog);
   btnClear.addEventListener('click', onClear);
+  btnOff.addEventListener('click', onOff);
 
   function tick(now) {
     raf = requestAnimationFrame(tick);

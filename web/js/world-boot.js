@@ -115,8 +115,19 @@ try {
   console.error('[world-boot] createWorld failed:', err.message);
   throw err;
 }
-if (location.search.includes('debug=perf')) import('./debug-perf.js').then((m) => m.mountPerfHud(V.getRenderer(), 'world')); // ?debug=perf 게이트 뒤 동적 import(behind-flag) — 진입 즉시 프레임 계측(world.js 무접촉)
-if (location.search.includes('debug=hud')) import('./debug-hud.js').then((m) => m.mountDebugHud(V)); // ?debug=hud 게이트 뒤 동적 import(behind-flag) — 월드 상태(위치·LOD·fog·FPS) HUD + 복사(world.js 무접촉). 개발자 북마크용
+// [디버그 HUD 고정(sticky)] ?debug=hud|perf 는 그 한 페이지에서만 살아 있어, 성능을 보며 돌아다니면
+// 이동·새로고침마다 주소를 다시 고쳐야 했다(감독 지시로 개선). 한 번 켜면 localStorage에 남겨
+// 이후 쿼리 없이 들어와도 계속 뜬다. 끄기는 HUD의 '끄기' 버튼(또는 ?debug=off).
+// 방문자 노출 0 — 명시적으로 켠 브라우저에만 남고, 기본값은 종전대로 꺼짐.
+const DBG_KEY = 'oas.debugHud';
+const dbgQuery = new URLSearchParams(location.search).get('debug') || '';
+function dbgRead() { try { return localStorage.getItem(DBG_KEY) || ''; } catch (_) { return ''; } } // 프라이빗 모드 등 접근 불가 시 조용히 무시
+function dbgWrite(v) { try { v ? localStorage.setItem(DBG_KEY, v) : localStorage.removeItem(DBG_KEY); } catch (_) { /* 저장 불가면 이번 세션만 유효 */ } }
+if (dbgQuery === 'off') dbgWrite('');            // 명시적 끄기
+else if (dbgQuery) dbgWrite(dbgQuery);           // 켠 상태를 기억(hud / perf / hud,perf)
+const dbgOn = dbgQuery === 'off' ? '' : (dbgQuery || dbgRead()); // 이번 페이지에 적용할 값(쿼리 우선, 없으면 기억된 값)
+if (dbgOn.includes('perf')) import('./debug-perf.js').then((m) => m.mountPerfHud(V.getRenderer(), 'world')); // 동적 import(behind-flag) — 진입 즉시 프레임 계측(world.js 무접촉)
+if (dbgOn.includes('hud')) import('./debug-hud.js').then((m) => m.mountDebugHud(V, { onOff: () => dbgWrite('') })); // 월드 상태(위치·LOD·fog·FPS) HUD + 복사(world.js 무접촉)
 
 let playerCount = 1;
 V.on('players', (n) => { playerCount = n; });
