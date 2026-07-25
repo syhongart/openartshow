@@ -14,7 +14,7 @@ const SITE = 'OpenArtShow';
 const OUT = join(ROOT, 'devlog');
 
 // ---------- 파싱 ----------
-const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8');
+const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8').replace(/\r\n/g, '\n'); // CRLF 정규화 — Windows 워킹트리(w/crlf)에서도 `## ` 블록 파싱이 깨지지 않게(git 저장은 LF, CI는 LF라 무영향)
 const blocks = src.split(/\n(?=## )/);
 const entries = [];
 let pinCount = 0;
