@@ -35,3 +35,25 @@ export function isViewingSea(px, pz, yaw, w, h, wasSea) {
   if (onS) best = Math.max(best, fz * 1);  // 남쪽 (0,+1)
   return best >= (wasSea ? COS_EXIT : COS_ENTER);
 }
+
+// [시야 인지 스트리밍] "파셀이 플레이어 시야 뒤(배후)에 있는가" 판정. world.js updateStreaming의 EXIT
+// 반경 축소(배후 언로드)에 쓰인다. isViewingSea와 동형의 각도 히스테리시스 — 진입(정면→배후)은 엄격
+// (반각 135°), 유지(배후 상태 지속)는 완화(반각 100°)해 경계 시선 왕복 시 강등/승격 진동을 막는다.
+const COS_BEHIND_ENTER = Math.cos(135 * Math.PI / 180); // ≈ -0.7071 — 정면→배후 진입(엄격)
+const COS_BEHIND_EXIT = Math.cos(100 * Math.PI / 180);  // ≈ -0.1736 — 배후 유지(완화, 35° 데드존)
+
+/**
+ * 파셀이 플레이어 배후(시야 뒤)에 있는지 판정한다(각도 히스테리시스).
+ * @param {number} rx 파셀 중심 − 플레이어 x 성분
+ * @param {number} rz 파셀 중심 − 플레이어 z 성분
+ * @param {number} yaw 시선 yaw(rad, 0=-Z=북)
+ * @param {boolean} wasBehind 직전 배후 상태(히스테리시스용)
+ * @returns {boolean} 배후면 true
+ */
+export function isBehind(rx, rz, yaw, wasBehind) {
+  const dist = Math.hypot(rx, rz);
+  if (dist < 1e-6) return !!wasBehind; // 파셀 중심과 겹침(내적 무의미) → 직전 상태 유지
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw); // 전방벡터(world.js 관례)
+  const dot = (rx * fx + rz * fz) / dist;         // 정규화 내적(전방과의 코사인)
+  return dot <= (wasBehind ? COS_BEHIND_EXIT : COS_BEHIND_ENTER);
+}

@@ -1,7 +1,7 @@
 // fog-view.js 순수 판정 단위테스트 — 바다 원경 응시(경계 셀 + 시선 내적 + 히스테리시스).
 // 좌표 관례: yaw=0 = -Z(북). fwd=(-sin yaw, -cos yaw). 바깥 법선 W(-1,0)/E(+1,0)/N(0,-1)/S(0,+1).
 import { describe, it, expect } from 'vitest';
-import { isViewingSea } from '../web/js/fog-view.js';
+import { isViewingSea, isBehind } from '../web/js/fog-view.js';
 
 const W = 10, H = 10;
 const D2R = Math.PI / 180;
@@ -36,5 +36,24 @@ describe('isViewingSea — 바다 원경 응시 판정', () => {
 
   it('코너 셀(0,0): 북서 대각(yaw=45°) 응시→true(두 법선 중 max)', () => {
     expect(isViewingSea(0, 0, 45 * D2R, W, H, false)).toBe(true); // W·N 둘 다 dot≈0.707 = 진입 임계
+  });
+});
+
+describe('isBehind — 배후 파셀 판정(각도 히스테리시스)', () => {
+  it('yaw=0(전방 -Z): 정남(+Z) 파셀은 배후 true, 정북(-Z)은 false', () => {
+    expect(isBehind(0, 10, 0, false)).toBe(true);   // 파셀방향(0,+1) · fwd(0,-1) dot=-1 ≤ -0.707
+    expect(isBehind(0, -10, 0, false)).toBe(false); // 정북 dot=+1
+  });
+  it('측면 파셀(dot=0)은 배후 아님', () => {
+    expect(isBehind(10, 0, 0, false)).toBe(false); // 정동 dot=0 > -0.707
+  });
+  it('히스테리시스: 반각 120°(dot=-0.5)는 wasBehind에 따라 갈림', () => {
+    const rx = Math.sqrt(75), rz = 5; // fwd(0,-1)과 120°, dot=-0.5
+    expect(isBehind(rx, rz, 0, false)).toBe(false); // 진입 임계 -0.707 미달(덜 배후)
+    expect(isBehind(rx, rz, 0, true)).toBe(true);   // 유지 임계 -0.174 통과(데드존 안)
+  });
+  it('중심 겹침(dist≈0)은 직전 상태 유지', () => {
+    expect(isBehind(0, 0, 0, true)).toBe(true);
+    expect(isBehind(0, 0, 0, false)).toBe(false);
   });
 });

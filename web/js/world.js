@@ -41,7 +41,7 @@ import { MultiplayerManager } from './multiplayer.js';
 // [하늘 엔진] 승인된 독립 모듈(sky.js) — sun/hemi/sky 돔을 주입해 시간대·날씨·이벤트 연출.
 // 배선은 3접점(생성·update·getSunDir 태양방위)만, sky.js가 조명·fog·clearColor·크로스페이드를 자기소유로 제어.
 import { createSkySystem } from './sky.js';
-import { isViewingSea } from './fog-view.js'; // [바다 조망 fog] 경계 셀+시선 → 바다 원경 응시 판정(순수 함수)
+import { isViewingSea, isBehind } from './fog-view.js'; // [바다 조망 fog] 경계 셀+시선 판정 / [시야 인지 스트리밍] 배후 파셀 판정(순수 함수)
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;         // 이동 속도(m/s)
@@ -1061,6 +1061,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const L = loaded.get(k); if (!L) return;
     disposeCtx(L);
     loaded.delete(k);
+    parcelBehind.delete(k); parcelDemoteAt.delete(k); // [시야 인지] 배후/쿨다운 상태도 함께 정리(누수 방지)
     if (!disposed) requestShadowBake(); // [섀도 프리즈] 파셀 언로드도 씬 변화 → 재베이크(일괄 정리 중엔 불필요)
   }
 
@@ -1203,6 +1204,14 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const STREAM_SHELL_ENTER = CELL_MAX * 1.55;  // shell 진입 반경(=현행)
   const STREAM_SHELL_EXIT  = CELL_MAX * 1.75;  // shell 유지 반경(이 밖이면 unload)
   const STREAM_LOOKAHEAD = CELL_MAX * 0.5; // 이동 시 판정 원 중심 전진 거리(선행 로드)
+  // [시야 인지 스트리밍] 배후(시야 뒤) 파셀은 EXIT 반경만 0.75배로 축소해 더 일찍 강등/언로드한다.
+  // ENTER(FULL/SHELL_ENTER)는 절대 불변 — 과거 "왼쪽 이동 시 오른쪽 파셀 LOD 강등" 회귀 발생 지점이라 그대로 둔다.
+  const FULL_EXIT_BEHIND  = STREAM_FULL_EXIT * 0.75;  // 배후 파셀 full 유지 반경(이 밖 배후면 shell 강등)
+  const SHELL_EXIT_BEHIND = STREAM_SHELL_EXIT * 0.75; // 배후 파셀 shell 유지 반경(이 밖 배후면 unload)
+  const DEMOTE_COOLDOWN_MS = 500; // 배후 강등 후 이 시간 내 같은 파셀 재강등 억제(스래싱 방지, 승격측 PROMOTE_COOLDOWN과 대칭)
+  const MAX_DEMOTE_PER_FRAME = 1; // 180° 급회전으로 다수 파셀이 동시 배후여도 프레임당 1개만 강등(급락 방지)
+  const parcelBehind = new Map();   // key→bool: 파셀별 직전 배후상태(isBehind 히스테리시스용)
+  const parcelDemoteAt = new Map(); // key→ms: 배후 강등 실행 시각(재강등 쿨다운 판정)
   // [SSOT] updateStreaming이 계산한 최신 want 판정을 캐시 — processLoadQueue가 "동일" 기준으로 큐를
   // 소진하도록 일원화한다. (예전엔 processLoadQueue가 currentParcel 3×3 맨해튼으로 독자 재계산해,
   // look-ahead로 앞쪽 파셀을 full로 큐잉해도 큐 처리 단계에서 판정 불일치로 빌드 없이 폐기 → 선행
@@ -1254,6 +1263,17 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const cpx = Math.round(cxw / CELLX), cpz = Math.round(czw / CELLZ);
     const reach = Math.ceil(STREAM_SHELL_EXIT / CELL_MAX) + 1; // 반경 커버 격자 후보 범위(해제 반경 기준, look-ahead는 cpx에 이미 반영)
     const want = new Map();
+    // [시야 인지 스트리밍] 배후 강등 게이트 — 프레임예산(MAX_DEMOTE_PER_FRAME)+쿨다운(DEMOTE_COOLDOWN_MS)
+    // 통과 시에만 강등 실행. 승격측(MAX_INFLIGHT_FULL·PROMOTE_COOLDOWN)과 대칭으로 스래싱을 막는다.
+    let demoteBudget = MAX_DEMOTE_PER_FRAME;
+    const nowMs = perfNow();
+    const tryDemote = (k) => {
+      if (demoteBudget <= 0) return false;              // 프레임당 강등 상한(급회전 다수 배후 → 1개만)
+      const at = parcelDemoteAt.get(k);
+      if (at !== undefined && nowMs - at < DEMOTE_COOLDOWN_MS) return false; // 쿨다운 내 재강등 억제
+      demoteBudget--; parcelDemoteAt.set(k, nowMs);
+      return true;
+    };
     for (let dz = -reach; dz <= reach; dz++) for (let dx = -reach; dx <= reach; dx++) {
       const pxi = cpx + dx, pzi = cpz + dz;
       const k = keyOf(pxi, pzi);
@@ -1263,15 +1283,26 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       // [히스테리시스] 현재 tier(로드됨 or 큐 대기) 참조 — 이미 있는 파셀은 EXIT까지 유지, 미로드는 ENTER로 진입.
       let cur = loaded.get(k)?.lod;
       if (cur === undefined && queued.has(k)) { const j = loadQueue.find((q) => q.k === k); if (j) cur = j.lod; }
+      // [시야 인지] 배후 판정 — 플레이어 실제 위치(look-ahead cxw 아님)+시선 기준. EXIT에만 적용(ENTER 불변).
+      const bdx = pxi * CELLX - pos.x, bdz = pzi * CELLZ - pos.z;
+      const behindNow = isBehind(bdx, bdz, yaw, parcelBehind.get(k));
+      parcelBehind.set(k, behindNow);
       if (cur === 'full') {
-        if (dist <= STREAM_FULL_EXIT) want.set(k, 'full');
-        else if (dist <= STREAM_SHELL_EXIT) want.set(k, 'shell');
+        if (dist <= STREAM_FULL_EXIT) {
+          // 배후 + 축소 EXIT 밖 → shell 강등 시도(예산·쿨다운 게이트). 게이트 실패면 full 유지.
+          if (behindNow && dist > FULL_EXIT_BEHIND && tryDemote(k)) want.set(k, 'shell');
+          else want.set(k, 'full');
+        } else if (dist <= STREAM_SHELL_EXIT) want.set(k, 'shell');
       } else if (cur === 'shell') {
-        if (dist <= STREAM_FULL_ENTER) want.set(k, 'full');
-        else if (dist <= STREAM_SHELL_EXIT) want.set(k, 'shell');
+        if (dist <= STREAM_FULL_ENTER) want.set(k, 'full'); // ENTER 불변(승격 조건 그대로)
+        else if (dist <= STREAM_SHELL_EXIT) {
+          // 배후 + 축소 SHELL EXIT 밖 → want 미설정(=아래 unloadParcel). 게이트 실패면 shell 유지.
+          if (behindNow && dist > SHELL_EXIT_BEHIND && tryDemote(k)) { /* want 제외 → 언로드 */ }
+          else want.set(k, 'shell');
+        }
       } else {
-        if (dist <= STREAM_FULL_ENTER) want.set(k, 'full');
-        else if (dist <= STREAM_SHELL_ENTER) want.set(k, 'shell');
+        if (dist <= STREAM_FULL_ENTER) want.set(k, 'full');   // ENTER 불변
+        else if (dist <= STREAM_SHELL_ENTER) want.set(k, 'shell'); // ENTER 불변
       }
     }
     streamWant = want; // [일원화] processLoadQueue가 이 판정(원형+look-ahead)을 그대로 재사용 — 격자 맨해튼 재계산 금지
