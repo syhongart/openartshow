@@ -190,10 +190,15 @@
   }
 
   /* ------------------------------------------------------------------- cta */
+  /* [접근성] main landmark 안(.essay-main 마지막 자식)에 있다 — 폭·좌우 여백은 부모가 담당하므로
+     max-width·좌우 padding을 걷어냈다. 세로 여백은 부모 padding과 합산되는 만큼 상계한 값이다:
+     위 128 = main padding-bottom 40 + 종전 margin 88, 아래 56 = 종전 96 − main padding-bottom 40.
+     모바일 대응값은 아래 미디어쿼리에서 조정한다. 실측(1280/390) — 세로 간격·문서 높이는 종전과
+     픽셀 동일. 좌우는 데스크톱 동일(양쪽 clamp가 상한 48px에 걸림)이나 모바일에선 CTA가 3.9px
+     넓어진다(종전 자체 padding 6vw=23.4px → 부모 5vw=19.5px): 본문 섹션 좌우선과 정렬되는 방향. */
   .essay-cta {
-    margin: 88px auto 0;
-    max-width: 720px;
-    padding: 0 clamp(20px, 6vw, 48px) 96px;
+    margin: 128px 0 0;
+    padding: 0 0 56px;
     text-align: center;
   }
   .essay-cta p {
@@ -263,6 +268,9 @@
     .essay-main { padding: 48px clamp(16px, 5vw, 24px) 24px; }
     .essay-section { margin-bottom: 52px; }
     .essay-section + .essay-section { padding-top: 40px; }
+    /* main padding-bottom이 24px(위 .essay-main)이므로 상계값도 그만큼 달라진다 — 위 24+88=112,
+       아래 96−24=72. 세로 간격은 종전(main 밖) 모바일 렌더와 실측 픽셀 동일. */
+    .essay-cta { margin-top: 112px; padding-bottom: 72px; }
     .cta-row { flex-direction: column; align-items: stretch; }
     .btn { justify-content: center; }
   }
@@ -399,15 +407,15 @@
     <p>저희도 서비스를 계속 지켜야 운영을 이어갈 수 있습니다. 그래서 유료 플랜을 두지만, 그 비용은 어디까지나 더 오래, 더 안정적으로 이 창을 열어 두기 위한 것입니다. 작가는 저희의 고객이지, 상품이 아닙니다.</p>
   </section>
 
-</main>
-
-<div class="essay-cta">
-  <p>지금, 브라우저 하나로 시작할 수 있습니다.</p>
-  <div class="cta-row">
-    <a class="btn btn-coral" href="./app/">전시장 둘러보기</a>
-    <a class="btn btn-outline" href="./guide.html">이용 안내 보기</a>
+  <div class="essay-cta">
+    <p>지금, 브라우저 하나로 시작할 수 있습니다.</p>
+    <div class="cta-row">
+      <a class="btn btn-coral" href="./app/">전시장 둘러보기</a>
+      <a class="btn btn-outline" href="./guide.html">이용 안내 보기</a>
+    </div>
   </div>
-</div>
+
+</main>
 
 <footer>
   <a class="brand" href="./index.html"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
