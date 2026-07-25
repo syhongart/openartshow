@@ -1211,8 +1211,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // ENTER(FULL/SHELL_ENTER)는 절대 불변 — 과거 "왼쪽 이동 시 오른쪽 파셀 LOD 강등" 회귀 발생 지점이라 그대로 둔다.
   //
   // [fog 연동 하한 클램프] 축소 반경은 고정 ×0.75가 아니라 현재 fog.far로 클램프해 매 updateStreaming마다
-  // 산출한다(behindExitRadii, fog-view.js). 완전 소멸(SHELL→UNLOAD)이 항상 안개 안에서 일어나도록 보장하고,
-  // fog가 옅은 프리셋에선 상한(정상 EXIT)에 걸려 축소량이 0 = 변경 전 동작으로 자동 후퇴한다.
+  // 산출한다(behindExitRadii, fog-view.js). 완전 소멸(SHELL→UNLOAD)을 fog.far까지 끌어올리되 상한(정상 EXIT)을
+  // 넘지 않으므로 실제 보장은 shell >= min(fog.far, 42)다 — fog.far가 42를 넘는 프리셋(a: 45.6)에선 3.6m
+  // 미달하나 그 경우 축소량이 0이라 변경 전과 동일 거리에서 언로드되어 신규 노출은 없다(아래 표 참조).
   // 프리셋별 실산출(CELL_MAX=24 → STREAM_FULL_EXIT=31.2 / STREAM_SHELL_EXIT=42, 폴백 하한 23.4 / 31.5):
   //   ?lod  fog.far   shell(=min(42, max(31.5, far)))   full(=min(31.2, max(23.4, far*0.85)))
   //   d     28.8      31.5   (축소 온전)                24.48
