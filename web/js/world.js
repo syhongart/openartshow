@@ -124,7 +124,12 @@ function makeEnvMap(renderer, isWebGPU) {
 // 지오는 CircleGeometry(1,20) 그대로 재사용(정점 수 무변화) — 색·질감은 전부 아래 makeTreePitTex()
 // 캔버스 텍스처(흙 베이스 + 벽돌 링, makeGroundTex 절차생성 패턴 재사용)가 담당하므로 버텍스컬러
 // 루프가 필요 없다.
-const PIT_RADIUS = 0.65; // 트렁크 충돌 반경 0.25(아래 solids.push ex/ez)의 약 2.6배 — 실제 tree pit 비례(흙 구역+벽돌 링 1개 폭)
+const PIT_RADIUS = 1.3; // 0.65→1.3(감독 지시, 반경 2배). 인접 나무 간 최소 배치 간격 4m(world-gen.js genStreet)
+// 대비 지름 2.6m이라 pit-pit 겹침은 없음(최소 간극 1.4m, 헤드리스 전수 확인). 남/동 가로수 라인은 도로
+// 경계 0.95m 안쪽에 서 있어 pit 바깥 가장자리가 도로 쪽으로 균일하게 0.35m 걸치는데, 이는 모든 가로수
+// 공통(가로수 pit이 도로 경계에 걸치는 것 자체는 실제 스트리트도 흔함)이라 문제로 보지 않았다. 건물
+// 풋프린트와는 336그루 중 2그루만 실측 겹침(-0.014m 무시 가능 1건, -0.519m 실침범 1건 — px6,pz5 large
+// 풋프린트) — 0.6%라 "심함"은 아니라 판단해 감독 지시대로 1.3 그대로 적용, 해당 1건은 보고에 명시.
 function makeTreePitGeo(wx, wz) {
   const geo = new THREE.CircleGeometry(1, 20); // 원경 소품 — 24→20 세그로 정점 절감(육안 무차이)
   geo.scale(PIT_RADIUS, PIT_RADIUS, 1); // 회전 전(XY 평면) 스케일 = 반경 적용
@@ -473,9 +478,11 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // seamless tile() 헬퍼는 불요(훨씬 단순). createWorld 호출 1회당 1장만 생성해 T.treePit이 전 파셀 공유
   // (드로우콜·텍스처 메모리 영향 무시 가능 — S=64/128 소형, 공유 1장).
   // 방사형 구성(중심=나무 밑동, CircleGeometry 기본 UV가 이미 중심(0.5,0.5)·반경 0.5 원형이라 왜곡 없이 정합):
-  //   0~80%  흙 베이스(#4a3a2c, 수피 #6b5138보다 어둡게) + 클럼프 얼룩(뿌리 주변 멀칭 느낌)
+  //   0~80%  흙 베이스(#362c24, 어두운 회갈색 — 채도를 죽여 벽돌과 톤 조화) + 클럼프 얼룩(뿌리 주변 멀칭 느낌)
   //   80~82% 모르타르 경계선(어두운 얇은 원)
-  //   82~100% 테라코타 벽돌 링(#9a5b43계, 화분 테라코타 0x9a5b43과 팔레트 통일) — 조각별 2톤 교대로 조적감
+  //   82~100% 차분한 어두운 벽돌 링(#6e4736/#7c5240 — 쨍한 테라코타 대신 채도·명도를 낮춰 흙과 조화) 조각별 2톤 교대로 조적감
+  // [감독 확정 — 톤 조정] 최초 버전(흙 #4a3a2c·벽돌 #8a4d38/#9a5b43)이 배경 대비 과하게 쨍해 보여, 흙·벽돌
+  // 둘 다 채도↓명도↓로 재조정(팔레트 상대관계·대역 비율은 유지 — 값만 조정).
   function makeTreePitTex() {
     if (typeof document === 'undefined') return null;
     const S = gpuInfo.soft ? 64 : 128; // 근접 시에만 보이는 소품 — 지면 타일(128/256)보다 더 작게
@@ -484,18 +491,18 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const cx = S / 2, cy = S / 2, R = S / 2;
     let seed = 0xC0FFEE | 0;
     const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-    ctx.fillStyle = '#4a3a2c'; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill(); // 흙 베이스(원 밖은 투명 — 벽돌 링이 덮음)
+    ctx.fillStyle = '#362c24'; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill(); // 흙 베이스(원 밖은 투명 — 벽돌 링이 덮음)
     for (let i = 0; i < 10; i++) { // 흙 클럼프(적은 개수 — 소형 텍스처·근접 소품이라 지면 얼룩보다 성글게)
       const rr = rnd() * R * 0.72, ang = rnd() * Math.PI * 2, x = cx + Math.cos(ang) * rr, y = cy + Math.sin(ang) * rr;
-      ctx.fillStyle = rnd() < 0.5 ? 'rgba(58,44,32,0.35)' : 'rgba(90,70,50,0.3)';
+      ctx.fillStyle = rnd() < 0.5 ? 'rgba(46,38,32,0.35)' : 'rgba(64,54,44,0.3)';
       ctx.beginPath(); ctx.arc(x, y, S * (0.05 + rnd() * 0.07), 0, Math.PI * 2); ctx.fill();
     }
-    ctx.strokeStyle = 'rgba(35,30,26,0.6)'; ctx.lineWidth = S * 0.02; // 흙/벽돌 경계 모르타르 선
+    ctx.strokeStyle = 'rgba(24,20,17,0.65)'; ctx.lineWidth = S * 0.02; // 흙/벽돌 경계 모르타르 선
     ctx.beginPath(); ctx.arc(cx, cy, R * 0.80, 0, Math.PI * 2); ctx.stroke();
     const nBricks = 11; // 벽돌 링 — 조각별 2톤 교대(교대 색만으로 조적감, 실제 사진 텍스처 아님)
     for (let i = 0; i < nBricks; i++) {
       const a0 = (i / nBricks) * Math.PI * 2, a1 = ((i + 0.86) / nBricks) * Math.PI * 2; // 0.86 = 조각 사이 얇은 틈(줄눈)
-      ctx.strokeStyle = i % 2 === 0 ? '#8a4d38' : '#9a5b43'; // 화분 테라코타(0x9a5b43)와 팔레트 통일 + 인접 조각 대비용 어두운 변형
+      ctx.strokeStyle = i % 2 === 0 ? '#6e4736' : '#7c5240'; // 차분한 어두운 벽돌 2톤(팔레트 상대관계는 기존과 동일 — 값만 하향)
       ctx.lineWidth = R * 0.18; // 82~100% 대역 폭
       ctx.beginPath(); ctx.arc(cx, cy, R * 0.91, a0, a1); ctx.stroke();
     }
