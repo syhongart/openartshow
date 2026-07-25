@@ -1,6 +1,12 @@
 name: build-and-deploy
 on: { push: { branches: [main] }, workflow_dispatch: {} }
 permissions: { contents: write }
+# [동시성 게이트] gh-pages 배포는 항상 최신 커밋 1건만 반영한다. 큐에 밀린 옛 run이 뒤늦게
+# 실행돼 최신 배포를 덮거나(구버전 롤백), 두 run이 gh-pages에 동시 push해 한쪽이 rejected로
+# 실패하는 레이스를 차단 — 새 배포가 시작되면 진행 중·대기 중인 이전 배포를 자동 취소한다.
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-latest
