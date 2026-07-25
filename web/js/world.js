@@ -129,10 +129,32 @@ const PIT_RADIUS = 1.3; // 0.65→1.3(감독 지시, 반경 2배). 인접 나무
 // 경계 0.95m 안쪽에 서 있어 pit 바깥 가장자리가 도로 쪽으로 균일하게 0.35m 걸치는데, 이는 모든 가로수
 // 공통(가로수 pit이 도로 경계에 걸치는 것 자체는 실제 스트리트도 흔함)이라 문제로 보지 않았다. 건물
 // 풋프린트와는 336그루 중 2그루만 실측 겹침(-0.014m 무시 가능 1건, -0.519m 실침범 1건 — px6,pz5 large
-// 풋프린트) — 0.6%라 "심함"은 아니라 판단해 감독 지시대로 1.3 그대로 적용, 해당 1건은 보고에 명시.
-function makeTreePitGeo(wx, wz) {
+// 풋프린트) — 0.6%라 "심함"은 아니라 판단해 감독 지시대로 1.3 그대로 적용했고, 그 2그루는 이제 아래
+// treePitRadius가 개별 반경을 건물까지 거리로 클램프해 해소한다(전역 1.3은 그대로).
+/**
+ * 개별 나무의 pit 반경 — 전역 PIT_RADIUS를 인접 건물 풋프린트까지의 거리로 클램프한다.
+ * PIT_RADIUS(1.3, 감독 확정값)는 불변이고, 건물에 가까운 나무만 반경이 줄어든다. 336그루 중 실측
+ * 대상은 2그루(px6,pz5 large 풋프린트 -0.519m 실침범 + -0.014m 1건)로, 평면 데칼이 불투명 건물
+ * 볼륨 아래로 파고들어 벽 하단에 흙·벽돌이 비치는 것을 막는다. 나머지 334그루는 거리 ≥ 1.3이라 무변화.
+ * bld는 S0(beginParcel)이 spaceDims에서 산출한 축정렬 풋프린트 {cx,cz,hw,hd}(월드좌표) —
+ * genStreet의 safe()가 쓰는 bhw/bhd(fw/2, fd/2)와 같은 기준이라 마진 계산이 일관된다.
+ * @param {number} wx 나무 월드 x
+ * @param {number} wz 나무 월드 z
+ * @param {{cx:number,cz:number,hw:number,hd:number}|null} bld 파셀 건물 풋프린트(없으면 클램프 없음)
+ * @returns {number} 이 나무에 적용할 pit 반경
+ */
+function treePitRadius(wx, wz, bld) {
+  if (!bld) return PIT_RADIUS;
+  const gx = Math.max(0, Math.abs(wx - bld.cx) - bld.hw); // 축정렬 사각형 외부 간극(x 성분)
+  const gz = Math.max(0, Math.abs(wz - bld.cz) - bld.hd); // 같은(z 성분) — 둘 다 0이면 내부
+  // 하한 0.2: genStreet의 safe()가 건물+0.4+r(=0.75m) 이격을 강제하므로 실제로는 걸리지 않지만,
+  // def는 외부(world-boot) 주입이라 degenerate 지오(반경 0 → scale(0,0,1)) 방어를 남긴다.
+  return Math.max(0.2, Math.min(PIT_RADIUS, Math.hypot(gx, gz)));
+}
+
+function makeTreePitGeo(wx, wz, radius = PIT_RADIUS) {
   const geo = new THREE.CircleGeometry(1, 20); // 원경 소품 — 24→20 세그로 정점 절감(육안 무차이)
-  geo.scale(PIT_RADIUS, PIT_RADIUS, 1); // 회전 전(XY 평면) 스케일 = 반경 적용
+  geo.scale(radius, radius, 1); // 회전 전(XY 평면) 스케일 = 반경 적용(기본=전역 PIT_RADIUS)
   geo.rotateX(-Math.PI / 2);            // 바닥에 눕힘(치비 blob과 동일 컨벤션)
   geo.translate(wx, 0.015, wz);         // 월드 좌표로 베이크(아바타 blob 0.02보다 살짝 낮게 — 겹칠 때 아바타 그림자 우선), z-fight 방지 y오프셋
   return geo;
@@ -618,7 +640,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // 거리 가구 배치 배열(def.street) → 렌더 Mesh + solid AABB(같은 데이터 파생 = 렌더-물리 정합).
   // shellOnly(대각 임포스터) 파셀은 생략(원거리 draw call 절약). 반환: 회수 대상 Mesh 배열.
-  function buildStreet(street, group, ox, oz, solids, own) {
+  // bld: 이 파셀 건물의 축정렬 풋프린트 {cx,cz,hw,hd}(S0 산출, 건물 없으면 null) — 나무 pit 반경
+  // 클램프에만 쓴다(treePitRadius). 배치 좌표·solid는 종전대로 def.street에서만 파생한다.
+  function buildStreet(street, group, ox, oz, solids, own, bld) {
     const meshes = [];
     // 가로수 — 미술관과 동일한 디테일 트리(scene.js buildDetailedTree: 수피 텍스처 + 재귀 가지
     // + 알파 잎 클러스터). 나무당 부품이 많아 그대로 두면 드로우콜이 폭발하므로, 파셀의 전 그루를
@@ -636,7 +660,8 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         dt.rotation.y = (tseed % 6283) / 1000; // 0~2π 결정론
         forest.add(dt);
         solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.25, ez: 0.25, bottom: 0, top: 2.0 }); // 줄기 충돌
-        pitGeos.push(makeTreePitGeo(ox + s.x, oz + s.z)); // 발치 흙+벽돌 링(월드좌표)
+        // 발치 흙+벽돌 링(월드좌표). 반경은 인접 건물 침범을 피해 개별 클램프(전역 PIT_RADIUS 불변).
+        pitGeos.push(makeTreePitGeo(ox + s.x, oz + s.z, treePitRadius(ox + s.x, oz + s.z, bld)));
       });
       // 드로우콜 절감: 파셀 내 잎(알파 재질)을 단일 참조로 통일 → bakeGroupByMaterial의 잎 버킷
       // 3→1(파셀당 나무 = 수피 1 + 잎 1). 파셀 간·나무 간 형태 다양성은 시드로 유지되고, 잎 색 변주만
@@ -993,9 +1018,11 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
 
   function stageStreet(ctx) { // S2: 거리 가구·가로수(재귀 지오+병합=무거움) — solids·own에 additive append
-    const { def, shellOnly, ox, oz } = ctx;
+    const { def, shellOnly, ox, oz, bld } = ctx;
     if (shellOnly || !def.street || !def.street.length) return;
-    ctx.streetMeshes = buildStreet(def.street, ctx.group, ox, oz, ctx.solids, ctx.own);
+    // bld(S0 산출 풋프린트)를 넘겨 나무 pit 반경을 건물까지 거리로 클램프한다 — S0→S2 순서가 보장돼 있어
+    // 이 시점 ctx.bld는 항상 확정값이다(def.space 없는 파셀은 null → 클램프 없음 = 종전 동작).
+    ctx.streetMeshes = buildStreet(def.street, ctx.group, ox, oz, ctx.solids, ctx.own, bld);
     // [C2] 가구 캐스터(가로등·벤치·화분)의 섀도는 finalizeParcel 단일 베이크가 포착 — 스테이지 재베이크 제거
   }
 
