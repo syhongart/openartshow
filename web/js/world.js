@@ -1217,6 +1217,28 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const mvx = f * fx + r * rgx, mvz = f * fz + r * rgz;
     return (mvx * rx + mvz * rz) > 0 ? 5 : 0;
   }
+  // ── [원거리·배후 갱신 컷] CPU update의 NPC/walker 시뮬만 대상. 물리·지면판정(resolveGround·blocked·
+  // stepLighthouses)은 정확도 유지가 필수라 제외한다. 파셀 중심(ox/oz)−플레이어 벡터의 시선 내적 + 거리로,
+  // 원거리(STREAM_FULL_ENTER 밖)이면서 배후(내적<cos120°)인 파셀만 성기게 갱신한다. dirBonus/updateStreaming과
+  // 동일한 전방벡터 관례(fx=-sin yaw, fz=-cos yaw)를 재사용한다.
+  const COS_UPDATE_BEHIND = Math.cos(120 * Math.PI / 180); // ≈ -0.5. 이 밑(배후)이고 원거리면 스로틀 대상
+  const NPC_THROTTLE_N = 3; // 원거리·배후 파셀 갱신 주기 — N프레임당 1회만 갱신(나머지 프레임은 누적)
+  function parcelFarBehind(L) {
+    const rx = L.ox - pos.x, rz = L.oz - pos.z;
+    const dist = Math.hypot(rx, rz);
+    if (dist <= STREAM_FULL_ENTER) return false; // 근거리 → 항상 풀레이트(접근 중 지연 0 보장 — 매 프레임 재평가)
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    const dot = (rx * fx + rz * fz) / (dist || 1); // 정규화 내적(전방과의 코사인)
+    return dot < COS_UPDATE_BEHIND;
+  }
+  // 파셀별 위상(0~N-1) — 모든 원거리 파셀이 같은 프레임에 동시 스킵/갱신되어 스터터가 동기화되는 것을 방지.
+  function parcelPhase(px, pz) {
+    return (((px * 73856093) ^ (pz * 19349663)) >>> 0) % NPC_THROTTLE_N;
+  }
+  // 이번 프레임 이 파셀의 NPC/walker 시뮬을 스킵할지 — 원거리·배후 + 위상 불일치 프레임이면 true.
+  function throttleParcelSim(L) {
+    return parcelFarBehind(L) && ((parcelPhase(L.px, L.pz) + frameCount) % NPC_THROTTLE_N !== 0);
+  }
   // sync=true(스폰·텔레포트) 또는 헤드리스 기본(streamAsync 미설정)은 즉시 동기 로드. 그 외는 큐잉.
   function updateStreaming(sync = false) {
     // [스마트 LOD] 판정 원 중심 = 플레이어 실제 위치 + 이동방향 look-ahead(정지 시 lookahead=0 → pos).
@@ -1441,8 +1463,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     let spawnBudget = NPC_SPAWN_PER_FRAME; // 이 프레임 전체(모든 파셀 합산) 신규 아바타 생성 상한
     for (const L of loaded.values()) {
       if (!L.crowd) continue;
+      L._accD = (L._accD || 0) + d; // 경과시간 누적 — 스킵 프레임의 dt를 모아 다음 갱신에 통째로 넘긴다.
+      if (throttleParcelSim(L)) continue; // [원거리·배후 컷] 위상 불일치 프레임 스킵(누적은 유지, 접근 시 즉시 복귀).
+      // ★누적 dt 상한 클램프 — 성긴 갱신에서 dt가 수초로 커지면 NPC 순간이동/애니 점프("워프")가 난다. 0.1s로 클램프.
+      const stepDt = Math.min(L._accD, 0.1);
+      L._accD = 0;
       const humans = [{ x: pos.x, z: pos.z }]; // y 생략 → NpcCrowd 회피·인사 정상(단층)
-      const states = L.crowd.update(d, humans);
+      const states = L.crowd.update(stepDt, humans);
       for (const id in states) {
         const s = states[id];
         let a = L.avatars.get(id);
@@ -1454,10 +1481,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
           scene.add(inst.group); a = { inst }; L.avatars.set(id, a);
         } else {
           const dxm = s.x - a.inst.group.position.x, dzm = s.z - a.inst.group.position.z;
-          const spd = Math.hypot(dxm, dzm) / Math.max(1e-3, d);
+          const spd = Math.hypot(dxm, dzm) / Math.max(1e-3, stepDt);
           a.inst.group.position.set(s.x, 0, s.z);
           a.inst.group.rotation.y = s.ry;
-          a.inst.update(d, spd);
+          a.inst.update(stepDt, spd);
         }
       }
       let chat; while ((chat = L.crowd.takeChat())) emit('chat', chat);
@@ -1476,18 +1503,22 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   function stepWalkers(d) {
     for (const L of loaded.values()) {
       const w = L.walker; if (!w) continue;
+      L._accWD = (L._accWD || 0) + d; // 경과시간 누적(walker 전용 — stepNpcs의 _accD와 분리)
+      if (throttleParcelSim(L)) continue; // [원거리·배후 컷] 위상 불일치 프레임 스킵(누적 유지, 접근 시 즉시 복귀).
+      const wd = Math.min(L._accWD, 0.1); // ★누적 dt 상한 클램프 — 성긴 갱신 dt 폭주로 인한 순간이동 방지.
+      L._accWD = 0;
       if (w.state === 'pause') {
-        w.timer -= d; if (w.timer <= 0) { w.state = 'walk'; pickWalkerTarget(w); }
-        w.inst.update(d, 0); continue;
+        w.timer -= wd; if (w.timer <= 0) { w.state = 'walk'; pickWalkerTarget(w); }
+        w.inst.update(wd, 0); continue;
       }
       const dx = w.tx - w.x, dz = w.tz - w.z, dist = Math.hypot(dx, dz);
-      if (dist < 0.15) { w.state = 'pause'; w.timer = 1.4 + Math.random() * 2.6; w.inst.update(d, 0); continue; }
-      const step = Math.min(dist, w.speed * d);
+      if (dist < 0.15) { w.state = 'pause'; w.timer = 1.4 + Math.random() * 2.6; w.inst.update(wd, 0); continue; }
+      const step = Math.min(dist, w.speed * wd);
       w.x += (dx / dist) * step; w.z += (dz / dist) * step;
       w.ry = Math.atan2(-dx / dist, -dz / dist); // yaw=0 → -Z 관례
       w.inst.group.position.set(w.x, 0, w.z);
       w.inst.group.rotation.y = w.ry;
-      w.inst.update(d, w.speed);
+      w.inst.update(wd, w.speed);
     }
   }
 
@@ -1575,6 +1606,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   // ── RAF ──
   let raf = 0, last = 0, disposed = false, potatoAccum = 0, capAccum = 0;
+  let frameCount = 0; // [원거리·배후 컷] update마다 증가 — 파셀 위상(parcelPhase)과 합쳐 원거리 갱신 프레임을 분산(스터터 동기화 방지)
   let needsRender = false; // [C1] 비동기 텍스처 로드 완료 신호 — 강제 풀렌더(applyPose+베이크+render) 대신 더티플래그로 다음 프레임에 흡수(무예산 렌더 클러스터 제거). tex.needsUpdate는 이미 서 있어 다음 렌더에서 업로드됨.
   let bgAccum = 0, bgThrottle = false, bgHidden = false, bgBlurred = false; // [비가시 스로틀] 탭 hidden 또는 창 blur면 ~4fps 하드 캡(발열↓). 시뮬 dt는 누적 보존(정지 아님).
   function step(now) {
@@ -1621,6 +1653,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 물결 흐름 — map.offset 스크롤(잔잔하게). 강/바다 공용이라 한 곳만.
     // 감독 지시: 물결이 "옆으로" 흐르지 않게 — 무늬(가로 사인 줄)와 수직인 z방향으로만 전진.
     // 줄무늬가 앞으로 밀려오는 파도감 + 강(남북 열)은 순류 방향과 정합. x 스크롤은 제거.
+    frameCount++; // [원거리·배후 컷] 갱신 프레임 위상 카운터(parcelPhase와 합산)
     if (waterTex) { waterTex.offset.y = (waterTex.offset.y + 0.012 * d) % 1; }
     const f = kmov.fwd + tmov.fwd, r = kmov.right + tmov.right;
     if (f || r) walk(f, r, d);
