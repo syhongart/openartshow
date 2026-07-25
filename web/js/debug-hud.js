@@ -94,14 +94,16 @@ export function mountDebugHud(world, opts) {
     const pos = camera && camera.position ? camera.position : { x: 0, y: 0, z: 0 };
     const fog = scene && scene.fog ? scene.fog : null;
     const dpr = renderer && typeof renderer.getPixelRatio === 'function' ? renderer.getPixelRatio() : 0;
-    const rinfo = renderer && renderer.info ? renderer.info.render : null;
+    // draw는 renderer.info를 직접 읽지 않는다 — three r171의 render.calls는 "누적 render() 호출 횟수"로
+    // Info.reset() 대상 자체가 아니라 세션 내내 단조증가한다(실기기 CSV의 53→9825이 그 결과였다).
+    // 프레임당 실제 draw 수는 world.getStats().drawCalls(= render.drawCalls, reset 대상)가 이미 정합해 둔 값이다.
     return {
       fps, lod, shellFlat: !!s.shellFlat,
       px: p.px, pz: p.pz,
       posx: pos.x, posz: pos.z, y: pos.y, groundY: gy,
       yawDeg: yaw * 180 / Math.PI, pitchDeg: pitch * 180 / Math.PI,
       fogNear: fog ? fog.near : null, fogFar: fog ? fog.far : null,
-      dpr, draw: rinfo ? rinfo.calls : null,
+      dpr, draw: (s && typeof s.drawCalls === 'number') ? s.drawCalls : null,
       loadedFull: s.loadedFull, loadedShell: s.loadedShell, queue: s.queue,
       backend: s.backend || '?', // WebGPU/WebGL — 렌더러 백엔드(전환 실동작 확인용)
     };
