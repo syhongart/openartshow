@@ -95,9 +95,13 @@ export function createPhotoController(ctx: PhotoCtx) {
           const thumbCanvas = document.createElement('canvas');
           thumbCanvas.width = tw;
           thumbCanvas.height = th;
-          // @ts-expect-error 원본 무변경 보존: getContext('2d')는 CanvasRenderingContext2D|null이나
-          //   원본은 null 가드 없이 즉시 .drawImage 호출(진짜 결함 — 로직 수정 금지 조건이라 타입만 유예).
-          thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
+          // null 가드(타입 유예 지시자 소거) — getContext('2d')는 CanvasRenderingContext2D|null이다.
+          // 종전에는 가드 없이 즉시 .drawImage를 호출해 null이면 TypeError가 났는데, 그 예외는 이
+          // try가 잡아 아래 catch의 경고로 흘렀다. 명시적 throw로 바꿔도 같은 catch·같은 경고 경로라
+          // 관측 동작은 동일하고(썸네일만 생략, 캡처·공유 모달은 정상 진행) 실패 원인만 분명해진다.
+          const thumbCtx = thumbCanvas.getContext('2d');
+          if (!thumbCtx) throw new Error('썸네일 2D 컨텍스트를 얻지 못했습니다');
+          thumbCtx.drawImage(canvas, 0, 0, tw, th);
           const thumb = thumbCanvas.toDataURL('image/jpeg', 0.72);
           const item = photoWall.addLocal(getMyNickname(), getGalleryInfo() ? getGalleryInfo()!.name : '', thumb);
           if (item && getMp()) getMp()!.sendPhoto(item);

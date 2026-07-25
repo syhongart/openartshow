@@ -57,7 +57,9 @@ function createPhotoController(ctx) {
           const thumbCanvas = document.createElement("canvas");
           thumbCanvas.width = tw;
           thumbCanvas.height = th;
-          thumbCanvas.getContext("2d").drawImage(canvas, 0, 0, tw, th);
+          const thumbCtx = thumbCanvas.getContext("2d");
+          if (!thumbCtx) throw new Error("\uC378\uB124\uC77C 2D \uCEE8\uD14D\uC2A4\uD2B8\uB97C \uC5BB\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4");
+          thumbCtx.drawImage(canvas, 0, 0, tw, th);
           const thumb = thumbCanvas.toDataURL("image/jpeg", 0.72);
           const item = photoWall.addLocal(getMyNickname(), getGalleryInfo() ? getGalleryInfo().name : "", thumb);
           if (item && getMp()) getMp().sendPhoto(item);
