@@ -121,6 +121,13 @@ function makeEnvMap(renderer, isWebGPU) {
 // 관찰): 나무 실시간 그림자를 끄고 이 가짜 그림자로 대체한다. 치비(반경 0.5)보다 넓고(수관 폭)
 // 옅게(치비 중심알파 0.78 대비 낮음) + 완만한 페더(지수 1.5 감쇠)로 "수관 그림자다움"을 낸다.
 // 순수 함수(THREE만 참조) — world.js buildStreet가 파셀별로 호출해 병합(mergeGeometries)한다.
+// [야간 역전 버그 수정 — 감독 실기기 神모드 스크린샷] 기존 NormalBlending + 고정 어두운색·알파 그라디언트는
+// "배경에 색을 알파 덧칠"하는 방식이라, 배경(지면)이 blob 고정색보다 더 어두워지는 야간에는 blob이 배경보다
+// 밝아져 "빛나는 연두색 원판"으로 역전되는 근본 결함이 있었다. MultiplyBlending(result = src.rgb × dst.rgb)으로
+// 전환해 "배경을 곱셈으로 어둡게" 하는 진짜 그림자 방식으로 바꾼다 — 배경이 얼마나 어둡든 곱셈은 항상 그보다
+// 어둡게만 만들어 낮/밤 역전이 구조적으로 불가능하다. MultiplyBlending은 알파를 쓰지 않고 rgb 명도만으로
+// 농도를 표현하므로, 버텍스컬러를 "알파 그라디언트"에서 "rgb 명도 그라디언트"로 변경(중심 회색 0.45=55%
+// 어둡게 → 가장자리 흰색 1.0=무변화).
 const TREE_BLOB_RADIUS = 1.6; // trunkLen 2.6 · leafScale 0.85 캐노피 폭 육안 대응(치비 0.5의 ~3배)
 function makeTreeBlobGeo(wx, wz) {
   const geo = new THREE.CircleGeometry(1, 20); // 원경 소품 — 24→20 세그로 정점 절감(육안 무차이)
@@ -128,9 +135,10 @@ function makeTreeBlobGeo(wx, wz) {
   const rgba = new Float32Array(pos.count * 4);
   for (let i = 0; i < pos.count; i++) {
     const r = Math.min(1, Math.hypot(pos.getX(i), pos.getY(i)));
-    const alpha = 0.34 * Math.pow(1 - r, 1.5); // 중심 0.34(치비 0.78보다 옅게) → 가장자리 0, 완만한 페더
-    rgba[i * 4 + 0] = 0.07; rgba[i * 4 + 1] = 0.08; rgba[i * 4 + 2] = 0.055; // 옅은 녹갈 그림자 톤(수관 아래)
-    rgba[i * 4 + 3] = alpha;
+    const t = Math.pow(1 - r, 1.5); // 중심 1(그림자 최대) → 가장자리 0(그림자 없음), 완만한 페더(기존과 동일 곡선)
+    const shade = 1 - 0.55 * t; // 중심 0.45(배경을 55% 어둡게 곱함) → 가장자리 1.0(곱해도 무변화)
+    rgba[i * 4 + 0] = shade; rgba[i * 4 + 1] = shade; rgba[i * 4 + 2] = shade; // 무채색 곱셈 — 색조는 배경(지면) 색이 그대로 유지, 명도만 낮춤
+    rgba[i * 4 + 3] = 1; // MultiplyBlending은 알파를 블렌딩에 쓰지 않음(dst *= src.rgb) — 항상 1
   }
   geo.setAttribute('color', new THREE.BufferAttribute(rgba, 4));
   geo.scale(TREE_BLOB_RADIUS, TREE_BLOB_RADIUS, 1); // 회전 전(XY 평면) 스케일 = 반경 적용
@@ -500,9 +508,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     lantern: new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffe08a, emissiveIntensity: 1.4, roughness: 0.3, metalness: 0 }),
     // 회전 빛 = 발광 콘 메시(additive·depthWrite false) — 실제 THREE.Light 0(라이트 풀 개수 불변 원칙 계승, 재컴파일 0).
     beam: new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
-    // [수관 그림자] 나무 발치 가짜 접지 그림자 재질 — 치비 blob(avatar.js attachBlobShadow)과 동일 구성
-    // (vertexColors·transparent·depthWrite:false). 파셀 전체 나무가 이 재질 하나를 공유(드로우콜 1/파셀).
-    treeBlob: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }),
+    // [수관 그림자] 나무 발치 가짜 접지 그림자 재질. MultiplyBlending(낮/밤 역전 버그 수정 — makeTreeBlobGeo
+    // 주석 참조)으로 배경을 곱셈으로만 어둡게 한다 — NormalBlending의 "고정색 알파 덧칠"과 달리 배경보다
+    // 밝아지는 경우가 구조적으로 없다. 파셀 전체 나무가 이 재질 하나를 공유(드로우콜 1/파셀).
+    treeBlob: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.MultiplyBlending }),
   };
   // [그래픽 1단계] 지면 절차 텍스처+노멀 주입 — repeat = 24m 셀 / 타일 미터(잔디 4m·모래 4m·광장 6m·도로 8m).
   // 도로 strip(24×2.5)은 폭 방향 왜곡이 있으나 아스팔트라 방향성 약해 무해(스크린샷 확인). 색은 텍스처가 대체.
