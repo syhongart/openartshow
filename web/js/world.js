@@ -1523,6 +1523,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       L._accD = (L._accD || 0) + d; // 경과시간 누적 — 스킵 프레임의 dt를 모아 다음 갱신에 통째로 넘긴다.
       if (throttleParcelSim(L)) continue; // [원거리·배후 컷] 위상 불일치 프레임 스킵(누적은 유지, 접근 시 즉시 복귀).
       // ★누적 dt 상한 클램프 — 성긴 갱신에서 dt가 수초로 커지면 NPC 순간이동/애니 점프("워프")가 난다. 0.1s로 클램프.
+      // [초과분 폐기: 의도된 손실] 클램프를 넘긴 누적분은 버려지고 보상되지 않으므로, 저프레임(헤드리스
+      // swiftshader ~4fps: 프레임 dt 0.25s × 스로틀 3프레임 = 0.75s 누적 → 0.1s만 반영)에서는 이 파셀의
+      // NPC가 실경과시간보다 느리게 시뮬레이션된다(진행률 ~13%). 무해한 이유: 스로틀 대상은
+      // throttleParcelSim이 고른 원거리(STREAM_FULL_ENTER 밖)·배후(내적<cos120°) 파셀뿐이라 화면 밖이고,
+      // 플레이어가 접근하거나 돌아보면 그 프레임부터 parcelFarBehind가 false → 즉시 풀레이트로 복귀한다.
+      // NPC는 절대 시각에 묶인 이벤트가 없는 앰비언트 배회라, 뒤처진 위상 자체가 관측 가능한 오류가 아니다
+      // (반대로 초과분을 전부 반영하면 시야 복귀 순간 순간이동이 보인다 — 그게 이 클램프의 존재 이유).
       const stepDt = Math.min(L._accD, 0.1);
       L._accD = 0;
       const humans = [{ x: pos.x, z: pos.z }]; // y 생략 → NpcCrowd 회피·인사 정상(단층)
@@ -1562,7 +1569,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       const w = L.walker; if (!w) continue;
       L._accWD = (L._accWD || 0) + d; // 경과시간 누적(walker 전용 — stepNpcs의 _accD와 분리)
       if (throttleParcelSim(L)) continue; // [원거리·배후 컷] 위상 불일치 프레임 스킵(누적 유지, 접근 시 즉시 복귀).
-      const wd = Math.min(L._accWD, 0.1); // ★누적 dt 상한 클램프 — 성긴 갱신 dt 폭주로 인한 순간이동 방지.
+      // ★누적 dt 상한 클램프 — 성긴 갱신 dt 폭주로 인한 순간이동 방지. 초과분은 stepNpcs와 동일하게
+      // 폐기되며(보상 없음) 저프레임에서 walker가 실경과보다 느려지는데, 대상이 원거리·배후 파셀(화면 밖)이고
+      // 시야 복귀 시 즉시 풀레이트로 돌아오므로 무해하다 — 근거 상세는 stepNpcs의 클램프 주석 참조.
+      const wd = Math.min(L._accWD, 0.1);
       L._accWD = 0;
       if (w.state === 'pause') {
         w.timer -= wd; if (w.timer <= 0) { w.state = 'walk'; pickWalkerTarget(w); }
