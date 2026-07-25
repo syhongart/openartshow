@@ -1304,7 +1304,15 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       // [시야 인지] 배후 판정 — 플레이어 실제 위치(look-ahead cxw 아님)+시선 기준. EXIT에만 적용(ENTER 불변).
       const bdx = pxi * CELLX - pos.x, bdz = pzi * CELLZ - pos.z;
       const behindNow = isBehind(bdx, bdz, yaw, parcelBehind.get(k));
-      parcelBehind.set(k, behindNow);
+      // [기록 정리] 배후 상태는 tier 보유 파셀(cur 정의 = 로드됨 or 큐 대기)에만 남긴다. 미로드 파셀은
+      // 아래 else 분기가 ENTER 판정만 하고 behindNow를 참조하지 않으므로 기록해도 쓰이지 않는데,
+      // unloadParcel 경로를 타지 않아 정리도 안 되는 잔존이었다(파셀셋이 정적 유한이라 bounded였을 뿐).
+      // 강등 판정 결과 불변: behindNow가 실제로 쓰이는 곳은 cur==='full'/'shell' 분기뿐이다.
+      // 성질(안전측) — 미로드 기록을 지우면 그 파셀이 로드된 뒤 첫 프레임에 wasBehind=undefined가 되어
+      // isBehind가 엄격 ENTER 임계(반각 135°)로 시작한다: 배후 판정이 덜 나므로 강등이 늦어질 뿐
+      // 이르게 되지 않는다. unloadParcel의 delete와 동일한 성질이라 재진입 규약도 일관된다.
+      if (cur !== undefined) parcelBehind.set(k, behindNow);
+      else parcelBehind.delete(k);
       if (cur === 'full') {
         if (dist <= STREAM_FULL_EXIT) {
           // 배후 + 축소 EXIT 밖 → shell 강등 시도(예산·쿨다운 게이트). 게이트 실패면 full 유지.
