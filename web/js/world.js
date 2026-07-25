@@ -1568,6 +1568,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // clamp에 걸리지 않아 정확하다. soft는 이미 포테이토 고정이라 여기서 제외한다.
   function adaptQuality(d) {
     if (gpuInfo.soft) return;
+    if (bgThrottle) { adaptFrames = 0; adaptElapsed = 0; deskCapTicks = 0; return; } // [비가시 스로틀] blur/hidden의 인위적 ~4fps를 발열캡(DESK_CAP)·해상도 강등 판단에서 배제 — 오발화로 세션 영구 30fps 고착 방지(교차리뷰 블로커). 집계·틱 리셋으로 가시 복귀 후 깨끗한 윈도우로 재측정.
     adaptAge += d; adaptFrames += 1; adaptElapsed += d;
     if (adaptElapsed < 0.5) return;
     const fpsNow = adaptFrames / adaptElapsed;
