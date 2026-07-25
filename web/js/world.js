@@ -1059,7 +1059,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   function finalizeParcel(ctx) {
     if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); scene.add(ctx.group); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
     ctx.ready = true;
-    requestShadowBake(); // 완성 1회(현행 loadParcel 끝 bake와 정합)
+    requestStreamShadowBake(); // 완성 1회(현행 loadParcel 끝 bake와 정합) — 스트리밍 활동 표식(버스트 후로 코얼레싱)
   }
 
   function loadParcelSync(px, pz, lod) { // immediate/headless — 전 스테이지 순차(무회귀 비트동일)
@@ -1092,7 +1092,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // parcelDemoteAt는 여기서 지우지 않는다: 쿨다운 타임스탬프가 언로드 순간 사라지면
     // "언로드→(전방 재로드)→재언로드"가 쿨다운 창 안에서도 매번 통과해 스래싱 억제가 무력화된다
     // (계측 실증: 150ms 왕복 억제율 20%). 파셀셋은 정적 유한(index)이라 잔존 엔트리는 bounded.
-    if (!disposed) requestShadowBake(); // [섀도 프리즈] 파셀 언로드도 씬 변화 → 재베이크(일괄 정리 중엔 불필요)
+    if (!disposed) requestStreamShadowBake(); // [섀도 프리즈] 파셀 언로드도 씬 변화 → 재베이크(일괄 정리 중엔 불필요). 스트리밍 활동 표식.
   }
 
   // ── [복셀스] 바다(월드 전체 아래 고정 물 평면 — 월드 밖·강 파셀에서 드러남) + 월드 소프트 경계 ──
@@ -1157,18 +1157,71 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 헤드리스(RAF 없음)는 flush 훅이 없으므로 스로틀을 우회해 즉시 베이크 — renderOnce 명시 렌더 경로 보전.
   let shadowBakePending = false; // 스로틀에 걸려 미뤄진 베이크 대기
   let lastShadowBakeMs = -1e9;   // 마지막 실제 needsUpdate 시각(perfNow)
-  function requestShadowBake() {
+  // ── [끊김] 스트리밍 버스트 인지형 섀도 리베이크 코얼레싱 ───────────────────────────────
+  // 실기기 계측: 로드 큐가 비었는데도(queue=0) 10~30fps로 급락하는 구간이 있었다. 원인은 파셀 완성/해제가
+  // 건 리베이크가 "몇 프레임 뒤 GPU에서" 후행 발생하기 때문 — 150ms 스로틀만으론 버스트 내내 150ms마다
+  // 1024² 뎁스패스가 로드된 9파셀 전체 캐스터에 대해 반복 폭발한다. 그래서 "스트리밍이 잦아든 뒤 한 번만" 굽는다.
+  // 굽는 내용(타입·해상도·카메라 박스·C-1 강등)은 일절 무변경 — "언제 굽느냐"만 조정한다.
+  //
+  // [설계 리스크와 방어 — 팀장 지적]
+  // (1) 상한이 짧으면 지속 이동 중 quiet가 매번 리셋되어 상한이 매번 발동 → 급락이 사라지는 게 아니라
+  //     "주기화"된다. 그래서 ① 상한 발동도 CPU가 한가한 프레임(이번 프레임에 파셀 빌드 스테이지를 돌리지
+  //     않은 프레임)에 정렬해 CPU 빌드와 GPU 뎁스패스가 같은 프레임에 겹치는 것을 피하고,
+  //     ② 상한 자체를 8m 이동 리베이크와 같은 시간 스케일로 늘려 "파셀발 리베이크가 8m 경로보다 잦아지는" 역전을 없앤다.
+  // (2) 8m 이동 리베이크(maybeRebakeShadow)·하늘 적용(onApply)·lite 복귀발 요청은 시각 정합에 직결되고
+  //     빈도가 낮으므로 코얼레싱 대상이 아니다 → pending에 비-스트리밍 요청이 섞이면 quiet 게이트를 면제한다.
+  const SHADOW_QUIET_MS = 260;       // 마지막 스트리밍 활동 후 이만큼 조용해야 실제 베이크(버스트 트레일링)
+  // 상한 근거: 태양 추종 정합은 이미 maybeRebakeShadow(8m 이동)가 담당하고, 그 실효 주기는 보행 3m/s 기준
+  // 약 2.7초다. 파셀발 리베이크에 그보다 짧은 상한을 두면 8m 경로보다 잦아져 상한이 스파이크의 새 주기원이
+  // 된다(팀장 지적). 그래서 상한을 2.6초 — 8m 주기와 같은 스케일 — 로 두어 8m 경로가 주 리베이크로 남고
+  // 파셀발은 quiet 때 보조로 반영되게 한다. 실제로 8m 리베이크가 먼저 터지면 pending은 거기에 흡수된다.
+  const SHADOW_MAX_DEFER_MS = 2600;  // 이만큼 미뤄지면 quiet를 무시하되, CPU 한가 프레임을 기다린다
+  const SHADOW_HARD_DEFER_MS = 4000; // CPU 한가 프레임이 끝내 안 오는 극단(연속 승격) — 진짜 최종 가드
+  let lastStreamActivityMs = -1e9;   // 마지막 파셀 완성/해제 시각(perfNow)
+  let shadowPendingSinceMs = -1e9;   // pending이 최초로 세워진 시각(최대지연 판정 기준)
+  let shadowPendingStreamOnly = true; // 현재 pending이 스트리밍발로만 구성됐는가(false면 quiet 게이트 면제)
+  // [끊김] 이번 프레임에 processLoadQueue가 실행한 파셀 빌드 스테이지 수(매 호출 초두에 리셋).
+  // update()의 호출 순서가 processLoadQueue() → flushShadowBake() → render()라 같은 프레임 값을 읽는다.
+  // 여기(섀도 블록)에 선언하는 이유: processLoadQueue보다 위라 어떤 조기 호출 경로에서도 TDZ가 없다.
+  let stagesRunThisFrame = 0;
+  // fromStream: 파셀 완성/해제발 요청(코얼레싱 대상). 인자 없는 기존 호출부(8m·하늘·lite·초기 1회)는 종전 타이밍 유지.
+  function requestShadowBake(fromStream) {
     shadowBakeAt = { x: pos.x, z: pos.z }; // 8m 트리거 기준점은 항상 갱신
     const nowMs = perfNow();
-    if (!headless && nowMs - lastShadowBakeMs < 150) { shadowBakePending = true; return; } // 최근 베이크 직후 — 트레일링으로 합침
+    // 스트리밍발은 150ms 밖이어도 즉시 굽지 않고 pending으로 보낸다. 즉시 경로를 남기면 파셀 이벤트가
+    // 150ms보다 성기게(예: 200ms 간격 지속 이동) 들어올 때 매번 스로틀을 통과해 quiet·CPU 한가 정렬이
+    // 통째로 우회되고, 하필 CPU 빌드가 도는 프레임에 1024² 뎁스패스가 그대로 겹친다(게이트 시뮬 실측:
+    // 즉시 경로 유지 시 20초 98회·CPU겹침 3회 → pending 경유 시 8회·0회). 비-스트리밍(8m·하늘·lite·초기
+    // 1회)은 종전 즉시 경로 그대로 — 시각 정합 직결 경로는 손대지 않는다.
+    if (!headless && (fromStream || nowMs - lastShadowBakeMs < 150)) { // 스트리밍발 or 최근 베이크 직후 — 트레일링으로 합침
+      if (!shadowBakePending) { shadowPendingSinceMs = nowMs; shadowPendingStreamOnly = true; } // pending 최초 설정
+      if (!fromStream) shadowPendingStreamOnly = false; // 시각 정합 직결 요청이 섞임 → 버스트 대기 면제
+      shadowBakePending = true; return;
+    }
     renderer.shadowMap.needsUpdate = true;         // WebGL 백엔드
     if (sun.shadow) sun.shadow.needsUpdate = true; // WebGPU 노드 섀도 미러링(양 백엔드 프리즈 실효)
     lastShadowBakeMs = nowMs; shadowBakePending = false;
   }
-  // [H] 미뤄둔 베이크 플러시 — force면 150ms 게이트 무시(sync/헤드리스 트레일링 보장, RAF 부재 대비).
+  // [끊김] 스트리밍(파셀 완성·해제)발 리베이크 요청 — 활동 시각을 남겨 flush가 버스트가 잦아든 뒤로 합친다.
+  function requestStreamShadowBake() {
+    lastStreamActivityMs = perfNow();
+    requestShadowBake(true);
+  }
+  // [H] 미뤄둔 베이크 플러시 — force면 모든 게이트(150ms 스로틀·quiet·최대지연·CPU 한가) 무시
+  // (sync/헤드리스 트레일링 보장, RAF 부재 대비 — 종전 계약 그대로).
   function flushShadowBake(force) {
     if (!shadowBakePending) return;
-    if (!force && perfNow() - lastShadowBakeMs < 150) return;
+    if (!force) {
+      const nowMs = perfNow();
+      if (nowMs - lastShadowBakeMs < 150) return;          // (a) 기존 스로틀 — 무변경
+      if (shadowPendingStreamOnly) {                       // (b) 스트리밍발 pending만 코얼레싱 대상
+        const deferred = nowMs - shadowPendingSinceMs;
+        if (deferred < SHADOW_MAX_DEFER_MS) {
+          if (nowMs - lastStreamActivityMs < SHADOW_QUIET_MS) return; // 아직 버스트 중 → 미룸
+          if (stagesRunThisFrame > 0) return;                         // 조용해졌어도 이번 프레임은 CPU 빌드 중 → 한가한 프레임에 양보
+        } else if (stagesRunThisFrame > 0 && deferred < SHADOW_HARD_DEFER_MS) return; // 상한 초과 — CPU 한가 프레임 우선, 그마저 안 오면 아래로 강제
+      }
+    }
     renderer.shadowMap.needsUpdate = true;
     if (sun.shadow) sun.shadow.needsUpdate = true;
     lastShadowBakeMs = perfNow(); shadowBakePending = false;
@@ -1411,6 +1464,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // [히칭 완화] 스테이지 파이프라인 소진 — job이 ctx(부분 빌드 상태)+stage를 갖고, 프레임 예산 내 여러 job의
   // 다음 스테이지를 1개씩 진행한다(S0=beginParcel로 시작→S1~S4→finalize). 무거운 파셀도 여러 프레임에 분산.
   function processLoadQueue() {
+    stagesRunThisFrame = 0; // [끊김] CPU 한가 프레임 판정용 — 큐가 비어 조기 반환해도 0으로 남는다
     if (!loadQueue.length) return;
     loadQueue.sort((a, b) => a.prio - b.prio); // [일원화] streamWant 재사용(맨해튼 재계산 금지) — 근접 우선
     const t0 = perfNow();
@@ -1452,6 +1506,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (stagesRun >= MAX_STAGES_PER_FRAME) break;     // [히칭] 프레임당 스테이지 캡(여러 파셀 동시 급락 완화)
       if (perfNow() - t0 > LOAD_BUDGET_MS) break;       // 최소 1스테이지 후 예산 초과 시 중단
     }
+    stagesRunThisFrame = stagesRun; // [끊김] 이번 프레임 CPU 빌드량 — flushShadowBake가 GPU 뎁스패스 겹침 회피에 사용
   }
 
   // ── [다층] 지면 해석 (player.js stairGroundAt/groundCandidatesAt/resolveGround 이식, 파셀 오프셋 인지) ──
