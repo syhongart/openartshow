@@ -115,6 +115,30 @@ function makeEnvMap(renderer, isWebGPU) {
   }
 }
 
+// ── [수관 그림자] 나무 발치 가짜 접지 그림자 지오 — 치비 blob(avatar.js attachBlobShadow)과
+// 동일 원리: 텍스처 없는 CircleGeometry + 버텍스컬러 방사형 알파(SwiftShader 실측 — 캔버스
+// 텍스처는 저사양에서 안 그려져 이 경로가 저사양 호환의 핵심, 반드시 유지). 감독 지시(실기기
+// 관찰): 나무 실시간 그림자를 끄고 이 가짜 그림자로 대체한다. 치비(반경 0.5)보다 넓고(수관 폭)
+// 옅게(치비 중심알파 0.78 대비 낮음) + 완만한 페더(지수 1.5 감쇠)로 "수관 그림자다움"을 낸다.
+// 순수 함수(THREE만 참조) — world.js buildStreet가 파셀별로 호출해 병합(mergeGeometries)한다.
+const TREE_BLOB_RADIUS = 1.6; // trunkLen 2.6 · leafScale 0.85 캐노피 폭 육안 대응(치비 0.5의 ~3배)
+function makeTreeBlobGeo(wx, wz) {
+  const geo = new THREE.CircleGeometry(1, 20); // 원경 소품 — 24→20 세그로 정점 절감(육안 무차이)
+  const pos = geo.attributes.position;
+  const rgba = new Float32Array(pos.count * 4);
+  for (let i = 0; i < pos.count; i++) {
+    const r = Math.min(1, Math.hypot(pos.getX(i), pos.getY(i)));
+    const alpha = 0.34 * Math.pow(1 - r, 1.5); // 중심 0.34(치비 0.78보다 옅게) → 가장자리 0, 완만한 페더
+    rgba[i * 4 + 0] = 0.07; rgba[i * 4 + 1] = 0.08; rgba[i * 4 + 2] = 0.055; // 옅은 녹갈 그림자 톤(수관 아래)
+    rgba[i * 4 + 3] = alpha;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(rgba, 4));
+  geo.scale(TREE_BLOB_RADIUS, TREE_BLOB_RADIUS, 1); // 회전 전(XY 평면) 스케일 = 반경 적용
+  geo.rotateX(-Math.PI / 2);                        // 바닥에 눕힘(치비 blob과 동일 컨벤션)
+  geo.translate(wx, 0.015, wz);                     // 월드 좌표로 베이크(아바타 blob 0.02보다 살짝 낮게 — 겹칠 때 아바타 그림자 우선)
+  return geo;
+}
+
 export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const headless = !!opts.headless;
   // 비정사각 셀(cellX/cellZ) — 복셀스 개방 도시는 정사각 24×24(셀 > 건물 → 가장자리가 길).
@@ -476,6 +500,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     lantern: new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffe08a, emissiveIntensity: 1.4, roughness: 0.3, metalness: 0 }),
     // 회전 빛 = 발광 콘 메시(additive·depthWrite false) — 실제 THREE.Light 0(라이트 풀 개수 불변 원칙 계승, 재컴파일 0).
     beam: new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0.20, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+    // [수관 그림자] 나무 발치 가짜 접지 그림자 재질 — 치비 blob(avatar.js attachBlobShadow)과 동일 구성
+    // (vertexColors·transparent·depthWrite:false). 파셀 전체 나무가 이 재질 하나를 공유(드로우콜 1/파셀).
+    treeBlob: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }),
   };
   // [그래픽 1단계] 지면 절차 텍스처+노멀 주입 — repeat = 24m 셀 / 타일 미터(잔디 4m·모래 4m·광장 6m·도로 8m).
   // 도로 strip(24×2.5)은 폭 방향 왜곡이 있으나 아스팔트라 방향성 약해 무해(스크린샷 확인). 색은 텍스처가 대체.
@@ -561,6 +588,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const trees = street.filter((s) => s.kind === 'tree');
     if (trees.length) {
       const forest = new THREE.Group();
+      const blobGeos = []; // [수관 그림자] 파셀 내 나무 발치 가짜 그림자 지오(월드좌표 베이크) — 아래서 병합
       trees.forEach((s, i) => {
         // 외형·회전 시드 결정론(파셀 오프셋 ⊕ 인덱스) — 모든 방문자 동일 세계(무저장 규율).
         const tseed = (((ox * 73856093) ^ (oz * 19349663) ^ ((i + 1) * 83492791)) >>> 0);
@@ -569,6 +597,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         dt.rotation.y = (tseed % 6283) / 1000; // 0~2π 결정론
         forest.add(dt);
         solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.25, ez: 0.25, bottom: 0, top: 2.0 }); // 줄기 충돌
+        blobGeos.push(makeTreeBlobGeo(ox + s.x, oz + s.z)); // 발치 가짜 그림자(월드좌표)
       });
       // 드로우콜 절감: 파셀 내 잎(알파 재질)을 단일 참조로 통일 → bakeGroupByMaterial의 잎 버킷
       // 3→1(파셀당 나무 = 수피 1 + 잎 1). 파셀 간·나무 간 형태 다양성은 시드로 유지되고, 잎 색 변주만
@@ -582,8 +611,19 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       });
       // 파셀 단위 재질별 병합 → 파셀당 수피 1 + 잎 1 드로우콜(나무 그루수와 무관).
       for (const m of bakeGroupByMaterial(forest)) {
+        // [감독 지시] 나무 실시간 그림자 off — bakeGroupByMaterial은 수피(bark, alphaTest 없음)에
+        // castShadow=true를 매긴다(scene-trees.ts는 미술관과 공용이라 무수정, 여기서만 오버라이드).
+        // 대신 아래 blobGeos(치비 blob 방식 가짜 그림자)가 접지 음영을 대체한다.
+        m.castShadow = false;
         group.add(m); meshes.push(m); own.push(m.geometry); // 병합 지오 = 파셀 소유(언로드 dispose)
       }
+      // [수관 그림자] 파셀 내 전 그루 blob을 1메시로 병합(드로우콜 1, 나무 병합과 동형 패턴).
+      // 공유 재질 T.treeBlob(vertexColors·transparent·depthWrite:false, 텍스처 없음 — SwiftShader 호환).
+      const merged = blobGeos.length > 1 ? mergeGeometries(blobGeos) : blobGeos[0];
+      if (blobGeos.length > 1) blobGeos.forEach((g) => g.dispose()); // 병합본만 유지 — 클론 회수
+      const bm = new THREE.Mesh(merged, T.treeBlob);
+      bm.renderOrder = 1; // 아바타 blob(avatar.js)과 동일 관례 — 반투명 오버드로우 정렬
+      group.add(bm); meshes.push(bm); own.push(merged); // 병합 지오 = 파셀 소유(언로드 dispose)
     }
     // [드로우콜 절감] 가로등·벤치·화분은 공유 재질(SG·T)인데도 소품마다 개별 Mesh였다. 나무·부두·테트라포드와
     // 동일하게 재질별로 지오를 클론해 위치·회전을 베이크(clone→rotateY→translate = Mesh의 T·R·geo와 동치)한 뒤
@@ -1079,8 +1119,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 그림자는 그대로 PCFSoft라 정작 가장 큰 비용은 안 줄어든다. 이 축을 lite 진입/복귀에 연동한다
   // (새 판정 만들지 않고 기존 liteMode 신호 재사용).
   // [방식 선택 — 룩 검수 결론] (a)PCFShadowMap 1탭+512 vs (b)shadowMap.enabled=false 완전 제거 중 (b) 채택.
-  // 근거: 이 씬의 castShadow 캐스터는 램프포스트·벤치·플랜터·부두목재·등대 등 소품뿐(건물·나무는 애초
-  // castShadow 미설정 — 481·475·485·587·636행). 즉 지금도 화면을 지배하는 큰 그림자는 없고 소품 발치의
+  // 근거: 이 씬의 castShadow 캐스터는 램프포스트·벤치·플랜터·부두목재·등대 등 소품 + 나무 수피(scene-trees의
+  // buildDetailedTree가 castShadow=true로 생성 — 감독 실기기 관찰로 발견. buildStreet에서 false 오버라이드해
+  // 발치 blob 가짜 그림자로 대체). 즉 지금도 화면을 지배하는 큰 그림자는 없고 소품 발치의
   // 옅은 블롭 수준이라 완전 제거해도 "붕 뜬" 느낌이 거의 없는 반면, 512 해상도 1탭 하드섀도는 벤치
   // 다리처럼 얇은 형상 경계에서 계단 앨리어싱이 오히려 더 도드라져 "조용한 럭셔리" 톤에 이질적이다.
   // 완전 제거가 fill-rate 절감도 최대(섀도 패스 자체가 스킵 — 873행 주석과 동일 근거)이고 코드도
