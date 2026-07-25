@@ -96,7 +96,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <ul><li><strong>RATIO_FLOOR 절대하한 0.85</strong>(world.js): dpr=1에서 죽어 있던 해상도 강등 레버를 부활. 평상시 1.0 유지, 긴급강등(fps&lt;24) 위기에서만 0.85(-28% fill-rate)로 내려가 위기 탈출 후 승급 복귀. dpr≥2 레티나·일반 모바일은 1.20 이상 유지(무변경).</li><li><strong>데스크톱 발열예방 캡</strong>(world.js): <code>FRAME_CAP_S</code>→<code>frameCapS</code>로 바꿔, 저사양 데스크톱이 워밍업 후 fps&lt;34를 3초 지속하면 30fps 캡에 비가역 진입(발열·듀티 완화). 승급 갇힘·그림자 진동은 비가역 진입 + 그림자 조기적응 <code>frameCapS===0</code> 가드로 차단(모바일 비활성 로직과 동형).</li><li><strong>저사양 위기 구름 제거</strong>(sky.js): lite 진입 시 흐르는 구름을 <code>visible=false</code>로 숨겨 대형 alpha-blend 상반부 레이어의 fill을 절감. (opacity 배수는 블렌딩 픽셀이 그대로라 fill 무이득 → visible 토글로 재설계.) 위기 한정이라 평상시 룩 무영향.</li></ul>
 <p><strong>결과.</strong> dpr=1 저사양 데스크톱의 유일한 해상도 레버가 부활하고, 발열 기인 저하에 예방 캡이 걸린다. 독립 executor 스모크(렌더 회귀 0) + release-reviewer 교차리뷰 통과(크로스페이드 중 구름 영구 은닉 블로커 1건 수정). 이번 단계는 <strong>데스크톱 무방비 축</strong>만 해소 — tri 지배 요인(NPC)은 2단계(로드반경↓ +fog+tri 예산 가드레일)·3단계(NPC 원경 LOD)에서 잡는다.</p>
 </article>
-<div class="pn"><a href="./2026-07-23-27331b.html"><span class="lbl">← 이전 기록</span>스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead</a></div>
+<div class="pn"><a href="./2026-07-23-27331b.html"><span class="lbl">← 이전 기록</span>스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead</a><a href="./2026-07-25-55ff0e.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
