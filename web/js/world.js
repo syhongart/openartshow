@@ -523,7 +523,12 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // [수관 그림자] 나무 발치 가짜 접지 그림자 재질. MultiplyBlending(낮/밤 역전 버그 수정 — makeTreeBlobGeo
     // 주석 참조)으로 배경을 곱셈으로만 어둡게 한다 — NormalBlending의 "고정색 알파 덧칠"과 달리 배경보다
     // 밝아지는 경우가 구조적으로 없다. 파셀 전체 나무가 이 재질 하나를 공유(드로우콜 1/파셀).
-    treeBlob: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.MultiplyBlending }),
+    treeBlob: new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, fog: false, blending: THREE.MultiplyBlending }),
+    // ↑ [야간 검은 타원 근본 수정 — 총동원 조사] fog:false 필수. MeshBasicMaterial fog 기본 true라 야간
+    //   fogColor(0x3d4762≈0.24)가 three의 fog_fragment(블렌딩 직전 mix)에서 blob src를 눌러, MultiplyBlending이
+    //   지면을 ×0.24로 곱해 원경 나무를 강한 검은 타원으로 만들었다(shade 0.55→0.35→0.15 조정이 fog에 묻혀
+    //   무의미했던 진짜 원인). fog:false로 blob이 fog에 안 눌려 shade(중심 0.85=15%만 암화)가 실제로 먹는다.
+    //   스카이돔·등대빔이 이미 쓰는 검증 패턴. blob은 지면에 붙은 접지 그림자라 fog 페이드 불요(원경도 은은).
   };
   // [그래픽 1단계] 지면 절차 텍스처+노멀 주입 — repeat = 24m 셀 / 타일 미터(잔디 4m·모래 4m·광장 6m·도로 8m).
   // 도로 strip(24×2.5)은 폭 방향 왜곡이 있으나 아스팔트라 방향성 약해 무해(스크린샷 확인). 색은 텍스처가 대체.
