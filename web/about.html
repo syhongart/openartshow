@@ -21,7 +21,10 @@
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
 <!-- 경로 규칙: about.html은 deploy.yml에서 루트(_site/about.html)로 승격 배포된다(landing/guide/design 급 공개 페이지).
-     따라서 vendor 폰트는 루트 기준 ./app/vendor/fonts/fonts.css로 참조(guide.html과 동일). 나머지 상대경로(브랜드·
+     vendor 폰트는 소스 실경로 기준 ./vendor/fonts/fonts.css로 참조한다 — vite가 실존 파일만 번들·경로 rewrite하므로
+     (→ /openartshow/_bundle/fonts-*.css) 배포 위치와 무관하게 동작한다. 과거 ./app/vendor/... 로 적혀 있었으나 그
+     경로엔 파일이 없어 rewrite가 일어나지 않고 그대로 emit돼 라이브 404를 냈다(landing·guide·about·design 4개 페이지).
+     되돌리지 말 것. 나머지 상대경로(브랜드·
      랜딩 ./index.html, 전시장 ./app/, 가이드 ./guide.html)도 전부 루트 기준으로 정합. 이 승격은 A단계 스모크 하네스가
      app/ 배포 시 CTA 404를 발견해 근본 해결한 것(deploy.yml에 cp web/about.html _site/about.html 추가). -->
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
