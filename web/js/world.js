@@ -1624,6 +1624,19 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       scene.fog.far += (tf - scene.fog.far) * fk;
     }
     if (skySystem) skySystem.update(d); // [하늘 엔진] 크로스페이드·강수·오로라·번개 진행(조명·clearColor 갱신)
+    // [수관 그림자 야간 오프 — 감독 지시] 야간엔 나무 발치 접지 그림자(단색 원판)를 끈다. 밤엔 실제로도
+    // 태양광이 없어 그림자가 사라지는 게 자연스럽고, 어두운 지면 위에서 단색 판이 거슬리는 문제(근본)도
+    // 함께 사라진다. 공유 재질 vertexColors 토글 한 번으로 전 파셀 blob 일괄 제어 — night이면 vColor(중심
+    // 0.85) 무시하고 matColor(기본 흰색)만 곱해 MultiplyBlending이 무변화(dst×1=그림자 0)가 된다. day/sunset은
+    // 접지감 유지. userData 캐시로 time 전환 시 1회만 needsUpdate(셰이더 재컴파일) — 매프레임 비용 0.
+    if (skySystem) {
+      const night = skySystem.get().time === 'night';
+      if (T.treeBlob.userData._night !== night) {
+        T.treeBlob.userData._night = night;
+        T.treeBlob.vertexColors = !night;
+        T.treeBlob.needsUpdate = true;
+      }
+    }
     // [팝인 완화 — 조명 페이드업] 라이트풀 intensity를 목표(_target)로 lerp. 갓 배정된 스포트(intensity 0)는
     // 목표23/18로 부드럽게 켜지고, 미사용/반납(_target 0)은 이미 0이라 무변. 개수·visible 불변(재컴파일 0).
     for (const sl of lightPool) sl.intensity += (sl._target - sl.intensity) * Math.min(1, d * FADE_K);
