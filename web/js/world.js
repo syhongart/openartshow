@@ -153,6 +153,15 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 그 canvas는 이미 'webgpu' 컨텍스트로 영구 커밋돼, 뒤이은 WebGLRenderer의 getContext('webgl2')가 null→크래시.
   // 프로브 canvas(8px, DOM 미부착)에서 init 성공을 확인한 경우에만 라이브 canvas로 WebGPURenderer를 생성한다.
   const forceWebGL = new URLSearchParams(typeof location !== 'undefined' ? location.search : '').has('webgl');
+  // [실험 격리 — ablation, behind-flag 프로파일링] 렌더 단계 격리 토글(world-boot의 ?off=npc/ayamo/self와
+  // 같은 파라미터를 렌더축에서 추가 소비). 기본(플래그 없음)이면 전부 무효 → 라이브 완전 무회귀.
+  //   ?off=shadow → 태양 그림자 완전 off(shadowMap.enabled=false)
+  //   ?off=recv   → 지면·물·도로 등 receiveShadow만 off(caster 유지 = "그림자는 지되 지면이 안 받음", 데칼 가설의 정확한 격리)
+  //   ?px=N       → spawnRatio 강제(해상도 fill-rate 축 격리, 예 ?px=0.75)
+  const _ablParams = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
+  const OFF_ABLATE = new Set((_ablParams.get('off') || '').split(',').map((s) => s.trim()).filter(Boolean));
+  const RECV_SHADOW = !OFF_ABLATE.has('recv');
+  const pxForce = parseFloat(_ablParams.get('px'));
   let isWebGPU = false;
   if (!forceWebGL && typeof navigator !== 'undefined' && navigator.gpu && typeof document !== 'undefined') {
     try {
@@ -186,6 +195,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 데스크톱(pointer:fine)은 캡 미적용 → 화질 무변화. gpuInfo.soft는 이미 0.7 캡이라 캡이 무영향.
   let spawnRatio = gpuInfo.soft ? Math.min(dprBase, 0.7) : Math.min(2, dprBase);
   if (coarsePointer) spawnRatio = Math.min(spawnRatio, MOBILE_PX_CAP);
+  if (isFinite(pxForce) && pxForce > 0) spawnRatio = pxForce; // [ablation] ?px=N 강제(해상도 fill-rate 축 격리)
   renderer.setPixelRatio(spawnRatio);
   // [진단] 모바일 판정·적용된 캡을 진입 시 1회 기록 — coarsePointer 오판(SPOF)이 재발하면 원격
   // 디버깅으로 즉시 확인. mobile=false인데 실제 폰이면 판정 실패 신호(프레임 캡·px 캡 미적용).
@@ -194,10 +204,11 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     '· dpr', dprBase, '· px', spawnRatio.toFixed(2),
     '· frameCap', coarsePointer ? (MOBILE_CAP_FPS + 'fps') : 'off',
     '· maxTouchPoints', (typeof navigator !== 'undefined' && navigator.maxTouchPoints) || 0);
+  if (typeof console !== 'undefined' && (OFF_ABLATE.size || (isFinite(pxForce) && pxForce > 0))) console.info('[OpenArtShow/World] ablation:', Array.from(OFF_ABLATE).join(',') || '(none)', '· px force', isFinite(pxForce) && pxForce > 0 ? pxForce : 'off');
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // ACES 톤매핑은 프래그먼트당 수십 ALU — 소프트웨어 렌더에서는 그대로 비용이라 끈다(main.js:613).
   renderer.toneMapping = gpuInfo.soft ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
-  renderer.shadowMap.enabled = !gpuInfo.soft; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = !gpuInfo.soft && !OFF_ABLATE.has('shadow'); renderer.shadowMap.type = THREE.PCFSoftShadowMap; // [ablation] ?off=shadow → 태양 그림자 완전 off
   // [섀도 프리즈] 정적 씬 — 섀도맵을 매 프레임이 아니라 이벤트 기반으로만 재베이크(하드웨어 GPU 포함 전체 적용).
   // 미술관(main.js:634)은 완전 프리즈지만 오픈월드는 태양이 플레이어 추종이라 완전 프리즈 불가 →
   // 초기 1회·파셀 로드/언로드·마지막 베이크에서 8m 이상 이동에만 1프레임 재베이크(needsUpdate).
@@ -600,7 +611,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (geos.length > 1) geos.forEach((g) => g.dispose()); // 병합본만 유지 — 클론 회수
       const m = new THREE.Mesh(merged, mat);
       if (cast) m.castShadow = true;
-      if (recv) m.receiveShadow = true;
+      if (recv) m.receiveShadow = RECV_SHADOW;
       group.add(m); meshes.push(m); own.push(merged); // 병합 지오 = 파셀 소유(언로드 dispose)
     };
     addBucket(lampPostGeos, T.lampPost, true, false);  // 기둥: castShadow(개별 Mesh와 동일)
@@ -651,7 +662,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (!geos.length) return null;
     const merged = geos.length > 1 ? mergeGeometries(geos) : geos[0];
     if (geos.length > 1) geos.forEach((g) => g.dispose());
-    const m = new THREE.Mesh(merged, T.sand); m.receiveShadow = true;
+    const m = new THREE.Mesh(merged, T.sand); m.receiveShadow = RECV_SHADOW;
     group.add(m); own.push(merged);
     return m;
   }
@@ -704,7 +715,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       });
     }
     const merged = mergeGeometries(parts); parts.forEach((p) => p.dispose());
-    const m = new THREE.Mesh(merged, T.pierWood); m.castShadow = true; m.receiveShadow = true;
+    const m = new THREE.Mesh(merged, T.pierWood); m.castShadow = true; m.receiveShadow = RECV_SHADOW;
     m.position.set(ox, 0, oz); group.add(m); own.push(merged);
     // 데크 도보 물리 — AABB(끝단 여유 -0.2로 난간 안쪽만 걷도록).
     pierDecks.push({ cx: ox + dcx, cz: oz + dcz, ex: spanW / 2, ez: spanD / 2, y: PIER_DECK_Y });
@@ -715,7 +726,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 배치 배열(def.tetra)은 world-gen이 시드 결정론으로 산출(위치·회전·스케일). 반쯤 잠긴 배치(팀장).
   function buildTetrapods(arr, group, ox, oz) {
     const inst = new THREE.InstancedMesh(TETRA_GEO, T.concrete, arr.length);
-    inst.castShadow = true; inst.receiveShadow = true;
+    inst.castShadow = true; inst.receiveShadow = RECV_SHADOW;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sv = new THREE.Vector3(), pv = new THREE.Vector3();
     arr.forEach((t, i) => {
       e.set(t.rx || 0, t.ry || 0, t.rz || 0); q.setFromEuler(e);
@@ -753,7 +764,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const roof = new THREE.ConeGeometry(topR + 0.35, 1.3, 16); roof.translate(0, TH + 2.75, 0);
     parts.push(paintGeo(roof, 0x8a2f2f));
     const merged = mergeGeometries(parts); parts.forEach((p) => p.dispose());
-    const body = new THREE.Mesh(merged, T.lighthouseVC); body.castShadow = true; body.receiveShadow = true;
+    const body = new THREE.Mesh(merged, T.lighthouseVC); body.castShadow = true; body.receiveShadow = RECV_SHADOW;
     body.position.set(lx, 0, lz); group.add(body); own.push(merged);
     // 등롱(유리방 발광) — 별도 재질(emissive)
     const lanternGeo = new THREE.CylinderGeometry(topR, topR, 1.5, 16); own.push(lanternGeo);
@@ -843,19 +854,19 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const own = [];
     if (def.water) {
       const wg = new THREE.BoxGeometry(CELLX, 0.1, CELLZ); own.push(wg);
-      const wm = new THREE.Mesh(wg, T.water); wm.position.set(ox, RIVER_Y - 0.05, oz); wm.receiveShadow = true; group.add(wm);
+      const wm = new THREE.Mesh(wg, T.water); wm.position.set(ox, RIVER_Y - 0.05, oz); wm.receiveShadow = RECV_SHADOW; group.add(wm);
       const bg = new THREE.BoxGeometry(CELLX, 0.12, 3); own.push(bg); // 동서 다리(강 z 중앙)
-      const bm = new THREE.Mesh(bg, T.bridge); bm.position.set(ox, -0.02, oz); bm.receiveShadow = true; group.add(bm);
+      const bm = new THREE.Mesh(bg, T.bridge); bm.position.set(ox, -0.02, oz); bm.receiveShadow = RECV_SHADOW; group.add(bm);
     } else {
       const gg = new THREE.BoxGeometry(CELLX, 0.1, CELLZ); own.push(gg); // 대지(잔디/광장 — 결정론 믹스)
       const isPlaza = ((px * 7 + pz * 13) % 4 === 0);
       const tc = parcelTint(px, pz, isPlaza); tintGeo(gg, tc[0], tc[1], tc[2]);
       const gm = new THREE.Mesh(gg, isPlaza ? T.plaza : T.grass);
-      gm.position.set(ox, -0.056, oz); gm.receiveShadow = true; group.add(gm);
+      gm.position.set(ox, -0.056, oz); gm.receiveShadow = RECV_SHADOW; group.add(gm);
       const rgS = new THREE.BoxGeometry(CELLX, 0.1, 2.5); own.push(rgS); // 남 가장자리 도로
-      const rs = new THREE.Mesh(rgS, T.road); rs.position.set(ox, -0.05, oz + CELLZ / 2 - 1.25); rs.receiveShadow = true; group.add(rs);
+      const rs = new THREE.Mesh(rgS, T.road); rs.position.set(ox, -0.05, oz + CELLZ / 2 - 1.25); rs.receiveShadow = RECV_SHADOW; group.add(rs);
       const rgE = new THREE.BoxGeometry(2.5, 0.1, CELLZ); own.push(rgE); // 동 가장자리 도로
-      const re = new THREE.Mesh(rgE, T.road); re.position.set(ox + CELLX / 2 - 1.25, -0.05, oz); re.receiveShadow = true; group.add(re);
+      const re = new THREE.Mesh(rgE, T.road); re.position.set(ox + CELLX / 2 - 1.25, -0.05, oz); re.receiveShadow = RECV_SHADOW; group.add(re);
     }
     let bld = null, dims = null, solids = [], floorsY = [0], stairBands = [];
     let bx = ox, bz = oz;
