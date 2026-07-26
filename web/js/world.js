@@ -1760,12 +1760,30 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   let profPrev = { frame: 0, render: 0, stage: 0, stageSum: 0, name: '' };
   let profSkip = false; // 이 프레임의 계측을 버린다 — 비가시 스로틀처럼 "의도적으로 느린" 프레임용
   let lastDrawCalls = 0;
+  // [리소스 델타] "무엇을 빼면 빨라지나"를 여덟 번 물어 여덟 번 빗나갔다(나무·NPC·섀도 재베이크·셰이더
+  // 예열·그림자 fill·receiveShadow·해상도·텍스처 감량). 총량은 절반 넘게 깎았는데 스파이크가 그대로였다
+  // → 총량이 아니라 "그 한 프레임에 새로 생긴 것"이 범인이라는 뜻. 밖에서 빼보는 대신 안을 센다.
+  // info.memory.geometries/textures는 reset() 대상이 아닌 생존 카운터이고, 증가 시점이 각각
+  // initGeometry(GPU 버퍼 최초 생성)·텍스처 최초 업로드다 — 프레임 간 델타가 곧 "이번 프레임의 신규 업로드 수".
+  // 파이프라인 수는 Info에 없어 WebGPU는 내부 캐시 크기, WebGL은 programs 길이로 센다(둘 다 없으면 0).
+  let resGeo = 0, resTex = 0, resPipe = 0; // 직전 프레임까지의 생존/누적 카운터
+  const EMPTY_PEAK = { geo: 0, tex: 0, pipe: 0, tri: 0, draw: 0 };
+  let profPeak = EMPTY_PEAK;     // renderMax를 세운 그 프레임의 델타(최댓값과 짝지어야 의미가 있다)
+  let profPrevPeak = EMPTY_PEAK; // 직전 창의 같은 것
+  function pipelineCount() {
+    try {
+      if (isWebGPU) { const c = renderer._pipelines && renderer._pipelines.caches; return c ? c.size : 0; } // three 내부(비공개) — 없어지면 0으로 떨어질 뿐 렌더에 영향 없음
+      return renderer.info.programs ? renderer.info.programs.length : 0;
+    } catch { return 0; }
+  }
   const STAGE_NAMES = ['bld', 'street', 'coast', 'walker']; // STAGES와 같은 순서. S0(beginParcel)은 'base'.
   function profRoll(now) { // 윈도우 만료 시 한 세대 넘기고 리셋(최댓값 계열은 창 단위로만 의미가 있다)
     if (profWinStart === 0) { profWinStart = now; return; } // 첫 프레임은 리셋하지 않는다 — 입장 전 동기 초기 로드에서 쌓인 값을 첫 창에 남겨, 계측이 실제로 도는지 헤드리스에서도 확인 가능하게.
     if (now - profWinStart >= PROF_WIN_MS) {
       profPrev = { frame: profFrameMax, render: profRenderMax, stage: profStageMax, stageSum: profStageSum, name: profStageName };
+      profPrevPeak = profPeak; // 최댓값과 짝인 델타도 같은 세대로 넘긴다
       profWinStart = now; profFrameMax = 0; profRenderMax = 0; profStageMax = 0; profStageSum = 0; profStageName = '';
+      profPeak = EMPTY_PEAK;
     }
   }
   function profStage(name, ms) {
@@ -1902,7 +1920,18 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const _r0 = perfNow();
     renderer.render(scene, camera);
     const _rms = perfNow() - _r0;
-    if (!profSkip && _rms > profRenderMax) profRenderMax = _rms;
+    // [리소스 델타] 생존 카운터는 렌더 직후에 읽어야 이번 프레임의 신규 업로드가 반영된다.
+    // 델타는 매 프레임 갱신하되(누락 없이), 보관은 renderMax를 세운 프레임 것만 — 그 한 프레임에
+    // 무엇이 새로 생겼는지가 곧 답이다. draw/tri도 여기서 읽는다(리셋은 render 직전이라 이번 프레임 값).
+    const _geo = renderer.info.memory.geometries, _tex = renderer.info.memory.textures, _pipe = pipelineCount();
+    const _dGeo = _geo - resGeo, _dTex = _tex - resTex, _dPipe = _pipe - resPipe;
+    resGeo = _geo; resTex = _tex; resPipe = _pipe;
+    if (!profSkip && _rms > profRenderMax) {
+      profRenderMax = _rms;
+      profPeak = { geo: _dGeo, tex: _dTex, pipe: _dPipe,
+        tri: renderer.info.render.triangles | 0,
+        draw: (renderer.info.render.drawCalls ?? renderer.info.render.calls) | 0 };
+    }
     needsRender = false; // [C1] 렌더 소비 — 비동기 텍스처 더티플래그 리셋
     adaptQuality(d); // [FPS 적응] 실측 프레임률로 해상도 배율 조정(soft 제외 — 아래에서 자체 가드)
   }
@@ -2088,10 +2117,14 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       //   frameMs만 크고 둘 다 작음 → 그 외(GC 유력 — heapMB 급감이 동반되는지 본다)
       // 직전 창과 현재 창의 최댓값을 합친다 — 조회 시점이 창 경계 어디에 놓이든 최근 1초 이상이 덮인다.
       const pStage = Math.max(profStageMax, profPrev.stage);
+      // [리소스 델타] 보고하는 renderMs와 같은 세대의 델타를 준다 — 다른 창의 최댓값에 이 창의 델타를
+      // 붙이면 "3초 프레임에 아무것도 안 생겼다"는 거짓 결론이 나온다.
+      const pk = (profRenderMax >= profPrev.render) ? profPeak : profPrevPeak;
       return { drawCalls: lastDrawCalls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL',
         frameMs: Math.max(profFrameMax, profPrev.frame), renderMs: Math.max(profRenderMax, profPrev.render),
         stageMs: pStage, stageSum: Math.max(profStageSum, profPrev.stageSum),
         stage: (profStageMax >= profPrev.stage ? profStageName : profPrev.name), // 보고하는 최댓값과 같은 쪽의 이름
+        peakGeo: pk.geo, peakTex: pk.tex, peakPipe: pk.pipe, peakTri: pk.tri, peakDraw: pk.draw,
         heapMB: heapMB() };
     },
     getQueueLength: () => loadQueue.length,

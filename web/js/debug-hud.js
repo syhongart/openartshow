@@ -17,7 +17,14 @@ const REC_INTERVAL_MS = 500; // 시계열 샘플 주기(HUD 갱신과 동일)
 //   frame_ms 큼 + stage_ms 큼  → CPU 파셀 조립. stage 열에 어느 단계인지(base/bld/street/coast/walker/final)
 //   frame_ms 큼 + render_ms 큼 → 렌더 파이프라인(셰이더 컴파일·텍스처 업로드·섀도 재베이크)
 //   frame_ms만 큼(둘 다 작음) → 그 외. heap_mb가 함께 급감했으면 GC 스톨
-const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend,frame_ms,render_ms,stage_ms,stage,stage_sum,heap_mb';
+// [리소스 델타] 마지막 5열(pk_*)은 render_ms 최댓값을 세운 "그 한 프레임"의 값이다 — 창 최댓값과 짝이라
+// 다른 행의 수치와 섞어 읽으면 안 된다. pk_geo/pk_tex/pk_pipe는 그 프레임에 GPU로 새로 올라간 지오메트리·
+// 텍스처·파이프라인 개수(델타), pk_tri/pk_draw는 그 프레임의 렌더량(누적 아님). 읽는 법:
+//   render_ms 큼 + pk_geo 큼   → 지오메트리 버퍼 업로드
+//   render_ms 큼 + pk_tex 큼   → 텍스처 업로드
+//   render_ms 큼 + pk_pipe 큼  → 셰이더/파이프라인 컴파일
+//   render_ms 큼 + 셋 다 0     → 신규 업로드가 아닌 상시 렌더 비용(pk_tri/pk_draw로 규모 확인)
+const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend,frame_ms,render_ms,stage_ms,stage,stage_sum,heap_mb,pk_geo,pk_tex,pk_pipe,pk_tri,pk_draw';
 
 /**
  * 월드 상태 디버그 HUD + 시계열 로그를 마운트한다.
@@ -116,6 +123,8 @@ export function mountDebugHud(world, opts) {
       // 0.5초 샘플 사이를 지나간 스파이크를 놓치지 않으려면 창 관리가 프레임 루프 쪽에 있어야 한다).
       frameMs: s.frameMs, renderMs: s.renderMs, stageMs: s.stageMs, stageSum: s.stageSum,
       stage: s.stage || '', heapMB: s.heapMB,
+      // [리소스 델타] render_ms 최댓값을 세운 그 프레임에 GPU로 새로 올라간 것의 개수.
+      peakGeo: s.peakGeo, peakTex: s.peakTex, peakPipe: s.peakPipe, peakTri: s.peakTri, peakDraw: s.peakDraw,
     };
   }
 
@@ -130,7 +139,9 @@ export function mountDebugHud(world, opts) {
       `yaw ${num(d.yawDeg, 0)}°  pitch ${num(d.pitchDeg, 0)}°\n` +
       `draw ${d.draw ?? '?'}  load ${d.loadedFull ?? '?'}f/${d.loadedShell ?? '?'}s q${d.queue ?? '?'}\n` +
       // [히칭 프로파일] 최근 1초 최대 — frame이 튈 때 render/stage 중 어느 쪽이 같이 튀는지가 답이다.
-      `frame ${num(d.frameMs, 0)}ms  render ${num(d.renderMs, 0)}  stage ${num(d.stageMs, 0)}${d.stage ? '(' + d.stage + ')' : ''}  heap ${num(d.heapMB, 0)}MB`;
+      `frame ${num(d.frameMs, 0)}ms  render ${num(d.renderMs, 0)}  stage ${num(d.stageMs, 0)}${d.stage ? '(' + d.stage + ')' : ''}  heap ${num(d.heapMB, 0)}MB\n` +
+      // [리소스 델타] 위 render 최댓값을 세운 그 프레임에 새로 올라간 것 — 여기가 0인데 render가 크면 신규 업로드는 범인이 아니다.
+      `↳ +geo ${d.peakGeo ?? '?'}  +tex ${d.peakTex ?? '?'}  +pipe ${d.peakPipe ?? '?'}  tri ${d.peakTri ?? '?'}  draw ${d.peakDraw ?? '?'}`;
     hint.textContent = rec.length ? `rec ${rec.length} (${Math.round(rec.length * REC_INTERVAL_MS / 1000)}s)` : '';
   }
 
@@ -154,6 +165,7 @@ export function mountDebugHud(world, opts) {
       c(d.yawDeg, 0), c(d.pitchDeg, 0), d.draw ?? '',
       d.loadedFull ?? '', d.loadedShell ?? '', d.queue ?? '', d.backend,
       c(d.frameMs, 1), c(d.renderMs, 1), c(d.stageMs, 1), d.stage, c(d.stageSum, 1), c(d.heapMB, 1),
+      d.peakGeo ?? '', d.peakTex ?? '', d.peakPipe ?? '', d.peakTri ?? '', d.peakDraw ?? '',
     ].join(',');
   }
 
