@@ -1100,12 +1100,12 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       queued.delete(ctx.k);
       if (!ctx.shellOnly) lastFullFinalizeAt = perfNow();
     }
-    // unloadParcel이 무효화한 예열은 여기서 끝낸다 — 그쪽에서 이미 dispose까지 마쳤으므로 되살리면
-    // 스트리밍이 버린 파셀이 화면에 다시 나타나거나(reload는 record 검사를 건너뛴다) 이중 dispose가 된다.
-    if (ctx.aborted) return;
+    // unloadParcel이 무효화한 예열은 여기서 끝낸다. 자원 회수도 여기가 제자리다 — 컴파일이 끝난 뒤라
+    // 안전하다(언로드 시점에 dispose하면 순회 중인 three 내부가 깨진다).
+    if (ctx.aborted) { disposeCtx(ctx); return; }
     const latest = pendingAttach.get(ctx.k);
     if (latest === ctx) pendingAttach.delete(ctx.k);
-    if (disposed) return;
+    if (disposed) { disposeCtx(ctx); return; } // world는 사라졌지만 지오·텍스처는 회수하고 끝낸다
     if (latest && latest !== ctx) { disposeCtx(ctx); return; }               // 더 나중에 시작된 ctx가 있다 → 이건 버린다
     if (!ctx.reload && loaded.get(ctx.k) !== ctx) { disposeCtx(ctx); return; } // fresh: record가 이미 남에게 넘어감(언로드·재로드)
     if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
@@ -1171,11 +1171,14 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     //  ② loadParcelSync("즉시 완성" 계약)가 LOD 교체로 이 함수를 거쳐 새 ctx를 만들 때, 남아 있던
     //     옛 예열 항목이 세대 가드에 걸려 그 새 ctx를 폐기시킨다(교차리뷰 블로커).
     // aborted는 이미 resolve 대기 중인 promise가 나중에 돌아왔을 때 되살아나지 못하게 하는 표식이다.
+    // 자원 회수는 여기서 하지 않는다 — compileAsync가 순회 중인 지오·재질을 dispose하면 three 내부
+    // 파이프라인 상태가 깨진다(헤드리스에서 "Cannot read properties of undefined (reading 'isReady')"
+    // 실측). 표식만 남기고, 예열 promise가 돌아온 뒤 attachParcel이 안전한 시점에 회수한다.
     const pend = pendingAttach.get(k);
     if (pend) { pend.aborted = true; pendingAttach.delete(k); }
     const L = loaded.get(k);
-    if (pend && pend !== L) disposeCtx(pend); // loaded와 다른 인스턴스일 때만 별도 회수(이중 dispose 방지)
     if (!L) return;
+    if (L === pend) { loaded.delete(k); parcelBehind.delete(k); if (!disposed) requestShadowBake(); return; } // 예열 중인 본인 — record만 떼고 dispose는 promise 이후로
     disposeCtx(L);
     loaded.delete(k);
     parcelBehind.delete(k); // [시야 인지] 각도 히스테리시스만 리셋 — 재진입 시 엄격기준(ENTER) 적용되어 안전.
@@ -2181,9 +2184,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getScene: () => scene, getCamera: () => camera, getRenderer: () => renderer,
     dispose() {
       disposed = true;
-      // 예열 대기 중이라 아직 씬에 안 붙은 파셀 — attachParcel은 disposed면 즉시 빠지므로 여기서
-      // 지오를 회수하지 않으면 그대로 샌다(교차리뷰 권고). 씬 미부착이라 remove는 무해.
-      for (const ctx of pendingAttach.values()) disposeCtx(ctx);
+      // 예열 대기 중이라 아직 씬에 안 붙은 파셀 — 여기서 dispose하면 컴파일 순회 중인 자원을 건드릴
+      // 수 있으므로 표식만 남긴다. 회수는 promise가 돌아온 뒤 attachParcel의 aborted 분기가 한다.
+      for (const ctx of pendingAttach.values()) ctx.aborted = true;
       pendingAttach.clear();
       if (raf) cancelAnimationFrame(raf);
       if (!headless && typeof window !== 'undefined') {
