@@ -238,34 +238,49 @@ export function genStreet(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel) {
   };
 
   const items = [];
+  // 점유 반경 — 이미 배치된 가구와의 상호 간섭 판정용(원형 근사, safe()의 r 인자와 같은 기준).
+  // tree만 실물(줄기 0.25)이 아니라 발치 tree pit 반경(world.js PIT_RADIUS 1.3)을 쓴다: pit은 충돌
+  // 없는 바닥 데칼이지만 흙+벽돌 원 위에 벤치·화분이 올라서면 어색하므로 시각 점유로 취급한다.
+  const FOOT = { tree: 1.3, lamp: 0.22, bench: 0.75, planter: 0.35 };
+  // safe()는 도로·건물·접근로·경계만 보고 이미 배치된 가구는 보지 않는다 — 그래서 나무가 도로에서
+  // 물러난 뒤 벤치·화분과 겹치는 파셀이 생겼다(전수 계산 확인). 배치 순서(나무→가로등→벤치→화분)대로
+  // 앞서 놓인 것들과의 간격을 여기서 함께 본다. rng 소비는 조건 판정 전에 이미 끝나므로 결정론 불변.
+  const clear = (x, z, kind) => items.every((i) => Math.hypot(i.x - x, i.z - z) >= FOOT[kind] + FOOT[i.kind]);
   // ── 가로수(2~4) — 남 도로 안쪽 라인 + 동 도로 안쪽 라인. rng 소비는 후보당 2회로 고정(결정론). ──
-  const treeZ = roadS - 0.95, treeX = roadE - 0.95;
+  // [동선 확보] 감독 실기기 판정 — 도로에서 0.95m는 걷는 선과 겹쳐 부딪혔다. 2.3m로 물려
+  //  도로 통행 폭을 온전히 비운다(pit 반경 1.3 + 여유). 건물과 가까워지는 만큼 safe()가
+  //  자동 배제하므로 겹침은 생기지 않고, 배제된 그루만큼 그루 수가 줄어 부하도 함께 준다.
+  const treeZ = roadS - 2.3, treeX = roadE - 2.3;
   const TREE_MAX = 4;
   let trees = 0;
   for (const x of [-8, -4, 4, 8]) {          // 남 라인(문 접근로는 safe가 배제)
     const roll = rng() < 0.72, tone = (rng() * 3) | 0;
-    if (trees < TREE_MAX && roll && safe(x, treeZ, 0.35)) { items.push({ kind: 'tree', x, z: treeZ, tone }); trees++; }
+    if (trees < TREE_MAX && roll && safe(x, treeZ, 0.35) && clear(x, treeZ, 'tree')) { items.push({ kind: 'tree', x, z: treeZ, tone }); trees++; }
   }
   for (const z of [-8, -4, 0]) {             // 동 라인(건물이 크면 safe가 배제)
     const roll = rng() < 0.6, tone = (rng() * 3) | 0;
-    if (trees < TREE_MAX && roll && safe(treeX, z, 0.35)) { items.push({ kind: 'tree', x: treeX, z, tone }); trees++; }
+    if (trees < TREE_MAX && roll && safe(treeX, z, 0.35) && clear(treeX, z, 'tree')) { items.push({ kind: 'tree', x: treeX, z, tone }); trees++; }
   }
-  // ── 가로등(1) — 남동 코너 도로 교차부. 의도적으로 safe() 미경유(safe는 도로 통행 스트립을 배제하지만
-  //    가로등은 도로 위 배치가 정상 — 반경 0.22로 작아 통행 우회 가능). 전제조건: 좌표 cx/2-1.25는
-  //    파셀 경계 안쪽(EDGE 0.6 여유)이고 건물은 북쪽 치우침(bz<0)이라 남동 코너에서 건물과 겹치지 않음. ──
-  items.push({ kind: 'lamp', x: cx / 2 - 1.25, z: cz / 2 - 1.25 });
+  // ── 가로등(1) — 남동 코너, 도로 안쪽 경계 바로 밖(인도 코너). 의도적으로 safe() 미경유(safe는 도로
+  //    통행 스트립을 통째로 배제하지만 가로등은 경계선 상에 서는 것이 정상). 건물은 북쪽 치우침(bz<0)이라
+  //    남동 코너에서 건물과 겹치지 않는다. ──
+  //  [동선 확보] 감독 실기기 판정으로 좌표를 cx/2-1.25(=10.75)에서 cx/2-2.8(=9.2)로 물렸다. 도로는
+  //  이 파셀의 [roadS, cx/2]와 이웃 파셀의 대칭 스트립이 이어져 폭 5m·중심선이 파셀 경계(cx/2)이므로,
+  //  10.75는 교차로 중심에서 1.25m — 통행선 한복판이었다. 9.2는 도로 안쪽 경계(roadS=9.5)보다 0.3m
+  //  바깥이라 기둥 반경 0.22를 더해도 도로에 걸치지 않아 교차부 통행 폭 5m가 온전히 빈다.
+  items.push({ kind: 'lamp', x: roadE - 0.3, z: roadS - 0.3 });
   // ── 벤치·화분(0~n) — 마당. 파셀당 가구 총 6개 이하(가로등1 + 가로수 + 가구 ≤ 6). ──
   const furnMax = Math.max(0, 5 - trees);
   let furn = 0;
   const yardZ = Math.min(roadS - 1.3, bz + bhd + 1.6);
   for (const bx2 of [-(APPROACH + 1.6), APPROACH + 1.6]) {   // 접근로 양옆 벤치
     const roll = rng() < 0.42;
-    if (furn < furnMax && roll && safe(bx2, yardZ, 0.7)) { items.push({ kind: 'bench', x: bx2, z: yardZ, ry: 0 }); furn++; }
+    if (furn < furnMax && roll && safe(bx2, yardZ, 0.7) && clear(bx2, yardZ, 'bench')) { items.push({ kind: 'bench', x: bx2, z: yardZ, ry: 0 }); furn++; }
   }
   for (const s of [-1, 1]) {                                  // 건물 남측 모서리 화분
     const roll = rng() < 0.4;
     const pxp = bx + s * (bhw + 0.8), pzp = bz + bhd + 0.8;
-    if (furn < furnMax && roll && safe(pxp, pzp, 0.35)) { items.push({ kind: 'planter', x: pxp, z: pzp }); furn++; }
+    if (furn < furnMax && roll && safe(pxp, pzp, 0.35) && clear(pxp, pzp, 'planter')) { items.push({ kind: 'planter', x: pxp, z: pzp }); furn++; }
   }
   return items;
 }

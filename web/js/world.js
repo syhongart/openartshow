@@ -124,21 +124,24 @@ function makeEnvMap(renderer, isWebGPU) {
 // 지오는 CircleGeometry(1,20) 그대로 재사용(정점 수 무변화) — 색·질감은 전부 아래 makeTreePitTex()
 // 캔버스 텍스처(흙 베이스 + 벽돌 링, makeGroundTex 절차생성 패턴 재사용)가 담당하므로 버텍스컬러
 // 루프가 필요 없다.
-// [가로수 온·오프] 감독 지시(2026-07-26): 길 가운데 가로수가 ① 걷는 동선을 막아 불편하고
-// ② 파셀 승격 시 draw call이 몰리는 부담원이라 일단 뺀다. 코드는 남기고 이 상수만 false —
-// 다시 켜려면 true 하나로 원복된다(줄기 충돌 solids·발치 tree pit도 이 블록에 함께 묶여 있다).
-const STREET_TREES = false;
-// [가로등 온·오프] 같은 지시로 가로등도 뺀다 — 기둥 충돌(top 3.0)이 보행을 막고, 파셀당
-// 기둥·갓 2버킷이 승격 시 draw call에 얹힌다. 벤치·화분은 유지(동선 가장자리·낮은 높이).
-// 갓 재질은 emissive라 실제 THREE.Light가 아니므로, 빼도 씬 조명 계산엔 영향 없다.
-const STREET_LAMPS = false;
+// [가로수 온·오프] 감독 지시(2026-07-26)로 한 번 껐다가(길 가운데 가로수가 걷는 동선을 막아 불편)
+// 다시 켰다 — 감독 재지시 "되살리되 길 가장자리로". 부담원 판정은 계측으로 뒤집혔다: 나무를 없앤
+// 상태의 헤드리스 A/B에서 파셀당 draw call은 -3(-8~11%)에 그쳤고 프레임 히칭의 압도적 1위는
+// stageWalker(NPC 생성, 파셀당 평균 33.9ms)였다. 즉 나무는 draw call에 조금 얹힐 뿐 히칭의 범인이
+// 아니었다. 동선 문제는 world-gen.js genStreet의 배치 좌표를 도로 밖으로 물려 해결했다.
+// 코드 경로는 그대로라 이 상수만 false면 다시 통째로 꺼진다(줄기 충돌 solids·발치 tree pit 포함).
+const STREET_TREES = true;
+// [가로등 온·오프] 같은 경위로 껐다가 복구. 기둥 충돌(top 3.0)이 교차부 통행을 막던 문제는 좌표를
+// 도로 안쪽 경계 밖(genStreet)으로 물려 해소했다. 갓 재질은 emissive라 실제 THREE.Light가 아니므로
+// 켜고 끄는 것이 씬 조명 계산에는 영향이 없다.
+const STREET_LAMPS = true;
 const PIT_RADIUS = 1.3; // 0.65→1.3(감독 지시, 반경 2배). 인접 나무 간 최소 배치 간격 4m(world-gen.js genStreet)
-// 대비 지름 2.6m이라 pit-pit 겹침은 없음(최소 간극 1.4m, 헤드리스 전수 확인). 남/동 가로수 라인은 도로
-// 경계 0.95m 안쪽에 서 있어 pit 바깥 가장자리가 도로 쪽으로 균일하게 0.35m 걸치는데, 이는 모든 가로수
-// 공통(가로수 pit이 도로 경계에 걸치는 것 자체는 실제 스트리트도 흔함)이라 문제로 보지 않았다. 건물
-// 풋프린트와는 336그루 중 2그루만 실측 겹침(-0.014m 무시 가능 1건, -0.519m 실침범 1건 — px6,pz5 large
-// 풋프린트) — 0.6%라 "심함"은 아니라 판단해 감독 지시대로 1.3 그대로 적용했고, 그 2그루는 이제 아래
-// treePitRadius가 개별 반경을 건물까지 거리로 클램프해 해소한다(전역 1.3은 그대로).
+// 대비 지름 2.6m이라 pit-pit 겹침은 없음(최소 간극 1.4m, 헤드리스 전수 확인). 가로수 라인을 도로에서
+// 2.3m 안쪽으로 물린 뒤로는 pit 바깥 가장자리가 도로 경계까지 1.0m 남아 도로 통행 폭을 전혀 침범하지
+// 않는다(전 파셀 전수 계산 0건 — 이전에는 336그루 전부가 0.35m씩 걸쳤다). genStreet의 clear()가
+// 이 PIT_RADIUS를 나무의 점유 반경으로 삼아 벤치·화분이 흙 원 위에 올라서지 않도록 함께 배제한다.
+// 건물 풋프린트와의 겹침은 아래 treePitRadius가 개별 반경을 건물까지 거리로 클램프해 해소한다
+// (전역 1.3은 그대로).
 /**
  * 개별 나무의 pit 반경 — 전역 PIT_RADIUS를 인접 건물 풋프린트까지의 거리로 클램프한다.
  * PIT_RADIUS(1.3, 감독 확정값)는 불변이고, 건물에 가까운 나무만 반경이 줄어든다. 336그루 중 실측
@@ -1994,8 +1997,11 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       for (const L of loaded.values()) { if (!L.ready) continue; if (L.lod === 'shell') loadedShell++; else loadedFull++; } // ready=완성 파셀만(스테이지 로딩 중 부분 record 제외)
       let lightsInUse = 0; for (const sl of lightPool) if (sl._inUse) lightsInUse++; // 라이트풀 점유(누수 검증 — 근접·이탈 반복에도 안정해야)
       // renderer.info.programs는 WebGL 전용(WebGPU Info엔 없음) → 가드해 WebGPU 실기 계측(debug-hud)이 통째로 비지 않게.
-      // drawCalls: render.calls는 누적 render() 횟수라 Info.reset() 대상 밖이다 — 프레임당 실제 draw 수는 render.drawCalls.
-      return { drawCalls: renderer.info.render.drawCalls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL' };
+      // drawCalls: 두 백엔드의 Info 스키마가 다르다. 신형 통합 Renderer(WebGPU)는 render.calls가 누적
+      // render() 횟수(reset 대상 밖)라 프레임당 값은 render.drawCalls이고, 폴백 WebGLRenderer의
+      // WebGLInfo에는 drawCalls 자체가 없고 render.calls가 프레임당 draw 수다. WebGPU 기준만 읽으면
+      // WebGL 폴백 기기에서 HUD draw가 통째로 undefined가 된다(헤드리스 계측에서 실측 확인).
+      return { drawCalls: renderer.info.render.drawCalls ?? renderer.info.render.calls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL' };
     },
     getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
