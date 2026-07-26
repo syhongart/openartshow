@@ -1091,11 +1091,14 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 조립이 끝난 파셀을 씬에 붙인다(예열 여부와 무관한 공통 경로).
   // fromQueue: processLoadQueue가 태운 job인가 — 큐 회계(queued·inflightFull·쿨다운)를 여기서 회수한다.
   function attachParcel(ctx, fromQueue) {
-    // 회수는 아래 가드보다 반드시 먼저. 조기 return 경로에서 inflightFull이 새면 MAX_INFLIGHT_FULL에
-    // 걸려 full 승격이 세션 내내 멈춘다(빈 껍데기 도시).
+    // 회수는 아래 가드보다 반드시 먼저 — 조기 return 경로에서 queued가 남으면 그 파셀은 다시 큐잉되지
+    // 못해 영영 로드되지 않는다. 쿨다운 기준시각도 "실제 부착" 시점으로 찍어야 순차 등장이 성립한다
+    // (컴파일 착수 시각으로 찍으면 컴파일이 400ms를 넘는 기기에서 쿨다운이 부착 전에 만료된다).
+    // in-flight full 한도는 여기서 건드리지 않는다 — processLoadQueue가 매 프레임 큐와 pendingAttach로
+    // 재계산하는 값이라 지속 카운터가 아니다(예열 대기분은 그쪽에서 함께 센다).
     if (fromQueue) {
       queued.delete(ctx.k);
-      if (!ctx.shellOnly) { inflightFull--; lastFullFinalizeAt = perfNow(); }
+      if (!ctx.shellOnly) lastFullFinalizeAt = perfNow();
     }
     const latest = pendingAttach.get(ctx.k);
     if (latest === ctx) pendingAttach.delete(ctx.k);
@@ -1502,6 +1505,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const PROMOTE_COOLDOWN_MS = 400;
     let inflightFull = 0;
     for (const j of loadQueue) if (j.ctx && !j.ctx.shellOnly) inflightFull++;
+    // [파이프라인 예열] 조립을 마치고 컴파일 대기 중인 full도 in-flight로 센다. 큐에서는 이미 빠졌지만
+    // 아직 화면에 붙지 않았으므로, 세지 않으면 MAX_INFLIGHT_FULL이 무력화돼 여러 파셀이 동시에
+    // 승격되고 컴파일이 겹친다(예열의 부하 분산 효과가 사라진다).
+    for (const c of pendingAttach.values()) if (!c.shellOnly) inflightFull++;
     let i = 0;
     while (i < loadQueue.length) {
       const job = loadQueue[i];
