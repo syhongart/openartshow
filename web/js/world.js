@@ -1100,6 +1100,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       queued.delete(ctx.k);
       if (!ctx.shellOnly) lastFullFinalizeAt = perfNow();
     }
+    // unloadParcel이 무효화한 예열은 여기서 끝낸다 — 그쪽에서 이미 dispose까지 마쳤으므로 되살리면
+    // 스트리밍이 버린 파셀이 화면에 다시 나타나거나(reload는 record 검사를 건너뛴다) 이중 dispose가 된다.
+    if (ctx.aborted) return;
     const latest = pendingAttach.get(ctx.k);
     if (latest === ctx) pendingAttach.delete(ctx.k);
     if (disposed) return;
@@ -1162,7 +1165,17 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     for (const g of L.own) g.dispose(); // 파셀 소유 지오(해변·부두 머지 포함, 공유 재질 T는 일괄)
   }
   function unloadParcel(k) {
-    const L = loaded.get(k); if (!L) return;
+    // [파이프라인 예열] 이 키에 예열 대기 중인 ctx가 있으면 함께 무효화한다. 두 방향으로 필요하다:
+    //  ① 스트리밍이 버린 파셀의 예열이 뒤늦게 끝나면 attachParcel이 그걸 씬에 되살린다(reload 경로는
+    //     loaded record 검사를 건너뛰므로 세대 가드만으로는 못 막는다).
+    //  ② loadParcelSync("즉시 완성" 계약)가 LOD 교체로 이 함수를 거쳐 새 ctx를 만들 때, 남아 있던
+    //     옛 예열 항목이 세대 가드에 걸려 그 새 ctx를 폐기시킨다(교차리뷰 블로커).
+    // aborted는 이미 resolve 대기 중인 promise가 나중에 돌아왔을 때 되살아나지 못하게 하는 표식이다.
+    const pend = pendingAttach.get(k);
+    if (pend) { pend.aborted = true; pendingAttach.delete(k); }
+    const L = loaded.get(k);
+    if (pend && pend !== L) disposeCtx(pend); // loaded와 다른 인스턴스일 때만 별도 회수(이중 dispose 방지)
+    if (!L) return;
     disposeCtx(L);
     loaded.delete(k);
     parcelBehind.delete(k); // [시야 인지] 각도 히스테리시스만 리셋 — 재진입 시 엄격기준(ENTER) 적용되어 안전.
