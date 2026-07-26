@@ -358,6 +358,10 @@ export function disposeSpaceGroup(g) {
   (u.geos || []).forEach((x) => x.dispose && x.dispose());
   (u.mats || []).forEach((m) => { // 텍스처 정리(누수 방지). 단 공유 텍스처(userData.shared)는 방문뷰·빌더·world 공용이라
     // 여기서 dispose하면 타 그룹이 참조 중인 걸 파괴 → 라이브 회귀. shared는 skip(세션 캐시 영구 유지). kintsugi/water/grass clone은 skip 아님 → 정상 회수.
+    // [P1 재질 캐시] 재질 자체도 같은 규약을 따른다 — texMat이 캐시해 여러 파셀이 같은 인스턴스를 공유하므로,
+    // 한 파셀 언로드가 그것을 dispose하면 남은 파셀의 렌더가 깨지고 다음 사용 시 파이프라인이 재생성된다
+    // (캐시를 넣은 목적 자체가 무효화된다). shared 재질은 텍스처·재질 모두 건너뛴다.
+    if (m.userData && m.userData.shared) return;
     if (m.map && m.map.dispose && !(m.map.userData && m.map.userData.shared)) m.map.dispose();
     if (m.normalMap && m.normalMap.dispose && !(m.normalMap.userData && m.normalMap.userData.shared)) m.normalMap.dispose();
     m.dispose && m.dispose();

@@ -59,11 +59,33 @@ export function warmBuildingTexCache() {
   baseMaps(createConcreteMaps, 'concrete');
   baseMaps(parquetLite, 'parquet'); // parquetTex와 같은 gen·키 — 캐시 불일치로 1024가 데워지는 일 방지
 }
+// [P1 재질 캐시] A-3에서 텍스처는 공유했지만 **재질 인스턴스는 호출마다 새로 태어났다.** 그 결과 파셀마다
+// 같은 마감의 벽·바닥이 각자 독립 MeshStandardMaterial을 갖고, three는 재질 단위로 렌더 파이프라인을 만들므로
+// 파이프라인 조합이 인위적으로 무한 증식했다. 실기기 CSV가 이를 확증한다 — 구조 키가 35→116으로 계속 늘고
+// (정적 분석은 13종이면 충분하다고 했다), 같은 키 재생성(pipe_re)은 0~1로 거의 없었다. 축출·재생성이 아니라
+// **매번 새 키**였다는 뜻이다. 그리고 조합이 수렴한 뒤 20초 구간은 프레임이 17~50ms로 완전히 안정적이었다.
+// 레퍼런스(Claude-of-Duty, MIT)의 MaterialSystem.get(name, opts)이 같은 문제를 이 방식으로 푼다:
+// *"Identical (name, opts) return the identical instance so meshes batch"*.
+//
+// **repeat을 키에 넣는 이유**: uvRepeat이 재질 userData에 실려 space-assembler가 그 값으로 지오 UV를 굽는다
+// (bakeUVRepeat). 재질을 무조건 공유하면 치수가 다른 벽이 남의 repeat으로 구워져 텍스처 스케일이 틀어진다.
+// 대신 같은 파츠 타입은 표준 치수라 repeat이 동일하므로 **파셀 간 공유는 그대로 일어난다** — 지금 문제인
+// "파셀마다 새로 생성"이 정확히 이 지점이다. 근본 해법(uvRepeat을 지오로 이관)은 파츠 생성부 전면 수정이라
+// 별건으로 남긴다.
+//
+// 캐시된 재질은 세션 영구다. disposeSpaceGroup이 파괴하지 않도록 userData.shared 표식을 붙인다(텍스처와 동일 규약).
+const _matCache = {};
 function texMat({ gen, key, tint = 0xffffff, repeat = [2, 2], normalScale = 0.4, roughness = 0.9, metalness = 0 }) {
+  // 부동소수 오차로 캐시가 갈리지 않게 소수 4자리로 양자화(0.1mm 미만 차이는 같은 재질로 본다).
+  const q = (v) => Math.round(v * 1e4) / 1e4;
+  const ck = `${key}|${tint}|${q(repeat[0])}|${q(repeat[1])}|${q(normalScale)}|${q(roughness)}|${q(metalness)}`;
+  const hit = _matCache[ck];
+  if (hit) return hit;
   const { map, normalMap } = sharedMaps(gen, key); // 마감당 공유 텍스처(repeat=1) — clone 안 함
   const mat = new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(normalScale, normalScale), color: new THREE.Color(tint), roughness, metalness });
   mat.userData.uvRepeat = [repeat[0], repeat[1]]; // 세그먼트 repeat은 track에서 지오 uv에 굽는다(bakeUVRepeat)
-  return mat;
+  mat.userData.shared = true;                     // 파셀 언로드가 파괴하지 않게(공유 텍스처와 같은 규약)
+  return (_matCache[ck] = mat);
 }
 // 표면 치수 → 텍스처 반복(월 목표 조인트 ~2.5m·바닥 파케 ~2m)
 const plasterTex = (tint, w, h) => texMat({ gen: createPlasterMaps, key: 'plaster', tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.32, roughness: 0.92 });

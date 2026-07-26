@@ -36,11 +36,23 @@ function warmBuildingTexCache() {
   baseMaps(createConcreteMaps, "concrete");
   baseMaps(parquetLite, "parquet");
 }
+// [P1 재질 캐시] 텍스처는 A-3에서 공유했지만 재질 인스턴스는 호출마다 새로 태어났다. three는 재질 단위로
+// 파이프라인을 만들므로 파셀마다 조합이 무한 증식했다(실기기 CSV: 구조 키 35→116 계속 증가, 같은 키
+// 재생성은 0~1 = 축출이 아니라 매번 새 키). 동일 파라미터 → 동일 인스턴스로 접는다.
+// repeat을 키에 포함하는 이유: uvRepeat이 재질 userData에 실려 space-assembler가 그 값으로 지오 UV를 굽는다.
+// 무조건 공유하면 치수가 다른 벽이 남의 repeat으로 구워져 텍스처 스케일이 틀어진다. 같은 파츠 타입은 표준
+// 치수라 repeat이 같으므로 파셀 간 공유는 그대로 일어난다 — 지금 문제인 "파셀마다 새로 생성"이 이 지점이다.
+const _matCache = {};
 function texMat({ gen, key, tint = 16777215, repeat = [2, 2], normalScale = 0.4, roughness = 0.9, metalness = 0 }) {
+  const q = (v) => Math.round(v * 1e4) / 1e4; // 부동소수 오차로 캐시가 갈리지 않게 양자화
+  const ck = `${key}|${tint}|${q(repeat[0])}|${q(repeat[1])}|${q(normalScale)}|${q(roughness)}|${q(metalness)}`;
+  const hit = _matCache[ck];
+  if (hit) return hit;
   const { map, normalMap } = sharedMaps(gen, key);
   const mat = new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(normalScale, normalScale), color: new THREE.Color(tint), roughness, metalness });
   mat.userData.uvRepeat = [repeat[0], repeat[1]];
-  return mat;
+  mat.userData.shared = true; // 파셀 언로드가 파괴하지 않게(공유 텍스처와 같은 규약)
+  return (_matCache[ck] = mat);
 }
 const plasterTex = (tint, w, h) => texMat({ gen: createPlasterMaps, key: "plaster", tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.32, roughness: 0.92 });
 const concreteTex = (tint, w, h) => texMat({ gen: createConcreteMaps, key: "concrete", tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.55, roughness: 0.9 });

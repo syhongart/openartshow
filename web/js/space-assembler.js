@@ -389,6 +389,9 @@ function disposeSpaceGroup(g) {
   const u = g.userData || {};
   (u.geos || []).forEach((x) => x.dispose && x.dispose());
   (u.mats || []).forEach((m) => {
+    // [P1 재질 캐시] texMat이 캐시한 공유 재질은 여러 파셀이 같은 인스턴스를 쓴다. 한 파셀 언로드가
+    // 그것을 dispose하면 남은 파셀 렌더가 깨지고 다음 사용 시 파이프라인이 재생성돼 캐시 목적이 무효화된다.
+    if (m.userData && m.userData.shared) return;
     if (m.map && m.map.dispose && !(m.map.userData && m.map.userData.shared)) m.map.dispose();
     if (m.normalMap && m.normalMap.dispose && !(m.normalMap.userData && m.normalMap.userData.shared)) m.normalMap.dispose();
     m.dispose && m.dispose();
