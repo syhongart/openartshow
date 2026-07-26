@@ -1742,6 +1742,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   let liteMode = false;
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
   let shadowDownTicks = 0, shadowUpTicks = 0; // [그림자 조기 적응] 방향별 연속 저/고FPS 틱(0.5s 집계 단위)
+  let shadowLitePending = false; // [지연 그림자 강등] 긴급강등이 요청한 그림자 off — 한가한 순간에 집행(자기모순 제거)
 
   // ── [히칭 프로파일] 급락의 정체를 실기기에서 가르는 계측 ──────────────────────────────
   // 감독 실기기 CSV(?off=shadow&px=0.5)에서 정상상태는 60fps 고정인데 승격 순간마다 3~30fps로
@@ -2028,9 +2029,29 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       liteMode = true; adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
       shadowDownTicks = 0; shadowUpTicks = 0; // 그림자 조기 적응 상태 리셋 — lite 진입이 그림자를 인수(1286)
       if (skySystem) skySystem.setLite(true); // [하늘 엔진] B-2 하늘 투명 레이어 오버드로우 축소
-      setShadowLite(true); // [C-1] 저사양 그림자 강등 — lite 진입과 연동(shadowMap.enabled=false)
+      // [자기모순 제거] 그림자 강등을 이 tick에서 하지 않는다 — 요청만 남기고 한가한 순간으로 미룬다.
+      // 이유: shadowMap.enabled 토글은 WebGPU에서 RenderObject 캐시키에 직접 들어가(three Nodes.js)
+      // 씬 전체 파이프라인을 무효화·전량 재생성시킨다. 그런데 이 블록은 fps<24로 **이미 힘든 프레임**이라,
+      // 사용자를 구하려는 처방이 그 순간 수백 ms~수초 스톨을 얹는 자기모순이었다(6갈래 조사 + 적대적
+      // 검증 만장일치, 실기기 CSV의 dpr 1.50→1.20 전환 tick에서 render 2639ms 관측).
+      // 종전 주석은 이 비용을 WebGL 프로그램 캐시키(USE_SHADOWMAP)로만 인식했다 — WebGPU에서 훨씬 넓다.
+      // 수단을 없애는 게 아니라 타이밍만 옮긴다 — 아래 지연 블록이 처리한다.
+      shadowLitePending = true;
       emit('adapt', { mode: 'lite', ratio: RATIO_FLOOR, fps: Math.round(fpsNow) });
       return; // 긴급 강등 처리 완료 — 이 tick의 그림자/승급 판정 불필요
+    }
+
+    // [지연 그림자 강등] 위 긴급강등이 요청한 그림자 off를 "한가한 순간"에만 집행한다(스트리밍 없음·큐
+    // 빔·쿨다운 만료). 파이프라인 전량 재생성 비용을 저fps·스트리밍 구간과 겹치지 않게 떼어 놓는 것이 요점.
+    // fps가 해상도 강등만으로 이미 회복됐으면 요청을 **취소**한다 — 감독 "그림자 유지(55:45)" 취지대로
+    // 굳이 끄지 않는 쪽이 룩에 낫다. 종전에는 이 판정 없이 긴급강등과 동시에 무조건 껐다.
+    if (shadowLitePending && adaptAge >= ADAPT_WARMUP && !streaming && loadQueue.length === 0 && adaptCooldown <= 0) {
+      if (renderer.shadowMap.enabled && fpsNow < SHADOW_LITE_ENTER) {
+        setShadowLite(true); shadowLitePending = false; adaptCooldown = ADAPT_COOLDOWN;
+        emit('adapt', { mode: 'shadow-lite-deferred', fps: Math.round(fpsNow) });
+      } else if (fpsNow > SHADOW_LITE_EXIT) {
+        shadowLitePending = false; // 해상도 강등만으로 회복 — 그림자는 살린다
+      }
     }
 
     // [그림자 조기 적응] 데스크톱(무캡) 전용 — 해상도 긴급 강등(24)에 해당하지 않는 중간대(24~48fps)에서
@@ -2068,7 +2089,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (adaptUpTicks >= ADAPT_UP_HOLD && cur < RATIO_CEIL) {
         renderer.setPixelRatio(Math.min(RATIO_CEIL, cur + ADAPT_UP_STEP));
         adaptCooldown = ADAPT_COOLDOWN; adaptUpTicks = 0;
-        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) { liteMode = false; shadowDownTicks = 0; shadowUpTicks = 0; if (skySystem) skySystem.setLite(false); setShadowLite(false); } // 상한 복귀 시 lite 해제(하늘 레이어·그림자 복원)
+        if (renderer.getPixelRatio() >= RATIO_CEIL - 1e-6) { liteMode = false; shadowDownTicks = 0; shadowUpTicks = 0; shadowLitePending = false; if (skySystem) skySystem.setLite(false); setShadowLite(false); } // 상한 복귀 시 lite 해제(하늘 레이어·그림자 복원). 미집행 지연요청도 함께 취소 — lite를 벗어난 뒤 뒤늦게 그림자가 꺼지는 역행 방지.
         emit('adapt', { mode: 'up', ratio: renderer.getPixelRatio(), fps: Math.round(fpsNow) });
       }
     } else {
