@@ -26,7 +26,22 @@ const REC_INTERVAL_MS = 500; // 시계열 샘플 주기(HUD 갱신과 동일)
 //   render_ms 큼 + 셋 다 0     → 신규 업로드가 아닌 상시 렌더 비용(pk_tri/pk_draw로 규모 확인)
 // pk_geo/pk_tex는 음수일 수 있다 — 그 프레임에 생긴 것보다 파셀 언로드로 해제된 것이 많았다는 뜻이다.
 // 이상값이 아니라 정상이며, 그 프레임의 범인이 신규 업로드가 아니라는 신호로 읽으면 된다.
-const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend,frame_ms,render_ms,stage_ms,stage,stage_sum,heap_mb,pk_geo,pk_tex,pk_pipe,pk_tri,pk_draw';
+//
+// [파이프라인 캐시 감시 2세대] pk_pipe는 캐시 크기의 **순델타**라 같은 프레임의 생성 N + 해제 N을 0으로
+// 보고했고, 창 최댓값 프레임의 값만 남아 "파이프라인이 생겼는데 프레임은 정상"이라는 반증 관측을 통째로
+// 버렸다. 아래 8열이 그 두 결함을 고친다. 읽는 법:
+//   pipe_new / pipe_del / pipe_re → 이 창에서 생성 / 해제 / **전에 봤던 키가 다시 생성**된 수
+//   pipe_tot                      → 세션 누적 생성(단조증가)
+//   pipe_struct                   → 구조 키 고유 수(셰이더 인스턴스 id 제외 = 진짜 조합 다양성)
+//   r_nopipe                      → **신규 파이프라인이 0인 프레임**의 render_ms 최댓값
+//   hi / hi_lo                    → 신규>0 프레임 수 / 그중 render_ms<50ms 로 멀쩡했던 프레임 수
+// 진단 판정:
+//   pipe_struct가 십몇에서 멈추는데 pipe_tot만 계속 오름 → 조합 폭발이 아니라 셰이더 축출·재컴파일
+//   pipe_struct가 계속 오름                              → 진짜 조합 폭발(표적은 조합 축 축소)
+//   pipe_re > 0                                          → 파이프라인만 축출·재생성(표적은 머티리얼 영속화)
+//   **r_nopipe가 크거나 hi_lo가 hi의 상당 비율** → "파이프라인이 스톨의 원인"이라는 진단이 무너진다.
+//     이 두 열은 우리 진단을 부정할 수 있게 일부러 넣은 것이다 — 0에 가깝기를 기대하지 말고 그냥 읽어라.
+const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend,frame_ms,render_ms,stage_ms,stage,stage_sum,heap_mb,pk_geo,pk_tex,pk_pipe,pk_tri,pk_draw,pipe_new,pipe_del,pipe_re,pipe_tot,pipe_struct,r_nopipe,hi,hi_lo';
 
 /**
  * 월드 상태 디버그 HUD + 시계열 로그를 마운트한다.
@@ -127,6 +142,11 @@ export function mountDebugHud(world, opts) {
       stage: s.stage || '', heapMB: s.heapMB,
       // [리소스 델타] render_ms 최댓값을 세운 그 프레임에 GPU로 새로 올라간 것의 개수.
       peakGeo: s.peakGeo, peakTex: s.peakTex, peakPipe: s.peakPipe, peakTri: s.peakTri, peakDraw: s.peakDraw,
+      // [파이프라인 캐시 감시] 2세대. pk_pipe(순델타)의 두 결함(동시 생성·해제 상쇄 / max-filter가 반증
+      // 프레임을 버림)을 고친 열들. r_nopipe와 hi_lo가 반증 장치다 — 상세는 CSV_HEADER 위 주석.
+      pipeNew: s.pipeNew, pipeDel: s.pipeDel, pipeRe: s.pipeRe,
+      pipeTot: s.pipeTot, pipeStructN: s.pipeStructN,
+      rNoPipe: s.rNoPipe, hiFrames: s.hiFrames, hiLoFrames: s.hiLoFrames,
     };
   }
 
@@ -143,7 +163,9 @@ export function mountDebugHud(world, opts) {
       // [히칭 프로파일] 최근 1초 최대 — frame이 튈 때 render/stage 중 어느 쪽이 같이 튀는지가 답이다.
       `frame ${num(d.frameMs, 0)}ms  render ${num(d.renderMs, 0)}  stage ${num(d.stageMs, 0)}${d.stage ? '(' + d.stage + ')' : ''}  heap ${num(d.heapMB, 0)}MB\n` +
       // [리소스 델타] 위 render 최댓값을 세운 그 프레임에 새로 올라간 것 — 여기가 0인데 render가 크면 신규 업로드는 범인이 아니다.
-      `↳ +geo ${d.peakGeo ?? '?'}  +tex ${d.peakTex ?? '?'}  +pipe ${d.peakPipe ?? '?'}  tri ${d.peakTri ?? '?'}  draw ${d.peakDraw ?? '?'}`;
+      `↳ +geo ${d.peakGeo ?? '?'}  +tex ${d.peakTex ?? '?'}  +pipe ${d.peakPipe ?? '?'}  tri ${d.peakTri ?? '?'}  draw ${d.peakDraw ?? '?'}\n` +
+      // [파이프라인 2세대] struct가 멈추고 tot만 오르면 축출·재컴파일. nopipe/hi_lo가 크면 진단이 틀린 것.
+      `pipe +${d.pipeNew ?? '?'}/-${d.pipeDel ?? '?'} re${d.pipeRe ?? '?'}  tot ${d.pipeTot ?? '?'} struct ${d.pipeStructN ?? '?'}  nopipe ${num(d.rNoPipe, 0)}ms  hi ${d.hiFrames ?? '?'}/lo ${d.hiLoFrames ?? '?'}`;
     hint.textContent = rec.length ? `rec ${rec.length} (${Math.round(rec.length * REC_INTERVAL_MS / 1000)}s)` : '';
   }
 
@@ -168,6 +190,8 @@ export function mountDebugHud(world, opts) {
       d.loadedFull ?? '', d.loadedShell ?? '', d.queue ?? '', d.backend,
       c(d.frameMs, 1), c(d.renderMs, 1), c(d.stageMs, 1), d.stage, c(d.stageSum, 1), c(d.heapMB, 1),
       d.peakGeo ?? '', d.peakTex ?? '', d.peakPipe ?? '', d.peakTri ?? '', d.peakDraw ?? '',
+      d.pipeNew ?? '', d.pipeDel ?? '', d.pipeRe ?? '', d.pipeTot ?? '', d.pipeStructN ?? '',
+      c(d.rNoPipe, 1), d.hiFrames ?? '', d.hiLoFrames ?? '',
     ].join(',');
   }
 

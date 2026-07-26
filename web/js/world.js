@@ -1770,11 +1770,55 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   const EMPTY_PEAK = { geo: 0, tex: 0, pipe: 0, tri: 0, draw: 0 };
   let profPeak = EMPTY_PEAK;     // renderMax를 세운 그 프레임의 델타(최댓값과 짝지어야 의미가 있다)
   let profPrevPeak = EMPTY_PEAK; // 직전 창의 같은 것
+  function pipeCaches() { // three 내부(비공개) — 없어지면 null로 떨어질 뿐 렌더에 영향 없음
+    try { const p = renderer._pipelines; return (p && p.caches) || null; } catch { return null; }
+  }
   function pipelineCount() {
     try {
-      if (isWebGPU) { const c = renderer._pipelines && renderer._pipelines.caches; return c ? c.size : 0; } // three 내부(비공개) — 없어지면 0으로 떨어질 뿐 렌더에 영향 없음
+      if (isWebGPU) { const c = pipeCaches(); return c ? c.size : 0; }
       return renderer.info.programs ? renderer.info.programs.length : 0;
     } catch { return 0; }
+  }
+  // ── [파이프라인 캐시 감시] 1세대 계측(pk_pipe = caches.size 순델타)의 두 결함을 고친다.
+  // (1) 같은 프레임에 생성 N + 해제 N이 일어나면 순델타가 0이라 통째로 안 보였다 → 생성·해제를 따로 센다.
+  // (2) 창 최댓값 프레임의 값만 보관해, "파이프라인이 새로 생겼는데 프레임은 정상"이라는 **반증 관측을
+  //     설계상 폐기**하고 있었다. 그래서 상관 r=0.99는 발견이 아니라 max-filter의 산물일 수 있다.
+  //     → 신규 0인 프레임의 render 최댓값(r_nopipe)과 "신규>0인데 render 정상"인 프레임 수(hi_lo)를
+  //     별도로 센다. 둘 중 하나라도 크면 "파이프라인이 스톨의 원인"이라는 진단이 무너진다.
+  // 캐시 키는 문자열 `vertexStageId,fragmentStageId,<backend render cache key>`(three Pipelines.js:249).
+  // 앞 두 필드는 ProgrammableStage **인스턴스 id**라, 셰이더 코드가 programs 캐시에서 축출되면 같은
+  // 셰이더도 새 id를 받아 전체 키가 달라진다 — 구조는 같은데 키만 새것이 된다. 정적 조사는 월드 전체가
+  // 구조 13종으로 접힌다는데 실측은 90초간 159개+가 계속 생겼다. 이 모순의 답이 여기 있을 수 있으므로
+  // **전체 키**와 **구조 키(앞 두 id 제외)**를 나눠 센다:
+  //   pipe_struct가 십몇 개에서 수렴 + pipe_tot만 증가  → 조합 폭발이 아니라 셰이더 코드 축출·재컴파일
+  //   pipe_struct가 계속 증가                            → 진짜 조합 폭발(표적은 조합 축 축소)
+  //   pipe_re(전체키 재등장) > 0                         → 파이프라인만 축출·재생성(표적은 머티리얼 영속화)
+  const pipeEver = new Set();    // 한 번이라도 캐시에 있었던 전체 키(축출돼도 유지 — 재생성 감지용)
+  const pipeStruct = new Set();  // 구조 키(스테이지 id 제외) — 진짜 조합 다양성
+  let pipeLive = new Set(), pipeScratch = new Set(); // 현재 캐시 스냅샷(두 Set을 swap해 프레임당 할당 0)
+  let pipeTot = 0, pipeRelTot = 0, pipeReTot = 0;   // 세션 누적: 생성 / 해제 / 재생성(전에 봤던 키가 다시)
+  let pipeWinNew = 0, pipeWinDel = 0, pipeWinRe = 0; // 현재 창 누적
+  let pipePrevWin = { n: 0, d: 0, r: 0 };
+  let rNoPipeMax = 0, rNoPipeMaxPrev = 0; // 신규 파이프라인 0인 프레임의 render_ms 최댓값(반증 장치)
+  let hiFrames = 0, hiLoFrames = 0;       // 신규>0 프레임 수 / 그중 render_ms < HI_LO_MS 인 프레임 수
+  const HI_LO_MS = 50; // "파이프라인이 생겼는데도 프레임이 멀쩡하다"의 기준
+  const structKeyOf = (k) => { const i = k.indexOf(','), j = i < 0 ? -1 : k.indexOf(',', i + 1); return j < 0 ? k : k.slice(j + 1); };
+  let pipeFrameNew = 0; // 이번 프레임 신규(렌더 직후 갱신 — 호출자가 render_ms와 짝지어 판정)
+  function scanPipelines() {
+    pipeFrameNew = 0;
+    const c = pipeCaches();
+    if (!c) return; // WebGL 폴백 등 — 이 계측은 WebGPU 전용
+    pipeScratch.clear();
+    for (const raw of c.keys()) {
+      const k = typeof raw === 'string' ? raw : String(raw);
+      pipeScratch.add(k);
+      if (pipeLive.has(k)) continue;
+      pipeFrameNew++; pipeTot++; pipeWinNew++;
+      if (pipeEver.has(k)) { pipeReTot++; pipeWinRe++; } else pipeEver.add(k);
+      pipeStruct.add(structKeyOf(k));
+    }
+    for (const k of pipeLive) if (!pipeScratch.has(k)) { pipeRelTot++; pipeWinDel++; }
+    const t = pipeLive; pipeLive = pipeScratch; pipeScratch = t; // swap(할당 0)
   }
   const STAGE_NAMES = ['bld', 'street', 'coast', 'walker']; // STAGES와 같은 순서. S0(beginParcel)은 'base'.
   function profRoll(now) { // 윈도우 만료 시 한 세대 넘기고 리셋(최댓값 계열은 창 단위로만 의미가 있다)
@@ -1782,8 +1826,11 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (now - profWinStart >= PROF_WIN_MS) {
       profPrev = { frame: profFrameMax, render: profRenderMax, stage: profStageMax, stageSum: profStageSum, name: profStageName };
       profPrevPeak = profPeak; // 최댓값과 짝인 델타도 같은 세대로 넘긴다
+      pipePrevWin = { n: pipeWinNew, d: pipeWinDel, r: pipeWinRe }; // 창 누적도 같은 세대 규약
+      rNoPipeMaxPrev = rNoPipeMax;
       profWinStart = now; profFrameMax = 0; profRenderMax = 0; profStageMax = 0; profStageSum = 0; profStageName = '';
       profPeak = EMPTY_PEAK;
+      pipeWinNew = 0; pipeWinDel = 0; pipeWinRe = 0; rNoPipeMax = 0;
     }
   }
   function profStage(name, ms) {
@@ -1926,6 +1973,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const _geo = renderer.info.memory.geometries, _tex = renderer.info.memory.textures, _pipe = pipelineCount();
     const _dGeo = _geo - resGeo, _dTex = _tex - resTex, _dPipe = _pipe - resPipe;
     resGeo = _geo; resTex = _tex; resPipe = _pipe;
+    // [파이프라인 캐시 감시] 생성·해제를 따로 세고, **모든 프레임**에 대해 반증 관측을 남긴다.
+    // 이 두 카운터가 1세대 계측의 순환논증(max-filter가 반증 프레임을 버림)을 깬다.
+    scanPipelines();
+    if (!profSkip) {
+      if (pipeFrameNew > 0) { hiFrames++; if (_rms < HI_LO_MS) hiLoFrames++; } // 파이프라인이 생겼는데 프레임은 멀쩡한 경우
+      else if (_rms > rNoPipeMax) rNoPipeMax = _rms;                            // 파이프라인 없이 난 스톨의 최댓값
+    }
     if (!profSkip && _rms > profRenderMax) {
       profRenderMax = _rms;
       profPeak = { geo: _dGeo, tex: _dTex, pipe: _dPipe,
@@ -2026,7 +2080,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 스테일로 굳지 않게 한다(검수관 권고). RAF 루프와 달리 "직전 renderOnce의 값"이 된다.
   // [리소스 델타] 이 경로도 실제로 GPU 업로드를 일으키므로 기준선을 함께 당겨 둔다 — 안 그러면 이 렌더로
   // 올라간 몫이 다음 RAF 프레임의 델타에 얹혀 거짓 스파이크로 보인다(검수관 권고).
-  function renderOnce() { applyPose(); maybeRebakeShadow(); lastDrawCalls = renderer.info.render.drawCalls ?? renderer.info.render.calls; renderer.info.reset(); renderer.render(scene, camera); resGeo = renderer.info.memory.geometries; resTex = renderer.info.memory.textures; resPipe = pipelineCount(); }
+  function renderOnce() { applyPose(); maybeRebakeShadow(); lastDrawCalls = renderer.info.render.drawCalls ?? renderer.info.render.calls; renderer.info.reset(); renderer.render(scene, camera); scanPipelines(); resGeo = renderer.info.memory.geometries; resTex = renderer.info.memory.textures; resPipe = pipelineCount(); }
 
   // ── 포인터락 + 이벤트(데스크톱) ──
   let locked = false;
@@ -2127,6 +2181,11 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         stageMs: pStage, stageSum: Math.max(profStageSum, profPrev.stageSum),
         stage: (profStageMax >= profPrev.stage ? profStageName : profPrev.name), // 보고하는 최댓값과 같은 쪽의 이름
         peakGeo: pk.geo, peakTex: pk.tex, peakPipe: pk.pipe, peakTri: pk.tri, peakDraw: pk.draw,
+        // [파이프라인 캐시 감시] 창 누적은 프로파일과 같은 두 세대 합산 규약. 세션 누적은 단조증가 원본.
+        pipeNew: pipeWinNew + pipePrevWin.n, pipeDel: pipeWinDel + pipePrevWin.d, pipeRe: pipeWinRe + pipePrevWin.r,
+        pipeTot, pipeRelTot, pipeReTot, pipeStructN: pipeStruct.size,
+        rNoPipe: Math.max(rNoPipeMax, rNoPipeMaxPrev), // 신규 파이프라인 0인데 난 스톨 — 크면 진단이 무너진다
+        hiFrames, hiLoFrames,                          // 신규>0 프레임 / 그중 프레임이 멀쩡했던 수
         heapMB: heapMB() };
     },
     getQueueLength: () => loadQueue.length,
