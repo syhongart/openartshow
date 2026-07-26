@@ -261,7 +261,31 @@ if (isTouch) {
   let lookTouch = null; // { id, lastX, lastY }
   let wasRunning = false;
 
+  // [stale 터치 방어] 브라우저가 메인 스레드를 길게 블록하면(감독 실기기 CSV에서 frame_ms 11,489ms 관측 —
+  // render_ms는 13ms였으므로 렌더 밖 프리즈) 그 사이 손을 뗀 touchend가 유실돼 moveTouch/lookTouch가
+  // 영구히 남는다. 그러면 ①조이스틱이 화면에 붙은 채 반응하지 않고(onTouchStart의 `=== null` 가드가 새
+  // 터치를 거부) ②마지막 setTouchMove 값이 계속 적용돼 아바타가 저절로 걷는다. 감독 보고 "조이스틱이
+  // 풀린다"의 정체다. changedTouches(변화분)가 아니라 e.touches(지금 화면에 실제로 닿아 있는 것 전부)를
+  // 진실로 삼아, 매 터치 이벤트마다 죽은 id를 청소한다.
+  function releaseMove() {
+    moveTouch = null; wasRunning = false;
+    joyBase.classList.remove('lu-live', 'lu-run');
+    joyKnob.classList.remove('lu-live', 'lu-run');
+    V.setTouchMove(0, 0);
+  }
+  function pruneStale(e) {
+    const live = new Set();
+    for (const t of e.touches) live.add(t.identifier);
+    if (moveTouch && !live.has(moveTouch.id)) releaseMove();
+    if (lookTouch && !live.has(lookTouch.id)) lookTouch = null;
+  }
+  // 탭 전환·창 blur는 touchend를 주지 않는 기기가 있다 — 돌아왔을 때 조이스틱이 눌린 상태로 남지 않게 한다.
+  const releaseAll = () => { if (moveTouch) releaseMove(); lookTouch = null; };
+  window.addEventListener('blur', releaseAll);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+
   function onTouchStart(e) {
+    pruneStale(e); // 새 터치는 이미 e.touches에 있으므로 이 청소에 걸리지 않는다
     for (const t of e.changedTouches) {
       const half = window.innerWidth * 0.5;
       if (t.clientX < half && moveTouch === null) {
@@ -277,6 +301,7 @@ if (isTouch) {
   }
 
   function onTouchMove(e) {
+    pruneStale(e);
     for (const t of e.changedTouches) {
       if (moveTouch && t.identifier === moveTouch.id) {
         const dx = t.clientX - moveTouch.startX, dy = t.clientY - moveTouch.startY;
@@ -303,15 +328,10 @@ if (isTouch) {
 
   function onTouchEnd(e) {
     for (const t of e.changedTouches) {
-      if (moveTouch && t.identifier === moveTouch.id) {
-        moveTouch = null; wasRunning = false;
-        joyBase.classList.remove('lu-live', 'lu-run');
-        joyKnob.classList.remove('lu-live', 'lu-run');
-        V.setTouchMove(0, 0);
-      } else if (lookTouch && t.identifier === lookTouch.id) {
-        lookTouch = null;
-      }
+      if (moveTouch && t.identifier === moveTouch.id) releaseMove();
+      else if (lookTouch && t.identifier === lookTouch.id) lookTouch = null;
     }
+    pruneStale(e); // changedTouches에 안 실려온 유실분까지 마무리 청소
   }
 
   canvas.addEventListener('touchstart', onTouchStart, { passive: false });

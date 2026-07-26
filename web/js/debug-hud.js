@@ -41,7 +41,7 @@ const REC_INTERVAL_MS = 500; // 시계열 샘플 주기(HUD 갱신과 동일)
 //   pipe_re > 0                                          → 파이프라인만 축출·재생성(표적은 머티리얼 영속화)
 //   **r_nopipe가 크거나 hi_lo가 hi의 상당 비율** → "파이프라인이 스톨의 원인"이라는 진단이 무너진다.
 //     이 두 열은 우리 진단을 부정할 수 있게 일부러 넣은 것이다 — 0에 가깝기를 기대하지 말고 그냥 읽어라.
-const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend,frame_ms,render_ms,stage_ms,stage,stage_sum,heap_mb,pk_geo,pk_tex,pk_pipe,pk_tri,pk_draw,pipe_new,pipe_del,pipe_re,pipe_tot,pipe_struct,r_nopipe,hi,hi_lo,rv_q,rv_n,rv_on';
+const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend,frame_ms,render_ms,stage_ms,stage,stage_sum,heap_mb,pk_geo,pk_tex,pk_pipe,pk_tri,pk_draw,pipe_new,pipe_del,pipe_re,pipe_tot,pipe_struct,r_nopipe,hi,hi_lo,rv_q,rv_n,rv_on,upd_ms,out_ms,vis_lost';
 
 /**
  * 월드 상태 디버그 HUD + 시계열 로그를 마운트한다.
@@ -147,7 +147,9 @@ export function mountDebugHud(world, opts) {
       pipeNew: s.pipeNew, pipeDel: s.pipeDel, pipeRe: s.pipeRe,
       pipeTot: s.pipeTot, pipeStructN: s.pipeStructN,
       rNoPipe: s.rNoPipe, hiFrames: s.hiFrames, hiLoFrames: s.hiLoFrames,
-      revealQ: s.revealQ, revealN: s.revealN, revealOn: s.revealOn, // [노출 예산] rv_q가 시종 0이면 기구 미배선 = 코드 버그(그 CSV로는 판정 금지)
+      revealQ: s.revealQ, revealN: s.revealN, revealOn: s.revealOn,
+      // [렌더 밖 프리즈] upd_ms=update() 체류, out_ms=rAF 간격 - upd_ms. out만 크면 우리 코드 밖(브라우저·GC·OS).
+      updMs: s.updMs, outMs: s.outMs, visLost: s.visLost, // [노출 예산] rv_q가 시종 0이면 기구 미배선 = 코드 버그(그 CSV로는 판정 금지)
     };
   }
 
@@ -168,7 +170,7 @@ export function mountDebugHud(world, opts) {
       // [파이프라인 2세대] struct가 멈추고 tot만 오르면 축출·재컴파일. nopipe/hi_lo가 크면 진단이 틀린 것.
       `pipe +${d.pipeNew ?? '?'}/-${d.pipeDel ?? '?'} re${d.pipeRe ?? '?'}  tot ${d.pipeTot ?? '?'} struct ${d.pipeStructN ?? '?'}  nopipe ${num(d.rNoPipe, 0)}ms  hi ${d.hiFrames ?? '?'}/lo ${d.hiLoFrames ?? '?'}\n` +
       // [노출 예산] reveal off면 종전 원자 노출(?off=reveal). q가 주행 중 계속 0이면 기구가 안 걸린 것이다.
-      `reveal ${d.revealOn ? 'on' : 'OFF'}  q ${d.revealQ ?? '?'}  +${d.revealN ?? '?'}/f`;
+      `reveal ${d.revealOn ? 'on' : 'OFF'}  q ${d.revealQ ?? '?'}  +${d.revealN ?? '?'}/f  |  upd ${num(d.updMs, 0)}ms  out ${num(d.outMs, 0)}ms  vis ${d.visLost ?? '?'}`;
     hint.textContent = rec.length ? `rec ${rec.length} (${Math.round(rec.length * REC_INTERVAL_MS / 1000)}s)` : '';
   }
 
@@ -196,6 +198,7 @@ export function mountDebugHud(world, opts) {
       d.pipeNew ?? '', d.pipeDel ?? '', d.pipeRe ?? '', d.pipeTot ?? '', d.pipeStructN ?? '',
       c(d.rNoPipe, 1), d.hiFrames ?? '', d.hiLoFrames ?? '',
       d.revealQ ?? '', d.revealN ?? '', d.revealOn ?? '',
+      c(d.updMs, 1), c(d.outMs, 1), d.visLost ?? '',
     ].join(',');
   }
 

@@ -1861,6 +1861,19 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   let pipePrevWin = { n: 0, d: 0, r: 0 };
   let rNoPipeMax = 0, rNoPipeMaxPrev = 0; // 신규 파이프라인 0인 프레임의 render_ms 최댓값(반증 장치)
   let hiFrames = 0, hiLoFrames = 0;       // 신규>0 프레임 수 / 그중 render_ms < HI_LO_MS 인 프레임 수
+  // [렌더 밖 프리즈] 감독 실기기에서 frame_ms 11,489ms인데 render_ms 13ms·stage_ms 0인 프레임이 나왔다
+  // (직전 CSV에도 5.4초짜리가 있었다). 즉 시간이 renderer.render()도 파셀 조립도 아닌 **우리가 한 번도
+  // 재본 적 없는 곳**에서 사라진다. 그래서 두 축을 새로 잰다:
+  //   updMs   = update() 전체 체류 시간(렌더 포함) — 이게 작으면 프리즈는 rAF 콜백 밖(브라우저·OS·GC)이다
+  //   outMs   = frame_ms - updMs = 콜백 밖에서 흐른 시간
+  //   vis     = 그 순간의 document.visibilityState/포커스 — 탭 전환·앱 백그라운드를 즉시 배제하기 위한 것.
+  //             (프레임 캡·비가시 스로틀 경로는 profSkip으로 이미 제외되지만, 스로틀이 걸리기 전 첫
+  //              전환 프레임이나 OS 레벨 서스펜드는 그 가드에 안 걸린다.)
+  let updMax = 0, updMaxPrev = 0, outMax = 0, outMaxPrev = 0;
+  let visLost = 0; // 주행 중 문서가 hidden/blur였던 샘플 수(누적) — 0인데 프리즈가 나면 탭 전환이 아니다
+  const docHidden = () => {
+    try { return (typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')) ? 1 : 0; } catch { return 0; }
+  };
   const HI_LO_MS = 50; // "파이프라인이 생겼는데도 프레임이 멀쩡하다"의 기준
   const structKeyOf = (k) => { const i = k.indexOf(','), j = i < 0 ? -1 : k.indexOf(',', i + 1); return j < 0 ? k : k.slice(j + 1); };
   let pipeFrameNew = 0; // 이번 프레임 신규(렌더 직후 갱신 — 호출자가 render_ms와 짝지어 판정)
@@ -1887,10 +1900,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       profPrev = { frame: profFrameMax, render: profRenderMax, stage: profStageMax, stageSum: profStageSum, name: profStageName };
       profPrevPeak = profPeak; // 최댓값과 짝인 델타도 같은 세대로 넘긴다
       pipePrevWin = { n: pipeWinNew, d: pipeWinDel, r: pipeWinRe }; // 창 누적도 같은 세대 규약
-      rNoPipeMaxPrev = rNoPipeMax;
+      rNoPipeMaxPrev = rNoPipeMax; updMaxPrev = updMax; outMaxPrev = outMax;
       profWinStart = now; profFrameMax = 0; profRenderMax = 0; profStageMax = 0; profStageSum = 0; profStageName = '';
       profPeak = EMPTY_PEAK;
-      pipeWinNew = 0; pipeWinDel = 0; pipeWinRe = 0; rNoPipeMax = 0;
+      pipeWinNew = 0; pipeWinDel = 0; pipeWinRe = 0; rNoPipeMax = 0; updMax = 0; outMax = 0;
     }
   }
   function profStage(name, ms) {
@@ -1960,7 +1973,18 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 프레임캡 return 경로는 의도적으로 건너뛴 것이라 급락이 아니므로 집계에 넣지 않는다.
     profRoll(t);
     if (!profSkip && rawFrameMs > profFrameMax) profFrameMax = rawFrameMs;
+    // [렌더 밖 프리즈] update()에 실제로 머문 시간과, rAF 간격에서 그것을 뺀 나머지를 따로 잰다.
+    // upd가 작은데 out이 크면 시간은 우리 콜백 밖(브라우저 합성·GC·OS 서스펜드)에서 사라진 것이다 —
+    // 그 경우 우리 코드를 아무리 최적화해도 닿지 않으므로, 표적을 잘못 고르지 않기 위한 분기 계측이다.
+    const _u0 = perfNow();
     update(dt);
+    if (!profSkip) {
+      const _ums = perfNow() - _u0;
+      if (_ums > updMax) updMax = _ums;
+      const _out = rawFrameMs - _ums;
+      if (_out > outMax) outMax = _out;
+      if (docHidden()) visLost++;
+    }
   }
   function update(dt) {
     const d = (typeof dt === 'number' && isFinite(dt)) ? dt : 0.016;
@@ -2266,6 +2290,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         pipeNew: pipeWinNew + pipePrevWin.n, pipeDel: pipeWinDel + pipePrevWin.d, pipeRe: pipeWinRe + pipePrevWin.r,
         pipeTot, pipeRelTot, pipeReTot, pipeStructN: pipeStruct.size,
         revealQ: revealQueue.length, revealN: revealLastN, revealOn: REVEAL_ON ? 1 : 0, // [노출 예산] 큐 잔량 / 이번 프레임 노출 수 / 기구 활성
+        updMs: Math.max(updMax, updMaxPrev), outMs: Math.max(outMax, outMaxPrev), visLost, // [렌더 밖 프리즈] out이 크고 upd가 작으면 우리 코드 밖이다
         rNoPipe: Math.max(rNoPipeMax, rNoPipeMaxPrev), // 신규 파이프라인 0인데 난 스톨 — 크면 진단이 무너진다
         hiFrames, hiLoFrames,                          // 신규>0 프레임 / 그중 프레임이 멀쩡했던 수
         heapMB: heapMB() };
