@@ -90,7 +90,8 @@
 | **렌더 파사드** | [space-render.js](../web/js/space-render.js) | 위 3층을 재수출하는 **얇은 배럴**. 소비자는 이 안정 경로로만 접근. |
 | **고정 미술관(보호)** | main·player·artworks·config | 서비스 중인 단일 고정 전시. 함부로 수정 금지. |
 | **방문자뷰(가산)** | [visit.js](../web/js/visit.js) | 보호 파일 미결합 독립 모듈. |
-| **오픈월드** | [world.js](../web/js/world.js) 등 | 파셀 스트리밍·NPC·성능 적응계. `space-render`/`space` 무수정 원칙(라이브 공유 리스크 0). |
+| **오픈월드(현행)** | [world.js](../web/js/world.js) 등 | 파셀 스트리밍·NPC·성능 적응계. `space`는 무수정, `space-render`는 **가산 1건 승인됨** — `addRoomLighting(group, opts)`에 `opts.noSpots` 게이트(라이트 풀 도입 시 교차리뷰·감독 승인). 기본 경로(opts 없음)는 라이브 회귀 0을 씬그래프 구조 비교로 입증했다. 그 외 접촉은 여전히 금지. |
+| **오픈월드(재작성)** | `web/js/world2/` | Kernel + Systems. **개수 불변식**(파셀 로드가 씬의 형태를 바꾸지 않는다) 위에 세운 신설 트랙. 판정은 `decide/`의 순수 함수, 집행은 커널, 계측은 비상주. behind-flag(무링크)로 현행과 병행하며 감독 판정 후 교체. |
 
 ---
 
