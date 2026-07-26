@@ -317,13 +317,19 @@ export function addRoomLighting(group, opts = {}) {
   // (c) 접촉그림자 — grounded 파츠 밑 소프트 AO 플레인(거의 0 비용). aoMat 1개 공유.
   const aoMat = new THREE.MeshBasicMaterial({ map: aoTexture().clone(), transparent: true, depthWrite: false });
   aoMat.map.needsUpdate = true; mats.push(aoMat);
-  refs.forEach(({ part, object }) => {
+  refs.forEach((ref) => {
+    const { part, object } = ref;
     const s = AO_GROUNDED[part.t]; if (!s) return;
     const geo = new THREE.PlaneGeometry(s, s); geos.push(geo);
     const pl = new THREE.Mesh(geo, aoMat); pl.rotation.x = -Math.PI / 2;
     // 스택 파츠(p.y>0)는 접촉그림자를 파츠 밑면(아래 파츠 윗면)에 붙인다 — 바닥 고정 시 스택과 분리(검수 MINOR).
     const baseY = object.position.y - PART_TYPES[part.t].size[1] / 2 + 0.015;
     pl.position.set(object.position.x, Math.max(0.015, baseY), object.position.z); group.add(pl);
+    // AO 플레인은 파츠의 자식이 아니라 group 직속이다(위 좌표가 group 좌표계라 자식화하면 파츠 회전을
+    // 따라 그림자도 돌아 룩이 바뀐다). 그래서 참조만 ref에 남긴다 — 오픈월드 노출 예산 게이트가 파츠를
+    // 한 프레임씩 늦게 보일 때 짝인 접촉그림자를 함께 숨기지 못하면 "그림자만 바닥에 떠 있는" 상태가 된다.
+    // 참조 기록뿐이라 렌더·룩에는 영향이 없다(라이브 미술관·빌더 경로 무변경).
+    ref.ao = pl;
   });
   // [단계2 라이트 풀] opts.noSpots(오픈월드 전용): SpotLight 생성부(a·b)만 스킵하고 AO 접촉그림자(c)는 유지.
   // 오픈월드는 파셀 경계 통과마다 조명 개수가 급변해 셰이더 프로그램이 매번 재컴파일되던 문제(히칭 총량 급증)를

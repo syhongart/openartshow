@@ -350,7 +350,8 @@ function addRoomLighting(group, opts = {}) {
   const aoMat = new THREE.MeshBasicMaterial({ map: aoTexture().clone(), transparent: true, depthWrite: false });
   aoMat.map.needsUpdate = true;
   mats.push(aoMat);
-  refs.forEach(({ part, object }) => {
+  refs.forEach((ref) => {
+    const { part, object } = ref;
     const s = AO_GROUNDED[part.t];
     if (!s) return;
     const geo = new THREE.PlaneGeometry(s, s);
@@ -360,6 +361,9 @@ function addRoomLighting(group, opts = {}) {
     const baseY = object.position.y - PART_TYPES[part.t].size[1] / 2 + 0.015;
     pl.position.set(object.position.x, Math.max(0.015, baseY), object.position.z);
     group.add(pl);
+    // AO 플레인은 group 직속(파츠 자식이 아니다 — 자식화하면 파츠 회전을 따라 돌아 룩이 바뀐다).
+    // 오픈월드 노출 예산 게이트가 파츠와 짝지어 숨길 수 있도록 참조만 남긴다(렌더·룩 무영향).
+    ref.ao = pl;
   });
   if (opts.noSpots) return;
   refs.filter(({ part }) => part.t === "artwork" || part.t === "screen").slice(0, ART_SPOT_CAP).forEach(({ object }) => {

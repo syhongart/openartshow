@@ -215,7 +215,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 같은 파라미터를 렌더축에서 추가 소비). 기본(플래그 없음)이면 전부 무효 → 라이브 완전 무회귀.
   //   ?off=shadow → 태양 그림자 완전 off(shadowMap.enabled=false)
   //   ?off=recv   → 지면·물·도로 등 receiveShadow만 off(caster 유지 = "그림자는 지되 지면이 안 받음", 데칼 가설의 정확한 격리)
-  //   ?px=N       → spawnRatio 강제(해상도 fill-rate 축 격리, 예 ?px=0.75)
+  //   ?px=N       → spawnRatio 강제(해상도 fill-rate 축 격리, 예 ?px=0.75). 주의: 적응계 하한
+  //                 (RATIO_FLOOR)은 devicePixelRatio에서 산정되므로 이 값과 무관하다 — ?px로 하한과
+  //                 같은 값을 주면 `cur > RATIO_FLOOR`가 false가 되어 긴급강등 자체가 발동하지 않는다.
+  //   ?off=reveal → 노출 예산 게이트 off = 승격 파셀을 종전대로 한 프레임에 통째 노출(A/B 대조군)
   const _ablParams = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
   const OFF_ABLATE = new Set((_ablParams.get('off') || '').split(',').map((s) => s.trim()).filter(Boolean));
   const RECV_SHADOW = !OFF_ABLATE.has('recv');
@@ -1070,8 +1073,63 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
 
   const STAGES = [stageBuilding, stageStreet, stageCoastal, stageWalker]; // S1~S4 (S0=beginParcel)
 
+  // ── [노출 예산 게이트] 승격 파셀의 "첫 드로우"를 프레임당 소수로 나눈다 ──
+  // 어떤 물체가 화면에 **처음** 그려지는 그 한 프레임에만, three는 지오 버퍼 생성 → WGSL 코드젠 →
+  // 텍스처 업로드·밉맵 → 바인드그룹 → createRenderPipeline(동기 블로킹)을 연속 실행한다.
+  // LOD 승격은 이 묶음을 한 프레임에 몰아 터뜨린다(구 파셀 파괴 + 신 파셀 전량 씬 투입이 같은 tick).
+  // 실기기 관측: 그 프레임 하나가 300~3200ms.
+  //
+  // 지금까지 여덟 번은 전부 "이 축이 범인이다"에 걸고 그 부품을 가볍게 만들려 했고 전부 빗나갔다
+  // (텍스처를 58% 깎았는데 스파이크 불변). 이 처방은 축을 고르지 않는다 — `visible=false`면 three가
+  // renderList 등재 전에 컷하므로(Renderer.js) 위 다섯 작업이 **동시에** 지연된다. 어느 축이 지배
+  // 원인인지에 대한 판정에 의존하지 않는 유일한 처방이라 채택했다(팀장 판정).
+  //
+  // 감독 취지: "드로우콜 리밋… 끊기는 것보다 천천히 나오는 게 낫다." 총량은 보존되고 분포만 바뀐다.
+  // 품질은 한 픽셀도 깎지 않는다(재질·조명·해상도·그림자·텍스처·삼각형 전부 그대로) — 등장 타이밍만.
+  //
+  // 원자 노출(분산 제외): 지면·도로·물·건물 셸 → 바닥/벽 구멍·통과 0. 승격 전 shell 파셀이 이미 그 자리에
+  // 보이고 있으므로 셸을 미루면 오히려 구멍이 보인다. 분산 대상은 실내 파츠·거리가구·배회 NPC뿐이다.
+  // 페이드·스케일인은 쓰지 않는다 — transparent/blending은 파이프라인 캐시키 축이라 새 파이프라인을
+  // 만들어 처방이 자기부정한다(팀장 조건). 순수 순서 제어만.
+  const REVEAL_ON = !OFF_ABLATE.has('reveal'); // [킬스위치] ?off=reveal → 종전 원자 노출로 즉시 복귀(재배포 불요)
+  const REVEAL_BUDGET = 2;      // 프레임당 노출 개수
+  const REVEAL_MAX_MS = 1200;   // 워치독: 큐 선두가 이만큼 기다렸으면 전량 강제 노출(영구 미노출 차단)
+  let revealQueue = [];         // [{ o, aos, k, t }] — o=노출 대상, aos=짝인 접촉그림자, k=파셀키, t=인큐 시각
+  let revealLastN = 0;          // 이번 프레임 노출 수(계측)
+  function enqueueReveal(ctx) {
+    if (!REVEAL_ON) return;
+    const t = perfNow();
+    const byObj = new Map(); // InstancedMesh는 여러 partRefs가 같은 object를 공유 → object로 접고 ao는 모은다
+    const u = ctx.bldGroup && ctx.bldGroup.userData;
+    if (u && u.partRefs) {
+      for (const r of u.partRefs) {
+        const o = r.object; if (!o) continue;
+        let e = byObj.get(o); if (!e) { e = { o, aos: [], k: ctx.k, t }; byObj.set(o, e); }
+        if (r.ao) e.aos.push(r.ao); // 접촉그림자는 group 직속이라 짝지어 숨기지 않으면 그림자만 떠 있게 된다
+      }
+    }
+    if (ctx.streetMeshes) for (const sm of ctx.streetMeshes) if (sm && sm.isObject3D && !byObj.has(sm)) byObj.set(sm, { o: sm, aos: [], k: ctx.k, t });
+    if (ctx.walker && ctx.walker.inst && ctx.walker.inst.group) byObj.set(ctx.walker.inst.group, { o: ctx.walker.inst.group, aos: [], k: ctx.k, t }); // 아바타는 원자 단위(반쪽 치비 0)
+    for (const e of byObj.values()) { e.o.visible = false; for (const a of e.aos) a.visible = false; revealQueue.push(e); }
+  }
+  function processReveal() {
+    revealLastN = 0;
+    if (!revealQueue.length) return;
+    // 워치독 — 선두가 상한을 넘게 기다렸으면 예산을 무시하고 전량 드레인한다. 큐가 어떤 이유로든
+    // 굶으면(프레임 캡·비가시 스로틀·연속 승격) 물체가 영구 미노출로 남는데, 그게 이 처방의 최악 실패다.
+    let n = (perfNow() - revealQueue[0].t) > REVEAL_MAX_MS ? revealQueue.length : REVEAL_BUDGET;
+    while (n-- > 0 && revealQueue.length) {
+      const e = revealQueue.shift();
+      e.o.visible = true; for (const a of e.aos) a.visible = true;
+      revealLastN++;
+    }
+    if (!revealQueue.length) requestShadowBake(); // 드레인 완료 — 뒤늦게 나타난 캐스터를 섀도맵에 반영(프리즈 정합)
+  }
+  function dropReveal(k) { if (revealQueue.length) revealQueue = revealQueue.filter((e) => e.k !== k); } // 파셀 파괴 — 죽은 참조 정리
+
   function finalizeParcel(ctx) {
-    if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); scene.add(ctx.group); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
+    // 씬 투입 **전에** 숨긴다 — 한 프레임이라도 보였다가 사라지면 그게 곧 플리커다.
+    if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); enqueueReveal(ctx); scene.add(ctx.group); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
     ctx.ready = true;
     requestShadowBake(); // 완성 1회(현행 loadParcel 끝 bake와 정합)
   }
@@ -1099,6 +1157,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 파셀 dispose 본문(loaded record 또는 reload side-ctx 공용). loaded.delete·bake는 호출자(unloadParcel)가.
   // 부분 record(스테이지 파이프라인 로딩 중)도 각 필드 null-guard·own 배열이라 안전 dispose(누수·이중해제 0).
   function disposeCtx(L) {
+    dropReveal(L.k); // [노출 예산] 미노출 항목의 죽은 참조를 큐에서 뺀다 — 폐기된 오브젝트를 나중에 visible=true 해도 무의미하고, 워치독 타이머만 오염시킨다
     if (L.lights) for (const sl of L.lights) releaseLight(sl); // [라이트 풀] 스포트 소등·반납(개수 불변 — 재컴파일 0)
     if (L.crowd) { for (const a of L.avatars.values()) { scene.remove(a.inst.group); a.inst.dispose(); } }
     if (L.walker) { scene.remove(L.walker.inst.group); L.walker.inst.dispose(); } // 거리 배회 NPC 정리(씬 잔존 0)
@@ -1953,6 +2012,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 원격 아바타 발바닥 = groundY(다층·강 반영). 원격 간 충돌은 데모 스코프 아웃.
     if (mp) { mp.sendState({ x: pos.x, y: groundY + EYE_HEIGHT, z: pos.z, ry: yaw }); mp.update(d); }
     processLoadQueue(); // [스트리밍 큐] 프레임 예산 내 지연 로드 소진(렌더 직전 — 이번 프레임 빌드분 반영)
+    processReveal();    // [노출 예산] 승격 파셀의 첫 드로우를 프레임당 소수로 나눠 낸다(렌더 직전 — 이번 프레임에 반영)
     flushShadowBake(); // [H] 스로틀로 미뤄둔 섀도 재베이크를 프레임마다 트레일링 플러시(150ms 경과 시)
     // [계측 정합] three r171의 신형 Renderer(WebGPU 포함)는 setAnimationLoop 내부 루프(common/Animation.js)에서만
     // info.reset()을 자동 호출한다. 오픈월드는 자체 rAF 재귀를 쓰므로(위 주석 참조) 리셋이 한 번도 안 걸려
@@ -2205,6 +2265,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         // [파이프라인 캐시 감시] 창 누적은 프로파일과 같은 두 세대 합산 규약. 세션 누적은 단조증가 원본.
         pipeNew: pipeWinNew + pipePrevWin.n, pipeDel: pipeWinDel + pipePrevWin.d, pipeRe: pipeWinRe + pipePrevWin.r,
         pipeTot, pipeRelTot, pipeReTot, pipeStructN: pipeStruct.size,
+        revealQ: revealQueue.length, revealN: revealLastN, revealOn: REVEAL_ON ? 1 : 0, // [노출 예산] 큐 잔량 / 이번 프레임 노출 수 / 기구 활성
         rNoPipe: Math.max(rNoPipeMax, rNoPipeMaxPrev), // 신규 파이프라인 0인데 난 스톨 — 크면 진단이 무너진다
         hiFrames, hiLoFrames,                          // 신규>0 프레임 / 그중 프레임이 멀쩡했던 수
         heapMB: heapMB() };
