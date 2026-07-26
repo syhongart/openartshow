@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
 import { normalizeSpace, newSpace, PART_TYPES, FINISH, FOOTPRINT, encodeSpace, decodeSpace, SPACE_PREFIX } from './space.js';
-import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting, bakeShellLightmaps } from './space-render.js';
+import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, buildPartPreview, addRoomLighting, bakeShellLightmaps, unshareMaterial } from './space-render.js';
 import { youtubeId } from './ytembed.js';
 import { SPACE_PRESETS, getPreset, presetThumb } from './space-presets.js';
 import { createBuilderWalk } from './builder-walk.js';
@@ -95,7 +95,13 @@ export function createBuilder(canvas, opts = {}) {
     // grass=매트 유지(글로시 강제 제외), water=자체 레시피(roughness 0.1)라 덮어쓰기 제외.
     const floor = group.userData.floor; // userData 참조(자식 순서 결합 제거, 검수 권고)
     const fkind = space.shell.finish.floor;
-    if (floor && floor.material && fkind !== 'grass' && fkind !== 'water') { floor.material.roughness = 0.16; floor.material.envMapIntensity = 1.35; }
+    // [P1] 바닥 재질도 캐시 공유본일 수 있다 — 여기서 값을 직접 바꾸면 같은 마감·치수를 쓰는 다른
+    // 표면까지 함께 글로시해진다. 이 그룹 전용 인스턴스로 분리한 뒤 바꾼다(맵 참조는 공유 유지).
+    if (floor && floor.material && fkind !== 'grass' && fkind !== 'water') {
+      const own = unshareMaterial(floor);
+      if (own) (group.userData.mats || (group.userData.mats = [])).push(own);
+      floor.material.roughness = 0.16; floor.material.envMapIntensity = 1.35;
+    }
     addRoomLighting(group); // 작품 스포트라이트·천장 다운라이트·접촉그림자
     applyLightColorToGroup(); // 유저 지정 조명색을 새 스포트라이트에 재적용
     scene.add(group);
@@ -124,7 +130,10 @@ export function createBuilder(canvas, opts = {}) {
       if (!o.isMesh) return;
       const m = o.material; // buildPartPreview가 만든 실제 재질은 정리 후 고스트 재질로 교체
       // [A-3] 마감 텍스처(concrete 등)는 세션 공유(userData.shared) — 여기서 dispose하면 _sharedMaps 싱글톤 파괴 → 타 그룹 회귀. 공유만 skip, 나머지는 그대로 회수.
-      if (m) { if (m.map && m.map.dispose && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); if (m.normalMap && m.normalMap.dispose && !(m.normalMap.userData && m.normalMap.userData.shared)) m.normalMap.dispose(); if (m.dispose) m.dispose(); }
+      // [P1] 재질도 세션 공유 대상이 됐다(texMat 캐시). 여기서 dispose하면 이미 배치된 같은 마감의
+      // 기둥·계단이 쓰는 바로 그 인스턴스가 파괴돼, 다음 프레임에 파이프라인이 재컴파일된다 —
+      // 재질 캐시가 없애려던 현상을 프리뷰를 열 때마다 되살리는 셈이다. 공유본은 건드리지 않는다.
+      if (m) { if (m.map && m.map.dispose && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); if (m.normalMap && m.normalMap.dispose && !(m.normalMap.userData && m.normalMap.userData.shared)) m.normalMap.dispose(); if (m.dispose && !(m.userData && m.userData.shared)) m.dispose(); }
       o.material = ghostMat;
     });
     ghost.visible = false; scene.add(ghost);

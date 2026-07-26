@@ -1,4 +1,4 @@
-import { partY, warmBuildingTexCache, ART_SCREEN_CAP, UNIQUE_TEX_TYPES } from "./space-parts.js";
+import { partY, warmBuildingTexCache, ART_SCREEN_CAP, UNIQUE_TEX_TYPES, unshareMaterial } from "./space-parts.js";
 import { spaceDims, DOOR_W, buildSpaceGroup, buildSpaceGroupChunked, addRoomLighting, disposeSpaceGroup, buildPartPreview, uniqueTexCount } from "./space-assembler.js";
 import { detectSoftGPU, bakeShellLightmaps, bakeShellLightmapsAsync } from "./space-lightmap.js";
 export {
@@ -16,5 +16,6 @@ export {
   partY,
   spaceDims,
   uniqueTexCount,
+  unshareMaterial,
   warmBuildingTexCache
 };

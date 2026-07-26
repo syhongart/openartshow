@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { unshareMaterial } from "./space-parts.js";
 const LIGHTMAP_INTENSITY = 1.7;
 const perfNow = () => typeof performance !== "undefined" ? performance.now() : 0;
 function detectSoftGPU(renderer) {
@@ -13,7 +14,11 @@ function detectSoftGPU(renderer) {
   }
 }
 const bakeRes = (renderer, opts) => opts.res || (detectSoftGPU(renderer) ? 256 : 512);
-function bakeOneSurface(s, renderer, spots, res) {
+function bakeOneSurface(s, renderer, spots, res, group) {
+  // 재질 캐시가 준 공유 인스턴스에 그대로 lightMap을 쓰면, 같은 캐시 키를 가진 다른 표면(북/남벽은
+  // 항상 같은 폭이라 언제나 같은 키다)이 서로를 덮어써 마지막에 구운 조명 패턴만 남는다.
+  const own = unshareMaterial(s.mesh);
+  if (own && group) (group.userData.mats || (group.userData.mats = [])).push(own);
   const rt = new THREE.WebGLRenderTarget(res, res, { colorSpace: THREE.SRGBColorSpace });
   const bs = new THREE.Scene();
   const white = new THREE.Mesh(s.mesh.geometry, new THREE.MeshStandardMaterial({ color: 16777215, roughness: 0.9, metalness: 0 }));
@@ -64,7 +69,7 @@ function bakeShellLightmaps(group, renderer, opts = {}) {
   const prevAlpha = renderer.getClearAlpha();
   renderer.toneMapping = THREE.NoToneMapping;
   const rts = [], t0 = perfNow();
-  for (const s of shell) rts.push(bakeOneSurface(s, renderer, spots, res));
+  for (const s of shell) rts.push(bakeOneSurface(s, renderer, spots, res, group));
   renderer.setRenderTarget(prevRT);
   renderer.toneMapping = prevTone;
   renderer.setClearColor(prevClear, prevAlpha);
@@ -105,7 +110,7 @@ function bakeShellLightmapsAsync(group, renderer, opts = {}) {
       const prevAlpha = renderer.getClearAlpha();
       renderer.toneMapping = THREE.NoToneMapping;
       const end = Math.min(shell.length, i + perFrame);
-      for (; i < end; i++) rts.push(bakeOneSurface(shell[i], renderer, spots, res));
+      for (; i < end; i++) rts.push(bakeOneSurface(shell[i], renderer, spots, res, group));
       renderer.setRenderTarget(prevRT);
       renderer.toneMapping = prevTone;
       renderer.setClearColor(prevClear, prevAlpha);

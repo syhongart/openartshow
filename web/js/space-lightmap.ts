@@ -1,6 +1,7 @@
 // @ts-nocheck — 순수 이동(C-3 분해). strict 타입 정합은 후속 마일스톤.
 // space-lightmap.ts — GPU 셸 라이트맵 베이크(leaf · three만 의존). space-render.js에서 순수 추출.
 import * as THREE from 'three';
+import { unshareMaterial } from './space-parts.js';
 // ── GPU 셸 라이트맵 베이크(팀장 승인 A: 무저장·결정론·방문 즉시) ──────────────
 // 스포트라이트만 셸(바닥·벽·피처월) 표면에 GPU 렌더-투-텍스처로 구움 → material.lightMap(uv1).
 // hemi/key는 실시간 유지(파츠도 계속 밝음). 결정론(난수·시간 미사용) → 동일 기기 재베이크 동일.
@@ -21,7 +22,13 @@ export function detectSoftGPU(renderer) {
 const bakeRes = (renderer, opts) => opts.res || (detectSoftGPU(renderer) ? 256 : 512); // 소프트=256², 그 외 512²
 
 // 표면 1개를 라이트맵으로 굽는다(정투영 카메라 RTT + uv1 정렬). 렌더러 상태 저장/복원은 호출부 책임.
-function bakeOneSurface(s, renderer, spots, res) {
+// group을 받는 이유: 라이트맵은 표면마다 내용이 다르므로 재질을 공유할 수 없다(unshareMaterial 참조).
+// 분리한 인스턴스는 group.userData.mats에 등록해야 disposeSpaceGroup이 회수한다.
+function bakeOneSurface(s, renderer, spots, res, group) {
+  // 재질 캐시가 준 공유 인스턴스에 그대로 lightMap을 쓰면, 같은 캐시 키를 가진 다른 표면(북/남벽은
+  // 항상 같은 폭이라 언제나 같은 키다)이 서로를 덮어써 마지막에 구운 조명 패턴만 남는다.
+  const own = unshareMaterial(s.mesh);
+  if (own && group) (group.userData.mats || (group.userData.mats = [])).push(own);
   const rt = new THREE.WebGLRenderTarget(res, res, { colorSpace: THREE.SRGBColorSpace });
   const bs = new THREE.Scene();
   const white = new THREE.Mesh(s.mesh.geometry, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 }));
@@ -48,7 +55,7 @@ export function bakeShellLightmaps(group, renderer, opts = {}) {
   const prevRT = renderer.getRenderTarget(), prevTone = renderer.toneMapping, prevClear = new THREE.Color(); renderer.getClearColor(prevClear); const prevAlpha = renderer.getClearAlpha();
   renderer.toneMapping = THREE.NoToneMapping; // 라이트맵=톤매핑 전 선형 조사량
   const rts = [], t0 = perfNow();
-  for (const s of shell) rts.push(bakeOneSurface(s, renderer, spots, res));
+  for (const s of shell) rts.push(bakeOneSurface(s, renderer, spots, res, group));
   renderer.setRenderTarget(prevRT); renderer.toneMapping = prevTone; renderer.setClearColor(prevClear, prevAlpha);
   spots.forEach((sp) => { group.remove(sp); if (sp.target) group.remove(sp.target); });
   group.userData.baked = true; group.userData.bakedRTs = rts;
@@ -74,7 +81,7 @@ export function bakeShellLightmapsAsync(group, renderer, opts = {}) {
       const prevRT = renderer.getRenderTarget(), prevTone = renderer.toneMapping, prevClear = new THREE.Color(); renderer.getClearColor(prevClear); const prevAlpha = renderer.getClearAlpha();
       renderer.toneMapping = THREE.NoToneMapping;
       const end = Math.min(shell.length, i + perFrame);
-      for (; i < end; i++) rts.push(bakeOneSurface(shell[i], renderer, spots, res));
+      for (; i < end; i++) rts.push(bakeOneSurface(shell[i], renderer, spots, res, group));
       renderer.setRenderTarget(prevRT); renderer.toneMapping = prevTone; renderer.setClearColor(prevClear, prevAlpha);
       group.userData.bakedRTs = rts; // 부분 결과도 등록(중도 dispose 회수)
       if (opts.onProgress) { try { opts.onProgress(i, shell.length); } catch {} }

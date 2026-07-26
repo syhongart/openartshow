@@ -54,6 +54,20 @@ function texMat({ gen, key, tint = 16777215, repeat = [2, 2], normalScale = 0.4,
   mat.userData.shared = true; // 파셀 언로드가 파괴하지 않게(공유 텍스처와 같은 규약)
   return (_matCache[ck] = mat);
 }
+// [P1 후속 · 공유 재질 쓰기 규약] 캐시가 돌려준 공유 인스턴스를 "이 메시 전용"으로 분리한다.
+// 라이트맵처럼 표면마다 내용이 달라야 하는 값은 공유 인스턴스에 쓸 수 없다 — 셸 벽은 북/남이 항상
+// 같은 폭, 동/서가 항상 같은 폭이라 방 모양과 무관하게 언제나 같은 캐시 키다. 순차로 구우면 마지막
+// 표면의 조명 패턴이 전부에 나타난다. map/normalMap 참조는 그대로 공유하므로 텍스처 메모리는 안 는다.
+// 분리본은 shared 표식을 떼어 disposeSpaceGroup 회수 대상이 되게 하고, 호출자가 group.userData.mats에
+// 등록할 책임을 진다. 새로 분리했을 때만 그 인스턴스를 반환한다(이미 전용이면 null).
+function unshareMaterial(mesh) {
+  const m = mesh && mesh.material;
+  if (!m || !m.userData || !m.userData.shared || !m.clone) return null;
+  const c = m.clone();
+  c.userData = { ...m.userData, shared: false };
+  mesh.material = c;
+  return c;
+}
 const plasterTex = (tint, w, h) => texMat({ gen: createPlasterMaps, key: "plaster", tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.32, roughness: 0.92 });
 const concreteTex = (tint, w, h) => texMat({ gen: createConcreteMaps, key: "concrete", tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.55, roughness: 0.9 });
 const parquetLite = () => createParquetMaps({ size: 512, normal: false });
@@ -1408,6 +1422,7 @@ export {
   partMat,
   partY,
   shellFlatMat,
+  unshareMaterial,
   wallMat,
   warmBuildingTexCache
 };
