@@ -11,7 +11,12 @@
 
 const REC_CAP = 3600;       // 0.5초 샘플 × 3600 = 최근 30분 링버퍼(초과 시 오래된 것부터 회전)
 const REC_INTERVAL_MS = 500; // 시계열 샘플 주기(HUD 갱신과 동일)
-const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend';
+// [히칭 프로파일] 뒤 6열(frame_ms~heap_mb)은 급락의 정체를 가르는 계측이다. 최근 1초 윈도우의 최댓값이라
+// 0.5초 샘플 두 개에 같은 스파이크가 걸쳐 보일 수 있다(놓치는 것보다 낫다). 읽는 법:
+//   frame_ms 큼 + stage_ms 큼  → CPU 파셀 조립. stage 열에 어느 단계인지(base/bld/street/coast/walker/final)
+//   frame_ms 큼 + render_ms 큼 → 렌더 파이프라인(셰이더 컴파일·텍스처 업로드·섀도 재베이크)
+//   frame_ms만 큼(둘 다 작음) → 그 외. heap_mb가 함께 급감했으면 GC 스톨
+const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend,frame_ms,render_ms,stage_ms,stage,stage_sum,heap_mb';
 
 /**
  * 월드 상태 디버그 HUD + 시계열 로그를 마운트한다.
@@ -106,6 +111,10 @@ export function mountDebugHud(world, opts) {
       dpr, draw: (s && typeof s.drawCalls === 'number') ? s.drawCalls : null,
       loadedFull: s.loadedFull, loadedShell: s.loadedShell, queue: s.queue,
       backend: s.backend || '?', // WebGPU/WebGL — 렌더러 백엔드(전환 실동작 확인용)
+      // [히칭 프로파일] world가 1초 윈도우로 관리하는 최댓값을 그대로 받는다(HUD는 집계하지 않는다 —
+      // 0.5초 샘플 사이를 지나간 스파이크를 놓치지 않으려면 창 관리가 프레임 루프 쪽에 있어야 한다).
+      frameMs: s.frameMs, renderMs: s.renderMs, stageMs: s.stageMs, stageSum: s.stageSum,
+      stage: s.stage || '', heapMB: s.heapMB,
     };
   }
 
@@ -118,7 +127,9 @@ export function mountDebugHud(world, opts) {
       `파셀 (${d.px ?? '?'},${d.pz ?? '?'})  y ${num(d.y)} (지면 ${num(d.groundY)})\n` +
       `pos ${num(d.posx)},${num(d.posz)}\n` +
       `yaw ${num(d.yawDeg, 0)}°  pitch ${num(d.pitchDeg, 0)}°\n` +
-      `draw ${d.draw ?? '?'}  load ${d.loadedFull ?? '?'}f/${d.loadedShell ?? '?'}s q${d.queue ?? '?'}`;
+      `draw ${d.draw ?? '?'}  load ${d.loadedFull ?? '?'}f/${d.loadedShell ?? '?'}s q${d.queue ?? '?'}\n` +
+      // [히칭 프로파일] 최근 1초 최대 — frame이 튈 때 render/stage 중 어느 쪽이 같이 튀는지가 답이다.
+      `frame ${num(d.frameMs, 0)}ms  render ${num(d.renderMs, 0)}  stage ${num(d.stageMs, 0)}${d.stage ? '(' + d.stage + ')' : ''}  heap ${num(d.heapMB, 0)}MB`;
     hint.textContent = rec.length ? `rec ${rec.length} (${Math.round(rec.length * REC_INTERVAL_MS / 1000)}s)` : '';
   }
 
@@ -141,6 +152,7 @@ export function mountDebugHud(world, opts) {
       d.px ?? '', d.pz ?? '', c(d.posx, 1), c(d.posz, 1), c(d.y, 1), c(d.groundY, 1),
       c(d.yawDeg, 0), c(d.pitchDeg, 0), d.draw ?? '',
       d.loadedFull ?? '', d.loadedShell ?? '', d.queue ?? '', d.backend,
+      c(d.frameMs, 1), c(d.renderMs, 1), c(d.stageMs, 1), d.stage, c(d.stageSum, 1), c(d.heapMB, 1),
     ].join(',');
   }
 

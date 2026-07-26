@@ -1079,9 +1079,20 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   function loadParcelSync(px, pz, lod) { // immediate/headless — 전 스테이지 순차(무회귀 비트동일)
     const k = keyOf(px, pz); const ex = loaded.get(k);
     if (ex) { if (ex.lod === lod) return; unloadParcel(k); } // 현행 선-언로드(LOD 변경 시 재로드)
-    const ctx = beginParcel(px, pz, lod, false); if (!ctx) return;
-    for (const s of STAGES) { while (s(ctx) === false) {} } // 청크 스테이지(stageBuilding)를 완전 드레인 → 무회귀 비트동일
+    // [히칭 프로파일] 동기 경로도 같은 단위로 계측한다 — 이 경로는 입장 전 초기 로드라 히칭 분석
+    // 대상은 아니지만, 계측이 실제로 값을 뱉는지가 헤드리스에서 확인 가능해진다(브라우저 보행 없이).
+    const _b0 = perfNow();
+    const ctx = beginParcel(px, pz, lod, false);
+    profStage('base', perfNow() - _b0);
+    if (!ctx) return;
+    for (let si = 0; si < STAGES.length; si++) { // 청크 스테이지(stageBuilding)를 완전 드레인 → 무회귀 비트동일
+      const _t = perfNow();
+      while (STAGES[si](ctx) === false) {}
+      profStage(STAGE_NAMES[si] || ('s' + si), perfNow() - _t);
+    }
+    const _f0 = perfNow();
     finalizeParcel(ctx);
+    profStage('final', perfNow() - _f0);
     flushShadowBake(true); // [H] sync/헤드리스는 RAF flush가 없어 pending이 안 풀리므로 강제 트레일링(섀도 미갱신 방지)
   }
 
@@ -1455,12 +1466,18 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (exist && exist.lod === job.lod && exist.ready && !job.ctx) { loadQueue.splice(i, 1); queued.delete(job.k); continue; } // 이미 완성
       if (!job.ctx) { // S0: base+물리 완결 + fresh record 삽입(지면·벽 즉시)
         if (job.lod === 'full' && loaded.has(job.k) && (inflightFull >= MAX_INFLIGHT_FULL || (lastFullFinalizeAt !== null && t0 - lastFullFinalizeAt < PROMOTE_COOLDOWN_MS))) { i++; continue; } // [승격 직렬화+순차 등장] in-flight full 한도 또는 완성 직후 쿨다운 중 → 승격 보류(순번·shell 유지, 다음 프레임 재평가)
+        const _s0 = perfNow();
         job.ctx = beginParcel(job.px, job.pz, job.lod, !!exist && exist.lod !== job.lod);
+        profStage('base', perfNow() - _s0); // [히칭 프로파일] S0(지면·물리·record 삽입)
         if (!job.ctx) { loadQueue.splice(i, 1); queued.delete(job.k); continue; } // def 없음
         job.stage = 0;
         if (!job.ctx.shellOnly) inflightFull++; // full S0 시작 → in-flight 등재
-      } else { const d = STAGES[job.stage](job.ctx); if (d !== false) job.stage++; } // S1~S4 하나씩(no-op guard면 ~0ms). stageBuilding이 false면 파츠 청크 잔여 → 스테이지 유지(다음 루프 재진입)
-      if (job.stage >= STAGES.length) { finalizeParcel(job.ctx); if (!job.ctx.shellOnly) { inflightFull--; lastFullFinalizeAt = t0; } loadQueue.splice(i, 1); queued.delete(job.k); } // 완성 → full이면 in-flight 회수 + 쿨다운 기준 갱신(순차 등장)
+      } else { // S1~S4 하나씩(no-op guard면 ~0ms). stageBuilding이 false면 파츠 청크 잔여 → 스테이지 유지(다음 루프 재진입)
+        const _s1 = perfNow(), _si = job.stage;
+        const d = STAGES[_si](job.ctx); if (d !== false) job.stage++;
+        profStage(STAGE_NAMES[_si] || ('s' + _si), perfNow() - _s1); // [히칭 프로파일] 어느 스테이지가 프레임을 삼켰는지
+      }
+      if (job.stage >= STAGES.length) { const _sf = perfNow(); finalizeParcel(job.ctx); profStage('final', perfNow() - _sf); if (!job.ctx.shellOnly) { inflightFull--; lastFullFinalizeAt = t0; } loadQueue.splice(i, 1); queued.delete(job.k); } // 완성 → full이면 in-flight 회수 + 쿨다운 기준 갱신(순차 등장). [히칭 프로파일] finalize(섀도 베이크 요청 등)도 별도 스테이지로 계측
       stagesRun++;
       if (gpuInfo.soft) break;                          // soft: 프레임당 1스테이지
       if (stagesRun >= MAX_STAGES_PER_FRAME) break;     // [히칭] 프레임당 스테이지 캡(여러 파셀 동시 급락 완화)
@@ -1726,6 +1743,33 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   let adaptFrames = 0, adaptElapsed = 0, adaptCooldown = 0, adaptUpTicks = 0, adaptAge = 0;
   let shadowDownTicks = 0, shadowUpTicks = 0; // [그림자 조기 적응] 방향별 연속 저/고FPS 틱(0.5s 집계 단위)
 
+  // ── [히칭 프로파일] 급락의 정체를 실기기에서 가르는 계측 ──────────────────────────────
+  // 감독 실기기 CSV(?off=shadow&px=0.5)에서 정상상태는 60fps 고정인데 승격 순간마다 3~30fps로
+  // 떨어졌다. 3fps = 프레임 하나에 333ms이고, 헤드리스로 잰 최대 CPU 스테이지(stageWalker 33.9ms)
+  // 로는 10배가 설명되지 않는다. 그래서 프레임 시간을 "빌드(CPU)"와 "렌더 호출"로 쪼개 어느 쪽이
+  // 삼키는지를 본다 — 셰이더 파이프라인 컴파일·텍스처 GPU 업로드는 renderer.render() 안에서
+  // 동기로 일어나므로 renderMs에, 파셀 조립은 stageMs에 잡힌다. 둘 다 작은데 frameMs만 크면
+  // 남는 용의자는 GC라, 가능한 브라우저에서 heap도 함께 본다.
+  // 1초 롤링 윈도우의 "최댓값"을 보관한다 — HUD가 0.5초마다 읽으므로 창이 겹쳐 스파이크를 놓치지
+  // 않는다(순간값이면 0.5초 사이에 지나간 급락이 사라진다).
+  const PROF_WIN_MS = 1000;
+  let profWinStart = 0, profFrameMax = 0, profRenderMax = 0, profStageMax = 0, profStageSum = 0, profStageName = '';
+  let lastDrawCalls = 0;
+  const STAGE_NAMES = ['bld', 'street', 'coast', 'walker']; // STAGES와 같은 순서. S0(beginParcel)은 'base'.
+  function profRoll(now) { // 윈도우 만료 시 리셋(최댓값 계열은 창 단위로만 의미가 있다)
+    if (profWinStart === 0) { profWinStart = now; return; } // 첫 프레임은 리셋하지 않는다 — 입장 전 동기 초기 로드에서 쌓인 값을 첫 창에 남겨, 계측이 실제로 도는지 헤드리스에서도 확인 가능하게.
+    if (now - profWinStart >= PROF_WIN_MS) { profWinStart = now; profFrameMax = 0; profRenderMax = 0; profStageMax = 0; profStageSum = 0; profStageName = ''; }
+  }
+  function profStage(name, ms) {
+    profStageSum += ms;
+    if (ms > profStageMax) { profStageMax = ms; profStageName = name; }
+  }
+  // JS heap(Chrome 계열 전용, 표준 아님) — 승격과 무관하게 급감하면 GC 스톨 방증. 없으면 그냥 0.
+  const heapMB = () => {
+    const m = typeof performance !== 'undefined' ? performance.memory : null;
+    return m && m.usedJSHeapSize ? m.usedJSHeapSize / 1048576 : 0;
+  };
+
   // ── RAF ──
   let raf = 0, last = 0, disposed = false, potatoAccum = 0, capAccum = 0;
   let frameCount = 0; // [원거리·배후 컷] update마다 증가 — 파셀 위상(parcelPhase)과 합쳐 원거리 갱신 프레임을 분산(스터터 동기화 방지)
@@ -1736,6 +1780,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // setAnimationLoop이라 return해도 다음 프레임이 오지만, RAF 재귀 경로는 명시 재예약이 필요).
     raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(step) : 0;
     const t = now || 0;
+    // [히칭 프로파일] 실제 프레임 간격은 아래 dt가 20fps로 클램프되기 전의 이 원본이다 — 클램프된
+    // 값으로는 333ms 스파이크가 50ms로 보여 급락 자체가 계측에서 사라진다. 프레임 캡·비가시
+    // 스로틀로 의도적으로 건너뛴 프레임은 급락이 아니므로, 아래 각 return 앞에서 기록하지 않는다.
+    const rawFrameMs = last ? (t - last) : 0;
     let dt = last ? Math.min(0.05, (t - last) / 1000) : 0.016;
     last = t;
     // [비가시 스로틀] 탭 hidden·창 blur면 ~4fps 하드 캡. 건너뛴 시간은 bgAccum에 누적해 다음 delta로 넘겨
@@ -1768,6 +1816,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
                           // 60Hz 모두 ~30fps). 정밀도보다 시간 정확·안정이 우선이고, ~30도 GPU 듀티를
                           // 낮춰 발열 예방엔 충분하다(감독 55:45에서 성능 쪽).
     }
+    // [히칭 프로파일] 여기까지 온 프레임 = 실제로 렌더하는 프레임. 위의 비가시 스로틀·포테이토·
+    // 프레임캡 return 경로는 의도적으로 건너뛴 것이라 급락이 아니므로 집계에 넣지 않는다.
+    profRoll(t);
+    if (rawFrameMs > profFrameMax) profFrameMax = rawFrameMs;
     update(dt);
   }
   function update(dt) {
@@ -1825,8 +1877,17 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // info.reset()을 자동 호출한다. 오픈월드는 자체 rAF 재귀를 쓰므로(위 주석 참조) 리셋이 한 번도 안 걸려
     // drawCalls·triangles가 렌더러 생애 내내 누적됐다(실기기 CSV에서 draw가 단조증가한 원인). 렌더 직전 명시 리셋.
     // WebGL 백엔드는 render() 안에서 자체 리셋하므로 여기서 한 번 더 0으로 만드는 건 멱등 — 백엔드 분기 불요.
+    // [draw 계측 타이밍] 값은 "리셋 직전"에 읽어 보관한다 = 직전 프레임의 확정 draw 수. HUD가 별도
+    // 타이머로 renderer.info를 들여다보면 리셋과 실제 draw 사이에 걸려 0이 찍히는데(실기기 CSV의
+    // draw=0 행들), 프레임 경계에서 한 번만 읽으면 그 창 자체가 없어진다. 첫 프레임만 0.
+    lastDrawCalls = renderer.info.render.drawCalls ?? renderer.info.render.calls;
     renderer.info.reset();
+    // [히칭 프로파일] 셰이더 파이프라인 컴파일·텍스처 GPU 업로드는 이 호출 안에서 동기로 일어난다.
+    // 여기가 크면 범인은 CPU 조립이 아니라 렌더 파이프라인이다(→ 미리 컴파일해 두는 워밍업으로 해소).
+    const _r0 = perfNow();
     renderer.render(scene, camera);
+    const _rms = perfNow() - _r0;
+    if (_rms > profRenderMax) profRenderMax = _rms;
     needsRender = false; // [C1] 렌더 소비 — 비동기 텍스처 더티플래그 리셋
     adaptQuality(d); // [FPS 적응] 실측 프레임률로 해상도 배율 조정(soft 제외 — 아래에서 자체 가드)
   }
@@ -2003,7 +2064,12 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       // render() 횟수(reset 대상 밖)라 프레임당 값은 render.drawCalls이고, 폴백 WebGLRenderer의
       // WebGLInfo에는 drawCalls 자체가 없고 render.calls가 프레임당 draw 수다. WebGPU 기준만 읽으면
       // WebGL 폴백 기기에서 HUD draw가 통째로 undefined가 된다(헤드리스 계측에서 실측 확인).
-      return { drawCalls: renderer.info.render.drawCalls ?? renderer.info.render.calls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL' };
+      // [히칭 프로파일] prof* 는 최근 1초 윈도우의 최댓값 — 어느 축이 프레임을 삼켰는지 가른다.
+      //   frameMs 크고 stageMs 큼   → CPU 파셀 조립(stage가 어느 단계인지까지 나온다)
+      //   frameMs 크고 renderMs 큼  → 렌더 파이프라인(셰이더 컴파일·텍스처 업로드·섀도 재베이크)
+      //   frameMs만 크고 둘 다 작음 → 그 외(GC 유력 — heapMB 급감이 동반되는지 본다)
+      return { drawCalls: lastDrawCalls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL',
+        frameMs: profFrameMax, renderMs: profRenderMax, stageMs: profStageMax, stageSum: profStageSum, stage: profStageName, heapMB: heapMB() };
     },
     getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
