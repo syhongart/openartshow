@@ -79,3 +79,8 @@ _site_baseline/
 /web/app/
 .qa-tmp/
 qa-tmp/
+
+# 임시 검증 스크립트 — 게이트 중 반복 생성/삭제하는 일회성 하네스(prof·레이스·보행 재현 등).
+# 프로젝트 루트에서 돌려야 node_modules(playwright)와 scripts/smoke/* 재사용이 되므로 여기 두되,
+# 커밋 대상은 아니다. 정식 검증은 scripts/smoke/ 아래 하네스가 담당한다.
+/__*.mjs
