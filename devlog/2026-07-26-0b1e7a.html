@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因) — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 1차(데스크톱 적응계 실효화·발열캡)를 배포한 뒤에도 감독 실기기의 버벅임이 남았다. 다만 성격이">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-26-0b1e7a.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因) — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 1차(데스크톱 적응계 실효화·발열캡)를 배포한 뒤에도 감독 실기기의 버벅임이 남았다. 다만 성격이">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-26-0b1e7a.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因)","datePublished":"2026-07-26","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-26-0b1e7a.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-26</div>
+<h1><span class="emo">⚡</span>오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 1차(데스크톱 적응계 실효화·발열캡)를 배포한 뒤에도 감독 실기기의 버벅임이 남았다. 다만 성격이 달랐다 — 평균 fps가 낮은 것이 아니라 <strong>걷다 보면 특정 순간에만 프레임이 급락</strong>했다. 감독이 보내준 디버그 HUD CSV 네 벌(87~241초)에서 그 급락 시점이 예외 없이 <code>loadedFull/Shell</code>이 <code>5/3 → 6/2</code>로 바뀌는 지점, 즉 <strong>파셀 shell→full 승격 순간</strong>과 겹쳤다. 1차가 정상상태를 다뤘다면 2차의 표적은 이 스파이크였다.</p>
+<p><strong>분석 0 — 계측 자체가 틀려 있었다.</strong> 파고들기 전에 계측을 먼저 고쳐야 했다. ① three.js 신형 통합 Renderer(WebGPU)는 <code>setAnimationLoop</code> <strong>내부에서만</strong> <code>info.reset()</code>을 자동 호출하는데, 오픈월드는 자체 rAF 재귀를 쓴다. 그래서 리셋이 한 번도 걸리지 않아 draw·삼각형이 렌더러 생애 내내 <strong>누적</strong>됐다(CSV에서 draw가 단조증가한 원인). 렌더 직전 명시 리셋으로 교정. ② 같은 Renderer에서 <code>render.calls</code>는 "누적 render() 호출 수"이고 프레임당 값은 <code>render.drawCalls</code>인데 전자를 읽고 있었다. ③ 그 수정이 이번엔 반대 방향으로 구멍을 냈다 — 폴백 <code>WebGLRenderer</code>의 <code>WebGLInfo</code>에는 <code>drawCalls</code> 필드가 <strong>아예 없고</strong> <code>render.calls</code>가 프레임당 값이라, WebGPU 기준만 읽으면 구형 기기에서 HUD의 draw가 통째로 <code>undefined</code>가 된다. 헤드리스 계측 중 발견해 두 스키마를 모두 받도록 했다. 감독 기기가 WebGPU라 보이던 값이 폴백 기기에선 비어 있었던 셈이다. 부수로 디버그 HUD를 sticky(한 번 켜면 유지 + 끄기 버튼)로 바꿔 실기기 프로파일링의 재현 비용을 없앴다.</p>
+<p><strong>개선(배포분) — 시야 인지 스트리밍.</strong> 감독 지적("LOD할 때 내 앞쪽만 하면 되지, 뒤에도 동일하게 하니 버벅이는 거 아냐?")이 출발점이었다. 레퍼런스 조사를 병행해 뒤쪽 파셀을 더 일찍 버리는 축을 넣었다.</p>
+<ul><li><strong>배후 판정 히스테리시스</strong>: 카메라 정면 대비 135°를 넘으면 배후로 ENTER, 100°로 돌아오면 EXIT. 경계에서 깜빡이지 않도록 진입·이탈 임계를 벌렸다.</li><li><strong>fog 연동 EXIT 클램프</strong>: 배후 EXIT 반경을 줄이되 fog far보다 안쪽으로는 못 내려가게 하한을 걸어, 파셀 소멸이 <strong>항상 안개 안에서</strong> 일어나게 했다(팝아웃 은폐).</li><li><strong>강등 쿨다운</strong>: 프레임당 강등 1개, 재강등 500ms 억제. 초기 구현에 버그가 있었다 — <code>unloadParcel</code>이 쿨다운 타임스탬프를 지워버려 억제가 무효였다(스래싱). 언로드 시 타임스탬프를 보존하도록 고쳤다.</li><li><strong>제자리 회전 트리거</strong>: 멈춰서 둘러보기만 해도 시야가 바뀌므로, yaw 변화 15°(지터 1° 무시)에 200ms 디바운스를 걸어 재평가한다. ENTER 경로와 기존 방어는 무변경.</li><li><strong>원거리·배후 NPC 갱신 성기게</strong>: 누적 dt + 상한 클램프로 시야 밖 NPC 시뮬을 듬성듬성.</li></ul>
+<p>헤드리스로는 측정이 불가능한 항목이 많아, 판정 로직(<code>isBehind</code>·<code>behindExitRadii</code>·<code>canDemoteByCooldown</code>· <code>yawDelta</code>)을 순수함수로 뽑아 단위테스트로 증명하는 방식을 택했다. 실기기에서 <code>loadedFull/Shell</code>이 바라보는 방향에 따라 실제로 변하는 것을 감독이 확인했다.</p>
+<p><strong>빗나간 것 셋 — 기록해 둔다.</strong> 이번 사이클에서 성능이라고 믿고 손댔다가 아닌 것으로 판명된 게 셋이다.</p>
+<p>① <strong>섀도 리베이크 코얼레싱</strong>(1b3fe06 → revert 1637462). 스트리밍 버스트 중 섀도 재베이크를 뒤로 모으면 승격 스파이크가 완화될 것으로 보고 quiet 260ms·최대지연 2600ms로 묶었다. 감독 판정은 "그림자 어색하고 체감상 큰 차이 없오" — 지연된 베이크가 눈에 띄는 대가를 치르고 얻은 이득이 없었다. 되돌렸다. 계측 정합 수정은 같은 커밋에 없었으므로 그대로 유지.</p>
+<p>② <strong>가로수</strong>(7ad9698 → 복구 8fa8072). 감독이 "드로우콜이 몰려 있다, 길 가운데 가로수 일단 빼보자"고 해서 껐고, 이어 가로등도 껐다. 헤드리스 A/B로 효과를 실측했더니 <strong>파셀당 draw call -3, 삼각형 -1,500</strong>, 씬 평균으로 draw 262.9→238.1(-9.4%)·tri 93,480→82,679(-11.6%)에 그쳤다. 감독의 실기기 판정은 "나는 나무가 범인이라고 생각했어. 전혀 아니네." 정확했다. 나무는 draw call에 조금 얹힐 뿐 히칭의 원인이 아니었다.</p>
+<p>③ <strong>거리 배회 NPC 생성</strong>. ②의 계측에서 스테이지별 실행시간을 재보니 <code>stageWalker</code>(치비 아바타 생성)가 <strong>파셀당 평균 33.9ms·최악 66.1ms</strong>로 압도적 1위였다(건물은 이미 청크 분산돼 호출당 1.7ms). 이걸 다음 표적으로 지목했으나 감독의 답은 "npc 빼도 차이 없었어"였다. 다시 보니 감독이 맞다 — 33.9ms는 <strong>파셀 승격당 1회</strong>뿐이고 100초 세션 총합이 270ms, 전체의 0.27%다. 순간 스파이크는 만들지만 평균 fps는 건드리지 않으니 빼도 체감이 안 바뀐다. 계측 수치의 크기에 끌려 "빈도"를 함께 보지 않은 오귀인이었다.</p>
+<p><strong>곁가지로 정리한 것.</strong> 가로수·가로등을 되살리면서(감독: "되살리되 길 가장자리로") 껐던 실제 이유인 동선을 좌표로 해결했다. 도로는 각 파셀이 자기 남/동 가장자리에만 그리는 <strong>폭 2.5m</strong> 스트립이고 중심선이 10.75인데, 기존 가로등 좌표가 정확히 그 중심선 — 게다가 거리 배회 NPC의 보행선과 <strong>같은 값</strong>이었다. 도로 한복판에 기둥이 서 있었던 셈이라 감독이 부딪힌 게 우연이 아니다. 가로수는 도로에서 2.3m 안쪽으로 물려 발치 tree pit의 도로 침범을 336그루 전부→0으로 없앴고, 가로등은 도로 밖으로 뺐다. 배치 로직의 구조적 구멍도 하나 드러났다 — <code>safe()</code>가 도로·건물·접근로만 보고 <strong>이미 배치된 가구끼리는 검사하지 않아</strong>, 나무가 물러난 자리에 벤치·화분이 겹쳐 들어갔다. 상호 간섭 검사를 추가했다.</p>
+<p>검증 방식도 기록해 둔다. 브라우저에서 실제로 걷게 하는 스모크가 다섯 번 시도에도 실패해서(입장 오버레이 미통과, 창 blur로 인한 4fps 하드캡, 잘못된 방향으로 보행 — 마당에서 북쪽은 건물이다), <strong>도로 통행 스트립을 0.1m 격자로 훑어 실제 충돌 AABB와 대조</strong>하는 방식으로 대체했다. 90개 파셀·격자점 112만 개. 이 검사가 <strong>실결함 하나를 잡았다</strong> — 가로등을 도로 경계에서 0.3m만 물렸는데 기둥 반경 0.22만 계산하고 플레이어 반경 0.3을 빼먹어, 파셀당 66점씩 총 5,940점이 여전히 막혀 있었다. 필요한 여유는 0.52다. 0.8로 물려 0건이 됐다. 걸리던 것은 전부 가로등이었고 가로수·벤치·화분·건물은 처음부터 0건이라, 가로수 재배치는 애초에 충분했음이 함께 확인됐다.</p>
+<p><strong>결과.</strong> 시야 인지 스트리밍과 계측 정합은 배포됐고, 가로수·가로등은 동선을 고쳐 복구했다(run #269 success). 스파이크 축에서는 진전이 있었지만 <strong>지속적 저 fps의 범인은 아직 못 잡았다.</strong> 셋을 지워 남은 것은 "매 프레임 화면 전체 픽셀이 내는 비용", 즉 fill-rate다. 과거에 삼각형을 84k→41k로 절반 깎고도 fps가 25→26에 머문 실험이 같은 방향을 가리킨다 — 병목이 기하학이 아니라 픽셀이라는 뜻이다. 유력 후보는 실시간 그림자로, 지면·모래·도로·강 등 <strong>148개 면</strong>이 매 픽셀마다 PCFSoft를 9~25번 샘플링하는데 정작 그림자를 드리우는 것은 벤치·화분 같은 소품뿐이다. 비싼 값을 치르고 얻는 게 거의 없는 구조다. 다행히 이를 격리할 ablation 스위치가 이미 라이브에 있어(<code>?off=shadow</code> 그림자 완전 off, <code>?off=recv</code> 지면만 그림자 안 받음, <code>?px=N</code> 해상도 강제) 새 배포 없이 감독 실기기에서 바로 판별할 수 있다. 다음 사이클은 그 A/B 결과에서 출발한다.</p>
+</article>
+<div class="pn"><a href="./2026-07-25-55ff0e.html"><span class="lbl">← 이전 기록</span>오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
