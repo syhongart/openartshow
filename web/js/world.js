@@ -216,6 +216,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   //   ?off=shadow → 태양 그림자 완전 off(shadowMap.enabled=false)
   //   ?off=recv   → 지면·물·도로 등 receiveShadow만 off(caster 유지 = "그림자는 지되 지면이 안 받음", 데칼 가설의 정확한 격리)
   //   ?px=N       → spawnRatio 강제(해상도 fill-rate 축 격리, 예 ?px=0.75)
+  //   ?off=prewarm→ 셰이더 파이프라인 사전 컴파일 끄기(히칭 전/후 A/B — 끄면 종전처럼 첫 렌더에서 동기 컴파일)
   const _ablParams = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
   const OFF_ABLATE = new Set((_ablParams.get('off') || '').split(',').map((s) => s.trim()).filter(Boolean));
   const RECV_SHADOW = !OFF_ABLATE.has('recv');
@@ -267,6 +268,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // ACES 톤매핑은 프래그먼트당 수십 ALU — 소프트웨어 렌더에서는 그대로 비용이라 끈다(main.js:613).
   renderer.toneMapping = gpuInfo.soft ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
   renderer.shadowMap.enabled = !gpuInfo.soft && !OFF_ABLATE.has('shadow'); renderer.shadowMap.type = THREE.PCFSoftShadowMap; // [ablation] ?off=shadow → 태양 그림자 완전 off
+  // [파이프라인 예열] 파셀을 씬에 붙이기 전 셰이더를 비동기로 굽는다(finalizeParcel). 두 백엔드 모두
+  // compileAsync를 제공하지만(WebGPU는 createRenderPipelineAsync, WebGL은 프로그램 사전 링크),
+  // 없는 런타임을 만나면 조용히 종전 동작으로 돌아간다. ?off=prewarm 으로 끄고 A/B 할 수 있다.
+  const prewarm = typeof renderer.compileAsync === 'function' && !OFF_ABLATE.has('prewarm');
   // [섀도 프리즈] 정적 씬 — 섀도맵을 매 프레임이 아니라 이벤트 기반으로만 재베이크(하드웨어 GPU 포함 전체 적용).
   // 미술관(main.js:634)은 완전 프리즈지만 오픈월드는 태양이 플레이어 추종이라 완전 프리즈 불가 →
   // 초기 1회·파셀 로드/언로드·마지막 베이크에서 8m 이상 이동에만 1프레임 재베이크(needsUpdate).
@@ -1005,7 +1010,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       bldGroup: null, bldStep: null, crowd: null, avatars: new Map(), streetMeshes: null,
       walker: null, tetraMesh: null, lighthouse: null, beachBands: [], pierDecks: [], lights: null,
     };
-    if (!reload) { scene.add(group); loaded.set(k, ctx); } // fresh: 지면·벽 즉시(reload는 finalize에서 원자 스왑). [C2] 셸·지면은 캐스터 아님(receiver) → 섀도 베이크 불요, finalize 1회로 축약(스테이지마다 1024² 재베이크 제거).
+    // record만 먼저 넣어 중복 큐잉을 막고, 씬 부착은 finalizeParcel이 파이프라인 예열을 마친 뒤로 미룬다.
+    // [파이프라인 예열] 예전에는 여기서 바로 scene.add(group)을 했다. 그러면 조립 중인 파셀이 이미
+    // 렌더 대상이라, 아직 컴파일 안 된 재질 조합을 만나는 순간 그 프레임에서 동기 셰이더 컴파일이
+    // 터진다(WebGPU device.createRenderPipeline은 메인스레드 블로킹). 감독 실기기 CSV에서 급락한
+    // 프레임의 render_ms가 frame_ms의 90~99%를 차지한 것이 이 현상이었다(최대 2,626ms).
+    // 씬 밖에서 조립하면 렌더가 건드리지 않으므로 그 스톨이 아예 발생하지 않는다.
+    if (!reload) loaded.set(k, ctx);
     return ctx;
   }
 
@@ -1063,17 +1074,41 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const inst = createAvatarInstance(wd.char, '#ffffff', ''); // 빈 닉네임 → 라벨 미생성
     inst.group.position.set(ox + wd.x, 0, oz + wd.z);
     inst.group.userData.isWalker = true;
-    scene.add(inst.group);
+    // [파이프라인 예열] 씬 부착은 finalizeParcel로 미룬다 — 아바타는 파셀 group의 자식이 아니라 씬에
+    // 직접 붙으므로 여기서 붙이면 파셀 group을 미뤄둔 의미가 없다(치비는 파츠마다 재질이 달라
+    // 컴파일 유발이 가장 잦은 축이다). ctx.walker에 담아두고 예열 후 함께 붙인다.
     ctx.walker = { inst, line: wd.line, ox, oz, x: ox + wd.x, z: oz + wd.z, tx: ox + wd.x, tz: oz + wd.z, ry: 0, state: 'walk', timer: 0, speed: 0.7 + Math.random() * 0.3 };
     pickWalkerTarget(ctx.walker);
   }
 
   const STAGES = [stageBuilding, stageStreet, stageCoastal, stageWalker]; // S1~S4 (S0=beginParcel)
 
-  function finalizeParcel(ctx) {
-    if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); scene.add(ctx.group); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
+  // 조립이 끝난 파셀을 씬에 붙인다(예열 여부와 무관한 공통 경로).
+  function attachParcel(ctx) {
+    if (disposed) return;
+    // 예열을 기다리는 동안 이 파셀이 언로드·재로드로 밀려났을 수 있다. fresh는 record가 여전히
+    // 자기 자신일 때만 붙인다(아니면 이미 dispose된 지오라 붙이면 잔상·누수).
+    if (!ctx.reload && loaded.get(ctx.k) !== ctx) return;
+    if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
+    scene.add(ctx.group);
+    if (ctx.walker) scene.add(ctx.walker.inst.group); // stageWalker가 미뤄둔 거리 배회 NPC
     ctx.ready = true;
     requestShadowBake(); // 완성 1회(현행 loadParcel 끝 bake와 정합)
+  }
+
+  // [파이프라인 예열] 완성된 파셀을 씬에 붙이기 전에 셰이더 파이프라인을 비동기로 컴파일한다.
+  // 감독 실기기 CSV에서 급락 프레임의 render_ms가 frame_ms의 90~99%(최대 2,626ms)를 차지했다 —
+  // 새 재질 조합이 처음 그려지는 순간 WebGPU가 device.createRenderPipeline(메인스레드 블로킹)을
+  // 그 자리에서 돌린 것이다. compileAsync 경로는 createRenderPipelineAsync를 쓰므로 같은 일을
+  // 메인스레드를 멈추지 않고 끝낸다. 렌더 결과는 동일 — 파이프라인 캐시를 미리 채울 뿐이다.
+  // 씬 밖 group을 targetScene=scene으로 컴파일하면 실제 씬의 조명 상태 그대로 굽는다.
+  function finalizeParcel(ctx) {
+    if (!prewarm) { attachParcel(ctx); return; } // 미지원(또는 동기 경로) → 종전대로 즉시 부착
+    ctx.group.updateMatrixWorld(true); // 씬 밖이라 자동 갱신을 못 받는다(컴파일 순회 전 1회)
+    const jobs = [renderer.compileAsync(ctx.group, camera, scene)];
+    if (ctx.walker) { ctx.walker.inst.group.updateMatrixWorld(true); jobs.push(renderer.compileAsync(ctx.walker.inst.group, camera, scene)); }
+    // 실패해도 부착은 반드시 한다 — 예열은 최적화지 정합 조건이 아니다(안 구워지면 종전처럼 첫 렌더에서 컴파일될 뿐).
+    Promise.all(jobs).then(() => attachParcel(ctx), () => attachParcel(ctx));
   }
 
   function loadParcelSync(px, pz, lod) { // immediate/headless — 전 스테이지 순차(무회귀 비트동일)
@@ -1091,7 +1126,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       profStage(STAGE_NAMES[si] || ('s' + si), perfNow() - _t);
     }
     const _f0 = perfNow();
-    finalizeParcel(ctx);
+    attachParcel(ctx); // 이 경로는 "즉시 완성"이 계약이라 예열(비동기)을 태우지 않는다 — 입장 전 초기 로드·헤드리스용.
     profStage('final', perfNow() - _f0);
     flushShadowBake(true); // [H] sync/헤드리스는 RAF flush가 없어 pending이 안 풀리므로 강제 트레일링(섀도 미갱신 방지)
   }
@@ -2048,6 +2083,11 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   updateStreaming(true);
   applyPose();
   requestShadowBake(); // [섀도 프리즈] 초기 1회 베이크 + 8m 이동 기준점 설정
+  // [파이프라인 예열 — 부팅] 첫 화면에 쓰이는 재질 조합을 입장 전에 미리 굽는다. 감독 실기기 CSV의
+  // 첫 샘플(t=0.5s)이 render 3,087ms였는데, 그게 이 초기 파셀들의 컴파일이 첫 렌더에 몰린 것이다.
+  // createWorld는 이미 async(WebGPU init await)라 여기서 기다려도 호출자 계약이 바뀌지 않는다 —
+  // 입장 오버레이 뒤에서 끝나므로 방문자에겐 로딩의 일부로 흡수된다. 실패는 무시(예열은 최적화).
+  if (prewarm && !headless) { try { await renderer.compileAsync(scene, camera); } catch { /* 미지원·디바이스 로스트 — 종전 동작 */ } }
   if (!headless) {
     resize((typeof window !== 'undefined' ? window.innerWidth : 1280), (typeof window !== 'undefined' ? window.innerHeight : 720));
     raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(step) : 0;
