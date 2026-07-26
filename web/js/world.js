@@ -2024,7 +2024,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // info.reset: 위 update() 렌더 지점과 동일 사유(신형 Renderer 자동리셋 부재).
   // lastDrawCalls 갱신도 같은 규약으로 — 이 경로만 도는 헤드리스·스크린샷 플로우에서 getStats().drawCalls가
   // 스테일로 굳지 않게 한다(검수관 권고). RAF 루프와 달리 "직전 renderOnce의 값"이 된다.
-  function renderOnce() { applyPose(); maybeRebakeShadow(); lastDrawCalls = renderer.info.render.drawCalls ?? renderer.info.render.calls; renderer.info.reset(); renderer.render(scene, camera); }
+  // [리소스 델타] 이 경로도 실제로 GPU 업로드를 일으키므로 기준선을 함께 당겨 둔다 — 안 그러면 이 렌더로
+  // 올라간 몫이 다음 RAF 프레임의 델타에 얹혀 거짓 스파이크로 보인다(검수관 권고).
+  function renderOnce() { applyPose(); maybeRebakeShadow(); lastDrawCalls = renderer.info.render.drawCalls ?? renderer.info.render.calls; renderer.info.reset(); renderer.render(scene, camera); resGeo = renderer.info.memory.geometries; resTex = renderer.info.memory.textures; resPipe = pipelineCount(); }
 
   // ── 포인터락 + 이벤트(데스크톱) ──
   let locked = false;

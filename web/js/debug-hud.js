@@ -24,6 +24,8 @@ const REC_INTERVAL_MS = 500; // 시계열 샘플 주기(HUD 갱신과 동일)
 //   render_ms 큼 + pk_tex 큼   → 텍스처 업로드
 //   render_ms 큼 + pk_pipe 큼  → 셰이더/파이프라인 컴파일
 //   render_ms 큼 + 셋 다 0     → 신규 업로드가 아닌 상시 렌더 비용(pk_tri/pk_draw로 규모 확인)
+// pk_geo/pk_tex는 음수일 수 있다 — 그 프레임에 생긴 것보다 파셀 언로드로 해제된 것이 많았다는 뜻이다.
+// 이상값이 아니라 정상이며, 그 프레임의 범인이 신규 업로드가 아니라는 신호로 읽으면 된다.
 const CSV_HEADER = 't_s,fps,lod,shellFlat,fog_near,fog_far,dpr,px,pz,posx,posz,y,groundY,yaw_deg,pitch_deg,draw,loadedFull,loadedShell,queue,backend,frame_ms,render_ms,stage_ms,stage,stage_sum,heap_mb,pk_geo,pk_tex,pk_pipe,pk_tri,pk_draw';
 
 /**
