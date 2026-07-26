@@ -97,7 +97,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 <p><strong>게이트가 잡은 것(경유의 값어치).</strong> 배포 전 §10 게이트(독립 스모크 + 교차리뷰)에서 <strong>실 블로커 1건</strong>을 포착했다: 비가시 스로틀(bgThrottle)이 blur 중 인위적 ~4fps를 adaptQuality에 집계시켜 데스크톱 발열예방 캡(DESK_CAP, fps&lt;34·3초)을 오발화 → frameCapS가 비가역 진입해 <strong>창 blur 3초만으로 세션 영구 30fps 고착</strong>. adaptQuality 진입부에 bgThrottle 배제 가드(집계·틱 리셋)를 넣어 차단. 부차로 선재 CRLF 버그 (build-devlog가 Windows 워킹트리 CRLF에서 DEVLOG 파싱 실패)를 정규화로 견고화했고, 스모크의 나머지 FAIL(랜딩/about CSP sha256 hash 불일치)은 로컬 Windows CRLF 위양성으로 규명(CI·라이브는 LF라 정상).</p>
 <p><strong>결과.</strong> 교차리뷰 승인 + 스모크 실질항 통과(오픈월드 콘솔 0) 후 main 배포. 라이브 헤드리스 사후검증에서 랜딩 CSP violation 0·오픈월드 콘솔 에러 0으로 위양성 확증 및 런타임 정상 확인. 정상상태 회귀 없음은 입증됐고, 이 사이클의 목적인 히칭·발열 개선의 실증은 <strong>실기기 프레임타임(디버그 HUD CSV) 프로파일링</strong>이 다음 과제로 남는다(헤드리스 정적 계측으로는 격리 불가).</p>
 </article>
-<div class="pn"><a href="./2026-07-23-62bb8c.html"><span class="lbl">← 이전 기록</span>오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거</a></div>
+<div class="pn"><a href="./2026-07-23-62bb8c.html"><span class="lbl">← 이전 기록</span>오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거</a><a href="./2026-07-26-0b1e7a.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因)</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
