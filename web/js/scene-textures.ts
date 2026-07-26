@@ -60,7 +60,15 @@ function canvasToNormalTexture(canvas, strength) {
 // 플랭크의 톤/결/옹이를 (행, 열 mod N) 시드로 결정 → 오른쪽 경계를 넘는 플랭크가
 // 왼쪽 첫 플랭크와 완전히 동일해져 타일 경계가 보이지 않는다.
 // ---------------------------------------------------------------------------
-export function createParquetMaps() {
+// opts.size: map 최종 한 변(기본 1024 — 미술관 종전 동작). 내부 드로잉은 항상 1024 좌표계로 하고
+//   마지막에 다운스케일한다 — 플랭크 격자·심리스 랩 로직이 size에 묶여 있어 좌표계를 줄이면 결·옹이
+//   선 굵기(lineWidth 고정값)가 상대적으로 굵어져 룩이 변하기 때문. 다운스케일은 룩을 보존한다.
+// opts.normal: normalMap 생성 여부(기본 true — 미술관 종전 동작). 오픈월드·빌더(space-parts의
+//   parquetTex, roughness 0.5)는 디자이너 실렌더 판정으로 노멀 기여가 육안 0이라 끈다(−5.33MB).
+//   미술관(scene-building, roughness 0.4·normalScale 0.7)은 판정 조건이 달라 종전 유지 — 무인자 호출.
+export function createParquetMaps(opts = {}) {
+  const outSize = opts.size || 1024;
+  const wantNormal = opts.normal !== false;
   const size = 1024;
   const plankW = 256; // 4 plank/행 (N=4)
   const plankH = 64;  // 16행 정확히 — 상하 경계도 심리스
@@ -163,12 +171,21 @@ export function createParquetMaps() {
   ctx.putImageData(noise, 0, 0);
 
   // 실측 비율: repeat 16 → 타일 3.125m, 플랭크 폭 ≈19.5cm × 길이 ≈78cm (파케 블록)
-  const map = new THREE.CanvasTexture(canvas);
+  // outSize < 1024면 다운스케일한 사본을 map으로 쓴다(GPU 업로드 −75%, 근경 2.2m 육안 무손실 판정).
+  let mapCanvas = canvas;
+  if (outSize !== size) {
+    mapCanvas = document.createElement('canvas');
+    mapCanvas.width = outSize; mapCanvas.height = outSize;
+    mapCanvas.getContext('2d').drawImage(canvas, 0, 0, outSize, outSize);
+  }
+  const map = new THREE.CanvasTexture(mapCanvas);
   map.colorSpace = THREE.SRGBColorSpace;
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.RepeatWrapping;
   map.repeat.set(16, 16);
   map.anisotropy = 16;
+
+  if (!wantNormal) return { map, normalMap: null };
 
   const normalMap = canvasToNormalTexture(canvas, 1.6);
   normalMap.repeat.set(16, 16);

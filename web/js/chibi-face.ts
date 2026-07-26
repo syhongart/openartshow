@@ -279,6 +279,11 @@ export function drawFaceInto(canvas, p, fx) {
   const wound = (fx && fx.wound) || 0;
   const ouch = !!(fx && fx.ouch);
   const ctx = canvas.getContext('2d');
+  // [사이클 B 텍스처 감량] 이 함수의 모든 드로잉은 512 좌표계다(EYE_Y 252 등 수십 곳 하드코딩).
+  // 캔버스 실크기가 그보다 작으면(256 — drawFaceCanvas) 변환행렬로 통째 축소해 그린다 — 좌표계
+  // 수정 없이 캔버스 크기만 자유로워진다. 512 캔버스가 들어오면 항등변환이라 종전과 동일.
+  const fs = canvas.width / 512;
+  ctx.setTransform(fs, 0, 0, fs, 0, 0);
   ctx.clearRect(0, 0, 512, 512);
 
   const EYE_Y = 252;
@@ -469,8 +474,12 @@ export function drawFaceInto(canvas, p, fx) {
 
 export function drawFaceCanvas(p) {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
+  // [사이클 B 텍스처 감량] 512→256: GPU 업로드 1.33MB→0.33MB/개체(밉맵 포함). 디자이너 실렌더
+  // A/B — 일반 시야(4·8m)·대화거리(1.5m)까지 동일, 0.6m 극단 근접만 미세 소프트닝(실플레이 미발생).
+  // 얼굴이 벡터 드로잉(텍스트·잔선 없음)이라 다운스케일에 관대. 드로잉은 drawFaceInto가 512 좌표계를
+  // 변환행렬로 축소해 그대로 쓴다 — 좌표 수정 0.
+  canvas.width = 256;
+  canvas.height = 256;
   drawFaceInto(canvas, p, null);
   return canvas;
 }

@@ -39,7 +39,9 @@ function canvasToNormalTexture(canvas, strength) {
   tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
-function createParquetMaps() {
+function createParquetMaps(opts = {}) {
+  const outSize = opts.size || 1024;
+  const wantNormal = opts.normal !== false;
   const size = 1024;
   const plankW = 256;
   const plankH = 64;
@@ -126,12 +128,20 @@ function createParquetMaps() {
     d[i + 2] += n;
   }
   ctx.putImageData(noise, 0, 0);
-  const map = new THREE.CanvasTexture(canvas);
+  let mapCanvas = canvas;
+  if (outSize !== size) {
+    mapCanvas = document.createElement("canvas");
+    mapCanvas.width = outSize;
+    mapCanvas.height = outSize;
+    mapCanvas.getContext("2d").drawImage(canvas, 0, 0, outSize, outSize);
+  }
+  const map = new THREE.CanvasTexture(mapCanvas);
   map.colorSpace = THREE.SRGBColorSpace;
   map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.RepeatWrapping;
   map.repeat.set(16, 16);
   map.anisotropy = 16;
+  if (!wantNormal) return { map, normalMap: null };
   const normalMap = canvasToNormalTexture(canvas, 1.6);
   normalMap.repeat.set(16, 16);
   normalMap.anisotropy = 16;

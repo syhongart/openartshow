@@ -34,7 +34,8 @@ function sharedMaps(gen, key) {
     t.userData = { ...(t.userData || {}), shared: true }; t.needsUpdate = true;
     return t;
   };
-  return (_sharedMaps[key] = { map: mk(base.map), normalMap: mk(base.normalMap) });
+  // normalMap은 마감에 따라 없을 수 있다(파케 — 디자이너 실렌더 판정으로 노멀 기여 육안 0이라 생성 생략).
+  return (_sharedMaps[key] = { map: mk(base.map), normalMap: base.normalMap ? mk(base.normalMap) : null });
 }
 // 세그먼트별 UV 스케일을 지오 uv attribute에 직접 굽는다(=map.repeat과 동등). 지오는 세그먼트마다 개별
 // BoxGeometry라 공유 없음 — 그래도 이중 굽기 방어로 1회 가드. 공유 텍스처 오염 없이 세그먼트별 타일 스케일 보존.
@@ -56,7 +57,7 @@ export function warmBuildingTexCache() {
   if (typeof document === 'undefined') return;
   baseMaps(createPlasterMaps, 'plaster');
   baseMaps(createConcreteMaps, 'concrete');
-  baseMaps(createParquetMaps, 'parquet');
+  baseMaps(parquetLite, 'parquet'); // parquetTex와 같은 gen·키 — 캐시 불일치로 1024가 데워지는 일 방지
 }
 function texMat({ gen, key, tint = 0xffffff, repeat = [2, 2], normalScale = 0.4, roughness = 0.9, metalness = 0 }) {
   const { map, normalMap } = sharedMaps(gen, key); // 마감당 공유 텍스처(repeat=1) — clone 안 함
@@ -67,7 +68,12 @@ function texMat({ gen, key, tint = 0xffffff, repeat = [2, 2], normalScale = 0.4,
 // 표면 치수 → 텍스처 반복(월 목표 조인트 ~2.5m·바닥 파케 ~2m)
 const plasterTex = (tint, w, h) => texMat({ gen: createPlasterMaps, key: 'plaster', tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.32, roughness: 0.92 });
 const concreteTex = (tint, w, h) => texMat({ gen: createConcreteMaps, key: 'concrete', tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.55, roughness: 0.9 });
-const parquetTex = (w, d) => texMat({ gen: createParquetMaps, key: 'parquet', tint: 0xffffff, repeat: [Math.max(1, w / 2), Math.max(1, d / 2)], normalScale: 0.45, roughness: 0.5 });
+// [사이클 B 텍스처 감량] 파케만 저용량 생성(map 512·normalMap 없음) — 오픈월드 파셀 승격 시 신규 GPU
+// 업로드 10.67MB→0.33MB. 디자이너 실렌더 판정: 이 재질 조건(roughness 0.5·normalScale 0.45)에서 노멀
+// 기여는 라킹~그레이징 조명 전부 픽셀 diff 육안 0, map 512는 근경 2.2m에서도 결·옹이 손실 없음.
+// 미술관(scene-building)은 조건이 달라(roughness 0.4·normalScale 0.7) 무인자 호출로 종전 유지 — 무접촉.
+const parquetLite = () => createParquetMaps({ size: 512, normal: false });
+const parquetTex = (w, d) => texMat({ gen: parquetLite, key: 'parquet', tint: 0xffffff, repeat: [Math.max(1, w / 2), Math.max(1, d / 2)], normalScale: 0.45, roughness: 0.5 });
 
 // ── v2 신재질 프로시저럴 텍스처(자작·외부에셋 0 — §6 IP 게이트 준수) ──────────
 // 결정적 시드 PRNG(mulberry32) — 로드마다 동일 결과(프로젝트 결정성 규율·베이크 정합).

@@ -253,6 +253,8 @@ function drawFaceInto(canvas, p, fx) {
   const wound = fx && fx.wound || 0;
   const ouch = !!(fx && fx.ouch);
   const ctx = canvas.getContext("2d");
+  const fs = canvas.width / 512;
+  ctx.setTransform(fs, 0, 0, fs, 0, 0);
   ctx.clearRect(0, 0, 512, 512);
   const EYE_Y = 252;
   const EYE_X = 84;
@@ -411,8 +413,8 @@ function drawFaceInto(canvas, p, fx) {
 }
 function drawFaceCanvas(p) {
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
+  canvas.width = 256;
+  canvas.height = 256;
   drawFaceInto(canvas, p, null);
   return canvas;
 }

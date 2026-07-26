@@ -19,7 +19,7 @@ function sharedMaps(gen, key) {
     t.needsUpdate = true;
     return t;
   };
-  return _sharedMaps[key] = { map: mk(base.map), normalMap: mk(base.normalMap) };
+  return _sharedMaps[key] = { map: mk(base.map), normalMap: base.normalMap ? mk(base.normalMap) : null };
 }
 function bakeUVRepeat(geo, rx, ry) {
   if (!geo || !geo.attributes || !geo.attributes.uv) return;
@@ -34,7 +34,7 @@ function warmBuildingTexCache() {
   if (typeof document === "undefined") return;
   baseMaps(createPlasterMaps, "plaster");
   baseMaps(createConcreteMaps, "concrete");
-  baseMaps(createParquetMaps, "parquet");
+  baseMaps(parquetLite, "parquet");
 }
 function texMat({ gen, key, tint = 16777215, repeat = [2, 2], normalScale = 0.4, roughness = 0.9, metalness = 0 }) {
   const { map, normalMap } = sharedMaps(gen, key);
@@ -44,7 +44,8 @@ function texMat({ gen, key, tint = 16777215, repeat = [2, 2], normalScale = 0.4,
 }
 const plasterTex = (tint, w, h) => texMat({ gen: createPlasterMaps, key: "plaster", tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.32, roughness: 0.92 });
 const concreteTex = (tint, w, h) => texMat({ gen: createConcreteMaps, key: "concrete", tint, repeat: [Math.max(1, w / 2.5), Math.max(1, h / 2.5)], normalScale: 0.55, roughness: 0.9 });
-const parquetTex = (w, d) => texMat({ gen: createParquetMaps, key: "parquet", tint: 16777215, repeat: [Math.max(1, w / 2), Math.max(1, d / 2)], normalScale: 0.45, roughness: 0.5 });
+const parquetLite = () => createParquetMaps({ size: 512, normal: false });
+const parquetTex = (w, d) => texMat({ gen: parquetLite, key: "parquet", tint: 16777215, repeat: [Math.max(1, w / 2), Math.max(1, d / 2)], normalScale: 0.45, roughness: 0.5 });
 function seeded(s) {
   return () => {
     s |= 0;
