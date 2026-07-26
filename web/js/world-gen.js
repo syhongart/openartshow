@@ -270,8 +270,11 @@ export function genStreet(px, pz, seed, grid, cell = { x: 24, z: 24 }, parcel) {
   //  범위가 [roadS, cx/2]이고 중심선이 10.75인데, 구 좌표가 정확히 그 중심선 — 게다가 거리 배회 NPC의
   //  보행선(world.js pickWalkerTarget의 roadS = CELLZ/2-1.25)과 같은 값이라 도로 한복판에 기둥이
   //  선 꼴이었다. 9.2는 도로 안쪽 경계(roadS=9.5)보다 0.3m 바깥이라 기둥 반경 0.22를 더해도 도로에
-  //  걸치지 않아 통행 폭 2.5m가 온전히 빈다.
-  items.push({ kind: 'lamp', x: roadE - 0.3, z: roadS - 0.3 });
+  //  걸치지 않는다. 다만 기둥 반경만으로는 부족하다 — 통행 판정은 플레이어 반경(0.3)까지 더한
+  //  0.52가 여유로 필요해서, 도로 격자 전수 검사에서 0.3만 물렸을 때 파셀당 66점이 여전히 걸렸다.
+  //  0.8로 물려 여유 0.28을 남긴다. 이 값에서도 남 라인 가로수(x=8, z=7.2)와는 1.66 떨어져
+  //  clear()의 tree+lamp 기준(1.52)을 넘으므로 나무를 밀어내지 않는다.
+  items.push({ kind: 'lamp', x: roadE - 0.8, z: roadS - 0.8 });
   // ── 벤치·화분(0~n) — 마당. 파셀당 가구 총 6개 이하(가로등1 + 가로수 + 가구 ≤ 6). ──
   const furnMax = Math.max(0, 5 - trees);
   let furn = 0;
