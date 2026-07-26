@@ -59,7 +59,7 @@ const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 
 document.body.classList.toggle('is-touch', isTouch);
 enterHint.textContent = isTouch
   ? '왼쪽 조이스틱으로 이동 · 오른쪽 드래그로 시선'
-  : '클릭 후 WASD로 이동 · 마우스로 시선 · ESC로 커서 해제';
+  : '클릭 후 WASD로 이동 · 마우스로 시선 · 1·2 키로 층 이동 · ESC로 커서 해제';
 
 // ── 렌더러 · 씬 · 카메라 ──────────────────────────────────────────────────
 const gpuInfo = probeGpu(); // 소프트웨어 렌더러(swiftshader 등) 감지 — AA·톤매핑·그림자를 그에 맞춰 낮춘다
@@ -345,7 +345,15 @@ function setKey(code, pressed) {
     case 'ShiftLeft': case 'ShiftRight': keys.run = pressed; break;
   }
 }
-document.addEventListener('keydown', (e) => { if (controlsEnabled) setKey(e.code, true); });
+document.addEventListener('keydown', (e) => {
+  if (!controlsEnabled) return;
+  setKey(e.code, true);
+  // 층 전환 단축키. 화면의 1F/2F 버튼은 포인터 락 중에는 누를 수 없다 — 락이 걸리면 마우스가
+  // 캔버스에 묶여 커서가 사라지므로, 버튼을 쓰려면 ESC로 락을 풀고 누른 뒤 다시 화면을 클릭해
+  // 락을 되찾아야 한다. 걸어다니다가 층만 바꾸고 싶을 때 그 왕복은 번거로우므로 숫자키를 둔다.
+  const n = e.code === 'Digit1' || e.code === 'Numpad1' ? 1 : (e.code === 'Digit2' || e.code === 'Numpad2' ? 2 : 0);
+  if (n) { const f = FLOORS.find((x) => x.id === n); if (f) teleportToFloor(f, undefined); }
+});
 document.addEventListener('keyup', (e) => setKey(e.code, false));
 
 // ── 모바일: 좌 조이스틱(이동) + 우 드래그(시선) — world-boot.js와 동일 규약 ──
