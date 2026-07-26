@@ -1754,13 +1754,22 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // 않는다(순간값이면 0.5초 사이에 지나간 급락이 사라진다).
   const PROF_WIN_MS = 1000;
   let profWinStart = 0, profFrameMax = 0, profRenderMax = 0, profStageMax = 0, profStageSum = 0, profStageName = '';
+  // 직전 창의 값. 조회 시 (직전, 현재) 중 큰 쪽을 준다 — 창을 그냥 1초마다 비우면(텀블링) 창 경계
+  // 직전에 난 스파이크가 HUD 폴링(0.5초, 별도 타이머) 틈에 끼어 어느 샘플에도 안 걸릴 수 있다.
+  // 직전 창을 한 세대 남겨 두면 조회 시점이 어디든 최근 1초 이상이 항상 덮인다(검수관 권고).
+  let profPrev = { frame: 0, render: 0, stage: 0, stageSum: 0, name: '' };
+  let profSkip = false; // 이 프레임의 계측을 버린다 — 비가시 스로틀처럼 "의도적으로 느린" 프레임용
   let lastDrawCalls = 0;
   const STAGE_NAMES = ['bld', 'street', 'coast', 'walker']; // STAGES와 같은 순서. S0(beginParcel)은 'base'.
-  function profRoll(now) { // 윈도우 만료 시 리셋(최댓값 계열은 창 단위로만 의미가 있다)
+  function profRoll(now) { // 윈도우 만료 시 한 세대 넘기고 리셋(최댓값 계열은 창 단위로만 의미가 있다)
     if (profWinStart === 0) { profWinStart = now; return; } // 첫 프레임은 리셋하지 않는다 — 입장 전 동기 초기 로드에서 쌓인 값을 첫 창에 남겨, 계측이 실제로 도는지 헤드리스에서도 확인 가능하게.
-    if (now - profWinStart >= PROF_WIN_MS) { profWinStart = now; profFrameMax = 0; profRenderMax = 0; profStageMax = 0; profStageSum = 0; profStageName = ''; }
+    if (now - profWinStart >= PROF_WIN_MS) {
+      profPrev = { frame: profFrameMax, render: profRenderMax, stage: profStageMax, stageSum: profStageSum, name: profStageName };
+      profWinStart = now; profFrameMax = 0; profRenderMax = 0; profStageMax = 0; profStageSum = 0; profStageName = '';
+    }
   }
   function profStage(name, ms) {
+    if (profSkip) return;
     profStageSum += ms;
     if (ms > profStageMax) { profStageMax = ms; profStageName = name; }
   }
@@ -1793,7 +1802,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (bgAccum < 0.25 && !needsRender) return; // ~4fps(비가시). needsRender면 텍스처 업로드 위해 통과.
       dt = bgAccum;
       bgAccum = 0;
+      // [히칭 프로파일] 이 경로는 실제로 렌더하지만 간격이 ~250ms인 것은 의도한 저듀티다. frameMs만
+      // 빼고 render/stageMs를 기록하면 "frame은 작은데 render만 크다"는 없는 신호가 만들어져 판독법이
+      // 어긋나므로(검수관 지적), 이 프레임은 세 축을 통째로 버린다.
+      profRoll(t);
+      profSkip = true;
       update(dt);
+      profSkip = false;
       return;
     }
     // [저사양 방어] 포테이토 프레임 캡(~30fps) — 소프트웨어 렌더는 프레임 시간이 널뛰어 일정 캡이
@@ -1819,7 +1834,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // [히칭 프로파일] 여기까지 온 프레임 = 실제로 렌더하는 프레임. 위의 비가시 스로틀·포테이토·
     // 프레임캡 return 경로는 의도적으로 건너뛴 것이라 급락이 아니므로 집계에 넣지 않는다.
     profRoll(t);
-    if (rawFrameMs > profFrameMax) profFrameMax = rawFrameMs;
+    if (!profSkip && rawFrameMs > profFrameMax) profFrameMax = rawFrameMs;
     update(dt);
   }
   function update(dt) {
@@ -1887,7 +1902,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const _r0 = perfNow();
     renderer.render(scene, camera);
     const _rms = perfNow() - _r0;
-    if (_rms > profRenderMax) profRenderMax = _rms;
+    if (!profSkip && _rms > profRenderMax) profRenderMax = _rms;
     needsRender = false; // [C1] 렌더 소비 — 비동기 텍스처 더티플래그 리셋
     adaptQuality(d); // [FPS 적응] 실측 프레임률로 해상도 배율 조정(soft 제외 — 아래에서 자체 가드)
   }
@@ -1977,7 +1992,10 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       adaptUpTicks = 0; // 중간대(24~48fps) — 승급 카운트 리셋(안정 유지)
     }
   }
-  function renderOnce() { applyPose(); maybeRebakeShadow(); renderer.info.reset(); renderer.render(scene, camera); } // info.reset: 위 update() 렌더 지점과 동일 사유(신형 Renderer 자동리셋 부재)
+  // info.reset: 위 update() 렌더 지점과 동일 사유(신형 Renderer 자동리셋 부재).
+  // lastDrawCalls 갱신도 같은 규약으로 — 이 경로만 도는 헤드리스·스크린샷 플로우에서 getStats().drawCalls가
+  // 스테일로 굳지 않게 한다(검수관 권고). RAF 루프와 달리 "직전 renderOnce의 값"이 된다.
+  function renderOnce() { applyPose(); maybeRebakeShadow(); lastDrawCalls = renderer.info.render.drawCalls ?? renderer.info.render.calls; renderer.info.reset(); renderer.render(scene, camera); }
 
   // ── 포인터락 + 이벤트(데스크톱) ──
   let locked = false;
@@ -2068,8 +2086,13 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       //   frameMs 크고 stageMs 큼   → CPU 파셀 조립(stage가 어느 단계인지까지 나온다)
       //   frameMs 크고 renderMs 큼  → 렌더 파이프라인(셰이더 컴파일·텍스처 업로드·섀도 재베이크)
       //   frameMs만 크고 둘 다 작음 → 그 외(GC 유력 — heapMB 급감이 동반되는지 본다)
+      // 직전 창과 현재 창의 최댓값을 합친다 — 조회 시점이 창 경계 어디에 놓이든 최근 1초 이상이 덮인다.
+      const pStage = Math.max(profStageMax, profPrev.stage);
       return { drawCalls: lastDrawCalls, programs: (renderer.info.programs ? renderer.info.programs.length : 0), loadedFull, loadedShell, queue: loadQueue.length, lightsInUse, shellFlat: !!opts.shellFlat, backend: isWebGPU ? 'WebGPU' : 'WebGL',
-        frameMs: profFrameMax, renderMs: profRenderMax, stageMs: profStageMax, stageSum: profStageSum, stage: profStageName, heapMB: heapMB() };
+        frameMs: Math.max(profFrameMax, profPrev.frame), renderMs: Math.max(profRenderMax, profPrev.render),
+        stageMs: pStage, stageSum: Math.max(profStageSum, profPrev.stageSum),
+        stage: (profStageMax >= profPrev.stage ? profStageName : profPrev.name), // 보고하는 최댓값과 같은 쪽의 이름
+        heapMB: heapMB() };
     },
     getQueueLength: () => loadQueue.length,
     getLoadedKeys: () => Array.from(loaded.keys()),
