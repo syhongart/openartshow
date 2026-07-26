@@ -128,6 +128,10 @@ function makeEnvMap(renderer, isWebGPU) {
 // ② 파셀 승격 시 draw call이 몰리는 부담원이라 일단 뺀다. 코드는 남기고 이 상수만 false —
 // 다시 켜려면 true 하나로 원복된다(줄기 충돌 solids·발치 tree pit도 이 블록에 함께 묶여 있다).
 const STREET_TREES = false;
+// [가로등 온·오프] 같은 지시로 가로등도 뺀다 — 기둥 충돌(top 3.0)이 보행을 막고, 파셀당
+// 기둥·갓 2버킷이 승격 시 draw call에 얹힌다. 벤치·화분은 유지(동선 가장자리·낮은 높이).
+// 갓 재질은 emissive라 실제 THREE.Light가 아니므로, 빼도 씬 조명 계산엔 영향 없다.
+const STREET_LAMPS = false;
 const PIT_RADIUS = 1.3; // 0.65→1.3(감독 지시, 반경 2배). 인접 나무 간 최소 배치 간격 4m(world-gen.js genStreet)
 // 대비 지름 2.6m이라 pit-pit 겹침은 없음(최소 간극 1.4m, 헤드리스 전수 확인). 남/동 가로수 라인은 도로
 // 경계 0.95m 안쪽에 서 있어 pit 바깥 가장자리가 도로 쪽으로 균일하게 0.35m 걸치는데, 이는 모든 가로수
@@ -699,6 +703,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const lampPostGeos = [], lampHeadGeos = [], benchGeos = [], planterGeos = [];
     for (const s of street) {
       if (s.kind === 'lamp') {
+        if (!STREET_LAMPS) continue; // [가로등 온·오프] 감독 지시 — 아래 상수 주석 참조
         lampPostGeos.push(SG.lampPost.clone().translate(ox + s.x, 0, oz + s.z));
         lampHeadGeos.push(SG.lampHead.clone().translate(ox + s.x, 0, oz + s.z));
         solids.push({ x: ox + s.x, z: oz + s.z, ex: 0.22, ez: 0.22, bottom: 0, top: 3.0 }); // 기둥 충돌
