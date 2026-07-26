@@ -1097,7 +1097,6 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // 예전에 여기서 지웠더니, 언로드로 폐기된 옛 ctx가 뒤늦게 돌아와 그 사이 새로 큐잉된 job의
     // 표시까지 지워 중복 job이 생겼다. in-flight full 한도도 여기서 건드리지 않는다 —
     // processLoadQueue가 매 프레임 큐와 pendingAttach로 재계산하는 값이라 지속 카운터가 아니다.
-    if (fromQueue && !ctx.shellOnly) lastFullFinalizeAt = perfNow();
     // unloadParcel이 무효화한 예열은 여기서 끝낸다. 자원 회수도 여기가 제자리다 — 컴파일이 끝난 뒤라
     // 안전하다(언로드 시점에 dispose하면 순회 중인 three 내부가 깨진다).
     if (ctx.aborted) { disposeCtx(ctx); return; }
@@ -1106,6 +1105,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     if (disposed) { disposeCtx(ctx); return; } // world는 사라졌지만 지오·텍스처는 회수하고 끝낸다
     if (latest && latest !== ctx) { disposeCtx(ctx); return; }               // 더 나중에 시작된 ctx가 있다 → 이건 버린다
     if (!ctx.reload && loaded.get(ctx.k) !== ctx) { disposeCtx(ctx); return; } // fresh: record가 이미 남에게 넘어감(언로드·재로드)
+    // 여기부터는 이 ctx가 실제로 붙는 것이 확정된 지점이다. 쿨다운 기준시각을 위 폐기 분기들보다
+    // 앞에서 찍으면, 화면에 결코 붙지 않을 ctx가 뒤늦게 돌아와 다음 승격을 400ms 늦춘다(검수관 권고).
+    if (fromQueue && !ctx.shellOnly) lastFullFinalizeAt = perfNow();
     if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
     scene.add(ctx.group);
     if (ctx.walker) scene.add(ctx.walker.inst.group); // stageWalker가 미뤄둔 거리 배회 NPC
@@ -1433,7 +1435,9 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       // [히스테리시스] 현재 tier(로드됨 or 큐 대기) 참조 — 이미 있는 파셀은 EXIT까지 유지, 미로드는 ENTER로 진입.
       let cur = loaded.get(k)?.lod;
       if (cur === undefined && queued.has(k)) { const j = loadQueue.find((q) => q.k === k); if (j) cur = j.lod; }
-      if (cur === undefined) { const pv = pendingAttach.get(k); if (pv) cur = pv.lod; } // 조립을 마치고 셰이더 예열 중 — 곧 이 LOD로 붙으므로 "보유"로 친다(중복 승격 방지)
+      // 예열 대기(pendingAttach) 파셀은 여기서 따로 볼 필요가 없다 — 그 키는 예외 없이 loaded에도
+      // 레코드가 있어(fresh는 beginParcel S0에서 즉시 삽입, reload는 옛 LOD 레코드가 남아 있다)
+      // cur이 위에서 이미 정해진다. 중복 큐잉 차단은 아래 pendingAttach.has(k) 가드가 맡는다.
       // [시야 인지] 배후 판정 — 플레이어 실제 위치(look-ahead cxw 아님)+시선 기준. EXIT에만 적용(ENTER 불변).
       const bdx = pxi * CELLX - pos.x, bdz = pzi * CELLZ - pos.z;
       const behindNow = isBehind(bdx, bdz, yaw, parcelBehind.get(k));
