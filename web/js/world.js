@@ -216,7 +216,6 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   //   ?off=shadow → 태양 그림자 완전 off(shadowMap.enabled=false)
   //   ?off=recv   → 지면·물·도로 등 receiveShadow만 off(caster 유지 = "그림자는 지되 지면이 안 받음", 데칼 가설의 정확한 격리)
   //   ?px=N       → spawnRatio 강제(해상도 fill-rate 축 격리, 예 ?px=0.75)
-  //   ?off=prewarm→ 셰이더 파이프라인 사전 컴파일 끄기(히칭 전/후 A/B — 끄면 종전처럼 첫 렌더에서 동기 컴파일)
   const _ablParams = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
   const OFF_ABLATE = new Set((_ablParams.get('off') || '').split(',').map((s) => s.trim()).filter(Boolean));
   const RECV_SHADOW = !OFF_ABLATE.has('recv');
@@ -268,10 +267,6 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   // ACES 톤매핑은 프래그먼트당 수십 ALU — 소프트웨어 렌더에서는 그대로 비용이라 끈다(main.js:613).
   renderer.toneMapping = gpuInfo.soft ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.95;
   renderer.shadowMap.enabled = !gpuInfo.soft && !OFF_ABLATE.has('shadow'); renderer.shadowMap.type = THREE.PCFSoftShadowMap; // [ablation] ?off=shadow → 태양 그림자 완전 off
-  // [파이프라인 예열] 파셀을 씬에 붙이기 전 셰이더를 비동기로 굽는다(finalizeParcel). 두 백엔드 모두
-  // compileAsync를 제공하지만(WebGPU는 createRenderPipelineAsync, WebGL은 프로그램 사전 링크),
-  // 없는 런타임을 만나면 조용히 종전 동작으로 돌아간다. ?off=prewarm 으로 끄고 A/B 할 수 있다.
-  const prewarm = typeof renderer.compileAsync === 'function' && !OFF_ABLATE.has('prewarm');
   // [섀도 프리즈] 정적 씬 — 섀도맵을 매 프레임이 아니라 이벤트 기반으로만 재베이크(하드웨어 GPU 포함 전체 적용).
   // 미술관(main.js:634)은 완전 프리즈지만 오픈월드는 태양이 플레이어 추종이라 완전 프리즈 불가 →
   // 초기 1회·파셀 로드/언로드·마지막 베이크에서 8m 이상 이동에만 1프레임 재베이크(needsUpdate).
@@ -1010,13 +1005,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       bldGroup: null, bldStep: null, crowd: null, avatars: new Map(), streetMeshes: null,
       walker: null, tetraMesh: null, lighthouse: null, beachBands: [], pierDecks: [], lights: null,
     };
-    // record만 먼저 넣어 중복 큐잉을 막고, 씬 부착은 finalizeParcel이 파이프라인 예열을 마친 뒤로 미룬다.
-    // [파이프라인 예열] 예전에는 여기서 바로 scene.add(group)을 했다. 그러면 조립 중인 파셀이 이미
-    // 렌더 대상이라, 아직 컴파일 안 된 재질 조합을 만나는 순간 그 프레임에서 동기 셰이더 컴파일이
-    // 터진다(WebGPU device.createRenderPipeline은 메인스레드 블로킹). 감독 실기기 CSV에서 급락한
-    // 프레임의 render_ms가 frame_ms의 90~99%를 차지한 것이 이 현상이었다(최대 2,626ms).
-    // 씬 밖에서 조립하면 렌더가 건드리지 않으므로 그 스톨이 아예 발생하지 않는다.
-    if (!reload) loaded.set(k, ctx);
+    if (!reload) { scene.add(group); loaded.set(k, ctx); } // fresh: 지면·벽 즉시(reload는 finalize에서 원자 스왑). [C2] 셸·지면은 캐스터 아님(receiver) → 섀도 베이크 불요, finalize 1회로 축약(스테이지마다 1024² 재베이크 제거).
     return ctx;
   }
 
@@ -1074,61 +1063,17 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const inst = createAvatarInstance(wd.char, '#ffffff', ''); // 빈 닉네임 → 라벨 미생성
     inst.group.position.set(ox + wd.x, 0, oz + wd.z);
     inst.group.userData.isWalker = true;
-    // [파이프라인 예열] 씬 부착은 finalizeParcel로 미룬다 — 아바타는 파셀 group의 자식이 아니라 씬에
-    // 직접 붙으므로 여기서 붙이면 파셀 group을 미뤄둔 의미가 없다(치비는 파츠마다 재질이 달라
-    // 컴파일 유발이 가장 잦은 축이다). ctx.walker에 담아두고 예열 후 함께 붙인다.
+    scene.add(inst.group);
     ctx.walker = { inst, line: wd.line, ox, oz, x: ox + wd.x, z: oz + wd.z, tx: ox + wd.x, tz: oz + wd.z, ry: 0, state: 'walk', timer: 0, speed: 0.7 + Math.random() * 0.3 };
     pickWalkerTarget(ctx.walker);
   }
 
   const STAGES = [stageBuilding, stageStreet, stageCoastal, stageWalker]; // S1~S4 (S0=beginParcel)
 
-  // 예열 완료를 기다리는 파셀. 키당 "가장 나중에 시작된 ctx"만 최종 승자다 — 같은 키에 대해 예열이
-  // 겹치면 먼저 시작했지만 늦게 끝난 stale ctx가 이미 정상 부착된 최신본을 덮어쓰고 dispose시킬 수
-  // 있다(교차리뷰 블로커). reload는 loaded record 검사만으로는 이 역전을 못 걸러 별도 세대 추적이 필요하다.
-  const pendingAttach = new Map();
-
-  // 조립이 끝난 파셀을 씬에 붙인다(예열 여부와 무관한 공통 경로).
-  // fromQueue: processLoadQueue가 태운 job인가 — 큐 회계(queued·inflightFull·쿨다운)를 여기서 회수한다.
-  function attachParcel(ctx, fromQueue) {
-    // 쿨다운 기준시각은 "실제 부착" 시점으로 찍는다 — 컴파일 착수 시각으로 찍으면 컴파일이 400ms를
-    // 넘는 기기에서 쿨다운이 부착 전에 만료돼 순차 등장이 깨진다.
-    // queued는 여기서 건드리지 않는다: 중복 큐잉 방지는 pendingAttach가 맡는다(updateStreaming 참조).
-    // 예전에 여기서 지웠더니, 언로드로 폐기된 옛 ctx가 뒤늦게 돌아와 그 사이 새로 큐잉된 job의
-    // 표시까지 지워 중복 job이 생겼다. in-flight full 한도도 여기서 건드리지 않는다 —
-    // processLoadQueue가 매 프레임 큐와 pendingAttach로 재계산하는 값이라 지속 카운터가 아니다.
-    // unloadParcel이 무효화한 예열은 여기서 끝낸다. 자원 회수도 여기가 제자리다 — 컴파일이 끝난 뒤라
-    // 안전하다(언로드 시점에 dispose하면 순회 중인 three 내부가 깨진다).
-    if (ctx.aborted) { disposeCtx(ctx); return; }
-    const latest = pendingAttach.get(ctx.k);
-    if (latest === ctx) pendingAttach.delete(ctx.k);
-    if (disposed) { disposeCtx(ctx); return; } // world는 사라졌지만 지오·텍스처는 회수하고 끝낸다
-    if (latest && latest !== ctx) { disposeCtx(ctx); return; }               // 더 나중에 시작된 ctx가 있다 → 이건 버린다
-    if (!ctx.reload && loaded.get(ctx.k) !== ctx) { disposeCtx(ctx); return; } // fresh: record가 이미 남에게 넘어감(언로드·재로드)
-    // 여기부터는 이 ctx가 실제로 붙는 것이 확정된 지점이다. 쿨다운 기준시각을 위 폐기 분기들보다
-    // 앞에서 찍으면, 화면에 결코 붙지 않을 ctx가 뒤늦게 돌아와 다음 승격을 400ms 늦춘다(검수관 권고).
-    if (fromQueue && !ctx.shellOnly) lastFullFinalizeAt = perfNow();
-    if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
-    scene.add(ctx.group);
-    if (ctx.walker) scene.add(ctx.walker.inst.group); // stageWalker가 미뤄둔 거리 배회 NPC
+  function finalizeParcel(ctx) {
+    if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); scene.add(ctx.group); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
     ctx.ready = true;
     requestShadowBake(); // 완성 1회(현행 loadParcel 끝 bake와 정합)
-  }
-
-  // [파이프라인 예열] 완성된 파셀을 씬에 붙이기 전에 셰이더 파이프라인을 비동기로 컴파일한다.
-  // 감독 실기기 CSV에서 급락 프레임의 render_ms가 frame_ms의 90~99%(최대 2,626ms)를 차지했다 —
-  // 새 재질 조합이 처음 그려지는 순간 WebGPU가 device.createRenderPipeline(메인스레드 블로킹)을
-  // 그 자리에서 돌린 것이다. compileAsync 경로는 createRenderPipelineAsync를 쓰므로 같은 일을
-  // 메인스레드를 멈추지 않고 끝낸다. 렌더 결과는 동일 — 파이프라인 캐시를 미리 채울 뿐이다.
-  // 씬 밖 group을 targetScene=scene으로 컴파일하면 실제 씬의 조명 상태 그대로 굽는다.
-  function finalizeParcel(ctx, fromQueue) {
-    if (!prewarm) { attachParcel(ctx, fromQueue); return; } // 미지원(또는 동기 경로) → 종전대로 즉시 부착
-    pendingAttach.set(ctx.k, ctx); // 같은 키의 이전 대기자를 밀어낸다(가장 나중에 시작된 것이 승자)
-    ctx.group.updateMatrixWorld(true); // 씬 밖이라 자동 갱신을 못 받는다(컴파일 순회 전 1회)
-    const jobs = [renderer.compileAsync(ctx.group, camera, scene)];
-    if (ctx.walker) { ctx.walker.inst.group.updateMatrixWorld(true); jobs.push(renderer.compileAsync(ctx.walker.inst.group, camera, scene)); }
-    // 실패해도 부착은 반드시 한다 — 예열은 최적화지 정합 조건이 아니다(안 구워지면 종전처럼 첫 렌더에서 컴파일될 뿐).
-    Promise.all(jobs).then(() => attachParcel(ctx, fromQueue), () => attachParcel(ctx, fromQueue));
   }
 
   function loadParcelSync(px, pz, lod) { // immediate/headless — 전 스테이지 순차(무회귀 비트동일)
@@ -1146,7 +1091,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       profStage(STAGE_NAMES[si] || ('s' + si), perfNow() - _t);
     }
     const _f0 = perfNow();
-    attachParcel(ctx, false); // 이 경로는 "즉시 완성"이 계약이라 예열(비동기)을 태우지 않는다 — 입장 전 초기 로드·헤드리스용(큐 회계 대상도 아니다).
+    finalizeParcel(ctx);
     profStage('final', perfNow() - _f0);
     flushShadowBake(true); // [H] sync/헤드리스는 RAF flush가 없어 pending이 안 풀리므로 강제 트레일링(섀도 미갱신 방지)
   }
@@ -1165,20 +1110,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     for (const g of L.own) g.dispose(); // 파셀 소유 지오(해변·부두 머지 포함, 공유 재질 T는 일괄)
   }
   function unloadParcel(k) {
-    // [파이프라인 예열] 이 키에 예열 대기 중인 ctx가 있으면 함께 무효화한다. 두 방향으로 필요하다:
-    //  ① 스트리밍이 버린 파셀의 예열이 뒤늦게 끝나면 attachParcel이 그걸 씬에 되살린다(reload 경로는
-    //     loaded record 검사를 건너뛰므로 세대 가드만으로는 못 막는다).
-    //  ② loadParcelSync("즉시 완성" 계약)가 LOD 교체로 이 함수를 거쳐 새 ctx를 만들 때, 남아 있던
-    //     옛 예열 항목이 세대 가드에 걸려 그 새 ctx를 폐기시킨다(교차리뷰 블로커).
-    // aborted는 이미 resolve 대기 중인 promise가 나중에 돌아왔을 때 되살아나지 못하게 하는 표식이다.
-    // 자원 회수는 여기서 하지 않는다 — compileAsync가 순회 중인 지오·재질을 dispose하면 three 내부
-    // 파이프라인 상태가 깨진다(헤드리스에서 "Cannot read properties of undefined (reading 'isReady')"
-    // 실측). 표식만 남기고, 예열 promise가 돌아온 뒤 attachParcel이 안전한 시점에 회수한다.
-    const pend = pendingAttach.get(k);
-    if (pend) { pend.aborted = true; pendingAttach.delete(k); }
-    const L = loaded.get(k);
-    if (!L) return;
-    if (L === pend) { loaded.delete(k); parcelBehind.delete(k); if (!disposed) requestShadowBake(); return; } // 예열 중인 본인 — record만 떼고 dispose는 promise 이후로
+    const L = loaded.get(k); if (!L) return;
     disposeCtx(L);
     loaded.delete(k);
     parcelBehind.delete(k); // [시야 인지] 각도 히스테리시스만 리셋 — 재진입 시 엄격기준(ENTER) 적용되어 안전.
@@ -1435,9 +1367,6 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       // [히스테리시스] 현재 tier(로드됨 or 큐 대기) 참조 — 이미 있는 파셀은 EXIT까지 유지, 미로드는 ENTER로 진입.
       let cur = loaded.get(k)?.lod;
       if (cur === undefined && queued.has(k)) { const j = loadQueue.find((q) => q.k === k); if (j) cur = j.lod; }
-      // 예열 대기(pendingAttach) 파셀은 여기서 따로 볼 필요가 없다 — 그 키는 예외 없이 loaded에도
-      // 레코드가 있어(fresh는 beginParcel S0에서 즉시 삽입, reload는 옛 LOD 레코드가 남아 있다)
-      // cur이 위에서 이미 정해진다. 중복 큐잉 차단은 아래 pendingAttach.has(k) 가드가 맡는다.
       // [시야 인지] 배후 판정 — 플레이어 실제 위치(look-ahead cxw 아님)+시선 기준. EXIT에만 적용(ENTER 불변).
       const bdx = pxi * CELLX - pos.x, bdz = pzi * CELLZ - pos.z;
       const behindNow = isBehind(bdx, bdz, yaw, parcelBehind.get(k));
@@ -1486,11 +1415,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
       if (immediate) { loadParcelSync(qx, qz, lod); continue; } // sync/headless: 전 스테이지 순차(무회귀 비트동일)
       // 큐잉 — 우선순위 = look-ahead 중심 파셀(cpx,cpz) 기준 맨해튼거리*10 - 진행방향보너스(작을수록 먼저).
       const prio = (Math.abs(qx - cpx) + Math.abs(qz - cpz)) * 10 - dirBonus(qx - cpx, qz - cpz);
-      // pendingAttach: 조립을 마치고 셰이더 예열 중인 파셀. 큐에서는 이미 빠졌지만 곧 붙을 것이므로
-      // 다시 큐잉하면 같은 파셀을 처음부터 재조립한다(loadQueue에 job이 없어 아래 갱신 분기는 no-op가
-      // 되고, 그대로 통과시키면 중복 job이 push된다). 언로드로 폐기되면 unloadParcel이 여기서 빼주므로
-      // 그때는 즉시 재큐잉된다 — "재진입해도 안 뜨는" 공백이 생기지 않는다.
-      if (queued.has(k) || pendingAttach.has(k)) {
+      if (queued.has(k)) {
         const job = loadQueue.find((j) => j.k === k); // 이미 큐에 있으면 LOD·우선순위 갱신(shell→full 승격 등)
         if (job) {
           if (job.ctx && job.lod !== lod) { // 진행 중 ctx가 옛 lod로 빌드됨 → 폐기 후 새 lod로 재시작(잘못된 LOD 완주·스래싱 방지)
@@ -1528,10 +1453,6 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     const PROMOTE_COOLDOWN_MS = 400;
     let inflightFull = 0;
     for (const j of loadQueue) if (j.ctx && !j.ctx.shellOnly) inflightFull++;
-    // [파이프라인 예열] 조립을 마치고 컴파일 대기 중인 full도 in-flight로 센다. 큐에서는 이미 빠졌지만
-    // 아직 화면에 붙지 않았으므로, 세지 않으면 MAX_INFLIGHT_FULL이 무력화돼 여러 파셀이 동시에
-    // 승격되고 컴파일이 겹친다(예열의 부하 분산 효과가 사라진다).
-    for (const c of pendingAttach.values()) if (!c.shellOnly) inflightFull++;
     let i = 0;
     while (i < loadQueue.length) {
       const job = loadQueue[i];
@@ -1556,12 +1477,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
         const d = STAGES[_si](job.ctx); if (d !== false) job.stage++;
         profStage(STAGE_NAMES[_si] || ('s' + _si), perfNow() - _s1); // [히칭 프로파일] 어느 스테이지가 프레임을 삼켰는지
       }
-      // 완성 → 예열 후 부착. 큐와 queued는 여기서 정리하고(job은 실제로 끝났다), 예열이 도는 동안의
-      // 중복 큐잉은 pendingAttach가 막는다(updateStreaming 참조). 쿨다운 기준시각만 attachParcel이
-      // "실제 부착 시점"에 찍는다 — 컴파일 착수 시각으로 찍으면 컴파일이 400ms를 넘는 기기에서
-      // 쿨다운이 부착 전에 만료돼 순차 등장이 깨진다(교차리뷰 블로커).
-      // [히칭 프로파일] finalize(섀도 베이크 요청 등)도 별도 스테이지로 계측
-      if (job.stage >= STAGES.length) { const _sf = perfNow(); finalizeParcel(job.ctx, true); profStage('final', perfNow() - _sf); loadQueue.splice(i, 1); queued.delete(job.k); }
+      if (job.stage >= STAGES.length) { const _sf = perfNow(); finalizeParcel(job.ctx); profStage('final', perfNow() - _sf); if (!job.ctx.shellOnly) { inflightFull--; lastFullFinalizeAt = t0; } loadQueue.splice(i, 1); queued.delete(job.k); } // 완성 → full이면 in-flight 회수 + 쿨다운 기준 갱신(순차 등장). [히칭 프로파일] finalize(섀도 베이크 요청 등)도 별도 스테이지로 계측
       stagesRun++;
       if (gpuInfo.soft) break;                          // soft: 프레임당 1스테이지
       if (stagesRun >= MAX_STAGES_PER_FRAME) break;     // [히칭] 프레임당 스테이지 캡(여러 파셀 동시 급락 완화)
@@ -2132,11 +2048,6 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   updateStreaming(true);
   applyPose();
   requestShadowBake(); // [섀도 프리즈] 초기 1회 베이크 + 8m 이동 기준점 설정
-  // [파이프라인 예열 — 부팅] 첫 화면에 쓰이는 재질 조합을 입장 전에 미리 굽는다. 감독 실기기 CSV의
-  // 첫 샘플(t=0.5s)이 render 3,087ms였는데, 그게 이 초기 파셀들의 컴파일이 첫 렌더에 몰린 것이다.
-  // createWorld는 이미 async(WebGPU init await)라 여기서 기다려도 호출자 계약이 바뀌지 않는다 —
-  // 입장 오버레이 뒤에서 끝나므로 방문자에겐 로딩의 일부로 흡수된다. 실패는 무시(예열은 최적화).
-  if (prewarm && !headless) { try { await renderer.compileAsync(scene, camera); } catch { /* 미지원·디바이스 로스트 — 종전 동작 */ } }
   if (!headless) {
     resize((typeof window !== 'undefined' ? window.innerWidth : 1280), (typeof window !== 'undefined' ? window.innerHeight : 720));
     raf = (typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame(step) : 0;
@@ -2191,10 +2102,6 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     getScene: () => scene, getCamera: () => camera, getRenderer: () => renderer,
     dispose() {
       disposed = true;
-      // pendingAttach는 여기서 건드리지 않는다. 아래 loaded 순회의 unloadParcel(k)이 키마다 정확히
-      // 처리한다(표식 + 지연 dispose) — 미리 비우면 unloadParcel의 `L === pend` 가드가 성립하지 못해
-      // 컴파일 순회 중인 자원을 즉시 dispose하게 되고, 방금 막은 three 내부 크래시가 teardown 경로로
-      // 되돌아온다(교차리뷰 블로커). 예열 중인 키는 정의상 loaded에도 레코드가 있어 빠짐없이 순회된다.
       if (raf) cancelAnimationFrame(raf);
       if (!headless && typeof window !== 'undefined') {
         canvas.removeEventListener('click', onCanvasClick);
