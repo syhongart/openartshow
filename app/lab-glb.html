@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- [실험] GLB 공간 1인칭 워크스루 미리보기 — behind-flag(라이브 미노출, 어디에도 링크 안 함).
+     반입 판정 전 감독 확인용. 자기완결(외부 호스트 0) — CSP default-src 'self'.
+     importmap은 world.html/index.html과 동일하게 raw(비-vite) 서빙 대응용으로 유지하고,
+     브라우저 제약상 인라인 전용이라 script-src에 sha256으로 고정한다(내용 불변 — three 매핑 1줄). -->
+<!-- connect-src에 blob: 필수: GLTFLoader가 GLB 내장 텍스처를 디코드할 때 ImageBitmapLoader가
+     버퍼뷰를 Blob→objectURL로 만들고 fetch()로 읽는다(three.js r160 ImageBitmapLoader.load).
+     'self'만으로는 이 blob: fetch가 CSP에 막혀 텍스처 전체가 로드 실패한다(헤드리스 검증으로 발견). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
+<title>GLB 워크스루 실험 · OpenArtShow</title>
+<style>
+  :root{
+    --bg:#14151A; --ink:#F5F5F2; --dim:#9A9EB1; --line:#3A3D4B;
+    --cyan:#72E6E1; --violet:#8B72FF;
+    --glass:linear-gradient(180deg, rgba(46,48,61,.72), rgba(20,21,27,.82));
+    --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;width:100%;background:var(--bg);color:var(--ink);font-family:var(--app);overflow:hidden;-webkit-font-smoothing:antialiased}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  .plate{position:fixed;z-index:10;background:var(--glass);
+    -webkit-backdrop-filter:blur(11px) saturate(150%);backdrop-filter:blur(11px) saturate(150%);
+    border:1px solid rgba(255,255,255,.10);border-radius:14px;
+    box-shadow:0 14px 32px -12px rgba(0,0,0,.52), inset 0 1px 0 rgba(255,255,255,.13)}
+
+  /* 좌상단 — 실험 페이지 안내 */
+  .info{top:16px;left:16px;padding:12px 16px;max-width:min(70vw,320px)}
+  .info .titlerow{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .info .tick{width:3px;height:15px;border-radius:2px;background:var(--cyan);flex:none}
+  .info .title{font-size:13.5px;font-weight:700;letter-spacing:-.01em}
+  .info .hint{font-size:11px;color:var(--dim);line-height:1.6}
+
+  /* 우상단 — HUD 한 줄(fps·삼각형·드로우콜·층) */
+  .hud{top:16px;right:16px;padding:9px 14px;font:700 12.5px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--cyan);white-space:nowrap}
+
+  /* 우하단 — 층 전환 버튼(계단 지오메트리 없음 → 순간이동) */
+  .floorpanel{right:16px;bottom:16px;padding:8px;display:flex;gap:6px}
+  .floorpanel button{font-family:var(--app);font-size:13px;font-weight:700;padding:9px 16px;border-radius:10px;
+    cursor:pointer;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);color:var(--dim);
+    transition:background .15s,color .15s,border-color .15s;min-height:38px}
+  .floorpanel button:hover{background:rgba(255,255,255,.12);color:var(--ink)}
+  .floorpanel button.on{background:rgba(114,230,225,.22);border-color:var(--cyan);color:var(--ink)}
+
+  /* 오버레이 공통(로딩/시작) */
+  .ov{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;
+    background:radial-gradient(120% 90% at 50% 40%, rgba(20,21,26,.55), rgba(10,10,14,.86));text-align:center;padding:24px}
+  .ov.hide{display:none}
+
+  .loadbox{display:flex;flex-direction:column;align-items:center;gap:12px;width:min(84vw,320px)}
+  .loadtitle{font-size:15px;font-weight:700}
+  .bar{width:100%;height:8px;border-radius:5px;background:rgba(255,255,255,.12);overflow:hidden}
+  .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--cyan),var(--violet));border-radius:5px;
+    transition:width .15s ease}
+  .fill.indeterminate{width:38%;animation:lgb-indet 1.1s ease-in-out infinite}
+  @keyframes lgb-indet{0%{margin-left:0%}50%{margin-left:62%}100%{margin-left:0%}}
+  .loadpct{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+  .entertitle{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  #enterHint{font-size:12.5px;color:var(--dim);line-height:1.7;max-width:min(85vw,380px)}
+  #enterBtn{font-family:var(--app);font-size:14px;font-weight:700;padding:11px 22px;border-radius:11px;cursor:pointer;
+    background:rgba(114,230,225,.24);border:1px solid var(--cyan);color:var(--ink);margin-top:4px;min-height:44px}
+  #enterBtn:hover{background:rgba(114,230,225,.36)}
+
+  @media (max-width:640px){
+    .info{max-width:min(78vw,300px);padding:10px 13px}
+    .info .hint{display:none} /* 좁은 화면에서는 상단 제목만, 안내는 시작 오버레이가 대신함 */
+    /* 우상단 HUD가 좁은 화면에서 좌상단 info 플레이트와 가로로 겹쳐(실측 375px 스크린샷에서 확인)
+       텍스트가 포개졌다 — 세로로 쌓아 info 바로 아래(좌측 정렬)로 옮겨 겹침을 없앤다. */
+    .hud{top:60px;left:16px;right:auto;padding:6px 11px;font-size:10.5px}
+    .floorpanel{padding:6px;gap:5px}
+    .floorpanel button{padding:8px 13px;font-size:12px}
+  }
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+  <script type="module" crossorigin src="/openartshow/_bundle/lab-glb-C_5X4vnI.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-B9S8r_AR.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/BufferGeometryUtils-BS6jbfHW.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/GLTFLoader-BlpG-TT5.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/main-gpu-BG9T9cr2.js">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div class="plate info">
+  <div class="titlerow"><span class="tick"></span><span class="title">GLB 공간 워크스루 · 실험</span></div>
+  <div class="hint">감독 확인용 미리보기 — 반입 판정 전, 라이브 미노출</div>
+</div>
+
+<div class="plate hud" id="hud">-- FPS · --k tri · -- draw · 1F</div>
+
+<div class="plate floorpanel" id="floorPanel">
+  <button type="button" data-floor="1" class="on">1F</button>
+  <button type="button" data-floor="2">2F</button>
+</div>
+
+<div class="ov" id="loading">
+  <div class="loadbox">
+    <div class="loadtitle">공간을 불러오는 중…</div>
+    <div class="bar"><div class="fill" id="loadFill"></div></div>
+    <div class="loadpct" id="loadPct">0%</div>
+  </div>
+</div>
+
+<div class="ov hide" id="enter">
+  <div class="entertitle">GLB 워크스루 실험</div>
+  <div id="enterHint"></div>
+  <button type="button" id="enterBtn">시작하기</button>
+</div>
+
+</body>
+</html>
