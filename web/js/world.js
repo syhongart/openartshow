@@ -124,6 +124,10 @@ function makeEnvMap(renderer, isWebGPU) {
 // 지오는 CircleGeometry(1,20) 그대로 재사용(정점 수 무변화) — 색·질감은 전부 아래 makeTreePitTex()
 // 캔버스 텍스처(흙 베이스 + 벽돌 링, makeGroundTex 절차생성 패턴 재사용)가 담당하므로 버텍스컬러
 // 루프가 필요 없다.
+// [가로수 온·오프] 감독 지시(2026-07-26): 길 가운데 가로수가 ① 걷는 동선을 막아 불편하고
+// ② 파셀 승격 시 draw call이 몰리는 부담원이라 일단 뺀다. 코드는 남기고 이 상수만 false —
+// 다시 켜려면 true 하나로 원복된다(줄기 충돌 solids·발치 tree pit도 이 블록에 함께 묶여 있다).
+const STREET_TREES = false;
 const PIT_RADIUS = 1.3; // 0.65→1.3(감독 지시, 반경 2배). 인접 나무 간 최소 배치 간격 4m(world-gen.js genStreet)
 // 대비 지름 2.6m이라 pit-pit 겹침은 없음(최소 간극 1.4m, 헤드리스 전수 확인). 남/동 가로수 라인은 도로
 // 경계 0.95m 안쪽에 서 있어 pit 바깥 가장자리가 도로 쪽으로 균일하게 0.35m 걸치는데, 이는 모든 가로수
@@ -648,7 +652,7 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
     // + 알파 잎 클러스터). 나무당 부품이 많아 그대로 두면 드로우콜이 폭발하므로, 파셀의 전 그루를
     // 한 forest 그룹에 모아 월드 변환을 굽고 머티리얼별(수피 1 + 잎 최대 3)로 병합한다
     // (scene.js 숲 병합 기법 재사용). 병합 지오는 파셀 소유 → own에 담아 언로드에서 dispose.
-    const trees = street.filter((s) => s.kind === 'tree');
+    const trees = STREET_TREES ? street.filter((s) => s.kind === 'tree') : [];
     if (trees.length) {
       const forest = new THREE.Group();
       const pitGeos = []; // [나무 pit] 파셀 내 나무 발치 흙+벽돌 링 지오(월드좌표 베이크) — 아래서 병합
