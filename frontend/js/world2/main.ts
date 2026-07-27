@@ -29,7 +29,19 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 // 원인을 짐작하기 어렵다(검수관이 잡은 열 번째 지점).
 import { ALL_KINDS } from './parts/index.js';
 
-const CELL = 32;
+// 셀 크기는 **레이아웃이 소유한다.** 여기 `32` 를 다시 적으면 안 된다.
+//
+// 물이 들어오면서 이게 실제 위험이 됐다(검수관 지적). `computeWant` 의 기본 물 차단은
+// `parcelWater(px, pz, DEFAULT_LAYOUT.cellX, cellZ)` 로 파셀 중심의 월드 좌표를 구하는데,
+// `StreamingSystem` 이 미터↔셀 변환에 쓰는 것은 여기서 주입한 값이다. 두 값이 어긋나면
+// **물 판정과 파셀 격자가 서로 다른 자로 재게 되고**, 증상은 "건물이 물 위에 서는" 모습으로
+// 만 나타난다 — 양쪽 단위 테스트 어디에도 안 걸린다.
+//
+// 오늘은 둘 다 32라 우연히 맞았다. 우연에 기대지 않는다. 이 프로젝트가 값 미러링으로 이미
+// 세 번 겪은 형태이고(캔버스 색 vs 상수 · 구름 고도 두 곳 · 테스트 임계값), 그때마다
+// "한쪽만 고쳐도 아무도 모른다"가 문제였다.
+const CELL_X = DEFAULT_LAYOUT.cellX;
+const CELL_Z = DEFAULT_LAYOUT.cellZ;
 
 /*
  * 동시 파셀 수 상수(`MAX_PARCELS = 20`)를 여기서 없앴다.
@@ -88,7 +100,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
-  scene.fog = new THREE.Fog(0x0b0d12, CELL * 0.9, CELL * 1.9);
+  scene.fog = new THREE.Fog(0x0b0d12, CELL_X * 0.9, CELL_X * 1.9);
 
   const player = new PlayerSystem({
     start: { x: 0, z: 0 },
@@ -234,7 +246,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           FEATURES,
           {
             scene, adapter: adapter!, player, pools: pools!,
-            sun: sun!, hemi: hemi!, cell: CELL,
+            sun: sun!, hemi: hemi!, cell: CELL_X,
             doc: typeof document !== 'undefined' ? document : null,
           },
           (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
@@ -255,11 +267,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
 
       stream: async (report, yieldFrame) => {
         builder = new PooledParcelBuilder({
-          pool: createSlotPool(pools!), cellX: CELL, cellZ: CELL, layout: LAYOUT,
+          pool: createSlotPool(pools!), cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
         });
         streaming = new StreamingSystem({
           builder,
-          cellX: CELL, cellZ: CELL,
+          cellX: CELL_X, cellZ: CELL_Z,
           getPosition: () => player.position,
           getDirection: () => player.direction,
           markDirty: () => kernel?.markDirty(),

@@ -178,6 +178,20 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     expect(map.offset.y).toBeCloseTo(norm.offset.y, 12);
   });
 
+  // 진단은 **검증을 위해 만든 값**이라 스스로도 검증돼야 한다. 헤드리스 스모크가 물결을
+  // 두 번 연속 "측정 불가"로 남겨서 이 필드를 신설했는데, 그게 텍스처가 아니라 내부
+  // 시간값을 되돌려주면 "계산은 도는데 텍스처엔 안 꽂힌 상태"를 통과시킨다 — 그러면
+  // 측정 지점을 만든 의미가 정확히 반대로 뒤집힌다.
+  it('진단이 텍스처의 실제 offset 을 내보낸다 — 계산값을 되돌려주면 못 잡는다', () => {
+    const { inst, norm, rough } = flow();
+    inst.system!.update({ dt: 2 } as never);
+    const d = inst.diagnostics!() as { flowA: number[]; flowB: number[] };
+    expect(d.flowA).toEqual([norm.offset.x, norm.offset.y]);
+    expect(d.flowB).toEqual([rough.offset.x, rough.offset.y]);
+    // 멈춘 물과 구별돼야 관측에 쓸모가 있다
+    expect(Math.abs(d.flowA[0]) + Math.abs(d.flowA[1])).toBeGreaterThan(0);
+  });
+
   it('흐름이 시간에 비례한다 — dt 를 무시하면 프레임레이트마다 속도가 달라진다', () => {
     const a = flow();
     a.inst.system!.update({ dt: 1 } as never);
