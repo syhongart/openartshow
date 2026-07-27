@@ -24,7 +24,7 @@
 // 물인 파셀은 지면을 안 그려서 아래 수면이 드러난다. 바다와 강을 따로 만들 필요가 없고
 // 드로우콜도 하나면 된다 — world1 이 쓰던 방식과 같다.
 
-import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid, isPlaza } from './grid.js';
+import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid } from './grid.js';
 
 /** 수면 높이(미터). 지면이 y=0 이므로 그보다 낮아야 육지가 물을 덮는다 */
 export const SEA_Y = -1.2;
@@ -171,10 +171,14 @@ export function parcelWater(px: number, pz: number, cellX: number, cellZ: number
   // 세계 밖은 파셀 좌표로 바로 답한다 — 미터로 환산해 경계와 비교하면 반 칸 어긋나
   // 가장자리 한 줄이 바다에 잠기거나 바다가 한 줄 육지가 된다.
   if (!inGrid(px, pz)) return 'water';
-  // **중앙 광장은 물이 되지 않는다.** 강이 광장을 비켜 가도록 `riverCenterZ` 를 잡았지만,
-  // 그것은 상수 셋의 합이 만드는 성질이라 누가 진폭을 키우면 조용히 깨진다. 광장은
-  // 세계의 중심이자 스폰 지점이므로 여기서 한 번 더 못박는다.
-  if (isPlaza(px, pz)) return 'dry';
+  // 여기 "광장은 무조건 dry" 를 한 줄 넣었다가 **뮤테이션이 죽은 코드임을 드러내** 뺐다.
+  // 강이 광장에서 24m 떨어져 있어 그 분기는 한 번도 실행되지 않는다 — 지워도 테스트가
+  // 전부 통과했다. 방어선인 척하면서 아무것도 안 막고 있었고, 있으면 오히려 "여기서
+  // 막고 있으니 강 위치는 신경 안 써도 된다"는 잘못된 안심을 준다.
+  //
+  // 광장을 지키는 것은 `tests/world2-water.test.ts` 의 "강 중심선이 광장에 닿지 않는다"
+  // 다. 누가 진폭을 키우면 그 테스트가 깨진다(실제로 강을 옛 위치로 되돌리는 뮤테이션을
+  // 잡았다).
   if (isRiver(px * cellX, pz * cellZ)) return 'water';
   // 물가 — 자기는 뭍인데 네 이웃 중 하나가 물인 칸
   if (
@@ -189,6 +193,5 @@ export function parcelWater(px: number, pz: number, cellX: number, cellZ: number
 /** 이웃 판정용 — `parcelWater` 를 재귀 호출하면 물가의 물가까지 번진다 */
 function parcelIsWater(px: number, pz: number, cellX: number, cellZ: number): boolean {
   if (!inGrid(px, pz)) return true;
-  if (isPlaza(px, pz)) return false;
   return isRiver(px * cellX, pz * cellZ);
 }
