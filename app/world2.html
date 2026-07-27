@@ -164,13 +164,17 @@
   .w2-god-row[data-group="fx"] button.on{
     background:rgba(114,230,225,.24);border-color:rgba(114,230,225,.6);
   }
+  /* 번개는 토글이 아니라 1회 발동이다. 비가 아니면 엔진이 무시하므로,
+     반려됐을 때 잠깐 흐려져 "눌렀는데 왜 안 되지"를 남기지 않는다. */
+  .w2-god-row button[data-bolt]{background:rgba(255,233,196,.14);border-color:rgba(255,233,196,.4)}
+  .w2-god-row button[data-bolt].off{opacity:.35}
   @media (prefers-reduced-motion: reduce){ #w2-god-toggle .caret{transition:none} }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/world2-ReQrbBTw.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/world2-D3KrcqEv.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-Cgv7Cwbx.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-webgpu-uO2gai6w.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-0hpxjCKQ.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/sky-DrpzuIEn.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/sky-D1ig13lT.js">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
 </head>
 <body>
@@ -223,6 +227,7 @@
         <span class="w2-god-cap">이벤트</span>
         <button type="button" data-fx="rainbow">무지개</button>
         <button type="button" data-fx="aurora">오로라</button>
+        <button type="button" data-bolt="1">번개⚡</button>
       </div>
       <div class="w2-god-row" data-group="safe">
         <span class="w2-god-cap">접근성</span>
