@@ -18,6 +18,8 @@ import { AdaptSystem } from './systems/adapt.js';
 import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
+import { attachHud, type PerfHud } from './ui/hud.js';
+import { SkySystem } from './systems/sky.js';
 import { DEFAULT_LAYOUT, type PartKind } from './decide/parcel-layout.js';
 
 const CELL = 32;
@@ -64,7 +66,49 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let streaming: StreamingSystem | null = null;
   let adapt: AdaptSystem | null = null;
   let builder: PooledParcelBuilder | null = null;
+  let sky: SkySystem | null = null;
   let lastTri = 0;
+
+  // 성능 HUD. 모바일에는 콘솔이 없으므로 화면 표시 + 클립보드 복사가 실기기 수치를 받는
+  // 유일한 경로다. DOM만 먼저 잡아두고 커널 probe를 여기로 흘려보낸다.
+  const hudRoot = document.getElementById('w2-hud');
+  const hud: PerfHud | null = (hudRoot
+    && document.getElementById('w2-hud-body')
+    && document.getElementById('w2-hud-copy')
+    && document.getElementById('w2-hud-toggle'))
+    ? attachHud({
+      root: hudRoot,
+      body: document.getElementById('w2-hud-body')!,
+      copy: document.getElementById('w2-hud-copy')!,
+      toggle: document.getElementById('w2-hud-toggle')!,
+    }, {
+      backend: () => adapter?.backend ?? '—',
+      counts: () => {
+        const f = adapter?.frameStats();
+        return {
+          draw: f?.draw ?? 0,
+          pipeline: adapter?.pipelineCount() ?? -1,
+          geometries: f?.geometries ?? 0,
+          textures: f?.textures ?? 0,
+        };
+      },
+      stream: () => {
+        const s = streaming?.stats();
+        return {
+          loaded: s?.loaded ?? 0, built: s?.built ?? 0, released: s?.released ?? 0,
+          starved: builder?.stats().starved ?? 0,
+        };
+      },
+      adapt: () => {
+        const a = adapt?.snapshot();
+        return {
+          pixelRatio: a?.ratio ?? 1,
+          frameCap: kernel?.frameCap ?? 0,
+          triAvg: a?.triAvg ?? 0,
+        };
+      },
+    })
+    : null;
 
   // 부팅 단계별 경과(ms). 진단 훅이 노출한다 — "부팅이 순식간에 끝났다"는 관측이
   // 진짜인지(정말 빨랐는지) 가짜인지(단계를 건너뛰었는지) 가르는 유일한 근거다.
@@ -121,6 +165,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         }
         // 봉인 — 이후 풀 생성은 예외다. 개수 불변식의 집행 지점.
         pools.seal();
+
+        // 하늘 — 돔 1 + 구름 1 = 드로우콜 2. 여기서 만들면 예열 단계가 이 파이프라인까지
+        // 함께 굽는다(세션 중 첫 등장으로 미루면 그게 곧 스파이크다).
+        sky = new SkySystem(scene, () => player.position);
       },
 
       warmup: async (report, yieldFrame) => {
@@ -160,14 +208,20 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 등록 순서가 실행 순서다: 입력 → 스트리밍 → 적응.
         // 적응이 마지막인 이유는 이번 프레임의 스트리밍 상태를 보고 판정해야 하기 때문이다.
         kernel = new Kernel({
+          // 커널 계측을 HUD로 흘린다. probe가 없으면 계측 자체가 돌지 않으므로,
+          // HUD가 없는 환경에서는 이 배선의 비용도 0이다.
+          probe: hud ? (name, value) => hud.sample(name, value) : undefined,
           render: () => {
             adapter!.beginFrame();
             adapter!.render(scene, camera);
             lastTri = adapter!.frameStats().tri;
             pools!.flush();
+            hud?.tick(); // render 직후 — frameStats가 유효한 유일한 시점
           },
         });
-        kernel.add(player).add(streaming).add(adapt);
+        // sky는 player 뒤에 둔다 — 카메라 위치를 읽어 돔·구름을 따라 옮기므로
+        // 같은 프레임의 최신 위치를 봐야 한 프레임 늦게 따라오지 않는다.
+        kernel.add(player).add(sky!).add(streaming).add(adapt);
         kernel.start();
 
         // 커널이 돌아야 파셀이 채워진다 — 여기서 블로킹 루프를 돌면 교착한다.
@@ -256,6 +310,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       window.removeEventListener('resize', onResize);
       input.dispose();
       touch.dispose();
+      hud?.dispose();
       // non-null 단언을 쓰는 이유: 이 셋은 부팅 콜백 안에서 할당되는데, TS 제어흐름
       // 분석은 함수 내부 할당을 추적하지 않아 바깥에서는 여전히 null로 본다.
       // 여기는 부팅 성공(ok===true) 경로에서만 도달하므로 셋 다 반드시 존재한다.

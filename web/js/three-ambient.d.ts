@@ -26,6 +26,9 @@ declare module 'three/webgpu' {
   export class Camera extends Base {}
   export class BufferGeometry extends Base {}
   export class Material extends Base {}
+  // 하늘 돔(ShaderMaterial)·구름(MeshBasicMaterial)이 타입 위치에서 쓴다.
+  export class ShaderMaterial extends Base { constructor(p?: any); }
+  export class MeshBasicMaterial extends Base { constructor(p?: any); }
   export class Mesh extends Base {}
   export class InstancedMesh extends Base { constructor(g: any, m: any, count: number); }
   export class InstancedBufferAttribute extends Base { constructor(a: any, itemSize: number); }

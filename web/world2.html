@@ -109,6 +109,30 @@
     box-shadow:0 2px 12px rgba(0,0,0,.35);
   }
   @media (prefers-reduced-motion: reduce){ #w2-stick{transition:none} }
+
+  /* ── 성능 HUD ──────────────────────────────────────────────────────────
+     기본은 아이콘 하나만. 펼쳐야 수치가 나온다 — 평소에 화면을 가리면
+     "걸을 때 끊기는가"를 보는 데 방해가 된다. */
+  #w2-hud{position:fixed;top:calc(10px + env(safe-area-inset-top));right:10px;z-index:8;
+    display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  #w2-hud-toggle{
+    width:38px;height:38px;border-radius:10px;cursor:pointer;
+    background:rgba(11,13,18,.62);border:1px solid var(--line);color:var(--ink);
+    font-size:16px;line-height:1;padding:0;
+  }
+  #w2-hud-panel{display:none;background:rgba(11,13,18,.86);border:1px solid var(--line);
+    border-radius:10px;padding:9px 10px;min-width:min(230px,64vw)}
+  #w2-hud[data-open="1"] #w2-hud-panel{display:block}
+  #w2-hud-body{
+    margin:0 0 8px;white-space:pre-wrap;word-break:break-all;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:11px;line-height:1.55;color:var(--ink);
+  }
+  #w2-hud-copy{
+    width:100%;padding:7px 10px;border-radius:8px;cursor:pointer;
+    background:rgba(139,114,255,.18);border:1px solid rgba(139,114,255,.5);
+    color:var(--ink);font-size:12px;font-family:inherit;
+  }
 </style>
 </head>
 <body>
@@ -127,6 +151,15 @@
   <!-- 가상 조이스틱. 누른 자리에 나타난다(고정 위치가 아니다) — 기기·손 크기마다
        엄지가 닿는 자리가 달라서, 고정하면 누군가는 늘 불편하다. -->
   <div id="w2-stick" data-on="0"><div id="w2-stick-knob"></div></div>
+
+  <!-- 성능 HUD. 모바일에는 콘솔이 없어 화면 표시 + 복사가 실기기 수치를 받는 유일한 경로다. -->
+  <div id="w2-hud" data-open="0">
+    <button id="w2-hud-toggle" type="button" aria-label="성능 정보 열기/닫기">📊</button>
+    <div id="w2-hud-panel">
+      <pre id="w2-hud-body">측정 중…</pre>
+      <button id="w2-hud-copy" type="button">복사</button>
+    </div>
+  </div>
 
   <p id="w2-hint">WASD·방향키로 이동 · 화면을 클릭하면 시선 조작 · Shift 달리기</p>
 
