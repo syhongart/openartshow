@@ -101,6 +101,19 @@ export class PooledParcelBuilder implements ParcelBuilder {
    *
    * 실측 최대 사용률은 ground 90.5%까지 올라간다. 예산이 실제로 빡빡하게 쓰인다는 뜻이고,
    * 그래서 `headroom`을 손잡이로 남겨 둔다 — 밴드나 스트리밍 순서를 만질 때 되돌릴 곳이다.
+   *
+   * ── 이 예산이 기대는 암묵 여유 (상수를 만질 때 함께 봐야 한다) ─────────────
+   * `tierFor`는 EXIT를 넘겨도 **한 프레임에 한 단계만** 강등한다. 그래서 한 프레임에
+   * 밴드 폭보다 크게 움직이면 "실제 거리보다 안쪽 tier에 잔류하는" 파셀이 생기고, 그만큼
+   * 슬롯이 최악치를 넘길 수 있다. 지금은 그 일이 일어나지 않는데, 근거는 상수들의 관계다:
+   *
+   *   프레임당 이동 = speed(9) × fast(2.2) × dt클램프(0.1s) = 1.98m = **0.062셀**  (CELL=32)
+   *   가장 좁은 밴드 폭 = nearExit − nearEnter = 1.30 − 1.15 = **0.15셀**
+   *
+   * 2배 이상 여유가 있고 `player.ts`에 텔레포트 경로도 없다. 다만 **speed·fast 배수·dt
+   * 클램프·CELL·밴드 폭 중 하나만 바뀌어도 이 여유가 조용히 잠식된다** — 이 diff가 고친
+   * 결함(상수 두 개가 서로를 상쇄)과 정확히 같은 형태다. 그 상수들을 만지면 여기를 다시
+   * 계산하고, `tests/world2-slot-budget.test.ts`의 중간 크기 점프 케이스를 함께 보라.
    */
   static poolBudget(opts: {
     layout?: LayoutOptions;
