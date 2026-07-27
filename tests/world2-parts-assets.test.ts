@@ -75,7 +75,15 @@ function stubThree() {
     dispose() {}
   }
   class Mat { constructor(o: Record<string, unknown> = {}) { Object.assign(this, o); } }
-  class Tex { colorSpace = ''; anisotropy = 0; constructor(public image: unknown) {} }
+  // 실제 `CanvasTexture` 는 `repeat`·`offset`(Vector2)과 wrap 모드를 항상 갖는다.
+  // 정원이 결 밀도를 맞추려 `repeat.set()` 을 부르면서 필요해졌다.
+  class Tex {
+    colorSpace = ''; anisotropy = 0;
+    wrapS = 0; wrapT = 0;
+    repeat = { x: 1, y: 1, set(x: number, y: number) { this.x = x; this.y = y; } };
+    offset = { x: 0, y: 0, set(x: number, y: number) { this.x = x; this.y = y; } };
+    constructor(public image: unknown) {}
+  }
   class Vec2 { constructor(public x = 0, public y = 0) {} }
   /** 곱셈만 흉내 낸다 — 값은 안 보고 "호출이 이어지는가" 만 본다 */
   class Mat4 {
@@ -92,7 +100,7 @@ function stubThree() {
     IcosahedronGeometry: Geo, OctahedronGeometry: Geo,
     Vector2: Vec2, Matrix4: Mat4, Float32BufferAttribute: Attr,
     MeshStandardMaterial: Mat, MeshBasicMaterial: Mat, Material: Mat,
-    CanvasTexture: Tex, SRGBColorSpace: 'srgb',
+    CanvasTexture: Tex, SRGBColorSpace: 'srgb', RepeatWrapping: 1000,
   } as unknown as ThreeNS;
 }
 

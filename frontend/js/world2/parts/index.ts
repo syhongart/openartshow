@@ -19,6 +19,7 @@ import { DEFAULT_LAYOUT, type PartSpec, type LayoutOptions } from './types.js';
 import type { Tier } from '../decide/lod.js';
 import { ground } from './ground.js';
 import { road } from './road.js';
+import { garden } from './garden.js';
 import { building } from './building.js';
 import { tree } from './tree.js';
 import { lamp } from './lamp.js';
@@ -27,7 +28,7 @@ import { clocktower } from './clocktower.js';
 import { bench } from './bench.js';
 import { planter } from './planter.js';
 
-export const PARTS = [ground, road, building, tree, lamp, bench, planter, fountain, clocktower] as const;
+export const PARTS = [ground, garden, road, building, tree, lamp, bench, planter, fountain, clocktower] as const;
 
 /** 파츠 종류 유니온. 목록에서 유도되므로 파츠를 넣고 빼면 타입이 저절로 따라온다. */
 export type PartKind = (typeof PARTS)[number]['kind'];
