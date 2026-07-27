@@ -19,6 +19,7 @@
 // 물이 `decide/water.ts` 를 SSOT 로 두는 것과 같은 배치다.
 
 import { roadDirs } from './road-topology.js';
+import { isCentralPlaza, centralPlazaCell } from '../decide/grid.js';
 
 /**
  * 광장 확률(길이 닿는 파셀 기준). 전체에서는 `0.974 × 0.02 ≈ 1.9%` — 쉰두 파셀에 하나다.
@@ -57,27 +58,38 @@ function h2(a: number, b: number, salt: number): number {
   return (h ^ (h >>> 15)) >>> 0;
 }
 
-/** 이 파셀이 광장인가. 길이 하나도 없으면 아니다 — 갈 수 없는 광장은 빈 땅이다. */
+/**
+ * 이 파셀이 광장인가. 길이 하나도 없으면 아니다 — 갈 수 없는 광장은 빈 땅이다.
+ *
+ * **중앙 광장은 무조건 광장이다.** 감독이 위치를 지정한 곳이라 확률이 끼어들 자리가
+ * 없고, 길 조건도 묻지 않는다 — 세계의 중심이자 스폰 지점이므로 길이 어떻든 광장이다.
+ */
 export function isPlaza(px: number, pz: number, p: number = PLAZA_P): boolean {
+  if (isCentralPlaza(px, pz)) return true;
   if (roadDirs(px, pz).length === 0) return false;
   return h2(px, pz, SALT_PLAZA) / 4294967296 < p;
 }
 
 /**
- * 광장 한가운데 무엇이 서는가. 광장이 아니면 `null`.
+ * 광장 한가운데 무엇이 서는가. 없으면 `null`.
  *
- * 감독 지시: *"가운데. 분수대있고 시계탑있고."* 둘 중 **하나만** 선다 — 같은 자리라
- * 둘 다 두면 겹친다. 여기서 갈라 주면 각 파츠는 "내 차례인가" 만 물어보면 되고,
- * 서로를 참조하지 않아도 배타가 보장된다.
+ * 감독 지시: *"중앙은 중앙광장으로 하고 분수대 시계탑."*
  *
- * 반씩 나눈다. 분수대가 더 흔하면 시계탑이 특별해 보이지만, 시계탑은 높이(14m)로 이미
- * 멀리서 눈에 띄어 랜드마크 노릇을 한다 — 빈도까지 낮추면 좀처럼 못 만난다.
+ * ── 흩어져 있던 것을 중앙으로 모았다 ────────────────────────────────────────
+ * 예전에는 분수대·시계탑이 **동네 광장마다** 확률 반반으로 섰다. 그러면 중앙 광장이
+ * 특별할 이유가 없다 — 두 블록만 걸으면 또 분수대가 있는데 굳이 중앙까지 갈 까닭이
+ * 없고, 그건 랜드마크가 아니라 가로수와 같은 반복 요소다.
+ *
+ * 이제 둘 다 **중앙 광장에만** 선다. 자리는 `decide/grid.ts` 가 칸으로 고정한다.
+ * 동네 광장은 랜드마크 없이 트인 채로 남는다 — 그것이 원래 목적("숨 쉴 곳")이다.
  */
 export type PlazaLandmark = 'fountain' | 'clock';
 
-const SALT_LANDMARK = 0x9e3779b1;
-
-export function plazaLandmark(px: number, pz: number, p: number = PLAZA_P): PlazaLandmark | null {
-  if (!isPlaza(px, pz, p)) return null;
-  return h2(px, pz, SALT_LANDMARK) / 4294967296 < 0.5 ? 'fountain' : 'clock';
+export function plazaLandmark(px: number, pz: number, _p: number = PLAZA_P): PlazaLandmark | null {
+  // 격자는 "가운데 칸인가 북쪽 칸인가" 만 답한다. 무엇이 서는지는 파츠의 몫이다.
+  switch (centralPlazaCell(px, pz)) {
+    case 'center': return 'fountain';
+    case 'north': return 'clock';
+    default: return null;   // 나머지 칸은 트인 바닥 — 광장은 비어 있어야 광장이다
+  }
 }

@@ -59,7 +59,11 @@ describe('광장 — 길이 닿는 곳에만', () => {
       return n;
     };
     expect(count(0.3)).toBeGreaterThan(count(0.06));
-    expect(count(0)).toBe(0);
+    // 확률 0 이어도 **중앙 광장은 남는다** — 감독이 위치를 지정한 곳이라 확률이 끼어들지
+    // 않는다. 그래서 0 을 기대하면 틀리고, "확률로 생긴 것이 없다" 를 봐야 한다.
+    const central = count(0);
+    expect(central).toBeGreaterThan(0);
+    expect(count(0.06)).toBeGreaterThan(central);
   });
 
   // 도로 위상과 시드가 겹치면 "특정 모양의 길에만 광장이 생기는" 편향이 나온다.

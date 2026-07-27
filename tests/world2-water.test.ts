@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, RIVER_HALF, SEA_Y,
 } from '../frontend/js/world2/decide/water.js';
-import { isPlaza, GRID_MIN_X, GRID_MAX_X } from '../frontend/js/world2/decide/grid.js';
+import { isCentralPlaza as isPlaza, GRID_MIN_X, GRID_MAX_X } from '../frontend/js/world2/decide/grid.js';
 
 const CELL = 32;
 /** 세계의 바깥 가장자리(미터) — 격자에서 유도된다 */
@@ -25,16 +25,16 @@ describe('세계의 끝 — 격자 밖은 바다다', () => {
   // 스폰 한 점만 보던 검사는 **강이 광장을 관통하는 것을 놓쳤다.** `riverCenterZ(0)` 은
   // 59.45 라 반폭 밖이지만, 사인이 바닥을 치는 x 에서는 중심이 −4 까지 내려와 광장
   // (±32m)을 가로질렀다. 한 점이 마른 것과 광장 전체가 마른 것은 다른 명제다.
-  it('중앙 광장 전체가 뭍이다 — 한 점이 아니라 네 칸 전부', () => {
+  it('중앙 광장 전체가 뭍이다 — 한 점이 아니라 모든 칸', () => {
     let checked = 0;
-    for (let px = -3; px <= 2; px++) {
-      for (let pz = -3; pz <= 2; pz++) {
+    for (let px = -4; px <= 4; px++) {
+      for (let pz = -4; pz <= 4; pz++) {
         if (!isPlaza(px, pz)) continue;
         checked++;
         expect(parcelWater(px, pz, CELL, CELL)).toBe('dry');
       }
     }
-    expect(checked).toBe(4); // 표본이 비면 위 단언이 한 번도 안 돈다
+    expect(checked).toBeGreaterThan(0); // 표본이 비면 위 단언이 한 번도 안 돈다
   });
 
   it('강 중심선이 광장에 닿지 않는다 — 상수 셋의 합이 만드는 성질이라 못 박는다', () => {

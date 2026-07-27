@@ -39,20 +39,49 @@ export function inGrid(px: number, pz: number): boolean {
 }
 
 /**
- * 중앙 광장이 차지하는 칸. **2×2 다.**
+ * 중앙 광장의 반지름(칸). 1이면 3×3 이다.
  *
- * 1칸(32m)이면 분수대와 시계탑을 나란히 놓기에 좁아 둘이 서로 가린다. 2×2 는 64m 라
- * 분수대를 가운데 두고 시계탑을 한쪽에 세워도 사이가 트인다.
+ * ── 2×2 로 잡았다가 3×3 으로 고쳤다 ─────────────────────────────────────────
+ * 처음엔 `(-1,0)×(-1,0)` 2×2 로 두고 "그래야 광장 중심이 월드 원점에 온다"고 적었다.
+ * **틀렸다.** 파셀 `(px,pz)` 의 중심은 `(px·cell, pz·cell)` 이므로 그 2×2 의 한가운데는
+ * `(-cell/2, -cell/2)` = **(-16,-16)** 이다. 원점이 아니라 광장 모서리 쪽으로 치우친
+ * 자리이고, 그대로 두면 분수대가 광장 한복판에 안 선다.
  *
- * 30이 짝수라 "정확히 가운데 한 칸"이 존재하지 않는 것도 이유다 — -15…14 의 중앙은
- * -0.5 이므로, 2×2 로 잡아야 광장 중심이 월드 원점 `(0,0)` 에 정확히 온다. 홀수 격자로
- * 바꾸면 이 함수만 고치면 된다(광장 중심을 쓰는 쪽은 `plazaCenter` 를 본다).
+ * 홀수 변으로 잡으면 가운데 칸이 존재하고 그 칸의 중심이 곧 원점이다. 분수대를 그
+ * 칸에 놓기만 하면 정확히 광장 한가운데에 온다 — 오프셋 계산이 필요 없다.
+ *
+ * 3×3 은 96m. 960m 세계의 10분의 1이라 크지만, 중앙 광장은 유일하고 스폰 지점이며
+ * 시계탑(14m)이 서는 곳이다. 1칸(32m)이면 분수대와 시계탑이 서로를 가린다.
  */
-export function isPlaza(px: number, pz: number): boolean {
-  return (px === -1 || px === 0) && (pz === -1 || pz === 0);
+export const PLAZA_R = 1;
+
+/**
+ * 이 파셀이 **중앙 광장**인가. 세계에 하나뿐이다.
+ *
+ * `parts/plaza.ts` 에도 `isPlaza` 가 있는데 그쪽은 **동네 광장**(확률 1.9%, 걷다 만나는
+ * 빈 구획)이라 다른 것이다. 이름이 겹쳐 헷갈리므로 여기는 `Central` 을 붙였다.
+ */
+export function isCentralPlaza(px: number, pz: number): boolean {
+  return Math.abs(px) <= PLAZA_R && Math.abs(pz) <= PLAZA_R;
 }
 
-/** 광장 중심의 월드 좌표. 2×2 의 한가운데이므로 파셀 경계 위 — 셀 크기와 무관하게 원점이다 */
+/**
+ * 중앙 광장 안에서 이 칸이 어느 자리인가. 광장이 아니면 `null`.
+ *
+ * **무엇이 서는지는 여기서 정하지 않는다.** 파츠 이름을 이 파일에 적었다가
+ * "레지스트리 밖에 파츠 목록을 다시 적지 않는다" 검사에 걸렸다 — 옳은 지적이다.
+ * 격자는 자리를 알고, 그 자리에 무엇을 세울지는 `parts/plaza.ts` 가 정한다.
+ */
+export type PlazaCell = 'center' | 'north' | 'edge';
+
+export function centralPlazaCell(px: number, pz: number): PlazaCell | null {
+  if (!isCentralPlaza(px, pz)) return null;
+  if (px === 0 && pz === 0) return 'center';
+  if (px === 0 && pz === -PLAZA_R) return 'north';
+  return 'edge';
+}
+
+/** 중앙 광장 한가운데의 월드 좌표. 홀수 변이라 가운데 칸의 중심이고, 그것이 원점이다 */
 export function plazaCenter(): { x: number; z: number } {
   return { x: 0, z: 0 };
 }

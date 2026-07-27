@@ -10,7 +10,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   GRID_W, GRID_H, GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z,
-  inGrid, isPlaza, plazaCenter, blockPattern, gridEdgeX, gridEdgeZ, BlockPattern,
+  inGrid, isCentralPlaza as isPlaza, centralPlazaCell, plazaCenter, PLAZA_R,
+  blockPattern, gridEdgeX, gridEdgeZ, BlockPattern,
 } from '../frontend/js/world2/decide/grid.js';
 
 describe('세계의 크기 — 감독 확정 30×30', () => {
@@ -48,27 +49,60 @@ describe('세계의 크기 — 감독 확정 30×30', () => {
 });
 
 describe('중앙 광장', () => {
-  it('2×2 네 칸이다 — 1칸이면 분수대와 시계탑이 서로 가린다', () => {
+  const CELL = 32;
+
+  it('홀수 변이다 — 짝수면 가운데 칸이 없어 분수대가 중앙에 못 선다', () => {
+    const side = PLAZA_R * 2 + 1;
+    expect(side % 2).toBe(1);
     let n = 0;
     for (let px = -40; px <= 40; px++) for (let pz = -40; pz <= 40; pz++) if (isPlaza(px, pz)) n++;
-    expect(n).toBe(4);
+    expect(n).toBe(side * side);
   });
 
-  // 30이 짝수라 "정확히 가운데 한 칸"이 없다. 2×2 로 잡아야 광장 **중심**이 월드 원점에
-  // 온다 — 홀수 격자로 바꾸면 이 관계가 깨지므로 여기서 고정한다.
-  it('광장 중심이 월드 원점이다 — 스폰이 곧 광장이다', () => {
+  // ── 이 검사가 2×2 의 오류를 잡는다 ────────────────────────────────────────
+  // 처음엔 `(-1,0)×(-1,0)` 2×2 로 두고 "그래야 중심이 원점" 이라고 적었다. 파셀
+  // `(px,pz)` 의 중심은 `(px·cell, pz·cell)` 이므로 그 2×2 의 한가운데는 (-16,-16) 이다.
+  // **분수대가 광장 한복판에 안 선다.** 중심 칸이 존재하고 그 칸의 중심이 원점이어야
+  // 오프셋 없이 가운데에 온다.
+  it('가운데 칸의 중심이 곧 월드 원점이다 — 분수대가 오프셋 없이 한복판에 선다', () => {
     const c = plazaCenter();
     expect(c.x).toBe(0);
     expect(c.z).toBe(0);
-    // 원점을 둘러싼 네 칸이 정확히 광장이어야 중심이 원점에 온다
-    for (const [px, pz] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
-      expect(isPlaza(px, pz)).toBe(true);
+    // 가운데 칸을 찾아 그 칸의 월드 중심이 광장 중심과 같은지 본다
+    let found = 0;
+    for (let px = -PLAZA_R; px <= PLAZA_R; px++) {
+      for (let pz = -PLAZA_R; pz <= PLAZA_R; pz++) {
+        if (centralPlazaCell(px, pz) !== 'center') continue;
+        found++;
+        expect(px * CELL).toBe(c.x);
+        expect(pz * CELL).toBe(c.z);
+      }
+    }
+    expect(found).toBe(1); // 표본이 비면 위 단언이 한 번도 안 돈다
+  });
+
+  it('랜드마크 자리가 각각 하나씩, 서로 다른 칸이다', () => {
+    const at: Record<string, string[]> = { center: [], north: [] };
+    for (let px = -PLAZA_R; px <= PLAZA_R; px++) {
+      for (let pz = -PLAZA_R; pz <= PLAZA_R; pz++) {
+        const cell = centralPlazaCell(px, pz);
+        if (cell && cell !== 'edge') at[cell].push(`${px},${pz}`);
+      }
+    }
+    expect(at.center).toHaveLength(1);
+    expect(at.north).toHaveLength(1);
+    expect(at.center[0]).not.toBe(at.north[0]);
+  });
+
+  it('광장 밖에는 자리가 없다 — 중앙이 유일해야 특별하다', () => {
+    for (const [px, pz] of [[5, 5], [-9, 2], [0, 7], [12, -12], [PLAZA_R + 1, 0]]) {
+      expect(centralPlazaCell(px, pz)).toBeNull();
     }
   });
 
   it('광장은 세계 안에 있다', () => {
-    for (let px = -2; px <= 1; px++) {
-      for (let pz = -2; pz <= 1; pz++) {
+    for (let px = -PLAZA_R - 1; px <= PLAZA_R + 1; px++) {
+      for (let pz = -PLAZA_R - 1; pz <= PLAZA_R + 1; pz++) {
         if (isPlaza(px, pz)) expect(inGrid(px, pz)).toBe(true);
       }
     }
