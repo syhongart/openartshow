@@ -8,8 +8,41 @@
 // 그래서 구름은 **순환**한다. 바람에 밀려 경계를 넘으면 반대편으로 되돌린다(랩어라운드).
 // 같은 40장이 영원히 도는 것이고, 그 사실이 눈에 띄지 않을 만큼 넓게 흩어두는 게 배치의 일이다.
 
+// ── 구름이 선으로 보였던 이유, 그리고 무엇이 그걸 막는가 ─────────────────────
+// 구름은 수평으로 눕힌 판이다. 눕힌 판을 낮은 각도에서 보면 모서리만 보여 **선**이 된다.
+// 겉보기 압축률이 정확히 sin(앙각)이므로, 앙각이 13°면 판이 23%로 눌려 12:1 비율의
+// 실선처럼 보인다. 감독 실기기에서 실제로 그렇게 보였다.
+//
+// 처음엔 정사각 영역에 균등하게 흩었고 그 영역이 1200이었다. 고도는 160~260뿐인데
+// 영역이 고도의 5배라, 구름 대부분이 머리 위가 아니라 저 멀리 낮게 깔렸다.
+//
+// **중요 — 반구 배치만으로는 보장되지 않는다.** 아래 배치는 앙각을 파라미터로 삼아
+// 구름을 반구에 올리지만, `wrap()`은 x·z를 **각 축 독립으로** 접는다. 바람이 충분히 불면
+// 각 축이 자기 범위를 반복해 쓸고 지나가므로, 시간이 지나면 x·z는 정사각 전체에 사실상
+// 균등해진다. 즉 반구 배치는 "처음 봤을 때의 분포"를 만들 뿐이고,
+// **"절대 선이 되지 않는다"는 보장은 `CLOUD_FIELD`가 진다.**
+//
+// 그래서 두 값은 세트다. 누가 `CLOUD_FIELD`만 키우면 반구 로직이 그대로 남아 있어도
+// 안전마진이 조용히 깨진다. 최악의 경우(정사각 코너에 최저고도 구름)를 테스트가 지킨다.
+
 /** 구름이 도는 정사각 영역의 한 변(월드 미터). 이 밖으로 나가면 반대편으로 감긴다. */
-export const CLOUD_FIELD = 900;
+export const CLOUD_FIELD = 600;
+
+const DEG = Math.PI / 180;
+/** 카메라 눈높이 — 앙각을 재는 기준면. */
+export const EYE_HEIGHT = 1.6;
+/** 스폰 시 앙각 범위. 낮은 구름일수록 낮은 각도(멀리), 높은 구름일수록 높은 각도(머리 위). */
+export const CLOUD_ELEV_MIN = 18 * DEG;
+export const CLOUD_ELEV_MAX = 55 * DEG;
+/** 앙각 지터 — 고도와 각도가 완전히 붙어 있으면 배치가 기계적으로 보인다. */
+export const CLOUD_ELEV_JITTER = 4 * DEG;
+/** 지터가 아무리 내려도 이 아래로는 안 간다. */
+export const CLOUD_ELEV_FLOOR = 14 * DEG;
+/**
+ * 개별 판의 기울기 상한. 전부 정확히 수평이면 인위적으로 보이지만, 크게 기울이면
+ * 최악 방위(뷰어 반대쪽으로 기움)에서 유효 앙각이 그만큼 깎여 다시 선에 가까워진다.
+ */
+export const CLOUD_TILT_MAX = 5 * DEG;
 
 export interface CloudSpec {
   /** 시작 위치(월드) */
@@ -24,6 +57,9 @@ export interface CloudSpec {
   ry: number;
   /** 불투명도 배수(0~1) */
   alpha: number;
+  /** 수평에서 기울인 각(라디안). 완전히 평행한 판들이 만드는 인위적 느낌을 던다. */
+  tiltX: number;
+  tiltZ: number;
 }
 
 /**
@@ -52,14 +88,19 @@ export interface CloudLayout {
 }
 
 export const DEFAULT_CLOUDS: CloudLayout = {
-  count: 40, minY: 120, maxY: 260, minSize: 90, maxSize: 240,
+  count: 28, minY: 160, maxY: 260, minSize: 70, maxSize: 150,
 };
 
 /**
  * 구름 배치. 결정론적이므로 새로고침해도 같은 하늘이다.
  *
- * 고도와 크기에 상관을 준다 — 높이 뜬 것을 크게 만들면 원근이 어긋나 하늘이 낮아 보인다.
- * 높은 구름일수록 작고 옅게 둔다.
+ * 정사각에 균등하게 흩는 대신 **앙각을 파라미터로 삼아 수평거리를 역산한다**
+ * (`r = (y - 눈높이) / tan(앙각)`). 낮은 구름은 낮은 각도에 멀리, 높은 구름은 높은 각도에
+ * 가까이 놓인다 — 고도와 각도를 같은 `t`로 묶었으므로 원근이 어긋나지 않는다.
+ *
+ * 역산한 `r`이 순환 영역을 넘는 경우가 소수 생긴다(가장 낮고 먼 구름들). 그건 `wrap`이
+ * 접어 넣는다 — 매 프레임 일어나는 정상 동작과 같은 처리이고, 이 접힘까지 포함한 최악
+ * 위치를 `CLOUD_FIELD`가 감당하도록 값을 정했다(파일 상단 주석 참고).
  */
 export function cloudLayout(opts: CloudLayout = DEFAULT_CLOUDS): CloudSpec[] {
   const o = { ...DEFAULT_CLOUDS, ...opts };
@@ -68,20 +109,44 @@ export function cloudLayout(opts: CloudLayout = DEFAULT_CLOUDS): CloudSpec[] {
   for (let i = 0; i < o.count; i++) {
     const t = rand(i, 0x11);                       // 고도 비율 0~1
     const y = o.minY + (o.maxY - o.minY) * t;
+
+    // 앙각 → 수평거리. 고도가 높은 구름일수록 가파른 각도(= 머리 위 가까이)에 둔다.
+    const jitter = (rand(i, 0x88) - 0.5) * 2 * CLOUD_ELEV_JITTER;
+    const elev = Math.max(
+      CLOUD_ELEV_FLOOR,
+      CLOUD_ELEV_MIN + (CLOUD_ELEV_MAX - CLOUD_ELEV_MIN) * t + jitter,
+    );
+    const r = Math.max(0, y - EYE_HEIGHT) / Math.tan(elev);
+    const az = rand(i, 0x33) * Math.PI * 2;
+
     // 높을수록 작게 — 원근 일관성.
     const sizeT = 1 - t * 0.55;
     const w = o.minSize + (o.maxSize - o.minSize) * sizeT * (0.7 + rand(i, 0x22) * 0.6);
     out.push({
-      x: (rand(i, 0x33) - 0.5) * field,
-      z: (rand(i, 0x44) - 0.5) * field,
+      x: wrap(r * Math.cos(az), 0, field),
+      z: wrap(r * Math.sin(az), 0, field),
       y,
       w,
       h: w * (0.42 + rand(i, 0x55) * 0.22),        // 가로로 퍼진 비율
       ry: rand(i, 0x66) * Math.PI * 2,
       alpha: 0.5 + (1 - t) * 0.4 + rand(i, 0x77) * 0.1, // 높을수록 옅게
+      tiltX: (rand(i, 0x99) - 0.5) * 2 * CLOUD_TILT_MAX,
+      tiltZ: (rand(i, 0xaa) - 0.5) * 2 * CLOUD_TILT_MAX,
     });
   }
   return out;
+}
+
+/**
+ * 정사각 코너에 최저고도 구름이 걸린 **최악 위치**의 앙각(라디안).
+ *
+ * 이 값이 "구름이 선으로 안 보인다"의 실제 보장선이다 — 반구 배치가 아니라 이것이 진다
+ * (파일 상단 주석 참고). `sin(이 각)`이 겉보기 압축률의 하한이다.
+ */
+export function worstElevation(field: number, minY: number, eye = EYE_HEIGHT): number {
+  const corner = (field / 2) * Math.SQRT2;
+  if (!(corner > 0)) return Math.PI / 2;
+  return Math.atan(Math.max(0, minY - eye) / corner);
 }
 
 /**

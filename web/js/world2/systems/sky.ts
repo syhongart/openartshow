@@ -14,7 +14,7 @@
 import * as THREE from 'three/webgpu';
 import type { FrameCtx, System } from '../kernel.js';
 import {
-  cloudLayout, cloudTint, driftedX, driftedZ, DEFAULT_CLOUDS, type CloudSpec,
+  cloudLayout, cloudTint, driftedX, driftedZ, DEFAULT_CLOUDS, CLOUD_FIELD, type CloudSpec,
 } from '../decide/sky.js';
 
 /** 안개·클리어색과 **동일해야 하는** 지평선 색. 이 값이 어긋나면 경계선이 보인다. */
@@ -46,9 +46,11 @@ export const SUN_HALO = 0xc98f5a;
 export const CLOUD_RIM = 0xe8c9a0;
 export const CLOUD_BASE = 0x1b2030;
 
-/** 구름 고도 범위(디자이너 값). 배치와 색 보간이 **같은 값**을 봐야 하므로 상수로 둔다. */
-const CLOUD_MIN_Y = 160;
-const CLOUD_MAX_Y = 260;
+/**
+ * 구름 배치 파라미터는 `decide/sky.ts`의 `DEFAULT_CLOUDS`가 SSOT다. 배치·색 보간·테스트가
+ * 전부 그 하나를 본다 — 여기 값을 다시 적으면 한쪽만 고쳐도 아무도 모른다.
+ */
+export { DEFAULT_CLOUDS as CLOUD_LAYOUT } from '../decide/sky.js';
 
 export interface SkyOptions {
   /** 돔 반경. 카메라 far(1200)보다 작아야 잘리지 않는다 */
@@ -235,12 +237,16 @@ export class SkySystem implements System {
    * 초당 2,400개가 쓰레기가 된다 — 값이 상수이므로 한 번 만들어 돌려쓴다.
    */
   private readonly _flat = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
+  /** 구름별 기울기 — 값이 매번 다르므로 재사용 필드에 다시 써넣는다. */
+  private readonly _tilt = new THREE.Matrix4();
 
   constructor(parent: THREE.Object3D, getCamera: () => { x: number; z: number }, opts: SkyOptions = {}) {
     this.getCamera = getCamera;
     this.windX = opts.windX ?? 2.2;
     this.windZ = opts.windZ ?? 0.44;
-    this.field = opts.field ?? 1200;
+    // field는 구름이 선으로 안 보이게 하는 **실제 보장선**이다(decide/sky.ts 상단 주석).
+    // 임의로 키우면 반구 배치가 그대로여도 안전마진이 조용히 깨진다.
+    this.field = opts.field ?? CLOUD_FIELD;
     const radius = opts.radius ?? 900;
 
     this.group.name = 'world2:sky';
@@ -253,9 +259,7 @@ export class SkySystem implements System {
 
     this.specs = cloudLayout({
       ...DEFAULT_CLOUDS,
-      count: opts.cloudCount ?? 40,
-      minY: CLOUD_MIN_Y, maxY: CLOUD_MAX_Y,
-      minSize: 60, maxSize: 140,
+      count: opts.cloudCount ?? DEFAULT_CLOUDS.count,
       field: this.field,
     });
 
@@ -276,7 +280,9 @@ export class SkySystem implements System {
     // 투명도도 색에 실어 보낸다(cloudTint 주석 참고) — 재질은 끝까지 하나다.
     const tmp = new THREE.Color();
     for (let i = 0; i < this.specs.length; i++) {
-      tmp.setHex(cloudTint(this.specs[i], CLOUD_BASE, CLOUD_RIM, HORIZON, CLOUD_MIN_Y, CLOUD_MAX_Y));
+      tmp.setHex(cloudTint(
+        this.specs[i], CLOUD_BASE, CLOUD_RIM, HORIZON, DEFAULT_CLOUDS.minY, DEFAULT_CLOUDS.maxY,
+      ));
       this.clouds.setColorAt(i, tmp);
     }
     if (this.clouds.instanceColor) this.clouds.instanceColor.needsUpdate = true;
@@ -302,6 +308,10 @@ export class SkySystem implements System {
       this._m.compose(this._p, this._q, this._s);
       // 수평으로 눕히기(X축 -90°)를 회전에 합성한다.
       this._m.multiply(this._flat);
+      // 개별 기울기 — 전부 정확히 평행하면 인위적으로 보인다. 크게 기울이지는 않는다
+      // (최악 방위에서 유효 앙각이 깎여 다시 선에 가까워진다).
+      this._m.multiply(this._tilt.makeRotationX(c.tiltX));
+      this._m.multiply(this._tilt.makeRotationZ(c.tiltZ));
       this.clouds.setMatrixAt(i, this._m);
     }
     this.clouds.instanceMatrix.needsUpdate = true;

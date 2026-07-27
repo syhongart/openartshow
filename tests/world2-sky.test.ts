@@ -7,7 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   cloudLayout, cloudTint, driftedX, driftedZ, wrap, skyColorAt, mixHex, validStops,
-  CLOUD_FIELD, DEFAULT_CLOUDS, type CloudSpec, type SkyStop,
+  CLOUD_FIELD, DEFAULT_CLOUDS, CLOUD_TILT_MAX, worstElevation,
+  type CloudSpec, type SkyStop,
 } from '../web/js/world2/decide/sky.js';
 
 describe('cloudLayout — 결정론적 배치', () => {
@@ -50,9 +51,15 @@ describe('cloudLayout — 결정론적 배치', () => {
 
   it('높은 구름일수록 작고 옅다 — 원근이 어긋나면 하늘이 낮아 보인다', () => {
     const cs = cloudLayout({ ...DEFAULT_CLOUDS, count: 60 });
-    const low = cs.filter((c) => c.y < 160);
-    const high = cs.filter((c) => c.y > 220);
-    const avg = (a: number[]) => a.reduce((s, x) => s + x, 0) / Math.max(1, a.length);
+    // 경계는 고도 범위에서 파생시킨다. 숫자를 손으로 박아두면 minY/maxY가 바뀔 때
+    // 한쪽 표본이 조용히 비고, 빈 평균 0이 단언을 통과시켜 버린다(실제로 그랬다).
+    const lo = DEFAULT_CLOUDS.minY + (DEFAULT_CLOUDS.maxY - DEFAULT_CLOUDS.minY) * 0.3;
+    const hi = DEFAULT_CLOUDS.minY + (DEFAULT_CLOUDS.maxY - DEFAULT_CLOUDS.minY) * 0.7;
+    const low = cs.filter((c) => c.y < lo);
+    const high = cs.filter((c) => c.y > hi);
+    expect(low.length).toBeGreaterThan(0);
+    expect(high.length).toBeGreaterThan(0);
+    const avg = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length;
     expect(avg(high.map((c) => c.alpha))).toBeLessThan(avg(low.map((c) => c.alpha)));
   });
 });
@@ -174,7 +181,7 @@ describe('mixHex', () => {
 // 눈으로 코드를 봐도 잘 안 보인다 — 그래서 소비를 여기서 강제한다.
 describe('cloudTint', () => {
   const spec = (y: number, alpha: number): CloudSpec =>
-    ({ x: 0, z: 0, y, w: 100, h: 50, ry: 0, alpha });
+    ({ x: 0, z: 0, y, w: 100, h: 50, ry: 0, alpha, tiltX: 0, tiltZ: 0 });
 
   const BASE = 0x1b2030, RIM = 0xe8c9a0, HORIZON = 0x0b0d12;
   const tint = (y: number, a: number) => cloudTint(spec(y, a), BASE, RIM, HORIZON, 160, 260);
@@ -221,5 +228,57 @@ describe('cloudTint', () => {
     for (const c of cloudLayout({ ...DEFAULT_CLOUDS, minY: 160, maxY: 260 })) {
       expect(cloudTint(c, BASE, RIM, HORIZON, 160, 260)).not.toBe(HORIZON);
     }
+  });
+});
+
+// ── 구름이 선으로 보이지 않는다 ──────────────────────────────────────────────
+// 감독 실기기에서 구름이 판이 아니라 **얇은 금색 선**으로 보였다. 원인은 색이 아니라
+// 기하였다 — 수평으로 눕힌 판을 낮은 각도에서 보면 모서리만 보인다. 겉보기 압축률이
+// 정확히 sin(앙각)이라, 13° 앙각에서는 판이 23%로 눌려 12:1 실선이 된다.
+//
+// 여기서 지키는 것은 **최악값**이다. 반구 배치는 "처음 봤을 때의 분포"만 만들고,
+// wrap이 x·z를 각 축 독립으로 접기 때문에 시간이 지나면 구름은 정사각 전체에 도로
+// 균등해진다. 그래서 보장은 field가 진다 — 누가 field만 키우면 이 테스트가 깨진다.
+describe('구름 앙각 — 선으로 보이지 않기 위한 하한', () => {
+  /** 겉보기 압축률 하한. 이 아래로 가면 판이 선처럼 읽힌다(약 6:1). */
+  const MIN_SIN = 0.30;
+
+  it('wrap 코너에 최저고도 구름이 걸린 최악 위치에서도 하한을 지킨다', () => {
+    const e = worstElevation(CLOUD_FIELD, DEFAULT_CLOUDS.minY);
+    expect(Math.sin(e)).toBeGreaterThanOrEqual(MIN_SIN);
+  });
+
+  it('최악 위치에 최대 기울기까지 겹쳐도 선이 되지는 않는다', () => {
+    // 판이 뷰어 반대쪽으로 기울면 유효 앙각이 그만큼 깎인다.
+    const e = worstElevation(CLOUD_FIELD, DEFAULT_CLOUDS.minY) - CLOUD_TILT_MAX;
+    expect(Math.sin(e)).toBeGreaterThan(0.25);
+  });
+
+  it('field를 옛 값(1200)으로 되돌리면 하한이 깨진다 — 두 값은 세트다', () => {
+    // 이 단언이 통과한다는 것은 위 테스트가 실제로 field를 지키고 있다는 뜻이다.
+    expect(Math.sin(worstElevation(1200, DEFAULT_CLOUDS.minY))).toBeLessThan(MIN_SIN);
+  });
+
+  it('배치된 구름 전부가 순환 영역 안이다', () => {
+    for (const c of cloudLayout()) {
+      expect(Math.abs(c.x)).toBeLessThanOrEqual(CLOUD_FIELD / 2 + 1e-6);
+      expect(Math.abs(c.z)).toBeLessThanOrEqual(CLOUD_FIELD / 2 + 1e-6);
+    }
+  });
+
+  it('기울기가 상한 안이다 — 크게 기울이면 최악 앙각이 다시 깎인다', () => {
+    for (const c of cloudLayout()) {
+      expect(Math.abs(c.tiltX)).toBeLessThanOrEqual(CLOUD_TILT_MAX + 1e-9);
+      expect(Math.abs(c.tiltZ)).toBeLessThanOrEqual(CLOUD_TILT_MAX + 1e-9);
+    }
+  });
+
+  it('고도가 높은 구름일수록 가까이 온다 — 앙각과 고도를 같은 t로 묶었다', () => {
+    const cs = cloudLayout({ ...DEFAULT_CLOUDS, count: 60 });
+    const dist = (c: { x: number; z: number }) => Math.hypot(c.x, c.z);
+    const low = cs.filter((c) => c.y < 190).map(dist);
+    const high = cs.filter((c) => c.y > 235).map(dist);
+    const avg = (a: number[]) => a.reduce((s, x) => s + x, 0) / Math.max(1, a.length);
+    expect(avg(high)).toBeLessThan(avg(low));
   });
 });
