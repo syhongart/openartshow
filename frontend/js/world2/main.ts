@@ -23,10 +23,13 @@ import {
   FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics,
   type MountedFeature,
 } from './features/index.js';
-import { DEFAULT_LAYOUT, type PartKind } from './decide/parcel-layout.js';
+import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
+// 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
+// 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
+// 원인을 짐작하기 어렵다(검수관이 잡은 열 번째 지점).
+import { ALL_KINDS } from './parts/index.js';
 
 const CELL = 32;
-const ALL_KINDS: readonly PartKind[] = ['ground', 'building', 'tree', 'lamp'];
 
 /*
  * 동시 파셀 수 상수(`MAX_PARCELS = 20`)를 여기서 없앴다.

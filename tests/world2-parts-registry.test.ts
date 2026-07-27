@@ -15,6 +15,7 @@
 // 가능하다. 아래가 그것을 잡는다.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
 import { PARTS, ALL_KINDS, kindsFor, outermostTierFor, maxPartsPerParcel, tonesFor } from '../frontend/js/world2/parts/index.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
 
@@ -114,6 +115,49 @@ describe('슬롯 예산 — 신고한 최대가 실제 최대를 덮는다', () 
     expect(tonesFor('없는파츠')).toEqual([0xffffff]); // 흰색 — 빠진 것이 눈에 띄어야 한다
   });
 });
+
+describe('레지스트리 밖에 파츠 목록을 다시 적지 않는다', () => {
+  // ── 이 검사가 있는 이유 ────────────────────────────────────────────────────
+  // 레지스트리를 만들면서 "아홉 군데를 한 곳으로 모았다"고 적었는데, 검수관이 **열 번째**를
+  // 찾았다 — `main.ts` 가 `['ground','building','tree','lamp']` 를 따로 들고 부팅 때
+  // 파츠별 인스턴스 풀을 만들고 있었다.
+  //
+  // 하필 그 자리가 최악이다. 새 파츠를 `PARTS` 에 넣어도 이 루프가 모르고 지나가면
+  // **그 종류의 풀이 아예 안 만들어지고**, 증상은 "그 파츠만 화면에 없음"이다. 배치는
+  // 정상이고 테스트도 통과하므로 원인을 짐작하기 어렵다 — 이 리팩터가 없애려던 바로 그
+  // 종류의 조용한 누락이다.
+  //
+  // 사람이 세는 것으로는 또 놓친다. 그래서 검사로 만든다.
+
+  it('world2 소스에 파츠 이름이 나열된 곳이 없다', () => {
+    const quoted = ALL_KINDS.flatMap((k) => [`'${k}'`, `"${k}"`]);
+    const offenders: string[] = [];
+
+    for (const file of walk(new URL('../frontend/js/world2/', import.meta.url).pathname)) {
+      // `parts/` 는 선언 자체가 사는 곳이다. 테스트도 목록을 다뤄야 하므로 제외한다.
+      if (file.includes('/parts/')) continue;
+      const src = readFileSync(file, 'utf8');
+      src.split('\n').forEach((line, i) => {
+        // 한 줄에 파츠 이름이 **둘 이상** 따옴표로 등장하면 목록을 다시 적은 것이다.
+        // 하나만 나오는 것은 정상이다(특정 종류를 지목하는 코드가 있을 수 있다).
+        if (quoted.filter((q) => line.includes(q)).length >= 2) {
+          offenders.push(`${file.split('/world2/')[1]}:${i + 1}  ${line.trim().slice(0, 70)}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+/** 디렉터리를 재귀로 훑어 `.ts` 파일 경로를 모은다 */
+function walk(dir: string, out: string[] = []): string[] {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = `${dir}/${e.name}`;
+    if (e.isDirectory()) walk(p, out);
+    else if (e.name.endsWith('.ts')) out.push(p);
+  }
+  return out;
+}
 
 /** 테스트 전용 난수. 배치의 결정론을 시험하는 것이 아니므로 간단한 것으로 충분하다 */
 function mulberry(seed: number): () => number {
