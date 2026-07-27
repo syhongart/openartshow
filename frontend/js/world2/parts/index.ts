@@ -22,8 +22,10 @@ import { road } from './road.js';
 import { building } from './building.js';
 import { tree } from './tree.js';
 import { lamp } from './lamp.js';
+import { fountain } from './fountain.js';
+import { clocktower } from './clocktower.js';
 
-export const PARTS = [ground, road, building, tree, lamp] as const;
+export const PARTS = [ground, road, building, tree, lamp, fountain, clocktower] as const;
 
 /** 파츠 종류 유니온. 목록에서 유도되므로 파츠를 넣고 빼면 타입이 저절로 따라온다. */
 export type PartKind = (typeof PARTS)[number]['kind'];

@@ -18,6 +18,7 @@
 
 import type { PartSpec, PlacedPart } from './types.js';
 import { roadDirs, ROAD_SEG } from './road-topology.js';
+import { isPlaza } from './plaza.js';
 
 export const road: PartSpec = {
   kind: 'road',
@@ -44,6 +45,7 @@ export const road: PartSpec = {
 
   // 네 방향 × 조각 2개 + 중심 1개. 중심은 방향이 하나라도 있을 때만 놓으므로 실제
   // 최댓값은 9다.
+  // 네 방향 × 2 + 중심 1. 광장은 중심이 빠져 최대 8 이지만, 상한은 최악치로 잡는다.
   maxPerParcel: () => 9,
 
   // 난수를 쓰지 않는다. 길의 모양은 경계 해시가 정하고, 색은 텍스처가 정한다.
@@ -60,7 +62,10 @@ export const road: PartSpec = {
       out.push({ kind: 'road', x, z, y, ry, sx: ROAD_SEG, sy: 1, sz: ROAD_SEG, tone });
     };
 
-    seg(0, 0, 0); // 중심 — 막다른 길이어도 길머리는 있어야 한다
+    // 중심 — 막다른 길이어도 길머리는 있어야 한다. 다만 **광장에서는 비운다**:
+    // 그 자리에 분수대나 시계탑이 선다. 팔은 그대로 남으므로 길은 광장 둘레를 도는
+    // 로터리처럼 읽힌다.
+    if (!isPlaza(px, pz)) seg(0, 0, 0);
 
     for (const d of dirs) {
       // 중심에서 변까지 16m 를 8m 조각 둘로 채운다. 조각 중심이 8m·16m 가 아니라

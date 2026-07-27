@@ -48,9 +48,11 @@ function stubThree() {
   class Geo { rotateX() { return this; } translate() { return this; } }
   class Mat { constructor(o: Record<string, unknown> = {}) { Object.assign(this, o); } }
   class Tex { colorSpace = ''; anisotropy = 0; constructor(public image: unknown) {} }
+  class Vec2 { constructor(public x = 0, public y = 0) {} }
   return {
     BoxGeometry: Geo, PlaneGeometry: Geo, ConeGeometry: Geo, CylinderGeometry: Geo,
-    SphereGeometry: Geo, CircleGeometry: Geo, BufferGeometry: Geo,
+    SphereGeometry: Geo, CircleGeometry: Geo, BufferGeometry: Geo, LatheGeometry: Geo,
+    Vector2: Vec2,
     MeshStandardMaterial: Mat, MeshBasicMaterial: Mat, Material: Mat,
     CanvasTexture: Tex, SRGBColorSpace: 'srgb',
   } as unknown as ThreeNS;

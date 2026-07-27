@@ -11,6 +11,7 @@ import {
   hash2, rngFrom, parcelLayout, kindsFor, maxPartsPerParcel,
   DEFAULT_LAYOUT, type PartKind, type PlacedPart,
 } from '../frontend/js/world2/decide/parcel-layout.js';
+import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
 
 const at = (px: number, pz: number, tier: 'near' | 'mid' | 'far' = 'near') => parcelLayout(px, pz, tier);
 const only = (ps: PlacedPart[], k: PartKind) => ps.filter((p) => p.kind === k);
@@ -180,13 +181,21 @@ describe('maxPartsPerParcel — 슬롯 예산의 근거', () => {
     }
   });
 
-  it('건물은 항상 최소 1채 — 완전히 빈 파셀은 없다', () => {
+  it('건물은 광장이 아닌 한 최소 1채 — 우연히 빈 파셀은 없다', () => {
     // 하한이 2였다. 감독이 "건물이 빽빽하다" 고 지적해 1~4로 내리면서 함께 낮췄다 —
-    // 하한 2면 "한 채만 선 여유로운 구획" 이 구조적으로 존재할 수 없다. 0 은 여전히
-    // 막는다. 아무것도 없는 파셀이 드문드문 섞이면 세상이 미완성으로 읽힌다.
-    for (let px = 0; px < 20; px++) {
-      expect(only(at(px, px + 1), 'building').length).toBeGreaterThanOrEqual(1);
+    // 하한 2면 "한 채만 선 여유로운 구획" 이 구조적으로 존재할 수 없다.
+    //
+    // 0채는 **광장에서만** 나온다. 그건 의도된 예외이고, 그 자리에는 분수대나 시계탑이
+    // 선다. 광장이 아닌데 0채면 배치가 어딘가 어긋난 것이다.
+    let checked = 0;
+    for (let px = 0; px < 60; px++) {
+      for (let pz = 0; pz < 4; pz++) {
+        if (isPlaza(px, pz)) continue;
+        checked++;
+        expect(only(at(px, pz), 'building').length).toBeGreaterThanOrEqual(1);
+      }
     }
+    expect(checked).toBeGreaterThan(100); // 표본이 비어 조용히 통과하지 않도록
   });
 
   it('옵션으로 예산을 줄이면 실제 배치도 줄어든다', () => {
