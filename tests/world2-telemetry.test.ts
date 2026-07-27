@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  summarize, hitchCount, constancy, Ring, formatReport, HITCH_MS,
+  summarize, hitchCount, constancy, constancyByGroup, Ring, formatReport, HITCH_MS,
   Timeline, downsample, formatTimeline, type ReportInput, type Bucket, type TimelineSample,
 } from '../web/js/world2/decide/telemetry.js';
 
@@ -295,5 +295,86 @@ describe('formatReport — 복사되는 그 텍스트', () => {
 
   it('시간축이 없으면 그 절을 생략한다', () => {
     expect(formatReport(base())).not.toContain('시간축');
+  });
+});
+
+describe('constancyByGroup — 드로우콜은 하늘 상태 안에서만 상수여야 한다', () => {
+  // 실제 오판. 감독 실기기(iPhone/WebGPU, 밀도 8) 리포트에서 `draw 9~12 ← 불변식 위반`이
+  // 찍혔는데, 같은 리포트의 pipeline 10 · geometry 9 · texture 9는 전부 상수였다.
+  // sky.js가 시간대·날씨에 따라 구름·별·비·눈의 visible을 토글한 결과였다 — 그리기를
+  // 멈춘 것이지 자원이 태어난 게 아니다.
+  it('하늘이 바뀌어서 변한 것은 위반이 아니다', () => {
+    const draw = [9, 9, 12, 12, 10, 10];
+    const sky = [0, 0, 1, 1, 2, 2]; // night|clear · night|rain · day|clear
+    const g = constancyByGroup(draw, sky);
+    expect(g.constant).toBe(true);
+    expect(g.violations).toEqual([]);
+    expect(g.groups).toHaveLength(3);
+  });
+
+  // 이쪽이 진짜 잡아야 할 것이다 — 하늘이 그대로인데 드로우콜이 늘면 슬롯 풀 설계가
+  // 무너진 것이다(파셀 로드가 새 메시를 만들었다는 뜻).
+  it('같은 하늘 상태에서 변하면 위반이다', () => {
+    const g = constancyByGroup([9, 9, 11], [0, 0, 0]);
+    expect(g.constant).toBe(false);
+    expect(g.violations).toEqual([{ key: 0, min: 9, max: 11 }]);
+  });
+
+  it('위반한 상태만 지목한다 — 멀쩡한 상태까지 싸잡지 않는다', () => {
+    const g = constancyByGroup([9, 9, 12, 14], [0, 0, 1, 1]);
+    expect(g.violations.map((v) => v.key)).toEqual([1]);
+  });
+
+  it('표본이 없으면 상수가 아니다 — 관측 안 한 것을 통과로 적지 않는다', () => {
+    expect(constancyByGroup([], []).constant).toBe(false);
+    expect(constancyByGroup([9, 9], []).constant).toBe(false);
+  });
+
+  it('길이가 어긋나면 짧은 쪽까지만 본다 — 짝 없는 표본을 지어내지 않는다', () => {
+    // draw 3개 · key 2개 → 앞 2개만 유효. 세 번째(11)는 짝이 없으므로 판정에 안 들어간다.
+    const g = constancyByGroup([9, 9, 11], [0, 0]);
+    expect(g.constant).toBe(true);
+    expect(g.groups).toEqual([{ key: 0, min: 9, max: 9 }]);
+  });
+
+  it('비유한 값은 건너뛴다', () => {
+    const g = constancyByGroup([9, NaN, 9], [0, 0, 0]);
+    expect(g.constant).toBe(true);
+  });
+});
+
+describe('formatReport — 드로우콜 줄', () => {
+  const base = {
+    backend: 'WebGPU', ua: 'test', dpr: 3, screen: '320x519', elapsedS: 39,
+    frameMs: [16.7, 16.7], updMs: [0.2], renderMs: [1.5], outMs: [15],
+    pipeline: [10, 10], geometries: [9, 9], textures: [9, 9],
+    parcels: [16, 16], built: 79, released: 63, starved: 0,
+    pixelRatio: 2, frameCap: 0, triAvg: 54205,
+  };
+
+  it('하늘 상태별로 상수면 위반이라 적지 않는다', () => {
+    const text = formatReport({
+      ...base, draw: [9, 9, 12, 12], drawSkyKey: [0, 0, 1, 1],
+      skyKeyNames: { 0: 'night|clear', 1: 'night|rain' },
+    });
+    const line = text.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).not.toContain('불변식 위반');
+    expect(line).toContain('night|clear=9');
+    expect(line).toContain('night|rain=12');
+  });
+
+  it('같은 상태에서 변하면 그 상태를 지목해 위반이라 적는다', () => {
+    const text = formatReport({
+      ...base, draw: [9, 11], drawSkyKey: [0, 0], skyKeyNames: { 0: 'day|clear' },
+    });
+    const line = text.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).toContain('불변식 위반');
+    expect(line).toContain('day|clear 9~11');
+  });
+
+  it('상태 키가 없으면 옛 판정으로 떨어진다 — 하위호환', () => {
+    const text = formatReport({ ...base, draw: [9, 12] });
+    const line = text.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).toContain('불변식 위반');
   });
 });

@@ -69,6 +69,59 @@ export function constancy(samples: readonly number[]): Constancy {
   return { min: mn, max: mx, constant: mn === mx };
 }
 
+export interface GroupedConstancy {
+  /** 모든 그룹이 각각 상수인가 */
+  constant: boolean;
+  /** 그룹별 (그룹키, min, max). 위반한 그룹을 지목하려면 이게 필요하다 */
+  groups: ReadonlyArray<{ key: number; min: number; max: number }>;
+  /** 위반한 그룹들 */
+  violations: ReadonlyArray<{ key: number; min: number; max: number }>;
+}
+
+/**
+ * **그룹별** 상수성. 드로우콜에 쓴다.
+ *
+ * ── 왜 드로우콜만 기준이 다른가 ───────────────────────────────────────────────
+ * 개수 불변식이 지키려는 것은 **"파셀을 로드해도 씬의 형태가 변하지 않는다"** 이다. 파이프라인·
+ * 지오·텍스처는 그래서 세션 내내 상수여야 한다 — 늘어나면 그 순간 GPU 자원이 새로 태어났다는
+ * 뜻이고, 그게 스파이크의 원인이었다.
+ *
+ * 그런데 **드로우콜은 가시성에 따라 정당하게 변한다.** `sky.js`가 시간대·날씨에 맞춰 구름·별
+ * 2겹·비·눈·무지개·오로라·크로스페이드 돔의 `visible`을 토글하기 때문이다. 그리기를 멈춘 것이지
+ * 자원이 사라진 게 아니다(파이프라인·지오·텍스처가 상수인 것이 그 증거다).
+ *
+ * 실제로 그렇게 오판했다 — 감독 실기기 리포트(iPhone/WebGPU, 밀도 8)에서 `draw 9~12`가
+ * "불변식 위반"으로 찍혔는데, 같은 리포트의 pipeline 10 · geometry 9 · texture 9는 전부
+ * 상수였다. 하늘을 만진 결과를 증식으로 읽은 것이다.
+ *
+ * 그렇다고 드로우콜을 판정에서 빼면 안 된다. **파셀 로드가 드로우콜을 늘리는 것**은 슬롯 풀
+ * 설계가 무너졌다는 뜻이고 반드시 잡아야 한다. 그래서 "전 구간 상수" 대신 **"같은 하늘 상태
+ * 안에서 상수"** 로 판정한다 — 하늘을 바꾸면 변해도 되지만, 하늘이 그대로인데 변하면 위반이다.
+ *
+ * `keys[i]`가 `samples[i]`의 그룹이다. 길이가 다르면 짧은 쪽까지만 본다(링버퍼가 어긋난
+ * 순간을 통과로 적지 않으려면 여기서 조용히 잘라야 한다 — 잘린 구간은 애초에 짝이 없다).
+ */
+export function constancyByGroup(
+  samples: readonly number[],
+  keys: readonly number[],
+): GroupedConstancy {
+  const n = Math.min(samples.length, keys.length);
+  const by = new Map<number, { key: number; min: number; max: number }>();
+  for (let i = 0; i < n; i++) {
+    const v = samples[i];
+    const k = keys[i];
+    if (!Number.isFinite(v) || !Number.isFinite(k)) continue;
+    const g = by.get(k);
+    if (!g) by.set(k, { key: k, min: v, max: v });
+    else { if (v < g.min) g.min = v; if (v > g.max) g.max = v; }
+  }
+  const groups = [...by.values()];
+  const violations = groups.filter((g) => g.min !== g.max);
+  // 표본이 없으면 상수가 아니다 — `constancy`와 같은 규약. "변한 적 없음"과 "관측한 적
+  // 없음"은 다르고, 후자를 통과로 적으면 재보지 않은 것이 검증된 것처럼 남는다.
+  return { constant: groups.length > 0 && violations.length === 0, groups, violations };
+}
+
 /** 고정 길이 링버퍼. 오래된 표본을 덮어쓴다 — 세션이 길어져도 메모리가 늘지 않는다. */
 export class Ring {
   private buf: number[] = [];
@@ -251,6 +304,13 @@ export interface ReportInput {
   outMs: readonly number[];
   /** 개수 — 상수여야 한다 */
   draw: readonly number[];
+  /**
+   * `draw[i]`를 잰 시점의 하늘 상태 id. 드로우콜은 이 그룹 안에서만 상수여야 한다
+   * (`constancyByGroup` 주석 참고). 없으면 전 구간 상수로 판정한다 — 옛 리포트 호환.
+   */
+  drawSkyKey?: readonly number[];
+  /** 하늘 상태 id → 사람이 읽는 이름. 위반한 상태를 지목할 때 쓴다 */
+  skyKeyNames?: Readonly<Record<number, string>>;
   pipeline: readonly number[];
   geometries: readonly number[];
   textures: readonly number[];
@@ -278,6 +338,31 @@ function countLine(label: string, c: Constancy): string {
   const mark = c.constant ? '상수' : `변동 ${c.min}~${c.max}  ← 불변식 위반`;
   return `${label.padEnd(10)} ${String(c.min).padStart(6)}   ${mark}`;
 }
+
+/**
+ * 드로우콜 줄. 하늘 상태별로 판정한다 — 왜 다른 기준인지는 `constancyByGroup` 주석에.
+ * 상태 키가 없으면(옛 리포트) 전 구간 상수로 떨어진다.
+ */
+function drawLine(
+  samples: readonly number[],
+  keys: readonly number[] | undefined,
+  names: Readonly<Record<number, string>> | undefined,
+): string {
+  if (!keys || keys.length === 0) return countLine('draw', constancy(samples));
+  const g = constancyByGroup(samples, keys);
+  const nameOf = (k: number) => names?.[k] ?? `#${k}`;
+  const lo = g.groups.length ? Math.min(...g.groups.map((x) => x.min)) : 0;
+  if (g.constant) {
+    // 어떤 상태에서 몇이었는지 함께 보여준다 — 하늘을 만졌을 때 드로우콜이 어떻게
+    // 움직이는지가 그 자체로 읽을 값이다.
+    const detail = g.groups.map((x) => `${nameOf(x.key)}=${x.min}`).join(' · ');
+    return `${label10('draw')}${String(lo).padStart(6)}   하늘 상태별 상수 (${detail})`;
+  }
+  const bad = g.violations.map((x) => `${nameOf(x.key)} ${x.min}~${x.max}`).join(' · ');
+  return `${label10('draw')}${String(lo).padStart(6)}   ${bad}  ← 불변식 위반`;
+}
+
+const label10 = (s: string) => s.padEnd(10) + ' ';
 
 /**
  * 복사용 리포트. **사람이 읽고 그대로 붙여넣는 텍스트**다.
@@ -314,7 +399,7 @@ export function formatReport(r: ReportInput): string {
   }
   lines.push('');
   lines.push('[개수 — 상수여야 함]');
-  lines.push(countLine('draw', constancy(r.draw)));
+  lines.push(drawLine(r.draw, r.drawSkyKey, r.skyKeyNames));
   lines.push(countLine('pipeline', constancy(r.pipeline)));
   lines.push(countLine('geometry', constancy(r.geometries)));
   lines.push(countLine('texture', constancy(r.textures)));

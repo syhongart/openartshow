@@ -10,7 +10,8 @@
 // 계측의 기본이고, 이 프로젝트는 그걸 한 번 어겨서 계측 자체가 프레임을 먹은 적이 있다.
 
 import {
-  Ring, Timeline, formatReport, summarize, hitchCount, constancy, type ReportInput,
+  Ring, Timeline, formatReport, summarize, hitchCount, constancy, constancyByGroup,
+  type ReportInput,
 } from '../decide/telemetry.js';
 
 /** 링버퍼 용량 — 60fps에서 약 30초 */
@@ -29,6 +30,11 @@ export interface HudParts {
 export interface HudSource {
   backend: () => string;
   counts: () => { draw: number; pipeline: number; geometries: number; textures: number };
+  /**
+   * 지금의 하늘 상태를 사람이 읽는 한 줄로. 드로우콜 판정이 이 그룹 안에서만 상수를 요구한다
+   * (`decide/telemetry.ts`의 `constancyByGroup` 참고). 없으면 전 구간 상수로 판정한다.
+   */
+  skyKey?: () => string;
   stream: () => { loaded: number; built: number; released: number; starved: number };
   adapt: () => { pixelRatio: number; frameCap: number; triAvg: number };
 }
@@ -51,6 +57,19 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
   const geometries = new Ring(CAP);
   const textures = new Ring(CAP);
   const parcels = new Ring(CAP);
+  /**
+   * `draw`와 짝을 이루는 하늘 상태 id 링. 같은 인덱스가 같은 프레임이어야 하므로
+   * **`draw`를 넣는 곳에서만** 함께 넣는다(둘이 어긋나면 판정이 엉뚱한 짝을 본다).
+   */
+  const drawSkyKey = new Ring(CAP);
+  /** 상태 문자열 → id. 리포트에서 사람이 읽는 이름으로 되돌리려고 양방향으로 들고 있다 */
+  const skyIds = new Map<string, number>();
+  const skyNames: Record<number, string> = {};
+  const skyIdOf = (s: string): number => {
+    let id = skyIds.get(s);
+    if (id === undefined) { id = skyIds.size; skyIds.set(s, id); skyNames[id] = s; }
+    return id;
+  };
 
   let built = 0, released = 0;
   const startedAt = Date.now();
@@ -74,7 +93,10 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       elapsedS: (Date.now() - startedAt) / 1000,
       frameMs: frameMs.values(), updMs: updMs.values(),
       renderMs: renderMs.values(), outMs: outMs.values(),
-      draw: draw.values(), pipeline: pipeline.values(),
+      draw: draw.values(),
+      drawSkyKey: src.skyKey ? drawSkyKey.values() : undefined,
+      skyKeyNames: src.skyKey ? { ...skyNames } : undefined,
+      pipeline: pipeline.values(),
       geometries: geometries.values(), textures: textures.values(),
       parcels: parcels.values(),
       built, released, starved: s.starved,
@@ -89,14 +111,20 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     const f = summarize(frameMs.values());
     const fps = f.avg > 0 ? 1000 / f.avg : 0;
     const h = hitchCount(frameMs.values());
+    // 화면 HUD도 같은 기준을 쓴다. 여기만 옛 판정을 남기면 감독은 리포트와 화면이 서로
+    // 다른 말을 하는 걸 보게 된다 — 그게 "어느 쪽이 맞나"를 매번 다시 묻게 만든다.
+    const gd = src.skyKey
+      ? constancyByGroup(draw.values(), drawSkyKey.values())
+      : null;
     const cd = constancy(draw.values());
+    const drawOk = gd ? gd.constant : cd.constant;
     const cp = constancy(pipeline.values());
     const s = src.stream();
     const a = src.adapt();
     const warn = (ok: boolean) => (ok ? '' : ' ⚠');
     parts.body.textContent = [
       `${fps.toFixed(0)}fps  max ${f.max.toFixed(0)}ms  히칭 ${h}`,
-      `draw ${cd.min}${cd.constant ? '' : `~${cd.max}`}${warn(cd.constant)}  pipe ${cp.min}${cp.constant ? '' : `~${cp.max}`}${warn(cp.constant)}`,
+      `draw ${cd.min}${cd.min === cd.max ? '' : `~${cd.max}`}${warn(drawOk)}  pipe ${cp.min}${cp.constant ? '' : `~${cp.max}`}${warn(cp.constant)}`,
       `파셀 ${s.loaded}  build ${built}  starve ${s.starved}${warn(s.starved === 0)}`,
       `px ${a.pixelRatio.toFixed(2)}  cap ${a.frameCap || '—'}  tri ${Math.round(a.triAvg)}`,
     ].join('\n');
@@ -144,7 +172,11 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     },
     tick() {
       const c = src.counts();
-      draw.push(c.draw); pipeline.push(c.pipeline);
+      // draw와 하늘 상태는 **같은 줄에서** 넣는다. 다른 지점에서 넣으면 링 인덱스가
+      // 어긋나 판정이 엉뚱한 짝을 보게 된다(그러고도 조용히 통과한다).
+      draw.push(c.draw);
+      if (src.skyKey) drawSkyKey.push(skyIdOf(src.skyKey()));
+      pipeline.push(c.pipeline);
       geometries.push(c.geometries); textures.push(c.textures);
       const s = src.stream();
       parcels.push(s.loaded);

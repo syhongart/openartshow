@@ -126,6 +126,24 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           textures: f?.textures ?? 0,
         };
       },
+      /**
+       * 드로우콜 판정의 그룹 키. `sky.js`가 시간대·날씨·fx에 따라 구름·별·비·눈·무지개·
+       * 오로라의 `visible`을 토글하므로 드로우콜은 **하늘을 바꾸면 정당하게 변한다.**
+       * 전 구간 상수로 판정하면 하늘을 만진 결과가 증식으로 찍힌다(감독 실기기 리포트에서
+       * `draw 9~12 ← 불변식 위반`이 그렇게 나왔고, 같은 리포트의 pipeline·geometry·
+       * texture는 전부 상수였다). 상태별로 묶어야 "파셀 로드가 드로우콜을 늘렸다"는
+       * 진짜 회귀만 남는다.
+       *
+       * `flashSafe`는 넣지 않는다 — 광과민성 보호 모드는 조명 강도·색만 바꾸고 무엇을
+       * 그릴지는 안 바꾼다. 넣으면 그룹만 쪼개져 표본이 흩어진다.
+       */
+      skyKey: () => {
+        const s = sky?.get();
+        if (!s) return 'none';
+        const fx = Object.entries(s.fx ?? {})
+          .filter(([, on]) => on).map(([k]) => k).sort().join('+');
+        return `${s.time}|${s.weather}${fx ? `|${fx}` : ''}`;
+      },
       stream: () => {
         const s = streaming?.stats();
         return {
