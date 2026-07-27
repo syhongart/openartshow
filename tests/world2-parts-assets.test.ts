@@ -49,20 +49,46 @@ function stubThree() {
   // 좁으면 **멀쩡한 코드가 여기서만 터진다** — 화분이 `scale()` 을 쓰자 실제로 그랬다.
   // (반대 방향, 즉 스텁이 실제보다 관대해서 "테스트만 통과하는 코드" 가 되는 것도 위험한데,
   // 여기 넷은 셋 다 `this` 를 돌려주는 실제 계약과 같다.)
+  //
+  // 나무가 재귀 가지를 **한 지오로 굽기** 시작하면서 스텁이 감당할 범위가 늘었다.
+  // `applyMatrix4`·`attributes`·`setAttribute`·`toNonIndexed`·`dispose` 를 실제로 부른다.
+  // 정점 배열까지 흉내 내지는 않는다 — 여기서 보는 것은 "부팅 때 자산이 만들어지는가" 이지
+  // 지오메트리가 옳은 모양인가가 아니다. 다만 **호출이 존재한다는 사실**은 실제 계약과
+  // 같아야 오탐이 안 난다.
   class Geo {
+    index: unknown = null;
+    // 실제 BufferGeometry 는 이 자리에 Float32BufferAttribute 를 담는다. 길이 0 이면
+    // 병합 루프가 그냥 아무것도 안 붙이고 지나가므로 조립 경로 전체가 돈다.
+    attributes: Record<string, { array: number[] }> = {
+      position: { array: [] }, normal: { array: [] },
+    };
     rotateX() { return this; }
     rotateY() { return this; }
     rotateZ() { return this; }
     translate() { return this; }
     scale() { return this; }
+    applyMatrix4() { return this; }
+    toNonIndexed() { return this; }
+    setAttribute(name: string, attr: { array: number[] }) { this.attributes[name] = attr; return this; }
+    dispose() {}
   }
   class Mat { constructor(o: Record<string, unknown> = {}) { Object.assign(this, o); } }
   class Tex { colorSpace = ''; anisotropy = 0; constructor(public image: unknown) {} }
   class Vec2 { constructor(public x = 0, public y = 0) {} }
+  /** 곱셈만 흉내 낸다 — 값은 안 보고 "호출이 이어지는가" 만 본다 */
+  class Mat4 {
+    makeTranslation() { return this; }
+    makeRotationY() { return this; }
+    makeRotationZ() { return this; }
+    multiply() { return this; }
+    multiplyMatrices() { return this; }
+  }
+  class Attr { constructor(public array: number[], public itemSize: number) {} }
   return {
     BoxGeometry: Geo, PlaneGeometry: Geo, ConeGeometry: Geo, CylinderGeometry: Geo,
     SphereGeometry: Geo, CircleGeometry: Geo, BufferGeometry: Geo, LatheGeometry: Geo,
-    Vector2: Vec2,
+    IcosahedronGeometry: Geo, OctahedronGeometry: Geo,
+    Vector2: Vec2, Matrix4: Mat4, Float32BufferAttribute: Attr,
     MeshStandardMaterial: Mat, MeshBasicMaterial: Mat, Material: Mat,
     CanvasTexture: Tex, SRGBColorSpace: 'srgb',
   } as unknown as ThreeNS;
