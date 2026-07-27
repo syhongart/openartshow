@@ -216,6 +216,24 @@ export default defineConfig({
       },
       output: {
         manualChunks(id) {
+          // [번들 분리] three/webgpu 는 오픈월드(world.js) 한 곳만 쓴다. 그런데 예전에는
+          // `node_modules/three` 를 통째로 한 청크에 묶어, WebGPU 를 전혀 안 쓰는
+          // 미술관·빌더·스튜디오까지 그 코드를 받았다. vendor-three 가 540KB→1,048KB 로
+          // 두 배가 된 정체가 이것이다(gzip 137.6→279.2KB).
+          //   · three        → build/three.module.js  (WebGL)
+          //   · three/webgpu → build/three.webgpu.js  (오픈월드 전용)
+          // 공유 코어(three.core.js)는 vendor-three 에 남아 양쪽이 함께 쓴다.
+          // 코어를 먼저 갈라낸다. 안 그러면 three.module ↔ three.webgpu 가 코어를 사이에
+          // 두고 서로를 참조해 rollup 이 순환 청크를 만든다(초기화 순서가 깨질 수 있다).
+          if (id.includes('node_modules/three/build/three.core')) return 'vendor-three-core';
+          // TSL(WebGPU 셰이더 언어)에 의존하는 것은 전부 webgpu 쪽으로 보낸다.
+          // three.tsl 과 examples/jsm/tsl·lighting 이 여기 해당하는데, 이것들이 `three`
+          // 매칭에 걸려 WebGL 청크로 가 있었고 — 그래서 **WebGL 청크가 WebGPU 청크를
+          // import** 했다. 미술관·빌더가 WebGPU 를 안 쓰면서도 받아가던 진짜 경로다.
+          if (id.includes('node_modules/three/build/three.webgpu')
+            || id.includes('node_modules/three/build/three.tsl')
+            || id.includes('node_modules/three/examples/jsm/tsl/')
+            || id.includes('node_modules/three/examples/jsm/lighting/')) return 'vendor-three-webgpu';
           if (id.includes('node_modules/three')) return 'vendor-three';
           if (id.includes('node_modules/peerjs')) return 'vendor-peerjs';
         },
