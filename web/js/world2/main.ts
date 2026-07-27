@@ -20,8 +20,19 @@ import { findLoading, LoadingView } from './ui/loading.js';
 import { DEFAULT_LAYOUT, type PartKind } from './decide/parcel-layout.js';
 
 const CELL = 32;
-/** 스트리밍이 동시에 띄우는 최대 파셀 수(기본 밴드 기준 13) + 전이 여유 */
-const MAX_PARCELS = 16;
+/**
+ * 스트리밍이 동시에 띄우는 최대 파셀 수. 풀 예산의 분모다.
+ *
+ * 정지 상태의 산술값은 13이지만 **실측은 그보다 크다.** look-ahead가 판정 중심을 0.5셀
+ * 앞으로 밀기 때문에 정지 중에도 want가 16이고, 이동 중에는 17까지 관측됐다(헤드리스
+ * 계측, 30샘플). 산술값 13으로 잡았으면 여유 배수(1.25)를 까먹는 순간 슬롯이 모자라
+ * 파셀이 조용히 덜 그려졌을 것이다 — 화면에는 "건물이 몇 채 없는" 모습으로만 나타나
+ * 원인을 짐작하기 어려운 종류의 결함이다.
+ *
+ * 실측 17에 이동·전이 여유를 얹어 20으로 잡는다. 굶주림 여부는 진단 훅의
+ * `builder.starved`로 감시한다(0이 아니면 이 값이 틀린 것이다).
+ */
+const MAX_PARCELS = 20;
 const ALL_KINDS: readonly PartKind[] = ['ground', 'building', 'tree', 'lamp'];
 
 export interface WorldHandle {
@@ -50,10 +61,23 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   });
 
   let streaming: StreamingSystem | null = null;
+  let adapt: AdaptSystem | null = null;
+  let builder: PooledParcelBuilder | null = null;
   let lastTri = 0;
 
+  // 부팅 단계별 경과(ms). 진단 훅이 노출한다 — "부팅이 순식간에 끝났다"는 관측이
+  // 진짜인지(정말 빨랐는지) 가짜인지(단계를 건너뛰었는지) 가르는 유일한 근거다.
+  const timeline: Array<{ stage: string; atMs: number }> = [];
+  let lastStage = '';
+
   const ok = await runBoot({
-    onProgress: (r) => loading?.update(r),
+    onProgress: (r) => {
+      if (r.stage !== lastStage) {
+        lastStage = r.stage;
+        timeline.push({ stage: r.stage, atMs: Math.round(r.elapsedMs) });
+      }
+      loading?.update(r);
+    },
     onError: (stage, err) => {
       loading?.fail(stage, err);
       console.error('[world2] 부팅 실패', stage, err);
@@ -111,7 +135,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       },
 
       stream: async (report, yieldFrame) => {
-        const builder = new PooledParcelBuilder({ pool: createSlotPool(pools!), cellX: CELL, cellZ: CELL });
+        builder = new PooledParcelBuilder({ pool: createSlotPool(pools!), cellX: CELL, cellZ: CELL });
         streaming = new StreamingSystem({
           builder,
           cellX: CELL, cellZ: CELL,
@@ -120,7 +144,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           markDirty: () => kernel?.markDirty(),
         });
 
-        const adapt = new AdaptSystem({
+        adapt = new AdaptSystem({
           dpr: window.devicePixelRatio || 1,
           mobileCap: 1.5,
           targets: {
@@ -178,6 +202,32 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   };
   window.addEventListener('resize', onResize);
   const input = bindInput(canvas, player);
+
+  // ── 진단 훅 ───────────────────────────────────────────────────────────────
+  // behind-flag 검증 페이지 전용이다. 라이브(world.html)에는 없다.
+  //
+  // 이걸 붙이는 이유: 이 아키텍처의 핵심 주장이 "재질·지오·파이프라인·드로우콜 개수가
+  // 세션 내내 상수"인데, 잴 수단이 없으면 그 주장은 검증할 수 없는 문장일 뿐이다.
+  // 실제로 첫 스모크에서 이 항목이 "측정 불가"로 남았고, 그건 검증기의 잘못이 아니라
+  // 측정 지점을 안 만들어 둔 설계의 잘못이었다.
+  (window as unknown as Record<string, unknown>).__world2 = {
+    /** 부팅 단계별 경과(ms) */
+    timeline,
+    /** 현재 개수 스냅샷 — 불변식 검사는 이 값을 프레임 간 비교해 판정한다 */
+    stats: () => ({
+      backend: adapter!.backend,
+      order: kernel!.order,
+      frame: adapter!.frameStats(),
+      pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
+      pools: pools!.stats(),
+      stream: streaming!.stats(),
+      adapt: adapt!.snapshot(),
+      // 슬롯이 모자라 못 그린 부품 수. 0이 아니면 MAX_PARCELS 예산이 틀린 것이다 —
+      // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
+      builder: builder!.stats(),
+      hidden: typeof document !== 'undefined' && document.hidden,
+    }),
+  };
 
   return {
     kernel: kernel!,
