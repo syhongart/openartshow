@@ -724,8 +724,66 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     glint.scale.set(1, 1, conf.len);
   }
 
-  // ── 번개 ──
-  let boltTimer = 8, flashT = 0;
+  // ── 번개 ──────────────────────────────────────────────────────────────────
+  // 감독: "번개가 너무너무 짧은 것 같아." 실측상 밝기는 충분했다(hemiI 0.48→2.88,
+  // 6배). 문제는 지속과 파형이었다 — 0.3초는 인간 반응속도(0.2~0.3초)와 겹쳐
+  // 인지되기 전에 끝나고, 최대/25% 두 계단은 잔광 없이 뚝 끊긴다.
+  //
+  // 디자이너 재설계(2026-07-27): 총 0.9초 · 3스트로크(강·약·약) + 소강 구간 +
+  // 지수 감쇠 꼬리. 실제 번개도 리턴스트로크가 여러 번 오고 첫 번째가 가장 강하다.
+  let boltTimer = 8;
+  /** 섬광 경과시간(초). **음수면 비활성** — 예전엔 남은시간 카운트다운이었다. */
+  let flashT = -1;
+  /**
+   * 재발동 최소 간격(초). 이 안의 요청은 무시한다.
+   *
+   * 디자이너 초안은 0.15였다(주섬광을 끝까지 보여주는 최소 보장). 그런데 그 값이면
+   * **⚡ 버튼을 연타할 때 주섬광이 0.15초마다 반복되어 초당 6.7회**가 된다 — 단일
+   * 스트라이크 내부는 2.2Hz로 안전한데 연타 경로가 그 보호를 무너뜨린다.
+   *
+   * WCAG의 명멸 상한은 3Hz 미만이므로 0.34초 이상이어야 한다. 여유를 둬 0.40으로
+   * 잡았다(2.5Hz). 사람이 누르는 감각으로는 여전히 "즉시"다.
+   */
+  const BOLT_DEBOUNCE = 0.40;
+
+  /** 지수 감쇠: k=0에서 a, k=1에서 b 근처. 선형보다 초반이 빠르고 꼬리가 남는다. */
+  const decayTo = (a, b, k) => b + (a - b) * Math.exp(-3.5 * k);
+
+  /**
+   * 섬광 배수(0~1). 경과시간 t(초)에 대한 파형.
+   *
+   * `safe`(광과민성 보호)는 **강도만 줄이는 게 아니라 파형을 바꾼다.** 예전에는
+   * 깜빡임 패턴을 그대로 두고 진폭만 22%로 낮췄는데, WCAG의 핵심은 "초당 3회 이상
+   * 명멸 금지"이지 강도가 아니다. 단봉으로 만들면 깜빡임 자체가 없어져 더 안전하고
+   * 더 자연스럽다(디자이너 지적).
+   */
+  function boltMult(t, safe) {
+    if (t < 0) return 0;
+    if (safe) {
+      if (t < 0.05) return t / 0.05;          // 완만한 상승
+      if (t < 0.30) return decayTo(1, 0, (t - 0.05) / 0.25);
+      return 0;
+    }
+    if (t < 0.04) return 1;                                              // 주섬광
+    if (t < 0.11) return decayTo(1, 0.12, (t - 0.04) / 0.07);            // 급락
+    if (t < 0.17) return 0.12;                                           // 소강
+    if (t < 0.21) return 0.12 + (0.80 - 0.12) * ((t - 0.17) / 0.04);     // 2차 상승
+    if (t < 0.30) return decayTo(0.80, 0.10, (t - 0.21) / 0.09);         // 2차 감쇠
+    if (t < 0.37) return 0.10;                                           // 소강
+    if (t < 0.40) return 0.10 + (0.45 - 0.10) * ((t - 0.37) / 0.03);     // 3차 상승
+    if (t < 0.55) return decayTo(0.45, 0.06, (t - 0.40) / 0.15);         // 3차 감쇠
+    if (t < 0.90) return 0.06 * (1 - (t - 0.55) / 0.35);                 // 산란 잔광
+    return 0;
+  }
+  const boltDur = (safe) => (safe ? 0.30 : 0.90);
+
+  /** 실제 발동. 디바운스에 걸리면 false. */
+  function strike() {
+    if (flashT >= 0 && flashT < BOLT_DEBOUNCE) return false;
+    flashT = 0;
+    synthThunder(0.8 + Math.random() * 2.2);
+    return true;
+  }
   const cur = asVec(LIGHT.day.clear); // 현재 적용값(플래시 기준·lerp 결과 보관)
 
   function applyLighting(vals) {
@@ -941,18 +999,33 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     // 번개(비) — 이중 섬광(자연스러운 더블 플래시) + 지연 천둥
     if (state.weather === 'rain') {
       boltTimer -= dt;
-      if (boltTimer <= 0) {
-        boltTimer = 7 + Math.random() * 14;
-        flashT = state.flashSafe ? 0.05 : 0.3;
-        synthThunder(0.8 + Math.random() * 2.2);
+      if (boltTimer <= 0) { boltTimer = 7 + Math.random() * 14; strike(); }
+    }
+    // 섬광 진행은 **날씨 밖에서** 마무리한다. 예전에는 이 블록이 `weather==='rain'`
+    // 안에 있어서, 섬광 도중 비를 끄면 조명이 밝아진 채로 굳었다(복구 코드도 같은
+    // 블록 안이라 도달하지 못했다). 진행 중인 연출은 끝까지 자기 손으로 꺼야 한다.
+    if (flashT >= 0) {
+      flashT += dt;
+      const safe = state.flashSafe;
+      const kk = safe ? 0.22 : 1.0;
+      const m = boltMult(flashT, safe);
+      hemi.intensity = cur.hemiI + 2.4 * m * kk;
+      sun.intensity = cur.sunI + 0.9 * m * kk;
+      // 하늘도 함께 밝힌다. 스카이돔은 MeshBasicMaterial이라 조명을 안 받으므로,
+      // 이걸 안 하면 하늘을 올려다보는 동안에는 번개가 쳐도 **아무 일도 일어나지
+      // 않는다** — 감독이 "불빛이 안 보인다"고 한 것이 그 상태였다.
+      // 새 메시·재질을 만들지 않고 기존 재질의 color만 쓴다(개수 불변식).
+      const boost = 1 + 1.3 * m * kk;
+      sky.material.color.setScalar(boost);
+      // 크로스페이드 중에는 fadeDome이 위에 겹쳐 있다. 함께 밝히지 않으면 날씨
+      // 전환 도중에만 하늘 섬광이 안 먹는다(디자이너 지적).
+      if (fadeDome.visible) fadeDome.material.color.setScalar(boost);
+      if (flashT >= boltDur(safe)) {
+        flashT = -1;
+        hemi.intensity = cur.hemiI; sun.intensity = cur.sunI;
+        sky.material.color.setScalar(1);
+        fadeDome.material.color.setScalar(1);
       }
-      if (flashT > 0) {
-        flashT = Math.max(0, flashT - dt);
-        const kk = state.flashSafe ? 0.22 : 1.0;
-        const double = flashT > 0.18 || (flashT < 0.12 && flashT > 0.04) ? 1 : 0.25; // 더블 플래시 파형
-        hemi.intensity = cur.hemiI + 2.4 * double * kk;
-        sun.intensity = cur.sunI + 0.9 * double * kk;
-      } else { hemi.intensity = cur.hemiI; sun.intensity = cur.sunI; }
     }
   }
 
@@ -979,8 +1052,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
    */
   function bolt() {
     if (state.weather !== 'rain') return false;
-    boltTimer = 0; // 다음 update에서 발동한다(발동 로직을 복제하지 않는다)
-    return true;
+    return strike(); // 디바운스도 함께 적용된다
   }
 
   return { set, get, update, getSunDir, setLite, bolt, dispose, SKY_TIMES, SKY_WEATHERS };
