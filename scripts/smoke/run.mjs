@@ -43,6 +43,72 @@ const SERVE_BASE = IS_VITE ? BASE_PATH : null;                  // 서버 마운
 const results = []; // { id, label, status: 'PASS'|'FAIL'|'INFO', evidence }
 const record = (id, label, status, evidence) => results.push({ id, label, status, evidence });
 
+// ── 검사-1: 워킹트리 가드 — "무엇을 쟀는가"를 보고서에 남긴다 ──────────
+//
+// 배경(2026-07-27 사고). 게이트 스모크를 맡은 에이전트가 대조군 비교를 하려고
+// `git checkout <이전커밋> -- <파일>`로 소스를 되돌린 뒤 복구하지 않았다. 그 상태로 돈
+// 측정은 **옛 코드를 잰 것**이었는데, 보고서에는 그 사실이 어디에도 나타나지 않았다.
+// 수치는 그럴듯했고 아무도 무엇을 쟀는지 알 수 없었다.
+//
+// 그래서 두 가지를 한다.
+//  ① 실행 시점의 HEAD와 워킹트리 변경을 **보고서에 찍는다**(INFO). 사후에 "이 스모크가
+//     무엇을 검증한 것인가"를 되짚을 수 있어야 한다.
+//  ② 스모크가 도는 동안 추적 파일이 바뀌면 **FAIL**. 측정 중 대상이 바뀌는 것은
+//     결과를 통째로 무효화하므로 통과시키면 안 된다.
+//
+// 산출물(`_site`·`dist`·`node_modules`)은 .gitignore이므로 여기 잡히지 않는다.
+function gitLine(args) {
+  const r = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
+
+/**
+ * 감시 대상은 **측정 대상인 소스**뿐이다.
+ *
+ * 스모크는 생성기를 돌려 `devlog/`·`sitemap.xml`·`team/` 등을 의도적으로 재생성한다.
+ * 그걸 오염으로 치면 이 가드는 항상 FAIL이라 아무도 안 보게 된다 — 늘 우는 경보는
+ * 경보가 아니다. 스모크가 검증하는 것은 `web/` 소스와 하네스·테스트·빌드 설정이므로,
+ * 그것들이 도중에 바뀌었을 때만 결과가 무효가 된다.
+ */
+const WATCHED = /^(web|scripts|tests)\/|^(vite\.config\.js|vitest\.config\.js|package\.json)$/;
+
+/** 감시 경로의 추적 파일 변경만 추린다(untracked `??`는 제외 — 스크래치 위반은 별건). */
+function trackedChanges() {
+  const out = gitLine(['status', '--porcelain']);
+  if (out === null) return null; // git 없음/저장소 아님 — 검사 생략
+  return out.split('\n')
+    .filter((l) => l.trim() && !l.startsWith('??'))
+    // porcelain 형식: 2글자 상태 + 공백 + 경로. 이름 변경은 `->` 뒤가 현재 경로.
+    .filter((l) => WATCHED.test(l.slice(3).split(' -> ').pop().replace(/^"|"$/g, '')))
+    .sort().join('\n');
+}
+
+function recordWorktreeBaseline() {
+  const head = gitLine(['rev-parse', '--short', 'HEAD']);
+  const changed = trackedChanges();
+  if (changed === null) {
+    record('-1', '워킹트리 기준점', 'INFO', 'git 사용 불가 — 가드 생략');
+    return null;
+  }
+  const n = changed ? changed.split('\n').length : 0;
+  record('-1', '워킹트리 기준점', 'INFO',
+    `HEAD ${head ?? '?'} · 추적 파일 변경 ${n}건${n ? `\n${changed}` : ' (HEAD 그대로)'}`);
+  return changed;
+}
+
+function checkWorktreeUnchanged(baseline) {
+  if (baseline === null) return true;
+  const now = trackedChanges();
+  if (now === baseline) {
+    record('-1b', '워킹트리 불변', 'PASS', '스모크 중 추적 파일 변경 없음');
+    return true;
+  }
+  record('-1b', '워킹트리 불변', 'FAIL',
+    '스모크가 도는 동안 추적 파일이 바뀌었다 — 측정 대상이 달라졌으므로 이 결과는 무효다.\n'
+    + `이전:\n${baseline || '(없음)'}\n이후:\n${now || '(없음)'}`);
+  return false;
+}
+
 // ── 검사0: 참조 무결성 (no-undef 스코프 — 끊긴 cross-module 참조) ──────
 // @ts-nocheck 모듈이 tsc·eslint 정적 게이트의 사각이 되는 문제(C-3(2) chibi 런타임
 // 크래시 사건)를 상시 자동화로 막는다. 억제 지시어를 벗긴 사본에서 미해결 참조만 검출.
@@ -245,6 +311,9 @@ async function main() {
   const modeLabel = IS_VITE ? 'vite 조립(교체 deploy) + 동등성' : 'web직조립(baseline, 현행 deploy)';
   console.log(`스모크 하네스 시작 — [${MODE}] ${modeLabel} + 헤드리스 6항 검증`);
 
+  // -1) 워킹트리 기준점 — 무엇을 재는지 먼저 기록한다
+  const worktreeBaseline = recordWorktreeBaseline();
+
   // 0) 참조 무결성(no-undef 스코프 — 정적 사각 방어)
   checkReferences();
 
@@ -295,6 +364,9 @@ async function main() {
     if (browser) await browser.close().catch(() => {});
     await srv.close().catch(() => {});
   }
+
+  // 측정이 끝난 뒤에 확인한다 — 도는 동안 대상이 바뀌었으면 위 결과는 전부 무효다.
+  checkWorktreeUnchanged(worktreeBaseline);
 
   ok = printReport();
   process.exit(ok ? 0 : 1);

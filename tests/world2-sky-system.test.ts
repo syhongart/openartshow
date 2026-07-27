@@ -74,6 +74,20 @@ vi.mock('three/webgpu', () => {
     constructor(h?: number) { this.hex = h ?? 0; }
     setHex(h: number) { this.hex = h; return this; }
     getHex() { return this.hex; }
+    // 옛 구현이 정확히 `tmp.copy(base).lerp(rim, k)` 패턴이었다. 이 두 메서드가 없으면
+    // 그 패턴을 되살렸을 때 TypeError로 죽는다 — 회귀는 잡히지만 "무엇이 틀렸는지"가
+    // 안 보인다. 실제 three와 같은 선형 혼합으로 구현해 단언 diff가 나오게 한다.
+    copy(o: Color) { this.hex = o.getHex(); return this; }
+    lerp(o: Color, k: number) {
+      const t = Math.min(1, Math.max(0, k));
+      const a = this.hex, b = o.getHex();
+      const mix = (sh: number) => {
+        const av = (a >> sh) & 255, bv = (b >> sh) & 255;
+        return Math.round(av + (bv - av) * t);
+      };
+      this.hex = (mix(16) << 16) | (mix(8) << 8) | mix(0);
+      return this;
+    }
   }
   class Mat4 {
     compose() { return this; }

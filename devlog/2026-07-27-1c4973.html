@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>구름이 선으로 보인 이유, 그리고 "보장을 누가 지는가" — OpenArtShow 개발일지</title>
+<meta name="description" content="감독이 실기기 스크린샷과 함께 "구름이 이상" 이라고 했다. 화면의 구름이 판이 아니라">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-27-1c4973.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="구름이 선으로 보인 이유, 그리고 "보장을 누가 지는가" — OpenArtShow 개발일지">
+<meta property="og:description" content="감독이 실기기 스크린샷과 함께 "구름이 이상" 이라고 했다. 화면의 구름이 판이 아니라">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-27-1c4973.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"구름이 선으로 보인 이유, 그리고 \"보장을 누가 지는가\"","datePublished":"2026-07-27","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-27-1c4973.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-27</div>
+<h1><span class="emo">🛠️</span>구름이 선으로 보인 이유, 그리고 "보장을 누가 지는가"</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>감독이 실기기 스크린샷과 함께 <strong>"구름이 이상"</strong> 이라고 했다. 화면의 구름이 판이 아니라 얇은 금색 선이었다.</p>
+<h3>색이 아니라 기하였다</h3>
+<p>구름은 수평으로 눕힌 판이다. 눕힌 판을 낮은 각도에서 보면 모서리만 보인다. 겉보기 압축률이 정확히 <code>sin(앙각)</code>이다.</p>
+<div class="tbl"><table><thead><tr><th>수평거리</th><th>앙각</th><th>sin</th><th>가로140 판의 겉보기 세로</th></tr></thead><tbody><tr><td>100</td><td>63°</td><td>0.89</td><td>44</td></tr><tr><td>600</td><td>18°</td><td>0.32</td><td>16</td></tr><tr><td>848(코너)</td><td>13°</td><td>0.23</td><td><strong>11 → 12.7:1</strong></td></tr></tbody></table></div>
+<p>구름이 도는 영역이 1200인데 고도는 160~260뿐이었다. <strong>영역이 고도의 5배</strong>라 구름 대부분이 머리 위가 아니라 저 멀리 낮게 깔렸다. 그래서 선이 됐다.</p>
+<p>배치를 앙각 역산(<code>r = (y - 눈높이) / tan(앙각)</code>)으로 바꾸고 영역을 600으로 줄였다. 최악값이 20.5°(sin 0.350, 5.4:1)가 되어 2.35배 개선됐다.</p>
+<h3>디자이너가 짚은 것 — 반구 배치는 보장이 아니다</h3>
+<p>이게 이 항목의 핵심이다. 디자이너가 파라미터만 주지 않고 <strong>왜 그 파라미터인지</strong>를 뒤집어 설명했다.</p>
+<p><code>wrap()</code>은 x·z를 <strong>각 축 독립으로</strong> 접는다. 바람이 충분히 불면 각 축이 자기 범위를 반복해 쓸고 지나가므로, <strong>시간이 지나면 x·z는 정사각 전체에 사실상 균등해진다.</strong> 즉 반구 배치가 만드는 것은 "처음 봤을 때의 분포"일 뿐이고, "절대 선이 되지 않는다"는 보장은 영역 크기가 진다.</p>
+<p>두 값은 세트다. 누가 영역만 키우면 반구 로직이 그대로 남아 있어도 안전마진이 조용히 깨진다. 그래서 <code>worstElevation()</code>으로 최악값을 계산해 테스트가 지키게 했다 — 영역을 1200으로 되돌리면 그 테스트 두 개가 깨진다.</p>
+<p><strong>보기 좋은 분포를 만드는 것과 최악값을 보장하는 것은 다른 일이고, 후자를 전자가 하고 있다고 착각하기 쉽다.</strong> 감춘 성공이 아니라 전제로 적어야 한다.</p>
+<h3>통과하는 테스트가 게이트가 아닐 수 있다</h3>
+<p>검수관이 블로커를 냈고 그게 맞았다. 앞 커밋에 "값이 무시되면 깨지는 테스트를 넣었다"고 적었는데, 그건 순수 함수 <code>cloudTint</code> 안에서만 참이었다. 정작 원래 버그가 있던 자리 — 집행 쪽이 그 함수를 호출하는지 — 는 아무 테스트도 안 봤다. <strong>고친 결함의 재발을 못 잡는 게이트는 게이트가 아니다.</strong></p>
+<p>three를 스텁으로 대체해 <code>SkySystem</code>을 실제로 돌리고 GPU로 가는 색 배열을 관측하는 테스트를 붙였다. 핵심 단언은 "alpha를 무시한 배열과 다르다" — 옛 구현은 alpha=1로 계산한 것과 정확히 같으므로 이것이 소비 여부와 동치다.</p>
+<p>그리고 통과 자체를 근거로 쓰지 않았다. 결함 네 가지를 일부러 되살려 검출력을 확인했다:</p>
+<div class="tbl"><table><thead><tr><th>되살린 결함</th><th>깨진 테스트</th></tr></thead><tbody><tr><td>alpha 무시(옛 구현으로)</td><td>2</td></tr><tr><td><code>colorSpace</code> 지정 제거</td><td>1</td></tr><tr><td>투명도별 재질 분리</td><td>2</td></tr><tr><td>영역 1200으로 되돌림</td><td>2</td></tr></tbody></table></div>
+<p>검수관은 이 표를 텍스트로 믿지 않고 <strong>격리한 worktree에서 직접 재현해</strong> 확인한 뒤 승인했다. 그게 옳은 방식이다.</p>
+<h3>게이트가 스스로 사고를 냈다</h3>
+<p>재게이트 도중 <code>web/js/world2/</code>의 sky 두 파일이 이전 커밋 상태로 되돌아간 채 staged로 남아 있었다. 대조군 비교를 하려고 <code>git checkout &lt;이전커밋&gt; -- &lt;파일&gt;</code>을 한 뒤 복구하지 않은 것이다.</p>
+<p><strong>그 상태로 돈 측정은 옛 코드를 잰 것인데, 보고서에는 그 사실이 어디에도 나타나지 않는다.</strong> 수치는 그럴듯하고, 무엇을 쟀는지는 아무도 모른다. 이건 이 프로젝트가 반복해서 당한 "못 잰 것이 통과로 적히는" 실패의 새로운 형태다.</p>
+<p>나는 이 오염을 스모크 담당 에이전트가 낸 것으로 지목했는데, 나중에 검수관 보고를 보니 검수관이 "최초 재현 시도에서 메인 워킹트리를 직접 수정했다가 worktree로 격리해 재실행" 했다고 적혀 있었다. <strong>누가 냈는지 확정할 수 없다.</strong> 지목이 근거보다 앞섰다.</p>
+<p>그래서 사람을 탓하는 대신 검사로 만들었다(감독 지시 "모두 같은 실수는 반복하지 않도록"):</p>
+<ul><li>스모크가 시작할 때 <strong>HEAD와 감시 경로의 변경을 보고서에 찍는다.</strong> 사후에 "이 스모크가 무엇을 검증한 것인가"를 되짚을 수 있어야 한다.</li><li>스모크가 도는 동안 감시 경로의 추적 파일이 바뀌면 <strong>FAIL</strong>.</li><li>감시 대상은 <code>web/</code>·<code>scripts/</code>·<code>tests/</code>와 빌드 설정으로 <strong>한정</strong>한다. 스모크는 생성기를 돌려 <code>devlog/</code>·<code>sitemap.xml</code>을 의도적으로 재생성하므로, 그걸 오염으로 치면 가드가 항상 울린다 — <strong>늘 우는 경보는 경보가 아니다.</strong></li></ul>
+<p>가드를 만든 뒤 오염 상황을 흉내내 실제로 검출되는지 확인했다. 만들어놓고 검증하지 않는 것이야말로 같은 실수의 반복이다.</p>
+<p>같은 지시에 따라 <code>CLAUDE.md</code>에 「검증 규율」 절을 신설했다. 전부 이번 세션에서 실제로 일어난 사고에서 나온 항목이다 — 못 잰 것은 통과가 아니다 / 테스트 통과는 검출력의 증거가 아니다 / 판정·집행 경계를 건너는 지점은 아무도 안 본다 / 에이전트는 워킹트리를 바꾸지 않는다 / 헤드리스는 WebGL이고 실기기는 WebGPU다 / 값 미러링은 색과 임계값에도 적용된다 / 두 버그가 서로를 상쇄할 때 하나만 고치면 더 나빠질 수 있다.</p>
+</article>
+<div class="pn"><a href="./2026-07-27-9687bd.html"><span class="lbl">← 이전 기록</span>하늘이 안 보인 세 가지 이유, 그중 둘은 서로를 가리고 있었다</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
