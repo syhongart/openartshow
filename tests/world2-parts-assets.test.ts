@@ -21,6 +21,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { PARTS } from '../frontend/js/world2/parts/index.js';
+import { ground } from '../frontend/js/world2/parts/ground.js';
+import { building } from '../frontend/js/world2/parts/building.js';
 import type { ThreeNS } from '../frontend/js/world2/parts/types.js';
 
 /**
@@ -188,5 +190,43 @@ describe('tones 는 곱셈기다 — 텍스처나 정점색이 있으면 밝아�
       return isMultiplier(a.material);
     });
     expect(textured.map((p) => p.kind)).toContain('road');
+  });
+});
+
+// ── 지면과 도로의 명도 대비 ─────────────────────────────────────────────────
+//
+// **감독 실기기 판정에서 나왔다.** *"바닥 격자 바닥이 잘 드러나지 않아."*
+//
+// 원인은 정원이 없어서가 아니었다. 지면 톤이 `0x2a3140`(명도 19%)이고 도로 텍스처
+// 베이스가 `#2a2d33`(17%)이라 **차이가 2%p 밖에 안 났다.** 길과 땅이 사실상 같은
+// 색이었고, 화면에서는 통짜 검은 바닥으로 보였다.
+//
+// 이 종류는 눈으로만 보면 반복해서 놓친다 — 각 색은 저마다 "괜찮아 보이고", 둘을
+// 나란히 놓고 명도를 재봐야 안다. 숫자로 못 박는다.
+describe('바닥 대비 — 길과 땅이 갈려 보여야 한다', () => {
+  /** 감마를 무시한 상대 명도. 대비 판정에는 이 정도 근사로 충분하다 */
+  const luma = (hex: number) => {
+    const [r, g, b] = channels(hex);
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  };
+
+  /** 도로 텍스처의 베이스 색(`parts/road.ts` 의 `#2a2d33`). 아스팔트다 */
+  const ROAD_BASE = 0x2a2d33;
+
+  it('지면이 도로보다 뚜렷이 밝다 — 2%p 차이로는 격자가 안 보인다', () => {
+    const road = luma(ROAD_BASE);
+    for (const tone of ground.tones) {
+      // 0.15 는 "다른 재질로 읽히는" 최소 차이다. 실패했던 조합이 0.02 였다.
+      expect(luma(tone) - road).toBeGreaterThan(0.15);
+    }
+  });
+
+  it('건물이 지면보다 밝다 — 벽이 바닥에서 일어서 보여야 한다', () => {
+    const g = Math.max(...ground.tones.map(luma));
+    for (const tone of building.tones) expect(luma(tone)).toBeGreaterThan(g);
+  });
+
+  it('건물이 완전히 밝지는 않다 — 하늘 앞에서 실루엣이 살아야 한다', () => {
+    for (const tone of building.tones) expect(luma(tone)).toBeLessThan(0.85);
   });
 });
