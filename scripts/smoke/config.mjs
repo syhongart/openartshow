@@ -85,8 +85,11 @@ export const REQUIRED_FILES_BY_MODE = {
 export const REQUIRED_FILES = REQUIRED_FILES_BASELINE;
 
 // ── 라이브 페이지 목록 (검사4/5/6 + 가드A/B 대상) ────────────────────
-// behind-flag 페이지(builder.html·visit.html)는 라이브 미노출이라 제외.
+// behind-flag 페이지(visit.html·lab-glb.html·world2.html)는 라이브 미노출이라 제외.
 // world.html 은 B-2b 에서 정식 노출(sitemap 등재)로 편입 → 검사 대상에 포함.
+// builder.html 도 라이브다 — studio.html 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다
+// (감독·팀장 게이트를 거친 정당한 해제). 이 주석이 오래 builder 를 behind-flag 로 적어
+// 라이브 페이지가 회귀 검사에서 빠져 있었다 → 아래 목록에 편입.
 // url 은 SITE_DIR(=http 루트) 기준 "정본 배포 URL"(vite 모드는 서버가 BASE_PATH strip).
 // webgl:true 는 swiftshader 부팅 대기 필요.
 //
@@ -107,6 +110,8 @@ export const LIVE_PAGES = [
   { name: 'about',             url: '/about.html',      webgl: false },
   // world: B-2b 정식 노출(sitemap 등재). WebGL 씬(top-level await manifest fetch).
   { name: 'app/world',         url: '/app/world.html',  webgl: true },
+  // builder: studio 진입 카드로 링크된 라이브 페이지. WebGL 씬.
+  { name: 'app/builder',       url: '/app/builder.html', webgl: true },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──

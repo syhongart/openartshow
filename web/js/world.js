@@ -219,6 +219,8 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   //                 (RATIO_FLOOR)은 devicePixelRatio에서 산정되므로 이 값과 무관하다 — ?px로 하한과
   //                 같은 값을 주면 `cur > RATIO_FLOOR`가 false가 되어 긴급강등 자체가 발동하지 않는다.
   //   ?off=reveal → 노출 예산 게이트 off = 승격 파셀을 종전대로 한 프레임에 통째 노출(A/B 대조군)
+  //   ?off=envmap|normalmap|texmap → 파셀 재질에서 그 요소를 벗긴다(픽셀당 셰이딩 비용 축 격리).
+  //                 조합 가능(예 ?off=envmap,normalmap). 아래 ablateMaterials 주석에 측정 근거.
   const _ablParams = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
   const OFF_ABLATE = new Set((_ablParams.get('off') || '').split(',').map((s) => s.trim()).filter(Boolean));
   const RECV_SHADOW = !OFF_ABLATE.has('recv');
@@ -1127,7 +1129,41 @@ export async function createWorld({ canvas, parcels = [], opts = {} } = {}) {
   }
   function dropReveal(k) { if (revealQueue.length) revealQueue = revealQueue.filter((e) => e.k !== k); } // 파셀 파괴 — 죽은 참조 정리
 
+  // [절제 A/B · 픽셀당 셰이딩] `?off=envmap|normalmap|texmap` — 파셀 재질에서 그 요소를 벗긴다.
+  //
+  // 왜 값을 정해 처방하지 않고 스위치를 두는가. 헤드리스에서 축을 하나씩 격리해 재보니 이렇게 나왔다
+  // (프레임 중앙값): 현행 1061ms · receiveShadow 126면 해제 1104ms · 섀도맵 통째 off 1133ms —
+  // **그림자를 완전히 없애도 개선이 0**이었다. 그런데 재질에서 map·normalMap·envMap을 한꺼번에 벗기니
+  // **16.7ms(63배)**가 됐다. 픽셀당 텍스처 샘플링·환경맵이 프레임을 지배한다는 뜻이다.
+  //
+  // 다만 그 배율을 실기기에 외삽할 수 없다. 헤드리스는 소프트웨어 래스터라이저(swiftshader)라 텍스처
+  // 샘플링이 실 GPU보다 극단적으로 비싸다 — 실 GPU는 전용 샘플러 유닛이 있다. 게다가 같은 측정에서
+  // 아무것도 바꾸지 않은 구간이 1061→2113ms로 2배 흔들렸다(순차 측정의 시간 교란). 즉 방향은 믿을 수
+  // 있어도 크기는 믿을 수 없다. 그래서 실기기 A/B로 판정한다 — 이 세션에서 값을 추측해 배포한 처방이
+  // 열 번 연속 빗나갔고, 그 실패의 공통점이 "헤드리스 수치로 실기기를 대신했다"는 것이었다.
+  //
+  // 재질은 P1 이후 세션 공유이므로 여기서 벗기면 그 재질을 쓰는 모든 파셀에 즉시 적용된다 — 전역 절제가
+  // 이 스위치의 의도이므로 공유본을 그대로 만진다(unshareMaterial로 분리하지 않는다).
+  // 플래그가 없으면 첫 줄에서 즉시 반환하므로 기본 경로는 바이트 동일하다.
+  const MAT_ABLATE = ['envmap', 'normalmap', 'texmap'].some((k) => OFF_ABLATE.has(k));
+  const _ablSeen = new Set();
+  function ablateMaterials(group) {
+    if (!MAT_ABLATE || !group) return;
+    group.traverse((o) => {
+      if (!o.isMesh && !o.isInstancedMesh) return;
+      for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+        if (!m || _ablSeen.has(m.uuid)) continue; // 공유 재질은 한 번만 — 파셀마다 재순회하지 않는다
+        _ablSeen.add(m.uuid);
+        if (OFF_ABLATE.has('texmap')) m.map = null;
+        if (OFF_ABLATE.has('normalmap')) m.normalMap = null;
+        if (OFF_ABLATE.has('envmap')) { m.envMap = null; m.envMapIntensity = 0; }
+        m.needsUpdate = true;
+      }
+    });
+  }
+
   function finalizeParcel(ctx) {
+    ablateMaterials(ctx.group); // [절제] 플래그 없으면 no-op
     // 씬 투입 **전에** 숨긴다 — 한 프레임이라도 보였다가 사라지면 그게 곧 플리커다.
     if (ctx.reload) { const old = loaded.get(ctx.k); if (old && old !== ctx) unloadParcel(ctx.k); enqueueReveal(ctx); scene.add(ctx.group); loaded.set(ctx.k, ctx); } // 원자 스왑(플리커 0)
     ctx.ready = true;
