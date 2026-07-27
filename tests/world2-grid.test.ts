@@ -120,20 +120,53 @@ describe('격자 경계 — 이어지되 고르지 않다', () => {
     expect(offZ).toBeGreaterThan(0);
   });
 
-  // ── 음수 좌표 ──────────────────────────────────────────────────────────────
-  // JS 의 `%` 는 부호를 피제수에서 가져와 `-1 % 2 === -1` 이다. 그대로 쓰면 원점 왼쪽·
-  // 위쪽 절반에서 슈퍼셀 경계가 어긋나 도시가 원점을 기준으로 두 겹으로 갈라진다.
-  // 원점이 세계 한복판이므로 **세계의 절반이 그 버그를 맞는다.**
-  it('음수 쪽에서도 슈퍼셀이 어긋나지 않는다', () => {
-    // 같은 슈퍼셀에 속한 좌표들은 같은 패턴을 봐야 한다.
-    // (-2,-2)(-1,-2)(-2,-1)(-1,-1) 이 한 슈퍼셀이다(floorDiv(-1,2) === -1).
-    const p = blockPattern(-1, -1);
-    for (const [px, pz] of [[-2, -2], [-1, -2], [-2, -1], [-1, -1]]) {
-      // 내부 경계 판정이 이 패턴과 모순되지 않는지 — 짝수 좌표에서만 꺼질 수 있다
-      const canOffX = px % 2 === 0;
-      if (!canOffX) expect(gridEdgeX(px, pz)).toBe(true);
+  // ── 음수 좌표 — 세계의 절반이 걸려 있다 ────────────────────────────────────
+  //
+  // 이 검사는 **뮤테이션이 만들게 했다.** 처음에는 "음수 쪽에서도 슈퍼셀이 어긋나지
+  // 않는다"는 이름으로 `floorMod` 를 겨냥한 것을 두었는데, `floorMod` 를 JS 의 `%` 로
+  // 바꾸는 뮤테이션이 **전부 통과했다.** 알고 보니 `floorMod` 는 `=== 0`(짝수인가)
+  // 판정에만 쓰여 `%` 와 동치였고, 진짜 위험한 것은 `floorDiv` 였다.
+  //
+  // `floorDiv(-1,2)` 는 -1 이지만 `Math.trunc(-1/2)` 는 0 이다. 그러면 **홀수 `pz` 에서
+  // 위 슈퍼셀이 아래 슈퍼셀의 패턴을 본다.** 증상은 블록이 반쪽만 병합되는 것 —
+  // 한 슈퍼셀의 위 행은 병합됐는데 아래 행은 안 된 모습이다.
+  //
+  // 그것을 잡으려면 **같은 슈퍼셀의 두 행이 같은 패턴에 따라 움직이는지** 봐야 한다.
+  it('같은 슈퍼셀의 두 행이 하나의 패턴을 공유한다 — 반쪽 병합이 없다', () => {
+    for (let sx = -12; sx <= 12; sx++) {
+      for (let sz = -12; sz <= 12; sz++) {
+        const px = sx * 2, top = sz * 2, bottom = sz * 2 + 1;
+        const p = blockPattern(sx, sz);
+        // 가로 병합이면 두 행 중 **정확히 하나만** 꺼져 있어야 한다.
+        const offTop = !gridEdgeX(px, top);
+        const offBottom = !gridEdgeX(px, bottom);
+        if (p === BlockPattern.HorizTop) {
+          expect([offTop, offBottom]).toEqual([true, false]);
+        } else if (p === BlockPattern.HorizBottom) {
+          expect([offTop, offBottom]).toEqual([false, true]);
+        } else {
+          expect([offTop, offBottom]).toEqual([false, false]);
+        }
+      }
     }
-    expect(p).toBe(blockPattern(-1, -1));
+  });
+
+  it('같은 슈퍼셀의 두 열이 하나의 패턴을 공유한다 — 세로도 마찬가지다', () => {
+    for (let sx = -12; sx <= 12; sx++) {
+      for (let sz = -12; sz <= 12; sz++) {
+        const pz = sz * 2, left = sx * 2, right = sx * 2 + 1;
+        const p = blockPattern(sx, sz);
+        const offLeft = !gridEdgeZ(left, pz);
+        const offRight = !gridEdgeZ(right, pz);
+        if (p === BlockPattern.VertLeft) {
+          expect([offLeft, offRight]).toEqual([true, false]);
+        } else if (p === BlockPattern.VertRight) {
+          expect([offLeft, offRight]).toEqual([false, true]);
+        } else {
+          expect([offLeft, offRight]).toEqual([false, false]);
+        }
+      }
+    }
   });
 
   it('음수·양수 양쪽에서 블록 병합이 고르게 일어난다', () => {
