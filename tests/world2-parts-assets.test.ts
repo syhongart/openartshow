@@ -32,7 +32,7 @@ function stubCanvas2D(): void {
   const ctx = {
     fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1,
     fillRect() {}, strokeRect() {}, clearRect() {},
-    beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc() {}, fill() {}, stroke() {},
+    beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc() {}, ellipse() {}, fill() {}, stroke() {},
     save() {}, restore() {}, translate() {}, rotate() {}, scale() {},
     drawImage() {}, putImageData() {},
     createRadialGradient: () => ({ addColorStop() {} }),
@@ -59,8 +59,10 @@ function stubThree() {
     index: unknown = null;
     // 실제 BufferGeometry 는 이 자리에 Float32BufferAttribute 를 담는다. 길이 0 이면
     // 병합 루프가 그냥 아무것도 안 붙이고 지나가므로 조립 경로 전체가 돈다.
+    // 실제 `PlaneGeometry`·`CylinderGeometry` 는 uv 를 항상 갖는다. 나무가 텍스처를
+    // 쓰면서 `attributes.uv` 를 읽기 시작했고, 없으면 여기서만 터진다.
     attributes: Record<string, { array: number[] }> = {
-      position: { array: [] }, normal: { array: [] },
+      position: { array: [] }, normal: { array: [] }, uv: { array: [] },
     };
     rotateX() { return this; }
     rotateY() { return this; }

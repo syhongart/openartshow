@@ -1,3 +1,7 @@
+// @vitest-environment jsdom
+//
+// 나무가 **캔버스 텍스처**를 쓰면서 DOM 이 필요해졌다(잎 실루엣을 그린다). 지오메트리만
+// 볼 때는 없어도 됐는데, `asset()` 이 재질까지 함께 만들므로 갈라낼 수가 없다.
 // 나무 지오메트리 — **실제 three 로 굽는다.**
 //
 // ── 왜 이 파일이 따로 필요한가 ──────────────────────────────────────────────
@@ -22,6 +26,15 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { tree } from '../frontend/js/world2/parts/tree.js';
 import type { ThreeNS } from '../frontend/js/world2/parts/types.js';
+
+// jsdom 은 네이티브 캔버스가 없어 `getContext('2d')` 가 null 이다. 여기서 보는 것은
+// **지오메트리** 이므로 텍스처를 굽는 코드가 끝까지 돌기만 하면 된다.
+const ctx2d = {
+  fillStyle: '', strokeStyle: '', lineWidth: 1,
+  fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, ellipse() {}, fill() {}, stroke() {},
+  save() {}, restore() {}, translate() {}, rotate() {},
+};
+(HTMLCanvasElement.prototype as unknown as { getContext: () => unknown }).getContext = () => ctx2d;
 
 // 타입 애노테이션을 안 붙인다 — `three` 는 `BufferGeometry` 를 **타입 네임스페이스로
 // 재수출하지 않아서**(TS2694) 명시하면 컴파일이 안 된다. `ocean.ts` 가 `CanvasTexture`
