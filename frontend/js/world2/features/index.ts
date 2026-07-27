@@ -23,9 +23,11 @@
 
 import type { Feature } from './types.js';
 import { skyFeature } from './sky.js';
+import { minimapFeature } from './minimap.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
+  minimapFeature,
 ];
 
 export type { Feature, FeatureEnv, FeatureInstance, MountedFeature } from './types.js';
