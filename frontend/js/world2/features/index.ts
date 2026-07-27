@@ -15,18 +15,21 @@
 // 오픈월드 교체 전에 이식할 셋이 대기 중이다. 각각 개수 불변식과 부딪히는 지점이 달라서,
 // 그대로 가져올 수 있는 것과 계약만 계승해 새로 써야 하는 것이 갈린다.
 //
-//   · ocean       — 바다. `sky.js`의 `waterY`와 물려 있다
 //   · npc         — 워커·NPC. **수가 동적이라** 슬롯 풀로 흡수하거나 상한을 고정해야 한다
 //   · multiplayer — 원격 플레이어. 룸 ID가 라이브 오픈월드와 충돌하지 않아야 한다
 //
-// 셋 다 붙일 때 `main.ts`를 건드리지 않는다. 이 배열에 한 줄씩이다.
+// 둘 다 붙일 때 `main.ts`를 건드리지 않는다. 이 배열에 한 줄씩이다. `ocean`이 방금 그렇게
+// 들어왔다 — 수면 메시·진단·정리가 전부 `features/ocean.ts` 안에 있고 조립부는 무변경이다.
+// (`sky.js`의 `waterY` 연동은 아직이다. 지금은 하늘이 물을 모르고, 물도 하늘을 모른다.)
 
 import type { Feature } from './types.js';
 import { skyFeature } from './sky.js';
+import { oceanFeature } from './ocean.js';
 import { minimapFeature } from './minimap.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
+  oceanFeature,
   minimapFeature,
 ];
 

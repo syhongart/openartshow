@@ -52,6 +52,14 @@ export interface StreamingOptions {
   getDirection?: () => { x: number; z: number };
   bands?: TierBands;
   limits?: { minPx: number; maxPx: number; minPz: number; maxPz: number };
+  /**
+   * 지을 수 없는 파셀. 생략하면 `computeWant`의 기본값(= 물)이 쓰인다.
+   *
+   * 실제 월드는 생략하는 것이 맞다 — 물 판정은 `decide/water.ts` 하나뿐이고 여기서 다시
+   * 정하지 않는다. 이 문은 **지형과 무관하게 스트리밍 기계만 시험하려는 테스트**를 위한
+   * 것이다(로드/반납/누수는 물이 있든 없든 같은 성질이어야 한다).
+   */
+  blocked?: (px: number, pz: number) => boolean;
   /** 프레임 목표 시간(ms). 기본 60fps */
   targetMs?: number;
   /** look-ahead 거리(셀) */
@@ -105,7 +113,7 @@ export class StreamingSystem implements System {
 
     const want = computeWant({
       cx: c.x, cz: c.z, dirX: dir.x, dirZ: dir.z,
-      have: this.tiers, bands: o.bands, limits: o.limits,
+      have: this.tiers, bands: o.bands, limits: o.limits, blocked: o.blocked,
     });
     const diff = diffParcels(want, this.tiers);
 

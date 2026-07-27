@@ -53,6 +53,11 @@ function mkSys(o: {
     cellX: 32, cellZ: 32,
     getPosition: () => pos,
     markDirty: o.markDirty,
+    // 이 파일은 **스트리밍 기계**를 본다 — 로드·반납·누수·예산. 그 성질은 물이 있든
+    // 없든 같아야 하므로 지형을 끈다. 실제 월드는 이 옵션을 주지 않아 물이 걸린다.
+    // (끄지 않으면 원점 두 파셀 옆 강 때문에 13이 11이 되고, 밴드가 바뀐 것도 강이
+    // 옮겨진 것도 똑같은 실패로 보인다.)
+    blocked: () => false,
   });
   return { sys, fb, pos };
 }

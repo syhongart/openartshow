@@ -16,6 +16,13 @@
 // 언젠가 한쪽만 고쳐진다.
 
 import { type Tier, type TierBands, TIERS, DEFAULT_BANDS, tierFor, loadPriority } from './lod.js';
+import { parcelWater } from './water.js';
+import { DEFAULT_LAYOUT } from '../parts/types.js';
+
+// 셀 크기는 레이아웃이 SSOT 다. 여기에 32 를 다시 적으면 셀을 바꿀 때 한쪽만 따라온다 —
+// 이 프로젝트가 값 미러링으로 이미 세 번 겪은 형태다. (`parts/types.ts` 는 상수와 타입뿐
+// 이라 이 파일의 "three import 0" 규약은 그대로다.)
+const { cellX: CELL_X, cellZ: CELL_Z } = DEFAULT_LAYOUT;
 
 /** 파셀 식별자. `"px,pz"` — 정수 격자 좌표 두 개. */
 export type ParcelKey = string;
@@ -61,6 +68,20 @@ export interface WantInput {
   bands?: TierBands;
   /** 월드 격자 경계(포함). 없으면 무한 월드 */
   limits?: { minPx: number; maxPx: number; minPz: number; maxPz: number };
+  /**
+   * 지을 수 없는 파셀. **생략하면 "물이면 못 짓는다"가 기본**이다.
+   *
+   * 기본값을 "아무것도 안 막는다"로 두지 않은 것은 의도적이다. 그랬다면 주입을 빠뜨린
+   * 호출자에게서 **바다 위에 도시가 서는** 형태로만 드러나고, 양쪽 단위 테스트 어디에도
+   * 안 걸린다(이 프로젝트가 판정/집행 경계에서 반복해 겪은 구멍이다). 안전한 쪽이 기본이고,
+   * 지형을 배제하고 밴드만 보고 싶을 때 `() => false`를 명시적으로 준다.
+   */
+  blocked?: (px: number, pz: number) => boolean;
+}
+
+/** 기본 차단 판정 — 물. `decide/water.ts`가 그 SSOT다 */
+function blockedByWater(px: number, pz: number): boolean {
+  return parcelWater(px, pz, CELL_X, CELL_Z) === 'water';
 }
 
 /**
@@ -76,6 +97,7 @@ export function computeWant(input: WantInput): WantEntry[] {
   const b = input.bands ?? DEFAULT_BANDS;
   const { cx, cz, dirX, dirZ, have } = input;
 
+  const block = input.blocked ?? blockedByWater;
   const reach = Math.ceil(b.farExit) + 1;
   const len = Math.hypot(dirX, dirZ);
   const ux = len > 1e-6 ? dirX / len : 0;
@@ -91,6 +113,16 @@ export function computeWant(input: WantInput): WantEntry[] {
         const L = input.limits;
         if (px < L.minPx || px > L.maxPx || pz < L.minPz || pz > L.maxPz) continue;
       }
+      // 지을 수 없는 곳은 로드하지 않는다 — `limits`(격자 경계)와 같은 계층이다.
+      //
+      // **여기가 물을 거르는 유일한 지점이다.** 배치(`parcelLayout`) 쪽에 두었다가 옮겼다:
+      // 배치는 "어떻게 짓는가"이고 물은 "지을 것인가"라서 계층이 다르다. 배치에 두면
+      // 건물 겹침·밀도·셋백 같은 **물과 무관한 성질의 테스트가 전부 물 판정에 묶여**,
+      // 강을 조금 옮기는 것만으로 표본이 바다가 되어 우수수 깨졌다(실제로 15건 깨졌다).
+      //
+      // 여기 두면 물 파셀은 슬롯도 조립 비용도 0이다 — 안 짓는 것이 가장 싸다.
+      // 섬 밖도 물이므로 **유한 세계가 이 한 줄로 강제된다**(`limits` 없이도).
+      if (block(px, pz)) continue;
       const ddx = px - cx;
       const ddz = pz - cz;
       const dist = Math.hypot(ddx, ddz);

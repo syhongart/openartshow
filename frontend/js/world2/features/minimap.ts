@@ -16,18 +16,31 @@
 import { mapCells, nearestLandmark } from '../decide/minimap.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
-/** 지도 반경(파셀). 7 = 15×15 칸 = ±224m — 렌더 반경(76.8m)의 약 3배다 */
-const R = 7;
+/**
+ * 지도 반경(파셀). 8 = 17×17 칸 = **±256m**.
+ *
+ * 섬 반경이 240m 이므로 이 값이면 **섬 전체가 지도 한 장에 들어온다.** 감독 지시
+ * *"월드2도 유한세계"* 가 지도에서 읽히려면 끝이 보여야 한다 — 7(±224m)이었을 때는
+ * 어느 방향으로 가도 지도 끝까지 육지라 무한한 세계와 구분되지 않았다.
+ *
+ * 섬이 커지면 여기도 함께 봐야 한다. `ISLAND_R / cell` 로 유도할 수도 있지만 그러면
+ * 섬이 커질 때 칸이 자동으로 작아져 길이 안 읽히게 된다 — 그때는 크기가 아니라 표현
+ * (전체 지도 / 확대 지도 전환)을 다시 정해야 하므로, 손으로 정하는 편이 정직하다.
+ */
+const R = 8;
 /** 갱신 간격(초). 지도는 정보이지 애니메이션이 아니다 */
 const REDRAW_S = 0.1;
 
 const COLOR = {
   bg: '#0d1016',
-  land: 'rgba(255,255,255,0.045)',
+  land: 'rgba(255,255,255,0.05)',
   road: 'rgba(200,208,220,0.5)',
-  water: 'rgba(58,104,150,0.55)',
-  shore: 'rgba(96,120,140,0.30)',
-  plaza: 'rgba(255,255,255,0.14)',
+  // 물과 뭍의 대비가 지도에서 곧 "세계의 끝"이다. 뭍보다 뚜렷하게 칠한다.
+  water: 'rgba(46,96,142,0.68)',
+  shore: 'rgba(104,132,154,0.34)',
+  // 광장 — 감독 지시로 강조한다. 채움 + 테두리 두 겹이라 길 색과 헷갈리지 않는다.
+  plaza: 'rgba(240,200,120,0.20)',
+  plazaEdge: 'rgba(240,200,120,0.55)',
   fountain: '#7fd4e8',
   clock: '#f0c869',
   me: '#ffffff',
@@ -75,6 +88,13 @@ export const minimapFeature: Feature = {
 
         if (c.water === 'water') continue; // 물에는 길이 없다
 
+        // 광장 테두리 — 채움만으로는 작은 화면에서 길 색과 섞인다
+        if (c.plaza) {
+          g.strokeStyle = COLOR.plazaEdge;
+          g.lineWidth = 1;
+          g.strokeRect(sx + 0.5, sz + 0.5, cell - 2, cell - 2);
+        }
+
         // 길 — 중심에서 각 방향으로 뻗은 선. 실제 지형과 같은 십자 모양이라
         // 지도와 눈앞이 같은 그림으로 읽힌다.
         if (c.dirs.length) {
@@ -94,12 +114,24 @@ export const minimapFeature: Feature = {
           }
         }
 
-        // 랜드마크 — 광장 한가운데. 분수대와 시계탑을 색으로 가른다.
+        // 랜드마크 — 광장 한가운데. **색이 아니라 형태로** 가른다. 셀이 11px 남짓이라
+        // 색만으로는 작은 화면·색각 차이에서 구분이 안 된다.
+        //   분수대 = 둥근 점    시계탑 = 세로로 선 탑
         if (c.landmark) {
+          const mx = sx + cell / 2;
+          const mz = sz + cell / 2;
+          const r = Math.max(2, cell * 0.2);
           g.fillStyle = c.landmark === 'fountain' ? COLOR.fountain : COLOR.clock;
-          g.beginPath();
-          g.arc(sx + cell / 2, sz + cell / 2, Math.max(2, cell * 0.22), 0, Math.PI * 2);
-          g.fill();
+          if (c.landmark === 'fountain') {
+            g.beginPath();
+            g.arc(mx, mz, r, 0, Math.PI * 2);
+            g.fill();
+          } else {
+            g.fillRect(mx - r * 0.45, mz - r, r * 0.9, r * 2);   // 탑 몸통
+            g.beginPath();
+            g.arc(mx, mz - r * 1.25, r * 0.5, 0, Math.PI * 2);   // 꼭대기
+            g.fill();
+          }
         }
       }
 

@@ -10,10 +10,17 @@ import {
   type WantEntry, type ParcelKey,
 } from '../frontend/js/world2/decide/stream.js';
 import { DEFAULT_BANDS, type Tier } from '../frontend/js/world2/decide/lod.js';
+import { parcelWater } from '../frontend/js/world2/decide/water.js';
+import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
+
+const CELL = DEFAULT_LAYOUT.cellX;
 
 const have = (o: Record<string, Tier> = {}) => new Map<ParcelKey, Tier>(Object.entries(o));
+// 이 파일은 **밴드와 우선순위**만 본다. 지형(물)은 `blocked`로 주입되는 별개 관심사라
+// 여기서는 명시적으로 끈다 — 강이 조금 옮겨졌다고 밴드 회귀 기준선이 깨지면, 깨진 것이
+// 밴드인지 지형인지 알 수 없게 된다. 물이 실제로 걸리는지는 아래 별도 describe에서 본다.
 const want = (o: Partial<Parameters<typeof computeWant>[0]> = {}) => computeWant({
-  cx: 0, cz: 0, dirX: 0, dirZ: 0, have: have(), ...o,
+  cx: 0, cz: 0, dirX: 0, dirZ: 0, have: have(), blocked: () => false, ...o,
 });
 const tierOf = (ws: WantEntry[], k: string) => ws.find((w) => w.key === k)?.tier;
 
@@ -29,6 +36,33 @@ describe('parcelKey / parseKey', () => {
     for (const bad of ['', 'x', '1', ',5', '1,', '1.5,2', 'a,b']) {
       expect(parseKey(bad)).toBeNull();
     }
+  });
+});
+
+// ── 물은 로드하지 않는다 ─────────────────────────────────────────────────────
+// 이 계층이 물을 거르는 **유일한 지점**이다. 여기가 새면 바다 위에 도시가 서는데, 배치
+// 테스트도 슬롯 테스트도 그걸 못 본다 — 양쪽 다 "물이 아닌 세계"를 전제하기 때문이다.
+// 그 구멍을 여기서 막는다.
+describe('computeWant — 물은 담기지 않는다', () => {
+  const raw = () => computeWant({ cx: 0, cz: 0, dirX: 0, dirZ: 0, have: have() });
+
+  it('기본값이 물을 거른다 — 주입을 빠뜨려도 바다에 짓지 않는다', () => {
+    // `blocked`를 아예 주지 않은 호출이다. 안전 기본값이 없으면 이게 통과해 버린다.
+    for (const w of raw()) {
+      expect(parcelWater(w.px, w.pz, CELL, CELL)).not.toBe('water');
+    }
+  });
+
+  it('실제로 무언가를 거른다 — 표본이 비어 조용히 통과하지 않는다', () => {
+    // 원점 둘레에 물이 하나도 없으면 위 테스트는 아무것도 검사하지 않은 것이 된다.
+    // 강이 원점에서 두 파셀 거리라 지금은 걸리는 것이 있다.
+    expect(raw().length).toBeLessThan(want().length);
+  });
+
+  it('섬 밖은 담기지 않는다 — 유한 세계가 이 계층에서 강제된다', () => {
+    // 섬 반경 240m = 7.5파셀. 그 밖에 중심을 두면 want가 통째로 빈다.
+    const far = computeWant({ cx: 40, cz: 40, dirX: 0, dirZ: 0, have: have() });
+    expect(far).toEqual([]);
   });
 });
 
