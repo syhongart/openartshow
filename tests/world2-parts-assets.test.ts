@@ -115,15 +115,25 @@ describe('파츠 자산 — 부팅 때 실제로 만들어진다', () => {
   });
 });
 
-describe('tones 는 곱셈기다 — 텍스처가 있으면 밝아야 한다', () => {
-  it('map 을 쓰는 파츠의 tones 가 흰색 근처다', () => {
+describe('tones 는 곱셈기다 — 텍스처나 정점색이 있으면 밝아야 한다', () => {
+  // ── 검사 범위를 넓힌 이유 ──────────────────────────────────────────────────
+  // 원래 `map` 만 봤다. 나무가 **정점색**으로 줄기·잎을 나누기 시작하면서 구멍이 드러
+  // 났다 — 정점색도 `tones` 와 곱해지는데 이 검사는 안 보고 있었다. 나무의 tones 를
+  // 옛 짙은 초록(0x2f4a3a)으로 되돌리는 뮤테이션이 **전부 통과했다.** 실제로 그 값이면
+  // 초록 × 초록이라 나무가 새까맣게 죽는다.
+  //
+  // 곱셈기인가 아닌가를 가르는 것은 "재질에 이미 색 정보가 있는가" 이지 그 색이 텍스처
+  // 에서 왔는지 정점에서 왔는지가 아니다.
+  const isMultiplier = (m: { map?: unknown; vertexColors?: unknown }) => !!m.map || !!m.vertexColors;
+
+  it('텍스처나 정점색을 쓰는 파츠의 tones 가 흰색 근처다', () => {
     stubCanvas2D();
     const T = stubThree();
     const offenders: string[] = [];
 
     for (const p of PARTS) {
-      const mat = p.asset(T) as unknown as { material: { map?: unknown } };
-      if (!mat.material.map) continue; // 텍스처가 없으면 tones 가 곧 색이다 — 자유
+      const mat = p.asset(T) as unknown as { material: { map?: unknown; vertexColors?: unknown } };
+      if (!isMultiplier(mat.material)) continue; // 재질에 색이 없으면 tones 가 곧 색이다 — 자유
       for (const tone of p.tones) {
         const ch = channels(tone);
         if (ch.some((c) => c < BRIGHT)) {
@@ -139,12 +149,12 @@ describe('tones 는 곱셈기다 — 텍스처가 있으면 밝아야 한다', (
   // 루프가 한 번도 안 돌고 빈 배열이 통과한다 — **빈 표본이 단언을 통과하는** 형태이고,
   // 이 프로젝트에서 실제로 한 번 겪은 실패 방식이다(옛 임계값 때문에 표본이 비었는데
   // 빈 평균 0이 통과했다).
-  it('텍스처를 쓰는 파츠가 실제로 존재한다 — 빈 표본이 통과하지 않게', () => {
+  it('곱셈기를 쓰는 파츠가 실제로 존재한다 — 빈 표본이 통과하지 않게', () => {
     stubCanvas2D();
     const T = stubThree();
     const textured = PARTS.filter((p) => {
-      const a = p.asset(T) as unknown as { material: { map?: unknown } };
-      return !!a.material.map;
+      const a = p.asset(T) as unknown as { material: { map?: unknown; vertexColors?: unknown } };
+      return isMultiplier(a.material);
     });
     expect(textured.map((p) => p.kind)).toContain('road');
   });
