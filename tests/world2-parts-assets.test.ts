@@ -45,7 +45,17 @@ function stubCanvas2D(): void {
 
 /** 최소 three 스텁. 만들어진 것을 그대로 들고 있어 나중에 들여다볼 수 있다. */
 function stubThree() {
-  class Geo { rotateX() { return this; } translate() { return this; } }
+  // 실제 `THREE.BufferGeometry` 가 가진 변형 메서드는 전부 갖춰 둔다. 스텁이 실제보다
+  // 좁으면 **멀쩡한 코드가 여기서만 터진다** — 화분이 `scale()` 을 쓰자 실제로 그랬다.
+  // (반대 방향, 즉 스텁이 실제보다 관대해서 "테스트만 통과하는 코드" 가 되는 것도 위험한데,
+  // 여기 넷은 셋 다 `this` 를 돌려주는 실제 계약과 같다.)
+  class Geo {
+    rotateX() { return this; }
+    rotateY() { return this; }
+    rotateZ() { return this; }
+    translate() { return this; }
+    scale() { return this; }
+  }
   class Mat { constructor(o: Record<string, unknown> = {}) { Object.assign(this, o); } }
   class Tex { colorSpace = ''; anisotropy = 0; constructor(public image: unknown) {} }
   class Vec2 { constructor(public x = 0, public y = 0) {} }
