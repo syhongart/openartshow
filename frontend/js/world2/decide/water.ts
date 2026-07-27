@@ -1,4 +1,4 @@
-// world2/decide/water.ts — 어디가 물인가. 순수 함수만, import 0.
+// world2/decide/water.ts — 어디가 물인가. 순수 함수만.
 //
 // ── 이 파일이 SSOT 인 이유 ───────────────────────────────────────────────────
 // 물이라는 사실을 **여러 계층이 함께 소비한다**:
@@ -24,6 +24,8 @@
 // 물인 파셀은 지면을 안 그려서 아래 수면이 드러난다. 바다와 강을 따로 만들 필요가 없고
 // 드로우콜도 하나면 된다 — world1 이 쓰던 방식과 같다.
 
+import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid, isPlaza } from './grid.js';
+
 /** 수면 높이(미터). 지면이 y=0 이므로 그보다 낮아야 육지가 물을 덮는다 */
 export const SEA_Y = -1.2;
 
@@ -41,21 +43,25 @@ export const SEA_Y = -1.2;
 export const SEABED_Y = -3.6;
 
 /**
- * 섬 반경(미터). 이 밖은 전부 바다다. **world2 는 유한 세계다**(감독 확정).
+ * 세계의 바깥 가장자리(미터). 이 밖은 전부 바다다. **world2 는 유한 세계다**(감독 확정).
  *
- * world1 은 10×10 파셀 × 24m = 240m 사방이었다. world2 는 셀이 32m 이므로 반경 240m
- * (지름 480m = 15파셀 반경)면 넓이로는 world1 의 네 배쯤이다 — 한 세계로 인지되면서
- * 지루하지 않은 크기다.
+ * ── 원에서 격자로 ───────────────────────────────────────────────────────────
+ * 예전에는 반경 240m 의 **원형 섬**(`ISLAND_R`)이었다. 감독이 격자를 30×30 으로 확정
+ * 하면서(`decide/grid.ts`) 그 원이 **세계를 잘라 버렸다** — 격자는 960m 사방인데 반경
+ * 240m 밖이 전부 바다라, 지시대로 넓혀도 걸을 수 있는 땅은 예전 그대로였다.
  *
- * 지름을 건너는 시간은 `WALK_SPEED`(`systems/player.ts`)에 달렸다. 그 값을 여기 적어두면
- * 속도를 고칠 때 이 주석만 남아 거짓말을 하므로 적지 않는다 — 실제로 한 번 그랬다.
- * 걷기 속도가 9m/s 였을 때 이 자리에 "53초"가 적혀 있었고, 감독 판정("땅에 붙어가는
- * 느낌")으로 속도를 내리자 그 숫자가 틀린 채로 남았다.
+ * **지형 판정 둘이 서로 다른 세계 크기를 들고 있으면 넓은 쪽이 조용히 무시된다.** 어느
+ * 쪽 단위 테스트에도 안 걸린다 — 격자는 "30×30 이다"를 통과하고, 물은 "반경 밖은
+ * 바다다"를 통과한다. 그래서 크기를 격자에서 **유도한다.** 격자를 40×40 으로 바꾸면
+ * 바다도 저절로 물러난다.
  *
- * far 렌더 반경이 76.8m 이므로 섬 지름의 1/3이 한눈에 들어온다. 섬을 더 키우면 어디서
- * 봐도 끝이 안 보여 "유한하다" 는 감각이 사라지고, 더 줄이면 몇 걸음에 물에 닿는다.
+ * 파셀 `px` 가 덮는 범위는 `[px·cell − cell/2, px·cell + cell/2]` 이므로, 바깥 가장자리는
+ * 가장 먼 파셀 중심에서 **반 칸 더 나간 곳**이다. 좌표가 -15…14 로 비대칭이라(짝수
+ * 격자) 양쪽 절댓값 중 큰 쪽을 쓴다 — 작은 쪽을 쓰면 한쪽 끝 파셀이 바다에 잠긴다.
  */
-export const ISLAND_R = 240;
+export function worldHalfExtent(cell: number): number {
+  return Math.max(-GRID_MIN_X, GRID_MAX_X + 1, -GRID_MIN_Z, GRID_MAX_Z + 1) * cell;
+}
 
 /**
  * 강 중심선. x 를 따라 흐르고 z 가 굽이친다.
@@ -67,13 +73,28 @@ export const ISLAND_R = 240;
  * 진폭 합이 130m — 파셀 4개분이라 도시를 가로지르며 눈에 띄게 휜다.
  */
 export function riverCenterZ(wx: number): number {
-  // 섬이 반경 240m 로 줄면서 진폭도 함께 줄였다. 예전 값(90+40=130m)은 반경 700m 기준이라,
-  // 그대로 두면 강이 섬을 벗어났다 들어왔다 하며 도시를 두 동강 낸다.
+  // ── 상수 180 은 **중앙 광장을 비켜 가려는 것**이다 ─────────────────────────
+  // 예전 값은 45 였고, 그때 이 주석은 "원점을 강에서 비켜 놓는다"고 적고 있었다.
+  // 원점 한 점만 보면 맞는 말이다 — `riverCenterZ(0) = 59.45` 라 반폭 24 밖이다.
   //
-  // 상수 45 는 **원점을 강에서 비켜 놓으려는 것**이다. 없으면 `riverCenterZ(0) = 14.5` 라
-  // 반폭 20 안에 들어와 **스폰 지점이 강 한복판**이 된다. 물 판정 테스트가 이 함정을
-  // 처음부터 검사하고 있었고, 섬을 줄이자 실제로 걸렸다.
-  return 45 + 34 * Math.sin(wx / 150) + 15 * Math.sin(wx / 61 + 1.3);
+  // **그런데 최솟값을 안 봤다.** 45 − 34 − 15 = −4 이므로 사인이 바닥을 치는 x 에서는
+  // 강 중심이 원점 아래를 지나고, 반폭 24 를 더하면 z ∈ [−28, 20] 이 물이 된다.
+  // 중앙 광장은 2×2 파셀(±32m)이므로 **강이 광장을 관통한다.** 스폰 지점 한 점만
+  // 검사하던 테스트는 이것을 놓쳤다 — 한 점이 마른 땅인 것과 광장 전체가 마른 것은
+  // 다른 명제다.
+  //
+  // 이제 최솟값이 180 − 70 − 30 = 80 이고, 강 가장자리는 80 − 24 = 56 이다. 광장
+  // 가장자리(32)에서 24m 떨어져 있다.
+  //
+  // 사인파 **둘**을 겹치는 이유는 그대로다. 주 파동의 주기는 2π×150 ≈ 942m 로 세계
+  // 폭(960m)과 비슷해 가로지르며 한 번 크게 굽이치고, 부 파동(2π×61 ≈ 383m)이 그
+  // 위에 잔물결을 얹어 되풀이가 눈에 안 띈다.
+  return 180 + 70 * Math.sin(wx / 150) + 30 * Math.sin(wx / 61 + 1.3);
+}
+
+/** 이 월드 좌표가 **강** 위인가. 바다와 나눠 둔다 — 강은 세계 안에만 있다 */
+export function isRiver(wx: number, wz: number): boolean {
+  return Math.abs(wz - riverCenterZ(wx)) < RIVER_HALF;
 }
 
 /**
@@ -105,10 +126,16 @@ export function riverCenterZ(wx: number): number {
  */
 export const RIVER_HALF = 24;
 
-/** 월드 좌표가 물인가. **이 함수가 유일한 답이다.** */
-export function isWater(wx: number, wz: number): boolean {
-  if (wx * wx + wz * wz > ISLAND_R * ISLAND_R) return true;  // 섬 밖 = 바다
-  return Math.abs(wz - riverCenterZ(wx)) < RIVER_HALF;        // 강
+/**
+ * 월드 좌표가 물인가. **이 함수가 유일한 답이다.**
+ *
+ * `cell` 을 받는 이유는 세계 경계가 격자에서 유도되기 때문이다 — 격자는 파셀 단위로
+ * 세어지고 여기는 미터로 묻는다. 셀 크기를 이 파일이 알면 그것이 곧 값 미러링이다.
+ */
+export function isWater(wx: number, wz: number, cell: number): boolean {
+  const half = worldHalfExtent(cell);
+  if (Math.abs(wx) > half || Math.abs(wz) > half) return true;  // 세계 밖 = 바다
+  return isRiver(wx, wz);
 }
 
 /**
@@ -141,12 +168,27 @@ export function isWater(wx: number, wz: number): boolean {
 export type WaterClass = 'dry' | 'shore' | 'water';
 
 export function parcelWater(px: number, pz: number, cellX: number, cellZ: number): WaterClass {
-  if (isWater(px * cellX, pz * cellZ)) return 'water';
+  // 세계 밖은 파셀 좌표로 바로 답한다 — 미터로 환산해 경계와 비교하면 반 칸 어긋나
+  // 가장자리 한 줄이 바다에 잠기거나 바다가 한 줄 육지가 된다.
+  if (!inGrid(px, pz)) return 'water';
+  // **중앙 광장은 물이 되지 않는다.** 강이 광장을 비켜 가도록 `riverCenterZ` 를 잡았지만,
+  // 그것은 상수 셋의 합이 만드는 성질이라 누가 진폭을 키우면 조용히 깨진다. 광장은
+  // 세계의 중심이자 스폰 지점이므로 여기서 한 번 더 못박는다.
+  if (isPlaza(px, pz)) return 'dry';
+  if (isRiver(px * cellX, pz * cellZ)) return 'water';
+  // 물가 — 자기는 뭍인데 네 이웃 중 하나가 물인 칸
   if (
-    isWater((px + 1) * cellX, pz * cellZ) ||
-    isWater((px - 1) * cellX, pz * cellZ) ||
-    isWater(px * cellX, (pz + 1) * cellZ) ||
-    isWater(px * cellX, (pz - 1) * cellZ)
+    parcelIsWater(px + 1, pz, cellX, cellZ) ||
+    parcelIsWater(px - 1, pz, cellX, cellZ) ||
+    parcelIsWater(px, pz + 1, cellX, cellZ) ||
+    parcelIsWater(px, pz - 1, cellX, cellZ)
   ) return 'shore';
   return 'dry';
+}
+
+/** 이웃 판정용 — `parcelWater` 를 재귀 호출하면 물가의 물가까지 번진다 */
+function parcelIsWater(px: number, pz: number, cellX: number, cellZ: number): boolean {
+  if (!inGrid(px, pz)) return true;
+  if (isPlaza(px, pz)) return false;
+  return isRiver(px * cellX, pz * cellZ);
 }

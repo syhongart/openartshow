@@ -6,53 +6,87 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  isWater, parcelWater, riverCenterZ, ISLAND_R, RIVER_HALF, SEA_Y,
+  isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, RIVER_HALF, SEA_Y,
 } from '../frontend/js/world2/decide/water.js';
+import { isPlaza, GRID_MIN_X, GRID_MAX_X } from '../frontend/js/world2/decide/grid.js';
 
 const CELL = 32;
+/** 세계의 바깥 가장자리(미터) — 격자에서 유도된다 */
+const EDGE = worldHalfExtent(CELL);
+const wet = (x: number, z: number) => isWater(x, z, CELL);
 
-describe('섬 — 반경 밖은 바다다', () => {
+describe('세계의 끝 — 격자 밖은 바다다', () => {
   it('원점은 뭍이다 — 스폰 지점이 물이면 시작부터 빠진다', () => {
-    // 원점이 강 중심선 위인지 먼저 확인한다. riverCenterZ(0) 가 0 근처면 스폰이 강 한복판이다.
     expect(Math.abs(riverCenterZ(0))).toBeGreaterThan(RIVER_HALF);
-    expect(isWater(0, 0)).toBe(false);
+    expect(wet(0, 0)).toBe(false);
   });
 
-  it('반경 밖은 전부 물이다', () => {
-    for (let a = 0; a < 16; a++) {
-      const th = (a / 16) * Math.PI * 2;
-      const r = ISLAND_R + 50;
-      expect(isWater(Math.cos(th) * r, Math.sin(th) * r)).toBe(true);
+  // ── 이 검사가 새로 생긴 이유 ──────────────────────────────────────────────
+  // 스폰 한 점만 보던 검사는 **강이 광장을 관통하는 것을 놓쳤다.** `riverCenterZ(0)` 은
+  // 59.45 라 반폭 밖이지만, 사인이 바닥을 치는 x 에서는 중심이 −4 까지 내려와 광장
+  // (±32m)을 가로질렀다. 한 점이 마른 것과 광장 전체가 마른 것은 다른 명제다.
+  it('중앙 광장 전체가 뭍이다 — 한 점이 아니라 네 칸 전부', () => {
+    let checked = 0;
+    for (let px = -3; px <= 2; px++) {
+      for (let pz = -3; pz <= 2; pz++) {
+        if (!isPlaza(px, pz)) continue;
+        checked++;
+        expect(parcelWater(px, pz, CELL, CELL)).toBe('dry');
+      }
+    }
+    expect(checked).toBe(4); // 표본이 비면 위 단언이 한 번도 안 돈다
+  });
+
+  it('강 중심선이 광장에 닿지 않는다 — 상수 셋의 합이 만드는 성질이라 못 박는다', () => {
+    let minZ = Infinity;
+    for (let x = -EDGE; x <= EDGE; x += 3) minZ = Math.min(minZ, riverCenterZ(x) - RIVER_HALF);
+    // 광장 반폭은 파셀 1칸(±CELL) — 2×2 이므로 중심에서 CELL 만큼이다
+    expect(minZ).toBeGreaterThan(CELL);
+  });
+
+  it('격자 밖은 전부 물이다', () => {
+    for (const d of [EDGE + 1, EDGE + 50, EDGE + 400]) {
+      expect(wet(d, 0)).toBe(true);
+      expect(wet(-d, 0)).toBe(true);
+      expect(wet(0, d)).toBe(true);
+      expect(wet(0, -d)).toBe(true);
+      expect(wet(d, d)).toBe(true);   // 모서리 — 원형이던 시절 여기가 제일 먼저 깨졌다
     }
   });
 
-  it('반경 안쪽이면서 강에서 먼 곳은 뭍이다', () => {
-    // 표본 간격은 **강 폭보다 훨씬 촘촘해야** 한다. 예전엔 50m 간격에 ±600m 범위였는데,
-    // 그건 섬이 반경 700m 이던 시절 값이다. 섬이 240m 로 줄자 표본이 37점으로 쪼그라들어
-    // 물 몇 점 차이로 비율이 크게 튀었다 — 통과·실패가 표본 운에 달린 상태였다.
-    // 간격 4m 면 섬 안 표본이 만 단위라 면적비에 수렴한다.
+  // 세계 크기를 격자에서 유도하는 것이 이 변경의 핵심이다. 둘이 어긋나면 넓은 쪽이
+  // 조용히 무시되고, 어느 단위 테스트에도 안 걸린다.
+  it('격자 끝 파셀이 물에 잠기지 않는다 — 세계 크기가 두 곳에서 어긋나면 안 된다', () => {
+    for (const px of [GRID_MIN_X, GRID_MAX_X]) {
+      for (const pz of [GRID_MIN_X, GRID_MAX_X]) {
+        // 강에 걸린 칸은 당연히 물이므로 제외하고, 그 외에는 육지로 남아야 한다
+        if (isRiver(px * CELL, pz * CELL)) continue;
+        expect(parcelWater(px, pz, CELL, CELL)).not.toBe('water');
+      }
+    }
+  });
+
+  it('격자 안이면서 강에서 먼 곳은 뭍이다', () => {
     let dry = 0, n = 0;
-    for (let x = -ISLAND_R; x <= ISLAND_R; x += 4) {
-      for (let z = -ISLAND_R; z <= ISLAND_R; z += 4) {
-        if (x * x + z * z > ISLAND_R * ISLAND_R) continue;
+    for (let x = -EDGE; x <= EDGE; x += 8) {
+      for (let z = -EDGE; z <= EDGE; z += 8) {
         n++;
-        if (!isWater(x, z)) dry++;
+        if (!wet(x, z)) dry++;
       }
     }
     expect(n).toBeGreaterThan(5000); // 표본이 성기면 아래 비율은 아무 뜻이 없다
-    // 섬 안에서 강이 먹는 비율은 크지 않아야 한다 — 대부분이 뭍이어야 도시가 선다.
     expect(dry / n).toBeGreaterThan(0.8);
   });
 });
 
 describe('강 — 굽이치고 이어진다', () => {
   it('중심선 위는 물이고 반폭 밖은 아니다', () => {
-    for (let x = -500; x <= 500; x += 37) {
+    for (let x = -EDGE + 40; x <= EDGE - 40; x += 37) {
       const cz = riverCenterZ(x);
-      if (x * x + cz * cz > ISLAND_R * ISLAND_R) continue; // 섬 밖은 어차피 바다
-      expect(isWater(x, cz)).toBe(true);
-      expect(isWater(x, cz + RIVER_HALF + 5)).toBe(false);
-      expect(isWater(x, cz - RIVER_HALF - 5)).toBe(false);
+      if (Math.abs(cz) + RIVER_HALF + 5 > EDGE) continue; // 세계 밖은 어차피 바다
+      expect(wet(x, cz)).toBe(true);
+      expect(wet(x, cz + RIVER_HALF + 5)).toBe(false);
+      expect(wet(x, cz - RIVER_HALF - 5)).toBe(false);
     }
   });
 
@@ -112,17 +146,16 @@ describe('파셀 분류', () => {
   // 끊겼는데 하필 그 열이 아니어서 통과했고, 실제로 두 개의 x 열에 물 파셀이 하나도
   // 없었다. 한 표본의 통과는 성질의 증거가 아니다 — 강이 지나는 **모든** 열을 본다.
   it('강이 지나는 모든 열에 물 파셀이 있다 — 어디서도 끊기지 않는다', () => {
-    const half = Math.ceil(ISLAND_R / CELL);
     const broken: number[] = [];
-    for (let px = -half; px <= half; px++) {
-      // 이 열이 섬 안에서 강과 만나는가 — 강 중심선이 섬 안에 있는 열만 본다
+    for (let px = GRID_MIN_X; px <= GRID_MAX_X; px++) {
+      // 이 열에서 강 중심선이 격자 안에 있는가 — 밖이면 바다에 이어진 것이라 건너뛴다
       const cz = riverCenterZ(px * CELL);
-      if ((px * CELL) ** 2 + cz * cz > ISLAND_R * ISLAND_R) continue;
-      let wet = 0;
-      for (let pz = -half; pz <= half; pz++) {
-        if (parcelWater(px, pz, CELL, CELL) === 'water') wet++;
+      if (Math.abs(cz) > EDGE - CELL) continue;
+      let wetCells = 0;
+      for (let pz = GRID_MIN_X; pz <= GRID_MAX_X; pz++) {
+        if (parcelWater(px, pz, CELL, CELL) === 'water') wetCells++;
       }
-      if (wet === 0) broken.push(px);
+      if (wetCells === 0) broken.push(px);
     }
     expect(broken).toEqual([]);
   });

@@ -38,18 +38,22 @@
 // 부른다. **부팅 시 한 번 정하고 다시 만지지 않는다** — 그래서 안전하다.
 
 import * as THREE from 'three/webgpu';
-import { SEA_Y, SEABED_Y, ISLAND_R } from '../decide/water.js';
+import { SEA_Y, SEABED_Y, worldHalfExtent } from '../decide/water.js';
+import { DEFAULT_LAYOUT } from '../parts/types.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
+
+/** 세계의 바깥 가장자리(미터). 격자에서 유도한다 — 격자를 넓히면 물도 함께 물러난다 */
+const EDGE = worldHalfExtent(DEFAULT_LAYOUT.cellX);
 
 /**
  * 물 판의 한 변(미터).
  *
- * **섬 지름의 여러 배**여야 한다. 섬 가장자리에 서서 바깥을 볼 때 물이 끝나고 허공이
+ * **세계 지름의 여러 배**여야 한다. 가장자리에 서서 바깥을 볼 때 물이 끝나고 허공이
  * 보이면 유한 세계가 아니라 부서진 세계로 읽힌다. 안개가 60.8m에서 모든 것을 덮으므로
- * 실제로 필요한 건 `섬 반경 + 안개 거리` 남짓이지만, 판 하나 늘린다고 드는 비용이
+ * 실제로 필요한 건 `세계 반경 + 안개 거리` 남짓이지만, 판 하나 늘린다고 드는 비용이
  * 삼각형 두 개뿐이라 넉넉히 잡는다.
  */
-const PLANE = ISLAND_R * 8;
+const PLANE = EDGE * 4;
 
 /** 물결 한 무늬가 덮는 거리(미터). 파셀(32m)의 절반 — 사람 눈높이에서 잔물결로 읽히는 크기 */
 const RIPPLE_M = 16;
@@ -233,8 +237,10 @@ export const oceanFeature: Feature = {
         return {
           y: SEA_Y,
           depth: `${(SEA_Y - SEABED_Y).toFixed(1)}m`,
-          // 플레이어가 섬 안인지 — 유한 세계의 끝에 얼마나 가까운지 읽는다
-          fromEdge: `${(ISLAND_R - Math.hypot(x, z)).toFixed(0)}m`,
+          // 세계의 끝에 얼마나 가까운지. 격자가 사각형이므로 **가장 가까운 변**까지의
+          // 거리다 — 원형이던 시절의 `반경 − 중심거리` 를 그대로 두면 모서리 근처에서
+          // 음수가 나와 "밖에 있다"고 잘못 읽힌다.
+          fromEdge: `${(EDGE - Math.max(Math.abs(x), Math.abs(z))).toFixed(0)}m`,
 
           // ── 물결이 실제로 흐르는가 ─────────────────────────────────────────
           // 감독이 요구한 것은 "살랑살랑"이고, 그 정체는 이 두 offset 이 매 프레임

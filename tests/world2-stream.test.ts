@@ -10,7 +10,7 @@ import {
   type WantEntry, type ParcelKey,
 } from '../frontend/js/world2/decide/stream.js';
 import { DEFAULT_BANDS, type Tier } from '../frontend/js/world2/decide/lod.js';
-import { parcelWater } from '../frontend/js/world2/decide/water.js';
+import { parcelWater, riverCenterZ } from '../frontend/js/world2/decide/water.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
 
 const CELL = DEFAULT_LAYOUT.cellX;
@@ -46,21 +46,31 @@ describe('parcelKey / parseKey', () => {
 describe('computeWant — 물은 담기지 않는다', () => {
   const raw = () => computeWant({ cx: 0, cz: 0, dirX: 0, dirZ: 0, have: have() });
 
+  // 강가에 선 상태. 원점은 이제 강에서 멀다 — 중앙 광장을 비켜 가도록 강을 옮겼기
+  // 때문이다(`riverCenterZ` 참고). 그래서 "물이 실제로 걸러지는가"는 강 근처에서
+  // 봐야 한다. 원점에서 보면 물이 하나도 없어 **아무것도 검사하지 않은 통과**가 된다.
+  const atRiver = () => {
+    const cz = Math.round(riverCenterZ(0) / CELL);
+    return {
+      raw: computeWant({ cx: 0, cz, dirX: 0, dirZ: 0, have: have() }),
+      open: computeWant({ cx: 0, cz, dirX: 0, dirZ: 0, have: have(), blocked: () => false }),
+    };
+  };
+
   it('기본값이 물을 거른다 — 주입을 빠뜨려도 바다에 짓지 않는다', () => {
     // `blocked`를 아예 주지 않은 호출이다. 안전 기본값이 없으면 이게 통과해 버린다.
-    for (const w of raw()) {
+    for (const w of [...raw(), ...atRiver().raw]) {
       expect(parcelWater(w.px, w.pz, CELL, CELL)).not.toBe('water');
     }
   });
 
   it('실제로 무언가를 거른다 — 표본이 비어 조용히 통과하지 않는다', () => {
-    // 원점 둘레에 물이 하나도 없으면 위 테스트는 아무것도 검사하지 않은 것이 된다.
-    // 강이 원점에서 두 파셀 거리라 지금은 걸리는 것이 있다.
-    expect(raw().length).toBeLessThan(want().length);
+    const { raw: filtered, open } = atRiver();
+    expect(filtered.length).toBeLessThan(open.length);
   });
 
-  it('섬 밖은 담기지 않는다 — 유한 세계가 이 계층에서 강제된다', () => {
-    // 섬 반경 240m = 7.5파셀. 그 밖에 중심을 두면 want가 통째로 빈다.
+  it('세계 밖은 담기지 않는다 — 유한 세계가 이 계층에서 강제된다', () => {
+    // 격자는 -15…14 이므로 그 밖에 중심을 두면 want 가 통째로 빈다.
     const far = computeWant({ cx: 40, cz: 40, dirX: 0, dirZ: 0, have: have() });
     expect(far).toEqual([]);
   });
