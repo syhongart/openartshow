@@ -136,6 +136,19 @@
   /* ── 神 모드 하늘 패널 ──────────────────────────────────────────────────
      HUD 아래에 붙인다. 하늘을 바꾸면서 바로 위 수치를 보는 것이 이 패널의
      목적이므로 둘이 같은 시야 안에 있어야 한다. 기본 접힘. */
+  /* 미니맵(좌하단) — HUD·神모드가 우상단이라 반대쪽에 둔다.
+     모바일 조이스틱이 좌하단이므로 그보다 위로 띄운다. */
+  #w2-mapwrap{
+    position:fixed;left:10px;bottom:calc(120px + env(safe-area-inset-bottom));z-index:8;
+    padding:5px;border-radius:10px;background:rgba(11,13,18,.72);
+    border:1px solid var(--line);line-height:0;pointer-events:none;
+  }
+  #w2-map{display:block;width:104px;height:104px;border-radius:6px}
+  @media (min-width:760px){
+    #w2-mapwrap{bottom:16px}
+    #w2-map{width:132px;height:132px}
+  }
+
   #w2-god{position:fixed;top:calc(10px + env(safe-area-inset-top));right:56px;z-index:8;
     max-width:min(300px,72vw)}
   #w2-god-toggle{
@@ -170,7 +183,7 @@
   .w2-god-row button[data-bolt].off{opacity:.35}
   @media (prefers-reduced-motion: reduce){ #w2-god-toggle .caret{transition:none} }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/world2-DW90df-M.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/world2-Duu_JX-d.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-Nq061_ii.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-webgpu-BWrPPyEy.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-CCeFiFSE.js">
@@ -195,6 +208,8 @@
   <div id="w2-stick" data-on="0"><div id="w2-stick-knob"></div></div>
 
   <!-- 성능 HUD. 모바일에는 콘솔이 없어 화면 표시 + 복사가 실기기 수치를 받는 유일한 경로다. -->
+  <div id="w2-mapwrap"><canvas id="w2-map" width="160" height="160" aria-hidden="true"></canvas></div>
+
   <div id="w2-hud" data-open="0">
     <button id="w2-hud-toggle" type="button" aria-label="성능 정보 열기/닫기">📊</button>
     <div id="w2-hud-panel">
