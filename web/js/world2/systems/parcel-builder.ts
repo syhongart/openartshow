@@ -16,9 +16,11 @@
 
 import type { SlotHandle } from './instancing.js';
 import type { ParcelBuilder, ParcelHandle } from './streaming.js';
-import type { Tier } from '../decide/lod.js';
 import {
-  parcelLayout, kindsFor, maxPartsPerParcel,
+  type Tier, type TierBands, DEFAULT_BANDS, tierReach, maxLatticePoints,
+} from '../decide/lod.js';
+import {
+  parcelLayout, kindsFor, maxPartsPerParcel, outermostTierFor,
   DEFAULT_LAYOUT, type LayoutOptions, type PartKind,
 } from '../decide/parcel-layout.js';
 
@@ -77,14 +79,43 @@ export class PooledParcelBuilder implements ParcelBuilder {
   /**
    * 풀 크기 예산. 부팅 때 이 값으로 InstancedMesh를 잡는다.
    *
-   * 여유 배수(1.25)를 두는 이유: 스트리밍이 언로드보다 로드를 먼저 처리하는 프레임이 있어
-   * 순간적으로 정원을 넘길 수 있다. 여기서 모자라면 파셀이 조용히 덜 그려진다 — 조용한 게
-   * 문제라 stats로도 노출한다.
+   * ── 무엇이 바뀌었나 ────────────────────────────────────────────────────────
+   * 예전 식은 `파셀당 최대 × MAX_PARCELS(20) × 1.25`였고, 뒤 두 항이 **둘 다 근거 없는
+   * 상수**였다. 20은 실측 최대(17)에 눈대중을 얹은 값이라 이론 최악치(21)보다 작았고,
+   * 여유 배수 1.25가 그 부족을 가려 `starved`가 0으로 나왔다. 서로를 상쇄하던 두 값이다.
+   *
+   * 지금은 밴드에서 유도한다:
+   *   슬롯 = 파셀당 최대 파츠 × `그 종류가 살아 있는 가장 바깥 tier의 EXIT 반경 안 격자점 최대`
+   *
+   * tier를 반영하는 것이 핵심이다. lamp는 near에만 있으니 7파셀분이면 충분한데 예전엔
+   * far와 같은 20파셀분을 잡고 있었다. 실측 사용률이 두 밀도 모두 20% 남짓이던 이유다.
+   *
+   * ── 여유 배수를 왜 없앨 수 있나 ────────────────────────────────────────────
+   * 유일한 초과 경로는 "승격이 처리되고 강등은 예산에 잘려 다음 프레임으로 밀리는" 순간
+   * 이었다. `diffParcels`가 강등을 앞에 내도록 고쳤고 `takeBudget`은 순서대로 자르므로,
+   * 그 상태가 만들어지지 않는다. 언로드는 애초에 예산 밖(streaming.ts ①)이다.
+   * 그래도 `headroom`을 남겨 둔다 — 밴드나 스트리밍 순서를 만질 때 되돌릴 손잡이다.
    */
-  static poolBudget(maxParcels: number, layout: LayoutOptions = DEFAULT_LAYOUT): Record<PartKind, number> {
+  static poolBudget(opts: {
+    layout?: LayoutOptions;
+    bands?: TierBands;
+    /** 여유 배수. 1 = 이론 최악치 그대로 */
+    headroom?: number;
+  } = {}): Record<PartKind, number> {
+    const layout = opts.layout ?? DEFAULT_LAYOUT;
+    const bands = opts.bands ?? DEFAULT_BANDS;
+    const headroom = opts.headroom ?? 1;
+    const parcelsAt = new Map<string, number>();
     const out = {} as Record<PartKind, number>;
     for (const k of ALL_KINDS) {
-      out[k] = Math.ceil(maxPartsPerParcel(k, layout) * maxParcels * 1.25);
+      const tier = outermostTierFor(k);
+      if (!tier) { out[k] = 0; continue; } // 어느 tier에도 없는 종류 — 슬롯이 필요 없다
+      let parcels = parcelsAt.get(tier);
+      if (parcels === undefined) {
+        parcels = maxLatticePoints(tierReach(tier, bands));
+        parcelsAt.set(tier, parcels);
+      }
+      out[k] = Math.ceil(maxPartsPerParcel(k, layout) * parcels * headroom);
     }
     return out;
   }

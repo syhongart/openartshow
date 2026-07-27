@@ -82,6 +82,77 @@ export function lookAheadCenter(
 }
 
 /**
+ * 그 tier로 **머무를 수 있는** 최대 거리(셀).
+ *
+ * ENTER가 아니라 EXIT인 이유: 히스테리시스 때문에 ENTER를 이미 지난 파셀도 EXIT까지는
+ * 현재 tier를 유지한다(`tierFor`). 예산을 ENTER로 잡으면 딱 그 경계대역에 있는 파셀만큼
+ * 슬롯이 모자란다 — 그것도 조용히.
+ */
+export function tierReach(tier: Exclude<Tier, 'none'>, b: TierBands = DEFAULT_BANDS): number {
+  return tier === 'near' ? b.nearExit : tier === 'mid' ? b.midExit : b.farExit;
+}
+
+/**
+ * 반경 `r`(셀)의 닫힌 원판이 **어디에 놓이든** 품을 수 있는 정수 격자점의 최대 개수.
+ *
+ * ── 왜 이 함수가 필요한가 ────────────────────────────────────────────────────
+ * 슬롯 풀 예산 = `파셀당 최대 파츠 수 × 동시에 뜰 수 있는 파셀 수`인데, 뒤쪽 항이
+ * 그동안 근거 없는 상수(20)였다. 실측 최대(17)에 눈대중 여유를 얹은 값이라 **이론
+ * 최악치(farExit=2.40에서 21)보다 작았고**, 예산에 곱해둔 여유 배수 1.25가 그 부족을
+ * 가려주고 있었다. 값 두 개가 각각 틀린 채 서로를 상쇄하던 상태다.
+ *
+ * 밴드에서 유도하면 밴드를 넓혔을 때 예산이 저절로 따라온다. `computeWant`의 순회 범위를
+ * `farExit`에서 유도한 것과 같은 이유다 — 상수로 박으면 조용히 어긋난다.
+ *
+ * ── 왜 정확한 최댓값이 나오는가 ───────────────────────────────────────────────
+ * 최적 위치의 원판은 언제나 격자점 **두 개 이상이 경계에 닿도록** 밀어붙일 수 있다(더
+ * 못 밀면 이미 그 상태다). 그러니 후보 중심은 "격자점을 중심으로 한 반경 r 원들의 쌍별
+ * 교점"이면 충분하다. 격자점이 하나도 없는 경우를 위해 원점도 후보에 넣는다.
+ * 격자를 촘촘히 훑는 방식은 최적점을 통째로 건너뛸 수 있어 쓰지 않는다.
+ */
+export function maxLatticePoints(r: number): number {
+  if (!(r >= 0)) return 0;
+  const reach = Math.ceil(r) + 1;
+  const pts: Array<[number, number]> = [];
+  for (let i = -reach; i <= reach; i++) {
+    for (let j = -reach; j <= reach; j++) pts.push([i, j]);
+  }
+
+  const rr = r * r;
+  const EPS = 1e-9; // 교점은 경계에 정확히 놓이므로 부동소수 오차만큼 열어준다
+  const count = (cx: number, cz: number): number => {
+    let n = 0;
+    for (const [x, z] of pts) {
+      const dx = x - cx;
+      const dz = z - cz;
+      if (dx * dx + dz * dz <= rr + EPS) n++;
+    }
+    return n;
+  };
+
+  let best = count(0, 0);
+  for (let a = 0; a < pts.length; a++) {
+    for (let b = a + 1; b < pts.length; b++) {
+      const dx = pts[b][0] - pts[a][0];
+      const dz = pts[b][1] - pts[a][1];
+      const d2 = dx * dx + dz * dz;
+      if (d2 > 4 * rr) continue; // 두 원이 만나지 않는다
+      const d = Math.sqrt(d2);
+      const h = Math.sqrt(Math.max(0, rr - d2 / 4));
+      const mx = (pts[a][0] + pts[b][0]) / 2;
+      const mz = (pts[a][1] + pts[b][1]) / 2;
+      const ux = -dz / d;
+      const uz = dx / d;
+      const c1 = count(mx + ux * h, mz + uz * h);
+      if (c1 > best) best = c1;
+      const c2 = count(mx - ux * h, mz - uz * h);
+      if (c2 > best) best = c2;
+    }
+  }
+  return best;
+}
+
+/**
  * 로드 우선순위. 작을수록 먼저. 거리 위주에 진행방향 보너스를 얹는다.
  * 현행 `prio = 맨해튼거리*10 − dirBonus` 규약을 계승하되 유클리드로 바꿨다 —
  * 격자 맨해튼은 대각 파셀을 과소평가해 시야 정면 대각이 늦게 올라왔다.

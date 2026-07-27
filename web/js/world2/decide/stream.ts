@@ -15,7 +15,7 @@
 // 단위를 하나로 맞춘다. 미터↔셀 환산은 호출자(System)의 책임이다 — 환산이 두 곳에 있으면
 // 언젠가 한쪽만 고쳐진다.
 
-import { type Tier, type TierBands, DEFAULT_BANDS, tierFor, loadPriority } from './lod.js';
+import { type Tier, type TierBands, TIERS, DEFAULT_BANDS, tierFor, loadPriority } from './lod.js';
 
 /** 파셀 식별자. `"px,pz"` — 정수 격자 좌표 두 개. */
 export type ParcelKey = string;
@@ -130,6 +130,12 @@ export interface ParcelDiff {
  * 현행은 큐에 쌓인 job이 유효한지를 따로 검사해 지웠고(101줄 중 12줄), 그 검사가 want 계산과
  * 어긋나 "떠난 파셀이 뒤늦게 로드되는" 버그가 났다. 여기서는 매 프레임 want를 다시 내고
  * 차이만 본다 — 큐는 System이 이 결과로 매번 다시 만들면 되므로 청소할 상태 자체가 없다.
+ *
+ * **retier는 강등을 먼저 낸다.** 강등(near→mid 등)은 슬롯을 반납하고 승격은 점유한다.
+ * 승격이 앞서면 프레임 예산이 중간에 잘렸을 때 "점유는 했는데 반납은 다음 프레임"인 순간이
+ * 생기고, 그 순간의 점유 수가 이론 최악치를 넘는다 — 슬롯 풀 예산이 여유 배수 없이는 못
+ * 버티는 유일한 경로가 이것이었다. 강등을 앞세우면 `takeBudget`이 순서대로 자르므로
+ * "승격만 처리되는" 상태가 원천적으로 만들어지지 않는다.
  */
 export function diffParcels(
   want: readonly WantEntry[],
@@ -148,6 +154,10 @@ export function diffParcels(
 
   const unload: ParcelKey[] = [];
   for (const k of have.keys()) if (!wantKeys.has(k)) unload.push(k);
+
+  // 강등(바깥으로) 먼저, 그 안에서 prio 순. `want`가 이미 prio 정렬이라 안정 정렬이면 충분하다.
+  const outward = (r: RetierEntry) => (TIERS.indexOf(r.to) > TIERS.indexOf(r.from) ? 0 : 1);
+  retier.sort((a, z) => outward(a) - outward(z));
 
   return { load, unload, retier };
 }

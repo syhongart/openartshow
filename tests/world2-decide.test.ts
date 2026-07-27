@@ -14,6 +14,7 @@ import {
 } from '../web/js/world2/decide/adapt.js';
 import {
   tierFor, validBands, DEFAULT_BANDS, lookAheadCenter, loadPriority,
+  tierReach, maxLatticePoints,
   type Tier,
 } from '../web/js/world2/decide/lod.js';
 
@@ -260,5 +261,90 @@ describe('lookAheadCenter / loadPriority', () => {
 
   it('등 뒤 파셀에는 보너스를 주지 않는다', () => {
     expect(loadPriority(2, -1)).toBe(loadPriority(2, 0));
+  });
+});
+
+describe('tierReach — 예산의 기준은 ENTER가 아니라 EXIT다', () => {
+  it('각 tier의 EXIT를 돌려준다', () => {
+    expect(tierReach('near')).toBe(DEFAULT_BANDS.nearExit);
+    expect(tierReach('mid')).toBe(DEFAULT_BANDS.midExit);
+    expect(tierReach('far')).toBe(DEFAULT_BANDS.farExit);
+  });
+
+  // 히스테리시스가 있으므로 ENTER를 넘긴 파셀도 EXIT까지는 그 tier로 남는다. 예산을
+  // ENTER로 잡으면 딱 그 대역에 있는 파셀만큼 슬롯이 조용히 모자란다.
+  it('EXIT 대역에 있는 파셀은 실제로 그 tier를 유지한다 — 예산이 덮어야 할 구간', () => {
+    for (const t of ['near', 'mid', 'far'] as const) {
+      const r = tierReach(t);
+      expect(tierFor(r, t)).toBe(t);
+    }
+  });
+
+  it('밴드를 넘겨받으면 그걸 쓴다', () => {
+    const b = { ...DEFAULT_BANDS, nearExit: 2.0 };
+    expect(tierReach('near', b)).toBe(2.0);
+  });
+});
+
+describe('maxLatticePoints — 슬롯 예산의 분모', () => {
+  /**
+   * 독립 검증. 중심을 촘촘히 훑어 세는 **다른 방법**으로 같은 답이 나오는지 본다.
+   * 스캔은 최적점을 통째로 건너뛸 수 있으므로 정답의 하한만 준다 — 그래서 방향이 있는
+   * 부등식(scan ≤ exact)과, 알려진 반경에서의 일치를 함께 본다. 두 방법이 다른 값을
+   * 내면 둘 중 하나가 틀린 것이고, 어느 쪽이든 이 테스트가 깨진다.
+   */
+  const scanMax = (r: number, N = 200): number => {
+    const reach = Math.ceil(r) + 1;
+    let best = 0;
+    for (let i = 0; i <= N; i++) {
+      for (let j = 0; j <= N; j++) {
+        const cx = (i / N) * 0.5;
+        const cz = (j / N) * 0.5;
+        let n = 0;
+        for (let px = -reach; px <= reach; px++) {
+          for (let pz = -reach; pz <= reach; pz++) {
+            if (Math.hypot(px - cx, pz - cz) <= r + 1e-12) n++;
+          }
+        }
+        if (n > best) best = n;
+      }
+    }
+    return best;
+  };
+
+  it('스캔이 찾은 값을 밑돌지 않는다 (near·mid·far EXIT)', () => {
+    for (const t of ['near', 'mid', 'far'] as const) {
+      const r = tierReach(t);
+      expect(maxLatticePoints(r)).toBeGreaterThanOrEqual(scanMax(r));
+    }
+  });
+
+  it('현행 밴드의 실제 값 — 이 숫자가 곧 슬롯 예산이다', () => {
+    expect(maxLatticePoints(DEFAULT_BANDS.nearExit)).toBe(7);
+    expect(maxLatticePoints(DEFAULT_BANDS.midExit)).toBe(12);
+    // 21이다. 예전 `MAX_PARCELS` 상수는 20이었다 — 이미 모자랐고, 예산에 곱해둔
+    // 여유 배수 1.25가 그 부족을 덮어 `starved`를 0으로 보이게 하고 있었다.
+    expect(maxLatticePoints(DEFAULT_BANDS.farExit)).toBe(21);
+  });
+
+  it('손으로 셀 수 있는 작은 반경에서 정확하다', () => {
+    expect(maxLatticePoints(0)).toBe(1);          // 격자점 하나
+    expect(maxLatticePoints(0.5)).toBe(2);        // 두 점 사이 정중앙
+    expect(maxLatticePoints(Math.SQRT1_2)).toBe(4); // 정사각형 네 꼭짓점의 외접원
+    expect(maxLatticePoints(1)).toBe(5);          // 십자
+  });
+
+  it('반경이 커지면 단조증가한다', () => {
+    let prev = 0;
+    for (let r = 0; r <= 3; r += 0.25) {
+      const n = maxLatticePoints(r);
+      expect(n).toBeGreaterThanOrEqual(prev);
+      prev = n;
+    }
+  });
+
+  it('음수·NaN에는 0을 돌려준다 — 예산이 NaN으로 새지 않게', () => {
+    expect(maxLatticePoints(-1)).toBe(0);
+    expect(maxLatticePoints(NaN)).toBe(0);
   });
 });

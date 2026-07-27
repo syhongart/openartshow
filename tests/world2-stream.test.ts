@@ -145,6 +145,28 @@ describe('diffParcels — 큐 청소가 필요 없어진다(버그 ①의 회귀
     const d = diffParcels(want(), have({ '1,1': 'near' })); // 실제로는 mid여야 하는 자리
     expect(d.retier).toContainEqual({ key: '1,1', from: 'near', to: 'mid', prio: expect.any(Number) });
   });
+
+  // ── 슬롯 예산에서 여유 배수를 없앤 근거 ──────────────────────────────────────
+  //
+  // 예산은 "이론 최악치 그대로"(headroom 1)로 잡혀 있다. 그게 성립하려면 슬롯 점유 수가
+  // 어느 순간에도 최악치를 넘지 않아야 하는데, 넘길 수 있는 경로가 딱 하나 있었다:
+  // 승격(슬롯 점유)이 먼저 처리되고 강등(슬롯 반납)이 프레임 예산에 잘려 다음 프레임으로
+  // 밀리는 경우. `takeBudget`은 목록 순서대로 자르므로, 강등이 앞에 있으면 "승격만
+  // 처리된 상태"가 만들어질 수 없다.
+  //
+  // 이 순서가 무너지면 화면에는 "가끔 건물이 몇 채 안 뜨는" 모습으로만 나타난다.
+  it('retier는 강등을 먼저 낸다 — headroom 1을 지탱하는 순서', () => {
+    // 중심을 (1,1)로 옮긴다: 0,0 쪽은 멀어져(강등) 1,1 쪽은 가까워진다(승격).
+    const ws = want({ cx: 1, cz: 1 });
+    const d = diffParcels(ws, have({ '0,0': 'near', '1,1': 'far', '2,2': 'far' }));
+
+    const rank = { near: 0, mid: 1, far: 2, none: 3 } as const;
+    const outward = d.retier.map((r) => rank[r.to] > rank[r.from]);
+    expect(outward.filter(Boolean).length).toBeGreaterThan(0); // 강등이 실제로 있다
+    expect(outward.some((v) => !v)).toBe(true);                // 승격도 실제로 있다
+    // 한 번 승격이 나온 뒤로는 강등이 다시 나오면 안 된다.
+    expect(outward.indexOf(false)).toBeGreaterThan(outward.lastIndexOf(true));
+  });
 });
 
 describe('takeBudget — 기아 방지가 규약(버그 ③의 회귀)', () => {

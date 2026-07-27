@@ -9,7 +9,10 @@
 import { describe, it, expect } from 'vitest';
 import { PooledParcelBuilder, type SlotPool } from '../web/js/world2/systems/parcel-builder.js';
 import type { SlotHandle } from '../web/js/world2/systems/instancing.js';
-import { kindsFor, maxPartsPerParcel, DEFAULT_LAYOUT } from '../web/js/world2/decide/parcel-layout.js';
+import {
+  kindsFor, maxPartsPerParcel, outermostTierFor, DEFAULT_LAYOUT,
+} from '../web/js/world2/decide/parcel-layout.js';
+import { DEFAULT_BANDS, tierReach, maxLatticePoints } from '../web/js/world2/decide/lod.js';
 
 /**
  * 용량이 있는 가짜 풀. 호출을 전부 기록한다.
@@ -225,30 +228,72 @@ describe('풀 고갈 — 조용히 넘기지 않는다', () => {
   });
 });
 
-describe('poolBudget — 예산이 실제 수요를 덮는다', () => {
-  it('종류마다 파셀당 최대 × 파셀 수 이상을 잡는다', () => {
-    const b = PooledParcelBuilder.poolBudget(13);
+describe('poolBudget — 예산이 밴드에서 유도된다', () => {
+  // 종류별 최대 파셀 수. 그 종류가 살아 있는 **가장 바깥 tier의 EXIT** 반경이 기준이다.
+  const parcelsFor = (k: 'ground' | 'building' | 'tree' | 'lamp') =>
+    maxLatticePoints(tierReach(outermostTierFor(k)!, DEFAULT_BANDS));
+
+  it('종류마다 파셀당 최대 × 그 종류의 tier 반경 파셀 수를 잡는다', () => {
+    const b = PooledParcelBuilder.poolBudget();
     for (const k of ['ground', 'building', 'tree', 'lamp'] as const) {
-      expect(b[k]).toBeGreaterThanOrEqual(maxPartsPerParcel(k) * 13);
+      expect(b[k]).toBe(maxPartsPerParcel(k) * parcelsFor(k));
     }
   });
 
-  it('이 예산이면 최대 로드 상황에서 굶지 않는다', () => {
-    const budget = PooledParcelBuilder.poolBudget(13);
+  // 예전 식(`파셀당 최대 × 20 × 1.25`)이 tier를 무시해 tree·lamp에 도달 불가능한 슬롯을
+  // 잡아두고 있었다. 이 단언이 그 회귀를 막는다 — tier를 다시 뭉개면 세 값이 같아진다.
+  it('lamp < tree < building 순으로 적게 잡는다 — tier가 좁을수록 파셀이 적다', () => {
+    const b = PooledParcelBuilder.poolBudget();
+    expect(parcelsFor('lamp')).toBeLessThan(parcelsFor('tree'));
+    expect(parcelsFor('tree')).toBeLessThan(parcelsFor('building'));
+    // lamp는 near에만 있다 — far까지 사는 ground와 같은 파셀 수를 잡으면 안 된다.
+    expect(b.lamp / maxPartsPerParcel('lamp')).toBeLessThan(b.ground / maxPartsPerParcel('ground'));
+  });
+
+  it('이 예산이면 최악의 로드 상황에서도 굶지 않는다', () => {
+    const budget = PooledParcelBuilder.poolBudget();
     const f = fakePool(budget); // 실제 풀처럼 종류별 용량을 그대로 준다
     const builder = new PooledParcelBuilder({ pool: f.pool, cellX: 32, cellZ: 32 });
-    // 실제 스트리밍 최대치(13파셀)를 near로 전부 채운다 — 최악의 경우.
-    let n = 0;
-    for (let px = 0; px < 4 && n < 13; px++) {
-      for (let pz = 0; pz < 4 && n < 13; pz++, n++) builder.build(px, pz, 'near');
+    // near 파셀 정원을 꽉 채운다 — lamp 예산이 가장 빡빡한 경로다.
+    const nearMax = parcelsFor('lamp');
+    for (let n = 0; n < nearMax; n++) builder.build(n, 0, 'near');
+    expect(builder.stats().starved).toBe(0);
+  });
+
+  it('far까지 정원을 채워도 ground·building이 굶지 않는다', () => {
+    const budget = PooledParcelBuilder.poolBudget();
+    const f = fakePool(budget);
+    const builder = new PooledParcelBuilder({ pool: f.pool, cellX: 32, cellZ: 32 });
+    const farMax = parcelsFor('building');
+    const nearMax = parcelsFor('lamp');
+    const midMax = parcelsFor('tree');
+    // 안쪽부터 채운다: near 정원 → mid 정원 → 나머지 far. 실제 밴드 분포와 같은 모양이다.
+    for (let n = 0; n < farMax; n++) {
+      const tier = n < nearMax ? 'near' : n < midMax ? 'mid' : 'far';
+      builder.build(n, 0, tier);
     }
     expect(builder.stats().starved).toBe(0);
   });
 
   it('레이아웃 예산을 줄이면 풀 예산도 준다', () => {
-    const small = PooledParcelBuilder.poolBudget(13, { ...DEFAULT_LAYOUT, maxTrees: 2 });
-    const big = PooledParcelBuilder.poolBudget(13, DEFAULT_LAYOUT);
+    const small = PooledParcelBuilder.poolBudget({ layout: { ...DEFAULT_LAYOUT, maxTrees: 2 } });
+    const big = PooledParcelBuilder.poolBudget({ layout: DEFAULT_LAYOUT });
     expect(small.tree).toBeLessThan(big.tree);
+  });
+
+  it('밴드를 넓히면 예산이 따라온다 — 상수로 박혀 있지 않다는 증거', () => {
+    const base = PooledParcelBuilder.poolBudget();
+    const wide = PooledParcelBuilder.poolBudget({
+      bands: { ...DEFAULT_BANDS, farEnter: 3.4, farExit: 3.8 },
+    });
+    expect(wide.building).toBeGreaterThan(base.building);
+    expect(wide.lamp).toBe(base.lamp); // near 밴드는 그대로 — lamp는 안 늘어야 한다
+  });
+
+  it('headroom 배수가 실제로 곱해진다', () => {
+    const base = PooledParcelBuilder.poolBudget();
+    const padded = PooledParcelBuilder.poolBudget({ headroom: 1.5 });
+    expect(padded.building).toBe(Math.ceil(base.building * 1.5));
   });
 });
 

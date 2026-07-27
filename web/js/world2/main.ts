@@ -24,20 +24,19 @@ import { SkySystem } from './systems/sky.js';
 import { DEFAULT_LAYOUT, type PartKind } from './decide/parcel-layout.js';
 
 const CELL = 32;
-/**
- * 스트리밍이 동시에 띄우는 최대 파셀 수. 풀 예산의 분모다.
- *
- * 정지 상태의 산술값은 13이지만 **실측은 그보다 크다.** look-ahead가 판정 중심을 0.5셀
- * 앞으로 밀기 때문에 정지 중에도 want가 16이고, 이동 중에는 17까지 관측됐다(헤드리스
- * 계측, 30샘플). 산술값 13으로 잡았으면 여유 배수(1.25)를 까먹는 순간 슬롯이 모자라
- * 파셀이 조용히 덜 그려졌을 것이다 — 화면에는 "건물이 몇 채 없는" 모습으로만 나타나
- * 원인을 짐작하기 어려운 종류의 결함이다.
- *
- * 실측 17에 이동·전이 여유를 얹어 20으로 잡는다. 굶주림 여부는 진단 훅의
- * `builder.starved`로 감시한다(0이 아니면 이 값이 틀린 것이다).
- */
-const MAX_PARCELS = 20;
 const ALL_KINDS: readonly PartKind[] = ['ground', 'building', 'tree', 'lamp'];
+
+/*
+ * 동시 파셀 수 상수(`MAX_PARCELS = 20`)를 여기서 없앴다.
+ *
+ * 그 값은 헤드리스 실측 최대(17)에 눈대중 여유를 얹은 것이었는데, LOD 밴드에서 유도한
+ * 이론 최악치는 **21**이다(farExit=2.40 반경 안 격자점 최대). 즉 상수가 이미 모자랐고,
+ * 예산에 곱해둔 여유 배수 1.25가 그 부족을 덮어 `starved`를 0으로 만들고 있었다. 두 값이
+ * 각각 틀린 채 서로를 상쇄하던 상태다 — 한쪽만 고쳤으면 그 자리에서 슬롯이 굶었다.
+ *
+ * 이제 `poolBudget`이 밴드에서 직접 유도한다. 밴드를 넓히면 예산이 따라오고, 실측을
+ * 다시 뜰 필요도 없다.
+ */
 
 /**
  * 부하 배수 — `?density=N`(1~8). 파셀당 파츠 수를 N배로 올린다.
@@ -187,7 +186,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       pools: () => {
         pools = new InstancePools(scene);
         const assets = createPartAssets();
-        const budget = PooledParcelBuilder.poolBudget(MAX_PARCELS, LAYOUT);
+        const budget = PooledParcelBuilder.poolBudget({ layout: LAYOUT });
         for (const kind of ALL_KINDS) {
           const a = assets[kind];
           pools.create({
@@ -352,8 +351,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       pools: pools!.stats(),
       stream: streaming!.stats(),
       adapt: adapt!.snapshot(),
-      // 슬롯이 모자라 못 그린 부품 수. 0이 아니면 MAX_PARCELS 예산이 틀린 것이다 —
+      // 슬롯이 모자라 못 그린 부품 수. 0이 아니면 `poolBudget` 산정이 틀린 것이다 —
       // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
+      // 여유 배수를 1로 내린 뒤로는 이 값이 예산의 유일한 감시 수단이다.
       builder: builder!.stats(),
       // 하늘 상태 + **조명 실측값**. 번개는 조명 강도를 순간적으로 올리는 방식이라,
       // 이 값을 샘플링하지 않으면 "쳤는데 못 본 것"과 "안 친 것"을 구별할 수 없다.

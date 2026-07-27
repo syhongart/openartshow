@@ -95,6 +95,23 @@ export function kindsFor(tier: 'near' | 'mid' | 'far'): readonly PartKind[] {
   return KINDS_BY_TIER[tier];
 }
 
+/** 바깥 → 안쪽. `outermostTierFor`가 이 순서로 훑는다. */
+const TIER_OUTWARD_IN = ['far', 'mid', 'near'] as const;
+
+/**
+ * 이 종류가 그려지는 **가장 바깥 tier**. 어디에도 없으면 null.
+ *
+ * 슬롯 예산이 여기서 나온다 — lamp는 near에만 있으므로 near 반경 안에 들어올 수 있는
+ * 파셀 수만큼만 있으면 되고, 그건 far 반경 파셀 수의 1/3이다. 예산을 종류와 무관하게
+ * "최대 파셀 수"로 잡으면 tree·lamp가 도달 불가능한 최악치를 잡고 앉아 있게 된다.
+ *
+ * `KINDS_BY_TIER`에서 유도하므로 tier 구성이 바뀌면 예산이 저절로 따라온다.
+ */
+export function outermostTierFor(kind: PartKind): 'near' | 'mid' | 'far' | null {
+  for (const t of TIER_OUTWARD_IN) if (KINDS_BY_TIER[t].includes(kind)) return t;
+  return null;
+}
+
 /**
  * 파셀 배치를 계산한다.
  *
