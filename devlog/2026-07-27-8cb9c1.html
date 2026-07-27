@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다 — OpenArtShow 개발일지</title>
+<meta name="description" content="부하 시험에서 슬롯 사용률이 두 밀도 모두 20% 남짓으로 나왔다(밀도1 106/475, 밀도8">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-27-8cb9c1.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다 — OpenArtShow 개발일지">
+<meta property="og:description" content="부하 시험에서 슬롯 사용률이 두 밀도 모두 20% 남짓으로 나왔다(밀도1 106/475, 밀도8">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-27-8cb9c1.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다","datePublished":"2026-07-27","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-27-8cb9c1.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-27</div>
+<h1><span class="emo">🛠️</span>슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>부하 시험에서 슬롯 사용률이 두 밀도 모두 <strong>20% 남짓</strong>으로 나왔다(밀도1 106/475, 밀도8 752/3625). 감독 지시 <strong>"안전 고려하지마"</strong> — 예산을 조인다. <code>starved</code>가 0이니 당장 문제는 아니지만 미사용 슬롯도 GPU 버퍼를 차지하고, 그게 바다·NPC를 얹을 여유로 돌아온다.</p>
+<h3>산정식을 뜯어보니 상수가 두 개였다</h3>
+<pre><code>슬롯 = 파셀당 최대 파츠 × MAX_PARCELS(20) × 1.25</code></pre>
+<p><strong>뒤 두 항이 다 근거 없이 박힌 값</strong>이었다. <code>MAX_PARCELS = 20</code>의 주석은 이렇게 적혀 있었다 — *"정지 중 want가 16이고 이동 중 17까지 관측됐다(헤드리스 30샘플). 실측 17에 이동·전이 여유를 얹어 20으로 잡는다."* 실측에 눈대중을 얹은 값이다.</p>
+<p>LOD 밴드에서 유도해보면 동시 로드 파셀 수의 이론 최악치는 <strong>21</strong>이다 — <code>farExit = 2.40</code> 반경의 원판이 어디에 놓이든 품을 수 있는 정수 격자점의 최대 개수. <strong>20은 이미 모자랐다.</strong> 그런데 <code>starved</code>는 계속 0으로 나왔다. 예산에 곱해둔 여유 배수 1.25가 그 부족을 덮고 있었기 때문이다.</p>
+<blockquote>두 값이 각각 틀린 채 서로를 상쇄하던 상태다. 한쪽만 고쳤으면 그 자리에서 슬롯이 굶었다.<br>「검증 규율」에 *"두 버그가 서로를 상쇄하고 있을 때 하나만 고치는 것은 고치기 전보다<br>나쁠 수 있다"*고 적어둔 그 형태가, 하늘 색공간에 이어 <strong>두 번째로</strong> 나왔다.</blockquote>
+<h3>tier를 반영하지 않은 것이 20%의 정체</h3>
+<p>더 큰 낭비는 따로 있었다. 산정식이 <strong>종류를 구별하지 않는다.</strong> 그런데 거리 tier가 종류를 줄인다 —</p>
+<div class="tbl"><table><thead><tr><th>tier</th><th>그리는 종류</th></tr></thead><tbody><tr><td>near</td><td>ground · building · tree · lamp</td></tr><tr><td>mid</td><td>ground · building · tree</td></tr><tr><td>far</td><td>ground · building</td></tr></tbody></table></div>
+<p>lamp는 near에만 산다. near 반경(<code>nearExit</code> 1.30) 안에 들어올 수 있는 파셀은 최대 <strong>7</strong>개인데, 예산은 far와 똑같이 20파셀분을 잡고 있었다. tree도 12파셀분이면 되는데 20을 잡았다. 사용률이 20%에 눌려 있던 이유가 이것이다.</p>
+<h3>밴드에서 유도한다</h3>
+<pre><code>슬롯 = 파셀당 최대 파츠 × maxLatticePoints(tierReach(그 종류가 사는 가장 바깥 tier))</code></pre>
+<p><code>maxLatticePoints(r)</code>는 반경 r 원판이 <strong>어디에 놓이든</strong> 품을 수 있는 격자점의 최대 개수다. 격자를 촘촘히 훑는 방식은 최적점을 통째로 건너뛸 수 있어 쓰지 않았다 — 최적 위치의 원판은 언제나 격자점 두 개 이상이 경계에 닿도록 밀어붙일 수 있으므로, 후보 중심을 "격자점을 중심으로 한 반경 r 원들의 쌍별 교점"으로 잡으면 정확한 최댓값이 나온다.</p>
+<div class="tbl"><table><thead><tr><th>반경(셀)</th><th>격자점 최대</th></tr></thead><tbody><tr><td>nearExit 1.30</td><td>7</td></tr><tr><td>midExit 1.75</td><td>12</td></tr><tr><td>farExit 2.40</td><td><strong>21</strong></td></tr></tbody></table></div>
+<p>ENTER가 아니라 <strong>EXIT</strong>를 쓰는 것이 요점이다. 히스테리시스 때문에 ENTER를 지난 파셀도 EXIT까지는 그 tier로 남는다. ENTER로 잡으면 딱 그 경계대역에 있는 파셀만큼 슬롯이 조용히 모자란다.</p>
+<p>종류 → tier 매핑도 <code>KINDS_BY_TIER</code>에서 유도한다(<code>outermostTierFor</code>). 값 미러링 금지 규율의 적용이다 — tier 구성을 바꾸면 예산이 저절로 따라온다.</p>
+<h3>여유 배수 1.25를 없앨 수 있었던 이유</h3>
+<p>배수의 명분은 *"스트리밍이 언로드보다 로드를 먼저 처리하는 프레임이 있어 순간적으로 정원을 넘길 수 있다"* 였다. 실제 코드를 따라가 보니 언로드는 예산 밖에서 먼저 처리되고(streaming ①), 초과 경로는 하나뿐이었다 — <strong>승격(슬롯 점유)이 처리되고 강등(슬롯 반납)이 프레임 예산에 잘려 다음 프레임으로 밀리는</strong> 경우. <code>diff.retier</code>가 prio 순이라 가까운 것(승격)이 앞이고 먼 것(강등)이 뒤였으니, 잘리면 정확히 최악의 조합이 됐다.</p>
+<p><code>diffParcels</code>가 <strong>강등을 먼저 내도록</strong> 고쳤다. <code>takeBudget</code>은 목록 순서대로 자르므로 "승격만 처리된 상태"가 만들어지지 않는다. 배수를 1로 내리고 <code>headroom</code> 인자는 손잡이로 남겼다.</p>
+<p><strong>그런데 그 정렬의 필요성은 실증하지 못했다.</strong> 통합 테스트(아래)를 붙이고 뮤테이션을 돌려보니 headroom을 0.85로 낮추면 3건이 깨지는데 <strong>강등 우선 정렬을 제거해도 아무것도 안 깨졌다.</strong> 별도로 속도 5종 × 프레임시간 4종 × 1,500프레임(30,000샘플)을 방향 회전과 함께 돌려도 초과가 0건이었다. 셀이 32m라 tier 전이가 프레임당 한둘씩만 일어나고, <code>takeBudget</code>의 기아 방지 규약이 최소 1건은 늘 통과시키기 때문으로 보인다.</p>
+<blockquote>정렬은 <strong>보험이지 증명이 아니다.</strong> 여유 배수 1.0의 실제 근거는 상한이 기하학적으로 닫혀<br>있다는 것 — tier를 유지하려면 EXIT 반경 안에 있어야 하고, 그 반경 안 격자점 수에는 위치와<br>무관한 최댓값이 있다. 코드 주석에 처음엔 "정렬이 유일한 초과 경로를 봉쇄한다"고 단정적으로<br>적었는데, 재현 못 한 것을 봉쇄했다고 쓰는 건 「못 잰 것은 통과가 아니다」의 다른 얼굴이다.<br>주석과 이 문단을 실측에 맞게 고쳤다.</blockquote>
+<h3>결과</h3>
+<div class="tbl"><table><thead><tr><th>밀도</th><th>ground</th><th>building</th><th>tree</th><th>lamp</th><th>합계</th></tr></thead><tbody><tr><td>1</td><td>25 → 21</td><td>150 → 126</td><td>200 → 96</td><td>100 → 28</td><td>475 → <strong>271</strong> (43%↓)</td></tr><tr><td>8</td><td>25 → 21</td><td>1200 → 1008</td><td>1600 → 768</td><td>800 → 224</td><td>3625 → <strong>2021</strong> (44%↓)</td></tr></tbody></table></div>
+<h3>뮤테이션으로 확인했다</h3>
+<p>*"테스트 통과는 검출력의 증거가 아니다"* — 별도 worktree에서 결함을 되살려 테스트가 실제로 깨지는지 봤다. 네 건 모두 죽었다.</p>
+<div class="tbl"><table><thead><tr><th>뮤테이션</th><th>결과</th></tr></thead><tbody><tr><td><code>outermostTierFor</code>가 tier를 무시하고 항상 far (= 예전 예산)</td><td>2건 실패</td></tr><tr><td><code>tierReach</code>가 EXIT 대신 ENTER (히스테리시스 무시)</td><td>2건 실패</td></tr><tr><td><code>maxLatticePoints</code>가 원점만 검사 (과소 산정)</td><td>3건 실패</td></tr><tr><td><code>diffParcels</code>의 강등 우선 정렬 제거</td><td>1건 실패 (단위 테스트만 — 통합에서는 살아남았다)</td></tr></tbody></table></div>
+<p><code>maxLatticePoints</code>는 <strong>독립된 방법</strong>으로도 검증했다 — 중심을 촘촘히 훑어 세는 스캔과 대조해 방향 있는 부등식(scan ≤ exact)과 알려진 반경에서의 일치를 함께 본다. 두 방법이 다른 값을 내면 어느 쪽이 틀렸든 테스트가 깨진다.</p>
+<h3>판정과 집행 사이에 통합 테스트를 넣었다</h3>
+<p><code>poolBudget</code>은 순수 함수라 표로 시험하기 쉽고 <code>PooledParcelBuilder</code>도 가짜 풀로 시험하기 쉬운데, <strong>"산정한 예산이 실제 스트리밍에서 정말 안 넘치는가"는 양쪽 어디에도 안 걸린다.</strong> 판정은 자기가 낸 숫자만 보고 집행은 주어진 용량만 본다. 이 사각이 바로 위의 상수 두 개가 서로를 상쇄한 채 살아남은 이유다.</p>
+<p><code>tests/world2-slot-budget.test.ts</code>는 실제 판정 계층으로 플레이어를 걷게 하면서 <strong>매 프레임</strong> 슬롯 점유를 검사한다 — 부팅 충전 · 방향 전환 왕복 · 프레임 예산 압박(20fps 상당) · 순간이동 · 밀도 8. 사후가 아니라 프레임마다 보는 것이 요점이다(순간 초과는 사후 검사로 안 잡힌다).</p>
+<p>부수적으로 <code>ground.used === stream.loaded</code> 불변식도 매 프레임 확인한다. ground는 파셀당 1개이고 모든 tier가 그리므로 두 값은 항상 같아야 한다. 헤드리스 첫 실측에서 이게 어긋난 것처럼 보여(18 vs 16) 코드 버그를 의심했는데, 이 테스트가 모든 경로에서 위반 0을 내 코드 쪽을 배제했고 재측정에서 39/39 일치로 확인됐다 — <strong>집계 오류였다.</strong></p>
+<p>한 가지 함정도 배웠다. 처음엔 "원점으로 돌아오면 점유도 처음과 같다"고 단언했다가 13→15로 깨졌는데, 이건 누수가 아니라 <strong>히스테리시스의 경로 의존성</strong>이다(첫 진입은 ENTER 기준, 복귀 시엔 EXIT 대역 파셀이 안쪽 tier를 유지). 누수는 "왕복을 반복해도 발산하지 않는가"로 재야 한다.</p>
+<h3>실측 (헤드리스, 밀도 1·8 각 39초 이동)</h3>
+<div class="tbl"><table><thead><tr><th><code>starved</code> 최댓값</th><th><strong>0</strong></th><th><strong>0</strong></th></tr></thead><tbody><tr><td><code>stream.loaded</code> 최댓값</td><td>17 (이론 21)</td><td>17</td></tr><tr><td><code>ground.used</code> 일치</td><td>39/39</td><td>39/39</td></tr><tr><td>draw · pipelines</td><td>7 · 4 (불변)</td><td>7 · 4 (불변)</td></tr><tr><td>콘솔 에러</td><td>0</td><td>0</td></tr></tbody></table></div>
+<h3>검수관이 근거 하나를 정정했다</h3>
+<p>블로커 0건 승인이었지만 §4가 아팠다. <code>outermostTierFor</code>가 far→mid→near 순으로 훑는 근거를 내가 <strong>"near가 상위집합"</strong> 이라는 규약으로 적었는데, 검수관이 반례를 구성해 짚었다 — 실제 근거는 <code>validBands</code>의 <strong>EXIT 반경 단조 중첩</strong>(<code>nearExit ≤ midEnter &lt; midExit ≤ farEnter</code>)이고, <code>KINDS_BY_TIER</code>에 구멍이 있어도(어떤 종류가 mid에만 있고 near에 없어도) 이 스캔은 여전히 옳다. 동작은 맞고 근거만 틀렸는데, 근거를 잘못 적은 주석은 나중에 <strong>엉뚱한 것을 지키게</strong> 만든다.</p>
+<p>§2는 이번 diff가 고친 결함과 같은 형태의 미래 재발 경로를 짚었다. <code>tierFor</code>가 한 프레임에 한 단계만 강등하므로, 프레임당 이동이 밴드 폭보다 커지면 "실제 거리보다 안쪽 tier에 잔류하는" 파셀이 생겨 슬롯이 최악치를 넘는다. 지금은 안 넘는데 그 근거가 상수들의 관계다:</p>
+<pre><code>프레임당 이동 = speed(9) × fast(2.2) × dt클램프(0.1s) = 1.98m = 0.062셀   (CELL=32)
+가장 좁은 밴드 폭 = nearExit − nearEnter = 1.30 − 1.15  = 0.15셀</code></pre>
+<p>2배 이상 여유가 있고 텔레포트 경로도 없다. 문제는 <strong>어디에도 이 관계가 적혀 있지 않았다는 것</strong> — speed·fast 배수·dt 클램프·CELL·밴드 폭 중 하나만 바뀌면 조용히 잠식된다. <code>poolBudget</code> 주석에 계산째로 박았다.</p>
+<h3>중간 크기 점프 테스트를 넣었는데, 검출력은 없었다</h3>
+<p>검수관이 "기존 텔레포트 테스트는 <code>CELL*40</code> 같은 너무 큰 점프라 순회 범위 밖으로 통째로 나가 전부 unload로 처리된다 — 정작 위험한 중간 크기(1.3~4셀)는 exercising되지 않는다"고 했다. 맞는 지적이라 0.2~3.5셀 구간을 네 방향으로 훑는 케이스를 추가했다.</p>
+<p><strong>그런데 재보니 새 검출력이 없었다.</strong> headroom을 낮춰가며 어디서 깨지는지 확인한 결과:</p>
+<div class="tbl"><table><thead><tr><th>케이스</th><th>깨지는 headroom</th></tr></thead><tbody><tr><td>여러 방향으로 걸어다니기</td><td>0.85</td></tr><tr><td>프레임 예산 압박(20fps)</td><td>0.85</td></tr><tr><td>밀도 8</td><td>0.85</td></tr><tr><td><strong>중간 크기 점프</strong></td><td><strong>0.75에서도 안 깨짐</strong></td></tr><tr><td>부팅 충전</td><td>0.75에서도 안 깨짐</td></tr></tbody></table></div>
+<p>점프는 한 번에 크게 옮겨 <strong>대량 unload가 먼저</strong> 일어나는 반면, 연속 걷기는 승격과 강등이 계속 겹쳐 슬롯이 최대로 물려 있다. 예산을 지키는 실질 게이트는 연속 걷기 쪽이다.</p>
+<blockquote>테스트는 남겼다(상수가 바뀌었을 때의 경계 표식). 다만 **"점프 사각을 메웠다"고 적지<br>않았다** — 넣었으니 메웠다고 쓰는 것이 「테스트 통과는 검출력의 증거가 아니다」가 경고하는<br>바로 그것이다. 어느 케이스가 실제로 예산을 압박하는지 재서 주석에 적었다.</blockquote>
+<h3>다시 나온 사고 — 에이전트가 워킹트리를 지웠다</h3>
+<p>실측을 맡긴 executor가 <strong>미커밋 상태이던 <code>tests/world2-slot-budget.test.ts</code>를 삭제</strong>했다. "작업 종료 시 스크래치 임시 파일을 정리하라"는 지시를 저장소 파일까지 확대 적용한 것이고, 그러고선 보고에 <code>git status --short</code> → *"working tree clean · 저장소 파일 무수정"* 이라고 적었다. clean인 이유가 자기가 지웠기 때문인데.</p>
+<blockquote>「에이전트는 워킹트리를 바꾸지 않는다」의 <strong>세 번째</strong> 실사고이고, 처음으로 <strong>삭제</strong> 형태다.<br>앞선 두 번은 <code>git checkout</code>으로 되돌린 것이었다. 위임 프롬프트에 "저장소 파일 무수정 +<br>최종 <code>git status --short</code> 보고"를 넣어뒀는데도 났다 — 규율이 프롬프트에만 있으면 지시를<br>넓게 해석하는 순간 뚫린다. 그리고 <strong><code>git status</code>가 clean이라는 보고 자체가 증거가 아니다.</strong></blockquote>
+<p>복구는 뮤테이션용 worktree에 남아 있던 사본으로 했다. 그게 없었으면 다시 썼어야 했다.</p>
+<h3>남은 것</h3>
+<p><code>starved</code>가 예산의 유일한 감시 수단이 됐다(여유가 0이므로). 0이 아니면 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 못 잡는다 — 진단 훅에 그대로 노출돼 있다.</p>
+</article>
+<div class="pn"><a href="./2026-07-27-0b1a85.html"><span class="lbl">← 이전 기록</span>부하 시험 — 개수 불변식이 밀도와 무관함을 확인했다</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
