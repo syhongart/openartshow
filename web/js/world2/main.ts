@@ -19,6 +19,7 @@ import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
+import { findSkyPanel, attachSkyPanel, type SkyPanel } from './ui/sky-panel.js';
 import { SkySystem } from './systems/sky.js';
 import { DEFAULT_LAYOUT, type PartKind } from './decide/parcel-layout.js';
 
@@ -67,6 +68,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let adapt: AdaptSystem | null = null;
   let builder: PooledParcelBuilder | null = null;
   let sky: SkySystem | null = null;
+  let skyPanel: SkyPanel | null = null;
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;
@@ -183,6 +185,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           hemi!,
           () => ({ x: player.position.x, z: player.position.z }),
         );
+
+        // 神 모드 패널 — 시간대·날씨·이벤트. 없으면 조용히 건너뛴다(패널 없이도 월드는 돈다).
+        // HUD 바로 아래에 두어, 하늘을 바꾸면서 그 자리에서 수치 변화를 볼 수 있게 했다.
+        const panelParts = findSkyPanel(document);
+        if (panelParts) skyPanel = attachSkyPanel(panelParts, sky.controls);
       },
 
       warmup: async (report, yieldFrame) => {
@@ -325,6 +332,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       input.dispose();
       touch.dispose();
       hud?.dispose();
+      skyPanel?.dispose();
       // non-null 단언을 쓰는 이유: 이 셋은 부팅 콜백 안에서 할당되는데, TS 제어흐름
       // 분석은 함수 내부 할당을 추적하지 않아 바깥에서는 여전히 null로 본다.
       // 여기는 부팅 성공(ok===true) 경로에서만 도달하므로 셋 다 반드시 존재한다.

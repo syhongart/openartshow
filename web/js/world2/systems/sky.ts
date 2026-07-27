@@ -38,6 +38,14 @@ const SUN_DIST = 70;
 /** 돔 반경. 카메라 far보다 작아야 잘리지 않는다(`sky.js`가 지오메트리를 교체하며 유지). */
 const DOME_RADIUS = 520;
 
+/** `sky.js`가 `get()`으로 돌려주는 **반영된** 상태(요청이 아니다 — 조합 보정이 적용된 결과). */
+export interface SkyState {
+  time: string;
+  weather: string;
+  fx: Record<string, boolean>;
+  flashSafe?: boolean;
+}
+
 export interface SkyOptions {
   /** 소프트웨어 렌더 여부 — 크로스페이드 스냅·저해상 돔·강수 축소 분기 */
   soft?: boolean;
@@ -127,14 +135,29 @@ export class SkySystem implements System {
     this.engine.setLite(on);
   }
 
-  /** 시간대·날씨 변경(신 모드·URL 파라미터용). */
-  set(state: { time?: string; weather?: string }, opt?: { fade?: number }): void {
+  /**
+   * 시간대·날씨·이벤트 변경(神 모드 패널·URL 파라미터용).
+   *
+   * `set` 직후 태양을 다시 맞춘다 — `sky.js`가 그림 속 해·달 방위를 바꾸는데 광원이 옛
+   * 방향에 남아 있으면 그림자가 하늘과 어긋난다.
+   */
+  set(state: Record<string, unknown>, opt?: { fade?: number }): void {
     this.engine.set(state, opt);
     this.applySun();
   }
 
-  get(): unknown {
+  get(): SkyState {
     return this.engine.get();
+  }
+
+  /**
+   * 패널이 붙을 수 있게 엔진 자체를 내준다.
+   *
+   * `set`/`get`만 노출하는 얇은 창구다 — 패널이 `sky.js`의 나머지(update·dispose 등)를
+   * 만지면 System이 소유권을 잃는다. 프레임 진행과 자원 반납은 끝까지 이 클래스 몫이다.
+   */
+  get controls(): { set: SkySystem['set']; get: SkySystem['get'] } {
+    return { set: this.set.bind(this), get: this.get.bind(this) };
   }
 
   dispose(): void {

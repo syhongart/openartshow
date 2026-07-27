@@ -72,8 +72,16 @@ function gitLine(args) {
  */
 const WATCHED = /^(web|scripts|tests)\/|^(vite\.config\.js|vitest\.config\.js|package\.json)$/;
 
-/** 감시 경로의 추적 파일 변경만 추린다(untracked `??`는 제외 — 스크래치 위반은 별건). */
+/**
+ * 감시 경로의 추적 파일 변경만 추린다(untracked `??`는 제외 — 스크래치 위반은 별건).
+ *
+ * 먼저 인덱스를 refresh한다. git은 변경 판단에 stat 캐시를 쓰는데, 소스를 막 수정한
+ * 직후에는 인덱스가 stale해서 **같은 파일을 시작 시점과 종료 시점에 다르게 읽는다.**
+ * 실제로 그 오탐이 한 번 났다(재현되지 않는 FAIL). 가끔 우는 경보는 늘 우는 경보만큼
+ * 나쁘다 — 다음에 진짜 오염이 잡혀도 "또 그거겠지"가 되기 때문이다.
+ */
 function trackedChanges() {
+  spawnSync('git', ['update-index', '--refresh'], { cwd: ROOT, encoding: 'utf8' });
   const out = gitLine(['status', '--porcelain']);
   if (out === null) return null; // git 없음/저장소 아님 — 검사 생략
   return out.split('\n')

@@ -133,6 +133,39 @@
     background:rgba(139,114,255,.18);border:1px solid rgba(139,114,255,.5);
     color:var(--ink);font-size:12px;font-family:inherit;
   }
+
+  /* ── 神 모드 하늘 패널 ──────────────────────────────────────────────────
+     HUD 아래에 붙인다. 하늘을 바꾸면서 바로 위 수치를 보는 것이 이 패널의
+     목적이므로 둘이 같은 시야 안에 있어야 한다. 기본 접힘. */
+  #w2-god{position:fixed;top:calc(10px + env(safe-area-inset-top));right:56px;z-index:8;
+    max-width:min(300px,72vw)}
+  #w2-god-toggle{
+    display:flex;align-items:center;gap:7px;padding:9px 12px;border-radius:10px;cursor:pointer;
+    background:rgba(11,13,18,.62);border:1px solid var(--line);color:var(--ink);
+    font-size:12px;font-family:inherit;line-height:1;
+  }
+  #w2-god-toggle .cap{opacity:.85}
+  #w2-god-toggle .caret{margin-left:2px;font-size:9px;color:var(--dim);transition:transform .2s}
+  #w2-god[data-open="1"] #w2-god-toggle .caret{transform:rotate(180deg)}
+  #w2-god-body{
+    margin-top:6px;background:rgba(11,13,18,.88);border:1px solid var(--line);
+    border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:8px;
+  }
+  #w2-god-body[hidden]{display:none}
+  .w2-god-row{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+  .w2-god-cap{font-size:10.5px;color:var(--dim);width:38px;flex:none}
+  .w2-god-row button{
+    font-family:inherit;font-size:11.5px;padding:6px 9px;border-radius:8px;cursor:pointer;
+    background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--dim);
+  }
+  .w2-god-row button.on{
+    background:rgba(139,114,255,.28);border-color:rgba(139,114,255,.7);
+    color:var(--ink);font-weight:600;
+  }
+  .w2-god-row[data-group="fx"] button.on{
+    background:rgba(114,230,225,.24);border-color:rgba(114,230,225,.6);
+  }
+  @media (prefers-reduced-motion: reduce){ #w2-god-toggle .caret{transition:none} }
 </style>
 </head>
 <body>
@@ -158,6 +191,38 @@
     <div id="w2-hud-panel">
       <pre id="w2-hud-body">측정 중…</pre>
       <button id="w2-hud-copy" type="button">복사</button>
+    </div>
+  </div>
+
+  <!-- 神 모드 하늘 패널 — 시간대·날씨·이벤트. 로직은 world2/ui/sky-panel.ts(인라인 금지). -->
+  <div id="w2-god" data-open="0">
+    <button id="w2-god-toggle" type="button" aria-expanded="false" aria-controls="w2-god-body">
+      <span aria-hidden="true">☀</span><span class="cap">하늘</span><span class="caret" aria-hidden="true">▾</span>
+    </button>
+    <div id="w2-god-body" hidden>
+      <div class="w2-god-row" data-group="time">
+        <span class="w2-god-cap">시간</span>
+        <button type="button" data-time="day">주간</button>
+        <button type="button" data-time="sunset">일몰</button>
+        <button type="button" data-time="night">야간</button>
+        <button type="button" data-auto="1">자동</button>
+      </div>
+      <div class="w2-god-row" data-group="weather">
+        <span class="w2-god-cap">날씨</span>
+        <button type="button" data-weather="clear">맑음</button>
+        <button type="button" data-weather="overcast">먹구름</button>
+        <button type="button" data-weather="rain">비</button>
+        <button type="button" data-weather="snow">눈</button>
+      </div>
+      <div class="w2-god-row" data-group="fx">
+        <span class="w2-god-cap">이벤트</span>
+        <button type="button" data-fx="rainbow">무지개</button>
+        <button type="button" data-fx="aurora">오로라</button>
+      </div>
+      <div class="w2-god-row" data-group="safe">
+        <span class="w2-god-cap">접근성</span>
+        <button type="button" data-flash="1">광과민성 보호</button>
+      </div>
     </div>
   </div>
 
