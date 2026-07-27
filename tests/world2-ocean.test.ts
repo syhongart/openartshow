@@ -190,6 +190,19 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     expect(d.flowB).toEqual([rough.offset.x, rough.offset.y]);
     // 멈춘 물과 구별돼야 관측에 쓸모가 있다
     expect(Math.abs(d.flowA[0]) + Math.abs(d.flowA[1])).toBeGreaterThan(0);
+
+    // ── 검출력은 여기서 나온다 ──────────────────────────────────────────────
+    // 위의 일치 검사만으로는 아무것도 증명되지 않는다. 정상 상태에서는 텍스처 offset 과
+    // 내부 계산값이 **정확히 같은 수**라, 진단이 어느 쪽을 읽든 통과한다(실제로 진단을
+    // 계산값 반환으로 바꿔봤더니 14건 전부 통과했다 — 동어반복이었다).
+    //
+    // 그래서 둘을 갈라놓는다. 텍스처만 밖에서 되돌리면, 텍스처를 읽는 진단은 멈춤을
+    // 보고하고 계산값을 읽는 진단은 여전히 흐른다고 거짓말한다.
+    norm.offset.set(0, 0);
+    rough.offset.set(0, 0);
+    const stopped = inst.diagnostics!() as { flowA: number[]; flowB: number[] };
+    expect(stopped.flowA).toEqual([0, 0]);
+    expect(stopped.flowB).toEqual([0, 0]);
   });
 
   it('흐름이 시간에 비례한다 — dt 를 무시하면 프레임레이트마다 속도가 달라진다', () => {
