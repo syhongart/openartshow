@@ -311,6 +311,11 @@ export interface ReportInput {
   drawSkyKey?: readonly number[];
   /** 하늘 상태 id → 사람이 읽는 이름. 위반한 상태를 지목할 때 쓴다 */
   skyKeyNames?: Readonly<Record<number, string>>;
+  /**
+   * 하늘 전이 중이라 드로우콜 판정에서 뺀 표본 수. **0이 아니면 리포트에 적는다** —
+   * 조용히 빼면 "재지 않은 구간"이 "통과한 구간"처럼 보인다.
+   */
+  drawSkipped?: number;
   pipeline: readonly number[];
   geometries: readonly number[];
   textures: readonly number[];
@@ -347,19 +352,22 @@ function drawLine(
   samples: readonly number[],
   keys: readonly number[] | undefined,
   names: Readonly<Record<number, string>> | undefined,
+  skipped = 0,
 ): string {
   if (!keys || keys.length === 0) return countLine('draw', constancy(samples));
   const g = constancyByGroup(samples, keys);
   const nameOf = (k: number) => names?.[k] ?? `#${k}`;
   const lo = g.groups.length ? Math.min(...g.groups.map((x) => x.min)) : 0;
+  // 뺀 표본을 반드시 붙인다. 이걸 생략하면 "재지 않은 구간"이 "통과한 구간"으로 읽힌다.
+  const note = skipped > 0 ? ` · 하늘 전이 중 ${skipped}표본 제외` : '';
   if (g.constant) {
     // 어떤 상태에서 몇이었는지 함께 보여준다 — 하늘을 만졌을 때 드로우콜이 어떻게
     // 움직이는지가 그 자체로 읽을 값이다.
     const detail = g.groups.map((x) => `${nameOf(x.key)}=${x.min}`).join(' · ');
-    return `${label10('draw')}${String(lo).padStart(6)}   하늘 상태별 상수 (${detail})`;
+    return `${label10('draw')}${String(lo).padStart(6)}   하늘 상태별 상수 (${detail})${note}`;
   }
   const bad = g.violations.map((x) => `${nameOf(x.key)} ${x.min}~${x.max}`).join(' · ');
-  return `${label10('draw')}${String(lo).padStart(6)}   ${bad}  ← 불변식 위반`;
+  return `${label10('draw')}${String(lo).padStart(6)}   ${bad}  ← 불변식 위반${note}`;
 }
 
 const label10 = (s: string) => s.padEnd(10) + ' ';
@@ -399,7 +407,7 @@ export function formatReport(r: ReportInput): string {
   }
   lines.push('');
   lines.push('[개수 — 상수여야 함]');
-  lines.push(drawLine(r.draw, r.drawSkyKey, r.skyKeyNames));
+  lines.push(drawLine(r.draw, r.drawSkyKey, r.skyKeyNames, r.drawSkipped ?? 0));
   lines.push(countLine('pipeline', constancy(r.pipeline)));
   lines.push(countLine('geometry', constancy(r.geometries)));
   lines.push(countLine('texture', constancy(r.textures)));

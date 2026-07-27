@@ -913,7 +913,19 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     if (onApply) { try { onApply(get(), L); } catch (_) {} } // ⑩ 가로등·창·envMap 연동 훅
     return get();
   }
-  const get = () => ({ time: state.time, weather: state.weather, fx: Object.assign({}, state.fx), flashSafe: state.flashSafe });
+  // `xfade`: 돔 크로스페이드가 진행 중인가(0=없음, 1=진행).
+  //
+  // 왜 노출하는가 — `set()`이 불리는 즉시 `state.time`/`state.weather`는 새 값이 되지만,
+  // **실제로 그려지는 것**은 최대 1.8초 동안 다르다. 그 사이 `fadeDome`이 하나 더 그려지고,
+  // `cloudMesh.visible` 갱신은 `phase !== 1` 가드로 멈춰 있어 이전 상태의 구름이 남는다.
+  // 즉 "논리적 상태"와 "그려지는 것"이 어긋나는 유일한 구간이다.
+  //
+  // 소비자(world2 성능 리포트)가 드로우콜을 하늘 상태별로 판정하는데, 이 구간을 구별하지
+  // 못하면 하늘을 바꿀 때마다 오탐이 난다. 순수 가산 필드이므로 기존 소비자는 영향 없다.
+  const get = () => ({
+    time: state.time, weather: state.weather, fx: Object.assign({}, state.fx),
+    flashSafe: state.flashSafe, xfade: phase === 1,
+  });
 
   let t = 0;
   function update(dt) {

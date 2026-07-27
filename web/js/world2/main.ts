@@ -134,12 +134,31 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
        * texture는 전부 상수였다). 상태별로 묶어야 "파셀 로드가 드로우콜을 늘렸다"는
        * 진짜 회귀만 남는다.
        *
+       * ── 전이 구간은 `null`을 돌려 판정에서 뺀다 ──────────────────────────
+       * `set()`이 불리는 즉시 `time`/`weather`는 새 값이 되지만 **그려지는 것**은 최대
+       * 1.8초 동안 다르다 — `fadeDome`이 하나 더 그려지고, `cloudMesh.visible` 갱신은
+       * `phase !== 1` 가드로 멈춰 이전 상태의 구름이 남는다. 그래서 전이 구간을 도착 키에
+       * 넣으면 그 그룹이 곧바로 "변동"으로 찍히고(검수관이 잡은 블로커), `|xfade` 축을
+       * 하나 더 붙이는 것으로도 안 닫힌다 — **출발지가 다르면 남아 있는 구름도 다르므로**
+       * 같은 `도착|xfade` 키 안에서 여전히 값이 갈린다.
+       *
+       * 전이 구간은 정의상 "무엇을 그리는지가 섞여 있는" 구간이라 상수를 요구할 근거가
+       * 없다. 빼되 **몇 표본을 뺐는지 리포트에 적는다** — 조용히 빼면 그게 「못 잰 것을
+       * 통과로 적는」 것이다.
+       *
        * `flashSafe`는 넣지 않는다 — 광과민성 보호 모드는 조명 강도·색만 바꾸고 무엇을
        * 그릴지는 안 바꾼다. 넣으면 그룹만 쪼개져 표본이 흩어진다.
+       *
+       * `lite`는 **아직 world2에 배선되지 않았다**(`sky.setLite`를 부르는 곳이 없다).
+       * 배선하는 순간 반드시 이 키에 넣어라 — `flashSafe`와 정반대로 `cloudMesh`·별
+       * 레이어의 `visible`을 직접 끄는, 즉 "무엇을 그릴지"를 바꾸는 축이다. 그때 키에
+       * 없으면 지금 고친 것과 똑같은 오탐이 재현된다. (`sky.js`의 `get()`이 `lite`를
+       * 노출하지 않으므로 그 노출부터 함께 해야 한다.)
        */
       skyKey: () => {
         const s = sky?.get();
         if (!s) return 'none';
+        if (s.xfade) return null; // 전이 중 — 판정에서 제외
         const fx = Object.entries(s.fx ?? {})
           .filter(([, on]) => on).map(([k]) => k).sort().join('+');
         return `${s.time}|${s.weather}${fx ? `|${fx}` : ''}`;

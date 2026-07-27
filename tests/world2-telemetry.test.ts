@@ -378,3 +378,47 @@ describe('formatReport — 드로우콜 줄', () => {
     expect(line).toContain('불변식 위반');
   });
 });
+
+describe('하늘 전이 구간 — 판정에서 빼되 뺀 사실을 적는다', () => {
+  const base = {
+    backend: 'WebGPU', ua: 'test', dpr: 3, screen: '320x519', elapsedS: 39,
+    frameMs: [16.7], updMs: [0.2], renderMs: [1.5], outMs: [15],
+    pipeline: [10], geometries: [9], textures: [9],
+    parcels: [16], built: 79, released: 63, starved: 0,
+    pixelRatio: 2, frameCap: 0, triAvg: 54205,
+  };
+
+  // 검수관이 잡은 블로커. set()이 불리면 time/weather는 즉시 새 값이 되는데 fadeDome은
+  // 최대 1.8초 더 켜져 있다. 그 표본을 도착 키에 넣으면 그 그룹이 곧바로 "변동"이 된다.
+  // 지금은 그 표본을 아예 안 넣으므로 판정이 깨끗하다.
+  it('전이 표본을 넣지 않으면 도착 상태가 상수로 남는다', () => {
+    // 전이 중 draw=13(fadeDome +1)이었지만 표본에 없다. 남은 것은 안정 구간뿐.
+    const text = formatReport({
+      ...base, draw: [9, 9, 12, 12], drawSkyKey: [0, 0, 1, 1],
+      skyKeyNames: { 0: 'night|clear', 1: 'night|rain' }, drawSkipped: 108,
+    });
+    const line = text.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).not.toContain('불변식 위반');
+    expect(line).toContain('하늘 전이 중 108표본 제외');
+  });
+
+  // 뺀 것을 조용히 숨기면 "재지 않은 구간"이 "통과한 구간"으로 읽힌다.
+  it('제외 표본이 0이면 그 문구를 붙이지 않는다', () => {
+    const text = formatReport({
+      ...base, draw: [9, 9], drawSkyKey: [0, 0], skyKeyNames: { 0: 'day|clear' },
+      drawSkipped: 0,
+    });
+    const line = text.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).not.toContain('제외');
+  });
+
+  it('위반이 있어도 제외 표본을 함께 적는다 — 둘 다 사실이다', () => {
+    const text = formatReport({
+      ...base, draw: [9, 11], drawSkyKey: [0, 0], skyKeyNames: { 0: 'day|clear' },
+      drawSkipped: 42,
+    });
+    const line = text.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).toContain('불변식 위반');
+    expect(line).toContain('하늘 전이 중 42표본 제외');
+  });
+});

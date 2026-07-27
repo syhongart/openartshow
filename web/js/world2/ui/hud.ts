@@ -34,7 +34,7 @@ export interface HudSource {
    * 지금의 하늘 상태를 사람이 읽는 한 줄로. 드로우콜 판정이 이 그룹 안에서만 상수를 요구한다
    * (`decide/telemetry.ts`의 `constancyByGroup` 참고). 없으면 전 구간 상수로 판정한다.
    */
-  skyKey?: () => string;
+  skyKey?: () => string | null;
   stream: () => { loaded: number; built: number; released: number; starved: number };
   adapt: () => { pixelRatio: number; frameCap: number; triAvg: number };
 }
@@ -71,6 +71,9 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     return id;
   };
 
+  /** 하늘 전이 중이라 드로우콜 판정에서 뺀 표본 수. 리포트에 그대로 적는다 */
+  let drawSkipped = 0;
+
   let built = 0, released = 0;
   const startedAt = Date.now();
   let open = false;
@@ -96,6 +99,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       draw: draw.values(),
       drawSkyKey: src.skyKey ? drawSkyKey.values() : undefined,
       skyKeyNames: src.skyKey ? { ...skyNames } : undefined,
+      drawSkipped,
       pipeline: pipeline.values(),
       geometries: geometries.values(), textures: textures.values(),
       parcels: parcels.values(),
@@ -124,7 +128,9 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     const warn = (ok: boolean) => (ok ? '' : ' ⚠');
     parts.body.textContent = [
       `${fps.toFixed(0)}fps  max ${f.max.toFixed(0)}ms  히칭 ${h}`,
-      `draw ${cd.min}${cd.min === cd.max ? '' : `~${cd.max}`}${warn(drawOk)}  pipe ${cp.min}${cp.constant ? '' : `~${cp.max}`}${warn(cp.constant)}`,
+      // 범위가 보이는데 경고가 없으면 "왜 안 뜨지"로 읽힌다. 하늘 상태 수를 함께 적어
+      // "상태가 여럿이라 범위가 나오는 게 정상"임을 그 자리에서 알 수 있게 한다.
+      `draw ${cd.min}${cd.min === cd.max ? '' : `~${cd.max}`}${gd && gd.groups.length > 1 ? `(하늘${gd.groups.length})` : ''}${warn(drawOk)}  pipe ${cp.min}${cp.constant ? '' : `~${cp.max}`}${warn(cp.constant)}`,
       `파셀 ${s.loaded}  build ${built}  starve ${s.starved}${warn(s.starved === 0)}`,
       `px ${a.pixelRatio.toFixed(2)}  cap ${a.frameCap || '—'}  tri ${Math.round(a.triAvg)}`,
     ].join('\n');
@@ -172,10 +178,23 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     },
     tick() {
       const c = src.counts();
-      // draw와 하늘 상태는 **같은 줄에서** 넣는다. 다른 지점에서 넣으면 링 인덱스가
-      // 어긋나 판정이 엉뚱한 짝을 보게 된다(그러고도 조용히 통과한다).
-      draw.push(c.draw);
-      if (src.skyKey) drawSkyKey.push(skyIdOf(src.skyKey()));
+      // ── draw와 하늘 상태의 링 정합 ──────────────────────────────────────
+      // 둘은 같은 인덱스가 같은 프레임이어야 한다. 그래서 **키를 먼저 구하고, 넣을지
+      // 말지를 정한 뒤, 넣을 때는 둘 다 넣는다.** `draw.push` 뒤에 키를 구하면 그 사이
+      // 예외 하나로 두 링이 영구히 한 칸씩 어긋나고, 그러고도 판정은 조용히 통과한다.
+      //
+      // 키가 `null`이면 하늘 전이 중이다 — 그리는 것이 섞여 있는 구간이라 판정에서 뺀다
+      // (`main.ts`의 `skyKey` 주석 참고). 뺀 개수는 리포트에 적는다.
+      let key: string | null | undefined;
+      if (src.skyKey) {
+        try { key = src.skyKey(); } catch { key = undefined; }
+      }
+      if (src.skyKey && key == null) {
+        drawSkipped++; // draw도 넣지 않는다 — 두 링의 길이가 항상 같게
+      } else {
+        draw.push(c.draw);
+        if (src.skyKey) drawSkyKey.push(skyIdOf(key as string));
+      }
       pipeline.push(c.pipeline);
       geometries.push(c.geometries); textures.push(c.textures);
       const s = src.stream();

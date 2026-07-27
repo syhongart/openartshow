@@ -44,6 +44,12 @@ export interface SkyState {
   weather: string;
   fx: Record<string, boolean>;
   flashSafe?: boolean;
+  /**
+   * 돔 크로스페이드 진행 중인가. **`time`/`weather`는 `set()` 즉시 새 값이 되지만 실제로
+   * 그려지는 것은 최대 1.8초 동안 다르다** — `fadeDome`이 하나 더 그려지고, 구름 가시성
+   * 갱신도 그동안 멈춰 있어 이전 상태가 남는다. 드로우콜 판정이 이 구간을 구별해야 한다.
+   */
+  xfade?: boolean;
 }
 
 export interface SkyOptions {
