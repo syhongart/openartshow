@@ -84,6 +84,158 @@ export class Ring {
   clear(): void { this.buf.length = 0; this.i = 0; }
 }
 
+// ── 시간축 ──────────────────────────────────────────────────────────────────
+// 통계만으로는 **언제 무엇이 늘었는지**를 못 본다. 이 프로젝트의 결정적 진단이 정확히
+// 그것이었다 — 파이프라인 구조 키가 35→52→84→116으로 단조 증가하는 것을 보고서야
+// "축출·재생성이 아니라 매번 새 키"임이 밝혀졌다. 스냅샷 하나로는 절대 안 보인다.
+//
+// 그래서 일정 구간마다 요약을 확정해 쌓는다. 원시 프레임을 전부 들고 있지 않으므로
+// 세션이 길어져도 메모리가 선형으로 늘지 않는다.
+
+export interface Bucket {
+  /** 구간 시작(초) */
+  t0: number;
+  frames: number;
+  fps: number;
+  maxMs: number;
+  hitches: number;
+  /** 구간 끝 시점의 개수 — 증가 추세를 보는 것이 목적이다 */
+  draw: number;
+  pipeline: number;
+  geometries: number;
+  textures: number;
+  parcels: number;
+  /** 구간 내 신규 생성 수 */
+  built: number;
+}
+
+export interface TimelineSample {
+  frameMs: number;
+  draw: number;
+  pipeline: number;
+  geometries: number;
+  textures: number;
+  parcels: number;
+  built: number;
+}
+
+/**
+ * 시간 구간별 요약 누적기.
+ *
+ * `maxBuckets`를 넘으면 오래된 것을 버린다. 다만 기본값(720구간 × 5초 = 1시간)은
+ * 실제 세션보다 훨씬 길게 잡아, 실기기 관측에서 앞부분이 잘리는 일이 없게 한다 —
+ * 부팅 직후 몇 초가 증식 진단의 핵심 구간이다.
+ */
+export class Timeline {
+  private readonly buckets: Bucket[] = [];
+  private cur: Bucket | null = null;
+  private frameSum = 0;
+
+  constructor(
+    private readonly bucketS = 5,
+    private readonly maxBuckets = 720,
+  ) {}
+
+  /** `nowS`는 세션 시작 기준 경과(초). */
+  add(nowS: number, s: TimelineSample): void {
+    if (!Number.isFinite(nowS)) return;
+    const t0 = Math.floor(nowS / this.bucketS) * this.bucketS;
+    if (!this.cur || this.cur.t0 !== t0) {
+      if (this.cur) this.commit();
+      this.cur = {
+        t0, frames: 0, fps: 0, maxMs: 0, hitches: 0,
+        draw: s.draw, pipeline: s.pipeline, geometries: s.geometries,
+        textures: s.textures, parcels: s.parcels, built: 0,
+      };
+      this.frameSum = 0;
+    }
+    const b = this.cur;
+    b.frames++;
+    if (Number.isFinite(s.frameMs)) {
+      this.frameSum += s.frameMs;
+      if (s.frameMs > b.maxMs) b.maxMs = s.frameMs;
+      if (s.frameMs > HITCH_MS) b.hitches++;
+    }
+    // 개수는 **구간 끝 값**을 남긴다. 증가 추세가 목적이므로 마지막 관측이 맞다.
+    b.draw = s.draw; b.pipeline = s.pipeline;
+    b.geometries = s.geometries; b.textures = s.textures; b.parcels = s.parcels;
+    b.built += s.built;
+  }
+
+  private commit(): void {
+    if (!this.cur) return;
+    this.cur.fps = this.frameSum > 0 ? (this.cur.frames * 1000) / this.frameSum : 0;
+    this.buckets.push(this.cur);
+    while (this.buckets.length > this.maxBuckets) this.buckets.shift();
+    this.cur = null;
+  }
+
+  /** 진행 중인 구간까지 포함해 돌려준다(복사 시점에 마지막 구간이 빠지면 안 된다). */
+  snapshot(): Bucket[] {
+    const out = [...this.buckets];
+    if (this.cur) {
+      out.push({
+        ...this.cur,
+        fps: this.frameSum > 0 ? (this.cur.frames * 1000) / this.frameSum : 0,
+      });
+    }
+    return out;
+  }
+}
+
+/**
+ * 표시 행 수를 제한하도록 구간을 묶는다.
+ *
+ * 세션이 길어져도 리포트 길이가 일정해야 한다 — 감독이 대화창에 붙여넣으므로 700행은
+ * 옮겨지지 않는다. 묶을 때 **최댓값과 히칭은 합산·최대**로 보존한다. 평균만 남기면
+ * 다운샘플이 히칭을 지워버려, 길이를 줄이려다 진단을 잃는다.
+ */
+export function downsample(buckets: readonly Bucket[], maxRows = 40): Bucket[] {
+  if (buckets.length <= maxRows || maxRows < 1) return [...buckets];
+  const group = Math.ceil(buckets.length / maxRows);
+  const out: Bucket[] = [];
+  for (let i = 0; i < buckets.length; i += group) {
+    const g = buckets.slice(i, i + group);
+    const frames = g.reduce((s, b) => s + b.frames, 0);
+    // fps는 프레임 수로 가중 평균해야 한다 — 단순 평균은 짧은 구간을 과대평가한다.
+    const wfps = frames > 0 ? g.reduce((s, b) => s + b.fps * b.frames, 0) / frames : 0;
+    const last = g[g.length - 1];
+    out.push({
+      t0: g[0].t0,
+      frames,
+      fps: wfps,
+      maxMs: Math.max(...g.map((b) => b.maxMs)),
+      hitches: g.reduce((s, b) => s + b.hitches, 0),
+      draw: last.draw, pipeline: last.pipeline,
+      geometries: last.geometries, textures: last.textures, parcels: last.parcels,
+      built: g.reduce((s, b) => s + b.built, 0),
+    });
+  }
+  return out;
+}
+
+/** 시간축 표. 개수가 늘어나면 한눈에 보이는 것이 이 표의 목적이다. */
+export function formatTimeline(buckets: readonly Bucket[], maxRows = 40): string {
+  if (buckets.length === 0) return '(표본 없음)';
+  const rows = downsample(buckets, maxRows);
+  const lines = ['   t   fps   max  히칭 draw pipe  geo  tex 파셀 build'];
+  for (const b of rows) {
+    lines.push(
+      String(Math.round(b.t0)).padStart(4)
+      + f1(b.fps).padStart(6)
+      + String(Math.round(b.maxMs)).padStart(6)
+      + String(b.hitches).padStart(5)
+      + String(b.draw).padStart(5)
+      + String(b.pipeline).padStart(5)
+      + String(b.geometries).padStart(5)
+      + String(b.textures).padStart(5)
+      + String(b.parcels).padStart(5)
+      + String(b.built).padStart(6),
+    );
+  }
+  return lines.join('\n');
+}
+
 export interface ReportInput {
   /** 기기·백엔드 식별 */
   backend: string;
@@ -111,6 +263,8 @@ export interface ReportInput {
   pixelRatio: number;
   frameCap: number;
   triAvg: number;
+  /** 시간축 구간 요약 — 언제 무엇이 늘었는지 */
+  timeline?: readonly Bucket[];
 }
 
 const f1 = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : '—');
@@ -171,6 +325,13 @@ export function formatReport(r: ReportInput): string {
   lines.push('');
   lines.push('[적응]');
   lines.push(`해상도 배율 ${f2(r.pixelRatio)} · 프레임캡 ${r.frameCap || '없음'} · 삼각형 평균 ${Math.round(r.triAvg)}`);
+
+  if (r.timeline && r.timeline.length > 0) {
+    lines.push('');
+    lines.push('[시간축 — 개수가 오른쪽으로 갈수록 늘면 증식이다]');
+    lines.push(formatTimeline(r.timeline));
+  }
+
   lines.push('');
   lines.push(`UA ${r.ua}`);
   return lines.join('\n');

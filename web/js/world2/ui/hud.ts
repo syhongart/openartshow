@@ -10,7 +10,7 @@
 // 계측의 기본이고, 이 프로젝트는 그걸 한 번 어겨서 계측 자체가 프레임을 먹은 적이 있다.
 
 import {
-  Ring, formatReport, summarize, hitchCount, constancy, type ReportInput,
+  Ring, Timeline, formatReport, summarize, hitchCount, constancy, type ReportInput,
 } from '../decide/telemetry.js';
 
 /** 링버퍼 용량 — 60fps에서 약 30초 */
@@ -55,6 +55,14 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
   let built = 0, released = 0;
   const startedAt = Date.now();
   let open = false;
+  /**
+   * 시간축 누적. 링버퍼(30초)는 오래된 표본을 버리므로 "언제 늘었나"를 못 본다.
+   * 이건 세션 시작부터 5초 구간 요약을 계속 쌓는다 — 원시 프레임을 안 들고 있으므로
+   * 오래 켜 둬도 메모리가 선형으로 늘지 않는다.
+   */
+  const timeline = new Timeline(5);
+  /** 마지막 프레임 시간 — 시간축 표본에 붙인다 */
+  let lastFrameMs = 0;
 
   const snapshot = (): ReportInput => {
     const s = src.stream(); const a = src.adapt();
@@ -71,6 +79,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       parcels: parcels.values(),
       built, released, starved: s.starved,
       pixelRatio: a.pixelRatio, frameCap: a.frameCap, triAvg: a.triAvg,
+      timeline: timeline.snapshot(),
     };
   };
 
@@ -128,7 +137,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
 
   return {
     sample(name, value) {
-      if (name === 'frame_ms') frameMs.push(value);
+      if (name === 'frame_ms') { frameMs.push(value); lastFrameMs = value; }
       else if (name === 'upd_ms') updMs.push(value);
       else if (name === 'render_ms') renderMs.push(value);
       else if (name === 'out_ms') outMs.push(value);
@@ -141,6 +150,12 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       parcels.push(s.loaded);
       // built/released는 프레임당 증분이므로 누적한다.
       built += s.built; released += s.released;
+      timeline.add((Date.now() - startedAt) / 1000, {
+        frameMs: lastFrameMs,
+        draw: c.draw, pipeline: c.pipeline,
+        geometries: c.geometries, textures: c.textures,
+        parcels: s.loaded, built: s.built,
+      });
     },
     dispose() {
       clearInterval(timer);

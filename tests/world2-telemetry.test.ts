@@ -6,7 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  summarize, hitchCount, constancy, Ring, formatReport, HITCH_MS, type ReportInput,
+  summarize, hitchCount, constancy, Ring, formatReport, HITCH_MS,
+  Timeline, downsample, formatTimeline, type ReportInput, type Bucket, type TimelineSample,
 } from '../web/js/world2/decide/telemetry.js';
 
 const base = (o: Partial<ReportInput> = {}): ReportInput => ({
@@ -101,6 +102,121 @@ describe('Ring — 세션이 길어져도 메모리가 늘지 않는다', () => 
   });
 });
 
+describe('Timeline — 언제 늘었는지 (통계로는 절대 안 보인다)', () => {
+  const s = (o: Partial<TimelineSample> = {}): TimelineSample => ({
+    frameMs: 16, draw: 7, pipeline: 5, geometries: 6, textures: 2, parcels: 16, built: 0, ...o,
+  });
+
+  it('구간마다 하나씩 쌓인다', () => {
+    const t = new Timeline(5);
+    t.add(0, s()); t.add(2, s()); t.add(6, s()); t.add(11, s());
+    expect(t.snapshot().map((b) => b.t0)).toEqual([0, 5, 10]);
+  });
+
+  it('진행 중인 구간도 포함한다 — 복사 시점에 마지막이 빠지면 안 된다', () => {
+    const t = new Timeline(5);
+    t.add(1, s());
+    expect(t.snapshot()).toHaveLength(1);
+  });
+
+  it('파이프라인 증식이 표에 드러난다 — 이 프로젝트의 결정적 진단', () => {
+    const t = new Timeline(5);
+    for (const [sec, pipe] of [[1, 35], [6, 52], [11, 84], [16, 116]] as const) t.add(sec, s({ pipeline: pipe }));
+    expect(t.snapshot().map((b) => b.pipeline)).toEqual([35, 52, 84, 116]);
+  });
+
+  it('개수는 구간 끝 값을 남긴다 — 증가 추세가 목적이다', () => {
+    const t = new Timeline(5);
+    t.add(0, s({ draw: 7 })); t.add(1, s({ draw: 9 }));
+    expect(t.snapshot()[0].draw).toBe(9);
+  });
+
+  it('히칭과 최댓값을 구간별로 센다', () => {
+    const t = new Timeline(5);
+    t.add(0, s({ frameMs: 16 })); t.add(1, s({ frameMs: 250 })); t.add(2, s({ frameMs: 400 }));
+    const b = t.snapshot()[0];
+    expect(b.hitches).toBe(2);
+    expect(b.maxMs).toBe(400);
+  });
+
+  it('build는 구간 내 증분을 합산한다', () => {
+    const t = new Timeline(5);
+    t.add(0, s({ built: 2 })); t.add(1, s({ built: 3 }));
+    expect(t.snapshot()[0].built).toBe(5);
+  });
+
+  it('fps는 프레임 시간에서 계산된다', () => {
+    const t = new Timeline(5);
+    for (let i = 0; i < 10; i++) t.add(i * 0.4, s({ frameMs: 20 }));
+    expect(t.snapshot()[0].fps).toBeCloseTo(50, 0);
+  });
+
+  it('오래 켜 둬도 메모리가 무한히 늘지 않는다', () => {
+    const t = new Timeline(5, 10);
+    for (let i = 0; i < 500; i++) t.add(i * 5, s());
+    expect(t.snapshot().length).toBeLessThanOrEqual(11); // 확정 10 + 진행중 1
+  });
+
+  it('이상한 시각은 무시한다', () => {
+    const t = new Timeline(5);
+    t.add(NaN, s());
+    expect(t.snapshot()).toHaveLength(0);
+  });
+});
+
+describe('downsample — 길이를 줄이되 진단을 잃지 않는다', () => {
+  const mk = (n: number): Bucket[] => Array.from({ length: n }, (_, i) => ({
+    t0: i * 5, frames: 300, fps: 60, maxMs: 16, hitches: 0,
+    draw: 7, pipeline: 5, geometries: 6, textures: 2, parcels: 16, built: 0,
+  }));
+
+  it('행 수 이하면 그대로', () => {
+    expect(downsample(mk(10), 40)).toHaveLength(10);
+  });
+
+  it('넘으면 묶는다 — 700행은 대화창에 옮겨지지 않는다', () => {
+    expect(downsample(mk(700), 40).length).toBeLessThanOrEqual(40);
+  });
+
+  it('묶어도 히칭이 사라지지 않는다 — 길이를 줄이려다 진단을 잃으면 안 된다', () => {
+    const bs = mk(100);
+    bs[57].hitches = 3; bs[57].maxMs = 900;
+    const d = downsample(bs, 10);
+    expect(d.reduce((s, b) => s + b.hitches, 0)).toBe(3);
+    expect(Math.max(...d.map((b) => b.maxMs))).toBe(900);
+  });
+
+  it('fps는 프레임 수로 가중 평균한다 — 짧은 구간을 과대평가하지 않는다', () => {
+    const bs = mk(4);
+    bs[0].fps = 10; bs[0].frames = 10;   // 짧고 느린 구간
+    bs[1].fps = 60; bs[1].frames = 600;
+    bs[2].fps = 60; bs[2].frames = 600;
+    bs[3].fps = 60; bs[3].frames = 600;
+    const d = downsample(bs, 1);
+    expect(d[0].fps).toBeGreaterThan(55); // 단순 평균이면 37.5로 왜곡된다
+  });
+
+  it('개수는 마지막 값을 남긴다', () => {
+    const bs = mk(4);
+    bs[3].pipeline = 99;
+    expect(downsample(bs, 1)[0].pipeline).toBe(99);
+  });
+});
+
+describe('formatTimeline', () => {
+  it('표본이 없으면 그렇게 적는다', () => {
+    expect(formatTimeline([])).toContain('표본 없음');
+  });
+
+  it('헤더와 행을 낸다', () => {
+    const t = new Timeline(5);
+    t.add(0, { frameMs: 16, draw: 7, pipeline: 5, geometries: 6, textures: 2, parcels: 16, built: 0 });
+    const s = formatTimeline(t.snapshot());
+    expect(s).toContain('fps');
+    expect(s).toContain('pipe');
+  });
+});
+
 describe('formatReport — 복사되는 그 텍스트', () => {
   it('정상 상태에서 히칭 없음을 적는다', () => {
     const t = formatReport(base());
@@ -162,5 +278,22 @@ describe('formatReport — 복사되는 그 텍스트', () => {
   it('프레임캡이 걸리면 값을, 없으면 "없음"을 적는다', () => {
     expect(formatReport(base({ frameCap: 30 }))).toContain('프레임캡 30');
     expect(formatReport(base({ frameCap: 0 }))).toContain('프레임캡 없음');
+  });
+
+  it('시간축이 있으면 표를 붙인다 — 감독 지시("시간축으로 축적")', () => {
+    const t = new Timeline(5);
+    for (const [sec, pipe] of [[1, 35], [6, 52], [11, 84]] as const) {
+      t.add(sec, { frameMs: 16, draw: 7, pipeline: pipe, geometries: 6, textures: 2, parcels: 16, built: 0 });
+    }
+    const s = formatReport(base({ timeline: t.snapshot() }));
+    expect(s).toContain('시간축');
+    // 증식이 표에 그대로 남아야 한다 — 35 → 52 → 84
+    expect(s).toContain('35');
+    expect(s).toContain('52');
+    expect(s).toContain('84');
+  });
+
+  it('시간축이 없으면 그 절을 생략한다', () => {
+    expect(formatReport(base())).not.toContain('시간축');
   });
 });
