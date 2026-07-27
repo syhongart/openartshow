@@ -1,4 +1,4 @@
-// world2/parts/road-topology.ts — 도로 위상. 순수 함수만, import 0.
+// world2/parts/road-topology.ts — 도로 위상. 순수 함수만.
 //
 // ── 풀어야 할 문제 ───────────────────────────────────────────────────────────
 // 파셀은 **서로를 모른다.** 배치는 `(px,pz)` 만으로 계산되고, 이웃 파셀은 아직 로드되지
@@ -7,7 +7,7 @@
 // 그런데 도로는 이어져야 한다. 내 파셀 동쪽 끝에서 길이 나가면 옆 파셀 서쪽 끝에서도
 // 길이 들어와야 하고, 안 그러면 세상이 끊긴 길 조각으로 뒤덮인다.
 //
-// ── 해법: 경계를 파셀이 아니라 **경계 자신의 좌표**로 해시한다 ──────────────
+// ── 해법: 경계를 파셀이 아니라 **경계 자신의 좌표**로 식별한다 ──────────────
 // 두 파셀 사이의 경계를 유일한 좌표로 식별하면, 양쪽이 각자 계산해도 **같은 값**이 나온다.
 // 이웃을 조회할 필요가 없다.
 //
@@ -16,43 +16,31 @@
 //
 // 각 경계가 "길이 지나는가"를 스스로 정하고, 파셀은 자기 네 경계를 물어보기만 한다.
 //
-// ── 왜 이 확률인가 ───────────────────────────────────────────────────────────
-// 경계 활성 확률 0.6 일 때 활성 경계 수는 이항분포 B(4, 0.6) 을 따른다:
+// ── 격자로 바꿨다 (감독 지시) ────────────────────────────────────────────────
+// *"길을 변경하자. 월드 1처럼 격자로 해주고."*
 //
-//   0개  2.6%   길 없는 구획 — 공원이나 큰 부지처럼 읽힌다
-//   1개 15.4%   막다른 길
-//   2개 34.6%   통과로(직선 또는 꺾임)
-//   3개 34.6%   T 자
-//   4개 13.0%   사거리
+// 예전에는 각 경계가 **확률 0.6 으로 독립 추첨**이었다. 그러면 활성 경계 수가 B(4,0.6)
+// 을 따라 막다른 길 15%·사거리 13% 가 섞이는데, 의도는 "바둑판 말고" 였지만 결과는
+// 길이 곳곳에서 끊긴 도시였다. 감독이 world1 을 가리킨 것이 이 지점이다 — world1 은
+// 파셀마다 남·동 가장자리에 도로 스트립을 그려 **전부 이어진 격자**가 된다.
 //
-// 막다른 길이 15% 있는 것이 의도다. 전부 통과로면 격자무늬가 되고, 감독이 "바둑판 말고"
-// 라고 한 것이 그 모습이다. 끊기고 꺾이는 길이 섞여야 도시로 읽힌다.
+// 이제 경계 판정은 `decide/grid.ts` 가 답한다. 기본은 전부 길이고, **2×2 슈퍼셀이
+// 자기 내부 경계 하나를 끄면 두 칸이 한 블록**이 된다 — 감독이 말한 *"칸의 크기는 모두
+// 같은 크기가 아니라 조금 달랐으면해. 2개 셀이 한개인것도 있고."* 가 이것이다.
+//
+// "import 0" 이 깨진 것처럼 보이지만 아니다. `decide/grid.ts` 도 import 0 의 순수 판정
+// 파일이고, 격자의 SSOT 를 두 곳에 적지 않으려면 여기가 그것을 **참조해야** 한다.
 
-/** 32비트 해시. `decide/parcel-layout.ts` 의 것과 같은 알고리즘이되 소금이 다르다 */
-function h2(a: number, b: number, salt: number): number {
-  let h = salt >>> 0;
-  h = Math.imul(h ^ (a | 0), 0x85ebca6b);
-  h ^= h >>> 13;
-  h = Math.imul(h ^ (b | 0), 0xc2b2ae35);
-  h ^= h >>> 16;
-  h = Math.imul(h, 0x27d4eb2d);
-  return (h ^ (h >>> 15)) >>> 0;
-}
-
-const SALT_X = 0x517cc1b7;
-const SALT_Z = 0x27220a95;
-
-/** 경계 활성 확률. 위 분포의 근거값이다 — 바꾸면 길의 성격이 통째로 바뀐다 */
-export const EDGE_P = 0.6;
+import { gridEdgeX, gridEdgeZ } from '../decide/grid.js';
 
 /** 파셀 (px,pz) 와 (px+1,pz) 사이 경계에 길이 지나는가 */
-export function edgeX(px: number, pz: number, p: number = EDGE_P): boolean {
-  return h2(px, pz, SALT_X) / 4294967296 < p;
+export function edgeX(px: number, pz: number): boolean {
+  return gridEdgeX(px, pz);
 }
 
 /** 파셀 (px,pz) 와 (px,pz+1) 사이 경계에 길이 지나는가 */
-export function edgeZ(px: number, pz: number, p: number = EDGE_P): boolean {
-  return h2(px, pz, SALT_Z) / 4294967296 < p;
+export function edgeZ(px: number, pz: number): boolean {
+  return gridEdgeZ(px, pz);
 }
 
 /** 파셀의 네 방향. 배열 순서가 곧 배치 순서다 */
@@ -66,12 +54,12 @@ export const DIRS: readonly Dir[] = ['north', 'south', 'west', 'east'];
  * 좌표**다. 여기를 `edgeZ(px, pz)` 로 적으면 북쪽과 남쪽이 같은 값을 보게 되고, 길이
  * 항상 남북으로 관통하거나 아예 없는 세상이 된다.
  */
-export function roadDirs(px: number, pz: number, p: number = EDGE_P): Dir[] {
+export function roadDirs(px: number, pz: number): Dir[] {
   const out: Dir[] = [];
-  if (edgeZ(px, pz - 1, p)) out.push('north');
-  if (edgeZ(px, pz, p)) out.push('south');
-  if (edgeX(px - 1, pz, p)) out.push('west');
-  if (edgeX(px, pz, p)) out.push('east');
+  if (edgeZ(px, pz - 1)) out.push('north');
+  if (edgeZ(px, pz)) out.push('south');
+  if (edgeX(px - 1, pz)) out.push('west');
+  if (edgeX(px, pz)) out.push('east');
   return out;
 }
 

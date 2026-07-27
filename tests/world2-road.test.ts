@@ -10,12 +10,14 @@
 //     피하는 것(`onRoad`)은 **다른 함수**다. 어긋나면 건물이 길 위에 서거나, 반대로 멀쩡한
 //     땅을 비워 도시가 휑해진다. 어느 쪽 단위 테스트로도 걸리지 않는 전형적인 경계다.
 //
-//  ③ **길의 성격.** 전부 통과로면 격자무늬가 된다 — 감독이 "바둑판 말고" 라고 한 그 모습.
-//     막다른 길과 꺾인 길이 섞여야 도시로 읽힌다.
+//  ③ **길의 성격.** 감독 지시로 **격자**가 됐다 — *"월드 1처럼 격자로 해주고."* 예전에는
+//     경계마다 확률 0.6 독립 추첨이라 막다른 길이 15% 섞였는데, 의도는 "바둑판 말고"
+//     였지만 결과는 길이 곳곳에서 끊긴 도시였다. 이제 기본은 전부 이어지고, 불규칙은
+//     **블록 크기**가 만든다(2×2 슈퍼셀이 내부 경계 하나를 끄면 두 칸이 한 블록).
 
 import { describe, it, expect } from 'vitest';
 import {
-  edgeX, edgeZ, roadDirs, onRoad, pickOffRoad, ROAD_SEG, ROAD_HALF, EDGE_P,
+  edgeX, edgeZ, roadDirs, onRoad, pickOffRoad, ROAD_SEG, ROAD_HALF,
   SETBACK,
 } from '../frontend/js/world2/parts/road-topology.js';
 import { road } from '../frontend/js/world2/parts/road.js';
@@ -57,25 +59,30 @@ describe('① 이웃 조회 없이 길이 이어진다', () => {
   // 북쪽을 `edgeZ(px, pz)` 로 잘못 적으면 북과 남이 같은 값을 보게 되고, 길이 늘 남북으로
   // 관통하거나 아예 없는 세상이 된다. 그 실수는 위 두 테스트를 **통과한다** — 대칭은
   // 여전히 성립하기 때문이다. 그래서 축이 실제로 갈라져 있는지 따로 본다.
+  // 북쪽을 `edgeZ(px, pz)` 로 잘못 적으면 북과 남이 같은 값을 보게 된다. 격자에서는
+  // 대부분의 경계가 열려 있어 "일치율" 로는 그 실수를 못 잡는다 — 정상일 때도 높다.
+  // 대신 **축이 실제로 갈라지는 지점**을 본다: 블록 병합이 일어난 칸에서는 한쪽 축만
+  // 닫히므로, 북≠남 인 파셀과 동≠서 인 파셀이 둘 다 존재해야 한다.
   it('네 경계가 서로 독립이다 — 북=남 이나 동=서 로 붙어 있지 않다', () => {
-    let nsSame = 0, ewSame = 0, n = 0;
+    let nsDiffer = 0, ewDiffer = 0;
     for (let px = -20; px <= 20; px++) {
       for (let pz = -20; pz <= 20; pz++) {
         const d = roadDirs(px, pz);
-        if (d.includes('north') === d.includes('south')) nsSame++;
-        if (d.includes('west') === d.includes('east')) ewSame++;
-        n++;
+        if (d.includes('north') !== d.includes('south')) nsDiffer++;
+        if (d.includes('west') !== d.includes('east')) ewDiffer++;
       }
     }
-    // 독립이면 일치율은 p²+(1-p)² = 0.52 근방이다. 붙어 있으면 1.0 이 된다.
-    expect(nsSame / n).toBeLessThan(0.7);
-    expect(ewSame / n).toBeLessThan(0.7);
+    expect(nsDiffer).toBeGreaterThan(0);
+    expect(ewDiffer).toBeGreaterThan(0);
   });
 
-  it('길이 하나도 없는 세상이 아니다', () => {
-    let withRoad = 0;
-    for (let px = 0; px < 40; px++) for (let pz = 0; pz < 40; pz++) if (roadDirs(px, pz).length) withRoad++;
-    expect(withRoad / 1600).toBeGreaterThan(0.9); // 이론값 97.4%
+  it('길이 끊기지 않는다 — 격자이므로 모든 파셀이 길에 닿는다', () => {
+    for (let px = -20; px <= 20; px++) {
+      for (let pz = -20; pz <= 20; pz++) {
+        // 병합된 블록의 한 칸도 바깥 경계는 열려 있어야 도달 가능하다.
+        expect(roadDirs(px, pz).length).toBeGreaterThanOrEqual(2);
+      }
+    }
   });
 });
 
@@ -96,18 +103,20 @@ describe('② onRoad 가 실제로 깔린 조각을 덮는다', () => {
     }
   });
 
-  it('길이 없는 파셀은 어디도 도로가 아니다', () => {
-    // 길 없는 파셀을 하나 찾아서 확인한다(이론상 2.6% 이므로 반드시 있다)
-    let found = false;
-    for (let px = 0; px < 60 && !found; px++) {
-      for (let pz = 0; pz < 60 && !found; pz++) {
-        if (roadDirs(px, pz).length) continue;
-        found = true;
-        expect(road.place({ px, pz, rnd: rngFrom(1), o: DEFAULT_LAYOUT, halfX: HALF_X, halfZ: HALF_Z })).toEqual([]);
-        for (const v of [-15, -5, 0, 5, 15]) expect(onRoad(v, v, [])).toBe(false);
-      }
+  // 격자로 바뀐 뒤 "길 없는 파셀"은 세상에 존재하지 않는다(앞의 ①이 그것을 고정한다).
+  // 그래도 방향이 빈 경우의 계약은 남겨둔다 — `road.place` 와 `onRoad` 는 방향 배열을
+  // 인자로 받는 순수 함수라, 빈 배열이 들어오는 경로가 사라진 것이지 함수가 사라진 건
+  // 아니다. 병합된 블록 안쪽을 계산할 때 실제로 빈 방향을 넘기게 된다.
+  it('방향이 비면 어디도 도로가 아니다', () => {
+    for (const v of [-15, -5, 0, 5, 15]) expect(onRoad(v, v, [])).toBe(false);
+    expect(onRoad(0, 0, [])).toBe(false); // 중심 교차 패치도 방향이 없으면 안 걸린다
+  });
+
+  it('격자에서는 모든 파셀에 도로 조각이 깔린다', () => {
+    for (const [px, pz] of [[0, 0], [3, -7], [-11, 5], [14, 14]]) {
+      const segs = road.place({ px, pz, rnd: rngFrom(px * 31 + pz), o: DEFAULT_LAYOUT, halfX: HALF_X, halfZ: HALF_Z });
+      expect(segs.length).toBeGreaterThan(0);
     }
-    expect(found).toBe(true);
   });
 
   it('신고한 최대 9조각을 넘지 않는다 — 슬롯 예산의 근거', () => {
@@ -123,24 +132,29 @@ describe('② onRoad 가 실제로 깔린 조각을 덮는다', () => {
   });
 });
 
-describe('③ 길의 성격 — 바둑판이 아니다', () => {
-  it('막다른 길과 사거리가 둘 다 나온다', () => {
+describe('③ 길의 성격 — 격자이되 칸 크기가 고르지 않다', () => {
+  it('대부분은 사거리다 — 격자로 이어진다', () => {
     const hist = [0, 0, 0, 0, 0];
     for (let px = 0; px < 60; px++) for (let pz = 0; pz < 60; pz++) hist[roadDirs(px, pz).length]++;
     const n = 3600;
-    // 이론값 B(4, 0.6): 2.6% / 15.4% / 34.6% / 34.6% / 13.0%
-    expect(hist[1] / n).toBeGreaterThan(0.08); // 막다른 길이 있어야 한다
-    expect(hist[4] / n).toBeGreaterThan(0.06); // 사거리도 있어야 한다
-    expect(hist[2] / n).toBeLessThan(0.55);    // 통과로만 있으면 그게 바둑판이다
+    expect(hist[4] / n).toBeGreaterThan(0.5); // 사거리가 다수
+    expect(hist[0]).toBe(0);                  // 길에서 끊긴 칸은 없다
+    expect(hist[1]).toBe(0);                  // 막다른 길도 없다
   });
 
-  it('EDGE_P 를 1로 올리면 전부 사거리가 된다 — 확률이 실제로 먹는다', () => {
-    for (let px = 0; px < 10; px++) {
-      expect(roadDirs(px, px * 7, 1).length).toBe(4);
-      expect(roadDirs(px, px * 7, 0).length).toBe(0);
+  // 감독 지시: *"칸의 크기는 모두 같은 크기가 아니라 조금 달랐으면해. 2개 셀이 한개인
+  // 것도 있고."* — 전부 사거리이기만 하면 그게 바둑판이다. 병합이 실제로 일어나는지
+  // 본다. 이 테스트가 없으면 `blockPattern` 이 늘 `None` 을 돌려줘도 아무도 모른다.
+  it('두 칸이 한 블록이 되는 곳이 있다 — 전부 같은 크기면 바둑판이다', () => {
+    let merged = 0;
+    for (let px = 0; px < 60; px++) {
+      for (let pz = 0; pz < 60; pz++) {
+        if (roadDirs(px, pz).length < 4) merged++;
+      }
     }
-    expect(EDGE_P).toBeGreaterThan(0);
-    expect(EDGE_P).toBeLessThan(1);
+    // 슈퍼셀의 60%가 내부 경계 하나를 끄고, 그 경계에 접한 칸이 둘이므로 대략 30%.
+    expect(merged / 3600).toBeGreaterThan(0.15);
+    expect(merged / 3600).toBeLessThan(0.45);
   });
 });
 
@@ -193,10 +207,20 @@ describe('경계 함수 자체', () => {
     }
   });
 
-  it('X 경계와 Z 경계가 같은 값을 내지 않는다 — 소금이 갈려 있다', () => {
-    let same = 0;
-    for (let i = 0; i < 400; i++) if (edgeX(i, i * 5) === edgeZ(i, i * 5)) same++;
-    expect(same).toBeLessThan(340); // 독립이면 208 근방, 같은 해시면 400
+  // 격자에서는 두 축 모두 대부분 열려 있어 "일치율"로는 축이 붙었는지 알 수 없다 —
+  // 정상일 때도 높다. 대신 **두 축이 서로 다른 값을 내는 좌표가 실제로 존재하는지**를
+  // 본다. `gridEdgeZ` 가 `gridEdgeX` 를 그대로 부르는 실수를 하면 이것이 0이 된다.
+  it('X 경계와 Z 경계가 서로 다르게 닫히는 곳이 있다 — 두 축이 붙어 있지 않다', () => {
+    let xOnly = 0, zOnly = 0;
+    for (let px = -30; px <= 30; px++) {
+      for (let pz = -30; pz <= 30; pz++) {
+        const ex = edgeX(px, pz), ez = edgeZ(px, pz);
+        if (!ex && ez) xOnly++;
+        if (ex && !ez) zOnly++;
+      }
+    }
+    expect(xOnly).toBeGreaterThan(0);
+    expect(zOnly).toBeGreaterThan(0);
   });
 });
 

@@ -11,18 +11,25 @@ import { roadDirs } from '../frontend/js/world2/parts/road-topology.js';
 
 describe('광장 — 길이 닿는 곳에만', () => {
   // 갈 수 없는 광장은 광장이 아니라 "아직 안 만든 곳" 으로 읽힌다.
-  it('길이 하나도 없는 파셀은 광장이 아니다', () => {
-    let checked = 0;
+  //
+  // 예전에는 "길 없는 파셀은 광장이 아니다"를 검사했다. 도로가 확률이던 시절에는 길이
+  // 하나도 없는 파셀이 2.6% 있었기 때문이다. **감독 지시로 도로가 격자가 되면서 그런
+  // 파셀이 세상에서 사라졌다** — 표본이 빈 배열이 되어 단언이 한 번도 돌지 않았고,
+  // `checked > 50` 가드가 그것을 잡았다(가드가 없었으면 빈 검사가 조용히 통과했다).
+  //
+  // 계약이 사라진 게 아니라 **더 강해졌다**: 이제 모든 광장이 예외 없이 길에 닿는다.
+  it('모든 광장이 길에 닿는다 — 갈 수 없는 광장은 없다', () => {
+    let plazas = 0;
     for (let px = -40; px <= 40; px++) {
       for (let pz = -40; pz <= 40; pz++) {
-        if (roadDirs(px, pz).length > 0) continue;
-        checked++;
-        expect(isPlaza(px, pz)).toBe(false);
+        if (!isPlaza(px, pz)) continue;
+        plazas++;
+        expect(roadDirs(px, pz).length).toBeGreaterThan(0);
       }
     }
-    // 길 없는 파셀이 표본에 실제로 있었는지 확인한다 — 없으면 위 단언이 한 번도 안 돌고
+    // 표본에 광장이 실제로 있었는지 확인한다 — 없으면 위 단언이 한 번도 안 돌고
     // 빈 검사가 통과한다(이 프로젝트에서 실제로 겪은 실패 방식이다).
-    expect(checked).toBeGreaterThan(50);
+    expect(plazas).toBeGreaterThan(0);
   });
 
   it('광장이 실제로 나온다 — 그리고 도시를 뒤덮지 않는다', () => {
