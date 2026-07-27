@@ -10,19 +10,20 @@
 // 이것을 따른다. 순서를 바꾸면 배치 골든 스냅샷이 깨진다 — 세상은 그대로지만 배열이
 // 다르므로, 의도한 변경일 때만 스냅샷을 갱신한다.
 //
-// ── 여기 들어올 것 ───────────────────────────────────────────────────────────
-//   · road  — 도로. 조각열 방식(경계점 해시 공유로 이웃 조회 없이 연결). 파셀당 평균
-//             6.4조각이고 드로우콜은 1종이다. 배치 의존성 때문에 **가장 먼저**다 —
-//             가로등과 가로수가 길가에 서야 하므로 도로가 없으면 둘 다 다시 짜야 한다.
+// ── 순서에 하나 더 ───────────────────────────────────────────────────────────
+// `road` 가 `building` 앞에 있다. 건물·나무·가로등이 `road-topology` 를 보고 길을 피해
+// 자리를 잡으므로, 읽는 순서도 그렇게 두는 편이 흐름과 맞다. (실제 동작은 순서와 무관하다
+// — 도로 위상은 좌표 해시로 정해지지 파츠 실행 순서에 기대지 않는다.)
 
 import { DEFAULT_LAYOUT, type PartSpec, type LayoutOptions } from './types.js';
 import type { Tier } from '../decide/lod.js';
 import { ground } from './ground.js';
+import { road } from './road.js';
 import { building } from './building.js';
 import { tree } from './tree.js';
 import { lamp } from './lamp.js';
 
-export const PARTS = [ground, building, tree, lamp] as const;
+export const PARTS = [ground, road, building, tree, lamp] as const;
 
 /** 파츠 종류 유니온. 목록에서 유도되므로 파츠를 넣고 빼면 타입이 저절로 따라온다. */
 export type PartKind = (typeof PARTS)[number]['kind'];

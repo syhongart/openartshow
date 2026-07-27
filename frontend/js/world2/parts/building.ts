@@ -3,7 +3,8 @@
 // 개수 하한이 2인 이유는 룩이다. 0~1채면 그 구획이 "아직 안 지어진 곳"처럼 보이고,
 // 오픈월드에서 그런 파셀이 드문드문 섞이면 세상이 버려진 인상을 준다.
 
-import type { PartSpec } from './types.js';
+import type { PartSpec, PlacedPart } from './types.js';
+import { roadDirs, pickOffRoad } from './road-topology.js';
 
 export const building: PartSpec = {
   kind: 'building',
@@ -14,17 +15,18 @@ export const building: PartSpec = {
   // `2 + floor(rnd * (max - 1))` 의 상한이다. rnd < 1 이므로 max 를 넘지 않는다.
   maxPerParcel: (o) => o.maxBuildings,
 
-  place: ({ rnd, o, halfX, halfZ }) => {
+  place: ({ px, pz, rnd, o, halfX, halfZ }) => {
+    const dirs = roadDirs(px, pz);
     const n = 2 + Math.floor(rnd() * (o.maxBuildings - 1));
-    const out = [];
+    const out: PlacedPart[] = [];
     for (let i = 0; i < n; i++) {
-      const x = (rnd() * 2 - 1) * halfX;
-      const z = (rnd() * 2 - 1) * halfZ;
+      const pos = pickOffRoad(rnd, halfX, halfZ, dirs);
       const ry = Math.floor(rnd() * 4) * (Math.PI / 2); // 직각 배치 — 도시가 정돈돼 보인다
       const w = 3 + rnd() * 5;
       const d = 3 + rnd() * 5;
       const h = 4 + rnd() * 16;
-      out.push({ kind: 'building', x, z, y: 0, ry, sx: w, sy: h, sz: d, tone: Math.floor(rnd() * 5) });
+      const tone = Math.floor(rnd() * 5);
+      out.push({ kind: 'building', x: pos.x, z: pos.z, y: 0, ry, sx: w, sy: h, sz: d, tone });
     }
     return out;
   },

@@ -7,7 +7,8 @@
 //
 // 최대 개수에 하한이 없다 — 나무가 0그루인 파셀은 광장처럼 읽혀서 오히려 자연스럽다.
 
-import type { PartSpec } from './types.js';
+import type { PartSpec, PlacedPart } from './types.js';
+import { roadDirs, pickOffRoad } from './road-topology.js';
 
 export const tree: PartSpec = {
   kind: 'tree',
@@ -18,20 +19,18 @@ export const tree: PartSpec = {
   // `floor(rnd * (max + 1))` 의 상한이다. rnd < 1 이므로 max 를 넘지 않는다.
   maxPerParcel: (o) => o.maxTrees,
 
-  place: ({ rnd, o, halfX, halfZ }) => {
+  place: ({ px, pz, rnd, o, halfX, halfZ }) => {
+    const dirs = roadDirs(px, pz);
     const n = Math.floor(rnd() * (o.maxTrees + 1));
-    const out = [];
+    const out: PlacedPart[] = [];
     for (let i = 0; i < n; i++) {
-      const x = (rnd() * 2 - 1) * halfX;
-      const z = (rnd() * 2 - 1) * halfZ;
+      const pos = pickOffRoad(rnd, halfX, halfZ, dirs);
       const ry = Math.floor(rnd() * 4) * (Math.PI / 2);
       // 밑동 굵기와 높이를 따로 뽑는다 — 같은 배율을 쓰면 전부 닮은꼴이 된다.
       const s = 0.8 + rnd() * 0.8;
-      out.push({
-        kind: 'tree', x, z, y: 0, ry,
-        sx: s, sy: s * (1.2 + rnd() * 0.6), sz: s,
-        tone: Math.floor(rnd() * 3),
-      });
+      const sy = s * (1.2 + rnd() * 0.6);
+      const tone = Math.floor(rnd() * 3);
+      out.push({ kind: 'tree', x: pos.x, z: pos.z, y: 0, ry, sx: s, sy, sz: s, tone });
     }
     return out;
   },

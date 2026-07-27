@@ -7,7 +7,8 @@
 //
 // 크기 편차를 두지 않는다. 가로등이 제각각이면 자연물이 아니라 인공물이라 눈에 띈다.
 
-import type { PartSpec } from './types.js';
+import type { PartSpec, PlacedPart } from './types.js';
+import { roadDirs, pickOffRoad } from './road-topology.js';
 
 export const lamp: PartSpec = {
   kind: 'lamp',
@@ -17,14 +18,16 @@ export const lamp: PartSpec = {
 
   maxPerParcel: (o) => o.maxLamps,
 
-  place: ({ rnd, o, halfX, halfZ }) => {
+  place: ({ px, pz, rnd, o, halfX, halfZ }) => {
+    const dirs = roadDirs(px, pz);
     const n = Math.floor(rnd() * (o.maxLamps + 1));
-    const out = [];
+    const out: PlacedPart[] = [];
     for (let i = 0; i < n; i++) {
-      const x = (rnd() * 2 - 1) * halfX;
-      const z = (rnd() * 2 - 1) * halfZ;
+      // 지금은 길을 피하기만 한다. **길가에 줄지어 세우는 것**은 가로등 차례의 일이다 —
+      // 그때 이 자리 선택이 `road-topology` 의 축을 따라가도록 바뀐다.
+      const pos = pickOffRoad(rnd, halfX, halfZ, dirs);
       const ry = Math.floor(rnd() * 4) * (Math.PI / 2);
-      out.push({ kind: 'lamp', x, z, y: 0, ry, sx: 1, sy: 1, sz: 1, tone: 0 });
+      out.push({ kind: 'lamp', x: pos.x, z: pos.z, y: 0, ry, sx: 1, sy: 1, sz: 1, tone: 0 });
     }
     return out;
   },
