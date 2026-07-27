@@ -321,6 +321,13 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 슬롯이 모자라 못 그린 부품 수. 0이 아니면 MAX_PARCELS 예산이 틀린 것이다 —
       // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
       builder: builder!.stats(),
+      // 하늘 상태 + **조명 실측값**. 번개는 조명 강도를 순간적으로 올리는 방식이라,
+      // 이 값을 샘플링하지 않으면 "쳤는데 못 본 것"과 "안 친 것"을 구별할 수 없다.
+      // 감독이 "천둥 불빛이 안 보인다"고 했을 때 추측이 다섯 개까지 늘어난 이유가
+      // 여기에 잴 수단이 없었기 때문이다.
+      sky: sky
+        ? { ...(sky.get() as object), sunI: sun?.intensity ?? -1, hemiI: hemi?.intensity ?? -1 }
+        : null,
       hidden: typeof document !== 'undefined' && document.hidden,
     }),
   };
