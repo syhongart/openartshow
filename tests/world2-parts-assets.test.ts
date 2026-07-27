@@ -159,6 +159,27 @@ describe('tones 는 곱셈기다 — 텍스처나 정점색이 있으면 밝아�
   // 루프가 한 번도 안 돌고 빈 배열이 통과한다 — **빈 표본이 단언을 통과하는** 형태이고,
   // 이 프로젝트에서 실제로 한 번 겪은 실패 방식이다(옛 임계값 때문에 표본이 비었는데
   // 빈 평균 0이 통과했다).
+  // ── 역방향 (뮤테이션이 시켜서 생겼다) ─────────────────────────────────────
+  // 위 검사는 "곱셈 대상이 있으면 tones 가 밝아야 한다" 다. 그 **역**은 안 보고 있었다 —
+  // tones 를 흰색으로 두고 곱할 것을 빼면 그냥 **흰 판**이 되는데 아무도 안 잡는다.
+  // 정원에서 텍스처를 제거하는 뮤테이션이 실제로 살아남았다.
+  //
+  // 흰색 근처 tones 는 "색은 다른 데서 온다" 는 선언이다. 그 다른 데가 없으면 선언이
+  // 거짓이 된다.
+  it('tones 가 흰색 근처인 파츠는 곱할 대상을 갖는다 — 없으면 그냥 흰 판이다', () => {
+    stubCanvas2D();
+    const T = stubThree();
+    const offenders: string[] = [];
+    for (const p of PARTS) {
+      const a = p.asset(T) as unknown as { material: { map?: unknown; vertexColors?: unknown } };
+      if (isMultiplier(a.material)) continue;
+      // 톤이 **전부** 밝으면 색을 스스로 갖지 않겠다는 뜻이다
+      const allBright = p.tones.every((t) => channels(t).every((c) => c >= BRIGHT));
+      if (allBright) offenders.push(`${p.kind}: 곱할 대상 없음`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('곱셈기를 쓰는 파츠가 실제로 존재한다 — 빈 표본이 통과하지 않게', () => {
     stubCanvas2D();
     const T = stubThree();
