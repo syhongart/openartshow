@@ -77,11 +77,15 @@ const FLOW_B = { x: -0.019, z: 0.030 };
 /**
  * 물결 높이장. 사인파 넷을 겹친다 — 아래 두 텍스처가 이 하나의 함수에서 나온다.
  *
- * 주기가 캔버스 폭의 정수배여야 타일 이음매가 안 보인다. `u`/`v`는 0~1.
+ * 주기가 캔버스 폭의 정수배여야 타일 이음매가 안 보인다 — 네 항 모두 `u`나 `v`가 1 늘 때
+ * 위상이 2π의 정수배만큼 도는 계수를 골랐다. 이게 깨지면 물 위에 격자 솔기가 뜬다.
+ * 테스트가 그것을 검사하므로 **export 한다**(그 목적 외에 쓰지 않는다). `u`/`v`는 0~1.
  */
-function waveHeight(u: number, v: number): number {
+export function waveHeight(u: number, v: number): number {
   return (
-    Math.sin(u * Math.PI * 2 + v * Math.PI * 1.4) * 0.5 +
+    // 각 항의 u·v 계수는 **모두 2π의 정수배**여야 한다. 처음에 이 항의 v 계수를 1.4π로
+    // 두었다가 테스트가 잡았다 — v 방향으로 위상이 안 맞아 물 위에 가로 솔기가 뜬다.
+    Math.sin(u * Math.PI * 2 + v * Math.PI * 6) * 0.5 +
     Math.sin(v * Math.PI * 4 - u * Math.PI * 2) * 0.3 +
     Math.sin((u + v) * Math.PI * 6) * 0.15 +
     Math.sin((u - v) * Math.PI * 8 + 1.1) * 0.1
