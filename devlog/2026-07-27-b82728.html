@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 감독이 "SOLID 리팩터 이후 성능이 떨어진 것 같다"는 가설을 냈다. 수치로 가리기 위해">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 감독이 "SOLID 리팩터 이후 성능이 떨어진 것 같다"는 가설을 냈다. 수치로 가리기 위해">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다","datePublished":"2026-07-27","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-27</div>
+<h1><span class="emo">🛠️</span>번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 감독이 "SOLID 리팩터 이후 성능이 떨어진 것 같다"는 가설을 냈다. 수치로 가리기 위해 리팩터 전후 6개 기준점을 각각 체크아웃해 같은 시나리오로 계측했다.</p>
+<p><strong>결과 — 가설은 기각.</strong> 리팩터 4개 체크포인트(<code>fab7128</code>→<code>641e6a9</code>→<code>918efe0</code>→<code>340decb</code>)에서 world.html·index.html의 programs/geometries/textures/calls/triangles가 <strong>소수점 하나 안 틀리고 동일</strong>했다(19/238/27/254/84,446 고정). 모듈 캐시 3종과 싱글턴도 스코프 강등 없이 온전히 이사했다. 재질 증식의 근원인 <code>MATS</code> 팩토리는 리팩터 <strong>이전 코드와 글자 하나 다르지 않았다</strong> — 리팩터가 만든 게 아니라 그대로 옮긴 기존 설계였다.</p>
+<p><strong>그런데 진짜 회귀가 따로 있었다.</strong> <code>vendor-three</code> 청크가 540KB→1,048KB로 두 배였다. <code>three/webgpu</code>를 쓰는 곳은 <code>world.js</code> 하나뿐인데 <code>manualChunks</code>가 <code>node_modules/three</code>를 통째로 묶어, WebGPU를 전혀 쓰지 않는 미술관·빌더까지 그 코드를 받고 있었다.</p>
+<p><strong>두 겹으로 숨어 있었다.</strong> ①단순히 <code>build/three.webgpu</code>만 갈랐더니 순환 청크 경고가 떴다 — 공유 코어를 사이에 두고 서로를 참조했다(코어를 먼저 갈라 해소). ②갈랐는데도 <strong>모든 페이지가 여전히 셋 다 받았다.</strong> WebGL 청크가 WebGPU 청크를 import하고 있었고, 범인은 <code>examples/jsm</code>의 <code>tsl</code>·<code>lighting</code> (TiledLighting)이었다. TSL은 WebGPU 셰이더 언어인데 <code>three</code> 매칭에 걸려 WebGL 쪽으로 분류돼 있었다.</p>
+<p><strong>결과.</strong> 미술관·빌더 1,048KB→567KB(gzip 279→143KB). 오픈월드는 변화 없음(실제로 WebGPU를 쓴다). 감독이 라이브 Network 탭에서 확인한 청크 해시가 로컬 빌드와 일치해, 배포본이 검증본과 바이트 단위로 같음이 관측으로 확정됐다.</p>
+<p><strong>교훈(체감은 맞고 범인만 틀릴 수 있다).</strong> 감독의 "리팩터 이후 느려졌다"는 시점 감각이 정확했다. 그 무렵 오픈월드를 WebGPU로 올렸고, 원래 가벼웠던 미술관이 그 비용을 대신 내기 시작했다. 가설을 기각하는 것과 체감을 부정하는 것은 다르다 — 조사의 목적은 "누구 탓인가"가 아니라 "지금 무엇이 남아 있나"였다.</p>
+<p><strong>후속(등재).</strong> 분류가 경로 allowlist라 <code>examples/jsm</code>의 다른 webgpu 의존 모듈 18개 (<code>SkyMesh</code>·<code>WaterMesh</code>·<code>CSMShadowNode</code> 등)는 못 잡는다. 지금은 미사용이라 안전하지만, 훗날 그런 모듈을 non-world 페이지에 도입하면 이번에 고친 버그가 조용히 재발한다. <code>getModuleInfo</code> 기반 전이 판정으로 교체 검토 + "WebGL 청크가 WebGPU 청크를 import하면 빌드 실패" 안전장치를 별건으로 남겼다.</p>
+</article>
+<div class="pn"><a href="./2026-07-26-5267ec.html"><span class="lbl">← 이전 기록</span>GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다</a><a href="./2026-07-27-eec8af.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 재작성(world2) — 개수를 상수로 묶으면 스파이크가 사라진다</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
