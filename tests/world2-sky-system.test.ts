@@ -89,11 +89,76 @@ vi.mock('three/webgpu', () => {
       return this;
     }
   }
+  /**
+   * **실제 행렬 수학을 구현한다.** no-op 스텁이면 안 된다.
+   *
+   * 처음에는 `compose`/`multiply`가 `return this`만 하는 껍데기였다. 그 결과 구름 판의
+   * 스케일 축이 뒤바뀐 실제 버그(가로 w × 세로 0.5 유닛 → 화면에서 실선)를 테스트가
+   * 통과시켰고, 감독 실기기에서야 드러났다. **검증하지 않는 스텁은 검증했다는 착각만
+   * 준다** — 그 축은 비어 있는 게 아니라 거짓으로 채워진다.
+   *
+   * three와 같은 열 우선(column-major) 16원소 배열을 쓴다.
+   */
   class Mat4 {
-    compose() { return this; }
-    multiply() { return this; }
-    makeRotationX() { return this; }
-    makeRotationZ() { return this; }
+    elements = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    set(e: number[]) { this.elements = e.slice(); return this; }
+    identity() { return this.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]); }
+    /** this = this · m (three의 multiply와 동일 — 오른쪽 곱) */
+    multiply(m: Mat4) {
+      const a = this.elements, b = m.elements, out = new Array(16).fill(0);
+      for (let c = 0; c < 4; c++) {
+        for (let r = 0; r < 4; r++) {
+          let s = 0;
+          for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+          out[c * 4 + r] = s;
+        }
+      }
+      this.elements = out;
+      return this;
+    }
+    /** 위치·쿼터니언·스케일 → T·R·S */
+    compose(p: { x: number; y: number; z: number }, q: Quat, s: { x: number; y: number; z: number }) {
+      const { x, y, z, w } = q;
+      const x2 = x + x, y2 = y + y, z2 = z + z;
+      const xx = x * x2, xy = x * y2, xz = x * z2;
+      const yy = y * y2, yz = y * z2, zz = z * z2;
+      const wx = w * x2, wy = w * y2, wz = w * z2;
+      this.elements = [
+        (1 - (yy + zz)) * s.x, (xy + wz) * s.x, (xz - wy) * s.x, 0,
+        (xy - wz) * s.y, (1 - (xx + zz)) * s.y, (yz + wx) * s.y, 0,
+        (xz + wy) * s.z, (yz - wx) * s.z, (1 - (xx + yy)) * s.z, 0,
+        p.x, p.y, p.z, 1,
+      ];
+      return this;
+    }
+    makeRotationX(t: number) {
+      const c = Math.cos(t), s = Math.sin(t);
+      return this.set([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]);
+    }
+    makeRotationZ(t: number) {
+      const c = Math.cos(t), s = Math.sin(t);
+      return this.set([c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    }
+    clone() { return new Mat4().set(this.elements); }
+  }
+
+  class Quat {
+    x = 0; y = 0; z = 0; w = 1;
+    setFromAxisAngle(axis: { x: number; y: number; z: number }, angle: number) {
+      const h = angle / 2, s = Math.sin(h);
+      this.x = axis.x * s; this.y = axis.y * s; this.z = axis.z * s; this.w = Math.cos(h);
+      return this;
+    }
+    /** this = this * q (three와 동일한 해밀턴 곱) */
+    multiply(q: Quat) {
+      const { x: ax, y: ay, z: az, w: aw } = this;
+      const { x: bx, y: by, z: bz, w: bw } = q;
+      this.x = ax * bw + aw * bx + ay * bz - az * by;
+      this.y = ay * bw + aw * by + az * bx - ax * bz;
+      this.z = az * bw + aw * bz + ax * by - ay * bx;
+      this.w = aw * bw - ax * bx - ay * by - az * bz;
+      return this;
+    }
   }
   class Mesh extends Obj3D {
     constructor(public geometry: any, public material: any) { super(); spy.meshes.push(this); }
@@ -113,14 +178,18 @@ vi.mock('three/webgpu', () => {
       this.colors[i] = c.getHex();
       if (!this.instanceColor) this.instanceColor = { needsUpdate: false };
     }
-    setMatrixAt() { this.matrixCount++; }
+    matrices: number[][] = [];
+    setMatrixAt(i: number, m: { elements: number[] }) {
+      this.matrixCount++;
+      this.matrices[i] = m.elements.slice();
+    }
     dispose() { this.disposed = true; }
   }
 
   return {
     Vector3: Vec3, Vector2: Vec3, Object3D: Obj3D, Group: Obj3D,
     Mesh, InstancedMesh, Color, Matrix4: Mat4,
-    Quaternion: class { setFromAxisAngle() { return this; } },
+    Quaternion: Quat,
     SphereGeometry: Geo, PlaneGeometry: Geo,
     MeshBasicMaterial: Mat, CanvasTexture: Tex,
     BackSide: 'BackSide', DoubleSide: 'DoubleSide', FrontSide: 'FrontSide',
@@ -268,5 +337,54 @@ describe('SkySystem — dispose', () => {
     for (const m of spy.materials) expect(m.disposed).toBe(true);
     for (const t of spy.textures) expect(t.disposed).toBe(true);
     expect(spy.instanced[0].disposed).toBe(true);
+  });
+});
+
+// ── 구름 판의 실제 크기 ──────────────────────────────────────────────────────
+// 이 블록이 없어서 실제 버그가 통과했다.
+//
+// `compose`가 T·R·S를 만들고 뒤에 `multiply(_flat)`을 붙이면 최종은 T·R·S·Flat이고,
+// 오른쪽 곱이라 정점에는 **Flat이 먼저** 적용된다. PlaneGeometry는 XY 평면인데 Flat이
+// 이를 XZ로 눕히므로 판의 두 번째 축은 z다. 그런데 스케일을 `(w, h, 1)`로 주고 있어서
+// z가 1배로 남았고, 구름이 **가로 w × 세로 0.5 유닛**이 됐다. 화면에서는 실선이었다.
+//
+// 눈으로는 안 보인다. 행렬을 실제로 곱해서 판의 두 축 길이를 재야 보인다.
+describe('구름 판의 실제 크기 — 행렬을 곱해서 잰다', () => {
+  /** 최종 행렬에서 로컬 축 e(단위벡터)가 월드에서 갖는 길이. */
+  const axisLen = (m: number[], col: 0 | 1 | 2) =>
+    Math.hypot(m[col * 4], m[col * 4 + 1], m[col * 4 + 2]);
+
+  it('가로축이 w, 세로축이 h다 — 축이 뒤바뀌면 판이 선이 된다', () => {
+    const { sys, clouds } = build();
+    sys.update({ dt: 1 / 60, hidden: false } as never);
+    const specs = specsOf();
+    for (let i = 0; i < specs.length; i++) {
+      const m = clouds.matrices[i];
+      // PlaneGeometry는 로컬 x·y에만 정점이 있다(z는 두께 축, 정점 없음). 따라서 판의
+      // 실제 크기를 정하는 것은 col0·col1 두 개뿐이고, col2가 무엇이든 화면과 무관하다.
+      //
+      // 세 축을 모아 정렬해 비교하면 안 된다 — (w,h,1)과 (w,1,h)는 **집합이 같아서**
+      // 뒤바뀐 것을 통과시킨다. 실제로 그렇게 썼다가 뮤테이션에서 걸렸다.
+      expect(axisLen(m, 0)).toBeCloseTo(specs[i].w, 2); // 로컬 x = 판의 가로
+      expect(axisLen(m, 1)).toBeCloseTo(specs[i].h, 2); // 로컬 y = 판의 세로
+    }
+  });
+
+  it('가로:세로 비가 설계 범위 안이다 — 어느 구름도 선이 아니다', () => {
+    const { sys, clouds } = build();
+    sys.update({ dt: 1 / 60, hidden: false } as never);
+    for (const m of clouds.matrices as number[][]) {
+      const w = axisLen(m, 0), h = axisLen(m, 1);
+      // h = w × (0.42~0.64)이므로 비는 최대 약 2.4:1이다. 이보다 크면 판이 눌린 것이다.
+      expect(w / h).toBeLessThan(3);
+      expect(h / w).toBeLessThan(3);
+    }
+  });
+
+  it('구름마다 크기가 다르다 — 한 크기로 굳으면 배치가 기계적으로 보인다', () => {
+    const { sys, clouds } = build();
+    sys.update({ dt: 1 / 60, hidden: false } as never);
+    const widths = new Set(clouds.matrices.map((m: number[]) => Math.round(axisLen(m, 0))));
+    expect(widths.size).toBeGreaterThan(1);
   });
 });

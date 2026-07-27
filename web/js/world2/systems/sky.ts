@@ -46,6 +46,10 @@ export const SUN_HALO = 0xc98f5a;
 export const CLOUD_RIM = 0xe8c9a0;
 export const CLOUD_BASE = 0x1b2030;
 
+/** 기울기 합성용 고정 축 — 매 프레임 새로 만들지 않는다. */
+const AXIS_X = new THREE.Vector3(1, 0, 0);
+const AXIS_Z = new THREE.Vector3(0, 0, 1);
+
 /**
  * 구름 배치 파라미터는 `decide/sky.ts`의 `DEFAULT_CLOUDS`가 SSOT다. 배치·색 보간·테스트가
  * 전부 그 하나를 본다 — 여기 값을 다시 적으면 한쪽만 고쳐도 아무도 모른다.
@@ -238,7 +242,7 @@ export class SkySystem implements System {
    */
   private readonly _flat = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
   /** 구름별 기울기 — 값이 매번 다르므로 재사용 필드에 다시 써넣는다. */
-  private readonly _tilt = new THREE.Matrix4();
+  private readonly _qt = new THREE.Quaternion();
 
   constructor(parent: THREE.Object3D, getCamera: () => { x: number; z: number }, opts: SkyOptions = {}) {
     this.getCamera = getCamera;
@@ -303,15 +307,27 @@ export class SkySystem implements System {
       const z = driftedZ(c.z, this.elapsed, this.windZ, cam.z, this.field);
       this._p.set(x, c.y, z);
       // 빌보드처럼 눕힌다 — 아래에서 올려다보므로 수평면에 가깝게 두고 살짝 기울인다.
+      //
+      // 기울기는 **회전 쪽에 합성한다.** 완성된 행렬 뒤에 회전을 곱하면(T·R·S·Tilt) 비균등
+      // 스케일과 회전이 섞여 shear가 생긴다 — 판이 기우는 게 아니라 늘어난다. 실제로
+      // 두께 축이 1이 아니라 6.75로 부풀어 있었다. 쿼터니언끼리 합치면 회전은 회전으로만
+      // 남고 스케일 축이 온전하다.
       this._q.setFromAxisAngle(this._up, c.ry);
-      this._s.set(c.w, c.h, 1);
+      this._q.multiply(this._qt.setFromAxisAngle(AXIS_X, c.tiltX));
+      this._q.multiply(this._qt.setFromAxisAngle(AXIS_Z, c.tiltZ));
+      // ⚠ 스케일 축은 **눕힌 뒤 기준**이다.
+      //
+      // `compose`가 T·R·S를 만들고 그 뒤 `multiply(_flat)`을 하므로 최종은 T·R·S·Flat이고,
+      // 오른쪽 곱이라 **정점에는 Flat이 먼저** 적용된다. PlaneGeometry는 XY 평면인데
+      // Flat(X축 -90°)이 이를 XZ 평면으로 눕히므로, 판의 두 번째 축은 y가 아니라 z다.
+      //
+      // 여기에 `(w, h, 1)`을 주면 z가 1배로 남아 판이 **가로 w × 세로 0.5 유닛**이 된다.
+      // 실제로 그랬고, 그래서 구름이 화면에서 실선으로 보였다. 앙각을 아무리 높여도
+      // 두께가 0.5인 판은 선이다 — 배치를 고쳐도 증상이 그대로였던 이유가 이것이다.
+      this._s.set(c.w, 1, c.h);
       this._m.compose(this._p, this._q, this._s);
       // 수평으로 눕히기(X축 -90°)를 회전에 합성한다.
       this._m.multiply(this._flat);
-      // 개별 기울기 — 전부 정확히 평행하면 인위적으로 보인다. 크게 기울이지는 않는다
-      // (최악 방위에서 유효 앙각이 깎여 다시 선에 가까워진다).
-      this._m.multiply(this._tilt.makeRotationX(c.tiltX));
-      this._m.multiply(this._tilt.makeRotationZ(c.tiltZ));
       this.clouds.setMatrixAt(i, this._m);
     }
     this.clouds.instanceMatrix.needsUpdate = true;
