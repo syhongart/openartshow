@@ -34,7 +34,7 @@ export interface HudSource {
    * 지금의 하늘 상태를 사람이 읽는 한 줄로. 드로우콜 판정이 이 그룹 안에서만 상수를 요구한다
    * (`decide/telemetry.ts`의 `constancyByGroup` 참고). 없으면 전 구간 상수로 판정한다.
    */
-  skyKey?: () => string | null;
+  drawGroupKey?: () => string | null;
   stream: () => { loaded: number; built: number; released: number; starved: number };
   adapt: () => { pixelRatio: number; frameCap: number; triAvg: number };
 }
@@ -61,13 +61,13 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
    * `draw`와 짝을 이루는 하늘 상태 id 링. 같은 인덱스가 같은 프레임이어야 하므로
    * **`draw`를 넣는 곳에서만** 함께 넣는다(둘이 어긋나면 판정이 엉뚱한 짝을 본다).
    */
-  const drawSkyKey = new Ring(CAP);
+  const drawGroupKeys = new Ring(CAP);
   /** 상태 문자열 → id. 리포트에서 사람이 읽는 이름으로 되돌리려고 양방향으로 들고 있다 */
-  const skyIds = new Map<string, number>();
-  const skyNames: Record<number, string> = {};
-  const skyIdOf = (s: string): number => {
-    let id = skyIds.get(s);
-    if (id === undefined) { id = skyIds.size; skyIds.set(s, id); skyNames[id] = s; }
+  const groupIds = new Map<string, number>();
+  const groupNames: Record<number, string> = {};
+  const groupIdOf = (s: string): number => {
+    let id = groupIds.get(s);
+    if (id === undefined) { id = groupIds.size; groupIds.set(s, id); groupNames[id] = s; }
     return id;
   };
 
@@ -97,8 +97,8 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       frameMs: frameMs.values(), updMs: updMs.values(),
       renderMs: renderMs.values(), outMs: outMs.values(),
       draw: draw.values(),
-      drawSkyKey: src.skyKey ? drawSkyKey.values() : undefined,
-      skyKeyNames: src.skyKey ? { ...skyNames } : undefined,
+      drawGroupKeys: src.drawGroupKey ? drawGroupKeys.values() : undefined,
+      groupKeyNames: src.drawGroupKey ? { ...groupNames } : undefined,
       drawSkipped,
       pipeline: pipeline.values(),
       geometries: geometries.values(), textures: textures.values(),
@@ -117,8 +117,8 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     const h = hitchCount(frameMs.values());
     // 화면 HUD도 같은 기준을 쓴다. 여기만 옛 판정을 남기면 감독은 리포트와 화면이 서로
     // 다른 말을 하는 걸 보게 된다 — 그게 "어느 쪽이 맞나"를 매번 다시 묻게 만든다.
-    const gd = src.skyKey
-      ? constancyByGroup(draw.values(), drawSkyKey.values())
+    const gd = src.drawGroupKey
+      ? constancyByGroup(draw.values(), drawGroupKeys.values())
       : null;
     const cd = constancy(draw.values());
     const drawOk = gd ? gd.constant : cd.constant;
@@ -184,16 +184,16 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       // 예외 하나로 두 링이 영구히 한 칸씩 어긋나고, 그러고도 판정은 조용히 통과한다.
       //
       // 키가 `null`이면 하늘 전이 중이다 — 그리는 것이 섞여 있는 구간이라 판정에서 뺀다
-      // (`main.ts`의 `skyKey` 주석 참고). 뺀 개수는 리포트에 적는다.
+      // (`main.ts`의 `drawGroupKey` 주석 참고). 뺀 개수는 리포트에 적는다.
       let key: string | null | undefined;
-      if (src.skyKey) {
-        try { key = src.skyKey(); } catch { key = undefined; }
+      if (src.drawGroupKey) {
+        try { key = src.drawGroupKey(); } catch { key = undefined; }
       }
-      if (src.skyKey && key == null) {
+      if (src.drawGroupKey && key == null) {
         drawSkipped++; // draw도 넣지 않는다 — 두 링의 길이가 항상 같게
       } else {
         draw.push(c.draw);
-        if (src.skyKey) drawSkyKey.push(skyIdOf(key as string));
+        if (src.drawGroupKey) drawGroupKeys.push(groupIdOf(key as string));
       }
       pipeline.push(c.pipeline);
       geometries.push(c.geometries); textures.push(c.textures);

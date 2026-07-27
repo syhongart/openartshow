@@ -354,8 +354,8 @@ describe('formatReport — 드로우콜 줄', () => {
 
   it('하늘 상태별로 상수면 위반이라 적지 않는다', () => {
     const text = formatReport({
-      ...base, draw: [9, 9, 12, 12], drawSkyKey: [0, 0, 1, 1],
-      skyKeyNames: { 0: 'night|clear', 1: 'night|rain' },
+      ...base, draw: [9, 9, 12, 12], drawGroupKeys: [0, 0, 1, 1],
+      groupKeyNames: { 0: 'night|clear', 1: 'night|rain' },
     });
     const line = text.split('\n').find((l) => l.startsWith('draw'))!;
     expect(line).not.toContain('불변식 위반');
@@ -365,7 +365,7 @@ describe('formatReport — 드로우콜 줄', () => {
 
   it('같은 상태에서 변하면 그 상태를 지목해 위반이라 적는다', () => {
     const text = formatReport({
-      ...base, draw: [9, 11], drawSkyKey: [0, 0], skyKeyNames: { 0: 'day|clear' },
+      ...base, draw: [9, 11], drawGroupKeys: [0, 0], groupKeyNames: { 0: 'day|clear' },
     });
     const line = text.split('\n').find((l) => l.startsWith('draw'))!;
     expect(line).toContain('불변식 위반');
@@ -394,18 +394,18 @@ describe('하늘 전이 구간 — 판정에서 빼되 뺀 사실을 적는다',
   it('전이 표본을 넣지 않으면 도착 상태가 상수로 남는다', () => {
     // 전이 중 draw=13(fadeDome +1)이었지만 표본에 없다. 남은 것은 안정 구간뿐.
     const text = formatReport({
-      ...base, draw: [9, 9, 12, 12], drawSkyKey: [0, 0, 1, 1],
-      skyKeyNames: { 0: 'night|clear', 1: 'night|rain' }, drawSkipped: 108,
+      ...base, draw: [9, 9, 12, 12], drawGroupKeys: [0, 0, 1, 1],
+      groupKeyNames: { 0: 'night|clear', 1: 'night|rain' }, drawSkipped: 108,
     });
     const line = text.split('\n').find((l) => l.startsWith('draw'))!;
     expect(line).not.toContain('불변식 위반');
-    expect(line).toContain('하늘 전이 중 108표본 제외');
+    expect(line).toContain('상태 전이 중 108표본 제외');
   });
 
   // 뺀 것을 조용히 숨기면 "재지 않은 구간"이 "통과한 구간"으로 읽힌다.
   it('제외 표본이 0이면 그 문구를 붙이지 않는다', () => {
     const text = formatReport({
-      ...base, draw: [9, 9], drawSkyKey: [0, 0], skyKeyNames: { 0: 'day|clear' },
+      ...base, draw: [9, 9], drawGroupKeys: [0, 0], groupKeyNames: { 0: 'day|clear' },
       drawSkipped: 0,
     });
     const line = text.split('\n').find((l) => l.startsWith('draw'))!;
@@ -414,11 +414,11 @@ describe('하늘 전이 구간 — 판정에서 빼되 뺀 사실을 적는다',
 
   it('위반이 있어도 제외 표본을 함께 적는다 — 둘 다 사실이다', () => {
     const text = formatReport({
-      ...base, draw: [9, 11], drawSkyKey: [0, 0], skyKeyNames: { 0: 'day|clear' },
+      ...base, draw: [9, 11], drawGroupKeys: [0, 0], groupKeyNames: { 0: 'day|clear' },
       drawSkipped: 42,
     });
     const line = text.split('\n').find((l) => l.startsWith('draw'))!;
     expect(line).toContain('불변식 위반');
-    expect(line).toContain('하늘 전이 중 42표본 제외');
+    expect(line).toContain('상태 전이 중 42표본 제외');
   });
 });

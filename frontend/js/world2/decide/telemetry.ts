@@ -308,9 +308,9 @@ export interface ReportInput {
    * `draw[i]`를 잰 시점의 하늘 상태 id. 드로우콜은 이 그룹 안에서만 상수여야 한다
    * (`constancyByGroup` 주석 참고). 없으면 전 구간 상수로 판정한다 — 옛 리포트 호환.
    */
-  drawSkyKey?: readonly number[];
+  drawGroupKeys?: readonly number[];
   /** 하늘 상태 id → 사람이 읽는 이름. 위반한 상태를 지목할 때 쓴다 */
-  skyKeyNames?: Readonly<Record<number, string>>;
+  groupKeyNames?: Readonly<Record<number, string>>;
   /**
    * 하늘 전이 중이라 드로우콜 판정에서 뺀 표본 수. **0이 아니면 리포트에 적는다** —
    * 조용히 빼면 "재지 않은 구간"이 "통과한 구간"처럼 보인다.
@@ -359,7 +359,7 @@ function drawLine(
   const nameOf = (k: number) => names?.[k] ?? `#${k}`;
   const lo = g.groups.length ? Math.min(...g.groups.map((x) => x.min)) : 0;
   // 뺀 표본을 반드시 붙인다. 이걸 생략하면 "재지 않은 구간"이 "통과한 구간"으로 읽힌다.
-  const note = skipped > 0 ? ` · 하늘 전이 중 ${skipped}표본 제외` : '';
+  const note = skipped > 0 ? ` · 상태 전이 중 ${skipped}표본 제외` : '';
   if (g.constant) {
     // 어떤 상태에서 몇이었는지 함께 보여준다 — 하늘을 만졌을 때 드로우콜이 어떻게
     // 움직이는지가 그 자체로 읽을 값이다.
@@ -407,7 +407,7 @@ export function formatReport(r: ReportInput): string {
   }
   lines.push('');
   lines.push('[개수 — 상수여야 함]');
-  lines.push(drawLine(r.draw, r.drawSkyKey, r.skyKeyNames, r.drawSkipped ?? 0));
+  lines.push(drawLine(r.draw, r.drawGroupKeys, r.groupKeyNames, r.drawSkipped ?? 0));
   lines.push(countLine('pipeline', constancy(r.pipeline)));
   lines.push(countLine('geometry', constancy(r.geometries)));
   lines.push(countLine('texture', constancy(r.textures)));

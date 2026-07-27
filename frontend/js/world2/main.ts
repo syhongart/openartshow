@@ -19,8 +19,10 @@ import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
-import { findSkyPanel, attachSkyPanel, type SkyPanel } from './ui/sky-panel.js';
-import { SkySystem } from './systems/sky.js';
+import {
+  FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics,
+  type MountedFeature,
+} from './features/index.js';
 import { DEFAULT_LAYOUT, type PartKind } from './decide/parcel-layout.js';
 
 const CELL = 32;
@@ -96,8 +98,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let streaming: StreamingSystem | null = null;
   let adapt: AdaptSystem | null = null;
   let builder: PooledParcelBuilder | null = null;
-  let sky: SkySystem | null = null;
-  let skyPanel: SkyPanel | null = null;
+  /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
+  let features: MountedFeature[] = [];
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;
@@ -127,41 +129,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         };
       },
       /**
-       * 드로우콜 판정의 그룹 키. `sky.js`가 시간대·날씨·fx에 따라 구름·별·비·눈·무지개·
-       * 오로라의 `visible`을 토글하므로 드로우콜은 **하늘을 바꾸면 정당하게 변한다.**
-       * 전 구간 상수로 판정하면 하늘을 만진 결과가 증식으로 찍힌다(감독 실기기 리포트에서
-       * `draw 9~12 ← 불변식 위반`이 그렇게 나왔고, 같은 리포트의 pipeline·geometry·
-       * texture는 전부 상수였다). 상태별로 묶어야 "파셀 로드가 드로우콜을 늘렸다"는
-       * 진짜 회귀만 남는다.
+       * 드로우콜 판정의 그룹 키. **여기에 기능별 로직이 없다** — 켜진 기능들이 각자
+       * 내놓은 키를 합칠 뿐이다(`combineDrawGroupKey`).
        *
-       * ── 전이 구간은 `null`을 돌려 판정에서 뺀다 ──────────────────────────
-       * `set()`이 불리는 즉시 `time`/`weather`는 새 값이 되지만 **그려지는 것**은 잠시
-       * 다르다. 그 구간을 도착 키에 넣으면 그 그룹이 곧바로 "변동"으로 찍힌다(검수관이
-       * 잡은 블로커). 축을 하나 더 붙이는 것으로는 안 닫힌다 — **출발지가 다르면 남아
-       * 있는 것도 다르므로** 같은 `도착|전이` 키 안에서 여전히 값이 갈린다.
+       * 드로우콜은 가시성에 따라 정당하게 변하고(하늘 날씨 등), 그 상태가 무엇인지는
+       * 기능이 안다. 예전에는 이 자리에 하늘 전용 코드가 박혀 있어서, 하늘을 빼도 이
+       * 로직이 남고 바다를 넣으면 여기에 또 붙여야 했다.
        *
-       * 전이 구간은 정의상 "무엇을 그리는지가 섞여 있는" 구간이라 상수를 요구할 근거가
-       * 없다. 빼되 **몇 표본을 뺐는지 리포트에 적는다** — 조용히 빼면 그게 「못 잰 것을
-       * 통과로 적는」 것이다.
-       *
-       * **무엇이 전이인지는 `sky.js`가 판정한다**(`settling`). 여기서 축을 세지 않는다 —
-       * 그렇게 했다가 세 번 연속으로 빠뜨렸다(크로스페이드 돔 · `lite` · 별 감쇠 꼬리).
-       *
-       * `flashSafe`는 키에 넣지 않는다 — 광과민성 보호 모드는 조명 강도·색만 바꾸고
-       * 무엇을 그릴지는 안 바꾼다. 넣으면 그룹만 쪼개져 표본이 흩어진다.
-       *
-       * `lite`는 **키에 넣는다** — 전이가 아니라 다른 상태이고, 켜지면 구름·별 레이어를
-       * 아예 끈다. world2는 아직 `setLite`를 부르지 않지만, 배선하는 순간 저절로 옳도록
-       * 지금 넣어 둔다("배선할 때 잊지 말라"는 메모보다 확실하다).
+       * 기능이 하나도 없으면 빈 문자열이고, 그래도 판정은 정상으로 돈다.
        */
-      skyKey: () => {
-        const s = sky?.get();
-        if (!s) return 'none';
-        if (s.settling) return null; // 그려지는 것이 논리 상태와 어긋나는 중 — 판정 제외
-        const fx = Object.entries(s.fx ?? {})
-          .filter(([, on]) => on).map(([k]) => k).sort().join('+');
-        return `${s.time}|${s.weather}${fx ? `|${fx}` : ''}${s.lite ? '|lite' : ''}`;
-      },
+      drawGroupKey: () => combineDrawGroupKey(features),
       stream: () => {
         const s = streaming?.stats();
         return {
@@ -240,21 +217,25 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 봉인 — 이후 풀 생성은 예외다. 개수 불변식의 집행 지점.
         pools.seal();
 
-        // 하늘 — 라이브 오픈월드의 `sky.js`를 그대로 쓴다(systems/sky.ts 주석 참고).
-        // 여기서 만들면 예열 단계가 하늘 파이프라인까지 함께 굽는다(세션 중 첫 등장으로
-        // 미루면 그게 곧 스파이크다).
-        sky = new SkySystem(
-          scene,
-          adapter!.renderer,
-          sun!,
-          hemi!,
-          () => ({ x: player.position.x, z: player.position.z }),
+        // ── 기능 조립 ────────────────────────────────────────────────────
+        // **여기에 기능별 코드가 없다.** 무엇을 켤지는 `features/index.ts`가 정하고,
+        // 이 자리는 그 목록을 읽어 만들 뿐이다. 기능을 넣고 빼는 데 이 파일을 고칠 일이
+        // 없어야 한다 — 그게 이 구조의 목적이다.
+        //
+        // 풀 봉인 직후·예열 직전이 조립 시점인 이유: 여기서 만들어야 예열 단계가 그
+        // 기능의 파이프라인까지 함께 굽는다. 세션 중 첫 등장으로 미루면 그게 곧
+        // 스파이크다(하늘이 실제로 그랬다).
+        //
+        // 한 기능이 실패해도 나머지는 켠다. 하늘이 죽었다고 월드 전체가 안 뜨는 건 과잉이다.
+        features = mountFeatures(
+          FEATURES,
+          {
+            scene, adapter: adapter!, player, pools: pools!,
+            sun: sun!, hemi: hemi!, cell: CELL,
+            doc: typeof document !== 'undefined' ? document : null,
+          },
+          (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
         );
-
-        // 神 모드 패널 — 시간대·날씨·이벤트. 없으면 조용히 건너뛴다(패널 없이도 월드는 돈다).
-        // HUD 바로 아래에 두어, 하늘을 바꾸면서 그 자리에서 수치 변화를 볼 수 있게 했다.
-        const panelParts = findSkyPanel(document);
-        if (panelParts) skyPanel = attachSkyPanel(panelParts, sky.controls);
       },
 
       warmup: async (report, yieldFrame) => {
@@ -307,9 +288,17 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             hud?.tick(); // render 직후 — frameStats가 유효한 유일한 시점
           },
         });
-        // sky는 player 뒤에 둔다 — 카메라 위치를 읽어 돔·구름을 따라 옮기므로
-        // 같은 프레임의 최신 위치를 봐야 한 프레임 늦게 따라오지 않는다.
-        kernel.add(player).add(sky!).add(streaming).add(adapt);
+        // ── 등록 순서가 곧 실행 순서다 ───────────────────────────────────
+        // 코어: 입력 → (기능들) → 스트리밍 → 적응.
+        //
+        // 기능이 `player` 뒤에 오는 이유: 하늘은 카메라 위치를 읽어 돔·구름을 따라 옮기고,
+        // 훗날 멀티플레이어는 이번 프레임 위치를 보내야 한다. 앞에 두면 한 프레임 늦는다.
+        // `adapt`가 마지막인 이유: 이번 프레임의 스트리밍 상태를 보고 판정해야 한다.
+        //
+        // 기능들 사이의 순서는 `features/index.ts`의 배열 순서다 — 거기서 정한다.
+        kernel.add(player);
+        for (const m of features) if (m.instance.system) kernel.add(m.instance.system);
+        kernel.add(streaming).add(adapt);
         kernel.start();
 
         // 커널이 돌아야 파셀이 채워진다 — 여기서 블로킹 루프를 돌면 교착한다.
@@ -391,19 +380,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
       // 여유 배수를 1로 내린 뒤로는 이 값이 예산의 유일한 감시 수단이다.
       builder: builder!.stats(),
-      // 하늘 상태 + **조명 실측값**. 번개는 조명 강도를 순간적으로 올리는 방식이라,
-      // 이 값을 샘플링하지 않으면 "쳤는데 못 본 것"과 "안 친 것"을 구별할 수 없다.
-      // 감독이 "천둥 불빛이 안 보인다"고 했을 때 추측이 다섯 개까지 늘어난 이유가
-      // 여기에 잴 수단이 없었기 때문이다.
-      sky: sky
-        ? {
-          ...(sky.get() as object),
-          sunI: sun?.intensity ?? -1, hemiI: hemi?.intensity ?? -1,
-          // 번개는 색도 흰색으로 당긴다. 섬광이 끝난 뒤 되돌아오는지 재려면 색이
-          // 필요하다 — intensity만 보면 "색이 물든 채 고착된" 상태를 놓친다.
-          sunC: sun?.color?.getHex?.() ?? -1, hemiC: hemi?.color?.getHex?.() ?? -1,
-        }
-        : null,
+      /** 켜진 기능 목록 — 리포트만 보고 "무엇이 켜진 상태에서 잰 것인가"를 알 수 있어야 한다 */
+      features: features.map((m) => m.name),
+      // 기능별 진단. **여기에 기능별 분기가 없다** — 각 기능이 스스로 내놓는다.
+      // 기능을 빼면 진단에서도 저절로 사라진다(예전에는 `sky:` 키가 여기 박혀 있었다).
+      ...collectDiagnostics(features),
       hidden: typeof document !== 'undefined' && document.hidden,
     }),
   };
@@ -415,7 +396,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       input.dispose();
       touch.dispose();
       hud?.dispose();
-      skyPanel?.dispose();
+      // 기능 정리. System의 `dispose`는 커널이 부르므로, 여기서는 기능이 따로 붙인
+      // UI·리스너만 거둔다. 여기에도 기능별 분기가 없다.
+      for (const m of features) {
+        try { m.instance.dispose?.(); } catch (err) { console.error(`[world2] ${m.name} 정리 실패`, err); }
+      }
       // non-null 단언을 쓰는 이유: 이 셋은 부팅 콜백 안에서 할당되는데, TS 제어흐름
       // 분석은 함수 내부 할당을 추적하지 않아 바깥에서는 여전히 null로 본다.
       // 여기는 부팅 성공(ok===true) 경로에서만 도달하므로 셋 다 반드시 존재한다.
