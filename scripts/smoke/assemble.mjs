@@ -1,6 +1,6 @@
 // scripts/smoke/assemble.mjs
 // _site 조립 레시피를 로컬에서 재현한다. 두 방식 모두 지원:
-//  · assembleSite()     = web직조립(baseline) — 현행 deploy.yml 의 cp 재배치 복제.
+//  · assembleSite()     = frontend직조립(baseline) — 현행 deploy.yml 의 cp 재배치 복제.
 //  · assembleSiteVite() = vite 조립 — 교체될 deploy.yml(B-2b-3) 의 vite build 기반.
 // (생성기 실행은 run.mjs 의 검사1 에서 선행 — 여기서는 파일 배치만.)
 
@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, SITE_DIR } from './config.mjs';
 
-// ── baseline: web직조립 (현행 deploy.yml `run:` 조립 스텝과 1:1) ──────
+// ── baseline: frontend직조립 (현행 deploy.yml `run:` 조립 스텝과 1:1) ──────
 // 유지보수 시 .github/workflows/deploy.yml 의 조립 스텝과 함께 갱신할 것.
 // $OUT 은 대상 디렉토리(기본 _site).
 const ASSEMBLE_BASELINE_SH = `
@@ -40,7 +40,7 @@ cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true
 touch "$OUT/.nojekyll"
 `;
 
-// _site 를 web직조립(baseline) 방식으로 조립. 실패 시 예외 전파.
+// _site 를 frontend직조립(baseline) 방식으로 조립. 실패 시 예외 전파.
 export function assembleSite(targetDir = SITE_DIR) {
   execFileSync('bash', ['-c', ASSEMBLE_BASELINE_SH], {
     cwd: ROOT,

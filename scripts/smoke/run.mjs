@@ -31,7 +31,7 @@ import { launchBrowser, collectPage } from './browser-checks.mjs';
 import { checkRefs } from './check-refs.mjs';
 
 // ── 모드 선택 ────────────────────────────────────────────────────────
-// `node run.mjs`      → baseline(web직조립, 현행 deploy.yml 복제)
+// `node run.mjs`      → baseline(frontend직조립, 현행 deploy.yml 복제)
 // `node run.mjs vite` → vite 조립(교체 deploy.yml)
 const MODE = process.argv[2] === 'vite' ? 'vite' : 'baseline';
 const IS_VITE = MODE === 'vite';
@@ -70,7 +70,7 @@ function gitLine(args) {
  * 경보가 아니다. 스모크가 검증하는 것은 `frontend/` 소스와 하네스·테스트·빌드 설정이므로,
  * 그것들이 도중에 바뀌었을 때만 결과가 무효가 된다.
  */
-const WATCHED = /^(web|scripts|tests)\/|^(vite\.config\.js|vitest\.config\.js|package\.json)$/;
+const WATCHED = /^(frontend|backend|scripts|tests)\/|^(vite\.config\.js|vitest\.config\.js|package\.json)$/;
 
 /**
  * 감시 경로의 추적 파일 변경만 추린다(untracked `??`는 제외 — 스크래치 위반은 별건).
@@ -341,7 +341,7 @@ function printReport() {
 }
 
 async function main() {
-  const modeLabel = IS_VITE ? 'vite 조립(교체 deploy) + 동등성' : 'web직조립(baseline, 현행 deploy)';
+  const modeLabel = IS_VITE ? 'vite 조립(교체 deploy) + 동등성' : 'frontend직조립(baseline, 현행 deploy)';
   console.log(`스모크 하네스 시작 — [${MODE}] ${modeLabel} + 헤드리스 6항 검증`);
 
   // -1) 워킹트리 기준점 — 무엇을 재는지 먼저 기록한다

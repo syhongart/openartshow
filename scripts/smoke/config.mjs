@@ -23,7 +23,7 @@ export const SITE_DIR = path.join(ROOT, '_site');
 // vite.config 의 base '/openartshow/' 와 1:1. vite 산출물의 자산참조는 절대경로
 // /openartshow/_bundle/… 이므로, vite 모드에서는 서버가 이 프리픽스를 strip 하고
 // 브라우저는 이 프리픽스를 붙여 접근한다(= github.io/openartshow/ 배포 재현).
-// baseline(web직조립) 모드는 서브패스 없이 루트 서빙(deploy.yml 현행과 동일).
+// baseline(frontend직조립) 모드는 서브패스 없이 루트 서빙(deploy.yml 현행과 동일).
 export const BASE_PATH = '/openartshow/';
 
 // ── 검사1: deploy.yml 이 실행하는 생성기 3종 (exit 0 요구) ─────────────
@@ -39,11 +39,11 @@ export const GENERATORS = [
 // 실측: 2026-07-21 arch-safety-net 브랜치 = 175 파일(about.html 루트 배포 +1 반영).
 // (DEVLOG 항목 추가 등으로 늘어나는 것은 정상 — 급증은 PASS, 급감만 FAIL)
 //
-// vite 모드는 파일수가 다르다: web직조립은 `cp -r frontend/. _site/app/` 로 js/폰트를
+// vite 모드는 파일수가 다르다: frontend직조립은 `cp -r frontend/. _site/app/` 로 js/폰트를
 // 통째 복사하지만, vite 는 js 를 번들해 _bundle 로 dedup(중복 제거)하고 app/js 폴더가
 // 없다. → vite 조립본은 더 적다. 실측: 2026-07-21 vite 조립본 = 148 파일.
 // (_bundle 해시파일명은 빌드마다 바뀌나 개수는 동일 → 값 안정. devlog 증가는 급증=PASS)
-export const BASELINE_FILE_COUNT = 175;      // web직조립(baseline) 모드
+export const BASELINE_FILE_COUNT = 175;      // frontend직조립(baseline) 모드
 export const BASELINE_FILE_COUNT_VITE = 148; // vite 조립 모드
 export const BASELINE_FILE_COUNT_BY_MODE = {
   baseline: BASELINE_FILE_COUNT,
@@ -53,7 +53,7 @@ export const DROP_THRESHOLD = 5; // baseline - 5 미만이면 FAIL (급감)
 
 // ── 검사3: 조립 결과에 반드시 존재해야 하는 핵심 파일 (SITE_DIR 상대) ──
 // 두 조립 방식은 레이아웃이 다르다:
-//  · web직조립(baseline): app/ 아래 web 전체 사본 → app/js/main.js 존재.
+//  · frontend직조립(baseline): app/ 아래 frontend 전체 사본 → app/js/main.js 존재.
 //  · vite 조립: js 는 _bundle 로 번들(app/js 폴더 없음) → _bundle 디렉토리 존재.
 // 공통 정본 공개 페이지는 양쪽 동일 위치. 모드별 차이만 분기한다.
 const REQUIRED_FILES_COMMON = [
@@ -71,7 +71,7 @@ const REQUIRED_FILES_COMMON = [
 ];
 export const REQUIRED_FILES_BASELINE = [
   ...REQUIRED_FILES_COMMON,
-  'app/js/main.js',        // 라이브 런타임 진입 (web직조립 사본)
+  'app/js/main.js',        // 라이브 런타임 진입 (frontend직조립 사본)
 ];
 export const REQUIRED_FILES_VITE = [
   ...REQUIRED_FILES_COMMON,
