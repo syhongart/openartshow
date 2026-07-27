@@ -14,6 +14,7 @@ import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
 import { PooledParcelBuilder } from './systems/parcel-builder.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
+import { SPAWN } from './decide/grid.js';
 import { AdaptSystem } from './systems/adapt.js';
 import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
@@ -127,7 +128,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const bobAmplitude = readNum('bob', BOB_AMPLITUDE, 0, 0.2);
 
   const player = new PlayerSystem({
-    start: { x: 0, z: 0 },
+    start: { x: SPAWN.x, z: SPAWN.z },
     speed: walkSpeed,
     eyeHeight,
     bobAmplitude,

@@ -10,9 +10,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   GRID_W, GRID_H, GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z,
-  inGrid, isCentralPlaza as isPlaza, centralPlazaCell, plazaCenter, PLAZA_R,
+  inGrid, isCentralPlaza as isPlaza, centralPlazaCell, plazaCenter, PLAZA_R, SPAWN,
   blockPattern, gridEdgeX, gridEdgeZ, BlockPattern,
 } from '../frontend/js/world2/decide/grid.js';
+import { FOUNTAIN_R } from '../frontend/js/world2/parts/fountain.js';
 
 describe('세계의 크기 — 감독 확정 30×30', () => {
   it('가로세로 30칸이다', () => {
@@ -98,6 +99,34 @@ describe('중앙 광장', () => {
     for (const [px, pz] of [[5, 5], [-9, 2], [0, 7], [12, -12], [PLAZA_R + 1, 0]]) {
       expect(centralPlazaCell(px, pz)).toBeNull();
     }
+  });
+
+  // ── 검수관이 잡은 블로커 ──────────────────────────────────────────────────
+  // 스폰이 원점이었고 분수대도 원점에 선다. 이 프로젝트에는 플레이어-메시 충돌이 없어
+  // 아무것도 밀어내지 않으므로 **부팅 첫 프레임부터 카메라가 분수대 안에** 있었다.
+  // 눈높이 1.7m 와 분수대 꼭대기 1.70m 가 소수점까지 겹치기까지 했다.
+  //
+  // 좌표 판정은 전부 초록이었다 — 광장이 뭍인가, 분수대가 어느 칸에 서는가는 다 맞았다.
+  // **계산된 좌표가 실제 지오메트리와 만나는 지점을 아무도 안 봤다.** 그 경계를 여기서
+  // 막는다. 분수대를 키우거나 스폰을 옮기면 이 테스트가 먼저 깨진다.
+  describe('스폰 안전', () => {
+    it('스폰이 분수대 밖이다 — 충돌이 없으므로 좌표로만 지킬 수 있다', () => {
+      const d = Math.hypot(SPAWN.x - plazaCenter().x, SPAWN.z - plazaCenter().z);
+      // 분수대 밑동에 사람 반경(0.3)과 여유를 더한 만큼은 떨어져야 한다
+      expect(d).toBeGreaterThan(FOUNTAIN_R + 1);
+    });
+
+    it('스폰이 중앙 광장 안이다 — 첫 화면이 광장이어야 한다', () => {
+      const px = Math.round(SPAWN.x / CELL);
+      const pz = Math.round(SPAWN.z / CELL);
+      expect(isPlaza(px, pz)).toBe(true);
+    });
+
+    it('스폰에서 분수대가 정면이다 — yaw=0 은 -z 를 본다', () => {
+      // facing(0) = (0,-1). 분수대(원점)가 그 방향에 있으려면 스폰 z 가 양수여야 한다.
+      expect(SPAWN.z).toBeGreaterThan(0);
+      expect(SPAWN.x).toBe(plazaCenter().x); // 좌우로 치우치면 정면이 아니다
+    });
   });
 
   it('광장은 세계 안에 있다', () => {
