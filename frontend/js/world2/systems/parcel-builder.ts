@@ -19,10 +19,11 @@ import type { ParcelBuilder, ParcelHandle } from './streaming.js';
 import {
   type Tier, type TierBands, DEFAULT_BANDS, tierReach, maxLatticePoints,
 } from '../decide/lod.js';
+import { parcelLayout, DEFAULT_LAYOUT } from '../decide/parcel-layout.js';
 import {
-  parcelLayout, kindsFor, maxPartsPerParcel, outermostTierFor,
-  DEFAULT_LAYOUT, type LayoutOptions, type PartKind,
-} from '../decide/parcel-layout.js';
+  ALL_KINDS, kindsFor, maxPartsPerParcel, outermostTierFor,
+  type LayoutOptions, type PartKind,
+} from '../parts/index.js';
 
 /**
  * 슬롯 풀에 필요한 것만 추린 인터페이스. `InstancePools`가 그대로 만족한다(tone 변환만
@@ -34,8 +35,6 @@ export interface SlotPool {
   setTone(h: SlotHandle, tone: number): void;
   release(h: SlotHandle): void;
 }
-
-const ALL_KINDS: readonly PartKind[] = ['ground', 'building', 'tree', 'lamp'];
 
 interface PooledHandle extends ParcelHandle {
   key: string;
