@@ -112,6 +112,16 @@ export const LIVE_PAGES = [
   { name: 'app/world',         url: '/app/world.html',  webgl: true },
   // builder: studio 진입 카드로 링크된 라이브 페이지. WebGL 씬.
   { name: 'app/builder',       url: '/app/builder.html', webgl: true },
+  // world2: behind-flag(무링크)지만 **검증 대상에는 넣는다.**
+  //
+  // 스모크에 없다는 것은 "콘솔 에러 0" 판정이 이 페이지를 한 번도 안 봤다는 뜻이다.
+  // 실제로 감독이 매일 실기기로 여는 페이지인데 게이트가 비어 있었다 — `builder.html`이
+  // 라이브가 된 뒤에도 한동안 스모크 대상에서 빠져 있던 것과 똑같은 구멍이다(CLAUDE.md).
+  // 링크 노출 여부와 검증 여부는 별개다.
+  //
+  // vite 번들 전용(`three/webgpu`·`three/addons/*` import)이라 baseline 모드에서는
+  // raw 직서빙으로 부팅되지 않는다 — 그래서 vite 모드에서만 검사한다.
+  { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──

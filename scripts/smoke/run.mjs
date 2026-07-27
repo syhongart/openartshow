@@ -340,7 +340,8 @@ async function main() {
   try {
     browser = await launchBrowser();
     const pageResults = [];
-    for (const spec of LIVE_PAGES) {
+    // viteOnly 페이지는 vite 번들 전용이라 baseline(raw 직서빙)에서는 부팅되지 않는다.
+    for (const spec of LIVE_PAGES.filter((s) => !s.viteOnly || IS_VITE)) {
       try {
         pageResults.push(await collectPage(browser, srv.origin, spec, URL_PREFIX));
       } catch (e) {
