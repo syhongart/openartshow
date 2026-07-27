@@ -45,13 +45,24 @@
     transition:width .35s cubic-bezier(.22,.61,.36,1);
   }
   #w2-loading-pct{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+  /* 로딩 문구. 교체는 JS가 텍스트만 갈고, 페이드는 여기서 한다 —
+     로딩 중에는 메인 스레드가 가장 바쁘므로 JS 애니메이션을 돌리지 않는다.
+     min-height로 자리를 미리 잡아 문구가 없을 때 레이아웃이 튀지 않게 한다. */
+  #w2-loading-copy{
+    margin:0;min-height:1.5em;max-width:min(460px,84vw);
+    text-align:center;font-size:13.5px;line-height:1.5;letter-spacing:.01em;
+    color:var(--dim);opacity:0;transform:translateY(4px);
+    transition:opacity .4s ease, transform .4s ease;
+  }
+  #w2-loading-copy[data-show="1"]{opacity:1;transform:none}
   #w2-loading-note{margin:0;max-width:min(420px,80vw);text-align:center;font-size:12.5px;line-height:1.6;color:var(--dim)}
   #w2-loading[data-state="error"] #w2-loading-bar{background:#FF705E}
   #w2-loading[data-state="error"] #w2-loading-note{color:#FFB4A8}
 
   /* 모션을 줄이고 싶다는 뜻은 존중한다 — 전환을 없애도 정보 전달은 그대로다. */
   @media (prefers-reduced-motion: reduce){
-    #w2-loading,#w2-loading-bar{transition:none}
+    #w2-loading,#w2-loading-bar,#w2-loading-copy{transition:none}
+    #w2-loading-copy{transform:none}
   }
 
   #w2-hint{
@@ -69,6 +80,7 @@
     <p id="w2-loading-label">준비 중</p>
     <div id="w2-loading-track"><div id="w2-loading-bar"></div></div>
     <span id="w2-loading-pct">0%</span>
+    <p id="w2-loading-copy" data-show="0"></p>
     <p id="w2-loading-note" hidden></p>
   </div>
 

@@ -8,6 +8,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { findLoading, LoadingView, slowNote } from '../web/js/world2/ui/loading.js';
+import { ROTATE_MS, FADE_MS } from '../web/js/world2/decide/loading-copy.js';
 import type { BootReport } from '../web/js/world2/boot.js';
 
 const MARKUP = `
@@ -15,6 +16,7 @@ const MARKUP = `
     <p id="w2-loading-label"></p>
     <div id="w2-loading-bar"></div>
     <span id="w2-loading-pct"></span>
+    <p id="w2-loading-copy" data-show="0"></p>
     <p id="w2-loading-note" hidden></p>
   </div>`;
 
@@ -85,6 +87,60 @@ describe('LoadingView — 진행 표시', () => {
     const note = el('w2-loading-note') as HTMLElement;
     expect(note.hidden).toBe(false);
     expect(note.textContent).toContain('조금 더 걸립니다');
+  });
+});
+
+describe('LoadingView — 로딩 문구', () => {
+  const view = (list?: readonly string[]) => new LoadingView(findLoading(document)!, list);
+
+  it('첫 문구는 곧바로 뜬다 — 페이드로 들어오면 시작이 굼떠 보인다', () => {
+    view(['첫 문구', '둘째 문구']).update(report({ elapsedMs: 0 }));
+    expect(el('w2-loading-copy').textContent).toBe('첫 문구');
+    expect(el('w2-loading-copy').dataset.show).toBe('1');
+  });
+
+  it('빠른 부팅에서는 첫 문구에서 끝난다 — 보여주려고 로딩을 늘리지 않는다', () => {
+    const v = view(['첫 문구', '둘째 문구']);
+    v.update(report({ elapsedMs: 0 }));
+    v.update(report({ elapsedMs: 1_400 })); // world2 실측 부팅 시간
+    expect(el('w2-loading-copy').textContent).toBe('첫 문구');
+  });
+
+  it('로딩이 길어지면 교체를 시작한다 — 먼저 사라진 뒤 바뀐다', () => {
+    const v = view(['첫 문구', '둘째 문구']);
+    v.update(report({ elapsedMs: 0 }));
+    v.update(report({ elapsedMs: ROTATE_MS }));
+    // 글자가 겹쳐 보이면 읽기 어려우므로, 사라지는 동안에는 옛 문구가 남아 있다.
+    expect(el('w2-loading-copy').dataset.show).toBe('0');
+    expect(el('w2-loading-copy').textContent).toBe('첫 문구');
+  });
+
+  it('같은 구간에서 여러 번 갱신해도 문구를 다시 쓰지 않는다', () => {
+    const v = view(['첫 문구', '둘째 문구']);
+    v.update(report({ elapsedMs: 100 }));
+    el('w2-loading-copy').textContent = 'SENTINEL';
+    v.update(report({ elapsedMs: 900 }));
+    expect(el('w2-loading-copy').textContent).toBe('SENTINEL');
+  });
+
+  it('실패하면 문구를 감춘다 — 읽어야 할 것은 오류 내용이다', () => {
+    const v = view(['첫 문구']);
+    v.update(report({ elapsedMs: 0 }));
+    v.fail('stream', new Error('타임아웃'));
+    expect(el('w2-loading-copy').dataset.show).toBe('0');
+  });
+
+  it('걷힌 뒤 늦게 도착한 교체는 화면을 되살리지 않는다', async () => {
+    const v = view(['첫 문구', '둘째 문구']);
+    v.update(report({ elapsedMs: 0 }));
+    v.update(report({ elapsedMs: ROTATE_MS })); // 교체 타이머 예약
+    v.dismiss();
+    await new Promise((r) => setTimeout(r, FADE_MS + 50));
+    expect(el('w2-loading-copy').textContent).toBe('첫 문구'); // 둘째로 안 바뀜
+  });
+
+  it('문구가 없어도 죽지 않는다', () => {
+    expect(() => view([]).update(report({ elapsedMs: 0 }))).not.toThrow();
   });
 });
 

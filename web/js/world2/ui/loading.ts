@@ -17,6 +17,7 @@
 
 import type { BootReport } from '../boot.js';
 import type { BootStage } from '../decide/boot.js';
+import { COPY, FADE_MS, copyIndexAt } from '../decide/loading-copy.js';
 
 export interface LoadingParts {
   root: HTMLElement;
@@ -24,6 +25,7 @@ export interface LoadingParts {
   label: HTMLElement;
   percent: HTMLElement;
   note: HTMLElement;
+  copy: HTMLElement;
 }
 
 /** 기본 선택자. world2.html의 마크업과 짝을 이룬다. */
@@ -33,6 +35,7 @@ const SEL = {
   label: '#w2-loading-label',
   percent: '#w2-loading-pct',
   note: '#w2-loading-note',
+  copy: '#w2-loading-copy',
 } as const;
 
 /**
@@ -46,8 +49,9 @@ export function findLoading(doc: Document): LoadingParts | null {
   const label = get(SEL.label);
   const percent = get(SEL.percent);
   const note = get(SEL.note);
-  if (!root || !bar || !label || !percent || !note) return null;
-  return { root, bar, label, percent, note };
+  const copy = get(SEL.copy);
+  if (!root || !bar || !label || !percent || !note || !copy) return null;
+  return { root, bar, label, percent, note, copy };
 }
 
 export class LoadingView {
@@ -56,9 +60,14 @@ export class LoadingView {
   /** 마지막으로 화면에 쓴 정수 퍼센트 — 같은 값을 다시 쓰면 레이아웃만 낭비한다 */
   private lastPct = -1;
   private noteShown = '';
+  /** 지금 보여주는 문구 인덱스. 바뀔 때만 DOM을 만진다 */
+  private copyIdx = -1;
+  private swapTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly copyList: readonly string[];
 
-  constructor(parts: LoadingParts) {
+  constructor(parts: LoadingParts, copyList: readonly string[] = COPY) {
     this.p = parts;
+    this.copyList = copyList;
     this.p.root.setAttribute('role', 'status');
     this.p.root.setAttribute('aria-live', 'polite');
     this.p.bar.setAttribute('role', 'progressbar');
@@ -86,6 +95,45 @@ export class LoadingView {
       this.p.note.textContent = note;
       this.p.note.hidden = note === '';
     }
+
+    this.updateCopy(r.elapsedMs);
+  }
+
+  /**
+   * 로딩 문구를 회전시킨다.
+   *
+   * 빠른 기기에서는 첫 문구 하나만 보이고 끝난다 — 보여주려고 로딩을 늘리지 않는다는
+   * 규약(decide/loading-copy.ts)이 여기서 지켜진다. 교체 시에만 페이드하고, 보간은
+   * CSS에 맡긴다(로딩 중 메인 스레드가 가장 바쁘므로 JS 애니메이션을 돌리지 않는다).
+   */
+  private updateCopy(elapsedMs: number): void {
+    const next = copyIndexAt(elapsedMs, this.copyList.length);
+    if (next < 0 || next === this.copyIdx) return;
+
+    const first = this.copyIdx < 0;
+    this.copyIdx = next;
+    const text = this.copyList[next];
+
+    if (first) {
+      // 첫 문구는 곧바로 띄운다. 페이드로 들어오면 로딩 시작이 굼떠 보인다.
+      this.p.copy.textContent = text;
+      this.p.copy.dataset.show = '1';
+      return;
+    }
+    // 교체: 사라진 뒤 바꿔 넣는다. 글자가 겹쳐 보이면 읽기 어렵다.
+    this.p.copy.dataset.show = '0';
+    if (this.swapTimer) clearTimeout(this.swapTimer);
+    this.swapTimer = setTimeout(() => {
+      this.swapTimer = null;
+      if (this.done) return; // 걷힌 뒤 늦게 도착한 교체는 버린다
+      this.p.copy.textContent = text;
+      this.p.copy.dataset.show = '1';
+    }, FADE_MS);
+  }
+
+  /** 남은 타이머를 정리한다. 걷기·실패 양쪽에서 부른다. */
+  private clearTimers(): void {
+    if (this.swapTimer) { clearTimeout(this.swapTimer); this.swapTimer = null; }
   }
 
   /**
@@ -94,6 +142,9 @@ export class LoadingView {
    */
   fail(stage: BootStage, err: unknown): void {
     this.done = true;
+    this.clearTimers();
+    // 실패 화면에서 문구가 계속 도는 건 부적절하다 — 읽어야 할 것은 오류 내용이다.
+    this.p.copy.dataset.show = '0';
     this.p.root.dataset.state = 'error';
     this.p.label.textContent = '전시 공간을 열지 못했습니다';
     this.p.percent.textContent = '';
@@ -111,6 +162,7 @@ export class LoadingView {
   dismiss(): void {
     if (this.done) return;
     this.done = true;
+    this.clearTimers();
     this.p.root.dataset.state = 'done';
     this.p.root.setAttribute('aria-hidden', 'true');
   }
