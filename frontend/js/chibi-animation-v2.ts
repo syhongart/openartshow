@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three';
-import { CHIBI_ACTION_DUR } from './chibi-anim';
+import { CHIBI_ACTION_DUR } from './chibi-anim.js';
 
 export interface AnimationState {
   currentAction: string | null;

@@ -5,17 +5,20 @@
  */
 
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
-import { BufferGeometryUtils } from 'three/examples/jsm/utils/BufferGeometryUtils';
+// 자기완결 원칙 — 외부 호스트·패키지 서브경로가 아니라 저장소 안의 사본을 쓴다.
+// (`three/examples/jsm/...`를 가리키고 있었는데, 같은 파일의 `.js` 산출물은 처음부터
+//  이 vendor 경로였다. `.js`가 서빙되고 있었으므로 이 어긋남이 드러날 일이 없었다.)
+import { GLTFLoader } from '../vendor/GLTFLoader.js';
+import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import {
   createChibiShaderMaterial,
   assignPartColor,
   initializeVertexColors,
-} from './chibi-shader-v2';
-import { drawFaceCanvas } from './chibi-face';
-import { toonRamp, vivid, vividSkin } from './chibi-materials';
-import { CHIBI_ACTION_DUR } from './chibi-anim';
-import { ChibiAnimationV2 } from './chibi-animation-v2';
+} from './chibi-shader-v2.js';
+import { drawFaceCanvas } from './chibi-face.js';
+import { toonRamp, vivid, vividSkin } from './chibi-materials.js';
+import { CHIBI_ACTION_DUR } from './chibi-anim.js';
+import { ChibiAnimationV2 } from './chibi-animation-v2.js';
 
 type ChibiParams = any;
 
@@ -61,7 +64,10 @@ function createPrototypeChibiMesh(): THREE.SkinnedMesh {
   geometries.push(rightLegGeo);
 
   // 통합 지오메트리
-  const mergedGeo = THREE.BufferGeometryUtils.mergeGeometries(geometries);
+  // `THREE.BufferGeometryUtils`는 실재하지 않는다 — three는 이걸 네임스페이스에 노출하지
+  // 않는다. 이 줄은 실행되면 그 자리에서 TypeError였고, `USE_SKINNED_MESH_V2=false`라
+  // 실행 경로가 죽어 있어서 6개월간 아무도 밟지 않았다.
+  const mergedGeo = mergeGeometries(geometries);
   mergedGeo.computeVertexNormals();
   initializeVertexColors(mergedGeo);
 
@@ -283,8 +289,18 @@ export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
       animController.playAction(name);
     };
 
+    // ⚠️ 부위별 채색이 되지 않는다 — `USE_SKINNED_MESH_V2` 를 켜기 전에 반드시 고쳐야 한다.
+    //
+    // 구버전(`ShaderMaterial`)은 skin/hair/cloth/accessory 를 각각의 유니폼으로 **독립
+    // 채색**했다. `MeshPhongMaterial` 로 옮기면서 `vertexColors` 를 켜지 않았으므로 부위를
+    // 가릴 수단이 없고, 그래서 지금은 세 부위가 **같은 `material.color` 하나를 서로 덮어쓴다**
+    // (`accessory` 는 아예 빠졌다). 마지막에 호출된 부위의 색이 몸 전체에 칠해진다.
+    //
+    // `USE_SKINNED_MESH_V2 = false` 라 도달 불가능한 경로여서 6개월간 드러나지 않았다.
+    // 되살리려면 `assignPartColor` 가 이미 심어 둔 정점 색상을 쓰도록 `vertexColors: true`
+    // 로 재질을 만들고, 부위별 색은 정점 색상 갱신으로 처리해야 한다. `chibi-shader-v2.ts`
+    // 의 `PART_SKIN`/`PART_HAIR`/`PART_CLOTH`/`PART_ACCESSORY` 가 그 인덱스다.
     const setColor = (part: string, hex: number) => {
-      // MeshPhongMaterial의 color 프로퍼티 직접 수정
       if (part === 'skin' || part === 'cloth' || part === 'hair') {
         material.color.setHex(hex);
         material.needsUpdate = true;
