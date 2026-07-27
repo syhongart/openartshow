@@ -45,11 +45,19 @@ export interface SkyState {
   fx: Record<string, boolean>;
   flashSafe?: boolean;
   /**
-   * 돔 크로스페이드 진행 중인가. **`time`/`weather`는 `set()` 즉시 새 값이 되지만 실제로
-   * 그려지는 것은 최대 1.8초 동안 다르다** — `fadeDome`이 하나 더 그려지고, 구름 가시성
-   * 갱신도 그동안 멈춰 있어 이전 상태가 남는다. 드로우콜 판정이 이 구간을 구별해야 한다.
+   * **지금 그려지는 것이 논리 상태와 아직 일치하지 않는가.** `time`/`weather`는 `set()`
+   * 즉시 새 값이 되지만 화면에 올라가는 메시 집합은 잠시 다르다(돔 크로스페이드 + 별
+   * 반짝임 감쇠 꼬리). 드로우콜 판정이 이 구간을 구별해야 한다.
+   *
+   * 어떤 축이 여기 들어가는지는 **`sky.js`가 안다** — 소비자가 세지 않는다. 세 번 연속으로
+   * 축을 빠뜨린 뒤 내린 결론이다.
    */
-  xfade?: boolean;
+  settling?: boolean;
+  /**
+   * 저사양 축소 모드. 구름·별 레이어를 아예 끄므로 **드로우콜 판정 키에 들어가야 한다**
+   * (전이가 아니라 다른 상태다). world2는 아직 `setLite`를 부르지 않지만 값은 노출된다.
+   */
+  lite?: boolean;
 }
 
 export interface SkyOptions {

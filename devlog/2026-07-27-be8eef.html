@@ -125,6 +125,19 @@ texture         9   상수</code></pre>
 <p>두 번째가 요점이다 — <strong>원래 블로커를 되살렸더니 테스트가 잡았다.</strong> 회귀 방지가 성립한다.</p>
 <p>함께 처리한 비블로커 셋:</p>
 <ul><li><strong>링 정합</strong> — 키를 <strong>먼저 계산하고</strong> 넣을지 정한 뒤 둘 다 넣는다. <code>draw.push</code> 뒤에 키를 구하면 그 사이 예외 하나로 두 링이 영구히 어긋난다. try/catch보다 순서가 근본이다.</li><li><strong><code>lite</code> 모드</strong> — 지금은 world2에서 미배선(<code>sky.setLite</code>를 부르는 곳이 없다)이라 위험이 없지만, 배선되는 순간 <code>flashSafe</code>와 <strong>정반대로</strong> "무엇을 그릴지"를 바꾸는 축이 키에서 빠진 채 같은 함정이 재현된다. <code>skyKey</code> 주석에 배선 시 조건을 못 박았다.</li><li><strong>HUD 표시</strong> — <code>draw 9~12</code>인데 경고가 없어 헷갈린다는 지적. <code>draw 9~12(하늘3)</code>으로 상태 수를 함께 적어 정상임이 그 자리에서 읽히게 했다.</li></ul>
+<h3>세 번째 축 — 그리고 축을 세는 책임을 옮겼다</h3>
+<p>재확인에서 검수관이 <code>sky.js</code>의 <code>.visible</code> 대입 15곳을 전수해 <strong>세 번째 축</strong>을 찾았다. 별 반짝임(<code>twk</code>) 레이어는 <code>wantTwk</code>가 즉시 꺼져도 <code>twkBase</code>가 지수 감쇠로 0.01 밑에 떨어질 때까지 <code>visible=true</code>를 유지한다 — <code>cloudMesh</code>와 같은 모양인데, <strong>크로스페이드 <code>phase</code>와 완전히 독립된 시계로 돈다.</strong></p>
+<p>지금 안 터지는 이유가 문제였다:</p>
+<div class="tbl"><table><thead><tr><th>twk 감쇠 종료</th><th>1.500초</th></tr></thead><tbody><tr><td>크로스페이드 종료</td><td>1.800초</td></tr><tr><td>마진</td><td><strong>0.3초</strong></td></tr></tbody></table></div>
+<p>꼬리가 크로스페이드 구간 안에 통째로 묻힌다. 그런데 <strong>그 마진은 설계가 아니라 우연이다</strong> — <code>fade</code> 기본값(1.8) · 감쇠율(3) · 문턱(0.01)이 서로 다른 세 곳에 독립적으로 박힌 상수라, <code>fade</code>를 1.2초로 줄이는 정상적인 튜닝만으로 역전되어 17프레임이 도착 키에 섞인다. 오늘 아침 CLAUDE.md에 써넣은 「값 미러링」과 「실측에 여유를 얹은 값은 근거가 아니다」가 그대로 재현된 형태다.</p>
+<p>검수관은 두 안을 줬다 — (a) 플래그 추가 (b) 상수 관계를 assert하는 테스트. <strong>(a)를 택했다.</strong> 관계를 테스트로 못 박으면 <code>fade</code>를 줄이는 정당한 튜닝까지 막힌다. 상태를 직접 보면 상수가 바뀌어도 저절로 옳다.</p>
+<blockquote>그런데 더 중요한 건 따로 있었다. <strong>세 번 다 "축을 빠뜨림"이었다</strong>(크로스페이드 돔 · <code>lite</code> ·<br>twk 꼬리). 축을 세는 책임이 소비자(world2)에 있는 한 네 번째가 온다.</blockquote>
+<p>그래서 <code>sky.js</code>가 스스로 답하게 했다. <code>xfade</code>(크로스페이드만 뜻함)를 <strong><code>settling</code></strong>으로 바꿨다 — *"지금 그려지는 것이 논리 상태와 아직 일치하지 않는가"*. 어떤 축이 거기 들어가는지는 <code>sky.js</code>가 알고, 소비자는 불리언 하나만 본다. <code>settling</code> 주석에 <strong>"비동기 가시성 축은 아래가 전부다. <code>.visible</code> 대입을 새로 추가하면 여기를 갱신하라"</strong>를 명시했다.</p>
+<p><code>lite</code>도 함께 노출했다. 이건 <code>settling</code>이 아니라 <strong>키에 들어가야 할 축</strong>이다 — 전이가 아니라 다른 상태이고, 켜지면 구름·별을 아예 끈다. world2는 아직 <code>setLite</code>를 부르지 않지만 지금 넣어 두면 배선하는 순간 저절로 옳다. "배선할 때 잊지 말라"는 메모보다 확실하다.</p>
+<h3>못 잰 것 — <code>settling</code>의 twk 축은 아직 검증되지 않았다</h3>
+<p>정직하게 적는다. <code>settling</code> 로직 자체는 3줄이고 자명하지만, <strong><code>twkBase</code>가 실제로 그렇게 움직이는지는 아무도 안 본다.</strong> sky.js를 실행하는 테스트가 하나도 없기 때문이다(three 전체 스텁이 필요하다).</p>
+<p>검증 시나리오는 명확하다 — <code>fade</code>를 1.0초로 줘서 크로스페이드가 먼저 끝나고 twk 꼬리만 남는 상황을 만들고, 그때 <code>settling</code>이 여전히 true인지 본다. 현행 기본값에서는 꼬리가 크로스페이드 안에 묻혀 이 경로를 <strong>한 번도 안 밟는다</strong>. 태스크 #113(sky.js 테스트 하네스)에 이 시나리오를 명시해 두었다.</p>
+<p>즉 이번 수정은 "코드가 맞아 보인다" 수준이고, 그건 통과 사유가 아니다. 다만 고치기 전보다 나쁘지는 않다 — 고치기 전에는 축이 아예 없었다.</p>
 <h3>남은 관측</h3>
 <p>같은 리포트의 <code>out 15.0ms</code>(p95 17 · max 50)가 프레임의 대부분이다. 60fps 캡에서 vsync 대기가 여기로 잡히므로 정상 범위지만, <strong><code>render()</code> 밖 프리즈 미제</strong>(5.4초·11.5초)를 보는 창이 이 열이다. 지금은 max 50ms라 조용하다.</p>
 </article>
