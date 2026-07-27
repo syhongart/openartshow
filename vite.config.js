@@ -204,7 +204,9 @@ export default defineConfig({
         index: r('frontend/index.html'),
         studio: r('frontend/studio.html'),
         world: r('frontend/world.html'),
-        // behind-flag(라이브 미노출) — 빌드 실증만, 링크 노출 아님.
+        // 라이브다 — studio.html 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다.
+        // (예전 주석은 behind-flag 라고 적고 있었다. CLAUDE.md 와 smoke/config.mjs 의
+        //  LIVE_PAGES 는 진작 정정됐는데 여기만 남아 있었다 — 값 미러링 사고 그대로다.)
         builder: r('frontend/builder.html'),
         visit: r('frontend/visit.html'),
         // [실험] GLB 공간 워크스루 — 감독이 "어떤 느낌일지" 보려는 미리보기. 라이브 미술관과 완전 분리,

@@ -74,8 +74,8 @@ _site_baseline/
 # Vite 검증기(B-2a) 빌드 산출물 — 커밋 제외(정적 배포는 deploy.yml 의 _site 조립이 담당)
 /dist/
 
-# 헤드리스 QA 하네스가 만드는 배포경로 모사 부산물(원본은 web/world/manifest.json,
-# 실제 배포는 vite가 web/world → dist/app/world 로 복사). 반복 재생성되므로 무시.
+# 헤드리스 QA 하네스가 만드는 배포경로 모사 부산물(원본은 frontend/world/manifest.json,
+# 실제 배포는 vite가 frontend/world → dist/app/world 로 복사). 반복 재생성되므로 무시.
 /frontend/app/
 .qa-tmp/
 qa-tmp/

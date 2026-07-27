@@ -43,7 +43,7 @@ OpenArtShow는 **웹 브라우저만으로 접속하는 3D 가상 전시 플랫�
 
 ```
 openartshow/
-├── frontend/                        # 개발 소스
+├── frontend/                   # 프론트엔드 소스
 │   ├── index.html              # 3D 전시장 (app/로 배포)
 │   ├── landing.html            # 랜딩 페이지 (루트의 index.html로 배포)
 │   ├── guide.html              # 이용 안내 (루트의 guide.html로 배포)
