@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 감독이 "지엘비 올려 보자, 궁금하다 — 어떤 느낌일지"라고 했다. 반입 판정 전에 직접 걸어다녀 볼">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html">
+<title>복원 지점 — `keep/world2-walkable-20260727` — OpenArtShow 개발일지</title>
+<meta name="description" content="감독 지시로 이 시점을 되돌아올 수 있게 고정했다. 브랜치 keep/world2-walkable-20260727">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-27-21297a.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 감독이 "지엘비 올려 보자, 궁금하다 — 어떤 느낌일지"라고 했다. 반입 판정 전에 직접 걸어다녀 볼">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다","datePublished":"2026-07-26","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="복원 지점 — `keep/world2-walkable-20260727` — OpenArtShow 개발일지">
+<meta property="og:description" content="감독 지시로 이 시점을 되돌아올 수 있게 고정했다. 브랜치 keep/world2-walkable-20260727">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-27-21297a.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"복원 지점 — `keep/world2-walkable-20260727`","datePublished":"2026-07-27","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-27-21297a.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,16 +87,19 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
-<div class="eyebrow">2026-07-26</div>
-<h1><span class="emo">🛠️</span>GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다</h1>
+<div class="eyebrow">2026-07-27</div>
+<h1><span class="emo">🛠️</span>복원 지점 — `keep/world2-walkable-20260727`</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 감독이 "지엘비 올려 보자, 궁금하다 — 어떤 느낌일지"라고 했다. 반입 판정 전에 직접 걸어다녀 볼 수 있어야 판단이 선다. <code>web/lab-glb.html</code> + <code>web/js/lab-glb.js</code>로 1인칭 워크스루 미리보기를 만들었다. 라이브 어디에도 링크하지 않는 behind-flag 실험이며 오픈월드·미술관 코드와 접점 0이다.</p>
-<p><strong>발견 ① — CSP와 GLB 내장 텍스처.</strong> GLTFLoader는 GLB에 내장된 텍스처를 디코드할 때 <code>blob:</code> URL을 만든다. 우리 CSP <code>connect-src 'self'</code>는 이 fetch를 차단하고, 그 결과 <strong>텍스처 22개가 전부 로드 실패</strong>했다(콘솔 에러 44건). <code>connect-src</code>에 <code>blob:</code>을 추가해 해결 — 외부 호스트는 여전히 0이다. 앞으로 GLB를 쓰는 모든 페이지에 해당되므로 기록해둔다.</p>
-<p><strong>발견 ② — 조명이 없는 GLB.</strong> 이 파일에는 라이트가 0개고, 다수 재질이 <code>metalness=1</code>이라 환경맵 없이는 완전히 검게 나온다. 외부 HDR 없이 절차적 PMREM 환경맵(<code>builder.js</code>·<code>world.js</code>와 같은 패턴) + 반구광 + 직사광 + 모델러가 배치한 조명 픽스처 자리의 PointLight로 구성했다. 다만 벽 재질 일부가 <code>alphaMode=BLEND</code>라 조명으로 완전히 밝힐 수 없다 — 재질 자체의 특성이며 재질 교체는 이 실험의 범위 밖이다.</p>
-<p><strong>발견 ③ — 포인터 락과 화면 버튼의 충돌.</strong> 데스크톱에서 진입하면 포인터 락이 걸리는데, 락 상태에서는 마우스가 캔버스에 묶여 <strong>화면에 보이는 1F/2F 버튼을 누를 수 없다.</strong> ESC로 풀고 누른 뒤 다시 클릭해 락을 되찾아야 하는 왕복이 번거로워 1·2 숫자키를 넣었다.</p>
-<p><strong>스모크 오진 정정.</strong> 위임한 스모크가 4/7 FAIL을 보고했으나 직접 재검증하니 대부분 오진이었다. "삼각형 0(GLB 미로드)"은 실제로 109.1k tri·55 draw로 정상 렌더 중이었고, "index.html 404 = 라이브 회귀"는 <strong>index.html·world.html에서도 똑같이 나는 기존 현상</strong>이었으며, "overlay가 클릭을 막는다"는 히트테스트가 버튼 자신을 반환하고 좌표 클릭이 성공하는 것으로 반증됐다(헤드리스 소프트웨어 렌더러의 하네스 한계). 남은 진짜 문제는 발견 ③ 하나였다. *대조군 없는 FAIL은 판정이 아니다* — 이 세션에서 세 번째 확인이다.</p>
+<p>감독 지시로 이 시점을 되돌아올 수 있게 고정했다. 브랜치 <code>keep/world2-walkable-20260727</code> (= <code>9d1de8b</code>, 당시 main과 동일)이 그것이다. <strong>태그도 시도했으나 이 환경의 git 프록시가 태그 push를 거부한다</strong>(반복 실패, 원인 불명) — 브랜치로 대체했고 기능은 동일하다.</p>
+<p>이 시점의 상태:</p>
+<ul><li>미술관·빌더 three 페이로드 gzip 279→143KB</li><li>world2(behind-flag)가 걸어다닐 수 있는 상태. 개수 불변식 실증(파셀 15~18 오르내려도 draw 4·pipeline 2 상수), 모바일 조이스틱, 이동 방향 시선 일치도 1.000</li><li>감독 실기기 판정: "동작은 진짜 자연스럽다"</li><li>테스트 472개·tsc·vite 빌드 통과, Actions #285 success</li></ul>
+<p>되돌리는 법:</p>
+<pre><code>git fetch origin
+git checkout -B main origin/keep/world2-walkable-20260727
+git push --force-with-lease origin main     # ⚠ 위험작업 2인 게이트(§10-2) 대상</code></pre>
+<p>gh-pages는 main에서 재생성되므로 별도 복원이 필요 없다. force-push는 되돌리기 어려운 작업이므로 팀장 서명 없이 실행하지 않는다.</p>
 </article>
-<div class="pn"><a href="./2026-07-26-a626c7.html"><span class="lbl">← 이전 기록</span>P1 재질 캐시 — 규약을 바꿔놓고 소비자 한 곳만 고친 대가</a><a href="./2026-07-27-b82728.html" style="text-align:right"><span class="lbl">다음 기록 →</span>번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다</a></div>
+<div class="pn"><a href="./2026-07-27-eec8af.html"><span class="lbl">← 이전 기록</span>오픈월드 재작성(world2) — 개수를 상수로 묶으면 스파이크가 사라진다</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>

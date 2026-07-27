@@ -11,7 +11,7 @@
 <meta property="og:title" content="개발일지 — OpenArtShow">
 <meta property="og:description" content="OpenArtShow를 만드는 과정의 공개 기록. 웹 3D 미술관의 성능·디자인·법무·브랜드 결정을 원인-분석-개선-결과로 남깁니다.">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html"},{"@type":"BlogPosting","headline":"P1 재질 캐시 — 규약을 바꿔놓고 소비자 한 곳만 고친 대가","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-a626c7.html"},{"@type":"BlogPosting","headline":"미술관 GLB 대치 실사 — \"실내가 없다\"는 오판을 레이캐스트로 뒤집기","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-ed77e9.html"},{"@type":"BlogPosting","headline":"오픈월드 성능 4차 — 계측이 스스로를 부정하게 만들기, 그리고 축을 고르지 않는 처방","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-8e5861.html"},{"@type":"BlogPosting","headline":"오픈월드 성능 3차 — 셰이더 예열의 실패와 롤백, 그리고 배제로 좁힌 것","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-978357.html"},{"@type":"BlogPosting","headline":"오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因)","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-0b1e7a.html"},{"@type":"BlogPosting","headline":"오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀","datePublished":"2026-07-25","url":"https://syhongart.github.io/openartshow/devlog/2026-07-25-55ff0e.html"},{"@type":"BlogPosting","headline":"오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-62bb8c.html"},{"@type":"BlogPosting","headline":"스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-27331b.html"},{"@type":"BlogPosting","headline":"모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)","datePublished":"2026-07-23","url":"https://syhongart.github.io/openartshow/devlog/2026-07-23-c7b62b.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"복원 지점 — `keep/world2-walkable-20260727`","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-21297a.html"},{"@type":"BlogPosting","headline":"오픈월드 재작성(world2) — 개수를 상수로 묶으면 스파이크가 사라진다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-eec8af.html"},{"@type":"BlogPosting","headline":"번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html"},{"@type":"BlogPosting","headline":"GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html"},{"@type":"BlogPosting","headline":"P1 재질 캐시 — 규약을 바꿔놓고 소비자 한 곳만 고친 대가","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-a626c7.html"},{"@type":"BlogPosting","headline":"미술관 GLB 대치 실사 — \"실내가 없다\"는 오판을 레이캐스트로 뒤집기","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-ed77e9.html"},{"@type":"BlogPosting","headline":"오픈월드 성능 4차 — 계측이 스스로를 부정하게 만들기, 그리고 축을 고르지 않는 처방","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-8e5861.html"},{"@type":"BlogPosting","headline":"오픈월드 성능 3차 — 셰이더 예열의 실패와 롤백, 그리고 배제로 좁힌 것","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-978357.html"},{"@type":"BlogPosting","headline":"오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因)","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-0b1e7a.html"},{"@type":"BlogPosting","headline":"오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀","datePublished":"2026-07-25","url":"https://syhongart.github.io/openartshow/devlog/2026-07-25-55ff0e.html"}]}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,7 +87,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <div class="eyebrow">Devlog</div>
 <h1>개발일지</h1>
-<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 105건의 기록.<br>
+<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 108건의 기록.<br>
 문제의 원인, 분석, 개선, 결과를 그대로 남깁니다.</p>
 <a class="pin-card" href="./philosophy.html">
   <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
@@ -168,6 +168,21 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
   <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
   <h2>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)</h2>
   <p>프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.</p>
+</a>
+<a class="card" href="./2026-07-27-21297a.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🛠️</span>복원 지점 — `keep/world2-walkable-20260727`</h2>
+  <p>감독 지시로 이 시점을 되돌아올 수 있게 고정했다. 브랜치 keep/world2-walkable-20260727</p>
+</a>
+<a class="card" href="./2026-07-27-eec8af.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🛠️</span>오픈월드 재작성(world2) — 개수를 상수로 묶으면 스파이크가 사라진다</h2>
+  <p>원인. 현행 오픈월드는 파셀이 승격될 때마다 화면이 걸린다. 그동안의 처방(텍스처 58% 감량,</p>
+</a>
+<a class="card" href="./2026-07-27-b82728.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🛠️</span>번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다</h2>
+  <p>원인. 감독이 "SOLID 리팩터 이후 성능이 떨어진 것 같다"는 가설을 냈다. 수치로 가리기 위해</p>
 </a>
 <a class="card" href="./2026-07-26-5267ec.html">
   <span class="d">2026-07-26</span>

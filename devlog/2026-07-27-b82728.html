@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다 — OpenArtShow 개발일지</title>
-<meta name="description" content="원인. 감독이 "지엘비 올려 보자, 궁금하다 — 어떤 느낌일지"라고 했다. 반입 판정 전에 직접 걸어다녀 볼">
-<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html">
+<title>번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다 — OpenArtShow 개발일지</title>
+<meta name="description" content="원인. 감독이 "SOLID 리팩터 이후 성능이 떨어진 것 같다"는 가설을 냈다. 수치로 가리기 위해">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="OpenArtShow">
-<meta property="og:title" content="GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다 — OpenArtShow 개발일지">
-<meta property="og:description" content="원인. 감독이 "지엘비 올려 보자, 궁금하다 — 어떤 느낌일지"라고 했다. 반입 판정 전에 직접 걸어다녀 볼">
-<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다","datePublished":"2026-07-26","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html","inLanguage":"ko"}</script>
+<meta property="og:title" content="번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다 — OpenArtShow 개발일지">
+<meta property="og:description" content="원인. 감독이 "SOLID 리팩터 이후 성능이 떨어진 것 같다"는 가설을 냈다. 수치로 가리기 위해">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다","datePublished":"2026-07-27","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,16 +87,18 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
-<div class="eyebrow">2026-07-26</div>
-<h1><span class="emo">🛠️</span>GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다</h1>
+<div class="eyebrow">2026-07-27</div>
+<h1><span class="emo">🛠️</span>번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다</h1>
 <p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
-<p><strong>원인.</strong> 감독이 "지엘비 올려 보자, 궁금하다 — 어떤 느낌일지"라고 했다. 반입 판정 전에 직접 걸어다녀 볼 수 있어야 판단이 선다. <code>web/lab-glb.html</code> + <code>web/js/lab-glb.js</code>로 1인칭 워크스루 미리보기를 만들었다. 라이브 어디에도 링크하지 않는 behind-flag 실험이며 오픈월드·미술관 코드와 접점 0이다.</p>
-<p><strong>발견 ① — CSP와 GLB 내장 텍스처.</strong> GLTFLoader는 GLB에 내장된 텍스처를 디코드할 때 <code>blob:</code> URL을 만든다. 우리 CSP <code>connect-src 'self'</code>는 이 fetch를 차단하고, 그 결과 <strong>텍스처 22개가 전부 로드 실패</strong>했다(콘솔 에러 44건). <code>connect-src</code>에 <code>blob:</code>을 추가해 해결 — 외부 호스트는 여전히 0이다. 앞으로 GLB를 쓰는 모든 페이지에 해당되므로 기록해둔다.</p>
-<p><strong>발견 ② — 조명이 없는 GLB.</strong> 이 파일에는 라이트가 0개고, 다수 재질이 <code>metalness=1</code>이라 환경맵 없이는 완전히 검게 나온다. 외부 HDR 없이 절차적 PMREM 환경맵(<code>builder.js</code>·<code>world.js</code>와 같은 패턴) + 반구광 + 직사광 + 모델러가 배치한 조명 픽스처 자리의 PointLight로 구성했다. 다만 벽 재질 일부가 <code>alphaMode=BLEND</code>라 조명으로 완전히 밝힐 수 없다 — 재질 자체의 특성이며 재질 교체는 이 실험의 범위 밖이다.</p>
-<p><strong>발견 ③ — 포인터 락과 화면 버튼의 충돌.</strong> 데스크톱에서 진입하면 포인터 락이 걸리는데, 락 상태에서는 마우스가 캔버스에 묶여 <strong>화면에 보이는 1F/2F 버튼을 누를 수 없다.</strong> ESC로 풀고 누른 뒤 다시 클릭해 락을 되찾아야 하는 왕복이 번거로워 1·2 숫자키를 넣었다.</p>
-<p><strong>스모크 오진 정정.</strong> 위임한 스모크가 4/7 FAIL을 보고했으나 직접 재검증하니 대부분 오진이었다. "삼각형 0(GLB 미로드)"은 실제로 109.1k tri·55 draw로 정상 렌더 중이었고, "index.html 404 = 라이브 회귀"는 <strong>index.html·world.html에서도 똑같이 나는 기존 현상</strong>이었으며, "overlay가 클릭을 막는다"는 히트테스트가 버튼 자신을 반환하고 좌표 클릭이 성공하는 것으로 반증됐다(헤드리스 소프트웨어 렌더러의 하네스 한계). 남은 진짜 문제는 발견 ③ 하나였다. *대조군 없는 FAIL은 판정이 아니다* — 이 세션에서 세 번째 확인이다.</p>
+<p><strong>원인.</strong> 감독이 "SOLID 리팩터 이후 성능이 떨어진 것 같다"는 가설을 냈다. 수치로 가리기 위해 리팩터 전후 6개 기준점을 각각 체크아웃해 같은 시나리오로 계측했다.</p>
+<p><strong>결과 — 가설은 기각.</strong> 리팩터 4개 체크포인트(<code>fab7128</code>→<code>641e6a9</code>→<code>918efe0</code>→<code>340decb</code>)에서 world.html·index.html의 programs/geometries/textures/calls/triangles가 <strong>소수점 하나 안 틀리고 동일</strong>했다(19/238/27/254/84,446 고정). 모듈 캐시 3종과 싱글턴도 스코프 강등 없이 온전히 이사했다. 재질 증식의 근원인 <code>MATS</code> 팩토리는 리팩터 <strong>이전 코드와 글자 하나 다르지 않았다</strong> — 리팩터가 만든 게 아니라 그대로 옮긴 기존 설계였다.</p>
+<p><strong>그런데 진짜 회귀가 따로 있었다.</strong> <code>vendor-three</code> 청크가 540KB→1,048KB로 두 배였다. <code>three/webgpu</code>를 쓰는 곳은 <code>world.js</code> 하나뿐인데 <code>manualChunks</code>가 <code>node_modules/three</code>를 통째로 묶어, WebGPU를 전혀 쓰지 않는 미술관·빌더까지 그 코드를 받고 있었다.</p>
+<p><strong>두 겹으로 숨어 있었다.</strong> ①단순히 <code>build/three.webgpu</code>만 갈랐더니 순환 청크 경고가 떴다 — 공유 코어를 사이에 두고 서로를 참조했다(코어를 먼저 갈라 해소). ②갈랐는데도 <strong>모든 페이지가 여전히 셋 다 받았다.</strong> WebGL 청크가 WebGPU 청크를 import하고 있었고, 범인은 <code>examples/jsm</code>의 <code>tsl</code>·<code>lighting</code> (TiledLighting)이었다. TSL은 WebGPU 셰이더 언어인데 <code>three</code> 매칭에 걸려 WebGL 쪽으로 분류돼 있었다.</p>
+<p><strong>결과.</strong> 미술관·빌더 1,048KB→567KB(gzip 279→143KB). 오픈월드는 변화 없음(실제로 WebGPU를 쓴다). 감독이 라이브 Network 탭에서 확인한 청크 해시가 로컬 빌드와 일치해, 배포본이 검증본과 바이트 단위로 같음이 관측으로 확정됐다.</p>
+<p><strong>교훈(체감은 맞고 범인만 틀릴 수 있다).</strong> 감독의 "리팩터 이후 느려졌다"는 시점 감각이 정확했다. 그 무렵 오픈월드를 WebGPU로 올렸고, 원래 가벼웠던 미술관이 그 비용을 대신 내기 시작했다. 가설을 기각하는 것과 체감을 부정하는 것은 다르다 — 조사의 목적은 "누구 탓인가"가 아니라 "지금 무엇이 남아 있나"였다.</p>
+<p><strong>후속(등재).</strong> 분류가 경로 allowlist라 <code>examples/jsm</code>의 다른 webgpu 의존 모듈 18개 (<code>SkyMesh</code>·<code>WaterMesh</code>·<code>CSMShadowNode</code> 등)는 못 잡는다. 지금은 미사용이라 안전하지만, 훗날 그런 모듈을 non-world 페이지에 도입하면 이번에 고친 버그가 조용히 재발한다. <code>getModuleInfo</code> 기반 전이 판정으로 교체 검토 + "WebGL 청크가 WebGPU 청크를 import하면 빌드 실패" 안전장치를 별건으로 남겼다.</p>
 </article>
-<div class="pn"><a href="./2026-07-26-a626c7.html"><span class="lbl">← 이전 기록</span>P1 재질 캐시 — 규약을 바꿔놓고 소비자 한 곳만 고친 대가</a><a href="./2026-07-27-b82728.html" style="text-align:right"><span class="lbl">다음 기록 →</span>번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다</a></div>
+<div class="pn"><a href="./2026-07-26-5267ec.html"><span class="lbl">← 이전 기록</span>GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다</a><a href="./2026-07-27-eec8af.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 재작성(world2) — 개수를 상수로 묶으면 스파이크가 사라진다</a></div>
 </div>
 <footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
 </body>
