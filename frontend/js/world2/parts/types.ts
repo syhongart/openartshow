@@ -50,7 +50,10 @@ export interface LayoutOptions {
   cellZ: number;
   /** 파셀 가장자리 여백(미터) — 이웃 파셀과 부품이 겹치지 않게 */
   margin?: number;
-  /** 건물 최대 개수(near 기준) */
+  /**
+   * 건물 최대 개수. **4를 넘기지 마라** — 건물은 사분면에 1:1로 배정돼 겹침을
+   * 구조적으로 피하는데, 5채부터는 한 사분면에 둘이 들어가 그 보장이 깨진다.
+   */
   maxBuildings?: number;
   maxTrees?: number;
   maxLamps?: number;
@@ -64,7 +67,7 @@ export type ResolvedLayout = Required<LayoutOptions>;
  */
 export const DEFAULT_LAYOUT: ResolvedLayout = {
   cellX: 32, cellZ: 32, margin: 2.5,
-  maxBuildings: 6, maxTrees: 8, maxLamps: 4,
+  maxBuildings: 4, maxTrees: 8, maxLamps: 4,
 };
 
 /** 배치 함수가 받는 것. 파셀 좌표와 **자기 몫의 난수**만 본다. */

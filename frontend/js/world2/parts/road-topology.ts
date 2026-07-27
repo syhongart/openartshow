@@ -85,6 +85,17 @@ export const ROAD_SEG = 8;
 export const ROAD_HALF = ROAD_SEG / 2 + 1.5;
 
 /**
+ * 건물·나무·가로등이 물러서는 안쪽 경계(미터). **도로 판정(`ROAD_HALF`)보다 넓다.**
+ *
+ * 둘을 같은 값으로 쓰다가 갈랐다. `ROAD_HALF` 는 "여기가 길인가"를 답하는 값이고,
+ * 셋백은 "여기까지는 안 짓는다"는 값이라 역할이 다르다. 같게 두면 건물 벽이 차도 끝에
+ * 딱 붙어 서고 인도가 없다 — 디자이너가 "숨 쉴 곳이 없다"고 지적한 지점의 일부다.
+ *
+ * 7.0 = 도로 반폭 4 + 인도 3.
+ */
+export const SETBACK = 7;
+
+/**
  * 파셀 안 좌표 `(x,z)`(중심 기준 오프셋)가 도로 위인가.
  *
  * 도로는 **중심에서 각 활성 방향으로 뻗은 십자**이므로, 그 축들 중 하나에 걸치면 도로다.
@@ -130,21 +141,62 @@ export function pickOffRoad(
   dirs: readonly Dir[],
 ): { x: number; z: number } {
   const q = Math.floor(rnd() * 4);
+  return pickInQuadrant(rnd, halfX, halfZ, dirs, q);
+}
+
+/**
+ * 사분면을 **지정해서** 자리를 고른다. 난수는 두 개만 쓴다(x·z).
+ *
+ * 건물이 이걸 쓴다. `pickOffRoad` 는 사분면을 무작위로 고르므로 두 채가 같은 사분면에
+ * 배정될 수 있고, 사분면 폭이 6.5m 인데 건물 폭이 3~8m 라 **겹친다.** 디자이너가
+ * "붙어 선다"의 실체로 지목한 지점이다.
+ *
+ * 채수를 4 이하로 제한하고 사분면을 1:1로 나눠 주면 겹침이 **구조적으로** 사라진다 —
+ * 충돌 판정도, 재시도도 필요 없다.
+ *
+ * 길이 없는 파셀은 안쪽 경계를 두지 않는다(사분면으로 나누기만 한다). 비켜설 도로가
+ * 없는데 가운데를 비우면 땅이 도넛처럼 보인다.
+ */
+export function pickInQuadrant(
+  rnd: () => number,
+  halfX: number,
+  halfZ: number,
+  dirs: readonly Dir[],
+  quad: number,
+  /**
+   * 사분면 안쪽 경계의 **하한**. 호출자가 자기 부품의 최대 반폭을 넘긴다.
+   *
+   * 길 없는 파셀에는 비켜설 도로가 없어 안쪽 경계가 0인데, 그러면 인접 사분면의 두
+   * 부품이 중심선 근처에서 만나 **겹친다**(1024 파셀 표본에서 실제로 4건 나왔다).
+   * 중심 거리가 `2 × inset` 이므로 `inset ≥ 최대 반폭` 이면 겹침이 사라진다.
+   */
+  minInset = 0,
+): { x: number; z: number } {
   const u = rnd();
   const v = rnd();
-
-  if (dirs.length === 0) {
-    return { x: (u * 2 - 1) * halfX, z: (v * 2 - 1) * halfZ };
-  }
-
-  // 사분면 안쪽 경계는 도로 반폭, 바깥 경계는 파셀 여백. 파셀이 도로보다 좁으면
-  // (설정을 크게 바꾼 경우) 폭이 음수가 되므로 0으로 눌러 최소한 경계 위에 둔다.
-  const x0 = Math.min(ROAD_HALF, halfX);
-  const z0 = Math.min(ROAD_HALF, halfZ);
-  const sx = q & 1 ? 1 : -1;
-  const sz = q & 2 ? 1 : -1;
+  // 파셀이 셋백보다 좁으면(설정을 크게 바꾼 경우) 폭이 음수가 되므로 눌러 준다.
+  const inset = dirs.length === 0 ? minInset : Math.max(SETBACK, minInset);
+  const x0 = Math.min(inset, halfX);
+  const z0 = Math.min(inset, halfZ);
+  const sx = quad & 1 ? 1 : -1;
+  const sz = quad & 2 ? 1 : -1;
   return {
     x: sx * (x0 + u * (halfX - x0)),
     z: sz * (z0 + v * (halfZ - z0)),
   };
+}
+
+/**
+ * 사분면 0~3 을 섞어 돌려준다. 난수 3개 고정(Fisher-Yates 4원소).
+ *
+ * 건물을 사분면에 1:1로 나눌 때 쓴다. 섞지 않으면 첫 건물이 늘 같은 사분면에 서서
+ * 도시 전체가 한쪽으로 쏠린 규칙성을 띤다.
+ */
+export function shuffledQuadrants(rnd: () => number): number[] {
+  const q = [0, 1, 2, 3];
+  for (let i = 3; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    const t = q[i]; q[i] = q[j]; q[j] = t;
+  }
+  return q;
 }

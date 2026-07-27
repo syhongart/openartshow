@@ -16,8 +16,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   edgeX, edgeZ, roadDirs, onRoad, pickOffRoad, ROAD_SEG, ROAD_HALF, EDGE_P,
+  SETBACK,
 } from '../frontend/js/world2/parts/road-topology.js';
 import { road } from '../frontend/js/world2/parts/road.js';
+import { parcelLayout } from '../frontend/js/world2/decide/parcel-layout.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
 
 const HALF_X = DEFAULT_LAYOUT.cellX / 2 - DEFAULT_LAYOUT.margin;
@@ -195,5 +197,72 @@ describe('경계 함수 자체', () => {
     let same = 0;
     for (let i = 0; i < 400; i++) if (edgeX(i, i * 5) === edgeZ(i, i * 5)) same++;
     expect(same).toBeLessThan(340); // 독립이면 208 근방, 같은 해시면 400
+  });
+});
+
+describe('건물 밀도 — 감독 지적 "빽빽하다" 의 처방', () => {
+  // ── 이 검사가 있는 이유 ──────────────────────────────────────────────────
+  // 감독 판정: *"이렇게 건물이 빽빽하게 있는 것도 말이 안되잖아."*
+  //
+  // 디자이너 진단으로 원인이 셋으로 갈렸다 — ① 밀도가 world1 의 2.25배(1000㎡당 3.91채
+  // vs 1.74채) ② **최소 간격 규칙이 없어 겹칠 수 있다** ③ 하한이 2라 빈 구획이 없다.
+  //
+  // ②가 가장 눈에 띄는 결함이다. 사분면 폭이 6.5m 인데 건물 폭이 3~8m 라, 두 채가 같은
+  // 사분면에 배정되면 실제로 겹쳐 선다. 채수를 4 이하로 두고 사분면을 1:1로 나눠 그
+  // 가능성을 구조적으로 없앴는데, **그게 실제로 성립하는지는 재봐야 안다.**
+
+  /** 건물의 바닥 AABB. 직각 회전이므로 90°·270° 에서 폭과 깊이가 바뀐다 */
+  function aabb(p: { x: number; z: number; ry: number; sx: number; sz: number }) {
+    const swapped = Math.abs(Math.sin(p.ry)) > 0.5;
+    const w = swapped ? p.sz : p.sx;
+    const d = swapped ? p.sx : p.sz;
+    return { x0: p.x - w / 2, x1: p.x + w / 2, z0: p.z - d / 2, z1: p.z + d / 2 };
+  }
+
+  it('한 파셀 안에서 건물끼리 겹치지 않는다 (1024 파셀)', () => {
+    const overlaps: string[] = [];
+    for (let px = 0; px < 32; px++) {
+      for (let pz = 0; pz < 32; pz++) {
+        const bs = parcelLayout(px, pz, 'near').filter((p) => p.kind === 'building').map(aabb);
+        for (let i = 0; i < bs.length; i++) {
+          for (let j = i + 1; j < bs.length; j++) {
+            const a = bs[i], b = bs[j];
+            if (a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1) {
+              overlaps.push(`(${px},${pz}) #${i}×#${j}`);
+            }
+          }
+        }
+      }
+    }
+    expect(overlaps).toEqual([]);
+  });
+
+  it('밀도가 world1 수준으로 내려왔다', () => {
+    let total = 0;
+    const n = 32 * 32;
+    for (let px = 0; px < 32; px++) {
+      for (let pz = 0; pz < 32; pz++) {
+        total += parcelLayout(px, pz, 'near').filter((p) => p.kind === 'building').length;
+      }
+    }
+    const avg = total / n;
+    // 파셀 1024㎡ 기준 1000㎡당 채수. world1 은 576㎡ 당 1채 = 1.74채/1000㎡ 였고,
+    // 고치기 전 world2 는 3.91 이었다. 목표는 2.4 언저리 — world1 의 1.4배.
+    const per1000 = avg / 1.024;
+    expect(per1000).toBeGreaterThan(1.9); // 너무 비면 버려진 도시가 된다
+    expect(per1000).toBeLessThan(2.9);    // 3 을 넘으면 다시 빽빽해진다
+  });
+
+  it('건물이 도로 셋백 안쪽으로 들어오지 않는다 — 인도가 남는다', () => {
+    for (let px = -10; px <= 10; px++) {
+      for (let pz = -10; pz <= 10; pz++) {
+        const dirs = roadDirs(px, pz);
+        if (dirs.length === 0) continue; // 길 없는 파셀은 셋백이 없다
+        for (const b of parcelLayout(px, pz, 'near').filter((p) => p.kind === 'building')) {
+          expect(Math.abs(b.x)).toBeGreaterThanOrEqual(SETBACK - 1e-9);
+          expect(Math.abs(b.z)).toBeGreaterThanOrEqual(SETBACK - 1e-9);
+        }
+      }
+    }
   });
 });

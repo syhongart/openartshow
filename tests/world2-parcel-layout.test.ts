@@ -180,9 +180,12 @@ describe('maxPartsPerParcel — 슬롯 예산의 근거', () => {
     }
   });
 
-  it('건물은 항상 최소 2채 — 빈 도시는 버려진 곳처럼 보인다', () => {
+  it('건물은 항상 최소 1채 — 완전히 빈 파셀은 없다', () => {
+    // 하한이 2였다. 감독이 "건물이 빽빽하다" 고 지적해 1~4로 내리면서 함께 낮췄다 —
+    // 하한 2면 "한 채만 선 여유로운 구획" 이 구조적으로 존재할 수 없다. 0 은 여전히
+    // 막는다. 아무것도 없는 파셀이 드문드문 섞이면 세상이 미완성으로 읽힌다.
     for (let px = 0; px < 20; px++) {
-      expect(only(at(px, px + 1), 'building').length).toBeGreaterThanOrEqual(2);
+      expect(only(at(px, px + 1), 'building').length).toBeGreaterThanOrEqual(1);
     }
   });
 
