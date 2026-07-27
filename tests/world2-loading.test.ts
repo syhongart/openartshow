@@ -1,0 +1,165 @@
+// @vitest-environment jsdom
+//
+// world2 로딩 화면 컨트롤러 테스트.
+//
+// 지켜야 할 것은 셋이다. ①진행이 보인다 ②실패하면 사라지지 않고 원인을 말한다
+// ③걷힌 뒤에는 되살아나지 않는다. 특히 ②가 중요하다 — 실패 시 조용히 사라지면
+// 사용자는 빈 3D 화면 앞에 남고, 그건 검은 화면보다 나쁘다(고쳐진 줄 알기 때문).
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { findLoading, LoadingView, slowNote } from '../web/js/world2/ui/loading.js';
+import type { BootReport } from '../web/js/world2/boot.js';
+
+const MARKUP = `
+  <div id="w2-loading">
+    <p id="w2-loading-label"></p>
+    <div id="w2-loading-bar"></div>
+    <span id="w2-loading-pct"></span>
+    <p id="w2-loading-note" hidden></p>
+  </div>`;
+
+const report = (o: Partial<BootReport> = {}): BootReport => ({
+  stage: 'stream', label: '전시 공간 불러오는 중', progress: 0.5,
+  elapsedMs: 1000, remainMs: 1000, slow: false, ...o,
+});
+
+const el = (id: string) => document.getElementById(id)!;
+
+beforeEach(() => { document.body.innerHTML = MARKUP; });
+
+describe('findLoading — 마크업이 빠진 걸 숨기지 않는다', () => {
+  it('전부 있으면 찾는다', () => {
+    expect(findLoading(document)).not.toBeNull();
+  });
+
+  it('하나라도 없으면 null — no-op 객체를 돌려주지 않는다', () => {
+    // 조용히 no-op으로 넘어가면 "로딩이 안 보이는" 버그를 배포까지 끌고 간다.
+    el('w2-loading-bar').remove();
+    expect(findLoading(document)).toBeNull();
+  });
+
+  it('루트가 없으면 null', () => {
+    document.body.innerHTML = '';
+    expect(findLoading(document)).toBeNull();
+  });
+});
+
+describe('LoadingView — 진행 표시', () => {
+  const view = () => new LoadingView(findLoading(document)!);
+
+  it('진행률을 폭·텍스트·aria에 반영한다', () => {
+    view().update(report({ progress: 0.42 }));
+    expect(el('w2-loading-bar').style.width).toBe('42%');
+    expect(el('w2-loading-pct').textContent).toBe('42%');
+    expect(el('w2-loading-bar').getAttribute('aria-valuenow')).toBe('42');
+  });
+
+  it('단계 문구를 보여준다', () => {
+    view().update(report({ label: '셰이더 예열' }));
+    expect(el('w2-loading-label').textContent).toBe('셰이더 예열');
+  });
+
+  it('접근성 속성을 세운다 — 화면 낭독기가 진행을 읽을 수 있어야 한다', () => {
+    view();
+    expect(el('w2-loading').getAttribute('role')).toBe('status');
+    expect(el('w2-loading').getAttribute('aria-live')).toBe('polite');
+    expect(el('w2-loading-bar').getAttribute('role')).toBe('progressbar');
+  });
+
+  it('같은 퍼센트를 다시 쓰지 않는다 — 레이아웃 낭비', () => {
+    const v = view();
+    v.update(report({ progress: 0.5 }));
+    // 유효한 CSS 값이어야 한다 — 무효값은 대입 자체가 무시돼 이 테스트가 헛돈다.
+    el('w2-loading-bar').style.width = '123px';
+    v.update(report({ progress: 0.502 })); // 반올림하면 같은 50%
+    expect(el('w2-loading-bar').style.width).toBe('123px');
+  });
+
+  it('느리지 않으면 안내를 숨긴다', () => {
+    view().update(report({ slow: false }));
+    expect((el('w2-loading-note') as HTMLElement).hidden).toBe(true);
+  });
+
+  it('느리면 안내를 띄운다', () => {
+    view().update(report({ slow: true, remainMs: 5000 }));
+    const note = el('w2-loading-note') as HTMLElement;
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain('조금 더 걸립니다');
+  });
+});
+
+describe('LoadingView — 실패는 감추지 않는다', () => {
+  const view = () => new LoadingView(findLoading(document)!);
+
+  it('실패하면 화면을 걷지 않고 원인을 보여준다', () => {
+    const v = view();
+    v.fail('renderer', new Error('WebGPU 어댑터 없음'));
+    expect(el('w2-loading').dataset.state).toBe('error');
+    expect(el('w2-loading').getAttribute('aria-hidden')).toBeNull(); // 여전히 읽힌다
+    expect(el('w2-loading-note').textContent).toContain('WebGPU 어댑터 없음');
+    expect(el('w2-loading-note').textContent).toContain('renderer');
+  });
+
+  it('Error가 아닌 것도 문자열로 보여준다', () => {
+    view().fail('pools', '알 수 없음');
+    expect(el('w2-loading-note').textContent).toContain('알 수 없음');
+  });
+
+  it('실패 후에는 update가 화면을 되돌리지 않는다', () => {
+    const v = view();
+    v.fail('warmup', new Error('실패'));
+    v.update(report({ progress: 0.9, label: '셰이더 예열' }));
+    expect(el('w2-loading-label').textContent).toBe('전시 공간을 열지 못했습니다');
+  });
+
+  it('실패 후 dismiss가 화면을 걷지 않는다 — 오류를 지우면 안 된다', () => {
+    const v = view();
+    v.fail('stream', new Error('타임아웃'));
+    v.dismiss();
+    expect(el('w2-loading').dataset.state).toBe('error');
+  });
+});
+
+describe('LoadingView — 걷기', () => {
+  const view = () => new LoadingView(findLoading(document)!);
+
+  it('dismiss가 상태를 done으로 바꾸고 낭독기에서 숨긴다', () => {
+    const v = view();
+    v.dismiss();
+    expect(el('w2-loading').dataset.state).toBe('done');
+    expect(el('w2-loading').getAttribute('aria-hidden')).toBe('true');
+    expect(v.finished).toBe(true);
+  });
+
+  it('걷힌 뒤 update는 무시된다 — 로딩 화면이 되살아나지 않는다', () => {
+    const v = view();
+    v.update(report({ progress: 0.3 }));
+    v.dismiss();
+    v.update(report({ progress: 0.9 }));
+    expect(el('w2-loading-bar').style.width).toBe('30%');
+  });
+
+  it('두 번 걷어도 안전하다', () => {
+    const v = view();
+    v.dismiss();
+    expect(() => v.dismiss()).not.toThrow();
+  });
+});
+
+describe('slowNote — 모르는 건 말하지 않는다', () => {
+  it('추정이 없으면 시간을 말하지 않는다', () => {
+    expect(slowNote(null)).toBe('이 기기에서는 조금 더 걸립니다.');
+  });
+
+  it('초 단위로 말한다', () => {
+    expect(slowNote(5_000)).toContain('약 5초 남음');
+  });
+
+  it('1초 이하는 곧 끝난다고 한다 — "약 1초 남음"은 어색하다', () => {
+    expect(slowNote(400)).toContain('곧 끝납니다');
+  });
+
+  it('1분을 넘으면 분으로 말한다', () => {
+    expect(slowNote(150_000)).toContain('약 3분 남음');
+  });
+});
