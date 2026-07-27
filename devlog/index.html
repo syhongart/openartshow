@@ -11,7 +11,7 @@
 <meta property="og:title" content="개발일지 — OpenArtShow">
 <meta property="og:description" content="OpenArtShow를 만드는 과정의 공개 기록. 웹 3D 미술관의 성능·디자인·법무·브랜드 결정을 원인-분석-개선-결과로 남깁니다.">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"부하 시험 — 개수 불변식이 밀도와 무관함을 확인했다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-0b1a85.html"},{"@type":"BlogPosting","headline":"눈과 번개 — 백엔드 세 번째 사각, 그리고 \"잴 수단이 없으면 추측이 쌓인다\"","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-10eda3.html"},{"@type":"BlogPosting","headline":"하늘을 새로 짠 것이 실수였다 — 이미 있던 sky.js로 되돌리기","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-911d62.html"},{"@type":"BlogPosting","headline":"구름이 선으로 보인 이유, 그리고 \"보장을 누가 지는가\"","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-1c4973.html"},{"@type":"BlogPosting","headline":"하늘이 안 보인 세 가지 이유, 그중 둘은 서로를 가리고 있었다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-9687bd.html"},{"@type":"BlogPosting","headline":"복원 지점 — `keep/world2-walkable-20260727`","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-21297a.html"},{"@type":"BlogPosting","headline":"오픈월드 재작성(world2) — 개수를 상수로 묶으면 스파이크가 사라진다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-eec8af.html"},{"@type":"BlogPosting","headline":"번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html"},{"@type":"BlogPosting","headline":"GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html"},{"@type":"BlogPosting","headline":"P1 재질 캐시 — 규약을 바꿔놓고 소비자 한 곳만 고친 대가","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-a626c7.html"}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-8cb9c1.html"},{"@type":"BlogPosting","headline":"부하 시험 — 개수 불변식이 밀도와 무관함을 확인했다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-0b1a85.html"},{"@type":"BlogPosting","headline":"눈과 번개 — 백엔드 세 번째 사각, 그리고 \"잴 수단이 없으면 추측이 쌓인다\"","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-10eda3.html"},{"@type":"BlogPosting","headline":"하늘을 새로 짠 것이 실수였다 — 이미 있던 sky.js로 되돌리기","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-911d62.html"},{"@type":"BlogPosting","headline":"구름이 선으로 보인 이유, 그리고 \"보장을 누가 지는가\"","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-1c4973.html"},{"@type":"BlogPosting","headline":"하늘이 안 보인 세 가지 이유, 그중 둘은 서로를 가리고 있었다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-9687bd.html"},{"@type":"BlogPosting","headline":"복원 지점 — `keep/world2-walkable-20260727`","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-21297a.html"},{"@type":"BlogPosting","headline":"오픈월드 재작성(world2) — 개수를 상수로 묶으면 스파이크가 사라진다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-eec8af.html"},{"@type":"BlogPosting","headline":"번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/devlog/2026-07-27-b82728.html"},{"@type":"BlogPosting","headline":"GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다","datePublished":"2026-07-26","url":"https://syhongart.github.io/openartshow/devlog/2026-07-26-5267ec.html"}]}</script>
 <link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
 <style>
 :root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
@@ -87,7 +87,7 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
 
 <div class="eyebrow">Devlog</div>
 <h1>개발일지</h1>
-<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 113건의 기록.<br>
+<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 114건의 기록.<br>
 문제의 원인, 분석, 개선, 결과를 그대로 남깁니다.</p>
 <a class="pin-card" href="./philosophy.html">
   <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
@@ -168,6 +168,11 @@ footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;colo
   <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
   <h2>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)</h2>
   <p>프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.</p>
+</a>
+<a class="card" href="./2026-07-27-8cb9c1.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🛠️</span>슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다</h2>
+  <p>부하 시험에서 슬롯 사용률이 두 밀도 모두 20% 남짓으로 나왔다(밀도1 106/475, 밀도8</p>
 </a>
 <a class="card" href="./2026-07-27-0b1a85.html">
   <span class="d">2026-07-27</span>
