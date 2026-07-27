@@ -5,7 +5,11 @@
 // look-ahead 판정까지 함께 왜곡된다.
 
 import { describe, it, expect } from 'vitest';
-import { moveDelta, facing, clampPitch, NO_INPUT, PlayerSystem, type MoveInput } from '../frontend/js/world2/systems/player.js';
+import {
+  moveDelta, facing, clampPitch, NO_INPUT, PlayerSystem,
+  stepBobPhase, bobHeight, BOB_AMPLITUDE, WALK_SPEED, RUN_MULT,
+  type MoveInput,
+} from '../frontend/js/world2/systems/player.js';
 import type { FrameCtx } from '../frontend/js/world2/kernel.js';
 
 const inp = (o: Partial<MoveInput> = {}): MoveInput => ({ ...NO_INPUT, ...o });
@@ -153,5 +157,126 @@ describe('PlayerSystem', () => {
     p.setInput({ fast: true });
     p.update(ctx({ dt: 1 }));
     expect(Math.hypot(p.position.x, p.position.z)).toBeGreaterThan(10);
+  });
+});
+
+// ── 헤드밥 ───────────────────────────────────────────────────────────────────
+//
+// 감독 판정 **"땅에 붙어가는 느낌이야"** 의 처방 절반이다(나머지 절반은 속도).
+//
+// 여기가 이 프로젝트가 반복해 뚫린 자리다 — **판정과 집행의 경계.** `bobHeight` 가 옳은
+// 값을 돌려줘도 `update` 가 그걸 카메라 y 에 안 더하면 화면은 아무 일도 안 일어나고,
+// 순수 함수 테스트는 전부 초록이다. 구름 `alpha` 미소비가 정확히 이 형태였다.
+// 그래서 아래 "실제로 카메라에 전달된다" 묶음이 이 파일에서 제일 중요하다.
+
+describe('bobHeight / stepBobPhase — 순수 판정', () => {
+  it('빨리 걸으면 위상이 빨리 간다 — 고정 각속도면 발과 화면이 어긋난다', () => {
+    const slow = stepBobPhase(0, 0.5, 0.1);
+    const fast = stepBobPhase(0, 1.0, 0.1);
+    expect(fast).toBeCloseTo(slow * 2, 9);
+  });
+
+  it('멈춰 있으면 위상이 안 간다', () => {
+    expect(stepBobPhase(3, 0, 0.1)).toBe(3);
+  });
+
+  it('진폭 0이면 언제나 0 — 끌 수 있어야 감독이 비교한다', () => {
+    // `toBe(0)`이 아니라 근사 비교인 이유: `sin(4) * 0`은 **-0**이고 `Object.is(-0, 0)`은
+    // false다. 카메라 y에 더하면 차이가 없으므로 부호 있는 0을 구분할 이유가 없다.
+    for (const ph of [0, 1, 2.5, 4]) expect(bobHeight(ph, 1, 0)).toBeCloseTo(0, 12);
+  });
+
+  it('강도 0이면 0 — 정지 중 화면이 흔들리면 안 된다', () => {
+    expect(bobHeight(1.2, 0)).toBe(0);
+  });
+
+  it('위아래로 모두 간다 — 한쪽으로만 밀리면 눈높이가 바뀐 것이지 걸음이 아니다', () => {
+    const ys = [];
+    for (let i = 0; i < 24; i++) ys.push(bobHeight(i * 0.4, 1));
+    expect(Math.max(...ys)).toBeGreaterThan(0);
+    expect(Math.min(...ys)).toBeLessThan(0);
+  });
+
+  it('강도가 진폭을 넘지 못한다', () => {
+    for (let i = 0; i < 30; i++) {
+      expect(Math.abs(bobHeight(i * 0.7, 1, BOB_AMPLITUDE))).toBeLessThanOrEqual(BOB_AMPLITUDE + 1e-12);
+    }
+  });
+});
+
+describe('헤드밥이 실제로 카메라에 전달된다 — 판정/집행 경계', () => {
+  /** 걸으면서 카메라 y 를 모은다 */
+  const walk = (opts: { bobAmplitude?: number } = {}, frames = 12) => {
+    const ys: number[] = [];
+    const p = new PlayerSystem({ speed: 10, applyCamera: (_x, y) => { ys.push(y); }, ...opts });
+    p.setInput({ forward: true });
+    for (let i = 0; i < frames; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    return ys;
+  };
+
+  it('걸으면 눈높이가 위아래로 흔들린다 — 안 흔들리면 활강이지 걷기가 아니다', () => {
+    const ys = walk();
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.01);
+  });
+
+  it('흔들림이 눈높이를 중심으로 한다 — 통째로 올라가면 그냥 키가 커진 것이다', () => {
+    const ys = walk();
+    expect(Math.max(...ys)).toBeGreaterThan(1.7);
+    expect(Math.min(...ys)).toBeLessThan(1.7);
+  });
+
+  it('bob=0이면 걸어도 정확히 눈높이 — 끄기가 실제로 먹는가', () => {
+    for (const y of walk({ bobAmplitude: 0 })) expect(y).toBe(1.7);
+  });
+
+  it('가만히 서 있으면 흔들리지 않는다', () => {
+    const ys: number[] = [];
+    const p = new PlayerSystem({ applyCamera: (_x, y) => { ys.push(y); } });
+    for (let i = 0; i < 10; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    for (const y of ys) expect(y).toBe(1.7);
+  });
+
+  it('멈추면 흔들림이 잦아든다 — 키를 떼는 순간 툭 끊기면 화면이 튄다', () => {
+    const p = new PlayerSystem({ speed: 10, applyCamera: (_x, y) => { ys.push(y); } });
+    const ys: number[] = [];
+    p.setInput({ forward: true });
+    for (let i = 0; i < 12; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    const moving = Math.max(...ys) - Math.min(...ys);
+    p.setInput({ forward: false });
+    ys.length = 0;
+    for (let i = 0; i < 30; i++) p.update(ctx({ dt: 0.1, frame: 100 + i }));
+    // 뒤쪽 절반은 사실상 멎어 있어야 한다
+    const tail = ys.slice(15);
+    expect(Math.max(...tail) - Math.min(...tail)).toBeLessThan(moving * 0.1);
+  });
+
+  it('느리게 걸으면 덜 흔들린다 — 강도가 속력을 따라간다', () => {
+    // 같은 speed 설정에서 조이스틱을 살짝만 민다(0.3) vs 끝까지(1.0)
+    const amp = (stick: number) => {
+      const ys: number[] = [];
+      const p = new PlayerSystem({ speed: 10, applyCamera: (_x, y) => { ys.push(y); } });
+      p.setAxes(0, -stick);
+      for (let i = 0; i < 40; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+      return Math.max(...ys) - Math.min(...ys);
+    };
+    expect(amp(0.3)).toBeLessThan(amp(1));
+  });
+});
+
+describe('걷는 속도 — 자동차가 아니어야 한다', () => {
+  it('기본 걷기가 사람 범위다', () => {
+    expect(WALK_SPEED).toBeGreaterThan(2);
+    expect(WALK_SPEED).toBeLessThan(7);
+  });
+
+  it('달리기가 전력질주 상한을 넘지 않는다 — 예전 19.8m/s는 시속 71km였다', () => {
+    expect(WALK_SPEED * RUN_MULT).toBeLessThan(12);
+  });
+
+  it('주입이 없으면 기본 걷기 속도를 쓴다 — 상수와 따로 놀면 아무도 모른다', () => {
+    const p = new PlayerSystem();
+    p.setInput({ forward: true });
+    p.update(ctx({ dt: 1 }));
+    expect(Math.hypot(p.position.x, p.position.z)).toBeCloseTo(WALK_SPEED, 6);
   });
 });

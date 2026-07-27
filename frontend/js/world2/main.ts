@@ -13,7 +13,7 @@ import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
 import { PooledParcelBuilder } from './systems/parcel-builder.js';
 import { StreamingSystem } from './systems/streaming.js';
-import { PlayerSystem } from './systems/player.js';
+import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { AdaptSystem } from './systems/adapt.js';
 import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
@@ -69,10 +69,22 @@ const CELL_Z = DEFAULT_LAYOUT.cellZ;
  * 하기 위해서다. 별도 빌드를 만들면 "무엇을 쟀는지"가 또 흐려진다.
  */
 function readDensity(): number {
-  if (typeof location === 'undefined') return 1;
-  const raw = Number(new URLSearchParams(location.search).get('density'));
-  if (!Number.isFinite(raw)) return 1;
-  return Math.max(1, Math.min(8, Math.round(raw)));
+  return Math.round(readNum('density', 1, 1, 8));
+}
+
+/**
+ * URL 수치 파라미터를 범위 안에서 읽는다. 없거나 숫자가 아니면 `fallback`.
+ *
+ * `readDensity`가 쓰던 파싱을 여기로 올렸다 — 같은 세 줄을 파라미터마다 다시 적으면
+ * 한쪽만 고쳐도 아무도 모른다(이 프로젝트가 값 미러링으로 세 번 겪은 형태다).
+ */
+function readNum(key: string, fallback: number, min: number, max: number): number {
+  if (typeof location === 'undefined') return fallback;
+  const raw = new URLSearchParams(location.search).get(key);
+  if (raw === null) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
 }
 
 export interface WorldHandle {
@@ -102,8 +114,23 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
   scene.fog = new THREE.Fog(0x0b0d12, CELL_X * 0.9, CELL_X * 1.9);
 
+  // 걷는 감각 — 감독 실기기에서 값을 확정하기 위해 URL 로 연다.
+  //
+  //   ?speed=N  걷기 속도(m/s)      기본 5      달리기는 ×2.2
+  //   ?eye=N    눈높이(m)           기본 1.7    라이브 미술관과 같은 값
+  //   ?bob=N    헤드밥 진폭(m)      기본 0.045  0이면 끈다
+  //
+  // 감독 판정이 "땅에 붙어가는 느낌"이었고, 이 감각은 **정지 스크린샷으로 판정할 수
+  // 없다** — 움직여봐야 안다. density 를 URL 로 둔 것과 같은 이유다.
+  const walkSpeed = readNum('speed', WALK_SPEED, 1, 20);
+  const eyeHeight = readNum('eye', 1.7, 0.5, 3);
+  const bobAmplitude = readNum('bob', BOB_AMPLITUDE, 0, 0.2);
+
   const player = new PlayerSystem({
     start: { x: 0, z: 0 },
+    speed: walkSpeed,
+    eyeHeight,
+    bobAmplitude,
     applyCamera: (x, y, z, yaw, pitch) => {
       camera.position.set(x, y, z);
       camera.rotation.set(pitch, yaw, 0, 'YXZ');
@@ -383,6 +410,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       order: kernel!.order,
       /** 부하 배수. 리포트만 보고 "어느 밀도에서 잰 것인가"를 알 수 있어야 한다. */
       density,
+      /** 걷는 감각 파라미터. 감독 실기기 비교에서 "어느 값이었나"를 리포트가 답해야 한다 */
+      feel: { walkSpeed, eyeHeight, bobAmplitude },
       // 플레이어 상태 — "조작이 실제로 이동으로 이어졌는가"를 재는 유일한 지점이다.
       // 파셀 수만 봐서는 알 수 없다(정상 상태에서도 같은 값이다).
       player: { ...player.position, ...player.angles },
