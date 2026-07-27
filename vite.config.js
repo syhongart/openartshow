@@ -60,6 +60,7 @@ const HTML_RENAME = {
   'builder.html': 'app/builder.html', // behind-flag
   'visit.html': 'app/visit.html',     // behind-flag
   'lab-glb.html': 'app/lab-glb.html', // behind-flag(실험) — GLB 공간 워크스루 미리보기
+  'world2.html': 'app/world2.html',   // behind-flag(실험) — 오픈월드 커널 재작성 검증
   // guide.html·about.html·design.html → 루트 불변(맵 미포함)
 };
 
@@ -209,6 +210,9 @@ export default defineConfig({
         // [실험] GLB 공간 워크스루 — 감독이 "어떤 느낌일지" 보려는 미리보기. 라이브 미술관과 완전 분리,
         // 어디에도 링크하지 않는다. 반입 판정 전이므로 이 페이지의 존재가 채택을 뜻하지 않는다.
         'lab-glb': r('web/lab-glb.html'),
+        // [실험] 오픈월드 커널 재작성 — 라이브 world.html과 완전 분리. 어디에도 링크하지
+        // 않으며, 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서지 채택이 아니다.
+        world2: r('web/world2.html'),
       },
       output: {
         manualChunks(id) {

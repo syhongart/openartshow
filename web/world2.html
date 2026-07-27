@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<!--
+  world2 — 오픈월드 재작성(커널 아키텍처) 검증 페이지.
+
+  behind-flag: 어디에도 링크하지 않는다. 라이브 미술관(world.html)과 완전히 분리돼 있고,
+  이 페이지의 존재가 채택을 뜻하지 않는다. 라이브 노출은 감독·팀장 게이트를 거친다.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<title>오픈월드 v2 (실험) · OpenArtShow</title>
+<link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<style>
+  :root{
+    --bg:#0B0D12; --ink:#F5F5F2; --dim:#9A9EB1; --line:#3A3D4B;
+    --violet:#8B72FF; --cyan:#72E6E1;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden}
+  body{font-family:'Pretendard','NanumGothic',system-ui,sans-serif}
+  #w2-canvas{display:block;width:100vw;height:100vh;touch-action:none}
+
+  /* ── 로딩 화면 ─────────────────────────────────────────────────────────
+     바 보간을 CSS transition에 맡긴다. 로딩 중에는 메인 스레드가 가장 바쁘므로
+     JS로 애니메이션을 돌리면 그 애니메이션부터 끊기고, 끊기는 진행바는
+     "멈춤"의 신호로 읽혀 없느니만 못하다. */
+  #w2-loading{
+    position:fixed;inset:0;z-index:10;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    background:radial-gradient(120% 90% at 50% 40%, #151926 0%, var(--bg) 70%);
+    transition:opacity .45s ease;
+  }
+  #w2-loading[data-state="done"]{opacity:0;pointer-events:none}
+  #w2-loading-label{margin:0;font-size:15px;letter-spacing:.02em;color:var(--ink)}
+  #w2-loading-track{
+    width:min(320px,62vw);height:2px;border-radius:2px;
+    background:rgba(255,255,255,.12);overflow:hidden;
+  }
+  #w2-loading-bar{
+    width:0%;height:100%;border-radius:2px;
+    background:linear-gradient(90deg,var(--violet),var(--cyan));
+    transition:width .35s cubic-bezier(.22,.61,.36,1);
+  }
+  #w2-loading-pct{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+  #w2-loading-note{margin:0;max-width:min(420px,80vw);text-align:center;font-size:12.5px;line-height:1.6;color:var(--dim)}
+  #w2-loading[data-state="error"] #w2-loading-bar{background:#FF705E}
+  #w2-loading[data-state="error"] #w2-loading-note{color:#FFB4A8}
+
+  /* 모션을 줄이고 싶다는 뜻은 존중한다 — 전환을 없애도 정보 전달은 그대로다. */
+  @media (prefers-reduced-motion: reduce){
+    #w2-loading,#w2-loading-bar{transition:none}
+  }
+
+  #w2-hint{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:5;
+    font-size:12px;color:var(--dim);letter-spacing:.02em;
+    background:rgba(11,13,18,.55);border:1px solid var(--line);border-radius:999px;
+    padding:7px 14px;pointer-events:none;
+  }
+</style>
+</head>
+<body>
+  <canvas id="w2-canvas"></canvas>
+
+  <div id="w2-loading">
+    <p id="w2-loading-label">준비 중</p>
+    <div id="w2-loading-track"><div id="w2-loading-bar"></div></div>
+    <span id="w2-loading-pct">0%</span>
+    <p id="w2-loading-note" hidden></p>
+  </div>
+
+  <p id="w2-hint">WASD·방향키로 이동 · 화면을 클릭하면 시선 조작 · Shift 달리기</p>
+
+<script type="module" src="./js/world2-boot.js"></script>
+</body>
+</html>
