@@ -1,4 +1,4 @@
-// web/js/ui.ts — HUD/셸 배럴(barrel)
+// frontend/js/ui.ts — HUD/셸 배럴(barrel)
 //
 // C단계 C-1 단계4의 산출물. ui.js 분해(단계1~3에서 ui-dom·ui-chibi-store·
 // ui-avatar-editor 추출 완료)의 마지막으로, 잔여 셸+HUD+Public API 는

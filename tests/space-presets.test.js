@@ -9,8 +9,8 @@ import {
   getPreset,
   northArt,
   presetThumb,
-} from '../web/js/space-presets.js';
-import { normalizeSpace, PART_TYPE_IDS, FOOTPRINT, STORY_H, FINISH } from '../web/js/space.js';
+} from '../frontend/js/space-presets.js';
+import { normalizeSpace, PART_TYPE_IDS, FOOTPRINT, STORY_H, FINISH } from '../frontend/js/space.js';
 
 describe('PRESET_IDS / getPreset — 조회 계약', () => {
   it('PRESET_IDS는 SPACE_PRESETS의 id 집합과 정확히 일치', () => {

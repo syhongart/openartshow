@@ -1,7 +1,7 @@
 // scripts/smoke/check-refs.mjs — no-undef 스코프(미해결 참조) 정적 검사.
 //
 // 왜 필요한가(#94, C-3(2) chibi 사건의 산물):
-//   web/js 의 분해 모듈 다수가 `// @ts-nocheck` 라 tsc 가 진단을 건너뛰고, eslint 도
+//   frontend/js 의 분해 모듈 다수가 `// @ts-nocheck` 라 tsc 가 진단을 건너뛰고, eslint 도
 //   .ts 를 대상에서 제외(+`no-undef:off`)한다. 그 결과 "정의가 어딘가로 이동했으나
 //   cross-module 참조 연결이 끊긴"(export 승격/ import 누락) 케이스가 정적 게이트의
 //   사각에 빠진다. chibi 분해 때 비export 상수 3개가 이 경로로 런타임 ReferenceError
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
-const SRC = path.join(ROOT, 'web', 'js');
+const SRC = path.join(ROOT, 'frontend', 'js');
 
 // 억제 지시어를 무력화(내용은 보존, 지시 효력만 제거)해 진단이 나오게 한다.
 const SUPPRESS_RE = /@ts-(nocheck|ignore|expect-error)/g;

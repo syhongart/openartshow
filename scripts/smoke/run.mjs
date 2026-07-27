@@ -67,7 +67,7 @@ function gitLine(args) {
  *
  * 스모크는 생성기를 돌려 `devlog/`·`sitemap.xml`·`team/` 등을 의도적으로 재생성한다.
  * 그걸 오염으로 치면 이 가드는 항상 FAIL이라 아무도 안 보게 된다 — 늘 우는 경보는
- * 경보가 아니다. 스모크가 검증하는 것은 `web/` 소스와 하네스·테스트·빌드 설정이므로,
+ * 경보가 아니다. 스모크가 검증하는 것은 `frontend/` 소스와 하네스·테스트·빌드 설정이므로,
  * 그것들이 도중에 바뀌었을 때만 결과가 무효가 된다.
  */
 const WATCHED = /^(web|scripts|tests)\/|^(vite\.config\.js|vitest\.config\.js|package\.json)$/;

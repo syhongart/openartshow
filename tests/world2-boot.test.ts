@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   BOOT_STAGES, bootProgress, monotonic, nextStage, stageLabel, stageSpec,
   isSlowBoot, estimateRemainMs, SLOW_BOOT_MS, type BootStage,
-} from '../web/js/world2/decide/boot.js';
+} from '../frontend/js/world2/decide/boot.js';
 
 describe('BOOT_STAGES — 단계 정의', () => {
   it('ready가 마지막이고 폭이 0이다', () => {

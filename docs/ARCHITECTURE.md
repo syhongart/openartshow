@@ -40,7 +40,7 @@
 
 ### O — 개방·폐쇄 / DRY (OCP)
 - **형상·상수의 이중 보유 금지.** 한쪽만 고치면 정합이 깨지는 수기 중복은 공유 spec으로 승격한다.
-  최우선 관리 대상: [space-parts.ts](../web/js/space-parts.ts)의 `partGeo`↔`partAccent` 형상 상수.
+  최우선 관리 대상: [space-parts.ts](../frontend/js/space-parts.ts)의 `partGeo`↔`partAccent` 형상 상수.
 - **파츠·종족 확장은 데이터/레지스트리로.** 새 소품·아바타 종족을 추가할 때 거대 `switch`나 하드코딩
   문자열을 늘리지 말고 등록 지점(`partGeo`/`partAccent`/`MATS` 3지점, chibi 종족 레지스트리)에
   데이터만 더한다 → 기존 조립 로직 무수정.
@@ -68,7 +68,7 @@
 불변**이다. release-reviewer 교차리뷰가 이 4개를 확인한다.
 
 1. **보호 파일 → 방문/빌더 모듈로의 import 0.** 라이브 런타임 보호 4파일
-   ([main.js](../web/js/main.js)·[player.js](../web/js/player.js)·[artworks.js](../web/js/artworks.js)·[config.js](../web/js/config.js))은
+   ([main.js](../frontend/js/main.js)·[player.js](../frontend/js/player.js)·[artworks.js](../frontend/js/artworks.js)·[config.js](../frontend/js/config.js))은
    가산형 신규 모듈(`visit.js` 등)을 **역참조하지 않는다**. 신규 기능은 보호 파일에 결합하지 않는
    **독립 가산 모듈**로 짓는다.
 2. **순환 의존 0.** 모듈 그래프에 사이클을 만들지 않는다.
@@ -83,15 +83,15 @@
 
 | 층 | 파일 | 책임 |
 |---|---|---|
-| **공간 스키마 SSOT** | [space.ts](../web/js/space.ts) | "파라미터가 곧 공간". 버전 필드 + `normalizeSpace`/`migrateSpace`(하위호환). 저장은 localStorage/JSON만. |
-| **아바타 스키마 SSOT** | [chibi-schema.js](../web/js/chibi-schema.js) | 치비 아바타 정규화·마이그레이션(`normalizeChibi`). space 스키마가 계승한 원형. |
-| **파츠 지오메트리** | [space-parts.ts](../web/js/space-parts.ts) | `partGeo`·`partAccent`·`MATS` — 파츠 형상/재질의 단일 정의 지점(§1-O). |
-| **공간 조립기** | [space-assembler.ts](../web/js/space-assembler.ts) | `buildSpaceGroup`(Chunked)·`addRoomLighting`·프리뷰 — 빌더·방문 공용. |
-| **렌더 파사드** | [space-render.js](../web/js/space-render.js) | 위 3층을 재수출하는 **얇은 배럴**. 소비자는 이 안정 경로로만 접근. |
+| **공간 스키마 SSOT** | [space.ts](../frontend/js/space.ts) | "파라미터가 곧 공간". 버전 필드 + `normalizeSpace`/`migrateSpace`(하위호환). 저장은 localStorage/JSON만. |
+| **아바타 스키마 SSOT** | [chibi-schema.js](../frontend/js/chibi-schema.js) | 치비 아바타 정규화·마이그레이션(`normalizeChibi`). space 스키마가 계승한 원형. |
+| **파츠 지오메트리** | [space-parts.ts](../frontend/js/space-parts.ts) | `partGeo`·`partAccent`·`MATS` — 파츠 형상/재질의 단일 정의 지점(§1-O). |
+| **공간 조립기** | [space-assembler.ts](../frontend/js/space-assembler.ts) | `buildSpaceGroup`(Chunked)·`addRoomLighting`·프리뷰 — 빌더·방문 공용. |
+| **렌더 파사드** | [space-render.js](../frontend/js/space-render.js) | 위 3층을 재수출하는 **얇은 배럴**. 소비자는 이 안정 경로로만 접근. |
 | **고정 미술관(보호)** | main·player·artworks·config | 서비스 중인 단일 고정 전시. 함부로 수정 금지. |
-| **방문자뷰(가산)** | [visit.js](../web/js/visit.js) | 보호 파일 미결합 독립 모듈. |
-| **오픈월드(현행)** | [world.js](../web/js/world.js) 등 | 파셀 스트리밍·NPC·성능 적응계. `space`는 무수정, `space-render`는 **가산 1건 승인됨** — `addRoomLighting(group, opts)`에 `opts.noSpots` 게이트(라이트 풀 도입 시 교차리뷰·감독 승인). 기본 경로(opts 없음)는 라이브 회귀 0을 씬그래프 구조 비교로 입증했다. 그 외 접촉은 여전히 금지. |
-| **오픈월드(재작성)** | `web/js/world2/` | Kernel + Systems. **개수 불변식**(파셀 로드가 씬의 형태를 바꾸지 않는다) 위에 세운 신설 트랙. 판정은 `decide/`의 순수 함수, 집행은 커널, 계측은 비상주. behind-flag(무링크)로 현행과 병행하며 감독 판정 후 교체. |
+| **방문자뷰(가산)** | [visit.js](../frontend/js/visit.js) | 보호 파일 미결합 독립 모듈. |
+| **오픈월드(현행)** | [world.js](../frontend/js/world.js) 등 | 파셀 스트리밍·NPC·성능 적응계. `space`는 무수정, `space-render`는 **가산 1건 승인됨** — `addRoomLighting(group, opts)`에 `opts.noSpots` 게이트(라이트 풀 도입 시 교차리뷰·감독 승인). 기본 경로(opts 없음)는 라이브 회귀 0을 씬그래프 구조 비교로 입증했다. 그 외 접촉은 여전히 금지. |
+| **오픈월드(재작성)** | `frontend/js/world2/` | Kernel + Systems. **개수 불변식**(파셀 로드가 씬의 형태를 바꾸지 않는다) 위에 세운 신설 트랙. 판정은 `decide/`의 순수 함수, 집행은 커널, 계측은 비상주. behind-flag(무링크)로 현행과 병행하며 감독 판정 후 교체. |
 
 ---
 
@@ -131,7 +131,7 @@ OCP(내부 변경이 소비자에 안 샘)를 동시에 만족시킨다.
 
 ## 6. 자기완결·보안 경계
 
-- **외부 호스트 0.** CDN·웹폰트·원격 이미지·원격 GLB 금지. three는 [/vendor/three.module.js](../web/vendor/)에서.
+- **외부 호스트 0.** CDN·웹폰트·원격 이미지·원격 GLB 금지. three는 [/vendor/three.module.js](../frontend/vendor/)에서.
 - **CSP `default-src 'self'`** — script-src 해시 고정, object-src none. 신규 코드가 인라인 스크립트·
   외부 fetch를 도입하면 CSP 정합이 깨진다(배포 차단). vite.config 플러그인이 CSP 정합을 빌드 시 유지.
 - **IP 경계.** 특정 게임/브랜드 트레이드드레스·실존 상호·인물 금지. 파츠 에셋은 자작 지오메트리만

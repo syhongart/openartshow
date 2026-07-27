@@ -8,8 +8,8 @@ import { describe, it, expect } from 'vitest';
 import {
   parcelKey, parseKey, computeWant, diffParcels, takeBudget, streamBudgetMs,
   type WantEntry, type ParcelKey,
-} from '../web/js/world2/decide/stream.js';
-import { DEFAULT_BANDS, type Tier } from '../web/js/world2/decide/lod.js';
+} from '../frontend/js/world2/decide/stream.js';
+import { DEFAULT_BANDS, type Tier } from '../frontend/js/world2/decide/lod.js';
 
 const have = (o: Record<string, Tier> = {}) => new Map<ParcelKey, Tier>(Object.entries(o));
 const want = (o: Partial<Parameters<typeof computeWant>[0]> = {}) => computeWant({

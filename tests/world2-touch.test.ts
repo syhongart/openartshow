@@ -8,8 +8,8 @@ import { describe, it, expect } from 'vitest';
 import {
   stickAxes, knobOffset, reconcile, assignSlot, lookDelta, isTouchDevice,
   STICK_RADIUS, DEADZONE, NO_SLOTS, type TouchSlots,
-} from '../web/js/world2/decide/touch.js';
-import { moveFromAxes } from '../web/js/world2/systems/player.js';
+} from '../frontend/js/world2/decide/touch.js';
+import { moveFromAxes } from '../frontend/js/world2/systems/player.js';
 
 const len = (v: { x: number; y: number }) => Math.hypot(v.x, v.y);
 

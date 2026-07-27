@@ -18,11 +18,11 @@
 | **영문·숫자** | **Pretendard** | 200~700 | SIL OFL 1.1 | 로고·얇은 weight 완성도 |
 | 폴백 | 시스템 스택 | — | — | `Helvetica Neue…Apple SD Gothic Neo…` |
 
-- **단일 진실원본(SSOT)**: `@font-face`와 폰트 스택은 **`web/vendor/fonts/fonts.css` 한 곳에만** 정의한다(`:root { --app-font: … }`). 정책 변경은 이 파일만 고친다. 절대 다른 파일에 `@font-face`나 스택 문자열을 복붙하지 않는다.
+- **단일 진실원본(SSOT)**: `@font-face`와 폰트 스택은 **`frontend/vendor/fonts/fonts.css` 한 곳에만** 정의한다(`:root { --app-font: … }`). 정책 변경은 이 파일만 고친다. 절대 다른 파일에 `@font-face`나 스택 문자열을 복붙하지 않는다.
   - **DOM**: 모든 화면(landing/guide/studio/index/design)과 생성기(team/valuation/devlog)는 fonts.css를 `<link rel="stylesheet">`로 참조하고 `font-family: var(--app-font)`만 쓴다. ui.js의 `--lu-font`도 `var(--app-font)`로 잇는다.
-  - **캔버스/WebGL**(3D 씬 라벨 — 플라크·이름표·워터마크·의성어): `web/js/fonts.js`의 `getCanvasFont()`가 런타임에 `--app-font`(SSOT)를 읽어 쓴다(스택 재정의 없음). 캔버스는 그리는 시점에 폰트가 없으면 시스템 폰트로 폴백해 그대로 텍스처에 구워지므로(이후 교체 안 됨), 텍스처를 굽기 전 `ensureCanvasFonts()`(한글 프로브 `'가'`로 나눔 400/700/800 로드 보장)를 **await**한다 — `createArtworks()` 앞. **순서 주의**: fonts.css는 index.html `<head>`의 정적 `<link>`라 main.js 실행 전 이미 문서에 존재해야 한다(런타임 주입 시 `document.fonts.load`가 @font-face를 못 찾는 콜드 로드 레이스 발생 — 검수 반려 사례).
+  - **캔버스/WebGL**(3D 씬 라벨 — 플라크·이름표·워터마크·의성어): `frontend/js/fonts.js`의 `getCanvasFont()`가 런타임에 `--app-font`(SSOT)를 읽어 쓴다(스택 재정의 없음). 캔버스는 그리는 시점에 폰트가 없으면 시스템 폰트로 폴백해 그대로 텍스처에 구워지므로(이후 교체 안 됨), 텍스처를 굽기 전 `ensureCanvasFonts()`(한글 프로브 `'가'`로 나눔 400/700/800 로드 보장)를 **await**한다 — `createArtworks()` 앞. **순서 주의**: fonts.css는 index.html `<head>`의 정적 `<link>`라 main.js 실행 전 이미 문서에 존재해야 한다(런타임 주입 시 `document.fonts.load`가 @font-face를 못 찾는 콜드 로드 레이스 발생 — 검수 반려 사례).
 - **매칭**: 나눔고딕 `unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF`(한글) → **한글은 나눔고딕**, 라틴은 범위 밖이라 **Pretendard**로 자동 폴백.
-- **self-host**: `web/vendor/fonts/*.woff2`. 앱 CSP(`default-src 'self'`, `style-src 'self' 'unsafe-inline'`)와 정합(외부 CDN 미사용, 동일 출처 `<link>` 허용). `font-display: swap`. fonts.css의 `src: url()`은 그 파일 기준 상대경로라 페이지 위치와 무관하게 동일 해석 — `<link href>` 접두(루트=`./app/…`, 앱=`./…`, 생성기=`../app/…`)만 위치별로 다르다.
+- **self-host**: `frontend/vendor/fonts/*.woff2`. 앱 CSP(`default-src 'self'`, `style-src 'self' 'unsafe-inline'`)와 정합(외부 CDN 미사용, 동일 출처 `<link>` 허용). `font-display: swap`. fonts.css의 `src: url()`은 그 파일 기준 상대경로라 페이지 위치와 무관하게 동일 해석 — `<link href>` 접두(루트=`./app/…`, 앱=`./…`, 생성기=`../app/…`)만 위치별로 다르다.
 - **성능**: 상용(KS X 1001 2350자) 서브셋으로 용량 최소화.
 - **한계(인지)**: 나눔고딕은 Regular/Bold/ExtraBold뿐이라 얇은~중간 한글 weight(200/300/500/600)는 400/700로 근사된다. 영문은 Pretendard라 전 weight 유지.
 
@@ -321,7 +321,7 @@ L만 계단식으로 낮춘다 — 원색이 이미 고채도(S 70~100%)이므�
   라틴은 Pretendard 유지 또는 짝이 되는 라틴 세리프 1종 검토. **법무 OFL 조건·표시 확인
   후 도입.**
 - **조달 완료(2026-07-14)**: Noto Serif KR을 조달·서브셋(한글 KS X 1001 2350자 311KB
-  + 라틴 19KB) 후 `web/vendor/fonts/`에 self-host, `fonts.css`에 `@font-face`(family
+  + 라틴 19KB) 후 `frontend/vendor/fonts/`에 self-host, `fonts.css`에 `@font-face`(family
   `NotoSerifKR`, weight 400, `unicode-range` 매칭) + **`--font-serif` 토큰** 추가 완료.
   라이선스: SIL OFL 1.1, THIRD-PARTY-NOTICES §7 + `NotoSerifKR-OFL.txt` 동봉.
 - **적용 방식**: 에세이 장문 컨테이너에만 `font-family: var(--font-serif)`. `font-display:
@@ -404,8 +404,8 @@ L만 계단식으로 낮춘다 — 원색이 이미 고채도(S 70~100%)이므�
 
 ### 5-4. 구현 메모
 
-색·타이포·스페이싱 토큰은 현재 §1 폰트처럼 SSOT 파일이 없고, `web/landing.html`,
-`web/design.html`, `web/studio.html`, `web/guide.html` 각각의 `<style>:root{}`에
+색·타이포·스페이싱 토큰은 현재 §1 폰트처럼 SSOT 파일이 없고, `frontend/landing.html`,
+`frontend/design.html`, `frontend/studio.html`, `frontend/guide.html` 각각의 `<style>:root{}`에
 개별 정의돼 있다. 위 표의 신규/변경 토큰을 적용하려면 이 4개 파일의 `:root`를 모두
 동기화해야 한다. 폰트처럼 공통 CSS 파일로 분리하는 것은 향후 개선 후보(이번 브리프
 범위 밖, 별도 제안 필요).
@@ -916,7 +916,7 @@ L만 계단식으로 낮춘다 — 원색이 이미 고채도(S 70~100%)이므�
 
 ## 12. 마스코트 — 아야모(Ayamo)
 
-- 자체 제작 3D 치비 캐릭터(외부 에셋 0, `web/js/chibi.js`). 헤어·얼굴형·눈·입·의상·색 커스터마이즈.
+- 자체 제작 3D 치비 캐릭터(외부 에셋 0, `frontend/js/chibi.js`). 헤어·얼굴형·눈·입·의상·색 커스터마이즈.
 - 꾸미기 모달: 옵션을 얼굴/헤어/의상 3그룹(스티키 헤더)으로. 프리뷰는 좌우 ±18° 스윙(드래그 수동 회전 가능), 카메라 여백 확보.
 - **§2 인상 우선순위 적용 지침**: 아야모의 컨셉·형태·색은 변경하지 않는다(감독 결정 영역).
   단, **노출 방식**은 인상 우선순위(예술성·활기·신뢰가 친근함보다 위, §2 2026-07-14 갱신)를
@@ -1004,7 +1004,7 @@ S 90%+ 인 것과 대비). 텍스트 사용 가능 여부는 크림 배경(`--pa
 - **용도(확정 당시)**: "소장 완료", "한정 판매", 가격 강조 등 **가치 신호**에 한해 극소량
   사용. 기본 CTA·내비게이션·포커스·선택은 청자 그린 단독. 두 포인트가 한 화면에서
   경쟁하지 않도록 골드는 "값을 매기는 자리"에만.
-- **명명 충돌 해소 이력**: 기존 코드(`web/landing.html`, `web/design.html`)의
+- **명명 충돌 해소 이력**: 기존 코드(`frontend/landing.html`, `frontend/design.html`)의
   `--gold: #5f9e7d`는 실제로는 그린값이었다(레거시). 진짜 골드는 `--accent-gold-*`로 따로
   명명해 충돌을 원천 차단했다. 레거시 `--gold`(=그린)는 `--green-500`의 별칭(deprecated)으로
   이관 중이었다.

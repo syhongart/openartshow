@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   COPY, ROTATE_MS, RICH_AFTER_MS, copyIndexAt, didRotate, validCopy,
   loadingDetail, copySlot,
-} from '../web/js/world2/decide/loading-copy.js';
+} from '../frontend/js/world2/decide/loading-copy.js';
 
 describe('copyIndexAt — 회전', () => {
   it('시작 직후에는 첫 문구', () => {

@@ -10,7 +10,7 @@ import {
   isExternalUrl,
   encodeGalleryData,
   createStorage
-} from '../web/js/studio-storage.js';
+} from '../frontend/js/studio-storage.js';
 
 // ── artworks.js(보호파일) 디코더 로직을 그대로 재현한 참조 픽스처 ──
 // 이 함수가 뷰어가 실제로 쓰는 규약이다 — 인코더 출력이 여기서 원복되면 바이트 호환.

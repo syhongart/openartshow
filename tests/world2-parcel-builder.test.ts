@@ -7,12 +7,12 @@
 // ④ 풀이 모자라면 조용히 넘기지 않고 센다.
 
 import { describe, it, expect } from 'vitest';
-import { PooledParcelBuilder, type SlotPool } from '../web/js/world2/systems/parcel-builder.js';
-import type { SlotHandle } from '../web/js/world2/systems/instancing.js';
+import { PooledParcelBuilder, type SlotPool } from '../frontend/js/world2/systems/parcel-builder.js';
+import type { SlotHandle } from '../frontend/js/world2/systems/instancing.js';
 import {
   kindsFor, maxPartsPerParcel, outermostTierFor, DEFAULT_LAYOUT,
-} from '../web/js/world2/decide/parcel-layout.js';
-import { DEFAULT_BANDS, tierReach, maxLatticePoints } from '../web/js/world2/decide/lod.js';
+} from '../frontend/js/world2/decide/parcel-layout.js';
+import { DEFAULT_BANDS, tierReach, maxLatticePoints } from '../frontend/js/world2/decide/lod.js';
 
 /**
  * 용량이 있는 가짜 풀. 호출을 전부 기록한다.

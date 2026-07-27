@@ -52,7 +52,7 @@
   `docs/BACKLOG.md`(연봉 메모 포함)·`docs/BUSINESS-PLAN-DRAFT.md`·`docs/SCALING.md`
   (인프라 갭·비용 노출) public 노출 중. 로컬 백업 후 삭제 + `.gitignore` 추가.
 - ⬜ **감독 실제 작품 이미지 준비** → 첫 전시 채우기 + 자기완결 마감
-  지금은 플레이스홀더 스톡 사진(`web/js/artworks.js`의 `picsum.photos` 외부 이미지). 이미지 주면
+  지금은 플레이스홀더 스톡 사진(`frontend/js/artworks.js`의 `picsum.photos` 외부 이미지). 이미지 주면
   부팀장이 `galleries/syhongart.json`에 넣어 진짜 개인전으로. **← 감독이 이미지만 주면 됨.**
   · **[자기완결 마감 — 팀장 지시 2026-07-15]** 실작품 교체 시 **동시에**: ① `artworks.js`의
     picsum 외부 이미지 URL 제거(CLAUDE.md "외부 호스트 0" 위반), ② `index.html` CSP

@@ -1,7 +1,7 @@
 // world-boot.js — 오픈월드(behind-flag) 부트스트랩. world.html 인라인 <script type="module">에서
 // 외부 모듈로 추출(보안 선결: CSP 'unsafe-inline' 제거 → script-src 'self'만으로 동작, 해시 불필요·
 // 유지보수 우위 — security-officer 29259bf 지적①). module script는 기본 defer라 DOM 로드 후 실행,
-// top-level await 정상. DOM 참조·fetch는 문서(world.html) 기준 상대경로 유지, import는 이 파일(web/js/) 기준.
+// top-level await 정상. DOM 참조·fetch는 문서(world.html) 기준 상대경로 유지, import는 이 파일(frontend/js/) 기준.
 import { genParcel, riverColAt, genStreet, genWalker, genPier, genTetrapods, genLighthouse } from './world-gen.js';
 import { createWorld } from './world.js';
 import { randomChibiChar } from './chibi.js';
@@ -203,7 +203,7 @@ V.on('chat', ({ name, text }) => {
 });
 
 // ── 모바일: 터치 감지 → 좌 조이스틱(갤러리 룩·플로팅 이식) + 우 드래그 시선 ──
-// 갤러리(web/js/player.js 129-176행 스타일, 214-294행 이벤트)를 오픈월드 전용 DOM 인스턴스로 이식.
+// 갤러리(frontend/js/player.js 129-176행 스타일, 214-294행 이벤트)를 오픈월드 전용 DOM 인스턴스로 이식.
 // player.js는 수정하지 않는다 — 이 블록은 world-boot.js 전용 클로저 변수(joyBase/joyKnob 등)만 쓰고,
 // 클래스명(lu-joy-*)은 player.js와 같은 이름을 재사용해도 두 페이지가 동시에 로드되지 않아 충돌 없음.
 // 룩: 상시 표시가 아니라 터치한 자리에 base+knob이 나타났다가(lu-live) 손을 떼면 사라진다(스타일 요소, pointer-events:none).

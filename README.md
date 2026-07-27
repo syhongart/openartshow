@@ -37,13 +37,13 @@ OpenArtShow는 **웹 브라우저만으로 접속하는 3D 가상 전시 플랫�
 
 ## 폴더 구조
 
-> 아래는 **개요**다. `web/js/`의 실제 모듈은 이후 SOLID 분해로 다수의 하위 모듈로
+> 아래는 **개요**다. `frontend/js/`의 실제 모듈은 이후 SOLID 분해로 다수의 하위 모듈로
 > 나뉘었고(예: `scene.js`·`ui.js`·`space-render.js`는 얇은 재수출 배럴), 소스는 TypeScript(`.ts`)로
 > 점진 전환 중이다. **현행 모듈 지도·아키텍처 원칙은 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)가 SSOT.**
 
 ```
 openartshow/
-├── web/                        # 개발 소스
+├── frontend/                        # 개발 소스
 │   ├── index.html              # 3D 전시장 (app/로 배포)
 │   ├── landing.html            # 랜딩 페이지 (루트의 index.html로 배포)
 │   ├── guide.html              # 이용 안내 (루트의 guide.html로 배포)
@@ -66,8 +66,8 @@ openartshow/
 
 ### 배포 구조
 
-- 개발 저장소의 `web/landing.html`, `web/guide.html` → 루트(`index.html`, `guide.html`)로 배포
-- `web/index.html`, `web/studio.html` → `app/`로 배포
+- 개발 저장소의 `frontend/landing.html`, `frontend/guide.html` → 루트(`index.html`, `guide.html`)로 배포
+- `frontend/index.html`, `frontend/studio.html` → `app/`로 배포
 - **자동배포**: `main`에 push하면 GitHub Actions(`.github/workflows/deploy.yml`)가 빌드 후
   `gh-pages` 브랜치로 배포 → GitHub Pages 자동 갱신 (수동 조작 불필요)
 
@@ -82,14 +82,14 @@ openartshow/
 
 ### 방법 B — 저장소 상설 등록 (전시 디렉터리에 노출)
 1. 스튜디오에서 **[JSON 다운로드]**
-2. 파일을 `web/galleries/`에 추가하고 `web/galleries/index.json`에 메타데이터 등록
+2. 파일을 `frontend/galleries/`에 추가하고 `frontend/galleries/index.json`에 메타데이터 등록
 3. `main`에 커밋·push → 자동배포(위 "배포 구조" 참조)
 
 ## 라이선스 · 저작권 · 상표
 
 - **저작권**: © 2026 홍성용 (Hong Sungyong). All rights reserved. 무단 복제·배포·상업적
   이용을 금합니다. 자세한 조건은 [LICENSE](./LICENSE)를 참조하세요.
-- **제3자 구성요소**: `web/vendor/`의 라이브러리(Three.js · PeerJS = MIT)와 크레딧 에셋
+- **제3자 구성요소**: `frontend/vendor/`의 라이브러리(Three.js · PeerJS = MIT)와 크레딧 에셋
   (ESO = CC BY 4.0, Poly Haven = CC0)은 각 라이선스를 따릅니다 —
   [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md).
 - **상표**: **OpenArtShow™** 및 마스코트 **아야모™(Ayamo™)**는 홍성용(OpenArtShow)이

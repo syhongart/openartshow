@@ -1,4 +1,4 @@
-// web/js/ui-chibi-store.ts — chibi(아야모) 퍼시스턴스 스토어 (ui.js 분해 C-1 단계2)
+// frontend/js/ui-chibi-store.ts — chibi(아야모) 퍼시스턴스 스토어 (ui.js 분해 C-1 단계2)
 // 중립 leaf: HUD 빌더·아바타 편집기가 공용으로 쓰는 저장/세션 상태. 두 그룹이 서로
 // import 하지 않고 이 leaf만 import 하도록 하여 향후 순환(ui-hud↔ui-avatar-editor)을 차단.
 // [불변] localStorage 키 생성 로직·프리픽스·레거시 키는 1바이트도 바꾸지 않는다

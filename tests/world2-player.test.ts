@@ -5,8 +5,8 @@
 // look-ahead 판정까지 함께 왜곡된다.
 
 import { describe, it, expect } from 'vitest';
-import { moveDelta, facing, clampPitch, NO_INPUT, PlayerSystem, type MoveInput } from '../web/js/world2/systems/player.js';
-import type { FrameCtx } from '../web/js/world2/kernel.js';
+import { moveDelta, facing, clampPitch, NO_INPUT, PlayerSystem, type MoveInput } from '../frontend/js/world2/systems/player.js';
+import type { FrameCtx } from '../frontend/js/world2/kernel.js';
 
 const inp = (o: Partial<MoveInput> = {}): MoveInput => ({ ...NO_INPUT, ...o });
 const len = (d: { dx: number; dz: number }) => Math.hypot(d.dx, d.dz);

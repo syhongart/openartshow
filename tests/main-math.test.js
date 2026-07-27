@@ -7,7 +7,7 @@ import {
   lerpAngle,
   resolveAutoTheme,
   djb2,
-} from '../web/js/main-math.js';
+} from '../frontend/js/main-math.js';
 
 const PI = Math.PI;
 

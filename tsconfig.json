@@ -12,6 +12,6 @@
     "forceConsistentCasingInFileNames": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["web/js/**/*", "tests/**/*", "scripts/**/*"],
-  "exclude": ["node_modules", "web/vendor"]
+  "include": ["frontend/js/**/*", "tests/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "frontend/vendor"]
 }

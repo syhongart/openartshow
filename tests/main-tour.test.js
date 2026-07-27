@@ -10,7 +10,7 @@
 //   검증할 수 있다. tourWaiting=false 분기(④)는 콜백을 실행 안 하는 mock으로 만든다.
 //   next() 발생은 getIndex() 변화(0→1)로 관측한다.
 import { describe, it, expect, vi } from 'vitest';
-import { createTourController } from '../web/js/main-tour.js';
+import { createTourController } from '../frontend/js/main-tour.js';
 
 // 3개짜리 작품 배열(길이>0이면 됨 — 내용은 판정에 무관)
 const ARTS = [{ title: 'a0' }, { title: 'a1' }, { title: 'a2' }];

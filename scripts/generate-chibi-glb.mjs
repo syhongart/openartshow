@@ -5,8 +5,8 @@
  *   node scripts/generate-chibi-glb.mjs
  *
  * 출력:
- *   web/assets/models/body-base.gltf
- *   web/assets/models/body-base.bin
+ *   frontend/assets/models/body-base.gltf
+ *   frontend/assets/models/body-base.bin
  */
 
 import * as THREE from 'three';
@@ -19,7 +19,7 @@ const BufferGeometryUtils = BufferGeometryUtilsModule;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const MODELS_DIR = path.join(PROJECT_ROOT, 'web', 'assets', 'models');
+const MODELS_DIR = path.join(PROJECT_ROOT, 'frontend', 'assets', 'models');
 
 // 디렉토리 생성
 function ensureDir(dir) {

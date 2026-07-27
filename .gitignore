@@ -76,7 +76,7 @@ _site_baseline/
 
 # 헤드리스 QA 하네스가 만드는 배포경로 모사 부산물(원본은 web/world/manifest.json,
 # 실제 배포는 vite가 web/world → dist/app/world 로 복사). 반복 재생성되므로 무시.
-/web/app/
+/frontend/app/
 .qa-tmp/
 qa-tmp/
 

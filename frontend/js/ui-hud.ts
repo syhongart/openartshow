@@ -1,4 +1,4 @@
-// web/js/ui-hud.ts (C-1 단계4에서 ui.js → ui-hud.ts 로 개명. 셸 + HUD 빌더 + Public API)
+// frontend/js/ui-hud.ts (C-1 단계4에서 ui.js → ui-hud.ts 로 개명. 셸 + HUD 빌더 + Public API)
 // 타입: 후속 #96에서 @ts-nocheck 제거 완료 — strict 통과. 타입 주석·지역 캐스팅만
 //   더했고 런타임 로직은 무변경이다. els는 15개 빌더 결과가 런타임 조립되고 프로퍼티가
 //   추가 주입되는 이질 컨테이너라 any로 표현한다(각 빌더 반환은 지역에서 타입 검증됨).

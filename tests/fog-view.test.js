@@ -1,7 +1,7 @@
 // fog-view.js 순수 판정 단위테스트 — 바다 원경 응시(경계 셀 + 시선 내적 + 히스테리시스).
 // 좌표 관례: yaw=0 = -Z(북). fwd=(-sin yaw, -cos yaw). 바깥 법선 W(-1,0)/E(+1,0)/N(0,-1)/S(0,+1).
 import { describe, it, expect } from 'vitest';
-import { isViewingSea, isBehind, behindExitRadii, canDemoteByCooldown } from '../web/js/fog-view.js';
+import { isViewingSea, isBehind, behindExitRadii, canDemoteByCooldown } from '../frontend/js/fog-view.js';
 
 const W = 10, H = 10;
 const D2R = Math.PI / 180;

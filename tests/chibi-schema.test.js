@@ -10,7 +10,7 @@ import {
   CHIBI_CHAR_PREFIX,
   DEFAULT_CHIBI,
   SKIN_TONES,
-} from '../web/js/chibi-schema.js';
+} from '../frontend/js/chibi-schema.js';
 
 describe('normalizeChibi (임의 입력 → 안전 파라미터)', () => {
   it('비객체 입력(null·undefined·문자열·숫자)도 크래시 없이 기본 룩', () => {

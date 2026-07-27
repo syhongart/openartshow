@@ -11,12 +11,12 @@ import {
   initialController, WARMUP_MS, DEMOTE_FPS, PROMOTE_FPS, PROMOTE_HOLD_TICKS,
   CAP_ENTER_FPS, CAP_SUSTAIN_MS, TRI_BUDGET,
   type AdaptInput,
-} from '../web/js/world2/decide/adapt.js';
+} from '../frontend/js/world2/decide/adapt.js';
 import {
   tierFor, validBands, DEFAULT_BANDS, lookAheadCenter, loadPriority,
   tierReach, maxLatticePoints,
   type Tier,
-} from '../web/js/world2/decide/lod.js';
+} from '../frontend/js/world2/decide/lod.js';
 
 const MOBILE_CAP = 1.5;
 const input = (o: Partial<AdaptInput> = {}): AdaptInput => ({

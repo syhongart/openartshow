@@ -6,9 +6,9 @@
 // 새로 태어나던 것이 스파이크의 원인이었다.
 
 import { describe, it, expect } from 'vitest';
-import { StreamingSystem, type ParcelBuilder, type ParcelHandle } from '../web/js/world2/systems/streaming.js';
-import type { FrameCtx } from '../web/js/world2/kernel.js';
-import type { Tier } from '../web/js/world2/decide/lod.js';
+import { StreamingSystem, type ParcelBuilder, type ParcelHandle } from '../frontend/js/world2/systems/streaming.js';
+import type { FrameCtx } from '../frontend/js/world2/kernel.js';
+import type { Tier } from '../frontend/js/world2/decide/lod.js';
 
 /** 호출을 세는 가짜 빌더. retierable=false면 재생성 경로를 강제한다. */
 function fakeBuilder(retierable = true) {

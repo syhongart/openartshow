@@ -1,6 +1,6 @@
 // lab-glb.js — [실험] GLB 공간 1인칭 워크스루 미리보기 (behind-flag, 라이브 무접촉).
 //
-// 목적: 감독이 반입 판정 전에 GLB 공간(web/assets/models/lab-space.glb)을 직접 걸어다니며
+// 목적: 감독이 반입 판정 전에 GLB 공간(frontend/assets/models/lab-space.glb)을 직접 걸어다니며
 // "어떤 느낌인지" 확인한다. 완성된 미술관 통합이 아니라 순수 미리보기 — 과한 물리·정밀 계단
 // 승강 없이, 조명·1인칭 이동·간이 충돌·층 전환 버튼만으로 공간감을 정직하게 보여주는 게 목표다.
 //
@@ -39,7 +39,7 @@ const FLOORS = [
 const BOUND = { minX: -7.6, maxX: 9.2, minZ: -16.9, maxZ: 7.2 };
 
 // 모델 경로 — base(BASE_URL)에서 계산(world-boot.js 매니페스트 fetch와 동일 패턴).
-// selfContained 플러그인이 web/assets → dist/app/assets 로 복사하므로, 이 HTML 자체가
+// selfContained 플러그인이 frontend/assets → dist/app/assets 로 복사하므로, 이 HTML 자체가
 // dist 루트/ app/ 어디에 배치되든(HTML_RENAME 매핑 유무 무관) 경로가 항상 유효하다.
 const BASE = import.meta.env.BASE_URL || '/';
 const MODEL_URL = (BASE.endsWith('/') ? BASE.slice(0, -1) : BASE) + '/app/assets/models/lab-space.glb';

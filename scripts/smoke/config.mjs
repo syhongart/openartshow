@@ -39,7 +39,7 @@ export const GENERATORS = [
 // 실측: 2026-07-21 arch-safety-net 브랜치 = 175 파일(about.html 루트 배포 +1 반영).
 // (DEVLOG 항목 추가 등으로 늘어나는 것은 정상 — 급증은 PASS, 급감만 FAIL)
 //
-// vite 모드는 파일수가 다르다: web직조립은 `cp -r web/. _site/app/` 로 js/폰트를
+// vite 모드는 파일수가 다르다: web직조립은 `cp -r frontend/. _site/app/` 로 js/폰트를
 // 통째 복사하지만, vite 는 js 를 번들해 _bundle 로 dedup(중복 제거)하고 app/js 폴더가
 // 없다. → vite 조립본은 더 적다. 실측: 2026-07-21 vite 조립본 = 148 파일.
 // (_bundle 해시파일명은 빌드마다 바뀌나 개수는 동일 → 값 안정. devlog 증가는 급증=PASS)
@@ -95,7 +95,7 @@ export const REQUIRED_FILES = REQUIRED_FILES_BASELINE;
 //
 // ※ app/landing.html 은 검사 대상이 아니다: landing.html 의 정본 배포 URL 은 루트
 //   /index.html 이며(deploy.yml: landing.html→_site/index.html) 아래에 이미 포함돼 있다.
-//   _site/app/landing.html 은 `cp -r web/. _site/app/` 의 부산물 사본으로 어떤 페이지도
+//   _site/app/landing.html 은 `cp -r frontend/. _site/app/` 의 부산물 사본으로 어떤 페이지도
 //   링크하지 않고(sitemap 에도 없음), landing 의 루트 기준 상대경로가 app/ 컨텍스트에서
 //   필연적으로 깨지므로 라이브 진입점이 아니다. → 정본 URL(/index.html)만 검사.
 export const LIVE_PAGES = [
@@ -106,7 +106,7 @@ export const LIVE_PAGES = [
   // about 정본 URL은 루트 /about.html (deploy.yml: about.html→_site/about.html, landing/
   // guide/design 급 공개 페이지). about.html은 루트 기준 상대경로(브랜드·랜딩 ./index.html,
   // 전시장 ./app/)라 루트 배포에서 정합. _site/app/about.html은 app/landing.html과 같은
-  // `cp -r web/. _site/app/` 부산물 사본(어떤 페이지도 링크 안 함)이라 검사하지 않는다.
+  // `cp -r frontend/. _site/app/` 부산물 사본(어떤 페이지도 링크 안 함)이라 검사하지 않는다.
   { name: 'about',             url: '/about.html',      webgl: false },
   // world: B-2b 정식 노출(sitemap 등재). WebGL 씬(top-level await manifest fetch).
   { name: 'app/world',         url: '/app/world.html',  webgl: true, weatherProbe: true },

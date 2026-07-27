@@ -20,11 +20,11 @@
 // 통과했으니 정렬이 검증됐다"고 읽으면 안 된다.
 
 import { describe, it, expect } from 'vitest';
-import { PooledParcelBuilder, type SlotPool } from '../web/js/world2/systems/parcel-builder.js';
-import { StreamingSystem } from '../web/js/world2/systems/streaming.js';
-import type { SlotHandle } from '../web/js/world2/systems/instancing.js';
-import type { FrameCtx } from '../web/js/world2/kernel.js';
-import { DEFAULT_LAYOUT, type PartKind } from '../web/js/world2/decide/parcel-layout.js';
+import { PooledParcelBuilder, type SlotPool } from '../frontend/js/world2/systems/parcel-builder.js';
+import { StreamingSystem } from '../frontend/js/world2/systems/streaming.js';
+import type { SlotHandle } from '../frontend/js/world2/systems/instancing.js';
+import type { FrameCtx } from '../frontend/js/world2/kernel.js';
+import { DEFAULT_LAYOUT, type PartKind } from '../frontend/js/world2/decide/parcel-layout.js';
 
 const KINDS: readonly PartKind[] = ['ground', 'building', 'tree', 'lamp'];
 const CELL = 32;

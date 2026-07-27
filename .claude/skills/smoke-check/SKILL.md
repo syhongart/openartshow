@@ -17,8 +17,8 @@ description: 배포 전 스모크 검증(§10-3). 트리거 — main 푸시/배�
 2. **배포 매니페스트 파일수 diff** — deploy.yml의 `_site` 조립 레시피를 로컬 재현:
    ```
    rm -rf /tmp/_site && mkdir -p /tmp/_site/app
-   cp web/landing.html /tmp/_site/index.html && cp web/guide.html /tmp/_site/guide.html
-   cp -r web/. /tmp/_site/app/ && cp -r devlog team valuation /tmp/_site/
+   cp frontend/landing.html /tmp/_site/index.html && cp frontend/guide.html /tmp/_site/guide.html
+   cp -r frontend/. /tmp/_site/app/ && cp -r devlog team valuation /tmp/_site/
    cp sitemap.xml robots.txt /tmp/_site/
    find /tmp/_site -type f | wc -l
    ```
@@ -26,9 +26,9 @@ description: 배포 전 스모크 검증(§10-3). 트리거 — main 푸시/배�
 3. **핵심 링크 200** — 조립 결과에 필수 파일 존재: `index.html`, `guide.html`, `app/index.html`, `devlog/index.html`, `team/index.html`, `valuation/index.html`, `sitemap.xml`. 배포 후에는 라이브 URL(`https://syhongart.github.io/openartshow/` + 위 경로) curl로 200 확인.
 4. **콘솔 에러 0** — 헤드리스 브라우저 가용 시 index.html·app/ 로드 후 console error 0 확인. 불가 시 "도구 부재로 정적 검사 대체" 명기하고 스크립트 문법 검사(`node --check` 가능한 파일)로 대체.
 5. **가로넘침 0** — 헤드리스 가용 시 **375px와 320px 두 뷰포트**에서 `document.documentElement.scrollWidth <= innerWidth` 확인. 320px(iPhone SE 1세대급 초소형)를 반드시 포함 — 모달·버튼 wrap이 좁은 폭에서 넘치는 케이스를 잡기 위함(2026-07-19 꾸미기 모달 반응형 회귀 교훈). 불가 시 변경된 CSS/HTML에서 고정폭(px) 신규 도입 여부 grep으로 대체 검사.
-6. **CSP 부팅** — web/index.html의 CSP 메타 존재 + `script-src` 해시·`object-src 'none'`·`base-uri 'none'` 잔존 확인 (보안패치 유실 사고 재발 방지):
+6. **CSP 부팅** — frontend/index.html의 CSP 메타 존재 + `script-src` 해시·`object-src 'none'`·`base-uri 'none'` 잔존 확인 (보안패치 유실 사고 재발 방지):
    ```
-   grep -c "Content-Security-Policy" web/index.html
+   grep -c "Content-Security-Policy" frontend/index.html
    ```
 
 ## 판정

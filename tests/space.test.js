@@ -18,7 +18,7 @@ import {
   encodeSpace,
   decodeSpace,
   newSpace,
-} from '../web/js/space.js';
+} from '../frontend/js/space.js';
 
 describe('migrateSpace — 버전 업그레이드 안전장치', () => {
   it('무버전(v0) 문서를 현재 버전으로 올린다', () => {

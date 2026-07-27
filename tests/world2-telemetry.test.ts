@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   summarize, hitchCount, constancy, constancyByGroup, Ring, formatReport, HITCH_MS,
   Timeline, downsample, formatTimeline, type ReportInput, type Bucket, type TimelineSample,
-} from '../web/js/world2/decide/telemetry.js';
+} from '../frontend/js/world2/decide/telemetry.js';
 
 const base = (o: Partial<ReportInput> = {}): ReportInput => ({
   backend: 'WebGL', ua: 'test-ua', dpr: 2, screen: '390x844', elapsedS: 10,

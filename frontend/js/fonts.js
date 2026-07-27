@@ -5,7 +5,7 @@
 // (1) 폰트 스택을 직접 지정해야 하고 (2) "그리는 그 순간" 폰트가 로드돼 있지 않으면
 // 조용히 시스템 폰트로 폴백해 그대로 텍스처에 구워진다(이후 로드돼도 교체 안 됨).
 //
-// 단일 진실원본(SSOT): 폰트 스택과 @font-face는 web/vendor/fonts/fonts.css 한 곳에만
+// 단일 진실원본(SSOT): 폰트 스택과 @font-face는 frontend/vendor/fonts/fonts.css 한 곳에만
 // 정의된다(:root --app-font). 이 모듈은 스택을 재정의하지 않고 그 값을 런타임에 읽어
 // 캔버스에 그대로 쓴다. fonts.css는 index.html <head>에 정적 <link>로 로드되므로
 // main.js 실행 시점엔 @font-face가 이미 문서에 존재한다.

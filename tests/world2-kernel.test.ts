@@ -6,7 +6,7 @@
 // 화면 rAF 틱 빈도라 캡이 걸려도 60을 유지했다 — 계측 대상 오인).
 
 import { describe, it, expect } from 'vitest';
-import { Kernel, type System, type FrameCtx, type KernelOptions } from '../web/js/world2/kernel.js';
+import { Kernel, type System, type FrameCtx, type KernelOptions } from '../frontend/js/world2/kernel.js';
 
 function spySystem(name: string, log: string[]): System {
   return { name, update: (ctx: FrameCtx) => { log.push(`${name}@${ctx.frame}`); } };

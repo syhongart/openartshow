@@ -8,7 +8,7 @@
 // [리팩터 여지] todayKey/_save의 Date·setTimeout을 주입 가능하게 빼면 fake timer 없이도
 //   테스트할 수 있다(현재는 fake timer로 우회 — 소스 무수정 원칙 유지).
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { GalleryStats } from '../web/js/stats.js';
+import { GalleryStats } from '../frontend/js/stats.js';
 
 const FIXED = new Date(2026, 6, 21, 10, 0, 0); // 2026-07-21 (로컬) → todayKey '2026-07-21'
 

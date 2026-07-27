@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   encodeGalleryDataGz,
   buildShareFragment
-} from '../web/js/studio-storage.js';
+} from '../frontend/js/studio-storage.js';
 
 // artworks.js b64urlToBytes 재현(참조 픽스처)
 function b64urlToBytes(b64url) {

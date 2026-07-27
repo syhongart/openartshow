@@ -2,7 +2,7 @@
 // 검증 순수함수(isValidPhotoItem)와 스토어 계약(id 멱등 병합·ts 내림차순·상한 절단)을 고정.
 // 설계상 Storage는 주입 가능(D: 의존성 역전)하므로 localStorage 없이 node 환경에서 순수 테스트.
 import { describe, it, expect } from 'vitest';
-import { VisitorLog, PhotoWall, isValidPhotoItem } from '../web/js/feed.js';
+import { VisitorLog, PhotoWall, isValidPhotoItem } from '../frontend/js/feed.js';
 
 // getItem/setItem 호환 인메모리 스토리지(주입) — jsdom 없이 결정적 테스트
 function makeStorage() {

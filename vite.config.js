@@ -28,7 +28,7 @@ const r = (p) => resolve(import.meta.dirname, p);
 // 이 방식의 목표다. vite/rollup 기본 resolver 는 확장자 명시 `./stats.js` 를 `.ts` 로
 // 치환하지 않으므로, "실재하는 .js 가 없고 대응 .ts 가 있을 때만" .ts 절대경로로
 // 폴백하는 pre-resolver 를 1회 얹는다.
-//   · web/js 상대 import 에만 적용: source 가 `./`·`../` 상대경로 + `.js` 로 끝날 때만.
+//   · frontend/js 상대 import 에만 적용: source 가 `./`·`../` 상대경로 + `.js` 로 끝날 때만.
 //   · node_modules·vendor 무개입: bare specifier(three·peerjs)는 상대경로가 아니라
 //     애초에 매치 안 됨. importer 가 node_modules 안이면 즉시 스킵. vendor/ 의 실재
 //     .js 는 existsSync 로 걸러져 그대로 통과(폴백 안 함).
@@ -51,7 +51,7 @@ export function tsJsFallback() {
   };
 }
 
-// root=web 기준 emit fileName → 배포구조 경로. (맵 미포함 HTML 은 루트 불변)
+// root=frontend 기준 emit fileName → 배포구조 경로. (맵 미포함 HTML 은 루트 불변)
 const HTML_RENAME = {
   'landing.html': 'index.html',     // 랜딩 → 루트
   'index.html': 'app/index.html',   // 미술관 → app/
@@ -85,9 +85,9 @@ function selfContained() {
       const dist = r('dist');
       mkdirSync(resolve(dist, 'app/vendor'), { recursive: true });
       // peerjs 는 전역 IIFE(window.Peer)라 ES 모듈 번들 대상이 아님 → self 로 정적 유지.
-      copyFileSync(r('web/vendor/peerjs.min.js'), resolve(dist, 'app/vendor/peerjs.min.js'));
+      copyFileSync(r('frontend/vendor/peerjs.min.js'), resolve(dist, 'app/vendor/peerjs.min.js'));
       for (const d of ['galleries', 'world', 'assets', 'utils']) {
-        const src = r('web/' + d);
+        const src = r('frontend/' + d);
         if (existsSync(src)) cpSync(src, resolve(dist, 'app', d), { recursive: true });
       }
     },
@@ -181,7 +181,7 @@ function cspReconcile() {
 export default defineConfig({
   // 순서: ts폴백(pre) → rename → CSP(rename 후 fileName 기준). self-contained 는 closeBundle(후처리).
   plugins: [tsJsFallback(), selfContained(), htmlRename(), cspReconcile()],
-  root: 'web',
+  root: 'frontend',
   // 배포 서브패스(github.io/openartshow/) 영구 고정 — 절대 base 로 깊이 무관 공유.
   base: '/openartshow/',
   build: {
@@ -196,23 +196,23 @@ export default defineConfig({
     rollupOptions: {
       input: {
         // 랜딩군(루트 배포) — landing 편입(B-2b 배포기 승격의 핵심).
-        landing: r('web/landing.html'),
-        guide: r('web/guide.html'),
-        about: r('web/about.html'),
-        design: r('web/design.html'),
+        landing: r('frontend/landing.html'),
+        guide: r('frontend/guide.html'),
+        about: r('frontend/about.html'),
+        design: r('frontend/design.html'),
         // 앱군(app/ 배포)
-        index: r('web/index.html'),
-        studio: r('web/studio.html'),
-        world: r('web/world.html'),
+        index: r('frontend/index.html'),
+        studio: r('frontend/studio.html'),
+        world: r('frontend/world.html'),
         // behind-flag(라이브 미노출) — 빌드 실증만, 링크 노출 아님.
-        builder: r('web/builder.html'),
-        visit: r('web/visit.html'),
+        builder: r('frontend/builder.html'),
+        visit: r('frontend/visit.html'),
         // [실험] GLB 공간 워크스루 — 감독이 "어떤 느낌일지" 보려는 미리보기. 라이브 미술관과 완전 분리,
         // 어디에도 링크하지 않는다. 반입 판정 전이므로 이 페이지의 존재가 채택을 뜻하지 않는다.
-        'lab-glb': r('web/lab-glb.html'),
+        'lab-glb': r('frontend/lab-glb.html'),
         // [실험] 오픈월드 커널 재작성 — 라이브 world.html과 완전 분리. 어디에도 링크하지
         // 않으며, 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서지 채택이 아니다.
-        world2: r('web/world2.html'),
+        world2: r('frontend/world2.html'),
       },
       output: {
         manualChunks(id) {

@@ -5,8 +5,8 @@
 // 갑자기 사라진다 — 진행바가 없는 것보다 나쁘다(사용자는 멈춘 걸로 읽는다).
 
 import { describe, it, expect } from 'vitest';
-import { runBoot, waitUntil, type BootReport } from '../web/js/world2/boot.js';
-import type { BootStage } from '../web/js/world2/decide/boot.js';
+import { runBoot, waitUntil, type BootReport } from '../frontend/js/world2/boot.js';
+import type { BootStage } from '../frontend/js/world2/decide/boot.js';
 
 /** 양보 횟수를 세는 가짜 — 실제로는 rAF + 매크로태스크 */
 function harness() {

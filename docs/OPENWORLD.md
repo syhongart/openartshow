@@ -1,6 +1,6 @@
 # 오픈월드 로드맵 — 파셀 그리드 · 지속 세계 · 직원 NPC
 
-> ⚠️ **내부 기획 문서.** behind-flag 실험(`web/world.html`)의 설계 SSOT.
+> ⚠️ **내부 기획 문서.** behind-flag 실험(`frontend/world.html`)의 설계 SSOT.
 > 배경: 감독이 "디센트럴랜드/복셀식 순수 지속 오픈월드"를 목표로 선택(무저장·무운영비·자기완결
 > 철학 완화 감수) + "우리 직원들(AI 팀·마스코트 아야모)을 NPC로 소환". 아키텍처 판단은 부팀장,
 > 확장 경로는 `docs/SCALING.md`와 짝 — 2026-07-19.
@@ -22,7 +22,7 @@
 - 배치(px,pz)는 **space 문서에 넣지 않는다** — 공간의 속성이 아니라 월드의 속성. 별도 월드 매니페스트 소관.
 
 ### 스키마 (SPACE_VERSION 불변)
-- `web/js/space.js`에 **가산 필드 하나**: `shell.entries` = 파셀 경계 개구부 방향 목록(`['north','south','east','west']` 부분집합).
+- `frontend/js/space.js`에 **가산 필드 하나**: `shell.entries` = 파셀 경계 개구부 방향 목록(`['north','south','east','west']` 부분집합).
   생략/빈배열 = 사방 폐쇄 = 기존 v2 문서 100% 동일(회귀 0). `p.y`/`p.featured`/`p.ar`과 동일한 옵션 필드 패턴.
 - **저작 불변식(1단계 매니페스트 착수 전 강제)**: 인접 파셀 쌍은 대응 방향 entries를 **함께** 선언해야 한다
   (A가 `east`면 동쪽 이웃 B는 `west`). `world.js clampPos`는 현재 파셀의 entries만으로 통과를 허용하므로,
@@ -30,9 +30,9 @@
 - 배치·발행은 v1은 정적 매니페스트, v3(지속백엔드)에서 DB 소관.
 
 ### 렌더 (다중 셸 스트리밍)
-- `web/js/space-render.js` `buildSpaceGroup`은 이미 자기완결 Group을 반환 → 파셀마다 호출해 월드 오프셋에 배치.
+- `frontend/js/space-render.js` `buildSpaceGroup`은 이미 자기완결 Group을 반환 → 파셀마다 호출해 월드 오프셋에 배치.
   가산: `shell.entries` 방향에 **문틀(좌우 세그먼트+상단 인방)** 개구부, `opts.shellOnly`(원거리/대각 파셀 임포스터 — `ART_SCREEN_CAP=80`이 방당이므로 스트리밍 시 필수).
-- `web/js/world.js`(신규): `loaded: Map<"px,pz">` + 3×3 스트리밍(직교=풀디테일, 대각=shell). visit.js의 검증된
+- `frontend/js/world.js`(신규): `loaded: Map<"px,pz">` + 3×3 스트리밍(직교=풀디테일, 대각=shell). visit.js의 검증된
   이동·충돌을 파셀 다중으로 확장. `clampPos`가 개구부+이웃로드+문범위일 때만 경계 통과 허용(아니면 벽 clamp).
 
 ### 실시간 (2단계: 데모=단일 룸 / 확장=디스트릭트 샤딩)
@@ -54,7 +54,7 @@
 
 **결정적 이점: 클라이언트 결정론(무저장)으로 두면 백엔드·네트워크 0으로 전 단계에서 동작.**
 
-- **엔진 재사용**: 기존 `web/js/npc.js` `NpcCrowd`(상태기계 WALK/VIEW·회피 조향·작품 감상평·근접 인사·짝 대화)를
+- **엔진 재사용**: 기존 `frontend/js/npc.js` `NpcCrowd`(상태기계 WALK/VIEW·회피 조향·작품 감상평·근접 인사·짝 대화)를
   그대로 재사용. `artworks.js`의 `getViewingPose(art)`는 순수 함수라, space의 `artwork` 파츠를 art 포맷
   (`{pos, rotY, floorY, title, featured}`)으로 변환하면 계열 A 결합 없이 구동된다.
 - **직원 페르소나 주입**: `NpcCrowd` 생성자에 `opts.roster` 가산(미주입 시 기존 익명 관객, 회귀 0).
@@ -97,11 +97,11 @@
 스파이크 위에 **손저작 없는 100방 세계**를 얹었다. 방은 시드 절차생성(결정론=무저장 유지), 개구부는 격자 경계로 자동 대칭, 직원 10명을 중앙 로비에 소환. 동시 로드는 여전히 **3×3(9방)뿐**이라 부하는 스파이크와 동일.
 
 **파일**:
-- `web/js/world.js` — CELL 스칼라 → **cellX/cellZ**(비정사각 셀). medium(9×7) 통일 시 cellX=9/cellZ=7로 벽 정합(북벽 월드z `pz*7-3.5` = 북쪽 이웃 남벽). `opts.cell` 폴백 유지(스파이크 무회귀).
-- `web/js/world-gen.js`(신규) — `mulberry32`/`cellSeed`(정수 해시, 브라우저 무관 결정론), `computeEntries`(격자 경계 자동 대칭 — A.east ⟺ 이웃 B.west 구조적 보장), `genRoom`(마감 192조합 + rng 가구 + 15% 랜드마크 프리셋 방, 방당 파츠 ~10-15).
-- `web/world/manifest.json`(신규) — grid 10×10, cell{9,7}, seed, spawn[4,4], **NPC 10명**(아야모 + 팀장·부팀장·실행[정규직 handle] + 법무팀·보안담당자·디자이너·카피라이터·성능 전문가·리서처[계약직 역할명]). char는 결정론 위해 고정 chibi 문자열, remarks는 `{t}` 템플릿.
-- `web/world.html` — 하드코딩 → `fetch('./world/manifest.json')` → `genRoom` 100파셀 + home NPC 그룹핑 → `createWorld({cellX,cellZ})`. **미니맵 HUD**(현재 셀·NPC home·방문 셀) 추가.
-- `web/js/space-presets.js` — `northArt` export(world-gen 재사용).
+- `frontend/js/world.js` — CELL 스칼라 → **cellX/cellZ**(비정사각 셀). medium(9×7) 통일 시 cellX=9/cellZ=7로 벽 정합(북벽 월드z `pz*7-3.5` = 북쪽 이웃 남벽). `opts.cell` 폴백 유지(스파이크 무회귀).
+- `frontend/js/world-gen.js`(신규) — `mulberry32`/`cellSeed`(정수 해시, 브라우저 무관 결정론), `computeEntries`(격자 경계 자동 대칭 — A.east ⟺ 이웃 B.west 구조적 보장), `genRoom`(마감 192조합 + rng 가구 + 15% 랜드마크 프리셋 방, 방당 파츠 ~10-15).
+- `frontend/world/manifest.json`(신규) — grid 10×10, cell{9,7}, seed, spawn[4,4], **NPC 10명**(아야모 + 팀장·부팀장·실행[정규직 handle] + 법무팀·보안담당자·디자이너·카피라이터·성능 전문가·리서처[계약직 역할명]). char는 결정론 위해 고정 chibi 문자열, remarks는 `{t}` 템플릿.
+- `frontend/world.html` — 하드코딩 → `fetch('./world/manifest.json')` → `genRoom` 100파셀 + home NPC 그룹핑 → `createWorld({cellX,cellZ})`. **미니맵 HUD**(현재 셀·NPC home·방문 셀) 추가.
+- `frontend/js/space-presets.js` — `northArt` export(world-gen 재사용).
 
 **개구부 자동 대칭**: 100방 손저작 불가 → `computeEntries`가 격자 경계로 이웃 존재 방향을 산출해 `shell.entries`에 주입. "인접 쌍은 대응 방향 문을 함께 선언" 불변식(위 스키마 절)이 코드로 구조적 보장됨.
 
@@ -164,7 +164,7 @@
 
 `security-officer 29259bf` 지적 4건을 해소해 플래그 해제(라이브 노출)의 보안 선결을 마친다. **해제 자체는 감독·팀장 게이트** — 본 절은 준비만.
 
-1. **`'unsafe-inline'` 제거**: world.html 인라인 `<script type="module">`을 `web/js/world-boot.js` 신규 외부 모듈로 추출하고
+1. **`'unsafe-inline'` 제거**: world.html 인라인 `<script type="module">`을 `frontend/js/world-boot.js` 신규 외부 모듈로 추출하고
    `<script type="module" src="./js/world-boot.js">`로 로드 → CSP `script-src 'self'`만으로 동작(sha256 해시 대신 파일 분리 — 코드 변경마다 해시
    재계산 불필요, 유지보수 우위). module script는 기본 defer라 DOM 로드 후 실행·top-level await 정상. `style-src 'unsafe-inline'`는 유지(index.html 관행).
 2. **P2P IP 고지**: 입장 오버레이(`#enter`)에 1줄 — "동시 접속 데모는 P2P라 접속자 간 네트워크 주소가 노출될 수 있어요."(§6 담백 톤).
@@ -174,7 +174,7 @@
    **라이브 갤러리 슬러그로 사용 금지**(`world.js`가 `PEER_ROOM_ID + '-openworld'` 룸을 점유 — 동명 갤러리가 생기면 룸 충돌). 갤러리 발행은 저장소 커밋
    경유라 문서 게이트로 충분. 배포 전 스모크에 다음 assert를 추가:
    ```
-   node -e "const g=require('./web/galleries/index.json'); if(g.some(x=>x.id==='openworld')) throw new Error('openworld 예약어 충돌'); console.log('OK: openworld 예약 준수')"
+   node -e "const g=require('./frontend/galleries/index.json'); if(g.some(x=>x.id==='openworld')) throw new Error('openworld 예약어 충돌'); console.log('OK: openworld 예약 준수')"
    ```
 
 **헤드리스 QA(swiftshader)**: world.html 로드 정상(외부 모듈 top-level await) / CSP 위반 콘솔 에러 0 / 오버레이 P2P 고지 렌더 /

@@ -7,9 +7,9 @@
 // 사용자는 빈 3D 화면 앞에 남고, 그건 검은 화면보다 나쁘다(고쳐진 줄 알기 때문).
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { findLoading, LoadingView, slowNote } from '../web/js/world2/ui/loading.js';
-import { ROTATE_MS, FADE_MS, RICH_AFTER_MS } from '../web/js/world2/decide/loading-copy.js';
-import type { BootReport } from '../web/js/world2/boot.js';
+import { findLoading, LoadingView, slowNote } from '../frontend/js/world2/ui/loading.js';
+import { ROTATE_MS, FADE_MS, RICH_AFTER_MS } from '../frontend/js/world2/decide/loading-copy.js';
+import type { BootReport } from '../frontend/js/world2/boot.js';
 
 const MARKUP = `
   <div id="w2-loading">

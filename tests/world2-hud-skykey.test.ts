@@ -16,7 +16,7 @@
 // 방법이라, 리포트 조립이 깨지면 여기서 먼저 운다.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { attachHud, type HudSource } from '../web/js/world2/ui/hud.js';
+import { attachHud, type HudSource } from '../frontend/js/world2/ui/hud.js';
 
 function parts() {
   const mk = (id: string) => {

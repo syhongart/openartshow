@@ -1,4 +1,4 @@
-// web/js/ui-dom.ts — 저수준 DOM/CSS 헬퍼 (ui.js 분해 C-1 단계1)
+// frontend/js/ui-dom.ts — 저수준 DOM/CSS 헬퍼 (ui.js 분해 C-1 단계1)
 // 순수 무상태: el() DOM 빌더 + injectStyles() CSS-in-JS + GOLD 브랜드 상수.
 // ui.js에서 로직·값·CSS 텍스트 무변경으로 통째 이동(export만 추가, el에 최소 시그니처).
 // [리졸브] vite.config의 .js→.ts 폴백(감독 B안)이 소비자의 확장자 명시 .js import를

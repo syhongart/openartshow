@@ -15,11 +15,11 @@ import { ROOT, SITE_DIR } from './config.mjs';
 const ASSEMBLE_BASELINE_SH = `
 set -euo pipefail
 rm -rf "$OUT" && mkdir -p "$OUT/app"
-cp web/landing.html "$OUT/index.html"
-cp web/guide.html   "$OUT/guide.html"
-cp web/design.html  "$OUT/design.html"
-cp web/about.html   "$OUT/about.html"
-cp -r web/.          "$OUT/app/"
+cp frontend/landing.html "$OUT/index.html"
+cp frontend/guide.html   "$OUT/guide.html"
+cp frontend/design.html  "$OUT/design.html"
+cp frontend/about.html   "$OUT/about.html"
+cp -r frontend/.          "$OUT/app/"
 cp -r devlog team valuation "$OUT/"
 cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true
 touch "$OUT/.nojekyll"

@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   hash2, rngFrom, parcelLayout, kindsFor, maxPartsPerParcel,
   DEFAULT_LAYOUT, type PartKind, type PlacedPart,
-} from '../web/js/world2/decide/parcel-layout.js';
+} from '../frontend/js/world2/decide/parcel-layout.js';
 
 const at = (px: number, pz: number, tier: 'near' | 'mid' | 'far' = 'near') => parcelLayout(px, pz, tier);
 const only = (ps: PlacedPart[], k: PartKind) => ps.filter((p) => p.kind === k);
