@@ -17,6 +17,7 @@ import { PlayerSystem } from './systems/player.js';
 import { AdaptSystem } from './systems/adapt.js';
 import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
+import { attachTouchControls } from './ui/touch-controls.js';
 import { DEFAULT_LAYOUT, type PartKind } from './decide/parcel-layout.js';
 
 const CELL = 32;
@@ -203,6 +204,23 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   window.addEventListener('resize', onResize);
   const input = bindInput(canvas, player);
 
+  // 터치 조작. 터치 기기가 아니면 스스로 아무것도 하지 않는다(데스크톱에 조이스틱 안 뜸).
+  const stickBase = document.getElementById('w2-stick');
+  const stickKnob = document.getElementById('w2-stick-knob');
+  const touch = (stickBase && stickKnob)
+    ? attachTouchControls(canvas, { base: stickBase, knob: stickKnob }, {
+      setAxes: (x, z) => player.setAxes(x, z),
+      look: (yaw, pitch) => player.lookBy(yaw, pitch),
+    })
+    : { active: false, dispose() {} };
+  // 조작 안내는 입력 방식에 맞춘 것만 보여준다 — 모바일에서 "WASD"는 소음이다.
+  const hint = document.getElementById('w2-hint');
+  if (hint) {
+    hint.textContent = touch.active
+      ? '왼쪽을 밀어 이동 · 오른쪽을 쓸어 둘러보기'
+      : 'WASD·방향키로 이동 · 화면을 클릭하면 시선 조작 · Shift 달리기';
+  }
+
   // ── 진단 훅 ───────────────────────────────────────────────────────────────
   // behind-flag 검증 페이지 전용이다. 라이브(world.html)에는 없다.
   //
@@ -217,6 +235,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     stats: () => ({
       backend: adapter!.backend,
       order: kernel!.order,
+      // 플레이어 상태 — "조작이 실제로 이동으로 이어졌는가"를 재는 유일한 지점이다.
+      // 파셀 수만 봐서는 알 수 없다(정상 상태에서도 같은 값이다).
+      player: { ...player.position, ...player.angles },
       frame: adapter!.frameStats(),
       pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
       pools: pools!.stats(),
@@ -234,6 +255,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     dispose() {
       window.removeEventListener('resize', onResize);
       input.dispose();
+      touch.dispose();
       // non-null 단언을 쓰는 이유: 이 셋은 부팅 콜백 안에서 할당되는데, TS 제어흐름
       // 분석은 함수 내부 할당을 추적하지 않아 바깥에서는 여전히 null로 본다.
       // 여기는 부팅 성공(ok===true) 경로에서만 도달하므로 셋 다 반드시 존재한다.

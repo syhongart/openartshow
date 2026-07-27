@@ -30,14 +30,31 @@ export function moveDelta(
   let az = (input.back ? 1 : 0) - (input.forward ? 1 : 0);
   const len = Math.hypot(ax, az);
   if (!(len > 0)) return { dx: 0, dz: 0 };
+  // 키보드는 켜짐/꺼짐뿐이라 대각선을 길이 1로 **정규화**한다.
   ax /= len; az /= len;
+  return moveFromAxes(ax, az, yaw, speed, dt, input.fast);
+}
 
-  const s = speed * (input.fast ? 2.2 : 1) * dt;
+/**
+ * 축 값(-1~1) → 이동량. 조이스틱처럼 **크기가 의미 있는** 입력이 쓴다.
+ *
+ * 여기서는 정규화하지 않고 **클램프**한다. 정규화하면 살짝 민 조이스틱도 전속력이 되어
+ * 아날로그 조작이 무의미해진다. 반대로 클램프를 빼면 대각선이 √2배 빨라진다 —
+ * 두 가지를 동시에 피하는 지점이 "길이가 1을 넘을 때만 자른다"이다.
+ */
+export function moveFromAxes(
+  ax: number, az: number, yaw: number, speed: number, dt: number, fast = false,
+): { dx: number; dz: number } {
+  if (!Number.isFinite(ax) || !Number.isFinite(az)) return { dx: 0, dz: 0 };
+  const len = Math.hypot(ax, az);
+  if (!(len > 0)) return { dx: 0, dz: 0 };
+  const k = len > 1 ? 1 / len : 1; // 1 초과만 자른다(작은 기울임은 그대로 느리게)
+  const s = speed * (fast ? 2.2 : 1) * dt;
   const cos = Math.cos(yaw), sin = Math.sin(yaw);
   // yaw 회전 적용 — 카메라가 보는 방향이 "앞"이다.
   return {
-    dx: (ax * cos - az * sin) * s,
-    dz: (ax * sin + az * cos) * s,
+    dx: ((ax * k) * cos - (az * k) * sin) * s,
+    dz: ((ax * k) * sin + (az * k) * cos) * s,
   };
 }
 
@@ -71,6 +88,8 @@ export class PlayerSystem implements System {
   private readonly eye: number;
   private readonly apply?: PlayerOptions['applyCamera'];
   private input: MoveInput = { ...NO_INPUT };
+  /** 아날로그 축(조이스틱). 키보드 입력과 **합산하지 않고** 큰 쪽을 쓴다 */
+  private axes = { x: 0, z: 0 };
   /** 실제로 움직인 방향(스트리밍 look-ahead용). 멈추면 마지막 방향을 유지한다 */
   private moveDir = { x: 0, z: 0 };
 
@@ -86,14 +105,34 @@ export class PlayerSystem implements System {
     this.input = { ...this.input, ...input };
   }
 
-  /** 마우스/터치 델타(픽셀)를 시선에 반영한다. */
+  /** 조이스틱 축을 넣는다. x=우, z=앞(음수가 전진 — 화면 위로 민 것). */
+  setAxes(x: number, z: number): void {
+    this.axes.x = Number.isFinite(x) ? x : 0;
+    this.axes.z = Number.isFinite(z) ? z : 0;
+  }
+
+  /** 마우스 델타(픽셀)를 시선에 반영한다. 감도를 여기서 곱한다. */
   look(dx: number, dy: number, sensitivity = 0.0025): void {
-    this.yaw -= dx * sensitivity;
-    this.pitch = clampPitch(this.pitch - dy * sensitivity);
+    this.lookBy(-dx * sensitivity, -dy * sensitivity);
+  }
+
+  /**
+   * **라디안 델타**를 직접 더한다. 감도를 이미 적용한 호출자(터치 조작)가 쓴다 —
+   * `look()`에 넘기면 감도가 두 번 곱해진다.
+   */
+  lookBy(yawDelta: number, pitchDelta: number): void {
+    if (Number.isFinite(yawDelta)) this.yaw += yawDelta;
+    if (Number.isFinite(pitchDelta)) this.pitch = clampPitch(this.pitch + pitchDelta);
   }
 
   update(ctx: FrameCtx): void {
-    const d = moveDelta(this.input, this.yaw, this.speed, ctx.dt);
+    // 조이스틱이 기울어져 있으면 그것을 쓰고, 아니면 키보드를 쓴다. 둘을 더하지 않는
+    // 이유: 합산하면 키보드+조이스틱 동시 입력에서 길이가 2에 가까워져 클램프가 걸리고,
+    // 그 순간 조이스틱의 미세 조작이 통째로 무시된다.
+    const stick = Math.hypot(this.axes.x, this.axes.z);
+    const d = stick > 0
+      ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, this.speed, ctx.dt, this.input.fast)
+      : moveDelta(this.input, this.yaw, this.speed, ctx.dt);
     if (d.dx !== 0 || d.dz !== 0) {
       this.x += d.dx;
       this.z += d.dz;
@@ -106,8 +145,9 @@ export class PlayerSystem implements System {
   get position(): { x: number; z: number } { return { x: this.x, z: this.z }; }
   /** 이동 방향. 정지 중이면 시선 방향을 쓴다 — 서서 둘러볼 때 그쪽을 미리 올리려는 것 */
   get direction(): { x: number; z: number } {
-    const moving = this.input.forward || this.input.back || this.input.left || this.input.right;
-    return moving ? this.moveDir : facing(this.yaw);
+    const keys = this.input.forward || this.input.back || this.input.left || this.input.right;
+    const stick = Math.hypot(this.axes.x, this.axes.z) > 0;
+    return (keys || stick) ? this.moveDir : facing(this.yaw);
   }
   get angles(): { yaw: number; pitch: number } { return { yaw: this.yaw, pitch: this.pitch }; }
 }
