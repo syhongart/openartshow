@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, RIVER_HALF, SEA_Y,
 } from '../frontend/js/world2/decide/water.js';
-import { isCentralPlaza as isPlaza, GRID_MIN_X, GRID_MAX_X } from '../frontend/js/world2/decide/grid.js';
+import { isCentralPlaza as isPlaza, GRID_MIN_X, GRID_MAX_X, PLAZA_R } from '../frontend/js/world2/decide/grid.js';
 
 const CELL = 32;
 /** 세계의 바깥 가장자리(미터) — 격자에서 유도된다 */
@@ -40,8 +40,14 @@ describe('세계의 끝 — 격자 밖은 바다다', () => {
   it('강 중심선이 광장에 닿지 않는다 — 상수 셋의 합이 만드는 성질이라 못 박는다', () => {
     let minZ = Infinity;
     for (let x = -EDGE; x <= EDGE; x += 3) minZ = Math.min(minZ, riverCenterZ(x) - RIVER_HALF);
-    // 광장 반폭은 파셀 1칸(±CELL) — 2×2 이므로 중심에서 CELL 만큼이다
-    expect(minZ).toBeGreaterThan(CELL);
+    // ── 임계값을 광장에서 유도한다 ────────────────────────────────────────
+    // 예전엔 `CELL` 을 그대로 썼고 주석이 "2×2 이므로" 라 적고 있었다. 광장이 3×3 으로
+    // 커진 뒤에도 그 값이 안 따라와서, 실제 필요한 마진(1.5×CELL=48m)보다 느슨한
+    // 32m 를 재고 있었다. 결과적으로는 안전했지만(실측 56m) **임계값이 실제 불변식과
+    // 어긋난 채 남아 있는 것** 자체가 이 프로젝트가 세 번 겪은 값 미러링이다.
+    // 이제 PLAZA_R 에서 유도하므로 광장을 키우면 임계값이 따라온다.
+    const plazaHalf = (PLAZA_R + 0.5) * CELL;
+    expect(minZ).toBeGreaterThan(plazaHalf);
   });
 
   it('격자 밖은 전부 물이다', () => {
