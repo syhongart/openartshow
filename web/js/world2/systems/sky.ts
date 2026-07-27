@@ -86,58 +86,78 @@ function makeCloudTexture(size = 256): THREE.Texture {
   return tex;
 }
 
-const hexToVec = (h: number) => new THREE.Color(h);
+const hex = (h: number) => `#${h.toString(16).padStart(6, '0')}`;
 
 /**
- * 하늘 셰이더. 세로 그라디언트 + 지평선 헤이즈 + 태양(원판·헤일로)을 한 번에 그린다.
- * WebGL/WebGPU 양쪽에서 도는 GLSL은 `ShaderMaterial`로 쓴다.
+ * 하늘 텍스처를 캔버스에 굽는다 — 세로 그라디언트 + 지평선 헤이즈 + 태양(원판·헤일로).
+ *
+ * ── 왜 셰이더가 아니라 캔버스인가(실기기 사고) ──────────────────────────────
+ * 처음에는 `ShaderMaterial`(GLSL)로 그렸다. 헤드리스(WebGL)에서는 잘 보였는데 감독
+ * 실기기(iPhone·**WebGPU**)에서 하늘이 통째로 안 보였다. 원인은 three 빌드 자체에 있다 —
+ * `three.webgpu.js`에서 `ShaderMaterial`은 **재수출 목록에 한 번 나올 뿐 렌더 경로가 없다**
+ * (WebGL 빌드는 22곳에서 처리). WebGPURenderer는 NodeMaterial 기반이라 GLSL을 못 그린다.
+ *
+ * 이건 렌더러 어댑터를 만든 이유를 하늘에서 스스로 어긴 것이었다. 백엔드 차이는 한 곳에
+ * 가두기로 해놓고 백엔드 의존 재질을 그냥 썼다. 캔버스 텍스처는 두 백엔드에서 동일하게
+ * 동작하므로 이 축의 분기 자체가 사라진다 — 구름이 이미 쓰던 방식이다.
+ *
+ * UV 규약: three `SphereGeometry`는 v=1이 북극(위), v=0이 남극이다. 세로 그라디언트는
+ * 그 축을 그대로 따르고, 태양은 방향벡터를 (방위각, 고도) → (u, v)로 옮겨 찍는다.
  */
-function makeSkyMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
+function makeSkyTexture(w = 512, h = 512): THREE.Texture {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(cv); // 하늘 없이라도 죽지 않는다
+
+  // 세로 그라디언트. 캔버스 y=0이 텍스처 v=1(천정)이다.
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0.00, hex(SKY_ZENITH));
+  g.addColorStop(0.40, hex(SKY_UPPER));
+  g.addColorStop(0.78, hex(SKY_LOWER));
+  g.addColorStop(1.00, hex(HORIZON));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  // 도시 불빛 헤이즈 — 지평선 직전에만 얹고 심에서 다시 안개색으로 수렴한다.
+  const hz = ctx.createLinearGradient(0, h * 0.90, 0, h);
+  hz.addColorStop(0, 'rgba(36,31,28,0)');
+  hz.addColorStop(0.62, 'rgba(36,31,28,0.18)');
+  hz.addColorStop(1, 'rgba(36,31,28,0)');
+  ctx.fillStyle = hz;
+  ctx.fillRect(0, h * 0.90, w, h * 0.10);
+
+  // 태양 — 조명 방향에서 UV를 얻는다(해와 그림자가 어긋나지 않게).
+  const el = Math.asin(Math.max(-1, Math.min(1, SUN_DIR.y)));          // 고도
+  const az = Math.atan2(SUN_DIR.x, SUN_DIR.z);                          // 방위
+  const su = ((az / (Math.PI * 2)) + 0.5) * w;
+  const sv = (1 - (el / Math.PI + 0.5)) * h;                            // v=1이 위
+  const halo = ctx.createRadialGradient(su, sv, 0, su, sv, h * 0.22);
+  halo.addColorStop(0, 'rgba(201,143,90,0.42)');
+  halo.addColorStop(0.45, 'rgba(201,143,90,0.14)');
+  halo.addColorStop(1, 'rgba(201,143,90,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, w, h);
+  const core = ctx.createRadialGradient(su, sv, 0, su, sv, h * 0.035);
+  core.addColorStop(0, 'rgba(255,233,196,0.95)');
+  core.addColorStop(0.7, 'rgba(255,233,196,0.55)');
+  core.addColorStop(1, 'rgba(255,233,196,0)');
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, w, h);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/** 하늘 재질. 백엔드 분기 없음 — 두 렌더러에서 같은 코드가 돈다. */
+function makeSkyMaterial(): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    map: makeSkyTexture(),
     side: THREE.BackSide,
     depthWrite: false,
-    // 안개 함정 — 켜면 돔 전체가 지평선색으로 뭉개진다.
+    // 안개 함정 — 켜면 돔 전체가 지평선색으로 뭉개진다(디자이너 지적).
     fog: false,
-    uniforms: {
-      uZenith: { value: hexToVec(SKY_ZENITH) },
-      uUpper: { value: hexToVec(SKY_UPPER) },
-      uLower: { value: hexToVec(SKY_LOWER) },
-      uHorizon: { value: hexToVec(HORIZON) },
-      uHaze: { value: hexToVec(HAZE) },
-      uSunDir: { value: SUN_DIR.clone() },
-      uSunCore: { value: hexToVec(SUN_CORE) },
-      uSunHalo: { value: hexToVec(SUN_HALO) },
-    },
-    vertexShader: `
-      varying vec3 vDir;
-      void main() {
-        vDir = normalize(position);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 uZenith, uUpper, uLower, uHorizon, uHaze, uSunCore, uSunHalo;
-      uniform vec3 uSunDir;
-      varying vec3 vDir;
-      void main() {
-        vec3 d = normalize(vDir);
-        // t: 0=천정, 1=지평선. 지평선 아래도 지평선색으로 둔다(바닥은 지면이 덮는다).
-        float t = clamp(1.0 - d.y, 0.0, 1.0);
-        vec3 col = mix(uZenith, uUpper, smoothstep(0.0, 0.40, t));
-        col = mix(col, uLower, smoothstep(0.40, 0.78, t));
-        col = mix(col, uHorizon, smoothstep(0.78, 1.0, t));
-        // 도시 불빛 헤이즈 — 방위각 독립, 지평선 직전에만 얹고 심에서 다시 수렴한다.
-        float haze = smoothstep(0.90, 0.985, t) * (1.0 - smoothstep(0.985, 1.0, t));
-        col = mix(col, uHaze, haze * 0.18);
-        // 태양 — 원판과 헤일로. 별도 지오메트리 없이 방향 내적으로만 그린다.
-        float c = max(dot(d, normalize(uSunDir)), 0.0);
-        float core = smoothstep(0.99926, 0.99954, c);       // 반경 ≈2.2°
-        float halo = pow(smoothstep(0.974, 1.0, c), 2.0);   // 반경 ≈13°
-        col += uSunHalo * halo * 0.25;                       // 밝기 상한(글로우 남용 방지)
-        col = mix(col, uSunCore, core * 0.9);
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `,
   });
 }
 
@@ -241,7 +261,9 @@ export class SkySystem implements System {
   dispose(): void {
     this.group.remove(this.dome, this.clouds);
     this.dome.geometry.dispose();
-    (this.dome.material as THREE.Material).dispose();
+    const dm = this.dome.material as THREE.MeshBasicMaterial;
+    dm.map?.dispose();
+    dm.dispose();
     this.clouds.geometry.dispose();
     const m = this.clouds.material as THREE.MeshBasicMaterial;
     m.map?.dispose();
