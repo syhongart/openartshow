@@ -34,6 +34,7 @@ declare module 'three/webgpu' {
   export class InstancedBufferAttribute extends Base { constructor(a: any, itemSize: number); }
   export class Texture extends Base {}
   export class DirectionalLight extends Base {}
+  export class HemisphereLight extends Base { constructor(...a: any[]); }
   export class Color extends Base { constructor(...a: any[]); }
   export class Matrix4 extends Base {}
   export class Quaternion extends Base {}

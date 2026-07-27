@@ -67,6 +67,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let adapt: AdaptSystem | null = null;
   let builder: PooledParcelBuilder | null = null;
   let sky: SkySystem | null = null;
+  // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
+  let sun: THREE.DirectionalLight | null = null;
+  let hemi: THREE.HemisphereLight | null = null;
   let lastTri = 0;
 
   // 성능 HUD. 모바일에는 콘솔이 없으므로 화면 표시 + 클립보드 복사가 실기기 수치를 받는
@@ -137,12 +140,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
 
         // 조명은 **개수 고정**이다. 라이트 풀 처방이 프로그램 캐시를 10→12 상수로 묶어
         // 프레임타임 총량을 21,114ms → 2,253ms로 줄인 그 원리를 여기서도 지킨다.
-        const sun = new THREE.DirectionalLight(0xffe9c4, 2.2);
-        sun.position.set(60, 120, 40);
-        sun.castShadow = true;
-        sun.shadow.mapSize.set(1024, 1024);
-        scene.add(sun);
-        scene.add(new THREE.HemisphereLight(0x8fa6d8, 0x1b2030, 1.1));
+        //
+        // 색·강도는 초기값일 뿐이다 — `sky.js`가 시간대·날씨에 따라 직접 제어한다(주입 대상).
+        const dir = new THREE.DirectionalLight(0xffe9c4, 2.2);
+        dir.position.set(60, 120, 40);
+        dir.castShadow = true;
+        dir.shadow.mapSize.set(1024, 1024);
+        scene.add(dir);
+        sun = dir;
+        hemi = new THREE.HemisphereLight(0x8fa6d8, 0x1b2030, 1.1);
+        scene.add(hemi);
       },
 
       pools: () => {
@@ -166,9 +173,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 봉인 — 이후 풀 생성은 예외다. 개수 불변식의 집행 지점.
         pools.seal();
 
-        // 하늘 — 돔 1 + 구름 1 = 드로우콜 2. 여기서 만들면 예열 단계가 이 파이프라인까지
-        // 함께 굽는다(세션 중 첫 등장으로 미루면 그게 곧 스파이크다).
-        sky = new SkySystem(scene, () => player.position);
+        // 하늘 — 라이브 오픈월드의 `sky.js`를 그대로 쓴다(systems/sky.ts 주석 참고).
+        // 여기서 만들면 예열 단계가 하늘 파이프라인까지 함께 굽는다(세션 중 첫 등장으로
+        // 미루면 그게 곧 스파이크다).
+        sky = new SkySystem(
+          scene,
+          adapter!.renderer,
+          sun!,
+          hemi!,
+          () => ({ x: player.position.x, z: player.position.z }),
+        );
       },
 
       warmup: async (report, yieldFrame) => {
