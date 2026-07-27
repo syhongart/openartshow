@@ -6,8 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  cloudLayout, driftedX, driftedZ, wrap, skyColorAt, mixHex, validStops,
-  CLOUD_FIELD, DEFAULT_CLOUDS, type SkyStop,
+  cloudLayout, cloudTint, driftedX, driftedZ, wrap, skyColorAt, mixHex, validStops,
+  CLOUD_FIELD, DEFAULT_CLOUDS, type CloudSpec, type SkyStop,
 } from '../web/js/world2/decide/sky.js';
 
 describe('cloudLayout — 결정론적 배치', () => {
@@ -164,5 +164,62 @@ describe('mixHex', () => {
 
   it('범위 밖 계수를 클램프한다', () => {
     expect(mixHex(0x000000, 0xffffff, 9)).toBe(0xffffff);
+  });
+});
+
+// ── cloudTint ────────────────────────────────────────────────────────────────
+// 이 함수가 생긴 이유가 곧 이 테스트가 있는 이유다. `cloudLayout`이 구름마다 `alpha`를
+// 계산해 뒀는데 집행 쪽이 그 값을 **한 번도 읽지 않아서** 40장이 전부 최대 불투명으로
+// 겹쳐 그려졌고, 감독이 실기기에서 "노이즈가 많다"고 보고했다. 계산된 값이 소비되는지는
+// 눈으로 코드를 봐도 잘 안 보인다 — 그래서 소비를 여기서 강제한다.
+describe('cloudTint', () => {
+  const spec = (y: number, alpha: number): CloudSpec =>
+    ({ x: 0, z: 0, y, w: 100, h: 50, ry: 0, alpha });
+
+  const BASE = 0x1b2030, RIM = 0xe8c9a0, HORIZON = 0x0b0d12;
+  const tint = (y: number, a: number) => cloudTint(spec(y, a), BASE, RIM, HORIZON, 160, 260);
+
+  const lum = (c: number) =>
+    0.2126 * ((c >> 16) & 255) + 0.7152 * ((c >> 8) & 255) + 0.0722 * (c & 255);
+
+  it('alpha가 낮을수록 지평선색에 가까워진다 — 이것이 "옅다"의 구현이다', () => {
+    const solid = tint(200, 1);
+    const faint = tint(200, 0.2);
+    // 옅은 쪽이 지평선색에 더 가깝다.
+    expect(Math.abs(lum(faint) - lum(HORIZON))).toBeLessThan(Math.abs(lum(solid) - lum(HORIZON)));
+  });
+
+  it('alpha=0이면 정확히 지평선색 — 완전히 사라진다', () => {
+    expect(tint(200, 0)).toBe(HORIZON);
+  });
+
+  it('alpha가 결과를 실제로 바꾼다 — 값이 무시되면 이 테스트가 깨진다', () => {
+    expect(tint(200, 1)).not.toBe(tint(200, 0.5));
+  });
+
+  it('고도가 높을수록 밝다 — 햇빛을 더 받은 인상', () => {
+    expect(lum(tint(260, 1))).toBeGreaterThan(lum(tint(160, 1)));
+  });
+
+  it('고도가 범위를 벗어나도 클램프된다', () => {
+    expect(tint(9999, 1)).toBe(tint(260, 1));
+    expect(tint(-9999, 1)).toBe(tint(160, 1));
+  });
+
+  it('alpha가 범위를 벗어나도 클램프된다', () => {
+    expect(tint(200, 5)).toBe(tint(200, 1));
+    expect(tint(200, -5)).toBe(HORIZON);
+  });
+
+  it('NaN이 들어와도 색을 낸다 — 하늘이 검게 죽지 않는다', () => {
+    expect(Number.isFinite(tint(NaN, 1))).toBe(true);
+    expect(Number.isFinite(tint(200, NaN))).toBe(true);
+  });
+
+  it('cloudLayout이 만든 alpha 범위 전체가 지평선색과 구분된다', () => {
+    // 배치가 실제로 내놓는 값으로 확인한다 — 합성 입력만 보면 통합 지점이 비어도 통과한다.
+    for (const c of cloudLayout({ ...DEFAULT_CLOUDS, minY: 160, maxY: 260 })) {
+      expect(cloudTint(c, BASE, RIM, HORIZON, 160, 260)).not.toBe(HORIZON);
+    }
   });
 });

@@ -143,6 +143,38 @@ export function skyColorAt(stops: readonly SkyStop[], t: number): number {
   return stops[stops.length - 1].color;
 }
 
+/**
+ * 구름 한 장의 최종 색. **인스턴스별 투명도를 색으로 옮긴다.**
+ *
+ * `MeshBasicMaterial.opacity`는 재질 전역이라 구름 40장에 각각 다른 투명도를 줄 수 없다.
+ * 투명도별로 재질을 나누면 개수 불변식이 깨진다(파이프라인 조합 증가) — 그건 우리가 없애려는
+ * 바로 그것이다. 그래서 다른 길을 쓴다: 알파 블렌딩에서 **배경색에 가까운 픽셀은 겹쳐도 눈에
+ * 띄지 않는다.** 옅어야 할 구름은 색을 지평선색 쪽으로 당긴다. 보이는 결과는 "옅다"와 같고
+ * 재질은 하나 그대로다.
+ *
+ * 이 함수가 생긴 경위: `cloudLayout`이 `alpha`를 계산해 두었는데 집행 쪽(systems/sky.ts)이
+ * 그 값을 **한 번도 읽지 않았다.** 40장이 전부 최대 불투명으로 겹쳐 그려져 하늘이 얼룩졌고
+ * 감독이 실기기에서 "노이즈가 많다"고 보고했다. 판정과 집행을 나눈 구조에서는 이렇게 값이
+ * 계산만 되고 소비되지 않는 누락이 생길 수 있다 — 그래서 색 결정을 순수 함수로 끌어내려
+ * 테스트가 소비를 강제하게 만든다.
+ */
+export function cloudTint(
+  spec: CloudSpec,
+  base: number,
+  rim: number,
+  horizon: number,
+  minY: number,
+  maxY: number,
+): number {
+  const span = Math.max(1e-6, maxY - minY);
+  const raw = Number.isFinite(spec.y) ? (spec.y - minY) / span : 0;
+  const t = Math.min(1, Math.max(0, raw));
+  // 높이 뜬 구름일수록 햇빛을 더 받은 인상 — 림 쪽으로 기울인다.
+  const lit = mixHex(base, rim, 0.35 + t * 0.4);
+  const a = Number.isFinite(spec.alpha) ? Math.min(1, Math.max(0, spec.alpha)) : 1;
+  return mixHex(lit, horizon, 1 - a);
+}
+
 /** 두 hex 색을 선형 혼합. 감마는 무시한다(하늘 그라디언트에서는 차이가 눈에 띄지 않는다). */
 export function mixHex(a: number, b: number, k: number): number {
   const t = Math.min(1, Math.max(0, k));

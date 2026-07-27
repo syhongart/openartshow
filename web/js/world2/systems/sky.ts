@@ -13,17 +13,29 @@
 
 import * as THREE from 'three/webgpu';
 import type { FrameCtx, System } from '../kernel.js';
-import { cloudLayout, driftedX, driftedZ, DEFAULT_CLOUDS, type CloudSpec } from '../decide/sky.js';
+import {
+  cloudLayout, cloudTint, driftedX, driftedZ, DEFAULT_CLOUDS, type CloudSpec,
+} from '../decide/sky.js';
 
 /** 안개·클리어색과 **동일해야 하는** 지평선 색. 이 값이 어긋나면 경계선이 보인다. */
 export const HORIZON = 0x0b0d12;
 
-/** 하늘 그라디언트 — 디자이너 4단(t=0 천정 → t=1 지평선) */
-export const SKY_ZENITH = 0x09090c;
-export const SKY_UPPER = 0x14151a;  // --bg-dark 토큰 그대로
-export const SKY_LOWER = 0x0f1015;
-/** 지평선 헤이즈(도시 불빛 산란) — 램프 골드 계열, 최대 18% */
-export const HAZE = 0x241f1c;
+/**
+ * 하늘 그라디언트 — 디자이너 4단(t=0 천정 → t=1 지평선). 시간대는 **야간 맑음**이다
+ * (커밋 `318addf`에서 감독이 오픈월드 기본 하늘로 확정한 값을 world2가 잇는다).
+ *
+ * 첫 판에서 `SKY_UPPER`가 `--bg-dark`(#14151A) **UI 토큰을 그대로** 쓰고 있었다. UI 다크
+ * 배경으로 만든 색이라 애초에 하늘이 될 수 없는 값이었고, 가장 밝은 지점조차 배경색과
+ * 채널당 8~9(3.5%)밖에 차이 나지 않아 폰에서 하늘이 배경에 묻혔다.
+ *
+ * 색상 축도 함께 옮겼다 — 중립 회색이 아니라 인디고/더스티블루다. 밤하늘은 순검정이 아니라
+ * 남색으로 지각되므로, 밝기뿐 아니라 색상으로도 "밤"을 말하게 한다.
+ */
+export const SKY_ZENITH = 0x0d1020;
+export const SKY_UPPER = 0x3a5480;  // 최대 밝기 — 배경 대비 휘도 약 27%p
+export const SKY_LOWER = 0x262636;
+/** 지평선 헤이즈(도시 불빛 산란) — 램프 골드 계열 */
+export const HAZE = 0x3a2f28;
 
 /** 태양 — 조명 방향에서 그대로 정규화(임의 재배치 금지) */
 export const SUN_DIR = new THREE.Vector3(60, 120, 40).normalize();
@@ -34,6 +46,10 @@ export const SUN_HALO = 0xc98f5a;
 export const CLOUD_RIM = 0xe8c9a0;
 export const CLOUD_BASE = 0x1b2030;
 
+/** 구름 고도 범위(디자이너 값). 배치와 색 보간이 **같은 값**을 봐야 하므로 상수로 둔다. */
+const CLOUD_MIN_Y = 160;
+const CLOUD_MAX_Y = 260;
+
 export interface SkyOptions {
   /** 돔 반경. 카메라 far(1200)보다 작아야 잘리지 않는다 */
   radius?: number;
@@ -43,6 +59,30 @@ export interface SkyOptions {
   windZ?: number;
   /** 구름이 도는 셸의 지름 */
   field?: number;
+}
+
+/**
+ * 캔버스를 텍스처로 감싼다. **색공간을 반드시 지정한다.**
+ *
+ * 빠뜨리면 three가 캔버스 데이터를 선형으로 취급하고 출력 단계에서 sRGB로 다시 인코딩한다.
+ * 어두운 값일수록 이 이중 변환이 크게 벌어진다 — 소스 (9,9,12)가 화면에서 (53,53,60) 근처로
+ * 나온다(헤드리스 상단 평균 실측 60,60,69로 확인).
+ *
+ * 밝아지는 것보다 나쁜 건 **계조가 벌어지는 것**이다. 인접 계조 1 차이가 화면에서 여러 계조로
+ * 확대되면서 그라디언트의 띠와 캔버스가 자체적으로 섞는 디더가 함께 증폭된다. 감독이 실기기에서
+ * 본 "노이즈"가 이것이었고, 같은 오류가 하늘을 3배 밝혀 대비 부족을 가려주고 있기도 했다 —
+ * 그래서 이 수정은 팔레트 재조정과 반드시 함께 가야 한다(따로 고치면 하늘이 도로 안 보인다).
+ *
+ * 밉맵은 끈다. 하늘 돔과 구름은 항상 확대되어 그려지므로 축소용 밉맵 체인이 쓰이지 않는다.
+ */
+function toTexture(cv: HTMLCanvasElement): THREE.Texture {
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 /**
@@ -59,7 +99,7 @@ function makeCloudTexture(size = 256): THREE.Texture {
   if (!ctx) {
     // 2D 컨텍스트를 못 얻는 환경이 실제로 있다(메모리 압박·헤드리스 일부).
     // 구름 없이라도 하늘은 떠야 하므로 빈 텍스처로 물러선다.
-    return new THREE.CanvasTexture(cv);
+    return toTexture(cv);
   }
   ctx.clearRect(0, 0, size, size);
   const blobs = [
@@ -81,12 +121,20 @@ function makeCloudTexture(size = 256): THREE.Texture {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, size, size);
   }
-  const tex = new THREE.CanvasTexture(cv);
-  tex.needsUpdate = true;
-  return tex;
+  return toTexture(cv);
 }
 
 const hex = (h: number) => `#${h.toString(16).padStart(6, '0')}`;
+
+/**
+ * hex 상수에서 캔버스용 rgba 문자열을 만든다.
+ *
+ * 알파가 필요한 자리에 `'rgba(36,31,28,0.18)'`처럼 숫자를 손으로 적어 두면 위쪽 상수를 바꿔도
+ * 반영되지 않는다 — 실제로 이 파일에서 헤이즈 색이 그렇게 굳어 있었다. 값 미러링 금지(SSOT
+ * 경유)는 색에도 그대로 적용된다.
+ */
+const rgba = (h: number, a: number) =>
+  `rgba(${(h >> 16) & 255},${(h >> 8) & 255},${h & 255},${a})`;
 
 /**
  * 하늘 텍스처를 캔버스에 굽는다 — 세로 그라디언트 + 지평선 헤이즈 + 태양(원판·헤일로).
@@ -108,7 +156,7 @@ function makeSkyTexture(w = 512, h = 512): THREE.Texture {
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
-  if (!ctx) return new THREE.CanvasTexture(cv); // 하늘 없이라도 죽지 않는다
+  if (!ctx) return toTexture(cv); // 하늘 없이라도 죽지 않는다
 
   // 세로 그라디언트. 캔버스 y=0이 텍스처 v=1(천정)이다.
   const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -121,9 +169,9 @@ function makeSkyTexture(w = 512, h = 512): THREE.Texture {
 
   // 도시 불빛 헤이즈 — 지평선 직전에만 얹고 심에서 다시 안개색으로 수렴한다.
   const hz = ctx.createLinearGradient(0, h * 0.90, 0, h);
-  hz.addColorStop(0, 'rgba(36,31,28,0)');
-  hz.addColorStop(0.62, 'rgba(36,31,28,0.18)');
-  hz.addColorStop(1, 'rgba(36,31,28,0)');
+  hz.addColorStop(0, rgba(HAZE, 0));
+  hz.addColorStop(0.62, rgba(HAZE, 0.24));
+  hz.addColorStop(1, rgba(HAZE, 0));
   ctx.fillStyle = hz;
   ctx.fillRect(0, h * 0.90, w, h * 0.10);
 
@@ -132,22 +180,21 @@ function makeSkyTexture(w = 512, h = 512): THREE.Texture {
   const az = Math.atan2(SUN_DIR.x, SUN_DIR.z);                          // 방위
   const su = ((az / (Math.PI * 2)) + 0.5) * w;
   const sv = (1 - (el / Math.PI + 0.5)) * h;                            // v=1이 위
+  // 하늘 몸통이 밝아진 만큼 헤일로도 함께 올린다 — 안 그러면 태양이 하늘에 묻힌다.
   const halo = ctx.createRadialGradient(su, sv, 0, su, sv, h * 0.22);
-  halo.addColorStop(0, 'rgba(201,143,90,0.42)');
-  halo.addColorStop(0.45, 'rgba(201,143,90,0.14)');
-  halo.addColorStop(1, 'rgba(201,143,90,0)');
+  halo.addColorStop(0, rgba(SUN_HALO, 0.46));
+  halo.addColorStop(0.45, rgba(SUN_HALO, 0.17));
+  halo.addColorStop(1, rgba(SUN_HALO, 0));
   ctx.fillStyle = halo;
   ctx.fillRect(0, 0, w, h);
   const core = ctx.createRadialGradient(su, sv, 0, su, sv, h * 0.035);
-  core.addColorStop(0, 'rgba(255,233,196,0.95)');
-  core.addColorStop(0.7, 'rgba(255,233,196,0.55)');
-  core.addColorStop(1, 'rgba(255,233,196,0)');
+  core.addColorStop(0, rgba(SUN_CORE, 0.95));
+  core.addColorStop(0.7, rgba(SUN_CORE, 0.55));
+  core.addColorStop(1, rgba(SUN_CORE, 0));
   ctx.fillStyle = core;
   ctx.fillRect(0, 0, w, h);
 
-  const tex = new THREE.CanvasTexture(cv);
-  tex.needsUpdate = true;
-  return tex;
+  return toTexture(cv);
 }
 
 /** 하늘 재질. 백엔드 분기 없음 — 두 렌더러에서 같은 코드가 돈다. */
@@ -183,6 +230,11 @@ export class SkySystem implements System {
   private readonly _p = new THREE.Vector3();
   private readonly _s = new THREE.Vector3();
   private readonly _up = new THREE.Vector3(0, 1, 0);
+  /**
+   * 구름 판을 수평으로 눕히는 고정 회전. 매 프레임 구름마다 `new Matrix4()`를 만들면
+   * 초당 2,400개가 쓰레기가 된다 — 값이 상수이므로 한 번 만들어 돌려쓴다.
+   */
+  private readonly _flat = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
 
   constructor(parent: THREE.Object3D, getCamera: () => { x: number; z: number }, opts: SkyOptions = {}) {
     this.getCamera = getCamera;
@@ -202,7 +254,7 @@ export class SkySystem implements System {
     this.specs = cloudLayout({
       ...DEFAULT_CLOUDS,
       count: opts.cloudCount ?? 40,
-      minY: 160, maxY: 260,     // 디자이너 값
+      minY: CLOUD_MIN_Y, maxY: CLOUD_MAX_Y,
       minSize: 60, maxSize: 140,
       field: this.field,
     });
@@ -221,13 +273,10 @@ export class SkySystem implements System {
     this.clouds.name = 'world2:clouds';
 
     // 색은 재질이 아니라 instanceColor로 준다 — 파이프라인 조합을 늘리지 않는다.
-    const rim = new THREE.Color(CLOUD_RIM);
-    const baseC = new THREE.Color(CLOUD_BASE);
+    // 투명도도 색에 실어 보낸다(cloudTint 주석 참고) — 재질은 끝까지 하나다.
     const tmp = new THREE.Color();
     for (let i = 0; i < this.specs.length; i++) {
-      // 높이 뜬 구름일수록 햇빛을 더 받은 인상 — 림 쪽으로 기울인다.
-      const t = (this.specs[i].y - 160) / Math.max(1, 260 - 160);
-      tmp.copy(baseC).lerp(rim, 0.35 + t * 0.4);
+      tmp.setHex(cloudTint(this.specs[i], CLOUD_BASE, CLOUD_RIM, HORIZON, CLOUD_MIN_Y, CLOUD_MAX_Y));
       this.clouds.setColorAt(i, tmp);
     }
     if (this.clouds.instanceColor) this.clouds.instanceColor.needsUpdate = true;
@@ -252,7 +301,7 @@ export class SkySystem implements System {
       this._s.set(c.w, c.h, 1);
       this._m.compose(this._p, this._q, this._s);
       // 수평으로 눕히기(X축 -90°)를 회전에 합성한다.
-      this._m.multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+      this._m.multiply(this._flat);
       this.clouds.setMatrixAt(i, this._m);
     }
     this.clouds.instanceMatrix.needsUpdate = true;
