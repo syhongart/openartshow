@@ -538,21 +538,64 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
   rain.visible = false; rain.frustumCulled = false; scene.add(rain);
 
   const S_COUNT = soft ? 260 : 700;
-  const snowGeo = track(new THREE.BufferGeometry());
+  // 낙하 물리 상태(월드 좌표). 예전에는 이 배열이 그대로 BufferGeometry의 position
+  // attribute였으나, 아래 사유로 InstancedMesh로 바뀌면서 순수 상태 배열이 됐다.
   const sPos = new Float32Array(S_COUNT * 3); const sSeed = new Float32Array(S_COUNT);
   { const r = seeded(78); for (let i = 0; i < S_COUNT; i++) { sPos[i * 3] = (r() - 0.5) * RBOX.x; sPos[i * 3 + 1] = r() * RBOX.y; sPos[i * 3 + 2] = (r() - 0.5) * RBOX.z; sSeed[i] = r() * 6.28; } }
-  snowGeo.setAttribute('position', new THREE.BufferAttribute(sPos, 3));
-  // 원형 스프라이트 — 기본 Points는 사각 픽셀로 그려져 눈송이가 네모로 보인다
+
+  // 원형 스프라이트 — 사각 텍셀 그대로면 눈송이가 네모로 보인다
   const snowSprite = (() => {
     const c = document.createElement('canvas'); c.width = c.height = 32;
     const x = c.getContext('2d');
     const g = x.createRadialGradient(16, 16, 0, 16, 16, 16);
     g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.55, 'rgba(255,255,255,0.8)'); g.addColorStop(1, 'rgba(255,255,255,0)');
     x.fillStyle = g; x.beginPath(); x.arc(16, 16, 16, 0, 7); x.fill();
-    return track(new THREE.CanvasTexture(c));
+    const t = track(new THREE.CanvasTexture(c)); t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
-  const snow = new THREE.Points(snowGeo, track(new THREE.PointsMaterial({ color: 0xffffff, size: 0.16, map: snowSprite, transparent: true, opacity: 0.9, depthWrite: false })));
+
+  // ── 눈은 Points가 아니라 InstancedMesh다 (2026-07-27, 감독 실기기 발견) ──────
+  // 예전에는 `THREE.Points` + `PointsMaterial({ size: 0.16 })`이었다. WebGL에서는 잘
+  // 보였지만 **WebGPU에서는 눈이 통째로 안 보였다.**
+  //
+  // 원인은 백엔드 차이다. WGSL에는 `gl_PointSize`에 대응하는 수단이 없고, WebGPU는
+  // point-list 토폴로지의 점을 **항상 1픽셀**로 그린다. three의 `PointsNodeMaterial`도
+  // `sizeNode`만 볼 뿐 `size`를 읽는 경로가 없다(`materialPointSize` 0건). 즉 0.16이
+  // 조용히 무시되어, DPR 3 화면에서 1픽셀 흰 점 = 사실상 안 보이는 상태였다.
+  //
+  // 비(`LineSegments`)는 선분 자체에 길이가 있어 멀쩡했고, 그래서 "비는 되는데 눈만
+  // 안 된다"로 나타났다.
+  //
+  // 교차 평면인 이유: 주입 API에 camera가 없어 빌보드(카메라를 향해 돌리기)를 만들 수
+  // 없다. 평면 2장을 90°로 교차시키면 어느 각도에서 봐도 한쪽이 보인다. 눈송이는
+  // 화면에서 몇 픽셀이라 삼각형 4개/입자는 무시할 만하다.
+  const snowGeo = track((() => {
+    const g = new THREE.BufferGeometry();
+    const h = 0.5;
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      -h, -h, 0, h, -h, 0, h, h, 0, -h, h, 0,   // XY 평면
+      0, -h, -h, 0, -h, h, 0, h, h, 0, h, -h,   // YZ 평면
+    ]), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+      0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1,
+    ]), 2));
+    g.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+    return g;
+  })());
+  /** 눈송이 한 변(월드 미터). 옛 `size: 0.16`은 화면 픽셀 스케일이라 그대로 못 쓴다. */
+  const FLAKE = 0.075;
+  // InstancedMesh 자체도 track한다 — Points와 달리 instanceMatrix 버퍼를 소유하므로
+  // 지오/재질만 반납하면 그 버퍼가 남는다.
+  const snow = track(new THREE.InstancedMesh(snowGeo, track(new THREE.MeshBasicMaterial({
+    color: 0xffffff, map: snowSprite, transparent: true, opacity: 0.9,
+    depthWrite: false, side: THREE.DoubleSide,
+  })), S_COUNT));
+  snow.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   snow.visible = false; snow.frustumCulled = false; scene.add(snow);
+  // 인스턴스 행렬 조립용 재사용 객체 — 매 프레임 700개를 새로 만들지 않는다.
+  const _sM = new THREE.Matrix4();
+  const _sP = new THREE.Vector3();
+  const _sQ = new THREE.Quaternion();
+  const _sS = new THREE.Vector3(FLAKE, FLAKE, FLAKE);
 
   // ── 무지개 ⑥ — 링 지오메트리(planar UV) × 방사형 스펙트럼 텍스처 ──
   // 주 무지개 + 알렉산더 밴드(어두운 사이 띠) + 색 역순 2차 무지개를 그라디언트 한 장·메시 1개로.
@@ -719,15 +762,14 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     // 비: LineSegments(선분당 2정점) — 앞쪽 N선분만 그린다(짝수 정점 보장).
     const rSeg = lite ? Math.floor(R_COUNT * LITE_PRECIP_MUL) : R_COUNT;
     rainGeo.setDrawRange(0, rSeg * 2);
-    // 눈: Points(정점당 1점).
-    const sN = lite ? Math.floor(S_COUNT * LITE_PRECIP_MUL) : S_COUNT;
-    snowGeo.setDrawRange(0, sN);
+    // 눈: InstancedMesh — 그리는 인스턴스 수를 줄인다(버퍼·물리는 전체 유지).
+    snow.count = lite ? Math.floor(S_COUNT * LITE_PRECIP_MUL) : S_COUNT;
   }
   function liteSnapshot() {
     return {
       lite,
       rainDraw: rainGeo.drawRange.count, rainMax: R_COUNT * 2,
-      snowDraw: snowGeo.drawRange.count, snowMax: S_COUNT,
+      snowDraw: snow.count, snowMax: S_COUNT,
       auroraOpacity: auroras[0].material.opacity,
       glintMul: lite ? LITE_GLINT_MUL : 1,
       twkMul: lite ? LITE_TWK_MUL : 1,
@@ -848,14 +890,21 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
       rain.position.set(pos.x, 0, pos.z);
     }
     if (snow.visible) {
-      const arr = snowGeo.attributes.position.array;
+      const arr = sPos;
       const fall = 2.1 * dt * state.precip;
+      // 물리는 전 입자를 굴린다(lite로 그리는 수를 줄여도 해제 시 즉시 정상 복원).
       for (let i = 0; i < S_COUNT; i++) {
         arr[i * 3 + 1] -= fall;
         arr[i * 3] += Math.sin(t * 1.3 + sSeed[i]) * dt * 0.5;
         if (arr[i * 3 + 1] < 0) arr[i * 3 + 1] += RBOX.y;
       }
-      snowGeo.attributes.position.needsUpdate = true;
+      // 그리는 수만 인스턴스 행렬에 반영한다(snow.count = draw-range 대응).
+      for (let i = 0; i < snow.count; i++) {
+        _sP.set(arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2]);
+        _sM.compose(_sP, _sQ, _sS);
+        snow.setMatrixAt(i, _sM);
+      }
+      snow.instanceMatrix.needsUpdate = true;
       snow.position.set(pos.x, 0, pos.z);
     }
     // 수면 빛반사 — 광원(밤=달) 방위로 관찰자 앞에 뻗는 띠. 잔물결 스크롤과 동조해 흐르는 느낌.

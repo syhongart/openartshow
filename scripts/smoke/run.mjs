@@ -225,6 +225,31 @@ function verifyLinks(pageResults, origin, basePath) {
 
 // ── 브라우저 기반 검사(4/5/6/A/B) 집계 ───────────────────────────────
 function aggregateBrowser(pageResults, origin) {
+  // ── 검사4-b: 날씨 코드가 **실제로 실행됐는가** ─────────────────────────
+  //
+  // 하늘 엔진의 기본 날씨는 clear다. 페이지를 띄우기만 하면 비·눈 코드는 한 프레임도
+  // 돌지 않으므로, 강수 관련 변경에 "콘솔 에러 0"을 근거로 쓰면 재지 않은 것을 통과로
+  // 적는 것이다(2026-07-27 실제 사고 — 검수관이 잡았다).
+  //
+  // 그래서 프로브가 밟은 날씨를 여기서 **명시적으로 센다.** 프로브 대상 페이지인데
+  // 아무것도 못 밟았으면(버튼 셀렉터 변경·패널 제거 등) FAIL이다 — 조용히 건너뛰면
+  // 이 검사 자체가 장식이 된다.
+  const probeTargets = LIVE_PAGES
+    .filter((s) => s.weatherProbe && (!s.viteOnly || IS_VITE))
+    .map((s) => s.name);
+  if (probeTargets.length) {
+    const done = pageResults.filter((p) => probeTargets.includes(p.name));
+    const empty = done.filter((p) => !(p.weatherProbed?.length));
+    if (empty.length || done.length !== probeTargets.length) {
+      record('4b', '날씨 코드 실행', 'FAIL',
+        `강수 코드를 실행하지 못한 페이지: ${empty.map((p) => p.name).join(', ') || '(페이지 자체 누락)'}`
+        + ' — 날씨 버튼 셀렉터가 바뀌었는지 확인. 이 상태의 "콘솔 에러 0"은 강수 코드에 대해 아무 근거가 아니다.');
+    } else {
+      record('4b', '날씨 코드 실행', 'PASS',
+        done.map((p) => `${p.name}=${p.weatherProbed.join('·')}`).join(' / '));
+    }
+  }
+
   // 검사4: 콘솔 에러 0
   const errAgg = pageResults.map((p) => ({
     name: p.name,

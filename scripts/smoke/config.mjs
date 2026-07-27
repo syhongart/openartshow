@@ -109,7 +109,7 @@ export const LIVE_PAGES = [
   // `cp -r web/. _site/app/` 부산물 사본(어떤 페이지도 링크 안 함)이라 검사하지 않는다.
   { name: 'about',             url: '/about.html',      webgl: false },
   // world: B-2b 정식 노출(sitemap 등재). WebGL 씬(top-level await manifest fetch).
-  { name: 'app/world',         url: '/app/world.html',  webgl: true },
+  { name: 'app/world',         url: '/app/world.html',  webgl: true, weatherProbe: true },
   // builder: studio 진입 카드로 링크된 라이브 페이지. WebGL 씬.
   { name: 'app/builder',       url: '/app/builder.html', webgl: true },
   // world2: behind-flag(무링크)지만 **검증 대상에는 넣는다.**
@@ -121,7 +121,7 @@ export const LIVE_PAGES = [
   //
   // vite 번들 전용(`three/webgpu`·`three/addons/*` import)이라 baseline 모드에서는
   // raw 직서빙으로 부팅되지 않는다 — 그래서 vite 모드에서만 검사한다.
-  { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true },
+  { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true, weatherProbe: true },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──
@@ -141,3 +141,6 @@ export const CHROMIUM_ARGS = [
 export const PAGE_TIMEOUT_MS = 30000; // goto 타임아웃
 export const WEBGL_WAIT_MS = 6000;    // 미술관 등 WebGL 씬 부팅 대기 (swiftshader 느림)
 export const REFLOW_WAIT_MS = 250;    // 뷰포트 변경 후 반응형 재배치 대기
+// 날씨 전환 후 강수 입자가 몇 프레임 갱신되도록 두는 시간. swiftshader가 ~4fps라
+// 넉넉히 잡아야 setMatrixAt 루프가 실제로 돈다(짧으면 코드를 안 재고 통과한다).
+export const WEATHER_PROBE_MS = 900;

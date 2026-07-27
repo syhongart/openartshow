@@ -9,6 +9,7 @@ import {
   PAGE_TIMEOUT_MS,
   WEBGL_WAIT_MS,
   REFLOW_WAIT_MS,
+  WEATHER_PROBE_MS,
   VIEWPORTS,
 } from './config.mjs';
 
@@ -75,6 +76,35 @@ export async function collectPage(browser, origin, pageSpec, urlPrefix = '') {
   }
   if (pageSpec.webgl) await page.waitForTimeout(WEBGL_WAIT_MS);
 
+  // ── 날씨 전환 프로브 ────────────────────────────────────────────────────
+  //
+  // 하늘 엔진(`sky.js`)의 기본 상태는 `weather:'clear'`다. 그래서 페이지를 띄우기만
+  // 해서는 **비·눈 코드가 단 한 프레임도 실행되지 않는다.** 강수 관련 변경을 하고
+  // "스모크 콘솔 에러 0"을 근거로 쓰면 그건 그 코드를 재지 않은 것이다 — 실제로
+  // 그렇게 통과시킨 적이 있다(2026-07-27, 눈을 Points→InstancedMesh로 바꾼 커밋을
+  // 검수관이 잡았다). 못 잰 것은 통과가 아니다.
+  //
+  // 여기서 보는 것은 **JS 런타임 예외**다(인덱스 초과·잘못된 인자·null 참조 등).
+  // 눈이 화면에 실제로 보이는지는 WebGPU 문제라 헤드리스로 검증할 수 없지만,
+  // 코드가 터지는지는 WebGL에서도 똑같이 잡힌다. 그 축은 여기서 닫는다.
+  //
+  // 버튼은 접힌 패널 안에 있어도 `.click()`은 DOM 호출이라 동작한다.
+  const weatherProbed = [];
+  if (pageSpec.weatherProbe) {
+    for (const w of ['rain', 'snow', 'overcast', 'clear']) {
+      const hit = await page.evaluate((weather) => {
+        const b = document.querySelector(`button[data-weather="${weather}"]`);
+        if (!b) return false;
+        b.click();
+        return true;
+      }, w).catch(() => false);
+      if (!hit) continue;
+      weatherProbed.push(w);
+      // 강수 입자가 실제로 몇 프레임 갱신되게 둔다(setMatrixAt 루프 진입).
+      await page.waitForTimeout(WEATHER_PROBE_MS);
+    }
+  }
+
   // CSP 메타 + 인라인 script + 내부 링크 + 위반 로그를 한 번에 추출.
   const dom = await page.evaluate(() => {
     const meta = document.querySelector('meta[http-equiv="Content-Security-Policy" i]');
@@ -125,5 +155,9 @@ export async function collectPage(browser, origin, pageSpec, urlPrefix = '') {
     links: dom.links,
     overflow,
     externalRequests,
+    // 실제로 밟은 날씨. 빈 배열이면 **프로브가 아무것도 실행하지 않았다**는 뜻이고,
+    // 그때 "콘솔 에러 0"은 강수 코드에 대해 아무 말도 하지 않는다. run.mjs가 이 값을
+    // 보고 판정한다 — 실행 여부를 보고하지 않으면 이 프로브도 장식이 된다.
+    weatherProbed,
   };
 }
