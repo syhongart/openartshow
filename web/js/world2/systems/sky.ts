@@ -156,8 +156,19 @@ export class SkySystem implements System {
    * `set`/`get`만 노출하는 얇은 창구다 — 패널이 `sky.js`의 나머지(update·dispose 등)를
    * 만지면 System이 소유권을 잃는다. 프레임 진행과 자원 반납은 끝까지 이 클래스 몫이다.
    */
-  get controls(): { set: SkySystem['set']; get: SkySystem['get'] } {
-    return { set: this.set.bind(this), get: this.get.bind(this) };
+  /** 번개 즉시 발동(비일 때만). 자동 발동은 평균 13~20초 간격이라 확인이 어렵다. */
+  bolt(): boolean {
+    return this.engine.bolt?.() ?? false;
+  }
+
+  get controls(): {
+    set: SkySystem['set']; get: SkySystem['get']; bolt: SkySystem['bolt'];
+  } {
+    return {
+      set: this.set.bind(this),
+      get: this.get.bind(this),
+      bolt: this.bolt.bind(this),
+    };
   }
 
   dispose(): void {

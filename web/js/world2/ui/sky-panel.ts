@@ -12,6 +12,8 @@
 /** `sky.js`가 노출하는 것 중 패널이 쓰는 부분만. */
 export interface SkyEngine {
   set(state: Record<string, unknown>, opt?: { fade?: number }): void;
+  /** 번개 즉시 발동. 비가 아니면 false를 돌려준다(요청이 무시됐다는 뜻). */
+  bolt?(): boolean;
   get(): {
     time: string;
     weather: string;
@@ -74,7 +76,8 @@ export function attachSkyPanel(parts: SkyPanelParts, engine: SkyEngine): SkyPane
   const onClick = (e: Event) => {
     const t = e.target as HTMLElement | null;
     const b = t?.closest<HTMLElement>(
-      'button[data-time],button[data-auto],button[data-weather],button[data-fx],button[data-flash]',
+      'button[data-time],button[data-auto],button[data-weather],button[data-fx],'
+      + 'button[data-flash],button[data-bolt]',
     );
     if (!b) return;
     const s = engine.get();
@@ -84,6 +87,13 @@ export function attachSkyPanel(parts: SkyPanelParts, engine: SkyEngine): SkyPane
     // fx·flash는 현재 반영 상태 기준 토글이다(누른 횟수가 아니라).
     else if (b.dataset.fx) engine.set({ fx: { [b.dataset.fx]: !(s?.fx?.[b.dataset.fx]) } });
     else if (b.dataset.flash) engine.set({ flashSafe: !s?.flashSafe });
+    else if (b.dataset.bolt) {
+      // 비가 아니면 엔진이 무시한다. 눌렀는데 아무 일도 없으면 "왜 안 되지"가 되므로
+      // 버튼을 잠깐 흐리게 해 요청이 반려됐음을 알린다.
+      const ok = engine.bolt?.() ?? false;
+      b.classList.toggle('off', !ok);
+      setTimeout(() => b.classList.remove('off'), 700);
+    }
     sync();
   };
 

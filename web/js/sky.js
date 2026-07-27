@@ -966,7 +966,24 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
   }
 
   set({ time: 'day', weather: 'clear' }, { fade: 0 });
-  return { set, get, update, getSunDir, setLite, dispose, SKY_TIMES, SKY_WEATHERS };
+  /**
+   * 번개를 즉시 친다(비일 때만).
+   *
+   * 자동 발동은 첫 8초 + 이후 7~21초 간격이라 **평균 13~20초에 한 번**이다(헤드리스
+   * 40초 실측: 섬광 2~3회). 게다가 섬광은 0.3초이고 조명 강도만 올리므로 하늘을
+   * 보고 있으면 아무 일도 없는 것처럼 보인다 — 감독이 "천둥 불빛이 안 보인다"고 한
+   * 것이 그 조합이었다. 코드는 정상이었고(hemiI 0.48→2.88 실측) **확인이 불가능한
+   * 설계**였던 것이다.
+   *
+   * 그래서 즉시 트리거를 연다. 진단 수단이자 연출 도구다.
+   */
+  function bolt() {
+    if (state.weather !== 'rain') return false;
+    boltTimer = 0; // 다음 update에서 발동한다(발동 로직을 복제하지 않는다)
+    return true;
+  }
+
+  return { set, get, update, getSunDir, setLite, bolt, dispose, SKY_TIMES, SKY_WEATHERS };
 }
 
 /** 방문자 실제 시각 → 시간대 자동 매핑(신 모드 '자동' 버튼용) */

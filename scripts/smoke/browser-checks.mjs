@@ -102,6 +102,14 @@ export async function collectPage(browser, origin, pageSpec, urlPrefix = '') {
       weatherProbed.push(w);
       // 강수 입자가 실제로 몇 프레임 갱신되게 둔다(setMatrixAt 루프 진입).
       await page.waitForTimeout(WEATHER_PROBE_MS);
+      // 비일 때 번개도 한 번 친다 — 이 경로도 눌러보지 않으면 재지 않은 것이다.
+      // (조명 강도 조작이라 백엔드 무관, 헤드리스에서 그대로 실행된다.)
+      if (w === 'rain') {
+        await page.evaluate(() => {
+          document.querySelector('button[data-bolt]')?.click();
+        }).catch(() => {});
+        await page.waitForTimeout(300);
+      }
     }
   }
 
