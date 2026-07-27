@@ -39,6 +39,26 @@ const CELL = 32;
 const MAX_PARCELS = 20;
 const ALL_KINDS: readonly PartKind[] = ['ground', 'building', 'tree', 'lamp'];
 
+/**
+ * 부하 배수 — `?density=N`(1~8). 파셀당 파츠 수를 N배로 올린다.
+ *
+ * 재작성의 반증 조건 중 하나가 **"밀도를 올려도 개수가 상수인가"**였다. 슬롯 풀
+ * 설계가 옳다면 파츠를 몇 배로 늘려도 드로우콜·파이프라인·재질 수는 안 변해야 한다
+ * (종류당 InstancedMesh 하나이므로). 그 예측이 틀리면 이 구조 자체가 틀린 것이다.
+ *
+ * 참고 — 라이브 오픈월드는 파셀마다 개별 메시를 만들어 정중앙 5방에서 드로우콜
+ * **146**, 스폰 시 218~263이었다(OPENWORLD.md 실측). world2는 같은 상황에서 9~10이다.
+ *
+ * URL 파라미터로 둔 이유: 헤드리스 자동 시험과 감독 실기기 확인을 같은 수단으로
+ * 하기 위해서다. 별도 빌드를 만들면 "무엇을 쟀는지"가 또 흐려진다.
+ */
+function readDensity(): number {
+  if (typeof location === 'undefined') return 1;
+  const raw = Number(new URLSearchParams(location.search).get('density'));
+  if (!Number.isFinite(raw)) return 1;
+  return Math.max(1, Math.min(8, Math.round(raw)));
+}
+
 export interface WorldHandle {
   kernel: Kernel;
   dispose(): void;
@@ -51,6 +71,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let adapter: RendererAdapter | null = null;
   let pools: InstancePools | null = null;
   let kernel: Kernel | null = null;
+
+  const density = readDensity();
+  // 밀도는 배치 판정에만 곱한다. 풀 예산은 이 레이아웃에서 자동으로 파생되므로
+  // 두 곳에 따로 적지 않는다(값 미러링 금지).
+  const LAYOUT = density === 1 ? DEFAULT_LAYOUT : {
+    ...DEFAULT_LAYOUT,
+    maxBuildings: DEFAULT_LAYOUT.maxBuildings * density,
+    maxTrees: DEFAULT_LAYOUT.maxTrees * density,
+    maxLamps: DEFAULT_LAYOUT.maxLamps * density,
+  };
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
@@ -157,7 +187,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       pools: () => {
         pools = new InstancePools(scene);
         const assets = createPartAssets();
-        const budget = PooledParcelBuilder.poolBudget(MAX_PARCELS, DEFAULT_LAYOUT);
+        const budget = PooledParcelBuilder.poolBudget(MAX_PARCELS, LAYOUT);
         for (const kind of ALL_KINDS) {
           const a = assets[kind];
           pools.create({
@@ -205,7 +235,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       },
 
       stream: async (report, yieldFrame) => {
-        builder = new PooledParcelBuilder({ pool: createSlotPool(pools!), cellX: CELL, cellZ: CELL });
+        builder = new PooledParcelBuilder({
+          pool: createSlotPool(pools!), cellX: CELL, cellZ: CELL, layout: LAYOUT,
+        });
         streaming = new StreamingSystem({
           builder,
           cellX: CELL, cellZ: CELL,
@@ -310,6 +342,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     stats: () => ({
       backend: adapter!.backend,
       order: kernel!.order,
+      /** 부하 배수. 리포트만 보고 "어느 밀도에서 잰 것인가"를 알 수 있어야 한다. */
+      density,
       // 플레이어 상태 — "조작이 실제로 이동으로 이어졌는가"를 재는 유일한 지점이다.
       // 파셀 수만 봐서는 알 수 없다(정상 상태에서도 같은 값이다).
       player: { ...player.position, ...player.angles },
