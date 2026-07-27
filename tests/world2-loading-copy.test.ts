@@ -5,7 +5,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  COPY, ROTATE_MS, copyIndexAt, didRotate, validCopy,
+  COPY, ROTATE_MS, RICH_AFTER_MS, copyIndexAt, didRotate, validCopy,
+  loadingDetail, copySlot,
 } from '../web/js/world2/decide/loading-copy.js';
 
 describe('copyIndexAt — 회전', () => {
@@ -49,6 +50,46 @@ describe('copyIndexAt — 회전', () => {
       expect(i).toBeGreaterThanOrEqual(0);
       expect(i).toBeLessThan(COPY.length);
     }
+  });
+});
+
+describe('loadingDetail — 3초 게이트 (감독 지시)', () => {
+  it('3초 이하는 minimal — 프로그레스 바만', () => {
+    for (const t of [0, 1_400, RICH_AFTER_MS - 1]) expect(loadingDetail(t)).toBe('minimal');
+  });
+
+  it('3초부터 rich', () => {
+    expect(loadingDetail(RICH_AFTER_MS)).toBe('rich');
+    expect(loadingDetail(10_000)).toBe('rich');
+  });
+
+  it('이상한 입력은 minimal로 — 화면이 갑자기 풍성해지는 쪽으로 틀리지 않는다', () => {
+    expect(loadingDetail(NaN)).toBe('minimal');
+  });
+});
+
+describe('copySlot — 3초 게이트 + 회전', () => {
+  it('3초 전에는 -1 — 문구가 아예 없다', () => {
+    for (const t of [0, 1_400, RICH_AFTER_MS - 1]) expect(copySlot(t, 6)).toBe(-1);
+  });
+
+  it('3초 시점에 첫 문구', () => {
+    expect(copySlot(RICH_AFTER_MS, 6)).toBe(0);
+  });
+
+  it('첫 문구를 읽을 시간을 준다 — 뜨자마자 넘어가지 않는다', () => {
+    // 회전 기준이 부팅 경과였다면 3초에 떠서 3.2초에 바로 넘어간다(0.2초).
+    expect(copySlot(RICH_AFTER_MS + ROTATE_MS - 1, 6)).toBe(0);
+    expect(copySlot(RICH_AFTER_MS + ROTATE_MS, 6)).toBe(1);
+  });
+
+  it('rich 진입 후 주기대로 돈다', () => {
+    expect(copySlot(RICH_AFTER_MS + ROTATE_MS * 2, 6)).toBe(2);
+    expect(copySlot(RICH_AFTER_MS + ROTATE_MS * 6, 6)).toBe(0);
+  });
+
+  it('문구가 없으면 -1', () => {
+    expect(copySlot(RICH_AFTER_MS + 5_000, 0)).toBe(-1);
   });
 });
 

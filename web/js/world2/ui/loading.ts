@@ -17,7 +17,7 @@
 
 import type { BootReport } from '../boot.js';
 import type { BootStage } from '../decide/boot.js';
-import { COPY, FADE_MS, copyIndexAt } from '../decide/loading-copy.js';
+import { COPY, FADE_MS, copySlot, loadingDetail, type LoadingDetail } from '../decide/loading-copy.js';
 
 export interface LoadingParts {
   root: HTMLElement;
@@ -64,6 +64,8 @@ export class LoadingView {
   private copyIdx = -1;
   private swapTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly copyList: readonly string[];
+  /** 현재 화면 밀도. 되돌아가지 않는다 */
+  private detail: LoadingDetail = 'minimal';
 
   constructor(parts: LoadingParts, copyList: readonly string[] = COPY) {
     this.p = parts;
@@ -73,6 +75,7 @@ export class LoadingView {
     this.p.bar.setAttribute('role', 'progressbar');
     this.p.bar.setAttribute('aria-valuemin', '0');
     this.p.bar.setAttribute('aria-valuemax', '100');
+    this.p.root.dataset.detail = 'minimal'; // 3초 이하면 바만 보인다(감독 지시)
   }
 
   /** 부팅 보고를 화면에 반영한다. */
@@ -85,7 +88,15 @@ export class LoadingView {
       this.p.bar.setAttribute('aria-valuenow', String(pct));
       this.p.percent.textContent = `${pct}%`;
     }
+    // 라벨은 밀도와 무관하게 계속 갱신한다. 숨기는 일은 CSS가 하므로, rich로 넘어가는
+    // 순간 이미 올바른 단계가 적혀 있다(전환 후에 한 박자 늦게 채워지지 않는다).
     if (this.p.label.textContent !== r.label) this.p.label.textContent = r.label;
+
+    // 밀도 승격. 되돌리지 않는다 — 진행이 빨라졌다고 문구가 사라지면 읽던 문장이 지워진다.
+    if (this.detail === 'minimal' && loadingDetail(r.elapsedMs) === 'rich') {
+      this.detail = 'rich';
+      this.p.root.dataset.detail = 'rich';
+    }
 
     // 느린 기기 안내. 남은 시간 추정이 있으면 같이 보여준다 — "얼마나"를 아는 것과
     // 모르는 것은 기다림의 성격이 다르다.
@@ -102,12 +113,15 @@ export class LoadingView {
   /**
    * 로딩 문구를 회전시킨다.
    *
-   * 빠른 기기에서는 첫 문구 하나만 보이고 끝난다 — 보여주려고 로딩을 늘리지 않는다는
-   * 규약(decide/loading-copy.ts)이 여기서 지켜진다. 교체 시에만 페이드하고, 보간은
-   * CSS에 맡긴다(로딩 중 메인 스레드가 가장 바쁘므로 JS 애니메이션을 돌리지 않는다).
+   * 3초를 넘기기 전에는 아무것도 뜨지 않는다(감독 지시) — `copySlot`이 그 구간에서 -1을
+   * 돌려준다. 그러니 빠른 부팅에서는 문구가 아예 등장하지 않는다. 보여주려고 로딩을
+   * 늘리지 않는다는 규약이 여기서 지켜진다.
+   *
+   * 교체 시에만 페이드하고 보간은 CSS에 맡긴다(로딩 중 메인 스레드가 가장 바쁘므로
+   * JS 애니메이션을 돌리지 않는다).
    */
   private updateCopy(elapsedMs: number): void {
-    const next = copyIndexAt(elapsedMs, this.copyList.length);
+    const next = copySlot(elapsedMs, this.copyList.length);
     if (next < 0 || next === this.copyIdx) return;
 
     const first = this.copyIdx < 0;

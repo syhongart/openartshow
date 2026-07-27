@@ -11,6 +11,15 @@
 // COPY 배열만 갈아끼우면 문안이 바뀐다. 회전 로직과 문구를 섞지 않는 이유는, 문안이
 // 카피 담당의 것이고 로직은 개발의 것이기 때문이다. 서로의 작업이 상대를 건드리지 않는다.
 
+/**
+ * 이 시간을 넘겨야 로딩 화면이 "풍성해진다"(감독 지시).
+ *
+ * 3초 이하면 프로그레스 바만 보인다. 짧은 로딩에서 단계 라벨과 문구가 스쳐 지나가면
+ * 읽히지도 않으면서 화면만 산만해진다 — 정보가 아니라 소음이다. 반대로 3초를 넘기면
+ * 사용자는 "왜 기다리는지"를 궁금해하기 시작하므로 그때 설명과 읽을거리를 내놓는다.
+ */
+export const RICH_AFTER_MS = 3000;
+
 /** 문구 교체 주기(ms). 읽고 넘어가기 충분하되 조급하지 않은 간격. */
 export const ROTATE_MS = 3200;
 
@@ -62,6 +71,36 @@ export function copyIndexAt(elapsedMs: number, count: number, rotateMs = ROTATE_
  */
 export function didRotate(elapsedMs: number, rotateMs = ROTATE_MS): boolean {
   return Number.isFinite(elapsedMs) && elapsedMs >= rotateMs;
+}
+
+/** 로딩 화면의 밀도. `minimal`은 바만, `rich`는 라벨·문구까지. */
+export type LoadingDetail = 'minimal' | 'rich';
+
+/**
+ * 지금 어느 밀도로 보여줄 것인가.
+ *
+ * **되돌아가지 않는다** — 한 번 rich가 되면 계속 rich다. 진행률이 빨라졌다고 문구가
+ * 사라지면 화면이 깜빡이고, 읽던 문장이 지워진다.
+ */
+export function loadingDetail(elapsedMs: number, richAfterMs = RICH_AFTER_MS): LoadingDetail {
+  if (!Number.isFinite(elapsedMs)) return 'minimal';
+  return elapsedMs >= richAfterMs ? 'rich' : 'minimal';
+}
+
+/**
+ * 지금 보여줄 문구 인덱스. `minimal` 구간에서는 -1(아무것도 안 보인다).
+ *
+ * 회전 기준점을 rich 진입 시점으로 잡는 이유: 부팅 경과를 그대로 쓰면 3초에 첫 문구가
+ * 뜨자마자 0.2초 뒤 두 번째로 넘어간다(ROTATE_MS=3200). 첫 문장을 읽을 시간이 없다.
+ */
+export function copySlot(
+  elapsedMs: number,
+  count: number,
+  rotateMs = ROTATE_MS,
+  richAfterMs = RICH_AFTER_MS,
+): number {
+  if (loadingDetail(elapsedMs, richAfterMs) === 'minimal') return -1;
+  return copyIndexAt(elapsedMs - richAfterMs, count, rotateMs);
 }
 
 /**

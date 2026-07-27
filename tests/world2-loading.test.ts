@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { findLoading, LoadingView, slowNote } from '../web/js/world2/ui/loading.js';
-import { ROTATE_MS, FADE_MS } from '../web/js/world2/decide/loading-copy.js';
+import { ROTATE_MS, FADE_MS, RICH_AFTER_MS } from '../web/js/world2/decide/loading-copy.js';
 import type { BootReport } from '../web/js/world2/boot.js';
 
 const MARKUP = `
@@ -90,26 +90,73 @@ describe('LoadingView — 진행 표시', () => {
   });
 });
 
+describe('LoadingView — 3초 게이트 (감독 지시)', () => {
+  const view = (list?: readonly string[]) => new LoadingView(findLoading(document)!, list);
+  const RICH = RICH_AFTER_MS;
+
+  it('처음에는 minimal — 프로그레스 바만', () => {
+    view().update(report({ elapsedMs: 0 }));
+    expect(el('w2-loading').dataset.detail).toBe('minimal');
+  });
+
+  it('3초 이하 부팅에서는 끝까지 minimal이다', () => {
+    const v = view();
+    for (const t of [0, 800, 1_400, RICH - 1]) v.update(report({ elapsedMs: t }));
+    expect(el('w2-loading').dataset.detail).toBe('minimal');
+  });
+
+  it('3초를 넘기면 rich로 올라간다', () => {
+    const v = view();
+    v.update(report({ elapsedMs: 0 }));
+    v.update(report({ elapsedMs: RICH }));
+    expect(el('w2-loading').dataset.detail).toBe('rich');
+  });
+
+  it('rich는 되돌아가지 않는다 — 읽던 문장이 지워지면 안 된다', () => {
+    const v = view();
+    v.update(report({ elapsedMs: RICH }));
+    v.update(report({ elapsedMs: 100 })); // 있을 수 없지만 방어
+    expect(el('w2-loading').dataset.detail).toBe('rich');
+  });
+
+  it('minimal 구간에도 라벨은 채워 둔다 — rich 전환 시 한 박자 늦지 않게', () => {
+    view().update(report({ elapsedMs: 500, label: '셰이더 예열' }));
+    expect(el('w2-loading-label').textContent).toBe('셰이더 예열');
+  });
+});
+
 describe('LoadingView — 로딩 문구', () => {
   const view = (list?: readonly string[]) => new LoadingView(findLoading(document)!, list);
+  const RICH = RICH_AFTER_MS;
 
-  it('첫 문구는 곧바로 뜬다 — 페이드로 들어오면 시작이 굼떠 보인다', () => {
-    view(['첫 문구', '둘째 문구']).update(report({ elapsedMs: 0 }));
+  it('3초 전에는 문구가 아예 뜨지 않는다', () => {
+    const v = view(['첫 문구', '둘째 문구']);
+    v.update(report({ elapsedMs: 0 }));
+    v.update(report({ elapsedMs: 1_400 })); // world2 실측 부팅 시간
+    expect(el('w2-loading-copy').textContent).toBe('');
+    expect(el('w2-loading-copy').dataset.show).toBe('0');
+  });
+
+  it('3초를 넘기면 첫 문구가 곧바로 뜬다 — 페이드로 들어오면 굼떠 보인다', () => {
+    const v = view(['첫 문구', '둘째 문구']);
+    v.update(report({ elapsedMs: RICH }));
     expect(el('w2-loading-copy').textContent).toBe('첫 문구');
     expect(el('w2-loading-copy').dataset.show).toBe('1');
   });
 
-  it('빠른 부팅에서는 첫 문구에서 끝난다 — 보여주려고 로딩을 늘리지 않는다', () => {
+  it('첫 문구를 읽을 시간을 준다 — 뜨자마자 넘어가지 않는다', () => {
+    // 회전 기준이 부팅 경과였다면 3초에 뜨고 0.2초 뒤 교체된다(ROTATE_MS=3200).
     const v = view(['첫 문구', '둘째 문구']);
-    v.update(report({ elapsedMs: 0 }));
-    v.update(report({ elapsedMs: 1_400 })); // world2 실측 부팅 시간
+    v.update(report({ elapsedMs: RICH }));
+    v.update(report({ elapsedMs: RICH + ROTATE_MS - 100 }));
+    expect(el('w2-loading-copy').dataset.show).toBe('1');
     expect(el('w2-loading-copy').textContent).toBe('첫 문구');
   });
 
-  it('로딩이 길어지면 교체를 시작한다 — 먼저 사라진 뒤 바뀐다', () => {
+  it('더 길어지면 교체를 시작한다 — 먼저 사라진 뒤 바뀐다', () => {
     const v = view(['첫 문구', '둘째 문구']);
-    v.update(report({ elapsedMs: 0 }));
-    v.update(report({ elapsedMs: ROTATE_MS }));
+    v.update(report({ elapsedMs: RICH }));
+    v.update(report({ elapsedMs: RICH + ROTATE_MS }));
     // 글자가 겹쳐 보이면 읽기 어려우므로, 사라지는 동안에는 옛 문구가 남아 있다.
     expect(el('w2-loading-copy').dataset.show).toBe('0');
     expect(el('w2-loading-copy').textContent).toBe('첫 문구');
@@ -117,30 +164,30 @@ describe('LoadingView — 로딩 문구', () => {
 
   it('같은 구간에서 여러 번 갱신해도 문구를 다시 쓰지 않는다', () => {
     const v = view(['첫 문구', '둘째 문구']);
-    v.update(report({ elapsedMs: 100 }));
+    v.update(report({ elapsedMs: RICH }));
     el('w2-loading-copy').textContent = 'SENTINEL';
-    v.update(report({ elapsedMs: 900 }));
+    v.update(report({ elapsedMs: RICH + 900 }));
     expect(el('w2-loading-copy').textContent).toBe('SENTINEL');
   });
 
   it('실패하면 문구를 감춘다 — 읽어야 할 것은 오류 내용이다', () => {
     const v = view(['첫 문구']);
-    v.update(report({ elapsedMs: 0 }));
+    v.update(report({ elapsedMs: RICH }));
     v.fail('stream', new Error('타임아웃'));
     expect(el('w2-loading-copy').dataset.show).toBe('0');
   });
 
   it('걷힌 뒤 늦게 도착한 교체는 화면을 되살리지 않는다', async () => {
     const v = view(['첫 문구', '둘째 문구']);
-    v.update(report({ elapsedMs: 0 }));
-    v.update(report({ elapsedMs: ROTATE_MS })); // 교체 타이머 예약
+    v.update(report({ elapsedMs: RICH }));
+    v.update(report({ elapsedMs: RICH + ROTATE_MS })); // 교체 타이머 예약
     v.dismiss();
     await new Promise((r) => setTimeout(r, FADE_MS + 50));
     expect(el('w2-loading-copy').textContent).toBe('첫 문구'); // 둘째로 안 바뀜
   });
 
   it('문구가 없어도 죽지 않는다', () => {
-    expect(() => view([]).update(report({ elapsedMs: 0 }))).not.toThrow();
+    expect(() => view([]).update(report({ elapsedMs: RICH }))).not.toThrow();
   });
 });
 
