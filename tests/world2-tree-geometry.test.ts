@@ -24,7 +24,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { tree } from '../frontend/js/world2/parts/tree.js';
+import { tree, LEAF_U0 } from '../frontend/js/world2/parts/tree.js';
 import type { ThreeNS } from '../frontend/js/world2/parts/types.js';
 
 // jsdom 은 네이티브 캔버스가 없어 `getContext('2d')` 가 null 이다. 여기서 보는 것은
@@ -104,3 +104,73 @@ describe('나무 지오메트리 — 실제로 구워진다', () => {
     expect(b.max.y - b.min.y).toBeGreaterThan(b.max.x - b.min.x);
   });
 });
+
+// ── 알파 잎 ─────────────────────────────────────────────────────────────────
+//
+// **이 묶음은 뮤테이션이 시켜서 생겼다.** 알파 잎을 넣고 여섯 가지로 망가뜨려 봤는데
+// (alphaTest 제거 · 잎 UV를 줄기 영역으로 · 줄기 UV를 잎 영역으로 · uv 미전달 ·
+// DoubleSide 제거) **전부 통과했다.** 위 묶음은 지오메트리만 보지 텍스처가 어떻게
+// 매핑되는지, 재질이 알파를 어떻게 다루는지는 하나도 안 봤다.
+//
+// 잎은 world2 에서 **줄기와 재질을 공유하는 유일한 구조**다. 한 텍스처의 두 영역을 UV
+// 로 갈라 쓰는데, 그 매핑이 어긋나면 잎이 통짜 사각형이 되거나 줄기에 구멍이 뚫린다.
+// 화면을 봐야만 알 수 있는 종류라 좌표로 못 박는다.
+describe('알파 잎 — 줄기와 한 텍스처를 나눠 쓴다', () => {
+  const uv = geo.attributes.uv;
+  const color = geo.attributes.color;
+
+  it('uv 가 위치와 같은 개수다 — 안 이어붙이면 매핑이 통째로 어긋난다', () => {
+    expect(uv).toBeDefined();
+    expect(uv.count).toBe(geo.attributes.position.count);
+  });
+
+  // 정점색과 UV 를 **교차 검증**한다. 둘 다 같은 조립 루프가 붙이는 값이라, 한쪽만
+  // 보면 "붙이긴 붙였는데 엉뚱한 데 붙였다" 를 못 잡는다.
+  it('잎 정점은 잎 영역을, 줄기 정점은 줄기 영역을 본다', () => {
+    let leafOk = 0, leafBad = 0, barkOk = 0, barkBad = 0;
+    for (let i = 0; i < color.count; i++) {
+      const isLeaf = color.getY(i) > color.getX(i);   // 초록이 빨강보다 크면 잎
+      const u = uv.getX(i);
+      if (isLeaf) { if (u >= LEAF_U0) leafOk++; else leafBad++; }
+      else { if (u <= LEAF_U0) barkOk++; else barkBad++; }
+    }
+    // 표본이 비면 아무것도 검사하지 않은 것이 된다
+    expect(leafOk + leafBad).toBeGreaterThan(0);
+    expect(barkOk + barkBad).toBeGreaterThan(0);
+    expect(leafBad).toBe(0);
+    expect(barkBad).toBe(0);
+  });
+});
+
+describe('알파 잎 — 재질 설정이 개수 불변식을 지킨다', () => {
+  const mat = asset.material as unknown as {
+    alphaTest?: number; transparent?: boolean; side?: unknown; map?: unknown;
+  };
+
+  it('alphaTest 를 쓴다 — 없으면 잎이 통짜 사각형 판이 된다', () => {
+    expect(mat.alphaTest).toBeGreaterThan(0);
+  });
+
+  // 이것이 이 파일에서 가장 중요한 한 줄이다. `transparent: true` 는 **파이프라인
+  // 캐시키 축**이라 켜는 순간 재질이 둘로 갈리고 드로우콜도 갈린다. 알파 컷아웃은
+  // 불투명 패스에서 처리되므로 같은 파이프라인에 남는다.
+  it('transparent 는 켜지 않는다 — 켜면 파이프라인이 갈린다', () => {
+    expect(mat.transparent).toBeFalsy();
+  });
+
+  it('양면을 그린다 — 평면 잎이라 뒤에서 보면 사라진다', () => {
+    expect(mat.side).toBeDefined();
+  });
+
+  it('텍스처가 붙어 있다 — 알파는 텍스처에서 온다', () => {
+    expect(mat.map).toBeDefined();
+  });
+});
+
+// ── 못 잰 것 ────────────────────────────────────────────────────────────────
+// 텍스처의 **픽셀**은 검사하지 못한다. jsdom 에는 네이티브 캔버스가 없어
+// `getContext('2d')` 가 null 이고, 위에서 그린 것을 다시 읽을 수단이 없다. 그래서
+// "잎 영역에 실제로 알파가 뚫려 있는가" · "중앙이 밀집하고 가장자리가 성긴가"(밀집
+// 지수 0.6)는 **여기서 못 본다.** 밀집 지수를 2로 바꾸는 뮤테이션이 실제로 살아남았다.
+//
+// 이 항목은 감독 실기기 확인이 유일한 판정이다. 추측으로 메우지 않고 여기 적어 둔다.

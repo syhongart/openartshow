@@ -97,7 +97,7 @@ export const tree: PartSpec = {
  * 0.25 는 잎에 넓은 쪽을 준 것이다. 수피는 세로 줄무늬라 가로 해상도가 덜 필요하고,
  * 잎은 실루엣이 전부라 촘촘할수록 좋다.
  */
-const LEAF_U0 = 0.25;
+export const LEAF_U0 = 0.25;
 
 /** 지오메트리의 U 좌표를 `[u0,u1]` 구간으로 눌러 넣는다 */
 function remapU(geo: InstanceType<ThreeNS['BufferGeometry']>, u0: number, u1: number): void {
