@@ -51,10 +51,18 @@ export function moveFromAxes(
   const k = len > 1 ? 1 / len : 1; // 1 초과만 자른다(작은 기울임은 그대로 느리게)
   const s = speed * (fast ? 2.2 : 1) * dt;
   const cos = Math.cos(yaw), sin = Math.sin(yaw);
-  // yaw 회전 적용 — 카메라가 보는 방향이 "앞"이다.
+  const x = ax * k, z = az * k;
+  // 로컬 축(x=우, z=앞이 음수)을 월드로 옮긴다. 기저는 카메라 자세에서 나온다:
+  //   forward = (-sin, -cos)  ← facing()과 같은 식
+  //   right   = ( cos, -sin)  ← forward를 y축으로 90° 돌린 것
+  // 이동 = x·right + (-z)·forward 를 전개한 것이 아래 두 줄이다.
+  //
+  // 부호를 한 번 틀린 적이 있다. yaw=0에서는 두 식이 우연히 같아서 통과했고, 시선을
+  // 돌린 뒤에야 좌우가 뒤집혔다(90°에서 정확히 반대편). 그래서 이 함수의 테스트는
+  // 반드시 **여러 yaw에서 facing과 일치하는지**로 해야 한다 — 속력만 비교하면 못 잡는다.
   return {
-    dx: ((ax * k) * cos - (az * k) * sin) * s,
-    dz: ((ax * k) * sin + (az * k) * cos) * s,
+    dx: (x * cos + z * sin) * s,
+    dz: (-x * sin + z * cos) * s,
   };
 }
 

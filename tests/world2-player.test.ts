@@ -59,6 +59,37 @@ describe('moveDelta — 대각선이 빠르면 안 된다', () => {
     expect(Math.sign(d.dz)).toBe(Math.sign(f.z));
     expect(d.dx).toBeCloseTo(0, 6);
   });
+
+  // ── 회귀: 시선을 돌리면 좌우가 뒤집히던 버그 ────────────────────────────
+  // 회전 변환의 부호를 틀렸는데 yaw=0에서는 두 식이 우연히 같아 통과했다. 감독이
+  // 실기기에서 "조이스틱 방향이 전혀 안 맞는다"고 발견했다. 속력만 비교하는 테스트로는
+  // 절대 못 잡는다 — 반드시 facing과 방향까지 대조해야 한다.
+  it.each([0, 30, 45, 90, 135, 180, 270, -60])('yaw %i°에서 전진이 시선과 같은 방향이다', (deg) => {
+    const yaw = (deg * Math.PI) / 180;
+    const d = moveDelta(inp({ forward: true }), yaw, 10, 1);
+    const f = facing(yaw);
+    const n = Math.hypot(d.dx, d.dz);
+    expect(d.dx / n).toBeCloseTo(f.x, 6);
+    expect(d.dz / n).toBeCloseTo(f.z, 6);
+  });
+
+  it.each([0, 45, 90, 180])('yaw %i°에서 우측 이동이 시선의 오른쪽이다', (deg) => {
+    const yaw = (deg * Math.PI) / 180;
+    const d = moveDelta(inp({ right: true }), yaw, 10, 1);
+    const f = facing(yaw);
+    // 오른쪽 = forward를 y축으로 -90° 돌린 것. 외적으로 검사한다(부호가 뒤집히면 음수).
+    const cross = f.x * d.dz - f.z * d.dx;
+    expect(cross).toBeGreaterThan(0);
+  });
+
+  it('후진은 시선의 반대다', () => {
+    const yaw = 1.1;
+    const d = moveDelta(inp({ back: true }), yaw, 10, 1);
+    const f = facing(yaw);
+    const n = Math.hypot(d.dx, d.dz);
+    expect(d.dx / n).toBeCloseTo(-f.x, 6);
+    expect(d.dz / n).toBeCloseTo(-f.z, 6);
+  });
 });
 
 describe('facing / clampPitch', () => {
