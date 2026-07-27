@@ -326,7 +326,13 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 감독이 "천둥 불빛이 안 보인다"고 했을 때 추측이 다섯 개까지 늘어난 이유가
       // 여기에 잴 수단이 없었기 때문이다.
       sky: sky
-        ? { ...(sky.get() as object), sunI: sun?.intensity ?? -1, hemiI: hemi?.intensity ?? -1 }
+        ? {
+          ...(sky.get() as object),
+          sunI: sun?.intensity ?? -1, hemiI: hemi?.intensity ?? -1,
+          // 번개는 색도 흰색으로 당긴다. 섬광이 끝난 뒤 되돌아오는지 재려면 색이
+          // 필요하다 — intensity만 보면 "색이 물든 채 고착된" 상태를 놓친다.
+          sunC: sun?.color?.getHex?.() ?? -1, hemiC: hemi?.color?.getHex?.() ?? -1,
+        }
         : null,
       hidden: typeof document !== 'undefined' && document.hidden,
     }),

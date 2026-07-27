@@ -427,6 +427,9 @@ function paintClearClouds(ctx, W, Hh, time, soft) {
   }
 }
 
+/** 섬광 화이트닝 목표색. Color 인스턴스 하나 — 조명·재질·메시가 아니라 개수 불변식 무관. */
+const WHITE = new THREE.Color(1, 1, 1);
+
 // ── WebAudio 합성 천둥(파일 0) ──
 function synthThunder(delayS) {
   try {
@@ -746,6 +749,17 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
    */
   const BOLT_DEBOUNCE = 0.40;
 
+  /**
+   * 광과민성 보호 모드의 강도 계수.
+   *
+   * 디자이너는 0.22 유지(전체가 세지면 보호도 비례해 세짐)와 0.13(절대 밝기 동결)
+   * 두 안을 주고 정책 판단으로 남겼다. **0.13을 택한다** — 강도 델타가 2.4→4.0으로
+   * 오르면서 0.22를 그대로 두면 보호 모드 피크가 1.008→1.36으로 **35% 세진다.**
+   * 보호를 켠 사람에게 "전보다 밝아졌다"가 되는 것은 그 기능의 계약에 어긋난다.
+   * 0.13은 4.0×0.13 ≈ 2.4×0.22가 되도록 역산한 값이다(절대 피크 동결).
+   */
+  const BOLT_KK_SAFE = 0.13;
+
   /** 지수 감쇠: k=0에서 a, k=1에서 b 근처. 선형보다 초반이 빠르고 꼬리가 남는다. */
   const decayTo = (a, b, k) => b + (a - b) * Math.exp(-3.5 * k);
 
@@ -1007,22 +1021,41 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     if (flashT >= 0) {
       flashT += dt;
       const safe = state.flashSafe;
-      const kk = safe ? 0.22 : 1.0;
-      const m = boltMult(flashT, safe);
-      hemi.intensity = cur.hemiI + 2.4 * m * kk;
-      sun.intensity = cur.sunI + 0.9 * m * kk;
+      const kk = safe ? BOLT_KK_SAFE : 1.0;
+      const e = boltMult(flashT, safe) * kk; // 공통 봉투(강도·색·하늘이 같은 곡선을 쓴다)
+      hemi.intensity = cur.hemiI + 4.0 * e;
+      sun.intensity = cur.sunI + 1.6 * e;
+      // ── 색도 흰색으로 당긴다 (디자이너 진단 2026-07-27) ────────────────────
+      // 강도만 올리면 "번쩍"이 안 된다. 야간 비의 빛 색이 이미 어둡기 때문이다
+      // (hemiG = 0x191d1a, 거의 검정). 그 색에 intensity만 곱하면 결과는 **야간
+      // 팔레트 안에서 조금 밝아진 회색**에 머물고, 화면이 "번쩍"으로 인식하는
+      // 흰색 클립존까지 못 간다. 하늘이 2.3배로도 확 튀는 건 MeshBasicMaterial이라
+      // PBR 감쇠를 안 거치고 색을 곧장 배수하기 때문이다 — 그래서 배수를 더 올리는
+      // 것만으로는 지상이 영영 하늘을 못 따라잡는다.
+      //
+      // 65%만 섞는다. 순백으로 밀면 야간 색조가 한 프레임 통째로 사라져 "다른 씬으로
+      // 순간이동"한 것처럼 튄다.
+      const w = safe ? 0 : 0.65 * e; // 보호 모드는 색을 건드리지 않는다(색조 유지가 곧 보호)
+      hemi.color.copy(cur.hemiS).lerp(WHITE, w);
+      hemi.groundColor.copy(cur.hemiG).lerp(WHITE, w);
+      sun.color.copy(cur.sun).lerp(WHITE, w);
       // 하늘도 함께 밝힌다. 스카이돔은 MeshBasicMaterial이라 조명을 안 받으므로,
       // 이걸 안 하면 하늘을 올려다보는 동안에는 번개가 쳐도 **아무 일도 일어나지
       // 않는다** — 감독이 "불빛이 안 보인다"고 한 것이 그 상태였다.
       // 새 메시·재질을 만들지 않고 기존 재질의 color만 쓴다(개수 불변식).
-      const boost = 1 + 1.3 * m * kk;
+      const boost = 1 + 1.5 * e;
       sky.material.color.setScalar(boost);
       // 크로스페이드 중에는 fadeDome이 위에 겹쳐 있다. 함께 밝히지 않으면 날씨
       // 전환 도중에만 하늘 섬광이 안 먹는다(디자이너 지적).
       if (fadeDome.visible) fadeDome.material.color.setScalar(boost);
       if (flashT >= boltDur(safe)) {
         flashT = -1;
+        // **색까지 되돌린다.** intensity만 복원하면 야간 톤이 흰색에 물든 채 고착된다
+        // — 평상시에는 applyLighting()이 다시 불리지 않으므로 아무도 되돌려주지 않는다.
         hemi.intensity = cur.hemiI; sun.intensity = cur.sunI;
+        hemi.color.copy(cur.hemiS);
+        hemi.groundColor.copy(cur.hemiG);
+        sun.color.copy(cur.sun);
         sky.material.color.setScalar(1);
         fadeDome.material.color.setScalar(1);
       }
