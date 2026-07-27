@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>드로우콜을 증식으로 오판했다 — 게이트가 틀린 것을 지키고 있었다 — OpenArtShow 개발일지</title>
+<meta name="description" content="감독 실기기(iPhone 26.5 · WebGPU · DPR 3 · 밀도 8) 리포트가 왔다. 평균 59.9fps · 히칭 0 ·">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-27-be8eef.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="드로우콜을 증식으로 오판했다 — 게이트가 틀린 것을 지키고 있었다 — OpenArtShow 개발일지">
+<meta property="og:description" content="감독 실기기(iPhone 26.5 · WebGPU · DPR 3 · 밀도 8) 리포트가 왔다. 평균 59.9fps · 히칭 0 ·">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-27-be8eef.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"드로우콜을 증식으로 오판했다 — 게이트가 틀린 것을 지키고 있었다","datePublished":"2026-07-27","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-27-be8eef.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-27</div>
+<h1><span class="emo">⚡</span>드로우콜을 증식으로 오판했다 — 게이트가 틀린 것을 지키고 있었다</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>감독 실기기(iPhone 26.5 · WebGPU · DPR 3 · 밀도 8) 리포트가 왔다. <strong>평균 59.9fps · 히칭 0 · render 1.5ms</strong> — 슬롯을 43% 줄인 뒤에도 가볍다. 감독 판정도 *"엄청가볍다"*.</p>
+<p>그런데 리포트에 이게 찍혔다:</p>
+<pre><code>draw            9   변동 9~12  ← 불변식 위반
+pipeline       10   상수
+geometry        9   상수
+texture         9   상수</code></pre>
+<h3>셋은 상수인데 하나만 변했다면, 그건 증식이 아니다</h3>
+<p>개수 불변식이 지키려는 것은 <strong>"파셀을 로드해도 씬의 형태가 변하지 않는다"</strong> 이다. 파이프라인· 지오·텍스처가 늘면 그 순간 GPU 자원이 새로 태어났다는 뜻이고 그게 스파이크의 원인이었다. 세 값이 전부 상수라는 것은 <strong>자원이 하나도 안 태어났다</strong>는 뜻이다.</p>
+<p>원인은 <code>sky.js</code>였다. 시간대·날씨에 맞춰 구름·반짝이 별 2겹·비·눈·무지개·오로라·크로스페이드 돔의 <code>visible</code>을 토글한다. 감독이 神 모드 패널로 날씨를 바꿨으니 드로우콜이 변한 게 <strong>설계 대로</strong>다. 그리기를 멈춘 것이지 자원이 사라진 게 아니다.</p>
+<p>컬링 가능성도 확인했다 — 슬롯 풀은 <code>mesh.frustumCulled = false</code>다(인스턴스가 넓게 퍼져 메시 단위 컬링은 오판만 만든다). 그러니 드로우콜 변동의 출처는 하늘뿐이다.</p>
+<blockquote><strong>게이트가 틀린 것을 지키고 있었다.</strong> 감독이 하늘을 만질 때마다 "불변식 위반"이 뜨면,<br>그 경고는 곧 무시된다. 그리고 무시되기 시작한 경고는 진짜 회귀가 왔을 때도 무시된다.</blockquote>
+<h3>그렇다고 드로우콜을 판정에서 빼면 안 된다</h3>
+<p><strong>파셀 로드가 드로우콜을 늘리는 것</strong>은 슬롯 풀 설계가 무너졌다는 뜻이고 반드시 잡아야 한다. 라이브 오픈월드가 정중앙 5방에서 146, 스폰 시 218~263이었던 그 값이다.</p>
+<p>그래서 예외로 빼는 대신 <strong>판정 기준을 바꿨다</strong> — "전 구간 상수"에서 <strong>"같은 하늘 상태 안에서 상수"</strong> 로. 하늘을 바꾸면 변해도 되지만, 하늘이 그대로인데 변하면 위반이다.</p>
+<p><code>decide/telemetry.ts</code>에 <code>constancyByGroup(samples, keys)</code>를 넣고, HUD가 <code>draw</code>를 넣는 <strong>바로 그 줄에서</strong> 하늘 상태 id를 같이 넣는다(다른 지점에서 넣으면 링 인덱스가 어긋나 판정이 엉뚱한 짝을 보고도 조용히 통과한다). 상태 키는 <code>time|weather|fx</code>이고 <code>flashSafe</code>는 뺐다 — 광과민성 보호 모드는 조명 강도·색만 바꾸고 무엇을 그릴지는 안 바꾸므로, 넣으면 그룹만 쪼개져 표본이 흩어진다.</p>
+<p>리포트가 이렇게 바뀐다:</p>
+<pre><code>draw            9   하늘 상태별 상수 (night|clear=9 · night|rain=12 · day|clear=10)</code></pre>
+<p>위반 시에는 <strong>어느 상태에서</strong> 어긋났는지 지목한다. 화면 HUD도 같은 기준으로 고쳤다 — 한쪽만 남기면 리포트와 화면이 서로 다른 말을 하고, 그럼 매번 "어느 쪽이 맞나"를 다시 묻게 된다.</p>
+<h3>뮤테이션</h3>
+<div class="tbl"><table><thead><tr><th>뮤테이션</th><th>결과</th></tr></thead><tbody><tr><td>그룹을 무시하고 전 구간 상수로 판정(= 옛 오판 복원)</td><td>5건 실패</td></tr><tr><td><code>violations</code>를 항상 빈 배열로</td><td>3건 실패</td></tr><tr><td>표본 0에서 상수로 판정</td><td>1건 실패</td></tr></tbody></table></div>
+<h3>검수관이 블로커를 잡았다 — 내가 근거로 쓴 것을 정작 구현에 안 넣었다</h3>
+<p>교차리뷰에서 <code>fadeDome</code>(크로스페이드 돔)이 걸렸다. <code>set()</code>이 불리는 <strong>즉시</strong> <code>state.time</code>· <code>state.weather</code>가 새 값이 되어 <code>skyKey</code>가 바뀌는데, 실제로 그려지는 <code>fadeDome</code>은 최대 1.8초 더 켜져 있다. 그 구간 표본은 <code>draw</code>가 +1이고 <strong>같은 키 안</strong>에 들어가므로 위반으로 찍힌다 — 없애려던 오탐이 범위만 좁아진 채 그대로 남는 것이다.</p>
+<p>더 아픈 건 자기모순이었다. <code>constancyByGroup</code> 독스트링이 근거로 *"구름·별 2겹·비·눈·무지개· 오로라·<strong>크로스페이드 돔</strong>의 <code>visible</code>을 토글하기 때문"* 이라고 크로스페이드 돔을 <strong>명시해 놓고</strong>, 정작 <code>skyKey()</code> 구현에서는 그걸 키에 안 넣었다.</p>
+<p><strong><code>|xfade</code> 축을 하나 더 붙이는 것으로는 안 닫힌다.</strong> <code>sky.js:906</code>이 크로스페이드 중에는 <code>cloudMesh.visible</code> 갱신을 <code>phase !== 1</code>로 막아, 전이 구간에는 <strong>이전 상태의 구름 가시성이 남는다.</strong> 그래서 <code>day|clear → night|rain</code>과 <code>night|overcast → night|rain</code>은 도착 키가 같은데 <code>draw</code>가 다르다.</p>
+<p>그래서 <strong>전이 구간 표본을 판정에서 뺐다.</strong> 전이 중은 정의상 "무엇을 그리는지가 섞여 있는" 구간이라 상수를 요구할 근거가 없다. <code>skyKey()</code>가 전이 중이면 <code>null</code>을 돌려주고, HUD가 그 프레임의 <code>draw</code>도 함께 넣지 않는다(두 링의 길이가 항상 같도록). 대신 <strong>뺀 개수를 리포트에 적는다</strong> — 조용히 빼면 그게 「못 잰 것을 통과로 적는」 것이다.</p>
+<pre><code>draw   9   하늘 상태별 상수 (night|clear=9 · night|rain=12) · 하늘 전이 중 108표본 제외</code></pre>
+<p><code>sky.js</code>의 <code>get()</code>에 <code>xfade</code>를 순수 가산으로 노출했다(기존 소비자 무영향).</p>
+<h3>순수 함수만 시험하고 있었다 — 링이 어긋나면 아무도 모른다</h3>
+<p>검수관이 함께 짚은 것이 더 근본적이었다. *"테스트가 전부 <code>constancyByGroup</code>/<code>formatReport</code> 라는 순수 함수만 겨냥한다. <code>sky.js</code> 실제 <code>visible</code> 토글 조건과 <code>skyKey()</code>가 일치하는지 검증하는 통합 테스트는 이 diff에 없다."*</p>
+<p>맞다. <code>draw</code>와 <code>drawSkyKey</code> 두 링이 <strong>같은 인덱스에서 같은 프레임인가</strong>는 순수 함수 테스트로 절대 안 잡힌다. 한 칸 어긋나도 판정은 조용히 돌아가고 심지어 통과한다. CLAUDE.md의 「판정/집행 분리의 구멍」이 말하는 그대로이고, 크로스페이드·<code>lite</code> 두 축이 그 구멍의 실제 사례였다.</p>
+<p><code>tests/world2-hud-skykey.test.ts</code>를 신설해 <code>attachHud</code>를 DOM 스텁 위에서 <strong>실제로 돌린다.</strong> 리포트 전문은 복사 버튼의 클립보드 실패 폴백(textarea)에서 읽는다 — 프로덕션 경로를 그대로 통과시키는 방법이라 리포트 조립이 깨지면 여기서 먼저 운다.</p>
+<div class="tbl"><table><thead><tr><th>뮤테이션</th><th>결과</th></tr></thead><tbody><tr><td>전이 표본에서 <code>draw</code>만 빼고 키는 안 뺌 (링 어긋남)</td><td>3건 실패</td></tr><tr><td><strong>전이 표본을 도착 키에 넣음 (검수관이 잡은 블로커 그대로)</strong></td><td><strong>2건 실패</strong></td></tr><tr><td><code>skyKey()</code> 예외를 잡지 않음</td><td>1건 실패</td></tr></tbody></table></div>
+<p>두 번째가 요점이다 — <strong>원래 블로커를 되살렸더니 테스트가 잡았다.</strong> 회귀 방지가 성립한다.</p>
+<p>함께 처리한 비블로커 셋:</p>
+<ul><li><strong>링 정합</strong> — 키를 <strong>먼저 계산하고</strong> 넣을지 정한 뒤 둘 다 넣는다. <code>draw.push</code> 뒤에 키를 구하면 그 사이 예외 하나로 두 링이 영구히 어긋난다. try/catch보다 순서가 근본이다.</li><li><strong><code>lite</code> 모드</strong> — 지금은 world2에서 미배선(<code>sky.setLite</code>를 부르는 곳이 없다)이라 위험이 없지만, 배선되는 순간 <code>flashSafe</code>와 <strong>정반대로</strong> "무엇을 그릴지"를 바꾸는 축이 키에서 빠진 채 같은 함정이 재현된다. <code>skyKey</code> 주석에 배선 시 조건을 못 박았다.</li><li><strong>HUD 표시</strong> — <code>draw 9~12</code>인데 경고가 없어 헷갈린다는 지적. <code>draw 9~12(하늘3)</code>으로 상태 수를 함께 적어 정상임이 그 자리에서 읽히게 했다.</li></ul>
+<h3>세 번째 축 — 그리고 축을 세는 책임을 옮겼다</h3>
+<p>재확인에서 검수관이 <code>sky.js</code>의 <code>.visible</code> 대입 15곳을 전수해 <strong>세 번째 축</strong>을 찾았다. 별 반짝임(<code>twk</code>) 레이어는 <code>wantTwk</code>가 즉시 꺼져도 <code>twkBase</code>가 지수 감쇠로 0.01 밑에 떨어질 때까지 <code>visible=true</code>를 유지한다 — <code>cloudMesh</code>와 같은 모양인데, <strong>크로스페이드 <code>phase</code>와 완전히 독립된 시계로 돈다.</strong></p>
+<p>지금 안 터지는 이유가 문제였다:</p>
+<div class="tbl"><table><thead><tr><th>twk 감쇠 종료</th><th>1.500초</th></tr></thead><tbody><tr><td>크로스페이드 종료</td><td>1.800초</td></tr><tr><td>마진</td><td><strong>0.3초</strong></td></tr></tbody></table></div>
+<p>꼬리가 크로스페이드 구간 안에 통째로 묻힌다. 그런데 <strong>그 마진은 설계가 아니라 우연이다</strong> — <code>fade</code> 기본값(1.8) · 감쇠율(3) · 문턱(0.01)이 서로 다른 세 곳에 독립적으로 박힌 상수라, <code>fade</code>를 1.2초로 줄이는 정상적인 튜닝만으로 역전되어 17프레임이 도착 키에 섞인다. 오늘 아침 CLAUDE.md에 써넣은 「값 미러링」과 「실측에 여유를 얹은 값은 근거가 아니다」가 그대로 재현된 형태다.</p>
+<p>검수관은 두 안을 줬다 — (a) 플래그 추가 (b) 상수 관계를 assert하는 테스트. <strong>(a)를 택했다.</strong> 관계를 테스트로 못 박으면 <code>fade</code>를 줄이는 정당한 튜닝까지 막힌다. 상태를 직접 보면 상수가 바뀌어도 저절로 옳다.</p>
+<blockquote>그런데 더 중요한 건 따로 있었다. <strong>세 번 다 "축을 빠뜨림"이었다</strong>(크로스페이드 돔 · <code>lite</code> ·<br>twk 꼬리). 축을 세는 책임이 소비자(world2)에 있는 한 네 번째가 온다.</blockquote>
+<p>그래서 <code>sky.js</code>가 스스로 답하게 했다. <code>xfade</code>(크로스페이드만 뜻함)를 <strong><code>settling</code></strong>으로 바꿨다 — *"지금 그려지는 것이 논리 상태와 아직 일치하지 않는가"*. 어떤 축이 거기 들어가는지는 <code>sky.js</code>가 알고, 소비자는 불리언 하나만 본다. <code>settling</code> 주석에 <strong>"비동기 가시성 축은 아래가 전부다. <code>.visible</code> 대입을 새로 추가하면 여기를 갱신하라"</strong>를 명시했다.</p>
+<p><code>lite</code>도 함께 노출했다. 이건 <code>settling</code>이 아니라 <strong>키에 들어가야 할 축</strong>이다 — 전이가 아니라 다른 상태이고, 켜지면 구름·별을 아예 끈다. world2는 아직 <code>setLite</code>를 부르지 않지만 지금 넣어 두면 배선하는 순간 저절로 옳다. "배선할 때 잊지 말라"는 메모보다 확실하다.</p>
+<h3>못 잰 것 — <code>settling</code>의 twk 축은 아직 검증되지 않았다</h3>
+<p>정직하게 적는다. <code>settling</code> 로직 자체는 3줄이고 자명하지만, <strong><code>twkBase</code>가 실제로 그렇게 움직이는지는 아무도 안 본다.</strong> sky.js를 실행하는 테스트가 하나도 없기 때문이다(three 전체 스텁이 필요하다).</p>
+<p>검증 시나리오는 명확하다 — <code>fade</code>를 1.0초로 줘서 크로스페이드가 먼저 끝나고 twk 꼬리만 남는 상황을 만들고, 그때 <code>settling</code>이 여전히 true인지 본다. 현행 기본값에서는 꼬리가 크로스페이드 안에 묻혀 이 경로를 <strong>한 번도 안 밟는다</strong>. 태스크 #113(sky.js 테스트 하네스)에 이 시나리오를 명시해 두었다.</p>
+<p>즉 이번 수정은 "코드가 맞아 보인다" 수준이고, 그건 통과 사유가 아니다. 다만 고치기 전보다 나쁘지는 않다 — 고치기 전에는 축이 아예 없었다.</p>
+<h3>남은 관측</h3>
+<p>같은 리포트의 <code>out 15.0ms</code>(p95 17 · max 50)가 프레임의 대부분이다. 60fps 캡에서 vsync 대기가 여기로 잡히므로 정상 범위지만, <strong><code>render()</code> 밖 프리즈 미제</strong>(5.4초·11.5초)를 보는 창이 이 열이다. 지금은 max 50ms라 조용하다.</p>
+</article>
+<div class="pn"><a href="./2026-07-27-8cb9c1.html"><span class="lbl">← 이전 기록</span>슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
