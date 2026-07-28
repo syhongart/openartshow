@@ -12,6 +12,7 @@ import {
   DEFAULT_LAYOUT, type PartKind, type PlacedPart,
 } from '../frontend/js/world2/decide/parcel-layout.js';
 import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
+import { ALL_KINDS } from '../frontend/js/world2/parts/index.js';
 
 const at = (px: number, pz: number, tier: 'near' | 'mid' | 'far' = 'near') => parcelLayout(px, pz, tier);
 const only = (ps: PlacedPart[], k: PartKind) => ps.filter((p) => p.kind === k);
@@ -156,13 +157,25 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   const DECALS = new Set(['ground', 'garden', 'road']);
 
   it('실물 부품은 밑동이 정확히 땅에 있다', () => {
-    let checked = 0;
-    for (const p of at(4, -4)) {
-      if (DECALS.has(p.kind)) continue;
-      checked++;
-      expect(p.y).toBe(0);
+    // ── 한 파셀로는 모자란다 ─────────────────────────────────────────────
+    // 처음엔 `at(4,-4)` 한 파셀만 봤다. 나무를 8cm 띄우는 뮤테이션이 **살아남았다** —
+    // 그 파셀에 나무가 없었기 때문이다. `checked > 0` 을 넣어 뒀지만 그건 "무언가는
+    // 검사했다" 일 뿐 "모든 종류를 검사했다" 가 아니다. 이 프로젝트가 빈 표본으로
+    // 이미 겪은 형태이고, 여기서는 표본이 **비지는 않았는데도** 구멍이 났다.
+    //
+    // 여러 파셀을 훑고, 실물 종류가 전부 표본에 들었는지 **레지스트리와 대조**한다 —
+    // 파츠를 추가하면 표본 요구도 자동으로 늘어난다.
+    const seen = new Set<string>();
+    for (let px = -5; px <= 5; px++) {
+      for (let pz = -5; pz <= 5; pz++) {
+        for (const p of at(px, pz)) {
+          if (DECALS.has(p.kind)) continue;
+          seen.add(p.kind);
+          expect(p.y).toBe(0);
+        }
+      }
     }
-    expect(checked).toBeGreaterThan(0);   // 표본이 비면 아무것도 검사하지 않은 것이다
+    expect(ALL_KINDS.filter((k) => !DECALS.has(k) && !seen.has(k))).toEqual([]);
   });
 
   it('바닥 판은 지면 바로 위에 얹힌다 — 깊이 다툼을 피할 만큼만', () => {
