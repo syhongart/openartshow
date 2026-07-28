@@ -49,7 +49,7 @@ export const road: PartSpec = {
   maxPerParcel: () => 9,
 
   // 난수를 쓰지 않는다. 길의 모양은 경계 해시가 정하고, 색은 텍스처가 정한다.
-  place: ({ px, pz }) => {
+  place: ({ px, pz, o }) => {
     const dirs = roadDirs(px, pz);
     if (dirs.length === 0) return [];
 
@@ -58,24 +58,41 @@ export const road: PartSpec = {
     // 지면(두께 0.1, 피벗 위쪽)보다 아주 살짝 위. 같은 높이면 z-fighting 으로 지글거린다.
     const y = 0.06;
 
-    const seg = (x: number, z: number, ry: number) => {
-      out.push({ kind: 'road', x, z, y, ry, sx: ROAD_SEG, sy: 1, sz: ROAD_SEG, tone });
+    /** 폭 `ROAD_SEG` 고정, 길이만 다르다. 회전은 인스턴스가 하므로 로컬 축으로 적는다 */
+    const seg = (x: number, z: number, ry: number, len: number) => {
+      out.push({ kind: 'road', x, z, y, ry, sx: ROAD_SEG, sy: 1, sz: len, tone });
     };
 
     // 중심 — 막다른 길이어도 길머리는 있어야 한다. 다만 **광장에서는 비운다**:
     // 그 자리에 분수대나 시계탑이 선다. 팔은 그대로 남으므로 길은 광장 둘레를 도는
     // 로터리처럼 읽힌다.
-    if (!isPlaza(px, pz)) seg(0, 0, 0);
+    if (!isPlaza(px, pz)) seg(0, 0, 0, ROAD_SEG);
 
+    // ── 팔은 중심 조각 **밖에서** 시작한다 (감독 판정) ────────────────────────
+    // 감독: *"길이 겹쳐지는 곳. 사거리? 시선을 밑을 보고 미세하게 움직이면 거기는 왜
+    // 텍스처가 울어."*
+    //
+    // 예전 공식은 `t = i × SEG − SEG/2` 라 첫 조각이 z ∈ [−8, 0] 이었다. 중심 조각이
+    // [−4, 4] 이므로 **[−4, 0] 4m 가 겹친다.** 네 방향이 다 그러니 사거리 한복판은
+    // 판이 다섯 장 포개지고, 같은 높이(y=0.06)의 두 면이 겹치면 어느 쪽이 앞인지
+    // 깊이값이 못 정해 **화면이 지글거린다**(z-fighting). 얕은 각도에서 특히 심하다 —
+    // 감독이 "밑을 보고 미세하게 움직이면" 이라 한 조건이 정확히 그것이다.
+    //
+    // 중심 반폭(4m)부터 **파셀 변**까지를 조각 둘로 나눈다. 겹침이 0이 된다.
+    //
+    // `halfX`(배치용 반경)가 아니라 `o.cellX / 2` 인 것에 주의 — `halfX` 는 여백이
+    // 적용된 값이라 부품이 이웃 파셀을 침범하지 않게 하는 용도다. 길은 반대로 **변까지
+    // 정확히 닿아야** 옆 파셀의 길과 이어진다. 여백만큼 물러나면 파셀마다 길이 끊긴다.
+    const armStart = ROAD_SEG / 2;
+    const armLen = (o.cellX / 2 - armStart) / 2;
     for (const d of dirs) {
-      // 중심에서 변까지 16m 를 8m 조각 둘로 채운다. 조각 중심이 8m·16m 가 아니라
-      // 4m·12m 인 것에 주의 — 피벗이 조각 한가운데다.
       for (let i = 1; i <= 2; i++) {
-        const t = i * ROAD_SEG - ROAD_SEG / 2;
-        if (d === 'north') seg(0, -t, 0);
-        else if (d === 'south') seg(0, t, 0);
-        else if (d === 'west') seg(-t, 0, Math.PI / 2);
-        else seg(t, 0, Math.PI / 2);
+        // 조각 중심 = 시작 + (i − 0.5) × 길이. 피벗이 조각 한가운데다.
+        const t = armStart + (i - 0.5) * armLen;
+        if (d === 'north') seg(0, -t, 0, armLen);
+        else if (d === 'south') seg(0, t, 0, armLen);
+        else if (d === 'west') seg(-t, 0, Math.PI / 2, armLen);
+        else seg(t, 0, Math.PI / 2, armLen);
       }
     }
     return out;
@@ -148,6 +165,10 @@ function asphaltTexture(T: typeof import('three/webgpu')): InstanceType<typeof i
 
   const tex = new T.CanvasTexture(cv);
   tex.colorSpace = T.SRGBColorSpace;
-  tex.anisotropy = 4;
+  // **16 으로 올렸다.** 4 였을 때 얕은 각도(바닥을 내려다보며 조금씩 움직일 때)에서
+  // 텍스처가 지글거렸다 — 그 각도에서는 픽셀 하나가 텍셀 수십 개를 덮는데, 이방성이
+  // 낮으면 그 중 몇 개만 골라 쓰므로 프레임마다 다른 텍셀이 뽑힌다.
+  // 하드웨어 상한을 넘으면 three 가 알아서 클램프하므로 안전하다.
+  tex.anisotropy = 16;
   return tex;
 }
