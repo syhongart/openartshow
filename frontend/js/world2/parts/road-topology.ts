@@ -84,6 +84,50 @@ export const ROAD_HALF = ROAD_SEG / 2 + 1.5;
 export const SETBACK = 7;
 
 /**
+ * 가로등이 서는 자리 — **도로에서 옆으로 비킨 거리.**
+ *
+ * `lamp.ts` 가 이 값의 주인이었는데, 슬롯 배치가 "여기는 이미 예약됐다"를 알아야 해서
+ * 공용 기하인 이 파일로 올렸다. 파츠끼리 직접 import 하면 파츠 하나를 빼는 순간 다른
+ * 파츠가 깨지므로, 이 파일이 그 중개를 맡는 것이 원래 규약이다.
+ */
+export const LAMP_OFFSET = (ROAD_HALF + SETBACK) / 2;
+
+/**
+ * 가로등이 비워 둘 반경(미터). `lamp.ts` 의 `footprint` 와 슬롯 예약이 **같은 값**을
+ * 써야 하므로 여기 하나만 둔다 — 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다.
+ */
+export const LAMP_CLEARANCE = 0.9;
+
+/**
+ * 이 파셀에서 **가로등이 점유하는 자리**. 실제로 가로등을 그리는지와 무관하다.
+ *
+ * ── 왜 "그리는지와 무관" 이 중요한가 ───────────────────────────────────────
+ * 가로등은 `tiers: ['near']` 라 mid 에서는 그려지지 않는다. 다른 파츠가 "놓인 가로등"을
+ * 보고 자리를 피하면, **mid 에서는 피할 것이 없어져 위치가 달라진다** — tier 가 바뀔 때
+ * 물건이 순간이동한다는 뜻이고, 그건 이 파일이 지키기로 한 불변식 ②의 위반이다.
+ *
+ * 그래서 자리를 **예약**으로 다룬다. tier 와 무관하게 계산되므로 near 든 mid 든 같은
+ * 자리가 비워지고, 가로등이 안 그려지는 거리에서는 그냥 빈 인도로 남는다.
+ */
+export function lampAnchors(
+  o: { cellX: number; cellZ: number },
+  halfX: number,
+  halfZ: number,
+  dirs: readonly Dir[],
+): { x: number; z: number }[] {
+  const alongX = Math.min(o.cellX / 4, halfX);
+  const alongZ = Math.min(o.cellZ / 4, halfZ);
+  const out: { x: number; z: number }[] = [];
+  for (const d of dirs) {
+    if (d === 'east') out.push({ x: alongX, z: LAMP_OFFSET });
+    else if (d === 'west') out.push({ x: -alongX, z: LAMP_OFFSET });
+    else if (d === 'north') out.push({ x: LAMP_OFFSET, z: -alongZ });
+    else out.push({ x: LAMP_OFFSET, z: alongZ });
+  }
+  return out;
+}
+
+/**
  * 파셀 안 좌표 `(x,z)`(중심 기준 오프셋)가 도로 위인가.
  *
  * 도로는 **중심에서 각 활성 방향으로 뻗은 십자**이므로, 그 축들 중 하나에 걸치면 도로다.

@@ -92,7 +92,7 @@ describe('② onRoad 가 실제로 깔린 조각을 덮는다', () => {
     for (let px = -8; px <= 8; px++) {
       for (let pz = -8; pz <= 8; pz++) {
         const dirs = roadDirs(px, pz);
-        const parts = road.place({ px, pz, rnd: rngFrom(1), o: DEFAULT_LAYOUT, halfX: HALF_X, halfZ: HALF_Z });
+        const parts = road.place({ px, pz, rnd: rngFrom(1), o: DEFAULT_LAYOUT, halfX: HALF_X, halfZ: HALF_Z, placed: [], radiusOf: () => 0 });
         const h = ROAD_SEG / 2 - 0.01; // 귀퉁이 안쪽 — 경계 위 부동소수 다툼을 피한다
         for (const p of parts) {
           for (const [dx, dz] of [[-h, -h], [h, -h], [-h, h], [h, h]] as const) {
@@ -114,7 +114,7 @@ describe('② onRoad 가 실제로 깔린 조각을 덮는다', () => {
 
   it('격자에서는 모든 파셀에 도로 조각이 깔린다', () => {
     for (const [px, pz] of [[0, 0], [3, -7], [-11, 5], [14, 14]]) {
-      const segs = road.place({ px, pz, rnd: rngFrom(px * 31 + pz), o: DEFAULT_LAYOUT, halfX: HALF_X, halfZ: HALF_Z });
+      const segs = road.place({ px, pz, rnd: rngFrom(px * 31 + pz), o: DEFAULT_LAYOUT, halfX: HALF_X, halfZ: HALF_Z, placed: [], radiusOf: () => 0 });
       expect(segs.length).toBeGreaterThan(0);
     }
   });
@@ -123,7 +123,7 @@ describe('② onRoad 가 실제로 깔린 조각을 덮는다', () => {
     let peak = 0;
     for (let px = -25; px <= 25; px++) {
       for (let pz = -25; pz <= 25; pz++) {
-        const n = road.place({ px, pz, rnd: rngFrom(1), o: DEFAULT_LAYOUT, halfX: HALF_X, halfZ: HALF_Z }).length;
+        const n = road.place({ px, pz, rnd: rngFrom(1), o: DEFAULT_LAYOUT, halfX: HALF_X, halfZ: HALF_Z, placed: [], radiusOf: () => 0 }).length;
         peak = Math.max(peak, n);
       }
     }

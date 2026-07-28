@@ -59,6 +59,9 @@ export const fountain: PartSpec = {
   tones: [0x8d8577, 0x9a9184, 0x807868],
 
   // 광장당 하나. 광장이 아닌 파셀은 0개다.
+  // `PROFILE` 최대 반경 2.4 에 물받이 테두리 여유를 얹는다.
+  footprint: () => 2.7,
+
   maxPerParcel: () => 1,
 
   place: ({ px, pz }) => {

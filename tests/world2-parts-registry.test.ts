@@ -59,7 +59,7 @@ describe('배치와 선언이 어긋나지 않는다', () => {
   it('place 가 자기 kind 로만 부품을 낸다', () => {
     for (const p of PARTS) {
       const rnd = mulberry(12345);
-      const parts = p.place({ px: 1, pz: 2, rnd, o: DEFAULT_LAYOUT, halfX: 13.5, halfZ: 13.5 });
+      const parts = p.place({ px: 1, pz: 2, rnd, o: DEFAULT_LAYOUT, halfX: 13.5, halfZ: 13.5, placed: [], radiusOf: () => 0 });
       for (const part of parts) expect(part.kind).toBe(p.kind);
     }
   });

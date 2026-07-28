@@ -18,8 +18,12 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
-import { roadDirs, pickOffRoad } from './road-topology.js';
+import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
+import { parcelSlots, freeSlots, takeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 import { isPlaza } from './plaza.js';
+
+/** 벤치가 차지하는 반경(미터). 좌판 1.4m 의 절반 + 앉을 여유 */
+const BENCH_RADIUS = 0.95;
 
 export const bench: PartSpec = {
   kind: 'bench',
@@ -29,22 +33,39 @@ export const bench: PartSpec = {
   // 아니라 tones 의 밝기로 준다(같은 벤치가 조금씩 바래 보인다).
   tones: [0xffffff, 0xeee6d8],
 
+  // 좌판 1.4 × 0.44. 회전이 직각 배수라 긴 변의 절반이 곧 반경이고, 앉을 자리를
+  // 남기려 조금 더 준다. 상수 하나를 자리 탐색과 겹침 판정이 함께 본다 — 둘이 어긋나면
+  // "안 겹친다고 판정한 자리에 놓았는데 겹치는" 상태가 된다.
+  footprint: () => BENCH_RADIUS,
+
   maxPerParcel: () => 2,
 
-  place: ({ px, pz, rnd, halfX, halfZ }) => {
+  /**
+   * 빈 슬롯에 놓는다 (감독 지시로 바뀐 자리).
+   *
+   * 나무 다음 차례라 나무가 쓰고 남은 자리를 받는다 — `parts/index.ts` 의 목록 순서가
+   * 곧 우선순위다. 벤치는 많아야 둘이라 자리 경쟁에서 밀려도 티가 안 나지만, 나무
+   * 여덟 그루가 밀리면 파셀이 휑해진다.
+   */
+  place: ({ px, pz, rnd, o, halfX, halfZ, placed, radiusOf }) => {
     const dirs = roadDirs(px, pz);
     // **광장에 더 많이 둔다.** 광장은 "숨 쉴 곳" 으로 만든 빈 구획인데, 정말 아무것도
     // 없으면 빈 땅으로 읽힌다. 앉을 것이 있어야 머물 수 있는 자리가 된다.
     const n = isPlaza(px, pz) ? 2 : (rnd() < 0.35 ? 1 : 0);
-    const out: PlacedPart[] = [];
-    for (let i = 0; i < n; i++) {
-      const pos = pickOffRoad(rnd, halfX, halfZ, dirs);
+    if (n === 0) return [];
+
+    const slots = parcelSlots(o, halfX, halfZ, dirs);
+    const free = freeSlots(
+      slots, placed, radiusOf, BENCH_RADIUS,
+      lampReservations(o, halfX, halfZ, dirs, LAMP_CLEARANCE),
+    );
+    return takeSlots(rnd, free, n, BENCH_RADIUS).map((slot) => {
+      const pos = jitterIn(rnd, slot, BENCH_RADIUS);
       // 90° 단위로만 돌린다. 벤치는 인공물이라 비스듬히 놓이면 버려진 것처럼 보인다.
       const ry = Math.floor(rnd() * 4) * (Math.PI / 2);
       const tone = Math.floor(rnd() * 2);
-      out.push({ kind: 'bench', x: pos.x, z: pos.z, y: 0, ry, sx: 1, sy: 1, sz: 1, tone });
-    }
-    return out;
+      return { kind: 'bench', x: pos.x, z: pos.z, y: 0, ry, sx: 1, sy: 1, sz: 1, tone };
+    });
   },
 
   asset: (T) => ({

@@ -44,6 +44,9 @@ export const ground: PartSpec = {
   // 아스팔트(17%)와 확실히 갈리면서 잔디(정원)와도 어울린다.
   tones: [0x6b6659, 0x746f61, 0x625e52],
 
+  // 바닥에 깔리는 평면 — 그 위에 물건이 서는 것이 정상이라 겹침 개념이 없다.
+  footprint: () => 0,
+
   maxPerParcel: () => 1,
 
   place: ({ rnd, o }) => [{

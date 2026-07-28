@@ -30,7 +30,8 @@
 // 최대 개수에 하한이 없다 — 나무가 0그루인 파셀은 광장처럼 읽혀서 오히려 자연스럽다.
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
-import { roadDirs, pickOffRoad } from './road-topology.js';
+import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
+import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 
 export const tree: PartSpec = {
   kind: 'tree',
@@ -41,15 +42,39 @@ export const tree: PartSpec = {
   // 겪은 것과 같은 함정이고, "tones 는 곱셈기다" 테스트가 이 규약을 지킨다.
   tones: [0xffffff, 0xe8f0e0, 0xf2ece0],
 
+  /**
+   * 수관 반경. 줄기 길이(`TRUNK_LEN` 2.6)에 가지가 2단 재귀로 뻗은 폭이라 실측 대신
+   * 비율로 잡는다 — 지오메트리가 three 안에서 만들어져 순수 판정에서는 잴 수 없다.
+   *
+   * 넉넉한 쪽으로 잡는 것이 맞다. 나무는 겹치면 **한 덩어리로 뭉쳐 보여** 그루 수가
+   * 읽히지 않는데, 그게 감독이 지적한 "겹쳐져 있는 것들" 의 큰 부분이다.
+   */
+  footprint: (p) => TREE_RADIUS_UNIT * p.sx,
+
   // `floor(rnd * (max + 1))` 의 상한이다. rnd < 1 이므로 max 를 넘지 않는다.
+  // 슬롯이 모자라면 실제로는 이보다 적게 심긴다 — 상한이므로 예산은 그대로 맞다.
   maxPerParcel: (o) => o.maxTrees,
 
-  place: ({ px, pz, rnd, o, halfX, halfZ }) => {
+  /**
+   * 빈 슬롯에 심는다 (감독 지시로 바뀐 자리).
+   *
+   * ── 전에는 어땠나 ─────────────────────────────────────────────────────────
+   * `pickOffRoad` 로 사분면을 **무작위로** 골라 그 안에서 좌표를 뽑았다. 길만 피할 뿐
+   * 건물이 이미 선 사분면인지, 앞서 심은 나무가 있는지는 보지 않았다. 그래서 여덟 그루가
+   * 한 칸에 몰려 한 덩어리로 뭉치고 건물 벽을 뚫고 자랐다.
+   *
+   * ── 왜 크기를 먼저 정하는가 ───────────────────────────────────────────────
+   * 자리가 비었는지는 **이 나무가 얼마나 큰지에 달려 있다.** 묘목은 들어가는데 다 자란
+   * 나무는 안 들어가는 자리가 있다. 그래서 스케일을 먼저 뽑고 그 반경으로 빈 슬롯을
+   * 찾는다. 순서를 뒤집으면 자리를 잡은 뒤 크기가 정해져 다시 겹친다.
+   */
+  place: ({ px, pz, rnd, o, halfX, halfZ, placed, radiusOf }) => {
     const dirs = roadDirs(px, pz);
     const n = Math.floor(rnd() * (o.maxTrees + 1));
+    const slots = parcelSlots(o, halfX, halfZ, dirs);
+    const reserved = lampReservations(o, halfX, halfZ, dirs, LAMP_CLEARANCE);
     const out: PlacedPart[] = [];
     for (let i = 0; i < n; i++) {
-      const pos = pickOffRoad(rnd, halfX, halfZ, dirs);
       // **자유 회전.** 90° 단위로 돌리던 것을 풀었다 — 나무는 인공물이 아니라 어느
       // 각도로 서 있어도 이상하지 않고, 지오가 하나뿐이라 반복감을 줄일 수단이 회전과
       // 크기뿐이다. (벤치·화분은 인공물이라 90° 단위를 유지한다.)
@@ -69,6 +94,17 @@ export const tree: PartSpec = {
       const s = 0.6 + rnd() * 1.3;
       const sy = s * (0.94 + rnd() * 0.12);
       const tone = Math.floor(rnd() * 3);
+      const r = TREE_RADIUS_UNIT * s;
+
+      // 앞선 파츠(건물)와 **이미 심은 나무**를 함께 피한다. `placed` 에는 `out` 이 아직
+      // 들어 있지 않으므로 이어 붙여 넘긴다 — 빠뜨리면 나무끼리 다시 겹친다.
+      const free = freeSlots(slots, [...placed, ...out], radiusOf, r, reserved);
+      // 자리가 없으면 **덜 심는다.** 여덟 그루를 채우려 억지로 밀어 넣으면 원래 문제로
+      // 돌아간다 — 겹쳐 선 여덟보다 떨어져 선 셋이 낫다.
+      if (free.length === 0) break;
+
+      const slot = free[Math.floor(rnd() * free.length)];
+      const pos = jitterIn(rnd, slot, r);
       out.push({ kind: 'tree', x: pos.x, z: pos.z, y: 0, ry, sx: s, sy, sz: s, tone });
     }
     return out;
@@ -193,6 +229,18 @@ const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
 /** 잎 색. 두 톤을 섞어 수관이 단색 덩어리로 안 보이게 한다 */
 const LEAF_A: readonly [number, number, number] = [0.34, 0.52, 0.30];
 const LEAF_B: readonly [number, number, number] = [0.26, 0.42, 0.24];
+
+/**
+ * 스케일 1일 때의 수관 반경(미터). `footprint` 가 여기에 인스턴스 스케일을 곱한다.
+ *
+ * 지오메트리는 three 안에서 가지 재귀로 만들어지므로 순수 판정에서 잴 수가 없다. 그래서
+ * 줄기 길이(`TRUNK_LEN`)에 대한 **비율로 잡는다** — 가지가 2단(`MAX_LEVEL`)으로 뻗으며
+ * 벌어지는 폭이 대략 줄기의 절반 안쪽이다.
+ *
+ * 실측이 아니라 상한이라는 것이 중요하다. 작게 잡으면 수관이 서로 파고들어 나무 여럿이
+ * 한 덩어리로 뭉쳐 보이고, 그러면 그루 수가 읽히지 않는다.
+ */
+export const TREE_RADIUS_UNIT = 1.3;
 
 /** world1 `world.js:676` 이 가로수에 쓰던 값 그대로 */
 const TRUNK_LEN = 2.6;

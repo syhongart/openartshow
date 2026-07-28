@@ -4,7 +4,7 @@
 // 오픈월드에서 그런 파셀이 드문드문 섞이면 세상이 버려진 인상을 준다.
 
 import type { PartSpec, PlacedPart } from './types.js';
-import { roadDirs, pickInQuadrant, shuffledQuadrants } from './road-topology.js';
+import { roadDirs, pickInQuadrant, shuffledQuadrants, SETBACK, LAMP_CLEARANCE } from './road-topology.js';
 import { isPlaza } from './plaza.js';
 
 /**
@@ -13,7 +13,16 @@ import { isPlaza } from './plaza.js';
  * 간격이 따라오지 않아 건물이 조용히 겹친다.
  */
 const MIN_SIDE = 3;
-const MAX_SIDE = 8;
+/**
+ * 건물 최대 변(미터). **사분면 폭에 맞춘 값이다.**
+ *
+ * 8 이었는데 사분면이 6.5m 라 건물이 제 구획을 넘었다 — 도로 위로 올라가고 가로등을
+ * 덮었다. 감독이 *"겹쳐져 있는 것들이 보여"* 라고 한 것의 큰 몫이 이것이다.
+ *
+ * 6 이면 사분면 안에 들어간다. 도시의 덩치는 **높이**(4~20m)가 만들지 바닥 넓이가
+ * 만드는 것이 아니라, 이 축소로 스카이라인은 그대로다.
+ */
+const MAX_SIDE = 6;
 
 export const building: PartSpec = {
   kind: 'building',
@@ -31,6 +40,12 @@ export const building: PartSpec = {
   //
   // 상한이 **사분면 수(4)를 넘으면 안 된다.** 넘는 순간 두 채가 같은 사분면에 배정돼
   // 겹치기 시작한다 — 그게 이 값을 6에서 4로 내린 이유의 절반이다.
+  /**
+   * 바닥 사각형을 감싸는 원. 회전이 직각 배수라 긴 변의 절반이면 충분하고, 처마·간판이
+   * 벽면을 조금 넘으므로 여유를 얹는다.
+   */
+  footprint: (p) => Math.max(p.sx, p.sz) * 0.5 + 0.6,
+
   maxPerParcel: (o) => o.maxBuildings,
 
   place: ({ px, pz, rnd, o, halfX, halfZ }) => {
@@ -47,11 +62,25 @@ export const building: PartSpec = {
     const quads = shuffledQuadrants(rnd);
     const out: PlacedPart[] = [];
     for (let i = 0; i < n; i++) {
-      const pos = pickInQuadrant(rnd, halfX, halfZ, dirs, quads[i], MAX_SIDE / 2);
       const ry = Math.floor(rnd() * 4) * (Math.PI / 2); // 직각 배치 — 도시가 정돈돼 보인다
+      // ── 크기를 자리보다 먼저 뽑는다 (감독 지시로 바뀐 순서) ─────────────────
+      // 얼마나 물러서야 하는지가 **건물 크기에 달려 있다.** 자리를 먼저 정하면 그 뒤에
+      // 정해진 크기가 도로나 가로등을 덮어도 알 수 없다 — 실제로 그랬다.
       const w = MIN_SIDE + rnd() * (MAX_SIDE - MIN_SIDE);
       const d = MIN_SIDE + rnd() * (MAX_SIDE - MIN_SIDE);
       const h = 4 + rnd() * 16;
+      const half = Math.max(w, d) / 2;
+
+      // 안쪽 경계 = 셋백 + 자기 반폭 + 가로등 여유. 유도값이라 크기 상한을 바꿔도
+      // 저절로 따라온다(예전 `MAX_SIDE / 2` 는 `SETBACK` 에 가려 무실효였다 —
+      // `pickInQuadrant` 가 `max(SETBACK, minInset)` 을 쓰는데 7 > 4 였다).
+      const inset = half + (dirs.length === 0 ? 0 : SETBACK + LAMP_CLEARANCE);
+      // 바깥 경계도 반폭만큼 당긴다. 안 하면 건물이 파셀 밖으로 나가 **이웃 파셀의**
+      // 물건과 겹친다 — 파셀 단위 검사로는 안 잡히는 겹침이다.
+      const outerX = Math.min(halfX, o.cellX / 2 - half);
+      const outerZ = Math.min(halfZ, o.cellZ / 2 - half);
+
+      const pos = pickInQuadrant(rnd, outerX, outerZ, dirs, quads[i], inset);
       const tone = Math.floor(rnd() * 5);
       out.push({ kind: 'building', x: pos.x, z: pos.z, y: 0, ry, sx: w, sy: h, sz: d, tone });
     }

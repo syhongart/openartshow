@@ -18,14 +18,16 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
-import { roadDirs, DIRS, ROAD_HALF, SETBACK } from './road-topology.js';
+import { roadDirs, DIRS, LAMP_OFFSET, LAMP_CLEARANCE, lampAnchors } from './road-topology.js';
 
 /**
  * 인도 한가운데까지의 거리(미터). 차도 끝(`ROAD_HALF`)과 건물 셋백(`SETBACK`) 사이가
  * 인도이므로 그 **중점**이다. 두 값에서 유도한다 — 6.25 를 직접 적으면 인도 폭을
  * 조정할 때 가로등만 옛 자리에 남는다(값 미러링).
  */
-export const LAMP_OFFSET = (ROAD_HALF + SETBACK) / 2;
+// 자리와 여유 반경의 정의는 `road-topology.ts` 에 있다. 슬롯 배치가 같은 값을 봐야
+// 하기 때문이다(가로등이 안 그려지는 tier 에서도 그 자리는 비워 둔다).
+export { LAMP_OFFSET, LAMP_CLEARANCE };
 
 export const lamp: PartSpec = {
   kind: 'lamp',
@@ -36,6 +38,15 @@ export const lamp: PartSpec = {
 
   // 방향당 하나이므로 최댓값은 방향 수다. **유도한다** — 4 를 적어 두면 방향이 늘 때
   // 슬롯이 모자라고, 그 부족은 `starved` 로만 나타나 원인을 찾기 어렵다.
+  /**
+   * 기둥과 갓을 함께 감싸는 반경. 실루엣(기둥 반경 ~0.1)보다 넉넉하게 잡는다 —
+   * 나무 수관이 갓을 스치면 등이 잎에 파묻혀 불빛이 가려진다.
+   *
+   * 값은 `road-topology.ts` 에 있다. 슬롯 배치가 "가로등 자리는 비운다" 를 계산할 때
+   * 같은 값을 봐야 하고, 가로등이 안 그려지는 tier 에서도 그 예약은 유지돼야 한다.
+   */
+  footprint: () => LAMP_CLEARANCE,
+
   maxPerParcel: () => DIRS.length,
 
   /**
@@ -70,18 +81,11 @@ export const lamp: PartSpec = {
    * 않게 눌러 주는 데만 쓴다.
    */
   place: ({ px, pz, o, halfX, halfZ }) => {
-    const out: PlacedPart[] = [];
-    const alongX = Math.min(o.cellX / 4, halfX);
-    const alongZ = Math.min(o.cellZ / 4, halfZ);
-    const at = (x: number, z: number): PlacedPart =>
-      ({ kind: 'lamp', x, z, y: 0, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 });
-    for (const d of roadDirs(px, pz)) {
-      if (d === 'east') out.push(at(alongX, LAMP_OFFSET));
-      else if (d === 'west') out.push(at(-alongX, LAMP_OFFSET));
-      else if (d === 'north') out.push(at(LAMP_OFFSET, -alongZ));
-      else out.push(at(LAMP_OFFSET, alongZ));
-    }
-    return out;
+    // 자리 계산은 `lampAnchors` 하나다. 다른 파츠도 그 함수로 "여기는 비운다"를
+    // 알아내므로, 여기에 같은 식을 다시 적으면 한쪽만 고쳐도 아무도 모른다.
+    return lampAnchors(o, halfX, halfZ, roadDirs(px, pz)).map((a) => ({
+      kind: 'lamp', x: a.x, z: a.z, y: 0, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0,
+    }));
   },
 
   /**

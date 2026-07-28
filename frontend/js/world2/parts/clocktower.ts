@@ -33,6 +33,9 @@ export const clocktower: PartSpec = {
   // (도로에서 어두운 톤을 곱해 길이 검게 나온 사고가 있었다)
   tones: [0xffffff],
 
+  // 사각 기둥이라 모서리까지가 반경이다(`R` = 외접원 반경).
+  footprint: () => R + 0.4,
+
   maxPerParcel: () => 1,
 
   place: ({ px, pz }) => {

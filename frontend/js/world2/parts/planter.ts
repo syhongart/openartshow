@@ -15,8 +15,17 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
-import { roadDirs, pickOffRoad } from './road-topology.js';
+import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
+import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 import { isPlaza } from './plaza.js';
+
+/**
+ * 화분이 차지하는 반경. 덤불 반경 0.3 에 스케일을 곱하고 잎이 삐져나온 만큼을 더한다.
+ *
+ * 함수인 이유는 스케일이 인스턴스마다 다르기 때문이다 — 상수 하나로 잡으면 큰 화분이
+ * 겹치거나 작은 화분이 자리를 낭비한다.
+ */
+const PLANTER_RADIUS = (s: number) => 0.3 * s + 0.15;
 
 export const planter: PartSpec = {
   kind: 'planter',
@@ -27,17 +36,37 @@ export const planter: PartSpec = {
   // 조금씩 다르게 보이게 한다.
   tones: [0xffffff, 0xf0f4e8, 0xe4ecdc],
 
+  // 덤불 반경 0.3 에 스케일을 곱한다. `place` 가 넣는 `sx` 가 그 스케일이다.
+  footprint: (p) => PLANTER_RADIUS(p.sx),
+
   maxPerParcel: () => 3,
 
-  place: ({ px, pz, rnd, halfX, halfZ }) => {
+  /**
+   * 빈 슬롯에 놓는다 (감독 지시로 바뀐 자리).
+   *
+   * 목록 마지막 차례라 남은 자리를 받는다. 화분은 작아서(반경 0.5 안팎) 나무·건물이
+   * 못 쓰는 좁은 틈에도 들어간다 — 우선순위가 낮은 것이 오히려 어울린다.
+   */
+  place: ({ px, pz, rnd, o, halfX, halfZ, placed, radiusOf }) => {
     const dirs = roadDirs(px, pz);
     const n = isPlaza(px, pz) ? 3 : Math.floor(rnd() * 3);
+    if (n === 0) return [];
+
+    const slots = parcelSlots(o, halfX, halfZ, dirs);
+    const reserved = lampReservations(o, halfX, halfZ, dirs, LAMP_CLEARANCE);
     const out: PlacedPart[] = [];
+
     for (let i = 0; i < n; i++) {
-      const pos = pickOffRoad(rnd, halfX, halfZ, dirs);
       // 화분은 둥글어서 회전이 안 보인다. 대신 **크기**를 흔들어 다양함을 만든다 —
       // 회전에 난수를 쓰면 소비만 하고 화면은 그대로다.
       const s = 0.85 + rnd() * 0.35;
+      // 나무와 같은 이유로 크기를 먼저 뽑는다 — 반경이 정해져야 자리를 물어볼 수 있다.
+      const r = PLANTER_RADIUS(s);
+      const free = freeSlots(slots, [...placed, ...out], radiusOf, r, reserved);
+      if (free.length === 0) break;
+
+      const slot = free[Math.floor(rnd() * free.length)];
+      const pos = jitterIn(rnd, slot, r);
       const tone = Math.floor(rnd() * 3);
       out.push({ kind: 'planter', x: pos.x, z: pos.z, y: 0, ry: 0, sx: s, sy: s, sz: s, tone });
     }

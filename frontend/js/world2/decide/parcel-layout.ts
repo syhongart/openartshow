@@ -19,7 +19,7 @@
 // `parts/` 의 파츠 파일에 있다. 이 파일에 남은 것은 "파셀 하나를 어떻게 훑는가" 뿐이다 —
 // 도로를 추가할 때 여기를 열 일이 없다는 것이 그 분리의 요점이다.
 
-import { PARTS, kindsFor, maxPartsPerParcel, outermostTierFor, type PartKind } from '../parts/index.js';
+import { PARTS, specFor, kindsFor, maxPartsPerParcel, outermostTierFor, type PartKind } from '../parts/index.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import type { LayoutOptions, PlacedPart } from '../parts/types.js';
 
@@ -89,7 +89,21 @@ export function parcelLayout(
   for (const spec of PARTS) {
     if (!spec.tiers.includes(tier)) continue;
     const rnd = rngFrom(hash2(base, spec.salt));
-    out.push(...spec.place({ px, pz, rnd, o, halfX, halfZ }));
+    // `out` 을 그대로 넘긴다 — 뒤에 오는 파츠가 앞서 놓인 것을 보고 자리를 피한다.
+    // 목록 순서가 곧 우선순위이고, 그래서 `parts/index.ts` 의 배열 순서가 룩에 영향을
+    // 준다(예전에는 "실제 동작은 순서와 무관" 했다. 이제 아니다).
+    out.push(...spec.place({ px, pz, rnd, o, halfX, halfZ, placed: out, radiusOf }));
   }
   return out;
+}
+
+/**
+ * 놓인 부품의 점유 반경. 종류를 몰라도 되게 하는 조회 한 겹.
+ *
+ * 모르는 종류는 0 이다 — 겹침 판정에서 빠진다. 파츠 목록에 없는 것이 배치에 들어 있을
+ * 수는 없으므로 실질적으로 도달하지 않지만, 0 을 돌려주는 쪽이 안전하다(임의의 큰 값을
+ * 돌려주면 모르는 종류 하나가 파셀 전체를 비워 버린다).
+ */
+function radiusOf(p: PlacedPart): number {
+  return specFor(p.kind)?.footprint(p) ?? 0;
 }
