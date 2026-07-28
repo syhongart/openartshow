@@ -13,7 +13,10 @@
 // 가로등 발광이 실제로 재질에 쓰이는가. three 는 필요한 모양만 스텁으로 세운다.
 
 import { describe, it, expect } from 'vitest';
-import { nightness, nightFloor, lampGlow } from '../frontend/js/world2/decide/night.js';
+import {
+  nightness, nightFloor, lampGlow, LAMP_LUMINANCE, LAMP_MAX_GLOW,
+} from '../frontend/js/world2/decide/night.js';
+import { BLOOM_THRESHOLD } from '../frontend/js/world2/features/postfx-params.js';
 // **실제 집행 함수를 부른다.** 테스트에서 같은 규칙을 다시 적으면 그것이 값 미러링이라,
 // 한쪽만 고쳐도 아무도 모른다. 이 함수를 `systems/night-lights.ts` 로 따로 뺀 이유가
 // 정확히 여기서 부르기 위해서다.
@@ -83,9 +86,8 @@ describe('가로등 발광', () => {
     expect(lampGlow(0)).toBe(0);
   });
 
-  it('밤에는 켜지되 타지 않는다', () => {
-    expect(lampGlow(1)).toBeGreaterThan(0.5);
-    expect(lampGlow(1)).toBeLessThanOrEqual(1);
+  it('밤에는 최대 배수까지 켜진다', () => {
+    expect(lampGlow(1)).toBe(LAMP_MAX_GLOW);
   });
 
   it('노을에 이미 켜지기 시작한다 — 어두워진 뒤 켜지면 늦어 보인다', () => {
@@ -176,5 +178,43 @@ describe('가로등 재질에 값이 닿는가', () => {
     expect(mat.emissiveIntensity).toBeGreaterThan(0.5);
     set('day');
     expect(mat.emissiveIntensity).toBe(0); // 다시 꺼진다
+  });
+});
+
+
+// ── 블룸이 실제로 걸리는가 ──────────────────────────────────────────────────
+// **이 검사가 없어서 블룸이 통째로 죽어 있었다.**
+//
+// 문턱을 0.85 로 잡았는데 등불색(`0xffc86e`)의 휘도가 0.805 였다. 블룸은 정상적으로
+// 돌면서 걸리는 픽셀이 하나도 없었고, 감독 화면은 *"가로등 똑같은데"* 였다. 코드도
+// 설정도 다 맞아 보이는데 **두 숫자의 관계**만 어긋난 것이라, 눈으로는 "왜 안 되지"
+// 에서 멈춘다.
+//
+// 이 저장소가 반복해서 배운 형태다 — 밤 조명 하한이 `sky.js` 밤 값보다 낮으면 아무
+// 일도 안 일어나는 것과 똑같다. **경계를 사이에 둔 두 값의 관계는 검사로 못 박는다.**
+describe('가로등이 블룸 문턱을 넘는가', () => {
+  const peak = LAMP_LUMINANCE * LAMP_MAX_GLOW;
+
+  it('한밤의 등이 문턱보다 밝다 — 아니면 블룸이 죽은 코드다', () => {
+    expect(peak).toBeGreaterThan(BLOOM_THRESHOLD);
+  });
+
+  it('여유가 넉넉하다 — 문턱에 겨우 걸치면 살짝만 번져 안 보인다', () => {
+    // 블룸 세기는 (휘도 − 문턱) 에 비례한다. 차이가 0.1 도 안 되면 켜 놓고도
+    // "똑같은데" 가 된다.
+    expect(peak - BLOOM_THRESHOLD).toBeGreaterThan(0.3);
+  });
+
+  it('낮에는 문턱 아래다 — 대낮에 등이 번지면 고장난 것처럼 보인다', () => {
+    expect(LAMP_LUMINANCE * lampGlow(nightness('day'))).toBeLessThan(BLOOM_THRESHOLD);
+  });
+
+  it('휘도 상수가 실제 등불색과 맞는다 — 색을 바꾸고 상수를 안 고치면 어긋난다', () => {
+    // `parts/lamp.ts` 의 `LAMP_LIGHT` 와 같은 값이어야 한다. 값 미러링이라 검사로 묶는다.
+    const hex = 0xffc86e;
+    const lum = 0.2126 * ((hex >> 16 & 0xff) / 255)
+      + 0.7152 * ((hex >> 8 & 0xff) / 255)
+      + 0.0722 * ((hex & 0xff) / 255);
+    expect(LAMP_LUMINANCE).toBeCloseTo(lum, 6);
   });
 });

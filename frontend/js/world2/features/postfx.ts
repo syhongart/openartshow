@@ -35,14 +35,15 @@ import * as THREE from 'three/webgpu';
 // `pass()` **함수**가 없어서, 거기서 찾다가 조용히 null 로 빠졌다(첫 시도의 실패 원인).
 import { pass } from 'three/tsl';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
-import { nightness } from '../decide/night.js';
+import { nightness, LAMP_LUMINANCE, LAMP_MAX_GLOW } from '../decide/night.js';
+import { BLOOM_THRESHOLD } from './postfx-params.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 /**
- * 번짐 세기. 1.0 을 넘기면 등이 뭉개져 형태가 사라진다 — 감독이 갓 모양을 보고
+ * 번짐 세기. 크게 잡으면 등이 뭉개져 형태가 사라진다 — 감독이 갓 모양을 보고
  * "가로등" 이라 읽는데, 그 실루엣을 지우면 켜진 얼룩이 된다.
  */
-const STRENGTH = 0.75;
+const STRENGTH = 0.9;
 
 /**
  * 번짐 반경. 크게 잡을수록 부드럽지만 다운샘플 단계가 늘어 비용이 붙는다.
@@ -53,13 +54,34 @@ const RADIUS = 0.4;
 /**
  * 이 밝기를 **넘는 픽셀만** 번진다.
  *
- * 낮게 잡으면 밤하늘의 별과 물 하이라이트까지 걸려 화면이 통째로 뿌예진다. 가로등의
- * 자체발광은 조명과 무관하게 더해지는 값이라 주변보다 확실히 밝고, 이 문턱이 그 차이를
- * 가른다. 감독 지시가 *"가로등 조명 옆"* 이라 **좁게 거는 쪽**을 택했다.
+ * ── 이 값 때문에 블룸이 통째로 죽어 있었다 ─────────────────────────────────
+ * 처음에 0.85 로 잡았는데 등불색의 휘도가 **0.805** 라 문턱을 못 넘었다. 블룸은
+ * 정상적으로 돌면서 걸리는 픽셀이 하나도 없었고, 감독 화면은 *"가로등 똑같은데"* 였다.
+ * "별까지 안 걸리게 좁게" 를 정하면서 **가로등이 그 문턱을 넘는지 계산하지 않은** 것이다.
+ *
+ * 지금은 등 쪽을 HDR 로 올려(`LAMP_MAX_GLOW` 1.8 → 휘도 1.45) 문턱 위로 보내고, 문턱은
+ * 0.75 로 조금만 낮춘다. 둘 사이 여유가 충분해야 등이 **번지고**, 문턱이 별·물보다
+ * 높아야 그것들은 **안 번진다.** 그 관계는 `tests/world2-night.test.ts` 가 지킨다.
  */
-const THRESHOLD = 0.85;
+const THRESHOLD = BLOOM_THRESHOLD;
 
-/** `?bloom=0` 이면 아예 켜지 않는다 — 대조군 측정용 */
+/** URL 로 값을 읽는다. 없거나 이상하면 기본값 */
+function num(key: string, fallback: number): number {
+  if (typeof location === 'undefined') return fallback;
+  const raw = new URLSearchParams(location.search).get(key);
+  if (raw === null) return fallback;
+  const v = Number(raw);
+  return Number.isFinite(v) ? v : fallback;
+}
+
+/**
+ * `?bloom=0` 이면 아예 켜지 않는다 — 대조군 측정용.
+ *
+ * 세기·문턱·반경도 URL 로 연다(`?bloomstr=` `?bloomthr=` `?bloomrad=`). **내가 이
+ * 기능을 볼 수 없기 때문이다** — 헤드리스는 WebGL 이라 블룸이 아예 안 켜지고, 실제
+ * 모습은 감독 기기(WebGPU)에서만 나온다. 값을 찾는 일을 코드 수정·배포 왕복으로
+ * 하면 한 번에 몇 분씩 걸리므로, 그 자리에서 돌려볼 수 있게 열어 둔다.
+ */
 function enabled(): boolean {
   if (typeof location === 'undefined') return true;
   return new URLSearchParams(location.search).get('bloom') !== '0';
@@ -109,9 +131,12 @@ export const postfxFeature: Feature = {
       try {
         pp = new PP(env.adapter.renderer);
         const scenePass = pass(env.scene, env.camera) as unknown as { add(x: unknown): unknown };
-        const b = bloom(scenePass, STRENGTH, RADIUS, THRESHOLD) as unknown as {
-          strength: { value: number };
-        };
+        const b = bloom(
+          scenePass,
+          num('bloomstr', STRENGTH),
+          num('bloomrad', RADIUS),
+          num('bloomthr', THRESHOLD),
+        ) as unknown as { strength: { value: number } };
         bloomNode = b;
         // 원본 + 번짐. `add` 로 더하는 것이 블룸의 정의다 — 곱하거나 섞으면 어두운
         // 부분까지 영향을 받아 대비가 죽는다.
@@ -147,7 +172,7 @@ export const postfxFeature: Feature = {
     let lastLevel = -1;
     function applyLevel(time: string): void {
       if (!bloomNode) return;
-      const level = STRENGTH * nightness(time);
+      const level = num('bloomstr', STRENGTH) * nightness(time);
       if (level === lastLevel) return;
       lastLevel = level;
       bloomNode.strength.value = level;
@@ -169,8 +194,10 @@ export const postfxFeature: Feature = {
         on: !!bloomNode,
         failure,
         strength: lastLevel,
-        radius: RADIUS,
-        threshold: THRESHOLD,
+        radius: num('bloomrad', RADIUS),
+        threshold: num('bloomthr', THRESHOLD),
+        // 가로등이 문턱을 넘는가. 이 둘이 뒤집히면 블룸이 켜져도 아무것도 안 번진다.
+        lampPeak: +(LAMP_LUMINANCE * LAMP_MAX_GLOW).toFixed(3),
       }),
 
       dispose() {
