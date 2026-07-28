@@ -63,11 +63,11 @@ describe('hitchCount', () => {
 
 describe('constancy — 개수 불변식 판정 그 자체', () => {
   it('같은 값만 있으면 상수', () => {
-    expect(constancy([6, 6, 6])).toEqual({ min: 6, max: 6, constant: true });
+    expect(constancy([6, 6, 6])).toEqual({ min: 6, max: 6, constant: true, n: 3 });
   });
 
   it('하나라도 다르면 변동', () => {
-    expect(constancy([6, 6, 7])).toEqual({ min: 6, max: 7, constant: false });
+    expect(constancy([6, 6, 7])).toEqual({ min: 6, max: 7, constant: false, n: 3 });
   });
 
   it('표본이 없으면 상수가 아니다 — 관측 없음을 통과로 적으면 안 된다', () => {
@@ -420,5 +420,55 @@ describe('하늘 전이 구간 — 판정에서 빼되 뺀 사실을 적는다',
     const line = text.split('\n').find((l) => l.startsWith('draw'))!;
     expect(line).toContain('불변식 위반');
     expect(line).toContain('상태 전이 중 42표본 제외');
+  });
+});
+
+// ── 못 잰 것이 위반으로 적히면 안 된다 (감독 실기기 리포트에서 나왔다) ────────
+//
+// 리포트에 `draw 0 변동 0~0 ← 불변식 위반` 이 찍혔는데, 같은 리포트의 시간축에는
+// draw 가 39~179 로 멀쩡히 있었다. 원인은 **표본이 하나도 없었던 것**이다 —
+// NPC 가 `drawGroupKey: () => null` 로 draw 판정을 유예하고 있어서 1800프레임이
+// 전부 제외됐고, 빈 표본의 `constant:false` 가 그대로 "위반" 으로 출력됐다.
+//
+// 이 저장소가 상시 위험으로 규정한 **"못 잰 것이 통과로 적히는 경향"** 의 거울상이다.
+// 어느 쪽이든 리포트가 사실과 달라지고, 이번 것이 더 나쁘다 — 멀쩡한 코드를 고치러
+// 가게 만든다.
+describe('표본이 없으면 판정이 아니라 미측정이다', () => {
+  it('빈 표본은 n=0 이고, 그것이 "변했다"와 구별된다', () => {
+    const empty = constancy([]);
+    const varied = constancy([1, 2]);
+    expect(empty.n).toBe(0);
+    expect(varied.n).toBe(2);
+    // 둘 다 constant:false 라서 이 필드만으로는 구별할 수 없다 — 그게 버그의 원인이었다.
+    expect(empty.constant).toBe(false);
+    expect(varied.constant).toBe(false);
+  });
+
+  it('리포트 줄이 "위반"이 아니라 "측정 안 됨"으로 나온다', () => {
+    const out = formatReport(base({
+      draw: [], drawGroupKeys: [], groupKeyNames: {}, drawSkipped: 1800,
+    }));
+    const line = out.split('\n').find((l) => l.startsWith('draw'));
+    expect(line, 'draw 줄이 리포트에 없다').toBeDefined();
+    expect(line).toContain('측정 안 됨');
+    expect(line).not.toContain('불변식 위반');
+  });
+
+  it('왜 못 쟀는지가 줄에 남는다 — 없으면 다음 사람이 또 같은 걸 조사한다', () => {
+    const out = formatReport(base({
+      draw: [], drawGroupKeys: [], groupKeyNames: {}, drawSkipped: 1800,
+    }));
+    const line = out.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).toContain('1800');
+    expect(line).toContain('판정 유예');
+  });
+
+  it('표본이 있으면 예전처럼 판정한다 — 미측정 처리가 정상 경로를 먹지 않는다', () => {
+    const out = formatReport(base({
+      draw: [40, 40, 41], drawGroupKeys: [1, 1, 1], groupKeyNames: { 1: 'night|clear' },
+    }));
+    const line = out.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).toContain('불변식 위반');
+    expect(line).toContain('40~41');
   });
 });

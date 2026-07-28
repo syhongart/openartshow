@@ -53,20 +53,30 @@ export interface Constancy {
   max: number;
   /** 상수인가 — 개수 불변식의 판정 그 자체 */
   constant: boolean;
+  /**
+   * 쓸 수 있었던 표본 수. **0이면 판정이 아니라 미측정이다.**
+   *
+   * 이 필드가 없어서 감독 실기기 리포트에 `draw 0 변동 0~0 ← 불변식 위반`이 찍혔다.
+   * 표본이 하나도 없었는데(전부 판정 유예) `constant:false` 가 그대로 "위반" 으로
+   * 출력된 것이다. 아래 주석이 "관측한 적 없음을 통과로 적지 않는다" 고 적어 두고도
+   * **거울상**을 놓쳤다 — 관측한 적 없음이 실패로 적혔고, 왜 없는지는 안 적혔다.
+   */
+  n: number;
 }
 
 /**
  * 상수성. 개수(드로우콜·파이프라인 등)에 쓴다.
  *
- * 표본이 없으면 `constant: false`다. "변한 적 없음"과 "관측한 적 없음"은 다르고,
- * 후자를 통과로 적으면 재보지 않은 것이 검증된 것처럼 남는다.
+ * 표본이 없으면 `constant: false` 이고 `n: 0` 이다. "변한 적 없음"·"관측한 적 없음"·
+ * "변했음" 은 **셋 다 다르고**, 출력은 셋을 구별해야 한다. `constant` 하나로는 뒤의
+ * 둘이 붙어 버린다.
  */
 export function constancy(samples: readonly number[]): Constancy {
   const xs = samples.filter((v) => Number.isFinite(v));
-  if (xs.length === 0) return { min: 0, max: 0, constant: false };
+  if (xs.length === 0) return { min: 0, max: 0, constant: false, n: 0 };
   let mn = xs[0], mx = xs[0];
   for (const v of xs) { if (v < mn) mn = v; if (v > mx) mx = v; }
-  return { min: mn, max: mx, constant: mn === mx };
+  return { min: mn, max: mx, constant: mn === mx, n: xs.length };
 }
 
 export interface GroupedConstancy {
@@ -339,9 +349,13 @@ function statLine(label: string, s: Stat): string {
   return `${label.padEnd(10)} avg ${f1(s.avg).padStart(7)}  p95 ${f1(s.p95).padStart(7)}  max ${f1(s.max).padStart(8)}`;
 }
 
-function countLine(label: string, c: Constancy): string {
-  const mark = c.constant ? '상수' : `변동 ${c.min}~${c.max}  ← 불변식 위반`;
-  return `${label.padEnd(10)} ${String(c.min).padStart(6)}   ${mark}`;
+function countLine(label: string, c: Constancy, why = ''): string {
+  // 표본 0은 판정이 아니다. 무엇이 막았는지까지 적어야 다음 사람이 이 줄을 읽고
+  // "재보지 않았구나" 를 안다 — 안 적으면 위반으로도, 통과로도 오독된다.
+  const mark = c.n === 0
+    ? `측정 안 됨(표본 0)${why ? ` — ${why}` : ''}`
+    : c.constant ? '상수' : `변동 ${c.min}~${c.max}  ← 불변식 위반`;
+  return `${label.padEnd(10)} ${c.n === 0 ? '     -' : String(c.min).padStart(6)}   ${mark}`;
 }
 
 /**
@@ -354,7 +368,13 @@ function drawLine(
   names: Readonly<Record<number, string>> | undefined,
   skipped = 0,
 ): string {
-  if (!keys || keys.length === 0) return countLine('draw', constancy(samples));
+  if (!keys || keys.length === 0) {
+    // 키가 아예 없으면 옛 리포트다(그룹 판정 이전) — 전 구간 상수로 본다.
+    // 키를 **쓰는데** 하나도 안 쌓였으면 전 프레임이 판정 유예였다는 뜻이고, 그건
+    // 위반이 아니라 미측정이다. 그 이유를 줄에 적는다.
+    const why = skipped > 0 ? `전 프레임 판정 유예(${skipped}표본 제외)` : '';
+    return countLine('draw', constancy(samples), why);
+  }
   const g = constancyByGroup(samples, keys);
   const nameOf = (k: number) => names?.[k] ?? `#${k}`;
   const lo = g.groups.length ? Math.min(...g.groups.map((x) => x.min)) : 0;
