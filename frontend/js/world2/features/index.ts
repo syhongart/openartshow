@@ -26,11 +26,15 @@ import type { Feature } from './types.js';
 import { skyFeature } from './sky.js';
 import { oceanFeature } from './ocean.js';
 import { minimapFeature } from './minimap.js';
+import { npcFeature } from './npc.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
   oceanFeature,
   minimapFeature,
+  // 사람은 플레이어 뒤에 온다 — 같은 프레임의 최신 플레이어 위치를 보고 멀어진 사람을
+  // 데려오기 때문이다. 한 프레임 늦으면 재배치가 시야 안에서 일어나 눈앞에서 튄다.
+  npcFeature,
 ];
 
 export type { Feature, FeatureEnv, FeatureInstance, MountedFeature } from './types.js';
