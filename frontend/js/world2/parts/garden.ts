@@ -23,20 +23,7 @@
 // 무엇보다 중앙 광장은 지을 수 없는 자리다.
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
-import { ROAD_HALF } from './road-topology.js';
 import { isPlaza } from './plaza.js';
-
-/**
- * 도로와 정원 사이 틈(미터).
- *
- * **`SETBACK`(7m)이 아니라 `ROAD_HALF`(5.5m) 기준이다.** 처음 셋백으로 잡았더니 판이
- * 4.5m 정사각형이 되어 격자를 드러내기엔 너무 작았다 — 셋백은 *건물이 물러서는 선*
- * 이지 땅의 경계가 아니다. 건물과 도로 사이의 인도까지가 다 "지을 수 있는 땅" 이다.
- *
- * 도로 경계에 딱 붙이지 않는 것은 경계가 애매해지기 때문이다. 0.5m 만 띄우면 길과
- * 잔디가 맞닿은 선이 또렷하다.
- */
-const KERB = 0.5;
 
 export const garden: PartSpec = {
   kind: 'garden',
@@ -53,38 +40,35 @@ export const garden: PartSpec = {
   // 한 장을 복사한 것처럼 안 보인다.
   tones: [0xffffff, 0xf0f4ea, 0xe6efe0],
 
-  maxPerParcel: () => 4,
+  // ── 사분면 넷에서 통짜 한 장으로 (감독 판정) ──────────────────────────────
+  // 감독: *"건물, 나무 있는 곳 바닥 정리가 필요해. 뭔가 건물이 어긋나있네."*
+  //
+  // 처음엔 사분면마다 7.5m 판을 하나씩 깔았다. 도로를 피하는 판정이 필요 없어서
+  // 깔끔해 보였는데, **건물과 나무는 그 판과 아무 관계 없이 배치된다.** 건물은 크기가
+  // 4~20m 로 제각각이고 자리도 사분면 안에서 흔들리므로, 정원 판을 가로질러 서거나
+  // 판 밖으로 비어져 나온다. 나무도 판 사이 틈에 서서 발치가 갈색 흙이었다.
+  // 화면에서는 **초록 조각이 어긋나게 흩어진** 모습이 된다.
+  //
+  // 통짜 한 장이면 그 문제가 통째로 사라진다. 건물이 어디에 서든 발밑이 잔디이고,
+  // 이웃 파셀의 잔디와 이어져 도시 전체가 연속된 땅으로 읽힌다.
+  //
+  // 도로 밑에도 깔리지만 **도로가 위에 있어 안 보인다**(정원 y=0.03, 도로 y=0.06).
+  // 낭비 같지만 드로우콜은 똑같다 — 인스턴스 하나가 넷보다 오히려 싸다.
+  maxPerParcel: () => 1,
 
-  place: ({ px, pz, rnd, o, halfX, halfZ }) => {
+  place: ({ px, pz, rnd, o }) => {
     if (isPlaza(px, pz)) return [];   // 광장은 포장 — 지을 수 없는 자리다
-
-    // 사분면 한 칸의 크기. 도로 경계 바깥부터 파셀 가장자리 여백 안쪽까지가 전부 땅이다.
-    const inner = ROAD_HALF + KERB;
-    const w = Math.max(0, halfX - inner);
-    const d = Math.max(0, halfZ - inner);
-    if (w <= 0 || d <= 0) return [];  // 셀이 작으면 정원이 설 자리가 없다
-
-    // 판 중심은 그 구간의 한가운데
-    const cx = inner + w / 2;
-    const cz = inner + d / 2;
-
-    const out: PlacedPart[] = [];
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        out.push({
-          kind: 'garden',
-          x: sx * cx, z: sz * cz,
-          // 지면(y=0) **바로 위**. 같은 높이면 z-파이팅으로 지글거린다. 도로가 0.06 이므로
-          // 그보다 낮게 둬서 길이 정원 위를 덮는다 — 둘이 겹치는 구간은 없지만, 순서가
-          // 정해져 있으면 나중에 도로 폭을 넓혀도 화면이 안 깨진다.
-          y: 0.03,
-          ry: 0,
-          sx: w, sy: 1, sz: d,
-          tone: Math.floor(rnd() * 3),
-        });
-      }
-    }
-    return out;
+    return [{
+      kind: 'garden',
+      x: 0, z: 0,
+      // 지면(y=0) 바로 위, 도로(0.06) 아래. 같은 높이면 z-파이팅으로 지글거린다.
+      y: 0.03,
+      ry: 0,
+      // **파셀을 꽉 채운다.** 조금이라도 작으면 파셀 경계마다 갈색 띠가 생기고,
+      // 그 띠가 격자를 이중으로 그려 어지럽다.
+      sx: o.cellX, sy: 1, sz: o.cellZ,
+      tone: Math.floor(rnd() * 3),
+    }];
   },
 
   asset: (T) => ({
@@ -151,6 +135,8 @@ function grassTexture(T: ThreeNS) {
   // 판마다 크기가 다르므로 반복시켜야 결의 밀도가 일정하다
   tex.wrapS = T.RepeatWrapping;
   tex.wrapT = T.RepeatWrapping;
-  tex.repeat.set(3, 3);
+  // 판이 파셀 한 칸(32m)을 덮으므로 결을 그만큼 반복시킨다. 예전 7.5m 판 기준의
+  // 3회를 그대로 두면 풀이 네 배로 늘어나 보인다.
+  tex.repeat.set(12, 12);
   return tex;
 }

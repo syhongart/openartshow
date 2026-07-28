@@ -13,7 +13,8 @@
 // 초록 쪽을 남긴 것은 거리에서 눈에 띄는 게 그쪽이라서다. 화분은 발치라 잘 안 보인다.
 // 나무(`tree.ts`)보다 훨씬 작아 **나무를 못 놓는 좁은 자리**를 메우는 것이 이 파츠의 몫이다.
 
-import type { PartSpec, PlacedPart } from './types.js';
+import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
+import { bakePieces, rgb, type Piece } from './bake.js';
 import { roadDirs, pickOffRoad } from './road-topology.js';
 import { isPlaza } from './plaza.js';
 
@@ -22,8 +23,9 @@ export const planter: PartSpec = {
   // 벤치보다도 작다(0.8m). near 에서만 — mid 에서도 이미 점 하나다.
   tiers: ['near'],
   salt: 0x2c8fd651,
-  // 잎 색 셋. 같은 초록이 반복되면 복사한 티가 나고, 미묘하게 다르면 심어 놓은 것으로 읽힌다.
-  tones: [0x4c6b42, 0x5c7a4a, 0x415f3c],
+  // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다. 밝기만 흔들어 화분마다
+  // 조금씩 다르게 보이게 한다.
+  tones: [0xffffff, 0xf0f4e8, 0xe4ecdc],
 
   maxPerParcel: () => 3,
 
@@ -43,11 +45,32 @@ export const planter: PartSpec = {
   },
 
   asset: (T) => ({
-    // 구를 살짝 눌러 덤불처럼. 8×6 이면 60삼각형 — world1 의 10×8(160)보다 가볍고
-    // 이 크기에서는 차이가 안 보인다.
-    geometry: new T.SphereGeometry(0.34, 8, 6).scale(1, 0.92, 1).translate(0, 0.34, 0),
-    material: new T.MeshStandardMaterial({ roughness: 0.9, metalness: 0 }),
+    geometry: buildPlanter(T),
+    material: new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }),
     castShadow: true,
     receiveShadow: false,
   }),
 };
+
+/** 화분 — 테라코타 */
+const POT = rgb(0x9a5b43);
+/** 덤불 */
+const BUSH = rgb(0x4c6b42);
+
+/**
+ * world1 `SG.planter` 를 되살렸다.
+ *
+ *   통    Cylinder(0.28, 0.2, 0.42, 12) → y=0.21
+ *   덤불  Sphere(0.3, 10, 8) 을 세로 0.92배 → y=0.62
+ *
+ * 예전에는 **덤불만** 남기고 화분을 뺐다. 재질이 하나라 갈색과 초록을 같이 못 쓴다고
+ * 판단했기 때문인데, 정점색을 쓰면 된다는 것을 나무에서 배웠다. 화분 없는 덤불은
+ * 땅에서 솟은 초록 공이라 감독 화면에서 그렇게 보였다.
+ */
+function buildPlanter(T: ThreeNS) {
+  const pieces: Piece[] = [
+    { geo: new T.CylinderGeometry(0.28, 0.2, 0.42, 12).translate(0, 0.21, 0), color: POT },
+    { geo: new T.SphereGeometry(0.3, 10, 8).scale(1, 0.92, 1).translate(0, 0.62, 0), color: BUSH },
+  ];
+  return bakePieces(T, pieces);
+}

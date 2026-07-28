@@ -16,7 +16,8 @@
 // 벤치는 높이 0.5m 다. `far`(76.8m)에서는 몇 픽셀도 안 되어 보이지 않는데 슬롯만 먹는다.
 // 가로등이 `near` 전용인 것과 같은 판단이고, 이 한 줄이 슬롯 예산을 결정한다.
 
-import type { PartSpec, PlacedPart } from './types.js';
+import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
+import { bakePieces, rgb, type Piece } from './bake.js';
 import { roadDirs, pickOffRoad } from './road-topology.js';
 import { isPlaza } from './plaza.js';
 
@@ -24,8 +25,9 @@ export const bench: PartSpec = {
   kind: 'bench',
   tiers: ['near', 'mid'],
   salt: 0x5f1d3a27,
-  // 나무색 둘. 하나면 온 세계 벤치가 같은 색이고, 셋 이상이면 거리가 알록달록해진다.
-  tones: [0x8a6a48, 0x6f5540],
+  // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다. 나무색 변주는 정점색이
+  // 아니라 tones 의 밝기로 준다(같은 벤치가 조금씩 바래 보인다).
+  tones: [0xffffff, 0xeee6d8],
 
   maxPerParcel: () => 2,
 
@@ -45,14 +47,34 @@ export const bench: PartSpec = {
     return out;
   },
 
-  // 좌석과 다리 둘을 한 지오로 굽는다. world1 은 `mergeGeometries` 를 썼지만 여기서는
-  // three 를 인자로만 받으므로(런타임 import 0) 박스 셋을 직접 합치는 대신 **좌석 하나에
-  // 다리를 파묻은 한 덩어리**로 단순화했다 — 36삼각형이 24가 되고, 다리 안쪽 면은 어차피
-  // 안 보인다.
   asset: (T) => ({
-    geometry: new T.BoxGeometry(1.4, 0.5, 0.44).translate(0, 0.25, 0),
-    material: new T.MeshStandardMaterial({ roughness: 0.82, metalness: 0.02 }),
+    geometry: buildBench(T),
+    material: new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02 }),
     castShadow: true,
     receiveShadow: false,
   }),
 };
+
+/** 좌석 — 나무 */
+const SEAT = rgb(0x8a6a48);
+/** 다리 — 좌석보다 어두운 나무. 같은 색이면 한 덩어리로 보인다 */
+const LEG = rgb(0x5f4a33);
+
+/**
+ * world1 `SG.bench` 의 치수 그대로.
+ *
+ *   좌석  Box(1.4, 0.09, 0.44) → y=0.45   실제로 앉는 높이다
+ *   다리  Box(0.12, 0.42, 0.4) → x=±0.58, y=0.21
+ *
+ * 예전에는 이것을 **박스 하나**로 뭉뚱그렸다("좌석에 다리를 파묻은 한 덩어리"). 24삼각형
+ * 으로 싸긴 했지만 멀리서도 벤치로 안 보이는 통짜 블록이었다 — 벤치가 벤치로 읽히는
+ * 것은 **좌석 아래가 비어 있기** 때문이다. 감독이 "임시 아셋" 이라 한 것이 이런 것들이다.
+ */
+function buildBench(T: ThreeNS) {
+  const pieces: Piece[] = [
+    { geo: new T.BoxGeometry(1.4, 0.09, 0.44).translate(0, 0.45, 0), color: SEAT },
+    { geo: new T.BoxGeometry(0.12, 0.42, 0.4).translate(-0.58, 0.21, 0), color: LEG },
+    { geo: new T.BoxGeometry(0.12, 0.42, 0.4).translate(0.58, 0.21, 0), color: LEG },
+  ];
+  return bakePieces(T, pieces);
+}
