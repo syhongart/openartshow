@@ -116,11 +116,17 @@ describe('tier별 구성', () => {
     expect(m.liveCount()).toBeGreaterThan(f.liveCount());
   });
 
-  it('far에는 lamp·tree가 없다', () => {
+  it('far에는 가까이서만 보이는 것들이 없다', () => {
+    // 검사 대상이 두 번 바뀌었다. lamp·tree 가 각각 far 로 올라갔기 때문인데,
+    // **둘 다 같은 이유**다 — 사라지는 지점이 안개(51.2m)보다 앞이라 또렷한 거리에서
+    // 툭 사라졌다(감독: *"이동시 멀리있는게 사라졌다가 멈추면 나타나"*).
+    //
+    // 지금 far 에서 빠지는 것은 planter(near)·bench(mid)·fountain(mid) 이다. 작아서
+    // 멀리서는 픽셀 몇 개이고, 사라져도 안개가 가려 줄 만큼 뒤에서 빠진다.
     const { builder, liveOf } = mk();
     builder.build(2, 9, 'far');
-    expect(liveOf('lamp')).toBe(0);
-    expect(liveOf('tree')).toBe(0);
+    expect(liveOf('planter')).toBe(0);
+    expect(liveOf('bench')).toBe(0);
     expect(liveOf('building')).toBeGreaterThan(0);
   });
 
@@ -134,17 +140,19 @@ describe('tier별 구성', () => {
 });
 
 describe('retier — 공통 부품을 건드리지 않는다(이 설계의 이득)', () => {
-  it('near→mid는 lamp 슬롯만 반납한다', () => {
+  it('near→mid는 near 전용 파츠만 반납한다', () => {
+    // 검사 대상을 lamp 에서 planter 로 옮겼다 — lamp 가 far 까지 그려지게 되면서
+    // tier 로 갈리지 않게 됐다. **지금 near 전용은 planter 하나뿐이다.**
     const { builder, log, liveOf } = mk();
     const h = builder.build(6, 6, 'near');
-    const lamps = liveOf('lamp');
+    const planters = liveOf('planter');
     const buildingsBefore = liveOf('building');
     const releasesBefore = log.release;
 
     builder.retier!(h, 'mid');
 
-    expect(log.release - releasesBefore).toBe(lamps); // 딱 lamp 개수만
-    expect(liveOf('lamp')).toBe(0);
+    expect(log.release - releasesBefore).toBe(planters); // 딱 planter 개수만
+    expect(liveOf('planter')).toBe(0);
     expect(liveOf('building')).toBe(buildingsBefore); // 건물은 그대로
   });
 
@@ -157,7 +165,7 @@ describe('retier — 공통 부품을 건드리지 않는다(이 설계의 이�
     expect(log.transform - transformsBefore).toBe(lamps);
   });
 
-  it('mid→near는 lamp만 새로 점유한다', () => {
+  it('mid→near는 near 전용 파츠만 새로 점유한다', () => {
     const { builder, log, liveOf } = mk();
     const h = builder.build(6, 6, 'mid');
     const treesBefore = liveOf('tree');
@@ -165,9 +173,9 @@ describe('retier — 공통 부품을 건드리지 않는다(이 설계의 이�
 
     builder.retier!(h, 'near');
 
-    expect(liveOf('lamp')).toBeGreaterThanOrEqual(0);
-    expect(liveOf('tree')).toBe(treesBefore); // 나무는 그대로
-    expect(log.acquire - acquiresBefore).toBe(liveOf('lamp'));
+    expect(liveOf('planter')).toBeGreaterThanOrEqual(0);
+    expect(liveOf('tree')).toBe(treesBefore); // 나무는 그대로 — 이제 far 까지 산다
+    expect(log.acquire - acquiresBefore).toBe(liveOf('planter'));
   });
 
   it('강등→승격 왕복이 원래 상태를 복원한다', () => {
@@ -183,15 +191,18 @@ describe('retier — 공통 부품을 건드리지 않는다(이 설계의 이�
     // 이 테스트가 잡은 버그: retier가 h.tier를 나중에 갱신해서 fill이 옛 tier 배치를
     // 봤고, 새 종류가 그 배치에 없어 아무것도 안 생겼다.
     //
-    // **검사 대상을 나무에서 가로등으로 바꿨다.** 나무가 far 까지 그려지게 되면서
-    // (감독 지적 *"이동하면 멀리 있는 게 사라졌다가 멈추면 나타나. 특히 나무."*)
-    // far 에도 나무가 있어 "0 → 양수" 가 성립하지 않는다. 가로등은 near 전용이라
-    // 지금은 그쪽이 tier 로 갈리는 파츠다.
+    // **검사 대상이 두 번 옮겨졌다.** 처음에는 나무였고, 나무가 far 로 올라가며
+    // 가로등으로 바꿨는데, 가로등도 같은 이유로 far 로 올라갔다(둘 다 안개보다 앞에서
+    // 사라지고 있었다). **지금 tier 로 갈리는 것은 planter 하나뿐이다.**
+    //
+    // 이 테스트가 자꾸 옮겨 다니는 것 자체가 신호다 — near 전용이 하나만 남았으니,
+    // 그것마저 올리면 이 검사는 대상을 잃는다. 그때는 tier 별 구성을 직접 비교하는
+    // 방식으로 다시 써야 한다.
     const { builder, liveOf } = mk();
     const h = builder.build(8, 8, 'far');
-    expect(liveOf('lamp')).toBe(0);
+    expect(liveOf('planter')).toBe(0);
     builder.retier!(h, 'near');
-    expect(liveOf('lamp')).toBeGreaterThan(0);
+    expect(liveOf('planter')).toBeGreaterThan(0);
   });
 
   it('retier 후 release가 여전히 전부 반납한다', () => {
@@ -235,7 +246,7 @@ describe('풀 고갈 — 조용히 넘기지 않는다', () => {
 
 describe('poolBudget — 예산이 밴드에서 유도된다', () => {
   // 종류별 최대 파셀 수. 그 종류가 살아 있는 **가장 바깥 tier의 EXIT** 반경이 기준이다.
-  const parcelsFor = (k: 'ground' | 'building' | 'tree' | 'lamp' | 'bench') =>
+  const parcelsFor = (k: 'ground' | 'building' | 'tree' | 'lamp' | 'bench' | 'planter') =>
     maxLatticePoints(tierReach(outermostTierFor(k)!, DEFAULT_BANDS));
 
   it('종류마다 파셀당 최대 × 그 종류의 tier 반경 파셀 수를 잡는다', () => {
@@ -249,14 +260,18 @@ describe('poolBudget — 예산이 밴드에서 유도된다', () => {
   // 잡아두고 있었다. 이 단언이 그 회귀를 막는다 — tier를 다시 뭉개면 세 값이 같아진다.
   it('tier가 좁을수록 파셀을 적게 잡는다 — 예산은 밴드에서 유도된다', () => {
     const b = PooledParcelBuilder.poolBudget();
-    // lamp(near) < bench(mid) < building(far). 예전에는 tree 가 가운데였는데 far 로
-    // 올라가면서(감독의 LOD 지적) building 과 같은 반경이 됐다 — **같아진 것이 맞다.**
-    // 값을 박아 두지 않고 관계로만 검사하는 이유가 이런 변경 때문이다.
-    expect(parcelsFor('lamp')).toBeLessThan(parcelsFor('bench'));
+    // planter(near) < bench(mid) < building(far). tree 에 이어 lamp 까지 far 로
+    // 올라가면서(둘 다 안개보다 앞에서 사라지고 있었다) building 과 같은 반경이 됐다 —
+    // **같아진 것이 맞다.** 값을 박아 두지 않고 관계로만 검사하는 이유가 이런 변경이다.
+    expect(parcelsFor('planter')).toBeLessThan(parcelsFor('bench'));
     expect(parcelsFor('bench')).toBeLessThan(parcelsFor('building'));
     expect(parcelsFor('tree')).toBe(parcelsFor('building'));
-    // lamp는 near에만 있다 — far까지 사는 ground와 같은 파셀 수를 잡으면 안 된다.
-    expect(b.lamp / maxPartsPerParcel('lamp')).toBeLessThan(b.ground / maxPartsPerParcel('ground'));
+    expect(parcelsFor('lamp')).toBe(parcelsFor('building'));
+    // near 전용 파츠는 far 까지 사는 ground 와 같은 파셀 수를 잡으면 안 된다.
+    // 예전에는 lamp 로 검사했는데 lamp 가 far 로 올라가면서 ground 와 같아졌다 —
+    // 회귀가 아니라 의도된 변경이고, near 에 남은 planter 로 옮기는 것이 맞다.
+    expect(b.planter / maxPartsPerParcel('planter'))
+      .toBeLessThan(b.ground / maxPartsPerParcel('ground'));
   });
 
   it('이 예산이면 최악의 로드 상황에서도 굶지 않는다', () => {
@@ -296,7 +311,13 @@ describe('poolBudget — 예산이 밴드에서 유도된다', () => {
       bands: { ...DEFAULT_BANDS, farEnter: 3.4, farExit: 3.8 },
     });
     expect(wide.building).toBeGreaterThan(base.building);
-    expect(wide.lamp).toBe(base.lamp); // near 밴드는 그대로 — lamp는 안 늘어야 한다
+    // near 밴드는 그대로이므로 **near 전용 파츠**는 안 늘어야 한다. 예전에는 lamp 로
+    // 검사했는데 lamp 가 far 로 올라가면서 함께 늘게 됐다 — 그건 회귀가 아니라 의도된
+    // 변경이고, 검사 대상을 near 에 남은 planter 로 옮기는 것이 맞다.
+    expect(wide.planter).toBe(base.planter);
+    // lamp 는 이제 far 라 **늘어야** 한다. 위 한 줄만 고치면 "안 늘어야 한다" 는 검사가
+    // 사라진 자리에 아무것도 안 남으므로, 반대 방향도 함께 못 박는다.
+    expect(wide.lamp).toBeGreaterThan(base.lamp);
   });
 
   it('headroom 배수가 실제로 곱해진다', () => {
