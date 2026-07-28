@@ -23,6 +23,19 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 const TIMES = ['day', 'sunset', 'night'] as const;
 const WEATHERS = ['clear', 'overcast', 'rain', 'snow'] as const;
 
+/**
+ * 안개를 하늘색으로 미는 기본 계수 (감독 지시 *"약간 하늘색으로"*).
+ *
+ * 물리적으로도 이 방향이 맞다 — 원거리 대기는 레일리 산란으로 푸르게 수렴한다. 그래서
+ * 시간대를 가리지 않고 **전 팔레트에 같은 계수**를 건다. 밤만 손대면 낮·노을과 톤이
+ * 갈리고, 그건 "약간 하늘색"이 아니라 "밤만 다른 세계"가 된다.
+ *
+ * 0.12 는 *약간* 의 해석이다. 밤 맑음 `#3d4762` 가 `#455472` 가 되어 남색이 조금 열리는
+ * 정도이고, 낮 맑음 `#e9eef2` 는 `#dce7f0` 으로 흰 기가 빠진다. **감독 판정 전의
+ * 출발점**이지 확정값이 아니다 — `?fogsky=` 로 조정한다.
+ */
+export const FOG_SKY_TINT = 0.12;
+
 export const skyFeature: Feature = {
   name: 'sky',
 
@@ -61,6 +74,17 @@ export const skyFeature: Feature = {
           fogScale: readNum('nfog', NIGHT_FOG_SCALE, 0.2, 4),
           groundScale: readNum('nground', NIGHT_GROUND_SCALE, 0.2, 4),
         },
+
+        // ── 안개 하늘색 틴트 (`?fogsky=`) ────────────────────────────────
+        // 감독: *"안개를 약간 하늘색으로 하면 어떨까."*
+        //
+        // 노브를 여는 이유는 밤 밝기와 같다 — **헤드리스는 WebGL, 감독 기기는
+        // WebGPU** 라 톤매핑을 거친 최종 색이 같지 않다. 색은 수치로 정할 수 없고
+        // 감독 화면이 유일한 게이트이므로, 링크에서 바로 돌려 볼 수 있어야 한다.
+        //
+        // `0` 이면 `sky.js` 가 팔레트를 그대로 돌려주므로 라이브와 완전히 같다 —
+        // 되돌리는 방법이 `?fogsky=0` 하나로 끝난다.
+        fogTint: readNum('fogsky', FOG_SKY_TINT, 0, 1),
       },
     );
 

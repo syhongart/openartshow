@@ -77,6 +77,16 @@ export interface SkyOptions {
    * `location` 을 읽는 순간 테스트가 브라우저를 필요로 하게 된다.
    */
   nightTune?: NightTune;
+  /**
+   * 안개를 하늘색 쪽으로 미는 계수(0..1). 감독 지시 *"안개를 약간 하늘색으로"*.
+   *
+   * `sky.js` 의 **팔레트 단계**로 넘어간다. 안개색은 하늘 돔 지평선도 함께 칠하므로
+   * (⑨ 규칙) 나중에 `scene.fog` 만 바꾸면 둘이 어긋나 원경이 하늘보다 밝게 뜬다 —
+   * 이미 그렇게 깨뜨려 감독이 *"안개가 안보여"* 로 잡은 적이 있다.
+   *
+   * 기본 0 이면 `sky.js` 가 테이블 객체를 그대로 돌려주므로 라이브와 완전히 같다.
+   */
+  fogTint?: number;
 }
 
 /**
@@ -143,6 +153,7 @@ export class SkySystem implements System {
       soft: opts.soft ?? false,
       // world2에는 아직 바다가 없다 — 수면 빛반사를 끈다.
       waterY: null,
+      fogTint: opts.fogTint ?? 0,
     });
     // 오픈월드 기본 하늘 = 야간 맑음. fade 0으로 즉시 적용(부팅 중 크로스페이드 낭비 방지).
     this.engine.set(

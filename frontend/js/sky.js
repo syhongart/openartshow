@@ -52,6 +52,40 @@ const LIGHT = {
   },
 };
 
+// ── 안개 하늘색 틴트 (감독 지시: *"안개를 약간 하늘색으로 하면 어떨까"*) ──────────
+//
+// 안개색은 위 테이블이 SSOT 이고, ⑨ 규칙에 따라 **돔 최하단(지평선)도 같은 색**이다.
+// 그래서 `scene.fog.color` 만 나중에 바꾸면 지평선과 어긋나 원경이 하늘보다 밝게 뜬다 —
+// world2 에서 실제로 그렇게 깨뜨렸고 감독이 *"안개가 안보여"* 로 잡았다. 색을 옮기려면
+// **팔레트 단계에서** 옮겨야 둘이 함께 움직인다.
+//
+// 이 파일은 라이브 `world.js` 와 공유하므로 테이블을 직접 고치지 않는다. 계수를 **주입**
+// 받고 기본값 0 이면 원본을 그대로 돌려준다 — 옵션을 안 넘기는 소비자는 무변경이다.
+
+/** 안개가 수렴하는 목표색. 원거리 대기가 레일리 산란으로 푸르게 보이는 것의 근사 */
+export const FOG_SKY = 0x7fb2e5;
+
+/** 두 hex 색을 `k`(0..1) 만큼 섞는다. 채널별 선형 보간 */
+function mixHex(a, b, k) {
+  const m = (sh) => {
+    const av = (a >> sh) & 255, bv = (b >> sh) & 255;
+    return Math.round(av + (bv - av) * k) & 255;
+  };
+  return (m(16) << 16) | (m(8) << 8) | m(0);
+}
+
+/**
+ * 시간대×날씨 팔레트. `tint`(0..1)만큼 안개를 `FOG_SKY` 쪽으로 민다.
+ *
+ * `tint` 가 0(기본)이면 **테이블 객체를 그대로** 돌려준다 — 사본조차 만들지 않으므로
+ * 기존 소비자의 동작이 한 톨도 달라지지 않는다.
+ */
+export function lightOf(time, weather, tint = 0) {
+  const L = LIGHT[time][weather];
+  if (!(tint > 0)) return L;
+  return { ...L, fog: mixHex(L.fog, FOG_SKY, Math.min(1, tint)) };
+}
+
 const seeded = (s0) => { let s = s0 | 0; return () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 
@@ -175,7 +209,8 @@ function dither(ctx, rnd, W, H) {
 // 그리고 하반부는 fog색 단색(지면에 가려 안 보이지만 지평선 이음새 방지 ⑨). — 실측 교정.
 function paintSky(ctx, W, H, time, weather, opts) {
   const rnd = seeded(0xa17c + SKY_TIMES.indexOf(time) * 7 + SKY_WEATHERS.indexOf(weather) * 31);
-  const L = LIGHT[time][weather];
+  // 지평선(⑨)과 `scene.fog` 가 **같은 팔레트 조회**를 거쳐야 정합이 유지된다.
+  const L = lightOf(time, weather, opts.fogTint);
   const Hh = H * 0.5; // 지평선(수평선) 텍스처 y
   // 눈도 구름 하늘 — 밤 눈 오는데 은하수가 보이는 모순 제거(눈구름은 먹구름보다 밝은 회백 톤)
   const cloudy = weather !== 'clear';
@@ -455,7 +490,7 @@ function synthThunder(delayS) {
   } catch (_) { /* 무음 폴백 */ }
 }
 
-export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null }) {
+export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = 0 }) {
   const state = { time: 'day', weather: 'clear', fx: { rainbow: false, aurora: false }, flashSafe: false, precip: 1 };
   // ── B-2 저사양 오버드로우 축소 ──
   // 모바일 타일드 GPU는 불투명 오브젝트의 오버드로우는 제거하지만 transparent·가산블렌딩 레이어
@@ -798,7 +833,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     synthThunder(0.8 + Math.random() * 2.2);
     return true;
   }
-  const cur = asVec(LIGHT.day.clear); // 현재 적용값(플래시 기준·lerp 결과 보관)
+  const cur = asVec(lightOf('day', 'clear', fogTint)); // 현재 적용값(플래시 기준·lerp 결과 보관)
 
   function applyLighting(vals) {
     sun.color.copy(vals.sun); sun.intensity = vals.sunI;
@@ -872,9 +907,10 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     const changedDome = n.time !== state.time || n.weather !== state.weather;
     state.time = n.time; state.weather = n.weather; state.fx = n.fx;
     if (typeof s.flashSafe === 'boolean') state.flashSafe = s.flashSafe;
-    const L = LIGHT[state.time][state.weather];
+    const L = lightOf(state.time, state.weather, fogTint);
     const fade = (o.fade === undefined ? 1.8 : o.fade) * (soft ? 0 : 1); // 저사양은 스냅
-    const pOpts = { soft, lowRes: false }; // 돔 2048 고정(위 주석) — 저해상 별 경로 사용 안 함
+    // `fogTint` 를 돔 페인터에도 넘긴다 — 안 넘기면 지평선만 원래 색으로 남아 ⑨ 가 깨진다.
+    const pOpts = { soft, lowRes: false, fogTint }; // 돔 2048 고정(위 주석) — 저해상 별 경로 사용 안 함
     if (changedDome && fade > 0) {
       paintSky(domeB.ctx, DOME_W, DOME_H, state.time, state.weather, pOpts);
       domeB.tex.needsUpdate = true;

@@ -24,6 +24,23 @@ const MIN_SIDE = 3;
  */
 const MAX_SIDE = 6;
 
+/**
+ * 처마·간판이 벽면을 넘는 몫(미터). **겹침 반경과 배치 한계가 이 값을 함께 봐야 한다.**
+ *
+ * ── 실제 사고 ────────────────────────────────────────────────────────────────
+ * 이 값이 `footprint` 에만 `+ 0.6` 으로 적혀 있었고 배치 한계는 반폭(`half`)만 당겼다.
+ * 그래서 건물 중심이 `cellX/2 − half` 까지 갈 수 있는데 겹침 반경은 `half + 0.6` 이라,
+ * 이웃 파셀 건물과 **0.6m 씩 마주 뻗어** 최대 0.74m 겹쳤다(13×13 파셀에서 11쌍).
+ *
+ * 값 미러링의 변종이다 — 같은 값을 두 곳에 적어서 어긋난 게 아니라, **두 곳에서 필요한
+ * 값을 한 곳에만 적어서** 다른 쪽이 몰랐다. 상수로 뽑으면 그 어긋남이 원리적으로 닫힌다.
+ *
+ * 왜 어느 검사에도 안 걸렸나: 파셀 겹침 검사는 **파셀 안**만 본다(41×41 전수로 0). 파셀
+ * 경계를 넘는 겹침은 볼 지점이 없었다. 가로등을 경계로 옮기며 유도 부등식을 세우다
+ * 드러났다.
+ */
+const EAVE = 0.6;
+
 export const building: PartSpec = {
   kind: 'building',
   tiers: ['near', 'mid', 'far'], // 가장 멀리서도 보인다 — 스카이라인을 만드는 것이 건물이다
@@ -42,9 +59,12 @@ export const building: PartSpec = {
   // 겹치기 시작한다 — 그게 이 값을 6에서 4로 내린 이유의 절반이다.
   /**
    * 바닥 사각형을 감싸는 원. 회전이 직각 배수라 긴 변의 절반이면 충분하고, 처마·간판이
-   * 벽면을 조금 넘으므로 여유를 얹는다.
+   * 벽면을 조금 넘으므로 `EAVE` 만큼 여유를 얹는다.
+   *
+   * **이 반경이 배치 한계와 같은 값을 봐야 한다.** 그러지 않아서 실제로 겹쳤다 — 아래
+   * `EAVE` 주석 참고.
    */
-  footprint: (p) => Math.max(p.sx, p.sz) * 0.5 + 0.6,
+  footprint: (p) => Math.max(p.sx, p.sz) * 0.5 + EAVE,
 
   maxPerParcel: (o) => o.maxBuildings,
 
@@ -75,10 +95,14 @@ export const building: PartSpec = {
       // 저절로 따라온다(예전 `MAX_SIDE / 2` 는 `SETBACK` 에 가려 무실효였다 —
       // `pickInQuadrant` 가 `max(SETBACK, minInset)` 을 쓰는데 7 > 4 였다).
       const inset = half + (dirs.length === 0 ? 0 : SETBACK + LAMP_CLEARANCE);
-      // 바깥 경계도 반폭만큼 당긴다. 안 하면 건물이 파셀 밖으로 나가 **이웃 파셀의**
-      // 물건과 겹친다 — 파셀 단위 검사로는 안 잡히는 겹침이다.
-      const outerX = Math.min(halfX, o.cellX / 2 - half);
-      const outerZ = Math.min(halfZ, o.cellZ / 2 - half);
+      // 바깥 경계는 **겹침 반경만큼** 당긴다. 반폭만 당겼더니 처마 몫(`EAVE`)이 남아
+      // 이웃 파셀 건물과 실제로 겹쳤다. 주석은 처음부터 옳았고 값만 모자랐다.
+      //
+      // 이 값이면 양쪽 파셀의 건물이 최대로 밀려도 중심 거리가 `2 × reach` 이므로 겹침
+      // 반경의 합과 정확히 같아진다 — 접하되 겹치지 않는다.
+      const reach = half + EAVE;
+      const outerX = Math.min(halfX, o.cellX / 2 - reach);
+      const outerZ = Math.min(halfZ, o.cellZ / 2 - reach);
 
       const pos = pickInQuadrant(rnd, outerX, outerZ, dirs, quads[i], inset);
       const tone = Math.floor(rnd() * 5);

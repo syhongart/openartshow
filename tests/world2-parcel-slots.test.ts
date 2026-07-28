@@ -90,6 +90,47 @@ describe('겹침이 사라졌는가 — 감독 지적의 본체', () => {
   });
 });
 
+// ── 파셀 **경계를 넘는** 겹침 ────────────────────────────────────────────────
+// 위 검사는 전부 **파셀 안**만 본다. 41×41 전수로 0 이 나오는데도 화면에서는 겹쳐
+// 보일 수 있다 — 이웃 파셀 물건과 겹치면 어느 파셀 안에서도 잡히지 않기 때문이다.
+//
+// 실제로 그랬다. `building.ts` 의 `footprint` 는 `반변 + 0.6`(처마 몫)인데 배치 한계는
+// 반변만 당겨서, 이웃 파셀 건물과 서로 0.6m 씩 뻗어 **최대 0.74m 겹쳤다**(13×13 파셀에서
+// 11쌍). 감독이 *"겹쳐져 있는 것들이 보여"* 라고 한 것의 남은 몫이다.
+//
+// 이 검사가 그 사각을 닫는다. 세계좌표로 옮겨 놓고 tier 별로 전수 비교한다 — 다른 tier
+// 끼리는 동시에 존재하지 않으므로 섞어 보면 없는 겹침을 만들어 낸다.
+describe('파셀 경계를 넘는 겹침 — 파셀 안만 보던 검사의 사각', () => {
+  const CELL = DEFAULT_LAYOUT.cellX;
+  const CELLZ = DEFAULT_LAYOUT.cellZ;
+
+  for (const tier of TIERS) {
+    it(`${tier} — 세계좌표에서 겹치는 쌍이 하나도 없다`, () => {
+      const world: { k: string; x: number; z: number; r: number }[] = [];
+      for (let px = -6; px <= 6; px++) {
+        for (let pz = -6; pz <= 6; pz++) {
+          for (const p of parcelLayout(px, pz, tier)) {
+            const r = radiusOf(p);
+            if (r > 0) world.push({ k: p.kind, x: px * CELL + p.x, z: pz * CELLZ + p.z, r });
+          }
+        }
+      }
+      const bad: string[] = [];
+      for (let i = 0; i < world.length; i++) {
+        for (let j = i + 1; j < world.length; j++) {
+          const a = world[i], b = world[j];
+          // 축 하나만 봐도 갈리면 거리를 안 재도 된다 — O(n²) 를 견딜 만하게 만든다.
+          const dx = Math.abs(a.x - b.x);
+          if (dx > a.r + b.r) continue;
+          const d = Math.hypot(dx, a.z - b.z) - (a.r + b.r);
+          if (d < -1e-9) bad.push(`${a.k}×${b.k} ${(-d).toFixed(2)}m @(${a.x.toFixed(1)},${a.z.toFixed(1)})`);
+        }
+      }
+      expect(bad.slice(0, 12), `겹침 ${bad.length}건 / 물체 ${world.length}개`).toEqual([]);
+    });
+  }
+});
+
 describe('tier 포함관계가 유지되는가 — 자리를 서로 참조하게 됐으니 위험이 커졌다', () => {
   // 파츠가 `placed` 를 보게 되면서 새 위험이 생겼다: **좁은 tier 의 파츠를 참조하면**
   // 그것이 사라지는 tier 에서 위치가 달라진다. 가로등을 예약으로 뺀 이유가 그것이고,
