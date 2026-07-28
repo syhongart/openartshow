@@ -56,6 +56,30 @@ const SPAWN_REACH = 2;
 /** 목표 도달 판정(m) */
 const ARRIVE = 0.35;
 
+/**
+ * 부팅 직후 **컬링을 끄고 전부 그리는** 프레임 수.
+ *
+ * ── 감독 성능 리포트에서 생겼다 ────────────────────────────────────────────
+ * `geometry` 가 세션 내내 늘었다 — 86 → 129 → 170 → 282. 증가폭 +43·+41 이 치비 한
+ * 체(45 지오)와 거의 같다.
+ *
+ * 원인은 `info.memory.geometries` 가 **씬에 있는 수가 아니라 GPU 에 업로드된 수**라는
+ * 것이다. 부팅 때 체를 다 만들어도 업로드는 그 메시가 **처음 그려질 때** 일어난다.
+ * 앞서 "파셀이 사람을 만들지 않으니 불변식은 지켜진다" 고 보고했는데, 객체 생성과
+ * GPU 업로드가 다른 시점이라는 것을 놓쳤다.
+ *
+ * 히칭은 안 났지만 그냥 둘 문제가 아니다 — "업로드 스파이크가 **언제** 날지 모른다"는
+ * 뜻이고, 그것이 이 아키텍처가 없애려는 바로 그 종류다.
+ *
+ * 처방: 처음 몇 프레임만 절두체 컬링을 끈다. 시야 밖 체까지 렌더 목록에 올라가
+ * 업로드가 끝나고, 그 뒤 컬링을 되돌리면 드로우콜은 원래대로 돌아온다. 로딩 직후라
+ * 그 몇 프레임의 드로우콜 증가는 화면에 드러나지 않는다.
+ *
+ * 3프레임인 이유: 1프레임이면 그 프레임에 렌더가 걸러질 여지(탭 비활성 등)가 있고,
+ * 많이 줄수록 초기 드로우콜이 높은 구간만 길어진다.
+ */
+const WARM_FRAMES = 3;
+
 interface Walker {
   /**
    * 무엇으로 그려지는가. **치비든 VRM 이든 이동 로직은 모른다** — 둘 다 `group`·
@@ -165,7 +189,11 @@ export const npcFeature: Feature = {
           // 본 매칭 결과를 진단에 싣는다. 못 찾으면 T-포즈로 미끄러지는데, 화면을 보기
           // 전까지 알 수 없었던 것이 실제 사고였다(감독이 스크린샷으로 잡았다).
           vrmBones = r.bones;
-          if (!spawn(r.avatar, 'vrm')) r.avatar.dispose();
+          if (!spawn(r.avatar, 'vrm')) { r.avatar.dispose(); return; }
+          // VRM 은 비동기라 예열 창을 이미 지났을 수 있다. 합류하는 체만 다시 연다.
+          const joined = walkers[walkers.length - 1];
+          setCulling(joined, false);
+          warmLeft = Math.max(warmLeft, WARM_FRAMES);
         })
         .catch((err) => { vrmError = String(err); });
     }
@@ -192,10 +220,31 @@ export const npcFeature: Feature = {
       retarget(w);
     }
 
+    /** 이 아바타의 모든 메시에 절두체 컬링을 켜고 끈다 */
+    function setCulling(w: Walker, on: boolean): void {
+      w.inst.group.traverse((o) => {
+        const m = o as { isMesh?: boolean; isSkinnedMesh?: boolean; frustumCulled?: boolean };
+        // VRM 은 스킨드라 이미 컬링이 꺼져 있다(본이 움직이면 바운딩이 어긋나 몸이
+        // 통째로 사라진다). 거기까지 켜면 안 되므로 일반 메시만 되돌린다.
+        if (m.isSkinnedMesh) return;
+        if (m.isMesh) m.frustumCulled = on;
+      });
+    }
+
+    for (const w of walkers) setCulling(w, false);
+    let warmLeft = WARM_FRAMES;
+
     const system = {
       name: 'npc',
       update(ctx: { dt: number }) {
         const dt = Math.min(ctx.dt, 0.1); // 탭 복귀 시 한 프레임에 순간이동하지 않게
+
+        // ── GPU 업로드 예열 ─────────────────────────────────────────────
+        // 컬링을 끈 채 몇 프레임 지나면 모든 메시가 한 번씩 렌더 목록에 올라 업로드가
+        // 끝난다. 그 뒤 되돌리면 `geometry` 가 세션 내내 상수가 된다.
+        if (warmLeft > 0 && --warmLeft === 0) {
+          for (const w of walkers) setCulling(w, true);
+        }
         const p = env.player.position;
         const ppx = Math.round(p.x / cellX);
         const ppz = Math.round(p.z / cellZ);
@@ -257,13 +306,26 @@ export const npcFeature: Feature = {
         vrmError,
       }),
 
-      // 보이는 사람 수가 바뀌면 드로우콜도 바뀐다. 그것은 정당한 변화이므로 **상태를
-      // 키에 넣어** 같은 상태끼리만 비교하게 한다. 안 그러면 성능 리포트가 "드로우콜이
-      // 흔들린다" 고 오판한다. 치비와 VRM 은 한 체당 드로우콜이 달라(45 대 6) 따로 센다.
-      drawGroupKey: () => {
-        const shown = walkers.filter((w) => w.shown);
-        return `c${shown.filter((w) => w.kind === 'chibi').length}v${shown.filter((w) => w.kind === 'vrm').length}`;
-      },
+      /**
+       * **드로우콜 판정을 유예한다**(`null`).
+       *
+       * ── 왜 상태 키로는 안 되는가 (감독 리포트가 알려줬다) ──────────────────
+       * 처음에는 보이는 체 수를 키에 넣었다(`c6v1`). 그런데 리포트에서 같은 키 안에서
+       * draw 가 **28~121 로 흔들렸다.**
+       *
+       * `shown` 은 **안개 거리** 기준인데, 실제로 그려질지는 **절두체**가 정한다.
+       * 카메라를 돌리는 것만으로 치비 한 체(45 드로우콜)가 들락날락하므로, 거리로 만든
+       * 키는 실제 변동 요인을 담지 못한다. 카메라 방향을 키에 넣을 수는 없다 — 연속값
+       * 이라 그룹이 무한히 갈라진다.
+       *
+       * 그래서 사람이 있는 동안에는 draw 표본을 **판정에서 뺀다.** 계약이 그 용도로
+       * `null` 을 두고 있고, 뺀 개수는 리포트에 적힌다.
+       *
+       * 잃는 것이 없다: 세계(파츠)의 드로우콜이 상수인지는 `?npc=0` 대조군에서 정확히
+       * 판정된다. 그것이 원래 이 불변식이 지키려던 것이고, 사람을 섞은 표본으로 "위반"
+       * 을 띄우는 것은 오탐일 뿐이다.
+       */
+      drawGroupKey: () => null,
 
       dispose() {
         disposed = true;

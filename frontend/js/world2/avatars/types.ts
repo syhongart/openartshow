@@ -29,6 +29,13 @@ export interface AvatarObject {
   rotation: { y: number };
   visible: boolean;
   removeFromParent(): void;
+  /**
+   * 하위 객체를 훑는다. `THREE.Object3D` 가 이 모양이다.
+   *
+   * 걷기에는 필요 없지만 **GPU 업로드 예열**에 필요하다 — 아바타의 메시들에 손을
+   * 뻗어야 하는 유일한 지점이라, 계약에 넣는 대신 여기 하나만 연다.
+   */
+  traverse(fn: (o: unknown) => void): void;
 }
 
 export interface WalkAvatar {
