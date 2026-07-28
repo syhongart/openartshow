@@ -12,7 +12,10 @@
 
 import { SkySystem } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
-import { nightness, lampGlow, NIGHT_HEMI_I, NIGHT_SUN_I } from '../decide/night.js';
+import {
+  nightness, lampGlow,
+  NIGHT_HEMI_I, NIGHT_SUN_I, NIGHT_EXPOSURE, NIGHT_FOG_SCALE, NIGHT_GROUND_SCALE,
+} from '../decide/night.js';
 import { readNum, readEnum } from '../url-knob.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
@@ -40,21 +43,23 @@ export const skyFeature: Feature = {
         time: readEnum('time', 'night', TIMES),
         weather: readEnum('weather', 'clear', WEATHERS),
 
-        // ── 밤 밝기 축 (`?nhemi=` `?nsun=` `?nexp=` `?nfog=`) ─────────────
+        // ── 밤 밝기 축 (`?nhemi=` `?nsun=` `?nexp=` `?nfog=` `?nground=`) ──
         // 감독: *"밤이 어둡다."* — 두 번째 지적이다. 첫 번째에 반구광·달빛을 올렸는데도
-        // 어둡다는 것은, 올린 축이 **화면에서 어두운 부분을 덮지 못한다**는 뜻이다.
+        // 어둡다는 것은, 올린 축이 **화면에서 어두운 부분을 덮지 못한다**는 뜻이었다.
         // 조명은 재질에 닿는 빛만 키우므로 하늘 돔·안개는 그대로 남는다.
         //
-        // 그래서 네 축을 전부 연다. 무엇이 지배하는지는 재고 정한다 — 이 프로젝트가
-        // 성능에서 열 번 빗나간 이유가 "재기 전에 처방부터 고른 것" 이었다.
+        // 기본값은 헤드리스 스윕이 정했다(`decide/night.ts` 의 각 상수 주석에 실측표).
+        // 노브를 남겨 두는 이유는 **헤드리스가 WebGL 이고 감독 기기는 WebGPU** 라
+        // 톤매핑을 거친 최종 밝기가 같지 않기 때문이다 — 최종 판정은 감독 화면이다.
         //
-        // `nexp`·`nfog` 의 기본값 1은 **곱셈 항등원**이라 지금 동작을 바꾸지 않는다.
-        // 축만 열어 두고 값은 스윕이 정한다.
+        // `undefined` 를 넘기지 않는 것이 중요하다. `readNum` 이 URL 부재 시 상수를
+        // 그대로 돌려주므로, 여기 적힌 것이 곧 배포값이다.
         nightTune: {
           hemiI: readNum('nhemi', NIGHT_HEMI_I, 0, 4),
           sunI: readNum('nsun', NIGHT_SUN_I, 0, 4),
-          exposure: readNum('nexp', 1, 0.2, 3),
-          fogScale: readNum('nfog', 1, 0.2, 4),
+          exposure: readNum('nexp', NIGHT_EXPOSURE, 0.2, 3),
+          fogScale: readNum('nfog', NIGHT_FOG_SCALE, 0.2, 4),
+          groundScale: readNum('nground', NIGHT_GROUND_SCALE, 0.2, 4),
         },
       },
     );

@@ -73,6 +73,8 @@ export interface NightTune {
   exposure?: number;
   /** 안개 목표색의 밝기 배수. 1이면 `sky.js` 값 그대로라 하한이 걸리지 않는다 */
   fogScale?: number;
+  /** 지면색(`hemiG`) 목표의 밝기 배수 */
+  groundScale?: number;
 }
 
 /**
@@ -87,8 +89,14 @@ const NIGHT_GROUND = [0x3a / 255, 0x42 / 255, 0x50 / 255] as const;
 /** 한밤의 목표 천공색 — `0x4a5878`. 원래 0x39445c 보다 한 단계 밝다 */
 const NIGHT_SKY = [0x4a / 255, 0x58 / 255, 0x78 / 255] as const;
 
-/** 한밤의 반구광 하한. 원래 0.55 */
-export const NIGHT_HEMI_I = 0.85;
+/**
+ * 한밤의 반구광 하한. `sky.js` 원래 값은 0.55.
+ *
+ * 0.85 로 한 번 올렸는데 감독 판정이 또 *"어둡다"* 였다. 헤드리스 스윕(390×844,
+ * 구역별 평균 휘도)에서 1.2 가 다른 축과 함께 쓸 때 가장 나았다 — 단독으로는 조명이
+ * 화면 전체를 그리 못 움직인다(1.5 로 올려도 +13%).
+ */
+export const NIGHT_HEMI_I = 1.2;
 /** 한밤의 달빛 하한. 원래 0.24 */
 export const NIGHT_SUN_I = 0.34;
 
@@ -105,13 +113,50 @@ export const NIGHT_SUN_I = 0.34;
 const NIGHT_FOG = [0x3d / 255, 0x47 / 255, 0x62 / 255] as const;
 
 /**
- * 한밤의 노출 하한. **1.0 은 곱셈 항등원이라 아무 일도 하지 않는다.**
+ * 한밤의 톤매핑 노출.
  *
- * 톤매핑 노출은 화면 전체를 한 번에 들어올리는 가장 강한 레버이고, 그래서 가장 위험한
- * 레버이기도 하다 — 올리면 밤이 밝아지는 게 아니라 **밤이 아니게 된다**(대비가 죽고
- * 하늘이 회색으로 뜬다). 얼마가 맞는지는 재고 정한다.
+ * ── 스윕이 고른 값이다 ──────────────────────────────────────────────────────
+ * 헤드리스 390×844 세로 화면에서 조건 9개를 재고 정했다(구역별 평균 휘도, Rec.709):
+ *
+ *   기본 밤      상단 19 · 중단 39 · 하단 10 · 전체 23
+ *   낮(대조군)   상단 200 · 중단 115 · 하단 27 · 전체 114
+ *   노출 1.6     상단 31 · 중단 52 · 하단 13 · 전체 32   (+39%)
+ *   안개 2.2     상단 19 · 중단 45 · 하단 10 · 전체 25   (+9%)
+ *   조명 1.5     상단 19 · 중단 45 · 하단 12 · 전체 26   (+13%)
+ *
+ * 노출이 압도적이다. 다른 축은 재질에 닿는 빛이나 특정 거리대만 건드리는데, 노출은
+ * 톤매핑 앞단이라 **하늘 돔·안개·지면·물이 한꺼번에** 올라간다.
+ *
+ * ── 왜 1.6이 아니라 1.4인가 ────────────────────────────────────────────────
+ * 노출만 올리면 하늘이 가장 많이 밝아진다(19 → 31). 밤하늘이 밝아지는 것은 밤을
+ * 밝히는 게 아니라 **밤이 아니게 만드는 것**이다. 1.4 에 안개·조명을 섞으면 같은
+ * 전체 밝기(32)를 내면서 하늘은 덜 뜨고(27) 원경이 더 살아난다(56) — 볼 것이 있는
+ * 구간을 밝히는 쪽이다.
  */
-const NIGHT_EXPOSURE = 1.0;
+export const NIGHT_EXPOSURE = 1.4;
+
+/**
+ * 한밤의 안개 밝기 배수.
+ *
+ * 단독 효과는 작다(2.2 로 올려도 +9%) — 안개가 51~77m 구간이라 화면에서 차지하는
+ * 면적이 좁기 때문이다. 그래도 넣는 이유는 그 좁은 띠가 **원경의 실루엣이 읽히는
+ * 곳**이고, 노출과 함께 쓸 때 중단이 52 → 56 으로 가장 많이 올라갔기 때문이다.
+ */
+export const NIGHT_FOG_SCALE = 1.6;
+
+/**
+ * 한밤의 지면색 배수 — **재지 못한 축이다.**
+ *
+ * 스윕에서 하단(지면)이 가장 안 움직였다. 기본 10, 노출 1.6 에서도 13, 조명을 1.5 +
+ * 달빛 0.7 까지 올려야 15였다. 그런데 **낮 대조군의 하단도 27**이다 — 한낮의 태양광
+ * 에서도 그 정도라면 밤에 어두운 원인은 조명이 아니라 **지면 알베도 자체**다(도로
+ * 텍스처 베이스가 `#2a2d33`, 명도 17%).
+ *
+ * 그것은 낮·밤 공통 사안이라 밤 처방으로 고칠 것이 아니다. 다만 `hemiG` **색** 하한은
+ * 스윕에서 축으로 열지 않아 못 쟀으므로, 1(무변경)으로 두고 `?nground=` 로 열어 둔다.
+ * 재지 않은 것을 기본값으로 박지 않는다.
+ */
+export const NIGHT_GROUND_SCALE = 1.0;
 
 /**
  * 밤 정도에 비례한 하한. 낮(`n=0`)에는 전부 0이라 **아무 일도 하지 않는다** —
@@ -127,11 +172,12 @@ export function nightFloor(n: number, tune?: NightTune): NightFloor {
   const hemiI = tune?.hemiI ?? NIGHT_HEMI_I;
   const sunI = tune?.sunI ?? NIGHT_SUN_I;
   const exposure = tune?.exposure ?? NIGHT_EXPOSURE;
-  const fogScale = tune?.fogScale ?? 1;
+  const fogScale = tune?.fogScale ?? NIGHT_FOG_SCALE;
+  const gs = tune?.groundScale ?? NIGHT_GROUND_SCALE;
   return {
     hemiI: lerp(hemiI),
     sunI: lerp(sunI),
-    ground: [lerp(NIGHT_GROUND[0]), lerp(NIGHT_GROUND[1]), lerp(NIGHT_GROUND[2])],
+    ground: [lerp(NIGHT_GROUND[0] * gs), lerp(NIGHT_GROUND[1] * gs), lerp(NIGHT_GROUND[2] * gs)],
     sky: [lerp(NIGHT_SKY[0]), lerp(NIGHT_SKY[1]), lerp(NIGHT_SKY[2])],
     // 1 → exposure 로 보간한다. 낮이면 정확히 1이라 집행 쪽에서 no-op 이 된다.
     exposure: 1 + (exposure - 1) * k,

@@ -63,10 +63,35 @@ describe('조명 하한', () => {
   });
 
   it('밤을 낮만큼 밝히지는 않는다 — 밤은 밤이어야 한다', () => {
-    // sky.js `LIGHT.day.clear`: hemiG 0x8fa385 · hemiI 1.0
+    // ── 왜 `intensity` 만 비교하면 안 되는가 ──────────────────────────────
+    // 처음에 `f.hemiI < 1.0`(낮의 hemiI)로 적었는데, 스윕이 고른 1.2 에서 깨졌다.
+    // 그런데 **그게 밤이 낮보다 밝다는 뜻이 아니다** — 반구광이 실제로 내는 빛은
+    // `intensity × 색` 이고, 밤 색은 낮 색보다 훨씬 어둡다. 세기 하나만 보는 판정은
+    // 색을 무시하므로 애초에 밝기를 재는 기준이 아니었다.
+    //
+    // 실제 조명량으로 비교한다. 이 프로젝트가 반복해서 배운 것이 그것이다 —
+    // "밝기를 올려도 검정을 곱하면 검정" 이면, 거꾸로 "세기가 커도 어두운 색을
+    // 곱하면 어둡다" 도 참이다.
+    const lum = (c: readonly number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
     const f = nightFloor(1);
-    expect(f.hemiI).toBeLessThan(1.0);
-    expect(f.ground[1]).toBeLessThan(0xa3 / 255);
+
+    // sky.js `LIGHT.day.clear`: hemiS 0xcfe4f7 · hemiG 0x8fa385 · hemiI 1.0
+    const dayHemiI = 1.0;
+    const daySky = [0xcf / 255, 0xe4 / 255, 0xf7 / 255];
+    const dayGround = [0x8f / 255, 0xa3 / 255, 0x85 / 255];
+
+    expect(f.hemiI * lum(f.sky)).toBeLessThan(dayHemiI * lum(daySky));
+    expect(f.hemiI * lum(f.ground)).toBeLessThan(dayHemiI * lum(dayGround));
+  });
+
+  it('밤이 낮의 절반을 넘지 않는다 — 밝히다가 낮이 되면 시간대가 사라진다', () => {
+    // 위 검사는 "낮보다 어둡다" 만 본다. 그 경계에 바짝 붙어도 통과하므로, 얼마나
+    // 어두운지를 따로 못 박는다. 스윕 실측에서 밤은 낮 대비 화면 휘도 20% 였고,
+    // 조명량으로는 47% 다(색이 어두워 화면에서 더 어둡게 나온다).
+    const lum = (c: readonly number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const f = nightFloor(1);
+    const dayLight = 1.0 * lum([0xcf / 255, 0xe4 / 255, 0xf7 / 255]);
+    expect(f.hemiI * lum(f.sky)).toBeLessThan(dayLight * 0.5);
   });
 
   it('밤 정도에 단조증가한다 — 어두워질수록 하한이 올라간다', () => {
@@ -270,16 +295,23 @@ describe('노출과 안개 — 계산한 값이 실제로 소비되는가', () =
     expect(bare.hemi.intensity).toBeGreaterThan(0.55);
   });
 
-  it('기본값은 아무것도 바꾸지 않는다 — 축만 열고 값은 재고 정한다', () => {
-    // `nexp`·`nfog` 의 기본 1은 곱셈 항등원이다. 축을 여는 커밋이 룩을 함께 바꾸면
-    // "무엇이 화면을 바꿨는가" 를 가를 수 없게 된다.
+  it('기본값이 실제로 밤을 밝힌다 — 아니면 스윕이 고른 값이 죽은 코드다', () => {
+    // 축을 여는 커밋에서는 이 테스트가 "아무것도 바꾸지 않는다" 였다(기본값이 곱셈
+    // 항등원이었으므로). 스윕이 값을 정한 뒤로는 **반대가 참이어야 한다** — 기본
+    // 경로로 들어온 사용자가 밝아진 밤을 본다.
     const t = targets();
     const fogBefore = { ...t.fog.color };
     applyNightFloor(t, 'night');
+    expect(t.renderer.toneMappingExposure).toBeGreaterThan(1);
+    expect(t.fog.color.g).toBeGreaterThan(fogBefore.g);
+  });
+
+  it('낮은 여전히 무변경이다 — 밤 기본값이 낮으로 새면 안 된다', () => {
+    const t = targets();
+    const snap = JSON.stringify({ hemi: t.hemi, sun: t.sun, fog: t.fog });
+    applyNightFloor(t, 'day');
+    expect(JSON.stringify({ hemi: t.hemi, sun: t.sun, fog: t.fog })).toBe(snap);
     expect(t.renderer.toneMappingExposure).toBe(1);
-    expect(t.fog.color.r).toBeCloseTo(fogBefore.r, 6);
-    expect(t.fog.color.g).toBeCloseTo(fogBefore.g, 6);
-    expect(t.fog.color.b).toBeCloseTo(fogBefore.b, 6);
   });
 });
 
