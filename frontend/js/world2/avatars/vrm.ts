@@ -27,22 +27,7 @@
 // 비용이 드러난다. 여러 체가 필요해지면 그때 조달한다.
 
 import { GLTFLoader } from '../../../vendor/GLTFLoader.js';
-
-/** 거리를 걷는 것의 공통 계약. 치비(`buildChibi`)가 이미 이 모양이다 */
-export interface WalkAvatar {
-  /** 씬에 붙일 것 */
-  readonly group: { position: { set(x: number, y: number, z: number): void }; rotation: { y: number }; visible: boolean; removeFromParent(): void };
-  /** `speed` 는 걷는 속도(m/s). 0 이면 서 있는 것 */
-  update(dt: number, speed: number): void;
-  dispose(): void;
-}
-
-/** 로드된 VRM 의 비용 — 진단에 싣는다 */
-export interface VrmCost {
-  meshes: number;
-  materials: number;
-  triangles: number;
-}
+import type { WalkAvatar, AvatarCost } from './types.js';
 
 /** 걷기에 쓰는 본. 없으면 그 관절만 안 움직인다 — 로드 실패로 취급하지 않는다 */
 const WALK_BONES = [
@@ -80,7 +65,7 @@ interface Bone {
 export function loadVrmAvatar(
   url: string,
   onError?: (err: unknown) => void,
-): Promise<{ avatar: WalkAvatar; cost: VrmCost } | null> {
+): Promise<{ avatar: WalkAvatar; cost: AvatarCost } | null> {
   return new Promise((resolve) => {
     let loader: InstanceType<typeof GLTFLoader>;
     try {
@@ -107,7 +92,7 @@ export function loadVrmAvatar(
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function build(gltf: any): { avatar: WalkAvatar; cost: VrmCost } {
+function build(gltf: any): { avatar: WalkAvatar; cost: AvatarCost } {
   const root = gltf.scene;
 
   // ── 본 찾기 ───────────────────────────────────────────────────────────────

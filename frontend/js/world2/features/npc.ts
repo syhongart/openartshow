@@ -30,30 +30,17 @@
 // 만나면서도 비용 상한은 고정된다.
 
 import * as THREE from 'three/webgpu';
-import { buildChibi, randomChibiLook } from '../../chibi.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import { nextDir, stepOf, pickNearby, type Cell } from '../decide/npc-walk.js';
-import { loadVrmAvatar, type WalkAvatar } from '../avatars/vrm.js';
+// **아바타는 배럴로만 만난다.** 이 파일은 치비가 world1 에서 오는지, VRM 이 파일에서
+// 오는지 모른다 — 감독 지시("월드원 폴더 것을 그냥 끌어다 쓰지 마, 나중에 날릴 거니까")
+// 를 지키는 지점이 여기다. 경계는 `tests/world2-boundary.test.ts` 가 감시한다.
+import {
+  createChibiAvatar, loadVrmAvatar, CHIBI, VRM_MALE, MAX_TOTAL_AVATARS,
+  type WalkAvatar,
+} from '../avatars/index.js';
 import type { Dir } from '../parts/road-topology.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
-
-/**
- * 감독이 보낸 VRM. **한 체만** 세운다 — 스킨드 메시를 복제하려면
- * `SkeletonUtils.clone`(three/addons)이 필요한데 vendor 에 없고, 지금 목적은 비용 비교라
- * 한 체로도 답이 나온다.
- */
-const VRM_URL = './assets/avatars/male.vrm';
-
-/**
- * 기본 인원. world1 의 거리 배회 상한(≤6)을 계승한다.
- *
- * 이 값이 곧 드로우콜 예산이다 — 치비 한 체가 45 드로우콜이므로 6명이면 270 이다.
- * 감독 기기 실측 전까지는 이 숫자를 근거 있게 올릴 방법이 없다.
- */
-export const DEFAULT_NPC_COUNT = 6;
-
-/** 안전 상한. URL 로 아무 값이나 넣어도 여기서 잘린다 — 실수로 60을 넣으면 기기가 멎는다 */
-export const MAX_NPC_COUNT = 12;
 
 /** 걷는 속도(m/s). 플레이어(5m/s)보다 확실히 느려야 "산책하는 사람" 으로 보인다 */
 const WALK_MIN = 0.8;
@@ -97,12 +84,12 @@ interface Walker {
  * 기능을 빼도 그 설정 코드가 남는다.
  */
 function readCount(): number {
-  if (typeof location === 'undefined') return DEFAULT_NPC_COUNT;
+  if (typeof location === 'undefined') return CHIBI.count;
   const raw = new URLSearchParams(location.search).get('npc');
-  if (raw === null) return DEFAULT_NPC_COUNT;
+  if (raw === null) return CHIBI.count;
   const n = Number(raw);
-  if (!Number.isFinite(n)) return DEFAULT_NPC_COUNT;
-  return Math.max(0, Math.min(MAX_NPC_COUNT, Math.floor(n)));
+  if (!Number.isFinite(n)) return CHIBI.count;
+  return Math.max(0, Math.min(MAX_TOTAL_AVATARS, Math.floor(n)));
 }
 
 /** 결정론 난수 — 같은 시드면 같은 도시가 된다("파라미터가 곧 공간") */
@@ -161,7 +148,7 @@ export const npcFeature: Feature = {
     }
 
     for (let i = 0; i < count; i++) {
-      if (!spawn(buildChibi(randomChibiLook()), 'chibi')) break;
+      if (!spawn(createChibiAvatar(), 'chibi')) break;
     }
 
     // ── VRM 은 비동기다 ───────────────────────────────────────────────────────
@@ -170,7 +157,7 @@ export const npcFeature: Feature = {
     let vrmCost: unknown = null;
     let vrmError: string | null = null;
     if (new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get('vrm') !== '0') {
-      loadVrmAvatar(VRM_URL, (err) => { vrmError = String(err); })
+      loadVrmAvatar(VRM_MALE.url!, (err) => { vrmError = String(err); })
         .then((r) => {
           if (!r || disposed) { r?.avatar.dispose(); return; }
           vrmCost = r.cost;
@@ -256,9 +243,9 @@ export const npcFeature: Feature = {
         chibi: walkers.filter((w) => w.kind === 'chibi').length,
         vrm: walkers.filter((w) => w.kind === 'vrm').length,
         shown: walkers.filter((w) => w.shown).length,
-        // 치비 한 체의 실측 비용(`tests/world2-chibi-cost.test.ts` 가 못 박은 값). 화면에서
-        // "사람이 좀 늘었네" 로만 보이는 비용을 숫자로 드러내는 것이 이 항목의 목적이다.
-        chibiEach: { draw: 45, tri: 24360 },
+        // 한 체의 실측 비용. 화면에서 "사람이 좀 늘었네" 로만 보이는 비용을 숫자로
+        // 드러내는 것이 이 항목의 목적이다. 값은 레지스트리가 들고 있다(값 미러링 금지).
+        chibiEach: CHIBI.cost,
         // VRM 은 로드해 봐야 아는 값이라 실측을 그대로 싣는다.
         vrmCost,
         vrmError,
