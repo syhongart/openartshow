@@ -289,10 +289,22 @@ function makeWalker(
   const group = new (root.constructor as any)();
   group.add(root);
 
-  // A-포즈로 내려 둔다. 매 프레임 다시 쓰지 않고 여기서 한 번만 — 스윙은 이 값에
-  // 더하는 것이 아니라 **x 축**에만 얹으므로 서로 간섭하지 않는다.
-  if (bones.leftUpperArm) bones.leftUpperArm.rotation.z = ARM_DROP;
-  if (bones.rightUpperArm) bones.rightUpperArm.rotation.z = -ARM_DROP;
+  // ── A-포즈로 내려 둔다 ───────────────────────────────────────────────────
+  // 매 프레임 다시 쓰지 않고 여기서 한 번만 — 스윙은 이 값에 더하는 것이 아니라
+  // **x 축**에만 얹으므로 서로 간섭하지 않는다.
+  //
+  // ── 부호가 뒤집혀 있었다 (감독 스크린샷) ─────────────────────────────────
+  // 감독: *"우리 캐릭터 괴기하게 다니고있어"* — 화면을 보니 팔이 내려간 게 아니라
+  // **만세를 하고 있었다.**
+  //
+  // VRM 1.0 T-포즈에서 왼팔은 **+X** 로 뻗어 있다. 그것을 아래(-Y)로 보내는 것은
+  // 오른손 법칙상 **-Z 회전**이다(+Z 회전은 X 를 Y 로 올린다). 반대로 줬으니 81° 를
+  // 위로 돌린 셈이고, 그래서 양팔이 하늘로 섰다.
+  //
+  // 앞서 이 값을 1.25 → 1.42 로 키웠는데, 방향이 틀린 상태에서 크기만 키웠으니
+  // 더 심해졌다. **각도를 의심하기 전에 축을 확인했어야 했다.**
+  if (bones.leftUpperArm) bones.leftUpperArm.rotation.z = -ARM_DROP;
+  if (bones.rightUpperArm) bones.rightUpperArm.rotation.z = ARM_DROP;
 
   let phase = 0;
 
