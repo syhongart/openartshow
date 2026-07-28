@@ -289,22 +289,60 @@ function makeWalker(
   const group = new (root.constructor as any)();
   group.add(root);
 
-  // ── A-포즈로 내려 둔다 ───────────────────────────────────────────────────
-  // 매 프레임 다시 쓰지 않고 여기서 한 번만 — 스윙은 이 값에 더하는 것이 아니라
-  // **x 축**에만 얹으므로 서로 간섭하지 않는다.
+  // ── 기준 자세를 저장한다 (감독 지적으로 바꾼 방식) ────────────────────────
   //
-  // ── 부호가 뒤집혀 있었다 (감독 스크린샷) ─────────────────────────────────
-  // 감독: *"우리 캐릭터 괴기하게 다니고있어"* — 화면을 보니 팔이 내려간 게 아니라
-  // **만세를 하고 있었다.**
+  // 감독: *"제대로 안됨. 이거 하려면 리그 파일이 있어야해? vrm파일에 어떤 요건을
+  // 갖춰야 하나"* — 파일 요건은 이미 충족하고 있었다(본 9/9). 문제는 이 코드였다.
   //
-  // VRM 1.0 T-포즈에서 왼팔은 **+X** 로 뻗어 있다. 그것을 아래(-Y)로 보내는 것은
-  // 오른손 법칙상 **-Z 회전**이다(+Z 회전은 X 를 Y 로 올린다). 반대로 줬으니 81° 를
-  // 위로 돌린 셈이고, 그래서 양팔이 하늘로 섰다.
+  // 예전에는 걷기 각도를 **대입**했다(`bone.rotation.x = 각도`). VRM 규격은 T-포즈를
+  // 요구하지만 **본 하나하나가 어느 방향을 향하는지는 강제하지 않는다** — 저작 도구
+  // 마다 다르고, 이 파일처럼 Blender Rigify 출신이면(본 이름이 `DEF-thigh.L` 형태)
+  // 본마다 고유한 기준 회전을 갖는다.
   //
-  // 앞서 이 값을 1.25 → 1.42 로 키웠는데, 방향이 틀린 상태에서 크기만 키웠으니
-  // 더 심해졌다. **각도를 의심하기 전에 축을 확인했어야 했다.**
-  if (bones.leftUpperArm) bones.leftUpperArm.rotation.z = -ARM_DROP;
-  if (bones.rightUpperArm) bones.rightUpperArm.rotation.z = ARM_DROP;
+  // 대입하면 그 기준 회전이 통째로 지워지고 계산한 각도만 남는다. *"81° 내려라"* 가
+  // 아니라 *"81°인 상태가 되어라"* 가 되어, 기준점이 다르면 엉뚱한 방향으로 꺾인다.
+  // 화면에서는 팔이 만세를 하고 다리가 접히는 것으로 나타났다.
+  //
+  // ⚠️ **복제 순서에 기댄다.** 복제본의 기준 자세는 원본의 현재 자세를 그대로 받는다.
+  // 원본이 이미 걷고 있는 상태에서 복제하면 그 순간의 포즈가 기준으로 굳는다. 지금은
+  // 로드 완료 → 원본 배치 → 복제가 **같은 tick** 안에서 끝나므로 안전하지만, 나중에
+  // 런타임 중 복제를 허용하려면 기준 자세를 로드 시점에 따로 떠서 넘겨야 한다.
+  const rest = {} as Record<BoneName, any>;
+  for (const key of WALK_BONES) {
+    const b = bones[key] as any;
+    if (b?.quaternion) rest[key] = b.quaternion.clone();
+  }
+
+  // 임시 객체. 매 프레임 새로 만들면 GC 압력이 생기므로 하나를 돌려 쓴다.
+  // three 를 import 하지 않고 본에서 생성자를 얻는다 — 이 파일은 `three/addons` 의
+  // 로더만 알고 있으면 되고, 두 진입점(`three` · `three/webgpu`)을 섞을 위험도 없다.
+  const anyBone: any = Object.values(bones).find((b) => !!b);
+  const Q = anyBone?.quaternion?.constructor;
+  const E = anyBone?.rotation?.constructor;
+  const tmpQ = Q ? new Q() : null;
+  const tmpE = E ? new E() : null;
+
+  /**
+   * 본을 **기준 자세 위에서** 돌린다.
+   *
+   * ── 왜 `delta × rest` 인가 (순서가 축을 정한다) ──────────────────────────
+   * 본의 `quaternion` 은 **부모 공간**에서의 회전이다. `rest` 를 먼저 적용하고 그
+   * 결과에 `delta` 를 왼쪽에서 곱하면, delta 의 축은 **부모 좌표계** 기준이 된다.
+   *
+   * 이것이 요점이다. 본 자신의 로컬 축은 리그마다 제멋대로여도, **부모(상체·골반)는
+   * 캐릭터와 정렬돼 있다.** 그래서 "z 로 돌리면 팔이 내려간다" 가 파일과 무관하게
+   * 성립한다. 순서를 뒤집어 `rest × delta` 로 하면 delta 가 본의 로컬 축을 타서
+   * 원래 문제로 돌아간다.
+   */
+  function pose(key: BoneName, rx: number, ry: number, rz: number): void {
+    const b = bones[key] as any;
+    if (!b || !tmpQ || !tmpE) return;
+    const r = rest[key];
+    tmpE.set(rx, ry, rz);
+    tmpQ.setFromEuler(tmpE);
+    if (r) b.quaternion.copy(tmpQ).multiply(r);
+    else b.quaternion.copy(tmpQ);
+  }
 
   let phase = 0;
 
@@ -318,23 +356,31 @@ function makeWalker(
       const s = Math.sin(phase) * amp;
       const c = Math.cos(phase) * amp;
 
-      if (bones.leftUpperLeg) bones.leftUpperLeg.rotation.x = s * LEG_SWING;
-      if (bones.rightUpperLeg) bones.rightUpperLeg.rotation.x = -s * LEG_SWING;
-      // 무릎은 뒤로만 굽는다 — 앞으로 굽으면 관절이 반대로 꺾인다. 음수 구간만 쓴다.
-      if (bones.leftLowerLeg) bones.leftLowerLeg.rotation.x = Math.max(0, -s) * KNEE_BEND;
-      if (bones.rightLowerLeg) bones.rightLowerLeg.rotation.x = Math.max(0, s) * KNEE_BEND;
+      // ── 다리 ────────────────────────────────────────────────────────────
+      pose('leftUpperLeg', s * LEG_SWING, 0, 0);
+      pose('rightUpperLeg', -s * LEG_SWING, 0, 0);
+      // 무릎은 뒤로만 굽는다 — 앞으로 굽으면 관절이 반대로 꺾인다. 한쪽 구간만 쓴다.
+      pose('leftLowerLeg', Math.max(0, -s) * KNEE_BEND, 0, 0);
+      pose('rightLowerLeg', Math.max(0, s) * KNEE_BEND, 0, 0);
 
-      // 팔은 다리와 **반대**로 흔든다. 같은 쪽으로 흔들면 걷는 게 아니라 행진이 된다.
-      if (bones.leftUpperArm) bones.leftUpperArm.rotation.x = -s * ARM_SWING;
-      if (bones.rightUpperArm) bones.rightUpperArm.rotation.x = s * ARM_SWING;
-      // 팔꿈치는 **늘 조금 굽어 있고** 앞으로 나올 때 조금 더 굽는다. 이 본을
-      // `WALK_BONES` 에 넣어 두고 쓰지 않아서 팔이 곧은 막대로 흔들리고 있었다.
-      if (bones.leftLowerArm) bones.leftLowerArm.rotation.x = -(ELBOW_BEND + Math.max(0, -s) * 0.35);
-      if (bones.rightLowerArm) bones.rightLowerArm.rotation.x = -(ELBOW_BEND + Math.max(0, s) * 0.35);
+      // ── 팔 ──────────────────────────────────────────────────────────────
+      // A-포즈로 내리는 것(`ARM_DROP`)을 **매 프레임 delta 에 포함**시킨다. 예전에는
+      // 부팅 때 한 번 대입했는데, 기준 자세를 곱하는 방식으로 바뀌면서 초기 대입이
+      // 다음 프레임에 덮여 무의미해졌다.
+      //
+      // T-포즈에서 왼팔은 +X 로 뻗어 있고, 그것을 아래(-Y)로 보내는 것은 **-Z 회전**
+      // 이다(+Z 회전은 X 를 Y 로 올린다). 이 부호를 반대로 줘서 아바타가 만세를 하고
+      // 걸었다 — 감독 스크린샷이 잡았다.
+      pose('leftUpperArm', -s * ARM_SWING, 0, -ARM_DROP);
+      pose('rightUpperArm', s * ARM_SWING, 0, ARM_DROP);
+      // 팔꿈치는 **늘 조금 굽어 있고** 앞으로 나올 때 조금 더 굽는다. 곧게 뻗은 팔은
+      // 사람이 아니라 인형으로 읽힌다.
+      pose('leftLowerArm', -(ELBOW_BEND + Math.max(0, -s) * 0.35), 0, 0);
+      pose('rightLowerArm', -(ELBOW_BEND + Math.max(0, s) * 0.35), 0, 0);
 
       // 상체를 걸음 주기의 **두 배**로 살짝 비튼다. 걸을 때 어깨가 좌우로 흔들리는 것이
       // 사람처럼 보이게 하는 신호다.
-      if (bones.spine) bones.spine.rotation.y = c * 0.05;
+      pose('spine', 0, c * 0.05, 0);
     },
     dispose() {
       group.removeFromParent?.();
