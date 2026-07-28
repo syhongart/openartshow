@@ -20,6 +20,8 @@ import type { PartSpec, PlacedPart } from './types.js';
 import { roadDirs, ROAD_SEG } from './road-topology.js';
 import { isPlaza } from './plaza.js';
 
+export { GRAIN_R, ROAD_TEX };
+
 export const road: PartSpec = {
   kind: 'road',
   // far 까지 그린다. 멀리서 길이 이어져 보이는 것이 "도시 안에 있다"는 인상의 대부분이고,
@@ -56,7 +58,9 @@ export const road: PartSpec = {
     const tone = 0;
     const out: PlacedPart[] = [];
     // 지면(두께 0.1, 피벗 위쪽)보다 아주 살짝 위. 같은 높이면 z-fighting 으로 지글거린다.
-    const y = 0.06;
+    // 정원(0.07) 위. 예전 0.06 은 정원(0.03)과 3cm 차이라 먼 거리에서 깊이가
+    // 뭉갤 수 있었다. 14cm 로 벌린다 — 계단으로 보이지 않으면서 확실히 앞이다.
+    const y = 0.14;
 
     /** 폭 `ROAD_SEG` 고정, 길이만 다르다. 회전은 인스턴스가 하므로 로컬 축으로 적는다 */
     const seg = (x: number, z: number, ry: number, len: number) => {
@@ -127,8 +131,23 @@ export const road: PartSpec = {
  * 조각 경계가 드러나지 않게 **가장자리를 어둡게 하지 않는다** — 조각마다 테두리가 지면
  * 길이 타일 바닥처럼 보인다.
  */
+/**
+ * 자갈 알갱이의 최소 반경(픽셀). **밉맵에서 살아남을 크기다.**
+ *
+ * 0.7 이었다. 반경 0.7px 은 지름 1.4px 이라 첫 밉에서 0.7px 이 되고 두 번째에서
+ * 사라진다 — 카메라가 조금만 움직여도 밉 레벨이 오가며 알갱이가 나타났다 사라졌다
+ * 한다. 그게 감독이 말한 "우는" 것이다. 정원 잔디와 같은 원인이고 같은 처방이다.
+ *
+ * 이 파일의 주석은 예전에 "멀어지면 밉맵이 평균 내버려 다시 단색이 된다" 고 적고
+ * 있었다. 평균으로 **수렴하는** 것은 맞는데, 수렴하기 전 몇 단계에서 출렁인다는 것을
+ * 못 봤다.
+ */
+const GRAIN_R = 1.6;
+const GRAIN_COUNT = 1300;
+const ROAD_TEX = 256;
+
 function asphaltTexture(T: typeof import('three/webgpu')): InstanceType<typeof import('three/webgpu')['CanvasTexture']> {
-  const S = 128;
+  const S = ROAD_TEX;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
   const g = cv.getContext('2d')!;
@@ -138,12 +157,14 @@ function asphaltTexture(T: typeof import('three/webgpu')): InstanceType<typeof i
 
   // 자갈 알갱이. 크기와 밝기를 섞어 균일한 노이즈로 보이지 않게 한다 — 한 종류만 뿌리면
   // 사포처럼 보이고, 멀어지면 밉맵이 평균 내버려 다시 단색이 된다.
-  for (let i = 0; i < 2600; i++) {
+  for (let i = 0; i < GRAIN_COUNT; i++) {
     const x = Math.random() * S;
     const z = Math.random() * S;
-    const r = Math.random() < 0.15 ? 1.6 : 0.7;
+    const r = Math.random() < 0.15 ? GRAIN_R * 2 : GRAIN_R;
     const v = 28 + Math.random() * 46;
-    g.fillStyle = `rgba(${v},${v + 2},${v + 6},${0.25 + Math.random() * 0.5})`;
+    // 불투명도 상한을 낮췄다(0.75 → 0.45). 출렁임의 **진폭**을 줄이는 쪽이다 —
+    // 대비가 낮으면 밉 레벨이 바뀌어도 눈에 덜 띈다.
+    g.fillStyle = `rgba(${v},${v + 2},${v + 6},${0.18 + Math.random() * 0.27})`;
     g.beginPath();
     g.arc(x, z, r, 0, Math.PI * 2);
     g.fill();
@@ -154,7 +175,7 @@ function asphaltTexture(T: typeof import('three/webgpu')): InstanceType<typeof i
   for (let i = 0; i < 14; i++) {
     const x = Math.random() * S;
     const z = Math.random() * S;
-    const r = 8 + Math.random() * 22;
+    const r = (8 + Math.random() * 22) * 2;   // 해상도 2배에 맞춰 얼룩도 키운다
     const grad = g.createRadialGradient(x, z, 0, x, z, r);
     const dark = Math.random() < 0.5;
     grad.addColorStop(0, dark ? 'rgba(20,21,24,0.35)' : 'rgba(70,73,80,0.22)');

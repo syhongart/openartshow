@@ -143,14 +143,47 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
     expect(g[0].z).toBe(0);
   });
 
-  it('부품이 땅에 붙어 있다 — 공중에 뜨면 안 된다', () => {
-    // 원래는 `toBe(0)` 이었다. 도로가 들어오면서 완화했는데, 그건 도로가 지면과 **정확히
-    // 같은 높이면 z-fighting 으로 지글거리기** 때문이다(둘 다 수평면이라 깊이값이 같다).
-    // 6cm 올려 그 다툼을 없앤다. 상한 10cm 는 "붙어 있다"가 계속 검사되게 남긴 것이다 —
-    // 이 값을 넘기면 부품이 실제로 떠 보이기 시작한다.
+  // ── 바닥 판과 실물을 갈라서 본다 ────────────────────────────────────────
+  // 원래는 전부 `toBe(0)` 이었고, 도로가 들어오며 `≤ 0.1` 로 완화했다. 그런데 그 둘은
+  // **성질이 다른 값**이다:
+  //
+  //   실물(건물·나무·벤치) — 밑동이 땅에 **닿아야** 한다. 조금이라도 뜨면 떠 보인다.
+  //   바닥 판(도로·정원)   — 수평면끼리 깊이 다툼을 피하려는 **미세 오프셋**이다.
+  //                          땅에 닿는 것이 아니라 땅 바로 위에 얹히는 것이다.
+  //
+  // 하나의 상한으로 둘을 재면 실물 쪽이 헐거워진다(0.1 까지 떠도 통과). 갈라 놓으면
+  // 실물은 정확히 0 을 요구할 수 있고, 판은 필요한 만큼 벌릴 수 있다.
+  const DECALS = new Set(['ground', 'garden', 'road']);
+
+  it('실물 부품은 밑동이 정확히 땅에 있다', () => {
+    let checked = 0;
     for (const p of at(4, -4)) {
+      if (DECALS.has(p.kind)) continue;
+      checked++;
+      expect(p.y).toBe(0);
+    }
+    expect(checked).toBeGreaterThan(0);   // 표본이 비면 아무것도 검사하지 않은 것이다
+  });
+
+  it('바닥 판은 지면 바로 위에 얹힌다 — 깊이 다툼을 피할 만큼만', () => {
+    let checked = 0;
+    for (const p of at(4, -4)) {
+      if (!DECALS.has(p.kind)) continue;
+      checked++;
       expect(p.y).toBeGreaterThanOrEqual(0);
-      expect(p.y).toBeLessThanOrEqual(0.1);
+      // 20cm 를 넘으면 판이 실제로 떠 보이기 시작한다. 지금 최대는 도로의 14cm 다.
+      expect(p.y).toBeLessThanOrEqual(0.2);
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it('바닥 판끼리 높이가 겹치지 않는다 — 같은 높이면 지글거린다', () => {
+    const ys = new Map<string, number>();
+    for (const p of at(4, -4)) if (DECALS.has(p.kind)) ys.set(p.kind, p.y);
+    const sorted = [...ys.values()].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) {
+      // 5cm 는 벌어져야 먼 거리에서도 순서가 유지된다
+      expect(sorted[i] - sorted[i - 1]).toBeGreaterThanOrEqual(0.05);
     }
   });
 

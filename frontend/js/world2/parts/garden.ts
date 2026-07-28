@@ -25,6 +25,8 @@
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { isPlaza } from './plaza.js';
 
+export { BLADE_WIDTH, GRASS_TEX, GRASS_REPEAT };
+
 export const garden: PartSpec = {
   kind: 'garden',
   // far 까지 그린다. **격자를 드러내는 것이 이 파츠의 목적**이라 멀리서 보일 때
@@ -61,8 +63,13 @@ export const garden: PartSpec = {
     return [{
       kind: 'garden',
       x: 0, z: 0,
-      // 지면(y=0) 바로 위, 도로(0.06) 아래. 같은 높이면 z-파이팅으로 지글거린다.
-      y: 0.03,
+      // 지면(y=0) 위, 도로(0.14) 아래.
+      //
+      // 예전엔 0.03 이었고 도로가 0.06 이라 **세 판이 6cm 안에 겹쳐** 있었다. 깊이
+      // 버퍼는 먼 거리일수록 정밀도가 떨어지므로 그렇게 촘촘하면 어느 쪽이 앞인지
+      // 못 정하는 지점이 생긴다. 간격을 벌리는 데 드는 비용은 0 이다 — 눈높이 1.7m
+      // 에서 7cm 단차는 보이지 않는다.
+      y: 0.07,
       ry: 0,
       // **파셀을 꽉 채운다.** 조금이라도 작으면 파셀 경계마다 갈색 띠가 생기고,
       // 그 띠가 격자를 이중으로 그려 어지럽다.
@@ -95,8 +102,29 @@ export const garden: PartSpec = {
  * 정점색이 없다. 그래서 초록을 텍스처에 칠하고 `tones` 는 밝기 변주만 맡는다 — 둘 다
  * 색을 가지면 곱해져서 검게 죽는다.
  */
+/**
+ * ── 밉맵이 감당할 크기 (감독 판정 *"울지 않는 방법 찾아보자"*) ──────────────
+ *
+ * 밉맵은 텍스처를 절반씩 줄여 저장한다. 그러니 **디테일이 1픽셀이면 첫 단계에서
+ * 절반이 사라지고 두 번째에서 없어진다.** 카메라가 미세하게 움직이면 밉 레벨이
+ * 오가면서 그 디테일이 나타났다 사라졌다 하고, 그게 **밝기의 출렁임** 으로 보인다.
+ * 감독이 "밑을 보고 미세하게 움직이면 텍스처가 운다" 고 한 것의 정체다.
+ *
+ * 살아남으려면 디테일이 최소 2~3픽셀이어야 한다. 아래 값들은 그 기준에서 나왔다:
+ *
+ *   해상도 128 → 256   밉 체인이 한 단계 길어져 먼 거리에서 더 곱게 평균된다
+ *   선 굵기 1 → 2.5    첫 밉에서 1.25px 로 살아남는다
+ *   선 개수 900 → 500  굵어진 만큼 줄여 밀도를 유지한다
+ *   불투명도 0.6 → 0.32  출렁임의 **진폭**을 낮춘다. 대비가 낮으면 밉이 바뀌어도 덜 튄다
+ *   반복 12 → 8        결이 1.5배 커져 화면에서 텍셀 밀도가 낮아진다
+ */
+const BLADE_WIDTH = 2.5;
+const BLADE_COUNT = 500;
+const GRASS_TEX = 256;
+const GRASS_REPEAT = 8;
+
 function grassTexture(T: ThreeNS) {
-  const S = 128;
+  const S = GRASS_TEX;
   const canvas = document.createElement('canvas');
   canvas.width = S;
   canvas.height = S;
@@ -115,15 +143,16 @@ function grassTexture(T: ThreeNS) {
   ctx.fillRect(0, 0, S, S);
   // 풀결 — 짧은 선을 위쪽으로 조금 기울여 긋는다. 밝기와 색조를 함께 흔들어야
   // 한 장을 반복해 깐 티가 덜 난다.
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 900; i++) {
+  ctx.lineWidth = BLADE_WIDTH;
+  ctx.lineCap = 'round';   // 끝이 각지면 그 모서리가 다시 1px 디테일이 된다
+  for (let i = 0; i < BLADE_COUNT; i++) {
     const x = rnd() * S;
     const y = rnd() * S;
-    const len = 2 + rnd() * 4;
-    const lean = (rnd() - 0.5) * 2;
+    const len = 5 + rnd() * 9;
+    const lean = (rnd() - 0.5) * 4;
     const h = 96 + rnd() * 16;
     const l = 42 + rnd() * 22;
-    ctx.strokeStyle = `hsla(${h}, 38%, ${l}%, 0.6)`;
+    ctx.strokeStyle = `hsla(${h}, 38%, ${l}%, 0.32)`;
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(x + lean, y - len);
@@ -137,7 +166,7 @@ function grassTexture(T: ThreeNS) {
   tex.wrapT = T.RepeatWrapping;
   // 판이 파셀 한 칸(32m)을 덮으므로 결을 그만큼 반복시킨다. 예전 7.5m 판 기준의
   // 3회를 그대로 두면 풀이 네 배로 늘어나 보인다.
-  tex.repeat.set(12, 12);
+  tex.repeat.set(GRASS_REPEAT, GRASS_REPEAT);
   // **이방성 필터가 아예 없었다**(기본값 1). 32m 판에 결을 12번 반복하므로 얕은
   // 각도에서 텍셀 밀도가 극단적으로 높아지고, 그 상태로 조금만 움직여도 잔디가
   // 지글거린다 — 도로보다 오히려 심했다. 감독이 잡은 "텍스처가 운다" 의 큰 몫이다.
