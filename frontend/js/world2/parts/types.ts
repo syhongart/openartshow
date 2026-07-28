@@ -56,7 +56,10 @@ export interface LayoutOptions {
    */
   maxBuildings?: number;
   maxTrees?: number;
-  maxLamps?: number;
+  // 가로등 상한은 여기에 없다. 자리를 **도로 축이 정하기 때문**에 개수도 도로 방향 수로
+  // 결정되고(`lamp.ts`), 설정으로 흔들 여지가 없다. 옛 `maxLamps` 는 난수로 뿌리던
+  // 시절의 잔재라 제거했다 — 남겨 두면 "밀도를 올렸는데 가로등은 그대로"가 설정 버그로
+  // 오인된다.
 }
 
 export type ResolvedLayout = Required<LayoutOptions>;
@@ -67,7 +70,7 @@ export type ResolvedLayout = Required<LayoutOptions>;
  */
 export const DEFAULT_LAYOUT: ResolvedLayout = {
   cellX: 32, cellZ: 32, margin: 2.5,
-  maxBuildings: 4, maxTrees: 8, maxLamps: 4,
+  maxBuildings: 4, maxTrees: 8,
 };
 
 /** 배치 함수가 받는 것. 파셀 좌표와 **자기 몫의 난수**만 본다. */

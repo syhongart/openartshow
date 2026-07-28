@@ -212,7 +212,7 @@ describe('슬롯 예산 — 여유 배수 1.0이 실제로 버티는가', () => 
       ...DEFAULT_LAYOUT,
       maxBuildings: DEFAULT_LAYOUT.maxBuildings * 8,
       maxTrees: DEFAULT_LAYOUT.maxTrees * 8,
-      maxLamps: DEFAULT_LAYOUT.maxLamps * 8,
+      // 가로등은 곱하지 않는다 — 개수를 도로 방향 수가 정하므로 밀도로 흔들 수 없다.
     });
     h.settle();
     for (const [x, z] of [[CELL * 3, CELL * 3], [-CELL * 3, 0], [0, 0]] as const) h.walkTo(x, z);

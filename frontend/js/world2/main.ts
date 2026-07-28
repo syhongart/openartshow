@@ -109,7 +109,6 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     ...DEFAULT_LAYOUT,
     maxBuildings: DEFAULT_LAYOUT.maxBuildings * density,
     maxTrees: DEFAULT_LAYOUT.maxTrees * density,
-    maxLamps: DEFAULT_LAYOUT.maxLamps * density,
   };
 
   const scene = new THREE.Scene();

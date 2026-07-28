@@ -18,7 +18,14 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
-import { roadDirs, pickOffRoad } from './road-topology.js';
+import { roadDirs, DIRS, ROAD_HALF, SETBACK } from './road-topology.js';
+
+/**
+ * 인도 한가운데까지의 거리(미터). 차도 끝(`ROAD_HALF`)과 건물 셋백(`SETBACK`) 사이가
+ * 인도이므로 그 **중점**이다. 두 값에서 유도한다 — 6.25 를 직접 적으면 인도 폭을
+ * 조정할 때 가로등만 옛 자리에 남는다(값 미러링).
+ */
+export const LAMP_OFFSET = (ROAD_HALF + SETBACK) / 2;
 
 export const lamp: PartSpec = {
   kind: 'lamp',
@@ -27,18 +34,52 @@ export const lamp: PartSpec = {
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다.
   tones: [0xffffff],
 
-  maxPerParcel: (o) => o.maxLamps,
+  // 방향당 하나이므로 최댓값은 방향 수다. **유도한다** — 4 를 적어 두면 방향이 늘 때
+  // 슬롯이 모자라고, 그 부족은 `starved` 로만 나타나 원인을 찾기 어렵다.
+  maxPerParcel: () => DIRS.length,
 
-  place: ({ px, pz, rnd, o, halfX, halfZ }) => {
-    const dirs = roadDirs(px, pz);
-    const n = Math.floor(rnd() * (o.maxLamps + 1));
+  /**
+   * 도로 축을 따라 **인도 위에** 세운다.
+   *
+   * ── 감독 지적 ─────────────────────────────────────────────────────────────
+   * *"아니 무슨 가로등을 나무처럼 심어 놨어."*
+   *
+   * 그 전까지 이 함수는 나무·벤치와 똑같은 `pickOffRoad` 를 썼다 — 길만 피하고 사분면
+   * 아무 데나 뽑는 것이다. 나무는 그래야 자연스럽지만 가로등은 **길을 밝히는 물건**이라
+   * 길에서 떨어져 정원 한가운데 서 있으면 용도를 잃는다. 이 파일 주석이 스스로
+   * *"길가에 줄지어 세우는 것은 가로등 차례의 일"* 이라 적어 두고 그 차례가 오지 않았다.
+   *
+   * ── 왜 난수를 하나도 안 쓰는가 ──────────────────────────────────────────────
+   * 가로등 자리는 **도로가 정한다.** 난수를 섞으면 이웃 파셀과 줄이 안 맞아 다시
+   * "심어 놓은" 모습이 된다. 여기서 결정론은 성능이 아니라 **룩의 요건**이다.
+   *
+   * ── 줄이 이어지는 원리 ──────────────────────────────────────────────────────
+   * 옆으로 비키는 쪽을 **축마다 고정**한다 — 동서 도로는 늘 +z 쪽, 남북 도로는 늘 +x 쪽.
+   * "진행 방향의 오른쪽" 같은 규칙을 쓰면 east 와 west 가 **같은 도로선의 반대편**을
+   * 골라서, 파셀 경계마다 가로등이 길 건너로 옮겨 다닌다.
+   *
+   * 축 방향 거리는 **셀의 1/4** 이다. 그러면 세계좌표에서 가로등이
+   *
+   *   … , px·cell − cell/4 , px·cell + cell/4 , (px+1)·cell − cell/4 , …
+   *
+   * 로 놓여 간격이 `cell/2` 로 **균등**해진다(중심의 교차로만 비어 있다).
+   *
+   * 반폭(`halfX`)의 절반이 아니다. 반폭은 `cell/2 − margin` 이라 파셀 경계를 넘는 순간
+   * 간격이 어긋난다(기본값에서 18.5m 와 13.5m 가 번갈아 나온다). 균등 간격을 결정하는
+   * 것은 **파셀 중심 사이 거리**이므로 셀에서 유도해야 한다. 반폭은 파셀 밖으로 나가지
+   * 않게 눌러 주는 데만 쓴다.
+   */
+  place: ({ px, pz, o, halfX, halfZ }) => {
     const out: PlacedPart[] = [];
-    for (let i = 0; i < n; i++) {
-      // 지금은 길을 피하기만 한다. **길가에 줄지어 세우는 것**은 가로등 차례의 일이다 —
-      // 그때 이 자리 선택이 `road-topology` 의 축을 따라가도록 바뀐다.
-      const pos = pickOffRoad(rnd, halfX, halfZ, dirs);
-      const ry = Math.floor(rnd() * 4) * (Math.PI / 2);
-      out.push({ kind: 'lamp', x: pos.x, z: pos.z, y: 0, ry, sx: 1, sy: 1, sz: 1, tone: 0 });
+    const alongX = Math.min(o.cellX / 4, halfX);
+    const alongZ = Math.min(o.cellZ / 4, halfZ);
+    const at = (x: number, z: number): PlacedPart =>
+      ({ kind: 'lamp', x, z, y: 0, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 });
+    for (const d of roadDirs(px, pz)) {
+      if (d === 'east') out.push(at(alongX, LAMP_OFFSET));
+      else if (d === 'west') out.push(at(-alongX, LAMP_OFFSET));
+      else if (d === 'north') out.push(at(LAMP_OFFSET, -alongZ));
+      else out.push(at(LAMP_OFFSET, alongZ));
     }
     return out;
   },
