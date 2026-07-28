@@ -111,12 +111,21 @@ describe('가로등은 도로를 따라간다 — 나무처럼 심지 않는다'
 
   it('한 쌍으로 보일 만큼 붙은 것이 없다 (감독: "2개 한쌍처럼 보이지?")', () => {
     // 이 검사가 이 변경의 본체다. 개수를 세는 것만으로는 **붙어 있는지**를 못 본다.
+    //
+    // ── 임계를 유도한다 (검수관 권고) ──────────────────────────────────────
+    // 처음엔 4m 를 적어 뒀다. 그러면 붙음이 4~13m 로 **좁아지는** 회귀는 그대로
+    // 통과한다 — "실측에 여유를 얹은 값은 근거가 아니다" 에 정확히 걸린다.
+    //
+    // 최솟값은 유도된다. 한 경계의 양옆 두 대가 인도 폭만큼 떨어져 있으므로
+    // `2 × LAMP_OFFSET` 이고, 서로 다른 축의 두 대는 `9.75 × √2 = 13.8m` 로 더 멀다.
+    // 그러니 이 값이 곧 도달 가능한 최솟값이다 — 인도 폭을 바꾸면 임계도 따라온다.
+    const minGap = 2 * LAMP_OFFSET;
     for (const [px, pz] of RANGE) {
       const lamps = lampsAt(px, pz);
       for (let i = 0; i < lamps.length; i++) {
         for (let j = i + 1; j < lamps.length; j++) {
           const d = Math.hypot(lamps[i].x - lamps[j].x, lamps[i].z - lamps[j].z);
-          expect(d, `(${px},${pz}) ${i}×${j}`).toBeGreaterThanOrEqual(4);
+          expect(d, `(${px},${pz}) ${i}×${j}`).toBeGreaterThanOrEqual(minGap - 1e-9);
         }
       }
     }
@@ -198,6 +207,7 @@ describe('가로등은 도로를 따라간다 — 나무처럼 심지 않는다'
     }
     expect(bad.slice(0, 12), `겹침 ${bad.length}건`).toEqual([]);
   });
+
 });
 
 // ── 줄 맞춤 — 감독 지적의 본체 ─────────────────────────────────────────────
