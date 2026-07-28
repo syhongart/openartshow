@@ -107,6 +107,25 @@ interface Walker {
  * URL 의 `?npc=` 를 읽는다. **기능이 스스로 읽는다** — 조립부가 기능별 설정을 알면
  * 기능을 빼도 그 설정 코드가 남는다.
  */
+/**
+ * VRM 을 몇 체 세울 것인가 (`?vrm=N`).
+ *
+ * 감독 지시: *"치비는 정상이야. 치비는 빼고. vrm만 많이 많이 깔아줘. 테스트버전으로"*
+ *
+ * 걷기가 이상한 쪽이 VRM 이라 여러 체를 나란히 세워야 관찰이 된다. 한 체는 지나가면
+ * 끝이지만 여럿이면 같은 동작이 반복돼 무엇이 어긋났는지 보인다.
+ *
+ * 기존 `?vrm=0`(끄기)과 호환된다 — 0 이면 그대로 안 켠다.
+ */
+function readVrmCount(): number {
+  if (typeof location === 'undefined') return VRM_MALE.count;
+  const raw = new URLSearchParams(location.search).get('vrm');
+  if (raw === null) return VRM_MALE.count;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return VRM_MALE.count;
+  return Math.max(0, Math.min(MAX_TOTAL_AVATARS, Math.floor(n)));
+}
+
 function readCount(): number {
   if (typeof location === 'undefined') return CHIBI.count;
   const raw = new URLSearchParams(location.search).get('npc');
@@ -132,7 +151,10 @@ export const npcFeature: Feature = {
 
   create(env: FeatureEnv): FeatureInstance | null {
     const count = readCount();
-    if (count <= 0) return null; // `?npc=0` 이면 아예 켜지 않는다 — 대조군 측정용
+    const vrmCount = readVrmCount();
+    // 둘 다 0 일 때만 끈다. 예전에는 치비 수만 봐서 `?npc=0` 이 VRM 까지 껐고,
+    // 그러면 **"치비는 빼고 VRM 만"** 이라는 조합 자체가 불가능했다.
+    if (count <= 0 && vrmCount <= 0) return null; // 대조군 측정용
 
     const { cellX, cellZ } = DEFAULT_LAYOUT;
     const rnd = rngFrom(0x9e3779b9);
@@ -181,7 +203,9 @@ export const npcFeature: Feature = {
     let vrmCost: unknown = null;
     let vrmBones: unknown = null;
     let vrmError: string | null = null;
-    if (new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get('vrm') !== '0') {
+    /** 실제로 선 VRM 체 수. 복제가 중간에 실패하면 요청보다 적다 — 진단에 싣는다 */
+    let vrmPlaced = 0;
+    if (vrmCount > 0) {
       loadVrmAvatar(VRM_MALE.url!, (err) => { vrmError = String(err); })
         .then((r) => {
           if (!r || disposed) { r?.avatar.dispose(); return; }
@@ -189,10 +213,26 @@ export const npcFeature: Feature = {
           // 본 매칭 결과를 진단에 싣는다. 못 찾으면 T-포즈로 미끄러지는데, 화면을 보기
           // 전까지 알 수 없었던 것이 실제 사고였다(감독이 스크린샷으로 잡았다).
           vrmBones = r.bones;
-          if (!spawn(r.avatar, 'vrm')) { r.avatar.dispose(); return; }
-          // VRM 은 비동기라 예열 창을 이미 지났을 수 있다. 합류하는 체만 다시 연다.
-          const joined = walkers[walkers.length - 1];
-          setCulling(joined, false);
+
+          /** 세우고 예열까지 걸어 준다. 원본과 복제본이 **같은 경로**를 타야 한다 */
+          const place = (inst: WalkAvatar): boolean => {
+            if (!spawn(inst, 'vrm')) { inst.dispose(); return false; }
+            // VRM 은 비동기라 예열 창을 이미 지났을 수 있다. 합류하는 체만 다시 연다.
+            setCulling(walkers[walkers.length - 1], false);
+            vrmPlaced++;
+            return true;
+          };
+
+          if (!place(r.avatar)) return;
+          // ── 나머지는 **복제**다 ─────────────────────────────────────────
+          // 파일을 다시 로드하면 GLTFLoader 가 매번 파싱해 지오·재질이 체 수만큼
+          // 늘어난다 — 개수 불변식이 그 자리에서 깨지고, 그게 성능 리포트를 통째로
+          // 오염시킨다. `clone` 은 뼈대만 새로 만들고 지오·재질은 공유한다.
+          for (let i = 1; i < vrmCount; i++) {
+            const c = r.clone();
+            if (!c) break; // 복제 불가 — 있는 만큼만. 그 사실은 진단의 vrmPlaced 에 남는다
+            if (!place(c)) break;
+          }
           warmLeft = Math.max(warmLeft, WARM_FRAMES);
         })
         .catch((err) => { vrmError = String(err); });
@@ -303,6 +343,10 @@ export const npcFeature: Feature = {
         vrmCost,
         // found < wanted 면 그만큼 관절이 굳어 있다. 0 이면 T-포즈다.
         vrmBones,
+        // 요청한 체 수와 실제로 선 수. 다르면 복제가 중간에 실패했다는 뜻이고,
+        // 그 사실이 어디에도 안 남으면 "왜 세 체만 있지" 를 추적할 수가 없다.
+        vrmWant: vrmCount,
+        vrmPlaced,
         vrmError,
       }),
 

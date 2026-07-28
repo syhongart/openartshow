@@ -30,10 +30,38 @@ import { GLTFLoader } from '../../../vendor/GLTFLoader.js';
 import type { WalkAvatar, AvatarCost } from './types.js';
 
 /** 로드 결과 — 비용과 **본 매칭 결과**를 함께 낸다. 후자가 없으면 조용히 실패한다 */
+/**
+ * `SkeletonUtils.clone` — 스킨드 메시를 올바르게 복제하는 three 부속 함수.
+ *
+ * `Object3D.clone()` 은 `SkinnedMesh` 의 뼈대를 **원본과 공유**해서, 복제본을 움직이면
+ * 원본까지 같이 움직인다. 이 함수는 뼈대를 새로 만들고 스킨 바인딩을 다시 건다.
+ *
+ * 최상위 `await import` 로 잡는 이유는 실패해도 월드가 살아야 하기 때문이다 — 복제가
+ * 안 되면 VRM 이 한 체만 서고, 그건 기능 축소이지 고장이 아니다.
+ */
+let cloneSkeleton: ((o: unknown) => any) | null = null;
+try {
+  const m: any = await import('three/examples/jsm/utils/SkeletonUtils.js');
+  cloneSkeleton = m?.clone ?? null;
+} catch {
+  cloneSkeleton = null;
+}
+
 export interface VrmLoadResult {
   avatar: WalkAvatar;
   cost: AvatarCost;
   bones: { found: number; wanted: number };
+  /**
+   * 같은 모델을 한 체 더 만든다. **지오메트리·재질은 공유한다.**
+   *
+   * 파일을 다시 로드하면 GLTFLoader 가 매번 파싱해 지오·재질이 N벌 생긴다 —
+   * world2 의 제1원리인 개수 불변식이 그 자리에서 깨진다(`geometry` 가 체 수에
+   * 비례해 늘고, 그게 성능 리포트를 통째로 오염시킨다).
+   *
+   * `SkeletonUtils.clone` 은 뼈대와 `SkinnedMesh` 만 새로 만들고 지오·재질은
+   * 참조로 공유한다. 늘어나는 것은 드로우콜과 스킨 계산뿐이다.
+   */
+  clone(): WalkAvatar | null;
 }
 
 /** 걷기에 쓰는 본. 없으면 그 관절만 안 움직인다 — 로드 실패로 취급하지 않는다 */
@@ -155,6 +183,23 @@ function build(gltf: any): VrmLoadResult {
     bonesFound++;
   }
 
+  // ── 복제본이 같은 본을 찾는 수단 ──────────────────────────────────────────
+  // `parser.associations` 는 **이 로드에만** 있다. 복제본에는 없으므로 다른 열쇠가
+  // 필요한데, **이름은 쓸 수 없다**(위 주석 참고 — GLTFLoader 가 `.` 을 `_` 로
+  // 치환해 원본 이름과 어긋난다).
+  //
+  // 대신 **순회 순서**를 쓴다. `SkeletonUtils.clone` 은 씬 그래프 구조를 그대로
+  // 보존하므로, 같은 순서로 훑으면 같은 자리의 객체가 나온다. 이름에 기대지 않는
+  // 것이 요점이고, 그래서 저작 도구가 무엇이든 영향이 없다.
+  const order = new Map<unknown, number>();
+  let seq = 0;
+  root.traverse((o: unknown) => { order.set(o, seq++); });
+  const boneSeq = {} as Record<BoneName, number | undefined>;
+  for (const key of WALK_BONES) {
+    const o = bones[key];
+    if (o) boneSeq[key] = order.get(o);
+  }
+
   // ── 비용 세기 ─────────────────────────────────────────────────────────────
   const mats = new Set<string>();
   let meshes = 0, triangles = 0;
@@ -173,6 +218,69 @@ function build(gltf: any): VrmLoadResult {
     o.frustumCulled = false;
   });
 
+  return {
+    avatar: makeWalker(root, bones, true),
+    cost: { meshes, materials: mats.size, triangles: Math.round(triangles) },
+    // 걷기에 필요한 본을 몇 개 찾았는가. `WALK_BONES.length` 에 못 미치면 그만큼 관절이
+    // 굳어 있다는 뜻이다 — 0 이면 T-포즈로 미끄러진다.
+    bones: { found: bonesFound, wanted: WALK_BONES.length },
+    clone: () => cloneWalker(root, boneSeq),
+  };
+}
+
+/**
+ * 같은 모델을 한 체 더. 지오·재질은 원본 것을 **공유**한다.
+ *
+ * 본은 **순회 순서**로 찾는다. 복제본에는 `parser.associations` 가 없고 이름은
+ * 믿을 수 없으므로(GLTFLoader 치환), 구조가 보존된다는 성질만 쓴다.
+ *
+ * 실패하면 `null` 이다 — 복제가 안 되는 것은 아바타가 하나 적은 것이지 세계가 깨질
+ * 일이 아니다. 조용히 넘어가지 않도록 이유는 콘솔이 아니라 호출자가 판단하게 둔다.
+ */
+function cloneWalker(root: any, boneSeq: Record<BoneName, number | undefined>): WalkAvatar | null {
+  if (!cloneSkeleton) return null;
+  let copy: any;
+  try {
+    copy = cloneSkeleton(root);
+  } catch {
+    return null;
+  }
+  if (!copy) return null;
+
+  // 원본에서 기록해 둔 순회 인덱스로 같은 자리의 본을 집는다.
+  const seqToObj = new Map<number, unknown>();
+  let i = 0;
+  copy.traverse((o: unknown) => { seqToObj.set(i++, o); });
+  const bones = {} as Record<BoneName, Bone | undefined>;
+  for (const key of WALK_BONES) {
+    const n = boneSeq[key];
+    if (typeof n === 'number') bones[key] = seqToObj.get(n) as Bone | undefined;
+  }
+
+  copy.traverse((o: any) => {
+    if (!o.isMesh && !o.isSkinnedMesh) return;
+    o.castShadow = false;
+    o.receiveShadow = false;
+    // 스킨드 메시는 본이 움직이면 바운딩이 어긋나 몸이 통째로 사라진다.
+    o.frustumCulled = false;
+  });
+
+  // `ownsAssets: false` — 지오·재질이 원본 것이라 반납하면 원본이 사라진다.
+  return makeWalker(copy, bones, false);
+}
+
+/**
+ * 로드된 뼈대에 걷기를 붙여 아바타로 만든다. **원본과 복제본이 같은 함수를 쓴다.**
+ *
+ * 복제본이 이 조립을 다시 적으면 걸음이 두 벌이 되고, 한쪽만 고쳐도 아무도 모른다 —
+ * 이 저장소가 값 미러링으로 반복해서 겪은 형태다.
+ *
+ * `ownsAssets` 가 `false` 면 `dispose` 가 지오·재질을 반납하지 않는다. 복제본은 원본의
+ * 것을 **공유**하므로, 반납하면 아직 쓰고 있는 원본이 사라진다.
+ */
+function makeWalker(
+  root: any, bones: Record<BoneName, Bone | undefined>, ownsAssets: boolean,
+): WalkAvatar {
   // ── 전방 보정 ─────────────────────────────────────────────────────────────
   // VRM 1.0 은 캐릭터가 **+Z** 를 향하도록 저작된다. 이 세계의 관례는 `yaw=0 → -Z`
   // 다(world1 `world.js:1752` 에서 계승). 그래서 π 를 얹어 둔다 — 안 하면 사람이
@@ -217,6 +325,10 @@ function build(gltf: any): VrmLoadResult {
       if (bones.spine) bones.spine.rotation.y = c * 0.05;
     },
     dispose() {
+      group.removeFromParent?.();
+      // 복제본은 지오·재질을 원본과 **공유**한다. 반납하면 아직 쓰고 있는 원본이
+      // 통째로 사라지므로, 소유한 쪽만 반납한다.
+      if (!ownsAssets) return;
       root.traverse((o: any) => {
         if (!o.isMesh && !o.isSkinnedMesh) return;
         o.geometry?.dispose?.();
@@ -228,15 +340,9 @@ function build(gltf: any): VrmLoadResult {
           m.dispose?.();
         }
       });
-      group.removeFromParent?.();
     },
   };
 
-  return {
-    avatar,
-    cost: { meshes, materials: mats.size, triangles: Math.round(triangles) },
-    // 걷기에 필요한 본을 몇 개 찾았는가. `WALK_BONES.length` 에 못 미치면 그만큼 관절이
-    // 굳어 있다는 뜻이다 — 0 이면 T-포즈로 미끄러진다.
-    bones: { found: bonesFound, wanted: WALK_BONES.length },
-  };
+  return avatar;
 }
+
