@@ -182,11 +182,16 @@ describe('retier — 공통 부품을 건드리지 않는다(이 설계의 이�
   it('far→near 승격이 실제로 부품을 채운다 — 옛 tier로 배치를 계산하면 0개가 된다', () => {
     // 이 테스트가 잡은 버그: retier가 h.tier를 나중에 갱신해서 fill이 옛 tier 배치를
     // 봤고, 새 종류가 그 배치에 없어 아무것도 안 생겼다.
+    //
+    // **검사 대상을 나무에서 가로등으로 바꿨다.** 나무가 far 까지 그려지게 되면서
+    // (감독 지적 *"이동하면 멀리 있는 게 사라졌다가 멈추면 나타나. 특히 나무."*)
+    // far 에도 나무가 있어 "0 → 양수" 가 성립하지 않는다. 가로등은 near 전용이라
+    // 지금은 그쪽이 tier 로 갈리는 파츠다.
     const { builder, liveOf } = mk();
     const h = builder.build(8, 8, 'far');
-    expect(liveOf('tree')).toBe(0);
+    expect(liveOf('lamp')).toBe(0);
     builder.retier!(h, 'near');
-    expect(liveOf('tree')).toBeGreaterThan(0);
+    expect(liveOf('lamp')).toBeGreaterThan(0);
   });
 
   it('retier 후 release가 여전히 전부 반납한다', () => {
@@ -230,7 +235,7 @@ describe('풀 고갈 — 조용히 넘기지 않는다', () => {
 
 describe('poolBudget — 예산이 밴드에서 유도된다', () => {
   // 종류별 최대 파셀 수. 그 종류가 살아 있는 **가장 바깥 tier의 EXIT** 반경이 기준이다.
-  const parcelsFor = (k: 'ground' | 'building' | 'tree' | 'lamp') =>
+  const parcelsFor = (k: 'ground' | 'building' | 'tree' | 'lamp' | 'bench') =>
     maxLatticePoints(tierReach(outermostTierFor(k)!, DEFAULT_BANDS));
 
   it('종류마다 파셀당 최대 × 그 종류의 tier 반경 파셀 수를 잡는다', () => {
@@ -242,10 +247,14 @@ describe('poolBudget — 예산이 밴드에서 유도된다', () => {
 
   // 예전 식(`파셀당 최대 × 20 × 1.25`)이 tier를 무시해 tree·lamp에 도달 불가능한 슬롯을
   // 잡아두고 있었다. 이 단언이 그 회귀를 막는다 — tier를 다시 뭉개면 세 값이 같아진다.
-  it('lamp < tree < building 순으로 적게 잡는다 — tier가 좁을수록 파셀이 적다', () => {
+  it('tier가 좁을수록 파셀을 적게 잡는다 — 예산은 밴드에서 유도된다', () => {
     const b = PooledParcelBuilder.poolBudget();
-    expect(parcelsFor('lamp')).toBeLessThan(parcelsFor('tree'));
-    expect(parcelsFor('tree')).toBeLessThan(parcelsFor('building'));
+    // lamp(near) < bench(mid) < building(far). 예전에는 tree 가 가운데였는데 far 로
+    // 올라가면서(감독의 LOD 지적) building 과 같은 반경이 됐다 — **같아진 것이 맞다.**
+    // 값을 박아 두지 않고 관계로만 검사하는 이유가 이런 변경 때문이다.
+    expect(parcelsFor('lamp')).toBeLessThan(parcelsFor('bench'));
+    expect(parcelsFor('bench')).toBeLessThan(parcelsFor('building'));
+    expect(parcelsFor('tree')).toBe(parcelsFor('building'));
     // lamp는 near에만 있다 — far까지 사는 ground와 같은 파셀 수를 잡으면 안 된다.
     expect(b.lamp / maxPartsPerParcel('lamp')).toBeLessThan(b.ground / maxPartsPerParcel('ground'));
   });
