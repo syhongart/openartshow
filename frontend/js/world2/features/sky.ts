@@ -12,6 +12,7 @@
 
 import { SkySystem } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
+import { nightness, lampGlow } from '../decide/night.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 export const skyFeature: Feature = {
@@ -34,8 +35,43 @@ export const skyFeature: Feature = {
     const parts = env.doc ? findSkyPanel(env.doc) : null;
     if (parts) panel = attachSkyPanel(parts, sky.controls);
 
+    // ── 가로등 점등 (감독 지시) ────────────────────────────────────────────
+    // *"밤에는 가로등이 켜져야 하고."*
+    //
+    // **왜 하늘이 이걸 하는가.** 켜고 끄는 판단의 근거가 시간대이고, 시간대를 아는 것은
+    // 하늘뿐이다. 기능 규약이 *"기능을 빼면 그 기능에 관한 모든 것이 함께 빠진다"* 이니,
+    // 하늘을 빼면 가로등도 낮 상태(꺼짐)로 남는 것이 맞다. `sky.js` 주석 ⑩도 원래
+    // *"onApply 로 가로등·창 발광을 배선측에서 연동"* 하라고 적어 두고 있었다.
+    //
+    // **만지는 것은 `emissiveIntensity` 하나뿐이다.** uniform 이라 파이프라인 캐시키에
+    // 들어가지 않는다 — 매 프레임 바꿔도 재컴파일이 없다. `emissive` 색이나 `map` 유무
+    // 같은 구조 신호를 건드리면 그 순간 전량 재컴파일이 된다.
+    const lampMat = env.pools.materialOf('lamp') as { emissiveIntensity?: number } | null;
+    let lampLit = -1; // 마지막으로 쓴 값. 같은 값을 다시 쓰지 않으려는 것
+
+    function applyLampGlow(): void {
+      if (!lampMat) return;
+      const g = lampGlow(nightness(sky.get().time));
+      // 값이 안 바뀌었으면 건드리지 않는다. 매 프레임 같은 수를 대입해도 three 는
+      // 조용히 넘어가지만, 만지지 않는 것이 만지는 것보다 언제나 싸다.
+      if (g === lampLit) return;
+      lampLit = g;
+      lampMat.emissiveIntensity = g;
+    }
+
+    applyLampGlow(); // 부팅 프레임부터 맞춰 둔다 — 밤에 들어왔는데 첫 프레임만 꺼져 있으면 깜빡인다
+
     return {
-      system: sky,
+      system: {
+        name: sky.name,
+        update(ctx) {
+          sky.update(ctx);
+          // 하늘이 시간대를 옮긴 **뒤에** 읽는다. 순서가 뒤집히면 한 프레임 늦은 값으로
+          // 켜져서, 시간대를 바꿀 때 가로등만 뒤늦게 따라온다.
+          applyLampGlow();
+        },
+        dispose: () => sky.dispose?.(),
+      },
 
       diagnostics() {
         // 하늘 상태 + **조명 실측값**. 번개는 조명 강도를 순간적으로 올리는 방식이라,
@@ -48,6 +84,8 @@ export const skyFeature: Feature = {
           hemiI: env.hemi.intensity,
           sunC: env.sun.color.getHex(),
           hemiC: env.hemi.color.getHex(),
+          // 가로등이 켜졌는가. 화면으로는 "좀 밝네" 로만 보이는 것을 숫자로 남긴다.
+          lampGlow: lampLit,
         };
       },
 

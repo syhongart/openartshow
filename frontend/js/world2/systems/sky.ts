@@ -31,6 +31,7 @@
 
 import * as THREE from 'three/webgpu';
 import { createSkySystem } from '../../sky.js';
+import { applyNightFloor, type HemiLike, type SunLike } from './night-lights.js';
 import type { FrameCtx, System } from '../kernel.js';
 
 /** 태양까지의 거리 — `getSunDir()` 방향에 이 값을 곱해 광원을 배치한다. */
@@ -98,6 +99,7 @@ export class SkySystem implements System {
   private readonly dome: THREE.Mesh;
   private readonly engine: ReturnType<typeof createSkySystem>;
   private readonly sun: THREE.DirectionalLight;
+  private readonly hemi: THREE.HemisphereLight;
   private readonly scene: THREE.Scene;
 
   constructor(
@@ -110,6 +112,7 @@ export class SkySystem implements System {
   ) {
     this.scene = scene;
     this.sun = sun;
+    this.hemi = hemi;
     this.dome = makeDome();
     this.dome.name = 'world2:sky';
     scene.add(this.dome);
@@ -142,7 +145,36 @@ export class SkySystem implements System {
     // 돔이 플레이어를 따라오게 하는 것도 `sky.js`가 주입받은 `getPos`로 직접 처리한다.
     this.engine.update(ctx.dt);
     this.applySun();
+    this.liftNightLights();
   }
+
+  /**
+   * 밤이 너무 어둡지 않게 **하한**을 얹는다 (감독 지시).
+   *
+   * ── 왜 여기인가 ───────────────────────────────────────────────────────────
+   * `sky.js` 의 밤 팔레트는 라이브 world1 도 쓴다. 거기서 값을 올리면 미술관 오픈월드의
+   * 룩이 함께 바뀐다. 어댑터가 있는 이유가 이런 것이라 world2 쪽에서만 얹는다.
+   *
+   * ── 왜 곱셈이 아니라 max 인가 ────────────────────────────────────────────
+   * 이 함수는 **매 프레임** 돈다. 배수를 곱하면 프레임마다 곱해져 발산한다. 하한은 몇
+   * 번 적용해도 결과가 같아서(멱등), `sky.js` 가 값을 덮어쓰든 크로스페이드 중이든
+   * 안전하다. "언제 덮어쓰는가" 를 알아야 하는 처방은 그 지식이 어긋나는 순간 깨진다.
+   *
+   * 지면색을 채널별로 올리는 것이 핵심이다. `HemisphereLight.groundColor` 는 아래에서
+   * 올라오는 빛이라, 그것이 검정(원래 `0x232a24`, 명도 15%)이면 위를 향한 면에 닿는
+   * 빛이 아예 없다. 강도를 올려도 검정을 곱하면 검정이다.
+   */
+  private liftNightLights(): void {
+    // 캐스팅하는 이유: `three/webgpu` 가 `HemisphereLight` 의 필드를 타입으로 완전히
+    // 재수출하지 않는다(이 저장소가 `BufferGeometry`·`CanvasTexture`·`Object3D` 에서
+    // 이미 겪은 TS2694 계열이다). 런타임 모양은 `HemiLike` 와 정확히 같다.
+    applyNightFloor(
+      this.hemi as unknown as HemiLike,
+      this.sun as unknown as SunLike,
+      this.engine.get().time,
+    );
+  }
+
 
   /** 적응계가 부하를 낮출 때 — 하늘 투명 레이어 오버드로우를 줄인다. */
   setLite(on: boolean): void {

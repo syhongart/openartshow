@@ -109,6 +109,21 @@ export class InstancePools {
   has(key: string): boolean { return this.pools.has(key); }
 
   /**
+   * 그 종류의 재질. 없으면 `null`.
+   *
+   * ── 무엇을 만져도 되는가 ───────────────────────────────────────────────
+   * **uniform 값만** 만진다 — 색·강도처럼 셰이더에 숫자로 들어가는 것들이다.
+   * `map`·`transparent`·`vertexColors` 같은 **구조 신호는 절대 바꾸지 않는다.** 그것들은
+   * `getProgramCacheKey` 의 축이라, 세션 도중에 바꾸면 그 재질을 쓰는 모든 것이 다시
+   * 컴파일된다. 이 저장소가 라이트 풀로 겨우 상수로 만든 그 숫자다.
+   *
+   * 밤에 가로등을 켜는 것이 첫 소비자다(`emissiveIntensity` — uniform 이다).
+   */
+  materialOf(key: string): THREE.Material | null {
+    return this.pools.get(key)?.spec.material ?? null;
+  }
+
+  /**
    * 슬롯을 하나 점유한다. 풀이 꽉 찼으면 null — **조용히 늘리지 않는다.**
    * 여기서 max를 키우면 그 순간 개수 불변식이 깨지고, 그게 우리가 없애려는 스파이크다.
    * 꽉 찬 건 설계 예산이 틀렸다는 신호이므로 호출자가 알아야 한다.
