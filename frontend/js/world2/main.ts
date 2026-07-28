@@ -20,6 +20,7 @@ import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
+import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
 import {
   FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics,
   type MountedFeature,
@@ -402,13 +403,13 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       look: (yaw, pitch) => player.lookBy(yaw, pitch),
     })
     : { active: false, dispose() {} };
-  // 조작 안내는 입력 방식에 맞춘 것만 보여준다 — 모바일에서 "WASD"는 소음이다.
-  const hint = document.getElementById('w2-hint');
-  if (hint) {
-    hint.textContent = touch.active
-      ? '왼쪽을 밀어 이동 · 오른쪽을 쓸어 둘러보기'
-      : 'WASD·방향키로 이동 · 화면을 클릭하면 시선 조작 · Shift 달리기';
-  }
+  // 조작 안내는 **감독 지시로 없앴다**(*"도움말없애줘"*). 화면 하단을 상시 차지하는데,
+  // 조작이 밀고 쓸기뿐이라 한 번 해보면 알게 되는 것이었다. 문구를 채우던 코드도 함께
+  // 지운다 — 요소만 지우고 코드를 남기면 다음 사람이 "왜 안 보이지" 를 여기서 찾는다.
+
+  // 미니맵 책갈피 — 왼쪽 가장자리에서 펼치고 접는다(감독 지시).
+  const drawerParts = findMapDrawer(document);
+  const mapDrawer = drawerParts ? attachMapDrawer(drawerParts) : null;
 
   // ── 진단 훅 ───────────────────────────────────────────────────────────────
   // behind-flag 검증 페이지 전용이다. 라이브(world.html)에는 없다.
@@ -456,6 +457,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       input.dispose();
       touch.dispose();
       hud?.dispose();
+      mapDrawer?.dispose();
       // 기능 정리. System의 `dispose`는 커널이 부르므로, 여기서는 기능이 따로 붙인
       // UI·리스너만 거둔다. 여기에도 기능별 분기가 없다.
       for (const m of features) {
