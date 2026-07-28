@@ -22,7 +22,10 @@
 import { describe, it, expect } from 'vitest';
 import { parcelLayout, DEFAULT_LAYOUT, type PlacedPart } from '../frontend/js/world2/decide/parcel-layout.js';
 import { LAMP_OFFSET } from '../frontend/js/world2/parts/lamp.js';
-import { roadDirs, onRoad, ROAD_HALF, SETBACK } from '../frontend/js/world2/parts/road-topology.js';
+import { specFor } from '../frontend/js/world2/parts/index.js';
+import {
+  roadDirs, onRoad, edgeX, edgeZ, ROAD_HALF, SETBACK, LAMP_CLEARANCE,
+} from '../frontend/js/world2/parts/road-topology.js';
 
 const { cellX: CELL_X, cellZ: CELL_Z } = DEFAULT_LAYOUT;
 
@@ -40,12 +43,82 @@ function worldLamps(px: number, pz: number) {
 const RANGE: [number, number][] = [];
 for (let px = -6; px <= 6; px++) for (let pz = -6; pz <= 6; pz++) RANGE.push([px, pz]);
 
+/**
+ * 세계좌표 `want` 근처의 가로등 수. 경계를 사이에 둔 **두 파셀 모두**에서 센다 —
+ * 누가 그 자리를 만드는지가 검사 대상이 아니라, 결과가 맞는지가 대상이기 때문이다.
+ */
+function countLampsNear(px: number, pz: number, want: { x: number; z: number }): number {
+  let n = 0;
+  for (const dx of [0, 1, -1]) {
+    for (const dz of [0, 1, -1]) {
+      for (const p of worldLamps(px + dx, pz + dz)) {
+        if (Math.hypot(p.x - want.x, p.z - want.z) < 1e-6) n++;
+      }
+    }
+  }
+  return n;
+}
+
+function hasLampNear(px: number, pz: number, want: { x: number; z: number }): boolean {
+  return countLampsNear(px, pz, want) > 0;
+}
+
 describe('가로등은 도로를 따라간다 — 나무처럼 심지 않는다', () => {
-  it('방향마다 길 양옆으로 두 대다 (감독: "길 양옆에 가지런히")', () => {
-    // 예전에는 방향당 한 대였다. 도로 축으로 옮기면서 **한쪽에만** 세웠고, 감독
-    // 판정은 *"가로등은 길 양옆에 가지런히 있어야하는데. 무슨 나무처럼있냐"* 였다.
+  // ── 왜 파셀 단위로 세지 않는가 ─────────────────────────────────────────────
+  // 가로등이 **파셀 경계 위**로 옮겨 가면서, 한 경계의 가로등을 두 파셀 중 **하나만**
+  // 만든다(양쪽이 만들면 겹친다). 그래서 파셀 하나만 보면 `west` 만 있는 파셀은 0대이고
+  // 그것이 정상이다 — 파셀당 개수는 이제 성질이 아니다.
+  //
+  // 진짜 성질은 경계 쪽에 있다: **길이 지나는 모든 경계에 가로등 한 쌍이 있다.** 이것을
+  // 세계좌표에서 확인하면 소유 규칙(누가 만드느냐)과 무관하게 결과만 본다.
+  it('길이 지나는 모든 경계에 가로등이 양옆 한 쌍씩 있다', () => {
+    const missing: string[] = [];
     for (const [px, pz] of RANGE) {
-      expect(lampsAt(px, pz).length).toBe(roadDirs(px, pz).length * 2);
+      // 동서 방향 경계 — 파셀 (px,pz) 와 (px+1,pz) 사이. 세계 x 는 파셀 중심 + 반셀.
+      if (edgeX(px, pz)) {
+        const wx = px * CELL_X + CELL_X / 2;
+        for (const s of [1, -1]) {
+          const want = { x: wx, z: pz * CELL_Z + s * LAMP_OFFSET };
+          if (!hasLampNear(px, pz, want)) missing.push(`edgeX(${px},${pz}) ${s > 0 ? '+' : '−'}쪽`);
+        }
+      }
+      if (edgeZ(px, pz)) {
+        const wz = pz * CELL_Z + CELL_Z / 2;
+        for (const s of [1, -1]) {
+          const want = { x: px * CELL_X + s * LAMP_OFFSET, z: wz };
+          if (!hasLampNear(px, pz, want)) missing.push(`edgeZ(${px},${pz}) ${s > 0 ? '+' : '−'}쪽`);
+        }
+      }
+    }
+    expect(missing.slice(0, 12), `빈 자리 ${missing.length}건`).toEqual([]);
+  });
+
+  it('한 자리에 두 대가 겹치지 않는다 — 경계를 양쪽이 만들면 그렇게 된다', () => {
+    // 위 검사는 "있는가"만 본다. 양쪽 파셀이 같은 경계를 각자 만들면 **같은 좌표에
+    // 두 대**가 서고, 그래도 위 검사는 통과한다. 개수를 함께 봐야 한다.
+    const dup: string[] = [];
+    for (const [px, pz] of RANGE) {
+      if (!edgeX(px, pz)) continue;
+      const wx = px * CELL_X + CELL_X / 2;
+      for (const s of [1, -1]) {
+        const want = { x: wx, z: pz * CELL_Z + s * LAMP_OFFSET };
+        const n = countLampsNear(px, pz, want);
+        if (n !== 1) dup.push(`edgeX(${px},${pz}) ${s > 0 ? '+' : '−'}쪽 ${n}대`);
+      }
+    }
+    expect(dup.slice(0, 12), `중복 ${dup.length}건`).toEqual([]);
+  });
+
+  it('한 쌍으로 보일 만큼 붙은 것이 없다 (감독: "2개 한쌍처럼 보이지?")', () => {
+    // 이 검사가 이 변경의 본체다. 개수를 세는 것만으로는 **붙어 있는지**를 못 본다.
+    for (const [px, pz] of RANGE) {
+      const lamps = lampsAt(px, pz);
+      for (let i = 0; i < lamps.length; i++) {
+        for (let j = i + 1; j < lamps.length; j++) {
+          const d = Math.hypot(lamps[i].x - lamps[j].x, lamps[i].z - lamps[j].z);
+          expect(d, `(${px},${pz}) ${i}×${j}`).toBeGreaterThanOrEqual(4);
+        }
+      }
     }
   });
 
@@ -87,14 +160,43 @@ describe('가로등은 도로를 따라간다 — 나무처럼 심지 않는다'
     }
   });
 
-  it('파셀 밖으로 나가지 않는다 — 이웃 파셀 땅에 서면 언로드 때 함께 사라진다', () => {
-    const halfX = CELL_X / 2, halfZ = CELL_Z / 2;
+  // ── 이 검사가 바뀐 이유를 적어 둔다 ────────────────────────────────────────
+  // 예전에는 `|x| < cellX/2` 를 요구했다 — "파셀 밖으로 나가지 마라". 가로등이 경계
+  // **위**로 옮겨 가면서 그 조건은 정의상 실패한다.
+  //
+  // 그런데 그 조건은 원래 목적의 **대리 지표**였다. 진짜 목적은 "이웃 파셀 물건과
+  // 겹치지 마라"이고, 경계 안에 있으면 그것이 보장되니 값싼 조건으로 대신 본 것이다.
+  // 대리 지표가 안 맞게 됐으면 **목적을 직접 재야지**, 조건을 느슨하게 풀 일이 아니다.
+  //
+  // 파셀 반폭이 `cellX/2 − margin` = 13.5m 라 경계(16m)와의 사이 2.5m 는 어느 파셀의
+  // 파츠도 들어오지 않는 땅이다. 그 여유가 실제로 있는지를 여기서 전수로 확인한다 —
+  // `margin` 이 줄면 이 검사가 먼저 깨진다.
+  it('이웃 파셀 물건과 겹치지 않는다 — 경계 위에 서게 됐으니 직접 잰다', () => {
+    const bad: string[] = [];
     for (const [px, pz] of RANGE) {
-      for (const p of lampsAt(px, pz)) {
-        expect(Math.abs(p.x)).toBeLessThan(halfX);
-        expect(Math.abs(p.z)).toBeLessThan(halfZ);
+      const lamps = worldLamps(px, pz);
+      if (lamps.length === 0) continue;
+      for (const dx of [-1, 0, 1]) {
+        for (const dz of [-1, 0, 1]) {
+          for (const t of ['near', 'mid', 'far'] as const) {
+            for (const q of parcelLayout(px + dx, pz + dz, t)) {
+              if (q.kind === 'lamp') continue;
+              const r = specFor(q.kind)?.footprint(q) ?? 0;
+              if (r <= 0) continue;             // 평면은 겹침 개념이 없다
+              const qx = (px + dx) * CELL_X + q.x;
+              const qz = (pz + dz) * CELL_Z + q.z;
+              for (const L of lamps) {
+                const gap = Math.hypot(L.x - qx, L.z - qz) - (r + LAMP_CLEARANCE);
+                if (gap < -1e-9) {
+                  bad.push(`(${px},${pz})의 등 × (${px + dx},${pz + dz},${t}) ${q.kind} ${(-gap).toFixed(2)}m`);
+                }
+              }
+            }
+          }
+        }
       }
     }
+    expect(bad.slice(0, 12), `겹침 ${bad.length}건`).toEqual([]);
   });
 });
 
@@ -141,17 +243,23 @@ describe('이웃 파셀과 줄이 이어진다', () => {
   // 다르다.
   it('동서 도로선을 따라 간격이 셀 절반의 정수배다', () => {
     const step = CELL_X / 2;
-    let exact = 0;
+    let base = 0;
     for (let pz = -3; pz <= 3; pz++) {
       const xs = row(pz * CELL_Z + LAMP_OFFSET, 'x', PXS, pz);
       for (let i = 1; i < xs.length; i++) {
         const gap = xs[i] - xs[i - 1];
         expect(gap / step).toBeCloseTo(Math.round(gap / step), 6);
-        if (Math.abs(gap - step) < 1e-9) exact++;
+        // ── 기본 간격이 셀 하나(32m)가 됐다 ──────────────────────────────
+        // 예전에는 16m 였다. 교차로 모서리에서 한 대만 서게 되면서(감독: *"왜 2개
+        // 한쌍처럼 보이지?"*) 사거리 파셀이 이 인도선에 한 대만 내놓는다.
+        //
+        // **줄어든 것이 맞다.** 실제 가로등 간격은 25~30m 이고 16m 는 오히려 촘촘
+        // 했다. 실측 분포도 32m 가 66회로 지배적이다(16m 13 · 64m 5).
+        if (Math.abs(gap - CELL_X) < 1e-9) base++;
       }
     }
-    // 전부 정수배인데 하나도 기본 간격이 아니면 "줄"이 아니라 띄엄띄엄 흩어진 것이다.
-    expect(exact).toBeGreaterThan(20);
+    // 전부 정수배인데 기본 간격이 드물면 "줄"이 아니라 띄엄띄엄 흩어진 것이다.
+    expect(base).toBeGreaterThan(20);
   });
 
   it('남북 도로선을 따라 간격이 셀 절반의 정수배다', () => {
@@ -162,7 +270,8 @@ describe('이웃 파셀과 줄이 이어진다', () => {
       for (let i = 1; i < zs.length; i++) {
         const gap = zs[i] - zs[i - 1];
         expect(gap / step).toBeCloseTo(Math.round(gap / step), 6);
-        if (Math.abs(gap - step) < 1e-9) exact++;
+        // 동서선과 같은 이유로 기본 간격이 셀 하나다(위 주석 참고).
+        if (Math.abs(gap - CELL_Z) < 1e-9) exact++;
       }
     }
     expect(exact).toBeGreaterThan(20);

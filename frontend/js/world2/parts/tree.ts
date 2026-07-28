@@ -90,7 +90,7 @@ export const tree: PartSpec = {
     const dirs = roadDirs(px, pz);
     const n = Math.floor(rnd() * (o.maxTrees + 1));
     const slots = parcelSlots(o, halfX, halfZ, dirs);
-    const reserved = lampReservations(o, halfX, halfZ, dirs, LAMP_CLEARANCE);
+    const reserved = lampReservations(o, dirs, LAMP_CLEARANCE);
     const out: PlacedPart[] = [];
     for (let i = 0; i < n; i++) {
       // **자유 회전.** 90° 단위로 돌리던 것을 풀었다 — 나무는 인공물이 아니라 어느

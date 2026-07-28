@@ -65,12 +65,12 @@ describe('겹침이 사라졌는가 — 감독 지적의 본체', () => {
   });
 
   it('가로등 자리도 비어 있다 — 그려지지 않는 tier 에서도', () => {
-    // 가로등은 `near` 전용이라 `mid` 배치에는 없다. 그래도 그 자리는 예약이라 다른
-    // 물건이 들어오면 안 된다 — near 로 돌아왔을 때 등이 나무 속에서 켜진다.
+    // 자리는 tier 와 무관한 **예약**이다. 가로등이 안 그려지는 거리에서 다른 물건이
+    // 그 자리에 들어오면, 가까이 왔을 때 등이 나무 속에서 켜진다.
     const bad: string[] = [];
     for (let px = -12; px <= 12; px++) {
       for (let pz = -12; pz <= 12; pz++) {
-        const anchors = lampAnchors(DEFAULT_LAYOUT, HALF_X, HALF_Z, roadDirs(px, pz));
+        const anchors = lampAnchors(DEFAULT_LAYOUT, roadDirs(px, pz));
         for (const t of TIERS) {
           for (const p of parcelLayout(px, pz, t)) {
             if (p.kind === 'lamp') continue;

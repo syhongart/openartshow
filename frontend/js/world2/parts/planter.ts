@@ -53,7 +53,7 @@ export const planter: PartSpec = {
     if (n === 0) return [];
 
     const slots = parcelSlots(o, halfX, halfZ, dirs);
-    const reserved = lampReservations(o, halfX, halfZ, dirs, LAMP_CLEARANCE);
+    const reserved = lampReservations(o, dirs, LAMP_CLEARANCE);
     const out: PlacedPart[] = [];
 
     for (let i = 0; i < n; i++) {

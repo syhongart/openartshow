@@ -300,10 +300,24 @@ describe('노출과 안개 — 계산한 값이 실제로 소비되는가', () =
     // 항등원이었으므로). 스윕이 값을 정한 뒤로는 **반대가 참이어야 한다** — 기본
     // 경로로 들어온 사용자가 밝아진 밤을 본다.
     const t = targets();
-    const fogBefore = { ...t.fog.color };
     applyNightFloor(t, 'night');
     expect(t.renderer.toneMappingExposure).toBeGreaterThan(1);
-    expect(t.fog.color.g).toBeGreaterThan(fogBefore.g);
+    expect(t.hemi.intensity).toBeGreaterThan(0.55);
+  });
+
+  it('안개색은 일부러 손대지 않는다 — 하늘 지평선과 같아야 한다 (감독 스크린샷)', () => {
+    // 감독: *"안개가 안보여"*. `sky.js` 가 하늘 돔 지평선을 안개색으로 칠하므로
+    // (그 파일 주석 ⑨ *"지평선 = fog색 — 이음새 제거의 핵"*) 안개만 밝히면 원경이
+    // 하늘에 녹아드는 대신 **하늘보다 밝게 떠서 도드라진다.**
+    //
+    // 그래서 `NIGHT_FOG_SCALE` 이 1이다. 이 검사가 없으면 "밤이 어둡다" 지적이 또
+    // 왔을 때 가장 만만해 보이는 이 축을 다시 올리게 된다.
+    const t = targets();
+    const before = { ...t.fog.color };
+    applyNightFloor(t, 'night');
+    expect(t.fog.color.r).toBeCloseTo(before.r, 6);
+    expect(t.fog.color.g).toBeCloseTo(before.g, 6);
+    expect(t.fog.color.b).toBeCloseTo(before.b, 6);
   });
 
   it('낮은 여전히 무변경이다 — 밤 기본값이 낮으로 새면 안 된다', () => {

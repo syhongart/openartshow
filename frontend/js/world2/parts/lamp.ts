@@ -18,7 +18,16 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
-import { roadDirs, DIRS, LAMP_OFFSET, LAMP_CLEARANCE, lampAnchors } from './road-topology.js';
+import { roadDirs, LAMP_OFFSET, LAMP_CLEARANCE, lampAnchors } from './road-topology.js';
+
+/**
+ * 이 파셀이 **자기 것으로 삼는 경계 수** — `east` 와 `south` 둘.
+ *
+ * 파셀은 서로를 모르므로 경계 자리를 양쪽이 만들면 겹친다. `+`방향만 소유하고
+ * `−`방향은 이웃에 맡기는 규칙이 `lampAnchors` 에 있고, 여기서는 그 규칙이 만드는
+ * **자리 개수**만 예산에 쓴다.
+ */
+const OWNED_EDGES = 2;
 
 /**
  * 인도 한가운데까지의 거리(미터). 차도 끝(`ROAD_HALF`)과 건물 셋백(`SETBACK`) 사이가
@@ -64,10 +73,14 @@ export const lamp: PartSpec = {
    */
   footprint: () => LAMP_CLEARANCE,
 
-  // 방향마다 **길 양옆으로 두 개**다(감독: *"길 양옆에 가지런히"*). 유도값이라
-  // 배치 규칙을 바꾸면 함께 따라온다 — 예산과 배치가 어긋나면 가로등이 조용히
-  // 덜 그려진다.
-  maxPerParcel: () => DIRS.length * 2,
+  /**
+   * 자리는 **+방향 경계 둘**(east·south)에 각각 양옆 두 대이므로 최대 4대다.
+   * `−`방향 경계는 이웃 파셀이 자기 `+` 로 세운다(`lampAnchors` 참고).
+   *
+   * 2 를 직접 곱하지 않고 자리 개수에서 유도한다 — 상한을 손으로 적어 두면 규칙이
+   * 바뀔 때 슬롯이 모자라고, 그 부족은 `starved` 로만 나타나 원인을 찾기 어렵다.
+   */
+  maxPerParcel: () => OWNED_EDGES * 2,
 
   /**
    * 도로 축을 따라 **인도 위에** 세운다.
@@ -85,25 +98,22 @@ export const lamp: PartSpec = {
    * "심어 놓은" 모습이 된다. 여기서 결정론은 성능이 아니라 **룩의 요건**이다.
    *
    * ── 줄이 이어지는 원리 ──────────────────────────────────────────────────────
-   * 옆으로 비키는 쪽을 **축마다 고정**한다 — 동서 도로는 늘 +z 쪽, 남북 도로는 늘 +x 쪽.
-   * "진행 방향의 오른쪽" 같은 규칙을 쓰면 east 와 west 가 **같은 도로선의 반대편**을
-   * 골라서, 파셀 경계마다 가로등이 길 건너로 옮겨 다닌다.
+   * 자리는 **파셀 경계 위**, 도로 양옆이다. 경계를 양쪽 파셀이 각자 만들면 두 대가
+   * 겹치므로 `+`방향(east·south)만 자기 것으로 삼는다 — 나머지 두 경계는 이웃이
+   * 자기 `+` 로 세운다. 그래서 세계좌표에서 가로등이
    *
-   * 축 방향 거리는 **셀의 1/4** 이다. 그러면 세계좌표에서 가로등이
+   *   … , px·cell + cell/2 , (px+1)·cell + cell/2 , …   각각 인도 양쪽에 하나씩
    *
-   *   … , px·cell − cell/4 , px·cell + cell/4 , (px+1)·cell − cell/4 , …
+   * 로 놓여 간격이 셀 하나(32m)로 균등해지고, 교차로 근처는 비어 있다.
    *
-   * 로 놓여 간격이 `cell/2` 로 **균등**해진다(중심의 교차로만 비어 있다).
-   *
-   * 반폭(`halfX`)의 절반이 아니다. 반폭은 `cell/2 − margin` 이라 파셀 경계를 넘는 순간
-   * 간격이 어긋난다(기본값에서 18.5m 와 13.5m 가 번갈아 나온다). 균등 간격을 결정하는
-   * 것은 **파셀 중심 사이 거리**이므로 셀에서 유도해야 한다. 반폭은 파셀 밖으로 나가지
-   * 않게 눌러 주는 데만 쓴다.
+   * 왜 교차로가 아니라 경계인지는 `road-topology.ts` 의 `lampAnchors` 에 적었다 —
+   * 짧게 말하면 도로 팔 중간(cell/4)에 세우면 교차로 모서리에서 상대 축 가로등과
+   * 2.47m 로 붙고, 그 붙음을 떼려 한 대만 세우면 이번엔 줄이 지그재그가 된다.
    */
-  place: ({ px, pz, o, halfX, halfZ }) => {
+  place: ({ px, pz, o }) => {
     // 자리 계산은 `lampAnchors` 하나다. 다른 파츠도 그 함수로 "여기는 비운다"를
     // 알아내므로, 여기에 같은 식을 다시 적으면 한쪽만 고쳐도 아무도 모른다.
-    return lampAnchors(o, halfX, halfZ, roadDirs(px, pz)).map((a) => ({
+    return lampAnchors(o, roadDirs(px, pz)).map((a) => ({
       kind: 'lamp', x: a.x, z: a.z, y: 0, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0,
     }));
   },

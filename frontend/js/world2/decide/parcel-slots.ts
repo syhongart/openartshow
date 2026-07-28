@@ -207,9 +207,16 @@ export function jitterIn(
   };
 }
 
-/** 가로등이 예약한 자리. 그려지는 tier 와 무관하게 항상 비운다 */
+/**
+ * 가로등이 예약한 자리. 그려지는 tier 와 무관하게 항상 비운다.
+ *
+ * 가로등이 파셀 경계(16m)로 옮겨 간 뒤로는 슬롯 격자(반폭 13.5m 안)와 대개 만나지
+ * 않는다 — 바깥 슬롯이 반경 2.4m 를 넘을 때만 걸린다. **그래도 남겨 둔다**: 이 함수가
+ * 지키는 것은 현재 좌표가 아니라 "가로등 자리는 tier 와 무관하게 비운다"는 규약이고,
+ * `LAMP_OFFSET` 이나 자리 규칙이 다시 안쪽으로 오면 그 순간 다시 실효를 갖는다.
+ */
 export function lampReservations(
-  o: ResolvedLayout, halfX: number, halfZ: number, dirs: readonly Dir[], r: number,
+  o: ResolvedLayout, dirs: readonly Dir[], r: number,
 ): { x: number; z: number; r: number }[] {
-  return lampAnchors(o, halfX, halfZ, dirs).map((a) => ({ x: a.x, z: a.z, r }));
+  return lampAnchors(o, dirs).map((a) => ({ x: a.x, z: a.z, r }));
 }

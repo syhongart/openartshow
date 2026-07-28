@@ -121,15 +121,26 @@ describe('kindsFor — tier별 구성', () => {
 });
 
 describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
-  it('모든 부품이 셀 경계 안에 있다', () => {
+  // 반폭(`cell/2 − margin`)은 파셀 **안쪽** 한계이고, 그 바깥 `margin` 띠는 어느 파셀의
+  // 파츠도 들어오지 않는 완충지다. 가로등만 그 띠를 넘어 경계 위에 선다 — 두 도로의
+  // 가로등 줄이 교차로에서 붙는 것을 피하려고 일부러 그리로 옮겼다(감독: *"왜 가로등이
+  // 2개 한쌍처럼 보이지?"*). 그래서 **가로등만 셀 경계까지** 허용한다.
+  //
+  // 예외를 열면서 이 검사가 원래 지키려던 것("이웃 파셀 물건과 안 겹친다")은 대리
+  // 지표로 못 보게 됐다. 그쪽은 `world2-lamp-placement.test.ts` 가 이웃 3×3 파셀 ×
+  // 3 tier 전수로 **직접** 잰다 — 예외를 열 때 검사를 함께 옮겨 두지 않으면 그 순간
+  // 사각이 생긴다.
+  it('모든 부품이 셀 경계 안에 있다 — 가로등만 경계 위까지', () => {
     const halfX = DEFAULT_LAYOUT.cellX / 2 - DEFAULT_LAYOUT.margin;
     const halfZ = DEFAULT_LAYOUT.cellZ / 2 - DEFAULT_LAYOUT.margin;
     for (let px = -3; px <= 3; px++) {
       for (let pz = -3; pz <= 3; pz++) {
         for (const p of at(px, pz)) {
           if (p.kind === 'ground') continue; // 지면은 셀 전체를 덮는다
-          expect(Math.abs(p.x)).toBeLessThanOrEqual(halfX + 1e-9);
-          expect(Math.abs(p.z)).toBeLessThanOrEqual(halfZ + 1e-9);
+          const lx = p.kind === 'lamp' ? DEFAULT_LAYOUT.cellX / 2 : halfX;
+          const lz = p.kind === 'lamp' ? DEFAULT_LAYOUT.cellZ / 2 : halfZ;
+          expect(Math.abs(p.x), `${p.kind} x`).toBeLessThanOrEqual(lx + 1e-9);
+          expect(Math.abs(p.z), `${p.kind} z`).toBeLessThanOrEqual(lz + 1e-9);
         }
       }
     }

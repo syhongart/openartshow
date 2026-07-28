@@ -57,7 +57,7 @@ export const bench: PartSpec = {
     const slots = parcelSlots(o, halfX, halfZ, dirs);
     const free = freeSlots(
       slots, placed, radiusOf, BENCH_RADIUS,
-      lampReservations(o, halfX, halfZ, dirs, LAMP_CLEARANCE),
+      lampReservations(o, dirs, LAMP_CLEARANCE),
     );
     return takeSlots(rnd, free, n, BENCH_RADIUS).map((slot) => {
       const pos = jitterIn(rnd, slot, BENCH_RADIUS);
