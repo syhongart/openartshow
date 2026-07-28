@@ -48,6 +48,31 @@ export interface NightFloor {
   ground: readonly [number, number, number];
   /** `HemisphereLight.color` 채널 하한(0~1 RGB) */
   sky: readonly [number, number, number];
+  /**
+   * `renderer.toneMappingExposure` 하한.
+   *
+   * 다른 넷과 **성질이 다르다** — 조명은 재질에 닿는 빛을 키우지만 노출은 그 결과를
+   * 포함해 **화면 전체**를 키운다. 하늘 돔·안개·물까지 같이 올라간다.
+   */
+  exposure: number;
+  /** `scene.fog.color` 채널 하한(0~1 RGB) */
+  fog: readonly [number, number, number];
+}
+
+/**
+ * 밤 밝기 축의 **튜닝값**. 전부 선택이고, 없으면 아래 상수를 쓴다.
+ *
+ * ── 왜 인자로 여는가 ────────────────────────────────────────────────────────
+ * 판정은 순수해야 하니 URL 을 여기서 읽을 수 없다. 그런데 값은 감독 실기기(WebGPU)에서
+ * 골라야 한다 — 헤드리스는 WebGL 이라 톤매핑을 거친 최종 밝기가 같지 않다. 그래서
+ * **읽는 것은 배선(`features/sky.ts`)이 하고, 쓰는 것은 여기가 한다.**
+ */
+export interface NightTune {
+  hemiI?: number;
+  sunI?: number;
+  exposure?: number;
+  /** 안개 목표색의 밝기 배수. 1이면 `sky.js` 값 그대로라 하한이 걸리지 않는다 */
+  fogScale?: number;
 }
 
 /**
@@ -63,23 +88,54 @@ const NIGHT_GROUND = [0x3a / 255, 0x42 / 255, 0x50 / 255] as const;
 const NIGHT_SKY = [0x4a / 255, 0x58 / 255, 0x78 / 255] as const;
 
 /** 한밤의 반구광 하한. 원래 0.55 */
-const NIGHT_HEMI_I = 0.85;
+export const NIGHT_HEMI_I = 0.85;
 /** 한밤의 달빛 하한. 원래 0.24 */
-const NIGHT_SUN_I = 0.34;
+export const NIGHT_SUN_I = 0.34;
+
+/**
+ * 한밤의 안개색 하한 — `sky.js` 의 밤 맑음 `fog: 0x3d4762` **와 같은 값**.
+ *
+ * 같은 값을 적어 둔 것이 요점이다. `fogScale` 1 이면 하한이 현재 색과 같아 **아무 일도
+ * 일어나지 않는다.** 축을 열되 기본 동작은 바꾸지 않는 것 — 무엇이 밤을 어둡게 하는지
+ * 아직 재지 않았는데 값부터 올리면, 그게 이 프로젝트가 열 번 반복한 "처방 먼저" 다.
+ *
+ * ⚠️ `sky.js` 의 값을 **복제**한 것이라 미러링이다. 저쪽이 바뀌면 여기가 조용히
+ * 어긋난다 — 그래서 `tests/world2-night.test.ts` 가 두 값이 같은지 검사한다.
+ */
+const NIGHT_FOG = [0x3d / 255, 0x47 / 255, 0x62 / 255] as const;
+
+/**
+ * 한밤의 노출 하한. **1.0 은 곱셈 항등원이라 아무 일도 하지 않는다.**
+ *
+ * 톤매핑 노출은 화면 전체를 한 번에 들어올리는 가장 강한 레버이고, 그래서 가장 위험한
+ * 레버이기도 하다 — 올리면 밤이 밝아지는 게 아니라 **밤이 아니게 된다**(대비가 죽고
+ * 하늘이 회색으로 뜬다). 얼마가 맞는지는 재고 정한다.
+ */
+const NIGHT_EXPOSURE = 1.0;
 
 /**
  * 밤 정도에 비례한 하한. 낮(`n=0`)에는 전부 0이라 **아무 일도 하지 않는다** —
  * 낮 값이 이미 하한보다 높으므로 자연히 no-op 이 되는 것이 아니라, 하한 자체가
  * 0 이라 계산도 무의미해진다. 낮 룩을 건드릴 여지를 원천적으로 없앤다.
+ *
+ * `exposure` 만 예외로 **1에서 출발한다.** 노출은 하한이 아니라 배수라서, 0 으로
+ * 내려가면 화면이 검어진다. 낮에는 1(항등원)이어야 손대지 않은 것이 된다.
  */
-export function nightFloor(n: number): NightFloor {
+export function nightFloor(n: number, tune?: NightTune): NightFloor {
   const k = Math.max(0, Math.min(1, n));
   const lerp = (v: number) => v * k;
+  const hemiI = tune?.hemiI ?? NIGHT_HEMI_I;
+  const sunI = tune?.sunI ?? NIGHT_SUN_I;
+  const exposure = tune?.exposure ?? NIGHT_EXPOSURE;
+  const fogScale = tune?.fogScale ?? 1;
   return {
-    hemiI: lerp(NIGHT_HEMI_I),
-    sunI: lerp(NIGHT_SUN_I),
+    hemiI: lerp(hemiI),
+    sunI: lerp(sunI),
     ground: [lerp(NIGHT_GROUND[0]), lerp(NIGHT_GROUND[1]), lerp(NIGHT_GROUND[2])],
     sky: [lerp(NIGHT_SKY[0]), lerp(NIGHT_SKY[1]), lerp(NIGHT_SKY[2])],
+    // 1 → exposure 로 보간한다. 낮이면 정확히 1이라 집행 쪽에서 no-op 이 된다.
+    exposure: 1 + (exposure - 1) * k,
+    fog: [lerp(NIGHT_FOG[0] * fogScale), lerp(NIGHT_FOG[1] * fogScale), lerp(NIGHT_FOG[2] * fogScale)],
   };
 }
 

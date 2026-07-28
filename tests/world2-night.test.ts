@@ -120,11 +120,11 @@ describe('하한 적용은 멱등이다 — 매 프레임 돌아도 발산하지
   // 이것이 곱셈 대신 max 를 고른 이유이고, 이 성질이 깨지면 밤이 프레임마다 밝아진다.
   it('100번 적용해도 1번과 같다', () => {
     const a = nightLights();
-    applyNightFloor(a.hemi, a.sun, 'night');
+    applyNightFloor({ hemi: a.hemi, sun: a.sun }, 'night');
     const once = { i: a.hemi.intensity, g: a.hemi.groundColor.g, s: a.sun.intensity };
 
     const b = nightLights();
-    for (let i = 0; i < 100; i++) applyNightFloor(b.hemi, b.sun, 'night');
+    for (let i = 0; i < 100; i++) applyNightFloor({ hemi: b.hemi, sun: b.sun }, 'night');
     expect(b.hemi.intensity).toBe(once.i);
     expect(b.hemi.groundColor.g).toBe(once.g);
     expect(b.sun.intensity).toBe(once.s);
@@ -133,7 +133,7 @@ describe('하한 적용은 멱등이다 — 매 프레임 돌아도 발산하지
   it('밤 조명이 실제로 밝아진다 — 값이 그대로면 이 기능은 죽은 코드다', () => {
     const l = nightLights();
     const before = { i: l.hemi.intensity, g: l.hemi.groundColor.g };
-    applyNightFloor(l.hemi, l.sun, 'night');
+    applyNightFloor({ hemi: l.hemi, sun: l.sun }, 'night');
     expect(l.hemi.intensity).toBeGreaterThan(before.i);
     expect(l.hemi.groundColor.g).toBeGreaterThan(before.g);
   });
@@ -148,7 +148,7 @@ describe('하한 적용은 멱등이다 — 매 프레임 돌아도 발산하지
       sun: { intensity: 0.95 },
     };
     const snap = JSON.stringify(day);
-    applyNightFloor(day.hemi, day.sun, 'day');
+    applyNightFloor({ hemi: day.hemi, sun: day.sun }, 'day');
     expect(JSON.stringify(day)).toBe(snap);
   });
 
@@ -158,7 +158,7 @@ describe('하한 적용은 멱등이다 — 매 프레임 돌아도 발산하지
     const l = nightLights();
     l.hemi.intensity = 4.55;
     l.sun.intensity = 1.84;
-    applyNightFloor(l.hemi, l.sun, 'night');
+    applyNightFloor({ hemi: l.hemi, sun: l.sun }, 'night');
     expect(l.hemi.intensity).toBe(4.55);
     expect(l.sun.intensity).toBe(1.84);
   });
@@ -216,5 +216,88 @@ describe('가로등이 블룸 문턱을 넘는가', () => {
       + 0.7152 * ((hex >> 8 & 0xff) / 255)
       + 0.0722 * ((hex & 0xff) / 255);
     expect(LAMP_LUMINANCE).toBeCloseTo(lum, 6);
+  });
+});
+
+// ── 화면 전체에 걸리는 두 축 (감독 2차 지적) ────────────────────────────────
+//
+// 감독: *"밤이 어둡다."* — 반구광·달빛을 이미 올린 **뒤**에 나온 말이다.
+//
+// 원인은 올린 축의 **적용 범위**였다. 조명은 재질에 닿는 빛을 키우므로 건물·지면은
+// 밝아지지만, 하늘 돔(자체 발광 캔버스)과 안개는 그대로 남는다. 화면에서 넓은 면적을
+// 차지하는 쪽이 안 움직이면 전체 인상은 바뀌지 않는다.
+//
+// 그래서 노출과 안개를 축으로 열었다. 아래 검사는 **그 축이 실제로 닿는지**를 본다 —
+// 값을 계산해 두고 아무 데도 안 쓰는 것이 이 저장소가 구름 `alpha` 에서 겪은 사고다.
+describe('노출과 안개 — 계산한 값이 실제로 소비되는가', () => {
+  const targets = () => ({
+    hemi: {
+      intensity: 0.55,
+      color: { r: 0x39 / 255, g: 0x44 / 255, b: 0x5c / 255 },
+      groundColor: { r: 0x23 / 255, g: 0x2a / 255, b: 0x24 / 255 },
+    },
+    sun: { intensity: 0.24 },
+    renderer: { toneMappingExposure: 1 },
+    // sky.js 가 밤에 칠하는 안개색 그대로
+    fog: { color: { r: 0x3d / 255, g: 0x47 / 255, b: 0x62 / 255 } },
+  });
+
+  it('노출 튜닝이 렌더러에 닿는다', () => {
+    const t = targets();
+    applyNightFloor(t, 'night', { exposure: 1.4 });
+    expect(t.renderer.toneMappingExposure).toBeCloseTo(1.4, 6);
+  });
+
+  it('안개 밝기 배수가 안개색에 닿는다', () => {
+    const t = targets();
+    const before = t.fog.color.g;
+    applyNightFloor(t, 'night', { fogScale: 1.5 });
+    expect(t.fog.color.g).toBeGreaterThan(before);
+  });
+
+  it('낮에는 노출이 1로 돌아온다 — max 로 뒀다면 한 번 올라간 뒤 안 내려온다', () => {
+    const t = targets();
+    applyNightFloor(t, 'night', { exposure: 1.6 });
+    expect(t.renderer.toneMappingExposure).toBeGreaterThan(1);
+    applyNightFloor(t, 'day', { exposure: 1.6 });
+    expect(t.renderer.toneMappingExposure).toBe(1);
+  });
+
+  it('노출·안개가 없어도 조명은 그대로 걸린다 — 대상은 전부 선택이다', () => {
+    const t = targets();
+    const bare = { hemi: t.hemi, sun: t.sun };
+    applyNightFloor(bare, 'night');
+    expect(bare.hemi.intensity).toBeGreaterThan(0.55);
+  });
+
+  it('기본값은 아무것도 바꾸지 않는다 — 축만 열고 값은 재고 정한다', () => {
+    // `nexp`·`nfog` 의 기본 1은 곱셈 항등원이다. 축을 여는 커밋이 룩을 함께 바꾸면
+    // "무엇이 화면을 바꿨는가" 를 가를 수 없게 된다.
+    const t = targets();
+    const fogBefore = { ...t.fog.color };
+    applyNightFloor(t, 'night');
+    expect(t.renderer.toneMappingExposure).toBe(1);
+    expect(t.fog.color.r).toBeCloseTo(fogBefore.r, 6);
+    expect(t.fog.color.g).toBeCloseTo(fogBefore.g, 6);
+    expect(t.fog.color.b).toBeCloseTo(fogBefore.b, 6);
+  });
+});
+
+// ── 미러링 방어 ─────────────────────────────────────────────────────────────
+// `decide/night.ts` 의 `NIGHT_FOG` 는 `sky.js` 밤 맑음 팔레트의 `fog` 값을 **복제**한
+// 것이다. 저쪽이 바뀌면 이쪽 하한이 조용히 어긋나고, 그러면 `fogScale=1` 이 더 이상
+// 항등원이 아니게 된다(모르는 사이에 안개가 어두워지거나 밝아진다).
+//
+// 이 저장소가 색·수치·임계값 미러링으로 세 번 겪은 사고라, 파일을 직접 읽어 묶는다.
+describe('안개 하한이 sky.js 밤 팔레트와 같은 값인가', () => {
+  it('night.clear.fog 가 0x3d4762 그대로다', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('frontend/js/sky.js', 'utf8');
+    // `night:` 블록 안 `clear:` 줄의 fog 값
+    const nightBlock = src.slice(src.indexOf('  night: {'));
+    const clearLine = nightBlock.slice(0, nightBlock.indexOf('\n', nightBlock.indexOf('clear:')));
+    const m = /fog:\s*0x([0-9a-fA-F]{6})/.exec(clearLine);
+    expect(m, 'sky.js 밤 맑음 fog 값을 못 찾았다 — 팔레트 구조가 바뀌었다').not.toBeNull();
+    expect(m![1].toLowerCase()).toBe('3d4762');
   });
 });

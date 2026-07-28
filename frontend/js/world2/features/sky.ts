@@ -12,8 +12,13 @@
 
 import { SkySystem } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
-import { nightness, lampGlow } from '../decide/night.js';
+import { nightness, lampGlow, NIGHT_HEMI_I, NIGHT_SUN_I } from '../decide/night.js';
+import { readNum, readEnum } from '../url-knob.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
+
+/** `sky.js` 의 `LIGHT` 최상위 키. 목록 밖 값이 넘어가면 팔레트 조회가 `undefined` 가 된다 */
+const TIMES = ['day', 'sunset', 'night'] as const;
+const WEATHERS = ['clear', 'overcast', 'rain', 'snow'] as const;
 
 export const skyFeature: Feature = {
   name: 'sky',
@@ -27,6 +32,31 @@ export const skyFeature: Feature = {
       env.sun,
       env.hemi,
       () => ({ x: env.player.position.x, z: env.player.position.z }),
+      {
+        // ── 시간대·날씨 (`?time=` `?weather=`) ────────────────────────────
+        // 神 모드 패널로도 바꿀 수 있지만, 그건 **DOM 이 있어야** 한다. 헤드리스 측정과
+        // 감독 확인이 둘 다 링크 하나로 끝나야 해서 URL 로도 연다. 낮을 대조군으로
+        // 띄우지 못하면 "밤이 얼마나 어두운가" 를 수치로 말할 수 없다.
+        time: readEnum('time', 'night', TIMES),
+        weather: readEnum('weather', 'clear', WEATHERS),
+
+        // ── 밤 밝기 축 (`?nhemi=` `?nsun=` `?nexp=` `?nfog=`) ─────────────
+        // 감독: *"밤이 어둡다."* — 두 번째 지적이다. 첫 번째에 반구광·달빛을 올렸는데도
+        // 어둡다는 것은, 올린 축이 **화면에서 어두운 부분을 덮지 못한다**는 뜻이다.
+        // 조명은 재질에 닿는 빛만 키우므로 하늘 돔·안개는 그대로 남는다.
+        //
+        // 그래서 네 축을 전부 연다. 무엇이 지배하는지는 재고 정한다 — 이 프로젝트가
+        // 성능에서 열 번 빗나간 이유가 "재기 전에 처방부터 고른 것" 이었다.
+        //
+        // `nexp`·`nfog` 의 기본값 1은 **곱셈 항등원**이라 지금 동작을 바꾸지 않는다.
+        // 축만 열어 두고 값은 스윕이 정한다.
+        nightTune: {
+          hemiI: readNum('nhemi', NIGHT_HEMI_I, 0, 4),
+          sunI: readNum('nsun', NIGHT_SUN_I, 0, 4),
+          exposure: readNum('nexp', 1, 0.2, 3),
+          fogScale: readNum('nfog', 1, 0.2, 4),
+        },
+      },
     );
 
     // 神 모드 패널 — 시간대·날씨·이벤트. DOM이 없으면 조용히 건너뛴다(패널 없이도 하늘은
@@ -78,12 +108,22 @@ export const skyFeature: Feature = {
         // 이 값을 샘플링하지 않으면 "쳤는데 못 본 것"과 "안 친 것"을 구별할 수 없다.
         // 감독이 "천둥 불빛이 안 보인다"고 했을 때 추측이 다섯 개까지 늘어난 이유가
         // 여기에 잴 수단이 없었기 때문이다.
+        const r = env.adapter.renderer as { toneMappingExposure?: number } | null;
+        const fog = env.scene.fog as { color?: { getHex(): number } } | null;
         return {
           ...(sky.get() as object),
           sunI: env.sun.intensity,
           hemiI: env.hemi.intensity,
           sunC: env.sun.color.getHex(),
           hemiC: env.hemi.color.getHex(),
+          // ── 밤 하한이 **실제로 걸렸는가** ────────────────────────────────
+          // 아래 셋이 없어서 지난번 진단이 "밤을 밝혔다" 를 확인해 주지 못했다.
+          // `hemiG` 는 지면을 비추는 색이라 밤 밝기의 핵심인데 안 실려 있었고,
+          // `exposure`·`fogC` 는 이번에 축으로 연 것이라 함께 싣는다. 값이 안 변했으면
+          // 처방이 안 걸린 것이고, 변했는데 화면이 그대로면 축이 틀린 것이다.
+          hemiG: env.hemi.groundColor.getHex(),
+          exposure: typeof r?.toneMappingExposure === 'number' ? r.toneMappingExposure : null,
+          fogC: fog?.color ? fog.color.getHex() : null,
           // 가로등이 켜졌는가. 화면으로는 "좀 밝네" 로만 보이는 것을 숫자로 남긴다.
           lampGlow: lampLit,
         };

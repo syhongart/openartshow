@@ -37,6 +37,7 @@ import { pass } from 'three/tsl';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { nightness, LAMP_LUMINANCE, LAMP_MAX_GLOW } from '../decide/night.js';
 import { BLOOM_THRESHOLD } from './postfx-params.js';
+import { readNum } from '../url-knob.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 /**
@@ -83,14 +84,13 @@ const RADIUS = 0.07;
  */
 const THRESHOLD = BLOOM_THRESHOLD;
 
-/** URL 로 값을 읽는다. 없거나 이상하면 기본값 */
-function num(key: string, fallback: number): number {
-  if (typeof location === 'undefined') return fallback;
-  const raw = new URLSearchParams(location.search).get(key);
-  if (raw === null) return fallback;
-  const v = Number(raw);
-  return Number.isFinite(v) ? v : fallback;
-}
+/**
+ * URL 로 값을 읽는다. 없거나 이상하면 기본값.
+ *
+ * 구현은 `url-knob.ts` 하나다. 여기 있던 사본을 지우고 감싸기만 남겼다 — 범위 클램프가
+ * 딸려 오는 것이 덤이다(`?bloomstr=99` 로 화면을 날려 먹지 않는다).
+ */
+const num = (key: string, fallback: number) => readNum(key, fallback, 0, 8);
 
 /**
  * `?bloom=0` 이면 아예 켜지 않는다 — 대조군 측정용.

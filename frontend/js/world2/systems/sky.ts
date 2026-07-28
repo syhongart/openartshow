@@ -31,7 +31,10 @@
 
 import * as THREE from 'three/webgpu';
 import { createSkySystem } from '../../sky.js';
-import { applyNightFloor, type HemiLike, type SunLike } from './night-lights.js';
+import {
+  applyNightFloor, type HemiLike, type SunLike, type ExposureLike, type FogLike,
+} from './night-lights.js';
+import type { NightTune } from '../decide/night.js';
 import type { FrameCtx, System } from '../kernel.js';
 
 /** 태양까지의 거리 — `getSunDir()` 방향에 이 값을 곱해 광원을 배치한다. */
@@ -67,6 +70,13 @@ export interface SkyOptions {
   /** 초기 시간대·날씨. 오픈월드 기본은 야간 맑음(커밋 `318addf` 감독 확정) */
   time?: string;
   weather?: string;
+  /**
+   * 밤 밝기 축의 튜닝값(URL 노브). 없으면 `decide/night.ts` 의 기본값.
+   *
+   * 배선이 읽어 여기로 넘기는 이유는 판정을 순수하게 두기 위해서다 — `decide/` 가
+   * `location` 을 읽는 순간 테스트가 브라우저를 필요로 하게 된다.
+   */
+  nightTune?: NightTune;
 }
 
 /**
@@ -101,6 +111,9 @@ export class SkySystem implements System {
   private readonly sun: THREE.DirectionalLight;
   private readonly hemi: THREE.HemisphereLight;
   private readonly scene: THREE.Scene;
+  /** 밤 노출을 얹을 대상. `toneMappingExposure` 만 만진다 */
+  private readonly renderer: ExposureLike | null;
+  private readonly nightTune?: NightTune;
 
   constructor(
     scene: THREE.Scene,
@@ -113,6 +126,13 @@ export class SkySystem implements System {
     this.scene = scene;
     this.sun = sun;
     this.hemi = hemi;
+    // 렌더러가 `unknown` 인 것은 `sky.js` 가 이 인자를 그대로 쓰기 때문이다(어떤 백엔드든
+    // 받는다). 노출을 만지려면 모양을 확인해야 하는데, 확인되지 않으면 `null` 로 두고
+    // **건너뛴다** — 없는 속성에 값을 쓰면 조용히 아무 일도 안 일어나고, 그러면 "노출을
+    // 올렸는데 화면이 그대로" 라는 가장 찾기 어려운 실패가 된다.
+    const r = renderer as { toneMappingExposure?: unknown } | null;
+    this.renderer = r && typeof r.toneMappingExposure === 'number' ? (r as ExposureLike) : null;
+    this.nightTune = opts.nightTune;
     this.dome = makeDome();
     this.dome.name = 'world2:sky';
     scene.add(this.dome);
@@ -169,9 +189,16 @@ export class SkySystem implements System {
     // 재수출하지 않는다(이 저장소가 `BufferGeometry`·`CanvasTexture`·`Object3D` 에서
     // 이미 겪은 TS2694 계열이다). 런타임 모양은 `HemiLike` 와 정확히 같다.
     applyNightFloor(
-      this.hemi as unknown as HemiLike,
-      this.sun as unknown as SunLike,
+      {
+        hemi: this.hemi as unknown as HemiLike,
+        sun: this.sun as unknown as SunLike,
+        renderer: this.renderer,
+        // 안개는 `main.ts` 가 만들고 `sky.js` 가 매 프레임 색을 덮어쓴다. 우리는 그
+        // **뒤에** 하한을 얹으므로 순서가 맞다(`update` 에서 engine 다음에 부른다).
+        fog: (this.scene.fog as FogLike | null) ?? null,
+      },
       this.engine.get().time,
+      this.nightTune,
     );
   }
 

@@ -13,7 +13,7 @@
 // 스텁으로 실제 코드를 돌릴 수 있고, `three` 와 `three/webgpu` 의 타입 네임스페이스
 // 차이(TS2694)도 비껴간다.
 
-import { nightness, nightFloor } from '../decide/night.js';
+import { nightness, nightFloor, type NightTune } from '../decide/night.js';
 
 /** 채널을 직접 만질 수 있는 색. `THREE.Color` 가 이 모양이다 */
 export interface MutableColor {
@@ -32,6 +32,29 @@ export interface SunLike {
   intensity: number;
 }
 
+/** 톤매핑 노출을 가진 것. `WebGPURenderer`·`WebGLRenderer` 가 이 모양이다 */
+export interface ExposureLike {
+  toneMappingExposure: number;
+}
+
+/** 색을 가진 안개. `THREE.Fog`·`THREE.FogExp2` 가 이 모양이다 */
+export interface FogLike {
+  color: MutableColor;
+}
+
+/**
+ * 밤 밝기를 얹을 대상들. **전부 선택**이다.
+ *
+ * 없는 것은 건너뛴다 — 하늘 기능을 빼면 안개도 노출도 손대지 않은 채로 남아야 하고,
+ * 테스트가 조명만 스텁으로 넘겨도 그 부분이 검사돼야 한다.
+ */
+export interface NightTargets {
+  hemi: HemiLike;
+  sun: SunLike;
+  renderer?: ExposureLike | null;
+  fog?: FogLike | null;
+}
+
 /**
  * 밤이면 조명을 하한까지 끌어올린다. 낮이면 **아무것도 하지 않는다.**
  *
@@ -44,13 +67,29 @@ export interface SunLike {
  * `sky.js` 는 번개에 `hemi +4.0` · `sun +1.6` 을 순간 가산한다. 하한이 그것을 덮으면
  * 번개가 사라진다. max 는 이 경우에도 옳게 동작한다.
  */
-export function applyNightFloor(hemi: HemiLike, sun: SunLike, time: string): void {
-  const f = nightFloor(nightness(time));
-  if (f.hemiI <= 0) return; // 낮 — 손대지 않는다
+export function applyNightFloor(
+  targets: NightTargets, time: string, tune?: NightTune,
+): void {
+  const { hemi, sun } = targets;
+  const f = nightFloor(nightness(time), tune);
+
+  // ── 노출은 조기 반환 **앞**이다 ──────────────────────────────────────────
+  // 나머지는 전부 하한(max)이라 낮에는 계산해도 no-op 이지만, 노출은 **대입**이다.
+  // 낮 프레임이 해야 할 일이 "밤에 올린 값을 1로 되돌리는 것" 이라, 조기 반환 뒤에
+  // 두면 시간대를 낮으로 바꿔도 노출이 밤에 머문다. 테스트가 이걸 잡았다.
+  if (targets.renderer) targets.renderer.toneMappingExposure = f.exposure;
+
+  if (f.hemiI <= 0) return; // 낮 — 조명·안개는 손대지 않는다
   if (hemi.intensity < f.hemiI) hemi.intensity = f.hemiI;
   if (sun.intensity < f.sunI) sun.intensity = f.sunI;
   liftColor(hemi.groundColor, f.ground);
   liftColor(hemi.color, f.sky);
+
+  // ── 안개 ────────────────────────────────────────────────────────────────
+  // 위 넷은 **재질에 닿는 빛**을 키운다. 그래서 건물·지면은 밝아져도 하늘 돔(자체
+  // 발광 캔버스)과 안개는 그대로다. 감독이 밤을 밝힌 **뒤에도** "어둡다" 고 한 것이
+  // 그 구조 때문이다 — 화면에서 넓은 면적을 차지하는 쪽이 안 움직였다.
+  if (targets.fog) liftColor(targets.fog.color, f.fog);
 }
 
 /**

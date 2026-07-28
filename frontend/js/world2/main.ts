@@ -30,6 +30,9 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
 // 원인을 짐작하기 어렵다(검수관이 잡은 열 번째 지점).
 import { ALL_KINDS } from './parts/index.js';
+// URL 노브는 `url-knob.ts` 가 유일한 구현이다 — 여기·`postfx.ts`·`features/sky.ts` 가
+// 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
+import { readNum } from './url-knob.js';
 
 // 셀 크기는 **레이아웃이 소유한다.** 여기 `32` 를 다시 적으면 안 된다.
 //
@@ -74,20 +77,6 @@ function readDensity(): number {
   return Math.round(readNum('density', 1, 1, 8));
 }
 
-/**
- * URL 수치 파라미터를 범위 안에서 읽는다. 없거나 숫자가 아니면 `fallback`.
- *
- * `readDensity`가 쓰던 파싱을 여기로 올렸다 — 같은 세 줄을 파라미터마다 다시 적으면
- * 한쪽만 고쳐도 아무도 모른다(이 프로젝트가 값 미러링으로 세 번 겪은 형태다).
- */
-function readNum(key: string, fallback: number, min: number, max: number): number {
-  if (typeof location === 'undefined') return fallback;
-  const raw = new URLSearchParams(location.search).get(key);
-  if (raw === null) return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
-}
 
 export interface WorldHandle {
   kernel: Kernel;
