@@ -48,6 +48,14 @@ type BoneName = (typeof WALK_BONES)[number];
 const STRIDE_PER_SPEED = 3.4;
 /** 다리 스윙 최대각(rad) */
 const LEG_SWING = 0.55;
+/**
+ * 무릎이 굽는 최대각(rad). 허벅지 스윙보다 **커야** 한다.
+ *
+ * 처음에 `LEG_SWING * 0.9` (약 28°)로 잡았는데 실제 보행의 무릎 굽힘은 60° 안팎이다.
+ * 얕게 굽히면 다리가 곧은 막대처럼 앞뒤로만 오가서, 걷는다기보다 **미끄러지는 인형**
+ * 으로 보인다.
+ */
+const KNEE_BEND = 1.05;
 /** 팔 스윙 최대각(rad) — 다리보다 작아야 자연스럽다 */
 const ARM_SWING = 0.35;
 /**
@@ -56,7 +64,16 @@ const ARM_SWING = 0.35;
  * VRM 1.0 은 T-포즈(또는 A-포즈)로 저작된다. 그대로 두면 양팔을 벌린 채 걸어서
  * 허수아비가 된다. 어깨에서 z 축으로 내리면 A-포즈가 되고, 그 위에 스윙을 얹는다.
  */
-const ARM_DROP = 1.25;
+const ARM_DROP = 1.42;
+
+/**
+ * 팔꿈치를 살짝 굽힌 각(rad).
+ *
+ * `WALK_BONES` 에 `leftLowerArm`·`rightLowerArm` 을 넣어 두고 **한 번도 쓰지
+ * 않았다.** 그래서 팔이 T-포즈 그대로 곧게 뻗은 채 흔들렸다 — 사람은 걸을 때
+ * 팔꿈치가 늘 조금 굽어 있고, 곧게 뻗은 팔은 인형처럼 읽힌다.
+ */
+const ELBOW_BEND = 0.30;
 
 interface Bone {
   rotation: { x: number; y: number; z: number };
@@ -184,12 +201,16 @@ function build(gltf: any): VrmLoadResult {
       if (bones.leftUpperLeg) bones.leftUpperLeg.rotation.x = s * LEG_SWING;
       if (bones.rightUpperLeg) bones.rightUpperLeg.rotation.x = -s * LEG_SWING;
       // 무릎은 뒤로만 굽는다 — 앞으로 굽으면 관절이 반대로 꺾인다. 음수 구간만 쓴다.
-      if (bones.leftLowerLeg) bones.leftLowerLeg.rotation.x = Math.max(0, -s) * LEG_SWING * 0.9;
-      if (bones.rightLowerLeg) bones.rightLowerLeg.rotation.x = Math.max(0, s) * LEG_SWING * 0.9;
+      if (bones.leftLowerLeg) bones.leftLowerLeg.rotation.x = Math.max(0, -s) * KNEE_BEND;
+      if (bones.rightLowerLeg) bones.rightLowerLeg.rotation.x = Math.max(0, s) * KNEE_BEND;
 
       // 팔은 다리와 **반대**로 흔든다. 같은 쪽으로 흔들면 걷는 게 아니라 행진이 된다.
       if (bones.leftUpperArm) bones.leftUpperArm.rotation.x = -s * ARM_SWING;
       if (bones.rightUpperArm) bones.rightUpperArm.rotation.x = s * ARM_SWING;
+      // 팔꿈치는 **늘 조금 굽어 있고** 앞으로 나올 때 조금 더 굽는다. 이 본을
+      // `WALK_BONES` 에 넣어 두고 쓰지 않아서 팔이 곧은 막대로 흔들리고 있었다.
+      if (bones.leftLowerArm) bones.leftLowerArm.rotation.x = -(ELBOW_BEND + Math.max(0, -s) * 0.35);
+      if (bones.rightLowerArm) bones.rightLowerArm.rotation.x = -(ELBOW_BEND + Math.max(0, s) * 0.35);
 
       // 상체를 걸음 주기의 **두 배**로 살짝 비튼다. 걸을 때 어깨가 좌우로 흔들리는 것이
       // 사람처럼 보이게 하는 신호다.
