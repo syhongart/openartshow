@@ -41,9 +41,24 @@ const RANGE: [number, number][] = [];
 for (let px = -6; px <= 6; px++) for (let pz = -6; pz <= 6; pz++) RANGE.push([px, pz]);
 
 describe('가로등은 도로를 따라간다 — 나무처럼 심지 않는다', () => {
-  it('개수가 도로 방향 수와 정확히 같다', () => {
+  it('방향마다 길 양옆으로 두 대다 (감독: "길 양옆에 가지런히")', () => {
+    // 예전에는 방향당 한 대였다. 도로 축으로 옮기면서 **한쪽에만** 세웠고, 감독
+    // 판정은 *"가로등은 길 양옆에 가지런히 있어야하는데. 무슨 나무처럼있냐"* 였다.
     for (const [px, pz] of RANGE) {
-      expect(lampsAt(px, pz).length).toBe(roadDirs(px, pz).length);
+      expect(lampsAt(px, pz).length).toBe(roadDirs(px, pz).length * 2);
+    }
+  });
+
+  it('한 방향의 두 대가 길을 사이에 두고 마주 본다', () => {
+    // 양옆이라는 것은 **인도 좌표의 부호가 갈린다**는 뜻이다. 둘 다 같은 쪽이면
+    // 개수만 늘고 여전히 한 줄이다.
+    for (const [px, pz] of RANGE) {
+      const lamps = lampsAt(px, pz);
+      if (lamps.length === 0) continue;
+      // 인도 축 값(±LAMP_OFFSET)만 모아 부호를 센다
+      const sides = lamps.map((p) => (Math.abs(Math.abs(p.x) - LAMP_OFFSET) < 1e-9 ? p.x : p.z));
+      expect(sides.some((v) => v > 0), `(${px},${pz}) +쪽 없음`).toBe(true);
+      expect(sides.some((v) => v < 0), `(${px},${pz}) -쪽 없음`).toBe(true);
     }
   });
 
@@ -91,14 +106,14 @@ describe('이웃 파셀과 줄이 이어진다', () => {
   // 방향을 구현과 같은 방식으로 판별하지 않는다 — 그러면 테스트가 구현을 베낀 것이라
   // 같이 틀린다. 대신 **도로선 하나를 따라 훑는다**: 인도 쪽 좌표를 고정해 놓고 그 선
   // 위에 있는 가로등을 전부 모은다. 줄이 안 맞으면 애초에 이 선에 걸리지 않는다.
-  it('옆으로 비키는 쪽이 언제나 같다 — 길 건너로 옮겨 다니지 않는다', () => {
+  it('인도 폭이 언제나 같다 — 어느 쪽이든 도로에서 같은 거리다', () => {
+    // 예전 규칙은 *"비키는 쪽이 언제나 같다"*(한쪽만)였다. 이제 양옆이므로 검사할
+    // 것은 **부호가 아니라 거리**다 — 두 줄이 각각 도로에서 같은 만큼 떨어져야
+    // 마주 본 두 줄로 읽힌다. 거리가 들쭉날쭉하면 그게 "나무처럼" 이다.
     for (const [px, pz] of RANGE) {
       for (const p of lampsAt(px, pz)) {
-        // 두 축 중 하나가 인도 폭이다. 그 값의 **부호**가 갈리면 도로 하나를 두고
-        // 가로등이 양쪽에 번갈아 서서, 걸을 때 길 건너로 옮겨 다니는 것처럼 보인다.
-        // ("진행 방향의 오른쪽" 규칙이 정확히 이 결과를 낸다.)
-        const side = Math.abs(p.x) === LAMP_OFFSET ? p.x : p.z;
-        expect(side).toBe(LAMP_OFFSET);
+        const side = Math.abs(Math.abs(p.x) - LAMP_OFFSET) < 1e-9 ? p.x : p.z;
+        expect(Math.abs(side)).toBeCloseTo(LAMP_OFFSET, 9);
       }
     }
   });

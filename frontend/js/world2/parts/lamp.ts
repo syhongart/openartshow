@@ -47,7 +47,10 @@ export const lamp: PartSpec = {
    */
   footprint: () => LAMP_CLEARANCE,
 
-  maxPerParcel: () => DIRS.length,
+  // 방향마다 **길 양옆으로 두 개**다(감독: *"길 양옆에 가지런히"*). 유도값이라
+  // 배치 규칙을 바꾸면 함께 따라온다 — 예산과 배치가 어긋나면 가로등이 조용히
+  // 덜 그려진다.
+  maxPerParcel: () => DIRS.length * 2,
 
   /**
    * 도로 축을 따라 **인도 위에** 세운다.

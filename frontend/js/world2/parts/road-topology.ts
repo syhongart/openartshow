@@ -119,10 +119,30 @@ export function lampAnchors(
   const alongZ = Math.min(o.cellZ / 4, halfZ);
   const out: { x: number; z: number }[] = [];
   for (const d of dirs) {
-    if (d === 'east') out.push({ x: alongX, z: LAMP_OFFSET });
-    else if (d === 'west') out.push({ x: -alongX, z: LAMP_OFFSET });
-    else if (d === 'north') out.push({ x: LAMP_OFFSET, z: -alongZ });
-    else out.push({ x: LAMP_OFFSET, z: alongZ });
+    // ── 길 **양옆**에 세운다 (감독 재지적) ─────────────────────────────────
+    // 감독: *"가로등은 길 양옆에 가지런히 있어야하는데. 무슨 나무처럼있냐"*
+    //
+    // 앞서 난수 배치를 도로 축으로 옮기면서 **한쪽에만** 세웠다. 이 파일 주석이
+    // *"옆으로 비키는 쪽을 축마다 고정한다 — 동서 도로는 늘 +z 쪽"* 이라 적어 둔
+    // 그것이다. 줄이 파셀 경계마다 길 건너로 옮겨 다니는 것을 막으려던 처방이었는데,
+    // **한쪽만 세우는 것으로 그 문제를 푼 것이 과했다.** 양쪽에 각각 세우면 두 줄이
+    // 각자 이어지므로 건너뛰는 문제도 없고 길 양옆이 채워진다.
+    //
+    // 축 방향 위치(±cellX/4)는 그대로다 — 이웃 파셀의 것과 16m 등간격으로 이어지는
+    // 근거이고, 그 유도는 여기서 바뀌지 않는다.
+    if (d === 'east') {
+      out.push({ x: alongX, z: LAMP_OFFSET });
+      out.push({ x: alongX, z: -LAMP_OFFSET });
+    } else if (d === 'west') {
+      out.push({ x: -alongX, z: LAMP_OFFSET });
+      out.push({ x: -alongX, z: -LAMP_OFFSET });
+    } else if (d === 'north') {
+      out.push({ x: LAMP_OFFSET, z: -alongZ });
+      out.push({ x: -LAMP_OFFSET, z: -alongZ });
+    } else {
+      out.push({ x: LAMP_OFFSET, z: alongZ });
+      out.push({ x: -LAMP_OFFSET, z: alongZ });
+    }
   }
   return out;
 }
