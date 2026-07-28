@@ -32,9 +32,17 @@
 import * as THREE from 'three/webgpu';
 import { buildChibi, randomChibiLook } from '../../chibi.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
-import { nextDir, stepOf, pickNearby, isWalkable, type Cell } from '../decide/npc-walk.js';
+import { nextDir, stepOf, pickNearby, type Cell } from '../decide/npc-walk.js';
+import { loadVrmAvatar, type WalkAvatar } from '../avatars/vrm.js';
 import type { Dir } from '../parts/road-topology.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
+
+/**
+ * 감독이 보낸 VRM. **한 체만** 세운다 — 스킨드 메시를 복제하려면
+ * `SkeletonUtils.clone`(three/addons)이 필요한데 vendor 에 없고, 지금 목적은 비용 비교라
+ * 한 체로도 답이 나온다.
+ */
+const VRM_URL = './assets/avatars/male.vrm';
 
 /**
  * 기본 인원. world1 의 거리 배회 상한(≤6)을 계승한다.
@@ -62,7 +70,14 @@ const SPAWN_REACH = 2;
 const ARRIVE = 0.35;
 
 interface Walker {
-  readonly inst: ReturnType<typeof buildChibi>;
+  /**
+   * 무엇으로 그려지는가. **치비든 VRM 이든 이동 로직은 모른다** — 둘 다 `group`·
+   * `update(dt, speed)`·`dispose()` 만 노출하는 같은 계약이라, 아바타 종류가 늘어도
+   * 걷기 코드는 그대로다.
+   */
+  readonly inst: WalkAvatar;
+  /** 진단에 종류를 적기 위한 표시 */
+  readonly kind: 'chibi' | 'vrm';
   /** 지금 향하는 칸 */
   cell: Cell;
   /** 그 칸으로 들어온 방향 — 왔던 길을 피하는 데 쓴다 */
@@ -119,13 +134,17 @@ export const npcFeature: Feature = {
     const hpz = Math.round(home.z / cellZ);
 
     const walkers: Walker[] = [];
-    for (let i = 0; i < count; i++) {
+    /** 페이지를 떠난 뒤 VRM 로드가 끝나는 경우가 있다. 그때 씬에 붙이면 누수가 된다 */
+    let disposed = false;
+
+    /** 걷는 사람 하나를 거리에 세운다. 아바타 종류는 여기서만 갈린다 */
+    function spawn(inst: WalkAvatar, kind: Walker['kind']): boolean {
       const start = pickNearby(hpx, hpz, SPAWN_RING, SPAWN_REACH, rnd, cellX, cellZ);
-      if (!start) break; // 걸을 곳이 없는 세계 — 있을 수 없지만 조용히 멈춘다
-      const inst = buildChibi(randomChibiLook());
-      group.add(inst.group);
+      if (!start) return false; // 걸을 곳이 없는 세계 — 있을 수 없지만 조용히 멈춘다
+      group.add(inst.group as unknown as THREE.Object3D);
       const w: Walker = {
         inst,
+        kind,
         cell: start,
         from: null,
         x: start.px * cellX,
@@ -138,6 +157,26 @@ export const npcFeature: Feature = {
       };
       retarget(w);
       walkers.push(w);
+      return true;
+    }
+
+    for (let i = 0; i < count; i++) {
+      if (!spawn(buildChibi(randomChibiLook()), 'chibi')) break;
+    }
+
+    // ── VRM 은 비동기다 ───────────────────────────────────────────────────────
+    // 파일을 fetch 해야 하므로 조립 시점에 준비되지 않는다. 로드가 끝나면 그때 거리에
+    // 합류시킨다 — 그동안 치비들은 이미 걷고 있다. 실패해도 월드는 그대로다.
+    let vrmCost: unknown = null;
+    let vrmError: string | null = null;
+    if (new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get('vrm') !== '0') {
+      loadVrmAvatar(VRM_URL, (err) => { vrmError = String(err); })
+        .then((r) => {
+          if (!r || disposed) { r?.avatar.dispose(); return; }
+          vrmCost = r.cost;
+          if (!spawn(r.avatar, 'vrm')) r.avatar.dispose();
+        })
+        .catch((err) => { vrmError = String(err); });
     }
 
     /** 다음 칸을 정하고 목표 좌표를 세운다. 갈 곳이 없으면 제자리에 둔다 */
@@ -214,20 +253,27 @@ export const npcFeature: Feature = {
       system,
 
       diagnostics: () => ({
-        count: walkers.length,
+        chibi: walkers.filter((w) => w.kind === 'chibi').length,
+        vrm: walkers.filter((w) => w.kind === 'vrm').length,
         shown: walkers.filter((w) => w.shown).length,
-        // 한 체의 실측 비용(테스트가 못 박은 값)을 곱해 보여 준다 — 화면에서 "사람이 좀
-        // 늘었네" 로만 보이는 비용을 숫자로 드러내는 것이 이 항목의 목적이다.
-        drawEach: 45,
-        triEach: 24360,
+        // 치비 한 체의 실측 비용(`tests/world2-chibi-cost.test.ts` 가 못 박은 값). 화면에서
+        // "사람이 좀 늘었네" 로만 보이는 비용을 숫자로 드러내는 것이 이 항목의 목적이다.
+        chibiEach: { draw: 45, tri: 24360 },
+        // VRM 은 로드해 봐야 아는 값이라 실측을 그대로 싣는다.
+        vrmCost,
+        vrmError,
       }),
 
       // 보이는 사람 수가 바뀌면 드로우콜도 바뀐다. 그것은 정당한 변화이므로 **상태를
       // 키에 넣어** 같은 상태끼리만 비교하게 한다. 안 그러면 성능 리포트가 "드로우콜이
-      // 흔들린다" 고 오판한다.
-      drawGroupKey: () => `n${walkers.filter((w) => w.shown).length}`,
+      // 흔들린다" 고 오판한다. 치비와 VRM 은 한 체당 드로우콜이 달라(45 대 6) 따로 센다.
+      drawGroupKey: () => {
+        const shown = walkers.filter((w) => w.shown);
+        return `c${shown.filter((w) => w.kind === 'chibi').length}v${shown.filter((w) => w.kind === 'vrm').length}`;
+      },
 
       dispose() {
+        disposed = true;
         for (const w of walkers) {
           w.inst.group.removeFromParent();
           w.inst.dispose();

@@ -10,7 +10,11 @@
   behind-flag: 어디에도 링크하지 않는다. 라이브 미술관(world.html)과 완전히 분리돼 있고,
   이 페이지의 존재가 채택을 뜻하지 않는다. 라이브 노출은 감독·팀장 게이트를 거친다.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<!-- connect-src 에 blob: 이 필요하다: GLTFLoader 가 VRM 내장 텍스처를 디코드할 때
+     ImageBitmapLoader 가 버퍼뷰를 Blob→objectURL 로 만들고 fetch() 로 읽는다.
+     'self' 만으로는 이 blob: fetch 가 막혀 텍스처 전체가 로드 실패한다
+     (lab-glb.html 이 헤드리스 검증으로 발견한 것을 그대로 계승). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
 <title>오픈월드 v2 (실험) · OpenArtShow</title>
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <style>
