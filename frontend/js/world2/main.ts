@@ -288,7 +288,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         features = mountFeatures(
           FEATURES,
           {
-            scene, adapter: adapter!, player, pools: pools!,
+            scene, camera, adapter: adapter!, player, pools: pools!,
             sun: sun!, hemi: hemi!, cell: CELL_X,
             doc: typeof document !== 'undefined' ? document : null,
           },

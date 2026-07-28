@@ -25,7 +25,7 @@
 
 // 개별 named type import를 쓴다 — `import type * as THREE from 'three/webgpu'`로 하면
 // 내부 네임스페이스 재수출에 걸려 타입이 안 잡힌다(TS2694).
-import type { Scene, DirectionalLight, HemisphereLight } from 'three/webgpu';
+import type { Scene, DirectionalLight, HemisphereLight, Camera } from 'three/webgpu';
 import type { System } from '../kernel.js';
 import type { RendererAdapter } from '../adapters/renderer.js';
 import type { InstancePools } from '../systems/instancing.js';
@@ -48,11 +48,20 @@ export interface FeatureEnv {
   readonly cell: number;
   /** UI를 붙일 문서. 없는 환경(테스트)에서는 null */
   readonly doc: Document | null;
-  //
-  // 카메라는 일부러 넣지 않았다. 지금 어느 기능도 쓰지 않고, `three/webgpu`가
-  // `PerspectiveCamera`를 재수출하지 않아 타입만으로도 걸림돌이 된다. 바다 fog 자동전환
-  // 처럼 시선 방향이 필요한 기능이 생기면 그때 넣는다 — 쓰지 않는 것을 미리 넣어 두면
-  // 계약만 넓어지고 지킬 것은 늘어난다.
+  /**
+   * 씬을 보는 눈.
+   *
+   * 오래 비워 두고 *"시선 방향이 필요한 기능이 생기면 그때 넣는다"* 고 적어 두었는데,
+   * **후보정이 그때가 됐다** — `pass(scene, camera)` 로 씬을 렌더타깃에 받아야 하므로
+   * 카메라 없이는 성립하지 않는다.
+   *
+   * 씬을 훑어 찾는 방법도 있지만 카메라는 씬의 자식이 아닌 것이 보통이라 실패한다.
+   * 계약으로 받는 것이 정직하다.
+   *
+   * 타입이 `PerspectiveCamera` 가 아니라 `Camera` 인 것은 `three/webgpu` 가 전자를
+   * 재수출하지 않아서다(TS2694). 기능이 원근 전용 필드를 만질 일도 없다.
+   */
+  readonly camera: Camera;
 }
 
 /** 조립된 기능 하나. 필요한 것만 제공하면 된다 — 전부 선택이다. */

@@ -27,6 +27,7 @@ import { skyFeature } from './sky.js';
 import { oceanFeature } from './ocean.js';
 import { minimapFeature } from './minimap.js';
 import { npcFeature } from './npc.js';
+import { postfxFeature } from './postfx.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -35,6 +36,10 @@ export const FEATURES: readonly Feature[] = [
   // 사람은 플레이어 뒤에 온다 — 같은 프레임의 최신 플레이어 위치를 보고 멀어진 사람을
   // 데려오기 때문이다. 한 프레임 늦으면 재배치가 시야 안에서 일어나 눈앞에서 튄다.
   npcFeature,
+  // 후보정은 **맨 마지막**이다. 렌더 경로를 통째로 가로채므로, 앞선 기능이 씬에 무엇을
+  // 넣든 그 결과 위에서 동작해야 한다. 여기서 한 줄을 지우면 후보정이 통째로 빠지고
+  // 어댑터는 기본 렌더 경로로 남는다.
+  postfxFeature,
 ];
 
 export type { Feature, FeatureEnv, FeatureInstance, MountedFeature } from './types.js';

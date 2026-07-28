@@ -52,6 +52,22 @@ export interface RendererAdapter {
    */
   pipelineCount(): number;
   render(scene: THREE.Scene, camera: THREE.Camera): void;
+  /**
+   * 렌더 경로를 가로챈다. `null` 이면 기본 경로(`renderer.render`)로 돌아온다.
+   *
+   * ── 왜 어댑터가 이걸 여는가 ───────────────────────────────────────────────
+   * 후보정(블룸 등)은 "씬을 그리는 방법" 자체를 바꾼다 — 화면에 직접 그리는 대신
+   * 렌더타깃에 받아 후처리한 뒤 합성한다. 그 교체 지점은 **렌더러를 쥔 곳**뿐이고,
+   * 그게 어댑터다.
+   *
+   * 훅으로 여는 이유는 후보정을 **기능으로 뺐다 넣었다** 할 수 있게 하려는 것이다.
+   * 어댑터가 블룸을 직접 알면 후보정을 끄는 일이 어댑터 수술이 된다.
+   *
+   * 훅 안에서 `renderer` 를 어떻게 쓰든 어댑터는 관여하지 않지만, **프레임 통계는
+   * 그대로 유효하다** — `beginFrame()`/`frameStats()` 는 렌더러의 info 를 읽으므로
+   * 후보정이 추가한 드로우콜도 함께 세어진다.
+   */
+  setRenderHook(fn: ((scene: THREE.Scene, camera: THREE.Camera) => void) | null): void;
   setPixelRatio(r: number): void;
   getPixelRatio(): number;
   setSize(w: number, h: number): void;
@@ -92,6 +108,9 @@ export async function createRendererAdapter(
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const isGPU = backend === 'WebGPU';
+
+  /** 후보정이 등록한 렌더 경로. `null` 이면 기본 경로다 */
+  let renderHook: ((scene: THREE.Scene, camera: THREE.Camera) => void) | null = null;
 
   return {
     backend,
@@ -147,7 +166,13 @@ export async function createRendererAdapter(
       } catch { return -1; } // 못 재면 -1. 0으로 돌려주면 불변식 검사가 통과해버린다
     },
 
-    render(scene, camera) { renderer.render(scene, camera); },
+    render(scene, camera) {
+      // 훅이 있으면 그쪽이 그린다. 없으면 평소대로 — 후보정을 빼면 이 분기가 곧
+      // 사라지는 것이 아니라 **항상 기본 경로**가 된다(분기 비용은 참조 비교 하나).
+      if (renderHook) renderHook(scene, camera);
+      else renderer.render(scene, camera);
+    },
+    setRenderHook(fn) { renderHook = fn; },
     setPixelRatio(r) { renderer.setPixelRatio(r); },
     getPixelRatio() { return renderer.getPixelRatio(); },
     setSize(w, h) { renderer.setSize(w, h, false); },

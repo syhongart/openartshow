@@ -7,6 +7,13 @@
 declare module 'three';
 // three/addons/* — TiledLighting 등 부속 모듈. 값만 쓰므로 shorthand로 충분하다.
 declare module 'three/addons/*';
+// three/examples/jsm/* — 같은 부속 모듈의 다른 경로 표기. 후보정 블룸(TSL 노드)이
+// `three/examples/jsm/tsl/display/BloomNode.js` 로 들어오면서 필요해졌다. addons 별칭과
+// 달리 이 경로는 vite 가 node_modules 를 직접 해석하므로 번들에는 영향이 없다.
+declare module 'three/examples/jsm/*';
+// three/tsl — TSL(Three Shading Language) **함수**들의 진입점. `three/webgpu` 에는
+// `PassNode` 같은 클래스만 있고 `pass()` 함수는 여기 있다. 후보정이 그 함수를 쓴다.
+declare module 'three/tsl';
 
 // ── three/webgpu ────────────────────────────────────────────────────────────
 // 신형 통합 Renderer 번들(WebGPURenderer + 노드 재질). 오픈월드가 이 진입점을 쓴다.
