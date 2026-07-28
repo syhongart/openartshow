@@ -29,8 +29,15 @@
 import { GLTFLoader } from '../../../vendor/GLTFLoader.js';
 import type { WalkAvatar, AvatarCost } from './types.js';
 
+/** 로드 결과 — 비용과 **본 매칭 결과**를 함께 낸다. 후자가 없으면 조용히 실패한다 */
+export interface VrmLoadResult {
+  avatar: WalkAvatar;
+  cost: AvatarCost;
+  bones: { found: number; wanted: number };
+}
+
 /** 걷기에 쓰는 본. 없으면 그 관절만 안 움직인다 — 로드 실패로 취급하지 않는다 */
-const WALK_BONES = [
+export const WALK_BONES = [
   'leftUpperLeg', 'rightUpperLeg', 'leftLowerLeg', 'rightLowerLeg',
   'leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm',
   'spine',
@@ -65,7 +72,7 @@ interface Bone {
 export function loadVrmAvatar(
   url: string,
   onError?: (err: unknown) => void,
-): Promise<{ avatar: WalkAvatar; cost: AvatarCost } | null> {
+): Promise<VrmLoadResult | null> {
   return new Promise((resolve) => {
     let loader: InstanceType<typeof GLTFLoader>;
     try {
@@ -92,27 +99,43 @@ export function loadVrmAvatar(
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-function build(gltf: any): { avatar: WalkAvatar; cost: AvatarCost } {
+function build(gltf: any): VrmLoadResult {
   const root = gltf.scene;
 
   // ── 본 찾기 ───────────────────────────────────────────────────────────────
-  // humanBones 는 **노드 인덱스**를 가리킨다. 파서가 이미 만들어 둔 Object3D 목록에서
-  // 그 인덱스를 집는다. 노드 이름(`J_Bip_C_Hips` 등)으로 찾지 않는 이유는 저작 도구마다
-  // 이름 규칙이 달라서다 — 인덱스 매핑이 VRM 이 보장하는 계약이다.
+  // `humanBones` 는 **노드 인덱스**를 가리킨다. 그 인덱스로 Object3D 를 직접 집는다.
+  //
+  // ── 이름으로 찾으면 안 되는 이유 (실패해 본 뒤 고친 것) ────────────────────
+  // 처음에는 인덱스 → glTF JSON 의 노드 이름 → 씬에서 이름으로 탐색, 이렇게 우회했다.
+  // **전부 빗나갔다.** GLTFLoader 가 노드 이름의 `.`·공백·`:` 을 `_` 로 치환하기
+  // 때문이다. 이 파일의 본은 Blender Rigify 출신이라 `DEF-thigh.L`·`DEF-spine.001`
+  // 처럼 점이 들어 있어서, 원본 이름으로는 단 하나도 찾지 못했다.
+  //
+  // 그래서 아바타가 **T-포즈 그대로 미끄러졌다.** 팔 내리기도 걸음 스윙도 본을 못 찾아
+  // 통째로 건너뛰어졌는데, 그 실패가 아무 데도 안 남아서 화면을 보기 전까지 몰랐다.
+  // 지금은 찾은 개수를 진단에 싣는다 — 조용한 실패가 이 사고의 본질이었다.
+  //
+  // `parser.associations` 는 GLTFLoader 가 만든 객체마다 원본 glTF 인덱스를 적어 두는
+  // 지도다(`associations.get(node).nodes = nodeIndex`). 이름을 거치지 않으므로 저작
+  // 도구가 무엇이든, 치환 규칙이 어떻게 바뀌든 영향을 받지 않는다.
   const humanBones = gltf.parser?.json?.extensions?.VRMC_vrm?.humanoid?.humanBones ?? {};
-  const nodeDefs: { name?: string }[] = gltf.parser?.json?.nodes ?? [];
-  const byName = new Map<string, unknown>();
-  root.traverse((o: { name?: string }) => { if (o.name) byName.set(o.name, o); });
+  const byIndex = new Map<number, unknown>();
+  const assoc: Map<unknown, { nodes?: number }> | undefined = gltf.parser?.associations;
+  if (assoc) {
+    for (const [obj, def] of assoc) {
+      if (typeof def?.nodes === 'number') byIndex.set(def.nodes, obj);
+    }
+  }
 
   const bones = {} as Record<BoneName, Bone | undefined>;
+  let bonesFound = 0;
   for (const key of WALK_BONES) {
     const idx = humanBones[key]?.node;
     if (typeof idx !== 'number') continue;
-    // GLTFLoader 는 노드 이름을 sanitize 해서 넣는다. 원본 이름으로 먼저 찾고,
-    // 못 찾으면 포기한다(그 관절만 안 움직인다).
-    const nm = nodeDefs[idx]?.name;
-    const obj = nm ? byName.get(nm) : undefined;
-    if (obj) bones[key] = obj as Bone;
+    const obj = byIndex.get(idx);
+    if (!obj) continue; // 그 관절만 안 움직인다 — 몇 개를 못 찾았는지는 아래 진단에 남는다
+    bones[key] = obj as Bone;
+    bonesFound++;
   }
 
   // ── 비용 세기 ─────────────────────────────────────────────────────────────
@@ -188,5 +211,11 @@ function build(gltf: any): { avatar: WalkAvatar; cost: AvatarCost } {
     },
   };
 
-  return { avatar, cost: { meshes, materials: mats.size, triangles: Math.round(triangles) } };
+  return {
+    avatar,
+    cost: { meshes, materials: mats.size, triangles: Math.round(triangles) },
+    // 걷기에 필요한 본을 몇 개 찾았는가. `WALK_BONES.length` 에 못 미치면 그만큼 관절이
+    // 굳어 있다는 뜻이다 — 0 이면 T-포즈로 미끄러진다.
+    bones: { found: bonesFound, wanted: WALK_BONES.length },
+  };
 }

@@ -155,12 +155,16 @@ export const npcFeature: Feature = {
     // 파일을 fetch 해야 하므로 조립 시점에 준비되지 않는다. 로드가 끝나면 그때 거리에
     // 합류시킨다 — 그동안 치비들은 이미 걷고 있다. 실패해도 월드는 그대로다.
     let vrmCost: unknown = null;
+    let vrmBones: unknown = null;
     let vrmError: string | null = null;
     if (new URLSearchParams(typeof location === 'undefined' ? '' : location.search).get('vrm') !== '0') {
       loadVrmAvatar(VRM_MALE.url!, (err) => { vrmError = String(err); })
         .then((r) => {
           if (!r || disposed) { r?.avatar.dispose(); return; }
           vrmCost = r.cost;
+          // 본 매칭 결과를 진단에 싣는다. 못 찾으면 T-포즈로 미끄러지는데, 화면을 보기
+          // 전까지 알 수 없었던 것이 실제 사고였다(감독이 스크린샷으로 잡았다).
+          vrmBones = r.bones;
           if (!spawn(r.avatar, 'vrm')) r.avatar.dispose();
         })
         .catch((err) => { vrmError = String(err); });
@@ -248,6 +252,8 @@ export const npcFeature: Feature = {
         chibiEach: CHIBI.cost,
         // VRM 은 로드해 봐야 아는 값이라 실측을 그대로 싣는다.
         vrmCost,
+        // found < wanted 면 그만큼 관절이 굳어 있다. 0 이면 T-포즈다.
+        vrmBones,
         vrmError,
       }),
 
