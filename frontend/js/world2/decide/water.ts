@@ -27,7 +27,7 @@
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid } from './grid.js';
 
 /** 수면 높이(미터). 지면이 y=0 이므로 그보다 낮아야 육지가 물을 덮는다 */
-export const SEA_Y = -1.2;
+export const SEA_Y = -0.5;
 
 /**
  * 해저 높이(미터). 수면보다 **2.4m 아래**.
@@ -40,7 +40,7 @@ export const SEA_Y = -1.2;
  * 바닥이 어렴풋이 비치고 조금만 나가도 물색이 이기는 깊이다. 더 깊게 잡으면 반투명으로
  * 만든 의미가 사라지고, 더 얕으면 바닥이 너무 또렷해 물웅덩이처럼 보인다.
  */
-export const SEABED_Y = -3.6;
+export const SEABED_Y = -2.9;
 
 /**
  * 세계의 바깥 가장자리(미터). 이 밖은 전부 바다다. **world2 는 유한 세계다**(감독 확정).

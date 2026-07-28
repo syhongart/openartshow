@@ -99,15 +99,23 @@ export const lamp: PartSpec = {
    * `emissive` **색**을 매 프레임 바꾸지 않고 강도만 만지는 이유: 색은 그대로 두고
    * 스칼라 하나만 흔들면 만질 것이 최소가 되고, 낮에 정확히 0으로 꺼진다.
    *
-   * 발광이 기둥에도 걸린다(재질이 하나다). 그대로 두는 쪽을 택했다 — 등 아래 금속이
-   * 빛을 받아 밝은 것은 실제로도 그렇고, 갓만 빛나게 하려면 파츠를 하나 더 만들어야
-   * 하는데 그 드로우콜이 이 효과보다 비싸다.
+   * ── 갓만 빛난다 (감독 지적) ───────────────────────────────────────────────
+   * 처음에는 재질이 하나라 기둥까지 함께 빛나게 두고 "등 아래 금속이 빛을 받는
+   * 것으로 읽힌다"고 적었다. **틀렸다.** 감독 화면에서 기둥이 통째로 노란 막대가 되어
+   * 성냥개비처럼 보였다 — *"가로등은 조명만 불이 켜져야지."*
+   *
+   * 파츠를 하나 더 만들지 않고 **마스크 텍스처**로 푼다. 2×1 텍스처를 `emissiveMap`
+   * 으로 깔고, 기둥은 검은 텍셀을 갓은 흰 텍셀을 보게 UV 를 고정한다. 발광은 맵과
+   * 곱해지므로 기둥 쪽은 0 이 된다. 드로우콜도 재질도 그대로다.
    */
   asset: (T) => ({
     geometry: buildLamp(T),
     material: new T.MeshStandardMaterial({
       vertexColors: true,
       emissive: LAMP_LIGHT,
+      // 갓만 통과시키는 마스크. **부팅 시 한 번 정하고 다시 만지지 않는다** — 맵의
+      // 유무는 파이프라인 캐시키 축이라 세션 중에 붙였다 떼면 전량 재컴파일이다.
+      emissiveMap: lampMask(T),
       // 낮에서 시작한다. 밤이면 하늘이 첫 프레임에 올린다.
       emissiveIntensity: 0,
       roughness: 0.6,
@@ -142,8 +150,35 @@ const HEAD = rgb(0xd8cfa8);
  */
 function buildLamp(T: ThreeNS) {
   const pieces: Piece[] = [
-    { geo: new T.CylinderGeometry(0.06, 0.09, 3.0, 8).translate(0, 1.5, 0), color: POST },
-    { geo: new T.SphereGeometry(0.22, 10, 8).scale(1, 0.8, 1).translate(0, 3.06, 0), color: HEAD },
+    // `u` 가 발광 마스크에서 읽을 텍셀을 고른다 — 기둥은 왼쪽(검정), 갓은 오른쪽(흰색).
+    { geo: new T.CylinderGeometry(0.06, 0.09, 3.0, 8).translate(0, 1.5, 0), color: POST, u: MASK_U_OFF },
+    { geo: new T.SphereGeometry(0.22, 10, 8).scale(1, 0.8, 1).translate(0, 3.06, 0), color: HEAD, u: MASK_U_ON },
   ];
   return bakePieces(T, pieces);
+}
+
+/** 왼쪽 텍셀의 중앙 — 발광 0 */
+const MASK_U_OFF = 0.25;
+/** 오른쪽 텍셀의 중앙 — 발광 1 */
+const MASK_U_ON = 0.75;
+
+/**
+ * 발광 마스크 — **2×1 픽셀.** 왼쪽 검정, 오른쪽 흰색.
+ *
+ * 이보다 작을 수 없는 크기다. 조각을 둘로만 가르면 되므로 텍셀도 둘이면 충분하고,
+ * UV 를 텍셀 중앙 한 점에 고정하므로 필터링이 경계를 흐려도 값이 섞이지 않는다.
+ * 그래도 `NearestFilter` 와 밉맵 끄기를 함께 걸어 둔다 — 나중에 조각이 늘어 텍셀이
+ * 촘촘해질 때를 대비한 안전장치다.
+ */
+function lampMask(T: ThreeNS) {
+  const cv = document.createElement('canvas');
+  cv.width = 2; cv.height = 1;
+  const ctx = cv.getContext('2d')!;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 1, 1);
+  ctx.fillStyle = '#fff'; ctx.fillRect(1, 0, 1, 1);
+  const tex = new T.CanvasTexture(cv);
+  tex.magFilter = T.NearestFilter;
+  tex.minFilter = T.NearestFilter;
+  tex.generateMipmaps = false;
+  return tex;
 }

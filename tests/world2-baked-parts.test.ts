@@ -28,6 +28,15 @@ import { bench } from '../frontend/js/world2/parts/bench.js';
 import { planter } from '../frontend/js/world2/parts/planter.js';
 import type { ThreeNS } from '../frontend/js/world2/parts/types.js';
 
+// 가로등이 **발광 마스크 텍스처**를 굽기 시작하면서 2D 컨텍스트가 필요해졌다(갓만
+// 빛나게 하려고 2×1 마스크를 깐다). jsdom 에는 네이티브 캔버스가 없어 `getContext` 가
+// null 이다 — 여기서 보는 것은 **지오메트리**이므로 그리기는 전부 no-op 이어도 된다.
+const ctx2d = {
+  fillStyle: '',
+  fillRect() {},
+};
+(HTMLCanvasElement.prototype as unknown as { getContext: () => unknown }).getContext = () => ctx2d;
+
 const T = THREE as unknown as ThreeNS;
 
 /** 정점색을 반올림해 **몇 가지 색으로 칠해졌는지** 센다 */

@@ -23,6 +23,19 @@ import type { ThreeNS } from './types.js';
 export interface Piece {
   geo: InstanceType<ThreeNS['BufferGeometry']>;
   color: readonly [number, number, number];
+  /**
+   * 이 조각의 UV 를 **한 점으로 고정**한다(0~1). 없으면 원본 UV 를 그대로 쓴다.
+   *
+   * ── 무엇에 쓰나 ──────────────────────────────────────────────────────────
+   * 조각마다 **다른 마스크 값**을 읽게 하려는 것이다. 가로등이 첫 소비자다: 갓만
+   * 빛나야 하는데 재질은 하나뿐이라, 작은 마스크 텍스처를 `emissiveMap` 으로 깔고
+   * 기둥은 검은 텍셀을, 갓은 흰 텍셀을 보게 한다.
+   *
+   * 구간이 아니라 **한 점**인 것이 핵심이다. 구간으로 압축하면 텍셀 경계에서 보간이
+   * 섞여 기둥 끝이 어중간하게 빛난다. 텍셀 중앙 한 점만 읽으면 필터링과 무관하게
+   * 정확한 값이 나온다.
+   */
+  u?: number;
 }
 
 /**
@@ -41,13 +54,18 @@ export function bakePieces(T: ThreeNS, pieces: readonly Piece[]) {
   const col: number[] = [];
   const uvs: number[] = [];
 
-  for (const { geo, color } of pieces) {
+  for (const { geo, color, u: pieceU } of pieces) {
     const g = geo.index ? geo.toNonIndexed() : geo;
     const p = g.attributes.position.array;
     const n = g.attributes.normal.array;
     const u = g.attributes.uv?.array;
     for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); }
-    if (u) for (let i = 0; i < u.length; i++) uvs.push(u[i]);
+    if (typeof pieceU === 'number') {
+      // UV 고정 — 정점마다 (u, 0.5). 세로 중앙을 쓰는 것은 마스크가 가로 1줄이라서다.
+      for (let i = 0; i < p.length / 3; i++) uvs.push(pieceU, 0.5);
+    } else if (u) {
+      for (let i = 0; i < u.length; i++) uvs.push(u[i]);
+    }
     for (let i = 0; i < p.length / 3; i++) col.push(color[0], color[1], color[2]);
     if (g !== geo) g.dispose();
     geo.dispose();
