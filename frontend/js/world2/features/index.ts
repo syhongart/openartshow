@@ -22,6 +22,30 @@
 // 들어왔다 — 수면 메시·진단·정리가 전부 `features/ocean.ts` 안에 있고 조립부는 무변경이다.
 // (`sky.js`의 `waterY` 연동은 아직이다. 지금은 하늘이 물을 모르고, 물도 하늘을 모른다.)
 
+// ── 시각효과(VFX)는 어디에 있나 — **아직 한 축으로 모여 있지 않다** ──────────
+//
+// 감독 확인: *"이런 특수효과 이펙트는 따로 파일로 분류하고 있지?"* → 후보정만 그렇고
+// 나머지는 흩어져 있다. 정리를 **world1 폐기 시점(#119)으로 미루기로 확정**했다 —
+// 지금 `fx/` 를 만들면 날씨가 여전히 `sky.js`(world1) 안에 남아 "이펙트는 fx 에 있다"가
+// 반만 참이 되고, 반만 참인 규칙이 아무 규칙도 없는 것보다 위험하기 때문이다.
+//
+// 그때까지 헤매지 않도록 **소재를 여기 적어 둔다:**
+//
+//   블룸(화면 후보정)   `features/postfx.ts` + `postfx-params.ts`   ← 유일하게 분리됨
+//   가로등 점등         세 곳에 쪼개져 있다:
+//                         · 재질·마스크  `parts/lamp.ts`
+//                         · 켜고 끄기    `features/sky.ts` (시간대를 아는 곳이 하늘뿐)
+//                         · 판정         `decide/night.ts`
+//   물 일렁임           `features/ocean.ts` (노멀맵 2층 UV 스크롤)
+//   밤 조명 하한        `systems/night-lights.ts` + `decide/night.ts`
+//   날씨·하늘           **world1 `frontend/js/sky.js`** — 비·눈·오로라·무지개·번개·
+//                       구름·별이 전부 그 안이다. world2 는 `systems/sky.ts` 어댑터
+//                       하나로만 닿는다.
+//
+// #119 에서 `sky.js` 를 world2 로 가져올 때, 위 항목을 `world2/fx/` 로 함께 모은다.
+// **물 일렁임은 예외로 둔다** — 물 재질의 일부라 떼면 재질 하나를 두 파일이 나눠 갖게
+// 된다. 옮길 것은 "여러 파일에 쪼개진 것"(가로등 점등)과 "남의 집에 있는 것"(날씨)이다.
+
 import type { Feature } from './types.js';
 import { skyFeature } from './sky.js';
 import { oceanFeature } from './ocean.js';
