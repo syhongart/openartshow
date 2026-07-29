@@ -31,7 +31,7 @@ cp frontend/guide.html   "$OUT/guide.html"
 cp frontend/design.html  "$OUT/design.html"
 cp frontend/about.html   "$OUT/about.html"
 cp -r frontend/.          "$OUT/app/"
-cp -r devlog team valuation "$OUT/"
+cp -r making devlog team valuation "$OUT/"
 cp sitemap.xml robots.txt "$OUT/"
 touch "$OUT/.nojekyll"
 `;
@@ -40,7 +40,7 @@ touch "$OUT/.nojekyll"
 // 유지보수 시 `.github/workflows/deploy.yml` 과 **반드시 함께** 갱신한다. 어긋나면
 // "스모크 PASS + 배포 실패" 가 성립한다(실제로 성립해 있었다 — `|| true` 사건).
 // vite build → dist(base /openartshow/, HTML rename·CSP정합·자기완결 플러그인 적용) →
-// dist 를 통째 $OUT 으로 복사 → 생성기/정적(devlog·team·valuation·sitemap·robots·.nojekyll)
+// dist 를 통째 $OUT 으로 복사 → 생성기/정적(making·devlog·team·valuation·sitemap·robots·.nojekyll)
 // 을 얹는다. 즉 vite _site = dist + 생성기 + 정적. (rename 은 vite 플러그인이 수행 —
 // baseline 의 cp 재배치 로직이 사라진다.)
 //
@@ -55,7 +55,7 @@ set -euo pipefail
 ./node_modules/.bin/vite build
 rm -rf "$OUT" && mkdir -p "$OUT"
 cp -r dist/.          "$OUT/"
-cp -r devlog team valuation "$OUT/"
+cp -r making devlog team valuation "$OUT/"
 cp sitemap.xml robots.txt "$OUT/"
 printf '%s\\n' "$(git rev-parse HEAD)" > "$OUT/$DEPLOY_SHA_FILE"
 touch "$OUT/.nojekyll"
@@ -85,9 +85,9 @@ function requireGenerated() {
   if (missing.length === 0) return;
   throw new Error(
     `생성기 산출물이 없다: ${missing.join(', ')}\n`
-    + '  → `node scripts/build-devlog.mjs` 를 먼저 돌려라.\n'
-    + '  (deploy.yml 은 조립 전에 생성기 3종을 돌린다. 스모크가 그것을 재현하지 않으면\n'
-    + '   "스모크 PASS + 배포 실패" 가 성립한다.)',
+    + '  → `node scripts/build-devlog.mjs` 등을 먼저 돌려라.\n'
+    + '  (deploy.yml 은 조립 전에 생성기 4종(devlog, team, valuation, making)을 돌린다.\n'
+    + '   스모크가 그것을 재현하지 않으면 "스모크 PASS + 배포 실패" 가 성립한다.)',
   );
 }
 

@@ -169,6 +169,14 @@ function checkGenerators() {
  * baseline 모드는 `cp -r frontend/. $OUT/app/` 라 구성요소가 겹쳐(루트 html 4개가
  * frontend 사본과 중복) 등식이 성립하지 않는다. 그쪽은 배포를 재현하지 않는
  * 대조군이므로 현재값만 INFO 로 남긴다 — **판정하지 않는 것을 판정한 척하지 않는다.**
+ *
+ * ── 검사2의 사각: 자기참조 항등식 ─────────────────────────────────────
+ * 검사2는 `parts.devlog` 를 `_site` 로 복사되는 **바로 그 원본 디렉터리**에서 잰다.
+ * 그래서 생성기가 콘텐츠를 **아예 안 만들면** 양변이 함께 줄어 `diff=0` 이 되고
+ * 검사2는 PASS 로 남는다. 그 사고는 **검사3(핵심 파일 존재)이 잡는다**
+ * (검수관 뮤테이션 실측: 스텁 생성 스킵 → 검사2 PASS · 검사3 FAIL · 전체 FAIL).
+ * 즉 검사2의 검출 범위는 "`cp` 단계에서 빠지는 사고" 에 한정된다.
+ * `config.mjs` 의 `REQUIRED_FILES_COMMON` 목록이 줄어들면 검사2는 절대 못 잡는다.
  */
 function checkManifestCount() {
   const n = countFiles(SITE_DIR);
@@ -179,10 +187,24 @@ function checkManifestCount() {
   }
   const parts = {
     dist: countFiles(path.join(ROOT, 'dist')),
+    making: countFiles(path.join(ROOT, 'making')),
     devlog: countFiles(path.join(ROOT, 'devlog')),
     team: countFiles(path.join(ROOT, 'team')),
     valuation: countFiles(path.join(ROOT, 'valuation')),
   };
+  // staticRoot = _site **루트에 직접 놓이는** 파일만이다:
+  //   sitemap.xml · robots.txt (GENERATED_ROOT_FILES) + _deploy-sha.txt (+1) + .nojekyll
+  //
+  // 리다이렉트 스텁 3개는 여기 없다. `devlog/index.html`·`team/index.html`·
+  // `valuation/index.html` 은 **각 디렉터리 안**에 있고 `cp -r devlog team valuation`
+  // 이 통째로 옮기므로 위 `parts.devlog`·`parts.team`·`parts.valuation` 에 이미
+  // 세어져 있다. 한때 여기에 `+3` 이 붙어 있었고 그게 이중계상이었다.
+  //
+  // **그 오진을 부른 것은 로컬 잔재였다.** 개발 머신의 `devlog/` 에는 경로 재편 전
+  // 생성한 옛 산출물 139개가 남아 있었고(`.gitignore` 가 가려 눈에 안 띄었다),
+  // 그것까지 세니 `parts.devlog` 가 140 으로 부풀어 계산이 어긋났다. 클린 클론
+  // (`git archive HEAD`)에서는 1 이다 — CI 는 언제나 그 조건이다.
+  // 조립 수치를 의심할 때는 **워킹트리가 아니라 클린 클론에서** 재라.
   const staticRoot = GENERATED_ROOT_FILES.length + 1 + STATIC_ROOT_EXTRA.length; // +1 = DEPLOY_SHA_FILE
   const expected = Object.values(parts).reduce((a, b) => a + b, 0) + staticRoot;
   const diff = n - expected;
