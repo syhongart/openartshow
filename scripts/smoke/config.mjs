@@ -42,23 +42,27 @@ export const GENERATORS = [
   'scripts/build-valuation.mjs',
 ];
 
-// ── 검사2: 매니페스트 파일수 baseline ────────────────────────────────
-// _site 조립 결과 파일 수. 직전 통과 조립 대비 급감 시 파일 누락 신호 → FAIL.
-// null 이면 "baseline 미설정"으로 현재값만 기록(INFO). 최초 통과 후 실측값을 채운다.
-// 실측: 2026-07-21 arch-safety-net 브랜치 = 175 파일(about.html 루트 배포 +1 반영).
-// (DEVLOG 항목 추가 등으로 늘어나는 것은 정상 — 급증은 PASS, 급감만 FAIL)
+// ── 검사2: 매니페스트 파일수 ─────────────────────────────────────────
 //
-// vite 모드는 파일수가 다르다: frontend직조립은 `cp -r frontend/. _site/app/` 로 js/폰트를
-// 통째 복사하지만, vite 는 js 를 번들해 _bundle 로 dedup(중복 제거)하고 app/js 폴더가
-// 없다. → vite 조립본은 더 적다. 실측: 2026-07-21 vite 조립본 = 148 파일.
-// (_bundle 해시파일명은 빌드마다 바뀌나 개수는 동일 → 값 안정. devlog 증가는 급증=PASS)
-export const BASELINE_FILE_COUNT = 175;      // frontend직조립(baseline) 모드
-export const BASELINE_FILE_COUNT_VITE = 148; // vite 조립 모드
-export const BASELINE_FILE_COUNT_BY_MODE = {
-  baseline: BASELINE_FILE_COUNT,
-  vite: BASELINE_FILE_COUNT_VITE,
-};
-export const DROP_THRESHOLD = 5; // baseline - 5 미만이면 FAIL (급감)
+// ── 왜 baseline 상수를 버렸나 (검수관 P1, 2026-07-29) ──────────────────────
+// 예전에는 실측 상수(vite 148)와 비교해 `n < baseline - 5` 면 FAIL 이었다. 그런데
+// `devlog/` 는 개발일지를 쓸 때마다 늘어난다 — 실측이 227 이 되도록 상수는 148 이었고,
+// **84개가 사라져도 PASS 가 찍히는 상태**였다. 급감을 잡으라고 만든 검사가 급감을
+// 못 잡고 있었다.
+//
+// "급증은 PASS" 규칙 때문에 조용히 벌어졌다. 상수를 227 로 갱신해도 같은 일이 반복된다 —
+// **낡는 방향이 검출력을 깎는 쪽**이기 때문이다. 그래서 상수를 안 쓴다.
+//
+// 대신 조립 구성요소의 합과 대조한다. `_site` 는 정의상
+//     dist(또는 frontend 사본) + devlog + team + valuation + 루트 정적
+// 이므로, 그 등식이 깨지면 조립이 뭔가 빠뜨린 것이다. devlog 가 아무리 늘어도
+// 양쪽이 함께 늘어 **값이 낡지 않는다.** 실측으로 등식 성립 확인(227 = 223 + 4).
+//
+// 루트 정적 = GENERATED_ROOT_FILES(sitemap·robots) + DEPLOY_SHA_FILE + .nojekyll.
+// 여기 값을 세지 않고 그 상수들에서 센다 — 파일이 늘면 자동으로 따라온다.
+export const STATIC_ROOT_EXTRA = ['.nojekyll'];
+// 등식이 정확히 0 이어야 한다. 오차를 허용하면 그 오차만큼 다시 못 잡는다.
+export const MANIFEST_TOLERANCE = 0;
 
 /**
  * 생성기가 만드는 **루트 산출물** — 이 목록의 SSOT.
