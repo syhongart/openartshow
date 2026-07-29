@@ -59,6 +59,8 @@ interface Counts {
   tamed?: number;
   /** 불투명으로 되돌린 재질 수. 이게 0 이면 WebGPU 에서 벽이 안 보인다 */
   opaque?: number;
+  /** 단순 재질로 갈아끼운 수. `?glbraw=1` 이면 0(원본 유지) */
+  swapped?: number;
 }
 
 export const glbCityFeature: Feature = {
@@ -97,9 +99,13 @@ export const glbCityFeature: Feature = {
 
         const model = gltf.scene as unknown as Object3D;
         measure(model, counts);
+        const raw = readNum('glbraw', 0, 0, 1) >= 1;
         const fixed = tameMetals(model as unknown as MetalWalkable);
         counts.tamed = fixed.metals;
         counts.opaque = fixed.opaque;
+        // 기본은 교체다. `?glbraw=1` 이면 원본 재질 그대로 — 둘을 번갈아 보면
+        // 재질 확장이 원인인지 감독 화면에서 한 번에 갈린다.
+        counts.swapped = raw ? 0 : swapMaterials(model, THREE as unknown as ThreeNS);
 
         // 실험 물건을 한 그룹에 모은다 — 정리할 때 하나만 지우면 된다.
         const g = new THREE.Group();
@@ -115,7 +121,13 @@ export const glbCityFeature: Feature = {
         if (disposed) return;
 
         counts.state = 'ready';
-        badge?.set(`미술관 ${want}채 · 금속 ${counts.tamed} · 불투명 ${counts.opaque} · 메시 ${counts.meshesPer * want}`);
+        // 최근접 거리를 함께 띄운다. **"안 보인다" 가 배치 문제인지 렌더 문제인지
+        // 이 숫자 하나로 갈린다** — 32m 인데 안 보이면 렌더, 200m 면 배치다.
+        const near = gridCells(want, env.cell)[0]?.d ?? 0;
+        badge?.set(
+          `미술관 ${want}채 · 재질 ${counts.swapped ? '교체' + counts.swapped : '원본'}`
+          + ` · 최근접 ${near.toFixed(0)}m`,
+        );
       } catch (err) {
         // **못 잰 것은 통과가 아니다.** 실패를 조용히 삼키면 진단에 0 이 찍히고 그것이
         // "가볍다" 로 읽힌다. 무엇이 막았는지를 남긴다.
@@ -133,6 +145,7 @@ export const glbCityFeature: Feature = {
         error: counts.error,
         tamed: counts.tamed,
         opaque: counts.opaque,
+        swapped: counts.swapped,
         meshesPer: counts.meshesPer,
         trisPer: counts.trisPer,
         // 곱해서 함께 보여준다 — 판정에 필요한 것은 1채가 아니라 총량이다.
@@ -274,6 +287,64 @@ export function makeBadge(doc: Document | null): { set(t: string): void; remove(
     set(t) { el.textContent = t; },
     remove() { el.remove(); },
   };
+}
+
+/**
+ * GLB 재질을 **단순 재질로 갈아끼운다.** 텍스처와 색은 가져오고 확장은 전부 버린다.
+ *
+ * ── 왜 필요한가 (감독 판정 3회) ────────────────────────────────────────────
+ * *"건물이 안보이던데. 하나도"* → 금속을 눅였다 → 여전히 안 보임 → 헛된 투명을
+ * 되돌렸다 → **여전히 안 보임.**
+ *
+ * 두 처방 모두 헤드리스(WebGL)에서는 효과가 있었고 감독 기기(WebGPU)에서는 없었다.
+ * 남은 차이는 **재질 확장**이다. 이 GLB 는 다섯을 쓴다 —
+ * `KHR_materials_sheen` · `clearcoat` · `specular` · `anisotropy` · `ior`.
+ * `three/webgpu` 가 이들을 노드 재질로 옮기다 실패하면 재질이 통째로 안 그려진다.
+ * WebGL 경로에는 없는 실패 모드라 헤드리스로는 원리적으로 재현되지 않는다.
+ *
+ * ── 추측을 처방으로 바꾸지 않기 위해 ───────────────────────────────────────
+ * 이것도 아직 가설이다. 그래서 **끄는 노브**(`?glbraw=1`)를 함께 연다. 교체본과 원본을
+ * 같은 기기에서 번갈아 보면 확장이 원인인지 **한 번에 갈린다** — 내가 헤드리스로는
+ * 영영 못 가르는 것을 감독 화면이 가른다.
+ *
+ * 재질은 **원본 하나당 하나씩만** 만들어 캐시한다. GLB 는 78개 메시가 17개 재질을
+ * 공유하므로, 메시마다 새로 만들면 재질이 78개로 불어나 개수 불변식이 깨진다.
+ */
+function swapMaterials(model: Object3D, THREE: ThreeNS): number {
+  const cache = new Map<unknown, unknown>();
+  let n = 0;
+  model.traverse((o: Object3D & { isMesh?: boolean; material?: unknown }) => {
+    if (!o.isMesh || !o.material) return;
+    const one = (src: SrcMat): unknown => {
+      const hit = cache.get(src);
+      if (hit) return hit;
+      const made = new THREE.MeshStandardMaterial({
+        map: src?.map ?? null,
+        color: src?.color ?? 0xffffff,
+        // 원본 거칠기는 살리되 금속은 낮게 고정한다 — 환경맵이 없는 씬이라 높은
+        // 금속은 어느 백엔드에서든 검게 나온다.
+        roughness: typeof src?.roughness === 'number' ? src.roughness : 0.8,
+        metalness: 0.05,
+      });
+      cache.set(src, made);
+      n++;
+      return made;
+    };
+    o.material = Array.isArray(o.material)
+      ? (o.material as SrcMat[]).map(one)
+      : one(o.material as SrcMat);
+  });
+  return n;
+}
+
+interface SrcMat { map?: unknown; color?: unknown; roughness?: number }
+
+/**
+ * 동적 import 한 `three/webgpu` 중 이 파일이 쓰는 부분만. 전체 타입을 정적으로 끌어오면
+ * 실험 파일이 three 에 묶여, "`?glb=` 없으면 아무것도 안 한다" 는 성질이 흐려진다.
+ */
+interface ThreeNS {
+  MeshStandardMaterial: new (o: Record<string, unknown>) => unknown;
 }
 
 /** 한 채의 메시 수와 삼각형 수를 센다. 총량은 이 값에 채수를 곱해 얻는다 */
