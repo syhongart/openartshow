@@ -29,7 +29,7 @@ const POS_LIMIT = 500;             // 좌표 절대값 클램프
 
 const finite = (v, d = 0) => (Number.isFinite(v) ? v : d);
 const clampPos = (v) => Math.max(-POS_LIMIT, Math.min(POS_LIMIT, finite(v, 0)));
-function sanitizeIncomingNote(n) {
+export function sanitizeIncomingNote(n) {
   if (!n || typeof n !== 'object' || typeof n.id !== 'string') return null;
   return {
     id: n.id.slice(0, 32),

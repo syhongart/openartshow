@@ -12,7 +12,7 @@ import { youtubeId } from './ytembed.js';
 import { SPACE_PRESETS, getPreset, presetThumb } from './space-presets.js';
 import { createBuilderWalk } from './builder-walk.js';
 
-const SAVE_KEY = 'openartshow.space.v1';
+export const SAVE_KEY = 'openartshow.space.v1';
 
 // 환경맵(PMREM) — 은은한 반사로 재질 깊이·고급감. 스포트라이트가 바닥에 반질하게 번지게.
 function makeEnvMap(renderer) {
