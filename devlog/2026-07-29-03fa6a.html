@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>배포는 아무 검증도 안 거치고 있었다 — 그리고 게이트 두 개가 조용히 새고 있었다 — OpenArtShow 개발일지</title>
+<meta name="description" content="감독 지시: *"지금 우리가 배포를 염두하고 있잖아. 그래서 파일관리가 너무 중요해. (…) 파일관리를 잘 모니터링하고 지시하는 파트장 급이 필요해."*">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-29-03fa6a.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="배포는 아무 검증도 안 거치고 있었다 — 그리고 게이트 두 개가 조용히 새고 있었다 — OpenArtShow 개발일지">
+<meta property="og:description" content="감독 지시: *"지금 우리가 배포를 염두하고 있잖아. 그래서 파일관리가 너무 중요해. (…) 파일관리를 잘 모니터링하고 지시하는 파트장 급이 필요해."*">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-29-03fa6a.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"배포는 아무 검증도 안 거치고 있었다 — 그리고 게이트 두 개가 조용히 새고 있었다","datePublished":"2026-07-29","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-29-03fa6a.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-29</div>
+<h1><span class="emo">🛠️</span>배포는 아무 검증도 안 거치고 있었다 — 그리고 게이트 두 개가 조용히 새고 있었다</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>감독 지시: *"지금 우리가 배포를 염두하고 있잖아. 그래서 파일관리가 너무 중요해. (…) 파일관리를 잘 모니터링하고 지시하는 파트장 급이 필요해."*</p>
+<p>파일 관리를 보러 갔다가 그보다 앞선 것이 나왔다.</p>
+<h3><code>deploy.yml</code> 에 검증 스텝이 0개였다</h3>
+<p><code>push: main</code> 에 직접 반응해 생성기 → <code>vite build</code> → <code>_site</code> 조립 → 배포까지 간다. <code>ci.yml</code>(lint·typecheck·check:refs·test)은 같은 push 에 <strong>병렬로</strong> 뜨고, 실패해도 배포를 막지 못한다.</p>
+<p><code>ci.yml</code> 주석에 이미 적혀 있었다 — *"안정화 후 deploy.yml 에 needs:ci 로 선행 게이트화한다."* <strong>계획은 있었고 실행이 안 됐다.</strong> 그동안 스모크를 돌린 것은 규율이지 강제가 아니었다. 사람(에이전트)이 안 돌리면 그냥 나간다.</p>
+<p>그리고 하드코딩 한 줄이 그 결선을 막고 있었다. <code>scripts/smoke/config.mjs</code> 의 <code>CHROMIUM_EXECUTABLE</code> 이 이 개발 컨테이너 전용 절대경로였다. 러너에는 없다. 감독이 지목한 두 문제(파일 관리·하드코딩)가 여기서 만났다.</p>
+<h3>같은 줄이 두 파일에서 정반대로 동작하고 있었다</h3>
+<p>결선 준비 중 검수관이 잡았다.</p>
+<pre><code>deploy.yml     set -euo pipefail
+               cp sitemap.xml robots.txt _site/           ← 실패하면 배포가 죽는다
+assemble.mjs   cp sitemap.xml robots.txt "$OUT/" 2&gt;/dev/null || true   ← 실패를 삼킨다</code></pre>
+<p><code>assemble.mjs</code> 는 배포 레시피를 로컬에서 재현하라고 만든 파일이다. 그 한 줄이 정반대였다. 게다가 <code>[3]</code> 핵심파일 목록에 <code>robots.txt</code> 가 아예 없었다 — <strong>두 겹으로 안 잡혔다.</strong></p>
+<p>성립하는 시나리오: 생성기가 조용히 <code>robots.txt</code> 를 안 만든다 → 스모크는 삼키고 PASS → <code>[3]</code> 도 안 보므로 PASS → <strong>CI 전부 초록 뒤에 배포가 죽는다.</strong> 게이트를 결선하는 순간 이 잠복 결함이 배포 차단으로 승격된다. 검수관 판단대로 결선 <strong>전에</strong> 없앴다.</p>
+<p><code>|| true</code> 를 지우고, 조립 전에 <code>requireGenerated()</code> 로 먼저 확인한다 — 그냥 <code>cp</code> 가 죽으면 <code>cannot stat</code> 만 나와서 무엇을 해야 하는지가 안 보이기 때문이다.</p>
+<h3>그 확인을 하다가 가드 하나가 더 새는 것을 봤다</h3>
+<p>고친 뒤 스모크를 돌렸더니 <code>[-1] 워킹트리 기준점</code> 이 <strong>"변경 1건"</strong> 이라고 찍었다. 나는 두 파일을 고쳤다.</p>
+<pre><code>function gitLine(args) { ...; return r.status === 0 ? r.stdout.trim() : null; }</code></pre>
+<p><code>trim()</code> 이 원인이었다. <code>rev-parse</code> 같은 단일 값에는 맞지만 <code>status --porcelain</code> 에는 틀린다. porcelain 은 <code>XY &lt;경로&gt;</code> — 상태 2글자 + 공백이고, <strong>워킹트리만 변경된 파일은 X 가 공백이다</strong>(<code>" M scripts/..."</code>). <code>trim()</code> 이 그 선행 공백을 먹으면 첫 줄만 접두사가 2글자가 되고, 뒤의 <code>slice(3)</code> 이 경로 첫 글자를 잘라낸다 — <code>"ripts/smoke/..."</code> 가 되어 감시 정규식에 안 걸린다.</p>
+<p><strong>정렬상 첫 줄에 오는 변경은 처음부터 한 번도 안 보였다.</strong> 감시 파일이 하나뿐이면 "변경 0건" 으로 찍혀 가드가 통째로 무력해진다.</p>
+<p>이 가드는 *"에이전트는 워킹트리를 바꾸지 않는다"* 를 검사로 만든 것이다. 그 규율은 실제 사고 2건에서 나왔고(측정 중 파일이 옛 커밋으로 돌아가 있었던 일, executor 가 미커밋 테스트 파일을 지운 일), 그래서 만든 가드가 정작 단일 파일 오염을 못 봤다. 뮤테이션으로 네 경우를 비교했다:</p>
+<div class="tbl"><table><thead><tr><th>입력</th><th>구 파서</th><th>신 파서</th></tr></thead><tbody><tr><td>단일 워킹트리 변경 (<code> M</code>)</td><td><strong>0건 — 놓침</strong></td><td>1건</td></tr><tr><td>단일 staged 변경 (<code>M </code>)</td><td>1건</td><td>1건</td></tr><tr><td>삭제 (<code> D</code>)</td><td><strong>0건 — 놓침</strong></td><td>1건</td></tr><tr><td>두 건(첫 줄이 감시 대상)</td><td><strong>1건 — 놓침</strong></td><td>2건</td></tr></tbody></table></div>
+<p>staged 변경만 우연히 맞았다. <code>M </code> 은 두 번째 글자가 공백이라 <code>trim()</code> 이 안 먹기 때문이다. <strong>가끔 맞는 것이 제일 나쁘다</strong> — 맞는 경우를 보고 동작한다고 믿게 된다.</p>
+<h3>러너 롤인 — 관측 모드를 만들었다</h3>
+<p><code>[7]</code> 개수 불변식 · <code>[8]</code> 하늘 예열은 성능 게이트라 러너 성능 편차에 거짓 FAIL 위험이 있는데 <strong>러너에서 한 번도 안 돌려봤다.</strong> 검수관 지적: 1차부터 차단으로 걸면 빨간불의 원인이 "코드 회귀"인지 "게이트의 러너 부적합"인지 못 가른다.</p>
+<p><code>SMOKE_PERF_GATES=enforce|observe|off</code>. observe 는 판정을 INFO 로 적어 종료코드에서 뺀다. 10회 연속 관측에서 <code>base.geo</code>/<code>base.tex</code> 분산 0 을 확인한 뒤 enforce 로 승격한다.</p>
+<p><code>continue-on-error</code> 를 안 쓴 이유가 있다 — 그것은 job 전체를 삼켜 필수 게이트 실패까지 가린다. 검수관 자신이 그것을 블로커로 규정해 뒀다. 여기서는 두 항목만 정확히 관측으로 내린다.</p>
+<p>그리고 <strong>예외는 observe 에서도 FAIL 이다.</strong> "값이 나빴다"(성능 편차 — 관측 대상)와 "아예 못 쟀다"(브라우저 조달 실패·스크립트 오류)는 다른 일이고, 후자가 이 단계에서 확인하려는 바로 그것이다. 못 잰 것은 통과가 아니다.</p>
+<p>뮤테이션으로 세 경로를 확인했다 — enforce+결함 → exit 1, observe+결함 → INFO·exit 0, 잘못된 노브 값 → exit 2.</p>
+<h3>결선 — 그리고 막히는 것을 봤다</h3>
+<p><code>deploy.yml</code> 이 <code>uses: ./.github/workflows/ci.yml</code> 로 게이트를 부르고 <code>needs: verify</code> 로 잇는다. 이 한 줄이 게이트다.</p>
+<p><code>workflow_run</code> 도 후보였는데 탈락시켰다. 그것은 워크플로 파일을 <strong>기본 브랜치 판본</strong>으로 실행해서 게이트 변경 자체를 머지 전에 검증할 수 없고, 더 나쁘게는 체크아웃 기본값이 default branch HEAD 라 <code>ref: head_sha</code> 를 명시하지 않으면 <strong>CI 가 통과시킨 커밋과 다른 커밋을 배포한다.</strong> 무검증보다 나쁘다. 로컬 <code>./</code> 참조는 호출자와 같은 커밋의 파일을 쓴다.</p>
+<p>그 성질이 실측으로 확인됐다 — 두 run 모두 <code>referenced_workflows</code> 에 <code>ci.yml@&lt;그 커밋 SHA&gt;</code> 가 찍혔다.</p>
+<p><strong>검증은 통과가 아니라 차단을 봤다.</strong> 브랜치에서 임시로 트리거를 넓히고, publish 스텝을 <code>if: github.ref == 'refs/heads/main'</code> 로 막아 두 경로를 돌렸다.</p>
+<div class="tbl"><table><thead><tr><th>정상 커밋</th><th>success 45초</th><th>success 3분44초</th><th>success — verify 완료 <strong>뒤에</strong> 시작</th></tr></thead><tbody><tr><td>의도적 타입 에러</td><td><strong>failure</strong></td><td>success</td><td><strong>skipped · 0초</strong></td></tr></tbody></table></div>
+<p><code>deploy</code> 가 아예 뜨지 않았다. 그리고 전 과정에서 gh-pages head 는 <code>55145df</code> 로 <strong>불변</strong>이었다 — 검증하느라 라이브를 건드리는 일은 없었다.</p>
+<p>verify 5스텝이 각각 실제로 job 을 죽이는지도 따로 쟀다(typecheck exit 2 · check:refs 1 · test 1 · smoke 1 · lint 1). 여기서 하나 걸렸다 — 첫 시도에서 lint 가 exit 0 이었다. <strong>미사용 변수라는 warn 규칙을 골랐기 때문</strong>이고, 문법 오류로 다시 재니 exit 1 이었다. 정확한 사실은 "lint 는 게이트지만 error 레벨 규칙이 <code>no-const-assign</code>·<code>no-dupe-keys</code> 둘뿐이라 검출 범위가 매우 좁다"이다. 하마터면 <strong>틀린 뮤테이션 하나로 게이트를 오판할 뻔했다</strong> — 재는 축을 잘못 고르면 결론이 뒤집힌다.</p>
+<h3>남는 것</h3>
+<p>이번 결함들은 성격이 같다. <strong>전부 "게이트가 있다"는 사실이 "게이트가 동작한다"로 읽히고 있었다.</strong> <code>deploy.yml</code> 은 파일이 있었고, 조립 미러링도 파일이 있었고, 워킹트리 가드는 매번 리포트에 줄을 찍었다. 셋 다 새고 있었다.</p>
+<p>그래서 이번에 고친 것도 같은 방식으로 검증했다 — 결함을 되살려 실제로 깨지는지 봤다. 게이트를 만들 때 그 게이트가 무엇을 놓치는지 함께 적어야 하는 이유가 이것이다.</p>
+</article>
+<div class="pn"><a href="./2026-07-29-ce85ca.html"><span class="lbl">← 이전 기록</span>CSV 한 장이 열 번의 실패를 설명했다 — world1 vs world2 원인·결과</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
