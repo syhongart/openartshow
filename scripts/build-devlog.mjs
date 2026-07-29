@@ -2,14 +2,14 @@
 // docs/DEVLOG.md → devlog/ 정적 블로그 생성기 (의존성 0)
 // 실행: node scripts/build-devlog.mjs   (저장소 루트 기준)
 // 산출: devlog/index.html, devlog/<slug>.html, sitemap.xml, robots.txt
-// BASE_URL은 artshow 이전·자체 도메인 구매 시 여기 한 곳만 바꾼다.
+// BASE_URL 은 `scripts/site-url.mjs` 가 SSOT 다(자체 도메인 구매 시 거기 한 줄만 바꾼다).
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BASE_URL } from './site-url.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const BASE_URL = 'https://syhongart.github.io/openartshow'; // 랜딩 OG와 동일 규약
 const SITE = 'OpenArtShow';
 const OUT = join(ROOT, 'devlog');
 
