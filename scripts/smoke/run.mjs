@@ -184,9 +184,20 @@ function checkManifestCount() {
     team: countFiles(path.join(ROOT, 'team')),
     valuation: countFiles(path.join(ROOT, 'valuation')),
   };
-  // staticRoot: 리다이렉트 스텁 3개(devlog/index.html·team/index.html·valuation/index.html)
-  // + sitemap.xml + robots.txt + _deploy-sha.txt + .nojekyll
-  const staticRoot = GENERATED_ROOT_FILES.length + 1 + STATIC_ROOT_EXTRA.length + 3; // +3 = 리다이렉트 스텁, +1 = DEPLOY_SHA_FILE
+  // staticRoot = _site **루트에 직접 놓이는** 파일만이다:
+  //   sitemap.xml · robots.txt (GENERATED_ROOT_FILES) + _deploy-sha.txt (+1) + .nojekyll
+  //
+  // 리다이렉트 스텁 3개는 여기 없다. `devlog/index.html`·`team/index.html`·
+  // `valuation/index.html` 은 **각 디렉터리 안**에 있고 `cp -r devlog team valuation`
+  // 이 통째로 옮기므로 위 `parts.devlog`·`parts.team`·`parts.valuation` 에 이미
+  // 세어져 있다. 한때 여기에 `+3` 이 붙어 있었고 그게 이중계상이었다.
+  //
+  // **그 오진을 부른 것은 로컬 잔재였다.** 개발 머신의 `devlog/` 에는 경로 재편 전
+  // 생성한 옛 산출물 139개가 남아 있었고(`.gitignore` 가 가려 눈에 안 띄었다),
+  // 그것까지 세니 `parts.devlog` 가 140 으로 부풀어 계산이 어긋났다. 클린 클론
+  // (`git archive HEAD`)에서는 1 이다 — CI 는 언제나 그 조건이다.
+  // 조립 수치를 의심할 때는 **워킹트리가 아니라 클린 클론에서** 재라.
+  const staticRoot = GENERATED_ROOT_FILES.length + 1 + STATIC_ROOT_EXTRA.length; // +1 = DEPLOY_SHA_FILE
   const expected = Object.values(parts).reduce((a, b) => a + b, 0) + staticRoot;
   const diff = n - expected;
   const breakdown = `${Object.entries(parts).map(([k, v]) => `${k} ${v}`).join(' + ')} + 정적 ${staticRoot}`;
