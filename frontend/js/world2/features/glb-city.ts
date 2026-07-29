@@ -57,6 +57,8 @@ interface Counts {
   error?: string;
   /** 눅인 금속 재질 수. 이게 0 이면 건물이 검게 보인다 */
   tamed?: number;
+  /** 불투명으로 되돌린 재질 수. 이게 0 이면 WebGPU 에서 벽이 안 보인다 */
+  opaque?: number;
 }
 
 export const glbCityFeature: Feature = {
@@ -95,7 +97,9 @@ export const glbCityFeature: Feature = {
 
         const model = gltf.scene as unknown as Object3D;
         measure(model, counts);
-        counts.tamed = tameMetals(model as unknown as MetalWalkable);
+        const fixed = tameMetals(model as unknown as MetalWalkable);
+        counts.tamed = fixed.metals;
+        counts.opaque = fixed.opaque;
 
         // 실험 물건을 한 그룹에 모은다 — 정리할 때 하나만 지우면 된다.
         const g = new THREE.Group();
@@ -111,7 +115,7 @@ export const glbCityFeature: Feature = {
         if (disposed) return;
 
         counts.state = 'ready';
-        badge?.set(`미술관 ${want}채 · 금속 ${counts.tamed} 조정 · 메시 ${counts.meshesPer * want}`);
+        badge?.set(`미술관 ${want}채 · 금속 ${counts.tamed} · 불투명 ${counts.opaque} · 메시 ${counts.meshesPer * want}`);
       } catch (err) {
         // **못 잰 것은 통과가 아니다.** 실패를 조용히 삼키면 진단에 0 이 찍히고 그것이
         // "가볍다" 로 읽힌다. 무엇이 막았는지를 남긴다.
@@ -128,6 +132,7 @@ export const glbCityFeature: Feature = {
         state: counts.state,
         error: counts.error,
         tamed: counts.tamed,
+        opaque: counts.opaque,
         meshesPer: counts.meshesPer,
         trisPer: counts.trisPer,
         // 곱해서 함께 보여준다 — 판정에 필요한 것은 1채가 아니라 총량이다.
@@ -182,8 +187,9 @@ export const glbCityFeature: Feature = {
  * 재질은 clone 이 **참조 공유**하므로 여기서 한 번 고치면 N 채에 모두 적용된다 —
  * 개수 불변식도 그대로다.
  */
-export function tameMetals(model: MetalWalkable): number {
-  let touched = 0;
+export function tameMetals(model: MetalWalkable): { metals: number; opaque: number } {
+  let metals = 0;
+  let opaque = 0;
   const seen = new Set<unknown>();
   model.traverse((o) => {
     if (!o.isMesh || !o.material) return;
@@ -191,12 +197,32 @@ export function tameMetals(model: MetalWalkable): number {
     for (const m of list as MatLike[]) {
       if (!m || seen.has(m)) continue;
       seen.add(m);
-      if (typeof m.metalness !== 'number' || m.metalness <= METAL_THRESHOLD) continue;
-      m.metalness = METAL_TAMED;
-      touched++;
+
+      // ── ① 금속 — 반사할 환경이 없으면 검게 나온다 ──────────────────────
+      if (typeof m.metalness === 'number' && m.metalness > METAL_THRESHOLD) {
+        m.metalness = METAL_TAMED;
+        metals++;
+      }
+
+      // ── ② 헛된 투명 — **이것이 "안 보인다" 의 본체였다** ────────────────
+      // 이 GLB 는 벽 재질 5개(plaster·Sand-Finish·STUCCO-Sand·ARCH-Ridged)가
+      // `alphaMode: BLEND` 인데 **알파는 전부 1.0** 이다. 투명일 이유가 없는데
+      // 저작 도구가 그렇게 내보냈다.
+      //
+      // three 는 BLEND 를 `transparent: true` 로 옮기고, 그러면 깊이 쓰기가 꺼지고
+      // 그리는 순서가 정렬에 의존한다. **WebGL 은 관대하게 그려 주지만 WebGPU 는
+      // 그렇지 않다** — 헤드리스에서는 보이는데 감독 기기(WebGPU)에서만 안 보였던
+      // 것이 이것이다. 지표는 정상이었다(삼각형이 182만까지 잡혔다).
+      //
+      // 완전 불투명한 것만 되돌린다. 진짜 유리(알파 < 1)는 그대로 둔다.
+      if (m.transparent === true && (m.opacity === undefined || m.opacity >= 1)) {
+        m.transparent = false;
+        m.depthWrite = true;
+        opaque++;
+      }
     }
   });
-  return touched;
+  return { metals, opaque };
 }
 
 /** 이 값을 넘는 금속만 손댄다. 0.6 짜리(DarkMetal)는 원래 의도된 금속감이라 남긴다 */
@@ -204,7 +230,12 @@ const METAL_THRESHOLD = 0.9;
 /** 눅인 뒤 값. 0 으로 만들면 금속감이 통째로 사라져 벽이 종이처럼 보인다 */
 const METAL_TAMED = 0.15;
 
-interface MatLike { metalness?: number }
+interface MatLike {
+  metalness?: number;
+  transparent?: boolean;
+  opacity?: number;
+  depthWrite?: boolean;
+}
 
 /** `tameMetals` 가 요구하는 최소 계약. three 전체를 끌어오지 않으려고 좁게 적는다 */
 export interface MetalWalkable {

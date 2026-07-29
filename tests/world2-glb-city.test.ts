@@ -126,13 +126,13 @@ describe('금속 재질을 눅여 검게 나오는 것을 막는다', () => {
 
   it('metalness 1.0 을 낮춘다 — 이것이 검정의 원인이었다', () => {
     const mats = [{ metalness: 1.0 }, { metalness: 1.0 }];
-    expect(tameMetals(model(mats))).toBe(2);
+    expect(tameMetals(model(mats)).metals).toBe(2);
     for (const m of mats) expect(m.metalness).toBeLessThan(0.5);
   });
 
   it('의도된 중간 금속(0.6)은 남긴다 — 전부 깎으면 벽이 종이처럼 된다', () => {
     const mats = [{ metalness: 0.6 }, { metalness: 0.78 }];
-    expect(tameMetals(model(mats))).toBe(0);
+    expect(tameMetals(model(mats)).metals).toBe(0);
     expect(mats[0].metalness).toBe(0.6);
     expect(mats[1].metalness).toBe(0.78);
   });
@@ -146,7 +146,7 @@ describe('금속 재질을 눅여 검게 나오는 것을 막는다', () => {
         cb({ isMesh: true, material: shared });
       },
     };
-    expect(tameMetals(m)).toBe(1);
+    expect(tameMetals(m).metals).toBe(1);
   });
 
   it('재질 배열도 처리한다 — 멀티머티리얼 메시가 GLB 에 흔하다', () => {
@@ -156,7 +156,7 @@ describe('금속 재질을 눅여 검게 나오는 것을 막는다', () => {
         cb({ isMesh: true, material: [a, b] });
       },
     };
-    expect(tameMetals(m)).toBe(2);
+    expect(tameMetals(m).metals).toBe(2);
   });
 });
 
@@ -172,5 +172,45 @@ describe('상태 배지', () => {
     expect(makeBadge(null)).toBeNull();
     // body 가 아직 없는 문서도 마찬가지다(스크립트가 head 에서 도는 경우).
     expect(makeBadge({ body: null } as unknown as Document)).toBeNull();
+  });
+});
+
+// ── 헛된 투명 (감독 실기기 판정) ─────────────────────────────────────────────
+// 이 GLB 는 벽 재질 5개가 `alphaMode: BLEND` 인데 **알파는 전부 1.0** 이다. three 는 이를
+// `transparent: true` 로 옮기고, 그러면 깊이 쓰기가 꺼져 그리는 순서가 정렬에 의존한다.
+// **WebGL 은 관대하게 그려 주지만 WebGPU 는 그렇지 않다** — 헤드리스에서는 보이는데
+// 감독 기기에서만 안 보였던 원인이 이것이다.
+//
+// 지표는 끝까지 정상이었다(삼각형 182만이 잡혔다). **백엔드가 갈리는 결함이라 헤드리스
+// 스크린샷으로는 영영 못 잡는다** — 그래서 화면이 아니라 **재질 상태를 직접** 검사한다.
+describe('헛된 투명을 되돌린다 — WebGPU 에서 벽이 사라지던 것', () => {
+  const model = (mats: unknown[]) => ({
+    traverse(cb: (o: { isMesh?: boolean; material?: unknown }) => void) {
+      for (const m of mats) cb({ isMesh: true, material: m });
+    },
+  });
+
+  it('알파 1.0 인데 transparent 인 재질을 불투명으로 되돌린다', () => {
+    const mats = [{ transparent: true, opacity: 1 }, { transparent: true }];
+    expect(tameMetals(model(mats)).opaque).toBe(2);
+    for (const m of mats as { transparent?: boolean; depthWrite?: boolean }[]) {
+      expect(m.transparent).toBe(false);
+      expect(m.depthWrite).toBe(true);
+    }
+  });
+
+  it('진짜 반투명(알파 < 1)은 건드리지 않는다 — 유리는 유리여야 한다', () => {
+    const glass = { transparent: true, opacity: 0.4 };
+    expect(tameMetals(model([glass])).opaque).toBe(0);
+    expect(glass.transparent).toBe(true);
+    expect(glass.opacity).toBe(0.4);
+  });
+
+  it('금속과 투명을 한 번에 처리한다 — 같은 재질이 둘 다일 수 있다', () => {
+    const wall = { metalness: 1, transparent: true, opacity: 1 };
+    const r = tameMetals(model([wall]));
+    expect(r).toEqual({ metals: 1, opaque: 1 });
+    expect(wall.metalness).toBeLessThan(0.5);
+    expect(wall.transparent).toBe(false);
   });
 });
