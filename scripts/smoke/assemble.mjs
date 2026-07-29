@@ -21,7 +21,7 @@ cp frontend/design.html  "$OUT/design.html"
 cp frontend/about.html   "$OUT/about.html"
 cp -r frontend/.          "$OUT/app/"
 cp -r devlog team valuation "$OUT/"
-cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true
+cp sitemap.xml robots.txt "$OUT/"
 touch "$OUT/.nojekyll"
 `;
 
@@ -36,12 +36,43 @@ set -euo pipefail
 rm -rf "$OUT" && mkdir -p "$OUT"
 cp -r dist/.          "$OUT/"
 cp -r devlog team valuation "$OUT/"
-cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true
+cp sitemap.xml robots.txt "$OUT/"
 touch "$OUT/.nojekyll"
 `;
 
+/**
+ * 생성기 산출물이 자리에 있는지 먼저 본다. **없으면 조립을 시작하지 않는다.**
+ *
+ * ── 왜 (검수관 지적 2026-07-29) ─────────────────────────────────────────────
+ * 예전에는 조립 스크립트가 `cp sitemap.xml robots.txt "$OUT/" 2>/dev/null || true` 로
+ * **실패를 삼켰다.** 그런데 `deploy.yml` 의 같은 줄은 `set -euo pipefail` 아래에 있어
+ * **실패하면 배포가 죽는다.** 같은 줄이 정반대로 동작하고 있었다.
+ *
+ * 결과: 생성기가 조용히 `robots.txt` 를 안 만들면 → 스모크는 삼키고 PASS →
+ * **배포에서 죽는다.** "스모크 PASS + 배포 실패" 가 성립하는 구멍이었다.
+ * (`[3]` 핵심파일 목록에도 `robots.txt` 가 빠져 있어 두 겹으로 안 잡혔다.)
+ *
+ * 이제 삼키지 않는다. 다만 그냥 `cp` 가 죽으면 `cannot stat 'robots.txt'` 만 나와서
+ * **무엇을 해야 하는지**가 안 보이므로, 여기서 먼저 확인하고 안내한다.
+ * `run.mjs` 는 검사1(생성기)을 조립보다 먼저 돌리므로 정상 경로에서는 걸리지 않는다 —
+ * 걸리는 것은 `measure:*` 를 클린 클론에서 단독 실행할 때다.
+ */
+function requireGenerated() {
+  const missing = ['sitemap.xml', 'robots.txt'].filter(
+    (f) => !fs.existsSync(path.join(ROOT, f)),
+  );
+  if (missing.length === 0) return;
+  throw new Error(
+    `생성기 산출물이 없다: ${missing.join(', ')}\n`
+    + '  → `node scripts/build-devlog.mjs` 를 먼저 돌려라.\n'
+    + '  (deploy.yml 은 조립 전에 생성기 3종을 돌린다. 스모크가 그것을 재현하지 않으면\n'
+    + '   "스모크 PASS + 배포 실패" 가 성립한다.)',
+  );
+}
+
 // _site 를 frontend직조립(baseline) 방식으로 조립. 실패 시 예외 전파.
 export function assembleSite(targetDir = SITE_DIR) {
+  requireGenerated();
   execFileSync('bash', ['-c', ASSEMBLE_BASELINE_SH], {
     cwd: ROOT,
     stdio: 'pipe',
@@ -51,6 +82,7 @@ export function assembleSite(targetDir = SITE_DIR) {
 
 // _site 를 vite 조립 방식으로 조립(vite build 포함). 실패 시 예외 전파.
 export function assembleSiteVite(targetDir = SITE_DIR) {
+  requireGenerated();
   execFileSync('bash', ['-c', ASSEMBLE_VITE_SH], {
     cwd: ROOT,
     stdio: 'pipe',

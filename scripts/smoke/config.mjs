@@ -69,6 +69,11 @@ const REQUIRED_FILES_COMMON = [
   'team/index.html',
   'valuation/index.html',
   'sitemap.xml',
+  // `robots.txt` 는 오래 빠져 있었다(검수관 지적 2026-07-29). 그런데 `deploy.yml` 은
+  // `set -euo pipefail` 아래에서 이 파일을 복사하므로 **없으면 배포가 죽는다.**
+  // 검사 목록에 없으면 "스모크 PASS + 배포 실패" 가 성립한다 — 게이트가 배포를 재현하지
+  // 못하는 지점이었다.
+  'robots.txt',
 ];
 export const REQUIRED_FILES_BASELINE = [
   ...REQUIRED_FILES_COMMON,
@@ -142,8 +147,15 @@ export const VIEWPORTS = [320, 375, 1280];
 //
 // ── ③만 쓰면 안 되는 이유 (실측) ─────────────────────────────────────
 // "그냥 playwright 에게 맡기자"가 제일 깔끔해 보이지만 **로컬이 즉시 깨진다.**
-// playwright-core 1.61.1 의 자체 해석 경로는 `chromium-1228` 인데 이 컨테이너에는
-// `chromium_headless_shell-1194` 만 설치돼 있다. ②의 `existsSync` 폴백이 그래서 필수다.
+// playwright-core 1.61.1 이 찾는 경로는
+// `chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`
+// 인데, 이 컨테이너에 설치된 것은 **1194** 뿐이다(`chromium-1194` 와
+// `chromium_headless_shell-1194` 둘 다 있지만 **버전이 다르다**).
+// ②의 `existsSync` 폴백이 그래서 필수다.
+//
+// (첫 판본 주석은 "headless shell 만 설치돼 있다"고 적었는데 사실이 아니었다 —
+//  `chromium-1194` 도 있다. 결론은 그대로 유효하지만 근거가 틀렸었다. 검수관이 잡았다.
+//  **참인 결론 뒤에 틀린 근거를 남기는 것**이 이 저장소가 반복해서 데인 패턴이다.)
 //
 // `undefined` 는 `executablePath` 를 아예 안 준 것과 같게 처리된다 — 소비처 4곳
 // (`browser-checks`·`measure-invariants`·`measure-sky-warm`·`measure-world2`)은

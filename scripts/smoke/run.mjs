@@ -79,13 +79,29 @@ const WATCHED = /^(frontend|backend|scripts|tests)\/|^(vite\.config\.js|vitest\.
  * 직후에는 인덱스가 stale해서 **같은 파일을 시작 시점과 종료 시점에 다르게 읽는다.**
  * 실제로 그 오탐이 한 번 났다(재현되지 않는 FAIL). 가끔 우는 경보는 늘 우는 경보만큼
  * 나쁘다 — 다음에 진짜 오염이 잡혀도 "또 그거겠지"가 되기 때문이다.
+ *
+ * ── `gitLine` 을 쓰지 않는 이유 (2026-07-29 실측으로 발견한 결함) ─────────────
+ * `gitLine` 은 `stdout.trim()` 을 한다. `rev-parse` 같은 단일 값에는 맞지만
+ * `status --porcelain` 에는 **틀린다.** porcelain 은 `XY <경로>` — 상태 2글자 +
+ * 공백이고, 워킹트리만 변경된 파일은 X 가 **공백**이다(`" M scripts/..."`).
+ * `trim()` 이 그 선행 공백을 먹으면 **첫 줄만 3글자가 아니라 2글자 접두사**가 되고,
+ * 뒤따르는 `slice(3)` 이 경로 첫 글자를 잘라먹는다 — `"ripts/smoke/..."` 가 되어
+ * `WATCHED` 에 안 걸린다.
+ *
+ * 결과: **정렬상 첫 줄에 오는 변경은 항상 안 보인다.** 감시 파일이 하나뿐이면
+ * "변경 0건"으로 보고되어 가드가 통째로 무력해진다. 실제로 `scripts/smoke/assemble.mjs`
+ * 를 고친 채 스모크를 돌렸더니 `[-1]` 이 "변경 1건"(config.mjs 만)으로 찍혔다.
+ *
+ * 이 가드는 "에이전트가 워킹트리를 바꿔 측정이 무효가 되는" 사고(이 저장소 2건)를
+ * 잡으라고 만든 것이다. 그 가드가 첫 항목을 못 보고 있었다. 그래서 raw stdout 을 쓴다.
  */
 function trackedChanges() {
   spawnSync('git', ['update-index', '--refresh'], { cwd: ROOT, encoding: 'utf8' });
-  const out = gitLine(['status', '--porcelain']);
-  if (out === null) return null; // git 없음/저장소 아님 — 검사 생략
-  return out.split('\n')
-    .filter((l) => l.trim() && !l.startsWith('??'))
+  const r = spawnSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' });
+  if (r.status !== 0) return null; // git 없음/저장소 아님 — 검사 생략
+  return r.stdout.split('\n')
+    // 접두사 3글자를 온전히 보존해야 하므로 trim 하지 않는다. 빈 꼬리줄은 길이로 거른다.
+    .filter((l) => l.length > 3 && !l.startsWith('??'))
     // porcelain 형식: 2글자 상태 + 공백 + 경로. 이름 변경은 `->` 뒤가 현재 경로.
     .filter((l) => WATCHED.test(l.slice(3).split(' -> ').pop().replace(/^"|"$/g, '')))
     .sort().join('\n');
