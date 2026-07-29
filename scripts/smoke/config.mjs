@@ -6,7 +6,12 @@
 //    본 스크립트는 그 절차의 "실행 보조"(재현 가능한 하네스)일 뿐이다. (§10-3)
 //
 // 경로·뷰포트·페이지 목록·크로미움 인자는 전부 여기에 상수로 고정한다.
-// → 인자 없이 `npm run smoke` 로 언제든 동일 재현.
+//
+// **배포 게이트가 도는 것은 `npm run smoke:vite` 하나다**(`ci.yml` smoke job).
+// `npm run smoke`(baseline)는 frontend직조립 대조군이고 **어떤 배포도 재현하지 않는다** —
+// 이름이 짧아서 그쪽을 돌리면 존재하지 않는 레이아웃을 검사한 PASS 를 받는다.
+// 이 줄이 오래 `npm run smoke` 를 기본 재현 수단으로 안내하고 있었다(검수관 지적 N2).
+// baseline 의 지위는 `assemble.mjs` 헤더 참조.
 
 import path from 'node:path';
 import { existsSync } from 'node:fs';
