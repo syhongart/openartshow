@@ -7,8 +7,8 @@
 // 이 검증이 없으면 한 생성기만 고쳐도 다른 곳은 여전히 옛 값으로 남아
 // 라이브 페이지 간 숫자가 어긋난다.
 
-import { describe, it, expect, beforeAll } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -18,8 +18,25 @@ import { calculateTeamComposition } from '../scripts/lib/devlog-contributors.mjs
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('생성기 일관성 — 개발일지 건수 · 팀 규모', () => {
+  // ── README 를 원상복구한다 (검수관 권고, 2026-07-29) ─────────────────────
+  // 아래 `beforeAll` 은 `build-readme.mjs` 를 돌리는데, 그것이 **추적 파일인
+  // `README.md` 를 덮어쓴다.** `making/*` 은 `.gitignore` 대상이라 무해하지만
+  // README 는 다르다.
+  //
+  // 처음 이 테스트를 넣은 날은 갱신일이 커밋된 값과 같아 diff 가 안 났다. 그래서
+  // 아무도 못 봤다 — **날짜가 바뀌는 다음 날부터** `npm test` 를 돌리기만 해도
+  // 워킹트리가 더러워진다. "발화하는 날에만 죽는" 구조이고, 이 저장소는 오늘
+  // 밸류에이션 cron 에서 정확히 같은 형태를 겪었다.
+  //
+  // 이 저장소의 "에이전트는 워킹트리를 바꾸지 않는다" 규율은 테스트에도 적용된다.
+  let readmeBackup = null;
+  afterAll(() => {
+    if (readmeBackup !== null) writeFileSync(join(ROOT, 'README.md'), readmeBackup, 'utf8');
+  });
+
   // CI 환경에서 생성기 산출물이 없을 수 있으므로, 테스트 시작 전 필요한 생성기를 실행
   beforeAll(() => {
+    readmeBackup = readFileSync(join(ROOT, 'README.md'), 'utf8');
     try {
       execFileSync('node', ['scripts/build-team.mjs'], { cwd: ROOT, stdio: 'pipe' });
     } catch (e) {
