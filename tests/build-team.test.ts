@@ -29,7 +29,7 @@ describe('생성기 일관성 — 개발일지 건수 · 팀 규모', () => {
   // 밸류에이션 cron 에서 정확히 같은 형태를 겪었다.
   //
   // 이 저장소의 "에이전트는 워킹트리를 바꾸지 않는다" 규율은 테스트에도 적용된다.
-  let readmeBackup = null;
+  let readmeBackup: string | null = null;
   afterAll(() => {
     if (readmeBackup !== null) writeFileSync(join(ROOT, 'README.md'), readmeBackup, 'utf8');
   });
