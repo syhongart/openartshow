@@ -85,11 +85,12 @@ export const RATES = {
 /**
  * 활동 개월을 계산한다. joined ~ lastSeen 사이의 YYYY-MM 개수.
  *
- * @param {string} joined YYYY-MM-DD 형식
- * @param {string} lastSeen YYYY-MM-DD 형식
+ * @param {string} joined ISO8601 또는 YYYY-MM-DD 형식
+ * @param {string} lastSeen ISO8601 또는 YYYY-MM-DD 형식
  * @returns {number} 서로 다른 YYYY-MM 개수
  */
 function countActivityMonths(joined, lastSeen) {
+  // ISO8601 또는 YYYY-MM-DD에서 앞 7글자가 YYYY-MM
   const joinedMonth = joined.substring(0, 7); // YYYY-MM
   const lastSeenMonth = lastSeen.substring(0, 7); // YYYY-MM
 
@@ -105,11 +106,12 @@ function countActivityMonths(joined, lastSeen) {
 /**
  * 재직 개월을 계산한다. joined ~ today 의 개월 수 (포함).
  *
- * @param {string} joined YYYY-MM 형식
+ * @param {string} joined YYYY-MM 형식 (ISO8601에서 앞 7글자 추출 후)
  * @param {Date} today 오늘 날짜 객체
  * @returns {number} 재직 개월 수
  */
 function countEmploymentMonths(joined, today) {
+  // joined는 항상 YYYY-MM 형식 (호출자가 substring(0, 7) 처리)
   const [year, month] = joined.split('-').map(Number);
   const todayYear = today.getFullYear();
   const todayMonth = today.getMonth() + 1; // JS month는 0-11, YYYY-MM은 1-12

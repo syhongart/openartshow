@@ -1,4 +1,5 @@
 // scripts/lib/devlog-contributors.mjs
+import { createRequire } from 'node:module';
 // 개발일지 항목의 **역할별 기여 축**. 항목 단위로 역할 참여를 집계한다.
 //
 // ── 왜 신설했나 ──────────────────────────────────────────────────────────
@@ -153,10 +154,6 @@ export const ROLES = [
 /** id → 역할. 소비자가 ROLES를 다시 순회하지 않게. */
 export const BY_ID = new Map([...ROLES].map((r) => [r.id, r]));
 
-// devlog-times: 항목별 커밋 시각 맵
-import { extractDevlogTimes } from './devlog-times.mjs';
-const devlogTimesMap = extractDevlogTimes();
-
 /**
  * DEVLOG 마크다운 전체에서 역할별 기여를 집계한다.
  * 항목 단위로 세므로, 한 항목 안에 같은 역할이 여러 번 나와도 1건이다.
@@ -169,6 +166,18 @@ const devlogTimesMap = extractDevlogTimes();
  *          count=0 인 역할도 joined/lastSeen 은 null
  */
 export function countContributions(md) {
+  // devlog-times: 항목별 커밋 시각 맵 (지연 호출 — 테스트에서 mock 가능)
+  let devlogTimesMap = {};
+  try {
+    // createRequire 로 동적 로드 (ESM 에서 require 사용 가능)
+    const require = createRequire(import.meta.url);
+    const mod = require('./devlog-times.mjs');
+    devlogTimesMap = mod.extractDevlogTimes();
+  } catch (e) {
+    // git 미설치, shallow clone, 또는 모듈 로드 실패 — 빈 맵
+    // 조용히 무시하고 진행 (joined/lastSeen 은 null 이 됨)
+  }
+
   const result = Object.fromEntries(ROLES.map((r) => [r.id, { count: 0, dates: [] }]));
 
   // 항목 단위로 쪼갠다. 정규식은 build-devlog.mjs:22 와 동일.

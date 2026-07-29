@@ -178,17 +178,20 @@ describe('DEVLOG 전량', () => {
     }
   });
 
-  it('결과 날짜가 YYYY-MM-DD 형식이거나 null 이다', () => {
+  it('결과 시각이 ISO8601 또는 YYYY-MM-DD 형식이거나 null 이다', () => {
     const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8');
     const result = countContributions(src);
+    // ISO8601: 2026-07-29T14:32:00Z 또는 날짜만: 2026-07-29
+    const iso8601Re = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
     const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 
     for (const [, data] of Object.entries(result)) {
       if (data.joined !== null) {
-        expect(data.joined).toMatch(dateRe);
+        // ISO8601 또는 날짜만
+        expect(data.joined).toMatch(iso8601Re.test(data.joined) ? iso8601Re : dateRe);
       }
       if (data.lastSeen !== null) {
-        expect(data.lastSeen).toMatch(dateRe);
+        expect(data.lastSeen).toMatch(iso8601Re.test(data.lastSeen) ? iso8601Re : dateRe);
       }
     }
   });
@@ -213,12 +216,13 @@ describe('DEVLOG 전량', () => {
 describe('API — contributionOf', () => {
   // 단건 조회 함수.
 
-  it('특정 역할의 정보를 조회한다', () => {
+  it('픽스처는 git 정보가 없으므로 joined/lastSeen = null', () => {
+    // 픽스처는 git log 정보 없음
     const md = `## 2026-01-01 · 제목\n\n감독이 했다.\n`;
     const info = contributionOf(md, 'director');
     expect(info.count).toBe(1);
-    expect(info.joined).toBe('2026-01-01');
-    expect(info.lastSeen).toBe('2026-01-01');
+    expect(info.joined).toBeNull(); // git 정보 없음
+    expect(info.lastSeen).toBeNull(); // git 정보 없음
   });
 
   it('미등장 역할은 { count: 0, joined: null, lastSeen: null }', () => {
