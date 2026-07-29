@@ -283,3 +283,57 @@ describe('자리비움 — 부재를 성능으로 세지 않는다', () => {
     expect(probes).toContain('frame_ms');
   });
 });
+
+// ── 자리비움 판정은 게이팅보다 앞이다 (검수관 지적 2026-07-29) ────────────────
+// `resumed` 를 게이팅 **뒤**에서 계산하면, 캡이 낮아 복귀 프레임 자체가 걸러지는 경우
+// 그 프레임의 `rawMs`(= 자리를 비운 시간)가 통째로 유실되고 다음 정상 프레임의 작은 값이
+// 자리비움으로 찍힌다. 부재를 안 세는 것이 아니라 **틀리게 세는 것**이다.
+//
+// 원래 코드가 그랬고, 안전했던 이유는 "설정되는 캡이 30fps 하나뿐"이라는 **다른 파일의
+// 상수**에 기대고 있었기 때문이다. 그 전제는 어디에도 안 적혀 있었다.
+describe('자리비움 — 낮은 프레임캡에서도 부재 시간을 정확히 센다', () => {
+  function lowCapKernel() {
+    let hidden = false;
+    const subs: Array<() => void> = [];
+    const probes: Array<[string, number]> = [];
+    const k = new Kernel({
+      render: () => {},
+      raf: () => 0,
+      now: () => 0,
+      capFps: 2,               // 캡 0.5초 — `rawS` 클램프(0.1초)보다 크다
+      probe: (n, v) => { probes.push([n, v]); },
+      doc: {
+        get hidden() { return hidden; },
+        get visibilityState() { return hidden ? 'hidden' : 'visible'; },
+        addEventListener: (_t: string, cb: () => void) => { subs.push(cb); },
+        removeEventListener: () => {},
+      },
+    });
+    return { k, probes, set(v: boolean) { hidden = v; for (const cb of [...subs]) cb(); } };
+  }
+
+  it('복귀 프레임이 게이팅을 뚫고, away_ms 가 실제 부재 시간을 담는다', () => {
+    const { k, probes, set } = lowCapKernel();
+    k.tick(0);               // 첫 프레임(dirty로 통과)
+    probes.length = 0;
+
+    set(true); set(false);   // 30초 자리 비움
+    k.tick(30_000);
+
+    // 게이팅에 걸렸다면 이 프레임은 통째로 없다 — probe 자체가 안 불린다.
+    expect(probes.map((p) => p[0])).toEqual(['away_ms']);
+    // 그리고 값이 실제 부재 시간이어야 한다. 다음 프레임의 작은 값이 아니다.
+    expect(probes[0][1]).toBeCloseTo(30_000, 0);
+  });
+
+  it('평상시에는 캡이 그대로 걸린다 — 뚫는 것은 복귀 프레임 하나뿐', () => {
+    const { k, probes, set } = lowCapKernel();
+    k.tick(0);
+    set(true); set(false);
+    k.tick(30_000);          // 복귀 프레임(뚫음) — accum 이 여기서 비워진다
+    probes.length = 0;
+
+    k.tick(30_016);          // 16ms 뒤: 0.5초 예산에 한참 못 미친다
+    expect(probes).toEqual([]);
+  });
+});

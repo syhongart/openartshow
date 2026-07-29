@@ -160,17 +160,29 @@ export class Kernel {
     this.accum += rawS;
 
     const hidden = this.isHidden();
+    // 자리비움에서 돌아온 첫 프레임인가. 한 번 소비하면 내린다.
+    //
+    // **게이팅보다 앞에서 판정하고, 게이팅을 뚫는다.** 여기서 걸러지면 이 프레임의
+    // `rawMs`(= 자리를 비운 시간)가 통째로 유실되고, 다음 정상 프레임의 작은 값이
+    // 자리비움으로 찍힌다 — 부재를 안 세는 것이 아니라 **틀리게 세는 것**이 된다.
+    //
+    // 걸러질 조건은 `capS > 0.1초`(= 캡 10fps 미만)이고 지금 설정되는 캡은
+    // `DESKTOP_CAP_FPS=30` 하나뿐이라 도달 불가능하다. 그래도 막아 둔다 — 도달 불가능이
+    // 코드 어디에도 안 적힌 채 **다른 파일의 상수**에 기대고 있었고, 저사양 대응으로 캡을
+    // 내리는 날 조용히 깨질 자리였다(검수관 지적 2026-07-29).
+    //
+    // 뚫는 것이 옳기도 하다. 복귀 프레임은 어차피 그려야 한다 — 화면이 갱신돼야 한다.
+    const resumed = this.awayPending && !hidden;
+    if (resumed) this.awayPending = false;
+
     const budget = hidden ? this.hiddenS : this.capS;
-    if (budget > 0 && this.accum < budget && !this.dirty) return; // 게이팅 — 이번 프레임은 건너뛴다
+    // 게이팅 — 이번 프레임은 건너뛴다
+    if (budget > 0 && this.accum < budget && !this.dirty && !resumed) return;
 
     const dt = this.accum;
     this.accum = 0;
     this.dirty = false;
     this.frame++;
-
-    // 자리비움에서 돌아온 첫 프레임인가. 한 번 소비하면 내린다.
-    const resumed = this.awayPending && !hidden;
-    if (resumed) this.awayPending = false;
 
     const ctx: FrameCtx = {
       dt,
