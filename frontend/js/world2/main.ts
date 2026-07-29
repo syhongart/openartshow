@@ -447,6 +447,25 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   (window as unknown as Record<string, unknown>).__world2 = {
     /** 부팅 단계별 경과(ms) */
     timeline,
+
+    // ── 조작 훅 — **게이트가 세션을 시뮬할 수 있어야 한다** ──────────────────
+    // world1 CSV(감독 실기기 76.5초)가 보여준 것: 파이프라인이 60→227 로 단조증가했고,
+    // 그중 상당수가 **아무것도 새로 로드하지 않은 채 카메라만 돌렸을 때** 생겼다.
+    //
+    //   t=40~65  yaw 90 고정   pipe 191 정체   fps 60
+    //   t=66.7   yaw 90→126    pipe 191→200    fps 29
+    //   t=67.2   yaw →171      pipe →209       fps 10
+    //
+    // 즉 **회전은 스트리밍과 독립된 증식 축**이다. 게이트가 걷기만 시뮬하면 이 축을
+    // 통째로 놓친다. 그런데 헤드리스는 pointer lock 을 못 걸어서 `mousemove` 경로가
+    // 죽어 있고(`document.pointerLockElement === canvas` 조건), 터치 조이스틱은 좌표
+    // 계산이 얽혀 있다. 그래서 여기에 직접 연다.
+    //
+    // 계측 훅과 같은 성격이다 — behind-flag 페이지 전용이고 라이브에는 이 객체 자체가
+    // 없다. **잴 수 없는 축은 지켜지지 않는다.**
+    look: (dYaw: number, dPitch: number) => player.lookBy(dYaw, dPitch),
+    /** 이동 축(-1..1). 프레임이 돌아야 실제로 움직인다 — 시간 기반이다 */
+    move: (x: number, z: number) => player.setAxes(x, z),
     /** 현재 개수 스냅샷 — 불변식 검사는 이 값을 프레임 간 비교해 판정한다 */
     stats: () => ({
       backend: adapter!.backend,
