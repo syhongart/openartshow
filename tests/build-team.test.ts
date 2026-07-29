@@ -7,16 +7,38 @@
 // 이 검증이 없으면 한 생성기만 고쳐도 다른 곳은 여전히 옛 값으로 남아
 // 라이브 페이지 간 숫자가 어긋난다.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { countEntries } from '../scripts/lib/devlog-entries.mjs';
 import { calculateTeamComposition } from '../scripts/lib/devlog-contributors.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('생성기 일관성 — 개발일지 건수 · 팀 규모', () => {
+  // CI 환경에서 생성기 산출물이 없을 수 있으므로, 테스트 시작 전 필요한 생성기를 실행
+  beforeAll(() => {
+    try {
+      execFileSync('node', ['scripts/build-team.mjs'], { cwd: ROOT, stdio: 'pipe' });
+    } catch (e) {
+      console.error('build-team.mjs 실행 실패:', e);
+      throw e;
+    }
+    try {
+      execFileSync('node', ['scripts/build-making.mjs'], { cwd: ROOT, stdio: 'pipe' });
+    } catch (e) {
+      console.error('build-making.mjs 실행 실패:', e);
+      throw e;
+    }
+    try {
+      execFileSync('node', ['scripts/build-readme.mjs'], { cwd: ROOT, stdio: 'pipe' });
+    } catch (e) {
+      console.error('build-readme.mjs 실행 실패:', e);
+      throw e;
+    }
+  });
   const devlogMd = readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8');
   const expectedDevlogCount = countEntries(devlogMd);
   const expectedTeamComposition = calculateTeamComposition(devlogMd);

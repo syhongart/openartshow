@@ -18,8 +18,6 @@ const devlogSrc = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8');
 const devlogCount = countEntries(devlogSrc); // SSOT
 const teamComposition = calculateTeamComposition(devlogSrc); // SSOT
 
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
 // 고유 CSS (허브는 간단한 카드만)
 const CSS = `
 .hub-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:30px 0}

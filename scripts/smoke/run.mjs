@@ -169,6 +169,14 @@ function checkGenerators() {
  * baseline 모드는 `cp -r frontend/. $OUT/app/` 라 구성요소가 겹쳐(루트 html 4개가
  * frontend 사본과 중복) 등식이 성립하지 않는다. 그쪽은 배포를 재현하지 않는
  * 대조군이므로 현재값만 INFO 로 남긴다 — **판정하지 않는 것을 판정한 척하지 않는다.**
+ *
+ * ── 검사2의 사각: 자기참조 항등식 ─────────────────────────────────────
+ * 검사2는 `parts.devlog` 를 `_site` 로 복사되는 **바로 그 원본 디렉터리**에서 잰다.
+ * 그래서 생성기가 콘텐츠를 **아예 안 만들면** 양변이 함께 줄어 `diff=0` 이 되고
+ * 검사2는 PASS 로 남는다. 그 사고는 **검사3(핵심 파일 존재)이 잡는다**
+ * (검수관 뮤테이션 실측: 스텁 생성 스킵 → 검사2 PASS · 검사3 FAIL · 전체 FAIL).
+ * 즉 검사2의 검출 범위는 "`cp` 단계에서 빠지는 사고" 에 한정된다.
+ * `config.mjs` 의 `REQUIRED_FILES_COMMON` 목록이 줄어들면 검사2는 절대 못 잡는다.
  */
 function checkManifestCount() {
   const n = countFiles(SITE_DIR);
