@@ -1,8 +1,10 @@
 name: ci
-# 회귀 안전망 — lint·typecheck·단위테스트를 PR/푸시마다 자동 실행.
-# (헤드리스 렌더 스모크는 브라우저 설치가 무거워 별도 스텝으로 추가 예정 — A-3.)
-# 2스텝 롤인: 초기엔 독립·정보용(배포 무영향). 안정화 후 deploy.yml에 needs:ci로
+# 회귀 안전망 — lint·typecheck·단위테스트·헤드리스 렌더 스모크를 PR/푸시마다 자동 실행.
+#
+# 2스텝 롤인: 초기엔 독립·정보용(배포 무영향). 안정화 후 deploy.yml에 needs로
 # 선행 게이트화한다(그 변경은 배포 구조 변경이라 §10-4 cross-review).
+# 현재 위치 — **1스텝(독립·정보용).** 이 워크플로가 실패해도 배포는 나간다.
+# 다음 단계(#127)에서 `workflow_call` + deploy.yml `needs: verify` 로 결선한다.
 on:
   push:
     branches: [main]
@@ -34,3 +36,49 @@ jobs:
         run: npm run check:refs
       - name: Unit tests (vitest)
         run: npm test
+
+  # ── 헤드리스 렌더 스모크 ────────────────────────────────────────────────
+  # verify 와 **병렬**로 돈다(의존 없음). 이 job 이 보는 것은 verify 가 못 보는 축이다 —
+  # 실제 `_site` 조립·부팅·CSP·자기완결·가로넘침·성능 불변식.
+  #
+  # 조립 레시피는 `scripts/smoke/assemble.mjs` 가 deploy.yml 과 1:1 로 재현한다.
+  # 그 미러링이 어긋나 있으면 "스모크 PASS + 배포 실패" 가 성립한다(2026-07-29 실제
+  # 사례 — `cp ... || true` 로 실패를 삼키고 있었다). 두 파일은 함께 갱신할 것.
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - run: npm ci
+      # 브라우저 바이너리 캐시. 키는 lockfile 해시 — playwright 버전이 바뀌면 자동으로
+      # 미스가 나야 하고, lockfile 이 곧 그 버전의 SSOT 다(버전 문자열을 따로 적어두면
+      # 값 미러링이 된다).
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # 캐시 히트여도 apt 의존은 러너에 남지 않는다 — 그 부분만 따로 건다.
+      - name: Install chromium (cache miss)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install chromium system deps (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      # SMOKE_CHROMIUM_EXECUTABLE 을 **주지 않는다.** config.mjs 의 해석 순서상
+      # env 없음 → 개발 컨테이너 경로 없음 → undefined → playwright 자체 해석으로
+      # 방금 설치한 브라우저를 쓴다. 러너에 절대경로를 박으면 그게 다음 하드코딩이 된다.
+      #
+      # SMOKE_PERF_GATES=observe — [7][8] 성능 게이트를 **관측 모드**로 돌린다.
+      # 러너에서 한 번도 안 돌려본 게이트라, 1차부터 차단으로 걸면 빨간불의 원인이
+      # "코드 회귀"인지 "게이트의 러너 부적합"인지 못 가른다(검수관 조건 3).
+      # 10회 연속 관측에서 base.geo/base.tex 분산 0 을 확인한 뒤 enforce 로 승격한다.
+      # **관측은 면제가 아니라 데이터 수집이다** — 승격 없이 이 줄이 남으면 그때부터
+      # 장식이 된다.
+      - name: Headless smoke (vite 조립)
+        env:
+          SMOKE_PERF_GATES: observe
+        run: npm run smoke:vite

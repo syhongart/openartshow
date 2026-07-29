@@ -369,14 +369,39 @@ function printReport() {
  *
  * 게이트가 **예외로 죽으면 그것도 FAIL 이다.** 못 잰 것을 통과로 적지 않는다.
  * 로그는 전부 삼키고 판정만 리포트에 남긴다 — 스모크 출력이 수백 줄이 되면 아무도 안 읽는다.
+ *
+ * ── `SMOKE_PERF_GATES` — 러너 롤인용 관측 모드 (검수관 조건 3) ────────────────
+ * `enforce`(기본) FAIL 이 스모크를 떨어뜨린다. 로컬·최종 게이트는 이 모드다.
+ * `observe`       돌리되 판정을 INFO 로 적는다 — 종료코드에 영향 없음.
+ * `off`           아예 안 돈다.
+ *
+ * **왜 observe 가 필요한가**: 이 둘은 성능 게이트라 러너 성능 편차에 거짓 FAIL 위험이
+ * 있는데, **아직 러너에서 한 번도 안 돌려봤다.** 검수관 지적 — 1차부터 차단으로 걸면
+ * 배포가 막힌 원인이 "코드 회귀"인지 "게이트 자체의 러너 부적합"인지 못 가른다.
+ * 10회 연속 observe 관측에서 `base.geo`/`base.tex` 분산이 0 임을 확인한 뒤 enforce 로
+ * 승격한다. 그 전까지 observe 는 **데이터를 모으는 장치이지 면제가 아니다.**
+ *
+ * `continue-on-error` 를 쓰지 않는 이유: 그것은 job 전체를 삼켜 필수 게이트 실패까지
+ * 가린다. 여기서는 [7][8] 두 항목만 정확히 관측으로 내린다.
  */
+const PERF_GATE_MODES = ['enforce', 'observe', 'off'];
+const PERF_GATES = (process.env.SMOKE_PERF_GATES || 'enforce').toLowerCase();
+if (!PERF_GATE_MODES.includes(PERF_GATES)) {
+  // 오타를 조용히 기본값으로 흡수하면 "관측인 줄 알았는데 차단"(또는 그 반대)이 된다.
+  console.error(`SMOKE_PERF_GATES 값이 잘못됐다: ${JSON.stringify(process.env.SMOKE_PERF_GATES)} — ${PERF_GATE_MODES.join('|')} 중 하나여야 한다.`);
+  process.exit(2);
+}
+// observe 에서는 실패를 INFO 로 적어 종료코드에서 뺀다. PASS 는 어느 모드에서나 PASS.
+const perfStatus = (pass) => (pass ? 'PASS' : (PERF_GATES === 'observe' ? 'INFO' : 'FAIL'));
+const perfLabel = (s) => (PERF_GATES === 'observe' ? `${s}(관측)` : s);
+
 async function runPerfGates(origin, browser) {
   const quiet = () => {};
   try {
     const { runInvariants } = await import('./measure-invariants.mjs');
     const r = await runInvariants({ browser, origin, basePath: BASE_PATH, log: quiet });
     record(
-      7, '개수 불변식(세션)', r.pass ? 'PASS' : 'FAIL',
+      7, perfLabel('개수 불변식(세션)'), perfStatus(r.pass),
       r.pass
         ? `회전12·주행6·복귀6 내내 상수(geo ${r.base?.geo} tex ${r.base?.tex} pipe ${r.base?.pipe})`
         : `증식 — geo +${r.maxGeo} tex +${r.maxTex} pipe +${r.maxPipe}`
@@ -384,7 +409,10 @@ async function runPerfGates(origin, browser) {
         + ' → `npm run measure:invariants` 로 구간별 표를 본다',
     );
   } catch (e) {
-    record(7, '개수 불변식(세션)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+    // **예외는 observe 에서도 FAIL 이다.** "값이 나빴다"(성능 편차 — 관측 대상)와
+    // "아예 못 쟀다"(브라우저 조달 실패·스크립트 오류)는 다른 일이다. 후자는 단계 2가
+    // 확인하려는 바로 그것이므로 빨간불이어야 한다. 못 잰 것은 통과가 아니다.
+    record(7, perfLabel('개수 불변식(세션)'), 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
   try {
     const { runSkyWarm } = await import('./measure-sky-warm.mjs');
@@ -392,14 +420,14 @@ async function runPerfGates(origin, browser) {
     // 단독 실행에 맡긴다 — 스모크에서 3분을 더 쓰지 않는다.
     const r = await runSkyWarm({ browser, origin, basePath: BASE_PATH, laps: 1, log: quiet });
     record(
-      8, '하늘 예열(첫 등장)', r.pass ? 'PASS' : 'FAIL',
+      8, perfLabel('하늘 예열(첫 등장)'), perfStatus(r.pass),
       r.pass
         ? '시간대×날씨 12조합 + fx·번개 순회에 증가 0'
         : `첫 등장 비용 잔존 — geo/tex 합 +${r.lap1}`
         + ' → `npm run measure:sky-warm` 으로 2바퀴 돌려 원인을 가른다',
     );
   } catch (e) {
-    record(8, '하늘 예열(첫 등장)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+    record(8, perfLabel('하늘 예열(첫 등장)'), 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
 }
 
@@ -460,7 +488,7 @@ async function main() {
     // 7/8 — 성능 불변식. **같은 서버·같은 브라우저를 재사용한다**(감독 지시로 스모크에
     // 묶었다). 각자 vite 빌드를 다시 하면 스모크가 3배로 길어지고, 그 시간이 곧
     // "게이트를 안 돌리는 이유"가 된다.
-    if (IS_VITE) await runPerfGates(srv.origin, browser);
+    if (IS_VITE && PERF_GATES !== 'off') await runPerfGates(srv.origin, browser);
   } finally {
     if (browser) await browser.close().catch(() => {});
     await srv.close().catch(() => {});
