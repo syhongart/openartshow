@@ -259,7 +259,10 @@ export function makeBadge(doc: Document | null): { set(t: string): void; remove(
   // 인라인 스타일을 쓴다. 실험이 CSS 파일을 건드리면 그 자국이 남고, 목록에서 한 줄을
   // 지우는 것으로 사라진다는 규약이 깨진다.
   el.style.cssText = [
-    'position:fixed', 'left:8px', 'bottom:8px', 'z-index:50',
+        // z-index 7 — 조이스틱(6) 위, 성능 HUD(8) 아래. 50 으로 두었더니 입장
+    // 오버레이(10)까지 덮었다. \ 이라 입력은 안 막지만,
+    // 실험 표시가 본체 UI 를 가리는 것은 그 자체로 판정을 방해한다.
+    'position:fixed', 'left:8px', 'bottom:8px', 'z-index:7',
     'padding:6px 10px', 'border-radius:8px',
     'background:rgba(18,20,24,.82)', 'color:#e8eaee',
     'font:12px/1.4 system-ui,sans-serif', 'pointer-events:none',
