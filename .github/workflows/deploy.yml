@@ -105,6 +105,16 @@ jobs:
   verify-live:
     needs: deploy
     if: github.ref == 'refs/heads/main'
+    # **최소권한.** 워크플로 레벨은 `contents: write` 지만 이 job 이 하는 일은
+    # checkout · npm ci · 브라우저로 URL 열기뿐이다 — 쓰기가 전혀 필요 없다.
+    # write 가 필요한 것은 `actions-gh-pages` 가 있는 `deploy` job 하나다(검수관 조건 2,
+    # `ci.yml` 이 같은 이유로 read 로 좁힌 전례가 있다).
+    #
+    # 이 한 줄이 "아무것도 바꾸지 않고 관찰만 한다"는 이 job 의 성격에 대한 **구조적
+    # 보증**이기도 하다 — 관측 데이터를 저장소에 커밋해 쌓는 설계를 원천 차단한다
+    # (그 경로는 자기 트리거 루프를 만든다: 배포 → verify-live → 커밋 → 배포 → …).
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     # 스크립트 내부 마감(11분)이 **항상 먼저 이겨야** 리포트가 나온다. 러너가 job 을
     # 죽이면 페이지별 근거가 한 줄도 안 남는다 — 마감 11분 + 최대 라운드 5분 + 셋업 3분

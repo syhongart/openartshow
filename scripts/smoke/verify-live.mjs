@@ -54,6 +54,7 @@
 //       SMOKE_LIVE_BASE_URL=http://127.0.0.1:PORT/openartshow \
 //       SMOKE_LIVE_ROUNDS=1 npm run smoke:live                    (로컬 로직 검증)
 
+import { appendFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 import { BASE_URL as SITE_BASE_URL } from '../site-url.mjs';
 import {
@@ -74,6 +75,13 @@ const BASE_URL = (ENV_BASE || SITE_BASE_URL).replace(/\/$/, '');
 // "배포 실패"가 아니라 "아직 안 올라옴"일 수 있고, 둘을 섞으면 가끔 우는 경보가 된다.
 const ROUNDS = Number(process.env.SMOKE_LIVE_ROUNDS || 6);
 const ROUND_WAIT_MS = Number(process.env.SMOKE_LIVE_ROUND_WAIT_MS || 30_000);
+// 판본 폴링(1단계)은 **라운드당 비용이 대기시간뿐**이라 페이지 스윕이 끼던 때보다
+// 실질 경과가 3배 짧아진다 — 6라운드면 2.5분이고, 마감 11분 중 23%만 쓰고 포기한다
+// (검수관 조건 1, N1 수정의 부작용). Pages 반영이 빌드 큐에 밀리면 5분을 넘기는 일이
+// 드물지 않다. 그때 뜨는 `stale` FAIL 은 라이브가 멀쩡한데 우는 경보이고, 하필
+// **첫 10회가 승격 관측 표본**이라 오탐이 데이터를 오염시킨다.
+// 16라운드 = 8분. 나머지 3분이 페이지 스윕·재시도 몫이다.
+const SHA_ROUNDS = Number(process.env.SMOKE_LIVE_SHA_ROUNDS || 16);
 // **`timeout-minutes` 를 판정 수단으로 쓰지 않는다.** 러너가 job 을 죽이면 리포트가
 // 통째로 안 나와 페이지별 근거가 한 줄도 안 남는다 — "못 잰 것"이 로그에서 사라진다.
 // 그래서 스크립트가 스스로 마감을 지키고, 마감이 와도 **리포트는 반드시 출력한다**.
@@ -88,6 +96,8 @@ const EXPECT_SHA = process.env.GITHUB_SHA || '';
 const IS_CI = !!process.env.CI;
 
 const started = Date.now();
+// 판본이 몇 라운드·몇 초에 확정됐는가 — 폴링 예산의 유일한 실측 근거(관측 지표 ②).
+let shaSettledAt = null;
 const log = (s) => console.log(s);
 
 // 도달 실패(네트워크·프록시·DNS)와 "라이브가 깨짐"을 가르는 표지.
@@ -258,7 +268,7 @@ function report(results, specs, sha) {
   if (bad.length) {
     // 부분 도달 실패를 breakage 로 뭉뚱그리지 않는다(검수관 R13).
     const parts = [
-      `깨짐 ${bad.length - unreach.length - missed.length}`,
+      bad.length - unreach.length - missed.length ? `깨짐 ${bad.length - unreach.length - missed.length}` : '',
       unreach.length ? `도달 실패 ${unreach.length}` : '',
       missed.length ? `미측정 ${missed.length}` : '',
     ].filter(Boolean).join(' · ');
@@ -267,6 +277,37 @@ function report(results, specs, sha) {
   }
   log(`판정: PASS — ${results.length}건 200 · 자산 실패 0 · 콘솔 에러 0${sha.state === 'match' ? ' · 판본 일치' : ''}`);
   return true;
+}
+
+/**
+ * 관측 지표를 job summary 에 한 줄로 남긴다 — **run 목록에서 열지 않고 보인다.**
+ *
+ * 승격 관측(태스크 #128)이 필요로 하는 4종이 여기 다 들어간다:
+ *   ①최종 판정 ②판본 확정 라운드·초 ③④ 상태 ④총 소요
+ *
+ * 저장소에 파일로 누적하지 않는다(검수관 판정). 그 경로는 이 job 에 쓰기 권한을
+ * 요구해 "관찰만 한다"는 성격을 없애고, push 가 `deploy.yml` 을 다시 트리거해
+ * **자기 트리거 루프**(배포 → verify-live → 커밋 → 배포 …)를 만든다. 게다가
+ * "생성물은 추적하지 않는다"는 이 저장소의 구조 규율에도 어긋난다.
+ * 리포트 전문은 Actions 로그에 남고, 관측 기간(14일)보다 보존이 길다.
+ */
+function writeSummary(results, sha, ok) {
+  const file = process.env.GITHUB_STEP_SUMMARY;
+  if (!file) return;
+  const secs = Math.round((Date.now() - started) / 1000);
+  const bad = results.filter((r) => !r.ok);
+  const verdict = ok ? 'PASS' : (bad.length === results.length && results.every((r) => r.unreachable) ? '판정 불가' : 'FAIL');
+  const rows = [
+    `| 최종 판정 | **${verdict}** |`,
+    `| 배포 판본(④) | ${sha.state}${sha.state === 'match' ? ` (${String(sha.live).slice(0, 7)})` : ''} |`,
+    `| 판본 확정 | ${shaSettledAt ?? '—'} |`,
+    `| 총 소요 | ${secs}초 |`,
+    `| 페이지 | ${results.length - bad.length}/${results.length} 통과 |`,
+  ];
+  try {
+    appendFileSync(file,
+      `### 라이브 검증 (관측 #128)\n\n| 항목 | 값 |\n|---|---|\n${rows.join('\n')}\n\n`);
+  } catch { /* summary 를 못 써도 판정에는 영향이 없다 */ }
 }
 
 async function main() {
@@ -294,11 +335,16 @@ async function main() {
     // 그래서 판본이 `match` 가 된 **이후에 수집한 결과만** 유효 표본으로 쓴다.
     // 재시도 좁히기는 "같은 판본 안에서"만 성립한다.
     if (EXPECT_SHA) {
-      for (let round = 1; round <= ROUNDS; round++) {
+      for (let round = 1; round <= SHA_ROUNDS; round++) {
         sha = await checkDeploySha(browser);
-        if (sha.state === 'match') { log(`판본 확정 — ${sha.live.slice(0, 7)} (라운드 ${round})`); break; }
-        if (round === ROUNDS || outOfTime()) break;
-        log(`라운드 ${round}/${ROUNDS} — 판본 ${sha.state} → ${ROUND_WAIT_MS / 1000}초 후 재확인(Pages 반영 대기)`);
+        if (sha.state === 'match') {
+          // 이 값이 폴링 예산의 유일한 실측 근거다 — 관측 지표 ②(태스크 #128).
+          shaSettledAt = `라운드 ${round}/${SHA_ROUNDS}, ${Math.round((Date.now() - started) / 1000)}초`;
+          log(`판본 확정 — ${sha.live.slice(0, 7)} (${shaSettledAt})`);
+          break;
+        }
+        if (round === SHA_ROUNDS || outOfTime()) break;
+        log(`라운드 ${round}/${SHA_ROUNDS} — 판본 ${sha.state} → ${ROUND_WAIT_MS / 1000}초 후 재확인(Pages 반영 대기)`);
         await wait();
       }
     }
@@ -327,7 +373,9 @@ async function main() {
   } finally {
     if (browser) await browser.close().catch(() => {});
   }
-  process.exit(report(results, specs, sha) ? 0 : 1);
+  const ok = report(results, specs, sha);
+  writeSummary(results, sha, ok);
+  process.exit(ok ? 0 : 1);
 }
 
 main().catch((e) => {

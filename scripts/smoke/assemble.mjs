@@ -57,7 +57,7 @@ rm -rf "$OUT" && mkdir -p "$OUT"
 cp -r dist/.          "$OUT/"
 cp -r devlog team valuation "$OUT/"
 cp sitemap.xml robots.txt "$OUT/"
-printf '%s\\n' "$(git rev-parse HEAD)" > "$OUT/$DEPLOY_SHA_NAME"
+printf '%s\\n' "$(git rev-parse HEAD)" > "$OUT/$DEPLOY_SHA_FILE"
 touch "$OUT/.nojekyll"
 `;
 
@@ -107,7 +107,7 @@ export function assembleSiteVite(targetDir = SITE_DIR) {
   execFileSync('bash', ['-c', ASSEMBLE_VITE_SH], {
     cwd: ROOT,
     stdio: 'pipe',
-    env: { ...process.env, OUT: targetDir, DEPLOY_SHA_NAME: DEPLOY_SHA_FILE },
+    env: { ...process.env, OUT: targetDir, DEPLOY_SHA_FILE: DEPLOY_SHA_FILE },
   });
 }
 
