@@ -12,7 +12,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  mountFeatures, combineDrawGroupKey, collectDiagnostics,
+  mountFeatures, combineDrawGroupKey, collectDiagnostics, prewarmFeatures,
   type Feature, type FeatureEnv, type FeatureInstance,
 } from '../frontend/js/world2/features/types.js';
 import type { System } from '../frontend/js/world2/kernel.js';
@@ -132,28 +132,88 @@ describe('collectDiagnostics — 진단도 기능이 스스로 낸다', () => {
   });
 });
 
+// ── 부팅 예열 ────────────────────────────────────────────────────────────────
+// 예열은 "숨은 것을 잠시 켜고 한 프레임 그린다"이다. 켜는 것보다 **되돌리는 것**이
+// 중요하다 — 안 되돌리면 날씨 레이어가 전부 보이는 하늘로 세션이 시작되고, 그건 예열을
+// 안 한 것보다 나쁘다.
+describe('prewarmFeatures — 예열 자세와 원상복구', () => {
+  it('예열을 내놓은 기능만 켜고, 반환 함수가 전부 되돌린다', () => {
+    const log: string[] = [];
+    const m = mountFeatures([
+      feature('sky', { prewarm: () => { log.push('sky:on'); return () => log.push('sky:off'); } }),
+      feature('ocean', {}), // 예열을 안 내놓는 기능 — 건드리지 않는다
+      feature('npc', { prewarm: () => { log.push('npc:on'); return () => log.push('npc:off'); } }),
+    ], env);
+
+    const undo = prewarmFeatures(m);
+    expect(log).toEqual(['sky:on', 'npc:on']); // 렌더는 이 시점에 일어난다
+    undo();
+    expect(log).toEqual(['sky:on', 'npc:on', 'sky:off', 'npc:off']);
+  });
+
+  it('되돌릴 것이 없는 예열(반환 없음)도 받는다', () => {
+    let on = 0;
+    const m = mountFeatures([feature('x', { prewarm: () => { on++; } })], env);
+    const undo = prewarmFeatures(m);
+    expect(on).toBe(1);
+    expect(() => undo()).not.toThrow(); // 되돌릴 것이 없을 뿐 실패가 아니다
+  });
+
+  it('한 기능의 예열이 던져도 나머지는 켜진다 — 예열은 최적화이지 정합성이 아니다', () => {
+    const log: string[] = [];
+    const m = mountFeatures([
+      feature('bad', { prewarm: () => { throw new Error('x'); } }),
+      feature('good', { prewarm: () => { log.push('on'); return () => log.push('off'); } }),
+    ], env);
+    const undo = prewarmFeatures(m);
+    expect(log).toEqual(['on']);
+    undo();
+    expect(log).toEqual(['on', 'off']);
+  });
+
+  it('한 기능의 복구가 던져도 나머지는 되돌아온다', () => {
+    // 여기가 이 함수에서 제일 위험한 지점이다. 복구를 한 덩어리로 묶으면 첫 실패에서
+    // 멈춰, 그 뒤 기능들이 **켜진 채로** 세션에 들어간다.
+    const log: string[] = [];
+    const m = mountFeatures([
+      feature('bad', { prewarm: () => () => { throw new Error('x'); } }),
+      feature('good', { prewarm: () => () => log.push('off') }),
+    ], env);
+    prewarmFeatures(m)();
+    expect(log).toEqual(['off']);
+  });
+});
+
 // ── 이 파일의 결론 ───────────────────────────────────────────────────────────
 // 아래 셋이 이 구조의 약속이고, 위 테스트가 전부 그것을 검사한다.
 describe('약속: 기능을 빼면 그 기능에 관한 모든 것이 함께 빠진다', () => {
+  let warmed = 0;
   const skyLike: Feature = feature('sky', {
     system: sys('sky'),
     diagnostics: () => ({ time: 'night', weather: 'rain' }),
     drawGroupKey: () => 'night|rain',
+    prewarm: () => { warmed++; },
   });
   const oceanLike: Feature = feature('ocean', { system: sys('ocean') });
 
-  it('켰을 때 — System·진단·판정 키가 모두 나타난다', () => {
+  it('켰을 때 — System·진단·판정 키·예열이 모두 나타난다', () => {
+    warmed = 0;
     const m = mountFeatures([skyLike, oceanLike], env);
     expect(m.map((x) => x.instance.system?.name)).toEqual(['sky', 'ocean']);
     expect(Object.keys(collectDiagnostics(m))).toEqual(['sky']);
     expect(combineDrawGroupKey(m)).toBe('sky=night|rain');
+    prewarmFeatures(m);
+    expect(warmed).toBe(1);
   });
 
-  it('뺐을 때 — 셋 다 함께 사라지고, 남은 기능은 그대로 돈다', () => {
+  it('뺐을 때 — 넷 다 함께 사라지고, 남은 기능은 그대로 돈다', () => {
+    warmed = 0;
     const m = mountFeatures([oceanLike], env); // 목록에서 sky 한 줄을 지운 것과 같다
     expect(m.map((x) => x.instance.system?.name)).toEqual(['ocean']);
     expect(collectDiagnostics(m)).toEqual({});      // 진단에서 사라짐
     expect(combineDrawGroupKey(m)).toBe('');        // 판정 키에서 사라짐 (null 아님 — 정상 그룹)
+    prewarmFeatures(m);
+    expect(warmed).toBe(0);                         // 예열에서도 사라짐
   });
 
   it('전부 뺐을 때 — 조립이 여전히 성립한다(코어만으로 월드가 돈다)', () => {

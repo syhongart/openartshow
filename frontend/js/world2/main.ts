@@ -22,7 +22,7 @@ import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
 import {
-  FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics,
+  FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics, prewarmFeatures,
   type MountedFeature,
 } from './features/index.js';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
@@ -289,11 +289,31 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 슬롯이 0 스케일이어도 InstancedMesh는 렌더 목록에 오르므로 파이프라인이 컴파일된다.
         // (`visible=false`를 쓰지 않는 이유가 이것이다.) 몇 프레임 돌려 그 비용을 부팅에
         // 몰아넣는다 — 세션 중에 나면 그게 바로 스파이크다.
-        for (let i = 0; i < 3; i++) {
-          adapter!.beginFrame();
-          adapter!.render(scene, camera);
-          report((i + 1) / 3);
-          await yieldFrame();
+        //
+        // ── 그런데 그것만으로는 "지금 보이는 것"만 구웠다 ────────────────────
+        // 조건부로만 등장하는 것은 여전히 안 구워진 채 남는다. 하늘이 그랬다 — 비·눈·
+        // 별·오로라를 부팅 때 다 만들어 두고도 `visible=false`라 렌더 목록에 안 올랐고,
+        // three의 `info.memory`는 **처음 그릴 때** 오르므로 GPU에는 아무것도 없었다.
+        //
+        // 헤드리스 실측(2026-07-29): 시간대×날씨 12조합을 두 바퀴 돌리면 **1바퀴에서만**
+        // geometry +4 · texture +4 · pipeline +3이 오르고 2바퀴는 전부 0이었다. 증식이
+        // 아니라 첫 등장 비용이라는 서명이다. 감독 실기기에서도 같은 계단이 낮→밤→천둥
+        // 구간에 났다.
+        //
+        // 그래서 예열 프레임 동안 숨은 것을 잠시 켠다. **무엇을 켤지는 기능이 안다** —
+        // 여기에 기능별 분기가 없다.
+        const undoPrewarm = prewarmFeatures(features);
+        try {
+          for (let i = 0; i < 3; i++) {
+            adapter!.beginFrame();
+            adapter!.render(scene, camera);
+            report((i + 1) / 3);
+            await yieldFrame();
+          }
+        } finally {
+          // 예열이 도중에 던져도 되돌린다. 안 되돌리면 날씨 레이어가 전부 보이는
+          // 하늘로 세션이 시작된다 — 예열을 안 한 것보다 나쁘다.
+          undoPrewarm();
         }
       },
 

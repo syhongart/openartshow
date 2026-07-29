@@ -86,6 +86,20 @@ export interface FeatureInstance {
    */
   drawGroupKey?(): string | null;
 
+  /**
+   * 부팅 예열에 참여한다 — **평소 숨어 있는 것을 잠시 보이게** 만든다.
+   *
+   * 예열 프레임은 "지금 씬에 그려지는 것"만 굽는다. 그래서 조건부로만 등장하는 것
+   * (날씨 레이어처럼)은 예열을 통과해도 여전히 안 구워진 채 남고, 세션 중 처음 켜지는
+   * 순간에 지오·텍스처·파이프라인이 한꺼번에 생긴다. 그게 곧 히칭이다.
+   *
+   * 무엇이 숨어 있는지는 **기능 자신만 안다.** 조립부가 세면 레이어를 하나 추가할 때마다
+   * 조용히 빠진다. 그래서 이 계약이 여기 있다.
+   *
+   * 반환한 함수가 원상복구다. 되돌릴 것이 없으면 아무것도 반환하지 않아도 된다.
+   */
+  prewarm?(): (() => void) | void;
+
   /** 페이지를 떠날 때. 커널 System의 `dispose`와 별개로 UI·리스너를 정리한다 */
   dispose?(): void;
 }
@@ -152,6 +166,29 @@ export function combineDrawGroupKey(mounted: readonly MountedFeature[]): string 
   }
   parts.sort();
   return parts.join(' ');
+}
+
+/**
+ * 켜진 기능들을 **한꺼번에 예열 자세로** 만든다. 반환 함수가 전체 원상복구다.
+ *
+ * 여기에도 기능별 분기가 없다 — 무엇을 켤지는 각 기능이 안다. 기능을 목록에서 빼면
+ * 예열에서도 저절로 빠진다.
+ *
+ * 한 기능의 예열이 실패해도 나머지는 켠다. 예열은 최적화이지 정합성이 아니다 — 실패하면
+ * 그 기능만 첫 등장 비용을 세션 중에 내고, 부팅은 계속된다. 복구도 같은 이유로 개별
+ * 보호한다. 하나가 던져서 나머지가 켜진 채 남으면 **날씨 레이어가 전부 보이는 하늘**이
+ * 되는데, 그건 예열을 안 한 것보다 나쁘다.
+ */
+export function prewarmFeatures(mounted: readonly MountedFeature[]): () => void {
+  const undos: (() => void)[] = [];
+  for (const m of mounted) {
+    if (!m.instance.prewarm) continue;
+    try {
+      const undo = m.instance.prewarm();
+      if (typeof undo === 'function') undos.push(undo);
+    } catch { /* 이 기능만 예열에서 빠진다 */ }
+  }
+  return () => { for (const u of undos) { try { u(); } catch { /* 나머지는 되돌린다 */ } } };
 }
 
 /** 켜진 기능들의 진단을 `{ 이름: 값 }`으로 모은다. 진단을 안 내는 기능은 빠진다. */

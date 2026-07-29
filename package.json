@@ -11,7 +11,8 @@
     "check:refs": "node scripts/smoke/check-refs.mjs",
     "lint": "eslint .",
     "smoke": "node scripts/smoke/run.mjs",
-    "smoke:vite": "node scripts/smoke/run.mjs vite"
+    "smoke:vite": "node scripts/smoke/run.mjs vite",
+    "measure:sky-warm": "node scripts/smoke/measure-sky-warm.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

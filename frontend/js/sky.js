@@ -15,7 +15,8 @@
 // 전부 절차 생성(외부 이미지·오디오 0). 결정론(시드 고정) — 모든 방문자 동일 하늘.
 //
 //   createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft, onApply })
-//     → { set(state, {fade}), get(), update(dt), getSunDir(), dispose, SKY_TIMES, SKY_WEATHERS }
+//     → { set(state, {fade}), get(), update(dt), getSunDir(), setLite(on), bolt(),
+//         prewarm(), dispose, SKY_TIMES, SKY_WEATHERS }
 // 조합 보정: 무지개=주간·일몰×비강수만 / 오로라=야간 맑음만 / 은하수·별=야간 맑음(먹구름 가림).
 // -----------------------------------------------------------------------------
 import * as THREE from 'three';
@@ -1160,7 +1161,45 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     return strike(); // 디바운스도 함께 적용된다
   }
 
-  return { set, get, update, getSunDir, setLite, bolt, dispose, SKY_TIMES, SKY_WEATHERS };
+  /**
+   * 부팅 예열 — 잠들어 있는 레이어를 **한 프레임 그리게 하려고** 잠시 전부 켠다.
+   *
+   * 이 함수는 그리지 않는다. `sky.js`는 카메라를 주입받지 않아서 렌더를 부를 수 없다.
+   * 호출자가 켠 채로 몇 프레임 렌더한 뒤, 반환된 함수로 되돌린다.
+   *
+   * ── 왜 필요한가 (감독 실기기 실측 2026-07-29) ────────────────────────────
+   * 개수는 부팅 시점에 이미 상수다 — 비·눈·무지개·오로라를 여기서 전부 만들어
+   * `visible=false`로 재워 두기 때문이다. 그래서 오래 "개수 불변식은 이미 지켜져
+   * 있다"고 적어 두었는데, **그 문장이 재는 축을 틀리게 짚고 있었다.**
+   *
+   * three의 `info.memory`는 객체를 만들 때가 아니라 **처음 그릴 때** 오른다. 재워둔
+   * 메시는 렌더 목록에 오르지 않으므로 지오 버퍼도, 텍스처 업로드도, 파이프라인도
+   * 그때까지 존재하지 않는다. 만들어 두는 것과 GPU에 올라가 있는 것은 다른 일이다.
+   *
+   * 그래서 감독이 낮→밤→천둥을 바꾼 30~35초 구간에서 pipeline 31→33 · geometry
+   * 92→95 · texture 32→35가 계단으로 올랐고, 그 뒤로는 상수였다. 계속 늘면 증식이고
+   * 한 번 오르고 멈추면 첫 등장 비용이다 — 후자의 서명이다.
+   *
+   * 문제는 개수가 아니라 개수가 *오르는 순간*이다. 그 순간을 로딩 화면으로 옮긴다.
+   *
+   * ── 왜 여기에 목록이 있는가 ──────────────────────────────────────────────
+   * 무엇이 잠들어 있는지는 `sky.js`만 안다. 소비자가 세면 레이어를 하나 추가할 때마다
+   * 조용히 빠진다 — `settling` 축을 세 번 연속 빠뜨린 뒤 내린 것과 같은 결론이다.
+   *
+   * @returns {() => void} 원상복구. 예열 렌더 직후에 반드시 부른다.
+   */
+  function prewarm() {
+    const layers = [fadeDome, cloudMesh, rain, snow, rainbowGrp];
+    for (const a of auroras) layers.push(a);
+    for (const w of twk) layers.push(w.mesh);
+    // `glint`는 `waterY`가 있을 때만 만들어진다. 없으면 예열할 것도 없다.
+    if (glint) layers.push(glint);
+    const prev = layers.map((o) => o.visible);
+    for (const o of layers) o.visible = true;
+    return () => { for (let i = 0; i < layers.length; i++) layers[i].visible = prev[i]; };
+  }
+
+  return { set, get, update, getSunDir, setLite, bolt, prewarm, dispose, SKY_TIMES, SKY_WEATHERS };
 }
 
 /** 방문자 실제 시각 → 시간대 자동 매핑(신 모드 '자동' 버튼용) */
