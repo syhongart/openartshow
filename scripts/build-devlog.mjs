@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shell, SITE } from './lib/site-shell.mjs';
 import { slugFor } from './lib/devlog-slug.mjs';
-import { categorize, stripTag } from './lib/devlog-category.mjs';
+import { categorize, stripTag, CATEGORIES, FALLBACK } from './lib/devlog-category.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'making', 'devlog');
@@ -23,10 +23,14 @@ for (const b of blocks) {
   if (!m) continue;
   const [, date, rawTitle] = m;
   let body = m[3].replace(/\n---\s*$/,'').trim();
-  const isPin = rawTitle.trim().startsWith('★');            // '★' 접두 = 최상단 고정
-  const title = rawTitle.trim().replace(/^★\s*/, '');
-  const slug = slugFor(date, title);                        // 새 모듈: 슬러그 축 (LEGACY_SLUGS + hash6)
-  const category = categorize(rawTitle);                    // 새 모듈: 카테고리 축 (emoji 포함)
+  // ★ 는 표시에서 완전히 지운다 — 단일 ★ 만 떼던 예전 정규식(/^★\s*/)이 ★★ 를 하나
+  // 남겨 렌더링에 노출시키고 있었다. '+' 로 전량 제거(제목·<title>·인덱스 어디에도 안 남는다).
+  const title = rawTitle.trim().replace(/^★+\s*/, '');
+  const slug = slugFor(date, title);                        // 새 모듈: 슬러그 축 (LEGACY_SLUGS + hash6) — ★ 제거는 슬러그에 무영향(devlog-slug.mjs 내부에서도 한 번 더 ★ 를 떼므로 결과 동일)
+  const category = categorize(rawTitle);                    // 새 모듈: 카테고리 축 (emoji 포함) — ★ 유무 무관(categorize 내부에서 자체 스트립)
+  // pin 판정을 '★' 접두 대신 카테고리로 옮긴다(감독 지시) — 141개 중 ★ 는 16건이었지만
+  // 진짜 철학은 2건뿐이었다. 이제 philosophy 로 분류되는 항목만 최상단 고정된다.
+  const isPin = category.id === 'philosophy';
   entries.push({ date, title, body, pinned: isPin, slug, category });
 }
 // 고정(철학) 항목과 일반 로그를 분리 — 고정은 날짜와 무관하게 인덱스 최상단·연대기 nav 제외
@@ -135,6 +139,19 @@ th{background:var(--paper-deep);color:var(--ink);font-weight:600}
 .pn a:hover{border-color:var(--g300)}
 .pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
 .back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
 @media(max-width:520px){.top nav{gap:12px}}
 `;
 
@@ -143,7 +160,9 @@ mkdirSync(OUT, { recursive: true });
 for (const f of readdirSync(OUT)) if (f.endsWith('.html')) unlinkSync(join(OUT, f)); // 슬러그 변경 잔재 제거
 
 function writeEntryPage(e, pn, isPin) {
-  const eyebrow = isPin ? 'OpenArtShow · 철학' : e.date;
+  // 하드코딩 '철학' 대신 카테고리 label 에서 받는다 — pin 판정 자체가 이제 category.id
+  // === 'philosophy' 라 지금은 결과가 같지만, 값을 두 곳(판정·표시)에 따로 적지 않는다.
+  const eyebrow = isPin ? `OpenArtShow · ${e.category.label}` : e.date;
   const meta = isPin
     ? `방향을 잃을 때 돌아오는 자리 — 새겨둔 날 ${e.date}`
     : 'OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과';
@@ -193,11 +212,50 @@ const pinCards = pinned.map(e => `<a class="pin-card" href="./${e.slug}.html">
   <p>${esc(excerpt(e.body))}</p>
 </a>`).join('\n');
 
-const cards = logs.map(e => `<a class="card" href="./${e.slug}.html">
+// ── 카테고리 필터 (인덱스 전용) ──────────────────────────────────────────
+// 감독 지적("복잡함")의 나머지 절반은 141개가 한 줄로 나열되는 것이었다. 고를 수
+// 있는 순수 CSS/HTML 수단은 앵커+TOC, <details>, :target, 그리드 재배치였는데
+// 이 콘텐츠(11카테고리·모바일 비중 높음·CSP 인라인 스크립트 금지)엔 앵커+<details>가
+// 맞다고 판단했다:
+//  · <details>는 브라우저 기본 토글이라 JS 0으로 "펼치기/접기"가 된다 — 스모크 [6]
+//    (CSP·인라인 스크립트 금지)을 건드릴 필요가 아예 없다.
+//  · :target 은 "한 번에 하나만 보이기"엔 맞지만 "카테고리 여러 개를 각자 접고 펼치기"
+//    엔 안 맞는다(전역 target 하나로 여러 섹션 상태를 표현 못 한다).
+//  · 칩(TOC)은 앵커라서 클릭하면 그 카테고리 위치로 스크롤한다. 최신 브라우저는
+//    앵커 대상이 닫힌 <details> 안에 있으면 자동으로 펼치기도 하지만(fragment
+//    navigation reveal), 이걸 지원 안 하는 구형 브라우저에서도 "그 위치로 스크롤 +
+//    탭 한 번으로 펼침"으로 열화할 뿐 깨지지 않는다 — 의존하지 않고 덤으로 받는다.
+//  · 기본 상태는 전부 닫힘이다. 141개 중 137개(고정 2건 제외)가 카테고리 요약
+//    11줄로 접혀 첫 화면이 압축된다 — 이게 "복잡함" 완화의 핵심이다.
+//  · 칩에 건수를 같이 보여준다("어디에 무엇이 얼마나 있는지가 곧 지도"라는 지시).
+// 가로 넘침 방지: 칩 컨테이너는 flex-wrap:wrap — 안 들어가면 다음 줄로 밀리지,
+// flex 기본 동작(축소 시도 후 넘침)으로 넘치지 않는다. 카드는 기존 .card 그대로라
+// 디자인 시스템 변경 없음.
+const byCat = new Map();
+for (const e of logs) {
+  if (!byCat.has(e.category.id)) byCat.set(e.category.id, []);
+  byCat.get(e.category.id).push(e);
+}
+const catOrder = [...CATEGORIES, FALLBACK].filter(c => byCat.has(c.id)); // CATEGORIES 순서를 그대로 따른다(우선순위=표시순위, 카테고리 모듈과 동일 축)
+
+const catToc = `<nav class="cat-toc" aria-label="카테고리로 이동">
+${catOrder.map(c => `<a href="#cat-${c.id}">${c.emoji} ${esc(c.label)} <b>${byCat.get(c.id).length}</b></a>`).join('\n')}
+</nav>`;
+
+const catSections = catOrder.map(c => {
+  const items = byCat.get(c.id);
+  const cardsHtml = items.map(e => `<a class="card" href="./${e.slug}.html">
   <span class="d">${e.date}</span>
   <h2><span class="emo">${e.category.emoji}</span>${esc(stripTag(e.title))}</h2>
   <p>${esc(excerpt(e.body))}</p>
 </a>`).join('\n');
+  return `<details class="cat-sec" id="cat-${c.id}">
+<summary>${c.emoji} ${esc(c.label)}<span class="cnt">${items.length}건</span></summary>
+<div class="cat-body">
+${cardsHtml}
+</div>
+</details>`;
+}).join('\n');
 
 writeFileSync(join(OUT, 'index.html'), shell({
   title: `개발일지 — ${SITE}`,
@@ -217,7 +275,8 @@ writeFileSync(join(OUT, 'index.html'), shell({
 <p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — ${logs.length}건의 기록.<br>
 문제의 원인, 분석, 개선, 결과를 그대로 남깁니다.</p>
 ${pinCards}
-${cards}`,
+${catToc}
+${catSections}`,
 }));
 
 // ---------- sitemap 은 build-making.mjs 에서 통합 생성 ----------
