@@ -85,9 +85,14 @@ jobs:
       # SMOKE_PERF_GATES=observe — [7][8] 성능 게이트를 **관측 모드**로 돌린다.
       # 러너에서 한 번도 안 돌려본 게이트라, 1차부터 차단으로 걸면 빨간불의 원인이
       # "코드 회귀"인지 "게이트의 러너 부적합"인지 못 가른다(검수관 조건 3).
-      # 10회 연속 관측에서 base.geo/base.tex 분산 0 을 확인한 뒤 enforce 로 승격한다.
+      #
+      # 승격 조건은 `scripts/smoke/run.mjs` 의 PERF_GATES 주석이 SSOT 다(여기 값을
+      # 다시 적으면 한쪽만 고쳐도 아무도 모른다). 회차 집계는 태스크 #126.
       # **관측은 면제가 아니라 데이터 수집이다** — 승격 없이 이 줄이 남으면 그때부터
       # 장식이 된다.
+      #
+      # 성능 판정만 INFO 로 내려간다. 콘솔 에러·pageerror 가 잡히면 observe 에서도
+      # FAIL 이다 — 페이지 에러는 러너 성능 편차가 아니다(검수관 B1).
       - name: Headless smoke (vite 조립)
         env:
           SMOKE_PERF_GATES: observe

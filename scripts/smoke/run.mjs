@@ -378,8 +378,16 @@ function printReport() {
  * **왜 observe 가 필요한가**: 이 둘은 성능 게이트라 러너 성능 편차에 거짓 FAIL 위험이
  * 있는데, **아직 러너에서 한 번도 안 돌려봤다.** 검수관 지적 — 1차부터 차단으로 걸면
  * 배포가 막힌 원인이 "코드 회귀"인지 "게이트 자체의 러너 부적합"인지 못 가른다.
- * 10회 연속 observe 관측에서 `base.geo`/`base.tex` 분산이 0 임을 확인한 뒤 enforce 로
- * 승격한다. 그 전까지 observe 는 **데이터를 모으는 장치이지 면제가 아니다.**
+ * 그 전까지 observe 는 **데이터를 모으는 장치이지 면제가 아니다.**
+ *
+ * ── 승격 조건 (SSOT — CLAUDE.md·ci.yml 주석은 이 문단을 가리킨다) ──────────
+ * 10회 연속 관측에서 **셋 다** 성립해야 `enforce` 로 올린다:
+ *   ① `[7]` base.geo/base.tex 분산 0        — 러너가 로컬과 같은 씬을 그린다(재현성)
+ *   ② `[7]` 10회 전부 maxGeo<=0 && maxTex<=0 — **거짓 FAIL 위험이 없다(판정 안정성)**
+ *   ③ `[8]` 10회 전부 lap1 == 0
+ * ①만으로는 부족하다 — base 가 매번 똑같아도 delta 가 러너 부하에 따라 튀면 승격은
+ * 여전히 위험하다. 처음에 ①만 적었던 것이 **재는 축을 잘못 고른 것**이었다(검수관 B2).
+ * 회차 집계는 태스크 #126 에 적는다. Actions 로그는 만료되므로 거기 두면 안 된다.
  *
  * `continue-on-error` 를 쓰지 않는 이유: 그것은 job 전체를 삼켜 필수 게이트 실패까지
  * 가린다. 여기서는 [7][8] 두 항목만 정확히 관측으로 내린다.
@@ -391,8 +399,30 @@ if (!PERF_GATE_MODES.includes(PERF_GATES)) {
   console.error(`SMOKE_PERF_GATES 값이 잘못됐다: ${JSON.stringify(process.env.SMOKE_PERF_GATES)} — ${PERF_GATE_MODES.join('|')} 중 하나여야 한다.`);
   process.exit(2);
 }
-// observe 에서는 실패를 INFO 로 적어 종료코드에서 뺀다. PASS 는 어느 모드에서나 PASS.
-const perfStatus = (pass) => (pass ? 'PASS' : (PERF_GATES === 'observe' ? 'INFO' : 'FAIL'));
+
+/**
+ * observe 는 **성능 판정만** INFO 로 내린다. 하드 실패는 어느 모드에서나 FAIL 이다.
+ *
+ * ── 왜 가르는가 (검수관 B1) ───────────────────────────────────────────────
+ * 두 측정 모듈의 `pass` 는 성능 지표만이 아니다 — `errors.length === 0` 도 곱해져 있다
+ * (`measure-invariants.mjs` `pass = maxGeo<=0 && maxTex<=0 && errors.length===0`,
+ *  `measure-sky-warm.mjs` `if (errors.length) pass = false`). 그 `errors` 는
+ * `console.error` + `pageerror` 다.
+ *
+ * 그래서 `pass` 하나로 status 를 정하면 **world2 조작 중에만 나는 런타임 에러가 CI 에서
+ * INFO 로 내려간다.** observe 의 정당화는 "러너 성능 편차의 거짓 FAIL" 이었는데
+ * 페이지 에러는 편차가 아니다. 예외를 observe 에서도 FAIL 로 남긴 논리 — "값이 나빴다"와
+ * "아예 못 쟀다"는 다른 일 — 가 `errors[]` 에 적용되지 않은 채였다.
+ *
+ * 이 구멍이 실질적인 이유: 검사 `[4]` 콘솔 에러 0 은 **로드 시점**만 본다. 회전·주행·
+ * 복귀와 날씨 12조합 순회 중에만 나는 에러를 보는 유일한 축이 `[7][8]` 이다. 그것을
+ * 종료코드 밖에 두면 기능적으로 `continue-on-error: true` 와 같아진다.
+ */
+const perfStatus = (pass, errors) => {
+  if (pass) return 'PASS';
+  if (errors?.length) return 'FAIL';           // 하드 실패 — 관측 대상이 아니다
+  return PERF_GATES === 'observe' ? 'INFO' : 'FAIL';
+};
 const perfLabel = (s) => (PERF_GATES === 'observe' ? `${s}(관측)` : s);
 
 async function runPerfGates(origin, browser) {
@@ -400,12 +430,16 @@ async function runPerfGates(origin, browser) {
   try {
     const { runInvariants } = await import('./measure-invariants.mjs');
     const r = await runInvariants({ browser, origin, basePath: BASE_PATH, log: quiet });
+    // base 는 **두 분기 모두** 찍는다. 승격 판정("10회 연속 base 분산 0")의 근거가
+    // 바로 값이 흔들린 회차인데, PASS 에만 적으면 그 회차에서 base 를 읽을 수 없다
+    // (검수관 B2). 관측 모드에서 기록이 판정의 전부라는 점을 잊으면 안 된다.
+    const base = `base geo ${r.base?.geo} tex ${r.base?.tex} pipe ${r.base?.pipe}`;
     record(
-      7, perfLabel('개수 불변식(세션)'), perfStatus(r.pass),
+      7, perfLabel('개수 불변식(세션)'), perfStatus(r.pass, r.errors),
       r.pass
-        ? `회전12·주행6·복귀6 내내 상수(geo ${r.base?.geo} tex ${r.base?.tex} pipe ${r.base?.pipe})`
-        : `증식 — geo +${r.maxGeo} tex +${r.maxTex} pipe +${r.maxPipe}`
-        + (r.errors.length ? ` · 콘솔 에러 ${r.errors.length}` : '')
+        ? `회전12·주행6·복귀6 내내 상수(${base})`
+        : `증식 — geo +${r.maxGeo} tex +${r.maxTex} pipe +${r.maxPipe} · ${base}`
+        + (r.errors.length ? ` · 콘솔 에러 ${r.errors.length}건(하드 실패 — 관측 대상 아님)` : '')
         + ' → `npm run measure:invariants` 로 구간별 표를 본다',
     );
   } catch (e) {
@@ -420,10 +454,11 @@ async function runPerfGates(origin, browser) {
     // 단독 실행에 맡긴다 — 스모크에서 3분을 더 쓰지 않는다.
     const r = await runSkyWarm({ browser, origin, basePath: BASE_PATH, laps: 1, log: quiet });
     record(
-      8, perfLabel('하늘 예열(첫 등장)'), perfStatus(r.pass),
+      8, perfLabel('하늘 예열(첫 등장)'), perfStatus(r.pass, r.errors),
       r.pass
-        ? '시간대×날씨 12조합 + fx·번개 순회에 증가 0'
+        ? `시간대×날씨 12조합 + fx·번개 순회에 증가 0 (lap1 ${r.lap1})`
         : `첫 등장 비용 잔존 — geo/tex 합 +${r.lap1}`
+        + (r.errors.length ? ` · 콘솔 에러 ${r.errors.length}건(하드 실패 — 관측 대상 아님)` : '')
         + ' → `npm run measure:sky-warm` 으로 2바퀴 돌려 원인을 가른다',
     );
   } catch (e) {
@@ -488,7 +523,14 @@ async function main() {
     // 7/8 — 성능 불변식. **같은 서버·같은 브라우저를 재사용한다**(감독 지시로 스모크에
     // 묶었다). 각자 vite 빌드를 다시 하면 스모크가 3배로 길어지고, 그 시간이 곧
     // "게이트를 안 돌리는 이유"가 된다.
-    if (IS_VITE && PERF_GATES !== 'off') await runPerfGates(srv.origin, browser);
+    if (IS_VITE && PERF_GATES !== 'off') {
+      await runPerfGates(srv.origin, browser);
+    } else if (IS_VITE) {
+      // `off` 가 리포트에 흔적을 안 남기면 "스모크: 통과" 만 보고 성능 게이트가 돈 줄
+      // 안다. **못 잰 것이 침묵으로 통과가 되는** 이 저장소의 상시 위험 형태다(검수관 R6).
+      record(7, '개수 불변식(세션)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      record(8, '하늘 예열(첫 등장)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+    }
   } finally {
     if (browser) await browser.close().catch(() => {});
     await srv.close().catch(() => {});

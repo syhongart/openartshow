@@ -52,6 +52,24 @@ export const BASELINE_FILE_COUNT_BY_MODE = {
 };
 export const DROP_THRESHOLD = 5; // baseline - 5 미만이면 FAIL (급감)
 
+/**
+ * 생성기가 만드는 **루트 산출물** — 이 목록의 SSOT.
+ *
+ * `deploy.yml` 은 `set -euo pipefail` 아래에서 이 파일들을 복사하므로 **없으면 배포가
+ * 죽는다.** 그런데 오래도록 `[3]` 핵심파일 목록에는 `robots.txt` 가 없었고, 조립
+ * 스크립트는 복사 실패를 삼켰다 — 두 겹으로 안 잡혀 "스모크 PASS + 배포 실패" 가
+ * 성립했다(검수관 지적 2026-07-29).
+ *
+ * 그것을 고치면서 `['sitemap.xml','robots.txt']` 를 `assemble.mjs` 에 **또 적었다.**
+ * 값 미러링을 지적해 만든 커밋이 값 미러링을 하나 늘린 셈이라 검수관이 다시 잡았다.
+ * 여기가 정의이고 `assemble.mjs` 의 `requireGenerated()` 는 이것을 import 한다.
+ *
+ * (쉘 레시피 문자열 2곳과 `deploy.yml` 의 `cp` 줄은 여전히 같은 값을 적는다. 그것은
+ *  "레시피를 문자 그대로 미러링한다"는 설계의 대가이고, 없애려면 verify 가 `_site` 를
+ *  artifact 로 넘기고 deploy 가 그것을 publish 하는 구조로 가야 한다 — 별건 상신.)
+ */
+export const GENERATED_ROOT_FILES = ['sitemap.xml', 'robots.txt'];
+
 // ── 검사3: 조립 결과에 반드시 존재해야 하는 핵심 파일 (SITE_DIR 상대) ──
 // 두 조립 방식은 레이아웃이 다르다:
 //  · frontend직조립(baseline): app/ 아래 frontend 전체 사본 → app/js/main.js 존재.
@@ -68,12 +86,7 @@ const REQUIRED_FILES_COMMON = [
   'devlog/index.html',
   'team/index.html',
   'valuation/index.html',
-  'sitemap.xml',
-  // `robots.txt` 는 오래 빠져 있었다(검수관 지적 2026-07-29). 그런데 `deploy.yml` 은
-  // `set -euo pipefail` 아래에서 이 파일을 복사하므로 **없으면 배포가 죽는다.**
-  // 검사 목록에 없으면 "스모크 PASS + 배포 실패" 가 성립한다 — 게이트가 배포를 재현하지
-  // 못하는 지점이었다.
-  'robots.txt',
+  ...GENERATED_ROOT_FILES,
 ];
 export const REQUIRED_FILES_BASELINE = [
   ...REQUIRED_FILES_COMMON,

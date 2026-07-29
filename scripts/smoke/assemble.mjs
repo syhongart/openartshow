@@ -1,16 +1,27 @@
 // scripts/smoke/assemble.mjs
-// _site 조립 레시피를 로컬에서 재현한다. 두 방식 모두 지원:
-//  · assembleSite()     = frontend직조립(baseline) — 현행 deploy.yml 의 cp 재배치 복제.
-//  · assembleSiteVite() = vite 조립 — 교체될 deploy.yml(B-2b-3) 의 vite build 기반.
+// _site 조립 레시피를 로컬에서 재현한다. 두 방식:
+//  · assembleSiteVite() = **현행 deploy.yml 을 재현한다.** 이것이 배포 경로다.
+//  · assembleSite()     = frontend직조립(baseline) — **이제 어떤 배포도 재현하지 않는다.**
+//
+// ── baseline 의 현재 지위 (검수관 지적 2026-07-29 R3) ──────────────────────
+// 이 파일은 오래도록 baseline 을 "현행", vite 를 "교체될" 로 적고 있었다. 그 서술은
+// vite 전환이 끝난 시점에 뒤집혔는데 주석만 남았다. 게다가 기본 스크립트명이
+// `npm run smoke`(baseline)이라, 이름만 보고 돌린 사람은 **존재하지 않는 배포
+// 레이아웃**을 검사한 결과를 PASS 로 받는다. `config.mjs` 의 `BASELINE_FILE_COUNT`·
+// `REQUIRED_FILES_BASELINE` 도 같이 사문화됐다.
+//
+// 폐지하지 않고 남기는 이유: world.html 폐기(#119) 전까지 frontend 직배치 레이아웃이
+// 여전히 참조 대조군으로 쓸모가 있다. **다만 배포 게이트는 `smoke:vite` 하나다** —
+// CI 가 도는 것도 그쪽이다(`ci.yml` smoke job).
+//
 // (생성기 실행은 run.mjs 의 검사1 에서 선행 — 여기서는 파일 배치만.)
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, SITE_DIR } from './config.mjs';
+import { GENERATED_ROOT_FILES, ROOT, SITE_DIR } from './config.mjs';
 
-// ── baseline: frontend직조립 (현행 deploy.yml `run:` 조립 스텝과 1:1) ──────
-// 유지보수 시 .github/workflows/deploy.yml 의 조립 스텝과 함께 갱신할 것.
+// ── baseline: frontend직조립 (구 deploy.yml 의 cp 재배치 — 지금은 대조군 전용) ──
 // $OUT 은 대상 디렉토리(기본 _site).
 const ASSEMBLE_BASELINE_SH = `
 set -euo pipefail
@@ -25,7 +36,9 @@ cp sitemap.xml robots.txt "$OUT/"
 touch "$OUT/.nojekyll"
 `;
 
-// ── vite 조립 (교체될 deploy.yml B-2b-3 과 1:1) ──────────────────────
+// ── vite 조립 — **현행 `deploy.yml` 의 조립 스텝과 1:1.** ──────────────────
+// 유지보수 시 `.github/workflows/deploy.yml` 과 **반드시 함께** 갱신한다. 어긋나면
+// "스모크 PASS + 배포 실패" 가 성립한다(실제로 성립해 있었다 — `|| true` 사건).
 // vite build → dist(base /openartshow/, HTML rename·CSP정합·자기완결 플러그인 적용) →
 // dist 를 통째 $OUT 으로 복사 → 생성기/정적(devlog·team·valuation·sitemap·robots·.nojekyll)
 // 을 얹는다. 즉 vite _site = dist + 생성기 + 정적. (rename 은 vite 플러그인이 수행 —
@@ -58,7 +71,7 @@ touch "$OUT/.nojekyll"
  * 걸리는 것은 `measure:*` 를 클린 클론에서 단독 실행할 때다.
  */
 function requireGenerated() {
-  const missing = ['sitemap.xml', 'robots.txt'].filter(
+  const missing = GENERATED_ROOT_FILES.filter(
     (f) => !fs.existsSync(path.join(ROOT, f)),
   );
   if (missing.length === 0) return;
