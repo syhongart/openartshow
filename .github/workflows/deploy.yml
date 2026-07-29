@@ -1,10 +1,9 @@
 name: build-and-deploy
-# `claude/**` 는 **결선 검증용 임시 트리거**다(#127 단계 3). 브랜치에서도 이 워크플로를
-# 돌려 "verify 가 막으면 deploy 가 skipped 되는가"를 눈으로 확인한다. publish 스텝이
-# `github.ref` 로 막혀 있어 브랜치에서는 gh-pages 를 건드리지 않는다.
-# **검증이 끝나면 이 줄에서 `claude/**` 를 뺀다** — 안 빼면 브랜치 푸시마다 스모크가
-# 두 번 돈다(ci.yml 독립 run + 여기서 호출한 verify).
-on: { push: { branches: [main, 'claude/**'] }, workflow_dispatch: {} }
+# 결선 검증(#127)은 끝났으므로 임시로 넓혔던 `claude/**` 를 도로 좁힌다 — 남겨두면
+# 브랜치 푸시마다 스모크가 두 번 돈다(ci.yml 독립 run + 여기서 호출한 verify).
+# 검증 결과는 run 30434091542(정상 → deploy 실행)와 30434607110(타입 에러 → deploy
+# **skipped**)에 남아 있다. 게이트는 막히는 것을 본 뒤에야 통과다.
+on: { push: { branches: [main] }, workflow_dispatch: {} }
 permissions: { contents: write }
 # [동시성 게이트] gh-pages 배포는 항상 최신 커밋 1건만 반영한다. 큐에 밀린 옛 run이 뒤늦게
 # 실행돼 최신 배포를 덮거나(구버전 롤백), 두 run이 gh-pages에 동시 push해 한쪽이 rejected로
