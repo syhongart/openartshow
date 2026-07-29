@@ -7,13 +7,16 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shell } from './lib/site-shell.mjs';
+import { calculateTeamComposition } from './lib/devlog-contributors.mjs';
+import { countEntries } from './lib/devlog-entries.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_HUB = join(ROOT, 'making');
 
-// 개발일지 항목 수 집계 (build-devlog.mjs와 동일한 정규식)
+// 개발일지 · 팀 정보
 const devlogSrc = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8');
-const devlogCount = (devlogSrc.match(/^## \d{4}-\d{2}-\d{2} · /gm) || []).length;
+const devlogCount = countEntries(devlogSrc); // SSOT
+const teamComposition = calculateTeamComposition(devlogSrc); // SSOT
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -48,7 +51,7 @@ const bodyHtml = `
     <div class="icon">👥</div>
     <h2>팀</h2>
     <p>감독과 AI, 그리고 전문 계약직이 함께 만듭니다. 인사기록과 기여도 추적.</p>
-    <div class="count">11명</div>
+    <div class="count">${teamComposition.total}명 (창업자 ${teamComposition.founder} · 정규직 ${teamComposition.staff} · 계약직 ${teamComposition.contract})</div>
   </a>
   <a href="./valuation/" class="hub-card">
     <div class="icon">📈</div>

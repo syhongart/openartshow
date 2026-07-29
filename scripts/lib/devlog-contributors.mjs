@@ -230,3 +230,38 @@ export function countContributions(md) {
 export function contributionOf(md, roleId) {
   return countContributions(md)[roleId] ?? { count: 0, joined: null, lastSeen: null };
 }
+
+/**
+ * 팀 구성을 티어별로 계산한다. 기여가 있는 역할만 센다.
+ * SSOT — 이 함수에서 정의한 값을 build-readme.mjs 와 build-making.mjs 가 소비한다.
+ *
+ * @param {string} md DEVLOG.md 의 전체 마크다운 내용
+ * @returns {{founder: number, staff: number, contract: number, total: number}}
+ *          founder: 창업자 수, staff: 정규직 수, contract: 계약직 수, total: 합계
+ */
+export function calculateTeamComposition(md) {
+  const contributions = countContributions(md);
+
+  // 티어별로 기여가 있는 역할을 센다 (count > 0)
+  const byTier = {
+    founder: [],
+    staff: [],
+    contract: [],
+  };
+
+  for (const role of ROLES) {
+    const contrib = contributions[role.id];
+    if (contrib.count > 0) {
+      if (role.tier === '창업자') byTier.founder.push(role.id);
+      else if (role.tier === '정규직') byTier.staff.push(role.id);
+      else if (role.tier === '계약직') byTier.contract.push(role.id);
+    }
+  }
+
+  return {
+    founder: byTier.founder.length,
+    staff: byTier.staff.length,
+    contract: byTier.contract.length,
+    total: byTier.founder.length + byTier.staff.length + byTier.contract.length,
+  };
+}

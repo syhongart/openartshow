@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { shell } from './lib/site-shell.mjs';
 import { ROLES, BY_ID, countContributions } from './lib/devlog-contributors.mjs';
 import { computePayroll, RATES } from './lib/payroll.mjs';
+import { countEntries } from './lib/devlog-entries.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'making', 'team');
@@ -171,7 +172,7 @@ const bodyHtml = `
     <div class="stat"><div class="n">${fulltime.length}</div><div class="l">정규직 · 창업자</div></div>
     <div class="stat"><div class="n">${contract.length}</div><div class="l">전문 계약직</div></div>
     <div class="stat"><div class="n">${totalContrib}</div><div class="l">누적 기여 건수</div></div>
-    <div class="stat"><div class="n">${readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8').split(/\n(?=## )/).length}</div><div class="l">공개 개발일지</div></div>
+    <div class="stat"><div class="n">${countEntries(devlogMd)}</div><div class="l">공개 개발일지</div></div>
   </div>
 
   <h2 class="sec">정규직 · 창업자</h2>

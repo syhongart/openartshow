@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { countEntries } from './lib/devlog-entries.mjs';
-import { countContributions } from './lib/devlog-contributors.mjs';
+import { calculateTeamComposition } from './lib/devlog-contributors.mjs';
 import { computePayroll, RATES } from './lib/payroll.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,8 +27,8 @@ if (!readme.includes(startMarker) || !readme.includes(endMarker)) {
 // 개발일지 통계
 const devlogMd = readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8');
 const itemCount = countEntries(devlogMd); // SSOT: parseEntries() 기반
-const contributions = countContributions(devlogMd);
-const teamSize = Object.values(contributions).filter((c) => c.count > 0).length;
+const teamComposition = calculateTeamComposition(devlogMd);
+const teamSize = teamComposition.total;
 
 // 급여 산정 — 3층 분리
 const today = new Date();
@@ -98,7 +98,7 @@ const content = `
 ## 상태
 
 - **개발일지**: ${itemCount}건
-- **팀 규모**: ${teamSize}명 (정규직 + 계약직)
+- **팀 규모**: ${teamSize}명 (창업자 ${teamComposition.founder} · 정규직 ${teamComposition.staff} · 계약직 ${teamComposition.contract})
 - **누적 인건비**: ${payrollText}
 - **밸류에이션**: ${valuationText}
 - **갱신일**: ${today_str}
