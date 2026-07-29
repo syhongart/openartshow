@@ -17,6 +17,11 @@
 //    적지 않는다.
 //  · `-f`/`--force` 가 붙은 호출. 강제 추가는 의도로 본다.
 //  · 워크플로가 실행 중 만드는 파일. 여기서는 저장소의 현재 `.gitignore` 만 본다.
+//  · **여러 물리 줄에 걸친 한 명령.** 접힌 블록 스칼라(`run: >`)나 백슬래시 라인연속으로
+//    `git add` 와 인자가 다른 줄에 있으면 재조립하지 않는다 — `runBlockLines` 가 줄
+//    단위로 반환하고 `parseGitAdd` 도 줄 단위로 돈다. 이 저장소에 실사례는 없다.
+//  · **공백이 든 따옴표 경로**(`git add "my file.txt"`). `split(/\s+/)` 가 토큰을 쪼갠다.
+//  · 디렉터리 전용 패턴과 같은 이름의 **파일** — 거짓 FAIL 쪽이다(`ignoredAmong` 주석).
 //
 // ── 트리거 (중요) ───────────────────────────────────────────────────────────
 // 이 검사는 `ci.yml` 의 `verify` job 에 **스텝으로** 들어간다 — 즉 **항상 돈다.**
@@ -110,15 +115,51 @@ function parseGitAdd(line) {
   return calls;
 }
 
-/** 경로들이 .gitignore 대상인지 한 번에 판정. 반환: ignored 경로 배열 */
+/**
+ * 경로들이 .gitignore 대상인지 한 번에 판정. 반환: ignored 경로 배열(원문 표기)
+ *
+ * ── 왜 슬래시를 붙인 형태로도 묻는가 (검수관 블로커, 실측으로 확인) ──────────
+ * `git check-ignore` 는 **디렉터리 전용 패턴**(`/valuation/` 처럼 끝에 슬래시가
+ * 있는 것)을 판정할 때, 인자에 슬래시가 없으면 그 경로가 **실제로 디렉터리로
+ * 존재하는지** 를 본다. 존재하지 않으면 매칭되지 않는다:
+ *
+ *   디렉터리 없음 + `valuation`   → 미매칭
+ *   디렉터리 없음 + `valuation/`  → .gitignore:105 매칭
+ *   디렉터리 있음 + `valuation`   → .gitignore:105 매칭
+ *
+ * 그런데 이 검사가 도는 `ci.yml` 의 `verify` job 은 **생성기를 돌리지 않는다** —
+ * 즉 언제나 "디렉터리 없음" 이다. 그래서 누가 `git add valuation`(슬래시 없이)로
+ * **이 검사가 막으려던 바로 그 사고**를 반복해도 조용히 통과했다. 원 사고 커밋이
+ * 마침 `valuation/`(슬래시 있음)이라 처음엔 안 보였다.
+ *
+ * 두 형태를 함께 물어 그 런타임 의존을 없앤다. 무관한 경로는 두 형태 모두
+ * 미매칭이므로(실측) 거짓 FAIL 이 늘지 않는다.
+ *
+ * **다만 하나 남는다**: `.gitignore` 에 `foo/`(디렉터리 전용)가 있는데 `git add foo`
+ * 가 **같은 이름의 파일**을 가리키면 거짓 FAIL 이 난다(실제 `git add` 는 성공한다).
+ * 게이트로서는 놓치는 쪽보다 이쪽이 낫다고 보고 감수한다 — 이름 충돌 자체가
+ * 드물고, 나면 그것대로 볼 만한 신호다.
+ */
 function ignoredAmong(paths) {
   if (!paths.length) return [];
+  // 질의 형태 → 원문 경로. 슬래시 변형이 매칭돼도 메시지에는 원문을 쓴다.
+  const back = new Map();
+  const query = [];
+  for (const p of paths) {
+    back.set(p, p); query.push(p);
+    if (!p.endsWith('/')) { back.set(`${p}/`, p); query.push(`${p}/`); }
+  }
   const r = spawnSync('git', ['check-ignore', '--stdin'], {
-    cwd: ROOT, encoding: 'utf8', input: paths.join('\n'),
+    cwd: ROOT, encoding: 'utf8', input: query.join('\n'),
   });
   // exit 0 = 하나 이상 ignored, 1 = 없음, 128 = 오류
   if (r.status === 128) return [];
-  return (r.stdout || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  const hit = new Set();
+  for (const line of (r.stdout || '').split('\n')) {
+    const s = line.trim();
+    if (s) hit.add(back.get(s) ?? s);   // 두 형태가 다 걸려도 원문 하나로 접힌다
+  }
+  return [...hit];
 }
 
 export function checkWorkflowGitAdd() {
