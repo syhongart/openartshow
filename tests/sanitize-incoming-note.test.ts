@@ -444,4 +444,48 @@ describe('XSS 방어 — 렌더 경로가 textContent 임을 고정한다', () =
     // 수신부가 DOM 을 직접 그리기 시작하면 방어 지점이 둘로 갈라진다.
     expect(mp.includes('innerHTML'), 'multiplayer.js 가 innerHTML 을 쓴다').toBe(false);
   });
+
+  // ── ④ 오픈월드는 두 번째 렌더 경로다 (검수관 권고, 2026-07-29) ─────────────
+  //
+  // ①~③ 은 미술관 경로만 본다: `main.js:502 → ui-hud.ts:1240 → ui-dom.ts:1695`.
+  // **오픈월드는 별도 경로로 그린다** — `world.js:2268` 의
+  // `mp.onChat = (name, text) => emit('chat', {...})` 가 `world-boot.js` 의
+  // `V.on('chat', ...)` 로 가고, 거기서 말풍선을 직접 만든다.
+  //
+  // 처음 이 게이트를 만들 때 그 경로를 **안 봤다**(검수관에게 "못 본 것" 으로
+  // 신고했고, 검수관이 실제 사각임을 확인했다). 오픈월드는 랜딩에서 정식 링크된
+  // **라이브**다 — 같은 커밋에서 `world.js` 주석의 `behind-flag` 오기재를 고친 것이
+  // 그 사실이다.
+  //
+  // 현재 코드는 안전하다. `innerHTML` 은 **빈 정적 템플릿**이고 사용자 값은
+  // `textContent` 로만 들어간다:
+  //
+  //     b.innerHTML = `<span class="nm"></span><span class="tx"></span>`;
+  //     b.querySelector('.nm').textContent = name;
+  //     b.querySelector('.tx').textContent = text;
+  //
+  // 위험은 누가 이걸 "한 줄로 정리" 하면서 보간으로 바꾸는 것이다. 그 순간 P2P
+  // 채팅이 실행되고, ①~③ 은 아무것도 안 잡는다.
+  it('④ 오픈월드 말풍선의 innerHTML 이 정적 템플릿이다 — 사용자 값 보간 없음', () => {
+    const wb = readFileSync(join(ROOT, 'frontend/js/world-boot.js'), 'utf8');
+    // `V.on('chat', ...)` 핸들러 본문만 잘라 본다(파일 전체를 보면 무관한 innerHTML 에 걸린다).
+    const start = wb.indexOf("V.on('chat'");
+    expect(start, "world-boot.js 에서 V.on('chat') 을 못 찾았다 — 렌더 경로가 바뀌었다").toBeGreaterThan(-1);
+    const handler = wb.slice(start, start + 700);
+
+    // innerHTML 할당에 템플릿 보간(`${`)이 없어야 한다. 있으면 사용자 값이 HTML 로 들어간다.
+    const innerHtmlAssigns = handler.match(/innerHTML\s*=\s*[`'"][^`'"]*[`'"]/g) || [];
+    for (const a of innerHtmlAssigns) {
+      expect(
+        a.includes('${'),
+        `오픈월드 말풍선 innerHTML 에 보간이 들어갔다 — P2P 채팅이 실행될 수 있다:\n  ${a}`,
+      ).toBe(false);
+    }
+
+    // 그리고 name·text 는 textContent 로 들어가야 한다.
+    expect(
+      /\.textContent\s*=\s*name/.test(handler) && /\.textContent\s*=\s*text/.test(handler),
+      'world-boot.js 채팅 핸들러가 name·text 를 textContent 로 넣지 않는다',
+    ).toBe(true);
+  });
 });

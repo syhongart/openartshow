@@ -66,7 +66,7 @@ describe('literal-mirror — SSOT와 거울 값 정합성', () => {
     ).toBe(true);
   }
 
-  describe('SAVE_KEY — openartshow.space.v1', () => {
+  describe('SAVE_KEY — 공간 문서 저장 키', () => {
     // SSOT 값을 여기 다시 적지 않는다 — 그러면 이 테스트가 **또 하나의 미러**가 된다.
     // (첫 판본이 `expect(SAVE_KEY).toBe('openartshow.space.v1')` 를 넣었고, 뮤테이션에서
     //  난 FAIL 의 일부가 그 줄 때문이었다 — 미러 검출력이 과대평가돼 있었다.)
@@ -93,7 +93,7 @@ describe('literal-mirror — SSOT와 거울 값 정합성', () => {
     });
   });
 
-  describe('PLAN_KEY — artshow-plan-v1', () => {
+  describe('PLAN_KEY — 결제 플랜 키', () => {
     it('PLAN_KEY SSOT 값 확인', () => {
       expect(typeof PLAN_KEY).toBe('string');
       expect(PLAN_KEY.length).toBeGreaterThan(0);
@@ -108,7 +108,7 @@ describe('literal-mirror — SSOT와 거울 값 정합성', () => {
     });
   });
 
-  describe('GOLD — #5f9e7d (브랜드 액센트 그린)', () => {
+  describe('GOLD — 브랜드 액센트 그린', () => {
     it('GOLD SSOT 값 확인', () => {
       expect(GOLD).toMatch(/^#[0-9a-f]{6}$/i);
     });
