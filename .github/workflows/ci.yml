@@ -1,20 +1,24 @@
 name: ci
 # 회귀 안전망 — lint·typecheck·단위테스트·헤드리스 렌더 스모크를 PR/푸시마다 자동 실행.
 #
-# 2스텝 롤인: 초기엔 독립·정보용(배포 무영향). 안정화 후 deploy.yml에 needs로
-# 선행 게이트화한다(그 변경은 배포 구조 변경이라 §10-4 cross-review).
-# 현재 위치 — **1스텝(독립·정보용).** 이 워크플로가 실패해도 배포는 나간다.
-# 다음 단계(#127)에서 `workflow_call` + deploy.yml `needs: verify` 로 결선한다.
+# 2스텝 롤인 **완료** — 이 워크플로는 이제 배포의 선행 게이트다.
+# `deploy.yml` 이 `uses: ./.github/workflows/ci.yml` 로 부르고 `needs: verify` 로 잇는다.
+# 여기가 빨간불이면 배포 job 이 아예 안 뜬다.
+#
+# `workflow_run` 이 아니라 `workflow_call` 인 이유(둘 다 검토했다):
+#  · `workflow_run` 은 워크플로 파일을 **기본 브랜치 판본**으로 실행한다 → 게이트 변경
+#    자체를 머지 전에 검증할 수 없다.
+#  · 더 나쁜 것 — 체크아웃 기본값이 default branch HEAD 라 `ref: head_sha` 를 명시하지
+#    않으면 **CI 가 통과시킨 커밋과 다른 커밋을 배포한다.** 무검증보다 나쁘다.
+#  · 로컬 `./` 참조는 **호출자와 같은 커밋의 파일**을 쓴다 → 그 문제가 원천 소거된다.
 on:
   push:
-    # `claude/**` — 작업 브랜치에서도 돈다. 이유 둘.
-    #  ① 게이트를 main 에 결선하기 전에 **러너에서 실제로 도는지** 확인할 곳이 필요하다.
-    #     PR 을 열지 않고, 배포에 손대지 않고 실측할 수 있는 유일한 경로다.
-    #  ② 결선 후에도 남길 값이 있다 — 회귀를 main 도착 전에 잡는다.
-    # 단계 3(#127)에서 `main` 만 뺀다(deploy.yml 이 workflow_call 로 부르므로 이중 실행이
-    # 되기 때문). `claude/**` 는 deploy 와 무관하므로 그대로 둔다.
-    branches: [main, 'claude/**']
+    # `main` 은 여기 없다. deploy.yml 이 workflow_call 로 부르므로, 남겨두면 main 푸시마다
+    # 독립 ci 와 호출된 ci 가 **이중으로** 돈다.
+    # `claude/**` 는 남긴다 — deploy 와 무관하고, 회귀를 main 도착 전에 잡는다.
+    branches: ['claude/**']
   pull_request:
+  workflow_call: {}
   workflow_dispatch: {}
 # 최소권한 — 검증 전용(체크아웃·설치·테스트)이라 쓰기 불요. (검수관 R4)
 permissions:
