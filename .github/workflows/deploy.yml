@@ -44,11 +44,12 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
           PUPPETEER_SKIP_DOWNLOAD: '1'
-      # 생성기 3종 — devlog/team/valuation·sitemap·robots 산출. vite build 이전 실행.
+      # 생성기 4종 — devlog/team/valuation·making·sitemap·robots 산출. vite build 이전 실행.
       - run: |
           node scripts/build-devlog.mjs
           node scripts/build-team.mjs
           node scripts/build-valuation.mjs
+          node scripts/build-making.mjs
       # Vite 배포기: dist(base /openartshow/) = 배포구조. HTML rename·CSP정합·자기완결은
       # vite.config 플러그인이 수행 → 소스 재배치 cp 로직 폐지(landing→index 등도 vite 가).
       - run: npx vite build
@@ -73,7 +74,7 @@ jobs:
           DEPLOY_SHA_FILE="$(node -e "import('./scripts/smoke/config.mjs').then(m=>process.stdout.write(m.DEPLOY_SHA_FILE))")"
           rm -rf _site && mkdir -p _site
           cp -r dist/.          _site/
-          cp -r devlog team valuation _site/
+          cp -r making devlog team valuation _site/
           cp sitemap.xml robots.txt _site/
           printf '%s\n' "$GITHUB_SHA" > "_site/$DEPLOY_SHA_FILE"
           touch _site/.nojekyll

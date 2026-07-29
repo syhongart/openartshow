@@ -179,11 +179,14 @@ function checkManifestCount() {
   }
   const parts = {
     dist: countFiles(path.join(ROOT, 'dist')),
+    making: countFiles(path.join(ROOT, 'making')),
     devlog: countFiles(path.join(ROOT, 'devlog')),
     team: countFiles(path.join(ROOT, 'team')),
     valuation: countFiles(path.join(ROOT, 'valuation')),
   };
-  const staticRoot = GENERATED_ROOT_FILES.length + 1 + STATIC_ROOT_EXTRA.length; // +1 = DEPLOY_SHA_FILE
+  // staticRoot: 리다이렉트 스텁 3개(devlog/index.html·team/index.html·valuation/index.html)
+  // + sitemap.xml + robots.txt + _deploy-sha.txt + .nojekyll
+  const staticRoot = GENERATED_ROOT_FILES.length + 1 + STATIC_ROOT_EXTRA.length + 3; // +3 = 리다이렉트 스텁, +1 = DEPLOY_SHA_FILE
   const expected = Object.values(parts).reduce((a, b) => a + b, 0) + staticRoot;
   const diff = n - expected;
   const breakdown = `${Object.entries(parts).map(([k, v]) => `${k} ${v}`).join(' + ')} + 정적 ${staticRoot}`;

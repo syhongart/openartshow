@@ -1,63 +1,37 @@
 #!/usr/bin/env node
-// docs/DEVLOG.md → devlog/ 정적 블로그 생성기 (의존성 0)
+// docs/DEVLOG.md → making/devlog/ 정적 블로그 생성기 (의존성 0)
 // 실행: node scripts/build-devlog.mjs   (저장소 루트 기준)
-// 산출: devlog/index.html, devlog/<slug>.html, sitemap.xml, robots.txt
+// 산출: making/devlog/index.html, making/devlog/<slug>.html
 // BASE_URL 은 `scripts/site-url.mjs` 가 SSOT 다(자체 도메인 구매 시 거기 한 줄만 바꾼다).
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BASE_URL } from './site-url.mjs';
+import { shell, SITE } from './lib/site-shell.mjs';
+import { slugFor } from './lib/devlog-slug.mjs';
+import { categorize, stripTag } from './lib/devlog-category.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SITE = 'OpenArtShow';
-const OUT = join(ROOT, 'devlog');
+const OUT = join(ROOT, 'making', 'devlog');
 
 // ---------- 파싱 ----------
 const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8').replace(/\r\n/g, '\n'); // CRLF 정규화 — Windows 워킹트리(w/crlf)에서도 `## ` 블록 파싱이 깨지지 않게(git 저장은 LF, CI는 LF라 무영향)
 const blocks = src.split(/\n(?=## )/);
 const entries = [];
-let pinCount = 0;
 for (const b of blocks) {
   const m = b.match(/^## (\d{4}-\d{2}-\d{2}) · (.+)\n([\s\S]*)$/);
   if (!m) continue;
   const [, date, rawTitle] = m;
   let body = m[3].replace(/\n---\s*$/,'').trim();
-  const isPin = rawTitle.trim().startsWith('★');            // '★' 접두 = 최상단 고정(철학 등)
+  const isPin = rawTitle.trim().startsWith('★');            // '★' 접두 = 최상단 고정
   const title = rawTitle.trim().replace(/^★\s*/, '');
-  const slug = isPin ? (pinCount++ === 0 ? 'philosophy' : `philosophy-${pinCount}`)
-                     : `${date}-${hash6(title)}`;
-  entries.push({ date, title, body, pinned: isPin, slug });
+  const slug = slugFor(date, title);                        // 새 모듈: 슬러그 축 (LEGACY_SLUGS + hash6)
+  const category = categorize(rawTitle);                    // 새 모듈: 카테고리 축 (emoji 포함)
+  entries.push({ date, title, body, pinned: isPin, slug, category });
 }
 // 고정(철학) 항목과 일반 로그를 분리 — 고정은 날짜와 무관하게 인덱스 최상단·연대기 nav 제외
 const pinned = entries.filter(e => e.pinned);
 const logs = entries.filter(e => !e.pinned);
-
-function hash6(s) { // djb2 — 제목이 같으면 영구 동일 슬러그 (SEO 안정성)
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
-  return h.toString(16).padStart(8, '0').slice(0, 6);
-}
-
-// 제목 키워드 → 주제 이모티콘 (첫 매치 승리, 슬러그·SEO 타이틀에는 미포함)
-const EMOJI_RULES = [
-  [/철학|philosophy/i, '🧭'],
-  [/법무/, '⚖️'],
-  [/블로그|일지 공개/, '📝'],
-  [/네이밍|마스코트|아야모|치비|캐릭터 전면/, '🧸'],
-  [/fps|프레임|드로우콜|성능|베이크드|픽셀|렌더링|포테이토|저사양/i, '⚡'],
-  [/하늘|HDRI|별|은하수/i, '🌌'],
-  [/나무|정원/, '🌳'],
-  [/그림자/, '🌗'],
-  [/일몰|사이클|cycle|테마/i, '🌅'],
-  [/타격|이펙트|콕 찌|VFX|HUD/i, '💥'],
-  [/모바일|햄버거|독 /, '📱'],
-  [/충돌|회피|통과/, '🚶'],
-  [/방명록/, '📖'],
-  [/스크롤|레일/, '📜'],
-  [/랜딩|카드|배지|CTA|타이포|조판|그린|골드|디자인|플레이트|라운드|비네팅|로비|리파인|조명/, '🎨'],
-];
-const emojiFor = t => (EMOJI_RULES.find(([re]) => re.test(t)) || [null, '🛠️'])[1];
 
 // ---------- 마크다운 → HTML (개발일지 서브셋: h3/불릿/표/굵게/코드/링크) ----------
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -93,7 +67,8 @@ function mdToHtml(md) {
     const img = raw.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
     if (img) {
       flushPara(); flushList(); flushQuote(); flushTable();
-      const isrc = img[2].replace('../devlog/img/', './img/'); // DEVLOG.md(docs/) 기준 → 블로그 기준 경로
+      // DEVLOG.md(docs/) 기준 `../devlog/img/` → making/devlog/ 기준 `./img/`
+      const isrc = img[2].replace('../devlog/img/', './img/');
       out.push(`<figure class="shot"><img src="${esc(isrc)}" alt="${esc(img[1])}" loading="lazy">` +
         (img[1] ? `<figcaption>${inline(img[1])}</figcaption>` : '') + `</figure>`);
       continue;
@@ -120,24 +95,8 @@ function excerpt(body, n = 120) {
   return t.length > n ? t.slice(0, n - 1) + '…' : t;
 }
 
-// ---------- 셸 (랜딩 갤러리 플레이트 토큰과 동일 언어) ----------
+// ---------- 고유 CSS — devlog 고유분만 (셸은 site-shell.mjs에서) ----------
 const CSS = `
-:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
---ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
---g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
-*{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
-font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
-a{color:var(--gold-text);text-decoration:none}
-.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
-.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
-.top .logo .dot{color:var(--gold)}
-.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
-.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
-.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
-.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
-h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
-.lead{color:var(--ink-body);margin:0 0 34px}
 .card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
 transition:border-color .2s,transform .2s}
 .card:hover{border-color:var(--g300);transform:translateY(-1px)}
@@ -176,48 +135,8 @@ th{background:var(--paper-deep);color:var(--ink);font-weight:600}
 .pn a:hover{border-color:var(--g300)}
 .pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
 .back{display:inline-block;margin-bottom:26px;font-size:13px}
-footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
 @media(max-width:520px){.top nav{gap:12px}}
 `;
-
-function shell({ title, desc, path, og, jsonld, bodyHtml }) {
-  const url = `${BASE_URL}${path}`;
-  return `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${esc(title)}</title>
-<meta name="description" content="${esc(desc)}">
-<link rel="canonical" href="${url}">
-<meta property="og:type" content="${og}">
-<meta property="og:site_name" content="${SITE}">
-<meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="${esc(desc)}">
-<meta property="og:url" content="${url}">
-<script type="application/ld+json">${JSON.stringify(jsonld)}</script>
-<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
-<style>${CSS}</style>
-</head>
-<body>
-<header class="top">
-  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
-  <nav>
-    <a href="../devlog/">개발일지</a>
-    <a href="../team/">팀</a>
-    <a href="../valuation/">밸류에이션</a>
-    <a href="../guide.html">가이드</a>
-    <a href="../app/">입장하기</a>
-  </nav>
-</header>
-<div class="wrap">
-${bodyHtml}
-</div>
-<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
-</body>
-</html>
-`;
-}
 
 // ---------- 생성 ----------
 mkdirSync(OUT, { recursive: true });
@@ -228,27 +147,31 @@ function writeEntryPage(e, pn, isPin) {
   const meta = isPin
     ? `방향을 잃을 때 돌아오는 자리 — 새겨둔 날 ${e.date}`
     : 'OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과';
+  const displayTitle = `${e.category.emoji} ${stripTag(e.title)}`;  // 새 모듈에서 이모지와 정제 제목
   const body = `
 <a class="back" href="./">← 개발일지 전체</a>
 <article>
 <div class="eyebrow">${eyebrow}</div>
-<h1><span class="emo">${emojiFor(e.title)}</span>${esc(e.title)}</h1>
+<h1>${esc(displayTitle)}</h1>
 <p class="meta">${meta}</p>
 ${mdToHtml(e.body)}
 </article>
 ${pn && pn.length ? `<div class="pn">${pn.join('')}</div>` : ''}`;
+  const cleanTitle = stripTag(e.title);  // 명시 태그 제거
   writeFileSync(join(OUT, `${e.slug}.html`), shell({
-    title: `${e.title} — ${SITE} 개발일지`,
+    title: `${cleanTitle} — ${SITE}`,
     desc: excerpt(e.body, 150),
-    path: `/devlog/${e.slug}.html`,
+    path: `/making/devlog/${e.slug}.html`,
     og: 'article',
     jsonld: {
       '@context': 'https://schema.org', '@type': 'BlogPosting',
-      headline: e.title, datePublished: e.date,
-      author: { '@type': 'Organization', name: SITE },
-      mainEntityOfPage: `${BASE_URL}/devlog/${e.slug}.html`,
+      headline: cleanTitle, datePublished: e.date,
+      author: { '@type': 'Organization', name: 'OpenArtShow' },
+      mainEntityOfPage: `https://syhongart.github.io/openartshow/making/devlog/${e.slug}.html`,
       inLanguage: 'ko',
     },
+    css: CSS,
+    depth: 2,
     bodyHtml: body,
   }));
 }
@@ -257,35 +180,37 @@ ${pn && pn.length ? `<div class="pn">${pn.join('')}</div>` : ''}`;
 logs.forEach((e, i) => {
   const newer = logs[i - 1], older = logs[i + 1];
   const pn = [];
-  if (older) pn.push(`<a href="./${older.slug}.html"><span class="lbl">← 이전 기록</span>${esc(older.title)}</a>`);
-  if (newer) pn.push(`<a href="./${newer.slug}.html" style="text-align:right"><span class="lbl">다음 기록 →</span>${esc(newer.title)}</a>`);
+  if (older) pn.push(`<a href="./${older.slug}.html"><span class="lbl">← 이전 기록</span>${esc(stripTag(older.title))}</a>`);
+  if (newer) pn.push(`<a href="./${newer.slug}.html" style="text-align:right"><span class="lbl">다음 기록 →</span>${esc(stripTag(newer.title))}</a>`);
   writeEntryPage(e, pn, false);
 });
 // 고정 철학 페이지 — 연대기 nav 없음
 pinned.forEach(e => writeEntryPage(e, null, true));
 
 const pinCards = pinned.map(e => `<a class="pin-card" href="./${e.slug}.html">
-  <span class="pin-tag">🧭 OpenArtShow의 철학 · 고정</span>
-  <h2>${esc(e.title)}</h2>
+  <span class="pin-tag">${e.category.emoji} ${e.category.label} · 고정</span>
+  <h2>${esc(stripTag(e.title))}</h2>
   <p>${esc(excerpt(e.body))}</p>
 </a>`).join('\n');
 
 const cards = logs.map(e => `<a class="card" href="./${e.slug}.html">
   <span class="d">${e.date}</span>
-  <h2><span class="emo">${emojiFor(e.title)}</span>${esc(e.title)}</h2>
+  <h2><span class="emo">${e.category.emoji}</span>${esc(stripTag(e.title))}</h2>
   <p>${esc(excerpt(e.body))}</p>
 </a>`).join('\n');
 
 writeFileSync(join(OUT, 'index.html'), shell({
   title: `개발일지 — ${SITE}`,
   desc: 'OpenArtShow를 만드는 과정의 공개 기록. 웹 3D 미술관의 성능·디자인·법무·브랜드 결정을 원인-분석-개선-결과로 남깁니다.',
-  path: '/devlog/',
+  path: '/making/devlog/',
   og: 'website',
   jsonld: {
     '@context': 'https://schema.org', '@type': 'Blog',
-    name: `${SITE} 개발일지`, url: `${BASE_URL}/devlog/`, inLanguage: 'ko',
-    blogPost: logs.slice(0, 10).map(e => ({ '@type': 'BlogPosting', headline: e.title, datePublished: e.date, url: `${BASE_URL}/devlog/${e.slug}.html` })),
+    name: `${SITE} 개발일지`, url: `https://syhongart.github.io/openartshow/making/devlog/`, inLanguage: 'ko',
+    blogPost: logs.slice(0, 10).map(e => ({ '@type': 'BlogPosting', headline: stripTag(e.title), datePublished: e.date, url: `https://syhongart.github.io/openartshow/making/devlog/${e.slug}.html` })),
   },
+  css: CSS,
+  depth: 2,
   bodyHtml: `
 <div class="eyebrow">Devlog</div>
 <h1>개발일지</h1>
@@ -295,20 +220,7 @@ ${pinCards}
 ${cards}`,
 }));
 
-// ---------- sitemap / robots ----------
-const urls = [
-  { loc: `${BASE_URL}/`, mod: entries[0].date },
-  { loc: `${BASE_URL}/guide.html`, mod: entries[0].date },
-  { loc: `${BASE_URL}/app/world.html`, mod: '2026-07-20' }, // 오픈월드 정식 승격일 고정(감독 결재) — 배포 구조상 app/
-  { loc: `${BASE_URL}/team/`, mod: entries[0].date },
-  { loc: `${BASE_URL}/valuation/`, mod: entries[0].date },
-  { loc: `${BASE_URL}/devlog/`, mod: entries[0].date },
-  ...entries.map(e => ({ loc: `${BASE_URL}/devlog/${e.slug}.html`, mod: e.date })),
-];
-writeFileSync(join(ROOT, 'sitemap.xml'),
-  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-  urls.map(u => `  <url><loc>${u.loc}</loc><lastmod>${u.mod}</lastmod></url>`).join('\n') +
-  `\n</urlset>\n`);
-writeFileSync(join(ROOT, 'robots.txt'), `User-agent: *\nAllow: /\n\nSitemap: ${BASE_URL}/sitemap.xml\n`);
+// ---------- sitemap 은 build-making.mjs 에서 통합 생성 ----------
+// 이 생성기는 devlog 페이지만 산출한다. sitemap·robots 은 build-making.mjs가 담당.
 
-console.log(`devlog: ${entries.length} posts → devlog/ + sitemap.xml + robots.txt`);
+console.log(`devlog: ${entries.length} posts → making/devlog/`);

@@ -35,11 +35,12 @@ export const SITE_DIR = path.join(ROOT, '_site');
 // 한쪽만 고쳐도 아무도 모른다(검수관 B3). 재수출만 한다.
 export { BASE_PATH } from '../site-url.mjs';
 
-// ── 검사1: deploy.yml 이 실행하는 생성기 3종 (exit 0 요구) ─────────────
+// ── 검사1: deploy.yml 이 실행하는 생성기 4종 (exit 0 요구) ─────────────
 export const GENERATORS = [
   'scripts/build-devlog.mjs',
   'scripts/build-team.mjs',
   'scripts/build-valuation.mjs',
+  'scripts/build-making.mjs',
 ];
 
 // ── 검사2: 매니페스트 파일수 ─────────────────────────────────────────
@@ -110,9 +111,10 @@ const REQUIRED_FILES_COMMON = [
   'app/index.html',        // 미술관
   'app/studio.html',       // 스튜디오
   'app/world.html',        // 월드 (정식 노출 — sitemap 등재)
-  'devlog/index.html',
-  'team/index.html',
-  'valuation/index.html',
+  'making/index.html',     // 만드는 이야기 허브
+  'devlog/index.html',     // 리다이렉트 스텁
+  'team/index.html',       // 리다이렉트 스텁
+  'valuation/index.html',  // 리다이렉트 스텁
   ...GENERATED_ROOT_FILES,
 ];
 export const REQUIRED_FILES_BASELINE = [

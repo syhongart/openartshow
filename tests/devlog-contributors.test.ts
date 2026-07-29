@@ -118,8 +118,13 @@ describe('날짜 계산 — min/max 정렬', () => {
 
     for (const [roleId, data] of Object.entries(result)) {
       if (data.count > 0) {
+        // tsc 가 `possibly null` 을 짚었다. 타입만 회피하지 않고 **단언으로 올린다** —
+        // 한 번이라도 등장했는데(count>0) 날짜가 없다면 그건 집계 자체의 결함이다.
+        // 회피(`!`·`as`)로 눌렀으면 그 결함이 조용히 통과했을 자리다.
+        expect(data.joined, `${roleId}: count>0 인데 joined 가 없다`).not.toBeNull();
+        expect(data.lastSeen, `${roleId}: count>0 인데 lastSeen 이 없다`).not.toBeNull();
         // 문자열 날짜 비교: YYYY-MM-DD 형식이므로 사전식 비교가 곧 날짜 비교
-        expect(data.joined <= data.lastSeen).toBe(true);
+        expect(String(data.joined) <= String(data.lastSeen), roleId).toBe(true);
       }
     }
   });

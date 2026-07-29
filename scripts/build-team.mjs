@@ -1,16 +1,15 @@
 #!/usr/bin/env node
-// docs/team-roster.js(데이터) → team/index.html 인사기록 페이지 생성기 (의존성 0)
+// docs/team-roster.js(데이터) → making/team/index.html 인사기록 페이지 생성기 (의존성 0)
 // 실행: node scripts/build-team.mjs   (저장소 루트 기준)
 // 개발일지와 동일한 갤러리 플레이트 디자인 시스템.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { shell } from './lib/site-shell.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const BASE_URL = 'https://syhongart.github.io/openartshow';
-const SITE = 'OpenArtShow';
-const OUT = join(ROOT, 'team');
+const OUT = join(ROOT, 'making', 'team');
 
 // ---------------------------------------------------------------------------
 // 명부 — 기여 건수는 개발일지(docs/DEVLOG.md)의 실제 태그·항목에서 집계한 값.
@@ -127,23 +126,8 @@ function memberCard(m) {
 </div>`;
 }
 
-const CSS = `
-:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
---ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
---g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
-*{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
-font-size:15px;line-height:1.7;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
-a{color:var(--gold-text);text-decoration:none}
-.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
-.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
-.top .logo .dot{color:var(--gold)}
-.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
-.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
-.wrap{max-width:900px;margin:0 auto;padding:48px 22px 90px}
-.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
-h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
-.lead{color:var(--ink-body);margin:0 0 30px}
+// team 고유 CSS (셸은 site-shell.mjs에서, 변수 오버라이드는 하단 shell() 호출에서)
+const CSS = `:root{--wrap-w:900px;--lead-mb:30px;--lh:1.7}
 .stat-row{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 44px}
 .stat{flex:1;min-width:130px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
 .stat .n{font-size:26px;font-weight:600;color:var(--g700);line-height:1}
@@ -168,46 +152,17 @@ h2.sec{font-size:15px;color:var(--g800);margin:38px 0 16px;padding-left:10px;bor
 .m-items{margin:12px 0 0;padding-left:18px}
 .m-items li{font-size:12.5px;color:var(--ink-body);margin:0 0 4px}
 .note-foot{margin-top:40px;font-size:12px;color:var(--ink-dim);line-height:1.6;border-top:1px solid var(--line);padding-top:18px}
-footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
-@media(max-width:640px){.grid{grid-template-columns:1fr}.top nav{gap:12px}}
+@media(max-width:640px){.grid{grid-template-columns:1fr}}
 `;
 
 const jsonld = {
-  '@context': 'https://schema.org', '@type': 'Organization', name: SITE,
-  url: `${BASE_URL}/`, member: [...ROSTER.fulltime, ...ROSTER.contract].map((m) => ({
+  '@context': 'https://schema.org', '@type': 'Organization', name: 'OpenArtShow',
+  url: `https://syhongart.github.io/openartshow/`, member: [...ROSTER.fulltime, ...ROSTER.contract].map((m) => ({
     '@type': 'Person', name: m.name, jobTitle: m.role,
   })),
 };
 
-const html = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>팀 · 인사기록 — ${SITE}</title>
-<meta name="description" content="OpenArtShow를 만드는 팀 — 정규직과 계약직(디자이너·법무·카피·성능·리서처)의 인사기록과 기여도. 사람과 AI가 함께 만드는 미술관.">
-<link rel="canonical" href="${BASE_URL}/team/">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="${SITE}">
-<meta property="og:title" content="팀 · 인사기록 — ${SITE}">
-<meta property="og:description" content="정규직과 계약직의 인사기록과 기여도 — 사람과 AI가 함께 만드는 미술관.">
-<meta property="og:url" content="${BASE_URL}/team/">
-<script type="application/ld+json">${JSON.stringify(jsonld)}</script>
-<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
-<style>${CSS}</style>
-</head>
-<body>
-<header class="top">
-  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
-  <nav>
-    <a href="../team/">팀</a>
-    <a href="../devlog/">개발일지</a>
-    <a href="../valuation/">밸류에이션</a>
-    <a href="../guide.html">가이드</a>
-    <a href="../app/">입장하기</a>
-  </nav>
-</header>
-<div class="wrap">
+const bodyHtml = `
   <div class="eyebrow">Team · HR</div>
   <h1>팀 · 인사기록</h1>
   <p class="lead">OpenArtShow는 감독 한 사람과 AI 팀이 함께 만듭니다.<br>
@@ -229,15 +184,21 @@ const html = `<!DOCTYPE html>
   <p class="note-foot">
     기여 건수는 <a href="../devlog/">공개 개발일지</a>의 실제 항목·태그에서 집계한 값입니다.
     막대는 팀 내 최대 기여자 대비 상대치입니다. 계약직은 사안이 생길 때 고용되어 실사·감사·자문을
-    수행하며, 결과는 개발일지에 근거와 함께 남습니다.<br>
+    수행하며, 결과는 개발일지에 근거와 함께 남깁니다.<br>
     <span style="color:var(--ink-dim)">최종 갱신 ${ROSTER.updated}</span>
   </p>
-</div>
-<footer>&copy; 2026 OpenArtShow. — 사람과 AI가 함께 만드는 미술관.</footer>
-</body>
-</html>
 `;
 
 mkdirSync(OUT, { recursive: true });
-writeFileSync(join(OUT, 'index.html'), html);
-console.log(`team: ${ROSTER.fulltime.length} 정규직 + ${ROSTER.contract.length} 계약직 → team/index.html`);
+writeFileSync(join(OUT, 'index.html'), shell({
+  title: '팀 · 인사기록 — OpenArtShow',
+  desc: 'OpenArtShow를 만드는 팀 — 정규직과 계약직(디자이너·법무·카피·성능·리서처)의 인사기록과 기여도. 사람과 AI가 함께 만드는 미술관.',
+  path: '/making/team/',
+  og: 'website',
+  jsonld,
+  css: CSS,
+  depth: 2,
+  footerNote: '사람과 AI가 함께 만드는 미술관.',
+  bodyHtml,
+}));
+console.log(`team: ${ROSTER.fulltime.length} 정규직 + ${ROSTER.contract.length} 계약직 → making/team/index.html`);

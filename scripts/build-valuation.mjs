@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 시장가치 추적기 — DEVLOG 신호 + 트랙션 입력으로 밸류에이션을 산출하고
-// docs/valuation-history.json에 일자별 누적, valuation/index.html에 그래프를 그린다.
+// docs/valuation-history.json에 일자별 누적, making/valuation/index.html에 그래프를 그린다.
 // 실행: node scripts/build-valuation.mjs  (저장소 루트 기준, 하루 1회 멱등)
 //
 // 모델(결정론적·공개 — 근거는 페이지 하단):
@@ -16,13 +16,12 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { shell } from './lib/site-shell.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const BASE_URL = 'https://syhongart.github.io/openartshow';
-const SITE = 'OpenArtShow';
 const HIST = join(ROOT, 'docs', 'valuation-history.json');
 const TRACTION = join(ROOT, 'docs', 'traction.json');
-const OUT = join(ROOT, 'valuation');
+const OUT = join(ROOT, 'making', 'valuation');
 const GOAL = 500000; // 50억 (만원)
 
 const kstDate = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -113,23 +112,8 @@ function chartSvg(hist) {
 const last = history[history.length - 1];
 const toGoal = GOAL - last.realized;
 
-const CSS = `
-:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
---ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
---g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
-*{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
-font-size:15px;line-height:1.7;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
-a{color:var(--gold-text);text-decoration:none}
-.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
-.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
-.top .logo .dot{color:var(--gold)}
-.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
-.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
-.wrap{max-width:840px;margin:0 auto;padding:48px 22px 90px}
-.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
-h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
-.lead{color:var(--ink-body);margin:0 0 28px}
+// valuation 고유 CSS (셸은 site-shell.mjs에서, 변수 오버라이드는 하단 shell() 호출에서)
+const CSS = `:root{--wrap-w:840px;--lead-mb:28px;--lh:1.7}
 .hero-n{display:flex;gap:26px;flex-wrap:wrap;align-items:baseline;margin:0 0 8px}
 .hero-n .big{font-size:44px;font-weight:600;color:var(--g700);line-height:1}
 .hero-n .sub{font-size:13px;color:var(--ink-dim)}
@@ -163,41 +147,14 @@ th{background:var(--paper-deep);color:var(--ink);font-weight:600}
 .lever .c b{color:var(--g700)} .lever .c .s{font-size:12px;color:var(--ink-dim)}
 .note{font-size:12.5px;color:var(--ink-dim);line-height:1.7;margin-top:8px}
 .disc{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:12.5px;color:var(--ink-body);margin-top:22px}
-footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
-@media(max-width:560px){.top nav{gap:12px}.hero-n .big{font-size:34px}.lever{grid-template-columns:1fr}}
+@media(max-width:560px){.hero-n .big{font-size:34px}.lever{grid-template-columns:1fr}}
 `;
 
 const rows = history.slice().reverse().map((h) =>
   `<tr><td>${h.date}</td><td>${h.devlogs}건</td><td>${h.galleries}·${h.mau}·${won(h.mrr)}</td><td>${won(h.realized)}</td><td>${pct(h.realized)}</td></tr>`
 ).join('');
 
-const html = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>시장가치 추이 · 목표 50억 — ${SITE}</title>
-<meta name="description" content="OpenArtShow의 결과물·트랙션 기반 시장가치를 매일 자동 산출하고 50억 목표까지의 경로를 추적합니다.">
-<link rel="canonical" href="${BASE_URL}/valuation/">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="${SITE}">
-<meta property="og:title" content="시장가치 추이 · 목표 50억 — ${SITE}">
-<meta property="og:description" content="결과물·트랙션 기반 밸류에이션과 50억 목표 경로.">
-<meta property="og:url" content="${BASE_URL}/valuation/">
-<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
-<style>${CSS}</style>
-</head>
-<body>
-<header class="top">
-  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
-  <nav>
-    <a href="../valuation/">밸류에이션</a>
-    <a href="../team/">팀</a>
-    <a href="../devlog/">개발일지</a>
-    <a href="../app/">입장하기</a>
-  </nav>
-</header>
-<div class="wrap">
+const bodyHtml = `
   <div class="eyebrow">Valuation · 목표 50억 · 매일 04:00 KST</div>
   <h1>시장가치 추이</h1>
   <p class="lead">결과물(개발일지·문서·IP)과 트랙션(갤러리·이용자·매출)로 밸류에이션을 매일 산출하고,<br>
@@ -250,12 +207,17 @@ const html = `<!DOCTYPE html>
     ⚠️ 내부 추적용 자기 추정이며 외부 투자·거래의 근거가 아닙니다. 시장범위·목표는
     트랙션 확보라는 조건부 시나리오입니다. 실제 가치는 시장이 정합니다.
   </div>
-</div>
-<footer>&copy; 2026 OpenArtShow. — 매일 04:00 KST 자동 산출 · 목표 50억 · 최종 ${last.date}</footer>
-</body>
-</html>
 `;
 
 mkdirSync(OUT, { recursive: true });
-writeFileSync(join(OUT, 'index.html'), html);
+writeFileSync(join(OUT, 'index.html'), shell({
+  title: '시장가치 추이 · 목표 50억 — OpenArtShow',
+  desc: 'OpenArtShow의 결과물·트랙션 기반 시장가치를 매일 자동 산출하고 50억 목표까지의 경로를 추적합니다.',
+  path: '/making/valuation/',
+  og: 'website',
+  css: CSS,
+  depth: 2,
+  footerNote: `매일 04:00 KST 자동 산출 · 목표 50억 · 최종 ${last.date}`,
+  bodyHtml,
+}));
 console.log(`valuation ${kstDate}: 실현 ${won(realized)} (${pct(realized)}) / 목표까지 ${won(toGoal)} · 개발일지 ${devlogCount} · 트랙션 g${traction.galleries}/m${traction.mau}/₩${traction.mrr}`);
