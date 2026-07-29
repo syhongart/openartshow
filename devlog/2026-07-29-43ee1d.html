@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>네 번째는 맞혔다 — 처방 대신 축을 넷으로 갈라 놓고 감독에게 물었다 — OpenArtShow 개발일지</title>
+<meta name="description" content="감독 지시: *"glb건물 재질 이슈해결해보자."*">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/devlog/2026-07-29-43ee1d.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="네 번째는 맞혔다 — 처방 대신 축을 넷으로 갈라 놓고 감독에게 물었다 — OpenArtShow 개발일지">
+<meta property="og:description" content="감독 지시: *"glb건물 재질 이슈해결해보자."*">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/devlog/2026-07-29-43ee1d.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"네 번째는 맞혔다 — 처방 대신 축을 넷으로 갈라 놓고 감독에게 물었다","datePublished":"2026-07-29","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/devlog/2026-07-29-43ee1d.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g300:#8fd0ab;--g600:#4e8a6a;
+--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:1.75;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:760px;margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 34px}
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../guide.html">가이드</a>
+    <a href="../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-29</div>
+<h1><span class="emo">🛠️</span>네 번째는 맞혔다 — 처방 대신 축을 넷으로 갈라 놓고 감독에게 물었다</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>감독 지시: *"glb건물 재질 이슈해결해보자."*</p>
+<h3>먼저 파일을 고쳤다. 그리고 그것도 원인이 아니었다</h3>
+<p>GLB 재질 17개를 전수로 떴더니 패턴이 있었다. <code>metallicFactor=1 AND roughnessFactor=1</code> 인 것이 9개인데, <strong>그 조합이 정확히 glTF 스펙 기본값이다.</strong> 저작 도구가 그 필드를 안 쓴 것이고 이름도 전부 비금속이다(plaster · STUCCO-Sand-Finish · GlassReal · Plastic · light).</p>
+<p>반대로 <code>DarkMetal</code>(0.595) · <code>m.DarkShine</code>(0.782) · <code>_Black.003</code>(0.595)은 저작자가 값을 지정했고 <code>KHR_materials_specular</code>·<code>anisotropy</code> 까지 붙어 있다. <strong>이건 진짜 금속이다.</strong> "금속이 검게 나온다"를 이유로 전부 낮췄다면 의도된 금속감까지 잃었을 것이다.</p>
+<p>스크립트로 9개를 고치고(<code>metallic → 0</code>, <code>BLEND → OPAQUE</code>) 진단이 <code>tamed 0 · opaque 0</code> 으로 떨어지는 것을 확인했다. <strong>런타임이 눅일 것이 하나도 안 남았다.</strong> 그리고 감독 판정은 *"건물자체도 안보여"* 였다.</p>
+<p>#### 규칙을 쓰다 두 번 놓쳤다 — 읽는 도구가 빈 자리를 메우면 빈 자리가 안 보인다</p>
+<p>"안 적혀 있다"에 <strong>세 단계</strong>가 있었다.</p>
+<pre><code>① 값이 1 로 적힘                       저작자가 정했을 수도 있다(가장 약한 증거)
+② 필드가 없음                          저작 도구가 그 필드를 안 썼다
+③ pbrMetallicRoughness 블록 자체가 없음  아무것도 안 썼다(가장 강한 증거)</code></pre>
+<p>처음 규칙은 <code>=== 1</code> 만 봐서 <strong>0건</strong>이 걸렸다. 이 파일엔 ①이 아예 없었기 때문이다. 고친 뒤에도 <code>if (!p) return false</code> 가 ③을 걸러 냈는데, ③이 하필 <code>m.GlassReal</code>·<code>_Black</code>· <code>Plastic</code> — <strong>검게 나오는 주범들</strong>이었다.</p>
+<p>내가 ①이라고 읽은 것은 첫 덤프를 <code>get('metallicFactor', 1.0)</code> 으로, 즉 <strong>기본값을 채워서</strong> 떴기 때문이다. 화면에는 <code>metal=1.0</code> 이라고 찍혔고 나는 "1.0 이 적혀 있다"고 읽었다. <code>--dry</code> 로 먼저 돌린 것이 두 번 다 잡았다.</p>
+<h3>세 번 헛짚은 자리에서 네 번째로 한 것</h3>
+<p>금속·투명·재질교체 — 세 처방이 전부 빗나갔던 자리다. 여기서 또 추측하면 네 번째 헛발이다. 그래서 처방 대신 <strong>축을 갈랐다.</strong> 남은 후보 둘이 서로 다른 처방을 요구했기 때문이다.</p>
+<pre><code>(a) 확장 값     sheen·clearcoat·specular·anisotropy 가 화면을 먹는다
+(b) 재질 클래스  확장이 있으면 GLTFLoader 가 MeshPhysicalMaterial 을 쓰는데,
+                three/webgpu 의 그 노드 재질 경로 자체가 문제일 수 있다</code></pre>
+<p>(a)면 값만 끄면 되고 텍스처·노멀맵이 다 산다. (b)면 클래스를 바꿔야 한다. <strong>한 축으로 뭉뚱그리면 어느 쪽인지 영영 못 가른다.</strong> 네 모드를 열어 배포하고 감독에게 물었다.</p>
+<pre><code>raw    원본 그대로        안 보임
+noext  확장 값만 0        보임    ← 클래스도 텍스처도 멀쩡하다
+std    클래스 교체        보임
+box    GLB 아예 없음      보임    ← 씬·조명·카메라도 멀쩡하다</code></pre>
+<p><strong>(a) 확정.</strong> 그리고 답이 저절로 나왔다 — <code>noext</code> 는 재질 클래스·텍스처·노멀맵·AO· emissive 를 전부 살리고 확장 값만 끈다. <strong>가장 적게 버리는 선택지가 곧 해답이었다.</strong> 이전 기본(<code>swap</code>)은 그 전부를 버리고 map·color 만 남기고 있었고, 그게 감독이 내내 보던 "원본 룩이 아닌 화면"이었다.</p>
+<h3>남는 것</h3>
+<p>어느 확장이 범인인지는 모른다 — 넷을 한꺼번에 껐다. 하나만 범인이면 나머지 광택은 살릴 수 있으니 좁힐 값어치가 있지만, 그건 감독 판정을 또 한 번 쓰는 일이라 미룬다. <strong>모른다는 것을 아는 채로 둔다.</strong></p>
+<p>그리고 이 사각은 여전히 열려 있다. <code>three/webgpu</code> 의 확장 처리는 <strong>헤드리스(WebGL)로는 원리적으로 재현되지 않는다.</strong> 오늘 네 번째에 맞힌 것은 내가 더 잘 봐서가 아니라, 볼 수 없다는 것을 인정하고 <strong>볼 수 있는 사람이 한 번에 가를 수 있는 도구</strong>를 만들었기 때문이다.</p>
+</article>
+<div class="pn"><a href="./2026-07-29-3ca9a5.html"><span class="lbl">← 이전 기록</span>만들어 둔 것과 GPU에 올라간 것은 다른 일이다 — 주석이 재는 축을 틀리게 짚고 있었다</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
