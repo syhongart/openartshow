@@ -17,7 +17,7 @@
 // 같은 형태로만 드러나 원인을 찾기가 매우 어렵다.
 
 import { describe, it, expect } from 'vitest';
-import { glbCityFeature } from '../frontend/js/world2/features/glb-city.js';
+import { glbCityFeature, gridCells } from '../frontend/js/world2/features/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 
@@ -76,3 +76,35 @@ function filesReferencing(dir: URL, needle: string): string[] {
   walk(rootDir);
   return out;
 }
+
+// ── 스폰 칸 (감독 실기기 판정) ───────────────────────────────────────────────
+// 감독: *"50채 해봤는데. 조이스틱이 안먹는듯."*
+//
+// 조이스틱은 멀쩡했다. **원점이 곧 플레이어 스폰 지점**인데 거기에 26×24m 미술관을
+// 세웠으니 부팅하자마자 건물 한가운데에 갇혔고, 움직여도 사방이 같은 벽이라 입력이
+// 안 먹는 것처럼 보였다. 성능 문제가 아니라 배치 결함이었다.
+//
+// 실기기로만 드러나는 결함을 실기기로만 확인하면 같은 왕복을 반복한다. 자리 계산을
+// 순수 함수로 떼어 두었으니 여기서 잡는다.
+describe('GLB 배치는 스폰 자리를 비운다', () => {
+  const CELL = 32;
+  /** 미술관 바닥 26.3 × 24.1m 의 대각 반경. 이 안에 들어오면 벽 속이다 */
+  const MODEL_RADIUS = Math.hypot(26.3, 24.1) / 2;
+
+  for (const n of [1, 10, 50, 100, 200]) {
+    it(`${n}채 — 원점에 아무것도 세우지 않는다`, () => {
+      const cells = gridCells(n, CELL);
+      expect(cells).toHaveLength(n); // 비운 칸의 몫은 바깥으로 밀릴 뿐 줄지 않는다
+      const nearest = Math.min(...cells.map((c) => c.d));
+      expect(nearest, `최근접 ${nearest.toFixed(1)}m, 모델 반경 ${MODEL_RADIUS.toFixed(1)}m`)
+        .toBeGreaterThan(MODEL_RADIUS);
+    });
+  }
+
+  it('같은 입력이면 같은 배치다 — 조건 간 비교가 성립하려면 결정론이어야 한다', () => {
+    expect(gridCells(50, CELL)).toEqual(gridCells(50, CELL));
+    // 채수를 늘려도 앞선 자리는 그대로여야 한다. 안 그러면 10채와 50채가 다른 세상이라
+    // "채수만 바꿨다"는 전제가 깨진다.
+    expect(gridCells(10, CELL)).toEqual(gridCells(50, CELL).slice(0, 10));
+  });
+});

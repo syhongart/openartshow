@@ -151,9 +151,19 @@ interface GeoLike {
 /**
  * 파셀 격자에 세운다. 미술관이 26×24m 이고 셀이 32m 라 한 칸에 한 채가 들어간다.
  *
- * 원점 주변부터 바깥으로 채운다 — 스폰 지점이 원점이므로, 채수가 적어도 **화면에 보이는
- * 곳부터** 서야 실험이 성립한다. 뒤에 세워 놓고 "안 버벅인다"고 하면 그건 프러스텀 컬링을
- * 잰 것이지 부하를 잰 것이 아니다.
+ * 원점에서 **가까운 순으로** 채운다. 채수가 적어도 화면에 보이는 곳부터 서야 실험이
+ * 성립한다 — 뒤에 세워 놓고 "안 버벅인다"고 하면 그건 프러스텀 컬링을 잰 것이지 부하를
+ * 잰 것이 아니다.
+ *
+ * ── 스폰 칸은 비운다 (감독 실기기 판정) ─────────────────────────────────────
+ * 감독: *"50채 해봤는데. 조이스틱이 안먹는듯."*
+ *
+ * 조이스틱은 멀쩡했다. **원점이 곧 플레이어 스폰 지점**인데 거기에 26×24m 미술관을
+ * 세웠으니, 부팅하자마자 건물 한가운데에 갇힌 것이다. 움직여도 사방이 같은 벽이라
+ * 입력이 안 먹는 것처럼 보인다.
+ *
+ * 실험 설계의 결함이지 성능 문제가 아니었다. 원점 한 칸만 비우면 그 자리에 서서
+ * 둘러보게 되고, 부하는 그대로 유지된다 — 비운 칸의 몫은 바깥으로 한 칸 밀린다.
  */
 function placeGrid(
   model: Object3D,
@@ -161,15 +171,35 @@ function placeGrid(
   n: number,
   cell: number,
 ): void {
-  const side = Math.ceil(Math.sqrt(n));
+  for (const c of gridCells(n, cell)) {
+    const copy = model.clone(true);
+    copy.position.set(c.x, 0, c.z);
+    root.add(copy);
+  }
+}
+
+/**
+ * 세울 자리 목록. **순수 함수라 검사할 수 있다** — 스폰 칸을 비우는 것이 이 실험의
+ * 사용 가능 여부를 가르는데(감독 실기기에서 한 번 막혔다), three 없이는 못 재는 곳에
+ * 두면 다시 화면으로만 확인하게 된다.
+ */
+export function gridCells(n: number, cell: number): { x: number; z: number; d: number }[] {
+  // 스폰 칸을 빼야 하므로 한 칸 여유를 두고 격자를 잡는다.
+  const side = Math.ceil(Math.sqrt(n + 1)) + 1;
   const half = (side - 1) / 2;
-  let made = 0;
-  for (let i = 0; i < side && made < n; i++) {
-    for (let j = 0; j < side && made < n; j++) {
-      const copy = model.clone(true);
-      copy.position.set((i - half) * cell, 0, (j - half) * cell);
-      root.add(copy);
-      made++;
+
+  const cells: { x: number; z: number; d: number }[] = [];
+  for (let i = 0; i < side; i++) {
+    for (let j = 0; j < side; j++) {
+      const x = (i - half) * cell;
+      const z = (j - half) * cell;
+      const d = Math.hypot(x, z);
+      if (d < cell * 0.5) continue; // 스폰 칸 — 여기 세우면 플레이어가 벽 속에서 시작한다
+      cells.push({ x, z, d });
     }
   }
+  // 가까운 순. 같은 거리면 좌표순으로 갈라 **결정론**을 지킨다 — 정렬이 흔들리면 같은
+  // URL 이 매번 다른 세상을 만들고, 그러면 조건 간 비교가 성립하지 않는다.
+  cells.sort((a, b) => a.d - b.d || a.x - b.x || a.z - b.z);
+  return cells.slice(0, n);
 }
