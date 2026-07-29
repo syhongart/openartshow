@@ -70,6 +70,16 @@ export const glbCityFeature: Feature = {
     let root: Object3D | null = null;
     let disposed = false;
 
+    // ── 상태를 화면에 띄운다 (감독 판정) ──────────────────────────────────
+    // *"건물이 안보이던데. 하나도"* / *"tamed 안보이는데"*
+    //
+    // 진단은 `window.__world2` 에만 있어서 콘솔을 열어야 보인다. 감독은 폰으로 본다.
+    // 50채 로딩이 헤드리스에서 38초였으니 실기기는 더 걸리는데, 그동안 화면에 아무
+    // 표시가 없으면 **아직 로딩 중인 것과 실패한 것이 구분되지 않는다.**
+    // 실험 기능이므로 배지도 이 파일이 스스로 만들고 스스로 지운다.
+    const badge = makeBadge(env.doc);
+    badge?.set('미술관 GLB 내려받는 중…');
+
     // 로더와 three 를 **동적 import** 로 가져온다. `?glb=` 가 없는 세션은 이 코드를
     // 내려받지도 않는다 — 실험이 평상시 번들을 무겁게 만들면 그 자체가 성능 변수가 된다.
     void (async () => {
@@ -90,17 +100,24 @@ export const glbCityFeature: Feature = {
         // 실험 물건을 한 그룹에 모은다 — 정리할 때 하나만 지우면 된다.
         const g = new THREE.Group();
         g.name = 'world2:glbCity';
-        placeGrid(model, g as unknown as Object3D, want, env.cell);
         env.scene.add(g);
         root = g as unknown as Object3D;
 
-        counts.placed = want;
+        // 씬에 먼저 붙이고 채워 넣는다. 그래야 세워지는 과정이 화면에 보인다.
+        await placeGrid(model, root, want, env.cell, (done) => {
+          counts.placed = done;
+          if (!disposed) badge?.set(`미술관 ${done}/${want} 세우는 중…`);
+        });
+        if (disposed) return;
+
         counts.state = 'ready';
+        badge?.set(`미술관 ${want}채 · 금속 ${counts.tamed} 조정 · 메시 ${counts.meshesPer * want}`);
       } catch (err) {
         // **못 잰 것은 통과가 아니다.** 실패를 조용히 삼키면 진단에 0 이 찍히고 그것이
         // "가볍다" 로 읽힌다. 무엇이 막았는지를 남긴다.
         counts.state = 'failed';
         counts.error = err instanceof Error ? err.message : String(err);
+        badge?.set('미술관 GLB 실패: ' + counts.error);
       }
     })();
 
@@ -125,6 +142,7 @@ export const glbCityFeature: Feature = {
 
       dispose() {
         disposed = true;
+        badge?.remove();
         root?.removeFromParent();
         root = null;
       },
@@ -193,6 +211,37 @@ export interface MetalWalkable {
   traverse(cb: (o: { isMesh?: boolean; material?: unknown }) => void): void;
 }
 
+/**
+ * 실험 상태 배지. **없어도 되는 것이 아니라, 없으면 판정이 불가능한 것이다.**
+ *
+ * 감독은 폰에서 본다. `window.__world2` 진단은 콘솔을 열어야 보이므로 없는 것과 같다.
+ * 로딩이 수십 초 걸리는데 표시가 없으면 "아직 오는 중" 과 "실패" 가 구분되지 않고,
+ * 그 구분이 안 되면 화면 판정 자체가 성립하지 않는다.
+ *
+ * DOM 이 없는 환경(테스트·헤드리스 일부)에서는 `null` 을 돌려주고 호출부는 `?.` 로
+ * 넘긴다 — 배지가 없다고 실험이 안 도는 일은 없어야 한다.
+ */
+export function makeBadge(doc: Document | null): { set(t: string): void; remove(): void } | null {
+  if (!doc?.body) return null;
+  const el = doc.createElement('div');
+  el.setAttribute('data-glb-city', '');
+  // 인라인 스타일을 쓴다. 실험이 CSS 파일을 건드리면 그 자국이 남고, 목록에서 한 줄을
+  // 지우는 것으로 사라진다는 규약이 깨진다.
+  el.style.cssText = [
+    'position:fixed', 'left:8px', 'bottom:8px', 'z-index:50',
+    'padding:6px 10px', 'border-radius:8px',
+    'background:rgba(18,20,24,.82)', 'color:#e8eaee',
+    'font:12px/1.4 system-ui,sans-serif', 'pointer-events:none',
+    'max-width:70vw', 'white-space:nowrap',
+    'overflow:hidden', 'text-overflow:ellipsis',
+  ].join(';');
+  doc.body.appendChild(el);
+  return {
+    set(t) { el.textContent = t; },
+    remove() { el.remove(); },
+  };
+}
+
 /** 한 채의 메시 수와 삼각형 수를 센다. 총량은 이 값에 채수를 곱해 얻는다 */
 function measure(model: Object3D, out: Counts): void {
   let meshes = 0;
@@ -230,17 +279,43 @@ interface GeoLike {
  * 실험 설계의 결함이지 성능 문제가 아니었다. 원점 한 칸만 비우면 그 자리에 서서
  * 둘러보게 되고, 부하는 그대로 유지된다 — 비운 칸의 몫은 바깥으로 한 칸 밀린다.
  */
-function placeGrid(
+async function placeGrid(
   model: Object3D,
   root: Object3D,
   n: number,
   cell: number,
-): void {
-  for (const c of gridCells(n, cell)) {
+  onStep: (done: number) => void,
+): Promise<void> {
+  const cells = gridCells(n, cell);
+  for (let i = 0; i < cells.length; i++) {
     const copy = model.clone(true);
-    copy.position.set(c.x, 0, c.z);
+    copy.position.set(cells[i].x, 0, cells[i].z);
     root.add(copy);
+    // 한 프레임에 다 붙이면 그 프레임이 통째로 멈춘다 — 감독 실기기에서 **1,072ms**
+    // 히칭 1회가 그것이었다. 배치마다 프레임을 넘기면 같은 총량이 여러 프레임에 흩어져
+    // 화면이 계속 돈다. 총 시간은 오히려 조금 늘지만 **멈추지 않는다.**
+    if ((i + 1) % ATTACH_BATCH === 0) {
+      onStep(i + 1);
+      await nextFrame();
+    }
   }
+  onStep(cells.length);
+}
+
+/**
+ * 한 프레임에 붙일 채수. 작을수록 부드럽고 총 시간이 길어진다.
+ *
+ * 한 채가 메시 78개라 4채면 프레임당 312개 — 헤드리스에서 프레임 하나가 감당하는 양이다.
+ * 이 값을 1 로 내리면 더 부드럽지만 50채에 50프레임(≈0.8초)이 더 든다.
+ */
+const ATTACH_BATCH = 4;
+
+/** 다음 프레임까지 양보한다. `requestAnimationFrame` 이 없는 환경(테스트)에서도 돈다 */
+function nextFrame(): Promise<void> {
+  return new Promise((res) => {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => res());
+    else setTimeout(res, 0);
+  });
 }
 
 /**

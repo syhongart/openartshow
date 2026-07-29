@@ -17,7 +17,7 @@
 // 같은 형태로만 드러나 원인을 찾기가 매우 어렵다.
 
 import { describe, it, expect } from 'vitest';
-import { glbCityFeature, gridCells, tameMetals } from '../frontend/js/world2/features/glb-city.js';
+import { glbCityFeature, gridCells, tameMetals, makeBadge } from '../frontend/js/world2/features/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 
@@ -157,5 +157,20 @@ describe('금속 재질을 눅여 검게 나오는 것을 막는다', () => {
       },
     };
     expect(tameMetals(m)).toBe(2);
+  });
+});
+
+// ── 상태 표시 (감독 판정: "tamed 안보이는데") ───────────────────────────────
+// 진단을 `window.__world2` 에만 두었더니 감독이 볼 수 없었다. 폰으로 보는 사람에게
+// 콘솔 진단은 없는 것과 같다. 50채 로딩이 수십 초인데 화면에 표시가 없으면 **"아직
+// 오는 중" 과 "실패" 가 구분되지 않고**, 그 구분이 안 되면 화면 판정 자체가 성립하지
+// 않는다.
+//
+// 배지가 없다고 실험이 안 도는 일은 없어야 한다 — DOM 이 없는 환경에서도 조용히 넘어간다.
+describe('상태 배지', () => {
+  it('DOM 이 없으면 null 을 돌려준다 — 배지 때문에 실험이 죽지 않는다', () => {
+    expect(makeBadge(null)).toBeNull();
+    // body 가 아직 없는 문서도 마찬가지다(스크립트가 head 에서 도는 경우).
+    expect(makeBadge({ body: null } as unknown as Document)).toBeNull();
   });
 });
