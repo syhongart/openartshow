@@ -1,4 +1,4 @@
-// world-boot.js — 오픈월드(behind-flag) 부트스트랩. world.html 인라인 <script type="module">에서
+// world-boot.js — 오픈월드(라이브 노출 중 · world2로 교체 예정 #119) 부트스트랩. world.html 인라인 <script type="module">에서
 // 외부 모듈로 추출(보안 선결: CSP 'unsafe-inline' 제거 → script-src 'self'만으로 동작, 해시 불필요·
 // 유지보수 우위 — security-officer 29259bf 지적①). module script는 기본 defer라 DOM 로드 후 실행,
 // top-level await 정상. DOM 참조·fetch는 문서(world.html) 기준 상대경로 유지, import는 이 파일(frontend/js/) 기준.
