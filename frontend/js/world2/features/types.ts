@@ -200,7 +200,3 @@ export function collectDiagnostics(mounted: readonly MountedFeature[]): Record<s
   }
   return out;
 }
-
-// ── 결선 뮤테이션(#127) — 의도적 타입 에러. 다음 커밋에서 되돌린다. ──────────
-// 게이트는 통과하는 것을 봐서는 게이트인지 알 수 없다. 막히는 것을 봐야 안다.
-export const __GATE_MUTATION__: number = '이 줄이 verify 를 떨어뜨려야 한다';
