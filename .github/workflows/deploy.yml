@@ -58,13 +58,22 @@ jobs:
       # 유일한 원본이다. 그래서 **복사 실패를 삼키면 안 된다.** 예전에는 `2>/dev/null ||
       # true` 였는데, 그때는 커밋된 사본이 안전망이었다. 지금 그걸 남겨두면 생성기가 조용히
       # 실패했을 때 sitemap·robots 없는 사이트가 그대로 배포되고 아무도 모른다.
+      #
+      # `_deploy-sha.txt` — **어느 커밋이 배포됐는지**를 배포물 자신이 들고 있게 한다.
+      # 이것이 없으면 `verify-live` 가 "옛 판본이 그대로 200"인 경우를 통과시킨다
+      # (검수관 B1). 롤백으로 보안 패치가 유실된 사고가 정확히 그 모양이었고,
+      # 200·자산 0·콘솔 0 만으로는 그것을 판정할 수 없다.
+      # 파일명은 `scripts/smoke/config.mjs` 의 `DEPLOY_SHA_FILE` 이 SSOT 다.
       - run: |
           set -euo pipefail
           rm -rf _site && mkdir -p _site
           cp -r dist/.          _site/
           cp -r devlog team valuation _site/
           cp sitemap.xml robots.txt _site/
+          printf '%s\n' "$GITHUB_SHA" > "_site/$DEPLOY_SHA_FILE"
           touch _site/.nojekyll
+        env:
+          DEPLOY_SHA_FILE: _deploy-sha.txt
       # **gh-pages 를 건드리는 유일한 스텝. main 에서만 돈다.**
       # 위 트리거가 `claude/**` 를 포함하는 동안(결선 검증 기간) 이 가드가 실제 배포를
       # 막는다. 검증이 끝나 트리거를 좁힌 뒤에도 이 줄은 남긴다 — 트리거가 다시 넓어져도
@@ -86,9 +95,10 @@ jobs:
   # 라이브 404)가 정확히 이 자리에서 났고, 그 구멍이 오늘까지 열려 있었다.
   # 이 job 이 줄이는 것은 "라이브가 깨진 것을 감독이 발견하기까지의 시간"이다.
   #
-  # 브라우저 캐시 키는 smoke job 과 **같다**(둘 다 lockfile 해시). 같은 키를 두 job 이
-  # 동시에 저장하면 경합이 나지만, 이 job 은 `needs: deploy` 라 smoke 가 끝난 뒤에
-  # 시작한다 — 그때는 이미 저장돼 있어 히트한다. 순서가 경합을 막는다.
+  # 브라우저 캐시 키는 smoke job 과 **같다**(둘 다 lockfile 해시). `needs: deploy` 라
+  # smoke 가 끝난 뒤 시작하므로 그때는 이미 저장돼 있어 히트한다. 키가 겹쳐도
+  # `actions/cache` 는 중복 저장을 경고로 처리하고 job 을 깨지 않으므로, 순서에
+  # 의존하지 않아도 안전하다 — 실질 비용은 캐시 미스 시 1~2분뿐이다.
   verify-live:
     needs: deploy
     if: github.ref == 'refs/heads/main'
@@ -99,9 +109,13 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
+      # puppeteer postinstall 의 Chrome 다운로드도 막는다. 알림 전용 job 에 네트워크
+      # 실패 표면을 하나 더 다는 셈이고, 그 실패는 로그상 "라이브가 깨졌다"와 구별되지
+      # 않는다(검수관 R3 — deploy job 에는 이미 있었다).
       - run: npm ci
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PUPPETEER_SKIP_DOWNLOAD: '1'
       - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         id: pw-cache
         with:
@@ -115,5 +129,10 @@ jobs:
         run: npx playwright install-deps chromium
       # `SMOKE_LIVE_BASE_URL` 을 주지 않는다 — `scripts/site-url.mjs` 의 실제 배포 URL 을
       # 본다. 그 env 는 로컬 로직 검증·뮤테이션 전용 주입점이다.
-      - name: 라이브 URL 검증 (200 · 자산 실패 0 · 콘솔 에러 0)
-        run: node scripts/smoke/verify-live.mjs
+      # `GITHUB_SHA` 는 러너가 자동으로 넣는다 → `_deploy-sha.txt` 대조(④)가 켜진다.
+      #
+      # `timeout-minutes` 는 안전망일 뿐 판정 수단이 아니다. 스크립트가 내부 마감
+      # (기본 11분)을 지켜 라운드를 끊고 **리포트를 반드시 출력한다** — 러너가 job 을
+      # 죽이면 페이지별 근거가 한 줄도 안 남는다(검수관 R1).
+      - name: 라이브 URL 검증 (200 · 자산 0 · 콘솔 0 · 판본 일치)
+        run: npm run smoke:live

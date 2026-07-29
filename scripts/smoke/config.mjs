@@ -26,11 +26,14 @@ export const ROOT = path.resolve(__dirname, '..', '..');
 export const SITE_DIR = path.join(ROOT, '_site');
 
 // ── 배포 서브패스(vite 모드) ─────────────────────────────────────────
-// vite.config 의 base '/openartshow/' 와 1:1. vite 산출물의 자산참조는 절대경로
-// /openartshow/_bundle/… 이므로, vite 모드에서는 서버가 이 프리픽스를 strip 하고
-// 브라우저는 이 프리픽스를 붙여 접근한다(= github.io/openartshow/ 배포 재현).
-// baseline(frontend직조립) 모드는 서브패스 없이 루트 서빙(deploy.yml 현행과 동일).
-export const BASE_PATH = '/openartshow/';
+// vite 산출물의 자산참조는 절대경로 /openartshow/_bundle/… 이므로, vite 모드에서는
+// 서버가 이 프리픽스를 strip 하고 브라우저는 이 프리픽스를 붙여 접근한다
+// (= github.io/openartshow/ 배포 재현).
+// baseline(frontend직조립) 모드는 서브패스 없이 루트 서빙.
+//
+// 정의는 `scripts/site-url.mjs` 한 곳이다 — 여기 값을 다시 적으면 도메인을 옮길 때
+// 한쪽만 고쳐도 아무도 모른다(검수관 B3). 재수출만 한다.
+export { BASE_PATH } from '../site-url.mjs';
 
 // ── 검사1: deploy.yml 이 실행하는 생성기 3종 (exit 0 요구) ─────────────
 export const GENERATORS = [
@@ -74,6 +77,19 @@ export const DROP_THRESHOLD = 5; // baseline - 5 미만이면 FAIL (급감)
  *  artifact 로 넘기고 deploy 가 그것을 publish 하는 구조로 가야 한다 — 별건 상신.)
  */
 export const GENERATED_ROOT_FILES = ['sitemap.xml', 'robots.txt'];
+
+/**
+ * 배포물이 자기 커밋 SHA 를 들고 있게 하는 파일(SITE_DIR 상대). `deploy.yml` 이 조립
+ * 스텝에서 쓰고 `verify-live.mjs` 가 읽어 대조한다.
+ *
+ * 없으면 라이브 검증이 **"옛 판본이 그대로 200"을 통과시킨다**(검수관 B1). 그러면
+ * 폴링도 죽은 코드가 된다 — 판본과 무관한 종료 조건은 거의 항상 1라운드에서 끝나므로.
+ *
+ * `REQUIRED_FILES` 에는 넣지 않는다. 이 파일은 CI 배포에서만 생기고 로컬 조립에는
+ * 없다 — 넣으면 로컬 스모크가 항상 FAIL 이다. 그 비대칭은 의도된 것이고, 대신
+ * `verify-live` 는 파일이 없으면 "반영 판정 불가"로 적는다(조용히 넘어가지 않는다).
+ */
+export const DEPLOY_SHA_FILE = '_deploy-sha.txt';
 
 // ── 검사3: 조립 결과에 반드시 존재해야 하는 핵심 파일 (SITE_DIR 상대) ──
 // 두 조립 방식은 레이아웃이 다르다:

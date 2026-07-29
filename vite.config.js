@@ -19,6 +19,9 @@ import { defineConfig } from 'vite';
 import { resolve, dirname } from 'node:path';
 import { copyFileSync, mkdirSync, cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+// 배포 서브패스의 정의는 `scripts/site-url.mjs` 한 곳이다(검수관 B3). 여기 값을 따로
+// 적으면 도메인·저장소명을 옮길 때 한쪽만 고쳐도 아무도 모른다.
+import { BASE_PATH } from './scripts/site-url.mjs';
 
 const r = (p) => resolve(import.meta.dirname, p);
 
@@ -182,8 +185,8 @@ export default defineConfig({
   // 순서: ts폴백(pre) → rename → CSP(rename 후 fileName 기준). self-contained 는 closeBundle(후처리).
   plugins: [tsJsFallback(), selfContained(), htmlRename(), cspReconcile()],
   root: 'frontend',
-  // 배포 서브패스(github.io/openartshow/) 영구 고정 — 절대 base 로 깊이 무관 공유.
-  base: '/openartshow/',
+  // 배포 서브패스(github.io/openartshow/) — 절대 base 로 깊이 무관 공유.
+  base: BASE_PATH,
   build: {
     outDir: r('dist'),
     emptyOutDir: true,

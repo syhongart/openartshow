@@ -145,11 +145,32 @@ OCP(내부 변경이 소비자에 안 샘)를 동시에 만족시킨다.
 > 범위 밖 — 착수 시 `docs/SCALING.md`·`docs/MIGRATION.md`에서 다룬다.
 
 **파이프라인** ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml)): `main` push →
-1. **생성기 3종**(선행): `build-devlog`·`build-team`·`build-valuation` → devlog/team/valuation·sitemap 산출
-2. `npm ci` (브라우저 다운로드 억제 — 배포엔 불요)
-3. **`vite build`** → `dist/`(base `/openartshow/`). HTML rename·CSP 정합·자기완결을 vite 플러그인이 수행
-4. **`_site` 조립**: `dist/` + 생성기 산출(devlog·team·valuation) + 정적(sitemap·robots) + `.nojekyll`
-5. `peaceiris/actions-gh-pages` → `gh-pages` 브랜치 → GitHub Pages 자동 갱신
+0. **`verify` — 검증 게이트**(`uses: ./.github/workflows/ci.yml`). lint·typecheck·참조무결성·
+   단위테스트 + 헤드리스 렌더 스모크. `deploy` 가 `needs: verify` 로 이어져 있어 **여기가
+   빨간불이면 아래 단계가 아예 뜨지 않는다**(2026-07-29 결선, #127).
+1. `npm ci` (브라우저 다운로드 억제 — 배포엔 불요). **생성기보다 앞이다** — 생성기가 npm
+   의존을 얻는 순간 스모크와 실행 환경이 갈리기 때문.
+2. **생성기 3종**: `build-devlog`·`build-team`·`build-valuation` → devlog/team/valuation·sitemap·robots
+3. **`vite build`** → `dist/`(base = `scripts/site-url.mjs` 의 `BASE_PATH`). HTML rename·CSP 정합·
+   자기완결을 vite 플러그인이 수행
+4. **`_site` 조립**: `dist/` + 생성기 산출 + 정적(sitemap·robots) + `_deploy-sha.txt` + `.nojekyll`
+5. `peaceiris/actions-gh-pages` → `gh-pages` 브랜치 → GitHub Pages 자동 갱신 (**main 한정** —
+   `if: github.ref` 가드가 방어심층으로 걸려 있다)
+6. **`verify-live` — 배포된 URL 을 실제로 열어본다**(`needs: deploy`, main 한정, #128).
+   HTTP 200 · 자산 실패 0 · 콘솔 에러 0 · `_deploy-sha.txt` 판본 일치.
+
+> **6단계 빨간불 ≠ 배포 실패.** `verify-live` 는 publish **뒤에** 도는 알림이다. 여기서 FAIL 이
+> 나도 배포는 이미 나갔고 이 job 이 되돌리지 않는다. 따라서 `CLAUDE.md` 의 "Actions success
+> 확인"은 1~5단계를 뜻한다.
+>
+> **FAIL 시 런북** — 먼저 리포트의 판정 줄을 본다.
+> · `판정 불가 — 전 페이지 도달 실패` → 라이브 상태는 **알 수 없다**. 러너 egress·DNS 문제이지
+>   배포 문제가 아니다. 재실행으로 확인한다.
+> · `배포 판본 미반영`(라이브 SHA ≠ 이번 커밋) → Pages 반영 지연이거나 publish 가 실패한 것.
+>   `gh-pages` head 를 확인한다.
+> · 특정 페이지 FAIL(404·자산 실패) → **배포물 결함이다.** 조립 레시피(`deploy.yml` ↔
+>   `scripts/smoke/assemble.mjs`)가 어긋났는지 먼저 보고, 필요하면 §10 롤백 절차로 간다.
+> 어느 경우든 **원인을 기록한다.** 못 잰 것을 통과로도, 배포 실패로도 적지 않는다.
 
 **배포 매핑**: `landing.html` → 루트 `index.html` / `guide.html` → 루트 / `index.html`·`studio.html`
 → `app/`. (재배치는 vite 플러그인이 수행 — 수동 cp 폐지.)
