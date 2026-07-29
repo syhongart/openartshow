@@ -9,6 +9,7 @@
 // → 인자 없이 `npm run smoke` 로 언제든 동일 재현.
 
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -128,8 +129,36 @@ export const LIVE_PAGES = [
 export const VIEWPORTS = [320, 375, 1280];
 
 // ── 헤드리스 크로미움 (playwright-core 로 구동) ──────────────────────
-export const CHROMIUM_EXECUTABLE =
+//
+// ── 왜 세 단계로 푸는가 ──────────────────────────────────────────────
+// 예전에는 개발 컨테이너 절대 경로 한 줄이었다. 그리고 **그 하드코딩 하나가 스모크를
+// CI 에 못 올리게 막고 있었다** — GitHub Actions 러너에는 그 경로가 없다. 게이트를
+// 만들어 놓고 게이트가 도는 곳을 늘리지 못하는 상태였고, 그래서 배포는 사람이 손으로
+// 스모크를 돌릴 때만 검증됐다(규율이지 강제가 아니다).
+//
+//   ① `SMOKE_CHROMIUM_EXECUTABLE`  — CI·다른 기계가 명시로 덮어쓴다
+//   ② 개발 컨테이너 경로가 실재하면 그것
+//   ③ 둘 다 아니면 `undefined` — playwright 가 자기 기본 경로를 찾는다
+//
+// ── ③만 쓰면 안 되는 이유 (실측) ─────────────────────────────────────
+// "그냥 playwright 에게 맡기자"가 제일 깔끔해 보이지만 **로컬이 즉시 깨진다.**
+// playwright-core 1.61.1 의 자체 해석 경로는 `chromium-1228` 인데 이 컨테이너에는
+// `chromium_headless_shell-1194` 만 설치돼 있다. ②의 `existsSync` 폴백이 그래서 필수다.
+//
+// `undefined` 는 `executablePath` 를 아예 안 준 것과 같게 처리된다 — 소비처 4곳
+// (`browser-checks`·`measure-invariants`·`measure-sky-warm`·`measure-world2`)은
+// **무수정**이다. 값이 갈리는 지점을 여기 하나로 묶어 둔다(값 미러링 금지).
+const DEV_CONTAINER_CHROMIUM =
   '/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell';
+
+export const CHROMIUM_EXECUTABLE = resolveChromium();
+
+function resolveChromium() {
+  const fromEnv = process.env.SMOKE_CHROMIUM_EXECUTABLE;
+  if (fromEnv) return fromEnv;
+  if (existsSync(DEV_CONTAINER_CHROMIUM)) return DEV_CONTAINER_CHROMIUM;
+  return undefined;
+}
 export const CHROMIUM_ARGS = [
   '--no-sandbox',
   '--use-gl=swiftshader',
