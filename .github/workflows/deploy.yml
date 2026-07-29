@@ -63,17 +63,20 @@ jobs:
       # 이것이 없으면 `verify-live` 가 "옛 판본이 그대로 200"인 경우를 통과시킨다
       # (검수관 B1). 롤백으로 보안 패치가 유실된 사고가 정확히 그 모양이었고,
       # 200·자산 0·콘솔 0 만으로는 그것을 판정할 수 없다.
-      # 파일명은 `scripts/smoke/config.mjs` 의 `DEPLOY_SHA_FILE` 이 SSOT 다.
+      #
+      # 파일명은 `scripts/smoke/config.mjs` 의 `DEPLOY_SHA_FILE` 에서 **읽어 온다.**
+      # 처음엔 `env:` 에 문자열로 적어놓고 "SSOT 에서 온다"고 주석을 달았는데, 그것은
+      # 상수 이름만 빌려온 것이지 유도가 아니었다 — 복사본은 그대로 둘이었다(검수관 N3).
+      # 값 미러링을 지적받아 고친 커밋이 값 미러링을 다시 만든 것이 이번이 세 번째다.
       - run: |
           set -euo pipefail
+          DEPLOY_SHA_FILE="$(node -e "import('./scripts/smoke/config.mjs').then(m=>process.stdout.write(m.DEPLOY_SHA_FILE))")"
           rm -rf _site && mkdir -p _site
           cp -r dist/.          _site/
           cp -r devlog team valuation _site/
           cp sitemap.xml robots.txt _site/
           printf '%s\n' "$GITHUB_SHA" > "_site/$DEPLOY_SHA_FILE"
           touch _site/.nojekyll
-        env:
-          DEPLOY_SHA_FILE: _deploy-sha.txt
       # **gh-pages 를 건드리는 유일한 스텝. main 에서만 돈다.**
       # 위 트리거가 `claude/**` 를 포함하는 동안(결선 검증 기간) 이 가드가 실제 배포를
       # 막는다. 검증이 끝나 트리거를 좁힌 뒤에도 이 줄은 남긴다 — 트리거가 다시 넓어져도
@@ -103,7 +106,10 @@ jobs:
     needs: deploy
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 스크립트 내부 마감(11분)이 **항상 먼저 이겨야** 리포트가 나온다. 러너가 job 을
+    # 죽이면 페이지별 근거가 한 줄도 안 남는다 — 마감 11분 + 최대 라운드 5분 + 셋업 3분
+    # 을 덮도록 25분으로 잡는다(검수관 N4). 이 값은 안전망이지 판정 수단이 아니다.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0

@@ -19,7 +19,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { GENERATED_ROOT_FILES, ROOT, SITE_DIR } from './config.mjs';
+import { DEPLOY_SHA_FILE, GENERATED_ROOT_FILES, ROOT, SITE_DIR } from './config.mjs';
 
 // ── baseline: frontend직조립 (구 deploy.yml 의 cp 재배치 — 지금은 대조군 전용) ──
 // $OUT 은 대상 디렉토리(기본 _site).
@@ -43,6 +43,13 @@ touch "$OUT/.nojekyll"
 // dist 를 통째 $OUT 으로 복사 → 생성기/정적(devlog·team·valuation·sitemap·robots·.nojekyll)
 // 을 얹는다. 즉 vite _site = dist + 생성기 + 정적. (rename 은 vite 플러그인이 수행 —
 // baseline 의 cp 재배치 로직이 사라진다.)
+//
+// `_deploy-sha.txt` 도 여기서 만든다 — **로컬이 그 줄을 밟게 하려는 것이다.**
+// 처음엔 `deploy.yml` 에만 두고 "CI 배포에서만 생기는 의도된 비대칭"이라고 적었는데,
+// 그러면 그 줄의 오타가 **프로덕션 배포 후에야** 드러난다(검수관 R14). 조립 레시피를
+// 1:1 로 미러링하는 이유가 바로 그것을 미리 밟아보려는 것이다.
+// 로컬에는 `GITHUB_SHA` 가 없으므로 `git rev-parse HEAD` 를 쓴다 — 값이 무엇이든
+// `verify-live` 는 로컬에서 ④를 `skip` 하므로 충돌하지 않는다.
 const ASSEMBLE_VITE_SH = `
 set -euo pipefail
 ./node_modules/.bin/vite build
@@ -50,6 +57,7 @@ rm -rf "$OUT" && mkdir -p "$OUT"
 cp -r dist/.          "$OUT/"
 cp -r devlog team valuation "$OUT/"
 cp sitemap.xml robots.txt "$OUT/"
+printf '%s\\n' "$(git rev-parse HEAD)" > "$OUT/$DEPLOY_SHA_NAME"
 touch "$OUT/.nojekyll"
 `;
 
@@ -99,7 +107,7 @@ export function assembleSiteVite(targetDir = SITE_DIR) {
   execFileSync('bash', ['-c', ASSEMBLE_VITE_SH], {
     cwd: ROOT,
     stdio: 'pipe',
-    env: { ...process.env, OUT: targetDir },
+    env: { ...process.env, OUT: targetDir, DEPLOY_SHA_NAME: DEPLOY_SHA_FILE },
   });
 }
 

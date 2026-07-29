@@ -85,9 +85,11 @@ export const GENERATED_ROOT_FILES = ['sitemap.xml', 'robots.txt'];
  * 없으면 라이브 검증이 **"옛 판본이 그대로 200"을 통과시킨다**(검수관 B1). 그러면
  * 폴링도 죽은 코드가 된다 — 판본과 무관한 종료 조건은 거의 항상 1라운드에서 끝나므로.
  *
- * `REQUIRED_FILES` 에는 넣지 않는다. 이 파일은 CI 배포에서만 생기고 로컬 조립에는
- * 없다 — 넣으면 로컬 스모크가 항상 FAIL 이다. 그 비대칭은 의도된 것이고, 대신
- * `verify-live` 는 파일이 없으면 "반영 판정 불가"로 적는다(조용히 넘어가지 않는다).
+ * **`assemble.mjs` 도 같은 파일을 만든다**(로컬은 `git rev-parse HEAD`). 처음엔
+ * `deploy.yml` 에만 두고 "CI 배포에서만 생기는 의도된 비대칭"이라고 적었는데, 그러면
+ * 그 줄의 오타가 **프로덕션 배포 후에야** 드러난다(검수관 R14). 조립 레시피를 1:1 로
+ * 미러링하는 이유가 그것을 미리 밟아보려는 것이므로, 비대칭을 없앴다.
+ * 그래서 `REQUIRED_FILES_VITE` 에도 들어간다 — 조립이 이 줄을 빠뜨리면 `[3]` 이 잡는다.
  */
 export const DEPLOY_SHA_FILE = '_deploy-sha.txt';
 
@@ -116,6 +118,7 @@ export const REQUIRED_FILES_BASELINE = [
 export const REQUIRED_FILES_VITE = [
   ...REQUIRED_FILES_COMMON,
   '_bundle',               // vite 번들 폴더 (js·폰트 dedup 산출물)
+  DEPLOY_SHA_FILE,         // 배포 판본 표식 — verify-live 의 ④ 축이 이것을 읽는다
 ];
 export const REQUIRED_FILES_BY_MODE = {
   baseline: REQUIRED_FILES_BASELINE,
