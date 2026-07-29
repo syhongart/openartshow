@@ -153,13 +153,19 @@ export const ROLES = [
 /** id → 역할. 소비자가 ROLES를 다시 순회하지 않게. */
 export const BY_ID = new Map([...ROLES].map((r) => [r.id, r]));
 
+// devlog-times: 항목별 커밋 시각 맵
+import { extractDevlogTimes } from './devlog-times.mjs';
+const devlogTimesMap = extractDevlogTimes();
+
 /**
  * DEVLOG 마크다운 전체에서 역할별 기여를 집계한다.
  * 항목 단위로 세므로, 한 항목 안에 같은 역할이 여러 번 나와도 1건이다.
  *
+ * joined·lastSeen 에 git 커밋 시각(ISO8601)을 포함한다. 시각을 못 찾으면 null.
+ *
  * @param {string} md DEVLOG.md 의 전체 마크다운 내용
  * @returns {Object.<string, {count: number, joined: string|null, lastSeen: string|null}>}
- *          역할 id → { count(기여 건수), joined(첫 등장 날짜), lastSeen(마지막 등장 날짜) }
+ *          역할 id → { count(기여 건수), joined(ISO8601 시각 또는 null), lastSeen(ISO8601 시각 또는 null) }
  *          count=0 인 역할도 joined/lastSeen 은 null
  */
 export function countContributions(md) {
@@ -193,13 +199,17 @@ export function countContributions(md) {
       const participated = role.patterns.some((pat) => pat.test(testContent));
       if (participated) {
         result[role.id].count++;
-        result[role.id].dates.push(block.date);
+        // 항목 제목에서 시각을 찾는다 (git log 에서 유도)
+        // 없으면 null 로 둔다 (0시로 채우지 않음).
+        const iso = devlogTimesMap[block.title] ?? null;
+        result[role.id].dates.push({ date: block.date, iso });
       }
     }
   }
 
   // 날짜를 min/max 로 정렬해서 joined/lastSeen 을 계산한다.
   // DEVLOG 의 날짜가 뒤섞여 있을 수 있으므로 등장 순서가 아니라 날짜로 비교.
+  // 이제 각 항목이 {date, iso} 객체이다.
   const finalResult = Object.fromEntries(
     ROLES.map((r) => {
       const data = result[r.id];
@@ -208,9 +218,9 @@ export function countContributions(md) {
 
       if (data.dates.length > 0) {
         // 날짜 배열에서 최소·최대 찾기
-        data.dates.sort();
-        joined = data.dates[0];
-        lastSeen = data.dates[data.dates.length - 1];
+        data.dates.sort((a, b) => a.date.localeCompare(b.date));
+        joined = data.dates[0].iso;  // ISO 시각 (또는 null)
+        lastSeen = data.dates[data.dates.length - 1].iso;  // ISO 시각 (또는 null)
       }
 
       return [r.id, { count: data.count, joined, lastSeen }];

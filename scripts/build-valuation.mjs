@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shell } from './lib/site-shell.mjs';
+import { kstDate as getKstDate } from './lib/kst.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const HIST = join(ROOT, 'docs', 'valuation-history.json');
@@ -24,7 +25,7 @@ const TRACTION = join(ROOT, 'docs', 'traction.json');
 const OUT = join(ROOT, 'making', 'valuation');
 const GOAL = 500000; // 50억 (만원)
 
-const kstDate = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+const kstDate = getKstDate();
 
 // --- 신호 집계 ---
 const devlog = readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8');

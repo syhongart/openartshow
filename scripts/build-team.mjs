@@ -11,6 +11,7 @@ import { shell } from './lib/site-shell.mjs';
 import { ROLES, BY_ID, countContributions } from './lib/devlog-contributors.mjs';
 import { computePayroll, RATES } from './lib/payroll.mjs';
 import { countEntries } from './lib/devlog-entries.mjs';
+import { kstDate as getKstDate } from './lib/kst.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'making', 'team');
@@ -53,8 +54,19 @@ const contract = members.filter((m) => m.tier === '계약직');
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-// 업데이트 날짜 (오늘)
-const today_str = today.toISOString().split('T')[0]; // YYYY-MM-DD
+// 기여 시각 포맷: ISO8601 → 'YYYY-MM-DD HH:mm' (또는 null/날짜만)
+function formatContributionTime(iso) {
+  if (!iso) return '미상';
+  // ISO: '2026-07-29T14:32:00Z' → 'YYYY-MM-DD HH:mm'
+  if (iso.includes('T')) {
+    return iso.slice(0, 16).replace('T', ' ');
+  }
+  // 날짜만 있으면 그대로
+  return iso;
+}
+
+// 업데이트 날짜 (KST 오늘)
+const today_str = getKstDate(); // YYYY-MM-DD
 
 // 기여 건수 표시 (상대치)
 const maxContrib = Math.max(...members.map((m) => m.contribution.count), 1);
@@ -79,8 +91,8 @@ function formatAmount(amount) {
 
 function memberCard(m) {
   const pct = Math.round((m.contribution.count / maxContrib) * 100);
-  const joinedText = m.contribution.joined ? m.contribution.joined.substring(0, 7) : '미상';
-  const lastSeenText = m.contribution.lastSeen ? m.contribution.lastSeen.substring(0, 7) : '미상';
+  const joinedText = formatContributionTime(m.contribution.joined);
+  const lastSeenText = formatContributionTime(m.contribution.lastSeen);
 
   let payrollHtml = '';
   if (m.payroll) {

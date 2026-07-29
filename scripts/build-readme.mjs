@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { countEntries } from './lib/devlog-entries.mjs';
 import { calculateTeamComposition } from './lib/devlog-contributors.mjs';
 import { computePayroll, summarizePayroll } from './lib/payroll.mjs';
+import { kstDate as getKstDate } from './lib/kst.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -30,7 +31,7 @@ const itemCount = countEntries(devlogMd); // SSOT: parseEntries() 기반
 const teamComposition = calculateTeamComposition(devlogMd);
 const teamSize = teamComposition.total;
 
-// 급여 산정
+// 급여 산정 — 날짜만(시·분은 필요 없음)
 const today = new Date();
 const payroll = computePayroll(devlogMd, today);
 const payrollText = summarizePayroll(payroll);
@@ -56,7 +57,8 @@ try {
   // valuation 파일 없음 또는 파싱 실패
 }
 
-const today_str = today.toISOString().split('T')[0];
+// KST 오늘 날짜로 통일 (SSOT)
+const today_str = getKstDate();
 
 // 생성 콘텐츠
 const content = `
