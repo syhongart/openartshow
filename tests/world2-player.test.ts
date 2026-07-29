@@ -14,7 +14,7 @@ import type { FrameCtx } from '../frontend/js/world2/kernel.js';
 
 const inp = (o: Partial<MoveInput> = {}): MoveInput => ({ ...NO_INPUT, ...o });
 const len = (d: { dx: number; dz: number }) => Math.hypot(d.dx, d.dz);
-const ctx = (o: Partial<FrameCtx> = {}): FrameCtx => ({ dt: 1, ageMs: 0, frame: 1, hidden: false, ...o });
+const ctx = (o: Partial<FrameCtx> = {}): FrameCtx => ({ dt: 1, ageMs: 0, frame: 1, hidden: false, resumed: false, ...o });
 
 describe('moveDelta — 대각선이 빠르면 안 된다', () => {
   it('직진과 대각선의 속력이 같다', () => {

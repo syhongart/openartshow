@@ -172,3 +172,114 @@ describe('생애주기', () => {
     expect(renders.length).toBe(1); // tick 자체는 순수하다 — 루프만 멈춘 것
   });
 });
+
+// ── 자리비움을 히칭으로 세지 않는다 ──────────────────────────────────────────
+// 감독 실기기 리포트가 평균 11.9fps · 히칭 5회 · 최악 57,197ms 로 나왔다. 실제로는 내내
+// 60fps 였고, 감독이 잠깐 앱을 벗어났다 돌아온 것이 한 프레임의 소요 시간으로 찍힌 것이다.
+// 감독은 그 숫자를 보고 *"12프레임 이네. 잘못느꼈은데"* 라며 자기 체감을 의심했다.
+//
+// `tick`의 `rawS` 클램프(0.1초)가 이미 같은 사실을 알고 있었다 — 시뮬레이션은 막았는데
+// **계측은 안 막았다.** 한쪽만 아는 사실은 결국 다른 쪽에서 샌다.
+//
+// iOS 는 백그라운드에서 rAF 를 아예 멈추므로 `document.hidden` 폴링으로는 못 잡는다.
+// 돌아왔을 때 커널이 처음 보는 상태는 이미 `visible` 이다. 그래서 숨는 **순간**을
+// 이벤트로 받아 둔다. 아래 테스트가 그 경로 전체를 돈다.
+describe('자리비움 — 부재를 성능으로 세지 않는다', () => {
+  /** visibilitychange 를 손으로 발화시킬 수 있는 문서 스텁 */
+  function fakeDoc() {
+    let hidden = false;
+    const subs: Array<() => void> = [];
+    return {
+      doc: {
+        get hidden() { return hidden; },
+        get visibilityState() { return hidden ? 'hidden' : 'visible'; },
+        addEventListener: (_t: string, cb: () => void) => { subs.push(cb); },
+        removeEventListener: (_t: string, cb: () => void) => {
+          const i = subs.indexOf(cb); if (i >= 0) subs.splice(i, 1);
+        },
+      },
+      set(v: boolean) { hidden = v; for (const cb of [...subs]) cb(); },
+      get listeners() { return subs.length; },
+    };
+  }
+
+  function run() {
+    const f = fakeDoc();
+    const probes: Array<[string, number]> = [];
+    const k = new Kernel({
+      render: () => {},
+      raf: () => 0,
+      now: () => 0,
+      doc: f.doc,
+      probe: (n, v) => { probes.push([n, v]); },
+    });
+    return { f, k, probes, names: () => probes.map((p) => p[0]) };
+  }
+
+  it('평상시에는 frame_ms 로 나간다', () => {
+    const { k, names } = run();
+    k.tick(16);
+    expect(names()).toContain('frame_ms');
+    expect(names()).not.toContain('away_ms');
+  });
+
+  it('자리를 비웠다 돌아온 첫 프레임은 away_ms 로만 나간다', () => {
+    const { f, k, probes, names } = run();
+    k.tick(16);
+    probes.length = 0;
+
+    f.set(true);            // 앱을 벗어남 — 이 동안 rAF 는 오지 않는다
+    f.set(false);           // 돌아옴
+    k.tick(57_213);         // 복귀 첫 프레임: rawMs 에 자리 비운 시간이 통째로 들어 있다
+
+    expect(names()).toEqual(['away_ms']);
+    // 히칭으로 셀 뻔한 값이 그대로 away 로 간다 — 버리되 얼마였는지는 남는다
+    expect(probes[0][1]).toBeCloseTo(57_197, 0);
+  });
+
+  it('그 다음 프레임부터는 다시 정상 계측이다 — 한 번만 소비한다', () => {
+    const { f, k, probes, names } = run();
+    k.tick(16);
+    f.set(true); f.set(false);
+    k.tick(57_213);
+    probes.length = 0;
+
+    k.tick(57_229);
+    expect(names()).toContain('frame_ms');
+    expect(names()).not.toContain('away_ms');
+  });
+
+  it('숨었다가 숨은 채로 도는 프레임은 자리비움이 아니다 — 복귀해야 소비된다', () => {
+    // 데스크톱은 백그라운드에서도 rAF 가 오는 경우가 있다. 그때는 아직 "돌아온" 것이
+    // 아니므로 소비하면 안 된다. 소비해 버리면 진짜 복귀 프레임이 히칭으로 찍힌다.
+    const { f, k, probes, names } = run();
+    k.tick(16);
+    f.set(true);
+    probes.length = 0;
+
+    k.tick(1016);           // 숨은 채로 한 프레임 (hiddenFps 예산은 통과)
+    expect(names()).not.toContain('away_ms');
+
+    probes.length = 0;
+    f.set(false);
+    k.tick(2016);
+    expect(names()).toEqual(['away_ms']);
+  });
+
+  it('dispose 가 리스너를 뗀다 — 페이지를 떠난 커널이 계속 듣고 있으면 안 된다', () => {
+    const { f, k } = run();
+    expect(f.listeners).toBe(1);
+    k.dispose();
+    expect(f.listeners).toBe(0);
+  });
+
+  it('문서가 없는 환경(doc: null)에서도 부팅하고 돈다', () => {
+    const probes: string[] = [];
+    const k = new Kernel({
+      render: () => {}, raf: () => 0, now: () => 0, doc: null,
+      probe: (n) => { probes.push(n); },
+    });
+    expect(() => k.tick(16)).not.toThrow();
+    expect(probes).toContain('frame_ms');
+  });
+});

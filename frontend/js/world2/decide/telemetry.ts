@@ -326,6 +326,13 @@ export interface ReportInput {
    * 조용히 빼면 "재지 않은 구간"이 "통과한 구간"처럼 보인다.
    */
   drawSkipped?: number;
+  /**
+   * 자리비움(탭 숨김·화면 잠금) 복귀 프레임 — **프레임 표본에서 뺀 것.**
+   *
+   * 안 빼면 잠깐 자리를 뜬 것이 수십 초짜리 히칭으로 찍히고 평균 fps가 무너진다. 다만
+   * 뺐다는 사실은 리포트에 남아야 한다 — 못 잰 것을 조용히 생략하지 않는다.
+   */
+  away?: { count: number; totalMs: number };
   pipeline: readonly number[];
   geometries: readonly number[];
   textures: readonly number[];
@@ -414,6 +421,15 @@ export function formatReport(r: ReportInput): string {
   lines.push(`측정 ${f1(r.elapsedS)}초 · 프레임 ${frame.n}개 · 평균 ${f1(fps)}fps`);
   lines.push('');
   lines.push(`▶ 히칭(>${HITCH_MS}ms) ${hitches}회` + (hitches > 0 ? `  ← 최악 ${f1(frame.max)}ms` : '  없음'));
+  // 자리비움은 **있을 때만** 적는다. 0회를 매번 찍으면 리포트에 노이즈가 늘고, 정작
+  // 있었을 때 눈에 안 띈다. 다만 있었으면 반드시 적는다 — 표본에서 뺀 사실이 숨으면
+  // "왜 프레임 수가 적지"를 아무도 답할 수 없다.
+  if (r.away && r.away.count > 0) {
+    lines.push(
+      `   자리비움 ${r.away.count}회 · 합계 ${f1(r.away.totalMs / 1000)}초`
+      + ' (탭 이탈·화면 잠금 — 프레임 표본에서 제외)',
+    );
+  }
   lines.push('');
   lines.push('[프레임 분해 ms]');
   lines.push(statLine('frame', frame));

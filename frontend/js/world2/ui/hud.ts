@@ -73,6 +73,12 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
 
   /** 하늘 전이 중이라 드로우콜 판정에서 뺀 표본 수. 리포트에 그대로 적는다 */
   let drawSkipped = 0;
+  /**
+   * 자리비움 복귀 프레임 — 프레임 표본에서 뺀 것. 횟수와 합계를 함께 들고 있다가 리포트에
+   * 적는다. 커널이 `away_ms`로 갈라 보내므로 여기서는 세기만 한다.
+   */
+  let awayCount = 0;
+  let awayMsTotal = 0;
 
   let built = 0, released = 0;
   const startedAt = Date.now();
@@ -100,6 +106,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       drawGroupKeys: src.drawGroupKey ? drawGroupKeys.values() : undefined,
       groupKeyNames: src.drawGroupKey ? { ...groupNames } : undefined,
       drawSkipped,
+      away: { count: awayCount, totalMs: awayMsTotal },
       pipeline: pipeline.values(),
       geometries: geometries.values(), textures: textures.values(),
       parcels: parcels.values(),
@@ -171,6 +178,10 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
 
   return {
     sample(name, value) {
+      // 자리비움 복귀 프레임은 **어느 링에도 안 넣는다.** 그 프레임의 `frame_ms`는 감독이
+      // 자리를 비운 시간이고, `out_ms`도 같은 시간을 다시 세는 것이다. 한 프레임을 잃는
+      // 대신 평균과 히칭이 사실을 말한다. 뺀 사실은 아래 `away`로 리포트에 남는다.
+      if (name === 'away_ms') { awayCount++; awayMsTotal += value; return; }
       if (name === 'frame_ms') { frameMs.push(value); lastFrameMs = value; }
       else if (name === 'upd_ms') updMs.push(value);
       else if (name === 'render_ms') renderMs.push(value);

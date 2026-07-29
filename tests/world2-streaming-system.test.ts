@@ -32,7 +32,7 @@ function fakeBuilder(retierable = true) {
 }
 
 const ctx = (o: Partial<FrameCtx> = {}): FrameCtx => ({
-  dt: 1 / 60, ageMs: 1000, frame: 1, hidden: false, ...o,
+  dt: 1 / 60, ageMs: 1000, frame: 1, hidden: false, resumed: false, ...o,
 });
 
 /** 예산이 넉넉한 프레임을 반복해 스트리밍이 안정될 때까지 돌린다 */

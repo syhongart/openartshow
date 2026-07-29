@@ -472,3 +472,30 @@ describe('표본이 없으면 판정이 아니라 미측정이다', () => {
     expect(line).toContain('40~41');
   });
 });
+
+// ── 자리비움을 리포트가 정직하게 적는가 ──────────────────────────────────────
+// 커널이 자리비움 복귀 프레임을 프레임 표본에서 갈라 낸다(`away_ms`). 그러면 평균과
+// 히칭이 사실을 말하게 되는데, **뺐다는 사실 자체가 사라지면** 감독은 "프레임 수가 왜
+// 적지"를 답할 수 없다. 못 잰 것을 조용히 생략하지 않는 규율이 여기에도 적용된다.
+describe('자리비움 표기', () => {
+  it('있었으면 횟수와 합계를 적는다', () => {
+    const t = formatReport(base({ away: { count: 3, totalMs: 163_200 } }));
+    expect(t).toContain('자리비움 3회');
+    expect(t).toContain('163.2초');
+    // "왜 빠졌는지"까지 적어야 감독이 리포트만 보고 판단할 수 있다
+    expect(t).toContain('프레임 표본에서 제외');
+  });
+
+  it('없었으면 줄 자체가 없다 — 0회를 매번 찍으면 정작 있을 때 안 보인다', () => {
+    expect(formatReport(base())).not.toContain('자리비움');
+    expect(formatReport(base({ away: { count: 0, totalMs: 0 } }))).not.toContain('자리비움');
+  });
+
+  it('자리비움이 있어도 프레임 통계는 남은 표본만으로 낸다', () => {
+    // 이것이 이 처방의 요점이다. 57초짜리 "프레임"이 표본에 없으므로 히칭도 평균도
+    // 실제 플레이를 반영한다.
+    const t = formatReport(base({ frameMs: [16, 17, 16], away: { count: 1, totalMs: 57_197 } }));
+    expect(t).toContain(`히칭(>${HITCH_MS}ms) 0회`);
+    expect(t).toContain('자리비움 1회');
+  });
+});

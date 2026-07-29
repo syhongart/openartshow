@@ -64,7 +64,7 @@ function budgetedPool(budget: Record<PartKind, number>) {
 }
 
 const ctx = (frame: number, dt = 0.0001): FrameCtx => ({
-  dt, ageMs: frame * 16, frame, hidden: false,
+  dt, ageMs: frame * 16, frame, hidden: false, resumed: false,
 });
 
 function harness(layout = DEFAULT_LAYOUT) {

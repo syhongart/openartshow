@@ -24,6 +24,12 @@ export interface FrameCtx {
   readonly frame: number;
   /** 문서가 숨겨졌는가 */
   readonly hidden: boolean;
+  /**
+   * **자리비움에서 돌아온 첫 프레임인가.** 탭을 벗어났거나 화면이 꺼져 있던 동안
+   * 브라우저가 `requestAnimationFrame`을 멈추고, 돌아오면 그 공백 전체가 한 프레임의
+   * 소요 시간으로 들어온다. 이 프레임의 시간 계측은 **성능이 아니라 부재를 잰 것**이다.
+   */
+  readonly resumed: boolean;
   /** 계측 훅. 없으면 계측이 아예 돌지 않는다 */
   readonly probe?: (name: string, value: number) => void;
 }
@@ -47,6 +53,21 @@ export interface KernelOptions {
   /** rAF 주입(테스트용). 없으면 requestAnimationFrame */
   raf?: (cb: (t: number) => void) => number;
   now?: () => number;
+  /**
+   * 가시성을 보는 문서(테스트용 주입). 없으면 전역 `document`.
+   *
+   * 주입 가능해야 하는 이유는 하나다 — **자리비움 판정에 테스트를 붙일 수 있어야 한다.**
+   * 전역만 읽으면 node 환경에서 그 분기가 영원히 안 돌고, 안 도는 코드는 검사되지 않는다.
+   */
+  doc?: VisibilityDoc | null;
+}
+
+/** 커널이 문서에게 요구하는 전부. `Document` 전체를 끌어오지 않으려고 좁게 적는다 */
+export interface VisibilityDoc {
+  readonly hidden?: boolean;
+  readonly visibilityState?: string;
+  addEventListener(type: string, cb: () => void): void;
+  removeEventListener(type: string, cb: () => void): void;
 }
 
 const defaultNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -66,6 +87,16 @@ export class Kernel {
   private readonly raf: (cb: (t: number) => void) => number;
   /** 다음 프레임을 반드시 그려야 하는가(비동기 텍스처 도착 등). 게이팅을 1회 뚫는다 */
   private dirty = true;
+  private readonly doc: VisibilityDoc | null;
+  /**
+   * 자리를 비웠고 아직 그 사실을 계측에 반영하지 않았다.
+   *
+   * **`isHidden()` 폴링으로는 못 잡는다.** iOS 는 백그라운드에서 `requestAnimationFrame`을
+   * 아예 멈추므로, 돌아왔을 때 커널이 처음 보는 상태는 이미 `visible`이다. 숨는 순간을
+   * 이벤트로 받아 두어야 복귀 프레임에서 "직전에 자리를 비웠다"를 알 수 있다.
+   */
+  private awayPending = false;
+  private readonly onVisibility: () => void;
 
   constructor(opts: KernelOptions) {
     this.opts = opts;
@@ -73,6 +104,11 @@ export class Kernel {
     this.hiddenS = 1 / (opts.hiddenFps ?? 4);
     this.now = opts.now ?? defaultNow;
     this.raf = opts.raf ?? ((cb) => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(cb) : 0));
+    this.doc = opts.doc !== undefined
+      ? opts.doc
+      : (typeof document !== 'undefined' ? (document as unknown as VisibilityDoc) : null);
+    this.onVisibility = () => { if (this.isHidden()) this.awayPending = true; };
+    this.doc?.addEventListener('visibilitychange', this.onVisibility);
   }
 
   /**
@@ -132,11 +168,16 @@ export class Kernel {
     this.dirty = false;
     this.frame++;
 
+    // 자리비움에서 돌아온 첫 프레임인가. 한 번 소비하면 내린다.
+    const resumed = this.awayPending && !hidden;
+    if (resumed) this.awayPending = false;
+
     const ctx: FrameCtx = {
       dt,
       ageMs: t - this.startedAt,
       frame: this.frame,
       hidden,
+      resumed,
       probe: this.opts.probe,
     };
 
@@ -148,26 +189,44 @@ export class Kernel {
     this.opts.render();
     const renderMs = this.now() - r0;
 
-    // 계측은 훅이 있을 때만 돈다. 없으면 이 세 줄이 그냥 통과한다.
+    // 계측은 훅이 있을 때만 돈다. 없으면 이 분기가 그냥 통과한다.
     if (ctx.probe) {
-      ctx.probe('frame_ms', rawMs);
-      ctx.probe('upd_ms', updMs);
-      ctx.probe('render_ms', renderMs);
-      // out_ms = 우리 콜백 밖에서 사라진 시간. 이게 크고 upd·render가 작으면 우리 코드를
-      // 최적화해도 닿지 않는다(브라우저 합성·GC·OS). 아직 못 푼 5.4초 프리즈의 분기 계측이다.
-      ctx.probe('out_ms', Math.max(0, rawMs - updMs - renderMs));
+      if (resumed) {
+        // ── 자리비움 복귀 — **이 프레임의 시간은 성능이 아니다** ──────────────
+        // `rawMs`에 자리를 비운 시간이 통째로 들어 있다. 이걸 프레임 표본에 넣으면
+        // 감독이 잠깐 자리를 뜬 것이 57초짜리 히칭으로 찍히고, 평균 fps가 60에서 12로
+        // 떨어진다. 실제로 그렇게 찍혀 감독이 *"12프레임 이네. 잘못느꼈은데"* 라고 자기
+        // 체감을 의심했다 — **지표가 사람을 오도하면 그 지표는 없느니만 못하다.**
+        //
+        // 위 `rawS` 클램프(0.1초)가 이미 같은 사실을 알고 있었다. 시뮬레이션은 막았는데
+        // 계측은 안 막은 것이 이 결함이었다. 한쪽만 아는 사실은 결국 다른 쪽에서 샌다.
+        //
+        // 버리되 **버렸다고 적는다.** 못 잰 것을 조용히 생략하지 않는다.
+        ctx.probe('away_ms', rawMs);
+      } else {
+        ctx.probe('frame_ms', rawMs);
+        ctx.probe('upd_ms', updMs);
+        ctx.probe('render_ms', renderMs);
+        // out_ms = 우리 콜백 밖에서 사라진 시간. 이게 크고 upd·render가 작으면 우리 코드를
+        // 최적화해도 닿지 않는다(브라우저 합성·GC·OS).
+        //
+        // 오래 미제로 둔 "5.4초·11.5초 프리즈"가 여기 찍혔었다. 이제 자리비움이 갈려
+        // 나가므로, **여기 남는 큰 값은 진짜 프리즈다.** 그게 이 분기의 진단 가치다.
+        ctx.probe('out_ms', Math.max(0, rawMs - updMs - renderMs));
+      }
     }
   }
 
   private isHidden(): boolean {
     try {
-      return typeof document !== 'undefined'
-        && (document.hidden || document.visibilityState === 'hidden');
+      const d = this.doc;
+      return !!d && (d.hidden === true || d.visibilityState === 'hidden');
     } catch { return false; }
   }
 
   dispose(): void {
     this.stop();
+    this.doc?.removeEventListener('visibilitychange', this.onVisibility);
     for (const s of this.systems) s.dispose?.();
     this.systems.length = 0;
   }
