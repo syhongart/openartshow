@@ -17,7 +17,7 @@
 // 같은 형태로만 드러나 원인을 찾기가 매우 어렵다.
 
 import { describe, it, expect } from 'vitest';
-import { glbCityFeature, gridCells } from '../frontend/js/world2/features/glb-city.js';
+import { glbCityFeature, gridCells, tameMetals } from '../frontend/js/world2/features/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 
@@ -106,5 +106,56 @@ describe('GLB 배치는 스폰 자리를 비운다', () => {
     // 채수를 늘려도 앞선 자리는 그대로여야 한다. 안 그러면 10채와 50채가 다른 세상이라
     // "채수만 바꿨다"는 전제가 깨진다.
     expect(gridCells(10, CELL)).toEqual(gridCells(50, CELL).slice(0, 10));
+  });
+});
+
+// ── 금속 재질 (감독 판정: "건물이 안보이던데. 하나도") ──────────────────────
+// 건물은 그려지고 있었다 — 드로우콜이 14 → 1,563 이었다. 다만 전부 새까맸다. 이 GLB 는
+// 재질 17개 중 9개가 `metalness = 1.0` 인데, 금속 PBR 은 diffuse 가 0 에 수렴하고 반사만
+// 남아서 반사할 환경(IBL)이 없으면 정의상 검게 렌더된다.
+//
+// **수치는 전부 정상이었다.** 드로우콜도 삼각형도 늘었고 `state: ready` 였다. 그래서
+// 지표로는 안 잡히고 화면으로만 드러난다 — 그 화면 판정을 여기서 대신한다.
+describe('금속 재질을 눅여 검게 나오는 것을 막는다', () => {
+  /** three 없이 도는 최소 모형. `traverse` 계약만 흉내낸다 */
+  const model = (mats: { metalness?: number }[]) => ({
+    traverse(cb: (o: { isMesh?: boolean; material?: unknown }) => void) {
+      for (const m of mats) cb({ isMesh: true, material: m });
+    },
+  });
+
+  it('metalness 1.0 을 낮춘다 — 이것이 검정의 원인이었다', () => {
+    const mats = [{ metalness: 1.0 }, { metalness: 1.0 }];
+    expect(tameMetals(model(mats))).toBe(2);
+    for (const m of mats) expect(m.metalness).toBeLessThan(0.5);
+  });
+
+  it('의도된 중간 금속(0.6)은 남긴다 — 전부 깎으면 벽이 종이처럼 된다', () => {
+    const mats = [{ metalness: 0.6 }, { metalness: 0.78 }];
+    expect(tameMetals(model(mats))).toBe(0);
+    expect(mats[0].metalness).toBe(0.6);
+    expect(mats[1].metalness).toBe(0.78);
+  });
+
+  it('같은 재질을 두 번 세지 않는다 — clone 이 재질을 참조 공유한다', () => {
+    // 공유 재질을 메시마다 다시 세면 "몇 개를 고쳤나" 가 부풀고, 그 수치로 판단하게 된다.
+    const shared = { metalness: 1.0 };
+    const m = {
+      traverse(cb: (o: { isMesh?: boolean; material?: unknown }) => void) {
+        cb({ isMesh: true, material: shared });
+        cb({ isMesh: true, material: shared });
+      },
+    };
+    expect(tameMetals(m)).toBe(1);
+  });
+
+  it('재질 배열도 처리한다 — 멀티머티리얼 메시가 GLB 에 흔하다', () => {
+    const a = { metalness: 1.0 }, b = { metalness: 1.0 };
+    const m = {
+      traverse(cb: (o: { isMesh?: boolean; material?: unknown }) => void) {
+        cb({ isMesh: true, material: [a, b] });
+      },
+    };
+    expect(tameMetals(m)).toBe(2);
   });
 });

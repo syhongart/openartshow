@@ -55,6 +55,8 @@ interface Counts {
   /** 로드 상태 — 못 재고 통과시키지 않으려고 명시한다 */
   state: 'loading' | 'ready' | 'failed';
   error?: string;
+  /** 눅인 금속 재질 수. 이게 0 이면 건물이 검게 보인다 */
+  tamed?: number;
 }
 
 export const glbCityFeature: Feature = {
@@ -83,6 +85,7 @@ export const glbCityFeature: Feature = {
 
         const model = gltf.scene as unknown as Object3D;
         measure(model, counts);
+        counts.tamed = tameMetals(model as unknown as MetalWalkable);
 
         // 실험 물건을 한 그룹에 모은다 — 정리할 때 하나만 지우면 된다.
         const g = new THREE.Group();
@@ -107,6 +110,7 @@ export const glbCityFeature: Feature = {
         placed: counts.placed,
         state: counts.state,
         error: counts.error,
+        tamed: counts.tamed,
         meshesPer: counts.meshesPer,
         trisPer: counts.trisPer,
         // 곱해서 함께 보여준다 — 판정에 필요한 것은 1채가 아니라 총량이다.
@@ -127,6 +131,67 @@ export const glbCityFeature: Feature = {
     };
   },
 };
+
+/**
+ * 금속 재질을 눅인다. **"건물이 하나도 안 보인다" 의 원인이 여기 있었다.**
+ *
+ * ── 감독 판정 ───────────────────────────────────────────────────────────────
+ * *"건물이 안보이던데. 하나도"*
+ *
+ * 실제로는 그려지고 있었다 — 드로우콜이 14 → 1,563 으로 폭증했다. 다만 **전부 새까맸다.**
+ * 이 GLB 는 재질 17개 중 **9개가 `metalness = 1.0`** 인데, 금속 PBR 은 diffuse 가 0 에
+ * 수렴하고 반사만 남는다. 반사할 환경(IBL)이 없으면 정의상 검게 렌더된다.
+ *
+ * ── 같은 결함을 이미 한 번 겪었고, 기록도 있었다 ────────────────────────────
+ * `lab-glb.js`(같은 GLB 를 쓰는 실험 페이지)의 주석이 정확히 이렇게 적고 있다 —
+ * *"금속류가 environment(IBL) 없이는 반사할 게 없어 완전 검정으로 렌더된다(1차 헤드리스
+ * 스크린샷으로 실증)"*. **나는 GLB 파일만 가져오고 그것이 서려면 필요한 조건은 안
+ * 가져왔다.** 자산을 옮길 때 옮겨야 하는 것은 파일이 아니라 파일 + 성립 조건이다.
+ *
+ * ── 왜 환경맵이 아니라 재질인가 ─────────────────────────────────────────────
+ * `lab-glb.js` 는 PMREM 환경맵으로 풀었다. 같은 방법을 시도했더니
+ * `this._renderer.hasInitialized is not a function` 으로 실패했다 — `three/webgpu` 의
+ * PMREMGenerator 는 WebGPU 전용 API 를 요구하는데 헤드리스는 WebGL 폴백이다.
+ *
+ * 규율이 이 경우를 지시한다: *"백엔드 의존 API 를 쓸 때는 어댑터에 가두거나, 두
+ * 백엔드에서 **동일한 수단**을 고른다."* 재질 속성은 백엔드와 무관하다.
+ *
+ * ── 무엇을 바꾸고 무엇을 안 바꾸는가 ────────────────────────────────────────
+ * `metalness` 만 낮춘다. 색·텍스처·거칠기는 그대로다. 금속감은 잃지만 **형태가 보인다** —
+ * 이 실험이 답해야 하는 질문("미술관 N 채가 볼 만한가, 얼마나 무거운가")에는 형태가
+ * 먼저다. 정식 도입 때는 환경맵을 어댑터에 제대로 넣는 것이 맞다.
+ *
+ * 재질은 clone 이 **참조 공유**하므로 여기서 한 번 고치면 N 채에 모두 적용된다 —
+ * 개수 불변식도 그대로다.
+ */
+export function tameMetals(model: MetalWalkable): number {
+  let touched = 0;
+  const seen = new Set<unknown>();
+  model.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of list as MatLike[]) {
+      if (!m || seen.has(m)) continue;
+      seen.add(m);
+      if (typeof m.metalness !== 'number' || m.metalness <= METAL_THRESHOLD) continue;
+      m.metalness = METAL_TAMED;
+      touched++;
+    }
+  });
+  return touched;
+}
+
+/** 이 값을 넘는 금속만 손댄다. 0.6 짜리(DarkMetal)는 원래 의도된 금속감이라 남긴다 */
+const METAL_THRESHOLD = 0.9;
+/** 눅인 뒤 값. 0 으로 만들면 금속감이 통째로 사라져 벽이 종이처럼 보인다 */
+const METAL_TAMED = 0.15;
+
+interface MatLike { metalness?: number }
+
+/** `tameMetals` 가 요구하는 최소 계약. three 전체를 끌어오지 않으려고 좁게 적는다 */
+export interface MetalWalkable {
+  traverse(cb: (o: { isMesh?: boolean; material?: unknown }) => void): void;
+}
 
 /** 한 채의 메시 수와 삼각형 수를 센다. 총량은 이 값에 채수를 곱해 얻는다 */
 function measure(model: Object3D, out: Counts): void {
