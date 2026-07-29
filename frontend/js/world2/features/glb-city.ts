@@ -29,7 +29,7 @@
 
 import type { Object3D, Scene } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
-import { readNum } from '../url-knob.js';
+import { readNum, readEnum } from '../url-knob.js';
 
 /** 실험 상한. 이보다 크면 브라우저가 죽는 쪽에 가까워 측정 자체가 안 된다 */
 const MAX_COPIES = 200;
@@ -61,6 +61,10 @@ interface Counts {
   opaque?: number;
   /** 단순 재질로 갈아끼운 수. `?glbraw=1` 이면 0(원본 유지) */
   swapped?: number;
+  /** 씬에 실제로 놓인 경계 상자. **계산값이 아니라 결과다** */
+  box?: string;
+  /** 무엇을 세웠나 — glb · box · flat */
+  mode?: string;
 }
 
 export const glbCityFeature: Feature = {
@@ -99,13 +103,28 @@ export const glbCityFeature: Feature = {
 
         const model = gltf.scene as unknown as Object3D;
         measure(model, counts);
+        // ── 모드 (`?glbmode=`) — 추측이 아니라 **이분법으로 좁히는 도구** ────
+        // 감독 판정이 네 번 왔고 내 처방이 세 번 빗나갔다(금속·투명·재질교체).
+        // 셋 다 헤드리스(WebGL)에서는 효과가 있었는데, **WebGL 에서는 애초에 문제가
+        // 없었다** — 헤드리스에서는 처음부터 미술관이 잘 보였다. 나는 문제가 없는
+        // 환경에서 세 번 고친 것이다.
+        //
+        // 그러니 다음 한 발은 처방이 아니라 **측정**이어야 한다. 세 모드를 같은
+        // 기기에서 번갈아 보면 원인이 한 번에 좁혀진다:
+        //
+        //   box  — GLB 를 버리고 같은 자리·같은 크기의 **단순 상자**를 세운다.
+        //          이것도 안 보이면 원인은 GLB 가 아니라 배치·씬·렌더 경로다.
+        //   flat — GLB 지오는 쓰되 **텍스처 없는 순색** 재질. 보이면 텍스처가 원인.
+        //   glb  — 지금 상태(텍스처 포함 교체 재질). 기본값.
+        const mode = readEnum('glbmode', 'glb', ['glb', 'box', 'flat'] as const);
         const raw = readNum('glbraw', 0, 0, 1) >= 1;
         const fixed = tameMetals(model as unknown as MetalWalkable);
         counts.tamed = fixed.metals;
         counts.opaque = fixed.opaque;
         // 기본은 교체다. `?glbraw=1` 이면 원본 재질 그대로 — 둘을 번갈아 보면
         // 재질 확장이 원인인지 감독 화면에서 한 번에 갈린다.
-        counts.swapped = raw ? 0 : swapMaterials(model, THREE as unknown as ThreeNS);
+        counts.swapped = raw ? 0 : swapMaterials(model, THREE as unknown as ThreeNS, mode === 'flat');
+        counts.mode = mode;
 
         // 실험 물건을 한 그룹에 모은다 — 정리할 때 하나만 지우면 된다.
         const g = new THREE.Group();
@@ -114,19 +133,40 @@ export const glbCityFeature: Feature = {
         root = g as unknown as Object3D;
 
         // 씬에 먼저 붙이고 채워 넣는다. 그래야 세워지는 과정이 화면에 보인다.
-        await placeGrid(model, root, want, env.cell, (done) => {
+        const unit = mode === 'box' ? makeBox(THREE) as unknown as Object3D : model;
+        await placeGrid(unit, root, want, env.cell, (done) => {
           counts.placed = done;
           if (!disposed) badge?.set(`미술관 ${done}/${want} 세우는 중…`);
         });
         if (disposed) return;
 
         counts.state = 'ready';
+        // ── 실제 씬 좌표를 잰다 (감독 판정 4회 후) ──────────────────────
+        // 배지의 "최근접 32m" 는 `gridCells` 의 **계산값**이었다. 계산이 맞아도 씬에
+        // 실제로 그 자리에 섰는지는 별개다 — 네 번의 "안 보인다" 동안 나는 계산값만
+        // 보고 배치는 맞다고 전제했다. **전제를 재본 적이 없다.**
+        //
+        // three 가 로드·배치한 결과의 실제 경계 상자를 읽는다. 여기서 y 가 지하이거나
+        // 크기가 터무니없으면 렌더가 아니라 배치·스케일 문제다.
+        try {
+          const box = new (THREE as unknown as { Box3: new () => Box3Like }).Box3().setFromObject(root as never);
+          if (box.min.x !== Infinity) {
+            counts.box = [box.min, box.max]
+              .map((v) => `${v.x.toFixed(0)},${v.y.toFixed(1)},${v.z.toFixed(0)}`)
+              .join(' ~ ');
+          } else {
+            counts.box = '비어 있음(메시 0)';
+          }
+        } catch (e) {
+          counts.box = '측정 실패: ' + (e instanceof Error ? e.message : String(e));
+        }
+
         // 최근접 거리를 함께 띄운다. **"안 보인다" 가 배치 문제인지 렌더 문제인지
         // 이 숫자 하나로 갈린다** — 32m 인데 안 보이면 렌더, 200m 면 배치다.
         const near = gridCells(want, env.cell)[0]?.d ?? 0;
         badge?.set(
-          `미술관 ${want}채 · 재질 ${counts.swapped ? '교체' + counts.swapped : '원본'}`
-          + ` · 최근접 ${near.toFixed(0)}m`,
+          `미술관 ${want}채 · ${counts.mode}${counts.swapped ? '' : '(원본)'}`
+          + ` · 최근접 ${near.toFixed(0)}m · 범위 ${counts.box}`,
         );
       } catch (err) {
         // **못 잰 것은 통과가 아니다.** 실패를 조용히 삼키면 진단에 0 이 찍히고 그것이
@@ -146,6 +186,8 @@ export const glbCityFeature: Feature = {
         tamed: counts.tamed,
         opaque: counts.opaque,
         swapped: counts.swapped,
+        box: counts.box,
+        mode: counts.mode,
         meshesPer: counts.meshesPer,
         trisPer: counts.trisPer,
         // 곱해서 함께 보여준다 — 판정에 필요한 것은 1채가 아니라 총량이다.
@@ -310,7 +352,7 @@ export function makeBadge(doc: Document | null): { set(t: string): void; remove(
  * 재질은 **원본 하나당 하나씩만** 만들어 캐시한다. GLB 는 78개 메시가 17개 재질을
  * 공유하므로, 메시마다 새로 만들면 재질이 78개로 불어나 개수 불변식이 깨진다.
  */
-function swapMaterials(model: Object3D, THREE: ThreeNS): number {
+function swapMaterials(model: Object3D, THREE: ThreeNS, flat = false): number {
   const cache = new Map<unknown, unknown>();
   let n = 0;
   model.traverse((o: Object3D & { isMesh?: boolean; material?: unknown }) => {
@@ -319,7 +361,8 @@ function swapMaterials(model: Object3D, THREE: ThreeNS): number {
       const hit = cache.get(src);
       if (hit) return hit;
       const made = new THREE.MeshStandardMaterial({
-        map: src?.map ?? null,
+        // `flat` 이면 텍스처를 뗀다 — 텍스처가 원인인지 가르는 축이다.
+        map: flat ? null : (src?.map ?? null),
         color: src?.color ?? 0xffffff,
         // 원본 거칠기는 살리되 금속은 낮게 고정한다 — 환경맵이 없는 씬이라 높은
         // 금속은 어느 백엔드에서든 검게 나온다.
@@ -345,6 +388,32 @@ interface SrcMat { map?: unknown; color?: unknown; roughness?: number }
  */
 interface ThreeNS {
   MeshStandardMaterial: new (o: Record<string, unknown>) => unknown;
+}
+
+/** `Box3` 최소 계약 — 실제 배치를 재는 데만 쓴다 */
+interface Box3Like {
+  min: { x: number; y: number; z: number };
+  max: { x: number; y: number; z: number };
+  setFromObject(o: never): Box3Like;
+}
+
+/**
+ * 미술관 대신 세울 **단순 상자.** 크기는 GLB 실측 바운즈와 같게 맞춘다.
+ *
+ * 이것이 보이는데 GLB 가 안 보이면 원인은 **GLB 쪽**(지오·재질·텍스처)이고,
+ * 이것도 안 보이면 원인은 **배치·씬·렌더 경로**다. 네 번의 판정 동안 그 둘을 가르는
+ * 수단이 없어 매번 GLB 만 의심했다.
+ */
+function makeBox(THREE: unknown): unknown {
+  const T = THREE as {
+    Mesh: new (g: unknown, m: unknown) => unknown;
+    BoxGeometry: new (w: number, h: number, d: number) => { translate(x: number, y: number, z: number): unknown };
+    MeshStandardMaterial: new (o: Record<string, unknown>) => unknown;
+  };
+  // GLB 실측: 폭 17.2 · 높이 7.9 · 깊이 24.6, 바닥이 y=−0.5
+  const geo = new T.BoxGeometry(17, 8, 24);
+  geo.translate(0, 3.5, 0);
+  return new T.Mesh(geo, new T.MeshStandardMaterial({ color: 0xc86432, roughness: 0.9, metalness: 0 }));
 }
 
 /** 한 채의 메시 수와 삼각형 수를 센다. 총량은 이 값에 채수를 곱해 얻는다 */
