@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵) — OpenArtShow</title>
+<meta name="description" content="원인. main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-07-22-2628f9.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵) — OpenArtShow">
+<meta property="og:description" content="원인. main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-07-22-2628f9.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-07-22-2628f9.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-22</div>
+<h1>🏛️ C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분. 감사 결과 <strong>코어 분해는 위험≫가치</strong>(export 0=소비자 없음, 공유 let ~40개, 미술관 전체다운 리스크). 감독 결정: 보류가 아니라 <strong>4단계 점진 로드맵</strong> — 1차 순수유틸 → 2차 이벤트핸들러 → 3차 기능컨트롤러 → 4차 "초기화·조립만 main.js 잔류"(Composition Root 이상형).</p>
+<p><strong>개선(1차, 순수 함수만).</strong> <code>main-math.ts</code>(easeInOutCubic·lerpAngle·djb2·resolveAutoTheme)· <code>main-spec.ts</code>(readSpec·writeSpec·품질 상수)·<code>main-gpu.ts</code>(probeGpu)·<code>main-photo-util.ts</code>(dataUrlToBlob· drawWatermark·drawLetterSpacedRight·getShareUrl) = 162줄 추출(1,418→1,256). <strong>순수 기준 엄격</strong>: DOM 미수정·모듈 let 미접근·scene/renderer/player 미참조·이벤트 미등록·입력→반환만. <strong>showGpuNotice(DOM 배너)·capturePhoto(렌더러 결합)·specFastTicks(공유 let)는 순수 아니라 잔류</strong>(2차 이후).</p>
+<p><strong>감독의 검증 용어 교정(중요).</strong> "byte 무결성"은 부정확한 표현(파일 분리하면 바이트는 당연히 달라짐) → <strong>"동작 동일성(입력·출력·사용자 동작) 회귀 검증"</strong>으로 정정. 실제 게이트 기준을 감독이 명시: ①동작 동일성 ②<strong>초기화 순서·이벤트 등록 횟수 불변</strong>(main.js 분해 최다 오류 지점) ③신규 콘솔 error· unhandledrejection 0 ④정상/네트워크제한/소프트웨어GPU 3환경 진입·렌더 ⑤추출 기능 결과 동일 ⑥재입장 리스너 중복 없음 ⑦성능 악화 없음. 하나라도 실패 시 롤백. 또 <strong>AI 역할명(팀장 서명 등)의 자기선언은 실질 없음</strong> — 실제 게이트는 "작업 전 범위승인(감독)→작업 후 검증→실패 시 롤백"으로 단순화.</p>
+<p><strong>결과.</strong> 게이트 통과 — 독립 스모크(소프트웨어GPU 헤드리스 렌더 콘솔0·unhandledrejection0, addEventListener 8→8·setAnimationLoop 2→2 불변, 이동 11함수 본문 동일) + 검수관 승인(순수성 전수·동작 동일성·잔류 정당· no-undef 0). player/artworks/config.js·index.html·CSP 무수정. test 116/116.</p>
+<p><strong>교훈.</strong> 모든 큰 파일을 쪼개는 게 SOLID가 아니다 — 진입점(Composition Root)은 조립 특성상 큰 게 자연스럽다. main.js는 "무조건 분해"가 아니라 <strong>감사로 위험/가치를 재고 → 순수 leaf부터 점진 → 최종 조립만 잔류"라는 정교한 경로를 택했다. 검증은 "소스 보존"이 아니라 </strong>동작 동일성 + 초기화 순서·이벤트 횟수 불변**이 본질(감독 교정).</p>
+</article>
+<div class="pn"><a href="./philosophy-2.html"><span class="lbl">← 이전 기록</span>C단계 C-3(3) — scene.js(2,059줄) 6분해 = 비보호 초대형 SOLID 완료</a><a href="./2026-07-22-ad8695.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

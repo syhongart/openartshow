@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>경계마다 구멍이 있었다 — 파츠 사이, 밴드와 안개 사이, 표본과 판정 사이 — OpenArtShow</title>
+<meta name="description" content="하루에 감독 지적이 여섯 건 들어왔다. 블룸 크기, 밤 밝기, 파셀 겹침, LOD, 캐릭터 걷기,">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-07-28-507665.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="경계마다 구멍이 있었다 — 파츠 사이, 밴드와 안개 사이, 표본과 판정 사이 — OpenArtShow">
+<meta property="og:description" content="하루에 감독 지적이 여섯 건 들어왔다. 블룸 크기, 밤 밝기, 파셀 겹침, LOD, 캐릭터 걷기,">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-07-28-507665.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"경계마다 구멍이 있었다 — 파츠 사이, 밴드와 안개 사이, 표본과 판정 사이","datePublished":"2026-07-28","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-07-28-507665.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-28</div>
+<h1>🌌 경계마다 구멍이 있었다 — 파츠 사이, 밴드와 안개 사이, 표본과 판정 사이</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>하루에 감독 지적이 여섯 건 들어왔다. 블룸 크기, 밤 밝기, 파셀 겹침, LOD, 캐릭터 걷기, 그리고 VRM 파일 요건. 고치고 보니 <strong>다섯 건이 같은 형태</strong>였다 — 각 조각은 자기 안에서 옳은데, 조각과 조각 <strong>사이</strong>를 아무도 보고 있지 않았다.</p>
+<h3>① 파츠와 파츠 사이 — "구조적으로 사라진다"는 문장이 반만 참이었다</h3>
+<p>감독: *"나무 건물 다른것들 가로등. 겹쳐져있는것들이 보여. 구획을 잘배치해서 균형. 통일감있게보이게 해줘. 계획세워서 해"*</p>
+<p>건물은 이미 안 겹치고 있었다. <code>pickInQuadrant</code>가 사분면을 1:1로 나눠 주고, 그 주석은 스스로 *"겹침이 구조적으로 사라진다 — 충돌 판정도, 재시도도 필요 없다"*고 적고 있었다.</p>
+<p><strong>그 문장은 건물 안에서만 참이었다.</strong> 나무·벤치·화분은 <code>pickOffRoad</code>로 사분면을 <strong>무작위로</strong> 골랐고, 그건 건물이 이미 선 사분면일 수 있다. 나무 여덟 그루가 같은 6.5m 칸에서 각자 난수를 뽑으니 자기들끼리도 겹쳤다.</p>
+<p>처방은 자리를 먼저 만들고 나눠 주는 것이다(<code>decide/parcel-slots.ts</code>). 파츠가 각자 좌표를 뽑던 것을, 파셀이 자리 목록을 갖고 파츠가 빈 것을 가져가는 방식으로 바꿨다. 사분면당 2×2 슬롯, 파셀당 16. 감독이 고른 것은 *"구역은 나누되 안에서는 자연스럽게"*라, 슬롯은 자리의 <strong>후보</strong>일 뿐이고 물건은 그 안에서 흔들려 놓인다.</p>
+<p><strong>곁들여 드러난 것 셋.</strong> 하나씩이 별개의 결함이었다.</p>
+<ul><li><strong>건물이 제 구획을 넘고 있었다.</strong> 최대 변 8m인데 사분면이 6.5m라 도로(반폭 5.5) 위로 올라가고 가로등(6.25)을 덮었다. 기존 방어 <code>MAX_SIDE / 2</code>는 <code>max(SETBACK, minInset)</code>에 가려 <strong>무실효</strong>였다(7 &gt; 4). 유도값처럼 생긴 코드가 실은 죽어 있었다.</li><li><strong>흔들림이 사각이었다.</strong> x·z를 각각 ±room으로 흔들면 대각선으로 √2배 나가는데 겹침 판정은 원형이라, 그 차이만큼 샜다.</li><li><strong>자리 검사가 흔들림을 안 봤다.</strong> 슬롯 중심으로 검사하고 흔든 자리에 놓았으니 흔들림 폭이 검사에서 통째로 빠졌다.</li></ul>
+<p>세 번째가 특히 그렇다 — <strong>검사와 집행이 서로 다른 좌표를 보고 있었다.</strong> 41×41 파셀 실측에서 <code>building×tree 0.16m</code>처럼 <strong>딱 흔들림만큼</strong> 겹치는 것들이 남아서 알았다.</p>
+<p>겹침은 지금까지 <strong>눈으로 찾는 결함</strong>이었다. 같은 계열이 이번이 세 번째다(건물끼리 붙어 섬 · 사분면 경계에서 만남 · 이번). 매번 조사로 끝나고 검사가 안 남았다. 이번엔 <code>tests/world2-parcel-slots.test.ts</code>가 41×41 × 3 tier 전수로 겹침 0을 지킨다.</p>
+<h3>② 밴드와 안개 사이 — 나무가 안개보다 앞에서 사라졌다</h3>
+<p>감독: *"lod가 자연스럽지 않다. 내가 왼쪽으로만 이동했는데 이동시 멀리있는게 사라졌다가 멈추면 나타나. 특히 나무."*</p>
+<p>나무는 <code>mid</code>까지만 그려진다. mid 경계는 1.55셀 = <strong>49.6m</strong>인데 안개는 <strong>51.2m부터</strong> 시작한다. 나무가 사라지는 지점이 안개보다 <strong>앞</strong>이라 가릴 것이 없었다.</p>
+<p>두 시스템이 각자 합리적인 값을 갖고 있었다. LOD 밴드는 비용에서, 안개 거리는 렌더 반경 에서 유도됐다. <strong>그 둘의 관계를 아무도 검사하지 않았다.</strong></p>
+<p>처방은 전환을 볼 수 없는 곳으로 옮기는 것이다. far 끝(2.4셀 = 76.8m)은 안개 끝과 정확히 같으므로, 거기서 사라지는 것은 안개 100%에 묻힌다.</p>
+<p><strong>전제가 바뀐 것도 함께 확인했다.</strong> 예전 주석은 *"far에서는 뺀다 — 실루엣이 픽셀 몇 개라 비용만 든다"*였는데, ①의 배치 정리로 삼각형이 259k → 71.5k로 72% 줄어 여유가 3.6배 생겼다. 비용을 아낄 이유가 사라졌는데 그 판단은 그대로 남아 있었다. 실측 71.5k → 87.6k (+23%)로 확인하고 나서야 안전하다고 말할 수 있었다.</p>
+<h3>③ 표본과 판정 사이 — 못 잰 것이 "불변식 위반"으로 찍혔다</h3>
+<p>감독 실기기 리포트에 <code>draw 0  변동 0~0  ← 불변식 위반</code>이 찍혔다. 그런데 같은 리포트의 시간축에는 draw가 39~179로 멀쩡히 있었다.</p>
+<p>원인은 표본이 <strong>하나도 없었던 것</strong>이다. NPC가 <code>drawGroupKey: () =&gt; null</code>로 draw 판정을 유예하고 있어서 1800프레임이 전부 제외됐고, 빈 표본의 <code>constant:false</code>가 그대로 '위반' 으로 출력됐다. 게다가 왜 표본이 없는지는 줄에 안 적혀서, 리포트만 보면 멀쩡한 코드를 고치러 가게 된다.</p>
+<p><code>constancy</code> 주석은 이미 *"관측한 적 없음을 통과로 적지 않는다"*고 적어 두고 있었다. <strong>거울상을 놓친 것이다</strong> — 관측한 적 없음이 <strong>실패</strong>로 적혔다. CLAUDE.md가 상시 위험으로 규정한 그 경향의 반대편이고, 이쪽이 더 나쁘다. 멀쩡한 것을 고치러 가게 만든다.</p>
+<p><code>Constancy</code>에 표본 수를 넣고, 0이면 <code>측정 안 됨(표본 0) — 전 프레임 판정 유예(N표본 제외)</code> 로 출력하게 했다. <strong>'변한 적 없음'·'관측한 적 없음'·'변했음'은 셋 다 다르고, 출력은 셋을 구별해야 한다.</strong></p>
+<h3>④ 조명과 화면 사이 — 올린 축이 어두운 곳을 덮지 못했다</h3>
+<p>감독: *"밤이 어둡다."* 반구광·달빛을 이미 올린 <strong>뒤</strong>에 나온 말이다.</p>
+<p>조명은 재질에 닿는 빛만 키운다. 건물·지면은 밝아져도 하늘 돔(자체 발광 캔버스)과 안개는 그대로다. <strong>화면에서 넓은 면적을 차지하는 쪽이 안 움직였다.</strong></p>
+<p>이번에는 재고 정했다. 헤드리스 390×844에서 조건 9개의 구역별 평균 휘도:</p>
+<pre><code>기본 밤      상단 19 · 중단 39 · 하단 10 · 전체 23
+낮(대조군)   상단 200 · 중단 115 · 하단 27 · 전체 114
+노출 1.6     상단 31 · 중단 52 · 하단 13 · 전체 32   (+39%)
+안개 2.2     상단 19 · 중단 45 · 하단 10 · 전체 25   (+9%)
+조명 1.5     상단 19 · 중단 45 · 하단 12 · 전체 26   (+13%)</code></pre>
+<p>톤매핑 노출이 압도적이다 — 다른 축은 특정 대상이나 거리대만 건드리는데 노출은 하늘· 안개·지면·물이 한꺼번에 올라간다. 다만 노출만 올리면 하늘이 가장 많이 밝아지고, <strong>밤하늘이 밝아지는 것은 밤을 밝히는 게 아니라 밤이 아니게 만드는 것</strong>이라 혼합을 골랐다.</p>
+<p><strong>대조군이 더 큰 것을 알려줬다.</strong> 낮의 하단도 27이다. 한낮의 태양광에서도 그 정도라면 밤에 어두운 원인은 조명이 아니라 <strong>지면 알베도 자체</strong>다(도로 텍스처 명도 17%). 낮·밤 공통 사안이라 밤 처방으로 고칠 것이 아니다 — 그 사실을 상수 주석에 적어 두고 기본값은 건드리지 않았다. <strong>재지 않은 것을 기본값으로 박지 않는다.</strong></p>
+<h3>⑤ 각도와 축 사이 — 팔을 더 내리려다 더 올렸다</h3>
+<p>감독: *"우리 캐릭터 괴기하게 다니고있어"*</p>
+<p>코드를 읽고 결함 셋을 찾았다. 팔꿈치 본을 <code>WALK_BONES</code>에 넣어 두고 한 번도 안 썼고, 무릎이 28°만 굽었고(실제 보행은 60°), 팔이 71.6°만 내려가 18° 벌어진 채였다. 셋을 고쳐 배포했다.</p>
+<p><strong>감독이 스크린샷을 보냈다. 팔이 만세를 하고 있었다.</strong></p>
+<p>VRM 1.0 T-포즈에서 왼팔은 +X로 뻗어 있다. 그것을 아래(-Y)로 보내는 것은 오른손 법칙상 <strong>-Z 회전</strong>인데(+Z 회전은 X를 Y로 올린다) 반대로 주고 있었다. 81°를 위로 돌린 셈이다.</p>
+<p>내가 *"팔이 덜 내려갔다"*고 적고 1.25 → 1.42로 키운 것이 정확히 반대 처방이었다. <strong>덜 내려간 게 아니라 반대로 올라가 있었고, 방향이 틀린 상태에서 크기만 키웠다.</strong> 각도를 의심하기 전에 축을 확인했어야 했다.</p>
+<p>스크린샷 한 장이 코드 읽기보다 빨랐다. 이 기능은 헤드리스로 볼 수 없다 — WebGL 폴백에서 VRM 로드 경로가 다르고, 애초에 걷기는 정지 화면으로 판정할 수 없다. <strong>감독 화면이 유일한 판정</strong>인 종류가 있고, 그럴 때는 추측을 쌓기 전에 화면을 요청하는 것이 싸다.</p>
+<h3>아직 남은 것 — 본의 기준 자세를 지우고 있다</h3>
+<p>부호를 고쳐도 감독 판정은 *"제대로 안됨"*이었다. 그리고 정확한 질문이 왔다 — *"이거 하려면 리그 파일이 있어야해? vrm파일에 어떤 요건을 갖춰야 하나"*</p>
+<p>파일 요건은 이미 충족하고 있다. 진단에서 걷기에 필요한 본 9개를 9개 다 찾았다.</p>
+<p><strong>문제는 코드다.</strong> 지금 구현이 걷기 각도를 <strong>대입</strong>한다(<code>bone.rotation.x = 각도</code>). VRM 규격은 T-포즈를 요구하지만 <strong>본 하나하나가 어느 방향을 향하는지는 강제하지 않는다.</strong> 저작 도구마다 다르고, 특히 Blender Rigify 리그는 본마다 고유한 기준 회전을 갖는다(이 파일의 본 이름이 <code>DEF-thigh.L</code> 형태다).</p>
+<p>대입하면 그 기준 회전이 통째로 지워지고 계산한 각도만 남는다. *"81° 내려라"*가 아니라 *"81°인 상태가 되어라"*가 되어, 기준점이 다르면 엉뚱한 방향으로 꺾인다.</p>
+<p>옳은 처방은 <strong>기준 자세를 보존하고 그 위에 합성</strong>하는 것이다 — 부팅 때 각 본의 원래 회전을 저장하고 매 프레임 <code>원래자세 × 스윙</code>으로 곱한다. 그러면 리그가 무엇이든 성립한다.</p>
+<p>감독이 파일을 다시 만들기로 해서 요건을 <code>docs/VRM_REQUIREMENTS.md</code>로 정리했다. 포맷 (VRM 1.0)·본 9개·T-포즈·본 기준 회전·크기·성능 예산·자기완결·라이선스·제작 도구·확인 절차 10절이다. <strong>★로 "코드가 흡수해야 맞는 것"을 구별해 뒀다</strong> — 파일을 요건에 맞추면 지금은 동작하지만 다음 파일이 또 어긋난다. 파일과 코드 양쪽을 고치는 것이 옳다.</p>
+<h3>오늘의 형태</h3>
+<p>다섯 건이 같은 자리에 있었다.</p>
+<div class="tbl"><table><thead><tr><th>구멍</th><th>각 조각은 옳았다</th><th>사이에 없던 것</th></tr></thead><tbody><tr><td>파츠 겹침</td><td>건물끼리 안 겹침 · 나무끼리 안 겹침</td><td>건물과 나무 사이</td></tr><tr><td>LOD 전환</td><td>밴드는 비용에서 유도 · 안개는 반경에서 유도</td><td>두 값의 관계</td></tr><tr><td>draw 판정</td><td>유예는 옳은 처방 · 상수성 판정도 옳음</td><td>표본 0의 의미</td></tr><tr><td>밤 밝기</td><td>조명 하한은 정확히 걸렸다</td><td>조명이 안 닿는 면적</td></tr><tr><td>팔 자세</td><td>각도는 합리적</td><td>축의 방향</td></tr></tbody></table></div>
+<p>CLAUDE.md가 *"판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다"*고 적어 둔 그 형태이고, 오늘 그것이 다섯 가지 다른 옷을 입고 나왔다. 각 조각을 아무리 잘 만들어도 <strong>경계에 검사가 없으면 그 사이로 샌다.</strong></p>
+<p>그래서 오늘 넣은 검사는 전부 <strong>경계를 보는 것</strong>이다 — 파츠와 파츠 사이의 겹침 0, tier가 바뀌어도 위치가 같은지, 표본 0과 위반의 구별, 블룸 문턱과 등불 휘도의 관계. 뮤테이션으로 실제 검출력도 확인했다(결함을 되살리면 깨지는지).</p>
+</article>
+<div class="pn"><a href="./2026-07-27-092e5b.html"><span class="lbl">← 이전 기록</span>저장소를 구조화했다 — 그리고 이동이 안전장치 하나를 조용히 죽였다</a><a href="./2026-07-28-91f676.html" style="text-align:right"><span class="lbl">다음 기록 →</span>두 지적이 같은 자리에서 충돌했다 — 가로등을 교차로에서 걷어내며</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임) — OpenArtShow</title>
+<meta name="description" content="원인. 3차 두 번째 군(도슨트 투어). 사진 군(격리 단발함수)과 달리 투어는 animate 게임루프에">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-07-22-069373.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임) — OpenArtShow">
+<meta property="og:description" content="원인. 3차 두 번째 군(도슨트 투어). 사진 군(격리 단발함수)과 달리 투어는 animate 게임루프에">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-07-22-069373.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-07-22-069373.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-22</div>
+<h1>🏛️ C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 3차 두 번째 군(도슨트 투어). 사진 군(격리 단발함수)과 달리 투어는 <strong>animate 게임루프에 매 프레임 결합</strong>돼 있다(자동진행 판정 <code>tourStayElapsed += delta</code>). 감독 판단으로 남은 기능군(투어· 셀프뷰·멀티플레이어)이 전부 게임루프 결합임이 드러나, "읽기 getter + 위임 wrapper" 패턴이 통하지 않는다. 상태를 write하므로 <strong>상태 소유권을 컨트롤러로 이전</strong>하는 SOLID 정석으로 진행(감독 확정).</p>
+<p><strong>개선.</strong> <code>main-tour.ts</code>(<code>createTourController(ctx)</code>)로 투어를 분리(main.js 1,191→1,158). 핵심:</p>
+<ul><li><strong>상태 SSOT 이전</strong>: <code>touring</code>·<code>tourIndex</code>·<code>tourAutoOn</code>·<code>tourWaiting</code>·<code>tourStayElapsed</code> + 임계 상수 <code>TOUR_STAY_SECONDS</code>를 main.js에서 <strong>제거</strong>하고 컨트롤러 클로저가 유일 소유. 외부는 <code>isTouring()</code>· <code>getIndex()</code> getter로만 조회 → main.js에 투어 상태 코드 참조 0(이중 상태 불가).</li><li><strong>게임루프 tick 위임</strong>: animate의 자동진행 블록을 <code>tourController.tick(delta)</code> 한 줄로 치환. 판정식(<code>touring &amp;&amp; tourWaiting &amp;&amp; tourAutoOn &amp;&amp; !getTween() &amp;&amp; !isLightboxOpen()</code>)·delta 누적· 임계·<code>next()</code> 호출 순서 <strong>원본과 1바이트 동치</strong>. <code>!tween</code>은 <code>getTween()</code> getter로 최신값 재조회 (stale 방지), <strong>tick 본문 내 객체·클로저 할당 0</strong>(프레임 GC 압박 없음).</li><li><strong>write 위임</strong>: <code>exitTour</code>의 <code>tween=null</code> 즉시정지는 getter로 쓰기 불가 → <code>clearTween()</code> 함수 주입.</li><li><strong>공통 경로 협조</strong>: <code>handleArtworkSelect</code>의 투어 분기를 <code>syncOnSelect</code>(트윈 전 idx·대기 세팅)/ <code>onArrive</code>(도착 콜백 tourBar+대기+카운트리셋)로 위임, startTween 전후 순서 원본 보존.</li><li>exports/HUD 콜백(<code>onNext:tourNext</code> 등)은 wrapper 5개로 심볼·시그니처 무변경.</li></ul>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 <strong>승인</strong>(상태 이전 정확·tick 1바이트 동치·clearTween 클로저 정합· handleArtworkSelect 전이 보존·exports 시그니처·초기화 순서 전부 통과, 블로커 0), 독립 스모크 (<strong>6/6 + 투어 경로 7/7</strong>, app/index·world 실렌더 콘솔0, tick 매 프레임·자동진행·exit·next/prev· 카드 동기화 크래시 0). player/artworks/config.js·index.html·CSP 무수정, test 116/116.</p>
+<p><strong>교훈.</strong> 게임루프 결합 함수의 분리는 "위임 wrapper"가 아니라 <strong>상태 소유권 이전</strong>이 정답이다 — 매 프레임 실행 코드를 컨트롤러 밖에 값 캡처로 두면 stale로 자동진행이 멈춘다. 두 규율을 못 박았다: ①tick 판정식은 원본과 <strong>1바이트 동치</strong>로 증명(게임루프 미묘한 조건 변화가 최악의 회귀). ②컨트롤러가 소유 못 하는 외부 상태(tween)의 <strong>읽기는 getter·쓰기는 함수</strong>로 명확히 나눈다(양방향을 getter 하나로 뭉개면 안 됨). "완전 위임" 리팩터답게 stale 주석(main.js:660 <code>touring</code>)도 amend로 정리했다.</p>
+</article>
+<div class="pn"><a href="./2026-07-22-b75440.html"><span class="lbl">← 이전 기록</span>C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)</a><a href="./2026-07-22-b437a9.html" style="text-align:right"><span class="lbl">다음 기록 →</span>C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

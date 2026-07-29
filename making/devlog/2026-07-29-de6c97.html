@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>예측이 반증됐다 — 헤드리스 22배 느림 vs 실기기 60fps — OpenArtShow</title>
+<meta name="description" content="감독 지시: *"건물대신 미술관 건물을 올려보자. 얼마나 버벅이나 보고싶다. 50개 올려봐."*">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-07-29-de6c97.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="예측이 반증됐다 — 헤드리스 22배 느림 vs 실기기 60fps — OpenArtShow">
+<meta property="og:description" content="감독 지시: *"건물대신 미술관 건물을 올려보자. 얼마나 버벅이나 보고싶다. 50개 올려봐."*">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-07-29-de6c97.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"예측이 반증됐다 — 헤드리스 22배 느림 vs 실기기 60fps","datePublished":"2026-07-29","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-07-29-de6c97.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-29</div>
+<h1>⚡ 예측이 반증됐다 — 헤드리스 22배 느림 vs 실기기 60fps</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>감독 지시: *"건물대신 미술관 건물을 올려보자. 얼마나 버벅이나 보고싶다. 50개 올려봐."*</p>
+<h3>예측을 먼저 적었다</h3>
+<p>착수 전에 GLB 헤더를 파싱해 비용을 계산하고 코드 주석에 남겼다.</p>
+<pre><code>파일 12.9MB · primitives 78 · 재질 17 · 텍스처 22 · 삼각형 162,902
+→ 50채면 드로우콜 3,900. world2 전체가 지금 40, 목표 80, 고정 미술관 실증 상한 255.
+→ 예측: 심하게 버벅인다.</code></pre>
+<p>예측을 적어 둔 이유를 그때 이렇게 썼다 — *"실측이 예측과 크게 다르면 내 비용 모델이 틀린 것이고 그건 그것대로 알아야 할 정보다."*</p>
+<h3>두 예측이 다 빗나갔고, 이유가 서로 달랐다</h3>
+<p><strong>① 드로우콜 3,900 → 실측 2,061(50채).</strong> 절반이다. 원인은 프러스텀 컬링 — 격자로 세우면 대부분 시야 밖이라 애초에 그려지지 않는다. 내 계산은 "다 보인다"를 가정했다.</p>
+<p><strong>② "로딩은 채수와 무관하다" → 20.7초에서 48.5초로 늘었다.</strong> GLB 는 한 번만 받는 것이 맞지만, <code>clone</code> 이 채당 메시 78개를 만들고 씬에 붙이는 비용이 로딩 구간에 그대로 쌓인다. <strong>병목은 다운로드가 아니라 메인 스레드의 객체 생성</strong>이었다.</p>
+<p>②는 처방을 가른다. 병목이 네트워크였다면 압축·병렬 다운로드가 답인데, 객체 생성이면 Web Worker 로도 못 옮긴다(three 객체는 메인 스레드 전용). 프레임 분할 부착이나 인스턴싱만 남는다. <strong>예측을 안 적었으면 엉뚱한 레버를 당겼을 것이다.</strong></p>
+<h3>그리고 셋째 예측이 가장 크게 빗나갔다 — 실기기</h3>
+<p>헤드리스(swiftshader) 실측은 대조군 대비 프레임 22배였다.</p>
+<div class="tbl"><table><thead><tr><th>채수</th><th>드로우콜</th><th>삼각형</th><th>지오</th><th>텍스처</th><th>파이프</th><th>로딩</th><th>프레임 중앙</th></tr></thead><tbody><tr><td>0</td><td>14</td><td>67,024</td><td>13</td><td>11</td><td>10</td><td>0.2초</td><td>167ms</td></tr><tr><td>10</td><td>560</td><td>119만</td><td>91</td><td>33</td><td>19</td><td>20.7초</td><td>1,220ms</td></tr><tr><td>50</td><td>2,061</td><td>428만</td><td>91</td><td>33</td><td>19</td><td>38.3초</td><td>3,733ms</td></tr><tr><td>100</td><td>3,379</td><td>697만</td><td>91</td><td>33</td><td>19</td><td>48.5초</td><td>5,966ms</td></tr></tbody></table></div>
+<p>감독 실기기(iPhone · WebGPU · DPR 3.0)는 <strong>평균 57.6fps, 5초 이후 계속 60fps</strong> 였다. 히칭은 부착 순간 1회(1072ms)뿐.</p>
+<blockquote><strong>헤드리스 수치로 실기기를 대신하지 않는다</strong> 는 규율이 이 프로젝트에 있는 이유가<br>이것이다. 열 번의 성능 처방 실패가 전부 그 형태였고, 이번에 한 번 더 확인됐다.<br>swiftshader 는 CPU 래스터라이저라 픽셀·삼각형 비용이 실제 GPU 와 자릿수가 다르다.</blockquote>
+<h3>뜻밖의 확인 — 개수 불변식은 GLB 안에서도 지켜졌다</h3>
+<p><code>pipeline 41 · geometry 92 · texture 48</code> 이 실기기 리포트에서 <strong>0초부터 25초까지 미동도 없었다.</strong> 채수를 10 → 100 으로 늘려도 헤드리스에서 91/33/19 로 고정이었다.</p>
+<p>지오·재질을 참조 공유하는 복제(<code>clone(true)</code>)가 의도대로 작동했다는 뜻이다. 증식하는 축은 <strong>드로우콜 하나뿐</strong>이고, 그건 인스턴싱으로 접을 수 있는 종류다. GLB 를 정식으로 들이는 길이 막혀 있지 않다는 신호로 읽는다.</p>
+<h3>실기기가 아니면 못 잡았을 결함 하나</h3>
+<p>감독: *"50채 해봤는데. 조이스틱이 안먹는듯."*</p>
+<p>조이스틱은 멀쩡했다. <strong>원점이 곧 플레이어 스폰 지점</strong>인데 거기에 26×24m 미술관을 세웠으니, 부팅하자마자 건물 한가운데에 갇힌 것이다. 움직여도 사방이 같은 벽이라 입력이 안 먹는 것처럼 보인다. 드로우콜이 918 → 47 로 떨어진 것도 그 정황이었다.</p>
+<p>성능 문제가 아니라 배치 결함이었고, <strong>수치는 전부 정상이었으므로 수치로는 안 잡힌다.</strong> 원점 한 칸을 비우고, 자리 계산을 순수 함수(<code>gridCells</code>)로 떼어 검사로 남겼다 — 실기기로만 드러나는 결함을 실기기로만 확인하면 같은 왕복을 반복한다.</p>
+<h3>되돌릴 수 있게 만든 것</h3>
+<p>감독 지시 *"원복할수있게 해"* 에 두 경로로 답했다.</p>
+<ul><li><strong>완전 제거</strong>: 실험이 순수 가산 커밋뿐이라 <code>git revert</code> 로 흔적 없이 사라진다.</li><li><strong>되돌리지 않아도 안전</strong>: <code>?glb=</code> 가 없으면 기능이 스스로 꺼지고 로더 코드조차 내려받지 않는다(동적 import).</li></ul>
+<p>후자는 코드가 지켜야 하는 약속이고 약속은 검사가 없으면 지켜지지 않으므로, 검사 3개로 박았다. 그중 하나는 <strong>다른 기능이 이 파일을 import 하지 못하게</strong> 막는다 — 하나라도 참조하면 목록에서 빼도 코드가 남고, 그때부터 "지웠는데 왜 남아 있지" 가 시작된다.</p>
+<p>이 기능은 world2 의 제1원리를 일부러 깨므로, 평상시 경로에 조금이라도 새면 성능 판정이 통째로 오염된다. 그 오염은 *"요즘 좀 무거운데"* 같은 형태로만 드러나 원인을 찾기 어렵다.</p>
+<h3>남은 것</h3>
+<ul><li><strong>첫 부착 1072ms 히칭</strong> — 프레임 분할 부착으로 없앨 수 있다. 실제 남은 유일한 프레임 문제</li><li><strong>로딩 시간</strong> — 객체 생성이 지배적. 압축 포맷(Draco/Meshopt·KTX2)은 fetch·파싱·업로드를 함께 줄이지만 <code>clone</code> 비용은 안 줄인다. 그쪽은 인스턴싱이 답이다</li><li><strong>정식 도입 시 구조</strong> — GLB 를 세션 중에 흘려 넣으면 그 순간 새 파이프라인이 생긴다. 파셀 승격 스파이크를 없애려고 만든 구조를 다시 깨는 것이므로, 들이려면 "미리 슬롯을 잡고 데이터만 채우는" 형태로 바꿔야 한다</li></ul>
+<h3>다섯 번의 "안 보인다" — 문제가 없는 환경에서 세 번 고쳤다</h3>
+<p>미술관 GLB 를 세우고 감독 판정을 받았다. 다섯 번 왕복했다.</p>
+<div class="tbl"><table><thead><tr><th>#</th><th>감독 판정</th><th>내 처방</th><th>결과</th></tr></thead><tbody><tr><td>1</td><td>*"조이스틱이 안먹는듯"*</td><td>스폰 칸을 비웠다</td><td>맞았다</td></tr><tr><td>2</td><td>*"건물이 안보이던데. 하나도"*</td><td>금속 9개를 눅였다</td><td><strong>헛돌았다</strong></td></tr><tr><td>3</td><td>*"tamed 안보이는데"*</td><td>상태 배지를 띄웠다</td><td>관측은 됐다</td></tr><tr><td>4</td><td>*"이거 맞아? 터치안됨"*</td><td>헛된 투명 5개를 되돌렸다</td><td><strong>헛돌았다</strong></td></tr><tr><td>5</td><td>*"둘다 안보여"*</td><td>재질을 통째로 교체했다</td><td><strong>헛돌았다</strong></td></tr><tr><td>6</td><td>*"다 보여. 좋다."*</td><td>— 진단 코드를 넣었을 뿐이다</td><td>?</td></tr></tbody></table></div>
+<h3>왜 세 번 다 헛돌았나</h3>
+<p>여섯 번째에 대조군 스크린샷을 찍어 비교하고서야 알았다. <strong>헤드리스(WebGL)에서는 처음부터 미술관이 잘 보였다.</strong> 분수 뒤로 2층 건물이 뚜렷했고 대조군에는 없었다.</p>
+<p>즉 나는 <strong>문제가 없는 환경에서 세 번 고쳤다.</strong> 매번 "헤드리스에서 보인다" 를 확인하고 배포했고, 감독 기기(WebGPU)에서는 아무것도 달라지지 않았다.</p>
+<p><code>CLAUDE.md</code> 에 이렇게 적혀 있다 — *"헤드리스는 WebGL(swiftshader)이고 감독 실기기는 WebGPU다. 두 백엔드는 렌더 경로가 다르다. 헤드리스 통과를 WebGPU 근거로 쓰지 않는다. <strong>이 사각은 아직 열려 있다.</strong>"*</p>
+<p>규율이 문서에 있었고, 그것이 가리키는 바로 그 사각에서 세 번 미끄러졌다.</p>
+<h3>무엇이 부족했나 — 처방이 아니라 판별 수단</h3>
+<p>세 처방(금속·투명·재질교체)은 각각 그럴듯했다. 실제로 셋 다 <strong>참인 결함</strong>이었다 — 금속 9개는 환경맵 없이 검게 나오고, 투명 5개는 알파 1.0 인데 BLEND 였다. 고친 것이 틀리지 않았다. <strong>다만 그것이 감독이 본 증상의 원인이 아니었다.</strong></p>
+<p>네 번째에야 방향을 바꿨다. 처방 대신 <strong>가르는 도구</strong>를 만들었다:</p>
+<ul><li><code>?glbmode=box</code> — GLB 를 버리고 같은 자리에 단순 상자. 이것도 안 보이면 GLB 가 범인이 아니다</li><li><code>?glbmode=flat</code> — 지오는 쓰되 텍스처 없음. 보이면 텍스처가 원인</li><li>배지에 <strong>실제 경계 상자</strong> — 그때까지 배지가 보여준 "최근접 32m" 는 <code>gridCells</code> 의 계산값이었다. 계산이 맞아도 씬 결과가 맞는지는 별개인데, 네 번 동안 그 전제를 재본 적이 없었다</li></ul>
+<p>그리고 다섯 번째 배포에서 <strong>갑자기 보였다.</strong></p>
+<h3>진단이 우연히 고쳤다</h3>
+<p>그 배포에서 내가 넣은 것은 진단 코드뿐이다 — <code>Box3().setFromObject(root)</code>. <strong>그 호출은 부작용으로 자식 전체의 월드 행렬을 강제 갱신한다.</strong></p>
+<p>증상과 맞아떨어진다. 부착을 프레임에 걸쳐 나눠 하므로 행렬 갱신 시점과 어긋날 수 있고, 행렬이 낡으면 프러스텀 컬링이 <strong>원점 기준</strong>으로 판정해 32m 앞 건물도 화면 밖으로 취급한다 — <strong>삼각형은 잡히는데 화면에는 없던</strong> 증상 그대로다.</p>
+<p>원인을 확정하지는 못했다. 헤드리스가 WebGL 이라 이 증상 자체가 재현되지 않는다.</p>
+<p>다만 <strong>진단이 부작용으로 고치는 상태를 남겨 둘 수는 없다.</strong> 진단을 빼면 다시 깨지고, 그때는 아무도 이유를 모른다. 부착 직후 <code>updateMatrixWorld(true)</code> 를 명시 호출해 Box3 측정과 무관하게 성립하도록 고정했다.</p>
+<blockquote><strong>관측 수단이 없는 환경에서는 처방을 세 번 반복하게 된다.</strong> 이번에 그 값을 치렀다.<br>백엔드가 갈리는 결함에서 다음 한 발은 언제나 <strong>판별 수단</strong>이어야 한다 — 내가 볼 수<br>없는 곳에서 일어나는 일은, 볼 수 있는 사람이 한 번에 가르도록 만드는 것이 빠르다.</blockquote>
+<h3>얻은 것</h3>
+<p>성능은 처음 예측이 통째로 틀렸다. 6채 기준 감독 실기기에서 <strong>평균 59.8fps</strong>, 히칭 1회 150ms. 50채에서도 60fps 가 나온다.</p>
+<p><strong>히칭이 1,072ms → 150ms 로 줄었다.</strong> 부착을 4채마다 프레임에 나눈 효과이고, 감독이 물었던 *"백그라운드 처리. 병렬처리 기술 그런것없을까"* 의 실질적 답이다. 로딩 병목이 네트워크가 아니라 <strong>메인 스레드의 객체 생성</strong>이라 Worker 로는 못 옮기고, 프레임 분할이 이 축에서 쓸 수 있는 수단이었다.</p>
+<p><code>pipeline</code>·<code>geometry</code>·<code>texture</code> 는 로드 후 완전히 고정이다 — 지오·재질을 참조 공유하는 복제가 의도대로 작동했고, 증식하는 축은 드로우콜 하나뿐이라 인스턴싱으로 접을 수 있다. <strong>GLB 를 정식으로 들이는 길이 막혀 있지 않다는 신호다.</strong></p>
+<h3>후기 — 판정할 수 없는 것을 판정해 달라고 했다</h3>
+<p>배포하고 링크를 드렸더니 감독 판정이 세 번 왔다.</p>
+<blockquote>*"조이스틱이 안먹는듯"* → *"건물이 안보이던데. 하나도"* → *"tamed 안보이는데. 시크릿창이야"*</blockquote>
+<p>세 번째에서 원인이 갈렸다. <strong>배포는 처음부터 정상이었다</strong> — gh-pages 의 번들 파일명이 내가 검증한 로컬 빌드와 동일했고 수정도 들어 있었다. <code>tamed</code> 가 안 보인 것은 <strong>내가 볼 수 없는 곳을 보라고 안내해서다.</strong> 📊 는 성능 리포트이고 기능 진단은 <code>window.__world2</code> 에만 있다. 감독은 폰으로 본다 — 콘솔 진단은 없는 것과 같다.</p>
+<p>그 착오가 더 큰 것을 드러냈다. <strong>감독에게는 GLB 가 다 섰는지 알 방법이 아예 없었다.</strong> 50채 로딩이 헤드리스에서 38초였으니 실기기는 더 걸리는데, 그동안 화면에 표시가 없으면 "아직 오는 중" 과 "실패" 가 구분되지 않는다. 구분이 안 되면 <strong>판정 자체가 성립하지 않는다.</strong> 나는 판정할 수 없는 것을 판정해 달라고 두 번 요청한 셈이다.</p>
+<p>좌하단 배지로 상태를 띄웠다 — <code>미술관 GLB 내려받는 중… → 8/12 세우는 중… → 12채 · 금속 9 조정 · 메시 936</code>. 버전 확인도 여기서 된다("금속 N 조정" 이 보이면 최신이다).</p>
+<blockquote><strong>관측 수단이 없으면 결함이 아니라 판정이 실패한다.</strong> 이번 세션에서 이 형태를 세 번<br>만났다 — 빈 표본이 "불변식 위반" 으로 출력된 것, 스모크가 <code>--untracked-files=all</code> 없이<br>"clean" 을 보고한 것, 그리고 이번 건. 매번 *"무엇이 잘못됐나"* 를 찾다가 *"무엇을 볼 수<br>없었나"* 로 옮겨 가서야 풀렸다.</blockquote>
+<h3>그리고 히칭을 없앴다</h3>
+<p>같은 작업에서 부착을 프레임 단위로 쪼갰다. 감독 리포트의 <strong>1,072ms 히칭 1회</strong>가 "한 프레임에 50채를 다 붙이기" 였다. 4채마다 프레임을 넘기면 같은 총량이 여러 프레임에 흩어진다. 총 시간은 조금 늘지만 <strong>멈추지 않는다.</strong></p>
+<p>감독이 물었던 *"백그라운드 처리. 병렬처리 기술 그런것없을까"* 의 실질적 답이기도 하다. 로딩 병목이 네트워크가 아니라 <strong>메인 스레드의 객체 생성</strong>이라 Worker 로는 못 옮긴다 (three 객체는 메인 스레드 전용). 프레임 분할이 이 축에서 쓸 수 있는 수단이다.</p>
+<p>진행률 표시가 가능해진 것도 이 분할 덕이다 — 한 덩어리로 붙이면 <strong>보고할 중간 상태가 존재하지 않는다.</strong> 관측 수단과 처방이 같은 변경에서 나온 것은 우연이 아니다.</p>
+</article>
+<div class="pn"><a href="./2026-07-28-91f676.html"><span class="lbl">← 이전 기록</span>두 지적이 같은 자리에서 충돌했다 — 가로등을 교차로에서 걷어내며</a><a href="./2026-07-29-3ca9a5.html" style="text-align:right"><span class="lbl">다음 기록 →</span>만들어 둔 것과 GPU에 올라간 것은 다른 일이다 — 주석이 재는 축을 틀리게 짚고 있었다</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

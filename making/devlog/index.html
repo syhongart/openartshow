@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>개발일지 — OpenArtShow</title>
+<meta name="description" content="OpenArtShow를 만드는 과정의 공개 기록. 웹 3D 미술관의 성능·디자인·법무·브랜드 결정을 원인-분석-개선-결과로 남깁니다.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="개발일지 — OpenArtShow">
+<meta property="og:description" content="OpenArtShow를 만드는 과정의 공개 기록. 웹 3D 미술관의 성능·디자인·법무·브랜드 결정을 원인-분석-개선-결과로 남깁니다.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"OpenArtShow 개발일지","url":"https://syhongart.github.io/openartshow/making/devlog/","inLanguage":"ko","blogPost":[{"@type":"BlogPosting","headline":"배포는 아무 검증도 안 거치고 있었다 — 그리고 게이트 두 개가 조용히 새고 있었다","datePublished":"2026-07-29","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-29-03fa6a.html"},{"@type":"BlogPosting","headline":"CSV 한 장이 열 번의 실패를 설명했다 — world1 vs world2 원인·결과","datePublished":"2026-07-29","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-29-ce85ca.html"},{"@type":"BlogPosting","headline":"네 번째는 맞혔다 — 처방 대신 축을 넷으로 갈라 놓고 감독에게 물었다","datePublished":"2026-07-29","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-29-43ee1d.html"},{"@type":"BlogPosting","headline":"만들어 둔 것과 GPU에 올라간 것은 다른 일이다 — 주석이 재는 축을 틀리게 짚고 있었다","datePublished":"2026-07-29","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-29-3ca9a5.html"},{"@type":"BlogPosting","headline":"예측이 반증됐다 — 헤드리스 22배 느림 vs 실기기 60fps","datePublished":"2026-07-29","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-29-de6c97.html"},{"@type":"BlogPosting","headline":"두 지적이 같은 자리에서 충돌했다 — 가로등을 교차로에서 걷어내며","datePublished":"2026-07-28","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-28-91f676.html"},{"@type":"BlogPosting","headline":"경계마다 구멍이 있었다 — 파츠 사이, 밴드와 안개 사이, 표본과 판정 사이","datePublished":"2026-07-28","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-28-507665.html"},{"@type":"BlogPosting","headline":"저장소를 구조화했다 — 그리고 이동이 안전장치 하나를 조용히 죽였다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-27-092e5b.html"},{"@type":"BlogPosting","headline":"드로우콜을 증식으로 오판했다 — 게이트가 틀린 것을 지키고 있었다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-27-be8eef.html"},{"@type":"BlogPosting","headline":"슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다","datePublished":"2026-07-27","url":"https://syhongart.github.io/openartshow/making/devlog/2026-07-27-8cb9c1.html"}]}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<div class="eyebrow">Devlog</div>
+<h1>개발일지</h1>
+<p class="lead">링크 하나로 열리는 3D 미술관을 만드는 과정 — 137건의 기록.<br>
+문제의 원인, 분석, 개선, 결과를 그대로 남깁니다.</p>
+<a class="pin-card" href="./philosophy-10.html">
+  <span class="pin-tag">🧭 철학·창업 · 고정</span>
+  <h2>우리가 이걸 왜 만드는가 — 창업 이야기와 개발 동기</h2>
+  <p>이 항목과 아래 '철학' 장은 날짜가 지나도 위로 흘려보내지 않는다. 왜를 잊을 때 돌아오는 자리다.</p>
+</a>
+<a class="pin-card" href="./philosophy-11.html">
+  <span class="pin-tag">🧭 철학·창업 · 고정</span>
+  <h2>OpenArtShow의 철학 — 어둠은 프레임, 즐거움은 콘텐츠</h2>
+  <p>"밤하늘이 어두운 건 별을 빛나게 하기 위해서다 — 어둠은 우리의 프레임이고, 즐거움은 그 안에서 빛나는 것들(작품·아야모·사람)이다."</p>
+</a>
+<nav class="cat-toc" aria-label="카테고리로 이동">
+<a href="#cat-legal">⚖️ 법무·브랜드 <b>4</b></a>
+<a href="#cat-avatar">🧸 아야모·캐릭터 <b>10</b></a>
+<a href="#cat-gate">🛡️ 보안·게이트·배포 <b>20</b></a>
+<a href="#cat-arch">🏛️ 아키텍처·리팩터링 <b>22</b></a>
+<a href="#cat-perf">⚡ 성능 <b>26</b></a>
+<a href="#cat-world">🌌 오픈월드·자연 <b>19</b></a>
+<a href="#cat-builder">🏗️ 공간·빌더 <b>5</b></a>
+<a href="#cat-design">🎨 디자인·UI <b>18</b></a>
+<a href="#cat-ops">📝 기록·운영 <b>6</b></a>
+<a href="#cat-misc">🛠️ 기타 <b>7</b></a>
+</nav>
+<details class="cat-sec" id="cat-legal">
+<summary>⚖️ 법무·브랜드<span class="cnt">4건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-13-f4b9d9.html">
+  <span class="d">2026-07-13</span>
+  <h2><span class="emo">⚖️</span>[법무/IP] 상표 출원 가이드 — 아야모 셀프 / OpenArtShow 변리사 (지식재산 전문가)</h2>
+  <p>감독 지시: 상표 출원(OpenArtShow·아야모) 절차 정리 + 감독 할 일 기록.</p>
+</a>
+<a class="card" href="./2026-07-12-05e4b5.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">⚖️</span>[법무] 네이밍 최종 실사 — 아야모 🟢 청신호 (전 후보 중 유일)</h2>
+  <p>볼리 🔴(삼성 Ballie) · 데구리 🔴(포켓몬) · 아야 🟡 · 구르미 🟡 · 아야미 🟡 ·</p>
+</a>
+<a class="card" href="./2026-07-12-d3c57c.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">⚖️</span>[법무] 네이밍 3차 실사 — 데구리 폐기, 구르미 1순위 승격</h2>
+  <p>판정 (웹 검색 기반 신속 실사)</p>
+</a>
+<a class="card" href="./2026-07-12-75ddb3.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">⚖️</span>[법무] 마스코트 네이밍 실사 — '볼리' 적신호 폐기</h2>
+  <p>카피라이터 2차 추천 1순위 '볼리(Bolli)'에 대해 감독 지시로 법무팀(전담</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-avatar">
+<summary>🧸 아야모·캐릭터<span class="cnt">10건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-23-d61e7e.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">🧸</span>오픈월드 원거리 아바타 LOD(C-2b) — NPC/워커 거리 임포스터 전환</h2>
+  <p>원인. 오픈월드가 무거운 파셀에서 tri 80k·17~27fps로 버벅였다. 신규 성능 세션 로거(?debug=perf&amp;rec)의</p>
+</a>
+<a class="card" href="./2026-07-15-2ce1e3.html">
+  <span class="d">2026-07-15</span>
+  <h2><span class="emo">🧸</span>아야모 심야 세션 — 피부 채도·비행 + 무릎/12액션 (부팀장 자율, 팀장 주도)</h2>
+  <p>감독 지시를 감독 부재(6시간) 중 자율 완결. 전 항목 §10 게이트(독립 executor 스모크 + 검수관 교차리뷰) 통과, 감독 룩 승인 후 배포 대기.</p>
+</a>
+<a class="card" href="./2026-07-14-b7e2cd.html">
+  <span class="d">2026-07-14</span>
+  <h2><span class="emo">🧸</span>제너레이티브 캐릭터 대확장 — 완성도 수리 + 새 종족·옵션, 그리고 꼬리 부양 버그</h2>
+  <p>제품 방향. 신규 종족을 늘리기 전에 기존 캐릭터 파츠의 완성도를 먼저 끌어올린다.</p>
+</a>
+<a class="card" href="./2026-07-12-d554d9.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🧸</span>사진→아야모 철회 (감독 판단)</h2>
+  <p>감독 평가: "사진으로 하는 게 큰 의미가 없어 보이네." — 색상 몇 개</p>
+</a>
+<a class="card" href="./2026-07-12-756624.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🧸</span>얼굴형 "통통" 폐기 → "각짐" (감독 피드백)</h2>
+  <p>감독 지시: "뚱뚱하게 하지는 말자. 형태만, 비슷하게." — 통통(두상</p>
+</a>
+<a class="card" href="./2026-07-12-7f2f6e.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🧸</span>사진 → 아야모 + 얼굴형 파츠 (감독 제안)</h2>
+  <p>감독 제안: "사진을 넣으면 귀엽게 비슷하게 만들 수 있을까? 얼굴형도 하자."</p>
+</a>
+<a class="card" href="./2026-07-12-677ac3.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🧸</span>마스코트 이름 확정 — 아야모(Ayamo) 표기 일괄 적용</h2>
+  <p>감독 확정. 3라운드 네이밍(카피라이터) × 3회 법무 실사를 거친 유일한</p>
+</a>
+<a class="card" href="./2026-07-11-38ce56.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🧸</span>서드파티 캐릭터 전면 삭제 — 치비 단일 체제</h2>
+  <p>에셋 저작권 감사에서 KayKit(CC0·안전)·RPM/DCL(약관 확인 필요) 발견 →</p>
+</a>
+<a class="card" href="./2026-07-11-3b3e32.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🧸</span>콕 찌르기 3종 개선 — 사거리 7m + 때린 사람 응시 + "아얏!" 사운드</h2>
+  <p>감독 지시: ① 좀 더 멀리서도 때릴 수 있게 ② 맞으면 때린 사람을 쳐다보며</p>
+</a>
+<a class="card" href="./2026-07-11-d9f6f7.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🧸</span>캐릭터 몸 충돌 — 통과 방지 + 회피 조향</h2>
+  <p>감독 제보: 걷는 캐릭터가 다른 캐릭터를 그대로 통과하고, 플레이어도</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-gate">
+<summary>🛡️ 보안·게이트·배포<span class="cnt">20건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-29-03fa6a.html">
+  <span class="d">2026-07-29</span>
+  <h2><span class="emo">🛡️</span>배포는 아무 검증도 안 거치고 있었다 — 그리고 게이트 두 개가 조용히 새고 있었다</h2>
+  <p>감독 지시: *"지금 우리가 배포를 염두하고 있잖아. 그래서 파일관리가 너무 중요해. (…) 파일관리를 잘 모니터링하고 지시하는 파트장 급이 필요해."*</p>
+</a>
+<a class="card" href="./2026-07-27-be8eef.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🛡️</span>드로우콜을 증식으로 오판했다 — 게이트가 틀린 것을 지키고 있었다</h2>
+  <p>감독 실기기(iPhone 26.5 · WebGPU · DPR 3 · 밀도 8) 리포트가 왔다. 평균 59.9fps · 히칭 0 ·</p>
+</a>
+<a class="card" href="./2026-07-27-0b1a85.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🛡️</span>부하 시험 — 개수 불변식이 밀도와 무관함을 확인했다</h2>
+  <p>감독 지시로 재작성의 반증 조건 하나를 실행했다. 플랜에 이렇게 적혀 있었다 —</p>
+</a>
+<a class="card" href="./2026-07-27-21297a.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🛡️</span>복원 지점 — `keep/world2-walkable-20260727`</h2>
+  <p>감독 지시로 이 시점을 되돌아올 수 있게 고정했다. 브랜치 keep/world2-walkable-20260727</p>
+</a>
+<a class="card" href="./2026-07-26-978357.html">
+  <span class="d">2026-07-26</span>
+  <h2><span class="emo">🛡️</span>오픈월드 성능 3차 — 셰이더 예열의 실패와 롤백, 그리고 배제로 좁힌 것</h2>
+  <p>원인. 2차에서 넣은 계측이 답을 줬다. 감독 실기기 CSV에서 급락한 프레임의 render_ms가</p>
+</a>
+<a class="card" href="./2026-07-25-55ff0e.html">
+  <span class="d">2026-07-25</span>
+  <h2><span class="emo">🛡️</span>오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀</h2>
+  <p>원인. 팀장 승인 1차 사이클(C1+C2 + 즉시안전 4종)을 새벽에 구현·커밋했으나 미검증·미배포 상태였다.</p>
+</a>
+<a class="card" href="./2026-07-22-0e2445.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🛡️</span>P1-② 보안 — CSP connect-src 축소 + valuation.yml 액션 SHA핀</h2>
+  <p>원인. 9축 점검의 보안축(A 92) 권고 2건. ①미술관(index) CSP connect-src 'self' https: wss:가</p>
+</a>
+<a class="card" href="./2026-07-22-66b12e.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🛡️</span>안전망 강화 — no-undef 정적검사 상시 게이트화 (#94 · R2·R5)</h2>
+  <p>원인. #87(QA 안전망) 검수관 권고 R2·R5. 3·4차 분해 내내 @ts-nocheck 모듈의 "끊긴 참조"(export</p>
+</a>
+<a class="card" href="./2026-07-22-0cbffb.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🛡️</span>C단계 후속 — 분해 게이트 비블로커 권고 2건 정리</h2>
+  <p>원인. 3·4차 분해 게이트에서 검수관이 남긴 비블로커 권고 2건(동작 동일성 리팩터 범위 밖이라 그때는</p>
+</a>
+<a class="card" href="./philosophy-3.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🛡️</span>C단계 C-3(2) — chibi.js(2,678줄) 6분해 + 검수관이 라이브 크래시 차단</h2>
+  <p>원인. chibi.js = 아바타 3D 생성(사람·동물·robot·ghost·의상). 초대형 SRP 위반. 소비자 7곳</p>
+</a>
+<a class="card" href="./philosophy-6.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🛡️</span>C단계 C-1 — ui.js(3,977줄) SRP 분해 완성 (SOLID, 감독 "게이트 정비→C")</h2>
+  <p>원인. 외부 코드평가가 지목한 최대 SRP 위반 핫스팟 = ui.js 단일 파일에 HUD·아바타 편집기·</p>
+</a>
+<a class="card" href="./2026-07-22-eb7dcb.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🛡️</span>안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행)</h2>
+  <p>원인. 감독 결정: SOLID(유지보수) 본질인 C단계(초대형 파일 분해) 착수 전, 그 대규모 분해를 잡을</p>
+</a>
+<a class="card" href="./philosophy-9.html">
+  <span class="d">2026-07-21</span>
+  <h2><span class="emo">🛡️</span>아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)</h2>
+  <p>원인. 외부 코드평가가 최대 문제로 "코드 구조 급속 복잡화(ui.js 3,842줄 등)·테스트/CI</p>
+</a>
+<a class="card" href="./philosophy-15.html">
+  <span class="d">2026-07-18</span>
+  <h2><span class="emo">🛡️</span>보안 종합감사 + 즉시 보완 3건 (감독 지시, 팀장 자율 완결)</h2>
+  <p>security-officer 종합 감사 결과 블로커·치명 0. 방어 설계는 견고(P2P 3종 방어선·저장 역직렬화 화이트리스트 재구성·textContent 렌더). 즉시 보완 3건을 게이트 거쳐 배포.</p>
+</a>
+<a class="card" href="./philosophy-16.html">
+  <span class="d">2026-07-18</span>
+  <h2><span class="emo">🛡️</span>QA/SOLID 감사 — 아키텍처 모범 확인, 부채 지도화 (감독 지시)</h2>
+  <p>프런트엔드 SOLID 감사. 아키텍처 경계·의존구조는 모범(보호↔비보호 import 0·순환 0·normalizeSpace/normalizeChibi SSOT 전량 경유). 부채는 두 축에 집중.</p>
+</a>
+<a class="card" href="./2026-07-16-c06aed.html">
+  <span class="d">2026-07-16</span>
+  <h2><span class="emo">🛡️</span>빌더 개방 — 소품 4배치·진입점·모바일 경량 빌더 (부팀장 자율, 감독·팀장 게이트)</h2>
+  <p>빌더를 유저에게 완전히 열었다. 이전엔 behind-flag라 아무도 못 썼는데, 이제 PC·모바일 모두 프리셋 골라 31종 소품으로 전시장을 만들고 공유한다. "룸 빌드가 UI에 없다"던 지점이 해소됐다.</p>
+</a>
+<a class="card" href="./2026-07-13-6a30c3.html">
+  <span class="d">2026-07-13</span>
+  <h2><span class="emo">🛡️</span>보안 블로커 3종 — P2P 검증·URL 화이트리스트·CSP (보안담당자+팀장 검토)</h2>
+  <p>감독 "코드 훔쳐간다" 우려 → 보안담당자(계약직) 위협모델 + 팀장(Fable)</p>
+</a>
+<a class="card" href="./2026-07-11-0a9584.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🛡️</span>[VFX+HUD 디자이너 동시 감사] 만화 타격 이펙트 + 모바일 HUD 게임급 개편</h2>
+  <p>감독 지시 ①: 캐릭터 콕 찌를 때 "만화에서 맞았을 때" 같은 시각 리액션이</p>
+</a>
+<a class="card" href="./2026-07-11-2f474e.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🛡️</span>[카피+디자인 동시 감사] 랜딩 전면 개편</h2>
+  <p>감독 지시로 카피라이터·디자이너(전담 에이전트 2인)를 동시 고용해 랜딩 교차 감사.</p>
+</a>
+<a class="card" href="./2026-07-11-95d7e5.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🛡️</span>[UX 감사] 모바일 독 사망 버그 + 행동 온보딩</h2>
+  <p>"모바일 키 입력을 어떻게 풀지"를 UX/UI 디자이너(전담 에이전트)에게 감사시킨</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-arch">
+<summary>🏛️ 아키텍처·리팩터링<span class="cnt">22건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-27-092e5b.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🏛️</span>저장소를 구조화했다 — 그리고 이동이 안전장치 하나를 조용히 죽였다</h2>
+  <p>감독 지적이 정확했다. *"내가 이거 배포한다고 말했잖아. 그러면 프런트엔드랑 백엔드랑</p>
+</a>
+<a class="card" href="./2026-07-22-ee5745.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>P1-⑤ 가변폰트 서브셋 — 첫 방문 폰트 페이로드 1.16MB → 60KB (-95%)</h2>
+  <p>원인. 9축 성능점검 톱1 = 첫 방문 폰트 페이로드. Pretendard 6웨이트 개별 woff2 합 1.16MB인데,</p>
+</a>
+<a class="card" href="./2026-07-22-6b5ce1.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료</h2>
+  <p>원인. P1-④ 2분할의 두 번째. PR-1(leaf 5)에 이어 게임루프 결합 대형군 8개(main-photo·main-tour·</p>
+</a>
+<a class="card" href="./2026-07-22-ee94c2.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)</h2>
+  <p>원인. 9축 점검 P0 "@ts-nocheck 70%(실효 타입 29%)". main.js 4차 컨트롤러 13개가 전부 nocheck.</p>
+</a>
+<a class="card" href="./2026-07-22-9259c9.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>P1-③ 보호4파일 첫 TS 전환 — config.js → config.ts (팀장 서명)</h2>
+  <p>원인. 9축 점검 P1. 보호4파일(main·player·artworks·config .js)이 tsc·no-undef·eslint 3중 정적</p>
+</a>
+<a class="card" href="./2026-07-22-e1372e.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>P1-① 접근성 — skip-link + landmark (9축 점검 후속)</h2>
+  <p>원인. 9축 종합 점검에서 접근성(C+)의 [중] 결함으로 "skip-link 전 페이지 부재·landmark role 부재"가</p>
+</a>
+<a class="card" href="./2026-07-22-eeea77.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C-1 후속 — ui-hud.ts strict화 (@ts-nocheck 소거 착수)</h2>
+  <p>원인. 9축 종합 점검에서 "TS 전환했으나 @ts-nocheck 70%(실효 타입 커버 ~29%)"가 아키텍처 약점으로</p>
+</a>
+<a class="card" href="./philosophy.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-4(D) — main.js 4차 게임루프(GameLoop) 분리 · 4차 완결(Composition Root)</h2>
+  <p>원인. 4차 마지막이자 심장 단위. animate 게임루프 전체(포테이토 프레임 캡·11개 위임 tick·근접 작품</p>
+</a>
+<a class="card" href="./2026-07-22-3a820c.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-4(C) — main.js 4차 입장 세션 셋업(EnterFlow) 분리</h2>
+  <p>원인. 4차 세 번째 단위(C). handleEnter의 입장 세션 셋업 — roomSuffix 산출·전시 통계(GalleryStats)</p>
+</a>
+<a class="card" href="./2026-07-22-b7d6d8.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-4(B) — main.js 4차 카메라 뷰 보조(트윈·온보딩·층안내) 분리</h2>
+  <p>원인. 4차 두 번째 단위(B). 게임루프에 흩어진 카메라 뷰 보조 3종 — 트윈(텔레포트/투어 보간)·</p>
+</a>
+<a class="card" href="./2026-07-22-3b6cb6.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-4(A) — main.js 4차 착수: 성능/렌더 거버너(PerfGovernor) 분리</h2>
+  <p>원인. 4차(Composition Root化) 착수. 감독이 "게임루프까지 완주"를 선택하되 "심장이라 위험하니</p>
+</a>
+<a class="card" href="./2026-07-22-60a49a.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-3(9) — main.js 3차 멀티플레이어 컨트롤러 (P2P 오케스트레이션 · 3차 완결)</h2>
+  <p>원인. 3차 마지막이자 최고위험 군(P2P). 비동기·네트워크·다인 상태라 헤드리스 스모크로 2인 세션을</p>
+</a>
+<a class="card" href="./2026-07-22-b437a9.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-3(8) — main.js 3차 셀프뷰 컨트롤러 (컨트롤러 간 의존을 조립점이 중재)</h2>
+  <p>원인. 3차 세 번째 군(3인칭 자기시점). 게임루프 결합이 가장 깊다 — 아바타 위치·회전·update가</p>
+</a>
+<a class="card" href="./2026-07-22-069373.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-3(7) — main.js 3차 투어 컨트롤러 (상태 소유권 이전 + 게임루프 tick 위임)</h2>
+  <p>원인. 3차 두 번째 군(도슨트 투어). 사진 군(격리 단발함수)과 달리 투어는 animate 게임루프에</p>
+</a>
+<a class="card" href="./2026-07-22-b75440.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-3(6) — main.js 점진 분해 3차: 사진 컨트롤러 (위험도별 분할 착수)</h2>
+  <p>원인. 감독 로드맵 3단계(기능별 컨트롤러). 3차 함수 14개는 2차 핸들러와 달리 전역 상태를</p>
+</a>
+<a class="card" href="./2026-07-22-ad8695.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-3(5) — main.js 점진 분해 2차: DOM 이벤트 핸들러 (ctx 주입)</h2>
+  <p>원인. 감독 로드맵 2단계. main.js의 DOM 이벤트 핸들러(onKeyDown·onWindowResize·beforeunload)를</p>
+</a>
+<a class="card" href="./2026-07-22-2628f9.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-3(4) — main.js 점진 분해 1차: 순수 유틸 leaf (보호파일, 감독 로드맵)</h2>
+  <p>원인. main.js(1,418줄)는 미술관 부트스트랩 진입점(Composition Root)이자 유일한 보호4파일 미분해분.</p>
+</a>
+<a class="card" href="./philosophy-2.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-3(3) — scene.js(2,059줄) 6분해 = 비보호 초대형 SOLID 완료</h2>
+  <p>원인. scene.js = 라이브 미술관(app/index) 씬 핵심(재질맵·조명·환경·나무·조립). 초대형 SRP</p>
+</a>
+<a class="card" href="./philosophy-4.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-3(1) — space-render.js(1,516줄) 3분해 (OCP 경계, 라이브 렌더)</h2>
+  <p>원인. space-render.js = 빌더·방문·world 공용 렌더 조립기(1,516줄, 초대형). SRP상 지오/재질</p>
+</a>
+<a class="card" href="./philosophy-5.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">🏛️</span>C단계 C-2 — studio.html(1,697줄) 인라인 추출 분해 완성 (SOLID+CSP, 감독)</h2>
+  <p>원인. studio.html에 스타일·폼·플랜·저장이 인라인 혼재(SRP 위반) + 인라인 &lt;script&gt;가 CSP</p>
+</a>
+<a class="card" href="./philosophy-7.html">
+  <span class="d">2026-07-21</span>
+  <h2><span class="emo">🏛️</span>아키텍처 안정화 B-5단계 — leaf TypeScript 전환 개시 (space.js→.ts, 감독 결정)</h2>
+  <p>원인. B-2b(배포 경로 Vite 전환)로 이제 소스가 Vite 번들을 거치므로 .ts 파일 전환이 가능해졌다.</p>
+</a>
+<a class="card" href="./philosophy-8.html">
+  <span class="d">2026-07-21</span>
+  <h2><span class="emo">🏛️</span>아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정)</h2>
+  <p>원인. A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-perf">
+<summary>⚡ 성능<span class="cnt">26건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-29-de6c97.html">
+  <span class="d">2026-07-29</span>
+  <h2><span class="emo">⚡</span>예측이 반증됐다 — 헤드리스 22배 느림 vs 실기기 60fps</h2>
+  <p>감독 지시: *"건물대신 미술관 건물을 올려보자. 얼마나 버벅이나 보고싶다. 50개 올려봐."*</p>
+</a>
+<a class="card" href="./2026-07-26-8e5861.html">
+  <span class="d">2026-07-26</span>
+  <h2><span class="emo">⚡</span>오픈월드 성능 4차 — 계측이 스스로를 부정하게 만들기, 그리고 축을 고르지 않는 처방</h2>
+  <p>원인 — 여덟 번째가 무너뜨린 것. 3차의 "남은 후보는 GPU 자원 업로드"라는 전망에 따라 텍스처를</p>
+</a>
+<a class="card" href="./2026-07-26-0b1e7a.html">
+  <span class="d">2026-07-26</span>
+  <h2><span class="emo">⚡</span>오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因)</h2>
+  <p>원인. 1차(데스크톱 적응계 실효화·발열캡)를 배포한 뒤에도 감독 실기기의 버벅임이 남았다. 다만 성격이</p>
+</a>
+<a class="card" href="./2026-07-23-62bb8c.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거</h2>
+  <p>원인. 감독이 실기기 재측정에서 "오픈월드가 모바일뿐 아니라 저사양 PC에서 더 버벅인다"고</p>
+</a>
+<a class="card" href="./2026-07-23-27331b.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>스마트 LOD — 파셀 스트리밍 격자 칸 → 연속 위치 + 이동방향 look-ahead</h2>
+  <p>원인. 감독이 파셀 스트리밍(감독은 "LOD")의 3가지를 지시했다: (1)로드 반경 중심을 격자 칸이</p>
+</a>
+<a class="card" href="./2026-07-23-c7b62b.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>모바일 프레임 캡 45→30 + 적응 임계 정합 (팀장 판정 b)</h2>
+  <p>원인. rfps 계측으로 45캡이 실제 걸림을 확인(가벼운 구간 화면 fps 60 / rfps 30~40)했으나, 감독</p>
+</a>
+<a class="card" href="./2026-07-23-fbcbdb.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>계측 정정 — 로거 fps가 3D 렌더가 아닌 화면 rAF였다(rfps 추가)</h2>
+  <p>원인. 프레임 캡을 세 번 배포하며 매번 실기기 로그의 "fps 62"를 근거로 "캡 미작동"이라 판독했다.</p>
+</a>
+<a class="card" href="./2026-07-23-c1f59e.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>프레임 캡 미작동 핫픽스 — coarsePointer 단일 지점 실패(SPOF) 제거 (팀장 직접 조사)</h2>
+  <p>원인. 직전 배포한 모바일 45fps 프레임 캡이 감독 실기기(모바일, 시크릿 탭)에서 두 번 다</p>
+</a>
+<a class="card" href="./2026-07-23-0cda96.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>오픈월드 모바일 프레임 캡(열 감안) + 나무 병합 clone dispose</h2>
+  <p>원인. 그림자 처방 배포 후 감독 실기기 로그에서 삼각형 수와 완전히 무관한 시간 누적 저하가</p>
+</a>
+<a class="card" href="./2026-07-23-23b28c.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>성능 세션 로거(?debug=perf&amp;rec) — 250ms 링버퍼·드랍 마커·CSV 내보내기</h2>
+  <p>원인. 성능 진단이 지금까지 HUD 스크린샷 순간값 1장씩이라 번거롭고, 이동 중 순간적으로 fps가</p>
+</a>
+<a class="card" href="./2026-07-23-fefb77.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>오픈월드 저사양 그림자 강등(C-1) — lite 진입 시 실시간 섀도 샘플링 완전 제거</h2>
+  <p>원인. 감독 실기기에서 오픈월드(world)가 9fps로 버벅였다. 성능감사로 주범을 확정했다 —</p>
+</a>
+<a class="card" href="./2026-07-23-2f3431.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">⚡</span>모바일 성능 처방 A+B — spec high·lite ON·px 2.25 충돌 하드가드 + 초기 슈퍼샘플 상한</h2>
+  <p>원인. 감독 실기기 HUD(?debug=perf) 스크린샷으로 원인을 확정했다 — index(미술관) 모바일에서</p>
+</a>
+<a class="card" href="./2026-07-22-ffa2b8.html">
+  <span class="d">2026-07-22</span>
+  <h2><span class="emo">⚡</span>실기기 성능 계측 HUD(?debug=perf) — 헤드리스 무회귀 수렴의 한계를 실측으로 뚫는다</h2>
+  <p>원인. 감독이 실기기에서 버벅임을 제보했다 — index 걷기, world 오픈월드 진입 즉시, builder 로드</p>
+</a>
+<a class="card" href="./2026-07-21-dfc674.html">
+  <span class="d">2026-07-21</span>
+  <h2><span class="emo">⚡</span>오픈월드 그래픽·모바일 성능·팝인 개선 (감독 실기기 피드백 루프, 연속 배포)</h2>
+  <p>감독 실기기 피드백을 받아 오픈월드 품질을 주제별로 연속 개선·배포. 모두 world.js(오픈월드 전용) 위주,</p>
+</a>
+<a class="card" href="./2026-07-20-f4def7.html">
+  <span class="d">2026-07-20</span>
+  <h2><span class="emo">⚡</span>오픈월드 해안+히칭 개선 통합 라이브 배포 (감독 승인)</h2>
+  <p>감독 결정("등대까지 하고 배포")에 따라 해안 연출 1+2단계(바다 단차·해변·부두·테트라포드·등대)와</p>
+</a>
+<a class="card" href="./2026-07-20-ec7a10.html">
+  <span class="d">2026-07-20</span>
+  <h2><span class="emo">⚡</span>오픈월드 스트리밍 히칭 개선 2단계 — 라이트 풀 (셰이더 재컴파일 제거)</h2>
+  <p>단계1(로드 큐) 실측이 방향을 확정했다: 큐가 경계 순간 프레임은 88~99%↓시켰지만, 소프트웨어 렌더에서</p>
+</a>
+<a class="card" href="./2026-07-20-0c9a7a.html">
+  <span class="d">2026-07-20</span>
+  <h2><span class="emo">⚡</span>오픈월드 스트리밍 히칭 개선 1단계 — 로드 시간분할 큐 (world.js)</h2>
+  <p>감독 보고: 오픈월드를 걷다 LOD로 새 건물·사물이 나타나는 순간 프레임이 확 떨어진다(히칭). 성능</p>
+</a>
+<a class="card" href="./2026-07-19-cd3302.html">
+  <span class="d">2026-07-19</span>
+  <h2><span class="emo">⚡</span>오픈월드 저사양 방어 이식 — 포테이토 폴백 + 섀도 이벤트 베이크 (팀장 지시, 부팀장 완결)</h2>
+  <p>랜딩 베타로 개방된 오픈월드(world.js)가 저사양·소프트웨어 렌더링 기기에서 심각한 저성능.</p>
+</a>
+<a class="card" href="./2026-07-11-72d5ad.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">⚡</span>60fps 달성 후 "알리아싱 필요해" — 등급별 픽셀 예산 + 라이브 샤프닝</h2>
+  <p>감독 실기기 60fps 도달. 남은 불만은 계단(알리아싱).</p>
+</a>
+<a class="card" href="./2026-07-11-404374.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">⚡</span>16fps·뿌옇·계단 제보 — 포테이토 상향 + 진단 가시화</h2>
+  <p>감독 실기기: 병합 배포 후에도 16fps, 뿌옇고 계단 현상. "ㅠ"</p>
+</a>
+<a class="card" href="./2026-07-11-42d9d4.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">⚡</span>가속 후 20fps + 뿌연 화면 — 드로우콜 -62% 병합 + 학습 오염 정리</h2>
+  <p>감독 실기기: 하드웨어 가속을 켜자 3→20fps로 올랐지만 60에 못 미치고,</p>
+</a>
+<a class="card" href="./2026-07-11-f5dcde.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">⚡</span>PC 3fps 최종 진단 — 소프트웨어 렌더링 감지 + 포테이토 모드 (전문가 자문)</h2>
+  <p>감독 반문: "모바일이 60fps인데 PC가 3fps인 게 이상하다. 씬을 깎아 화질을</p>
+</a>
+<a class="card" href="./2026-07-11-2795e3.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">⚡</span>데스크톱 3fps 심층 조사 — 조명 19→5 + 섀도맵 프리즈</h2>
+  <p>픽셀 예산 캡 이후에도 감독 PC에서 여전히 3fps — 해상도(필레이트) 문제가</p>
+</a>
+<a class="card" href="./2026-07-11-f70135.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">⚡</span>데스크톱 3fps 추락 — 픽셀 예산 캡 + 라이브 강등 + 블러 다이어트</h2>
+  <p>감독 실기기 제보: 데스크톱에서 3fps.</p>
+</a>
+<a class="card" href="./2026-07-11-6fa433.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">⚡</span>AI 관객 겹침 해소 + 짝 대화 + 드로우콜 병합 + 적응형 저사양 모드</h2>
+  <p>실기기 제보: 한 작품을 관객 3명이 보는데 전원이 같은 지점에 포개져 서 있음.</p>
+</a>
+<a class="card" href="./2026-07-11-d81524.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">⚡</span>베이크드 라이팅 — 모바일 프레임 개선</h2>
+  <p>원인 (무엇이 문제였나)</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-world">
+<summary>🌌 오픈월드·자연<span class="cnt">19건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-28-91f676.html">
+  <span class="d">2026-07-28</span>
+  <h2><span class="emo">🌌</span>두 지적이 같은 자리에서 충돌했다 — 가로등을 교차로에서 걷어내며</h2>
+  <p>감독 지적이 이틀에 걸쳐 둘 왔다.</p>
+</a>
+<a class="card" href="./2026-07-28-507665.html">
+  <span class="d">2026-07-28</span>
+  <h2><span class="emo">🌌</span>경계마다 구멍이 있었다 — 파츠 사이, 밴드와 안개 사이, 표본과 판정 사이</h2>
+  <p>하루에 감독 지적이 여섯 건 들어왔다. 블룸 크기, 밤 밝기, 파셀 겹침, LOD, 캐릭터 걷기,</p>
+</a>
+<a class="card" href="./2026-07-27-10eda3.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🌌</span>눈과 번개 — 백엔드 세 번째 사각, 그리고 "잴 수단이 없으면 추측이 쌓인다"</h2>
+  <p>sky.js를 world2로 가져오자 감독이 날씨를 하나씩 밟아보며 두 가지를 보고했다.</p>
+</a>
+<a class="card" href="./2026-07-27-911d62.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🌌</span>하늘을 새로 짠 것이 실수였다 — 이미 있던 sky.js로 되돌리기</h2>
+  <p>감독 한마디로 끝났다. "원래 오픈월드 하늘 좋았는데. 그거 가지고 오면 문제 생기려나."</p>
+</a>
+<a class="card" href="./2026-07-27-1c4973.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🌌</span>구름이 선으로 보인 이유, 그리고 "보장을 누가 지는가"</h2>
+  <p>감독이 실기기 스크린샷과 함께 "구름이 이상" 이라고 했다. 화면의 구름이 판이 아니라</p>
+</a>
+<a class="card" href="./2026-07-27-9687bd.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🌌</span>하늘이 안 보인 세 가지 이유, 그중 둘은 서로를 가리고 있었다</h2>
+  <p>감독이 실기기(iPhone·WebGPU)에서 두 번 보고했다. 먼저 "하늘이 안보여", 고친 뒤에는</p>
+</a>
+<a class="card" href="./2026-07-27-eec8af.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🌌</span>오픈월드 재작성(world2) — 개수를 상수로 묶으면 스파이크가 사라진다</h2>
+  <p>원인. 현행 오픈월드는 파셀이 승격될 때마다 화면이 걸린다. 그동안의 처방(텍스처 58% 감량,</p>
+</a>
+<a class="card" href="./2026-07-27-b82728.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🌌</span>번들 2배의 정체 — 미술관이 오픈월드 비용을 내고 있었다</h2>
+  <p>원인. 감독이 "SOLID 리팩터 이후 성능이 떨어진 것 같다"는 가설을 냈다. 수치로 가리기 위해</p>
+</a>
+<a class="card" href="./2026-07-23-27ad7f.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">🌌</span>오픈월드 그림자 조기 적응 — 프래그먼트 병목 처방 + C-2b 원복</h2>
+  <p>원인. 감독이 C-2b(아바타 LOD) 배포 직후 실기기 로그를 다시 채집하며 "아야모 문제가 아닌 것</p>
+</a>
+<a class="card" href="./2026-07-23-cac7e3.html">
+  <span class="d">2026-07-23</span>
+  <h2><span class="emo">🌌</span>오픈월드 모바일 초기 DPR 상한 1.5(C-2a) — 진입 직후 px 2.0 노출 캡</h2>
+  <p>원인. C-1(그림자 off) 배포·감독 실측 후 병목이 "렌더 → 진입/이동"으로 이동했다. 감독 관찰 —</p>
+</a>
+<a class="card" href="./2026-07-20-12cedf.html">
+  <span class="d">2026-07-20</span>
+  <h2><span class="emo">🌌</span>오픈월드 정식 서비스 승격 — 베타 제거 + 검색 노출 + P2P IP 노출 고지 3결함 수정</h2>
+  <p>감독 결재로 오픈월드를 베타 데모에서 정식 서비스로 승격(랜딩 "베타" 딱지 제거 + sitemap 검색 노출).</p>
+</a>
+<a class="card" href="./2026-07-20-8e801f.html">
+  <span class="d">2026-07-20</span>
+  <h2><span class="emo">🌌</span>해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크)</h2>
+  <p>감독 결정: 등대(해안 2단계)까지 완성 후 해안 전체 + 성능(스트리밍 히칭 개선)을 한 번에 배포. 부두·</p>
+</a>
+<a class="card" href="./2026-07-20-729e3f.html">
+  <span class="d">2026-07-20</span>
+  <h2><span class="emo">🌌</span>해안 연출 패키지 1단계 — 바다 단차 + 해변 + 부두 + 테트라포드 (오픈월드)</h2>
+  <p>감독 지시: "바다는 땅과 같은 높이면 어색하다" + 부두·테트라포드·(2단계)등대. 복셀스식 개방 해안 도시.</p>
+</a>
+<a class="card" href="./2026-07-19-a30245.html">
+  <span class="d">2026-07-19</span>
+  <h2><span class="emo">🌌</span>정문 포털 — 라이브 미술관 남측 입구에서 오픈월드로 (감독 결재, 부팀장 · 브랜치 한정)</h2>
+  <p>하늘 엔진 배포 후속 — 고정 라이브 미술관과 오픈월드를 잇는 "정문". 미술관 남측 정문(유리</p>
+</a>
+<a class="card" href="./2026-07-19-578beb.html">
+  <span class="d">2026-07-19</span>
+  <h2><span class="emo">🌌</span>정문 포털 + 하늘 2차 개선 라이브 배포 (감독 승인, 부팀장 병합)</h2>
+  <p>감독 라이브 배포 승인 — 정문 포털(고정 미술관 → 오픈월드 입구 게이트)과 하늘 2차 개선(수면 빛반사·</p>
+</a>
+<a class="card" href="./2026-07-19-314b60.html">
+  <span class="d">2026-07-19</span>
+  <h2><span class="emo">🌌</span>오픈월드 하늘 엔진(sky.js) 배선 + 감독 신 모드 패널 (팀장 발주, 부팀장 완결)</h2>
+  <p>감독 승인된 하늘 연출 엔진 sky.js(시간대×날씨×이벤트 절차 생성)를 오픈월드에 배선하고,</p>
+</a>
+<a class="card" href="./2026-07-19-4921af.html">
+  <span class="d">2026-07-19</span>
+  <h2><span class="emo">🌌</span>오픈월드 — 타당성 스파이크에서 베타 개방까지</h2>
+  <p>고정 미술관(방 하나) 밖으로 걸어 나가 여러 전시가 한 도시처럼 이어지는</p>
+</a>
+<a class="card" href="./2026-07-11-2b6c68.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🌌</span>하늘 HDRI 전환 + 3D 포인트 별 — "별 이상해" 수정</h2>
+  <p>감독 제보: 별이 이상함 + HDRI 제안. 기존 별은 돔 캔버스 텍스처에 찍은</p>
+</a>
+<a class="card" href="./2026-07-11-cdd65e.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🌌</span>나무 전면 업그레이드 — blob → 디테일 트리, 비용 +2콜</h2>
+  <p>감독 질문: "동그란 나무를 잎 있는 것으로 다 바꾸면 비용이 올라가려나?"</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-builder">
+<summary>🏗️ 공간·빌더<span class="cnt">5건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-26-5267ec.html">
+  <span class="d">2026-07-26</span>
+  <h2><span class="emo">🏗️</span>GLB 워크스루 실험 페이지 — strict CSP가 GLB 내장 텍스처를 막는다</h2>
+  <p>원인. 감독이 "지엘비 올려 보자, 궁금하다 — 어떤 느낌일지"라고 했다. 반입 판정 전에 직접 걸어다녀 볼</p>
+</a>
+<a class="card" href="./2026-07-26-ed77e9.html">
+  <span class="d">2026-07-26</span>
+  <h2><span class="emo">🏗️</span>미술관 GLB 대치 실사 — "실내가 없다"는 오판을 레이캐스트로 뒤집기</h2>
+  <p>원인. 감독이 GLB(test2.glb, 13.5MB)를 올리며 "오픈월드 말고 그냥 갤러리에 넣을 수 있을까"라고 물었고,</p>
+</a>
+<a class="card" href="./philosophy-13.html">
+  <span class="d">2026-07-18</span>
+  <h2><span class="emo">🏗️</span>스튜디오 외부 이미지 자동 임베드 + 발행 누수 차단 (감독 지시, 7b360f3)</h2>
+  <p>원인. 작가가 작품 이미지를 외부 URL(예: 남의 서버 그림 주소)로 넣으면 두 문제가 생긴다.</p>
+</a>
+<a class="card" href="./philosophy-14.html">
+  <span class="d">2026-07-18</span>
+  <h2><span class="emo">🏗️</span>빌더 조작 통일 — 걸어서빌드 접고 조망 자유이동으로 (c342319)</h2>
+  <p>감독 방향전환: "걸어서 빌드"(아바타가 공간을 걸으며 배치)를 여러 차례 다듬다(벽 파묻힘·시야각·아바타 반투명·1인칭) 결국 접었다. 아바타를 시야에서 치우고 조망(orbit) 카메라 자유이동 + 마우스/터치 …</p>
+</a>
+<a class="card" href="./2026-07-15-9111a4.html">
+  <span class="d">2026-07-15</span>
+  <h2><span class="emo">🏗️</span>UX 정비 5종 + 공간 빌더 확장 (부팀장 야간 세션)</h2>
+  <p>원인 → 작가·관람객 여정에 마찰이 흩어져 있었고(진입점 파편화·개발용어 노출·재방문 반복), 공간 빌더는 사이트 진입점이 없고 방이 좁았다. 감독 지시로 UX를 여정 관점에서 정비하고 빌더를 확장했다.</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-design">
+<summary>🎨 디자인·UI<span class="cnt">18건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-13-f538dd.html">
+  <span class="d">2026-07-13</span>
+  <h2><span class="emo">🎨</span>히어로/워드마크 재조판 — "길다"는 자간, "무겁다"는 weight (디자이너+카피)</h2>
+  <p>감독: "OpenArtShow가 영어로 저렇게 있으니 왜 이리 길어… 디자이너·카피와</p>
+</a>
+<a class="card" href="./2026-07-13-d31630.html">
+  <span class="d">2026-07-13</span>
+  <h2><span class="emo">🎨</span>브랜드 개명 ARTSHOW → OpenArtShow(오픈아트쇼) (감독 지시)</h2>
+  <p>감독: "이름을 아트쇼가 아니라 오픈아트쇼!!!" 저장소명(openartshow)과</p>
+</a>
+<a class="card" href="./2026-07-12-5deb90.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>좌측 스크롤 진행 레일 철회 (감독 피드백)</h2>
+  <p>감독 판단: 좌측 레일도 없애자. SCROLL 큐 제거는 유지.</p>
+</a>
+<a class="card" href="./2026-07-12-38b13d.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>SCROLL 큐 제거 → 좌측 2px 진행 레일 (감독 제안)</h2>
+  <p>히어로 하단 영문 "SCROLL" 텍스트 큐(+드립 애니메이션) 제거.</p>
+</a>
+<a class="card" href="./2026-07-12-a92324.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>한국어 조판 정비 — keep-all + 모바일 쉼표 줄바꿈</h2>
+  <p>감독 제안: 모바일에서 쉼표 다음에 줄을 띄우자. 실기기에서 "서게 됩니다"가</p>
+</a>
+<a class="card" href="./2026-07-12-574a2a.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>특징 카드 챕터 룰 제거 — "선이 애매" 해소</h2>
+  <p>감독 피드백: 카드 상단 그린 그라디언트 선이 애매하게 느껴짐 — 중앙</p>
+</a>
+<a class="card" href="./2026-07-12-d306dd.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>모바일 특징 카드 중앙 정렬 — "왼쪽으로 쏠린 느낌" 해소</h2>
+  <p>감독 실기기 스크린샷: 1열 전폭 카드에서 룰·아이콘·글이 전부 좌측 기준이라</p>
+</a>
+<a class="card" href="./2026-07-12-621832.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>모바일 네비 — 햄버거 메뉴로 교체</h2>
+  <p>감독 지시: 모바일은 심플한 햄버거 메뉴로.</p>
+</a>
+<a class="card" href="./2026-07-12-d5ddc1.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>상단 입장하기 CTA — 스크롤 노출로 중복 해소</h2>
+  <p>감독 지적: 상단 네비 "입장하기"가 히어로 "지금 입장하기"와 중복.</p>
+</a>
+<a class="card" href="./2026-07-12-fc9fa9.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>히어로 배지 제거 + 랜딩 로그인/회원가입</h2>
+  <p>감독 지시: "베타 오픈 박스 없애자. 메인창에 회원가입·로그인 넣어야지."</p>
+</a>
+<a class="card" href="./2026-07-12-cefdc1.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>특징 카드 3종 — 설명문에서 실사 스크린샷으로</h2>
+  <p>감독 피드백: "메인 밑 소개 3박스, 설명충 같은 느낌."</p>
+</a>
+<a class="card" href="./2026-07-12-7799b7.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>청자 그린 스케일 확장 — "강한 색도, 다양하게"</h2>
+  <p>감독 피드백: 초록 차분해서 좋다 + 더 강한 색·다양한 톤도 쓰자.</p>
+</a>
+<a class="card" href="./2026-07-12-472713.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>브랜드 액센트 골드 → 청자 그린 전환</h2>
+  <p>감독 결정: "아트는 초록 계열이어서." (A/B 시안 비교 후)</p>
+</a>
+<a class="card" href="./2026-07-12-8adc9e.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">🎨</span>랜딩 "갤러리 플레이트" 개편 — 라운드박스 현대화 + 타이포 대비 복구</h2>
+  <p>감독 피드백: "라운드박스가 현대적이지 않다. 글도 박스도 눈에 안 들어온다."</p>
+</a>
+<a class="card" href="./2026-07-11-dc3ce8.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🎨</span>그림자 강화 — 대비 3층위 상향</h2>
+  <p>감독 지시: "그림자를 좀 더 진하게 해도 될듯."</p>
+</a>
+<a class="card" href="./2026-07-11-9f2caa.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🎨</span>비네팅 경계선 제거 (폴오프 스무딩)</h2>
+  <p>감독 피드백: "비네팅 경계가 살짝 보여" — 화면 가장자리 어두워짐이 시작되는</p>
+</a>
+<a class="card" href="./2026-07-11-ad4ea5.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🎨</span>로비(입장 화면) 심플화</h2>
+  <p>준비 중인 소셜 로그인 3버튼이 최상단 점유, 캐릭터가 텍스트 칩 나열</p>
+</a>
+<a class="card" href="./2026-07-11-16d1b4.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🎨</span>디자인 리파인 — 방명록·작품 캡션·라이트박스</h2>
+  <p>감독 피드백: "방명록·작품 설명 화면이 조악하다" — 기능은 갖췄지만 플랫한</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-ops">
+<summary>📝 기록·운영<span class="cnt">6건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-13-36e5fc.html">
+  <span class="d">2026-07-13</span>
+  <h2><span class="emo">📝</span>강좌 유니티 잔재 3.1GB 제거 — 제품만 남김 (감독 지적)</h2>
+  <p>감독: "우리 이름은 openartshow인데 lifeunity 항목이 보인다. 다 찾아 검토."</p>
+</a>
+<a class="card" href="./2026-07-12-e2c1fd.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">📝</span>밸류에이션 모델에 트랙션 입력 + 50억 목표선 (감독 지시)</h2>
+  <p>감독 질문 "50억 가치 방법은?" → 답을 그래프로 추적 가능하게 만들자.</p>
+</a>
+<a class="card" href="./2026-07-12-b762ee.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">📝</span>시장가치 추적기 /valuation/ — 매일 04:00 자동 산출 그래프 (감독 지시)</h2>
+  <p>감독 지시: 매일 새벽 4시에 시장가치를 분석하고 그래프로 표현하라.</p>
+</a>
+<a class="card" href="./2026-07-12-f4698c.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">📝</span>팀 인사기록 페이지 /team/ — 정규직·계약직 기여도 (감독 지시)</h2>
+  <p>감독 지시: 사이트에 팀·계약직 인사기록을 남기고, 각자 어느 정도</p>
+</a>
+<a class="card" href="./2026-07-12-cec0b0.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">📝</span>개발일지 블로그 — 실사 캡처 + 주제 이모티콘 (감독 제안)</h2>
+  <p>감독 제안: 블로그에 이미지 캡처와 이모티콘도 넣자. 글자만 있는</p>
+</a>
+<a class="card" href="./2026-07-12-4bce7f.html">
+  <span class="d">2026-07-12</span>
+  <h2><span class="emo">📝</span>개발일지 공개 블로그 /devlog/ — 37건 일괄 발행 + SEO 기반</h2>
+  <p>감독 결정: 개발일지를 블로그로 공개하자. 워드프레스·노션·위키 비교 후</p>
+</a>
+</div>
+</details>
+<details class="cat-sec" id="cat-misc">
+<summary>🛠️ 기타<span class="cnt">7건</span></summary>
+<div class="cat-body">
+<a class="card" href="./2026-07-29-ce85ca.html">
+  <span class="d">2026-07-29</span>
+  <h2><span class="emo">🛠️</span>CSV 한 장이 열 번의 실패를 설명했다 — world1 vs world2 원인·결과</h2>
+  <p>감독 지시: *"월드1은 버벅였는데. 지금 버전과 비교해서. 원인. 결과 분석해보자."*</p>
+</a>
+<a class="card" href="./2026-07-29-43ee1d.html">
+  <span class="d">2026-07-29</span>
+  <h2><span class="emo">🛠️</span>네 번째는 맞혔다 — 처방 대신 축을 넷으로 갈라 놓고 감독에게 물었다</h2>
+  <p>감독 지시: *"glb건물 재질 이슈해결해보자."*</p>
+</a>
+<a class="card" href="./2026-07-29-3ca9a5.html">
+  <span class="d">2026-07-29</span>
+  <h2><span class="emo">🛠️</span>만들어 둔 것과 GPU에 올라간 것은 다른 일이다 — 주석이 재는 축을 틀리게 짚고 있었다</h2>
+  <p>감독 50채 리포트에 계단이 하나 남아 있었다.</p>
+</a>
+<a class="card" href="./2026-07-27-8cb9c1.html">
+  <span class="d">2026-07-27</span>
+  <h2><span class="emo">🛠️</span>슬롯 예산을 조였다 — 두 상수가 각각 틀린 채 서로를 상쇄하고 있었다</h2>
+  <p>부하 시험에서 슬롯 사용률이 두 밀도 모두 20% 남짓으로 나왔다(밀도1 106/475, 밀도8</p>
+</a>
+<a class="card" href="./2026-07-26-a626c7.html">
+  <span class="d">2026-07-26</span>
+  <h2><span class="emo">🛠️</span>P1 재질 캐시 — 규약을 바꿔놓고 소비자 한 곳만 고친 대가</h2>
+  <p>원인. 오픈월드 실기기 CSV에서 파이프라인 구조 키가 35→116으로 계속 늘고, 같은 키 재생성(pipe_re)은</p>
+</a>
+<a class="card" href="./philosophy-12.html">
+  <span class="d">2026-07-19</span>
+  <h2><span class="emo">🛠️</span>라이브 미술관 정비 — 외부 이미지 자기완결화 + GPU 경고 제거 (감독 지시)</h2>
+  <p>두 건을 라이브 고정 미술관(syhongart 개인전)에 반영했다.</p>
+</a>
+<a class="card" href="./2026-07-11-2e71bf.html">
+  <span class="d">2026-07-11</span>
+  <h2><span class="emo">🛠️</span>기본 전시 cycle 테마 전환 + 잠복 버그 수정 (fog 널 가드)</h2>
+  <p>감독 지시: 일몰 → "계속 바뀌는" 실시간 낮밤 순환(cycle)으로.</p>
+</a>
+</div>
+</details>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

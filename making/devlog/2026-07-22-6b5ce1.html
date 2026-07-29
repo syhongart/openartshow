@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료 — OpenArtShow</title>
+<meta name="description" content="원인. P1-④ 2분할의 두 번째. PR-1(leaf 5)에 이어 게임루프 결합 대형군 8개(main-photo·main-tour·">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-07-22-6b5ce1.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료 — OpenArtShow">
+<meta property="og:description" content="원인. P1-④ 2분할의 두 번째. PR-1(leaf 5)에 이어 게임루프 결합 대형군 8개(main-photo·main-tour·">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-07-22-6b5ce1.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-07-22-6b5ce1.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-22</div>
+<h1>🏛️ P1-④ PR-2 — main-* 대형군 8개 @ts-nocheck 소거 · 13개 전량 완료</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> P1-④ 2분할의 두 번째. PR-1(leaf 5)에 이어 게임루프 결합 대형군 8개(<code>main-photo</code>·<code>main-tour</code>· <code>main-selfview</code>·<code>main-multiplayer</code>·<code>main-perf</code>·<code>main-viewfx</code>·<code>main-enterflow</code>·<code>main-gameloop</code>) — 라이브 미술관 런타임 전부(게임루프·P2P·셀프뷰·투어)에 걸침. PR-1 절차(dist diff 0·최소 인터페이스)를 적용하되 무변경 절대 우선.</p>
+<p><strong>개선.</strong> 8개 <strong>전량 소거</strong>(무리한 nocheck 잔존 0). three는 vendor js라 타입 정의가 없어 <code>THREE.Clock/ Vector3</code> 등을 <strong>실제 호출 메서드만 담은 구조적 인터페이스</strong>로 대체(값 사용은 그대로), ctx는 로컬 최소 인터페이스(<code>GameLoopCtx</code>·<code>MpInstance</code> 등), config는 <code>import type {Floor,FloorId}</code>(P1-③ export 재사용). <strong>런타임 무변경</strong>: 지역 캐스팅(<code>as</code>·non-null <code>!</code>)만 — <code>clock!</code>·<code>onboardPos0!</code>은 대입 직후라 불변식 성립, <code>getGalleryInfo()!</code>은 원본 truthy 패턴, <code>MpInstance</code>는 multiplayer.js 공개 멤버와 1:1.</p>
+<p><strong>결과.</strong> 게이트 통과 — 검수관 승인(<strong>"런타임 토큰 무변경: 확인" 별도 명시</strong>, 검수관 자체 재현 <code>diff -rq dist</code>=바이트 동일, 지역 캐스팅 각 지점 불변식 검증, 보호 .js·leaf·deploy 미접촉), 독립 스모크 (9/9 — dist diff 0, app/index·world 대형군 소비 콘솔0). test 146.</p>
+<p>**★ P1-④ 완료 — main-* 13개(leaf 5 + 대형 8) 전량 @ts-nocheck 소거.** 9축 점검 P0 "타입 실효 29%"의 핵심 부채를 신규 코드(4차 컨트롤러)부터 닫았다. @ts-expect-error 1곳(main-photo 썸네일 getContext null 가드 부재 — 진짜 결함, 로직 무변경 유예 후 후속 티켓 #105) 외 클린.</p>
+<p><strong>교훈.</strong> 라이브 런타임 전부에 걸친 대형 strict화도 <strong>dist diff 0이 무변경의 유일·최종 심판</strong>이다 — 검수관이 스모크 보고를 신뢰만 하지 않고 자체 재현한 것이 §10 구현자≠검증자의 실천이다. 그리고 vendor(타입 없는) three는 <code>@types/three</code>를 끌어오는 대신 <strong>실제 호출 메서드만 담은 구조적 인터페이스</strong>로 타이핑하면 자기완결(외부 의존 0)을 지키며 strict를 통과한다. 진짜 결함은 로직으로 덮지 말고 @ts-expect-error+티켓으로 가시화한다(무변경 보증 &gt; 전량 소거).</p>
+</article>
+<div class="pn"><a href="./2026-07-22-ee94c2.html"><span class="lbl">← 이전 기록</span>P1-④ PR-1 — main-* leaf군 5개 @ts-nocheck 소거 (팀장 2분할 승인)</a><a href="./2026-07-22-ee5745.html" style="text-align:right"><span class="lbl">다음 기록 →</span>P1-⑤ 가변폰트 서브셋 — 첫 방문 폰트 페이로드 1.16MB → 60KB (-95%)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

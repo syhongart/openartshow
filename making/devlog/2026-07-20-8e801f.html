@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크) — OpenArtShow</title>
+<meta name="description" content="감독 결정: 등대(해안 2단계)까지 완성 후 해안 전체 + 성능(스트리밍 히칭 개선)을 한 번에 배포. 부두·">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-07-20-8e801f.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크) — OpenArtShow">
+<meta property="og:description" content="감독 결정: 등대(해안 2단계)까지 완성 후 해안 전체 + 성능(스트리밍 히칭 개선)을 한 번에 배포. 부두·">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-07-20-8e801f.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크)","datePublished":"2026-07-20","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-07-20-8e801f.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-20</div>
+<h1>🌌 해안 연출 패키지 2단계 — 등대 (오픈월드 랜드마크)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>감독 결정: 등대(해안 2단계)까지 완성 후 해안 전체 + 성능(스트리밍 히칭 개선)을 한 번에 배포. 부두· 테트라포드와 동형 가산 패턴. world.js/world-gen.js/world-boot.js(오픈월드 전용)만 — 라이브 보호· 방문자뷰·빌더·랜딩·하늘(sky.js)·space-render 무접촉.</p>
+<h3>구현</h3>
+<ul><li><strong>world-gen.js</strong> <code>genLighthouse</code>: 경계 육지 파셀 ~15%(독립 LIGHTHOUSE_SALT, 기존 salt와 비충돌)에 등대 배치 결정. <strong>부두 있는 파셀엔 배치 안 함</strong>(랜드마크 중복 방지 우선순위). 시드 결정론(Math.random 0).</li><li><strong>world.js</strong> <code>buildLighthouse</code>: 테이퍼 원통 탑(홍백 줄무늬 정점색) + 갤러리 난간(토러스) + 갓(원뿔)을 머지(드로우콜 1) + 등롱(유리방 발광 재질) + <strong>회전 서치라이트</strong>. 물가 경계 방향 모서리에 배치, 탑은 solid(충돌). shellOnly(원경)는 생략(드로우콜 절약).</li><li><strong>회전 빛(핵심)</strong>: 실제 SpotLight를 추가하면 방금 만든 라이트 풀(조명 개수 불변) 원칙을 훼손하므로, <strong>발광 콘 메시(additive·depthWrite false, THREE.Light 0)</strong>로 구현. update 루프에서 y축 회전만(무료). 야간에 additive로 도드라지고 주간엔 은은. 조명 개수 불변 → 셰이더 재컴파일 0.</li><li>world-boot.js: def.lighthouse 배선(부두 인자 전달) + 미니맵 등대 마커.</li></ul>
+<h3>결과</h3>
+<p>헤드리스 swiftshader(등대 파셀 스폰): <strong>drawCalls 39(≤255 여유)</strong>, <strong>programs 13</strong>(라이트풀 12 + 등대 재질 1회 컴파일, 조명 개수 불변 — 라이트 풀 원칙 유지), 콘솔 0. 시각 3각도 확인 — 주간 정면(홍백 탑·발광 등롱·갓·회전빔), 야간(별밤 + 발광 등롱 + 바다로 뻗는 회전 서치라이트), 원경 해안 실루엣. 자작 지오· 절차 텍스처만(외부 에셋 0·실존 상표 0). 결정론(시드 기반).</p>
+<p>게이트: executor 배포 스모크 6항 · release-reviewer 교차리뷰 · 부팀장 직접 시각/드로우콜 검증. 브랜치 커밋만 — 팀장 검수 후 감독께 스크린샷 상신, 감독 최종 확인 시 해안1+2+성능 묶어 배포.</p>
+</article>
+<div class="pn"><a href="./2026-07-20-ec7a10.html"><span class="lbl">← 이전 기록</span>오픈월드 스트리밍 히칭 개선 2단계 — 라이트 풀 (셰이더 재컴파일 제거)</a><a href="./2026-07-20-f4def7.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 해안+히칭 개선 통합 라이브 배포 (감독 승인)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

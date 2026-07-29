@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정) — OpenArtShow</title>
+<meta name="description" content="원인. A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/philosophy-8.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정) — OpenArtShow">
+<meta property="og:description" content="원인. A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/philosophy-8.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정)","datePublished":"2026-07-21","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/philosophy-8.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-21</div>
+<h1>🏛️ 아키텍처 안정화 B-2b단계 — 배포 경로 전면 Vite 전환 (감독 결정)</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> A단계 안전망 위에서 감독 결정(전면 TS+Vite, 장기 서비스 관리성). B-2a에서 Vite가 자기완결·CSP self·인라인0을 지켜 빌드 가능함을 검증기로 실증. B-2b는 그 Vite 산출물을 실제 배포 경로(_site)로 승격 — "소스 직서빙"에서 "빌드 산출물 배포"로 전환하되 라이브 미술관을 한 번도 깨지 않고 URL·자기완결·CSP·보호4파일 규율을 완화하지 않는 것이 핵심 난제.</p>
+<p><strong>개선.</strong></p>
+<ul><li><strong>base 절대전환</strong> <code>'/openartshow/'</code>: rollup 멀티페이지 공유 <code>_bundle</code> 을 깊이 다른 랜딩(루트)· 앱(app/)이 공유하려면 절대 base 필수. 손으로 쓴 런타임 참조(<code>fetch("./app/…")</code>·<code>href</code>·og· peerjs classic)는 문자열이라 미변경 — 절대 base가 안 깬다(빌드 실측 확인).</li><li><strong>HTML rename 플러그인</strong>(generateBundle 2-pass): landing→<code>index.html</code>, 미술관→<code>app/index.html</code>, studio/world/builder/visit→<code>app/*</code>, guide/design/about→루트 불변. <strong>최종 배포 URL 전부 불변</strong> (공유링크·SEO·sitemap 무영향).</li><li><strong>CSP 자동정합 플러그인</strong>: 인라인 sha256 을 빌드 후단 디스크 실측 재계산→script-src 재작성. 수작업 핀 관리 폐지(드리프트 소멸). importmap 제거로 미술관/world 핀 dead→<code>'self'</code> 수렴.</li><li><strong>랜딩군 소스 8줄</strong>: 빌드대상(import·link)만 소스경로로 교정, 런타임(fetch·href·og)은 <code>./app/</code> 유지. design.html:549 깨진 <code>./landing.html</code>→<code>./index.html</code> 교정.</li><li><strong>deploy.yml 교체</strong>: 소스 재배치 cp 로직 삭제 → <code>npm ci</code>+<code>npx vite build</code>+<code>cp -r dist/. _site/</code> +생성기/sitemap/robots. assemble.mjs ASSEMBLE_VITE_SH 와 1:1.</li></ul>
+<p><strong>⚠️ 롤백 단위(중요).</strong> 이 전환의 안전한 롤백 단위는 <strong>B-2b 4커밋 전체(또는 병합 커밋)</strong> 이다. deploy.yml(85f2880) <strong>단독 revert 는 불충분</strong> — 랜딩군 소스 8줄(<code>./app/vendor/…</code>→<code>./vendor/…</code> 등)이 vite 전제로 조정돼 있어, deploy 만 web직서빙으로 되돌리면 랜딩군 fonts/import 가 404 로 깨진다(§검수관 지적). 회귀 시 반드시 4커밋(또는 main 병합 커밋) 전체를 되돌릴 것.</p>
+<p><strong>결과.</strong> 게이트 통과 — executor 독립 스모크 기본6항 6/6 + B-2b특화 6/6(smoke:vite 10항: 6항+ 가드A/B/C+E1/E2 동등성 전부 PASS, URL회귀0, npm test 108/108), 검수관 cross-review 조건부 승인(블로커0 — 실제 vite build 실행+CSP 해시 디스크 실측 일치 검증). 보호4파일 무변경. 권고 3건(utils 死파일 복사·peerjs 미사용 devDep·three caret 동기화 문서화)은 #94 로 이월.</p>
+<p><strong>교훈.</strong> "빌드 없는 자기완결 직서빙"을 "빌드 산출물 배포"로 옮기는 최대 위험(외부호스트 유입· CSP 핀 파손·URL 회귀)을, Vite 를 먼저 "검증기"(B-2a)로만 태우고 자기완결·CSP·인라인0 을 실증한 뒤에야 "배포기"(B-2b)로 승격하는 2페이즈 롤인으로 전부 관문 통과시켰다. 롤백 단위를 커밋이 아닌 "원자 변경 집합"으로 인식하는 것이 안전 전환의 핵심.</p>
+</article>
+<div class="pn"><a href="./philosophy-9.html"><span class="lbl">← 이전 기록</span>아키텍처 안정화 A단계 — 회귀 안전망(테스트·CI·스모크) 도입 (감독 결정)</a><a href="./2026-07-22-eb7dcb.html" style="text-align:right"><span class="lbl">다음 기록 →</span>안전망 #94 게이트 핵심 정비 — E2 폐기 + 리졸브 일원화 (C단계 전 선행)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>

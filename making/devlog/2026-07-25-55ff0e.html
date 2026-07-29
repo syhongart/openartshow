@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀 — OpenArtShow</title>
+<meta name="description" content="원인. 팀장 승인 1차 사이클(C1+C2 + 즉시안전 4종)을 새벽에 구현·커밋했으나 미검증·미배포 상태였다.">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-07-25-55ff0e.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀 — OpenArtShow">
+<meta property="og:description" content="원인. 팀장 승인 1차 사이클(C1+C2 + 즉시안전 4종)을 새벽에 구현·커밋했으나 미검증·미배포 상태였다.">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-07-25-55ff0e.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀","datePublished":"2026-07-25","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-07-25-55ff0e.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>
+:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
+--ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
+--g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-07-25</div>
+<h1>🛡️ 오픈월드 쾌적성 1차 배포 — 파셀 승격 히칭·발열 절감 + 게이트가 잡은 발열캡 회귀</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p><strong>원인.</strong> 팀장 승인 1차 사이클(C1+C2 + 즉시안전 4종)을 새벽에 구현·커밋했으나 미검증·미배포 상태였다. 근본 병목은 파셀 승격 시 render() 동기비용(onAsyncTex 강제 렌더 + 스테이지마다 1024² 섀도 재베이크)이라 정상상태 렌더가 아니라 <strong>승격 순간의 프레임 스파이크(히칭)와 발열</strong>에 있다.</p>
+<p><strong>분석(정성+정량 총동원).</strong> 성능전문가(코드 진단)와 헤드리스 정량 계측을 병렬로 돌려 before(bd7954b)↔ after 비교. 정적 지표(드로우콜 240·지오 224·삼각형 85,482)는 <strong>before=after 완전 동일</strong> — 이는 회귀 0· 픽셀 불변의 증거이며, 이 커밋의 개선은 정적 지표가 아니라 히칭·발열 축이라 <code>renderer.info</code> 스냅샷으로는 원리상 안 잡힌다(swiftshader는 soft 판정→섀도 패스 no-op, lite도 미발동). 가구 병합의 드로우콜 절감은 가로등이 파셀당 1개뿐이라 병합 무의미하고 벤치·화분도 통상 0~1개라, 실측상 파셀당 ≤2·다수 0으로 곁가지.</p>
+<p><strong>개선(배포분).</strong></p>
+<ul><li><strong>C1</strong>: onAsyncTex의 강제 renderOnce()(RAF 밖 무예산 풀패스 클러스터) → needsRender 더티플래그. 다음 프레임 정규 렌더 1회로 흡수(tex.needsUpdate는 이미 서 있음).</li><li><strong>C2</strong>: 파셀 승격 스테이지별 requestShadowBake 6지점 제거 → finalizeParcel 단일 베이크. sync·async· unload 전 경로가 모두 단일 베이크에 도달(섀도 미갱신 0, 교차리뷰 확인).</li><li><strong>H</strong>: requestShadowBake 150ms 스로틀 + flushShadowBake 트레일링(다중 파셀 동시 로드 시 베이크 폭주 억제).</li><li><strong>비가시 스로틀</strong>: 탭 hidden·창 blur 시 ~4fps 하드캡(발열↓, 시뮬 dt 보존).</li><li><strong>거리가구 병합</strong>: 가로등·벤치·화분을 재질별 mergeGeometries로 파셀당 버킷 1 Mesh(픽셀·솔리드 불변).</li><li><strong>별 lite 토글</strong>(sky.js): 저사양 위기 시 야간 별 풀돔을 visible=false로 숨겨 fill 절감(opacity 배수만으론 블렌딩 픽셀이 그대로라 무이득이었다).</li></ul>
+<p><strong>게이트가 잡은 것(경유의 값어치).</strong> 배포 전 §10 게이트(독립 스모크 + 교차리뷰)에서 <strong>실 블로커 1건</strong>을 포착했다: 비가시 스로틀(bgThrottle)이 blur 중 인위적 ~4fps를 adaptQuality에 집계시켜 데스크톱 발열예방 캡(DESK_CAP, fps&lt;34·3초)을 오발화 → frameCapS가 비가역 진입해 <strong>창 blur 3초만으로 세션 영구 30fps 고착</strong>. adaptQuality 진입부에 bgThrottle 배제 가드(집계·틱 리셋)를 넣어 차단. 부차로 선재 CRLF 버그 (build-devlog가 Windows 워킹트리 CRLF에서 DEVLOG 파싱 실패)를 정규화로 견고화했고, 스모크의 나머지 FAIL(랜딩/about CSP sha256 hash 불일치)은 로컬 Windows CRLF 위양성으로 규명(CI·라이브는 LF라 정상).</p>
+<p><strong>결과.</strong> 교차리뷰 승인 + 스모크 실질항 통과(오픈월드 콘솔 0) 후 main 배포. 라이브 헤드리스 사후검증에서 랜딩 CSP violation 0·오픈월드 콘솔 에러 0으로 위양성 확증 및 런타임 정상 확인. 정상상태 회귀 없음은 입증됐고, 이 사이클의 목적인 히칭·발열 개선의 실증은 <strong>실기기 프레임타임(디버그 HUD CSV) 프로파일링</strong>이 다음 과제로 남는다(헤드리스 정적 계측으로는 격리 불가).</p>
+</article>
+<div class="pn"><a href="./2026-07-23-62bb8c.html"><span class="lbl">← 이전 기록</span>오픈월드 저사양 1단계 — 데스크톱 적응계 실효화 + 저사양 위기 구름 오버드로우 제거</a><a href="./2026-07-26-0b1e7a.html" style="text-align:right"><span class="lbl">다음 기록 →</span>오픈월드 성능 2차 — 시야 인지 스트리밍 배포, 그리고 세 번의 오귀인(誤歸因)</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.</footer>
+</body>
+</html>
