@@ -52,6 +52,7 @@ import { oceanFeature } from './ocean.js';
 import { minimapFeature } from './minimap.js';
 import { npcFeature } from './npc.js';
 import { postfxFeature } from './postfx.js';
+import { glbCityFeature } from './glb-city.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -60,6 +61,11 @@ export const FEATURES: readonly Feature[] = [
   // 사람은 플레이어 뒤에 온다 — 같은 프레임의 최신 플레이어 위치를 보고 멀어진 사람을
   // 데려오기 때문이다. 한 프레임 늦으면 재배치가 시야 안에서 일어나 눈앞에서 튄다.
   npcFeature,
+  // ── 실험 전용 (`?glb=N`) ─────────────────────────────────────────────────
+  // 감독 지시 *"건물대신 미술관 건물을 올려보자. 50개."* 개수 불변식을 **일부러 깨는**
+  // 기능이라 평상시에는 꺼져 있다 — `?glb=` 가 없으면 `create` 가 `null` 이라 로더
+  // 코드조차 내려받지 않는다. 실험이 끝나면 이 줄과 파일을 함께 지운다.
+  glbCityFeature,
   // 후보정은 **맨 마지막**이다. 렌더 경로를 통째로 가로채므로, 앞선 기능이 씬에 무엇을
   // 넣든 그 결과 위에서 동작해야 한다. 여기서 한 줄을 지우면 후보정이 통째로 빠지고
   // 어댑터는 기본 렌더 경로로 남는다.
