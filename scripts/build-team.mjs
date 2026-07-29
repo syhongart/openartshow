@@ -1,113 +1,104 @@
 #!/usr/bin/env node
-// docs/team-roster.js(데이터) → making/team/index.html 인사기록 페이지 생성기 (의존성 0)
-// 실행: node scripts/build-team.mjs   (저장소 루트 기준)
+// scripts/build-team.mjs
+// 인사기록 페이지 생성기 — 개발일지 + 급여 산정으로부터 동적 생성
+// 실행: node scripts/build-team.mjs (저장소 루트 기준)
 // 개발일지와 동일한 갤러리 플레이트 디자인 시스템.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shell } from './lib/site-shell.mjs';
+import { ROLES, BY_ID, countContributions } from './lib/devlog-contributors.mjs';
+import { computePayroll, RATES } from './lib/payroll.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'making', 'team');
 
-// ---------------------------------------------------------------------------
-// 명부 — 기여 건수는 개발일지(docs/DEVLOG.md)의 실제 태그·항목에서 집계한 값.
-// 새 인원/기여가 생기면 이 배열만 갱신하고 재생성한다.
-// ---------------------------------------------------------------------------
-const ROSTER = {
-  updated: '2026-07-13',
-  fulltime: [
-    {
-      emoji: '🎬', name: '감독', handle: 'syhongart', role: '창업자 · 총괄 디렉터',
-      tier: '창업자', tierClass: 'founder', joined: '2026-07', works: 42,
-      note: '모든 결정의 최종 방향. 시각예술가 겸 감독 — 제품 철학과 브랜드의 원천.',
-      items: ['제품 방향·전 기능 의사결정', '브랜드(청자 그린)·마스코트 컨셉', '지원금·사업화 전략'],
-    },
-    {
-      emoji: '🧠', name: 'Fable 5', handle: '팀장', role: '개발 총괄 · 심층 판단',
-      tier: '정규직', tierClass: 'staff', joined: '2026-07', works: 20,
-      note: '성능 심층 디버깅, 설계 판단, 법무·전략 같은 무거운 일 담당.',
-      items: ['PC 3fps 소프트웨어 렌더링 진단', '드로우콜 -62% 병합', '전문 에이전트 오케스트레이션'],
-    },
-    {
-      emoji: '⚙️', name: 'Opus 4.8', handle: '부팀장', role: '개발 실무',
-      tier: '정규직', tierClass: 'staff', joined: '2026-07', works: 6,
-      note: '기능 개발·문서·QA 실무. 팀장 부재 시 개발 연속성 담당.',
-      items: ['얼굴형 파츠 구현', '개발일지 블로그·인사기록', '기능 QA·배포'],
-    },
-    {
-      emoji: '🍃', name: 'Haiku 4.5', handle: '실행', role: '정형 실무 · 스모크',
-      tier: '정규직', tierClass: 'staff', joined: '2026-07', works: 0,
-      note: '가볍고 기계적인 일 담당(§10-1) — 체크리스트·생성기 재빌드·스모크·명단 갱신·패턴 스캔. 상위 모델의 잔업을 흡수해 비용을 낮춘다. 신규 편제, 다음 사이클부터 기여 집계.',
-      items: ['배포 전 스모크 체크리스트(구현자≠검증자)', '정형 산출물 재빌드·명단/사이트맵 갱신', '주간 노출 패턴 스캔'],
-    },
-  ],
-  contract: [
-    {
-      emoji: '⚖️', name: '법무팀', role: '상표 · 규제 실사',
-      tier: '계약직', tierClass: 'contract', joined: '2026-07', works: 4,
-      note: '실수가 치명적인 영역 — 자가 체크가 아닌 웹 실사로 상표 충돌을 걸러낸다.',
-      items: [
-        "'볼리' 적신호 적발 (삼성 Ballie 국문 상표)",
-        "'데구리' 적신호 적발 (포켓몬 데구리)",
-        '아야모 🟢 청신호 — 최종 채택 근거',
-        '코인 보상 규제 검토 (가상자산법·전금법)',
-      ],
-    },
-    {
-      emoji: '🛡️', name: '보안담당자', role: '위협모델 · 취약점',
-      tier: '계약직', tierClass: 'contract', joined: '2026-07', works: 3,
-      note: '대규모 공개 전 위협모델 수립 — "코드 은닉은 연극, public 무방". 블로커 3종을 걸러 안전하게 공개.',
-      items: [
-        'P2P 메시지 검증 — 64KB 상한·초당 30건 레이트리밋·좌표 클램프',
-        '공유링크 미디어 URL 화이트리스트(safeMediaUrl)',
-        'CSP 메타 — script-src 해시·object-src none·base-uri none',
-      ],
-    },
-    {
-      emoji: '🎨', name: '디자이너', role: 'VFX · HUD · 랜딩',
-      tier: '계약직', tierClass: 'contract', joined: '2026-07', works: 3,
-      note: '게임급 인터랙션과 편집형 랜딩. 감독 피드백을 시각 언어로 번역.',
-      items: [
-        '만화 타격 이펙트 + 모바일 HUD 게임급 개편',
-        '랜딩 갤러리 플레이트 전면 개편',
-        '모바일 독 UX 감사',
-      ],
-    },
-    {
-      emoji: '✍️', name: '카피라이터', role: '네이밍 · 카피',
-      tier: '계약직', tierClass: 'contract', joined: '2026-07', works: 2,
-      note: '글로벌 기준 3음절 코이닝. (자가 체크만으로는 상표 충돌을 못 걸러 법무 실사와 짝으로 운영.)',
-      items: ['마스코트 네이밍 3라운드 → 아야모', '랜딩 히어로·섹션 카피'],
-    },
-    {
-      emoji: '⚡', name: '성능 전문가', role: '렌더링 진단',
-      tier: '계약직', tierClass: 'contract', joined: '2026-07', works: 1,
-      note: '프레임타임 수학으로 "씬을 깎는 방향이 틀렸다"는 감독 직관을 근거로 입증.',
-      items: ['CPU 소프트웨어 래스터라이저 감지 — 250~330ms/프레임 진단'],
-    },
-    {
-      emoji: '🔬', name: '리서처', role: '지원금 · 시장 조사',
-      tier: '계약직', tierClass: 'contract', joined: '2026-07', works: 2,
-      note: '현행 공고·규제를 웹 실사로 확인해 전략 근거를 만든다.',
-      items: ['예술인복지재단·창업 지원금 조사', 'AI 메타버스 시장 분석'],
-    },
-    {
-      emoji: '🔎', name: '검수관', role: '교차리뷰 · 릴리스 승인',
-      tier: '계약직', tierClass: 'contract', joined: '2026-07', works: 0,
-      note: '구현자와 분리된 제3자 검증(§10-3·10-4). 중요 변경 교차리뷰와 릴리스 승인 전담 — 셀프 QA가 놓친 회귀(guide.html 404·롤백 패치 유실)를 막기 위해 신설. 신규 편제, 다음 사이클부터 기여 집계.',
-      items: ['중요 변경 교차 코드리뷰', '릴리스 게이트 승인', '스모크는 Haiku에 재위임'],
-    },
-  ],
-};
+// 개발일지 읽기
+const devlogMd = readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8');
+
+// 기여 집계
+const contributions = countContributions(devlogMd);
+
+// 급여 산정
+const today = new Date();
+const payroll = computePayroll(devlogMd, today);
+
+// 기본 정보 (역할별 메타데이터 + 기여도)
+function buildMemberData(roleId) {
+  const role = BY_ID.get(roleId);
+  const contrib = contributions[roleId] || { count: 0, joined: null, lastSeen: null };
+  const pay = payroll[roleId];
+
+  if (!role || contrib.count === 0) return null;
+
+  return {
+    ...role,
+    contribution: contrib,
+    payroll: pay,
+  };
+}
+
+// 정규직 + 계약직 모두 모은다
+const members = [];
+for (const role of ROLES) {
+  const member = buildMemberData(role.id);
+  if (member) members.push(member);
+}
+
+// 정규직/계약직 분리
+const fulltime = members.filter((m) => m.tier === '정규직' || m.tier === '창업자');
+const contract = members.filter((m) => m.tier === '계약직');
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const maxWorks = Math.max(...[...ROSTER.fulltime, ...ROSTER.contract].map((m) => m.works));
-const totalWorks = [...ROSTER.fulltime, ...ROSTER.contract].reduce((a, m) => a + m.works, 0);
+
+// 업데이트 날짜 (오늘)
+const today_str = today.toISOString().split('T')[0]; // YYYY-MM-DD
+
+// 기여 건수 표시 (상대치)
+const maxContrib = Math.max(...members.map((m) => m.contribution.count), 1);
+const totalContrib = members.reduce((a, m) => a + m.contribution.count, 0);
+
+// 인건비 포맷
+function formatAmount(amount) {
+  if (amount === null) return '시세 미확인';
+  if (typeof amount === 'object') {
+    // 범위형
+    const min = (amount.min / 1000000).toFixed(2);
+    const max = (amount.max / 1000000).toFixed(2);
+    return `${min} ~ ${max}만 원`;
+  }
+  // 숫자
+  if (amount === 0) return '0원';
+  if (amount >= 10000000) return `${(amount / 1000000).toFixed(0)}만 원`;
+  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}만 원`;
+  if (amount >= 10000) return `${(amount / 10000).toFixed(0)}만 원`;
+  return `${amount}원`;
+}
 
 function memberCard(m) {
-  const pct = Math.round((m.works / maxWorks) * 100);
+  const pct = Math.round((m.contribution.count / maxContrib) * 100);
+  const joinedText = m.contribution.joined ? m.contribution.joined.substring(0, 7) : '미상';
+  const lastSeenText = m.contribution.lastSeen ? m.contribution.lastSeen.substring(0, 7) : '미상';
+
+  let payrollHtml = '';
+  if (m.payroll) {
+    const unit = RATES[m.id]?.unit || '—';
+    const amountText = formatAmount(m.payroll.amount);
+    const gradeText = m.payroll.grade || '—';
+    payrollHtml = `
+    <div class="m-payroll">
+      <div class="m-payroll-row">
+        <span class="m-payroll-label">산정</span>
+        <span class="m-payroll-value">${esc(amountText)} (${unit}) / ${m.payroll.months || '—'}개월</span>
+      </div>
+      <div class="m-payroll-row">
+        <span class="m-payroll-label">등급</span>
+        <span class="m-payroll-value">${esc(gradeText)}</span>
+      </div>
+    </div>`;
+  }
+
   return `<div class="member">
   <div class="m-top">
     <span class="m-emoji" aria-hidden="true">${m.emoji}</span>
@@ -117,16 +108,16 @@ function memberCard(m) {
     </div>
     <span class="m-badge ${m.tierClass}">${esc(m.tier)}</span>
   </div>
-  <p class="m-note">${esc(m.note)}</p>
-  <div class="m-bar" role="img" aria-label="기여 ${m.works}건">
+  <p class="m-note">${esc(m.name)}(${m.emoji})는 개발일지에서 <strong>${m.contribution.count}건</strong> 기여를 했습니다. ${m.contribution.joined ? `첫 등장: ${joinedText}, 마지막: ${lastSeenText}.` : ''}</p>
+  <div class="m-bar" role="img" aria-label="기여 ${m.contribution.count}건">
     <span class="m-bar-fill" style="width:${pct}%"></span>
-    <span class="m-bar-num">${m.works}건</span>
+    <span class="m-bar-num">${m.contribution.count}건</span>
   </div>
-  <ul class="m-items">${m.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+  ${payrollHtml}
 </div>`;
 }
 
-// team 고유 CSS (셸은 site-shell.mjs에서, 변수 오버라이드는 하단 shell() 호출에서)
+// team 고유 CSS
 const CSS = `:root{--wrap-w:900px;--lead-mb:30px;--lh:1.7}
 .stat-row{display:flex;gap:12px;flex-wrap:wrap;margin:0 0 44px}
 .stat{flex:1;min-width:130px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
@@ -149,16 +140,24 @@ h2.sec{font-size:15px;color:var(--g800);margin:38px 0 16px;padding-left:10px;bor
 .m-bar{position:relative;height:20px;background:var(--paper-deep);border-radius:2px;overflow:hidden;display:flex;align-items:center}
 .m-bar-fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--g300),var(--g600));border-radius:2px}
 .m-bar-num{position:relative;margin-left:auto;padding-right:8px;font-size:11px;font-weight:600;color:var(--g900)}
-.m-items{margin:12px 0 0;padding-left:18px}
-.m-items li{font-size:12.5px;color:var(--ink-body);margin:0 0 4px}
+.m-payroll{margin:12px 0 0;padding:8px 10px;background:var(--paper-deep);border-radius:2px;font-size:12px}
+.m-payroll-row{display:flex;gap:8px;margin:4px 0}
+.m-payroll-label{font-weight:600;color:var(--ink-dim);min-width:40px}
+.m-payroll-value{color:var(--ink-body)}
 .note-foot{margin-top:40px;font-size:12px;color:var(--ink-dim);line-height:1.6;border-top:1px solid var(--line);padding-top:18px}
+.note-foot strong{color:var(--ink)}
 @media(max-width:640px){.grid{grid-template-columns:1fr}}
 `;
 
 const jsonld = {
-  '@context': 'https://schema.org', '@type': 'Organization', name: 'OpenArtShow',
-  url: `https://syhongart.github.io/openartshow/`, member: [...ROSTER.fulltime, ...ROSTER.contract].map((m) => ({
-    '@type': 'Person', name: m.name, jobTitle: m.role,
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'OpenArtShow',
+  url: 'https://syhongart.github.io/openartshow/',
+  member: members.map((m) => ({
+    '@type': 'Person',
+    name: m.name,
+    jobTitle: m.role,
   })),
 };
 
@@ -169,36 +168,45 @@ const bodyHtml = `
   무거운 일에는 전문 계약직을 고용해 맡깁니다 — 아래는 그 기록입니다.</p>
 
   <div class="stat-row">
-    <div class="stat"><div class="n">${ROSTER.fulltime.length}</div><div class="l">정규직 · 창업자</div></div>
-    <div class="stat"><div class="n">${ROSTER.contract.length}</div><div class="l">전문 계약직</div></div>
-    <div class="stat"><div class="n">${totalWorks}</div><div class="l">누적 기여 건수</div></div>
-    <div class="stat"><div class="n">42</div><div class="l">공개 개발일지</div></div>
+    <div class="stat"><div class="n">${fulltime.length}</div><div class="l">정규직 · 창업자</div></div>
+    <div class="stat"><div class="n">${contract.length}</div><div class="l">전문 계약직</div></div>
+    <div class="stat"><div class="n">${totalContrib}</div><div class="l">누적 기여 건수</div></div>
+    <div class="stat"><div class="n">${readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8').split(/\n(?=## )/).length}</div><div class="l">공개 개발일지</div></div>
   </div>
 
   <h2 class="sec">정규직 · 창업자</h2>
-  <div class="grid">${ROSTER.fulltime.map(memberCard).join('\n')}</div>
+  <div class="grid">${fulltime.map(memberCard).join('\n')}</div>
 
   <h2 class="sec">전문 계약직</h2>
-  <div class="grid">${ROSTER.contract.map(memberCard).join('\n')}</div>
+  <div class="grid">${contract.map(memberCard).join('\n')}</div>
 
   <p class="note-foot">
-    기여 건수는 <a href="../devlog/">공개 개발일지</a>의 실제 항목·태그에서 집계한 값입니다.
-    막대는 팀 내 최대 기여자 대비 상대치입니다. 계약직은 사안이 생길 때 고용되어 실사·감사·자문을
-    수행하며, 결과는 개발일지에 근거와 함께 남깁니다.<br>
-    <span style="color:var(--ink-dim)">최종 갱신 ${ROSTER.updated}</span>
+    <strong>기여 건수</strong>는 <a href="../devlog/">공개 개발일지</a>의 실제 항목·태그에서 집계한 값입니다.
+    집계는 "개발일지 본문에 역할 이름이 적힌 항목 수" 이지 실제 기여도가 아님을 명시합니다.
+    실제로 부팀장이 최근 활동을 했는데 일지 작성 주기가 길면 기여 건수가 낮아질 수 있습니다.
+    글 쓰는 습관이 숫자를 바꿉니다.<br>
+    <strong>급여 산정</strong>은 KOSA 2025 통계 기반 단가를 역할별·재직 개월별로 계산한 추정값입니다.
+    정규직은 입사일~오늘을 재직 개월로, 계약직은 활동한 서로 다른 YYYY-MM 개수를 활동 개월로 산정합니다.
+    "시세 미확인"은 공표된 통계를 찾지 못했거나 범위가 너무 넓어 중앙값을 쓸 수 없는 역할입니다.
+    범위형은 최소·최대값을 그대로 냅니다. 원가 합계에는 감독(창업자)을 포함하지 않습니다.<br>
+    <span style="color:var(--ink-dim)">최종 갱신 ${today_str}</span>
   </p>
 `;
 
 mkdirSync(OUT, { recursive: true });
-writeFileSync(join(OUT, 'index.html'), shell({
-  title: '팀 · 인사기록 — OpenArtShow',
-  desc: 'OpenArtShow를 만드는 팀 — 정규직과 계약직(디자이너·법무·카피·성능·리서처)의 인사기록과 기여도. 사람과 AI가 함께 만드는 미술관.',
-  path: '/making/team/',
-  og: 'website',
-  jsonld,
-  css: CSS,
-  depth: 2,
-  footerNote: '사람과 AI가 함께 만드는 미술관.',
-  bodyHtml,
-}));
-console.log(`team: ${ROSTER.fulltime.length} 정규직 + ${ROSTER.contract.length} 계약직 → making/team/index.html`);
+writeFileSync(
+  join(OUT, 'index.html'),
+  shell({
+    title: '팀 · 인사기록 — OpenArtShow',
+    desc: 'OpenArtShow를 만드는 팀 — 정규직과 계약직(디자이너·법무·카피·성능·리서처)의 인사기록과 기여도. 개발일지 기반 동적 집계.',
+    path: '/making/team/',
+    og: 'website',
+    jsonld,
+    css: CSS,
+    depth: 2,
+    footerNote: '사람과 AI가 함께 만드는 미술관.',
+    bodyHtml,
+  })
+);
+
+console.log(`team: ${fulltime.length} 정규직 + ${contract.length} 계약직 → making/team/index.html (${today_str})`);
