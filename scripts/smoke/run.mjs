@@ -19,8 +19,9 @@ import {
   SITE_DIR,
   BASE_PATH,
   GENERATORS,
-  BASELINE_FILE_COUNT_BY_MODE,
-  DROP_THRESHOLD,
+  GENERATED_ROOT_FILES,
+  MANIFEST_TOLERANCE,
+  STATIC_ROOT_EXTRA,
   REQUIRED_FILES_BY_MODE,
   LIVE_PAGES,
   VIEWPORTS,
@@ -35,7 +36,6 @@ import { checkRefs } from './check-refs.mjs';
 // `node run.mjs vite` → vite 조립(교체 deploy.yml)
 const MODE = process.argv[2] === 'vite' ? 'vite' : 'baseline';
 const IS_VITE = MODE === 'vite';
-const BASELINE_FILE_COUNT = BASELINE_FILE_COUNT_BY_MODE[MODE];
 const REQUIRED_FILES = REQUIRED_FILES_BY_MODE[MODE];
 const URL_PREFIX = IS_VITE ? BASE_PATH.replace(/\/$/, '') : ''; // '/openartshow'
 const SERVE_BASE = IS_VITE ? BASE_PATH : null;                  // 서버 마운트 프리픽스
@@ -156,18 +156,42 @@ function checkGenerators() {
   return true;
 }
 
-// ── 검사2: 매니페스트 파일수 (급감 감지) ─────────────────────────────
+/**
+ * 검사2: 매니페스트 파일수 — **조립 구성요소의 합과 대조한다.**
+ *
+ * 옛 판본은 실측 상수(vite 148)와 비교했는데, `devlog/` 가 개발일지마다 늘어 실측이
+ * 227 이 되도록 상수는 148 이었다 → **84개가 사라져도 PASS** 였다(검수관 P1).
+ * 상수를 갱신해도 같은 일이 반복된다 — 낡는 방향이 검출력을 깎는 쪽이기 때문이다.
+ *
+ * `_site` 는 정의상 `dist + devlog + team + valuation + 루트 정적` 이므로 그 등식이
+ * 깨지면 조립이 뭔가 빠뜨린 것이다. 양쪽이 함께 늘어 **값이 낡지 않는다.**
+ *
+ * baseline 모드는 `cp -r frontend/. $OUT/app/` 라 구성요소가 겹쳐(루트 html 4개가
+ * frontend 사본과 중복) 등식이 성립하지 않는다. 그쪽은 배포를 재현하지 않는
+ * 대조군이므로 현재값만 INFO 로 남긴다 — **판정하지 않는 것을 판정한 척하지 않는다.**
+ */
 function checkManifestCount() {
   const n = countFiles(SITE_DIR);
-  if (BASELINE_FILE_COUNT == null) {
-    record('2', '매니페스트 파일수', 'INFO', `현재 ${n} — baseline 미설정(현재값을 config 에 기록 권장)`);
+  if (!IS_VITE) {
+    record('2', '매니페스트 파일수', 'INFO',
+      `${n} — baseline 조립은 구성요소가 겹쳐 등식이 성립하지 않는다(대조군 전용, 판정 없음)`);
     return;
   }
-  const delta = n - BASELINE_FILE_COUNT;
-  if (n < BASELINE_FILE_COUNT - DROP_THRESHOLD) {
-    record('2', '매니페스트 파일수', 'FAIL', `${n} (baseline ${BASELINE_FILE_COUNT}, Δ${delta}) — 급감(파일 누락 의심)`);
+  const parts = {
+    dist: countFiles(path.join(ROOT, 'dist')),
+    devlog: countFiles(path.join(ROOT, 'devlog')),
+    team: countFiles(path.join(ROOT, 'team')),
+    valuation: countFiles(path.join(ROOT, 'valuation')),
+  };
+  const staticRoot = GENERATED_ROOT_FILES.length + 1 + STATIC_ROOT_EXTRA.length; // +1 = DEPLOY_SHA_FILE
+  const expected = Object.values(parts).reduce((a, b) => a + b, 0) + staticRoot;
+  const diff = n - expected;
+  const breakdown = `${Object.entries(parts).map(([k, v]) => `${k} ${v}`).join(' + ')} + 정적 ${staticRoot}`;
+  if (Math.abs(diff) > MANIFEST_TOLERANCE) {
+    record('2', '매니페스트 파일수', 'FAIL',
+      `${n} ≠ 기대 ${expected} (Δ${diff >= 0 ? '+' : ''}${diff}) — ${breakdown}. 조립이 빠뜨렸거나 군더더기가 붙었다`);
   } else {
-    record('2', '매니페스트 파일수', 'PASS', `${n} (baseline ${BASELINE_FILE_COUNT}, Δ${delta >= 0 ? '+' : ''}${delta})`);
+    record('2', '매니페스트 파일수', 'PASS', `${n} = ${breakdown}`);
   }
 }
 
