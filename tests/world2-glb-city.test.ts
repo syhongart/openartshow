@@ -17,7 +17,7 @@
 // 같은 형태로만 드러나 원인을 찾기가 매우 어렵다.
 
 import { describe, it, expect } from 'vitest';
-import { glbCityFeature, gridCells, tameMetals, makeBadge } from '../frontend/js/world2/features/glb-city.js';
+import { glbCityFeature, gridCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, EXT_OFF } from '../frontend/js/world2/features/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 
@@ -212,5 +212,39 @@ describe('헛된 투명을 되돌린다 — WebGPU 에서 벽이 사라지던 �
     expect(r).toEqual({ metals: 1, opaque: 1 });
     expect(wall.metalness).toBeLessThan(0.5);
     expect(wall.transparent).toBe(false);
+  });
+});
+
+// ── 재질 축 (`?glbmat=`) ──────────────────────────────────────────────────────
+// GLB 파일의 재질을 고쳤는데도(metallic 9개 → 0, BLEND 5개 → OPAQUE) 감독 화면에서
+// 원본 재질이 여전히 안 보였다. 금속·투명은 원인이 아니었던 것이다.
+//
+// 남은 후보 둘이 **서로 다른 처방을 요구한다** — 확장 값이냐, 재질 클래스냐. 한 축으로
+// 뭉뚱그리면 또 헛짚는다. 네 모드가 그 둘을 가른다.
+describe('재질 축 — 네 모드가 서로 다른 가설을 검증한다', () => {
+  it('모드 목록이 넷이고 기본이 swap 이다', () => {
+    // 기본을 바꾸는 것은 감독 판정 뒤다. 지금 바꾸면 "보이던 것"이 갑자기 달라진다.
+    expect([...MAT_MODES]).toEqual(['swap', 'std', 'noext', 'raw']);
+  });
+
+  it('CARRY_MAPS 에 확장 전용 속성이 없다 — 그게 std 모드의 정의다', () => {
+    // `std` 는 `MeshStandardMaterial` 로 옮기는 모드다. 확장 속성을 여기 넣으면 그
+    // 클래스가 모르는 필드를 대입하게 되고, 조용히 무시되면서 "옮겼다"고 착각한다.
+    const extOnly = ['sheen', 'clearcoat', 'specularIntensity', 'anisotropy', 'iridescence', 'transmission', 'ior'];
+    for (const k of extOnly) expect(CARRY_MAPS).not.toContain(k);
+  });
+
+  it('CARRY_MAPS 가 룩의 핵심을 담는다 — 지금 기본이 버리고 있던 것들', () => {
+    // 감독이 본 "원본 룩이 아닌 화면"의 정체가 이 셋이 빠진 것이다.
+    for (const k of ['normalMap', 'aoMap', 'emissiveMap']) expect(CARRY_MAPS).toContain(k);
+  });
+
+  it('specularIntensity 는 0 이 아니라 1 로 끈다', () => {
+    // 0 은 반사를 아예 죽여서 "확장 없음"과 다른 상태가 된다. 그러면 noext 가 검증하려던
+    // 가설(확장 값이 원인인가)이 다른 변화에 오염된다.
+    expect(EXT_OFF.specularIntensity).toBe(1);
+    expect(EXT_OFF.ior).toBe(1.5); // glTF 기본값
+    expect(EXT_OFF.sheen).toBe(0);
+    expect(EXT_OFF.clearcoat).toBe(0);
   });
 });

@@ -59,8 +59,10 @@ interface Counts {
   tamed?: number;
   /** 불투명으로 되돌린 재질 수. 이게 0 이면 WebGPU 에서 벽이 안 보인다 */
   opaque?: number;
-  /** 단순 재질로 갈아끼운 수. `?glbraw=1` 이면 0(원본 유지) */
+  /** 재질을 손댄 수. `raw` 면 0(원본 유지) */
   swapped?: number;
+  /** 어느 재질 축인가 — swap · std · noext · raw. **리포트가 이걸 말해야 판정이 성립한다** */
+  mat?: string;
   /** 씬에 실제로 놓인 경계 상자. **계산값이 아니라 결과다** */
   box?: string;
   /** 무엇을 세웠나 — glb · box · flat */
@@ -117,14 +119,39 @@ export const glbCityFeature: Feature = {
         //   flat — GLB 지오는 쓰되 **텍스처 없는 순색** 재질. 보이면 텍스처가 원인.
         //   glb  — 지금 상태(텍스처 포함 교체 재질). 기본값.
         const mode = readEnum('glbmode', 'glb', ['glb', 'box', 'flat'] as const);
-        const raw = readNum('glbraw', 0, 0, 1) >= 1;
         const fixed = tameMetals(model as unknown as MetalWalkable);
         counts.tamed = fixed.metals;
         counts.opaque = fixed.opaque;
-        // 기본은 교체다. `?glbraw=1` 이면 원본 재질 그대로 — 둘을 번갈아 보면
-        // 재질 확장이 원인인지 감독 화면에서 한 번에 갈린다.
-        counts.swapped = raw ? 0 : swapMaterials(model, THREE as unknown as ThreeNS, mode === 'flat');
+
+        // ── 재질 축 (`?glbmat=`) — 다시 이분법이다 ────────────────────────
+        // GLB 파일의 재질을 고쳤는데도(metallic 9개 → 0, BLEND 5개 → OPAQUE) 감독
+        // 화면에서 원본 재질이 **여전히 안 보인다**. 그러니 금속·투명은 원인이 아니었다.
+        //
+        // 남은 후보가 둘인데 **서로 다른 처방을 요구한다.** 한 축으로 뭉뚱그리면 또
+        // 헛짚는다:
+        //
+        //   (a) 확장 **값**   — sheen·clearcoat·specular·anisotropy 가 화면을 먹는다
+        //   (b) 재질 **클래스** — 확장이 있으면 GLTFLoader 가 `MeshPhysicalMaterial` 을
+        //       쓰는데, `three/webgpu` 의 그 노드 재질 경로 자체가 문제일 수 있다
+        //
+        // (a)면 값만 0으로 하면 되고 텍스처·노멀맵이 전부 살아난다. (b)면 클래스를
+        // 바꿔야 하는데, 그때도 **텍스처를 다 옮기면** 룩 손실이 지금보다 훨씬 적다.
+        //
+        //   raw   — 원본 그대로. 지금 안 보이는 것
+        //   noext — 원본 클래스 유지 + 확장 **값만** 0 → 보이면 (a)
+        //   std   — MeshStandardMaterial 로 옮기되 **텍스처 전부 이관** → 보이면 (b)
+        //   swap  — 지금 기본. map·color 만 가져오고 나머지는 버린다(룩 손실 최대)
+        //
+        // 헤드리스는 WebGL 이라 이 사각을 원리적으로 못 본다 — 감독 화면만 가른다.
+        // 그래서 처방이 아니라 **노브**를 배포한다.
+        const matMode = readNum('glbraw', 0, 0, 1) >= 1
+          ? 'raw' // 하위호환 — 이미 드린 링크가 살아 있어야 한다
+          : readEnum('glbmat', 'swap', MAT_MODES);
+        counts.swapped = applyMatMode(
+          model, THREE as unknown as ThreeNS, matMode, mode === 'flat',
+        );
         counts.mode = mode;
+        counts.mat = matMode;
 
         // 실험 물건을 한 그룹에 모은다 — 정리할 때 하나만 지우면 된다.
         const g = new THREE.Group();
@@ -165,7 +192,10 @@ export const glbCityFeature: Feature = {
         // 이 숫자 하나로 갈린다** — 32m 인데 안 보이면 렌더, 200m 면 배치다.
         const near = gridCells(want, env.cell)[0]?.d ?? 0;
         badge?.set(
-          `미술관 ${want}채 · ${counts.mode}${counts.swapped ? '' : '(원본)'}`
+          // **어느 축으로 보고 있는지를 배지가 말해야 한다.** 감독은 폰으로 보고,
+          // 여러 링크를 번갈아 열면 지금 화면이 어느 조합인지 헷갈린다 — 그러면 판정이
+          // 엉뚱한 축에 붙는다. 리포트에는 아직 이 값이 안 실리므로 배지가 유일한 표시다.
+          `미술관 ${want}채 · ${counts.mode}/${counts.mat}`
           + ` · 최근접 ${near.toFixed(0)}m · 범위 ${counts.box}`,
         );
       } catch (err) {
@@ -352,7 +382,7 @@ export function makeBadge(doc: Document | null): { set(t: string): void; remove(
  * 재질은 **원본 하나당 하나씩만** 만들어 캐시한다. GLB 는 78개 메시가 17개 재질을
  * 공유하므로, 메시마다 새로 만들면 재질이 78개로 불어나 개수 불변식이 깨진다.
  */
-function swapMaterials(model: Object3D, THREE: ThreeNS, flat = false): number {
+function swapMaterials(model: Object3D, THREE: ThreeNS, flat = false, keepMaps = false): number {
   const cache = new Map<unknown, unknown>();
   let n = 0;
   model.traverse((o: Object3D & { isMesh?: boolean; material?: unknown }) => {
@@ -368,7 +398,17 @@ function swapMaterials(model: Object3D, THREE: ThreeNS, flat = false): number {
         // 금속은 어느 백엔드에서든 검게 나온다.
         roughness: typeof src?.roughness === 'number' ? src.roughness : 0.8,
         metalness: 0.05,
-      });
+      }) as Record<string, unknown>;
+      // ── `keepMaps` — 클래스만 바꾸고 **나머지는 다 가져온다** ──────────────
+      // 지금 기본(`swap`)은 map·color 만 옮기고 노멀맵·AO·emissive 를 통째로 버린다.
+      // 그게 감독이 본 "원본 룩이 아닌 화면"의 정체다. 클래스가 원인이라면 클래스만
+      // 바꾸면 되지, 텍스처까지 버릴 이유가 없다.
+      if (keepMaps && !flat) {
+        for (const k of CARRY_MAPS) {
+          const v = (src as Record<string, unknown>)?.[k];
+          if (v !== undefined && v !== null) made[k] = v;
+        }
+      }
       cache.set(src, made);
       n++;
       return made;
@@ -376,6 +416,60 @@ function swapMaterials(model: Object3D, THREE: ThreeNS, flat = false): number {
     o.material = Array.isArray(o.material)
       ? (o.material as SrcMat[]).map(one)
       : one(o.material as SrcMat);
+  });
+  return n;
+}
+
+/**
+ * 클래스를 바꿔도 따라가야 하는 것들. **`MeshStandardMaterial` 이 이해하는 것만** 적는다 —
+ * 확장 전용 속성(sheen·clearcoat 등)은 여기 없다. 그게 이 모드의 정의다.
+ */
+export const CARRY_MAPS = [
+  'normalMap', 'normalScale', 'aoMap', 'aoMapIntensity',
+  'emissive', 'emissiveMap', 'emissiveIntensity',
+  'roughnessMap', 'metalnessMap', 'alphaMap', 'lightMap', 'lightMapIntensity',
+  'side', 'flatShading', 'vertexColors',
+] as const;
+
+/** 확장이 만드는 속성. `noext` 는 이 값들만 **끄고** 재질 클래스는 그대로 둔다. */
+export const EXT_OFF: Record<string, number> = {
+  sheen: 0, sheenRoughness: 0,
+  clearcoat: 0, clearcoatRoughness: 0,
+  specularIntensity: 1, // 1 이 "확장 없음"과 같은 상태다(0 은 반사를 아예 죽인다)
+  anisotropy: 0,
+  iridescence: 0,
+  transmission: 0,
+  ior: 1.5, // glTF 기본값
+};
+
+export const MAT_MODES = ['swap', 'std', 'noext', 'raw'] as const;
+export type MatMode = (typeof MAT_MODES)[number];
+
+/**
+ * 재질 축을 적용한다. **네 모드가 서로 다른 가설을 검증한다** — 위 `?glbmat=` 주석 참고.
+ *
+ * @returns 손댄 재질 수(진단용). `raw` 는 0 이다.
+ */
+function applyMatMode(model: Object3D, THREE: ThreeNS, mat: MatMode, flat: boolean): number {
+  if (mat === 'raw') return 0;
+  if (mat === 'swap') return swapMaterials(model, THREE, flat, false);
+  if (mat === 'std') return swapMaterials(model, THREE, flat, true);
+  // noext — 클래스는 그대로 두고 확장 값만 끈다. 재질 인스턴스를 새로 만들지 않으므로
+  // 개수도 그대로다(clone 이 참조를 공유하니 한 번 고치면 N 채 전부에 적용된다).
+  const seen = new Set<unknown>();
+  let n = 0;
+  model.traverse((o: Object3D & { isMesh?: boolean; material?: unknown }) => {
+    if (!o.isMesh || !o.material) return;
+    const list = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of list as Array<Record<string, unknown>>) {
+      if (!m || seen.has(m)) continue;
+      seen.add(m);
+      let touched = false;
+      for (const [k, v] of Object.entries(EXT_OFF)) {
+        if (typeof m[k] === 'number') { m[k] = v; touched = true; }
+      }
+      if (touched) n++;
+    }
   });
   return n;
 }
