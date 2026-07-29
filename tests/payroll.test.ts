@@ -2,7 +2,8 @@
 // 인건비 산정 로직 검증 — 활동 개월·null 처리·감독 제외·등급 표기
 
 import { describe, it, expect } from 'vitest';
-import { computePayroll, totalPayroll, RATES } from '../scripts/lib/payroll.mjs';
+import { computePayroll, totalPayroll, RATES, summarizePayroll } from '../scripts/lib/payroll.mjs';
+import { countContributions } from '../scripts/lib/devlog-contributors.mjs';
 
 describe('활동 개월 계산', () => {
   // 주의: 픽스처에는 git log 정보가 없으므로 joined/lastSeen = null

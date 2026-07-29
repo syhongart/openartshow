@@ -1,5 +1,6 @@
 // scripts/lib/devlog-contributors.mjs
-import { createRequire } from 'node:module';
+import { extractDevlogTimes } from './devlog-times.mjs';
+
 // 개발일지 항목의 **역할별 기여 축**. 항목 단위로 역할 참여를 집계한다.
 //
 // ── 왜 신설했나 ──────────────────────────────────────────────────────────
@@ -161,21 +162,18 @@ export const BY_ID = new Map([...ROLES].map((r) => [r.id, r]));
  * joined·lastSeen 에 git 커밋 시각(ISO8601)을 포함한다. 시각을 못 찾으면 null.
  *
  * @param {string} md DEVLOG.md 의 전체 마크다운 내용
+ * @param {Object.<string, string|null>} devlogTimesMap 항목 제목 → ISO8601 시각 맵 (기본값: extractDevlogTimes()의 times)
  * @returns {Object.<string, {count: number, joined: string|null, lastSeen: string|null}>}
  *          역할 id → { count(기여 건수), joined(ISO8601 시각 또는 null), lastSeen(ISO8601 시각 또는 null) }
  *          count=0 인 역할도 joined/lastSeen 은 null
  */
-export function countContributions(md) {
-  // devlog-times: 항목별 커밋 시각 맵 (지연 호출 — 테스트에서 mock 가능)
-  let devlogTimesMap = {};
-  try {
-    // createRequire 로 동적 로드 (ESM 에서 require 사용 가능)
-    const require = createRequire(import.meta.url);
-    const mod = require('./devlog-times.mjs');
-    devlogTimesMap = mod.extractDevlogTimes();
-  } catch (e) {
-    // git 미설치, shallow clone, 또는 모듈 로드 실패 — 빈 맵
-    // 조용히 무시하고 진행 (joined/lastSeen 은 null 이 됨)
+export function countContributions(md, devlogTimesMap = undefined) {
+  // devlog-times: 항목별 커밋 시각 맵
+  // 기본값: extractDevlogTimes() 호출해서 실제 git log 에서 추출
+  // 테스트: devlogTimesMap 을 파라미터로 넣어서 mock 가능
+  if (devlogTimesMap === undefined) {
+    const result = extractDevlogTimes();
+    devlogTimesMap = result.times; // shallow/git-failed 는 빈 맵 반환
   }
 
   const result = Object.fromEntries(ROLES.map((r) => [r.id, { count: 0, dates: [] }]));

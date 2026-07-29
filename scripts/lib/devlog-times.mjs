@@ -25,25 +25,39 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 /**
  * git log 에서 DEVLOG.md 변경을 파싱해 항목별 시각 맵을 만든다.
  *
- * @returns {Object.<string, string|null>}
- *          제목 → ISO8601 시각 (또는 null 시각을 못 찾은 경우)
+ * @returns {{times: Object.<string, string|null>, unavailable: string|null}}
+ *          times: 제목 → ISO8601 시각 (또는 null 시각을 못 찾은 경우)
+ *          unavailable: null(정상) | 'shallow'(shallow clone) | 'git-failed'(git 명령 실패)
  *
  * 한계:
- * - shallow clone 이면 맵이 비거나 일부만 찬다. 에러를 던지지 않는다.
+ * - shallow clone 이면 unavailable='shallow' 를 반환하고 times={} 빈 맵.
+ * - git 명령 실패 이면 unavailable='git-failed' 를 반환하고 times={} 빈 맵.
  * - 초기 일괄 커밋에서 여러 항목이 함께 추가되면 전부 같은 시각이다.
  *   그것은 개별 작업 시각이 아니라 "개발일지를 쓴 시각" — 이 한계를
  *   호출자가 명시해야 한다.
  */
 export function extractDevlogTimes() {
   const times = {};
+  let unavailable = null;
 
   try {
+    // shallow repository 감지 — 측정 불가 상태 판정
+    const isShallowOutput = execSync('git rev-parse --is-shallow-repository', {
+      cwd: ROOT,
+      encoding: 'utf8',
+    }).trim();
+
+    if (isShallowOutput === 'true') {
+      unavailable = 'shallow';
+      return { times, unavailable };
+    }
+
     // git log: --reverse(오래→새), --format="C|%aI"(커밋시각 ISO 앞 마커),
     // -p(패치), --unified=0(컨텍스트 0줄 — 변경 줄만).
     // DEVLOG.md 만.
     const log = execSync(
       'git log --reverse --format="C|%aI" -p --unified=0 -- docs/DEVLOG.md',
-      { cwd: ROOT, encoding: 'utf8' }
+      { cwd: ROOT, encoding: 'utf8', maxBuffer: 1024 * 1024 }
     );
 
     const lines = log.split('\n');
@@ -65,17 +79,17 @@ export function extractDevlogTimes() {
       }
     }
   } catch (e) {
-    // git 명령 실패 (예: shallow clone, git 미설치)
-    // 조용히 빈 맵 반환. 에러 던지지 말 것 — 호출자가 null 처리한다.
-    // console.error(`devlog-times: git log 실패 — ${e.message}`);
+    // git 명령 실패 (git 미설치 등)
+    // 조용히 빈 맵 반환. 에러 던지지 말 것 — 호출자가 unavailable 로 판정한다.
+    unavailable = 'git-failed';
   }
 
-  return times;
+  return { times, unavailable };
 }
 
 /**
  * 항목 제목에서 시각을 조회한다. 없으면 null.
- * @param {Object.<string, string|null>} timesMap extractDevlogTimes() 반환값
+ * @param {Object.<string, string|null>} timesMap extractDevlogTimes() 반환값의 times 필드
  * @param {string} title 항목 제목
  * @returns {string|null} ISO8601 시각 또는 null
  */

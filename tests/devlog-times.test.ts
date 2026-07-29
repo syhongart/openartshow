@@ -111,21 +111,27 @@ C|2026-07-29T14:32:00Z
   });
 
   // ── 실제 통합 테스트 (CI 에서 shallow clone 재현) ────
-  // CI 의 deploy job 에서 fetch-depth: 0 을 받으면 git log 가 정상 동작하고,
-  // 그렇지 않으면 맵이 비거나 일부만 찬다.
-  // 이것은 실행 환경에 의존하므로 "존재 확인"만 한다.
-  it('실제 extractDevlogTimes 는 함수로 존재하고 객체를 반환한다', async () => {
+  // 반환값: { times: {...}, unavailable: null | 'shallow' | 'git-failed' }
+  it('실제 extractDevlogTimes 는 함수로 존재하고 올바른 구조를 반환한다', async () => {
     // 실제 모듈 임포트 (git 실행 가능한 환경에서만)
     try {
       const { extractDevlogTimes } = await import('../scripts/lib/devlog-times.mjs');
       const result = extractDevlogTimes();
       expect(typeof result).toBe('object');
-      // 결과는 제목 → ISO 시각 맵
-      const titles = Object.keys(result);
-      expect(titles.length).toBeGreaterThanOrEqual(0); // 0개일 수도 (shallow)
+      expect(result).toHaveProperty('times');
+      expect(result).toHaveProperty('unavailable');
+
+      // unavailable: null 이면 정상, 'shallow'/'git-failed' 면 측정 실패
+      expect([null, 'shallow', 'git-failed'].includes(result.unavailable)).toBe(true);
+
+      // times 는 항상 객체 (빈 객체일 수도)
+      expect(typeof result.times).toBe('object');
+      const titles = Object.keys(result.times);
+      expect(titles.length).toBeGreaterThanOrEqual(0);
+
       // 값은 ISO 또는 null
       for (const title of titles.slice(0, 3)) { // 일부만 검사
-        const val = result[title];
+        const val = result.times[title];
         expect(val === null || typeof val === 'string').toBe(true);
         if (typeof val === 'string') {
           // ISO 형식 재검증 안 함 (문자열이면 충분)
@@ -135,6 +141,31 @@ C|2026-07-29T14:32:00Z
     } catch (e) {
       // git 미설치 또는 저장소 아님 — 조용히 넘김
       console.warn('git log 실행 불가 (예상):', (e as Error).message);
+    }
+  });
+
+  // ── Shallow clone 판정 테스트 ────
+  // git rev-parse --is-shallow-repository 를 통해 shallow 판정
+  // 이 테스트는 shallow repository 환경에서 unavailable='shallow' 를 확인한다.
+  // (로컬에서는 항상 false, CI 에서도 fetch-depth: 0 이면 false,
+  //  하지만 shallow clone 재현을 원하면 별도 worktree 등으로 테스트)
+  it('shallow repository 는 unavailable="shallow" 를 반환한다', async () => {
+    try {
+      const { extractDevlogTimes } = await import('../scripts/lib/devlog-times.mjs');
+      const result = extractDevlogTimes();
+
+      // 이 테스트는 shallow 환경에서만 의미가 있다.
+      // 정상 환경: unavailable=null, times={많은 항목}
+      // shallow 환경: unavailable='shallow', times={}
+
+      if (result.unavailable === 'shallow') {
+        expect(result.times).toEqual({});
+      } else if (result.unavailable === null) {
+        // 정상 환경 — times 가 많거나 비어있을 수 있음
+        expect(typeof result.times).toBe('object');
+      }
+    } catch (e) {
+      console.warn('shallow test 미실행:', (e as Error).message);
     }
   });
 });

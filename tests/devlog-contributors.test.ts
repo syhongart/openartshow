@@ -84,22 +84,94 @@ describe('항목 단위 집계', () => {
   });
 });
 
-describe('날짜 계산 — min/max 정렬', () => {
+describe('날짜 계산 — min/max 정렬 (없는 맵)', () => {
   // DEVLOG 날짜가 뒤섞여 있을 수 있으니 등장 순서가 아니라 날짜로 min/max 를 잡는다.
   // joined·lastSeen 은 이제 ISO8601 시각 또는 null 이다.
-  // 픽스처는 git 정보가 없으므로 null 을 기대한다.
+  // 픽스처는 git 정보가 없으므로 null 을 기대한다 (git 맵을 주입하지 않으면 측정 실패).
 
-  it('날짜가 뒤섞인 경우 joined(최소 날짜) <= lastSeen(최대 날짜)', () => {
-    // 등장 순서: 3월→1월→2월, 하지만 joined 는 1월, lastSeen 은 3월
-    // 픽스처는 git 정보가 없으므로 joined·lastSeen 은 null
+  it('맵을 주입하지 않으면: joined/lastSeen = null (측정 실패)', () => {
+    // 등장 순서: 3월→1월→2월, 하지만 git 맵이 없으므로 null
     const md = `## 2026-03-15 · 제목1\n\n감독이 했다.\n
 ## 2026-01-05 · 제목2\n\n감독이 했다.\n
 ## 2026-02-10 · 제목3\n\n감독이 했다.\n`;
-    const result = countContributions(md);
+    const result = countContributions(md); // 맵 미주입 — 측정 실패
     expect(result['director'].count).toBe(3);
-    // 픽스처는 git 로그가 없으므로 null
     expect(result['director'].joined).toBeNull();
     expect(result['director'].lastSeen).toBeNull();
+  });
+});
+
+describe('날짜 계산 — min/max 정렬 (고정 맵 주입)', () => {
+  // countContributions(md, devlogTimesMap) 에 고정 맵을 주입해서
+  // 산술값을 검증한다. 이것이 블로커 2의 핵심 — 산술 경로를 실제로 깨뜨리는 뮤테이션 감지.
+
+  it('고정 맵을 주입해서 joined/lastSeen 산술값을 검증한다', () => {
+    const md = `## 2026-03-15 · 항목A\n\n감독이 했다.\n
+## 2026-01-05 · 항목B\n\n감독이 했다.\n
+## 2026-02-10 · 항목C\n\n감독이 했다.\n`;
+
+    // 고정 맵: 항목별 커밋 시각
+    const mockTimes = {
+      '항목A': '2026-03-15T14:32:00Z',
+      '항목B': '2026-01-05T10:00:00Z',
+      '항목C': '2026-02-10T09:30:00Z',
+    };
+
+    const result = countContributions(md, mockTimes);
+    expect(result['director'].count).toBe(3);
+    // min(항목B) = 2026-01-05, max(항목A) = 2026-03-15
+    expect(result['director'].joined).toBe('2026-01-05T10:00:00Z');
+    expect(result['director'].lastSeen).toBe('2026-03-15T14:32:00Z');
+  });
+
+  it('한 항목만 있으면 joined === lastSeen (고정 맵)', () => {
+    const md = `## 2026-02-10 · 항목\n\n감독이 했다.\n`;
+    const mockTimes = {
+      '항목': '2026-02-10T09:30:00Z',
+    };
+    const result = countContributions(md, mockTimes);
+    expect(result['director'].count).toBe(1);
+    expect(result['director'].joined).toBe('2026-02-10T09:30:00Z');
+    expect(result['director'].lastSeen).toBe('2026-02-10T09:30:00Z');
+  });
+
+  it('맵에 없는 항목은 null 값으로 처리된다', () => {
+    const md = `## 2026-07-01 · 항목A\n\n팀장이 했다.\n
+## 2026-07-05 · 항목B\n\n팀장이 했다.\n`;
+
+    // 항목B 는 맵에 없음
+    const mockTimes = {
+      '항목A': '2026-07-01T10:00:00Z',
+      // '항목B': undefined → 기본값 null
+    };
+
+    const result = countContributions(md, mockTimes);
+    expect(result['lead'].count).toBe(2);
+    // 항목A 의 시각은 '2026-07-01', 항목B 는 null
+    // min(2026-07-01, null) = null, max 도 null? 아니, 둘 다 있으면 ISO, 하나가 null 이면?
+    // (날짜 배열에서 min/max 를 구하는데, null 을 무시해야 하나? 아니면 포함하나?)
+    // 현재 구현을 보면 data.dates 배열에서 sort 후 첫/마지막을 취하므로,
+    // 배열 원소는 { date, iso } 형태고, iso 는 null 일 수 있다.
+    // 즉, joined/lastSeen 이 null 이 될 수 있다 (일부가 null 이면).
+    expect(result['lead'].joined).toBeNull(); // 일부가 null 이므로
+  });
+
+  it('모든 항목이 맵에 있으면 min/max 산술값이 정확하다', () => {
+    const md = `## 2026-07-10 · 첫째\n\n부팀장이 했다.\n
+## 2026-07-01 · 둘째\n\n부팀장이 했다.\n
+## 2026-07-20 · 셋째\n\n부팀장이 했다.\n`;
+
+    const mockTimes = {
+      '첫째': '2026-07-10T15:00:00Z',
+      '둘째': '2026-07-01T08:30:00Z',
+      '셋째': '2026-07-20T16:45:00Z',
+    };
+
+    const result = countContributions(md, mockTimes);
+    expect(result['deputy-lead'].count).toBe(3);
+    // min = 2026-07-01, max = 2026-07-20
+    expect(result['deputy-lead'].joined).toBe('2026-07-01T08:30:00Z');
+    expect(result['deputy-lead'].lastSeen).toBe('2026-07-20T16:45:00Z');
   });
 
   it('한 항목만 있는 경우 joined === lastSeen (있다면)', () => {

@@ -227,22 +227,31 @@ export function totalPayroll(payroll) {
  *  · 확정   — 단일 금액이 나오는 역할. 이것만 더한다
  *  · 범위형 — 시세 폭이 5~10배라 중앙값이 근거가 못 되는 역할(리서처 판정).
  *             범위끼리 더하면 폭이 무의미해지므로 **건수만** 낸다
- *  · 미확인 — 시세 데이터 자체가 없는 역할. **0원으로 합산하지 않는다**
+ *  · 시세   — 시세 데이터 자체가 없는 역할. **0원으로 합산하지 않는다**
  *             (0 으로 채우면 합계가 조용히 작아진다 — 못 잰 것을 통과로 적는 것이다)
+ *  · 미확인 — 측정 실패(joined/lastSeen 없음)로 개월을 못 구한 역할.
+ *             "시세 미확인"과 달리, 데이터는 있지만 기간을 못 잰 것이다.
  *
  * `confirmedTotal` 은 **원 단위**다. 만원 표기로 바꿀 때 10,000 으로 나눈다 —
  * 한때 여기가 1,000,000 이었고 그러면 1,141만원이 "11만원" 으로 찍혔다(100배).
  *
  * @param {Object} payroll computePayroll() 의 결과
- * @returns {string} 분류된 요약 (예: "확정 1,141만원 · 범위형 2건 · 시세 미확인 1건")
+ * @returns {string} 분류된 요약 (예: "확정 1,141만원 · 범위형 2건 · 시세 미확인 1건 · 측정 미확인 1건")
  */
 export function summarizePayroll(payroll) {
   let confirmedTotal = 0;
   const rangeCount = [];
   const missingCount = [];
+  const unmeasuredCount = [];
 
   for (const [roleId, data] of Object.entries(payroll)) {
-    if (roleId === 'director' || !data.months || data.months === 0) continue;
+    if (roleId === 'director') continue;
+
+    // 측정 실패: months=0 (joined 또는 lastSeen 없음)
+    if (!data.months || data.months === 0) {
+      unmeasuredCount.push(roleId);
+      continue;
+    }
 
     if (data.amount === null) {
       missingCount.push(roleId);
@@ -256,11 +265,13 @@ export function summarizePayroll(payroll) {
   const confirmedStr = confirmedTotal > 0 ? `${(confirmedTotal / 10000).toFixed(0)}만원` : null;
   const rangeStr = rangeCount.length > 0 ? `${rangeCount.length}건` : null;
   const missingStr = missingCount.length > 0 ? `${missingCount.length}건` : null;
+  const unmeasuredStr = unmeasuredCount.length > 0 ? `${unmeasuredCount.length}건` : null;
 
   const parts = [];
   if (confirmedStr) parts.push(`확정 ${confirmedStr}`);
   if (rangeStr) parts.push(`범위형 ${rangeStr}`);
   if (missingStr) parts.push(`시세 미확인 ${missingStr}`);
+  if (unmeasuredStr) parts.push(`측정 미확인 ${unmeasuredStr}`);
 
   return parts.length ? parts.join(' · ') : '산정 불가';
 }

@@ -26,6 +26,28 @@ const contributions = countContributions(devlogMd);
 const today = new Date();
 const payroll = computePayroll(devlogMd, today);
 
+// 초기 일괄 커밋 시각 판정 — 가장 자주 나타나는 joined 값
+// (여러 역할이 같은 커밋에서 추가되면 같은 시각을 가짐)
+function detectBulkCommitTime() {
+  const joinedTimes = Object.values(contributions)
+    .filter((c) => c.joined !== null && c.count > 0)
+    .map((c) => c.joined);
+
+  if (joinedTimes.length === 0) return null;
+
+  // 시각별 개수 카운트
+  const timeCount = {};
+  for (const time of joinedTimes) {
+    timeCount[time] = (timeCount[time] || 0) + 1;
+  }
+
+  // 가장 자주 나타나는 시각
+  const bulkTime = Object.entries(timeCount).sort((a, b) => b[1] - a[1])[0]?.[0];
+  return bulkTime || null;
+}
+
+const bulkCommitTime = detectBulkCommitTime();
+
 // 기본 정보 (역할별 메타데이터 + 기여도)
 function buildMemberData(roleId) {
   const role = BY_ID.get(roleId);
@@ -54,9 +76,14 @@ const contract = members.filter((m) => m.tier === '계약직');
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-// 기여 시각 포맷: ISO8601 → 'YYYY-MM-DD HH:mm' (또는 null/날짜만)
-function formatContributionTime(iso) {
+// 기여 시각 포맷: ISO8601 → 'YYYY-MM-DD HH:mm' (또는 날짜만, 또는 미상)
+// isBulkCommit=true 이면 "일괄 커밋" 표시 (개별 시각이 아님)
+function formatContributionTime(iso, isBulkCommit = false) {
   if (!iso) return '미상';
+  if (isBulkCommit) {
+    // 초기 일괄 커밋에 몰린 항목 — 개별 시각이 아니므로 날짜만 표시
+    return iso.slice(0, 10) + ' (일괄)';
+  }
   // ISO: '2026-07-29T14:32:00Z' → 'YYYY-MM-DD HH:mm'
   if (iso.includes('T')) {
     return iso.slice(0, 16).replace('T', ' ');
@@ -91,8 +118,11 @@ function formatAmount(amount) {
 
 function memberCard(m) {
   const pct = Math.round((m.contribution.count / maxContrib) * 100);
-  const joinedText = formatContributionTime(m.contribution.joined);
-  const lastSeenText = formatContributionTime(m.contribution.lastSeen);
+  // 초기 일괄 커밋에 몰린 항목 판정
+  const isBulkJoined = bulkCommitTime !== null && m.contribution.joined === bulkCommitTime;
+  const isBulkLastSeen = bulkCommitTime !== null && m.contribution.lastSeen === bulkCommitTime;
+  const joinedText = formatContributionTime(m.contribution.joined, isBulkJoined);
+  const lastSeenText = formatContributionTime(m.contribution.lastSeen, isBulkLastSeen);
 
   let payrollHtml = '';
   if (m.payroll) {
@@ -198,9 +228,13 @@ const bodyHtml = `
     집계는 "개발일지 본문에 역할 이름이 적힌 항목 수" 이지 실제 기여도가 아님을 명시합니다.
     실제로 부팀장이 최근 활동을 했는데 일지 작성 주기가 길면 기여 건수가 낮아질 수 있습니다.
     글 쓰는 습관이 숫자를 바꿉니다.<br>
+    <strong>첫 등장·마지막 활동 시각</strong>은 git 커밋 로그에서 유도되며, "개발일지를 쓴 시각"을 뜻합니다.
+    초기 일괄 커밋에 몰린 항목(표시 옆에 "일괄" 표기)은 실제 작업 시각이 아니므로 참고만 하세요.
+    가져오지 않은 저장소(shallow clone) 환경에서는 시각이 표시되지 않습니다.<br>
     <strong>급여 산정</strong>은 KOSA 2025 통계 기반 단가를 역할별·재직 개월별로 계산한 추정값입니다.
     정규직은 입사일~오늘을 재직 개월로, 계약직은 활동한 서로 다른 YYYY-MM 개수를 활동 개월로 산정합니다.
     "시세 미확인"은 공표된 통계를 찾지 못했거나 범위가 너무 넓어 중앙값을 쓸 수 없는 역할입니다.
+    "측정 미확인"은 git 정보 부재로 활동 기간을 못 구한 항목입니다.
     범위형은 최소·최대값을 그대로 냅니다. 원가 합계에는 감독(창업자)을 포함하지 않습니다.<br>
     <span style="color:var(--ink-dim)">최종 갱신 ${today_str}</span>
   </p>
