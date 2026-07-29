@@ -340,6 +340,53 @@ function printReport() {
   return fails.length === 0;
 }
 
+/**
+ * 7/8 — 성능 불변식 게이트. **world2(vite 전용)만 대상이다.**
+ *
+ * 감독 지시로 스모크에 묶었다: *"개발할때 성능 확보, 성능 유지하는게 모니터링하도록 해."*
+ * world1 CSV 가 지킬 것을 확정해 줬다 — 파이프라인 60→227 단조증가가 프리즈의 직접
+ * 원인이었고, world2 는 38 상수다. **그 상수성이 깨지는 순간을 여기서 잡는다.**
+ *
+ * 두 게이트가 보는 축이 다르다:
+ *   7) 세션 시뮬(회전·주행·재방문) — 스트리밍과 시야가 만드는 증식
+ *   8) 날씨 첫 등장             — 예열이 빠뜨린 레이어
+ *
+ * 게이트가 **예외로 죽으면 그것도 FAIL 이다.** 못 잰 것을 통과로 적지 않는다.
+ * 로그는 전부 삼키고 판정만 리포트에 남긴다 — 스모크 출력이 수백 줄이 되면 아무도 안 읽는다.
+ */
+async function runPerfGates(origin, browser) {
+  const quiet = () => {};
+  try {
+    const { runInvariants } = await import('./measure-invariants.mjs');
+    const r = await runInvariants({ browser, origin, basePath: BASE_PATH, log: quiet });
+    record(
+      7, '개수 불변식(세션)', r.pass ? 'PASS' : 'FAIL',
+      r.pass
+        ? `회전12·주행6·복귀6 내내 상수(geo ${r.base?.geo} tex ${r.base?.tex} pipe ${r.base?.pipe})`
+        : `증식 — geo +${r.maxGeo} tex +${r.maxTex} pipe +${r.maxPipe}`
+        + (r.errors.length ? ` · 콘솔 에러 ${r.errors.length}` : '')
+        + ' → `npm run measure:invariants` 로 구간별 표를 본다',
+    );
+  } catch (e) {
+    record(7, '개수 불변식(세션)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+  try {
+    const { runSkyWarm } = await import('./measure-sky-warm.mjs');
+    // 1바퀴면 판정이 된다(증가 0 이 통과 조건). 2바퀴는 FAIL 일 때 원인을 가르는 용도라
+    // 단독 실행에 맡긴다 — 스모크에서 3분을 더 쓰지 않는다.
+    const r = await runSkyWarm({ browser, origin, basePath: BASE_PATH, laps: 1, log: quiet });
+    record(
+      8, '하늘 예열(첫 등장)', r.pass ? 'PASS' : 'FAIL',
+      r.pass
+        ? '시간대×날씨 12조합 + fx·번개 순회에 증가 0'
+        : `첫 등장 비용 잔존 — geo/tex 합 +${r.lap1}`
+        + ' → `npm run measure:sky-warm` 으로 2바퀴 돌려 원인을 가른다',
+    );
+  } catch (e) {
+    record(8, '하늘 예열(첫 등장)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+}
+
 async function main() {
   const modeLabel = IS_VITE ? 'vite 조립(교체 deploy) + 동등성' : 'frontend직조립(baseline, 현행 deploy)';
   console.log(`스모크 하네스 시작 — [${MODE}] ${modeLabel} + 헤드리스 6항 검증`);
@@ -394,6 +441,10 @@ async function main() {
       }
     }
     aggregateBrowser(pageResults, srv.origin);
+    // 7/8 — 성능 불변식. **같은 서버·같은 브라우저를 재사용한다**(감독 지시로 스모크에
+    // 묶었다). 각자 vite 빌드를 다시 하면 스모크가 3배로 길어지고, 그 시간이 곧
+    // "게이트를 안 돌리는 이유"가 된다.
+    if (IS_VITE) await runPerfGates(srv.origin, browser);
   } finally {
     if (browser) await browser.close().catch(() => {});
     await srv.close().catch(() => {});

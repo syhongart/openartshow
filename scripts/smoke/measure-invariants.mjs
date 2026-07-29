@@ -97,15 +97,17 @@ async function drive(page, fn, ...args) {
   if (!ok) throw new Error(`__world2.${fn}() 를 못 불렀다 — 조작 훅이 없어 세션 시뮬이 성립하지 않는다`);
 }
 
-async function main() {
-  console.log('=== 성능 불변식 게이트 (개수 상수성) ===\n');
-  assembleSiteVite(SITE_DIR);
-  const { origin, close: closeServer } = await startServer(SITE_DIR, BASE_PATH);
-  const browser = await chromium.launch({
-    executablePath: CHROMIUM_EXECUTABLE, args: CHROMIUM_ARGS, headless: true,
-  });
-
-  try {
+/**
+ * 게이트 본체. **브라우저·서버를 주입받는다** — 스모크 하네스가 이미 세워 둔 것을 다시
+ * 세우면 vite 빌드가 한 번 더 돌고, 그 시간이 곧 "게이트를 안 돌리는 이유"가 된다.
+ *
+ * @param {{browser: import('playwright-core').Browser, origin: string, basePath: string,
+ *          log?: (s: string) => void}} env
+ * @returns {Promise<{pass: boolean, maxGeo: number, maxTex: number, maxPipe: number,
+ *                    rows: unknown[], errors: string[], base: unknown}>}
+ */
+export async function runInvariants({ browser, origin, basePath, log = console.log }) {
+  {
     const context = await browser.newContext({ viewport: { width: 1024, height: 640 } });
     const page = await context.newPage();
     const errors = [];
@@ -114,8 +116,8 @@ async function main() {
 
     // GLB 실험은 끈다 — 그 기능은 개수 불변식을 **일부러** 깨는 것이라 여기 섞이면
     // 게이트가 의미를 잃는다. NPC·VRM 도 끄고 코어 스트리밍만 본다.
-    const url = `${origin}${BASE_PATH}app/world2.html?glb=0&npc=0&vrm=0&time=day&weather=clear`;
-    console.log(`접속: ${url}`);
+    const url = `${origin}${basePath}app/world2.html?glb=0&npc=0&vrm=0&time=day&weather=clear`;
+    log(`접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
     await page.waitForFunction(() => !!window.__world2?.stats?.(), null, { timeout: 60000 });
     // 초기 파셀이 다 붙을 때까지. 부팅 중 개수가 오르는 것은 정상이므로 **기준선을
@@ -124,7 +126,7 @@ async function main() {
 
     const base = await counts(page);
     if (!base) throw new Error('stats() 를 못 읽었다 — 측정이 성립하지 않는다');
-    console.log(`\n기준선  geo=${show(base.geo)} tex=${show(base.tex)} pipe=${show(base.pipe)} 파셀=${show(base.parcels)}\n`);
+    log(`\n기준선  geo=${show(base.geo)} tex=${show(base.tex)} pipe=${show(base.pipe)} 파셀=${show(base.parcels)}\n`);
 
     const rows = [];
     const snap = async (label) => {
@@ -134,7 +136,7 @@ async function main() {
     };
 
     // ── ① 제자리 회전 — world1 이 여기서 무너졌다 ────────────────────────────
-    console.log('[1] 제자리 360° 회전…');
+    log('[1] 제자리 360° 회전…');
     const stepRad = (Math.PI * 2) / SPIN_STEPS;
     for (let i = 0; i < SPIN_STEPS; i++) {
       await drive(page, 'look', stepRad, 0);
@@ -143,7 +145,7 @@ async function main() {
     }
 
     // ── ② 직진 — 파셀 경계를 여러 번 넘는다 ─────────────────────────────────
-    console.log('[2] 직진 주행…');
+    log('[2] 직진 주행…');
     for (let i = 0; i < WALK_LEGS; i++) {
       await drive(page, 'move', 0, -1); // 전진
       await page.waitForTimeout(WALK_MS);
@@ -153,7 +155,7 @@ async function main() {
 
     // ── ③ 되돌아오기 — 언로드된 파셀을 다시 로드한다 ────────────────────────
     // **재방문이 핵심이다.** 슬롯 반납이 제대로 안 되면 여기서 개수가 오른다.
-    console.log('[3] 되돌아오기(재방문)…');
+    log('[3] 되돌아오기(재방문)…');
     await drive(page, 'look', Math.PI, 0);
     await page.waitForTimeout(STEP_MS);
     for (let i = 0; i < WALK_LEGS; i++) {
@@ -166,15 +168,15 @@ async function main() {
     await snap('정지');
 
     // ── 판정 ────────────────────────────────────────────────────────────────
-    console.log('\n[결과] 기준선 대비 증가분 — 하나라도 + 면 증식이다\n');
-    console.log('  구간              geo   tex  pipe   draw  파셀');
+    log('\n[결과] 기준선 대비 증가분 — 하나라도 + 면 증식이다\n');
+    log('  구간              geo   tex  pipe   draw  파셀');
     let maxGeo = 0, maxTex = 0, maxPipe = 0;
     for (const r of rows) {
       const d = (b, v) => (b == null || v == null ? '  ?' : (v - b > 0 ? `+${v - b}` : '  '));
       if (base.geo != null && r.geo != null) maxGeo = Math.max(maxGeo, r.geo - base.geo);
       if (base.tex != null && r.tex != null) maxTex = Math.max(maxTex, r.tex - base.tex);
       if (base.pipe != null && r.pipe != null) maxPipe = Math.max(maxPipe, r.pipe - base.pipe);
-      console.log(
+      log(
         `  ${r.label.padEnd(16)} ${show(r.geo).padStart(4)}${d(base.geo, r.geo)} `
         + `${show(r.tex).padStart(4)}${d(base.tex, r.tex)} `
         + `${show(r.pipe).padStart(4)}${d(base.pipe, r.pipe)} `
@@ -182,36 +184,56 @@ async function main() {
       );
     }
 
-    console.log('\n[판정]\n');
-    console.log(`  geometry  최대 증가 ${maxGeo >= 0 ? '+' : ''}${maxGeo}`);
-    console.log(`  texture   최대 증가 ${maxTex >= 0 ? '+' : ''}${maxTex}`);
-    console.log(`  pipeline  최대 증가 ${maxPipe >= 0 ? '+' : ''}${maxPipe}  (참고 — 백엔드 의존)`);
+    log('\n[판정]\n');
+    log(`  geometry  최대 증가 ${maxGeo >= 0 ? '+' : ''}${maxGeo}`);
+    log(`  texture   최대 증가 ${maxTex >= 0 ? '+' : ''}${maxTex}`);
+    log(`  pipeline  최대 증가 ${maxPipe >= 0 ? '+' : ''}${maxPipe}  (참고 — 백엔드 의존)`);
 
     // 통과·실패는 백엔드 무관 카운터로만 가른다.
     const pass = maxGeo <= 0 && maxTex <= 0 && errors.length === 0;
     if (pass) {
-      console.log('\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다.');
+      log('\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다.');
     } else if (maxGeo > 0 || maxTex > 0) {
-      console.log('\n  ✗ FAIL — 세션 중 개수가 늘었다. **world1 이 겪은 증식이 돌아왔다.**');
-      console.log('    위 표에서 어느 구간에 + 가 붙었는지가 원인 지점이다:');
-      console.log('      회전 구간   → 시야에 따라 새 조합이 생긴다(재질 변종·LOD tier 등)');
-      console.log('      전진 구간   → 스트리밍이 객체를 새로 만든다(슬롯 방식이 깨짐)');
-      console.log('      복귀 구간   → 슬롯 반납이 안 되어 재방문마다 쌓인다');
+      log('\n  ✗ FAIL — 세션 중 개수가 늘었다. **world1 이 겪은 증식이 돌아왔다.**');
+      log('    위 표에서 어느 구간에 + 가 붙었는지가 원인 지점이다:');
+      log('      회전 구간   → 시야에 따라 새 조합이 생긴다(재질 변종·LOD tier 등)');
+      log('      전진 구간   → 스트리밍이 객체를 새로 만든다(슬롯 방식이 깨짐)');
+      log('      복귀 구간   → 슬롯 반납이 안 되어 재방문마다 쌓인다');
     }
     if (maxPipe > 0 && maxGeo <= 0 && maxTex <= 0) {
       // 이 조합은 "지오·텍스처는 그대로인데 파이프라인만 늘었다" — 재질 **구조**가
       // 바뀌는 경로가 생겼다는 뜻이다. WebGL 에서도 잡히면 실기기(WebGPU)에서는 더 크다.
-      console.log('\n  ⚠ 경고 — geometry·texture 는 상수인데 pipeline 이 늘었다.');
-      console.log('    재질 구조 신호(맵 유무·transparent·조명 수)가 런타임에 바뀌는 경로가 있다.');
-      console.log('    world1 을 무너뜨린 것이 정확히 이 축이다. FAIL 은 아니지만 반드시 본다.');
+      log('\n  ⚠ 경고 — geometry·texture 는 상수인데 pipeline 이 늘었다.');
+      log('    재질 구조 신호(맵 유무·transparent·조명 수)가 런타임에 바뀌는 경로가 있다.');
+      log('    world1 을 무너뜨린 것이 정확히 이 축이다. FAIL 은 아니지만 반드시 본다.');
     }
 
-    console.log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
-    process.exitCode = pass ? 0 : 1;
+    log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
+    await context.close();
+    return { pass, maxGeo, maxTex, maxPipe, rows, errors, base };
+  }
+}
+
+// ── CLI ─────────────────────────────────────────────────────────────────────
+// 단독 실행(`npm run measure:invariants`)일 때만 자기가 빌드·서버·브라우저를 세운다.
+// 스모크 하네스에서 부를 때는 위 `runInvariants` 를 직접 쓴다.
+async function cli() {
+  console.log('=== 성능 불변식 게이트 (개수 상수성) ===\n');
+  assembleSiteVite(SITE_DIR);
+  const { origin, close: closeServer } = await startServer(SITE_DIR, BASE_PATH);
+  const browser = await chromium.launch({
+    executablePath: CHROMIUM_EXECUTABLE, args: CHROMIUM_ARGS, headless: true,
+  });
+  try {
+    const r = await runInvariants({ browser, origin, basePath: BASE_PATH });
+    process.exitCode = r.pass ? 0 : 1;
   } finally {
     await browser.close();
     await closeServer();
   }
 }
 
-main().catch((e) => { console.error(`측정 실패(판정 아님): ${e.message}`); process.exit(2); });
+// `import.meta.main` 은 Node 20 에 없다. argv 로 판별한다.
+if (process.argv[1] && process.argv[1].endsWith('measure-invariants.mjs')) {
+  cli().catch((e) => { console.error(`측정 실패(판정 아님): ${e.message}`); process.exit(2); });
+}

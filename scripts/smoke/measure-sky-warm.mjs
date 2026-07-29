@@ -72,19 +72,16 @@ async function click(page, sel) {
   if (!ok) throw new Error(`셀렉터를 못 찾았다: ${sel} — 조작하지 못했으므로 이 회차는 측정 실패다`);
 }
 
-async function main() {
-  console.log('=== 하늘 전환 개수 계단 재현 (#114) ===\n');
-
-  console.log('[1] vite 빌드 및 _site 조립...');
-  assembleSiteVite(SITE_DIR);
-  console.log('✓ 완료\n');
-
-  const { origin, close: closeServer } = await startServer(SITE_DIR, BASE_PATH);
-  const browser = await chromium.launch({
-    executablePath: CHROMIUM_EXECUTABLE, args: CHROMIUM_ARGS, headless: true,
-  });
-
-  try {
+/**
+ * 게이트 본체. **브라우저·서버를 주입받는다** — 스모크 하네스가 이미 세워 둔 것을 다시
+ * 세우면 vite 빌드가 한 번 더 돈다.
+ *
+ * `laps` 는 기본 2 다. 예열이 정상이면 1바퀴로도 판정이 되지만(증가가 0 이므로), 2바퀴는
+ * **FAIL 일 때 원인을 가른다** — 1바퀴만 오르면 예열이 빠뜨린 레이어, 2바퀴에서도 오르면
+ * 증식이다. 스모크에 묶을 때는 시간을 아끼려고 1 로 부르고, 단독 실행은 2 로 둔다.
+ */
+export async function runSkyWarm({ browser, origin, basePath, laps = 2, log = console.log }) {
+  {
     const context = await browser.newContext({ viewport: { width: 1024, height: 640 } });
     const page = await context.newPage();
     const errors = [];
@@ -92,24 +89,24 @@ async function main() {
     page.on('pageerror', (e) => errors.push(e.message));
 
     // GLB·NPC·VRM 을 끈 순수 world2 — 계단이 하늘 때문인지 가리는 것이 목적이다.
-    const url = `${origin}${BASE_PATH}app/world2.html?glb=0&npc=0&vrm=0&time=day&weather=clear`;
-    console.log(`[2] 접속: ${url}`);
+    const url = `${origin}${basePath}app/world2.html?glb=0&npc=0&vrm=0&time=day&weather=clear`;
+    log(`[2] 접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
 
     // 부팅 완료 = `__world2` 노출 + stats() 성공. 시간 대기가 아니라 조건 대기다.
     await page.waitForFunction(() => !!window.__world2?.stats?.(), null, { timeout: 60000 });
     await page.waitForTimeout(6000); // 스트리밍 초기 파셀이 다 붙을 때까지
-    console.log('✓ 부팅 완료\n');
+    log('✓ 부팅 완료\n');
 
     // 패널 펼치기 — 접힌 상태에서도 .click() 은 버블링되지만, 열어두면 실사용과 같아진다.
     await click(page, '#w2-god [aria-expanded]').catch(() => {});
 
     const base = await readCounts(page);
     if (!base) throw new Error('stats() 를 읽지 못했다 — 측정 자체가 성립하지 않는다');
-    console.log(`[3] 기준선  geo=${show(base.geo)} tex=${show(base.tex)} pipe=${show(base.pipe)}\n`);
+    log(`[3] 기준선  geo=${show(base.geo)} tex=${show(base.tex)} pipe=${show(base.pipe)}\n`);
 
     const rows = [];
-    for (let lap = 1; lap <= 2; lap++) {
+    for (let lap = 1; lap <= laps; lap++) {
       for (const t of TIMES) {
         for (const w of WEATHERS) {
           await click(page, `button[data-time="${t}"]`);
@@ -137,16 +134,17 @@ async function main() {
       rows.push({ lap, label: `bolt(${bolted})`, ...(await readCounts(page)) });
     }
 
-    console.log('[4] 순회 결과 — 개수가 오른쪽 바퀴에서도 늘면 증식이다\n');
-    console.log('lap  조합              geo   tex  pipe   draw');
+    log('[4] 순회 결과 — 개수가 오른쪽 바퀴에서도 늘면 증식이다\n');
+    log('lap  조합              geo   tex  pipe   draw');
     let prev = base;
-    const lapDelta = { 1: { geo: 0, tex: 0, pipe: 0 }, 2: { geo: 0, tex: 0, pipe: 0 } };
+    const lapDelta = {};
+    for (let i = 1; i <= laps; i++) lapDelta[i] = { geo: 0, tex: 0, pipe: 0 };
     for (const r of rows) {
       const d = (a, b) => (a == null || b == null ? '  ?' : (b - a > 0 ? `+${b - a}` : '  '));
       if (prev.geo != null && r.geo != null) lapDelta[r.lap].geo += Math.max(0, r.geo - prev.geo);
       if (prev.tex != null && r.tex != null) lapDelta[r.lap].tex += Math.max(0, r.tex - prev.tex);
       if (prev.pipe != null && r.pipe != null) lapDelta[r.lap].pipe += Math.max(0, r.pipe - prev.pipe);
-      console.log(
+      log(
         `  ${r.lap}  ${r.label.padEnd(16)} ${show(r.geo).padStart(4)}${d(prev.geo, r.geo)} `
         + `${show(r.tex).padStart(4)}${d(prev.tex, r.tex)} `
         + `${show(r.pipe).padStart(4)}${d(prev.pipe, r.pipe)} ${show(r.draw).padStart(6)}`,
@@ -154,30 +152,47 @@ async function main() {
       prev = r;
     }
 
-    console.log('\n[5] 판정\n');
-    console.log(`  1바퀴 증가분  geo +${lapDelta[1].geo}  tex +${lapDelta[1].tex}  pipe +${lapDelta[1].pipe}`);
-    console.log(`  2바퀴 증가분  geo +${lapDelta[2].geo}  tex +${lapDelta[2].tex}  pipe +${lapDelta[2].pipe}`);
+    log('\n[5] 판정\n');
+    log(`  1바퀴 증가분  geo +${lapDelta[1].geo}  tex +${lapDelta[1].tex}  pipe +${lapDelta[1].pipe}`);
+    if (laps >= 2) log(`  2바퀴 증가분  geo +${lapDelta[2].geo}  tex +${lapDelta[2].tex}  pipe +${lapDelta[2].pipe}`);
 
     // 개수 판정은 백엔드 무관 카운터로만 한다. pipeline 은 참고로 찍되 통과·실패를
     // 가르지 않는다 — 헤드리스(WebGL)와 실기기(WebGPU)의 파이프라인 개념이 다르다.
     const lap1 = lapDelta[1].geo + lapDelta[1].tex;
-    const lap2 = lapDelta[2].geo + lapDelta[2].tex;
+    const lap2 = laps >= 2 ? lapDelta[2].geo + lapDelta[2].tex : 0;
     let pass = false;
     if (lap1 === 0 && lap2 === 0) {
       pass = true;
-      console.log('\n  ✓ PASS — 첫 바퀴부터 증가 0. 예열이 날씨 레이어를 전부 굽고 있다.');
+      log('\n  ✓ PASS — 첫 바퀴부터 증가 0. 예열이 날씨 레이어를 전부 굽고 있다.');
     } else if (lap2 === 0) {
-      console.log('\n  ✗ FAIL — 1바퀴에서만 올랐다(첫 등장 비용 잔존).');
-      console.log('    예열이 **빠뜨린 레이어**가 있다. `sky.js`의 `prewarm()` 목록을 본다.');
-      console.log('    위 표에서 어느 조합에 `+` 가 붙었는지가 곧 빠진 레이어다.');
+      log('\n  ✗ FAIL — 1바퀴에서만 올랐다(첫 등장 비용 잔존).');
+      log('    예열이 **빠뜨린 레이어**가 있다. `sky.js`의 `prewarm()` 목록을 본다.');
+      log('    위 표에서 어느 조합에 `+` 가 붙었는지가 곧 빠진 레이어다.');
     } else {
-      console.log('\n  ✗ FAIL — 2바퀴에서도 올랐다. 지연 생성이 아니라 **증식**이다.');
-      console.log('    예열로 고칠 문제가 아니다. 개수 불변식 자체가 깨진 곳을 찾아야 한다.');
+      log('\n  ✗ FAIL — 2바퀴에서도 올랐다. 지연 생성이 아니라 **증식**이다.');
+      log('    예열로 고칠 문제가 아니다. 개수 불변식 자체가 깨진 곳을 찾아야 한다.');
     }
 
-    console.log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
+    log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
     if (errors.length) pass = false;
-    process.exitCode = pass ? 0 : 1;
+    await context.close();
+    return { pass, lap1, lap2, lapDelta, rows, errors };
+  }
+}
+
+// ── CLI ─────────────────────────────────────────────────────────────────────
+async function cli() {
+  log('=== 하늘 전환 개수 계단 재현 (#114) ===\n');
+  log('[1] vite 빌드 및 _site 조립...');
+  assembleSiteVite(SITE_DIR);
+  log('✓ 완료\n');
+  const { origin, close: closeServer } = await startServer(SITE_DIR, BASE_PATH);
+  const browser = await chromium.launch({
+    executablePath: CHROMIUM_EXECUTABLE, args: CHROMIUM_ARGS, headless: true,
+  });
+  try {
+    const r = await runSkyWarm({ browser, origin, basePath: BASE_PATH, laps: 2 });
+    process.exitCode = r.pass ? 0 : 1;
   } finally {
     await browser.close();
     await closeServer();
@@ -186,4 +201,9 @@ async function main() {
 
 // 측정 자체가 실패한 것과 측정 결과가 FAIL 인 것을 구별한다. 전자는 "못 쟀다"이지
 // "통과 못 했다"가 아니다 — 리포트에 그렇게 적혀야 한다.
-main().catch((e) => { console.error(`측정 실패(판정 아님): ${e.message}`); process.exit(2); });
+if (process.argv[1] && process.argv[1].endsWith('measure-sky-warm.mjs')) {
+  cli().catch((e) => { console.error(`측정 실패(판정 아님): ${e.message}`); process.exit(2); });
+}
+
+/** CLI 전용 로거 — 함수 본체는 주입받은 `log` 를 쓴다 */
+function log(...a) { console.log(...a); }
