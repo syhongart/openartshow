@@ -302,7 +302,20 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         //
         // 그래서 예열 프레임 동안 숨은 것을 잠시 켠다. **무엇을 켤지는 기능이 안다** —
         // 여기에 기능별 분기가 없다.
-        const undoPrewarm = prewarmFeatures(features);
+        //
+        // ── `?prewarm=0` 으로 끌 수 있다 (감독 지적 2026-07-29) ──────────────
+        // *"이거 재질 이거 다 올리면 비용 커질수도"* — 맞는 지적이다. 예열은 **언젠가
+        // 쓸 것을 미리 GPU 에 올린다.** 세션 내내 날씨를 안 바꾸면 그만큼이 순수 낭비고,
+        // 저사양 기기에서는 부팅 지연과 메모리 압박으로 돌아온다.
+        //
+        // 그래서 노브를 연다. 켜고 끈 두 상태를 **같은 빌드에서** 비교할 수 있어야 어느
+        // 쪽이 나은지 판정할 수 있다. 대조군을 만들려고 코드를 고치면 그 순간 두 측정이
+        // 다른 코드를 잰 것이 되고, 그 사실은 리포트에 안 나타난다.
+        //
+        // 기본은 켬이다. 계단은 실측된 결함이고 예열은 실측으로 그것을 없앴다 —
+        // 비용 쪽은 아직 실측이 없으므로, 검증된 것을 기본으로 둔다.
+        const wantPrewarm = readNum('prewarm', 1, 0, 1) >= 1;
+        const undoPrewarm = wantPrewarm ? prewarmFeatures(features) : () => {};
         try {
           for (let i = 0; i < 3; i++) {
             adapter!.beginFrame();
