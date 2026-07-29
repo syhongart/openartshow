@@ -46,6 +46,15 @@ jobs:
         run: npm run check:refs
       - name: Unit tests (vitest)
         run: npm test
+      # 워크플로가 `git add` 하는 경로가 `.gitignore` 대상인지 — 2026-07-28 밸류에이션이
+      # 매일 죽던 사고를 게이트로 만든 것(#129). ignored path 에 대한 `git add` 는 비영
+      # 종료하고 Actions 기본 쉘은 `bash -e` 다.
+      #
+      # **경로 필터를 걸지 않고 항상 돈다.** 그 사고의 발단은 워크플로가 아니라
+      # `.gitignore` 쪽 커밋이었다 — 트리거를 워크플로 diff 로 좁히면 재발만 잡고
+      # 최초 발생과 같은 형태는 다시 못 잡는다. 비용은 파일 몇 개 읽기다.
+      - name: Workflow git add / .gitignore 정합
+        run: npm run check:gitadd
 
   # ── 헤드리스 렌더 스모크 ────────────────────────────────────────────────
   # verify 와 **병렬**로 돈다(의존 없음). 이 job 이 보는 것은 verify 가 못 보는 축이다 —
