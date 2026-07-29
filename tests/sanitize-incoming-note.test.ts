@@ -16,12 +16,22 @@
 // 5. 객체의 추가 필드는 무시
 //
 // 못 잡는 것 (이 함수 범위 밖):
-// - XSS 페이로드: 새니타이징 로직 0 (표시 단계에서 이스케이프 기대)
+// - **XSS 페이로드 — 그리고 그것이 맞다.** 이 함수에 새니타이징 로직이 0 인 것은
+//   결함이 아니다. 방어는 렌더 계층이 한다: `ui-dom.ts` 의 `el()` 이 `text` 옵션을
+//   `node.textContent` 로 넣으므로 태그가 문자로 표시된다.
+//   **함수 이름이 오해를 부른다** — `sanitize` 라서 "여기서 막힌다" 고 읽히지만
+//   실제로는 타입·길이 정규화다. 그 착각이 위험해서 여기 적어둔다.
+//   실제 방어 지점은 이 파일 하단 `describe('XSS 방어 …')` 가 테스트로 고정한다.
 // - 극단적 ts 값: Number.isFinite(n.ts) 만 확인 (음수·미래시간 대체 검증 안 함)
 // - 다른 필드의 타입 강제: String() 강제형변환만 함 (의도한 설계)
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sanitizeIncomingNote } from '../frontend/js/multiplayer.js';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const GB_NAME_MAX = 40;
 const GB_TEXT_MAX = 200;
@@ -382,5 +392,56 @@ describe('sanitizeIncomingNote — 방명록 노트 입력 검증', () => {
       const keys = Object.keys(result);
       expect(keys).toEqual(['id', 'name', 'text', 'ts']);
     });
+  });
+});
+
+// ── XSS 방어의 실제 자리는 이 함수가 아니다 ────────────────────────────────
+//
+// `sanitizeIncomingNote` 는 **타입·길이 정규화**만 한다. 이름이 `sanitize` 라서
+// "여기서 XSS 를 막는다" 고 읽히지만 그런 로직은 없다 — 그리고 **없는 것이 맞다.**
+// 방어는 렌더 계층이 한다.
+//
+// 경로를 실제로 따라가 보면:
+//   multiplayer.js  onChat/onGuestbook 콜백으로 넘긴다 (innerHTML·textContent 0건)
+//   main.js:502     addChatMessage(name, text, false)
+//   ui-hud.ts:1240  el('span', { text: name }) · el('span', { text })
+//   ui-dom.ts:1695  else if (k === 'text') node.textContent = v;   ← 여기가 방어다
+//
+// **그 방어가 주석 한 줄로만 보증돼 있었다.** `multiplayer.js:547` 의
+// *"렌더는 textContent라 XSS 아님"* 이 유일한 근거였고, 누가 `ui-dom.ts:1695` 를
+// `innerHTML` 로 바꾸면 P2P 로 들어온 텍스트가 그대로 실행되는데 잡을 것이 없었다.
+//
+// 이 저장소가 반복해서 겪은 형태다 — 문서가 지키는 불변식. 그래서 게이트로 옮긴다.
+//
+// ── 못 잡는 것 ──────────────────────────────────────────────────────────────
+//  · **정적 검사다.** `el()` 을 우회해 직접 `innerHTML` 을 쓰는 새 코드는 안 걸린다.
+//  · 렌더 경로가 바뀌는 것(`addChatMessage` 가 `el()` 을 안 쓰게 되는 경우)도 안 걸린다.
+//    아래 ②가 그 일부만 본다.
+//  · 실제 브라우저 동작이 아니다. DOM 스텁 없이 소스를 읽는다 — `[6] CSP 부팅` 스모크가
+//    그 축을 별도로 본다.
+describe('XSS 방어 — 렌더 경로가 textContent 임을 고정한다', () => {
+  const uiDom = readFileSync(join(ROOT, 'frontend/js/ui-dom.ts'), 'utf8');
+  const uiHud = readFileSync(join(ROOT, 'frontend/js/ui-hud.ts'), 'utf8');
+  const mp = readFileSync(join(ROOT, 'frontend/js/multiplayer.js'), 'utf8');
+
+  it('① el() 의 text 옵션이 textContent 로 들어간다 — 방어의 실제 자리', () => {
+    // 이 줄이 innerHTML 로 바뀌면 채팅·방명록 전체가 XSS 에 열린다.
+    expect(
+      /k === 'text'\s*\)\s*node\.textContent\s*=/.test(uiDom),
+      'ui-dom.ts 의 el() 이 text 를 textContent 로 넣지 않는다 — '
+      + 'P2P 로 들어온 채팅·방명록 텍스트가 실행될 수 있다',
+    ).toBe(true);
+  });
+
+  it('② addChatMessage 가 el({ text }) 로 그린다 — innerHTML 을 안 쓴다', () => {
+    const body = uiHud.slice(uiHud.indexOf('export function addChatMessage'));
+    const fn = body.slice(0, body.indexOf('\n}') + 2);
+    expect(fn.includes('innerHTML'), 'addChatMessage 가 innerHTML 을 쓴다').toBe(false);
+    expect(/text:\s*(name|text)/.test(fn), 'addChatMessage 가 el({ text }) 경로를 안 쓴다').toBe(true);
+  });
+
+  it('③ multiplayer.js 는 DOM 을 직접 만지지 않는다 — 콜백으로만 넘긴다', () => {
+    // 수신부가 DOM 을 직접 그리기 시작하면 방어 지점이 둘로 갈라진다.
+    expect(mp.includes('innerHTML'), 'multiplayer.js 가 innerHTML 을 쓴다').toBe(false);
   });
 });
