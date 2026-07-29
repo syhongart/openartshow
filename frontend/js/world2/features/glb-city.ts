@@ -140,13 +140,28 @@ export const glbCityFeature: Feature = {
         //   raw   — 원본 그대로. 지금 안 보이는 것
         //   noext — 원본 클래스 유지 + 확장 **값만** 0 → 보이면 (a)
         //   std   — MeshStandardMaterial 로 옮기되 **텍스처 전부 이관** → 보이면 (b)
-        //   swap  — 지금 기본. map·color 만 가져오고 나머지는 버린다(룩 손실 최대)
+        //   swap  — map·color 만 가져오고 나머지는 버린다(룩 손실 최대)
         //
         // 헤드리스는 WebGL 이라 이 사각을 원리적으로 못 본다 — 감독 화면만 가른다.
-        // 그래서 처방이 아니라 **노브**를 배포한다.
+        // 그래서 처방이 아니라 **노브**를 배포했다.
+        //
+        // ── 감독 판정 2026-07-29: **(a) 확장 값이 원인** ──────────────────────
+        //   raw 안 보임 / noext 보임 / std 보임 / box 보임
+        //
+        // `noext` 가 보인다는 것이 결론을 셋으로 좁힌다 — 재질 **클래스**는 멀쩡하고,
+        // 텍스처도 멀쩡하고, 씬·조명·카메라도 멀쩡하다(box 가 보였다). `three/webgpu` 가
+        // `sheen`·`clearcoat`·`anisotropy`·`ior` 를 처리하다 화면을 먹는다.
+        //
+        // 그래서 기본을 `noext` 로 옮긴다. **가장 적게 버리는 선택지가 곧 답이었다** —
+        // 클래스도 텍스처도 노멀맵도 AO 도 emissive 도 전부 살고, 꺼지는 것은 확장 값뿐이다.
+        // 이전 기본(`swap`)은 그 전부를 버리고 있었다.
+        //
+        // 어느 확장이 범인인지는 아직 모른다(넷을 한꺼번에 껐다). 하나만 범인이면 나머지
+        // 광택은 살릴 수 있으므로 좁힐 값어치가 있지만, 그건 감독 판정을 또 한 번 써야
+        // 하는 일이라 룩을 보신 뒤로 미룬다. **모른다는 것을 아는 채로 둔다.**
         const matMode = readNum('glbraw', 0, 0, 1) >= 1
           ? 'raw' // 하위호환 — 이미 드린 링크가 살아 있어야 한다
-          : readEnum('glbmat', 'swap', MAT_MODES);
+          : readEnum('glbmat', 'noext', MAT_MODES);
         counts.swapped = applyMatMode(
           model, THREE as unknown as ThreeNS, matMode, mode === 'flat',
         );

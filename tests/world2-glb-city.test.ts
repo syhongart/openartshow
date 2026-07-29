@@ -17,6 +17,8 @@
 // 같은 형태로만 드러나 원인을 찾기가 매우 어렵다.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { glbCityFeature, gridCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, EXT_OFF } from '../frontend/js/world2/features/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
@@ -222,9 +224,20 @@ describe('헛된 투명을 되돌린다 — WebGPU 에서 벽이 사라지던 �
 // 남은 후보 둘이 **서로 다른 처방을 요구한다** — 확장 값이냐, 재질 클래스냐. 한 축으로
 // 뭉뚱그리면 또 헛짚는다. 네 모드가 그 둘을 가른다.
 describe('재질 축 — 네 모드가 서로 다른 가설을 검증한다', () => {
-  it('모드 목록이 넷이고 기본이 swap 이다', () => {
-    // 기본을 바꾸는 것은 감독 판정 뒤다. 지금 바꾸면 "보이던 것"이 갑자기 달라진다.
+  it('모드 목록이 넷이다', () => {
     expect([...MAT_MODES]).toEqual(['swap', 'std', 'noext', 'raw']);
+  });
+
+  it('기본이 noext 다 — 감독 판정으로 확정된 값', () => {
+    // raw 안 보임 / noext 보임 / std 보임 / box 보임 (2026-07-29 실기기).
+    // `noext` 는 재질 클래스·텍스처·노멀맵·AO·emissive 를 전부 살리고 확장 값만 끈다.
+    // **가장 적게 버리는 선택지가 곧 답이었다.** 소스에서 직접 확인한다 — 기본값이
+    // 조용히 바뀌면 감독이 보던 화면이 달라지고, 그 사실이 아무 데도 안 적힌다.
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world2/features/glb-city.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(src).toMatch(/readEnum\('glbmat',\s*'noext',\s*MAT_MODES\)/);
   });
 
   it('CARRY_MAPS 에 확장 전용 속성이 없다 — 그게 std 모드의 정의다', () => {
