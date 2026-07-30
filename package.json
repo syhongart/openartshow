@@ -12,6 +12,7 @@
     "check:gitadd": "node scripts/smoke/check-workflow-gitadd.mjs",
     "check:devlog-times": "node scripts/extract-devlog-times.mjs --check",
     "lint": "eslint .",
+    "gate": "node scripts/gate.mjs",
     "smoke": "node scripts/smoke/run.mjs",
     "smoke:vite": "node scripts/smoke/run.mjs vite",
     "smoke:live": "node scripts/smoke/verify-live.mjs",

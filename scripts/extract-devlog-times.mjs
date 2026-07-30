@@ -79,6 +79,12 @@ for (const line of log.split('\n')) {
   if (!m || !commitIso) continue;
 
   const date = m[1];
+  // ── 제목에 시각이 적힌 항목은 동결 대상이 **아니다** ──────────────────────
+  // 그 시각이 git 커밋 시각을 이긴다(사람이 적은 실제 작업 시각 vs 일지를 쓴 시각).
+  // 동결 파일에 넣으면 쓰이지 않는 값이 쌓이고, `--check` 가 그것을 "신규" 로 요구해
+  // 게이트를 떨어뜨린다 — 실제로 승격 항목(`## 2026-07-30 12:19 · …`)에서 그랬다.
+  // 앞으로 모든 항목이 시각을 적으면 이 파일은 더 자라지 않는다. 의도한 설계다.
+  if (m[2]) continue;
   const key = entryKey(date, m[3].trim());
   if (!firstSeen.has(key)) firstSeen.set(key, commitIso);
 

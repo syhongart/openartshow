@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git config core.hooksPath scripts/githooks && chmod +x scripts/githooks/* 2>/dev/null; rm -f .gate-stamp; exit 0",
+            "statusMessage": "게이트 훅 설치"
+          }
+        ]
+      }
+    ]
+  }
+}
