@@ -38,11 +38,15 @@ import { fountain } from './fountain.js';
 import { clocktower } from './clocktower.js';
 import { bench } from './bench.js';
 import { planter } from './planter.js';
+import { bridge } from './bridge.js';
 
 export const PARTS = [
   ground, garden, road,
   fountain, clocktower,
   building, lamp,
+  // 다리는 물 위로 뻗으므로 육지 파츠와 자리를 다투지 않는다(footprint 0). 순서는
+  // 건물 다음 — 도로 축을 따르는 시설물이라 나무·벤치보다 먼저 자리를 굳힌다.
+  bridge,
   tree, bench, planter,
 ] as const;
 

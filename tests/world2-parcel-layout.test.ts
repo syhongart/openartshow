@@ -130,6 +130,11 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   // 지표로 못 보게 됐다. 그쪽은 `world2-lamp-placement.test.ts` 가 이웃 3×3 파셀 ×
   // 3 tier 전수로 **직접** 잰다 — 예외를 열 때 검사를 함께 옮겨 두지 않으면 그 순간
   // 사각이 생긴다.
+  //
+  // **다리도 같은 처지다.** 다리는 강을 건너므로 본질적으로 파셀 여러 개를 걸친다 —
+  // 경계 안에 넣는 것이 애초에 불가능하다. 그래서 여기서 빼고, 그 대신
+  // `tests/world2-bridge.test.ts` 가 **"다리가 지나는 중간 파셀이 전부 물인가"** 를 직접
+  // 잰다. 다리가 넘어가도 되는 것은 물 위뿐이고, 육지 파셀을 덮으면 그쪽에서 깨진다.
   it('모든 부품이 셀 경계 안에 있다 — 가로등만 경계 위까지', () => {
     const halfX = DEFAULT_LAYOUT.cellX / 2 - DEFAULT_LAYOUT.margin;
     const halfZ = DEFAULT_LAYOUT.cellZ / 2 - DEFAULT_LAYOUT.margin;
@@ -137,6 +142,7 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
       for (let pz = -3; pz <= 3; pz++) {
         for (const p of at(px, pz)) {
           if (p.kind === 'ground') continue; // 지면은 셀 전체를 덮는다
+          if (p.kind === 'bridge') continue; // 강을 건너므로 경계를 넘는 것이 정의다
           const lx = p.kind === 'lamp' ? DEFAULT_LAYOUT.cellX / 2 : halfX;
           const lz = p.kind === 'lamp' ? DEFAULT_LAYOUT.cellZ / 2 : halfZ;
           expect(Math.abs(p.x), `${p.kind} x`).toBeLessThanOrEqual(lx + 1e-9);
@@ -167,6 +173,16 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   // 실물은 정확히 0 을 요구할 수 있고, 판은 필요한 만큼 벌릴 수 있다.
   const DECALS = new Set(['ground', 'garden', 'road']);
 
+  // ── 제3의 부류 — 물 위 구조물 ──────────────────────────────────────────
+  // 다리는 바닥 판도 아니고 땅에 닿는 실물도 아니다. **노면이 도로 높이에 오도록 아래로
+  // 내려가 있고**(피벗이 거더 최하단), 그 결과 밑동이 수면 아래로 잠긴다 — 다리가 물에
+  // 발을 담근 것으로 보이게 하는 의도적 배치다(`parts/bridge.ts` 의 `DECK_Y`).
+  //
+  // **예외를 뚫는 것으로 끝내지 않는다.** 여기서 빼는 대신 `tests/world2-bridge.test.ts`
+  // 가 "노면 상단(`y + H`)이 도로 높이와 같다" 를 정확히 검사한다 — 요구가 사라진 것이
+  // 아니라 다리에 맞는 형태로 옮겨간 것이다. 그것이 없으면 이 예외가 곧 구멍이 된다.
+  const OVER_WATER = new Set(['bridge']);
+
   it('실물 부품은 밑동이 정확히 땅에 있다', () => {
     // ── 한 파셀로는 모자란다 ─────────────────────────────────────────────
     // 처음엔 `at(4,-4)` 한 파셀만 봤다. 나무를 8cm 띄우는 뮤테이션이 **살아남았다** —
@@ -180,13 +196,13 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
     for (let px = -5; px <= 5; px++) {
       for (let pz = -5; pz <= 5; pz++) {
         for (const p of at(px, pz)) {
-          if (DECALS.has(p.kind)) continue;
+          if (DECALS.has(p.kind) || OVER_WATER.has(p.kind)) continue;
           seen.add(p.kind);
           expect(p.y).toBe(0);
         }
       }
     }
-    expect(ALL_KINDS.filter((k) => !DECALS.has(k) && !seen.has(k))).toEqual([]);
+    expect(ALL_KINDS.filter((k) => !DECALS.has(k) && !OVER_WATER.has(k) && !seen.has(k))).toEqual([]);
   });
 
   it('바닥 판은 지면 바로 위에 얹힌다 — 깊이 다툼을 피할 만큼만', () => {
