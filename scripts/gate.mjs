@@ -25,7 +25,7 @@
 // 구현자가 스모크를 돌리는 습관이 생긴다.
 
 import { spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,6 +51,18 @@ export const GATES = [
   { name: 'check:devlog-times', cmd: 'check:devlog-times' },
   { name: 'test', cmd: 'test' },
 ];
+
+/**
+ * 스탬프를 지운다. **실패·거부 경로에서 반드시 부른다.**
+ *
+ * 안 지우면 **옛 통과를 상속한다.** 뮤테이션이 드러냈다: 게이트가 거부(exit 1)해도
+ * 이전 실행의 스탬프가 남아 있고, index 가 그대로면(워킹트리만 고친 경우) 훅이 그
+ * 해시와 일치한다고 판정해 통과시킨다 — 검수관이 재현한 시나리오가 그대로 성립한다.
+ * "쓰지 않는다" 로는 부족하고 "지운다" 여야 한다.
+ */
+function clearStamp() {
+  if (existsSync(STAMP_PATH)) unlinkSync(STAMP_PATH);
+}
 
 /** 현재 index 의 트리 해시. 커밋될 내용을 그대로 가리킨다. */
 export function indexTreeHash(cwd = ROOT) {
@@ -115,8 +127,13 @@ export function changeSummary(base = 'origin/main', cwd = ROOT) {
 function printChangeSummary() {
   const s = changeSummary();
   if (!s) return;
+  // base 의 신선도를 함께 찍는다(검수관 권고) — `origin/main` 이 낡았으면 범위가
+  // 오판된다. fetch 여부를 코드가 강제할 수는 없으니 눈으로 볼 수 있게 한다.
+  const bi = spawnSync('git', ['log', '-1', '--format=%h %ad', '--date=format:%m-%d %H:%M', s.base],
+    { cwd: ROOT, encoding: 'utf8' });
+  const baseInfo = bi.status === 0 ? bi.stdout.trim() : '?';
   console.log('');
-  console.log(`── 이 브랜치가 만진 것 (${s.base} 대비) ${'─'.repeat(24)}`);
+  console.log(`── 이 브랜치가 만진 것 (${s.base} = ${baseInfo} 대비) ${'─'.repeat(10)}`);
   for (const b of s.buckets) {
     const mark = b.hits.length ? '⚠' : ' ';
     console.log(`  ${mark} ${b.label.padEnd(24)} ${String(b.hits.length).padStart(3)} 파일${b.hits.length ? `   → ${b.why}` : ''}`);
@@ -168,11 +185,49 @@ function main() {
     console.log('─'.repeat(60));
     console.log('');
     console.log(`게이트 실패: ${failed.name} (exit ${failed.code})`);
-    console.log('스탬프를 쓰지 않았다 — pre-commit 훅이 커밋을 막는다.');
+    clearStamp();
+    console.log('스탬프를 지웠다 — pre-commit 훅이 커밋을 막는다.');
     return 1;
   }
 
-  // ── 스탬프 ────────────────────────────────────────────────────────────────
+  // ── 워킹트리와 index 가 어긋나면 스탬프를 쓰지 않는다 ──────────────────────
+  //
+  // **검수관이 재현한 블로커(2026-07-30).** 첫 판본은 이 검사가 없어서, 이 도구가
+  // 없애려던 패턴을 도구 자신이 새로 만들고 있었다:
+  //
+  //   1. 깨진 코드를 `git add` (index = 깨진 버전)
+  //   2. 워킹트리에서 고친다. **재-add 하지 않는다** (disk = 고친 버전)
+  //   3. `npm run gate` → lint·tsc·vitest 는 **디스크**를 읽으므로 PASS.
+  //      그런데 스탬프는 `git write-tree`(= **index**, 깨진 버전)의 해시다
+  //   4. `git commit` → 훅이 index 해시를 다시 계산해 "일치 — 통과"
+  //   5. 커밋된 HEAD 는 **게이트가 본 적 없는 깨진 코드**다(typecheck 실패 상태)
+  //
+  // 검수관이 별도 클론에서 실제로 재현했다. 사람이 게이트 결과를 정확히 읽어도 안
+  // 잡힌다 — 앞선 사고들("사람이 결과를 잘못 읽었다")과 종류가 다르고 더 나쁘다.
+  // `git add` 뒤 편집을 이어가는 것은 드문 실수가 아니라 일상적 편집 흐름이다.
+  //
+  // 그래서 **게이트가 검사한 것과 커밋될 것이 같음**을 확인한 뒤에만 스탬프를 쓴다.
+  // `git diff --quiet` 는 추적 파일의 unstaged 변경을 본다(untracked 는 커밋에 안
+  // 들어가므로 대상이 아니다). 실측: 게이트 실행 자체는 워킹트리를 더럽히지 않는다
+  // (exit 0) — 거짓 FAIL 위험이 낮다.
+  const unstaged = spawnSync('git', ['diff', '--quiet'], { cwd: ROOT }).status;
+  if (unstaged !== 0) {
+    const names = spawnSync('git', ['diff', '--name-only'], { cwd: ROOT, encoding: 'utf8' });
+    console.log('');
+    console.log('게이트는 통과했지만 **스탬프를 쓰지 않는다.**');
+    console.log('  워킹트리에 staged 되지 않은 변경이 있다 — 게이트가 검사한 내용과');
+    console.log('  커밋될 내용이 다르다(게이트는 디스크를, 커밋은 index 를 쓴다).');
+    console.log('');
+    for (const f of (names.stdout ?? '').split('\n').filter(Boolean).slice(0, 20)) {
+      console.log(`    ${f}`);
+    }
+    console.log('');
+    console.log('  `git add` 로 맞춘 뒤 다시 돌려라.');
+    clearStamp();
+    printChangeSummary();
+    return 1;
+  }
+
   // 통과했으면 **그때의 index 트리 해시**를 남긴다. pre-commit 훅이 이것과 현재 해시를
   // 비교해 "게이트를 통과한 그 내용이 맞는지" 본다. 통과 후 파일을 더 고치면 해시가
   // 달라지므로 다시 돌려야 한다 — 그게 맞다.
