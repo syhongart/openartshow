@@ -21,6 +21,10 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 
 /** 텍스처 스텁 — 관찰 대상은 `offset`과 `repeat`뿐이다 */
 class FakeTexture {
+  // 실제 `CanvasTexture` 처럼 원본 캔버스를 들고 있는다. 윤슬 검사가 이 캔버스에 남은
+  // G채널 표본(`_g`)을 읽어 **점이 실제로 구워졌는지**를 본다 — 들고 있지 않으면
+  // `engraveSparkle` 호출 누락을 밖에서 확인할 방법이 없다.
+  constructor(public image?: unknown) {}
   offset = { x: 0, y: 0, set(x: number, y: number) { this.x = x; this.y = y; }, copy(o: { x: number; y: number }) { this.x = o.x; this.y = o.y; } };
   repeat = { x: 1, y: 1, set(x: number, y: number) { this.x = x; this.y = y; } };
   wrapS = 0;
@@ -52,11 +56,34 @@ class FakeMesh {
   constructor(public geometry: unknown, public material: unknown) {}
 }
 
+/** 버퍼 속성 스텁 — 강 판의 정점을 실제로 들여다보려고 배열을 그대로 보관한다 */
+class FakeAttr {
+  constructor(public array: number[], public itemSize: number) {}
+}
+
+/**
+ * 강 판 지오메트리 스텁.
+ *
+ * 강 판이 **어디까지 뻗어 있는지**를 정점 배열로 직접 재려고 만들었다. `index.count` 만
+ * 세면 "쿼드가 몇 개인가" 는 알 수 있지만 "그것이 세계 전체를 덮는 큰 판 하나인가" 는
+ * 구별되지 않는다 — 겹침 블로커가 바로 그 형태였으므로 좌표를 봐야 한다.
+ */
+class FakeBufferGeometry {
+  attrs: Record<string, FakeAttr> = {};
+  index: { count: number; array: number[] } | null = null;
+  disposed = false;
+  setAttribute(name: string, a: FakeAttr) { this.attrs[name] = a; }
+  setIndex(a: number[]) { this.index = { count: a.length, array: a }; }
+  dispose() { this.disposed = true; }
+}
+
 vi.mock('three/webgpu', () => ({
   PlaneGeometry: FakeGeometry,
   MeshStandardMaterial: FakeMaterial,
   Mesh: FakeMesh,
   CanvasTexture: FakeTexture,
+  BufferGeometry: FakeBufferGeometry,
+  Float32BufferAttribute: FakeAttr,
   RepeatWrapping: 1000,
   Vector2: class { constructor(public x: number, public y: number) {} },
 }));
@@ -64,17 +91,37 @@ vi.mock('three/webgpu', () => ({
 beforeAll(() => {
   // jsdom 은 네이티브 canvas 없이 `getContext('2d')`로 null 을 준다. 노멀맵을 굽는 코드가
   // 끝까지 도는 것만 보면 되므로 필요한 호출만 채운다.
-  const ctx = {
+  // 윤슬 검사를 위해 `putImageData` 가 **G채널을 캔버스에 남긴다.** 빈 함수로 두면
+  // "무엇이 실제로 구워졌는가" 를 밖에서 볼 길이 없고, `engraveSparkle` 호출 누락이
+  // 테스트를 통과한다 — 판정과 집행 사이의 그 구멍이 이 프로젝트의 상시 위험이다.
+  const mkCtx = (canvas: { _g?: number[] }) => ({
     createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
-    putImageData() {},
-  };
-  (HTMLCanvasElement.prototype as unknown as { getContext: () => unknown }).getContext = () => ctx;
+    putImageData(img: { data: Uint8ClampedArray }) {
+      const g: number[] = [];
+      for (let i = 1; i < img.data.length; i += 4) g.push(img.data[i]);
+      canvas._g = g;
+    },
+  });
+  (HTMLCanvasElement.prototype as unknown as { getContext: (t: string) => unknown }).getContext =
+    function (this: { _g?: number[] }) { return mkCtx(this); };
 });
 
 const { oceanFeature, waveHeight } = await import('../frontend/js/world2/features/ocean.js');
-const { SEA_Y, SEABED_Y } = await import('../frontend/js/world2/decide/water.js');
+const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent } = await import('../frontend/js/world2/decide/water.js');
+const { DEFAULT_LAYOUT } = await import('../frontend/js/world2/parts/types.js');
+/** 세계 절반 크기. `ocean.ts` 와 **같은 유도**를 쓴다 — 값을 적어두면 그것이 미러링이다 */
+const EDGE = worldHalfExtent(DEFAULT_LAYOUT.cellX);
 
-interface Added { name: string; position: { y: number }; material: FakeMaterial; renderOrder: number; frustumCulled: boolean; castShadow: boolean }
+interface Added {
+  name: string;
+  position: { y: number };
+  material: FakeMaterial;
+  renderOrder: number;
+  frustumCulled: boolean;
+  castShadow: boolean;
+  /** 강 판이 바다와 지오를 공유하지 않는지, 어디까지 뻗었는지를 여기서 본다 */
+  geometry: unknown;
+}
 
 function mount() {
   const added: Added[] = [];
@@ -106,9 +153,90 @@ describe('waveHeight — 타일이 이어진다', () => {
 });
 
 describe('수면 조립 — 개수 불변식', () => {
-  it('씬에 정확히 둘을 넣는다 — 드로우콜 +2', () => {
+  it('씬에 정확히 셋을 넣는다 — 드로우콜 +3', () => {
+    // 강이 셋째 판으로 늘었다(감독 지시 2026-07-30: 강 −0.5 / 바다 −1.0). 재질·지오는
+    // 공유하므로 늘어난 것은 드로우콜 하나뿐이다.
     const { added } = mount();
-    expect(added.map((m) => m.name).sort()).toEqual(['ocean', 'seabed']);
+    expect(added.map((m) => m.name).sort()).toEqual(['ocean', 'river', 'seabed']);
+  });
+
+  it('바다와 강이 재질을 공유한다 — 물빛이 두 곳에 적히면 미러링이다', () => {
+    const { added } = mount();
+    const sea = added.find((m) => m.name === 'ocean')!;
+    const river = added.find((m) => m.name === 'river')!;
+    // 같은 물이다. 재질을 따로 만들면 색·윤슬·불투명도가 두 곳에서 정해진다.
+    expect(river.material).toBe(sea.material);
+  });
+
+  // ── 반투명 이중 겹침 (검수관 블로커) ──────────────────────────────────────
+  // 강 판도 바다처럼 세계 전체를 덮는 큰 평면이었다. 격자 안에서 물인 곳은 강뿐이므로
+  // **물이 보이는 전 구간에서 두 반투명 판이 겹쳤고**, 실효 불투명도가 0.7 → 0.91 로
+  // 올라가 `WATER_DEPTH` 의 캘리브레이션(단일 층 전제)이 무효가 됐다.
+  //
+  // 값이 아니라 전제가 깨진 형태라 어떤 수치 단언에도 안 걸렸다. 그래서 **지오가 어디까지
+  // 뻗어 있는지** 를 좌표로 직접 잰다.
+  describe('강 판은 물 파셀 위에만 깔린다', () => {
+    it('바다와 지오를 공유하지 않는다 — 공유하면 물 전 구간이 이중 겹침이다', () => {
+      const { added } = mount();
+      const sea = added.find((m) => m.name === 'ocean')!;
+      const river = added.find((m) => m.name === 'river')!;
+      expect(river.geometry).not.toBe(sea.geometry);
+    });
+
+    it('쿼드가 하나 이상 있다 — 0 이면 강이 아예 안 보인다', () => {
+      // 격자 순회나 판정이 어긋나면 지오가 조용히 비고, 화면에는 "바다만 보이는 강"으로
+      // 나타난다. 에러도 경고도 없으므로 개수를 단언한다.
+      const { added } = mount();
+      const g = (added.find((m) => m.name === 'river')!.geometry) as FakeBufferGeometry;
+      expect(g.index, '강 지오에 인덱스가 없다').not.toBeNull();
+      expect(g.index!.count / 6, '강 파셀이 0개 — 강 판이 비었다').toBeGreaterThan(0);
+    });
+
+    it('세계 전체를 덮지 않는다 — 강이 지나는 폭만 덮는다', () => {
+      // 강은 x 를 따라 흐르므로 x 범위는 세계를 가로지르지만 **z 범위는 좁아야** 한다.
+      // 큰 판 하나면 z 도 세계 전체(그리고 그 4배인 `PLANE`)를 덮는다.
+      const { added } = mount();
+      const g = (added.find((m) => m.name === 'river')!.geometry) as FakeBufferGeometry;
+      const pos = g.attrs.position.array;
+      const zs: number[] = [];
+      for (let i = 2; i < pos.length; i += 3) zs.push(pos[i]);
+      const zSpan = Math.max(...zs) - Math.min(...zs);
+      // 세계 절반 크기(EDGE)를 기준으로 삼는다 — 값을 적어두지 않고 유도한다.
+      // 강은 굽이치므로 z 로도 꽤 움직이지만(진폭 합 200m), 세계 전체(2×EDGE)를
+      // 덮지는 않는다. 큰 판이면 z 폭이 PLANE(= 4×EDGE)이 된다.
+      const worldSpan = EDGE * 2;
+      expect(zSpan, '강 판의 z 폭이 세계 전체를 넘는다 — 큰 판 하나로 되돌아갔다')
+        .toBeLessThan(worldSpan);
+    });
+
+    it('UV 를 바다와 같은 규칙으로 낸다 — 어긋나면 무늬가 다른 크기로 흐른다', () => {
+      // 재질(따라서 `repeat`·`offset`)을 공유하므로 UV 규칙이 어긋나면 강과 바다에서
+      // 물결 무늬의 크기·방향이 갈린다. 바다 판의 규칙은
+      // `PlaneGeometry(PLANE, PLANE).rotateX(-π/2)` → `u = x/PLANE + 0.5`,
+      // `v = 0.5 − z/PLANE` 다. 정점 하나를 골라 그 식이 성립하는지 본다.
+      const { added } = mount();
+      const g = (added.find((m) => m.name === 'river')!.geometry) as FakeBufferGeometry;
+      const pos = g.attrs.position.array;
+      const uv = g.attrs.uv.array;
+      const PLANE = EDGE * 4; // ocean.ts 와 같은 유도
+      for (let q = 0; q < 4; q++) {
+        const x = pos[q * 3];
+        const z = pos[q * 3 + 2];
+        expect(uv[q * 2]).toBeCloseTo(x / PLANE + 0.5, 9);
+        expect(uv[q * 2 + 1]).toBeCloseTo(0.5 - z / PLANE, 9);
+      }
+    });
+
+    it('법선이 전부 위쪽이다 — 뒤집히면 위에서 물이 안 보인다', () => {
+      const { added } = mount();
+      const g = (added.find((m) => m.name === 'river')!.geometry) as FakeBufferGeometry;
+      const n = g.attrs.normal.array;
+      for (let i = 0; i < n.length; i += 3) {
+        expect(n[i]).toBe(0);
+        expect(n[i + 1]).toBe(1);
+        expect(n[i + 2]).toBe(0);
+      }
+    });
   });
 
   it('해저가 수면보다 아래다 — 뒤집히면 물이 안 비친다', () => {
@@ -120,6 +248,39 @@ describe('수면 조립 — 개수 불변식', () => {
     expect(bed.position.y).toBeLessThan(sea.position.y);
     // 수면이 나중에 그려져야 해저 위에 겹친다
     expect(sea.renderOrder).toBeGreaterThan(bed.renderOrder);
+  });
+
+  // ── 판정/집행 경계 (팀장 조건 7) ──────────────────────────────────────────
+  // 상수를 둘로 쪼갰으므로 **각 상수가 올바른 판에 꽂히는가**가 새 사각이다. 두 값을
+  // 맞바꿔 꽂아도 "물이 두 층으로 있다" 는 사실은 그대로라 위 단언들이 다 통과한다 —
+  // 그래서 어느 판이 어느 높이인지를 직접 본다.
+  it('강 판이 RIVER_Y · 바다 판이 SEA_Y 다 — 두 상수를 맞바꿔 꽂는 것을 잡는다', () => {
+    const { added } = mount();
+    expect(added.find((m) => m.name === 'river')!.position.y).toBe(RIVER_Y);
+    expect(added.find((m) => m.name === 'ocean')!.position.y).toBe(SEA_Y);
+  });
+
+  it('강이 바다보다 높다 — 강물이 바다로 흘러나가는 방향', () => {
+    // 감독 지시가 강 −0.5 / 바다 −1.0 이므로 이 관계가 뒤집히면 지시 위반이다.
+    // 값을 여기 다시 적지 않는다 — 관계만 본다.
+    expect(RIVER_Y).toBeGreaterThan(SEA_Y);
+    const { added } = mount();
+    const sea = added.find((m) => m.name === 'ocean')!;
+    const river = added.find((m) => m.name === 'river')!;
+    expect(river.position.y).toBeGreaterThan(sea.position.y);
+    // 위에 있는 판이 나중에 그려져야 겹침 정렬이 맞는다
+    expect(river.renderOrder).toBeGreaterThan(sea.renderOrder);
+  });
+
+  it('둘 다 지면(y=0)보다 낮다 — 육지가 물을 덮어야 물 구멍이 성립한다', () => {
+    expect(RIVER_Y).toBeLessThan(0);
+    expect(SEA_Y).toBeLessThan(0);
+  });
+
+  it('해저를 바다 수면에서 유도한다 — 실측치를 적어두지 않았다', () => {
+    // 예전에는 `-2.9` 를 직접 적고 주석에 "수면보다 2.4m 아래" 라고 썼다. 수면이 바뀌자
+    // 그 유도가 거짓이 됐다(실제 1.9m). 산술로 바꿨으므로 수면을 옮기면 해저가 따라온다.
+    expect(SEABED_Y).toBeCloseTo(SEA_Y - WATER_DEPTH, 10);
   });
 
   it('수면이 반투명이다 — 불투명하면 바닥이 안 비쳐 물로 안 읽힌다', () => {
@@ -222,10 +383,70 @@ describe('정리', () => {
     const { inst, added, removed } = mount();
     const sea = added.find((m) => m.name === 'ocean')!;
     inst.dispose!();
-    expect(removed).toHaveLength(2);
+    // ── 넣은 것을 다 뺀다 (개수를 적지 않고 대조한다) ────────────────────────
+    // `2` 를 박아 두었더니 판이 셋으로 늘었을 때 **강만 씬에 남는 것**을 통과시켰다.
+    // 씬에 남은 메시는 재질이 해제된 뒤에도 렌더 목록에 올라 있다. 넣은 것과 뺀 것을
+    // 이름으로 맞대면 판을 몇 장 더 늘려도 이 단언이 저절로 따라온다.
+    expect(removed.map((m) => m.name).sort()).toEqual(added.map((m) => m.name).sort());
     expect((sea.material as FakeMaterial).disposed).toBe(true);
     for (const k of ['map', 'normalMap', 'roughnessMap'] as const) {
       expect((sea.material.opts[k] as FakeTexture).disposed).toBe(true);
     }
+  });
+
+  it('강 판의 지오도 반납한다 — 자기 지오를 갖고 있으므로 바다 것과 별개다', () => {
+    const { inst, added } = mount();
+    const g = (added.find((m) => m.name === 'river')!.geometry) as FakeBufferGeometry;
+    inst.dispose!();
+    expect(g.disposed, '강 지오가 반납되지 않았다').toBe(true);
+  });
+});
+
+// ── 윤슬 (감독 지시 2026-07-30) ─────────────────────────────────────────────
+// *"윤슬이 보이는 거였으면 좋겠어. 실제 반사로 하지말고. 쉐이더 트릭으로 했으면 해."*
+//
+// 윤슬은 `roughnessMap`(= 층 B 노멀맵) **G채널의 낮은 점**으로 낸다. 그 자리에서만
+// 스페큘러가 좁고 세게 튄다. 여기서 지키는 것은 **그 점이 실제로 텍스처에 들어갔는가**다 —
+// `engraveSparkle` 을 정의만 하고 호출을 빠뜨리면 아무 일도 안 일어나면서 테스트는 통과한다.
+// 실제로 이 구현에서 그 실수가 한 번 났다(주석 블록을 먼저 넣어 삽입 패턴이 어긋났다).
+describe('윤슬 — roughnessMap G채널에 점이 새겨진다', () => {
+  it('층 B(roughnessMap)에만 아주 낮은 G값이 있다 — 층 A(normalMap)에는 없다', () => {
+    const { added } = mount();
+    // `FakeMaterial` 은 생성 옵션을 `opts` 에 담는다(실제 재질처럼 필드로 펼치지 않는다).
+    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
+      opts: { normalMap: { image?: { _g?: number[] } }; roughnessMap: { image?: { _g?: number[] } } };
+    }).opts;
+    // 스텁 캔버스가 putImageData 로 받은 G채널 표본을 남긴다(위 beforeAll 참고).
+    const gA = opts.normalMap.image?._g ?? [];
+    const gB = opts.roughnessMap.image?._g ?? [];
+    expect(gB.length, 'roughnessMap 의 G채널 표본이 없다 — 스텁이 안 물렸다').toBeGreaterThan(0);
+
+    // 스파클은 G 를 0.06*255 ≈ 15 까지 눌러 넣는다. 물결 법선만으로는 그렇게 낮아지지
+    // 않는다(법선 G 는 0.5 근처에서 진동한다) — 그래서 이 문턱이 스파클의 지문이다.
+    const veryLowB = gB.filter((v) => v <= 24).length;
+    const veryLowA = gA.filter((v) => v <= 24).length;
+    expect(veryLowB, '윤슬 점이 roughnessMap 에 없다 — engraveSparkle 이 안 불렸다').toBeGreaterThan(0);
+    expect(veryLowA, '층 A(normalMap)에 스파클이 섞였다 — 물결 법선이 망가진다').toBe(0);
+  });
+
+  it('점이 화면을 덮지 않는다 — 물이 서리처럼 되면 윤슬이 아니다', () => {
+    const { added } = mount();
+    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
+      opts: { roughnessMap: { image?: { _g?: number[] } } };
+    }).opts;
+    const gB = opts.roughnessMap.image?._g ?? [];
+    const ratio = gB.filter((v) => v <= 24).length / gB.length;
+    // 격자 7px 칸에 16% 확률 → 픽셀 대비 약 0.3%. 상한을 넉넉히 잡되 "드문 점" 임을 지킨다.
+    expect(ratio).toBeLessThan(0.05);
+  });
+
+  it('emissive 로 내지 않았다 — 스스로 빛나는 물은 밤에 어색하다 (팀장 조건 4)', () => {
+    // 감독 지적: *"밤인데 빛이 이렇게 많지 않잖아."* emissive 는 광원과 무관하게 밝아진다.
+    const { added } = mount();
+    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
+      opts: { emissiveMap?: unknown; emissiveIntensity?: number };
+    }).opts;
+    expect(opts.emissiveMap ?? null).toBeNull();
+    expect(opts.emissiveIntensity ?? 0).toBe(0);
   });
 });

@@ -6,9 +6,12 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, RIVER_HALF, SEA_Y,
+  isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, RIVER_HALF, SEA_Y, RIVER_Y,
 } from '../frontend/js/world2/decide/water.js';
 import { isCentralPlaza as isPlaza, GRID_MIN_X, GRID_MAX_X, PLAZA_R } from '../frontend/js/world2/decide/grid.js';
+// 지면 두께는 파츠 쪽 상수지만 **수면에서 유도되므로** 관계를 여기서 지킨다 — 두 파일에
+// 나눠 적으면 어느 쪽 테스트에도 경계가 안 걸린다(판정/집행 분리의 그 구멍).
+import { GROUND_DEPTH } from '../frontend/js/world2/parts/ground.js';
 
 const CELL = 32;
 /** 세계의 바깥 가장자리(미터) — 격자에서 유도된다 */
@@ -190,7 +193,38 @@ describe('파셀 분류', () => {
 
 describe('수면 높이', () => {
   it('지면보다 낮다 — 육지가 물을 덮는다', () => {
-    // 지면은 y=0 에 두께 0.1 로 깔린다. 수면이 그보다 높으면 뭍에서도 물이 보인다.
-    expect(SEA_Y).toBeLessThan(-0.1);
+    // 지면 상면이 y=0 이다. 수면이 그보다 높으면 뭍에서도 물이 보인다.
+    //
+    // 예전에는 이 단언이 `-0.1` 이었고 주석이 "지면은 두께 0.1 로 깔린다" 고 적었다.
+    // 그 두께는 그 뒤 두 번 바뀌었고(0.8 → 유도값) 주석만 남아 근거가 거짓이 됐다.
+    // 두께는 아래 describe 가 따로 본다 — 여기서는 **상면(0)** 만 기준으로 삼는다.
+    expect(SEA_Y).toBeLessThan(0);
+    expect(RIVER_Y).toBeLessThan(0);
+  });
+});
+
+// ── 지면 판이 두 수면을 모두 덮는가 (검수관 블로커) ──────────────────────────
+// `GROUND_DEPTH` 는 `0.8` 상수였다. 물이 −0.5m 하나였을 때 "수면보다 30cm 깊다" 는
+// 뜻이었고 그때는 맞았다. 감독이 물을 강 −0.5 / 바다 −1.0 으로 가르자 **0.8 이 바다
+// 수면보다 얕아졌다** — 바닷가에서 지면 판 옆면이 수면 위로 20cm 드러난다.
+//
+// 값은 그대로인데 뜻이 바뀐 형태라 어떤 단언에도 안 걸렸다. 같은 커밋의 `SEABED_Y` 는
+// `SEA_Y` 에서 유도해 이 사고를 피했는데 `GROUND_DEPTH` 만 안 따랐다.
+describe('지면 두께 — 수면에서 유도한다', () => {
+  it('지면 판 아랫면이 두 수면보다 모두 아래다 — 물가에 틈이 없다', () => {
+    // 판 아랫면 = −GROUND_DEPTH. 두 수면 중 **더 낮은 쪽**보다도 낮아야 양쪽이 덮인다.
+    const bottom = -GROUND_DEPTH;
+    expect(bottom, '지면 판이 바다 수면까지 닿지 않는다 — 바닷가에서 옆면이 드러난다')
+      .toBeLessThan(SEA_Y);
+    expect(bottom).toBeLessThan(RIVER_Y);
+  });
+
+  it('수면을 옮기면 따라온다 — 상수를 박아두지 않았다', () => {
+    // 유도 관계 자체를 본다. 여유값(margin)을 여기 적지 않고, **차이가 양수**인지만
+    // 확인한다 — 그러면 여유를 조정해도 이 단언이 살아 있다.
+    const margin = Math.abs(SEA_Y) - GROUND_DEPTH;
+    expect(margin, '지면 두께가 바다 수면 깊이에서 유도되지 않았다').toBeLessThan(0);
+    // 그리고 터무니없이 깊지도 않다 — 물가 흙벽이 3m 면 절벽이다.
+    expect(GROUND_DEPTH).toBeLessThan(3);
   });
 });

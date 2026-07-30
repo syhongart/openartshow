@@ -27,7 +27,23 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
  * 섬이 커질 때 칸이 자동으로 작아져 길이 안 읽히게 된다 — 그때는 크기가 아니라 표현
  * (전체 지도 / 확대 지도 전환)을 다시 정해야 하므로, 손으로 정하는 편이 정직하다.
  */
-const R = 8;
+const R_VISIBLE = 8;
+
+/**
+ * 실제로 훑는 반경(파셀). **화면에 보이는 반경보다 넓다.**
+ *
+ * 지도가 회전하므로(감독 지시 2026-07-30 heading-up) 정사각형 캔버스를 돌리면 **모서리
+ * 바깥이 빈다** — 45° 에서 가장 심하고, 그때 필요한 것은 한 변이 아니라 **대각선**이다.
+ *
+ * 대각 절반 = 변의 절반 × √2 이므로 `R_VISIBLE × √2` 를 덮으면 어느 각도에서도 구석이
+ * 채워진다. 올림해서 정수 칸으로 맞춘다(칸 단위로만 그리므로).
+ *
+ * **유도로 적는다** — `R_VISIBLE` 을 바꾸면 따라온다. "실측에 여유를 얹은 값" 을 쓰면
+ * 전제가 바뀔 때 한쪽만 남고, 이 저장소가 슬롯 예산에서 이미 그 사고를 냈다(이론 최악치
+ * 21 을 밟아본 최댓값 17 + 여유로 20 이라 적어 부족을 덮었다).
+ */
+const R = Math.ceil(R_VISIBLE * Math.SQRT2);
+
 /** 갱신 간격(초). 지도는 정보이지 애니메이션이 아니다 */
 const REDRAW_S = 0.1;
 
@@ -58,7 +74,10 @@ export const minimapFeature: Feature = {
     if (!g) return null;
 
     const W = cv.width;
-    const cell = W / (R * 2 + 1); // 칸 한 변(픽셀)
+    // 칸 크기는 **보이는** 반경으로 정한다. 훑는 반경(`R`)은 회전 여백까지 넓혀 놨으므로
+    // 그것으로 나누면 축척이 작아져 지도가 확 넓어진다 — 감독이 지시한 것은 회전이고
+    // 축척 변경이 아니다.
+    const cell = W / (R_VISIBLE * 2 + 1); // 칸 한 변(픽셀)
     let acc = 0;
 
     const draw = (): void => {
@@ -71,14 +90,35 @@ export const minimapFeature: Feature = {
       g.fillStyle = COLOR.bg;
       g.fillRect(0, 0, W, W);
 
+      // ── 지도가 돈다 (감독 지시 2026-07-30) ────────────────────────────────
+      // *"맵에서 사람이 돌면 화살표가 회전하는게 아니라 맵이 회전하게 하자. 네비게이션
+      //   처럼."*
+      //
+      // 전에는 반대였다 — 북쪽을 위에 고정하고 마커만 돌렸다. 그 선택의 근거를 이 자리
+      // 주석이 *"지도가 돌면 방향 감각이 오히려 흐려진다"* 로 적어뒀는데, 감독이 원하는
+      // 것은 차량 내비게이션의 **heading-up**(진행방향 상단 고정)이다. 걸어가는 시점에서는
+      // "내가 보는 쪽이 화면 위" 가 직관적이고, 그것이 감독 판단이다.
+      //
+      // **캔버스를 돌리므로 구석이 빈다.** 정사각형을 회전시키면 모서리 바깥이 그려지지
+      // 않은 채 드러난다 — 그래서 그리는 범위를 대각선까지 넓혔다(`R` 유도, 아래 참고).
+      // 회전은 지도 요소 **전체**를 감싼다. 마커는 이 블록 밖에서 그려 화면 위를 향해
+      // 고정된다.
+      g.save();
+      g.translate(W / 2, W / 2);
+      g.rotate(yaw);      // 시선 방향이 위로 오게 — 마커 회전(-yaw)의 반대다
+      g.translate(-W / 2, -W / 2);
+
       // 플레이어가 파셀 안 어디에 있는지까지 반영해 지도를 밀어 준다. 이게 없으면
       // 파셀을 넘는 순간 지도가 한 칸씩 툭툭 튄다.
       const offX = ((x / env.cell) - cpx) * cell;
       const offZ = ((z / env.cell) - cpz) * cell;
 
       for (const c of mapCells(cpx, cpz, R, env.cell, env.cell)) {
-        const sx = (c.px - cpx + R) * cell - offX;
-        const sz = (c.pz - cpz + R) * cell - offZ;
+        // **캔버스 중앙 기준**으로 놓는다. 예전에는 `(… + R) * cell` 이었는데 그것은
+        // `cell` 이 `R` 에서 나올 때만 중심이 맞는다 — 훑는 반경을 회전 여백만큼 넓히자
+        // 중심이 화면 밖으로 밀려났다. 중앙에서 유도하면 두 반경이 달라도 항상 맞는다.
+        const sx = (c.px - cpx) * cell + W / 2 - cell / 2 - offX;
+        const sz = (c.pz - cpz) * cell + W / 2 - cell / 2 - offZ;
 
         // 바닥 — 물/뭍
         g.fillStyle = c.water === 'water' ? COLOR.water
@@ -135,13 +175,14 @@ export const minimapFeature: Feature = {
         }
       }
 
-      // ── 내 위치 — 한가운데 고정, 시선 방향으로 회전 ──
-      // 지도를 돌리지 않고(북쪽 고정) 마커만 돌린다. 지도가 돌면 방향 감각이 오히려
-      // 흐려지고, 글자를 넣게 되면 읽을 수 없게 된다.
+      g.restore(); // ← 지도 회전 끝. 아래는 화면에 고정된 것들이다
+
+      // ── 내 위치 — 한가운데 고정, **회전하지 않는다** ──
+      // 지도가 도는 방식(heading-up)에서 마커는 늘 위를 향한다 — 내가 보는 쪽이 화면
+      // 위이므로, 마커까지 돌리면 두 번 돌아 방향이 어긋난다.
       const c0 = W / 2;
       g.save();
       g.translate(c0, c0);
-      g.rotate(-yaw);
       g.fillStyle = COLOR.me;
       g.beginPath();
       g.moveTo(0, -6);
@@ -154,12 +195,17 @@ export const minimapFeature: Feature = {
 
       // 가장 가까운 랜드마크가 지도 밖이면 테두리에 방향만 찍는다. 화면에서 사라지는
       // 순간 잊히는 것을 막는다.
-      const near = nearestLandmark(x, z, R, env.cell, env.cell);
-      if (near && near.dist > R * env.cell * 0.82) {
+      // 판정 기준은 **보이는** 반경이다 — 훑는 반경으로 재면 화면 밖에 있는데도
+      // "안에 있다" 고 읽혀 테두리 표시가 안 뜬다.
+      const near = nearestLandmark(x, z, R_VISIBLE, env.cell, env.cell);
+      if (near && near.dist > R_VISIBLE * env.cell * 0.82) {
         const rr = W / 2 - 5;
         g.fillStyle = near.kind === 'fountain' ? COLOR.fountain : COLOR.clock;
         g.beginPath();
-        g.arc(c0 + Math.sin(near.bearing) * rr, c0 - Math.cos(near.bearing) * rr, 2.5, 0, Math.PI * 2);
+        // 지도가 `yaw` 만큼 돌았으므로 이 점도 같이 돌려야 실제 방향을 가리킨다.
+        // 안 돌리면 지도는 회전했는데 테두리 표시만 북쪽 기준으로 남아 어긋난다.
+        const b = near.bearing - yaw;
+        g.arc(c0 + Math.sin(b) * rr, c0 - Math.cos(b) * rr, 2.5, 0, Math.PI * 2);
         g.fill();
       }
     };

@@ -32,7 +32,8 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import { ALL_KINDS } from './parts/index.js';
 // URL 노브는 `url-knob.ts` 가 유일한 구현이다 — 여기·`postfx.ts`·`features/sky.ts` 가
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
-import { readNum } from './url-knob.js';
+import { readNum, readEnum } from './url-knob.js';
+import { TIMES, type SkyTime } from './decide/night.js';
 
 // 셀 크기는 **레이아웃이 소유한다.** 여기 `32` 를 다시 적으면 안 된다.
 //
@@ -147,6 +148,19 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let builder: PooledParcelBuilder | null = null;
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
   let features: MountedFeature[] = [];
+
+  /**
+   * 지금 몇 시인가 — **월드 상태이고 조립부가 소유한다**(팀장 판정 A-2, 2026-07-30).
+   *
+   * 하늘도 후보정도 이 값을 보고, 바꾸는 것은 `env.setTime` 하나다. 예전에는 하늘이
+   * 혼자 들고 있었고 후보정은 반구광 세기로 시간대를 **추측**했다 — 밤을 밝히는 커밋이
+   * 그 추측의 근거를 무너뜨려 블룸이 밤에 통째로 꺼졌다(`features/types.ts` 의 `time`
+   * 주석에 전말이 있다).
+   *
+   * 초기값은 URL 이다. `readEnum` 이 목록 밖 값을 걸러 주므로 팔레트 조회가 `undefined`
+   * 가 되는 일이 없다.
+   */
+  let timeOfDay: SkyTime = readEnum('time', 'night', TIMES);
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;
@@ -280,6 +294,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             scene, camera, adapter: adapter!, player, pools: pools!,
             sun: sun!, hemi: hemi!, cell: CELL_X,
             doc: typeof document !== 'undefined' ? document : null,
+            time: () => timeOfDay,
+            setTime: (t) => { timeOfDay = t; },
           },
           (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
         );
