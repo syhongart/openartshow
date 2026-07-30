@@ -234,13 +234,28 @@ describe('훅 배선 — 설정은 추적되지 않는다', () => {
     expect(src, 'ensureHooksWired() 가 없다 — 배선 복구 경로가 사라졌다').toContain('ensureHooksWired');
   });
 
-  it('현재 저장소에 훅이 실제로 배선돼 있다', () => {
-    // `npm run gate` 가 이 테스트를 돌리므로, 게이트를 한 번이라도 돌렸으면 배선돼 있다
-    // (ensureHooksWired 가 main() 첫 줄에서 복구한다).
+  // ── CI 에서는 건너뛴다 — 그리고 그것이 이 테스트의 교훈이다 ────────────────
+  // 첫 판본은 무조건 단언했고 주석에 이렇게 적었다: *"`npm run gate` 가 이 테스트를
+  // 돌리므로, 게이트를 한 번이라도 돌렸으면 배선돼 있다."* **로컬에서만 참이었다.**
+  // CI 는 `npm test` 를 직접 돌려 `ensureHooksWired()` 를 거치지 않으므로 갓 checkout
+  // 한 저장소에는 `core.hooksPath` 가 없다. 실측: run 30512622471 의 `verify` FAIL
+  // (`expected '' to be 'scripts/githooks'`, 1 failed | 1116 passed).
+  //
+  // **로컬 게이트 PASS 가 CI PASS 를 보증하지 않는 지점을 내가 스스로 만든 것이다** —
+  // 게이트가 테스트보다 먼저 환경을 바꾸고, 그 테스트가 바뀐 환경을 단언했다. 앞서
+  // executor 가 "훅이 클론에 안 따라간다" 를 드러냈을 때 `gate.mjs` 만 고치고 이 테스트가
+  // 같은 전제를 박아둔 것은 안 봤다.
+  //
+  // **단언을 약화시키는 것이 아니다.** CI 는 커밋하지 않으므로 pre-commit 훅 배선은 CI 의
+  // 검증 대상이 아니다(있어야 할 이유가 없다). 로컬에서는 단언이 그대로 남아 M7 뮤테이션
+  // (`ensureHooksWired()` 호출 제거)의 검출력이 유지된다 — 거기가 이 축이 의미를 갖는
+  // 유일한 환경이다.
+  it.skipIf(process.env.CI)('현재 저장소에 훅이 실제로 배선돼 있다 (로컬 전용)', () => {
     const r = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: ROOT, encoding: 'utf8' });
     expect(
       (r.stdout ?? '').trim(),
-      'core.hooksPath 가 scripts/githooks 가 아니다 — pre-commit 이 돌지 않는다',
+      'core.hooksPath 가 scripts/githooks 가 아니다 — pre-commit 이 돌지 않는다.\n'
+      + '  `npm run gate` 를 한 번 돌리면 ensureHooksWired() 가 복구한다.',
     ).toBe('scripts/githooks');
   });
 });
