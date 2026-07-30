@@ -20,6 +20,7 @@ import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
+import { attachDiagBadge } from './ui/diag-badge.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
 import {
   FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics, prewarmFeatures,
@@ -460,6 +461,46 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 세션 내내 상수"인데, 잴 수단이 없으면 그 주장은 검증할 수 없는 문장일 뿐이다.
   // 실제로 첫 스모크에서 이 항목이 "측정 불가"로 남았고, 그건 검증기의 잘못이 아니라
   // 측정 지점을 안 만들어 둔 설계의 잘못이었다.
+  /**
+   * 개수·상태 스냅샷. **진단의 유일한 출처다.**
+   *
+   * 변수로 빼 둔 이유: 화면 배지(`ui/diag-badge.ts`)도 이것을 읽는다. 배지가 따로 값을
+   * 계산하면 그것이 값 미러링이고, 화면과 실제가 갈리는 순간 배지는 거짓말하는 장치가
+   * 된다 — 진단을 못 믿게 되면 안 만든 것보다 나쁘다.
+   */
+  const statsSnapshot = () => ({
+    backend: adapter!.backend,
+    order: kernel!.order,
+    /** 부하 배수. 리포트만 보고 "어느 밀도에서 잰 것인가"를 알 수 있어야 한다. */
+    density,
+    /** 걷는 감각 파라미터. 감독 실기기 비교에서 "어느 값이었나"를 리포트가 답해야 한다 */
+    feel: { walkSpeed, eyeHeight, bobAmplitude },
+    // 플레이어 상태 — "조작이 실제로 이동으로 이어졌는가"를 재는 유일한 지점이다.
+    // 파셀 수만 봐서는 알 수 없다(정상 상태에서도 같은 값이다).
+    player: { ...player.position, ...player.angles },
+    frame: adapter!.frameStats(),
+    pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
+    pools: pools!.stats(),
+    stream: streaming!.stats(),
+    adapt: adapt!.snapshot(),
+    // 슬롯이 모자라 못 그린 부품 수. 0이 아니면 `poolBudget` 산정이 틀린 것이다 —
+    // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
+    // 여유 배수를 1로 내린 뒤로는 이 값이 예산의 유일한 감시 수단이다.
+    builder: builder!.stats(),
+    /** 켜진 기능 목록 — 리포트만 보고 "무엇이 켜진 상태에서 잰 것인가"를 알 수 있어야 한다 */
+    features: features.map((m) => m.name),
+    // 기능별 진단. **여기에 기능별 분기가 없다** — 각 기능이 스스로 내놓는다.
+    // 기능을 빼면 진단에서도 저절로 사라진다(예전에는 `sky:` 키가 여기 박혀 있었다).
+    ...collectDiagnostics(features),
+    hidden: typeof document !== 'undefined' && document.hidden,
+  });
+
+  // ── 화면 진단 배지 (`?diag=1`) ────────────────────────────────────────────
+  // 위 스냅샷은 콘솔에서만 볼 수 있었고, 감독 기기는 폰이다. **잴 수 있는데 볼 수 없으면
+  // 진단이 없는 것과 같다** — 블룸이 밤에 꺼져 있던 것을 감독이 *"둘다 꺼짐"* 이라고만
+  // 말할 수 있었던 이유다. 기본은 꺼짐(이 화면의 목적은 캡처다).
+  const diag = attachDiagBadge(document, statsSnapshot);
+
   (window as unknown as Record<string, unknown>).__world2 = {
     /** 부팅 단계별 경과(ms) */
     timeline,
@@ -483,32 +524,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     /** 이동 축(-1..1). 프레임이 돌아야 실제로 움직인다 — 시간 기반이다 */
     move: (x: number, z: number) => player.setAxes(x, z),
     /** 현재 개수 스냅샷 — 불변식 검사는 이 값을 프레임 간 비교해 판정한다 */
-    stats: () => ({
-      backend: adapter!.backend,
-      order: kernel!.order,
-      /** 부하 배수. 리포트만 보고 "어느 밀도에서 잰 것인가"를 알 수 있어야 한다. */
-      density,
-      /** 걷는 감각 파라미터. 감독 실기기 비교에서 "어느 값이었나"를 리포트가 답해야 한다 */
-      feel: { walkSpeed, eyeHeight, bobAmplitude },
-      // 플레이어 상태 — "조작이 실제로 이동으로 이어졌는가"를 재는 유일한 지점이다.
-      // 파셀 수만 봐서는 알 수 없다(정상 상태에서도 같은 값이다).
-      player: { ...player.position, ...player.angles },
-      frame: adapter!.frameStats(),
-      pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
-      pools: pools!.stats(),
-      stream: streaming!.stats(),
-      adapt: adapt!.snapshot(),
-      // 슬롯이 모자라 못 그린 부품 수. 0이 아니면 `poolBudget` 산정이 틀린 것이다 —
-      // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
-      // 여유 배수를 1로 내린 뒤로는 이 값이 예산의 유일한 감시 수단이다.
-      builder: builder!.stats(),
-      /** 켜진 기능 목록 — 리포트만 보고 "무엇이 켜진 상태에서 잰 것인가"를 알 수 있어야 한다 */
-      features: features.map((m) => m.name),
-      // 기능별 진단. **여기에 기능별 분기가 없다** — 각 기능이 스스로 내놓는다.
-      // 기능을 빼면 진단에서도 저절로 사라진다(예전에는 `sky:` 키가 여기 박혀 있었다).
-      ...collectDiagnostics(features),
-      hidden: typeof document !== 'undefined' && document.hidden,
-    }),
+    stats: statsSnapshot,
   };
 
   return {
@@ -518,6 +534,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       input.dispose();
       touch.dispose();
       hud?.dispose();
+      diag?.dispose(); // setInterval 을 남기면 페이지를 떠난 뒤에도 계속 돈다
       mapDrawer?.dispose();
       // 기능 정리. System의 `dispose`는 커널이 부르므로, 여기서는 기능이 따로 붙인
       // UI·리스너만 거둔다. 여기에도 기능별 분기가 없다.
