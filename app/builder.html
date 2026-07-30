@@ -36,6 +36,37 @@
     background:radial-gradient(135% 68% at 12% 0%, rgba(255,255,255,.14), transparent 56%)} /* 유리 상단 sheen */
   .plate.hero{background:var(--glass-hero);border-radius:var(--r-xl);box-shadow:var(--sh-hero), var(--glass-hi), var(--glass-lo)}
 
+  /* ── HUD 책갈피 접기 (감독 지시 2026-07-30) ─────────────────────────────
+     *"기본은 깨끗한 화면으로 둘수있도록 HUD, 맵을 책갈피로 접을수있게 만들고
+       디폴트가 접는 것으로 해서. 너도 잘 체크하고 나도 체크할수있게."*
+
+     두 가지를 동시에 푼다: ① 작가가 자기 공간을 크롬 없이 본다 ② 헤드리스 검증에서
+     캔버스만 측정된다 — 하늘 색 확정을 4회 실패했고 마지막 원인이 HUD가 화면 상단을
+     덮어 캔버스가 아니라 HUD를 재고 있었던 것이다.
+
+     접는 대상은 **상시 크롬**이다. `hud-context`(파츠 선택 시 편집 UI)는 접지 않는다 —
+     접으면 선택은 되는데 편집이 불가해 기능이 사라진다. walk 힌트도 모드 전용이라 제외. */
+  body.hudoff .hud-info,
+  body.hudoff .hud-modebar,
+  body.hudoff .hud-settings,
+  body.hudoff .hud-dock,
+  body.hudoff .hud-gizmo,
+  body.hudoff .hud-minimap,
+  body.hudoff .hud-toolbar{opacity:0;pointer-events:none;transform:translateY(-6px);
+    transition:opacity .22s cubic-bezier(.2,.8,.2,1), transform .22s cubic-bezier(.2,.8,.2,1)}
+  /* 책갈피 — 접힌 상태에서 **유일한 진입 어포던스**이므로 항상 보인다.
+     화면 우상단 모서리에 얇게 걸린 형태(책에 끼운 갈피). */
+  .hud-bookmark{position:fixed;top:0;right:22px;z-index:40;appearance:none;cursor:pointer;
+    padding:7px 13px 9px;border:1px solid var(--line);border-top:0;
+    border-radius:0 0 var(--r-md) var(--r-md);background:var(--glass-hero);
+    box-shadow:var(--sh-plate), var(--glass-hi);color:var(--dim);
+    font:inherit;font-size:11px;font-weight:600;letter-spacing:.04em;
+    display:flex;align-items:center;gap:7px;transition:.2s}
+  .hud-bookmark:hover,.hud-bookmark:focus-visible{color:var(--ink);border-color:var(--violet)}
+  .hud-bookmark .chev{width:9px;height:9px;border-right:1.6px solid currentColor;
+    border-bottom:1.6px solid currentColor;transform:rotate(45deg) translateY(-1px);transition:transform .22s}
+  body:not(.hudoff) .hud-bookmark .chev{transform:rotate(-135deg) translateY(-1px)}
+
   /* ↖ 정보 플레이트(히어로) */
   .hud-info{top:16px;left:16px;padding:14px 20px 13px 16px;min-width:194px}
   .hud-info .titlerow{display:flex;align-items:center;gap:9px;margin-bottom:11px}
@@ -332,20 +363,22 @@
   .hud-context .mini.on{background:var(--violet);border-color:var(--violet);color:#fff} /* 이동 토글 활성 표시 */
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/builder-BtnWOaZv.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/builder-BLr4QwsQ.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-VwdBOMVL.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-qSFwv9H7.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/BufferGeometryUtils-CzUCobaM.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/GLTFLoader-DZlxPmcS.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/chibi-builder-v2-DSbP8kZm.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/scene-textures-qKSHayRs.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-assembler-HfbSN_0g.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-lightmap-DvcveMyr.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-presets-BigHWqQa.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/scene-textures-B36ZqzXf.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-assembler-D3fhz6Ic.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-lightmap-BbAIqNJB.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/space-presets-DO3gtYhT.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-aZ7HCW1S.js">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
 </head>
-<body>
+<!-- `hudoff` = HUD 접힘. **디폴트가 접힘이다**(감독 지시) — HTML 에 직접 박아 첫 페인트
+     부터 접힌 상태로 뜨게 한다. JS 로 나중에 붙이면 크롬이 한 프레임 번쩍인다. -->
+<body class="hudoff">
 <div id="stage"><canvas id="c"></canvas></div>
 
 <!-- 리퀴드 글래스 굴절 필터(backdrop 왜곡 = IOR 느낌). scale이 유리 두께/굴절 강도. -->
@@ -356,6 +389,12 @@
 </filter></svg>
 
 <!-- ↖ 정보(히어로) -->
+<!-- HUD 책갈피 — 디폴트 접힘(body.hudoff)이므로 이것이 최초 진입점이다 (감독 지시) -->
+<button class="hud-bookmark" id="bHudToggle" type="button"
+        aria-controls="hudChrome" aria-expanded="false" aria-label="작업 도구 펼치기·접기">
+  <span class="chev"></span><span id="hudToggleLab">도구</span>
+</button>
+
 <div class="plate hero hud-info desk">
   <div class="titlerow"><span class="tick"></span><span class="title" id="spaceTitle">나의 공간</span><span class="pill">파츠 <b id="nParts">0</b></span></div>
   <div class="gauge-lab"><span>작품 · 영상</span><b><span id="nCap">0</span>/80</b></div>
