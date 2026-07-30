@@ -13,7 +13,6 @@ import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
 import { PART_TYPES, FRAME_RULES } from './space.js';
 import { createPlasterMaps, createParquetMaps, createConcreteMaps } from './scene.js';
-import { getWindowSceneryTexture, WINDOW_EMISSIVE_INTENSITY } from './sky-proc.js';
 
 // 미술관(scene.js) 프로시저럴 텍스처+노말맵 계승(감독: 노말맵 필수). 생성기(createPlasterMaps 등)는
 // 내부 싱글톤 캐시를 반환 → _texCache[key]는 scene.js 고정 미술관(라이브)과 "같은 base 객체". 절대 mutate 금지.
@@ -237,20 +236,7 @@ export const MATS = {
   // 배치4(좌석·안내·구조 세트) 전용
   lounge:     () => SM({ color: 0xffffff, roughness: 0.72, metalness: 0, vertexColors: true }), // 라운지 쿠션 — 정점색 패브릭 투톤(LOUNGE_PALETTE), 스툴 패드와 공유
   reception:  () => SM({ color: 0xffffff, roughness: 0.55, metalness: 0, vertexColors: true }),  // 안내데스크 몸체 — 정점색 2톤(스톤 플린스+우드 전면 패널)
-  // 창 유리 — opacity 반투명 + emissive("빛 든" 느낌, 실제 THREE.Light 0, transmission 금지).
-  // **창밖 풍경**(하늘+수평선+바다)을 `map` 과 `emissiveMap` 에 **같은 텍스처로** 물린다.
-  // map 만으로는 안 된다: 유리 뒤에 벽 마감이 그대로 있고 알파 블렌딩이
-  //   최종색 = 유리색 × 0.34 + 벽색 × 0.66
-  // 이라 66% 가 벽색이라 텍스처가 흰 벽에서 "밋밋한 회색 사각형" 이 됐다(디자이너 실측).
-  // emissive 는 씬 조명에 곱해지지 않으므로 벽 마감(흰·warmsand·차콜) 무엇이든 같은
-  // 밝기로 뚫고 나온다 — 3종 전부에서 수평선·바다 판독 확인.
-  // 텍스처는 세션당 1회 생성돼 모든 창이 공유한다(정적 배경화, 파츠별 고유성 불필요).
-  windowGlass: () => SM({
-    color: 0xe4eef1, roughness: 0.12, metalness: 0.04, transparent: true, opacity: 0.34,
-    map: getWindowSceneryTexture(),
-    emissive: 0xfff0cf, emissiveMap: getWindowSceneryTexture(),
-    emissiveIntensity: WINDOW_EMISSIVE_INTENSITY,
-  }),
+  windowGlass: () => SM({ color: 0xe4eef1, roughness: 0.12, metalness: 0.04, transparent: true, opacity: 0.34, emissive: 0xfff0cf, emissiveIntensity: 0.28 }), // 창 유리 — opacity 반투명 + 옅은 emissive("빛 든" 느낌, 실제 THREE.Light 0, transmission 금지)
 };
 // 마감 스와치 → 재질
 const FINISH_MAT = {

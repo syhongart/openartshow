@@ -3,8 +3,9 @@
 //   canvasToNormalTexture·파케/회반죽/콘크리트/잔디 맵·수피/잎 재질군·
 //   sharedTreeMats·getAOStripTexture + 캐시 싱글톤 8개 전부(단일 소유 —
 //   분산 시 텍스처 힙 2배). createParquetMaps는 무캐시 유지. scene.js에서 분해(C-3 S1).
-//   renderSkyTexture는 scene-scenery.ts에서 이동(2026-07-30) — world1 하늘돔과 공간
-//   빌더가 공유하는 유일 정의다(파일 끝).
+//   renderSkyTexture는 scene-scenery.ts에서 이동(2026-07-30, 팀장 (C) 판정) — 텍스처
+//   생성기라는 이 모듈의 책임과 동형이라 여기 둔다(파일 끝). 현재 소비자는 world1
+//   하늘돔 하나다(빌더는 하늘을 쓰지 않는다 — 감독 판정: "빌더는 룸꾸미기").
 import * as THREE from 'three';
 
 // 시드 고정 LCG — 실행마다 동일한 배치/텍스처
@@ -549,10 +550,9 @@ export function getAOStripTexture() {
 
 // ---------------------------------------------------------------------------
 // 하늘 텍스처 (그라디언트 + 별 + 구름) — 스펙 객체 → CanvasTexture 순수 생성기.
-//   scene-scenery.ts 에서 이동(2026-07-30, 팀장 (C) 판정). world1 하늘돔과 공간
-//   빌더 하늘 배경이 **같은 드로잉을 공유한다** — 복사하면 그라디언트·구름·별이
-//   두 곳에 미러링되고, 이 저장소는 그 형태로 이미 사고를 냈다(캔버스 rgba 가 HAZE
-//   상수와 따로 논 건, 구름 고도 하드코딩). 본문은 이동 시 무변경.
+//   scene-scenery.ts 에서 이동(2026-07-30, 팀장 (C) 판정). 본문은 이동 시 무변경.
+//   소비자는 world1 하늘돔이다(`scene-scenery.ts`). world2 는 자체 하늘 엔진(`sky.js`)을
+//   쓰므로 이 함수를 거치지 않는다.
 // ---------------------------------------------------------------------------
 export function renderSkyTexture(sky) {
   const size = 1024;

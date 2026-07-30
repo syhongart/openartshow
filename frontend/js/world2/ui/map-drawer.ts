@@ -36,7 +36,17 @@ export function findMapDrawer(doc: Document): MapDrawerParts | null {
   return wrap && tab ? { wrap, tab } : null;
 }
 
-export function attachMapDrawer(parts: MapDrawerParts, startOpen = true): MapDrawer {
+// ── 기본은 **접힘**이다 (감독 지시 2026-07-30) ──────────────────────────────
+// *"월드2에서 캡쳐하면 지도, HUD때문에 안보일테니깐. 책갈피로 감춰지게하자."*
+//
+// 캡처가 이 화면의 목적 중 하나다 — 작가가 자기 공간을 담아 보여주는 것. 지도가 늘
+// 펼쳐져 있으면 그 캡처마다 왼쪽이 UI 로 먹힌다. 성능 패널(`#w2-hud`)은 이미
+// `data-open="0"` 으로 접혀 있었고, 지도만 열려 있었다.
+//
+// 기본값을 바꾸는 것으로 끝내고 새 코드를 만들지 않는다 — 책갈피·토글·transform 접기가
+// 이미 여기 다 있다. **`world2.html` 의 `data-open` 속성도 함께 `0` 으로 맞춘다**:
+// 두 곳이 어긋나면 첫 페인트에 지도가 펼쳐진 채 뜨고 이 함수가 접으면서 번쩍인다.
+export function attachMapDrawer(parts: MapDrawerParts, startOpen = false): MapDrawer {
   let open = startOpen;
 
   const apply = () => {

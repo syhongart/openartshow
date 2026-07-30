@@ -227,9 +227,11 @@
   <div id="w2-stick" data-on="0"><div id="w2-stick-knob"></div></div>
 
   <!-- 성능 HUD. 모바일에는 콘솔이 없어 화면 표시 + 복사가 실기기 수치를 받는 유일한 경로다. -->
-  <div id="w2-mapwrap" data-open="1">
+  <!-- 기본 접힘(감독 지시 2026-07-30 "캡쳐하면 지도, HUD때문에 안보일테니깐"). `attachMapDrawer`
+       의 startOpen=false 와 **같은 값이어야 한다** — 어긋나면 첫 페인트에 지도가 번쩍인다. -->
+  <div id="w2-mapwrap" data-open="0">
     <div class="sheet"><canvas id="w2-map" width="192" height="192" aria-hidden="true"></canvas></div>
-    <button id="w2-map-tab" type="button" aria-expanded="true" aria-controls="w2-map" aria-label="지도 접기">‹</button>
+    <button id="w2-map-tab" type="button" aria-expanded="false" aria-controls="w2-map" aria-label="지도 펼치기">›</button>
   </div>
 
   <div id="w2-hud" data-open="0">
