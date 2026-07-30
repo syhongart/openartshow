@@ -1,0 +1,119 @@
+#!/usr/bin/env node
+// scripts/gate.mjs — 게이트 조립을 코드로 고정한다. `npm run gate`
+//
+// ── 왜 스크립트인가 (감독 지시 2026-07-30) ──────────────────────────────────
+// 감독: *"지금보니 너 동작할때 자꾸 빠뜨리고. 실패하고. 우리 메모리 기능을 넣을까?"*
+//
+// 실측으로 원인을 나눴다. CLAUDE.md 는 이미 17,756자·규율 29개다. 그날 어긴 것 중
+// 셋은 **적혀 있는데 어긴 것**이었고(문서를 늘려도 무효), 둘은 **아예 안 적힌 것**
+// 이었다. 그리고 가장 여러 번 반복된 실패는 셋 다 아니었다 — **게이트를 매번 손으로
+// 조립한 것**이다.
+//
+//   1회차: `npm run lint; npm run typecheck; npm test` 처럼 `;` 로 나열
+//          → 읽는 사람이 판정자가 되고, typecheck=2 를 화면에서 보고도 커밋했다
+//   2회차: `set -e` 로 고쳤다. 그런데 `| tail -4` 로 파이프했다
+//          → **pipefail 이 없으면 종료코드가 tail 의 것(0)** 이라 set -e 가 안 걸린다
+//          → 또 typecheck 에러를 화면에 띄운 채 "게이트 4종 전부 통과" 라고 적었다
+//
+// 두 번 다 형태만 달랐고 원인은 같다: **매번 손으로 조립하니 매번 다르게 틀렸다.**
+// 조립을 없애면 틀릴 자리가 없어진다. Node 는 자식 프로세스의 종료코드를 직접 받으므로
+// 파이프·pipefail 문제가 구조적으로 존재하지 않는다.
+//
+// ── 무엇을 안 하는가 ────────────────────────────────────────────────────────
+// 스모크(`smoke:vite`)는 넣지 않는다 — 브라우저를 띄워 수십 초가 걸리고, 배포 전
+// **독립 executor** 가 돌리는 것이 규율이다(§10-3, 구현자 본인 금지). 여기 넣으면
+// 구현자가 스모크를 돌리는 습관이 생긴다.
+
+import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+export const STAMP_PATH = join(ROOT, '.gate-stamp');
+
+/**
+ * 게이트 목록. **순서가 곧 실행 순서**이고 싼 것부터 둔다 — lint 로 걸릴 것을
+ * test 16초 뒤에 알 이유가 없다.
+ *
+ * `cmd` 는 package.json 의 script 이름이다. 여기에 명령줄을 직접 적지 않는다
+ * (그러면 package.json 과 값 미러링이 된다).
+ */
+export const GATES = [
+  { name: 'lint', cmd: 'lint' },
+  { name: 'typecheck', cmd: 'typecheck' },
+  // check:refs — `@ts-nocheck` 로 tsc 가 건너뛰는 .ts 모듈의 미해결 참조를 본다.
+  // ci.yml:46 과 스모크에는 배선돼 있었으나 **로컬 게이트에만 빠져 있었다**(신설한
+  // tests/gate.test.ts 가 첫 실행에서 잡았다). 로컬에서 통과한 것이 CI 에서 깨지는
+  // 상태였고, 이 검사가 보는 것은 런타임 ReferenceError 라 가장 늦게 알면 안 된다.
+  { name: 'check:refs', cmd: 'check:refs' },
+  { name: 'check:gitadd', cmd: 'check:gitadd' },
+  { name: 'check:devlog-times', cmd: 'check:devlog-times' },
+  { name: 'test', cmd: 'test' },
+];
+
+/** 현재 index 의 트리 해시. 커밋될 내용을 그대로 가리킨다. */
+export function indexTreeHash(cwd = ROOT) {
+  const r = spawnSync('git', ['write-tree'], { cwd, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
+
+function run(gate) {
+  const label = gate.name.padEnd(20);
+  process.stdout.write(`  ${label} `);
+  const r = spawnSync('npm', ['run', '--silent', gate.cmd], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    // 출력을 삼키지 않는다 — 실패했을 때 왜 실패했는지 그대로 보여준다.
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const code = r.status ?? -1;
+  if (code === 0) {
+    console.log('PASS (exit 0)');
+    return { ...gate, code, out: r.stdout ?? '', err: r.stderr ?? '' };
+  }
+  console.log(`FAIL (exit ${code})`);
+  return { ...gate, code, out: r.stdout ?? '', err: r.stderr ?? '' };
+}
+
+function main() {
+  let failed = null;
+  for (const gate of GATES) {
+    const res = run(gate);
+    if (res.code !== 0) {
+      failed = res;
+      break; // 첫 실패에서 멈춘다. 뒤를 돌려도 정보가 늘지 않고 시간만 쓴다.
+    }
+  }
+
+  if (failed) {
+    console.log('');
+    console.log(`── ${failed.name} 실패 출력 ${'─'.repeat(40)}`);
+    const body = `${failed.out}\n${failed.err}`.trim().split('\n');
+    // 앞부분이 아니라 **뒤 40줄**을 보여준다 — 에러 요약이 보통 끝에 있다.
+    console.log(body.slice(-40).join('\n'));
+    console.log('─'.repeat(60));
+    console.log('');
+    console.log(`게이트 실패: ${failed.name} (exit ${failed.code})`);
+    console.log('스탬프를 쓰지 않았다 — pre-commit 훅이 커밋을 막는다.');
+    return 1;
+  }
+
+  // ── 스탬프 ────────────────────────────────────────────────────────────────
+  // 통과했으면 **그때의 index 트리 해시**를 남긴다. pre-commit 훅이 이것과 현재 해시를
+  // 비교해 "게이트를 통과한 그 내용이 맞는지" 본다. 통과 후 파일을 더 고치면 해시가
+  // 달라지므로 다시 돌려야 한다 — 그게 맞다.
+  const tree = indexTreeHash();
+  if (tree) writeFileSync(STAMP_PATH, `${tree}\n`, 'utf8');
+
+  console.log('');
+  console.log(`게이트 ${GATES.length}종 전부 exit 0.${tree ? ` 스탬프: ${tree.slice(0, 12)}` : ''}`);
+  return 0;
+}
+
+// **실행 가드.** 이것이 없으면 `import { GATES }` 만 해도 게이트가 통째로 돌아간다 —
+// 실제로 그랬고, 그래서 게이트 목록을 검사하는 테스트를 쓸 수 없었다(테스트가 게이트를
+// 부르고 그 게이트가 테스트를 부르는 재귀가 된다). 부작용을 실행 경로에 가둔다.
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  process.exit(main());
+}

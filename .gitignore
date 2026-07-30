@@ -115,5 +115,5 @@ qa-tmp/
 /sitemap.xml
 /robots.txt
 
-# 게이트 통과 스탬프 (scripts/gate.mjs — claude/gate-enforcement 에서 신설)
+# 게이트 통과 스탬프 (scripts/gate.mjs → scripts/githooks/pre-commit)
 /.gate-stamp

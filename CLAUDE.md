@@ -24,6 +24,9 @@ GitHub Pages 정적 호스팅. "파라미터가 곧 공간/아바타" (무저장
 - **자기완결**: 외부 호스트 0(CDN·폰트·이미지·GLB 금지). CSP `default-src 'self'`. three는 `/vendor/three.module.js`.
 - **IP**: 특정 게임/브랜드 트레이드드레스·실존 상호·인물 금지. 파츠 에셋은 자작 지오메트리만(외부 에셋은 §6 법무).
 - **커밋**: `git config user.email noreply@anthropic.com` / `user.name Claude`. push는 `-u origin <branch>` + 실패 시 지수백오프 재시도. **모델 식별자를 커밋·PR·코드·아티팩트에 넣지 않는다**(채팅 한정).
+- **게이트는 `npm run gate` 하나다 — 손으로 조립하지 않는다** (감독 지시 2026-07-30 *"자꾸 빠뜨리고 실패하고"*). `git add` 를 마친 뒤 돌리고, 통과하면 index 트리 해시가 `.gate-stamp` 에 남고 `scripts/githooks/pre-commit` 이 그것을 대조해 **불일치·미실행이면 커밋을 막는다**(실측: 게이트 실패 시·게이트 후 파일 변경 시·스탬프 없을 때 3케이스 전부 차단). 훅 설치는 `.claude/settings.json` 의 SessionStart 가 `core.hooksPath` 로 한다.
+  **왜 구조로 옮겼나** — 같은 실패를 두 번 했고 원인이 같았다. ① `;` 로 나열해 typecheck=2 를 화면에서 보고도 커밋 ② `set -e` 로 고쳤으나 `| tail` 로 파이프해 **pipefail 부재로 종료코드가 삼켜져** 또 통과로 적었다. 형태만 달랐고 **매번 손으로 조립하니 매번 다르게 틀렸다.** 조립을 없애면 틀릴 자리가 없다. 스모크는 넣지 않는다(§10-3 독립 executor 소관).
+- **위임 프롬프트는 [docs/DELEGATION.md](docs/DELEGATION.md) 의 블록을 복사해서 쓴다.** 손으로 조항을 쓰면 빠진다 — executor 에게 *"테스트를 느슨하게 만들지 말 것"* 을 안 적어서 실제 산술 단언이 전부 null 기대로 바뀐 채 CI 를 통과했고, 검수관 반려(블로커 4건) → 재작업이 났다. 조항 한 줄이 없어서다.
 - **스크래치**: 임시 파일은 세션 스크래치패드에. 헤드리스 QA 하네스는 `/opt/pw-browsers` 크로미움 + swiftshader. **작업 종료 시 스크래치 임시 파일(스크립트·스크린샷·로그)은 즉시 정리한다**(매 턴 재주입·컨텍스트 누적 방지).
 
 ## 토큰·컨텍스트 절약 (부팀장 운영 규율)
