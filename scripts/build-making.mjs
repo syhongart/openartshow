@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { shell } from './lib/site-shell.mjs';
 import { calculateTeamComposition } from './lib/devlog-contributors.mjs';
-import { countEntries } from './lib/devlog-entries.mjs';
+import { countEntries, parseEntries } from './lib/devlog-entries.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_HUB = join(ROOT, 'making');
@@ -98,13 +98,9 @@ writeFileSync(join(ROOT, 'valuation/index.html'), redirectHtml('valuation'));
 
 // sitemap — 모든 페이지를 통합 생성
 const baseUrl = 'https://syhongart.github.io/openartshow';
-const devlogEntries = devlogSrc
-  .split(/\n(?=## )/)
-  .map(b => {
-    const m = b.match(/^## (\d{4}-\d{2}-\d{2}) · (.+)\n/);
-    return m ? { date: m[1] } : null;
-  })
-  .filter(Boolean);
+// 파싱은 SSOT 경유(`devlog-entries.mjs`) — 자체 정규식을 두면 제목 줄의 시각을
+// 모르는 파서가 되고, 그 순간 항목을 조용히 버려 sitemap 의 lastmod 가 낡는다.
+const devlogEntries = parseEntries(devlogSrc);
 
 const lastDate = devlogEntries.length > 0 ? devlogEntries[0].date : new Date().toISOString().slice(0, 10);
 

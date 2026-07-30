@@ -1,98 +1,82 @@
 // scripts/lib/devlog-times.mjs
-// DEVLOG.md 의 항목별 작성 시각을 git 커밋 로그에서 유도한다.
+// 개발일지 항목별 **작성 시각**의 조회 계층. 동결 데이터를 읽는다.
 //
-// 목표: build-team.mjs 의 입사일·마지막 활동을 "월일 시·분"까지 표시.
+// ── 이 모듈은 git 을 보지 않는다 (2026-07-30 재설계) ──────────────────────────
+// 1차 판본은 매 호출마다 `git log -p -- docs/DEVLOG.md` 를 파싱했다. 검수관이 반려
+// 했고, 반려 사유가 예상보다 나빴다:
 //
-// 문제: DEVLOG.md 에 시각이 없다(## 2026-07-29 · 제목만 있음).
+//   CI checkout 은 shallow(`fetch-depth: 1`)다. shallow 에서는 유일 커밋이 "DEVLOG
+//   전체를 새로 추가" 한 diff 로 보이므로 **139개 항목 전부가 체크아웃 시각 하나로
+//   수렴한다.** 실측(검수관, `git clone --depth=1`): 고유 시각 개수 = 1.
 //
-// 방법: git log 로 DEVLOG 변경 커밋을 순회하고, "어느 커밋에서 어느 항목이
-// 추가됐는가" 를 파싱한다.
-//   git log --reverse --format="C|%aI" -p --unified=0 -- docs/DEVLOG.md
-// 에서 `C|<ISO8601>` 뒤의 `+## YYYY-MM-DD · 제목` 줄들이 그 커밋에서
-// 추가된 항목이다 → 제목 → 커밋시각 맵.
+// 즉 실패가 아니라 **그럴듯하게 틀린 값**이 조용히 흘렀다. 1차 판본의 이 자리 주석은
+// "(a) 시각을 못 얻으면 null" 이라고 적어놨는데 코드가 그렇게 동작하지 않았다 —
+// 문서가 틀린 것을 보증하고 있었다. 이 저장소가 반복해 겪은 형태다.
 //
-// 한계 셋:
-// (a) CI 는 shallow clone (기본값 fetch-depth: 1). 시각을 못 얻으면 null.
-// (b) 시각을 못 찾은 항목을 0시로 채우지 말 것 — 못 잰 것을 통과로 적는 것.
-// (c) 초기 일괄 커밋은 여러 항목이 한 커밋에 들어가 개별 시각이 아니다.
+// 그래서 축을 없앴다. 시각은 `docs/devlog-times.json` 에 **동결**돼 있고
+// `scripts/extract-devlog-times.mjs` 가 full clone 에서만(shallow 면 거부) 만든다.
+// shallow 클론에서도 결과가 같다 — 읽는 것이 파일이기 때문이다.
+//
+// ── 시각의 두 출처와 우선순위 ────────────────────────────────────────────────
+//   ① DEVLOG 제목 줄        `## 2026-07-30 08:15 · 제목`   ← 사람이 적은 값. 이긴다.
+//   ② 동결 JSON (git 유래)  과거 139건
+//   ③ 없으면 null           — 0시로 채우지 않는다
+//
+// ①이 이기는 이유: 사람이 직접 적은 시각은 **실제 작업 시각**이고 git 커밋 시각은
+// "개발일지를 쓴 시각" 이다. 후자가 전자를 덮어쓰면 정확한 값이 부정확한 값에 밀린다.
+// 그리고 ①로 적힌 것은 일괄 기록일 수 없다(그 항목을 쓰는 순간 적은 값이다).
 
-import { execSync } from 'node:child_process';
+import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { kstTimeOfIso } from './kst.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const FROZEN_PATH = join(ROOT, 'docs', 'devlog-times.json');
 
 /**
- * git log 에서 DEVLOG.md 변경을 파싱해 항목별 시각 맵을 만든다.
+ * 동결 데이터를 읽는다.
  *
- * @returns {{times: Object.<string, string|null>, unavailable: string|null}}
- *          times: 제목 → ISO8601 시각 (또는 null 시각을 못 찾은 경우)
- *          unavailable: null(정상) | 'shallow'(shallow clone) | 'git-failed'(git 명령 실패)
+ * 파일이 없거나 깨졌으면 **빈 데이터**를 돌린다(예외를 던지지 않는다) — 시각 표시는
+ * 부가 기능이고 없으면 날짜만 나오면 된다. 다만 "파일이 없어서 비었다" 와 "읽었는데
+ * 비었다" 를 `available` 로 구별한다. 못 잰 것을 통과로 적지 않기 위해서다.
  *
- * 한계:
- * - shallow clone 이면 unavailable='shallow' 를 반환하고 times={} 빈 맵.
- * - git 명령 실패 이면 unavailable='git-failed' 를 반환하고 times={} 빈 맵.
- * - 초기 일괄 커밋에서 여러 항목이 함께 추가되면 전부 같은 시각이다.
- *   그것은 개별 작업 시각이 아니라 "개발일지를 쓴 시각" — 이 한계를
- *   호출자가 명시해야 한다.
+ * @param {string} [path] 테스트가 다른 파일을 주입할 수 있게. 기본은 docs/devlog-times.json
+ * @returns {{times: Object<string,string>, bulkCommits: Set<string>, available: boolean}}
  */
-export function extractDevlogTimes() {
-  const times = {};
-  let unavailable = null;
-
-  try {
-    // shallow repository 감지 — 측정 불가 상태 판정
-    const isShallowOutput = execSync('git rev-parse --is-shallow-repository', {
-      cwd: ROOT,
-      encoding: 'utf8',
-    }).trim();
-
-    if (isShallowOutput === 'true') {
-      unavailable = 'shallow';
-      return { times, unavailable };
-    }
-
-    // git log: --reverse(오래→새), --format="C|%aI"(커밋시각 ISO 앞 마커),
-    // -p(패치), --unified=0(컨텍스트 0줄 — 변경 줄만).
-    // DEVLOG.md 만.
-    const log = execSync(
-      'git log --reverse --format="C|%aI" -p --unified=0 -- docs/DEVLOG.md',
-      { cwd: ROOT, encoding: 'utf8', maxBuffer: 1024 * 1024 }
-    );
-
-    const lines = log.split('\n');
-    let currentTime = null; // 현재 커밋 시각
-
-    for (const line of lines) {
-      // 커밋 마커: "C|<ISO8601>"
-      if (line.startsWith('C|')) {
-        currentTime = line.slice(2); // "C|" 제거
-      }
-      // 추가 줄: "+## YYYY-MM-DD · 제목"
-      // diff unified 형식에서 추가는 "+"로 시작.
-      else if (line.startsWith('+') && line.includes('## ')) {
-        const match = line.match(/^\+## \d{4}-\d{2}-\d{2} · (.+)$/);
-        if (match) {
-          const title = match[1].trim();
-          times[title] = currentTime; // null 일 수도, ISO 시각일 수도
-        }
-      }
-    }
-  } catch (e) {
-    // git 명령 실패 (git 미설치 등)
-    // 조용히 빈 맵 반환. 에러 던지지 말 것 — 호출자가 unavailable 로 판정한다.
-    unavailable = 'git-failed';
+export function loadFrozenTimes(path = FROZEN_PATH) {
+  if (!existsSync(path)) {
+    return { times: {}, bulkCommits: new Set(), available: false };
   }
-
-  return { times, unavailable };
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    return {
+      times: raw.times ?? {},
+      bulkCommits: new Set(raw.bulkCommits ?? []),
+      available: true,
+    };
+  } catch {
+    return { times: {}, bulkCommits: new Set(), available: false };
+  }
 }
 
 /**
- * 항목 제목에서 시각을 조회한다. 없으면 null.
- * @param {Object.<string, string|null>} timesMap extractDevlogTimes() 반환값의 times 필드
- * @param {string} title 항목 제목
- * @returns {string|null} ISO8601 시각 또는 null
+ * 항목 하나의 표시용 시각을 판정한다.
+ *
+ * @param {{key: string, time: string|null}} entry parseEntries() 항목
+ * @param {{times: Object<string,string>, bulkCommits: Set<string>}} frozen loadFrozenTimes() 결과
+ * @returns {{time: string|null, bulk: boolean}}
+ *   time  'HH:mm'(KST) 또는 null
+ *   bulk  이 시각이 **일괄 기록 커밋**에서 왔는가. true 면 실제 작업 시각이 아니므로
+ *         표시 측이 시각을 감춘다(build-team.mjs). 실측 50/139 건(36%)이 여기 해당한다.
  */
-export function getDevlogTime(timesMap, title) {
-  return timesMap[title] ?? null;
+export function timeInfoFor(entry, frozen) {
+  // ① 제목 줄에 적힌 시각이 이긴다.
+  if (entry.time) return { time: entry.time, bulk: false };
+
+  // ② 동결 JSON
+  const iso = frozen.times[entry.key];
+  if (!iso) return { time: null, bulk: false };
+
+  return { time: kstTimeOfIso(iso), bulk: frozen.bulkCommits.has(iso) };
 }

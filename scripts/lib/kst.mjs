@@ -30,4 +30,21 @@ export function kstDateTime(now = Date.now()) {
   return iso.slice(0, 16).replace('T', ' ');
 }
 
+/**
+ * ISO8601 문자열(예: git 커밋 시각 `2026-07-29T22:56:09+00:00`)을 KST 시·분으로.
+ *
+ * 동결된 커밋 시각은 UTC 로 적혀 있고 감독이 보는 화면은 KST 다. 이 변환을 여기 두는
+ * 이유는 `KST_OFFSET_MS` 를 재사용하기 위해서다 — 소비자가 `+9` 를 직접 더하면
+ * 오프셋이 두 곳에 적히고, 한쪽만 고쳐도 아무도 모른다.
+ *
+ * @param {string|null|undefined} iso ISO8601 시각. 없으면 null 을 돌린다(0시로 채우지 않는다).
+ * @returns {string|null} 'HH:mm' 또는 null
+ */
+export function kstTimeOfIso(iso) {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms + KST_OFFSET_MS).toISOString().slice(11, 16);
+}
+
 export { KST_OFFSET_MS };

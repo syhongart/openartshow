@@ -84,103 +84,24 @@ describe('항목 단위 집계', () => {
   });
 });
 
-describe('날짜 계산 — min/max 정렬 (없는 맵)', () => {
+describe('날짜 계산 — min/max 정렬', () => {
   // DEVLOG 날짜가 뒤섞여 있을 수 있으니 등장 순서가 아니라 날짜로 min/max 를 잡는다.
-  // joined·lastSeen 은 이제 ISO8601 시각 또는 null 이다.
-  // 픽스처는 git 정보가 없으므로 null 을 기대한다 (git 맵을 주입하지 않으면 측정 실패).
 
-  it('맵을 주입하지 않으면: joined/lastSeen = null (측정 실패)', () => {
-    // 등장 순서: 3월→1월→2월, 하지만 git 맵이 없으므로 null
+  it('날짜가 뒤섞인 경우 joined=최소 · lastSeen=최대', () => {
+    // 등장 순서: 3월→1월→2월, 하지만 joined 는 1월, lastSeen 은 3월
     const md = `## 2026-03-15 · 제목1\n\n감독이 했다.\n
 ## 2026-01-05 · 제목2\n\n감독이 했다.\n
 ## 2026-02-10 · 제목3\n\n감독이 했다.\n`;
-    const result = countContributions(md); // 맵 미주입 — 측정 실패
-    expect(result['director'].count).toBe(3);
-    expect(result['director'].joined).toBeNull();
-    expect(result['director'].lastSeen).toBeNull();
-  });
-});
-
-describe('날짜 계산 — min/max 정렬 (고정 맵 주입)', () => {
-  // countContributions(md, devlogTimesMap) 에 고정 맵을 주입해서
-  // 산술값을 검증한다. 이것이 블로커 2의 핵심 — 산술 경로를 실제로 깨뜨리는 뮤테이션 감지.
-
-  it('고정 맵을 주입해서 joined/lastSeen 산술값을 검증한다', () => {
-    const md = `## 2026-03-15 · 항목A\n\n감독이 했다.\n
-## 2026-01-05 · 항목B\n\n감독이 했다.\n
-## 2026-02-10 · 항목C\n\n감독이 했다.\n`;
-
-    // 고정 맵: 항목별 커밋 시각
-    const mockTimes = {
-      '항목A': '2026-03-15T14:32:00Z',
-      '항목B': '2026-01-05T10:00:00Z',
-      '항목C': '2026-02-10T09:30:00Z',
-    };
-
-    const result = countContributions(md, mockTimes);
-    expect(result['director'].count).toBe(3);
-    // min(항목B) = 2026-01-05, max(항목A) = 2026-03-15
-    expect(result['director'].joined).toBe('2026-01-05T10:00:00Z');
-    expect(result['director'].lastSeen).toBe('2026-03-15T14:32:00Z');
+    const result = countContributions(md);
+    expect(result['director'].joined).toBe('2026-01-05');
+    expect(result['director'].lastSeen).toBe('2026-03-15');
   });
 
-  it('한 항목만 있으면 joined === lastSeen (고정 맵)', () => {
-    const md = `## 2026-02-10 · 항목\n\n감독이 했다.\n`;
-    const mockTimes = {
-      '항목': '2026-02-10T09:30:00Z',
-    };
-    const result = countContributions(md, mockTimes);
-    expect(result['director'].count).toBe(1);
-    expect(result['director'].joined).toBe('2026-02-10T09:30:00Z');
-    expect(result['director'].lastSeen).toBe('2026-02-10T09:30:00Z');
-  });
-
-  it('맵에 없는 항목은 null 값으로 처리된다', () => {
-    const md = `## 2026-07-01 · 항목A\n\n팀장이 했다.\n
-## 2026-07-05 · 항목B\n\n팀장이 했다.\n`;
-
-    // 항목B 는 맵에 없음
-    const mockTimes = {
-      '항목A': '2026-07-01T10:00:00Z',
-      // '항목B': undefined → 기본값 null
-    };
-
-    const result = countContributions(md, mockTimes);
-    expect(result['lead'].count).toBe(2);
-    // 항목A 의 시각은 '2026-07-01', 항목B 는 null
-    // min(2026-07-01, null) = null, max 도 null? 아니, 둘 다 있으면 ISO, 하나가 null 이면?
-    // (날짜 배열에서 min/max 를 구하는데, null 을 무시해야 하나? 아니면 포함하나?)
-    // 현재 구현을 보면 data.dates 배열에서 sort 후 첫/마지막을 취하므로,
-    // 배열 원소는 { date, iso } 형태고, iso 는 null 일 수 있다.
-    // 즉, joined/lastSeen 이 null 이 될 수 있다 (일부가 null 이면).
-    expect(result['lead'].joined).toBeNull(); // 일부가 null 이므로
-  });
-
-  it('모든 항목이 맵에 있으면 min/max 산술값이 정확하다', () => {
-    const md = `## 2026-07-10 · 첫째\n\n부팀장이 했다.\n
-## 2026-07-01 · 둘째\n\n부팀장이 했다.\n
-## 2026-07-20 · 셋째\n\n부팀장이 했다.\n`;
-
-    const mockTimes = {
-      '첫째': '2026-07-10T15:00:00Z',
-      '둘째': '2026-07-01T08:30:00Z',
-      '셋째': '2026-07-20T16:45:00Z',
-    };
-
-    const result = countContributions(md, mockTimes);
-    expect(result['deputy-lead'].count).toBe(3);
-    // min = 2026-07-01, max = 2026-07-20
-    expect(result['deputy-lead'].joined).toBe('2026-07-01T08:30:00Z');
-    expect(result['deputy-lead'].lastSeen).toBe('2026-07-20T16:45:00Z');
-  });
-
-  it('한 항목만 있는 경우 joined === lastSeen (있다면)', () => {
+  it('한 항목만 있는 경우 joined === lastSeen', () => {
     const md = `## 2026-01-05 · 제목\n\n감독이 했다.\n`;
     const result = countContributions(md);
-    expect(result['director'].count).toBe(1);
-    // 픽스처는 null
-    expect(result['director'].joined).toBeNull();
-    expect(result['director'].lastSeen).toBeNull();
+    expect(result['director'].joined).toBe('2026-01-05');
+    expect(result['director'].lastSeen).toBe('2026-01-05');
   });
 
   it('미등장 역할은 joined/lastSeen = null', () => {
@@ -191,23 +112,19 @@ describe('날짜 계산 — min/max 정렬 (고정 맵 주입)', () => {
     expect(result['legal'].count).toBe(0);
   });
 
-  it('실제 DEVLOG 에서: joined 와 lastSeen 이 있다면 joined <= lastSeen', () => {
+  it('실제 DEVLOG 에서 모든 joined <= lastSeen', () => {
     const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8');
     const result = countContributions(src);
 
     for (const [roleId, data] of Object.entries(result)) {
       if (data.count > 0) {
-        // joined·lastSeen 은 이제 ISO8601 시각 또는 null.
-        // git log 가 동작하면 ISO 시각이 있고, shallow clone 이면 null 일 수도.
-        if (data.joined && data.lastSeen) {
-          // ISO 형식이므로 사전식 비교로 시간 비교 가능
-          expect(String(data.joined) <= String(data.lastSeen), roleId).toBe(true);
-        }
-        // joined·lastSeen 중 하나만 null 인 경우는 없어야 한다
-        // (둘 다 같은 로직으로 계산되므로 함께 null 이거나 함께 ISO)
-        const bothNull = data.joined === null && data.lastSeen === null;
-        const bothPresent = data.joined !== null && data.lastSeen !== null;
-        expect(bothNull || bothPresent, `${roleId}: joined 와 lastSeen 의 null/non-null 불일치`).toBe(true);
+        // tsc 가 `possibly null` 을 짚었다. 타입만 회피하지 않고 **단언으로 올린다** —
+        // 한 번이라도 등장했는데(count>0) 날짜가 없다면 그건 집계 자체의 결함이다.
+        // 회피(`!`·`as`)로 눌렀으면 그 결함이 조용히 통과했을 자리다.
+        expect(data.joined, `${roleId}: count>0 인데 joined 가 없다`).not.toBeNull();
+        expect(data.lastSeen, `${roleId}: count>0 인데 lastSeen 이 없다`).not.toBeNull();
+        // 문자열 날짜 비교: YYYY-MM-DD 형식이므로 사전식 비교가 곧 날짜 비교
+        expect(String(data.joined) <= String(data.lastSeen), roleId).toBe(true);
       }
     }
   });
@@ -250,20 +167,17 @@ describe('DEVLOG 전량', () => {
     }
   });
 
-  it('결과 시각이 ISO8601 또는 YYYY-MM-DD 형식이거나 null 이다', () => {
+  it('결과 날짜가 YYYY-MM-DD 형식이거나 null 이다', () => {
     const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8');
     const result = countContributions(src);
-    // ISO8601: 2026-07-29T14:32:00Z 또는 날짜만: 2026-07-29
-    const iso8601Re = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
     const dateRe = /^\d{4}-\d{2}-\d{2}$/;
 
     for (const [, data] of Object.entries(result)) {
       if (data.joined !== null) {
-        // ISO8601 또는 날짜만
-        expect(data.joined).toMatch(iso8601Re.test(data.joined) ? iso8601Re : dateRe);
+        expect(data.joined).toMatch(dateRe);
       }
       if (data.lastSeen !== null) {
-        expect(data.lastSeen).toMatch(iso8601Re.test(data.lastSeen) ? iso8601Re : dateRe);
+        expect(data.lastSeen).toMatch(dateRe);
       }
     }
   });
@@ -288,13 +202,12 @@ describe('DEVLOG 전량', () => {
 describe('API — contributionOf', () => {
   // 단건 조회 함수.
 
-  it('픽스처는 git 정보가 없으므로 joined/lastSeen = null', () => {
-    // 픽스처는 git log 정보 없음
+  it('특정 역할의 정보를 조회한다', () => {
     const md = `## 2026-01-01 · 제목\n\n감독이 했다.\n`;
     const info = contributionOf(md, 'director');
     expect(info.count).toBe(1);
-    expect(info.joined).toBeNull(); // git 정보 없음
-    expect(info.lastSeen).toBeNull(); // git 정보 없음
+    expect(info.joined).toBe('2026-01-01');
+    expect(info.lastSeen).toBe('2026-01-01');
   });
 
   it('미등장 역할은 { count: 0, joined: null, lastSeen: null }', () => {
@@ -343,5 +256,91 @@ describe('패턴 정확도 — 회귀 방지', () => {
 
     expect(result1['security'].count).toBe(1);
     expect(result2['security'].count).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 시각 축 (2026-07-30 신설)
+//
+// **산정축(joined/lastSeen = 날짜)과 표시축(joinedTime/lastSeenTime = 시각)의 분리**를
+// 지킨다. 1차 판본이 `joined = dates[0].iso` 로 두 축을 한 필드에 합쳤고, 그 한 줄이
+// 검수관 블로커 두 건의 단일 원인이었다:
+//   · joined 가 null 가능해져 payroll 산술이 CI 에서 한 번도 실행되지 않게 됐다
+//   · payroll.mjs 의 `months===0` skip 이 도달 가능해져 측정 실패 역할을 집계에서 지웠다
+//
+// 그래서 여기서 가장 중요한 단언은 **"joined 는 절대 null 이 아니다"** 다.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('시각 축 — 산정축과 표시축의 분리', () => {
+  const md = [
+    '## 2026-07-13 · 몰아 쓴 항목 (감독)',
+    '감독이 지시했다.',
+    '',
+    '## 2026-07-20 · 개별 항목 (감독)',
+    '감독이 또 지시했다.',
+    '',
+  ].join('\n');
+
+  const frozen = {
+    times: {
+      '2026-07-13 · 몰아 쓴 항목 (감독)': '2026-07-13T05:53:56+00:00',
+      '2026-07-20 · 개별 항목 (감독)': '2026-07-20T07:59:19+00:00',
+    },
+    bulkCommits: new Set(['2026-07-13T05:53:56+00:00']),
+  };
+
+  it('joined·lastSeen 은 **날짜**다 — 시각이 아니다', () => {
+    const c = countContributions(md, frozen).director;
+    expect(c.joined).toBe('2026-07-13');
+    expect(c.lastSeen).toBe('2026-07-20');
+  });
+
+  it('joinedTime·lastSeenTime 이 시각을 따로 실어 온다 (KST)', () => {
+    const c = countContributions(md, frozen).director;
+    expect(c.joinedTime).toBe('14:53');   // 05:53 UTC + 9h
+    expect(c.lastSeenTime).toBe('16:59'); // 07:59 UTC + 9h
+  });
+
+  it('일괄 기록 커밋에서 온 시각은 *TimeBulk 로 표시된다', () => {
+    const c = countContributions(md, frozen).director;
+    expect(c.joinedTimeBulk).toBe(true);    // 2026-07-13 은 bulkCommits 에 있다
+    expect(c.lastSeenTimeBulk).toBe(false); // 2026-07-20 은 없다
+  });
+
+  it('동결 데이터가 **비어 있어도 joined 는 null 이 아니다** — 이 게이트의 핵', () => {
+    // shallow clone·파일 부재·파일 손상 어느 경우든 날짜는 DEVLOG 에서 오므로 살아야
+    // 한다. 여기가 깨지면 payroll 산정이 무너지고 그 다음에 테스트가 느슨해진다.
+    const empty = { times: {} as Record<string, string>, bulkCommits: new Set<string>() };
+    const c = countContributions(md, empty).director;
+    expect(c.joined).toBe('2026-07-13');
+    expect(c.lastSeen).toBe('2026-07-20');
+    expect(c.joinedTime).toBeNull();   // 시각만 없다
+    expect(c.lastSeenTime).toBeNull();
+  });
+
+  it('제목 줄에 적힌 시각이 동결 데이터를 이기고, bulk 가 아니다', () => {
+    const withTime = '## 2026-07-13 22:10 · 몰아 쓴 항목 (감독)\n감독이 지시했다.\n';
+    const c = countContributions(withTime, frozen).director;
+    expect(c.joinedTime).toBe('22:10');
+    expect(c.joinedTimeBulk).toBe(false);
+  });
+
+  it('기여 0 인 역할은 날짜·시각 전부 null, bulk 는 false', () => {
+    const c = countContributions('## 2026-07-13 · 아무도 없음\n본문\n', frozen).designer;
+    expect(c.count).toBe(0);
+    expect(c.joined).toBeNull();
+    expect(c.joinedTime).toBeNull();
+    expect(c.joinedTimeBulk).toBe(false);
+  });
+
+  it('실제 DEVLOG: 기여가 있는 모든 역할의 joined 가 날짜 형식이다', () => {
+    const real = readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8');
+    const all = countContributions(real);
+    for (const [id, c] of Object.entries(all)) {
+      if (c.count === 0) continue;
+      expect(c.joined, `${id} 의 joined`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(c.lastSeen, `${id} 의 lastSeen`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // 위 두 단언이 형식을 보장하므로 여기서는 문자열로 비교한다(TS 는 그것을 모른다).
+      expect(String(c.joined) <= String(c.lastSeen), `${id}: joined(${c.joined}) <= lastSeen(${c.lastSeen})`).toBe(true);
+    }
   });
 });
