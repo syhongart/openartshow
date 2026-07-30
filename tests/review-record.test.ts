@@ -41,6 +41,20 @@ describe('parseReviewRecord — 판정 줄 찾기', () => {
     expect(parseReviewRecord(body).raw).toBeNull();
   });
 
+  it('판정 줄이 여러 개면 마지막을 채택하고 개수를 노출한다', () => {
+    const r = parseReviewRecord('검수관 판정: 승인\n\n(재검토 후 갱신)\n검수관 판정: 반려');
+    expect(r.count).toBe(2);
+    // 첫 매치를 쓰면 '승인' 이 나온다 — 그것이 검수관이 낸 블로커였다.
+    expect(r.verdict).toBe('반려');
+  });
+
+  it('코드블록 예시는 개수에 세지 않는다 (거짓 FAIL 방지)', () => {
+    const body = '형식:\n\n```\n검수관 판정: 승인\n```\n\n검수관 판정: 조건부 (재확인: abc1234)';
+    const r = parseReviewRecord(body);
+    expect(r.count).toBe(1);
+    expect(r.verdict).toBe('조건부');
+  });
+
   it('없으면 raw=null', () => {
     expect(parseReviewRecord('판정 얘기 없음').raw).toBeNull();
     expect(parseReviewRecord('').raw).toBeNull();
@@ -76,6 +90,24 @@ describe('validateReviewRecord — 막아야 하는 것', () => {
   it('해당없음에 사유가 없으면 실패 — 검사를 무력화하는 우회로를 막는다', () => {
     expect(validateReviewRecord('검수관 판정: 해당없음').ok).toBe(false);
     expect(validateReviewRecord('검수관 판정: 해당없음 ()').ok).toBe(false);
+  });
+
+  it('판정 줄 2개 → 실패 (검수관 블로커 2026-07-30)', () => {
+    // ── 실측된 사각이다 ──────────────────────────────────────────────────
+    // 첫 판본은 첫 매치만 채택해서 아래가 `ok: true, verdict: 승인` 이었다. 옛 판정 줄을
+    // 남긴 채 새 줄을 덧붙이면 **관대한 옛 판정이 이겼다.** 위험이 통과 쪽으로 편향돼
+    // 있었다 — 이 검사가 표방한 "누락은 막는다" 를 정면으로 비껴간다.
+    const r = validateReviewRecord('검수관 판정: 승인\n\n(재검토 후 갱신)\n검수관 판정: 반려');
+    expect(r.ok).toBe(false);
+    expect(r.errors.join('')).toContain('2개');
+  });
+
+  it('판정 줄 2개는 순서와 무관하게 실패 — 통과 쪽으로 새지 않는다', () => {
+    // 반대 순서(반려 먼저 → 승인 나중)도 막는다. "마지막을 채택" 만으로 고치면 이쪽이
+    // 통과하는데, 어느 것이 최신인지 본문 순서로 보증되지 않으므로 둘 다 막아야 한다.
+    const r = validateReviewRecord('검수관 판정: 반려\n\n검수관 판정: 승인');
+    expect(r.ok).toBe(false);
+    expect(r.errors.join('')).toContain('2개');
   });
 
   it('알 수 없는 판정 값 → 실패', () => {

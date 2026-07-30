@@ -14,7 +14,12 @@
 //
 // ── 무엇을 막고 무엇을 못 막는가 ────────────────────────────────────────────
 // 막는다:   판정 기록 **누락** · 형식 오류 · 조건부인데 **재확인 근거 없음** · **반려** 상태 병합
+//           · 판정 줄이 여러 개(옛 줄을 남긴 채 덧붙이는 편집 — 검수관 블로커 2026-07-30)
 // 못 막는다: 위조("승인" 이라 적었지만 안 받은 경우) · 검수관이 실제로 무엇을 봤는지의 질
+//           · **fork PR 이 이 파일 자체를 고쳐 항상 통과하게 만드는 것** — 워크플로가
+//             `pull_request` 트리거로 PR head 를 checkout 하므로 검사 코드가 PR 소유다
+//             (검수관 권고 2026-07-30). 위조 한계의 연장선이고, 이 저장소는 지금 외부
+//             기여자가 없어 실효 위험이 없다 — 열리면 `pull_request_target` 검토 사안이다.
 
 /** 판정 종류. `해당없음` 은 검수관 트리거에 해당하지 않는 변경을 위한 것이다. */
 export const VERDICTS = ['승인', '조건부', '반려', '해당없음'];
@@ -29,20 +34,38 @@ export const VERDICTS = ['승인', '조건부', '반려', '해당없음'];
  *   검수관 판정: 해당없음 (<사유>)
  *
  * @param {string} body PR 본문
- * @returns {{verdict: string|null, detail: string, raw: string|null}}
+ * @returns {{verdict: string|null, detail: string, raw: string|null, count: number}}
  */
 export function parseReviewRecord(body) {
   const text = String(body ?? '').replace(/\r\n/g, '\n');
   // 코드블록 안의 예시를 판정으로 오인하지 않게 ``` 구간을 먼저 지운다.
   // (이 파일의 설명을 PR 본문에 붙여넣는 일이 실제로 생긴다.)
   const stripped = text.replace(/```[\s\S]*?```/g, '');
-  const m = stripped.match(/^\s*검수관\s*판정\s*:\s*(.+)$/m);
-  if (!m) return { verdict: null, detail: '', raw: null };
 
+  // ── **모든** 판정 줄을 찾는다 (검수관 블로커 2026-07-30) ────────────────────
+  // 첫 판본은 `.match(...)` 로 **첫 매치**만 채택했다. 검수관이 실측으로 사각을 냈다:
+  //
+  //   "검수관 판정: 승인\n\n(재검토 후 갱신)\n검수관 판정: 반려"  →  ok: true, verdict: 승인
+  //
+  // PR 본문에 옛 판정 줄을 남긴 채 새 줄을 덧붙이면 **관대한 옛 판정이 이긴다.** 위험이
+  // 통과 쪽으로 편향돼 있다(반려 먼저 → 승인 나중은 안전하게 막힌다). 이 검사가 표방한
+  // "누락은 막는다" 를 정면으로 비껴가고, 본문을 통짜 교체하지 않고 이어 붙이는 편집은
+  // 드문 습관이 아니다.
+  //
+  // 마지막 매치를 조용히 채택하는 대신 **여러 개면 FAIL** 로 간다(`validateReviewRecord`).
+  // 조용히 고르면 "옛 줄을 안 지웠다" 는 사실이 아무 데도 안 나타나고, 어느 것이 최신인지는
+  // 본문 순서로 보증되지 않는다. `count` 를 노출해 판정을 호출부로 넘긴다.
+  //
+  // 앵커를 `^\s*` 에서 `^[ \t]*` 로 좁혔다 — `\s` 는 개행을 포함하므로 `g` 플래그로 반복
+  // 매치할 때 앞의 빈 줄을 삼켜 매치 경계가 흐려진다. 판정은 한 줄 형식이다.
+  const all = [...stripped.matchAll(/^[ \t]*검수관[ \t]*판정[ \t]*:[ \t]*(.+)$/gm)];
+  if (all.length === 0) return { verdict: null, detail: '', raw: null, count: 0 };
+
+  const m = all[all.length - 1];
   const rest = m[1].trim();
   const verdict = VERDICTS.find((v) => rest.startsWith(v)) ?? null;
   const detail = verdict ? rest.slice(verdict.length).trim() : rest;
-  return { verdict, detail, raw: m[0].trim() };
+  return { verdict, detail, raw: m[0].trim(), count: all.length };
 }
 
 /**
@@ -62,6 +85,17 @@ export function validateReviewRecord(body) {
       + '    검수관 판정: 조건부 (재확인: <커밋 해시 또는 리뷰 링크>)\n'
       + '    검수관 판정: 반려\n'
       + '    검수관 판정: 해당없음 (<사유 — 왜 검수관 트리거가 아닌지>)',
+    );
+    return { ok: false, errors, record };
+  }
+
+  // 판정 줄이 여러 개면 **어느 것이 최신인지 본문 순서로 보증되지 않는다.** 옛 줄을
+  // 남긴 채 새 판정을 덧붙이는 편집에서 관대한 쪽이 이길 수 있었다(검수관 블로커).
+  // 고르지 않고 지우게 한다 — 사람이 어느 것을 남길지 판단하는 것이 옳다.
+  if (record.count > 1) {
+    errors.push(
+      `판정 기록이 **${record.count}개**다 — 어느 것이 최신인지 알 수 없다.\n`
+      + '  옛 판정 줄을 지우고 최신 것 하나만 남겨라. (본문 순서는 최신을 보증하지 않는다.)',
     );
     return { ok: false, errors, record };
   }
