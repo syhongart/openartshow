@@ -66,7 +66,7 @@
     --text-dim-light: #9A9EB1;
     --border-light: var(--border-dark);
     --border-dark: #3A3D4B;
-    --section-pad: clamp(80px, 10vw, 120px);
+    --section-pad: clamp(72px, 8vw, 96px);
     /* 타이포 스케일 — 모듈러 계단 (디자이너 감사: 혼재값 흡수, 색과 직교 — 유지) */
     --fs-h1: clamp(34px, 8.5vw, 60px);   /* 히어로 표제 (감독 이력 존중 — 크기 유지) */
     --fs-h2: clamp(30px, 4.5vw, 42px);   /* 섹션 표제 (28~44 혼재값 흡수, h1과 1.43배 대비) */
@@ -93,7 +93,8 @@
   html, body {
     margin: 0;
     padding: 0;
-    background: var(--bg-light);
+    background: linear-gradient(180deg, var(--bg-dark) 0%, var(--surface-dark-1) 45%, var(--bg-dark) 100%);
+    background-attachment: fixed;
     color: var(--text-light);
     font-family: var(--app-font);
     font-weight: 400;
@@ -252,7 +253,7 @@
   .btn-gold:active {
     background: var(--accent-hover);
     border-color: var(--accent-hover);
-    box-shadow: 0 8px 20px rgba(20, 21, 26, 0.3), 0 0 28px 6px rgba(255, 112, 94, 0.55);
+    box-shadow: 0 8px 20px rgba(20, 21, 26, 0.3), 0 0 18px 3px rgba(255, 112, 94, 0.4);
   }
   .btn-gold:hover { transform: translateY(-2px); }
   .btn-gold:active { transform: translateY(1px) scale(0.98); }
@@ -281,7 +282,7 @@
   /* ---------- Section shell ---------- */
   section { position: relative; }
   .section-inner {
-    max-width: 1120px;
+    max-width: 1080px;
     margin: 0 auto;
     padding: var(--section-pad) 28px;
   }
@@ -290,7 +291,7 @@
   }
   .section-head {
     text-align: center;
-    margin-bottom: 64px;
+    margin-bottom: 40px;
   }
   .section-head h2 {
     margin: 16px 0 0;
@@ -310,7 +311,7 @@
 
   /* ---------- Features ---------- */
   .features {
-    background: var(--paper-deep); /* 카드(surface-dark-2)와의 다크 표면 단차 대비 — 그림자 없이 분리 */
+    background: transparent; /* 표면 한 층 — body 고정 그라디언트 위, 카드만 rgba 면 분리(§디자인 개편) */
   }
   .feature-grid {
     display: grid;
@@ -321,12 +322,12 @@
     .feature-grid { grid-template-columns: 1fr; }
   }
   .feature-card {
-    /* 타이포 주도 미니멀 카드 — 아이콘이 앵커, 선 장식 없음. 다크 표면 2단 상승(§3-7) */
-    background: var(--surface-dark-2);
+    /* 타이포 주도 미니멀 카드 — 아이콘이 앵커, 선 장식 없음. 표면 한 층 위 유리 면(§디자인 개편) */
+    background: rgba(255,255,255,.03);
     padding: 38px 32px 38px;
     display: flex;
     flex-direction: column;
-    border: 1px solid var(--border-light);
+    border: 1px solid rgba(255,255,255,.08);
     border-radius: var(--r-card);
     box-shadow: 0 0 0 0 rgba(20, 21, 26, 0), 0 0 0 0 rgba(139, 114, 255, 0);
     /* 순서 고정: border-color, transform, box-shadow */
@@ -618,7 +619,7 @@
 
   /* ---------- 라이브 포토월 & 최근 관람객 ---------- */
   .community {
-    background: var(--green-900); color: var(--text-light); /* 다크 표면 2단 상승 — 페이지 리듬 */
+    background: transparent; color: var(--text-light); /* 표면 한 층 — body 고정 그라디언트 위(§디자인 개편) */
     padding: clamp(64px, 10vw, 120px) 0;
   }
   .community .section-inner { max-width: 1080px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px); }
@@ -631,7 +632,7 @@
   .visitor-chip {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 8px 14px; border-radius: var(--r-card);
-    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08);
     font-size: var(--fs-label); color: rgba(255,255,255,0.85);
   }
   .visitor-chip .vdot { width: 8px; height: 8px; border-radius: 50%; }
@@ -666,7 +667,7 @@
 
 
   /* 요금제 — 캡션 카드 모티프 (디자이너 감사 ②) */
-  .pricing { background: var(--paper-deep); color: var(--ink); text-align: center; }
+  .pricing { background: transparent; color: var(--ink); text-align: center; } /* 표면 한 층 — body 고정 그라디언트 위(§디자인 개편) */
   .pricing h2 { font-size: var(--fs-h2); font-weight: 300; line-height: var(--lh-h2); margin: 8px 0 6px; }
   .pricing-sub { color: var(--ink-dim); font-size: var(--fs-body); }
   .plan-grid {
@@ -676,8 +677,8 @@
   .plan-card {
     flex: 1; min-width: 250px; max-width: 320px;
     padding: 28px 26px 30px;
-    background: var(--surface-dark-2);
-    border: 1px solid var(--border-light);
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
     border-radius: var(--r-card);
     position: relative;
     text-align: left;
@@ -718,15 +719,15 @@
   .code-row input:focus-visible { outline: none; border-color: var(--gold-deep); box-shadow: 0 0 0 1px var(--gold-deep); }
   .code-msg { margin-top: 12px; font-size: 13px; min-height: 18px; }
 
-  /* 톤 전환 디바이더 — 전시실이 바뀌는 신호 */
+  /* 톤 전환 디바이더 — 표면이 한 층으로 통일되며 무력화(규칙은 보존, content:none으로 렌더만 억제 — §디자인 개편) */
   .tone-shift { position: relative; }
   .tone-shift::before {
-    content: ""; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    content: none; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
     width: min(200px, 40vw); height: 2px;
     background: linear-gradient(90deg, transparent, var(--gold), transparent);
   }
-  .recruit { background: var(--surface-dark-2); border-top: 1px solid var(--border-dark); }
-  .features { background: linear-gradient(180deg, var(--paper) 0%, var(--paper-deep) 100%); }
+  .recruit { background: rgba(255,255,255,.03); border-top: 1px solid rgba(255,255,255,.08); }
+  .features { background: transparent; }
 
   /* 히어로 — 헤어라인 액자 + 좌하단 캡션 카드 (디자이너 감사 §3, 다크 몰입 리페인트) */
   .hero::before {
