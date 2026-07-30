@@ -1,4 +1,7 @@
 // scripts/lib/devlog-contributors.mjs
+import { parseEntries } from './devlog-entries.mjs';
+import { loadFrozenTimes, timeInfoFor } from './devlog-times.mjs';
+
 // 개발일지 항목의 **역할별 기여 축**. 항목 단위로 역할 참여를 집계한다.
 //
 // ── 왜 신설했나 ──────────────────────────────────────────────────────────
@@ -157,79 +160,117 @@ export const BY_ID = new Map([...ROLES].map((r) => [r.id, r]));
  * DEVLOG 마크다운 전체에서 역할별 기여를 집계한다.
  * 항목 단위로 세므로, 한 항목 안에 같은 역할이 여러 번 나와도 1건이다.
  *
+ * ── 산정축과 표시축을 분리한다 (2026-07-30 재설계) ─────────────────────────
+ * 1차 판본이 `joined` **자체를 시각으로 덮어썼다**:
+ *     joined = data.dates[0].iso;   // ISO 시각 또는 null
+ * 그 한 줄이 검수관 블로커 두 건의 단일 원인이었다. `joined` 가 null 가능해지자
+ *   · `payroll.mjs` 의 개월 산정이 무너져 픽스처를 전부 null 기대로 고쳤고
+ *     (= 산술 경로가 CI 에서 한 번도 실행되지 않게 됐다)
+ *   · `payroll.mjs:245` 의 `months===0` skip 이 처음 도달 가능해져 **측정 실패
+ *     역할을 집계에서 조용히 지웠다**(미확인으로도 안 세고).
+ *
+ * 그런데 payroll 은 애초에 시각을 보지 않는다 — `contrib.joined.substring(0, 7)`
+ * 로 YYYY-MM 만 쓴다. 두 축은 원래 별개였고 1차 판본이 한 필드에 합친 것이다.
+ *
+ *   joined / lastSeen         YYYY-MM-DD · DEVLOG 유래 · **절대 null 아님** · 산정용
+ *   joinedTime / lastSeenTime HH:mm(KST) 또는 null      · 동결 데이터 유래 · 표시용
+ *   *TimeBulk                 그 시각이 일괄 기록 커밋에서 왔는가(표시 측이 감춘다)
+ *
  * @param {string} md DEVLOG.md 의 전체 마크다운 내용
- * @returns {Object.<string, {count: number, joined: string|null, lastSeen: string|null}>}
- *          역할 id → { count(기여 건수), joined(첫 등장 날짜), lastSeen(마지막 등장 날짜) }
- *          count=0 인 역할도 joined/lastSeen 은 null
+ * @param {{times: Object<string,string>, bulkCommits: Set<string>}} [frozen]
+ *        동결 시각 데이터. 기본값은 `loadFrozenTimes()`. **테스트가 주입한다** —
+ *        주입 가능해야 산술·표시 경로가 파일 존재와 무관하게 항상 검증된다.
+ * @returns {Object.<string, {count: number, joined: string|null, lastSeen: string|null,
+ *                            joinedTime: string|null, lastSeenTime: string|null,
+ *                            joinedTimeBulk: boolean, lastSeenTimeBulk: boolean}>}
+ *          count=0 인 역할은 전부 null/false
  */
-export function countContributions(md) {
+export function countContributions(md, frozen = undefined) {
+  const times = frozen ?? loadFrozenTimes();
+
   const result = Object.fromEntries(ROLES.map((r) => [r.id, { count: 0, dates: [] }]));
 
-  // 항목 단위로 쪼갠다. 정규식은 build-devlog.mjs:22 와 동일.
-  const blocks = md.split(/\n(?=## )/).map((b) => {
-    const match = b.match(/^## (\d{4}-\d{2}-\d{2}) · (.+)\n/);
-    if (!match) return null;
-    return {
-      date: match[1],
-      title: match[2].trim(),
-      body: b, // 제목을 포함한 전체 블록(본문도 포함)
-    };
-  }).filter((x) => x !== null);
+  // 항목 파싱은 SSOT 를 경유한다(`devlog-entries.mjs`). 예전에는 같은 정규식을 여기
+  // 또 적었고, 그래서 제목 줄에 시각을 허용하는 순간 이 파서만 항목을 버릴 수 있었다.
+  const entries = parseEntries(md);
 
-  // 각 항목에서 역할별 참여 여부를 확인한다.
-  for (const block of blocks) {
-    const content = block.body;
+  for (const entry of entries) {
+    const content = entry.body;
 
     for (const role of ROLES) {
       // 부팀장을 먼저 제거한 텍스트에서 팀장을 매치시킨다.
-      // 이것이 사용자가 요구한 "팀장/부팀장 분리" 처리다.
+      // "팀장" 패턴이 "부팀장" 을 삼키는 것을 사전 제거로 막는다(후방탐색 대신).
       let testContent = content;
       if (role.id === 'lead') {
-        // 팀장 패턴을 테스트하기 전에 부팀장을 제거한다.
         testContent = content.replace(/부팀장/g, '');
       }
 
-      // 역할 패턴 중 하나라도 매치되면 해당 항목에 그 역할이 참여한 것으로 본다.
       const participated = role.patterns.some((pat) => pat.test(testContent));
       if (participated) {
         result[role.id].count++;
-        result[role.id].dates.push(block.date);
+        const info = timeInfoFor(entry, times);
+        result[role.id].dates.push({ date: entry.date, time: info.time, bulk: info.bulk });
       }
     }
   }
 
-  // 날짜를 min/max 로 정렬해서 joined/lastSeen 을 계산한다.
-  // DEVLOG 의 날짜가 뒤섞여 있을 수 있으므로 등장 순서가 아니라 날짜로 비교.
   const finalResult = Object.fromEntries(
     ROLES.map((r) => {
       const data = result[r.id];
-      let joined = null;
-      let lastSeen = null;
-
-      if (data.dates.length > 0) {
-        // 날짜 배열에서 최소·최대 찾기
-        data.dates.sort();
-        joined = data.dates[0];
-        lastSeen = data.dates[data.dates.length - 1];
+      if (data.dates.length === 0) {
+        return [r.id, {
+          count: data.count,
+          joined: null, lastSeen: null,
+          joinedTime: null, lastSeenTime: null,
+          joinedTimeBulk: false, lastSeenTimeBulk: false,
+        }];
       }
 
-      return [r.id, { count: data.count, joined, lastSeen }];
+      // 날짜 오름차순. 같은 날짜 안에서는 시각 오름차순이고 **시각 불명은 뒤로** 둔다.
+      // 한계: 시각 불명 항목이 실제로 더 이른 시각이었을 수 있다. 다만 같은 날짜
+      // 안의 순서라 `joined`(날짜)에는 영향이 없고 표시 시각만 달라진다 — 알려진
+      // 것 중 가장 이른 값을 보여주는 편이 null 을 보여주는 것보다 정보가 많다.
+      data.dates.sort((a, b) =>
+        a.date.localeCompare(b.date) || (a.time ?? '~').localeCompare(b.time ?? '~'));
+
+      const first = data.dates[0];
+      const last = data.dates[data.dates.length - 1];
+
+      return [r.id, {
+        count: data.count,
+        joined: first.date,        // YYYY-MM-DD — DEVLOG 에 항상 있으므로 null 이 될 수 없다
+        lastSeen: last.date,
+        joinedTime: first.time,
+        lastSeenTime: last.time,
+        joinedTimeBulk: first.bulk,
+        lastSeenTimeBulk: last.bulk,
+      }];
     })
   );
 
   return finalResult;
 }
 
+/** count=0 역할의 기본값. 모양을 한 곳에만 적는다. */
+const EMPTY_CONTRIBUTION = {
+  count: 0,
+  joined: null, lastSeen: null,
+  joinedTime: null, lastSeenTime: null,
+  joinedTimeBulk: false, lastSeenTimeBulk: false,
+};
+
 /**
  * 특정 역할의 기여 정보를 조회한다.
  *
  * @param {string} md DEVLOG.md 의 전체 마크다운 내용
  * @param {string} roleId 역할 id
- * @returns {{count: number, joined: string|null, lastSeen: string|null}}
+ * @param {object} [frozen] 동결 시각 데이터(테스트 주입용)
  */
-export function contributionOf(md, roleId) {
-  return countContributions(md)[roleId] ?? { count: 0, joined: null, lastSeen: null };
+export function contributionOf(md, roleId, frozen = undefined) {
+  return countContributions(md, frozen)[roleId] ?? { ...EMPTY_CONTRIBUTION };
 }
+
+export { EMPTY_CONTRIBUTION };
 
 /**
  * 팀 구성을 티어별로 계산한다. 기여가 있는 역할만 센다.

@@ -258,3 +258,89 @@ describe('패턴 정확도 — 회귀 방지', () => {
     expect(result2['security'].count).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 시각 축 (2026-07-30 신설)
+//
+// **산정축(joined/lastSeen = 날짜)과 표시축(joinedTime/lastSeenTime = 시각)의 분리**를
+// 지킨다. 1차 판본이 `joined = dates[0].iso` 로 두 축을 한 필드에 합쳤고, 그 한 줄이
+// 검수관 블로커 두 건의 단일 원인이었다:
+//   · joined 가 null 가능해져 payroll 산술이 CI 에서 한 번도 실행되지 않게 됐다
+//   · payroll.mjs 의 `months===0` skip 이 도달 가능해져 측정 실패 역할을 집계에서 지웠다
+//
+// 그래서 여기서 가장 중요한 단언은 **"joined 는 절대 null 이 아니다"** 다.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('시각 축 — 산정축과 표시축의 분리', () => {
+  const md = [
+    '## 2026-07-13 · 몰아 쓴 항목 (감독)',
+    '감독이 지시했다.',
+    '',
+    '## 2026-07-20 · 개별 항목 (감독)',
+    '감독이 또 지시했다.',
+    '',
+  ].join('\n');
+
+  const frozen = {
+    times: {
+      '2026-07-13 · 몰아 쓴 항목 (감독)': '2026-07-13T05:53:56+00:00',
+      '2026-07-20 · 개별 항목 (감독)': '2026-07-20T07:59:19+00:00',
+    },
+    bulkCommits: new Set(['2026-07-13T05:53:56+00:00']),
+  };
+
+  it('joined·lastSeen 은 **날짜**다 — 시각이 아니다', () => {
+    const c = countContributions(md, frozen).director;
+    expect(c.joined).toBe('2026-07-13');
+    expect(c.lastSeen).toBe('2026-07-20');
+  });
+
+  it('joinedTime·lastSeenTime 이 시각을 따로 실어 온다 (KST)', () => {
+    const c = countContributions(md, frozen).director;
+    expect(c.joinedTime).toBe('14:53');   // 05:53 UTC + 9h
+    expect(c.lastSeenTime).toBe('16:59'); // 07:59 UTC + 9h
+  });
+
+  it('일괄 기록 커밋에서 온 시각은 *TimeBulk 로 표시된다', () => {
+    const c = countContributions(md, frozen).director;
+    expect(c.joinedTimeBulk).toBe(true);    // 2026-07-13 은 bulkCommits 에 있다
+    expect(c.lastSeenTimeBulk).toBe(false); // 2026-07-20 은 없다
+  });
+
+  it('동결 데이터가 **비어 있어도 joined 는 null 이 아니다** — 이 게이트의 핵', () => {
+    // shallow clone·파일 부재·파일 손상 어느 경우든 날짜는 DEVLOG 에서 오므로 살아야
+    // 한다. 여기가 깨지면 payroll 산정이 무너지고 그 다음에 테스트가 느슨해진다.
+    const empty = { times: {} as Record<string, string>, bulkCommits: new Set<string>() };
+    const c = countContributions(md, empty).director;
+    expect(c.joined).toBe('2026-07-13');
+    expect(c.lastSeen).toBe('2026-07-20');
+    expect(c.joinedTime).toBeNull();   // 시각만 없다
+    expect(c.lastSeenTime).toBeNull();
+  });
+
+  it('제목 줄에 적힌 시각이 동결 데이터를 이기고, bulk 가 아니다', () => {
+    const withTime = '## 2026-07-13 22:10 · 몰아 쓴 항목 (감독)\n감독이 지시했다.\n';
+    const c = countContributions(withTime, frozen).director;
+    expect(c.joinedTime).toBe('22:10');
+    expect(c.joinedTimeBulk).toBe(false);
+  });
+
+  it('기여 0 인 역할은 날짜·시각 전부 null, bulk 는 false', () => {
+    const c = countContributions('## 2026-07-13 · 아무도 없음\n본문\n', frozen).designer;
+    expect(c.count).toBe(0);
+    expect(c.joined).toBeNull();
+    expect(c.joinedTime).toBeNull();
+    expect(c.joinedTimeBulk).toBe(false);
+  });
+
+  it('실제 DEVLOG: 기여가 있는 모든 역할의 joined 가 날짜 형식이다', () => {
+    const real = readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8');
+    const all = countContributions(real);
+    for (const [id, c] of Object.entries(all)) {
+      if (c.count === 0) continue;
+      expect(c.joined, `${id} 의 joined`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(c.lastSeen, `${id} 의 lastSeen`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // 위 두 단언이 형식을 보장하므로 여기서는 문자열로 비교한다(TS 는 그것을 모른다).
+      expect(String(c.joined) <= String(c.lastSeen), `${id}: joined(${c.joined}) <= lastSeen(${c.lastSeen})`).toBe(true);
+    }
+  });
+});

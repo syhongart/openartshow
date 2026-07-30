@@ -10,28 +10,27 @@ import { fileURLToPath } from 'node:url';
 import { shell, SITE } from './lib/site-shell.mjs';
 import { slugFor } from './lib/devlog-slug.mjs';
 import { categorize, stripTag, CATEGORIES, FALLBACK } from './lib/devlog-category.mjs';
+import { parseEntries } from './lib/devlog-entries.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'making', 'devlog');
 
 // ---------- 파싱 ----------
-const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8').replace(/\r\n/g, '\n'); // CRLF 정규화 — Windows 워킹트리(w/crlf)에서도 `## ` 블록 파싱이 깨지지 않게(git 저장은 LF, CI는 LF라 무영향)
-const blocks = src.split(/\n(?=## )/);
+const src = readFileSync(join(ROOT, 'docs/DEVLOG.md'), 'utf8');
+// 파싱은 SSOT 를 경유한다(`devlog-entries.mjs`). 예전에는 이 파일이 자체 정규식을
+// 들고 있었고, ★ 전량 제거와 CRLF 정규화도 여기만 하고 있었다 — 다른 세 파서와
+// 어긋난 상태였다. 제목 줄에 **시각을 옵션으로 허용**하면서 그것을 방치할 수 없게
+// 됐다: 시각을 모르는 파서는 `## 2026-07-30 08:15 · 제목` 을 매치 실패로 처리해
+// **항목을 조용히 버린다.** 개발일지에서 사라지고 아무 게이트도 알려주지 않는다.
 const entries = [];
-for (const b of blocks) {
-  const m = b.match(/^## (\d{4}-\d{2}-\d{2}) · (.+)\n([\s\S]*)$/);
-  if (!m) continue;
-  const [, date, rawTitle] = m;
-  let body = m[3].replace(/\n---\s*$/,'').trim();
-  // ★ 는 표시에서 완전히 지운다 — 단일 ★ 만 떼던 예전 정규식(/^★\s*/)이 ★★ 를 하나
-  // 남겨 렌더링에 노출시키고 있었다. '+' 로 전량 제거(제목·<title>·인덱스 어디에도 안 남는다).
-  const title = rawTitle.trim().replace(/^★+\s*/, '');
-  const slug = slugFor(date, title);                        // 새 모듈: 슬러그 축 (LEGACY_SLUGS + hash6) — ★ 제거는 슬러그에 무영향(devlog-slug.mjs 내부에서도 한 번 더 ★ 를 떼므로 결과 동일)
-  const category = categorize(rawTitle);                    // 새 모듈: 카테고리 축 (emoji 포함) — ★ 유무 무관(categorize 내부에서 자체 스트립)
+for (const e of parseEntries(src)) {
+  const body = e.content.replace(/\n---\s*$/, '').trim();
+  const slug = slugFor(e.date, e.title);      // 슬러그 축 (LEGACY_SLUGS + hash6)
+  const category = categorize(e.rawTitle);    // 카테고리 축 — ★ 를 봐야 하므로 rawTitle
   // pin 판정을 '★' 접두 대신 카테고리로 옮긴다(감독 지시) — 141개 중 ★ 는 16건이었지만
   // 진짜 철학은 2건뿐이었다. 이제 philosophy 로 분류되는 항목만 최상단 고정된다.
   const isPin = category.id === 'philosophy';
-  entries.push({ date, title, body, pinned: isPin, slug, category });
+  entries.push({ date: e.date, time: e.time, title: e.title, body, pinned: isPin, slug, category });
 }
 // 고정(철학) 항목과 일반 로그를 분리 — 고정은 날짜와 무관하게 인덱스 최상단·연대기 nav 제외
 const pinned = entries.filter(e => e.pinned);

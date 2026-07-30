@@ -12,8 +12,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { countEntries } from '../scripts/lib/devlog-entries.mjs';
-import { calculateTeamComposition } from '../scripts/lib/devlog-contributors.mjs';
+
+import { calculateTeamComposition, countContributions } from '../scripts/lib/devlog-contributors.mjs';
+import { loadFrozenTimes, timeInfoFor } from '../scripts/lib/devlog-times.mjs';
+import { countEntries, parseEntries } from '../scripts/lib/devlog-entries.mjs';
+import { kstTimeOfIso } from '../scripts/lib/kst.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -174,5 +177,93 @@ describe('생성기 일관성 — 개발일지 건수 · 팀 규모', () => {
       // contract 일치
       expect(makingMatch[4]).toBe(readmeMatch[4]);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 활동 시각 표시 — **집행 쪽** 통합 검증 (2026-07-30 신설)
+//
+// 이 저장소 규율: *"판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다.
+// `decide/` 를 순수 함수로 두면 각 쪽은 테스트하기 쉬워지지만, '계산된 값이 실제로
+// 소비되는가' 는 양쪽 테스트 어디에도 안 걸린다."*
+//
+// `countContributions()` 가 `*TimeBulk` 를 계산하고 `devlog-times.test.ts` 가 그 판정을
+// 검증하지만, **`build-team.mjs` 가 그 값을 실제로 써서 시각을 감추는지**는 어느 단위
+// 테스트도 보지 않는다. `formatActivity()` 에서 `isBulk` 조건을 지워도 단위 테스트는
+// 전부 통과한다. 그 구멍을 여기서 막는다.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('활동 시각 표시 — 일괄 기록 시각이 화면에 새지 않는다', () => {
+  const teamHtml = () => readFileSync(join(ROOT, 'making', 'team', 'index.html'), 'utf8');
+
+  /** "첫 등장: X, 마지막: Y." 문장을 전부 뽑는다. */
+  function activityLines(html: string): { joined: string; lastSeen: string }[] {
+    const out: { joined: string; lastSeen: string }[] = [];
+    const re = /첫 등장: ([^,]+), 마지막: ([^.<]+)\./g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) out.push({ joined: m[1].trim(), lastSeen: m[2].trim() });
+    return out;
+  }
+
+  it('활동 표시가 실제로 렌더된다', () => {
+    const lines = activityLines(teamHtml());
+    expect(lines.length, '"첫 등장: …, 마지막: …" 문장을 찾을 수 없음').toBeGreaterThan(5);
+  });
+
+  it('모든 표시가 날짜로 시작한다 (YYYY-MM-DD)', () => {
+    for (const { joined, lastSeen } of activityLines(teamHtml())) {
+      expect(joined).toMatch(/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/);
+      expect(lastSeen).toMatch(/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/);
+    }
+  });
+
+  it('시각이 붙은 표시가 하나 이상 있다 — 없으면 이 기능이 장식이다', () => {
+    const withTime = activityLines(teamHtml())
+      .filter((l) => /\d{2}:\d{2}/.test(l.joined) || /\d{2}:\d{2}/.test(l.lastSeen));
+    expect(withTime.length, '시각이 표시된 항목이 0건 — 감독이 요청한 시·분 표시가 안 나온다').toBeGreaterThan(0);
+  });
+
+  it('일괄 기록 커밋의 시각이 **어디에도 표시되지 않는다**', () => {
+    // 일괄 커밋 시각을 동결 데이터에서 유도한다 — 하드코딩하면 미러가 된다.
+    const frozen = loadFrozenTimes();
+    expect(frozen.bulkCommits.size, 'bulkCommits 가 비어 있어 이 테스트가 무의미하다').toBeGreaterThan(0);
+
+    const bulkHHmm = [...frozen.bulkCommits].map((iso) => kstTimeOfIso(iso)).filter(Boolean);
+    const html = teamHtml();
+    const lines = activityLines(html);
+
+    for (const hhmm of bulkHHmm) {
+      for (const { joined, lastSeen } of lines) {
+        expect(joined, `일괄 기록 시각 ${hhmm} 이 "첫 등장" 에 노출됐다`).not.toContain(hhmm as string);
+        expect(lastSeen, `일괄 기록 시각 ${hhmm} 이 "마지막" 에 노출됐다`).not.toContain(hhmm as string);
+      }
+    }
+  });
+
+  it('카피라이터의 첫 등장과 마지막 활동이 다르다 — 활동 기간 은폐 회귀 방어', () => {
+    // 1차 판본에서 카피라이터는 "첫 등장 05:53, 마지막 05:53" 으로 나왔다. 일괄 커밋
+    // 시각이 joined·lastSeen 양쪽을 덮어써서 **실제 활동 기간이 완전히 사라졌다.**
+    // 그 회귀를 직접 겨냥한다.
+    const devlog = readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8');
+    const c = countContributions(devlog).copywriter;
+    expect(c.count, '카피라이터 기여가 0이면 이 테스트가 무의미하다').toBeGreaterThan(0);
+    expect(c.joined).not.toBe(c.lastSeen);
+    expect(String(c.joined) < String(c.lastSeen), `joined=${c.joined} lastSeen=${c.lastSeen}`).toBe(true);
+  });
+
+  it('시각의 출처와 한계가 페이지에 적혀 있다', () => {
+    const html = teamHtml();
+    // 규율: 못 잰 것·부정확한 것을 조용히 두지 않는다. 읽는 사람이 오해하지 않게 적는다.
+    expect(html).toContain('일지를 쓴 시각');
+    expect(html).toMatch(/표시하지 않고 날짜만/);
+  });
+
+  it('한계 문구의 숫자가 실제 데이터와 일치한다 — 하드코딩이 아니다', () => {
+    const devlog = readFileSync(join(ROOT, 'docs', 'DEVLOG.md'), 'utf8');
+    const frozen = loadFrozenTimes();
+    const actualBulk = parseEntries(devlog).filter((e) => timeInfoFor(e, frozen).bulk).length;
+
+    const m = teamHtml().match(/개발 초기에 (\d+)개 항목을 한 번에 몰아 기록한/);
+    expect(m, '한계 문구를 찾을 수 없음').not.toBeNull();
+    expect(parseInt(m![1], 10)).toBe(actualBulk);
   });
 });
