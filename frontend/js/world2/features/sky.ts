@@ -13,14 +13,14 @@
 import { SkySystem } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
 import {
-  nightness, lampGlow,
+  nightness, lampGlow, TIMES, type SkyTime,
   NIGHT_HEMI_I, NIGHT_SUN_I, NIGHT_EXPOSURE, NIGHT_FOG_SCALE, NIGHT_GROUND_SCALE,
 } from '../decide/night.js';
 import { readNum, readEnum } from '../url-knob.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
-/** `sky.js` 의 `LIGHT` 최상위 키. 목록 밖 값이 넘어가면 팔레트 조회가 `undefined` 가 된다 */
-const TIMES = ['day', 'sunset', 'night'] as const;
+// 시간대 목록(`TIMES`)은 `decide/night.ts` 로 옮겼다 — 조립부도 그것을 읽으므로 여기
+// 사본을 두면 값 미러링이다. 날씨는 아직 소비자가 하늘 하나이므로 여기 남는다.
 const WEATHERS = ['clear', 'overcast', 'rain', 'snow'] as const;
 
 /**
@@ -49,11 +49,15 @@ export const skyFeature: Feature = {
       env.hemi,
       () => ({ x: env.player.position.x, z: env.player.position.z }),
       {
-        // ── 시간대·날씨 (`?time=` `?weather=`) ────────────────────────────
-        // 神 모드 패널로도 바꿀 수 있지만, 그건 **DOM 이 있어야** 한다. 헤드리스 측정과
-        // 감독 확인이 둘 다 링크 하나로 끝나야 해서 URL 로도 연다. 낮을 대조군으로
-        // 띄우지 못하면 "밤이 얼마나 어두운가" 를 수치로 말할 수 없다.
-        time: readEnum('time', 'night', TIMES),
+        // ── 시간대·날씨 ───────────────────────────────────────────────────
+        // **시간대는 이제 조립부가 소유한다**(`env.time()`, 팀장 판정 A-2 2026-07-30).
+        // `?time=` 을 읽는 것도 조립부이고 하늘은 소비자다 — 하늘이 혼자 들고 있었을 때
+        // 후보정이 반구광으로 시간대를 추측하다 블룸이 밤에 통째로 꺼졌다
+        // (`features/types.ts` 의 `time` 주석에 전말이 있다).
+        //
+        // 날씨는 아직 소비자가 하늘 하나이므로 여기서 URL 을 읽는다. 헤드리스 측정과
+        // 감독 확인이 링크 하나로 끝나야 하므로 노브 자체는 유지한다.
+        time: env.time(),
         weather: readEnum('weather', 'clear', WEATHERS),
 
         // ── 밤 밝기 축 (`?nhemi=` `?nsun=` `?nexp=` `?nfog=` `?nground=`) ──
@@ -92,7 +96,22 @@ export const skyFeature: Feature = {
     // 돈다). 예전에는 이 배선이 main.ts에 있어서, 하늘을 빼도 패널 코드가 남았다.
     let panel: SkyPanel | null = null;
     const parts = env.doc ? findSkyPanel(env.doc) : null;
-    if (parts) panel = attachSkyPanel(parts, sky.controls);
+    if (parts) {
+      // ── 패널에 맨 컨트롤을 주지 않는다 (팀장 조건 4) ─────────────────────
+      // 패널이 시간대를 고르면 **조립부의 setter 를 먼저 거친다.** 엔진에 직접 주면
+      // 소유가 다시 갈리고(조립부 값 ≠ 엔진 값) 블룸·가로등이 옛 시간대를 본다.
+      //
+      // `set` 하나만 감싼다 — `get`·`bolt` 는 상태를 바꾸지 않으므로 그대로 통과한다.
+      // 감싼 것만 넘기는 것이 중요하다: 맨 `sky.controls` 가 함께 노출되면 setter 를
+      // 우회하는 세 번째 쓰기 경로가 열린다.
+      panel = attachSkyPanel(parts, {
+        ...sky.controls,
+        set(state, opt) {
+          if (typeof state.time === 'string') env.setTime(state.time as SkyTime);
+          sky.controls.set(state, opt);
+        },
+      });
+    }
 
     // ── 가로등 점등 (감독 지시) ────────────────────────────────────────────
     // *"밤에는 가로등이 켜져야 하고."*
@@ -110,7 +129,10 @@ export const skyFeature: Feature = {
 
     function applyLampGlow(): void {
       if (!lampMat) return;
-      const g = lampGlow(nightness(sky.get().time));
+      // 시간대는 **조립부에 묻는다.** 예전에는 `sky.get().time`(엔진 반영값)을 읽었다 —
+      // 가로등은 그것으로도 맞게 돌았지만, 같은 밤을 재는 두 소비자(등·블룸)가 서로 다른
+      // 원천을 보면 언젠가 갈린다. 원천을 하나로 모은다(팀장 판정 A-2).
+      const g = lampGlow(nightness(env.time()));
       // 값이 안 바뀌었으면 건드리지 않는다. 매 프레임 같은 수를 대입해도 three 는
       // 조용히 넘어가지만, 만지지 않는 것이 만지는 것보다 언제나 싸다.
       if (g === lampLit) return;
@@ -146,6 +168,12 @@ export const skyFeature: Feature = {
         const fog = env.scene.fog as { color?: { getHex(): number } } | null;
         return {
           ...(sky.get() as object),
+          // ── 사본이 어긋나면 보이게 한다 (팀장 조건 5) ────────────────────
+          // 위 스프레드의 `time` 은 **엔진 반영값**이고, 아래는 **조립부가 소유한 진실**
+          // 이다. `sky.js` 는 조합 보정을 적용한 결과를 돌려주므로 요청값과 반영값이
+          // 어긋나는 경로가 이론상 있다 — 어긋나면 진단에서 보여야 하고, 침묵하면 이번
+          // 블룸 사고의 재판이다(그 사고도 두 값이 갈렸는데 아무 신호가 없었다).
+          ownedTime: env.time(),
           sunI: env.sun.intensity,
           hemiI: env.hemi.intensity,
           sunC: env.sun.color.getHex(),

@@ -35,7 +35,7 @@ import * as THREE from 'three/webgpu';
 // `pass()` **함수**가 없어서, 거기서 찾다가 조용히 null 로 빠졌다(첫 시도의 실패 원인).
 import { pass } from 'three/tsl';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
-import { nightness, LAMP_LUMINANCE, LAMP_MAX_GLOW } from '../decide/night.js';
+import { nightness, LAMP_LUMINANCE, LAMP_MAX_GLOW, type SkyTime } from '../decide/night.js';
 import { BLOOM_THRESHOLD } from './postfx-params.js';
 import { readNum } from '../url-knob.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
@@ -188,7 +188,7 @@ export const postfxFeature: Feature = {
     // 밤에만 번진다. 낮에 켜 두면 하늘이 부옇게 떠서 대낮의 대비가 죽는다.
     // **파이프라인은 그대로 두고 세기만** 흔든다 — 노드를 갈아 끼우면 재컴파일이다.
     let lastLevel = -1;
-    function applyLevel(time: string): void {
+    function applyLevel(time: SkyTime): void {
       if (!bloomNode) return;
       const level = num('bloomstr', STRENGTH) * nightness(time);
       if (level === lastLevel) return;
@@ -200,10 +200,21 @@ export const postfxFeature: Feature = {
       system: {
         name: 'postfx',
         update() {
-          // 하늘 상태를 직접 읽지 않는다 — 기능끼리 상태를 공유하지 않는 규약이다.
-          // 대신 **씬 조명**으로 시간대를 읽는다. `env.hemi` 는 커널이 소유하고 모든
-          // 기능에 공식으로 열려 있는 것이라, 이건 공유가 아니라 관측이다.
-          applyLevel(env.hemi.intensity < DAY_HEMI_MIN ? 'night' : 'day');
+          // ── 시간대를 **묻는다**. 추측하지 않는다 ──────────────────────────
+          // 여기 이런 줄이 있었다:
+          //
+          //     applyLevel(env.hemi.intensity < DAY_HEMI_MIN ? 'night' : 'day');
+          //
+          // 반구광 세기로 낮/밤을 가르는 간접 관측이었고, 규약("기능끼리 상태를 공유하지
+          // 않는다")을 지키려고 고른 방법이었다. 문턱 0.95 의 근거는 "밤 반구광 하한이
+          // 0.85" 였는데, 밤을 밝히는 커밋이 그 하한을 **1.2** 로 올리면서 밤이 낮으로
+          // 읽혔다 — 세기가 0 이 되어 감독 화면에서 번짐이 사라졌고 `?bloom=0` 과
+          // 구별조차 되지 않았다. 노을(0.85)만 밤으로 읽혀 **정확히 뒤집혔다.**
+          //
+          // 값을 고치는 것으로는 안 된다. 밤 하한(1.2)이 낮 값(1.0)보다 커진 뒤로는
+          // 어떤 문턱을 골라도 이 축이 성립하지 않는다 — **재는 축이 무효가 됐다.**
+          // 그래서 시간대를 계약으로 받는다(팀장 판정 A-2, `types.ts` 의 `time`).
+          applyLevel(env.time());
         },
       },
 
@@ -212,6 +223,10 @@ export const postfxFeature: Feature = {
         on: !!bloomNode,
         failure,
         strength: lastLevel,
+        // **어느 시간대로 판정했는가**(팀장 조건 5 · 뮤테이션 M4). `strength: 0` 만으로는
+        // "낮이라 0" 과 "배선이 끊겨 0" 을 구별할 수 없다 — 이번 사고가 정확히 후자였고
+        // 진단에 아무 신호가 없어 감독 화면을 보고서야 드러났다.
+        time: env.time(),
         radius: num('bloomrad', RADIUS),
         threshold: num('bloomthr', THRESHOLD),
         // 가로등이 문턱을 넘는가. 이 둘이 뒤집히면 블룸이 켜져도 아무것도 안 번진다.
@@ -226,14 +241,10 @@ export const postfxFeature: Feature = {
   },
 };
 
-/**
- * 이 값보다 반구광이 어두우면 밤으로 본다.
- *
- * `sky.js` 의 밤 반구광은 0.55 이고 우리 하한이 0.85 다. 낮은 1.0 이므로 그 사이인
- * 0.95 를 문턱으로 잡는다. 노을(0.85)은 밤 쪽으로 읽히는데, 해 질 녘에 등이 번지기
- * 시작하는 것이 오히려 자연스럽다.
- */
-const DAY_HEMI_MIN = 0.95;
+// ── `DAY_HEMI_MIN` 은 삭제했다 (팀장 조건 3) ─────────────────────────────────
+// 반구광 세기로 낮/밤을 가르던 문턱(0.95)이 여기 있었다. 근거는 "밤 반구광 하한이 0.85"
+// 였고, 밤을 밝히는 커밋이 그것을 1.2 로 올리면서 문턱이 거짓이 됐다(위 `update` 주석에
+// 전말이 있다). 이행기라며 남겨 두면 죽은 축이 미러링으로 잔존하므로 함께 지운다.
 
 interface PostProcessingLike {
   outputNode: unknown;

@@ -26,6 +26,7 @@
 // 개별 named type import를 쓴다 — `import type * as THREE from 'three/webgpu'`로 하면
 // 내부 네임스페이스 재수출에 걸려 타입이 안 잡힌다(TS2694).
 import type { Scene, DirectionalLight, HemisphereLight, Camera } from 'three/webgpu';
+import type { SkyTime } from '../decide/night.js';
 import type { System } from '../kernel.js';
 import type { RendererAdapter } from '../adapters/renderer.js';
 import type { InstancePools } from '../systems/instancing.js';
@@ -46,6 +47,42 @@ export interface FeatureEnv {
   readonly hemi: HemisphereLight;
   /** 월드 셀 크기(미터) */
   readonly cell: number;
+
+  /**
+   * 지금 몇 시인가. **조립부가 소유하는 월드 상태다.**
+   *
+   * ── 왜 계약에 있는가 (감독 발견 2026-07-30 · 팀장 판정 A-2) ────────────────
+   * 시간대를 아는 기능이 둘 이상이다 — 하늘(팔레트·가로등)과 후보정(블룸 세기). 그런데
+   * 계약에 없었으므로 후보정은 **반구광 세기를 관측해 낮/밤을 추측**했다:
+   *
+   *   env.hemi.intensity < 0.95 ? 'night' : 'day'
+   *
+   * 그 문턱의 근거는 "밤 반구광 하한이 0.85" 였는데, 밤을 밝히는 커밋이 그 하한을
+   * **1.2** 로 올리면서 밤이 낮으로 읽혔다. 블룸 세기 = `기본값 × nightness('day')` = 0.
+   * 감독 화면에서 가로등 번짐이 사라졌고, `?bloom=0` 과 구별조차 되지 않았다.
+   *
+   * 값이 틀린 것이 아니라 **재는 축이 무효가 됐다** — 밤 하한(1.2)이 낮 값(1.0)보다
+   * 커진 뒤로는 어떤 문턱을 골라도 반구광으로 시간대를 가릴 수 없다. 그래서 추측을
+   * 없애고 상태를 공식으로 연다.
+   *
+   * 함수인 것은 **세션 중 변하기 때문**이다(神 모드 패널·URL). 값으로 받으면 조립 시점의
+   * 시간대가 영원히 굳는다.
+   *
+   * 열거형 그대로 여는 것도 의도다 — `isNight` 같은 파생 boolean 으로 좁히면 노을이
+   * 사라지고, 그 정보를 각 소비자가 다시 만들면서 `nightness` 와 미러링이 생긴다.
+   */
+  readonly time: () => SkyTime;
+
+  /**
+   * 시간대를 바꾼다. **부르는 자리는 둘뿐이다**(팀장 조건 4):
+   *
+   *   ① 조립부 초기화 — `?time=` 을 읽어 넣는다
+   *   ② `features/sky.ts` — 神 모드 패널이 시간대를 고를 때
+   *
+   * 세 번째 경로가 열리면 소유가 다시 갈린다. 그래서 패널에는 하늘 엔진의 컨트롤을
+   * 그대로 주지 않고 **이 setter 를 거치는 것만** 준다.
+   */
+  readonly setTime: (t: SkyTime) => void;
   /** UI를 붙일 문서. 없는 환경(테스트)에서는 null */
   readonly doc: Document | null;
   /**

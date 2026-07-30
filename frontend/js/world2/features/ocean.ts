@@ -43,7 +43,8 @@
 // 부른다. **부팅 시 한 번 정하고 다시 만지지 않는다** — 그래서 안전하다.
 
 import * as THREE from 'three/webgpu';
-import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent } from '../decide/water.js';
+import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater } from '../decide/water.js';
+import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
@@ -227,6 +228,69 @@ function waveTintTexture() {
   return tex;
 }
 
+/**
+ * 강 판의 지오메트리 — **물 파셀 위에만 깐 쿼드 묶음.**
+ *
+ * 왜 큰 평면 하나가 아닌지는 아래 `river` 조립부 주석에 적었다(요약: 바다 판과 상시
+ * 이중 겹침이 되어 반투명 캘리브레이션이 무효화된다).
+ *
+ * **어디가 물인지는 `parcelWater` 에만 묻는다.** 강 중심선·반폭을 여기서 다시 계산하면
+ * 그것이 값 미러링이고, 판정이 강을 옮겼을 때 물 구멍과 강 판이 어긋난다.
+ *
+ * 격자 안만 순회하는 것이 중요하다 — `parcelWater` 는 격자 **밖**도 `'water'` 로
+ * 돌려주는데(세계의 끝 = 바다) 그쪽은 바다 판이 덮는다. 밖까지 깔면 바다 전체에 강
+ * 높이의 판이 한 장 더 생겨 원래 문제로 되돌아간다.
+ *
+ * UV 는 바다 판(`PlaneGeometry(PLANE, PLANE).rotateX(-π/2)`)과 **같은 규칙**으로 낸다.
+ * 그 회전 뒤 `u = x/PLANE + 0.5` · `v = 0.5 − z/PLANE` 가 되므로 그대로 쓴다 — 어긋나면
+ * 물결 무늬가 강과 바다에서 다른 크기·다른 방향으로 흐른다(같은 재질이므로 `repeat` 와
+ * `offset` 은 저절로 공유된다).
+ */
+function riverGeometry(): THREE.BufferGeometry {
+  const cellX = DEFAULT_LAYOUT.cellX;
+  const cellZ = DEFAULT_LAYOUT.cellZ;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  let n = 0;
+
+  for (let px = GRID_MIN_X; px <= GRID_MAX_X; px++) {
+    for (let pz = GRID_MIN_Z; pz <= GRID_MAX_Z; pz++) {
+      if (parcelWater(px, pz, cellX, cellZ) !== 'water') continue;
+
+      // 파셀이 덮는 범위. 지면 판과 **같은 규칙**이라야 물 구멍에 정확히 들어맞는다.
+      const x0 = px * cellX - cellX / 2;
+      const x1 = px * cellX + cellX / 2;
+      const z0 = pz * cellZ - cellZ / 2;
+      const z1 = pz * cellZ + cellZ / 2;
+
+      // y=0 으로 만들고 높이는 메시의 `position.y`(= RIVER_Y)가 준다 — 바다 판과
+      // 같은 방식이라 높이를 옮길 때 손댈 곳이 한 군데다.
+      pos.push(x0, 0, z0,  x1, 0, z0,  x1, 0, z1,  x0, 0, z1);
+      uv.push(
+        x0 / PLANE + 0.5, 0.5 - z0 / PLANE,
+        x1 / PLANE + 0.5, 0.5 - z0 / PLANE,
+        x1 / PLANE + 0.5, 0.5 - z1 / PLANE,
+        x0 / PLANE + 0.5, 0.5 - z1 / PLANE,
+      );
+      // 위에서 내려다볼 때 앞면이 되도록 감는다(반시계). 뒤집히면 위에서 안 보인다.
+      idx.push(n, n + 2, n + 1, n, n + 3, n + 2);
+      n += 4;
+    }
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  // 법선은 전부 위쪽 — 수평 판이므로 계산할 것이 없다. `computeVertexNormals` 를 쓰면
+  // 같은 값을 삼각형마다 다시 구하는 셈이고, 물결은 노말맵이 낸다.
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(
+    new Array(n * 3).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3,
+  ));
+  g.setIndex(idx);
+  return g;
+}
+
 export const oceanFeature: Feature = {
   name: 'ocean',
 
@@ -291,17 +355,29 @@ export const oceanFeature: Feature = {
     //
     // 두 높이를 요구하므로 판이 하나일 수 없다. **재질은 바다와 공유한다** — 같은
     // 물이고, 재질을 따로 만들면 물빛·윤슬·불투명도가 두 곳에 적히는 미러링이 된다.
-    // 지오도 공유한다(같은 크기의 판).
     //
-    // 강 모양을 이 파일이 알 필요는 없다. 격자 안에서 물인 곳은 강뿐이고(`decide/water.ts`
-    // 의 `inGrid` → `isRiver`), 스트리밍이 물 파셀의 지면을 아예 안 그리므로 **강 구멍으로
-    // 만 이 판이 드러난다.** 판정이 강 경로를 바꿔도 여기는 손댈 것이 없다 — 이 파일
-    // 머리말이 지키려는 성질 그대로다.
+    // ── 지오는 공유하지 않는다 (검수관 블로커) ──────────────────────────────
+    // 처음에는 지오도 공유했다(둘 다 세계보다 큰 `PLANE` 판). 그러면 **강이 보이는 모든
+    // 곳에서 두 판이 겹쳐 그려진다** — 격자 안에서 물인 곳은 강뿐이므로 "겹치는 구역"이
+    // 국지적인 게 아니라 물이 보이는 전 구간이 그 상태였다.
+    //
+    // 반투명 두 장이 겹치면 실효 불투명도가 `1 − (1 − 0.7)² = 0.91` 로 올라간다.
+    // `WATER_DEPTH` 는 **단일 반투명 층**을 전제로 고른 값이므로(물가에서 바닥이 어렴풋이
+    // 비치는 깊이) 그 캘리브레이션이 무효가 된다. 값이 아니라 전제가 깨진 형태다.
+    //
+    // 그래서 강 판을 **물 파셀 위에만** 깐다. `parcelWater` 가 'water' 로 분류한 칸에
+    // 정확히 그 칸 크기의 쿼드를 놓는다 — 판정과 렌더가 **같은 해상도**를 쓰므로 틈도
+    // 초과도 없다. 강 폭에 맞춰 리본을 그리는 방법도 있지만, 그러면 판정(파셀 단위)과
+    // 렌더(미터 단위)의 해상도가 달라 강 가장자리에 바다가 비치는 띠가 생긴다.
+    //
+    // 강 모양을 이 파일이 정하지는 않는다 — `decide/water.ts` 에 묻는다. 판정이 강 경로를
+    // 바꾸면 이 지오가 따라온다(이 파일 머리말이 지키려는 성질 그대로다).
     //
     // 강이 바다보다 위에 있으므로 더 늦게 그린다. 하구에는 50cm 단차가 생기는데 1차는
     // 그대로 둔다(팀장 판정: *"감독은 폭포를 지시하지 않았다 — 지시 안 한 연출을 추측으로
     // 메우지 않는다"*). 안개가 60.8m 에서 덮으므로 멀리서는 보이지 않는다.
-    const river = new THREE.Mesh(geo, seaMat);
+    const riverGeo = riverGeometry();
+    const river = new THREE.Mesh(riverGeo, seaMat);
     river.position.y = RIVER_Y;
     river.renderOrder = 2;
 
@@ -342,6 +418,10 @@ export const oceanFeature: Feature = {
           riverY: RIVER_Y,
           depth: `${WATER_DEPTH.toFixed(1)}m`,
           riverDepth: `${(RIVER_Y - SEABED_Y).toFixed(1)}m`,
+          // 강 판이 덮은 파셀 수. **0 이면 강이 아예 안 보인다** — 판정이 강을 옮겼거나
+          // 격자 순회가 어긋나면 조용히 빈 지오가 되고, 화면에는 "바다만 보이는 강"으로
+          // 나타난다. 에러도 경고도 없으므로 셀 수 있게 내보낸다.
+          riverParcels: riverGeo.index ? riverGeo.index.count / 6 : 0,
           // 세계의 끝에 얼마나 가까운지. 격자가 사각형이므로 **가장 가까운 변**까지의
           // 거리다 — 원형이던 시절의 `반경 − 중심거리` 를 그대로 두면 모서리 근처에서
           // 음수가 나와 "밖에 있다"고 잘못 읽힌다.
@@ -365,9 +445,13 @@ export const oceanFeature: Feature = {
       },
 
       dispose() {
+        // 세 판을 다 뗀다. `river` 가 빠져 있었다 — 판을 늘리면서 이 목록을 안 늘렸고,
+        // 씬에 남은 메시는 재질이 해제된 뒤에도 렌더 목록에 올라 있다.
         env.scene.remove(bed);
         env.scene.remove(sea);
+        env.scene.remove(river);
         geo.dispose();
+        riverGeo.dispose(); // 강은 자기 지오를 갖는다(파셀 단위 쿼드 묶음)
         bedMat.dispose();
         seaMat.dispose();
         normA.dispose();
