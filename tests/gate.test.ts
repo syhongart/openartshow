@@ -15,9 +15,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GATES } from '../scripts/gate.mjs';
+import { GATES, RISK_PATHS, changeSummary } from '../scripts/gate.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -94,10 +95,22 @@ describe('pre-commit 훅', () => {
     expect(readFileSync(join(ROOT, 'scripts', 'gate.mjs'), 'utf8')).toContain('.gate-stamp');
   });
 
-  it('.gate-stamp 가 .gitignore 대상이다', () => {
-    // 커밋되면 다른 세션·다른 사람의 스탬프가 섞여 검사가 무의미해진다.
-    const ignore = readFileSync(join(ROOT, '.gitignore'), 'utf8');
-    expect(ignore).toMatch(/^\/?\.gate-stamp$/m);
+  it('.gate-stamp 가 실제로 추적되지 않는다', () => {
+    // ── 첫 판본은 `.gitignore` **파일 내용**만 봤다 ────────────────────────
+    // 그래서 `.gate-stamp` 가 이미 추적 중인 상태를 통과시켰다. 실제로 그 상태로
+    // 커밋됐고(`b1e9421`), git 규칙상 **이미 추적된 파일은 .gitignore 가 무시하지
+    // 않는다** — 패턴을 적어둔 것만으로는 아무것도 보장되지 않는다.
+    //
+    // 또 하나의 "없는 보증" 이었다. 지금은 `git ls-files` 로 **결과**를 본다.
+    const r = spawnSync('git', ['ls-files', '.gate-stamp'], { cwd: ROOT, encoding: 'utf8' });
+    expect(
+      (r.stdout ?? '').trim(),
+      '.gate-stamp 가 추적되고 있다 — `git rm --cached .gate-stamp` 로 빼라.\n'
+      + '  커밋되면 다른 세션의 스탬프가 섞여 pre-commit 검사가 무의미해진다.',
+    ).toBe('');
+
+    // 패턴도 함께 확인한다(둘 다 필요하다 — 패턴이 없으면 다음에 또 추가된다).
+    expect(readFileSync(join(ROOT, '.gitignore'), 'utf8')).toMatch(/^\/?\.gate-stamp$/m);
   });
 
   it('SessionStart 훅이 hooksPath 를 설정한다', () => {
@@ -109,5 +122,51 @@ describe('pre-commit 훅', () => {
       .map((h: HookEntry) => h.command ?? '');
     expect(cmds.some((c: string) => c.includes('core.hooksPath')), 'SessionStart 에 hooksPath 설정이 없다').toBe(true);
     expect(cmds.some((c: string) => c.includes('scripts/githooks')), 'hooksPath 가 scripts/githooks 를 가리키지 않는다').toBe(true);
+  });
+});
+
+describe('변경 범위 요약 — 패턴 A(확인 없이 단정) 방지 축', () => {
+  it('위험 경로 목록이 CLAUDE.md 의 규율과 정합한다', () => {
+    // 값 미러링 지점이다. CLAUDE.md 는 산문이라 import 로 없앨 수 없으니 정합을 검사한다.
+    const claude = readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8');
+    expect(claude).toContain('.github/workflows/**');
+    expect(claude).toContain('scripts/smoke/**');
+    // 보호파일 이름이 CLAUDE.md 에 실제로 적혀 있는가
+    for (const name of ['main.js', 'player.js', 'artworks.js']) {
+      expect(claude, `CLAUDE.md 에 보호파일 ${name} 언급이 없다`).toContain(name);
+    }
+  });
+
+  it('보호파일 정규식이 실재 파일을 잡는다 (존재하지 않는 config.js 를 기준으로 삼지 않는다)', () => {
+    const guard = RISK_PATHS.find((p) => p.label.includes('보호파일'))!;
+    // config.ts 가 실재이고 config.js 는 없다(태스크 #138). 둘 다 잡히게 두되,
+    // **실재하는 쪽이 반드시 잡혀야 한다**.
+    expect(guard.re.test('frontend/js/config.ts')).toBe(true);
+    expect(guard.re.test('frontend/js/main.js')).toBe(true);
+    expect(existsSync(join(ROOT, 'frontend/js/config.ts'))).toBe(true);
+    // 무관한 파일은 안 잡는다
+    expect(guard.re.test('frontend/js/ui-dom.ts')).toBe(false);
+  });
+
+  it('워크플로·스모크 경로를 정확히 분류한다', () => {
+    const wf = RISK_PATHS.find((p) => p.label.includes('workflows'))!;
+    expect(wf.re.test('.github/workflows/deploy.yml')).toBe(true);
+    expect(wf.re.test('.github/workflows/ci.yml')).toBe(true);
+    expect(wf.re.test('scripts/gate.mjs')).toBe(false);
+
+    const sm = RISK_PATHS.find((p) => p.label.includes('smoke'))!;
+    expect(sm.re.test('scripts/smoke/run.mjs')).toBe(true);
+    expect(sm.re.test('scripts/gate.mjs')).toBe(false);
+  });
+
+  it('changeSummary 가 0 건도 보고한다 — "만지지 않았다" 를 화면에서 확인할 수 있어야 한다', () => {
+    const s = changeSummary('HEAD'); // 자기 자신 대비 = 변경 0
+    expect(s).not.toBeNull();
+    expect(s!.buckets.length).toBe(RISK_PATHS.length); // 0 건인 버킷도 빠지지 않는다
+    expect(s!.files).toEqual([]);
+  });
+
+  it('존재하지 않는 base 면 null (게이트를 깨뜨리지 않는다)', () => {
+    expect(changeSummary('존재하지-않는-ref-xyz')).toBeNull();
   });
 });

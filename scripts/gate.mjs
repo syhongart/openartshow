@@ -58,6 +58,79 @@ export function indexTreeHash(cwd = ROOT) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
+/**
+ * 위험 경로 — 여기를 만졌으면 별도 절차가 붙는다.
+ *
+ * CLAUDE.md 의 규율과 같은 값을 적고 있으므로 `tests/gate.test.ts` 가 정합을 검사한다
+ * (한쪽만 고치면 테스트가 깨진다). `config.js` 는 **일부러 넣지 않았다** — 그 파일은
+ * 존재하지 않고 실재는 `config.ts` 다(태스크 #138).
+ */
+export const RISK_PATHS = [
+  { label: '.github/workflows/', re: /^\.github\/workflows\//, why: '§10-4 검수관 무조건' },
+  { label: 'scripts/smoke/', re: /^scripts\/smoke\//, why: '§10-4 검수관 무조건' },
+  { label: '보호파일(라이브 런타임)', re: /^frontend\/js\/(main|player|artworks|config)\.(js|ts)$/, why: '팀장 사전서명' },
+];
+
+/**
+ * 이 브랜치가 만진 것을 위험도별로 요약한다. **0 이어도 출력한다.**
+ *
+ * ── 왜 이것이 게이트에 있나 (감독 지시 2026-07-30 *"실수가 왜 이렇게 많지?"*) ──
+ * 그날 실수 40건을 패턴으로 묶으니 최대 집단이 **"확인할 수 있었는데 확인 없이 단정"**
+ * 이었다. 그리고 그 주장들은 전부 같은 종류였다 — *이 브랜치가 무엇을 만졌는가*:
+ *   · "typecheck 0" (게이트 결과를 안 보고)
+ *   · "워크플로 diff 0" (ci.yml 만 보고 deploy.yml 을 안 봐서 거짓이 됐다)
+ *   · "미러 6곳 중 4곳만 잡는다" (grep 한 번이면 6곳 다 잡을 수 있었다)
+ *   · "권고 3건 반영" (git diff 에 없었다)
+ * 전부 **단일 명령으로 확인 가능**했는데 안 했다. 그럴듯해서 확인하지 않은 것이다.
+ *
+ * 그래서 확인을 선택에서 뺐다. 내가 보든 안 보든 **매번 화면에 나온다.** 게이트는
+ * 자연어 주장을 검사할 수 없지만, 그 주장의 근거를 눈앞에 놓을 수는 있다.
+ */
+export function changeSummary(base = 'origin/main', cwd = ROOT) {
+  const r = spawnSync('git', ['diff', '--name-only', `${base}...HEAD`], { cwd, encoding: 'utf8' });
+  if (r.status !== 0) return null; // base 를 못 찾으면(오프라인 등) 조용히 생략
+  const files = (r.stdout ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
+
+  const buckets = RISK_PATHS.map((p) => ({ ...p, hits: files.filter((f) => p.re.test(f)) }));
+  const risky = new Set(buckets.flatMap((b) => b.hits));
+  const other = files.filter((f) => !risky.has(f));
+
+  // 로컬 잔재 — 무시된 생성물이 워킹트리에 쌓여 있으면 진단을 오염시킨다. 실제 사고:
+  // 검사2 의 `+3` 이중계상을 "devlog 140" 근거로 진단했는데, 그 140 은 경로 재편 전
+  // 산출물 139개가 로컬에 남아 있던 것이었다(클린 클론에서는 1). 결론은 맞고 근거가
+  // 틀렸다 — `git status` 에 안 보여서 아무도 몰랐다.
+  const ig = spawnSync('git', ['status', '--porcelain', '--ignored', '--untracked-files=all'], { cwd, encoding: 'utf8' });
+  const stale = (ig.stdout ?? '').split('\n')
+    .filter((l) => l.startsWith('!!'))
+    .map((l) => l.slice(3).trim())
+    // 의존성·빌드 산출물은 **노이즈다.** 첫 판본이 이것을 안 걸러 8,398개를 세었고
+    // (node_modules 7,671 · _site 370 · dist 68) 정작 봐야 할 수(making 143 ·
+    // devlog 140)가 묻혔다. 진단을 오염시키는 것은 **생성기 산출물**이다.
+    .filter((p) => !/^(node_modules|dist|_site|\.git)\//.test(p))
+    .length;
+
+  return { files, buckets, other, stale, base };
+}
+
+function printChangeSummary() {
+  const s = changeSummary();
+  if (!s) return;
+  console.log('');
+  console.log(`── 이 브랜치가 만진 것 (${s.base} 대비) ${'─'.repeat(24)}`);
+  for (const b of s.buckets) {
+    const mark = b.hits.length ? '⚠' : ' ';
+    console.log(`  ${mark} ${b.label.padEnd(24)} ${String(b.hits.length).padStart(3)} 파일${b.hits.length ? `   → ${b.why}` : ''}`);
+    for (const f of b.hits) console.log(`      ${f}`);
+  }
+  console.log(`    ${'그 외'.padEnd(23)} ${String(s.other.length).padStart(3)} 파일`);
+  if (s.stale > 0) {
+    console.log('');
+    console.log(`  ⚠ 무시된 산출물 ${s.stale}개가 워킹트리에 있다 — 수치를 진단 근거로 쓸 때`);
+    console.log('    클린 클론에서 다시 재라(로컬 잔재가 근거를 오염시킨 전례가 있다).');
+  }
+  console.log('─'.repeat(60));
+}
+
 function run(gate) {
   const label = gate.name.padEnd(20);
   process.stdout.write(`  ${label} `);
@@ -108,6 +181,9 @@ function main() {
 
   console.log('');
   console.log(`게이트 ${GATES.length}종 전부 exit 0.${tree ? ` 스탬프: ${tree.slice(0, 12)}` : ''}`);
+
+  // 통과했어도 **변경 범위는 항상 본다.** 이것이 보고 문장의 근거다.
+  printChangeSummary();
   return 0;
 }
 
