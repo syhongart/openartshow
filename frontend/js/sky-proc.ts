@@ -163,6 +163,16 @@ export function getWindowSceneryTexture() {
   _sceneryTex = new THREE.CanvasTexture(canvas);
   // **색공간 명시 필수** — 누락이 하늘을 3배 밝힌 실제 사고가 있다(팀장 조건).
   _sceneryTex.colorSpace = THREE.SRGBColorSpace;
+
+  // ── `shared` 플래그가 없으면 dispose 에 파괴된다 ────────────────────────
+  // `disposeSpaceGroup` 은 재질의 `map` 을 회수하는데, **`userData.shared` 인 것만
+  // 건너뛴다**(`space-assembler.ts` 의 dispose 루프). 이 텍스처는 세션당 1개를 모든
+  // 창이 공유하므로, 플래그가 없으면 **공간 하나를 언로드할 때 파괴되어 남은/다음
+  // 공간의 창이 깨진다.** 그 파일 주석이 같은 시나리오를 이미 경고하고 있다:
+  //   "한 파셀 언로드가 그것을 dispose하면 남은 파셀의 렌더가 깨지고 다음 사용 시
+  //    파이프라인이 재생성된다"
+  // 스모크는 페이지를 한 번 열 뿐이라 이 결함을 통과시킨다 — 공간 전환이 있어야 난다.
+  _sceneryTex.userData.shared = true;
   return _sceneryTex;
 }
 

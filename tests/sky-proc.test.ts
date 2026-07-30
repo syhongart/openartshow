@@ -144,6 +144,18 @@ describe('sky-proc — 창밖 풍경 텍스처', () => {
     expect(a).toBe(b);
   });
 
+  it('shared 플래그가 있다 — 없으면 공간 언로드가 공유 텍스처를 파괴한다', async () => {
+    // ── 실측된 결함이다 ──────────────────────────────────────────────────
+    // `disposeSpaceGroup` 은 재질의 `map` 을 회수하되 `userData.shared` 인 것만 건너뛴다
+    // (`space-assembler.ts` dispose 루프). 이 텍스처는 세션당 1개를 모든 창이 공유하므로
+    // 플래그가 없으면 **공간 하나를 언로드할 때 파괴되어 다음 공간의 창이 깨진다.**
+    //
+    // 스모크는 페이지를 한 번 열 뿐이라 이것을 통과시켰다 — 공간 전환이 있어야 나는
+    // 결함이고, 그래서 "스모크 PASS" 가 근거가 되지 못한다.
+    const { getWindowSceneryTexture } = await load();
+    expect(getWindowSceneryTexture().userData.shared).toBe(true);
+  });
+
   it('색공간을 명시한다 — 누락이 하늘을 3배 밝힌 사고가 있다', async () => {
     const { getWindowSceneryTexture } = await load();
     expect(getWindowSceneryTexture().colorSpace).toBe(THREE.SRGBColorSpace);
