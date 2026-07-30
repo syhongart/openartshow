@@ -113,6 +113,29 @@ export interface FeatureInstance {
   diagnostics?(): unknown;
 
   /**
+   * **화면 진단 배지(`?diag=1`)에 실을 한 줄.** 없으면 그 기능은 배지에 안 나온다.
+   *
+   * ── 왜 `diagnostics` 로 안 되는가 ─────────────────────────────────────────
+   * 배지는 감독이 **폰에서 읽는** 것이라 다섯 줄 남짓이 한계다. `diagnostics` 를 전부
+   * 쏟으면 읽을 수 없고, 읽을 수 없는 진단은 없는 진단과 같다(그것이 배지를 만든 이유다).
+   *
+   * 그래서 "무엇이 중요한지"를 골라야 하는데, **그 판단은 기능 자신만 할 수 있다.**
+   * 처음엔 배지가 진단 스냅샷에서 **기능 이름으로 직접 골라 읽었다가** 규약을 깼다 —
+   * `features/index.ts` 에서 그 기능의 한 줄을 지워도 배지 코드에 이름이 남았다.
+   * 참조자 검사가 그것을 잡았다(기능별 테스트가 그 불변식을 지킨다).
+   *
+   * 이제 배지는 문자열 배열만 받는다 — **기능 이름을 하나도 모른다.** 기능을 빼면 그
+   * 줄이 저절로 사라진다. `diagnostics` 와 정확히 같은 배치다.
+   *
+   * ── 무엇을 적는가 ────────────────────────────────────────────────────────
+   * *"이게 왜 안 보이나"* 에 답하는 값. 못 잰 값을 0 이나 빈칸으로 흘리지 않는다 —
+   * 화면에서도 "측정 안 됨" 과 "0" 은 다른 일이다.
+   *
+   * `null` 을 돌려주면 그 줄을 뺀다(예: 기능이 이번 세션에 관여하지 않는 상태).
+   */
+  badgeLine?(): string | null;
+
+  /**
    * 드로우콜 판정의 그룹 키 조각.
    *
    * 드로우콜은 가시성에 따라 정당하게 변한다(하늘 날씨, 훗날 바다 상태 등). 그래서 성능
@@ -234,6 +257,27 @@ export function collectDiagnostics(mounted: readonly MountedFeature[]): Record<s
   for (const m of mounted) {
     if (!m.instance.diagnostics) continue;
     try { out[m.name] = m.instance.diagnostics(); } catch { out[m.name] = '(진단 실패)'; }
+  }
+  return out;
+}
+
+/**
+ * 화면 배지에 실을 줄들을 모은다. **여기에 기능별 분기가 없다** — `collectDiagnostics` 와
+ * 같은 배치이고, 그것이 규약("기능을 빼면 그 기능에 관한 모든 것이 함께 빠진다")을
+ * 지키는 유일한 형태다.
+ *
+ * 이름을 앞에 붙이는 것은 조립부가 한다 — 기능이 자기 이름을 문자열로 또 적으면 그것이
+ * 값 미러링이다(`Feature.name` 이 이미 있다).
+ *
+ * 한 기능이 터져도 나머지 줄은 살린다. 진단이 화면을 멎게 하는 것은 어떤 경우에도 옳지 않다.
+ */
+export function collectBadgeLines(mounted: readonly MountedFeature[]): string[] {
+  const out: string[] = [];
+  for (const m of mounted) {
+    if (!m.instance.badgeLine) continue;
+    let line: string | null;
+    try { line = m.instance.badgeLine(); } catch { line = '(진단 실패)'; }
+    if (line !== null && line !== undefined) out.push(`${m.name} ${line}`);
   }
   return out;
 }

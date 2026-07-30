@@ -218,6 +218,22 @@ export const postfxFeature: Feature = {
         },
       },
 
+      /**
+       * 화면 배지 한 줄 (`?diag=1`).
+       *
+       * **세 값을 함께 적어야 원인이 갈린다** — 이번 사고에서 감독이 말할 수 있었던 것은
+       * *"둘다 꺼짐"* 이 전부였고, 그것으로는 "안 켜졌다"(백엔드·조립 실패)와 "켜졌는데
+       * 세기가 0"(시간대 오판)을 구별할 수 없었다. 그 둘은 완전히 다른 고장이다.
+       *
+       * `failure` 가 있으면 그것이 답이므로 그것만 적는다 — 좁은 화면에서 가장 중요한
+       * 한 줄이 밀려나지 않게.
+       */
+      badgeLine() {
+        if (failure) return `off — ${failure.slice(0, 44)}`;
+        const t = env.time();
+        return `${bloomNode ? 'on' : 'off'} · ${t} · 세기 ${lastLevel < 0 ? '—' : lastLevel.toFixed(2)}`;
+      },
+
       // `on` 이 false 면 블룸이 안 걸린 것이고, `failure` 가 이유를 말한다.
       diagnostics: () => ({
         on: !!bloomNode,

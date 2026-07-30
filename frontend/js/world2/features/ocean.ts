@@ -409,6 +409,19 @@ export const oceanFeature: Feature = {
         },
       },
 
+      /**
+       * 화면 배지 한 줄 (`?diag=1`).
+       *
+       * **강 파셀 수가 핵이다.** 0 이면 강이 아예 안 보이는데, 판정이 강을 옮겼거나 격자
+       * 순회가 어긋나면 조용히 빈 지오가 되고 화면에는 "바다만 보이는 강"으로 나타난다 —
+       * 에러도 경고도 없다. 두 수면 높이를 함께 적어 감독이 지시한 단차(강 50cm · 바다
+       * 1m)가 실제로 들어갔는지도 그 자리에서 확인된다.
+       */
+      badgeLine() {
+        const n = riverGeo.index ? riverGeo.index.count / 6 : 0;
+        return `강 ${n}칸 · 강 ${RIVER_Y}m / 바다 ${SEA_Y}m`;
+      },
+
       diagnostics() {
         const { x, z } = env.player.position;
         return {

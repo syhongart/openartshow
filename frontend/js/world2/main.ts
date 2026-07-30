@@ -23,7 +23,7 @@ import { attachHud, type PerfHud } from './ui/hud.js';
 import { attachDiagBadge } from './ui/diag-badge.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
 import {
-  FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics, prewarmFeatures,
+  FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics, collectBadgeLines, prewarmFeatures,
   type MountedFeature,
 } from './features/index.js';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
@@ -499,7 +499,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 위 스냅샷은 콘솔에서만 볼 수 있었고, 감독 기기는 폰이다. **잴 수 있는데 볼 수 없으면
   // 진단이 없는 것과 같다** — 블룸이 밤에 꺼져 있던 것을 감독이 *"둘다 꺼짐"* 이라고만
   // 말할 수 있었던 이유다. 기본은 꺼짐(이 화면의 목적은 캡처다).
-  const diag = attachDiagBadge(document, statsSnapshot);
+  //
+  // **여기에 기능별 분기가 없다.** 커널 소유 값(백엔드·드로우콜)만 넘기고, 나머지는 각
+  // 기능이 `badgeLine()` 으로 스스로 내놓는다 — `collectDiagnostics` 와 같은 배치다.
+  // 첫 판본은 배지가 진단 스냅샷에서 기능 이름으로 직접 골라 읽어 규약을 깼고(기능을
+  // 목록에서 빼도 배지에 이름이 남았다) 참조자 검사가 그것을 잡았다.
+  const diag = attachDiagBadge(
+    document,
+    () => ({ backend: adapter!.backend, frame: adapter!.frameStats() }),
+    () => collectBadgeLines(features),
+  );
 
   (window as unknown as Record<string, unknown>).__world2 = {
     /** 부팅 단계별 경과(ms) */

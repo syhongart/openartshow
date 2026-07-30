@@ -223,6 +223,27 @@ export const glbCityFeature: Feature = {
     })();
 
     return {
+      /**
+       * 화면 배지 한 줄 (`?diag=1`).
+       *
+       * **핵심은 `mat`(재질 축)이다.** 감독이 2026-07-29 에 이미 판정했다 — `raw` 안 보임
+       * / `noext` 보임 / `std` 보임. 그 판정이 위 주석에만 있고 **화면에서는 볼 수 없었다.**
+       * `?glbraw=1` 같은 하위호환 링크가 살아 있어 실수로 `raw` 로 열 수 있는데, 그러면
+       * 건물이 안 보이고 원인은 "GLB 가 고장났다" 로 오진된다.
+       *
+       * `tamed`·`opaque` 는 **넣지 않는다.** 위 주석이 *"이게 0 이면 건물이 검게 보인다"*
+       * 로 적고 있으나 그것은 GLB 파일을 고치기 **전** 기준이다. 파일 쪽에서 metallic
+       * 9개→0 · BLEND 5개→OPAQUE 로 이미 고쳤으므로 지금은 눅일 것이 없어 **0 이 정상**
+       * 이다(헤드리스 실측 확인). 좁은 화면에 정상값을 결함처럼 띄우면 거짓 경보가 된다.
+       *
+       * 대신 `meshesTotal` 을 적는다 — 채수를 올릴 때 실제로 뭐가 늘어나는지가 그것이다.
+       */
+      badgeLine() {
+        if (counts.state === 'failed') return `실패 — ${String(counts.error ?? '이유 없음').slice(0, 40)}`;
+        if (counts.state === 'loading') return `로딩 중 (${want}채 요청)`;
+        return `${counts.placed}채 · 재질 ${counts.mat ?? '—'} · 메시 ${counts.meshesPer * counts.placed}`;
+      },
+
       diagnostics: () => ({
         want,
         placed: counts.placed,

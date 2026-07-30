@@ -3,9 +3,9 @@
 // 화면 진단 배지 — **감독이 폰에서 원인을 판별할 수 있는가.**
 //
 // ── 이 파일이 막는 것 ───────────────────────────────────────────────────────
-// 이 배지는 진단을 **다시 계산하지 않고** `stats()` 를 그대로 읽는다. 그 규율이 깨지면
-// 화면과 실제가 갈리고, 그 순간 배지는 거짓말하는 장치가 된다 — 진단을 못 믿게 되면
-// 안 만든 것보다 나쁘다.
+// 배지는 기능 이름을 **하나도 몰라야 한다.** 첫 판본이 그것을 어겼다 —
+// `stats().glbCity.tamed` 를 직접 골라 읽어서, `features/index.ts` 에서 GLB 한 줄을 지워도
+// 배지에 그 이름이 남았다. `tests/world2-glb-city.test.ts` 의 참조자 검사가 잡았다.
 //
 // 그리고 **기본으로 떠서는 안 된다.** 이 화면의 목적은 캡처이고(감독이 지도를 접게 한
 // 이유), 상시 오버레이는 그것을 정면으로 방해한다.
@@ -15,20 +15,17 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { attachDiagBadge } from '../frontend/js/world2/ui/diag-badge.js';
+import { collectBadgeLines } from '../frontend/js/world2/features/types.js';
 
 /** `?diag=` 를 바꿔 끼운다. jsdom 은 `location` 을 직접 못 쓰므로 통째로 스텁한다 */
 function withSearch(search: string) {
   vi.stubGlobal('location', { search });
 }
 
-beforeEach(() => {
-  document.body.innerHTML = '';
-});
+const text = () => document.getElementById('w2-diag')?.textContent ?? '';
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.useRealTimers();
-});
+beforeEach(() => { document.body.innerHTML = ''; });
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('켜는 조건', () => {
   it('?diag=1 이 없으면 붙지 않는다 — 캡처를 방해하지 않는다', () => {
@@ -51,36 +48,15 @@ describe('켜는 조건', () => {
   });
 });
 
-describe('무엇을 보여주는가', () => {
-  it('블룸이 안 켜진 이유를 그대로 적는다 — "왜 안 보이나" 의 답이다', () => {
+describe('커널 값 — backend 가 첫 줄이다', () => {
+  it('backend 를 보여준다 — 이 저장소의 열린 사각이 전부 그 값에 달려 있다', () => {
+    // WebGPU 가 아니면 블룸은 **정상적으로** 안 켜진다(TSL 후보정이 WebGL 에서 부팅을
+    // 깨뜨려 의도적으로 막았다). 그 구별을 못 하면 정상을 고장으로 오진한다.
     withSearch('?diag=1');
-    const b = attachDiagBadge(document, () => ({
-      backend: 'WebGL',
-      postfx: { on: false, failure: 'WebGL 백엔드 — TSL 후보정이 부팅을 깨뜨려 켜지 않는다(WebGPU 전용)', strength: -1, time: 'night' },
-    }))!;
-    const t = document.getElementById('w2-diag')!.textContent!;
-    // backend 가 이 판별의 핵이다 — WebGPU 가 아니면 블룸은 **정상적으로** 안 켜진다
-    expect(t).toContain('WebGL');
-    expect(t).toContain('WebGPU 전용');
+    const b = attachDiagBadge(document, () => ({ backend: 'WebGL', frame: { draw: 108 } }))!;
+    expect(text()).toContain('WebGL');
+    expect(text()).toContain('108');
     b.dispose();
-  });
-
-  it('세기 0 과 기능 고장을 구별한다 — 이번 사고가 그 둘을 못 갈랐다', () => {
-    withSearch('?diag=1');
-    // 낮이라 0 인 정상 상태
-    const ok = attachDiagBadge(document, () => ({
-      backend: 'WebGPU',
-      postfx: { on: true, failure: null, strength: 0, time: 'day' },
-    }))!;
-    const okText = document.getElementById('w2-diag')!.textContent!;
-    expect(okText).toContain('on');
-    expect(okText).toContain('day');
-    ok.dispose();
-
-    // 기능이 아예 없는 상태 — 같은 "세기 0" 이지만 다른 일이다
-    const gone = attachDiagBadge(document, () => ({ backend: 'WebGPU' }))!;
-    expect(document.getElementById('w2-diag')!.textContent).toContain('기능 없음');
-    gone.dispose();
   });
 
   it('측정 안 된 값을 0 으로 보여주지 않는다', () => {
@@ -88,41 +64,94 @@ describe('무엇을 보여주는가', () => {
     // 흘러가면, 값을 못 읽은 것과 값이 0 인 것이 화면에서 같아진다.
     withSearch('?diag=1');
     const b = attachDiagBadge(document, () => ({}))!;
-    const t = document.getElementById('w2-diag')!.textContent!;
-    expect(t).toContain('—');
-    expect(t).not.toMatch(/backend\s+0/);
+    expect(text()).toContain('—');
+    expect(text()).not.toMatch(/backend\s+0/);
     b.dispose();
   });
 
-  it('강 파셀 수를 보여준다 — 0 이면 강이 안 보인다는 신호다', () => {
+  it('0 을 측정 실패로 표시하지 않는다 — 그 반대 방향도 지킨다', () => {
     withSearch('?diag=1');
-    const b = attachDiagBadge(document, () => ({ ocean: { riverParcels: 37 } }))!;
-    expect(document.getElementById('w2-diag')!.textContent).toContain('37');
+    const b = attachDiagBadge(document, () => ({ backend: 'WebGPU', frame: { draw: 0 } }))!;
+    expect(text()).toMatch(/드로우콜\s+0/);
     b.dispose();
   });
 });
 
-describe('값의 출처가 하나다', () => {
-  it('스냅샷을 다시 읽어 갱신한다 — 첫 값을 굳혀두지 않는다', () => {
+describe('기능 줄 — 배지는 기능 이름을 모른다', () => {
+  it('넘겨받은 줄을 그대로 싣는다', () => {
     withSearch('?diag=1');
-    let time = 'day';
-    const b = attachDiagBadge(document, () => ({
-      postfx: { on: true, failure: null, strength: 0, time },
-    }))!;
-    expect(document.getElementById('w2-diag')!.textContent).toContain('day');
-    // 神 모드 패널로 시간대를 바꾼 상황
-    time = 'night';
-    b.refresh();
-    expect(document.getElementById('w2-diag')!.textContent).toContain('night');
+    const b = attachDiagBadge(document, () => ({}), () => ['postfx on · night · 세기 1.15'])!;
+    expect(text()).toContain('postfx on · night · 세기 1.15');
     b.dispose();
   });
 
-  it('스냅샷이 터져도 화면을 멎게 하지 않는다', () => {
+  it('줄이 없으면 커널 값만 나온다 — 없는 기능을 위한 자리를 만들지 않는다', () => {
+    // 기능을 목록에서 빼면 그 줄이 저절로 사라져야 한다. 배지가 `GLB —` 같은 빈 자리를
+    // 남기면 "안 켠 것" 과 "켰는데 실패한 것" 이 화면에서 같아진다.
+    withSearch('?diag=1');
+    const b = attachDiagBadge(document, () => ({ backend: 'WebGPU' }), () => [])!;
+    expect(text().split('\n')).toHaveLength(2);
+    b.dispose();
+  });
+
+  it('줄 수집이 터져도 화면을 멎게 하지 않는다', () => {
+    withSearch('?diag=1');
+    const b = attachDiagBadge(document, () => ({}), () => { throw new Error('진단 없음'); })!;
+    expect(text()).toContain('진단 실패');
+    b.dispose();
+  });
+
+  it('커널 값 읽기가 터져도 화면을 멎게 하지 않는다', () => {
     // 배지는 있으면 좋은 것이고 월드는 필수다 — `postfx` 가 렌더 훅에서 한 판단과 같다.
     withSearch('?diag=1');
-    const b = attachDiagBadge(document, () => { throw new Error('진단 없음'); })!;
-    expect(document.getElementById('w2-diag')!.textContent).toContain('진단 실패');
+    const b = attachDiagBadge(document, () => { throw new Error('어댑터 없음'); })!;
+    expect(text()).toContain('진단 실패');
     b.dispose();
+  });
+
+  it('스냅샷을 다시 읽어 갱신한다 — 첫 값을 굳혀두지 않는다', () => {
+    withSearch('?diag=1');
+    let line = 'postfx on · day · 세기 0.00';
+    const b = attachDiagBadge(document, () => ({}), () => [line])!;
+    expect(text()).toContain('day');
+    line = 'postfx on · night · 세기 1.15'; // 神 모드 패널로 시간대를 바꾼 상황
+    b.refresh();
+    expect(text()).toContain('night');
+    b.dispose();
+  });
+});
+
+describe('collectBadgeLines — 기능별 분기가 없다', () => {
+  const mk = (name: string, badgeLine?: () => string | null) => ({
+    name,
+    instance: badgeLine ? { badgeLine } : {},
+  });
+
+  it('기능 이름을 앞에 붙여 모은다 — 기능이 자기 이름을 또 적지 않는다', () => {
+    // 이름은 `Feature.name` 에 이미 있다. 기능이 문자열로 다시 적으면 값 미러링이다.
+    const out = collectBadgeLines([
+      mk('postfx', () => 'on · night'),
+      mk('ocean', () => '강 37칸'),
+    ] as never);
+    expect(out).toEqual(['postfx on · night', 'ocean 강 37칸']);
+  });
+
+  it('badgeLine 이 없는 기능은 건너뛴다', () => {
+    const out = collectBadgeLines([mk('sky'), mk('ocean', () => '강 37칸')] as never);
+    expect(out).toEqual(['ocean 강 37칸']);
+  });
+
+  it('null 을 돌려주면 그 줄을 뺀다', () => {
+    const out = collectBadgeLines([mk('glbCity', () => null), mk('ocean', () => 'x')] as never);
+    expect(out).toEqual(['ocean x']);
+  });
+
+  it('한 기능이 터져도 나머지 줄은 살린다', () => {
+    const out = collectBadgeLines([
+      mk('broken', () => { throw new Error('터짐'); }),
+      mk('ocean', () => '강 37칸'),
+    ] as never);
+    expect(out).toEqual(['broken (진단 실패)', 'ocean 강 37칸']);
   });
 });
 
