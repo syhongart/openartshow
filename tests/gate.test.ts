@@ -200,6 +200,20 @@ describe('변경 범위 요약 — 패턴 A(확인 없이 단정) 방지 축', (
         .toContain('.github/workflows/x.yml');
       const wf = s!.buckets.find((b) => b.label.includes('workflows'))!;
       expect(wf.hits, '워크플로 신설이 위험 버킷으로 분류되지 않았다').toEqual(['.github/workflows/x.yml']);
+
+      // ── unstaged 는 요약에 **나오지 않는다** ────────────────────────────
+      // 이 단언이 없으면 위 케이스만으로는 `--cached` 를 지워도 테스트가 통과한다.
+      // 실측(뮤테이션 M1): staged 변경만 있을 때 `git diff HEAD` 와
+      // `git diff --cached HEAD` 는 **같은 답을 낸다** — 두 범위가 갈리는 것은
+      // unstaged 변경이 있을 때뿐이다. 그래서 그 상태를 만들어 재야 한다.
+      //
+      // 요약이 unstaged 를 포함하면 "이 브랜치가 만진 것" 이 **커밋될 내용과 달라진다.**
+      // 스탬프 거부가 같은 상태를 따로 막지만, 요약은 그보다 먼저 화면에 찍히므로
+      // 그 사이에 틀린 근거를 보여줄 수 있다. 요약의 기준은 index 하나여야 한다.
+      writeFileSync(join(tmp, 'seed.txt'), 'seed\ndirty\n'); // add 하지 않는다
+      const s2 = changeSummary('HEAD', tmp);
+      expect(s2!.files, 'unstaged 변경이 요약에 섞였다 — index 가 아니라 워킹트리를 보고 있다')
+        .toEqual(['.github/workflows/x.yml']);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
