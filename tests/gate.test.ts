@@ -14,8 +14,9 @@
 // 여러 번 겪은 형태다(검사2 가 장식이었던 일, 성능 게이트가 observe 로 남은 일).
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GATES, RISK_PATHS, changeSummary } from '../scripts/gate.mjs';
@@ -159,14 +160,73 @@ describe('변경 범위 요약 — 패턴 A(확인 없이 단정) 방지 축', (
     expect(sm.re.test('scripts/gate.mjs')).toBe(false);
   });
 
-  it('changeSummary 가 0 건도 보고한다 — "만지지 않았다" 를 화면에서 확인할 수 있어야 한다', () => {
-    const s = changeSummary('HEAD'); // 자기 자신 대비 = 변경 0
+  it('changeSummary 가 0 건인 버킷도 보고한다 — "만지지 않았다" 를 화면에서 확인할 수 있어야 한다', () => {
+    // 위험 경로를 하나도 안 만졌을 때 그 줄이 **사라지면** 안 된다. 사라지면 "안 만졌다"
+    // 와 "요약이 그 축을 잊었다" 가 화면에서 구별되지 않는다.
+    const s = changeSummary('HEAD');
     expect(s).not.toBeNull();
-    expect(s!.buckets.length).toBe(RISK_PATHS.length); // 0 건인 버킷도 빠지지 않는다
-    expect(s!.files).toEqual([]);
+    expect(s!.buckets.length).toBe(RISK_PATHS.length);
+    for (const b of s!.buckets) expect(Array.isArray(b.hits)).toBe(true);
+  });
+
+  it('index 를 본다 — 아직 커밋되지 않은 staged 신규 파일이 요약에 나온다', () => {
+    // ── 이 테스트는 실제 사고를 재현한다 ──────────────────────────────────
+    // 첫 판본은 `${base}...HEAD` 였다. 게이트는 **항상 커밋 전에** 도는데 그 범위는
+    // 커밋된 것만 보므로, 이 세션에서 `.github/workflows/review-record.yml` 을 신설한
+    // 직후 게이트가 "workflows 0 파일" 로 보고했다 — 검수관 무조건 트리거인 파일을
+    // 추가하면서 그 신호를 놓쳤다. 요약이 막으려던 실패를 요약 자신이 저지른 것이다.
+    //
+    // **저장소 워킹트리를 건드리지 않는다**(규율). `changeSummary` 의 `cwd` 파라미터로
+    // 임시 저장소를 대신 넘긴다 — 그래서 이 검출력은 현재 워킹트리 상태와 무관하게
+    // 항상 성립한다. `changeSummary('HEAD')` 의 결과로 검사하면 staged 가 0 인 순간
+    // (커밋 직후)에는 아무것도 못 잡는 테스트가 된다.
+    const tmp = mkdtempSync(join(tmpdir(), 'gate-index-'));
+    const g = (...args: string[]) =>
+      spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: tmp, encoding: 'utf8' });
+    try {
+      g('init', '-q');
+      writeFileSync(join(tmp, 'seed.txt'), 'seed\n');
+      g('add', 'seed.txt');
+      g('commit', '-qm', 'seed');
+
+      // 검수관 무조건 트리거 경로를 신설하고 add 만 한다(= 사고 당시의 상태).
+      mkdirSync(join(tmp, '.github', 'workflows'), { recursive: true });
+      writeFileSync(join(tmp, '.github', 'workflows', 'x.yml'), 'name: x\n');
+      g('add', '.github/workflows/x.yml');
+
+      const s = changeSummary('HEAD', tmp);
+      expect(s).not.toBeNull();
+      expect(s!.files, 'staged 신규 파일이 요약에 없다 — index 가 아니라 HEAD 를 보고 있다')
+        .toContain('.github/workflows/x.yml');
+      const wf = s!.buckets.find((b) => b.label.includes('workflows'))!;
+      expect(wf.hits, '워크플로 신설이 위험 버킷으로 분류되지 않았다').toEqual(['.github/workflows/x.yml']);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it('존재하지 않는 base 면 null (게이트를 깨뜨리지 않는다)', () => {
     expect(changeSummary('존재하지-않는-ref-xyz')).toBeNull();
+  });
+});
+
+describe('훅 배선 — 설정은 추적되지 않는다', () => {
+  it('gate.mjs 가 core.hooksPath 를 확인·복구한다', () => {
+    // executor 재현이 드러낸 사각: `core.hooksPath` 는 `.git/config` 에만 있어
+    // **클론에 따라가지 않는다.** 훅 파일은 추적돼 따라오지만 git 이 안 본다.
+    // SessionStart 만으로는 새 클론·별도 worktree 를 못 덮는다.
+    const src = readFileSync(join(ROOT, 'scripts', 'gate.mjs'), 'utf8');
+    expect(src).toContain('core.hooksPath');
+    expect(src, 'ensureHooksWired() 가 없다 — 배선 복구 경로가 사라졌다').toContain('ensureHooksWired');
+  });
+
+  it('현재 저장소에 훅이 실제로 배선돼 있다', () => {
+    // `npm run gate` 가 이 테스트를 돌리므로, 게이트를 한 번이라도 돌렸으면 배선돼 있다
+    // (ensureHooksWired 가 main() 첫 줄에서 복구한다).
+    const r = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: ROOT, encoding: 'utf8' });
+    expect(
+      (r.stdout ?? '').trim(),
+      'core.hooksPath 가 scripts/githooks 가 아니다 — pre-commit 이 돌지 않는다',
+    ).toBe('scripts/githooks');
   });
 });

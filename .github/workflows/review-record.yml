@@ -1,0 +1,42 @@
+name: review-record
+
+# PR 본문의 **검수관 판정 기록**을 검사한다.
+#
+# ── 왜 이 워크플로가 있나 (팀장 조건 2026-07-30) ────────────────────────────
+# 검수관이 정규직으로 승격하며 판정에 구속력이 붙었다. 그런데 그 구속력을 기술적으로
+# 집행할 수단이 없었다 — GitHub required review 는 사람 계정을 요구하고 검수관은
+# 에이전트다. 부팀장은 "PR 본문 검사는 자기신고라 게이트가 아니다" 로 기각했고,
+# 팀장이 **사고의 실측 형태**로 반박했다:
+#
+#   실제 사고(PR #36)는 **위조가 아니라 누락**이었다 — 부팀장은 "재확인 받았다" 고
+#   거짓말한 것이 아니라 재확인 절차 자체를 건너뛰었다. 자기신고 검사는 위조를 못
+#   막지만 **누락은 막는다.**
+#
+# 그래서 막는 대상을 정확히 좁혔다. 판정 로직·한계는 `scripts/lib/review-record.mjs`
+# 헤더에 있고 테스트는 `tests/review-record.test.ts` 다.
+#
+# **배포를 막지 않는다** — `deploy.yml` 의 `needs` 에 넣지 않았다. 이것은 PR 단계의
+# 절차 검사이고, main push 경로(감독 직접 병합 등)를 막을 이유가 없다.
+
+on:
+  pull_request:
+    # `edited` 가 필요하다 — 판정을 나중에 본문에 채우는 것이 정상 흐름이다
+    # (리뷰를 받고 나서 적는다). synchronize 만 보면 본문 수정이 재검사되지 않는다.
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: '20' }
+      - name: 검수관 판정 기록 검사
+        # PR 본문을 **env 로 넘긴다.** `run:` 안에 `${{ }}` 를 직접 쓰면 본문 내용이
+        # 셸로 전개돼 스크립트 인젝션이 된다(PR 본문은 외부 입력이다).
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/smoke/check-review-record.mjs

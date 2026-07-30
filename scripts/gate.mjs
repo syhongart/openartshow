@@ -99,8 +99,20 @@ export const RISK_PATHS = [
  * 자연어 주장을 검사할 수 없지만, 그 주장의 근거를 눈앞에 놓을 수는 있다.
  */
 export function changeSummary(base = 'origin/main', cwd = ROOT) {
-  const r = spawnSync('git', ['diff', '--name-only', `${base}...HEAD`], { cwd, encoding: 'utf8' });
-  if (r.status !== 0) return null; // base 를 못 찾으면(오프라인 등) 조용히 생략
+  // ── **index** 를 본다, HEAD 가 아니다 (2026-07-30 교정) ─────────────────────
+  // 첫 판본은 `${base}...HEAD` 였다. 게이트는 **항상 커밋 전에** 도는데 그 범위는
+  // 커밋된 것만 보므로 **지금 만들고 있는 것이 요약에 안 나온다.** 실제로 이 세션에서
+  // `.github/workflows/review-record.yml` 을 신설한 직후 게이트가 "workflows 0 파일" 로
+  // 보고했다 — 검수관 무조건 트리거인 파일을 추가하면서 그 신호를 놓친 것이다.
+  //
+  // 그것은 이 요약이 막으려던 바로 그 실패("확인할 수 있었는데 확인 없이 단정")를
+  // 요약 자신이 저지르는 것이다. `--cached` 로 index 를 보면 커밋될 내용과 일치하고,
+  // 스탬프(`git write-tree` = index)와도 같은 기준이 된다.
+  const mb = spawnSync('git', ['merge-base', base, 'HEAD'], { cwd, encoding: 'utf8' });
+  if (mb.status !== 0) return null; // base 를 못 찾으면(오프라인 등) 조용히 생략
+  const from = mb.stdout.trim();
+  const r = spawnSync('git', ['diff', '--cached', '--name-only', from], { cwd, encoding: 'utf8' });
+  if (r.status !== 0) return null;
   const files = (r.stdout ?? '').split('\n').map((s) => s.trim()).filter(Boolean);
 
   const buckets = RISK_PATHS.map((p) => ({ ...p, hits: files.filter((f) => p.re.test(f)) }));
@@ -166,7 +178,39 @@ function run(gate) {
   return { ...gate, code, out: r.stdout ?? '', err: r.stderr ?? '' };
 }
 
+/**
+ * 훅이 배선돼 있는지 확인하고 **없으면 배선한다.**
+ *
+ * ── 왜 자동 복구인가 (executor 재현이 드러냈다, 2026-07-30) ──────────────────
+ * 훅은 `core.hooksPath` 설정에 의존하고, 그 설정은 **`.git/config` 에 로컬로만
+ * 존재한다** — 추적되지 않으므로 클론에 따라가지 않는다. `scripts/githooks/pre-commit`
+ * 파일은 추적돼 따라오지만 git 이 그것을 보지 않는다.
+ *
+ * executor 가 `/tmp` 클론에서 재현 절차를 돌렸을 때 "게이트 실패 + 스탬프 없음인데
+ * 커밋이 만들어졌다" 는 결과가 나왔다. 관측은 정확했고 원인은 훅 결함이 아니라
+ * **클론에 설정이 없던 것**이었다(실측: 원본 `scripts/githooks`, 클론 미설정).
+ *
+ * 그것이 실제 사각을 드러냈다 — 지금 배선은 `.claude/settings.json` 의 SessionStart 에만
+ * 의존한다. 새 클론·별도 worktree·다른 도구에서는 훅이 **조용히 없다.** 그래서 게이트가
+ * 돌 때마다 확인하고 복구한다. 게이트를 돌린다는 것은 이 저장소에서 작업한다는 뜻이고,
+ * 그러면 훅이 있어야 한다.
+ */
+function ensureHooksWired() {
+  const want = 'scripts/githooks';
+  const cur = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd: ROOT, encoding: 'utf8' });
+  const got = (cur.stdout ?? '').trim();
+  if (got === want) return;
+  const set = spawnSync('git', ['config', 'core.hooksPath', want], { cwd: ROOT, encoding: 'utf8' });
+  if (set.status === 0) {
+    console.log(`  훅 배선 복구: core.hooksPath = ${want}${got ? ` (이전: ${got})` : ' (미설정이었다)'}`);
+  } else {
+    // 못 했으면 조용히 넘기지 않는다 — 훅 없이 커밋할 수 있는 상태다.
+    console.log('  ⚠ 훅 배선 실패 — pre-commit 이 돌지 않는다. `git config core.hooksPath scripts/githooks` 를 직접 실행하라.');
+  }
+}
+
 function main() {
+  ensureHooksWired();
   let failed = null;
   for (const gate of GATES) {
     const res = run(gate);
