@@ -21,6 +21,10 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 
 /** 텍스처 스텁 — 관찰 대상은 `offset`과 `repeat`뿐이다 */
 class FakeTexture {
+  // 실제 `CanvasTexture` 처럼 원본 캔버스를 들고 있는다. 윤슬 검사가 이 캔버스에 남은
+  // G채널 표본(`_g`)을 읽어 **점이 실제로 구워졌는지**를 본다 — 들고 있지 않으면
+  // `engraveSparkle` 호출 누락을 밖에서 확인할 방법이 없다.
+  constructor(public image?: unknown) {}
   offset = { x: 0, y: 0, set(x: number, y: number) { this.x = x; this.y = y; }, copy(o: { x: number; y: number }) { this.x = o.x; this.y = o.y; } };
   repeat = { x: 1, y: 1, set(x: number, y: number) { this.x = x; this.y = y; } };
   wrapS = 0;
@@ -64,15 +68,23 @@ vi.mock('three/webgpu', () => ({
 beforeAll(() => {
   // jsdom 은 네이티브 canvas 없이 `getContext('2d')`로 null 을 준다. 노멀맵을 굽는 코드가
   // 끝까지 도는 것만 보면 되므로 필요한 호출만 채운다.
-  const ctx = {
+  // 윤슬 검사를 위해 `putImageData` 가 **G채널을 캔버스에 남긴다.** 빈 함수로 두면
+  // "무엇이 실제로 구워졌는가" 를 밖에서 볼 길이 없고, `engraveSparkle` 호출 누락이
+  // 테스트를 통과한다 — 판정과 집행 사이의 그 구멍이 이 프로젝트의 상시 위험이다.
+  const mkCtx = (canvas: { _g?: number[] }) => ({
     createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
-    putImageData() {},
-  };
-  (HTMLCanvasElement.prototype as unknown as { getContext: () => unknown }).getContext = () => ctx;
+    putImageData(img: { data: Uint8ClampedArray }) {
+      const g: number[] = [];
+      for (let i = 1; i < img.data.length; i += 4) g.push(img.data[i]);
+      canvas._g = g;
+    },
+  });
+  (HTMLCanvasElement.prototype as unknown as { getContext: (t: string) => unknown }).getContext =
+    function (this: { _g?: number[] }) { return mkCtx(this); };
 });
 
 const { oceanFeature, waveHeight } = await import('../frontend/js/world2/features/ocean.js');
-const { SEA_Y, SEABED_Y } = await import('../frontend/js/world2/decide/water.js');
+const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH } = await import('../frontend/js/world2/decide/water.js');
 
 interface Added { name: string; position: { y: number }; material: FakeMaterial; renderOrder: number; frustumCulled: boolean; castShadow: boolean }
 
@@ -106,9 +118,19 @@ describe('waveHeight — 타일이 이어진다', () => {
 });
 
 describe('수면 조립 — 개수 불변식', () => {
-  it('씬에 정확히 둘을 넣는다 — 드로우콜 +2', () => {
+  it('씬에 정확히 셋을 넣는다 — 드로우콜 +3', () => {
+    // 강이 셋째 판으로 늘었다(감독 지시 2026-07-30: 강 −0.5 / 바다 −1.0). 재질·지오는
+    // 공유하므로 늘어난 것은 드로우콜 하나뿐이다.
     const { added } = mount();
-    expect(added.map((m) => m.name).sort()).toEqual(['ocean', 'seabed']);
+    expect(added.map((m) => m.name).sort()).toEqual(['ocean', 'river', 'seabed']);
+  });
+
+  it('바다와 강이 재질·지오를 공유한다 — 물빛이 두 곳에 적히면 미러링이다', () => {
+    const { added } = mount();
+    const sea = added.find((m) => m.name === 'ocean')!;
+    const river = added.find((m) => m.name === 'river')!;
+    // 같은 물이다. 재질을 따로 만들면 색·윤슬·불투명도가 두 곳에서 정해진다.
+    expect(river.material).toBe(sea.material);
   });
 
   it('해저가 수면보다 아래다 — 뒤집히면 물이 안 비친다', () => {
@@ -120,6 +142,39 @@ describe('수면 조립 — 개수 불변식', () => {
     expect(bed.position.y).toBeLessThan(sea.position.y);
     // 수면이 나중에 그려져야 해저 위에 겹친다
     expect(sea.renderOrder).toBeGreaterThan(bed.renderOrder);
+  });
+
+  // ── 판정/집행 경계 (팀장 조건 7) ──────────────────────────────────────────
+  // 상수를 둘로 쪼갰으므로 **각 상수가 올바른 판에 꽂히는가**가 새 사각이다. 두 값을
+  // 맞바꿔 꽂아도 "물이 두 층으로 있다" 는 사실은 그대로라 위 단언들이 다 통과한다 —
+  // 그래서 어느 판이 어느 높이인지를 직접 본다.
+  it('강 판이 RIVER_Y · 바다 판이 SEA_Y 다 — 두 상수를 맞바꿔 꽂는 것을 잡는다', () => {
+    const { added } = mount();
+    expect(added.find((m) => m.name === 'river')!.position.y).toBe(RIVER_Y);
+    expect(added.find((m) => m.name === 'ocean')!.position.y).toBe(SEA_Y);
+  });
+
+  it('강이 바다보다 높다 — 강물이 바다로 흘러나가는 방향', () => {
+    // 감독 지시가 강 −0.5 / 바다 −1.0 이므로 이 관계가 뒤집히면 지시 위반이다.
+    // 값을 여기 다시 적지 않는다 — 관계만 본다.
+    expect(RIVER_Y).toBeGreaterThan(SEA_Y);
+    const { added } = mount();
+    const sea = added.find((m) => m.name === 'ocean')!;
+    const river = added.find((m) => m.name === 'river')!;
+    expect(river.position.y).toBeGreaterThan(sea.position.y);
+    // 위에 있는 판이 나중에 그려져야 겹침 정렬이 맞는다
+    expect(river.renderOrder).toBeGreaterThan(sea.renderOrder);
+  });
+
+  it('둘 다 지면(y=0)보다 낮다 — 육지가 물을 덮어야 물 구멍이 성립한다', () => {
+    expect(RIVER_Y).toBeLessThan(0);
+    expect(SEA_Y).toBeLessThan(0);
+  });
+
+  it('해저를 바다 수면에서 유도한다 — 실측치를 적어두지 않았다', () => {
+    // 예전에는 `-2.9` 를 직접 적고 주석에 "수면보다 2.4m 아래" 라고 썼다. 수면이 바뀌자
+    // 그 유도가 거짓이 됐다(실제 1.9m). 산술로 바꿨으므로 수면을 옮기면 해저가 따라온다.
+    expect(SEABED_Y).toBeCloseTo(SEA_Y - WATER_DEPTH, 10);
   });
 
   it('수면이 반투명이다 — 불투명하면 바닥이 안 비쳐 물로 안 읽힌다', () => {
@@ -227,5 +282,54 @@ describe('정리', () => {
     for (const k of ['map', 'normalMap', 'roughnessMap'] as const) {
       expect((sea.material.opts[k] as FakeTexture).disposed).toBe(true);
     }
+  });
+});
+
+// ── 윤슬 (감독 지시 2026-07-30) ─────────────────────────────────────────────
+// *"윤슬이 보이는 거였으면 좋겠어. 실제 반사로 하지말고. 쉐이더 트릭으로 했으면 해."*
+//
+// 윤슬은 `roughnessMap`(= 층 B 노멀맵) **G채널의 낮은 점**으로 낸다. 그 자리에서만
+// 스페큘러가 좁고 세게 튄다. 여기서 지키는 것은 **그 점이 실제로 텍스처에 들어갔는가**다 —
+// `engraveSparkle` 을 정의만 하고 호출을 빠뜨리면 아무 일도 안 일어나면서 테스트는 통과한다.
+// 실제로 이 구현에서 그 실수가 한 번 났다(주석 블록을 먼저 넣어 삽입 패턴이 어긋났다).
+describe('윤슬 — roughnessMap G채널에 점이 새겨진다', () => {
+  it('층 B(roughnessMap)에만 아주 낮은 G값이 있다 — 층 A(normalMap)에는 없다', () => {
+    const { added } = mount();
+    // `FakeMaterial` 은 생성 옵션을 `opts` 에 담는다(실제 재질처럼 필드로 펼치지 않는다).
+    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
+      opts: { normalMap: { image?: { _g?: number[] } }; roughnessMap: { image?: { _g?: number[] } } };
+    }).opts;
+    // 스텁 캔버스가 putImageData 로 받은 G채널 표본을 남긴다(위 beforeAll 참고).
+    const gA = opts.normalMap.image?._g ?? [];
+    const gB = opts.roughnessMap.image?._g ?? [];
+    expect(gB.length, 'roughnessMap 의 G채널 표본이 없다 — 스텁이 안 물렸다').toBeGreaterThan(0);
+
+    // 스파클은 G 를 0.06*255 ≈ 15 까지 눌러 넣는다. 물결 법선만으로는 그렇게 낮아지지
+    // 않는다(법선 G 는 0.5 근처에서 진동한다) — 그래서 이 문턱이 스파클의 지문이다.
+    const veryLowB = gB.filter((v) => v <= 24).length;
+    const veryLowA = gA.filter((v) => v <= 24).length;
+    expect(veryLowB, '윤슬 점이 roughnessMap 에 없다 — engraveSparkle 이 안 불렸다').toBeGreaterThan(0);
+    expect(veryLowA, '층 A(normalMap)에 스파클이 섞였다 — 물결 법선이 망가진다').toBe(0);
+  });
+
+  it('점이 화면을 덮지 않는다 — 물이 서리처럼 되면 윤슬이 아니다', () => {
+    const { added } = mount();
+    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
+      opts: { roughnessMap: { image?: { _g?: number[] } } };
+    }).opts;
+    const gB = opts.roughnessMap.image?._g ?? [];
+    const ratio = gB.filter((v) => v <= 24).length / gB.length;
+    // 격자 7px 칸에 16% 확률 → 픽셀 대비 약 0.3%. 상한을 넉넉히 잡되 "드문 점" 임을 지킨다.
+    expect(ratio).toBeLessThan(0.05);
+  });
+
+  it('emissive 로 내지 않았다 — 스스로 빛나는 물은 밤에 어색하다 (팀장 조건 4)', () => {
+    // 감독 지적: *"밤인데 빛이 이렇게 많지 않잖아."* emissive 는 광원과 무관하게 밝아진다.
+    const { added } = mount();
+    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
+      opts: { emissiveMap?: unknown; emissiveIntensity?: number };
+    }).opts;
+    expect(opts.emissiveMap ?? null).toBeNull();
+    expect(opts.emissiveIntensity ?? 0).toBe(0);
   });
 });
