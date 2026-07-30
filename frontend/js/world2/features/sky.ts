@@ -89,6 +89,11 @@ export const skyFeature: Feature = {
         // `0` 이면 `sky.js` 가 팔레트를 그대로 돌려주므로 라이브와 완전히 같다 —
         // 되돌리는 방법이 `?fogsky=0` 하나로 끝난다.
         fogTint: readNum('fogsky', FOG_SKY_TINT, 0, 1),
+
+        // ── 달 발광체 (감독 지시 *"달에 블룸효과 넣어줘. 월드2 만이야"*) ──
+        // 알파 마스크 캔버스를 만들 문서다. 없으면 발광체 없이 하늘만 뜬다 —
+        // 계약대로 그 판단은 어댑터가 하고 여기서는 있는 것을 넘겨 줄 뿐이다.
+        doc: env.doc,
       },
     );
 
@@ -188,6 +193,9 @@ export const skyFeature: Feature = {
           fogC: fog?.color ? fog.color.getHex() : null,
           // 가로등이 켜졌는가. 화면으로는 "좀 밝네" 로만 보이는 것을 숫자로 남긴다.
           lampGlow: lampLit,
+          // 달 발광체(world2 전용). `null` 이면 **없는 것**이고 0 과 다르다 —
+          // 문서가 없어 못 만든 것과 밤이 아니라 꺼진 것은 완전히 다른 고장이다.
+          moon: sky.moonDiagnostics(),
         };
       },
 
