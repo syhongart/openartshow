@@ -5,78 +5,13 @@
 import * as THREE from 'three';
 import { RGBELoader } from '../vendor/RGBELoader.js';
 import {
-  makeRand, createGrassMaps, createBarkTexture, createBarkNormal,
+  makeRand, createGrassMaps, createBarkTexture, createBarkNormal, renderSkyTexture,
 } from './scene-textures.js';
 import { buildDetailedTree, bakeGroupByMaterial } from './scene-trees.js';
 import { THEMES } from './scene-themes.js';
 
 // 움직이는 생물(나비/새) — sceneTick(delta)이 매 프레임 갱신
 const creatures = [];
-// ---------------------------------------------------------------------------
-// 하늘 돔 (그라디언트 + 구름) — 텍스처 드로잉은 renderSkyTexture()로 공유
-// ---------------------------------------------------------------------------
-function renderSkyTexture(sky) {
-  const size = 1024;
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-
-  // 세로 그라디언트: 천정 색 → 수평선 색 (테마별 stops)
-  const grad = ctx.createLinearGradient(0, 0, 0, size);
-  for (const [stop, color] of sky.stops) grad.addColorStop(stop, color);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
-
-  // 별 (night 테마) — 크기·밝기 랜덤, 시드 고정, 가끔 큰 별엔 은은한 글로우
-  if (sky.stars > 0) {
-    const srand = makeRand(90210);
-    for (let i = 0; i < sky.stars; i++) {
-      const x = srand() * size;
-      const y = srand() * size * 0.82; // 수평선 근처는 비워둠
-      const r = 0.4 + srand() * 1.6;
-      const bright = 0.35 + srand() * 0.65;
-      if (srand() > 0.965) {
-        const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 5);
-        glow.addColorStop(0, `rgba(255, 255, 255, ${bright * 0.5})`);
-        glow.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath();
-        ctx.arc(x, y, r * 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = `rgba(255, 255, 255, ${bright})`;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // 부드러운 뭉게구름 (테마별 색조/농도)
-  const rand = makeRand(13579);
-  const [aMin, aMax] = sky.cloudAlpha;
-  for (let i = 0; i < sky.cloudCount; i++) {
-    const cx = rand() * size;
-    const cy = size * (0.3 + rand() * 0.45); // 중간 높이대
-    const scale = 30 + rand() * 90;
-    for (let p = 0; p < 7; p++) {
-      const px = cx + (rand() - 0.5) * scale * 2.4;
-      const py = cy + (rand() - 0.5) * scale * 0.7;
-      const pr = scale * (0.35 + rand() * 0.5);
-      const cloudGrad = ctx.createRadialGradient(px, py, 0, px, py, pr);
-      cloudGrad.addColorStop(0, `rgba(${sky.cloudColor}, ${aMin + rand() * (aMax - aMin)})`);
-      cloudGrad.addColorStop(1, `rgba(${sky.cloudColor}, 0)`);
-      ctx.fillStyle = cloudGrad;
-      ctx.beginPath();
-      ctx.arc(px, py, pr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
 
 // HDRI 하늘 (Poly Haven CC0, drei-assets 1k 미러) — 프로시저럴 캔버스 하늘을
 // 즉시 표시용 플레이스홀더로 쓰고, .hdr 로드가 끝나면 맵만 교체한다

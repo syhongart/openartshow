@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { buildSpaceGroup, disposeSpaceGroup, partY, addRoomLighting, bakeShellLightmapsAsync } from './space-render.js';
 import { PART_TYPES } from './space.js';
+import { createSkyDome, skyFogColor } from './sky-proc.js';
 
 const EYE = 1.5;            // 시점 높이(m)
 const SPEED = 3.0;          // 이동 속도(m/s)
@@ -55,14 +56,24 @@ export function createVisit({ canvas, space, opts = {} } = {}) {
   const dims = group.userData.dims; // {fw,fd,hw,hd,H,t}
 
   // 대기 원근(fog) — 방 스케일에 맞춤. 젤다식 깊이감. 색은 은은한 중립.
-  const FOG_COLOR = 0x20232b;
+  // 예전에는 `0x20232b`(어두운 중성회색)였다. 하늘을 도입하면 **하늘은 밝은 파랑인데
+  // 먼 벽이 어두운 회색 안개로 사라지는 이음매 불일치**가 생긴다(디자이너 지적) —
+  // fog 색도 하늘과 같은 계열에서 가져온다(`THEMES.daylight.fog.color`).
+  const FOG_COLOR = skyFogColor();
   const diag = Math.hypot(dims.fw, dims.fd);
   const fogNear = Math.min(dims.fw, dims.fd) * 0.5;
   const fogFar = diag * 1.5;
   const fogObj = new THREE.Fog(FOG_COLOR, fogNear, fogFar);
   scene.fog = fogObj;
-  scene.background = new THREE.Color(FOG_COLOR);
+  scene.background = FOG_COLOR.clone();
   renderer.setClearColor(FOG_COLOR, 1);
+
+  // 하늘 돔 (#78 트랙A). **방문자뷰는 천장이 있어(hideCeiling 미지정) 하늘이 거의 안
+  // 보인다** — 팀장이 확정 범위에 그 격차를 미리 적었다. 여기서 체감되는 것은 주로
+  // 창밖 풍경 텍스처이고, 돔은 반투명 창유리(opacity 0.34) 뒤와 열린 구조에서만
+  // 드러난다. 그래도 넣는 이유는 fog 색·창밖 텍스처·배경이 **같은 하늘 팔레트**를
+  // 공유해야 이음매가 생기지 않기 때문이다.
+  scene.add(createSkyDome());
 
   // 물 바닥 스크롤 소스 — 텍스처 있으면 애니, 없으면 정적 폴백(무동작).
   const floorMat = group.userData.floor && group.userData.floor.material;
