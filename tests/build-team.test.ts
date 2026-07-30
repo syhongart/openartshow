@@ -64,15 +64,22 @@ describe('생성기 일관성 — 개발일지 건수 · 팀 규모', () => {
   const expectedTeamComposition = calculateTeamComposition(devlogMd);
 
   it('SSOT: countEntries() 가 반환하는 항목 수', () => {
+    // ── 고정값 단언을 뺐다 (2026-07-30) ────────────────────────────────────
+    // `toBe(139)` 가 있었다. 개발일지 항목을 하나 쓸 때마다 이 테스트가 깨지고,
+    // 깨지면 **숫자만 기계적으로 고친다** — 그것은 검출력이 아니라 마찰이다.
+    // 실제로 이번에 승격 항목을 쓰자마자 140 으로 깨졌다.
+    //
+    // 이 단언이 지키려던 것("생성기 3종이 같은 값을 쓰는가")은 아래
+    // "세 소비자가 개발일지 건수를 같게 쓴다" 가 이미 본다. 여기서는 **파싱이
+    // 통째로 죽는 것**만 잡으면 된다(정규식을 잘못 고치면 0 이나 1 이 나온다).
     expect(expectedDevlogCount).toBeGreaterThan(100);
-    // 정확한 값은 DEVLOG.md 에 의존하지만, 139개로 고정되어야 함 (2026-07-29 기준)
-    expect(expectedDevlogCount).toBe(139);
   });
 
   it('SSOT: calculateTeamComposition() 가 반환하는 팀 규모', () => {
     expect(expectedTeamComposition.founder).toBe(1);
-    expect(expectedTeamComposition.staff).toBe(3);
-    expect(expectedTeamComposition.contract).toBe(8);
+    // 검수관이 2026-07-30 정규직으로 승격했다(감독 지시) — 3/8 → 4/7. 총계는 그대로 12.
+    expect(expectedTeamComposition.staff).toBe(4);
+    expect(expectedTeamComposition.contract).toBe(7);
     expect(expectedTeamComposition.total).toBe(12);
   });
 
