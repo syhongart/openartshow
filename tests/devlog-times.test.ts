@@ -19,6 +19,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadFrozenTimes, timeInfoFor, FROZEN_PATH } from '../scripts/lib/devlog-times.mjs';
 import { parseEntries, entryKey } from '../scripts/lib/devlog-entries.mjs';
+// 오프셋(+9h)을 여기 다시 적지 않는다 — kst.mjs 가 SSOT 다.
+import { kstDate } from '../scripts/lib/kst.mjs';
 
 /** 임시 동결 파일을 만들어 경로를 돌려준다. **저장소 파일을 건드리지 않는다.** */
 function writeTempFrozen(obj: unknown): string {
@@ -147,5 +149,47 @@ describe('실제 docs/devlog-times.json — 오염 검사', () => {
     for (const [key, iso] of Object.entries(frozen.times)) {
       expect(Number.isNaN(Date.parse(iso as string)), `${key} → ${iso}`).toBe(false);
     }
+  });
+
+  // ── 값 오염을 잡는 축 (2026-07-30 추가) ─────────────────────────────────────
+  // 뮤테이션 M4 가 사각을 드러냈다: `docs/devlog-times.json` 의 시각 하나를 다른 값으로
+  // 바꿔도 **어느 테스트도 깨지지 않았다.** 추적 파일이므로 잘못된 값이 커밋되면 그대로
+  // 라이브에 나간다.
+  //
+  // 값을 테스트에 다시 적는 것은 답이 아니다 — 그러면 테스트가 또 하나의 미러가 되고,
+  // 이 저장소가 그 형태로 세 번 사고를 냈다. 대신 **유도할 수 있는 불변식**을 쓴다.
+  //
+  // 불변식: **커밋 KST 날짜 >= 항목 날짜.** 개발일지 항목을 쓰기 전에 그 항목을 담은
+  // 커밋이 존재할 수는 없다. 실측 139/139 성립(위반 0건, 최대 지연 2일).
+  //
+  // **이 축이 못 잡는 것**: 같은 날 안에서 시·분만 바뀐 오염(M4-b: `T07:59:19` →
+  // `T23:58:57`). 날짜가 그대로이므로 불변식을 위반하지 않는다.
+  //
+  // 그것은 `npm run check:devlog-times` 가 git 과 직접 대조해 잡는다 — **단, 그 사실을
+  // 실측으로 확인한 뒤에 적는다.** 첫 판본은 여기에 "check 가 잡는다" 고 적어놨는데
+  // 거짓이었다: `--check` 가 `nextJson !== prevJson` 만 봤고 갱신 로직이 기존 키를
+  // 덮어쓰지 않으므로 변조된 값이 유지돼 두 문자열이 같았다 → 종료코드 0. 없는 보증을
+  // 문서화한 것이고, 뮤테이션을 돌려서야 드러났다. 지금은 불일치를 별도로 모아 종료코드
+  // 1 로 실패한다(실측: 변조 시 exit 1 + 저장/git 값 출력, 정상 시 exit 0).
+  //
+  // **남는 한계**: `check:devlog-times` 는 full clone 을 요구하므로 **CI 에서 돌 수 없다**
+  // (CI checkout 은 shallow 다). 즉 이 축은 로컬에서 손으로 돌려야 닫히며 자동이 아니다.
+  // 자동화된 것은 아래 불변식뿐이다.
+  it('커밋 시각이 항목 날짜보다 앞서지 않는다 — 값 오염 검출', () => {
+    const violations: string[] = [];
+    for (const [key, iso] of Object.entries(frozen.times)) {
+      const entryDate = key.slice(0, 10);
+      const commitKstDate = kstDate(Date.parse(iso as string));
+      if (commitKstDate < entryDate) {
+        violations.push(`${key} : 항목 ${entryDate} < 커밋 ${commitKstDate}`);
+      }
+    }
+    expect(violations, `불변식 위반 — 항목 날짜보다 이른 커밋 시각:\n  ${violations.join('\n  ')}`).toHaveLength(0);
+  });
+
+  it('시각이 있는 항목이 과반이다 — 데이터가 사실상 비어 있지 않다', () => {
+    // 파일이 존재하고 형식이 맞아도 내용이 비면 표시가 전부 날짜만 된다.
+    // "있는데 비었다" 를 available 로는 구별할 수 없으므로 개수로 본다.
+    expect(Object.keys(frozen.times).length).toBeGreaterThan(50);
   });
 });

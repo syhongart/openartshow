@@ -105,10 +105,19 @@ const prevTimes = prev.times ?? {};
 
 const times = { ...prevTimes };
 let added = 0;
+// **불일치는 따로 모은다.** 갱신 모드는 기존 값을 지키지만(제목 편집으로 "첫 등장" 이
+// 최신 편집 시각으로 밀리는 것을 막는 설계), `--check` 는 그것을 **보고해야 한다**.
+//
+// 이 구분이 없던 첫 판본은 --check 가 기존 값을 그대로 통과시켰다. 그래서 파일의 시각
+// 하나를 임의로 바꿔도 종료코드 0 이었다 — 뮤테이션(M4-b)으로 확인했다. 그 상태로
+// 테스트 주석에 "check:devlog-times 가 이 오염을 잡는다" 고 적어뒀는데 **거짓이었다.**
+const mismatched = [];
 for (const [key, iso] of [...firstSeen.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
   if (!(key in times)) {
     times[key] = iso;
     added++;
+  } else if (times[key] !== iso) {
+    mismatched.push({ key, stored: times[key], git: iso });
   }
 }
 // 키 정렬 — diff 를 읽을 수 있게. Object 삽입 순서가 JSON 출력 순서다.
@@ -132,12 +141,30 @@ const prevJson = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
 console.log(`항목 ${firstSeen.size}건 · 신규 ${added}건 · 총 ${Object.keys(sortedTimes).length}건`);
 console.log(`일괄 기록 커밋 ${bulkCommits.length}건: ${bulkCommits.join(', ') || '(없음)'}`);
 
+if (mismatched.length) {
+  console.error('');
+  console.error(`저장된 시각이 git 이력과 다르다 (${mismatched.length}건):`);
+  for (const m of mismatched.slice(0, 10)) {
+    console.error(`  ${m.key}`);
+    console.error(`    저장: ${m.stored}`);
+    console.error(`    git : ${m.git}`);
+  }
+  if (mismatched.length > 10) console.error(`  … 외 ${mismatched.length - 10}건`);
+  console.error('');
+  console.error('  값이 손으로 편집됐거나 이력이 재작성됐다. 둘 중 하나다:');
+  console.error('   · 오염이면 → git 값으로 되돌려라 (docs/devlog-times.json 을 git checkout)');
+  console.error('   · 의도한 것이면 → 왜 다른지 커밋 메시지에 남겨라');
+}
+
 if (CHECK_ONLY) {
-  if (nextJson !== prevJson) {
-    console.error('차이 있음 — node scripts/extract-devlog-times.mjs 로 갱신하라.');
+  // 불일치는 파일 크기 변화가 없어도 **실패로 잡는다.** 첫 판본은 `nextJson !== prevJson`
+  // 만 봤고, 갱신 로직이 기존 키를 덮어쓰지 않으므로 변조된 값이 그대로 유지돼 두 문자열
+  // 이 같았다 → 종료코드 0. 뮤테이션(M4-b)이 그것을 드러냈다.
+  if (mismatched.length || nextJson !== prevJson) {
+    console.error('차이 있음 — 위 내용을 확인하고 필요하면 갱신/되돌려라.');
     process.exit(1);
   }
-  console.log('변경 없음.');
+  console.log('변경 없음 · git 이력과 일치.');
   process.exit(0);
 }
 

@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "check:refs": "node scripts/smoke/check-refs.mjs",
     "check:gitadd": "node scripts/smoke/check-workflow-gitadd.mjs",
+    "check:devlog-times": "node scripts/extract-devlog-times.mjs --check",
     "lint": "eslint .",
     "smoke": "node scripts/smoke/run.mjs",
     "smoke:vite": "node scripts/smoke/run.mjs vite",
