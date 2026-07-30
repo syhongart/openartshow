@@ -11,7 +11,6 @@ import { buildSpaceGroup, disposeSpaceGroup, spaceDims, partY, uniqueTexCount, A
 import { youtubeId } from './ytembed.js';
 import { SPACE_PRESETS, getPreset, presetThumb } from './space-presets.js';
 import { createBuilderWalk } from './builder-walk.js';
-import { createSkyDome, skyHorizonColor } from './sky-proc.js';
 
 export const SAVE_KEY = 'openartshow.space.v1';
 
@@ -40,15 +39,11 @@ const clampToRoom = (v, half, t) => Math.max(-half + t + 0.2, Math.min(half - t 
 export function createBuilder(canvas, opts = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: !!opts.preserveDrawingBuffer });
   renderer.setPixelRatio(Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
-  // 첫 프레임 안전망 — 하늘 돔이 화면을 채우기 전 한 프레임에만 보인다. 예전에는
-  // `0x15161a`(거의 검정)였고, 오빗이 천장을 숨기므로 **벽 위가 검정이라 방이 허공에
-  // 뜬 것처럼** 읽혔다(#78 트랙A가 고치는 결함). 값은 하늘 수평선 톤에서 가져온다.
-  renderer.setClearColor(skyHorizonColor());
+  renderer.setClearColor(0x15161a);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 접지 그림자(디자이너 P0)
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.16; // 필믹 그레이드(디자이너 아트디렉션)
   const scene = new THREE.Scene();
-  scene.add(createSkyDome()); // 벽 위로 보이는 하늘 (#78 트랙A) — fog 없음, 레이캐스트 제외
   // 앰비언트는 낮게(그림자 깊게·대비↑) — 연출 조명(스포트/다운라이트)이 무드를 주도. 바이올렛 언더톤.
   scene.add(new THREE.HemisphereLight(0xfff3e6, 0x241f30, 0.58));
   scene.environment = makeEnvMap(renderer); // 은은한 환경 반사(글로시 바닥·재질 깊이)
