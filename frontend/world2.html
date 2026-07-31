@@ -207,6 +207,116 @@
   .w2-god-row button[data-bolt]{background:rgba(255,233,196,.14);border-color:rgba(255,233,196,.4)}
   .w2-god-row button[data-bolt].off{opacity:.35}
   @media (prefers-reduced-motion: reduce){ #w2-god-toggle .caret{transition:none} }
+
+  /* ── 수면 파라미터 슬라이더 바 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ────
+     위치: 화면 우하단. #w2-god(좌상)·#w2-hud(우상)·#w2-mapwrap(좌하)이 이미 세 모서리를
+     차지해 남은 자리가 여기뿐이다. #w2-god과 대각선이라 항상 분리되고, 캔버스 중앙
+     (수면이 실제로 보이는 영역)을 가리지 않는다 — **미는 동안 물을 봐야 한다**가
+     이 도구의 전부라서 모서리 배치가 요건이다.
+
+     기본 접힘 — 기존 세 패널 전부와 같은 관례. 값은 접혀 있어도 계속 적용되므로
+     상시 펼 필요가 없다.
+
+     열면 위로 펼쳐진다(column-reverse). 아래엔 화면 끝/홈 인디케이터뿐이라 내려갈
+     자리가 없다. 토글이 하단에 고정되고 그 위로 행이 쌓인다. */
+  #w2-sliders{
+    position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:8;
+    display:flex;flex-direction:column-reverse;align-items:flex-end;gap:6px;
+  }
+  #w2-sliders-toggle{
+    display:flex;align-items:center;gap:7px;padding:9px 12px;border-radius:10px;cursor:pointer;
+    background:rgba(11,13,18,.62);border:1px solid var(--line);color:var(--ink);
+    font-size:12px;font-family:inherit;line-height:1;
+    transition:border-color .15s ease;
+  }
+  #w2-sliders-toggle .cap{opacity:.85}
+  #w2-sliders-toggle .caret{margin-left:2px;font-size:9px;color:var(--dim);transition:transform .2s}
+  #w2-sliders[data-open="1"] #w2-sliders-toggle .caret{transform:rotate(180deg)}
+
+  /* 하나라도 지정값이면 토글에도 신호를 남긴다 — 접힌 채로는 행 안의 점이 안 보이므로,
+     패널을 안 열어도 "지금 기본값이 아니다"를 알아야 지정값인 채로 세션을 끝내지 않는다. */
+  #w2-sliders-toggle .dirty-dot{
+    display:none;width:6px;height:6px;border-radius:50%;
+    background:var(--cyan);box-shadow:0 0 4px var(--cyan);
+  }
+  #w2-sliders[data-dirty="1"] #w2-sliders-toggle .dirty-dot{display:inline-block}
+  #w2-sliders[data-dirty="1"] #w2-sliders-toggle{border-color:rgba(139,114,255,.55)}
+
+  #w2-sliders-body{
+    width:min(260px,80vw);
+    background:rgba(11,13,18,.88);border:1px solid var(--line);border-radius:10px;
+    padding:10px 11px;display:flex;flex-direction:column;gap:10px;
+  }
+  #w2-sliders-body[hidden]{display:none}
+
+  .w2-slide-row{display:flex;align-items:center;gap:6px}
+  /* .w2-god-cap 폭 38px 을 그대로 재사용 — 좌측 패널과 라벨 정렬 리듬을 맞춘다 */
+  .w2-slide-cap{
+    font-size:10.5px;color:var(--dim);width:38px;flex:none;
+    display:flex;align-items:center;gap:4px;line-height:1.3;
+  }
+  /* 지정값 점 — 색이 아니라 "있다/없다"를 1차 신호로 쓴다(색만으로 구분하지 않는다) */
+  .w2-slide-pin{
+    display:block;width:5px;height:5px;border-radius:50%;flex:none;
+    background:var(--violet);opacity:0;transition:opacity .15s ease;
+  }
+  .w2-slide-row[data-overridden="1"] .w2-slide-pin{opacity:1}
+
+  /* 트랙은 얇게(4px), 히트박스는 요소 높이(32px) 전체로 — 시각과 판정 영역을 분리한다.
+     touch-action:none 은 #w2-canvas 와 같은 이유: 드래그 중 브라우저 제스처가 끼어들지
+     않게 한다. */
+  .w2-slide-input{
+    -webkit-appearance:none;appearance:none;flex:1 1 auto;min-width:70px;
+    height:32px;margin:0;background:transparent;touch-action:none;cursor:pointer;
+  }
+  .w2-slide-input::-webkit-slider-runnable-track{
+    height:4px;border-radius:2px;background:rgba(255,255,255,.14);
+  }
+  .w2-slide-input::-webkit-slider-thumb{
+    -webkit-appearance:none;width:20px;height:20px;border-radius:50%;margin-top:-8px;
+    background:linear-gradient(145deg, rgba(139,114,255,.9), rgba(114,230,225,.8));
+    border:1px solid rgba(255,255,255,.35);box-shadow:0 1px 5px rgba(0,0,0,.4);
+  }
+  .w2-slide-input::-moz-range-track{
+    height:4px;border-radius:2px;background:rgba(255,255,255,.14);
+  }
+  .w2-slide-input::-moz-range-thumb{
+    width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.35);
+    background:linear-gradient(145deg, rgba(139,114,255,.9), rgba(114,230,225,.8));
+    box-shadow:0 1px 5px rgba(0,0,0,.4);
+  }
+  .w2-slide-row[data-overridden="1"] .w2-slide-input::-webkit-slider-runnable-track{
+    background:rgba(139,114,255,.28);
+  }
+  .w2-slide-row[data-overridden="1"] .w2-slide-input::-moz-range-track{
+    background:rgba(139,114,255,.28);
+  }
+
+  .w2-slide-val{
+    font-size:11px;color:var(--dim);width:36px;flex:none;text-align:right;
+    font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  .w2-slide-row[data-overridden="1"] .w2-slide-val{color:var(--ink);font-weight:600}
+
+  .w2-slide-reset{
+    width:26px;height:26px;flex:none;border-radius:8px;cursor:pointer;padding:0;
+    background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--dim);
+    font-size:13px;line-height:1;font-family:inherit;opacity:.4;
+    transition:opacity .15s ease,color .15s ease,border-color .15s ease,background .15s ease;
+  }
+  .w2-slide-row[data-overridden="1"] .w2-slide-reset{
+    opacity:1;color:var(--ink);border-color:rgba(139,114,255,.6);
+    background:rgba(139,114,255,.16);
+  }
+
+  /* #w2-mapwrap 과 같은 브레이크포인트(760px)를 재사용해 넓은 화면에서 트랙에 여유를 준다 */
+  @media (min-width:760px){
+    #w2-sliders-body{width:280px}
+    .w2-slide-input{min-width:120px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    #w2-sliders-toggle .caret,#w2-sliders-toggle,.w2-slide-pin,.w2-slide-reset{transition:none}
+  }
 </style>
 </head>
 <body>
@@ -273,6 +383,19 @@
         <button type="button" data-flash="1">광과민성 보호</button>
       </div>
     </div>
+  </div>
+
+  <!-- 수면 파라미터 바 — 감독이 값을 직접 고르는 도구. 로직은 world2/ui/knob-bar.ts.
+       행(슬라이더)은 **JS 가 만든다** — 노브 정의(키·범위·라벨)를 여기에 적으면 그것이
+       곧 값 미러링이고, 이 저장소가 색·수치·임계값에서 세 번 데인 형태다. 정의는
+       `features/ocean.ts` 한 곳에 있고 이 컨테이너는 그것이 담길 자리만 잡는다. -->
+  <div id="w2-sliders" data-open="0" data-dirty="0" hidden>
+    <button id="w2-sliders-toggle" type="button" aria-expanded="false" aria-controls="w2-sliders-body">
+      <span aria-hidden="true">🌊</span><span class="cap">수면</span>
+      <span class="dirty-dot" aria-hidden="true"></span>
+      <span class="caret" aria-hidden="true">▾</span>
+    </button>
+    <div id="w2-sliders-body" hidden></div>
   </div>
 
 

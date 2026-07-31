@@ -17,7 +17,7 @@
 // 모듈째 스텁으로 갈아 끼운다. 그래도 **돌아가는 것은 실제 ocean 코드**다 — 실제로 씬에
 // 무엇을 넣는지, update가 무엇을 만지는지 그대로 관찰한다.
 
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
 /** 텍스처 스텁 — 관찰 대상은 `offset`과 `repeat`뿐이다 */
 class FakeTexture {
@@ -42,7 +42,14 @@ class FakeGeometry {
 
 class FakeMaterial {
   disposed = false;
-  constructor(public opts: Record<string, unknown>) {}
+  needsUpdate = false;
+  // three 의 재질은 생성자 opts 를 **인스턴스 프로퍼티로 펼친다**. 스텁이 `opts` 만
+  // 들고 있으면 `mat.normalScale.set(...)` 같은 실제 사용 경로가 undefined 로 터진다
+  // — 코드가 아니라 스텁이 계약을 덜 재현한 것이다(감독 지시 "반짝임" 작업에서 실측).
+  [k: string]: unknown;
+  constructor(public opts: Record<string, unknown>) {
+    Object.assign(this, opts);
+  }
   dispose() { this.disposed = true; }
 }
 
@@ -73,6 +80,9 @@ class FakeBufferGeometry {
   index: { count: number; array: number[] } | null = null;
   disposed = false;
   setAttribute(name: string, a: FakeAttr) { this.attrs[name] = a; }
+  // three 의 BufferGeometry 계약. 물살(감독 지시 2026-07-31)이 매 프레임 UV 속성을
+  // 잡아 쓰므로 스텁도 이것을 줘야 한다 — 없으면 프로덕션 코드가 아니라 스텁이 터진다.
+  getAttribute(name: string) { return this.attrs[name]; }
   setIndex(a: number[]) { this.index = { count: a.length, array: a }; }
   dispose() { this.disposed = true; }
 }
@@ -85,7 +95,12 @@ vi.mock('three/webgpu', () => ({
   BufferGeometry: FakeBufferGeometry,
   Float32BufferAttribute: FakeAttr,
   RepeatWrapping: 1000,
-  Vector2: class { constructor(public x: number, public y: number) {} },
+  // `set()` 이 있어야 한다 — three 의 Vector2 계약이고, `ocean.ts` 의 `applyGloss` 가
+  // 이것을 부른다. 스텁이 계약을 덜 재현하면 **프로덕션 코드가 멀쩡한데 테스트만 깨진다**.
+  Vector2: class {
+    constructor(public x: number, public y: number) {}
+    set(x: number, y: number) { this.x = x; this.y = y; return this; }
+  },
 }));
 
 beforeAll(() => {
@@ -107,7 +122,7 @@ beforeAll(() => {
 });
 
 const { oceanFeature, waveHeight } = await import('../frontend/js/world2/features/ocean.js');
-const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent } = await import('../frontend/js/world2/decide/water.js');
+const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, waterGloss } = await import('../frontend/js/world2/decide/water.js');
 const { DEFAULT_LAYOUT } = await import('../frontend/js/world2/parts/types.js');
 /** 세계 절반 크기. `ocean.ts` 와 **같은 유도**를 쓴다 — 값을 적어두면 그것이 미러링이다 */
 const EDGE = worldHalfExtent(DEFAULT_LAYOUT.cellX);
@@ -123,18 +138,30 @@ interface Added {
   geometry: unknown;
 }
 
-function mount() {
+type Tod = 'day' | 'sunset' | 'night';
+
+/**
+ * @param initial 부팅 시각대. 광택(`waterGloss`)이 이것을 읽는다.
+ *
+ * 반환하는 `setTime` 으로 **세션 중 시간대 전환**을 만들 수 있다. `ocean.ts` 는
+ * `update` 안에서 `env.time()` 을 다시 읽어 바뀌었을 때만 광택을 다시 거는데,
+ * 시간을 고정해 두면 그 분기가 통째로 미검증으로 남는다(검수관 블로커 2026-07-31).
+ */
+function mount(initial: Tod = 'day') {
   const added: Added[] = [];
   const removed: Added[] = [];
+  let tod: Tod = initial;
   const env = {
     scene: { add: (m: Added) => added.push(m), remove: (m: Added) => removed.push(m) },
     player: { position: { x: 0, z: 0 } },
     doc: document,
     cell: 32,
+    time: () => tod,
   };
   // 실제 Feature 계약 전체를 만들지 않는다 — ocean 이 쓰는 것만 준다.
   const inst = oceanFeature.create(env as never)!;
-  return { inst, added, removed };
+  const sea = () => added.find((m) => m.name === 'ocean')!.material;
+  return { inst, added, removed, sea, setTime: (t: Tod) => { tod = t; } };
 }
 
 describe('waveHeight — 타일이 이어진다', () => {
@@ -375,6 +402,389 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     b.inst.system!.update({ dt: 0.5 } as never);
     expect(b.norm.offset.x).toBeCloseTo(one.x, 12);
     expect(b.norm.offset.y).toBeCloseTo(one.y, 12);
+  });
+});
+
+// ── 수면 광택 — **실제 재질에 닿는가** (검수관 블로커 2026-07-31) ─────────────
+//
+// 이 블록이 생긴 경위를 적어 둔다. 같은 실수를 다시 하지 않기 위한 것이다.
+//
+// 처음에는 `world2-water-gloss.test.ts` 에 "[B] 집행" 이라는 섹션을 두고 거기서
+// **`applyGloss` 와 같은 로직을 테스트 파일 안에 다시 적어** 그 사본을 검사했다.
+// 통합 테스트처럼 보였고 주석에도 "경계를 건너는 지점을 본다" 고 적었지만, 검수관이
+// 실제 `ocean.ts` 를 훼손해 실증했다:
+//
+//   · `seaMat.needsUpdate = true;` 제거          → 47 passed 0 failed
+//   · `seaMat.roughness = 0.62;` 강제 대입        → 47 passed 0 failed
+//     (= `waterGloss` 를 완전히 무력화. 이 브랜치가 고치려던 버그를 그대로 재현)
+//
+// 즉 **이 작업의 존재 이유였던 바로 그 사고 형태**가 그 "집행 테스트" 자신에서
+// 재현됐다 — 그것도 아예 없는 게 아니라 **있는 것처럼 보이는 사본**이라 더 나빴다.
+//
+// 그래서 여기로 옮긴다. `mount()` 는 실제 `oceanFeature.create` 를 태우므로 아래
+// 단언은 진짜 `applyGloss` 가 만든 재질을 본다. 위 두 뮤테이션이 여기서는 깨진다.
+//
+// ── 값 미러링을 피하는 방법 ──────────────────────────────────────────────────
+// 광택 수치를 여기에 다시 적지 않는다. `waterGloss(시간대)` 를 불러 **그 반환값과
+// 재질을 대조**한다 — 지키려는 것은 "값이 무엇인가"(그건 `world2-water-gloss.test.ts`
+// 소관)가 아니라 **"판정이 재질까지 닿는가"** 이기 때문이다.
+describe('수면 광택 — 판정이 실제 재질까지 닿는가', () => {
+  /** `FakeMaterial` 은 인덱스 시그니처라 필드가 `unknown` 이다. 읽을 형태로 좁힌다 */
+  const glossOf = (mat: FakeMaterial) => mat as unknown as {
+    normalScale: { x: number; y: number };
+    roughness: number;
+    needsUpdate: boolean;
+  };
+
+  it('★ 부팅 시 시간대 값이 재질에 대입된다 — 안 닿으면 판정이 장식이다', () => {
+    const { sea } = mount('day');
+    const g = waterGloss('day');
+    const m = glossOf(sea());
+    expect(m.normalScale.x).toBe(g.normalScale);
+    expect(m.normalScale.y).toBe(g.normalScale);
+    expect(m.roughness).toBe(g.roughness);
+  });
+
+  it('★ 밤에 부팅하면 밤 값이다 — 낮 값이 하드코딩돼 있으면 여기가 깨진다', () => {
+    // 이 브랜치가 고친 버그가 정확히 그것이었다(전역 상수가 재질에 박혀 있었다).
+    const { sea } = mount('night');
+    const g = waterGloss('night');
+    const m = glossOf(sea());
+    expect(m.normalScale.x).toBe(g.normalScale);
+    expect(m.roughness).toBe(g.roughness);
+    // 낮과 다르다는 것까지 본다 — 두 시간대가 같은 값이면 위 단언은 통과하면서도
+    // 분기가 죽어 있을 수 있다.
+    expect(m.normalScale.x).not.toBe(waterGloss('day').normalScale);
+  });
+
+  it('★ needsUpdate 를 세운다 — 안 세우면 값을 바꿔도 화면이 안 바뀐다', () => {
+    // 검수관 뮤테이션 ①이 노린 자리. 값을 정확히 계산하고 정확히 대입해도 이 줄이
+    // 없으면 GPU 쪽 유니폼이 안 갱신돼 **화면에는 아무 일도 안 일어난다.**
+    const { sea } = mount('day');
+    expect(glossOf(sea()).needsUpdate).toBe(true);
+  });
+
+  it('★ update 중 시간대가 바뀌면 재질이 따라간다', () => {
+    // `mount()` 가 시간을 고정하던 동안 이 분기는 통째로 미검증이었다.
+    const { inst, sea, setTime } = mount('day');
+    const m = glossOf(sea());
+    expect(m.roughness).toBe(waterGloss('day').roughness);
+
+    setTime('night');
+    inst.system!.update({ dt: 1 } as never);
+    expect(m.roughness).toBe(waterGloss('night').roughness);
+    expect(m.normalScale.x).toBe(waterGloss('night').normalScale);
+
+    // 되돌아오는 것도 본다 — 한 번 밤이 되면 낮으로 못 돌아오는 구현이 있을 수 있다.
+    setTime('day');
+    inst.system!.update({ dt: 1 } as never);
+    expect(m.roughness).toBe(waterGloss('day').roughness);
+  });
+
+  it('시간대가 그대로면 다시 걸지 않는다 — 매 프레임 대입하면 유니폼이 계속 갱신된다', () => {
+    const { inst, sea } = mount('day');
+    const m = glossOf(sea());
+    m.needsUpdate = false;          // 밖에서 내려두고
+    inst.system!.update({ dt: 1 } as never);
+    expect(m.needsUpdate).toBe(false); // 안 바뀌었으면 건드리지 않아야 한다
+  });
+});
+
+// ── URL 노브 (감독 지시 2026-07-31 "URL로 값 조절할 수 있게 열어둬") ───────────
+//
+// 노브의 요건은 둘이고 **둘 다 깨지기 쉽다**:
+//   ① 지정하면 덮는다 — 안 덮으면 감독이 값을 바꿔도 화면이 그대로다(가장 흔한 결함)
+//   ② 지정 안 하면 시간대 분기가 그대로 산다 — `readNum` 을 쓰면 여기가 깨진다.
+//      fallback 이 강제돼 낮 기본값이 밤에도 걸리고, 이 브랜치가 방금 고친 버그가
+//      노브를 통해 되살아난다. 그래서 `readNumOpt` 가 따로 있다.
+describe('URL 노브 — 수면 값을 밖에서 연다', () => {
+  /** jsdom 의 `location.search` 를 바꿔 `create` 를 태운다. 끝나면 반드시 되돌린다 */
+  function withSearch<T>(search: string, fn: () => T): T {
+    const before = location.search;
+    const to = (s: string) => window.history.replaceState({}, '', s || location.pathname);
+    to(search);
+    try { return fn(); } finally { to(before); }
+  }
+  const glossOf = (mat: FakeMaterial) => mat as unknown as {
+    normalScale: { x: number; y: number }; roughness: number;
+  };
+
+  it('★ ?wns= 를 주면 시간대 값을 덮는다', () => {
+    const m = withSearch('?wns=2.4', () => glossOf(mount('day').sea()));
+    expect(m.normalScale.x).toBe(2.4);
+    expect(m.normalScale.y).toBe(2.4);
+  });
+
+  it('★ ?wrough= 를 주면 시간대 값을 덮는다', () => {
+    const m = withSearch('?wrough=0.45', () => glossOf(mount('night').sea()));
+    expect(m.roughness).toBe(0.45);
+  });
+
+  it('한쪽만 줘도 나머지는 시간대 값이 산다 — 노브 하나가 둘을 덮으면 안 된다', () => {
+    const m = withSearch('?wns=2', () => glossOf(mount('night').sea()));
+    expect(m.normalScale.x).toBe(2);
+    expect(m.roughness).toBe(waterGloss('night').roughness); // 건드리지 않았다
+  });
+
+  it('★ 노브가 없으면 시간대 분기가 그대로다 — 여기가 깨지면 노브가 기본값을 죽인 것이다', () => {
+    // `readNumOpt` 대신 `readNum('wns', 0.9, ...)` 을 쓰면 정확히 이 단언이 깨진다.
+    const day = withSearch('', () => glossOf(mount('day').sea()));
+    const night = withSearch('', () => glossOf(mount('night').sea()));
+    expect(day.normalScale.x).toBe(waterGloss('day').normalScale);
+    expect(night.normalScale.x).toBe(waterGloss('night').normalScale);
+    expect(day.normalScale.x).not.toBe(night.normalScale.x);
+  });
+
+  it('★ ?wns=0 도 유효한 지정이다 — `||` 로 쓰면 조용히 무시된다', () => {
+    // 평평한 수면을 보려는 시도가 바로 이 값이다. `??` 가 아니라 `||` 였다면
+    // 0 이 falsy 라 시간대 값으로 되돌아가고, 감독은 "노브가 안 먹는다" 고만 본다.
+    const m = withSearch('?wns=0', () => glossOf(mount('day').sea()));
+    expect(m.normalScale.x).toBe(0);
+  });
+
+  it('범위 밖 값은 클램프된다 — ?wns=999 로 화면이 날아가지 않는다', () => {
+    const m = withSearch('?wns=999', () => glossOf(mount('day').sea()));
+    expect(m.normalScale.x).toBe(3);   // NS_MAX
+  });
+
+  it('숫자가 아니면 무시하고 시간대 값으로 간다', () => {
+    const m = withSearch('?wns=abc', () => glossOf(mount('day').sea()));
+    expect(m.normalScale.x).toBe(waterGloss('day').normalScale);
+  });
+
+  it('★ ?wflow= 가 강물 속도를 실제로 바꾼다 — 진단만 바뀌고 UV 가 그대로면 장식이다', () => {
+    // 유속은 재질이 아니라 **UV 이동량**으로 드러난다. 같은 dt 를 주고 이동 거리를
+    // 비교한다 — 노브가 `phase` 계산에 안 닿으면 두 값이 같아진다.
+    const shift = (search: string) => withSearch(search, () => {
+      const { inst, added } = mount();
+      const g = added.find((m) => m.name === 'river')!.geometry as FakeBufferGeometry;
+      const uv = g.attrs.uv.array as unknown as number[];
+      const before = [...uv];
+      inst.system!.update({ dt: 1 } as never);
+      return Math.hypot(uv[0] - before[0], uv[1] - before[1]);
+    });
+    const slow = shift('?wflow=0.5');
+    const fast = shift('?wflow=4');
+    expect(fast).toBeGreaterThan(slow * 1.5);
+  });
+
+  it('★ 진단이 실제로 걸린 값을 내보낸다 — 다시 계산하면 노브 무시를 덮는다', () => {
+    const d = withSearch('?wns=1.5&wrough=0.4&wflow=3', () => {
+      const { inst } = mount('night');
+      return inst.diagnostics!() as {
+        gloss: { normalScale: number; roughness: number };
+        glossKnob: { ns: number | null; rough: number | null; flow: number | null };
+        flowMps: number;
+      };
+    });
+    expect(d.gloss).toEqual({ normalScale: 1.5, roughness: 0.4 });
+    expect(d.glossKnob).toEqual({ ns: 1.5, rough: 0.4, flow: 3 });
+    expect(d.flowMps).toBe(3);
+  });
+
+  it('노브를 안 쓰면 진단이 그 사실을 말한다 — 값만으로는 지정 여부를 못 가린다', () => {
+    // 세 노브가 **전부** null 이어야 한다. 유속만 `readNum` 이던 시절에는 이 자리에
+    // 기본값 1.1 이 들어와 "지정했다"와 구별되지 않았다.
+    const d = withSearch('', () => {
+      const { inst } = mount('day');
+      return inst.diagnostics!() as {
+        glossKnob: { ns: number | null; rough: number | null; flow: number | null };
+        flowMps: number;
+      };
+    });
+    expect(d.glossKnob).toEqual({ ns: null, rough: null, flow: null });
+    // 그래도 실제로 쓰이는 유속은 기본값이다 — "미지정"이 "0"이 되면 강이 멈춘다.
+    expect(d.flowMps).toBeGreaterThan(0);
+  });
+});
+
+// ── 슬라이더 바 → 실제 재질 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ─────
+//
+// `world2-knob-bar.test.ts` 는 스텁 spec 으로 **바의 계약**만 본다. 여기서는 진짜
+// `oceanFeature.create` 를 태워 **슬라이더를 민 것이 재질까지 가는가**를 본다.
+//
+// 이 구별이 오늘 검수관이 잡은 블로커의 핵심이다. 로직을 테스트 안에 다시 적으면
+// 사본만 지켜지고, 정작 `ocean.ts` 를 훼손해도 아무것도 안 깨진다. 그러니 바를 진짜
+// 문서에 세우고 진짜 이벤트를 쏜다.
+describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
+  const BAR = `
+    <div id="w2-sliders" data-open="0" data-dirty="0" hidden>
+      <button id="w2-sliders-toggle" type="button" aria-expanded="false"></button>
+      <div id="w2-sliders-body" hidden></div>
+    </div>`;
+  beforeEach(() => { document.body.innerHTML = BAR; window.history.replaceState({}, '', location.pathname); });
+  afterEach(() => { document.body.innerHTML = ''; window.history.replaceState({}, '', location.pathname); });
+
+  const glossOf = (mat: FakeMaterial) => mat as unknown as {
+    normalScale: { x: number; y: number }; roughness: number;
+  };
+  const inputs = () => document.querySelectorAll<HTMLInputElement>('.w2-slide-input');
+  const resets = () => document.querySelectorAll<HTMLButtonElement>('.w2-slide-reset');
+  const push = (el: HTMLInputElement, v: string) => {
+    el.value = v;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  it('★ 문서에 바가 있으면 수면 노브 셋이 붙는다', () => {
+    mount('day');
+    expect(inputs().length).toBe(3);
+    expect(document.getElementById('w2-sliders')!.hidden).toBe(false);
+  });
+
+  it('★ 물결 슬라이더를 밀면 재질의 normalScale 이 바뀐다 — 이 축이 없으면 바가 장식이다', () => {
+    const { sea } = mount('day');
+    const m = glossOf(sea());
+    expect(m.normalScale.x).toBe(waterGloss('day').normalScale);
+    push(inputs()[0], '2.4');
+    expect(m.normalScale.x).toBe(2.4);
+    expect(m.normalScale.y).toBe(2.4);
+  });
+
+  it('★ 거칠기 슬라이더를 밀면 재질의 roughness 가 바뀐다', () => {
+    const { sea } = mount('night');
+    const m = glossOf(sea());
+    push(inputs()[1], '0.42');
+    expect(m.roughness).toBe(0.42);
+  });
+
+  it('★ 유속 슬라이더를 밀면 강 UV 이동량이 바뀐다', () => {
+    const { inst, added } = mount('day');
+    const g = added.find((x) => x.name === 'river')!.geometry as FakeBufferGeometry;
+    const uv = g.attrs.uv.array as unknown as number[];
+
+    const shift = () => {
+      const before = [...uv];
+      inst.system!.update({ dt: 1 } as never);
+      return Math.hypot(uv[0] - before[0], uv[1] - before[1]);
+    };
+    push(inputs()[2], '0.5');
+    const slow = shift();
+    push(inputs()[2], '5');
+    const fast = shift();
+    expect(fast).toBeGreaterThan(slow * 1.5);
+  });
+
+  it('★ 되돌리기를 누르면 시간대 기본값으로 돌아온다', () => {
+    const { sea } = mount('night');
+    const m = glossOf(sea());
+    push(inputs()[0], '2.8');
+    expect(m.normalScale.x).toBe(2.8);
+    resets()[0].click();
+    expect(m.normalScale.x).toBe(waterGloss('night').normalScale);
+  });
+
+  it('★ 민 값이 주소에 실린다 — 그래야 화면 밖으로 나갈 수 있다', () => {
+    // 이 도구의 목적 자체다. 값이 화면 안에만 있으면 감독이 숫자를 눈으로 읽어
+    // 옮겨 적어야 하고, 사람이 옮기는 그 구간이 오늘 이미 훼손을 냈다.
+    mount('day');
+    push(inputs()[0], '1.25');
+    expect(location.search).toContain('wns=1.25');
+  });
+
+  it('★ 되돌리면 주소에서도 사라진다 — 기본값을 주소가 기억하면 안 된다', () => {
+    mount('day');
+    push(inputs()[1], '0.5');
+    expect(location.search).toContain('wrough');
+    resets()[1].click();
+    expect(location.search).not.toContain('wrough');
+  });
+
+  it('★ 주소에 값이 있으면 슬라이더가 그 자리에서 시작한다', () => {
+    window.history.replaceState({}, '', '?wns=2.15');
+    mount('day');
+    expect(inputs()[0].value).toBe('2.15');
+    expect(document.querySelectorAll<HTMLElement>('.w2-slide-row')[0].dataset.overridden).toBe('1');
+  });
+
+  it('★ 시간대가 바뀌면 안 잡은 슬라이더가 따라간다', () => {
+    const { inst, setTime } = mount('day');
+    expect(inputs()[0].value).toBe(String(waterGloss('day').normalScale));
+    setTime('night');
+    inst.system!.update({ dt: 1 } as never);
+    expect(inputs()[0].value).toBe(String(waterGloss('night').normalScale));
+  });
+
+  it('★ 잡아둔 슬라이더는 시간대를 따라가지 않는다 — 그게 "잡는다"의 뜻이다', () => {
+    const { inst, sea, setTime } = mount('day');
+    push(inputs()[0], '2.2');
+    setTime('night');
+    inst.system!.update({ dt: 1 } as never);
+    expect(inputs()[0].value).toBe('2.2');
+    expect(glossOf(sea()).normalScale.x).toBe(2.2);
+    // 안 잡은 거칠기는 밤을 따라간다 — 노브가 서로를 끌고 가지 않는다.
+    expect(glossOf(sea()).roughness).toBe(waterGloss('night').roughness);
+  });
+
+  it('★ dispose 가 바를 걷는다 — 해제된 재질을 만지는 핸들러가 남으면 안 된다', () => {
+    const { inst } = mount('day');
+    expect(inputs().length).toBe(3);
+    inst.dispose!();
+    expect(inputs().length).toBe(0);
+    expect(document.getElementById('w2-sliders')!.hidden).toBe(true);
+  });
+
+  it('바가 없는 문서에서도 물은 뜬다 — 패널은 있으면 좋은 것이지 필수가 아니다', () => {
+    document.body.innerHTML = '';
+    const { sea, added } = mount('day');
+    expect(added.length).toBe(3);
+    expect(glossOf(sea()).normalScale.x).toBe(waterGloss('day').normalScale);
+  });
+});
+
+// ── 물살 (감독 지시 2026-07-31 "물살로 보이고") ──────────────────────────────
+// 반짝임과 달리 이것은 **정점마다 다른 값**이라 순수 함수 테스트로 못 본다.
+// `riverFlowAt` 이 옳은 방향을 주는지는 `world2-river-flow.test.ts` 가 보고,
+// 여기서는 **그 방향이 실제로 UV 에 실리는지**를 본다 — 경계를 건너는 지점이다.
+describe('물살 — 강 UV 가 정점마다 제 방향으로 밀린다', () => {
+  const riverUv = () => {
+    const { inst, added } = mount();
+    const river = added.find((m) => m.name === 'river')!;
+    const g = river.geometry as FakeBufferGeometry;
+    return { inst, uv: g.attrs.uv.array as unknown as number[] };
+  };
+
+  it('★ update 가 강 UV 를 실제로 바꾼다 — 안 바뀌면 물살이 없다', () => {
+    const { inst, uv } = riverUv();
+    const before = [...uv];
+    inst.system!.update({ dt: 2 } as never);
+    expect(uv.some((v, i) => v !== before[i])).toBe(true);
+  });
+
+  it('★ 정점마다 다른 방향으로 민다 — 전부 같으면 지금과 다를 게 없다', () => {
+    // 이것이 이 작업의 핵심 단언이다. 모든 정점을 같은 양만큼 밀면 그냥 offset 을
+    // 흘리는 것과 같고, 굽이를 따라 흐르지 않는다.
+    const { inst, uv } = riverUv();
+    const before = [...uv];
+    inst.system!.update({ dt: 3 } as never);
+    // 정점별 이동 벡터를 모아 서로 다른 것이 있는지 본다
+    const deltas = new Set<string>();
+    for (let i = 0; i < uv.length; i += 2) {
+      deltas.add(`${(uv[i] - before[i]).toFixed(6)},${(uv[i + 1] - before[i + 1]).toFixed(6)}`);
+    }
+    expect(deltas.size).toBeGreaterThan(1);
+  });
+
+  it('누적하지 않는다 — 같은 t 면 같은 UV 다(부동소수 오차가 안 쌓인다)', () => {
+    // 기준 UV 에서 매번 다시 계산하므로, 한 번에 dt=4 를 주든 dt=2 를 두 번 주든
+    // 같은 결과여야 한다. 누적 구현이면 여기가 깨진다.
+    const a = riverUv();
+    a.inst.system!.update({ dt: 4 } as never);
+    const once = [...a.uv];
+    const b = riverUv();
+    b.inst.system!.update({ dt: 2 } as never);
+    b.inst.system!.update({ dt: 2 } as never);
+    for (let i = 0; i < once.length; i++) expect(b.uv[i]).toBeCloseTo(once[i], 9);
+  });
+
+  it('UV 속성에 needsUpdate 를 세운다 — 안 세우면 GPU 버퍼가 안 올라간다', () => {
+    const { inst, added } = (() => {
+      const m = mount();
+      return { inst: m.inst, added: m.added };
+    })();
+    const g = added.find((x) => x.name === 'river')!.geometry as FakeBufferGeometry;
+    (g.attrs.uv as unknown as { needsUpdate?: boolean }).needsUpdate = false;
+    inst.system!.update({ dt: 1 } as never);
+    expect((g.attrs.uv as unknown as { needsUpdate?: boolean }).needsUpdate).toBe(true);
   });
 });
 
