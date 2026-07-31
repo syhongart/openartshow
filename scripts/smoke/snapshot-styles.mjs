@@ -291,7 +291,10 @@ async function main() {
 
   // 검수관 권고 P4 — 한계가 주석에만 있으면 실행 결과를 읽는 사람에게 안 닿는다.
   // 3D 페이지가 목록에 있으면 "이 페이지도 검증됐다" 는 오독을 로그에서 미리 끊는다.
-  const canvasPages = pages.filter((p) => /^(builder|world|world2|visit|lab-glb|index)\.html$/.test(p));
+  // landing 이 빠져 있었다(검수관 조건 3). 대문도 배경 연출에 <canvas> 를 쓰는데
+  // 목록에 없어 "DOM 만 봤다" 경고가 안 떴다 — 하필 그 캔버스가 이번 CSP 회귀로
+  // 죽었던 자리다. 경고가 떴다면 더 일찍 의심했을 것이다.
+  const canvasPages = pages.filter((p) => /^(landing|builder|world|world2|visit|lab-glb|index)\.html$/.test(p));
   if (canvasPages.length) {
     console.log(`  ⚠ ${canvasPages.join(', ')} — DOM(UI 크롬)만 본다. 캔버스 안 3D 씬(재질·조명)은 미검증이다.`);
   }
