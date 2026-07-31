@@ -25,6 +25,7 @@ import {
   REQUIRED_FILES_BY_MODE,
   LIVE_PAGES,
   VIEWPORTS,
+  PAGE_TIMEOUT_MS,
 } from './config.mjs';
 import { ASSEMBLERS, countFiles } from './assemble.mjs';
 import { startServer } from './server.mjs';
@@ -572,6 +573,55 @@ async function runPerfGates(origin, browser) {
     );
   } catch (e) {
     record(8, perfLabel('하늘 예열(첫 등장)'), 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
+  await recordRenderBackend(browser, origin);
+}
+
+// ── [10] 렌더 백엔드 — **판정이 아니라 기록이다** (감독 지시 2026-07-31) ──────
+//
+// 감독 지적: *"헤드리스가 WebGL/SwiftShader 로 폴백한 것을 'WebGPU 시각 검증 완료' 로
+// 기록하지 마라. backend 가 WebGL 이면 WebGPU 테스트는 FAIL 이 아니라 **미측정**으로
+// 분리해 보고하라."*
+//
+// **왜 FAIL 이 아닌가** — 이 컨테이너에 GPU 가 없는 것은 코드 결함이 아니다. FAIL 로 두면
+// 개발자가 매번 빨간불을 무시하게 되고, 그러면 진짜 회귀가 났을 때도 무시한다. 반대로
+// 조용히 넘기면 "무엇으로 그렸는지 모르는 채" 통과가 쌓인다. 그래서 **INFO 로 남기되
+// 라벨에 미측정을 명시**한다.
+//
+// **이 검사가 막는 것**: 리포트를 읽는 사람이 헤드리스 결과를 실기기 결과로 오해하는 것.
+// **못 막는 것**: 아무것도 막지 않는다 — 종료코드에 영향이 없다. 실제 WebGPU 시각 검증은
+// GPU self-hosted runner 소관이다(태스크 #170 B단계).
+async function recordRenderBackend(browser, origin) {
+  const LABEL = '렌더 백엔드';
+  let page;
+  try {
+    page = await browser.newPage();
+    await page.goto(`${origin}/app/world2.html`, { waitUntil: 'domcontentloaded', timeout: PAGE_TIMEOUT_MS });
+    await page.waitForFunction(() => !!window.__world2, { timeout: 60000 });
+    // 렌더러가 실제로 프레임을 돌린 뒤에 읽는다 — 초기화 직후 값은 아직 확정 전일 수 있다
+    await page.waitForTimeout(2500);
+    const s = await page.evaluate(() => {
+      const st = window.__world2.stats();
+      return { detail: st.backendDetail, backend: st.backend, ev: st.backendEvidence };
+    });
+
+    // 값이 없으면 **모른다고 적는다.** 옛 판본을 재고 있을 수도 있으니 통과로 갈음하지 않는다.
+    if (!s.detail) {
+      record('10', LABEL, 'INFO', `측정실패 — stats() 에 backendDetail 없음(backend=${s.backend ?? '?'})`);
+      return;
+    }
+    const isGPU = s.detail.startsWith('webgpu-');
+    const gl = s.ev?.glRenderer ? ` · GL="${String(s.ev.glRenderer).slice(0, 70)}"` : '';
+    const why = s.ev?.note ? ` · ${s.ev.note}` : '';
+    record('10', LABEL, 'INFO',
+      isGPU
+        ? `${s.detail}${gl}${why}`
+        : `${s.detail} — **WebGPU 미측정**(이 환경은 WebGPU 경로를 안 탄다. 실기기 판정 아님)${gl}${why}`);
+  } catch (e) {
+    record('10', LABEL, 'INFO', `측정실패 — ${(e.message || String(e)).slice(0, 120)}`);
+  } finally {
+    await page?.close().catch(() => {});
   }
 }
 

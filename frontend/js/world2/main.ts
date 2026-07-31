@@ -485,6 +485,12 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     /** 현재 개수 스냅샷 — 불변식 검사는 이 값을 프레임 간 비교해 판정한다 */
     stats: () => ({
       backend: adapter!.backend,
+      // 하드웨어/소프트웨어까지 가른 라벨 + 근거 (감독 지시 2026-07-31).
+      // `backend` 만으로는 실기기 GPU 와 헤드리스 SwiftShader 가 같은 값이라,
+      // 리포트를 성능·색감 판정의 근거로 쓸 수 없었다. 판정은 `renderer.ts` 한 곳이고
+      // 여기는 읽기만 한다 — 같은 판정을 두 곳에 쓰면 한쪽만 고쳐도 아무도 모른다.
+      backendDetail: adapter!.backendDetail,
+      backendEvidence: adapter!.backendEvidence,
       order: kernel!.order,
       /** 부하 배수. 리포트만 보고 "어느 밀도에서 잰 것인가"를 알 수 있어야 한다. */
       density,
