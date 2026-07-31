@@ -190,7 +190,7 @@ ${navHtml}
 <div class="wrap">
 ${bodyHtml}
 </div>
-<footer>&copy; 2026 ${SITE}. — ${footerNote}</footer>
+<footer>&copy; 2026 ${SITE}. — ${footerNote}<br><a href="${toMaking(depth)}licenses/">오픈소스 고지</a></footer>
 </body>
 </html>
 `;
