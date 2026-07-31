@@ -215,10 +215,50 @@ const WAVE_GAIN = 1.6;
  * 노이즈 옥타브의 격자 해상도. **전부 정수**여야 타일이 감긴다 — 이 배열이 심리스의
  * 유일한 전제이고, 소수를 넣으면 `hash2` 의 wrap 이 어긋나 이음매가 생긴다.
  *
- * 3(큰 너울) → 7 → 15 → 31. 2배가 아니라 **서로 소에 가깝게** 띄운다. 정확히 2배씩
- * 늘리면 격자점이 겹쳐 층이 같은 자리에서 꺾이고, 그 자국이 다시 격자무늬로 읽힌다.
+ * 3(큰 너울) → 7 → 15 → 31 → 61 → 127. 2배가 아니라 **서로 소에 가깝게** 띄운다. 정확히
+ * 2배씩 늘리면 격자점이 겹쳐 층이 같은 자리에서 꺾이고, 그 자국이 다시 격자무늬로 읽힌다.
+ *
+ * ── 왜 61·127 을 더 얹었나 (감독 지시 2026-07-31 *"느낌이 아쉬워"*) ────────────
+ * 예전에는 31 에서 끊었다. 그런데 노멀맵이 128px 이었으므로 **31 이 이미 한계**였다 —
+ * 격자 하나가 4px 이고, 그보다 잔 결은 표현될 자리가 아예 없었다.
+ *
+ * 실제 수면에는 바람이 만드는 **미세한 주름**(capillary wave)이 늘 얹혀 있고, 반짝임의
+ * 밀도는 큰 물결이 아니라 그 주름이 만든다. 사진에서 뽑은 노멀맵이 좋아 보이는 이유의
+ * 큰 부분이 이것이다 — 우리가 못 낸 것은 "사진" 이 아니라 **고주파**였다.
+ *
+ * 그래서 노멀맵 해상도를 올리고(`NORMAL_N`) 옥타브를 두 단 더 얹는다. 부팅 시 한 번
+ * 굽는 비용이라 프레임에는 영향이 없다.
  */
-const NOISE_OCTAVES = [3, 7, 15, 31];
+const NOISE_OCTAVES = [3, 7, 15, 31, 61, 127];
+
+/**
+ * 노멀맵 한 변(px). **여기만 크게 잡는다** — 일렁임과 반짝임을 만드는 것은 색이 아니라
+ * 법선이고, 고주파 주름이 살려면 최고 옥타브(127)의 격자가 최소 4px 은 돼야 한다.
+ *
+ * 512 = 127 × 4. 이보다 키워도 옥타브를 더 얹지 않으면 얻는 것이 없다.
+ */
+const NORMAL_N = 512;
+
+/**
+ * 나머지 텍스처(밝기·윤슬·자갈) 한 변(px). 노멀맵만큼 클 필요가 없다 —
+ * 밝기는 완만하고, 윤슬은 점이고, 자갈은 물을 통해 흐려져 보인다.
+ *
+ * 부팅 시 굽는 비용이 해상도의 제곱으로 늘어서, 필요 없는 곳까지 키우면
+ * 로딩만 길어지고 화면은 그대로다.
+ *
+ * ── 한 번 256 으로 올렸다가 되돌렸다 (검수관 권고 2026-07-31) ────────────────
+ * 노멀맵을 512 로 올리면서 이것도 128 → 256 으로 같이 올렸는데, **근거를 어디에도
+ * 적지 않았다.** 검수관이 짚었다 — 주석은 "클 필요 없다" 고 해놓고 값은 2배로 올린
+ * 상태였고, 그 2배가 부팅 비용을 순수하게 늘리고 있었다(픽셀 4배).
+ *
+ * 되돌린다. 이 셋은 옥타브 확장의 수혜자가 아니다:
+ *   · `sparkleTexture`·`pebbleTexture` 는 `NOISE_OCTAVES` 를 **아예 안 쓴다**
+ *     (자체 상수와 시드 랜덤을 쓴다) — 해상도만 늘 뿐 잔결이 생기지 않는다.
+ *   · `waveTintTexture` 는 옥타브를 쓰지만 **밝기**라 고주파가 눈에 안 띈다.
+ *
+ * 고주파가 필요한 곳은 **법선**뿐이고 그것이 `NORMAL_N` 이다.
+ */
+const AUX_N = 128;
 
 /**
  * 격자 해시 — 정수 좌표 하나에 0~1 난수 하나. **주기로 감아 읽는 것**이 핵심이다.
@@ -277,7 +317,7 @@ function softLight(a: number, b: number): number {
 // 반환 타입은 일부러 적지 않는다. `three/webgpu` 는 `CanvasTexture` 를 타입으로
 // 재수출하지 않아(TS2305/TS2694) 이름으로 적을 방법이 없고, 추론이 정확히 같은 타입을 준다.
 function waveNormalTexture(strength: number) {
-  const N = 128;
+  const N = NORMAL_N;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
   const g = cv.getContext('2d')!;
@@ -378,7 +418,7 @@ const SPARKLE_HALO = 0.35;   // 점 둘레 밝기 — 1px 점만 두면 멀리�
  * 시드를 고정한다. 매 실행 같은 배치여야 스크린샷 비교가 성립한다.
  */
 function sparkleTexture() {
-  const N = 128;
+  const N = AUX_N;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
   const g = cv.getContext('2d')!;
@@ -434,7 +474,7 @@ function sparkleTexture() {
  * 심리스는 `valueNoise` 가 보증한다(정수 주기로 감긴다).
  */
 function pebbleTexture() {
-  const N = 128;
+  const N = AUX_N;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
   const g = cv.getContext('2d')!;
@@ -481,7 +521,7 @@ const PEBBLE_LIGHT = 0.85;
  * 어두운 톤이 텍스처와 곱해져 길이 검게 나왔다).
  */
 function waveTintTexture() {
-  const N = 128;
+  const N = AUX_N;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
   const g = cv.getContext('2d')!;
