@@ -36,9 +36,12 @@
     --ink-body: var(--oas-ink-body);
     --ink-dim: var(--oas-ink-dim);
 
-    --violet-ink: var(--oas-violet-ink);
-    --coral-ink: var(--oas-coral-ink);
-    --coral-900: var(--oas-coral-900);
+    /* 그린 전환(2026-07-30, 태스크 #154) — 이름은 옛 팔레트 B 잔재. studio는 상시 라이트 표면이라
+       이미 -ink 딥변형 컨벤션이었다(값만 교체). coral-ink/coral-900은 .btn-gold·.builder-promo-cta
+       채움(라이트 위 딥채움 + 밝은 텍스트, 발주 (4))이라 cta-ink 계열로 잇는다. */
+    --violet-ink: var(--oas-accent-ink);
+    --coral-ink: var(--oas-cta-ink);
+    --coral-900: var(--oas-green-900);
 
     --shadow-whisper: 0 2px 6px rgba(20,21,26,.05);
     --shadow-panel: 0 8px 20px rgba(20,21,26,.10);
