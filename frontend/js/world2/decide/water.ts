@@ -54,6 +54,9 @@ import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid } from './grid.j
 // 높다** — 강물이 바다로 흘러나가는 지형이므로 그 방향이 맞다(`tests` 가 관계를 지킨다).
 
 /** 강(내수면) 수면 높이(미터). 지면보다 50cm 아래 — 감독 지시 */
+// `SkyTime` 은 `decide/night.ts` 가 SSOT 다 — 여기서 문자열 유니온을 다시 적지 않는다.
+import type { SkyTime } from './night.js';
+
 export const RIVER_Y = -0.5;
 
 /** 바다(외해) 수면 높이(미터). 지면보다 1m 아래 — 감독 지시. 강보다 50cm 낮다 */
@@ -238,4 +241,65 @@ export function parcelWater(px: number, pz: number, cellX: number, cellZ: number
 function parcelIsWater(px: number, pz: number, cellX: number, cellZ: number): boolean {
   if (!inGrid(px, pz)) return true;
   return isRiver(px * cellX, pz * cellZ);
+}
+
+// ── 수면 광택 — 시간대별 (감독 지시 2026-07-31 "반짝임부터 살려봐") ────────────
+//
+// ── 왜 시간대로 나누는가 ────────────────────────────────────────────────────
+// 예전에 감독이 *"밤 강에서 반사가 어색하네. 밤인데 빛이 이렇게 많지 않잖아"* 라고
+// 해서 `normalScale` 을 0.85→0.35, `roughness` 를 0.28→0.62 로 올렸다. **전역으로.**
+// `ocean.ts` 주석은 그 선택을 이렇게 정당화했다:
+//
+//   "시간대로 분기하지 않는다. 낮에도 이 정도가 과하지 않고, 분기를 넣으면 바다가
+//    하늘의 상태를 알아야 해서 기능 사이에 결합이 생긴다."
+//
+// 두 문장 다 지금은 성립하지 않는다:
+//
+//   ① *"낮에도 과하지 않다"* — 검증 없이 들어간 판단이었고, 감독이 낮 화면을 보고
+//      *"진짜 리얼하게 빤짝빤작"* 을 요구했다. `normalScale 0.35` 는 기본값의 1/3 이라
+//      물결 기울기가 거의 평평하다. 빛이 튈 각도 자체가 없으니 반짝일 수가 없다.
+//   ② *"결합이 생긴다"* — **이미 계약에 있다.** `FeatureEnv.time()` 이 그것이다.
+//      후보정이 똑같은 문제를 겪었고(반구광으로 낮/밤을 추측하다 밤이 낮으로 읽혔다)
+//      팀장 판정 A-2 로 공식 경로가 열렸다. 그 뒤로 이 주석만 낡은 채 남아 있었다.
+//
+// 밤을 고치려고 전역을 낮춘 것이 낮을 죽였다. **한 축으로 두 시간대를 맞추려던 것이
+// 애초에 무리였다** — 밤 물은 광원이 달·가로등뿐이라 좁고 약해야 하고, 낮 물은 태양이
+// 하나뿐이라 좁고 강해야 한다. 같은 값일 이유가 없다.
+//
+// ── 왜 순수 함수인가 ────────────────────────────────────────────────────────
+// 판정(어떤 시간대에 어떤 광택인가)과 집행(재질에 넣기)을 가른다. 이 저장소가 "경계를
+// 건너는 지점은 아무도 안 본다" 로 데였으므로, **집행 쪽 통합 테스트를 함께** 붙인다
+// (`tests/world2-water-gloss.test.ts`).
+
+/** 수면 광택 파라미터. `MeshStandardMaterial` 의 두 필드에 그대로 들어간다. */
+export interface WaterGloss {
+  /**
+   * 물결 기울기 배수. **반짝임의 1차 원인이다** — 이 값이 낮으면 법선이 평평해져
+   * 빛이 튈 각도가 사라진다. 0.35(구 전역값)에서는 사실상 반짝임이 없다.
+   */
+  readonly normalScale: number;
+  /**
+   * 거칠기. 낮을수록 하이라이트가 **좁고 밝다**(반짝이는 점), 높을수록 넓고 흐리다(은은한 띠).
+   * 밤에 이 값을 올린 것은 옳았다 — 달빛은 넓게 번진다. 낮에까지 적용한 것이 문제였다.
+   */
+  readonly roughness: number;
+}
+
+/**
+ * 시간대별 수면 광택.
+ *
+ * @param time 지금 시간대. `FeatureEnv.time()` 이 준다 — 추측하지 않는다.
+ */
+export function waterGloss(time: SkyTime): WaterGloss {
+  switch (time) {
+    // 태양 하나가 강하게 내리쬔다. 물결이 서면 그 각도마다 점이 박힌다 —
+    // **좁고(roughness↓) 강하게(normalScale↑)** 가 한낮 물의 문법이다.
+    case 'day': return { normalScale: 0.9, roughness: 0.18 };
+    // 노을은 광원이 낮고 크다. 물 위로 **길게 끌리는 띠**가 생긴다 —
+    // 기울기는 살리되 거칠기를 중간에 둬 띠가 끊기지 않게 한다.
+    case 'sunset': return { normalScale: 0.7, roughness: 0.3 };
+    // 밤은 달·가로등뿐이다. 감독이 지적한 그 화면 — 여기서는 예전 값을 지킨다.
+    // **이 줄이 예전 지시를 보존하는 자리다.** 낮을 살리려다 밤을 되돌리면 안 된다.
+    case 'night': return { normalScale: 0.35, roughness: 0.62 };
+  }
 }

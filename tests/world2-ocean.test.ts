@@ -42,7 +42,14 @@ class FakeGeometry {
 
 class FakeMaterial {
   disposed = false;
-  constructor(public opts: Record<string, unknown>) {}
+  needsUpdate = false;
+  // three 의 재질은 생성자 opts 를 **인스턴스 프로퍼티로 펼친다**. 스텁이 `opts` 만
+  // 들고 있으면 `mat.normalScale.set(...)` 같은 실제 사용 경로가 undefined 로 터진다
+  // — 코드가 아니라 스텁이 계약을 덜 재현한 것이다(감독 지시 "반짝임" 작업에서 실측).
+  [k: string]: unknown;
+  constructor(public opts: Record<string, unknown>) {
+    Object.assign(this, opts);
+  }
   dispose() { this.disposed = true; }
 }
 
@@ -85,7 +92,12 @@ vi.mock('three/webgpu', () => ({
   BufferGeometry: FakeBufferGeometry,
   Float32BufferAttribute: FakeAttr,
   RepeatWrapping: 1000,
-  Vector2: class { constructor(public x: number, public y: number) {} },
+  // `set()` 이 있어야 한다 — three 의 Vector2 계약이고, `ocean.ts` 의 `applyGloss` 가
+  // 이것을 부른다. 스텁이 계약을 덜 재현하면 **프로덕션 코드가 멀쩡한데 테스트만 깨진다**.
+  Vector2: class {
+    constructor(public x: number, public y: number) {}
+    set(x: number, y: number) { this.x = x; this.y = y; return this; }
+  },
 }));
 
 beforeAll(() => {
@@ -131,6 +143,11 @@ function mount() {
     player: { position: { x: 0, z: 0 } },
     doc: document,
     cell: 32,
+    // 시간대 — 광택(`waterGloss`)이 이것을 읽는다(감독 지시 2026-07-31 "반짝임").
+    // `'day'` 로 고정한다: 이 파일의 단언은 텍스처 맵·지오·개수에 관한 것이라
+    // 시간대와 무관하고, 광택 자체는 `world2-water-gloss.test.ts` 가 따로 본다.
+    // **여기서 광택을 단언하면 두 파일이 같은 값을 적게 된다**(값 미러링).
+    time: () => 'day' as const,
   };
   // 실제 Feature 계약 전체를 만들지 않는다 — ocean 이 쓰는 것만 준다.
   const inst = oceanFeature.create(env as never)!;

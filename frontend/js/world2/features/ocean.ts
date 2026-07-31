@@ -43,7 +43,8 @@
 // 부른다. **부팅 시 한 번 정하고 다시 만지지 않는다** — 그래서 안전하다.
 
 import * as THREE from 'three/webgpu';
-import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater } from '../decide/water.js';
+import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater, waterGloss } from '../decide/water.js';
+import type { SkyTime } from '../decide/night.js';
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
@@ -337,14 +338,29 @@ export const oceanFeature: Feature = {
       //
       // 시간대로 분기하지 않는다. 낮에도 이 정도가 과하지 않고, 분기를 넣으면
       // 바다가 하늘의 상태를 알아야 해서 기능 사이에 결합이 생긴다.
-      normalScale: new THREE.Vector2(0.35, 0.35),
-      roughness: 0.62,
+      // 광택은 **시간대가 정한다**(`decide/water.ts` 의 `waterGloss`). 여기서 값을
+      // 다시 적지 않는다 — 예전에 밤을 위해 낮춘 전역값이 낮의 반짝임을 죽였고,
+      // 그 값이 이 자리에 하드코딩돼 있었다(감독 지시 2026-07-31 "반짝임부터 살려봐").
+      normalScale: new THREE.Vector2(1, 1),  // 아래 applyGloss 가 즉시 덮는다
+      roughness: 0.5,                         // 〃
       metalness: 0.05,
       transparent: true,
       opacity: OPACITY,
       // 반투명 판이 깊이를 기록하면, 같은 물 위에 훗날 무엇을 띄우든 정렬이 꼬인다.
       depthWrite: false,
     });
+    // 광택을 시간대에 맞춘다. 판정은 `waterGloss` 가 하고 여기는 집행만 한다 —
+    // **경계를 건너는 지점**이라 통합 테스트로 따로 본다(`tests/world2-water-gloss.test.ts`).
+    // 값이 재질에 실제로 닿는지는 순수 함수 테스트로는 알 수 없다.
+    const applyGloss = (time: SkyTime): void => {
+      const g = waterGloss(time);
+      seaMat.normalScale.set(g.normalScale, g.normalScale);
+      seaMat.roughness = g.roughness;
+      seaMat.needsUpdate = true;
+    };
+    let glossTime = env.time();
+    applyGloss(glossTime);
+
     const sea = new THREE.Mesh(geo, seaMat);
     sea.position.y = SEA_Y;
     // 해저보다 늦게 그려야 그 위에 비친다.
@@ -400,6 +416,12 @@ export const oceanFeature: Feature = {
         name: 'ocean',
         update(ctx) {
           t += ctx.dt;
+
+          // ── 시간대가 바뀌면 광택을 다시 건다 ──────────────────────────────
+          // **바뀔 때만** 건다. 매 프레임 대입하면 three 가 유니폼을 계속 갱신하고,
+          // 무엇보다 "왜 바뀌었나" 를 리포트에서 추적할 수 없다.
+          const now = env.time();
+          if (now !== glossTime) { glossTime = now; applyGloss(now); }
           // UV 단위로 환산해서 흘린다. 한 무늬가 RIPPLE_M 미터를 덮으므로
           // `초당 미터 / RIPPLE_M`이 초당 UV 이동량이다 — 화면 속도가 실제 m/s와 맞는다.
           const a = t / RIPPLE_M;
