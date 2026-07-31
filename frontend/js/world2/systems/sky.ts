@@ -42,11 +42,12 @@
 // 한 번만 로드한다. 즉 `instanceof`·씬그래프 혼선이 없다.
 
 import * as THREE from 'three/webgpu';
-import { createSkySystem } from '../../sky.js';
+import { createSkySystem, moonPlacement } from '../../sky.js';
 import {
   applyNightFloor, type HemiLike, type SunLike, type ExposureLike, type FogLike,
 } from './night-lights.js';
-import type { NightTune } from '../decide/night.js';
+import { createMoonGlow, type MoonGlow } from './sky-moon.js';
+import { nightness, type NightTune } from '../decide/night.js';
 import type { FrameCtx, System } from '../kernel.js';
 
 /** 태양까지의 거리 — `getSunDir()` 방향에 이 값을 곱해 광원을 배치한다. */
@@ -99,6 +100,13 @@ export interface SkyOptions {
    * 기본 0 이면 `sky.js` 가 테이블 객체를 그대로 돌려주므로 라이브와 완전히 같다.
    */
   fogTint?: number;
+  /**
+   * 달 발광체가 알파 마스크 캔버스를 만들 문서. 없으면 발광체를 만들지 않는다.
+   *
+   * 하늘 자체는 문서 없이도 성립하므로(테스트가 그렇게 쓴다) **선택**이다 — 문서가
+   * 없다고 하늘이 통째로 안 뜨는 것은 과잉이다.
+   */
+  doc?: Document | null;
 }
 
 /**
@@ -136,6 +144,14 @@ export class SkySystem implements System {
   /** 밤 노출을 얹을 대상. `toneMappingExposure` 만 만진다 */
   private readonly renderer: ExposureLike | null;
   private readonly nightTune?: NightTune;
+  /**
+   * 달을 블룸 문턱 위로 올리는 발광체 (world2 전용).
+   *
+   * `liftNightLights()` 와 같은 자리다 — `sky.js` 는 라이브 world1 과 공유하므로 거기서
+   * 달을 밝히면 미술관 오픈월드의 밤도 함께 바뀐다. 감독 지시가 *"월드2 만이야"* 였다.
+   * 문서가 없는 환경에서는 `null` 이고, 그때는 달이 평소대로 그려질 뿐 아무것도 안 깨진다.
+   */
+  private readonly moon: MoonGlow | null;
 
   constructor(
     scene: THREE.Scene,
@@ -173,6 +189,16 @@ export class SkySystem implements System {
       { fade: 0 },
     );
     this.applySun();
+
+    // 달 발광체는 **돔의 자식**이다. 돔이 플레이어를 따라 움직여도 그림 속 달과 절대
+    // 어긋나지 않는다 — 어긋나는 순간이 곧 화면에 달이 둘로 보이는 순간이다.
+    // `engine.set` 뒤에 만드는 것은 그때 돔 지오메트리가 확정되기 때문이고, 부팅 시
+    // 한 번뿐이라 예열이 이 파이프라인도 함께 굽는다.
+    //
+    // 좌표를 **여기서 받아 넘긴다.** `sky.js` 를 아는 것은 이 어댑터 하나여야 하고
+    // (경계 검사가 지킨다), 발광체는 world1 을 모르는 순수 부품으로 남는다.
+    this.moon = createMoonGlow(this.dome, DOME_RADIUS, opts.doc ?? null, moonPlacement());
+    this.applyMoon();
   }
 
   /** 하늘 그림의 해·달 방위와 그림자 방향을 맞춘다. */
@@ -189,6 +215,30 @@ export class SkySystem implements System {
     this.engine.update(ctx.dt);
     this.applySun();
     this.liftNightLights();
+    this.applyMoon();
+  }
+
+  /**
+   * 달의 밝기를 시간대에 맞춘다.
+   *
+   * 시간대는 **엔진 반영값**(`engine.get().time`)에서 읽는다 — 크로스페이드 중에는 화면에
+   * 그려지는 하늘이 요청값보다 늦으므로, 요청값을 쓰면 달만 먼저 켜지거나 꺼진다.
+   * `liftNightLights()` 가 같은 출처를 쓰는 것과 같은 이유다.
+   *
+   * 값이 안 바뀌면 `MoonGlow` 쪽에서 그대로 빠져나온다 — 매 프레임 불러도 공짜다.
+   */
+  private applyMoon(): void {
+    this.moon?.setNightness(nightness(this.engine.get().time));
+  }
+
+  /**
+   * 달 발광체의 진단. `features/sky.ts` 가 자기 스냅샷에 실어 준다.
+   *
+   * `null` 은 **발광체가 없다**는 뜻이고 0 이나 빈 객체와 다르다 — 화면에서도 "측정 안 됨"
+   * 과 "0" 은 다른 일이라는 규율이 여기에도 적용된다.
+   */
+  moonDiagnostics(): Record<string, unknown> | null {
+    return this.moon?.diagnostics() ?? null;
   }
 
   /**
@@ -281,6 +331,8 @@ export class SkySystem implements System {
   }
 
   dispose(): void {
+    // 달을 먼저 뗀다 — 돔의 자식이라 돔 지오메트리를 버리기 전에 정리해야 한다.
+    this.moon?.dispose();
     this.engine.dispose();
     this.scene.remove(this.dome);
     this.dome.geometry.dispose();

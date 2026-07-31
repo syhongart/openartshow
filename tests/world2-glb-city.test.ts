@@ -51,10 +51,27 @@ describe('GLB 실험은 꺼져 있을 때 존재하지 않는다', () => {
   it('목록에서 한 줄을 지우는 것이 곧 제거다 — 다른 기능이 이것을 참조하지 않는다', () => {
     // 기능 규약의 핵심이다. 다른 기능이 glbCity 를 import 하면 목록에서 빼도 코드가
     // 남고, 그때부터 "지웠는데 왜 남아 있지" 가 시작된다.
+    //
+    // ── 이 검사에 구멍이 있었다 (뮤테이션이 드러냄, 2026-07-30) ──────────────
+    // 원래 `'glb-city'` **하이픈 형태만** 찾았다. 그런데 코드의 실제 식별자는
+    // `glbCity`(카멜)다 — `glbCityFeature` · `stats().glbCity` · 진단 키가 전부 그렇다.
+    // **즉 진짜 코드 참조를 못 잡고 파일 경로 문자열만 잡고 있었다.**
+    //
+    // 이것이 드러난 경위가 그 자체로 교훈이다. 화면 진단 배지 첫 판본이 이 검사에
+    // 걸렸는데, 걸린 이유가 코드의 `stats().glbCity` 가 아니라 **주석에 적은
+    // `tests/world2-glb-city.test.ts` 라는 파일명**이었다. 결과가 맞아서 아무도
+    // 의심하지 않았고, 검수관도 "검사가 통과한다" 까지만 확인했다. 뮤테이션(배지에
+    // `glbCity` 참조를 일부러 넣기)에서 **안 깨져서** 비로소 드러났다.
+    //
+    // 두 형태를 모두 본다. 어느 쪽으로 참조해도 걸린다.
     const dir = new URL('../frontend/js/world2/', import.meta.url);
-    const referrers = filesReferencing(dir, 'glb-city');
-    // 자기 자신과 선언 목록만 알아야 한다.
-    expect(referrers.sort()).toEqual(['features/glb-city.ts', 'features/index.ts']);
+    const expected = ['features/glb-city.ts', 'features/index.ts'];
+    for (const needle of ['glb-city', 'glbCity']) {
+      expect(
+        filesReferencing(dir, needle).sort(),
+        `'${needle}' 를 참조하는 파일이 선언 목록 밖에 있다`,
+      ).toEqual(expected);
+    }
   });
 });
 

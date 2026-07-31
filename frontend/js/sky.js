@@ -31,6 +31,55 @@ const MOON_AZ = 0.30;
 // (하네스 스윕으로 실측 검증 — getSunDir·무지개 배치는 반드시 이 변환을 거친다.)
 const azWorld = (u) => u * Math.PI * 2 - Math.PI / 2;
 
+// ── 달의 그림 좌표 — 상수로 뽑는다 ───────────────────────────────────────────
+// 세 값이 그리기 코드 안에 리터럴로 박혀 있었다(`Hh * 0.46`, `Hh * 0.055`, `255,246,204`).
+// world2가 달 위에 발광체를 겹치려면 **같은 값**을 알아야 하는데, 거기 다시 적으면
+// 그것이 값 미러링이다 — 한쪽만 고치면 발광체가 달에서 떨어져 나가고, 그러면 화면에
+// **달이 둘로** 보인다. 그래서 여기 한 곳에 두고 `moonPlacement()`로 함께 연다.
+/** 캔버스 세로 비율(0=천정, 1=지평선). 상반구 높이 Hh 기준 */
+const MOON_V = 0.46;
+/** 원반 반경 — 역시 Hh 기준 */
+const MOON_R = 0.055;
+/** 달 고도(rad). 캔버스 세로 위치에서 유도한다 — 그리기의 equirect 위도 보정과 같은 값 */
+const MOON_EL = (1 - MOON_V) * Math.PI / 2;
+/** 원반 중심색(sRGB 0..255). 감독 지시 "진짜 노란색" 계열의 가장 밝은 코어 */
+const MOON_CORE = [255, 246, 204];
+
+/**
+ * **그림 속 달이 실제로 어디에 얼마나 크게 그려지는가.**
+ *
+ * ── 왜 `getSunDir()`로는 안 되는가 ──────────────────────────────────────────
+ * `getSunDir()`의 달 고도는 `0.9`(rad) 고정값이다. 그런데 텍스처에 그려지는 달의 고도는
+ * 캔버스 세로 위치에서 나오는 `MOON_EL`(≈0.848)이다 — **3° 어긋나 있다.** 조명 방향으로는
+ * 아무도 눈치채지 못하는 차이지만(그림자 방위만 보므로), 그 방향에 발광 원반을 놓으면
+ * 원반 반경(≈5°)의 절반이 넘게 밀려 **달이 둘로 보인다.**
+ *
+ * 그래서 `getSunDir()`을 고치지 않고 함수를 하나 더 연다. 저쪽을 고치면 라이브 world1의
+ * 그림자 방향이 함께 바뀐다 — 감독이 확인한 적 없는 변경이고, 이 지시("월드2 만이야")의
+ * 범위 밖이다.
+ *
+ * 순수 함수이고 `THREE`에 의존하지 않는다(평범한 객체를 돌려준다) — 테스트가 렌더러 없이
+ * 값을 확인할 수 있게.
+ *
+ * @returns {{dir: {x:number,y:number,z:number}, angularRadius:number, core:{r:number,g:number,b:number}}}
+ *   `dir` 단위벡터 · `angularRadius` 원반의 각반경(rad) · `core` 코어색(sRGB 0..1)
+ */
+export function moonPlacement() {
+  const az = azWorld(MOON_AZ);
+  const el = MOON_EL;
+  return {
+    dir: {
+      x: Math.sin(az) * Math.cos(el),
+      y: Math.sin(el),
+      z: Math.cos(az) * Math.cos(el),
+    },
+    // 캔버스 상반구(높이 Hh)가 고도 0..90°를 담으므로 세로 비율이 곧 각도 비율이다.
+    // 가로는 `mst`로 위도 왜곡을 되돌려 그리므로 화면에서 원형이고, 반경도 이 값과 같다.
+    angularRadius: MOON_R * Math.PI / 2,
+    core: { r: MOON_CORE[0] / 255, g: MOON_CORE[1] / 255, b: MOON_CORE[2] / 255 },
+  };
+}
+
 // 시간대×날씨 → 조명·안개 테이블. fog는 ⑨규칙에 따라 돔 최하단색과 동일하게 유지할 것.
 const LIGHT = {
   day: {
@@ -336,16 +385,15 @@ function paintSky(ctx, W, H, time, weather, opts) {
     ctx.restore();
     // (광망 별은 별밭 3등급에 통합 — 위 bright 등급이 글로우 헤일로+색 스파이크를 그린다)
     // 천정 캡 — 극점 부근 성분(별·은하수 자락)을 하늘 top색 소프트 페이드로 덮어
-    // equirect 극점 수렴이 만드는 방사 스트릭을 봉인(상방 실측). 달(y 0.46Hh)은 안 걸린다.
+    // equirect 극점 수렴이 만드는 방사 스트릭을 봉인(상방 실측). 달(y = MOON_V·Hh)은 안 걸린다.
     const cap = ctx.createLinearGradient(0, 0, 0, Hh * 0.2);
     cap.addColorStop(0, 'rgba(7,10,22,1)'); cap.addColorStop(0.55, 'rgba(7,10,22,0.7)'); cap.addColorStop(1, 'rgba(7,10,22,0)');
     ctx.fillStyle = cap; ctx.fillRect(0, 0, W, Hh * 0.2);
 
     // 달 ④ — 원반 + 크레이터 + 위상 터미네이터 + 넓은 글로우.
     // 낮 태양과 동일한 equirect 위도 보정(가로 타원) — 안 하면 상방 시선에서 타원 접시로 왜곡.
-    const mx = MOON_AZ * W, my = Hh * 0.46, mr = Hh * 0.055;
-    const mel = (1 - my / Hh) * Math.PI / 2;
-    const mst = 1 / Math.max(0.35, Math.cos(mel));
+    const mx = MOON_AZ * W, my = Hh * MOON_V, mr = Hh * MOON_R;
+    const mst = 1 / Math.max(0.35, Math.cos(MOON_EL));
     ctx.save();
     ctx.translate(mx, my); ctx.scale(mst, 1);
     // 감독 지시: 달을 흰색이 아니라 "진짜 노란색"으로 — 따뜻한 버터/골드 톤 + 노란 헤일로.
@@ -354,7 +402,7 @@ function paintSky(ctx, W, H, time, weather, opts) {
     ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(0, 0, mr * 5.5, 0, 7); ctx.fill();
     // 원반 — 살짝 방사 그라디언트(가장자리로 갈수록 톤 짙어져 구체감)
     const md = ctx.createRadialGradient(-mr * 0.25, -mr * 0.25, 0, 0, 0, mr);
-    md.addColorStop(0, 'rgba(255,246,204,0.99)'); md.addColorStop(0.68, 'rgba(249,228,156,0.98)'); md.addColorStop(1, 'rgba(232,200,124,0.97)');
+    md.addColorStop(0, `rgba(${MOON_CORE.join(',')},0.99)`); md.addColorStop(0.68, 'rgba(249,228,156,0.98)'); md.addColorStop(1, 'rgba(232,200,124,0.97)');
     ctx.fillStyle = md; ctx.beginPath(); ctx.arc(0, 0, mr, 0, 7); ctx.fill();
     // 표면 무늬 — 원반 안쪽으로 클립해 밖으로 새지 않게
     ctx.save(); ctx.beginPath(); ctx.arc(0, 0, mr, 0, 7); ctx.clip();
@@ -380,12 +428,16 @@ function paintSky(ctx, W, H, time, weather, opts) {
       ctx.fillRect(Math.cos(a) * dd, Math.sin(a) * dd, 1, 1);
     }
     ctx.restore();
-    // 위상 — 한쪽 가장자리를 살짝 덮는 터미네이터(과하면 잘린 원판처럼 보인다)
-    ctx.save();
-    ctx.beginPath(); ctx.arc(0, 0, mr + 0.5, 0, 7); ctx.clip();
-    ctx.fillStyle = 'rgba(10,14,26,0.62)';
-    ctx.beginPath(); ctx.arc(-mr * 1.25, 0, mr * 1.06, 0, 7); ctx.fill();
-    ctx.restore();
+    // 위상 — **없다. 보름달이다**(감독 지시 2026-07-30: *"달은 그냥 보름달로."*).
+    //
+    // 전에는 한쪽 가장자리를 어둡게 덮는 터미네이터가 있었다(`rgba(10,14,26,0.62)` 원반을
+    // 왼쪽으로 밀어 겹치는 방식). 실제 달을 흉내 낸 것이지만 이 화면에서는 값이 없다 —
+    // 우리 하늘은 시간대가 낮·노을·밤 셋뿐이고 날짜 개념이 없어서, 위상이 **무엇을
+    // 나타내는지 설명할 수 없는 장식**이었다. 그리고 어둡게 덮인 쪽이 밤하늘과 붙어
+    // 원판이 이지러져 보였다.
+    //
+    // 보름달이면 원반 전체가 빛나 실루엣이 또렷하고, 가로등 블룸이 문턱을 넘는 밤 팔레트와
+    // 톤이 맞는다. 코드를 지우는 것이 곧 구현이다.
     ctx.restore();
   }
 

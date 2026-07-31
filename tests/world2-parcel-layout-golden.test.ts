@@ -179,20 +179,28 @@ function ser(p: PlacedPart): string {
 
 const TIERS = ['near', 'mid', 'far'] as const;
 
-/** 25×25 격자 × 3 tier. 좁은 표본은 우연히 같을 수 있다 */
-function gridDigest(): { hash: string; parts: number } {
+/**
+ * 25×25 격자 × 3 tier. 좁은 표본은 우연히 같을 수 있다.
+ *
+ * **종류별 개수를 함께 낸다.** 총수만 보면 상쇄를 놓친다 — "다리 72개 늘고 나무 3개
+ * 줄었다" 가 총수 +69 로만 보이고, 그 69 가 어디서 왔는지는 알 수 없다. 종류별로
+ * 갈라 두면 해시가 어긋났을 때 **어느 파츠가 움직였는지**가 바로 읽힌다.
+ */
+function gridDigest(): { hash: string; parts: number; byKind: Record<string, number> } {
   const lines: string[] = [];
   let parts = 0;
+  const byKind: Record<string, number> = {};
   for (let px = -12; px <= 12; px++) {
     for (let pz = -12; pz <= 12; pz++) {
       for (const t of TIERS) {
         const placed = parcelLayout(px, pz, t);
         parts += placed.length;
+        for (const p of placed) byKind[p.kind] = (byKind[p.kind] ?? 0) + 1;
         lines.push(`${px},${pz},${t}:${placed.map(ser).join(';')}`);
       }
     }
   }
-  return { hash: createHash('sha256').update(lines.join('\n')).digest('hex'), parts };
+  return { hash: createHash('sha256').update(lines.join('\n')).digest('hex'), parts, byKind };
 }
 
 describe('배치 골든 — 리팩터가 세상을 바꾸지 않았다', () => {
@@ -200,8 +208,42 @@ describe('배치 골든 — 리팩터가 세상을 바꾸지 않았다', () => {
     const { hash, parts } = gridDigest();
     // 해시가 어긋나면 무엇이 달라졌는지 알 수 없으므로, 파츠 총수를 함께 본다 —
     // "개수가 같은데 해시만 다르다"와 "개수부터 다르다"는 원인이 전혀 다르다.
-    expect(parts).toBe(36459);
-    expect(hash).toBe('a344773c56db2410ae3eb1b80128a99e4e109e0b103f66dce19fff80f1fb169e');
+    //
+    // ── 36459 → 36531 (다리 신설, 2026-07-30) ────────────────────────────
+    // 감독 지시(*"아. 다리 3디로 만들어"*)로 `parts/bridge.ts` 가 들어와 **72개**가
+    // 늘었다(3 tier × 다리 24개 — 다리는 near·mid·far 전부에 그린다).
+    //
+    // **다른 종류는 한 개도 안 변했다** — 아래 종류별 검사에서 `bridge` 만 빼고 돌려
+    // 실측했고, 유일한 차이가 그 항목이었다. 총수 +72 와 `bridge: 72` 가 일치하는 것만
+    // 으로는 상쇄("다리 75 + 나무 −3")를 배제할 수 없어서 직접 쟀다.
+    //
+    // 구조적 근거도 있다: 다리는 `footprint: () => 0` 이라 슬롯을 먹지 않고(나무·벤치가
+    // 자리를 잃지 않는다), 종류마다 `hash2(base, spec.salt)` 로 독립 시드를 쓰므로 배열에
+    // 새 종류를 넣는 것이 기존 종류의 난수 소비를 건드릴 수 없다. 실측이 그 논증과 일치했다.
+    expect(parts).toBe(36531);
+    expect(hash).toBe('10f98deb93c45ddcdc66401d625d60a57a52b1ba0e382803db70ba833be9a7df');
+  });
+
+  // ── 총수만 보면 상쇄를 놓친다 ──────────────────────────────────────────────
+  // 다리를 넣을 때 총수가 +72 였다. 그것이 "다리 72개" 인지 "다리 75개 + 나무 −3" 인지
+  // 총수로는 갈리지 않는다. 이 저장소는 그 형태를 이미 겪었다 — 건물 경계 수정에서
+  // 건물 수는 그대로인데 나무 −378 · 벤치 −42 · 화분 −64 가 함께 움직였고, 그것을
+  // **종류별 전수 대조**로 확인했다. 그 대조를 손으로 하지 않고 검사로 남긴다.
+  it('종류별 개수가 고정값과 일치한다 — 무엇이 움직였는지 갈린다', () => {
+    const { byKind } = gridDigest();
+    expect(byKind).toEqual({
+      ground: 1875,
+      garden: 1785,
+      road: 15651,
+      fountain: 2,
+      clock: 3,
+      building: 4587,
+      lamp: 6894,
+      bridge: 72,
+      tree: 4947,
+      bench: 362,
+      planter: 353,
+    });
   });
 
   // 해시 불일치는 "어딘가 다르다"까지만 말해준다. 한 파셀을 통째로 박아 두면
