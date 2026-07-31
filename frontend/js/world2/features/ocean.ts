@@ -101,6 +101,10 @@ const RIVER_FLOW_MPS = 1.1;
 const NS_KNOB = 'wns', NS_MIN = 0, NS_MAX = 3, NS_STEP = 0.05;
 const ROUGH_KNOB = 'wrough', ROUGH_MIN = 0, ROUGH_MAX = 1, ROUGH_STEP = 0.01;
 const FLOW_KNOB = 'wflow', FLOW_MIN = 0, FLOW_MAX = 10, FLOW_STEP = 0.1;
+// 흰 윤슬 세기(감독 지시 2026-07-31 "흰 반짝임효과"). 상한을 2 로 둔다 — 1 을 넘기면
+// 발광이 물빛을 이겨 수면이 하얗게 뜨는데, **그 과한 지점을 볼 수 있어야** 감독이
+// 어디까지가 좋은지 고를 수 있다. 노브의 상한은 안전선이 아니라 탐색 범위다.
+const SPARK_KNOB = 'wspark', SPARK_MIN = 0, SPARK_MAX = 2, SPARK_STEP = 0.05;
 
 /** 수면 빛깔. 밝은 청록 — 어두우면 반투명이라도 바닥이 안 비쳐 보인다 */
 const WATER = 0x8fc9dd;
@@ -130,14 +134,52 @@ const FLOW_B = { x: -0.019, z: 0.030 };
  * 테스트가 그것을 검사하므로 **export 한다**(그 목적 외에 쓰지 않는다). `u`/`v`는 0~1.
  */
 export function waveHeight(u: number, v: number): number {
-  return (
-    // 각 항의 u·v 계수는 **모두 2π의 정수배**여야 한다. 처음에 이 항의 v 계수를 1.4π로
-    // 두었다가 테스트가 잡았다 — v 방향으로 위상이 안 맞아 물 위에 가로 솔기가 뜬다.
-    Math.sin(u * Math.PI * 2 + v * Math.PI * 6) * 0.5 +
-    Math.sin(v * Math.PI * 4 - u * Math.PI * 2) * 0.3 +
-    Math.sin((u + v) * Math.PI * 6) * 0.15 +
-    Math.sin((u - v) * Math.PI * 8 + 1.1) * 0.1
-  );
+  // ── 층을 더하지 않고 **겹쳐 합성한다** (감독 지시 2026-07-31) ────────────────
+  // 감독: *"포토샵 합성기능 그런것 응용하고."*
+  //
+  // 사인파를 그냥 더하면 **평균으로 수렴한다** — 봉우리와 골이 서로를 깎아 무늬가
+  // 흐리멍덩해지고, 그것이 실기기에서 "물이 밋밋하다" 로 보인다. 진폭을 키우면
+  // 대비가 아니라 전체가 출렁일 뿐이다.
+  //
+  // 포토샵이 이 문제를 푸는 방법이 **블렌드 모드**다. `soft-light` 는 밝은 곳은 더
+  // 밝게, 어두운 곳은 더 어둡게 하되 **가장자리를 뭉개지 않는다** — 층을 겹쳐도
+  // 대비가 살아 있다. `overlay` 는 같은 성질을 더 세게 낸다.
+  //
+  // 그래서 잔물결(고주파)을 큰 너울(저주파) **위에 얹어** 합성한다. 큰 물결의 마루에서
+  // 잔물결이 도드라지고 골에서는 잦아드는데, 그것이 실제 수면이 하는 일이다.
+  //
+  // ── 심리스는 여전히 계수가 지킨다 ────────────────────────────────────────────
+  // 블렌드는 **같은 좌표의 두 값**을 섞을 뿐 좌표를 옮기지 않으므로, 각 층이 이미
+  // 타일 경계에서 이어지면 합성 결과도 이어진다. 그래서 아래 u·v 계수는 전부
+  // **2π의 정수배**여야 한다는 규칙이 그대로 살아 있다(테스트가 지킨다) — 예전에
+  // 1.4π 를 넣었다가 가로 솔기가 떠서 잡힌 적이 있다.
+  const swell = Math.sin(u * Math.PI * 2 + v * Math.PI * 6) * 0.5
+              + Math.sin(v * Math.PI * 4 - u * Math.PI * 2) * 0.3;
+  const ripple = Math.sin((u + v) * Math.PI * 6) * 0.6
+               + Math.sin((u - v) * Math.PI * 8 + 1.1) * 0.4;
+  const fine = Math.sin((u * 3 - v) * Math.PI * 12 + 0.7) * 0.5
+             + Math.sin((u + v * 2) * Math.PI * 16 + 2.2) * 0.5;
+
+  // 블렌드는 0~1 도메인이다. −1~1 인 파동을 옮겨 섞고 마지막에 되돌린다.
+  let h = swell * 0.5 + 0.5;
+  h = softLight(h, ripple * 0.5 + 0.5);
+  h = softLight(h, fine * 0.5 + 0.5);
+  return h * 2 - 1;
+}
+
+/**
+ * 포토샵 `소프트 라이트`. 밑층 `a` 를 윗층 `b` 로 부드럽게 조인다.
+ *
+ * `b`가 0.5면 `a` 그대로다 — **중립값이 있다**는 것이 덧셈과 다른 점이고, 그래서 층을
+ * 아무리 겹쳐도 전체가 회색으로 수렴하지 않는다.
+ *
+ * W3C 합성 명세(`css-compositing-1`)의 식 그대로다. `a < 0.25` 가지의 다항식은 제곱근을
+ * 근사하면서 미분 연속을 맞춘 것 — 여기서 꺾이면 노멀맵에 그 자국이 선으로 남는다.
+ */
+function softLight(a: number, b: number): number {
+  if (b <= 0.5) return a - (1 - 2 * b) * a * (1 - a);
+  const d = a <= 0.25 ? ((16 * a - 12) * a + 4) * a : Math.sqrt(a);
+  return a + (2 * b - 1) * (d - a);
 }
 
 /**
@@ -148,7 +190,7 @@ export function waveHeight(u: number, v: number): number {
  */
 // 반환 타입은 일부러 적지 않는다. `three/webgpu` 는 `CanvasTexture` 를 타입으로
 // 재수출하지 않아(TS2305/TS2694) 이름으로 적을 방법이 없고, 추론이 정확히 같은 타입을 준다.
-function waveNormalTexture(strength: number, sparkle = false) {
+function waveNormalTexture(strength: number) {
   const N = 128;
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
@@ -171,9 +213,6 @@ function waveNormalTexture(strength: number, sparkle = false) {
       img.data[i + 3] = 255;
     }
   }
-  // 윤슬은 노멀을 다 구운 **뒤**에 새긴다 — 법선 계산은 그대로 두고 G채널만 점으로
-  // 누르므로, 층 B 가 두 번째 파동으로서 하던 일이 유지된다(아래 `engraveSparkle` 주석).
-  if (sparkle) engraveSparkle(img, N);
   g.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -202,39 +241,91 @@ function waveNormalTexture(strength: number, sparkle = false) {
 // **`emissive` 로 내지 않는다**(팀장 조건 4) — 스스로 빛나는 물은 광원과 무관해져 밤
 // 지적과 정면 충돌한다. 반짝임은 반드시 광원 의존 경로(roughness 변조)로 낸다.
 //
-// ── 슬롯을 추가하지 않는다 ──────────────────────────────────────────────────
-// three 의 표준 재질은 `roughnessMap` 의 **G채널만** 읽는다. 층 B 노멀맵이 그 슬롯에
-// 꽂혀 있는데 R·B 채널은 아무도 안 본다 — 그래서 **G채널에 스파클을 곱해 넣으면** 한 장이
-// 두 역할을 한다(텍스처 0장 추가·드로우콜 0·파이프라인 축 무변화 = 개수 불변식 [7] 유지).
+// ── 왜 거칠기맵 슬롯을 버렸나 (감독 실기기 실증 2026-07-31) ──────────────────
+// 예전 판본은 *"슬롯을 추가하지 않는다"* 를 내걸고 **층 B 노멀맵을 `roughnessMap` 자리에
+// 태웠다.** three 표준 재질이 `roughnessMap` 의 G채널만 읽으니 R·B 는 남고, 그 G 에
+// 윤슬을 눌러 넣으면 텍스처 한 장이 두 역할을 한다 — 텍스처 0장 추가, 드로우콜 0.
+//
+// **그 절약이 화면을 망가뜨렸다.** 노멀맵의 G 는 법선의 Y성분이라 0~1 전 구간을 오간다.
+// 실효 거칠기는 `스칼라 × G` 이므로 G≈0 인 자리가 **완전 거울**이 되는데, 이 씬에는
+// `scene.environment` 가 없어 거울이 반사할 것이 없다 → **검다.** 그 자리는 파동 무늬를
+// 따라 띠를 이루고 `offset` 이 흐르므로 **검은 줄기가 물 위를 흘러간다.**
+//
+// 감독 실기기 스크린샷이 이것을 확정했다 — 거칠기 슬라이더를 **1.00(최대)** 까지 올렸는데도
+// 줄기가 그대로였다. 곱셈이라 G=0 인 자리는 어떤 스칼라를 곱해도 0 이다. 값으로 못 고친다.
+//
+// 앞서 나는 원인을 "환경맵 부재로 근-거울면이 어둡다" 로 짚었는데, **절반만 맞았다.**
+// 환경맵이 없는 것은 맞지만 진짜 원인은 *어디가 거울이 되는지를 노멀맵이 정하고 있던 것*
+// 이다. 거칠기를 아무리 올려도 안 사라지는 이유가 거기 있었다.
+//
+// 그래서 슬롯을 **비운다.** 거칠기는 시간대·노브가 정하는 스칼라 하나로 간다.
+// 주석이 "R·B 는 아무도 안 본다" 고 적었던 것은 사실이었지만, **G 는 노멀의 Y이면서
+// 동시에 거칠기**라는 것 — 한 채널이 두 역할을 맡고 있다는 것 — 을 못 봤다.
+
+// ── 윤슬을 흰 빛으로 낸다 (감독 지시 2026-07-31 "흰 반짝임효과 해줘") ──────────
+// 예전에는 윤슬을 **거칠기 변조로만** 냈다. 좁은 스페큘러가 광원을 튕기는 방식이라
+// 물리적으로는 옳지만, 반사할 환경이 없으면 **아무것도 안 보인다** — 실기기에서 실제로
+// 반짝임이 0 이었다.
+//
+// ── 팀장 조건 4 를 뒤집는다 (근거는 지킨다) ──────────────────────────────────
+// 2026-07-30 팀장 판정은 *"`emissive` 로 내지 않는다 — 스스로 빛나는 물은 광원과 무관해져
+// 밤 지적과 정면 충돌한다"* 였다. 그 **근거**는 지금도 옳다(감독의 예전 지적: *"밤인데 빛이
+// 이렇게 많지 않잖아"*). 그러나 근거가 지키려던 것은 "밤에 물이 밝아지지 않을 것" 이지
+// "emissive 를 쓰지 말 것" 이 아니다 — 그것은 수단이었다.
+//
+// 수단을 바꾸되 목적은 `emissiveIntensity` 의 **시간대 분기**로 지킨다(낮 강 · 밤 약).
+// 그리고 감독이 이번에 직접 지시했고, 현행 수단이 실기기에서 0 이라는 것이 실증됐다.
 const SPARKLE_CELL = 7;      // 스파클 격자 한 칸(px) — 촘촘하면 물이 서리처럼 된다
 const SPARKLE_RATE = 0.16;   // 칸당 점이 생길 확률
-const SPARKLE_MIN_R = 0.06;  // 점의 거칠기(0에 가까울수록 좁고 세게 튄다)
+const SPARKLE_CORE = 1.0;    // 점 중심 밝기(0~1)
+const SPARKLE_HALO = 0.35;   // 점 둘레 밝기 — 1px 점만 두면 멀리서 사라진다
 
 /**
- * 층 B 노멀맵의 G채널에 윤슬 점을 새긴다. **제자리 변형**이므로 반환값이 없다.
+ * 윤슬 발광맵. **검은 바탕에 흰 점**이고 `emissiveMap` 슬롯에 꽂힌다.
  *
- * G채널이 낮은 자리 = 거칠기가 낮은 자리 = 스페큘러가 좁고 강한 자리다. 물결 법선과
- * 겹쳐 있어 점이 물결을 타고 흐르고, 층 A·B 의 `offset` 이 서로 다른 방향이라 점이
- * 나타났다 사라지며 **명멸**한다 — 윤슬이 반짝이는 이유가 그것이다.
+ * 검은 곳은 `emissive` 가 0 이라 물빛 그대로다 — 즉 이 텍스처는 물 전체를 밝히지 않고
+ * **점만** 밝힌다. 감독의 예전 지적(밤에 빛이 너무 많다)이 여기서 지켜진다.
+ *
+ * 점 둘레에 옅은 halo 를 둔다. 1px 점만 두면 밉맵이 먼 거리에서 그것을 평균내 **없애버려**,
+ * 가까이서만 반짝이고 멀리서는 아무것도 없는 물이 된다.
  *
  * 시드를 고정한다. 매 실행 같은 배치여야 스크린샷 비교가 성립한다.
  */
-function engraveSparkle(img: ImageData, N: number) {
+function sparkleTexture() {
+  const N = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = N;
+  const g = cv.getContext('2d')!;
+  const img = g.createImageData(N, N);
+  // 바탕은 검정(발광 0). `createImageData` 가 0으로 채워 주지만 알파는 세워야 한다.
+  for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+
   let seed = 20260730;
   const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const put = (x: number, y: number, v: number) => {
+    // 타일 경계를 **넘어가지 않고 감는다**. 점이 가장자리에 걸렸을 때 halo 가 잘리면
+    // 그 자리에 반짝임이 반쪽인 점이 생기고, 타일이 이어붙는 자리마다 그것이 줄지어 선다.
+    const i = (((y + N) % N) * N + ((x + N) % N)) * 4;
+    const c = Math.max(img.data[i], v * 255);
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = c;
+  };
+
   for (let cy = 0; cy < N; cy += SPARKLE_CELL) {
     for (let cx = 0; cx < N; cx += SPARKLE_CELL) {
       if (rand() > SPARKLE_RATE) continue;
       // 칸 안 임의 위치 — 격자 그대로 두면 점이 줄지어 서 격자무늬로 읽힌다
       const x = cx + Math.floor(rand() * SPARKLE_CELL);
       const y = cy + Math.floor(rand() * SPARKLE_CELL);
-      if (x >= N || y >= N) continue;
-      // **낮추기만 한다**(`Math.min`). 올리면 물결 법선이 만든 거칠기를 지우게 되고,
-      // 그러면 층 B 가 두 번째 파동으로서 하던 일이 사라진다.
-      const i = (y * N + x) * 4 + 1; // +1 = G채널
-      img.data[i] = Math.min(img.data[i], SPARKLE_MIN_R * 255);
+      put(x, y, SPARKLE_CORE);
+      put(x + 1, y, SPARKLE_HALO); put(x - 1, y, SPARKLE_HALO);
+      put(x, y + 1, SPARKLE_HALO); put(x, y - 1, SPARKLE_HALO);
     }
   }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(PLANE / RIPPLE_M, PLANE / RIPPLE_M);
+  return tex;
 }
 
 /**
@@ -358,17 +449,23 @@ export const oceanFeature: Feature = {
 
     // 층 A는 법선 + 밝기, 층 B는 법선만. 둘의 `offset`이 따로 흐른다.
     const normA = waveNormalTexture(2.2);
-    const normB = waveNormalTexture(1.4, true); // 윤슬 — G채널에 점(감독 지시)
+    const sparkle = sparkleTexture();       // 흰 윤슬(감독 지시 2026-07-31)
     const tint = waveTintTexture();
 
     const seaMat = new THREE.MeshStandardMaterial({
       color: WATER,
       map: tint,
       normalMap: normA,
-      // 두 번째 층은 `roughnessMap` 자리에 태운다. three 의 표준 재질에 노멀맵 슬롯이
-      // 하나뿐이라, 남는 스칼라 맵으로 "거칠기가 물결을 따라 변하는" 두 번째 파동을 만든다.
-      // 반짝임이 물결과 함께 흘러 층이 둘로 읽힌다.
-      roughnessMap: normB,
+      // ── 층이 둘인 것은 그대로다. 다만 **거칠기가 아니라 밝기로** 겹친다 ──────
+      // 예전에는 두 번째 노멀맵을 `roughnessMap` 에 태워 "거칠기가 물결을 따라 변하는"
+      // 층을 만들었다. 그것이 검은 줄기의 원인이었다(위 주석). 이제 `tint`(map)가
+      // 노멀맵과 **다른 방향·속도로** 흐르며 두 번째 파동 노릇을 한다 — 간섭 무늬는
+      // 남고, 거칠기는 어디서도 0 으로 떨어지지 않는다.
+      //
+      // 윤슬은 별도 발광맵으로 뺐다. 광원 의존이 아니게 됐지만, 대신 **실제로 보인다** —
+      // 광원 의존이던 예전 판본은 실기기에서 반짝임이 0 이었다.
+      emissive: 0xffffff,
+      emissiveMap: sparkle,
       // ── 반짝임 세기 (감독 지적) ─────────────────────────────────────────
       // *"밤 강에서 반사가 어색하네. 밤인데 빛이 이렇게 많지 않잖아. 달빛이나 주변
       // 가로등."*
@@ -411,8 +508,9 @@ export const oceanFeature: Feature = {
     // `null` 대입이다.
     let nsKnob = readNumOpt(NS_KNOB, NS_MIN, NS_MAX);
     let roughKnob = readNumOpt(ROUGH_KNOB, ROUGH_MIN, ROUGH_MAX);
+    let sparkKnob = readNumOpt(SPARK_KNOB, SPARK_MIN, SPARK_MAX);
     /** 실제로 재질에 걸린 값. 진단이 이것을 내보낸다 — 화면만 보고는 무슨 값인지 모른다 */
-    let glossNow = { normalScale: 0, roughness: 0 };
+    let glossNow = { normalScale: 0, roughness: 0, sparkle: 0 };
     const applyGloss = (time: SkyTime): void => {
       const g = waterGloss(time);
       // 노브가 지정됐으면 그것이, 아니면 시간대 값이 간다. `??` 라서 `0` 도 유효한
@@ -420,10 +518,13 @@ export const oceanFeature: Feature = {
       // 보려는 시도가 바로 그 값이다).
       const ns = nsKnob ?? g.normalScale;
       const rough = roughKnob ?? g.roughness;
+      const spark = sparkKnob ?? g.sparkle;
       seaMat.normalScale.set(ns, ns);
       seaMat.roughness = rough;
+      // 흰 윤슬의 세기. `emissiveMap` 이 검은 바탕에 흰 점이므로 이 값은 **점만** 밝힌다.
+      seaMat.emissiveIntensity = spark;
       seaMat.needsUpdate = true;
-      glossNow = { normalScale: ns, roughness: rough };
+      glossNow = { normalScale: ns, roughness: rough, sparkle: spark };
     };
     let glossTime = env.time();
     applyGloss(glossTime);
@@ -460,6 +561,13 @@ export const oceanFeature: Feature = {
         overridden: () => roughKnob !== null,
         set(v) { roughKnob = v; writeNumOpt(ROUGH_KNOB, v); applyGloss(glossTime); },
         reset() { roughKnob = null; writeNumOpt(ROUGH_KNOB, null); applyGloss(glossTime); },
+      },
+      {
+        key: SPARK_KNOB, label: '반짝임', min: SPARK_MIN, max: SPARK_MAX, step: SPARK_STEP,
+        value: () => glossNow.sparkle,
+        overridden: () => sparkKnob !== null,
+        set(v) { sparkKnob = v; writeNumOpt(SPARK_KNOB, v); applyGloss(glossTime); },
+        reset() { sparkKnob = null; writeNumOpt(SPARK_KNOB, null); applyGloss(glossTime); },
       },
       {
         key: FLOW_KNOB, label: '유속', min: FLOW_MIN, max: FLOW_MAX, step: FLOW_STEP,
@@ -546,8 +654,18 @@ export const oceanFeature: Feature = {
           // `초당 미터 / RIPPLE_M`이 초당 UV 이동량이다 — 화면 속도가 실제 m/s와 맞는다.
           const a = t / RIPPLE_M;
           normA.offset.set(FLOW_A.x * a, FLOW_A.z * a);
-          tint.offset.copy(normA.offset);
-          normB.offset.set(FLOW_B.x * a, FLOW_B.z * a);
+          // ── 층 둘이 서로 어긋나게 흐른다 ──────────────────────────────────
+          // 예전에는 `tint` 를 노멀맵에 **붙여** 같이 흘리고(`copy`), 두 번째 층을
+          // `roughnessMap` 에 태웠다. 그 슬롯이 검은 줄기의 원인이라 비웠으므로
+          // (위 슬롯 주석) 두 번째 파동 노릇을 `tint` 가 이어받는다.
+          //
+          // **서로 다른 방향·속도라야 한다.** 같이 흐르면 두 무늬가 한 덩어리로
+          // 미끄러져 "흐르는 벽지" 가 되고, 어긋나면 겹치는 자리가 계속 바뀌어 물이
+          // 살아 있는 것처럼 보인다.
+          tint.offset.set(FLOW_B.x * a, FLOW_B.z * a);
+          // 윤슬은 또 다른 속도로 흘린다 — 물결과 어긋나야 점이 **명멸**한다.
+          // 물결에 붙여 두면 점이 무늬에 박혀 같이 미끄러질 뿐 반짝이지 않는다.
+          sparkle.offset.set(FLOW_A.x * a * 0.6, FLOW_A.z * a * 0.6);
 
           // ── 강만 제 방향으로 흐른다 (감독 지시 "물살로 보이고") ──────────────
           // 위 `offset` 은 텍스처 하나에 걸리므로 **씬 전체가 한 방향**이다. 바다는
@@ -558,10 +676,25 @@ export const oceanFeature: Feature = {
           // **기준 UV 에서 매번 다시 계산한다**(누적하지 않는다). 누적하면 부동소수
           // 오차가 쌓여 무늬가 서서히 어긋나고, 그 어긋남은 오래 봐야 보여서 잡기 어렵다.
           //
-          // `phase` 를 타일 하나(`RIPPLE_M`)로 되감는다. 흐름 벡터가 **전부 단위벡터**라
-          // (`riverFlowAt` 이 보증한다) 모든 정점이 같은 순간에 되감기고, 무늬가 주기
-          // 경계에서 정확히 겹쳐 되감기가 눈에 안 보인다.
-          const phase = ((t * flowMps()) % RIPPLE_M) / PLANE;
+          // ── 되감지 않는다 (감독 실기기 실증 2026-07-31) ─────────────────────
+          // 감독: *"심리스가 아니여서 이동하다가 끊기네."*
+          //
+          // 예전에는 `% RIPPLE_M` 으로 타일 하나마다 되감았고, 주석은 *"흐름 벡터가 전부
+          // 단위벡터라 모든 정점이 같은 순간에 되감기고 무늬가 주기 경계에서 정확히
+          // 겹친다"* 고 적었다. **틀렸다.**
+          //
+          // 같은 순간에 되감기는 것은 맞다. 그러나 되감긴 **위치**가 타일 격자와 안 맞는다 —
+          // UV 이동량은 `riverFlow × phase` 인데 흐름이 단위벡터라 성분이 `|fx| < 1` 이다.
+          // `phase` 가 한 타일을 채웠을 때 실제 u 이동량은 `fx × 한 타일` 이라 **타일 주기의
+          // 정수배가 아니다.** 그래서 되감는 순간 무늬가 튄다.
+          //
+          // 게다가 `fx` 는 **정점마다 다르다**(굽이를 따라 접선이 달라지므로). 튀는 양이
+          // 정점마다 달라 파셀 경계에서 무늬가 찢어진다 — 그것이 화면에서 "끊김" 으로 보였다.
+          //
+          // 그냥 안 되감으면 된다. 텍스처가 `RepeatWrapping` 이라 UV 가 1을 넘어도 이어지고,
+          // 되감기가 없으면 어긋날 순간도 없다. float32 정밀도가 걱정이지만 실측 범위에서
+          // 문제되지 않는다 — 10시간을 흘려도 `phase` 는 수십 수준이다.
+          const phase = (t * flowMps()) / PLANE;
           const uvArr = riverUvAttr.array as Float32Array;
           for (let i = 0; i < uvArr.length; i += 2) {
             uvArr[i]     = riverBaseUv[i]     + riverFlow[i]     * phase;
@@ -602,7 +735,10 @@ export const oceanFeature: Feature = {
           // 두 층을 다 내보내는 이유: 하나만 보면 "둘이 같은 방향으로 흐르는"
           // 결함(= 흐르는 벽지)을 밖에서 판별할 수 없다.
           flowA: [normA.offset.x, normA.offset.y],
-          flowB: [normB.offset.x, normB.offset.y],
+          flowB: [tint.offset.x, tint.offset.y],
+          // 윤슬 층도 따로 본다. 이 값이 안 움직이면 점이 무늬에 박혀 명멸하지 않는다 —
+          // 화면에서는 "반짝임이 없다" 가 아니라 "반짝임이 밋밋하다" 로 보여서 알기 어렵다.
+          flowSparkle: [sparkle.offset.x, sparkle.offset.y],
 
           // ── 지금 걸려 있는 값 (감독 지시 "URL로 값 조절할 수 있게 열어둬") ────
           // 노브를 열면 **화면만 보고는 무슨 값을 보고 있는지 알 수 없다.** 감독이
@@ -633,7 +769,7 @@ export const oceanFeature: Feature = {
         bedMat.dispose();
         seaMat.dispose();
         normA.dispose();
-        normB.dispose();
+        sparkle.dispose();
         tint.dispose();
       },
     };
