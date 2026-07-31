@@ -35,12 +35,16 @@ export const SITE_DIR = path.join(ROOT, '_site');
 // 한쪽만 고쳐도 아무도 모른다(검수관 B3). 재수출만 한다.
 export { BASE_PATH } from '../site-url.mjs';
 
-// ── 검사1: deploy.yml 이 실행하는 생성기 4종 (exit 0 요구) ─────────────
+// ── 검사1: deploy.yml 이 실행하는 생성기 (exit 0 요구) ─────────────────
+// 개수를 주석에 적지 않는다 — 목록과 숫자가 따로 놀면 한쪽만 고쳐도 아무도 모른다.
+// 이 배열이 SSOT 이고 `deploy.yml` 의 실행 목록과 1:1 이어야 한다. 어긋나면
+// "스모크 PASS + 배포 실패" 가 성립한다(실제로 성립한 적 있다).
 export const GENERATORS = [
   'scripts/build-devlog.mjs',
   'scripts/build-team.mjs',
   'scripts/build-valuation.mjs',
   'scripts/build-making.mjs',
+  'scripts/build-licenses.mjs',
 ];
 
 // ── 검사2: 매니페스트 파일수 ─────────────────────────────────────────

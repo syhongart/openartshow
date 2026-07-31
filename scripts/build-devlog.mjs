@@ -11,6 +11,7 @@ import { shell, SITE } from './lib/site-shell.mjs';
 import { slugFor } from './lib/devlog-slug.mjs';
 import { categorize, stripTag, CATEGORIES, FALLBACK } from './lib/devlog-category.mjs';
 import { parseEntries } from './lib/devlog-entries.mjs';
+import { esc, mdToHtml as mdToHtmlBase } from './lib/md-to-html.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'making', 'devlog');
@@ -36,61 +37,14 @@ for (const e of parseEntries(src)) {
 const pinned = entries.filter(e => e.pinned);
 const logs = entries.filter(e => !e.pinned);
 
-// ---------- 마크다운 → HTML (개발일지 서브셋: h3/불릿/표/굵게/코드/링크) ----------
-const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-function inline(s) {
-  return esc(s)
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" rel="noopener" target="_blank">$1</a>');
-}
-function mdToHtml(md) {
-  const lines = md.split('\n');
-  const out = [];
-  let list = null, para = [], table = null, fence = null, quote = null;
-  const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; } };
-  const flushList = () => { if (list) { out.push('<ul>' + list.map(i => `<li>${inline(i.join(' '))}</li>`).join('') + '</ul>'); list = null; } };
-  const flushQuote = () => { if (quote) { out.push('<blockquote>' + quote.map(l => inline(l)).join('<br>') + '</blockquote>'); quote = null; } };
-  const flushTable = () => {
-    if (!table) return;
-    const [head, ...rows] = table.filter(r => !/^\|[\s:-]+\|/.test(r));
-    const cells = r => r.split('|').slice(1, -1).map(c => c.trim());
-    let h = '<div class="tbl"><table><thead><tr>' + cells(head).map(c => `<th>${inline(c)}</th>`).join('') + '</tr></thead><tbody>';
-    for (const r of rows) h += '<tr>' + cells(r).map(c => `<td>${inline(c)}</td>`).join('') + '</tr>';
-    out.push(h + '</tbody></table></div>');
-    table = null;
-  };
-  for (const raw of lines) {
-    if (fence !== null) {
-      if (/^```/.test(raw)) { out.push(`<pre><code>${esc(fence.join('\n'))}</code></pre>`); fence = null; }
-      else fence.push(raw);
-      continue;
-    }
-    if (/^```/.test(raw)) { flushPara(); flushList(); flushQuote(); flushTable(); fence = []; continue; }
-    const img = raw.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-    if (img) {
-      flushPara(); flushList(); flushQuote(); flushTable();
-      // DEVLOG.md(docs/) 기준 `../devlog/img/` → making/devlog/ 기준 `./img/`
-      const isrc = img[2].replace('../devlog/img/', './img/');
-      out.push(`<figure class="shot"><img src="${esc(isrc)}" alt="${esc(img[1])}" loading="lazy">` +
-        (img[1] ? `<figcaption>${inline(img[1])}</figcaption>` : '') + `</figure>`);
-      continue;
-    }
-    if (/^\|/.test(raw.trim())) { flushPara(); flushList(); flushQuote(); (table ||= []).push(raw.trim()); continue; }
-    flushTable();
-    const h3 = raw.match(/^### (.+)/);
-    if (h3) { flushPara(); flushList(); flushQuote(); out.push(`<h3>${inline(h3[1])}</h3>`); continue; }
-    const bq = raw.match(/^>\s?(.*)/);
-    if (bq) { flushPara(); flushList(); (quote ||= []).push(bq[1]); continue; }
-    const li = raw.match(/^- (.+)/);
-    if (li) { flushPara(); flushQuote(); (list ||= []).push([li[1]]); continue; }
-    if (/^\s{2,}\S/.test(raw) && list) { list[list.length - 1].push(raw.trim()); continue; }
-    if (!raw.trim()) { flushPara(); flushList(); flushQuote(); continue; }
-    flushList(); flushQuote(); para.push(raw.trim());
-  }
-  flushPara(); flushList(); flushQuote(); flushTable();
-  return out.join('\n');
-}
+// ---------- 마크다운 → HTML ----------
+// 변환 규칙 자체는 `lib/md-to-html.mjs` 가 SSOT 다(라이선스 고지 페이지와 공유).
+// 여기 남는 것은 **devlog 사정 하나뿐** — 이미지 경로다.
+// `docs/DEVLOG.md` 기준의 `../devlog/img/` 를 산출 위치(`making/devlog/`) 기준
+// `./img/` 로 바꾼다. 마크다운 문법이 아니라 이 생성기의 출력 위치 문제라 밖에 둔다.
+const mdToHtml = (md) => mdToHtmlBase(md, {
+  imageSrc: (src) => src.replace('../devlog/img/', './img/'),
+});
 
 function excerpt(body, n = 120) {
   const line = body.split('\n').map(l => l.replace(/^[-#>\s]+/, '').trim()).find(l => l.length > 10) || '';

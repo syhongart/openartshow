@@ -196,6 +196,21 @@ export default defineConfig({
     target: 'esnext',
     // 인라인 modulepreload polyfill 제거 — CSP script-src 'self' 로만 로드.
     modulePreload: { polyfill: false },
+    // ── 라이선스 주석을 번들에 남긴다 (법무 §6, 2026-07-31) ───────────────
+    // three·PeerJS 는 MIT 다. MIT 는 **저작권 고지 유지를 허락의 조건**으로 삼으므로,
+    // 이용자 기기로 전송되는 번들에도 고지가 살아 있어야 한다(웹앱 배포도 사본 배포다).
+    //
+    // 실측(2026-07-31): 이 줄이 없던 상태에서도 `@license` 주석은 살아남고 있었다 —
+    // three 청크 3개 전부에 `Copyright 2010-2024 Three.js Authors` 와 SPDX 가 있었다.
+    // 그러니 이것은 위반 해소가 아니라 **기본값 의존을 끊는 것**이다. esbuild 가
+    // legalComments 기본값을 바꾸면 고지가 조용히 사라지고, 아무 게이트도 알려주지 않는다.
+    // 사람이 읽는 고지는 `/making/licenses/` 가 따로 담당한다(미니파이된 JS 주석은
+    // 기계는 읽어도 방문자는 못 읽는다).
+    //
+    // 실제 보존 설정은 최상위 `esbuild.legalComments` 다(이 파일 아래쪽). vite 의
+    // 기본 minifier 가 esbuild 이지만 명시해 둔다 — 기본값이 바뀌면 그 옵션이
+    // 통째로 무시되기 때문이다.
+    minify: 'esbuild',
     rollupOptions: {
       input: {
         // 랜딩군(루트 배포) — landing 편입(B-2b 배포기 승격의 핵심).
@@ -244,5 +259,17 @@ export default defineConfig({
         },
       },
     },
+  },
+  // ── 라이선스 주석 보존 (법무 §6, 2026-07-31) ────────────────────────────
+  // `build.minify: 'esbuild'` 와 짝이다. 왜 필요한지는 그쪽 주석에 적었다.
+  // 'eof' — 각 산출 파일 **끝에 라이선스 주석을 모은다.** 'inline'(원위치 보존)보다
+  // 번들이 작고, 'none' 과 달리 고지가 남는다.
+  //
+  // 이 값이 지켜지는지는 **스모크 검사9(라이선스 고지)** 가 본다 — 조립된 `_site` 의
+  // 번들을 읽어 three·PeerJS 고지 문자열의 존재를 단언한다. vitest 가 아니라 스모크인
+  // 이유는 빌드 산출물을 봐야 하기 때문이다(단위 테스트는 빌드를 안 돌린다).
+  // 설정만 적어두고 검사하지 않으면, 옵션 이름이 바뀌거나 오타가 나도 아무도 모른다.
+  esbuild: {
+    legalComments: 'eof',
   },
 });

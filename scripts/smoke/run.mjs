@@ -385,6 +385,69 @@ function aggregateBrowser(pageResults, origin) {
   }
 }
 
+// ── 검사9: 라이선스 고지 (법무 §6, 2026-07-31) ─────────────────────────────
+//
+// three·PeerJS 는 MIT 다. MIT 는 **저작권 고지 유지를 허락의 조건**으로 삼는다 —
+// 조건을 어기면 허락 자체가 성립하지 않고, 그 순간 무단 복제가 된다. 웹앱 배포도
+// 사본 배포이므로(번들 JS 가 이용자 기기로 전송된다) 조립본에 고지가 있어야 한다.
+//
+// 두 축을 본다:
+//   ① 번들 안의 `@license` 주석 — `vite.config.js` 의 `esbuild.legalComments: 'eof'`
+//      가 지키는 것. **기본값에 의존하던 때에도 살아 있었지만**(실측 2026-07-31),
+//      기본값이 바뀌면 조용히 사라진다. 그래서 설정과 함께 검사를 둔다.
+//   ② 사람이 읽는 고지 페이지 — `making/licenses/`. 미니파이된 JS 안의 주석은
+//      기계는 읽어도 방문자는 못 읽는다. 감독 지시("홈피에 라이센스 고지")의 본체다.
+//
+// **못 잡는 것**: 고지의 정확성(항목 누락·오기)은 못 본다. 문자열 존재만 본다.
+// `THIRD-PARTY-NOTICES.md` 에 안 적힌 새 의존성이 들어와도 이 검사는 PASS 다.
+function checkLicenseNotice(siteDir) {
+  const { readFileSync: rf, existsSync: ex, readdirSync: rd } = fs;
+  const bundleDir = path.join(siteDir, '_bundle');
+  const problems = [];
+
+  // ① 번들 고지 — esbuild 를 거치는 청크
+  if (!ex(bundleDir)) {
+    problems.push('_bundle/ 없음 — 번들 고지를 못 쟀다');
+  } else {
+    const js = rd(bundleDir).filter((f) => f.endsWith('.js'));
+    const all = js.map((f) => rf(path.join(bundleDir, f), 'utf8')).join('\n');
+    for (const [label, needle] of [['three', 'Three.js Authors'], ['@license', '@license']]) {
+      if (!all.includes(needle)) problems.push(`번들에 ${label} 고지 없음`);
+    }
+  }
+
+  // ①-b PeerJS 는 **파일 안에서 재지 않는다.** 왜 그런지 실측을 남긴다.
+  //
+  // PeerJS 는 전역 IIFE(window.Peer)라 ES 모듈 번들 대상이 아니어서 `selfContained()`
+  // 가 `app/vendor/peerjs.min.js` 로 정적 복사한다(`vite.config.js:91`). esbuild 를
+  // 안 거치니 `legalComments` 와도 무관하다.
+  //
+  // 검수관 권고(2026-07-31)를 받아 이 파일에 라이선스 표기 검사를 붙였다가 **대조군에서
+  // FAIL 이 났고, 실측하니 검사 쪽이 틀렸다**: 이 파일(92,865 bytes)에는 선두 배너 주석이
+  // 아예 없고, `MIT` 의 첫 출현은 offset 65,612 — 번들에 인라인된 `package.json` 의
+  // `"license":"MIT"` **필드**다. 그것은 저작권 고지가 아니라 메타데이터다(MIT 가 요구하는
+  // 것은 저작권 고지 **및 허가 고지 전문**이다). "파일에 MIT 문자열이 있다" 는 참이지만
+  // 거기서 "고지가 실려 있다" 는 결론은 나오지 않는다.
+  //
+  // PeerJS 의 고지 의무는 `THIRD-PARTY-NOTICES.md`(저작권자 Michelle Bu·Eric Zhang +
+  // MIT 전문)가 충족하고, 그것을 아래 ② 의 고지 페이지가 싣는다. 그래서 재는 축을
+  // 파일이 아니라 **고지 페이지**에 둔다 — ② 가 `PeerJS` 문자열을 이미 단언한다.
+
+  // ② 고지 페이지
+  const page = path.join(siteDir, 'making', 'licenses', 'index.html');
+  if (!ex(page)) {
+    problems.push('making/licenses/index.html 없음');
+  } else {
+    const html = rf(page, 'utf8');
+    for (const needle of ['Three.js', 'PeerJS', 'MIT']) {
+      if (!html.includes(needle)) problems.push(`고지 페이지에 "${needle}" 없음`);
+    }
+  }
+
+  if (problems.length) record('9', '라이선스 고지', 'FAIL', problems.join(' | '));
+  else record('9', '라이선스 고지', 'PASS', '번들 @license + making/licenses/ 고지 페이지 존재');
+}
+
 function printReport() {
   const icon = { PASS: 'PASS', FAIL: 'FAIL', INFO: 'INFO' };
   console.log('\n──────── 스모크 결과 (smoke-check 6항 + 가드A/B) ────────');
@@ -581,6 +644,12 @@ async function main() {
     if (browser) await browser.close().catch(() => {});
     await srv.close().catch(() => {});
   }
+
+  // 라이선스 고지 — 조립된 `_site` 를 본다(브라우저 불필요, 파일 검사).
+  // vite 모드에서만 유효하다: baseline 은 `_bundle/` 을 안 만들고 `making/` 도
+  // 조립 구성이 달라 판정 대상이 아니다. **판정 못 하는 것을 판정한 척하지 않는다.**
+  if (IS_VITE) checkLicenseNotice(SITE_DIR);
+  else record('9', '라이선스 고지', 'INFO', 'baseline 조립은 번들이 없어 판정 대상 아님(대조군 전용)');
 
   // 측정이 끝난 뒤에 확인한다 — 도는 동안 대상이 바뀌었으면 위 결과는 전부 무효다.
   checkWorktreeUnchanged(worktreeBaseline);

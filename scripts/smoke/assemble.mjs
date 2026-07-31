@@ -86,7 +86,7 @@ function requireGenerated() {
   throw new Error(
     `생성기 산출물이 없다: ${missing.join(', ')}\n`
     + '  → `node scripts/build-devlog.mjs` 등을 먼저 돌려라.\n'
-    + '  (deploy.yml 은 조립 전에 생성기 4종(devlog, team, valuation, making)을 돌린다.\n'
+    + '  (deploy.yml 은 조립 전에 생성기를 돌린다 — 목록의 SSOT 는 config.mjs 의 GENERATORS 다.\n'
     + '   스모크가 그것을 재현하지 않으면 "스모크 PASS + 배포 실패" 가 성립한다.)',
   );
 }
