@@ -16,6 +16,7 @@
     "smoke": "node scripts/smoke/run.mjs",
     "smoke:vite": "node scripts/smoke/run.mjs vite",
     "smoke:live": "node scripts/smoke/verify-live.mjs",
+    "snapshot:styles": "node scripts/smoke/snapshot-styles.mjs",
     "measure:sky-warm": "node scripts/smoke/measure-sky-warm.mjs",
     "measure:invariants": "node scripts/smoke/measure-invariants.mjs"
   },
