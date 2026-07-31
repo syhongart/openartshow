@@ -75,3 +75,30 @@ export function readNumOpt(key: string, min: number, max: number): number | null
   if (!Number.isFinite(n)) return null;
   return Math.max(min, Math.min(max, n));
 }
+
+/**
+ * 주소창의 노브 값을 갱신한다. `null` 이면 파라미터를 **지운다**.
+ *
+ * ── 왜 화면 UI 가 URL 을 건드리는가 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ──
+ * 슬라이더만 있으면 감독이 좋은 값을 찾아도 **그 값이 화면 안에 갇힌다.** 나에게
+ * 전하려면 숫자 셋을 눈으로 읽어 옮겨 적어야 하고, 그 옮겨 적는 구간이 이 프로젝트가
+ * 이미 데인 자리다(relay 훼손 — 사람이 옮기는 구간에서 값이 다듬어졌다).
+ *
+ * 주소를 함께 갱신하면 **주소 자체가 값이 된다.** 감독은 주소를 통째로 보내면 되고,
+ * 나는 그 주소를 열면 같은 화면을 본다. 옮겨 적을 것이 없으면 훼손될 것도 없다.
+ *
+ * `pushState` 가 아니라 `replaceState` 다 — 슬라이더를 한 번 미는 동안 입력이 수십 번
+ * 들어오므로, 히스토리를 쌓으면 뒤로가기가 수십 번 눌려야 페이지를 벗어나게 된다.
+ *
+ * `readNumOpt` 의 짝이다. 읽기가 `null` 로 "지정 안 됨"을 표현하므로 쓰기도 같은
+ * 어휘를 쓴다 — 되돌리기(기본값 복귀)가 곧 `null` 쓰기다.
+ */
+export function writeNumOpt(key: string, v: number | null): void {
+  if (typeof location === 'undefined' || typeof history === 'undefined') return;
+  const url = new URL(location.href);
+  if (v === null) url.searchParams.delete(key);
+  else url.searchParams.set(key, String(v));
+  // 검색 파라미터가 하나도 안 남으면 `?` 만 남는 주소가 된다. 보기에도 나쁘고
+  // "값이 지정돼 있다"는 인상을 준다.
+  history.replaceState(history.state, '', url.search ? `${url.pathname}${url.search}${url.hash}` : `${url.pathname}${url.hash}`);
+}

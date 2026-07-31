@@ -47,7 +47,8 @@ import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater, wa
 import type { SkyTime } from '../decide/night.js';
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
-import { readNum, readNumOpt } from '../url-knob.js';
+import { readNumOpt, writeNumOpt } from '../url-knob.js';
+import { findKnobBar, attachKnobBar } from '../ui/knob-bar.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 /** 세계의 바깥 가장자리(미터). 격자에서 유도한다 — 격자를 넓히면 물도 함께 물러난다 */
@@ -94,9 +95,12 @@ const RIVER_FLOW_MPS = 1.1;
 // **검은 점 진단 도구이기도 하다**(감독 보고, 헤드리스에서 재현 실패). `?wrough=0.45`
 // 로 사라지면 원인은 근-거울면인데 반사할 환경맵이 없는 것이고, `?wns=0.35` 로
 // 사라지면 물결 기울기 쪽이다. 가설을 코드가 아니라 화면이 가른다.
-const NS_KNOB = 'wns', NS_MIN = 0, NS_MAX = 3;
-const ROUGH_KNOB = 'wrough', ROUGH_MIN = 0, ROUGH_MAX = 1;
-const FLOW_KNOB = 'wflow', FLOW_MIN = 0, FLOW_MAX = 10;
+//
+// `STEP` 은 화면 슬라이더의 눈금이자 표시 해상도다(`knob-bar.ts` 가 자릿수를 여기서
+// 유도한다 — 따로 적으면 "0.05 를 밀었는데 표시가 안 바뀌는" 어긋남이 가능해진다).
+const NS_KNOB = 'wns', NS_MIN = 0, NS_MAX = 3, NS_STEP = 0.05;
+const ROUGH_KNOB = 'wrough', ROUGH_MIN = 0, ROUGH_MAX = 1, ROUGH_STEP = 0.01;
+const FLOW_KNOB = 'wflow', FLOW_MIN = 0, FLOW_MAX = 10, FLOW_STEP = 0.1;
 
 /** 수면 빛깔. 밝은 청록 — 어두우면 반투명이라도 바닥이 안 비쳐 보인다 */
 const WATER = 0x8fc9dd;
@@ -400,8 +404,13 @@ export const oceanFeature: Feature = {
     // 노브는 **여기서 한 번만 읽는다**(`create` 시점). `applyGloss` 안에서 읽으면
     // 시간대가 바뀔 때마다 URL 을 다시 파싱하게 되고, 무엇보다 세션 중에 값이 달라질
     // 수 있는 것처럼 보인다 — URL 은 세션 내내 고정이므로 그 여지를 만들지 않는다.
-    const nsKnob = readNumOpt(NS_KNOB, NS_MIN, NS_MAX);
-    const roughKnob = readNumOpt(ROUGH_KNOB, ROUGH_MIN, ROUGH_MAX);
+    //
+    // **가변이다**(감독 지시 "유아이 바를 만들어봐"). 처음에는 `const` 로 두고 부팅
+    // 시점의 URL 만 읽었는데, 슬라이더가 생기면서 세션 중에 바뀔 수 있게 됐다.
+    // `null` 은 여전히 "지정 안 됨" 이고 그때 시간대 값이 산다 — 되돌리기가 곧
+    // `null` 대입이다.
+    let nsKnob = readNumOpt(NS_KNOB, NS_MIN, NS_MAX);
+    let roughKnob = readNumOpt(ROUGH_KNOB, ROUGH_MIN, ROUGH_MAX);
     /** 실제로 재질에 걸린 값. 진단이 이것을 내보낸다 — 화면만 보고는 무슨 값인지 모른다 */
     let glossNow = { normalScale: 0, roughness: 0 };
     const applyGloss = (time: SkyTime): void => {
@@ -419,8 +428,49 @@ export const oceanFeature: Feature = {
     let glossTime = env.time();
     applyGloss(glossTime);
 
-    /** 강 유속(m/s). 기본값이 하나뿐이라 `readNum` 으로 족하다 */
-    const flowMps = readNum(FLOW_KNOB, RIVER_FLOW_MPS, FLOW_MIN, FLOW_MAX);
+    // 강 유속도 `readNumOpt` 로 통일한다. 기본값이 하나뿐이라 `readNum` 으로도 값은
+    // 맞지만, 그러면 **"지정 안 됨" 을 알 수 없다** — 슬라이더가 "이건 내가 잡은 값"
+    // 을 표시해야 하는데 세 노브 중 하나만 그것을 모르는 상태가 된다.
+    let flowKnob = readNumOpt(FLOW_KNOB, FLOW_MIN, FLOW_MAX);
+    const flowMps = (): number => flowKnob ?? RIVER_FLOW_MPS;
+
+    // ── 화면 슬라이더 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ──────────
+    // 노브 정의는 **여기 하나뿐**이다. `knob-bar.ts` 는 키도 범위도 모르고 행을 그리는
+    // 일만 한다 — 정의를 UI 쪽에도 적으면 그것이 곧 값 미러링이다.
+    //
+    // 슬라이더를 밀면 **주소도 갱신한다**(`writeNumOpt`). 그래야 감독이 찾은 값이 화면
+    // 안에 갇히지 않는다 — 주소를 그대로 보내면 값이 전달되고, 사람이 숫자를 옮겨 적는
+    // 구간이 사라진다(이 프로젝트가 오늘 relay 훼손으로 데인 자리다).
+    //
+    // `value()` 는 슬라이더가 아니라 **재질에 실제로 걸린 값**(`glossNow`)을 읽는다.
+    // 요청이 아니라 반영된 상태를 표시한다는 뜻이고, `sky-panel.ts` 가 `get()` 을 다시
+    // 읽는 것과 같은 이유다.
+    const barParts = env.doc ? findKnobBar(env.doc) : null;
+    const knobBar = barParts ? attachKnobBar(barParts, [
+      {
+        key: NS_KNOB, label: '물결', min: NS_MIN, max: NS_MAX, step: NS_STEP,
+        value: () => glossNow.normalScale,
+        overridden: () => nsKnob !== null,
+        set(v) { nsKnob = v; writeNumOpt(NS_KNOB, v); applyGloss(glossTime); },
+        reset() { nsKnob = null; writeNumOpt(NS_KNOB, null); applyGloss(glossTime); },
+      },
+      {
+        key: ROUGH_KNOB, label: '거칠기', min: ROUGH_MIN, max: ROUGH_MAX, step: ROUGH_STEP,
+        value: () => glossNow.roughness,
+        overridden: () => roughKnob !== null,
+        set(v) { roughKnob = v; writeNumOpt(ROUGH_KNOB, v); applyGloss(glossTime); },
+        reset() { roughKnob = null; writeNumOpt(ROUGH_KNOB, null); applyGloss(glossTime); },
+      },
+      {
+        key: FLOW_KNOB, label: '유속', min: FLOW_MIN, max: FLOW_MAX, step: FLOW_STEP,
+        // 유속은 재질이 아니라 매 프레임 UV 계산에 쓰인다 — 되읽을 "걸린 값"이 따로
+        // 없으므로 소비처와 같은 함수를 쓴다.
+        value: flowMps,
+        overridden: () => flowKnob !== null,
+        set(v) { flowKnob = v; writeNumOpt(FLOW_KNOB, v); },
+        reset() { flowKnob = null; writeNumOpt(FLOW_KNOB, null); },
+      },
+    ]) : null;
 
     const sea = new THREE.Mesh(geo, seaMat);
     sea.position.y = SEA_Y;
@@ -485,7 +535,13 @@ export const oceanFeature: Feature = {
           // **바뀔 때만** 건다. 매 프레임 대입하면 three 가 유니폼을 계속 갱신하고,
           // 무엇보다 "왜 바뀌었나" 를 리포트에서 추적할 수 없다.
           const now = env.time();
-          if (now !== glossTime) { glossTime = now; applyGloss(now); }
+          if (now !== glossTime) {
+            glossTime = now;
+            applyGloss(now);
+            // 슬라이더 표시도 다시 맞춘다. **지정하지 않은 노브의 기본값이 통째로
+            // 바뀌는 순간**이라(낮 .9 → 밤 .35), 안 맞추면 손잡이가 옛 값에 남는다.
+            knobBar?.sync();
+          }
           // UV 단위로 환산해서 흘린다. 한 무늬가 RIPPLE_M 미터를 덮으므로
           // `초당 미터 / RIPPLE_M`이 초당 UV 이동량이다 — 화면 속도가 실제 m/s와 맞는다.
           const a = t / RIPPLE_M;
@@ -505,7 +561,7 @@ export const oceanFeature: Feature = {
           // `phase` 를 타일 하나(`RIPPLE_M`)로 되감는다. 흐름 벡터가 **전부 단위벡터**라
           // (`riverFlowAt` 이 보증한다) 모든 정점이 같은 순간에 되감기고, 무늬가 주기
           // 경계에서 정확히 겹쳐 되감기가 눈에 안 보인다.
-          const phase = ((t * flowMps) % RIPPLE_M) / PLANE;
+          const phase = ((t * flowMps()) % RIPPLE_M) / PLANE;
           const uvArr = riverUvAttr.array as Float32Array;
           for (let i = 0; i < uvArr.length; i += 2) {
             uvArr[i]     = riverBaseUv[i]     + riverFlow[i]     * phase;
@@ -558,12 +614,15 @@ export const oceanFeature: Feature = {
           gloss: glossNow,
           // 노브가 걸렸는지 자체도 내보낸다. 값만 보면 "기본값과 같은 값을 지정한 것"
           // 과 "지정 안 한 것" 이 구별되지 않고, 그것이 `readNumOpt` 를 만든 이유다.
-          glossKnob: { ns: nsKnob, rough: roughKnob },
-          flowMps,
+          glossKnob: { ns: nsKnob, rough: roughKnob, flow: flowKnob },
+          flowMps: flowMps(),
         };
       },
 
       dispose() {
+        // 슬라이더 행과 리스너를 먼저 뗀다. 남겨 두면 해제된 재질을 만지는 핸들러가
+        // 문서에 살아 있게 된다.
+        knobBar?.dispose();
         // 세 판을 다 뗀다. `river` 가 빠져 있었다 — 판을 늘리면서 이 목록을 안 늘렸고,
         // 씬에 남은 메시는 재질이 해제된 뒤에도 렌더 목록에 올라 있다.
         env.scene.remove(bed);

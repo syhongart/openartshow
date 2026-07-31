@@ -17,7 +17,7 @@
 // 모듈째 스텁으로 갈아 끼운다. 그래도 **돌아가는 것은 실제 ocean 코드**다 — 실제로 씬에
 // 무엇을 넣는지, update가 무엇을 만지는지 그대로 관찰한다.
 
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
 /** 텍스처 스텁 — 관찰 대상은 `offset`과 `repeat`뿐이다 */
 class FakeTexture {
@@ -573,21 +573,161 @@ describe('URL 노브 — 수면 값을 밖에서 연다', () => {
       const { inst } = mount('night');
       return inst.diagnostics!() as {
         gloss: { normalScale: number; roughness: number };
-        glossKnob: { ns: number | null; rough: number | null };
+        glossKnob: { ns: number | null; rough: number | null; flow: number | null };
         flowMps: number;
       };
     });
     expect(d.gloss).toEqual({ normalScale: 1.5, roughness: 0.4 });
-    expect(d.glossKnob).toEqual({ ns: 1.5, rough: 0.4 });
+    expect(d.glossKnob).toEqual({ ns: 1.5, rough: 0.4, flow: 3 });
     expect(d.flowMps).toBe(3);
   });
 
   it('노브를 안 쓰면 진단이 그 사실을 말한다 — 값만으로는 지정 여부를 못 가린다', () => {
+    // 세 노브가 **전부** null 이어야 한다. 유속만 `readNum` 이던 시절에는 이 자리에
+    // 기본값 1.1 이 들어와 "지정했다"와 구별되지 않았다.
     const d = withSearch('', () => {
       const { inst } = mount('day');
-      return inst.diagnostics!() as { glossKnob: { ns: number | null; rough: number | null } };
+      return inst.diagnostics!() as {
+        glossKnob: { ns: number | null; rough: number | null; flow: number | null };
+        flowMps: number;
+      };
     });
-    expect(d.glossKnob).toEqual({ ns: null, rough: null });
+    expect(d.glossKnob).toEqual({ ns: null, rough: null, flow: null });
+    // 그래도 실제로 쓰이는 유속은 기본값이다 — "미지정"이 "0"이 되면 강이 멈춘다.
+    expect(d.flowMps).toBeGreaterThan(0);
+  });
+});
+
+// ── 슬라이더 바 → 실제 재질 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ─────
+//
+// `world2-knob-bar.test.ts` 는 스텁 spec 으로 **바의 계약**만 본다. 여기서는 진짜
+// `oceanFeature.create` 를 태워 **슬라이더를 민 것이 재질까지 가는가**를 본다.
+//
+// 이 구별이 오늘 검수관이 잡은 블로커의 핵심이다. 로직을 테스트 안에 다시 적으면
+// 사본만 지켜지고, 정작 `ocean.ts` 를 훼손해도 아무것도 안 깨진다. 그러니 바를 진짜
+// 문서에 세우고 진짜 이벤트를 쏜다.
+describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
+  const BAR = `
+    <div id="w2-sliders" data-open="0" data-dirty="0" hidden>
+      <button id="w2-sliders-toggle" type="button" aria-expanded="false"></button>
+      <div id="w2-sliders-body" hidden></div>
+    </div>`;
+  beforeEach(() => { document.body.innerHTML = BAR; window.history.replaceState({}, '', location.pathname); });
+  afterEach(() => { document.body.innerHTML = ''; window.history.replaceState({}, '', location.pathname); });
+
+  const glossOf = (mat: FakeMaterial) => mat as unknown as {
+    normalScale: { x: number; y: number }; roughness: number;
+  };
+  const inputs = () => document.querySelectorAll<HTMLInputElement>('.w2-slide-input');
+  const resets = () => document.querySelectorAll<HTMLButtonElement>('.w2-slide-reset');
+  const push = (el: HTMLInputElement, v: string) => {
+    el.value = v;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  it('★ 문서에 바가 있으면 수면 노브 셋이 붙는다', () => {
+    mount('day');
+    expect(inputs().length).toBe(3);
+    expect(document.getElementById('w2-sliders')!.hidden).toBe(false);
+  });
+
+  it('★ 물결 슬라이더를 밀면 재질의 normalScale 이 바뀐다 — 이 축이 없으면 바가 장식이다', () => {
+    const { sea } = mount('day');
+    const m = glossOf(sea());
+    expect(m.normalScale.x).toBe(waterGloss('day').normalScale);
+    push(inputs()[0], '2.4');
+    expect(m.normalScale.x).toBe(2.4);
+    expect(m.normalScale.y).toBe(2.4);
+  });
+
+  it('★ 거칠기 슬라이더를 밀면 재질의 roughness 가 바뀐다', () => {
+    const { sea } = mount('night');
+    const m = glossOf(sea());
+    push(inputs()[1], '0.42');
+    expect(m.roughness).toBe(0.42);
+  });
+
+  it('★ 유속 슬라이더를 밀면 강 UV 이동량이 바뀐다', () => {
+    const { inst, added } = mount('day');
+    const g = added.find((x) => x.name === 'river')!.geometry as FakeBufferGeometry;
+    const uv = g.attrs.uv.array as unknown as number[];
+
+    const shift = () => {
+      const before = [...uv];
+      inst.system!.update({ dt: 1 } as never);
+      return Math.hypot(uv[0] - before[0], uv[1] - before[1]);
+    };
+    push(inputs()[2], '0.5');
+    const slow = shift();
+    push(inputs()[2], '5');
+    const fast = shift();
+    expect(fast).toBeGreaterThan(slow * 1.5);
+  });
+
+  it('★ 되돌리기를 누르면 시간대 기본값으로 돌아온다', () => {
+    const { sea } = mount('night');
+    const m = glossOf(sea());
+    push(inputs()[0], '2.8');
+    expect(m.normalScale.x).toBe(2.8);
+    resets()[0].click();
+    expect(m.normalScale.x).toBe(waterGloss('night').normalScale);
+  });
+
+  it('★ 민 값이 주소에 실린다 — 그래야 화면 밖으로 나갈 수 있다', () => {
+    // 이 도구의 목적 자체다. 값이 화면 안에만 있으면 감독이 숫자를 눈으로 읽어
+    // 옮겨 적어야 하고, 사람이 옮기는 그 구간이 오늘 이미 훼손을 냈다.
+    mount('day');
+    push(inputs()[0], '1.25');
+    expect(location.search).toContain('wns=1.25');
+  });
+
+  it('★ 되돌리면 주소에서도 사라진다 — 기본값을 주소가 기억하면 안 된다', () => {
+    mount('day');
+    push(inputs()[1], '0.5');
+    expect(location.search).toContain('wrough');
+    resets()[1].click();
+    expect(location.search).not.toContain('wrough');
+  });
+
+  it('★ 주소에 값이 있으면 슬라이더가 그 자리에서 시작한다', () => {
+    window.history.replaceState({}, '', '?wns=2.15');
+    mount('day');
+    expect(inputs()[0].value).toBe('2.15');
+    expect(document.querySelectorAll<HTMLElement>('.w2-slide-row')[0].dataset.overridden).toBe('1');
+  });
+
+  it('★ 시간대가 바뀌면 안 잡은 슬라이더가 따라간다', () => {
+    const { inst, setTime } = mount('day');
+    expect(inputs()[0].value).toBe(String(waterGloss('day').normalScale));
+    setTime('night');
+    inst.system!.update({ dt: 1 } as never);
+    expect(inputs()[0].value).toBe(String(waterGloss('night').normalScale));
+  });
+
+  it('★ 잡아둔 슬라이더는 시간대를 따라가지 않는다 — 그게 "잡는다"의 뜻이다', () => {
+    const { inst, sea, setTime } = mount('day');
+    push(inputs()[0], '2.2');
+    setTime('night');
+    inst.system!.update({ dt: 1 } as never);
+    expect(inputs()[0].value).toBe('2.2');
+    expect(glossOf(sea()).normalScale.x).toBe(2.2);
+    // 안 잡은 거칠기는 밤을 따라간다 — 노브가 서로를 끌고 가지 않는다.
+    expect(glossOf(sea()).roughness).toBe(waterGloss('night').roughness);
+  });
+
+  it('★ dispose 가 바를 걷는다 — 해제된 재질을 만지는 핸들러가 남으면 안 된다', () => {
+    const { inst } = mount('day');
+    expect(inputs().length).toBe(3);
+    inst.dispose!();
+    expect(inputs().length).toBe(0);
+    expect(document.getElementById('w2-sliders')!.hidden).toBe(true);
+  });
+
+  it('바가 없는 문서에서도 물은 뜬다 — 패널은 있으면 좋은 것이지 필수가 아니다', () => {
+    document.body.innerHTML = '';
+    const { sea, added } = mount('day');
+    expect(added.length).toBe(3);
+    expect(glossOf(sea()).normalScale.x).toBe(waterGloss('day').normalScale);
   });
 });
 

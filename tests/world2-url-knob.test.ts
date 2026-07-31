@@ -16,7 +16,7 @@
 // 수면 쪽은 `tests/world2-ocean.test.ts` 의 「URL 노브」 블록이 실제 `create` 를 태워 본다.
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { readNum, readNumOpt, readEnum } from '../frontend/js/world2/url-knob.js';
+import { readNum, readNumOpt, readEnum, writeNumOpt } from '../frontend/js/world2/url-knob.js';
 
 /** jsdom 의 주소를 바꾼다. 모듈은 호출 시점에 `location.search` 를 읽으므로 이것으로 족하다 */
 const setSearch = (s: string) => window.history.replaceState({}, '', s || location.pathname);
@@ -69,6 +69,65 @@ describe('readNumOpt — "지정 안 됨"을 값으로 구별한다', () => {
   it('음수 범위도 다룬다 — 하한이 0 이라고 가정하지 않는다', () => {
     setSearch('?k=-2');
     expect(readNumOpt('k', -5, 5)).toBe(-2);
+  });
+});
+
+// ── writeNumOpt — 슬라이더가 주소를 갱신한다 (감독 지시 "유아이 바를 만들어봐") ──
+//
+// 이 함수가 지키는 것은 **"주소가 곧 값"** 이다. 감독이 화면에서 고른 값을 나에게
+// 전할 때 숫자를 눈으로 읽어 옮기지 않아도 되게 하는 것이 목적이므로, 라운드트립
+// (`write` 한 것을 `read` 가 그대로 돌려주는가)이 이 축의 본질이다.
+describe('writeNumOpt — 주소가 곧 값이 된다', () => {
+  it('★ 쓴 값을 읽으면 그대로다 — 라운드트립이 이 함수의 존재 이유다', () => {
+    setSearch('');
+    writeNumOpt('wns', 1.35);
+    expect(readNumOpt('wns', 0, 3)).toBe(1.35);
+  });
+
+  it('★ null 을 쓰면 파라미터가 사라진다 — 되돌리기가 곧 null 쓰기다', () => {
+    setSearch('?wns=2');
+    writeNumOpt('wns', null);
+    expect(readNumOpt('wns', 0, 3)).toBeNull();
+    expect(location.search).not.toContain('wns');
+  });
+
+  it('다른 파라미터를 건드리지 않는다 — 노브 하나가 시간대·날씨를 날리면 안 된다', () => {
+    setSearch('?time=night&wns=1');
+    writeNumOpt('wrough', 0.5);
+    expect(readEnum('time', 'day', ['day', 'night'] as const)).toBe('night');
+    expect(readNumOpt('wns', 0, 3)).toBe(1);
+    expect(readNumOpt('wrough', 0, 1)).toBe(0.5);
+  });
+
+  it('같은 키를 다시 쓰면 덮는다 — 슬라이더를 미는 동안 값이 누적되면 안 된다', () => {
+    setSearch('');
+    writeNumOpt('wns', 1);
+    writeNumOpt('wns', 2);
+    writeNumOpt('wns', 3);
+    expect(readNumOpt('wns', 0, 3)).toBe(3);
+    // `?wns=1&wns=2&wns=3` 이 되면 첫 값이 읽힌다 — 슬라이더가 안 먹는 것처럼 보인다.
+    expect(location.search.match(/wns=/g)?.length).toBe(1);
+  });
+
+  it('★ 마지막 값을 지우면 `?` 만 남지 않는다', () => {
+    setSearch('?wns=2');
+    writeNumOpt('wns', null);
+    expect(location.search).toBe('');
+    expect(location.href.endsWith('?')).toBe(false);
+  });
+
+  it('히스토리를 쌓지 않는다 — 슬라이더 한 번에 뒤로가기가 수십 번 눌리면 안 된다', () => {
+    setSearch('');
+    const before = history.length;
+    for (let i = 0; i < 12; i++) writeNumOpt('wns', i / 10);
+    expect(history.length).toBe(before);
+  });
+
+  it('0 을 쓸 수 있다 — null 과 구별된다', () => {
+    setSearch('');
+    writeNumOpt('wns', 0);
+    expect(readNumOpt('wns', 0, 3)).toBe(0);
+    expect(location.search).toContain('wns=0');
   });
 });
 
