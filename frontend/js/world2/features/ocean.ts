@@ -47,6 +47,7 @@ import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater, wa
 import type { SkyTime } from '../decide/night.js';
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
+import { readNum, readNumOpt } from '../url-knob.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 /** 세계의 바깥 가장자리(미터). 격자에서 유도한다 — 격자를 넓히면 물도 함께 물러난다 */
@@ -70,6 +71,32 @@ const RIPPLE_M = 16;
  * 빠르면 급류가 되고, 너무 느리면 고인 물이다. 실개천~완만한 강의 유속대다.
  */
 const RIVER_FLOW_MPS = 1.1;
+
+// ── URL 노브 (감독 지시 2026-07-31 "URL로 값 조절할 수 있게 열어둬") ──────────
+// 세 값을 연다. **내가 볼 수 없는 것을 감독이 보기 때문이다** — 헤드리스는
+// SwiftShader(WebGL)이고 감독 실기기는 WebGPU라 수면 반사가 도는 경로가 다르다.
+// 값 하나 바꾸는 데 코드 수정 → 스모크 → 배포 왕복이면 한 번 맞추는 데 하루가 든다.
+//
+//   ?wns=    물결 기울기(normalScale)  0~3    기본: 시간대별(낮 .9 / 노을 .7 / 밤 .35)
+//   ?wrough= 수면 거칠기(roughness)    0~1    기본: 시간대별(낮 .18 / 노을 .3 / 밤 .62)
+//   ?wflow=  강 유속(m/s)              0~10   기본: RIVER_FLOW_MPS
+//
+// 앞 둘은 `readNumOpt` 다 — **기본값이 시간대마다 다르기 때문이다.** `readNum` 은
+// fallback 을 강제해 "지정 안 됨" 과 "기본값과 같은 값을 지정함" 을 구별하지 못하고,
+// 그러면 낮 기본값이 밤에도 걸려 **시간대 분기가 통째로 죽는다** — 이 브랜치가 방금
+// 고친 버그(전역 하드코딩)의 재발이다. `null` 로 갈라내야 `노브 ?? 시간대값` 이 된다.
+//
+// `wflow` 는 기본값이 하나뿐이라 `readNum` 으로 족하다.
+//
+// 노브는 디버그 전용이 아니다 — 기본값이 곧 배포값이고, 노브는 그 기본값을 무엇으로
+// 정할지 감독이 실기기에서 고르는 수단이다. 값이 확정되면 기본값으로 옮긴다.
+//
+// **검은 점 진단 도구이기도 하다**(감독 보고, 헤드리스에서 재현 실패). `?wrough=0.45`
+// 로 사라지면 원인은 근-거울면인데 반사할 환경맵이 없는 것이고, `?wns=0.35` 로
+// 사라지면 물결 기울기 쪽이다. 가설을 코드가 아니라 화면이 가른다.
+const NS_KNOB = 'wns', NS_MIN = 0, NS_MAX = 3;
+const ROUGH_KNOB = 'wrough', ROUGH_MIN = 0, ROUGH_MAX = 1;
+const FLOW_KNOB = 'wflow', FLOW_MIN = 0, FLOW_MAX = 10;
 
 /** 수면 빛깔. 밝은 청록 — 어두우면 반투명이라도 바닥이 안 비쳐 보인다 */
 const WATER = 0x8fc9dd;
@@ -369,14 +396,31 @@ export const oceanFeature: Feature = {
     // 광택을 시간대에 맞춘다. 판정은 `waterGloss` 가 하고 여기는 집행만 한다 —
     // **경계를 건너는 지점**이라 통합 테스트로 따로 본다(`tests/world2-water-gloss.test.ts`).
     // 값이 재질에 실제로 닿는지는 순수 함수 테스트로는 알 수 없다.
+    //
+    // 노브는 **여기서 한 번만 읽는다**(`create` 시점). `applyGloss` 안에서 읽으면
+    // 시간대가 바뀔 때마다 URL 을 다시 파싱하게 되고, 무엇보다 세션 중에 값이 달라질
+    // 수 있는 것처럼 보인다 — URL 은 세션 내내 고정이므로 그 여지를 만들지 않는다.
+    const nsKnob = readNumOpt(NS_KNOB, NS_MIN, NS_MAX);
+    const roughKnob = readNumOpt(ROUGH_KNOB, ROUGH_MIN, ROUGH_MAX);
+    /** 실제로 재질에 걸린 값. 진단이 이것을 내보낸다 — 화면만 보고는 무슨 값인지 모른다 */
+    let glossNow = { normalScale: 0, roughness: 0 };
     const applyGloss = (time: SkyTime): void => {
       const g = waterGloss(time);
-      seaMat.normalScale.set(g.normalScale, g.normalScale);
-      seaMat.roughness = g.roughness;
+      // 노브가 지정됐으면 그것이, 아니면 시간대 값이 간다. `??` 라서 `0` 도 유효한
+      // 지정으로 통과한다(`||` 였으면 `?wns=0` 이 조용히 무시된다 — 평평한 수면을
+      // 보려는 시도가 바로 그 값이다).
+      const ns = nsKnob ?? g.normalScale;
+      const rough = roughKnob ?? g.roughness;
+      seaMat.normalScale.set(ns, ns);
+      seaMat.roughness = rough;
       seaMat.needsUpdate = true;
+      glossNow = { normalScale: ns, roughness: rough };
     };
     let glossTime = env.time();
     applyGloss(glossTime);
+
+    /** 강 유속(m/s). 기본값이 하나뿐이라 `readNum` 으로 족하다 */
+    const flowMps = readNum(FLOW_KNOB, RIVER_FLOW_MPS, FLOW_MIN, FLOW_MAX);
 
     const sea = new THREE.Mesh(geo, seaMat);
     sea.position.y = SEA_Y;
@@ -461,7 +505,7 @@ export const oceanFeature: Feature = {
           // `phase` 를 타일 하나(`RIPPLE_M`)로 되감는다. 흐름 벡터가 **전부 단위벡터**라
           // (`riverFlowAt` 이 보증한다) 모든 정점이 같은 순간에 되감기고, 무늬가 주기
           // 경계에서 정확히 겹쳐 되감기가 눈에 안 보인다.
-          const phase = ((t * RIVER_FLOW_MPS) % RIPPLE_M) / PLANE;
+          const phase = ((t * flowMps) % RIPPLE_M) / PLANE;
           const uvArr = riverUvAttr.array as Float32Array;
           for (let i = 0; i < uvArr.length; i += 2) {
             uvArr[i]     = riverBaseUv[i]     + riverFlow[i]     * phase;
@@ -503,6 +547,19 @@ export const oceanFeature: Feature = {
           // 결함(= 흐르는 벽지)을 밖에서 판별할 수 없다.
           flowA: [normA.offset.x, normA.offset.y],
           flowB: [normB.offset.x, normB.offset.y],
+
+          // ── 지금 걸려 있는 값 (감독 지시 "URL로 값 조절할 수 있게 열어둬") ────
+          // 노브를 열면 **화면만 보고는 무슨 값을 보고 있는지 알 수 없다.** 감독이
+          // `?wns=` 를 여러 번 바꿔가며 고르는 동안 "지금 얼마인가" 를 되돌려주지
+          // 않으면, 좋았던 값을 나중에 재현할 수 없다.
+          //
+          // `waterGloss(시간대)` 를 다시 계산해 적지 않는다 — **재질에 실제로 대입된
+          // 값**을 그대로 내보낸다. 다시 계산하면 노브가 무시된 결함을 진단이 덮는다.
+          gloss: glossNow,
+          // 노브가 걸렸는지 자체도 내보낸다. 값만 보면 "기본값과 같은 값을 지정한 것"
+          // 과 "지정 안 한 것" 이 구별되지 않고, 그것이 `readNumOpt` 를 만든 이유다.
+          glossKnob: { ns: nsKnob, rough: roughKnob },
+          flowMps,
         };
       },
 

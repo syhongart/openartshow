@@ -68,64 +68,21 @@ describe('[A] waterGloss — 판정', () => {
   });
 });
 
-describe('[B] 집행 — 값이 재질에 실제로 닿는가', () => {
-  /**
-   * `ocean.ts` 의 `applyGloss` 와 **같은 대입 코드**. three 를 띄우지 않고
-   * 재질만 스텁으로 세운다.
-   *
-   * 여기가 미러링이 아닌 이유: 이 테스트가 지키려는 것은 "대입이 일어나는가" 이지
-   * "어떤 값인가" 가 아니다(값은 [A] 가 지킨다). 대입 형태가 바뀌면 이 테스트도
-   * 함께 고쳐야 하고, 그때 `ocean.ts` 를 보게 된다.
-   */
-  function makeMaterialStub() {
-    return {
-      normalScale: {
-        x: 1, y: 1,
-        set(x: number, y: number) { this.x = x; this.y = y; },
-      },
-      roughness: 0.5,
-      needsUpdate: false,
-    };
-  }
-  function applyGloss(mat: ReturnType<typeof makeMaterialStub>, time: 'day' | 'sunset' | 'night') {
-    const g = waterGloss(time);
-    mat.normalScale.set(g.normalScale, g.normalScale);
-    mat.roughness = g.roughness;
-    mat.needsUpdate = true;
-  }
-
-  it('낮을 걸면 재질의 두 필드가 낮 값이 된다', () => {
-    const mat = makeMaterialStub();
-    applyGloss(mat, 'day');
-    const g = waterGloss('day');
-    expect(mat.normalScale.x).toBe(g.normalScale);
-    expect(mat.normalScale.y).toBe(g.normalScale);
-    expect(mat.roughness).toBe(g.roughness);
-  });
-
-  it('★ needsUpdate 를 세운다 — 안 세우면 값을 바꿔도 화면이 안 바뀐다', () => {
-    // 이것이 [B] 축의 존재 이유다. 값을 정확히 계산하고 정확히 대입해도
-    // `needsUpdate` 를 빠뜨리면 **화면에는 아무 일도 안 일어난다.**
-    // 순수 함수 테스트로는 절대 잡을 수 없는 종류의 결함이다.
-    const mat = makeMaterialStub();
-    expect(mat.needsUpdate).toBe(false);
-    applyGloss(mat, 'day');
-    expect(mat.needsUpdate).toBe(true);
-  });
-
-  it('시간대를 바꿔 걸면 재질이 따라간다 — 한 번 걸고 마는 것이 아니다', () => {
-    const mat = makeMaterialStub();
-    applyGloss(mat, 'night');
-    expect(mat.normalScale.x).toBe(0.35);
-    applyGloss(mat, 'day');
-    expect(mat.normalScale.x).toBeGreaterThan(0.5);
-    applyGloss(mat, 'night');
-    expect(mat.normalScale.x).toBe(0.35);
-  });
-
-  it('x·y 를 같이 세운다 — 한쪽만 세우면 물결이 한 축으로만 선다', () => {
-    const mat = makeMaterialStub();
-    applyGloss(mat, 'sunset');
-    expect(mat.normalScale.x).toBe(mat.normalScale.y);
-  });
-});
+// ── [B] 집행 축은 여기 없다 (검수관 블로커 2026-07-31, 실증으로 제거) ─────────
+//
+// 이 자리에 "[B] 집행 — 값이 재질에 실제로 닿는가" 라는 섹션이 있었다. `ocean.ts` 의
+// `applyGloss` 를 **테스트 파일 안에 다시 적은 사본**을 만들고 그 사본을 검사했다.
+// 주석에는 "경계를 건너는 지점을 본다" 고 적혀 있었지만, 검수관이 실제 `ocean.ts` 를
+// 훼손해 실증한 결과:
+//
+//   · `seaMat.needsUpdate = true;` 제거     → 47 passed 0 failed
+//   · `seaMat.roughness = 0.62;` 강제 대입   → 47 passed 0 failed
+//     (= `waterGloss` 완전 무력화. 이 브랜치가 고치려던 버그를 그대로 재현)
+//
+// 사본은 **자기 자신만 지킨다.** 그리고 없는 것보다 나쁘다 — 통합 축이 있다고 읽히니
+// 아무도 진짜를 만들지 않는다. 이 파일이 경고하던 구름 `alpha` 사고가, 그 경고를 적은
+// 파일 자신에서 되풀이된 형태다.
+//
+// **집행 축은 `tests/world2-ocean.test.ts` 의 「수면 광택」 블록으로 옮겼다.** 거기는
+// `mount()` 가 실제 `oceanFeature.create` 를 태우므로 위 두 뮤테이션이 실제로 깨진다.
+// 이 파일에는 판정([A])만 남긴다.

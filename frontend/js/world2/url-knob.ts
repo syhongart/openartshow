@@ -42,3 +42,36 @@ export function readEnum<T extends string>(key: string, fallback: T, allowed: re
   if (raw === null) return fallback;
   return (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
 }
+
+/**
+ * URL 숫자 파라미터를 **지정됐을 때만** 읽는다. 없으면 `null`.
+ *
+ * ── 왜 `readNum` 으로 안 되는가 (감독 지시 2026-07-31 "URL로 값 조절할 수 있게 열어둬") ──
+ * `readNum` 은 fallback 을 강제하므로 **"지정 안 됨" 과 "기본값과 같은 값을 지정함" 을
+ * 구별할 수 없다.** 대부분의 노브는 그래도 되지만, 기본값이 **상황에 따라 다른** 값이면
+ * 얘기가 달라진다.
+ *
+ * 수면 광택이 그렇다 — 기본값이 시간대별로 다르다(낮 0.9 / 노을 0.7 / 밤 0.35).
+ * `readNum('wns', 0.9, ...)` 로 쓰면 낮 기본값이 밤에도 걸려 **시간대 분기가 통째로
+ * 죽는다.** 그것은 바로 이 브랜치가 고친 버그의 재발이다.
+ *
+ * `null` 로 갈라내면 소비처가 `override ?? 시간대값` 으로 쓸 수 있다 — 노브를 안 쓰면
+ * 시간대 분기가 그대로 살아 있고, 쓰면 그 순간만 덮는다.
+ *
+ * @param key URL 파라미터 이름
+ * @param min 하한 (클램프)
+ * @param max 상한 (클램프)
+ * @returns 지정된 유한수를 [min,max] 로 클램프한 값, 없거나 숫자가 아니면 `null`
+ */
+export function readNumOpt(key: string, min: number, max: number): number | null {
+  if (typeof location === 'undefined') return null;
+  const raw = new URLSearchParams(location.search).get(key);
+  if (raw === null) return null;
+  // 빈 값(`?k=`)은 지정이 아니다. `Number('')` 가 **0** 이라 이 줄이 없으면
+  // 주소창에서 값을 지우다 만 상태가 "0 을 지정함" 으로 읽힌다 — 0 이 유효한
+  // 지정값인 노브(`?wns=0`)에서는 그 오독을 되돌릴 방법이 없다.
+  if (raw.trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(min, Math.min(max, n));
+}
