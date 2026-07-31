@@ -10,28 +10,35 @@
 <meta name="robots" content="noindex">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 (루트 배포 기준) -->
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<!-- 색 SSOT — 원시 팔레트(--oas-*)는 css/tokens.css 한 곳에만. 아래 :root 는 이 페이지의
+     토큰 이름을 그 원시값에 잇기만 한다(값을 다시 적지 않는다). 폰트와 같은 구조다. -->
+<link rel="stylesheet" href="./css/tokens.css">
 <style>
 
   :root {
-    /* ---- 실측 브랜드 토큰 (web/landing.html :root 동일 값) ---- */
-    --green-100: #e3efe7;
-    --green-300: #8fd0ab;
-    --green-500: #5f9e7d;
-    --green-600: #4e8a6a;
-    --green-700: #3f7a5c;
-    --green-800: #2c5844;
-    --green-900: #14261d;
-    --gold: #5f9e7d;
-    --gold-text: #3d6b50;
-    --paper: #fdfbf5;
-    --paper-deep: #f6f1e4;
-    --ink: #17140f;
-    --ink-body: #57503f;
-    --ink-dim: #6b6459;
-    --border-light: #e6dfcf;
-    --accent: #1fd677;
-    --accent-hover: #25e481;
-    --accent-ink: #0d2417;
+    /* ---- 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 ----
+     * 값을 여기 다시 적지 않는다. 같은 값을 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다.
+     * (예전 주석은 "landing.html :root 동일 값" 이라 적고 있었는데, landing 은 진작
+     *  팔레트 B 로 옮겨가 더는 같지 않았다 — 손으로 맞춘 값이 조용히 어긋난 실례다.) */
+    --green-100: var(--oas-green-100);
+    --green-300: var(--oas-green-300);
+    --green-500: var(--oas-green-500);
+    --green-600: var(--oas-green-600);
+    --green-700: var(--oas-green-700);
+    --green-800: var(--oas-green-800);
+    --green-900: var(--oas-green-900);
+    --gold: var(--oas-green-500);
+    --gold-text: var(--oas-green-text);
+    --paper: var(--oas-paper);
+    --paper-deep: var(--oas-paper-deep);
+    --ink: var(--oas-ink);
+    --ink-body: var(--oas-ink-body);
+    --ink-dim: var(--oas-ink-dim);
+    --border-light: var(--oas-border-light);
+    --accent: var(--oas-vivid);
+    --accent-hover: var(--oas-vivid-hi);
+    --accent-ink: var(--oas-vivid-ink);
+    /* ---- 형태·타이포: 이 페이지 고유. 색이 아니라 SSOT 이전 대상이 아니다 ---- */
     --r-card: 3px;
     --fs-h1: clamp(34px, 8.5vw, 60px);
     --fs-h2: clamp(30px, 4.5vw, 42px);
@@ -42,11 +49,11 @@
     --lh-body: 1.7;
     --lh-body-loose: 1.85;
     --lh-h2: 1.2;
-    --shadow-card-hover: 0 16px 32px rgba(20, 38, 29, 0.08);
-    --shadow-card-hover-deep: 0 20px 40px rgba(63, 122, 92, 0.18);
-    /* 다크 캔버스 전용 텍스트 토큰 (landing --text-light/--text-dim-light 재사용) */
-    --text-light: #f2f2f0;
-    --text-dim-light: #a6a6a4;
+    --shadow-card-hover: var(--oas-shadow-card-hover);
+    --shadow-card-hover-deep: var(--oas-shadow-card-hover-deep);
+    /* 다크 캔버스 전용 텍스트 토큰 */
+    --text-light: var(--oas-text-light);
+    --text-dim-light: var(--oas-text-dim-light);
   }
 
   * { box-sizing: border-box; }

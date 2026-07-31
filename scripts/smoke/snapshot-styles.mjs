@@ -273,11 +273,29 @@ async function main() {
   }
 
   console.log(`[스냅샷] 페이지 ${pages.length}개 × 스킴 ${SCHEMES.length}종 채취 중…`);
+
+  // 검수관 권고 P4 — 한계가 주석에만 있으면 실행 결과를 읽는 사람에게 안 닿는다.
+  // 3D 페이지가 목록에 있으면 "이 페이지도 검증됐다" 는 오독을 로그에서 미리 끊는다.
+  const canvasPages = pages.filter((p) => /^(builder|world|world2|visit|lab-glb|index)\.html$/.test(p));
+  if (canvasPages.length) {
+    console.log(`  ⚠ ${canvasPages.join(', ')} — DOM(UI 크롬)만 본다. 캔버스 안 3D 씬(재질·조명)은 미검증이다.`);
+  }
+
   const { result, failures } = await snapshot(pages);
 
   if (failures.length) {
     console.error(`\n[경고] 채취 실패 ${failures.length}건 — 못 잰 것은 통과가 아니다:`);
     failures.forEach((f) => console.error(`  · ${f}`));
+  }
+
+  // 검수관 권고 P2 — diff 는 기준·현재의 unreadableSheets 가 **다를 때만** 잡는다.
+  // 처음부터 못 읽던 시트는 계속 같은 개수라 영원히 조용하다. 채취 시점에 알린다.
+  const unread = Object.entries(result)
+    .filter(([, p]) => (p.meta?.unreadableSheets || 0) > 0)
+    .map(([k, p]) => `${k}: ${p.meta.unreadableSheets}개`);
+  if (unread.length) {
+    console.error(`\n[경고] 읽지 못한 스타일시트가 있다 — 그 시트의 토큰은 [B]축에서 빠진다:`);
+    unread.forEach((u) => console.error(`  · ${u}`));
   }
 
   if (mode === '--save') {
