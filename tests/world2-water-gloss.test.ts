@@ -34,6 +34,26 @@ describe('[A] waterGloss — 판정', () => {
     expect(g.roughness).toBeLessThan(0.3);
   });
 
+  it('★ 밤 반짝임이 낮보다 훨씬 약하다 — 감독 예전 지적을 지키는 자리', () => {
+    // ── 뮤테이션 실측 2026-07-31 ────────────────────────────────────────────
+    // 밤 `sparkle` 을 0.18 → 0.85(낮 값)로 바꿔도 **아무 테스트도 안 깨졌다.**
+    // 흰 윤슬을 새로 넣으면서 세기 축을 만들었는데 그 축을 지키는 단언이 없었다.
+    //
+    // 이 값이 팀장 조건 4(`emissive` 금지)를 대신한다. 조건을 뒤집으면서 근거는
+    // 지키기로 했는데, 근거를 지키는 것이 바로 이 수치다 — 못박아 두지 않으면
+    // 누가 전역으로 반짝임을 올렸을 때 감독의 예전 지적이 조용히 되살아난다.
+    const night = waterGloss('night');
+    const day = waterGloss('day');
+    expect(night.sparkle).toBeLessThan(day.sparkle * 0.35);
+    // 0 은 아니다 — 달빛에 잔물결이 튀는 정도는 있어야 물이다.
+    expect(night.sparkle).toBeGreaterThan(0);
+  });
+
+  it('반짝임이 낮 → 노을 → 밤으로 단조 감소한다 — 광원이 약해지는 순서다', () => {
+    expect(waterGloss('day').sparkle).toBeGreaterThan(waterGloss('sunset').sparkle);
+    expect(waterGloss('sunset').sparkle).toBeGreaterThan(waterGloss('night').sparkle);
+  });
+
   it('★ 밤은 예전 지시를 지킨다 — 낮을 살리려다 밤을 되돌리면 안 된다', () => {
     // 감독이 예전에 *"밤인데 빛이 이렇게 많지 않잖아"* 라고 지적해 낮춘 값이다.
     // 이 단언이 그 지시를 보존한다 — 누가 전역으로 반짝임을 올리면 여기가 깨진다.

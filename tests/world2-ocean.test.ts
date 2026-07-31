@@ -172,6 +172,55 @@ describe('waveHeight — 타일이 이어진다', () => {
     }
   });
 
+  it('★ 마루가 좁고 골이 넓다 — 대칭 대조군보다 실제로 골이 넓어야 한다', () => {
+    // ── 이 테스트는 한 번 틀렸다. 그 기록을 남긴다 (검수관 블로커 2026-07-31) ──
+    // 처음 판본은 *"표본 평균이 −0.05 보다 낮다"* 였고 주석에 "`WAVE_SKEW` 를 1 로
+    // 되돌리면 깨진다" 고 적었다. **거짓이었다.** 검수관이 실측했다:
+    //
+    //   skew 1(대칭)  → mean −0.4938   ← 비대칭을 꺼도 임계값을 한참 밑돈다
+    //   skew 1.7      → mean −0.7927
+    //   합성 직후 raw → mean  0.3147   ← 0.5 가 아니다
+    //
+    // `softLight` 4옥타브 합성 **자체가** 평균을 크게 끌어내리고 있었다. 그래서 그 축은
+    // 감마가 아니라 **합성의 편향**을 재고 있었고, 정작 이 커밋이 넣은 비대칭이 사라져도
+    // 침묵했다. 이 저장소가 반복해 겪은 형태 그대로다 — *"참인 문장에서 성립하지 않는
+    // 결론을 뽑는 것. 값이 아니라 재는 축이 틀린다."*
+    //
+    // 원인은 **기준선이 없었다는 것**이다. "낮다" 를 재려면 무엇보다 낮은지가 있어야 하는데
+    // 테스트가 대칭 버전을 만들 수단이 없었다. 그래서 `waveHeight` 가 skew 를 인자로도
+    // 받게 하고, 여기서 **대조군을 직접 만든다.**
+    const sample = (skew?: number) => {
+      const vals: number[] = [];
+      for (let i = 0; i < 64; i++) {
+        for (let j = 0; j < 64; j++) vals.push(waveHeight(i / 64, j / 64, skew));
+      }
+      return vals;
+    };
+    const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+    const asym = sample();          // 기본값 = WAVE_SKEW
+    const sym = sample(1);          // 감마 없음 = 대칭
+
+    // ★ 이것이 검출 지점이다. `WAVE_SKEW` 를 1 로 되돌리면 두 표본이 **같아져서** 깨진다.
+    expect(mean(asym), '비대칭이 대칭과 같다 — 감마가 안 먹고 있다')
+      .toBeLessThan(mean(sym) - 0.1);
+
+    // 그렇다고 바닥에 깔리면 안 된다 — 마루가 실제로 서 있어야 한다.
+    expect(Math.max(...asym)).toBeGreaterThan(0.5);
+  });
+
+  it('대칭 대조군은 실제로 대칭 쪽이다 — 대조군 자체가 기울어 있으면 위 비교가 무의미하다', () => {
+    // 위 테스트는 **상대 비교**라 대조군이 이미 극단으로 기울어 있으면 차이가 안 난다.
+    // 대조군이 적어도 비대칭본보다는 덜 치우쳤음을 따로 못박는다.
+    const vals: number[] = [];
+    for (let i = 0; i < 32; i++) {
+      for (let j = 0; j < 32; j++) vals.push(waveHeight(i / 32, j / 32, 1));
+    }
+    const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+    // 합성 편향 때문에 0 은 아니지만(검수관 실측 −0.49), 완전히 바닥에 붙지는 않는다.
+    expect(m).toBeGreaterThan(-0.9);
+  });
+
   it('평평하지 않다 — 물결이 실제로 있다', () => {
     const vals = [];
     for (let i = 0; i < 40; i++) vals.push(waveHeight(i / 40, (i * 7 % 40) / 40));
@@ -339,9 +388,11 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     const { inst, added } = mount();
     const sea = added.find((m) => m.name === 'ocean')!;
     const norm = sea.material.opts.normalMap as FakeTexture;
-    const rough = sea.material.opts.roughnessMap as FakeTexture;
+    // 두 번째 파동 층이 `roughnessMap` → `map`(tint) 으로 옮겨졌다.
+    // 예전 구조는 노멀맵을 거칠기맵 자리에 태워 검은 줄기를 만들었다(감독 실기기 실증).
     const map = sea.material.opts.map as FakeTexture;
-    return { inst, norm, rough, map };
+    const spark = sea.material.opts.emissiveMap as FakeTexture;
+    return { inst, norm, map, spark };
   };
 
   it('시간이 지나면 노멀맵 offset 이 움직인다 — 안 움직이면 물이 멈춰 있다', () => {
@@ -352,18 +403,45 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
   });
 
   it('두 층이 서로 다른 방향으로 흐른다 — 같으면 흐르는 벽지가 된다', () => {
-    const { inst, norm, rough } = flow();
+    // 층 둘의 정체가 바뀌었다(노멀맵 + 거칠기맵 → 노멀맵 + 밝기맵). **단언은 그대로다** —
+    // 지키려는 것은 "두 무늬가 어긋나 간섭한다" 이지 어느 슬롯을 쓰느냐가 아니다.
+    const { inst, norm, map } = flow();
     inst.system!.update({ dt: 4 } as never);
     // 방향 벡터가 평행하지 않아야 한다(외적 ≠ 0)
-    const cross = norm.offset.x * rough.offset.y - norm.offset.y * rough.offset.x;
+    const cross = norm.offset.x * map.offset.y - norm.offset.y * map.offset.x;
     expect(Math.abs(cross)).toBeGreaterThan(1e-9);
   });
 
-  it('밝기 무늬가 노멀맵 층과 함께 간다 — 따로 놀면 무늬와 빛이 어긋난다', () => {
+  it('★ 밝기 무늬가 노멀맵과 **따로** 흐른다 — 붙여 두면 두 층이 한 덩어리가 된다', () => {
+    // ── 이 단언은 뒤집힌 것이다 (감독 실기기 실증 2026-07-31) ──────────────────
+    // 예전에는 정반대였다: *"밝기 무늬가 노멀맵 층과 함께 간다 — 따로 놀면 무늬와 빛이
+    // 어긋난다."* 그때는 `tint.offset.copy(normA.offset)` 이었고, 두 번째 파동을
+    // `roughnessMap` 이 맡고 있었으니 밝기는 노멀맵에 붙어 있어도 층이 둘이었다.
+    //
+    // 그 `roughnessMap` 슬롯이 검은 줄기의 원인이라 비웠다. 이제 두 번째 파동은 `tint`
+    // 가 맡으므로 **붙어 있으면 안 된다** — 붙이면 층이 하나가 되고 "흐르는 벽지" 가 된다.
+    //
+    // 단언을 느슨하게 만든 것이 아니라 **계약이 바뀐 것**이다. 옛 단언은 옛 구조에서만
+    // 참이었고, 지금 그대로 두면 고쳐야 할 결함을 통과시킨다.
     const { inst, norm, map } = flow();
     inst.system!.update({ dt: 3 } as never);
-    expect(map.offset.x).toBeCloseTo(norm.offset.x, 12);
-    expect(map.offset.y).toBeCloseTo(norm.offset.y, 12);
+    const same = Math.abs(map.offset.x - norm.offset.x) < 1e-9
+              && Math.abs(map.offset.y - norm.offset.y) < 1e-9;
+    expect(same, '밝기 무늬가 노멀맵에 붙어 있다 — 두 층이 한 덩어리로 미끄러진다').toBe(false);
+  });
+
+  it('★ 윤슬도 물결과 어긋나게 흐른다 — 붙어 있으면 점이 박혀 명멸하지 않는다', () => {
+    // 윤슬이 물결에 붙어 흐르면 무늬 위 한 점에 고정된 채 같이 미끄러진다. 그러면
+    // "흐르는 반짝이 무늬" 이지 반짝임이 아니다 — 나타났다 사라지는 것이 윤슬이다.
+    const { inst, norm, spark } = flow();
+    const before = { ...spark.offset };
+    inst.system!.update({ dt: 3 } as never);
+    // 움직이긴 해야 한다
+    expect(spark.offset.x !== before.x || spark.offset.y !== before.y).toBe(true);
+    // 그러나 물결과 같은 속도는 아니다
+    const same = Math.abs(spark.offset.x - norm.offset.x) < 1e-9
+              && Math.abs(spark.offset.y - norm.offset.y) < 1e-9;
+    expect(same, '윤슬이 물결과 같은 속도다 — 점이 무늬에 박힌다').toBe(false);
   });
 
   // 진단은 **검증을 위해 만든 값**이라 스스로도 검증돼야 한다. 헤드리스 스모크가 물결을
@@ -371,11 +449,12 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
   // 시간값을 되돌려주면 "계산은 도는데 텍스처엔 안 꽂힌 상태"를 통과시킨다 — 그러면
   // 측정 지점을 만든 의미가 정확히 반대로 뒤집힌다.
   it('진단이 텍스처의 실제 offset 을 내보낸다 — 계산값을 되돌려주면 못 잡는다', () => {
-    const { inst, norm, rough } = flow();
+    const { inst, norm, map, spark } = flow();
     inst.system!.update({ dt: 2 } as never);
-    const d = inst.diagnostics!() as { flowA: number[]; flowB: number[] };
+    const d = inst.diagnostics!() as { flowA: number[]; flowB: number[]; flowSparkle: number[] };
     expect(d.flowA).toEqual([norm.offset.x, norm.offset.y]);
-    expect(d.flowB).toEqual([rough.offset.x, rough.offset.y]);
+    expect(d.flowB).toEqual([map.offset.x, map.offset.y]);
+    expect(d.flowSparkle).toEqual([spark.offset.x, spark.offset.y]);
     // 멈춘 물과 구별돼야 관측에 쓸모가 있다
     expect(Math.abs(d.flowA[0]) + Math.abs(d.flowA[1])).toBeGreaterThan(0);
 
@@ -387,7 +466,7 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     // 그래서 둘을 갈라놓는다. 텍스처만 밖에서 되돌리면, 텍스처를 읽는 진단은 멈춤을
     // 보고하고 계산값을 읽는 진단은 여전히 흐른다고 거짓말한다.
     norm.offset.set(0, 0);
-    rough.offset.set(0, 0);
+    map.offset.set(0, 0);
     const stopped = inst.diagnostics!() as { flowA: number[]; flowB: number[] };
     expect(stopped.flowA).toEqual([0, 0]);
     expect(stopped.flowB).toEqual([0, 0]);
@@ -433,6 +512,7 @@ describe('수면 광택 — 판정이 실제 재질까지 닿는가', () => {
   const glossOf = (mat: FakeMaterial) => mat as unknown as {
     normalScale: { x: number; y: number };
     roughness: number;
+    emissiveIntensity: number;
     needsUpdate: boolean;
   };
 
@@ -443,6 +523,25 @@ describe('수면 광택 — 판정이 실제 재질까지 닿는가', () => {
     expect(m.normalScale.x).toBe(g.normalScale);
     expect(m.normalScale.y).toBe(g.normalScale);
     expect(m.roughness).toBe(g.roughness);
+    // 반짝임 세기도 **재질에 닿아야** 한다. 뮤테이션 실측(2026-07-31): 이 단언이 없을 때
+    // `seaMat.emissiveIntensity = spark;` 줄을 통째로 지워도 62건 전부 통과했다 —
+    // 값은 계산되는데 화면에는 아무 일도 안 일어나는 상태를 아무도 안 보고 있었다.
+    expect(m.emissiveIntensity).toBe(g.sparkle);
+  });
+
+  it('★ 반짝임 세기가 시간대를 따라간다 — 안 따라가면 밤에도 낮처럼 빛난다', () => {
+    // M4 뮤테이션(밤 sparkle 을 낮 값으로) 대응. 감독의 예전 지적
+    // *"밤인데 빛이 이렇게 많지 않잖아"* 를 지키는 **집행 쪽** 자리다
+    // (판정 쪽은 `world2-water-gloss.test.ts` 가 본다).
+    const { inst, sea, setTime } = mount('day');
+    const m = glossOf(sea());
+    expect(m.emissiveIntensity).toBe(waterGloss('day').sparkle);
+    setTime('night');
+    inst.system!.update({ dt: 1 } as never);
+    expect(m.emissiveIntensity).toBe(waterGloss('night').sparkle);
+    // 낮보다 확실히 어두워야 한다 — 두 값이 같아지면 위 두 단언은 통과하면서도
+    // 시간대 분기가 죽어 있을 수 있다.
+    expect(m.emissiveIntensity).toBeLessThan(waterGloss('day').sparkle);
   });
 
   it('★ 밤에 부팅하면 밤 값이다 — 낮 값이 하드코딩돼 있으면 여기가 깨진다', () => {
@@ -572,13 +671,19 @@ describe('URL 노브 — 수면 값을 밖에서 연다', () => {
     const d = withSearch('?wns=1.5&wrough=0.4&wflow=3', () => {
       const { inst } = mount('night');
       return inst.diagnostics!() as {
-        gloss: { normalScale: number; roughness: number };
-        glossKnob: { ns: number | null; rough: number | null; flow: number | null };
+        gloss: { normalScale: number; roughness: number; sparkle: number; opacity: number };
+        glossKnob: {
+          ns: number | null; rough: number | null; flow: number | null; opa: number | null;
+        };
         flowMps: number;
       };
     });
-    expect(d.gloss).toEqual({ normalScale: 1.5, roughness: 0.4 });
-    expect(d.glossKnob).toEqual({ ns: 1.5, rough: 0.4, flow: 3 });
+    // 반짝임·투명도는 노브로 지정하지 않았으므로 기본값이 그대로 온다 — 셋만 덮인다.
+    expect(d.gloss.normalScale).toBe(1.5);
+    expect(d.gloss.roughness).toBe(0.4);
+    expect(d.gloss.sparkle).toBe(waterGloss('night').sparkle);
+    expect(d.gloss.opacity).toBeGreaterThan(0);   // 상수 기본값이 살아 있다
+    expect(d.glossKnob).toEqual({ ns: 1.5, rough: 0.4, flow: 3, opa: null });
     expect(d.flowMps).toBe(3);
   });
 
@@ -588,11 +693,13 @@ describe('URL 노브 — 수면 값을 밖에서 연다', () => {
     const d = withSearch('', () => {
       const { inst } = mount('day');
       return inst.diagnostics!() as {
-        glossKnob: { ns: number | null; rough: number | null; flow: number | null };
+        glossKnob: {
+          ns: number | null; rough: number | null; flow: number | null; opa: number | null;
+        };
         flowMps: number;
       };
     });
-    expect(d.glossKnob).toEqual({ ns: null, rough: null, flow: null });
+    expect(d.glossKnob).toEqual({ ns: null, rough: null, flow: null, opa: null });
     // 그래도 실제로 쓰이는 유속은 기본값이다 — "미지정"이 "0"이 되면 강이 멈춘다.
     expect(d.flowMps).toBeGreaterThan(0);
   });
@@ -625,9 +732,11 @@ describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
-  it('★ 문서에 바가 있으면 수면 노브 셋이 붙는다', () => {
+  it('★ 문서에 바가 있으면 수면 노브 다섯이 붙는다', () => {
+    // 셋 → 넷(흰 윤슬 `wspark`) → 다섯(수면 투명도 `wopa`). 해저에 자갈이 깔리면서
+    // "얼마나 비쳐야 좋은가" 가 비로소 고를 수 있는 값이 됐다(감독 지시 2026-07-31).
     mount('day');
-    expect(inputs().length).toBe(3);
+    expect(inputs().length).toBe(5);
     expect(document.getElementById('w2-sliders')!.hidden).toBe(false);
   });
 
@@ -657,9 +766,9 @@ describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
       inst.system!.update({ dt: 1 } as never);
       return Math.hypot(uv[0] - before[0], uv[1] - before[1]);
     };
-    push(inputs()[2], '0.5');
+    push(inputs()[4], '0.5');
     const slow = shift();
-    push(inputs()[2], '5');
+    push(inputs()[4], '5');
     const fast = shift();
     expect(fast).toBeGreaterThan(slow * 1.5);
   });
@@ -717,7 +826,7 @@ describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
 
   it('★ dispose 가 바를 걷는다 — 해제된 재질을 만지는 핸들러가 남으면 안 된다', () => {
     const { inst } = mount('day');
-    expect(inputs().length).toBe(3);
+    expect(inputs().length).toBe(5);
     inst.dispose!();
     expect(inputs().length).toBe(0);
     expect(document.getElementById('w2-sliders')!.hidden).toBe(true);
@@ -776,6 +885,30 @@ describe('물살 — 강 UV 가 정점마다 제 방향으로 밀린다', () => 
     for (let i = 0; i < once.length; i++) expect(b.uv[i]).toBeCloseTo(once[i], 9);
   });
 
+  it('★ 되감기가 없다 — 타일 경계를 넘어도 이동량이 일정하다 (감독 "이동하다가 끊기네")', () => {
+    // ── 왜 이 축이 따로 필요한가 (뮤테이션 실측 2026-07-31) ────────────────────
+    // `% RIPPLE_M` 되감기를 **그대로 되살려도 62건 전부 통과했다.** 감독이 실기기에서
+    // 직접 본 결함인데 방어선이 하나도 없었다.
+    //
+    // 옆의 "누적하지 않는다" 테스트가 못 잡는 이유: 그것은 *같은 t 면 같은 UV 인가* 를
+    // 보는데, 되감기가 있어도 그 성질은 참이다. 되감기는 **시간을 가로질러야** 드러난다.
+    //
+    // 되감기의 실제 증상은 "어느 한 순간 무늬가 튄다" 이다. 그러니 같은 dt 를 계속 주며
+    // **매 스텝 이동량이 일정한지**를 본다 — 되감는 순간 한 스텝만 값이 달라진다.
+    // 흐름이 단위벡터라 되감긴 위치가 타일 격자와 안 맞기 때문이다.
+    const { inst, uv } = riverUv();
+    const steps: number[] = [];
+    let prev = [...uv];
+    // 기본 유속 1.1 m/s · RIPPLE_M 16m → 약 14.5초마다 되감긴다. 40초를 돌면 두 번 겪는다.
+    for (let i = 0; i < 40; i++) {
+      inst.system!.update({ dt: 1 } as never);
+      steps.push(Math.hypot(uv[0] - prev[0], uv[1] - prev[1]));
+      prev = [...uv];
+    }
+    const spread = Math.max(...steps) - Math.min(...steps);
+    expect(spread, '스텝마다 이동량이 다르다 — 되감기가 무늬를 튀게 한다').toBeLessThan(1e-9);
+  });
+
   it('UV 속성에 needsUpdate 를 세운다 — 안 세우면 GPU 버퍼가 안 올라간다', () => {
     const { inst, added } = (() => {
       const m = mount();
@@ -799,7 +932,7 @@ describe('정리', () => {
     // 이름으로 맞대면 판을 몇 장 더 늘려도 이 단언이 저절로 따라온다.
     expect(removed.map((m) => m.name).sort()).toEqual(added.map((m) => m.name).sort());
     expect((sea.material as FakeMaterial).disposed).toBe(true);
-    for (const k of ['map', 'normalMap', 'roughnessMap'] as const) {
+    for (const k of ['map', 'normalMap', 'emissiveMap'] as const) {
       expect((sea.material.opts[k] as FakeTexture).disposed).toBe(true);
     }
   });
@@ -812,51 +945,72 @@ describe('정리', () => {
   });
 });
 
-// ── 윤슬 (감독 지시 2026-07-30) ─────────────────────────────────────────────
-// *"윤슬이 보이는 거였으면 좋겠어. 실제 반사로 하지말고. 쉐이더 트릭으로 했으면 해."*
+// ── 윤슬 (감독 지시 2026-07-31 "흰 반짝임효과 해줘") ─────────────────────────
 //
-// 윤슬은 `roughnessMap`(= 층 B 노멀맵) **G채널의 낮은 점**으로 낸다. 그 자리에서만
-// 스페큘러가 좁고 세게 튄다. 여기서 지키는 것은 **그 점이 실제로 텍스처에 들어갔는가**다 —
-// `engraveSparkle` 을 정의만 하고 호출을 빠뜨리면 아무 일도 안 일어나면서 테스트는 통과한다.
-// 실제로 이 구현에서 그 실수가 한 번 났다(주석 블록을 먼저 넣어 삽입 패턴이 어긋났다).
-describe('윤슬 — roughnessMap G채널에 점이 새겨진다', () => {
-  it('층 B(roughnessMap)에만 아주 낮은 G값이 있다 — 층 A(normalMap)에는 없다', () => {
+// ── 이 블록은 통째로 뒤집혔다. 왜인지 적어 둔다 ──────────────────────────────
+// 예전 판본은 윤슬을 `roughnessMap`(= 층 B 노멀맵) **G채널의 낮은 점**으로 냈다. 그 자리만
+// 거칠기가 낮아 스페큘러가 좁고 세게 튄다는 설계였고, `emissive` 는 팀장 조건 4 로 금지였다
+// (*"스스로 빛나는 물은 광원과 무관해져 밤 지적과 충돌한다"*).
+//
+// **실기기에서 반짝임이 0 이었다.** 좁은 스페큘러는 반사할 것이 있어야 보이는데 이 씬에는
+// `scene.environment` 가 없다. 게다가 같은 구조가 더 큰 사고를 내고 있었다 — 노멀맵의 G 는
+// 법선 Y성분이라 0~1 을 오가고, 그것이 거칠기로 읽히면 G≈0 인 자리가 **완전 거울**이 되어
+// 검게 나온다. 감독 스크린샷의 "검은 물줄기" 가 그것이었다(거칠기 슬라이더를 1.00 까지
+// 올려도 안 사라졌다 — 곱셈이라 0 은 0 이다).
+//
+// 그래서 슬롯을 비우고 윤슬을 **별도 발광맵의 흰 점**으로 옮겼다. 팀장 조건 4 가 지키려던
+// 것(밤에 물이 밝아지지 않을 것)은 `waterGloss(time).sparkle` 의 시간대 분기가 대신 지킨다.
+//
+// 아래 단언들은 **느슨해진 것이 아니라 대상이 바뀐 것**이다. 옛 단언은 옛 구조에서만
+// 참이었고, 그대로 두면 지금 고친 결함을 다시 부른다.
+describe('윤슬 — 발광맵에 흰 점이 새겨진다', () => {
+  const seaOpts = () => {
     const { added } = mount();
-    // `FakeMaterial` 은 생성 옵션을 `opts` 에 담는다(실제 재질처럼 필드로 펼치지 않는다).
-    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
-      opts: { normalMap: { image?: { _g?: number[] } }; roughnessMap: { image?: { _g?: number[] } } };
+    // `FakeMaterial` 은 생성 옵션을 `opts` 에 담는다(실제 재질처럼 필드로도 펼친다).
+    return (added.find((m) => m.name === 'ocean')!.material as unknown as {
+      opts: {
+        normalMap: { image?: { _g?: number[] } };
+        emissiveMap: { image?: { _g?: number[] } };
+        roughnessMap?: unknown;
+        emissive?: unknown;
+      };
     }).opts;
-    // 스텁 캔버스가 putImageData 로 받은 G채널 표본을 남긴다(위 beforeAll 참고).
-    const gA = opts.normalMap.image?._g ?? [];
-    const gB = opts.roughnessMap.image?._g ?? [];
-    expect(gB.length, 'roughnessMap 의 G채널 표본이 없다 — 스텁이 안 물렸다').toBeGreaterThan(0);
+  };
 
-    // 스파클은 G 를 0.06*255 ≈ 15 까지 눌러 넣는다. 물결 법선만으로는 그렇게 낮아지지
-    // 않는다(법선 G 는 0.5 근처에서 진동한다) — 그래서 이 문턱이 스파클의 지문이다.
-    const veryLowB = gB.filter((v) => v <= 24).length;
-    const veryLowA = gA.filter((v) => v <= 24).length;
-    expect(veryLowB, '윤슬 점이 roughnessMap 에 없다 — engraveSparkle 이 안 불렸다').toBeGreaterThan(0);
-    expect(veryLowA, '층 A(normalMap)에 스파클이 섞였다 — 물결 법선이 망가진다').toBe(0);
+  it('★ 발광맵에 아주 밝은 점이 있다 — 없으면 반짝임이 아예 없다', () => {
+    const opts = seaOpts();
+    // 스텁 캔버스가 putImageData 로 받은 G채널 표본을 남긴다(위 beforeAll 참고).
+    const g = opts.emissiveMap.image?._g ?? [];
+    expect(g.length, '발광맵 표본이 없다 — 스텁이 안 물렸다').toBeGreaterThan(0);
+    // 바탕은 0(검정), 점 중심은 255. 물결 무늬가 아니라 **점**이므로 최댓값이 끝까지 간다.
+    expect(g.filter((v) => v >= 250).length, '흰 점이 없다 — sparkleTexture 가 안 불렸다')
+      .toBeGreaterThan(0);
+  });
+
+  it('★ 발광맵 바탕은 검다 — 바탕이 밝으면 물 전체가 빛난다(감독 예전 지적)', () => {
+    // 이것이 팀장 조건 4 의 근거를 지키는 자리다. 점만 밝고 나머지가 0 이라야
+    // *"밤인데 빛이 이렇게 많지 않잖아"* 가 유지된다.
+    const g = seaOpts().emissiveMap.image?._g ?? [];
+    const dark = g.filter((v) => v === 0).length / g.length;
+    expect(dark, '발광맵 바탕이 검지 않다 — 물 전체가 밝아진다').toBeGreaterThan(0.8);
   });
 
   it('점이 화면을 덮지 않는다 — 물이 서리처럼 되면 윤슬이 아니다', () => {
-    const { added } = mount();
-    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
-      opts: { roughnessMap: { image?: { _g?: number[] } } };
-    }).opts;
-    const gB = opts.roughnessMap.image?._g ?? [];
-    const ratio = gB.filter((v) => v <= 24).length / gB.length;
-    // 격자 7px 칸에 16% 확률 → 픽셀 대비 약 0.3%. 상한을 넉넉히 잡되 "드문 점" 임을 지킨다.
-    expect(ratio).toBeLessThan(0.05);
+    const g = seaOpts().emissiveMap.image?._g ?? [];
+    // 격자 7px 칸에 16% 확률 + 점마다 halo 4px → 픽셀 대비 약 1.6%.
+    // 상한을 넉넉히 잡되 "드문 점" 임을 지킨다.
+    expect(g.filter((v) => v > 0).length / g.length).toBeLessThan(0.08);
   });
 
-  it('emissive 로 내지 않았다 — 스스로 빛나는 물은 밤에 어색하다 (팀장 조건 4)', () => {
-    // 감독 지적: *"밤인데 빛이 이렇게 많지 않잖아."* emissive 는 광원과 무관하게 밝아진다.
-    const { added } = mount();
-    const opts = (added.find((m) => m.name === 'ocean')!.material as unknown as {
-      opts: { emissiveMap?: unknown; emissiveIntensity?: number };
-    }).opts;
-    expect(opts.emissiveMap ?? null).toBeNull();
-    expect(opts.emissiveIntensity ?? 0).toBe(0);
+  it('노멀맵에는 점이 섞이지 않는다 — 섞이면 물결 법선이 망가진다', () => {
+    const gA = seaOpts().normalMap.image?._g ?? [];
+    // 법선 G 는 0.5 근처에서 진동한다. 0 이나 255 로 끝까지 가는 값이 있으면 오염이다.
+    expect(gA.filter((v) => v >= 250 || v === 0).length).toBe(0);
+  });
+
+  it('★ roughnessMap 슬롯이 비어 있다 — 여기 무엇을 꽂으면 검은 줄기가 돌아온다', () => {
+    // 이 단언이 감독 실기기 사고의 재발 방지선이다. 노멀맵이든 무엇이든 이 슬롯에
+    // 0 근처 값을 갖는 맵이 꽂히면 그 자리가 거울이 되고, 환경맵이 없는 한 검게 나온다.
+    expect(seaOpts().roughnessMap ?? null).toBeNull();
   });
 });

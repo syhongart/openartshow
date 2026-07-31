@@ -283,6 +283,23 @@ export interface WaterGloss {
    * 밤에 이 값을 올린 것은 옳았다 — 달빛은 넓게 번진다. 낮에까지 적용한 것이 문제였다.
    */
   readonly roughness: number;
+  /**
+   * 흰 윤슬의 발광 세기(감독 지시 2026-07-31 *"흰 반짝임효과 해줘"*).
+   *
+   * ── 이 값이 팀장 조건 4 를 대신한다 ──────────────────────────────────────
+   * 2026-07-30 팀장 판정은 *"`emissive` 로 내지 않는다 — 스스로 빛나는 물은 광원과
+   * 무관해져 밤 지적과 정면 충돌한다"* 였다. 그 판정이 **지키려던 것**은 감독의 예전
+   * 지적(*"밤인데 빛이 이렇게 많지 않잖아"*)이지 `emissive` 금지 자체가 아니었다 —
+   * 그것은 목적이 아니라 수단이었다.
+   *
+   * 수단을 바꾸고 목적은 여기서 지킨다. 밤 값이 낮의 1/4 이하라 물 전체가 밝아지지
+   * 않는다 — 달빛에 잔물결 몇 개가 튀는 정도다.
+   *
+   * 광원 방향 의존을 잃은 것이 이 교체의 대가다. 그 대신 **실제로 보인다** — 광원에
+   * 의존하던 예전 수단(거칠기 변조)은 반사할 환경맵이 없어 실기기에서 반짝임이 0 이었고,
+   * 같은 구조가 검은 줄기까지 만들고 있었다(`features/ocean.ts` 의 슬롯 주석).
+   */
+  readonly sparkle: number;
 }
 
 /**
@@ -294,13 +311,13 @@ export function waterGloss(time: SkyTime): WaterGloss {
   switch (time) {
     // 태양 하나가 강하게 내리쬔다. 물결이 서면 그 각도마다 점이 박힌다 —
     // **좁고(roughness↓) 강하게(normalScale↑)** 가 한낮 물의 문법이다.
-    case 'day': return { normalScale: 0.9, roughness: 0.18 };
+    case 'day': return { normalScale: 0.9, roughness: 0.18, sparkle: 0.85 };
     // 노을은 광원이 낮고 크다. 물 위로 **길게 끌리는 띠**가 생긴다 —
     // 기울기는 살리되 거칠기를 중간에 둬 띠가 끊기지 않게 한다.
-    case 'sunset': return { normalScale: 0.7, roughness: 0.3 };
+    case 'sunset': return { normalScale: 0.7, roughness: 0.3, sparkle: 0.55 };
     // 밤은 달·가로등뿐이다. 감독이 지적한 그 화면 — 여기서는 예전 값을 지킨다.
     // **이 줄이 예전 지시를 보존하는 자리다.** 낮을 살리려다 밤을 되돌리면 안 된다.
-    case 'night': return { normalScale: 0.35, roughness: 0.62 };
+    case 'night': return { normalScale: 0.35, roughness: 0.62, sparkle: 0.18 };
   }
 }
 
