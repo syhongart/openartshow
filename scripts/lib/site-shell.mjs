@@ -8,7 +8,29 @@
 // `scripts/site-url.mjs` 가 SSOT. 예전엔 build-team.mjs:11 / build-valuation.mjs:21
 // 이 `https://syhongart.github.io/openartshow` 를 각자 하드코딩해 site-url.mjs 와
 // 따로 놀았다 — 그 자체가 값 미러링이었다. 여기서는 반드시 import 로만 가져온다.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BASE_URL } from '../site-url.mjs';
+
+// ── 색 SSOT ─────────────────────────────────────────────────────────────
+// 원시 팔레트(`--oas-*`)는 `frontend/css/tokens.css` 한 곳에만 있다. 여기서는 그
+// 파일을 **빌드 시점에 읽어** 셸 CSS 앞에 붙인다 — 값을 이 파일에 다시 적지 않는다.
+//
+// 왜 <link> 가 아니라 인라인인가 — 생성 페이지(/making/·/devlog/·/team/·/valuation/)는
+// vite 를 타지 않는다. `assemble.mjs` 가 `cp -r making devlog team valuation` 으로
+// 통째 복사하므로 vite 의 자산 경로 rewrite 가 안 걸리고, 깊이가 제각각이라
+// 상대경로도 한 값으로 못 적는다. 셸은 원래부터 CSS 를 인라인하고 있었으니
+// (`<style>${SHELL_CSS}…`) 같은 자리에 얹는 것이 배포 구조를 안 건드리는 길이다.
+// 주석·공백을 털면 1.3KB 남짓이라 페이지당 부담도 작다.
+const TOKENS_CSS = fs
+  .readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'frontend', 'css', 'tokens.css'),
+    'utf8',
+  )
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\s+/g, ' ')
+  .trim();
 
 export const SITE = 'OpenArtShow'; // 세 파일이 각각 하드코딩하던 사이트명. 필수 export 목록엔 없지만
 // shell() 내부에서 og:site_name·로고 텍스트에 쓰이므로 여기 한 곳에만 적어 넷째 미러링을 막는다.
@@ -100,9 +122,13 @@ function navHref(item, depth) {
 //    그대로 각 생성기의 `css` 에 남는다(브레이크포인트도 각자 걸로 유지 가능 —
 //    공통화 대상이 아님).
 export const SHELL_CSS = `
-:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
---ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
---g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+/* 색: tokens.css 의 원시 팔레트를 셸 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+:root{--gold:var(--oas-green-500);--gold-text:var(--oas-green-text);--paper:var(--oas-paper);
+--paper-deep:var(--oas-paper-deep);--panel:var(--oas-panel);
+--ink:var(--oas-ink);--ink-body:var(--oas-ink-body);--ink-dim:var(--oas-ink-dim);
+--line:var(--oas-border-light);--g100:var(--oas-green-100);--g300:var(--oas-green-300);
+--g500:var(--oas-green-500);--g600:var(--oas-green-600);--g700:var(--oas-green-700);
+--g800:var(--oas-green-800);--g900:var(--oas-green-900);--r:3px;
 --wrap-w:760px;--lead-mb:34px;--lh:1.75}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
@@ -152,7 +178,7 @@ export function shell({ title, desc, path, og, jsonld, bodyHtml, css = '', depth
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:url" content="${url}">
 ${jsonld ? `<script type="application/ld+json">${JSON.stringify(jsonld)}</script>\n` : ''}<link rel="stylesheet" href="${root}app/vendor/fonts/fonts.css">
-<style>${SHELL_CSS}${css}</style>
+<style>${TOKENS_CSS}${SHELL_CSS}${css}</style>
 </head>
 <body>
 <header class="top">

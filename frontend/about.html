@@ -28,20 +28,21 @@
      랜딩 ./index.html, 전시장 ./app/, 가이드 ./guide.html)도 전부 루트 기준으로 정합. 이 승격은 A단계 스모크 하네스가
      app/ 배포 시 CTA 404를 발견해 근본 해결한 것(deploy.yml에 cp web/about.html _site/about.html 추가). -->
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<link rel="stylesheet" href="./css/tokens.css">
 <style>
   :root {
-    /* 팔레트 B — 액센트: 콘텐츠 영역(라이트/다크 전환) vs 톱바·히어로(항상 다크 몰입 고정) — guide.html과 동일 SSOT */
-    --accent: #5733FF;        /* --violet-ink — 라이트 에디토리얼 링크·정체성 */
-    --accent-dark: #8B72FF;   /* --violet-500 — 톱바·히어로(항상 다크 배경) 정체성 고정값 */
-    --ink: #14151A;           /* --bg-dark 팔레트 B 다크 앵커 */
-    --paper: #F3F0E9;         /* --bg-light 라이트 에디토리얼 아이보리 */
-    --paper-2: #efe6d3;       /* --neutral-sand-100 샌드베이지 */
-    --line: #cfc6b8;          /* --neutral-warm-gray-300 테두리 기본값 */
-    --text: #202124;          /* --text-dark */
-    --text-dim: #6b6459;      /* --ink-dim (웜그레이 딥 — 보조 텍스트) */
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+    --accent: var(--oas-violet-ink);
+    --accent-dark: var(--oas-violet-500);
+    --ink: var(--oas-dark-anchor);
+    --paper: var(--oas-ivory);
+    --paper-2: var(--oas-sand-100);
+    --line: var(--oas-warm-gray-300);
+    --text: var(--oas-ink-cool);
+    --text-dim: var(--oas-ink-dim);
     /* CTA 전용 — 코랄(§3-2 규율, landing.html과 동일 SSOT). 에디토리얼 바이올렛과는 분리 */
-    --coral: #FF705E;
-    --coral-hover: #FF331A;
+    --coral: var(--oas-coral-500);
+    --coral-hover: var(--oas-coral-600);
     /* 에세이 전용 타이포 토큰 */
     --fs-body-lg: clamp(16px, 1.55vw, 18px);
     --lh-body-loose: 1.85;
@@ -281,33 +282,36 @@
   /* -------------------------------------------------------- dark mode */
   @media (prefers-color-scheme: dark) {
     :root {
-      --accent: #8B72FF;      /* 다크 몰입: 콘텐츠 영역도 원색 바이올렛으로 전환 */
-      --paper: #14151A;       /* --bg-dark 팔레트 B 다크 앵커 */
-      --paper-2: #1F2128;     /* --surface-dark-1 */
-      --line: #3A3D4B;        /* --border-dark */
-      --text: #F5F5F2;        /* --text-light */
-      --text-dim: #9A9EB1;    /* --text-light-dim */
+      /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+      --accent: var(--oas-violet-500);
+      --paper: var(--oas-dark-anchor);
+      --paper-2: var(--oas-dark-1);
+      --line: var(--oas-dark-line);
+      --text: var(--oas-on-dark);
+      --text-dim: var(--oas-on-dark-dim);
     }
     .btn-coral { color: #14151A; }
     .btn-outline { color: var(--text); }
     footer a.mail { border-bottom-color: rgba(139,114,255,0.4); }
   }
   :root[data-theme="dark"] {
-    --accent: #8B72FF;
-    --paper: #14151A;
-    --paper-2: #1F2128;
-    --line: #3A3D4B;
-    --text: #F5F5F2;
-    --text-dim: #9A9EB1;
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+    --accent: var(--oas-violet-500);
+    --paper: var(--oas-dark-anchor);
+    --paper-2: var(--oas-dark-1);
+    --line: var(--oas-dark-line);
+    --text: var(--oas-on-dark);
+    --text-dim: var(--oas-on-dark-dim);
   }
   :root[data-theme="dark"] footer a.mail { border-bottom-color: rgba(139,114,255,0.4); }
   :root[data-theme="light"] {
-    --accent: #5733FF;
-    --paper: #F3F0E9;
-    --paper-2: #efe6d3;
-    --line: #cfc6b8;
-    --text: #202124;
-    --text-dim: #6b6459;
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+    --accent: var(--oas-violet-ink);
+    --paper: var(--oas-ivory);
+    --paper-2: var(--oas-sand-100);
+    --line: var(--oas-warm-gray-300);
+    --text: var(--oas-ink-cool);
+    --text-dim: var(--oas-ink-dim);
   }
   :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(87,51,255,0.4); }
 

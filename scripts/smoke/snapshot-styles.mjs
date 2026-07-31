@@ -173,7 +173,14 @@ async function collectInPage({ colorProps, layoutProps }) {
 }
 
 async function snapshot(pages) {
-  const server = await startServer(path.join(ROOT, 'frontend'));
+  // 서빙 루트. 기본은 소스(`frontend/`)다 — 인라인 <style> → 외부 CSS 이동을
+  // 검증하는 현 용도에는 소스 기준이 맞다. `SNAPSHOT_ROOT` 로 바꾸면 생성 페이지
+  // (`making/`·`devlog/`)나 배포 조립본(`_site/`·`dist/`)도 잴 수 있다.
+  // 이 도구를 CI 게이트로 올릴 때는 조립본 기준으로 전환해야 한다(태스크 #158).
+  const serveRoot = process.env.SNAPSHOT_ROOT
+    ? path.resolve(process.env.SNAPSHOT_ROOT)
+    : path.join(ROOT, 'frontend');
+  const server = await startServer(serveRoot);
   const browser = await chromium.launch({ executablePath: CHROMIUM_EXECUTABLE, args: CHROMIUM_ARGS });
   const result = {};
   const failures = [];
