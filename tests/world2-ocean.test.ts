@@ -80,6 +80,9 @@ class FakeBufferGeometry {
   index: { count: number; array: number[] } | null = null;
   disposed = false;
   setAttribute(name: string, a: FakeAttr) { this.attrs[name] = a; }
+  // three 의 BufferGeometry 계약. 물살(감독 지시 2026-07-31)이 매 프레임 UV 속성을
+  // 잡아 쓰므로 스텁도 이것을 줘야 한다 — 없으면 프로덕션 코드가 아니라 스텁이 터진다.
+  getAttribute(name: string) { return this.attrs[name]; }
   setIndex(a: number[]) { this.index = { count: a.length, array: a }; }
   dispose() { this.disposed = true; }
 }
@@ -392,6 +395,63 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     b.inst.system!.update({ dt: 0.5 } as never);
     expect(b.norm.offset.x).toBeCloseTo(one.x, 12);
     expect(b.norm.offset.y).toBeCloseTo(one.y, 12);
+  });
+});
+
+// ── 물살 (감독 지시 2026-07-31 "물살로 보이고") ──────────────────────────────
+// 반짝임과 달리 이것은 **정점마다 다른 값**이라 순수 함수 테스트로 못 본다.
+// `riverFlowAt` 이 옳은 방향을 주는지는 `world2-river-flow.test.ts` 가 보고,
+// 여기서는 **그 방향이 실제로 UV 에 실리는지**를 본다 — 경계를 건너는 지점이다.
+describe('물살 — 강 UV 가 정점마다 제 방향으로 밀린다', () => {
+  const riverUv = () => {
+    const { inst, added } = mount();
+    const river = added.find((m) => m.name === 'river')!;
+    const g = river.geometry as FakeBufferGeometry;
+    return { inst, uv: g.attrs.uv.array as unknown as number[] };
+  };
+
+  it('★ update 가 강 UV 를 실제로 바꾼다 — 안 바뀌면 물살이 없다', () => {
+    const { inst, uv } = riverUv();
+    const before = [...uv];
+    inst.system!.update({ dt: 2 } as never);
+    expect(uv.some((v, i) => v !== before[i])).toBe(true);
+  });
+
+  it('★ 정점마다 다른 방향으로 민다 — 전부 같으면 지금과 다를 게 없다', () => {
+    // 이것이 이 작업의 핵심 단언이다. 모든 정점을 같은 양만큼 밀면 그냥 offset 을
+    // 흘리는 것과 같고, 굽이를 따라 흐르지 않는다.
+    const { inst, uv } = riverUv();
+    const before = [...uv];
+    inst.system!.update({ dt: 3 } as never);
+    // 정점별 이동 벡터를 모아 서로 다른 것이 있는지 본다
+    const deltas = new Set<string>();
+    for (let i = 0; i < uv.length; i += 2) {
+      deltas.add(`${(uv[i] - before[i]).toFixed(6)},${(uv[i + 1] - before[i + 1]).toFixed(6)}`);
+    }
+    expect(deltas.size).toBeGreaterThan(1);
+  });
+
+  it('누적하지 않는다 — 같은 t 면 같은 UV 다(부동소수 오차가 안 쌓인다)', () => {
+    // 기준 UV 에서 매번 다시 계산하므로, 한 번에 dt=4 를 주든 dt=2 를 두 번 주든
+    // 같은 결과여야 한다. 누적 구현이면 여기가 깨진다.
+    const a = riverUv();
+    a.inst.system!.update({ dt: 4 } as never);
+    const once = [...a.uv];
+    const b = riverUv();
+    b.inst.system!.update({ dt: 2 } as never);
+    b.inst.system!.update({ dt: 2 } as never);
+    for (let i = 0; i < once.length; i++) expect(b.uv[i]).toBeCloseTo(once[i], 9);
+  });
+
+  it('UV 속성에 needsUpdate 를 세운다 — 안 세우면 GPU 버퍼가 안 올라간다', () => {
+    const { inst, added } = (() => {
+      const m = mount();
+      return { inst: m.inst, added: m.added };
+    })();
+    const g = added.find((x) => x.name === 'river')!.geometry as FakeBufferGeometry;
+    (g.attrs.uv as unknown as { needsUpdate?: boolean }).needsUpdate = false;
+    inst.system!.update({ dt: 1 } as never);
+    expect((g.attrs.uv as unknown as { needsUpdate?: boolean }).needsUpdate).toBe(true);
   });
 });
 

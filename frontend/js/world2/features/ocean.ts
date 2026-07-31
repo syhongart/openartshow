@@ -43,7 +43,7 @@
 // 부른다. **부팅 시 한 번 정하고 다시 만지지 않는다** — 그래서 안전하다.
 
 import * as THREE from 'three/webgpu';
-import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater, waterGloss } from '../decide/water.js';
+import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater, waterGloss, riverFlowAt } from '../decide/water.js';
 import type { SkyTime } from '../decide/night.js';
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
@@ -64,6 +64,12 @@ const PLANE = EDGE * 4;
 
 /** 물결 한 무늬가 덮는 거리(미터). 파셀(32m)의 절반 — 사람 눈높이에서 잔물결로 읽히는 크기 */
 const RIPPLE_M = 16;
+
+/**
+ * 강물이 흐르는 속력(m/s). 걷는 속도(5 m/s)보다 느려야 **강이 흐르는 것**으로 읽힌다 —
+ * 빠르면 급류가 되고, 너무 느리면 고인 물이다. 실개천~완만한 강의 유속대다.
+ */
+const RIVER_FLOW_MPS = 1.1;
 
 /** 수면 빛깔. 밝은 청록 — 어두우면 반투명이라도 바닥이 안 비쳐 보인다 */
 const WATER = 0x8fc9dd;
@@ -247,11 +253,13 @@ function waveTintTexture() {
  * 물결 무늬가 강과 바다에서 다른 크기·다른 방향으로 흐른다(같은 재질이므로 `repeat` 와
  * `offset` 은 저절로 공유된다).
  */
-function riverGeometry(): THREE.BufferGeometry {
+function riverGeometry(): { geo: THREE.BufferGeometry; baseUv: number[]; flow: number[] } {
   const cellX = DEFAULT_LAYOUT.cellX;
   const cellZ = DEFAULT_LAYOUT.cellZ;
   const pos: number[] = [];
   const uv: number[] = [];
+  /** 정점별 흐름 방향(UV 공간, 단위벡터). 매 프레임 UV 를 이 방향으로 민다. */
+  const flow: number[] = [];
   const idx: number[] = [];
   let n = 0;
 
@@ -274,6 +282,13 @@ function riverGeometry(): THREE.BufferGeometry {
         x1 / PLANE + 0.5, 0.5 - z1 / PLANE,
         x0 / PLANE + 0.5, 0.5 - z1 / PLANE,
       );
+      // 흐름 방향 — **정점의 x 로** 구한다(파셀 중심이 아니라). 한 파셀 안에서도
+      // 좌우 끝의 접선이 달라야 굽이가 부드럽게 이어진다. 월드 (x,z) 를 UV 로 옮길 때
+      // v 축이 뒤집히므로(`0.5 - z/PLANE`) z 성분의 부호를 바꾼다.
+      for (const [vx] of [[x0], [x1], [x1], [x0]]) {
+        const f = riverFlowAt(vx);
+        flow.push(f.x, -f.z);
+      }
       // 위에서 내려다볼 때 앞면이 되도록 감는다(반시계). 뒤집히면 위에서 안 보인다.
       idx.push(n, n + 2, n + 1, n, n + 3, n + 2);
       n += 4;
@@ -289,7 +304,9 @@ function riverGeometry(): THREE.BufferGeometry {
     new Array(n * 3).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3,
   ));
   g.setIndex(idx);
-  return g;
+  // 기준 UV 를 따로 들고 있는다. 매 프레임 **기준에서 다시 계산**한다 —
+  // 누적하면 부동소수 오차가 쌓여 무늬가 서서히 어긋난다.
+  return { geo: g, baseUv: uv.slice(), flow };
 }
 
 export const oceanFeature: Feature = {
@@ -392,8 +409,11 @@ export const oceanFeature: Feature = {
     // 강이 바다보다 위에 있으므로 더 늦게 그린다. 하구에는 50cm 단차가 생기는데 1차는
     // 그대로 둔다(팀장 판정: *"감독은 폭포를 지시하지 않았다 — 지시 안 한 연출을 추측으로
     // 메우지 않는다"*). 안개가 60.8m 에서 덮으므로 멀리서는 보이지 않는다.
-    const riverGeo = riverGeometry();
+    const { geo: riverGeo, baseUv: riverBaseUv, flow: riverFlow } = riverGeometry();
     const river = new THREE.Mesh(riverGeo, seaMat);
+    // 매 프레임 쓸 UV 속성을 붙잡아 둔다 — `getAttribute` 를 프레임마다 부르면
+    // 문자열 조회가 반복된다(작지만, 이 루프는 초당 60번 돈다).
+    const riverUvAttr = riverGeo.getAttribute('uv');
     river.position.y = RIVER_Y;
     river.renderOrder = 2;
 
@@ -428,6 +448,26 @@ export const oceanFeature: Feature = {
           normA.offset.set(FLOW_A.x * a, FLOW_A.z * a);
           tint.offset.copy(normA.offset);
           normB.offset.set(FLOW_B.x * a, FLOW_B.z * a);
+
+          // ── 강만 제 방향으로 흐른다 (감독 지시 "물살로 보이고") ──────────────
+          // 위 `offset` 은 텍스처 하나에 걸리므로 **씬 전체가 한 방향**이다. 바다는
+          // 방향이 없으니 그것으로 족하지만, 강은 굽이를 따라 흘러야 강으로 읽힌다.
+          // 그래서 강만 **UV 를 정점별로** 민다 — 정점마다 접선이 다르고 래스터라이저가
+          // 그 사이를 보간하므로, 파셀(32m) 해상도의 flow map 이 공짜로 생긴다.
+          //
+          // **기준 UV 에서 매번 다시 계산한다**(누적하지 않는다). 누적하면 부동소수
+          // 오차가 쌓여 무늬가 서서히 어긋나고, 그 어긋남은 오래 봐야 보여서 잡기 어렵다.
+          //
+          // `phase` 를 타일 하나(`RIPPLE_M`)로 되감는다. 흐름 벡터가 **전부 단위벡터**라
+          // (`riverFlowAt` 이 보증한다) 모든 정점이 같은 순간에 되감기고, 무늬가 주기
+          // 경계에서 정확히 겹쳐 되감기가 눈에 안 보인다.
+          const phase = ((t * RIVER_FLOW_MPS) % RIPPLE_M) / PLANE;
+          const uvArr = riverUvAttr.array as Float32Array;
+          for (let i = 0; i < uvArr.length; i += 2) {
+            uvArr[i]     = riverBaseUv[i]     + riverFlow[i]     * phase;
+            uvArr[i + 1] = riverBaseUv[i + 1] + riverFlow[i + 1] * phase;
+          }
+          riverUvAttr.needsUpdate = true;
         },
       },
 
