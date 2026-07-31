@@ -20,29 +20,33 @@
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
+<link rel="stylesheet" href="./css/tokens.css">
 <style>
   :root {
-    /* === 팔레트 B '라이트 에디토리얼' — docs/mockups/pilot-artwork-light.html SSOT === */
-    --bg-light: #F3F0E9;
-    --text-dark: #202124;
-    --text-light: #F5F5F2;
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+    --bg-light: var(--oas-ivory);
+    --text-dark: var(--oas-ink-cool);
+    --text-light: var(--oas-on-dark);
 
-    --neutral-white: #ffffff;
-    --neutral-sand-100: #efe6d3;
-    --neutral-sand-300: #ddccae;
-    --neutral-warm-gray-300: #cfc6b8;
-    --neutral-warm-gray-500: #a49a8c;
-    --ink-body: #57503f;
-    --ink-dim: #6b6459;
+    --neutral-white: var(--oas-white);
+    --neutral-sand-100: var(--oas-sand-100);
+    --neutral-sand-300: var(--oas-sand-300);
+    --neutral-warm-gray-300: var(--oas-warm-gray-300);
+    --neutral-warm-gray-500: var(--oas-warm-gray-500);
+    --ink-body: var(--oas-ink-body);
+    --ink-dim: var(--oas-ink-dim);
 
-    --violet-ink: #5733FF;   /* 선택·링크·정체성 축 (구 --gold) */
-    --coral-ink: #CC1700;    /* CTA 전용 — 다운로드·공유 (구 --accent). 에러·삭제는 --danger로 분리 */
-    --coral-900: #660B00;    /* CTA hover (구 --accent-hover) */
+    /* 그린 전환(2026-07-30, 태스크 #154) — 이름은 옛 팔레트 B 잔재. studio는 상시 라이트 표면이라
+       이미 -ink 딥변형 컨벤션이었다(값만 교체). coral-ink/coral-900은 .btn-gold·.builder-promo-cta
+       채움(라이트 위 딥채움 + 밝은 텍스트, 발주 (4))이라 cta-ink 계열로 잇는다. */
+    --violet-ink: var(--oas-accent-ink);
+    --coral-ink: var(--oas-cta-ink);
+    --coral-900: var(--oas-green-900);
 
     --shadow-whisper: 0 2px 6px rgba(20,21,26,.05);
     --shadow-panel: 0 8px 20px rgba(20,21,26,.10);
 
-    --danger: #b0503f;       /* 에러·삭제(§7-0 error 테라코타) — 텍스트·테두리 전용. CTA 코랄과 색 분리 */
+    --danger: var(--oas-danger);
   }
   * { box-sizing: border-box; }
   html, body {
