@@ -11,7 +11,7 @@ import { shell, SITE } from './lib/site-shell.mjs';
 import { slugFor } from './lib/devlog-slug.mjs';
 import { categorize, stripTag, CATEGORIES, FALLBACK } from './lib/devlog-category.mjs';
 import { parseEntries } from './lib/devlog-entries.mjs';
-import { esc, inline, mdToHtml as mdToHtmlBase } from './lib/md-to-html.mjs';
+import { esc, mdToHtml as mdToHtmlBase } from './lib/md-to-html.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'making', 'devlog');

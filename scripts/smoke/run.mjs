@@ -405,7 +405,7 @@ function checkLicenseNotice(siteDir) {
   const bundleDir = path.join(siteDir, '_bundle');
   const problems = [];
 
-  // ① 번들 고지
+  // ① 번들 고지 — esbuild 를 거치는 청크
   if (!ex(bundleDir)) {
     problems.push('_bundle/ 없음 — 번들 고지를 못 쟀다');
   } else {
@@ -415,6 +415,23 @@ function checkLicenseNotice(siteDir) {
       if (!all.includes(needle)) problems.push(`번들에 ${label} 고지 없음`);
     }
   }
+
+  // ①-b PeerJS 는 **파일 안에서 재지 않는다.** 왜 그런지 실측을 남긴다.
+  //
+  // PeerJS 는 전역 IIFE(window.Peer)라 ES 모듈 번들 대상이 아니어서 `selfContained()`
+  // 가 `app/vendor/peerjs.min.js` 로 정적 복사한다(`vite.config.js:91`). esbuild 를
+  // 안 거치니 `legalComments` 와도 무관하다.
+  //
+  // 검수관 권고(2026-07-31)를 받아 이 파일에 라이선스 표기 검사를 붙였다가 **대조군에서
+  // FAIL 이 났고, 실측하니 검사 쪽이 틀렸다**: 이 파일(92,865 bytes)에는 선두 배너 주석이
+  // 아예 없고, `MIT` 의 첫 출현은 offset 65,612 — 번들에 인라인된 `package.json` 의
+  // `"license":"MIT"` **필드**다. 그것은 저작권 고지가 아니라 메타데이터다(MIT 가 요구하는
+  // 것은 저작권 고지 **및 허가 고지 전문**이다). "파일에 MIT 문자열이 있다" 는 참이지만
+  // 거기서 "고지가 실려 있다" 는 결론은 나오지 않는다.
+  //
+  // PeerJS 의 고지 의무는 `THIRD-PARTY-NOTICES.md`(저작권자 Michelle Bu·Eric Zhang +
+  // MIT 전문)가 충족하고, 그것을 아래 ② 의 고지 페이지가 싣는다. 그래서 재는 축을
+  // 파일이 아니라 **고지 페이지**에 둔다 — ② 가 `PeerJS` 문자열을 이미 단언한다.
 
   // ② 고지 페이지
   const page = path.join(siteDir, 'making', 'licenses', 'index.html');
