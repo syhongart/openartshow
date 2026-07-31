@@ -463,6 +463,7 @@ describe('수면 광택 — 판정이 실제 재질까지 닿는가', () => {
   const glossOf = (mat: FakeMaterial) => mat as unknown as {
     normalScale: { x: number; y: number };
     roughness: number;
+    emissiveIntensity: number;
     needsUpdate: boolean;
   };
 
@@ -473,6 +474,25 @@ describe('수면 광택 — 판정이 실제 재질까지 닿는가', () => {
     expect(m.normalScale.x).toBe(g.normalScale);
     expect(m.normalScale.y).toBe(g.normalScale);
     expect(m.roughness).toBe(g.roughness);
+    // 반짝임 세기도 **재질에 닿아야** 한다. 뮤테이션 실측(2026-07-31): 이 단언이 없을 때
+    // `seaMat.emissiveIntensity = spark;` 줄을 통째로 지워도 62건 전부 통과했다 —
+    // 값은 계산되는데 화면에는 아무 일도 안 일어나는 상태를 아무도 안 보고 있었다.
+    expect(m.emissiveIntensity).toBe(g.sparkle);
+  });
+
+  it('★ 반짝임 세기가 시간대를 따라간다 — 안 따라가면 밤에도 낮처럼 빛난다', () => {
+    // M4 뮤테이션(밤 sparkle 을 낮 값으로) 대응. 감독의 예전 지적
+    // *"밤인데 빛이 이렇게 많지 않잖아"* 를 지키는 **집행 쪽** 자리다
+    // (판정 쪽은 `world2-water-gloss.test.ts` 가 본다).
+    const { inst, sea, setTime } = mount('day');
+    const m = glossOf(sea());
+    expect(m.emissiveIntensity).toBe(waterGloss('day').sparkle);
+    setTime('night');
+    inst.system!.update({ dt: 1 } as never);
+    expect(m.emissiveIntensity).toBe(waterGloss('night').sparkle);
+    // 낮보다 확실히 어두워야 한다 — 두 값이 같아지면 위 두 단언은 통과하면서도
+    // 시간대 분기가 죽어 있을 수 있다.
+    expect(m.emissiveIntensity).toBeLessThan(waterGloss('day').sparkle);
   });
 
   it('★ 밤에 부팅하면 밤 값이다 — 낮 값이 하드코딩돼 있으면 여기가 깨진다', () => {
@@ -602,16 +622,19 @@ describe('URL 노브 — 수면 값을 밖에서 연다', () => {
     const d = withSearch('?wns=1.5&wrough=0.4&wflow=3', () => {
       const { inst } = mount('night');
       return inst.diagnostics!() as {
-        gloss: { normalScale: number; roughness: number; sparkle: number };
-        glossKnob: { ns: number | null; rough: number | null; flow: number | null };
+        gloss: { normalScale: number; roughness: number; sparkle: number; opacity: number };
+        glossKnob: {
+          ns: number | null; rough: number | null; flow: number | null; opa: number | null;
+        };
         flowMps: number;
       };
     });
-    // 반짝임은 노브로 지정하지 않았으므로 밤 기본값이 그대로 온다 — 노브 셋만 덮인다.
-    expect(d.gloss).toEqual({
-      normalScale: 1.5, roughness: 0.4, sparkle: waterGloss('night').sparkle,
-    });
-    expect(d.glossKnob).toEqual({ ns: 1.5, rough: 0.4, flow: 3 });
+    // 반짝임·투명도는 노브로 지정하지 않았으므로 기본값이 그대로 온다 — 셋만 덮인다.
+    expect(d.gloss.normalScale).toBe(1.5);
+    expect(d.gloss.roughness).toBe(0.4);
+    expect(d.gloss.sparkle).toBe(waterGloss('night').sparkle);
+    expect(d.gloss.opacity).toBeGreaterThan(0);   // 상수 기본값이 살아 있다
+    expect(d.glossKnob).toEqual({ ns: 1.5, rough: 0.4, flow: 3, opa: null });
     expect(d.flowMps).toBe(3);
   });
 
@@ -621,11 +644,13 @@ describe('URL 노브 — 수면 값을 밖에서 연다', () => {
     const d = withSearch('', () => {
       const { inst } = mount('day');
       return inst.diagnostics!() as {
-        glossKnob: { ns: number | null; rough: number | null; flow: number | null };
+        glossKnob: {
+          ns: number | null; rough: number | null; flow: number | null; opa: number | null;
+        };
         flowMps: number;
       };
     });
-    expect(d.glossKnob).toEqual({ ns: null, rough: null, flow: null });
+    expect(d.glossKnob).toEqual({ ns: null, rough: null, flow: null, opa: null });
     // 그래도 실제로 쓰이는 유속은 기본값이다 — "미지정"이 "0"이 되면 강이 멈춘다.
     expect(d.flowMps).toBeGreaterThan(0);
   });
@@ -658,10 +683,11 @@ describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
-  it('★ 문서에 바가 있으면 수면 노브 넷이 붙는다', () => {
-    // 셋 → 넷. 흰 윤슬 세기(`wspark`)가 늘었다(감독 지시 2026-07-31 "흰 반짝임효과").
+  it('★ 문서에 바가 있으면 수면 노브 다섯이 붙는다', () => {
+    // 셋 → 넷(흰 윤슬 `wspark`) → 다섯(수면 투명도 `wopa`). 해저에 자갈이 깔리면서
+    // "얼마나 비쳐야 좋은가" 가 비로소 고를 수 있는 값이 됐다(감독 지시 2026-07-31).
     mount('day');
-    expect(inputs().length).toBe(4);
+    expect(inputs().length).toBe(5);
     expect(document.getElementById('w2-sliders')!.hidden).toBe(false);
   });
 
@@ -691,9 +717,9 @@ describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
       inst.system!.update({ dt: 1 } as never);
       return Math.hypot(uv[0] - before[0], uv[1] - before[1]);
     };
-    push(inputs()[3], '0.5');
+    push(inputs()[4], '0.5');
     const slow = shift();
-    push(inputs()[3], '5');
+    push(inputs()[4], '5');
     const fast = shift();
     expect(fast).toBeGreaterThan(slow * 1.5);
   });
@@ -751,7 +777,7 @@ describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
 
   it('★ dispose 가 바를 걷는다 — 해제된 재질을 만지는 핸들러가 남으면 안 된다', () => {
     const { inst } = mount('day');
-    expect(inputs().length).toBe(4);
+    expect(inputs().length).toBe(5);
     inst.dispose!();
     expect(inputs().length).toBe(0);
     expect(document.getElementById('w2-sliders')!.hidden).toBe(true);
@@ -808,6 +834,30 @@ describe('물살 — 강 UV 가 정점마다 제 방향으로 밀린다', () => 
     b.inst.system!.update({ dt: 2 } as never);
     b.inst.system!.update({ dt: 2 } as never);
     for (let i = 0; i < once.length; i++) expect(b.uv[i]).toBeCloseTo(once[i], 9);
+  });
+
+  it('★ 되감기가 없다 — 타일 경계를 넘어도 이동량이 일정하다 (감독 "이동하다가 끊기네")', () => {
+    // ── 왜 이 축이 따로 필요한가 (뮤테이션 실측 2026-07-31) ────────────────────
+    // `% RIPPLE_M` 되감기를 **그대로 되살려도 62건 전부 통과했다.** 감독이 실기기에서
+    // 직접 본 결함인데 방어선이 하나도 없었다.
+    //
+    // 옆의 "누적하지 않는다" 테스트가 못 잡는 이유: 그것은 *같은 t 면 같은 UV 인가* 를
+    // 보는데, 되감기가 있어도 그 성질은 참이다. 되감기는 **시간을 가로질러야** 드러난다.
+    //
+    // 되감기의 실제 증상은 "어느 한 순간 무늬가 튄다" 이다. 그러니 같은 dt 를 계속 주며
+    // **매 스텝 이동량이 일정한지**를 본다 — 되감는 순간 한 스텝만 값이 달라진다.
+    // 흐름이 단위벡터라 되감긴 위치가 타일 격자와 안 맞기 때문이다.
+    const { inst, uv } = riverUv();
+    const steps: number[] = [];
+    let prev = [...uv];
+    // 기본 유속 1.1 m/s · RIPPLE_M 16m → 약 14.5초마다 되감긴다. 40초를 돌면 두 번 겪는다.
+    for (let i = 0; i < 40; i++) {
+      inst.system!.update({ dt: 1 } as never);
+      steps.push(Math.hypot(uv[0] - prev[0], uv[1] - prev[1]));
+      prev = [...uv];
+    }
+    const spread = Math.max(...steps) - Math.min(...steps);
+    expect(spread, '스텝마다 이동량이 다르다 — 되감기가 무늬를 튀게 한다').toBeLessThan(1e-9);
   });
 
   it('UV 속성에 needsUpdate 를 세운다 — 안 세우면 GPU 버퍼가 안 올라간다', () => {

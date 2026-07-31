@@ -105,6 +105,11 @@ const FLOW_KNOB = 'wflow', FLOW_MIN = 0, FLOW_MAX = 10, FLOW_STEP = 0.1;
 // 발광이 물빛을 이겨 수면이 하얗게 뜨는데, **그 과한 지점을 볼 수 있어야** 감독이
 // 어디까지가 좋은지 고를 수 있다. 노브의 상한은 안전선이 아니라 탐색 범위다.
 const SPARK_KNOB = 'wspark', SPARK_MIN = 0, SPARK_MAX = 2, SPARK_STEP = 0.05;
+// 수면 불투명도(감독 지시 2026-07-31 "투명하게 보이는 효과는 어때"). 해저 자갈이
+// 깔리면서 **얼마나 비쳐야 좋은가**가 비로소 고를 수 있는 값이 됐다 — 그전에는 물
+// 아래가 단색이라 투명도를 바꿔도 볼 것이 없었다.
+// 0 이면 물이 사라지고 1 이면 자갈이 안 보인다. 양 끝을 다 볼 수 있어야 중간을 고른다.
+const OPA_KNOB = 'wopa', OPA_MIN = 0, OPA_MAX = 1, OPA_STEP = 0.02;
 
 /** 수면 빛깔. 밝은 청록 — 어두우면 반투명이라도 바닥이 안 비쳐 보인다 */
 const WATER = 0x8fc9dd;
@@ -134,37 +139,79 @@ const FLOW_B = { x: -0.019, z: 0.030 };
  * 테스트가 그것을 검사하므로 **export 한다**(그 목적 외에 쓰지 않는다). `u`/`v`는 0~1.
  */
 export function waveHeight(u: number, v: number): number {
-  // ── 층을 더하지 않고 **겹쳐 합성한다** (감독 지시 2026-07-31) ────────────────
-  // 감독: *"포토샵 합성기능 그런것 응용하고."*
+  // ── 사인파를 버렸다 (감독 실기기 지시 2026-07-31 "일자형 말고") ───────────────
+  // 감독이 스크린샷을 보며: *"ㅈ런. 일자형 말고."*
   //
-  // 사인파를 그냥 더하면 **평균으로 수렴한다** — 봉우리와 골이 서로를 깎아 무늬가
-  // 흐리멍덩해지고, 그것이 실기기에서 "물이 밋밋하다" 로 보인다. 진폭을 키우면
-  // 대비가 아니라 전체가 출렁일 뿐이다.
+  // 예전 판본은 사인파 넷을 겹쳤다. 그런데 **사인파는 방향을 가진 줄무늬**다 — 몇 개를
+  // 겹쳐도 각 항의 마루가 직선을 이루고, 그 직선들이 교차하며 격자·빗금이 남는다.
+  // 실기기 화면에 뜬 것이 정확히 그 빗금이었다.
   //
-  // 포토샵이 이 문제를 푸는 방법이 **블렌드 모드**다. `soft-light` 는 밝은 곳은 더
-  // 밝게, 어두운 곳은 더 어둡게 하되 **가장자리를 뭉개지 않는다** — 층을 겹쳐도
-  // 대비가 살아 있다. `overlay` 는 같은 성질을 더 세게 낸다.
+  // 더 나쁜 것은 그 직전에 내가 `soft-light` 합성으로 **대비를 올렸다**는 점이다.
+  // 무늬를 또렷하게 만든 것이 맞는데, 또렷해진 것이 하필 줄무늬였다. 층을 겹치는 방향은
+  // 옳았고 **겹칠 재료가 틀렸다.**
   //
-  // 그래서 잔물결(고주파)을 큰 너울(저주파) **위에 얹어** 합성한다. 큰 물결의 마루에서
-  // 잔물결이 도드라지고 골에서는 잦아드는데, 그것이 실제 수면이 하는 일이다.
+  // 값 노이즈는 방향이 없다. 격자점마다 독립적인 난수를 두고 보간하므로 어느 축으로
+  // 흘려도 줄이 생기지 않는다 — 물결이 물결로 보이는 최소 조건이다.
   //
-  // ── 심리스는 여전히 계수가 지킨다 ────────────────────────────────────────────
-  // 블렌드는 **같은 좌표의 두 값**을 섞을 뿐 좌표를 옮기지 않으므로, 각 층이 이미
-  // 타일 경계에서 이어지면 합성 결과도 이어진다. 그래서 아래 u·v 계수는 전부
-  // **2π의 정수배**여야 한다는 규칙이 그대로 살아 있다(테스트가 지킨다) — 예전에
-  // 1.4π 를 넣었다가 가로 솔기가 떠서 잡힌 적이 있다.
-  const swell = Math.sin(u * Math.PI * 2 + v * Math.PI * 6) * 0.5
-              + Math.sin(v * Math.PI * 4 - u * Math.PI * 2) * 0.3;
-  const ripple = Math.sin((u + v) * Math.PI * 6) * 0.6
-               + Math.sin((u - v) * Math.PI * 8 + 1.1) * 0.4;
-  const fine = Math.sin((u * 3 - v) * Math.PI * 12 + 0.7) * 0.5
-             + Math.sin((u + v * 2) * Math.PI * 16 + 2.2) * 0.5;
+  // ── 심리스는 이제 **주기 wrap** 이 보증한다 ──────────────────────────────────
+  // 예전에는 "계수가 2π 정수배" 라는 규칙으로 타일을 이었고, 그 규칙을 어겨 가로 솔기가
+  // 뜬 적이 있다(사람이 지켜야 하는 규칙이었다). 노이즈는 다르다 — `hash2` 가 격자
+  // 좌표를 **주기로 감아** 읽으므로 u=0 과 u=1 이 같은 격자점을 보고, 이음매가
+  // 구조적으로 존재할 수 없다. 지킬 규칙이 사람에게서 함수로 옮겨갔다.
+  //
+  // ── 합성은 그대로 남긴다 (감독 지시 "포토샵 합성기능") ──────────────────────
+  // 옥타브를 그냥 더하면 평균으로 수렴해 흐리멍덩해진다. `soft-light` 는 중립값(0.5)이
+  // 있어 층을 겹쳐도 대비가 살아 있다 — 큰 너울의 마루에서 잔물결이 도드라지고 골에서
+  // 잦아든다. 그것이 실제 수면이 하는 일이다.
+  let h = valueNoise(u, v, NOISE_OCTAVES[0]);
+  for (let i = 1; i < NOISE_OCTAVES.length; i++) {
+    h = softLight(h, valueNoise(u, v, NOISE_OCTAVES[i]));
+  }
+  // 값 노이즈는 0~1 이다. 합성 뒤 −1~1 로 펴서 예전 계약을 지킨다(소비처가 그것을 기대한다).
+  // 노이즈는 극단값이 드물어 그대로 펴면 진폭이 작다 — 1.6 배로 늘리고 잘라낸다.
+  return Math.max(-1, Math.min(1, (h * 2 - 1) * 1.6));
+}
 
-  // 블렌드는 0~1 도메인이다. −1~1 인 파동을 옮겨 섞고 마지막에 되돌린다.
-  let h = swell * 0.5 + 0.5;
-  h = softLight(h, ripple * 0.5 + 0.5);
-  h = softLight(h, fine * 0.5 + 0.5);
-  return h * 2 - 1;
+/**
+ * 노이즈 옥타브의 격자 해상도. **전부 정수**여야 타일이 감긴다 — 이 배열이 심리스의
+ * 유일한 전제이고, 소수를 넣으면 `hash2` 의 wrap 이 어긋나 이음매가 생긴다.
+ *
+ * 3(큰 너울) → 7 → 15 → 31. 2배가 아니라 **서로 소에 가깝게** 띄운다. 정확히 2배씩
+ * 늘리면 격자점이 겹쳐 층이 같은 자리에서 꺾이고, 그 자국이 다시 격자무늬로 읽힌다.
+ */
+const NOISE_OCTAVES = [3, 7, 15, 31];
+
+/**
+ * 격자 해시 — 정수 좌표 하나에 0~1 난수 하나. **주기로 감아 읽는 것**이 핵심이다.
+ *
+ * `period` 로 감기 때문에 좌표 `0` 과 `period` 가 같은 값을 받고, 그래서 타일 경계가
+ * 이어진다. 심리스를 사람이 지키는 규칙에서 **함수의 성질**로 옮긴 자리다.
+ *
+ * `Math.imul` 을 쓴다 — 일반 곱셈은 32비트를 넘으면 부동소수로 새서 해시가 뭉개진다.
+ */
+function hash2(xi: number, yi: number, period: number): number {
+  const x = ((xi % period) + period) % period;
+  const y = ((yi % period) + period) % period;
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * 심리스 값 노이즈. 타일 하나에 `freq × freq` 격자를 깔고 그 사이를 부드럽게 잇는다.
+ *
+ * 보간에 스무스스텝(`t²(3−2t)`)을 쓴다. 선형 보간이면 격자 경계에서 기울기가 꺾이고,
+ * **노멀맵은 기울기를 그대로 읽으므로** 그 꺾임이 화면에 격자 선으로 나타난다.
+ */
+function valueNoise(u: number, v: number, freq: number): number {
+  const x = u * freq, y = v * freq;
+  const x0 = Math.floor(x), y0 = Math.floor(y);
+  const fx = x - x0, fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const a = hash2(x0, y0, freq), b = hash2(x0 + 1, y0, freq);
+  const c = hash2(x0, y0 + 1, freq), d = hash2(x0 + 1, y0 + 1, freq);
+  return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
 }
 
 /**
@@ -329,6 +376,65 @@ function sparkleTexture() {
 }
 
 /**
+ * 해저 자갈(감독 지시 2026-07-31 *"바닥에 검은 돌들이 있는 심리스로 깔아서. 투명하게
+ * 보이는 효과는 어때"*).
+ *
+ * ── 이것이 물을 물로 만든다 ──────────────────────────────────────────────────
+ * 지금까지 해저는 **단색 판**이었다. 물이 반투명인데 아래에 볼 것이 없으니 방문자에게
+ * 깊이를 읽을 단서가 하나도 없었고, 그래서 물이 "색칠한 판" 으로 보였다. 반투명이라는
+ * 성질은 **뒤에 무엇이 있을 때만** 의미가 있다.
+ *
+ * 자갈이 깔리면 얕은 데선 또렷하고 깊은 데선 물빛에 묻힌다. 그 차이가 곧 깊이다 —
+ * 수면 무늬를 아무리 다듬어도 이것 없이는 물이 얕아 보이지 않는다.
+ *
+ * ── 왜 노이즈 두 겹인가 ──────────────────────────────────────────────────────
+ * 돌 하나하나를 그리지 않는다. 굵은 노이즈로 **돌덩이 크기의 얼룩**을 만들고, 잔 노이즈로
+ * 그 위에 자잘한 결을 얹는다. 물을 통해 보면 어차피 흐려지므로 형태보다 **명암의 밀도**가
+ * 중요하다 — 검은 점이 촘촘히 박힌 느낌이면 자갈로 읽힌다.
+ *
+ * 심리스는 `valueNoise` 가 보증한다(정수 주기로 감긴다).
+ */
+function pebbleTexture() {
+  const N = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = N;
+  const g = cv.getContext('2d')!;
+  const img = g.createImageData(N, N);
+  for (let y = 0; y < N; y++) {
+    for (let x = 0; x < N; x++) {
+      const u = x / N, v = y / N;
+      // 굵은 얼룩(돌덩이) 위에 잔결을 얹는다. 곱하지 않고 `soft-light` 로 겹치는 이유는
+      // 곱셈이 전체를 어둡게만 만들기 때문이다 — 밝은 자갈과 어두운 자갈이 섞여야 한다.
+      const stone = softLight(valueNoise(u, v, PEBBLE_COARSE), valueNoise(u, v, PEBBLE_FINE));
+      // 0~1 을 `PEBBLE_DARK ~ PEBBLE_LIGHT` 로 옮긴다. 아주 검은 돌이 섞여야 감독이
+      // 말한 "검은 돌" 이 되지만, 바닥 전체가 검으면 물이 구멍처럼 보인다.
+      const s = PEBBLE_DARK + stone * (PEBBLE_LIGHT - PEBBLE_DARK);
+      const i = (y * N + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = s * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  // 자갈은 물결보다 **잘게** 반복해야 돌 크기로 읽힌다. 물결 무늬(16m)와 같은 주기로
+  // 깔면 돌 하나가 방 하나만 해진다.
+  tex.repeat.set(PLANE / PEBBLE_M, PLANE / PEBBLE_M);
+  return tex;
+}
+
+/** 자갈 무늬 한 타일이 덮는 거리(미터). 사람 걸음에 돌 몇 개가 지나갈 크기 */
+const PEBBLE_M = 6;
+/** 굵은 얼룩(돌덩이) 격자 — 정수여야 심리스 */
+const PEBBLE_COARSE = 11;
+/** 잔결 격자 — 정수여야 심리스 */
+const PEBBLE_FINE = 23;
+/** 가장 어두운 돌. 0 에 너무 가까우면 물 아래가 구멍처럼 보인다 */
+const PEBBLE_DARK = 0.18;
+/** 가장 밝은 돌. 1 에 가까우면 자갈이 아니라 모래가 된다 */
+const PEBBLE_LIGHT = 0.85;
+
+/**
  * 밝기 무늬. 같은 높이장에서 굽는다 — 물마루가 밝고 골이 어둡다.
  *
  * 색은 넣지 않는다. 재질의 `color`가 색을 정하고 이 텍스처는 곱해질 뿐이라, 여기에 색을
@@ -443,7 +549,12 @@ export const oceanFeature: Feature = {
     // 실제 파도 진폭이 없는 지금은 보이는 차이가 0이다.
     const geo = new THREE.PlaneGeometry(PLANE, PLANE, 1, 1).rotateX(-Math.PI / 2);
 
-    const bedMat = new THREE.MeshStandardMaterial({ color: BED, roughness: 0.95 });
+    // 해저에 자갈을 깐다(감독 지시 2026-07-31). 단색 판이던 것이 이 텍스처 하나로
+    // **물 아래 볼 것**이 된다 — 반투명이라는 성질이 비로소 뜻을 갖는다.
+    const pebble = pebbleTexture();
+    const bedMat = new THREE.MeshStandardMaterial({
+      color: BED, roughness: 0.95, map: pebble,
+    });
     const bed = new THREE.Mesh(geo, bedMat);
     bed.position.y = SEABED_Y;
 
@@ -509,8 +620,9 @@ export const oceanFeature: Feature = {
     let nsKnob = readNumOpt(NS_KNOB, NS_MIN, NS_MAX);
     let roughKnob = readNumOpt(ROUGH_KNOB, ROUGH_MIN, ROUGH_MAX);
     let sparkKnob = readNumOpt(SPARK_KNOB, SPARK_MIN, SPARK_MAX);
+    let opaKnob = readNumOpt(OPA_KNOB, OPA_MIN, OPA_MAX);
     /** 실제로 재질에 걸린 값. 진단이 이것을 내보낸다 — 화면만 보고는 무슨 값인지 모른다 */
-    let glossNow = { normalScale: 0, roughness: 0, sparkle: 0 };
+    let glossNow = { normalScale: 0, roughness: 0, sparkle: 0, opacity: 0 };
     const applyGloss = (time: SkyTime): void => {
       const g = waterGloss(time);
       // 노브가 지정됐으면 그것이, 아니면 시간대 값이 간다. `??` 라서 `0` 도 유효한
@@ -523,8 +635,12 @@ export const oceanFeature: Feature = {
       seaMat.roughness = rough;
       // 흰 윤슬의 세기. `emissiveMap` 이 검은 바탕에 흰 점이므로 이 값은 **점만** 밝힌다.
       seaMat.emissiveIntensity = spark;
+      // 불투명도는 시간대와 무관하다 — 물의 탁도는 하루 중 시각이 아니라 물 자체의
+      // 성질이다. 그래서 노브가 없으면 상수(`OPACITY`)가 간다.
+      const opa = opaKnob ?? OPACITY;
+      seaMat.opacity = opa;
       seaMat.needsUpdate = true;
-      glossNow = { normalScale: ns, roughness: rough, sparkle: spark };
+      glossNow = { normalScale: ns, roughness: rough, sparkle: spark, opacity: opa };
     };
     let glossTime = env.time();
     applyGloss(glossTime);
@@ -568,6 +684,16 @@ export const oceanFeature: Feature = {
         overridden: () => sparkKnob !== null,
         set(v) { sparkKnob = v; writeNumOpt(SPARK_KNOB, v); applyGloss(glossTime); },
         reset() { sparkKnob = null; writeNumOpt(SPARK_KNOB, null); applyGloss(glossTime); },
+      },
+      {
+        key: OPA_KNOB, label: '투명도', min: OPA_MIN, max: OPA_MAX, step: OPA_STEP,
+        // 슬라이더를 오른쪽으로 밀수록 **물이 진해진다**(자갈이 덜 비친다).
+        // 라벨과 방향이 반대로 느껴질 수 있지만, 재질 값(`opacity`)을 그대로 보여주는
+        // 것이 진단·주소와 어긋나지 않는 유일한 방법이다.
+        value: () => glossNow.opacity,
+        overridden: () => opaKnob !== null,
+        set(v) { opaKnob = v; writeNumOpt(OPA_KNOB, v); applyGloss(glossTime); },
+        reset() { opaKnob = null; writeNumOpt(OPA_KNOB, null); applyGloss(glossTime); },
       },
       {
         key: FLOW_KNOB, label: '유속', min: FLOW_MIN, max: FLOW_MAX, step: FLOW_STEP,
@@ -750,7 +876,7 @@ export const oceanFeature: Feature = {
           gloss: glossNow,
           // 노브가 걸렸는지 자체도 내보낸다. 값만 보면 "기본값과 같은 값을 지정한 것"
           // 과 "지정 안 한 것" 이 구별되지 않고, 그것이 `readNumOpt` 를 만든 이유다.
-          glossKnob: { ns: nsKnob, rough: roughKnob, flow: flowKnob },
+          glossKnob: { ns: nsKnob, rough: roughKnob, flow: flowKnob, opa: opaKnob },
           flowMps: flowMps(),
         };
       },
@@ -767,6 +893,7 @@ export const oceanFeature: Feature = {
         geo.dispose();
         riverGeo.dispose(); // 강은 자기 지오를 갖는다(파셀 단위 쿼드 묶음)
         bedMat.dispose();
+        pebble.dispose();
         seaMat.dispose();
         normA.dispose();
         sparkle.dispose();
