@@ -81,7 +81,7 @@ const OUT_DIR = process.env.SNAPSHOT_DIR
   || path.join(process.env.TMPDIR || '/tmp', 'oas-style-snapshots');
 
 // 페이지 안에서 도는 채취 함수. 요소마다 DOM 경로를 키로 삼아 색 속성을 뽑는다.
-function collectInPage({ colorProps, layoutProps }) {
+async function collectInPage({ colorProps, layoutProps }) {
   // 요소를 가리키는 안정적인 키. id 가 있으면 그것으로 끊고, 없으면 tag:nth 체인.
   // 리팩터가 DOM 을 안 건드리는 전제이므로 경로는 전후 동일해야 한다 — 다르면 그 자체가 신호다.
   function pathOf(el) {
@@ -138,16 +138,20 @@ function collectInPage({ colorProps, layoutProps }) {
   // 리팩터에서는 원문이 바뀌는 것이 정상이라, 담으면 전량 FAIL 이 나 신호가 죽는다.
   const styleText = [];
   for (const el of document.querySelectorAll('style')) styleText.push(el.textContent || '');
+
+  // 링크된 시트는 **원문을 직접 받아온다.** CSSOM 순회로는 놓쳤다 —
+  // tokens.css 의 선언 46개 중 21개(이 페이지가 var() 로 참조하는 것)만 잡히고
+  // 나머지 25개는 안 잡혔다. 값이 해소되는 걸 보면 시트는 분명히 로드됐는데도
+  // 그랬다. 원문 fetch 는 그 층을 건너뛰므로 선언이 통째로 들어온다.
+  // (CSP 는 connect-src 'self' 라 same-origin fetch 가 허용된다.)
   let unreadableSheets = 0;
-  const walk = (list) => {
-    for (let i = 0; i < list.length; i++) {
-      const r = list[i];
-      if (r.cssRules) { walk(r.cssRules); continue; }
-      if (r.cssText) styleText.push(r.cssText);
-    }
-  };
-  for (const sheet of Array.from(document.styleSheets)) {
-    try { walk(sheet.cssRules); } catch { unreadableSheets++; }
+  const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
+  for (const link of links) {
+    try {
+      const res = await fetch(link.href);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      styleText.push(await res.text());
+    } catch { unreadableSheets++; }
   }
 
   const customNames = new Set();
@@ -158,7 +162,11 @@ function collectInPage({ colorProps, layoutProps }) {
   const tokens = {};
   const rootCS = getComputedStyle(document.documentElement);
   for (const name of Array.from(customNames).sort()) {
-    tokens[name] = rootCS.getPropertyValue(name).trim();
+    const v = rootCS.getPropertyValue(name).trim();
+    // 값이 비면 담지 않는다. 정규식이 **주석 안 문구**까지 긁기 때문이다
+    // (`원시 팔레트(--oas-*)는…` 같은 서술에서 `--oas-` 가 이름처럼 잡힌다).
+    // 실재하던 토큰이 사라진 경우는 이 필터를 타도 diff 가 `removed` 로 잡는다.
+    if (v) tokens[name] = v;
   }
 
   return { elements, tokens, meta: { unreadableSheets, tokenCount: customNames.size } };
