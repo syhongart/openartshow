@@ -611,13 +611,29 @@ async function recordRenderBackend(browser, origin) {
       record('10', LABEL, 'INFO', `측정실패 — stats() 에 backendDetail 없음(backend=${s.backend ?? '?'})`);
       return;
     }
-    const isGPU = s.detail.startsWith('webgpu-');
+
+    // ── 두 질문을 분리한다 (검수관 블로커 2026-07-31) ────────────────────────
+    // 처음엔 `detail.startsWith('webgpu-')` 하나로 문구를 갈랐다. 그러면
+    // **WebGPU 경로를 탔는데 hw/sw 를 못 가른 경우**(`backend==='WebGPU'` 인데
+    // `detail==='unknown'`)에 "이 환경은 WebGPU 경로를 안 탄다" 를 찍는다 — 거짓이고,
+    // 뒤에 붙는 근거("하드웨어/소프트웨어를 가를 근거 없음")와 한 줄 안에서 모순이 난다.
+    //
+    // **이 커밋이 막으려던 사고의 거울상이다.** 폴백을 WebGPU 로 오해하는 것을 막으려다
+    // 반대 방향 오해를 새로 만들었다. 두 질문은 서로 다른 값이 답한다:
+    //   · 경로를 탔는가        → `backend`(프로브가 실제로 고른 것)
+    //   · hw/sw 를 가렸는가    → `detail`(근거가 충분했는가)
+    const tookWebGPU = s.backend === 'WebGPU';
+    const resolved = s.detail !== 'unknown';
     const gl = s.ev?.glRenderer ? ` · GL="${String(s.ev.glRenderer).slice(0, 70)}"` : '';
     const why = s.ev?.note ? ` · ${s.ev.note}` : '';
-    record('10', LABEL, 'INFO',
-      isGPU
-        ? `${s.detail}${gl}${why}`
-        : `${s.detail} — **WebGPU 미측정**(이 환경은 WebGPU 경로를 안 탄다. 실기기 판정 아님)${gl}${why}`);
+
+    let verdict;
+    if (tookWebGPU && resolved) verdict = s.detail;                       // 탔고 가렸다
+    else if (tookWebGPU) verdict = `${s.detail} — WebGPU 경로는 탔으나 **하드웨어/소프트웨어 미확정**`;
+    else if (resolved) verdict = `${s.detail} — **WebGPU 미측정**(이 환경은 WebGPU 경로를 안 탄다. 실기기 판정 아님)`;
+    else verdict = `${s.detail} — **측정 미확정**(WebGPU 경로도 안 탔고 GL 근거도 못 읽었다)`;
+
+    record('10', LABEL, 'INFO', `${verdict}${gl}${why}`);
   } catch (e) {
     record('10', LABEL, 'INFO', `측정실패 — ${(e.message || String(e)).slice(0, 120)}`);
   } finally {
