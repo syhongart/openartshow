@@ -13,10 +13,14 @@
 <meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-07-22-eeea77.html">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"C-1 후속 — ui-hud.ts strict화 (@ts-nocheck 소거 착수)","datePublished":"2026-07-22","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-07-22-eeea77.html","inLanguage":"ko"}</script>
 <link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
-<style>
-:root{--gold:#5f9e7d;--gold-text:#3d6b50;--paper:#fdfbf5;--paper-deep:#f6f1e4;--panel:#fffdf9;
---ink:#17140f;--ink-body:#57503f;--ink-dim:#6b6459;--line:#e6dfcf;--g100:#e3efe7;--g300:#8fd0ab;
---g500:#5f9e7d;--g600:#4e8a6a;--g700:#3f7a5c;--g800:#2c5844;--g900:#14261d;--r:3px;
+<style>:root { --oas-green-100: #e3efe7; --oas-green-300: #8fd0ab; --oas-green-500: #5f9e7d; --oas-green-600: #4e8a6a; --oas-green-700: #3f7a5c; --oas-green-800: #2c5844; --oas-green-900: #14261d; --oas-green-text: #1e6742; --oas-vivid: #1fd677; --oas-vivid-hi: #25e481; --oas-vivid-ink: #0d2417; --oas-violet-100: #EAE5FF; --oas-violet-300: #AB99FF; --oas-violet-500: #8B72FF; --oas-violet-600: #6C4DFF; --oas-violet-ink: #5733FF; --oas-cyan-500: #72E6E1; --oas-cyan-600: #26D9D1; --oas-coral-500: #FF705E; --oas-coral-600: #FF331A; --oas-coral-900: #660B00; --oas-coral-ink: #CC1700; --oas-violet-soft: rgba(139,114,255,0.5); --oas-dark-anchor: #14151A; --oas-dark-1: #1F2128; --oas-dark-2: #2A2C37; --oas-dark-line: #3A3D4B; --oas-paper: #fdfbf5; --oas-paper-deep: #f6f1e4; --oas-ivory: #F3F0E9; --oas-white: #ffffff; --oas-sand-100: #efe6d3; --oas-sand-300: #ddccae; --oas-panel: #fffdf9; --oas-ink: #17140f; --oas-ink-cool: #202124; --oas-ink-body: #57503f; --oas-ink-dim: #6b6459; --oas-border-light: #e6dfcf; --oas-warm-gray-300: #cfc6b8; --oas-warm-gray-500: #a49a8c; --oas-on-dark: #F5F5F2; --oas-on-dark-warm: #f2f2f0; --oas-on-dark-dim: #9A9EB1; --oas-on-dark-dim-warm: #a6a6a4; --oas-danger: #b0503f; --oas-accent: var(--oas-green-500); --oas-accent-ink: var(--oas-green-text); --oas-accent-soft: var(--oas-green-300); --oas-accent-deep: var(--oas-green-600); --oas-cta: var(--oas-vivid); --oas-cta-hi: var(--oas-vivid-hi); --oas-cta-label: var(--oas-vivid-ink); --oas-cta-ink: var(--oas-green-800); --oas-status: var(--oas-cyan-500); --oas-status-hi: var(--oas-cyan-600); --oas-warn: var(--oas-coral-500); --oas-warn-hi: var(--oas-coral-600); --oas-warn-ink: var(--oas-coral-ink); --oas-shadow-card-hover: 0 16px 32px rgba(20, 38, 29, 0.08); --oas-shadow-card-hover-deep: 0 20px 40px rgba(63, 122, 92, 0.18); }
+/* 색: tokens.css 의 원시 팔레트를 셸 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+:root{--gold:var(--oas-green-500);--gold-text:var(--oas-green-text);--paper:var(--oas-paper);
+--paper-deep:var(--oas-paper-deep);--panel:var(--oas-panel);
+--ink:var(--oas-ink);--ink-body:var(--oas-ink-body);--ink-dim:var(--oas-ink-dim);
+--line:var(--oas-border-light);--g100:var(--oas-green-100);--g300:var(--oas-green-300);
+--g500:var(--oas-green-500);--g600:var(--oas-green-600);--g700:var(--oas-green-700);
+--g800:var(--oas-green-800);--g900:var(--oas-green-900);--r:3px;
 --wrap-w:760px;--lead-mb:34px;--lh:1.75}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);

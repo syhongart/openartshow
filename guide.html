@@ -22,15 +22,18 @@
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
 <style>
   :root {
-    /* 팔레트 B — 액센트: 콘텐츠 영역(라이트/다크 전환) vs 톱바·히어로(항상 다크 몰입 고정) */
-    --accent: #5733FF;        /* --violet-ink — 라이트 에디토리얼 링크·active·정체성 */
-    --accent-dark: #8B72FF;   /* --violet-500 — 톱바·히어로(항상 다크 배경) 정체성·링크 고정값 */
-    --ink: #14151A;           /* --bg-dark 팔레트 B 다크 앵커 — 히어로 배경 · 스텝 배지 등 항상-다크 칩 */
-    --paper: #F3F0E9;         /* --bg-light 라이트 에디토리얼 아이보리 (구 --paper #fbfbfa 폐기) */
-    --paper-2: #efe6d3;       /* --neutral-sand-100 샌드베이지 (구 --paper-2 #f2f1ee 폐기) */
-    --line: #cfc6b8;          /* --neutral-warm-gray-300 테두리 기본값 */
-    --text: #202124;          /* --text-dark */
-    --text-dim: #6b6459;      /* --ink-dim (웜그레이 딥 — 보조 텍스트) */
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다.
+       그린 전환(2026-07-30, 태스크 #154) — 이름은 옛 팔레트 B 잔재. 이 블록은 라이트 표면
+       기본값(paper=ivory)이라 --accent는 -ink 딥변형(라이트 3:1/4.5:1 기준용). --accent-dark는
+       .topnav/.brand가 얹히는 상시 다크 히어로 밴드 전용이라 테마 무관하게 다크값 그대로. */
+    --accent: var(--oas-accent-ink);
+    --accent-dark: var(--oas-accent);
+    --ink: var(--oas-dark-anchor);
+    --paper: var(--oas-ivory);
+    --paper-2: var(--oas-sand-100);
+    --line: var(--oas-warm-gray-300);
+    --text: var(--oas-ink-cool);
+    --text-dim: var(--oas-ink-dim);
     color-scheme: light dark;
   }
 
@@ -107,7 +110,7 @@
   /* ------------------------------------------------------------------ hero */
   .hero {
     background:
-      radial-gradient(ellipse at 30% 0%, rgba(139,114,255,0.14), transparent 55%),
+      radial-gradient(ellipse at 30% 0%, rgba(95,158,125,0.14), transparent 55%),
       var(--ink);
     color: #fff;
     padding: 72px clamp(18px, 6vw, 64px) 64px;
@@ -351,7 +354,7 @@
     border-radius: 6px;
     padding: 20px;
   }
-  .diff-card.gold { border-color: rgba(139,114,255,0.5); background: linear-gradient(180deg, rgba(139,114,255,0.06), transparent 40%); }
+  .diff-card.gold { border-color: rgba(61,107,80,0.5); background: linear-gradient(180deg, rgba(61,107,80,0.06), transparent 40%); }  /* 라이트 표면 — green-text(ink) rgb */
   .diff-card h4 { margin: 0 0 8px; font-weight: 500; font-size: 15px; }
   .diff-card ul { margin: 10px 0 0; padding-left: 18px; font-size: 13.5px; color: var(--text-dim); }
   .diff-card ul li { margin-bottom: 6px; }
@@ -398,7 +401,7 @@
   footer .brand .w-lead { color: var(--accent); }
   footer .brand .dot { color: var(--text-dim); }
   footer p { color: var(--text-dim); font-size: 13px; margin: 12px 0 0; }
-  footer a.mail { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(87,51,255,0.4); }
+  footer a.mail { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(61,107,80,0.4); }  /* 라이트 표면 — green-text(ink) rgb */
 
   /* --------------------------------------------------------------- mobile */
   @media (max-width: 880px) {
@@ -430,12 +433,13 @@
   /* -------------------------------------------------------- dark mode */
   @media (prefers-color-scheme: dark) {
     :root {
-      --accent: #8B72FF;      /* 다크 몰입: 콘텐츠 영역도 원색 바이올렛으로 전환 */
-      --paper: #14151A;       /* --bg-dark 팔레트 B 다크 앵커 */
-      --paper-2: #1F2128;     /* --surface-dark-1 */
-      --line: #3A3D4B;        /* --border-dark */
-      --text: #F5F5F2;        /* --text-light */
-      --text-dim: #9A9EB1;    /* --text-light-dim */
+      /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+      --accent: var(--oas-accent);
+      --paper: var(--oas-dark-anchor);
+      --paper-2: var(--oas-dark-1);
+      --line: var(--oas-dark-line);
+      --text: var(--oas-on-dark);
+      --text-dim: var(--oas-on-dark-dim);
     }
     .card { background: var(--paper-2); }
     .key {
@@ -444,15 +448,16 @@
       box-shadow: 0 2px 0 var(--paper), 0 3px 3px rgba(0,0,0,0.4);
       color: var(--text);
     }
-    footer a.mail { border-bottom-color: rgba(139,114,255,0.4); }
+    footer a.mail { border-bottom-color: rgba(95,158,125,0.4); }
   }
   :root[data-theme="dark"] {
-    --accent: #8B72FF;
-    --paper: #14151A;
-    --paper-2: #1F2128;
-    --line: #3A3D4B;
-    --text: #F5F5F2;
-    --text-dim: #9A9EB1;
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+    --accent: var(--oas-accent);
+    --paper: var(--oas-dark-anchor);
+    --paper-2: var(--oas-dark-1);
+    --line: var(--oas-dark-line);
+    --text: var(--oas-on-dark);
+    --text-dim: var(--oas-on-dark-dim);
   }
   :root[data-theme="dark"] .card { background: var(--paper-2); }
   :root[data-theme="dark"] .key {
@@ -461,16 +466,17 @@
     box-shadow: 0 2px 0 var(--paper), 0 3px 3px rgba(0,0,0,0.4);
     color: var(--text);
   }
-  :root[data-theme="dark"] footer a.mail { border-bottom-color: rgba(139,114,255,0.4); }
+  :root[data-theme="dark"] footer a.mail { border-bottom-color: rgba(95,158,125,0.4); }
   :root[data-theme="light"] {
-    --accent: #5733FF;
-    --paper: #F3F0E9;
-    --paper-2: #efe6d3;
-    --line: #cfc6b8;
-    --text: #202124;
-    --text-dim: #6b6459;
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+    --accent: var(--oas-accent-ink);
+    --paper: var(--oas-ivory);
+    --paper-2: var(--oas-sand-100);
+    --line: var(--oas-warm-gray-300);
+    --text: var(--oas-ink-cool);
+    --text-dim: var(--oas-ink-dim);
   }
-  :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(87,51,255,0.4); }
+  :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(61,107,80,0.4); }  /* green-text(ink) rgb */
 
   /* ---------- P1-①: skip-link + focus-visible (기존 focus 스타일 0 — 최소 보강) ---------- */
   .skip-link {
@@ -501,6 +507,7 @@
   }
 </style>
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-BtfeuGbd.css">
 </head>
 <body>
 

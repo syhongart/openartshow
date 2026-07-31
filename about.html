@@ -29,18 +29,27 @@
      app/ 배포 시 CTA 404를 발견해 근본 해결한 것(deploy.yml에 cp web/about.html _site/about.html 추가). -->
 <style>
   :root {
-    /* 팔레트 B — 액센트: 콘텐츠 영역(라이트/다크 전환) vs 톱바·히어로(항상 다크 몰입 고정) — guide.html과 동일 SSOT */
-    --accent: #5733FF;        /* --violet-ink — 라이트 에디토리얼 링크·정체성 */
-    --accent-dark: #8B72FF;   /* --violet-500 — 톱바·히어로(항상 다크 배경) 정체성 고정값 */
-    --ink: #14151A;           /* --bg-dark 팔레트 B 다크 앵커 */
-    --paper: #F3F0E9;         /* --bg-light 라이트 에디토리얼 아이보리 */
-    --paper-2: #efe6d3;       /* --neutral-sand-100 샌드베이지 */
-    --line: #cfc6b8;          /* --neutral-warm-gray-300 테두리 기본값 */
-    --text: #202124;          /* --text-dark */
-    --text-dim: #6b6459;      /* --ink-dim (웜그레이 딥 — 보조 텍스트) */
-    /* CTA 전용 — 코랄(§3-2 규율, landing.html과 동일 SSOT). 에디토리얼 바이올렛과는 분리 */
-    --coral: #FF705E;
-    --coral-hover: #FF331A;
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다.
+       그린 전환(2026-07-30, 태스크 #154) — 이름은 옛 팔레트 B 잔재. 이 블록은 라이트 표면
+       기본값(paper=ivory)이라 --accent는 -ink 딥변형. --accent-dark는 .topnav/.brand 다크
+       히어로 밴드 전용, 테마 무관.
+       --coral(CTA, .btn-coral)은 라이트 표면 위 필박스 채움이라 vivid(1.69:1)는 UI 기준
+       미달(§3-4/발주 (4)) — cta-ink(딥그린, 채움 대 배경 7.13:1)로 바꾸되, 채움이 밝음→어두움
+       방향이 뒤집혀 그 위 글자색도 어두운 잉크(#14151A 고정)에서 밝은 라벨로 같이 바꿔야
+       읽힌다(안 바꾸면 어두운 채움 위 어두운 글자로 접근성 회귀). 다크 테마에선 원래 설계대로
+       vivid 채움 + 어두운 라벨(vivid-ink, 8.54:1)로 되돌아간다 — 아래 다크 오버라이드 3곳에서
+       --coral/--coral-hover/--coral-label 을 함께 재정의한다. */
+    --accent: var(--oas-accent-ink);
+    --accent-dark: var(--oas-accent);
+    --ink: var(--oas-dark-anchor);
+    --paper: var(--oas-ivory);
+    --paper-2: var(--oas-sand-100);
+    --line: var(--oas-warm-gray-300);
+    --text: var(--oas-ink-cool);
+    --text-dim: var(--oas-ink-dim);
+    --coral: var(--oas-cta-ink);        /* 라이트 표면 채움 */
+    --coral-hover: var(--oas-green-900); /* hover — 더 짙게 */
+    --coral-label: var(--oas-on-dark);  /* 딥그린 채움 위 밝은 라벨 */
     /* 에세이 전용 타이포 토큰 */
     --fs-body-lg: clamp(16px, 1.55vw, 18px);
     --lh-body-loose: 1.85;
@@ -119,7 +128,7 @@
   /* ------------------------------------------------------------------ hero */
   .hero {
     background:
-      radial-gradient(ellipse at 30% 0%, rgba(139,114,255,0.14), transparent 55%),
+      radial-gradient(ellipse at 30% 0%, rgba(95,158,125,0.14), transparent 55%),
       var(--ink);
     color: #fff;
     padding: 88px clamp(18px, 6vw, 64px) 76px;
@@ -229,15 +238,15 @@
   }
   .btn-coral {
     background: var(--coral);
-    color: #14151A;
+    color: var(--coral-label);
     border: 1px solid var(--coral);
   }
   .btn-coral:hover {
     background: var(--coral-hover);
     border-color: var(--coral-hover);
-    color: #fff;
+    color: var(--coral-label);
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(20,21,26,0.16), 0 0 20px 3px rgba(255,112,94,0.35);
+    box-shadow: 0 8px 20px rgba(20,21,26,0.16), 0 0 20px 3px rgba(31,214,119,0.35);
   }
   .btn-outline {
     background: transparent;
@@ -261,7 +270,7 @@
   footer .brand .w-lead { color: var(--accent); }
   footer .brand .dot { color: var(--text-dim); }
   footer p { color: var(--text-dim); font-size: 13px; margin: 12px 0 0; }
-  footer a.mail { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(87,51,255,0.4); }
+  footer a.mail { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(61,107,80,0.4); }  /* green-text(ink) rgb */
 
   /* --------------------------------------------------------------- mobile */
   @media (max-width: 640px) {
@@ -280,35 +289,47 @@
   /* -------------------------------------------------------- dark mode */
   @media (prefers-color-scheme: dark) {
     :root {
-      --accent: #8B72FF;      /* 다크 몰입: 콘텐츠 영역도 원색 바이올렛으로 전환 */
-      --paper: #14151A;       /* --bg-dark 팔레트 B 다크 앵커 */
-      --paper-2: #1F2128;     /* --surface-dark-1 */
-      --line: #3A3D4B;        /* --border-dark */
-      --text: #F5F5F2;        /* --text-light */
-      --text-dim: #9A9EB1;    /* --text-light-dim */
+      /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다.
+         --coral 3종은 다크 표면으로 돌아가므로 원래 설계(vivid 채움 + 어두운 라벨)로 복귀. */
+      --accent: var(--oas-accent);
+      --paper: var(--oas-dark-anchor);
+      --paper-2: var(--oas-dark-1);
+      --line: var(--oas-dark-line);
+      --text: var(--oas-on-dark);
+      --text-dim: var(--oas-on-dark-dim);
+      --coral: var(--oas-cta);
+      --coral-hover: var(--oas-cta-hi);
+      --coral-label: var(--oas-cta-label);
     }
-    .btn-coral { color: #14151A; }
     .btn-outline { color: var(--text); }
-    footer a.mail { border-bottom-color: rgba(139,114,255,0.4); }
+    footer a.mail { border-bottom-color: rgba(95,158,125,0.4); }
   }
   :root[data-theme="dark"] {
-    --accent: #8B72FF;
-    --paper: #14151A;
-    --paper-2: #1F2128;
-    --line: #3A3D4B;
-    --text: #F5F5F2;
-    --text-dim: #9A9EB1;
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+    --accent: var(--oas-accent);
+    --paper: var(--oas-dark-anchor);
+    --paper-2: var(--oas-dark-1);
+    --line: var(--oas-dark-line);
+    --text: var(--oas-on-dark);
+    --text-dim: var(--oas-on-dark-dim);
+    --coral: var(--oas-cta);
+    --coral-hover: var(--oas-cta-hi);
+    --coral-label: var(--oas-cta-label);
   }
-  :root[data-theme="dark"] footer a.mail { border-bottom-color: rgba(139,114,255,0.4); }
+  :root[data-theme="dark"] footer a.mail { border-bottom-color: rgba(95,158,125,0.4); }
   :root[data-theme="light"] {
-    --accent: #5733FF;
-    --paper: #F3F0E9;
-    --paper-2: #efe6d3;
-    --line: #cfc6b8;
-    --text: #202124;
-    --text-dim: #6b6459;
+    /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+    --accent: var(--oas-accent-ink);
+    --paper: var(--oas-ivory);
+    --paper-2: var(--oas-sand-100);
+    --line: var(--oas-warm-gray-300);
+    --text: var(--oas-ink-cool);
+    --text-dim: var(--oas-ink-dim);
+    --coral: var(--oas-cta-ink);
+    --coral-hover: var(--oas-green-900);
+    --coral-label: var(--oas-on-dark);
   }
-  :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(87,51,255,0.4); }
+  :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(61,107,80,0.4); }  /* green-text(ink) rgb */
 
   /* ---------- P1-①: skip-link + focus-visible (기존 focus 스타일 0 — 최소 보강) ---------- */
   .skip-link {
@@ -338,6 +359,7 @@
   }
 </style>
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-BtfeuGbd.css">
 </head>
 <body>
 
