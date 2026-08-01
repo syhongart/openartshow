@@ -252,11 +252,33 @@ export const RIVER_HALF = 24;
  *
  * `null` 을 쓰는 이유는 `0` 이 유효한 높이이기 때문이다. "물이 아니다" 를 숫자로 표현할
  * 방법이 없다.
+ *
+ * ── ★ 파셀 단위로 답한다 — `isRiver` 를 직접 쓰지 않는다 (감독 발견 2026-08-01) ──
+ * 감독: *"강 가기 전에 빠져."*
+ *
+ * 처음에는 `isRiver(wx, wz, cell)` 로 **연속 좌표** 판정을 했다. 그런데 **지면은 파셀
+ * 단위로 그려진다** — `parcelWater` 가 `'water'` 로 분류한 칸만 지면을 안 그리고, 그
+ * 구멍으로 수면이 드러난다(`stream.ts` 가 물 파셀을 아예 안 만든다).
+ *
+ * 두 해상도가 다르면 **땅을 밟고 서서 물로 판정되는 띠**가 생긴다. 파셀 중심이 강
+ * 중심선에서 `RIVER_HALF` 보다 멀면 그 칸은 뭍이라 지면이 깔리는데, 칸은 중심 ±`cell/2`
+ * 를 덮으므로 그 가장자리는 여전히 강 띠 안이다. 최악의 경우 **반 칸(16m)을 먼저**
+ * 빠진다 — 감독이 본 것이 이것이다.
+ *
+ * *"물에 빠진다"* 는 것은 **발밑에 땅이 없다**는 뜻이고, 땅의 유무는 파셀이 정한다.
+ * 그러니 판정도 파셀이어야 한다. 화면에 구멍이 보이는 자리와 정확히 일치한다.
+ *
+ * 이것은 값이 틀린 것이 아니라 **재는 축의 해상도가 달랐던 것**이다 — 이 저장소가
+ * `parcelWater` 주석에 *"파셀보다 정밀한 판정은 그릴 방법이 없다"* 고 적어 두고도,
+ * 물빠짐을 붙이면서 그보다 정밀한 판정을 새로 만들었다.
  */
 export function waterSurfaceY(wx: number, wz: number, cell: number): number | null {
   const half = worldHalfExtent(cell);
   if (Math.abs(wx) > half || Math.abs(wz) > half) return SEA_Y;   // 세계 밖 = 바다
-  return isRiver(wx, wz, cell) ? RIVER_Y : null;
+  // 이 좌표가 **속한 파셀**을 묻는다. 파셀 `p` 의 중심이 `p·cell` 이므로 반올림이다.
+  const px = Math.round(wx / cell);
+  const pz = Math.round(wz / cell);
+  return parcelWater(px, pz, cell, cell) === 'water' ? RIVER_Y : null;
 }
 
 /**
