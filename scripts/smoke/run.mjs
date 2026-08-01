@@ -575,6 +575,36 @@ async function runPerfGates(origin, browser) {
     record(8, perfLabel('하늘 예열(첫 등장)'), 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
 
+  // ── [11] 물빠짐 상호작용 (검수관 게이트 명세 2026-07-31) ────────────────────
+  //
+  // **성능 게이트가 아니다 — `perfStatus`/`perfLabel` 을 쓰지 않고 언제나 판정한다.**
+  // `[7][8]` 이 observe 로 내려가는 근거는 "러너 성능 편차의 거짓 FAIL" 인데, 이 검사는
+  // 성능 수치를 재지 않는다. 물에 들어갔는가·오버레이가 칠해졌는가·걸어 나올 수 있는가는
+  // 전부 이산 판정이라 편차가 없다.
+  //
+  // 왜 신설했나: `[7]` 이 PASS 였지만 **뭍에서만 걸은 결과**였다. 실측으로 강까지 37m
+  // 모자랐고, 스모크 원문 어디에도 "물빠짐 미실행" 이라는 단서가 없었다. 판정과 집행이
+  // 연결돼 있다는 것(단위 테스트가 본다)과 **브라우저에서 한 번이라도 돌았다**는 것은
+  // 다른 명제다.
+  //
+  // 이 검사는 **강 좌표를 모른다** — `stats().player.submersion` 이 0 을 넘을 때까지만
+  // 걷는다. 거리를 적으면 그 값이 곧 값 미러링이고, 강이 옮겨지는 순간 이 게이트가
+  // PASS 인 채로 아무것도 안 재게 된다(`[7]` 이 정확히 그 상태였다).
+  try {
+    const { runSubmerge } = await import('./measure-submerge.mjs');
+    const r = await runSubmerge({ browser, origin, basePath: BASE_PATH, log: quiet });
+    record(
+      11, '물빠짐 상호작용', r.pass ? 'PASS' : 'FAIL',
+      r.pass
+        ? `진입 ${r.ticksToWater}틱 · 최대 잠김 ${r.peak} · overlay "${r.overlayAtPeak}"`
+          + ` · hud/map ${r.hud}/${r.map} · 복귀 ${r.backOut}`
+        : `${r.reason} → \`npm run measure:submerge\` 로 단독 실행해 본다`,
+    );
+  } catch (e) {
+    // 못 잰 것은 통과가 아니다 — `[7][8]` 과 같은 규약.
+    record(11, '물빠짐 상호작용', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
   await recordRenderBackend(browser, origin);
 }
 
@@ -705,6 +735,11 @@ async function main() {
       // 안다. **못 잰 것이 침묵으로 통과가 되는** 이 저장소의 상시 위험 형태다(검수관 R6).
       record(7, '개수 불변식(세션)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(8, '하늘 예열(첫 등장)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      // `[11]` 도 같이 적는다(검수관 비블로커 2026-07-31). 이 검사는 성능 게이트가
+      // 아니지만 `runPerfGates()` 안에 배선돼 있어 `off` 면 함께 안 돈다. 흔적을 안
+      // 남기면 **리포트에서 통째로 사라져** "스모크: 통과" 만 보인다 — 바로 위 두 줄이
+      // 막으려던 그 형태를 `[11]` 에서 새로 만든 셈이었다.
+      record(11, '물빠짐 상호작용', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
     }
   } finally {
     if (browser) await browser.close().catch(() => {});

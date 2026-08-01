@@ -4,6 +4,7 @@
 // 엉켜 "대각선이 빠른" 정규화 버그를 오래 못 잡았는데, 그건 계산만 따로 볼 수 없어서였다.
 
 import type { FrameCtx, System } from '../kernel.js';
+import { stepSubmersion, eyeYAt, underwaterAlpha, swimSpeedMult } from '../decide/swim.js';
 
 export interface MoveInput {
   forward: boolean;
@@ -140,6 +141,28 @@ export interface PlayerOptions {
   start?: { x: number; z: number };
   /** 카메라에 위치·회전을 반영한다 */
   applyCamera?: (x: number, y: number, z: number, yaw: number, pitch: number) => void;
+
+  // ── 물에 빠진다 (감독 지시 2026-07-31 *"강에 사람이 빠지게해줘"*) ────────────
+  //
+  // **주입으로 받는다.** 이 파일은 `decide/water.ts` 를 import 하지 않는다 — 물의 모양을
+  // 알면 플레이어가 세계 지형에 묶이고, 테스트가 강을 만들어야 이 클래스를 돌릴 수 있게
+  // 된다. 지금은 "물이면 이 높이" 라는 함수 하나만 알면 되고, 그 함수가 강에서 오든
+  // 수영장에서 오든 여기는 모른다.
+  //
+  // 세 개를 **다 주지 않으면 물에 안 빠진다**(예전과 똑같이 동작한다). 빌더 미리보기처럼
+  // 지형이 없는 화면에서 물 판정을 붙일 이유가 없기 때문이다.
+
+  /** 이 좌표의 수면 높이(m). 물이 아니면 `null`. 안 주면 물 판정을 하지 않는다 */
+  waterSurfaceY?: (x: number, z: number) => number | null;
+  /** 해저 높이(m). 완전히 잠기면 여기에 발이 닿는다 */
+  seabedY?: number;
+  /**
+   * 물속 화면 틴트의 알파(0~1)를 매 프레임 알린다.
+   *
+   * **여기서 DOM 을 만지지 않는다.** 그리는 일은 화면 소유자(`main.ts`)의 몫이고, 이
+   * 클래스는 수치만 낸다 — 그래야 헤드리스 테스트가 알파를 직접 읽어 검사할 수 있다.
+   */
+  onSubmerge?: (alpha: number) => void;
 }
 
 export class PlayerSystem implements System {
@@ -166,6 +189,20 @@ export class PlayerSystem implements System {
    */
   private bobIntensity = 0;
 
+  /** 잠김 정도(0~1). `decide/swim.ts` 가 시간으로 진행시킨다 */
+  private submersion = 0;
+  /**
+   * 마지막으로 밟은 물의 수면 높이. 물 밖으로 나오는 **도중**에 쓴다.
+   *
+   * 물이 아니면 수면 높이가 없는데(`null`), 그렇다고 틴트를 0 으로 끊으면 뭍에 발을
+   * 딛는 순간 물속 화면이 툭 사라진다 — 아직 눈이 수면 아래인데도. 마지막 수면을
+   * 기억해 두면 눈이 실제로 올라오는 동안 틴트가 자연히 옅어진다.
+   */
+  private lastSurfaceY: number | null = null;
+  private readonly waterSurfaceY?: PlayerOptions['waterSurfaceY'];
+  private readonly seabed: number;
+  private readonly onSubmerge?: PlayerOptions['onSubmerge'];
+
   constructor(opts: PlayerOptions = {}) {
     this.speed = opts.speed ?? WALK_SPEED;
     this.eye = opts.eyeHeight ?? 1.7;
@@ -173,6 +210,11 @@ export class PlayerSystem implements System {
     this.x = opts.start?.x ?? 0;
     this.z = opts.start?.z ?? 0;
     this.apply = opts.applyCamera;
+    this.waterSurfaceY = opts.waterSurfaceY;
+    // 기본값을 두지 않는다 — 물 판정을 안 주면 어차피 안 쓰이고, 숫자를 여기 적으면
+    // `decide/water.ts` 의 `SEABED_Y` 와 값 미러링이 된다.
+    this.seabed = opts.seabedY ?? 0;
+    this.onSubmerge = opts.onSubmerge;
   }
 
   setInput(input: Partial<MoveInput>): void {
@@ -204,9 +246,12 @@ export class PlayerSystem implements System {
     // 이유: 합산하면 키보드+조이스틱 동시 입력에서 길이가 2에 가까워져 클램프가 걸리고,
     // 그 순간 조이스틱의 미세 조작이 통째로 무시된다.
     const stick = Math.hypot(this.axes.x, this.axes.z);
+    // 물속에서는 무겁다. **직전 프레임의 잠김**을 쓴다 — 이번 프레임 잠김은 이동한
+    // 뒤에야 정해지고(새 위치에서 판정한다), 한 프레임 지연은 화면에 안 보인다.
+    const speed = this.speed * swimSpeedMult(this.submersion);
     const d = stick > 0
-      ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, this.speed, ctx.dt, this.input.fast)
-      : moveDelta(this.input, this.yaw, this.speed, ctx.dt);
+      ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, speed, ctx.dt, this.input.fast)
+      : moveDelta(this.input, this.yaw, speed, ctx.dt);
     if (d.dx !== 0 || d.dz !== 0) {
       this.x += d.dx;
       this.z += d.dz;
@@ -225,11 +270,21 @@ export class PlayerSystem implements System {
     // 지수 접근. dt 를 곱해 프레임레이트가 달라도 같은 시간에 같은 만큼 따라간다.
     this.bobIntensity += (Math.min(1, ratio) - this.bobIntensity) * Math.min(1, ctx.dt * 8);
 
-    this.apply?.(
-      this.x,
-      this.eye + bobHeight(this.bobPhase, this.bobIntensity, this.bobAmp),
-      this.z, this.yaw, this.pitch,
-    );
+    // ── 물 (감독 지시 *"강에 사람이 빠지게해줘"*) ──────────────────────────────
+    // **이동한 뒤에** 판정한다. 이동 전 좌표로 물어보면 물가를 넘어선 프레임에 아직
+    // 뭍으로 읽혀, 잠김이 한 프레임 늦게 시작한다.
+    const surface = this.waterSurfaceY?.(this.x, this.z) ?? null;
+    if (surface !== null) this.lastSurfaceY = surface;
+    this.submersion = stepSubmersion(this.submersion, surface !== null, ctx.dt);
+
+    // 뭍에서의 눈높이(헤드밥 포함)를 만들어 넘긴다. 잠길수록 이 값의 기여가 줄어
+    // **헤드밥이 저절로 잦아든다** — 물속에서 흔들림을 따로 끄는 코드가 필요 없다.
+    const groundEye = this.eye + bobHeight(this.bobPhase, this.bobIntensity, this.bobAmp);
+    const eyeY = eyeYAt(this.submersion, groundEye, this.seabed, this.eye);
+
+    this.apply?.(this.x, eyeY, this.z, this.yaw, this.pitch);
+    // 물에 한 번도 안 닿았으면 수면이 없다 — 그때는 알파를 계산할 것도 없이 0 이다.
+    this.onSubmerge?.(this.lastSurfaceY === null ? 0 : underwaterAlpha(eyeY, this.lastSurfaceY));
   }
 
   get position(): { x: number; z: number } { return { x: this.x, z: this.z }; }
@@ -240,4 +295,6 @@ export class PlayerSystem implements System {
     return (keys || stick) ? this.moveDir : facing(this.yaw);
   }
   get angles(): { yaw: number; pitch: number } { return { yaw: this.yaw, pitch: this.pitch }; }
+  /** 잠김 정도(0~1). 0 = 마른 땅, 1 = 완전히 가라앉음 */
+  get submerged(): number { return this.submersion; }
 }

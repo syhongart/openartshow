@@ -16,9 +16,11 @@
 import { describe, it, expect } from 'vitest';
 import { riverCenterZ, riverFlowAt } from '../frontend/js/world2/decide/water.js';
 
+const CELL = 32;
+
 /** 중심선의 수치미분. 해석적 도함수와 대조할 독립 근거다. */
-function numericSlope(wx: number, h = 0.01): number {
-  return (riverCenterZ(wx + h) - riverCenterZ(wx - h)) / (2 * h);
+function numericSlope(wx: number, h = 0.01, cell = CELL): number {
+  return (riverCenterZ(wx + h, cell) - riverCenterZ(wx - h, cell)) / (2 * h);
 }
 
 describe('riverFlowAt — 해석적 도함수가 곡선과 맞는가', () => {
@@ -69,6 +71,27 @@ describe('riverFlowAt — 해석적 도함수가 곡선과 맞는가', () => {
       // 조용히 통과시키면 "쟀다" 로 읽힌다.
       expect(true, '[0,200] 에 기울기 영점 없음 — 이 케이스는 측정 못 함').toBe(true);
     }
+  });
+});
+
+// ── `riverFlowAt` 이 셀 크기를 안 받는 것은 **주장**이다 ─────────────────────
+// `riverCenterZ` 는 `cell` 을 받는다(기준선을 광장 크기에서 유도하므로). `riverFlowAt` 은
+// 안 받는데, 그것이 성립하는 이유는 **기준선이 상수라 도함수에서 사라지기** 때문이다.
+//
+// 그 이유가 깨지는 순간이 있다 — 누가 진폭이나 파장을 셀에 비례하게 만들면 곡선은
+// 셀마다 달라지는데 흐름은 하나로 남는다. 시그니처가 다르므로 타입 검사도 못 잡고,
+// 위 수치미분 대조도 **같은 cell 로만** 재니까 못 잡는다.
+describe('riverFlowAt — 셀 크기와 무관하다 (시그니처가 거는 약속)', () => {
+  it('★ 셀을 바꿔도 기울기가 같다 — 다르면 흐름 함수가 곡선을 못 따라간다', () => {
+    for (let wx = -600; wx <= 600; wx += 53) {
+      // 셀이 커지면 기준선만 밀린다. 기울기는 그대로여야 한다.
+      expect(numericSlope(wx, 0.01, 64)).toBeCloseTo(numericSlope(wx, 0.01, CELL), 6);
+    }
+  });
+
+  it('기준선은 셀을 따라 실제로 움직인다 — 위 단언이 빈 명제가 아님을 확인한다', () => {
+    // 셀이 커져도 곡선이 통째로 그대로면 위 검사는 아무것도 안 잰 셈이 된다.
+    expect(riverCenterZ(0, 64)).not.toBeCloseTo(riverCenterZ(0, CELL), 6);
   });
 });
 

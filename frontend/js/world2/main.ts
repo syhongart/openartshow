@@ -15,6 +15,7 @@ import { PooledParcelBuilder } from './systems/parcel-builder.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
+import { waterSurfaceY as surfaceYAt, SEABED_Y } from './decide/water.js';
 import { AdaptSystem } from './systems/adapt.js';
 import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
@@ -132,6 +133,19 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const eyeHeight = readNum('eye', 1.7, 0.5, 3);
   const bobAmplitude = readNum('bob', BOB_AMPLITUDE, 0, 0.2);
 
+  // 물속 틴트 판. 마크업은 `world2.html` 에 있고 색도 거기 있다 — 여기서는 세기만
+  // 실어 나른다. 요소가 없어도(구버전 HTML 캐시) 그냥 안 보일 뿐 터지지 않는다.
+  const underwaterEl = document.getElementById('w2-underwater');
+  /**
+   * 마지막으로 쓴 알파. **값이 같으면 안 쓴다**(검수관 비블로커 권고 2026-07-31).
+   *
+   * 뭍에서는 알파가 계속 0 인데 매 프레임 `style.opacity` 를 재대입하면 스타일 무효화가
+   * 매번 걸린다. 단일 속성이라 비용은 작지만, 이 저장소는 "작다는 게 근거 없이 해도
+   * 된다는 뜻은 아니다" 를 이미 한 번 적었다. `-1` 로 시작하는 것은 첫 프레임에 반드시
+   * 한 번 쓰이게 하려는 것이다(알파는 0 이상이라 절대 같아지지 않는다).
+   */
+  let lastAlpha = -1;
+
   const player = new PlayerSystem({
     start: { x: SPAWN.x, z: SPAWN.z },
     speed: walkSpeed,
@@ -140,6 +154,22 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     applyCamera: (x, y, z, yaw, pitch) => {
       camera.position.set(x, y, z);
       camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    },
+    // ── 물에 빠진다 (감독 지시 2026-07-31 *"강에 사람이 빠지게해줘"*) ───────────
+    // 지형을 아는 것은 조립부(여기)뿐이다. `PlayerSystem` 은 "이 좌표가 물이면 수면이
+    // 여기" 라는 함수 하나만 받고 강도 바다도 모른다.
+    //
+    // **`CELL_Z` 다**(검수관 조건 2026-07-31). 처음에 `CELL_X` 를 넘겼는데, 강 기준선은
+    // 광장을 **z 방향**으로 재서 유도하고(`decide/water.ts` 의 `riverBase`) `parcelWater`
+    // 도 z 쪽에 `cellZ` 를 준다. 지금은 두 셀이 32 로 같아 관측 가능한 차이가 0 이라
+    // 어떤 테스트도 안 걸렸겠지만, `water.ts:316` 주석이 경고하는 형태 그대로였다 —
+    // *"`cellX` 를 넘기면 두 셀이 달라지는 날 강이 조용히 밀린다."*
+    waterSurfaceY: (x, z) => surfaceYAt(x, z, CELL_Z),
+    seabedY: SEABED_Y,
+    onSubmerge: (alpha) => {
+      if (!underwaterEl || alpha === lastAlpha) return;
+      lastAlpha = alpha;
+      underwaterEl.style.opacity = String(alpha);
     },
   });
 
@@ -498,7 +528,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       feel: { walkSpeed, eyeHeight, bobAmplitude },
       // 플레이어 상태 — "조작이 실제로 이동으로 이어졌는가"를 재는 유일한 지점이다.
       // 파셀 수만 봐서는 알 수 없다(정상 상태에서도 같은 값이다).
-      player: { ...player.position, ...player.angles },
+      // `submersion` 은 **게이트가 강 좌표를 몰라도 되게** 하려고 연다(검수관 명세
+      // 2026-07-31). 스모크가 "z 몇 미터까지 걸어라" 를 알아야 하면 그 거리가 곧 값
+      // 미러링이 되고, 감독이 강을 옮기는 순간 소리 없이 못 미치는 값이 된다.
+      // 이 값을 보면 스모크는 **"0 보다 커질 때까지"** 만 걸으면 된다.
+      player: { ...player.position, ...player.angles, submersion: player.submerged },
       frame: adapter!.frameStats(),
       pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
       pools: pools!.stats(),

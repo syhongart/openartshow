@@ -36,7 +36,7 @@
 // 깔린다(`features/ocean.ts` 의 `riverGeometry`); 큰 판 두 장을 겹치면 반투명이 이중으로
 // 곱해져 물빛 캘리브레이션이 무효가 되기 때문이다.
 
-import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid } from './grid.js';
+import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid, PLAZA_R } from './grid.js';
 
 // ── 강과 바다는 높이가 다르다 (감독 지시 2026-07-30) ────────────────────────
 // *"바다, 강은 중요해. 지금 보다 더 밑에 있게 하고 강은 땅보다 50 cm 밑, 바다는 땅보다
@@ -111,37 +111,102 @@ export function worldHalfExtent(cell: number): number {
 }
 
 /**
+ * 강의 굽이를 만드는 파동들. **계수의 유일한 자리다.**
+ *
+ * ── 왜 배열인가 (감독 지시 2026-07-31 *"하드코딩하지말고. 코드지저분하게하지말고"*) ──
+ * 예전에는 `riverCenterZ` 와 `riverFlowAt`(도함수)에 계수가 **각각 적혀** 있었다. 같은
+ * 값이 두 곳에 사는 전형적인 미러링이라, 한쪽만 고치면 물이 제 방향으로 안 흐른다.
+ * 그것을 `tests/world2-river-flow.test.ts` 가 수치미분으로 **감시**하고 있었다.
+ *
+ * 감시는 어긋난 뒤에야 알려준다. 배열 하나로 합치면 **어긋날 자리가 없어진다** — 두
+ * 함수가 같은 배열을 순회하므로 계수를 고치면 도함수가 저절로 따라온다. 테스트는 남기되
+ * 이제 그것은 감시가 아니라 유도가 옳다는 확인이다.
+ *
+ * 주기가 서로 다른 둘을 겹친다. 하나면 규칙적인 물결이라 인공물처럼 보이고, 둘이면
+ * 되풀이 주기가 최소공배수로 밀려나 눈에 안 띈다(도로의 "바둑판 말고" 와 같은 해법).
+ * 주 파동의 주기는 2π×150 ≈ 942m 로 세계 폭(960m)과 비슷해 가로지르며 한 번 크게
+ * 굽이치고, 부 파동(2π×61 ≈ 383m)이 그 위에 잔물결을 얹는다.
+ *
+ * **위상이 둘 다 +π/2 인 것은 우연이 아니다.** 그래야 `wx = 0`(스폰 정면)에서 두 파동이
+ * 동시에 최대가 되고, 기준선이 음수이므로(`riverBase`) 강이 스폰 쪽으로 **가장 가까이**
+ * 올라온다 — 감독 지시 *"스폰 앞 주변에 흐르는 강이있으면"* 이 그것이다. 이 값을 바꾸면
+ * 강이 스폰에서 멀어진다.
+ */
+const RIVER_WAVES = [
+  { amp: 70, len: 150, phase: Math.PI / 2 },
+  { amp: 30, len: 61, phase: Math.PI / 2 },
+] as const;
+
+/** 굽이의 진폭 합(미터). 중심선이 기준선에서 벗어날 수 있는 최대 거리다 */
+const RIVER_SWING = RIVER_WAVES.reduce((a, w) => a + w.amp, 0);
+
+/**
+ * 강과 **광장 밖 첫 링** 사이에 두는 최소 거리(미터). 기준이 무엇인지는 `riverBase`.
+ *
+ * 0 이면 강이 그 링의 파셀 중심에 딱 걸린다. 광장은 스폰 지점이므로 물가에 발을 걸친 채
+ * 시작하는 셈이고, 경계에 딱 붙으면 부동소수 다툼으로 어느 쪽이 될지도 정해지지 않는다.
+ * 한 칸의 1/4 을 띄운다.
+ */
+const RIVER_PLAZA_GAP = 8;
+
+/**
+ * 강 중심선의 기준선(미터). **유도한다 — 이 값을 손으로 적지 않는다.**
+ *
+ * ── 예전에는 +180 이라는 상수였다 ───────────────────────────────────────────
+ * 그 자리에 "왜 180 인가" 를 설명하는 긴 주석이 붙어 있었다. 광장을 비켜 가려는 값이라는
+ * 설명이었는데, **설명할 수 있다는 것은 유도할 수 있다는 뜻이다.** 그리고 그 주석은
+ * 광장 가장자리를 **32** 로 적고 있었다 — `PLAZA_R = 1` 에 셀 32 면 3×3 이라 실제
+ * 가장자리는 **48** 이다. 손으로 적은 값이 손으로 적은 설명과도 어긋나 있었다.
+ *
+ * 유도로 바꾸면 광장을 넓히든 강 폭을 바꾸든 굽이를 키우든 **저절로 따라온다.**
+ *
+ * ── 부호가 음수인 이유 (감독 지시 *"스폰 앞 주변에 흐르는 강이있으면"*) ────────
+ * 스폰은 `SPAWN = {x:0, z:10}` 이고 기본 시선 `yaw = 0` 은 **-z** 를 본다(`grid.ts`).
+ * 그러니 **+z 는 등 뒤다.** 예전 강(+180)은 돌아서야 보였고, 그 상태로 "스폰 앞" 을
+ * 만족한다고 적으면 부호 하나로 지시가 뒤집힌다. 강을 -z 쪽에 둔다.
+ *
+ * 그러면 스폰에서 본 구도가 **분수대(원점) → 시계탑(북쪽 칸) → 강** 이 된다.
+ *
+ * `wx = 0` 에서 파동은 최대(`+RIVER_SWING`, 위상 +π/2)이므로 중심선은 `기준선 + 진폭합`
+ * 으로 광장에 가장 가까워지고, 거기서 강 가장자리는 다시 `RIVER_HALF` 만큼 더 광장
+ * 쪽이다. 그 가장자리를 아래 기준점에서 `RIVER_PLAZA_GAP` 만큼 띄운다.
+ *
+ * ── 기준점은 광장 **가장자리**가 아니다 (처음에 그렇게 적었다가 실패했다) ──────
+ * 처음 유도는 `(PLAZA_R + 0.5) × cell`(광장의 기하학적 가장자리)이었다. 통과할 것 같지만
+ * **광장 전체가 뭍이다** 검사가 `'shore'` 로 깨졌다. `parcelWater` 는 파셀을 **중심
+ * 좌표**로 판정하므로, 강이 광장 바로 바깥 링의 파셀 중심까지 오면 그 칸이 `'water'` 가
+ * 되고 광장 칸은 그 이웃이라 `'shore'` 가 된다.
+ *
+ * 그러니 기준은 **광장 밖 첫 링 파셀의 중심**이다. 기하학적 가장자리와 반 칸(16m)
+ * 차이인데, 그 반 칸이 검사 하나를 가르는 크기였다.
+ *
+ * 옛 상수 `180` 은 이 조건을 만족하고 있었지만 **우연이었다** — 최근접 지점이 파셀 중심
+ * x 격자(32의 배수) 사이에 떨어져 있었을 뿐이다. 유도로 바꾸니 우연이 사라지고 조건이
+ * 드러났다.
+ */
+function riverBase(cell: number): number {
+  const firstRingCenter = (PLAZA_R + 1) * cell;
+  return -(firstRingCenter + RIVER_PLAZA_GAP + RIVER_HALF + RIVER_SWING);
+}
+
+/**
  * 강 중심선. x 를 따라 흐르고 z 가 굽이친다.
  *
- * 사인파 **둘**을 겹친다. 하나면 규칙적인 물결이라 인공물처럼 보이고, 주기가 다른 둘을
- * 더하면 되풀이 주기가 최소공배수로 밀려나 눈에 안 띈다. 도로에서 "바둑판 말고"를 풀 때와
- * 같은 문제이고 같은 해법이다.
- *
- * 진폭 합이 130m — 파셀 4개분이라 도시를 가로지르며 눈에 띄게 휜다.
+ * @param wx 월드 x 좌표
+ * @param cell 파셀 한 변(미터). 기준선이 광장 크기에서 유도되므로 필요하다.
+ *   **기본값을 두지 않는다** — `decide/` 가 셀 크기를 알면 그것이 곧 값 미러링이고
+ *   (`worldHalfExtent`·`parcelWater` 가 같은 규약이다), 기본값을 주려면 `parts/` 를
+ *   import 해야 해서 계층까지 뒤집힌다.
  */
-export function riverCenterZ(wx: number): number {
-  // ── 상수 180 은 **중앙 광장을 비켜 가려는 것**이다 ─────────────────────────
-  // 예전 값은 45 였고, 그때 이 주석은 "원점을 강에서 비켜 놓는다"고 적고 있었다.
-  // 원점 한 점만 보면 맞는 말이다 — `riverCenterZ(0) = 59.45` 라 반폭 24 밖이다.
-  //
-  // **그런데 최솟값을 안 봤다.** 45 − 34 − 15 = −4 이므로 사인이 바닥을 치는 x 에서는
-  // 강 중심이 원점 아래를 지나고, 반폭 24 를 더하면 z ∈ [−28, 20] 이 물이 된다.
-  // 중앙 광장은 2×2 파셀(±32m)이므로 **강이 광장을 관통한다.** 스폰 지점 한 점만
-  // 검사하던 테스트는 이것을 놓쳤다 — 한 점이 마른 땅인 것과 광장 전체가 마른 것은
-  // 다른 명제다.
-  //
-  // 이제 최솟값이 180 − 70 − 30 = 80 이고, 강 가장자리는 80 − 24 = 56 이다. 광장
-  // 가장자리(32)에서 24m 떨어져 있다.
-  //
-  // 사인파 **둘**을 겹치는 이유는 그대로다. 주 파동의 주기는 2π×150 ≈ 942m 로 세계
-  // 폭(960m)과 비슷해 가로지르며 한 번 크게 굽이치고, 부 파동(2π×61 ≈ 383m)이 그
-  // 위에 잔물결을 얹어 되풀이가 눈에 안 띈다.
-  return 180 + 70 * Math.sin(wx / 150) + 30 * Math.sin(wx / 61 + 1.3);
+export function riverCenterZ(wx: number, cell: number): number {
+  let z = riverBase(cell);
+  for (const w of RIVER_WAVES) z += w.amp * Math.sin(wx / w.len + w.phase);
+  return z;
 }
 
 /** 이 월드 좌표가 **강** 위인가. 바다와 나눠 둔다 — 강은 세계 안에만 있다 */
-export function isRiver(wx: number, wz: number): boolean {
-  return Math.abs(wz - riverCenterZ(wx)) < RIVER_HALF;
+export function isRiver(wx: number, wz: number, cell: number): boolean {
+  return Math.abs(wz - riverCenterZ(wx, cell)) < RIVER_HALF;
 }
 
 /**
@@ -174,15 +239,37 @@ export function isRiver(wx: number, wz: number): boolean {
 export const RIVER_HALF = 24;
 
 /**
+ * 이 월드 좌표의 **수면 높이**(m). 물이 아니면 `null`.
+ *
+ * ── 왜 `isWater` 보다 이 함수가 아래쪽인가 (감독 지시 *"강에 사람이 빠지게해줘"*) ──
+ * 플레이어를 물에 잠기게 하려면 "물인가" 만으로는 모자라다 — **어느 물인가**를 알아야
+ * 한다. 강과 바다는 수면 높이가 50cm 다르고(`RIVER_Y` vs `SEA_Y`), 그 차이는 감독이
+ * 직접 지시한 것이라 뭉개면 안 된다.
+ *
+ * 소비자가 `isRiver` 를 다시 불러 높이를 고르게 두면 **"어느 물인가" 판정이 두 곳에
+ * 생긴다.** 그래서 여기서 한 번에 답하고, `isWater` 를 이 함수 위에 다시 세웠다 —
+ * 둘이 갈라질 자리가 원리적으로 없어진다.
+ *
+ * `null` 을 쓰는 이유는 `0` 이 유효한 높이이기 때문이다. "물이 아니다" 를 숫자로 표현할
+ * 방법이 없다.
+ */
+export function waterSurfaceY(wx: number, wz: number, cell: number): number | null {
+  const half = worldHalfExtent(cell);
+  if (Math.abs(wx) > half || Math.abs(wz) > half) return SEA_Y;   // 세계 밖 = 바다
+  return isRiver(wx, wz, cell) ? RIVER_Y : null;
+}
+
+/**
  * 월드 좌표가 물인가. **이 함수가 유일한 답이다.**
  *
  * `cell` 을 받는 이유는 세계 경계가 격자에서 유도되기 때문이다 — 격자는 파셀 단위로
  * 세어지고 여기는 미터로 묻는다. 셀 크기를 이 파일이 알면 그것이 곧 값 미러링이다.
+ *
+ * **판정 자체는 `waterSurfaceY` 가 한다.** 예전에는 여기에 세계 경계 검사와 강 검사가
+ * 직접 적혀 있었는데, 수면 높이를 묻는 함수가 생기면서 같은 판정이 두 벌이 될 뻔했다.
  */
 export function isWater(wx: number, wz: number, cell: number): boolean {
-  const half = worldHalfExtent(cell);
-  if (Math.abs(wx) > half || Math.abs(wz) > half) return true;  // 세계 밖 = 바다
-  return isRiver(wx, wz);
+  return waterSurfaceY(wx, wz, cell) !== null;
 }
 
 /**
@@ -226,7 +313,9 @@ export function parcelWater(px: number, pz: number, cellX: number, cellZ: number
   // 광장을 지키는 것은 `tests/world2-water.test.ts` 의 "강 중심선이 광장에 닿지 않는다"
   // 다. 누가 진폭을 키우면 그 테스트가 깨진다(실제로 강을 옛 위치로 되돌리는 뮤테이션을
   // 잡았다).
-  if (isRiver(px * cellX, pz * cellZ)) return 'water';
+  // 강 기준선은 광장 가장자리를 **z 방향으로** 재서 유도하므로 `cellZ` 를 넘긴다
+  // (`riverBase`). `cellX` 를 넘기면 두 셀이 달라지는 날 강이 조용히 밀린다.
+  if (isRiver(px * cellX, pz * cellZ, cellZ)) return 'water';
   // 물가 — 자기는 뭍인데 네 이웃 중 하나가 물인 칸
   if (
     parcelIsWater(px + 1, pz, cellX, cellZ) ||
@@ -240,7 +329,7 @@ export function parcelWater(px: number, pz: number, cellX: number, cellZ: number
 /** 이웃 판정용 — `parcelWater` 를 재귀 호출하면 물가의 물가까지 번진다 */
 function parcelIsWater(px: number, pz: number, cellX: number, cellZ: number): boolean {
   if (!inGrid(px, pz)) return true;
-  return isRiver(px * cellX, pz * cellZ);
+  return isRiver(px * cellX, pz * cellZ, cellZ);
 }
 
 // ── 수면 광택 — 시간대별 (감독 지시 2026-07-31 "반짝임부터 살려봐") ────────────
@@ -332,8 +421,10 @@ export function waterGloss(time: SkyTime): WaterGloss {
 // 실측하거나 근사할 필요가 없다 — 미분 한 번이면 정확하다. 그리고 유도해 두면
 // `riverCenterZ` 의 계수를 바꿔도 흐름이 저절로 따라온다(값 미러링이 안 생긴다).
 //
-//   z(x)  = 180 + 70·sin(x/150) + 30·sin(x/61 + 1.3)
-//   z'(x) = (70/150)·cos(x/150) + (30/61)·cos(x/61 + 1.3)
+// 계수를 여기 다시 적지 않는다 — 그것이 `RIVER_WAVES` 를 만든 이유다. 일반형만 적는다:
+//
+//   z(x)  = base + Σ ampᵢ·sin(x/lenᵢ + phaseᵢ)
+//   z'(x) =        Σ (ampᵢ/lenᵢ)·cos(x/lenᵢ + phaseᵢ)      ← base 는 상수라 사라진다
 //
 // ── 왜 단위벡터인가 (중요) ──────────────────────────────────────────────────
 // 방향만 정점마다 다르고 **속력은 모두 같아야 한다.** 속력이 다르면 정점마다 UV 가
@@ -354,11 +445,12 @@ export interface RiverFlow {
  * @returns 단위벡터. 크기는 항상 1 이다(위 주석의 "속력은 같아야 한다").
  */
 export function riverFlowAt(wx: number): RiverFlow {
-  // `riverCenterZ` 의 도함수. 계수는 그 함수와 **같은 자리에서 읽어야** 하지만
-  // TypeScript 로 자동 미분을 할 수는 없으므로, 대신 두 함수를 붙여 두고
-  // `tests/world2-river-flow.test.ts` 가 **수치미분과 대조해** 어긋나면 깨지게 한다.
-  // 그것이 여기서 값 미러링을 막는 방법이다 — 주석이 아니라 테스트가 지킨다.
-  const dzdx = (70 / 150) * Math.cos(wx / 150) + (30 / 61) * Math.cos(wx / 61 + 1.3);
+  // `riverCenterZ` 의 도함수 — **같은 배열에서 유도한다.** 예전에는 계수를 여기 다시
+  // 적었고 테스트가 수치미분으로 감시했는데, 이제 어긋날 자리 자체가 없다.
+  // 기준선(`riverBase`)은 상수라 미분하면 사라지므로 `cell` 을 받을 필요가 없다.
+  let dzdx = 0;
+  for (const w of RIVER_WAVES) dzdx += (w.amp / w.len) * Math.cos(wx / w.len + w.phase);
   const len = Math.hypot(1, dzdx);
   return { x: 1 / len, z: dzdx / len };
 }
+
