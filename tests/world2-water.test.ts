@@ -13,6 +13,8 @@ import { isCentralPlaza as isPlaza, GRID_MIN_X, GRID_MAX_X, PLAZA_R } from '../f
 // 지면 두께는 파츠 쪽 상수지만 **수면에서 유도되므로** 관계를 여기서 지킨다 — 두 파일에
 // 나눠 적으면 어느 쪽 테스트에도 경계가 안 걸린다(판정/집행 분리의 그 구멍).
 import { GROUND_DEPTH } from '../frontend/js/world2/parts/ground.js';
+// 물 판정 API 가 전제하는 "정사각 셀" 을 검사로 고정하려면 실제 레이아웃이 필요하다.
+import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
 
 const CELL = 32;
 /** 세계의 바깥 가장자리(미터) — 격자에서 유도된다 */
@@ -267,6 +269,23 @@ describe('waterSurfaceY — 강과 바다를 가른다', () => {
 
   it('뭍에서는 null 이다 — 0 이 아니다(0 은 유효한 높이다)', () => {
     expect(waterSurfaceY(0, 0, CELL)).toBeNull();
+  });
+
+  // ── 이 API 는 정사각 셀을 전제한다 (검수관 조건 2026-07-31) ──────────────
+  // `worldHalfExtent`·`waterSurfaceY`·`isWater`·`riverCenterZ` 는 전부 **단일 `cell`**
+  // 을 받는다. x·z 스케일이 갈라지면 그 시그니처로는 표현할 방법이 아예 없다.
+  //
+  // 검수관이 `main.ts` 에서 `CELL_X` 를 넘기던 것을 잡았고(강 기준선은 z 방향 유도라
+  // `CELL_Z` 가 맞다) 그 자리는 고쳤다. 하지만 **고친 것은 호출 한 줄이고, 전제 자체는
+  // 여전히 암묵적이다** — 누가 레이아웃을 직사각으로 바꾸면 물 판정이 조용히 틀린다.
+  //
+  // 그래서 전제를 검사로 만든다. 이 단언이 깨지는 날은 "값을 고칠 날" 이 아니라
+  // **API 시그니처를 고칠 날**이라는 신호다.
+  it('★ 물 판정 API 가 전제하는 정사각 셀이 실제로 정사각이다', () => {
+    expect(DEFAULT_LAYOUT.cellX).toBe(DEFAULT_LAYOUT.cellZ);
+    // 위 단언이 참인 동안에는 이 파일이 쓰는 `CELL` 이 곧 레이아웃의 셀이어야 한다 —
+    // 아니면 여기서 재는 것과 실제 세계가 다른 셀로 계산된다.
+    expect(CELL).toBe(DEFAULT_LAYOUT.cellX);
   });
 
   it('★ `isWater` 와 한 치도 어긋나지 않는다 — 판정이 갈리면 SSOT 가 아니다', () => {

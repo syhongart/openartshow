@@ -136,6 +136,15 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 물속 틴트 판. 마크업은 `world2.html` 에 있고 색도 거기 있다 — 여기서는 세기만
   // 실어 나른다. 요소가 없어도(구버전 HTML 캐시) 그냥 안 보일 뿐 터지지 않는다.
   const underwaterEl = document.getElementById('w2-underwater');
+  /**
+   * 마지막으로 쓴 알파. **값이 같으면 안 쓴다**(검수관 비블로커 권고 2026-07-31).
+   *
+   * 뭍에서는 알파가 계속 0 인데 매 프레임 `style.opacity` 를 재대입하면 스타일 무효화가
+   * 매번 걸린다. 단일 속성이라 비용은 작지만, 이 저장소는 "작다는 게 근거 없이 해도
+   * 된다는 뜻은 아니다" 를 이미 한 번 적었다. `-1` 로 시작하는 것은 첫 프레임에 반드시
+   * 한 번 쓰이게 하려는 것이다(알파는 0 이상이라 절대 같아지지 않는다).
+   */
+  let lastAlpha = -1;
 
   const player = new PlayerSystem({
     start: { x: SPAWN.x, z: SPAWN.z },
@@ -149,10 +158,18 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     // ── 물에 빠진다 (감독 지시 2026-07-31 *"강에 사람이 빠지게해줘"*) ───────────
     // 지형을 아는 것은 조립부(여기)뿐이다. `PlayerSystem` 은 "이 좌표가 물이면 수면이
     // 여기" 라는 함수 하나만 받고 강도 바다도 모른다.
-    waterSurfaceY: (x, z) => surfaceYAt(x, z, CELL_X),
+    //
+    // **`CELL_Z` 다**(검수관 조건 2026-07-31). 처음에 `CELL_X` 를 넘겼는데, 강 기준선은
+    // 광장을 **z 방향**으로 재서 유도하고(`decide/water.ts` 의 `riverBase`) `parcelWater`
+    // 도 z 쪽에 `cellZ` 를 준다. 지금은 두 셀이 32 로 같아 관측 가능한 차이가 0 이라
+    // 어떤 테스트도 안 걸렸겠지만, `water.ts:316` 주석이 경고하는 형태 그대로였다 —
+    // *"`cellX` 를 넘기면 두 셀이 달라지는 날 강이 조용히 밀린다."*
+    waterSurfaceY: (x, z) => surfaceYAt(x, z, CELL_Z),
     seabedY: SEABED_Y,
     onSubmerge: (alpha) => {
-      if (underwaterEl) underwaterEl.style.opacity = String(alpha);
+      if (!underwaterEl || alpha === lastAlpha) return;
+      lastAlpha = alpha;
+      underwaterEl.style.opacity = String(alpha);
     },
   });
 
