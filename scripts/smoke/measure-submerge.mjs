@@ -164,12 +164,21 @@ export async function runSubmerge({ browser, origin, basePath, log = console.log
     // ── ② 더 걸어 실제로 가라앉는지 ──────────────────────────────────────────
     let peak = 0;
     let overlayAtPeak = null;
+    // ── HUD·미니맵은 **매 틱 누적으로** 판정한다 (검수관 비블로커 2026-07-31) ──
+    // 처음에는 peak 시점의 스냅샷 하나만 봤다. 그러면 구간 중간에 HUD 가 잠깐 가려졌다
+    // 마지막 틱에 다시 보이는 경우를 못 잡는다 — 물에 빠진 순간 조작 UI 가 깜빡이는
+    // 것은 "나갈 길을 못 찾는다" 는 이 기능의 실패 모드 그 자체다.
+    // 지금 그런 플리커가 날 근거는 없지만, **없을 근거가 있다는 것과 검사가 본다는 것은
+    // 다른 일이다.** 한 번이라도 안 보이면 그 값이 남는다.
     let hud = 'unknown', map = 'unknown';
+    const worst = (prev, now) => (prev === 'unknown' || prev === 'shown' ? now : prev);
     for (let i = 0; i < SINK_TICKS; i++) {
       await page.waitForTimeout(TICK_MS);
       const p = await probe(page);
       const s = num(p.submersion) ?? 0;
-      if (s >= peak) { peak = s; overlayAtPeak = p.overlay; hud = p.hud; map = p.map; }
+      if (s >= peak) { peak = s; overlayAtPeak = p.overlay; }
+      hud = worst(hud, p.hud);
+      map = worst(map, p.map);
     }
     await drive(page, 'move', 0, 0);
     log(`최대 잠김: ${peak} · overlay="${overlayAtPeak}" · hud=${hud} map=${map}`);
@@ -180,12 +189,16 @@ export async function runSubmerge({ browser, origin, basePath, log = console.log
     await drive(page, 'move', 0, 1);
     let backOut = false;
     let endOverlay = null;
-    for (let i = 0; i < RETURN_TICKS; i++) {
+    let returnTicks = null;
+    for (let i = 1; i <= RETURN_TICKS; i++) {
       await page.waitForTimeout(TICK_MS);
       const p = await probe(page);
-      if (num(p.submersion) === 0) { backOut = true; endOverlay = p.overlay; break; }
+      if (num(p.submersion) === 0) { backOut = true; endOverlay = p.overlay; returnTicks = i; break; }
     }
     await drive(page, 'move', 0, 0);
+    // 복귀 틱을 남긴다(검수관 비블로커) — ⓔ 가 FAIL 일 때 "못 나왔다" 와 "느리게
+    // 나왔다" 를 가르는 유일한 수치다.
+    log(`복귀: ${backOut ? `${returnTicks}틱` : `실패(${RETURN_TICKS}틱 상한)`} · overlay="${endOverlay}"`);
 
     // ── 판정 (검수관 명세 ⓐ~ⓔ) ──────────────────────────────────────────────
     const bad = [];
@@ -205,7 +218,7 @@ export async function runSubmerge({ browser, origin, basePath, log = console.log
     return {
       pass: bad.length === 0,
       reason: bad.join(' · '),
-      peak, ticksToWater, overlayAtPeak, hud, map, backOut, errors,
+      peak, ticksToWater, overlayAtPeak, hud, map, backOut, returnTicks, errors,
     };
   } finally {
     await context.close().catch(() => {});
@@ -230,7 +243,7 @@ async function cli() {
     console.log('');
     console.log(r.pass ? '  ✓ PASS — 물에 들어갔다 나왔고 화면·조작이 온전하다.' : `  ✗ FAIL — ${r.reason}`);
     console.log(`    진입 ${r.ticksToWater}틱 · 최대 잠김 ${r.peak} · overlay "${r.overlayAtPeak}"`);
-    console.log(`    hud=${r.hud} map=${r.map} 복귀=${r.backOut}`);
+    console.log(`    hud=${r.hud} map=${r.map} 복귀=${r.backOut}${r.returnTicks ? ` (${r.returnTicks}틱)` : ""}`);
     for (const e of r.errors.slice(0, 10)) console.log(`    에러: ${e}`);
     process.exitCode = r.pass ? 0 : 1;
   } finally {
