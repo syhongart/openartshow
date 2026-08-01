@@ -26,6 +26,32 @@
   body{font-family:'Pretendard','NanumGothic',system-ui,sans-serif}
   #w2-canvas{display:block;width:100vw;height:100vh;touch-action:none}
 
+  /* ── 물속 (감독 지시 2026-07-31 "강에 사람이 빠지게해줘") ──────────────────
+     카메라를 수면 아래로 내리는 것만으로는 **물속으로 안 읽힌다.** 물 판이
+     FrontSide 라 아래에서는 안 보이고, 위를 올려다보면 하늘이 그대로 있어서
+     물에 잠긴 게 아니라 땅에 파묻힌 것처럼 보인다.
+
+     scene.fog 를 물빛으로 바꾸는 길은 버렸다 — 하늘 시스템이 매 프레임 안개색을
+     시간대에 맞춰 덮어써서 둘이 싸우고, WebGL/WebGPU 렌더 경로 차이도 탄다.
+     화면 오버레이는 두 백엔드에서 똑같이 동작한다(이 저장소의 백엔드 사각을
+     피하는 정석 수단이다).
+
+     **색은 여기가 SSOT 이고 세기는 `decide/swim.ts` 가 SSOT 다.** JS 는 opacity
+     하나만 만진다 — 색을 JS 로 넘기면 같은 물빛이 두 곳에 살게 된다.
+
+     z-index 5 — 캔버스(기본 0) 위, UI(6~10) 아래. 물에 빠졌다고 지도·HUD 가
+     물빛에 잠기면 나갈 길을 못 찾는다.
+
+     가장자리를 더 짙게 해 시야가 좁아진 느낌을 준다. 단색 한 장이면 화면에
+     색유리를 댄 것처럼 보이지 물에 잠긴 것으로는 안 보인다.
+
+     transition 을 걸지 않는다 — 잠김 보간은 `stepSubmersion` 이 시간으로 이미
+     하고 있다. 여기에 또 걸면 두 보간이 겹쳐 물 밖에 나온 뒤에도 색이 남는다. */
+  #w2-underwater{
+    position:fixed;inset:0;z-index:5;pointer-events:none;opacity:0;
+    background:radial-gradient(120% 100% at 50% 45%, #0d4256 0%, #05202e 100%);
+  }
+
   /* ── 로딩 화면 ─────────────────────────────────────────────────────────
      바 보간을 CSS transition에 맡긴다. 로딩 중에는 메인 스레드가 가장 바쁘므로
      JS로 애니메이션을 돌리면 그 애니메이션부터 끊기고, 끊기는 진행바는
@@ -317,7 +343,7 @@
     #w2-sliders-toggle .caret,#w2-sliders-toggle,.w2-slide-pin,.w2-slide-reset{transition:none}
   }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/world2-BBz7g_dc.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/world2-D0HduIrK.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-DFA7_gjf.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-webgpu-B9hxrwvo.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-BlbV7Ge8.js">
@@ -329,6 +355,9 @@
 </head>
 <body>
   <canvas id="w2-canvas"></canvas>
+
+  <!-- 물속 틴트. `aria-hidden` — 화면에만 있는 연출이라 읽어 줄 내용이 없다 -->
+  <div id="w2-underwater" aria-hidden="true"></div>
 
   <div id="w2-loading" data-detail="minimal">
     <div id="w2-loading-center">
