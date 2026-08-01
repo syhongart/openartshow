@@ -528,7 +528,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       feel: { walkSpeed, eyeHeight, bobAmplitude },
       // 플레이어 상태 — "조작이 실제로 이동으로 이어졌는가"를 재는 유일한 지점이다.
       // 파셀 수만 봐서는 알 수 없다(정상 상태에서도 같은 값이다).
-      player: { ...player.position, ...player.angles },
+      // `submersion` 은 **게이트가 강 좌표를 몰라도 되게** 하려고 연다(검수관 명세
+      // 2026-07-31). 스모크가 "z 몇 미터까지 걸어라" 를 알아야 하면 그 거리가 곧 값
+      // 미러링이 되고, 감독이 강을 옮기는 순간 소리 없이 못 미치는 값이 된다.
+      // 이 값을 보면 스모크는 **"0 보다 커질 때까지"** 만 걸으면 된다.
+      player: { ...player.position, ...player.angles, submersion: player.submerged },
       frame: adapter!.frameStats(),
       pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
       pools: pools!.stats(),

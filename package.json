@@ -18,7 +18,8 @@
     "smoke:live": "node scripts/smoke/verify-live.mjs",
     "snapshot:styles": "node scripts/smoke/snapshot-styles.mjs",
     "measure:sky-warm": "node scripts/smoke/measure-sky-warm.mjs",
-    "measure:invariants": "node scripts/smoke/measure-invariants.mjs"
+    "measure:invariants": "node scripts/smoke/measure-invariants.mjs",
+    "measure:submerge": "node scripts/smoke/measure-submerge.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
