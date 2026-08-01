@@ -15,6 +15,7 @@ import { PooledParcelBuilder } from './systems/parcel-builder.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
+import { waterSurfaceY as surfaceYAt, SEABED_Y } from './decide/water.js';
 import { AdaptSystem } from './systems/adapt.js';
 import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
@@ -132,6 +133,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const eyeHeight = readNum('eye', 1.7, 0.5, 3);
   const bobAmplitude = readNum('bob', BOB_AMPLITUDE, 0, 0.2);
 
+  // 물속 틴트 판. 마크업은 `world2.html` 에 있고 색도 거기 있다 — 여기서는 세기만
+  // 실어 나른다. 요소가 없어도(구버전 HTML 캐시) 그냥 안 보일 뿐 터지지 않는다.
+  const underwaterEl = document.getElementById('w2-underwater');
+
   const player = new PlayerSystem({
     start: { x: SPAWN.x, z: SPAWN.z },
     speed: walkSpeed,
@@ -140,6 +145,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     applyCamera: (x, y, z, yaw, pitch) => {
       camera.position.set(x, y, z);
       camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    },
+    // ── 물에 빠진다 (감독 지시 2026-07-31 *"강에 사람이 빠지게해줘"*) ───────────
+    // 지형을 아는 것은 조립부(여기)뿐이다. `PlayerSystem` 은 "이 좌표가 물이면 수면이
+    // 여기" 라는 함수 하나만 받고 강도 바다도 모른다.
+    waterSurfaceY: (x, z) => surfaceYAt(x, z, CELL_X),
+    seabedY: SEABED_Y,
+    onSubmerge: (alpha) => {
+      if (underwaterEl) underwaterEl.style.opacity = String(alpha);
     },
   });
 

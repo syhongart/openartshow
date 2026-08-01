@@ -239,15 +239,37 @@ export function isRiver(wx: number, wz: number, cell: number): boolean {
 export const RIVER_HALF = 24;
 
 /**
+ * 이 월드 좌표의 **수면 높이**(m). 물이 아니면 `null`.
+ *
+ * ── 왜 `isWater` 보다 이 함수가 아래쪽인가 (감독 지시 *"강에 사람이 빠지게해줘"*) ──
+ * 플레이어를 물에 잠기게 하려면 "물인가" 만으로는 모자라다 — **어느 물인가**를 알아야
+ * 한다. 강과 바다는 수면 높이가 50cm 다르고(`RIVER_Y` vs `SEA_Y`), 그 차이는 감독이
+ * 직접 지시한 것이라 뭉개면 안 된다.
+ *
+ * 소비자가 `isRiver` 를 다시 불러 높이를 고르게 두면 **"어느 물인가" 판정이 두 곳에
+ * 생긴다.** 그래서 여기서 한 번에 답하고, `isWater` 를 이 함수 위에 다시 세웠다 —
+ * 둘이 갈라질 자리가 원리적으로 없어진다.
+ *
+ * `null` 을 쓰는 이유는 `0` 이 유효한 높이이기 때문이다. "물이 아니다" 를 숫자로 표현할
+ * 방법이 없다.
+ */
+export function waterSurfaceY(wx: number, wz: number, cell: number): number | null {
+  const half = worldHalfExtent(cell);
+  if (Math.abs(wx) > half || Math.abs(wz) > half) return SEA_Y;   // 세계 밖 = 바다
+  return isRiver(wx, wz, cell) ? RIVER_Y : null;
+}
+
+/**
  * 월드 좌표가 물인가. **이 함수가 유일한 답이다.**
  *
  * `cell` 을 받는 이유는 세계 경계가 격자에서 유도되기 때문이다 — 격자는 파셀 단위로
  * 세어지고 여기는 미터로 묻는다. 셀 크기를 이 파일이 알면 그것이 곧 값 미러링이다.
+ *
+ * **판정 자체는 `waterSurfaceY` 가 한다.** 예전에는 여기에 세계 경계 검사와 강 검사가
+ * 직접 적혀 있었는데, 수면 높이를 묻는 함수가 생기면서 같은 판정이 두 벌이 될 뻔했다.
  */
 export function isWater(wx: number, wz: number, cell: number): boolean {
-  const half = worldHalfExtent(cell);
-  if (Math.abs(wx) > half || Math.abs(wz) > half) return true;  // 세계 밖 = 바다
-  return isRiver(wx, wz, cell);
+  return waterSurfaceY(wx, wz, cell) !== null;
 }
 
 /**
