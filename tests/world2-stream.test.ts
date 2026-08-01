@@ -50,7 +50,7 @@ describe('computeWant — 물은 담기지 않는다', () => {
   // 때문이다(`riverCenterZ` 참고). 그래서 "물이 실제로 걸러지는가"는 강 근처에서
   // 봐야 한다. 원점에서 보면 물이 하나도 없어 **아무것도 검사하지 않은 통과**가 된다.
   const atRiver = () => {
-    const cz = Math.round(riverCenterZ(0) / CELL);
+    const cz = Math.round(riverCenterZ(0, CELL) / CELL);
     return {
       raw: computeWant({ cx: 0, cz, dirX: 0, dirZ: 0, have: have() }),
       open: computeWant({ cx: 0, cz, dirX: 0, dirZ: 0, have: have(), blocked: () => false }),

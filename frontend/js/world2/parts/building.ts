@@ -93,7 +93,7 @@ export const building: PartSpec = {
 
       // 안쪽 경계 = 셋백 + 자기 반폭 + 가로등 여유. 유도값이라 크기 상한을 바꿔도
       // 저절로 따라온다(예전 `MAX_SIDE / 2` 는 `SETBACK` 에 가려 무실효였다 —
-      // `pickInQuadrant` 가 `max(SETBACK, minInset)` 을 쓰는데 7 > 4 였다).
+      // `pickInQuadrant` 가 `max(SETBACK, minInset)` 을 쓰는데 셋백이 더 컸다).
       const inset = half + (dirs.length === 0 ? 0 : SETBACK + LAMP_CLEARANCE);
       // 바깥 경계는 **겹침 반경만큼** 당긴다. 반폭만 당겼더니 처마 몫(`EAVE`)이 남아
       // 이웃 파셀 건물과 실제로 겹쳤다. 주석은 처음부터 옳았고 값만 모자랐다.
