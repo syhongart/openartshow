@@ -6,7 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, RIVER_HALF, SEA_Y, RIVER_Y,
+  isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, waterSurfaceY,
+  RIVER_HALF, SEA_Y, RIVER_Y,
 } from '../frontend/js/world2/decide/water.js';
 import { isCentralPlaza as isPlaza, GRID_MIN_X, GRID_MAX_X, PLAZA_R } from '../frontend/js/world2/decide/grid.js';
 // 지면 두께는 파츠 쪽 상수지만 **수면에서 유도되므로** 관계를 여기서 지킨다 — 두 파일에
@@ -224,6 +225,61 @@ describe('파셀 분류', () => {
       expect(seq[at - 1]).toBe('shore');
       expect(seq[at + 1]).toBe('shore');
     }
+  });
+});
+
+// ── `waterSurfaceY` — 어느 물인가 (뮤테이션이 뚫은 자리, 2026-07-31) ──────────
+//
+// 이 블록은 **뮤테이션이 없어서 생겼다.** 감독 지시 *"강에 사람이 빠지게해줘"* 로
+// `waterSurfaceY` 를 신설한 뒤 검출력을 재 봤더니, `return isRiver(...) ? RIVER_Y : null`
+// 의 `RIVER_Y` 를 `SEA_Y` 로 바꿔도 **1,287 테스트가 전부 통과했다.**
+//
+// 즉 강에 바다 높이를 물려도 아무도 몰랐다. 그런데 그 두 값은 감독이 직접 지시한 것이다:
+// *"강은 땅보다 50 cm 밑, 바다는 땅보다 1미터 밑에 있게해."* 상수 자체를 지키는 단언은
+// 아래 describe 에 있었지만, **그 상수가 옳은 좌표에 쓰이는가**를 보는 축이 없었다.
+//
+// 상수와 사용처는 다른 명제다 — 이 저장소가 구름 `alpha`·`waterGloss` 로 두 번 겪은
+// 판정/집행 구멍의 또 다른 형태다.
+describe('waterSurfaceY — 강과 바다를 가른다', () => {
+  it('★ 강 위에서는 강 수면이다 — 바다 높이가 오면 감독 지시가 뒤집힌다', () => {
+    // 강 중심선 위를 여러 x 에서 훑는다. 한 점만 보면 우연히 맞을 수 있다.
+    let checked = 0;
+    for (let x = -EDGE + 60; x <= EDGE - 60; x += 47) {
+      const cz = centerZ(x);
+      if (Math.abs(cz) + RIVER_HALF > EDGE) continue;   // 바다에 이어진 구간은 제외
+      checked++;
+      expect(waterSurfaceY(x, cz, CELL)).toBe(RIVER_Y);
+    }
+    expect(checked).toBeGreaterThan(5);  // 표본이 비면 위 단언이 한 번도 안 돈다
+  });
+
+  it('★ 세계 밖에서는 바다 수면이다', () => {
+    for (const d of [EDGE + 1, EDGE + 200]) {
+      expect(waterSurfaceY(d, 0, CELL)).toBe(SEA_Y);
+      expect(waterSurfaceY(0, -d, CELL)).toBe(SEA_Y);
+    }
+  });
+
+  it('★ 두 수면이 서로 다르다 — 같아지면 위 두 검사가 빈 명제가 된다', () => {
+    // 이 단언이 없으면 `RIVER_Y === SEA_Y` 로 만드는 것만으로 위 검사들이 통과한다.
+    expect(RIVER_Y).not.toBe(SEA_Y);
+  });
+
+  it('뭍에서는 null 이다 — 0 이 아니다(0 은 유효한 높이다)', () => {
+    expect(waterSurfaceY(0, 0, CELL)).toBeNull();
+  });
+
+  it('★ `isWater` 와 한 치도 어긋나지 않는다 — 판정이 갈리면 SSOT 가 아니다', () => {
+    // `isWater` 를 `waterSurfaceY` 위에 다시 세운 것이 이 커밋의 리팩터다. 둘이 갈리면
+    // 그 리팩터가 무의미해지고, 갈린 사실은 어느 쪽 단위 테스트에도 안 걸린다.
+    let n = 0;
+    for (let x = -EDGE - 40; x <= EDGE + 40; x += 29) {
+      for (let z = -EDGE - 40; z <= EDGE + 40; z += 29) {
+        n++;
+        expect(waterSurfaceY(x, z, CELL) !== null).toBe(isWater(x, z, CELL));
+      }
+    }
+    expect(n).toBeGreaterThan(1000);
   });
 });
 
