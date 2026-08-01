@@ -126,14 +126,90 @@ describe('세계의 끝 — 격자 밖은 바다다', () => {
 });
 
 describe('강 — 굽이치고 이어진다', () => {
-  it('중심선 위는 물이고 반폭 밖은 아니다', () => {
-    for (let x = -EDGE + 40; x <= EDGE - 40; x += 37) {
+  it('파셀 중심에서 본 중심선 위는 물이고 충분히 먼 곳은 아니다', () => {
+    // ── 이 검사가 두 번 고쳐졌다 (감독 발견 2026-08-01) ──────────────────────
+    // `isWater` 는 이제 **파셀 단위**로 답한다(`waterSurfaceY` 참고). 그래서 두 가지가
+    // 예전 형태로는 성립하지 않는다:
+    //
+    // ① **임의의 x 에서 "중심선 위 = 물" 이 참이 아니다.** `parcelWater` 는 파셀
+    //    **중심 한 점**으로 판정하는데, x 가 파셀 중심이 아니면 그 칸이 보는 중심선은
+    //    `riverCenterZ(px·cell)` 이라 최대 `기울기(0.4455) × cell/2 ≈ 7.1m` 어긋나고,
+    //    z 반올림이 최대 `cell/2` 를 더한다. 둘을 합치면 `RIVER_HALF`(24)에 육박해
+    //    어떤 x 에서는 넘어간다.
+    //
+    //    **이것은 이번에 생긴 결함이 아니라 원래 있던 성질이다** — 강은 파셀 격자에
+    //    맞춰 계단으로 나타난다. 연속 판정으로 물어보던 동안 가려져 있었을 뿐이다.
+    //    강이 끊기지 않는다는 것은 「강이 지나는 모든 열에 물 파셀이 있다」가 본다.
+    //
+    //    그래서 **x 를 파셀 중심에 맞춰** 표집한다. 그러면 그 칸이 보는 중심선이 곧
+    //    우리가 계산한 중심선이고, 남는 오차는 z 반올림(≤ cell/2 = 16)뿐이라
+    //    `RIVER_HALF`(24) 안에 확실히 들어간다.
+    //
+    // ② **"반폭 + 5m" 로는 물 밖이라고 단정할 수 없다.** 그 점이 속한 파셀의 중심이
+    //    아직 강 안일 수 있고, 그때 그 칸은 지면이 없으므로 물이라고 답하는 것이 맞다.
+    //    여유를 `RIVER_HALF + CELL` 로 잡아 ①의 두 오차를 전부 덮는다.
+    //
+    // **단언을 느슨하게 만든 것이 아니라 재는 축이 바뀐 것이다.** 아래 두 검사가
+    // 그 축을 정면으로 본다.
+    let checked = 0;
+    for (let px = -12; px <= 12; px++) {
+      const x = px * CELL;                      // ← 파셀 중심
       const cz = centerZ(x);
-      if (Math.abs(cz) + RIVER_HALF + 5 > EDGE) continue; // 세계 밖은 어차피 바다
+      if (Math.abs(cz) + RIVER_HALF + CELL > EDGE) continue; // 세계 밖은 어차피 바다
+      checked++;
       expect(wet(x, cz)).toBe(true);
-      expect(wet(x, cz + RIVER_HALF + 5)).toBe(false);
-      expect(wet(x, cz - RIVER_HALF - 5)).toBe(false);
+      expect(wet(x, cz + RIVER_HALF + CELL)).toBe(false);
+      expect(wet(x, cz - RIVER_HALF - CELL)).toBe(false);
     }
+    expect(checked).toBeGreaterThan(10);   // 표본이 비면 위 단언이 한 번도 안 돈다
+  });
+
+  // ── ★ 감독 발견 2026-08-01: *"강 가기 전에 빠져."* ──────────────────────────
+  //
+  // 물빠짐을 붙이면서 `waterSurfaceY` 가 `isRiver`(연속 좌표)로 판정했다. 그런데 지면은
+  // `parcelWater`(파셀 단위)가 정한다 — 두 해상도가 다르면 **땅을 밟고 서서 물로
+  // 판정되는 띠**가 생기고, 최악의 경우 반 칸(16m)을 먼저 빠진다.
+  //
+  // 값이 틀린 것이 아니라 **재는 축의 해상도가 달랐다.** 그리고 이 저장소는 바로 그
+  // 파일(`parcelWater` 주석)에 *"파셀보다 정밀한 판정은 그릴 방법이 없다"* 고 적어
+  // 두고도, 새 기능에서 그보다 정밀한 판정을 만들었다.
+  it('★ 지면이 있는 칸에서는 어디에 서도 안 빠진다 — 판정 해상도가 지면과 같다', () => {
+    let checked = 0;
+    for (let px = -12; px <= 12; px++) {
+      for (let pz = -12; pz <= 12; pz++) {
+        // 물 파셀은 지면이 없다 — 거기서 빠지는 것이 이 기능이다.
+        if (parcelWater(px, pz, CELL, CELL) === 'water') continue;
+        // 지면이 있는 칸. **칸 안 어디에 서도** 물이면 안 된다(가장자리 포함).
+        for (const dx of [-0.49, 0, 0.49]) {
+          for (const dz of [-0.49, 0, 0.49]) {
+            checked++;
+            expect(
+              waterSurfaceY((px + dx) * CELL, (pz + dz) * CELL, CELL),
+              `파셀 (${px},${pz}) 은 지면이 있는데 오프셋 (${dx},${dz}) 에서 물이다`,
+            ).toBeNull();
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(1000);  // 표본이 비면 위 단언이 한 번도 안 돈다
+  });
+
+  it('★ 물 파셀에서는 어디에 서도 빠진다 — 반대 방향도 어긋나면 안 된다', () => {
+    // 위 검사만 있으면 `waterSurfaceY` 가 **항상 null** 을 반환해도 통과한다.
+    // 물빠짐 기능 자체가 죽는 뮤테이션을 이 짝이 막는다.
+    let checked = 0;
+    for (let px = -12; px <= 12; px++) {
+      for (let pz = -12; pz <= 12; pz++) {
+        if (parcelWater(px, pz, CELL, CELL) !== 'water') continue;
+        for (const dx of [-0.49, 0, 0.49]) {
+          for (const dz of [-0.49, 0, 0.49]) {
+            checked++;
+            expect(waterSurfaceY((px + dx) * CELL, (pz + dz) * CELL, CELL)).toBe(RIVER_Y);
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
   });
 
   // 사인파 하나만 쓰면 강이 규칙적인 물결이 되어 인공물처럼 보인다. 둘을 겹친 것이
