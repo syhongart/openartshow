@@ -19,8 +19,15 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fogBand, FOG_NEAR_CELLS, FOG_FAR_CELLS } from '../frontend/js/world2/decide/fog.js';
+import { DEFAULT_BANDS } from '../frontend/js/world2/decide/lod.js';
 
 describe('안개 밴드 — 계약', () => {
+  it('안개 차단이 렌더 far 경계에서 유도된다 (검수관 B4)', () => {
+    // 둘이 갈라지면 세계의 끝이 드러난다 — LOD 가 안 그리는데 안개가 아직 안 닫혔으면
+    // 그 사이가 텅 빈다. 같은 리터럴을 두 파일에 적어두고 "유도" 라고 부르던 자리다.
+    expect(FOG_FAR_CELLS).toBe(DEFAULT_BANDS.farExit);
+  });
+
   it('near < far — 뒤집히면 안개가 성립하지 않는다', () => {
     expect(FOG_NEAR_CELLS).toBeLessThan(FOG_FAR_CELLS);
     const b = fogBand(32);
@@ -70,9 +77,17 @@ describe('안개 소비자가 SSOT 를 경유한다', () => {
   it('npc.ts 가 안개 배수를 숫자로 적지 않는다', () => {
     // 주석에 적는 것도 미러링이다(팀장 조건 1). 코드·주석 구별 없이 본다 —
     // 이번 사고가 정확히 "주석은 안개를 말하는데 값은 딴 것" 이었다.
+    //
+    // ⚠ **이 검사가 거짓 PASS 였다**(검수관 B3). `\b` 는 `[A-Za-z0-9_]` 경계라
+    // **`76.8m` 을 못 잡는다** — `8` 과 `m` 이 둘 다 워드문자라 경계가 없다. 그래서
+    // `npc.ts` 가 안개 거리를 숫자로 적고 있는데도 통과했다. 한글 단위(`2.4셀`)는
+    // 한글이 비워드문자라 잡혔고, 그래서 "두 번 잡았다" 는 실적이 반쪽이었다.
+    //
+    // 뒤 경계를 **숫자가 아닌 것**으로 바꿔 단위문자까지 덮는다.
     const s = src('frontend/js/world2/features/npc.ts');
-    expect(s).not.toMatch(/\b(1\.6|2\.4)\b/);
-    expect(s, '안개 거리(m)를 하드코딩했다 — 셀이 바뀌면 어긋난다').not.toMatch(/\b(51\.2|76\.8)\b/);
+    expect(s, '안개 배수를 적었다').not.toMatch(/(?<![\d.])(1\.6|2\.4)(?![\d])/);
+    expect(s, '안개 거리(m)를 하드코딩했다 — 셀이 바뀌면 어긋난다')
+      .not.toMatch(/(?<![\d.])(51\.2|76\.8)(?![\d])/);
   });
 });
 
@@ -107,12 +122,14 @@ describe('스폰 밴드가 안개 시작 안쪽이다', () => {
     expect(m![1], '스폰 상한이 안개와 무관한 값이다').toContain('FOG_NEAR_CELLS');
   });
 
-  it('SPAWN_RING < SPAWN_REACH — 밴드가 뒤집히면 스폰이 성립하지 않는다', () => {
+  it('SPAWN_RING 이 SPAWN_REACH 에서 온다 — 상한이 움직이면 따라온다', () => {
     const ring = /const SPAWN_RING\s*=\s*(.+);/.exec(src);
     expect(ring, 'SPAWN_RING 을 못 찾았다').not.toBeNull();
-    // 하한도 상한에서 유도돼야 상한이 움직일 때 함께 따라온다.
     expect(ring![1], '스폰 하한이 상한과 무관하다 — 상한을 바꿔도 안 따라온다')
       .toContain('SPAWN_REACH');
+    // ⚠ 나눗셈은 정수를 깨뜨린다(B1). 실제 정수성은 `world2-spawn-band.test.ts` 가
+    // `pickNearby` 를 호출해서 본다 — 여기서는 그 형태가 되살아나는 것만 막는다.
+    expect(ring![1], '나눗셈이 되살아났다 — B1 재발 경로다').not.toMatch(/\//);
   });
 
   it('안개 시작 < 안개 차단 < 재배치 — 세 경계의 순서가 이 처방의 뼈대다', () => {
