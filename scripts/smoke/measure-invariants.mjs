@@ -54,17 +54,18 @@
 import { chromium } from 'playwright-core';
 import { startServer } from './server.mjs';
 import {
-  SITE_DIR, BASE_PATH, CHROMIUM_EXECUTABLE, CHROMIUM_ARGS,
+  SITE_DIR, BASE_PATH, CHROMIUM_EXECUTABLE, CHROMIUM_ARGS, ROOT,
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
 import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
 import { appendFileSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 /**
  * 부팅 기준선을 회차별로 남기고 **직전 회차와의 차이**를 출력한다.
  *
  * ── 임계는 실측이 아니라 유도다 ─────────────────────────────────────────────
- * NPC 한 체의 메시 수(`CHIBI.cost.meshes`)를 **런타임에서 읽어** 임계로 쓴다.
+ * 치비 한 체의 **메시 수**(`CHIBI.cost.meshes`)를 **런타임에서 읽어** 임계로 쓴다.
  * 실측값(32·39)을 박거나 거기에 여유를 얹으면 두 규율에 동시에 걸린다 —
  * *"실측에 여유를 얹은 값은 근거가 아니다"* 와 *"값 미러링"* 이다. 레지스트리에서
  * 읽으면 아바타 구성이 바뀔 때 임계가 **저절로 따라온다.**
@@ -72,13 +73,25 @@ import { appendFileSync, readFileSync, existsSync } from 'node:fs';
  * 왜 하필 한 체 분량인가: 세션 간 흔들림의 정체가 "한 체가 잡히거나 안 잡히거나" 였다.
  * 그보다 큰 도약은 그 흔들림으로 설명되지 않는 것이고, 그때가 봐야 할 순간이다.
  *
+ * ⚠ **재는 양과 유도한 양이 정확히 같지는 않다** (검수관 R4). 비교 대상은
+ * `info.memory.geometries` 인데 임계는 **메시 수**다. 지오메트리를 공유하는 메시가
+ * 있으면 geometries ≤ meshes 이므로 임계가 실제보다 **느슨한 쪽**으로 어긋난다.
+ * 방향이 안전한 쪽이라 이대로 두되, 정확히 하려면 레지스트리가 지오 축을 함께
+ * 들어야 한다. **"한 체 분량" 이라는 뭉뚱그린 말로 덮지 않는다** — 이 저장소가
+ * *"값이 아니라 재는 축이 틀린다"* 로 이름 붙인 형태가 여기 남아 있다.
+ *
+ * ── 이 축이 **못 보는 것** (검수관 S2 — 적지 않으면 관측이 장식이 된다) ──────
+ * 잔여 잡음이 32 이고 임계가 45 다. 그 사이, 즉 **45 미만의 실제 부팅 증가는 잡음과
+ * 구별되지 않아 영구히 안 보인다.** 리얼리티 회차가 매번 30 안팎씩 늘리면 이 축은
+ * 한 번도 안 울린다. 알고 쓰는 한계이지 해결된 문제가 아니다.
+ *
  * ── 기록 파일은 커밋하지 않는다 ────────────────────────────────────────────
  * `docs/valuation-history.json` 이 스모크 부산물로 매번 워킹트리를 더럽혀 손으로
  * 되돌리는 일이 반복됐다(태스크 #168). 같은 것을 또 만들지 않는다.
  * 그래서 CI 처럼 매번 새 러너인 곳에서는 직전 값이 없고, 그 사실을 그대로 적는다 —
  * **"첫 기록" 을 "변화 없음" 으로 적지 않는다.**
  */
-const BASELINE_LOG = '.smoke-baseline.jsonl';
+const BASELINE_LOG = join(ROOT, '.smoke-baseline.jsonl');
 
 async function trackBaseline(base, page, log) {
   // 임계를 못 읽으면 비교를 하지 않는다. 임의의 기본값을 넣으면 그 순간 유도가 아니다.
@@ -108,8 +121,19 @@ async function trackBaseline(base, page, log) {
       log(`  변화가 한 체 분량(${limit}) 미만 — 세션 간 편차 범위다`);
     }
   }
-  // 판정에 영향을 주지 않는다(종료코드 무관). 기록은 기록일 뿐이다.
-  appendFileSync(BASELINE_LOG, `${JSON.stringify({ geo: base.geo, tex: base.tex, pipe: base.pipe })}\n`);
+  // ── 기록 실패가 판정을 죽이지 않게 한다 (검수관 BL-2, 2026-08-02) ───────────
+  // 원래 여기 *"판정에 영향을 주지 않는다(종료코드 무관)"* 라고만 적혀 있었고 `try` 가
+  // 없었다. **그 보증이 거짓이었다** — `run.mjs` 가 `runInvariants` 의 예외를 잡아
+  // `[7]` 을 FAIL 로 적고, 그 catch 는 observe 모드에서도 FAIL 로 남긴다(페이지 에러와
+  // 같은 취급이다). 즉 **파일 쓰기 실패 하나가 성능 게이트를 빨갛게 만들 수 있었다.**
+  //
+  // 이 저장소가 반복해서 잡아온 *"못 잰 것이 통과로 적힌다"* 의 거울상이다 —
+  // **영향 있는 것이 무관으로 적혔다.** 보증을 적었으면 그 보증이 참이어야 한다.
+  try {
+    appendFileSync(BASELINE_LOG, `${JSON.stringify({ geo: base.geo, tex: base.tex, pipe: base.pipe })}\n`);
+  } catch (e) {
+    log(`  기록 실패 — ${e.message} (판정은 계속한다. 다음 회차는 "첫 기록" 으로 뜬다)`);
+  }
 }
 
 /** 회전 스텝 — 360°를 이 수로 나눠 돈다 */
