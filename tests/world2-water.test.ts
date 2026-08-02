@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, waterSurfaceY,
-  RIVER_HALF, SEA_Y, RIVER_Y, WATER_MODES, pickWaterMode,
+  RIVER_HALF, SEA_Y, RIVER_Y, SEABED_Y, WATER_MODES, pickWaterMode,
 } from '../frontend/js/world2/decide/water.js';
 import { isCentralPlaza as isPlaza, GRID_MIN_X, GRID_MAX_X, PLAZA_R } from '../frontend/js/world2/decide/grid.js';
 // 지면 두께는 파츠 쪽 상수지만 **수면에서 유도되므로** 관계를 여기서 지킨다 — 두 파일에
@@ -390,14 +390,23 @@ describe('수면 높이', () => {
   });
 });
 
-// ── 지면 판이 두 수면을 모두 덮는가 (검수관 블로커) ──────────────────────────
-// `GROUND_DEPTH` 는 `0.8` 상수였다. 물이 −0.5m 하나였을 때 "수면보다 30cm 깊다" 는
-// 뜻이었고 그때는 맞았다. 감독이 물을 강 −0.5 / 바다 −1.0 으로 가르자 **0.8 이 바다
-// 수면보다 얕아졌다** — 바닷가에서 지면 판 옆면이 수면 위로 20cm 드러난다.
+// ── 지면 판이 물바닥까지 내려가는가 ─────────────────────────────────────────
 //
-// 값은 그대로인데 뜻이 바뀐 형태라 어떤 단언에도 안 걸렸다. 같은 커밋의 `SEABED_Y` 는
-// `SEA_Y` 에서 유도해 이 사고를 피했는데 `GROUND_DEPTH` 만 안 따랐다.
-describe('지면 두께 — 수면에서 유도한다', () => {
+// 이 검사는 두 번 고쳐졌고, 두 번 다 **재는 축이 낮은 시점을 못 보고 있었다.**
+//
+// ① `GROUND_DEPTH` 가 `0.8` 상수이던 시절 — 물이 −0.5m 하나였을 때 "수면보다 30cm
+//    깊다" 는 뜻이었고 그때는 맞았다. 감독이 물을 강 −0.5 / 바다 −1.0 으로 가르자
+//    **0.8 이 바다 수면보다 얕아졌다.** 값은 그대로인데 뜻이 바뀌어 어떤 단언에도
+//    안 걸렸다(검수관 블로커). → `SEA_Y` 에서 유도하게 고쳤다.
+//
+// ② 그 유도가 **물 밖 시점에서만 충분했다** (감독 실기기 2026-08-02). 물에 빠지는
+//    기능이 생기면서 시점이 수면 아래로 내려갔고, 거기서 보니 판 아랫면(−1.3)과
+//    해저(−3.4) 사이 2.1m 가 뚫려 있었다. 육지가 "떠 있는 판" 으로 보이고 그 밑으로
+//    헤엄쳐 들어갈 수 있다. → `SEABED_Y` 에서 유도하게 고쳤다.
+//
+// **두 번 다 값이 아니라 축이 틀렸다.** 그래서 이번에는 물이 닿는 **가장 낮은 자리**를
+// 기준으로 못 박는다 — 해저보다 낮으면 어느 시점에서도 아래가 열리지 않는다.
+describe('지면 두께 — 해저에서 유도한다', () => {
   it('지면 판 아랫면이 두 수면보다 모두 아래다 — 물가에 틈이 없다', () => {
     // 판 아랫면 = −GROUND_DEPTH. 두 수면 중 **더 낮은 쪽**보다도 낮아야 양쪽이 덮인다.
     const bottom = -GROUND_DEPTH;
@@ -406,13 +415,34 @@ describe('지면 두께 — 수면에서 유도한다', () => {
     expect(bottom).toBeLessThan(RIVER_Y);
   });
 
-  it('수면을 옮기면 따라온다 — 상수를 박아두지 않았다', () => {
-    // 유도 관계 자체를 본다. 여유값(margin)을 여기 적지 않고, **차이가 양수**인지만
-    // 확인한다 — 그러면 여유를 조정해도 이 단언이 살아 있다.
-    const margin = Math.abs(SEA_Y) - GROUND_DEPTH;
-    expect(margin, '지면 두께가 바다 수면 깊이에서 유도되지 않았다').toBeLessThan(0);
-    // 그리고 터무니없이 깊지도 않다 — 물가 흙벽이 3m 면 절벽이다.
-    expect(GROUND_DEPTH).toBeLessThan(3);
+  it('★ 지면 판 아랫면이 해저보다도 아래다 — 물속에서 육지 밑이 열리면 안 된다', () => {
+    // 이 단언이 이번 결함을 잡는 축이다. **없어서 통과했다.**
+    // 물에 빠진 플레이어는 해저에 앉으므로 눈높이가 판 아랫면과 해저 사이 틈의
+    // 한가운데다 — 그 틈이 0 이어야 벽으로 보이고 통과가 막힌다.
+    expect(-GROUND_DEPTH, '판 아랫면과 해저 사이가 뚫려 있다 — 물속에서 육지 밑으로 들어간다')
+      .toBeLessThan(SEABED_Y);
+  });
+
+  it('해저를 옮기면 따라온다 — 상수를 박아두지 않았다', () => {
+    // 유도 관계 자체를 본다. 여유값(margin)을 여기 적지 않고 **차이의 부호**만 본다 —
+    // 그러면 여유를 조정해도 이 단언이 살아 있다.
+    const margin = Math.abs(SEABED_Y) - GROUND_DEPTH;
+    expect(margin, '지면 두께가 해저 깊이에서 유도되지 않았다').toBeLessThan(0);
+  });
+
+  it('물 밖에서 보이는 흙벽 높이는 두께가 아니라 **수심이 정한다** — 절벽이 되지 않는다', () => {
+    // 옛 판본은 `GROUND_DEPTH < 3` 으로 "물가 흙벽이 3m 면 절벽이다" 를 지켰다.
+    // 그 단언은 **전제가 틀렸다** — 두께 전체가 물가에서 보인다고 가정했는데, 물이
+    // 채워져 있으므로 물 밖 관찰자에게 드러나는 높이는 수면까지뿐이다. 판을 아무리
+    // 두껍게 해도 그 아래는 물에 잠긴다.
+    //
+    // 그래서 재는 대상을 **노출 높이**로 바꾼다. 이 값은 `GROUND_DEPTH` 와 무관하게
+    // `|SEA_Y|` 이고, 두께를 키운 이번 변경이 여기를 건드리지 않았음을 못 박는다.
+    const exposedAtSea = Math.abs(SEA_Y);
+    expect(exposedAtSea, '바닷가 흙벽이 절벽처럼 높다').toBeLessThan(3);
+    expect(Math.abs(RIVER_Y), '강가 흙벽이 절벽처럼 높다').toBeLessThan(3);
+    // 그리고 물속 벽은 깊어도 된다 — 그것이 이번 변경의 목적이다.
+    expect(GROUND_DEPTH, '판이 해저까지 안 내려간다').toBeGreaterThan(exposedAtSea);
   });
 });
 
