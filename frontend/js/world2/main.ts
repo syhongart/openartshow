@@ -27,6 +27,7 @@ import {
   type MountedFeature,
 } from './features/index.js';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
+import { fogBand } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { DEFAULT_BANDS } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
@@ -141,7 +142,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 끝을 far 렌더 반경(76.8m)에 정확히 맞춘다. 그 너머는 파셀이 로드되지 않으므로
   // 안개가 딱 그 경계를 덮어야 **세계의 끝이 안 보인다** — 더 늘리면 빈 공간이 드러나고,
   // 더 줄이면 지금처럼 답답해진다. 렌더 반경에서 유도한 값이라 밴드를 넓히면 함께 따라온다.
-  scene.fog = new THREE.Fog(0x0b0d12, CELL_X * 1.6, CELL_X * 2.4);
+  // 안개 거리는 `decide/fog.ts` 가 SSOT 다. 여기 배수를 다시 적으면 "안개 밖" 을
+  // 판단해야 하는 다른 모듈이 그것을 알 방법이 없어진다 — 실제로 `npc.ts` 가 자기
+  // 나름의 거리를 쓰다가 25.6m 를 헛그리고 있었다(본편 ①).
+  const fog = fogBand(CELL_X);
+  scene.fog = new THREE.Fog(0x0b0d12, fog.near, fog.far);
 
   // 걷는 감각 — 감독 실기기에서 값을 확정하기 위해 URL 로 연다.
   //

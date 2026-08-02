@@ -32,6 +32,7 @@
 import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import { nextDir, stepOf, pickNearby, type Cell } from '../decide/npc-walk.js';
+import { fogBand } from '../decide/fog.js';
 // **아바타는 배럴로만 만난다.** 이 파일은 치비가 world1 에서 오는지, VRM 이 파일에서
 // 오는지 모른다 — 감독 지시("월드원 폴더 것을 그냥 끌어다 쓰지 마, 나중에 날릴 거니까")
 // 를 지키는 지점이 여기다. 경계는 `tests/world2-boundary.test.ts` 가 감시한다.
@@ -46,7 +47,14 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 const WALK_MIN = 0.8;
 const WALK_MAX = 1.3;
 
-/** 이만큼 멀어지면 앞쪽으로 데려온다(셀). 안개 끝(2.4셀)보다 넉넉히 밖이다 */
+/**
+ * 이만큼 멀어지면 앞쪽으로 데려온다(셀).
+ *
+ * **안개 차단보다 밖이어야 한다** — 두 경계가 같아지면 그 자리에서 팝핑이 나고,
+ * 뒤집히면 재배치된 체가 즉시 숨겨져 영영 안 보인다. 부등호는 `tests/world2-fog.test.ts`
+ * 가 지킨다(`decide/fog.ts` 의 값과 대조). **여기에 안개 배수를 적지 않는다** —
+ * 적었다가 그 숫자만 남고 값이 갈라진 것이 이번 회차의 결함이었다.
+ */
 const RECYCLE_CELLS = 3.2;
 
 /** 재배치 시 플레이어에게서 최소 이만큼 떨어뜨린다(셀) — 눈앞에 튀어나오지 않게 */
@@ -305,11 +313,14 @@ export const npcFeature: Feature = {
         const p = env.player.position;
         const ppx = Math.round(p.x / cellX);
         const ppz = Math.round(p.z / cellZ);
-        const far = RECYCLE_CELLS * cellX;
+        // 재배치 임계와 **은닉 임계는 다른 값이다**(팀장 판정 2026-08-02, 본편 ①).
+        // 오래 하나로 썼고 그것이 이번 회차가 찾아낸 결함이다 — 아래 `show` 주석 참조.
+        const recycleFar = RECYCLE_CELLS * cellX;
+        const fogFar = fogBand(cellX).far;
 
         for (const w of walkers) {
           // ── 멀어졌으면 앞쪽으로 ─────────────────────────────────────────
-          if (Math.hypot(w.x - p.x, w.z - p.z) > far) recycle(w, ppx, ppz);
+          if (Math.hypot(w.x - p.x, w.z - p.z) > recycleFar) recycle(w, ppx, ppz);
 
           // ── 목표로 걷는다 ───────────────────────────────────────────────
           const dx = w.tx - w.x;
@@ -340,7 +351,18 @@ export const npcFeature: Feature = {
           //
           // 예열 중에는 거리를 보지 않는다. 그래야 안개 밖 체까지 한 번씩 그려져
           // 업로드가 끝나고, `geometries` 가 부팅 순간의 배치와 무관해진다.
-          const show = warming || Math.hypot(w.x - p.x, w.z - p.z) <= far;
+          // ⚠ **임계가 재배치 거리였다 — 주석은 안개를 말하는데 값은 딴 것이었다.**
+          // 재배치 거리가 안개 차단보다 멀어서 그 사이 구간의 체를 계속 그렸다. 안개
+          // 밖은 **정의상 화면 기여 0** 이므로 그만큼이 통째로 버려졌다. 디자이너 실측
+          // (2026-08-02): 정지 8조합에서 NPC 화면 픽셀 기여 0.007~0.114%, 알아볼 수
+          // 있는 사람 **0명**. 그 상태로 드로우콜 +100 을 냈다.
+          //
+          // 그리고 이 값이 `shown` 진단으로 나가 **내 판정을 한 번 오도했다** —
+          // `shown=7` 을 "안개 안 7체" 로 읽고 *"멀어서 안 보인다는 배제됐다"* 고 적었다.
+          //
+          // 이제 안개 SSOT 에서 유도한다(`decide/fog.ts`). **거리 숫자를 여기 적지
+          // 않는다** — 주석에 적는 것도 미러링이고 이번 사고가 정확히 그 형태였다.
+          const show = warming || Math.hypot(w.x - p.x, w.z - p.z) <= fogFar;
           if (show !== w.shown) {
             w.shown = show;
             w.inst.group.visible = show;
