@@ -48,7 +48,14 @@ export const PLAZA_P = 0.02;
 
 const SALT_PLAZA = 0x3b9aca07;
 
-function h2(a: number, b: number, salt: number): number {
+/**
+ * 파셀 좌표 → 균등 해시. **소비자가 둘 이상이라 export 한다**(용도 판정 `zoning.ts`).
+ *
+ * 난수 스트림이 아니라 좌표 해시인 것이 핵심이다 — 파셀은 서로를 모르는 채로 로드되고
+ * tier 마다 다시 계산되므로, 순서에 의존하는 난수를 쓰면 같은 파셀이 매번 다른 답을
+ * 낸다. 해시는 좌표만 보므로 언제 어디서 물어도 같다.
+ */
+export function h2(a: number, b: number, salt: number): number {
   let h = salt >>> 0;
   h = Math.imul(h ^ (a | 0), 0x85ebca6b);
   h ^= h >>> 13;
