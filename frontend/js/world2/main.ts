@@ -613,6 +613,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     kernel: kernel!,
     dispose() {
       window.removeEventListener('resize', onResize);
+      // 조명 타깃도 씬에서 뺀다. 지금은 `startWorld2` 가 페이지당 한 번뿐이라 **도달하지
+      // 않는 경로**지만(검수관 확인), 재기동이 생기는 날 타깃만 씬에 쌓인다.
+      if (sun) scene.remove(sun.target);
       input.dispose();
       touch.dispose();
       hud?.dispose();

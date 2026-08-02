@@ -67,3 +67,62 @@ describe('낮 빛 대비 — 계약', () => {
     expect(dayLightMix(2)).toBeNull();
   });
 });
+
+// ── 팔레트와의 관계 (검수관 조건 + 권고, 2026-08-02) ─────────────────────────
+//
+// `decide/daylight.ts` 의 두 상수는 `sky.js` 낮 맑음 팔레트를 **대체**하는 값이다.
+// 저쪽이 바뀌면 "총량을 보존했다" 는 근거가 조용히 무너지고, 아래 전환 스냅의 크기도
+// 함께 달라진다. 이 저장소가 값 미러링으로 세 번 데인 자리라 파일을 직접 읽어 묶는다
+// (`world2-night.test.ts` 의 `NIGHT_FOG` 대조가 같은 형태의 선례다).
+describe('낮 팔레트와의 관계', () => {
+  async function dayClear(): Promise<{ sunI: number; hemiI: number }> {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('frontend/js/sky.js', 'utf8');
+    const dayBlock = src.slice(src.indexOf('  day: {'));
+    const line = dayBlock.slice(0, dayBlock.indexOf('\n', dayBlock.indexOf('clear:')));
+    const sun = /sunI:\s*([\d.]+)/.exec(line);
+    const hemi = /hemiI:\s*([\d.]+)/.exec(line);
+    expect(sun, 'sky.js 낮 맑음 sunI 를 못 찾았다 — 팔레트 구조가 바뀌었다').not.toBeNull();
+    expect(hemi, 'sky.js 낮 맑음 hemiI 를 못 찾았다').not.toBeNull();
+    return { sunI: Number(sun![1]), hemiI: Number(hemi![1]) };
+  }
+
+  it('팔레트의 비율이 뒤집혀 있다 — 감독이 본 증상의 원인이 여기다', async () => {
+    const p = await dayClear();
+    // 이 부등호가 증상 그 자체다: 하늘 반사광이 태양보다 세서 그림자를 도로 채운다.
+    // 팔레트가 고쳐지는 날 이 검사가 깨지고, 그때는 `decide/daylight.ts` 가 필요 없어진다.
+    expect(p.hemiI, 'sky.js 낮 팔레트가 고쳐졌다면 이 모듈의 존재 이유를 재검토하라')
+      .toBeGreaterThan(p.sunI);
+  });
+
+  it('총량을 보존한다 — 팔레트에서 유도한다(상수를 다시 적지 않는다)', async () => {
+    const p = await dayClear();
+    const before = p.sunI + p.hemiI;
+    const after = DAY_SUN_I + DAY_HEMI_I;
+    // "밝기가 아니라 비율을 바꾸는 변경" 이라는 주장이 실제로 참인지 본다.
+    expect(Math.abs(after - before) / before, '총량이 20% 넘게 움직였다 — 대비가 아니라 노출을 바꾼 것이다')
+      .toBeLessThan(0.2);
+  });
+
+  // ── 알려진 한계 — 시간대 전환 순간 대비가 한 프레임 사라진다 ────────────────
+  //
+  // 검수관이 잡았다(2026-08-02, 조건부 승인의 조건). `applyDayContrast` 는 three 객체에
+  // **직접 대입**하는데 `sky.js` 내부의 현재값(`cur`)은 그 사실을 모른다. 그래서 낮→노을
+  // 전환에서 `sky.js` 가 크로스페이드 시작점을 `cur.sunI`(= 팔레트 0.95)로 잡고, 그 순간
+  // 화면에 그려지던 1.30 이 0.95 로 **한 프레임 만에 스냅**한다.
+  //
+  // 고치려면 `sky.js` 의 `cur` 를 함께 갱신해야 하는데 그 파일은 **라이브 오픈월드와
+  // 공유**한다. `onApply` 훅은 적용 *뒤* 통지라 시작점 문제를 못 고친다. 그래서 지금은
+  // **고치지 않고 크기를 재서 묶어 둔다**(검수관이 제시한 선택지 (c)).
+  //
+  // world2 는 behind-flag 이고 기본 시간대가 밤이라, 이 경로는 신 패널로 시간대를 능동적
+  // 으로 바꿀 때만 발동한다. 감독이 낮↔노을을 오가며 비교하면 보일 수 있다.
+  it('전환 스냅 크기가 알려진 범위 안이다 — 커지면 눈에 띈다', async () => {
+    const p = await dayClear();
+    const sunSnap = Math.abs(DAY_SUN_I - p.sunI);
+    const hemiSnap = Math.abs(DAY_HEMI_I - p.hemiI);
+    // 현재 0.35 / 0.45. 팔레트나 상수가 크게 벌어지면 전환이 그만큼 튄다.
+    expect(sunSnap, `태양 스냅 ${sunSnap.toFixed(2)}`).toBeLessThan(0.6);
+    expect(hemiSnap, `반구 스냅 ${hemiSnap.toFixed(2)}`).toBeLessThan(0.6);
+  });
+});
