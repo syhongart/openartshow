@@ -58,6 +58,59 @@ import {
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
 import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
+import { appendFileSync, readFileSync, existsSync } from 'node:fs';
+
+/**
+ * 부팅 기준선을 회차별로 남기고 **직전 회차와의 차이**를 출력한다.
+ *
+ * ── 임계는 실측이 아니라 유도다 ─────────────────────────────────────────────
+ * NPC 한 체의 메시 수(`CHIBI.cost.meshes`)를 **런타임에서 읽어** 임계로 쓴다.
+ * 실측값(32·39)을 박거나 거기에 여유를 얹으면 두 규율에 동시에 걸린다 —
+ * *"실측에 여유를 얹은 값은 근거가 아니다"* 와 *"값 미러링"* 이다. 레지스트리에서
+ * 읽으면 아바타 구성이 바뀔 때 임계가 **저절로 따라온다.**
+ *
+ * 왜 하필 한 체 분량인가: 세션 간 흔들림의 정체가 "한 체가 잡히거나 안 잡히거나" 였다.
+ * 그보다 큰 도약은 그 흔들림으로 설명되지 않는 것이고, 그때가 봐야 할 순간이다.
+ *
+ * ── 기록 파일은 커밋하지 않는다 ────────────────────────────────────────────
+ * `docs/valuation-history.json` 이 스모크 부산물로 매번 워킹트리를 더럽혀 손으로
+ * 되돌리는 일이 반복됐다(태스크 #168). 같은 것을 또 만들지 않는다.
+ * 그래서 CI 처럼 매번 새 러너인 곳에서는 직전 값이 없고, 그 사실을 그대로 적는다 —
+ * **"첫 기록" 을 "변화 없음" 으로 적지 않는다.**
+ */
+const BASELINE_LOG = '.smoke-baseline.jsonl';
+
+async function trackBaseline(base, page, log) {
+  // 임계를 못 읽으면 비교를 하지 않는다. 임의의 기본값을 넣으면 그 순간 유도가 아니다.
+  const each = await page.evaluate(() => window.__world2?.stats?.()?.npc?.chibiEach ?? null);
+  const limit = each && typeof each.meshes === 'number' ? each.meshes : null;
+
+  let prev = null;
+  if (existsSync(BASELINE_LOG)) {
+    const lines = readFileSync(BASELINE_LOG, 'utf8').trim().split('\n').filter(Boolean);
+    if (lines.length) { try { prev = JSON.parse(lines[lines.length - 1]); } catch { prev = null; } }
+  }
+
+  log('[기준선 추이] 부팅 시 확정값 — 아래 판정(델타)이 못 보는 축이다');
+  if (!prev) {
+    log('  직전 기록 없음 — 이번이 첫 회차다(비교 불가, 변화 없음이 아니다)');
+  } else {
+    const d = (k) => (base[k] == null || prev[k] == null ? null : base[k] - prev[k]);
+    const [dg, dt, dp] = [d('geo'), d('tex'), d('pipe')];
+    const fmt = (v) => (v == null ? '?' : `${v >= 0 ? '+' : ''}${v}`);
+    log(`  직전 대비  geo ${fmt(dg)}  tex ${fmt(dt)}  pipe ${fmt(dp)}`);
+    if (limit == null) {
+      log('  ⚠ 임계를 못 읽었다(`npc.chibiEach.meshes` 부재) — 판정 생략. 추측으로 메우지 않는다');
+    } else if (dg != null && Math.abs(dg) >= limit) {
+      log(`  ⚠ WARN — geo 변화 ${fmt(dg)} 가 아바타 한 체 분량(${limit}) 이상이다.`);
+      log('    세션 간 편차로 설명되지 않는 크기다. 이 회차에 무엇을 늘렸는지 확인하라.');
+    } else {
+      log(`  변화가 한 체 분량(${limit}) 미만 — 세션 간 편차 범위다`);
+    }
+  }
+  // 판정에 영향을 주지 않는다(종료코드 무관). 기록은 기록일 뿐이다.
+  appendFileSync(BASELINE_LOG, `${JSON.stringify({ geo: base.geo, tex: base.tex, pipe: base.pipe })}\n`);
+}
 
 /** 회전 스텝 — 360°를 이 수로 나눠 돈다 */
 const SPIN_STEPS = 12;
@@ -128,6 +181,21 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
     const base = await counts(page);
     if (!base) throw new Error('stats() 를 못 읽었다 — 측정이 성립하지 않는다');
     log(`\n기준선  geo=${show(base.geo)} tex=${show(base.tex)} pipe=${show(base.pipe)} 파셀=${show(base.parcels)}\n`);
+
+    // ── 부팅 기준선의 회차 추이 (팀장 판정 2026-08-02, 회차 0) ─────────────────
+    //
+    // **이 검사가 못 보는 것을 메우는 자리다.** 아래 판정은 base **대비 델타**만 본다
+    // (`maxGeo = r.geo - base.geo`). 그래서 부팅 때 만들어 둔 것은 base 에 흡수되고
+    // 증가로 안 잡힌다 — 그런데 리얼리티 개발이 늘리는 것은 거의 전부 부팅 시 추가다.
+    //
+    // 골든으로 고정하지 못한 이유: 실측상 세션 간 폭이 **32** 다(6회, VRM 대기를 붙인
+    // 뒤). 변하는 값을 골든으로 박으면 게이트가 아니라 주사위가 된다. 세션 **내부**는
+    // 폭 0 이 6/6 으로 확인됐으므로(회전·보행·복귀 포함) 그쪽은 아래 판정이 이미 본다.
+    //
+    // 그래서 **막지 않고 추이를 남긴다.** 한계는 분명하다 — 기록은 사람이 읽어야
+    // 효과가 있고, 안 읽으면 장식이다. 그 위험을 줄이려고 임계를 넘으면 WARN 으로
+    // 올린다(팀장 조건).
+    await trackBaseline(base, page, log);
 
     const rows = [];
     const snap = async (label) => {

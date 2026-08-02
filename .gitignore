@@ -117,3 +117,10 @@ qa-tmp/
 
 # 게이트 통과 스탬프 (scripts/gate.mjs → scripts/githooks/pre-commit)
 /.gate-stamp
+
+# 스모크 부산물 — 부팅 기준선 회차 기록(로컬 추이용).
+# `docs/valuation-history.json` 이 커밋돼 있어 스모크를 돌 때마다 워킹트리를
+# 더럽히고 매번 손으로 되돌리는 일이 반복됐다(태스크 #168). 같은 것을 또 만들지
+# 않으려고 처음부터 무시한다 — CI 처럼 매번 새 러너인 곳에서는 직전 값이 없고,
+# 그 경우 "첫 회차" 로 적힌다(변화 없음으로 적지 않는다).
+/.smoke-baseline.jsonl
