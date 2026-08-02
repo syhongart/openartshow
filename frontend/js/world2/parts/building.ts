@@ -4,7 +4,9 @@
 // 오픈월드에서 그런 파셀이 드문드문 섞이면 세상이 버려진 인상을 준다.
 
 import type { PartSpec, PlacedPart } from './types.js';
-import { roadDirs, pickInQuadrant, shuffledQuadrants, SETBACK, LAMP_CLEARANCE } from './road-topology.js';
+import {
+  roadDirs, pickInQuadrant, shuffledQuadrants, SETBACK, LAMP_CLEARANCE, EAVE,
+} from './road-topology.js';
 import { isPlaza } from './plaza.js';
 import { isTowerParcel } from './zoning.js';
 
@@ -25,22 +27,10 @@ const MIN_SIDE = 3;
  */
 const MAX_SIDE = 6;
 
-/**
- * 처마·간판이 벽면을 넘는 몫(미터). **겹침 반경과 배치 한계가 이 값을 함께 봐야 한다.**
- *
- * ── 실제 사고 ────────────────────────────────────────────────────────────────
- * 이 값이 `footprint` 에만 `+ 0.6` 으로 적혀 있었고 배치 한계는 반폭(`half`)만 당겼다.
- * 그래서 건물 중심이 `cellX/2 − half` 까지 갈 수 있는데 겹침 반경은 `half + 0.6` 이라,
- * 이웃 파셀 건물과 **0.6m 씩 마주 뻗어** 최대 0.74m 겹쳤다(13×13 파셀에서 11쌍).
- *
- * 값 미러링의 변종이다 — 같은 값을 두 곳에 적어서 어긋난 게 아니라, **두 곳에서 필요한
- * 값을 한 곳에만 적어서** 다른 쪽이 몰랐다. 상수로 뽑으면 그 어긋남이 원리적으로 닫힌다.
- *
- * 왜 어느 검사에도 안 걸렸나: 파셀 겹침 검사는 **파셀 안**만 본다(41×41 전수로 0). 파셀
- * 경계를 넘는 겹침은 볼 지점이 없었다. 가로등을 경계로 옮기며 유도 부등식을 세우다
- * 드러났다.
- */
-const EAVE = 0.6;
+// `EAVE`(처마·간판 여유)는 `road-topology.ts` 로 옮겼다. 타워가 같은 값을 필요로
+// 하면서 미러링이 생겼기 때문이다(검수관 블로커 2026-08-02 B1). 이 값이 왜 있는지와
+// 무엇을 잘못했다 고쳤는지의 기록도 그 파일에 함께 옮겼다 —
+// **사고 이력은 값을 따라간다.** 값만 옮기고 이력을 남기면 다음 사람이 값만 본다.
 
 export const building: PartSpec = {
   kind: 'building',

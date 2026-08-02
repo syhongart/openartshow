@@ -21,14 +21,12 @@
 // 이격은 값으로 기록한다(팀장 조건 ②) — 아래 상수 주석이 그 기록이다.
 
 import type { PartSpec, PlacedPart } from './types.js';
-import { roadDirs, SETBACK, LAMP_CLEARANCE } from './road-topology.js';
+import { roadDirs, SETBACK, LAMP_CLEARANCE, EAVE } from './road-topology.js';
 import { isTowerParcel } from './zoning.js';
 
-/**
- * 처마 여유(m). 건물과 같은 값을 쓴다 — 배치 한계와 겹침 반경이 **같은 값을 봐야**
- * 하고, 건물이 그것을 안 지켜서 실제로 겹친 전례가 있다(`building.ts` 의 `EAVE` 주석).
- */
-const EAVE = 0.6;
+// 처마 여유(`EAVE`)·도로 셋백·가로등 여유는 전부 `road-topology.ts` 가 소유한다.
+// 여기 다시 적지 않는다 — 처음엔 적었고, 그것이 검수관 블로커였다(2026-08-02 B1).
+// 위험을 주석으로 서술하면서 그 위험을 새로 만든 형태다.
 
 /**
  * 바닥 한 변(m). **9~13m.**

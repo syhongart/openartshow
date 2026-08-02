@@ -18,9 +18,17 @@
 // 둘 다 서거나 둘 다 안 선다.
 //
 // ── `decide/` 가 아니라 `parts/` 인 이유 ─────────────────────────────────────
-// `roadDirs`(`parts/road-topology.ts`)를 소비하기 때문이다. `decide/` 에 두면
-// decide → parts 방향 import 가 생겨 지금까지의 방향(parts → decide)과 뒤집힌다.
-// `plaza.ts` 가 이미 같은 이유로 `parts/` 에 있다.
+// **전례를 따른 것이다.** `plaza.ts` 가 이미 같은 성격의 순수 판정(`isPlaza`)을
+// `parts/` 에 두고 있다 — 도로 위상을 소비해 "이 파셀이 무엇인가" 를 답하고, 그 답을
+// 파츠 여럿이 함께 본다. 이 파일이 하는 일이 정확히 그것이다.
+//
+// 처음엔 여기에 "`decide/` 에 두면 decide → parts 방향 import 가 새로 생긴다" 고
+// 적었다. **사실이 아니었다**(검수관 R1 2026-08-02) — `decide/parcel-slots.ts` 가 이미
+// `parts/road-topology.js` 를, `decide/parcel-layout.ts` 가 `parts/index.js` 를
+// import 한다. 그 방향은 이 파일 이전부터 있었다.
+//
+// 결론(`parts/` 에 둔 것)은 그대로 두되 근거를 고친다. 틀린 선례 주장이 코드에 남으면
+// 다음 사람이 그것을 아키텍처 사실로 믿고 판단한다 — 주석은 읽히므로 틀리면 퍼진다.
 
 import { roadDirs } from './road-topology.js';
 import { isPlaza, h2 } from './plaza.js';

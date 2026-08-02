@@ -17,6 +17,7 @@ import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
 import { roadDirs } from '../frontend/js/world2/parts/road-topology.js';
 import { isCentralPlaza, GRID_MIN_X, GRID_MAX_X } from '../frontend/js/world2/decide/grid.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
+import { parcelLayout } from '../frontend/js/world2/decide/parcel-layout.js';
 
 const CX = DEFAULT_LAYOUT.cellX;
 const CZ = DEFAULT_LAYOUT.cellZ;
@@ -129,5 +130,65 @@ describe('결정론 — 같은 파셀은 언제 물어도 같은 답', () => {
       const first = isTower(px, pz);
       for (let i = 0; i < 5; i++) expect(isTower(px, pz)).toBe(first);
     }
+  });
+});
+
+// ── 셋백 실패 가지 — 죽은 분기를 죽은 채 두지 않는다 (검수관 R4) ────────────
+//
+// `tower.place()` 는 파셀 중앙에 세워도 도로 셋백을 못 지키면 `[]` 를 돌려준다.
+// 현재 `DEFAULT_LAYOUT`(cell 32) 에서는 그 조건이 **도달 불가능**하다:
+//
+//   16 − (SETBACK 6.0 + LAMP_CLEARANCE 0.9) − EAVE 0.6 = 8.5m  >  MAX_SIDE/2 = 6.5m
+//
+// 그대로 두면 파셀 크기나 셋백을 줄이는 변경이 왔을 때 **조용히 깨진다** — 타워가
+// 소리 없이 사라지고, 그 실패는 `starved` 에도 안 잡힌다.
+//
+// ── 첫 판본은 이 가지를 못 쟀다 (뮤테이션이 드러냈다) ────────────────────────
+// 처음에는 기본 셀에서 타워 파셀을 찾은 뒤 **그 좌표에** 좁은 셀을 넘겨 `[]` 인지
+// 봤다. 통과했다. 그런데 셋백 가드를 통째로 지우는 뮤테이션(M8)을 넣어도 **안
+// 깨졌다** — 좁은 셀은 물 판정(`parcelWater`)까지 바꾸므로 그 좌표가 애초에 타워
+// 파셀이 아니게 되고, 가드에 **도달조차 안 했다.**
+//
+// 테스트는 초록이었고 아무것도 안 재고 있었다. 이 저장소가 이름 붙인 그 형태다 —
+// *"테스트 통과는 검출력의 증거가 아니다."* 뮤테이션이 아니었으면 몰랐다.
+//
+// 그래서 **좁은 셀 기준으로 타워 파셀을 다시 찾는다.** 그러면 배제 조건은 통과하고
+// 셋백 가드만 남아, 그 한 줄을 겨눌 수 있다.
+describe('셋백 실패 — 좁은 파셀에서는 안 세운다', () => {
+  /** 셋백·가로등·처마를 빼고 남는 반폭. 음수면 어떤 크기도 못 들어간다 */
+  const TIGHT = 14;
+
+  it('★ 파셀이 좁으면 타워를 세우지 않는다 — 조용히 겹치는 것보다 낫다', () => {
+    const tight = { ...DEFAULT_LAYOUT, cellX: TIGHT, cellZ: TIGHT };
+    // **좁은 셀 기준으로** 타워 파셀을 찾는다. 기본 셀에서 찾으면 물 판정이 달라져
+    // 배제 조건에 걸리고, 셋백 가드는 실행되지도 않는다(위 주석의 그 함정).
+    let target: [number, number] | null = null;
+    for (let px = -20; px < 20 && !target; px++) {
+      for (let pz = -20; pz < 20; pz++) {
+        if (isTowerParcel(px, pz, TIGHT, TIGHT)) { target = [px, pz]; break; }
+      }
+    }
+    expect(target, '좁은 셀에서 타워 파셀을 못 찾았다 — 이 검사가 아무것도 안 본다')
+      .not.toBeNull();
+    const [px, pz] = target!;
+
+    // 여기까지 왔다는 것은 배제 조건(광장·도로·물)을 **전부 통과**했다는 뜻이다.
+    // 그러므로 타워가 안 서는 이유는 셋백 가드 하나뿐이다.
+    const narrow = parcelLayout(px, pz, 'near', tight).filter((p) => p.kind === 'tower');
+    expect(narrow.length, '좁은 파셀인데 타워가 섰다 — 도로를 덮는다').toBe(0);
+  });
+
+  it('넓은 셀에서는 같은 판정이 타워를 세운다 — 위 검사가 항상 0 인 것이 아니다', () => {
+    // 위 단언만 있으면 "어떤 이유로든 0" 이어도 통과한다. 대조군을 둔다.
+    let target: [number, number] | null = null;
+    for (let px = -20; px < 20 && !target; px++) {
+      for (let pz = -20; pz < 20; pz++) {
+        if (isTowerParcel(px, pz, CX, CZ)) { target = [px, pz]; break; }
+      }
+    }
+    expect(target).not.toBeNull();
+    const [px, pz] = target!;
+    const normal = parcelLayout(px, pz, 'near').filter((p) => p.kind === 'tower');
+    expect(normal.length, '기본 셀에서도 타워가 안 선다 — 파츠가 통째로 죽었는가').toBe(1);
   });
 });
