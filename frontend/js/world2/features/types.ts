@@ -45,6 +45,11 @@ export interface FeatureEnv {
   /** 씬 조명. 개수가 고정이라 커널이 소유하고, 기능은 색·강도만 빌려 쓴다 */
   readonly sun: DirectionalLight;
   readonly hemi: HemisphereLight;
+  /**
+   * 광원을 타깃에서 물릴 거리(m). 조립부가 `decide/shadow.ts` 로 그림자 프러스텀과
+   * **함께** 유도한 값이다 — 하늘이 이 값으로 태양을 배치해야 프러스텀과 짝이 맞는다.
+   */
+  readonly shadowDist: number;
   /** 월드 셀 크기(미터) */
   readonly cell: number;
 

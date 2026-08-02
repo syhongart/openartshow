@@ -27,6 +27,9 @@ import {
   type MountedFeature,
 } from './features/index.js';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
+import { shadowFrustum } from './decide/shadow.js';
+import { DEFAULT_BANDS } from './decide/lod.js';
+import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
 // 원인을 짐작하기 어렵다(검수관이 잡은 열 번째 지점).
@@ -49,6 +52,25 @@ import { TIMES, type SkyTime } from './decide/night.js';
 // "한쪽만 고쳐도 아무도 모른다"가 문제였다.
 const CELL_X = DEFAULT_LAYOUT.cellX;
 const CELL_Z = DEFAULT_LAYOUT.cellZ;
+
+/**
+ * 그림자 맵 한 변(px). 프러스텀 반폭과 함께 **텍셀 크기**를 정한다 —
+ * `decide/shadow.ts` 가 둘에서 유도하고, 그 텍셀이 곧 그림자 경계의 선명도다.
+ *
+ * 1024 는 원래 값 그대로다. 이번 변경은 "얼마나 촘촘히" 가 아니라 **"어디까지 담느냐"**
+ * 를 고친 것이라, 해상도를 함께 올리면 무엇이 화면을 바꿨는지 갈리지 않는다.
+ * 올릴 값어치가 있는지는 감독 판정 뒤에 본다(2048 이면 텍셀이 절반).
+ */
+const SHADOW_MAP = 1024;
+
+/**
+ * 그림자 카메라 파라미터. **한 번 유도해 두 곳이 함께 쓴다** — 조명 설정(프러스텀)과
+ * 하늘(`shadowDist`, 태양을 얼마나 물릴지)이 따로 계산하면 짝이 어긋나고, 그 어긋남은
+ * "그림자가 없다"로만 보여 원인을 짚기 어렵다.
+ */
+const SHADOW = shadowFrustum(
+  DEFAULT_LAYOUT.cellX, DEFAULT_BANDS.nearExit, TOWER_MAX_H, SHADOW_MAP,
+);
 
 /*
  * 동시 파셀 수 상수(`MAX_PARCELS = 20`)를 여기서 없앴다.
@@ -280,7 +302,23 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         const dir = new THREE.DirectionalLight(0xffe9c4, 2.2);
         dir.position.set(60, 120, 40);
         dir.castShadow = true;
-        dir.shadow.mapSize.set(1024, 1024);
+        dir.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
+        // ── 프러스텀은 유도한다 (감독 지시 2026-08-02 "하드라이트 느낌이 없어") ──
+        // 여기가 비어 있어서 three 기본 **±5m** 가 쓰이고 있었다. 셀이 32m 인 세계에서
+        // 그 반경은 발밑뿐이라, `castShadow` 를 단 파츠들이 전부 그림자를 못 그렸다.
+        // 값 넷이 서로 묶여 있으므로 `decide/shadow.ts` 가 함께 유도한다.
+        dir.shadow.camera.left = -SHADOW.half;
+        dir.shadow.camera.right = SHADOW.half;
+        dir.shadow.camera.top = SHADOW.half;
+        dir.shadow.camera.bottom = -SHADOW.half;
+        dir.shadow.camera.near = SHADOW.near;
+        dir.shadow.camera.far = SHADOW.far;
+        dir.shadow.normalBias = SHADOW.normalBias;
+        dir.shadow.camera.updateProjectionMatrix();
+        // **타깃을 씬에 넣는다.** three 는 `target.matrixWorld` 로 광원 방향을 정하는데,
+        // 씬 밖 객체는 갱신되지 않아 타깃을 옮겨도 반영이 안 된다. 기본 타깃은 월드
+        // 원점이므로, 이걸 빼먹으면 플레이어가 광장을 벗어나는 순간 그림자가 사라진다.
+        scene.add(dir.target);
         scene.add(dir);
         sun = dir;
         hemi = new THREE.HemisphereLight(0x8fa6d8, 0x1b2030, 1.1);
@@ -323,6 +361,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           {
             scene, camera, adapter: adapter!, player, pools: pools!,
             sun: sun!, hemi: hemi!, cell: CELL_X,
+            // 프러스텀과 **같은 유도**에서 나온 값이라야 짝이 맞는다. 하늘이 태양을
+            // 이보다 가깝게 놓으면 타워 꼭대기가 그림자 카메라 뒤로 밀린다.
+            shadowDist: SHADOW.dist,
             doc: typeof document !== 'undefined' ? document : null,
             time: () => timeOfDay,
             setTime: (t) => { timeOfDay = t; },
