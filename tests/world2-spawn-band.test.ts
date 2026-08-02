@@ -22,14 +22,18 @@
 
 import { describe, it, expect } from 'vitest';
 import { pickNearby } from '../frontend/js/world2/decide/npc-walk.js';
-import { fogBand, FOG_NEAR_CELLS } from '../frontend/js/world2/decide/fog.js';
+import { fogBand } from '../frontend/js/world2/decide/fog.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
+// ★ **실물 상수를 import 한다.** 처음엔 같은 유도식을 여기 복제했고, 그래서
+// `npc.ts` 의 `Math.floor` 를 `ceil` 로 바꿔도 저장소 전체 게이트가 **하나도 안
+// 깨졌다**(검수관 뮤테이션 실증, 1371/1371 통과). 값을 다시 적는 것만 미러링이
+// 아니라 **식을 다시 적는 것도 미러링**이다 — 검사가 자기가 만든 값을 검사하면
+// 실물이 무엇이든 통과한다. B1 이 샌 사각과 정확히 같은 형태이고 이번이 세 번째다.
+import { SPAWN_REACH, SPAWN_RING } from '../frontend/js/world2/features/npc.js';
 
 const { cellX, cellZ } = DEFAULT_LAYOUT;
-
-/** `npc.ts` 와 같은 방식으로 유도한다 — 값을 여기 다시 적으면 미러링이다 */
-const REACH = Math.max(1, Math.floor(FOG_NEAR_CELLS));
-const RING = REACH;
+const REACH = SPAWN_REACH;
+const RING = SPAWN_RING;
 
 /** 결정론 난수. `npc.ts:rngFrom` 과 같은 알고리즘 — 시드가 같으면 같은 결과 */
 function rng(seed: number): () => number {

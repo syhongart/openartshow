@@ -84,10 +84,18 @@ describe('안개 소비자가 SSOT 를 경유한다', () => {
     // 한글이 비워드문자라 잡혔고, 그래서 "두 번 잡았다" 는 실적이 반쪽이었다.
     //
     // 뒤 경계를 **숫자가 아닌 것**으로 바꿔 단위문자까지 덮는다.
-    const s = src('frontend/js/world2/features/npc.ts');
-    expect(s, '안개 배수를 적었다').not.toMatch(/(?<![\d.])(1\.6|2\.4)(?![\d])/);
-    expect(s, '안개 거리(m)를 하드코딩했다 — 셀이 바뀌면 어긋난다')
-      .not.toMatch(/(?<![\d.])(51\.2|76\.8)(?![\d])/);
+    // 대상이 `npc.ts` 하나면 **같은 문장이 옆 파일에 살아 있어도 통과한다** —
+    // 실제로 `npc-walk.ts`(이번 처방의 주제 함수 `pickNearby` 가 있는 파일)에
+    // 그대로 있었다(검수관 조건 3). 화이트리스트로 좁게 늘린다.
+    for (const f of [
+      'frontend/js/world2/features/npc.ts',
+      'frontend/js/world2/decide/npc-walk.ts',
+    ]) {
+      const s = src(f);
+      expect(s, `${f}: 안개 배수를 적었다`).not.toMatch(/(?<![\d.])(1\.6|2\.4)(?![\d])/);
+      expect(s, `${f}: 안개 거리(m)를 하드코딩했다 — 셀이 바뀌면 어긋난다`)
+        .not.toMatch(/(?<![\d.])(51\.2|76\.8)(?![\d])/);
+    }
   });
 });
 

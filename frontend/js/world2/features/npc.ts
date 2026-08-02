@@ -95,11 +95,22 @@ const RECYCLE_CELLS = 3.2;
  * 스폰 최대(셀). **정수여야 한다** — 아래 B1 전말 참조.
  *
  * 값은 `fogBand` 에서 **유도하되 정수로 내린다.** 체비셰프 박스라 코너가
- * `reach × √2` 까지 나가므로, 그 코너까지 안개 시작 안쪽이어야 조건이 실제로
- * 성립한다. `Math.floor` 가 그것을 보장하는 가장 단순한 수단이고, 안개가 넓어지면
- * 밴드도 따라 넓어진다.
+ * `reach × √2` 까지 나가므로, **그 코너까지** 안개 시작 안쪽이어야 조건이 성립한다.
+ *
+ * ⚠ 처음엔 `Math.floor(FOG_NEAR_CELLS)` 로 쓰고 *"floor 가 그것을 보장한다"* 고
+ * 적었다. **보장하지 않는다**(검수관 조건 2, 반례 6/8): near 2.0 이면 reach 2 이고
+ * 코너는 2.83 이라 안개 밖이다. 현재 값에서 성립한 것은 near 가 `[√2, 2)` 라는
+ * 좁은 구간에 있어서였다 — **우연히 참인 문장**이었다.
+ *
+ * 그래서 √2 로 나눈 뒤 내린다. 이러면 어떤 near 에도 코너가 안쪽이다.
+ * (`near < √2` 면 어떤 정수 reach 로도 불가능하다 — 그때는 `Math.max(1, …)` 가
+ *  1 을 주고 코너가 안개를 넘는다. 그 경우 밴드가 아니라 안개를 다시 봐야 한다.)
+ *
+ * **`export` 인 이유**: 테스트가 이 값을 import 해서 검사한다. 예전에는 테스트가
+ * 같은 유도식을 **복제**했고, 그래서 `floor`→`ceil` 한 글자를 바꿔도 저장소 전체
+ * 게이트가 하나도 안 깨졌다(검수관 뮤테이션 실증). **식을 복제하는 것도 미러링이다.**
  */
-const SPAWN_REACH = Math.max(1, Math.floor(FOG_NEAR_CELLS));
+export const SPAWN_REACH = Math.max(1, Math.floor(FOG_NEAR_CELLS / Math.SQRT2));
 
 /**
  * 스폰 최소(셀). `reach` 와 같으면 **한 겹 링**이 된다 — 후보가 8칸으로 줄지만
@@ -108,7 +119,7 @@ const SPAWN_REACH = Math.max(1, Math.floor(FOG_NEAR_CELLS));
  * `reach / 2` 로 두었다가 **비정수가 나와 격자를 깨뜨렸다**(B1). 나눗셈은 정수를
  * 보존하지 않으므로 여기서는 쓰지 않는다.
  */
-const SPAWN_RING = SPAWN_REACH;
+export const SPAWN_RING = SPAWN_REACH;
 
 /** 목표 도달 판정(m) */
 const ARRIVE = 0.35;
