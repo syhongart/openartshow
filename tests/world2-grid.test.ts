@@ -82,17 +82,28 @@ describe('중앙 광장', () => {
     expect(found).toBe(1); // 표본이 비면 위 단언이 한 번도 안 돈다
   });
 
-  it('랜드마크 자리가 각각 하나씩, 서로 다른 칸이다', () => {
-    const at: Record<string, string[]> = { center: [], north: [] };
+  it('이름 붙은 자리가 각각 하나씩, 서로 다른 칸이다', () => {
+    // ── 목록을 미리 적지 않는다 ─────────────────────────────────────────────
+    // 예전엔 `{ center: [], north: [] }` 로 시작했고, 그래서 `west`(미술관 자리)가
+    // 생기자 **단언이 아니라 `at[cell].push` 가 TypeError 로 죽었다.** 테스트가 새 자리를
+    // "계약 위반" 이 아니라 "크래시" 로 알린 것이라, 무엇이 틀렸는지가 안 보였다.
+    // 발견한 것을 모으고 나서 판정하면 그 실패가 읽히는 형태가 된다.
+    const at = new Map<string, string[]>();
     for (let px = -PLAZA_R; px <= PLAZA_R; px++) {
       for (let pz = -PLAZA_R; pz <= PLAZA_R; pz++) {
         const cell = centralPlazaCell(px, pz);
-        if (cell && cell !== 'edge') at[cell].push(`${px},${pz}`);
+        if (!cell || cell === 'edge') continue;
+        const list = at.get(cell) ?? [];
+        list.push(`${px},${pz}`);
+        at.set(cell, list);
       }
     }
-    expect(at.center).toHaveLength(1);
-    expect(at.north).toHaveLength(1);
-    expect(at.center[0]).not.toBe(at.north[0]);
+    // **이름 목록 자체가 계약이다.** 자리를 늘리거나 줄이는 것은 의도적 변경이므로
+    // 여기도 함께 고쳐야 한다 — 저절로 따라오면 자리가 소리 없이 사라져도 초록이다.
+    expect([...at.keys()].sort()).toEqual(['center', 'north', 'west']);
+    for (const [name, cells] of at) expect(cells, `${name} 의 칸`).toHaveLength(1);
+    const all = [...at.values()].flat();
+    expect(new Set(all).size, '두 자리가 같은 칸을 가리킨다').toBe(all.length);
   });
 
   it('광장 밖에는 자리가 없다 — 중앙이 유일해야 특별하다', () => {

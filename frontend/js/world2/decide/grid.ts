@@ -72,14 +72,24 @@ export function isCentralPlaza(px: number, pz: number): boolean {
  * "레지스트리 밖에 파츠 목록을 다시 적지 않는다" 검사에 걸렸다 — 옳은 지적이다.
  * 격자는 자리를 알고, 그 자리에 무엇을 세울지는 `parts/plaza.ts` 가 정한다.
  */
-export type PlazaCell = 'center' | 'north' | 'edge';
+export type PlazaCell = 'center' | 'north' | 'west' | 'edge';
 
 export function centralPlazaCell(px: number, pz: number): PlazaCell | null {
   if (!isCentralPlaza(px, pz)) return null;
   if (px === 0 && pz === 0) return 'center';
   if (px === 0 && pz === -PLAZA_R) return 'north';
+  if (px === PLAZA_WEST.px && pz === PLAZA_WEST.pz) return 'west';
   return 'edge';
 }
+
+/**
+ * 광장 서쪽 칸의 파셀 좌표. **자리만 정하고 무엇이 서는지는 모른다**(위 규율 그대로).
+ *
+ * 좌표를 상수로 빼 둔 이유는 소비자가 둘이기 때문이다 — 위 `centralPlazaCell` 과, 이
+ * 칸에 무언가를 세우는 쪽. 양쪽이 `(-1, 0)` 을 각자 적으면 `PLAZA_R` 이 바뀌는 날 한쪽만
+ * 따라온다.
+ */
+export const PLAZA_WEST = { px: -PLAZA_R, pz: 0 } as const;
 
 /** 중앙 광장 한가운데의 월드 좌표. 홀수 변이라 가운데 칸의 중심이고, 그것이 원점이다 */
 export function plazaCenter(): { x: number; z: number } {

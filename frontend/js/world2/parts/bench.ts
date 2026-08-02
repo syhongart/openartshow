@@ -20,7 +20,7 @@ import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, takeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
-import { isPlaza } from './plaza.js';
+import { isPlaza, plazaOccupied } from './plaza.js';
 
 /** 벤치가 차지하는 반경(미터). 좌판 1.4m 의 절반 + 앉을 여유 */
 const BENCH_RADIUS = 0.95;
@@ -48,6 +48,8 @@ export const bench: PartSpec = {
    * 여덟 그루가 밀리면 파셀이 휑해진다.
    */
   place: ({ px, pz, rnd, o, halfX, halfZ, placed, radiusOf }) => {
+    // 미술관이 파셀을 통째로 쓰는 칸 — 소품이 벽 안에 박힌다(plaza.ts)
+    if (plazaOccupied(px, pz)) return [];
     const dirs = roadDirs(px, pz);
     // **광장에 더 많이 둔다.** 광장은 "숨 쉴 곳" 으로 만든 빈 구획인데, 정말 아무것도
     // 없으면 빈 땅으로 읽힌다. 앉을 것이 있어야 머물 수 있는 자리가 된다.

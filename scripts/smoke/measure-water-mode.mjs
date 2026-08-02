@@ -56,6 +56,7 @@ import {
   SITE_DIR, BASE_PATH, CHROMIUM_EXECUTABLE, CHROMIUM_ARGS,
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
+import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
 
 /** 부팅 대기 상한(ms). 헤드리스 SwiftShader 는 느리므로 넉넉히 */
 const BOOT_TIMEOUT = 60000;
@@ -89,17 +90,22 @@ export async function runWaterMode({ browser, origin, basePath = BASE_PATH, log 
   });
   page.on('pageerror', (e) => errors.push(`PAGEERROR: ${String(e.message).slice(0, 200)}`));
 
+  // 사유는 부팅 전부터 쌓인다 — 부팅·GLB 대기 실패도 여기 들어간다. **선언을 뒤로 두면
+  // 그 push 가 TDZ ReferenceError 로 죽는다**(실제로 한 번 그렇게 적었고, `node --check`
+  // 는 문법만 보므로 통과했다).
+  const bad = [];
+
   try {
-    // 무거운 기능은 끈다 — 이 게이트가 보는 것은 수면 재질 하나다.
-    const url = `${origin}${basePath}app/world2.html`
-      + '?glb=0&npc=0&vrm=0&time=day&weather=clear&water=tsl';
+    // NPC·VRM 은 끈다. **GLB 는 끄지 않는다** — 기본 노출이 됐고, 게이트는 라이브 상태를
+    // 재야 한다(`world2-ready.mjs`).
+    const url = `${origin}${basePath}app/world2.html${WORLD2_QUERY}&water=tsl`;
     await page.goto(url, { waitUntil: 'networkidle', timeout: BOOT_TIMEOUT });
 
-    let booted = false;
-    try {
-      await page.waitForFunction(() => !!window.__world2?.stats?.(), null, { timeout: BOOT_TIMEOUT });
-      booted = true;
-    } catch { /* 아래에서 FAIL 로 적는다 */ }
+    // 부팅 실패 사유도 이 함수가 문구까지 만들어 돌려준다 — 여기서 다시 적으면 같은
+    // 실패가 두 줄로 쌓이고, 문구가 갈리면 어느 쪽이 참인지 알 수 없게 된다.
+    const ready = await waitForWorld2Ready(page, { bootTimeout: BOOT_TIMEOUT });
+    const booted = ready.booted;
+    if (ready.reason) bad.push(ready.reason);
 
     // **부팅 직후에 판정하지 않는다.** 노드 재질 오류는 재질이 처음 렌더 목록에 오르는
     // 프레임에 난다 — `stats()` 가 뜬 시점에는 아직 안 났을 수 있다.
@@ -112,8 +118,6 @@ export async function runWaterMode({ browser, origin, basePath = BASE_PATH, log 
       })
       : { backend: null, water: null };
 
-    const bad = [];
-    if (!booted) bad.push(`부팅 실패 — \`__world2.stats()\` 가 ${BOOT_TIMEOUT}ms 안에 안 떴다`);
     if (errors.length) bad.push(`콘솔/페이지 에러 ${errors.length}건 (첫 건: ${errors[0]})`);
 
     const w = snap.water;

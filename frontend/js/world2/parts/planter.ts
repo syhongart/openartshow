@@ -17,7 +17,7 @@ import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
-import { isPlaza } from './plaza.js';
+import { isPlaza, plazaOccupied } from './plaza.js';
 
 /**
  * 화분이 차지하는 반경. 덤불 반경 0.3 에 스케일을 곱하고 잎이 삐져나온 만큼을 더한다.
@@ -48,6 +48,8 @@ export const planter: PartSpec = {
    * 못 쓰는 좁은 틈에도 들어간다 — 우선순위가 낮은 것이 오히려 어울린다.
    */
   place: ({ px, pz, rnd, o, halfX, halfZ, placed, radiusOf }) => {
+    // 미술관이 파셀을 통째로 쓰는 칸 — 소품이 벽 안에 박힌다(plaza.ts)
+    if (plazaOccupied(px, pz)) return [];
     const dirs = roadDirs(px, pz);
     const n = isPlaza(px, pz) ? 3 : Math.floor(rnd() * 3);
     if (n === 0) return [];

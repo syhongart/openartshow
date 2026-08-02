@@ -1,8 +1,25 @@
-// world2/features/glb-city.ts — **미술관 GLB 부하 실험.** 실험 전용 기능이다.
+// world2/features/glb-city.ts — **미술관 GLB.** 라이브 랜드마크 1채 + 부하 실험 노브.
 //
 // ── 감독 지시 ────────────────────────────────────────────────────────────────
 // *"브런치만들어서 테스트로 건물대신 미술관 건물을 올려보자. 얼마나 버벅이나 보고싶다.
-//   한개 올리지말고. 50개 올려봐. 미술관 지엘비 파일."*
+//   한개 올리지말고. 50개 올려봐. 미술관 지엘비 파일."* (실험 착수)
+// *"glb 건물 기본으로 나오게하자"* (2026-08-02 — 기본 노출로 승격)
+//
+// ── 실험에서 라이브로 (팀장 판정 2026-08-02) ────────────────────────────────
+// 기본 채수는 **1** 이다. 실측이 그렇게 시켰다 — `glb=0` 대비 드로우콜 증가가 채당
+// 31~37 이고, world2 전체가 40 안팎이며 설계 목표가 80 이다. 즉 **1채로 가용분이 거의
+// 소진되고 2채는 어느 기준으로도 초과**다. 채수를 늘리려면 메시 병합·LOD 가 먼저다.
+//
+//   채수  draw 총계   증가    geo증가  tex증가  pipe증가  로드(로컬)
+//     0      16        —        —       —        —         —
+//     1      44      +28       +28     +21       +5      299ms
+//     3     122     +106       +78     +22       +6      541ms
+//     8     315     +299       +78     +22       +6    1,281ms
+//    20     646     +630       +78     +22       +6    2,451ms
+//
+// geo·tex·pipe 가 3채부터 상수인 것은 `clone()` 이 지오·재질을 참조 공유하기 때문이다.
+// **드로우콜만 선형**이고, 그것이 이 자산의 유일한 비용 축이다.
+// (고정 시점 측정이라 카메라를 돌렸을 때의 최댓값은 못 쟀다 — 과소평가일 수 있다.)
 //
 // ── 이 기능은 world2 의 제1원리를 일부러 깬다 ────────────────────────────────
 // world2 는 **개수 불변식** 위에 서 있다 — 파츠 종류당 `InstancedMesh` 하나로 재질·지오·
@@ -15,7 +32,13 @@
 //
 // ── 실측 (파일 헤더 파싱, 배치 전) ──────────────────────────────────────────
 //   파일 12.9MB · primitives 78 · 재질 17 · 텍스처 22 · 삼각형 162,902
-//   바닥 26.3 × 24.1m · 높이 5.8m
+//   바닥 17.2 × 24.6m · 높이 7.95m (바닥면이 로컬 y = −0.5)
+//
+// ⚠ 위 치수는 **한 번 틀린 채로 오래 있었다.** 예전에 "26.3 × 24.1m · 높이 5.8m" 라고
+// 적혀 있었고, 같은 파일 아래 `makeBox()` 주석은 처음부터 옳은 값을 담고 있었다. 한
+// 파일 안에서 같은 실측이 두 번 적혀 갈라진 것이다(디자이너가 glTF accessor 를 다시
+// 파싱해 잡았다, 2026-08-02). 배치 계산을 이 숫자로 하면 파셀을 넘친다 — 그래서 아래
+// 배치는 **주석이 아니라 런타임 `Box3` 를 읽는다.**
 //
 // primitives 가 곧 드로우콜 후보다. 50채면 **3,900** 이고, world2 세계 전체가 지금 40
 // 안팎이며 설계 목표가 80 이다. 고정 미술관이 실증한 상한이 255 였다. 즉 예측은
@@ -30,9 +53,42 @@
 import type { Object3D, Scene } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import { readNum, readEnum } from '../url-knob.js';
+import { PLAZA_WEST } from '../decide/grid.js';
 
 /** 실험 상한. 이보다 크면 브라우저가 죽는 쪽에 가까워 측정 자체가 안 된다 */
 const MAX_COPIES = 200;
+
+/**
+ * 기본 채수. **1.** 위 표의 근거로 팀장이 확정했다 — 2채는 draw 예산을 넘는다.
+ *
+ * `?glb=0` 으로 끌 수 있게 남겨 둔다. 스모크가 대조군을 잡을 때 쓰고, 감독 기기에서
+ * 이 자산이 말썽을 부릴 때 URL 하나로 격리하는 경로이기도 하다.
+ */
+const DEFAULT_COPIES = 1;
+
+/**
+ * 랜드마크가 서는 파셀과 방향 (디자이너 판정 2026-08-02).
+ *
+ * ── 왜 광장 서쪽인가 ────────────────────────────────────────────────────────
+ * 이 자산은 바닥이 17.2 × 24.6m 라 32m 파셀을 거의 채운다. 도로 셋백(6.0m)을 지킬 수
+ * 있는 일반 파셀이 없어서, 도로 중심 조각이 안 그려지는 **중앙 광장** 칸이 유일한
+ * 후보였다. 그중 `center`(분수대)·`north`(시계탑)는 이미 임자가 있다.
+ *
+ * 남은 칸 중 서쪽 가운데를 고른 것은 거리다 — 스폰(0,10)에서 33.5m 로, 안개 완전가시
+ * 거리 60.8m 의 55% 라 또렷하게 보인다. 북쪽 모서리 칸이면 첫 화면에 분수대·시계탑과
+ * 함께 걸릴 여지가 있지만 52.8m 라 안개 경계의 87% 여서 뿌옇다. **흐릿하게 걸리는 것보다
+ * 가까이서 또렷하게 발견되는 쪽**을 골랐다 — 취향이 섞인 판단이고, 다르게 볼 여지가
+ * 있다고 디자이너가 함께 적었다.
+ *
+ * 결과적으로 스폰 정면(-z)이 아니라 베어링 ~73° 라 **고개를 돌려야 보인다.** 이 자산은
+ * 안 보이는 사고를 세 번 냈다(금속 검정화·헛된 투명·WebGPU 확장값) — 첫 화면 정면이
+ * 아닌 것이 그 위험도 함께 줄인다.
+ *
+ * ── 회전 ───────────────────────────────────────────────────────────────────
+ * 문(`door.002`)과 차고문이 로컬 +Z 벽에 있다(디자이너가 헤드리스 렌더로 색을 칠해
+ * 확인했다 — 추정이 아니다). 광장 서쪽 칸에서 정면이 광장(동쪽)을 보게 하는 값이 π/2 다.
+ */
+const LANDMARK_RY = Math.PI / 2;
 
 /**
  * 미술관 GLB. `lab-glb.html`(behind-flag 실험 페이지)이 쓰던 것과 같은 파일이다.
@@ -73,8 +129,9 @@ export const glbCityFeature: Feature = {
   name: 'glbCity',
 
   create(env: FeatureEnv): FeatureInstance | null {
-    const want = Math.round(readNum('glb', 0, 0, MAX_COPIES));
-    if (want <= 0) return null; // 기본은 꺼짐 — 실험 URL 로만 켠다
+    const want = Math.round(readNum('glb', DEFAULT_COPIES, 0, MAX_COPIES));
+    // `?glb=0` 이면 기능 자체가 없는 것과 같다 — 씬도 배지도 진단도 만들지 않는다.
+    if (want <= 0) return null;
 
     const counts: Counts = { placed: 0, meshesPer: 0, trisPer: 0, state: 'loading' };
     let root: Object3D | null = null;
@@ -176,10 +233,16 @@ export const glbCityFeature: Feature = {
 
         // 씬에 먼저 붙이고 채워 넣는다. 그래야 세워지는 과정이 화면에 보인다.
         const unit = mode === 'box' ? makeBox(THREE) as unknown as Object3D : model;
-        await placeGrid(unit, root, want, env.cell, (done) => {
+        await placeGrid(THREE as unknown as ThreeGroupNS, unit, root, want, env.cell, (done) => {
           counts.placed = done;
           if (!disposed) badge?.set(`미술관 ${done}/${want} 세우는 중…`);
         });
+        if (disposed) return;
+
+        // 예열이 **끝난 뒤에** ready 를 세운다(팀장 조건 1). 순서를 뒤집으면 게이트가
+        // 예열 전에 기준선을 잡아 FAIL 이 그대로 재현되고, `ready` 가 뜻하는 것도
+        // "다 섰다" 에서 "다 섰지만 아직 GPU 에 안 올라갔다" 로 흐려진다.
+        await warmUp(root);
         if (disposed) return;
 
         counts.state = 'ready';
@@ -205,7 +268,10 @@ export const glbCityFeature: Feature = {
 
         // 최근접 거리를 함께 띄운다. **"안 보인다" 가 배치 문제인지 렌더 문제인지
         // 이 숫자 하나로 갈린다** — 32m 인데 안 보이면 렌더, 200m 면 배치다.
-        const near = gridCells(want, env.cell)[0]?.d ?? 0;
+        // **`gridCells` 가 아니라 실제 배치 목록에서 잰다.** 첫 채가 랜드마크로 고정된
+        // 뒤에도 옛 함수를 그대로 두면 배지가 세우지도 않은 자리의 거리를 말한다.
+        const first = placementCells(want, env.cell)[0];
+        const near = first ? Math.hypot(first.x, first.z) : 0;
         badge?.set(
           // **어느 축으로 보고 있는지를 배지가 말해야 한다.** 감독은 폰으로 보고,
           // 여러 링크를 번갈아 열면 지금 화면이 어느 조합인지 헷갈린다 — 그러면 판정이
@@ -506,6 +572,16 @@ interface Box3Like {
   setFromObject(o: never): Box3Like;
 }
 
+/** 배치가 쓰는 최소 계약 — 그룹 하나와 경계 상자 하나면 된다 */
+interface ThreeGroupNS {
+  Group: new () => {
+    add(o: never): void;
+    position: { set(x: number, y: number, z: number): void };
+    rotation: { y: number };
+  };
+  Box3: new () => Box3Like;
+}
+
 /**
  * 미술관 대신 세울 **단순 상자.** 크기는 GLB 실측 바운즈와 같게 맞춘다.
  *
@@ -563,17 +639,39 @@ interface GeoLike {
  * 둘러보게 되고, 부하는 그대로 유지된다 — 비운 칸의 몫은 바깥으로 한 칸 밀린다.
  */
 async function placeGrid(
+  THREE: ThreeGroupNS,
   model: Object3D,
   root: Object3D,
   n: number,
   cell: number,
   onStep: (done: number) => void,
 ): Promise<void> {
-  const cells = gridCells(n, cell);
+  const cells = placementCells(n, cell);
+  // ── 피벗 보정 — **주석의 치수가 아니라 실물을 잰다** ──────────────────────
+  // 이 자산은 로컬 XZ 중심이 노드 원점에서 벗어나 있고 바닥도 y=0 이 아니다. 파셀
+  // 중심에 그냥 `position.set` 하면 시각적 중심이 밀려 셀 경계를 1m 남짓 넘고, 바닥은
+  // 지면에 반쯤 묻힌다.
+  //
+  // 오프셋을 상수로 적지 않는 이유: 이 파일 헤더의 치수가 **실제로 틀린 채 오래
+  // 있었다**(26.3×24.1 로 적혀 있었고 참값은 17.2×24.6). GLB 를 교체하면 다시 틀린다.
+  // 런타임에 `Box3` 로 재면 자산이 바뀌어도 저절로 따라온다.
+  const box = new THREE.Box3().setFromObject(model as never);
+  const fix = box.min.x === Infinity
+    ? { x: 0, y: 0, z: 0 }   // 메시가 없다 — 보정할 것도 없다
+    : { x: -(box.min.x + box.max.x) / 2, y: -box.min.y, z: -(box.min.z + box.max.z) / 2 };
+
   for (let i = 0; i < cells.length; i++) {
+    // ── 회전은 **바깥 그룹**이 한다 ─────────────────────────────────────────
+    // 보정 오프셋은 모델의 로컬 좌표계 값이다. 같은 객체에 회전과 보정을 함께 주면
+    // 보정까지 회전해 자리가 어긋난다. 안쪽에서 보정하고 바깥에서 돌리면 순서가
+    // 분리된다. 그룹은 드로우콜을 만들지 않으므로 개수 축에는 무해하다.
+    const holder = new THREE.Group();
     const copy = model.clone(true);
-    copy.position.set(cells[i].x, 0, cells[i].z);
-    root.add(copy);
+    copy.position.set(fix.x, fix.y, fix.z);
+    holder.add(copy as never);
+    holder.position.set(cells[i].x, 0, cells[i].z);
+    holder.rotation.y = cells[i].ry;
+    root.add(holder as never);
     // ── 월드 행렬을 **명시적으로** 갱신한다 ────────────────────────────────
     // 감독 판정 네 번 동안 미술관이 안 보였고, 다섯 번째에 갑자기 보였다. 그 사이
     // 내가 넣은 것은 **진단 코드뿐**이다 — `Box3().setFromObject(root)`.
@@ -587,7 +685,10 @@ async function placeGrid(
     // 원인을 확정하지는 못했다(헤드리스는 WebGL 이라 이 증상이 재현되지 않는다).
     // 다만 **진단이 부작용으로 고치는 상태를 남겨 둘 수는 없다.** 진단을 빼면
     // 다시 깨지고, 그때는 아무도 이유를 모른다.
-    copy.updateMatrixWorld(true);
+    //
+    // 갱신은 **씬에 붙은 쪽**(그룹)에서 건다 — 복제본에서 걸면 그룹의 회전·위치가
+    // 아직 안 반영된 행렬로 자식만 갱신된다.
+    (holder as unknown as Object3D).updateMatrixWorld(true);
     // 한 프레임에 다 붙이면 그 프레임이 통째로 멈춘다 — 감독 실기기에서 **1,072ms**
     // 히칭 1회가 그것이었다. 배치마다 프레임을 넘기면 같은 총량이 여러 프레임에 흩어져
     // 화면이 계속 돈다. 총 시간은 오히려 조금 늘지만 **멈추지 않는다.**
@@ -606,6 +707,69 @@ async function placeGrid(
  * 이 값을 1 로 내리면 더 부드럽지만 50채에 50프레임(≈0.8초)이 더 든다.
  */
 const ATTACH_BATCH = 4;
+
+/**
+ * **최초 렌더 예열.** 잠시 컬링을 끄고 두 프레임 돌린 뒤 원상복구한다.
+ *
+ * ── 왜 필요한가 (스모크가 잡았다, 2026-08-02) ───────────────────────────────
+ * three 의 `info.memory` 는 객체를 **만들 때가 아니라 처음 렌더되는 프레임에** 오른다.
+ * 이 자산은 광장 서쪽(스폰 기준 베어링 ~73°)에 서므로 기본 시선(-z)에서 시야 밖이고,
+ * 프러스텀 컬링에 걸려 렌더 목록에 안 오른다. 그래서 **고개를 돌리는 순간** geo +78 ·
+ * tex +22 · pipe +6 계단이 난다 — 개수 불변식 게이트는 그것을 "증식" 으로 읽었다.
+ *
+ * 증식이 아니었다. 실측으로 갈랐다: 기준선 **전에** 카메라를 한 바퀴 돌리면 기준선이
+ * 22→100 으로 오르고 그 뒤 증가분은 정확히 0 이다. **지연된 최초 예열**이다.
+ *
+ * 이 저장소가 날씨에서 이미 겪은 것과 같은 축이고(#114 "날씨 첫 등장 비용을 부팅
+ * 예열로 이동"), CLAUDE.md 가 *"만들어 둔 것과 GPU 에 올라간 것은 다른 일이다"* 로
+ * 적어 둔 함정이다. 아는 함정을 그대로 밟았다.
+ *
+ * ── 왜 정식 `prewarm()` 훅이 아닌가 ────────────────────────────────────────
+ * 그 훅은 부팅 시퀀스의 한 지점에서 불린다. GLB 는 **비동기 로드**라 그때 씬에 아직
+ * 없다 — 훅에 붙이면 아무것도 안 구워진다. 그래서 발상만 같고(*"평소 숨어 있는 것을
+ * 잠시 보이게"*) 자리는 로드 완료 지점이다.
+ *
+ * ── 원복은 `finally` 다 (팀장 조건 2) ───────────────────────────────────────
+ * 원복이 빠지면 이 자산이 **영구히 컬링에서 빠져** 안 보일 때도 드로우콜 78 을 낸다.
+ * 세계 총합이 94 가 되어 설계 목표 80 을 넘는데, **그것을 잡는 지표가 없다** — 개수
+ * 불변식은 통과하고(상수니까) 드로우콜 예산 게이트는 존재하지 않는다. 조용히 나빠지는
+ * 형태라 예외 경로까지 원복을 보장한다.
+ *
+ * ── 백그라운드 탭은 위험이 아니다 (검수관 확인 2026-08-02) ──────────────────
+ * 처음에 *"탭이 백그라운드로 가면 `nextFrame()` 이 안 깨어나 `finally` 도 안 돌고,
+ * 컬링이 꺼진 채 남는다"* 를 열린 위험으로 적었다. **코드로 답이 나 있었다** — 커널의
+ * 렌더 루프(`kernel.ts`)도 여기와 **같은 전역 `requestAnimationFrame`** 을 쓴다.
+ * 브라우저가 그것을 멈추면 렌더 루프도 함께 멎으므로, 컬링이 꺼져 있는 동안 애초에
+ * 드로우콜이 나가지 않는다. 조사해서 닫은 질문이니 "못 잰 것" 으로 남기지 않는다.
+ *
+ * 원래부터 `frustumCulled === false` 인 것은 건드리지 않는다 — 만졌다가 되돌리면 그
+ * 객체의 원래 뜻을 덮어쓴다. (그런 객체는 어차피 첫 프레임부터 렌더되어 기준선에
+ * 이미 들어가 있으므로 예열 대상이 아니다.)
+ *
+ * **못 잰 것**: 헤드리스는 WebGL 이고 감독 실기기는 WebGPU 다. 컬링을 껐다 켜는 것이
+ * WebGPU 에서 같은 효과인지 여기서는 확인할 수 없다(팀장 조건 4).
+ */
+async function warmUp(root: Object3D): Promise<void> {
+  const touched: Object3D[] = [];
+  try {
+    root.traverse((o: Object3D) => {
+      if (o.frustumCulled) { o.frustumCulled = false; touched.push(o); }
+    });
+    for (let i = 0; i < WARMUP_FRAMES; i++) await nextFrame();
+  } finally {
+    for (const o of touched) o.frustumCulled = true;
+  }
+}
+
+/**
+ * 예열에 돌릴 프레임 수. **2 는 실측으로 정해졌다** — 이 값으로 개수 불변식이 통과했고,
+ * 예열을 아예 빼면 다시 FAIL 한다(뮤테이션 확인).
+ *
+ * 모자라면 증상은 **다시 FAIL** 이지 조용한 악화가 아니다 — 개수 불변식이 계속 감시한다.
+ * 부팅 예열(`main.ts`)의 프레임 수와 다른 것은 서로 다른 축이라 그렇고, 값 미러링이
+ * 아니다(한쪽을 고쳐도 다른 쪽이 틀려지지 않는다).
+ */
+const WARMUP_FRAMES = 2;
 
 /** 다음 프레임까지 양보한다. `requestAnimationFrame` 이 없는 환경(테스트)에서도 돈다 */
 function nextFrame(): Promise<void> {
@@ -639,4 +803,31 @@ export function gridCells(n: number, cell: number): { x: number; z: number; d: n
   // URL 이 매번 다른 세상을 만들고, 그러면 조건 간 비교가 성립하지 않는다.
   cells.sort((a, b) => a.d - b.d || a.x - b.x || a.z - b.z);
   return cells.slice(0, n);
+}
+
+/** 세울 자리 하나 — 격자 좌표에 **방향**이 붙는다. 랜드마크만 정면을 갖는다 */
+export interface Placement { x: number; z: number; ry: number }
+
+/**
+ * 실제로 세우는 자리 목록. **첫 채는 언제나 랜드마크**이고 나머지는 부하 실험 격자다.
+ *
+ * ── 왜 둘을 한 함수에 두는가 ────────────────────────────────────────────────
+ * 기본(1채)과 실험(N채)이 같은 노브(`?glb=`)를 쓰기 때문이다. "1이면 랜드마크, 2 이상이면
+ * 격자" 로 가르면 채수를 하나 올리는 순간 랜드마크가 **사라진다** — 실험하려고 2를 넣었는데
+ * 라이브에서 보던 것이 없어지는 것은 축을 두 개 흔드는 일이다. 첫 채를 고정하면 실험은
+ * "랜드마크 + 추가 N−1채" 가 되어 비교가 성립한다.
+ *
+ * 격자 자리 중 랜드마크와 같은 칸은 뺀다. 안 빼면 두 채가 같은 자리에 겹쳐 서고, 그러면
+ * 드로우콜은 두 채인데 화면에는 한 채로 보여 **측정과 눈이 어긋난다.**
+ */
+export function placementCells(n: number, cell: number): Placement[] {
+  if (n <= 0) return [];
+  const lm = { x: PLAZA_WEST.px * cell, z: PLAZA_WEST.pz * cell, ry: LANDMARK_RY };
+  if (n === 1) return [lm];
+  // `gridCells(n)` 이 n 개를 주므로, 랜드마크 칸이 그 안에 있어 하나 빠져도 n−1 개가 남는다.
+  const rest = gridCells(n, cell)
+    .filter((c) => !(c.x === lm.x && c.z === lm.z))
+    .slice(0, n - 1)
+    .map((c) => ({ x: c.x, z: c.z, ry: 0 }));
+  return [lm, ...rest];
 }

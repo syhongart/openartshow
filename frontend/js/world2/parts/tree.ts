@@ -32,6 +32,7 @@
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
+import { plazaOccupied } from './plaza.js';
 
 export const tree: PartSpec = {
   kind: 'tree',
@@ -87,6 +88,8 @@ export const tree: PartSpec = {
    * 찾는다. 순서를 뒤집으면 자리를 잡은 뒤 크기가 정해져 다시 겹친다.
    */
   place: ({ px, pz, rnd, o, halfX, halfZ, placed, radiusOf }) => {
+    // 미술관이 파셀을 통째로 쓰는 칸 — 소품이 벽 안에 박힌다(plaza.ts)
+    if (plazaOccupied(px, pz)) return [];
     const dirs = roadDirs(px, pz);
     const n = Math.floor(rnd() * (o.maxTrees + 1));
     const slots = parcelSlots(o, halfX, halfZ, dirs);
