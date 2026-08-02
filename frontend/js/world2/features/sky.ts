@@ -17,6 +17,7 @@ import {
   NIGHT_HEMI_I, NIGHT_SUN_I, NIGHT_EXPOSURE, NIGHT_FOG_SCALE, NIGHT_GROUND_SCALE,
 } from '../decide/night.js';
 import { readNum, readEnum } from '../url-knob.js';
+import { DAY_SUN_I, DAY_HEMI_I } from '../decide/daylight.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 // 시간대 목록(`TIMES`)은 `decide/night.ts` 로 옮겼다 — 조립부도 그것을 읽으므로 여기
@@ -58,6 +59,11 @@ export const skyFeature: Feature = {
         // 날씨는 아직 소비자가 하늘 하나이므로 여기서 URL 을 읽는다. 헤드리스 측정과
         // 감독 확인이 링크 하나로 끝나야 하므로 노브 자체는 유지한다.
         sunDist: env.shadowDist,
+        // 낮 대비 — 감독이 실기기에서 값을 비교할 수 있게 연다(밤 노브 `nsun`/`nhemi` 전례).
+        dayLight: {
+          sun: readNum('dsun', DAY_SUN_I, 0, 6),
+          hemi: readNum('dhemi', DAY_HEMI_I, 0, 4),
+        },
         time: env.time(),
         weather: readEnum('weather', 'clear', WEATHERS),
 
