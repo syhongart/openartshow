@@ -11,6 +11,7 @@ import {
   hash2, rngFrom, parcelLayout, kindsFor, maxPartsPerParcel,
   DEFAULT_LAYOUT, type PartKind, type PlacedPart,
 } from '../frontend/js/world2/decide/parcel-layout.js';
+import { isTowerParcel } from '../frontend/js/world2/parts/zoning.js';
 import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
 import { ALL_KINDS } from '../frontend/js/world2/parts/index.js';
 
@@ -238,21 +239,45 @@ describe('maxPartsPerParcel — 슬롯 예산의 근거', () => {
     }
   });
 
-  it('건물은 광장이 아닌 한 최소 1채 — 우연히 빈 파셀은 없다', () => {
+  it('건물은 광장·타워 파셀이 아닌 한 최소 1채 — 우연히 빈 파셀은 없다', () => {
     // 하한이 2였다. 감독이 "건물이 빽빽하다" 고 지적해 1~4로 내리면서 함께 낮췄다 —
     // 하한 2면 "한 채만 선 여유로운 구획" 이 구조적으로 존재할 수 없다.
     //
-    // 0채는 **광장에서만** 나온다. 그건 의도된 예외이고, 그 자리에는 분수대나 시계탑이
-    // 선다. 광장이 아닌데 0채면 배치가 어딘가 어긋난 것이다.
+    // 0채는 **의도된 예외에서만** 나온다. 그리고 그 예외 목록이 이번에 하나 늘었다:
+    //   · 광장 — 트인 곳이 목적이고, 중앙 광장에는 분수대·시계탑이 선다
+    //   · 타워 파셀 — 고층이 파셀 중앙을 통째로 쓴다(`parts/tower.ts`). 건물이 사분면
+    //     에서 자리를 뽑으면 안쪽이 타워와 겹치므로 아예 비운다
+    //
+    // **이 목록에 없는데 0채면 배치가 어긋난 것이다.** 예외를 늘릴 때마다 여기에
+    // 적히므로, "언제부터인가 빈 파셀이 늘었다" 가 조용히 지나가지 않는다.
     let checked = 0;
     for (let px = 0; px < 60; px++) {
       for (let pz = 0; pz < 4; pz++) {
         if (isPlaza(px, pz)) continue;
+        if (isTowerParcel(px, pz, DEFAULT_LAYOUT.cellX, DEFAULT_LAYOUT.cellZ)) continue;
         checked++;
         expect(only(at(px, pz), 'building').length).toBeGreaterThanOrEqual(1);
       }
     }
     expect(checked).toBeGreaterThan(100); // 표본이 비어 조용히 통과하지 않도록
+  });
+
+  it('★ 타워 파셀에는 건물이 하나도 없다 — 겹침은 판정으로만 막힌다', () => {
+    // 위 검사가 타워를 **건너뛰므로**, 그 자리에서 실제로 0인지는 따로 봐야 한다.
+    // 건너뛰기만 하고 확인을 안 하면 "예외로 뒀더니 아무도 안 보는 자리" 가 된다 —
+    // 이 저장소가 반복해서 데인 형태다.
+    let towers = 0;
+    for (let px = -20; px < 20; px++) {
+      for (let pz = -20; pz < 20; pz++) {
+        if (!isTowerParcel(px, pz, DEFAULT_LAYOUT.cellX, DEFAULT_LAYOUT.cellZ)) continue;
+        towers++;
+        const ps = at(px, pz);
+        expect(only(ps, 'building').length, `타워 파셀 (${px},${pz}) 에 건물이 섰다`).toBe(0);
+        expect(only(ps, 'tower').length, `타워 파셀 (${px},${pz}) 에 정작 타워가 없다`).toBe(1);
+      }
+    }
+    expect(towers, '표본에 타워 파셀이 없다 — 이 검사가 아무것도 안 봤다')
+      .toBeGreaterThan(3);
   });
 
   it('옵션으로 예산을 줄이면 실제 배치도 줄어든다', () => {

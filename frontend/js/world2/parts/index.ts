@@ -32,6 +32,7 @@ import { ground } from './ground.js';
 import { road } from './road.js';
 import { garden } from './garden.js';
 import { building } from './building.js';
+import { tower } from './tower.js';
 import { tree } from './tree.js';
 import { lamp } from './lamp.js';
 import { fountain } from './fountain.js';
@@ -42,6 +43,11 @@ import { planter } from './planter.js';
 export const PARTS = [
   ground, garden, road,
   fountain, clocktower,
+  // 타워는 건물보다 **앞**이다. 파셀당 한 채가 중앙 고정이라 자리를 양보할 수 없고,
+  // 건물은 사분면에서 뽑으므로 물러설 여지가 있다. 다만 지금은 `zoning.ts` 가 두
+  // 파셀 집합을 배타로 가르므로 실제로 겹칠 일은 없다 — 순서는 그 판정이 언젠가
+  // 느슨해질 때를 위한 방어다.
+  tower,
   building, lamp,
   tree, bench, planter,
 ] as const;

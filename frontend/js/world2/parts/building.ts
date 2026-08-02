@@ -6,6 +6,7 @@
 import type { PartSpec, PlacedPart } from './types.js';
 import { roadDirs, pickInQuadrant, shuffledQuadrants, SETBACK, LAMP_CLEARANCE } from './road-topology.js';
 import { isPlaza } from './plaza.js';
+import { isTowerParcel } from './zoning.js';
 
 /**
  * 바닥 한 변의 최소·최대(미터). **여기가 유일한 출처다** — 배치가 이 값으로 크기를 뽑고,
@@ -72,6 +73,11 @@ export const building: PartSpec = {
     // 광장에는 짓지 않는다. 채수 하한을 1로 내려도 어느 파셀에나 한 채는 서므로,
     // "아무것도 없는 트인 곳" 은 이 예외로만 생긴다.
     if (isPlaza(px, pz)) return [];
+    // 타워 파셀에도 짓지 않는다. 타워는 파셀 **중앙**을 통째로 쓰는데(`tower.ts`),
+    // 건물은 사분면에서 자리를 뽑으므로 둘이 같은 파셀에 서면 사분면 안쪽이 타워와
+    // 겹친다 — `footprint` 경쟁으로는 못 막는다. 타워가 중앙 고정이라 언제나 먼저
+    // 놓이고, 겹침 판정은 "앞선 것을 피한다" 이지 "뒤엣것을 밀어낸다" 가 아니다.
+    if (isTowerParcel(px, pz, o.cellX, o.cellZ)) return [];
     const dirs = roadDirs(px, pz);
     // 1~4채. 예전엔 2~6이었고, 1000㎡ 당 3.91채로 world1(1.74채)의 **2.25배**였다.
     // 이제 2.44채 — world1 의 1.4배까지 내려온다. 하한을 1로 내린 것도 의도다:
