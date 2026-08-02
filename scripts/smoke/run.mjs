@@ -544,6 +544,11 @@ async function runPerfGates(origin, browser) {
     // 바로 값이 흔들린 회차인데, PASS 에만 적으면 그 회차에서 base 를 읽을 수 없다
     // (검수관 B2). 관측 모드에서 기록이 판정의 전부라는 점을 잊으면 안 된다.
     const base = `base geo ${r.base?.geo} tex ${r.base?.tex} pipe ${r.base?.pipe}`;
+    // 부팅 기준선의 **회차 추이**를 별도 줄로 싣는다(팀장 조건 3). `[7]` 판정은 base
+    // 대비 델타만 보므로 **부팅 시 증가를 못 잡는다** — 그 사각을 메우려고 만든
+    // 관측인데, `runInvariants` 에 넘기는 `log` 가 `quiet` 라 화면에 안 나왔다.
+    // 파일에만 남으면 사람이 못 읽고, 그때부터 장식이다.
+    if (r.baselineNote) record(7.5, '기준선 추이(관측)', 'INFO', r.baselineNote);
     record(
       7, perfLabel('개수 불변식(세션)'), perfStatus(r.pass, r.errors),
       r.pass

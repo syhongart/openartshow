@@ -104,21 +104,30 @@ async function trackBaseline(base, page, log) {
     if (lines.length) { try { prev = JSON.parse(lines[lines.length - 1]); } catch { prev = null; } }
   }
 
+  // 리포트로 **되돌려 준다.** 여기 `log` 는 `run.mjs` 에서 `quiet` 로 들어오므로
+  // 화면에 안 나온다 — 파일에만 남기면 사람이 못 읽고, 그 순간 관측은 장식이 된다
+  // (팀장 조건 3: 회차 리포트에 필수 필드로 둔다).
+  let note;
   log('[기준선 추이] 부팅 시 확정값 — 아래 판정(델타)이 못 보는 축이다');
   if (!prev) {
     log('  직전 기록 없음 — 이번이 첫 회차다(비교 불가, 변화 없음이 아니다)');
+    note = '첫 회차(비교 불가 — 변화 없음이 아니다)';
   } else {
     const d = (k) => (base[k] == null || prev[k] == null ? null : base[k] - prev[k]);
     const [dg, dt, dp] = [d('geo'), d('tex'), d('pipe')];
     const fmt = (v) => (v == null ? '?' : `${v >= 0 ? '+' : ''}${v}`);
     log(`  직전 대비  geo ${fmt(dg)}  tex ${fmt(dt)}  pipe ${fmt(dp)}`);
+    const d3 = `직전 대비 geo ${fmt(dg)} tex ${fmt(dt)} pipe ${fmt(dp)}`;
     if (limit == null) {
       log('  ⚠ 임계를 못 읽었다(`npc.chibiEach.meshes` 부재) — 판정 생략. 추측으로 메우지 않는다');
+      note = `${d3} · 임계 미확인(판정 생략)`;
     } else if (dg != null && Math.abs(dg) >= limit) {
-      log(`  ⚠ WARN — geo 변화 ${fmt(dg)} 가 아바타 한 체 분량(${limit}) 이상이다.`);
+      log(`  ⚠ WARN — geo 변화 ${fmt(dg)} 가 치비 한 체의 메시 수(${limit}) 이상이다.`);
       log('    세션 간 편차로 설명되지 않는 크기다. 이 회차에 무엇을 늘렸는지 확인하라.');
+      note = `⚠ WARN — ${d3} · geo 변화가 치비 한 체(${limit}) 이상`;
     } else {
-      log(`  변화가 한 체 분량(${limit}) 미만 — 세션 간 편차 범위다`);
+      log(`  변화가 치비 한 체의 메시 수(${limit}) 미만 — 세션 간 편차 범위다`);
+      note = `${d3} · 한 체(${limit}) 미만`;
     }
   }
   // ── 기록 실패가 판정을 죽이지 않게 한다 (검수관 BL-2, 2026-08-02) ───────────
@@ -133,7 +142,9 @@ async function trackBaseline(base, page, log) {
     appendFileSync(BASELINE_LOG, `${JSON.stringify({ geo: base.geo, tex: base.tex, pipe: base.pipe })}\n`);
   } catch (e) {
     log(`  기록 실패 — ${e.message} (판정은 계속한다. 다음 회차는 "첫 기록" 으로 뜬다)`);
+    note = `${note} · 기록 실패(${e.message})`;
   }
+  return note;
 }
 
 /** 회전 스텝 — 360°를 이 수로 나눠 돈다 */
@@ -219,7 +230,7 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
     // 그래서 **막지 않고 추이를 남긴다.** 한계는 분명하다 — 기록은 사람이 읽어야
     // 효과가 있고, 안 읽으면 장식이다. 그 위험을 줄이려고 임계를 넘으면 WARN 으로
     // 올린다(팀장 조건).
-    await trackBaseline(base, page, log);
+    const baselineNote = await trackBaseline(base, page, log);
 
     const rows = [];
     const snap = async (label) => {
@@ -303,7 +314,7 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
 
     log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
     await context.close();
-    return { pass, maxGeo, maxTex, maxPipe, rows, errors, base };
+    return { pass, maxGeo, maxTex, maxPipe, rows, errors, base, baselineNote };
   }
 }
 
