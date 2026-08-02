@@ -19,7 +19,8 @@
     "snapshot:styles": "node scripts/smoke/snapshot-styles.mjs",
     "measure:sky-warm": "node scripts/smoke/measure-sky-warm.mjs",
     "measure:invariants": "node scripts/smoke/measure-invariants.mjs",
-    "measure:submerge": "node scripts/smoke/measure-submerge.mjs"
+    "measure:submerge": "node scripts/smoke/measure-submerge.mjs",
+    "measure:water-mode": "node scripts/smoke/measure-water-mode.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

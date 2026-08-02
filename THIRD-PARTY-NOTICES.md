@@ -5,16 +5,28 @@ This project bundles the third-party software and assets below, each under its o
 
 --------------------------------------------------------------------------------
 
-## 1. Three.js (r160) — `frontend/vendor/three.module.js`, `GLTFLoader.js`, `RGBELoader.js`
-Copyright (c) 2010-2023 Three.js Authors
+## 1. Three.js — **두 판본이 함께 실린다**
 License: MIT · https://github.com/mrdoob/three.js
-(`GLTFLoader.js`, `RGBELoader.js`는 three.js `examples/jsm` 모듈로 동일 MIT 적용)
+Copyright (c) 2010-2026 Three.js Authors
+
+이 저장소는 three.js 를 **두 경로로** 배포합니다. 예전에는 이 항목이 `r160` 하나만
+적고 있었는데(법무 실사 2026-08-01 발견), 실제로는 아래 둘이 공존합니다. MIT 전문이
+실려 있어 라이선스 위반은 아니었지만 **고지가 부정확했습니다.**
+
+| 판본 | 경로 | 쓰는 곳 |
+|---|---|---|
+| **r160** (`REVISION = '160'`, Copyright 2010-2023) | `frontend/vendor/three.module.js` | 라이브 미술관·world1 (WebGL) |
+| **0.171.0** (npm `three`) | vite 번들 (`three/webgpu`) | world2 (WebGPU/WebGL 양용) |
+
+`GLTFLoader.js`·`RGBELoader.js` 는 three.js `examples/jsm` 모듈로 동일 MIT 적용.
+three.js 루트 `LICENSE` 에 `examples` 디렉터리 예외 조항은 없습니다.
 
 ## 2. PeerJS — `frontend/vendor/peerjs.min.js`
 Copyright (c) Michelle Bu and Eric Zhang · https://peerjs.com
 License: MIT · https://github.com/peers/peerjs
 
-### 위 1·2 항목에 적용되는 MIT License 전문
+### 위 1·2 항목(three.js·PeerJS)에 적용되는 MIT License 전문
+### — 아래 **2-1 은 별개 라이선스**(Apache-2.0 / BSD)이므로 이 전문이 적용되지 않는다
 
 ```
 MIT License
@@ -40,6 +52,30 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+--------------------------------------------------------------------------------
+
+## 2-1. MaterialX / Open Shading Language — three.js 번들 경유
+
+**우리가 직접 반입한 파일이 아니라 three.js 안에 들어 있는 코드입니다.** 그런데 three 가
+트랜스파일하면서 원 고지를 옮기지 않아(`src/nodes/materialx/lib/mx_noise.js` 상단에
+`// Three.js Transpiler` 와 원본 URL 두 줄뿐), 그대로 두면 우리 배포물에도 고지가
+빠집니다. BSD·Apache 계열은 **재배포 시 저작권 고지 유지 의무**가 있으므로 여기 세웁니다.
+
+원 저작물: `MaterialX/libraries/stdlib/genglsl/lib/mx_noise.glsl`
+Copyright (c) 2009-2010 Sony Pictures Imageworks Inc., et al. All Rights Reserved.
+(Open Shading Language 유래 — BSD 계열)
+MaterialX 저장소: Apache-2.0 · https://github.com/AcademySoftwareFoundation/MaterialX
+경유 경로: npm `three` → `src/nodes/materialx/lib/mx_noise.js` → vite 번들
+
+### 언제부터 실려 있었나 (정직하게)
+
+법무 실사(2026-08-01)에서 배포 번들에 `worley` 문자열이 **이미 존재**함을 확인했습니다.
+즉 이 코드는 **이 고지를 세우기 전부터 나가고 있었습니다.** 특정 기능을 위해 새로
+가져온 것이 아니라 three 번들에 딸려 온 것이고, 그 사실을 몰랐던 것이 공백의 원인입니다.
+
+world2 수면이 `mx_worley_noise_float` 를 쓰게 되면서 **우연한 포함이 의도적 의존으로
+격상**되므로, 그 시점에 고지를 갖춥니다.
 
 --------------------------------------------------------------------------------
 

@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isWater, isRiver, parcelWater, riverCenterZ, worldHalfExtent, waterSurfaceY,
-  RIVER_HALF, SEA_Y, RIVER_Y,
+  RIVER_HALF, SEA_Y, RIVER_Y, WATER_MODES, pickWaterMode,
 } from '../frontend/js/world2/decide/water.js';
 import { isCentralPlaza as isPlaza, GRID_MIN_X, GRID_MAX_X, PLAZA_R } from '../frontend/js/world2/decide/grid.js';
 // 지면 두께는 파츠 쪽 상수지만 **수면에서 유도되므로** 관계를 여기서 지킨다 — 두 파일에
@@ -413,5 +413,44 @@ describe('지면 두께 — 수면에서 유도한다', () => {
     expect(margin, '지면 두께가 바다 수면 깊이에서 유도되지 않았다').toBeLessThan(0);
     // 그리고 터무니없이 깊지도 않다 — 물가 흙벽이 3m 면 절벽이다.
     expect(GROUND_DEPTH).toBeLessThan(3);
+  });
+});
+
+// ── 어느 수면 구현이 걸리는가 (감독 지시 2026-08-01) ──────────────────────────
+// 이 판정이 `ocean.create` 안의 한 줄이던 동안에는 **어떤 테스트도 못 닿았다.**
+// 헤드리스 스모크는 항상 WebGL 이라 폴백 가지 하나만 밟고, `WebGPU → tsl` 가지는
+// 감독 실기기에서만 실행된다 — 즉 그 가지가 뒤집혀도 배포 전에는 아무도 모른다.
+// 순수 함수로 뺀 이유가 이것이고, 그래서 여기서 **양쪽 가지를 다** 돌린다.
+describe('pickWaterMode — 요청과 백엔드가 함께 정한다', () => {
+  it('WebGPU 에서 tsl 요청이면 tsl 이다 — 헤드리스가 영원히 못 밟는 가지', () => {
+    expect(pickWaterMode('tsl', 'WebGPU')).toBe('tsl');
+  });
+
+  it('★ WebGL 에서 tsl 요청이면 std 로 폴백한다 — 안 그러면 월드가 통째로 안 뜬다', () => {
+    // 실측(2026-08-01): 노드 재질을 레거시 WebGLRenderer 에 넘기면 첫 렌더에서
+    //   resolveIncludes (WebGLProgram.js:261) ← … ← WebGLRenderer.renderBufferDirect
+    // 로 죽는다. 부팅 실패이지 물만 안 보이는 게 아니다.
+    expect(pickWaterMode('tsl', 'WebGL')).toBe('std');
+  });
+
+  it('std 요청은 백엔드와 무관하게 std 다 — 게이팅이 기본 경로를 건드리지 않는다', () => {
+    for (const backend of ['WebGL', 'WebGPU']) {
+      expect(pickWaterMode('std', backend)).toBe('std');
+    }
+  });
+
+  it('★ 모르는 백엔드는 std 다 — 화이트리스트여야 새 백엔드가 저절로 열리지 않는다', () => {
+    // "WebGL 이 아니면 통과" 로 적으면 백엔드가 하나 더 늘었을 때 **검증되지 않은
+    // 경로가 저절로 열린다.** 그 형태를 여기서 못 박는다.
+    expect(pickWaterMode('tsl', 'WebGPU2')).toBe('std');
+    expect(pickWaterMode('tsl', '')).toBe('std');
+  });
+
+  it('후보 목록이 두 구현을 다 담는다 — URL 노브가 파싱할 수 있어야 한다', () => {
+    // `readEnum('water', 'std', WATER_MODES)` 가 이 배열로 요청을 거른다. 여기서
+    // 'tsl' 이 빠지면 `?water=tsl` 이 조용히 기본값으로 떨어지고, 화면상으로는
+    // 폴백과 구별되지 않는다.
+    expect(WATER_MODES).toContain('std');
+    expect(WATER_MODES).toContain('tsl');
   });
 });
