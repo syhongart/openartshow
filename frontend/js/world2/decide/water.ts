@@ -476,3 +476,40 @@ export function riverFlowAt(wx: number): RiverFlow {
   return { x: 1 / len, z: dzdx / len };
 }
 
+// ── 어느 수면 구현을 쓸 것인가 (감독 지시 2026-08-01, 팀장 판정 B) ────────────
+//
+// `?water=tsl` 은 **요청이지 채택이 아니다.** 노드 재질(`MeshBasicNodeMaterial`)은
+// WebGPU 백엔드에서만 컴파일된다 — 레거시 `WebGLRenderer` 에는 노드를 GLSL 로 낮출
+// 경로가 아예 없어서, 재질에 `vertexShader` 문자열이 없는 채로 첫 렌더에 들어가
+// 이렇게 죽는다(실측 스택, 2026-08-01 헤드리스):
+//
+//   resolveIncludes (WebGLProgram.js:261) ← new WebGLProgram ← acquireProgram
+//     ← getProgram ← setProgram ← WebGLRenderer.renderBufferDirect
+//
+// CLAUDE.md 가 적어둔 사각의 **반대 방향**이다(거기서는 GLSL `ShaderMaterial` 이
+// `three.webgpu` 빌드에 렌더 경로가 없다고 적었다). 두 재질계는 서로의 렌더러에서
+// 각각 죽는다 — 한쪽만 알고 있으면 반드시 다른 쪽에서 밟는다.
+//
+// **왜 여기(순수 판정)에 두는가.** 이 한 줄이 `ocean.create` 안에 묻혀 있으면 어떤
+// 테스트도 못 닿는다. 헤드리스는 항상 WebGL 이라 스모크가 밟는 것은 폴백 가지 하나뿐
+// 이고, `WebGPU → tsl` 가지는 감독 실기기에서만 실행된다. 그러면 그 가지가 뒤집혀도
+// (예: 조건을 `!==` 로 잘못 적어도) 배포 전에는 아무도 모른다. 순수 함수로 빼면
+// 두 가지 다 테스트에서 돈다.
+
+/** 수면 구현 후보. `std` = 기존 PBR 물, `tsl` = TSL 노드 물(`ocean-tsl.ts`) */
+export const WATER_MODES = ['std', 'tsl'] as const;
+export type WaterMode = (typeof WATER_MODES)[number];
+
+/**
+ * 요청과 백엔드를 받아 **실제로 걸 수면 구현**을 고른다.
+ *
+ * @param requested URL 노브가 요청한 것
+ * @param backend   렌더러 어댑터가 확정한 백엔드(`adapter.backend`)
+ * @returns 채택된 구현. 요청이 `tsl` 이어도 WebGPU 가 아니면 `std` 다.
+ */
+export function pickWaterMode(requested: WaterMode, backend: string): WaterMode {
+  // 화이트리스트다 — "WebGL 이 아니면 통과" 로 적으면 앞으로 백엔드가 하나 더
+  // 늘었을 때 검증되지 않은 경로가 **저절로** 열린다.
+  return requested === 'tsl' && backend === 'WebGPU' ? 'tsl' : 'std';
+}
+

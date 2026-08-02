@@ -43,11 +43,19 @@
 // 부른다. **부팅 시 한 번 정하고 다시 만지지 않는다** — 그래서 안전하다.
 
 import * as THREE from 'three/webgpu';
-import { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater, waterGloss, riverFlowAt } from '../decide/water.js';
+// TSL 노드 — `?water=tsl` 에서만 실제로 쓰인다. `three/webgpu` 가 이미 이 코드를
+// 번들에 담고 있으므로(법무 실사 2026-08-01: 배포 번들에 `worley` 문자열 존재 확인)
+// 정적 import 로 늘어나는 바이트가 사실상 없다.
+import * as TSL from 'three/tsl';
+import {
+  RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater, waterGloss, riverFlowAt,
+  WATER_MODES, pickWaterMode, type WaterMode,
+} from '../decide/water.js';
 import type { SkyTime } from '../decide/night.js';
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
-import { readNumOpt, writeNumOpt } from '../url-knob.js';
+import { readNumOpt, writeNumOpt, readEnum } from '../url-knob.js';
+import { createTslWater, type TslWaterHandle, type TslNamespace } from './ocean-tsl.js';
 import { findKnobBar, attachKnobBar } from '../ui/knob-bar.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
@@ -110,6 +118,26 @@ const SPARK_KNOB = 'wspark', SPARK_MIN = 0, SPARK_MAX = 2, SPARK_STEP = 0.05;
 // 아래가 단색이라 투명도를 바꿔도 볼 것이 없었다.
 // 0 이면 물이 사라지고 1 이면 자갈이 안 보인다. 양 끝을 다 볼 수 있어야 중간을 고른다.
 const OPA_KNOB = 'wopa', OPA_MIN = 0, OPA_MAX = 1, OPA_STEP = 0.02;
+
+/**
+ * 수면 구현 선택 — `?water=std|tsl`. **기본은 `std`(기존 물)다.**
+ *
+ * ── 왜 노브인가 (팀장 판정 B, 2026-08-01) ──────────────────────────────────
+ * 감독 지시: *"물은 이거쓰자. 지금 어색해"* + three.js `webgpu_backdrop_water` 링크.
+ *
+ * 전면 교체가 아니라 병행이다. **물 룩의 유일한 판정자는 감독 실기기 육안**인데
+ * (헤드리스는 SwiftShader 고, 고주파 물결을 넣었다 되돌린 전례가 있다), 전면 교체는
+ * 그 판정을 받기 전에 되돌릴 수 없는 지점을 지나버린다 — 아래 노브 5개와 슬라이더가
+ * 전부 `MeshStandardMaterial` 의 PBR 파라미터에 묶여 있다.
+ *
+ * 기본을 `std` 로 두는 것은 behind-flag 와 같은 논리다. 라이브 방문자는 감독 판정
+ * 전까지 검증된 경로만 본다.
+ *
+ * **이 분기는 한시적이다**(팀장 조건 5 — 청산 조항). 감독이 고르면 진 쪽 코드를
+ * 지우는 것까지가 이 작업이고, 그래야 *"코드지저분하게하지말고"* 와 어긋나지 않는다.
+ *
+ * 후보 목록과 백엔드 판정은 `decide/water.ts` 가 소유한다 — 여기서 다시 적지 않는다.
+ */
 
 /** 수면 빛깔. 밝은 청록 — 어두우면 반투명이라도 바닥이 안 비쳐 보인다 */
 const WATER = 0x8fc9dd;
@@ -647,15 +675,39 @@ export const oceanFeature: Feature = {
     const bed = new THREE.Mesh(geo, bedMat);
     bed.position.y = SEABED_Y;
 
-    // 층 A는 법선 + 밝기, 층 B는 법선만. 둘의 `offset`이 따로 흐른다.
-    const normA = waveNormalTexture(2.2);
-    const sparkle = sparkleTexture();       // 흰 윤슬(감독 지시 2026-07-31)
-    const tint = waveTintTexture();
+    // ── 수면 구현 분기 (감독 지시 2026-08-01, 팀장 판정 B) ────────────────────
+    // `?water=tsl` 이면 TSL 노드 물(`ocean-tsl.ts`)을 쓴다. 기본은 기존 물.
+    // **요청이 곧 채택은 아니다** — 노드 재질은 WebGPU 전용이라 백엔드가 함께 정한다.
+    // 왜 그런지(실측 스택 포함)는 `decide/water.ts` 의 `pickWaterMode` 한 곳에 있다.
+    const waterMode: WaterMode = readEnum('water', 'std', WATER_MODES);
+    const activeMode = pickWaterMode(waterMode, env.adapter.backend);
+    const useTsl = activeMode === 'tsl';
+    /**
+     * 요청은 했는데 백엔드가 받쳐주지 않아 못 쓴 경우. **조용히 폴백하지 않는다.**
+     *
+     * 감독이 `?water=tsl` 을 열고 기존 물을 보면서 "새 물이 이 모양이냐" 고 판정하면
+     * 비교 자체가 무효가 된다 — 이 저장소가 반복해서 데인 형태다(못 쓴 것이 통과로
+     * 적히는 것). 진단으로 내보내고 콘솔에도 한 줄 남긴다.
+     */
+    const tslDenied = waterMode === 'tsl' && !useTsl;
+    if (tslDenied) {
+      console.warn(
+        `[ocean] ?water=tsl 요청 — 그러나 백엔드가 ${env.adapter.backend} 라 기존 물로 폴백했다. `
+        + '노드 재질은 WebGPU 에서만 컴파일된다.',
+      );
+    }
+
+    // TSL 모드에서는 아래 텍스처 셋을 **굽지 않는다.** 노드 물은 절차적 노이즈로
+    // 물결을 만들므로 쓰이지 않는데, 그냥 만들면 부팅에 수백 ms 를 버린다
+    // (실측 근거: 노멀맵 512px 판본이 41ms → 454ms 였다).
+    const normA = useTsl ? null : waveNormalTexture(2.2);
+    const sparkle = useTsl ? null : sparkleTexture();  // 흰 윤슬(감독 지시 2026-07-31)
+    const tint = useTsl ? null : waveTintTexture();
 
     const seaMat = new THREE.MeshStandardMaterial({
       color: WATER,
-      map: tint,
-      normalMap: normA,
+      map: tint ?? undefined,
+      normalMap: normA ?? undefined,
       // ── 층이 둘인 것은 그대로다. 다만 **거칠기가 아니라 밝기로** 겹친다 ──────
       // 예전에는 두 번째 노멀맵을 `roughnessMap` 에 태워 "거칠기가 물결을 따라 변하는"
       // 층을 만들었다. 그것이 검은 줄기의 원인이었다(위 주석). 이제 `tint`(map)가
@@ -665,7 +717,7 @@ export const oceanFeature: Feature = {
       // 윤슬은 별도 발광맵으로 뺐다. 광원 의존이 아니게 됐지만, 대신 **실제로 보인다** —
       // 광원 의존이던 예전 판본은 실기기에서 반짝임이 0 이었다.
       emissive: 0xffffff,
-      emissiveMap: sparkle,
+      emissiveMap: sparkle ?? undefined,
       // ── 반짝임 세기 (감독 지적) ─────────────────────────────────────────
       // *"밤 강에서 반사가 어색하네. 밤인데 빛이 이렇게 많지 않잖아. 달빛이나 주변
       // 가로등."*
@@ -712,7 +764,19 @@ export const oceanFeature: Feature = {
     let opaKnob = readNumOpt(OPA_KNOB, OPA_MIN, OPA_MAX);
     /** 실제로 재질에 걸린 값. 진단이 이것을 내보낸다 — 화면만 보고는 무슨 값인지 모른다 */
     let glossNow = { normalScale: 0, roughness: 0, sparkle: 0, opacity: 0 };
+
+    // TSL 물은 여기서 만든다 — `seaMat` 이 이미 있어야 `applyGloss` 가 그것을 건너뛸지
+    // 판정할 수 있다. `three/tsl` 은 조립부가 아니라 여기서 받는다(`ocean-tsl.ts` 가
+    // three 를 직접 import 하지 않게 하려는 것 — 그 파일 주석 참고).
+    const tslWater: TslWaterHandle | null = useTsl
+      ? createTslWater(THREE, TSL as unknown as TslNamespace)
+      : null;
+
     const applyGloss = (time: SkyTime): void => {
+      // TSL 물은 PBR 파라미터가 없다. `normalScale`·`roughness` 는 `MeshStandardMaterial`
+      // 의 축이고 노드 재질에는 대응물이 없다 — 여기서 시간대만 넘기고 끝낸다.
+      // 슬라이더도 이 모드에서는 의미가 없다(아래 `attachKnobBar` 가 건너뛴다).
+      if (tslWater) { tslWater.setTime(time); return; }
       const g = waterGloss(time);
       // 노브가 지정됐으면 그것이, 아니면 시간대 값이 간다. `??` 라서 `0` 도 유효한
       // 지정으로 통과한다(`||` 였으면 `?wns=0` 이 조용히 무시된다 — 평평한 수면을
@@ -795,7 +859,10 @@ export const oceanFeature: Feature = {
       },
     ]) : null;
 
-    const sea = new THREE.Mesh(geo, seaMat);
+    // 수면 재질 — TSL 모드면 노드 재질, 아니면 기존 PBR. **두 메시가 같은 것을 쓴다**
+    // (강과 바다는 같은 물이다 — 높이만 다르고 `waterSurfaceY` 가 그것을 판정한다).
+    const surfaceMat = tslWater ? tslWater.material : seaMat;
+    const sea = new THREE.Mesh(geo, surfaceMat);
     sea.position.y = SEA_Y;
     // 해저보다 늦게 그려야 그 위에 비친다.
     sea.renderOrder = 1;
@@ -827,7 +894,7 @@ export const oceanFeature: Feature = {
     // 그대로 둔다(팀장 판정: *"감독은 폭포를 지시하지 않았다 — 지시 안 한 연출을 추측으로
     // 메우지 않는다"*). 안개가 60.8m 에서 덮으므로 멀리서는 보이지 않는다.
     const { geo: riverGeo, baseUv: riverBaseUv, flow: riverFlow } = riverGeometry();
-    const river = new THREE.Mesh(riverGeo, seaMat);
+    const river = new THREE.Mesh(riverGeo, surfaceMat);
     // 매 프레임 쓸 UV 속성을 붙잡아 둔다 — `getAttribute` 를 프레임마다 부르면
     // 문자열 조회가 반복된다(작지만, 이 루프는 초당 60번 돈다).
     const riverUvAttr = riverGeo.getAttribute('uv');
@@ -949,11 +1016,26 @@ export const oceanFeature: Feature = {
           //
           // 두 층을 다 내보내는 이유: 하나만 보면 "둘이 같은 방향으로 흐르는"
           // 결함(= 흐르는 벽지)을 밖에서 판별할 수 없다.
-          flowA: [normA.offset.x, normA.offset.y],
-          flowB: [tint.offset.x, tint.offset.y],
+          //
+          // **TSL 모드에서는 `null` 이다.** 노드 물에는 이 텍스처들이 아예 없다(굽지도
+          // 않는다). 0 이나 `[0,0]` 으로 채우면 "흐르지 않는 물"과 구별되지 않으므로,
+          // 없는 것은 없다고 적는다 — 못 잰 것을 통과로 적지 않는다는 규율 그대로다.
+          flowA: normA ? [normA.offset.x, normA.offset.y] : null,
+          flowB: tint ? [tint.offset.x, tint.offset.y] : null,
           // 윤슬 층도 따로 본다. 이 값이 안 움직이면 점이 무늬에 박혀 명멸하지 않는다 —
           // 화면에서는 "반짝임이 없다" 가 아니라 "반짝임이 밋밋하다" 로 보여서 알기 어렵다.
-          flowSparkle: [sparkle.offset.x, sparkle.offset.y],
+          flowSparkle: sparkle ? [sparkle.offset.x, sparkle.offset.y] : null,
+
+          // ── 어느 물이 실제로 걸렸는가 ──────────────────────────────────────
+          // `requested` 와 `active` 를 **따로** 내보낸다. 하나만 보면 "TSL 을 요청했고
+          // TSL 이 떴다" 와 "TSL 을 요청했지만 폴백했다" 가 구별되지 않는다. 폴백은
+          // 정상 동작이지만 **비교 판정을 무효화하는** 상태라 셀 수 있어야 한다.
+          water: {
+            requested: waterMode,
+            active: activeMode,
+            backend: env.adapter.backend,
+            denied: tslDenied,
+          },
 
           // ── 지금 걸려 있는 값 (감독 지시 "URL로 값 조절할 수 있게 열어둬") ────
           // 노브를 열면 **화면만 보고는 무슨 값을 보고 있는지 알 수 없다.** 감독이
@@ -984,6 +1066,7 @@ export const oceanFeature: Feature = {
         bedMat.dispose();
         pebble.dispose();
         seaMat.dispose();
+        tslWater?.dispose();
         normA.dispose();
         sparkle.dispose();
         tint.dispose();

@@ -147,7 +147,7 @@ type Tod = 'day' | 'sunset' | 'night';
  * `update` 안에서 `env.time()` 을 다시 읽어 바뀌었을 때만 광택을 다시 거는데,
  * 시간을 고정해 두면 그 분기가 통째로 미검증으로 남는다(검수관 블로커 2026-07-31).
  */
-function mount(initial: Tod = 'day') {
+function mount(initial: Tod = 'day', backend = 'WebGL') {
   const added: Added[] = [];
   const removed: Added[] = [];
   let tod: Tod = initial;
@@ -157,6 +157,10 @@ function mount(initial: Tod = 'day') {
     doc: document,
     cell: 32,
     time: () => tod,
+    // 수면 구현 분기가 이것을 읽는다(`pickWaterMode`). 기본을 `WebGL` 로 두는 것은
+    // **라이브의 최악 조건**을 기본 대조군으로 삼으려는 것이다 — `navigator.gpu` 가
+    // 없는 기기가 실제 방문자의 다수이고, 그 경로가 깨지면 월드가 통째로 안 뜬다.
+    adapter: { backend },
   };
   // 실제 Feature 계약 전체를 만들지 않는다 — ocean 이 쓰는 것만 준다.
   const inst = oceanFeature.create(env as never)!;
@@ -1012,5 +1016,58 @@ describe('윤슬 — 발광맵에 흰 점이 새겨진다', () => {
     // 이 단언이 감독 실기기 사고의 재발 방지선이다. 노멀맵이든 무엇이든 이 슬롯에
     // 0 근처 값을 갖는 맵이 꽂히면 그 자리가 거울이 되고, 환경맵이 없는 한 검게 나온다.
     expect(seaOpts().roughnessMap ?? null).toBeNull();
+  });
+});
+
+// ── 집행: `ocean.create` 가 백엔드 판정을 실제로 쓰는가 ─────────────────────
+//
+// `pickWaterMode` 자체는 `tests/world2-water.test.ts` 가 양쪽 가지를 다 돌린다. 그것은
+// **판정**이다. 여기는 **집행** — 조립부가 그 판정을 정말 소비하는지 본다. 누가
+// `const useTsl = waterMode === 'tsl'` 로 되돌려도 판정 테스트는 전부 초록이고,
+// 그 상태로 배포하면 WebGL 기기에서 월드가 통째로 안 뜬다(실측한 형태다).
+//
+// **WebGPU 가지는 여기서 안 돈다** — 그쪽은 `createTslWater` 가 실제 노드 그래프를
+// 만드는데, 이 하네스의 three 는 스텁이라 그것을 세울 수 없다. 그 가지를 보는 축은
+// 스모크 `[12]` 이고, 거기서도 GPU 러너가 붙기 전까지는 안 돈다. 못 재는 것을 잰
+// 것처럼 적지 않는다.
+describe('수면 구현 분기 — 판정이 조립까지 닿는가', () => {
+  function withSearch<T>(search: string, fn: () => T): T {
+    const before = location.search;
+    const to = (s: string) => window.history.replaceState({}, '', s || location.pathname);
+    to(search);
+    try { return fn(); } finally { to(before); }
+  }
+  const diagOf = (inst: { diagnostics?(): unknown }) => inst.diagnostics!() as {
+    water: { requested: string; active: string; backend: string; denied: boolean };
+    flowA: unknown;
+  };
+
+  it('★ WebGL 에서 ?water=tsl 이면 기존 물이 걸린다 — 노드 재질을 넘기면 부팅이 죽는다', () => {
+    const d = withSearch('?water=tsl', () => diagOf(mount('day', 'WebGL').inst));
+    expect(d.water.requested).toBe('tsl');
+    expect(d.water.active, 'WebGL 인데 TSL 물이 걸렸다 — 첫 렌더에서 월드가 통째로 죽는다')
+      .toBe('std');
+    expect(d.water.denied).toBe(true);
+  });
+
+  it('폴백이면 기존 물의 텍스처가 실제로 살아 있다 — active 만 맞고 재질이 비면 소용없다', () => {
+    // `active: 'std'` 를 보고하면서 정작 텍스처를 안 구웠으면 화면은 밋밋한 판이다.
+    // 진단 문자열과 재질 상태가 어긋날 수 있으므로 둘 다 본다.
+    const d = withSearch('?water=tsl', () => diagOf(mount('day', 'WebGL').inst));
+    expect(d.flowA, '폴백인데 노멀맵 흐름이 null 이다 — 기존 물 텍스처가 안 구워졌다')
+      .not.toBeNull();
+  });
+
+  it('노브를 안 주면 std 이고 거부도 없다 — 게이팅이 기본 경로를 건드리지 않는다', () => {
+    const d = diagOf(mount('day', 'WebGL').inst);
+    expect(d.water.requested).toBe('std');
+    expect(d.water.active).toBe('std');
+    expect(d.water.denied, '요청하지도 않았는데 거부로 적히면 진단이 거짓말을 한다')
+      .toBe(false);
+  });
+
+  it('진단이 백엔드를 그대로 옮긴다 — 어긋나면 폴백 원인을 밖에서 못 읽는다', () => {
+    const d = withSearch('?water=tsl', () => diagOf(mount('day', 'WebGL').inst));
+    expect(d.water.backend).toBe('WebGL');
   });
 });

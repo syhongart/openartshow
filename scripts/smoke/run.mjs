@@ -605,6 +605,32 @@ async function runPerfGates(origin, browser) {
     record(11, '물빠짐 상호작용', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
 
+  // ── [12] 수면 구현 (감독 지시 2026-08-01 · 팀장 조건 3) ─────────────────────
+  //
+  // `[11]` 과 같은 성격이다 — **성능 게이트가 아니라 이산 판정**이라 `perfStatus` 를
+  // 안 쓰고 언제나 판정한다.
+  //
+  // 왜 신설했나: TSL 노드 물을 붙인 첫 판본이 헤드리스에서 **부팅째로 죽었다**(노드
+  // 재질은 레거시 `WebGLRenderer` 가 컴파일하지 못한다). 단위 테스트는 전부 초록이었다 —
+  // 판정(`pickWaterMode`)은 순수 함수라 잘 돌았고, **집행**(그 판정을 `ocean.create` 가
+  // 실제로 쓰는가)을 보는 축이 없었기 때문이다.
+  //
+  // 기대는 백엔드에서 유도한다(하드코딩 금지). GPU 러너가 붙는 날 검사 대상이 저절로
+  // `tsl` 가지로 넘어가야 하고, 그때 이 게이트를 손볼 일이 없어야 한다.
+  try {
+    const { runWaterMode } = await import('./measure-water-mode.mjs');
+    const r = await runWaterMode({ browser, origin, basePath: BASE_PATH, log: quiet });
+    record(
+      12, '수면 구현(?water=tsl)', r.pass ? 'PASS' : 'FAIL',
+      r.pass
+        ? `backend=${r.backend} · active=${r.water?.active} · denied=${r.water?.denied}`
+          + (r.backend === 'WebGPU' ? ' (TSL 물이 실제로 컴파일됐다)' : ' (폴백 가지 — TSL 물 자체는 안 돌았다)')
+        : `${r.reason} → \`npm run measure:water-mode\` 로 단독 실행해 본다`,
+    );
+  } catch (e) {
+    record(12, '수면 구현(?water=tsl)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
   await recordRenderBackend(browser, origin);
 }
 
@@ -740,6 +766,7 @@ async function main() {
       // 남기면 **리포트에서 통째로 사라져** "스모크: 통과" 만 보인다 — 바로 위 두 줄이
       // 막으려던 그 형태를 `[11]` 에서 새로 만든 셈이었다.
       record(11, '물빠짐 상호작용', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      record(12, '수면 구현(?water=tsl)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
     }
   } finally {
     if (browser) await browser.close().catch(() => {});
