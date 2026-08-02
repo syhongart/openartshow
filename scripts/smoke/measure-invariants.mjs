@@ -57,6 +57,7 @@ import {
   SITE_DIR, BASE_PATH, CHROMIUM_EXECUTABLE, CHROMIUM_ARGS,
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
+import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
 
 /** 회전 스텝 — 360°를 이 수로 나눠 돈다 */
 const SPIN_STEPS = 12;
@@ -114,12 +115,12 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(e.message));
 
-    // GLB 실험은 끈다 — 그 기능은 개수 불변식을 **일부러** 깨는 것이라 여기 섞이면
-    // 게이트가 의미를 잃는다. NPC·VRM 도 끄고 코어 스트리밍만 본다.
-    const url = `${origin}${basePath}app/world2.html?glb=0&npc=0&vrm=0&time=day&weather=clear`;
+    // GLB 가 기본 노출로 바뀐 뒤 게이트도 기본 상태를 재야 한다. 대기는 world2-ready.mjs 소유.
+    const url = `${origin}${basePath}app/world2.html${WORLD2_QUERY}`;
     log(`접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
-    await page.waitForFunction(() => !!window.__world2?.stats?.(), null, { timeout: 60000 });
+    const ready = await waitForWorld2Ready(page);
+    if (ready.reason) throw new Error(ready.reason);
     // 초기 파셀이 다 붙을 때까지. 부팅 중 개수가 오르는 것은 정상이므로 **기준선을
     // 그 뒤에 잡는다** — 안 그러면 정상 상승이 위반으로 찍힌다.
     await page.waitForTimeout(8000);

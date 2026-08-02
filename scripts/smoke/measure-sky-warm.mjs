@@ -38,6 +38,7 @@ import {
   SITE_DIR, BASE_PATH, CHROMIUM_EXECUTABLE, CHROMIUM_ARGS,
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
+import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
 
 const TIMES = ['day', 'sunset', 'night'];
 const WEATHERS = ['clear', 'overcast', 'rain', 'snow'];
@@ -88,13 +89,14 @@ export async function runSkyWarm({ browser, origin, basePath, laps = 2, log = co
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push(e.message));
 
-    // GLB·NPC·VRM 을 끈 순수 world2 — 계단이 하늘 때문인지 가리는 것이 목적이다.
-    const url = `${origin}${basePath}app/world2.html?glb=0&npc=0&vrm=0&time=day&weather=clear`;
+    // GLB 가 기본 노출로 바뀐 뒤 게이트도 기본 상태를 재야 한다. 대기는 world2-ready.mjs 소유.
+    const url = `${origin}${basePath}app/world2.html${WORLD2_QUERY}`;
     log(`[2] 접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
 
-    // 부팅 완료 = `__world2` 노출 + stats() 성공. 시간 대기가 아니라 조건 대기다.
-    await page.waitForFunction(() => !!window.__world2?.stats?.(), null, { timeout: 60000 });
+    // 부팅 완료 = `stats()` 노출 + GLB 로드 종료. 시간 대기가 아니라 조건 대기다.
+    const ready = await waitForWorld2Ready(page);
+    if (ready.reason) throw new Error(ready.reason);
     await page.waitForTimeout(6000); // 스트리밍 초기 파셀이 다 붙을 때까지
     log('✓ 부팅 완료\n');
 

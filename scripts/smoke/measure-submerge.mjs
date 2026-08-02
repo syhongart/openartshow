@@ -44,6 +44,7 @@ import {
   SITE_DIR, BASE_PATH, CHROMIUM_EXECUTABLE, CHROMIUM_ARGS,
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
+import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
 
 /**
  * 물에 닿을 때까지 걷는 상한(틱). **정답 거리가 아니라 무한루프 방지선이다.**
@@ -122,11 +123,12 @@ export async function runSubmerge({ browser, origin, basePath, log = console.log
   });
 
   try {
-    // `[7]` 과 같은 조건으로 연다 — GLB·NPC·VRM 은 이 축과 무관하고 부팅만 늘린다.
-    const url = `${origin}${basePath}app/world2.html?glb=0&npc=0&vrm=0&time=day&weather=clear`;
+    // GLB 가 기본 노출로 바뀐 뒤 게이트도 기본 상태를 재야 한다. 대기는 world2-ready.mjs 소유.
+    const url = `${origin}${basePath}app/world2.html${WORLD2_QUERY}`;
     log(`접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
-    await page.waitForFunction(() => !!window.__world2?.stats?.(), null, { timeout: 60000 });
+    const ready = await waitForWorld2Ready(page);
+    if (ready.reason) return fail(ready.reason);
     await page.waitForTimeout(4000);   // 초기 파셀
 
     const start = await probe(page);
