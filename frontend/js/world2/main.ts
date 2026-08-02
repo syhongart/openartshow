@@ -576,6 +576,23 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       player: { ...player.position, ...player.angles, submersion: player.submerged },
       frame: adapter!.frameStats(),
       pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
+      // ── 그림자 축 (감독 지시 2026-08-02) ─────────────────────────────────
+      // **적용됐는지 밖에서 볼 수 없으면 고쳤다는 말을 검증할 수 없다.** 실제로 프러스텀을
+      // 넓힌 뒤 헤드리스 스크린샷이 전혀 안 바뀌었는데, 그때 "안 먹은 것"과 "먹었지만
+      // 화면 차이가 없는 것"을 가를 수단이 없었다. 값을 열어 그 둘을 가른다.
+      //
+      // `target` 이 특히 중요하다 — three 기본 타깃은 월드 원점이고, 그 회귀가 나면
+      // 그림자는 "가끔 있다가 없어지는" 형태로만 나타나 원인을 짚기 어렵다.
+      shadow: sun ? {
+        half: sun.shadow.camera.right,
+        near: sun.shadow.camera.near,
+        far: sun.shadow.camera.far,
+        normalBias: sun.shadow.normalBias,
+        mapSize: sun.shadow.mapSize.x,
+        target: { x: sun.target.position.x, z: sun.target.position.z },
+        /** 광원과 타깃의 실제 거리. 프러스텀 깊이와 짝이 맞는지 보는 값 */
+        dist: sun.position.distanceTo(sun.target.position),
+      } : null,
       pools: pools!.stats(),
       stream: streaming!.stats(),
       adapt: adapt!.snapshot(),
