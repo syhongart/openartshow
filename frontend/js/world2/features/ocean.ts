@@ -700,14 +700,26 @@ export const oceanFeature: Feature = {
     // TSL 모드에서는 아래 텍스처 셋을 **굽지 않는다.** 노드 물은 절차적 노이즈로
     // 물결을 만들므로 쓰이지 않는데, 그냥 만들면 부팅에 수백 ms 를 버린다
     // (실측 근거: 노멀맵 512px 판본이 41ms → 454ms 였다).
-    const normA = useTsl ? null : waveNormalTexture(2.2);
-    const sparkle = useTsl ? null : sparkleTexture();  // 흰 윤슬(감독 지시 2026-07-31)
-    const tint = useTsl ? null : waveTintTexture();
+    //
+    // **셋을 한 덩어리로 묶는다.** 처음에는 각각 `null` 로 뒀는데, 그러면 소비 지점마다
+    // 세 번 가드해야 하고 **실제로 빠뜨렸다** — `update()` 의 `normA.offset.set(...)`
+    // 세 줄에 가드가 없어, TSL 모드를 켜면 첫 프레임부터 `null.offset` 예외가 매 프레임
+    // 반복되고 `render()` 가 한 번도 안 불려 **화면이 통째로 멈춘다**(검수관 반려
+    // 2026-08-02 B1). 앰비언트 `three/webgpu` 선언이 `any` 로 붕괴해 tsc 도 못 잡았다.
+    //
+    // 묶으면 "셋 중 하나만 null" 이라는 불가능한 상태가 타입에서 사라지고, 가드가
+    // `if (tex)` 한 번으로 끝난다. 네 번째 텍스처가 생겨도 빠뜨릴 자리가 없다 —
+    // 손으로 조립하지 않으면 틀릴 자리가 없다는 이 저장소의 규율 그대로다.
+    const tex = useTsl ? null : {
+      normA: waveNormalTexture(2.2),
+      sparkle: sparkleTexture(),  // 흰 윤슬(감독 지시 2026-07-31)
+      tint: waveTintTexture(),
+    };
 
     const seaMat = new THREE.MeshStandardMaterial({
       color: WATER,
-      map: tint ?? undefined,
-      normalMap: normA ?? undefined,
+      map: tex?.tint ?? undefined,
+      normalMap: tex?.normA ?? undefined,
       // ── 층이 둘인 것은 그대로다. 다만 **거칠기가 아니라 밝기로** 겹친다 ──────
       // 예전에는 두 번째 노멀맵을 `roughnessMap` 에 태워 "거칠기가 물결을 따라 변하는"
       // 층을 만들었다. 그것이 검은 줄기의 원인이었다(위 주석). 이제 `tint`(map)가
@@ -717,7 +729,7 @@ export const oceanFeature: Feature = {
       // 윤슬은 별도 발광맵으로 뺐다. 광원 의존이 아니게 됐지만, 대신 **실제로 보인다** —
       // 광원 의존이던 예전 판본은 실기기에서 반짝임이 0 이었다.
       emissive: 0xffffff,
-      emissiveMap: sparkle ?? undefined,
+      emissiveMap: tex?.sparkle ?? undefined,
       // ── 반짝임 세기 (감독 지적) ─────────────────────────────────────────
       // *"밤 강에서 반사가 어색하네. 밤인데 빛이 이렇게 많지 않잖아. 달빛이나 주변
       // 가로등."*
@@ -775,7 +787,10 @@ export const oceanFeature: Feature = {
     const applyGloss = (time: SkyTime): void => {
       // TSL 물은 PBR 파라미터가 없다. `normalScale`·`roughness` 는 `MeshStandardMaterial`
       // 의 축이고 노드 재질에는 대응물이 없다 — 여기서 시간대만 넘기고 끝낸다.
-      // 슬라이더도 이 모드에서는 의미가 없다(아래 `attachKnobBar` 가 건너뛴다).
+      // **슬라이더는 이 모드에서 무력하다.** 예전 주석은 "`attachKnobBar` 가 건너뛴다"
+      // 고 적었는데 사실이 아니다 — 바는 그대로 붙고, 다만 `glossNow` 가 갱신되지 않아
+      // 손잡이가 0 에 머문다(검수관 권고 4). 동작이 아니라 서술이 틀렸던 자리다.
+      // 청산(팀장 조건 5) 때 이긴 쪽에 맞춰 정리한다.
       if (tslWater) { tslWater.setTime(time); return; }
       const g = waterGloss(time);
       // 노브가 지정됐으면 그것이, 아니면 시간대 값이 간다. `??` 라서 `0` 도 유효한
@@ -934,20 +949,25 @@ export const oceanFeature: Feature = {
           }
           // UV 단위로 환산해서 흘린다. 한 무늬가 RIPPLE_M 미터를 덮으므로
           // `초당 미터 / RIPPLE_M`이 초당 UV 이동량이다 — 화면 속도가 실제 m/s와 맞는다.
-          const a = t / RIPPLE_M;
-          normA.offset.set(FLOW_A.x * a, FLOW_A.z * a);
-          // ── 층 둘이 서로 어긋나게 흐른다 ──────────────────────────────────
-          // 예전에는 `tint` 를 노멀맵에 **붙여** 같이 흘리고(`copy`), 두 번째 층을
-          // `roughnessMap` 에 태웠다. 그 슬롯이 검은 줄기의 원인이라 비웠으므로
-          // (위 슬롯 주석) 두 번째 파동 노릇을 `tint` 가 이어받는다.
           //
-          // **서로 다른 방향·속도라야 한다.** 같이 흐르면 두 무늬가 한 덩어리로
-          // 미끄러져 "흐르는 벽지" 가 되고, 어긋나면 겹치는 자리가 계속 바뀌어 물이
-          // 살아 있는 것처럼 보인다.
-          tint.offset.set(FLOW_B.x * a, FLOW_B.z * a);
-          // 윤슬은 또 다른 속도로 흘린다 — 물결과 어긋나야 점이 **명멸**한다.
-          // 물결에 붙여 두면 점이 무늬에 박혀 같이 미끄러질 뿐 반짝이지 않는다.
-          sparkle.offset.set(FLOW_A.x * a * 0.6, FLOW_A.z * a * 0.6);
+          // TSL 물에는 이 텍스처들이 아예 없다(`tex === null`). **가드가 여기 있어야
+          // 한다** — 매 프레임 도는 자리라 빠지면 예외가 초당 60번 쌓이고 렌더가 멈춘다.
+          const a = t / RIPPLE_M;
+          if (tex) {
+            tex.normA.offset.set(FLOW_A.x * a, FLOW_A.z * a);
+            // ── 층 둘이 서로 어긋나게 흐른다 ──────────────────────────────────
+            // 예전에는 `tint` 를 노멀맵에 **붙여** 같이 흘리고(`copy`), 두 번째 층을
+            // `roughnessMap` 에 태웠다. 그 슬롯이 검은 줄기의 원인이라 비웠으므로
+            // (위 슬롯 주석) 두 번째 파동 노릇을 `tint` 가 이어받는다.
+            //
+            // **서로 다른 방향·속도라야 한다.** 같이 흐르면 두 무늬가 한 덩어리로
+            // 미끄러져 "흐르는 벽지" 가 되고, 어긋나면 겹치는 자리가 계속 바뀌어 물이
+            // 살아 있는 것처럼 보인다.
+            tex.tint.offset.set(FLOW_B.x * a, FLOW_B.z * a);
+            // 윤슬은 또 다른 속도로 흘린다 — 물결과 어긋나야 점이 **명멸**한다.
+            // 물결에 붙여 두면 점이 무늬에 박혀 같이 미끄러질 뿐 반짝이지 않는다.
+            tex.sparkle.offset.set(FLOW_A.x * a * 0.6, FLOW_A.z * a * 0.6);
+          }
 
           // ── 강만 제 방향으로 흐른다 (감독 지시 "물살로 보이고") ──────────────
           // 위 `offset` 은 텍스처 하나에 걸리므로 **씬 전체가 한 방향**이다. 바다는
@@ -1020,11 +1040,11 @@ export const oceanFeature: Feature = {
           // **TSL 모드에서는 `null` 이다.** 노드 물에는 이 텍스처들이 아예 없다(굽지도
           // 않는다). 0 이나 `[0,0]` 으로 채우면 "흐르지 않는 물"과 구별되지 않으므로,
           // 없는 것은 없다고 적는다 — 못 잰 것을 통과로 적지 않는다는 규율 그대로다.
-          flowA: normA ? [normA.offset.x, normA.offset.y] : null,
-          flowB: tint ? [tint.offset.x, tint.offset.y] : null,
+          flowA: tex ? [tex.normA.offset.x, tex.normA.offset.y] : null,
+          flowB: tex ? [tex.tint.offset.x, tex.tint.offset.y] : null,
           // 윤슬 층도 따로 본다. 이 값이 안 움직이면 점이 무늬에 박혀 명멸하지 않는다 —
           // 화면에서는 "반짝임이 없다" 가 아니라 "반짝임이 밋밋하다" 로 보여서 알기 어렵다.
-          flowSparkle: sparkle ? [sparkle.offset.x, sparkle.offset.y] : null,
+          flowSparkle: tex ? [tex.sparkle.offset.x, tex.sparkle.offset.y] : null,
 
           // ── 어느 물이 실제로 걸렸는가 ──────────────────────────────────────
           // `requested` 와 `active` 를 **따로** 내보낸다. 하나만 보면 "TSL 을 요청했고
@@ -1067,9 +1087,13 @@ export const oceanFeature: Feature = {
         pebble.dispose();
         seaMat.dispose();
         tslWater?.dispose();
-        normA.dispose();
-        sparkle.dispose();
-        tint.dispose();
+        // TSL 모드에서는 이 셋이 없다. 가드가 없으면 정리 도중 예외가 나고, 그 뒤의
+        // 정리가 통째로 중단된다(`main.ts` 의 try/catch 가 삼켜서 조용히 샌다).
+        if (tex) {
+          tex.normA.dispose();
+          tex.sparkle.dispose();
+          tex.tint.dispose();
+        }
       },
     };
   },

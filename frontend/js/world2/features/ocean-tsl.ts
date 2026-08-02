@@ -105,7 +105,7 @@ export function createTslWater(
   tsl: TslNamespace,
 ): TslWaterHandle {
   const {
-    color, vec2, linearDepth, screenUV, viewportLinearDepth,
+    vec2, linearDepth, screenUV, viewportLinearDepth,
     viewportDepthTexture, viewportSharedTexture, mx_worley_noise_float,
     positionWorld, time, uniform,
   } = tsl;

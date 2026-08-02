@@ -87,6 +87,29 @@ class FakeBufferGeometry {
   dispose() { this.disposed = true; }
 }
 
+// ── TSL 노드 물 스텁 ────────────────────────────────────────────────────────
+// **이것이 없으면 `useTsl === true` 가지를 한 번도 못 돈다.** 실제 `createTslWater` 는
+// three 의 노드 시스템을 세우는데 이 하네스의 three 는 스텁이라 세울 수 없다. 그래서
+// 핸들 계약만 재현한다 — 돌아가는 것은 여전히 **실제 `ocean.ts` 코드**다.
+//
+// 왜 필요했나(검수관 반려 2026-08-02 B1): TSL 모드에서 `update()` 의
+// `normA.offset.set(...)` 이 `null.offset` 으로 매 프레임 터져 화면이 통째로 멈추는
+// 결함이 있었다. 그런데 그때 있던 테스트는 전부 `mount('day','WebGL')` 이라 이 가지가
+// **한 번도 실행되지 않았고**, vitest 1,304 통과·tsc 0·스모크 16 PASS 가 전부 초록이었다.
+const tslCalls = { created: 0, times: [] as string[], disposed: 0 };
+vi.mock('../frontend/js/world2/features/ocean-tsl.js', () => ({
+  createTslWater: () => {
+    tslCalls.created += 1;
+    return {
+      // 실제 `createTslWater` 는 `MeshBasicNodeMaterial` 을 돌려준다. 여기서는 씬에
+      // 꽂히기만 하면 되므로 빈 재질로 족하다.
+      material: new FakeMaterial({}),
+      setTime: (t: string) => { tslCalls.times.push(t); },
+      dispose: () => { tslCalls.disposed += 1; },
+    };
+  },
+}));
+
 vi.mock('three/webgpu', () => ({
   PlaneGeometry: FakeGeometry,
   MeshStandardMaterial: FakeMaterial,
@@ -1069,5 +1092,67 @@ describe('수면 구현 분기 — 판정이 조립까지 닿는가', () => {
   it('진단이 백엔드를 그대로 옮긴다 — 어긋나면 폴백 원인을 밖에서 못 읽는다', () => {
     const d = withSearch('?water=tsl', () => diagOf(mount('day', 'WebGL').inst));
     expect(d.water.backend).toBe('WebGL');
+  });
+});
+
+// ── TSL 모드를 **실제로 돌린다** (검수관 반려 2026-08-02 B1 재제출) ──────────
+//
+// 위 `describe('수면 구현 분기')` 는 `diagnostics()` 만 읽고 `system.update()` 를 한 번도
+// 부르지 않았다. 그래서 매 프레임 터지는 결함이 통과했다. 여기는 **프레임을 돌린다.**
+//
+// `kernel.ts` 는 `system.update()` 를 try/catch 없이 순회하고, `tick()` 은 다음 rAF 를
+// 먼저 예약한 뒤 돌기 때문에, 여기서 예외가 나면 **매 프레임 반복되고 `render()` 가
+// 한 번도 안 불린다** — 화면이 검은 채로 콘솔만 쌓인다. 그 형태를 여기서 못 박는다.
+describe('TSL 모드 — 프레임을 실제로 돌린다', () => {
+  function withSearch<T>(search: string, fn: () => T): T {
+    const before = location.search;
+    const to = (s: string) => window.history.replaceState({}, '', s || location.pathname);
+    to(search);
+    try { return fn(); } finally { to(before); }
+  }
+  const tslMount = () => withSearch('?water=tsl', () => mount('day', 'WebGPU'));
+
+  beforeEach(() => { tslCalls.created = 0; tslCalls.times = []; tslCalls.disposed = 0; });
+
+  it('WebGPU + ?water=tsl 이면 TSL 물이 실제로 만들어진다 — 전제가 성립하는지 먼저 본다', () => {
+    const m = tslMount();
+    const d = m.inst.diagnostics!() as { water: { active: string; denied: boolean } };
+    expect(d.water.active, '이 전제가 깨지면 아래 검사들이 std 경로를 재게 된다').toBe('tsl');
+    expect(d.water.denied).toBe(false);
+    expect(tslCalls.created, '`createTslWater` 가 안 불렸다 — TSL 물이 조립되지 않았다').toBe(1);
+  });
+
+  it('★ 프레임을 여러 번 돌려도 예외가 나지 않는다 — 가드를 빼면 여기가 깨진다', () => {
+    const m = tslMount();
+    // 한 프레임으로는 부족하다. 매 프레임 도는 자리라는 것이 요점이므로 여러 번 돈다.
+    expect(() => {
+      for (let i = 0; i < 5; i += 1) m.inst.system!.update({ dt: 1 / 60 } as never);
+    }, 'TSL 모드에서 update 가 터진다 — 실기기에서 화면이 통째로 멈춘다').not.toThrow();
+  });
+
+  it('★ 시간대가 바뀌면 TSL 물에 전달된다 — 판정이 집행까지 닿는가', () => {
+    const m = tslMount();
+    m.inst.system!.update({ dt: 1 / 60 } as never);
+    const before = tslCalls.times.length;
+    m.setTime('night');
+    m.inst.system!.update({ dt: 1 / 60 } as never);
+    expect(tslCalls.times.length, '시간대를 바꿨는데 `setTime` 이 안 불렸다').toBeGreaterThan(before);
+    expect(tslCalls.times.at(-1)).toBe('night');
+  });
+
+  it('★ dispose 도 터지지 않는다 — 정리 도중 예외는 뒤의 정리를 통째로 건너뛴다', () => {
+    const m = tslMount();
+    m.inst.system!.update({ dt: 1 / 60 } as never);
+    expect(() => m.inst.dispose?.()).not.toThrow();
+    expect(tslCalls.disposed, 'TSL 물이 정리되지 않았다 — 재질이 샌다').toBe(1);
+  });
+
+  it('진단이 텍스처 흐름을 null 로 적는다 — 없는 것을 0 으로 채우면 "멈춘 물" 과 구별이 안 된다', () => {
+    const m = tslMount();
+    m.inst.system!.update({ dt: 1 / 60 } as never);
+    const d = m.inst.diagnostics!() as { flowA: unknown; flowB: unknown; flowSparkle: unknown };
+    expect(d.flowA).toBeNull();
+    expect(d.flowB).toBeNull();
+    expect(d.flowSparkle).toBeNull();
   });
 });
