@@ -47,10 +47,20 @@ import {
   applyNightFloor, type HemiLike, type SunLike, type ExposureLike, type FogLike,
 } from './night-lights.js';
 import type { NightTune } from '../decide/night.js';
+import { nightness } from '../decide/night.js';
+import { dayLightMix, type DayLightMix } from '../decide/daylight.js';
 import type { FrameCtx, System } from '../kernel.js';
 
-/** 태양까지의 거리 — `getSunDir()` 방향에 이 값을 곱해 광원을 배치한다. */
-const SUN_DIST = 70;
+/**
+ * 태양까지의 기본 거리 — `getSunDir()` 방향에 이 값을 곱해 광원을 배치한다.
+ *
+ * **방향광이라 조명 결과는 거리와 무관하다.** 이 값이 실제로 정하는 것은 오직 **그림자
+ * 카메라가 어디에 서느냐**다. 그래서 조립부가 `decide/shadow.ts` 로 유도한 값을
+ * `opts.sunDist` 로 주입한다 — 여기 적힌 70 은 그 주입이 없을 때의 하위호환 값이고,
+ * 씬 두께(반폭 + 최고 구조물)보다 작아서 **그림자 카메라를 쓰면 타워 꼭대기가 광원보다
+ * 뒤에 놓여 잘린다.** 프러스텀과 거리는 함께 정해져야 하는 한 쌍이다.
+ */
+const SUN_DIST_FALLBACK = 70;
 /** 돔 반경. 카메라 far보다 작아야 잘리지 않는다(`sky.js`가 지오메트리를 교체하며 유지). */
 const DOME_RADIUS = 520;
 
@@ -99,6 +109,21 @@ export interface SkyOptions {
    * 기본 0 이면 `sky.js` 가 테이블 객체를 그대로 돌려주므로 라이브와 완전히 같다.
    */
   fogTint?: number;
+  /**
+   * 광원을 타깃에서 얼마나 물릴 것인가(m). **그림자 카메라의 위치를 정하는 값**이다.
+   *
+   * 방향광이라 조명 결과는 이 거리와 무관하다. 조립부가 `decide/shadow.ts` 로 프러스텀과
+   * **함께** 유도해 주입한다 — 둘이 따로 놀면 씬이 카메라 뒤로 밀려 그림자가 통째로
+   * 사라지는데, 화면에는 "원래 그림자가 없는 것" 과 똑같이 보인다.
+   */
+  sunDist?: number;
+  /**
+   * 낮 조명 세기(URL 노브). 없으면 `decide/daylight.ts` 의 상수.
+   *
+   * 낮 팔레트는 라이브 오픈월드와 공유하는 `sky.js` 에 있어 거기서 못 바꾼다 —
+   * world2 쪽에서 낮에만 덮어쓴다.
+   */
+  dayLight?: Partial<DayLightMix>;
 }
 
 /**
@@ -136,6 +161,10 @@ export class SkySystem implements System {
   /** 밤 노출을 얹을 대상. `toneMappingExposure` 만 만진다 */
   private readonly renderer: ExposureLike | null;
   private readonly nightTune?: NightTune;
+  /** 플레이어 위치 — 그림자 카메라를 따라오게 하는 데 쓴다 */
+  private readonly getPos: () => { x: number; z: number };
+  private readonly sunDist: number;
+  private readonly dayLight?: Partial<DayLightMix>;
 
   constructor(
     scene: THREE.Scene,
@@ -155,6 +184,9 @@ export class SkySystem implements System {
     const r = renderer as { toneMappingExposure?: unknown } | null;
     this.renderer = r && typeof r.toneMappingExposure === 'number' ? (r as ExposureLike) : null;
     this.nightTune = opts.nightTune;
+    this.getPos = getPos;
+    this.sunDist = opts.sunDist ?? SUN_DIST_FALLBACK;
+    this.dayLight = opts.dayLight;
     this.dome = makeDome();
     this.dome.name = 'world2:sky';
     scene.add(this.dome);
@@ -179,7 +211,26 @@ export class SkySystem implements System {
   private applySun(): void {
     const d = this.engine.getSunDir();
     if (!d) return;
-    this.sun.position.set(d.x * SUN_DIST, d.y * SUN_DIST, d.z * SUN_DIST);
+    // ── 그림자 카메라를 플레이어에 붙인다 (감독 지시 2026-08-02) ──────────────
+    // 예전에는 `sun.position` 만 옮겼다. `DirectionalLight.target` 은 기본이 **월드
+    // 원점**이라 그림자 카메라도 원점에 서 있었고, 플레이어가 광장을 벗어나면 그림자가
+    // 발밑에서 통째로 사라졌다. 조명 방향은 멀쩡했으므로 **화면은 "원래 그림자가 옅은
+    // 세계" 처럼 보였다** — 이것이 감독이 *"하드라이트 느낌이 없어"* 로 잡은 증상의
+    // 절반이다(나머지 절반은 프러스텀이 ±5m 였던 것).
+    //
+    // 타깃 높이를 0 으로 두는 것은 지면 기준이기 때문이다. 눈높이를 따라가면 카메라가
+    // 위아래로 흔들려 그림자 텍셀이 매 프레임 어긋난다.
+    const p = this.getPos();
+    this.sun.target.position.set(p.x, 0, p.z);
+    // 타깃은 씬에 들어 있어야 갱신된다(조립부가 `scene.add(dir.target)` 를 한다).
+    // 그래도 여기서 한 번 더 미는 이유: 프레임 순서상 렌더보다 늦게 갱신되면 한 프레임
+    // 낡은 방향으로 그림자가 그려진다.
+    this.sun.target.updateMatrixWorld();
+    this.sun.position.set(
+      p.x + d.x * this.sunDist,
+      d.y * this.sunDist,
+      p.z + d.z * this.sunDist,
+    );
   }
 
   update(ctx: FrameCtx): void {
@@ -189,6 +240,7 @@ export class SkySystem implements System {
     this.engine.update(ctx.dt);
     this.applySun();
     this.liftNightLights();
+    this.applyDayContrast();
   }
 
   /**
@@ -207,6 +259,31 @@ export class SkySystem implements System {
    * 올라오는 빛이라, 그것이 검정(원래 `0x232a24`, 명도 15%)이면 위를 향한 면에 닿는
    * 빛이 아예 없다. 강도를 올려도 검정을 곱하면 검정이다.
    */
+  /**
+   * 낮의 빛 대비를 world2 쪽에서만 얹는다 (감독 지시 2026-08-02 *"하드라이트 느낌이 없어"*).
+   *
+   * ── 왜 `sky.js` 가 아니라 여기인가 ────────────────────────────────────────
+   * 낮 팔레트(`LIGHT.day.clear`)는 **라이브 오픈월드(`world.html`)와 공유하는 파일**에
+   * 있다. 거기서 값을 바꾸면 감독이 지시하지 않은 라이브 화면이 함께 바뀐다 — 지시는
+   * *"월드2"* 였다. `liftNightLights` 가 밤에 하한을 얹는 것과 똑같은 이유이고, 그
+   * 함수 주석이 이미 같은 말을 적어 두었다.
+   *
+   * ── 대입이지 곱셈이 아니다 ───────────────────────────────────────────────
+   * 이 함수는 **매 프레임** 돈다. 배수를 곱하면 프레임마다 곱해져 발산한다 —
+   * `liftNightLights` 가 정확히 그 함정을 주석으로 경고하고 있고, 나는 처음에 배수로
+   * 설계했다가 그 주석을 읽고 고쳤다. 대입은 몇 번 해도 결과가 같아(멱등) `sky.js` 가
+   * 언제 값을 덮어쓰든 안전하다.
+   *
+   * 낮이 아니면 `dayLightMix` 가 `null` 을 돌려주고 여기서는 아무것도 안 한다 — 밤은
+   * `liftNightLights` 소관이라 두 축이 같은 값을 반대로 당기지 않는다.
+   */
+  private applyDayContrast(): void {
+    const mix = dayLightMix(nightness(this.engine.get().time), this.dayLight);
+    if (!mix) return;
+    (this.sun as unknown as SunLike).intensity = mix.sun;
+    (this.hemi as unknown as HemiLike).intensity = mix.hemi;
+  }
+
   private liftNightLights(): void {
     // 캐스팅하는 이유: `three/webgpu` 가 `HemisphereLight` 의 필드를 타입으로 완전히
     // 재수출하지 않는다(이 저장소가 `BufferGeometry`·`CanvasTexture`·`Object3D` 에서

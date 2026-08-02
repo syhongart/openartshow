@@ -176,6 +176,12 @@ export const glbCityFeature: Feature = {
         //   flat — GLB 지오는 쓰되 **텍스처 없는 순색** 재질. 보이면 텍스처가 원인.
         //   glb  — 지금 상태(텍스처 포함 교체 재질). 기본값.
         const mode = readEnum('glbmode', 'glb', ['glb', 'box', 'flat'] as const);
+        // ── 그림자를 던지고 받게 한다 (감독 지시 2026-08-02) ──────────────────
+        // GLB 의 `castShadow`/`receiveShadow` 기본값은 **false** 다. 파츠들은 스펙에서
+        // 명시적으로 켜는데(`parts/*.ts` 의 `asset()`) 이 기능은 그 경로를 안 지나므로,
+        // 어제 세운 랜드마크만 **그림자가 없는 채로 서 있었다.** 세계에서 가장 큰
+        // 구조물이 빛을 안 막으니 "하드라이트가 아니다" 의 한 축이 된다.
+        model.traverse((o: Object3D) => { o.castShadow = true; o.receiveShadow = true; });
         const fixed = tameMetals(model as unknown as MetalWalkable);
         counts.tamed = fixed.metals;
         counts.opaque = fixed.opaque;
