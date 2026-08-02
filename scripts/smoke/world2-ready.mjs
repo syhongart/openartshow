@@ -43,6 +43,15 @@ const GLB_TIMEOUT = 90000;
 /**
  * `__world2.stats()` 가 뜨고 **GLB 가 로딩을 끝낼 때까지** 기다린다.
  *
+ * ── `ready` 의 뜻이 넓어졌다 (2026-08-02) ───────────────────────────────────
+ * 처음에는 "다 세웠다" 였다. 지금은 **"다 세우고 GPU 에 올라갔다"** 다 — `glb-city.ts`
+ * 가 배치 뒤 컬링을 잠시 꺼 최초 렌더까지 마친 다음에야 `ready` 를 세운다.
+ *
+ * 그 순서가 이 헬퍼에 중요한 이유: 예열 전에 `ready` 가 서면 기준선이 GPU 업로드 **전**에
+ * 잡히고, 카메라를 돌리는 순간 개수가 오르는 것이 "증식" 으로 찍힌다. 실제로 그렇게
+ * FAIL 했다. 이 헬퍼는 시간이 아니라 상태를 보므로 `ready` 가 몇 프레임 늦게 서는 것
+ * 자체는 아무 문제가 없다 — **늦게 서야 맞다.**
+ *
  * @param {import('playwright-core').Page} page
  * @param {{timeout?: number, bootTimeout?: number}} [opt]
  * @returns {Promise<{booted: boolean, glb: {state: string, placed: number,

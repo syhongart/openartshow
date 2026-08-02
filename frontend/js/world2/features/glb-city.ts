@@ -735,8 +735,16 @@ const ATTACH_BATCH = 4;
  * 불변식은 통과하고(상수니까) 드로우콜 예산 게이트는 존재하지 않는다. 조용히 나빠지는
  * 형태라 예외 경로까지 원복을 보장한다.
  *
+ * ── 백그라운드 탭은 위험이 아니다 (검수관 확인 2026-08-02) ──────────────────
+ * 처음에 *"탭이 백그라운드로 가면 `nextFrame()` 이 안 깨어나 `finally` 도 안 돌고,
+ * 컬링이 꺼진 채 남는다"* 를 열린 위험으로 적었다. **코드로 답이 나 있었다** — 커널의
+ * 렌더 루프(`kernel.ts`)도 여기와 **같은 전역 `requestAnimationFrame`** 을 쓴다.
+ * 브라우저가 그것을 멈추면 렌더 루프도 함께 멎으므로, 컬링이 꺼져 있는 동안 애초에
+ * 드로우콜이 나가지 않는다. 조사해서 닫은 질문이니 "못 잰 것" 으로 남기지 않는다.
+ *
  * 원래부터 `frustumCulled === false` 인 것은 건드리지 않는다 — 만졌다가 되돌리면 그
- * 객체의 원래 뜻을 덮어쓴다.
+ * 객체의 원래 뜻을 덮어쓴다. (그런 객체는 어차피 첫 프레임부터 렌더되어 기준선에
+ * 이미 들어가 있으므로 예열 대상이 아니다.)
  *
  * **못 잰 것**: 헤드리스는 WebGL 이고 감독 실기기는 WebGPU 다. 컬링을 껐다 켜는 것이
  * WebGPU 에서 같은 효과인지 여기서는 확인할 수 없다(팀장 조건 4).
@@ -747,12 +755,21 @@ async function warmUp(root: Object3D): Promise<void> {
     root.traverse((o: Object3D) => {
       if (o.frustumCulled) { o.frustumCulled = false; touched.push(o); }
     });
-    await nextFrame();
-    await nextFrame();
+    for (let i = 0; i < WARMUP_FRAMES; i++) await nextFrame();
   } finally {
     for (const o of touched) o.frustumCulled = true;
   }
 }
+
+/**
+ * 예열에 돌릴 프레임 수. **2 는 실측으로 정해졌다** — 이 값으로 개수 불변식이 통과했고,
+ * 예열을 아예 빼면 다시 FAIL 한다(뮤테이션 확인).
+ *
+ * 모자라면 증상은 **다시 FAIL** 이지 조용한 악화가 아니다 — 개수 불변식이 계속 감시한다.
+ * 부팅 예열(`main.ts`)의 프레임 수와 다른 것은 서로 다른 축이라 그렇고, 값 미러링이
+ * 아니다(한쪽을 고쳐도 다른 쪽이 틀려지지 않는다).
+ */
+const WARMUP_FRAMES = 2;
 
 /** 다음 프레임까지 양보한다. `requestAnimationFrame` 이 없는 환경(테스트)에서도 돈다 */
 function nextFrame(): Promise<void> {

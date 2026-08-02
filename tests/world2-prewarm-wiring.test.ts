@@ -79,3 +79,43 @@ describe('부팅 예열 배선', () => {
     });
   });
 });
+
+// ── ⑤ 미술관 GLB 의 최초 렌더 예열 ────────────────────────────────────────────
+//
+// **같은 위험 클래스가 두 번째로 나타났다.** 위 ①~④가 날씨 레이어를 위해 만들어진
+// 배선이고, 이번엔 비동기로 로드되는 GLB 가 같은 함정을 밟았다 — `info.memory` 는 첫
+// 렌더에 오르는데 그 자산이 스폰 시야 밖에 서 있어 기준선에 안 잡혔고, 카메라를 돌리는
+// 순간 계단이 나 개수 불변식이 FAIL 했다(2026-08-02).
+//
+// 처방(`warmUp`)은 스모크가 잡아 주지만 **`npm run smoke:vite` 는 배포 전에 사람이
+// 돌리는 것**이고 `npm run gate` 는 매 커밋 자동이다. 순서가 뒤집히거나 `finally` 가
+// 빠지는 리팩터를 게이트가 못 잡으면, 다음에 같은 FAIL 이 배포 직전까지 안 보인다.
+// 검수관이 조건부 승인의 조건으로 이 검사를 요구했다 — 위 ④와 정확히 같은 이유다.
+//
+// ── 이 검사가 **못 잡는 것** ─────────────────────────────────────────────────
+// `warmUp` 이 실제로 GPU 업로드를 일으키는지는 정적으로 알 수 없다. 그것은
+// `scripts/smoke/measure-invariants.mjs` 가 잡는다(예열을 빼면 다시 FAIL 한다 —
+// 뮤테이션으로 확인했다). 여기가 보는 것은 **배선**뿐이다.
+describe('⑤ 미술관 GLB 예열 배선', () => {
+  const src = read('world2/features/glb-city.ts');
+
+  it('`ready` 를 세우기 **전에** 예열한다 — 뒤면 기준선이 GPU 업로드 전에 잡힌다', () => {
+    const warm = src.indexOf('await warmUp(');
+    const ready = src.indexOf("counts.state = 'ready'");
+    expect(warm, 'glb-city.ts 에서 warmUp 호출을 못 찾았다').toBeGreaterThan(-1);
+    expect(ready, "counts.state = 'ready' 대입을 못 찾았다").toBeGreaterThan(-1);
+    expect(warm, '예열이 ready 보다 뒤에 있다 — 게이트 기준선이 예열 전에 잡힌다')
+      .toBeLessThan(ready);
+  });
+
+  it('finally 에서 컬링을 되돌린다 — 안 되돌리면 드로우콜이 상시 늘고 아무 지표도 못 잡는다', () => {
+    // 함수 본문만 떼어 본다. 파일 전체에서 정규식을 돌리면 다른 `finally` 를 잡을 수 있다.
+    const i = src.indexOf('async function warmUp(');
+    expect(i, 'warmUp 함수 정의를 못 찾았다').toBeGreaterThan(-1);
+    const body = src.slice(i, src.indexOf('\n}', i));
+    const fin = body.match(/finally\s*\{([\s\S]*?)\}/);
+    expect(fin, 'warmUp 에 finally 가 없다 — 복구가 예외 경로를 안 탄다').not.toBeNull();
+    expect(fin![1], 'finally 안에서 frustumCulled 를 되돌리지 않는다')
+      .toMatch(/frustumCulled\s*=\s*true/);
+  });
+});
