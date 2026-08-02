@@ -88,3 +88,39 @@ describe('재배치 거리가 은닉 거리보다 멀다', () => {
     expect(Number(m![1]), '재배치가 안개 차단보다 가깝다').toBeGreaterThan(FOG_FAR_CELLS);
   });
 });
+
+// ── 스폰 밴드가 안개 시작 안쪽인가 (팀장 조건 A, 본편 ① 2단) ────────────────
+//
+// 이 부등호가 이번 회차 처방의 본체다. 밖에서 태어난 개체는 **대비가 깎인 채로
+// 시작하고 자력으로 회복할 수 없다** — NPC 속도(0.8~1.3m/s)보다 재배치 거리가
+// 훨씬 멀어서, 한 번 멀리 나면 계속 멀다.
+//
+// 디자이너 실측이 그 결과였다: 정지 8조합에서 알아볼 수 있는 사람 0명,
+// 화면 픽셀 기여 0.007~0.114%. 세계 지오메트리의 94% 를 쓰면서.
+describe('스폰 밴드가 안개 시작 안쪽이다', () => {
+  const src = readFileSync('frontend/js/world2/features/npc.ts', 'utf8');
+
+  it('SPAWN_REACH 가 안개 시작에서 유도된다 — 숫자를 다시 적지 않는다', () => {
+    const m = /const SPAWN_REACH\s*=\s*(.+);/.exec(src);
+    expect(m, 'SPAWN_REACH 를 못 찾았다 — 상수 이름이 바뀌었다').not.toBeNull();
+    // 리터럴 숫자면 안개와 갈라진 것이다. `FOG_NEAR_CELLS` 를 거쳐야 한다.
+    expect(m![1], '스폰 상한이 안개와 무관한 값이다').toContain('FOG_NEAR_CELLS');
+  });
+
+  it('SPAWN_RING < SPAWN_REACH — 밴드가 뒤집히면 스폰이 성립하지 않는다', () => {
+    const ring = /const SPAWN_RING\s*=\s*(.+);/.exec(src);
+    expect(ring, 'SPAWN_RING 을 못 찾았다').not.toBeNull();
+    // 하한도 상한에서 유도돼야 상한이 움직일 때 함께 따라온다.
+    expect(ring![1], '스폰 하한이 상한과 무관하다 — 상한을 바꿔도 안 따라온다')
+      .toContain('SPAWN_REACH');
+  });
+
+  it('안개 시작 < 안개 차단 < 재배치 — 세 경계의 순서가 이 처방의 뼈대다', () => {
+    // 스폰(≤near) → 은닉(far) → 재배치(그 밖). 순서가 깨지면 어느 하나가
+    // 다른 것을 무의미하게 만든다. 예: 은닉이 스폰보다 가까우면 태어나자마자 숨는다.
+    const rc = /const RECYCLE_CELLS\s*=\s*([\d.]+)/.exec(src);
+    expect(rc).not.toBeNull();
+    expect(FOG_NEAR_CELLS).toBeLessThan(FOG_FAR_CELLS);
+    expect(FOG_FAR_CELLS).toBeLessThan(Number(rc![1]));
+  });
+});
