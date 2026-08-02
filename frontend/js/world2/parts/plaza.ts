@@ -92,6 +92,25 @@ export function isPlaza(px: number, pz: number, p: number = PLAZA_P): boolean {
  */
 export type PlazaLandmark = 'fountain' | 'clock';
 
+/**
+ * 이 광장 칸이 **큰 것에 통째로 점유돼** 소품을 놓을 수 없는가.
+ *
+ * ── 왜 생겼나 ───────────────────────────────────────────────────────────────
+ * 미술관 GLB 가 실험에서 기본 노출로 올라오면서 광장 서쪽 칸에 선다(`features/glb-city.ts`).
+ * 그 자산은 바닥이 **17.2 × 24.6m** 라 32m 파셀을 거의 채운다 — 사분면에 뽑는 소품과
+ * 같은 칸에 두면 나무가 지붕을 뚫고 벤치가 벽 안에 박힌다.
+ *
+ * ── 분수대·시계탑 칸은 왜 여기 없나 ────────────────────────────────────────
+ * 그 둘도 광장 칸을 쓰지만 **밑동이 작아**(분수 반경 2.4m·시계탑 한 변 2m 남짓) 소품이
+ * 곁에 서도 겹치지 않고, 지금 실제로 그렇게 서 있다. 넣으면 보이는 것이 바뀌는데 그것은
+ * 이번 작업이 요청받은 범위가 아니다. **"큰 것" 을 크기로 판정하지 않고 칸으로 열거하는
+ * 것이 이 함수의 한계다** — 셋 다 파츠가 아니라 자리 이름으로 걸려 있어서, 미술관을
+ * 옮기면 여기도 함께 고쳐야 한다.
+ */
+export function plazaOccupied(px: number, pz: number): boolean {
+  return centralPlazaCell(px, pz) === 'west';
+}
+
 export function plazaLandmark(px: number, pz: number, _p: number = PLAZA_P): PlazaLandmark | null {
   // 격자는 "가운데 칸인가 북쪽 칸인가" 만 답한다. 무엇이 서는지는 파츠의 몫이다.
   switch (centralPlazaCell(px, pz)) {

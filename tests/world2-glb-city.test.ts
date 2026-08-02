@@ -1,76 +1,124 @@
-// GLB 실험이 **꺼져 있을 때 정말 아무것도 아닌가.**
+// GLB 미술관이 **기본으로 서고, 끄면 정말 아무것도 아닌가.**
 //
 // ── 감독 지시에서 생겼다 ────────────────────────────────────────────────────
-// *"지엘비 건물 테스트로 넘어가자. 원복할수있게 해."*
+// *"지엘비 건물 테스트로 넘어가자. 원복할수있게 해."* (실험 착수)
+// *"glb 건물 기본으로 나오게하자"* (2026-08-02 — 기본 노출로 승격)
 //
-// 원복 경로는 둘이다.
-//   ① `git revert` — 실험이 **단일 커밋 · 순수 가산**(181줄 추가, 0줄 삭제)이라 한 번에
-//      완전히 사라진다.
-//   ② 되돌리지 않아도 안전 — `?glb=` 가 없으면 기능이 스스로 꺼진다.
+// ── 계약이 뒤집혔다 ─────────────────────────────────────────────────────────
+// 이 파일은 원래 *"`?glb=` 가 없으면 기능이 스스로 꺼진다"* 를 지키고 있었다. 기본 노출로
+// 바뀌면서 그 단언은 **더는 유효하지 않다** — 노브가 없으면 이제 1채가 선다.
 //
-// ①은 git 이 보장하지만 ②는 **코드가 지켜야 하는 약속**이고, 약속은 검사가 없으면
-// 지켜지지 않는다. 이 파일이 ②를 검사로 만든다.
+// 그렇다고 검사를 지우지 않는다. 끌 수 있어야 한다는 요구는 그대로이고(스모크 대조군·
+// 감독 기기 격리), 옮겨간 곳이 `?glb=0` 이다. **끄는 경로가 사라진 것이 아니라 이름이
+// 바뀐 것**이므로, 단언도 그 자리로 옮긴다.
 //
 // ── 왜 중요한가 ─────────────────────────────────────────────────────────────
-// 이 기능은 world2 의 제1원리(개수 불변식)를 **일부러 깬다.** 실험이 평상시 경로에 조금이라도
-// 새면 그 순간 world2 의 성능 판정이 통째로 오염된다 — 그리고 그 오염은 "요즘 좀 무거운데"
-// 같은 형태로만 드러나 원인을 찾기가 매우 어렵다.
+// 이 기능은 world2 의 제1원리(개수 불변식)를 **일부러 깬다.** 기본 노출이 된 지금은 그
+// 비용이 상시 발생하므로, 끄는 경로가 실제로 도는지가 전보다 더 중요해졌다.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { glbCityFeature, gridCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, EXT_OFF } from '../frontend/js/world2/features/glb-city.js';
+import { glbCityFeature, gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, EXT_OFF } from '../frontend/js/world2/features/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
+import { PLAZA_WEST, isCentralPlaza } from '../frontend/js/world2/decide/grid.js';
+import { plazaOccupied } from '../frontend/js/world2/parts/plaza.js';
+import { parcelLayout } from '../frontend/js/world2/decide/parcel-layout.js';
 
-// `create` 가 첫 줄에서 꺼짐을 판정하고 나가므로 env 를 만질 일이 없다. 진짜 env 를
-// 조립하려면 three 씬이 필요한데, 그것을 요구하는 순간 이 검사가 무거워져 안 돌게 된다.
+// `create` 는 꺼짐 판정 뒤 배지·비동기 로드로 넘어가는데, 배지는 `doc?.body` 가 없으면
+// null 을 돌려주고 로드는 자기 try/catch 안에서 실패한다. 그래서 빈 env 로도 부를 수 있다.
 const ENV = {} as FeatureEnv;
 
-describe('GLB 실험은 꺼져 있을 때 존재하지 않는다', () => {
-  it('`?glb=` 가 없으면 create 가 null 이다 — 씬을 만지지 않는다', () => {
-    // 테스트 환경에는 `location` 이 없다. `readNum` 이 그 경우 fallback(0)을 돌려주므로
+/** URL 노브를 흉내낸다. `readNum` 이 `typeof location` 을 보므로 전역에 심으면 읽힌다 */
+function withSearch(search: string, fn: () => void): void {
+  const g = globalThis as unknown as { location?: unknown };
+  const had = 'location' in g;
+  const prev = g.location;
+  g.location = { search };
+  try { fn(); } finally {
+    if (had) g.location = prev; else delete g.location;
+  }
+}
+
+// 스텁이 새면 **뒤에 도는 테스트가 조용히 다른 세계를 본다.** 되돌리기를 강제한다.
+afterEach(() => {
+  const g = globalThis as unknown as { location?: unknown };
+  if (g.location && typeof g.location === 'object' && 'search' in g.location) delete g.location;
+});
+
+describe('GLB 미술관은 기본으로 서고 `?glb=0` 으로 꺼진다', () => {
+  it('노브가 없으면 켜진다 — 기본 노출(감독 지시 2026-08-02)', () => {
+    // 테스트 환경에는 `location` 이 없다. `readNum` 이 그 경우 fallback 을 돌려주므로
     // 이것이 곧 "URL 노브 없이 부팅한 세션" 과 같은 조건이다.
-    expect(glbCityFeature.create(ENV)).toBeNull();
+    const inst = glbCityFeature.create(ENV);
+    expect(inst).not.toBeNull();
+    // 진단이 `want` 를 말해야 채수를 판정할 수 있다. 1 이 아니면 예산을 넘는다.
+    const d = inst?.diagnostics?.() as { want: number } | undefined;
+    expect(d?.want).toBe(1);
   });
 
-  it('기능 목록에 들어 있어도 조립 결과에 안 나타난다', () => {
-    // `mountFeatures` 는 `create` 가 null 인 기능을 걸러낸다. 그 계약이 유지되는지를
-    // **실제 목록으로** 확인한다 — 이 파일이 `glbCityFeature` 만 따로 부르고 끝나면
-    // "목록에 넣은 것" 과 "조립되는 것" 사이가 사각으로 남는다.
+  it('`?glb=0` 이면 create 가 null 이다 — 씬을 만지지 않는다', () => {
+    withSearch('?glb=0', () => {
+      expect(glbCityFeature.create(ENV)).toBeNull();
+    });
+  });
+
+  it('기능 목록으로 조립해도 켜진다 — 목록과 실제가 갈리지 않는다', () => {
+    // `mountFeatures` 는 `create` 가 null 인 기능을 걸러낸다. **실제 목록으로** 확인한다
+    // — 이 파일이 `glbCityFeature` 만 따로 부르고 끝나면 "목록에 넣은 것" 과 "조립되는
+    // 것" 사이가 사각으로 남는다.
     const errors: string[] = [];
     const mounted = mountFeatures(FEATURES, ENV, (name) => errors.push(name));
-    expect(mounted.map((m) => m.name)).not.toContain('glbCity');
-
+    expect(mounted.map((m) => m.name)).toContain('glbCity');
     // 다른 기능들은 env 가 비어 있어 조립에 실패한다(그게 정상이다 — 씬이 없다).
-    // 그 실패 목록에 glbCity 가 있으면 안 된다. **던져서 빠진 것과 스스로 꺼진 것은
-    // 다르다** — 전자는 언젠가 env 가 갖춰지면 켜지고, 후자만 진짜 꺼짐이다.
+    // glbCity 가 그 실패 목록에 있으면 **켜진 것이 아니라 던진 것**이다.
     expect(errors).not.toContain('glbCity');
   });
 
-  it('목록에서 한 줄을 지우는 것이 곧 제거다 — 다른 기능이 이것을 참조하지 않는다', () => {
+  it('`?glb=0` 이면 조립 결과에서도 사라진다', () => {
+    withSearch('?glb=0', () => {
+      const mounted = mountFeatures(FEATURES, ENV, () => {});
+      expect(mounted.map((m) => m.name)).not.toContain('glbCity');
+    });
+  });
+
+  it('목록에서 한 줄을 지우는 것이 곧 제거다 — 다른 기능이 이것을 import 하지 않는다', () => {
     // 기능 규약의 핵심이다. 다른 기능이 glbCity 를 import 하면 목록에서 빼도 코드가
     // 남고, 그때부터 "지웠는데 왜 남아 있지" 가 시작된다.
+    //
+    // ── 검사를 import 로 좁혔다 (2026-08-02) ────────────────────────────────
+    // 예전엔 파일 본문에 `glb-city` 라는 **문자열이 있기만 해도** 걸렸다. 그래서
+    // `parts/plaza.ts` 가 주석에 *"미술관은 `features/glb-city.ts` 가 세운다"* 라고
+    // 근거를 적자 이 검사가 FAIL 했다 — 그 주석은 그 함수가 존재하는 유일한 이유이고,
+    // 지우면 다음 사람이 "이 배제는 뭐지" 를 알 길이 없다.
+    //
+    // **주석은 결합이 아니다.** 코드를 지웠을 때 남는 것은 낡은 주석 한 줄이지 컴파일
+    // 오류가 아니다. 반대로 import 는 진짜 결합이라 목록에서 빼도 파일이 살아남는다.
+    // 그래서 단언을 느슨하게 한 것이 아니라 **재는 축을 옳은 것으로 바꾼 것**이다 —
+    // 아래 뮤테이션이 그 검출력을 확인한다(다른 파일에서 import 를 심으면 깨진다).
     const dir = new URL('../frontend/js/world2/', import.meta.url);
-    const referrers = filesReferencing(dir, 'glb-city');
-    // 자기 자신과 선언 목록만 알아야 한다.
-    expect(referrers.sort()).toEqual(['features/glb-city.ts', 'features/index.ts']);
+    const importers = filesImporting(dir, 'glb-city');
+    // 자기 자신은 import 하지 않으므로 선언 목록만 남는다.
+    expect(importers.sort()).toEqual(['features/index.ts']);
   });
 });
 
-/** `world2/` 아래에서 주어진 이름을 언급하는 파일들(저장소 상대경로) */
-function filesReferencing(dir: URL, needle: string): string[] {
+/** `world2/` 아래에서 주어진 모듈을 **import 하는** 파일들(저장소 상대경로) */
+function filesImporting(dir: URL, moduleName: string): string[] {
   const { readdirSync, readFileSync } = require('node:fs') as typeof import('node:fs');
   const { fileURLToPath } = require('node:url') as typeof import('node:url');
   const { join, relative } = require('node:path') as typeof import('node:path');
   const rootDir = fileURLToPath(dir);
+  // `from '<경로>/glb-city.js'` · `import('<경로>/glb-city.js')` 둘 다 잡는다.
+  const re = new RegExp(`(from|import\\()\\s*['"][^'"]*${moduleName}\\.js['"]`);
   const out: string[] = [];
   const walk = (p: string): void => {
     for (const e of readdirSync(p, { withFileTypes: true })) {
       const full = join(p, e.name);
       if (e.isDirectory()) { walk(full); continue; }
       if (!e.name.endsWith('.ts')) continue;
-      if (readFileSync(full, 'utf8').includes(needle)) {
+      if (re.test(readFileSync(full, 'utf8'))) {
         out.push(relative(rootDir, full).split('\\').join('/'));
       }
     }
@@ -90,24 +138,91 @@ function filesReferencing(dir: URL, needle: string): string[] {
 // 순수 함수로 떼어 두었으니 여기서 잡는다.
 describe('GLB 배치는 스폰 자리를 비운다', () => {
   const CELL = 32;
-  /** 미술관 바닥 26.3 × 24.1m 의 대각 반경. 이 안에 들어오면 벽 속이다 */
-  const MODEL_RADIUS = Math.hypot(26.3, 24.1) / 2;
+  /**
+   * 미술관 바닥 **17.2 × 24.6m** 의 대각 반경. 이 안에 들어오면 벽 속이다.
+   *
+   * 예전엔 `26.3 × 24.1` 이었는데 그 숫자가 **틀렸다**(디자이너가 glTF accessor 재파싱,
+   * 2026-08-02). 옛 값이 더 커서 단언은 더 엄격했고 그래서 통과했다 — 즉 이 검사가
+   * 틀린 값으로도 초록이었다는 뜻이고, 그 사실 자체가 "치수를 두 곳에 적으면 벌어지는
+   * 일" 의 표본이다. 참값으로 고치되, **여기가 세 번째 사본**임을 적어 둔다.
+   */
+  const MODEL_RADIUS = Math.hypot(17.2, 24.6) / 2;
 
   for (const n of [1, 10, 50, 100, 200]) {
     it(`${n}채 — 원점에 아무것도 세우지 않는다`, () => {
-      const cells = gridCells(n, CELL);
+      const cells = placementCells(n, CELL);
       expect(cells).toHaveLength(n); // 비운 칸의 몫은 바깥으로 밀릴 뿐 줄지 않는다
-      const nearest = Math.min(...cells.map((c) => c.d));
+      const nearest = Math.min(...cells.map((c) => Math.hypot(c.x, c.z)));
       expect(nearest, `최근접 ${nearest.toFixed(1)}m, 모델 반경 ${MODEL_RADIUS.toFixed(1)}m`)
         .toBeGreaterThan(MODEL_RADIUS);
     });
   }
+
+  it('같은 자리를 두 번 쓰지 않는다 — 겹쳐 서면 측정과 눈이 어긋난다', () => {
+    for (const n of [2, 10, 50]) {
+      const keys = placementCells(n, CELL).map((c) => `${c.x},${c.z}`);
+      expect(new Set(keys).size, `${n}채에서 중복 자리`).toBe(n);
+    }
+  });
 
   it('같은 입력이면 같은 배치다 — 조건 간 비교가 성립하려면 결정론이어야 한다', () => {
     expect(gridCells(50, CELL)).toEqual(gridCells(50, CELL));
     // 채수를 늘려도 앞선 자리는 그대로여야 한다. 안 그러면 10채와 50채가 다른 세상이라
     // "채수만 바꿨다"는 전제가 깨진다.
     expect(gridCells(10, CELL)).toEqual(gridCells(50, CELL).slice(0, 10));
+  });
+
+  it('첫 채는 언제나 랜드마크다 — 채수를 올렸다고 사라지면 축이 둘 흔들린다', () => {
+    const lm = placementCells(1, CELL)[0];
+    for (const n of [1, 2, 10, 50]) {
+      expect(placementCells(n, CELL)[0], `${n}채의 첫 자리`).toEqual(lm);
+    }
+    // 랜드마크만 정면을 갖는다. 실험 격자는 방향이 의미 없다.
+    expect(lm.ry).not.toBe(0);
+    for (const c of placementCells(10, CELL).slice(1)) expect(c.ry).toBe(0);
+  });
+});
+
+// ── 판정과 집행이 만나는 자리 (이 저장소가 반복해 데인 곳) ──────────────────
+// 미술관이 서는 칸을 `glb-city` 가 정하고, 그 칸을 비우는 일은 `parts/*` 가 한다. 양쪽은
+// 서로를 모른 채 각자 테스트하기 쉬운데, **"계산된 자리가 실제로 비워지는가"** 는 그
+// 어느 쪽에도 안 걸린다. 여기가 그 경계다.
+describe('미술관이 서는 칸은 실제로 비워진다', () => {
+  const CELL = 32;
+
+  it('랜드마크 좌표와 소품 배제 판정이 같은 칸을 가리킨다', () => {
+    const lm = placementCells(1, CELL)[0];
+    // 좌표를 다시 적지 않는다 — 배치가 쓰는 값에서 **유도**한다. 하드코딩하면 미술관을
+    // 옮겨도 이 검사가 옛 칸을 보며 계속 초록이다.
+    const px = Math.round(lm.x / CELL);
+    const pz = Math.round(lm.z / CELL);
+    expect({ px, pz }).toEqual({ px: PLAZA_WEST.px, pz: PLAZA_WEST.pz });
+    expect(isCentralPlaza(px, pz)).toBe(true);
+    expect(plazaOccupied(px, pz)).toBe(true);
+  });
+
+  it('그 칸의 실제 배치 결과에 나무·벤치·화분이 하나도 없다', () => {
+    // **순수 판정이 아니라 조립 결과를 본다.** `plazaOccupied` 가 true 를 돌려주는 것과
+    // 파츠가 그것을 실제로 소비하는 것은 다른 일이다 — 셋 중 하나가 import 를 빠뜨려도
+    // 판정 테스트는 초록이다.
+    const parts = parcelLayout(PLAZA_WEST.px, PLAZA_WEST.pz, 'near');
+    const props = parts.filter((p) => p.kind === 'tree' || p.kind === 'bench' || p.kind === 'planter');
+    expect(props.map((p) => p.kind)).toEqual([]);
+  });
+
+  it('다른 광장 칸에는 소품이 그대로 선다 — 배제가 광장 전체로 번지지 않았다', () => {
+    // 이 단언이 없으면 "전부 비워버리는" 구현도 위 검사를 통과한다. 광장은 원래 벤치·
+    // 화분이 **더 모이는** 자리다(`plaza.ts`) — 그 성질이 살아 있는지 함께 본다.
+    let props = 0;
+    for (let px = -1; px <= 1; px++) {
+      for (let pz = -1; pz <= 1; pz++) {
+        if (px === PLAZA_WEST.px && pz === PLAZA_WEST.pz) continue;
+        for (const p of parcelLayout(px, pz, 'near')) {
+          if (p.kind === 'tree' || p.kind === 'bench' || p.kind === 'planter') props++;
+        }
+      }
+    }
+    expect(props).toBeGreaterThan(0);
   });
 });
 
