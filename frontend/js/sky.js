@@ -199,7 +199,12 @@ function dither(ctx, rnd, W, H) {
   const y0 = (H * 0.05) | 0;
   const img = ctx.getImageData(0, y0, W, H - y0); const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
-    const n = ((rnd() * 8) | 0) - 4; // ±4
+    // ±2 — ±4 에서 낮췄다(감독 "노이즈가 왜 이렇게 많아", 2026-08-03).
+    // 나는 이 층을 "미미하다" 고 적었었고 **그것이 틀렸다**: 디자이너 실측으로 dither 가
+    // 고주파 그레인의 **46%** 였고 화면의 24%(224,176px)가 2 이상 달라졌다.
+    // ±2 로 낮춰도 밴딩 파괴력은 **같다** — 순수 그라디언트에서 동일값 최대 연속 길이가
+    // 없음 8px / ±1 4px / ±2 3px / ±4 3px 로, ±2 가 이미 ±4 와 동률이다. 그레인만 절반.
+    const n = ((rnd() * 5) | 0) - 2; // ±2
     d[i] += n; d[i + 1] += n; d[i + 2] += n;
   }
   ctx.putImageData(img, 0, y0);
@@ -284,14 +289,16 @@ function paintSky(ctx, W, H, time, weather, opts) {
     // "성기고 또렷한 별" 방향: 개수 1/3, 소프트 도트(사각 픽셀 방지), 천정 감쇠 강화.
     // 별밭(정적) — 어두운/중간 별. 밝은 별(십자 스파이크)은 트윙클 레이어로 분리되어 반짝인다.
     // 밝기 2등급 차등(감독: "밝기 동일하게 하지 말고") + 색온도 다양화(starColor).
-    const starN = opts.lowRes ? 500 : 1400;
+    const starN = opts.lowRes ? 500 : 1100;
     const yMin = opts.lowRes ? 0.12 : 0.06, zcDen = opts.lowRes ? 0.5 : 0.35;
     for (let i = 0; i < starN; i++) {
       const x = rnd() * W, y = Hh * (yMin + rnd() * (0.92 - yMin));
       const zc = Math.min(1, y / (Hh * zcDen)); // 0=천정 → 1=중간 고도 이하
       const mid = rnd() > 0.72;
-      const a = (mid ? 0.5 + rnd() * 0.3 : 0.14 + rnd() * 0.3) * (0.35 + 0.65 * zc);
-      const r = (mid ? 0.9 + rnd() * 0.5 : 0.5 + rnd() * 0.5) * (0.45 + 0.55 * zc);
+      // 어두운 등급의 **하한**만 올린다(0.14→0.22 / 0.5→0.62). 알파 0.14 · 반경 0.5px 는
+      // 별이 아니라 뿌연 먼지였다 — 화면 확대 + AA 로 뭉개져 "지저분함" 에만 기여했다.
+      const a = (mid ? 0.5 + rnd() * 0.3 : 0.22 + rnd() * 0.26) * (0.35 + 0.65 * zc);
+      const r = (mid ? 0.9 + rnd() * 0.5 : 0.62 + rnd() * 0.5) * (0.45 + 0.55 * zc);
       const [cr, cg, cb] = starColor(rnd);
       const cc = `${cr},${cg},${cb}`;
       if (opts.lowRes) { // 저해상 돔은 소프트 도트(사각 픽셀 방지)
@@ -308,28 +315,51 @@ function paintSky(ctx, W, H, time, weather, opts) {
     ctx.save();
     ctx.beginPath(); ctx.rect(0, Hh * 0.14, W, Hh * 0.86); ctx.clip();
     ctx.translate(W * 0.5, Hh * 0.66); ctx.rotate(-0.42);
-    const nebN = opts.lowRes ? 600 : 900, nebK = opts.lowRes ? 0.7 : 1;
-    for (let i = 0; i < nebN; i++) { // 성운 얼룩 — 작고 많게(큰 반경은 흐린 보케 원반처럼 보인다)
+    // ── 성운 얼룩 — **개수↓ 반경↑ 알파↓** (감독 노이즈 지적, 2026-08-03) ──────────
+    // 여기가 감독이 본 "흐릿하게 번진 뿌연 점" 의 정체다. 디자이너가 층을 하나씩 꺼서
+    // 분리했다(개수 0 이 아니라 draw 만 스킵 — `rnd()` 스트림을 보존해야 다른 층의 별이
+    // 한 픽셀도 안 움직이는 정확한 A/B 가 된다): 성운을 끄면 중주파 얼룩이 **29% 사라지고**,
+    // 미세 별을 꺼도 얼룩은 **95% 그대로 남았다.** 미세 별은 얼룩이 아니라 점이었다.
+    //
+    // 바로 위 줄의 옛 주석이 "작고 많게(큰 반경은 흐린 보케 원반처럼 보인다)" 였는데
+    // **반대였다.** 작고 많은 것이 보케 원반이 된다 — 화면 확대 때문이다. 데스크톱
+    // 1280×720/FOV70 이 세로 1.81배, **모바일은 390×844 CSS + dpr 2 라 4.2배**여서
+    // 반경 4~17px 가 화면 지름 34~143px 원반이 된다(감독 실기기가 이 조건이다).
+    // 크고 옅게 가면 개별 원반이 서로 융합해 **저주파 광휘**가 되고, 그래야 은하수로 읽힌다.
+    // 알파는 반경² 증가분을 상쇄하도록 낮춘다 — 총 광량(`알파 × r² × N`)을 보존한다.
+    // ⚠ `lowRes` 쪽 값(370/1.7)은 **실측이 아니라 비율 스케일**이다 — 이 분기는 실행되지
+    //   않는다(`:941` 이 `lowRes: false` 를 하드코딩하는 유일한 소비처다). 되살릴 때 실측
+    //   없이 쓰지 마라. 태스크 #194.
+    const nebN = opts.lowRes ? 370 : 560, nebK = opts.lowRes ? 1.7 : 2.4;
+    for (let i = 0; i < nebN; i++) {
       const bx = (rnd() - 0.5) * W * 1.35;
       const by = (rnd() - 0.5) * Hh * 0.34 * (1 + Math.cos((bx / W) * 3.1) * 0.45);
-      const rr = (4 + rnd() * 13) * nebK, aa = 0.014 + rnd() * 0.032;
+      const rr = (4 + rnd() * 13) * nebK, aa = 0.005 + rnd() * 0.0115;
       const core = Math.abs(by) < Hh * 0.09;
       const huv = core ? (rnd() < 0.45 ? '235,220,200' : '228,225,240') : (rnd() < 0.3 ? '185,175,225' : '205,210,240');
       const g2 = ctx.createRadialGradient(bx, by, 0, bx, by, rr);
       g2.addColorStop(0, `rgba(${huv},${(aa * (core ? 2.6 : 1.8)).toFixed(3)})`); g2.addColorStop(1, `rgba(${huv},0)`);
       ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(bx, by, rr, 0, 7); ctx.fill();
     }
-    for (let i = 0; i < 1600; i++) { // 밴드 내 고밀도 미세 별
+    // 밴드 내 미세 별 — 1600→900, 알파 하한 0.1→0.18. "많고 흐릿하게" → "성기고 또렷하게".
+    // ⚠ 좌표를 `Math.round` 로 정수 정렬해 AA 흐림을 없애려는 시도는 **무효다**(실측).
+    //   이 루프는 `ctx.rotate(-0.42)` 아래라 로컬 정수가 비정수 디바이스 좌표로 되돌아간다
+    //   — 픽셀은 4,874개 바뀌지만 또렷함은 그대로였다(피크 상위10% 20.71 → 20.75).
+    //   또렷하게 만드는 실효 수단은 알파 하한뿐이다.
+    for (let i = 0; i < 900; i++) {
       const bx = (rnd() - 0.5) * W * 1.3, by = (rnd() - 0.5) * Hh * 0.28;
-      ctx.fillStyle = `rgba(238,240,255,${(0.1 + rnd() * 0.45).toFixed(2)})`;
+      ctx.fillStyle = `rgba(238,240,255,${(0.18 + rnd() * 0.42).toFixed(2)})`;
       ctx.fillRect(bx, by, 1, 1);
     }
     // ④ 암흑대(dark rift) — 밴드 중심을 가르는 검은 균열(구불구불한 어두운 얼룩 사슬)
     let rx = -W * 0.62, ry0 = -Hh * 0.024;
     while (rx < W * 0.62) {
-      const rr = 10 + rnd() * 24;
+      // 성운이 옅어지면 암흑대가 **검은 구슬 사슬**로 도드라진다(후보 C4 에서 실제로 났다).
+      // 두 층이 서로를 가려주고 있었다 — 한쪽만 밀면 다른 쪽이 새 얼룩이 된다.
+      // 그래서 함께 키우고(반경) 함께 낮춘다(알파).
+      const rr = 14 + rnd() * 34;
       const g3 = ctx.createRadialGradient(rx, ry0, 0, rx, ry0, rr);
-      g3.addColorStop(0, 'rgba(8,10,22,0.34)'); g3.addColorStop(0.7, 'rgba(8,10,22,0.14)'); g3.addColorStop(1, 'rgba(8,10,22,0)');
+      g3.addColorStop(0, 'rgba(8,10,22,0.29)'); g3.addColorStop(0.7, 'rgba(8,10,22,0.12)'); g3.addColorStop(1, 'rgba(8,10,22,0)');
       ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(rx, ry0, rr, 0, 7); ctx.fill();
       rx += rr * (0.6 + rnd() * 0.5); ry0 += (rnd() - 0.5) * Hh * 0.04;
     }
