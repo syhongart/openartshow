@@ -31,8 +31,9 @@
 
 import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
-import { nextDir, stepOf, pickNearby, type Cell } from '../decide/npc-walk.js';
+import { nextDir, stepOf, pickNearby, yawOf, type Cell } from '../decide/npc-walk.js';
 import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
+import { laneOffset, rightOf } from '../decide/npc-lane.js';
 // **아바타는 배럴로만 만난다.** 이 파일은 치비가 world1 에서 오는지, VRM 이 파일에서
 // 오는지 모른다 — 감독 지시("월드원 폴더 것을 그냥 끌어다 쓰지 마, 나중에 날릴 거니까")
 // 를 지키는 지점이 여기다. 경계는 `tests/world2-boundary.test.ts` 가 감시한다.
@@ -167,6 +168,35 @@ interface Walker {
   tz: number;
   ry: number;
   speed: number;
+  /**
+   * 이 체가 걸을 차선 오프셋(m). 진행방향 **오른쪽**으로 이만큼 비켜선다.
+   *
+   * 체마다 들고 있는 이유: 몸집이 다르면 차선이 성립하지 않을 수 있다(치비와 VRM 은
+   * 크기가 다르다). 성립하지 않으면 0 이고, 그때 그 체는 지금까지처럼 길 한가운데를
+   * 걷는다 — 기능이 없어지는 것이지 깨지는 것이 아니다.
+   */
+  lane: number;
+  /**
+   * 지금 실제로 얹고 있는 오프셋(m). 목표(`lane × 오른쪽`)로 **걸어서** 따라간다.
+   *
+   * 목표를 그대로 쓰면 모퉁이에서 방향이 90° 꺾이는 순간 오프셋도 튀어 사람이 옆으로
+   * 순간이동한다. 따라가는 속도는 자기 걷는 속도로 묶는다 — 옆걸음이 앞걸음보다 빠를
+   * 이유가 없고, 그러면 여기에 새 상수를 만들지 않아도 된다.
+   */
+  ox: number;
+  oz: number;
+  /**
+   * 마지막으로 **실제 그린 자리**(= `group.position` 에 넣은 값).
+   *
+   * 진단이 이것을 읽는다. `w.x + w.ox` 를 진단 쪽에서 다시 계산하면 식이 두 곳에 생기고
+   * (값 미러링), 그러면 집행이 오프셋을 안 얹어도 진단만 얹은 값을 보여 준다 —
+   * 정확히 그 자리를 보려고 만든 진단이 그 자리를 못 보게 된다.
+   *
+   * 아바타 계약(`WalkAvatar`)의 `position` 은 `set()` 만 노출한다. 읽기를 계약에 넣으면
+   * 소비자가 위치를 직접 만지기 시작하므로, 넓히는 대신 **넣은 값을 여기 남긴다**.
+   */
+  rx: number;
+  rz: number;
   /** 지금 그려지는가. 안개 밖이면 끈다 */
   shown: boolean;
 }
@@ -238,6 +268,22 @@ export const npcFeature: Feature = {
     /** 페이지를 떠난 뒤 VRM 로드가 끝나는 경우가 있다. 그때 씬에 붙이면 누수가 된다 */
     let disposed = false;
 
+    /**
+     * 이 아바타의 XZ 반경(m)을 **실측한다.**
+     *
+     * 차선 오프셋이 이 값에서 유도되므로(`decide/npc-lane.ts`) 숫자를 적어 두면 아바타를
+     * 갈아 끼우는 순간 갈라진다 — 이 저장소가 세 번 데인 형태다. 치비와 VRM 은 몸집이
+     * 다르고, 감독 지시대로 둘 다 나중에 교체될 수 있다.
+     *
+     * 체당 한 번, 부팅 때만 잰다. 걷는 동안 팔다리가 움직여 폭이 조금 변하지만, 차선
+     * 판정은 그 정도 흔들림에 좌우되지 않는다(창의 폭이 그보다 훨씬 넓다).
+     */
+    function bodyRadiusOf(inst: WalkAvatar): number {
+      const box = new THREE.Box3().setFromObject(inst.group as unknown as THREE.Object3D);
+      if (box.isEmpty()) return 0; // 잴 것이 없다 — 차선은 성립하지 않고, 그건 0 이 답한다
+      return Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+    }
+
     /** 걷는 사람 하나를 거리에 세운다. 아바타 종류는 여기서만 갈린다 */
     function spawn(inst: WalkAvatar, kind: Walker['kind']): boolean {
       const start = pickNearby(hpx, hpz, SPAWN_RING, SPAWN_REACH, rnd, cellX, cellZ);
@@ -254,6 +300,13 @@ export const npcFeature: Feature = {
         tz: start.pz * cellZ,
         ry: 0,
         speed: WALK_MIN + rnd() * (WALK_MAX - WALK_MIN),
+        // 우측통행 — **전원 같은 규칙**이다. 체마다 무작위로 갈라 두면 같은 방향으로
+        // 걷는 두 체가 서로 반대 차선에 놓여 오히려 마주치고, 대향이 같은 차선에 놓인다.
+        lane: laneOffset(bodyRadiusOf(inst)),
+        ox: 0,
+        oz: 0,
+        rx: start.px * cellX,
+        rz: start.pz * cellZ,
         shown: true,
       };
       retarget(w);
@@ -325,6 +378,10 @@ export const npcFeature: Feature = {
       w.from = null;
       w.x = w.tx = c.px * cellX;
       w.z = w.tz = c.pz * cellZ;
+      // 차선 오프셋도 되돌린다. 재배치는 위치가 통째로 바뀌는 일이라, 이전 진행방향에서
+      // 얻은 오프셋을 들고 가면 새 길에서 엉뚱한 쪽에 서 있게 된다. 0 에서 다시 붙는다.
+      w.ox = 0;
+      w.oz = 0;
       retarget(w);
     }
 
@@ -337,6 +394,30 @@ export const npcFeature: Feature = {
         if (m.isSkinnedMesh) return;
         if (m.isMesh) m.frustumCulled = on;
       });
+    }
+
+    /**
+     * 지금 화면에 있는 두 체 중 가장 가까운 거리(m). 두 체 미만이면 `null`.
+     *
+     * **실제로 그린 자리(`w.rx`)를 본다** — 경로 좌표(`w.x`)가 아니다. 차선 오프셋이
+     * 실제로 얹혔는지를 보는 것이 목적이므로, 얹기 전 값을 보면 아무 의미가 없다.
+     *
+     * 진단이 호출될 때만 돈다(체 7이면 21쌍). 프레임 루프에 넣지 않는다 — 이 처방이
+     * 매 프레임 쌍 검사를 **피하려고** 고른 것인데 진단이 그걸 도로 넣으면 앞뒤가 안 맞다.
+     */
+    function minPairDistance(): number | null {
+      const on = walkers.filter((w) => w.shown);
+      if (on.length < 2) return null;
+      let min = Infinity;
+      for (let i = 0; i < on.length; i++) {
+        for (let j = i + 1; j < on.length; j++) {
+          const a = on[i];
+          const b = on[j];
+          const d = Math.hypot(a.rx - b.rx, a.rz - b.rz);
+          if (d < min) min = d;
+        }
+      }
+      return Number(min.toFixed(2));
     }
 
     for (const w of walkers) setCulling(w, false);
@@ -391,9 +472,10 @@ export const npcFeature: Feature = {
             const step = Math.min(dist, w.speed * dt);
             w.x += (dx / dist) * step;
             w.z += (dz / dist) * step;
-            // yaw=0 → -Z 관례(world1 `world.js:1752` 와 같다). 여기를 부호 하나 틀리면
-            // 사람들이 전부 뒤로 걷는다.
-            w.ry = Math.atan2(-dx / dist, -dz / dist);
+            // yaw 관례(`yaw=0 → -Z`)는 `decide/npc-walk.ts` 가 소유한다. 차선 오프셋이
+            // 이 각을 입력으로 받으므로, 식이 두 곳에 있으면 사람이 반대쪽으로 비켜선다.
+            const ry = yawOf(dx, dz);
+            if (ry !== null) w.ry = ry;
             moving = w.speed;
           } else {
             retarget(w);
@@ -429,7 +511,29 @@ export const npcFeature: Feature = {
           }
 
           if (!show) continue; // 안 보이는 사람의 애니메이션까지 돌릴 이유가 없다
-          w.inst.group.position.set(w.x, 0, w.z);
+
+          // ── 차선으로 비켜선다 (감독 지적 2026-08-03, 팀장 판정 A) ────────
+          // 경로(`w.x`,`w.z`)는 파셀 중심을 잇는 **정확한 격자선**이다. 그 선을 그대로
+          // 밟으면 마주 오는 두 체가 확률이 아니라 **필연으로** 겹친다 — 감독이 본
+          // "치비끼리 뚫고 지나간다" 가 그것이다. 경로는 그대로 두고 **그리는 자리만**
+          // 오른쪽으로 옮긴다(우측통행). 걷기 판정·격자 위상은 손대지 않는다.
+          //
+          // 목표로 **걸어서** 간다 — 모퉁이에서 방향이 90° 꺾이는 순간 오프셋을 그냥
+          // 갈아 끼우면 사람이 옆으로 순간이동한다. 속도를 자기 걷는 속도로 묶으면
+          // 새 상수를 만들지 않고도 자연스러운 폭이 나온다(옆걸음이 앞걸음보다 빠를
+          // 이유가 없다).
+          const r = rightOf(w.ry);
+          const odx = r.x * w.lane - w.ox;
+          const odz = r.z * w.lane - w.oz;
+          const od = Math.hypot(odx, odz);
+          if (od > 0) {
+            const s = Math.min(od, w.speed * dt);
+            w.ox += (odx / od) * s;
+            w.oz += (odz / od) * s;
+          }
+          w.rx = w.x + w.ox;
+          w.rz = w.z + w.oz;
+          w.inst.group.position.set(w.rx, 0, w.rz);
           w.inst.group.rotation.y = w.ry;
           w.inst.update(dt, moving);
         }
@@ -456,6 +560,20 @@ export const npcFeature: Feature = {
         vrmWant: vrmCount,
         vrmPlaced,
         vrmError,
+        // ── 차선이 실제로 소비되는가 (감독 지적 2026-08-03) ──────────────────
+        // 이 둘은 **집행 쪽을 보는 유일한 창**이다. `decide/npc-lane.ts` 의 순수 함수는
+        // 테스트가 직접 부르지만, "계산된 값이 실제로 `group.position` 에 얹히는가" 는
+        // 양쪽 테스트 어디에도 안 걸린다 — CLAUDE.md 가 이름 붙인 판정/집행 경계의
+        // 구멍이고, 이번 회차에 B1 이 정확히 그 자리로 샜다.
+        //
+        // `lanes` 는 체별 오프셋(0 이면 그 몸집에 차선이 성립하지 않았다는 뜻).
+        // `minPairDist` 는 **실제 렌더 좌표** 기준 가장 가까운 두 체의 거리다 —
+        // 오프셋이 계산만 되고 안 얹히면 대향 순간에 0 으로 떨어진다.
+        //
+        // ⚠ **게이트가 아니라 관측이다.** 대향이 언제 생길지는 확률이라, 이 값이 큰
+        // 것이 처방이 들었다는 증거가 못 된다. 작으면 볼 것이 생긴다는 뜻일 뿐이다.
+        lanes: walkers.map((w) => Number(w.lane.toFixed(3))),
+        minPairDist: minPairDistance(),
       }),
 
       /**
