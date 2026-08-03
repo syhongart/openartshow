@@ -31,7 +31,9 @@
 
 import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
-import { nextDir, stepOf, pickNearby, yawOf, type Cell } from '../decide/npc-walk.js';
+import {
+  nextDir, stepOf, pickNearby, yawOf, reachFor, cellKey, type Cell,
+} from '../decide/npc-walk.js';
 import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
 import {
   laneOffset, lookAhead, laneTarget, stepLane, relativeTo, type Ahead,
@@ -123,6 +125,15 @@ export const SPAWN_REACH = Math.max(1, Math.floor(FOG_NEAR_CELLS / Math.SQRT2));
  * 보존하지 않으므로 여기서는 쓰지 않는다.
  */
 export const SPAWN_RING = SPAWN_REACH;
+
+/**
+ * 인원이 많을 때 밴드를 넓힐 수 있는 **상한**(셀).
+ *
+ * 세계 한 변이 30 파셀이므로 그 절반이면 어디에 서 있든 세계 전체가 후보에 든다.
+ * 더 키워도 후보가 안 늘고 루프만 길어진다 — 그래서 여기서 멈춘다.
+ * (`decide/grid.ts` 가 격자 밖을 걸러 주므로 넘겨도 안전하지만, 무의미한 순회다.)
+ */
+const MAX_SPAWN_REACH = 15;
 
 /** 목표 도달 판정(m) */
 const ARRIVE = 0.35;
@@ -277,6 +288,37 @@ export const npcFeature: Feature = {
     /** 페이지를 떠난 뒤 VRM 로드가 끝나는 경우가 있다. 그때 씬에 붙이면 누수가 된다 */
     let disposed = false;
 
+    // ── 인원에 맞춰 스폰 밴드를 넓힌다 (감독 지시 2026-08-03) ──────────────
+    // *"사람을 백 명을 깔아줘. 그래야지 내가 확인 하지."*
+    //
+    // 밴드는 안개 시작 안쪽 한 겹 링이라 후보가 8칸 남짓이다. 거기 100 명을 넣으면
+    // 한 칸에 열댓이 겹쳐 태어나 **확인하려고 늘린 인원이 확인을 방해한다.**
+    //
+    // 그래서 필요한 만큼만 넓힌다. 기본 인원에서는 `SPAWN_REACH` 가 그대로 나오므로
+    // **기존 동작이 안 바뀐다** — 그 불변은 `tests/world2-spawn-band.test.ts` 가 본다.
+    // 인원이 많으면 안개 시작을 넘는데, 안개 안 칸 수가 유한하므로 피할 수 없다.
+    // 넘는다는 사실을 진단(`spawnReach`)으로 내보내 감춰지지 않게 한다.
+    const wanted = count + vrmCount;
+    const spawnReach = reachFor(
+      wanted,
+      hpx,
+      hpz,
+      SPAWN_RING,
+      SPAWN_REACH,
+      MAX_SPAWN_REACH,
+      cellX,
+      cellZ,
+    );
+    /**
+     * 이미 누가 태어난 칸. **스폰에서만** 본다 — 걷기는 그대로 자유다.
+     *
+     * 팀장이 셀 점유 배제를 기각한 사유는 *"후보 7.37칸에 개체 7 이라 고갈이 산술적으로
+     * 성립한다"* 였다. 위에서 후보를 인원 이상으로 확보하므로 **그 사유가 성립하지
+     * 않는다.** 그래도 고갈에 대비해 `pickNearby` 가 `null` 을 주면 배제 없이 다시
+     * 고른다 — 겹쳐서라도 세우는 편이 아예 안 서는 것보다 낫다.
+     */
+    const taken = new Set<string>();
+
     /**
      * 이 아바타의 XZ 반경(m)을 **실측한다.**
      *
@@ -295,8 +337,13 @@ export const npcFeature: Feature = {
 
     /** 걷는 사람 하나를 거리에 세운다. 아바타 종류는 여기서만 갈린다 */
     function spawn(inst: WalkAvatar, kind: Walker['kind']): boolean {
-      const start = pickNearby(hpx, hpz, SPAWN_RING, SPAWN_REACH, rnd, cellX, cellZ);
+      // 이미 누가 선 칸은 비켜 앉는다. 자리가 동나면 배제 없이 다시 골라 — 겹쳐서라도
+      // 세우는 편이 아예 안 서는 것보다 낫다(그 경우 위 `spawnReach` 가 이미 최대다).
+      const start =
+        pickNearby(hpx, hpz, SPAWN_RING, spawnReach, rnd, cellX, cellZ, taken)
+        ?? pickNearby(hpx, hpz, SPAWN_RING, spawnReach, rnd, cellX, cellZ);
       if (!start) return false; // 걸을 곳이 없는 세계 — 있을 수 없지만 조용히 멈춘다
+      taken.add(cellKey(start.px, start.pz));
       group.add(inst.group as unknown as THREE.Object3D);
       const radius = bodyRadiusOf(inst);
       const w: Walker = {
@@ -383,7 +430,10 @@ export const npcFeature: Feature = {
 
     /** 플레이어 근처 도로로 데려온다. 자리를 못 찾으면 그대로 둔다(다음 프레임에 다시 본다) */
     function recycle(w: Walker, px: number, pz: number) {
-      const c = pickNearby(px, pz, SPAWN_RING, SPAWN_REACH, rnd, cellX, cellZ);
+      // 재배치도 같은 밴드를 쓴다 — 인원이 많으면 넓어진 밴드로 돌아와야 그 인원이
+      // 다시 한 줌에 몰리지 않는다. 여기서는 점유를 안 본다(스폰과 달리 상시 벌어지는
+      // 일이라, 자리 다툼으로 재배치가 실패하면 그 체가 영영 멀리 남는다).
+      const c = pickNearby(px, pz, SPAWN_RING, spawnReach, rnd, cellX, cellZ);
       if (!c) return;
       w.cell = c;
       w.from = null;
@@ -625,6 +675,11 @@ export const npcFeature: Feature = {
         // 것이 처방이 들었다는 증거가 못 된다. 작으면 볼 것이 생긴다는 뜻일 뿐이다.
         lanes: walkers.map((w) => Number(w.lane.toFixed(3))),
         minPairDist: minPairDistance(),
+        // 인원에 맞춰 넓힌 스폰 밴드(셀). 기본값(`SPAWN_REACH`)보다 크면 **안개 시작을
+        // 넘어 태어난 체가 있다**는 뜻이다 — 인원이 많을 때는 피할 수 없지만, 그
+        // 사실이 감춰지면 본편 ① 이 고친 결함과 구별되지 않는다.
+        spawnReach,
+        spawnReachBase: SPAWN_REACH,
       }),
 
       /**

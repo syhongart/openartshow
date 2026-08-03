@@ -141,16 +141,80 @@ export function pickNearby(
   rnd: () => number,
   cellX: number,
   cellZ: number,
+  taken?: ReadonlySet<string>,
 ): Cell | null {
-  const cands: Cell[] = [];
+  const cands = nearbyCells(centerPx, centerPz, ring, reach, cellX, cellZ, taken);
+  if (cands.length === 0) return null;
+  return cands[Math.floor(rnd() * cands.length) % cands.length];
+}
+
+/** 칸의 신원. 점유 집합의 유일한 표기 — 두 곳에서 다르게 만들면 안 맞는다 */
+export function cellKey(px: number, pz: number): string {
+  return `${px},${pz}`;
+}
+
+/**
+ * 밴드 안에서 걸을 수 있는 칸 **전부**. `pickNearby` 가 고르는 후보와 같은 집합이다.
+ *
+ * 따로 뽑을 수 있게 한 이유: **몇 명을 세울 수 있는지 미리 알아야** 한다. 인원이
+ * 후보보다 많으면 같은 칸에 겹쳐 태어나는데, 그 사실이 어디에도 안 나타난다.
+ *
+ * @param taken 이미 쓴 칸(`cellKey`). 스폰이 서로를 비켜 앉는 데 쓴다
+ */
+export function nearbyCells(
+  centerPx: number,
+  centerPz: number,
+  ring: number,
+  reach: number,
+  cellX: number,
+  cellZ: number,
+  taken?: ReadonlySet<string>,
+): Cell[] {
+  const out: Cell[] = [];
   for (let dx = -reach; dx <= reach; dx++) {
     for (let dz = -reach; dz <= reach; dz++) {
       if (Math.max(Math.abs(dx), Math.abs(dz)) < ring) continue;
       const px = centerPx + dx;
       const pz = centerPz + dz;
-      if (isWalkable(px, pz, cellX, cellZ)) cands.push({ px, pz });
+      if (taken?.has(cellKey(px, pz))) continue;
+      if (isWalkable(px, pz, cellX, cellZ)) out.push({ px, pz });
     }
   }
-  if (cands.length === 0) return null;
-  return cands[Math.floor(rnd() * cands.length) % cands.length];
+  return out;
+}
+
+/**
+ * 이 인원을 **겹치지 않게** 세우려면 밴드를 얼마나 넓혀야 하는가(셀).
+ *
+ * ── 왜 필요한가 (감독 지시 2026-08-03) ──────────────────────────────────────
+ * *"사람을 백 명을 깔아줘. 그래야지 내가 확인 하지."*
+ *
+ * 스폰 밴드는 **안개 시작 안쪽**으로 묶여 있다(한 겹 링, 후보 평균 7.37칸). 그 안에
+ * 100 명을 넣으면 한 칸에 열댓 명이 겹쳐 태어난다 — 확인하려고 늘린 인원이 확인을
+ * 방해한다. 그래서 인원이 수용력을 넘으면 **필요한 만큼만** 넓힌다.
+ *
+ * 기하로 계산하지 않고 **실제로 세는** 이유: 밴드 칸 중 걸을 수 있는 비율은 격자
+ * 패턴·물·경계에 따라 다르다. 비율을 가정하면 그 가정이 곧 미러링이 된다.
+ *
+ * ⚠ **인원이 많으면 안개 시작을 넘는다.** 안개 안에 든 칸 수가 유한하므로 피할 수
+ * 없다. 이 함수는 "넓혀도 되는가" 를 판단하지 않고 **필요한 값을 돌려줄 뿐**이고,
+ * 기본 인원에서는 `min` 이 그대로 나와 기존 동작이 유지된다(그 불변은 테스트가 본다).
+ *
+ * @param min 최소 reach. 인원이 적으면 이 값 그대로다(= 기존 동작)
+ * @param max 안전 상한. 여기까지 넓혀도 모자라면 그냥 멈춘다 — 무한히 커지지 않는다
+ */
+export function reachFor(
+  count: number,
+  centerPx: number,
+  centerPz: number,
+  ring: number,
+  min: number,
+  max: number,
+  cellX: number,
+  cellZ: number,
+): number {
+  for (let r = min; r < max; r++) {
+    if (nearbyCells(centerPx, centerPz, ring, r, cellX, cellZ).length >= count) return r;
+  }
+  return max;
 }
