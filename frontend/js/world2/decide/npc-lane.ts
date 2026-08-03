@@ -86,3 +86,90 @@ export function laneOffset(bodyRadius: number, bound: number = LANE_BOUND): numb
 export function rightOf(ry: number): { x: number; z: number } {
   return { x: Math.cos(ry), z: -Math.sin(ry) };
 }
+
+/**
+ * yaw 로부터 **전방** 단위벡터. `rightOf` 와 같은 관례에서 유도한다.
+ *
+ * 앞을 막는 사람을 찾으려면 상대 위치를 "앞이 얼마 / 옆이 얼마" 로 분해해야 하는데,
+ * 그 분해에 쓰는 두 축이 서로 다른 관례에서 오면 옆 사람을 앞 사람으로 읽는다.
+ */
+export function forwardOf(ry: number): { x: number; z: number } {
+  return { x: -Math.sin(ry), z: -Math.cos(ry) };
+}
+
+/** 다른 사람이 내 진행방향 기준 어디 있는가 */
+export interface Ahead {
+  /** 앞이면 양수(m) */
+  ahead: number;
+  /** 오른쪽이면 양수(m) */
+  side: number;
+}
+
+/**
+ * **얼마나 앞을 보고 비키기 시작하는가**(m).
+ *
+ * 감독 지시(2026-08-03): *"앞에 있으면 사람처럼 점점 옆으로 이동하게, 그 옆을 스쳐갔다가
+ * 다시 중앙으로 오게 해줘."* — 핵심은 **점점**이다. 코앞에서 알아채면 비키는 데 걸리는
+ * 거리가 없어서 결국 순간이동으로 보인다.
+ *
+ * 그래서 거리를 유도한다. 비켜서는 데 걸리는 시간 동안 상대가 다가오는 거리다:
+ *
+ *   비켜야 할 최대 폭 = 차도 폭 = `2 × bound`
+ *   그 폭을 옮기는 데 걸리는 시간 `t` = 폭 ÷ 내 걷는 속도
+ *   그동안 좁혀지는 거리 = 접근 속도 × `t`   ← 이만큼 앞에서 알아채야 한다
+ *
+ * 값을 적어 두지 않는 이유는 늘 같다 — 도로를 넓히거나 걷는 속도를 바꾸면 "미리" 의
+ * 뜻이 달라지는데, 숫자로 적어 두면 그때 갈라지고 갈라진 줄 아무도 모른다.
+ *
+ * @param speed 내 걷는 속도(m/s). 느린 사람일수록 더 일찍 본다 — 비키는 데 오래 걸린다
+ * @param closing 상대와 좁혀지는 최대 속도(m/s). 대향이면 두 속도의 합이다
+ */
+export function lookAhead(speed: number, closing: number, bound: number = LANE_BOUND): number {
+  if (speed <= 0) return 0;
+  return ((2 * bound) / speed) * closing;
+}
+
+/**
+ * 앞을 막는 사람을 비켜 지나가려면 **옆으로 얼마나** 더 가야 하는가(m).
+ * 막는 사람이 없으면 **0** — 그래서 지나가고 나면 저절로 중앙(차선)으로 돌아온다.
+ *
+ * ── 왜 위치를 밀어내지 않는가 ───────────────────────────────────────────────
+ * 팀장이 근접 반발(서로 밀어내기)을 기각한 사유가 **도로 이탈**이었다. 여기서는
+ * 위치를 만지지 않는다 — **차선 오프셋만** 키운다. 오프셋은 진행방향 옆으로만 작용하고
+ * 총량이 `clampLane` 으로 차도 안에 갇히므로, 경로(격자 좌표)는 무엇을 해도 그대로다.
+ * 기각 사유가 여기에는 성립하지 않는다.
+ *
+ * ── 어느 쪽으로 비키는가 ────────────────────────────────────────────────────
+ * 상대가 **왼쪽이나 정면**이면 오른쪽으로(우측통행과 같은 방향), 상대가 이미 **오른쪽**
+ * 이면 왼쪽으로. 오른쪽만 고집하면 오른쪽에 있는 사람을 가로질러 지나가게 된다.
+ *
+ * ── 왜 가장 가까운 하나만 보는가 ────────────────────────────────────────────
+ * 여럿의 회피량을 합치면 서로 상쇄되거나 튀어서, 같은 배치에서도 프레임마다 다른 값이
+ * 나온다. 사람도 제일 먼저 마주칠 사람을 피한다.
+ *
+ * @param gap 벌리고 싶은 옆 간격(m). 두 몸 반경의 합이다
+ */
+export function dodgeOffset(others: readonly Ahead[], gap: number, look: number): number {
+  let near: Ahead | null = null;
+  for (const o of others) {
+    if (o.ahead <= 0 || o.ahead > look) continue; // 뒤에 있거나 아직 멀다
+    if (Math.abs(o.side) >= gap) continue; // 이미 충분히 비켜 있다
+    if (!near || o.ahead < near.ahead) near = o;
+  }
+  if (!near) return 0;
+  // 옆 간격이 `gap` 이 되는 최소 이동. 부호가 어느 쪽으로 비킬지를 말한다.
+  return near.side <= 0 ? near.side + gap : near.side - gap;
+}
+
+/**
+ * 총 오프셋을 **차도 안에 가둔다.** 이 한 줄이 위상 보증의 전부다.
+ *
+ * 회피량이 얼마가 되든 여기서 잘리므로, 사람이 인도나 건물 쪽으로 밀려나는 경로가
+ * 존재하지 않는다. `tests/world2-npc-lane.test.ts` 가 회피 최대치까지 훑어 `onRoad` 를
+ * 확인한다 — B1(격자 판정이 무력화돼 NPC 가 건물을 관통한 사고)이 샌 축이 이것이다.
+ */
+export function clampLane(total: number, bodyRadius: number, bound: number = LANE_BOUND): number {
+  const lim = bound - bodyRadius;
+  if (lim <= 0) return 0; // 몸이 차도보다 넓다 — 비킬 자리가 없다
+  return Math.max(-lim, Math.min(lim, total));
+}

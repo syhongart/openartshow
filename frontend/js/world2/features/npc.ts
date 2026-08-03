@@ -33,7 +33,9 @@ import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import { nextDir, stepOf, pickNearby, yawOf, type Cell } from '../decide/npc-walk.js';
 import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
-import { laneOffset, rightOf } from '../decide/npc-lane.js';
+import {
+  laneOffset, rightOf, forwardOf, lookAhead, dodgeOffset, clampLane, type Ahead,
+} from '../decide/npc-lane.js';
 // **아바타는 배럴로만 만난다.** 이 파일은 치비가 world1 에서 오는지, VRM 이 파일에서
 // 오는지 모른다 — 감독 지시("월드원 폴더 것을 그냥 끌어다 쓰지 마, 나중에 날릴 거니까")
 // 를 지키는 지점이 여기다. 경계는 `tests/world2-boundary.test.ts` 가 감시한다.
@@ -177,6 +179,13 @@ interface Walker {
    */
   lane: number;
   /**
+   * 몸의 XZ 반경(m). 부팅 때 한 번 실측한다.
+   *
+   * 차선 계산에도 쓰고, **앞사람과 벌려야 할 간격**(두 반경의 합)에도 쓴다. 체마다 들고
+   * 있어야 하는 이유가 후자다 — 치비끼리와 치비-VRM 은 벌릴 폭이 다르다.
+   */
+  radius: number;
+  /**
    * 지금 실제로 얹고 있는 오프셋(m). 목표(`lane × 오른쪽`)로 **걸어서** 따라간다.
    *
    * 목표를 그대로 쓰면 모퉁이에서 방향이 90° 꺾이는 순간 오프셋도 튀어 사람이 옆으로
@@ -289,6 +298,7 @@ export const npcFeature: Feature = {
       const start = pickNearby(hpx, hpz, SPAWN_RING, SPAWN_REACH, rnd, cellX, cellZ);
       if (!start) return false; // 걸을 곳이 없는 세계 — 있을 수 없지만 조용히 멈춘다
       group.add(inst.group as unknown as THREE.Object3D);
+      const radius = bodyRadiusOf(inst);
       const w: Walker = {
         inst,
         kind,
@@ -302,7 +312,8 @@ export const npcFeature: Feature = {
         speed: WALK_MIN + rnd() * (WALK_MAX - WALK_MIN),
         // 우측통행 — **전원 같은 규칙**이다. 체마다 무작위로 갈라 두면 같은 방향으로
         // 걷는 두 체가 서로 반대 차선에 놓여 오히려 마주치고, 대향이 같은 차선에 놓인다.
-        lane: laneOffset(bodyRadiusOf(inst)),
+        lane: laneOffset(radius),
+        radius,
         ox: 0,
         oz: 0,
         rx: start.px * cellX,
@@ -522,9 +533,40 @@ export const npcFeature: Feature = {
           // 갈아 끼우면 사람이 옆으로 순간이동한다. 속도를 자기 걷는 속도로 묶으면
           // 새 상수를 만들지 않고도 자연스러운 폭이 나온다(옆걸음이 앞걸음보다 빠를
           // 이유가 없다).
+          // ── 앞사람을 미리 비킨다 (감독 지시 2026-08-03) ──────────────────
+          // *"앞에 있으면 사람처럼 점점 옆으로 이동하게, 그 옆을 스쳐갔다가 다시
+          // 중앙으로 오게 해줘."*
+          //
+          // 비키는 것은 **차선 오프셋뿐**이다 — 경로(`w.x`,`w.z`)는 안 만진다. 그래서
+          // 격자 위상이 어떤 경우에도 안 깨진다(팀장이 근접 반발을 기각한 사유가
+          // 도로 이탈이었고, 이 형태에는 그 사유가 성립하지 않는다). 총량은
+          // `clampLane` 이 차도 안에 가둔다.
+          //
+          // **"다시 중앙으로" 는 따로 만들지 않았다.** 앞이 비면 회피량이 0 이 되고,
+          // 아래 추종이 그 목표를 걷는 속도로 따라가므로 저절로 차선으로 돌아온다.
+          // 복귀를 별도 상태로 두면 "지금 복귀 중인가" 를 관리해야 하고, 그 상태가
+          // 틀어지는 순간 사람이 길 옆에 붙어 굳는다.
           const r = rightOf(w.ry);
-          const odx = r.x * w.lane - w.ox;
-          const odz = r.z * w.lane - w.oz;
+          const f = forwardOf(w.ry);
+          const seen: Ahead[] = [];
+          for (const o of walkers) {
+            if (o === w || !o.shown) continue;
+            const gx = o.rx - w.rx;
+            const gz = o.rz - w.rz;
+            seen.push({ ahead: gx * f.x + gz * f.z, side: gx * r.x + gz * r.z });
+          }
+          // 벌릴 간격도 상한도 유도한다. 상대 반경은 이웃마다 다르지만, 가장 큰 체를
+          // 기준으로 잡으면 어느 조합에서도 부족하지 않다.
+          const widest = walkers.reduce((m, o) => (o.radius > m ? o.radius : m), 0);
+          const dodge = dodgeOffset(
+            seen,
+            w.radius + widest,
+            lookAhead(w.speed, w.speed + WALK_MAX),
+          );
+          const want = clampLane(w.lane + dodge, w.radius);
+
+          const odx = r.x * want - w.ox;
+          const odz = r.z * want - w.oz;
           const od = Math.hypot(odx, odz);
           if (od > 0) {
             const s = Math.min(od, w.speed * dt);

@@ -23,7 +23,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { laneOffset, rightOf, LANE_BOUND } from '../frontend/js/world2/decide/npc-lane.js';
+import {
+  laneOffset, rightOf, forwardOf, lookAhead, dodgeOffset, clampLane, LANE_BOUND,
+  type Ahead,
+} from '../frontend/js/world2/decide/npc-lane.js';
 import { yawOf } from '../frontend/js/world2/decide/npc-walk.js';
 import { onRoad, ROAD_HALF, roadDirs } from '../frontend/js/world2/parts/road-topology.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
@@ -168,9 +171,16 @@ describe('마주 오는 두 체가 스쳐 지나간다 (G-3)', () => {
 describe('차선을 얹은 좌표가 도로 위다 (G-4)', () => {
   const { cellX, cellZ } = DEFAULT_LAYOUT;
 
-  it('★ 네 방향 모두, 파셀을 가로지르는 내내 onRoad 다', () => {
-    const L = laneOffset(0.5);
-    expect(L, '오프셋이 0 이면 이 검사는 아무것도 안 본다').toBeGreaterThan(0);
+  it('★ 네 방향 모두, 파셀을 가로지르는 내내 onRoad 다 — 회피 최대치까지', () => {
+    const RADIUS = 0.5;
+    // 차선만이 아니라 **회피가 갈 수 있는 끝까지** 훑는다. 회피는 차선을 넘어 좌우로
+    // 움직이므로, 차선 하나만 보면 실제로 밟는 좌표의 일부만 검사하게 된다.
+    // 여기가 B1 이 샌 축이다 — 아무도 좌표를 도로 판정에 넣어 보지 않아서 NPC 가
+    // 건물 안쪽을 가로지르는 동안 테스트는 전부 통과했다.
+    const lim = clampLane(1e9, RADIUS); // 도달 가능한 최대 오프셋
+    expect(lim, '오프셋 상한이 0 이면 이 검사는 아무것도 안 본다').toBeGreaterThan(0);
+    const offs: number[] = [];
+    for (let o = -lim; o <= lim + 1e-9; o += lim / 6) offs.push(o);
 
     // 도로가 사방으로 뻗은 칸을 찾는다. 격자 패턴에 따라 방향 수가 달라서, 네 방향이
     // 다 있는 칸에서 봐야 어느 방향으로 걷든 덮인다.
@@ -189,11 +199,13 @@ describe('차선을 얹은 좌표가 도로 위다 (G-4)', () => {
     for (const [sx, sz] of off) {
       const ry = yawOf(sx * cellX, sz * cellZ)!;
       const r = rightOf(ry);
-      // 파셀 중심에서 그 방향 경계까지 훑는다(중심 기준 로컬 좌표 = onRoad 의 계약).
-      for (let u = 0; u <= 0.5; u += 0.02) {
-        const x = sx * cellX * u + r.x * L;
-        const z = sz * cellZ * u + r.z * L;
-        if (!onRoad(x, z, dirs)) bad.push(`(${x.toFixed(1)},${z.toFixed(1)})`);
+      for (const L of offs) {
+        // 파셀 중심에서 그 방향 경계까지 훑는다(중심 기준 로컬 좌표 = onRoad 의 계약).
+        for (let u = 0; u <= 0.5; u += 0.02) {
+          const x = sx * cellX * u + r.x * L;
+          const z = sz * cellZ * u + r.z * L;
+          if (!onRoad(x, z, dirs)) bad.push(`오프셋 ${L.toFixed(2)} → (${x.toFixed(1)},${z.toFixed(1)})`);
+        }
       }
     }
     expect(bad.slice(0, 5), `도로 밖 ${bad.length}점`).toEqual([]);
@@ -202,6 +214,138 @@ describe('차선을 얹은 좌표가 도로 위다 (G-4)', () => {
   it('차도 반폭이 도로 판정 반폭보다 좁다 — 그래서 위 검사가 자동으로 성립한다', () => {
     // 이 부등호가 뒤집히면 "차도 위" 와 "길 위" 가 갈라져 사람이 아스팔트 밖을 걷는다.
     expect(LANE_BOUND).toBeLessThan(ROAD_HALF);
+  });
+});
+
+// ── G-6: 앞사람 회피 (감독 지시 2026-08-03) ─────────────────────────────────
+//
+// *"앞에 있으면 사람처럼 점점 옆으로 이동하게, 그 옆을 스쳐갔다가 다시 중앙으로 오게."*
+//
+// 차선만으로는 **대향 정면**밖에 못 덮는다. 같은 방향 추월도, 교차로에서 직각으로 오는
+// 것도 남는다. 회피는 그 나머지를 덮는다.
+describe('앞을 막는 사람을 비켜 간다 (G-6)', () => {
+  const GAP = 1.0; // 두 몸 반경의 합
+  const LOOK = 8;
+
+  it('앞이 비면 0 이다 — "다시 중앙으로" 가 여기서 나온다', () => {
+    // 복귀를 별도 상태로 만들지 않았다. 앞이 비면 목표가 차선으로 돌아가고, 추종이
+    // 걸어서 따라간다. 이 단언이 곧 복귀 동작의 근거다.
+    expect(dodgeOffset([], GAP, LOOK)).toBe(0);
+  });
+
+  it('뒤에 있는 사람은 안 본다 — 지나간 사람을 계속 피하면 영영 안 돌아온다', () => {
+    expect(dodgeOffset([{ ahead: -2, side: 0 }], GAP, LOOK)).toBe(0);
+  });
+
+  it('아직 먼 사람은 안 본다 — 시야 밖까지 피하면 늘 옆에 붙어 걷는다', () => {
+    expect(dodgeOffset([{ ahead: LOOK + 1, side: 0 }], GAP, LOOK)).toBe(0);
+  });
+
+  it('이미 충분히 벌어져 있으면 0 이다', () => {
+    expect(dodgeOffset([{ ahead: 3, side: GAP }], GAP, LOOK)).toBe(0);
+    expect(dodgeOffset([{ ahead: 3, side: -GAP - 0.5 }], GAP, LOOK)).toBe(0);
+  });
+
+  it('★ 정면이면 옆으로 몸 폭만큼 비킨다', () => {
+    expect(dodgeOffset([{ ahead: 3, side: 0 }], GAP, LOOK)).toBeCloseTo(GAP, 6);
+  });
+
+  it('★ 왼쪽에 있으면 오른쪽으로 — 우측통행과 같은 방향이라 조금만 가도 된다', () => {
+    const d = dodgeOffset([{ ahead: 3, side: -0.3 }], GAP, LOOK);
+    expect(d).toBeGreaterThan(0);
+    expect(d).toBeLessThan(GAP); // 이미 왼쪽으로 치우쳐 있으니 덜 가도 벌어진다
+    expect(d).toBeCloseTo(GAP - 0.3, 6);
+  });
+
+  it('★ 오른쪽에 있으면 왼쪽으로 — 오른쪽만 고집하면 그 사람을 가로지른다', () => {
+    expect(dodgeOffset([{ ahead: 3, side: 0.4 }], GAP, LOOK)).toBeLessThan(0);
+  });
+
+  it('가장 가까운 사람만 본다 — 여럿을 합치면 서로 상쇄돼 프레임마다 값이 튄다', () => {
+    const many: Ahead[] = [
+      { ahead: 6, side: 0.2 }, // 멀다
+      { ahead: 1.5, side: -0.2 }, // 가장 가깝다 — 이것만 본다
+      { ahead: 4, side: 0.1 },
+    ];
+    expect(dodgeOffset(many, GAP, LOOK)).toBeCloseTo(GAP - 0.2, 6);
+  });
+
+  it('회피 뒤 실제로 벌어진다 — 옆 간격이 gap 이상이 된다', () => {
+    // 판정이 낸 값을 **적용해 보고** 결과를 확인한다. 값만 보면 부호를 틀려도 통과한다.
+    for (const side of [-0.8, -0.3, 0, 0.2, 0.7]) {
+      const d = dodgeOffset([{ ahead: 3, side }], GAP, LOOK);
+      expect(Math.abs(side - d), `side=${side} 에서 안 벌어졌다`).toBeGreaterThanOrEqual(GAP - 1e-9);
+    }
+  });
+});
+
+// ── G-7: 회피가 도로를 못 벗어난다 ──────────────────────────────────────────
+//
+// 팀장이 근접 반발을 기각한 사유가 **도로 이탈**이었다. 이 처방은 위치를 안 만지고
+// 차선 오프셋만 키우지만, 그 오프셋도 무한히 크면 결국 인도로 나간다. `clampLane` 이
+// 유일한 방벽이고, 그래서 여기서 그것만 본다.
+describe('회피량이 얼마든 차도 안이다 (G-7)', () => {
+  it('★ 어떤 회피량을 넣어도 |총 오프셋| + 반경 ≤ 차도 반폭', () => {
+    const bad: string[] = [];
+    for (const r of [0.2, 0.5, 0.9, 1.2]) {
+      for (const raw of [-99, -3, -1, 0, 1, 3, 99]) {
+        const t = clampLane(raw, r);
+        if (t !== 0 && Math.abs(t) + r > LANE_BOUND + 1e-9) bad.push(`r=${r} raw=${raw} → ${t}`);
+      }
+    }
+    expect(bad, `차도 밖 ${bad.length}건`).toEqual([]);
+  });
+
+  it('몸이 차도보다 넓으면 0 — 비킬 자리가 없다', () => {
+    expect(clampLane(5, LANE_BOUND)).toBe(0);
+    expect(clampLane(5, LANE_BOUND + 1)).toBe(0);
+  });
+
+  it('여유 안쪽 값은 그대로 통과한다 — 항상 자르면 회피가 장식이 된다', () => {
+    expect(clampLane(0.7, 0.5)).toBeCloseTo(0.7, 6);
+  });
+});
+
+// ── G-8: 얼마나 미리 보는가 ─────────────────────────────────────────────────
+describe('미리 보는 거리가 유도된다 (G-8)', () => {
+  it('느린 사람이 더 일찍 본다 — 비키는 데 오래 걸린다', () => {
+    expect(lookAhead(0.8, 2.1)).toBeGreaterThan(lookAhead(1.3, 2.1));
+  });
+
+  it('빨리 다가올수록 더 일찍 본다', () => {
+    expect(lookAhead(1.0, 3.0)).toBeGreaterThan(lookAhead(1.0, 1.5));
+  });
+
+  it('멈춘 사람은 0 — 나눗셈이 폭발하지 않는다', () => {
+    expect(lookAhead(0, 2)).toBe(0);
+  });
+
+  it('비켜서는 데 걸리는 시간 안에 좁혀지는 거리다 — 코앞에서 알면 못 피한다', () => {
+    // 차도 폭을 자기 속도로 건너는 시간 × 접근 속도. 그 시간 안에 상대가 오는 거리보다
+    // 짧게 잡으면, 다 비키기 전에 부딪힌다.
+    const speed = 1.0;
+    const closing = 2.3;
+    expect(lookAhead(speed, closing)).toBeCloseTo(((2 * LANE_BOUND) / speed) * closing, 6);
+  });
+});
+
+// ── G-9: 전방·오른쪽 축이 직교한다 ──────────────────────────────────────────
+//
+// 두 축이 어긋나면 옆 사람을 앞사람으로 읽어, 아무도 앞에 없는데 계속 비켜 걷는다.
+describe('전방과 오른쪽이 같은 관례에서 온다 (G-9)', () => {
+  it('내적 0 — 직교한다', () => {
+    for (const ry of [0, 0.7, Math.PI / 2, 2.4, Math.PI, -1.1]) {
+      const f = forwardOf(ry);
+      const r = rightOf(ry);
+      expect(f.x * r.x + f.z * r.z, `ry=${ry} 에서 안 직교한다`).toBeCloseTo(0, 9);
+    }
+  });
+
+  it('둘 다 단위벡터다 — 길이가 1 이 아니면 거리 분해가 왜곡된다', () => {
+    for (const ry of [0, 1.2, -2.9]) {
+      expect(Math.hypot(forwardOf(ry).x, forwardOf(ry).z)).toBeCloseTo(1, 9);
+      expect(Math.hypot(rightOf(ry).x, rightOf(ry).z)).toBeCloseTo(1, 9);
+    }
   });
 });
 

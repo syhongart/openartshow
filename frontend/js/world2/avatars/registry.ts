@@ -46,7 +46,21 @@ export interface AvatarSource {
 export const DEFAULT_CHIBI_COUNT = 6;
 
 /**
- * 감독이 보낸 VRM. **한 체만** 세운다 — 스킨드 메시를 복제하려면
+ * 감독이 보낸 VRM.
+ *
+ * ── 지금은 **끈다** (감독 지시 2026-08-03) ──────────────────────────────────
+ * *"vrm 캐릭터는 여전히 손을 올리고 다닌다. 일단 빼. 내거 다시 캐릭터 올려볼게."*
+ *
+ * 팔이 내려오지 않는다 — 본 매칭이 덜 돼 T-포즈로 미끄러지는 것으로 보이지만, **그
+ * 진단은 아직 확정된 것이 아니다**(`vrmBones` 를 진단에 실어 둔 이유가 그것이고, 여기
+ * 원인을 단정해 적지 않는다). 감독이 다른 파일을 올리실 예정이므로 지금 원인을 쫓는
+ * 것은 곧 사라질 파일을 쫓는 일이 된다.
+ *
+ * **경로를 지우지 않고 `count` 만 0 으로 둔다.** 코드를 들어내면 감독이 새 파일을
+ * 올리셨을 때 배선을 다시 만들어야 하고, 그 사이 로더·복제·진단이 조용히 썩는다.
+ * 지금도 `?vrm=1` 로 켤 수 있다 — 새 파일이 오면 그것으로 먼저 확인한다.
+ *
+ * 한 체만 세우는 제약은 그대로다 — 스킨드 메시를 복제하려면
  * `SkeletonUtils.clone`(three/addons)이 필요한데 vendor 에 없다.
  *
  * 라이선스: 파일 안 `VRMC_vrm` 메타가 `allowRedistribution: false` ·
@@ -59,7 +73,7 @@ export const VRM_MALE: AvatarSource = {
   label: '남성 아바타(VRM)',
   kind: 'file',
   url: './assets/avatars/male.vrm',
-  count: 1,
+  count: 0,
 };
 
 export const CHIBI: AvatarSource = {
