@@ -24,14 +24,18 @@
 // 전부 만든다.** 로딩이 그만큼 길어지지만, 로딩은 기다리는 시간이고 히칭은 놀라는 시간이다.
 //
 // ── 보이는 범위에만 유지한다 ────────────────────────────────────────────────
-// 안개가 76.8m 에서 시야를 닫으므로 그 밖의 사람은 보이지도 않으면서 비용만 낸다. 멀어진
+// 안개가 시야를 닫는 거리(`decide/fog.ts`) 밖의 사람은 보이지도 않으면서 비용만 낸다. 멀어진
 // 사람은 플레이어 앞쪽 도로로 데려온다(`decide/npc-walk.ts` 의 `pickNearby`). 세계 전체에
 // 인구를 뿌리는 것이 아니라 **보이는 범위를 채우는** 방식이라, 걸어가면 계속 사람을
 // 만나면서도 비용 상한은 고정된다.
 
 import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
-import { nextDir, stepOf, pickNearby, type Cell } from '../decide/npc-walk.js';
+import { nextDir, stepOf, pickNearby, yawOf, type Cell } from '../decide/npc-walk.js';
+import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
+import {
+  laneOffset, lookAhead, laneTarget, stepLane, relativeTo, type Ahead,
+} from '../decide/npc-lane.js';
 // **아바타는 배럴로만 만난다.** 이 파일은 치비가 world1 에서 오는지, VRM 이 파일에서
 // 오는지 모른다 — 감독 지시("월드원 폴더 것을 그냥 끌어다 쓰지 마, 나중에 날릴 거니까")
 // 를 지키는 지점이 여기다. 경계는 `tests/world2-boundary.test.ts` 가 감시한다.
@@ -46,12 +50,79 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 const WALK_MIN = 0.8;
 const WALK_MAX = 1.3;
 
-/** 이만큼 멀어지면 앞쪽으로 데려온다(셀). 안개 끝(2.4셀)보다 넉넉히 밖이다 */
+/**
+ * 이만큼 멀어지면 앞쪽으로 데려온다(셀).
+ *
+ * **안개 차단보다 밖이어야 한다** — 두 경계가 같아지면 그 자리에서 팝핑이 나고,
+ * 뒤집히면 재배치된 체가 즉시 숨겨져 영영 안 보인다. 부등호는 `tests/world2-fog.test.ts`
+ * 가 지킨다(`decide/fog.ts` 의 값과 대조). **여기에 안개 배수를 적지 않는다** —
+ * 적었다가 그 숫자만 남고 값이 갈라진 것이 이번 회차의 결함이었다.
+ */
 const RECYCLE_CELLS = 3.2;
 
-/** 재배치 시 플레이어에게서 최소 이만큼 떨어뜨린다(셀) — 눈앞에 튀어나오지 않게 */
-const SPAWN_RING = 1;
-const SPAWN_REACH = 2;
+// ── 스폰 밴드는 **안개 시작 안쪽**이다 (팀장 조건 A, 2026-08-02 본편 ①) ──────
+//
+// 전에는 1~2셀 고정이었고, 그것이 이 회차가 찾아낸 결함의 절반이다.
+// 스폰 상한이 안개 시작보다 멀어서 **밴드의 절반이 이미 안개 안에서 태어났다.**
+//
+// 디자이너 실측이 결과를 보여줬다 — 화면 픽셀 높이는 거리의 종속변수이고
+// (`px ≈ 832 / d`), 스폰 최소 1셀은 태어나는 순간 26px 다. NPC 속도는 0.8~1.3m/s
+// 인데 재배치는 그보다 훨씬 먼 데서만 걸리므로 **자력으로 가까워질 수 없다.**
+// 결과: 정지 8조합에서 알아볼 수 있는 사람 **0명**, 화면 기여 0.007~0.114%.
+//
+// 그래서 상한을 **안개 시작**에 묶는다. 그 밖은 정의상 대비가 깎이기 시작하는
+// 구간이고, 거기서 태어난 개체는 회복할 수단이 없다.
+//
+// 밴드는 **한 겹 링**이다(ring = reach). 처음엔 형태(1:2)를 보존하려 했으나 그것이
+// B1 을 낳았다 — 나눗셈이 정수를 깨뜨렸다. 링이면 후보가 8칸으로 줄지만 **코너까지
+// 안개 시작 안쪽**이라 조건이 실제로 성립한다(체비셰프 박스는 `reach × √2` 까지 나간다).
+//
+// **여기에 셀 배수를 숫자로 적지 않는다**(팀장 조건 1). 적었다가 값이 갈라진 것이
+// 바로 위 `RECYCLE_CELLS` 주석이 기록한 사고다.
+//
+// ── ⚠ B1 — 이 자리에서 **라이브 회귀**를 한 번 냈다 (검수관 반려, 2026-08-02) ──
+// 처음엔 `SPAWN_REACH = FOG_NEAR_CELLS`(비정수) · `SPAWN_RING = REACH / 2` 로 썼다.
+// 그런데 소비자 `decide/npc-walk.ts` 의 `pickNearby` 는 **정수 셀 인덱스**가 계약이다
+// (`for (let dx = -reach; dx <= reach; dx++)`). 비정수를 넣으니 후보 12개 중 정수
+// 좌표가 **0개**가 됐고, 그것이 격자 판정을 통째로 무력화했다 — `floorMod(px,2) !== 0`
+// 이 비정수에서 **항상 참**이라 `roadDirs` 가 언제나 4방향을 반환하고, NPC 가 도로
+// 위상을 무시하고 블록·건물 안쪽을 가로질렀다.
+//
+// **테스트는 전부 통과했다.** 검사가 소스 문자열만 봤기 때문이다 — `FOG_NEAR_CELLS`
+// 를 포함하는지는 봤고 **그 값이 소비자 계약을 만족하는지는 안 봤다.** CLAUDE.md 가
+// 이름 붙인 *"계산된 값이 실제로 소비되는가는 양쪽 테스트 어디에도 안 걸린다"* 의
+// 교과서적 사례다. 그래서 `tests/world2-spawn-band.test.ts` 는 문자열이 아니라
+// **`pickNearby` 를 실제로 호출**한다.
+
+/**
+ * 스폰 최대(셀). **정수여야 한다** — 아래 B1 전말 참조.
+ *
+ * 값은 `fogBand` 에서 **유도하되 정수로 내린다.** 체비셰프 박스라 코너가
+ * `reach × √2` 까지 나가므로, **그 코너까지** 안개 시작 안쪽이어야 조건이 성립한다.
+ *
+ * ⚠ 처음엔 `Math.floor(FOG_NEAR_CELLS)` 로 쓰고 *"floor 가 그것을 보장한다"* 고
+ * 적었다. **보장하지 않는다**(검수관 조건 2, 반례 6/8): near 2.0 이면 reach 2 이고
+ * 코너는 2.83 이라 안개 밖이다. 현재 값에서 성립한 것은 near 가 `[√2, 2)` 라는
+ * 좁은 구간에 있어서였다 — **우연히 참인 문장**이었다.
+ *
+ * 그래서 √2 로 나눈 뒤 내린다. 이러면 어떤 near 에도 코너가 안쪽이다.
+ * (`near < √2` 면 어떤 정수 reach 로도 불가능하다 — 그때는 `Math.max(1, …)` 가
+ *  1 을 주고 코너가 안개를 넘는다. 그 경우 밴드가 아니라 안개를 다시 봐야 한다.)
+ *
+ * **`export` 인 이유**: 테스트가 이 값을 import 해서 검사한다. 예전에는 테스트가
+ * 같은 유도식을 **복제**했고, 그래서 `floor`→`ceil` 한 글자를 바꿔도 저장소 전체
+ * 게이트가 하나도 안 깨졌다(검수관 뮤테이션 실증). **식을 복제하는 것도 미러링이다.**
+ */
+export const SPAWN_REACH = Math.max(1, Math.floor(FOG_NEAR_CELLS / Math.SQRT2));
+
+/**
+ * 스폰 최소(셀). `reach` 와 같으면 **한 겹 링**이 된다 — 후보가 8칸으로 줄지만
+ * 전부 안개 시작 안쪽이다(코너 포함).
+ *
+ * `reach / 2` 로 두었다가 **비정수가 나와 격자를 깨뜨렸다**(B1). 나눗셈은 정수를
+ * 보존하지 않으므로 여기서는 쓰지 않는다.
+ */
+export const SPAWN_RING = SPAWN_REACH;
 
 /** 목표 도달 판정(m) */
 const ARRIVE = 0.35;
@@ -99,6 +170,42 @@ interface Walker {
   tz: number;
   ry: number;
   speed: number;
+  /**
+   * 이 체가 걸을 차선 오프셋(m). 진행방향 **오른쪽**으로 이만큼 비켜선다.
+   *
+   * 체마다 들고 있는 이유: 몸집이 다르면 차선이 성립하지 않을 수 있다(치비와 VRM 은
+   * 크기가 다르다). 성립하지 않으면 0 이고, 그때 그 체는 지금까지처럼 길 한가운데를
+   * 걷는다 — 기능이 없어지는 것이지 깨지는 것이 아니다.
+   */
+  lane: number;
+  /**
+   * 몸의 XZ 반경(m). 부팅 때 한 번 실측한다.
+   *
+   * 차선 계산에도 쓰고, **앞사람과 벌려야 할 간격**(두 반경의 합)에도 쓴다. 체마다 들고
+   * 있어야 하는 이유가 후자다 — 치비끼리와 치비-VRM 은 벌릴 폭이 다르다.
+   */
+  radius: number;
+  /**
+   * 지금 실제로 얹고 있는 오프셋(m). 목표(`lane × 오른쪽`)로 **걸어서** 따라간다.
+   *
+   * 목표를 그대로 쓰면 모퉁이에서 방향이 90° 꺾이는 순간 오프셋도 튀어 사람이 옆으로
+   * 순간이동한다. 따라가는 속도는 자기 걷는 속도로 묶는다 — 옆걸음이 앞걸음보다 빠를
+   * 이유가 없고, 그러면 여기에 새 상수를 만들지 않아도 된다.
+   */
+  ox: number;
+  oz: number;
+  /**
+   * 마지막으로 **실제 그린 자리**(= `group.position` 에 넣은 값).
+   *
+   * 진단이 이것을 읽는다. `w.x + w.ox` 를 진단 쪽에서 다시 계산하면 식이 두 곳에 생기고
+   * (값 미러링), 그러면 집행이 오프셋을 안 얹어도 진단만 얹은 값을 보여 준다 —
+   * 정확히 그 자리를 보려고 만든 진단이 그 자리를 못 보게 된다.
+   *
+   * 아바타 계약(`WalkAvatar`)의 `position` 은 `set()` 만 노출한다. 읽기를 계약에 넣으면
+   * 소비자가 위치를 직접 만지기 시작하므로, 넓히는 대신 **넣은 값을 여기 남긴다**.
+   */
+  rx: number;
+  rz: number;
   /** 지금 그려지는가. 안개 밖이면 끈다 */
   shown: boolean;
 }
@@ -170,11 +277,28 @@ export const npcFeature: Feature = {
     /** 페이지를 떠난 뒤 VRM 로드가 끝나는 경우가 있다. 그때 씬에 붙이면 누수가 된다 */
     let disposed = false;
 
+    /**
+     * 이 아바타의 XZ 반경(m)을 **실측한다.**
+     *
+     * 차선 오프셋이 이 값에서 유도되므로(`decide/npc-lane.ts`) 숫자를 적어 두면 아바타를
+     * 갈아 끼우는 순간 갈라진다 — 이 저장소가 세 번 데인 형태다. 치비와 VRM 은 몸집이
+     * 다르고, 감독 지시대로 둘 다 나중에 교체될 수 있다.
+     *
+     * 체당 한 번, 부팅 때만 잰다. 걷는 동안 팔다리가 움직여 폭이 조금 변하지만, 차선
+     * 판정은 그 정도 흔들림에 좌우되지 않는다(창의 폭이 그보다 훨씬 넓다).
+     */
+    function bodyRadiusOf(inst: WalkAvatar): number {
+      const box = new THREE.Box3().setFromObject(inst.group as unknown as THREE.Object3D);
+      if (box.isEmpty()) return 0; // 잴 것이 없다 — 차선은 성립하지 않고, 그건 0 이 답한다
+      return Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+    }
+
     /** 걷는 사람 하나를 거리에 세운다. 아바타 종류는 여기서만 갈린다 */
     function spawn(inst: WalkAvatar, kind: Walker['kind']): boolean {
       const start = pickNearby(hpx, hpz, SPAWN_RING, SPAWN_REACH, rnd, cellX, cellZ);
       if (!start) return false; // 걸을 곳이 없는 세계 — 있을 수 없지만 조용히 멈춘다
       group.add(inst.group as unknown as THREE.Object3D);
+      const radius = bodyRadiusOf(inst);
       const w: Walker = {
         inst,
         kind,
@@ -186,6 +310,14 @@ export const npcFeature: Feature = {
         tz: start.pz * cellZ,
         ry: 0,
         speed: WALK_MIN + rnd() * (WALK_MAX - WALK_MIN),
+        // 우측통행 — **전원 같은 규칙**이다. 체마다 무작위로 갈라 두면 같은 방향으로
+        // 걷는 두 체가 서로 반대 차선에 놓여 오히려 마주치고, 대향이 같은 차선에 놓인다.
+        lane: laneOffset(radius),
+        radius,
+        ox: 0,
+        oz: 0,
+        rx: start.px * cellX,
+        rz: start.pz * cellZ,
         shown: true,
       };
       retarget(w);
@@ -257,6 +389,15 @@ export const npcFeature: Feature = {
       w.from = null;
       w.x = w.tx = c.px * cellX;
       w.z = w.tz = c.pz * cellZ;
+      // 차선 오프셋도 되돌린다. 재배치는 위치가 통째로 바뀌는 일이라, 이전 진행방향에서
+      // 얻은 오프셋을 들고 가면 새 길에서 엉뚱한 쪽에 서 있게 된다. 0 에서 다시 붙는다.
+      w.ox = 0;
+      w.oz = 0;
+      // **그린 자리도 같이 옮긴다**(검수관 R3). 이 프레임에 이미 처리된 이웃은 이 체의
+      // `rx` 를 보고 회피를 정하는데, 그 값이 순간이동 **전** 좌표면 아무도 없는 자리를
+      // 피하게 된다. 은닉 중인 체도 `rx` 가 얼어 있어 재등장 프레임에 같은 창이 열린다.
+      w.rx = w.x;
+      w.rz = w.z;
       retarget(w);
     }
 
@@ -271,6 +412,35 @@ export const npcFeature: Feature = {
       });
     }
 
+    /**
+     * 지금 화면에 있는 두 체 중 가장 가까운 거리(m). 두 체 미만이면 `null`.
+     *
+     * **실제로 그린 자리(`w.rx`)를 본다** — 경로 좌표(`w.x`)가 아니다. 차선 오프셋이
+     * 실제로 얹혔는지를 보는 것이 목적이므로, 얹기 전 값을 보면 아무 의미가 없다.
+     *
+     * 진단이 호출될 때만 돈다(체 7이면 21쌍).
+     *
+     * ⚠ 여기 *"프레임 루프에 넣지 않는다 — 이 처방이 매 프레임 쌍 검사를 피하려고 고른
+     * 것"* 이라 적혀 있었다. **틀린 문장이라 지운다**(검수관 R2, 2026-08-03). 앞사람
+     * 회피가 들어오면서 프레임 루프도 이웃을 훑는다(7체면 42쌍/프레임). 피한 것은 쌍
+     * 검사가 아니라 **위치를 밀어내는 것**이었다 — 도로 이탈이 기각 사유였으니까.
+     * 비용은 n=7 이라 무시 가능하다. 틀린 주석을 남기면 다음 사람이 같은 판단을 한다.
+     */
+    function minPairDistance(): number | null {
+      const on = walkers.filter((w) => w.shown);
+      if (on.length < 2) return null;
+      let min = Infinity;
+      for (let i = 0; i < on.length; i++) {
+        for (let j = i + 1; j < on.length; j++) {
+          const a = on[i];
+          const b = on[j];
+          const d = Math.hypot(a.rx - b.rx, a.rz - b.rz);
+          if (d < min) min = d;
+        }
+      }
+      return Number(min.toFixed(2));
+    }
+
     for (const w of walkers) setCulling(w, false);
     let warmLeft = WARM_FRAMES;
 
@@ -282,17 +452,37 @@ export const npcFeature: Feature = {
         // ── GPU 업로드 예열 ─────────────────────────────────────────────
         // 컬링을 끈 채 몇 프레임 지나면 모든 메시가 한 번씩 렌더 목록에 올라 업로드가
         // 끝난다. 그 뒤 되돌리면 `geometry` 가 세션 내내 상수가 된다.
+        //
+        // ⚠ **컬링만 꺼서는 안 된다** (2026-08-02, 회차 0 실측 + 팀장 판정 A).
+        // 아래 안개 은닉이 쓰는 `visible=false` 는 절두체보다 **앞단**이라, 컬링을
+        // 꺼도 그 체들은 렌더 목록에 아예 안 올라간다. 그래서 예열이 안개 안쪽 체만
+        // 굽고 있었다 — NPC 는 걸어다니므로 부팅 순간의 안개 안/밖 분포가 세션마다
+        // 다르고, `geometries` 가 358~403 으로 흔들렸다(3회×3라운드 실측).
+        //
+        // 이 사각은 CLAUDE.md 검증 규율이 이미 이름 붙여 둔 것이다 — *"`info.memory`
+        // 는 객체 생성이 아니라 **첫 렌더**에 오른다. 재워둔(`visible=false`) 메시는
+        // 렌더 목록에 안 올라 GPU 자원이 아예 없다."* 그런데 바로 아래 은닉 코드의
+        // 주석은 *"개수 불변식에는 영향이 없다"* 고 적고 있었다. **그 문장이 틀렸고,
+        // 이 커밋에서 함께 고친다**(틀린 주석을 남기면 다음 사람이 같은 판단을 한다).
+        //
+        // `warming` 을 `--warmLeft` **앞에서** 읽는 이유: 컬링을 되돌리는 프레임까지
+        // 표시를 유지해야 세 프레임이 온전히 예열 구간이 된다. 뒤에서 읽으면 마지막
+        // 프레임에 은닉이 먼저 걸려 한 프레임을 잃는다.
+        const warming = warmLeft > 0;
         if (warmLeft > 0 && --warmLeft === 0) {
           for (const w of walkers) setCulling(w, true);
         }
         const p = env.player.position;
         const ppx = Math.round(p.x / cellX);
         const ppz = Math.round(p.z / cellZ);
-        const far = RECYCLE_CELLS * cellX;
+        // 재배치 임계와 **은닉 임계는 다른 값이다**(팀장 판정 2026-08-02, 본편 ①).
+        // 오래 하나로 썼고 그것이 이번 회차가 찾아낸 결함이다 — 아래 `show` 주석 참조.
+        const recycleFar = RECYCLE_CELLS * cellX;
+        const fogFar = fogBand(cellX).far;
 
         for (const w of walkers) {
           // ── 멀어졌으면 앞쪽으로 ─────────────────────────────────────────
-          if (Math.hypot(w.x - p.x, w.z - p.z) > far) recycle(w, ppx, ppz);
+          if (Math.hypot(w.x - p.x, w.z - p.z) > recycleFar) recycle(w, ppx, ppz);
 
           // ── 목표로 걷는다 ───────────────────────────────────────────────
           const dx = w.tx - w.x;
@@ -303,9 +493,10 @@ export const npcFeature: Feature = {
             const step = Math.min(dist, w.speed * dt);
             w.x += (dx / dist) * step;
             w.z += (dz / dist) * step;
-            // yaw=0 → -Z 관례(world1 `world.js:1752` 와 같다). 여기를 부호 하나 틀리면
-            // 사람들이 전부 뒤로 걷는다.
-            w.ry = Math.atan2(-dx / dist, -dz / dist);
+            // yaw 관례(`yaw=0 → -Z`)는 `decide/npc-walk.ts` 가 소유한다. 차선 오프셋이
+            // 이 각을 입력으로 받으므로, 식이 두 곳에 있으면 사람이 반대쪽으로 비켜선다.
+            const ry = yawOf(dx, dz);
+            if (ry !== null) w.ry = ry;
             moving = w.speed;
           } else {
             retarget(w);
@@ -313,15 +504,87 @@ export const npcFeature: Feature = {
 
           // ── 안개 밖이면 끈다 ────────────────────────────────────────────
           // `visible=false` 는 three 가 renderList 등재 **전에** 컷하므로 드로우콜이 실제로
-          // 준다. 개수 불변식에는 영향이 없다 — 객체는 그대로 있고 그리지만 않는다.
-          const show = Math.hypot(w.x - p.x, w.z - p.z) <= far;
+          // 준다.
+          //
+          // ⚠ 여기 *"개수 불변식에는 영향이 없다 — 객체는 그대로 있고 그리지만
+          // 않는다"* 고 적혀 있었다. **틀린 문장이라 지운다**(2026-08-02).
+          // 객체가 있는 것과 GPU 에 올라간 것은 다른 일이다 — `info.memory` 는 **첫
+          // 렌더**에 오르므로, 한 번도 그려지지 않은 체의 지오메트리는 카운트에 아예
+          // 없다. 그래서 이 한 줄이 위쪽 예열을 무력화하고 있었다.
+          //
+          // 예열 중에는 거리를 보지 않는다. 그래야 안개 밖 체까지 한 번씩 그려져
+          // 업로드가 끝나고, `geometries` 가 부팅 순간의 배치와 무관해진다.
+          // ⚠ **임계가 재배치 거리였다 — 주석은 안개를 말하는데 값은 딴 것이었다.**
+          // 재배치 거리가 안개 차단보다 멀어서 그 사이 구간의 체를 계속 그렸다. 안개
+          // 밖은 **정의상 화면 기여 0** 이므로 그만큼이 통째로 버려졌다. 디자이너 실측
+          // (2026-08-02): 정지 8조합에서 NPC 화면 픽셀 기여 0.007~0.114%, 알아볼 수
+          // 있는 사람 **0명**. 그 상태로 드로우콜 +100 을 냈다.
+          //
+          // 그리고 이 값이 `shown` 진단으로 나가 **내 판정을 한 번 오도했다** —
+          // `shown=7` 을 "안개 안 7체" 로 읽고 *"멀어서 안 보인다는 배제됐다"* 고 적었다.
+          //
+          // 이제 안개 SSOT 에서 유도한다(`decide/fog.ts`). **거리 숫자를 여기 적지
+          // 않는다** — 주석에 적는 것도 미러링이고 이번 사고가 정확히 그 형태였다.
+          const show = warming || Math.hypot(w.x - p.x, w.z - p.z) <= fogFar;
           if (show !== w.shown) {
             w.shown = show;
             w.inst.group.visible = show;
           }
 
           if (!show) continue; // 안 보이는 사람의 애니메이션까지 돌릴 이유가 없다
-          w.inst.group.position.set(w.x, 0, w.z);
+
+          // ── 차선으로 비켜선다 (감독 지적 2026-08-03, 팀장 판정 A) ────────
+          // 경로(`w.x`,`w.z`)는 파셀 중심을 잇는 **정확한 격자선**이다. 그 선을 그대로
+          // 밟으면 마주 오는 두 체가 확률이 아니라 **필연으로** 겹친다 — 감독이 본
+          // "치비끼리 뚫고 지나간다" 가 그것이다. 경로는 그대로 두고 **그리는 자리만**
+          // 오른쪽으로 옮긴다(우측통행). 걷기 판정·격자 위상은 손대지 않는다.
+          //
+          // 목표로 **걸어서** 간다 — 모퉁이에서 방향이 90° 꺾이는 순간 오프셋을 그냥
+          // 갈아 끼우면 사람이 옆으로 순간이동한다. 속도를 자기 걷는 속도로 묶으면
+          // 새 상수를 만들지 않고도 자연스러운 폭이 나온다(옆걸음이 앞걸음보다 빠를
+          // 이유가 없다).
+          // ── 앞사람을 미리 비킨다 (감독 지시 2026-08-03) ──────────────────
+          // *"앞에 있으면 사람처럼 점점 옆으로 이동하게, 그 옆을 스쳐갔다가 다시
+          // 중앙으로 오게 해줘."*
+          //
+          // 비키는 것은 **차선 오프셋뿐**이다 — 경로(`w.x`,`w.z`)는 안 만진다. 그래서
+          // 격자 위상이 어떤 경우에도 안 깨진다(팀장이 근접 반발을 기각한 사유가
+          // 도로 이탈이었고, 이 형태에는 그 사유가 성립하지 않는다). 총량은
+          // `clampLane` 이 차도 안에 가둔다.
+          //
+          // **"다시 중앙으로" 는 따로 만들지 않았다.** 앞이 비면 회피량이 0 이 되고,
+          // 아래 추종이 그 목표를 걷는 속도로 따라가므로 저절로 차선으로 돌아온다.
+          // 복귀를 별도 상태로 두면 "지금 복귀 중인가" 를 관리해야 하고, 그 상태가
+          // 틀어지는 순간 사람이 길 옆에 붙어 굳는다.
+          //
+          // ⚠ **판정을 여기서 조립하지 않는다** (검수관 반려 B1·B2, 2026-08-03).
+          // 처음에는 목표를 여기서 만들었다 — 회피량(지금 선 자리 기준의 **증분**)을
+          // 차선(**절대 위치**)에 더했다. 두 기준을 섞은 것이라 비켜설수록 목표가
+          // 물러났고, 추월에서 필요량의 **정확히 절반**만 벌어졌다. 검사는 같은 값을
+          // 증분으로 검증해서 **양쪽 다 통과**했다.
+          // 이제 `laneTarget` 이 **절대 목표**를 내고 여기서는 더할 것이 없다.
+          const seen: Ahead[] = [];
+          for (const o of walkers) {
+            if (o === w || !o.shown) continue;
+            seen.push(relativeTo(w.ry, o.rx - w.rx, o.rz - w.rz));
+          }
+          // 벌릴 간격은 유도한다. 상대 반경은 이웃마다 다르지만, 가장 큰 체를 기준으로
+          // 잡으면 어느 조합에서도 부족하지 않다.
+          const widest = walkers.reduce((m, o) => (o.radius > m ? o.radius : m), 0);
+          const target = laneTarget(
+            seen,
+            relativeTo(w.ry, w.ox, w.oz).side, // 지금 얹고 있는 오프셋의 오른쪽 성분
+            w.lane,
+            w.radius + widest,
+            lookAhead(w.speed, w.speed + WALK_MAX),
+            w.radius,
+          );
+          const next = stepLane(w.ox, w.oz, w.ry, target, w.speed * dt);
+          w.ox = next.ox;
+          w.oz = next.oz;
+          w.rx = w.x + w.ox;
+          w.rz = w.z + w.oz;
+          w.inst.group.position.set(w.rx, 0, w.rz);
           w.inst.group.rotation.y = w.ry;
           w.inst.update(dt, moving);
         }
@@ -348,6 +611,20 @@ export const npcFeature: Feature = {
         vrmWant: vrmCount,
         vrmPlaced,
         vrmError,
+        // ── 차선이 실제로 소비되는가 (감독 지적 2026-08-03) ──────────────────
+        // 이 둘은 **집행 쪽을 보는 유일한 창**이다. `decide/npc-lane.ts` 의 순수 함수는
+        // 테스트가 직접 부르지만, "계산된 값이 실제로 `group.position` 에 얹히는가" 는
+        // 양쪽 테스트 어디에도 안 걸린다 — CLAUDE.md 가 이름 붙인 판정/집행 경계의
+        // 구멍이고, 이번 회차에 B1 이 정확히 그 자리로 샜다.
+        //
+        // `lanes` 는 체별 오프셋(0 이면 그 몸집에 차선이 성립하지 않았다는 뜻).
+        // `minPairDist` 는 **실제 렌더 좌표** 기준 가장 가까운 두 체의 거리다 —
+        // 오프셋이 계산만 되고 안 얹히면 대향 순간에 0 으로 떨어진다.
+        //
+        // ⚠ **게이트가 아니라 관측이다.** 대향이 언제 생길지는 확률이라, 이 값이 큰
+        // 것이 처방이 들었다는 증거가 못 된다. 작으면 볼 것이 생긴다는 뜻일 뿐이다.
+        lanes: walkers.map((w) => Number(w.lane.toFixed(3))),
+        minPairDist: minPairDistance(),
       }),
 
       /**

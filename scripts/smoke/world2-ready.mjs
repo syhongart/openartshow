@@ -29,13 +29,30 @@
 // 그중 셋의 리포트 형식이 깨진다.
 
 /**
- * world2 게이트 공통 URL 쿼리. **`glb` 를 적지 않는다** — 기본값이 곧 라이브 상태이고,
- * 게이트는 라이브 상태를 재야 한다.
+ * world2 게이트 공통 URL 쿼리. **켜고 끄는 노브를 하나도 적지 않는다** — 기본값이 곧
+ * 라이브 상태이고, 게이트는 라이브 상태를 재야 한다.
  *
  * 여기 하나로 모은 이유는 값 미러링이다. 넷이 각자 적고 있었고, 그래서 `?glb=0` 을
  * 걷어내려면 네 곳을 고쳐야 했다 — 한 곳만 놓치면 그 게이트만 옛 세계를 잰다.
+ *
+ * ── `npc=0&vrm=0` 을 걷어냈다 (2026-08-02, 리얼리티 회차 0) ──────────────────
+ * **이 파일이 자기 주석을 어기고 있었다.** 바로 위에 *"기본값이 곧 라이브 상태이고,
+ * 게이트는 라이브 상태를 재야 한다"* 고 적어 놓고 정작 NPC 와 VRM 을 꺼 두었다.
+ * `?glb=0` 을 걷어낼 때 같은 줄에 있던 둘을 그냥 지나쳤다 — 문장은 옳게 적혔는데
+ * 값이 따라오지 않았고, 아무도 그것을 대조하지 않았다.
+ *
+ * 즉 게이트 넷이 지금까지 재던 것은 **라이브에 없는 조건의 세계**였고, 그 위에서
+ * "개수가 상수다" 를 선언하고 있었다. `?glb=0` 을 걷어낸 이유와 **글자 그대로 같은
+ * 이유**다 — *"못 잰 것이 통과로 적히는 경향"* 의 구조적 재생산.
+ *
+ * (NPC 를 켰을 때 개수가 얼마나 오르는지는 이 커밋과 함께 실측해 아래 골든에 적는다.
+ *  여기에 수치를 다시 쓰지 않는다 — 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다.)
+ *
+ * 시간대·날씨는 남긴다. 그 둘은 켜고 끄는 스위치가 아니라 **측정 조건**이고,
+ * 고정하지 않으면 하늘 레이어가 회차마다 달라져 개수 비교 자체가 성립하지 않는다.
+ * (`[8]` 하늘 예열 게이트는 12조합을 일부러 순회하므로 이 값을 쓰지 않는다.)
  */
-export const WORLD2_QUERY = '?npc=0&vrm=0&time=day&weather=clear';
+export const WORLD2_QUERY = '?time=day&weather=clear';
 
 /** GLB 로드 상한(ms). 로컬 서빙 실측이 1채 299ms 이므로 대부분 여기 근처도 안 간다 */
 const GLB_TIMEOUT = 90000;
@@ -98,5 +115,49 @@ export async function waitForWorld2Ready(page, opt = {}) {
   if (glb && glb.placed < glb.want) {
     return { booted: true, glb, reason: `GLB 가 ${glb.want}채 중 ${glb.placed}채만 섰다` };
   }
+
+  // ── VRM 도 기다린다 (2026-08-02, 팀장 판정 — 회차 0 마지막 축) ──────────────
+  // **같은 함정을 세 번째로 밟고 있었다.** GLB 에 대해서는 위에서 "시간이 아니라 상태로
+  // 기다린다" 를 이미 했는데, VRM 은 그 처방 밖에 있었다 — `features/npc.ts` 가
+  // `loadVrmAvatar(...).then(...)` 으로 비동기 로드하는데 여기서는 `glbCity` 만 봤다.
+  //
+  // 증상: 부팅 기준선 `geometries` 가 세션마다 360~399 로 흔들렸다(폭 39). 팀장이
+  // 그 39 를 **NPC 한 체당 지오(실측 유도 42~48)와 같은 자릿수**라고 짚었다 — 여러
+  // 원인이 섞인 잡음이 아니라 **한 체가 잡히거나 안 잡히거나**의 계단이라는 뜻이다.
+  //
+  // 즉 이 폭은 "몇 체가 새는가" 가 아니라 **"몇 체가 로드된 시점에 쟀는가"** 다.
+  // 제품의 증식이 아니라 계측 하네스의 결함이고, 하네스를 고치지 않은 채 세운 골든은
+  // **무엇을 재는지 모르는 골든**이 된다.
+  const npc = await page.evaluate(() => {
+    const n = window.__world2?.stats?.()?.npc;
+    return n && typeof n === 'object' ? { want: n.vrmWant, placed: n.vrmPlaced, error: n.vrmError } : null;
+  });
+  // 기능이 꺼졌거나(`?npc=0&vrm=0`) VRM 을 요청하지 않았으면 기다릴 것이 없다.
+  if (npc && npc.want > 0) {
+    try {
+      await page.waitForFunction(
+        (want) => {
+          const n = window.__world2?.stats?.()?.npc;
+          // 로드 실패도 대기를 풀어야 한다 — 안 그러면 타임아웃 메시지가 원인을 가린다.
+          return !!n && (n.vrmPlaced >= want || !!n.vrmError);
+        },
+        npc.want,
+        { timeout },
+      );
+    } catch {
+      return { booted: true, glb, reason: `VRM 이 ${timeout}ms 안에 ${npc.want}체를 못 세웠다` };
+    }
+    const after = await page.evaluate(() => {
+      const n = window.__world2?.stats?.()?.npc;
+      return { placed: n?.vrmPlaced, error: n?.vrmError };
+    });
+    // GLB 와 같은 규약 — 실패를 조용히 통과시키지 않는다. 그러면 VRM 없는 세계를 재고
+    // 초록불을 켜게 되고, 증상은 "게이트는 통과하는데 라이브에는 사람이 없다" 로만 난다.
+    if (after.error) return { booted: true, glb, reason: `VRM 로드 실패 — ${after.error}` };
+    if (after.placed < npc.want) {
+      return { booted: true, glb, reason: `VRM 이 ${npc.want}체 중 ${after.placed}체만 섰다` };
+    }
+  }
+
   return { booted: true, glb, reason: '' };
 }
