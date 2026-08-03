@@ -193,21 +193,94 @@ function paintCloudLayer(ctx, rnd, W, Hh, o) {
   ctx.restore();
 }
 
-// ② 밴딩 파괴 디더링 — 미세 모노 노이즈를 낮은 알파로 1패스(저사양은 스킵).
-// 최상단(천정 극점 부근)은 제외 — 극점에서 픽셀 노이즈가 방사 부챗살로 늘어난다(상방 실측).
-function dither(ctx, rnd, W, H) {
-  const y0 = (H * 0.05) | 0;
-  const img = ctx.getImageData(0, y0, W, H - y0); const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    // ±2 — ±4 에서 낮췄다(감독 "노이즈가 왜 이렇게 많아", 2026-08-03).
-    // 나는 이 층을 "미미하다" 고 적었었고 **그것이 틀렸다**: 디자이너 실측으로 dither 가
-    // 고주파 그레인의 **46%** 였고 화면의 24%(224,176px)가 2 이상 달라졌다.
-    // ±2 로 낮춰도 밴딩 파괴력은 **같다** — 순수 그라디언트에서 동일값 최대 연속 길이가
-    // 없음 8px / ±1 4px / ±2 3px / ±4 3px 로, ±2 가 이미 ±4 와 동률이다. 그레인만 절반.
-    const n = ((rnd() * 5) | 0) - 2; // ±2
-    d[i] += n; d[i + 1] += n; d[i + 2] += n;
+// ── ② 밴딩 파괴 — **양자화 직전** 디더 (감독 "그레인 노이즈가 보여", 2026-08-03) ──────
+//
+// 예전 판본은 `getImageData` 로 읽어들인 **8비트 픽셀에 ±2~±4 를 더했다.** 그것이 틀린
+// 지점이었다. canvas 의 `createLinearGradient` 는 **이미 자체 디더를 하고 있다** — 그래서
+// 양자화가 끝난 값에 노이즈를 얹으면 디더로서는 아무 일도 안 하고 **그레인만 남는다.**
+//
+// 디자이너 실측(배경 면만·모바일 780×1688 dpr2·밤 맑음)이 그것을 수치로 보였다:
+//
+//   판본            중주파 그레인   저주파 얼룩   밴딩 B_row
+//   ±2 (직전 배포)     0.4204       0.3921       0.0936   ← 그레인 최대인데 밴딩도 최악
+//   dither 제거        0.1128       0.0784       0.0778
+//   **이 판본**        0.1222       0.1090       **0.0463**
+//
+// 즉 직전 배포는 **두 축 모두에서 열등**했다. 노이즈를 더 넣고도 밴딩이 더 나빴다.
+// 진폭을 낮추는 문제가 아니라 **넣는 지점**의 문제다 — 양자화 **전** float 값에 더하면
+// 필요 진폭이 1 LSB(±0.5)로 떨어지고, 그레인이 1/3.4 가 되면서 밴딩은 절반이 된다.
+//
+// 단순 제거(가운데 행)를 안 고른 이유: **낮에 밴딩이 돌아온다.** 가로 정렬도가
+// 0.1189 → 0.5209 로 뛰고 6배 증폭에서 줄무늬가 눈에 보인다. 밤만 보고 고르면 회귀다.
+//
+// 비용은 **줄어든다** — `getImageData`(GPU→CPU 리드백) 왕복이 사라지기 때문이다.
+// 페인트 중앙값(15회): 밤 49.6→45.7ms · 낮 29.9→18.8ms · 흐림 78.6→51.6ms.
+
+/** 0xRRGGBB → [r,g,b]. 색 리터럴을 원래 표기 그대로 두려고 둔다(`hex()` 의 역방향). */
+const rgb = (n) => [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+
+// 난수 LUT — `seeded()` 를 픽셀마다 부르면 그것만으로 200ms 가 붙는다(실측 249→79ms).
+const DITHER_LUT_N = 65536;
+let ditherLut = null;
+function ditherNoise() {
+  if (ditherLut) return ditherLut;
+  // ★ 시드를 **분리한다.** 이 페인터는 `paintSky` 맨 앞에서 도는데 여기서 공용 `rnd` 를
+  //   소비하면 뒤따르는 별·성운·달 배치가 **전부 이동한다**(옛 `dither` 는 마지막 줄이라
+  //   그 위험이 없었다). 전역 1회 생성이라 시간대·날씨와도 무관해야 한다.
+  const r = seeded(0xd17e);
+  ditherLut = new Float32Array(DITHER_LUT_N);
+  for (let i = 0; i < DITHER_LUT_N; i++) ditherLut[i] = r() - 0.5; // ±0.5 LSB (RPDF)
+  return ditherLut;
+}
+
+/**
+ * 베이스 수직 그라디언트를 **직접** 그린다(천정→지평선, 그 아래는 fog 단색).
+ *
+ * @param stops `[[t, [r,g,b]], …]` — t 는 0..1 (0=천정, 1=지평선). sRGB 값 공간 선형 보간
+ *   으로 canvas gradient 와 같은 규칙을 쓴다(실측으로 색 일치 확인: luma 차 ±1 이내).
+ */
+export function paintBase(ctx, W, H, Hh, stops, fogRGB) {
+  const img = ctx.createImageData(W, H);
+  const u32 = new Uint32Array(img.data.buffer); // 채널별 4회 store → 1회 (118.5→30.1ms)
+  const lut = ditherNoise();
+  // 천정 극점 부근은 디더에서 뺀다 — 극점 수렴으로 픽셀 노이즈가 **방사 부챗살**이 된다
+  // (상방 실측, 옛 판본과 같은 경계를 유지해 회귀를 만들지 않는다).
+  const yDither = (Hh * 0.05) | 0;
+  const edge = Hh - 1; // 이 아래는 fog 단색 — 옛 두 번째 `fillRect` 가 이 줄부터였다
+  let li = 0;
+  for (let y = 0; y < H; y++) {
+    let r, g, b;
+    if (y >= edge) { [r, g, b] = fogRGB; } else {
+      const t = y / Hh;
+      let k = 0;
+      while (k < stops.length - 2 && t > stops[k + 1][0]) k++;
+      const [t0, c0] = stops[k], [t1, c1] = stops[k + 1];
+      const f = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+      r = c0[0] + (c1[0] - c0[0]) * f;
+      g = c0[1] + (c1[1] - c0[1]) * f;
+      b = c0[2] + (c1[2] - c0[2]) * f;
+    }
+    const row = y * W;
+    if (y < yDither || y >= edge) { // 디더 없이 — 단색 구간과 극점 캡
+      const p = 0xff000000 | ((b + 0.5) | 0) << 16 | ((g + 0.5) | 0) << 8 | ((r + 0.5) | 0);
+      for (let x = 0; x < W; x++) u32[row + x] = p;
+      continue;
+    }
+    for (let x = 0; x < W; x++) {
+      // 3채널이 **같은** 노이즈를 쓴다 — 채널별로 뽑으면 색 노이즈가 된다(옛 판본도 모노였다).
+      const n = lut[li++ & (DITHER_LUT_N - 1)];
+      // `r+n+0.5 >= 0` 이 보장되므로(r≥0, n≥−0.5) `|0` 절단이 곧 반올림이다. 상한만 막는다.
+      let R = (r + n + 0.5) | 0; if (R > 255) R = 255;
+      let G = (g + n + 0.5) | 0; if (G > 255) G = 255;
+      let B = (b + n + 0.5) | 0; if (B > 255) B = 255;
+      u32[row + x] = 0xff000000 | (B << 16) | (G << 8) | R;
+    }
+    // ★ 행마다 LUT 위상을 소수만큼 민다. 안 밀면 `65536 / W` 행 주기로 **같은 노이즈 줄이
+    //   반복**된다(W=2048 이면 32행마다 — 확대되면 보인다). 61 과 65536 은 서로소라
+    //   주기가 텍스처 높이를 넘어간다.
+    li += 61;
   }
-  ctx.putImageData(img, 0, y0);
+  ctx.putImageData(img, 0, 0);
 }
 
 // ── 하늘돔 리페인트 ──
@@ -220,7 +293,7 @@ function paintSky(ctx, W, H, time, weather, opts) {
   const Hh = H * 0.5; // 지평선(수평선) 텍스처 y
   // 눈도 구름 하늘 — 밤 눈 오는데 은하수가 보이는 모순 제거(눈구름은 먹구름보다 밝은 회백 톤)
   const cloudy = weather !== 'clear';
-  const horizon = hex(L.fog); // ⑨ 지평선 = fog색 — 이음새 제거의 핵
+  // ⑨ 지평선 = fog색 — 이음새 제거의 핵. `paintBase` 가 스톱 마지막에 이 색을 넣는다.
 
   // 구름 하늘 톤(그라디언트·구름장 공용)
   const snowy = weather === 'snow';
@@ -229,24 +302,21 @@ function paintSky(ctx, W, H, time, weather, opts) {
   const cloudTop = !cloudy ? null : snowy ? snowTop[time]
     : time === 'night' ? [22, 26, 36] : time === 'sunset' ? [110, 96, 88] : [118, 128, 140];
 
-  // 1) 베이스 수직 그라디언트(천정→지평) + 하반부 fog색
-  const grd = ctx.createLinearGradient(0, 0, 0, Hh);
-  if (cloudy) {
-    grd.addColorStop(0, `rgb(${cloudTop.map((v) => (v * cloudK) | 0).join(',')})`);
-    grd.addColorStop(0.62, `rgb(${cloudTop.map((v) => (v * cloudK * 1.22) | 0).join(',')})`);
-    grd.addColorStop(1, horizon);
-  } else if (time === 'day') {
+  // 1) 베이스 수직 그라디언트(천정→지평) + 하반부 fog색.
+  //    스톱 배열이 SSOT 다 — `paintBase` 가 이것을 보간하면서 **양자화 직전에** 디더를
+  //    넣는다(위 주석). 색 리터럴은 옛 `addColorStop` 과 같은 값 그대로다.
+  const fogRGB = rgb(L.fog);
+  const stops = cloudy
+    ? [[0, cloudTop.map((v) => (v * cloudK) | 0)],
+       [0.62, cloudTop.map((v) => (v * cloudK * 1.22) | 0)],
+       [1, fogRGB]]
     // 파랑을 지평선 가까이까지 끌어내려 하늘이 비어 보이지 않게 — 흰 헤이즈가 이르면
     // 저고도(시점에서 보이는 대부분의 하늘)에서 흰 구름이 배경에 묻힌다
-    grd.addColorStop(0, '#3f86c8'); grd.addColorStop(0.62, '#8cbae0'); grd.addColorStop(0.93, '#bdd6ea'); grd.addColorStop(1, horizon);
-  } else if (time === 'sunset') {
+    : time === 'day' ? [[0, rgb(0x3f86c8)], [0.62, rgb(0x8cbae0)], [0.93, rgb(0xbdd6ea)], [1, fogRGB]]
     // 베이스는 차분하게 — 타오르는 부분은 태양 방위 글로우가 담당(방위 비대칭 ①)
-    grd.addColorStop(0, '#2e3d6b'); grd.addColorStop(0.45, '#6a5a8e'); grd.addColorStop(0.72, '#a06a74'); grd.addColorStop(1, horizon);
-  } else {
-    grd.addColorStop(0, '#070a16'); grd.addColorStop(0.55, '#141b30'); grd.addColorStop(0.85, '#232c46'); grd.addColorStop(1, horizon);
-  }
-  ctx.fillStyle = grd; ctx.fillRect(0, 0, W, Hh);
-  ctx.fillStyle = horizon; ctx.fillRect(0, Hh - 1, W, H - Hh + 1);
+    : time === 'sunset' ? [[0, rgb(0x2e3d6b)], [0.45, rgb(0x6a5a8e)], [0.72, rgb(0xa06a74)], [1, fogRGB]]
+    : [[0, rgb(0x070a16)], [0.55, rgb(0x141b30)], [0.85, rgb(0x232c46)], [1, fogRGB]];
+  paintBase(ctx, W, H, Hh, stops, fogRGB);
 
   // 2) 태양 방위 연출 ① — 일몰: 지평선에 걸린 해 + 타오르는 글로우 + 반대편 지구그림자
   const sunX = SUN_AZ * W;
@@ -438,7 +508,9 @@ function paintSky(ctx, W, H, time, weather, opts) {
     }
   }
 
-  if (!opts.soft) dither(ctx, rnd, W, Hh); // ② 밴딩 파괴 — 하늘(상반부)만(하반부는 단색)
+  // ② 밴딩 파괴는 `paintBase`(1단계)가 양자화 직전에 한다 — 여기서 사후 디더를 얹던
+  //    옛 판본이 그레인의 원인이었다. `opts.soft` 분기도 없앴다: 새 경로가 더 싸고,
+  //    저사양 기기는 화면이 저해상이라 밴딩이 **더** 잘 보인다(디자이너 판정).
 }
 
 // 별 색온도 팔레트(항성 실제 색) — 흰색 다수 + 따뜻한/차가운 별 소수.
@@ -539,8 +611,10 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
   const track = (o) => { disposables.push(o); return o; };
   // 돔 텍스처는 전 기기 2048 고정. ①저해상(512) 하늘은 별이 화면 확대로 뭉개지고(실측)
   // ②캔버스 크기를 도중에 바꾸면 three가 텍스처를 불변 스토리지로 잡아 needsUpdate로도
-  // 재업로드되지 않는다(전환 후 하늘이 안 바뀌는 버그 — 진단 실측). soft 절약은 디더 스킵과
-  // 구름 밀도장 저해상으로 충분하고, 페인트는 전환 시 1회 비용이다.
+  // 재업로드되지 않는다(전환 후 하늘이 안 바뀌는 버그 — 진단 실측). soft 절약은 구름
+  // 밀도장 저해상·별 개수 축소로 충분하고, 페인트는 전환 시 1회 비용이다.
+  // (여기 "디더 스킵" 이라 적혀 있었는데 그 분기는 없앴다 — `paintBase` 가 양자화 직전에
+  //  넣는 새 디더는 사후 패스가 아니라 페인트 자체이고, 오히려 옛 경로보다 싸다.)
   const DOME_W = 2048, DOME_H = 1024;
 
   // 저폴리 돔(24×12)은 위도 링을 따라 UV 보간이 절곡돼 그라디언트에 마하 밴드 원호가 생긴다
