@@ -24,8 +24,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  laneOffset, rightOf, forwardOf, lookAhead, dodgeOffset, clampLane, LANE_BOUND,
-  type Ahead,
+  laneOffset, rightOf, forwardOf, lookAhead, laneTarget, stepLane, relativeTo,
+  clampLane, laneLimit, LANE_BOUND, type Ahead,
 } from '../frontend/js/world2/decide/npc-lane.js';
 import { yawOf } from '../frontend/js/world2/decide/npc-walk.js';
 import { onRoad, ROAD_HALF, roadDirs } from '../frontend/js/world2/parts/road-topology.js';
@@ -223,42 +223,74 @@ describe('차선을 얹은 좌표가 도로 위다 (G-4)', () => {
 //
 // 차선만으로는 **대향 정면**밖에 못 덮는다. 같은 방향 추월도, 교차로에서 직각으로 오는
 // 것도 남는다. 회피는 그 나머지를 덮는다.
+//
+// ⚠ **반환값의 의미가 바뀌었다**(검수관 반려 B1). 옛 `dodgeOffset` 은 "얼마나 더 갈까"
+// 였고 집행부는 그것을 절대 목표에 더했다 — 기준이 달라 추월에서 필요량의 절반만
+// 벌어졌다. 이제 `laneTarget` 이 **어디로 갈까**(절대 목표)를 낸다.
 describe('앞을 막는 사람을 비켜 간다 (G-6)', () => {
   const GAP = 1.0; // 두 몸 반경의 합
   const LOOK = 8;
+  const R = 0.5; // 몸 반경
+  const LANE = laneOffset(R);
+  /** 지금 차선 위에 서 있는 체가 이웃들을 보고 정한 목표 */
+  const from = (others: Ahead[], cur = LANE) => laneTarget(others, cur, LANE, GAP, LOOK, R);
 
-  it('앞이 비면 0 이다 — "다시 중앙으로" 가 여기서 나온다', () => {
-    // 복귀를 별도 상태로 만들지 않았다. 앞이 비면 목표가 차선으로 돌아가고, 추종이
-    // 걸어서 따라간다. 이 단언이 곧 복귀 동작의 근거다.
-    expect(dodgeOffset([], GAP, LOOK)).toBe(0);
+  it('앞이 비면 차선으로 돌아간다 — "다시 중앙으로" 가 여기서 나온다', () => {
+    // 복귀를 별도 상태로 만들지 않았다. 앞이 비면 목표가 차선이 되고 추종이 걸어서
+    // 따라간다. 이 단언이 곧 복귀 동작의 근거다.
+    expect(from([])).toBeCloseTo(LANE, 9);
+    // 이미 옆으로 나가 있어도 차선으로 돌아온다 — 되돌아오는 힘이 실제로 있는가.
+    expect(from([], 1.9)).toBeCloseTo(LANE, 9);
   });
 
-  it('뒤에 있는 사람은 안 본다 — 지나간 사람을 계속 피하면 영영 안 돌아온다', () => {
-    expect(dodgeOffset([{ ahead: -2, side: 0 }], GAP, LOOK)).toBe(0);
+  it('★ 뒤에 있어도 가까우면 본다 — 추월 직후 끼어들면 다시 겹친다', () => {
+    // 옛 계약은 `ahead <= 0` 을 잘랐다. 그러자 추월한 순간 앞이 비어 곧장 차선으로
+    // 돌아갔고, 방금 지나친 사람이 바로 뒤 옆에 있어 다시 겹쳤다(실측 0.502m).
+    // 사람도 추월하자마자 끼어들지 않는다.
+    const t = from([{ ahead: -2, side: 0 }]);
+    expect(t, '바로 뒤 옆에 사람이 있는데 차선으로 돌아간다').not.toBeCloseTo(LANE, 6);
+    expect(Math.abs(t - LANE)).toBeGreaterThanOrEqual(GAP - 1e-9);
   });
 
-  it('아직 먼 사람은 안 본다 — 시야 밖까지 피하면 늘 옆에 붙어 걷는다', () => {
-    expect(dodgeOffset([{ ahead: LOOK + 1, side: 0 }], GAP, LOOK)).toBe(0);
+  it('충분히 멀어지면 차선으로 돌아온다 — 유지가 영구가 되면 안 된다', () => {
+    // 앞·뒤 어느 쪽이든 `look` 밖이면 푼다. 비키기 시작하는 거리와 푸는 거리가 같아서
+    // 규칙이 하나로 끝난다.
+    expect(from([{ ahead: -(LOOK + 1), side: 0 }], 0.3)).toBeCloseTo(LANE, 9);
+    expect(from([{ ahead: LOOK + 1, side: 0 }], 0.3)).toBeCloseTo(LANE, 9);
   });
 
-  it('이미 충분히 벌어져 있으면 0 이다', () => {
-    expect(dodgeOffset([{ ahead: 3, side: GAP }], GAP, LOOK)).toBe(0);
-    expect(dodgeOffset([{ ahead: 3, side: -GAP - 0.5 }], GAP, LOOK)).toBe(0);
+  it('가까운 사람이 아무도 없으면 차선이다 — 복귀의 기본 경로', () => {
+    expect(from([{ ahead: LOOK + 5, side: LOOK + 5 }], 1.9)).toBeCloseTo(LANE, 9);
   });
 
-  it('★ 정면이면 옆으로 몸 폭만큼 비킨다', () => {
-    expect(dodgeOffset([{ ahead: 3, side: 0 }], GAP, LOOK)).toBeCloseTo(GAP, 6);
+  it('★ 이미 벌어져 있으면 그 자리를 지킨다 — 차선으로 튀면 진동한다', () => {
+    // 여기서 `LANE` 으로 돌아가면 다시 가까워지고, 가까워지면 또 비킨다. 그 되먹임의
+    // 평형점이 정확히 `gap/2` 라 B1 과 겉보기 증상이 똑같았다(실측 0.502m 두 번).
+    expect(from([{ ahead: 3, side: GAP }], 0.3)).toBeCloseTo(0.3, 9);
+    expect(from([{ ahead: 3, side: -GAP - 0.5 }], 1.9)).toBeCloseTo(1.9, 9);
   });
 
-  it('★ 왼쪽에 있으면 오른쪽으로 — 우측통행과 같은 방향이라 조금만 가도 된다', () => {
-    const d = dodgeOffset([{ ahead: 3, side: -0.3 }], GAP, LOOK);
-    expect(d).toBeGreaterThan(0);
-    expect(d).toBeLessThan(GAP); // 이미 왼쪽으로 치우쳐 있으니 덜 가도 벌어진다
-    expect(d).toBeCloseTo(GAP - 0.3, 6);
+  it('★ 목표가 상대와 정확히 gap 만큼 떨어져 있다 — 절대 좌표로 본다', () => {
+    // 이것이 B1 이 어긴 성질이다. 옛 구현은 목표가 상대에게서 gap/2 밖에 안 떨어졌다.
+    for (const [cur, side] of [[LANE, 0], [LANE, -0.4], [LANE, 0.3], [0, 0.2], [1.8, -0.6]]) {
+      const other = cur + side; // 상대의 절대 오프셋
+      const t = from([{ ahead: 3, side }], cur);
+      // 차도 폭이 허용하는 한 gap 을 확보한다. 잘렸으면 그 사실이 아래 G-10 에 나온다.
+      const lim = laneLimit(R);
+      const reachable = Math.abs(other + GAP) <= lim || Math.abs(other - GAP) <= lim;
+      if (reachable) {
+        expect(Math.abs(t - other), `cur=${cur} side=${side} 에서 gap 미달`)
+          .toBeGreaterThanOrEqual(GAP - 1e-9);
+      }
+    }
   });
 
-  it('★ 오른쪽에 있으면 왼쪽으로 — 오른쪽만 고집하면 그 사람을 가로지른다', () => {
-    expect(dodgeOffset([{ ahead: 3, side: 0.4 }], GAP, LOOK)).toBeLessThan(0);
+  it('★ 갈 수 있는 쪽을 고른다 — 자른 뒤에 비교해야 착시가 없다', () => {
+    // 추월: 상대가 내 차선 위에 있다. 오른쪽은 `lim − lane` 밖에 안 남아 gap 이 안
+    // 나오지만 왼쪽은 넉넉하다. 자르기 **전** 값으로 고르면 오른쪽을 골라 실패한다.
+    const t = from([{ ahead: 3, side: 0 }], LANE);
+    expect(Math.abs(t - LANE), '추월에서 gap 을 못 벌렸다').toBeGreaterThanOrEqual(GAP - 1e-9);
+    expect(t, '왼쪽으로 갔어야 한다').toBeLessThan(LANE);
   });
 
   it('가장 가까운 사람만 본다 — 여럿을 합치면 서로 상쇄돼 프레임마다 값이 튄다', () => {
@@ -267,14 +299,16 @@ describe('앞을 막는 사람을 비켜 간다 (G-6)', () => {
       { ahead: 1.5, side: -0.2 }, // 가장 가깝다 — 이것만 본다
       { ahead: 4, side: 0.1 },
     ];
-    expect(dodgeOffset(many, GAP, LOOK)).toBeCloseTo(GAP - 0.2, 6);
+    const other = LANE - 0.2;
+    expect(Math.abs(from(many) - other)).toBeGreaterThanOrEqual(GAP - 1e-9);
   });
 
-  it('회피 뒤 실제로 벌어진다 — 옆 간격이 gap 이상이 된다', () => {
-    // 판정이 낸 값을 **적용해 보고** 결과를 확인한다. 값만 보면 부호를 틀려도 통과한다.
-    for (const side of [-0.8, -0.3, 0, 0.2, 0.7]) {
-      const d = dodgeOffset([{ ahead: 3, side }], GAP, LOOK);
-      expect(Math.abs(side - d), `side=${side} 에서 안 벌어졌다`).toBeGreaterThanOrEqual(GAP - 1e-9);
+  it('목표가 차도 안이다 — 회피가 얼마든 여기서 잘린다', () => {
+    const lim = laneLimit(R);
+    for (const side of [-0.9, -0.4, 0, 0.3, 0.8]) {
+      for (const cur of [-1.9, -0.5, 0, LANE, 1.9]) {
+        expect(Math.abs(from([{ ahead: 2, side }], cur))).toBeLessThanOrEqual(lim + 1e-9);
+      }
     }
   });
 });
@@ -282,7 +316,7 @@ describe('앞을 막는 사람을 비켜 간다 (G-6)', () => {
 // ── G-7: 회피가 도로를 못 벗어난다 ──────────────────────────────────────────
 //
 // 팀장이 근접 반발을 기각한 사유가 **도로 이탈**이었다. 이 처방은 위치를 안 만지고
-// 차선 오프셋만 키우지만, 그 오프셋도 무한히 크면 결국 인도로 나간다. `clampLane` 이
+// 차선 오프셋만 움직이지만, 그 오프셋도 무한히 크면 결국 인도로 나간다. `clampLane` 이
 // 유일한 방벽이고, 그래서 여기서 그것만 본다.
 describe('회피량이 얼마든 차도 안이다 (G-7)', () => {
   it('★ 어떤 회피량을 넣어도 |총 오프셋| + 반경 ≤ 차도 반폭', () => {
@@ -299,10 +333,17 @@ describe('회피량이 얼마든 차도 안이다 (G-7)', () => {
   it('몸이 차도보다 넓으면 0 — 비킬 자리가 없다', () => {
     expect(clampLane(5, LANE_BOUND)).toBe(0);
     expect(clampLane(5, LANE_BOUND + 1)).toBe(0);
+    expect(laneLimit(LANE_BOUND + 1)).toBe(0);
   });
 
   it('여유 안쪽 값은 그대로 통과한다 — 항상 자르면 회피가 장식이 된다', () => {
     expect(clampLane(0.7, 0.5)).toBeCloseTo(0.7, 6);
+  });
+
+  it('상한이 자르는 값과 같은 규칙에서 온다 — 둘이 갈리면 판단과 집행이 어긋난다', () => {
+    for (const r of [0.2, 0.5, 1.0]) {
+      expect(clampLane(1e9, r)).toBeCloseTo(laneLimit(r), 9);
+    }
   });
 });
 
@@ -349,6 +390,190 @@ describe('전방과 오른쪽이 같은 관례에서 온다 (G-9)', () => {
   });
 });
 
+// ── G-10: 닫힌 고리 — 실제로 몸이 벌어지는가 (검수관 게이트 명세) ───────────
+//
+// **이 파일에서 가장 중요한 검사다.** B1 이 여기로 샜다.
+//
+// 순수 함수는 전부 멀쩡했고 뮤테이션 12건이 전부 깨졌는데도, 목표 산출과 추종을 **합친
+// 결과**는 틀려 있었다. 판정 쪽 검사는 반환값을 증분으로 봤고 집행부는 절대 가산항으로
+// 썼다 — 둘이 의미에 동의하지 않는데 양쪽 다 통과했다. CLAUDE.md 가 이름 붙인
+// *"경계를 건너는 지점은 아무도 안 본다"* 가 정확히 이것이다.
+//
+// 그래서 여기서는 **집행부와 같은 순서로 같은 함수를 부른다.** `features/npc.ts` 는
+// `three/webgpu` 를 끌어와 단위 테스트로 못 돌리므로, 합성 지점을 순수 함수 경계로
+// 끌어올렸다(`laneTarget` → `stepLane`). 그 두 함수를 npc.ts 와 같은 순서로 부른다.
+describe('두 체가 실제로 스쳐 지나간다 — 닫힌 고리 (G-10)', () => {
+  const DT = 1 / 60;
+  const R = 0.5;
+  const GAP = 2 * R;
+
+  interface Body {
+    x: number; z: number; dx: number; dz: number; speed: number;
+    ox: number; oz: number; rx: number; rz: number; ry: number;
+  }
+
+  const make = (x: number, z: number, dx: number, dz: number, speed: number): Body => ({
+    x, z, dx, dz, speed, ox: 0, oz: 0, rx: x, rz: z, ry: yawOf(dx, dz) ?? 0,
+  });
+
+  /**
+   * `features/npc.ts` 의 per-walker 본문을 **같은 순서로** 돈다.
+   * 전진 → yaw → 이웃 분해 → 목표 → 추종 → 그린 자리 기입.
+   */
+  function run(bodies: Body[], steps: number) {
+    let minCenter = Infinity;
+    let minAhead = Infinity;
+    let maxOff = 0;
+    for (let i = 0; i < steps; i++) {
+      for (const b of bodies) {
+        b.x += b.dx * b.speed * DT;
+        b.z += b.dz * b.speed * DT;
+        const ry = yawOf(b.dx, b.dz);
+        if (ry !== null) b.ry = ry;
+
+        const seen: Ahead[] = [];
+        for (const o of bodies) {
+          if (o === b) continue;
+          seen.push(relativeTo(b.ry, o.rx - b.rx, o.rz - b.rz));
+        }
+        const target = laneTarget(
+          seen,
+          relativeTo(b.ry, b.ox, b.oz).side,
+          laneOffset(R),
+          GAP,
+          lookAhead(b.speed, b.speed + 1.3),
+          R,
+        );
+        const next = stepLane(b.ox, b.oz, b.ry, target, b.speed * DT);
+        b.ox = next.ox;
+        b.oz = next.oz;
+        b.rx = b.x + b.ox;
+        b.rz = b.z + b.oz;
+        maxOff = Math.max(maxOff, Math.hypot(b.ox, b.oz));
+        for (const o of seen) minAhead = Math.min(minAhead, o.ahead);
+      }
+      const [a, c] = bodies;
+      minCenter = Math.min(minCenter, Math.hypot(a.rx - c.rx, a.rz - c.rz));
+    }
+    return { minCenter, minAhead, maxOff };
+  }
+
+  it('★ 같은 방향 추월 — B1 이 정확히 여기서 절반만 벌렸다', () => {
+    // 뒤차가 빠르다. 둘 다 북(-Z). 앞차를 따라잡아 지나간다.
+    const r = run([make(0, -14, 0, -1, 0.8), make(0, 0, 0, -1, 1.3)], 2400);
+    // 조우가 실제로 일어났는가 — 안 만났으면 아래 단언이 공허하다(검수관 명세).
+    expect(r.minAhead, '두 체가 스쳐 지나가지 않았다 — 검사가 공허하다').toBeLessThanOrEqual(0);
+    expect(
+      r.minCenter,
+      `추월 최소 중심거리 ${r.minCenter.toFixed(3)}m ≤ 몸 폭 합 ${GAP}m`,
+    ).toBeGreaterThanOrEqual(GAP - 1e-6);
+  });
+
+  it('★ 대향 정면 — 차선만으로도 덮이지만 회피가 망치지 않는지 본다', () => {
+    const r = run([make(0, -14, 0, -1, 1.0), make(0, 14, 0, 1, 1.0)], 2400);
+    expect(r.minAhead, '두 체가 스쳐 지나가지 않았다').toBeLessThanOrEqual(0);
+    expect(
+      r.minCenter,
+      `대향 최소 중심거리 ${r.minCenter.toFixed(3)}m ≤ 몸 폭 합 ${GAP}m`,
+    ).toBeGreaterThanOrEqual(GAP - 1e-6);
+  });
+
+  it('오프셋이 상한을 안 넘는다 — 시뮬 내내 (검수관 R1)', () => {
+    const r = run([make(0, -14, 0, -1, 0.8), make(0, 0, 0, -1, 1.3)], 2400);
+    expect(r.maxOff).toBeLessThanOrEqual(laneLimit(R) + 1e-9);
+  });
+
+  it('★ 옛 형태(증분을 차선에 더하기)면 이 검사가 깨진다 — 검출력 확인', () => {
+    // B1 을 코드로 굳힌다. 옛 합성은 `clampLane(lane + dodge)` 였고, 그 `dodge` 는
+    // 지금 자리 기준 증분이었다. 고정점이 `(lane + p + gap)/2` 라 확보량이 `gap/2` 다.
+    const old = (others: Ahead[], cur: number) => {
+      let near: Ahead | null = null;
+      for (const o of others) {
+        if (o.ahead <= 0 || o.ahead > 20) continue;
+        if (Math.abs(o.side) >= GAP) continue;
+        if (!near || o.ahead < near.ahead) near = o;
+      }
+      const dodge = !near ? 0 : near.side <= 0 ? near.side + GAP : near.side - GAP;
+      void cur;
+      return clampLane(laneOffset(R) + dodge, R);
+    };
+    const bodies = [make(0, -14, 0, -1, 0.8), make(0, 0, 0, -1, 1.3)];
+    let minCenter = Infinity;
+    for (let i = 0; i < 2400; i++) {
+      for (const b of bodies) {
+        b.x += b.dx * b.speed * DT;
+        b.z += b.dz * b.speed * DT;
+        const ry = yawOf(b.dx, b.dz);
+        if (ry !== null) b.ry = ry;
+        const seen: Ahead[] = [];
+        for (const o of bodies) {
+          if (o === b) continue;
+          seen.push(relativeTo(b.ry, o.rx - b.rx, o.rz - b.rz));
+        }
+        const next = stepLane(b.ox, b.oz, b.ry, old(seen, 0), b.speed * DT);
+        b.ox = next.ox;
+        b.oz = next.oz;
+        b.rx = b.x + b.ox;
+        b.rz = b.z + b.oz;
+      }
+      const [a, c] = bodies;
+      minCenter = Math.min(minCenter, Math.hypot(a.rx - c.rx, a.rz - c.rz));
+    }
+    expect(minCenter, '옛 형태가 몸을 벌린다 — 이 검사가 무력하다').toBeLessThan(GAP);
+  });
+});
+
+// ── G-11: 오프셋 노름 불변식 (검수관 R1) ────────────────────────────────────
+//
+// `clampLane` 은 **목표**만 자른다. 실제로 얹히는 것은 그 목표를 향해 걷는 중인
+// `(ox, oz)` 이고, 그것은 어느 검사도 안 봤다. 볼록성으로 안전하지만 — 0 에서 출발해
+// 노름 ≤ lim 인 점을 향해 선분 위를 움직이므로 반경 lim 공을 못 벗어난다 — 그 논증이
+// 코드에도 검사에도 없었다. 논증 대신 검사를 둔다.
+describe('오프셋 노름이 상한 안이다 (G-11)', () => {
+  it('★ 90° 전환을 포함한 경로 내내 |(ox,oz)| ≤ lim', () => {
+    const R = 0.5;
+    const lim = laneLimit(R);
+    let ox = 0;
+    let oz = 0;
+    let worst = 0;
+    // 네 방향을 차례로 돈다. 모퉁이에서 `ox` 가 옛 오른쪽 방향에 남아 임의 방향을
+    // 가리키는 전이 구간이 생기는데, G-4 는 수직 오프셋만 훑어 이 구간을 못 본다.
+    for (const [dx, dz] of [[0, -1], [1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      const ry = yawOf(dx, dz)!;
+      for (let i = 0; i < 40; i++) {
+        // 목표를 매번 극단으로 흔든다 — 가장 나쁜 전이를 만든다.
+        const target = i % 2 === 0 ? lim : -lim;
+        const next = stepLane(ox, oz, ry, target, 1.0 / 60);
+        ox = next.ox;
+        oz = next.oz;
+        worst = Math.max(worst, Math.hypot(ox, oz));
+      }
+    }
+    expect(worst, `노름 ${worst.toFixed(4)} > 상한 ${lim}`).toBeLessThanOrEqual(lim + 1e-9);
+  });
+
+  it('목표에 도달하면 멈춘다 — 지나쳐서 진동하면 사람이 떤다', () => {
+    const ry = yawOf(0, -1)!;
+    let ox = 0;
+    let oz = 0;
+    for (let i = 0; i < 500; i++) {
+      const n = stepLane(ox, oz, ry, 1.0, 0.05);
+      ox = n.ox;
+      oz = n.oz;
+    }
+    const r = rightOf(ry);
+    expect(ox).toBeCloseTo(r.x * 1.0, 6);
+    expect(oz).toBeCloseTo(r.z * 1.0, 6);
+  });
+
+  it('걷는 속도를 안 넘는다 — 옆걸음이 앞걸음보다 빠를 이유가 없다', () => {
+    const ry = yawOf(0, -1)!;
+    const step = 0.02;
+    const n = stepLane(0, 0, ry, 99, step);
+    expect(Math.hypot(n.ox, n.oz)).toBeCloseTo(step, 9);
+  });
+});
+
 // ── G-5: 집행이 실제로 소비하는가 ───────────────────────────────────────────
 //
 // 판정/집행 경계의 구멍이다 — CLAUDE.md 가 이름 붙인 자리이고, 위 검사는 전부 판정
@@ -368,26 +593,61 @@ describe('집행부가 차선을 실제로 얹는다 (G-5)', () => {
   });
 
   it('그린 자리가 오프셋을 포함한다 — rx 가 경로 좌표만이면 처방이 끊긴 것이다', () => {
-    const line = src.split('\n').find((l) => /w\.rx\s*=/.test(l));
-    expect(line, '`w.rx =` 를 못 찾았다 — 구조가 바뀌었다').toBeTruthy();
-    expect(line!, '그린 자리에 차선이 안 얹힌다').toMatch(/w\.ox/);
+    // `w.rx =` 는 두 곳이다 — 재배치(오프셋 리셋과 짝, 검수관 R3)와 매 프레임 기입.
+    // **매 프레임 쪽**이 오프셋을 얹는지가 관심사다.
+    const lines = src.split('\n').filter((l) => /w\.rx\s*=/.test(l));
+    expect(lines.length, '`w.rx =` 를 못 찾았다 — 구조가 바뀌었다').toBeGreaterThan(0);
+    expect(
+      lines.some((l) => /w\.ox/.test(l)),
+      `그린 자리에 차선이 안 얹힌다 — 찾은 줄: ${lines.join(' / ')}`,
+    ).toBe(true);
   });
 
   it('오프셋 크기를 npc.ts 가 직접 정하지 않는다 — 유도는 decide 소관이다', () => {
     expect(src, 'laneOffset 을 안 쓴다').toContain('laneOffset');
-    expect(src, 'rightOf 를 안 쓴다').toContain('rightOf');
     // 차도 반폭·차선 거리를 숫자로 적으면 도로가 바뀌어도 안 따라온다. 값뿐 아니라
     // 주석에 적는 것도 미러링이다(이 저장소가 세 번 데인 형태).
-    expect(src, '차선 거리를 숫자로 적었다').not.toMatch(/(?<![\d.])(1\.25|2\.5)(?![\d])/);
+    //
+    // ⚠ **가드 자체가 미러링이었다**(검수관 R5). 예전에는 `1.25|2.5` 를 정규식에 박아
+    // 뒀는데, 그것은 **오늘의 유도값 두 개를 문자열로 베낀 것**이다. `ROAD_SEG` 가
+    // 바뀌면 이 가드는 조용히 아무것도 안 지키고 새 하드코딩은 그대로 통과한다.
+    // 그래서 **실물에서 금지어를 만든다.**
+    // 정수는 뺀다 — `2` 같은 값은 배열 인덱스·나눗셈 등 온갖 곳에 정당하게 나온다.
+    // 소수점을 가진 값만이 "이 도메인의 거리" 를 가리킨다.
+    const forbidden = [LANE_BOUND, LANE_BOUND / 2, laneLimit(0.5)]
+      .map((v) => Number(v.toFixed(6)))
+      .filter((v) => !Number.isInteger(v))
+      .map((v) => String(v).replace('.', '\\.'));
+    expect(forbidden.length, '금지어가 하나도 안 만들어졌다 — 이 검사는 장식이다')
+      .toBeGreaterThan(0);
+    for (const num of forbidden) {
+      expect(src, `차선 거리(${num})를 숫자로 적었다`)
+        .not.toMatch(new RegExp(`(?<![\\d.])${num}(?![\\d])`));
+    }
   });
 
-  it('★ 목표 오프셋이 회피를 포함하고 클램프를 경유한다', () => {
-    // 회피를 계산해 놓고 목표에 안 더하면 사람은 영영 안 비킨다 — 그런데 위 검사들은
-    // 전부 통과한다(순수 함수는 멀쩡하고, 차선은 여전히 얹히니까).
-    const line = src.split('\n').find((l) => /const want\s*=/.test(l));
-    expect(line, '`const want =` 를 못 찾았다 — 구조가 바뀌었다').toBeTruthy();
-    expect(line!, '목표에 회피가 안 실린다 — 앞사람을 안 비킨다').toMatch(/dodge/);
-    expect(line!, '클램프를 안 거친다 — 회피가 도로 밖으로 나갈 수 있다').toMatch(/clampLane/);
+  it('★ 목표를 집행부가 조립하지 않는다 — B1 이 그 조립에서 났다', () => {
+    // 옛 코드: `const want = clampLane(w.lane + dodge, w.radius)`.
+    // 증분(`dodge`)과 절대값(`w.lane`)을 더한 것이 결함이었다. 판정을 집행부가 다시
+    // 조립하기 시작하면 같은 자리가 다시 열린다.
+    expect(src, 'laneTarget 을 안 쓴다 — 목표를 여기서 만들고 있다').toContain('laneTarget(');
+    expect(src, 'stepLane 을 안 쓴다 — 추종을 여기서 적분하고 있다').toContain('stepLane(');
+    expect(src, '없앤 함수가 되살아났다').not.toContain('dodgeOffset');
+    // 목표에 무언가를 더하는 형태가 돌아오면 잡는다. **코드 줄만 본다** — 주석에 옛
+    // 형태를 인용하면(그리고 인용해야 한다, 왜 바뀌었는지가 거기 있으므로) 소스 전체
+    // 매칭은 그 인용에 걸린다. 실제로 걸렸다.
+    const code = src
+      .split('\n')
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join('\n');
+    expect(code, '목표에 차선을 더하고 있다 — 기준이 다시 갈렸다')
+      .not.toMatch(/w\.lane\s*\+/);
+  });
+
+  it('이웃 분해를 손으로 하지 않는다 — 같은 값을 두 곳이 다르게 해석한 것이 B1 이다', () => {
+    expect(src, 'relativeTo 를 안 쓴다').toContain('relativeTo(');
+    // 내적을 직접 쓰면 검사가 보는 축과 집행이 쓰는 축이 갈릴 수 있다.
+    expect(src, '진행방향 분해를 손으로 한다').not.toMatch(/f\.x\s*\+.*f\.z/);
   });
 
   it('앞을 볼 때 자기 자신을 세지 않는다 — 자기 앞에 자기가 있으면 늘 비켜 걷는다', () => {

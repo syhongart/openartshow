@@ -130,35 +130,174 @@ export function lookAhead(speed: number, closing: number, bound: number = LANE_B
 }
 
 /**
- * 앞을 막는 사람을 비켜 지나가려면 **옆으로 얼마나** 더 가야 하는가(m).
- * 막는 사람이 없으면 **0** — 그래서 지나가고 나면 저절로 중앙(차선)으로 돌아온다.
+ * 지금 향해야 할 **차선 위치**(m, 오른쪽이 양수). 막는 사람이 없으면 `lane` 으로
+ * 돌아간다 — 그래서 스쳐 지나가고 나면 저절로 중앙으로 복귀한다.
+ *
+ * ── ★ 왜 "얼마나 더 갈까" 가 아니라 "어디로 갈까" 인가 (검수관 반려 B1) ─────
+ * 처음에는 **증분**을 냈다(`dodgeOffset`). 집행부는 그것을 **절대 목표**인 `lane` 에
+ * 더했다 — `const want = clampLane(w.lane + dodge, …)`. 두 값의 기준이 달랐다.
+ *
+ * `side` 는 **지금 내가 선 자리**를 기준으로 잰 값이라(상대 위치를 렌더 좌표에서 재고,
+ * 거기엔 이미 현재 오프셋이 들어 있다) 비켜설수록 작아진다. 그런데 목표는 `lane` 에서
+ * 다시 세어지므로, 비켜서면 목표도 같이 물러난다. 닫힌 고리의 고정점을 풀면
+ *
+ *     c* = (lane + p + gap) / 2
+ *
+ * 이고, **같은 방향 추월**(상대가 자기 차선 위, `p = lane`)에서 실제로 확보되는 간격은
+ * 정확히 `gap / 2` 다. 몸 크기와 무관하게 **항상 절반만 벌어진다.** 검수관이 실물 함수를
+ * 집행 루프에 넣어 돌려 반경 0.3~0.8 전 구간에서 겹침을 실측했다.
+ *
+ * 검사도 못 잡았다 — 검사는 반환값을 **증분으로** 검증했고 집행부는 **절대 가산항으로**
+ * 썼다. 둘이 의미에 동의하지 않는데 **양쪽 다 통과**했다. 단일 함수 뮤테이션 12건이
+ * 전부 깨졌는데도 안 나타났다. 결함이 함수 안이 아니라 **합성 지점**에 있었기 때문이다.
+ *
+ * 그래서 값의 의미를 하나로 만든다. **이 함수가 절대 목표를 낸다.** 집행부가 할 일은
+ * 그 목표를 향해 걷는 것뿐이고, 더할 것이 없으니 기준이 갈릴 자리도 없다.
  *
  * ── 왜 위치를 밀어내지 않는가 ───────────────────────────────────────────────
  * 팀장이 근접 반발(서로 밀어내기)을 기각한 사유가 **도로 이탈**이었다. 여기서는
- * 위치를 만지지 않는다 — **차선 오프셋만** 키운다. 오프셋은 진행방향 옆으로만 작용하고
- * 총량이 `clampLane` 으로 차도 안에 갇히므로, 경로(격자 좌표)는 무엇을 해도 그대로다.
- * 기각 사유가 여기에는 성립하지 않는다.
+ * 위치를 만지지 않는다 — 차선 오프셋만 움직이고, 그 값이 `lim` 으로 잘린다. 경로(격자
+ * 좌표)는 무엇을 해도 그대로다. 기각 사유가 이 형태에는 성립하지 않는다.
  *
  * ── 어느 쪽으로 비키는가 ────────────────────────────────────────────────────
- * 상대가 **왼쪽이나 정면**이면 오른쪽으로(우측통행과 같은 방향), 상대가 이미 **오른쪽**
- * 이면 왼쪽으로. 오른쪽만 고집하면 오른쪽에 있는 사람을 가로질러 지나가게 된다.
+ * **양쪽을 다 계산해 실제로 벌어지는 쪽을 고른다.** 처음에는 "왼쪽에 있으면 오른쪽으로"
+ * 라는 규칙 하나로 정했는데, 그러면 추월에서 오른쪽 여유가 모자란다(차선이 이미 오른쪽
+ * 절반을 쓰고 있으므로 남은 폭이 `lim − lane` 뿐이다). 자를 것을 **자르고 나서** 재보면
+ * 그런 착시가 안 생긴다.
+ *
+ * 둘 다 충분하면 **덜 움직이는 쪽**을 고른다 — 우측통행이 기본이므로 대부분 오른쪽이
+ * 가깝고, 그래서 규칙을 따로 쓰지 않아도 우측통행이 유지된다.
  *
  * ── 왜 가장 가까운 하나만 보는가 ────────────────────────────────────────────
  * 여럿의 회피량을 합치면 서로 상쇄되거나 튀어서, 같은 배치에서도 프레임마다 다른 값이
  * 나온다. 사람도 제일 먼저 마주칠 사람을 피한다.
  *
- * @param gap 벌리고 싶은 옆 간격(m). 두 몸 반경의 합이다
+ * @param others 이웃들의 상대 위치. **지금 선 자리 기준**이다
+ * @param cur    지금 얹고 있는 오프셋(m). `side` 가 이 자리 기준이므로 절대값으로 되돌릴 때 쓴다
+ * @param lane   막는 사람이 없을 때 돌아갈 자리(m)
+ * @param gap    벌리고 싶은 옆 간격(m). 두 몸 반경의 합이다
+ * @param bodyRadius 내 몸 반경(m). 여기서 차도 상한이 유도된다 — 자르는 규칙을 여기
+ *                   다시 적지 않고 `clampLane` 을 그대로 부른다(같은 규칙이 두 곳에
+ *                   있으면 한쪽만 고쳐도 아무도 모른다)
  */
-export function dodgeOffset(others: readonly Ahead[], gap: number, look: number): number {
+export function laneTarget(
+  others: readonly Ahead[],
+  cur: number,
+  lane: number,
+  gap: number,
+  look: number,
+  bodyRadius: number,
+): number {
+  const fit = (v: number) => clampLane(v, bodyRadius);
+
+  // ── ★ 앞만 보지 않는다 — **가까운 사람**을 본다 ────────────────────────────
+  // 처음에는 `ahead <= 0` 으로 뒤를 잘랐다. 그러자 **추월 직후**가 깨졌다: 지나친
+  // 순간 앞이 비므로 목표가 곧장 차선으로 돌아가는데, 방금 지나친 사람이 바로 뒤
+  // 옆에 있다. 둘 다 같은 차선을 원하니 다시 겹친다 — 실측 최소 0.502m 로, 앞의 두
+  // 결함과 **또 같은 숫자**가 나왔다. 셋째 원인이다.
+  //
+  // 사람도 추월하자마자 끼어들지 않는다. 충분히 벗어난 다음에 돌아온다. 그 "충분히"
+  // 는 이미 유도해 둔 `look`(비켜서는 데 걸리는 시간 동안 좁혀지는 거리)을 그대로
+  // 쓴다 — 비키기 시작하는 거리와 자리를 푸는 거리가 같으면 규칙이 하나로 끝난다.
   let near: Ahead | null = null;
+  let nearDist = Infinity;
   for (const o of others) {
-    if (o.ahead <= 0 || o.ahead > look) continue; // 뒤에 있거나 아직 멀다
-    if (Math.abs(o.side) >= gap) continue; // 이미 충분히 비켜 있다
-    if (!near || o.ahead < near.ahead) near = o;
+    const d = Math.hypot(o.ahead, o.side);
+    if (d > look) continue; // 아직 멀다(또는 충분히 멀어졌다)
+    if (d < nearDist) {
+      near = o;
+      nearDist = d;
+    }
   }
-  if (!near) return 0;
-  // 옆 간격이 `gap` 이 되는 최소 이동. 부호가 어느 쪽으로 비킬지를 말한다.
-  return near.side <= 0 ? near.side + gap : near.side - gap;
+  if (!near) return fit(lane); // 아무도 가까이 없다 — 차선으로 돌아간다
+
+  // ── ★ 이미 벌어져 있으면 **그 자리를 지킨다** (진동 방지) ─────────────────
+  // 처음에는 여기서 "충분히 벌어졌으니 볼 것 없다" 며 후보에서 아예 뺐다. 그러면 목표가
+  // 차선으로 튀고, 차선으로 돌아가면 다시 가까워지고, 가까워지면 또 비킨다 — **되먹임이
+  // 진동한다.** 그 평형점이 정확히 `gap / 2` 라, 겉보기 증상이 B1(기준을 섞어 절반만
+  // 벌린 것)과 **똑같았다.** 실측 0.502m 로 같은 숫자가 두 번 나왔다.
+  //
+  // 원인이 하나라고 가정하지 않는다 — CLAUDE.md 가 이름 붙인 자리다(*"두 버그가 서로를
+  // 상쇄하고 있을 때, 하나만 고치는 것은 고치기 전보다 나쁠 수 있다"*). B1 을 고쳤는데도
+  // 같은 값이 남은 것이 증거였다.
+  //
+  // 앞에 사람이 있는 **동안은** 벌린 자리를 유지하고, 그 사람이 시야를 벗어나거나
+  // 뒤로 가면(위 `continue`) 차선으로 돌아온다. 감독이 말한 *"스쳐갔다가 다시 중앙으로"*
+  // 가 정확히 이 순서다. 상태 변수를 늘리지 않고 히스테리시스를 얻는다.
+  if (Math.abs(near.side) >= gap) return fit(cur);
+
+  // 상대가 실제로 서 있는 절대 오프셋. `side` 가 내 자리 기준이므로 되돌려 준다.
+  const other = cur + near.side;
+  // 양쪽 후보를 **자른 뒤** 비교한다. 자르기 전 값으로 고르면 갈 수 없는 쪽을 고른다.
+  const right = fit(other + gap);
+  const left = fit(other - gap);
+  const gainR = Math.abs(right - other);
+  const gainL = Math.abs(left - other);
+  // 벌어지는 쪽 우선, 비기면 덜 움직이는 쪽(= 대개 우측통행 방향)
+  if (gainR > gainL + 1e-9) return right;
+  if (gainL > gainR + 1e-9) return left;
+  return Math.abs(right - cur) <= Math.abs(left - cur) ? right : left;
+}
+
+/**
+ * 목표 오프셋을 향해 **한 프레임 걷는다.** 새 오프셋 벡터를 돌려준다.
+ *
+ * ── 왜 집행부에서 여기로 옮겼나 (검수관 반려 B2) ────────────────────────────
+ * 목표 산출과 추종이 집행부(`features/npc.ts`)에 흩어져 있으면, 그 둘을 합친 결과를
+ * 보는 검사를 쓸 수가 없다 — `npc.ts` 는 `three/webgpu` 를 끌어와 단위 테스트로 못
+ * 돌린다. B1 이 정확히 그 합성 지점에 있었고 34건이 전부 통과했다.
+ *
+ * 그래서 **합성 지점을 순수 함수 경계로 끌어올린다.** 이제 테스트가 `laneTarget` 과
+ * 이 함수를 **집행부와 같은 순서로** 불러 두 체를 실제로 걷게 할 수 있다.
+ *
+ * ── 왜 걸어서 가는가 ────────────────────────────────────────────────────────
+ * 목표를 그대로 얹으면 모퉁이에서 방향이 90° 꺾이는 순간 사람이 옆으로 순간이동한다.
+ * 속도를 자기 걷는 속도로 묶으면 새 상수를 만들지 않고도 자연스러운 폭이 나온다 —
+ * 옆걸음이 앞걸음보다 빠를 이유가 없다.
+ *
+ * **노름이 `lim` 을 넘지 않는다**(검수관 R1). 0 에서 출발해 매 프레임 노름 ≤ `lim` 인
+ * 점을 향해 선분 위를 움직이므로, 반경 `lim` 공을 벗어나는 경로가 없다(볼록성). 이
+ * 논증이 코드에도 검사에도 없어 지적받았다 — `tests/world2-npc-lane.test.ts` 의 G-11 이
+ * 90° 전환을 포함한 경로에서 매 프레임 노름을 단언한다.
+ *
+ * @param target 목표 오프셋(m, 오른쪽 축 스칼라). `laneTarget` 이 낸 값
+ * @param maxStep 이 프레임에 옆으로 갈 수 있는 거리(m) = 걷는 속도 × dt
+ */
+export function stepLane(
+  ox: number,
+  oz: number,
+  ry: number,
+  target: number,
+  maxStep: number,
+): { ox: number; oz: number } {
+  const r = rightOf(ry);
+  const dx = r.x * target - ox;
+  const dz = r.z * target - oz;
+  const d = Math.hypot(dx, dz);
+  if (d === 0 || maxStep <= 0) return { ox, oz };
+  const s = Math.min(d, maxStep);
+  return { ox: ox + (dx / d) * s, oz: oz + (dz / d) * s };
+}
+
+/**
+ * 진행방향 기준으로 상대 위치를 분해한다.
+ *
+ * 집행부가 손으로 내적을 쓰면 그 식이 검사와 갈라진다 — B1 이 바로 "같은 값을 두 곳이
+ * 다르게 해석한" 사고였으므로, 분해도 한 곳에 둔다.
+ */
+export function relativeTo(ry: number, dx: number, dz: number): Ahead {
+  const f = forwardOf(ry);
+  const r = rightOf(ry);
+  return { ahead: dx * f.x + dz * f.z, side: dx * r.x + dz * r.z };
+}
+
+/**
+ * 이 몸집이 차도 안에서 쓸 수 있는 **오프셋 상한**(m). 못 쓰면 0.
+ *
+ * 자를 값과 "얼마나 갈 수 있나" 를 판단하는 값이 같아야 하므로 한 곳에서 낸다.
+ */
+export function laneLimit(bodyRadius: number, bound: number = LANE_BOUND): number {
+  return Math.max(0, bound - bodyRadius);
 }
 
 /**
@@ -169,7 +308,7 @@ export function dodgeOffset(others: readonly Ahead[], gap: number, look: number)
  * 확인한다 — B1(격자 판정이 무력화돼 NPC 가 건물을 관통한 사고)이 샌 축이 이것이다.
  */
 export function clampLane(total: number, bodyRadius: number, bound: number = LANE_BOUND): number {
-  const lim = bound - bodyRadius;
+  const lim = laneLimit(bodyRadius, bound);
   if (lim <= 0) return 0; // 몸이 차도보다 넓다 — 비킬 자리가 없다
   return Math.max(-lim, Math.min(lim, total));
 }

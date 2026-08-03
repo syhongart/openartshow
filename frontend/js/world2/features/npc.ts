@@ -34,7 +34,7 @@ import { DEFAULT_LAYOUT } from '../parts/types.js';
 import { nextDir, stepOf, pickNearby, yawOf, type Cell } from '../decide/npc-walk.js';
 import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
 import {
-  laneOffset, rightOf, forwardOf, lookAhead, dodgeOffset, clampLane, type Ahead,
+  laneOffset, lookAhead, laneTarget, stepLane, relativeTo, type Ahead,
 } from '../decide/npc-lane.js';
 // **아바타는 배럴로만 만난다.** 이 파일은 치비가 world1 에서 오는지, VRM 이 파일에서
 // 오는지 모른다 — 감독 지시("월드원 폴더 것을 그냥 끌어다 쓰지 마, 나중에 날릴 거니까")
@@ -393,6 +393,11 @@ export const npcFeature: Feature = {
       // 얻은 오프셋을 들고 가면 새 길에서 엉뚱한 쪽에 서 있게 된다. 0 에서 다시 붙는다.
       w.ox = 0;
       w.oz = 0;
+      // **그린 자리도 같이 옮긴다**(검수관 R3). 이 프레임에 이미 처리된 이웃은 이 체의
+      // `rx` 를 보고 회피를 정하는데, 그 값이 순간이동 **전** 좌표면 아무도 없는 자리를
+      // 피하게 된다. 은닉 중인 체도 `rx` 가 얼어 있어 재등장 프레임에 같은 창이 열린다.
+      w.rx = w.x;
+      w.rz = w.z;
       retarget(w);
     }
 
@@ -413,8 +418,13 @@ export const npcFeature: Feature = {
      * **실제로 그린 자리(`w.rx`)를 본다** — 경로 좌표(`w.x`)가 아니다. 차선 오프셋이
      * 실제로 얹혔는지를 보는 것이 목적이므로, 얹기 전 값을 보면 아무 의미가 없다.
      *
-     * 진단이 호출될 때만 돈다(체 7이면 21쌍). 프레임 루프에 넣지 않는다 — 이 처방이
-     * 매 프레임 쌍 검사를 **피하려고** 고른 것인데 진단이 그걸 도로 넣으면 앞뒤가 안 맞다.
+     * 진단이 호출될 때만 돈다(체 7이면 21쌍).
+     *
+     * ⚠ 여기 *"프레임 루프에 넣지 않는다 — 이 처방이 매 프레임 쌍 검사를 피하려고 고른
+     * 것"* 이라 적혀 있었다. **틀린 문장이라 지운다**(검수관 R2, 2026-08-03). 앞사람
+     * 회피가 들어오면서 프레임 루프도 이웃을 훑는다(7체면 42쌍/프레임). 피한 것은 쌍
+     * 검사가 아니라 **위치를 밀어내는 것**이었다 — 도로 이탈이 기각 사유였으니까.
+     * 비용은 n=7 이라 무시 가능하다. 틀린 주석을 남기면 다음 사람이 같은 판단을 한다.
      */
     function minPairDistance(): number | null {
       const on = walkers.filter((w) => w.shown);
@@ -546,33 +556,32 @@ export const npcFeature: Feature = {
           // 아래 추종이 그 목표를 걷는 속도로 따라가므로 저절로 차선으로 돌아온다.
           // 복귀를 별도 상태로 두면 "지금 복귀 중인가" 를 관리해야 하고, 그 상태가
           // 틀어지는 순간 사람이 길 옆에 붙어 굳는다.
-          const r = rightOf(w.ry);
-          const f = forwardOf(w.ry);
+          //
+          // ⚠ **판정을 여기서 조립하지 않는다** (검수관 반려 B1·B2, 2026-08-03).
+          // 처음에는 목표를 여기서 만들었다 — 회피량(지금 선 자리 기준의 **증분**)을
+          // 차선(**절대 위치**)에 더했다. 두 기준을 섞은 것이라 비켜설수록 목표가
+          // 물러났고, 추월에서 필요량의 **정확히 절반**만 벌어졌다. 검사는 같은 값을
+          // 증분으로 검증해서 **양쪽 다 통과**했다.
+          // 이제 `laneTarget` 이 **절대 목표**를 내고 여기서는 더할 것이 없다.
           const seen: Ahead[] = [];
           for (const o of walkers) {
             if (o === w || !o.shown) continue;
-            const gx = o.rx - w.rx;
-            const gz = o.rz - w.rz;
-            seen.push({ ahead: gx * f.x + gz * f.z, side: gx * r.x + gz * r.z });
+            seen.push(relativeTo(w.ry, o.rx - w.rx, o.rz - w.rz));
           }
-          // 벌릴 간격도 상한도 유도한다. 상대 반경은 이웃마다 다르지만, 가장 큰 체를
-          // 기준으로 잡으면 어느 조합에서도 부족하지 않다.
+          // 벌릴 간격은 유도한다. 상대 반경은 이웃마다 다르지만, 가장 큰 체를 기준으로
+          // 잡으면 어느 조합에서도 부족하지 않다.
           const widest = walkers.reduce((m, o) => (o.radius > m ? o.radius : m), 0);
-          const dodge = dodgeOffset(
+          const target = laneTarget(
             seen,
+            relativeTo(w.ry, w.ox, w.oz).side, // 지금 얹고 있는 오프셋의 오른쪽 성분
+            w.lane,
             w.radius + widest,
             lookAhead(w.speed, w.speed + WALK_MAX),
+            w.radius,
           );
-          const want = clampLane(w.lane + dodge, w.radius);
-
-          const odx = r.x * want - w.ox;
-          const odz = r.z * want - w.oz;
-          const od = Math.hypot(odx, odz);
-          if (od > 0) {
-            const s = Math.min(od, w.speed * dt);
-            w.ox += (odx / od) * s;
-            w.oz += (odz / od) * s;
-          }
+          const next = stepLane(w.ox, w.oz, w.ry, target, w.speed * dt);
+          w.ox = next.ox;
+          w.oz = next.oz;
           w.rx = w.x + w.ox;
           w.rz = w.z + w.oz;
           w.inst.group.position.set(w.rx, 0, w.rz);
