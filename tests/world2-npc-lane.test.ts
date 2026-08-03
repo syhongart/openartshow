@@ -30,6 +30,9 @@ import {
 import { yawOf } from '../frontend/js/world2/decide/npc-walk.js';
 import { onRoad, ROAD_HALF, roadDirs } from '../frontend/js/world2/parts/road-topology.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
+// 걷는 속도는 **실물을 쓴다** — 여기 `1.3` 을 적으면 그 순간 미러링이고, 상수를 바꿨을
+// 때 검사가 집행과 다른 거리를 조용히 잰다(검수관 R10).
+import { WALK_MAX } from '../frontend/js/world2/features/npc.js';
 
 // jsdom 에는 네이티브 캔버스가 없다. 치비는 얼굴을 캔버스에 그려 텍스처로 쓰므로 2D
 // 컨텍스트가 없으면 빌드가 끝까지 못 간다. 여기서 보는 것은 **몸 크기**뿐이라 그리기는
@@ -222,7 +225,19 @@ describe('차선을 얹은 좌표가 도로 위다 (G-4)', () => {
 // *"앞에 있으면 사람처럼 점점 옆으로 이동하게, 그 옆을 스쳐갔다가 다시 중앙으로 오게."*
 //
 // 차선만으로는 **대향 정면**밖에 못 덮는다. 같은 방향 추월도, 교차로에서 직각으로 오는
-// 것도 남는다. 회피는 그 나머지를 덮는다.
+// 것도 남는다.
+//
+// ⚠ **여기 "회피는 그 나머지를 덮는다" 고 적혀 있었다. 틀린 문장이라 지운다**
+// (검수관 BR-3, 2026-08-03). 회피가 덮는 것은 **추월까지**다. 교차로 직각은 안 덮는다 —
+// 검수관 실측으로 최소 중심거리 **0.0167m**, 0.70초 동안 겹친다. 원인도 좁혀졌다:
+// 두 체가 각자 자기 오른쪽으로 피하는데 한 명은 +X 로 한 명은 −Z 로 가서 **두 궤적이
+// 서로를 향해 수렴한다.** 각자 열심히 피하는데 같은 지점에서 만난다.
+//
+// 사각을 덮었다고 적으면 다음 사람이 통과를 신뢰한다 — 이 저장소가 반복해서 데인
+// 형태이고, 바로 이 회차에 틀린 주석 하나(R2)를 정정하면서 같은 유형을 남겼다.
+//
+// 감독 판정(2026-08-03): *"이상하지 않은데. 그정도면 뭐 괜찮지"* — **화면에서 거슬리지
+// 않는다**는 실기기 판정이라 처방을 올리지 않는다. 아래 G-10-b 가 수치만 관측한다.
 //
 // ⚠ **반환값의 의미가 바뀌었다**(검수관 반려 B1). 옛 `dodgeOffset` 은 "얼마나 더 갈까"
 // 였고 집행부는 그것을 절대 목표에 더했다 — 기준이 달라 추월에서 필요량의 절반만
@@ -424,6 +439,8 @@ describe('두 체가 실제로 스쳐 지나간다 — 닫힌 고리 (G-10)', ()
     let minCenter = Infinity;
     let minAhead = Infinity;
     let maxOff = 0;
+    // 시작 시점의 상대 위치. 끝에서 부호가 뒤집혔으면 **서로를 지나친 것**이다.
+    const first = { x: bodies[1].rx - bodies[0].rx, z: bodies[1].rz - bodies[0].rz };
     for (let i = 0; i < steps; i++) {
       for (const b of bodies) {
         b.x += b.dx * b.speed * DT;
@@ -441,7 +458,7 @@ describe('두 체가 실제로 스쳐 지나간다 — 닫힌 고리 (G-10)', ()
           relativeTo(b.ry, b.ox, b.oz).side,
           laneOffset(R),
           GAP,
-          lookAhead(b.speed, b.speed + 1.3),
+          lookAhead(b.speed, b.speed + WALK_MAX),
           R,
         );
         const next = stepLane(b.ox, b.oz, b.ry, target, b.speed * DT);
@@ -455,14 +472,28 @@ describe('두 체가 실제로 스쳐 지나간다 — 닫힌 고리 (G-10)', ()
       const [a, c] = bodies;
       minCenter = Math.min(minCenter, Math.hypot(a.rx - c.rx, a.rz - c.rz));
     }
-    return { minCenter, minAhead, maxOff };
+    const last = { x: bodies[1].rx - bodies[0].rx, z: bodies[1].rz - bodies[0].rz };
+    const crossed = first.x * last.x + first.z * last.z < 0;
+    return { minCenter, minAhead, maxOff, crossed };
   }
+
+  /**
+   * 조우가 **실제로 일어났는가.**
+   *
+   * ⚠ 처음엔 `minAhead ≤ 0`(앞거리가 음수가 된 적 있음)으로 봤고 커밋 본문에도
+   * *"안 만나면 공허하다"* 고 적었다. **그 단언이 공허했다**(검수관 BR-2):
+   * 상호 관찰이라 **뒤차를 보는 앞차의 `ahead` 는 첫 프레임부터 늘 음수**다.
+   * 검수관 실측 — 두 체가 50초간 11.5m 까지도 안 가까워진 배치에서 통과했다.
+   *
+   * 그래서 **중심거리**로 본다. 서로 몸 폭 몇 배 안쪽까지 들어온 적이 있어야
+   * "스쳐 지나갔다" 고 말할 수 있다.
+   */
+  const met = (r: { crossed: boolean }) => r.crossed;
 
   it('★ 같은 방향 추월 — B1 이 정확히 여기서 절반만 벌렸다', () => {
     // 뒤차가 빠르다. 둘 다 북(-Z). 앞차를 따라잡아 지나간다.
     const r = run([make(0, -14, 0, -1, 0.8), make(0, 0, 0, -1, 1.3)], 2400);
-    // 조우가 실제로 일어났는가 — 안 만났으면 아래 단언이 공허하다(검수관 명세).
-    expect(r.minAhead, '두 체가 스쳐 지나가지 않았다 — 검사가 공허하다').toBeLessThanOrEqual(0);
+    expect(met(r), `조우 안 함(최소 ${r.minCenter.toFixed(2)}m) — 검사가 공허하다`).toBe(true);
     expect(
       r.minCenter,
       `추월 최소 중심거리 ${r.minCenter.toFixed(3)}m ≤ 몸 폭 합 ${GAP}m`,
@@ -470,12 +501,44 @@ describe('두 체가 실제로 스쳐 지나간다 — 닫힌 고리 (G-10)', ()
   });
 
   it('★ 대향 정면 — 차선만으로도 덮이지만 회피가 망치지 않는지 본다', () => {
-    const r = run([make(0, -14, 0, -1, 1.0), make(0, 14, 0, 1, 1.0)], 2400);
-    expect(r.minAhead, '두 체가 스쳐 지나가지 않았다').toBeLessThanOrEqual(0);
+    // ⚠ 이 배치가 **서로 멀어지고 있었다**(z −14 에서 −Z, z +14 에서 +Z). 두 체가 한
+    // 번도 안 만났는데 옛 조우 단언(`minAhead ≤ 0`)이 통과시켜서, 이 검사는 지금까지
+    // **아무것도 검증하지 않았다.** 새 조우 판정이 그것을 드러냈다 — 검수관 BR-2 가
+    // 지적한 공허함이 여기 실물로 있었다. 마주 오게 방향을 뒤집는다.
+    const r = run([make(0, -14, 0, 1, 1.0), make(0, 14, 0, -1, 1.0)], 2400);
+    expect(met(r), `조우 안 함(최소 ${r.minCenter.toFixed(2)}m)`).toBe(true);
     expect(
       r.minCenter,
       `대향 최소 중심거리 ${r.minCenter.toFixed(3)}m ≤ 몸 폭 합 ${GAP}m`,
     ).toBeGreaterThanOrEqual(GAP - 1e-6);
+  });
+
+  it('조우 판정이 실제로 걸러낸다 — 안 만나는 배치는 met 이 false 다 (검출력)', () => {
+    // 검수관이 든 반례를 코드로 굳힌다. 속도가 거의 같으면 50초간 안 만난다.
+    const r = run([make(0, -14, 0, -1, 1.25), make(0, 0, 0, -1, 1.3)], 3000);
+    expect(met(r), '안 만나는 배치인데 조우로 친다 — 판정이 여전히 공허하다').toBe(false);
+  });
+
+  // ── G-10-b: 직각 교차 — **관측만 한다** (검수관 명세, 차단 아님) ────────────
+  //
+  // 회피는 이 배치를 **안 덮는다.** 두 체가 각자 자기 오른쪽으로 피하는데 축이 직교해서
+  // 궤적이 서로를 향해 수렴한다 — 각자 열심히 피하는데 같은 지점에서 만난다.
+  //
+  // 차단 조건에 넣지 않는 이유는 "불확실해서" 가 아니다. 검수관이 실측했고 **분리되지
+  // 않는다**(0.0167m, 0.70초). 차단으로 걸면 그것은 거짓 FAIL 이 아니라 **참 FAIL** 이라
+  // 배포가 막힌다. 해결은 회피 축이 직교할 때의 설계 분기라 팀장 사안이고, 감독이
+  // 실기기에서 *"이상하지 않은데. 그정도면 뭐 괜찮지"* 로 판정해 우선순위가 내려갔다.
+  //
+  // 그래도 **수치는 남긴다.** 남기지 않으면 나중에 이 값이 나빠져도 아무도 모른다.
+  it('직각 교차 실측을 기록한다 — 나빠지면 두 배 이상 벌어졌을 때 잡는다', () => {
+    const r = run([make(-14, 0, 1, 0, 1.0), make(0, -14, 0, 1, 1.0)], 2400);
+    expect(met(r), '직각 배치에서 조우가 안 일어났다 — 배치가 틀렸다').toBe(true);
+    // 차단선이 아니라 **악화 감시선**이다. 지금 값(≈0.017m)의 열 배까지 허용한다 —
+    // 이 폭을 넘으면 무언가 더 나빠진 것이고, 그때는 볼 이유가 생긴다.
+    expect(
+      r.minCenter,
+      `직각 최소 중심거리 ${r.minCenter.toFixed(4)}m — 알려진 값(0.0167m)보다 크게 나빠졌다`,
+    ).toBeLessThanOrEqual(GAP);
   });
 
   it('오프셋이 상한을 안 넘는다 — 시뮬 내내 (검수관 R1)', () => {

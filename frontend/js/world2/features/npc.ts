@@ -49,8 +49,13 @@ import type { Dir } from '../parts/road-topology.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 /** 걷는 속도(m/s). 플레이어(5m/s)보다 확실히 느려야 "산책하는 사람" 으로 보인다 */
-const WALK_MIN = 0.8;
-const WALK_MAX = 1.3;
+export const WALK_MIN = 0.8;
+/**
+ * `export` 인 이유: 회피 시뮬 검사(`tests/world2-npc-lane.test.ts` G-10)가 이 값으로
+ * "얼마나 미리 보는가" 를 계산한다. 검사가 `1.3` 을 직접 적으면 그 순간 미러링이고,
+ * 이 상수를 바꿨을 때 **검사가 집행과 다른 거리를 조용히 잰다**(검수관 R10).
+ */
+export const WALK_MAX = 1.3;
 
 /**
  * 이만큼 멀어지면 앞쪽으로 데려온다(셀).

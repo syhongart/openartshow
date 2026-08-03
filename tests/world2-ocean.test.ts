@@ -29,8 +29,26 @@ class FakeTexture {
   repeat = { x: 1, y: 1, set(x: number, y: number) { this.x = x; this.y = y; } };
   wrapS = 0;
   wrapT = 0;
+  needsUpdate = false;
   disposed = false;
   dispose() { this.disposed = true; }
+
+  /**
+   * `Texture.clone()` — **이미지는 공유하고 `offset`·`repeat` 만 별도**로 갖는 사본.
+   *
+   * 두 번째 물결 층(감독 지시 2026-08-03)이 같은 노말맵을 다른 스케일·방향으로 쓰려고
+   * 이것을 부른다. 스텁이 안 갖고 있어서 `clone is not a function` 으로 터졌다 —
+   * 위 `FakeMaterial` 주석이 이미 이름 붙인 형태다: **코드가 아니라 스텁이 계약을 덜
+   * 재현한 것**이다. 구현을 스텁에 맞춰 비틀지 않고 스텁을 실물에 맞춘다.
+   */
+  clone(): FakeTexture {
+    const t = new FakeTexture(this.image);
+    t.wrapS = this.wrapS;
+    t.wrapT = this.wrapT;
+    t.repeat.set(this.repeat.x, this.repeat.y);
+    t.offset.set(this.offset.x, this.offset.y);
+    return t;
+  }
 }
 
 class FakeGeometry {
@@ -256,11 +274,65 @@ describe('waveHeight — 타일이 이어진다', () => {
 });
 
 describe('수면 조립 — 개수 불변식', () => {
-  it('씬에 정확히 셋을 넣는다 — 드로우콜 +3', () => {
+  it('씬에 정확히 다섯을 넣는다 — 드로우콜 +5', () => {
     // 강이 셋째 판으로 늘었다(감독 지시 2026-07-30: 강 −0.5 / 바다 −1.0). 재질·지오는
-    // 공유하므로 늘어난 것은 드로우콜 하나뿐이다.
+    // 공유하므로 늘어난 것은 드로우콜 하나뿐이었다.
+    //
+    // ── 3 → 5 (감독 지시 2026-08-03, 팀장 판정 A) ────────────────────────────
+    // 두 번째 물결 층이 바다·강에 각각 하나씩 붙었다. **이것은 단언을 느슨하게 만든
+    // 것이 아니라 예산을 갱신한 것**이고, 둘의 차이는 아래 두 검사가 지킨다:
+    // 재질·지오를 공유하므로 늘어난 것은 **드로우콜 둘뿐**이다.
+    //
+    // 팀장 조건이 정확히 이 자리를 겨눴다 — *"개수 불변식에 반영되는지 확인하고 가라.
+    // 예산 갱신 없이 통과하면 그게 게이트 구멍이다."* 게이트는 통과하지 않았고,
+    // 이름 없는 메시 둘을 빈 문자열로 잡아냈다.
     const { added } = mount();
-    expect(added.map((m) => m.name).sort()).toEqual(['ocean', 'river', 'seabed']);
+    expect(added.map((m) => m.name).sort())
+      .toEqual(['ocean', 'ocean-wave2', 'river', 'river-wave2', 'seabed']);
+  });
+
+  it('두 번째 층이 재질 하나를 공유한다 — 바다·강이 따로 만들면 미러링이다', () => {
+    const { added } = mount();
+    const s2 = added.find((m) => m.name === 'ocean-wave2')!;
+    const r2 = added.find((m) => m.name === 'river-wave2')!;
+    expect(r2.material).toBe(s2.material);
+  });
+
+  it('★ 두 번째 층이 첫 층과 다른 재질이다 — 같으면 간섭이 아니라 중복이다', () => {
+    // 이 처방의 본체는 **다른 법선을 겹치는 것**이다. 재질이 같으면 같은 노말맵을
+    // 두 번 그릴 뿐이라 무늬가 겹쳐 보일 뿐 간섭이 없다 — 비용만 늘고 효과는 0이다.
+    const { added } = mount();
+    const sea = added.find((m) => m.name === 'ocean')!;
+    const s2 = added.find((m) => m.name === 'ocean-wave2')!;
+    expect(s2.material).not.toBe(sea.material);
+    const a = (sea.material as Record<string, unknown>).normalMap;
+    const b = (s2.material as Record<string, unknown>).normalMap;
+    expect(b, '두 번째 층에 노말맵이 없다 — 법선을 안 겹친다').toBeTruthy();
+    expect(b, '두 층이 같은 텍스처 인스턴스다 — repeat 가 공유돼 스케일이 안 갈린다')
+      .not.toBe(a);
+  });
+
+  it('★ 두 층의 무늬 크기가 정수비가 아니다 — 정렬되면 간섭이 끊긴다', () => {
+    // 팀장 조건: *"두 층 속도·스케일 비를 정수비로 두지 마라 — 주기적으로 정렬되는
+    // 순간 간섭이 사라지고 '한 장' 으로 보이는 박동이 생긴다."*
+    const { added } = mount();
+    const sea = added.find((m) => m.name === 'ocean')!;
+    const s2 = added.find((m) => m.name === 'ocean-wave2')!;
+    const r1 = ((sea.material as Record<string, unknown>).normalMap as { repeat: { x: number } }).repeat.x;
+    const r2 = ((s2.material as Record<string, unknown>).normalMap as { repeat: { x: number } }).repeat.x;
+    expect(r1).toBeGreaterThan(0);
+    expect(r2).toBeGreaterThan(0);
+    const ratio = r1 / r2;
+    // 작은 정수비에서 충분히 떨어져 있는가. 황금비는 유리수로 가장 느리게 근사되는
+    // 수라 이 검사를 넉넉히 통과한다 — 손으로 고른 값이면 여기서 걸린다.
+    for (let p = 1; p <= 6; p++) {
+      for (let q = 1; q <= 6; q++) {
+        expect(
+          Math.abs(ratio - p / q),
+          `스케일 비 ${ratio.toFixed(3)} 가 ${p}/${q} 에 너무 가깝다 — 두 층이 정렬된다`,
+        ).toBeGreaterThan(0.04);
+      }
+    }
   });
 
   it('바다와 강이 재질을 공유한다 — 물빛이 두 곳에 적히면 미러링이다', () => {
@@ -862,7 +934,9 @@ describe('슬라이더 바 — 민 것이 실제 재질까지 간다', () => {
   it('바가 없는 문서에서도 물은 뜬다 — 패널은 있으면 좋은 것이지 필수가 아니다', () => {
     document.body.innerHTML = '';
     const { sea, added } = mount('day');
-    expect(added.length).toBe(3);
+    // 3 → 5: 두 번째 물결 층이 바다·강에 각각 붙었다(2026-08-03). 위 "씬에 정확히
+    // 다섯을 넣는다" 가 이름까지 못 박으므로 여기서는 개수만 본다.
+    expect(added.length).toBe(5);
     expect(glossOf(sea()).normalScale.x).toBe(waterGloss('day').normalScale);
   });
 });

@@ -159,6 +159,55 @@ const OPACITY = 0.7;
 const FLOW_A = { x: 0.035, z: 0.021 };
 const FLOW_B = { x: -0.019, z: 0.030 };
 
+// ── 두 번째 물결 층 (감독 지시 2026-08-03, 팀장 판정 A) ─────────────────────
+//
+// 감독: *"물 표현. 한방향으로 흐르는데. 물은 복합적인 사인파들로 구성되어있잖아."*
+//
+// 정확한 지적이다. 지금까지 **법선을 만드는 층은 하나뿐**이었다(`normA`). `tint` 와
+// `sparkle` 이 다른 방향으로 흐르지만 그것들은 색·반짝임이라 **형상에 기여하지 않는다.**
+// 그래서 물결 무늬가 모양을 유지한 채 통째로 미끄러졌다 — "천이 흘러가는" 느낌의 정체다.
+//
+// 실제 수면은 방향·파장·속도가 다른 파동이 **겹쳐 간섭**한다. 마루가 생겼다 사라지고
+// 무늬 모양 자체가 시시각각 변한다. 그것이 물이 살아 있어 보이는 이유다.
+//
+// ── ⚠ 사인파로 돌아가지 않는다 ──────────────────────────────────────────────
+// 감독이 말한 "복합적인 사인파" 를 **공간 무늬**로 읽으면 안 된다. 2026-07-31 에 사인파
+// 넷을 겹친 판본이 있었고 감독이 *"ㅈ런. 일자형 말고"* 라고 기각했다 — 사인파는 마루가
+// 직선이라 몇 개를 겹쳐도 격자·빗금이 남는다. 높이장은 값 노이즈 그대로 둔다.
+// 되살리는 것은 무늬가 아니라 **여러 파동이 다른 속도로 지나가며 간섭한다는 성질**이다.
+//
+// ── 비율을 정수비로 두지 않는다 (팀장 조건) ────────────────────────────────
+// 두 층이 **같은 텍스처**를 쓰므로, 스케일·속도가 정수비면 주기적으로 두 층이 정확히
+// 정렬된다. 그 순간 간섭이 사라져 "한 장" 으로 보이고, 물이 규칙적으로 박동한다.
+//
+// 그래서 **황금비**를 쓴다. 연분수 전개가 `[1;1,1,1,…]` 라 유리수로 가장 느리게 근사되는
+// 수이고 — 즉 **정수비에서 가장 먼 수**다. "적당히 안 맞는 값" 을 손으로 고르는 대신
+// 성질에서 유도한다.
+const PHI = (1 + Math.sqrt(5)) / 2;
+/** 두 번째 층의 무늬 크기 배수. 1보다 크면 더 큰 너울이 된다 */
+const LAYER2_SCALE = PHI;
+/** 두 번째 층의 흐름 속도 배수. 같은 이유로 황금비의 역수를 쓴다 */
+const LAYER2_SPEED = 1 / PHI;
+/**
+ * 두 번째 층의 흐름 방향. `FLOW_A` 를 **황금각(≈137.5°)만큼 돌린 것**이다.
+ *
+ * 각도도 손으로 고르지 않는다 — 황금각은 어떤 정수배로도 한 바퀴에 맞아떨어지지 않아서
+ * (해바라기 씨가 그 각으로 배열되는 이유다) 두 방향이 평행해지는 순간이 없다.
+ */
+const GOLDEN_ANGLE = 2 * Math.PI * (1 - 1 / PHI);
+const FLOW_C = {
+  x: FLOW_A.x * Math.cos(GOLDEN_ANGLE) - FLOW_A.z * Math.sin(GOLDEN_ANGLE),
+  z: FLOW_A.x * Math.sin(GOLDEN_ANGLE) + FLOW_A.z * Math.cos(GOLDEN_ANGLE),
+};
+/**
+ * 두 번째 층의 불투명도.
+ *
+ * 이 층이 하는 일은 **법선을 겹치는 것**이지 물을 더 진하게 만드는 것이 아니다. 아래
+ * 층이 비쳐야 두 법선이 섞여 보이므로 낮게 둔다. 정확한 값은 룩 판단이라 디자이너
+ * 소관이고(팀장 판정), 여기 값은 시제품 출발점이다.
+ */
+const LAYER2_OPACITY = 0.42;
+
 /**
  * 물결 높이장. 사인파 넷을 겹친다 — 아래 두 텍스처가 이 하나의 함수에서 나온다.
  *
@@ -784,6 +833,39 @@ export const oceanFeature: Feature = {
       ? createTslWater(THREE, TSL as unknown as TslNamespace)
       : null;
 
+    // ── 두 번째 물결 층 (감독 지시 2026-08-03) ──────────────────────────────
+    // 법선을 만드는 층이 하나뿐이라 무늬가 모양을 유지한 채 미끄러졌다. 같은 노말맵을
+    // **다른 크기·다른 방향·다른 속도**로 한 겹 더 얹으면 두 법선이 겹쳐 간섭이 생긴다 —
+    // 겹치는 자리가 계속 바뀌므로 무늬 모양 자체가 변한다.
+    //
+    // TSL 물에는 안 얹는다. 그쪽은 셰이더가 직접 파동을 만들므로 이 처방이 필요 없고,
+    // 노드 재질에 `normalMap` 을 붙이는 경로도 다르다.
+    const normB = tex ? tex.normA.clone() : null;
+    if (normB) {
+      // **텍스처 인스턴스는 별도지만 이미지는 공유한다** — `clone` 은 `image` 를 참조로
+      // 넘긴다. 캔버스를 다시 굽지 않으므로 부팅 비용은 안 늘고, GPU 업로드만 하나 는다.
+      normB.repeat.set(
+        (PLANE / RIPPLE_M) / LAYER2_SCALE,
+        (PLANE / RIPPLE_M) / LAYER2_SCALE,
+      );
+      normB.needsUpdate = true;
+    }
+    const layer2Mat = normB
+      ? new THREE.MeshStandardMaterial({
+        color: WATER,
+        normalMap: normB,
+        // 세기·거칠기는 아래 `applyGloss` 가 시간대에 맞춰 함께 건다. 여기서 값을
+        // 적으면 시간대 분기가 이 층만 비껴간다.
+        normalScale: new THREE.Vector2(1, 1),
+        roughness: 0.5,
+        metalness: 0.05,
+        transparent: true,
+        opacity: LAYER2_OPACITY,
+        // 아래 층과 같은 이유로 깊이를 안 쓴다. 더해서, 이 층은 **아래 층 바로 위**라
+        // 깊이를 쓰면 z-fighting 이 난다.
+        depthWrite: false,
+      })
+      : null;
     const applyGloss = (time: SkyTime): void => {
       // TSL 물은 PBR 파라미터가 없다. `normalScale`·`roughness` 는 `MeshStandardMaterial`
       // 의 축이고 노드 재질에는 대응물이 없다 — 여기서 시간대만 넘기고 끝낸다.
@@ -808,6 +890,18 @@ export const oceanFeature: Feature = {
       const opa = opaKnob ?? OPACITY;
       seaMat.opacity = opa;
       seaMat.needsUpdate = true;
+      // ── 두 번째 층도 같은 시간대를 따른다 ──────────────────────────────────
+      // 안 걸면 밤에 아래 층만 잦아들고 위 층이 낮의 기울기로 남아, **밤에 물이 도로
+      // 밝아진다** — 감독이 이미 한 번 지적한 축이다(*"밤인데 빛이 이렇게 많지 않잖아"*).
+      // 불투명도는 이 층의 고유값을 지킨다(위 층은 법선을 겹치는 것이 일이고 물을 더
+      // 진하게 만드는 것이 아니다). 그래서 `opa` 를 곱해 **아래 층에 비례**시킨다 —
+      // 노브로 물을 투명하게 하면 위 층도 함께 옅어진다.
+      if (layer2Mat) {
+        layer2Mat.normalScale.set(ns, ns);
+        layer2Mat.roughness = rough;
+        layer2Mat.opacity = LAYER2_OPACITY * (opa / OPACITY);
+        layer2Mat.needsUpdate = true;
+      }
       glossNow = { normalScale: ns, roughness: rough, sparkle: spark, opacity: opa };
     };
     let glossTime = env.time();
@@ -882,6 +976,14 @@ export const oceanFeature: Feature = {
     // 해저보다 늦게 그려야 그 위에 비친다.
     sea.renderOrder = 1;
 
+    const sea2 = layer2Mat ? new THREE.Mesh(geo, layer2Mat) : null;
+    if (sea2) {
+      // 아래 층과 같은 높이면 z-fighting 이다. 1cm 만 띄운다 — 그보다 크면 물이 두 겹으로
+      // 보이고, 작으면 부동소수 정밀도 안에서 다시 섞인다.
+      sea2.position.y = SEA_Y + 0.01;
+      sea2.renderOrder = 3;
+    }
+
     // ── 강 판 (감독 지시 2026-07-30) ────────────────────────────────────────
     // *"강은 땅보다 50 cm 밑, 바다는 땅보다 1미터 밑에 있게해."*
     //
@@ -916,7 +1018,16 @@ export const oceanFeature: Feature = {
     river.position.y = RIVER_Y;
     river.renderOrder = 2;
 
-    for (const m of [bed, sea, river]) {
+    // 강에도 같은 두 번째 층을 얹는다 — **재질과 지오를 그대로 공유**하므로 개수는
+    // 드로우콜 하나만 는다. 강이 감독 눈에 가장 자주 드는 물이라(스폰 앞) 여기가 빠지면
+    // 처방이 반쪽이 된다.
+    const river2 = layer2Mat ? new THREE.Mesh(riverGeo, layer2Mat) : null;
+    if (river2) {
+      river2.position.y = RIVER_Y + 0.01;
+      river2.renderOrder = 4;
+    }
+
+    for (const m of [bed, sea, river, sea2, river2].filter((x): x is THREE.Mesh => !!x)) {
       m.castShadow = false;
       m.receiveShadow = false;
       // 프러스텀 컬링을 끈다. 판이 워낙 커서 바운딩 스피어 중심(원점)이 시야 밖으로
@@ -927,6 +1038,10 @@ export const oceanFeature: Feature = {
     bed.name = 'seabed';
     sea.name = 'ocean';
     river.name = 'river';
+    // 두 번째 물결 층. **이름을 안 주면 개수 검사가 빈 문자열로 잡는다** — 실제로
+    // 그렇게 잡혔고, 그 덕에 예산이 늘어난 것을 놓치지 않았다.
+    if (sea2) sea2.name = 'ocean-wave2';
+    if (river2) river2.name = 'river-wave2';
 
     let t = 0;
 
@@ -967,6 +1082,14 @@ export const oceanFeature: Feature = {
             // 윤슬은 또 다른 속도로 흘린다 — 물결과 어긋나야 점이 **명멸**한다.
             // 물결에 붙여 두면 점이 무늬에 박혀 같이 미끄러질 뿐 반짝이지 않는다.
             tex.sparkle.offset.set(FLOW_A.x * a * 0.6, FLOW_A.z * a * 0.6);
+          }
+          // ── 두 번째 물결 층 (감독 지시 2026-08-03) ────────────────────────
+          // 방향은 황금각만큼 돌아가 있고 속도는 황금비의 역수다. **어느 것도 첫 층과
+          // 정수비가 아니라서** 두 층이 정렬되는 순간이 없다 — 간섭이 끊기지 않는다.
+          // 스케일이 다르므로 UV 환산도 그만큼 나눠야 화면 속도가 맞다.
+          if (normB) {
+            const b = a * LAYER2_SPEED * LAYER2_SCALE;
+            normB.offset.set(FLOW_C.x * b, FLOW_C.z * b);
           }
 
           // ── 강만 제 방향으로 흐른다 (감독 지시 "물살로 보이고") ──────────────
@@ -1081,6 +1204,12 @@ export const oceanFeature: Feature = {
         env.scene.remove(bed);
         env.scene.remove(sea);
         env.scene.remove(river);
+        // 두 번째 물결 층. **빠뜨리면 씬에 남아 누수가 된다** — 이 저장소가 하늘 돔에서
+        // 한 번 겪은 형태다(#143). 지오는 위 둘과 공유하므로 여기서 dispose 하지 않는다.
+        if (sea2) env.scene.remove(sea2);
+        if (river2) env.scene.remove(river2);
+        layer2Mat?.dispose();
+        normB?.dispose();
         geo.dispose();
         riverGeo.dispose(); // 강은 자기 지오를 갖는다(파셀 단위 쿼드 묶음)
         bedMat.dispose();
