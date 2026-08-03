@@ -21,7 +21,7 @@
 // 그래서 이 파일은 **`pickNearby` 를 실제로 호출**한다.
 
 import { describe, it, expect } from 'vitest';
-import { pickNearby } from '../frontend/js/world2/decide/npc-walk.js';
+import { pickNearby, reachFor, nearbyCells, cellKey } from '../frontend/js/world2/decide/npc-walk.js';
 import { fogBand } from '../frontend/js/world2/decide/fog.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
 // ★ **실물 상수를 import 한다.** 처음엔 같은 유도식을 여기 복제했고, 그래서
@@ -112,5 +112,72 @@ describe('스폰 밴드가 안개 시작 안쪽이다 (G-2)', () => {
       .map((c) => Math.hypot(c.px * cellX, c.pz * cellZ))
       .filter((d) => d > near);
     expect(over.length, '옛 밴드가 안개를 안 넘는다 — 이 검사가 무력하다').toBeGreaterThan(0);
+  });
+});
+
+// ── G-3: 인원에 맞춘 밴드 확장 (감독 지시 2026-08-03) ───────────────────────
+//
+// *"사람을 백 명을 깔아줘. 그래야지 내가 확인 하지."*
+//
+// 밴드가 한 겹 링이라 후보가 8칸 남짓이다. 거기 100 명을 넣으면 한 칸에 열댓이 겹쳐
+// 태어나 **확인하려고 늘린 인원이 확인을 방해한다.** 그래서 인원이 수용력을 넘으면
+// 필요한 만큼만 넓힌다.
+//
+// ⚠ 이 확장은 본편 ① 이 세운 조건("스폰은 안개 시작 안쪽")을 **인원이 많을 때 깬다.**
+// 안개 안 칸 수가 유한하므로 물리적으로 피할 수 없다. 그래서 **기본 인원에서 값이
+// 안 바뀌는 것**을 못 박는다 — 그것이 깨지면 라이브 회귀다.
+describe('스폰 밴드가 인원에 맞춰 넓어진다 (G-3)', () => {
+  const at = (c: number, r: number = SPAWN_REACH) =>
+    reachFor(c, 0, 0, SPAWN_RING, r, 15, cellX, cellZ);
+
+  it('★ 기본 인원에서는 밴드가 그대로다 — 이게 깨지면 라이브 회귀다', () => {
+    // 치비 기본 6 + VRM 0. 지금 라이브가 도는 값이다.
+    expect(at(6)).toBe(SPAWN_REACH);
+    expect(at(1)).toBe(SPAWN_REACH);
+    // 수용력 경계까지도 안 넓어진다.
+    const cap = nearbyCells(0, 0, SPAWN_RING, SPAWN_REACH, cellX, cellZ).length;
+    expect(cap, '기본 밴드에 후보가 없다 — 아래 단언이 공허해진다').toBeGreaterThan(0);
+    expect(at(cap)).toBe(SPAWN_REACH);
+  });
+
+  it('★ 인원이 수용력을 넘으면 넓어진다', () => {
+    const cap = nearbyCells(0, 0, SPAWN_RING, SPAWN_REACH, cellX, cellZ).length;
+    expect(at(cap + 1)).toBeGreaterThan(SPAWN_REACH);
+    expect(at(100)).toBeGreaterThan(SPAWN_REACH);
+  });
+
+  it('★ 100 명이 겹치지 않을 만큼 후보가 확보된다', () => {
+    const r = at(100);
+    const cells = nearbyCells(0, 0, SPAWN_RING, r, cellX, cellZ);
+    expect(cells.length, `100 명인데 후보가 ${cells.length}칸 — 겹쳐 태어난다`)
+      .toBeGreaterThanOrEqual(100);
+  });
+
+  it('필요한 만큼만 넓힌다 — 한 단계 좁히면 모자란다', () => {
+    // 과하게 넓히면 사람들이 멀리 흩어져 또 안 보인다. 최소성을 단언한다.
+    const r = at(100);
+    if (r > SPAWN_REACH) {
+      const less = nearbyCells(0, 0, SPAWN_RING, r - 1, cellX, cellZ).length;
+      expect(less, `${r - 1} 로도 충분한데 ${r} 까지 넓혔다`).toBeLessThan(100);
+    }
+  });
+
+  it('상한에서 멈춘다 — 도달 불가능한 인원에도 무한히 안 커진다', () => {
+    expect(at(1e9)).toBe(15);
+  });
+
+  it('★ 점유를 배제하면 같은 칸이 다시 안 나온다 — 겹쳐 태어나는 경로 차단', () => {
+    const r = at(40);
+    const taken = new Set<string>();
+    const rng2 = rng(0x1234);
+    const got: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      const c = pickNearby(0, 0, SPAWN_RING, r, rng2, cellX, cellZ, taken);
+      expect(c, `${i}번째에서 후보가 동났다`).not.toBeNull();
+      const k = cellKey(c!.px, c!.pz);
+      got.push(k);
+      taken.add(k);
+    }
+    expect(new Set(got).size, '같은 칸이 두 번 나왔다').toBe(got.length);
   });
 });
