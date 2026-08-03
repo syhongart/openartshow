@@ -144,7 +144,7 @@ const WATER = 0x8fc9dd;
 /** 해저 빛깔. 물빛에 물든 모래. 채도를 낮춰야 물 너머로 보일 때 자연스럽다 */
 const BED = 0x9aa89b;
 /** 수면 불투명도. 낮추면 바닥이 또렷해 물웅덩이가 되고, 높이면 반투명인 뜻이 없어진다 */
-const OPACITY = 0.7;
+export const OPACITY = 0.7;
 
 /**
  * 두 물결층이 흐르는 속도(m/s). **서로 다르고 방향도 어긋나야** 한다.
@@ -186,8 +186,18 @@ const FLOW_B = { x: -0.019, z: 0.030 };
 const PHI = (1 + Math.sqrt(5)) / 2;
 /** 두 번째 층의 무늬 크기 배수. 1보다 크면 더 큰 너울이 된다 */
 const LAYER2_SCALE = PHI;
-/** 두 번째 층의 흐름 속도 배수. 같은 이유로 황금비의 역수를 쓴다 */
-const LAYER2_SPEED = 1 / PHI;
+/**
+ * 두 번째 층 무늬가 **월드에서** 첫 층의 몇 배 속도로 흐르는가.
+ *
+ * ⚠ 처음엔 `LAYER2_SPEED = 1 / PHI` 를 두고 `a * LAYER2_SPEED * LAYER2_SCALE` 로 썼다.
+ * `(1/φ) × φ = 1` 이라 **UV 속도가 첫 층과 정확히 같았다**(검수관 R-3). 결과적으로
+ * 월드 속도비는 `repeat` 차이 덕에 φ 가 나와 팀장 조건은 충족했지만, **상수 이름과
+ * 주석이 코드와 다른 것을 말하고 있었다** — 다음 사람이 이 값을 속도 노브로 오인한다.
+ *
+ * 그래서 **재는 축을 월드로 바꾼다.** 화면에서 눈에 보이는 것이 월드 속도이므로 그것을
+ * 직접 적고, UV 환산은 계산이 맡는다. 값이 φ 인 것은 위와 같은 이유다(정수비 회피).
+ */
+const LAYER2_WORLD_SPEED = PHI;
 /**
  * 두 번째 층의 흐름 방향. `FLOW_A` 를 **황금각(≈137.5°)만큼 돌린 것**이다.
  *
@@ -200,13 +210,43 @@ const FLOW_C = {
   z: FLOW_A.x * Math.sin(GOLDEN_ANGLE) + FLOW_A.z * Math.cos(GOLDEN_ANGLE),
 };
 /**
- * 두 번째 층의 불투명도.
+ * 층 하나에 줄 불투명도 — **겹친 실효 불투명도가 `total` 이 되도록** 나눈다.
  *
- * 이 층이 하는 일은 **법선을 겹치는 것**이지 물을 더 진하게 만드는 것이 아니다. 아래
- * 층이 비쳐야 두 법선이 섞여 보이므로 낮게 둔다. 정확한 값은 룩 판단이라 디자이너
- * 소관이고(팀장 판정), 여기 값은 시제품 출발점이다.
+ * ── 왜 필요한가 (검수관 반려 BR-2, 2026-08-03) ──────────────────────────────
+ * 반투명 판이 겹치면 실효 불투명도가 곱으로 올라간다. 이 파일은 그 사실을 이미 알고
+ * 있었다 — 강 판을 파셀 위에만 깐 이유가 그것이고, 주석이 *"`WATER_DEPTH` 는 단일
+ * 반투명 층을 전제로 고른 값이라 그 캘리브레이션이 무효가 된다. 값이 아니라 전제가
+ * 깨진 형태다"* 라고 적고 있다.
+ *
+ * **그런데 그 위에 또 한 겹을 얹었다.** 검수관 실측:
+ *
+ *   바다  투과 0.300 → 0.174 (−42%)
+ *   강    투과 0.090 → 0.030 (−66%),  실효 불투명도 0.910 → 0.970
+ *
+ * 물가에서 바닥이 어렴풋이 비치는 정도는 감독이 노브(`?wopa=`)로 고른 축이다. 그것을
+ * 아무 기록 없이 바꿔 놓았고 검사도 없었다(`LAYER2_OPACITY` 를 1.0 으로 바꿔도 78건
+ * 전부 통과했다).
+ *
+ * ── 균등 배분으로 간다 ──────────────────────────────────────────────────────
+ * 처음엔 위 층을 상수(0.42)로 고정하고 아래 층만 낮췄다. 그런데 **위 층 값이 총량보다
+ * 크면 배분이 성립하지 않는다** — 아래를 0 으로 해도 총량을 못 맞춘다. 새로 넣은
+ * G-2b 검사가 `total=0.3, second=0.42` 에서 그것을 바로 잡았다.
+ *
+ * 그래서 층 수에서 유도한다: `(1−o)ⁿ = 1−total` → `o = 1 − (1−total)^(1/n)`.
+ * 상수 하나가 사라지고(위 층 불투명도), 총량 보존이 **어떤 값에서도** 성립한다.
+ * 두 층이 대등하게 섞이는 것이 물리적으로도 자연스럽다 — 둘 다 같은 물이다.
+ *
+ * @param total  겹쳤을 때 나와야 할 실효 불투명도. `OPACITY` 또는 `?wopa=` 노브값
+ * @param layers 겹치는 층 수
  */
-const LAYER2_OPACITY = 0.42;
+export function layerOpacity(total: number, layers: number): number {
+  if (layers <= 1) return total;
+  if (total >= 1) return 1;
+  return 1 - Math.pow(1 - total, 1 / layers);
+}
+
+/** 물 판이 몇 겹인가. 두 번째 물결 층이 붙으면 2 다 */
+const WATER_LAYERS = 2;
 
 /**
  * 물결 높이장. 사인파 넷을 겹친다 — 아래 두 텍스처가 이 하나의 함수에서 나온다.
@@ -844,9 +884,11 @@ export const oceanFeature: Feature = {
     if (normB) {
       // **텍스처 인스턴스는 별도지만 이미지는 공유한다** — `clone` 은 `image` 를 참조로
       // 넘긴다. 캔버스를 다시 굽지 않으므로 부팅 비용은 안 늘고, GPU 업로드만 하나 는다.
+      // **첫 층에서 파생시킨다**(검수관 R-5). `(PLANE / RIPPLE_M)` 을 여기 다시 적으면
+      // 같은 식이 네 번째가 되고, 첫 층 repeat 계산을 바꿨을 때 이 층만 남는다.
       normB.repeat.set(
-        (PLANE / RIPPLE_M) / LAYER2_SCALE,
-        (PLANE / RIPPLE_M) / LAYER2_SCALE,
+        tex!.normA.repeat.x / LAYER2_SCALE,
+        tex!.normA.repeat.y / LAYER2_SCALE,
       );
       normB.needsUpdate = true;
     }
@@ -860,7 +902,7 @@ export const oceanFeature: Feature = {
         roughness: 0.5,
         metalness: 0.05,
         transparent: true,
-        opacity: LAYER2_OPACITY,
+        opacity: layerOpacity(OPACITY, WATER_LAYERS),  // applyGloss 가 즉시 덮는다
         // 아래 층과 같은 이유로 깊이를 안 쓴다. 더해서, 이 층은 **아래 층 바로 위**라
         // 깊이를 쓰면 z-fighting 이 난다.
         depthWrite: false,
@@ -888,7 +930,10 @@ export const oceanFeature: Feature = {
       // 불투명도는 시간대와 무관하다 — 물의 탁도는 하루 중 시각이 아니라 물 자체의
       // 성질이다. 그래서 노브가 없으면 상수(`OPACITY`)가 간다.
       const opa = opaKnob ?? OPACITY;
-      seaMat.opacity = opa;
+      // 두 번째 층이 있으면 **총량을 나눠 갖는다**(검수관 BR-2). 안 그러면 겹친 만큼
+      // 물이 진해져 `WATER_DEPTH` 캘리브레이션이 무효가 된다 — 이 파일 주석이 이미
+      // "값이 아니라 전제가 깨진 형태" 라고 이름 붙인 자리다.
+      seaMat.opacity = layer2Mat ? layerOpacity(opa, WATER_LAYERS) : opa;
       seaMat.needsUpdate = true;
       // ── 두 번째 층도 같은 시간대를 따른다 ──────────────────────────────────
       // 안 걸면 밤에 아래 층만 잦아들고 위 층이 낮의 기울기로 남아, **밤에 물이 도로
@@ -899,7 +944,9 @@ export const oceanFeature: Feature = {
       if (layer2Mat) {
         layer2Mat.normalScale.set(ns, ns);
         layer2Mat.roughness = rough;
-        layer2Mat.opacity = LAYER2_OPACITY * (opa / OPACITY);
+        // 위 층은 **고정**이고 아래 층이 총량을 맞춘다(`splitOpacity`). 예전에는 여기서
+        // `opa` 에 비례시켰는데, 그러면 두 값이 함께 움직여 곱이 총량과 어긋난다.
+        layer2Mat.opacity = layerOpacity(opa, WATER_LAYERS);
         layer2Mat.needsUpdate = true;
       }
       glossNow = { normalScale: ns, roughness: rough, sparkle: spark, opacity: opa };
@@ -978,10 +1025,17 @@ export const oceanFeature: Feature = {
 
     const sea2 = layer2Mat ? new THREE.Mesh(geo, layer2Mat) : null;
     if (sea2) {
-      // 아래 층과 같은 높이면 z-fighting 이다. 1cm 만 띄운다 — 그보다 크면 물이 두 겹으로
-      // 보이고, 작으면 부동소수 정밀도 안에서 다시 섞인다.
+      // ⚠ 여기 *"같은 높이면 z-fighting 이다"* 라고 적혀 있었다. **틀린 이유다**
+      // (검수관 R-4) — 두 재질 모두 `depthWrite: false` 라 깊이 버퍼에 안 쓰이고,
+      // 그러면 z-fighting 이 성립하지 않는다. 순서를 정하는 것은 `renderOrder` 다.
+      // 1cm 는 물속에서 올려다볼 때 두 면이 정확히 겹쳐 보이지 않게 하는 몫으로만 둔다.
       sea2.position.y = SEA_Y + 0.01;
-      sea2.renderOrder = 3;
+      // ── 렌더 순서는 **물리적 높이 순서**여야 한다 (검수관 BR-1) ──────────────
+      // 처음엔 `sea 1 · river 2 · sea2 3 · river2 4` 로 줬다. 그러면 −0.99m 의 sea2 가
+      // −0.50m 의 river **위에** 덧칠된다 — 깊이를 안 쓰므로 그리는 순서가 곧 겹치는
+      // 순서이고, 강 파셀 구멍에서는 두 판이 함께 보인다. 강은 스폰 앞이라 감독 눈에
+      // 가장 자주 드는 물이다.
+      sea2.renderOrder = 2;
     }
 
     // ── 강 판 (감독 지시 2026-07-30) ────────────────────────────────────────
@@ -1016,7 +1070,7 @@ export const oceanFeature: Feature = {
     // 문자열 조회가 반복된다(작지만, 이 루프는 초당 60번 돈다).
     const riverUvAttr = riverGeo.getAttribute('uv');
     river.position.y = RIVER_Y;
-    river.renderOrder = 2;
+    river.renderOrder = 3;  // sea(1) → sea2(2) → river(3) → river2(4): 높이 순서 그대로
 
     // 강에도 같은 두 번째 층을 얹는다 — **재질과 지오를 그대로 공유**하므로 개수는
     // 드로우콜 하나만 는다. 강이 감독 눈에 가장 자주 드는 물이라(스폰 앞) 여기가 빠지면
@@ -1024,7 +1078,7 @@ export const oceanFeature: Feature = {
     const river2 = layer2Mat ? new THREE.Mesh(riverGeo, layer2Mat) : null;
     if (river2) {
       river2.position.y = RIVER_Y + 0.01;
-      river2.renderOrder = 4;
+      river2.renderOrder = 4;  // 가장 위(−0.49m)라 마지막
     }
 
     for (const m of [bed, sea, river, sea2, river2].filter((x): x is THREE.Mesh => !!x)) {
@@ -1088,7 +1142,11 @@ export const oceanFeature: Feature = {
           // 정수비가 아니라서** 두 층이 정렬되는 순간이 없다 — 간섭이 끊기지 않는다.
           // 스케일이 다르므로 UV 환산도 그만큼 나눠야 화면 속도가 맞다.
           if (normB) {
-            const b = a * LAYER2_SPEED * LAYER2_SCALE;
+            // 월드 속도를 UV 로 환산한다 — 무늬 한 장이 `RIPPLE_M × LAYER2_SCALE`
+            // 미터를 덮으므로 그것으로 나눈다. 이러면 상수가 뜻하는 것과 화면에서
+            // 보이는 것이 같아진다(검수관 R-3: 예전 식은 두 배수가 상쇄돼 UV 속도가
+            // 첫 층과 **정확히 같았다** — 이름과 코드가 다른 것을 말했다).
+            const b = (t * LAYER2_WORLD_SPEED) / (RIPPLE_M * LAYER2_SCALE);
             normB.offset.set(FLOW_C.x * b, FLOW_C.z * b);
           }
 

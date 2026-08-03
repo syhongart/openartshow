@@ -164,6 +164,10 @@ beforeAll(() => {
 
 const { oceanFeature, waveHeight } = await import('../frontend/js/world2/features/ocean.js');
 const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, waterGloss } = await import('../frontend/js/world2/decide/water.js');
+// 두 번째 물결 층 검사가 쓴다. **실물을 import 한다** — 총 불투명도(`OPACITY`)와 배분
+// 공식(`splitOpacity`)을 여기 다시 적으면 그 순간 미러링이고, 값을 바꿔도 검사가 옛
+// 값을 지키게 된다.
+const { OPACITY, layerOpacity } = await import('../frontend/js/world2/features/ocean.js');
 const { DEFAULT_LAYOUT } = await import('../frontend/js/world2/parts/types.js');
 /** 세계 절반 크기. `ocean.ts` 와 **같은 유도**를 쓴다 — 값을 적어두면 그것이 미러링이다 */
 const EDGE = worldHalfExtent(DEFAULT_LAYOUT.cellX);
@@ -1228,5 +1232,155 @@ describe('TSL 모드 — 프레임을 실제로 돌린다', () => {
     expect(d.flowA).toBeNull();
     expect(d.flowB).toBeNull();
     expect(d.flowSparkle).toBeNull();
+  });
+});
+
+// ── 두 번째 물결 층 — **동적 축** (검수관 반려 2026-08-03, 게이트 명세 G-1~G-6) ──
+//
+// 처음 얹었을 때 추가한 검사 셋은 전부 **조립 시점 정적 속성**만 봤다(재질 동일성·
+// 텍스처 인스턴스·repeat 비). 검수관 뮤테이션이 그 구멍을 실측으로 드러냈다 —
+// **두 번째 층이 아예 정지해도, 시간대 분기를 통째로 지워도, 불투명도를 1.0 으로
+// 올려도, dispose 를 빼도 78건이 전부 통과했다.**
+//
+// 즉 "무늬가 미끄러지는 게 아니라 간섭한다" 는 커밋 제목의 주장을 보는 검사가 0건이었다.
+// 이 저장소가 *"판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다"* 로 이름
+// 붙인 형태 그대로다. 여기서 그 넷을 덮는다.
+describe('두 번째 물결 층 — 동적 축', () => {
+  /** 반투명 물 판만. 해저(불투명)는 정렬 논의 대상이 아니다 */
+  const waterPlanes = (added: Added[]) =>
+    added.filter((m) => m.name !== 'seabed');
+
+  it('★ G-1 렌더 순서가 물리적 높이 순서다 — 어긋나면 아래 판이 위를 덮는다', () => {
+    // 네 판 모두 `depthWrite: false` 라 **깊이 버퍼가 순서를 교정해 주지 않는다.**
+    // 그리는 순서가 곧 겹치는 순서다. 처음엔 `sea 1 · river 2 · sea2 3 · river2 4` 로
+    // 줘서 −0.99m 의 sea2 가 −0.50m 의 river 위에 덧칠됐다(검수관 BR-1).
+    const { added } = mount();
+    const ps = waterPlanes(added)
+      .map((m) => ({ name: m.name, y: m.position.y as number, order: m.renderOrder as number }))
+      .sort((a, b) => a.order - b.order);
+    expect(ps.length, '물 판을 못 찾았다 — 아래 단언이 공허해진다').toBeGreaterThanOrEqual(4);
+    for (let i = 1; i < ps.length; i++) {
+      expect(
+        ps[i].y,
+        `renderOrder ${ps[i - 1].order}(${ps[i - 1].name}, y=${ps[i - 1].y}) 뒤에 `
+        + `${ps[i].order}(${ps[i].name}, y=${ps[i].y}) 가 온다 — 아래 판이 위를 덮는다`,
+      ).toBeGreaterThanOrEqual(ps[i - 1].y);
+    }
+  });
+
+  it('★ G-2 겹친 실효 불투명도가 단일 층 값 그대로다 — 물이 탁해지면 안 된다', () => {
+    // 반투명 두 장이 겹치면 실효 불투명도가 곱으로 오른다. 이 파일 주석이 이미
+    // *"`WATER_DEPTH` 는 단일 반투명 층을 전제로 고른 값이라 캘리브레이션이 무효가
+    // 된다"* 고 적어 뒀는데, 그 위에 또 한 겹을 얹었다(검수관 BR-2 — 강 구역 실효
+    // 불투명도 0.910 → 0.970, 바닥 비침 −66%).
+    const { added, sea } = mount();
+    const s2 = added.find((m) => m.name === 'ocean-wave2')!;
+    const o1 = (sea() as Record<string, unknown>).opacity as number;
+    const o2 = (s2.material as Record<string, unknown>).opacity as number;
+    // 두 층을 통과해 바닥까지 가는 빛의 비율.
+    const pass = (1 - o1) * (1 - o2);
+    expect(o2, '두 번째 층이 불투명하다').toBeLessThan(1);
+    expect(
+      1 - pass,
+      `겹친 실효 불투명도 ${(1 - pass).toFixed(3)} — 단일 층 전제(${OPACITY})가 깨졌다`,
+    ).toBeCloseTo(OPACITY, 3);
+  });
+
+  it('G-2b 배분 공식이 총량을 보존한다 — 어떤 조합에서도', () => {
+    // ⚠ 이 검사가 **첫 판본을 바로 잡았다.** 처음엔 위 층을 상수(0.42)로 고정하고
+    // 아래 층만 낮췄는데, `total=0.3` 이면 위 층만으로 이미 초과라 배분이 성립하지
+    // 않았다. 그래서 층 수에서 유도하는 균등 배분으로 바꿨다.
+    for (const total of [0.1, 0.3, 0.5, 0.7, 0.9, 1]) {
+      for (const layers of [1, 2, 3, 4]) {
+        const o = layerOpacity(total, layers);
+        expect(1 - (1 - o) ** layers, `total=${total} layers=${layers}`)
+          .toBeCloseTo(total, 9);
+      }
+    }
+  });
+
+  it('G-2c 층이 늘수록 층당 값이 낮아진다 — 겹칠수록 옅게', () => {
+    const one = layerOpacity(0.7, 1);
+    const two = layerOpacity(0.7, 2);
+    const four = layerOpacity(0.7, 4);
+    expect(two).toBeLessThan(one);
+    expect(four).toBeLessThan(two);
+  });
+
+  it('★ G-3 시간대 분기가 두 번째 층에도 걸린다 — 안 걸면 밤에 물이 도로 밝아진다', () => {
+    // 감독이 이미 지적한 축이다(*"밤인데 빛이 이렇게 많지 않잖아"*). 아래 층만 잦아들고
+    // 위 층이 낮의 기울기로 남으면 그 지적이 되살아난다.
+    const { added, setTime, inst } = mount('day');
+    const s2 = () => added.find((m) => m.name === 'ocean-wave2')!.material as Record<string, unknown>;
+    const nsOf = (m: Record<string, unknown>) => (m.normalScale as { x: number }).x;
+
+    expect(nsOf(s2()), '낮 기울기가 안 걸렸다').toBeCloseTo(waterGloss('day').normalScale, 6);
+    setTime('night');
+    inst.system!.update!({ dt: 1 / 60 } as never);
+    expect(nsOf(s2()), '밤이 됐는데 두 번째 층이 낮 기울기로 남았다')
+      .toBeCloseTo(waterGloss('night').normalScale, 6);
+    expect(s2().roughness, '밤 거칠기가 안 걸렸다').toBeCloseTo(waterGloss('night').roughness, 6);
+  });
+
+  it('★ G-4 두 층이 **둘 다** 흐르고, 방향이 평행하지 않다 — 이것이 처방의 본체다', () => {
+    // 두 번째 층이 정지하면 간섭이 아예 안 일어난다. 그 상태가 게이트를 통과했다
+    // (검수관 뮤테이션 M8: `normB.offset` 갱신을 지워도 78건 전부 통과).
+    const { added, inst } = mount();
+    const nm = (name: string) =>
+      ((added.find((m) => m.name === name)!.material as Record<string, unknown>)
+        .normalMap as { offset: { x: number; y: number } });
+    const a0 = { ...nm('ocean').offset };
+    const b0 = { ...nm('ocean-wave2').offset };
+    for (let i = 0; i < 60; i++) inst.system!.update!({ dt: 1 / 60 } as never);
+    const da = { x: nm('ocean').offset.x - a0.x, y: nm('ocean').offset.y - a0.y };
+    const db = { x: nm('ocean-wave2').offset.x - b0.x, y: nm('ocean-wave2').offset.y - b0.y };
+
+    expect(Math.hypot(da.x, da.y), '첫 층이 안 흐른다').toBeGreaterThan(1e-6);
+    expect(Math.hypot(db.x, db.y), '두 번째 층이 안 흐른다 — 간섭이 일어나지 않는다')
+      .toBeGreaterThan(1e-6);
+    // 외적이 0 이면 평행 — 같은 방향으로 나란히 흐르면 겹치는 자리가 안 바뀐다.
+    const cross = Math.abs(da.x * db.y - da.y * db.x);
+    expect(cross, `두 흐름이 평행하다(외적 ${cross.toExponential(2)}) — 간섭이 생기지 않는다`)
+      .toBeGreaterThan(1e-9);
+  });
+
+  it('★ G-5 두 층의 월드 무늬 속도비가 정수비가 아니다 — 정렬되면 간섭이 끊긴다', () => {
+    // UV 속도가 아니라 **월드** 속도를 본다. 무늬 한 장이 덮는 미터가 층마다 다르므로
+    // UV 만 보면 같은 속도로 보이는데 화면에서는 다르다(검수관 R-3 이 지적한 혼동).
+    const { added, inst } = mount();
+    const mapOf = (name: string) =>
+      ((added.find((m) => m.name === name)!.material as Record<string, unknown>)
+        .normalMap as { offset: { x: number; y: number }; repeat: { x: number } });
+    const a = mapOf('ocean');
+    const b = mapOf('ocean-wave2');
+    const a0 = { ...a.offset };
+    const b0 = { ...b.offset };
+    for (let i = 0; i < 60; i++) inst.system!.update!({ dt: 1 / 60 } as never);
+    // 월드 속도 = UV 속도 ÷ repeat (repeat 이 클수록 무늬가 작다)
+    const wa = Math.hypot(a.offset.x - a0.x, a.offset.y - a0.y) / a.repeat.x;
+    const wb = Math.hypot(b.offset.x - b0.x, b.offset.y - b0.y) / b.repeat.x;
+    expect(wa).toBeGreaterThan(0);
+    expect(wb).toBeGreaterThan(0);
+    const ratio = wa > wb ? wa / wb : wb / wa;
+    for (let p = 1; p <= 6; p++) {
+      for (let q = 1; q <= 6; q++) {
+        expect(
+          Math.abs(ratio - p / q),
+          `월드 속도비 ${ratio.toFixed(3)} 가 ${p}/${q} 에 너무 가깝다 — 두 층이 정렬된다`,
+        ).toBeGreaterThan(0.04);
+      }
+    }
+  });
+
+  it('★ G-6 정리가 두 번째 층의 재질·텍스처까지 닿는다 — 빠지면 누수다', () => {
+    // 씬에서 빼는 것은 잡혔지만(뮤테이션 M7) dispose 는 안 잡혔다(M6). 하늘 돔에서
+    // 겪은 형태다(#143).
+    const { added, inst } = mount();
+    const s2 = added.find((m) => m.name === 'ocean-wave2')!;
+    const mat = s2.material as Record<string, unknown>;
+    const map = mat.normalMap as { disposed: boolean };
+    inst.dispose!();
+    expect(mat.disposed, '두 번째 층 재질이 안 치워졌다').toBe(true);
+    expect(map.disposed, '두 번째 층 노말맵이 안 치워졌다').toBe(true);
   });
 });
