@@ -48,7 +48,7 @@ import * as THREE from 'three/webgpu';
 // 정적 import 로 늘어나는 바이트가 사실상 없다.
 import * as TSL from 'three/tsl';
 import {
-  RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, parcelWater, waterGloss, riverFlowAt,
+  RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, WAVE_PEAK_MAX, worldHalfExtent, parcelWater, waterGloss, riverFlowAt,
   WATER_MODES, pickWaterMode, type WaterMode,
 } from '../decide/water.js';
 import type { SkyTime } from '../decide/night.js';
@@ -374,11 +374,17 @@ export const RIVER_SEG = Math.max(1, Math.round(DEFAULT_LAYOUT.cellX / (LIFT_LAM
 export const LIFT_LAMBDA = LIFT_LAMBDA_M;
 
 /**
- * 파고(m, 마루~골의 **절반**). 강은 땅보다 50cm 아래이므로(`RIVER_Y`) 이 값이 그보다
- * 크면 물이 둔치를 넘는다. 여유를 크게 둔다 — 넘치는 것은 결함으로 보이고,
- * 실루엣은 진폭보다 **움직임**으로 읽힌다.
+ * 파고(m, 마루~골의 **절반**).
+ *
+ * ── 상한을 손으로 적지 않는다 (감독 지시 2026-08-04 *"강 더 깊게 파고 파고 올려봐"*) ──
+ * 예전에는 `0.4` 를 박고 주석에 *"강이 50cm 아래라 그보다 크면 넘친다"* 고 적었다.
+ * 그 유도는 `RIVER_Y = −0.5` 일 때만 참이고, 깊이를 바꾸는 순간 **주석과 값이 어긋난다**
+ * — 이 저장소가 `SEABED_Y` 에서 똑같이 겪은 형태다(팀장 조건 3: 유도 없는 실측치 잔류 금지).
+ *
+ * 이제 `decide/water.ts` 가 파고에서 깊이를 유도하므로 여기서는 그 파고를 그대로 받는다.
+ * 깊이를 옮기면 상한이 따라오고, 둘이 어긋날 자리가 없어진다.
  */
-const LIFT_AMP = readNum('wamp', 0.13, 0, 0.4);
+const LIFT_AMP = readNum('wamp', 0.2, 0, WAVE_PEAK_MAX);
 
 /**
  * 진행파 : 정재파 배분. `0` 이면 전부 흘러가고 `1` 이면 전부 제자리에서 오르내린다.
