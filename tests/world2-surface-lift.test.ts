@@ -23,7 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import { surfaceLift, RIVER_SEG, LIFT_LAMBDA } from '../frontend/js/world2/features/ocean.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
-import { RIVER_HALF, RIVER_Y } from '../frontend/js/world2/decide/water.js';
+import { RIVER_HALF, RIVER_Y, WAVE_PEAK_MAX, WAVE_CLEARANCE } from '../frontend/js/world2/decide/water.js';
 import { GRID_W } from '../frontend/js/world2/decide/grid.js';
 
 /** x 축을 따라 높이를 샘플링한다 — 파형의 공간 프로파일. */
@@ -132,6 +132,47 @@ describe('물이 강둑을 넘지 않는다 (G-3)', () => {
 
   it('진폭 0 이면 완전히 평평하다 — 되돌리기 스위치', () => {
     for (const x of [0, 13.7, 91.2]) expect(surfaceLift(x, 5, 2.2, 0)).toBe(0);
+  });
+
+  // ── 위 검사가 **기본 진폭만** 본다 ────────────────────────────────────────
+  //
+  // `?wamp=` 는 `WAVE_PEAK_MAX` 까지 열려 있다. 기본값(0.2)에서 안전하다는 것은 상한
+  // 에서도 안전하다는 뜻이 아니다 — 감독이 *"파고를 엄청 크게 태풍온것 처럼"* 을 지시한
+  // 뒤 그 상한이 실제로 밟히는 값이 됐다.
+  //
+  // 그래서 **깊이를 파고에서 유도했다**(`RIVER_Y = -(WAVE_PEAK_MAX + WAVE_CLEARANCE)`).
+  // 아래 두 검사가 그 유도가 살아 있는지 본다.
+  it('★ 상한 진폭(?wamp 최대)에서도 마루가 지면 아래다 — 실제 파형을 돌려 본다', () => {
+    // 공식을 여기 복사하지 않는다. `surfaceLift` 를 **상한 진폭으로 실제로 돌려**
+    // 마루의 실측 최댓값을 구하고, 그것이 강바닥 깊이 안에 남는지만 본다.
+    // (직전 회차에 이 파일의 경계 검사가 공식 복사본끼리 비교해 뮤테이션을 통과시켰다.)
+    let peak = 0;
+    for (let x = 0; x < 400; x += 0.9) {
+      for (let z = -40; z < 40; z += 2.3) {
+        for (let t = 0; t < 6.4; t += 0.37) {
+          peak = Math.max(peak, surfaceLift(x, z, t, WAVE_PEAK_MAX));
+        }
+      }
+    }
+    const crest = RIVER_Y + peak; // 마루의 절대 높이. 지면은 y=0 이다.
+    expect(crest, `상한 파고에서 마루가 ${crest.toFixed(3)}m — 지면(0) 위로 넘친다`)
+      .toBeLessThan(0);
+    // 넘치지 않는 것만으로는 부족하다. 여유가 `WAVE_CLEARANCE` 만큼 남아야 부동소수
+    // 오차 한 번에 물이 둔치에 뜨지 않는다.
+    expect(crest, `마루-지면 여유 ${(-crest).toFixed(3)}m 가 ${WAVE_CLEARANCE}m 미만이다`)
+      .toBeLessThanOrEqual(-WAVE_CLEARANCE);
+  });
+
+  it('★ 강 깊이가 파고에서 유도된다 — 상수로 박으면 파고를 올려도 안 따라온다', () => {
+    // **이 단언이 없어서** `RIVER_Y` 를 옛 상수 −0.5 로 되돌리는 뮤테이션이
+    // ocean + surface-lift 100건을 전부 통과했다(골든 해시만 우연히 잡았고, 골든은
+    // 배치가 바뀌면 무엇이든 잡으므로 이 관계를 겨냥한 축이 아니다).
+    //
+    // 재는 것은 값이 아니라 **관계**다 — 파고를 바꾸면 깊이가 그만큼 따라와야 한다.
+    const headroom = Math.abs(RIVER_Y) - WAVE_PEAK_MAX;
+    expect(headroom, `깊이 ${Math.abs(RIVER_Y)}m 와 파고 ${WAVE_PEAK_MAX}m 의 차가 `
+      + `${headroom.toFixed(3)}m — 유도(${WAVE_CLEARANCE}m)가 끊겼다`)
+      .toBeCloseTo(WAVE_CLEARANCE, 10);
   });
 });
 
