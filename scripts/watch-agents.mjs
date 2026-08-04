@@ -141,7 +141,11 @@ async function main() {
 
       if (now - mt > ALIVE) {
         if (seen.has(aid)) {
-          events.push(`✅ ${seen.get(aid).job} — 종료`);
+          // 종료 알림도 **움직이는 것을 본 뒤에만** 낸다. 정지 경보에만 이 조건을
+          // 걸었더니 같은 사고가 형태만 바꿔 남아 있었다 — baseline 에 담긴 1,009개가
+          // ALIVE 를 넘기는 순간 종료 알림 1,009개가 된다. 시작을 못 본 것의 끝은
+          // 알릴 것이 아니다.
+          if (seen.get(aid).moved) events.push(`✅ ${seen.get(aid).job} — 종료`);
           seen.delete(aid);
         }
         continue;
