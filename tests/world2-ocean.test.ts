@@ -82,6 +82,12 @@ class FakeMesh {
 }
 
 /** 버퍼 속성 스텁 — 강 판의 정점을 실제로 들여다보려고 배열을 그대로 보관한다 */
+/**
+ * three 의 `DynamicDrawUsage` 실제 값. 스텁이 임의 값을 주면 **테스트에서만 다른 상수**가
+ * 생기고 그것이 곧 값 미러링이다. 아래 `FakeAttr` 와 mock 이 같은 이름을 본다.
+ */
+const DYNAMIC_DRAW_USAGE = 35048;
+
 class FakeAttr {
   /** three 의 기본값(`StaticDrawUsage`). `setUsage` 가 실제로 바꾸는지 검사가 볼 수 있게 둔다. */
   usage = 35044;
@@ -143,7 +149,7 @@ vi.mock('three/webgpu', () => ({
   // 강 판이 매 프레임 정점 y 를 덮어쓰므로 `setUsage(DynamicDrawUsage)` 를 건다
   // (수면 변위, 2026-08-03). three 의 실제 값과 같게 둔다 — 스텁이 다른 값을 주면
   // "테스트에서만 다른 상수" 가 생기고, 그것이 곧 값 미러링이다.
-  DynamicDrawUsage: 35048,
+  DynamicDrawUsage: DYNAMIC_DRAW_USAGE,
   // `set()` 이 있어야 한다 — three 의 Vector2 계약이고, `ocean.ts` 의 `applyGloss` 가
   // 이것을 부른다. 스텁이 계약을 덜 재현하면 **프로덕션 코드가 멀쩡한데 테스트만 깨진다**.
   Vector2: class {
@@ -175,7 +181,7 @@ const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, waterGloss } = a
 // 두 번째 물결 층 검사가 쓴다. **실물을 import 한다** — 총 불투명도(`OPACITY`)와 배분
 // 공식(`splitOpacity`)을 여기 다시 적으면 그 순간 미러링이고, 값을 바꿔도 검사가 옛
 // 값을 지키게 된다.
-const { OPACITY, layerOpacity } = await import('../frontend/js/world2/features/ocean.js');
+const { OPACITY, layerOpacity, RIVER_SEG } = await import('../frontend/js/world2/features/ocean.js');
 const { DEFAULT_LAYOUT } = await import('../frontend/js/world2/parts/types.js');
 /** 세계 절반 크기. `ocean.ts` 와 **같은 유도**를 쓴다 — 값을 적어두면 그것이 미러링이다 */
 const EDGE = worldHalfExtent(DEFAULT_LAYOUT.cellX);
@@ -368,6 +374,47 @@ describe('수면 조립 — 개수 불변식', () => {
       const sea = added.find((m) => m.name === 'ocean')!;
       const river = added.find((m) => m.name === 'river')!;
       expect(river.geometry).not.toBe(sea.geometry);
+    });
+
+    it('★ 파셀 경계에서 정점 x 가 갈리지 않는다 — 갈리면 물에 금이 간다', () => {
+      // ── 이 검사가 여기 있는 이유 (검수관 뮤테이션 실증 2026-08-04) ──────────
+      // 같은 검사를 `world2-surface-lift.test.ts` 에 두 번 썼고 **두 번 다 tautology**
+      // 였다. 마지막 판본은 `riverGeometry` 의 정점 식을 테스트 파일에 복사해 복사본끼리
+      // 비교했는데, `px·cell + cell/2 == (px+1)·cell − cell/2` 가 항등식이라 프로덕션이
+      // 무엇을 하든 참이었다 — 실제로 정점 식에 +0.05m 를 주입해도 전부 통과했다.
+      //
+      // **실제 코드를 돌려야 한다.** 여기서는 `mount()` 가 진짜 `riverGeometry()` 를
+      // 실행하므로 그 결과 배열을 직접 읽는다. 강 판은 파셀마다 독립 정점을 쓰고
+      // 왼쪽 파셀의 마지막 열(i=S)과 오른쪽 파셀의 첫 열(i=0)이 **다른 산술 경로**를
+      // 지나므로, 두 값이 갈리면 경계에 같은 위치의 x 가 둘 생긴다.
+      const { added } = mount();
+      const g = (added.find((m) => m.name === 'river')!.geometry) as FakeBufferGeometry;
+      const pos = g.getAttribute('position').array;
+      expect(pos.length, '강 정점이 없다 — 아래 단언이 공허해진다').toBeGreaterThan(0);
+
+      // 실제로 나온 x 값을 전부 모은다(중복 제거).
+      const xs = [...new Set<number>(pos.filter((_, i) => i % 3 === 0))].sort((a, b) => a - b);
+      // 인접한 두 x 가 "거의 같지만 다르면" 경계가 갈린 것이다. 정상이면 세그먼트 간격
+      // (cellX / RIVER_SEG)만큼 떨어져 있거나 정확히 같은 값 하나로 합쳐진다.
+      // ★ SSOT 를 경유한다 — 여기 `32 / 8` 을 적었다가 지웠다. 그것이 검수관 지적 ② 와
+      //   같은 형태(값 미러링)이고, 셀 크기나 세분이 바뀌면 이 검사가 조용히 stale 해진다.
+      const step = DEFAULT_LAYOUT.cellX / RIVER_SEG;
+      const split = [];
+      for (let i = 1; i < xs.length; i++) {
+        const d = xs[i] - xs[i - 1];
+        if (d > 0 && d < step * 0.5) split.push([xs[i - 1], xs[i]]);
+      }
+      expect(split.slice(0, 3), `경계에서 x 가 갈린 곳 ${split.length}군데`).toEqual([]);
+    });
+
+    it('★ 정점 버퍼가 동적으로 선언된다 — 매 프레임 y 를 덮어쓴다', () => {
+      // 커밋 메시지가 *"`DynamicDrawUsage` 로 드라이버에 알린다"* 고 주장하는데, 그 주장을
+      // 보는 검사가 없었다(검수관 지적 ④). 정적 버퍼로 두면 갱신마다 재할당이 날 수 있고
+      // 그 손해는 **실기기에서만** 드러난다 — 헤드리스가 못 잡는 축이라 더더욱 선언을 본다.
+      const { added } = mount();
+      const g = (added.find((m) => m.name === 'river')!.geometry) as FakeBufferGeometry;
+      expect(g.getAttribute('position').usage, '강 정점 버퍼가 정적으로 남아 있다')
+        .toBe(DYNAMIC_DRAW_USAGE);
     });
 
     it('쿼드가 하나 이상 있다 — 0 이면 강이 아예 안 보인다', () => {

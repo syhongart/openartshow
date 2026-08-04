@@ -24,6 +24,7 @@ import { describe, it, expect } from 'vitest';
 import { surfaceLift, RIVER_SEG, LIFT_LAMBDA } from '../frontend/js/world2/features/ocean.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
 import { RIVER_HALF, RIVER_Y } from '../frontend/js/world2/decide/water.js';
+import { GRID_W } from '../frontend/js/world2/decide/grid.js';
 
 /** x 축을 따라 높이를 샘플링한다 — 파형의 공간 프로파일. */
 function profile(t: number, standing: number, n = 256, span = LIFT_LAMBDA * 4): number[] {
@@ -90,19 +91,18 @@ describe('수면이 제자리에서 오르내린다 (G-1)', () => {
 // 강 판은 파셀마다 **독립된 정점**을 쓴다(같은 좌표에 정점이 둘). 변위가 위치만의
 // 함수가 아니면 두 값이 갈려 경계가 찢어진다 — 물에 금이 간 것처럼 보인다.
 describe('파셀 경계에서 수면이 이어진다 (G-2)', () => {
-  it('★ 같은 좌표는 항상 같은 높이다 — 호출 순서·이력에 안 기댄다', () => {
-    const cell = DEFAULT_LAYOUT.cellX;
-    for (const t of [0, 1.7, 9.3]) {
-      for (let px = -2; px <= 2; px++) {
-        const edge = px * cell + cell / 2; // 이 파셀의 오른쪽 끝 = 이웃의 왼쪽 끝
-        for (const z of [-16, 0, 16]) {
-          const fromLeft = surfaceLift(edge, z, t);
-          const fromRight = surfaceLift(edge, z, t);
-          expect(fromLeft).toBe(fromRight);
-        }
-      }
-    }
-  });
+  // ⚠ **경계 정점이 실제로 일치하는가는 여기서 안 본다.** 두 번 시도했고 두 번 다
+  //   tautology 였다(검수관이 뮤테이션으로 실증):
+  //     1차 — `surfaceLift(edge, …)` 를 같은 인자로 두 번 부르고 같은지 봤다.
+  //     2차 — `riverGeometry` 의 공식을 이 파일에 **복사**해 복사본끼리 비교했다.
+  //           `px·cell + cell/2 == (px+1)·cell − cell/2` 는 항등식이라 프로덕션이 무엇을
+  //           하든 참이다. 실제로 `ocean.ts` 의 정점 식에 +0.05m 오프셋을 주입해도
+  //           **100/100 통과**했다.
+  //   두 번 다 실패 형태가 같다 — **실제 코드를 한 번도 안 돌렸다.** 이 저장소가 세 번
+  //   겪은 값 미러링과 같은 자리다(공식이 두 곳에 각각 산다).
+  //   그래서 그 검사는 실제 지오메트리를 조립하는 `tests/world2-ocean.test.ts` 로 옮겼다
+  //   — 거기서는 `mount()` 가 진짜 `riverGeometry()` 를 돌리고 정점 배열을 직접 읽는다.
+  //   여기 남은 것은 `surfaceLift` **함수 자체**의 성질뿐이다.
 
   it('높이가 연속이다 — 이웃 정점 사이가 튀면 각진 이가 보인다', () => {
     const step = LIFT_LAMBDA / 4; // 실제 세그먼트 간격
@@ -154,12 +154,18 @@ describe('세분이 파장에서 유도된다 (G-4)', () => {
     // 한 x 열의 물 칸: `|pz·cellZ − C| < RIVER_HALF` 를 만족하는 정수 pz.
     // 길이 `2·RIVER_HALF / cellZ` 구간이므로 최대 `floor(길이) + 1` 칸.
     const perColumn = Math.floor((2 * RIVER_HALF) / DEFAULT_LAYOUT.cellZ) + 1;
-    const worstCells = 30 * perColumn; // GRID_W = 30
+    // ★ `GRID_W` 를 **import 한다**(검수관 지적 ②). 30 을 여기 다시 적으면 격자가 넓어질 때
+    //   예산 가드가 조용히 stale 해진다 — 이 저장소가 세 번 겪은 값 미러링과 같은 형태다.
+    const worstCells = GRID_W * perColumn;
     const verts = worstCells * (RIVER_SEG + 1) ** 2;
     const tris = worstCells * RIVER_SEG ** 2 * 2;
-    // 감독 실기기 씬이 삼각형 102,563 개다. 물결이 그 10% 를 넘으면 예산 초과로 본다
-    // (감독이 무게를 물었고 그 답의 전제가 +7% 였다).
-    expect(tris, `삼각형 ${tris} 개 — 씬의 10% 를 넘는다`).toBeLessThan(10256);
+    // 예산 기준: 감독 실기기 리포트(2026-08-03, iPhone·WebGPU)의 `삼각형 평균 102563`.
+    // 그 10% 를 넘으면 초과로 본다 — 감독이 무게를 물었고("에이는 무겁지 않아?")
+    // 내 답의 전제가 +7% 였다. **10% 는 실측이 아니라 그 대화에서 나온 재량 기준이다**
+    // (검수관 지적 ③ — 출처를 여기 남긴다).
+    const SCENE_TRIS = 102563;
+    expect(tris, `삼각형 ${tris} 개 — 씬(${SCENE_TRIS})의 10% 를 넘는다`)
+      .toBeLessThan(SCENE_TRIS * 0.1);
     expect(verts, `정점 ${verts} 개`).toBeLessThan(6000);
   });
 });
