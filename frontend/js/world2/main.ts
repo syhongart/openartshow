@@ -15,6 +15,7 @@ import { PooledParcelBuilder } from './systems/parcel-builder.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
+import { spawnFor, SPAWN_SPOTS, type SpawnSpot } from './decide/spawn-spot.js';
 import { waterSurfaceY as surfaceYAt, SEABED_Y } from './decide/water.js';
 import { AdaptSystem } from './systems/adapt.js';
 import { runBoot, waitUntil } from './boot.js';
@@ -174,7 +175,13 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let lastAlpha = -1;
 
   const player = new PlayerSystem({
-    start: { x: SPAWN.x, z: SPAWN.z },
+    // ── 어디서 시작할까 (감독 지시 2026-08-04 *"링크로 강 또는 바다로 한번에 갈수있어?"*) ──
+    // `?at=river` / `?at=sea` 로 물가에 바로 선다. 좌표는 `decide/spawn-spot.ts` 가
+    // `parcelWater` 에 물어 **찾는다** — 상수로 박으면 강이 옮겨지는 날 물속에서 시작한다.
+    // 기본값 `default` 는 기존 스폰 그대로라 링크를 안 붙이면 아무것도 안 바뀐다.
+    // ⚠ `LAYOUT`(밀도 노브가 바꿀 수 있는 것)이 아니라 `CELL_X/Z`(기본 셀)를 쓴다 —
+    //   `parcelWater` 로 강을 찾는 계산이 지면 판정과 **같은 셀**을 봐야 물가가 맞는다.
+    start: spawnFor(readEnum('at', 'default', SPAWN_SPOTS) as SpawnSpot, CELL_X, CELL_Z),
     speed: walkSpeed,
     eyeHeight,
     bobAmplitude,
