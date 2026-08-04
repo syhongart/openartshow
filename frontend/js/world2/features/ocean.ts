@@ -54,7 +54,7 @@ import {
 import type { SkyTime } from '../decide/night.js';
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
-import { readNumOpt, writeNumOpt, readEnum } from '../url-knob.js';
+import { readNum, readNumOpt, writeNumOpt, readEnum } from '../url-knob.js';
 import { createTslWater, type TslWaterHandle, type TslNamespace } from './ocean-tsl.js';
 import { findKnobBar, attachKnobBar } from '../ui/knob-bar.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
@@ -327,6 +327,107 @@ export function waveHeight(u: number, v: number, skew: number = WAVE_SKEW): numb
 const WAVE_SKEW = 1.7;
 /** 진폭 배수. 노이즈는 극단값이 드물어 그대로 펴면 물결이 밋밋하다 */
 const WAVE_GAIN = 1.6;
+
+// ── 수면 변위 — 물이 **제자리에서 오르내린다** (감독 지시 2026-08-03) ─────────
+//
+// 감독 판정: *"물이 일렁인다는 느낌이 없네"* (실기기 WebGPU).
+//
+// ── 왜 노말맵 2겹으로는 안 됐나 ─────────────────────────────────────────────
+// 직전 처방(층을 둘로 겹쳐 간섭)은 **무늬의 단조로운 반복**은 깼지만 일렁임을 만드는
+// 축이 아니었다. 원인이 둘이고 **둘 다 구조적**이었다:
+//   ① 높이가 0 이다 — 판이 `PlaneGeometry(…, 1, 1)` 이라 정점이 4개였고, `waveHeight`
+//      는 노말맵 텍스처를 굽는 데만 쓰였다. 노말맵은 빛 반사 방향만 속이므로 실루엣이
+//      평평하고 시차가 없다. 눈높이에서는 스침각이라 더 압축된다.
+//   ② 정재파가 없다 — 두 층 다 `FLOW × t` 로 **병진**한다. 진행파 둘의 합은 여전히
+//      진행파다. 제자리 상하 운동은 마주 보는 파가 만나야 생긴다.
+//
+// 그래서 이 처방은 **정점을 실제로 올린다.** 수용 기준(팀장 조건 4)은 감독의 언어로:
+//   *"강가에 서서 보면, 무늬가 흐르는 것과 별개로 물 표면이 제자리에서 오르내리고
+//     물가 경계선이 출렁인다."*
+
+/**
+ * 변위가 담당할 **최단 파장**(m). 이보다 잔 물결은 노말맵이 계속 담당한다 —
+ * 두 축의 분담 정의이고, 세분 수는 여기서 **유도된다**(손으로 정하지 않는다).
+ *
+ * 팀장이 확정한 값은 8m 였는데 유도해 보니 예산을 넘었다:
+ *   λ=8m  → 세분 16×16 → 쿼드당 512 삼각형 → 최악 60칸 × 512 = 30,720 (씬 대비 **+30%**)
+ *   λ=16m → 세분  8×8  → 쿼드당 128 삼각형 → 최악 60칸 × 128 =  7,680 (씬 대비 **+7.5%**)
+ * 감독이 무게를 물었고("에이는 무겁지 않아?") 그 답의 전제가 +7% 였으므로 예산 초과로
+ * 판정해 16m 로 올렸다 — 팀장 조건 1 이 그 경우를 명시적으로 허용한다.
+ * 강 폭이 48m(`RIVER_HALF × 2`)라 파장 16m 면 강을 가로질러 파형이 3개 들어간다.
+ */
+const LIFT_LAMBDA_M = 16;
+
+/**
+ * 물 쿼드 하나(32m)를 몇 조각으로 나눌 것인가. **파장에서 유도한다.**
+ * 파장당 4점(나이퀴스트에 여유) → 세그먼트 간격 = λ/4.
+ *
+ * `1` 이면 정점이 네 귀퉁이뿐이라 변위가 사실상 꺼진다 — **되돌리기 스위치가 이 상수
+ * 하나다**(팀장 조건 2). 실기기에서 무거우면 여기만 1 로 되돌리면 옛 평면으로 간다.
+ *
+ * 총량 유도(실측이 아니라 밴드에서 — 팀장 조건 1):
+ *   한 x 열의 물 칸 = `|pz·cellZ − C| < RIVER_HALF` 를 만족하는 정수 pz.
+ *   길이 `2·RIVER_HALF / cellZ = 48/32 = 1.5` 구간이므로 **최대 2칸**.
+ *   → 이론 최악 = `GRID_W × 2 = 60` 칸 → 정점 60 × 9² = **4,860** · 삼각형 **7,680**.
+ */
+export const RIVER_SEG = Math.max(1, Math.round(DEFAULT_LAYOUT.cellX / (LIFT_LAMBDA_M / 4)));
+export const LIFT_LAMBDA = LIFT_LAMBDA_M;
+
+/**
+ * 파고(m, 마루~골의 **절반**). 강은 땅보다 50cm 아래이므로(`RIVER_Y`) 이 값이 그보다
+ * 크면 물이 둔치를 넘는다. 여유를 크게 둔다 — 넘치는 것은 결함으로 보이고,
+ * 실루엣은 진폭보다 **움직임**으로 읽힌다.
+ */
+const LIFT_AMP = readNum('wamp', 0.13, 0, 0.4);
+
+/**
+ * 진행파 : 정재파 배분. `0` 이면 전부 흘러가고 `1` 이면 전부 제자리에서 오르내린다.
+ * **노브로 뺀 이유**(팀장 조건 3): 어느 배분이 "일렁임" 으로 읽히는지는 감독 실기기
+ * 육안 판정이고, 헤드리스로는 못 정한다. 기본값은 정재 쪽에 무게를 둔다 —
+ * 감독이 지적한 것이 *"한 방향으로 흐르는데"* 였으므로 병진이 이미 과했다.
+ */
+const LIFT_STANDING = readNum('wstd', 0.65, 0, 1);
+
+/**
+ * 겹치는 파들. 감독 요청이 *"물은 복합적인 사인파들로 구성되어있잖아"* 였다.
+ * 방향과 주파수 비를 정수비에서 멀리 둔다 — 정수비면 짧은 주기로 패턴이 되풀이된다.
+ * `dir` 은 단위벡터, `rel` 은 기본 파수 대비 배율, `amp` 는 상대 진폭(합이 1).
+ */
+const LIFT_WAVES = [
+  { dx: 1, dz: 0, rel: 1, amp: 0.5 },
+  { dx: 0.5, dz: 0.866, rel: PHI, amp: 0.3 },              // 60°
+  { dx: -0.309, dz: 0.951, rel: PHI * PHI, amp: 0.2 },     // 108°
+];
+
+/**
+ * 수면 높이(m). **월드 좌표만의 함수다** — 이 성질이 파셀 경계의 이음새를 막는다.
+ * 강 판은 파셀마다 독립된 정점을 쓰므로(같은 좌표에 정점이 둘) 위치 기반이 아니면
+ * 두 값이 갈려 틈이 벌어진다.
+ *
+ * 진행파 `sin(k·x − ωt)` 와 정재파 `sin(k·x)·cos(ωt)` 를 섞는다. 정재파가 곧
+ * "제자리 오르내림" 이다 — 공간 패턴이 고정된 채 진폭만 시간에 따라 오간다.
+ *
+ * ω 는 **깊은 물 분산관계 `ω = √(gk)`** 에서 유도한다(실측에 여유를 얹지 않는다).
+ * λ=16m 면 주기 3.2초로, 사람이 물가에서 보는 잔잔한 강의 리듬과 맞는다.
+ */
+export function surfaceLift(
+  x: number, z: number, t: number,
+  amp: number = LIFT_AMP, standing: number = LIFT_STANDING,
+): number {
+  if (amp <= 0) return 0;
+  const k0 = (2 * Math.PI) / LIFT_LAMBDA_M;
+  let h = 0;
+  for (const w of LIFT_WAVES) {
+    const k = k0 * w.rel;
+    const phase = k * (w.dx * x + w.dz * z);
+    const omega = Math.sqrt(9.81 * k);
+    h += w.amp * (
+      (1 - standing) * Math.sin(phase - omega * t)
+      + standing * Math.sin(phase) * Math.cos(omega * t)
+    );
+  }
+  return h * amp;
+}
 
 /**
  * 노이즈 옥타브의 격자 해상도. **전부 정수**여야 타일이 감긴다 — 이 배열이 심리스의
@@ -707,30 +808,48 @@ function riverGeometry(): { geo: THREE.BufferGeometry; baseUv: number[]; flow: n
       const z0 = pz * cellZ - cellZ / 2;
       const z1 = pz * cellZ + cellZ / 2;
 
-      // y=0 으로 만들고 높이는 메시의 `position.y`(= RIVER_Y)가 준다 — 바다 판과
-      // 같은 방식이라 높이를 옮길 때 손댈 곳이 한 군데다.
-      pos.push(x0, 0, z0,  x1, 0, z0,  x1, 0, z1,  x0, 0, z1);
-      uv.push(
-        x0 / PLANE + 0.5, 0.5 - z0 / PLANE,
-        x1 / PLANE + 0.5, 0.5 - z0 / PLANE,
-        x1 / PLANE + 0.5, 0.5 - z1 / PLANE,
-        x0 / PLANE + 0.5, 0.5 - z1 / PLANE,
-      );
-      // 흐름 방향 — **정점의 x 로** 구한다(파셀 중심이 아니라). 한 파셀 안에서도
-      // 좌우 끝의 접선이 달라야 굽이가 부드럽게 이어진다. 월드 (x,z) 를 UV 로 옮길 때
-      // v 축이 뒤집히므로(`0.5 - z/PLANE`) z 성분의 부호를 바꾼다.
-      for (const [vx] of [[x0], [x1], [x1], [x0]]) {
-        const f = riverFlowAt(vx);
-        flow.push(f.x, -f.z);
+      // ── 쿼드를 `RIVER_SEG` 조각으로 나눈다 (감독 지시 2026-08-03) ────────────
+      // 예전에는 네 귀퉁이뿐이었다. 그러면 **높이를 줄 자리가 없다** — 그것이 감독이
+      // *"일렁인다는 느낌이 없네"* 라고 판정한 원인이었다. 세분 수는 파장에서 유도한다
+      // (`RIVER_SEG`). `1` 이면 옛 모양 그대로이므로 되돌리기 스위치이기도 하다.
+      //
+      // y 는 0 으로 두고 높이는 메시의 `position.y`(= RIVER_Y)가 준다 — 바다 판과
+      // 같은 방식이라 높이를 옮길 때 손댈 곳이 한 군데다. 물결 변위는 매 프레임
+      // `surfaceLift` 가 이 y 를 덮어쓴다.
+      const S = RIVER_SEG;
+      for (let i = 0; i <= S; i++) {
+        for (let j = 0; j <= S; j++) {
+          const vx = x0 + (x1 - x0) * (i / S);
+          const vz = z0 + (z1 - z0) * (j / S);
+          pos.push(vx, 0, vz);
+          uv.push(vx / PLANE + 0.5, 0.5 - vz / PLANE);
+          // 흐름 방향 — **정점의 x 로** 구한다(파셀 중심이 아니라). 한 파셀 안에서도
+          // 좌우 끝의 접선이 달라야 굽이가 부드럽게 이어진다. 월드 (x,z) 를 UV 로
+          // 옮길 때 v 축이 뒤집히므로(`0.5 - z/PLANE`) z 성분의 부호를 바꾼다.
+          const f = riverFlowAt(vx);
+          flow.push(f.x, -f.z);
+        }
       }
       // 위에서 내려다볼 때 앞면이 되도록 감는다(반시계). 뒤집히면 위에서 안 보인다.
-      idx.push(n, n + 2, n + 1, n, n + 3, n + 2);
-      n += 4;
+      // 옛 감기 `(0,2,1),(0,3,2)` 를 격자로 옮긴 것이다 — 0=(i,j) 1=(i+1,j) 2=(i+1,j+1) 3=(i,j+1).
+      for (let i = 0; i < S; i++) {
+        for (let j = 0; j < S; j++) {
+          const a = n + i * (S + 1) + j;      // (i,   j  )
+          const b = a + (S + 1);              // (i+1, j  )
+          idx.push(a, b + 1, b, a, a + 1, b + 1);
+        }
+      }
+      n += (S + 1) * (S + 1);
     }
   }
 
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const posAttr = new THREE.Float32BufferAttribute(pos, 3);
+  // 매 프레임 y 를 덮어쓴다 — 드라이버에 그 사실을 알린다(정적 버퍼로 두면 갱신마다
+  // 재할당이 날 수 있다). **개수는 안 는다** — 부팅 1회 생성이고 갱신은 내용뿐이라
+  // 스모크 `[7]` 개수 불변식이 그대로 성립한다.
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  g.setAttribute('position', posAttr);
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   // 법선은 전부 위쪽 — 수평 판이므로 계산할 것이 없다. `computeVertexNormals` 를 쓰면
   // 같은 값을 삼각형마다 다시 구하는 셈이고, 물결은 노말맵이 낸다.
@@ -1069,6 +1188,8 @@ export const oceanFeature: Feature = {
     // 매 프레임 쓸 UV 속성을 붙잡아 둔다 — `getAttribute` 를 프레임마다 부르면
     // 문자열 조회가 반복된다(작지만, 이 루프는 초당 60번 돈다).
     const riverUvAttr = riverGeo.getAttribute('uv');
+    // 물결 변위가 쓸 정점 배열. UV 와 같은 이유로 프레임마다 `getAttribute` 를 안 부른다.
+    const riverPosAttr = riverGeo.getAttribute('position');
     river.position.y = RIVER_Y;
     river.renderOrder = 3;  // sea(1) → sea2(2) → river(3) → river2(4): 높이 순서 그대로
 
@@ -1184,6 +1305,22 @@ export const oceanFeature: Feature = {
             uvArr[i + 1] = riverBaseUv[i + 1] + riverFlow[i + 1] * phase;
           }
           riverUvAttr.needsUpdate = true;
+
+          // ── 수면을 실제로 올린다 (감독 지시 2026-08-03) ────────────────────
+          // 위 UV 이동은 무늬를 **흘려보낼** 뿐이고 판은 평평하다. 감독 판정
+          // *"물이 일렁인다는 느낌이 없네"* 가 그 사실을 정확히 짚었다.
+          //
+          // `x`·`z` 는 안 건드리고 **y 만** 덮어쓴다. `surfaceLift` 가 월드 좌표만의
+          // 함수라 파셀 경계에서 이웃 쿼드와 같은 값이 나오고, 그래서 정점이 갈려 있어도
+          // 틈이 안 생긴다(강 판은 파셀마다 독립 정점을 쓴다).
+          //
+          // `RIVER_SEG === 1` 이면 네 귀퉁이뿐이라 의미가 없다 — 되돌리기 스위치가
+          // 여기서도 성립하게 통째로 건너뛴다(불필요한 버퍼 업로드도 안 난다).
+          if (RIVER_SEG > 1 && LIFT_AMP > 0) {
+            const p = riverPosAttr.array as Float32Array;
+            for (let i = 0; i < p.length; i += 3) p[i + 1] = surfaceLift(p[i], p[i + 2], t);
+            riverPosAttr.needsUpdate = true;
+          }
         },
       },
 

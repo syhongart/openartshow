@@ -83,7 +83,11 @@ class FakeMesh {
 
 /** 버퍼 속성 스텁 — 강 판의 정점을 실제로 들여다보려고 배열을 그대로 보관한다 */
 class FakeAttr {
+  /** three 의 기본값(`StaticDrawUsage`). `setUsage` 가 실제로 바꾸는지 검사가 볼 수 있게 둔다. */
+  usage = 35044;
   constructor(public array: number[], public itemSize: number) {}
+  /** 강 판이 매 프레임 정점 y 를 덮어쓰므로 동적 버퍼로 선언한다 — three 의 계약이다. */
+  setUsage(u: number) { this.usage = u; return this; }
 }
 
 /**
@@ -136,6 +140,10 @@ vi.mock('three/webgpu', () => ({
   BufferGeometry: FakeBufferGeometry,
   Float32BufferAttribute: FakeAttr,
   RepeatWrapping: 1000,
+  // 강 판이 매 프레임 정점 y 를 덮어쓰므로 `setUsage(DynamicDrawUsage)` 를 건다
+  // (수면 변위, 2026-08-03). three 의 실제 값과 같게 둔다 — 스텁이 다른 값을 주면
+  // "테스트에서만 다른 상수" 가 생기고, 그것이 곧 값 미러링이다.
+  DynamicDrawUsage: 35048,
   // `set()` 이 있어야 한다 — three 의 Vector2 계약이고, `ocean.ts` 의 `applyGloss` 가
   // 이것을 부른다. 스텁이 계약을 덜 재현하면 **프로덕션 코드가 멀쩡한데 테스트만 깨진다**.
   Vector2: class {
