@@ -167,11 +167,19 @@ async function main() {
       const tail = b.warn ? ' ← 저장소 수정' : '';
       if (!prev) {
         events.push(`${mark ?? '🟢'} [${aid}] ${b.job} — 시작 · ${b.tool}${tail}`);
-        seen.set(aid, { n: b.n, tool: b.tool, since: now, job: b.job });
+        seen.set(aid, { n: b.n, tool: b.tool, since: now, job: b.job, moved: false });
       } else if (b.n !== prev.n || b.tool !== prev.tool) {
         events.push(`${mark ?? '🔵'} [${aid}] ${b.job} · ${b.n}줄 · ${b.tool}${tail}`);
-        seen.set(aid, { n: b.n, tool: b.tool, since: now, job: b.job });
-      } else if (now - prev.since > STALL) {
+        seen.set(aid, { n: b.n, tool: b.tool, since: now, job: b.job, moved: true });
+      } else if (prev.moved && now - prev.since > STALL) {
+        // 정지 경보는 **움직이는 것을 실제로 본 뒤에만** 낸다. 처음부터 조용한 것은
+        // 멈춘 게 아니라 이미 끝난 것이다.
+        //
+        // 이 조건이 없어서 폭주했다(실증 2026-08-04): 컨테이너가 재시작되자
+        // 과거 세션 트랜스크립트 **1,009개의 mtime 이 한꺼번에 갱신됐고**, 전부
+        // ALIVE 안에 들어와 "방금까지 살아 있던 에이전트" 로 잡힌 뒤 481초 후
+        // 일제히 무진행 경보를 냈다. mtime 은 "그 파일이 최근에 만져졌다" 는 뜻이지
+        // "그 에이전트가 최근까지 일했다" 는 뜻이 아니다 — 재는 축이 또 틀렸다.
         events.push(`🟠 [${aid}] ${b.job} — ${Math.round((now - prev.since) / 1000)}초 무진행`);
         seen.set(aid, { ...prev, since: now });
       }
