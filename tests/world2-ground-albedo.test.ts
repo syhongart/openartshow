@@ -270,4 +270,46 @@ describe('목록과 원천이 레지스트리 한 곳이다', () => {
     expect(sky).toMatch(/new GroundTint\(/);
     expect(sky).toMatch(/groundTint\.apply\(/);
   });
+
+  it('**매 프레임** 배선이다 — `update` 안에서 부른다', () => {
+    // ── 이 검사는 뮤테이션이 만들었다 (2026-08-05) ──────────────────────────
+    // `update(ctx)` 안의 `groundTint.apply(...)` 한 줄을 지우는 뮤테이션(M2)이 **안
+    // 깨졌다.** 위 검사가 소스 전체에서 `groundTint.apply(` 를 찾는데, 부팅 호출이
+    // 남아 있어 그대로 매치했기 때문이다. 두 호출은 **하는 일이 다르다**:
+    //
+    //   부팅 호출   밤에 들어왔을 때 첫 프레임부터 맞춰 둔다
+    //   update 호출 **세션 중 시간대가 바뀔 때 따라간다**(神 모드 패널 경로)
+    //
+    // update 쪽이 빠지면 증상은 *"시간대를 바꿨는데 지면만 안 변한다"* 이고, 부팅
+    // 시간대가 낮이면 밤으로 바꿔도 잔디가 형광 그대로다 — 정확히 이번에 고친 그 화면
+    // 이다. 그런데 테스트는 전부 초록이었다. **호출이 있는가**를 봤지 **어디서 부르는가**
+    // 를 안 봤다.
+    //
+    // ⚠ 한계: 이것도 소스 문자열 검사다. `update` 를 실제로 돌려 확인하려면
+    // `skyFeature.create()` 가 필요하고 그것은 `SkySystem`(three)을 끈다 — 스텁을
+    // 세우는 것은 별건이다(태스크 #197 후속). **여기서 재는 것은 "그 자리에 그 호출이
+    // 있는가" 까지다.**
+    const sky = readFileSync(join(W2, 'features', 'sky.ts'), 'utf8');
+    const body = blockAfter(sky, 'update(ctx)');
+    // 표본이 비면 아래 `toContain` 이 무의미해진다 — 이 저장소가 빈 표본으로
+    // 단언을 통과시킨 전례가 있다. 블록을 제대로 떴는지 먼저 못 박는다.
+    expect(body).toContain('sky.update(ctx)');
+    expect(body).toContain('groundTint.apply(');
+  });
 });
+
+/**
+ * `header` 뒤 첫 중괄호 블록의 본문. 중괄호를 세어 뜨므로 들여쓰기에 의존하지 않는다.
+ * 못 찾으면 던진다 — 조용히 빈 문자열을 돌려주면 위 단언이 통과해 버린다.
+ */
+function blockAfter(src: string, header: string): string {
+  const i = src.indexOf(header);
+  if (i < 0) throw new Error(`블록 머리를 못 찾았다: ${header}`);
+  let depth = 0;
+  let start = -1;
+  for (let j = i; j < src.length; j++) {
+    if (src[j] === '{') { if (depth === 0) start = j + 1; depth++; }
+    else if (src[j] === '}') { depth--; if (depth === 0) return src.slice(start, j); }
+  }
+  throw new Error(`중괄호가 안 닫혔다: ${header}`);
+}
