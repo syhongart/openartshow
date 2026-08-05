@@ -88,7 +88,18 @@ describe('하늘 돔 반경 — 노브가 열려 있다', () => {
   // **계수가 1보다 큰가**를 본다. 리터럴로 되돌리면 첫 단언이 깨진다.
   it('★ 카메라 far 가 DOME_MAX 에서 유도된다 — 리터럴이면 한쪽만 올릴 때 하늘이 잘린다', () => {
     const main = read('frontend/js/world2/main.ts');
-    const m = main.match(/new THREE\.PerspectiveCamera\(([^)]*)\)/);
+    // ⚠ **import 까지 본다** (검수관 RC-1). 소스에 `DOME_MAX` 토큰만 보면,
+    // import 를 지우고 `const DOME_MAX = 1100` 을 **로컬 재정의**했을 때 유도가 완전히
+    // 끊기는데도 통과한다 — 검수관이 뮤테이션 M4 로 실증했다(7 passed). tsc 도 안 잡는다.
+    // 출처가 틀린 경우(M5)는 tsc 가 `TS2305` 로 잡으므로 이 한 줄로 둘 다 덮인다.
+    expect(
+      /import\s*\{[^}]*\bDOME_MAX\b[^}]*\}\s*from\s*'\.\/systems\/sky\.js'/.test(main),
+      'DOME_MAX 를 sky.ts 에서 import 하지 않는다 — 로컬 재정의면 유도가 끊긴다',
+    ).toBe(true);
+    // ⚠ `const camera =` 로 앵커를 좁힌다 (검수관 RC-2). 그냥 `PerspectiveCamera` 를
+    // 찾으면 파일 **앞줄**에 다른 카메라(프리뷰 등)가 생기는 순간 그것을 잡아
+    // **유도가 멀쩡한데도 FAIL** 한다(뮤테이션 M6).
+    const m = main.match(/const camera = new THREE\.PerspectiveCamera\(([^)]*)\)/);
     expect(m, '카메라 생성부를 못 찾았다 — 이 검사가 무효다').not.toBeNull();
     const args = m![1];
     expect(
