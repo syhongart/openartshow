@@ -19,8 +19,21 @@
 //   smoke job 종료(02:14:15) **2초 뒤**인 02:14:17 에 시작했다.
 //
 // 그래서 등급이 줄이는 것은 **배포 전 로컬 executor 스모크와 검수관 왕복**이지,
-// 자기완결·CSP 검사 자체가 아니다. 팀장 조건 3(*"3등급에서도 자기완결·CSP 는 면제
-// 불가"*)이 이 구조로 충족된다 — 면제할 방법이 애초에 없다.
+// 자기완결·CSP 검사 자체가 아니다.
+//
+// ⚠ **단, 이 문장은 조건부다 — 처음에 무조건으로 적었고 그것이 반려됐다(2026-08-05).**
+// CSP·외부요청 검사는 페이지 로드 기반이고 `scripts/smoke/config.mjs` 의 `LIVE_PAGES` 를
+// 순회한다. **거기 없는 진입점은 CI 스모크도 열지 않는다.** 당시 `visit.html`·`lab-glb.html`
+// 이 3등급인데 `LIVE_PAGES` 에 없었다 — 검수관·배포 전 스모크·CI 스모크 **세 겹 모두**
+// 그 페이지를 안 보는 상태였다. 팀장 조건 3 이 정확히 그 경우를 막으라고 쓰인 것이다.
+//
+// 내 문장이 참으로 보였던 이유는 구조가 아니라 **우연**이었다: world2 가 behind-flag 인데도
+// `LIVE_PAGES` 에 예외로 들어 있어서다. **예외를 일반 규칙으로 승격해 적었다** — 이 저장소가
+// "못 잰 것이 통과로 적히는 경향" 이라 부르는 형태 그대로다.
+//
+// 지금은 두 페이지를 `LIVE_PAGES` 에 편입해 **조건을 참으로 만들었고**, 그 상태를
+// `tests/verification-tier.test.ts` 의 G1 검사가 지킨다(flagged 진입점이 `LIVE_PAGES` 에서
+// 빠지면 FAIL). 조건 3 은 **그 게이트가 있는 동안만** 충족된다 — 게이트를 지우면 같이 죽는다.
 //
 // ── IP 축은 여기 없다 (팀장 조건 3 의 한계) ────────────────────────────────
 // 조건 3 은 IP 축도 면제 불가로 적었는데, **IP 검사는 저장소에 존재하지 않는다**
@@ -92,6 +105,19 @@ export const ALWAYS_TIER1 = [
   'scripts/gate.mjs',          // 게이트 러너
   'vite.config.js',            // 배포 조립 레시피
   '.claude/agents/release-reviewer.md', // 검수관 자신 (팀장 판정 소관)
+  // ── 아래 셋은 **검수관 반려(2026-08-05)로 들어왔다** ────────────────────────
+  // `tests/` — 처음에 3등급으로 뒀는데, **테스트 약화는 CI 가 구조적으로 못 잡는다**
+  // (느슨해진 테스트는 초록으로 통과한다). 이 저장소에 실물 사고가 있고(위임 시 산술
+  // 단언이 전부 null 기대로 바뀐 채 CI 통과) **그것을 잡은 유일한 축이 검수관**이었다.
+  // 게다가 자기모순이었다: `tests/verification-tier.test.ts` 가 *"판정기 자신이 1등급"*
+  // 을 단언하는데 그 파일 자신은 3등급이었다 — 자물쇠를 잠그고 열쇠를 옆에 둔 꼴이다.
+  'tests/',
+  // 게이트 훅 설치 지점. SessionStart 가 `core.hooksPath` 를 걸어 `.gate-stamp` 대조
+  // pre-commit 을 설치한다 — 이 파일을 비우면 게이트 미실행 커밋을 막는 구조가 사라진다.
+  '.claude/settings.json',
+  // 위임 프롬프트 SSOT. *"테스트를 느슨하게 만들지 마라"* 조항이 여기 있고, 그 조항의
+  // **부재가 실제 사고를 냈다**(검수관 반려 → 재작업).
+  'docs/DELEGATION.md',
   // 라이브 런타임 보호 4파일 — `CLAUDE.md` 가 "함부로 수정하지 않는다" 로 못 박은 것
   'frontend/js/main.js',
   'frontend/js/player.js',
@@ -122,9 +148,10 @@ const CODE_EXT = ['.ts', '.js', '.mjs'];
  * 남는다. fail-closed 다(팀장 조건 2).
  */
 function scriptsOf(htmlPath) {
-  if (!existsSync(htmlPath)) return [];
+  if (!existsSync(htmlPath)) return { files: [], dynamic: false };
   const html = readFileSync(htmlPath, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
   const out = [];
+  let dynamic = false;
   const re = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
   let m;
   while ((m = re.exec(html)) !== null) {
@@ -134,7 +161,30 @@ function scriptsOf(htmlPath) {
     const real = realFile(abs);
     if (real) out.push(real);
   }
-  return out;
+
+  // ── 인라인 `<script type="module">` — **여기가 사각이었다** (검수관 반려 B3) ──────
+  //
+  // `src` 속성만 보면 **HTML 안에서 import 로 진입하는 페이지가 통째로 그래프 밖**이 된다.
+  // 실측(2026-08-05): `builder.html:542`·`landing.html:1322,1394`·`visit.html:110` 이 그렇고,
+  // 그 결과 `frontend/js/builder.js`·`builder-walk.js`·`auth-modal.js`·`ytembed.ts` 4개가
+  // **라이브인데 라이브 그래프에 없었다.**
+  //
+  // 당시 오판정은 0건이었다 — 넷 다 어느 그래프에도 없어 fail-closed 로 1등급에 남았기
+  // 때문이다. 그러나 안전했던 이유가 **구조가 아니라 우연**이었다: 그 파일이 flagged
+  // 그래프에 잡히는 순간(world2 가 빌더 모듈을 쓰기 시작하면) 3등급으로 떨어진다.
+  // 더 나쁜 것은 `liveDynamic` fail-closed 가드도 안 켜진다는 점이다 — 가드는 라이브
+  // 그래프 **안에서 발견된** 파일의 동적 import 만 수집하는데, 서브그래프가 통째로 밖이면
+  // 수집될 기회가 없다. 팀장 조건 2 의 안전망이 진입점 8개 중 2개에서 뚫려 있었다.
+  const inlineRe = /<script\b(?![^>]*\bsrc\s*=)[^>]*\btype\s*=\s*["']module["'][^>]*>([\s\S]*?)<\/script>/gi;
+  while ((m = inlineRe.exec(html)) !== null) {
+    const { specs, dynamic: dyn } = specsFromSource(m[1]);
+    if (dyn) dynamic = true;
+    for (const s of specs) {
+      const real = resolveSpec(htmlPath, s);
+      if (real) out.push(real);
+    }
+  }
+  return { files: out, dynamic };
 }
 
 /**
@@ -146,7 +196,19 @@ function scriptsOf(htmlPath) {
  * 조건 2 가 막으라는 형태다.
  */
 function importsOf(file) {
-  const src = readFileSync(file, 'utf8')
+  return specsFromSource(readFileSync(file, 'utf8'));
+}
+
+/**
+ * JS 소스 문자열에서 import 지정자를 뽑는다.
+ *
+ * **파일이 아니라 문자열을 받는 이유**: HTML 안의 인라인 `&lt;script type="module"&gt;` 에도
+ * 같은 규칙을 적용해야 하기 때문이다. 그것을 안 읽어서 라이브 파일 4개
+ * (`builder.js`·`builder-walk.js`·`auth-modal.js`·`ytembed.ts`)가 라이브 그래프 밖에
+ * 있었다 — 검수관 반려 B3(2026-08-05).
+ */
+function specsFromSource(raw) {
+  const src = raw
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
   const specs = [];
@@ -195,8 +257,13 @@ export function reachableFrom(entries) {
     // 접두사는 `srcPath` 가 붙인다 — 여기서 `join(FRONTEND, e.src)` 로 다시 적으면
     // 같은 규약이 두 곳에 있게 되고, 그 미러링이 실제로 vite 쪽을 깨뜨렸다(2026-08-05).
     const html = join(REPO, srcPath(e));
-    seen.add(relative(REPO, html));
-    queue.push(...scriptsOf(html));
+    const rel = relative(REPO, html);
+    seen.add(rel);
+    // 인라인 module 안의 **비리터럴** 동적 import 도 그래프가 끊기는 자리다 — HTML 을
+    // `dynamicHits` 에 넣어야 fail-closed 가드가 그 진입점에 대해서도 켜진다(B3).
+    const { files, dynamic } = scriptsOf(html);
+    if (dynamic) dynamicHits.add(rel);
+    queue.push(...files);
   }
   while (queue.length) {
     const file = queue.pop();
@@ -241,7 +308,9 @@ export function tierOf(file, ctx) {
     return { tier: 3, why: 'behind-flag 진입점에서만 도달 — 검수 이연' };
   }
   if (NOT_DEPLOYED.some((p) => file.startsWith(p))) {
-    return { tier: file.startsWith('tests/') ? 3 : 2, why: `배포되지 않는 경로(${file})` };
+    // `tests/` 는 위 `ALWAYS_TIER1` 에서 이미 걸린다 — 여기에 3등급 분기를 두면
+    // 그것이 곧 죽은 코드이자 함정이다(목록에서 빠지는 날 조용히 3등급이 된다).
+    return { tier: 2, why: `배포되지 않는 경로(${file})` };
   }
   if (ROOT_DOCS.test(file)) return { tier: 2, why: '루트 규율 문서 — 배포물에 안 실린다' };
   // 여기까지 왔다는 것은 **어느 그래프에도 안 잡혔다**는 뜻이다. 도달 못 함이 아니라

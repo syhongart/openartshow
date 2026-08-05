@@ -124,8 +124,12 @@ describe('등급 판정 — 내려가면 안 되는 것이 안 내려가는가',
     expect(r.why).toMatch(/동적 import/);
   });
 
-  it('배포 안 되는 경로 — tests 는 3, 문서는 2', () => {
-    expect(tierOf('tests/foo.test.ts', ctx([], [])).tier).toBe(3);
+  it('배포 안 되는 경로는 2등급 — **`tests/` 는 예외로 1등급이다**', () => {
+    // ⚠ 옛 단언은 `tests/foo.test.ts` → 3등급이었다. **그 단언이 무효가 된 이유**:
+    // 검수관 반려 B2(2026-08-05) — "배포되지 않는가" 와 "느슨해지면 누가 잡는가" 는 다른
+    // 축이다. 테스트는 배포되지 않지만 **약화되면 CI 가 구조적으로 못 잡는다**(느슨한
+    // 테스트는 초록으로 통과한다). 그래서 `ALWAYS_TIER1` 로 올라갔다.
+    expect(tierOf('tests/foo.test.ts', ctx([], [])).tier).toBe(1);
     expect(tierOf('docs/BOARD.md', ctx([], [])).tier).toBe(2);
     expect(tierOf('CLAUDE.md', ctx([], [])).tier).toBe(2);
   });
@@ -135,10 +139,68 @@ describe('등급 판정 — 내려가면 안 되는 것이 안 내려가는가',
     expect(tierOf('scripts/build-devlog.mjs', ctx([], [])).tier).toBe(1);
   });
 
-  it('최종 등급은 가장 무거운 파일이 정한다', () => {
-    const c = ctx(['a.js'], ['b.ts']);
-    const rows = [tierOf('b.ts', c), tierOf('a.js', c)];
-    expect(Math.min(...rows.map((r) => r.tier))).toBe(1);
+  it('최종 등급은 가장 무거운 파일이 정한다 — **`judge()` 를 경유해서 잰다**', () => {
+    // ⚠ 원래 이 검사는 `Math.min(...rows.map(...))` 을 **테스트 코드 안에서 직접 계산**했다.
+    // 그러면 `judge()` 의 집계를 전혀 재지 않는다 — 검수관 권고 R4 가 "장식" 이라 부른 것이다.
+    // 지금은 `judge()` 를 부르므로 거기서 `Math.min` 을 `Math.max` 로 바꾸면 이 검사가 깨진다.
+    expect(judge(['docs/BOARD.md']).tier).toBe(2);
+    expect(judge(['docs/BOARD.md', 'frontend/js/main.js']).tier).toBe(1);
+  });
+});
+
+// ── 검수관 반려(2026-08-05) 로 들어온 검사들 ────────────────────────────────
+//
+// 넷 중 셋이 같은 형태였다: **판정기가 못 본 것을 면제해도 되는 것으로 읽었다.**
+// 그래서 여기 검사들은 전부 "안 보이는 것이 조용히 빠지지 않는가" 를 잰다.
+
+describe('G1 — 낮은 등급 진입점이 CI 스모크 대상인가 (블로커 1)', () => {
+  it('**모든 behind-flag 진입점이 `LIVE_PAGES` 에 있다** — 없으면 검사가 세 겹 모두 0이 된다', async () => {
+    // 실측 사고: `visit.html`·`lab-glb.html` 이 3등급인데 `LIVE_PAGES` 에 없었다. 3등급은
+    // 검수관·배포 전 스모크를 면제하고, `LIVE_PAGES` 에 없으면 **CI 스모크도 그 페이지를
+    // 열지 않는다** — CSP·외부요청 검사가 실제로 0이 된다. 팀장 조건 3 이 막으라는 것이 이것이다.
+    //
+    // 이 검사가 없으면 판정기 주석·`OPERATING-PRINCIPLES.md`·CLI 가 입을 모아
+    // *"어느 등급에서도 면제되지 않는다"* 고 말하는데 실제로는 면제되는 상태가 성립한다.
+    const { LIVE_PAGES } = await import('../scripts/smoke/config.mjs');
+    const urls = new Set((LIVE_PAGES as { url: string }[]).map((p) => p.url));
+    for (const e of FLAGGED_ENTRIES) {
+      expect(urls.has(`/${e.out}`), `${e.src} → /${e.out} 이 LIVE_PAGES 에 없다`).toBe(true);
+    }
+  });
+});
+
+describe('B2 — 게이트 자신을 낮은 등급에 두지 않는다', () => {
+  it('**`tests/` 가 1등급이다** — 테스트 약화는 CI 가 구조적으로 못 잡는다', () => {
+    // 느슨해진 테스트는 초록으로 통과한다. 이 저장소에 실물 사고가 있고(산술 단언이 전부
+    // null 기대로 바뀐 채 CI 통과) **그것을 잡은 유일한 축이 검수관**이었다.
+    expect(judge(['tests/verification-tier.test.ts']).tier).toBe(1);
+    expect(judge(['tests/world2-sky-system.test.ts']).tier).toBe(1);
+  });
+
+  it('게이트 훅 설치 지점과 위임 SSOT 도 1등급이다 (권고 R1·R2)', () => {
+    // `.claude/settings.json` 은 `core.hooksPath` 를 걸어 `.gate-stamp` 대조 pre-commit 을
+    // 설치한다 — 비우면 게이트 미실행 커밋을 막는 구조가 사라진다.
+    expect(judge(['.claude/settings.json']).tier).toBe(1);
+    expect(judge(['docs/DELEGATION.md']).tier).toBe(1);
+  });
+});
+
+describe('B3 — 인라인 `<script type="module">` 도 그래프에 들어간다', () => {
+  it('**인라인 module 로만 진입하는 라이브 파일이 라이브 그래프에 있다**', () => {
+    // 실측 사고: `src` 속성만 읽어서 `builder.html:542`·`landing.html:1322` 의 인라인
+    // module 진입이 통째로 빠졌고, 그 결과 아래 파일들이 **라이브인데 라이브 그래프 밖**
+    // 이었다. 당시 오판정이 0건이었던 것은 fail-closed 덕분이지 구조 덕분이 아니다 —
+    // 그 파일이 flagged 그래프에 잡히는 날 3등급이 된다.
+    const { seen } = reachableFrom(LIVE_ENTRIES);
+    for (const f of ['frontend/js/builder.js', 'frontend/js/auth-modal.js']) {
+      expect(seen.has(f), `${f} 가 라이브 그래프에 없다`).toBe(true);
+    }
+  });
+
+  it('그 파일들이 1등급으로 판정된다 — 이제 "판정 불가" 가 아니라 "라이브 도달" 이다', () => {
+    const r = judge(['frontend/js/builder.js']);
+    expect(r.tier).toBe(1);
+    expect(r.rows[0].why).toMatch(/라이브 그래프에서 도달/);
   });
 });
 
