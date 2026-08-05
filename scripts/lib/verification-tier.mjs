@@ -1,0 +1,261 @@
+// 검증 등급 판정 — **등급표와 판정 규칙의 SSOT**(팀장 조건 6).
+//
+// 문서는 여기를 가리키기만 한다. 등급표를 문서에 다시 적으면 그것이 값 미러링이고,
+// 이 저장소가 색·수치·임계값에서 세 번 겪은 사고가 그것이다.
+//
+// ── 왜 등급이 필요한가 (감독 지시) ─────────────────────────────────────────
+// *"간단한 테스트도 검증을 너무 많이 하는 거 아닐까?"*
+//
+// 실측: world2 밤하늘 수정(behind-flag 4파일)에 게이트 6종 + 독립 스모크 16종 +
+// 뮤테이션 4건 + 오퍼스 검수관 — 검증·대기 **9시간 초과**. 절차가 위험에 비례하지
+// 않고 **균일하게** 걸려 있었다.
+//
+// ── 등급이 줄이는 것과 줄이지 않는 것 (실측 2026-08-05) ────────────────────
+// **CI 스모크는 등급과 무관하게 항상 돈다.** `deploy.yml` 의 `verify` 가
+// `ci.yml` 전체를 부르고(`uses:`), 그 안에 `smoke` job 이 있다. 재사용 워크플로는 모든
+// job 이 성공해야 성공하므로 `deploy: needs: verify` 가 스모크까지 기다린다.
+//
+//   실측 run 30968482664 — verify job 은 02:09:29 에 끝났는데 deploy 는 그때 안 떴고,
+//   smoke job 종료(02:14:15) **2초 뒤**인 02:14:17 에 시작했다.
+//
+// 그래서 등급이 줄이는 것은 **배포 전 로컬 executor 스모크와 검수관 왕복**이지,
+// 자기완결·CSP 검사 자체가 아니다. 팀장 조건 3(*"3등급에서도 자기완결·CSP 는 면제
+// 불가"*)이 이 구조로 충족된다 — 면제할 방법이 애초에 없다.
+//
+// ── IP 축은 여기 없다 (팀장 조건 3 의 한계) ────────────────────────────────
+// 조건 3 은 IP 축도 면제 불가로 적었는데, **IP 검사는 저장소에 존재하지 않는다**
+// (`CLAUDE.md`·`ARCHITECTURE.md §6`·`OPERATING-PRINCIPLES.md §6` 의 문서 규율뿐이고
+// `scripts/`·`tests/` 에 판정 코드 0건 — 2026-08-05 실측). 없는 검사를 "면제 불가" 로
+// 규정하는 것은 성립하지 않으므로, IP 는 **등급 체계 밖의 법무 게이트**로 둔다.
+// 새 에셋·텍스트·네이밍이 들어오면 등급과 무관하게 §6 법무 게이트다. 팀장 재상신 대상.
+
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { LIVE_ENTRIES, FLAGGED_ENTRIES } from './entrypoints.mjs';
+
+const REPO = resolve(import.meta.dirname, '..', '..');
+const FRONTEND = join(REPO, 'frontend');
+
+/**
+ * 등급 정의. **번호가 작을수록 무겁다.**
+ *
+ * `smoke` — 배포 **전** 독립 executor 가 `smoke:vite` 를 돌리는가(§10-3).
+ *           `false` 여도 CI 스모크는 돈다(파일 머리 참조).
+ * `reviewer` — 검수관 교차리뷰를 부르는가.
+ */
+export const TIERS = {
+  1: {
+    name: '1등급(전체)',
+    gate: true,
+    smoke: true,
+    reviewer: true,
+    why: '라이브 런타임 또는 판정 불가 — 기본값이다',
+  },
+  2: {
+    name: '2등급(문서)',
+    gate: true,
+    smoke: false,
+    reviewer: false,
+    why: '배포되지만 실행 코드가 아니다',
+  },
+  3: {
+    name: '3등급(behind-flag)',
+    gate: true,
+    smoke: false,
+    reviewer: false,
+    why: 'behind-flag 진입점에서만 도달한다 — 면제가 아니라 **검수 이연**이다',
+  },
+};
+
+/**
+ * **무조건 1등급인 경로.** 도달성 판정보다 우선한다.
+ *
+ * 여기 있는 것들은 "라이브에서 실행되는가" 와 무관하게 무거운 이유가 있다 —
+ * 게이트 자신이거나(자기 자신을 느슨하게 만들 수 있다), 되돌리기가 비싸거나,
+ * 검수관 자신에 관한 것이다.
+ */
+export const ALWAYS_TIER1 = [
+  '.github/workflows/',        // 배포 파이프라인 (§10-4 검수관 무조건 트리거)
+  'scripts/smoke/',            // 게이트 자신 (§10-4)
+  'scripts/lib/verification-tier.mjs', // **판정기 자신** (팀장 조건 2)
+  'scripts/lib/entrypoints.mjs',       // 판정의 입력 — 여기가 틀리면 전부 틀린다
+  'scripts/gate.mjs',          // 게이트 러너
+  'vite.config.js',            // 배포 조립 레시피
+  '.claude/agents/release-reviewer.md', // 검수관 자신 (팀장 판정 소관)
+  // 라이브 런타임 보호 4파일 — `CLAUDE.md` 가 "함부로 수정하지 않는다" 로 못 박은 것
+  'frontend/js/main.js',
+  'frontend/js/player.js',
+  'frontend/js/artworks.js',
+  'frontend/js/config.js',
+];
+
+/**
+ * 배포되지 않는(따라서 방문자에게 닿지 않는) 경로.
+ *
+ * `docs/` 는 **원본**이다 — 생성기가 `devlog/`·`making/` HTML 을 만들어 배포하지만,
+ * 그 생성기(`scripts/build-*.mjs`)는 여기 없으므로 판정 불가로 1등급에 남는다.
+ * 문서를 고치는 것과 생성기를 고치는 것은 다른 위험이고, 그 구분이 여기서 난다.
+ */
+const NOT_DEPLOYED = ['tests/', 'docs/', '.claude/', 'devlog/img/'];
+
+/** 저장소 루트의 규율 문서. 배포물에 안 실린다 */
+const ROOT_DOCS = /^[^/]+\.md$/;
+
+/** 실행 코드로 취급하는 확장자. 이외는 그래프로 추적하지 않는다 */
+const CODE_EXT = ['.ts', '.js', '.mjs'];
+
+/**
+ * HTML 에서 참조하는 스크립트 경로를 뽑는다.
+ *
+ * ⚠ **정규식이다.** 정확히 하려면 HTML 파서가 필요한데, 여기서 틀리는 방향은 안전하다 —
+ * 못 찾으면 그 진입점의 그래프가 작아지고, 도달 못 하는 파일은 **1등급(기본값)** 으로
+ * 남는다. fail-closed 다(팀장 조건 2).
+ */
+function scriptsOf(htmlPath) {
+  if (!existsSync(htmlPath)) return [];
+  const html = readFileSync(htmlPath, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+  const out = [];
+  const re = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const src = m[1];
+    if (/^(https?:)?\/\//.test(src) || src.startsWith('data:')) continue; // 외부는 그래프 밖
+    const abs = src.startsWith('/') ? join(FRONTEND, src.slice(1)) : resolve(dirname(htmlPath), src);
+    const real = realFile(abs);
+    if (real) out.push(real);
+  }
+  return out;
+}
+
+/**
+ * 한 모듈이 import 하는 것들. **정적 import 만** 본다.
+ *
+ * ⚠ **동적 `import(...)` 는 일부러 따라가지 않는다.** 대신 그것이 있는 파일을
+ * `dynamic` 으로 표시해 호출자가 fail-closed 판정에 쓴다 — 변수·문자열 조립 경로는
+ * 정적으로 해석할 수 없고, "해석 못 한 것을 도달 안 함으로 치는 것" 이 정확히 팀장
+ * 조건 2 가 막으라는 형태다.
+ */
+function importsOf(file) {
+  const src = readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const specs = [];
+  let dynamic = false;
+  const staticRe = /(?:^|[\s;}])(?:import|export)\s+(?:[\s\S]*?\sfrom\s*)?["']([^"']+)["']/g;
+  let m;
+  while ((m = staticRe.exec(src)) !== null) specs.push(m[1]);
+  const bareRe = /(?:^|[\s;}])import\s*["']([^"']+)["']/g;
+  while ((m = bareRe.exec(src)) !== null) specs.push(m[1]);
+  const dynRe = /\bimport\s*\(\s*(["'])([^"']+)\1\s*\)/g;
+  while ((m = dynRe.exec(src)) !== null) specs.push(m[2]);
+  // 리터럴이 아닌 동적 import — 여기서 그래프가 끊긴다는 사실 자체를 신호로 남긴다.
+  if (/\bimport\s*\(\s*[^"')\s]/.test(src)) dynamic = true;
+  return { specs, dynamic };
+}
+
+/**
+ * 절대 경로 후보 → 실재하는 파일.
+ *
+ * **`.js` 로 쓰고 실재는 `.ts` 인 규약**을 따라간다 — `vite.config.js` 의 `tsJsFallback`
+ * 플러그인이 빌드에서 하는 일과 같다. 이걸 빼면 `world2.html` 이 참조하는
+ * `./js/world2-boot.js`(실재는 `.ts`)에서 그래프가 끊겨 **behind-flag 그래프가 통째로
+ * 비고, 3등급이 한 번도 안 나온다**(실측으로 그렇게 됐다).
+ */
+function realFile(abs) {
+  const cands = [abs, abs.replace(/\.js$/, '.ts'), `${abs}.ts`, `${abs}.js`, join(abs, 'index.ts'), join(abs, 'index.js')];
+  return cands.find((c) => existsSync(c) && !c.endsWith('/')) ?? null;
+}
+
+/** 모듈 지정자 → 실재 파일 절대경로. bare specifier(three 등)는 `null` */
+function resolveSpec(fromFile, spec) {
+  if (!spec.startsWith('.') && !spec.startsWith('/')) return null;
+  const abs = spec.startsWith('/') ? join(FRONTEND, spec.slice(1)) : resolve(dirname(fromFile), spec);
+  return realFile(abs);
+}
+
+/**
+ * 진입점 집합에서 도달 가능한 파일(저장소 상대 경로) 집합.
+ * `dynamicHits` 에는 동적 import 를 가진 파일이 담긴다 — 그래프가 끊긴 자리다.
+ */
+export function reachableFrom(entries) {
+  const seen = new Set();
+  const dynamicHits = new Set();
+  const queue = [];
+  for (const e of entries) {
+    const html = join(FRONTEND, e.src);
+    seen.add(relative(REPO, html));
+    queue.push(...scriptsOf(html));
+  }
+  while (queue.length) {
+    const file = queue.pop();
+    if (!file || !existsSync(file)) continue;
+    const rel = relative(REPO, file);
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    if (!CODE_EXT.some((x) => file.endsWith(x))) continue;
+    const { specs, dynamic } = importsOf(file);
+    if (dynamic) dynamicHits.add(rel);
+    for (const s of specs) {
+      const r = resolveSpec(file, s);
+      if (r) queue.push(r);
+    }
+  }
+  return { seen, dynamicHits };
+}
+
+/**
+ * 파일 하나의 등급과 그 근거.
+ *
+ * **기본값이 1등급이다.** 등급이 내려가려면 명시적으로 판정돼야 한다 — 그것이
+ * fail-closed 이고, 새 종류의 파일이 생겼을 때 조용히 면제되지 않는 유일한 방법이다.
+ */
+export function tierOf(file, ctx) {
+  if (ALWAYS_TIER1.some((p) => file === p || file.startsWith(p))) {
+    return { tier: 1, why: `무조건 1등급 경로(${file})` };
+  }
+  if (ctx.live.has(file)) return { tier: 1, why: '라이브 그래프에서 도달 — 라이브 런타임' };
+
+  if (ctx.flagged.has(file)) {
+    // ⚠ **라이브 그래프가 끊겨 있으면 3등급으로 내리지 않는다.** 라이브 쪽에 리터럴이
+    // 아닌 동적 import 가 있으면 그 너머는 정적으로 못 본다 — 지금 flagged 로만 보이는
+    // 파일이 실은 라이브에서도 쓰일 수 있다. "안 보였다" 를 "없다" 로 읽지 않는 것이
+    // 팀장 조건 2 다.
+    if (ctx.liveDynamic.size > 0) {
+      return {
+        tier: 1,
+        why: `라이브 그래프가 동적 import 로 끊겨 있다(${[...ctx.liveDynamic][0]} 외 ${ctx.liveDynamic.size - 1}건) — 도달 판정 불가`,
+      };
+    }
+    return { tier: 3, why: 'behind-flag 진입점에서만 도달 — 검수 이연' };
+  }
+  if (NOT_DEPLOYED.some((p) => file.startsWith(p))) {
+    return { tier: file.startsWith('tests/') ? 3 : 2, why: `배포되지 않는 경로(${file})` };
+  }
+  if (ROOT_DOCS.test(file)) return { tier: 2, why: '루트 규율 문서 — 배포물에 안 실린다' };
+  // 여기까지 왔다는 것은 **어느 그래프에도 안 잡혔다**는 뜻이다. 도달 못 함이 아니라
+  // 판정 못 함으로 읽는다(HTML·CSS·이미지·생성기·새 종류 전부 여기로 온다).
+  return { tier: 1, why: '판정 불가 — fail-closed 기본값' };
+}
+
+/** `git diff --name-only` 로 변경 파일을 얻는다. 실패하면 던진다(조용히 빈 목록 금지) */
+export function changedFiles(base) {
+  const out = execFileSync('git', ['diff', '--name-only', `${base}...HEAD`], {
+    cwd: REPO, encoding: 'utf8',
+  });
+  return out.split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
+/** 변경 파일 목록 → 최종 등급 + 파일별 근거 */
+export function judge(files) {
+  const liveR = reachableFrom(LIVE_ENTRIES);
+  const flagR = reachableFrom(FLAGGED_ENTRIES);
+  const ctx = {
+    live: liveR.seen,
+    liveDynamic: liveR.dynamicHits,
+    flagged: flagR.seen,
+  };
+  const rows = files.map((f) => ({ file: f, ...tierOf(f, ctx) }));
+  const tier = rows.length ? Math.min(...rows.map((r) => r.tier)) : 1;
+  return { tier, rows, ctx };
+}

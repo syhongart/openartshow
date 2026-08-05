@@ -22,6 +22,11 @@ import { createHash } from 'node:crypto';
 // 배포 서브패스의 정의는 `scripts/site-url.mjs` 한 곳이다(검수관 B3). 여기 값을 따로
 // 적으면 도메인·저장소명을 옮길 때 한쪽만 고쳐도 아무도 모른다.
 import { BASE_PATH } from './scripts/site-url.mjs';
+// 진입점 목록·재배치·노출 상태의 **SSOT**. 여기서 유도하지 않고 아래에 다시 적으면
+// 그 순간 값 미러링이고, 실제로 `builder.html` 이 라이브가 된 뒤에도 이 파일 주석만
+// `// behind-flag` 로 남아 있던 사고가 그것이었다.
+// `htmlRename` 은 아래에 **플러그인 함수**로 이미 있다(이름 충돌) — 맵 쪽을 개명해 받는다.
+import { viteInput, htmlRename as entryRenameMap } from './scripts/lib/entrypoints.mjs';
 
 const r = (p) => resolve(import.meta.dirname, p);
 
@@ -55,17 +60,9 @@ export function tsJsFallback() {
 }
 
 // root=frontend 기준 emit fileName → 배포구조 경로. (맵 미포함 HTML 은 루트 불변)
-const HTML_RENAME = {
-  'landing.html': 'index.html',     // 랜딩 → 루트
-  'index.html': 'app/index.html',   // 미술관 → app/
-  'studio.html': 'app/studio.html',
-  'world.html': 'app/world.html',
-  'builder.html': 'app/builder.html', // behind-flag
-  'visit.html': 'app/visit.html',     // behind-flag
-  'lab-glb.html': 'app/lab-glb.html', // behind-flag(실험) — GLB 공간 워크스루 미리보기
-  'world2.html': 'app/world2.html',   // behind-flag(실험) — 오픈월드 커널 재작성 검증
-  // guide.html·about.html·design.html → 루트 불변(맵 미포함)
-};
+// **목록은 `scripts/lib/entrypoints.mjs` 가 갖는다** — 노출 상태(behind-flag 여부)와
+// 같은 곳에 있어야 검증 등급 판정기가 읽을 수 있고, 두 곳에 적으면 어긋난다.
+const HTML_RENAME = entryRenameMap();
 
 // 인라인 실행 script 타입(CSP script-src 해시 대상). ld+json·importmap 은 비실행.
 const EXEC_TYPES = new Set(['', 'module', 'text/javascript', 'application/javascript']);
@@ -212,28 +209,10 @@ export default defineConfig({
     // 통째로 무시되기 때문이다.
     minify: 'esbuild',
     rollupOptions: {
-      input: {
-        // 랜딩군(루트 배포) — landing 편입(B-2b 배포기 승격의 핵심).
-        landing: r('frontend/landing.html'),
-        guide: r('frontend/guide.html'),
-        about: r('frontend/about.html'),
-        design: r('frontend/design.html'),
-        // 앱군(app/ 배포)
-        index: r('frontend/index.html'),
-        studio: r('frontend/studio.html'),
-        world: r('frontend/world.html'),
-        // 라이브다 — studio.html 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다.
-        // (예전 주석은 behind-flag 라고 적고 있었다. CLAUDE.md 와 smoke/config.mjs 의
-        //  LIVE_PAGES 는 진작 정정됐는데 여기만 남아 있었다 — 값 미러링 사고 그대로다.)
-        builder: r('frontend/builder.html'),
-        visit: r('frontend/visit.html'),
-        // [실험] GLB 공간 워크스루 — 감독이 "어떤 느낌일지" 보려는 미리보기. 라이브 미술관과 완전 분리,
-        // 어디에도 링크하지 않는다. 반입 판정 전이므로 이 페이지의 존재가 채택을 뜻하지 않는다.
-        'lab-glb': r('frontend/lab-glb.html'),
-        // [실험] 오픈월드 커널 재작성 — 라이브 world.html과 완전 분리. 어디에도 링크하지
-        // 않으며, 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서지 채택이 아니다.
-        world2: r('frontend/world2.html'),
-      },
+      // 진입점 목록의 SSOT 는 `scripts/lib/entrypoints.mjs` 다. 어느 것이 라이브고
+      // 어느 것이 behind-flag 인지도 거기 한 곳에 있다 — 여기 주석으로 적으면 낡는다
+      // (`builder.html` 이 라이브가 된 뒤에도 `// behind-flag` 주석이 남아 있었다).
+      input: viteInput(r),
       output: {
         manualChunks(id) {
           // [번들 분리] three/webgpu 는 오픈월드(world.js) 한 곳만 쓴다. 그런데 예전에는
