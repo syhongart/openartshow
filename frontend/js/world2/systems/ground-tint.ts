@@ -1,0 +1,82 @@
+// 지면 알베도 배수의 **집행**. 판정은 `decide/ground-albedo.ts` 가 한다.
+//
+// ── 왜 별도 파일인가 ────────────────────────────────────────────────────────
+// `systems/night-lights.ts` 와 같은 이유다. 배선을 `features/sky.ts` 안 클로저로 두면
+// 테스트가 그 로직을 **다시 적어야** 하고, 그것이 곧 값 미러링이다. 실제로 가로등
+// 배선이 그 상태다 — `tests/world2-night.test.ts` 의 *"가로등 재질에 값이 닿는가"* 는
+// `features/sky.ts` 를 한 줄도 실행하지 않고 같은 식을 옆에 다시 쓴다. 배선이 사라져도
+// 그 테스트는 초록이다. 여기로 빼면 테스트가 **실제로 돌아가는 코드**를 부른다.
+//
+// ── 왜 three 타입을 안 쓰는가 ───────────────────────────────────────────────
+// 필요한 모양은 `color.r/g/b` 뿐이다. 구조적 타입으로 두면 테스트가 가벼운 스텁으로
+// 실제 코드를 돌릴 수 있고, `three` 와 `three/webgpu` 의 타입 네임스페이스 차이도
+// 비껴간다(`night-lights.ts` 가 같은 이유로 그렇게 한다).
+
+import { GROUND_KEYS, GROUND_TINT_STRENGTH, groundTint } from '../decide/ground-albedo.js';
+import { nightness } from '../decide/night.js';
+
+/** 채널을 직접 만질 수 있는 색. `THREE.Color` 가 이 모양이다 */
+export interface MutableColor { r: number; g: number; b: number }
+
+/** 색을 가진 재질. `MeshStandardMaterial` 이 이 모양이다 */
+export interface TintableMaterial { color?: MutableColor | null }
+
+/** 풀에서 재질을 꺼낼 수 있는 것. `InstancePools` 가 이 모양이다 */
+export interface MaterialSource { materialOf(key: string): unknown }
+
+interface Target {
+  key: string;
+  color: MutableColor;
+  /** 부팅 시점의 재질 색. 배수는 **여기에** 곱한다 */
+  base: readonly [number, number, number];
+}
+
+/**
+ * 시간대에 따라 지면 3파츠의 `material.color` 에 배수를 건다.
+ *
+ * ── 왜 곱셈인데도 발산하지 않는가 ───────────────────────────────────────────
+ * 매 프레임 곱하는 것이 아니라 **부팅 시점의 색에서 매번 다시 계산**한다. 그래서
+ * `apply` 를 몇 번 부르든 결과가 같다(멱등). 밤 조명 하한이 `max` 를 고른 것과 같은
+ * 성질이고, 이 성질이 없으면 "언제 적용되는가" 를 정확히 알아야 하는데 그 지식은
+ * 언젠가 어긋난다.
+ *
+ * 기준을 `1` 로 가정하지 않는 것이 중요하다. 지금은 세 재질 모두 `color` 를 명시하지
+ * 않아 흰색이지만, 다음 사람이 재질에 색을 주면 그 색이 조용히 지워질 자리다.
+ */
+export class GroundTint {
+  private targets: Target[] = [];
+  /** 풀에 없었거나 `color` 가 없던 파츠. 조용히 넘어가면 기능이 죽은 줄 모른다 */
+  readonly missing: string[] = [];
+  private lastN = -1;
+  private applied: Record<string, number> | null = null;
+
+  constructor(src: MaterialSource, private readonly strength = GROUND_TINT_STRENGTH) {
+    for (const key of GROUND_KEYS) {
+      const mat = src.materialOf(key) as TintableMaterial | null;
+      const c = mat?.color;
+      if (!c) { this.missing.push(key); continue; }
+      this.targets.push({ key, color: c, base: [c.r, c.g, c.b] });
+    }
+  }
+
+  /**
+   * 시간대를 반영한다. 값이 안 바뀌었으면 아무것도 만지지 않는다 — 매 프레임 같은 수를
+   * 대입해도 three 는 조용히 넘어가지만, 만지지 않는 것이 언제나 싸다.
+   */
+  apply(time: string): void {
+    const n = nightness(time);
+    if (n === this.lastN) return;
+    this.lastN = n;
+    const t = groundTint(n, this.strength);
+    this.applied = t;
+    for (const { key, color, base } of this.targets) {
+      const s = t[key];
+      color.r = base[0] * s;
+      color.g = base[1] * s;
+      color.b = base[2] * s;
+    }
+  }
+
+  /** 진단용 — 지금 걸린 배수. 화면에서는 "좀 어둡네" 로만 보이는 것을 숫자로 남긴다 */
+  get scales(): Record<string, number> | null { return this.applied; }
+}
