@@ -51,10 +51,50 @@ class FakeTexture {
   }
 }
 
+/**
+ * `PlaneGeometry` 스텁.
+ *
+ * ── 왜 정점을 실제로 만드는가 (2026-08-05) ───────────────────────────────────
+ * 예전에는 `w`·`h` 만 들고 `rotateX()` 가 `this` 를 돌려주는 껍데기였다. 바다 정점
+ * 파동 패치(팀장 판정 A)가 `getAttribute('position')` 을 부르자 **프로덕션 코드가
+ * 멀쩡한데 테스트만 터졌다** — 이 파일 `FakeMaterial` 주석이 이미 이름 붙인 형태다
+ * (*"스텁이 계약을 덜 재현하면 …"*). 그래서 three 의 계약대로 정점을 만든다.
+ *
+ * `rotateX` 도 **실제로 회전시킨다.** no-op 으로 두면 정점이 XY 평면에 남아, 프로덕션이
+ * 읽는 `p[i+1]`(y) 이 테스트에서만 다른 축을 가리킨다 — 거짓 재현은 미검출보다 나쁘다.
+ * three 의 `PlaneGeometry` 는 XY 평면에 (z=0) 만들고, `rotateX(-π/2)` 는 그것을
+ * `(x, y, 0) → (x, 0, −y)` 로 옮긴다.
+ */
 class FakeGeometry {
   disposed = false;
-  constructor(public w: number, public h: number) {}
-  rotateX() { return this; }
+  attrs: Record<string, FakeAttr> = {};
+  constructor(public w: number, public h: number, public ws = 1, public hs = 1) {
+    const pos: number[] = [];
+    for (let iy = 0; iy <= hs; iy++) {
+      // three 와 같은 순서·부호: y 는 위(+h/2)에서 아래(−h/2)로 훑는다.
+      const y = h / 2 - (iy * h) / hs;
+      for (let ix = 0; ix <= ws; ix++) {
+        pos.push((ix * w) / ws - w / 2, y, 0);
+      }
+    }
+    this.attrs.position = new FakeAttr(pos, 3);
+  }
+
+  /** `-π/2` 만 재현한다 — 이 파일이 쓰는 유일한 각도이고, 임의 각도는 쓸 일이 없다 */
+  rotateX(rad: number) {
+    if (Math.abs(rad + Math.PI / 2) > 1e-9) {
+      throw new Error(`FakeGeometry.rotateX: -π/2 만 재현한다(받은 값 ${rad})`);
+    }
+    const p = this.attrs.position.array;
+    for (let i = 0; i < p.length; i += 3) {
+      const y = p[i + 1];
+      p[i + 1] = p[i + 2];
+      p[i + 2] = -y;
+    }
+    return this;
+  }
+
+  getAttribute(name: string) { return this.attrs[name]; }
   dispose() { this.disposed = true; }
 }
 
@@ -72,7 +112,9 @@ class FakeMaterial {
 }
 
 class FakeMesh {
-  position = { y: 0 };
+  // `x`·`z` 도 준다 — 바다 패치가 플레이어를 따라 **가로로** 움직이므로(팀장 판정 A),
+  // `y` 만 있으면 그 이동을 검사가 볼 수 없고 프로덕션에서는 `undefined` 대입이 된다.
+  position = { x: 0, y: 0, z: 0 };
   castShadow = false;
   receiveShadow = false;
   frustumCulled = true;
@@ -91,7 +133,10 @@ const DYNAMIC_DRAW_USAGE = 35048;
 class FakeAttr {
   /** three 의 기본값(`StaticDrawUsage`). `setUsage` 가 실제로 바꾸는지 검사가 볼 수 있게 둔다. */
   usage = 35044;
+  /** three 의 계약. 진단이 정점 수를 이것으로 읽는다 — 없으면 `undefined` 가 보고된다 */
+  needsUpdate = false;
   constructor(public array: number[], public itemSize: number) {}
+  get count() { return this.array.length / this.itemSize; }
   /** 강 판이 매 프레임 정점 y 를 덮어쓰므로 동적 버퍼로 선언한다 — three 의 계약이다. */
   setUsage(u: number) { this.usage = u; return this; }
 }
@@ -176,7 +221,7 @@ beforeAll(() => {
     function (this: { _g?: number[] }) { return mkCtx(this); };
 });
 
-const { oceanFeature, waveHeight } = await import('../frontend/js/world2/features/ocean.js');
+const { oceanFeature, waveHeight, SEA_PATCH_METRICS, peakOf } = await import('../frontend/js/world2/features/ocean.js');
 const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, waterGloss } = await import('../frontend/js/world2/decide/water.js');
 // 두 번째 물결 층 검사가 쓴다. **실물을 import 한다** — 총 불투명도(`OPACITY`)와 배분
 // 공식(`splitOpacity`)을 여기 다시 적으면 그 순간 미러링이고, 값을 바꿔도 검사가 옛
@@ -188,7 +233,9 @@ const EDGE = worldHalfExtent(DEFAULT_LAYOUT.cellX);
 
 interface Added {
   name: string;
-  position: { y: number };
+  // 바다 패치가 플레이어를 따라 **가로로** 움직인다(팀장 판정 A). `y` 만 적어 두면
+  // 그 이동을 검사가 아예 못 읽는다 — `FakeMesh` 와 같은 모양을 유지한다.
+  position: { x: number; y: number; z: number };
   material: FakeMaterial;
   renderOrder: number;
   frustumCulled: boolean;
@@ -224,7 +271,14 @@ function mount(initial: Tod = 'day', backend = 'WebGL') {
   // 실제 Feature 계약 전체를 만들지 않는다 — ocean 이 쓰는 것만 준다.
   const inst = oceanFeature.create(env as never)!;
   const sea = () => added.find((m) => m.name === 'ocean')!.material;
-  return { inst, added, removed, sea, setTime: (t: Tod) => { tod = t; } };
+  return {
+    inst, added, removed, sea,
+    setTime: (t: Tod) => { tod = t; },
+    // 바다 패치가 플레이어를 따라 움직이는지 보려면 플레이어가 **실제로 움직여야** 한다
+    // (팀장 판정 A). 고정 좌표만 쓰면 그 가지가 통째로 미검증으로 남는다 — TSL 분기가
+    // 정확히 그렇게 새어나갔다(위 스텁 주석).
+    setPlayer: (x: number, z: number) => { env.player.position.x = x; env.player.position.z = z; },
+  };
 }
 
 describe('waveHeight — 타일이 이어진다', () => {
@@ -1437,5 +1491,136 @@ describe('두 번째 물결 층 — 동적 축', () => {
     inst.dispose!();
     expect(mat.disposed, '두 번째 층 재질이 안 치워졌다').toBe(true);
     expect(map.disposed, '두 번째 층 노말맵이 안 치워졌다').toBe(true);
+  });
+});
+
+// ── 바다 정점 파동 패치 — **집행**을 본다 (감독 실기기 2026-08-05, 팀장 판정 A) ────
+//
+// `tests/world2-ocean-patch.test.ts` 는 예산·유도(순수 산술)를 본다. 그것만으로는
+// **"계산한 파동이 실제 버퍼에 꽂히는가"** 가 미검증으로 남는다 — 이 저장소가 구름
+// `alpha` 에서 정확히 그렇게 새어나갔고, CLAUDE.md 가 *"판정/집행 분리의 구멍 — 경계를
+// 건너는 지점은 아무도 안 본다"* 로 이름 붙인 자리다.
+//
+// 애초에 이 기능이 필요해진 이유가 그 형태였다: 바다 판이 평면인 채 `surfaceLift` 만
+// 존재했고, 순수 함수 테스트는 내내 초록이었다.
+describe('바다 패치 — 정점이 실제로 울렁이는가 (집행)', () => {
+  const patchOf = (added: Added[]) => {
+    const m = added.find((x) => x.name === 'ocean-wave2')!;
+    return (m.geometry as FakeGeometry).getAttribute('position');
+  };
+
+  it('층2 메시가 세분 패치를 쓴다 — 정점 수가 유도값과 같다', () => {
+    const { added } = mount();
+    expect(patchOf(added).count).toBe(SEA_PATCH_METRICS.vertices);
+  });
+
+  it('★ update 한 번이면 평평하지 않다 — 이것이 "울렁임"의 유일한 증거다', () => {
+    const { inst, added } = mount();
+    const pos = patchOf(added);
+    // 부팅 직후는 `PlaneGeometry` 그대로라 평평하다.
+    expect(peakOf(pos.array as never)).toBe(0);
+    inst.system!.update({ dt: 1 } as never);
+    // ⚠ 이 단언이 이 커밋의 핵심이다. `p[i + 1] = …` 한 줄을 지우면 여기가 깨진다.
+    expect(peakOf(pos.array as never)).toBeGreaterThan(0);
+    expect(pos.needsUpdate, '버퍼 갱신을 안 알리면 GPU 에 안 올라간다').toBe(true);
+  });
+
+  it('시간이 흐르면 파형이 달라진다 — 굳어 있으면 정지한 물이다', () => {
+    const { inst, added } = mount();
+    const pos = patchOf(added);
+    inst.system!.update({ dt: 0.5 } as never);
+    const first = (pos.array as number[]).slice();
+    inst.system!.update({ dt: 0.9 } as never);
+    const moved = (pos.array as number[]).some((v, i) => Math.abs(v - first[i]) > 1e-9);
+    expect(moved, '두 프레임의 정점이 완전히 같다 — 파동이 시간을 안 쓴다').toBe(true);
+  });
+
+  it('★ 골이 아래 층을 뚫지 않는다 — 정점 y 가 0.01 아래로 안 내려간다', () => {
+    // 층2가 평평한 `sea` 를 뚫고 내려가면 물이 두 겹으로 갈라져 보인다. 그 몫을
+    // `+ LIFT_AMP` 오프셋이 맡는다 — 없애면 여기가 깨진다.
+    const { inst, added } = mount();
+    const pos = patchOf(added);
+    for (const dt of [0.1, 0.7, 1.3, 2.9, 5.2]) {
+      inst.system!.update({ dt } as never);
+      const ys = (pos.array as number[]).filter((_, i) => i % 3 === 1);
+      expect(Math.min(...ys)).toBeGreaterThanOrEqual(0.01 - 1e-9);
+    }
+  });
+
+  it('★ 플레이어를 따라오되 **스냅 단위로만** 움직인다 — 아니면 무늬가 따라다닌다', () => {
+    const { inst, added, setPlayer } = mount();
+    const mesh = added.find((x) => x.name === 'ocean-wave2')!;
+    const snap = SEA_PATCH_METRICS.snap;
+
+    // 반 칸도 안 되는 이동에는 안 움직인다.
+    setPlayer(snap * 0.3, 0);
+    inst.system!.update({ dt: 1 } as never);
+    expect(mesh.position.x).toBe(0);
+
+    // 한 칸을 넘으면 정확히 한 칸 옮겨간다.
+    setPlayer(snap * 1.2, snap * -2.1);
+    inst.system!.update({ dt: 1 } as never);
+    expect(mesh.position.x).toBeCloseTo(snap, 9);
+    expect(mesh.position.z).toBeCloseTo(-2 * snap, 9);
+  });
+
+  it('패치가 움직여도 같은 월드 지점의 높이는 그대로다 — 이음새가 안 생긴다', () => {
+    // A 안이 성립하는 근거를 **조립된 상태에서** 확인한다(순수 함수 쪽은 별도 파일).
+    const { inst, added, setPlayer } = mount();
+    const pos = patchOf(added);
+    const snap = SEA_PATCH_METRICS.snap;
+    const heightAtWorldOrigin = () => {
+      const mesh = added.find((x) => x.name === 'ocean-wave2')!;
+      const p = pos.array as number[];
+      for (let i = 0; i < p.length; i += 3) {
+        if (Math.abs(p[i] + mesh.position.x) < 1e-6 && Math.abs(p[i + 2] + mesh.position.z) < 1e-6) {
+          return p[i + 1];
+        }
+      }
+      return null;
+    };
+    inst.system!.update({ dt: 2 } as never);
+    const before = heightAtWorldOrigin();
+    expect(before, '월드 원점에 해당하는 정점을 못 찾았다').not.toBeNull();
+
+    // 시간은 **멈춘 채**(dt 0) 판만 옮긴다 — 파형이 위치 때문에 바뀌는지만 본다.
+    setPlayer(snap * 3, snap * 3);
+    inst.system!.update({ dt: 0 } as never);
+    expect(heightAtWorldOrigin()).toBeCloseTo(before!, 9);
+  });
+
+  it('진단이 상수가 아니라 버퍼를 읽는다 — peak 이 실제 배열과 일치한다', () => {
+    const { inst, added } = mount();
+    inst.system!.update({ dt: 1.7 } as never);
+    const d = inst.diagnostics!() as { seaPatch: { peak: number; vertices: number } | null };
+    expect(d.seaPatch).not.toBeNull();
+    expect(d.seaPatch!.peak).toBeCloseTo(peakOf(patchOf(added).array as never), 12);
+    expect(d.seaPatch!.vertices).toBe(SEA_PATCH_METRICS.vertices);
+  });
+
+  it('TSL 모드에는 패치가 없고, 진단이 그것을 `null` 로 말한다', () => {
+    // `0` 으로 채우면 "패치가 있는데 평평하다" 와 구별되지 않는다 — 못 잰 것을 통과로
+    // 적지 않는다는 규율 그대로다.
+    //
+    // ⚠ **`WebGPU` 백엔드만으로는 TSL 이 안 걸린다.** `?water=tsl` 요청과 백엔드가
+    // 함께 정한다(`pickWaterMode`). 처음에 백엔드만 바꿔 놓고 이 테스트를 썼다가
+    // 기본 물이 떠서 깨졌다 — 요청과 채택을 갈라 놓은 설계를 테스트가 안 따라간 것이다.
+    const before = location.search;
+    window.history.replaceState({}, '', '?water=tsl');
+    try {
+      const { inst } = mount('day', 'WebGPU');
+      const d = inst.diagnostics!() as { seaPatch: unknown; water: { active: string } };
+      expect(d.water.active, 'TSL 이 실제로 걸리지 않았다 — 이 검사가 딴것을 보고 있다').toBe('tsl');
+      expect(d.seaPatch).toBeNull();
+    } finally {
+      window.history.replaceState({}, '', before || location.pathname);
+    }
+  });
+
+  it('패치 지오가 정리된다 — 빠지면 누수다', () => {
+    const { inst, added } = mount();
+    const g = added.find((x) => x.name === 'ocean-wave2')!.geometry as FakeGeometry;
+    inst.dispose!();
+    expect(g.disposed, '패치 지오가 안 치워졌다').toBe(true);
   });
 });
