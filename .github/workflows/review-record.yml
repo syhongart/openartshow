@@ -32,11 +32,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        # `fetch-depth: 0` 이 필요하다 — `해당없음` 판정일 때 base..HEAD 로 변경 목록을
+        # 떠서 검증 등급을 판정한다(아래 참조). 얕은 checkout 이면 `git diff` 가 실패하고,
+        # 실패는 **통과가 아니라 FAIL** 로 처리된다(fail-closed).
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with: { node-version: '20' }
       - name: 검수관 판정 기록 검사
         # PR 본문을 **env 로 넘긴다.** `run:` 안에 `${{ }}` 를 직접 쓰면 본문 내용이
         # 셸로 전개돼 스크립트 인젝션이 된다(PR 본문은 외부 입력이다).
+        #
+        # `PR_BASE_SHA` 는 **`해당없음` 의 근거를 검사**하기 위한 것이다(검수관 반려 B4,
+        # 2026-08-05). 검증 등급 도입으로 `해당없음` 이 상시 경로가 됐는데 그 진위를 보는
+        # 축이 0이었다 — *"3등급이라 면제"* 라고 적으면 통과했다. 이제 실제 등급이 1이면
+        # FAIL 한다. 게이트가 검증을 면제하는 것이 아니라 **면제 주장의 근거를 검사**한다.
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: node scripts/smoke/check-review-record.mjs

@@ -177,6 +177,8 @@ OCP(내부 변경이 소비자에 안 샘)를 동시에 만족시킨다.
 
 **배포 게이트**(`OPERATING-PRINCIPLES.md` §10): 구현 → **독립 executor 스모크**(구현자 ≠ 검증자) →
 **release-reviewer 교차리뷰** → 승인 → push. main push 후 Actions success 확인까지가 배포 완결.
+**어디까지 거는가는 `node scripts/verification-tier.mjs` 가 판정한다**(§10-3) — 라이브 진입점
+그래프에서 도달하는가로 가른다. 등급표는 `scripts/lib/verification-tier.mjs` 한 곳이다.
 
 **공급망 위생**: 모든 GitHub Action은 SHA 핀 고정(보안 §10-6 상시 점검 대상).
 

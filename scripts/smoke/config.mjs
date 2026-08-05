@@ -175,6 +175,21 @@ export const LIVE_PAGES = [
   // vite 번들 전용(`three/webgpu`·`three/addons/*` import)이라 baseline 모드에서는
   // raw 직서빙으로 부팅되지 않는다 — 그래서 vite 모드에서만 검사한다.
   { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // ── visit·lab-glb: behind-flag 인데 **검사가 0이었다** (검수관 반려 B1, 2026-08-05) ──
+  //
+  // 검증 등급(#195)을 도입하면서 *"3등급이어도 자기완결·CSP 는 CI 스모크가 등급과 무관하게
+  // 도니 면제할 방법이 애초에 없다"* 고 적었다. **그 문장이 틀렸다.** CSP·외부요청 검사는
+  // 이 `LIVE_PAGES` 를 순회하는데 두 페이지가 여기 없었다 — 3등급이 되면 검수관·배포 전
+  // 스모크·CI 스모크 **세 겹 모두** 이 페이지를 안 본다.
+  //
+  // 그 문장이 참으로 보였던 이유는 구조가 아니라 **우연**이다: world2 가 behind-flag 인데도
+  // 위에 예외로 들어 있어서였다. 예외를 일반 규칙으로 승격해 적은 것이다.
+  //
+  // 둘 다 importmap 으로 `./vendor/three.module.js` 를 쓰므로(`visit.html:10`·`lab-glb.html:16`,
+  // GLTFLoader 도 `../vendor/`) baseline 직서빙에서도 부팅된다 — world2 와 달리 `viteOnly` 가
+  // 필요 없다. **이 편입이 빠지면 `tests/verification-tier.test.ts` 의 G1 검사가 FAIL 한다.**
+  { name: 'app/visit',         url: '/app/visit.html',  webgl: true },
+  { name: 'app/lab-glb',       url: '/app/lab-glb.html', webgl: true },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──

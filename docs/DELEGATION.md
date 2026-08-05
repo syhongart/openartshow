@@ -14,6 +14,13 @@
 > 규율은 문서로 늘려도 안 지켜진다(CLAUDE.md 는 이미 17,756자다). 이 파일이 다른 이유는
 > **쓰는 순간에 열는 체크리스트**라서다 — 기억에 의존하지 않는다.
 
+> **누구를 부를지 이전에 — 부를 필요가 있는지부터 (2026-08-05, #195)**
+> 배포 전 독립 스모크(B·executor)와 검수관(E)을 **매번** 부르는 것이 기본값이었다. 지금은
+> **등급이 정한다**: `node scripts/verification-tier.mjs --base origin/main`.
+> 등급표와 판정 규칙은 [`scripts/lib/verification-tier.mjs`](../scripts/lib/verification-tier.mjs)
+> 한 곳이고 여기에 다시 적지 않는다. 판정 불가는 **가장 무거운 등급**이므로, 등급이 안
+> 나오면 전부 부르는 쪽이 기본값이다. 근거는 `OPERATING-PRINCIPLES.md` §10-3.
+
 ---
 
 ## A. 모든 위임에 공통 (유형 무관)
