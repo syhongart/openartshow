@@ -10,6 +10,9 @@ on:
 
 permissions:
   contents: write
+  # PR 생성·자동병합에 필요하다. `main` 이 보호돼 있어 직접 push 가 거부되므로
+  # 봇도 PR 을 거친다(감독 카드 판정 2026-08-05 *"봇도 PR로"*).
+  pull-requests: write
 
 jobs:
   valuate:
@@ -46,25 +49,74 @@ jobs:
         #
         # 이 저장소에서 추적되는 생성물은 `docs/valuation-history.json` 하나뿐이다
         # (산출물이 아니라 **상태**다 — 날짜별 이력이라 다시 만들 수 없다).
+        # ── 2026-07-30 부터 **또** 매일 실패했다 — 이번엔 main 보호 규칙 (7일 연속) ──
+        # 로그 실물(run 30948796238):
+        #   remote: error: GH013: Repository rule violations found for refs/heads/main.
+        #   remote: - Changes must be made through a pull request.
+        #   remote: - 2 of 2 required status checks are expected.
+        #   ! [remote rejected] main -> main (push declined)
+        #
+        # 07-29 성공 / 07-30 실패이므로 그 사이에 `main` 보호가 켜졌다. **보호 자체는
+        # 좋은 변화**인데 봇만 옛 방식(직접 push)에 남아 7일을 거부당했다.
+        #
+        # ⚠ 아래 `for i in 1 2 3` 재시도는 **이 실패에 무력했다.** 재시도는 경합
+        # (non-fast-forward)을 푸는 장치이고 **정책 위반은 세 번 다 같은 이유로 거부된다.**
+        # 재시도가 있으니 견고하다고 읽힐 자리였다 — 무엇을 푸는 장치인지 적어 둔다.
+        #
+        # 감독 카드 판정(2026-08-05): **"봇도 PR로"** — 보호를 그대로 두고 봇을 규칙에 맞춘다.
+        id: commit
         run: |
           set -euo pipefail
           git config user.name  "artshow-bot"
           git config user.email "bot@artshow.local"
           if [ -z "$(git status --porcelain docs/valuation-history.json README.md)" ]; then
             echo "변경 없음 — 스킵"
+            echo "changed=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # build-team.mjs 산출물(making/team/)은 .gitignore 대상이므로 커밋하지 않는다.
           # 배포 때 deploy.yml 이 다시 만든다. 인사기록 갱신은 README 의 자동 블록을 통해 반영.
+          BR="bot/valuation-$(date -u +%Y%m%d-%H%M%S)"
+          git switch -c "$BR"
           git add docs/valuation-history.json README.md
           git commit -m "chore(valuation): $(date -u +%Y-%m-%d) 자동 산출"
-          # 사람·에이전트 커밋도 같은 상태 파일을 건드린다(스모크가 생성기를 돌리면서
-          # 갱신한다). 봇이 도는 사이에 main 이 앞서가면 push 가 non-fast-forward 로
-          # 죽는다 — 하루치 산출이 통째로 날아간다. rebase 후 재시도한다.
-          for i in 1 2 3; do
-            if git push; then exit 0; fi
-            echo "push 실패 — main 을 다시 받아 rebase 후 재시도 ($i/3)"
-            git pull --rebase origin main
-          done
-          echo "3회 재시도 실패" >&2
-          exit 1
+          git push -u origin "$BR"
+          echo "branch=$BR"   >> "$GITHUB_OUTPUT"
+          echo "changed=1"    >> "$GITHUB_OUTPUT"
+
+      - name: PR 생성 + 자동 병합
+        if: steps.commit.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BR: ${{ steps.commit.outputs.branch }}
+        # ⚠⚠ **알려진 함정 — 이 스텝이 성공해도 병합은 안 될 수 있다.**
+        # `GITHUB_TOKEN` 으로 만든 push·PR 은 **다른 워크플로를 발화하지 않는다**(무한 루프
+        # 방지 정책). 이 저장소는 그것을 이미 실증했다 — 태스크 #130 *"봇 커밋이 배포를
+        # 발화하지 않는다"*. 그러면 `ci.yml` 이 안 돌아 **필수 상태검사가 영원히 pending**
+        # 이고 auto-merge 가 걸린 채 멈춘다.
+        #
+        # 그래도 **지금보다 낫다**: 예전에는 실패가 조용했고(7일 동안 아무도 몰랐다)
+        # 감독이 발견했다. 이제는 **PR 이 열린 채 남아 눈에 보인다.**
+        #
+        # 근본 해소는 PAT(감독 작업) 또는 ruleset 봇 우회(감독 작업)이고, 어느 쪽이든
+        # 감독 판정이 필요하다 — 그래서 여기서 정하지 않는다. 실측 결과는 태스크 #204 에.
+        run: |
+          set -euo pipefail
+          # ⚠ heredoc 을 쓰지 않는다. YAML 블록 안에서는 종료 표식이 들여쓰기되는데
+          # `<<'EOF'` 는 들여쓴 `EOF` 를 인식하지 않아 스크립트가 통째로 삼켜진다.
+          # 파일로 쓰면 그 함정이 없다.
+          {
+            echo "밸류에이션 자동 산출 — \`daily-valuation\` 워크플로가 생성했다."
+            echo
+            echo "변경은 \`docs/valuation-history.json\`(추적되는 **상태** — 날짜별 이력이라"
+            echo "다시 만들 수 없다)과 \`README.md\` 자동 블록뿐이다."
+            echo
+            echo "검수관 판정: 해당없음 (2등급 — 봇 자동 산출, 문서만. 라이브 런타임 도달 0)"
+          } > /tmp/pr-body.md
+          gh pr create --base main --head "$BR" \
+            --title "chore(valuation): $(date -u +%Y-%m-%d) 자동 산출" \
+            --body-file /tmp/pr-body.md
+          # auto-merge 가 안 걸려도 **워크플로를 죽이지 않는다** — PR 은 이미 열렸고,
+          # 그것이 이 변경의 핵심(실패가 보이게 하는 것)이다.
+          gh pr merge --auto --squash "$BR" \
+            || echo "::warning::auto-merge 를 못 걸었다 — PR 이 열린 채 남는다(위 주석의 알려진 함정)"
