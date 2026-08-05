@@ -18,6 +18,8 @@ import {
 } from '../decide/night.js';
 import { readNum, readEnum } from '../url-knob.js';
 import { DAY_SUN_I, DAY_HEMI_I } from '../decide/daylight.js';
+import { GroundLift } from '../systems/ground-lift.js';
+import { NIGHT_GROUND_LIFT, MAX_LIFT } from '../decide/ground-albedo.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 // 시간대 목록(`TIMES`)은 `decide/night.ts` 로 옮겼다 — 조립부도 그것을 읽으므로 여기
@@ -149,6 +151,28 @@ export const skyFeature: Feature = {
 
     applyLampGlow(); // 부팅 프레임부터 맞춰 둔다 — 밤에 들어왔는데 첫 프레임만 꺼져 있으면 깜빡인다
 
+    // ── 지면 알베도 (`?glift=`) ────────────────────────────────────────────
+    // 감독: *"정상적으로 밝은 느낌 나게 해."* (2026-08-05)
+    //
+    // 밤 처방은 지금까지 전부 **빛**이었다(조명 하한·노출·안개). 빛은 알베도에 곱해지
+    // 므로 알베도가 낮은 파츠는 밤에 검정으로 죽는다 — 도로가 화면에서 4/255 다.
+    // 노출을 더 올려 고칠 수 없다: 그것은 화면 전체를 밝혀 하늘까지 뜬다(그 벽에서
+    // `NIGHT_EXPOSURE` 가 1.6→1.4 로 내려왔다). 감독이 원하는 것은 **하늘은 밤인 채로
+    // 지면만 정상적으로 보이는 것**이고, 알베도는 그 재질에만 걸리므로 정확히 그렇다.
+    //
+    // **전 파츠에 같은 배수**라 대비는 낮과 동일하다 — 파츠별로 갈라 대비를 좁힌 첫
+    // 판본은 감독 판정으로 철회됐다(*"밤이여도 이전이 더 좋은데?"*).
+    //
+    // **왜 하늘이 이걸 하는가** — 가로등과 같은 이유다. 근거가 시간대이고, 기능 규약이
+    // *"기능을 빼면 그 기능에 관한 모든 것이 함께 빠진다"* 이다. 하늘을 빼면 밤 자체가
+    // 없으므로(조명 하한도 노출도 `SkySystem` 이 건다) 지면도 낮 알베도로 남는 것이 맞다.
+    //
+    // 배선이 `systems/ground-lift.ts` 에 있는 이유는 테스트가 **실제로 돌아가는 코드**를
+    // 부르게 하려는 것이다 — 위 `applyLampGlow` 는 클로저 안이라 테스트가 같은 식을 옆에
+    // 다시 쓰고 있고, 배선이 사라져도 그 테스트는 초록이다.
+    const groundLift = new GroundLift(env.pools, readNum('glift', NIGHT_GROUND_LIFT, 1, MAX_LIFT));
+    groundLift.apply(env.time()); // 가로등과 같은 이유로 부팅 프레임부터 맞춘다
+
     return {
       system: {
         name: sky.name,
@@ -157,6 +181,7 @@ export const skyFeature: Feature = {
           // 하늘이 시간대를 옮긴 **뒤에** 읽는다. 순서가 뒤집히면 한 프레임 늦은 값으로
           // 켜져서, 시간대를 바꿀 때 가로등만 뒤늦게 따라온다.
           applyLampGlow();
+          groundLift.apply(env.time());
         },
         dispose: () => sky.dispose?.(),
       },
@@ -195,6 +220,10 @@ export const skyFeature: Feature = {
           fogC: fog?.color ? fog.color.getHex() : null,
           // 가로등이 켜졌는가. 화면으로는 "좀 밝네" 로만 보이는 것을 숫자로 남긴다.
           lampGlow: lampLit,
+          // 지면 알베도 배수. `groundMissing` 이 비어 있지 않으면 그 파츠에는 **아무것도
+          // 안 걸린 것**이다 — 조용히 넘어가면 기능이 죽은 줄 모른다.
+          groundLift: groundLift.scale,
+          groundMissing: groundLift.missing,
         };
       },
 
