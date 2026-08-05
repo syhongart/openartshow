@@ -99,6 +99,21 @@ describe('하늘 돔 반경 — 노브가 열려 있다', () => {
     // ⚠ `const camera =` 로 앵커를 좁힌다 (검수관 RC-2). 그냥 `PerspectiveCamera` 를
     // 찾으면 파일 **앞줄**에 다른 카메라(프리뷰 등)가 생기는 순간 그것을 잡아
     // **유도가 멀쩡한데도 FAIL** 한다(뮤테이션 M6).
+    //
+    // ── ⚠ 좁힌 대가 — 거짓 FAIL 3종 (검수관 조건 3, 실측) ──────────────────
+    // 위 두 수정이 왜 필요했는지는 적었는데 **그 대가는 안 적었다.** 다음 사람이
+    // 아래 중 하나를 하면 **유도가 멀쩡한데 FAIL** 하고, 이유를 못 찾는다:
+    //
+    //   M7  변수명 교체 — `const camera` → `const mainCamera` 면 앵커가 안 맞는다
+    //   M11 따옴표 — 쌍따옴표 import 면 정규식이 안 맞는다. **이 저장소에는 prettier
+    //       설정이 없고 `eslint.config.js` 에 quote 규칙도 없다** — 단따옴표는
+    //       강제되는 것이 아니라 관습이다
+    //   M13 배럴 — `ARCHITECTURE.md §4` 가 배럴 패턴을 규정하므로, 훗날
+    //       `systems/index.js` 배럴이 생겨 그리로 import 하면 FAIL 한다
+    //
+    // 셋 다 **fail-closed** 다(거짓 PASS 가 아니라 거짓 FAIL). 그래서 블로커로 두지
+    // 않았다 — 그러나 위 중 하나를 하다 여기서 막히면 **정규식을 넓히면 되는 것**이지
+    // 유도가 깨진 것이 아니다.
     const m = main.match(/const camera = new THREE\.PerspectiveCamera\(([^)]*)\)/);
     expect(m, '카메라 생성부를 못 찾았다 — 이 검사가 무효다').not.toBeNull();
     const args = m![1];
