@@ -1566,27 +1566,53 @@ describe('바다 패치 — 정점이 실제로 울렁이는가 (집행)', () =>
 
   it('패치가 움직여도 같은 월드 지점의 높이는 그대로다 — 이음새가 안 생긴다', () => {
     // A 안이 성립하는 근거를 **조립된 상태에서** 확인한다(순수 함수 쪽은 별도 파일).
+    //
+    // ⚠ 처음엔 "월드 원점(0,0) 에 해당하는 정점" 을 찾았다. `SEA_PATCH_TILES` 가 7 로
+    // 늘자 세그먼트가 홀수(49)가 되어 **중심에 정점이 없어졌고** 검사가 깨졌다.
+    // 특정 좌표에 정점이 있다고 가정한 것이 잘못이다 — 세그먼트 수는 유도값이라
+    // 홀짝이 언제든 바뀐다. 그래서 **실재하는 정점 하나를 골라** 그 월드 좌표를 쓴다.
     const { inst, added, setPlayer } = mount();
     const pos = patchOf(added);
+    const mesh = added.find((x) => x.name === 'ocean-wave2')!;
     const snap = SEA_PATCH_METRICS.snap;
-    const heightAtWorldOrigin = () => {
-      const mesh = added.find((x) => x.name === 'ocean-wave2')!;
+
+    /** 주어진 월드 좌표에 놓인 정점의 y. 없으면 null */
+    const heightAtWorld = (wx: number, wz: number) => {
       const p = pos.array as number[];
       for (let i = 0; i < p.length; i += 3) {
-        if (Math.abs(p[i] + mesh.position.x) < 1e-6 && Math.abs(p[i + 2] + mesh.position.z) < 1e-6) {
-          return p[i + 1];
-        }
+        if (Math.abs(p[i] + mesh.position.x - wx) < 1e-6
+          && Math.abs(p[i + 2] + mesh.position.z - wz) < 1e-6) return p[i + 1];
       }
       return null;
     };
+
     inst.system!.update({ dt: 2 } as never);
-    const before = heightAtWorldOrigin();
-    expect(before, '월드 원점에 해당하는 정점을 못 찾았다').not.toBeNull();
+    // 판 한가운데 정점을 고른다.
+    //
+    // ⚠ 처음엔 `count/2` 로 잡았다. 정점은 `(seg+1)²` 격자라 그 인덱스는 **행 중앙의
+    // 왼쪽 끝**(row 25, col 0)이고, 판을 +x 로 옮기면 대응 정점이 판 밖(col −7)으로
+    // 나가 "격자가 안 겹친다" 로 깨졌다. 1차원 인덱스를 2차원 격자의 중앙으로 착각한
+    // 것이다 — 격자를 다루면서 격자 규칙을 안 쓴 자리다.
+    const arr = pos.array as number[];
+    const side = SEA_PATCH_METRICS.seg + 1;
+    const mid = Math.floor(SEA_PATCH_METRICS.seg / 2);
+    const k = (mid * side + mid) * 3;
+    const wx = arr[k] + mesh.position.x;
+    const wz = arr[k + 2] + mesh.position.z;
+    const before = heightAtWorld(wx, wz);
+    expect(before, '방금 고른 정점을 다시 못 찾았다 — 검사가 무효다').not.toBeNull();
 
     // 시간은 **멈춘 채**(dt 0) 판만 옮긴다 — 파형이 위치 때문에 바뀌는지만 본다.
-    setPlayer(snap * 3, snap * 3);
+    // 스냅 단위로 옮기므로 정점 격자가 정확히 겹쳐 같은 월드 좌표에 정점이 다시 온다.
+    //
+    // ⚠ **한 칸만 옮긴다.** 세 칸(≈110m 대각)을 옮겼더니 기준 정점이 새 판 범위
+    // (반쪽 ≈90.6m) 밖으로 나가 "정점을 못 찾음" 으로 깨졌다. 검사가 보려는 것은
+    // 이동량이 아니라 **격자가 겹치는가**이므로 한 칸이면 족하다.
+    setPlayer(snap, snap);
     inst.system!.update({ dt: 0 } as never);
-    expect(heightAtWorldOrigin()).toBeCloseTo(before!, 9);
+    const after = heightAtWorld(wx, wz);
+    expect(after, '판을 옮기니 그 월드 좌표에 정점이 없다 — 격자가 안 겹친다').not.toBeNull();
+    expect(after).toBeCloseTo(before!, 9);
   });
 
   it('진단이 상수가 아니라 버퍼를 읽는다 — peak 이 실제 배열과 일치한다', () => {
@@ -1622,5 +1648,88 @@ describe('바다 패치 — 정점이 실제로 울렁이는가 (집행)', () =>
     const g = added.find((x) => x.name === 'ocean-wave2')!.geometry as FakeGeometry;
     inst.dispose!();
     expect(g.disposed, '패치 지오가 안 치워졌다').toBe(true);
+  });
+});
+
+// ── 노브 극값 — 검수관 게이트 명세 G1 (2026-08-05) ──────────────────────────
+// 검수관 블로커 BL-1 이 나온 자리다. `?wamp=0` 은 "파도를 끈다" 는 뜻인데, 위치 추종이
+// 진폭 조건 안에 들어 있어 **층2가 원점에 못 박히고 1cm 분리까지 소실**됐다.
+// 노브 하나가 관계없는 축을 함께 껐고, 그것을 보는 검사가 없었다.
+describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)', () => {
+  /** jsdom `location.search` 를 바꿔 모듈 상수를 다시 읽게 한다. 끝나면 되돌린다 */
+  async function withSearch<T>(search: string, fn: (m: typeof import('../frontend/js/world2/features/ocean.js')) => T): Promise<T> {
+    const before = location.search;
+    window.history.replaceState({}, '', search);
+    // 노브는 모듈 최상위에서 한 번 읽는다 — 재평가하려면 모듈 캐시를 비워야 한다.
+    vi.resetModules();
+    try {
+      const mod = await import('../frontend/js/world2/features/ocean.js');
+      return fn(mod);
+    } finally {
+      window.history.replaceState({}, '', before || location.pathname);
+      vi.resetModules();
+    }
+  }
+
+  it('★ ?wamp=0 이어도 층2가 플레이어를 따라온다 — BL-1 회귀 검사', async () => {
+    const moved = await withSearch('?wamp=0', (mod) => {
+      const added: Added[] = [];
+      const player = { position: { x: 0, z: 0 } };
+      const env = {
+        scene: { add: (m: Added) => added.push(m), remove: () => {} },
+        player, doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+      };
+      const inst = mod.oceanFeature.create(env as never)!;
+      const mesh = added.find((x) => x.name === 'ocean-wave2')!;
+      const snap = mod.SEA_PATCH_METRICS.snap;
+      player.position.x = snap * 2;
+      player.position.z = snap * -1;
+      inst.system!.update({ dt: 1 } as never);
+      return { x: mesh.position.x, z: mesh.position.z, snap };
+    });
+    expect(moved.x, '진폭 0 인데 층2가 안 따라왔다 — 노브가 관계없는 축을 껐다')
+      .toBeCloseTo(moved.snap * 2, 9);
+    expect(moved.z).toBeCloseTo(moved.snap * -1, 9);
+  });
+
+  it('★ ?wamp=0 이어도 1cm 분리가 남는다 — 아래 층과 정확히 겹치면 안 된다', async () => {
+    const ys = await withSearch('?wamp=0', (mod) => {
+      const added: Added[] = [];
+      const env = {
+        scene: { add: (m: Added) => added.push(m), remove: () => {} },
+        player: { position: { x: 0, z: 0 } },
+        doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+      };
+      const inst = mod.oceanFeature.create(env as never)!;
+      inst.system!.update({ dt: 1 } as never);
+      const g = added.find((x) => x.name === 'ocean-wave2')!.geometry as FakeGeometry;
+      const p = g.getAttribute('position').array as number[];
+      return p.filter((_, i) => i % 3 === 1);
+    });
+    // 전부 정확히 0.01 — 평평하되 아래 층 위에 떠 있다.
+    expect(Math.min(...ys)).toBeCloseTo(0.01, 9);
+    expect(Math.max(...ys)).toBeCloseTo(0.01, 9);
+  });
+
+  it('★ ?wpatch=0 이면 되돌아간다 — 되돌리기 스위치가 실제로 작동한다', async () => {
+    // 검수관 권고: 옛 스위치(`SEA_PATCH_SEG > 0`)는 정적으로 항상 참이라 **한 번도
+    // 실행된 적이 없었다**. 있다고 적힌 장치가 없는 상태였다.
+    const r = await withSearch('?wpatch=0', (mod) => {
+      const added: Added[] = [];
+      const env = {
+        scene: { add: (m: Added) => added.push(m), remove: () => {} },
+        player: { position: { x: 0, z: 0 } },
+        doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+      };
+      const inst = mod.oceanFeature.create(env as never)!;
+      inst.system!.update({ dt: 1 } as never);
+      const d = inst.diagnostics!() as { seaPatch: unknown };
+      const sea = added.find((x) => x.name === 'ocean')!.geometry;
+      const w2 = added.find((x) => x.name === 'ocean-wave2')!.geometry;
+      return { seaPatch: d.seaPatch, sharesGeo: sea === w2, seg: mod.SEA_PATCH_METRICS.seg };
+    });
+    expect(r.seg, '스위치를 껐는데 세그먼트가 남아 있다').toBe(0);
+    expect(r.seaPatch, '스위치를 껐는데 진단이 패치를 보고한다').toBeNull();
+    expect(r.sharesGeo, '되돌렸으면 층2가 옛 큰 평면(같은 지오)으로 돌아가야 한다').toBe(true);
   });
 });

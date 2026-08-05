@@ -9,8 +9,13 @@
 // 미는 날 아무도 안 읽는다 — 그때 이 테스트가 빨간불로 말한다.
 
 import { describe, it, expect } from 'vitest';
-import { SEA_PATCH_METRICS, peakOf, surfaceLift, LIFT_LAMBDA } from '../frontend/js/world2/features/ocean.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  SEA_PATCH_METRICS, peakOf, surfaceLift, LIFT_LAMBDA, RIVER_SEG,
+} from '../frontend/js/world2/features/ocean.js';
 import { fogBand } from '../frontend/js/world2/decide/fog.js';
+import { GRID_W } from '../frontend/js/world2/decide/grid.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
 
 describe('바다 패치 — 예산 경계 (팀장 조건 1)', () => {
@@ -20,11 +25,14 @@ describe('바다 패치 — 예산 경계 (팀장 조건 1)', () => {
     expect(SEA_PATCH_METRICS.vertices).toBeLessThanOrEqual(SEA_PATCH_METRICS.riverWorstVertices);
   });
 
-  it('패치가 안개 far 를 실제로 덮는다 — 덜 덮으면 물 없는 띠가 드러난다', () => {
+  it('★ 스냅 최악에서도 안개 far 를 덮는다 — 이 단언이 검수관 BL-2 다', () => {
     const far = fogBand(DEFAULT_LAYOUT.cellX).far;
-    // 플레이어가 패치 중심에 있을 때 가장자리까지 = span/2. 그것이 far 이상이어야
-    // 안개가 닫히기 전에 패치가 끝나지 않는다.
-    expect(SEA_PATCH_METRICS.span / 2).toBeGreaterThanOrEqual(far);
+    // ⚠ 처음엔 `span/2 >= far` 로 적었다. **패치가 항상 플레이어 중심일 때만 참이다.**
+    // 패치는 `SNAP` 단위로만 움직이므로 플레이어는 중심에서 최대 `SNAP/2` 어긋나고,
+    // 그때 보장되는 반경은 `span/2 − snap/2` 다. 그 차이(12.08m)가 **가시 47%** 지점이라
+    // 울렁이는 물과 평평한 물의 경계가 눈에 보였다.
+    const worst = SEA_PATCH_METRICS.span / 2 - SEA_PATCH_METRICS.snap / 2;
+    expect(worst).toBeGreaterThanOrEqual(far);
   });
 
   it('세그먼트 간격이 λ/4 이하다 — 나이퀴스트 여유', () => {
@@ -35,6 +43,31 @@ describe('바다 패치 — 예산 경계 (팀장 조건 1)', () => {
   it('스냅 단위가 span 을 정수로 나눈다 — 안 그러면 무늬가 플레이어를 따라다닌다', () => {
     const tiles = SEA_PATCH_METRICS.span / SEA_PATCH_METRICS.snap;
     expect(Math.abs(tiles - Math.round(tiles))).toBeLessThan(1e-9);
+  });
+
+  it('상한 기준값이 유도식과 일치한다', () => {
+    const derived = GRID_W * 2 * (RIVER_SEG + 1) ** 2;
+    expect(SEA_PATCH_METRICS.riverWorstVertices).toBe(derived);
+  });
+
+  it('★ 상한 기준값이 **리터럴이 아니다** — 값 비교로는 못 잡는다 (검수관 BL-4)', () => {
+    // ── 왜 소스를 읽는가 (뮤테이션 실측 2026-08-05) ────────────────────────
+    // 위 검사만 두고 `RIVER_WORST_VERTICES` 를 `4860` 리터럴로 되돌리는 뮤테이션을
+    // 돌렸더니 **111건 전부 통과했다.** 당연하다 — 지금 유도값이 정확히 4860 이라
+    // 두 판본이 **같은 값**이고, 값을 비교하는 한 구별할 수단이 없다.
+    //
+    // 구별되는 것은 "`RIVER_SEG` 가 바뀌면 따라오는가" 인데 그것은 모듈 상수라
+    // 런타임에 흔들 수 없다. 그래서 **축을 바꾼다** — 소스에 유도식이 살아 있는지 본다.
+    // 검사가 닿지 않는 범위를 값으로 우기지 않는다.
+    const src = readFileSync(
+      join(import.meta.dirname, '..', 'frontend/js/world2/features/ocean.ts'), 'utf8',
+    );
+    const m = src.match(/const RIVER_WORST_VERTICES\s*=\s*([^;]+);/);
+    expect(m, 'RIVER_WORST_VERTICES 정의를 못 찾았다 — 이 검사가 무효다').not.toBeNull();
+    const expr = m![1];
+    expect(/\bGRID_W\b/.test(expr), '격자 폭을 안 참조한다 — 리터럴로 되돌아갔다').toBe(true);
+    expect(/\bRIVER_SEG\b/.test(expr), '강 세그먼트를 안 참조한다 — 리터럴로 되돌아갔다').toBe(true);
+    expect(/^\s*\d+\s*$/.test(expr), '숫자 리터럴이다').toBe(false);
   });
 });
 
