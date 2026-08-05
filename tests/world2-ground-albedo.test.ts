@@ -78,12 +78,35 @@ describe('밤 보정 판정 — 밝히되 대비는 그대로', () => {
   it('**대비가 보존된다** — 이것이 철회된 설계와 갈리는 지점이다', () => {
     // 배수가 하나이므로 파츠 사이의 비는 산술적으로 불변이다. 감독이 승인한 대비
     // (지면 대 도로 5.2배)도, 밤에도 초록인 잔디도 그대로여야 한다.
+    //
+    // ── 왜 정확 일치(`toEqual`)가 아닌가 ─────────────────────────────────────
+    // 처음엔 `toEqual` 이었고 배수 2.0 에서 **통과했다.** 2.4 로 바꾸자 깨졌다 —
+    // 값 차이가 마지막 자리 2 ULP(12.126380411183877 대 …879)였다. 2.0 은 2의
+    // 거듭제곱이라 곱했다 나눠도 가수 비트가 흔들리지 않고, 2.4 는 이진수로 정확히
+    // 표현되지 않아 반올림이 남는다. **단언이 값에 의존해 통과하고 있었다.**
+    //
+    // 느슨하게 푸는 것이 아니다: 이 검사가 잡아야 할 것은 파츠별로 배수를 가르는
+    // 설계 변경이고, 그때 비는 12.1 → 5.2 처럼 **자릿수로** 움직인다. 1e-10 은
+    // 부동소수만 통과시키고 그 변경은 확실히 잡는다(아래 케이스가 그것을 확인한다).
     const dayRatios = GROUND_KEYS.map((k) => DAY_ALBEDO[k] / DAY_ALBEDO.road);
     for (const n of [0, 0.4, 1]) {
       const s = groundLift(n);
       const nightRatios = GROUND_KEYS.map((k) => (DAY_ALBEDO[k] * s) / (DAY_ALBEDO.road * s));
-      expect(nightRatios).toEqual(dayRatios);
+      nightRatios.forEach((v, i) => expect(v).toBeCloseTo(dayRatios[i], 10));
     }
+  });
+
+  it('파츠별로 배수를 가르면 위 검사가 실제로 깨진다 — 허용오차가 장식이 아니다', () => {
+    // 위에서 `toEqual` 을 `toBeCloseTo(…, 10)` 로 푼 만큼, 그 허용오차가 **철회된
+    // 설계를 여전히 잡는지**를 여기서 못 박는다. 안 그러면 완화가 조용히 구멍이 된다.
+    const day = GROUND_KEYS.map((k) => DAY_ALBEDO[k] / DAY_ALBEDO.road);
+    // 철회된 설계의 모양: 기준보다 밝은 파츠만 눌러 대비를 좁힌다.
+    const ref = DAY_ALBEDO.ground;
+    const split = GROUND_KEYS.map((k) => Math.min(1, ref / DAY_ALBEDO[k]));
+    const night = GROUND_KEYS.map((k, i) => (DAY_ALBEDO[k] * split[i]) / DAY_ALBEDO.road);
+    // 잔디 쪽 비가 자릿수로 무너진다 — 1e-10 허용오차로는 절대 통과하지 못한다.
+    const worst = Math.max(...night.map((v, i) => Math.abs(v - day[i])));
+    expect(worst).toBeGreaterThan(1);
   });
 
   it('밤에 도로가 실제로 밝아진다 — 검정에서 꺼내는 것이 목적이다', () => {
