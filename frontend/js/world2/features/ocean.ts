@@ -52,7 +52,8 @@ import {
   WATER_MODES, pickWaterMode, type WaterMode,
 } from '../decide/water.js';
 import type { SkyTime } from '../decide/night.js';
-import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
+import { fogBand } from '../decide/fog.js';
+import { GRID_W, GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import { readNum, readNumOpt, writeNumOpt, readEnum } from '../url-knob.js';
 import { createTslWater, type TslWaterHandle, type TslNamespace } from './ocean-tsl.js';
@@ -372,6 +373,140 @@ const LIFT_LAMBDA_M = 16;
  */
 export const RIVER_SEG = Math.max(1, Math.round(DEFAULT_LAYOUT.cellX / (LIFT_LAMBDA_M / 4)));
 export const LIFT_LAMBDA = LIFT_LAMBDA_M;
+
+// ── 바다 정점 파동 패치 (감독 실기기 2026-08-05, 팀장 판정 A) ──────────────────
+//
+// 감독 판정: *"`?wflow=8` 이것도 약해. **울렁이는 웨이브 느낌도없어**"*
+//
+// 원인은 속도가 아니었다. 바다 판이 `PlaneGeometry(PLANE, PLANE, 1, 1)` — 정점이 네
+// 귀퉁이뿐이라 **실루엣이 변할 수가 없었다.** 정점 파동(`surfaceLift`)은 강에만 걸려
+// 있었고(아래 `RIVER_SEG > 1` 분기), 바다 판을 건드리는 코드가 한 줄도 없었다.
+// 텍스처를 아무리 빨리 흘려도 평면이 미끄러질 뿐이라 "울렁"이 안 생긴다.
+//
+// ⚠ **왜 오래 안 보였나** — 판 생성부 주석이 *"물결은 정점이 아니라 법선으로 낸다.
+// 정점을 쪼개면 삼각형만 늘고, **실제 파도 진폭이 없는 지금은** 보이는 차이가 0이다"*
+// 라고 적고 있었다. 그 문장은 **쓰인 시점에 참이었다.** 그 뒤 `surfaceLift` 가 생겨
+// 전제(진폭 0)가 무너졌는데 주석도 코드도 그 자리에 남았다. CLAUDE.md 가 이름 붙인
+// *"참인 문장에서 성립하지 않는 결론"* 과 같은 형태다 — 전제를 만든 사람과 전제를
+// 무너뜨린 사람이 다르면 아무도 그 문장을 다시 안 읽는다.
+//
+// ── 왜 바다 판 전체를 세분하지 않는가 (팀장 판정 A) ──────────────────────────
+// `PLANE` 은 1,920m 다. λ/4 = 4m 로 전면 세분하면 정점 **231,361** — 매 프레임 CPU
+// 갱신이 불가능하다. 8m 로 낮춰도 58,081 이고, 그러면 λ=16m 를 λ/2 로 샘플링하는
+// 셈이라 강이 세운 유도 규율(`RIVER_SEG`)을 바다에서만 깨게 된다.
+//
+// **실제로 보이는 바다는 안개 far 까지뿐이다.** 그 바깥은 안개가 100% 덮는다. 그래서
+// 그만큼만 세분한 패치를 플레이어 아래에 깔고 따라 움직인다. `surfaceLift` 가 **월드
+// 좌표만의 함수**라(아래 그 함수 주석) 패치를 옮겨도 파형이 제자리에 있다 — 강이
+// 파셀 경계 이음새를 막는 데 이미 쓰고 있는 바로 그 성질이다.
+
+/** 층2 무늬 한 장이 덮는 거리(m). 층2 repeat 계산과 **같은 식에서 온다** */
+const LAYER2_TILE_M = RIPPLE_M * LAYER2_SCALE;
+
+/**
+ * 패치가 덮는 한 변(m). **안개 far 에서 유도한다 — 리터럴을 적지 않는다**(팀장 SSOT 판정).
+ *
+ * `decide/fog.ts` 가 이미 렌더 반경(`DEFAULT_BANDS.farExit`)에서 안개를 유도하고 있으므로,
+ * 여기서 그 결과를 받으면 #202 가 안개를 밀 때 패치가 **저절로 따라온다.** 역방향은
+ * 금지다 — 안개는 물의 존재를 몰라야 한다.
+ *
+ * 무늬 주기의 **정수배로 올린다.** 그래야 패치를 주기 단위로 스냅해 옮길 때 무늬가
+ * 이어진다(UV 는 판 로컬이라, 스냅이 주기와 안 맞으면 무늬가 플레이어를 따라다닌다).
+ *
+ * ── ⚠ 스냅 오프셋을 더한다 (검수관 블로커 BL-2, 2026-08-05) ─────────────────
+ * 처음엔 `span = 2·far` 로 유도하고 주석에 *"보이는 바다는 far 까지뿐"* 이라고 적었다.
+ * **그 문장은 패치가 항상 플레이어 중심일 때만 참이다.** 패치는 `SNAP` 단위로만
+ * 움직이므로 플레이어는 중심에서 최대 `SNAP/2` 어긋나고, 그때 보장되는 반경은
+ * `SPAN/2 − SNAP/2` 다. 검수관 실측:
+ *
+ *     최악 축 커버 = 155.33/2 − 25.889/2 = 64.72m  (far 76.8 에 12.08m 미달)
+ *     그 지점 안개 = 52.8% → **가시 47.2%** 에서 패치 경계가 끊긴다
+ *
+ * 즉 울렁이는 물과 평평한 물이 눈에 보이는 거리에서 맞닿았다. 이 커밋의 주석이
+ * *"참인 문장에서 성립하지 않는 결론"* 을 인용하며 들어왔는데 유도가 같은 형태였다 —
+ * **전제(중심 고정)를 스스로 깨는 구현을 옆에 두고도 유도를 안 고쳤다.**
+ *
+ * 그래서 한 타일을 더 얹는다: `SPAN ≥ 2·far + SNAP` ⟺ `TILES ≥ 2·far/TILE + 1`.
+ */
+const SEA_PATCH_TILES = Math.ceil(
+  (2 * fogBand(DEFAULT_LAYOUT.cellX).far + LAYER2_TILE_M) / LAYER2_TILE_M,
+);
+const SEA_PATCH_SPAN = SEA_PATCH_TILES * LAYER2_TILE_M;
+
+/** 무늬 한 장을 몇 조각으로 나눌 것인가. 세그먼트 간격이 **λ/4 이하**가 되는 최소값 */
+const SEGS_PER_TILE = Math.ceil(LAYER2_TILE_M / (LIFT_LAMBDA_M / 4));
+
+/**
+ * 되돌리기 스위치 (팀장 조건 3). `?wpatch=0` 이면 패치를 안 만들고 층2가 **옛 큰
+ * 평면**으로 돌아간다 — 실기기에서 무거우면 이 노브 하나로 되돌린다.
+ *
+ * ⚠ 처음엔 `SEA_PATCH_SEG > 0` 을 스위치라고 적었다. **정적으로 항상 참이었다**
+ * (검수관 권고) — `SEA_PATCH_TILES`·`SEGS_PER_TILE` 이 둘 다 `Math.ceil` 결과라 0 이
+ * 될 수 없다. 즉 그 분기는 **한 번도 실행된 적이 없고**, 되돌리려면 유도식을 지워야
+ * 했다. 되돌리기가 실제로 되는지는 테스트가 본다(PR #36 의 죽은 `fetch-depth` 와 같은
+ * 자리 — 있다고 적힌 장치가 없는 것).
+ */
+const SEA_PATCH_ON = readNum('wpatch', 1, 0, 1) > 0;
+
+/**
+ * 패치 한 변의 세그먼트 수.
+ *
+ * ── 상한 판정 (팀장 조건 1) ────────────────────────────────────────────────
+ * 정점 수는 `(SEA_PATCH_SEG + 1)²` 이고, far 에 대해 **제곱으로** 증가한다.
+ *   현재: far 76.8m → span ≈ 155.3m → seg 42 → 정점 **1,849**
+ *   비교: 강 판의 이론 최악치 **4,860**(위 `RIVER_SEG` 주석) — 그 38% 다.
+ *
+ * ⚠ **정점 수가 강 이론 최악치를 넘는 far 에 도달하면 이 구현을 재판정한다(팀장
+ * 재상정).** 즉 #202 가 안개를 크게 밀면 이 패치는 그대로 쓸 수 없다 — **여기가 A 안의
+ * 경계다.** 경계를 안 적으면 다음 사람이(나 포함) 같은 고리를 또 돈다. 비교 기준은
+ * 아래 `RIVER_WORST_VERTICES` 로 **유도**하고(리터럴 금지 — 검수관 BL-4), 셀 수 있게
+ * 테스트로도 박아 둔다(`tests/world2-ocean-patch.test.ts`).
+ */
+const SEA_PATCH_SEG = SEA_PATCH_ON ? SEA_PATCH_TILES * SEGS_PER_TILE : 0;
+
+/** 패치가 한 번에 건너뛰는 거리(m). 무늬 주기와 같아야 무늬가 제자리에 남는다 */
+const SEA_PATCH_SNAP = LAYER2_TILE_M;
+
+/**
+ * 정점 배열의 **실제** 마루~골 차이(m). 진단이 이것을 내보낸다.
+ *
+ * 상수(`LIFT_AMP`)를 되돌려주면 "계산은 했는데 버퍼에 안 꽂혔다" 를 못 잡는다 —
+ * 판정과 집행 사이의 그 구멍이 이 저장소의 상시 위험이고, 이미 구름 `alpha` 에서
+ * 한 번 났다. 그래서 **결과를 읽는다.** 평평하면 정확히 `0` 이다.
+ */
+export function peakOf(pos: Float32Array): number {
+  if (pos.length < 3) return 0;
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 1; i < pos.length; i += 3) {
+    if (pos[i] < lo) lo = pos[i];
+    if (pos[i] > hi) hi = pos[i];
+  }
+  return hi - lo;
+}
+
+/**
+ * 강 판의 이론 최악 정점 수. **유도한다 — 리터럴을 안 적는다**(검수관 블로커 BL-4).
+ *
+ * 처음엔 `4860` 을 박아 두었다. 그런데 이 값은 팀장 조건 1 게이트가 **비교 기준으로
+ * 쓰는 값**이다. `LIFT_LAMBDA_M` 을 바꾸면 `RIVER_SEG` 가 바뀌고 강 최악치도 바뀌는데
+ * 박아둔 4860 은 안 따라오고, 그러면 상한 단언이 **옛 기준으로 통과**한다 — 조건 1 이
+ * 요구한 바로 그 장치가 장식이 된다. 패치 크기는 유도해 놓고 비교 대상은 박아둔 셈이다.
+ *
+ * 유도(위 `RIVER_SEG` 주석의 밴드 논증 그대로):
+ *   한 x 열의 물 칸은 최대 2칸 → 이론 최악 칸 수 = `GRID_W × 2`
+ *   칸마다 정점 `(RIVER_SEG + 1)²`
+ */
+const RIVER_WORST_VERTICES = GRID_W * 2 * (RIVER_SEG + 1) ** 2;
+
+/** 상한 판정을 밖에서 셀 수 있게 내보낸다(테스트 전용 — 런타임 소비자는 없다) */
+export const SEA_PATCH_METRICS = {
+  span: SEA_PATCH_SPAN,
+  seg: SEA_PATCH_SEG,
+  snap: SEA_PATCH_SNAP,
+  vertices: (SEA_PATCH_SEG + 1) ** 2,
+  /** 강 판의 이론 최악치. 이 값을 넘으면 팀장 재상정 (팀장 조건 1) */
+  riverWorstVertices: RIVER_WORST_VERTICES,
+};
 
 /**
  * 파고(m, 마루~골의 **절반**).
@@ -876,8 +1011,14 @@ export const oceanFeature: Feature = {
     // 조립부는 물을 모른다 — `Feature.create`가 null을 돌려줄 수 있게 한 이유다.
     if (!env.doc) return null;
 
-    // 세그먼트 1 — 물결은 정점이 아니라 법선으로 낸다. 정점을 쪼개면 삼각형만 늘고,
-    // 실제 파도 진폭이 없는 지금은 보이는 차이가 0이다.
+    // 세그먼트 1 — 이 판은 **먼 바다와 해저**를 맡는다. 1,920m 짜리를 세분할 수는
+    // 없고(정점 23만), 안개 far 밖은 어차피 안개가 100% 덮으므로 평면으로 족하다.
+    //
+    // ⚠ 여기 *"물결은 정점이 아니라 법선으로 낸다 … **실제 파도 진폭이 없는 지금은**
+    // 보이는 차이가 0이다"* 라고 적혀 있었다. 그 문장은 쓰인 시점에 참이었으나
+    // `surfaceLift` 가 생기면서 **전제가 무너졌고**, 그 뒤로도 바다는 계속 평면이었다.
+    // 감독이 실기기에서 *"울렁이는 웨이브 느낌도없어"* 로 잡아냈다(2026-08-05).
+    // 지금은 근거리 울렁임을 **층2 패치**가 맡는다 — 위 `SEA_PATCH_SEG` 주석 참고.
     const geo = new THREE.PlaneGeometry(PLANE, PLANE, 1, 1).rotateX(-Math.PI / 2);
 
     // 해저에 자갈을 깐다(감독 지시 2026-07-31). 단색 판이던 것이 이 텍스처 하나로
@@ -1148,13 +1289,83 @@ export const oceanFeature: Feature = {
     // 해저보다 늦게 그려야 그 위에 비친다.
     sea.renderOrder = 1;
 
-    const sea2 = layer2Mat ? new THREE.Mesh(geo, layer2Mat) : null;
+    // ── 층2 = 근거리 세분 패치 (팀장 판정 A, 2026-08-05) ─────────────────────
+    // **겹 수를 안 늘린다.** 층을 새로 더하면 반투명이 한 겹 더 쌓여 `WATER_DEPTH`
+    // 캘리브레이션이 무효가 된다 — 이 파일이 이미 두 번 겪은 형태다(강 판 지오 공유,
+    // `layerOpacity`). 그래서 **이미 있는 층2의 지오만 바꾼다**: 알파도 렌더 순서도
+    // 그대로이고, 달라지는 것은 "층2가 큰 평면이 아니라 플레이어를 따라다니는
+    // 세분 패치" 라는 점뿐이다.
+    //
+    // 층2는 원래 간섭 무늬용이고 그 효과는 근거리에서만 읽힌다 — 먼 바다에서 층2가
+    // 없어지는 것은 안개에 잠기므로 화면에 나타나지 않는다.
+    //
+    // `layer2Mat` 에 묶는다 — TSL 물에는 층2가 없으므로(그쪽은 셰이더가 직접 파동을
+    // 만든다) 패치도 만들지 않는다. 안 그러면 **아무도 안 쓰는 지오가 GPU 에 올라가고**,
+    // 갱신 루프가 없는 메시를 찾다가 널 참조가 난다.
+    const patchGeo = (SEA_PATCH_SEG > 0 && layer2Mat)
+      ? new THREE.PlaneGeometry(SEA_PATCH_SPAN, SEA_PATCH_SPAN, SEA_PATCH_SEG, SEA_PATCH_SEG)
+        .rotateX(-Math.PI / 2)
+      : null;
+    if (patchGeo) {
+      // ── ⚠ UV 를 월드 스케일에 맞춘다 (검수관 블로커 BL-6, 2026-08-05) ────────
+      //
+      // `layer2Mat` 은 `sea2` 와 `river2` 가 **공유**하고, `normB.repeat`(위)는 UV 0..1 이
+      // **`PLANE`(1,920m)** 을 덮는 지오를 전제로 유도돼 있다. 그런데 `sea2` 의 지오만
+      // 181m 패치로 바뀌었고 `repeat` 는 그대로였다 — 그러면 **같은 재질인데 월드 무늬
+      // 크기가 달라진다.** 실측:
+      //
+      //     river2 층2 타일 25.889m   vs   sea2 패치 타일 2.443m   (10.59× 어긋남)
+      //
+      // 결과 셋 다 이 커밋의 목적을 정면으로 깬다:
+      //   ① 간섭 설계 무효 — `LAYER2_SCALE = PHI` 의 근거는 "층2 = 층1 × 1.618" 인데
+      //      지금 층2가 층1(16m)의 **1/6.5** 다. 정수비 회피가 뜻을 잃는다.
+      //   ② 흐름이 10.59× 느려진다 — 아래 `b` 의 UV 환산은 타일이 `RIPPLE_M ×
+      //      LAYER2_SCALE` m 라는 전제다(검수관 R-3 이 고쳐 놓은 자리). **R-3 결함이
+      //      되살아난다** — 그리고 이 작업을 연 감독 판정이 *"`?wflow=8` 이것도 약해"* 였다.
+      //   ③ 월드 고정이 깨진다 — 스냅 1회당 위상이 10.5949 타일 이동(소수부 0.405)이라
+      //      25.9m 걸을 때마다 무늬가 0.99m 튄다. 스냅이 막는다고 적은 바로 그 실패다.
+      //
+      // **재질·텍스처는 그대로 두고 지오의 UV 만 줄인다.** `normB` 를 고치면 `river2` 가
+      // 깨지고(공유), 재질을 새로 만들면 `layerOpacity` 캘리브레이션과 겹쳐 팀장 사안이
+      // 된다. UV 를 `SPAN/PLANE` 배로 두면 텍스처 좌표가 `PLANE` 지오와 **같은 규칙**이
+      // 되어 월드 타일이 저절로 일치한다(이 파일 `makeRiverGeo` 주석이 이미 그 불변식을
+      // 문장으로 갖고 있다 — *"바다 판과 같은 규칙으로 낸다"*).
+      //
+      // ⚠ 이동 시 무늬가 안 따라오는 근거: `offset` 은 공유라 보정할 수 없다. 대신
+      // 스냅 보폭이 **월드 타일과 정확히 같으므로**(`SEA_PATCH_SNAP = LAYER2_TILE_M`),
+      // 한 칸 이동 = 정수 타일 이동이고 `RepeatWrapping` 에서 정수 위상차는 무늬가 같다.
+      // 이 성질을 테스트가 검사한다(G5) — 산술이 깨지면 화면 없이 빨간불이 뜬다.
+      const uvAttr = patchGeo.getAttribute('uv');
+      const uvArr = uvAttr.array as Float32Array;
+      const uvScale = SEA_PATCH_SPAN / PLANE;
+      for (let i = 0; i < uvArr.length; i++) uvArr[i] *= uvScale;
+      uvAttr.needsUpdate = true;
+
+      // 매 프레임 y 를 덮어쓴다. 개수는 안 는다 — 부팅 1회 생성이고 갱신은 내용뿐이라
+      // 스모크 `[7]` 개수 불변식이 그대로 성립한다(팀장 조건 2).
+      const attr = patchGeo.getAttribute('position');
+      attr.setUsage(THREE.DynamicDrawUsage);
+      // **평탄 baseline 을 여기서 한 번 채운다** (검수관 BL-1 대응).
+      // `?wamp=0` 이면 매 프레임 갱신이 안 도는데, `PlaneGeometry` 초기 y 는 0 이라
+      // 아래 층과 정확히 겹친다. 1cm 분리는 진폭과 무관하게 **항상** 성립해야 하므로
+      // (그 몫의 목적은 "물속에서 올려다볼 때 두 면이 겹쳐 보이지 않게") 생성 시점에
+      // 세운다. 진폭이 있으면 첫 `update` 가 이 위에 파동을 얹는다.
+      const p0 = attr.array as Float32Array;
+      for (let i = 0; i < p0.length; i += 3) p0[i + 1] = 0.01;
+      attr.needsUpdate = true;
+    }
+    const sea2 = layer2Mat ? new THREE.Mesh(patchGeo ?? geo, layer2Mat) : null;
     if (sea2) {
       // ⚠ 여기 *"같은 높이면 z-fighting 이다"* 라고 적혀 있었다. **틀린 이유다**
       // (검수관 R-4) — 두 재질 모두 `depthWrite: false` 라 깊이 버퍼에 안 쓰이고,
       // 그러면 z-fighting 이 성립하지 않는다. 순서를 정하는 것은 `renderOrder` 다.
       // 1cm 는 물속에서 올려다볼 때 두 면이 정확히 겹쳐 보이지 않게 하는 몫으로만 둔다.
-      sea2.position.y = SEA_Y + 0.01;
+      //
+      // **패치일 때는 그 1cm 를 정점 y 가 들고 있다**(아래 매 프레임 갱신). 메시 원점을
+      // `SEA_Y` 에 두고 정점이 `0.01 + LIFT_AMP + lift` 를 담으므로, 파동이 골일 때도
+      // 값이 `0.01` 아래로 안 내려간다 — 즉 **아래 층(평평한 `sea`)을 뚫지 않는다.**
+      // 여기서 `+0.01` 을 또 더하면 그 몫이 두 번 들어간다(값 미러링).
+      sea2.position.y = patchGeo ? SEA_Y : SEA_Y + 0.01;
       // ── 렌더 순서는 **물리적 높이 순서**여야 한다 (검수관 BR-1) ──────────────
       // 처음엔 `sea 1 · river 2 · sea2 3 · river2 4` 로 줬다. 그러면 −0.99m 의 sea2 가
       // −0.50m 의 river **위에** 덧칠된다 — 깊이를 안 쓰므로 그리는 순서가 곧 겹치는
@@ -1341,6 +1552,46 @@ export const oceanFeature: Feature = {
             for (let i = 0; i < p.length; i += 3) p[i + 1] = surfaceLift(p[i], p[i + 2], t);
             riverPosAttr.needsUpdate = true;
           }
+
+          // ── 바다 패치 — 플레이어를 따라가며 정점을 울렁인다 (팀장 판정 A) ────
+          //
+          // **위치를 무늬 주기(`SEA_PATCH_SNAP`)로 스냅한다.** UV 는 판 로컬이므로 판이
+          // 임의 거리로 움직이면 무늬가 판에 붙어 **플레이어를 따라다닌다** — 물 위를
+          // 걷는데 물결이 함께 오는, 즉효로 어색한 결함이다. 주기 정수배로만 옮기면
+          // 무늬가 정확히 한 장씩 맞물려 제자리에 남는다.
+          //
+          // 파형(`surfaceLift`)은 **월드 좌표만의 함수**라 스냅과 무관하게 이어진다.
+          // 그래서 판이 튀는 순간에도 물결은 안 튄다 — 강이 파셀 경계에서 쓰는 성질
+          // 그대로다.
+          if (patchGeo) {
+            // ⚠ **위치 추종은 진폭과 독립이다** (검수관 블로커 BL-1, 2026-08-05).
+            // 처음엔 이 블록 전체가 `LIFT_AMP > 0` 안에 있었다. 그러면 `?wamp=0`
+            // (파도 끄기)에서 층2가 **원점 155m 사각형에 못 박힌다** — 세계는 960m 라
+            // 걸어나가면 간섭 무늬가 통째로 사라진다. 변경 전에는 `wamp=0` 이 정점
+            // 파동만 껐는데, 노브 하나가 관계없는 축까지 끄게 된 것이다.
+            //
+            // 진폭은 "얼마나 울렁이는가" 이고 추종은 "어디에 있는가" 다. 두 축을 한
+            // 조건문에 묶었던 것이 결함이었다.
+            const { x: pxRaw, z: pzRaw } = env.player.position;
+            const ox = Math.round(pxRaw / SEA_PATCH_SNAP) * SEA_PATCH_SNAP;
+            const oz = Math.round(pzRaw / SEA_PATCH_SNAP) * SEA_PATCH_SNAP;
+            sea2!.position.x = ox;
+            sea2!.position.z = oz;
+
+            // 정점 파동만 진폭에 걸린다. `LIFT_AMP === 0` 이면 생성 시점에 채운
+            // 평탄 baseline(`0.01`)이 그대로 남는다 — 1cm 분리가 유지된다.
+            if (LIFT_AMP > 0) {
+              const attr = patchGeo.getAttribute('position');
+              const p = attr.array as Float32Array;
+              // `+ LIFT_AMP` 로 골을 baseline 위로 들어올린다. 아래 층(`sea`, 평평)을
+              // 뚫지 않게 하는 몫이고, `0.01` 은 두 면이 정확히 겹쳐 보이지 않게 하는
+              // 옛 몫 그대로다.
+              for (let i = 0; i < p.length; i += 3) {
+                p[i + 1] = 0.01 + LIFT_AMP + surfaceLift(p[i] + ox, p[i + 2] + oz, t);
+              }
+              attr.needsUpdate = true;
+            }
+          }
         },
       },
 
@@ -1402,6 +1653,21 @@ export const oceanFeature: Feature = {
           //
           // `waterGloss(시간대)` 를 다시 계산해 적지 않는다 — **재질에 실제로 대입된
           // 값**을 그대로 내보낸다. 다시 계산하면 노브가 무시된 결함을 진단이 덮는다.
+          // ── 바다 정점 파동 패치가 실제로 사는가 ────────────────────────────
+          // `null` 이면 패치가 없다(되돌리기 스위치 0 이거나 TSL 모드). **`0` 으로
+          // 채우지 않는다** — "패치가 있는데 평평하다" 와 "패치가 아예 없다" 는 다른
+          // 고장이고, 0 으로 뭉개면 밖에서 구별할 수 없다.
+          //
+          // `peak` 는 **정점 배열에서 직접 읽는다.** `LIFT_AMP` 를 되돌려주면 "계산은
+          // 했는데 버퍼에 안 꽂혔다" 를 못 잡는다 — 이 파일이 `flowA` 에서 이미 같은
+          // 이유로 텍스처를 직접 읽고 있다(구름 `alpha` 미소비와 같은 형태).
+          seaPatch: patchGeo ? {
+            span: Math.round(SEA_PATCH_SPAN),
+            seg: SEA_PATCH_SEG,
+            vertices: patchGeo.getAttribute('position').count,
+            at: [sea2!.position.x, sea2!.position.z],
+            peak: peakOf(patchGeo.getAttribute('position').array as Float32Array),
+          } : null,
           gloss: glossNow,
           // 노브가 걸렸는지 자체도 내보낸다. 값만 보면 "기본값과 같은 값을 지정한 것"
           // 과 "지정 안 한 것" 이 구별되지 않고, 그것이 `readNumOpt` 를 만든 이유다.
@@ -1427,6 +1693,7 @@ export const oceanFeature: Feature = {
         normB?.dispose();
         geo.dispose();
         riverGeo.dispose(); // 강은 자기 지오를 갖는다(파셀 단위 쿼드 묶음)
+        patchGeo?.dispose(); // 층2 근거리 패치도 자기 지오다(`geo` 와 별개)
         bedMat.dispose();
         pebble.dispose();
         seaMat.dispose();

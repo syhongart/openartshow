@@ -51,10 +51,61 @@ class FakeTexture {
   }
 }
 
+/**
+ * `PlaneGeometry` 스텁.
+ *
+ * ── 왜 정점을 실제로 만드는가 (2026-08-05) ───────────────────────────────────
+ * 예전에는 `w`·`h` 만 들고 `rotateX()` 가 `this` 를 돌려주는 껍데기였다. 바다 정점
+ * 파동 패치(팀장 판정 A)가 `getAttribute('position')` 을 부르자 **프로덕션 코드가
+ * 멀쩡한데 테스트만 터졌다** — 이 파일 `FakeMaterial` 주석이 이미 이름 붙인 형태다
+ * (*"스텁이 계약을 덜 재현하면 …"*). 그래서 three 의 계약대로 정점을 만든다.
+ *
+ * `rotateX` 도 **실제로 회전시킨다.** no-op 으로 두면 정점이 XY 평면에 남아, 프로덕션이
+ * 읽는 `p[i+1]`(y) 이 테스트에서만 다른 축을 가리킨다 — 거짓 재현은 미검출보다 나쁘다.
+ * three 의 `PlaneGeometry` 는 XY 평면에 (z=0) 만들고, `rotateX(-π/2)` 는 그것을
+ * `(x, y, 0) → (x, 0, −y)` 로 옮긴다.
+ */
 class FakeGeometry {
   disposed = false;
-  constructor(public w: number, public h: number) {}
-  rotateX() { return this; }
+  attrs: Record<string, FakeAttr> = {};
+  constructor(public w: number, public h: number, public ws = 1, public hs = 1) {
+    const pos: number[] = [];
+    for (let iy = 0; iy <= hs; iy++) {
+      // three 와 같은 순서·부호: y 는 위(+h/2)에서 아래(−h/2)로 훑는다.
+      const y = h / 2 - (iy * h) / hs;
+      for (let ix = 0; ix <= ws; ix++) {
+        pos.push((ix * w) / ws - w / 2, y, 0);
+      }
+    }
+    this.attrs.position = new FakeAttr(pos, 3);
+    // ── uv 도 만든다 (검수관 블로커 BL-6, 2026-08-05) ───────────────────────
+    // 패치가 텍스처 월드 스케일을 맞추려고 `getAttribute('uv')` 를 만지는데, 스텁이
+    // position 만 갖고 있으면 **프로덕션이 멀쩡한데 테스트만 터진다**(이 파일이 이미
+    // 같은 이유로 position 을 실제로 만들게 됐다 — 아래 클래스 주석).
+    //
+    // three 의 `PlaneGeometry` 규칙 그대로: `u = ix/ws`, `v = 1 − iy/hs`.
+    const uv: number[] = [];
+    for (let iy = 0; iy <= hs; iy++) {
+      for (let ix = 0; ix <= ws; ix++) uv.push(ix / ws, 1 - iy / hs);
+    }
+    this.attrs.uv = new FakeAttr(uv, 2);
+  }
+
+  /** `-π/2` 만 재현한다 — 이 파일이 쓰는 유일한 각도이고, 임의 각도는 쓸 일이 없다 */
+  rotateX(rad: number) {
+    if (Math.abs(rad + Math.PI / 2) > 1e-9) {
+      throw new Error(`FakeGeometry.rotateX: -π/2 만 재현한다(받은 값 ${rad})`);
+    }
+    const p = this.attrs.position.array;
+    for (let i = 0; i < p.length; i += 3) {
+      const y = p[i + 1];
+      p[i + 1] = p[i + 2];
+      p[i + 2] = -y;
+    }
+    return this;
+  }
+
+  getAttribute(name: string) { return this.attrs[name]; }
   dispose() { this.disposed = true; }
 }
 
@@ -72,7 +123,9 @@ class FakeMaterial {
 }
 
 class FakeMesh {
-  position = { y: 0 };
+  // `x`·`z` 도 준다 — 바다 패치가 플레이어를 따라 **가로로** 움직이므로(팀장 판정 A),
+  // `y` 만 있으면 그 이동을 검사가 볼 수 없고 프로덕션에서는 `undefined` 대입이 된다.
+  position = { x: 0, y: 0, z: 0 };
   castShadow = false;
   receiveShadow = false;
   frustumCulled = true;
@@ -91,7 +144,10 @@ const DYNAMIC_DRAW_USAGE = 35048;
 class FakeAttr {
   /** three 의 기본값(`StaticDrawUsage`). `setUsage` 가 실제로 바꾸는지 검사가 볼 수 있게 둔다. */
   usage = 35044;
+  /** three 의 계약. 진단이 정점 수를 이것으로 읽는다 — 없으면 `undefined` 가 보고된다 */
+  needsUpdate = false;
   constructor(public array: number[], public itemSize: number) {}
+  get count() { return this.array.length / this.itemSize; }
   /** 강 판이 매 프레임 정점 y 를 덮어쓰므로 동적 버퍼로 선언한다 — three 의 계약이다. */
   setUsage(u: number) { this.usage = u; return this; }
 }
@@ -176,7 +232,7 @@ beforeAll(() => {
     function (this: { _g?: number[] }) { return mkCtx(this); };
 });
 
-const { oceanFeature, waveHeight } = await import('../frontend/js/world2/features/ocean.js');
+const { oceanFeature, waveHeight, SEA_PATCH_METRICS, peakOf } = await import('../frontend/js/world2/features/ocean.js');
 const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, waterGloss } = await import('../frontend/js/world2/decide/water.js');
 // 두 번째 물결 층 검사가 쓴다. **실물을 import 한다** — 총 불투명도(`OPACITY`)와 배분
 // 공식(`splitOpacity`)을 여기 다시 적으면 그 순간 미러링이고, 값을 바꿔도 검사가 옛
@@ -188,7 +244,9 @@ const EDGE = worldHalfExtent(DEFAULT_LAYOUT.cellX);
 
 interface Added {
   name: string;
-  position: { y: number };
+  // 바다 패치가 플레이어를 따라 **가로로** 움직인다(팀장 판정 A). `y` 만 적어 두면
+  // 그 이동을 검사가 아예 못 읽는다 — `FakeMesh` 와 같은 모양을 유지한다.
+  position: { x: number; y: number; z: number };
   material: FakeMaterial;
   renderOrder: number;
   frustumCulled: boolean;
@@ -224,7 +282,14 @@ function mount(initial: Tod = 'day', backend = 'WebGL') {
   // 실제 Feature 계약 전체를 만들지 않는다 — ocean 이 쓰는 것만 준다.
   const inst = oceanFeature.create(env as never)!;
   const sea = () => added.find((m) => m.name === 'ocean')!.material;
-  return { inst, added, removed, sea, setTime: (t: Tod) => { tod = t; } };
+  return {
+    inst, added, removed, sea,
+    setTime: (t: Tod) => { tod = t; },
+    // 바다 패치가 플레이어를 따라 움직이는지 보려면 플레이어가 **실제로 움직여야** 한다
+    // (팀장 판정 A). 고정 좌표만 쓰면 그 가지가 통째로 미검증으로 남는다 — TSL 분기가
+    // 정확히 그렇게 새어나갔다(위 스텁 주석).
+    setPlayer: (x: number, z: number) => { env.player.position.x = x; env.player.position.z = z; },
+  };
 }
 
 describe('waveHeight — 타일이 이어진다', () => {
@@ -1437,5 +1502,304 @@ describe('두 번째 물결 층 — 동적 축', () => {
     inst.dispose!();
     expect(mat.disposed, '두 번째 층 재질이 안 치워졌다').toBe(true);
     expect(map.disposed, '두 번째 층 노말맵이 안 치워졌다').toBe(true);
+  });
+});
+
+// ── 바다 정점 파동 패치 — **집행**을 본다 (감독 실기기 2026-08-05, 팀장 판정 A) ────
+//
+// `tests/world2-ocean-patch.test.ts` 는 예산·유도(순수 산술)를 본다. 그것만으로는
+// **"계산한 파동이 실제 버퍼에 꽂히는가"** 가 미검증으로 남는다 — 이 저장소가 구름
+// `alpha` 에서 정확히 그렇게 새어나갔고, CLAUDE.md 가 *"판정/집행 분리의 구멍 — 경계를
+// 건너는 지점은 아무도 안 본다"* 로 이름 붙인 자리다.
+//
+// 애초에 이 기능이 필요해진 이유가 그 형태였다: 바다 판이 평면인 채 `surfaceLift` 만
+// 존재했고, 순수 함수 테스트는 내내 초록이었다.
+describe('바다 패치 — 정점이 실제로 울렁이는가 (집행)', () => {
+  const patchOf = (added: Added[]) => {
+    const m = added.find((x) => x.name === 'ocean-wave2')!;
+    return (m.geometry as FakeGeometry).getAttribute('position');
+  };
+
+  it('층2 메시가 세분 패치를 쓴다 — 정점 수가 유도값과 같다', () => {
+    const { added } = mount();
+    expect(patchOf(added).count).toBe(SEA_PATCH_METRICS.vertices);
+  });
+
+  it('★ update 한 번이면 평평하지 않다 — 이것이 "울렁임"의 유일한 증거다', () => {
+    const { inst, added } = mount();
+    const pos = patchOf(added);
+    // 부팅 직후는 `PlaneGeometry` 그대로라 평평하다.
+    expect(peakOf(pos.array as never)).toBe(0);
+    inst.system!.update({ dt: 1 } as never);
+    // ⚠ 이 단언이 이 커밋의 핵심이다. `p[i + 1] = …` 한 줄을 지우면 여기가 깨진다.
+    expect(peakOf(pos.array as never)).toBeGreaterThan(0);
+    expect(pos.needsUpdate, '버퍼 갱신을 안 알리면 GPU 에 안 올라간다').toBe(true);
+  });
+
+  it('시간이 흐르면 파형이 달라진다 — 굳어 있으면 정지한 물이다', () => {
+    const { inst, added } = mount();
+    const pos = patchOf(added);
+    inst.system!.update({ dt: 0.5 } as never);
+    const first = (pos.array as number[]).slice();
+    inst.system!.update({ dt: 0.9 } as never);
+    const moved = (pos.array as number[]).some((v, i) => Math.abs(v - first[i]) > 1e-9);
+    expect(moved, '두 프레임의 정점이 완전히 같다 — 파동이 시간을 안 쓴다').toBe(true);
+  });
+
+  it('★ 골이 아래 층을 뚫지 않는다 — 정점 y 가 0.01 아래로 안 내려간다', () => {
+    // 층2가 평평한 `sea` 를 뚫고 내려가면 물이 두 겹으로 갈라져 보인다. 그 몫을
+    // `+ LIFT_AMP` 오프셋이 맡는다 — 없애면 여기가 깨진다.
+    const { inst, added } = mount();
+    const pos = patchOf(added);
+    for (const dt of [0.1, 0.7, 1.3, 2.9, 5.2]) {
+      inst.system!.update({ dt } as never);
+      const ys = (pos.array as number[]).filter((_, i) => i % 3 === 1);
+      expect(Math.min(...ys)).toBeGreaterThanOrEqual(0.01 - 1e-9);
+    }
+  });
+
+  it('★ 플레이어를 따라오되 **스냅 단위로만** 움직인다 — 아니면 무늬가 따라다닌다', () => {
+    const { inst, added, setPlayer } = mount();
+    const mesh = added.find((x) => x.name === 'ocean-wave2')!;
+    const snap = SEA_PATCH_METRICS.snap;
+
+    // 반 칸도 안 되는 이동에는 안 움직인다.
+    setPlayer(snap * 0.3, 0);
+    inst.system!.update({ dt: 1 } as never);
+    expect(mesh.position.x).toBe(0);
+
+    // 한 칸을 넘으면 정확히 한 칸 옮겨간다.
+    setPlayer(snap * 1.2, snap * -2.1);
+    inst.system!.update({ dt: 1 } as never);
+    expect(mesh.position.x).toBeCloseTo(snap, 9);
+    expect(mesh.position.z).toBeCloseTo(-2 * snap, 9);
+  });
+
+  it('패치가 움직여도 같은 월드 지점의 높이는 그대로다 — 이음새가 안 생긴다', () => {
+    // A 안이 성립하는 근거를 **조립된 상태에서** 확인한다(순수 함수 쪽은 별도 파일).
+    //
+    // ⚠ 처음엔 "월드 원점(0,0) 에 해당하는 정점" 을 찾았다. `SEA_PATCH_TILES` 가 7 로
+    // 늘자 세그먼트가 홀수(49)가 되어 **중심에 정점이 없어졌고** 검사가 깨졌다.
+    // 특정 좌표에 정점이 있다고 가정한 것이 잘못이다 — 세그먼트 수는 유도값이라
+    // 홀짝이 언제든 바뀐다. 그래서 **실재하는 정점 하나를 골라** 그 월드 좌표를 쓴다.
+    const { inst, added, setPlayer } = mount();
+    const pos = patchOf(added);
+    const mesh = added.find((x) => x.name === 'ocean-wave2')!;
+    const snap = SEA_PATCH_METRICS.snap;
+
+    /** 주어진 월드 좌표에 놓인 정점의 y. 없으면 null */
+    const heightAtWorld = (wx: number, wz: number) => {
+      const p = pos.array as number[];
+      for (let i = 0; i < p.length; i += 3) {
+        if (Math.abs(p[i] + mesh.position.x - wx) < 1e-6
+          && Math.abs(p[i + 2] + mesh.position.z - wz) < 1e-6) return p[i + 1];
+      }
+      return null;
+    };
+
+    inst.system!.update({ dt: 2 } as never);
+    // 판 한가운데 정점을 고른다.
+    //
+    // ⚠ 처음엔 `count/2` 로 잡았다. 정점은 `(seg+1)²` 격자라 그 인덱스는 **행 중앙의
+    // 왼쪽 끝**(row 25, col 0)이고, 판을 +x 로 옮기면 대응 정점이 판 밖(col −7)으로
+    // 나가 "격자가 안 겹친다" 로 깨졌다. 1차원 인덱스를 2차원 격자의 중앙으로 착각한
+    // 것이다 — 격자를 다루면서 격자 규칙을 안 쓴 자리다.
+    const arr = pos.array as number[];
+    const side = SEA_PATCH_METRICS.seg + 1;
+    const mid = Math.floor(SEA_PATCH_METRICS.seg / 2);
+    const k = (mid * side + mid) * 3;
+    const wx = arr[k] + mesh.position.x;
+    const wz = arr[k + 2] + mesh.position.z;
+    const before = heightAtWorld(wx, wz);
+    expect(before, '방금 고른 정점을 다시 못 찾았다 — 검사가 무효다').not.toBeNull();
+
+    // 시간은 **멈춘 채**(dt 0) 판만 옮긴다 — 파형이 위치 때문에 바뀌는지만 본다.
+    // 스냅 단위로 옮기므로 정점 격자가 정확히 겹쳐 같은 월드 좌표에 정점이 다시 온다.
+    //
+    // ⚠ **한 칸만 옮긴다.** 세 칸(≈110m 대각)을 옮겼더니 기준 정점이 새 판 범위
+    // (반쪽 ≈90.6m) 밖으로 나가 "정점을 못 찾음" 으로 깨졌다. 검사가 보려는 것은
+    // 이동량이 아니라 **격자가 겹치는가**이므로 한 칸이면 족하다.
+    setPlayer(snap, snap);
+    inst.system!.update({ dt: 0 } as never);
+    const after = heightAtWorld(wx, wz);
+    expect(after, '판을 옮기니 그 월드 좌표에 정점이 없다 — 격자가 안 겹친다').not.toBeNull();
+    expect(after).toBeCloseTo(before!, 9);
+  });
+
+  it('진단이 상수가 아니라 버퍼를 읽는다 — peak 이 실제 배열과 일치한다', () => {
+    const { inst, added } = mount();
+    inst.system!.update({ dt: 1.7 } as never);
+    const d = inst.diagnostics!() as { seaPatch: { peak: number; vertices: number } | null };
+    expect(d.seaPatch).not.toBeNull();
+    expect(d.seaPatch!.peak).toBeCloseTo(peakOf(patchOf(added).array as never), 12);
+    expect(d.seaPatch!.vertices).toBe(SEA_PATCH_METRICS.vertices);
+  });
+
+  it('TSL 모드에는 패치가 없고, 진단이 그것을 `null` 로 말한다', () => {
+    // `0` 으로 채우면 "패치가 있는데 평평하다" 와 구별되지 않는다 — 못 잰 것을 통과로
+    // 적지 않는다는 규율 그대로다.
+    //
+    // ⚠ **`WebGPU` 백엔드만으로는 TSL 이 안 걸린다.** `?water=tsl` 요청과 백엔드가
+    // 함께 정한다(`pickWaterMode`). 처음에 백엔드만 바꿔 놓고 이 테스트를 썼다가
+    // 기본 물이 떠서 깨졌다 — 요청과 채택을 갈라 놓은 설계를 테스트가 안 따라간 것이다.
+    const before = location.search;
+    window.history.replaceState({}, '', '?water=tsl');
+    try {
+      const { inst } = mount('day', 'WebGPU');
+      const d = inst.diagnostics!() as { seaPatch: unknown; water: { active: string } };
+      expect(d.water.active, 'TSL 이 실제로 걸리지 않았다 — 이 검사가 딴것을 보고 있다').toBe('tsl');
+      expect(d.seaPatch).toBeNull();
+    } finally {
+      window.history.replaceState({}, '', before || location.pathname);
+    }
+  });
+
+  it('패치 지오가 정리된다 — 빠지면 누수다', () => {
+    const { inst, added } = mount();
+    const g = added.find((x) => x.name === 'ocean-wave2')!.geometry as FakeGeometry;
+    inst.dispose!();
+    expect(g.disposed, '패치 지오가 안 치워졌다').toBe(true);
+  });
+});
+
+// ── 노브 극값 — 검수관 게이트 명세 G1 (2026-08-05) ──────────────────────────
+// 검수관 블로커 BL-1 이 나온 자리다. `?wamp=0` 은 "파도를 끈다" 는 뜻인데, 위치 추종이
+// 진폭 조건 안에 들어 있어 **층2가 원점에 못 박히고 1cm 분리까지 소실**됐다.
+// 노브 하나가 관계없는 축을 함께 껐고, 그것을 보는 검사가 없었다.
+describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)', () => {
+  /** jsdom `location.search` 를 바꿔 모듈 상수를 다시 읽게 한다. 끝나면 되돌린다 */
+  async function withSearch<T>(search: string, fn: (m: typeof import('../frontend/js/world2/features/ocean.js')) => T): Promise<T> {
+    const before = location.search;
+    window.history.replaceState({}, '', search);
+    // 노브는 모듈 최상위에서 한 번 읽는다 — 재평가하려면 모듈 캐시를 비워야 한다.
+    vi.resetModules();
+    try {
+      const mod = await import('../frontend/js/world2/features/ocean.js');
+      return fn(mod);
+    } finally {
+      window.history.replaceState({}, '', before || location.pathname);
+      vi.resetModules();
+    }
+  }
+
+  it('★ ?wamp=0 이어도 층2가 플레이어를 따라온다 — BL-1 회귀 검사', async () => {
+    const moved = await withSearch('?wamp=0', (mod) => {
+      const added: Added[] = [];
+      const player = { position: { x: 0, z: 0 } };
+      const env = {
+        scene: { add: (m: Added) => added.push(m), remove: () => {} },
+        player, doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+      };
+      const inst = mod.oceanFeature.create(env as never)!;
+      const mesh = added.find((x) => x.name === 'ocean-wave2')!;
+      const snap = mod.SEA_PATCH_METRICS.snap;
+      player.position.x = snap * 2;
+      player.position.z = snap * -1;
+      inst.system!.update({ dt: 1 } as never);
+      return { x: mesh.position.x, z: mesh.position.z, snap };
+    });
+    expect(moved.x, '진폭 0 인데 층2가 안 따라왔다 — 노브가 관계없는 축을 껐다')
+      .toBeCloseTo(moved.snap * 2, 9);
+    expect(moved.z).toBeCloseTo(moved.snap * -1, 9);
+  });
+
+  it('★ ?wamp=0 이어도 1cm 분리가 남는다 — 아래 층과 정확히 겹치면 안 된다', async () => {
+    const ys = await withSearch('?wamp=0', (mod) => {
+      const added: Added[] = [];
+      const env = {
+        scene: { add: (m: Added) => added.push(m), remove: () => {} },
+        player: { position: { x: 0, z: 0 } },
+        doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+      };
+      const inst = mod.oceanFeature.create(env as never)!;
+      inst.system!.update({ dt: 1 } as never);
+      const g = added.find((x) => x.name === 'ocean-wave2')!.geometry as FakeGeometry;
+      const p = g.getAttribute('position').array as number[];
+      return p.filter((_, i) => i % 3 === 1);
+    });
+    // 전부 정확히 0.01 — 평평하되 아래 층 위에 떠 있다.
+    expect(Math.min(...ys)).toBeCloseTo(0.01, 9);
+    expect(Math.max(...ys)).toBeCloseTo(0.01, 9);
+  });
+
+  it('★ ?wpatch=0 이면 되돌아간다 — 되돌리기 스위치가 실제로 작동한다', async () => {
+    // 검수관 권고: 옛 스위치(`SEA_PATCH_SEG > 0`)는 정적으로 항상 참이라 **한 번도
+    // 실행된 적이 없었다**. 있다고 적힌 장치가 없는 상태였다.
+    const r = await withSearch('?wpatch=0', (mod) => {
+      const added: Added[] = [];
+      const env = {
+        scene: { add: (m: Added) => added.push(m), remove: () => {} },
+        player: { position: { x: 0, z: 0 } },
+        doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+      };
+      const inst = mod.oceanFeature.create(env as never)!;
+      inst.system!.update({ dt: 1 } as never);
+      const d = inst.diagnostics!() as { seaPatch: unknown };
+      const sea = added.find((x) => x.name === 'ocean')!.geometry;
+      const w2 = added.find((x) => x.name === 'ocean-wave2')!.geometry;
+      return { seaPatch: d.seaPatch, sharesGeo: sea === w2, seg: mod.SEA_PATCH_METRICS.seg };
+    });
+    expect(r.seg, '스위치를 껐는데 세그먼트가 남아 있다').toBe(0);
+    expect(r.seaPatch, '스위치를 껐는데 진단이 패치를 보고한다').toBeNull();
+    expect(r.sharesGeo, '되돌렸으면 층2가 옛 큰 평면(같은 지오)으로 돌아가야 한다').toBe(true);
+  });
+});
+
+// ── G5 · 층2 UV 월드 스케일 정합 (검수관 게이트 명세 2026-08-05) ──────────────
+// 블로커 BL-6 이 나온 자리다. `layer2Mat` 을 공유하는 메시들의 **월드 무늬 크기**가
+// 서로 달라도 아무 검사가 안 잡았다 — 실제로 10.59× 어긋난 채 통과했다.
+//
+// 핵심: UV 는 지오 로컬 0..1 이므로, 같은 `repeat` 를 다른 크기 지오에 쓰면 월드 무늬가
+// 달라진다. 그래서 **`지오 한 변 × uv 범위 / repeat`** 를 메시마다 산출해 비교한다.
+//
+// ⚠ **메시 목록 위에서 돈다**(검수관 명시). `sea2` 에 하드코딩하면 다음에 추가되는
+// 이동 메시가 그대로 빠져나간다.
+describe('층2 월드 스케일 정합 (G5)', () => {
+  /** 이 메시의 층2 무늬 한 장이 덮는 월드 거리(m) */
+  const worldTile = (m: Added, repeatX: number) => {
+    const g = m.geometry as FakeGeometry;
+    const uv = g.getAttribute('uv').array as number[];
+    let uMin = Infinity, uMax = -Infinity;
+    for (let i = 0; i < uv.length; i += 2) {
+      if (uv[i] < uMin) uMin = uv[i];
+      if (uv[i] > uMax) uMax = uv[i];
+    }
+    const pos = g.getAttribute('position').array as number[];
+    let xMin = Infinity, xMax = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      if (pos[i] < xMin) xMin = pos[i];
+      if (pos[i] > xMax) xMax = pos[i];
+    }
+    return (xMax - xMin) / ((uMax - uMin) * repeatX);
+  };
+
+  it('★ 층2 재질을 공유하는 모든 메시의 월드 무늬 크기가 같다', () => {
+    const { added } = mount();
+    // 층2 재질을 쓰는 메시를 **목록으로** 모은다.
+    const w2 = added.filter((m) => m.name === 'ocean-wave2' || m.name === 'river-wave2');
+    expect(w2.length, '층2 메시를 못 찾았다 — 이 검사가 무효다').toBeGreaterThanOrEqual(2);
+    const repeatX = (w2[0].material as { normalMap?: { repeat: { x: number } } }).normalMap!.repeat.x;
+    const tiles = w2.map((m) => ({ name: m.name, tile: worldTile(m, repeatX) }));
+    const base = tiles[0].tile;
+    for (const t of tiles) {
+      expect(
+        Math.abs(t.tile - base) / base,
+        `${t.name} 의 월드 무늬가 ${t.tile.toFixed(3)}m 로 ${base.toFixed(3)}m 와 다르다 `
+        + '— 같은 재질인데 크기가 갈리면 간섭 설계와 흐름 속도가 함께 깨진다',
+      ).toBeLessThan(1e-9);
+    }
+  });
+
+  it('★ 이동 메시의 스냅 보폭이 월드 무늬의 정수배다 — 아니면 걸을 때마다 무늬가 튄다', () => {
+    // `offset` 은 재질 공유라 이동 보정을 못 한다. 대신 보폭이 무늬 정수배면
+    // `RepeatWrapping` 에서 위상차가 정수라 무늬가 제자리에 남는다.
+    const { added } = mount();
+    const sea2 = added.find((m) => m.name === 'ocean-wave2')!;
+    const repeatX = (sea2.material as { normalMap?: { repeat: { x: number } } }).normalMap!.repeat.x;
+    const ratio = SEA_PATCH_METRICS.snap / worldTile(sea2, repeatX);
+    expect(
+      Math.abs(ratio - Math.round(ratio)),
+      `스냅 ${SEA_PATCH_METRICS.snap.toFixed(3)}m 가 무늬의 ${ratio.toFixed(4)} 배다`,
+    ).toBeLessThan(1e-9);
   });
 });
