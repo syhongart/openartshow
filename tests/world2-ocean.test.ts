@@ -78,6 +78,17 @@ class FakeGeometry {
       }
     }
     this.attrs.position = new FakeAttr(pos, 3);
+    // ── uv 도 만든다 (검수관 블로커 BL-6, 2026-08-05) ───────────────────────
+    // 패치가 텍스처 월드 스케일을 맞추려고 `getAttribute('uv')` 를 만지는데, 스텁이
+    // position 만 갖고 있으면 **프로덕션이 멀쩡한데 테스트만 터진다**(이 파일이 이미
+    // 같은 이유로 position 을 실제로 만들게 됐다 — 아래 클래스 주석).
+    //
+    // three 의 `PlaneGeometry` 규칙 그대로: `u = ix/ws`, `v = 1 − iy/hs`.
+    const uv: number[] = [];
+    for (let iy = 0; iy <= hs; iy++) {
+      for (let ix = 0; ix <= ws; ix++) uv.push(ix / ws, 1 - iy / hs);
+    }
+    this.attrs.uv = new FakeAttr(uv, 2);
   }
 
   /** `-π/2` 만 재현한다 — 이 파일이 쓰는 유일한 각도이고, 임의 각도는 쓸 일이 없다 */
@@ -1731,5 +1742,64 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
     expect(r.seg, '스위치를 껐는데 세그먼트가 남아 있다').toBe(0);
     expect(r.seaPatch, '스위치를 껐는데 진단이 패치를 보고한다').toBeNull();
     expect(r.sharesGeo, '되돌렸으면 층2가 옛 큰 평면(같은 지오)으로 돌아가야 한다').toBe(true);
+  });
+});
+
+// ── G5 · 층2 UV 월드 스케일 정합 (검수관 게이트 명세 2026-08-05) ──────────────
+// 블로커 BL-6 이 나온 자리다. `layer2Mat` 을 공유하는 메시들의 **월드 무늬 크기**가
+// 서로 달라도 아무 검사가 안 잡았다 — 실제로 10.59× 어긋난 채 통과했다.
+//
+// 핵심: UV 는 지오 로컬 0..1 이므로, 같은 `repeat` 를 다른 크기 지오에 쓰면 월드 무늬가
+// 달라진다. 그래서 **`지오 한 변 × uv 범위 / repeat`** 를 메시마다 산출해 비교한다.
+//
+// ⚠ **메시 목록 위에서 돈다**(검수관 명시). `sea2` 에 하드코딩하면 다음에 추가되는
+// 이동 메시가 그대로 빠져나간다.
+describe('층2 월드 스케일 정합 (G5)', () => {
+  /** 이 메시의 층2 무늬 한 장이 덮는 월드 거리(m) */
+  const worldTile = (m: Added, repeatX: number) => {
+    const g = m.geometry as FakeGeometry;
+    const uv = g.getAttribute('uv').array as number[];
+    let uMin = Infinity, uMax = -Infinity;
+    for (let i = 0; i < uv.length; i += 2) {
+      if (uv[i] < uMin) uMin = uv[i];
+      if (uv[i] > uMax) uMax = uv[i];
+    }
+    const pos = g.getAttribute('position').array as number[];
+    let xMin = Infinity, xMax = -Infinity;
+    for (let i = 0; i < pos.length; i += 3) {
+      if (pos[i] < xMin) xMin = pos[i];
+      if (pos[i] > xMax) xMax = pos[i];
+    }
+    return (xMax - xMin) / ((uMax - uMin) * repeatX);
+  };
+
+  it('★ 층2 재질을 공유하는 모든 메시의 월드 무늬 크기가 같다', () => {
+    const { added } = mount();
+    // 층2 재질을 쓰는 메시를 **목록으로** 모은다.
+    const w2 = added.filter((m) => m.name === 'ocean-wave2' || m.name === 'river-wave2');
+    expect(w2.length, '층2 메시를 못 찾았다 — 이 검사가 무효다').toBeGreaterThanOrEqual(2);
+    const repeatX = (w2[0].material as { normalMap?: { repeat: { x: number } } }).normalMap!.repeat.x;
+    const tiles = w2.map((m) => ({ name: m.name, tile: worldTile(m, repeatX) }));
+    const base = tiles[0].tile;
+    for (const t of tiles) {
+      expect(
+        Math.abs(t.tile - base) / base,
+        `${t.name} 의 월드 무늬가 ${t.tile.toFixed(3)}m 로 ${base.toFixed(3)}m 와 다르다 `
+        + '— 같은 재질인데 크기가 갈리면 간섭 설계와 흐름 속도가 함께 깨진다',
+      ).toBeLessThan(1e-9);
+    }
+  });
+
+  it('★ 이동 메시의 스냅 보폭이 월드 무늬의 정수배다 — 아니면 걸을 때마다 무늬가 튄다', () => {
+    // `offset` 은 재질 공유라 이동 보정을 못 한다. 대신 보폭이 무늬 정수배면
+    // `RepeatWrapping` 에서 위상차가 정수라 무늬가 제자리에 남는다.
+    const { added } = mount();
+    const sea2 = added.find((m) => m.name === 'ocean-wave2')!;
+    const repeatX = (sea2.material as { normalMap?: { repeat: { x: number } } }).normalMap!.repeat.x;
+    const ratio = SEA_PATCH_METRICS.snap / worldTile(sea2, repeatX);
+    expect(
+      Math.abs(ratio - Math.round(ratio)),
+      `스냅 ${SEA_PATCH_METRICS.snap.toFixed(3)}m 가 무늬의 ${ratio.toFixed(4)} 배다`,
+    ).toBeLessThan(1e-9);
   });
 });

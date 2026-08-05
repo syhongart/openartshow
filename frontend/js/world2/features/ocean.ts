@@ -1307,6 +1307,40 @@ export const oceanFeature: Feature = {
         .rotateX(-Math.PI / 2)
       : null;
     if (patchGeo) {
+      // ── ⚠ UV 를 월드 스케일에 맞춘다 (검수관 블로커 BL-6, 2026-08-05) ────────
+      //
+      // `layer2Mat` 은 `sea2` 와 `river2` 가 **공유**하고, `normB.repeat`(위)는 UV 0..1 이
+      // **`PLANE`(1,920m)** 을 덮는 지오를 전제로 유도돼 있다. 그런데 `sea2` 의 지오만
+      // 181m 패치로 바뀌었고 `repeat` 는 그대로였다 — 그러면 **같은 재질인데 월드 무늬
+      // 크기가 달라진다.** 실측:
+      //
+      //     river2 층2 타일 25.889m   vs   sea2 패치 타일 2.443m   (10.59× 어긋남)
+      //
+      // 결과 셋 다 이 커밋의 목적을 정면으로 깬다:
+      //   ① 간섭 설계 무효 — `LAYER2_SCALE = PHI` 의 근거는 "층2 = 층1 × 1.618" 인데
+      //      지금 층2가 층1(16m)의 **1/6.5** 다. 정수비 회피가 뜻을 잃는다.
+      //   ② 흐름이 10.59× 느려진다 — 아래 `b` 의 UV 환산은 타일이 `RIPPLE_M ×
+      //      LAYER2_SCALE` m 라는 전제다(검수관 R-3 이 고쳐 놓은 자리). **R-3 결함이
+      //      되살아난다** — 그리고 이 작업을 연 감독 판정이 *"`?wflow=8` 이것도 약해"* 였다.
+      //   ③ 월드 고정이 깨진다 — 스냅 1회당 위상이 10.5949 타일 이동(소수부 0.405)이라
+      //      25.9m 걸을 때마다 무늬가 0.99m 튄다. 스냅이 막는다고 적은 바로 그 실패다.
+      //
+      // **재질·텍스처는 그대로 두고 지오의 UV 만 줄인다.** `normB` 를 고치면 `river2` 가
+      // 깨지고(공유), 재질을 새로 만들면 `layerOpacity` 캘리브레이션과 겹쳐 팀장 사안이
+      // 된다. UV 를 `SPAN/PLANE` 배로 두면 텍스처 좌표가 `PLANE` 지오와 **같은 규칙**이
+      // 되어 월드 타일이 저절로 일치한다(이 파일 `makeRiverGeo` 주석이 이미 그 불변식을
+      // 문장으로 갖고 있다 — *"바다 판과 같은 규칙으로 낸다"*).
+      //
+      // ⚠ 이동 시 무늬가 안 따라오는 근거: `offset` 은 공유라 보정할 수 없다. 대신
+      // 스냅 보폭이 **월드 타일과 정확히 같으므로**(`SEA_PATCH_SNAP = LAYER2_TILE_M`),
+      // 한 칸 이동 = 정수 타일 이동이고 `RepeatWrapping` 에서 정수 위상차는 무늬가 같다.
+      // 이 성질을 테스트가 검사한다(G5) — 산술이 깨지면 화면 없이 빨간불이 뜬다.
+      const uvAttr = patchGeo.getAttribute('uv');
+      const uvArr = uvAttr.array as Float32Array;
+      const uvScale = SEA_PATCH_SPAN / PLANE;
+      for (let i = 0; i < uvArr.length; i++) uvArr[i] *= uvScale;
+      uvAttr.needsUpdate = true;
+
       // 매 프레임 y 를 덮어쓴다. 개수는 안 는다 — 부팅 1회 생성이고 갱신은 내용뿐이라
       // 스모크 `[7]` 개수 불변식이 그대로 성립한다(팀장 조건 2).
       const attr = patchGeo.getAttribute('position');

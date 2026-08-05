@@ -40,10 +40,17 @@ describe('바다 패치 — 예산 경계 (팀장 조건 1)', () => {
     expect(spacing).toBeLessThanOrEqual(LIFT_LAMBDA / 4);
   });
 
-  it('스냅 단위가 span 을 정수로 나눈다 — 안 그러면 무늬가 플레이어를 따라다닌다', () => {
-    const tiles = SEA_PATCH_METRICS.span / SEA_PATCH_METRICS.snap;
-    expect(Math.abs(tiles - Math.round(tiles))).toBeLessThan(1e-9);
-  });
+  // ⚠ 여기 *"스냅 단위가 span 을 정수로 나눈다"* 단언이 있었다. **항상 참이었다**
+  // (검수관 G6). `SPAN = TILES × LAYER2_TILE_M` · `SNAP = LAYER2_TILE_M` 이므로
+  // `span/snap = TILES` 이고 `TILES` 는 `Math.ceil` 결과다 — 구조상 정수일 수밖에 없다.
+  // 검수관이 뮤테이션으로 실증했다: `LAYER2_TILE_M` 을 텍스처 유도에서 완전히 떼어내도
+  // **12/12 통과.** 무늬가 실제로 어긋나는 것을 이 단언은 못 본다.
+  //
+  // 진짜 불변식은 "**스냅 보폭이 실제 월드 무늬 크기의 정수배인가**" 이고, 그것은
+  // 지오 UV 와 텍스처 `repeat` 를 **함께** 읽어야 판정된다. `tests/world2-ocean.test.ts`
+  // 의 G5 로 옮겼다 — 거기서는 mount 후 실제 객체를 읽으므로 발화한다.
+  //
+  // 교훈: 상수끼리 비교하는 단언은 유도 관계를 재확인할 뿐 **집행을 안 본다.**
 
   it('상한 기준값이 유도식과 일치한다', () => {
     const derived = GRID_W * 2 * (RIVER_SEG + 1) ** 2;
