@@ -18,8 +18,6 @@ import {
 } from '../decide/night.js';
 import { readNum, readEnum } from '../url-knob.js';
 import { DAY_SUN_I, DAY_HEMI_I } from '../decide/daylight.js';
-import { GroundTint } from '../systems/ground-tint.js';
-import { GROUND_TINT_STRENGTH } from '../decide/ground-albedo.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 // 시간대 목록(`TIMES`)은 `decide/night.ts` 로 옮겼다 — 조립부도 그것을 읽으므로 여기
@@ -151,23 +149,6 @@ export const skyFeature: Feature = {
 
     applyLampGlow(); // 부팅 프레임부터 맞춰 둔다 — 밤에 들어왔는데 첫 프레임만 꺼져 있으면 깜빡인다
 
-    // ── 지면 알베도 (`?gtint=`) ────────────────────────────────────────────
-    // 감독: *"재질 배선 진행해"* (2026-08-05)
-    //
-    // 지금까지 밤 처방은 전부 **빛**이었다(조명 하한·노출·안개). 빛은 알베도에 곱해지
-    // 므로, 알베도가 13배 벌어져 있으면 같은 조명 한 벌이 잔디는 형광으로 도로는 검정
-    // 으로 만든다. `decide/night.ts` 가 *"재지 못한 축"* 이라 적어 둔 그 축이다.
-    //
-    // **왜 하늘이 이걸 하는가** — 가로등과 같은 이유다. 근거가 시간대이고, 기능 규약이
-    // *"기능을 빼면 그 기능에 관한 모든 것이 함께 빠진다"* 이다. 하늘을 빼면 밤 자체가
-    // 없으므로(조명 하한도 노출도 `SkySystem` 이 건다) 지면도 낮 알베도로 남는 것이 맞다.
-    //
-    // 배선이 `systems/ground-tint.ts` 에 있는 이유는 테스트가 **실제로 돌아가는 코드**를
-    // 부르게 하려는 것이다 — 위 `applyLampGlow` 는 클로저 안이라 테스트가 같은 식을 옆에
-    // 다시 쓰고 있고, 배선이 사라져도 그 테스트는 초록이다.
-    const groundTint = new GroundTint(env.pools, readNum('gtint', GROUND_TINT_STRENGTH, 0, 1));
-    groundTint.apply(env.time()); // 가로등과 같은 이유로 부팅 프레임부터 맞춘다
-
     return {
       system: {
         name: sky.name,
@@ -176,7 +157,6 @@ export const skyFeature: Feature = {
           // 하늘이 시간대를 옮긴 **뒤에** 읽는다. 순서가 뒤집히면 한 프레임 늦은 값으로
           // 켜져서, 시간대를 바꿀 때 가로등만 뒤늦게 따라온다.
           applyLampGlow();
-          groundTint.apply(env.time());
         },
         dispose: () => sky.dispose?.(),
       },
@@ -215,10 +195,6 @@ export const skyFeature: Feature = {
           fogC: fog?.color ? fog.color.getHex() : null,
           // 가로등이 켜졌는가. 화면으로는 "좀 밝네" 로만 보이는 것을 숫자로 남긴다.
           lampGlow: lampLit,
-          // 지면 알베도 배수. `groundMissing` 이 비어 있지 않으면 그 파츠에는 **아무것도
-          // 안 걸린 것**이다 — 조용히 넘어가면 기능이 죽은 줄 모른다.
-          groundTint: groundTint.scales,
-          groundMissing: groundTint.missing,
         };
       },
 

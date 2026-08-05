@@ -24,17 +24,8 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { isPlaza } from './plaza.js';
-import { hexCss } from './color.js';
 
 export { BLADE_WIDTH, GRASS_TEX, GRASS_REPEAT };
-
-/**
- * 잔디 텍스처의 바탕색. 색상 100° 근처의 노랑기 있는 초록 — 순수한 초록(120°)은
- * 인공적이다. 원래 `'hsl(102, 34%, 52%)'` 였고 hex 로 옮긴 것은 밤 알베도 배수가 이 색의
- * **휘도**를 읽기 때문이다(`decide/ground-albedo.ts`). 변환 오차는 채널당 1/255 미만이라
- * 화면에서 구별되지 않는다.
- */
-export const GRASS_BASE = 0x74ae5b;
 
 export const garden: PartSpec = {
   kind: 'garden',
@@ -50,10 +41,6 @@ export const garden: PartSpec = {
   // 색을 갖는다. 그래서 tones 는 **밝기 변주**만 맡는다 — 판마다 미세하게 달라야 잔디가
   // 한 장을 복사한 것처럼 안 보인다.
   tones: [0xffffff, 0xf0f4ea, 0xe6efe0],
-
-  // 지면 평면 신고 + 알베도 원천. 밤 배수가 `GRASS_BASE` 휘도와 위 `tones` 평균에서
-  // 유도된다(`decide/ground-albedo.ts`) — 잔디가 밤에 형광으로 뜨던 원인이 이 값이다.
-  groundBase: GRASS_BASE,
 
   // ── 사분면 넷에서 통짜 한 장으로 (감독 판정) ──────────────────────────────
   // 감독: *"건물, 나무 있는 곳 바닥 정리가 필요해. 뭔가 건물이 어긋나있네."*
@@ -154,9 +141,8 @@ function grassTexture(T: ThreeNS) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 
-  // 잔디 바탕. 색은 위 `GRASS_BASE` 하나이고 여기서는 CSS 로 되돌려 칠하기만 한다 —
-  // 밤 알베도 배수가 같은 상수의 휘도를 읽으므로 두 곳에 적으면 조용히 어긋난다.
-  ctx.fillStyle = hexCss(GRASS_BASE);
+  // 잔디 바탕. 색상 100° 근처의 노랑기 있는 초록 — 순수한 초록(120°)은 인공적이다.
+  ctx.fillStyle = 'hsl(102, 34%, 52%)';
   ctx.fillRect(0, 0, S, S);
   // 풀결 — 짧은 선을 위쪽으로 조금 기울여 긋는다. 밝기와 색조를 함께 흔들어야
   // 한 장을 반복해 깐 티가 덜 난다.

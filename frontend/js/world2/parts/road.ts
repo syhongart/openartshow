@@ -19,16 +19,8 @@
 import type { PartSpec, PlacedPart } from './types.js';
 import { roadDirs, ROAD_SEG } from './road-topology.js';
 import { isPlaza } from './plaza.js';
-import { hexCss } from './color.js';
 
 export { GRAIN_R, ROAD_TEX };
-
-/**
- * 아스팔트 텍스처의 바탕색. hex 로 두는 이유는 밤 알베도 배수가 이 색의 **휘도**를 읽기
- * 때문이다(`decide/ground-albedo.ts`) — 캔버스와 판정에 따로 적으면 한쪽만 고쳐도
- * 아무도 모른다.
- */
-export const ASPHALT_BASE = 0x2a2d33;
 
 export const road: PartSpec = {
   kind: 'road',
@@ -52,10 +44,6 @@ export const road: PartSpec = {
   // 파셀별 색 변주도 넣지 않는다 — 길은 이어진 하나로 읽혀야 하고, 파셀마다 미세하게
   // 색이 다르면 그 경계가 이음매로 드러난다.
   tones: [0xffffff],
-
-  // 지면 평면 신고 + 알베도 원천. 도로는 알베도가 가장 낮아 밤 압축의 **기준 아래**에
-  // 있고, 그래서 배수가 1(무변경)로 유도된다 — 밤에 길을 밝히는 것은 이 축의 일이 아니다.
-  groundBase: ASPHALT_BASE,
 
   // 네 방향 × 조각 2개 + 중심 1개. 중심은 방향이 하나라도 있을 때만 놓으므로 실제
   // 최댓값은 9다.
@@ -167,8 +155,7 @@ function asphaltTexture(T: typeof import('three/webgpu')): InstanceType<typeof i
   cv.width = cv.height = S;
   const g = cv.getContext('2d')!;
 
-  // 색은 위 `ASPHALT_BASE` 하나. 여기서는 CSS 로 되돌려 칠하기만 한다.
-  g.fillStyle = hexCss(ASPHALT_BASE);
+  g.fillStyle = '#2a2d33';
   g.fillRect(0, 0, S, S);
 
   // 자갈 알갱이. 크기와 밝기를 섞어 균일한 노이즈로 보이지 않게 한다 — 한 종류만 뿌리면
