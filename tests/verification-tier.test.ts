@@ -232,17 +232,61 @@ describe('B3 — 인라인 `<script type="module">` 도 그래프에 들어간�
   });
 
   it('**못 잡는 형태가 실제 트리에 없다** — 있으면 그래프가 조용히 작아진다', () => {
-    // 위 표의 MISS 셋이 라이브 HTML 에 들어오면 그 서브그래프가 통째로 빠진다.
+    // 위 표의 MISS 형태가 라이브 HTML 에 들어오면 그 서브그래프가 통째로 빠진다.
     // 그때 이 검사가 FAIL 해서 "정규식을 고칠지, 그 HTML 을 고칠지" 를 판단하게 만든다.
+    //
+    // ⚠⚠ **첫 판본은 이 검사가 셋 중 하나만 잡았다**(검수관 조건 C2, 2026-08-05).
+    // 느슨 쪽 필터가 `!/\bsrc\s*=/` 였는데 `\b` 가 `data-src` 의 `src` 에도 걸린다 —
+    // **잡으려는 버그를 대조군에 그대로 복사한 것이다.** 검수관 실측: 같은 import 를
+    // `<script data-src="x" type="module">` 로 주입하면 그 파일이 `tier 1`(라이브)에서
+    // `tier 3`(검수 이연)으로 떨어지는데 **테스트 38건이 전부 초록이었다.**
+    //
+    // > **대조군이 대상과 같은 버그를 공유하면 그것은 대조군이 아니다.** 침입 감지·회귀
+    // > 대조·뮤테이션 전부 같다. "느슨하게 다시 세어 본다" 를 만들 때는 **느슨한 쪽이
+    // > 엄격한 쪽의 코드를 물려받지 않았는지** 먼저 본다. 여기서는 `\bsrc` 다섯 글자였다.
+    //
+    // **엄격 정규식(`INLINE_RE`)은 일부러 안 고친다** — 넓히면 `type="text/x-module"`
+    // 같은 비모듈 태그까지 그래프에 들어와 판정이 오염된다. 넓히는 것은 **느슨한 쪽만**이다.
+    //
+    // ── 이 검사가 무엇의 집행 수단인가 (검수관 권고 R-g) ──────────────────────────
+    // `scripts/lib/verification-tier.mjs` 의 `scriptsOf` 주석이 *"안 보이는 누락은
+    // `liveDynamic` 가드도 못 켠다"* 고 적는다. **그 문장을 지키는 것이 이 검사다** —
+    // 가드는 라이브 그래프 **안에서 발견된** 파일의 동적 import 만 모으므로, 인라인
+    // 파싱이 통째로 누락되면 그 페이지의 비리터럴 `import(x)` 도 안 잡히고 가드가
+    // 켜지지 않는다. 즉 **누락을 사후에 알아챌 축이 여기밖에 없다.**
     const loose = /<script\b[^>]*\btype\s*=\s*["']?module["']?[^>]*>/gi;
     for (const e of [...LIVE_ENTRIES, ...FLAGGED_ENTRIES]) {
       const html = readFileSync(join(REPO, 'frontend', e.src), 'utf8')
         .replace(/<!--[\s\S]*?-->/g, '');
-      const looseInline = (html.match(loose) ?? []).filter((t) => !/\bsrc\s*=/.test(t)).length;
+      // `(?<![-\w])` — `data-src`·`foo_src` 를 `src` 로 오인하지 않는다.
+      const looseInline = (html.match(loose) ?? [])
+        .filter((t) => !/(?<![-\w])src\s*=/.test(t)).length;
       INLINE_RE.lastIndex = 0;
       const strict = (html.match(INLINE_RE) ?? []).length;
       expect(strict, `${e.src}: 느슨 ${looseInline} vs 엄격 ${strict}`).toBe(looseInline);
     }
+  });
+
+  it('침입 감지가 **어느 형태를 잡고 어느 형태를 못 잡는지** — 대조군 자체를 잰다', () => {
+    // 위 검사가 실제로 무엇을 감지하는지 여기서 고정한다. 이것이 없으면 "그 형태가
+    // 들어오면 FAIL 한다" 가 **검사가 닿지 않는 범위까지 말하는 문장**이 된다.
+    const loose = /<script\b[^>]*\btype\s*=\s*["']?module["']?[^>]*>/gi;
+    const detects = (html: string): boolean => {
+      const looseInline = (html.match(loose) ?? [])
+        .filter((t) => !/(?<![-\w])src\s*=/.test(t)).length;
+      INLINE_RE.lastIndex = 0;
+      return (html.match(INLINE_RE) ?? []).length !== looseInline; // 불일치 = 감지
+    };
+    // 잡는다
+    expect(detects('<script type=module>import "./a.js";</script>')).toBe(true);
+    expect(detects('<script data-src="x" type="module">import "./a.js";</script>')).toBe(true);
+    // ⛔ **못 잡는다 — 원리적으로 불가하다.** 느슨·엄격 둘 다 `[^>]*` 라 속성값 안의
+    // `>` 를 못 넘는다. 정규식으로는 여기가 끝이고, 고치려면 HTML 파서가 필요하다.
+    // 고치라는 것이 아니라 **그렇게 적어 두라는 것**이다(검수관 C2).
+    expect(detects('<script data-x="a>b" type="module">import "./a.js";</script>')).toBe(false);
+    // 정상 태그는 감지되면 안 된다(거짓 FAIL 방지)
+    expect(detects('<script type="module">import "./a.js";</script>')).toBe(false);
+    expect(detects('<script type="module" src="./a.js"></script>')).toBe(false);
   });
 });
 
