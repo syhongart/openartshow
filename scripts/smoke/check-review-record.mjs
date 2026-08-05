@@ -23,7 +23,12 @@ if (!process.env.PR_BODY && process.env.PR_BODY !== '') {
 const { ok, errors, record } = validateReviewRecord(body);
 
 if (ok) {
-  console.log(`[PASS] 검수관 판정 기록 — ${record.verdict}${record.detail ? ` ${record.detail}` : ''}`);
+  // ⚠ `[PASS]` 를 **여기서 찍지 않는다.** 아래 `해당없음` 근거 검사가 FAIL 할 수 있고,
+  // 그러면 실패 회차 로그에 `[PASS]` 가 **먼저** 남는다 — 로그를 grep 하는 다음 사람에게
+  // 위험한 형태다(검수관 권고 R-c, 2026-08-05). 형식 검사는 중간 단계이므로 `[..]` 로
+  // 적고, `[PASS]`/`[FAIL]` 은 **최종 판정에서 한 번만** 찍는다.
+  const label = `검수관 판정 기록 — ${record.verdict}${record.detail ? ` ${record.detail}` : ''}`;
+
   // ── `해당없음` 은 **근거를 검사한다** (검수관 반려 B4, 2026-08-05) ─────────────
   //
   // 검증 등급(#195) 도입 전에는 `해당없음` 이 좁은 예외였다(검수관 트리거에 해당하지 않는
@@ -33,7 +38,11 @@ if (ok) {
   //
   // ⚠ 이것은 **게이트가 검증을 면제하는** 구조가 아니다. 방향이 반대다 — 게이트는
   // **면제 주장의 근거**를 검사한다. 판정기 CLI 자체는 여전히 게이트가 아니다(종료코드 0).
-  if (record.verdict === '해당없음') process.exit(checkExemption());
+  if (record.verdict === '해당없음') {
+    console.log(`[..] ${label} — 근거(등급) 확인 중`);
+    process.exit(checkExemption());
+  }
+  console.log(`[PASS] ${label}`);
   process.exit(0);
 }
 

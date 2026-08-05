@@ -202,6 +202,48 @@ describe('B3 — 인라인 `<script type="module">` 도 그래프에 들어간�
     expect(r.tier).toBe(1);
     expect(r.rows[0].why).toMatch(/라이브 그래프에서 도달/);
   });
+
+  // ── 정규식이 **어느 형태를 잡고 어느 형태를 놓치는지** 고정한다 (검수관 권고 R-d) ──
+  //
+  // 검수관이 11개 변형을 실측해 MISS 셋을 찾았다. 현재 트리에는 그 형태가 **0건**이지만
+  // **테스트로 고정돼 있지 않았다** — 그러면 "지금 안 쓰니 괜찮다" 가 근거 없이 유지된다.
+  // MISS 를 고치지 않고 **명시**하는 이유: 정규식으로 HTML 을 정확히 파싱할 수 없고,
+  // 여기서 무리하면 오히려 오탐이 는다. 대신 **못 잡는 것을 적어 두고 그 형태가 트리에
+  // 들어오는 순간 이 표가 근거가 되게** 한다.
+  const INLINE_RE = /<script\b(?![^>]*\bsrc\s*=)[^>]*\btype\s*=\s*["']module["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const CASES: [string, string, boolean][] = [
+    ['표준', '<script type="module">import "./a.js";</script>', true],
+    ['defer 선행', '<script defer type="module">import "./a.js";</script>', true],
+    ['defer 후행', '<script type="module" defer>import "./a.js";</script>', true],
+    ['등호 공백', '<script type = "module">import "./a.js";</script>', true],
+    ['태그 내 개행', '<script\n  type="module">import "./a.js";</script>', true],
+    ['대문자', '<SCRIPT TYPE="MODULE">import "./a.js";</SCRIPT>', true],
+    ['홑따옴표', "<script type='module'>import './a.js';</script>", true],
+    ['src 있음 — 잡으면 안 된다', '<script type="module" src="./a.js"></script>', false],
+    // ↓ **못 잡는 것** — 현재 트리에 0건이고 고치지 않았다
+    ['따옴표 없는 type=module', '<script type=module>import "./a.js";</script>', false],
+    ['data-src 동반(`\\bsrc` 오탐)', '<script data-src="x" type="module">import "./a.js";</script>', false],
+    ['속성값에 > 포함', '<script data-x="a>b" type="module">import "./a.js";</script>', false],
+  ];
+
+  it.each(CASES)('인라인 정규식 — %s', (_name, html, shouldMatch) => {
+    INLINE_RE.lastIndex = 0;
+    expect(INLINE_RE.test(html)).toBe(shouldMatch);
+  });
+
+  it('**못 잡는 형태가 실제 트리에 없다** — 있으면 그래프가 조용히 작아진다', () => {
+    // 위 표의 MISS 셋이 라이브 HTML 에 들어오면 그 서브그래프가 통째로 빠진다.
+    // 그때 이 검사가 FAIL 해서 "정규식을 고칠지, 그 HTML 을 고칠지" 를 판단하게 만든다.
+    const loose = /<script\b[^>]*\btype\s*=\s*["']?module["']?[^>]*>/gi;
+    for (const e of [...LIVE_ENTRIES, ...FLAGGED_ENTRIES]) {
+      const html = readFileSync(join(REPO, 'frontend', e.src), 'utf8')
+        .replace(/<!--[\s\S]*?-->/g, '');
+      const looseInline = (html.match(loose) ?? []).filter((t) => !/\bsrc\s*=/.test(t)).length;
+      INLINE_RE.lastIndex = 0;
+      const strict = (html.match(INLINE_RE) ?? []).length;
+      expect(strict, `${e.src}: 느슨 ${looseInline} vs 엄격 ${strict}`).toBe(looseInline);
+    }
+  });
 });
 
 // ── 실제 저장소 그래프 — 규칙이 아니라 **이 세계**에서 성립하는가 ──────────

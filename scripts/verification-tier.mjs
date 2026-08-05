@@ -56,9 +56,11 @@ console.log(`    npm run gate            ${t.gate ? '필수' : '—'}`);
 console.log(`    배포 전 독립 스모크      ${t.smoke ? '필수(executor, 구현자 본인 금지)' : '생략 — CI 가 돈다'}`);
 console.log(`    검수관 교차리뷰          ${t.reviewer ? '필수' : '면제'}`);
 console.log('');
-console.log('  ⚠ 등급이 줄이는 것은 **배포 전 로컬 왕복**이다. 자기완결·CSP·개수 불변식은');
-console.log('    CI 스모크가 등급과 무관하게 돌므로 면제되지 않는다 — **단 그 진입점이');
+console.log('  ⚠ 등급이 줄이는 것은 **배포 전 로컬 왕복**이다. 자기완결·CSP 는 CI 스모크가');
+console.log('    등급과 무관하게 돌므로 면제되지 않는다 — **단 그 진입점이');
 console.log('    `scripts/smoke/config.mjs` 의 LIVE_PAGES 에 있을 때만이다**(검수관 반려 B1).');
+console.log('    개수 불변식[7] 은 여기 없다 — world2 한 페이지에서만 돌고, CI 는');
+console.log('    SMOKE_PERF_GATES=observe 라 종료코드에서 빠진다(검수관 반려 C1).');
 console.log('    IP 축은 검사가 없다 — 새 에셋·텍스트·네이밍은 등급과 별개로 §6 법무 게이트다.');
 console.log('    (자동 게이트 신설은 태스크 #198 — 팀장 조건으로 등록돼 있다)');
 // ── 등급이 검수관을 면제하는 출력에만 붙인다 (팀장 2차 판정 2026-08-05) ─────────
