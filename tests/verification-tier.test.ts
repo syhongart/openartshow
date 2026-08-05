@@ -211,6 +211,22 @@ describe('B3 — 인라인 `<script type="module">` 도 그래프에 들어간�
   // 여기서 무리하면 오히려 오탐이 는다. 대신 **못 잡는 것을 적어 두고 그 형태가 트리에
   // 들어오는 순간 이 표가 근거가 되게** 한다.
   const INLINE_RE = /<script\b(?![^>]*\bsrc\s*=)[^>]*\btype\s*=\s*["']module["'][^>]*>([\s\S]*?)<\/script>/gi;
+
+  /**
+   * 느슨 파서 — 인라인 module 후보 개수. **아래 두 검사가 이것 하나를 부른다**(조건 C3).
+   *
+   * 여기가 갈리면 "감지기" 와 "감지기의 범위를 재는 검사" 가 서로 다른 것을 보게 되고,
+   * 그때 후자는 전자를 재는 것이 아니라 **자기 사본을 재게 된다**(실증됨 — 위 주석).
+   *
+   * - `(?<![-\w])` — `data-src`·`foo_src` 를 `src` 로 오인하지 않는다(조건 C2).
+   * - **`i` 플래그** — HTML 속성명은 대소문자 무구분이다. 없으면 `<script TYPE="MODULE"
+   *   SRC="./a.js">` 같은 **정상 태그가 거짓 FAIL** 을 만든다(검수관 실측). 엄격 쪽
+   *   `INLINE_RE` 는 `gi` 라 이미 대문자 `SRC` 를 제외하는데 느슨 쪽만 못 해서 어긋났다.
+   */
+  const looseInlineCount = (html: string): number => {
+    const loose = /<script\b[^>]*\btype\s*=\s*["']?module["']?[^>]*>/gi;
+    return (html.match(loose) ?? []).filter((t) => !/(?<![-\w])src\s*=/i.test(t)).length;
+  };
   const CASES: [string, string, boolean][] = [
     ['표준', '<script type="module">import "./a.js";</script>', true],
     ['defer 선행', '<script defer type="module">import "./a.js";</script>', true],
@@ -254,28 +270,36 @@ describe('B3 — 인라인 `<script type="module">` 도 그래프에 들어간�
     // 가드는 라이브 그래프 **안에서 발견된** 파일의 동적 import 만 모으므로, 인라인
     // 파싱이 통째로 누락되면 그 페이지의 비리터럴 `import(x)` 도 안 잡히고 가드가
     // 켜지지 않는다. 즉 **누락을 사후에 알아챌 축이 여기밖에 없다.**
-    const loose = /<script\b[^>]*\btype\s*=\s*["']?module["']?[^>]*>/gi;
     for (const e of [...LIVE_ENTRIES, ...FLAGGED_ENTRIES]) {
       const html = readFileSync(join(REPO, 'frontend', e.src), 'utf8')
         .replace(/<!--[\s\S]*?-->/g, '');
-      // `(?<![-\w])` — `data-src`·`foo_src` 를 `src` 로 오인하지 않는다.
-      const looseInline = (html.match(loose) ?? [])
-        .filter((t) => !/(?<![-\w])src\s*=/.test(t)).length;
+      const loose = looseInlineCount(html);
       INLINE_RE.lastIndex = 0;
       const strict = (html.match(INLINE_RE) ?? []).length;
-      expect(strict, `${e.src}: 느슨 ${looseInline} vs 엄격 ${strict}`).toBe(looseInline);
+      expect(strict, `${e.src}: 느슨 ${loose} vs 엄격 ${strict}`).toBe(loose);
     }
   });
 
   it('침입 감지가 **어느 형태를 잡고 어느 형태를 못 잡는지** — 대조군 자체를 잰다', () => {
     // 위 검사가 실제로 무엇을 감지하는지 여기서 고정한다. 이것이 없으면 "그 형태가
     // 들어오면 FAIL 한다" 가 **검사가 닿지 않는 범위까지 말하는 문장**이 된다.
-    const loose = /<script\b[^>]*\btype\s*=\s*["']?module["']?[^>]*>/gi;
+    //
+    // ⚠⚠ **이 검사는 `looseInlineCount` 를 위 검사와 공유해야 한다**(검수관 조건 C3).
+    // 첫 판본은 느슨 정규식과 필터를 **각자 복제**했다. 결함을 공유하진 않았지만
+    // **코드를 복제했고 결과는 같았다** — 검수관 뮤테이션: 위 검사의 필터만 옛 결함
+    // (`\bsrc`)으로 되돌려도 **39건 전부 초록**이었고, 그 상태에서 `data-src` 를 주입해도
+    // 초록이었다. **C2 가 막은 오판정이 통째로 재개방됐는데 "범위를 잰다" 는 이 검사가
+    // 조용했다.** 사본을 재고 있었기 때문이다.
+    //
+    // > **지난 회차 교훈의 일반형**: *"대조군이 대상과 같은 버그를 공유하면 대조군이
+    // > 아니다"* → **"대조군이 대상의 코드를 복제해도 대조군이 아니다."** 사본은 처음엔
+    // > 옳다. 옳은 채로 갈라지고, 갈라진 것을 아무도 못 본다.
+    //
+    // 그리고 **처방은 층을 더하는 쪽이 아니라 빼는 쪽이다** — "검사를 재는 검사를 재는
+    // 검사" 로 가면 축이 틀린 것이다. 중복을 없애면 이 검사가 저절로 정당해진다.
     const detects = (html: string): boolean => {
-      const looseInline = (html.match(loose) ?? [])
-        .filter((t) => !/(?<![-\w])src\s*=/.test(t)).length;
       INLINE_RE.lastIndex = 0;
-      return (html.match(INLINE_RE) ?? []).length !== looseInline; // 불일치 = 감지
+      return (html.match(INLINE_RE) ?? []).length !== looseInlineCount(html); // 불일치 = 감지
     };
     // 잡는다
     expect(detects('<script type=module>import "./a.js";</script>')).toBe(true);
@@ -287,6 +311,9 @@ describe('B3 — 인라인 `<script type="module">` 도 그래프에 들어간�
     // 정상 태그는 감지되면 안 된다(거짓 FAIL 방지)
     expect(detects('<script type="module">import "./a.js";</script>')).toBe(false);
     expect(detects('<script type="module" src="./a.js"></script>')).toBe(false);
+    // **대문자 속성** — HTML 은 속성명 대소문자를 안 가린다. 느슨 쪽 필터에 `i` 가 없어
+    // 무고한 태그가 FAIL 을 만들었다(검수관 실측, 현재 트리 0건이지만 유효한 입력이다).
+    expect(detects('<script TYPE="MODULE" SRC="./a.js"></script>')).toBe(false);
   });
 });
 
