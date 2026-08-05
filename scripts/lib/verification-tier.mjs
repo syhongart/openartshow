@@ -41,7 +41,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { LIVE_ENTRIES, FLAGGED_ENTRIES } from './entrypoints.mjs';
+import { LIVE_ENTRIES, FLAGGED_ENTRIES, srcPath } from './entrypoints.mjs';
 
 const REPO = resolve(import.meta.dirname, '..', '..');
 const FRONTEND = join(REPO, 'frontend');
@@ -192,7 +192,9 @@ export function reachableFrom(entries) {
   const dynamicHits = new Set();
   const queue = [];
   for (const e of entries) {
-    const html = join(FRONTEND, e.src);
+    // 접두사는 `srcPath` 가 붙인다 — 여기서 `join(FRONTEND, e.src)` 로 다시 적으면
+    // 같은 규약이 두 곳에 있게 되고, 그 미러링이 실제로 vite 쪽을 깨뜨렸다(2026-08-05).
+    const html = join(REPO, srcPath(e));
     seen.add(relative(REPO, html));
     queue.push(...scriptsOf(html));
   }

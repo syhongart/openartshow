@@ -9,7 +9,7 @@
 // **"내려가면 안 되는 것이 안 내려가는가"** 다.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -45,6 +45,18 @@ describe('진입점 SSOT', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
     expect(flagged).toEqual(['lab-glb.html', 'visit.html', 'world2.html']);
+  });
+
+  it('**`viteInput` 이 내는 경로가 실제 파일을 가리킨다** — 개수만 세면 빌드가 죽는다', () => {
+    // ⚠ 이 검사는 **사고 뒤에 생겼다**(2026-08-05). 바로 아래 검사가 원래는 키 개수만
+    // 봤고, 그래서 `viteInput(r)` 에서 `frontend/` 접두사가 사라진 것을 **게이트 6종이
+    // 전부 초록으로 통과시켰다.** 배포 전 독립 스모크가 잡았다:
+    //     Could not resolve entry module "landing.html"
+    // 개수는 규약이 틀려도 그대로다 — **개수와 유효성은 다른 축**이다.
+    const input = viteInput((p: string) => join(REPO, p));
+    for (const [key, abs] of Object.entries(input)) {
+      expect(existsSync(abs as string), `${key} → ${abs}`).toBe(true);
+    }
   });
 
   it('`viteInput` 은 전부, `htmlRename` 은 재배치되는 것만 낸다', () => {

@@ -70,11 +70,29 @@ export const LIVE_ENTRIES = ENTRYPOINTS.filter((e) => e.exposure === 'live');
 export const FLAGGED_ENTRIES = ENTRYPOINTS.filter((e) => e.exposure === 'flagged');
 
 /**
+ * 소스 루트. `src` 는 **여기 기준 상대경로**다.
+ *
+ * ⚠ 처음에는 이 상수를 두지 않고 *"이 파일은 경로 규약(`frontend/` 접두사)을 모르는 편이
+ * 낫다 — 호출자가 준다"* 고 적었다. **그 판단이 틀렸다는 것이 배포 전 스모크에서 실증됐다**
+ * (2026-08-05): `vite.config.js` 가 `viteInput(r)` 로 받으면서 접두사가 사라져
+ * `Could not resolve entry module "landing.html"` 로 빌드가 죽었다. 규약을 소비자에게
+ * 맡기면 **소비자 수만큼 틀릴 자리가 생긴다** — 실제로 판정기(`verification-tier.mjs`)는
+ * `join(FRONTEND, e.src)` 로 제대로 붙이고 있었고 vite 쪽만 틀렸다. 두 소비자가 같은
+ * 규약을 각자 적고 있었으니 그것이 곧 값 미러링이었다.
+ */
+export const SRC_ROOT = 'frontend';
+
+/** 저장소 루트 기준 소스 경로. **접두사를 소비자가 붙이지 않는다** (위 주석 참조) */
+export function srcPath(entry) {
+  return `${SRC_ROOT}/${entry.src}`;
+}
+
+/**
  * vite 의 `rollupOptions.input` 형태로. `resolve` 는 호출자가 준다 —
- * 이 파일은 경로 규약(`frontend/` 접두사)을 모르는 편이 낫다.
+ * **저장소 루트 기준** 경로를 절대경로로 바꾸는 함수여야 한다.
  */
 export function viteInput(resolve) {
-  return Object.fromEntries(ENTRYPOINTS.map((e) => [e.key, resolve(e.src)]));
+  return Object.fromEntries(ENTRYPOINTS.map((e) => [e.key, resolve(srcPath(e))]));
 }
 
 /**
