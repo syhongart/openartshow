@@ -40,6 +40,8 @@ import { ALL_KINDS } from './parts/index.js';
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
 import { readNum, readEnum } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
+// 카메라 far 를 여기서 유도한다 — 아래 `PerspectiveCamera` 주석 참고.
+import { DOME_MAX } from './systems/sky.js';
 
 // 셀 크기는 **레이아웃이 소유한다.** 여기 `32` 를 다시 적으면 안 된다.
 //
@@ -127,7 +129,15 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   };
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
+  // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
+  // 돔이 far 를 넘으면 잘리는데, 화면에는 *"하늘이 사라졌다"* 로 보여 원인을 찾기
+  // 어렵다. 예전에는 `1200` 을 손으로 적고 `DOME_MAX` 를 1100 으로 맞춰 뒀다 —
+  // 두 값이 따로 살아 있었고, 한쪽만 올리는 순간 조용히 깨지는 형태였다.
+  //
+  // **far 를 키우는 실질 비용은 없다**(실측): 24비트 깊이 버퍼의 정밀도는 `near` 가
+  // 지배하므로 far 1200 → 7500 으로 바꿔도 z=76.8m 에서 Δz 가 3.515mm → 3.516mm 다.
+  // 그래서 여유를 넉넉히(×1.25) 둔다 — 눈높이·부동소수 여유를 삼키고도 남는다.
+  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, DOME_MAX * 1.25);
   // ── 안개 거리 (감독 실기기 판정) ──────────────────────────────────────────
   // 예전 값은 `0.9 ~ 1.9` 셀 = **28.8m 부터 60.8m** 이었다. 파셀 하나 거리에서 안개가
   // 시작되니, 화면이 이렇게 갈렸다:

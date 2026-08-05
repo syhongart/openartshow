@@ -80,13 +80,31 @@ describe('하늘 돔 반경 — 노브가 열려 있다', () => {
     ).toBe(true);
   });
 
-  it('상한이 카메라 far 보다 작다 — 넘으면 하늘이 잘린다', () => {
-    const sky = read('frontend/js/world2/systems/sky.ts');
+  // ⚠ 여기 *"상한이 카메라 far 보다 작다"* 를 **두 리터럴 비교**로 적었었다. far 를
+  // `DOME_MAX` 에서 유도한 지금 그 형태로 두면 **항상 참**이 된다 — 이 저장소가 같은
+  // 회차에 두 번 만든 타우톨로지(상한값 리터럴·`span/snap ∈ ℤ`)와 같은 형태다.
+  //
+  // 그래서 축을 바꾼다: **유도가 살아 있는가**(소스에 `DOME_MAX` 참조가 있는가)와
+  // **계수가 1보다 큰가**를 본다. 리터럴로 되돌리면 첫 단언이 깨진다.
+  it('★ 카메라 far 가 DOME_MAX 에서 유도된다 — 리터럴이면 한쪽만 올릴 때 하늘이 잘린다', () => {
     const main = read('frontend/js/world2/main.ts');
-    const maxM = sky.match(/DOME_MAX\s*=\s*(\d+)/);
-    const farM = main.match(/PerspectiveCamera\([^)]*?,\s*[\d.]+\s*,\s*(\d+)\s*\)/);
-    expect(maxM, 'DOME_MAX 를 못 찾았다').not.toBeNull();
-    expect(farM, '카메라 far 를 못 찾았다 — 이 검사가 무효다').not.toBeNull();
-    expect(Number(maxM![1])).toBeLessThan(Number(farM![1]));
+    const m = main.match(/new THREE\.PerspectiveCamera\(([^)]*)\)/);
+    expect(m, '카메라 생성부를 못 찾았다 — 이 검사가 무효다').not.toBeNull();
+    const args = m![1];
+    expect(
+      /\bDOME_MAX\b/.test(args),
+      '카메라 far 가 DOME_MAX 를 참조하지 않는다 — 두 값이 따로 살면 조용히 깨진다',
+    ).toBe(true);
+    // 계수가 1 이하면 돔이 far 를 넘어 잘린다.
+    const k = args.match(/DOME_MAX\s*\*\s*([\d.]+)/);
+    expect(k, 'DOME_MAX 에 곱하는 계수를 못 찾았다').not.toBeNull();
+    expect(Number(k![1]), '계수가 1 이하다 — 돔이 카메라 far 를 넘는다').toBeGreaterThan(1);
+  });
+
+  it('DOME_MAX 가 감독 요청 4000 을 담는다 (문의 2026-08-05)', () => {
+    const sky = read('frontend/js/world2/systems/sky.ts');
+    const m = sky.match(/export const DOME_MAX\s*=\s*(\d+)/);
+    expect(m, 'DOME_MAX 를 못 찾았다').not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(4000);
   });
 });
