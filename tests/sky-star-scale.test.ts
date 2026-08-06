@@ -18,6 +18,8 @@
 // 여기서 잠그는 것은 딱 하나: **`scale` 이 그리기 좌표를 바꾸는가.**
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { paintTwinkleStars, TWK_BASE_COUNT, TWK_MAX_COUNT } from '../frontend/js/sky.js';
 
 /** 그리기 호출을 기록만 하는 페이크 2D 컨텍스트. three·DOM 없이 순수 계측. */
@@ -87,6 +89,27 @@ describe('별 각크기 노브 — 값이 그리기에 도달한다', () => {
     expect(paint(0.1).count).toBe(TWK_MAX_COUNT);
     // 노브 하한 밖(0)으로 들어와도 0 나누기가 안 난다.
     expect(paint(0).count).toBe(TWK_MAX_COUNT);
+  });
+
+  it('★ world2 기본값이 감독 판정값 0.25 다 — 되돌아가면 벽지로 돌아간다', () => {
+    // 감독 판정(2026-08-06): 후보 다섯 중 `?star=0.25`. 근거표는 `sky.ts` 의
+    // `STAR_SCALE` 독블록 한 곳이 소유한다 — 여기에 값을 다시 적지 않는다(0.25 하나만
+    // 본다). 이 검사가 없으면 리팩터링 중 기본값이 1 로 돌아가도 아무도 모르고,
+    // 화면은 감독이 **거부한 상태**(보름달 8.76배)로 조용히 되돌아간다.
+    const src = readFileSync(join(import.meta.dirname, '..', 'frontend/js/world2/systems/sky.ts'), 'utf8');
+    const m = src.match(/readNum\(\s*'star'\s*,\s*([\d.]+)/);
+    expect(m, "`readNum('star', …)` 를 못 찾았다 — 노브가 사라졌거나 이 검사가 딴것을 본다").not.toBeNull();
+    expect(Number(m![1])).toBe(0.25);
+  });
+
+  it('라이브 world1 은 여전히 scale=1 이다 — world2 판정이 서비스로 새지 않는다', () => {
+    // `sky.js` 는 두 월드 공용이다. world2 기본값을 0.25 로 내린 것이 **라이브 미술관
+    // 하늘까지 바꾸면 안 된다** — 그 판정은 world2 화면에서 받았다.
+    const src = readFileSync(join(import.meta.dirname, '..', 'frontend/js/sky.js'), 'utf8');
+    expect(
+      /starScale\s*=\s*1\b/.test(src),
+      'sky.js 의 starScale 기본값이 1 이 아니다 — 라이브 world1 하늘이 함께 바뀐다',
+    ).toBe(true);
   });
 
   it('기본값 1 은 옛 고정 동작과 같다 — 라이브 world1 무영향', () => {
