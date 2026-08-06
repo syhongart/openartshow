@@ -21,7 +21,7 @@ import {
   onAuthChange,
 } from './auth.js';
 
-import { el, injectStyles } from './ui-dom.js';
+import { el } from './ui-dom.js';
 import {
   readStoredChibi,
   readStoredChibiThumb,
@@ -1159,8 +1159,6 @@ export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle }: {
   callbacks.onChatSend = onChatSend || null;
   callbacks.onAvatarChange = onAvatarChange || null;
   callbacks.onMakerToggle = onMakerToggle || null;
-
-  injectStyles();
 
   els = {
     loading: buildLoading(),
