@@ -134,6 +134,34 @@ export function collectWorld(opts: CollectOptions = {}): CollectResult {
 }
 
 /**
+ * 이미 가진 노드 목록을 `CollectResult` 모양으로 감싼다.
+ *
+ * ── 왜 필요한가 (실측이 잡은 결함) ──────────────────────────────────────────
+ * 되읽기를 붙인 첫 판에서 **편집본을 불러온 뒤 다시 내보내면 편집이 사라졌다.**
+ * `exportWorldGlb` 가 언제나 `collectWorld()` 를 부르기 때문이다 — 화면은 편집된
+ * 도시를 그리는데 파일은 원본 계산으로 나갔다. 왕복 검증(내보내기 → 편집 → 되읽기 →
+ * 재출력)이 아니었으면 안 드러났다: 되읽기만 보면 16,232개가 정확히 적용됐고,
+ * 재출력만 보면 유효한 GLB 가 나온다. **두 축이 각각 통과하고 사이가 끊겨 있었다.**
+ *
+ * 이 저장소가 이름 붙인 형태 그대로다 — *"판정/집행 분리의 구멍: 경계를 건너는
+ * 지점은 아무도 안 본다."*
+ */
+export function resultFromNodes(nodes: readonly ExportNode[], cell = DEFAULT_LAYOUT.cellX): CollectResult {
+  const combos = new Set<string>();
+  for (const n of nodes) combos.add(comboKey(n.kind, n.tone));
+  return {
+    nodes: [...nodes],
+    water: collectWater(cell),
+    // 파셀 수는 세지 않는다 — 편집된 목록에서 "육지 파셀" 은 원래 뜻을 잃는다
+    // (사용자가 부품을 어디로든 옮길 수 있다). 0 을 넣어 "재지 않았다" 를 표시하느니
+    // 실제로 부품이 있는 파셀을 세는 편이 정직하지만, 그 값을 쓰는 곳이 없다.
+    landParcels: -1,
+    waterParcels: -1,
+    combos: [...combos].sort(),
+  };
+}
+
+/**
  * 물판 한 장.
  *
  * ── 왜 강과 바다를 나누지 않는가 ────────────────────────────────────────────

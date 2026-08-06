@@ -24,7 +24,7 @@
 import * as THREE from 'three/webgpu';
 import { createPartAssets } from '../systems/parcel-assets.js';
 import { tonesFor } from '../parts/index.js';
-import { collectWorld, comboKey, type CollectOptions, type CollectResult } from './collect.js';
+import { collectWorld, resultFromNodes, comboKey, type CollectOptions, type CollectResult } from './collect.js';
 
 /**
  * 맵에서 꺼내되 없으면 만들어 넣는다.
@@ -54,6 +54,13 @@ export interface ExportOptions extends CollectOptions {
   /** 바다·강 판을 포함할까. 기본 포함 */
   water?: boolean;
   onProgress?(p: ExportProgress): void;
+  /**
+   * 이 목록을 그대로 굽는다. 주면 세계를 다시 계산하지 않는다.
+   *
+   * **되읽은 도시를 다시 내보낼 때 쓴다.** 이게 없으면 편집본을 불러온 뒤 내보내기가
+   * 원본 계산으로 돌아가 편집이 조용히 사라진다(왕복 검증이 잡은 실제 결함이다).
+   */
+  nodes?: readonly import('./collect.js').ExportNode[];
 }
 
 export interface ExportResult {
@@ -139,8 +146,8 @@ export async function exportWorldGlb(opts: ExportOptions = {}): Promise<ExportRe
   const t0 = performance.now();
   const report = opts.onProgress ?? (() => {});
 
-  report({ phase: 'collect', ratio: 0, message: '세계를 계산하는 중…' });
-  const collected: CollectResult = collectWorld(opts);
+  report({ phase: 'collect', ratio: 0, message: opts.nodes ? '편집본을 굽는 중…' : '세계를 계산하는 중…' });
+  const collected: CollectResult = opts.nodes ? resultFromNodes(opts.nodes) : collectWorld(opts);
 
   report({ phase: 'build', ratio: 0.15, message: `부품 ${collected.nodes.length.toLocaleString()}개 조립 중…` });
   const assets = createPartAssets();

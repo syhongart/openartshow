@@ -416,6 +416,10 @@
       <div class="w2-god-row" data-group="export">
         <span class="w2-god-cap">내보내기</span>
         <button id="w2-export-glb" type="button">GLB 내보내기</button>
+        <button id="w2-import-glb" type="button">편집본 불러오기</button>
+        <!-- 파일 입력은 감춘다 — 기본 위젯이 패널 폭을 밀어내고, 눌러야 할 것이
+             버튼인지 입력칸인지 두 개가 되면 헷갈린다. 버튼이 이것을 대신 연다. -->
+        <input id="w2-import-glb-file" type="file" accept=".glb,model/gltf-binary" hidden>
       </div>
     </div>
   </div>

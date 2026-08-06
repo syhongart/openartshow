@@ -211,4 +211,23 @@ export class StreamingSystem implements System {
     this.handles.clear();
     this.tiers.clear();
   }
+
+  /**
+   * 떠 있는 파셀을 전부 반납한다. 다음 `update` 가 want 를 새로 내고 다시 짓는다.
+   *
+   * 배치 출처가 바뀐 순간에 쓴다(`PooledParcelBuilder.setLayoutSource`) — 이미 지어진
+   * 파셀은 옛 배치를 들고 있고, 스트리밍은 "이미 있는 파셀" 을 다시 짓지 않기 때문이다.
+   *
+   * ── `dispose` 와 같은 일을 하는데 왜 따로 두나 ─────────────────────────────
+   * 하는 일이 아니라 **뒤에 오는 것이 다르다.** `dispose` 뒤에는 아무것도 없고, 여기는
+   * 다음 프레임에 전부 다시 선다. 한 메서드로 합치면 "페이지를 떠날 때" 와 "도시를 갈아
+   * 끼울 때" 가 같은 이름이 되고, 그러면 종료 경로에서 재빌드가 도는 실수를 아무도 못
+   * 막는다. `settled` 를 되돌리는 것도 여기만이다 — 다시 채워질 때까지 기다려야 한다.
+   */
+  rebuildAll(): void {
+    for (const h of this.handles.values()) this.opts.builder.release(h);
+    this.handles.clear();
+    this.tiers.clear();
+    this.settled = false;
+  }
 }

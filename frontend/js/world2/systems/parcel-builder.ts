@@ -22,8 +22,24 @@ import {
 import { parcelLayout, DEFAULT_LAYOUT } from '../decide/parcel-layout.js';
 import {
   ALL_KINDS, kindsFor, maxPartsPerParcel, outermostTierFor,
-  type LayoutOptions, type PartKind,
+  type LayoutOptions, type PartKind, type PlacedPart,
 } from '../parts/index.js';
+
+/**
+ * 이 파셀에 무엇이 놓이는가 — **배치의 출처.**
+ *
+ * 기본값은 `parcelLayout`(좌표 해시로 계산)이고, 그것이 world2 의 제1원리다("파라미터가
+ * 곧 공간"). 이 문을 연 이유는 **편집된 GLB 되읽기**다(감독 요청 2026-08-06) — 파일에서
+ * 읽은 배치를 같은 자리에 꽂으면 스트리밍·슬롯 풀·LOD 를 하나도 안 건드리고 도시가
+ * 통째로 바뀐다.
+ *
+ * ⚠ **tier 를 무시하는 소스도 정당하다.** `fill()` 이 `p.kind !== kind` 로 이미 거르고,
+ * 어떤 종류를 그릴지는 `kindsFor(tier)` 가 정한다. 오히려 tier 별로 다른 목록을 내는
+ * 소스가 위험하다 — 배치 불변식 ②("tier 는 어디에 그릴지를 바꾸지 않는다")가 깨진다.
+ */
+export type LayoutSource = (
+  px: number, pz: number, tier: Exclude<Tier, 'none'>, layout: LayoutOptions,
+) => readonly PlacedPart[];
 
 /**
  * 슬롯 풀에 필요한 것만 추린 인터페이스. `InstancePools`가 그대로 만족한다(tone 변환만
@@ -52,6 +68,8 @@ export interface ParcelBuilderOptions {
   layout?: LayoutOptions;
   /** 동시에 떠 있을 수 있는 최대 파셀 수 — 풀 예산 산정에 쓴다 */
   maxParcels?: number;
+  /** 배치의 출처. 생략하면 좌표 해시 계산(`parcelLayout`) */
+  layoutSource?: LayoutSource;
 }
 
 /** 풀이 모자라 못 그린 부품 수. 0이 아니면 예산 산정이 틀린 것이다. */
@@ -65,6 +83,7 @@ export class PooledParcelBuilder implements ParcelBuilder {
   private readonly cellX: number;
   private readonly cellZ: number;
   private readonly layout: LayoutOptions;
+  private source: LayoutSource;
   private starved = 0;
   private byKindStarved: Record<string, number> = {};
 
@@ -73,6 +92,19 @@ export class PooledParcelBuilder implements ParcelBuilder {
     this.cellX = opts.cellX;
     this.cellZ = opts.cellZ;
     this.layout = { ...DEFAULT_LAYOUT, cellX: opts.cellX, cellZ: opts.cellZ, ...opts.layout };
+    this.source = opts.layoutSource ?? parcelLayout;
+  }
+
+  /**
+   * 배치 출처를 갈아 끼운다. **이미 떠 있는 파셀은 옛 배치 그대로다** — 호출자가
+   * 스트리밍을 재빌드해야 화면이 따라온다(`StreamingSystem.rebuildAll`).
+   *
+   * 그 둘을 여기서 묶지 않는 이유: 빌더는 스트리밍을 모른다(의존 방향이 반대다).
+   * 묶으려면 빌더가 스트리밍을 참조해야 하고, 그러면 빌더를 three·스트리밍 없이
+   * 시험하는 지금 구조가 무너진다.
+   */
+  setLayoutSource(source: LayoutSource | null): void {
+    this.source = source ?? parcelLayout;
   }
 
   /**
@@ -190,7 +222,7 @@ export class PooledParcelBuilder implements ParcelBuilder {
 
   /** 한 종류의 부품을 배치대로 채운다. tier를 인자로 받는다(핸들 상태에 기대지 않는다). */
   private fill(h: PooledHandle, kind: PartKind, tier: Exclude<Tier, 'none'>): void {
-    const parts = parcelLayout(h.px, h.pz, tier, this.layout);
+    const parts = this.source(h.px, h.pz, tier, this.layout);
     const ox = h.px * this.cellX;
     const oz = h.pz * this.cellZ;
     const slots: SlotHandle[] = [];

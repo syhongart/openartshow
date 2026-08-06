@@ -551,9 +551,22 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const drawerParts = findMapDrawer(document);
   const mapDrawer = drawerParts ? attachMapDrawer(drawerParts) : null;
 
-  // GLB 내보내기 — 神 모드 패널 안. 세계를 다시 계산해 굽는 것이라 씬·렌더러를 받지
-  // 않는다(왜 화면을 굽지 않는지는 `export/collect.ts` 헤더에 있다).
-  const exportPanel = attachExportPanel(document);
+  // GLB 내보내기·되읽기 — 神 모드 패널 안. 세계를 다시 계산해 굽는 것이라 씬·렌더러를
+  // 받지 않는다(왜 화면을 굽지 않는지는 `export/collect.ts` 헤더에 있다).
+  //
+  // 되읽기는 **배치의 출처만 갈아 끼운다.** 슬롯 풀도 스트리밍도 LOD 도 그대로다 —
+  // 그래서 개수 불변식이 유지되고, 편집된 도시도 원래 도시와 같은 드로우콜로 돈다.
+  // `builder`·`streaming` 을 클로저로 읽는 것은 이 시점에 아직 null 일 수 있어서다
+  // (부팅 `stream` 단계에서 생성된다). 호출 시점에 평가되므로 그때는 차 있다.
+  const exportPanel = attachExportPanel(document, {
+    applyOverlay: (overlay) => {
+      if (!builder || !streaming) return;
+      builder.setLayoutSource((px, pz) => overlay.layoutFor(px, pz));
+      // 이미 떠 있는 파셀은 옛 배치다. 반납해야 다음 프레임에 새 배치로 다시 선다.
+      streaming.rebuildAll();
+      kernel?.markDirty();
+    },
+  });
 
   // ── 진단 훅 ───────────────────────────────────────────────────────────────
   // behind-flag 검증 페이지 전용이다. 라이브(world.html)에는 없다.
