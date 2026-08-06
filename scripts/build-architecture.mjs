@@ -41,8 +41,14 @@ const entries = tracked.map((path) => {
   try {
     const src = readFileSync(join(ROOT, path), 'utf8');
     lines = src.length ? src.split('\n').length : 0;
-  } catch {
-    lines = 0; // 심볼릭 링크·바이너리 등 — 0 으로 두고 계속한다(전체를 죽이지 않는다)
+  } catch (e) {
+    // 심볼릭 링크·바이너리 등 — 0 으로 두고 계속한다(한 파일 때문에 전체를 죽이지 않는다).
+    // ⚠ **반드시 남긴다**(검수관 비블로커). 조용히 0 이 되면 그 파일이 통계에서 사라진
+    //   것을 아무도 모르고, 페이지에는 그럴듯한 총계가 그대로 뜬다 — 이 저장소가 이름
+    //   붙인 *"못 잰 것이 통과로 적히는 경향"* 의 데이터판이다.
+    //   (`git ls-files` 자체가 실패하면 이 catch 밖이라 생성기가 죽는다 — 그건 CI 가 잡는다.)
+    console.warn(`[build-architecture] 줄 수를 못 읽어 0 으로 셌다: ${path} — ${e.message}`);
+    lines = 0;
   }
   return { path, lines };
 });
