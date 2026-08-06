@@ -39,6 +39,13 @@
        main.js 실행 전 <head>에서 정적 로드돼야 캔버스 폰트(fonts.js)가 콜드 로드
        타이밍에 @font-face를 찾을 수 있다(런타임 주입 시 순서 레이스 발생). -->
   <link rel="stylesheet" href="./vendor/fonts/fonts.css">
+  <!-- 미술관 UI 스타일. 예전엔 ui-dom.ts 의 injectStyles() 가 런타임에 <style> 을 꽂았고,
+       그래서 CSS 1,665줄이 .ts 소스 안 문자열로 갇혀 디자이너가 열 수 없었다.
+       fonts.css 뒤에 와야 한다 — gallery.css 의 --lu-font 가 거기 --app-font 를 참조한다. -->
+  <link rel="stylesheet" href="./css/gallery.css">
+  <!-- 로비 룩 후보(?look=b·c·d). 파라미터가 없으면 규칙이 하나도 매칭되지 않는다 —
+       기본 화면은 현행 그대로다. gallery.css 뒤에 와야 오버라이드가 성립한다. -->
+  <link rel="stylesheet" href="./css/gallery-looks.css">
   <!-- 라이브러리 로컬 내장 — CDN 장애/차단 환경에서도 동작 -->
   <script src="./vendor/peerjs.min.js"></script>
   <script type="importmap">
