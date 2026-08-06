@@ -40,6 +40,8 @@ import { ALL_KINDS } from './parts/index.js';
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
 import { readNum, readEnum } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
+// 카메라 far 를 여기서 유도한다 — 아래 `PerspectiveCamera` 주석 참고.
+import { DOME_MAX } from './systems/sky.js';
 
 // 셀 크기는 **레이아웃이 소유한다.** 여기 `32` 를 다시 적으면 안 된다.
 //
@@ -127,7 +129,17 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   };
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1200);
+  // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
+  // 돔이 far 를 넘으면 잘리는데, 화면에는 *"하늘이 사라졌다"* 로 보여 원인을 찾기
+  // 어렵다. 예전에는 `1200` 을 손으로 적고 `DOME_MAX` 를 1100 으로 맞춰 뒀다 —
+  // 두 값이 따로 살아 있었고, 한쪽만 올리는 순간 조용히 깨지는 형태였다.
+  //
+  // ⚠ **근거는 여기 적지 않는다**(검수관 BL-2). 깊이 정밀도 실측을 이 자리에도 적었다가
+  // `systems/sky.ts` 쪽과 **곧바로 어긋났다** — 값 미러링을 없애는 커밋이 값 미러링을
+  // 만든 셈이다. 왜 far 를 키워도 되는지는 `DOME_MAX` 독블록 한 곳이 소유한다.
+  //
+  // ×1.25 는 눈높이·부동소수 여유다. 계수가 1 이하면 돔이 잘린다(테스트가 본다).
+  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, DOME_MAX * 1.25);
   // ── 안개 거리 (감독 실기기 판정) ──────────────────────────────────────────
   // 예전 값은 `0.9 ~ 1.9` 셀 = **28.8m 부터 60.8m** 이었다. 파셀 하나 거리에서 안개가
   // 시작되니, 화면이 이렇게 갈렸다:

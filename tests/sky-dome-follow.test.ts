@@ -80,13 +80,66 @@ describe('하늘 돔 반경 — 노브가 열려 있다', () => {
     ).toBe(true);
   });
 
-  it('상한이 카메라 far 보다 작다 — 넘으면 하늘이 잘린다', () => {
-    const sky = read('frontend/js/world2/systems/sky.ts');
+  // ⚠ 여기 *"상한이 카메라 far 보다 작다"* 를 **두 리터럴 비교**로 적었었다. far 를
+  // `DOME_MAX` 에서 유도한 지금 그 형태로 두면 **항상 참**이 된다 — 이 저장소가 같은
+  // 회차에 두 번 만든 타우톨로지(상한값 리터럴·`span/snap ∈ ℤ`)와 같은 형태다.
+  //
+  // 그래서 축을 바꾼다: **유도가 살아 있는가**(소스에 `DOME_MAX` 참조가 있는가)와
+  // **계수가 1보다 큰가**를 본다. 리터럴로 되돌리면 첫 단언이 깨진다.
+  it('★ 카메라 far 가 DOME_MAX 에서 유도된다 — 리터럴이면 한쪽만 올릴 때 하늘이 잘린다', () => {
     const main = read('frontend/js/world2/main.ts');
-    const maxM = sky.match(/DOME_MAX\s*=\s*(\d+)/);
-    const farM = main.match(/PerspectiveCamera\([^)]*?,\s*[\d.]+\s*,\s*(\d+)\s*\)/);
-    expect(maxM, 'DOME_MAX 를 못 찾았다').not.toBeNull();
-    expect(farM, '카메라 far 를 못 찾았다 — 이 검사가 무효다').not.toBeNull();
-    expect(Number(maxM![1])).toBeLessThan(Number(farM![1]));
+    // ⚠ **import 까지 본다** (검수관 RC-1). 소스에 `DOME_MAX` 토큰만 보면,
+    // import 를 지우고 `const DOME_MAX = 1100` 을 **로컬 재정의**했을 때 유도가 완전히
+    // 끊기는데도 통과한다 — 검수관이 뮤테이션 M4 로 실증했다(7 passed). tsc 도 안 잡는다.
+    // 출처가 틀린 경우(M5)는 tsc 가 `TS2305` 로 잡으므로 이 한 줄로 둘 다 덮인다.
+    expect(
+      /import\s*\{[^}]*\bDOME_MAX\b[^}]*\}\s*from\s*'\.\/systems\/sky\.js'/.test(main),
+      'DOME_MAX 를 sky.ts 에서 import 하지 않는다 — 로컬 재정의면 유도가 끊긴다',
+    ).toBe(true);
+    // ⚠ `const camera =` 로 앵커를 좁힌다 (검수관 RC-2). 그냥 `PerspectiveCamera` 를
+    // 찾으면 파일 **앞줄**에 다른 카메라(프리뷰 등)가 생기는 순간 그것을 잡아
+    // **유도가 멀쩡한데도 FAIL** 한다(뮤테이션 M6).
+    //
+    // ── ⚠ 좁힌 대가 — 거짓 FAIL **적어도** 다음 다섯 (검수관 조건 3·권고 2) ──
+    // 위 두 수정이 왜 필요했는지는 적었는데 **그 대가는 안 적었다.** 다음 사람이
+    // 아래 중 하나를 하면 **유도가 멀쩡한데 FAIL** 하고, 이유를 못 찾는다.
+    //
+    // ⚠ **"셋 다" 라고 닫아 적었다가 검수관이 둘을 더 찾았다** — 못 잡는 것을 적는
+    // 규율의 취지는 목록을 닫는 게 아니라 **열어 두는** 것이다:
+    //
+    //   M15 `import * as THREE` 를 named import 로 바꾸거나 별칭을 바꾸면
+    //       아래 `THREE\.PerspectiveCamera` 앵커가 깨진다
+    //   M16 far 인자에 괄호 있는 표현(`Math.min(...)` 등)을 쓰면 `[^)]*` 가 첫 `)` 에서
+    //       끊겨 `args` 가 잘린다
+    //
+    //
+    //   M7  변수명 교체 — `const camera` → `const mainCamera` 면 앵커가 안 맞는다
+    //   M11 따옴표 — 쌍따옴표 import 면 정규식이 안 맞는다. **이 저장소에는 prettier
+    //       설정이 없고 `eslint.config.js` 에 quote 규칙도 없다** — 단따옴표는
+    //       강제되는 것이 아니라 관습이다
+    //   M13 배럴 — `ARCHITECTURE.md §4` 가 배럴 패턴을 규정하므로, 훗날
+    //       `systems/index.js` 배럴이 생겨 그리로 import 하면 FAIL 한다
+    //
+    // 셋 다 **fail-closed** 다(거짓 PASS 가 아니라 거짓 FAIL). 그래서 블로커로 두지
+    // 않았다 — 그러나 위 중 하나를 하다 여기서 막히면 **정규식을 넓히면 되는 것**이지
+    // 유도가 깨진 것이 아니다.
+    const m = main.match(/const camera = new THREE\.PerspectiveCamera\(([^)]*)\)/);
+    expect(m, '카메라 생성부를 못 찾았다 — 이 검사가 무효다').not.toBeNull();
+    const args = m![1];
+    expect(
+      /\bDOME_MAX\b/.test(args),
+      '카메라 far 가 DOME_MAX 를 참조하지 않는다 — 두 값이 따로 살면 조용히 깨진다',
+    ).toBe(true);
+    // 계수가 1 이하면 돔이 far 를 넘어 잘린다.
+    const k = args.match(/DOME_MAX\s*\*\s*([\d.]+)/);
+    expect(k, 'DOME_MAX 에 곱하는 계수를 못 찾았다').not.toBeNull();
+    expect(Number(k![1]), '계수가 1 이하다 — 돔이 카메라 far 를 넘는다').toBeGreaterThan(1);
+  });
+
+  it('DOME_MAX 가 감독 요청 4000 을 담는다 (문의 2026-08-05)', () => {
+    const sky = read('frontend/js/world2/systems/sky.ts');
+    const m = sky.match(/export const DOME_MAX\s*=\s*(\d+)/);
+    expect(m, 'DOME_MAX 를 못 찾았다').not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(4000);
   });
 });
