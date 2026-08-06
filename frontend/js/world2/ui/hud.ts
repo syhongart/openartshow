@@ -35,6 +35,11 @@ export interface HudSource {
    * (`decide/telemetry.ts`의 `constancyByGroup` 참고). 없으면 전 구간 상수로 판정한다.
    */
   drawGroupKey?: () => string | null;
+  /**
+   * `drawGroupKey()` 가 `null` 을 냈을 때 **누가 막았는지**. 리포트가 이름을 지목하려고 쓴다.
+   * 없어도 계측은 돌고 개수만 남는다 — 훅 부재가 수집을 죽이지 않는다.
+   */
+  drawBlockers?: () => readonly { readonly name: string; readonly hint?: string }[];
   stream: () => { loaded: number; built: number; released: number; starved: number };
   adapt: () => { pixelRatio: number; frameCap: number; triAvg: number };
 }
@@ -74,6 +79,12 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
   /** 하늘 전이 중이라 드로우콜 판정에서 뺀 표본 수. 리포트에 그대로 적는다 */
   let drawSkipped = 0;
   /**
+   * **누가** 판정을 막았는지. 이름을 안 남기면 리포트가 "유예됐다" 만 말하고, 읽는 사람은
+   * *"곧 재지겠지"* 로 읽는다 — 실제로는 `npc`·`glb-city` 가 조건 없이 막고 있어 영원히
+   * 안 재진다(감독 실기기에서 두 번 나왔다: #176, 2026-08-06).
+   */
+  const drawBlockers = new Map<string, string | undefined>();
+  /**
    * 자리비움 복귀 프레임 — 프레임 표본에서 뺀 것. 횟수와 합계를 함께 들고 있다가 리포트에
    * 적는다. 커널이 `away_ms`로 갈라 보내므로 여기서는 세기만 한다.
    */
@@ -106,6 +117,10 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       drawGroupKeys: src.drawGroupKey ? drawGroupKeys.values() : undefined,
       groupKeyNames: src.drawGroupKey ? { ...groupNames } : undefined,
       drawSkipped,
+      drawBlockedBy: drawBlockers.size > 0
+        ? [...drawBlockers].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([name, hint]) => (hint ? { name, hint } : { name }))
+        : undefined,
       away: { count: awayCount, totalMs: awayMsTotal },
       pipeline: pipeline.values(),
       geometries: geometries.values(), textures: textures.values(),
@@ -199,6 +214,16 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       let key: string | null | undefined;
       if (src.drawGroupKey) {
         try { key = src.drawGroupKey(); } catch { key = undefined; }
+        // 막은 기능 이름은 별도 훅에서 받는다(있으면). 없으면 이름 없이 개수만 남는다 —
+        // **못 잰 것을 조용히 넘기지 않되, 훅이 없다고 수집을 죽이지도 않는다.**
+        if (key == null && src.drawBlockers) {
+          try {
+            for (const b of src.drawBlockers()) {
+              // 힌트가 있는 보고를 우선한다 — 같은 기능이 두 번 올라오면 정보가 많은 쪽.
+              if (b.hint || !drawBlockers.has(b.name)) drawBlockers.set(b.name, b.hint);
+            }
+          } catch { /* 훅 실패는 계측을 죽이지 않는다 */ }
+        }
       }
       if (src.drawGroupKey && key == null) {
         drawSkipped++; // draw도 넣지 않는다 — 두 링의 길이가 항상 같게

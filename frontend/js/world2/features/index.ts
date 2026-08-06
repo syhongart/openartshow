@@ -74,5 +74,5 @@ export const FEATURES: readonly Feature[] = [
 
 export type { Feature, FeatureEnv, FeatureInstance, MountedFeature } from './types.js';
 export {
-  mountFeatures, combineDrawGroupKey, collectDiagnostics, prewarmFeatures,
+  mountFeatures, combineDrawGroupKey, drawGroupKeyOf, collectDiagnostics, prewarmFeatures,
 } from './types.js';

@@ -25,7 +25,7 @@ import { attachHud, type PerfHud } from './ui/hud.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
 import { attachExportPanel } from './ui/export-panel.js';
 import {
-  FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics, prewarmFeatures,
+  FEATURES, mountFeatures, combineDrawGroupKey, drawGroupKeyOf, collectDiagnostics, prewarmFeatures,
   type MountedFeature,
 } from './features/index.js';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
@@ -277,6 +277,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
        * 기능이 하나도 없으면 빈 문자열이고, 그래도 판정은 정상으로 돈다.
        */
       drawGroupKey: () => combineDrawGroupKey(features),
+      // 막은 기능 이름 — 리포트가 "npc·glb-city 가 판정 불가로 표시" 를 찍게 한다.
+      drawBlockers: () => drawGroupKeyOf(features).blockedBy,
       stream: () => {
         const s = streaming?.stats();
         return {
