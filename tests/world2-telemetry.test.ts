@@ -455,12 +455,27 @@ describe('표본이 없으면 판정이 아니라 미측정이다', () => {
   });
 
   it('왜 못 쟀는지가 줄에 남는다 — 없으면 다음 사람이 또 같은 걸 조사한다', () => {
+    // 2026-08-06 문구 교체: 옛 문구는 *"전 프레임 판정 유예"* 였고, 그건 **왜**가 아니라
+    // **무엇**만 말했다. 그 공백에 추측이 들어가 #176 이 원인을 "하늘 상태 전이" 로
+    // 잘못 적었다(실제는 `npc`·`glb-city` 의 무조건 `null`). 이제 이름을 적고, 이름을
+    // 못 받았으면 **모른다고 적는다** — 둘 중 하나는 반드시 줄에 있어야 한다.
     const out = formatReport(base({
       draw: [], drawGroupKeys: [], groupKeyNames: {}, drawSkipped: 1800,
     }));
     const line = out.split('\n').find((l) => l.startsWith('draw'))!;
     expect(line).toContain('1800');
-    expect(line).toContain('판정 유예');
+    expect(line).toContain('미상');
+  });
+
+  it('막은 기능 이름을 받으면 그것을 적는다 — "미상" 으로 뭉개지 않는다', () => {
+    const out = formatReport(base({
+      draw: [], drawGroupKeys: [], groupKeyNames: {}, drawSkipped: 1800,
+      drawBlockedBy: [{ name: 'npc', hint: 'npc=0&vrm=0' }],
+    }));
+    const line = out.split('\n').find((l) => l.startsWith('draw'))!;
+    expect(line).toContain('npc');
+    expect(line).toContain('?npc=0&vrm=0');
+    expect(line).not.toContain('미상');
   });
 
   it('표본이 있으면 예전처럼 판정한다 — 미측정 처리가 정상 경로를 먹지 않는다', () => {

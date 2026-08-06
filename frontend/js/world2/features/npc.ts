@@ -707,6 +707,10 @@ export const npcFeature: Feature = {
        * 을 띄우는 것은 오탐일 뿐이다.
        */
       drawGroupKey: () => null,
+      // ⚠ **두 노브를 다 0 으로 해야 꺼진다** — 위 `create` 가 `count<=0 && vrmCount<=0`
+      //   일 때만 `null` 을 낸다. `npc=0` 만 적으면 VRM 이 남아 또 미측정이 나온다.
+      //   그래서 이 문자열은 리포트가 아니라 **노브를 읽는 이 파일**이 소유한다.
+      drawBlockHint: 'npc=0&vrm=0',
 
       dispose() {
         disposed = true;

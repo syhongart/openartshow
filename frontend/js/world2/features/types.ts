@@ -129,6 +129,21 @@ export interface FeatureInstance {
   drawGroupKey?(): string | null;
 
   /**
+   * `drawGroupKey()` 가 `null` 을 낼 때, **이 기능을 빼고 다시 재는 URL 질의 조각.**
+   * 예: `'npc=0&vrm=0'`(`?` 는 붙이지 않는다 — 여러 기능 것을 `&` 로 잇는다).
+   *
+   * ── 왜 리포트가 아니라 여기가 소유하는가 ────────────────────────────────
+   * 처음엔 리포트 쪽에 `기능이름 → 노브` 매핑을 뒀는데, 그 자리에서 `npc` 를 `npc=0`
+   * 하나로 적었다. **틀린 안내였다** — `npc` 기능은 치비(`?npc=`)와 VRM(`?vrm=`) 두
+   * 노브를 읽고 **둘 다 0 일 때만** 꺼진다(`npc.ts` 의 `create`). 감독이 그대로 따라
+   * 재면 사람이 남은 채로 또 "측정 안 됨" 이 나온다.
+   *
+   * 노브를 아는 것은 기능 자신뿐이고, 노브가 바뀌면 이 줄도 같은 파일 안에서 함께
+   * 바뀐다. 리포트가 들면 한쪽만 낡는다(값 미러링).
+   */
+  readonly drawBlockHint?: string;
+
+  /**
    * 부팅 예열에 참여한다 — **평소 숨어 있는 것을 잠시 보이게** 만든다.
    *
    * 예열 프레임은 "지금 씬에 그려지는 것"만 굽는다. 그래서 조건부로만 등장하는 것
@@ -197,17 +212,61 @@ export function mountFeatures(
  *     낸다 — 목록 순서에 의존하면 기능을 재배치하는 것만으로 그룹이 갈라진다.
  *
  * 아무도 키를 제공하지 않으면 `''`(빈 문자열)이다. 그래도 유효한 그룹이라 판정은 돈다.
+ *
+ * ── ⚠ 누가 막았는지 **이름을 돌려준다** (감독 실기기 2026-08-06) ─────────────
+ * 감독 리포트에 `draw - 측정 안 됨(표본 0) — 전 프레임 판정 유예(5019표본 제외)` 가
+ * 두 번 찍혔다(#176, 그리고 오늘 또). 표본 5,019개를 다 뽑아 놓고 전부 버린 것이다.
+ *
+ * **그때 진단이 틀렸다.** 태스크 #176 은 원인을 *"하늘 상태 전이가 안 끝난다"* 로 적었는데
+ * 실제로는 `npc`·`glb-city` 가 **조건 없이** `null` 을 낸다(각 파일의 `drawGroupKey: () => null`).
+ * 둘 다 기본 켜짐이라 **기본 구성에서는 이 축이 영원히 판정되지 않는다.**
+ *
+ * 두 기능의 근거 자체는 맞다 — NPC 가 있으면 카메라를 돌리는 것만으로 컬링이 달라져
+ * 드로우콜은 **정의상** 상수가 아니다. 틀린 것은 근거가 아니라 **리포트가 그 사실을
+ * 말하지 않은 것**이다. "유예됐다" 만 적으면 읽는 사람은 *"곧 재지겠지"* 로 읽고,
+ * 실제로는 영원히 안 재진다.
+ *
+ * 그래서 이름을 돌려준다. 리포트가 `npc·glb-city 가 판정 불가로 표시` 라고 적으면
+ * 읽는 즉시 **끄고 다시 재면 된다**는 것을 안다.
  */
-export function combineDrawGroupKey(mounted: readonly MountedFeature[]): string | null {
+export interface DrawBlocker {
+  /** 막은 기능 이름 */
+  readonly name: string;
+  /** 그 기능을 빼는 URL 질의 조각(`?` 없이). 기능이 안 알려주면 없다 */
+  readonly hint?: string;
+}
+
+export interface DrawGroupKeyResult {
+  /** 합쳐진 키. `null` 이면 이 프레임 표본은 판정에서 뺀다. */
+  readonly key: string | null;
+  /** `null` 을 낸 기능들. 비어 있으면 정상 판정이다. 이름순 정렬. */
+  readonly blockedBy: readonly DrawBlocker[];
+}
+
+/** 이름까지 필요한 소비자용. 기존 `combineDrawGroupKey` 는 이것의 `key` 만 쓴다. */
+export function drawGroupKeyOf(mounted: readonly MountedFeature[]): DrawGroupKeyResult {
   const parts: string[] = [];
+  const blockedBy: DrawBlocker[] = [];
   for (const m of mounted) {
     if (!m.instance.drawGroupKey) continue;
     const k = m.instance.drawGroupKey();
-    if (k === null) return null;
+    // ⚠ `null` 을 만나도 **즉시 return 하지 않는다.** 먼저 만난 하나만 보고하면
+    //   그것을 끈 뒤에야 다음 원인을 알게 되어 감독이 두 번 재야 한다.
+    if (k === null) {
+      blockedBy.push(m.instance.drawBlockHint
+        ? { name: m.name, hint: m.instance.drawBlockHint }
+        : { name: m.name });
+      continue;
+    }
     parts.push(`${m.name}=${k}`);
   }
   parts.sort();
-  return parts.join(' ');
+  blockedBy.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return { key: blockedBy.length > 0 ? null : parts.join(' '), blockedBy };
+}
+
+export function combineDrawGroupKey(mounted: readonly MountedFeature[]): string | null {
+  return drawGroupKeyOf(mounted).key;
 }
 
 /**

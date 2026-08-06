@@ -327,6 +327,15 @@ export interface ReportInput {
    */
   drawSkipped?: number;
   /**
+   * 드로우콜 판정을 **막은 기능 이름들.** `drawSkipped > 0` 인데 이게 비어 있으면
+   * "누가 막았는지 모른다" 는 뜻이고, 그것도 리포트에 그대로 적는다.
+   *
+   * 이 필드가 없어서 같은 리포트가 두 번(2026-07-31 #176, 2026-08-06) *"판정 유예"* 만
+   * 말하고 원인을 안 말했다. 그동안 원인은 `npc`·`glb-city` 의 무조건 `null` 이었는데
+   * **#176 은 그것을 "하늘 상태 전이" 로 잘못 적었다** — 이름이 없으니 추측이 들어갔다.
+   */
+  drawBlockedBy?: readonly { readonly name: string; readonly hint?: string }[];
+  /**
    * 자리비움(탭 숨김·화면 잠금) 복귀 프레임 — **프레임 표본에서 뺀 것.**
    *
    * 안 빼면 잠깐 자리를 뜬 것이 수십 초짜리 히칭으로 찍히고 평균 fps가 무너진다. 다만
@@ -374,12 +383,24 @@ function drawLine(
   keys: readonly number[] | undefined,
   names: Readonly<Record<number, string>> | undefined,
   skipped = 0,
+  blockedBy: readonly { readonly name: string; readonly hint?: string }[] = [],
 ): string {
   if (!keys || keys.length === 0) {
     // 키가 아예 없으면 옛 리포트다(그룹 판정 이전) — 전 구간 상수로 본다.
     // 키를 **쓰는데** 하나도 안 쌓였으면 전 프레임이 판정 유예였다는 뜻이고, 그건
     // 위반이 아니라 미측정이다. 그 이유를 줄에 적는다.
-    const why = skipped > 0 ? `전 프레임 판정 유예(${skipped}표본 제외)` : '';
+    // **누가 막았는지 지목한다.** "유예됐다" 만 적으면 읽는 사람은 *"곧 재지겠지"* 로
+    // 읽고, 실제로는 기본 구성에서 영원히 안 재진다. 끄는 법까지 적어야 행동이 된다.
+    // ⚠ 끄는 법(`hint`)은 **기능 자신이 소유한다**(`FeatureInstance.drawBlockHint`).
+    //   여기서 `이름 → 노브` 를 매핑하지 않는다 — 한 번 그렇게 적었다가 `npc` 를
+    //   `npc=0` 하나로 안내했고, 실제로는 `?npc=0&vrm=0` 이라야 꺼진다. 노브가 바뀌면
+    //   리포트만 낡는 자리였다.
+    const hints = blockedBy.map((b) => b.hint).filter((h): h is string => !!h);
+    const how = hints.length > 0 ? ` — ?${hints.join('&')} 로 다시 재라` : '';
+    const who = blockedBy.length > 0
+      ? `${blockedBy.map((b) => b.name).join('·')} 가 판정 불가로 표시${how}`
+      : '막은 기능 미상(계측 훅 부재)';
+    const why = skipped > 0 ? `${who} · ${skipped}표본 제외` : '';
     return countLine('draw', constancy(samples), why);
   }
   const g = constancyByGroup(samples, keys);
@@ -443,7 +464,7 @@ export function formatReport(r: ReportInput): string {
   }
   lines.push('');
   lines.push('[개수 — 상수여야 함]');
-  lines.push(drawLine(r.draw, r.drawGroupKeys, r.groupKeyNames, r.drawSkipped ?? 0));
+  lines.push(drawLine(r.draw, r.drawGroupKeys, r.groupKeyNames, r.drawSkipped ?? 0, r.drawBlockedBy ?? []));
   lines.push(countLine('pipeline', constancy(r.pipeline)));
   lines.push(countLine('geometry', constancy(r.geometries)));
   lines.push(countLine('texture', constancy(r.textures)));

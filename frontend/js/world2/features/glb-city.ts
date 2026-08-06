@@ -339,6 +339,9 @@ export const glbCityFeature: Feature = {
       // 성립하지 않는 세션이고(그게 실험의 요지다), 그 상태로 "불변식 위반" 을 보고하면
       // 리포트가 실험 자체를 결함으로 읽는다.
       drawGroupKey: () => null,
+      // 막았으면 **끄는 법까지** 알려준다. 리포트가 이름만 적으면 감독은 노브를 찾으러
+      // 코드를 열어야 한다. 이 문자열의 소유자는 노브를 읽는 이 파일이다(`readNum('glb')`).
+      drawBlockHint: 'glb=0',
 
       dispose() {
         disposed = true;
