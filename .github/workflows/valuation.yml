@@ -78,8 +78,17 @@ jobs:
           #
           # 그래서 **다음 회차가 그것을 발견하게 한다.** 어제 것이 안 병합됐으면 오늘
           # 빨간불이 뜬다. 브랜치를 만들기 전에 막으므로 `bot/valuation-*` 누적도 없다(권고 R1).
-          OPEN=$(gh pr list --state open --limit 100 --json headRefName \
-                   --jq '[.[] | select(.headRefName | startswith("bot/valuation-"))] | length')
+          #
+          # ⚠ 조회 자체가 실패한 경우와 **구분해서** 적는다(검수관 비블로커). `set -e` 아래서는
+          # 둘 다 똑같이 job 을 죽이는데, `::error::` 문구가 전자를 후자로 읽히게 한다 —
+          # "미병합 PR 이 있다" 와 "미병합 PR 이 있는지 못 봤다" 는 다른 사건이다.
+          if ! OPEN=$(gh pr list --state open --limit 100 --json headRefName \
+                        --jq '[.[] | select(.headRefName | startswith("bot/valuation-"))] | length' \
+                      2> /tmp/gh-list-err); then
+            echo "::error::gh pr list 가 실패했다 — 미병합 봇 PR 확인 자체를 **못 했다**(미병합이 있다는 뜻이 아니다)."
+            cat /tmp/gh-list-err
+            exit 1
+          fi
           if [ "$OPEN" -gt 0 ]; then
             echo "::error::이전 회차 봇 PR 이 ${OPEN} 건 미병합으로 남아 있다 — 병합 경로가 막혀 있다."
             echo "::error::https://github.com/${GITHUB_REPOSITORY}/pulls?q=is%3Apr+is%3Aopen+head%3Abot%2Fvaluation"
