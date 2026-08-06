@@ -81,6 +81,18 @@ const BUILD_MIX: Record<string, string> = {
   // `^\s*import` 로 시작하는 줄만 봐서 `await import(…)` 형태를 놓쳤고, 검수관 리뷰도
   // 놓쳤다. 동적 import 를 보게 만든 것이 실제로 값을 했다 — 기록으로 남긴다.
   'avatars/vrm.ts': 'SkeletonUtils.clone(addons) — 혼합 확인됨·영향 미판정',
+  // GLB 내보내기(감독 요청 2026-08-06). `await import('three/examples/jsm/exporters/
+  // GLTFExporter.js')` 이고, 그 파일은 bare `'three'` 를 import 한다 — 혼합이 맞다.
+  //
+  // **위 두 항목과 방향이 반대라 위험도가 다르다.** GLTFLoader·SkeletonUtils 는 남의
+  // 빌드에서 온 객체를 **씬에 남긴다**(그래서 #120 이 열려 있다). exporter 는 우리
+  // 객체를 읽어 바이트를 만들 뿐 씬에 아무것도 넣지 않고, 호출이 끝나면 사라진다.
+  // 읽는 쪽도 `isBufferGeometry` 류의 플래그를 보지 `instanceof` 로 가르지 않는다.
+  //
+  // **실측(2026-08-06, 배포 조립본 + 헤드리스)**: 17,502 부품이 노드 17,515개·메시
+  // 29개·재질 29개·이미지 5개로 나갔고, 삼각형 1,258,506개에 콘솔 에러 0·pageerror 0.
+  // 즉 혼합이 이 경로에서 실제로 아무것도 깨뜨리지 않는다 — 추정이 아니라 잰 값이다.
+  'export/glb.ts': 'GLTFExporter(examples) — 읽기 전용 혼합·실측 확인(2026-08-06)',
 };
 
 /** `.ts`·`.js` 소스를 모두 모은다 */

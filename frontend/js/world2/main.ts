@@ -23,6 +23,7 @@ import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
+import { attachExportPanel } from './ui/export-panel.js';
 import {
   FEATURES, mountFeatures, combineDrawGroupKey, collectDiagnostics, prewarmFeatures,
   type MountedFeature,
@@ -548,6 +549,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const drawerParts = findMapDrawer(document);
   const mapDrawer = drawerParts ? attachMapDrawer(drawerParts) : null;
 
+  // GLB 내보내기 — 神 모드 패널 안. 세계를 다시 계산해 굽는 것이라 씬·렌더러를 받지
+  // 않는다(왜 화면을 굽지 않는지는 `export/collect.ts` 헤더에 있다).
+  const exportPanel = attachExportPanel(document);
+
   // ── 진단 훅 ───────────────────────────────────────────────────────────────
   // behind-flag 검증 페이지 전용이다. 라이브(world.html)에는 없다.
   //
@@ -644,6 +649,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       touch.dispose();
       hud?.dispose();
       mapDrawer?.dispose();
+      exportPanel?.dispose();
       // 기능 정리. System의 `dispose`는 커널이 부르므로, 여기서는 기능이 따로 붙인
       // UI·리스너만 거둔다. 여기에도 기능별 분기가 없다.
       for (const m of features) {
