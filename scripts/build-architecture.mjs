@@ -158,7 +158,7 @@ const TREE = [
 const treeHtml = TREE.map((t) => {
   const a = t.key ? area(t.key) : null;
   return `    <tr class="d${t.depth}">
-      <td><code>${esc(t.path)}</code></td>
+      <td><code>${esc(t.path).replace(/\//g, '/<wbr>')}</code></td>
       <td class="num">${a ? n(a.lines) : '—'}</td>
       <td class="num">${a ? a.files : '—'}</td>
       <td class="desc">${esc(t.desc)}</td>
@@ -173,18 +173,37 @@ const statsHtml = [
   [ratio ? pct(ratio) : '—', '테스트 / 구현'],
 ].map(([v, k]) => `  <div class="stat"><span class="n">${v}</span><span class="k">${k}</span></div>`).join('\n');
 
+// ⚠ **막대 폭은 비중이 아니라 최대 행 대비 비율이다**(디자이너 필수 2).
+// `--w` 에 실제 비중(예: 31%)을 그대로 넣으면 트랙의 31% 만 차서 **최대 행조차
+// 3분의 1 만 찬다** — 막대가 "가장 큰 것" 을 못 보여주고 전부 짧게 뭉친다.
+// 읽는 이가 쓰는 정보는 **행 간 비교**이므로 최대를 100% 로 정규화한다.
+// 실제 퍼센트는 옆의 `.pv` 텍스트가 그대로 말하므로 값이 왜곡되지 않는다.
+const maxShare = Math.max(...agg.areas.map((a) => a.share ?? 0), 0);
 const rowsHtml = agg.areas.map((a) => `    <tr>
       <td>${esc(a.label)}</td>
       <td class="num">${n(a.lines)}</td>
       <td class="num">${a.files}</td>
-      <td>${a.share === null
-    ? '<span class="out">축 밖</span>'
-    : `<span class="bar" style="--w:${(a.share * 100).toFixed(1)}%"></span><span class="pctv">${pct(a.share)}</span>`}</td>
+      <td class="pct">${a.share === null
+    ? '<span class="pv">축 밖</span>'
+    : `<span class="bar" style="--w:${maxShare ? ((a.share / maxShare) * 100).toFixed(1) : 0}%"></span>`
+      + `<span class="pv">${pct(a.share)}</span>`}</td>
     </tr>`).join('\n');
 
-const topHtml = top.map((f) => `    <tr><td><code>${esc(f.path)}</code></td><td class="num">${n(f.lines)}</td></tr>`).join('\n');
+// 경로에 `<wbr>` 를 넣는다 — 없으면 360px 에서 `frontend/js/main.` / `js` 처럼
+// 엉뚱한 데서 갈라진다(디자이너 실측). `word-break:break-all` 로 푸는 것이 아니라
+// **줄바꿈 기회를 주는 것**이 맞다: body 의 `word-break:keep-all` 은 한글 규칙이라
+// 슬래시 경로에 기회를 하나도 안 만든다.
+const topHtml = top.map((f) => `    <tr><td><code>${esc(f.path).replace(/\//g, '/<wbr>')}</code></td><td class="num">${n(f.lines)}</td></tr>`).join('\n');
 
-const listHtml = (items) => items.map((x) => `      <li><b>${esc(x.t)}</b> ${x.d.replace(/\s+/g, ' ').trim()}</li>`).join('\n');
+// ⚠ 서술 안의 `<b>` 를 `<strong>` 으로 바꾼다. 디자이너 CSS 가 `.arch-pros li b` 를
+// **항목 제목**으로 규정해 `display:block` 을 걸기 때문이다 — 안 바꾸면 본문 중간의
+// 강조가 전부 줄바꿈돼 문장이 토막난다(화면에서 실제로 그렇게 나왔다).
+// 의미도 이쪽이 맞다: 제목은 이름표(`<b>`), 본문 강조는 중요도(`<strong>`)다.
+const listHtml = (items) => items.map((x) => {
+  const body = x.d.replace(/\s+/g, ' ').trim()
+    .replace(/<b>/g, '<strong>').replace(/<\/b>/g, '</strong>');
+  return `      <li><b>${esc(x.t)}</b> ${body}</li>`;
+}).join('\n');
 
 const RULES = [
   '보호 파일(라이브 미술관 4개)을 새 기능이 역참조하지 않는다. 신규는 독립 가산 모듈로 짓는다.',
@@ -205,7 +224,7 @@ const bodyHtml = `
 ${statsHtml}
 </div>
 
-<h2>영역별 규모</h2>
+<h2 class="sec">영역별 규모</h2>
 <p class="note">비중의 분모는 <b>자체 코드</b>입니다. 벤더를 넣으면 three.js 하나가 3분의 1을
 먹어 나머지가 전부 납작해집니다 — 보려는 것은 우리 코드의 분포입니다.</p>
 <table class="arch-table">
@@ -215,15 +234,15 @@ ${rowsHtml}
   </tbody>
 </table>
 
-<h2>파일 구조</h2>
-<table class="arch-table tree">
+<h2 class="sec">파일 구조</h2>
+<table class="arch-table layers">
   <thead><tr><th>경로</th><th class="num">줄</th><th class="num">파일</th><th>책임</th></tr></thead>
   <tbody>
 ${treeHtml}
   </tbody>
 </table>
 
-<h2>강점과 값</h2>
+<h2 class="sec">강점과 값</h2>
 <p class="note">모든 선택에는 값이 따릅니다. 좋은 점만 적으면 다음 사람이 무엇을 조심해야
 하는지 모릅니다.</p>
 <div class="arch-pros">
@@ -241,7 +260,7 @@ ${listHtml(CONS)}
   </section>
 </div>
 
-<h2>큰 코드 파일 10개</h2>
+<h2 class="sec">큰 코드 파일 10개</h2>
 <p class="note"><b>줄 수는 규모이지 품질이 아닙니다.</b> 진입점은 "조립"이 책임이라 큰 것이
 자연스럽고, 분해 신호는 크기가 아니라 <b>책임의 혼재</b>입니다.<br>
 문서와 <code>package-lock.json</code>은 뺐습니다 — 큰 것이 정상이라 여기 있으면 오해를 부릅니다.</p>
@@ -252,42 +271,203 @@ ${topHtml}
   </tbody>
 </table>
 
-<h2>깨지 않는 네 가지</h2>
+<h2 class="sec">깨지 않는 네 가지</h2>
 <div class="arch-rules">
 ${RULES.map((r, i) => `  <div class="rule"><span class="no">${i + 1}</span><p>${esc(r)}</p></div>`).join('\n')}
 </div>
 `;
 
-// 디자이너 CSS 를 받기 전 임시 스타일. 배선 후 교체한다.
+// 디자이너 산출(2026-08-06). 대비비는 이 CSS 헤더 주석이 실측표로 갖고 있다.
+// ⚠ `<pre>` 트리를 표로 바꾸면서 `.arch-tree*` 규칙은 소비자가 0 이 되어 뺐다 —
+//   쓰지 않는 CSS 를 남기면 다음 사람이 그것을 살아 있는 규칙으로 읽는다.
 const CSS = `
-.arch-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:28px 0}
-.arch-stats .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px}
-.arch-stats .n{display:block;font-size:26px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
-.arch-stats .k{display:block;font-size:12.5px;color:var(--ink-body);margin-top:4px}
-.arch-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
-.arch-table th,.arch-table td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left}
-.arch-table .num{text-align:right;font-variant-numeric:tabular-nums}
-.arch-table .bar{display:inline-block;height:7px;width:var(--w);background:var(--g300);border-radius:4px;vertical-align:middle}
-.arch-table .pctv{font-size:12px;color:var(--ink-body);margin-left:8px;font-variant-numeric:tabular-nums}
-.arch-table .out{font-size:12px;color:var(--ink-body)}
-.arch-table.tree .d1 td:first-child{padding-left:22px}
-.arch-table.tree .d2 td:first-child{padding-left:40px}
-.arch-table.tree .desc{color:var(--ink-body);font-size:13px}
-.arch-pros{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:18px 0}
-.arch-pros section{border:1px solid var(--line);border-radius:var(--r);padding:18px;background:var(--panel)}
-.arch-pros h3{margin:0 0 10px;font-size:15px}
-.arch-pros ul{margin:0;padding-left:18px}
-.arch-pros li{margin-bottom:12px;font-size:13.5px;line-height:1.65}
-.arch-rules{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:16px 0}
-.arch-rules .rule{display:flex;gap:12px;border:1px solid var(--line);border-radius:var(--r);padding:14px;background:var(--panel)}
-.arch-rules .no{font-weight:700;color:var(--g700);flex:none}
-.arch-rules p{margin:0;font-size:13.5px;line-height:1.6}
-.note{font-size:13px;color:var(--ink-body);margin:6px 0 12px}
+/* /making/architecture/ 고유 CSS
+ *
+ * 셸(scripts/lib/site-shell.mjs)의 TOKENS_CSS + SHELL_CSS 가 이 앞에 붙는다.
+ * 색을 새로 만들지 않는다 — 셸이 이미 이어 놓은 이름(--g100..--g900 · --gold-text ·
+ * --ink/--ink-body/--ink-dim · --paper/--paper-deep/--panel · --line · --r)만 쓴다.
+ *
+ * 라이트 전용이다. 셸에 prefers-color-scheme 분기가 한 곳도 없고(.top 은 --g900,
+ * body 는 --paper 고정) 본문만 다크로 뒤집으면 헤더·푸터와 어긋난다. 다크 대응은
+ * 셸 차원의 판단이지 이 페이지가 단독으로 열 축이 아니다 — 여기서 멈춘다.
+ *
+ * ── 대비 실측(WCAG 2.x, 이 파일이 쓰는 조합 전부) ─────────────────────────
+ *   [텍스트 · 기준 4.5:1]
+ *     본문 ink/paper            17.75    표 본문 inkBody/paper        7.73
+ *     표 숫자 ink/paper         17.75    표 헤더 ink/paper-deep      16.29
+ *     스탯 숫자 g700/panel       4.98 ←최저   스탯 라벨 inkDim/panel   5.75
+ *     섹션 g800/paper            7.85    강점 제목 g800/panel         7.99
+ *     대가 제목 inkBody/panel    7.88    + 마커 g700/panel            4.98
+ *     − 마커 inkDim/panel        5.75    규칙 본문 inkBody/paper-deep 7.10
+ *     규칙 번호 g100/g800        6.87    트리 본문 g100/g900         13.41
+ *     트리 주석 g300/g900        8.89
+ *   [비텍스트 UI · 기준 3:1]
+ *     막대 시작 g600/paper-deep  3.60    막대 끝 g800/paper-deep      7.20
+ *     강점 테두리 g600/panel     4.00    대가 테두리 inkDim/panel     5.75
+ *     th 하단선 g600/paper-deep  3.60
+ *   최저 텍스트가 4.98 이므로 AA 전항 통과. 계산기는 상대휘도 정의식 그대로다.
+ *   기준 미달로 **기각한 후보**도 남긴다(다음 사람이 같은 값을 또 고를 자리다):
+ *     g300/paper-deep 1.58 · warm-gray-500/panel 2.73 · g500/paper-deep 2.79.
+ */
+:root{--wrap-w:840px;--lead-mb:28px;--lh:1.7}
+
+/* 섹션 제목 — team·valuation 의 h2.sec 와 문자 그대로 같은 규칙이다.
+ * 표가 두 개 연달아 나오는 페이지라 제목 없이는 무슨 표인지 읽히지 않는다. */
+h2.sec{font-size:15px;color:var(--g800);margin:38px 0 14px;padding-left:10px;
+border-left:3px solid var(--g300);letter-spacing:0.02em}
+
+/* ── ① 요약 스탯 ────────────────────────────────────────────────────────
+ * team 의 .stat-row/.stat 과 같은 형태지만 flex 가 아니라 grid 다 — flex:1+min-width
+ * 는 4칸이 3+1 로 접히는 폭 구간이 생기고, 그 구간에서 마지막 칸만 전폭이 된다.
+ * grid 는 2열/4열 두 상태만 갖는다. */
+.arch-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:0 0 34px}
+.arch-stats .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+padding:15px 16px;min-width:0}
+/* min-width:0 — grid 아이템의 기본 min-width:auto 는 내용보다 작아지길 거부한다.
+ * 숫자에 tabular-nums+nowrap 이 걸려 있으므로 이게 없으면 칸이 트랙을 밀어내
+ * 그리드 전체가 컨테이너를 넘는다(가로넘침이 실제로 나는 자리). */
+.arch-stats .stat .n{display:block;font-size:clamp(19px,3.4vw,26px);font-weight:600;
+color:var(--g700);line-height:1.15;letter-spacing:-0.015em;
+font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.arch-stats .stat .k{display:block;font-size:12px;color:var(--ink-dim);margin-top:6px;
+letter-spacing:0.03em;line-height:1.4}
+
+/* ── ②④ 표 ─────────────────────────────────────────────────────────────
+ * devlog·valuation·licenses 의 md 표는 4변 격자(border:1px solid var(--line))다.
+ * 여기서는 가로선만 남겼다 — 저 표들은 본문 흐름 속 인용이고 이 표는 페이지의 주
+ * 콘텐츠라 행이 길게 이어진다. 좁은 폭에서 세로선은 셀마다 padding 을 한 번 더
+ * 요구해 4열이 컨테이너를 넘기고, 그것이 요청서가 지목한 태스크 #16 과 같은 사고다.
+ * 구조는 헤더 하단선을 g600 으로 굵혀 남긴다(3.60:1).
+ * table-layout 은 일부러 auto 다 — fixed 로 열 폭을 내가 정하면 첫 열 라벨이
+ * 길어질 때마다 CSS 를 다시 만져야 하고, 그 값이 곧 마크업과의 값 미러링이 된다. */
+.arch-table{width:100%;border-collapse:collapse;font-size:13px;margin:0 0 26px}
+.arch-table th,.arch-table td{padding:9px 10px;text-align:left;vertical-align:baseline;
+border-bottom:1px solid var(--line);color:var(--ink-body)}
+.arch-table th{background:var(--paper-deep);color:var(--ink);font-weight:600;font-size:12px;
+letter-spacing:0.03em;white-space:nowrap;border-bottom:1px solid var(--g600)}
+.arch-table tbody tr:last-child td{border-bottom:0}
+.arch-table td:first-child{color:var(--ink)}
+/* 숫자가 주인공이다 — 자릿수 정렬(tabular-nums) + 오른끝 정렬로 자릿수를 눈으로 센다.
+ * font-feature-settings 는 tabular-nums 를 무시하는 구형 엔진용 이중 지정이다. */
+.arch-table .num{text-align:right;white-space:nowrap;color:var(--ink);
+font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+
+/* 비중 막대. --w 로 폭을 받고, 값 자체는 옆의 .pv 텍스트가 말한다.
+ *
+ * 채움을 g300→g600(저장소 관례: valuation .goalbar · team .m-bar)이 아니라
+ * g600→g800 으로 내렸다. 그 관례는 **채움이 긴 막대**를 전제한 값이다 — 이 표의
+ * 비중은 한 자릿수부터 30% 대까지라 짧은 막대에서는 그라디언트 시작색만 보이는데,
+ * g300 은 트랙(paper-deep) 위에서 1.58:1 로 비텍스트 기준 3:1 에 한참 못 미친다.
+ * g600 시작이면 3.60:1 이다. 관례를 깬 것이 아니라 관례가 성립하는 전제(긴 채움)가
+ * 여기엔 없다.
+ * **여기서 멈춘다** — 더 어둡게(g700 시작) 가면 막대가 본문 글자보다 무거워져
+ * "숫자가 주인공" 이라는 이 페이지의 전제가 뒤집힌다.
+ *
+ * 트랙은 장식이다(paper 위 1.28:1 로 거의 안 보인다). 값을 .pv 가 전달하므로
+ * 트랙 가시성은 요구조건이 아니고, 트랙을 진하게 만들면 표의 가로선보다 무거워진다. */
+.arch-table .pct{width:26%;white-space:nowrap}
+/* 막대와 숫자를 **한 줄에** 둔다. 세로로 쌓으면 행 높이가 두 배가 되고, 그러면
+ * 표가 성겨져 행끼리 비교가 안 된다 — 이 표의 목적이 행 간 비교다(1280px 실측). */
+.arch-table .pct .bar{display:inline-block;vertical-align:middle;
+width:calc(100% - 42px);min-width:40px;height:7px;border-radius:2px;
+background:var(--paper-deep);position:relative;overflow:hidden}
+.arch-table .pct .bar::before{content:"";position:absolute;left:0;top:0;bottom:0;
+/* 하한 3px — 한 자릿수 비중이 0px 로 사라지면 "값이 없다" 와 구별되지 않는다.
+ * 3px 은 트랙 높이(7px)보다 작아 막대가 아니라 눈금으로 읽히므로 과장이 아니다. */
+width:max(var(--w,0%),3px);border-radius:2px;
+background:linear-gradient(90deg,var(--g600),var(--g800));
+transform-origin:left center;animation:arch-grow .5s cubic-bezier(.22,.9,.3,1) both}
+.arch-table .pct .pv{display:inline-block;vertical-align:middle;width:38px;
+text-align:right;font-size:11.5px;color:var(--ink-dim);
+font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+@keyframes arch-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+
+/* 층 구조 표는 2열이라 첫 열이 파일 경로다. 경로는 등폭이 읽기 쉽다. */
+.arch-table.layers td:first-child{width:38%;font-weight:600;
+font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+font-size:12px;overflow-wrap:anywhere}
+/* overflow-wrap:anywhere 이지 word-break:break-all 이 아니다. break-all 을 먼저 썼다가
+ * 360px 실측에서 \`frontend/js/main.\` / \`js\` 로 갈라지는 것을 보고 물렸다 — break-all 은
+ * **줄바꿈 기회가 있어도** 임의 위치에서 자른다. anywhere 는 정상 기회(마크업의 <wbr>)를
+ * 먼저 쓰고 넘칠 때만 자른다. 그래서 경로에 <wbr> 를 넣어 달라고 요청했다(보고 §3).
+ * body 의 word-break:keep-all 은 한글 규칙이라 슬래시 경로에 아무 기회도 안 만든다. */
+
+/* ── ⑤ 장단점 ──────────────────────────────────────────────────────────
+ * 강점/대가를 색으로만 가르지 않는다 — 색각 이상에서 그린과 웜 뉴트럴은 붙는다.
+ * 형태 축을 셋 겹친다:
+ *   ① 왼쪽 테두리   solid(강점) / dashed(대가)
+ *   ② 제목 앞 사각형 채움(강점) / 윤곽(대가)
+ *   ③ 항목 마커     +(강점) / −(대가)
+ * 색은 넷째 축이지 유일한 축이 아니다. 흑백 인쇄에서도 셋 다 남는다.
+ * 대가 쪽을 --warn(코랄)으로 칠하지 않은 것은 의도다 — 대가는 경고가 아니고,
+ * 기능 신호색을 서술에 쓰면 빌더의 미저장 경고와 같은 색 어휘를 낭비한다. */
+.arch-pros{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:0 0 30px;align-items:start}
+.arch-pros>section{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+padding:16px 18px;min-width:0}
+.arch-pros .pro{border-left:4px solid var(--g600)}
+.arch-pros .con{border-left:4px dashed var(--ink-dim)}
+.arch-pros h3{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;
+margin:0 0 12px;letter-spacing:0.02em}
+.arch-pros .pro h3{color:var(--g800)}
+.arch-pros .con h3{color:var(--ink-body)}
+.arch-pros h3::before{content:"";flex:0 0 auto;width:9px;height:9px;border-radius:1px}
+.arch-pros .pro h3::before{background:var(--g600)}
+.arch-pros .con h3::before{border:2px solid var(--ink-dim)}
+.arch-pros ul{list-style:none;margin:0;padding:0}
+.arch-pros li{position:relative;padding-left:18px;margin:0 0 12px;font-size:13px;
+color:var(--ink-body);line-height:1.65}
+.arch-pros li:last-child{margin-bottom:0}
+.arch-pros li b{display:block;color:var(--ink);font-weight:600;margin-bottom:1px}
+.arch-pros li::before{position:absolute;left:0;top:0;font-weight:700;line-height:1.65}
+.arch-pros .pro li::before{content:"+";color:var(--g700)}
+.arch-pros .con li::before{content:"−";color:var(--ink-dim)}
+/* content 의 alt 텍스트(\`/ ""\`)는 스크린리더가 "더하기/빼기" 를 읽지 않게 한다.
+ * 미지원 엔진은 **선언 전체를 버리므로** 위 두 줄을 폴백으로 먼저 두고 여기서
+ * 덮어쓴다 — 한 줄로 합치면 미지원 브라우저에서 마커가 통째로 사라진다. */
+.arch-pros .pro li::before{content:"+" / ""}
+.arch-pros .con li::before{content:"−" / ""}
+
+/* ── ⑥ 불변식 카드 ─────────────────────────────────────────────────────
+ * 번호를 절대배치 배지로 빼고 본문에 왼쪽 padding 을 준다 — flex 로 번호와 문단을
+ * 나란히 두면 문단이 두 줄 이상일 때 번호가 세로 가운데로 떠서 목록으로 안 읽힌다. */
+.arch-rules{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:0 0 8px}
+.arch-rules .rule{position:relative;background:var(--paper-deep);border:1px solid var(--line);
+border-radius:var(--r);padding:14px 16px 14px 44px;min-width:0}
+.arch-rules .rule .no{position:absolute;left:14px;top:13px;width:20px;height:20px;
+border-radius:50%;background:var(--g800);color:var(--g100);
+display:flex;align-items:center;justify-content:center;
+font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.arch-rules .rule p{margin:0;font-size:13px;color:var(--ink-body);line-height:1.6}
+.arch-rules .rule p b,.arch-rules .rule p strong{color:var(--ink);font-weight:600}
+
+/* ── 모바일 ≤640px ─────────────────────────────────────────────────────
+ * 640 을 고른 이유: 셸이 이미 640 에서 nav gap 을 줄인다(site-shell.mjs 의 유일한
+ * 미디어쿼리). 브레이크포인트를 하나 더 만들면 그 값이 두 파일에 흩어진 값
+ * 미러링이 되고, 한쪽만 고쳤을 때 헤더와 본문이 다른 폭에서 접힌다.
+ * 이 저장소가 "모바일" 로 부르는 선도 같은 640 이다(디자이너 산출물 스모크 기준). */
 @media(max-width:640px){
-  .arch-stats{grid-template-columns:repeat(2,1fr)}
-  .arch-pros,.arch-rules{grid-template-columns:1fr}
-  .arch-table{font-size:13px}
+  .arch-stats{grid-template-columns:repeat(2,1fr);gap:10px}
+  .arch-stats .stat{padding:13px 14px}
+  .arch-pros{grid-template-columns:1fr;gap:12px}
+  .arch-rules{grid-template-columns:1fr}
+  .arch-table{font-size:12.5px}
   .arch-table th,.arch-table td{padding:8px 6px}
+  .arch-table th:first-child,.arch-table td:first-child{padding-left:0}
+  .arch-table th:last-child,.arch-table td:last-child{padding-right:0}
+  /* 막대를 지운다. 같은 값을 .pv 숫자가 이미 말하므로 **잃는 정보가 0** 이고,
+   * 4열을 3열분 폭에 넣는 가장 싼 방법이다. 표를 가로 스크롤 래퍼에 넣지 않는
+   * 이유이기도 하다 — 스크롤 래퍼는 넘침을 감추지 열을 읽게 해주지 않는다. */
+  .arch-table .pct{width:auto}
+  .arch-table .pct .bar{display:none}
+  .arch-table .pct .pv{width:auto;font-size:12.5px;color:var(--ink)}
+  .arch-table.layers td:first-child{width:42%}
+  h2.sec{margin:30px 0 12px}
+}
+
+/* 움직임은 막대 하나뿐이고, 그마저 값을 읽는 장치다(길이 비교를 눈에 태운다).
+ * reduce 면 animation 자체를 끈다 — scaleX 기본값이 1 이라 최종 상태는 동일하다. */
+@media(prefers-reduced-motion:reduce){
+  .arch-table .pct .bar::before{animation:none}
 }
 `;
 
