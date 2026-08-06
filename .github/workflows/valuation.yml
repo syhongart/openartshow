@@ -65,8 +65,26 @@ jobs:
         #
         # 감독 카드 판정(2026-08-05): **"봇도 PR로"** — 보호를 그대로 두고 봇을 규칙에 맞춘다.
         id: commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # ── 미병합 봇 PR 이 남아 있으면 **여기서 죽는다** (검수관 블로커 B1) ──────
+          # 아래 「PR 생성 + 자동 병합」 의 `gh pr merge --auto` 는 **거는 데 성공하면**
+          # `||` 뒤가 실행되지 않는다. 상태검사가 영원히 pending 이면(아래 함정 주석)
+          # job 은 매일 **초록으로 끝나고** 실제 병합은 결코 일어나지 않는다 —
+          # 이 워크플로가 고치려던 결함(*"발화하는 날에만 죽고 조용히 스킵"*)과 **같은
+          # 형태**이고, 붉은 X 조차 없어져 이전보다 나쁘다.
+          #
+          # 그래서 **다음 회차가 그것을 발견하게 한다.** 어제 것이 안 병합됐으면 오늘
+          # 빨간불이 뜬다. 브랜치를 만들기 전에 막으므로 `bot/valuation-*` 누적도 없다(권고 R1).
+          OPEN=$(gh pr list --state open --limit 100 --json headRefName \
+                   --jq '[.[] | select(.headRefName | startswith("bot/valuation-"))] | length')
+          if [ "$OPEN" -gt 0 ]; then
+            echo "::error::이전 회차 봇 PR 이 ${OPEN} 건 미병합으로 남아 있다 — 병합 경로가 막혀 있다."
+            echo "::error::https://github.com/${GITHUB_REPOSITORY}/pulls?q=is%3Apr+is%3Aopen+head%3Abot%2Fvaluation"
+            exit 1
+          fi
           git config user.name  "artshow-bot"
           git config user.email "bot@artshow.local"
           if [ -z "$(git status --porcelain docs/valuation-history.json README.md)" ]; then
