@@ -53,6 +53,7 @@ jobs:
           node scripts/build-team.mjs
           node scripts/build-valuation.mjs
           node scripts/build-making.mjs
+          node scripts/build-architecture.mjs
           node scripts/build-licenses.mjs
       # Vite 배포기: dist(base /openartshow/) = 배포구조. HTML rename·CSP정합·자기완결은
       # vite.config 플러그인이 수행 → 소스 재배치 cp 로직 폐지(landing→index 등도 vite 가).

@@ -44,6 +44,7 @@ export const GENERATORS = [
   'scripts/build-team.mjs',
   'scripts/build-valuation.mjs',
   'scripts/build-making.mjs',
+  'scripts/build-architecture.mjs',
   'scripts/build-licenses.mjs',
 ];
 

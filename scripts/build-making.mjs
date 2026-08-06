@@ -20,7 +20,10 @@ const teamComposition = calculateTeamComposition(devlogSrc); // SSOT
 
 // 고유 CSS (허브는 간단한 카드만)
 const CSS = `
-.hub-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:30px 0}
+/* 카드 수가 늘어도 빈 칸이 안 생기게 auto-fit. 3개일 때 3열이던 것을 4개(코드 구조
+   추가)에서 고정 3열로 두면 마지막 줄에 한 칸이 뜬다 — 개수를 세는 대신 브라우저가
+   맞추게 한다(카드가 또 늘어도 이 줄을 안 고쳐도 된다). */
+.hub-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px;margin:30px 0}
 .hub-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:24px;
 transition:border-color .2s,transform .2s;text-decoration:none;color:inherit;display:flex;flex-direction:column}
 .hub-card:hover{border-color:var(--g300);transform:translateY(-1px)}
@@ -56,6 +59,12 @@ const bodyHtml = `
     <h2>밸류에이션</h2>
     <p>결과물과 트랙션으로 매일 자동 산출. 50억 목표까지의 경로를 추적합니다.</p>
     <div class="count">매일 갱신</div>
+  </a>
+  <a href="./architecture/" class="hub-card">
+    <div class="icon">🧱</div>
+    <h2>코드 구조</h2>
+    <p>파일 구조와 규모를 배포할 때마다 다시 잽니다. 아키텍처의 강점과 치르는 값을 함께 적습니다.</p>
+    <div class="count">매 배포 실측</div>
   </a>
 </div>
 `;
