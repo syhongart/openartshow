@@ -523,21 +523,76 @@ function starColor(rnd) {
 // 반짝이는 밝은 별(십자 스파이크) 전용 페인터 — 홀짝으로 두 캔버스에 나눠 그린다.
 // 두 레이어를 반대 위상으로 opacity 진동시키면 별이 "생겼다 사라졌다" 반짝인다(감독 지시).
 // 위치·색은 결정론(시드 고정) — 시간대 무관 동일, opacity만 런타임 제어.
-function paintTwinkleStars(ctxA, ctxB, W, Hh) {
+//
+// ── ⚠ 이 텍스처의 픽셀은 **각도다** (감독 실기기 2026-08-06) ──────────────────
+// 돔은 `W`(=2048) 픽셀로 방위 360°를 덮는다. 그래서:
+//
+//     1px = 360° / 2048 = 0.1758°
+//
+// `scale=1`(옛 고정값)에서 십자 전체 길이는 `2·(5 + r·3.4)`, r 최대 2.4 이므로
+// **26.3px = 4.63°** 다. 보름달이 0.52° 이므로 **보름달의 8.9배**이고, 중심 광구도
+// 지름 11.5px = 2.02°(보름달 3.9배)다. 실제 밤하늘에서는 가장 밝은 별도 맨눈 번짐이
+// 0.1° 미만이다.
+//
+// **이것이 감독이 *"별이 보이는 게 아니라 바로 앞에 있는 벽지가 보이는 것 같아"* 로
+// 잡은 증상의 정체다.** 보름달 9배짜리 광원이 34개 떠 있으면 그것은 별이 아니라 무늬로
+// 읽힌다 — 뇌가 "이건 하늘이 아니라 가까운 표면"으로 판정한다.
+//
+// ⚠⚠ **돔 반경으로는 절대 안 고쳐진다 — 실측으로 확인했다.** 돔이 카메라를 따라오면
+// 반경은 **카메라 중심 스케일 변환**이고, 원근 투영에서 그것은 화면 각도를 하나도
+// 바꾸지 않는다. 텍스처는 UV 로 매핑되므로 각도당 텍셀 수도 반경과 무관하다.
+// 감독이 `dome=520` 과 `dome=6000` 스크린샷 두 장을 나란히 올려 *"현재 같은데?"* 로
+// 잡았고, 두 화면은 실제로 구별되지 않았다. **`?dome=` 은 화면에 대해 죽은 노브다.**
+//
+// 내가 `sky.ts` 주석에 *"반경은 시차에 영향을 주지 않는다"* 까지 써 놓고 *"그래도 천장
+// 높이감은 바뀐다"* 를 덧붙였는데 그 덧붙인 절이 거짓이었고, 그 거짓 위에서 감독께
+// 높이 후보 링크를 다섯 개 드렸다. **참인 문장에서 성립하지 않는 결론을 뽑는 것** 의
+// 또 한 사례다(`CLAUDE.md` 가 이름 붙인 그 형태).
+//
+// ── 개수가 크기에 반비례하는 이유 ────────────────────────────────────────────
+// 각크기만 줄이면 하늘이 휑해진다 — 34개는 "크게 그렸을 때" 화면을 채우던 수다.
+// 실제 밤하늘은 **밝은 별이 적고 어두운 별이 많다**. `scale` 을 줄일 때 개수를 그 역수로
+// 늘리면 그 분포에 가까워지고, 화면 총 광량도 대략 보존된다(면적 ∝ scale² 이므로 완전
+// 보존은 아니다 — 의도적이다. 작아질수록 어두워지는 것이 맞다).
+//
+// 비용은 **캔버스 1회 페인트**뿐이다. 지오메트리·텍스처·머티리얼 개수가 전부 그대로라
+// `[7]` 개수 불변식과 무관하다(메시는 `mkTwk()` 두 개로 고정).
+//
+// ── ⚠ 이 함수를 export 하는 이유 — **헤드리스로는 이 축을 못 잰다** ──────────
+// `?star=` 를 넣고 헤드리스(swiftshader/WebGL)로 `star=1` 과 `star=0.2` 를 렌더해
+// 비교했더니 **두 화면이 구별되지 않았다.** 그러나 그것은 "노브가 죽었다"는 뜻이 아니다 —
+// 헤드리스 화면에는 감독 실기기에 보이는 **큰 십자 별 자체가 나타나지 않았다.**
+// 감독 기기는 WebGPU + 블룸이고 헤드리스는 WebGL 이라 렌더 경로가 다르다
+// (`CLAUDE.md` 가 열어 둔 사각 그대로다). **못 잰 것을 통과로도, 실패로도 적지 않는다.**
+//
+// 그래서 화면 인상은 감독 판정으로 남기고, **노브가 코드에 도달하는지**만 여기서
+// 잠근다 — `tests/sky-star-scale.test.ts` 가 페이크 ctx 로 이 함수를 직접 돌려
+// 그리기 좌표가 `scale` 을 따라 움직이는지 본다. `?dome=` 이 배선은 멀쩡한데 화면에
+// 아무 영향이 없었던 것과 **정확히 반대 방향의 실패**(배선이 끊겨 화면이 안 바뀌는 것)를
+// 막는 축이다. 둘 다 증상은 "화면이 같다" 로 똑같이 보이므로 구별할 수단이 필요하다.
+export const TWK_BASE_COUNT = 34;
+export const TWK_MAX_COUNT = 300; // 페인트 비용 상한 — scale 0.1 이면 340 이 되므로 자른다
+export function paintTwinkleStars(ctxA, ctxB, W, Hh, scale = 1) {
   const rnd = seeded(0x7a1e);
   ctxA.clearRect(0, 0, W, Hh * 2); ctxB.clearRect(0, 0, W, Hh * 2);
-  for (let i = 0; i < 34; i++) {
+  const count = Math.min(TWK_MAX_COUNT, Math.round(TWK_BASE_COUNT / Math.max(0.1, scale)));
+  for (let i = 0; i < count; i++) {
     const ctx = (i % 2 === 0) ? ctxA : ctxB;
     const x = rnd() * W, y = Hh * (0.06 + rnd() * 0.62);
     const zc = Math.min(1, y / (Hh * 0.35));
-    const r = (1.5 + rnd() * 0.9) * (0.5 + 0.5 * zc);
+    const rBase = (1.5 + rnd() * 0.9) * (0.5 + 0.5 * zc);
+    const r = rBase * scale;
     const a = 0.85 + rnd() * 0.15;
     const [cr, cg, cb] = starColor(rnd); const cc = `${cr},${cg},${cb}`;
     const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.4);
     g.addColorStop(0, `rgba(${cc},${a.toFixed(2)})`); g.addColorStop(0.35, `rgba(${cc},${(a * 0.5).toFixed(2)})`); g.addColorStop(1, `rgba(${cc},0)`);
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2.4, 0, 7); ctx.fill();
-    ctx.strokeStyle = `rgba(${cc},${(a * 0.6).toFixed(2)})`; ctx.lineWidth = 0.8;
-    const s = 5 + r * 3.4;
+    ctx.strokeStyle = `rgba(${cc},${(a * 0.6).toFixed(2)})`; ctx.lineWidth = Math.max(0.4, 0.8 * scale);
+    // ⚠ **상수항 5 도 함께 곱한다** — `rBase` 를 쓰고 전체에 `scale` 을 건다.
+    // `5 + r*3.4`(= 5 + rBase·3.4·scale) 로 두면 `scale` 을 아무리 줄여도 십자가
+    // **1.76° 아래로 안 내려간다**(5px 이 바닥이다). 노브를 열어 놓고 축이 안 움직이는
+    // 것 — 방금 `?dome=` 으로 겪은 것과 정확히 같은 형태다.
+    const s = (5 + rBase * 3.4) * scale;
     ctx.beginPath(); ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.moveTo(x, y - s); ctx.lineTo(x, y + s); ctx.stroke();
   }
 }
@@ -593,7 +648,7 @@ function synthThunder(delayS) {
   } catch (_) { /* 무음 폴백 */ }
 }
 
-export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = 0 }) {
+export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = 0, starScale = 1 }) {
   const state = { time: 'day', weather: 'clear', fx: { rainbow: false, aurora: false }, flashSafe: false, precip: 1 };
   // ── B-2 저사양 오버드로우 축소 ──
   // 모바일 타일드 GPU는 불투명 오브젝트의 오버드로우는 제거하지만 transparent·가산블렌딩 레이어
@@ -661,7 +716,8 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     return { c, ctx: c.getContext('2d'), tex, mesh: m };
   };
   const twk = [mkTwk(), mkTwk()];
-  paintTwinkleStars(twk[0].ctx, twk[1].ctx, DOME_W, DOME_H / 2); // 결정론 1회 페인트
+  // 결정론 1회 페인트. `starScale` 기본 1 = 옛 고정값 — **라이브 world1 은 무영향**이다.
+  paintTwinkleStars(twk[0].ctx, twk[1].ctx, DOME_W, DOME_H / 2, starScale);
   twk[0].tex.needsUpdate = twk[1].tex.needsUpdate = true;
   let twkBase = 0, twkTarget = 0; // 야간 맑음=1로 lerp, 그 외 0(별 반짝임 페이드)
 
