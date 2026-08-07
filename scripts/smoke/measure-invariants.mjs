@@ -187,15 +187,42 @@ async function drive(page, fn, ...args) {
 }
 
 /**
+ * 드로우콜 대조군 쿼리 — **사람과 GLB 를 끈 세계.**
+ *
+ * ── 왜 별도 세션인가 (태스크 #208) ──────────────────────────────────────────
+ * 기본 세션에서는 `draw` 를 **판정할 수 없다.** `npc`·`glb-city` 가 조건 없이
+ * `drawGroupKey: () => null` 을 내고, 그 근거가 맞기 때문이다 — NPC 가 있으면 카메라를
+ * 돌리는 것만으로 절두체 컬링이 달라져 드로우콜은 **정의상** 상수가 아니다.
+ *
+ * 그래서 감독 리포트에 `draw - 측정 안 됨(표본 0)` 이 두 번 찍혔고(#176), 그동안
+ * **draw 만 늘어나는 회귀는 아무도 못 잡았다.** 다른 세 축(geo·tex·pipe)이 상수라
+ * 위험이 낮아 보였을 뿐이다.
+ *
+ * ⚠ **이 쿼리로 기본 세션을 대체하지 않는다.** 이 파일의 형제인 `world2-ready.mjs` 가
+ * 정확히 그 실수를 기록하고 있다 — 게이트 넷이 `npc=0&vrm=0` 을 켜 둔 채
+ * *"개수가 상수다"* 를 선언했고, 그것은 **라이브에 없는 조건의 세계**였다. 대조군은
+ * draw 축 하나를 열려고 **추가**하는 것이고, 라이브 상태 판정은 기본 세션이 그대로 한다.
+ *
+ * `npc=0` 만으로는 안 꺼진다 — `npc.ts` 의 `create` 가 `count<=0 && vrmCount<=0` 일 때만
+ * `null` 을 낸다. 이 문자열의 근거는 각 기능의 `drawBlockHint` 다.
+ */
+export const DRAW_CONTROL_QUERY = `${WORLD2_QUERY}&npc=0&vrm=0&glb=0`;
+
+/**
  * 게이트 본체. **브라우저·서버를 주입받는다** — 스모크 하네스가 이미 세워 둔 것을 다시
  * 세우면 vite 빌드가 한 번 더 돌고, 그 시간이 곧 "게이트를 안 돌리는 이유"가 된다.
  *
  * @param {{browser: import('playwright-core').Browser, origin: string, basePath: string,
- *          log?: (s: string) => void}} env
+ *          log?: (s: string) => void, query?: string, judgeDraw?: boolean}} env
+ *   `query` 는 접속 URL 쿼리(기본 = 라이브 상태). `judgeDraw` 는 드로우콜을 **판정에
+ *   포함**할지 — 대조군에서만 true 다(기본 세션에서는 정의상 상수가 아니라 무의미하다).
  * @returns {Promise<{pass: boolean, maxGeo: number, maxTex: number, maxPipe: number,
- *                    rows: unknown[], errors: string[], base: unknown}>}
+ *                    maxDraw: number, rows: unknown[], errors: string[], base: unknown}>}
  */
-export async function runInvariants({ browser, origin, basePath, log = console.log }) {
+export async function runInvariants({
+  browser, origin, basePath, log = console.log,
+  query = WORLD2_QUERY, judgeDraw = false,
+}) {
   {
     const context = await browser.newContext({ viewport: { width: 1024, height: 640 } });
     const page = await context.newPage();
@@ -204,7 +231,7 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
     page.on('pageerror', (e) => errors.push(e.message));
 
     // GLB 가 기본 노출로 바뀐 뒤 게이트도 기본 상태를 재야 한다. 대기는 world2-ready.mjs 소유.
-    const url = `${origin}${basePath}app/world2.html${WORLD2_QUERY}`;
+    const url = `${origin}${basePath}app/world2.html${query}`;
     log(`접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
     const ready = await waitForWorld2Ready(page);
@@ -274,12 +301,13 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
     // ── 판정 ────────────────────────────────────────────────────────────────
     log('\n[결과] 기준선 대비 증가분 — 하나라도 + 면 증식이다\n');
     log('  구간              geo   tex  pipe   draw  파셀');
-    let maxGeo = 0, maxTex = 0, maxPipe = 0;
+    let maxGeo = 0, maxTex = 0, maxPipe = 0, maxDraw = 0;
     for (const r of rows) {
       const d = (b, v) => (b == null || v == null ? '  ?' : (v - b > 0 ? `+${v - b}` : '  '));
       if (base.geo != null && r.geo != null) maxGeo = Math.max(maxGeo, r.geo - base.geo);
       if (base.tex != null && r.tex != null) maxTex = Math.max(maxTex, r.tex - base.tex);
       if (base.pipe != null && r.pipe != null) maxPipe = Math.max(maxPipe, r.pipe - base.pipe);
+      if (base.draw != null && r.draw != null) maxDraw = Math.max(maxDraw, r.draw - base.draw);
       log(
         `  ${r.label.padEnd(16)} ${show(r.geo).padStart(4)}${d(base.geo, r.geo)} `
         + `${show(r.tex).padStart(4)}${d(base.tex, r.tex)} `
@@ -292,11 +320,22 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
     log(`  geometry  최대 증가 ${maxGeo >= 0 ? '+' : ''}${maxGeo}`);
     log(`  texture   최대 증가 ${maxTex >= 0 ? '+' : ''}${maxTex}`);
     log(`  pipeline  최대 증가 ${maxPipe >= 0 ? '+' : ''}${maxPipe}  (참고 — 백엔드 의존)`);
+    log(
+      `  draw      최대 증가 ${maxDraw >= 0 ? '+' : ''}${maxDraw}`
+      + `  ${judgeDraw ? '← 대조군이므로 **판정에 포함**' : '(참고 — 기본 세션에서는 컬링으로 정당하게 변한다)'}`,
+    );
 
     // 통과·실패는 백엔드 무관 카운터로만 가른다.
-    const pass = maxGeo <= 0 && maxTex <= 0 && errors.length === 0;
+    // `draw` 는 **대조군에서만** 판정에 넣는다 — 기본 세션에서는 NPC 절두체 컬링 때문에
+    // 정의상 상수가 아니고, 거기서 판정하면 게이트가 아니라 오탐 발생기가 된다.
+    const pass = maxGeo <= 0 && maxTex <= 0 && (!judgeDraw || maxDraw <= 0) && errors.length === 0;
     if (pass) {
       log('\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다.');
+    } else if (judgeDraw && maxDraw > 0 && maxGeo <= 0 && maxTex <= 0) {
+      log('\n  ✗ FAIL — 대조군에서 **드로우콜만** 늘었다.');
+      log('    지오·텍스처는 그대로인데 draw 가 늘었다는 것은 **같은 자원을 더 많은 호출로**');
+      log('    그린다는 뜻이다 — 배칭이 깨졌거나(인스턴싱 해제·재질 분화), 숨어 있던 것이');
+      log('    보이게 됐다. 대조군에는 사람도 GLB 도 없으므로 컬링 변동으로 설명되지 않는다.');
     } else if (maxGeo > 0 || maxTex > 0) {
       log('\n  ✗ FAIL — 세션 중 개수가 늘었다. **world1 이 겪은 증식이 돌아왔다.**');
       log('    위 표에서 어느 구간에 + 가 붙었는지가 원인 지점이다:');
@@ -314,7 +353,7 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
 
     log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
     await context.close();
-    return { pass, maxGeo, maxTex, maxPipe, rows, errors, base, baselineNote };
+    return { pass, maxGeo, maxTex, maxPipe, maxDraw, rows, errors, base, baselineNote };
   }
 }
 
@@ -322,14 +361,21 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
 // 단독 실행(`npm run measure:invariants`)일 때만 자기가 빌드·서버·브라우저를 세운다.
 // 스모크 하네스에서 부를 때는 위 `runInvariants` 를 직접 쓴다.
 async function cli() {
-  console.log('=== 성능 불변식 게이트 (개수 상수성) ===\n');
+  // `--control` 은 드로우콜 대조군 세션이다(사람·GLB 없음, draw 를 판정에 포함).
+  const control = process.argv.includes('--control');
+  console.log(`=== 성능 불변식 게이트 (개수 상수성)${control ? ' — 드로우콜 대조군' : ''} ===\n`);
   assembleSiteVite(SITE_DIR);
   const { origin, close: closeServer } = await startServer(SITE_DIR, BASE_PATH);
   const browser = await chromium.launch({
     executablePath: CHROMIUM_EXECUTABLE, args: CHROMIUM_ARGS, headless: true,
   });
   try {
-    const r = await runInvariants({ browser, origin, basePath: BASE_PATH });
+    const r = await runInvariants({
+      browser,
+      origin,
+      basePath: BASE_PATH,
+      ...(control ? { query: DRAW_CONTROL_QUERY, judgeDraw: true } : {}),
+    });
     process.exitCode = r.pass ? 0 : 1;
   } finally {
     await browser.close();

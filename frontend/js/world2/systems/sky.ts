@@ -42,10 +42,11 @@
 // 한 번만 로드한다. 즉 `instanceof`·씬그래프 혼선이 없다.
 
 import * as THREE from 'three/webgpu';
-import { createSkySystem } from '../../sky.js';
+import { createSkySystem, lightOf } from '../../sky.js';
 import {
   applyNightFloor, type HemiLike, type SunLike, type ExposureLike, type FogLike,
 } from './night-lights.js';
+import { createHorizonBand, type HorizonBand } from './horizon.js';
 import type { NightTune } from '../decide/night.js';
 import { nightness } from '../decide/night.js';
 import { dayLightMix, type DayLightMix } from '../decide/daylight.js';
@@ -265,6 +266,20 @@ export interface SkyOptions {
    * world2 쪽에서 낮에만 덮어쓴다.
    */
   dayLight?: Partial<DayLightMix>;
+  /**
+   * 발바닥에서 눈까지(m). **수평선 밴드의 기하가 전부 이 값에서 나온다**
+   * (`decide/horizon.ts`). 없으면 밴드를 만들지 않는다 — 눈높이를 추측해 그리면
+   * 수평선이 실제와 다른 자리에 서고, 그것은 "밴드가 없는 것" 보다 나쁘다.
+   */
+  eyeHeight?: number;
+  /**
+   * 카메라의 **월드 y**. 밴드를 눈높이에 놓는 데 쓴다.
+   *
+   * `getPos` 가 x·z 만 주는 것은 돔에는 y 가 필요 없었기 때문이다(반경 520m 에서
+   * 1.7m 는 0.19°). 밴드는 반경이 51.2m 라 같은 오프셋이 1.9° — 밴드 폭의 63% 다.
+   * 그래서 이것만 따로 받는다. 없으면 `eyeHeight` 를 평지 가정으로 쓴다.
+   */
+  getEyeY?: () => number;
 }
 
 /**
@@ -306,6 +321,21 @@ export class SkySystem implements System {
   private readonly getPos: () => { x: number; z: number };
   private readonly sunDist: number;
   private readonly dayLight?: Partial<DayLightMix>;
+  /**
+   * 수평선 밴드. `?hz=0` 이거나 `eyeHeight` 를 안 받으면 `null` 이고, 그때 화면은
+   * 이 기능이 들어오기 전과 **한 픽셀도 다르지 않다**(대조군이 곧 그 상태다).
+   */
+  private readonly horizon: HorizonBand | null;
+  /** 밴드를 놓을 눈 y. 주입이 없으면 평지 눈높이 */
+  private readonly getEyeY: () => number;
+  /**
+   * 밴드에 실제로 들어가는 색(팔레트를 향해 스무딩된 값)과 그 목표. 프레임마다 새
+   * `Color` 를 만들지 않으려고 둘을 재사용한다 — 매 프레임 도는 자리다.
+   */
+  private readonly horizonTint = new THREE.Color();
+  private readonly horizonTarget = new THREE.Color();
+  /** 팔레트 조회에 그대로 넘긴다 — 안개 틴트가 걸린 색이 곧 지평선 색이다 */
+  private readonly fogTint: number;
 
   constructor(
     scene: THREE.Scene,
@@ -341,6 +371,18 @@ export class SkySystem implements System {
       fogTint: opts.fogTint ?? 0,
       starScale: STAR_SCALE,
     });
+    // 수평선 밴드 — 바다와 하늘의 경계(태스크 #202). 왜 이 축인지·왜 안개 far 를 밀지
+    // 않는지는 `decide/horizon.ts` 머리말 한 곳이 소유한다.
+    const eyeH = opts.eyeHeight;
+    this.fogTint = opts.fogTint ?? 0;
+    this.getEyeY = opts.getEyeY ?? (() => eyeH ?? 0);
+    this.horizon = eyeH !== undefined ? createHorizonBand(scene, eyeH) : null;
+    // 첫 프레임부터 맞는 색으로 뜨게 한다. 스무딩만 두면 부팅 직후 검정에서 올라오는
+    // 것이 보인다 — 로딩 화면 뒤라 짧지만, 시작값이 없는 스무딩은 그 자체가 결함이다.
+    if (this.horizon) {
+      const st = this.engine.get();
+      this.horizonTint.set(lightOf(st.time, st.weather, this.fogTint).fog);
+    }
     // 오픈월드 기본 하늘 = 야간 맑음. fade 0으로 즉시 적용(부팅 중 크로스페이드 낭비 방지).
     this.engine.set(
       { time: opts.time ?? 'night', weather: opts.weather ?? 'clear' },
@@ -418,6 +460,47 @@ export class SkySystem implements System {
     this.applySun();
     this.liftNightLights();
     this.applyDayContrast();
+    this.updateHorizon(p, ctx.dt);
+  }
+
+  /**
+   * 수평선 밴드 갱신.
+   *
+   * ── 색 기준을 `scene.fog.color` 에서 **팔레트로** 옮겼다 (실측이 뒤집었다) ──
+   * 첫 판본은 `scene.fog.color` 를 읽었다. 밴드가 노려야 하는 것은 **하늘 돔 지평선의
+   * 색**이고(`sky.js` ⑨ *"지평선 = fog색"*), 안개도 같은 팔레트에서 나오니 같을
+   * 것이라고 생각했다. **두 군데서 틀렸다.**
+   *
+   * ① `liftNightLights` 가 `scene.fog.color` 에 밤 하한을 얹는다. 돔 텍스처에는 안
+   *    얹으므로 둘은 밤에 어긋나 있다(실측 화면 휘도: 하늘 98 · 안개 143).
+   * ② 그래서 하한 **앞에서** 읽도록 순서를 바꿨는데 **아무 차이가 없었다.**
+   *    `sky.js` 의 `applyLighting` 은 **크로스페이드 중에만** 불린다(`sky.js:1085,1166`).
+   *    평상시에 `scene.fog.color` 를 되돌려주는 코드가 없으므로, 한 번 얹힌 하한이
+   *    그대로 고착된다 — 순서를 바꿔 읽어도 이미 밝혀진 값을 읽는다.
+   *
+   *    ⚠ 이것이 이 회차에서 가장 비쌌던 오판이다. 나는 "하한 앞에서 읽으면 팔레트
+   *    색이다" 를 **코드 순서만 보고** 참이라고 적었고, 그 문장은 `applyLighting` 이
+   *    매 프레임 돈다는 전제 위에서만 참이었다. 전제를 확인하지 않았다. 화면을 다시
+   *    재지 않았다면 이 커밋은 "고쳤다" 고 적힌 채 아무것도 안 고쳤을 것이다.
+   *
+   * 그래서 **팔레트를 직접 묻는다.** `lightOf` 가 `sky.js` 의 색 SSOT 이고 돔 텍스처도
+   * 같은 함수를 거친다 — 안개를 경유하지 않으니 하한도, 갱신 시점도 끼어들 자리가 없다.
+   *
+   * ── 부드럽게 따라간다 ─────────────────────────────────────────────────────
+   * 팔레트는 `set()` 즉시 새 값이 되지만 화면의 돔은 1.8초 크로스페이드로 넘어간다.
+   * 그대로 대입하면 시간대를 바꾸는 순간 **수평선만 먼저 점프**한다. 지수 스무딩으로
+   * 따라가게 두면 그 점프가 사라진다 — `sky.js` 의 페이드 길이를 알 필요가 없다는
+   * 것이 요점이다(알아야 하는 처방은 저쪽이 바뀌는 날 조용히 어긋난다).
+   */
+  private updateHorizon(p: { x: number; z: number }, dt: number): void {
+    if (!this.horizon) return;
+    const st = this.engine.get();
+    // `lightOf` 는 `.fog` 에 팔레트 hex 를 준다. `Color.set(hex)` 가 sRGB→선형
+    // 변환을 하고, 밴드 재질도 선형이라 공간이 맞는다.
+    this.horizonTarget.set(lightOf(st.time, st.weather, this.fogTint).fog);
+    // 시정수 ≈ 0.5초. `dt` 가 크게 튀어도 1 을 넘지 않게 자른다(탭 복귀 시 dt 폭주).
+    this.horizonTint.lerp(this.horizonTarget, Math.min(1, dt * 2));
+    this.horizon.update({ x: p.x, y: this.getEyeY(), z: p.z }, this.horizonTint);
   }
 
   /**
@@ -536,6 +619,7 @@ export class SkySystem implements System {
 
   dispose(): void {
     this.engine.dispose();
+    this.horizon?.dispose();
     this.scene.remove(this.dome);
     this.dome.geometry.dispose();
     const m = this.dome.material as THREE.MeshBasicMaterial;

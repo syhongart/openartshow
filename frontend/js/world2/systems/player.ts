@@ -138,7 +138,14 @@ export interface PlayerOptions {
   eyeHeight?: number;
   /** 헤드밥 진폭(m). **0이면 끈다** — 감독 실기기 비교용(`?bob=0`) */
   bobAmplitude?: number;
-  start?: { x: number; z: number };
+  /**
+   * 시작 위치. `yaw` 는 **있을 때만** 적용한다(rad) — 없으면 지금까지처럼 0 이다.
+   *
+   * 물가 스폰(`?at=river|sea`)이 물 쪽을 보게 하려고 열었다. 좌표만 옮기면 바다에
+   * 세워 놓고 **도시를 보게 하는** 일이 생기고(실측 2026-08-07), 그러면 "링크 하나로
+   * 확인" 이라는 노브의 목적이 절반만 달성된다.
+   */
+  start?: { x: number; z: number; yaw?: number };
   /** 카메라에 위치·회전을 반영한다 */
   applyCamera?: (x: number, y: number, z: number, yaw: number, pitch: number) => void;
 
@@ -209,6 +216,9 @@ export class PlayerSystem implements System {
     this.bobAmp = opts.bobAmplitude ?? BOB_AMPLITUDE;
     this.x = opts.start?.x ?? 0;
     this.z = opts.start?.z ?? 0;
+    // `?? 0` 이 아니라 조건이다 — 아래 `yaw` 필드 초기값이 0 이고, 여기서 다시 0 을
+    // 대입하면 "기본값을 두 곳이 적는" 형태가 된다.
+    if (opts.start?.yaw !== undefined) this.yaw = opts.start.yaw;
     this.apply = opts.applyCamera;
     this.waterSurfaceY = opts.waterSurfaceY;
     // 기본값을 두지 않는다 — 물 판정을 안 주면 어차피 안 쓰이고, 숫자를 여기 적으면
@@ -288,6 +298,14 @@ export class PlayerSystem implements System {
   }
 
   get position(): { x: number; z: number } { return { x: this.x, z: this.z }; }
+  /**
+   * 발바닥에서 눈까지(m). **읽기 전용으로 내주는 이유**: 수평선 밴드의 각도가 이 값에서
+   * 나온다(`decide/horizon.ts`). 소비자가 `?eye=` 를 다시 읽으면 그 순간 값 미러링이고,
+   * 감독이 눈높이를 바꾸는 날 수평선만 옛 높이에 남는다.
+   *
+   * **현재 눈의 월드 y 가 아니다** — 그것은 잠김에 따라 움직이므로 카메라에서 읽는다.
+   */
+  get eyeHeight(): number { return this.eye; }
   /** 이동 방향. 정지 중이면 시선 방향을 쓴다 — 서서 둘러볼 때 그쪽을 미리 올리려는 것 */
   get direction(): { x: number; z: number } {
     const keys = this.input.forward || this.input.back || this.input.left || this.input.right;
