@@ -124,6 +124,37 @@
 > 읽었고, **두 에이전트가 서로를 밟는 경우**를 같은 조항으로 보지 않았다. 조항이 없어서가
 > 아니라 좁게 읽어서 났다.
 
+### 2026-08-06 · 부팀장 — 🚨 라이브가 10시간째 옛 판본이다 (GitHub Pages 층 장애)
+
+**감독 개입이 필요하다.** 우리가 할 수 있는 것은 다 했다.
+
+라이브(`syhongart.github.io/openartshow`)가 **05:01 판본 `ff95332`** 를 서빙하고 있다.
+그 이후 main 커밋 7개·gh-pages 배포 5번이 하나도 반영되지 않았다.
+
+층을 갈랐다 — **우리 파이프라인은 전부 정상이다**:
+
+| 층 | 상태 |
+|---|---|
+| CI (`verify`·`smoke`) | ✅ 매번 통과 |
+| `deploy` job (gh-pages 푸시) | ✅ 매번 success. head `096efe0`, `_deploy-sha.txt` = `12cd67c` |
+| **`pages-build-deployment`** (GitHub 관리) | ❌ **12:16 부터 5연속 실패** |
+
+실패 로그는 5번 모두 동일하다 — `Current status: deployment_in_progress` 를 10분간
+반복하다 `Timeout reached, aborting!` → `Canceling Pages deployment...`.
+**GitHub Pages 서비스 쪽에서 배포가 진행중 상태로 걸린다.** 마지막 성공은 05:01.
+
+**부팀장이 시도한 것과 막힌 이유**: `rerun_failed_jobs`·`workflow_dispatch` 둘 다
+통합 토큰 권한으로 **403**(GitHub 관리 워크플로라 손댈 수 없다). main push 가 유일한
+재트리거 경로여서 PR #87 병합으로 한 번 더 걸었고, 그것도 같은 지점에서 죽었다.
+컨테이너 프록시가 `github.io` 를 403 으로 막아 라이브 URL 직접 확인도 불가하다.
+
+**저장소 소유자만 할 수 있는 것**: ① Settings→Pages 소스가 `gh-pages` 인지 확인
+② Actions 탭에서 `pages-build-deployment` 수동 Re-run ③ githubstatus.com 확인.
+
+판정·런북은 `ARCHITECTURE.md §7` 의 `verify-live` FAIL 런북에 층 구분을 추가해 두었다.
+**이 사고는 `verify-live`(#128) 없이는 아무도 몰랐을 것이다** — 우리 쪽 신호가 전부
+초록인 채로 라이브만 10시간 멈춰 있었다. 배포 후 축이 왜 필요한지의 실례다.
+
 ### 2026-08-06 · 검수관 — 로비 룩 노브(PR #86) 승인 (블로커 0)
 
 `dc7d5b1`(CSS 순수 이동)을 재추출해 1,662줄 중 1줄(값 미러링 주석)만 다름을 확인,
