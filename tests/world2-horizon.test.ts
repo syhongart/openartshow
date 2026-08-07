@@ -13,10 +13,11 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  HORIZON_MIN, HORIZON_MAX, HORIZON_DEFAULT,
+  HORIZON_MIN, HORIZON_MAX, HORIZON_NIGHT, HORIZON_LIT, HORIZON_TARGET_RATIO,
   eyeAboveSea, horizonBandAngle, horizonFogAt, horizonAlphaProfile,
-  horizonRadius, horizonFog,
+  horizonRadius, horizonFog, horizonStrength,
 } from '../frontend/js/world2/decide/horizon.js';
+import { TIMES } from '../frontend/js/world2/decide/night.js';
 import { SEA_Y } from '../frontend/js/world2/decide/water.js';
 import { fogBand } from '../frontend/js/world2/decide/fog.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
@@ -89,11 +90,61 @@ describe('수평선 밴드 판정', () => {
     expect(horizonFog()).toEqual(fogBand(DEFAULT_LAYOUT.cellX));
   });
 
-  it('노브 범위: 기본값이 범위 안이고 상한이 1 미만이다', () => {
-    expect(HORIZON_DEFAULT).toBeGreaterThan(HORIZON_MIN);
-    expect(HORIZON_DEFAULT).toBeLessThanOrEqual(HORIZON_MAX);
+  it('노브 범위: 시간대 기본값이 전부 범위 안이고 상한이 1 미만이다', () => {
+    for (const t of TIMES) {
+      const s = horizonStrength(t);
+      expect(s, `${t} 기본 세기`).toBeGreaterThan(HORIZON_MIN);
+      expect(s, `${t} 기본 세기`).toBeLessThanOrEqual(HORIZON_MAX);
+    }
     // 1 이면 밴드가 검정이 된다 — 후보에 넣지 않는다.
     expect(HORIZON_MAX).toBeLessThan(1);
+  });
+});
+
+// ── 시간대별 세기 ───────────────────────────────────────────────────────────
+// 같은 `hz` 가 시간대마다 다르게 일한다(톤매핑 어깨). 낮은 0.3 에서 밴드/하늘 비율이
+// 0.988 — 밴드가 켜져 있는데 사실상 꺼진 것과 같았고, 감독이 *"낮에도 이렇게"* 라고
+// 한 것이 그 상태다. 그 분기가 실제로 살아 있는지 **값으로** 본다.
+describe('시간대별 밴드 세기', () => {
+  it('밤과 낮이 다른 값이다 — 분기가 죽으면 낮이 다시 사실상 꺼진다', () => {
+    expect(horizonStrength('night')).toBe(HORIZON_NIGHT);
+    expect(horizonStrength('day')).toBe(HORIZON_LIT);
+    // 자릿수 차이가 이 분기의 존재 이유다. 둘이 가까워지면 분기가 장식이 된다.
+    expect(HORIZON_LIT).toBeGreaterThan(HORIZON_NIGHT * 2);
+  });
+
+  it('노을은 낮 쪽이다 — 밝은 안개 팔레트를 공유한다', () => {
+    expect(horizonStrength('sunset')).toBe(HORIZON_LIT);
+  });
+
+  it('모르는 시간대는 밝은 쪽으로 떨어진다 — 밤 세기가 낮에 새면 밴드가 죽는다', () => {
+    // `nightness()` 가 모르는 값을 낮으로 보는 것과 같은 규약이다. 반대로 떨어지면
+    // 새 시간대를 추가하는 날 그 시간대만 밴드가 조용히 꺼진다.
+    expect(horizonStrength('golden-hour')).toBe(HORIZON_LIT);
+  });
+
+  it('`?hz=` 오버라이드가 전 시간대를 덮는다 — 감독이 링크로 비교한다', () => {
+    for (const t of TIMES) expect(horizonStrength(t, 0.42)).toBe(0.42);
+  });
+
+  it('오버라이드는 범위로 잘린다 — `?hz=99` 가 밴드를 검정으로 만들지 않는다', () => {
+    expect(horizonStrength('day', 99)).toBe(HORIZON_MAX);
+    expect(horizonStrength('day', -5)).toBe(HORIZON_MIN);
+  });
+
+  it('오버라이드 0 은 0 이다 — `null`(미지정)과 구별된다', () => {
+    // `readNum` 을 쓰면 이 구별이 불가능하다. 0 이 기본값으로 되돌아가면 대조군
+    // (`?hz=0`)을 볼 방법 자체가 사라진다.
+    expect(horizonStrength('night', 0)).toBe(0);
+    expect(horizonStrength('night', null)).toBe(HORIZON_NIGHT);
+  });
+
+  it('기준 비율은 감독이 판정한 밤 화면에서 온다 — 0..1 안의 실수다', () => {
+    // 세 세기가 전부 이 하나에서 유도됐다는 것이 설계의 요점이다. 값 자체를 단언하는
+    // 대신(그러면 이 파일이 미러가 된다) 범위와 방향만 묶는다 — 1 이상이면 "밴드가
+    // 하늘보다 밝아도 된다" 는 뜻이 되어 부등식이 뒤집힌다.
+    expect(HORIZON_TARGET_RATIO).toBeGreaterThan(0);
+    expect(HORIZON_TARGET_RATIO).toBeLessThan(1);
   });
 });
 
@@ -133,6 +184,28 @@ describe('수평선 밴드 배선', () => {
     // 부팅 호출만 남으면 시간대가 바뀔 때 수평선만 옛 색에 머문다 — 이 저장소가
     // `groundTint` 에서 겪은 형태이고, 뮤테이션 한 건이 안 죽어서 드러났던 자리다.
     expect(body![1]).toMatch(/this\.updateHorizon\(/);
+  });
+
+  it('세기가 **시간대에서** 매 프레임 계산돼 밴드로 넘어간다', () => {
+    const s = SRC('frontend/js/world2/systems/sky.ts');
+    const body = /private updateHorizon\([\s\S]*?\n  \}/.exec(s);
+    expect(body).not.toBeNull();
+    const u = body![0];
+    // 시간대를 안 보고 상수를 넘기면 낮이 다시 밤 세기로 돌아간다 — 화면에는
+    // "밴드가 원래 낮에는 약한 것" 과 똑같이 보인다.
+    expect(u).toMatch(/bandStrength\(/);
+    // 넘기기까지 확인한다. 계산만 하고 안 넘기면 판정/집행 경계가 또 비는데,
+    // 그 구멍은 양쪽 테스트 어디에도 안 걸린다(이 저장소가 이름 붙인 형태다).
+    // 인자 개수를 세지 않는 이유: 첫 인자에 `this.getEyeY()` 가 들어 있어 괄호
+    // 세기가 성립하지 않고, 그런 정규식은 표현만 바뀌는 리팩터에 거짓 FAIL 을 낸다.
+    expect(u).toMatch(/this\.horizon\.update\(.*this\.horizonDim/);
+  });
+
+  it('`?hz=` 를 `readNumOpt` 로 읽는다 — 미지정과 0 을 구별해야 한다', () => {
+    const s = SRC('frontend/js/world2/systems/horizon.ts');
+    expect(s).toMatch(/readNumOpt\(\s*HORIZON_KNOB/);
+    // `readNum` 으로 되돌아가면 fallback 이 강제돼 시간대 분기가 통째로 죽는다.
+    expect(s).not.toMatch(/readNum\(\s*HORIZON_KNOB/);
   });
 
   it('밴드 재질이 `depthTest` 를 끄지 않는다', () => {

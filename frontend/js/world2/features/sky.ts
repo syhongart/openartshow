@@ -84,7 +84,11 @@ export const skyFeature: Feature = {
           hemiI: readNum('nhemi', NIGHT_HEMI_I, 0, 4),
           sunI: readNum('nsun', NIGHT_SUN_I, 0, 4),
           exposure: readNum('nexp', NIGHT_EXPOSURE, 0.2, 3),
-          fogScale: readNum('nfog', NIGHT_FOG_SCALE, 0.2, 4),
+          // 하한 0.05: 기본값(0.2)이 곧 클램프 하한이면 **그 아래를 볼 수 없다.**
+          // 0.2 는 하한이 팔레트를 못 이기게 만드는 값이라(`decide/night.ts`) 더
+          // 내리면 안개가 팔레트보다 어두워지는 구간이고, 그 구간을 못 보면
+          // "0.2 가 바닥인가" 를 감독이 화면으로 확인할 방법이 없다.
+          fogScale: readNum('nfog', NIGHT_FOG_SCALE, 0.05, 4),
           groundScale: readNum('nground', NIGHT_GROUND_SCALE, 0.2, 4),
         },
 

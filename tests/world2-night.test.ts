@@ -305,19 +305,39 @@ describe('노출과 안개 — 계산한 값이 실제로 소비되는가', () =
     expect(t.hemi.intensity).toBeGreaterThan(0.55);
   });
 
-  it('안개색은 일부러 손대지 않는다 — 하늘 지평선과 같아야 한다 (감독 스크린샷)', () => {
+  it('기본값에서 안개 하한이 팔레트를 못 이긴다 — 지평선보다 밝게 뜨지 않는다', () => {
     // 감독: *"안개가 안보여"*. `sky.js` 가 하늘 돔 지평선을 안개색으로 칠하므로
     // (그 파일 주석 ⑨ *"지평선 = fog색 — 이음새 제거의 핵"*) 안개만 밝히면 원경이
     // 하늘에 녹아드는 대신 **하늘보다 밝게 떠서 도드라진다.**
     //
-    // 그래서 `NIGHT_FOG_SCALE` 이 1이다. 이 검사가 없으면 "밤이 어둡다" 지적이 또
-    // 왔을 때 가장 만만해 보이는 이 축을 다시 올리게 된다.
+    // ── 이 검사는 원래 *"안개색을 한 톨도 안 바꾼다"* 였고 `NIGHT_FOG_SCALE = 1` 을
+    //    지키고 있었다. **그런데 1 이 항등원이 아니었다** — 하한이 얹히는 채널은
+    //    선형인데 `NIGHT_FOG` 는 sRGB 숫자라, 1 에서 안개가 팔레트보다 3~5배 밝게
+    //    고착돼 있었다(전말은 `decide/night.ts` 의 `NIGHT_FOG_SCALE`). 즉 그 검사는
+    //    **자기가 지킨다고 적은 것을 지키지 못한 채 통과**하고 있었다.
+    //
+    // 그래서 수단(= 값 무변경)이 아니라 **목적**을 검사한다: 하한 적용 뒤 안개가
+    // 팔레트 선형색보다 밝아지지 않을 것. 이러면 `NIGHT_FOG` 의 색공간을 나중에
+    // 바로잡아도(그때 항등원은 다시 1 이 된다) 이 검사는 그대로 유효하다.
     const t = targets();
-    const before = { ...t.fog.color };
+    // `targets()` 의 `fog.color` 는 `sky.js` 밤 팔레트를 **선형으로** 담고 있다.
+    const palette = { ...t.fog.color };
     applyNightFloor(t, 'night');
-    expect(t.fog.color.r).toBeCloseTo(before.r, 6);
-    expect(t.fog.color.g).toBeCloseTo(before.g, 6);
-    expect(t.fog.color.b).toBeCloseTo(before.b, 6);
+    for (const ch of ['r', 'g', 'b'] as const) {
+      // 5% 는 유도값(0.196)과 채택값(0.2) 사이의 r 채널 여유(2.7%)를 덮는 선이다.
+      // 0 으로 잡으면 그 2.7% 에 걸려 FAIL 하고, 크게 잡으면 1.6 같은 회귀를 놓친다.
+      expect(t.fog.color[ch], `${ch} 채널`).toBeLessThanOrEqual(palette[ch] * 1.05);
+    }
+  });
+
+  it('안개를 밝히는 회귀는 여전히 잡힌다 — 위 검사가 장식이 아님', () => {
+    // 뮤테이션을 테스트로 굳힌 것이다. `NIGHT_FOG_SCALE` 이 1.6(옛 사고값)으로
+    // 되돌아가는 형태를 그대로 재현해, 위 단언이 실제로 깨지는 조건을 못 박는다.
+    const t = targets();
+    const palette = { ...t.fog.color };
+    applyNightFloor(t, 'night', { fogScale: 1.6 });
+    const brighter = (['r', 'g', 'b'] as const).some((ch) => t.fog.color[ch] > palette[ch] * 1.05);
+    expect(brighter, 'fogScale 1.6 인데 안개가 안 밝아졌다 — 이 축이 죽어 있다').toBe(true);
   });
 
   it('낮은 여전히 무변경이다 — 밤 기본값이 낮으로 새면 안 된다', () => {
