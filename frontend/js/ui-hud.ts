@@ -1143,18 +1143,6 @@ function bindGlobalKeys() {
 // Public API
 // ---------------------------------------------------------------------------
 
-// ?look= 노브 — 로비 룩 후보를 재배포 없이 비교하기 위한 것(css/gallery-looks.css).
-// 화이트리스트로 받는 이유: dataset 에 임의 문자열이 들어가면 URL 이 CSS 셀렉터 표면이
-// 된다. 값이 목록에 없거나 파라미터가 없으면 아무것도 설정하지 않고, 그러면 오버라이드
-// 규칙이 하나도 매칭되지 않아 **기본 화면은 현행 그대로**다(회귀 위험 0).
-const LOOKS = ['b', 'c', 'd'];
-function applyLookKnob() {
-  try {
-    const v = new URLSearchParams(location.search).get('look');
-    if (v && LOOKS.includes(v)) document.documentElement.dataset.look = v;
-  } catch { /* location 이 없는 환경(테스트 등) — 노브는 없어도 되는 것이다 */ }
-}
-
 export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle }: {
   onEnter?: (...a: any[]) => void; onChatSend?: (...a: any[]) => void;
   onAvatarChange?: (...a: any[]) => void; onMakerToggle?: (...a: any[]) => void;
@@ -1167,7 +1155,6 @@ export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle }: {
     return;
   }
   initialized = true;
-  applyLookKnob();
   callbacks.onEnter = onEnter || null;
   callbacks.onChatSend = onChatSend || null;
   callbacks.onAvatarChange = onAvatarChange || null;

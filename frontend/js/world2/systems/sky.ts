@@ -46,7 +46,7 @@ import { createSkySystem, lightOf } from '../../sky.js';
 import {
   applyNightFloor, type HemiLike, type SunLike, type ExposureLike, type FogLike,
 } from './night-lights.js';
-import { createHorizonBand, type HorizonBand } from './horizon.js';
+import { createHorizonBand, bandStrength, type HorizonBand } from './horizon.js';
 import type { NightTune } from '../decide/night.js';
 import { nightness } from '../decide/night.js';
 import { dayLightMix, type DayLightMix } from '../decide/daylight.js';
@@ -334,6 +334,16 @@ export class SkySystem implements System {
    */
   private readonly horizonTint = new THREE.Color();
   private readonly horizonTarget = new THREE.Color();
+  /**
+   * 지금 밴드에 걸린 세기. 목표(`bandStrength(time)`)를 향해 색과 **같은 시정수로**
+   * 따라간다.
+   *
+   * 색만 스무딩하고 세기를 즉시 대입하면 낮↔밤 전환에서 수평선 대비만 계단으로 튄다
+   * (낮 0.75 · 밤 0.3 — 두 배 넘는 차다). 하늘 돔은 1.8초 크로스페이드로 넘어가므로
+   * 그 계단은 화면에서 "수평선이 먼저 바뀌는" 것으로 보인다. `-1` 은 미초기화 표식이다
+   * — 첫 프레임에 목표로 즉시 맞춰 부팅 직후의 페이드인을 없앤다.
+   */
+  private horizonDim = -1;
   /** 팔레트 조회에 그대로 넘긴다 — 안개 틴트가 걸린 색이 곧 지평선 색이다 */
   private readonly fogTint: number;
 
@@ -499,8 +509,13 @@ export class SkySystem implements System {
     // 변환을 하고, 밴드 재질도 선형이라 공간이 맞는다.
     this.horizonTarget.set(lightOf(st.time, st.weather, this.fogTint).fog);
     // 시정수 ≈ 0.5초. `dt` 가 크게 튀어도 1 을 넘지 않게 자른다(탭 복귀 시 dt 폭주).
-    this.horizonTint.lerp(this.horizonTarget, Math.min(1, dt * 2));
-    this.horizon.update({ x: p.x, y: this.getEyeY(), z: p.z }, this.horizonTint);
+    const k = Math.min(1, dt * 2);
+    this.horizonTint.lerp(this.horizonTarget, k);
+    // 세기도 **같은 시정수로** 따라간다(위 `horizonDim` 주석). 시간대는 엔진에 묻는다 —
+    // 밴드 색과 같은 출처를 봐야 색과 세기가 갈리지 않는다.
+    const want = bandStrength(st.time);
+    this.horizonDim = this.horizonDim < 0 ? want : this.horizonDim + (want - this.horizonDim) * k;
+    this.horizon.update({ x: p.x, y: this.getEyeY(), z: p.z }, this.horizonTint, this.horizonDim);
   }
 
   /**
