@@ -15,7 +15,7 @@
 // 인스턴스 색은 파이프라인 캐시키를 늘리지 않는다(구조 신호가 아니다).
 
 import * as THREE from 'three/webgpu';
-import type { InstancePools } from './instancing.js';
+import type { InstancePools, SlotHandle } from './instancing.js';
 import type { SlotPool } from './parcel-builder.js';
 import { PARTS, tonesFor, type PartKind } from '../parts/index.js';
 import type { PartAsset } from '../parts/types.js';
@@ -33,19 +33,43 @@ export function createPartAssets(): Record<PartKind, PartAsset> {
 }
 
 /**
- * `InstancePools` 를 파셀 빌더가 쓰는 좁은 인터페이스로 감싼다.
- * 여기서만 tone 번호 → THREE.Color 변환이 일어난다.
+ * tone 이 확정한 **최종 색을 가로채는 문**. 없으면 지금까지처럼 즉시 칠한다.
+ *
+ * ── 인터페이스가 왜 여기(소비자 쪽)에 있는가 ────────────────────────────────
+ * 이 문을 실제로 쓰는 것은 `createSlotPool` 이고, 구현은 `systems/parcel-fade.ts` 다.
+ * 소비자가 인터페이스를 소유하면 구현을 갈아끼워도 여기가 안 바뀌고, 무엇보다 이
+ * 파일이 페이드를 **모른다** — 페이드를 걷어내는 날 `parcel-fade.ts` 만 지우면 된다.
  */
-export function createSlotPool(pools: InstancePools): SlotPool {
+export interface ToneSink {
+  /** 슬롯이 최종적으로 가져야 할 색(팔레트 hex). 즉시 칠할지 서서히 칠할지는 구현이 정한다 */
+  apply(h: SlotHandle, hex: number): void;
+  /** 슬롯이 반납된다. 진행 중인 상태가 있으면 여기서 버린다 */
+  release?(h: SlotHandle): void;
+}
+
+/**
+ * `InstancePools` 를 파셀 빌더가 쓰는 좁은 인터페이스로 감싼다.
+ * 여기서만 tone 번호 → 팔레트 hex 변환이 일어난다.
+ *
+ * @param sink 색을 가로챌 문. 생략하면 종전대로 즉시 칠한다(페이드 없음).
+ */
+export function createSlotPool(pools: InstancePools, sink?: ToneSink): SlotPool {
   const c = new THREE.Color();
   return {
     acquire: (key) => pools.acquire(key),
     setTransform: (h, x, y, z, ry, sx, sy, sz) => pools.setTransform(h, x, y, z, ry, sx, sy, sz),
     setTone: (h, tone) => {
       const palette = tonesFor(h.key);
-      c.setHex(palette[tone % palette.length] ?? palette[0]);
+      const hex = palette[tone % palette.length] ?? palette[0];
+      if (sink) { sink.apply(h, hex); return; }
+      c.setHex(hex);
       pools.setColor(h, c);
     },
-    release: (h) => pools.release(h),
+    release: (h) => {
+      // 순서가 중요하다: 풀에 반납하면 핸들이 죽은 표식(index=-1)을 달아 sink 가 자기
+      // 항목을 못 찾는다. 먼저 sink 에서 걷고 반납한다.
+      sink?.release?.(h);
+      pools.release(h);
+    },
   };
 }

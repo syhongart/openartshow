@@ -12,6 +12,8 @@ import { createRendererAdapter, type RendererAdapter } from './adapters/renderer
 import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
 import { PooledParcelBuilder } from './systems/parcel-builder.js';
+import { ParcelFadeSystem } from './systems/parcel-fade.js';
+import { FADE_SECONDS, FADE_EASE, FADE_EASES } from './decide/lod-fade.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
@@ -243,9 +245,26 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 배수**이고 기본값 1 이 그 SSOT 를 그대로 쓴다 — 배수를 여기 상수로 박지 않는다.
   const fogDist = readNum('fogd', 1, 0, 20);
   const fog = fogBand(CELL_X);
+  /** 안개색. LOD 페이드의 시작색이기도 해서 상수로 뽑는다 — 두 곳에 적지 않는다 */
+  const FOG_HEX = 0x0b0d12;
   scene.fog = fogDist > 0
-    ? new THREE.Fog(0x0b0d12, fog.near * fogDist, fog.far * fogDist)
+    ? new THREE.Fog(FOG_HEX, fog.near * fogDist, fog.far * fogDist)
     : null;
+  /** 안개가 꺼져 있을 때(`?fogd=0`) 페이드가 출발할 색 */
+  const fogFallback = new THREE.Color(FOG_HEX);
+
+  // ── LOD 페이드 — 새 파셀이 안개에서 배어 나오게 (감독 지시 2026-08-07) ────
+  //
+  // 감독: *"ldo로 건물들이 나타날때 디졸브 철럼 나오게 가능? 현재는 팍"*
+  //
+  //   ?lodfade=N      페이드 시간(초). **0 이면 끈다** = 종전 동작
+  //   ?lodease=NAME   커브. lin | in | out | smooth
+  //
+  // 왜 "팍" 이 나는지(등장 지점의 안개 진행률 62.5%)와 기본값의 근거는
+  // `decide/lod-fade.ts` 한 곳이다 — 여기에 숫자를 다시 적지 않는다.
+  // 기본값은 **감독 판정 대기 중인 잠정치**이고, 판정은 이 두 노브로 받는다.
+  const lodFade = readNum('lodfade', FADE_SECONDS, 0, 5);
+  const lodEase = readEnum('lodease', FADE_EASE, FADE_EASES);
 
   // 걷는 감각 — 감독 실기기에서 값을 확정하기 위해 URL 로 연다.
   //
@@ -308,6 +327,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let streaming: StreamingSystem | null = null;
   let adapt: AdaptSystem | null = null;
   let builder: PooledParcelBuilder | null = null;
+  let parcelFade: ParcelFadeSystem | null = null;
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
   let features: MountedFeature[] = [];
 
@@ -535,8 +555,20 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       },
 
       stream: async (report, yieldFrame) => {
+        // 페이드를 **빌더보다 먼저** 만든다 — 슬롯 어댑터 안쪽에 꽂아야 tone 이 확정한
+        // 색을 가로챌 수 있다. `gate` 가 `streaming` 을 늦게 읽는 것은 의도다:
+        // 초기 충전이 끝나기 전에는 페이드를 걸지 않는다(세계 전체가 서서히 뜨는 것은
+        // 감독이 말한 "건물들이 나타날때" 가 아니다).
+        parcelFade = new ParcelFadeSystem({
+          pools: pools!,
+          duration: lodFade,
+          ease: lodEase,
+          // `three/webgpu` 는 `Fog` 타입을 재수출하지 않아 구조로 읽는다.
+          fadeColor: () => (scene.fog as { color?: THREE.Color } | null)?.color ?? fogFallback,
+          gate: () => streaming?.ready ?? false,
+        });
         builder = new PooledParcelBuilder({
-          pool: createSlotPool(pools!), cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
+          pool: createSlotPool(pools!, parcelFade.sink()), cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
         });
         streaming = new StreamingSystem({
           builder,
@@ -582,7 +614,13 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 기능들 사이의 순서는 `features/index.ts`의 배열 순서다 — 거기서 정한다.
         kernel.add(player);
         for (const m of features) if (m.instance.system) kernel.add(m.instance.system);
-        kernel.add(streaming).add(adapt);
+        // `parcelFade` 가 `streaming` **뒤**인 이유: 이번 프레임에 태어난 슬롯은
+        // `sink.apply` 가 이미 안개색으로 덮었고, 여기서는 진행만 한다. 그래서 새 슬롯이
+        // 첫 프레임에 dt(≈16ms) 만큼 앞서 나가지만 기본 커브(`in`)에서 0.2% 미만이다
+        // (60fps·0.45초 기준 (16.67/450)² ≈ 0.14%) —
+        // 순서를 뒤집어 없앨 수도 있으나 그러면 "이번 프레임 것은 다음 프레임부터" 라는
+        // 예외를 시스템 순서로 표현하게 되어, 읽는 사람이 그 규칙을 알아야 한다.
+        kernel.add(streaming).add(parcelFade).add(adapt);
         kernel.start();
 
         // 커널이 돌아야 파셀이 채워진다 — 여기서 블로킹 루프를 돌면 교착한다.

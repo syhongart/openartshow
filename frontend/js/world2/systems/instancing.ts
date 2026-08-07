@@ -32,6 +32,31 @@ const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 const _s = new THREE.Vector3(1, 1, 1);
+/** 슬롯 반납 시 색을 옮기는 임시 버퍼 */
+const _c = new THREE.Color();
+
+/**
+ * 인스턴스 속성의 일부 구간만 GPU 로 올린다.
+ *
+ * three r171 에서 `updateRange`(단일 객체)가 `updateRanges`(배열)로 바뀌었고, 둘 다
+ * **요소 단위**라 인스턴스 인덱스에 요소 폭을 곱해야 한다(행렬 16, 색 3).
+ * 이 환산이 두 곳에 흩어져 있으면 한쪽만 고쳐도 아무도 모른다 — 그래서 한 함수다.
+ */
+function uploadRange(attr: THREE.InstancedBufferAttribute, lo: number, hi: number, stride: number): void {
+  const a = attr as unknown as {
+    updateRanges?: { start: number; count: number }[];
+    updateRange?: { offset: number; count: number };
+    needsUpdate: boolean;
+  };
+  if (a.updateRanges) {
+    a.updateRanges.length = 0;
+    a.updateRanges.push({ start: lo * stride, count: (hi - lo + 1) * stride });
+  } else if (a.updateRange) {
+    a.updateRange.offset = lo * stride;
+    a.updateRange.count = (hi - lo + 1) * stride;
+  }
+  a.needsUpdate = true;
+}
 
 export interface SlotHandle {
   /** 이 핸들이 속한 풀 키 */
@@ -58,6 +83,9 @@ interface Pool {
   owners: (SlotHandle | null)[];
   loRange: number;
   hiRange: number;
+  /** 색 갱신 구간. 행렬과 따로 잡는다 — 페이드는 색만 만지고 행렬은 안 만진다 */
+  loColor: number;
+  hiColor: number;
 }
 
 export class InstancePools {
@@ -90,7 +118,8 @@ export class InstancePools {
     mesh.instanceMatrix.needsUpdate = true;
     this.group.add(mesh);
     this.pools.set(spec.key, {
-      spec, mesh, used: 0, owners: new Array(spec.max).fill(null), loRange: 0, hiRange: -1,
+      spec, mesh, used: 0, owners: new Array(spec.max).fill(null),
+      loRange: 0, hiRange: -1, loColor: 0, hiColor: -1,
     });
   }
 
@@ -150,16 +179,24 @@ export class InstancePools {
     this.touch(p, h.index);
   }
 
-  /** 인스턴스 색. instanceColor는 파이프라인 캐시키를 늘리지 않는다(구조 신호가 아니다). */
+  /**
+   * 인스턴스 색. instanceColor는 파이프라인 캐시키를 늘리지 않는다(구조 신호가 아니다).
+   *
+   * ── 매 프레임 불릴 수 있다 ─────────────────────────────────────────────
+   * LOD 페이드(`systems/parcel-fade.ts`)가 등장 중인 슬롯 색을 프레임마다 고쳐 쓴다.
+   * 그래서 행렬과 **같은 방식으로 구간만** 올린다 — 예전에는 여기서 곧장
+   * `needsUpdate = true` 를 세워 풀 전체(max×3 float)를 매번 재업로드했다.
+   */
   setColor(h: SlotHandle, color: THREE.Color): void {
     const p = this.pools.get(h.key);
     if (!p) return;
+    if (h.index < 0) return; // 죽은 핸들 — 남의 슬롯을 칠하지 않는다
     if (!p.mesh.instanceColor) {
       // 최초 1회만 생성 — 이것도 부팅 중에 미리 깨워두는 게 좋다(warmColors 참조).
       p.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(p.spec.max * 3).fill(1), 3);
     }
     p.mesh.setColorAt(h.index, color);
-    if (p.mesh.instanceColor) p.mesh.instanceColor.needsUpdate = true;
+    this.touchColor(p, h.index);
   }
 
   /**
@@ -185,6 +222,17 @@ export class InstancePools {
     if (h.index !== last) {
       p.mesh.getMatrixAt(last, _m);
       p.mesh.setMatrixAt(h.index, _m);
+      // ── 색도 함께 옮긴다 ──────────────────────────────────────────────
+      // 오래 빠져 있던 부분이다. 행렬만 옮기면 이사 온 인스턴스가 **그 자리에 남아
+      // 있던 옛 색**을 물려받는다. tone 팔레트가 같은 종류 안에서 서로 비슷해 눈에 잘
+      // 안 띄었을 뿐이고, LOD 페이드가 붙으면 "등장 중이라 안개색인 슬롯" 의 색이
+      // 살아 있는 건물에 얹혀 증폭된다. 뮤테이션(이 줄들을 지우면 깨지는가)은
+      // `tests/world2-lod-fade.test.ts` §3 이 본다.
+      if (p.mesh.instanceColor) {
+        p.mesh.getColorAt(last, _c);
+        p.mesh.setColorAt(h.index, _c);
+        this.touchColor(p, h.index);
+      }
       const moved = p.owners[last];
       if (moved) { moved.index = h.index; p.owners[h.index] = moved; }
       this.touch(p, h.index);
@@ -203,24 +251,29 @@ export class InstancePools {
     if (index > p.hiRange) p.hiRange = index;
   }
 
+  /** 색 갱신 구간. 행렬과 나눠 두는 이유는 페이드가 색만 만지기 때문이다 */
+  private touchColor(p: Pool, index: number): void {
+    if (p.hiColor < p.loColor) { p.loColor = index; p.hiColor = index; return; }
+    if (index < p.loColor) p.loColor = index;
+    if (index > p.hiColor) p.hiColor = index;
+  }
+
   /**
    * 프레임 끝에 부른다. 이번 프레임에 만진 구간만 GPU로 올린다.
    * three r171의 `updateRange`는 요소 단위이므로 행렬 16개분으로 환산한다.
    */
   flush(): void {
     for (const p of this.pools.values()) {
-      if (p.hiRange < p.loRange) continue;
-      const attr: any = p.mesh.instanceMatrix;
-      if (attr.updateRanges) {
-        // r171+: updateRanges 배열 방식
-        attr.updateRanges.length = 0;
-        attr.updateRanges.push({ start: p.loRange * 16, count: (p.hiRange - p.loRange + 1) * 16 });
-      } else if (attr.updateRange) {
-        attr.updateRange.offset = p.loRange * 16;
-        attr.updateRange.count = (p.hiRange - p.loRange + 1) * 16;
+      if (p.hiRange >= p.loRange) {
+        uploadRange(p.mesh.instanceMatrix, p.loRange, p.hiRange, 16);
+        p.loRange = 0; p.hiRange = -1;
       }
-      attr.needsUpdate = true;
-      p.loRange = 0; p.hiRange = -1;
+      // 색은 행렬과 **따로** 올린다. 페이드 중에는 색만 바뀌므로, 한 구간으로 묶으면
+      // 안 바뀐 행렬까지 매 프레임 재업로드한다.
+      if (p.hiColor >= p.loColor && p.mesh.instanceColor) {
+        uploadRange(p.mesh.instanceColor, p.loColor, p.hiColor, 3);
+        p.loColor = 0; p.hiColor = -1;
+      }
     }
   }
 
