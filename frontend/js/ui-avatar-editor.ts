@@ -40,6 +40,7 @@ import {
   normalizeChibi,
 } from './chibi.js';
 import { setSceneCover } from './render-gate.js';
+import { applyPreviewShadowCasters } from './chibi-shadow.js';
 import {
   LU_CLOSET_MAX,
   currentUserId,
@@ -595,7 +596,10 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     // (감독 신고). 대신 실시간 그림자맵으로 바닥에 접지 그림자를 뿌린다(ensurePreviewRenderer).
     chibiPreviewInstance = createAvatarInstance(encodeChibi(chibiParams), GOLD, ' ', { blobShadow: false });
     // 캐릭터 메쉬가 그림자를 드리우게 한다(그림자맵에 렌더될 대상). 재조립마다 새 그룹이라 매번.
-    chibiPreviewInstance.group.traverse((o: any) => { if (o.isMesh) o.castShadow = true; });
+    // **전부** 켜지 않는다 — 45메시 중 20개는 아웃라인 셸(원본을 감싼 복제본이라 그림자에
+    // 기여할 수 없다)이고, 작은 파츠는 몸통 그림자 안에 완전히 들어간다. 판정과 그 근거는
+    // chibi-shadow.ts 한 곳이다(여기에 값을 다시 적지 않는다).
+    applyPreviewShadowCasters(chibiPreviewInstance.group);
     previewRotator.add(chibiPreviewInstance.group);
   }
 
