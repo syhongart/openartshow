@@ -398,6 +398,13 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     if (!chibiParams || !randomTargets.length) return;
     // pick 은 **적용 시점의** 현재값을 읽는다(pickForRandomize 가 그것을 후보에서 뺀다).
     // 앞선 적용이 뒤 항목의 현재값을 바꿀 수 있는데(종족→팔레트), 그건 의도된 연쇄다.
+    //
+    // 알려진 예외 하나(검수관 확인, 영향 없음): 사람 상태로 그려진 화면에서 굴릴 때
+    // `gender` 가 대상에 들어가는데, 같은 굴림에서 종족이 동물로 뽑혀도 순서상 그 값이
+    // 그대로 적용된다. `normalizeChibi` 는 화이트리스트 방식이라 species 조건부 필드를
+    // 지우지 않으므로 상태에 남는다 — 동물에는 성별 UI 가 없어 화면에는 안 나타나고,
+    // 다시 사람으로 돌아오면 그 값이 보인다. **"화면 = 랜덤 대상" 원칙의 완전한 예외는
+    // 아니고**(그리는 시점엔 실제로 화면에 있었다) 굴림 도중 화면이 바뀌는 데서 온다.
     for (const t of randomTargets) applyParam(t.key, t.pick());
     chibiParams = normalizeChibi(chibiParams);
     renderPanel();
