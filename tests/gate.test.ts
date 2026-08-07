@@ -182,7 +182,16 @@ describe('변경 범위 요약 — 패턴 A(확인 없이 단정) 방지 축', (
     // (커밋 직후)에는 아무것도 못 잡는 테스트가 된다.
     const tmp = mkdtempSync(join(tmpdir(), 'gate-index-'));
     const g = (...args: string[]) =>
-      spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: tmp, encoding: 'utf8' });
+      // `commit.gpgsign=false` 를 함께 끊는다 — 이 임시 저장소는 **개발자의 전역 git
+      // 설정을 상속하면 안 된다.** user.email·user.name 을 -c 로 준 것과 같은 이유이고,
+      // 서명만 빠져 있었다. 이 세션 환경은 `commit.gpgsign=true` +
+      // `gpg.ssh.program=/tmp/code-sign` 이 전역으로 걸려 있는데, 그 서명 프로그램이
+      // 저장소 밖의 임시 repo 를 거부해 `fatal: failed to write commit object` 로 죽는다.
+      // 그러면 `changeSummary` 가 null 을 받아 이 테스트가 실패하는데, **실패 사유가
+      // 검사 대상(index 를 보는가)과 아무 상관이 없다.** CI 에는 서명 설정이 없어
+      // 통과하므로 로컬에서만 깨졌고, 그 형태는 "환경 때문에 게이트를 못 도는" 것이라
+      // pre-commit 훅이 커밋을 막는다. 검출력은 그대로다 — 서명은 이 테스트의 축이 아니다.
+      spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd: tmp, encoding: 'utf8' });
     try {
       g('init', '-q');
       writeFileSync(join(tmp, 'seed.txt'), 'seed\n');

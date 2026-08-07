@@ -39,6 +39,8 @@ import {
   encodeChibi,
   normalizeChibi,
 } from './chibi.js';
+import { setSceneCover } from './render-gate.js';
+import { applyPreviewShadowCasters } from './chibi-shadow.js';
 import {
   LU_CLOSET_MAX,
   currentUserId,
@@ -304,6 +306,52 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   document.body.appendChild(overlay);
 
 
+  // ── 프리뷰 재조립 지연 ────────────────────────────────────────────────────
+  //   칩·스와치를 누르면 원래 이 순서였다: rebuildPreview() → renderPanel().
+  //   즉 **캐릭터 45개 메시를 통째로 해체하고 다시 만든 뒤에야** "선택됨" 표시가 그려졌다.
+  //   실측 47.9ms — 탭 전환(최대 9.1ms)보다 5~10배 무겁고, 60fps 예산 16.6ms 의 세 배다.
+  //
+  //   순서를 뒤집고 재조립을 다음 프레임으로 미룬다. 누른 즉시 그려지는 것은 선택 표시
+  //   (사용자가 "눌렸다"를 확인하는 신호)이고, 캐릭터가 조금 뒤에 바뀌는 것은 눈에
+  //   띄지 않는다 — 반대 순서는 눈에 띄었다.
+  //
+  //   **정확히는 두 프레임 뒤다**(≈33ms, 검수관 지적). `previewFrame` 은 콜백 맨 앞에서
+  //   자기를 재등록하므로, 프레임 N 에서 예약하면 N+1 의 rAF 큐에는 `previewFrame` 이
+  //   재조립 콜백보다 **먼저** 들어간다 → N+1 은 옛 캐릭터를 그리고 새 캐릭터는 N+2 에
+  //   보인다. 47.9ms 를 즉시 반환하는 것과 맞바꾼 값이라 채택은 유효하지만, "한 프레임"
+  //   이라고 적으면 다음 사람이 재조립 지연을 실제보다 싸게 계산한다.
+  //
+  //   연타는 프레임당 1회로 합쳐진다(코얼레스). 색을 훑듯이 연달아 누를 때 예전에는
+  //   누른 횟수만큼 재조립했다.
+  let rebuildRAF: number | null = null;
+
+  /** 다음 프레임에 프리뷰를 재조립한다. 이미 예약돼 있으면 합친다. */
+  function scheduleRebuild() {
+    if (rebuildRAF !== null) return;
+    rebuildRAF = requestAnimationFrame(() => { rebuildRAF = null; rebuildPreview(); });
+  }
+
+  /**
+   * 예약된 재조립을 지금 당장 실행한다.
+   *
+   * 지연이 만드는 유일한 위험이 여기 있다 — **예약이 남은 채로 화면을 읽으면 옛 모습이
+   * 찍힌다.** 그래서 프리뷰 픽셀을 읽는 자리(snapshotThumb)에서 반드시 먼저 부른다.
+   * 저장 버튼을 누른 순간의 썸네일이 방금 고른 색과 다른 것은 사용자가 바로 알아챈다.
+   */
+  function flushRebuild() {
+    if (rebuildRAF === null) return;
+    cancelAnimationFrame(rebuildRAF);
+    rebuildRAF = null;
+    rebuildPreview();
+  }
+
+  /** 예약을 버린다(재조립하지 않는다). 편집기를 닫을 때 — 아래 close() 주석 참조. */
+  function cancelRebuild() {
+    if (rebuildRAF === null) return;
+    cancelAnimationFrame(rebuildRAF);
+    rebuildRAF = null;
+  }
+
   function setParam(key: string, value: any) {
     if (!chibiParams) return;
     chibiParams[key] = value;
@@ -313,15 +361,15 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
       Object.assign(chibiParams, (SPECIES_PRESET as any)[value]);
     }
     chibiParams = normalizeChibi(chibiParams);
-    rebuildPreview();
-    renderPanel();
+    renderPanel();      // 선택 표시부터 — 이게 사용자가 기다리는 피드백이다
+    scheduleRebuild();  // 45메시 재조립은 다음 프레임
   }
 
   // 프리셋 적용 — 완성 룩을 통째로 로드해 시작점으로. 이후 세부 커스터마이즈 가능.
   function applyPreset(look: any) {
     chibiParams = normalizeChibi(Object.assign({}, look));
-    rebuildPreview();
     renderPanel();
+    scheduleRebuild();
   }
 
   function presetRow() {
@@ -554,7 +602,9 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     // (감독 신고). 대신 실시간 그림자맵으로 바닥에 접지 그림자를 뿌린다(ensurePreviewRenderer).
     chibiPreviewInstance = createAvatarInstance(encodeChibi(chibiParams), GOLD, ' ', { blobShadow: false });
     // 캐릭터 메쉬가 그림자를 드리우게 한다(그림자맵에 렌더될 대상). 재조립마다 새 그룹이라 매번.
-    chibiPreviewInstance.group.traverse((o: any) => { if (o.isMesh) o.castShadow = true; });
+    // **전부** 켜지 않는다 — 아웃라인 셸은 원본을 감싼 복제본이라 그림자에 기여할 수
+    // 없다. 판정·수치·기각된 대안은 chibi-shadow.ts 한 곳이다(여기에 다시 적지 않는다).
+    applyPreviewShadowCasters(chibiPreviewInstance.group);
     previewRotator.add(chibiPreviewInstance.group);
   }
 
@@ -621,6 +671,7 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function snapshotThumb(w: number, h: number) {
     try {
       if (!previewRenderer) return '';
+      flushRebuild(); // 예약된 재조립이 남아 있으면 **한 수 전 모습**이 찍힌다
       previewRenderer.render(previewScene, previewCamera);
       return makeThumbDataUrl(canvas, w, h) || previewRenderer.domElement.toDataURL('image/png');
     } catch (_) { return ''; }
@@ -667,6 +718,14 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     renderPanel();
     overlay.classList.add('lu-open');
     state.chibiOpen = true;
+    // [오버레이 렌더 스킵] 이 편집기는 전체화면(position:fixed; inset:0)이라 뒤의 3D
+    // 씬은 보이지 않는다 — 그동안 그리지 않는다. 근거·실측·경계는 render-gate.ts 머리말.
+    //
+    // 왜 main.js 의 onMakerToggle 이 아니라 여기인가: ① main.js 는 보호파일(라이브 미술관
+    // 서비스 중)이고 ② 그 콜백은 `if (!entered) return` 뒤에 있어 **로비에서 연 편집기에는
+    // 안 걸린다** — 캐릭터를 먼저 꾸미고 입장하는 순서가 오히려 흔하다. 편집기가 자기
+    // 상태를 직접 선언하면 두 문제가 같이 없어진다.
+    setSceneCover('chibi-maker', true);
     startLoop();
     // 입장 후 편집이면 모달이 화면을 덮는 동안 플레이어 이동·포인터락을 멈춘다
     // (라이트박스/투어와 동일한 확립된 패턴). 로비에서는 이미 비활성이라 main.js가 무시.
@@ -675,7 +734,14 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function close() {
     overlay.classList.remove('lu-open');
     state.chibiOpen = false;
+    // 반드시 걷는다 — 안 걷으면 미술관이 멈춘 채로 남는다. close()는 ✓(저장)·×(닫기)·
+    // ESC 가 모두 지나는 단일 지점이라 여기 한 곳이면 충분하다(경로가 늘면 여기로 모아라).
+    setSceneCover('chibi-maker', false);
     stopLoop();
+    // 예약된 재조립을 **버린다**(flush 가 아니다). 남겨두면 아래에서 dispose 한 직후에
+    // 콜백이 깨어나 새 인스턴스를 만들어 rotator 에 붙인다 — 닫힌 편집기에 캐릭터가
+    // 매달린 채 남는 누수다.
+    cancelRebuild();
     if (chibiPreviewInstance) {
       previewRotator.remove(chibiPreviewInstance.group);
       chibiPreviewInstance.dispose();
