@@ -113,6 +113,16 @@ async function checkPage(browser, spec) {
   const consoleErrors = [];
   const pageErrors = [];
   const failedRequests = [];
+  // 판정에서 뺀 ERR_ABORTED — **끄되 흔적은 남긴다.** 이 파일은 같은 자리에서 세 번
+  // 반대로 판단했다(도달 실패를 INFO 로 흘리지 않고 FAIL 로, CI 의 SHA 부재를 FAIL 로,
+  // 못 잰 항목을 표에서 빼지 않고 남김). 이번 필터만 축을 조용히 없애면 그 원칙이
+  // 깨진다. 그리고 이 페이지의 자산 관측은 고정 예산(WEBGL_WAIT_MS+300ms) 안에서만
+  // 이뤄지므로, **삼킨 건수가 늘어나는 것이 "라이브가 느려졌다"의 유일한 신호**다.
+  //
+  // **읽을 때 단서 하나**(검수관 R5): 404 도 여기 섞인다 — 404 응답 뒤 Chromium 이 그
+  // 요청을 abort 하기 때문이다. 그래서 신호로 읽을 때는 **PASS 줄의 숫자만** 본다.
+  // FAIL 줄의 건수에는 404 몫이 포함돼 있어 합산하면 느려짐을 과대평가한다.
+  const abortedIgnored = [];
 
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
   page.on('pageerror', (e) => pageErrors.push(String(e?.message || e)));
@@ -121,7 +131,49 @@ async function checkPage(browser, spec) {
     if (r.status() >= 400) failedRequests.push(`${r.status()} ${r.url()}`);
   });
   page.on('requestfailed', (r) => {
-    failedRequests.push(`FAILED ${r.failure()?.errorText || '?'} ${r.url()}`);
+    const err = r.failure()?.errorText || '?';
+    // [ERR_ABORTED 제외] 이건 "자산이 깨졌다"가 아니라 **"우리가 끊었다"** 다.
+    // `context.close()` 시점에 살아 있던 요청이 전부 여기로 온다.
+    //
+    // 라이브에서 미술관 첫 화면의 작품 영상(`frontend/assets/neon-motion.mp4`, 2.79MB)이
+    // 이 축에 걸려 배포마다 빨간불이 났다. **간헐적이었다** — 같은 파일이 통과와 실패를
+    // 오갔고, 코드 변경과 무관했다.
+    //
+    // ── 실제 타임라인 (검수관 계측, `_site/app/index.html`) ─────────────────
+    //      136ms  REQ  syhongart.json
+    //      136ms  --- load ---
+    //      654ms  --- networkidle 성립 ---
+    //     3556ms  REQ  neon-motion.mp4      ← networkidle 이 끝난 뒤 2.9초에 **시작**
+    //     6657ms  --- WEBGL_WAIT_MS(6000) 종료 ---
+    //     7575ms  RES 200 neon-motion.mp4
+    //     8527ms  --- 300ms 유예 종료 --- 8547ms close
+    //
+    // 여기서 두 가지를 바로잡는다(처음 이 자리에 적었던 설명이 틀렸다):
+    //   · mp4 는 `networkidle` 을 "통과"한 것이 아니라 **그 뒤에 태어난다.**
+    //   · Playwright 의 `networkidle` 은 **연결 0개 500ms** 다. "2개 이하"는 Puppeteer
+    //     의 `networkidle2` 이고 여기와 무관하다.
+    //   · 이 페이지의 실효 예산은 300ms 가 아니라 **`WEBGL_WAIT_MS`(6000) + 300ms** 다
+    //     (미술관은 `webgl: true`). 300ms 만 지목하면 다음 사람이 틀린 값을 만진다.
+    //
+    // ── 대기를 늘리는 것은 처방이 아니다 (검수관 실측) ───────────────────────
+    // latency 0 인 127.0.0.1 에서조차 결과가 흔들린다:
+    //     유예 300ms  → FAIL · PASS · PASS
+    //     유예 10초   → PASS · FAIL · FAIL      ← 10초를 줘도 안 낫는다
+    // 로컬에서 2.79MB 전송은 수십 ms 다. 대역폭 문제가 아니라 **미디어 요청의 수명이
+    // 페이지 수명과 어긋나는 구조**의 문제다.
+    //
+    // ── 404 검출력은 그대로다 (검수관 17케이스 실측, 손실 0건) ───────────────
+    // 그 축은 위 `response` 핸들러(`status >= 400`)가 담당한다. script·img·css·video·
+    // `_bundle` 모듈·지연 404·`load` 후 fetch 전부 이 변경 뒤에도 FAIL 로 잡히고,
+    // **큰 미디어와 404 가 한 페이지에 섞여 있어도 404 가 남는다.** 게다가 404 는 콘솔
+    // 에러("Failed to load resource … 404")를 동반하는데 ERR_ABORTED 는 콘솔에 아무것도
+    // 안 남긴다 — 두 축이 갈린다.
+    //
+    // 잃는 것: 서버가 실제로 연결을 끊는 경우. 그건 ERR_CONNECTION_RESET·
+    // ERR_EMPTY_RESPONSE 등 다른 코드로 온다. **CSP 차단은 `errorText` 가 그냥 `csp` 다**
+    // (검수관 실측 — `ERR_BLOCKED_BY_CSP` 가 아니다). 셋 다 이 필터에 안 걸린다.
+    if (err === 'net::ERR_ABORTED') { abortedIgnored.push(r.url()); return; }
+    failedRequests.push(`FAILED ${err} ${r.url()}`);
   });
 
   let status = 0;
@@ -134,8 +186,11 @@ async function checkPage(browser, spec) {
     status = resp?.status() ?? 0;
     await page.waitForLoadState('networkidle', { timeout: PAGE_TIMEOUT_MS }).catch(() => {});
     if (spec.webgl) await page.waitForTimeout(WEBGL_WAIT_MS);
-    // networkidle 이후 한 박자 — 컨텍스트를 닫는 순간 살아 있던 요청이 ERR_ABORTED 로
-    // 잡히면 그것은 실제 실패가 아니다. 닫기 전에 가라앉힌다.
+    // **networkidle 이후에 시작된 요청의 마지막 창.** 위 타임라인이 보여주듯 이 페이지의
+    // 실제 자산은 networkidle(654ms)이 끝난 뒤에 태어나므로, 그 구간을 덮는 것은
+    // `WEBGL_WAIT_MS` 와 이 유예뿐이다.
+    // (원래 주석은 이 대기가 ERR_ABORTED 도 가라앉힌다고 적었으나 **못 가라앉혔다** —
+    //  그 축은 위 `requestfailed` 핸들러의 제외 규칙이 담당한다.)
     await page.waitForTimeout(300);
   } catch (e) {
     const msg = String(e?.message || e);
@@ -151,6 +206,8 @@ async function checkPage(browser, spec) {
     name: spec.name, url, status, unreachable,
     ok: status === 200 && assetFails.length === 0 && consoleErrors.length === 0 && pageErrors.length === 0,
     assetFails, consoleErrors, pageErrors,
+    // 판정에 넣지 않는다(INFO) — 위 핸들러 주석 참조. 리포트에만 남는다.
+    abortedIgnored,
   };
 }
 
@@ -223,16 +280,21 @@ function report(results, specs, sha) {
   if (!pagesAuthoritative) log('※ 아래 페이지 결과는 판본 확정 전 측정이라 INFO 다 — 판정 근거가 아니다.');
   for (const r of results) {
     const mark = r.unmeasured ? 'MISS' : (!pagesAuthoritative ? 'INFO' : (r.ok ? 'PASS' : 'FAIL'));
+    // 판정에서 뺀 ERR_ABORTED — **PASS 줄에도 보인다.** 삼킨 건이 나타날 자리가 거기다.
+    // 판정에는 안 들어가지만(INFO), 건수가 늘면 라이브가 느려졌다는 신호다.
+    const ignored = r.abortedIgnored?.length
+      ? ` · 중단 무시 ${r.abortedIgnored.length}건: ${r.abortedIgnored.slice(0, 2).map((u) => u.split('/').pop()).join(', ')}`
+      : '';
     const detail = r.unmeasured
       ? '측정 안 함 — 마감 초과로 라운드를 끊었다'
       : r.ok
-        ? `${r.status}`
+        ? `${r.status}${ignored}`
         : [
           `HTTP ${r.status}`,
           r.assetFails.length ? `자산 실패 ${r.assetFails.length}건: ${r.assetFails.slice(0, 2).join(' | ')}` : '',
           r.consoleErrors.length ? `콘솔 에러 ${r.consoleErrors.length}건: ${r.consoleErrors[0]?.slice(0, 100)}` : '',
           r.pageErrors.length ? `pageerror ${r.pageErrors.length}건: ${r.pageErrors[0]?.slice(0, 100)}` : '',
-        ].filter(Boolean).join(' · ');
+        ].filter(Boolean).join(' · ') + ignored;
     log(`[${mark}] ${r.name.padEnd(18)} ${detail}`);
   }
   log(shaLine(sha));
