@@ -750,6 +750,20 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
       // 여유 배수를 1로 내린 뒤로는 이 값이 예산의 유일한 감시 수단이다.
       builder: builder!.stats(),
+      // ── LOD 페이드가 **실제로 걸리는가** (2026-08-07) ──────────────────
+      // 감독이 *"디졸브는 별차이가 없네"* 라고 했을 때, 나는 그 원인을 다른 데서
+      // 찾기 시작했다 — **페이드가 돌기는 하는지 한 번도 안 재보고.** 그 추측이
+      // 안개 정합이라는 틀린 진단으로 이어졌고 커밋했다가 되돌렸다.
+      //
+      // `pending` 이 이동 중에도 0 이면 페이드가 한 번도 안 걸린 것이고, 그러면
+      // 화면 차이가 없는 것이 당연하다. **"효과가 없다" 와 "안 돈다" 는 다른 일이다.**
+      fade: {
+        pending: parcelFade?.pending ?? null,
+        duration: lodFade,
+        ease: lodEase,
+        // 게이트가 닫혀 있으면 `sink` 가 즉시 확정한다 — 초기 충전 중 상태를 구별한다.
+        gated: !(streaming?.ready ?? false),
+      },
       /** 켜진 기능 목록 — 리포트만 보고 "무엇이 켜진 상태에서 잰 것인가"를 알 수 있어야 한다 */
       features: features.map((m) => m.name),
       // 기능별 진단. **여기에 기능별 분기가 없다** — 각 기능이 스스로 내놓는다.
