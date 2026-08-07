@@ -121,7 +121,30 @@ async function checkPage(browser, spec) {
     if (r.status() >= 400) failedRequests.push(`${r.status()} ${r.url()}`);
   });
   page.on('requestfailed', (r) => {
-    failedRequests.push(`FAILED ${r.failure()?.errorText || '?'} ${r.url()}`);
+    const err = r.failure()?.errorText || '?';
+    // [ERR_ABORTED 제외] 이건 "자산이 깨졌다"가 아니라 **"우리가 끊었다"** 다.
+    // `context.close()` 시점에 살아 있던 요청이 전부 여기로 온다.
+    //
+    // 아래 300ms 유예(`waitForTimeout`)가 원래 그것을 가라앉히려던 수단인데, **큰
+    // 미디어에서는 못 가라앉는다.** 미술관 첫 화면의 작품 영상은 2.79MB 이고
+    // (`frontend/assets/neon-motion.mp4`), 비디오는 연결 하나로 계속 받으므로
+    // `networkidle`(요청 2개 이하 500ms) 판정도 통과해버린다. 그래서 300ms 를 더 기다려도
+    // 다 못 받고, 컨텍스트를 닫는 순간 ERR_ABORTED 가 난다.
+    //
+    // 실측 — 같은 자산이 러너 속도에 따라 통과와 실패를 오갔다:
+    //     bbe0908 (15:53) FAIL neon-motion.mp4 ERR_ABORTED
+    //     c0a6d50 (16:13) PASS
+    //     d704db0 (23:05) FAIL neon-motion.mp4 ERR_ABORTED   ← 같은 파일, 같은 사유
+    // 대기를 늘리는 것은 처방이 아니다. 러너 속도에 의존하는 한 언제든 다시 운다.
+    //
+    // **404 검출력은 그대로다** — 그 축은 위 `response` 핸들러(`status >= 400`)가 담당한다.
+    // 이번 실패도 404 가 아니라 ERR_ABORTED 로 찍혔다는 것이 곧 **서버가 200 으로
+    // 응답했다**(파일은 배포돼 있다)는 증거였다.
+    //
+    // 잃는 것: 서버가 실제로 연결을 끊는 경우. 그건 ERR_CONNECTION_RESET·
+    // ERR_EMPTY_RESPONSE 등 다른 코드로 오므로 이 필터에 걸리지 않는다.
+    if (err.includes('ERR_ABORTED')) return;
+    failedRequests.push(`FAILED ${err} ${r.url()}`);
   });
 
   let status = 0;
@@ -134,8 +157,9 @@ async function checkPage(browser, spec) {
     status = resp?.status() ?? 0;
     await page.waitForLoadState('networkidle', { timeout: PAGE_TIMEOUT_MS }).catch(() => {});
     if (spec.webgl) await page.waitForTimeout(WEBGL_WAIT_MS);
-    // networkidle 이후 한 박자 — 컨텍스트를 닫는 순간 살아 있던 요청이 ERR_ABORTED 로
-    // 잡히면 그것은 실제 실패가 아니다. 닫기 전에 가라앉힌다.
+    // networkidle 이후 한 박자 — 늦게 도착하는 404 를 놓치지 않으려는 유예다.
+    // (원래 주석은 이 대기가 ERR_ABORTED 도 가라앉힌다고 적었으나 **큰 미디어에서는
+    //  그러지 못했다** — 그 축은 위 `requestfailed` 핸들러의 제외 규칙이 담당한다.)
     await page.waitForTimeout(300);
   } catch (e) {
     const msg = String(e?.message || e);
