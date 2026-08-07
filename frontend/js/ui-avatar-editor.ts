@@ -312,8 +312,14 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   //   실측 47.9ms — 탭 전환(최대 9.1ms)보다 5~10배 무겁고, 60fps 예산 16.6ms 의 세 배다.
   //
   //   순서를 뒤집고 재조립을 다음 프레임으로 미룬다. 누른 즉시 그려지는 것은 선택 표시
-  //   (사용자가 "눌렸다"를 확인하는 신호)이고, 캐릭터가 한 프레임 뒤에 바뀌는 것은
-  //   눈에 띄지 않는다 — 반대 순서는 눈에 띄었다.
+  //   (사용자가 "눌렸다"를 확인하는 신호)이고, 캐릭터가 조금 뒤에 바뀌는 것은 눈에
+  //   띄지 않는다 — 반대 순서는 눈에 띄었다.
+  //
+  //   **정확히는 두 프레임 뒤다**(≈33ms, 검수관 지적). `previewFrame` 은 콜백 맨 앞에서
+  //   자기를 재등록하므로, 프레임 N 에서 예약하면 N+1 의 rAF 큐에는 `previewFrame` 이
+  //   재조립 콜백보다 **먼저** 들어간다 → N+1 은 옛 캐릭터를 그리고 새 캐릭터는 N+2 에
+  //   보인다. 47.9ms 를 즉시 반환하는 것과 맞바꾼 값이라 채택은 유효하지만, "한 프레임"
+  //   이라고 적으면 다음 사람이 재조립 지연을 실제보다 싸게 계산한다.
   //
   //   연타는 프레임당 1회로 합쳐진다(코얼레스). 색을 훑듯이 연달아 누를 때 예전에는
   //   누른 횟수만큼 재조립했다.
@@ -596,9 +602,8 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     // (감독 신고). 대신 실시간 그림자맵으로 바닥에 접지 그림자를 뿌린다(ensurePreviewRenderer).
     chibiPreviewInstance = createAvatarInstance(encodeChibi(chibiParams), GOLD, ' ', { blobShadow: false });
     // 캐릭터 메쉬가 그림자를 드리우게 한다(그림자맵에 렌더될 대상). 재조립마다 새 그룹이라 매번.
-    // **전부** 켜지 않는다 — 45메시 중 20개는 아웃라인 셸(원본을 감싼 복제본이라 그림자에
-    // 기여할 수 없다)이고, 작은 파츠는 몸통 그림자 안에 완전히 들어간다. 판정과 그 근거는
-    // chibi-shadow.ts 한 곳이다(여기에 값을 다시 적지 않는다).
+    // **전부** 켜지 않는다 — 아웃라인 셸은 원본을 감싼 복제본이라 그림자에 기여할 수
+    // 없다. 판정·수치·기각된 대안은 chibi-shadow.ts 한 곳이다(여기에 다시 적지 않는다).
     applyPreviewShadowCasters(chibiPreviewInstance.group);
     previewRotator.add(chibiPreviewInstance.group);
   }

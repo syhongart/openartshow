@@ -422,12 +422,21 @@
   flex: 0 0 auto;
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   min-width: 58px;
-  /* [탭 지연] iOS Safari 는 탭 대상에 대해 더블탭 줌 같은 표준 제스처가 가능한지 먼저
-     판정하고, 그동안 click 발화를 미룬다. manipulation 은 패닝·핀치줌만 남기고 그
-     판정을 없애 탭이 즉시 발화하게 한다(감독 신고 "한 템포 느리게 반응해").
+  /* [탭 지연 — 가설이지 확인된 처방이 아니다] iOS Safari 는 탭 대상에 더블탭 줌 같은
+     표준 제스처가 가능한지 먼저 판정하고 그동안 click 발화를 미룬다. manipulation 은
+     패닝·핀치줌만 남기고 그 판정을 없앤다(감독 신고 "한 템포 느리게 반응해").
+
+     **다만 이 페이지에서는 효과가 없을 공산이 크다**(검수관 지적). 편집기가 사는
+     index.html 의 viewport 가 `width=device-width, …, user-scalable=no` 이고,
+     width=device-width 뷰포트에서는 iOS 의 더블탭 대기가 **이미 제거**돼 있다. 즉 이
+     선언이 없애려는 지연이 애초에 없을 수 있다. 해가 없으니 남겨 두지만, 지연의
+     원인을 여기서 찾은 것으로 읽지 마라 — 실제로 걷어낸 것은 프레임 과부하다
+     (render-gate.ts). 이 줄은 실기기 판정 대기 상태다.
+
      왜 부모 .lu-am-nav 에 pan-x 를 걸지 않았나 — nav 는 가로 스크롤 컨테이너지만
      높이가 낮아 손가락이 자주 얹힌다. pan-x 를 걸면 그 위에서 세로 스크롤이 죽어
      패널을 못 내린다. 버튼에만 거는 쪽이 부작용이 없다.
+
      한계: 이 저장소의 헤드리스 환경에는 WebKit 이 없어 **실측하지 못했다** —
      Chromium 은 이 지연을 재현하지 않는다. 감독 실기기가 유일한 판정 수단이다. */
   touch-action: manipulation;
