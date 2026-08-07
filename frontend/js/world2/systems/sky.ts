@@ -252,6 +252,13 @@ export interface SkyOptions {
    */
   fogTint?: number;
   /**
+   * `scene.fog.color` 를 하늘 지평색에 맞출 것인가(⑨ 규칙). 기본 **켬**.
+   *
+   * 끄면 안개가 `main.ts` 가 만든 초기색에 고정된다 — 이 diff 이전의 동작이다.
+   * 감독 판정을 화면으로 받기 위한 대조군이고, 노브는 `?fogsky=0`.
+   */
+  matchSceneFog?: boolean;
+  /**
    * 광원을 타깃에서 얼마나 물릴 것인가(m). **그림자 카메라의 위치를 정하는 값**이다.
    *
    * 방향광이라 조명 결과는 이 거리와 무관하다. 조립부가 `decide/shadow.ts` 로 프러스텀과
@@ -334,6 +341,12 @@ export class SkySystem implements System {
    */
   private readonly horizonTint = new THREE.Color();
   private readonly horizonTarget = new THREE.Color();
+  /** 첫 프레임인가 — 시작값 없는 지수 스무딩은 검정에서 올라온다 */
+  private tintReady = false;
+  /** 이번 프레임 스무딩 계수. 밴드 세기가 색과 **같은 시정수**를 쓰게 하려고 남긴다 */
+  private lastTintK = 1;
+  /** ⑨ 규칙(돔 최하단색 = fog색)을 집행하는가. `?fogsky=0` 이 끈다 */
+  private readonly matchSceneFog: boolean;
   /**
    * 지금 밴드에 걸린 세기. 목표(`bandStrength(time)`)를 향해 색과 **같은 시정수로**
    * 따라간다.
@@ -387,11 +400,16 @@ export class SkySystem implements System {
     this.fogTint = opts.fogTint ?? 0;
     this.getEyeY = opts.getEyeY ?? (() => eyeH ?? 0);
     this.horizon = eyeH !== undefined ? createHorizonBand(scene, eyeH) : null;
+    this.matchSceneFog = opts.matchSceneFog !== false;
     // 첫 프레임부터 맞는 색으로 뜨게 한다. 스무딩만 두면 부팅 직후 검정에서 올라오는
     // 것이 보인다 — 로딩 화면 뒤라 짧지만, 시작값이 없는 스무딩은 그 자체가 결함이다.
-    if (this.horizon) {
+    //
+    // ⚠ 예전에는 이 초기화가 `if (this.horizon)` 안에 있었다. **밴드를 끄면 초기값도
+    // 사라졌다** — 밴드 유무가 색 계산을 좌우하던 구조의 잔재다(`updateSkyTint` 주석).
+    {
       const st = this.engine.get();
       this.horizonTint.set(lightOf(st.time, st.weather, this.fogTint).fog);
+      this.tintReady = true;
     }
     // 오픈월드 기본 하늘 = 야간 맑음. fade 0으로 즉시 적용(부팅 중 크로스페이드 낭비 방지).
     this.engine.set(
@@ -468,9 +486,65 @@ export class SkySystem implements System {
     // 크로스페이드·강수·오로라·번개 진행. 조명·안개·클리어색 갱신도 여기서 일어난다.
     this.engine.update(ctx.dt);
     this.applySun();
+    // ⑨ 규칙 집행은 **밤 하한보다 먼저** 온다 — 하한은 그 위에 얹히는 것이지
+    // 하한을 덮어쓰면 `NIGHT_FOG_SCALE` 이 조용히 무효가 된다.
+    this.updateSkyTint(ctx.dt);
     this.liftNightLights();
     this.applyDayContrast();
-    this.updateHorizon(p, ctx.dt);
+    this.updateHorizon(p);
+  }
+
+  /**
+   * 하늘 지평색을 따라가고, **`scene.fog` 를 거기에 맞춘다.**
+   *
+   * ── 이 메서드가 왜 생겼나 (감독 실기기 2026-08-07) ──────────────────────────
+   * 감독: *"멀리서 건물 윤곽"* 이 팍 하고 나타난다. LOD 페이드(#213)를 넣었는데
+   * *"별 차이가 없네"* 였다. 페이드가 안 돈 것이 아니라 **시작색이 배경과 딴판**이었다.
+   *
+   * `sky.js` 헤더가 규칙을 명시하고 있다 — *"⑨ 지평선 정합 — 돔 최하단색 = fog색 =
+   * clear색 강제 일치(이음새 제거)"*. 그런데 world2 에는 그 집행이 **어디에도 없었다.**
+   * `main.ts` 가 `new THREE.Fog(0x0b0d12, …)` 로 한 번 만들고 끝이었고, 팔레트의
+   * 지평색은 시간대마다 딴 값이다:
+   *
+   *   낮 맑음   fog 0xe9eef2 (거의 흰색)   ↔ scene.fog 0x0b0d12 (거의 검정)
+   *   노을 맑음 fog 0xf2c9a2              ↔ 〃
+   *   밤 맑음   fog 0x3d4762              ↔ 〃
+   *
+   * **낮에는 정반대다.** 원경이 검게 물들어 밝은 하늘 앞에 검은 실루엣으로 서고, 그것이
+   * 등장하는 순간이 감독이 본 "팍" 이다. 색 페이드는 그 검정에서 출발하니 실루엣이
+   * 처음부터 보였다 — 그래서 "별 차이" 가 없었다.
+   *
+   * ── 같은 형태의 누락이 이미 한 번 있었다 ────────────────────────────────────
+   * 돔 추종(`sky.position.set(pos.x, 0, pos.z)`)도 `sky.js` 가 **전제**하고 world1 이
+   * 소비자 쪽에서 채우는데 world2 만 그 한 줄이 없었다(위 `update` 주석). 계약을 읽고
+   * "처리된다" 고 넘긴 것이 두 번째다. **`sky.js` 가 값을 주는 것과 누가 그 값을 쓰는
+   * 것은 다른 일이다.**
+   *
+   * ── 밴드와 갈라 둔 이유 ─────────────────────────────────────────────────────
+   * 예전에는 이 tint 계산이 `updateHorizon` 안에 있었고 그 함수는 **밴드가 없으면 즉시
+   * 리턴**했다. 감독이 밴드를 끈 뒤(#202) tint 가 아예 안 돌게 됐다 — 밴드를 끄는 것이
+   * 안개 정합까지 끄는 부작용을 냈고 아무 신호가 없었다. 이제 tint 는 항상 돌고,
+   * 밴드는 있으면 그 색을 쓴다.
+   */
+  private updateSkyTint(dt: number): void {
+    const st = this.engine.get();
+    // `lightOf` 는 `.fog` 에 팔레트 hex 를 준다. `Color.set(hex)` 가 sRGB→선형 변환을
+    // 하고, `scene.fog.color` 도 밴드 재질도 선형이라 공간이 맞는다.
+    this.horizonTarget.set(lightOf(st.time, st.weather, this.fogTint).fog);
+    if (!this.tintReady) {
+      // 첫 프레임은 스무딩하지 않는다 — 시작값 없는 지수 스무딩은 검정에서 올라온다.
+      this.horizonTint.copy(this.horizonTarget);
+      this.tintReady = true;
+    } else {
+      // 시정수 ≈ 0.5초. `dt` 가 튀어도 1 을 넘지 않게 자른다(탭 복귀 시 dt 폭주).
+      this.lastTintK = Math.min(1, dt * 2);
+      this.horizonTint.lerp(this.horizonTarget, this.lastTintK);
+    }
+    if (!this.matchSceneFog) return;
+    // `three/webgpu` 가 `Fog` 타입을 재수출하지 않아 구조로 읽는다. 안개가 꺼져 있으면
+    // (`?fogd=0`) 만질 것이 없다.
+    const fog = this.scene.fog as { color?: THREE.Color } | null;
+    fog?.color?.copy(this.horizonTint);
   }
 
   /**
@@ -502,17 +576,14 @@ export class SkySystem implements System {
    * 따라가게 두면 그 점프가 사라진다 — `sky.js` 의 페이드 길이를 알 필요가 없다는
    * 것이 요점이다(알아야 하는 처방은 저쪽이 바뀌는 날 조용히 어긋난다).
    */
-  private updateHorizon(p: { x: number; z: number }, dt: number): void {
+  private updateHorizon(p: { x: number; z: number }): void {
     if (!this.horizon) return;
     const st = this.engine.get();
-    // `lightOf` 는 `.fog` 에 팔레트 hex 를 준다. `Color.set(hex)` 가 sRGB→선형
-    // 변환을 하고, 밴드 재질도 선형이라 공간이 맞는다.
-    this.horizonTarget.set(lightOf(st.time, st.weather, this.fogTint).fog);
-    // 시정수 ≈ 0.5초. `dt` 가 크게 튀어도 1 을 넘지 않게 자른다(탭 복귀 시 dt 폭주).
-    const k = Math.min(1, dt * 2);
-    this.horizonTint.lerp(this.horizonTarget, k);
-    // 세기도 **같은 시정수로** 따라간다(위 `horizonDim` 주석). 시간대는 엔진에 묻는다 —
-    // 밴드 색과 같은 출처를 봐야 색과 세기가 갈리지 않는다.
+    // 색은 `updateSkyTint` 가 이미 이번 프레임 값으로 만들어 뒀다 — 여기서 다시 계산하면
+    // 밴드와 안개가 각자 lerp 해 **같은 색이어야 하는 둘이 갈린다**(⑨ 규칙 위반).
+    // 세기는 색과 **같은 시정수로** 따라간다. 시간대는 엔진에 묻는다 — 밴드 색과 같은
+    // 출처를 봐야 색과 세기가 갈리지 않는다.
+    const k = this.lastTintK;
     const want = bandStrength(st.time);
     this.horizonDim = this.horizonDim < 0 ? want : this.horizonDim + (want - this.horizonDim) * k;
     this.horizon.update({ x: p.x, y: this.getEyeY(), z: p.z }, this.horizonTint, this.horizonDim);
