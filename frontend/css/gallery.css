@@ -92,16 +92,23 @@
   transition: opacity 0.6s ease;
 }
 #lu-lobby.lu-hidden { opacity: 0; pointer-events: none; }
+/* ── 로비 여백·크기: 감독이 고른 「컴팩트」 값이다 (2026-08-07 판정) ──────────
+ * 후보 4종을 ?look= 노브로 배포해 비교한 결과 c(컴팩트)가 채택됐다. 겨눈 것은 룩이
+ * 아니라 **넘침**이었다 — 실측(헤드리스 1280×800)에서 800px 높이에 하단 CTA
+ * ("작가 스튜디오에서 나만의 전시 만들기 →")가 잘렸다. 색은 일부러 손대지 않았다:
+ * 한 후보가 두 축을 동시에 바꾸면 무엇이 좋아졌는지 못 가른다.
+ * 승격 전 값은 padding 44/36/36 · rule margin 22 · title 24px 였다.
+ */
 .lu-lobby-card {
   width: 100%; max-width: 400px;
   background: rgba(255,255,255,0.97);
   color: #111;
-  padding: 44px 36px 36px;
+  padding: 30px 30px 24px;
   box-shadow: 0 30px 80px rgba(0,0,0,0.5);
   text-align: center;
 }
 .lu-lobby-title {
-  font-size: 24px; font-weight: 300;
+  font-size: 21px; font-weight: 300;
   letter-spacing: 0.32em; text-indent: 0.32em;
   color: #111;
 }
@@ -112,8 +119,9 @@
 }
 .lu-lobby-rule {
   width: 36px; height: 1px; background: var(--lu-gold);
-  margin: 22px auto;
+  margin: 14px auto;
 }
+
 .lu-field-label {
   display: block; text-align: left;
   font-size: 11px; letter-spacing: 0.12em;
@@ -1677,3 +1685,27 @@
 @media (max-width: 360px) {
   .lu-am-stagewrap { width: 168px; height: 224px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   소셜 계정 연동을 감춘다 — **되살릴 자리는 여기 한 곳이다**
+   (감독 판정 2026-08-07 「컴팩트」의 일부)
+
+   이 블록이 스스로 "준비 중"이라고 적어두고도 화면의 약 1/4을 먹고 있었다. 800px
+   높이에서 하단 CTA("작가 스튜디오에서 나만의 전시 만들기 →")가 잘린 직접 원인이다.
+
+   **셋을 함께 감춰야 한다.** 버튼(.lu-social-wrap)만 지우면 구분선 라벨
+   "소셜 계정 연동 (준비 중)"이 빈 줄로 남는다 — 후보 렌더에서 실제로 그렇게 났고,
+   그때 구분선의 진짜 클래스가 .lu-lobby-divider 가 아니라 .lu-auth-or 임을 알았다.
+   짐작으로 셀렉터를 적으면 이렇게 조용히 절반만 듣는다.
+
+   **왜 파일 끝인가** — 원래 정의(.lu-social-wrap{display:flex} 등)가 위쪽에 있어서,
+   같은 특이도로 앞에 두면 뒤에 온 원래 규칙이 이긴다. 실제로 로비 여백 옆에 뒀다가
+   `socialShown: true` 로 실측에 잡혔다. 특이도를 올려 이기는 대신 순서로 해결한다.
+
+   **실제 연동이 붙는 날 이 블록만 지우면 된다.** DOM 은 ui-hud.ts 의
+   buildSocialButtons() 가 그대로 만들고 있으므로 마크업 복원 작업이 없다 — CSS 로
+   감춘 이유가 그것이다. 지금 DOM 을 지우면 되살릴 때 다시 짜야 한다.
+   ══════════════════════════════════════════════════════════════════════════ */
+.lu-social-wrap,
+.lu-social-note,
+.lu-auth-or { display: none; }
