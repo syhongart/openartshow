@@ -305,6 +305,46 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   document.body.appendChild(overlay);
 
 
+  // ── 프리뷰 재조립 지연 ────────────────────────────────────────────────────
+  //   칩·스와치를 누르면 원래 이 순서였다: rebuildPreview() → renderPanel().
+  //   즉 **캐릭터 45개 메시를 통째로 해체하고 다시 만든 뒤에야** "선택됨" 표시가 그려졌다.
+  //   실측 47.9ms — 탭 전환(최대 9.1ms)보다 5~10배 무겁고, 60fps 예산 16.6ms 의 세 배다.
+  //
+  //   순서를 뒤집고 재조립을 다음 프레임으로 미룬다. 누른 즉시 그려지는 것은 선택 표시
+  //   (사용자가 "눌렸다"를 확인하는 신호)이고, 캐릭터가 한 프레임 뒤에 바뀌는 것은
+  //   눈에 띄지 않는다 — 반대 순서는 눈에 띄었다.
+  //
+  //   연타는 프레임당 1회로 합쳐진다(코얼레스). 색을 훑듯이 연달아 누를 때 예전에는
+  //   누른 횟수만큼 재조립했다.
+  let rebuildRAF: number | null = null;
+
+  /** 다음 프레임에 프리뷰를 재조립한다. 이미 예약돼 있으면 합친다. */
+  function scheduleRebuild() {
+    if (rebuildRAF !== null) return;
+    rebuildRAF = requestAnimationFrame(() => { rebuildRAF = null; rebuildPreview(); });
+  }
+
+  /**
+   * 예약된 재조립을 지금 당장 실행한다.
+   *
+   * 지연이 만드는 유일한 위험이 여기 있다 — **예약이 남은 채로 화면을 읽으면 옛 모습이
+   * 찍힌다.** 그래서 프리뷰 픽셀을 읽는 자리(snapshotThumb)에서 반드시 먼저 부른다.
+   * 저장 버튼을 누른 순간의 썸네일이 방금 고른 색과 다른 것은 사용자가 바로 알아챈다.
+   */
+  function flushRebuild() {
+    if (rebuildRAF === null) return;
+    cancelAnimationFrame(rebuildRAF);
+    rebuildRAF = null;
+    rebuildPreview();
+  }
+
+  /** 예약을 버린다(재조립하지 않는다). 편집기를 닫을 때 — 아래 close() 주석 참조. */
+  function cancelRebuild() {
+    if (rebuildRAF === null) return;
+    cancelAnimationFrame(rebuildRAF);
+    rebuildRAF = null;
+  }
+
   function setParam(key: string, value: any) {
     if (!chibiParams) return;
     chibiParams[key] = value;
@@ -314,15 +354,15 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
       Object.assign(chibiParams, (SPECIES_PRESET as any)[value]);
     }
     chibiParams = normalizeChibi(chibiParams);
-    rebuildPreview();
-    renderPanel();
+    renderPanel();      // 선택 표시부터 — 이게 사용자가 기다리는 피드백이다
+    scheduleRebuild();  // 45메시 재조립은 다음 프레임
   }
 
   // 프리셋 적용 — 완성 룩을 통째로 로드해 시작점으로. 이후 세부 커스터마이즈 가능.
   function applyPreset(look: any) {
     chibiParams = normalizeChibi(Object.assign({}, look));
-    rebuildPreview();
     renderPanel();
+    scheduleRebuild();
   }
 
   function presetRow() {
@@ -622,6 +662,7 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function snapshotThumb(w: number, h: number) {
     try {
       if (!previewRenderer) return '';
+      flushRebuild(); // 예약된 재조립이 남아 있으면 **한 수 전 모습**이 찍힌다
       previewRenderer.render(previewScene, previewCamera);
       return makeThumbDataUrl(canvas, w, h) || previewRenderer.domElement.toDataURL('image/png');
     } catch (_) { return ''; }
@@ -688,6 +729,10 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     // ESC 가 모두 지나는 단일 지점이라 여기 한 곳이면 충분하다(경로가 늘면 여기로 모아라).
     setSceneCover('chibi-maker', false);
     stopLoop();
+    // 예약된 재조립을 **버린다**(flush 가 아니다). 남겨두면 아래에서 dispose 한 직후에
+    // 콜백이 깨어나 새 인스턴스를 만들어 rotator 에 붙인다 — 닫힌 편집기에 캐릭터가
+    // 매달린 채 남는 누수다.
+    cancelRebuild();
     if (chibiPreviewInstance) {
       previewRotator.remove(chibiPreviewInstance.group);
       chibiPreviewInstance.dispose();
