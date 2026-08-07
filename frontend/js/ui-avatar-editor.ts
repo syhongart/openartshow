@@ -448,6 +448,13 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     const n = CHIBI_PRESETS.length;
     if (!n) return;
     // 인덱스로 고른다 — look 은 객체라 `===` 비교가 성립하지 않는다.
+    //
+    // 범위 밖 인덱스가 나올 수 없는 이유(검수관 질의 확인): `pickDifferent` 가 `current`
+    // 를 그대로 돌려주는 것은 **후보가 빌 때뿐**인데, 후보는 `0..n-1` 이고 `current` 는
+    // 직전 인덱스이거나 -1 이다. -1 이면 모든 후보가 남고, 0..n-1 이면 그 하나만 빠진다
+    // — `n >= 1` 인 이상 후보가 비면 그건 `current` 가 유일한 인덱스일 때이고 그 값은
+    // 실재한다. 따라서 `CHIBI_PRESETS[idx]` 는 항상 존재한다(위 `if (!n) return` 이
+    // n=0 을 이미 걸렀다).
     const idx = pickDifferent(CHIBI_PRESETS.map((_: any, i: number) => i), lastPresetIndex);
     applyPreset((CHIBI_PRESETS as any)[idx].look, idx);
   }
@@ -815,6 +822,11 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function open() {
     activeCat = 'species'; // 새로 열 때는 항상 첫 카테고리(종족)부터 — 이전 탭 유지 방지
     chibiParams = normalizeChibi(Object.assign({}, DEFAULT_CHIBI, readActiveChibi() || {}));
+    // 아래 줄이 없으면 **적용되지도 않은 프리셋에 선택 표시가 남는다**(검수관 반려).
+    // 프리셋을 고르고 → 저장 없이 닫고 → 다시 열면, 위에서 `chibiParams` 는 저장된
+    // 룩으로 통째로 재설정되는데 `lastPresetIndex` 는 모듈 클로저에 살아남아 옛 인덱스를
+    // 가리킨다. 표시는 **지금 적용된 것**만 가리켜야 한다 — 모르면 아무것도 안 가리킨다.
+    lastPresetIndex = -1;
     syncSaveGate(); // 로그인 여부에 따라 저장/회원가입 버튼 상태 갱신
     ensurePreviewRenderer();
     previewRotator.rotation.y = Math.PI; // 정면(카메라 쪽)부터 — 얼굴을 꾸미는 화면이므로
