@@ -118,6 +118,10 @@ async function checkPage(browser, spec) {
   // 못 잰 항목을 표에서 빼지 않고 남김). 이번 필터만 축을 조용히 없애면 그 원칙이
   // 깨진다. 그리고 이 페이지의 자산 관측은 고정 예산(WEBGL_WAIT_MS+300ms) 안에서만
   // 이뤄지므로, **삼킨 건수가 늘어나는 것이 "라이브가 느려졌다"의 유일한 신호**다.
+  //
+  // **읽을 때 단서 하나**(검수관 R5): 404 도 여기 섞인다 — 404 응답 뒤 Chromium 이 그
+  // 요청을 abort 하기 때문이다. 그래서 신호로 읽을 때는 **PASS 줄의 숫자만** 본다.
+  // FAIL 줄의 건수에는 404 몫이 포함돼 있어 합산하면 느려짐을 과대평가한다.
   const abortedIgnored = [];
 
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
