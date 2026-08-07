@@ -23,7 +23,27 @@ import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, SPAWN } from './grid.js
 export const SPAWN_SPOTS = ['default', 'river', 'sea'] as const;
 export type SpawnSpot = (typeof SPAWN_SPOTS)[number];
 
-export interface Spot { x: number; z: number }
+export interface Spot {
+  x: number;
+  z: number;
+  /**
+   * 시작 시선 방위(rad). **물가 스폰에만 붙는다** — `default` 는 지금까지처럼 없다.
+   *
+   * ── 왜 좌표만으로는 부족했나 (실측 2026-08-07) ────────────────────────────
+   * `?at=sea` 로 뜬 화면을 찍어 보니 **바다를 등지고 도시를 보고 있었다.** 초기 yaw 가
+   * 0 이고 `facing(0) = (0, −1)` 인데, 바닷가 스폰은 격자 +Z 가장자리라 바다가 뒤였다.
+   *
+   * 좌표는 맞았고 화면은 틀렸다. 이 노브가 생긴 이유가 *"확인 자체가 일이 되면 확인이
+   * 덜 일어난다"* 였는데(이 파일 머리말), 열자마자 손으로 180° 돌려야 하면 그 이유가
+   * 절반만 달성된다 — 게다가 **무엇을 보러 온 링크인지 모르면 안 돌린다.**
+   *
+   * ── 왜 상수가 아닌가 ─────────────────────────────────────────────────────
+   * 물 방향은 `waterDir` 이 이미 판정한다. 각도를 상수로 박으면 강이 옮겨지거나 격자가
+   * 바뀌는 날 시선만 옛 방향에 남고, 그 어긋남은 화면에만 나타난다 — 좌표를 상수로
+   * 박지 않은 것과 **같은 이유**다.
+   */
+  yaw?: number;
+}
 
 /**
  * 물가에 설 수 있는 칸인가. `shore` 는 "자기는 뭍인데 이웃이 물" 인 칸이라
@@ -85,6 +105,21 @@ function isWaterAt(wx: number, wz: number, cell: number): boolean {
   return isRiver(wx, wz, cell);
 }
 
+/**
+ * 방향 벡터 → 그 방향을 **바라보는** yaw(rad).
+ *
+ * `systems/player.ts` 의 `facing(yaw) = (−sin yaw, −cos yaw)` 를 뒤집은 것이다.
+ * 그 함수를 여기서 부르지 않는 이유는 방향이다 — `decide/` 는 `systems/` 를 모른다.
+ * 그래서 **역함수 관계를 테스트가 검사한다**(`world2-spawn-spot.test.ts`): 나온 yaw 를
+ * `facing` 에 넣어 원래 방향이 돌아오는지 본다. 한쪽 부호가 바뀌면 거기서 깨진다.
+ *
+ * 부호를 손으로 확인하려 들지 마라 — `yaw=0` 에서는 여러 식이 우연히 일치한다
+ * (`player.ts` 의 `moveFromAxes` 주석이 그 함정으로 한 번 틀린 이력을 적고 있다).
+ */
+function yawToward(dx: number, dz: number): number {
+  return Math.atan2(-dx, -dz);
+}
+
 function pushToWaterEdge(
   cx: number, cz: number, dir: { dx: number; dz: number },
   cellX: number, cellZ: number,
@@ -99,7 +134,13 @@ function pushToWaterEdge(
     else dry = mid;
   }
   const back = Math.max(0, dry - EDGE_KEEP);
-  return { x: cx + dir.dx * back, z: cz + dir.dz * back };
+  return {
+    x: cx + dir.dx * back,
+    z: cz + dir.dz * back,
+    // 물 쪽을 본다. **미는 방향과 보는 방향이 같은 벡터에서 나온다** — 따로 두면
+    // 한쪽만 고쳐도 아무도 모르고, 증상은 "물가에 섰는데 등지고 있다" 로만 난다.
+    yaw: yawToward(dir.dx, dir.dz),
+  };
 }
 
 /**

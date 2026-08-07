@@ -13,9 +13,13 @@
 // 찾고, 이 파일은 **찾은 결과가 실제로 설 수 있는 자리인지** 본다.
 
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { spawnFor, SPAWN_SPOTS } from '../frontend/js/world2/decide/spawn-spot.js';
 import { parcelWater, isRiver, RIVER_HALF } from '../frontend/js/world2/decide/water.js';
 import { SPAWN, GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../frontend/js/world2/decide/grid.js';
+// 시선 규약의 SSOT. 테스트가 `(−sin, −cos)` 를 다시 적지 않으려고 실제 함수를 부른다.
+import { facing } from '../frontend/js/world2/systems/player.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
 
 const { cellX, cellZ } = DEFAULT_LAYOUT;
@@ -75,6 +79,48 @@ describe('링크로 물가에 바로 선다', () => {
 
   it('노브 목록에 기본값이 들어 있다 — 빠지면 `readEnum` 이 기본값을 거른다', () => {
     expect(SPAWN_SPOTS).toContain('default');
+  });
+
+  // ── 시선 (2026-08-07) ─────────────────────────────────────────────────────
+  // 좌표만 맞고 화면은 틀렸던 자리다. `?at=sea` 를 실제로 띄워 보니 **바다를 등지고
+  // 도시를 보고 있었다** — 초기 yaw 0 의 정면이 −Z 인데 바닷가는 +Z 가장자리였다.
+  // 수치는 전부 초록이었고(물가 칸 맞음·격자 안 맞음) 화면만 틀렸다.
+
+  it('★ 물가 스폰은 **물 쪽을 본다** — `facing(yaw)` 이 물 이웃을 가리킨다', () => {
+    for (const spot of ['river', 'sea'] as const) {
+      const s = at(spot);
+      expect(s.yaw, `${spot} 에 시선이 없다`).toBeDefined();
+      // **실제 집행 함수를 부른다.** 여기서 `(−sin, −cos)` 를 다시 적으면 그것이
+      // 값 미러링이고, `player.ts` 가 규약을 바꾸는 날 이 단언만 옛 규약으로 통과한다.
+      const f = facing(s.yaw!);
+      const { px, pz } = parcelOf(s);
+      // 시선이 가리키는 이웃 칸이 물이어야 한다. 물가는 축 정렬 이웃 하나가 물이므로
+      // 반올림으로 그 칸이 정확히 나온다.
+      const nx = px + Math.round(f.x);
+      const nz = pz + Math.round(f.z);
+      expect(parcelWater(nx, nz, cellX, cellZ), `${spot} 가 물을 안 보고 있다`).toBe('water');
+    }
+  });
+
+  it('기본 스폰에는 시선이 없다 — 옛 동작 그대로', () => {
+    // `yaw` 가 붙으면 **모든 방문자의 시작 시선이 바뀐다.** 라이브 회귀다.
+    expect(at('default').yaw).toBeUndefined();
+  });
+
+  it('★ 계산된 시선이 실제로 **소비된다** — 판정과 집행 사이의 구멍을 막는다', () => {
+    // 위 단언은 전부 `spawnFor` 의 반환값만 본다. `PlayerSystem` 이 그 `yaw` 를 안
+    // 읽으면 **모든 단언이 초록인 채로 화면은 그대로**다 — 이 저장소가 구름 `alpha`
+    // 에서 겪은 형태 그대로이고, 이 기능은 화면이 유일한 증상이라 특히 위험하다.
+    const src = fs.readFileSync(
+      path.join(process.cwd(), 'frontend/js/world2/systems/player.ts'), 'utf8',
+    );
+    expect(src).toMatch(/opts\.start\?\.yaw !== undefined.*\n?.*this\.yaw = opts\.start\.yaw/);
+    // 조립부가 `spawnFor` 결과를 **통째로** 넘겨야 `yaw` 가 따라간다. `{x, z}` 로
+    // 풀어서 넘기면 좌표만 가고 시선은 조용히 사라진다.
+    const main = fs.readFileSync(
+      path.join(process.cwd(), 'frontend/js/world2/main.ts'), 'utf8',
+    );
+    expect(main).toMatch(/start:\s*spawnFor\(/);
   });
 });
 
