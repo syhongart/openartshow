@@ -17,7 +17,7 @@ import {
   eyeAboveSea, horizonBandAngle, horizonFogAt, horizonAlphaProfile,
   horizonRadius, horizonFog, horizonStrength,
 } from '../frontend/js/world2/decide/horizon.js';
-import { HorizonBand } from '../frontend/js/world2/systems/horizon.js';
+import { HorizonBand, bandExists } from '../frontend/js/world2/systems/horizon.js';
 import { TIMES } from '../frontend/js/world2/decide/night.js';
 import { SEA_Y } from '../frontend/js/world2/decide/water.js';
 import { fogBand } from '../frontend/js/world2/decide/fog.js';
@@ -294,6 +294,42 @@ describe('수평선 밴드 배선', () => {
       ctx as unknown as HorizonBand, { x: 0, y: 1.7, z: 0 }, null, 0.3,
     );
     expect(touched).toBe(0);
+  });
+
+  // ── 메시를 만드는가 (감독 지시 2026-08-07 *"밴드만 끄자"*) ──────────────────
+  //
+  // 세기 0 은 화면상 무해하지 않다 — 재질이 `fog: false` 라 `scene.fog` 가 꺼져도
+  // 안개색을 계속 칠한다(`systems/horizon.ts` 의 `createHorizonBand` 독블록). 그래서
+  // **어느 시간대에서도 안 켜지면 메시를 아예 안 만든다.**
+  describe('밴드 메시 생성 판정', () => {
+    it('전 시간대 세기가 0 이면 만들지 않는다 — 지금 기본값이 그렇다', () => {
+      // 감독 확정으로 `HORIZON_NIGHT`·`HORIZON_LIT` 이 둘 다 0 이다. 그 상태에서
+      // 메시가 생기면 `?fogd=0` 화면에 안개색 띠만 남는다 — 감독이 끄라고 한 그것.
+      expect(HORIZON_NIGHT).toBe(0);
+      expect(HORIZON_LIT).toBe(0);
+      expect(bandExists(null)).toBe(false);
+    });
+
+    it('노브로 0 이 아닌 값을 주면 만든다 — 되살리는 경로가 살아 있다', () => {
+      expect(bandExists(0.3)).toBe(true);
+      expect(bandExists(0.9)).toBe(true);
+    });
+
+    it('노브 0 은 명시적으로 끈다', () => {
+      expect(bandExists(0)).toBe(false);
+    });
+
+    it('판정이 **부팅 시 상수**다 — 시간대를 돌려도 안 바뀐다', () => {
+      // 개수 불변식을 지키는 근거가 이것이다. 지금 시간대가 아니라 **전 시간대의
+      // 최대**를 보므로, 세션 중 시간대가 바뀌어도 메시 존재 여부는 그대로다.
+      // 이 단언이 깨지면 `bandExists` 가 어딘가에서 현재 시간대를 보게 된 것이다.
+      const once = bandExists(null);
+      for (const t of TIMES) {
+        // 시간대별 세기를 각각 물어봐도(= 상태를 건드려도) 판정이 안 흔들린다.
+        horizonStrength(t);
+        expect(bandExists(null)).toBe(once);
+      }
+    });
   });
 
   it('밴드 재질이 `depthTest` 를 끄지 않는다', () => {
