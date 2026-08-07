@@ -41,6 +41,7 @@ import {
 } from './chibi.js';
 import { setSceneCover } from './render-gate.js';
 import { applyPreviewShadowCasters } from './chibi-shadow.js';
+import { pickForRandomize, canRandomize } from './random-pick.js';
 import {
   LU_CLOSET_MAX,
   currentUserId,
@@ -352,17 +353,62 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     rebuildRAF = null;
   }
 
-  function setParam(key: string, value: any) {
-    if (!chibiParams) return;
+  // ── 탭 재클릭 랜덤 ─────────────────────────────────────────────────────────
+  //   감독 요청 2026-08-07: *"한번누르면 밑에서 사람이 선택할수있고. 반면에 또 누르면
+  //   그 카테고리안에서 랜덤으로 선택되는거였어."*
+  //
+  //   즉 하단 탭이 두 가지 일을 한다 — **처음 누르면 펴고, 이미 펴진 것을 또 누르면
+  //   굴린다.** 그 전까지 같은 탭 재클릭은 `return` 으로 버려지고 있었다(renderNav).
+  //
+  //   대상 목록을 따로 적지 않는다. `renderPanel` 이 줄을 그리면서 여기에 쌓으므로
+  //   **화면에 보이는 것이 곧 랜덤 대상**이다. 카테고리별 키 목록을 상수로 두면
+  //   `renderPanel` 의 분기(동물이면 성별·헤어 줄이 사라진다)와 값 미러링이 생기고,
+  //   한쪽만 고쳐도 아무도 모른다 — 이 저장소가 반복해 데인 형태다.
+  let randomTargets: Array<{ key: string; pick: () => any }> = [];
+
+  /**
+   * 파라미터 하나를 적용한다(렌더는 하지 않는다).
+   * `setParam`(한 개 즉시 반영)과 카테고리 랜덤(여러 개 모아서 한 번 렌더)이 **같은 규칙**을
+   * 쓰도록 분리했다 — 종족 팔레트 연동 같은 규칙이 한쪽에만 적용되면 랜덤 결과만 어색해진다.
+   */
+  function applyParam(key: string, value: any) {
     chibiParams[key] = value;
     // 종족을 동물로 바꾸면 그 종족 기본 팔레트(털색·포인트색)를 함께 적용 — 사람 피부색이
     // 동물에 남아 어색해지는 걸 방지.
     if (key === 'species' && value !== 'human' && (SPECIES_PRESET as any)[value]) {
       Object.assign(chibiParams, (SPECIES_PRESET as any)[value]);
     }
+  }
+
+  function setParam(key: string, value: any) {
+    if (!chibiParams) return;
+    applyParam(key, value);
     chibiParams = normalizeChibi(chibiParams);
     renderPanel();      // 선택 표시부터 — 이게 사용자가 기다리는 피드백이다
     scheduleRebuild();  // 45메시 재조립은 다음 프레임
+  }
+
+  /**
+   * 지금 펼쳐진 카테고리를 통째로 굴린다.
+   *
+   * 대상이 하나도 없으면(옷장 탭 등) 아무 일도 하지 않는다 — 탭을 두 번 눌렀는데 화면이
+   * 바뀌지 않는 것은 그 탭에 굴릴 것이 없다는 뜻이고, 그게 맞는 동작이다.
+   */
+  function randomizeActiveCategory() {
+    if (!chibiParams || !randomTargets.length) return;
+    // pick 은 **적용 시점의** 현재값을 읽는다(pickForRandomize 가 그것을 후보에서 뺀다).
+    // 앞선 적용이 뒤 항목의 현재값을 바꿀 수 있는데(종족→팔레트), 그건 의도된 연쇄다.
+    //
+    // 알려진 예외 하나(검수관 확인, 영향 없음): 사람 상태로 그려진 화면에서 굴릴 때
+    // `gender` 가 대상에 들어가는데, 같은 굴림에서 종족이 동물로 뽑혀도 순서상 그 값이
+    // 그대로 적용된다. `normalizeChibi` 는 화이트리스트 방식이라 species 조건부 필드를
+    // 지우지 않으므로 상태에 남는다 — 동물에는 성별 UI 가 없어 화면에는 안 나타나고,
+    // 다시 사람으로 돌아오면 그 값이 보인다. **"화면 = 랜덤 대상" 원칙의 완전한 예외는
+    // 아니고**(그리는 시점엔 실제로 화면에 있었다) 굴림 도중 화면이 바뀌는 데서 온다.
+    for (const t of randomTargets) applyParam(t.key, t.pick());
+    chibiParams = normalizeChibi(chibiParams);
+    renderPanel();
+    scheduleRebuild();
   }
 
   // 프리셋 적용 — 완성 룩을 통째로 로드해 시작점으로. 이후 세부 커스터마이즈 가능.
@@ -467,6 +513,10 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
 
   function chipRow(labelText: string, options: any[], key: string) {
     page.appendChild(el('div', { className: 'lu-am-section-title', text: labelText }));
+    // [탭 재클릭 랜덤] 지금 화면에 그려진 줄만 랜덤 대상이 된다 — 아래 randomTargets 주석.
+    if (canRandomize(options.length)) {
+      randomTargets.push({ key, pick: () => pickForRandomize(options.map((o) => o.id), chibiParams[key]) });
+    }
     const row = el('div', { className: 'lu-am-tabs' });
     options.forEach((opt) => {
       const btn = el('button', {
@@ -482,6 +532,9 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
 
   function swatchRow(labelText: string, palette: string[], key: string) {
     page.appendChild(el('div', { className: 'lu-am-section-title', text: labelText }));
+    if (canRandomize(palette.length)) {
+      randomTargets.push({ key, pick: () => pickForRandomize(palette, chibiParams[key]) });
+    }
     const row = el('div', { className: 'lu-swatches' });
     palette.forEach((hex) => {
       const swatch = el('button', {
@@ -523,12 +576,20 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
         'aria-selected': selected ? 'true' : 'false',
         'aria-controls': 'lu-am-tabpanel',
         tabindex: selected ? '0' : '-1',   // 로빙 탭인덱스 — 선택 탭만 Tab 포커스 대상
-        'aria-label': cat.label,
+        // 선택된 탭은 "다시 누르면 랜덤"이 된다. 눈에 보이는 표시가 없는 기능이라
+        // 최소한 접근성 이름과 툴팁에는 적어 둔다.
+        'aria-label': selected ? `${cat.label} — 다시 누르면 랜덤으로 바뀝니다` : cat.label,
+        title: selected ? '다시 누르면 랜덤으로 바뀌어요' : cat.label,
       });
       btn.innerHTML = cat.icon;
       btn.appendChild(el('span', { className: 'lu-am-navtab-label', text: cat.label }));
       btn.addEventListener('click', () => {
-        if (activeCat === cat.id) return;
+        // [탭 재클릭 랜덤] 이미 펴진 탭을 또 누르면 그 카테고리를 굴린다(감독 요청).
+        // 그 전까지 이 자리는 그냥 `return` 이라 두 번째 클릭이 버려지고 있었다.
+        if (activeCat === cat.id) {
+          randomizeActiveCategory();
+          return;
+        }
         activeCat = cat.id;
         renderPanel();
         page.scrollTop = 0;
@@ -541,6 +602,7 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function renderPanel() {
     renderNav();
     page.textContent = '';
+    randomTargets = []; // 이번에 그리는 줄들이 다시 채운다(화면 = 랜덤 대상)
     if (!chibiParams) return;
     const isAnimal = chibiParams.species && chibiParams.species !== 'human';
 
