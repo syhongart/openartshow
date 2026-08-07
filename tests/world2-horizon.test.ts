@@ -183,60 +183,18 @@ describe('수평선 밴드 배선', () => {
     expect(s).not.toMatch(/readNum\(\s*'eye'/);
   });
 
-  it('지평 tint 는 **팔레트**에서 온다 — `scene.fog` 를 읽지 않는다', () => {
-    // ── 옛 단언이 왜 더는 유효하지 않은가 (2026-08-07) ─────────────────────
-    // 이 검사는 `updateHorizon` **한 함수의 소스**를 읽어 `lightOf(` 를 찾았다. 색 계산이
-    // 그 안에 있었기 때문인데, 그것이 바로 결함이었다 — `updateHorizon` 은 **밴드가
-    // 없으면 즉시 리턴**하므로, 감독이 밴드를 끈 뒤(#202) tint 계산이 통째로 죽었다.
-    // 안개 정합(#218)이 그 tint 를 쓰기 때문에 계산을 `updateSkyTint` 로 옮겼다.
-    //
-    // **성질은 안 바뀌었다** — 색 출처는 여전히 팔레트이고 `scene.fog` 를 읽지 않는다.
-    // 바뀐 것은 그 성질이 사는 함수 이름뿐이라, 검사도 거기를 본다.
+  it('밴드 색은 **팔레트**에서 온다 — `scene.fog` 를 경유하지 않는다', () => {
     const s = SRC('frontend/js/world2/systems/sky.ts');
-    const tint = /private updateSkyTint\([\s\S]*?\n  \}/.exec(s);
-    expect(tint).not.toBeNull();
-    const u = tint![0];
+    const body = /private updateHorizon\([\s\S]*?\n  \}/.exec(s);
+    expect(body).not.toBeNull();
+    const u = body![0];
     // `lightOf` 는 `sky.js` 의 색 SSOT 이고 돔 텍스처도 그것을 거친다.
     expect(u).toMatch(/lightOf\(/);
-    // ⚠ `scene.fog.color` 를 **읽으면** 안 된다. 밤 하한이 얹힌 값이고(하늘 98 · 안개 143),
+    // ⚠ `scene.fog.color` 를 쓰면 안 된다. 밤 하한이 얹힌 값이고(하늘 98 · 안개 143),
     // `applyLighting` 이 크로스페이드 중에만 도는 탓에 그 하한이 **고착**된다 —
     // "하한 앞에서 읽으면 된다" 는 처방이 실측에서 아무 차이도 못 냈던 이유다.
-    // 쓰기는 허용된다(⑨ 규칙 집행) — 읽어서 계산에 되먹이는 것만 금지다.
-    expect(u).not.toMatch(/copy\(\s*fog/);
-    expect(u).not.toMatch(/lerp\(\s*fog/);
-    // 쓰는 방향은 하나뿐이다: tint → fog.
-    expect(u).toMatch(/fog\?\.color\?\.copy\(this\.horizonTint\)/);
-  });
-
-  it('tint 계산이 **밴드 유무와 무관하게** 돈다 — 밴드를 끄면 안개 정합까지 죽던 자리', () => {
-    // 실제로 그렇게 죽어 있었다. `?hz=0` 으로 밴드를 끈 것이 안개색 추종까지 끈 것을
-    // **아무도 몰랐다** — 부작용에 신호가 없었다. 이 단언이 그 자리를 지킨다.
-    const s = SRC('frontend/js/world2/systems/sky.ts');
-    const tint = /private updateSkyTint\([\s\S]*?\n  \}/.exec(s)![0];
-    expect(tint).not.toMatch(/this\.horizon\b/);
-  });
-
-  it('⑨ 규칙 집행이 **밤 하한보다 먼저** 온다 — 순서가 뒤집히면 하한이 매 프레임 지워진다', () => {
-    // `updateSkyTint` 가 `scene.fog.color` 를 팔레트 색으로 덮고, `liftNightLights` 가
-    // 그 위에 밤 하한을 얹는다. 반대로 두면 하한이 다음 줄에서 지워져 `NIGHT_FOG_SCALE`
-    // 이 조용히 무효가 된다 — 값은 살아 있는데 화면에 안 나타나는 형태다.
-    const s = SRC('frontend/js/world2/systems/sky.ts');
-    const body = /update\(ctx: FrameCtx\): void \{([\s\S]*?)\n  \}/.exec(s)![1];
-    const tintAt = body.indexOf('this.updateSkyTint(');
-    const liftAt = body.indexOf('this.liftNightLights(');
-    expect(tintAt).toBeGreaterThanOrEqual(0);
-    expect(liftAt).toBeGreaterThanOrEqual(0);
-    expect(tintAt).toBeLessThan(liftAt);
-  });
-
-  it('밴드는 tint 를 **받아 쓴다** — 자기 lerp 를 따로 돌리지 않는다', () => {
-    // 둘이 각자 lerp 하면 같은 색이어야 할 밴드와 안개가 크로스페이드 중에 갈린다.
-    const s = SRC('frontend/js/world2/systems/sky.ts');
-    const band = /private updateHorizon\([\s\S]*?\n  \}/.exec(s)![0];
-    expect(band).toMatch(/this\.horizon\.update\(/);
-    expect(band).toMatch(/this\.horizonTint/);
-    expect(band).not.toMatch(/lightOf\(/);
-    expect(band).not.toMatch(/horizonTint\.lerp\(/);
+    expect(u).not.toMatch(/scene\.fog/);
+    expect(u).toMatch(/this\.horizon\.update\(/);
   });
 
   it('밴드 갱신이 매 프레임 `update` 에서 불린다', () => {
