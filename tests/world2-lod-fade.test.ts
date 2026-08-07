@@ -81,8 +81,18 @@ describe('§1-3 페이드 시간과 통과 시간의 관계 — 근거를 게이
     expect(crossingCells(pushed)).toBeGreaterThan(crossingCells());
   });
 
-  it('속도가 0 이면 영원히 안 닿는다 — 0 나눗셈을 NaN 으로 흘리지 않는다', () => {
-    expect(crossingSeconds(DEFAULT_LAYOUT.cellX, 0, RUN_MULT)).toBe(Infinity);
+  it('나아가지 않는 입력은 Infinity 다 — NaN·음수를 흘리지 않는다', () => {
+    // ── 첫 판본은 `speed=0` 하나만 봤고, 검출력이 0 이었다 (검수관 실측 2026-08-07)
+    // JS 는 `양수/0` 을 가드 없이도 `Infinity` 로 낸다. 그래서 `crossingSeconds` 의
+    // `if (!(v > 0)) return Infinity;` 를 **통째로 지워도 19건이 전부 통과했다.**
+    // 단언 문장 자체는 참이었다(속도 0 이면 실제로 Infinity 다) — 참인데 아무것도
+    // 검사하지 않는 것, 그게 이 저장소가 "장식" 이라 부르는 상태다.
+    //
+    // 가드가 실제로 갈리는 자리는 셋이다. 전부 넣는다.
+    const cell = DEFAULT_LAYOUT.cellX;
+    expect(crossingSeconds(cell, 0, RUN_MULT)).toBe(Infinity);        // 0 — 가드 없이도 같다
+    expect(crossingSeconds(cell, -5, RUN_MULT)).toBe(Infinity);       // 음수 — 없으면 음의 시간
+    expect(crossingSeconds(cell, Number.NaN, RUN_MULT)).toBe(Infinity); // NaN — 없으면 NaN 전파
   });
 });
 
