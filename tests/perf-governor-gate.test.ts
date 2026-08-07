@@ -31,7 +31,7 @@ vi.mock('../frontend/js/main-spec.js', async (importOriginal) => {
 });
 
 import { createPerfGovernor } from '../frontend/js/main-perf.js';
-import { writeSpec } from '../frontend/js/main-spec.js';
+import { writeSpec, LITE_VISIBLE_NPCS } from '../frontend/js/main-spec.js';
 import { setSceneCover, resetSceneCover } from '../frontend/js/render-gate.js';
 
 /** 60fps 상당 — `fpsNow = 1/0.0166 ≈ 60.2` 로 승급 임계(55)를 넘는다. */
@@ -142,24 +142,54 @@ describe('perfGovernor — 렌더 게이트와 fps 표본', () => {
     expect(vi.mocked(writeSpec).mock.calls.length).toBe(before);
   });
 
-  // 검수관 처방의 경계 — `perfGovernor.tick` 전체를 게이트 안으로 옮기면 이것이 깨진다.
-  it('게이트 중에도 NPC 컬링·섀도 축은 계속 돈다 (tick 전체를 막지 않았다)', () => {
-    const culled: number[] = [];
+  // 검수관 처방의 경계 — 막는 것은 **fps 표본 하나뿐**이다. `perfGovernor.tick` 전체를
+  // 게이트 안으로 옮기거나 `#14` 앞에서 early return 하면 NPC 컬링과 섀도 재베이크가
+  // 함께 멈춘다. 그 회귀는 **조용하다** — 컬링은 lite 모드에서만, 섀도는 cycle 테마에서만
+  // 드러나 화면으로 판정되지 않는다. 그래서 여기서 잡는다.
+  //
+  // (이 테스트는 한 번 장식이었다. `not.toThrow()` 하나만 걸고 제목은 "계속 돈다"를
+  //  주장했는데, 검수관이 `#14` 앞에 early return 을 넣는 뮤테이션으로 **6/6 전부 초록**
+  //  임을 보였다. 검사가 닿지 않는 범위까지 말한 문장이었다. 아래는 실제 단언이다.)
+  it('게이트 중에도 #14 NPC 컬링과 #15 섀도 재베이크는 계속 돈다', () => {
+    const shadowRebakes: number[] = [];
+    // 거리를 다르게 준 NPC 5명 — lite 모드에서 가까운 LITE_VISIBLE_NPCS 명만 남아야 한다.
+    const npcs = [5, 1, 4, 2, 3].map((d) => ({
+      group: { visible: true, position: { distanceTo: () => d } },
+    }));
+    const mp = { remoteAvatars: new Map(npcs.map((a, i) => ['npc-' + i, a])) };
+
     const ctx = {
       renderer: {
         setPixelRatio() {}, getPixelRatio() { return 1; },
-        shadowMap: { set needsUpdate(v: boolean) { if (v) culled.push(1); }, get needsUpdate() { return false; } },
+        shadowMap: {
+          set needsUpdate(v: boolean) { if (v) shadowRebakes.push(1); },
+          get needsUpdate() { return false; },
+        },
       },
-      camera: { position: { distanceTo: () => 1 } },
+      camera: { position: {} },
       gpuInfo: { soft: false },
-      getMp: () => null,
+      getMp: () => mp,
       isEntered: () => true,
       setFPS() {}, setStatus() {},
     };
     const gov = createPerfGovernor(ctx as never);
+    gov.setShadowInterval(2); // cycle 테마 상당 — 이게 0이면 #15 가 원래 안 돈다
+
+    // 게이트 **전에** 저사양 모드로 들여보낸다(10fps). lite 가 아니면 #14 의
+    // `if (liteMode)` 가 막아 컬링이 원래부터 안 돌고, 그러면 아래 단언이 공허해진다.
+    for (let i = 0; i < 40; i++) gov.tick(0.1);
+    expect(gov.getLite()).toBe(true);
+
+    // 관측 시작점 리셋 — 여기부터가 게이트 구간이다.
+    for (const a of npcs) a.group.visible = true;
+    shadowRebakes.length = 0;
+
     setSceneCover('chibi-maker', true);
-    // 예외 없이 끝까지 도는 것 자체가 확인 대상이다 — tick 전체를 건너뛰는 구현이었다면
-    // 아래 루프가 아무 일도 하지 않고, #14/#15 누산기가 전진하지 않는다.
-    expect(() => { for (let i = 0; i < 400; i++) gov.tick(DELTA_60FPS); }).not.toThrow();
+    for (let i = 0; i < 250; i++) gov.tick(DELTA_60FPS); // ≈4.15초 — 2초 주기를 두 번 넘긴다
+
+    // #15 — 섀도 재베이크가 게이트 중에도 발화했다.
+    expect(shadowRebakes.length).toBeGreaterThan(0);
+    // #14 — NPC 컬링이 게이트 중에도 돌아 먼 관객을 숨겼다.
+    expect(npcs.filter((a) => a.group.visible).length).toBe(LITE_VISIBLE_NPCS);
   });
 });
