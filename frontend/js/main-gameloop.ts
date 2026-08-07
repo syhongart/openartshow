@@ -17,6 +17,7 @@
 //   showArtworkInfo·hideArtworkInfo·setStatus)도 값. 이 모듈은 프레임 안에서 신규 객체 할당 0.
 
 import * as THREE from 'three';
+import { isSceneCovered } from './render-gate.js';
 
 // main.js가 주입하는 게임루프 계약(전량 값 주입 — 위임 tick 컨트롤러는 호출 멤버만 최소 선언).
 interface GameLoopCtx {
@@ -123,12 +124,25 @@ export function createGameLoop(ctx: GameLoopCtx) {
       // 소유(4차 A군). render()는 여기서 건드리지 않는다(아래 분기가 그대로 소유).
       perfGovernor.tick(delta);
 
-      if (selfViewController.isThirdPerson() && selfViewController.getSelfAvatar()) {
-        selfViewController.applySelfCamOffset();
-        renderer.render(scene, camera);
-        selfViewController.restoreSelfCamOffset();
-      } else {
-        renderer.render(scene, camera);
+      // [오버레이 렌더 스킵] 전체화면 오버레이(캐릭터 편집기 등)가 씬을 덮고 있으면
+      // 그리지 않는다. 판정은 render-gate.ts(SSOT) — 근거·실측·경계는 그 파일 머리말
+      // 한 곳에 있다(여기에 다시 적지 않는다).
+      //
+      // 위치가 여기인 이유: 스킵하는 것은 **render 뿐**이다. 위의 시뮬 tick 들(이동·투어·
+      // 멀티플레이어 상태 전송·NPC)은 그대로 돈다. 루프 맨 앞에서 return 하면 다른
+      // 접속자에게 내가 얼어붙어 보이고, 오버레이를 닫는 순간 누적 delta 가 한 번에 튄다.
+      //
+      // 이 분기가 renderer.render 를 **가진 유일한 자리**여야 이 게이트가 유효하다.
+      // 새 렌더 경로를 추가하면 이 게이트 안으로 넣어라 — 밖에 두면 게이트는 통과하는데
+      // 씬은 계속 그려지고, 그 상태는 "고쳤다"와 화면상 구별되지 않는다.
+      if (!isSceneCovered()) {
+        if (selfViewController.isThirdPerson() && selfViewController.getSelfAvatar()) {
+          selfViewController.applySelfCamOffset();
+          renderer.render(scene, camera);
+          selfViewController.restoreSelfCamOffset();
+        } else {
+          renderer.render(scene, camera);
+        }
       }
     } catch (err) {
       console.error('렌더 루프 오류:', err);

@@ -39,6 +39,7 @@ import {
   encodeChibi,
   normalizeChibi,
 } from './chibi.js';
+import { setSceneCover } from './render-gate.js';
 import {
   LU_CLOSET_MAX,
   currentUserId,
@@ -667,6 +668,14 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     renderPanel();
     overlay.classList.add('lu-open');
     state.chibiOpen = true;
+    // [오버레이 렌더 스킵] 이 편집기는 전체화면(position:fixed; inset:0)이라 뒤의 3D
+    // 씬은 보이지 않는다 — 그동안 그리지 않는다. 근거·실측·경계는 render-gate.ts 머리말.
+    //
+    // 왜 main.js 의 onMakerToggle 이 아니라 여기인가: ① main.js 는 보호파일(라이브 미술관
+    // 서비스 중)이고 ② 그 콜백은 `if (!entered) return` 뒤에 있어 **로비에서 연 편집기에는
+    // 안 걸린다** — 캐릭터를 먼저 꾸미고 입장하는 순서가 오히려 흔하다. 편집기가 자기
+    // 상태를 직접 선언하면 두 문제가 같이 없어진다.
+    setSceneCover('chibi-maker', true);
     startLoop();
     // 입장 후 편집이면 모달이 화면을 덮는 동안 플레이어 이동·포인터락을 멈춘다
     // (라이트박스/투어와 동일한 확립된 패턴). 로비에서는 이미 비활성이라 main.js가 무시.
@@ -675,6 +684,9 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function close() {
     overlay.classList.remove('lu-open');
     state.chibiOpen = false;
+    // 반드시 걷는다 — 안 걷으면 미술관이 멈춘 채로 남는다. close()는 ✓(저장)·×(닫기)·
+    // ESC 가 모두 지나는 단일 지점이라 여기 한 곳이면 충분하다(경로가 늘면 여기로 모아라).
+    setSceneCover('chibi-maker', false);
     stopLoop();
     if (chibiPreviewInstance) {
       previewRotator.remove(chibiPreviewInstance.group);
