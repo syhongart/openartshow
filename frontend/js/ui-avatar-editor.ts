@@ -41,7 +41,7 @@ import {
 } from './chibi.js';
 import { setSceneCover } from './render-gate.js';
 import { applyPreviewShadowCasters } from './chibi-shadow.js';
-import { pickForRandomize, canRandomize } from './random-pick.js';
+import { pickForRandomize, pickDifferent, canRandomize } from './random-pick.js';
 import {
   LU_CLOSET_MAX,
   currentUserId,
@@ -382,6 +382,7 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
 
   function setParam(key: string, value: any) {
     if (!chibiParams) return;
+    lastPresetIndex = -1; // 세부를 하나라도 건드리면 더는 그 프리셋이 아니다
     applyParam(key, value);
     chibiParams = normalizeChibi(chibiParams);
     renderPanel();      // 선택 표시부터 — 이게 사용자가 기다리는 피드백이다
@@ -395,7 +396,12 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
    * 바뀌지 않는 것은 그 탭에 굴릴 것이 없다는 뜻이고, 그게 맞는 동작이다.
    */
   function randomizeActiveCategory() {
-    if (!chibiParams || !randomTargets.length) return;
+    if (!chibiParams) return;
+    // 종족 탭만 규칙이 다르다 — 칩을 굴리는 대신 **프리셋 전체 풀**에서 뽑는다.
+    // 근거는 `randomizePreset` 주석(감독 지시).
+    if (activeCat === 'species') { randomizePreset(); return; }
+    if (!randomTargets.length) return;
+    lastPresetIndex = -1; // 다른 탭을 굴리면 프리셋 원본에서 벗어난다
     // pick 은 **적용 시점의** 현재값을 읽는다(pickForRandomize 가 그것을 후보에서 뺀다).
     // 앞선 적용이 뒤 항목의 현재값을 바꿀 수 있는데(종족→팔레트), 그건 의도된 연쇄다.
     //
@@ -411,11 +417,39 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     scheduleRebuild();
   }
 
+  /**
+   * 마지막으로 적용한 프리셋의 인덱스. 종족 탭 랜덤이 **같은 프리셋을 연속으로 뽑지
+   * 않도록** 기억한다 — 같은 룩이 다시 나오면 눌러도 안 바뀐 것처럼 보인다.
+   * 프리셋이 아닌 경로(옷장 슬롯 로드)로 적용하면 -1 이라 다음 굴림에 제약이 없다.
+   */
+  let lastPresetIndex = -1;
+
   // 프리셋 적용 — 완성 룩을 통째로 로드해 시작점으로. 이후 세부 커스터마이즈 가능.
-  function applyPreset(look: any) {
+  function applyPreset(look: any, presetIndex = -1) {
+    lastPresetIndex = presetIndex;
     chibiParams = normalizeChibi(Object.assign({}, look));
     renderPanel();
     scheduleRebuild();
+  }
+
+  /**
+   * 종족 탭 랜덤 — **프리셋 전체 풀**에서 하나를 뽑는다(감독 지시 2026-08-07:
+   * *"종족을 랜덤으로 할때는 밑의 프리셋만 되게 해줘. 밑의 프리셋 모두."*).
+   *
+   * 왜 종족·성별·피부색 칩을 굴리지 않는가: 그 셋만 흔들면 **어중간한 조합**이 나온다
+   * (동물 종족에 사람 옷, 머리색과 안 어울리는 피부색 등). 프리셋은 사람이 완성해 둔
+   * 룩이라 한 번에 그럴듯한 캐릭터가 되고, **적용 뒤에도 아래 칩·스와치로 세부를 계속
+   * 바꿀 수 있다**(감독: *"그다음에 변경가능하게"*) — `applyPreset` 이 `renderPanel` 을
+   * 부르므로 편집 UI 가 그대로 다시 그려진다.
+   *
+   * 그룹(신작·사람·동물…)을 가리지 않고 `CHIBI_PRESETS` 전체에서 뽑는다("밑의 프리셋 모두").
+   */
+  function randomizePreset() {
+    const n = CHIBI_PRESETS.length;
+    if (!n) return;
+    // 인덱스로 고른다 — look 은 객체라 `===` 비교가 성립하지 않는다.
+    const idx = pickDifferent(CHIBI_PRESETS.map((_: any, i: number) => i), lastPresetIndex);
+    applyPreset((CHIBI_PRESETS as any)[idx].look, idx);
   }
 
   function presetRow() {
@@ -428,14 +462,24 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
       page.appendChild(el('div', { className: 'lu-am-section-title', text: `${grp.name} (${items.length})` }));
       const row = el('div', { className: 'lu-am-tabs lu-am-presets' });
       for (const pre of items) {
-        const btn = el('button', { type: 'button', className: 'lu-am-tab lu-am-preset' });
+        // 전체 풀 기준 인덱스 — 그룹 필터와 무관하게 `lastPresetIndex` 와 맞춘다.
+        const gi = CHIBI_PRESETS.indexOf(pre);
+        const btn = el('button', {
+          type: 'button',
+          // 지금 적용된 프리셋을 표시한다. 랜덤으로 굴릴 때 표시가 옮겨가므로
+          // "무엇이 뽑혔는지"가 화면에 보인다. 세부를 하나라도 바꾸면 더는 그 프리셋이
+          // 아니므로 표시가 사라진다(setParam·카테고리 랜덤에서 lastPresetIndex 해제).
+          className: 'lu-am-tab lu-am-preset' + (gi === lastPresetIndex ? ' lu-selected' : ''),
+        });
         const c1 = pre.look.skin || DEFAULT_CHIBI.skin;
         const c2 = pre.look.top || pre.look.hairColor || DEFAULT_CHIBI.top;
         const dot = el('span', { className: 'lu-am-preset-dot', 'aria-hidden': 'true' });
         dot.style.background = `conic-gradient(${c1} 0deg 180deg, ${c2} 180deg 360deg)`;
         btn.appendChild(dot);
         btn.appendChild(el('span', { className: 'lu-am-preset-label', text: pre.name }));
-        btn.addEventListener('click', () => applyPreset(pre.look));
+        // 인덱스를 함께 넘긴다 — 손으로 고른 뒤 종족 탭을 눌렀을 때 방금 그 프리셋이
+        // 다시 뽑히지 않게(전체 풀 기준 인덱스라 그룹 필터와 무관하다).
+        btn.addEventListener('click', () => applyPreset(pre.look, gi));
         row.appendChild(btn);
       }
       page.appendChild(row);
