@@ -13,8 +13,14 @@
 // 가로등 발광이 실제로 재질에 쓰이는가. three 는 필요한 모양만 스텁으로 세운다.
 
 import { describe, it, expect } from 'vitest';
+// **팔레트 hex 를 채널 값으로 만드는 일을 three 에게 시킨다.** 아래 `palette()` 독블록이
+// 이유를 소유한다 — 요약하면 변환식을 여기 적는 순간 그것이 미러링이고, 이 파일은 실제로
+// 그 미러링 때문에 **자기가 지킨다고 적은 것을 못 지킨 채 통과**한 적이 있다.
+// `three/webgpu` 가 아니라 `three` 인 것은 색 관리가 두 빌드의 공유 코드이고, WebGPU
+// 번들은 node 에서 무겁기만 하기 때문이다.
+import { Color } from 'three';
 import {
-  nightness, nightFloor, lampGlow, LAMP_LUMINANCE, LAMP_MAX_GLOW,
+  nightness, nightFloor, lampGlow, LAMP_LUMINANCE, LAMP_MAX_GLOW, type NightTune,
 } from '../frontend/js/world2/decide/night.js';
 import { BLOOM_THRESHOLD } from '../frontend/js/world2/features/postfx-params.js';
 // **실제 집행 함수를 부른다.** 테스트에서 같은 규칙을 다시 적으면 그것이 값 미러링이라,
@@ -124,18 +130,43 @@ describe('가로등 발광', () => {
 // 위 단언이 전부 통과해도, 그 값을 아무도 조명에 대입하지 않으면 화면은 그대로다.
 // 여기서 그 경계를 건넌다.
 
+/**
+ * `sky.js` 팔레트 hex → **집행이 실제로 만지는 채널 값.**
+ *
+ * ── 이 헬퍼가 없어서 블로커가 났다 (검수관 2026-08-07) ──────────────────────
+ * 아래 스텁들은 원래 `0x3d / 255` 처럼 **sRGB 바이트 비율**을 담고 있었고, 주석은 그것을
+ * *"팔레트를 선형으로 담고 있다"* 고 적었다. **거짓이다.** 프로덕션에서 하한이 얹히는
+ * `scene.fog.color`·`HemisphereLight.color` 는 `THREE.Color` 의 **선형** 채널이고,
+ * `0x3d4762` 의 선형 r 은 0.0467 — sRGB 숫자(0.2392)와 **5배** 차다.
+ *
+ * 그래서 그 스텁 위에서는 `fogScale` 이 무엇이든 팔레트도 하한도 **같은 배수만큼** 움직여
+ * 비교가 항상 `scale ≤ 1.05` 로 환원됐다. 즉 검사는 `> 1` 만 잡고 `(0, 1]` 구간 전체가
+ * 무방비였다 — `?nfog=0.9` 는 실제로 안개를 팔레트의 **4.6배**로 밝히는데 PASS 했다.
+ * 원래 사고와 같은 자릿수인데 통과한 것이다.
+ *
+ * ── 왜 변환식을 여기 적지 않는가 ────────────────────────────────────────────
+ * `SRGBToLinear` 를 손으로 옮겨 적으면 그것이 곧 값 미러링이고, three 가 색 관리 정책을
+ * 바꾸는 날 이 파일만 옛 공간에 남는다. **프로덕션과 같은 코드에 같은 일을 시킨다** —
+ * `sky.js` 도 `Color.set(hex)` 로 같은 경로를 탄다.
+ */
+function palette(hex: number): { r: number; g: number; b: number } {
+  const c = new Color(hex);
+  return { r: c.r, g: c.g, b: c.b };
+}
+
 /** `THREE.Color` 의 필요한 부분만. 계약이 이것뿐이라 스텁으로 충분하다 */
 class FakeColor {
   constructor(public r = 0, public g = 0, public b = 0) {}
 }
 
-/** sky.js 의 밤 값에서 시작한 조명 한 벌 */
+/** sky.js 의 밤 값(`LIGHT.night.clear`)에서 시작한 조명 한 벌 */
 function nightLights() {
+  const sky = palette(0x39445c), ground = palette(0x232a24);
   return {
     hemi: {
       intensity: 0.55,
-      color: new FakeColor(0x39 / 255, 0x44 / 255, 0x5c / 255),
-      groundColor: new FakeColor(0x23 / 255, 0x2a / 255, 0x24 / 255),
+      color: new FakeColor(sky.r, sky.g, sky.b),
+      groundColor: new FakeColor(ground.r, ground.g, ground.b),
     },
     sun: { intensity: 0.24 },
   };
@@ -255,17 +286,45 @@ describe('가로등이 블룸 문턱을 넘는가', () => {
 // 그래서 노출과 안개를 축으로 열었다. 아래 검사는 **그 축이 실제로 닿는지**를 본다 —
 // 값을 계산해 두고 아무 데도 안 쓰는 것이 이 저장소가 구름 `alpha` 에서 겪은 사고다.
 describe('노출과 안개 — 계산한 값이 실제로 소비되는가', () => {
+  // 채널 값은 전부 `palette()` 를 거친다 — **집행이 실제로 만지는 공간과 같아야** 검사가
+  // 검사가 된다(그 독블록이 전말을 소유한다). 조명 쪽도 같이 옮긴 이유는 한 스텁 안에서
+  // 안개만 선형이고 반구광만 sRGB 이면, 다음에 이 파일을 여는 사람이 어느 쪽이 맞는지
+  // 판단할 근거가 없기 때문이다.
   const targets = () => ({
     hemi: {
       intensity: 0.55,
-      color: { r: 0x39 / 255, g: 0x44 / 255, b: 0x5c / 255 },
-      groundColor: { r: 0x23 / 255, g: 0x2a / 255, b: 0x24 / 255 },
+      color: palette(0x39445c),
+      groundColor: palette(0x232a24),
     },
     sun: { intensity: 0.24 },
     renderer: { toneMappingExposure: 1 },
     // sky.js 가 밤에 칠하는 안개색 그대로
-    fog: { color: { r: 0x3d / 255, g: 0x47 / 255, b: 0x62 / 255 } },
+    fog: { color: palette(0x3d4762) },
   });
+
+  /**
+   * 허용 초과분 — **하한이 팔레트를 이겨도 되는 한계.**
+   *
+   * `NIGHT_FOG_SCALE` 독블록의 실측에서 온다: 채택값 0.2 는 항등 배수(0.1951)보다
+   * 커서 r 채널이 팔레트를 **1.025배** 넘어선다. 임계는 그 2.5% 를 덮어야 하고(안 그러면
+   * 기본값이 FAIL 한다), 동시에 그 두 배는 되지 말아야 한다(아래 표의 0.5 = 2.56배부터
+   * 전부 놓친다). 1.05 는 그 사이다. **저쪽 값이 바뀌면 이 근거를 다시 본다.**
+   */
+  const FOG_TOL = 1.05;
+
+  /**
+   * 하한 적용 뒤 안개가 팔레트보다 밝아진 **배수**를 채널별로 준다. 1 을 넘으면
+   * 그 채널에서 하한이 팔레트를 이겼다는 뜻이다.
+   *
+   * 배수로 돌려주는 이유: 절댓값을 그대로 단언하면 `sky.js` 팔레트가 바뀌는 날 검사가
+   * 통째로 낡는다. 이 축이 지키는 것은 색이 아니라 **두 값의 관계**다.
+   */
+  const fogLift = (tune?: NightTune): [ch: 'r' | 'g' | 'b', ratio: number][] => {
+    const t = targets();
+    const base = { ...t.fog.color };
+    applyNightFloor(t, 'night', tune);
+    return (['r', 'g', 'b'] as const).map((ch) => [ch, t.fog.color[ch] / base[ch]]);
+  };
 
   it('노출 튜닝이 렌더러에 닿는다', () => {
     const t = targets();
@@ -319,25 +378,42 @@ describe('노출과 안개 — 계산한 값이 실제로 소비되는가', () =
     // 그래서 수단(= 값 무변경)이 아니라 **목적**을 검사한다: 하한 적용 뒤 안개가
     // 팔레트 선형색보다 밝아지지 않을 것. 이러면 `NIGHT_FOG` 의 색공간을 나중에
     // 바로잡아도(그때 항등원은 다시 1 이 된다) 이 검사는 그대로 유효하다.
-    const t = targets();
-    // `targets()` 의 `fog.color` 는 `sky.js` 밤 팔레트를 **선형으로** 담고 있다.
-    const palette = { ...t.fog.color };
-    applyNightFloor(t, 'night');
-    for (const ch of ['r', 'g', 'b'] as const) {
-      // 5% 는 유도값(0.196)과 채택값(0.2) 사이의 r 채널 여유(2.7%)를 덮는 선이다.
-      // 0 으로 잡으면 그 2.7% 에 걸려 FAIL 하고, 크게 잡으면 1.6 같은 회귀를 놓친다.
-      expect(t.fog.color[ch], `${ch} 채널`).toBeLessThanOrEqual(palette[ch] * 1.05);
+    for (const [ch, ratio] of fogLift()) {
+      expect(ratio, `${ch} 채널 — 하한 ÷ 팔레트`).toBeLessThanOrEqual(FOG_TOL);
     }
   });
 
-  it('안개를 밝히는 회귀는 여전히 잡힌다 — 위 검사가 장식이 아님', () => {
-    // 뮤테이션을 테스트로 굳힌 것이다. `NIGHT_FOG_SCALE` 이 1.6(옛 사고값)으로
-    // 되돌아가는 형태를 그대로 재현해, 위 단언이 실제로 깨지는 조건을 못 박는다.
-    const t = targets();
-    const palette = { ...t.fog.color };
-    applyNightFloor(t, 'night', { fogScale: 1.6 });
-    const brighter = (['r', 'g', 'b'] as const).some((ch) => t.fog.color[ch] > palette[ch] * 1.05);
-    expect(brighter, 'fogScale 1.6 인데 안개가 안 밝아졌다 — 이 축이 죽어 있다').toBe(true);
+  // ── 검출력 — 위 검사가 무엇을 실제로 잡는가 ───────────────────────────────
+  // 뮤테이션을 테스트로 굳힌 것이다. 표의 배수는 `palette()` 가 만든 **선형** 채널
+  // 기준이고, 그래서 `NIGHT_FOG_SCALE` 이 sRGB 숫자를 얹는다는 사실이 그대로 드러난다.
+  //
+  //   fogScale   하한 ÷ 팔레트(r · g · b)      옛 스텁(sRGB 숫자)에서는
+  //   ────────┼──────────────────────────┼──────────────────────────
+  //   0.2(기본) 1.025 · 0.884 · 0.629       0.2 전부 → PASS (같음)
+  //   0.5        2.563 · 2.209 · 1.573      0.5 전부 → **PASS** ← 놓쳤다
+  //   0.9        4.614 · 3.977 · 2.832      0.9 전부 → **PASS** ← 놓쳤다
+  //   1.0        5.126 · 4.419 · 3.147      1.0 전부 → **PASS** ← 놓쳤다
+  //   1.6        8.202 · 7.070 · 5.034      1.6 전부 → FAIL (유일하게 잡히던 것)
+  //
+  // 옛 스텁은 팔레트도 하한도 sRGB 숫자였다. 두 값이 **같은 배수만큼** 함께 움직이니
+  // 비교가 언제나 `fogScale ≤ 1.05` 로 환원됐고, 검사가 실제로 지킨 것은 *"배수가 1 을
+  // 넘지 않는다"* 뿐이었다. `?nfog=` 는 `[0.05, 4]` 로 열려 있고 그 구간의 절반이
+  // **원래 사고를 그대로 재현하는 구간**인데 전부 통과했다.
+  it.each([0.5, 0.9, 1.0, 1.6])('fogScale=%s 는 잡힌다 — 위 검사가 장식이 아님', (scale) => {
+    const over = fogLift({ fogScale: scale }).filter(([, r]) => r > FOG_TOL);
+    expect(
+      over.map(([ch]) => ch),
+      `fogScale ${scale} 인데 어느 채널도 팔레트를 못 이겼다 — 이 축이 죽어 있다`,
+    ).not.toHaveLength(0);
+  });
+
+  it('노브 하한(0.05)은 통과한다 — 임계가 안 밝히는 값까지 잡으면 거짓 FAIL 이다', () => {
+    // 위 검사를 통과시키려고 임계를 늘리는 것과 반대 방향의 확인이다. 임계가 너무
+    // 빡빡하면 *"안개를 어둡게 두는"* 정당한 값이 FAIL 하고, 그러면 다음 사람이
+    // 임계를 늘려 검출력을 통째로 잃는다.
+    for (const [ch, ratio] of fogLift({ fogScale: 0.05 })) {
+      expect(ratio, `${ch} 채널`).toBeLessThanOrEqual(FOG_TOL);
+    }
   });
 
   it('낮은 여전히 무변경이다 — 밤 기본값이 낮으로 새면 안 된다', () => {

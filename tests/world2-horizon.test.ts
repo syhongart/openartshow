@@ -13,10 +13,11 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  HORIZON_MIN, HORIZON_MAX, HORIZON_NIGHT, HORIZON_LIT, HORIZON_TARGET_RATIO,
+  HORIZON_MIN, HORIZON_MAX, HORIZON_NIGHT, HORIZON_LIT,
   eyeAboveSea, horizonBandAngle, horizonFogAt, horizonAlphaProfile,
   horizonRadius, horizonFog, horizonStrength,
 } from '../frontend/js/world2/decide/horizon.js';
+import { HorizonBand } from '../frontend/js/world2/systems/horizon.js';
 import { TIMES } from '../frontend/js/world2/decide/night.js';
 import { SEA_Y } from '../frontend/js/world2/decide/water.js';
 import { fogBand } from '../frontend/js/world2/decide/fog.js';
@@ -93,7 +94,12 @@ describe('수평선 밴드 판정', () => {
   it('노브 범위: 시간대 기본값이 전부 범위 안이고 상한이 1 미만이다', () => {
     for (const t of TIMES) {
       const s = horizonStrength(t);
-      expect(s, `${t} 기본 세기`).toBeGreaterThan(HORIZON_MIN);
+      // ⚠ `>` 가 아니라 `>=` 다. **느슨하게 만든 것이 아니라 하한이 유효값이 됐다** —
+      // 감독이 전 시간대를 0 으로 확정했다(`decide/horizon.ts` 의 두 상수 독블록).
+      // 옛 `> HORIZON_MIN` 은 "밴드는 늘 켜져 있다" 를 암묵 전제로 깔고 있었고, 그
+      // 전제가 판정으로 깨진 것이다. 0 을 못 넣는 검사를 남겨 두면 감독 판정이
+      // 게이트에 막힌다.
+      expect(s, `${t} 기본 세기`).toBeGreaterThanOrEqual(HORIZON_MIN);
       expect(s, `${t} 기본 세기`).toBeLessThanOrEqual(HORIZON_MAX);
     }
     // 1 이면 밴드가 검정이 된다 — 후보에 넣지 않는다.
@@ -106,11 +112,32 @@ describe('수평선 밴드 판정', () => {
 // 0.988 — 밴드가 켜져 있는데 사실상 꺼진 것과 같았고, 감독이 *"낮에도 이렇게"* 라고
 // 한 것이 그 상태다. 그 분기가 실제로 살아 있는지 **값으로** 본다.
 describe('시간대별 밴드 세기', () => {
-  it('밤과 낮이 다른 값이다 — 분기가 죽으면 낮이 다시 사실상 꺼진다', () => {
+  it('시간대마다 자기 상수를 본다 — 분기가 죽으면 낮이 다시 사실상 꺼진다', () => {
     expect(horizonStrength('night')).toBe(HORIZON_NIGHT);
     expect(horizonStrength('day')).toBe(HORIZON_LIT);
-    // 자릿수 차이가 이 분기의 존재 이유다. 둘이 가까워지면 분기가 장식이 된다.
-    expect(HORIZON_LIT).toBeGreaterThan(HORIZON_NIGHT * 2);
+  });
+
+  // ⚠ **이 단언은 지금 검출력이 없다. 그것을 알고 남긴다.**
+  //
+  // 원래 여기에 `HORIZON_LIT > HORIZON_NIGHT * 2`(자릿수 차이가 분기의 존재 이유다)가
+  // 있었다. 감독이 두 값을 **모두 0** 으로 확정하면서 그 단언은 성립하지 않는다.
+  //
+  // 그리고 값이 같아진 순간 **위 단언도 검출력을 잃었다** — `horizonStrength` 가 분기를
+  // 버리고 아무 상수나 하나 돌려줘도 통과한다(실제로 executor 뮤테이션 M1 이 잡던
+  // 결함이다). 값이 같은 동안 이 축은 **값으로 볼 수 없다.**
+  //
+  // 그래서 분기의 생사는 아래 `분기가 시간대를 실제로 본다` 가 소스로 본다. 값 축이
+  // 돌아오는 것은 두 상수가 다시 갈라지는 날이고, 그때 위 단언에 대소 비교를 되살린다.
+  // **비어 있다는 것을 적어 두지 않으면 다음 사람은 이 파일이 그 축을 지킨다고 읽는다.**
+  it('분기가 시간대를 실제로 본다 — 값이 같아진 지금 이것이 유일한 축이다', () => {
+    const s = SRC('frontend/js/world2/decide/horizon.ts');
+    const body = /export function horizonStrength\([\s\S]*?\n\}/.exec(s);
+    expect(body).not.toBeNull();
+    // 밤을 이름으로 가려낸다. 이 분기가 사라지면 전 시간대가 한 값으로 붕괴한다.
+    expect(body![0]).toMatch(/'night'/);
+    // 두 상수를 **둘 다** 참조해야 한다 — 하나만 남으면 그것이 M1 의 형태다.
+    expect(body![0]).toMatch(/HORIZON_NIGHT/);
+    expect(body![0]).toMatch(/HORIZON_LIT/);
   });
 
   it('노을은 낮 쪽이다 — 밝은 안개 팔레트를 공유한다', () => {
@@ -139,13 +166,6 @@ describe('시간대별 밴드 세기', () => {
     expect(horizonStrength('night', null)).toBe(HORIZON_NIGHT);
   });
 
-  it('기준 비율은 감독이 판정한 밤 화면에서 온다 — 0..1 안의 실수다', () => {
-    // 세 세기가 전부 이 하나에서 유도됐다는 것이 설계의 요점이다. 값 자체를 단언하는
-    // 대신(그러면 이 파일이 미러가 된다) 범위와 방향만 묶는다 — 1 이상이면 "밴드가
-    // 하늘보다 밝아도 된다" 는 뜻이 되어 부등식이 뒤집힌다.
-    expect(HORIZON_TARGET_RATIO).toBeGreaterThan(0);
-    expect(HORIZON_TARGET_RATIO).toBeLessThan(1);
-  });
 });
 
 // ── 집행·배선 ───────────────────────────────────────────────────────────────
@@ -206,6 +226,74 @@ describe('수평선 밴드 배선', () => {
     expect(s).toMatch(/readNumOpt\(\s*HORIZON_KNOB/);
     // `readNum` 으로 되돌아가면 fallback 이 강제돼 시간대 분기가 통째로 죽는다.
     expect(s).not.toMatch(/readNum\(\s*HORIZON_KNOB/);
+  });
+
+  // ── 소비 층 — 넘긴 값을 실제로 쓰는가 (검수관 블로커 B1) ────────────────────
+  //
+  // 위 배선 검사들은 **소스 텍스트**다. "부른다" 는 보지만 "받은 값을 쓴다" 는 못 본다.
+  // executor 뮤테이션 M3(`update` 가 `strength` 인자를 무시하고 내부 고정값을 씀)이
+  // **어떤 테스트에도 안 걸렸다** — 계산도 하고 호출도 하는데 소비 층이 비어 있었다.
+  // CLAUDE.md 가 "판정/집행 분리의 구멍" 으로 이름 붙인 형태 그대로다.
+  //
+  // ── 왜 생성자를 안 부르는가 ────────────────────────────────────────────────
+  // `HorizonBand` 생성자는 `bakeProfile` 에서 `document.createElement('canvas')` 를
+  // 거친다. jsdom 은 `getContext('2d')` 를 주지 못할 수 있고(node-canvas 부재),
+  // 그 실패는 이 테스트가 보려는 것과 무관하다. 그래서 **실제 `update` 코드**를
+  // 프로토타입에서 꺼내 최소 컨텍스트로 돌린다 — 검사 대상은 그 메서드 본문이고,
+  // 그것을 진짜로 실행하는 것이 요점이다(복사한 로직을 재검사하면 그게 미러링이다).
+  it('`update` 가 받은 세기를 **실제로 색에 반영한다** — 인자를 무시하면 잡힌다', () => {
+    const seen: number[][] = [];
+    const ctx = {
+      mesh: { position: { set: () => {} } },
+      mat: { color: { setRGB: (r: number, g: number, b: number) => { seen.push([r, g, b]); } } },
+    };
+    const run = (strength: number) => {
+      HorizonBand.prototype.update.call(
+        ctx as unknown as HorizonBand,
+        { x: 0, y: 1.7, z: 0 },
+        { r: 0.4, g: 0.5, b: 0.6 },
+        strength,
+      );
+    };
+
+    run(0.3);
+    run(0.75);
+    expect(seen).toHaveLength(2);
+
+    // 세기가 세면 더 어둡다(`1 − strength` 가 곱해진다). 인자를 무시하고 상수를 쓰면
+    // 두 줄이 같아져 이 단언이 깨진다 — M3 이 여기서 죽는다.
+    expect(seen[1][0]).toBeLessThan(seen[0][0]);
+    // 방향만이 아니라 **값**도 본다. 부호만 맞고 배수가 틀리면 화면이 달라진다.
+    expect(seen[0]).toEqual([0.4 * 0.7, 0.5 * 0.7, 0.6 * 0.7].map((v) => expect.closeTo(v, 10)));
+    expect(seen[1]).toEqual([0.4 * 0.25, 0.5 * 0.25, 0.6 * 0.25].map((v) => expect.closeTo(v, 10)));
+  });
+
+  it('`update` 가 세기를 0..1 로 자른다 — 범위 밖이 색을 뒤집지 않는다', () => {
+    const seen: number[][] = [];
+    const ctx = {
+      mesh: { position: { set: () => {} } },
+      mat: { color: { setRGB: (r: number, g: number, b: number) => { seen.push([r, g, b]); } } },
+    };
+    const run = (s: number) => HorizonBand.prototype.update.call(
+      ctx as unknown as HorizonBand, { x: 0, y: 1.7, z: 0 }, { r: 0.4, g: 0.5, b: 0.6 }, s,
+    );
+
+    run(2);   // 클램프가 없으면 `1 − 2 = −1` → 음수 색
+    run(-1);  // 클램프가 없으면 `1 − (−1) = 2` → 팔레트보다 **밝은** 밴드
+    expect(seen[0]).toEqual([0, 0, 0]);
+    expect(seen[1]).toEqual([0.4, 0.5, 0.6]);
+  });
+
+  it('안개색이 없으면 색을 건드리지 않는다 — 부팅 첫 프레임에 검은 띠가 뜨지 않는다', () => {
+    let touched = 0;
+    const ctx = {
+      mesh: { position: { set: () => {} } },
+      mat: { color: { setRGB: () => { touched += 1; } } },
+    };
+    HorizonBand.prototype.update.call(
+      ctx as unknown as HorizonBand, { x: 0, y: 1.7, z: 0 }, null, 0.3,
+    );
+    expect(touched).toBe(0);
   });
 
   it('밴드 재질이 `depthTest` 를 끄지 않는다', () => {
