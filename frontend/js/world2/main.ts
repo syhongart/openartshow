@@ -616,7 +616,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         for (const m of features) if (m.instance.system) kernel.add(m.instance.system);
         // `parcelFade` 가 `streaming` **뒤**인 이유: 이번 프레임에 태어난 슬롯은
         // `sink.apply` 가 이미 안개색으로 덮었고, 여기서는 진행만 한다. 그래서 새 슬롯이
-        // 첫 프레임에 dt(≈16ms) 만큼 앞서 나가지만 기본 커브(`in`)에서 0.1% 미만이다 —
+        // 첫 프레임에 dt(≈16ms) 만큼 앞서 나가지만 기본 커브(`in`)에서 0.2% 미만이다
+        // (60fps·0.45초 기준 (16.67/450)² ≈ 0.14%) —
         // 순서를 뒤집어 없앨 수도 있으나 그러면 "이번 프레임 것은 다음 프레임부터" 라는
         // 예외를 시스템 순서로 표현하게 되어, 읽는 사람이 그 규칙을 알아야 한다.
         kernel.add(streaming).add(parcelFade).add(adapt);

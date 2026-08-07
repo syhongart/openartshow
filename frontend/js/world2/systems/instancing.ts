@@ -226,8 +226,8 @@ export class InstancePools {
       // 오래 빠져 있던 부분이다. 행렬만 옮기면 이사 온 인스턴스가 **그 자리에 남아
       // 있던 옛 색**을 물려받는다. tone 팔레트가 같은 종류 안에서 서로 비슷해 눈에 잘
       // 안 띄었을 뿐이고, LOD 페이드가 붙으면 "등장 중이라 안개색인 슬롯" 의 색이
-      // 살아 있는 건물에 얹혀 증폭된다. 뮤테이션(이 두 줄을 지우면 깨지는가)은
-      // `tests/world2-instancing.test.ts` 가 본다.
+      // 살아 있는 건물에 얹혀 증폭된다. 뮤테이션(이 줄들을 지우면 깨지는가)은
+      // `tests/world2-lod-fade.test.ts` §3 이 본다.
       if (p.mesh.instanceColor) {
         p.mesh.getColorAt(last, _c);
         p.mesh.setColorAt(h.index, _c);

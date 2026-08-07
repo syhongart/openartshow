@@ -120,7 +120,11 @@ export class ParcelFadeSystem implements System {
       _cur.copy(_from).lerp(e.target, mix);
       this.pools.setColor(h, _cur);
       if (mix >= 1) {
-        this.pools.setColor(h, e.target); // 끝값을 정확히 박는다(보간 오차 잔류 방지)
+        // 끝값을 한 번 더 박는다. **뮤테이션으로 확인했다 — 이 줄을 지워도 테스트가
+        // 깨지지 않는다.** `lerp(alpha=1)` 이 이미 목표색을 주고, 이 엔트리는 바로
+        // 아래에서 지워져 아무도 그 값을 다시 읽지 않기 때문이다. 즉 여기가 막는
+        // "보간 오차 잔류" 는 **관측 가능한 것이 없다.** 방어로만 남긴다.
+        this.pools.setColor(h, e.target);
         this.entries.delete(h);
       }
     }

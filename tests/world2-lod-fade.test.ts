@@ -15,8 +15,11 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three/webgpu';
 import {
   EASINGS, FADE_EASES, fadeMix, residualAtSpawn,
+  crossingCells, crossingSeconds, FADE_SECONDS,
 } from '../frontend/js/world2/decide/lod-fade.js';
 import { DEFAULT_BANDS } from '../frontend/js/world2/decide/lod.js';
+import { DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
+import { WALK_SPEED, RUN_MULT } from '../frontend/js/world2/systems/player.js';
 import { FOG_FAR_CELLS } from '../frontend/js/world2/decide/fog.js';
 import { InstancePools } from '../frontend/js/world2/systems/instancing.js';
 import { createSlotPool } from '../frontend/js/world2/systems/parcel-assets.js';
@@ -52,6 +55,34 @@ describe('§1 커브 — 나타나다 되돌아가지 않는다', () => {
   it('경과가 시간을 넘겨도 1 을 넘지 않는다', () => {
     expect(fadeMix(10, 0.5, 'lin')).toBe(1);
     expect(fadeMix(-1, 0.5, 'lin')).toBe(0);
+  });
+});
+
+describe('§1-3 페이드 시간과 통과 시간의 관계 — 근거를 게이트로', () => {
+  // ── 왜 이 절이 있는가 (검수관 지적 2026-08-07) ─────────────────────────
+  // `FADE_SECONDS` 의 유도가 처음에는 **주석의 숫자**였고 그 숫자가 이미 폐기된
+  // `speed 9` 였다. 결론(0.45 가 안전)은 오히려 여유가 커지는 방향이라 안 흔들렸고,
+  // 그래서 아무도 근거를 검산하지 않았다. **결론이 맞으면 근거는 검증되지 않는다.**
+  // 여기서 실제 상수를 넣어 관계를 못 박는다 — 속도가 바뀌어 여유가 사라지면 깨진다.
+
+  it('기본 페이드가 통과 시간 안에 넉넉히 끝난다', () => {
+    const t = crossingSeconds(DEFAULT_LAYOUT.cellX, WALK_SPEED, RUN_MULT);
+    expect(t).toBeGreaterThan(FADE_SECONDS * 2);
+  });
+
+  it('빨라질수록 통과 시간이 줄어든다(단조) — 여유가 잠식되는 방향을 안다', () => {
+    const slow = crossingSeconds(DEFAULT_LAYOUT.cellX, WALK_SPEED, RUN_MULT);
+    const fast = crossingSeconds(DEFAULT_LAYOUT.cellX, WALK_SPEED * 2, RUN_MULT);
+    expect(fast).toBeLessThan(slow);
+  });
+
+  it('등장을 안개 밖으로 밀면 통과 구간이 0 이 아니라 늘어난다', () => {
+    const pushed = { ...DEFAULT_BANDS, farEnter: 3.0, farExit: 3.3 };
+    expect(crossingCells(pushed)).toBeGreaterThan(crossingCells());
+  });
+
+  it('속도가 0 이면 영원히 안 닿는다 — 0 나눗셈을 NaN 으로 흘리지 않는다', () => {
+    expect(crossingSeconds(DEFAULT_LAYOUT.cellX, 0, RUN_MULT)).toBe(Infinity);
   });
 });
 
