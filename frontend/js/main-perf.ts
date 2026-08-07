@@ -130,6 +130,12 @@ export function createPerfGovernor(ctx: PerfCtx) {
       fpsFrames = 0;
       fpsElapsed = 0;
       // 저사양 자동 전환 (히스테리시스 + 10초 재전환 금지로 깜빡임 방지)
+      //
+      // 이 감소는 위 게이트(오버레이 렌더 스킵) 안에 있어 **편집기가 열린 동안 함께
+      // 얼어붙는다. 의도한 것이다.** 시간만 흘려보내면 편집기를 닫는 순간 쿨다운이
+      // 만료된 상태가 되어 **첫 표본 하나로 곧장 재전환**할 수 있고, 그건 쿨다운이
+      // 막으려는 깜빡임 그 자체다. 얼려두면 닫은 뒤 남은 시간만큼 더 기다린다 —
+      // 방향이 보수적(전환 억제)이라 안전한 쪽으로 틀린다.
       liteToggleCooldown = Math.max(0, liteToggleCooldown - 0.5);
       if (liteToggleCooldown === 0 && entered) {
         if (!liteMode && fpsNow < LITE_ENTER_FPS) {
