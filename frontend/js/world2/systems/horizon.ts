@@ -21,6 +21,8 @@ import {
   HORIZON_KNOB, HORIZON_MIN, HORIZON_MAX,
   horizonBandAngle, horizonAlphaProfile, horizonRadius, horizonFog, horizonStrength,
 } from '../decide/horizon.js';
+// 전 시간대를 순회해 "어디서도 안 켜지는가" 를 판정한다 — `createHorizonBand` 독블록.
+import { TIMES } from '../decide/night.js';
 import { readNumOpt } from '../url-knob.js';
 import type { MutableColor } from './night-lights.js';
 
@@ -168,17 +170,47 @@ export class HorizonBand {
 }
 
 /**
- * `?hz=0` 이면 `null` — 밴드를 만들지 않는다(대조군이 곧 밴드 이전 화면이다).
+ * 세기가 **어느 시간대에서도 0** 이면 `null` — 밴드를 만들지 않는다.
  *
- * **명시적 0 만 끈다.** 시간대 기본값이 0 인 경우로 끄지 않는 이유: 만들고 안 만들고를
- * 시간대에 걸면 세션 중 시간대를 바꿀 때 메시가 생겼다 사라졌다 하고, 그것은 이
- * 프로젝트가 개수 불변식으로 금지한 바로 그 형태다(부팅 때 만들고 세션 내내 그대로).
- * 세기 0 은 `dim = 1` 이라 안개색을 그대로 덧그리므로 화면상 무해하다.
+ * ── *"세기 0 은 화면상 무해하다"* 가 거짓이었다 (검수관 지적 2026-08-07) ────
+ * 이 자리에는 *"명시적 `?hz=0` 만 끈다. 세기 0 은 `dim = 1` 이라 안개색을 그대로
+ * 덧그리므로 **화면상 무해하다**"* 라고 적혀 있었다. **그 문장이 거짓이다.**
+ *
+ * 이 재질은 `fog: false` 다 — three 의 씬 안개 시스템에 **연결돼 있지 않다.** 그래서
+ * 밴드는 `scene.fog` 가 무엇이든(꺼져 있어도) **팔레트 안개색을 감쇠 없이 계속
+ * 칠한다.** 주변이 안개 감쇠를 받는 동안에는 우연히 같은 색이라 안 보였을 뿐이고,
+ * `?fogd=0` 으로 안개를 끄면 **밴드만 안개색으로 남아 전에 없던 띠가 된다.**
+ * "무해" 는 안개가 켜져 있다는 전제 위에서만 참이었고, 그 전제는 이제 노브로 깨진다.
+ *
+ * ── 개수 불변식은 그대로 지킨다 ────────────────────────────────────────────
+ * 옛 주석이 든 우려 — *"만들고 안 만들고를 시간대에 걸면 세션 중 메시가 생겼다
+ * 사라졌다 한다"* — 는 **여전히 유효하고, 여기서 그것을 하지 않는다.** 판정을 *지금
+ * 시간대* 가 아니라 **전 시간대의 최대 세기**로 하기 때문이다. 그 값은 부팅 시
+ * 상수이므로 세션 중 바뀌지 않는다 — 시간대를 아무리 돌려도 메시 존재 여부는 그대로다.
+ *
+ * 되살리려면 `?hz=0.3` 처럼 **0 이 아닌 값**을 주면 된다(override 가 이기므로 전
+ * 시간대에서 생성된다). 감독이 밴드를 다시 쓰기로 하면 시간대 상수를 올리면 된다.
  */
 export function createHorizonBand(
   scene: THREE.Scene, eyeHeight: number, override = HORIZON_OVERRIDE,
 ): HorizonBand | null {
-  return override === 0 ? null : new HorizonBand(scene, eyeHeight);
+  return bandExists(override) ? new HorizonBand(scene, eyeHeight) : null;
+}
+
+/**
+ * 밴드 메시를 만들 것인가. **판정만 하는 순수 함수**라 테스트가 값으로 본다.
+ *
+ * `createHorizonBand` 안에 인라인으로 두면 이 판정을 검증하려고 `HorizonBand` 를 실제로
+ * 생성해야 하고, 그 생성자는 `document.createElement('canvas')` 를 거쳐 node 에서
+ * 막힌다 — 즉 판정이 **테스트할 수 없는 자리**에 갇힌다. 그래서 뺀다.
+ *
+ * @param override `?hz=` 지정값. `null` 이면 미지정
+ */
+export function bandExists(override: number | null): boolean {
+  // 노브가 지정되면 그것이 전 시간대를 덮으므로 시간대를 볼 필요가 없다.
+  if (override !== null) return override > 0;
+  // 미지정이면 **전 시간대 중 하나라도** 켜지는지 본다. 부팅 시 상수다.
+  return TIMES.some((t) => horizonStrength(t) > 0);
 }
 
 /** 지금 프레임의 세기. 노브가 지정됐으면 그것이, 아니면 시간대 기본값이 이긴다 */
