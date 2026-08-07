@@ -828,6 +828,7 @@ async function main() {
       // `off` 가 리포트에 흔적을 안 남기면 "스모크: 통과" 만 보고 성능 게이트가 돈 줄
       // 안다. **못 잰 것이 침묵으로 통과가 되는** 이 저장소의 상시 위험 형태다(검수관 R6).
       record(7, '개수 불변식(세션)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      record(7.6, '드로우콜 대조군', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(8, '하늘 예열(첫 등장)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       // `[11]` 도 같이 적는다(검수관 비블로커 2026-07-31). 이 검사는 성능 게이트가
       // 아니지만 `runPerfGates()` 안에 배선돼 있어 `off` 면 함께 안 돈다. 흔적을 안
