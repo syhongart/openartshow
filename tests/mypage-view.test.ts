@@ -365,6 +365,39 @@ describe('링크 편집', () => {
     expect(dropped).toBe(1);
   });
 
+  it('**플랫폼과 다른 호스트의 주소를 버린다** — 이 축이 비어 있었다', () => {
+    // ── 뮤테이션 M6 이 찾아낸 구멍 (2026-08-08) ───────────────────────────
+    // `readLinks` 의 `checkLink` 블록을 일부러 지웠는데 **아무 테스트도 안 깨졌다.**
+    // 바로 아래의 `normalizeLinkUrl` 실패 검사가 위험 스킴을 이미 덮고 있었고,
+    // 위 테스트가 `javascript:` 하나만 보고 있었기 때문이다.
+    //
+    // 하지만 `normalizeLinkUrl` 은 **이미 절대 URL 인 입력을 그대로 통과시킨다** —
+    // 호스트가 맞는지는 `checkLink` 만 본다. 그래서 그 블록이 없으면 인스타그램
+    // 칸에 페이스북 주소가 저장되고, 공개 프로필에는 "@x" 가 인스타그램 아이콘을
+    // 달고 뜬다. 프로필을 보는 사람만 속고 주인은 모른다.
+    addLinkRow(root, noop);
+    const row = root.querySelector('[data-mp-link-row]')!;
+    row.querySelector<HTMLSelectElement>('[data-mp-link="platform"]')!.value = 'instagram';
+    row.querySelector<HTMLInputElement>('[data-mp-link="url"]')!.value = 'https://facebook.com/someoneelse';
+    const { links, dropped } = readLinks(root);
+    expect(links.length).toBe(0);
+    expect(dropped).toBe(1);
+  });
+
+  it('**기타 링크에 이름이 없으면 버린다** — 같은 블록의 다른 축이다', () => {
+    // 위와 같은 이유다. `normalizeLinkUrl` 은 이름 유무를 모른다 — `checkLink` 만 본다.
+    addLinkRow(root, noop);
+    const row = root.querySelector('[data-mp-link-row]')!;
+    row.querySelector<HTMLSelectElement>('[data-mp-link="platform"]')!.value = 'other';
+    row.querySelector<HTMLInputElement>('[data-mp-link="url"]')!.value = 'https://a.example';
+    expect(readLinks(root).dropped).toBe(1);
+
+    row.querySelector<HTMLInputElement>('[data-mp-link="label"]')!.value = '포트폴리오';
+    const after = readLinks(root);
+    expect(after.dropped).toBe(0);
+    expect(after.links[0].label).toBe('포트폴리오');
+  });
+
   it('빈 행은 버린 것으로 세지 않는다 — 아직 안 적었을 뿐이다', () => {
     addLinkRow(root, noop);
     const { links, dropped } = readLinks(root);

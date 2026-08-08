@@ -624,6 +624,15 @@ html, body {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* 장르는 고를 수 있는 개수에 상한이 있다(schema 의 GENRE_MAX — 값은 JS 가 안다).
+   상한에 닿으면 JS 가 안 고른 칩을 disabled 로 만든다. 그때 **누를 수 없다는 것이
+   눌러 보기 전에** 보여야 한다 — 상한 안내만 띄우고 칩은 멀쩡해 보이면 사용자는
+   같은 칩을 여러 번 누른다. */
+.chip input:disabled + .chip__face {
+  opacity: .4;
+  cursor: not-allowed;
+  border-style: dashed;
+}
 
 .cards {
   display: grid;
@@ -668,6 +677,9 @@ html, body {
   cursor: pointer;
   padding: 12px 2px;
   border-bottom: 1px solid var(--line-soft);
+  /* 넓은 화면에서 라벨과 스위치가 600px 넘게 벌어지면 둘이 한 쌍으로 안 읽힌다
+     — 어느 토글이 어느 항목인지 눈이 가로질러 가야 한다. 폭을 묶어 둔다. */
+  max-width: 560px;
 }
 .swrow:last-child { border-bottom: 0; }
 .swrow__name { font-size: 13.5px; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
@@ -694,7 +706,7 @@ html, body {
   width: 21px; height: 21px;
   border-radius: 50%;
   background: var(--surface);
-  box-shadow: 0 1px 3px rgba(20,21,26,.30);
+  box-shadow: var(--sh-knob);
   transition: transform .16s ease;
 }
 .sw:checked { background: var(--cta); }
@@ -725,9 +737,10 @@ html, body {
 
 .master__kids {
   position: relative;
-  margin: 0 0 0 14px;
+  margin: 8px 0 0 14px;
   padding: 2px 0 2px 16px;
   border-left: 2px solid var(--line-soft);
+  max-width: 560px;
 }
 .master__veil { display: none; }
 
@@ -743,7 +756,7 @@ html, body {
   background: repeating-linear-gradient(
     -45deg,
     transparent 0 7px,
-    rgba(20,21,26,.055) 7px 14px
+    var(--veil-stripe) 7px 14px
   );
   pointer-events: none;
 }

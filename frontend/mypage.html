@@ -66,11 +66,18 @@
     --pv-cta:var(--oas-cta);
     --pv-cta-label:var(--oas-cta-label);
 
-    /* 형태 — 색이 아니므로 tokens.css 소관이 아니다(그림자 틴트는 중성 검정 알파만 쓴다). */
+    /* 형태·틴트 — 오프셋·블러는 형태지만 **틴트는 색이다.**
+       rgba(20,21,26) 은 --oas-dark-anchor(#14151A) 의 rgb 표기다. hex 토큰에서 알파만
+       떼어내는 표준 수단이 아직 좁아서(`rgb(from …)`) 저장소 선례대로 rgba 를 직접
+       적되(studio 의 --shadow-whisper, builder 의 --glass 와 같은 처리) **이 블록 한
+       곳에만** 모은다 — mypage.css 안에는 색 리터럴이 0이어야 하고, 실제로 0이다.
+       tokens.css 가 `rgb(from …)` 을 쓸 수 있게 되는 날 이 다섯 줄만 갈아끼우면 된다. */
     --r-lg:14px; --r-md:10px; --r-sm:7px;
     --sh-1:0 2px 6px rgba(20,21,26,.05);
     --sh-2:0 8px 20px rgba(20,21,26,.10);
     --sh-pv:0 18px 38px -14px rgba(20,21,26,.42);
+    --sh-knob:0 1px 3px rgba(20,21,26,.30);
+    --veil-stripe:rgba(20,21,26,.055);
     --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
   }
 </style>

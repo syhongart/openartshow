@@ -59,6 +59,29 @@ describe('normalizeLinkUrl — 아이디도 URL 도 받는다', () => {
       expect(normalizeLinkUrl('instagram', bad), bad).toBe('');
     }
   });
+
+  it('**호스트를 가진 위험 스킴**도 막는다 — 이 축이 비어 있었다', () => {
+    // ── 뮤테이션 M16 이 찾아낸 구멍 (2026-08-08) ──────────────────────────
+    // `parseUrl` 의 프로토콜 검사를 일부러 지웠는데 **아무 테스트도 안 깨졌다.**
+    // 바로 아래 줄의 `if (!url.hostname) return null` 이 대부분을 덮고 있었기
+    // 때문이다 — `javascript:alert(1)` 은 hostname 이 비어 걸린다.
+    //
+    // 그런데 `javascript://example.com/%0aalert(1)` 은 다르다. `//` 뒤가 host 로
+    // 파싱돼 `hostname === 'example.com'` 이 되고, hostname 검사를 **통과한다.**
+    // 개행(%0a) 뒤의 코드는 브라우저가 실행한다 — 실제 우회 수법이다.
+    //
+    // 즉 두 방어가 겹쳐 있어서 하나를 없애도 다른 하나가 덮었고, 그래서 프로토콜
+    // 검사가 **테스트로는 장식**이었다. 각 방어를 직접 겨냥해야 검출력이 생긴다.
+    for (const bad of [
+      'javascript://example.com/%0aalert(1)',
+      'javascript://comment%0aalert(1)',
+      'data://example.com/x',
+      'vbscript://example.com/x',
+    ]) {
+      expect(normalizeLinkUrl('website', bad), bad).toBe('');
+      expect(checkLink('website', bad).ok, bad).toBe(false);
+    }
+  });
 });
 
 describe('checkLink — 판정', () => {
