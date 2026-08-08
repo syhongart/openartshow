@@ -31,17 +31,31 @@ import type { Tier } from '../decide/lod.js';
 import { ground } from './ground.js';
 import { road } from './road.js';
 import { garden } from './garden.js';
+import { plazaFloor } from './plaza.js';
 import { building } from './building.js';
 import { tower } from './tower.js';
 import { tree } from './tree.js';
 import { lamp } from './lamp.js';
 import { fountain } from './fountain.js';
 import { clocktower } from './clocktower.js';
+import { bridge } from './bridge.js';
 import { bench } from './bench.js';
 import { planter } from './planter.js';
 
 export const PARTS = [
-  ground, garden, road,
+  // 바닥 평면. `footprint` 가 0이라 경쟁에 끼지 않는다.
+  //
+  // **광장 바닥은 도로 뒤다** — 순서가 배치에는 아무 영향이 없지만(둘 다 반경 0),
+  // 목록이 곧 층 순서를 읽는 자리이므로 y 가 낮은 것부터 적는다:
+  // 정원 0.07 → 도로 0.14 → 광장 0.22. 광장이 도로를 덮는 것은 의도다(`plaza.ts`).
+  ground, garden, road, plazaFloor,
+  // 랜드마크. 자리가 **고정**이라 양보할 수 없다.
+  //
+  // **다리가 분수·시계탑보다 앞이다.** 자리를 강과 격자가 통째로 정하므로(난수 0)
+  // 양보할 여지가 아예 없고, 셋 중 유일하게 **파셀 밖으로 뻗는다**. 실제로는 강가와
+  // 중앙 광장이 겹치지 않아 다툴 일이 없다 — 순서는 그 사실이 언젠가 바뀔 때를 위한
+  // 방어다(`tower` 를 `building` 앞에 둔 것과 같은 성격).
+  bridge,
   fountain, clocktower,
   // 타워는 건물보다 **앞**이다. 파셀당 한 채가 중앙 고정이라 자리를 양보할 수 없고,
   // 건물은 사분면에서 뽑으므로 물러설 여지가 있다. 다만 지금은 `zoning.ts` 가 두
@@ -111,3 +125,24 @@ export function tonesFor(kind: string): readonly number[] {
 
 export { DEFAULT_LAYOUT };
 export type { PartSpec, PlacedPart, PartAsset, LayoutOptions, ResolvedLayout, PlaceContext, ThreeNS } from './types.js';
+
+/**
+ * 발광을 신고한 파츠 — `PartSpec.neon` 을 가진 것들.
+ *
+ * ── 왜 목록이 여기 있고 판정이 저기 있는가 ──────────────────────────────────
+ * `GROUND_KEYS` 는 `decide/ground-albedo.ts` 에 있는데 이것은 여기 있다. 갈린 이유는
+ * **순환**이다: `parts/lamp.ts` 가 밤 세기 상수(`LAMP_MAX_GLOW`)를 `decide/night.ts`
+ * 에서 되읽으므로, 저쪽이 `PARTS` 를 import 하면 고리가 닫힌다
+ * (`parts/index` → `parts/lamp` → `decide/night` → `parts/index`).
+ *
+ * 지면 파츠는 밤 상수를 되읽지 않아 그 고리가 없었다. **같은 패턴이 한쪽에서만
+ * 성립하는 것이 아니라, 의존 방향이 달라서 자리가 다른 것이다.**
+ *
+ * 어느 쪽이든 요점은 같다 — **목록을 손으로 나열하지 않는다.** 파츠에 `neon` 한 줄을
+ * 적으면 저절로 집히고, 안 적으면 안 빛난다. 배선 쪽에 이름을 적어 두면 파츠를 추가할
+ * 때마다 저쪽을 고쳐야 하고, 안 고치면 **조용히 안 빛난다** — 포크 직후가 정확히 그
+ * 상태였다(`features/sky.ts` 가 `materialOf('lamp')` 한 종류만 만지고 있었다).
+ */
+export const NEON_PARTS: readonly { kind: string; day: number; night: number }[] =
+  PARTS.filter((p) => p.neon !== undefined)
+    .map((p) => ({ kind: p.kind, day: p.neon!.day, night: p.neon!.night }));

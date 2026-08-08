@@ -22,6 +22,10 @@ import { roadDirs, LAMP_OFFSET, LAMP_CLEARANCE, lampAnchors } from './road-topol
 // 색은 팔레트가 유일한 출처다. 등불색은 `decide/night.ts` 의 블룸 판정 기준이기도
 // 하므로 **양쪽이 같은 상수를 봐야 한다** — 그 경위는 `palette.ts` 의 `lampGlow` 주석.
 import { V } from './palette.js';
+// 밤 발광 세기. **여기서 숫자를 다시 적지 않는다** — 그 값은 블룸 문턱을 넘도록
+// 정해진 것이라(`decide/night.ts` 의 `LAMP_MAX_GLOW` 주석) 복제하면 정합이 깨진다.
+// `parts/` → `decide/` 방향은 이미 `types.ts` → `decide/lod.js` 로 열려 있다.
+import { LAMP_MAX_GLOW } from '../decide/night.js';
 
 /**
  * 이 파셀이 **자기 것으로 삼는 경계 수** — `east` 와 `south` 둘.
@@ -62,6 +66,12 @@ export const lamp: PartSpec = {
    * 하므로** 멀리 이어지는 불빛 줄이 그 값을 한다.
    */
   tiers: ['near', 'mid', 'far'],
+  /**
+   * 발광 신고(`PartSpec.neon`). 가로등. 낮에는 완전히 꺼진다 — 켜져 있으면 낮 화면에서 점으로 뜬다.
+   *  밤 세기는 `LAMP_MAX_GLOW` 를 그대로 쓴다: 그 값이 **블룸 문턱을 넘도록**
+   *  정해진 값이라(`decide/night.ts`) 여기서 따로 정하면 그 정합이 깨진다.
+   */
+  neon: { day: 0, night: LAMP_MAX_GLOW },
   salt: 0x94d049bb,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다.
   tones: [0xffffff],

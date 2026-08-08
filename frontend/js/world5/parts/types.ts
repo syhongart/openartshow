@@ -170,6 +170,30 @@ export interface PartSpec {
   readonly groundBase?: number;
 
   /**
+   * **이 파츠는 스스로 빛난다** — 그리고 낮·밤에 얼마나 빛나는지.
+   *
+   * ── 왜 파츠가 신고하는가 (2026-08-08, 감독 지시 *"밤에 건물 네온"*) ───────
+   * 포크 직후 발광 배선은 `features/sky.ts` 안에서 **`materialOf('lamp')` 한 종류만**
+   * 만지고 있었다. 그래서 마천루·광고 타워·다리에 `emissive` 를 넣어도 **낮에도 밤에도
+   * 영원히 꺼진 채** 남았다 — 디자이너가 그것을 발견하고 세 파츠를 상시 점등(`1`)으로
+   * 두면서 *"미봉이지 완성이 아니다"* 라고 보고했다. 정확한 진단이다.
+   *
+   * 배선 쪽에 파츠 이름 목록을 적는 방법도 있었지만 그러면 **파츠를 추가할 때마다
+   * 저쪽을 고쳐야 하고, 안 고치면 조용히 안 빛난다.** `groundBase` 가 같은 문제를
+   * 이미 이 방식으로 풀었다 — `GROUND_KEYS` 는 목록이 아니라 `PARTS` 에서 **유도**된다.
+   * 여기 한 줄을 적으면 `decide/night.ts` 의 `NEON_PARTS` 가 저절로 그것을 집는다.
+   *
+   * @property day   낮의 `emissiveIntensity`. 0 이면 낮에는 꺼진다.
+   *                 광고 스크린처럼 낮에도 켜져 있는 것이 정확한 물건은 0 이 아니다.
+   * @property night 한밤의 `emissiveIntensity`.
+   *
+   * ⚠️ **`emissiveMap` 이 없으면 이 신고는 무의미하다.** 세기는 맵의 밝기에 곱해지므로,
+   * 맵 없이 세기만 올리면 파츠 **전체**가 균일하게 빛난다(창문만 켜지는 게 아니라
+   * 벽까지). 마스크를 굽는 방법은 `parts/bake.ts` 의 `Piece.u` 주석에 있다.
+   */
+  readonly neon?: { readonly day: number; readonly night: number };
+
+  /**
    * 한 파셀이 쓸 수 있는 최대 개수. **슬롯 예산의 근거**이므로 `place` 가 실제로 내는
    * 최댓값과 반드시 일치해야 한다 — 작으면 부품이 조용히 안 그려지고, 크면 쓰지도 않을
    * 슬롯을 잡고 앉는다. `tests/world2-parts-registry.test.ts` 가 표본으로 대조한다.

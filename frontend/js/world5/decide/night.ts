@@ -391,3 +391,35 @@ export function lampGlow(n: number): number {
   // 자연스럽고, 어두워진 뒤에 켜지면 "늦게 켜졌다"는 인상이 남는다.
   return LAMP_MAX_GLOW * Math.min(1, 0.35 + k * 0.65);
 }
+
+// ── 네온 발광 (감독 지시 2026-08-08 *"밤에 건물 네온. 건물 외벽 조명도 넣고"*) ──
+//
+// **목록을 여기 적지 않는다.** `PARTS` 에서 유도한다 — `GROUND_KEYS` 가 같은 문제를
+// 이미 이 방식으로 풀었다(`decide/ground-albedo.ts`). 파츠에 `neon` 한 줄을 적으면
+// 저절로 집히고, 안 적으면 안 빛난다. 배선 쪽에 이름을 나열하면 **파츠를 추가할 때마다
+// 저쪽을 고쳐야 하고, 안 고치면 조용히 안 빛난다** — 포크 직후가 정확히 그 상태였다
+// (`features/sky.ts` 가 `materialOf('lamp')` 한 종류만 만지고 있었다).
+//
+// ⚠️ **목록(`NEON_PARTS`)은 `parts/index.ts` 에 있고 여기에는 판정만 있다.**
+// 여기서 `PARTS` 를 import 하면 순환이 생긴다: `parts/index` → `parts/lamp` →
+// `decide/night`(가로등 밤 세기) → `parts/index`. `GROUND_KEYS` 가 `decide/` 쪽에
+// 있는 것과 갈리는 지점이고, 이유는 **가로등이 밤 상수를 되읽기 때문**이다.
+
+/**
+ * 시간대에 따른 발광 세기. `day` ↔ `night` 사이를 **가로등 곡선으로** 보간한다.
+ *
+ * ── 왜 선형이 아닌가 ────────────────────────────────────────────────────────
+ * 가로등이 쓰던 곡선(`lampGlow`)을 그대로 일반화했다: 노을(n=0.4)에서 이미 절반 넘게
+ * 올라온다. 해가 지기 시작하면 먼저 켜지는 것이 자연스럽고, 완전히 어두워진 뒤에
+ * 켜지면 *"늦게 켜졌다"* 는 인상이 남는다 — 그 판단은 `lampGlow` 주석에 있다.
+ *
+ * **`lampGlow` 를 대체하지 않고 일반화했다.** `lamp` 를 `{day:0, night:LAMP_MAX_GLOW}`
+ * 로 신고하면 이 함수가 내는 값이 `lampGlow(n)` 과 **산술적으로 같다** —
+ * `0 + (LAMP_MAX_GLOW-0) × min(1, 0.35+0.65k)`. 그 동치를
+ * `tests/world5-neon-glow.test.ts` 가 못 박는다. 같지 않게 되는 날 빨간불이 뜬다.
+ */
+export function neonGlow(spec: { day: number; night: number }, n: number): number {
+  const k = Math.max(0, Math.min(1, n));
+  if (k <= 0) return spec.day;
+  return spec.day + (spec.night - spec.day) * Math.min(1, 0.35 + k * 0.65);
+}

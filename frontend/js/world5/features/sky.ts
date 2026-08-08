@@ -13,12 +13,17 @@
 import { SkySystem } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
 import {
-  nightness, lampGlow, TIMES, type SkyTime,
+  // `lampGlow` 는 더 이상 여기서 부르지 않는다 — `systems/neon-glow.ts` 가 그 곡선을
+  // 일반화한 `neonGlow` 로 파츠 넷을 함께 켠다. 저 함수는 남겨 뒀다: 가로등만 재는
+  // 기존 검사들이 그것을 부르고, `neonGlow` 와 산술적으로 같다는 것이 그 검사들의
+  // 근거가 된다(`tests/world5-neon-glow.test.ts` 가 동치를 못 박는다).
+  nightness, TIMES, type SkyTime,
   NIGHT_HEMI_I, NIGHT_SUN_I, NIGHT_EXPOSURE, NIGHT_FOG_SCALE, NIGHT_GROUND_SCALE,
 } from '../decide/night.js';
 import { readNum, readEnum } from '../url-knob.js';
 import { DAY_SUN_I, DAY_HEMI_I } from '../decide/daylight.js';
 import { GroundLift } from '../systems/ground-lift.js';
+import { NeonGlow } from '../systems/neon-glow.js';
 import { NIGHT_GROUND_LIFT, MAX_LIFT } from '../decide/ground-albedo.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
@@ -158,23 +163,22 @@ export const skyFeature: Feature = {
     // **만지는 것은 `emissiveIntensity` 하나뿐이다.** uniform 이라 파이프라인 캐시키에
     // 들어가지 않는다 — 매 프레임 바꿔도 재컴파일이 없다. `emissive` 색이나 `map` 유무
     // 같은 구조 신호를 건드리면 그 순간 전량 재컴파일이 된다.
-    const lampMat = env.pools.materialOf('lamp') as { emissiveIntensity?: number } | null;
-    let lampLit = -1; // 마지막으로 쓴 값. 같은 값을 다시 쓰지 않으려는 것
-
-    function applyLampGlow(): void {
-      if (!lampMat) return;
-      // 시간대는 **조립부에 묻는다.** 예전에는 `sky.get().time`(엔진 반영값)을 읽었다 —
-      // 가로등은 그것으로도 맞게 돌았지만, 같은 밤을 재는 두 소비자(등·블룸)가 서로 다른
-      // 원천을 보면 언젠가 갈린다. 원천을 하나로 모은다(팀장 판정 A-2).
-      const g = lampGlow(nightness(env.time()));
-      // 값이 안 바뀌었으면 건드리지 않는다. 매 프레임 같은 수를 대입해도 three 는
-      // 조용히 넘어가지만, 만지지 않는 것이 만지는 것보다 언제나 싸다.
-      if (g === lampLit) return;
-      lampLit = g;
-      lampMat.emissiveIntensity = g;
-    }
-
-    applyLampGlow(); // 부팅 프레임부터 맞춰 둔다 — 밤에 들어왔는데 첫 프레임만 꺼져 있으면 깜빡인다
+    // ── 네온 발광 (감독 지시 2026-08-08 *"밤에 건물 네온"*) ──────────────────
+    //
+    // ⚠️ 이 자리에는 `materialOf('lamp')` **한 종류만** 만지는 클로저가 있었다. 그래서
+    // 마천루·광고 타워·다리에 `emissive` 를 넣어도 **낮에도 밤에도 영원히 꺼진 채**
+    // 남았고, 감독 지시가 화면에 하나도 안 나타났다.
+    //
+    // 그리고 이 파일 아래쪽(`groundLift` 옆) 주석이 그 클로저를 스스로 이렇게 적고
+    // 있었다 — *"테스트가 같은 식을 옆에 다시 쓰고 있고, **배선이 사라져도 그 테스트는
+    // 초록이다**."* 대상이 넷으로 늘어나는 마당에 검출력 0 인 구조를 키울 이유가 없어
+    // `systems/neon-glow.ts` 로 뺐다. 이제 테스트가 실제로 돌아가는 코드를 부른다.
+    //
+    // 시간대는 **조립부에 묻는다**(`env.time()`). 예전에는 `sky.get().time`(엔진
+    // 반영값)을 읽었는데, 같은 밤을 재는 두 소비자(등·블룸)가 서로 다른 원천을 보면
+    // 언젠가 갈린다 — 원천을 하나로 모은다(팀장 판정 A-2).
+    const neon = new NeonGlow(env.pools);
+    neon.apply(env.time()); // 부팅 프레임부터 맞춰 둔다 — 밤에 들어왔는데 첫 프레임만 꺼져 있으면 깜빡인다
 
     // ── 지면 알베도 (`?glift=`) ────────────────────────────────────────────
     // 감독: *"정상적으로 밝은 느낌 나게 해."* (2026-08-05)
@@ -205,7 +209,7 @@ export const skyFeature: Feature = {
           sky.update(ctx);
           // 하늘이 시간대를 옮긴 **뒤에** 읽는다. 순서가 뒤집히면 한 프레임 늦은 값으로
           // 켜져서, 시간대를 바꿀 때 가로등만 뒤늦게 따라온다.
-          applyLampGlow();
+          neon.apply(env.time());
           groundLift.apply(env.time());
         },
         dispose: () => sky.dispose?.(),
@@ -243,8 +247,14 @@ export const skyFeature: Feature = {
           hemiG: env.hemi.groundColor.getHex(),
           exposure: typeof r?.toneMappingExposure === 'number' ? r.toneMappingExposure : null,
           fogC: fog?.color ? fog.color.getHex() : null,
-          // 가로등이 켜졌는가. 화면으로는 "좀 밝네" 로만 보이는 것을 숫자로 남긴다.
-          lampGlow: lampLit,
+          // 네온이 켜졌는가. 화면으로는 "좀 밝네" 로만 보이는 것을 숫자로 남긴다.
+          //
+          // `neonMissing` 이 비어 있지 않으면 그 파츠는 **발광을 신고했는데 아무것도
+          // 안 걸린 것**이다 — 포크 직후 마천루·광고 타워·다리가 정확히 그 상태였고,
+          // 화면에서는 "그냥 좀 어두운" 것으로만 보였다. 숫자로 남겨야 알아챈다.
+          lampGlow: neon.intensityOf('lamp') ?? null,
+          neonWired: neon.wired,
+          neonMissing: neon.missing,
           // 지면 알베도 배수. `groundMissing` 이 비어 있지 않으면 그 파츠에는 **아무것도
           // 안 걸린 것**이다 — 조용히 넘어가면 기능이 죽은 줄 모른다.
           groundLift: groundLift.scale,
