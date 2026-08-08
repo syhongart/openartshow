@@ -78,10 +78,10 @@
     --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
   }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/mypage-m-GgumpA.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/mypage-DQ2cB23J.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-hr07Qqp5.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/avatar-deeplink-BPFPK8q9.js">
-  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/mypage-Bip3p2Tw.css">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/mypage-Cacyheo9.css">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-BtfeuGbd.css">
 </head>
@@ -108,7 +108,14 @@
       <div class="pv__card">
         <p class="pv__lock" data-mp="preview-private" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.3 10.6h11.4v9H6.3ZM8.6 10.6V7.9a3.4 3.4 0 0 1 6.8 0v2.7"/></svg>프로필을 비공개로 설정했습니다</p>
 
-        <div class="pv__id">
+        <!-- 감독 지시 2026-08-08: *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로 바로
+             가게 하자"* — 아바타+이름 블록이 그 진입점이다.
+
+             **`<button>` 이다.** Preview 는 "다른 사람이 보는 모습" 이지만 이 블록만은
+             편집 진입점을 겸한다. `<div>` + click 리스너로 두면 키보드로 도달할 수 없고
+             스크린리더가 누를 수 있다는 것을 모른다 — 「캐릭터」 탭의 같은 기능이 이미
+             버튼이므로 여기만 다르면 그쪽만 접근 가능해진다. -->
+        <button class="pv__id" type="button" data-mp="preview-identity">
           <span class="pv__avatar">
             <!-- img 자체에 계약 속성을 붙였다. JS 가 `el.src = …` 로 채울 수 있고,
                  src 없는 <img> 가 깨진 아이콘으로 보이지 않도록 hidden 으로 시작한다
@@ -123,7 +130,20 @@
               <span class="pv__type" data-mp="preview-type" hidden></span>
             </span>
           </span>
-        </div>
+          <!-- 누를 수 있다는 신호. 아이콘은 `aria-hidden` 이고, 목적은 바로 아래
+               시각 숨김 텍스트가 말한다. -->
+          <span class="pv__id-go" aria-hidden="true">
+            <svg class="ico" viewBox="0 0 24 24" focusable="false"><path d="M4 16.5V20h3.5L18 9.5 14.5 6 4 16.5Z"/><path d="M13.2 7.3 16.7 10.8"/></svg>
+          </span>
+          <!-- ⚠ **`aria-label` 을 쓰지 않는다** (검수관 C1, 2026-08-08).
+               `aria-label` 은 자손 텍스트보다 우선해 접근 이름을 **완전히 대체**한다.
+               첫 판본이 그렇게 했고, 그 결과 스크린리더 사용자는 이 카드에서 **자기
+               이름·별명·타입을 읽을 수 없었다** — `<div>` 였을 때는 읽혔으므로 회귀다.
+               접근성을 근거로 `<button>` 을 골라 놓고 다른 축의 접근성을 깎은 셈이다.
+               대신 시각 숨김 텍스트를 자손으로 두면 접근 이름이
+               "…이름·별명·타입 + 캐릭터 꾸미기" 로 **누적**된다. -->
+          <span class="sr-only">캐릭터 꾸미기</span>
+        </button>
 
         <p class="pv__bioshort" data-mp="preview-bioshort"></p>
         <p class="pv__bio" data-mp="preview-bio"></p>
