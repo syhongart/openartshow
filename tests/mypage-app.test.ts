@@ -87,7 +87,8 @@ const FIXTURE = `
   <img data-mp="avatar-thumb"><button data-mp="avatar-open"></button>
   <div data-mp="closet">
     <span data-mp="closet-count"></span>
-    <p data-mp="closet-empty" hidden></p><p data-mp="closet-status"></p>
+    <p data-mp="closet-empty" hidden><span data-mp="closet-empty-guest" hidden></span></p>
+    <p data-mp="closet-status"></p>
     <div data-mp="closet-list"></div>
     <template data-mp="closet-cell"><button data-mp-closet="load">
       <img data-mp-closet="thumb" alt=""><span data-mp-closet="name"></span>
@@ -580,6 +581,33 @@ describe('내 옷장', () => {
 
     expect(readStoredChibi(currentUserId())).toEqual(before);
     app.destroy();
+  });
+
+  // 검수관 E1. 옷장은 **로그인 전용**이라(편집기가 탭 자체를 숨긴다) 빈 안내에 로그인
+  // 문구를 덧붙였는데, 그것은 **게스트에게만 참**이다. 로그인 사용자에게 뜨면 거짓말이다.
+  //
+  // ⚠ 이 테스트가 생긴 경위 자체가 값이다 — 바로 앞 커밋에서 *"픽스처와 마크업이 갈린
+  // 곳은 전부 이 구멍이다"* 라고 **일반화를 적어 놓고**, 같은 커밋에서 이 요소를 마크업에
+  // 추가하면서 계약 배열에도 픽스처에도 안 넣었다. **일반화를 적은 순간 그 문장이 적용될
+  // 자리를 세지 않으면, 다음 사람은 그 문장을 읽고 확인을 생략한다.**
+  it('빈 옷장 안내 — 로그인 문구는 **게스트에게만** 뜬다', async () => {
+    const guest = await bootApp();
+    expect(
+      root.querySelector<HTMLElement>('[data-mp="closet-empty-guest"]')!.hidden,
+      '게스트에게 로그인 안내가 안 뜬다',
+    ).toBe(false);
+    guest.destroy();
+
+    // 로그인 상태를 만드는 수단은 저장소에 이미 있다(`mypage-store.test.ts` 와 같은 패턴).
+    const { loginWith } = await import('../frontend/js/auth.js');
+    await loginWith('google');
+    root = mount();
+    const member = await bootApp();
+    expect(
+      root.querySelector<HTMLElement>('[data-mp="closet-empty-guest"]')!.hidden,
+      '로그인 사용자에게 "로그인이 필요합니다" 가 뜬다 — 거짓말이다',
+    ).toBe(true);
+    member.destroy();
   });
 
   // 검수관 D2. 「갈아입기」 테스트가 `wearFromCloset` 안의 호출로 통과해 버려서,

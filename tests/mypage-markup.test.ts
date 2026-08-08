@@ -237,7 +237,8 @@ describe('캐릭터·계정 탭', () => {
     // ⚠ `closet-status` 가 빠지면 갈아입기는 되는데 **아무 메시지도 안 뜬다**
     // (`setText(null)` 이 조용한 no-op 이다) — 앱 테스트는 픽스처를 쓰므로 실제 마크업
     // 누락을 원리상 못 본다(검수관 D3). **픽스처와 마크업이 갈린 곳은 전부 이 구멍이다.**
-    for (const name of ['closet', 'closet-list', 'closet-empty', 'closet-count', 'closet-status']) {
+    for (const name of ['closet', 'closet-list', 'closet-empty', 'closet-count', 'closet-status',
+      'closet-empty-guest']) {
       expect(has(`[data-mp="${name}"]`), name).toBe(true);
     }
     const tpl = doc.querySelector<HTMLTemplateElement>('template[data-mp="closet-cell"]');
