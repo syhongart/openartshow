@@ -227,6 +227,30 @@
           </div>
           <button class="btn btn--line" type="button" data-mp="avatar-open">캐릭터 꾸미기</button>
         </div>
+
+        <!-- ── 내 옷장 (감독 지시 2026-08-08: *"옷장리스트가 나오게 해줘"*) ──────
+             편집기(`ui-avatar-editor.ts`)의 「내 옷장」과 **같은 저장소**를 읽는다
+             (`readCloset`) — 여기에 목록을 다시 만들지 않는다. 저장·삭제는 편집기가
+             하고 여기서는 **입기**만 한다. 삭제를 여기 두지 않는 이유는 실수 비용이다:
+             옷 한 벌은 되돌릴 수단이 없고(서버 백업 0), 이 화면은 프로필을 고치러 온
+             사람이 지나가며 보는 자리다. -->
+        <div class="closet" data-mp="closet">
+          <div class="closet__head">
+            <h3 class="closet__title">내 옷장</h3>
+            <span class="closet__count" data-mp="closet-count"></span>
+          </div>
+          <p class="closet__empty" data-mp="closet-empty" hidden>
+            아직 저장한 옷이 없습니다. 「캐릭터 꾸미기」에서 마음에 드는 모습을 옷장에 담아 보세요.
+          </p>
+          <div class="closet__grid" data-mp="closet-list"></div>
+          <!-- 행 템플릿 — 목록은 JS 가 채운다(마크업에 옷 개수를 적지 않는다). -->
+          <template data-mp="closet-cell">
+            <button class="closet__cell" type="button" data-mp-closet="load">
+              <img class="closet__thumb" data-mp-closet="thumb" alt="">
+              <span class="closet__name" data-mp-closet="name"></span>
+            </button>
+          </template>
+        </div>
       </section>
 
       <!-- ── 소개 ───────────────────────────────────────────────────────── -->

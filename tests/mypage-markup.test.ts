@@ -231,6 +231,40 @@ describe('캐릭터·계정 탭', () => {
       expect(has(`[data-mp="${name}"]`), name).toBe(true);
     }
   });
+
+  // 감독 지시 2026-08-08: *"옷장리스트가 나오게 해줘."*
+  it('옷장 자리와 행 템플릿이 있다', () => {
+    for (const name of ['closet', 'closet-list', 'closet-empty', 'closet-count']) {
+      expect(has(`[data-mp="${name}"]`), name).toBe(true);
+    }
+    const tpl = doc.querySelector<HTMLTemplateElement>('template[data-mp="closet-cell"]');
+    expect(tpl, '행 템플릿이 없다').not.toBe(null);
+    const frag = tpl!.content;
+    // 행의 루트가 하나여야 복제 후 `firstElementChild` 로 잡힌다.
+    expect(frag.children.length).toBe(1);
+    expect(frag.firstElementChild?.tagName, '칸은 눌리는 것이므로 버튼이다').toBe('BUTTON');
+    for (const part of ['load', 'thumb', 'name']) {
+      expect(frag.querySelector(`[data-mp-closet="${part}"]`) !== null, part).toBe(true);
+    }
+  });
+
+  it('옷 목록을 마크업에 적지 않았다 — JS 가 저장소에서 채운다', () => {
+    // 여기에 예시 칸을 적어 두면 로그인 전에도 남의 옷이 보이고, 저장소 형식이
+    // 바뀌어도 화면은 그대로라 어긋난 것을 아무도 모른다.
+    expect(doc.querySelector('[data-mp="closet-list"]')!.children.length).toBe(0);
+  });
+
+  it('캐릭터 패널에 **스타일이 있다** — 없으면 왼쪽에 붙고 썸네일이 원본 크기로 나온다', () => {
+    // 이 패널은 마크업만 있고 CSS 가 0건이었다(감독 실기기에서 발견 —
+    // *"모바일에서는 중앙정렬로 나오게 해주고"*). 클래스만 붙어 있고 규칙이 없으면
+    // 화면에서만 어긋나고 어떤 검사도 안 걸린다.
+    const css = readFileSync(resolve(import.meta.dirname, '../frontend/css/mypage.css'), 'utf8');
+    expect(css, '.avatar 규칙이 없다').toMatch(/\.avatar\s*\{/);
+    expect(css, '.closet__grid 규칙이 없다').toMatch(/\.closet__grid\s*\{/);
+    // 중앙정렬이 감독 지시의 핵심이다.
+    const avatarRule = /\.avatar\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(avatarRule, '중앙정렬이 아니다').toMatch(/align-items\s*:\s*center/);
+  });
 });
 
 describe('자기완결·보안', () => {

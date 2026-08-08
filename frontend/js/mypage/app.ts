@@ -35,7 +35,16 @@ import {
 import { writeLinks, readLinks, addLinkRow } from './view-links.js';
 import { q, qa, mp, field, fields, setText, setShown, writeValue } from './dom.js';
 
-import { currentUserId, readStoredChibiThumb, makeThumbDataUrl } from '../ui-chibi-store.js';
+import {
+  currentUserId,
+  readStoredChibiThumb,
+  makeThumbDataUrl,
+  // 옷장은 편집기와 **같은 저장소**를 쓴다 — 형식(`{ id, name, look, thumb, ts }`)은
+  // `ui-chibi-store` 가 소유하고 여기서 다시 정의하지 않는다.
+  readCloset,
+  saveStoredChibi,
+  saveStoredChibiThumb,
+} from '../ui-chibi-store.js';
 import { getProfile as authGetProfile, onAuthChange, isMockMode, PROVIDERS } from '../auth.js';
 // 딥링크 문자열을 여기 적지 않는다 — `avatar-deeplink.ts` 가 SSOT 다(검수관 P2).
 import { buildAvatarDeepLink } from '../avatar-deeplink.js';
@@ -400,12 +409,78 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   disposers.push(() => window.removeEventListener('beforeunload', beforeUnload));
 
   // 아바타 썸네일(캐릭터 탭)
-  const thumb = mp<HTMLImageElement>(root, 'avatar-thumb');
-  if (thumb) {
+  function refreshAvatarThumb(): void {
+    const thumb = mp<HTMLImageElement>(root, 'avatar-thumb');
+    if (!thumb) return;
     const data = readStoredChibiThumb(uid);
     if (data) thumb.src = data;
     setShown(thumb, Boolean(data));
   }
+  refreshAvatarThumb();
+
+  // ── 내 옷장 (감독 지시 2026-08-08) ──────────────────────────────────────
+  //
+  // 편집기(`ui-avatar-editor.ts`)의 「내 옷장」과 **같은 저장소**를 읽는다. 목록 형식을
+  // 여기 다시 정의하지 않는다 — `{ id, name, look, thumb, ts }` 는 그쪽이 소유한다.
+  //
+  // 여기서는 **입기**만 한다. 저장·삭제는 편집기 몫이다(삭제는 되돌릴 수단이 없고,
+  // 이 화면은 프로필을 고치러 온 사람이 지나가며 보는 자리라 실수 비용이 크다).
+  function renderCloset(): void {
+    const list = mp(root, 'closet-list');
+    const tpl = root.querySelector<HTMLTemplateElement>('template[data-mp="closet-cell"]');
+    if (!list || !tpl) return;
+
+    const slots = readCloset(uid);
+    list.textContent = '';
+    setShown(mp(root, 'closet-empty'), slots.length === 0);
+    setText(mp(root, 'closet-count'), slots.length ? `${slots.length}벌` : '');
+
+    for (const slot of slots) {
+      const cell = tpl.content.firstElementChild?.cloneNode(true) as HTMLElement | null;
+      if (!cell) continue;
+      const name = String(slot?.name ?? '');
+      const img = cell.querySelector<HTMLImageElement>('[data-mp-closet="thumb"]');
+      if (img) {
+        // 썸네일이 없는 슬롯도 있다(옛 저장분). 빈 `src` 는 깨진 아이콘이 되므로 숨긴다.
+        if (slot?.thumb) img.src = String(slot.thumb);
+        setShown(img, Boolean(slot?.thumb));
+        img.alt = '';
+      }
+      setText(cell.querySelector('[data-mp-closet="name"]'), name);
+      // 접근 이름은 자손 텍스트(옷 이름)로 만들어지는데, 그것만으로는 **무엇을 하는
+      // 버튼인지**가 안 읽힌다. 그래서 목적을 덧붙인다.
+      cell.setAttribute('aria-label', `${name} 입기`);
+      cell.addEventListener('click', () => wearFromCloset(slot));
+      list.appendChild(cell);
+    }
+  }
+
+  /**
+   * 옷장의 한 벌을 **지금 캐릭터로 만든다.**
+   *
+   * 3D 편집기를 열지 않고 저장만 갈아 끼운다 — 옷장 슬롯이 `look` 과 `thumb` 를 함께
+   * 들고 있어서 가능하다. 미술관은 다음 진입 때 `readActiveChibi()` 로 이 값을 읽는다.
+   */
+  function wearFromCloset(slot: { look?: unknown; thumb?: unknown; name?: unknown } | null): void {
+    if (!slot?.look) return;
+    const status = mp(root, 'save-status');
+    status?.classList.remove('is-ok', 'is-error');
+    if (!saveStoredChibi(slot.look, uid)) {
+      setText(status, '저장 공간이 부족해 갈아입지 못했습니다.');
+      status?.classList.add('is-error');
+      return;
+    }
+    if (slot.thumb) saveStoredChibiThumb(String(slot.thumb), uid);
+    refreshAvatarThumb();
+    refreshPreview();   // Preview 아바타도 같이 바뀐다 — 안 바꾸면 두 화면이 어긋난다
+    // ⚠ **조사를 붙이지 않는다.** `"…으로 갈아입었습니다"` 로 썼더니 실측에서
+    // *"파란 후디 으로"* 가 나왔다 — 한국어 조사는 받침에 따라 `로`/`으로` 로 갈리고,
+    // 옷 이름은 사용자가 정하므로 영문·숫자도 온다. 조사 판정기를 만드는 대신
+    // 조사가 필요 없는 어순으로 쓴다.
+    setText(status, `갈아입었습니다 — ${String(slot.name ?? '')}`);
+    status?.classList.add('is-ok');
+  }
+  renderCloset();
 
   selectTab('basic');
   void reload();

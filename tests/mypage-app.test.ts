@@ -28,6 +28,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createMyPage } from '../frontend/js/mypage/app.js';
 import { LocalProfileStore, type ProfileStore } from '../frontend/js/mypage/store.js';
 import { emptyProfile, type Profile } from '../frontend/js/mypage/schema.js';
+// 옷장은 **실제 저장소**를 쓴다 — 모킹하면 편집기와 같은 곳을 읽는다는 주장을
+// 검증하지 못하고, 형식이 어긋나도 테스트만 통과한다.
+import {
+  currentUserId,
+  saveCloset,
+  readStoredChibi,
+  readStoredChibiThumb,
+} from '../frontend/js/ui-chibi-store.js';
 
 /** 실제 마크업과 같이 `is-loading` 을 달고 시작한다 — 그것이 이 파일의 요점이다. */
 const FIXTURE = `
@@ -73,6 +81,14 @@ const FIXTURE = `
   <input type="checkbox" data-mp-vis="email"><input type="checkbox" data-mp-vis="inquiry">
   <button data-mp="save"></button><span data-mp="save-status"></span>
   <img data-mp="avatar-thumb"><button data-mp="avatar-open"></button>
+  <div data-mp="closet">
+    <span data-mp="closet-count"></span>
+    <p data-mp="closet-empty" hidden></p>
+    <div data-mp="closet-list"></div>
+    <template data-mp="closet-cell"><button data-mp-closet="load">
+      <img data-mp-closet="thumb" alt=""><span data-mp-closet="name"></span>
+    </button></template>
+  </div>
   <span data-mp="account-provider"></span><button data-mp="account-reset"></button>
   <p data-mp="account-notice"></p>
 </div>`;
@@ -458,5 +474,90 @@ describe('캐릭터 편집 진입점 — 둘이 같은 곳으로 간다', () => 
       app.destroy();
       nav.restore();
     }
+  });
+});
+
+// 감독 지시 2026-08-08: *"옷장리스트가 나오게 해줘."*
+//
+// **편집기와 같은 저장소를 읽는가**가 요점이다. 여기서 형식을 흉내 낸 픽스처를 쓰면
+// `ui-chibi-store` 가 형식을 바꿔도 이 테스트만 초록으로 남는다 — 그래서 `saveCloset`
+// 을 그대로 불러 심는다.
+describe('내 옷장', () => {
+  async function bootApp() {
+    const app = createMyPage(root, new LocalProfileStore(() => 1000));
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    return app;
+  }
+
+  const SLOT_A = {
+    id: 'c1', name: '초록 원피스', ts: 1,
+    look: { species: 'human', outfit: 'dress' },
+    thumb: 'data:image/jpeg;base64,AAAA',
+  };
+  const SLOT_B = {
+    id: 'c2', name: '파란 후디', ts: 2,
+    look: { species: 'human', outfit: 'hoodie' },
+    thumb: 'data:image/jpeg;base64,BBBB',
+  };
+
+  const cells = () => Array.from(root.querySelectorAll<HTMLElement>('[data-mp-closet="load"]'));
+
+  it('비어 있으면 **안내를 보여주고 목록은 비운다**', async () => {
+    const app = await bootApp();
+    expect(cells().length).toBe(0);
+    // 빈 화면과 "로드 실패" 는 구별되지 않는다 — 문구가 그 구별을 만든다.
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-empty"]')!.hidden).toBe(false);
+    app.destroy();
+  });
+
+  it('저장된 옷을 **편집기와 같은 저장소에서** 읽어 그린다', async () => {
+    saveCloset([SLOT_A, SLOT_B], currentUserId());
+    const app = await bootApp();
+
+    expect(cells().length, '옷장 칸이 그려지지 않았다').toBe(2);
+    expect(cells()[0].textContent).toContain('초록 원피스');
+    expect(cells()[1].textContent).toContain('파란 후디');
+    // 이름만으로는 **무엇을 하는 버튼인지** 안 읽힌다.
+    expect(cells()[0].getAttribute('aria-label')).toBe('초록 원피스 입기');
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-empty"]')!.hidden).toBe(true);
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-count"]')!.textContent).toBe('2벌');
+    app.destroy();
+  });
+
+  it('누르면 **그 옷으로 갈아입는다** — 저장분과 썸네일이 함께 바뀐다', async () => {
+    saveCloset([SLOT_A, SLOT_B], currentUserId());
+    const app = await bootApp();
+
+    cells()[1].click();
+
+    const uid = currentUserId();
+    // `look` 만 바꾸고 썸네일을 안 바꾸면 화면과 실제 캐릭터가 어긋난다.
+    expect(readStoredChibi(uid)).toEqual(SLOT_B.look);
+    expect(readStoredChibiThumb(uid)).toBe(SLOT_B.thumb);
+    // 캐릭터 탭 썸네일도 즉시 따라와야 한다(안 따라오면 눌러도 아무 일 없어 보인다).
+    expect(root.querySelector<HTMLImageElement>('[data-mp="avatar-thumb"]')!.src).toContain('BBBB');
+    expect(root.querySelector<HTMLElement>('[data-mp="save-status"]')!.textContent).toContain('갈아입었');
+    app.destroy();
+  });
+
+  it('`look` 이 없는 슬롯은 **아무 일도 하지 않는다** — 옛 저장분 방어', async () => {
+    saveCloset([{ id: 'c3', name: '깨진 것', ts: 3 }], currentUserId());
+    const app = await bootApp();
+    const before = readStoredChibi(currentUserId());
+
+    cells()[0].click();
+
+    expect(readStoredChibi(currentUserId())).toEqual(before);
+    app.destroy();
+  });
+
+  it('썸네일이 없는 슬롯은 **깨진 이미지를 보이지 않는다**', async () => {
+    saveCloset([{ id: 'c4', name: '썸네일 없음', ts: 4, look: { species: 'human' } }], currentUserId());
+    const app = await bootApp();
+    const img = cells()[0].querySelector<HTMLImageElement>('[data-mp-closet="thumb"]')!;
+    // `src` 가 빈 `<img>` 는 브라우저에서 깨진 아이콘으로 나온다.
+    expect(img.hidden).toBe(true);
+    app.destroy();
   });
 });
