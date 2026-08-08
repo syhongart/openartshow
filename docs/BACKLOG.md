@@ -144,6 +144,20 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
 ## 기타 대기 항목
 
+- **G-OF1 — `[5] 가로 넘침` 게이트가 `overflow-x:hidden` 페이지에서 검출력이 0이다**
+  (디자이너 발견 + 부팀장 실측, 2026-08-08). `scripts/smoke/browser-checks.mjs:145-149` 가
+  `document.documentElement.scrollWidth > innerWidth` 만 보는데, 방어선이 켜져 있으면
+  **넘친 요소가 잘려 `scrollWidth` 가 안 늘어난다.** 방어선 ON 으로 잰 0 은 "안 넘쳤다" 와
+  구별되지 않는다.
+  해당 페이지: `css/mypage.css:35` · `landing.html` · `design.html` · `studio.html` (4곳).
+  **실증**: `.panel{min-width:520px}` 뮤테이션이 방어선 OFF 에서는 320~412px 전 폭에서
+  검출되는데(`doc=534/320`), ON 에서는 6폭 전부 "넘침 0" 으로 통과한다.
+  처방(디자이너 3단): ① 측정 직전 `overflow-x` 를 임시로 풀고 ② `getBoundingClientRect().right
+  > innerWidth` 로 **넘친 요소를 지목**하고 ③ 뮤테이션으로 측정기 생존을 먼저 확인한다.
+  **왜 지금 안 고쳤나**: 고치면 기존 라이브 4페이지에서 새 FAIL 이 나와, 마이페이지 배포와
+  무관한 회귀 처리를 요구한다. 그 4페이지가 실제로 넘치는지는 **아직 안 쟀다** — 고치기 전에
+  그것부터 재야 한다(안 넘치면 게이트만 고치면 되고, 넘치면 별개의 수선 작업이다).
+
 - **G-VL1 — `verify-live` 404 검출력 회귀 테스트** (검수관 명세, 2026-08-07 · `7a08293`).
   `tests/` 에 `verify-live` 커버리지가 **0건**이라 이 파일 전체가 무보호다. 검출력 확인은
   검수관이 손으로 돌린 1회성 실측이었지 게이트가 아니다. 명세 전문(단언 3종·거짓 FAIL
