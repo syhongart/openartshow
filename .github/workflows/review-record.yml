@@ -37,7 +37,7 @@ jobs:
         # 실패는 **통과가 아니라 FAIL** 로 처리된다(fail-closed).
         with: { fetch-depth: 0 }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with: { node-version: '20' }
+        with: { node-version: '24' }
       - name: 검수관 판정 기록 검사
         # PR 본문을 **env 로 넘긴다.** `run:` 안에 `${{ }}` 를 직접 쓰면 본문 내용이
         # 셸로 전개돼 스크립트 인젝션이 된다(PR 본문은 외부 입력이다).

@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "브라우저 기반 3D 가상 미술관 — 정적 호스팅·자기완결. 런타임 배포물은 npm 의존 0(vendor 직서빙). 아래 의존성은 전부 개발·검증 도구.",
+  "engines": {
+    "node": "^24"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
