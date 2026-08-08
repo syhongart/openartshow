@@ -86,9 +86,16 @@ describe('await-until — probe 안에서 실패가 사라지지 않는다', () 
     expect(m, '헤더에서 --probe 예시를 못 찾았다').not.toBeNull();
 
     // 주석 줄머리(`// `)를 걷고, 조회 대상을 **없는 리모트**로 바꿔 실패를 만든다.
+    //
+    // ⚠ `<sha>` 플레이스홀더를 **반드시 실제 토큰으로 바꾼다** (검수관 NB2, 2026-08-08).
+    // 안 바꾸면 `<`·`>` 가 셸 리다이렉션으로 파싱돼 `syntax error` 로 죽고, 그러면 어느
+    // 판본이든 exit≠0 이 나와 아래 단언이 **항상 참**이 된다. 실제로 헤더 예시를 반려 전
+    // 구멍 판본으로 되돌려도 8 passed 였다 — **처방은 옳았고 그것을 지키는 검사만 죽어
+    // 있었다.** "0이 나오면 측정기가 살아 있는지부터 확인한다" 를 여기서 또 놓쳤다.
     const probe = m![1]
       .split('\n').map((l) => l.replace(/^\s*\/\/\s?/, '')).join(' ')
-      .replace(/origin gh-pages/, 'nosuchremote_xyz gh-pages');
+      .replace(/origin gh-pages/, 'nosuchremote_xyz gh-pages')
+      .replace(/<[a-z]+>/g, 'deadbeef');
 
     const r = run(probe);
     expect(r.code, `조회가 죽었는데 「충족」이 났다:\n${r.out}`).not.toBe(0);

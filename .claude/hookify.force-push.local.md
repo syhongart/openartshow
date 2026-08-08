@@ -3,7 +3,7 @@ name: 강제 푸시는 위험작업 게이트
 enabled: true
 event: bash
 action: block
-pattern: push(?!.*--force-with-lease).*(\s--force(\s|$)|\s-[a-zA-Z]*f(\s|$))
+pattern: push(?!.*--force-with-lease).*(\s--force(\s|$)|\s-[a-zA-Z]*f[a-zA-Z]*(\s|$))
 ---
 
 `--force` 단독 푸시는 §10-2 위험작업(2인 게이트)이다. 이 저장소는 롤백/강제 갱신으로
@@ -21,5 +21,19 @@ pattern: push(?!.*--force-with-lease).*(\s--force(\s|$)|\s-[a-zA-Z]*f(\s|$))
 > 실측: `git push -f origin main` → **exit 0(통과)**, `git push -uf …` → **exit 0**,
 > 그런데 `git push origin main -f` → exit 2. **위치에 따라 달라졌다.**
 > 같은 커밋의 `curl` 규칙은 묶은 플래그(`-sf`) 교훈을 이미 반영했는데 여기엔 적용하지
-> 않았다 — 규칙마다 따로 생각하면 따로 틀린다. 그래서 `\s-[a-zA-Z]*f` 로 통일했다.
-> 이 사각은 `tests/hookify-guard.test.ts` 의 BLOCK 케이스 4행이 지킨다.
+> 않았다 — 규칙마다 따로 생각하면 따로 틀린다.
+>
+> **그리고 그 고침이 또 한쪽만 열었다 (검수관 NB1, 같은 날).** `\s-[a-zA-Z]*f(\s|$)` 는
+> **`f` 가 묶음의 마지막일 때만** 잡는다: `-uf` 는 exit 2 인데 `-fu`·`-fq` 는 **exit 0** 이었다
+> (둘 다 git 이 실제로 받는 유효 명령이다). 같은 커밋의 `no-verify` 규칙은
+> `-[a-zA-Z]*n[a-zA-Z]*` 로 **양쪽을 열어 뒀는데** 이 규칙만 한쪽이었다 — *"규칙마다 따로
+> 생각하면 따로 틀린다"* 를 적은 바로 그 커밋에서 그 문장이 재발했다.
+> 더 나쁜 것은 이 자리에 원래 *"이 사각은 BLOCK 케이스 4행이 지킨다"* 라고 적혀 있었고
+> **`-fu` 가 그 4행 밖이었다는 점**이다. 게이트 유효성에 대한 거짓 진술은 다음 사람이
+> 확인을 생략하게 만든다. 지금은 `f[a-zA-Z]*` 로 양쪽을 열었고 `-fu` 도 케이스에 있다.
+
+**이 규칙이 못 잡는 것** (실측 근거 있음 — 모르면 통과를 과신하게 된다)
+- `git push --force origin main && git push --force-with-lease origin gh-pages` → **exit 0**.
+  전방부정이 **명령 전체**를 보므로 `&&` 로 이은 두 push 에 with-lease 가 하나라도 있으면
+  뚫린다(순서가 반대면 잡힌다 — 방향 의존). 검수관 권고 P1, 태스크 #219.
+- `eval`·변수 치환으로 감싼 형태. 이 장치는 적대적 우회가 아니라 습관을 막는다.

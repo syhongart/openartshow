@@ -69,9 +69,14 @@ const BLOCK: Array<[rule: string, name: string, cmd: string]> = [
   ['hookify.no-verify.local.md', '게이트 우회(-n 뒤에)', 'git commit -m x -n'],
   // ↓ 검수관 B1 이 실측한 사각 3형태. 첫 판본은 앞의 둘을 **통과시켰다**.
   ['hookify.force-push.local.md', '강제 푸시(-f 선두)', 'git push -f origin main'],
-  ['hookify.force-push.local.md', '강제 푸시(묶은 플래그)', 'git push -uf origin main'],
+  ['hookify.force-push.local.md', '강제 푸시(묶음 끝에 f)', 'git push -uf origin main'],
   ['hookify.force-push.local.md', '강제 푸시(-f 후미)', 'git push origin main -f'],
   ['hookify.force-push.local.md', '강제 푸시(긴 플래그)', 'git push --force origin main'],
+  // ↓ 그 고침이 **또 한쪽만 열었다**(검수관 NB1). `f` 가 묶음의 마지막일 때만 잡아서
+  //   `-fu`·`-fq` 가 통과했다 — 둘 다 git 이 실제로 받는 유효 명령이다.
+  //   G-H1(규칙당 2케이스)은 수만 강제하고 **변종은 못 강제한다**. 그 한계대로 뚫렸다.
+  ['hookify.force-push.local.md', '강제 푸시(묶음 앞에 f)', 'git push -fu origin main'],
+  ['hookify.force-push.local.md', '강제 푸시(묶음 가운데 f)', 'git push -vfq origin main'],
   ['hookify.hand-wait-loop.local.md', '손으로 짠 대기 루프', 'until [ "$(curl -sf x)" = done ]; do sleep 5; done'],
   ['hookify.hand-wait-loop.local.md', '손으로 짠 대기 루프(sleep)', 'until grep -q ok /tmp/log; do sleep 10; done'],
   ['hookify.checkout-revert.local.md', '워킹트리를 옛 판본으로', 'git checkout db0b70c -- frontend/js/a.ts'],
@@ -89,7 +94,11 @@ describe('hookify 규칙 — 차단해야 하는 것', () => {
       expect(v.err.length).toBeGreaterThan(40);
       // 오탐일 때 할 일이 적혀 있어야 한다. 첫 판본에는 탈출로가 문서 어디에도 없었고
       // (grep 0건), 그 상태에서 규칙이 검수관의 리뷰 명령을 두 번 막았다(반려 B2).
-      expect(v.err, '탈출로 안내가 없다').toMatch(/enabled:\s*false/);
+      //
+      // **안내문 고유 문자열로 좁힌다** (검수관 권고 R1). `enabled: false` 로 보면 일부
+      // 규칙은 **본문에도** 그 글자가 있어서, 훅이 안내를 통째로 잃어도 통과했다 —
+      // 뮤테이션 실측으로 11케이스 중 4건만 깨졌다. 이 문자열은 훅만 만든다.
+      expect(v.err, '탈출로 안내가 없다').toMatch(/임시 해제/);
     });
   }
 });
