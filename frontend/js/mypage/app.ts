@@ -373,10 +373,16 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   // 편집기 자체는 미술관 HUD 소유라(`ui-hud.ts`) 마이페이지 안에 인라인으로 띄우려면
   // HUD 컨텍스트를 흉내 내야 한다. 그 대신 딥링크로 **편집기가 열린 상태로** 보낸다.
   // `back=mypage` 는 돌아올 길이다 — 저장하든 닫든 여기로 되돌아온다.
-  on(mp(root, 'avatar-open'), 'click', () => {
+  //
+  // 진입점이 **둘**이다(감독 지시 2026-08-08 *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로
+  // 바로 가게 하자"* — Preview 의 아바타+이름 블록). 같은 함수를 공유한다: 두 곳에
+  // 각각 적으면 미저장 확인이나 back 타깃이 한쪽만 바뀌는 형태가 열린다.
+  const goAvatarEditor = () => {
     if (dirty && !window.confirm('저장하지 않은 변경이 있습니다. 이동할까요?')) return;
     window.location.href = buildAvatarDeepLink('./index.html', 'mypage');
-  });
+  };
+  on(mp(root, 'avatar-open'), 'click', goAvatarEditor);
+  on(mp(root, 'preview-identity'), 'click', goAvatarEditor);
 
   // 로그인 상태가 바뀌면 그 사용자의 프로필로 갈아탄다. 아바타가 이미 그렇게
   // 동작하고 있어(`ui-chibi-store`), 프로필만 안 따라가면 두 개가 어긋난다.

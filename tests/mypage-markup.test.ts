@@ -78,6 +78,54 @@ describe('Preview', () => {
   it('아바타 자리는 <img> 다 — JS 가 src 를 채운다', () => {
     expect(doc.querySelector('[data-mp="preview-avatar"]')?.tagName).toBe('IMG');
   });
+
+  // 감독 지시 2026-08-08: *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로 바로 가게 하자"*
+  it('신원 블록이 **버튼**이다 — 키보드로 도달할 수 있어야 한다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]');
+    // `<div>` + click 리스너로 두면 마우스에서만 동작하고, 「캐릭터」 탭의 같은 기능은
+    // 버튼이라 그쪽만 접근 가능해진다 — 같은 일을 하는 두 진입점의 접근성이 갈린다.
+    expect(el?.tagName).toBe('BUTTON');
+    expect(el?.getAttribute('type'), 'form 안이 아니어도 type 을 명시한다').toBe('button');
+  });
+
+  it('접근 이름이 **이름을 가리지 않는다** — `aria-label` 로 덮지 않는다 (검수관 C1)', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]')!;
+    // `aria-label`·`aria-labelledby` 는 자손 텍스트보다 우선해 접근 이름을 **완전히
+    // 대체**한다. 그러면 스크린리더 사용자는 이 카드에서 자기 이름·별명·타입을 못 읽는다
+    // — 그것이 이 카드의 목적인데. `<div>` 였을 때는 읽혔으므로 회귀가 된다.
+    expect(el.getAttribute('aria-label'), 'aria-label 이 이름을 덮는다').toBe(null);
+    expect(el.getAttribute('aria-labelledby'), 'labelledby 도 같은 문제를 만든다').toBe(null);
+    // 대신 목적은 시각 숨김 텍스트가 말한다 — 접근 이름이 "이름 + 목적" 으로 누적된다.
+    const sr = el.querySelector('.sr-only');
+    expect(sr, '목적을 알리는 시각 숨김 텍스트가 없다').not.toBe(null);
+    expect(sr?.textContent?.trim()).toBeTruthy();
+  });
+
+  it('`.sr-only` 가 **접근성 트리에서 사라지지 않게** 숨긴다', () => {
+    // `display:none`·`visibility:hidden` 이면 스크린리더도 못 읽어 C1 처방이 무의미해진다.
+    const css = readFileSync(resolve(import.meta.dirname, '../frontend/css/mypage.css'), 'utf8');
+    const rule = /\.sr-only\s*\{([^}]*)\}/.exec(css);
+    expect(rule, '.sr-only 규칙이 없다').not.toBe(null);
+    const body = rule![1];
+    expect(body, 'display:none 이면 리더도 못 읽는다').not.toMatch(/display\s*:\s*none/);
+    expect(body, 'visibility:hidden 이면 리더도 못 읽는다').not.toMatch(/visibility\s*:\s*hidden/);
+    expect(body, '실제로 숨기지 않는다').toMatch(/clip-path|clip\s*:/);
+  });
+
+  it('신원 블록이 아바타와 이름을 **품는다** — 감독이 지목한 그 영역이다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]')!;
+    expect(el.querySelector('[data-mp="preview-avatar"]'), '아바타').not.toBe(null);
+    expect(el.querySelector('[data-mp="preview-name"]'), '이름').not.toBe(null);
+  });
+
+  it('신원 블록 안에 **중첩 인터랙티브가 없다** — HTML 이 허용하지 않는다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]')!;
+    // 검수관 P6 — 첫 판본은 `button, a[href], input, select, textarea` 뿐이었다.
+    // 막으려는 것이 "중첩 인터랙티브" 인데 목록이 그보다 좁으면 검사가 이름값을 못 한다.
+    const interactive = 'button, a[href], input, select, textarea, label, summary,'
+      + ' [tabindex], [contenteditable], audio[controls], video[controls], details, iframe';
+    expect(el.querySelectorAll(interactive).length).toBe(0);
+  });
 });
 
 describe('폼 필드', () => {
