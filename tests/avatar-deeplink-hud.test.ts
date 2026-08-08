@@ -283,3 +283,67 @@ describe('G-C — 닫는 네 경로 모두 복귀한다', () => {
     expect(hrefs).toEqual([]);
   });
 });
+
+// ── G-B(생산자 축) · 마이페이지 버튼이 실제로 딥링크를 만든다 ─────────────
+// ⚠ **뮤테이션 M3 이 이 축의 부재를 드러냈다**(2026-08-08). `mypage/app.ts` 의
+// `buildAvatarDeepLink(...)` 를 `'./index.html'` 리터럴로 되돌려도 **31개가 전부
+// 통과했다.** 위 G-B 는 URL 을 테스트가 직접 만들어 HUD 에 넣었을 뿐, **마이페이지
+// 버튼이 그 URL 을 만드는지는 아무도 안 봤다.**
+//
+// 검수관 G-B 명세는 원래 왕복 전체였다 — *"`createMyPage()` → `avatar-open` 클릭 →
+// 가로챈 `location.href` → 그 search 를 HUD `initUI()` 에 주입"*. 내가 앞 절반을
+// 빼먹었고, 그래서 "생산자와 소비자가 같은 프로토콜을 쓴다" 는 주장이 절반만 검증됐다.
+describe('G-B(생산자) — 마이페이지 버튼 → HUD 왕복', () => {
+  /** 딥링크에 필요한 최소 마크업. 나머지 조회는 전부 null 안전이다. */
+  const MYPAGE_FIXTURE = '<div data-mp="root"><button data-mp="avatar-open"></button></div>';
+
+  it('**버튼을 누르면 딥링크가 만들어지고, 그 URL 로 편집기가 열린다**', async () => {
+    // ① 생산자 — 마이페이지를 띄우고 버튼을 누른다
+    vi.resetModules();
+    document.body.innerHTML = MYPAGE_FIXTURE;
+    const hrefs: string[] = [];
+    interceptNavigation(hrefs);
+
+    const { createMyPage } = await import('../frontend/js/mypage/app.js');
+    const app = createMyPage(document.querySelector('[data-mp="root"]')!);
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+
+    document.querySelector<HTMLButtonElement>('[data-mp="avatar-open"]')!.click();
+    app.destroy();
+
+    expect(hrefs.length, '버튼이 이동을 일으키지 않았다').toBe(1);
+    const produced = hrefs[0];
+
+    // ② 소비자 — 그 URL 로 HUD 를 부팅하면 편집기가 열려야 한다.
+    //    **여기서 URL 을 다시 적지 않는다** — 생산자가 만든 것을 그대로 쓴다.
+    const qIndex = produced.indexOf('?');
+    expect(qIndex, `생산된 URL 에 파라미터가 없다: ${produced}`).toBeGreaterThan(-1);
+
+    Object.defineProperty(window, 'location', { configurable: true, value: REAL_LOCATION });
+    setSearch(produced.slice(qIndex));
+    await bootHud();
+    expect(isOpen(), `생산된 URL 로 편집기가 안 열렸다: ${produced}`).toBe(true);
+  });
+
+  it('생산된 URL 에 복귀 키가 실려 닫으면 마이페이지로 돌아온다', async () => {
+    vi.resetModules();
+    document.body.innerHTML = MYPAGE_FIXTURE;
+    const produced: string[] = [];
+    interceptNavigation(produced);
+
+    const { createMyPage } = await import('../frontend/js/mypage/app.js');
+    const app = createMyPage(document.querySelector('[data-mp="root"]')!);
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    document.querySelector<HTMLButtonElement>('[data-mp="avatar-open"]')!.click();
+    app.destroy();
+
+    Object.defineProperty(window, 'location', { configurable: true, value: REAL_LOCATION });
+    setSearch(produced[0].slice(produced[0].indexOf('?')));
+    await bootHud();
+
+    const back: string[] = [];
+    interceptNavigation(back);
+    document.getElementById('lu-am-close')!.click();
+    expect(back).toEqual(['./mypage.html']);
+  });
+});
