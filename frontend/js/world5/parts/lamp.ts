@@ -19,6 +19,9 @@
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 import { roadDirs, LAMP_OFFSET, LAMP_CLEARANCE, lampAnchors } from './road-topology.js';
+// 색은 팔레트가 유일한 출처다. 등불색은 `decide/night.ts` 의 블룸 판정 기준이기도
+// 하므로 **양쪽이 같은 상수를 봐야 한다** — 그 경위는 `palette.ts` 의 `lampGlow` 주석.
+import { V } from './palette.js';
 
 /**
  * 이 파셀이 **자기 것으로 삼는 경계 수** — `east` 와 `south` 둘.
@@ -167,7 +170,7 @@ export const lamp: PartSpec = {
  * 순백으로 하면 밤에 형광등처럼 차갑고, 채도를 더 올리면 주황 점으로만 보여 등의
  * 형태가 사라진다. 이 값이 **켜졌다고 읽히면서 갓 모양도 남는** 선이다.
  */
-const LAMP_LIGHT = 0xffc86e;
+const LAMP_LIGHT = V.lampGlow;
 
 /** 기둥 — 어두운 금속. 갓과 대비돼야 실루엣이 산다 */
 const POST = rgb(0x4a4636);
