@@ -139,7 +139,14 @@ export const REQUIRED_FILES_BY_MODE = {
 export const REQUIRED_FILES = REQUIRED_FILES_BASELINE;
 
 // ── 라이브 페이지 목록 (검사4/5/6 + 가드A/B 대상) ────────────────────
-// behind-flag 페이지(visit.html·lab-glb.html·world2.html)는 라이브 미노출이라 제외.
+// ⚠️ 이 이름(`LIVE_PAGES`)은 **"라이브 노출 목록" 이 아니라 "검증 대상 목록" 이다.**
+// behind-flag 페이지도 여기 들어온다 — 링크 노출 여부와 검증 여부는 다른 축이다.
+// 노출 상태의 SSOT 는 `scripts/lib/entrypoints.mjs` 의 `exposure` 다.
+//
+// ⚠️ 바로 아래 줄은 **2026-08-08 까지 거짓이었다**(검수관 권고 P6). *"behind-flag
+// 페이지는 제외"* 라고 적혀 있었는데 목록은 그것들을 이미 **포함**하고 있었다
+// (2026-08-05 검수관 반려 B1 로 visit·lab-glb 가 편입됐고 world2 는 그 전부터 있었다).
+// 산문만 낡은 채 남아 있었고, world3 를 추가하면서도 그대로 지나칠 뻔했다.
 // world.html 은 B-2b 에서 정식 노출(sitemap 등재)로 편입 → 검사 대상에 포함.
 // builder.html 도 라이브다 — studio.html 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다
 // (감독·팀장 게이트를 거친 정당한 해제). 이 주석이 오래 builder 를 behind-flag 로 적어
@@ -176,6 +183,29 @@ export const LIVE_PAGES = [
   // vite 번들 전용(`three/webgpu`·`three/addons/*` import)이라 baseline 모드에서는
   // raw 직서빙으로 부팅되지 않는다 — 그래서 vite 모드에서만 검사한다.
   { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // world3(포근마을): world2 의 포크라 **부팅 성질이 같다** — `three/webgpu` 를 쓰므로
+  // vite 전용이고, 날씨 코드도 그대로 승계한다. 그래서 world2 와 같은 플래그를 단다.
+  //
+  // 포크한 날 **처음부터** 넣는다. 바로 위 visit·lab-glb 가 "나중에 넣기로 하면 그 사이
+  // 검사 0 인 페이지가 배포된다" 를 실측으로 남겨 뒀고, 포크는 그 위험이 더 크다 —
+  // 파일이 1.9만 줄인데 그중 어느 것도 안 보게 된다.
+  //
+  // ── ⚠️ world3 가 **안 받는 것** (검수관 명세, 조건 5 이연) ──────────────
+  // 이 줄에 들어 있다고 "world3 도 스모크 대상" 으로 읽으면 틀린다. 받는 것은
+  //   `[4]`  로드 시점 — 콘솔 에러·pageerror·CSP·자기완결·404
+  //   `[4b]` 날씨 4종 전환 + 번개 (전환 후 프레임 갱신까지 실제로 밟는다)
+  // 두 축뿐이다. **안 받는 것**:
+  //   `[7]`   개수 불변식 — 회전·주행·재방문 세션 시뮬
+  //   `[7.6]` 드로우콜 대조군
+  //   `[8]`   하늘 예열(날씨 첫 등장)
+  // 이 셋은 `measure-invariants.mjs`·`measure-sky-warm.mjs` 가 `/app/world2.html` 을
+  // **URL 로 하드코딩**해서 돌기 때문이다. 즉 world3 는 **조작 중에만 나는 콘솔
+  // 에러를 보는 축이 `[4b]` 하나**이고, 회전·주행 세션은 아무도 안 본다.
+  //
+  // behind-flag 인 동안의 이연이다(팀장 조건 5 → 검수관 이연 판정). 라이브 승격의
+  // 선결 조건이고, 잊히지 않도록 `tests/verification-tier.test.ts` 의 **GS-4** 가
+  // 승격 자체를 막는다 — 산문으로만 남기지 않는다.
+  { name: 'app/world3',        url: '/app/world3.html', webgl: true, viteOnly: true, weatherProbe: true },
   // ── visit·lab-glb: behind-flag 인데 **검사가 0이었다** (검수관 반려 B1, 2026-08-05) ──
   //
   // 검증 등급(#195)을 도입하면서 *"3등급이어도 자기완결·CSP 는 CI 스모크가 등급과 무관하게

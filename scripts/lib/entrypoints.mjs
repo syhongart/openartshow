@@ -74,6 +74,12 @@ export const ENTRYPOINTS = [
   { key: 'lab-glb', src: 'lab-glb.html', out: 'app/lab-glb.html', exposure: 'flagged' },
   // [실험] 오픈월드 커널 재작성 — 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서다.
   { key: 'world2', src: 'world2.html', out: 'app/world2.html', exposure: 'flagged' },
+  // [실험] 포근마을 — world2 의 **포크**다(분기 근거·no-sync 정책은
+  // `frontend/js/world3/README.md`). 감독 지시 2026-08-08 *"월드3으로 하고 … 독립적으로
+  // 해"* 로 착수했다. world2 파일을 한 줄도 import 하지 않으며 그 사실은
+  // `tests/world3-independence.test.ts` 가 지킨다 — 포크의 존재 이유가 격리이므로
+  // 그것을 산문이 아니라 검사로 둔다(팀장 조건 2).
+  { key: 'world3', src: 'world3.html', out: 'app/world3.html', exposure: 'flagged' },
 ];
 
 /** 링크되어 방문자가 도달하는 진입점 */
