@@ -656,10 +656,23 @@
        실측(2026-08-08): `.is-open` 을 붙인 직후 `getComputedStyle(menu).visibility` 가
        여전히 `hidden` 이고(리플로우를 강제해도 그렇다), 그래서 같은 틱의 `.focus()` 가
        먹지 않아 `document.activeElement` 가 `body` 로 떨어졌다. 250ms 뒤에 부르면 된다.
-       원인은 discrete 속성의 보간이다 — 크로미움은 전환 **중간 지점**에서 값을 바꾸므로
-       0.16s 의 절반 동안 hidden 으로 남는다.
+
+       **원인은 `t=0` 하나다.** `visibility` 는 transition 에서 discrete 의 **명시적
+       예외**라 한쪽 끝이 `visible` 이면 `0<t<1` 전 구간이 `visible` 인데, `t=0` 은 그
+       열린 구간 **밖**이라 시작값(`hidden`)이 나온다. 클래스를 붙인 같은 틱이 정확히
+       `t=0` 이다. 실측(수정 전 CSS 를 주입해 20ms 간격 샘플링):
+
+         t=0ms  vis=hidden op=0.00   ← focus() 가 여기서 불린다
+         t=21ms vis=visible op=0.10  ← 이미 visible
+
+       ⚠ 처음에는 이것을 *"크로미움이 전환 중간 지점에서 바꾸므로 0.16s 의 절반 동안
+       hidden"* 이라고 적었고 **틀렸다**(검수관 P13). 두 설명 모두 `t=0` 의 hidden 을
+       예측해서 관측만으로는 구별이 안 됐다 — 위 t=21ms 샘플이 구별한다.
+
        처방은 표준형이다: **열 때는 즉시**(`0s`), **닫을 때만** 애니메이션이 끝난 뒤
-       (`0s linear 0.16s`) 숨긴다. 룩은 그대로다 — opacity·transform 은 안 건드렸다. */
+       (`0s linear 0.16s`) 숨긴다. **룩은 안 바뀐다 — 실측으로 확정했다**: 닫힘 곡선이
+       수정 전 `t=180ms op=0.00`, 수정 후 `t=183ms op=0.00` 이고 둘 다 `t=200ms` 에
+       `hidden` 이다(예외 규칙 덕에 수정 전에도 페이드아웃이 끝까지 보였다). */
     transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
   }
   .nav-profile.is-open > .nav-profile-menu {
@@ -935,7 +948,17 @@
       position: static; min-width: 0; max-width: none; padding: 0 0 0 6px; margin: 0;
       background: none; border: none; box-shadow: none;
       /* 팝오버 쪽 전환값을 되돌린다 — 여기서는 display 로 접는다(높이 애니메이션은
-         `role="menu"` 와 `menuitem` 사이에 래퍼를 끼워야 해서 ARIA 구조를 흐린다). */
+         `role="menu"` 와 `menuitem` 사이에 래퍼를 끼워야 해서 ARIA 구조를 흐린다).
+
+         ⚠ **`transition: none` 은 닫힘 상태에서만 적용된다**(검수관 P15). 열림 규칙
+         `.nav-profile.is-open > .nav-profile-menu`(0,3,0)가 이 선택자(0,2,0)를 이기기
+         때문이다. 무해하다 — 값이 같아(`opacity 1→1`·`transform none→none`) 실제 전환이
+         없고, `nsProfileIn` 애니메이션은 (0,4,0)이라 그대로 산다.
+
+         그리고 이 세 줄이 **시트가 팝오버의 `visibility` 결함을 안 겪은 이유**다:
+         여기서는 `visibility: visible` 로 고정하고 `display` 로 접으므로 `visibility`
+         전환 자체가 없다. 즉 390 이 통과한 것은 **우연이 아니라 구조적**이다
+         (처음에 "레이아웃이 이미 갱신돼 있어서" 라고 적었고 틀렸다 — 검수관 P13). */
       opacity: 1; visibility: visible; transform: none; transition: none;
       display: none;
     }
