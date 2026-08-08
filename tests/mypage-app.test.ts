@@ -38,6 +38,7 @@ import {
   readStoredChibi,
   readStoredChibiThumb,
   saveStoredChibi,
+  saveStoredChibiThumb,
 } from '../frontend/js/ui-chibi-store.js';
 
 /** 실제 마크업과 같이 `is-loading` 을 달고 시작한다 — 그것이 이 파일의 요점이다. */
@@ -578,6 +579,17 @@ describe('내 옷장', () => {
     cells()[0].click();
 
     expect(readStoredChibi(currentUserId())).toEqual(before);
+    app.destroy();
+  });
+
+  // 검수관 D2. 「갈아입기」 테스트가 `wearFromCloset` 안의 호출로 통과해 버려서,
+  // **부팅 때 썸네일이 아예 안 그려져도 초록**이었다. 그 축을 따로 건다.
+  it('부팅하면 저장된 아바타 썸네일을 **캐릭터 탭에 그린다**', async () => {
+    saveStoredChibiThumb('data:image/jpeg;base64,CCCC', currentUserId());
+    const app = await bootApp();
+    const img = root.querySelector<HTMLImageElement>('[data-mp="avatar-thumb"]')!;
+    expect(img.src, '부팅 시 썸네일이 안 그려졌다').toContain('CCCC');
+    expect(img.hidden).toBe(false);
     app.destroy();
   });
 

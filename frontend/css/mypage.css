@@ -915,7 +915,10 @@ html, body {
   font-size: 12px;
   color: var(--ink-dim);
 }
-.closet__status:empty { display: none; }
+/* ⚠ `display: none` 으로 접지 않는다 (검수관 Q1). 이 요소는 `aria-live` 라, 트리에서
+   빠져 있다가 내용과 함께 나타나면 다수 스크린리더가 **그 알림을 놓친다**(live region 이
+   새로 생긴 것으로 취급). 자리만 죽이고 요소는 트리에 남긴다. */
+.closet__status:empty { margin: 0; }
 .closet__status.is-ok { color: var(--accent); }
 .closet__status.is-error { color: var(--danger); }
 

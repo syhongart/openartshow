@@ -448,6 +448,12 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
     const slots = readCloset(uid);
     list.textContent = '';
     setShown(mp(root, 'closet-empty'), slots.length === 0);
+    // 옷장은 **로그인 전용**이다(편집기가 탭 자체를 숨긴다). 그 안내는 게스트에게만 참이라
+    // 로그인 사용자에게는 감춘다 — 안 그러면 이미 로그인한 사람에게 거짓말이 된다(Q2).
+    setShown(mp(root, 'closet-empty-guest'), slots.length === 0 && !authGetProfile());
+    // 계정이 바뀌면 앞 계정의 "갈아입었습니다" 가 남는다(Q3).
+    setText(mp(root, 'closet-status'), '');
+    mp(root, 'closet-status')?.classList.remove('is-ok', 'is-error');
     setText(mp(root, 'closet-count'), slots.length ? `${slots.length}벌` : '');
 
     for (const slot of slots) {
@@ -504,7 +510,14 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
     const name = String(slot?.name ?? '').trim();
     return name || '이름 없는 옷';
   }
-  renderCloset();
+
+  // ⚠ 여기서 `renderCloset()` 을 부르지 않는다 — 첫 렌더는 아래 `reload()` 의 `finally`
+  // 가 한다. 그래야 **계정 전환 때도 같은 자리에서 다시 그린다**(검수관 P6).
+  //
+  // 이 줄은 한 번 남아 있었고 그 사실을 내가 못 봤다: "초기 호출을 제거했다" 고 보고까지
+  // 했는데 치환 문자열이 원문과 안 맞아 **no-op** 이었다. 발견은 뮤테이션이 했다 —
+  // `reload()` 쪽 호출을 지워도 테스트가 통과했고, 그 이유가 여기 남은 중복이었다.
+  // **적용 diff 를 안 보면 "고쳤다" 가 거짓이 된다**(게시판 2026-08-08 과 같은 형태).
 
   selectTab('basic');
   void reload();
