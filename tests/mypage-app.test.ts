@@ -33,6 +33,7 @@ import { emptyProfile, type Profile } from '../frontend/js/mypage/schema.js';
 const FIXTURE = `
 <div class="mp is-loading" data-mp="root">
   <div data-mp="preview">
+    <button data-mp="preview-identity"></button>
     <img data-mp="preview-avatar" alt=""><span data-mp="preview-avatar-fallback"></span>
     <h2 data-mp="preview-name"></h2><span data-mp="preview-nickname"></span>
     <span data-mp="preview-type"></span><p data-mp="preview-bioshort"></p>
@@ -347,6 +348,60 @@ describe('별명 — 한글 IME 조합', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await afterDebounce();
     expect(feedback().textContent).toContain('쓸 수 있는 형식입니다');
+    app.destroy();
+  });
+});
+
+// 감독 지시 2026-08-08: *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로 바로 가게 하자"*
+// — Preview 의 아바타+이름 블록이 두 번째 진입점이다.
+//
+// **두 진입점이 같은 곳으로 가는지**를 본다. 각각 따로 배선하면 미저장 확인이나 back
+// 타깃이 한쪽만 바뀌는 형태가 열리는데, 그것은 화면에서 조용하다(둘 다 "이동은 한다").
+describe('캐릭터 편집 진입점 — 둘이 같은 곳으로 간다', () => {
+  /** jsdom 은 실제 이동을 안 하므로 `href` 대입을 가로챈다. */
+  function captureNav(): { get(): string } {
+    let last = '';
+    const loc = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: new Proxy(loc, {
+        set(_t, prop, value) {
+          if (prop === 'href') { last = String(value); return true; }
+          return Reflect.set(loc, prop, value);
+        },
+        get(t, prop) {
+          const v = Reflect.get(t, prop);
+          return typeof v === 'function' ? v.bind(t) : v;
+        },
+      }),
+    });
+    return { get: () => last };
+  }
+
+  async function bootApp() {
+    const app = createMyPage(root, new LocalProfileStore(() => 1000));
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    return app;
+  }
+
+  it('「캐릭터」 탭 버튼과 Preview 신원 블록이 **같은 URL** 로 보낸다', async () => {
+    const nav = captureNav();
+    const app = await bootApp();
+
+    root.querySelector<HTMLElement>('[data-mp="avatar-open"]')!.click();
+    const fromTab = nav.get();
+    root.querySelector<HTMLElement>('[data-mp="preview-identity"]')!.click();
+    const fromPreview = nav.get();
+
+    expect(fromTab, '탭 버튼이 이동하지 않았다').toBeTruthy();
+    expect(fromPreview, 'Preview 신원 블록이 이동하지 않았다').toBeTruthy();
+    expect(fromPreview).toBe(fromTab);
+    // 편집기가 **열린 채로** 열려야 한다. 로비에 떨어뜨리면 버튼이 약속한 것과 다르다.
+    expect(fromPreview).toContain('avatar=1');
+    // 돌아올 길이 있어야 한다 — 없으면 편집 후 미술관에 갇힌다.
+    expect(fromPreview).toContain('back=mypage');
+
     app.destroy();
   });
 });

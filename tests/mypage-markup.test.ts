@@ -78,6 +78,28 @@ describe('Preview', () => {
   it('아바타 자리는 <img> 다 — JS 가 src 를 채운다', () => {
     expect(doc.querySelector('[data-mp="preview-avatar"]')?.tagName).toBe('IMG');
   });
+
+  // 감독 지시 2026-08-08: *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로 바로 가게 하자"*
+  it('신원 블록이 **버튼**이다 — 키보드로 도달할 수 있어야 한다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]');
+    // `<div>` + click 리스너로 두면 마우스에서만 동작하고, 「캐릭터」 탭의 같은 기능은
+    // 버튼이라 그쪽만 접근 가능해진다 — 같은 일을 하는 두 진입점의 접근성이 갈린다.
+    expect(el?.tagName).toBe('BUTTON');
+    expect(el?.getAttribute('type'), 'form 안이 아니어도 type 을 명시한다').toBe('button');
+    // 안에 든 것은 아바타 이미지와 이름뿐이라 접근 이름이 안 생긴다.
+    expect(el?.getAttribute('aria-label')).toBeTruthy();
+  });
+
+  it('신원 블록이 아바타와 이름을 **품는다** — 감독이 지목한 그 영역이다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]')!;
+    expect(el.querySelector('[data-mp="preview-avatar"]'), '아바타').not.toBe(null);
+    expect(el.querySelector('[data-mp="preview-name"]'), '이름').not.toBe(null);
+  });
+
+  it('신원 블록 안에 **중첩 버튼이 없다** — HTML 이 허용하지 않는다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]')!;
+    expect(el.querySelectorAll('button, a[href], input, select, textarea').length).toBe(0);
+  });
 });
 
 describe('폼 필드', () => {
