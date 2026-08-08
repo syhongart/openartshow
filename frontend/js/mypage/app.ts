@@ -361,12 +361,19 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
       });
   });
 
-  // 아바타 편집기는 미술관 HUD 안에서 열린다(`ui-hud.ts`). 마이페이지에 그것을
-  // 그대로 띄우려면 HUD 컨텍스트(els·state·callbacks)가 필요해 결합이 커진다 —
-  // 이번 사이클은 **연결만** 한다(계획서 §9). 인라인 편집기 삽입은 별도 판단이다.
+  // ── 캐릭터 꾸미기 → 편집기가 **바로 열린다** ──────────────────────────────
+  // 감독 지시 2026-08-08: *"캐릭터 꾸미기 누르면 캐릭터 디자인으로 바로 이동해야지."*
+  //
+  // 처음에는 `./index.html`(미술관 로비)로만 보냈다. 버튼 이름은 "캐릭터 꾸미기" 인데
+  // 실제로는 미술관 입구에 떨어뜨리고 사용자가 편집기를 다시 찾게 만들었다 —
+  // **버튼이 약속한 것과 일어나는 일이 달랐다.**
+  //
+  // 편집기 자체는 미술관 HUD 소유라(`ui-hud.ts`) 마이페이지 안에 인라인으로 띄우려면
+  // HUD 컨텍스트를 흉내 내야 한다. 그 대신 딥링크로 **편집기가 열린 상태로** 보낸다.
+  // `back=mypage` 는 돌아올 길이다 — 저장하든 닫든 여기로 되돌아온다.
   on(mp(root, 'avatar-open'), 'click', () => {
     if (dirty && !window.confirm('저장하지 않은 변경이 있습니다. 이동할까요?')) return;
-    window.location.href = './index.html';
+    window.location.href = './index.html?avatar=1&back=mypage';
   });
 
   // 로그인 상태가 바뀌면 그 사용자의 프로필로 갈아탄다. 아바타가 이미 그렇게

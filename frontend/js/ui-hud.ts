@@ -1192,6 +1192,51 @@ export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle }: {
   if (pendingPicker) applyGalleryPicker(pendingPicker.galleries, pendingPicker.currentId, pendingPicker.onPick);
   if (pendingArtworkList) renderArtworkList(pendingArtworkList);
   if (pendingGuestbookNotes) renderGuestbookNotes(pendingGuestbookNotes);
+
+  applyAvatarDeepLink();
+}
+
+// ---------------------------------------------------------------------------
+// 캐릭터 디자인 딥링크 (`?avatar=1`)
+// ---------------------------------------------------------------------------
+// 감독 지시 2026-08-08: *"캐릭터 꾸미기 누르면 캐릭터 디자인으로 바로 이동해야지."*
+//
+// 그전에는 마이페이지의 「캐릭터 꾸미기」가 미술관 로비로만 보냈고, 사용자가 거기서
+// 편집기를 **다시 찾아 눌러야** 했다. 버튼 이름이 약속한 것과 실제로 일어나는 일이
+// 달랐다.
+//
+// **입장 전 로비에서도 열린다** — `openChibiMaker` 의 가드 플래그(chibiOpen·lightbox·
+// share·guestbook·artworkList)가 로비에서는 전부 false 이기 때문이다. 그 함수 주석이
+// 이미 그렇게 적고 있었다. 그래서 "입장 → 편집기" 를 강요하지 않고 바로 연다.
+//
+// `back=mypage` 는 **돌아올 길**이다. 이것이 없으면 편집기를 닫는 순간 로비에 남고,
+// 사용자는 자기가 왜 미술관에 있는지 모른다 — 마이페이지에서 버튼 하나 눌렀을 뿐인데.
+// 저장(✓)·닫기(×) 어느 쪽으로 끝내든 돌려보낸다.
+function applyAvatarDeepLink() {
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(window.location.search);
+  } catch (_) {
+    return; // URL 파싱 실패는 무시 — 미술관 본체는 계속 떠야 한다
+  }
+  if (params.get('avatar') !== '1') return;
+
+  openChibiMaker();
+
+  // 돌아갈 곳은 **화이트리스트로만** 정한다. `back` 값을 그대로 `location.href` 에
+  // 넣으면 열린 리다이렉트가 된다(`?back=https://evil.example`). 값은 키일 뿐이고
+  // 실제 경로는 여기 코드가 갖는다.
+  const BACK_TARGETS: Record<string, string> = { mypage: './mypage.html' };
+  const target = BACK_TARGETS[params.get('back') || ''];
+  if (!target) return;
+
+  // 편집기 헤더의 저장(✓)·닫기(×). 편집기가 먼저 등록한 핸들러가 저장·닫기를 끝낸
+  // 뒤에 이 리스너가 돈다(addEventListener 는 등록 순서대로 실행된다).
+  for (const id of ['lu-am-save', 'lu-am-close']) {
+    document.getElementById(id)?.addEventListener('click', () => {
+      window.location.href = target;
+    });
+  }
 }
 
 export function showLoading(show: boolean) {
