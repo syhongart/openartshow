@@ -80,6 +80,16 @@ export const ENTRYPOINTS = [
   // `tests/world3-independence.test.ts` 가 지킨다 — 포크의 존재 이유가 격리이므로
   // 그것을 산문이 아니라 검사로 둔다(팀장 조건 2).
   { key: 'world3', src: 'world3.html', out: 'app/world3.html', exposure: 'flagged' },
+  // [실험] 갤러리 스트리트 — world2 의 **포크**다(분기 근거·no-sync 정책은
+  // `frontend/js/world5/README.md`). 감독 지시 2026-08-08 *"월드3 킵해놓고. 월드5를
+  // 만들어보자 … 뉴욕 갤러리 거리를 만들고 싶어. 맨해탄 다리도 있고"* 로 착수했다.
+  //
+  // ⚠️ **`world4` 는 결번이다.** 감독이 명시적으로 "월드5" 라고 지시했고, 팀장이
+  // *"명시 발화에 정정을 되묻는 것은 이미 답이 있는 질문이고 그 왕복이 감독 시간을
+  // 쓴다"* 로 유지 판정했다. 기능상 문제는 없다 — GS-4 의 `/^world\d+$/` 가 숫자
+  // 접미로 판정하므로 결번과 무관하게 자동 편입된다. 이 줄은 다음 사람이
+  // *"world4 가 어디 갔나"* 를 찾는 고리를 막으려고 있다.
+  { key: 'world5', src: 'world5.html', out: 'app/world5.html', exposure: 'flagged' },
 ];
 
 /** 링크되어 방문자가 도달하는 진입점 */
