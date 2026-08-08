@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- maximum-scale/user-scalable 을 넣지 않는다 — builder 는 3D 조작 화면이라 확대를 막지만
+     마이페이지는 읽고 입력하는 문서형이라 확대를 막으면 접근성이 깎인다.
+     대신 iOS 의 "입력 포커스 시 자동 확대"(= 확대되면서 가로 스크롤이 생긴다)는
+     mypage.css 에서 입력 글자 크기 16px 로 막는다. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- CSP — builder.html 과 같은 형태. 다른 점 둘:
+     ① frame-src 없음(유튜브 임베드가 없다. 프레임을 아예 안 쓰므로 default-src 'self' 가 덮는다)
+     ② script-src 에 'unsafe-inline' 없음(인라인 실행 script 0. studio.html 과 같은 수준)
+     img-src 의 data: 는 프로필 사진이 dataURL 로 저장되기 때문에 **반드시** 필요하다. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<title>마이페이지 · OpenArtShow</title>
+<!-- behind-flag: 어디에도 링크하지 않는다. 검색 색인까지 막아 둔다 —
+     링크가 없어도 URL 이 노출되면 색인될 수 있고, 미완성 화면이 검색에 뜨는 것은 링크 노출과 같다. -->
+<meta name="robots" content="noindex, nofollow">
+<style>
+  /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다.
+     (2층 구조. 1층 = tokens.css 의 --oas-*, 2층 = 이 블록. builder.html·studio.html 과 같은 형태)
+
+     ── 라이트를 고른 이유 ──────────────────────────────────────────────────
+     builder 가 상시 다크인 것은 3D 캔버스 위에 뜨는 HUD 라서다(밝은 판이 화면을 가린다).
+     마이페이지는 캔버스가 없고 **긴 폼 + 읽는 텍스트**라 studio 쪽 문제다. studio 가
+     이미 라이트 표면 + -ink 딥변형 컨벤션으로 서 있으므로 같은 계열로 잇는다.
+
+     ── 단 Preview 만 다크로 반전한다 ───────────────────────────────────────
+     이 화면의 핵심 요구가 *"Preview 는 남이 보는 모습이고, 편집 영역과 시각적으로 확실히
+     구분돼야 한다"* 이다. 테두리·여백만으로 가르면 스크롤 중에 경계가 흐려진다.
+     표면 자체를 반전시키면 두 영역이 **한 화면에서 절대 섞이지 않는다** — 그리고 그 다크
+     플레이트가 builder 의 글래스 플레이트 언어와도 이어져 새 룩을 만들지 않는다.
+     그래서 --pv-* 는 --oas-dark-* / --oas-on-dark-* 계열로, 나머지는 라이트 계열로 잇는다.
+     accent 도 표면에 따라 갈린다(라이트 위 --oas-accent-ink, 다크 위 --oas-accent) —
+     tokens.css 가 그 분기를 이미 이름으로 갖고 있으므로 여기서는 고르기만 한다. */
+  :root{
+    /* 편집 영역(라이트) */
+    --bg:var(--oas-ivory);
+    --surface:var(--oas-white);
+    --surface-2:var(--oas-paper);
+    --panel:var(--oas-panel);
+    --line:var(--oas-warm-gray-300);
+    --line-soft:var(--oas-border-light);
+    --ink:var(--oas-ink-cool);
+    --ink-body:var(--oas-ink-body);
+    --ink-dim:var(--oas-ink-dim);
+    --accent:var(--oas-accent-ink);
+    --accent-soft:var(--oas-green-100);
+    --accent-line:var(--oas-green-300);
+    --cta:var(--oas-cta-ink);
+    --cta-label:var(--oas-white);
+    --danger:var(--oas-danger);
+    --warn:var(--oas-warn-ink);
+
+    /* Preview(다크 반전) */
+    --pv-bg:var(--oas-dark-anchor);
+    --pv-surface:var(--oas-dark-1);
+    --pv-surface-2:var(--oas-dark-2);
+    --pv-line:var(--oas-dark-line);
+    --pv-ink:var(--oas-on-dark);
+    --pv-dim:var(--oas-on-dark-dim);
+    --pv-accent:var(--oas-accent);
+    --pv-cta:var(--oas-cta);
+    --pv-cta-label:var(--oas-cta-label);
+
+    /* 형태·틴트 — 오프셋·블러는 형태지만 **틴트는 색이다.**
+       rgba(20,21,26) 은 --oas-dark-anchor(#14151A) 의 rgb 표기다. hex 토큰에서 알파만
+       떼어내는 표준 수단이 아직 좁아서(`rgb(from …)`) 저장소 선례대로 rgba 를 직접
+       적되(studio 의 --shadow-whisper, builder 의 --glass 와 같은 처리) **이 블록 한
+       곳에만** 모은다 — mypage.css 안에는 색 리터럴이 0이어야 하고, 실제로 0이다.
+       tokens.css 가 `rgb(from …)` 을 쓸 수 있게 되는 날 이 다섯 줄만 갈아끼우면 된다. */
+    --r-lg:14px; --r-md:10px; --r-sm:7px;
+    --sh-1:0 2px 6px rgba(20,21,26,.05);
+    --sh-2:0 8px 20px rgba(20,21,26,.10);
+    --sh-pv:0 18px 38px -14px rgba(20,21,26,.42);
+    --sh-knob:0 1px 3px rgba(20,21,26,.30);
+    --veil-stripe:rgba(20,21,26,.055);
+    --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
+  }
+</style>
+  <script type="module" crossorigin src="/openartshow/_bundle/mypage-BLEx-WaU.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-aZ7HCW1S.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/ui-chibi-store-Dl7gzIEr.js">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/mypage-Bip3p2Tw.css">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-BtfeuGbd.css">
+</head>
+<body>
+<!-- 로딩 중 is-loading 이 붙어 있고 JS 가 뗀다. 초기값으로 붙여 두는 이유 —
+     JS 가 값을 넣기 전의 빈 폼이 "저장된 프로필이 비어 있다"로 읽히면 안 된다. -->
+<div class="mp is-loading" data-mp="root">
+
+  <header class="mp__top">
+    <h1 class="mp__title">MY PAGE</h1>
+  </header>
+
+  <div class="mp__grid">
+
+    <!-- ══ Preview — 다른 사람이 보는 모습 ═══════════════════════════════════
+         데스크톱에서는 왼쪽 열에 sticky 로 붙어 편집 내내 보인다.
+         모바일에서는 문서 흐름 상단(감독 안의 "항상 상단")에 온다. -->
+    <aside class="pv" data-mp="preview" aria-label="공개 프로필 미리보기">
+      <p class="pv__eyebrow">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M1.8 12S5.5 5.5 12 5.5 22.2 12 22.2 12 18.5 18.5 12 18.5 1.8 12 1.8 12Z"/><circle cx="12" cy="12" r="3.1"/></svg>
+        다른 사람이 보는 모습
+      </p>
+
+      <div class="pv__card">
+        <p class="pv__lock" data-mp="preview-private" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.3 10.6h11.4v9H6.3ZM8.6 10.6V7.9a3.4 3.4 0 0 1 6.8 0v2.7"/></svg>프로필을 비공개로 설정했습니다</p>
+
+        <div class="pv__id">
+          <span class="pv__avatar">
+            <!-- img 자체에 계약 속성을 붙였다. JS 가 `el.src = …` 로 채울 수 있고,
+                 src 없는 <img> 가 깨진 아이콘으로 보이지 않도록 hidden 으로 시작한다
+                 (fallback 쪽이 기본으로 보이는 것 = 계약). -->
+            <img class="pv__avatar-img" data-mp="preview-avatar" alt="" hidden>
+            <span class="pv__avatar-fb" data-mp="preview-avatar-fallback" aria-hidden="true"></span>
+          </span>
+          <span class="pv__names">
+            <strong class="pv__name" data-mp="preview-name"></strong>
+            <span class="pv__meta">
+              <span class="pv__nick" data-mp="preview-nickname"></span>
+              <span class="pv__type" data-mp="preview-type" hidden></span>
+            </span>
+          </span>
+        </div>
+
+        <p class="pv__bioshort" data-mp="preview-bioshort"></p>
+        <p class="pv__bio" data-mp="preview-bio"></p>
+        <p class="pv__loc" data-mp="preview-location"></p>
+        <div class="pv__genres" data-mp="preview-genres"></div>
+        <div class="pv__links" data-mp="preview-links"></div>
+        <button class="pv__inquiry" type="button" data-mp="preview-inquiry" hidden>작품 문의</button>
+
+        <p class="pv__empty" data-mp="preview-empty">아직 소개가 없습니다</p>
+      </div>
+    </aside>
+
+    <!-- ══ 편집 영역 ════════════════════════════════════════════════════════ -->
+    <div class="ed">
+
+      <!-- 탭 7개. 모바일 대응은 mypage.css 의 .ed__tabs 주석 한 곳에 적었다. -->
+      <div class="ed__tabs" role="tablist" aria-label="마이페이지 편집 항목">
+        <button class="tab" type="button" role="tab" id="mp-tab-basic"   aria-controls="mp-panel-basic"   aria-selected="true"  data-mp-tab="basic">기본 정보</button>
+        <button class="tab" type="button" role="tab" id="mp-tab-avatar"  aria-controls="mp-panel-avatar"  aria-selected="false" data-mp-tab="avatar">캐릭터</button>
+        <button class="tab" type="button" role="tab" id="mp-tab-about"   aria-controls="mp-panel-about"   aria-selected="false" data-mp-tab="about">소개</button>
+        <button class="tab" type="button" role="tab" id="mp-tab-links"   aria-controls="mp-panel-links"   aria-selected="false" data-mp-tab="links">SNS·링크</button>
+        <button class="tab" type="button" role="tab" id="mp-tab-artist"  aria-controls="mp-panel-artist"  aria-selected="false" data-mp-tab="artist">작가 정보</button>
+        <button class="tab" type="button" role="tab" id="mp-tab-privacy" aria-controls="mp-panel-privacy" aria-selected="false" data-mp-tab="privacy">공개 설정</button>
+        <button class="tab" type="button" role="tab" id="mp-tab-account" aria-controls="mp-panel-account" aria-selected="false" data-mp-tab="account">계정</button>
+      </div>
+
+      <!-- 비활성 패널의 hidden 은 JS 가 관리한다(계약). 초기 HTML 에 미리 적어 두는 것은
+           JS 가 붙기 전 7개 패널이 한꺼번에 펼쳐지는 것을 막기 위해서다 — CSS 로
+           display:none 시키지 않았으므로 JS 가 hidden 을 떼면 그대로 보인다. -->
+
+      <!-- ── 기본 정보 ──────────────────────────────────────────────────── -->
+      <section class="panel" role="tabpanel" id="mp-panel-basic" aria-labelledby="mp-tab-basic" data-mp-panel="basic">
+
+        <div class="fld">
+          <div class="fld__head">
+            <label class="fld__label" for="mp-nickname">별명</label>
+            <span class="fld__count" data-mp-count="nickname"></span>
+          </div>
+          <input class="inp" id="mp-nickname" type="text" data-mp-field="nickname" autocomplete="off" spellcheck="false">
+          <p class="msg" data-mp-error="nickname"></p>
+          <div class="suggest" data-mp-suggest="nickname"></div>
+        </div>
+
+        <div class="fld">
+          <div class="fld__head">
+            <label class="fld__label" for="mp-displayname">작가명</label>
+          </div>
+          <input class="inp" id="mp-displayname" type="text" data-mp-field="displayName" autocomplete="off">
+          <p class="msg" data-mp-error="displayName"></p>
+        </div>
+
+        <fieldset class="fld fld--set">
+          <legend class="fld__label">활동 분야</legend>
+          <!-- 카드형 라디오. studio.html 의 .theme-card 와 같은 형태(라벨 안에 input 을 숨기고
+               형제 요소를 칠한다) — :has() 없이도 전 브라우저에서 동작한다. -->
+          <div class="cards">
+            <label class="card"><input type="radio" name="mp-usertype" value="artist" data-mp-field="userType" checked><span class="card__face">작가</span></label>
+            <label class="card"><input type="radio" name="mp-usertype" value="gallery" data-mp-field="userType"><span class="card__face">갤러리</span></label>
+            <label class="card"><input type="radio" name="mp-usertype" value="collector" data-mp-field="userType"><span class="card__face">컬렉터</span></label>
+            <label class="card"><input type="radio" name="mp-usertype" value="member" data-mp-field="userType"><span class="card__face">일반 회원</span></label>
+          </div>
+          <p class="msg" data-mp-error="userType"></p>
+        </fieldset>
+
+        <div class="fld">
+          <div class="fld__head">
+            <span class="fld__label" id="mp-photo-label">프로필 사진</span>
+          </div>
+          <label class="filepick">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.2 8.4h3.4l1.5-2.2h7.8l1.5 2.2h3.4v10.4H3.2Z"/><circle cx="12" cy="13.3" r="3.4"/></svg>
+            <span class="filepick__txt">사진 선택</span>
+            <input class="filepick__input" type="file" accept="image/*" data-mp-field="profileImage" aria-labelledby="mp-photo-label">
+          </label>
+          <p class="msg" data-mp-error="profileImage"></p>
+        </div>
+
+      </section>
+
+      <!-- ── 캐릭터 ─────────────────────────────────────────────────────── -->
+      <section class="panel" role="tabpanel" id="mp-panel-avatar" aria-labelledby="mp-tab-avatar" data-mp-panel="avatar" hidden>
+        <div class="avatar">
+          <div class="avatar__frame">
+            <img class="avatar__thumb" data-mp="avatar-thumb" alt="">
+          </div>
+          <button class="btn btn--line" type="button" data-mp="avatar-open">캐릭터 꾸미기</button>
+        </div>
+      </section>
+
+      <!-- ── 소개 ───────────────────────────────────────────────────────── -->
+      <section class="panel" role="tabpanel" id="mp-panel-about" aria-labelledby="mp-tab-about" data-mp-panel="about" hidden>
+
+        <div class="fld">
+          <div class="fld__head">
+            <label class="fld__label" for="mp-bioshort">한 줄 소개</label>
+            <span class="fld__count" data-mp-count="bioShort"></span>
+          </div>
+          <input class="inp" id="mp-bioshort" type="text" data-mp-field="bioShort">
+          <p class="msg" data-mp-error="bioShort"></p>
+        </div>
+
+        <div class="fld">
+          <div class="fld__head">
+            <label class="fld__label" for="mp-bio">소개</label>
+            <span class="fld__count" data-mp-count="bio"></span>
+          </div>
+          <textarea class="inp inp--area" id="mp-bio" rows="7" data-mp-field="bio"></textarea>
+          <p class="msg" data-mp-error="bio"></p>
+        </div>
+
+        <div class="fld">
+          <div class="fld__head">
+            <label class="fld__label" for="mp-location">활동 지역</label>
+          </div>
+          <input class="inp" id="mp-location" type="text" data-mp-field="location">
+          <p class="msg" data-mp-error="location"></p>
+        </div>
+
+      </section>
+
+      <!-- ── SNS·링크 ───────────────────────────────────────────────────── -->
+      <section class="panel" role="tabpanel" id="mp-panel-links" aria-labelledby="mp-tab-links" data-mp-panel="links" hidden>
+
+        <div class="links" data-mp="links-list"></div>
+
+        <button class="btn btn--line btn--wide" type="button" data-mp="link-add">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5.4v13.2M5.4 12h13.2"/></svg>
+          링크 추가
+        </button>
+
+        <!-- 한 행의 틀. platform 의 <option> 은 JS 가 채운다(플랫폼 목록 SSOT 는 links.ts
+             한 곳이므로 여기 옮겨 적으면 그 순간 값 미러링이다). -->
+        <template data-mp="link-row">
+          <div class="linkrow">
+            <div class="linkrow__main">
+              <select class="inp inp--sel linkrow__platform" data-mp-link="platform" aria-label="플랫폼"></select>
+              <input class="inp linkrow__url" type="text" data-mp-link="url" placeholder="@아이디 또는 주소" autocomplete="off" spellcheck="false" aria-label="아이디 또는 주소">
+            </div>
+            <input class="inp linkrow__label" type="text" data-mp-link="label" aria-label="링크 이름" hidden>
+            <div class="linkrow__foot">
+              <label class="swrow swrow--sm">
+                <span class="swrow__name">공개</span>
+                <input class="sw sw--sm" type="checkbox" data-mp-link="visible" checked>
+              </label>
+              <button class="iconbtn iconbtn--danger" type="button" data-mp-link="remove" aria-label="이 링크 삭제">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.6 7.2h14.8M9.6 7.2V5.1h4.8v2.1M6.4 7.2l.9 12.1h9.4l.9-12.1M10.2 10.6v5.5M13.8 10.6v5.5"/></svg>
+              </button>
+            </div>
+            <p class="msg" data-mp-link="error"></p>
+          </div>
+        </template>
+
+      </section>
+
+      <!-- ── 작가 정보 ──────────────────────────────────────────────────── -->
+      <section class="panel" role="tabpanel" id="mp-panel-artist" aria-labelledby="mp-tab-artist" data-mp-panel="artist" hidden>
+
+        <fieldset class="fld fld--set">
+          <legend class="fld__label">장르</legend>
+          <div class="chips">
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="painting"><span class="chip__face">회화</span></label>
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="photo"><span class="chip__face">사진</span></label>
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="sculpture"><span class="chip__face">조각</span></label>
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="media"><span class="chip__face">미디어아트</span></label>
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="installation"><span class="chip__face">설치</span></label>
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="digital"><span class="chip__face">디지털아트</span></label>
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="craft"><span class="chip__face">공예</span></label>
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="drawing"><span class="chip__face">드로잉</span></label>
+            <label class="chip"><input type="checkbox" data-mp-field="genres" value="etc"><span class="chip__face">기타</span></label>
+          </div>
+          <p class="msg" data-mp-error="genres"></p>
+        </fieldset>
+
+        <div class="fld">
+          <div class="fld__head">
+            <label class="fld__label" for="mp-exhibitions">주요 전시</label>
+            <span class="fld__count" data-mp-count="exhibitions"></span>
+          </div>
+          <textarea class="inp inp--area" id="mp-exhibitions" rows="6" data-mp-field="exhibitions"></textarea>
+          <p class="msg" data-mp-error="exhibitions"></p>
+        </div>
+
+        <div class="fld">
+          <div class="fld__head">
+            <label class="fld__label" for="mp-gallery">소속 갤러리</label>
+          </div>
+          <input class="inp" id="mp-gallery" type="text" data-mp-field="gallery">
+          <p class="msg" data-mp-error="gallery"></p>
+        </div>
+
+        <div class="fld">
+          <label class="swrow">
+            <span class="swrow__name">작품 문의 가능</span>
+            <input class="sw" type="checkbox" data-mp-field="inquiryOpen">
+          </label>
+          <label class="swrow">
+            <span class="swrow__name">작품 판매 가능</span>
+            <input class="sw" type="checkbox" data-mp-field="saleOpen">
+          </label>
+        </div>
+
+      </section>
+
+      <!-- ── 공개 설정 ──────────────────────────────────────────────────── -->
+      <section class="panel" role="tabpanel" id="mp-panel-privacy" aria-labelledby="mp-tab-privacy" data-mp-panel="privacy" hidden>
+
+        <!-- 마스터 스위치를 자식 5개와 **다른 층**에 둔다(요구사항).
+             ① 마스터는 카드 밖 상단에 단독 행으로 크게
+             ② 자식 5개는 들여쓴 카드 안, 좌측에 종속선
+             ③ 마스터가 꺼지면 :has() 로 자식 층 전체가 덮인다(JS 없이도 성립).
+                :has() 미지원 브라우저에서는 덮개가 안 뜰 뿐 기능 손실은 없다. -->
+        <div class="master">
+          <label class="swrow swrow--master">
+            <span class="swrow__name">프로필 공개</span>
+            <input class="sw sw--lg" type="checkbox" data-mp-vis="profile" checked>
+          </label>
+
+          <div class="master__kids">
+            <div class="master__veil" aria-hidden="true"></div>
+            <label class="swrow"><span class="swrow__name">소개</span><input class="sw" type="checkbox" data-mp-vis="bio" checked></label>
+            <label class="swrow"><span class="swrow__name">활동 지역</span><input class="sw" type="checkbox" data-mp-vis="location" checked></label>
+            <label class="swrow"><span class="swrow__name">SNS·링크</span><input class="sw" type="checkbox" data-mp-vis="links" checked></label>
+            <!-- email 기본값은 꺼짐(schema.ts DEFAULT_VISIBILITY 와 같은 초기 상태). -->
+            <label class="swrow"><span class="swrow__name">이메일</span><input class="sw" type="checkbox" data-mp-vis="email"></label>
+            <label class="swrow"><span class="swrow__name">작품 문의</span><input class="sw" type="checkbox" data-mp-vis="inquiry" checked></label>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ── 계정 ───────────────────────────────────────────────────────── -->
+      <section class="panel" role="tabpanel" id="mp-panel-account" aria-labelledby="mp-tab-account" data-mp-panel="account" hidden>
+
+        <!-- 문구는 비워 둔다 — 카피는 내 소관이 아니다(자리·타이포까지만). JS 가 채운다. -->
+        <p class="notice" data-mp="account-notice"></p>
+
+        <div class="fld">
+          <div class="fld__head">
+            <span class="fld__label">로그인 수단</span>
+          </div>
+          <p class="readout" data-mp="account-provider"></p>
+        </div>
+
+        <div class="danger">
+          <button class="btn btn--danger" type="button" data-mp="account-reset">프로필 초기화</button>
+        </div>
+
+      </section>
+
+      <!-- ── 저장 ───────────────────────────────────────────────────────── -->
+      <div class="actionbar">
+        <span class="actionbar__status" data-mp="save-status" aria-live="polite"></span>
+        <button class="btn btn--cta" type="button" data-mp="save">저장</button>
+      </div>
+
+    </div><!-- /.ed -->
+  </div><!-- /.mp__grid -->
+</div><!-- /.mp -->
+
+</body>
+</html>
