@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "브라우저 기반 3D 가상 미술관 — 정적 호스팅·자기완결. 런타임 배포물은 npm 의존 0(vendor 직서빙). 아래 의존성은 전부 개발·검증 도구.",
+  "description": "브라우저 기반 3D 가상 미술관 — 정적 호스팅·자기완결. 자기완결 = 방문자 브라우저가 외부 호스트를 부르지 않는다는 뜻이지 라이브러리를 안 쓴다는 뜻이 아니다 — three·peerjs 는 npm 에서 받아 vendor/ 로 직서빙한다. 아래 devDependencies 는 개발·검증 도구다.",
   "engines": {
     "node": "^24"
   },
