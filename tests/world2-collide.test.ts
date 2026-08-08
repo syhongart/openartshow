@@ -8,6 +8,26 @@
 // **플레이어가 정말 안 지나가는지**를 본다. 이것이 없으면 `resolveMove` 를 배선에서
 // 빠뜨려도 위 두 층은 전부 초록이다.
 
+// ── 검출력 실측 (뮤테이션, 2026-08-08) ─────────────────────────────────────
+// **통과는 검출력의 증거가 아니다.** 결함을 일부러 되살려 실제로 깨지는지 봤다.
+// 이름이 아니라 **적용 원문**으로 적는다(태스크 #192 — 이름만 적어 서로 다른 것을 같은
+// 이름으로 부른 사고가 있었다).
+//
+//   대조군                                                    17 passed
+//   `slide` 의 축분리 두 `if` → 한 번에 판정                   → §1 비스듬히 FAIL
+//   `player.ts` 의 `this.resolveMove ? … : …` → 주입 무시      → §3 **3개** FAIL
+//   `blockersOf` 의 `if (r > 0)` → `if (true)`                 → §1 반경0 FAIL
+//   `main.ts` 의 `resolveMove: …` 줄 삭제                      → §4 배선 FAIL
+//   `player.ts` 헤드밥의 `mx, mz` → `d.dx, d.dz`               → §3 헤드밥 FAIL
+//   `collide.ts` 의 "이미 갇혔으면 통과" 가드 삭제              → §1 갇힘 FAIL
+//   `collision.ts` 의 `Math.round` → `Math.floor` (2곳)        → **17 passed(안 깨짐)**
+//
+// ⚠ **마지막 것은 사각이 아니라 등가에 가까운 뮤테이션이다.** 3×3 커버가 여유를 줘서
+// floor 로도 현재 파츠 크기에서는 안 닿는다 — 그 사실을 확인하고 `collision.ts` 의
+// **틀린 주석을 고쳤다**(원래 *"발밑 파셀을 놓친다"* 라고 적혀 있었고 거짓이었다).
+// **안 깨진 뮤테이션에는 등가와 진짜 사각이 있고, 이것은 전자다** — 억지로 잡는 검사를
+// 만들면 그것이 장식이다.
+
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { blockersOf, blocked, slide, type Blocker } from '../frontend/js/world2/decide/collide.js';

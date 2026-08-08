@@ -84,8 +84,18 @@ export function createCollider(opts: ColliderOptions = {}): Collider {
 
   return {
     resolve(x, z, dx, dz) {
-      // `Math.round` 다 — 파셀 원점이 `px * cellX` 이므로 파셀은 그 좌표를 **중심**으로 한다.
-      // `Math.floor(x / cellX)` 를 쓰면 반 칸 어긋나 발밑 파셀을 놓친다.
+      // `Math.round` 다 — 파셀 원점이 `px * cellX` 이므로 파셀은 그 좌표를 **중심**으로
+      // 한다(파츠는 원점 ±cellX/2 에 놓인다).
+      //
+      // ⚠ 여기 원래 *"`Math.floor` 를 쓰면 반 칸 어긋나 발밑 파셀을 놓친다"* 라고 적혀
+      // 있었고 **거짓이었다**(뮤테이션 실측: floor 로 바꿔도 17개 전부 통과).
+      // 실제 차이는 **여유의 균등함**이다:
+      //   round → 커버가 항상 플레이어 앞뒤로 최소 `cellX`(32m)
+      //   floor → 파셀 끝에 서면 앞쪽 여유가 절반(16m)까지 줄어든다
+      // 지금 파츠 중 가장 큰 것의 반경으로도 16m 를 못 채우므로 **floor 여도 현재는
+      // 안 닿는다** — 그래서 뮤테이션이 안 깨진 것이고, 그것이 정상이다(등가에 가까운
+      // 뮤테이션). round 를 쓰는 이유는 결함을 막아서가 아니라 **마진이 두 배**라서다.
+      // 파셀이 작아지거나 파츠가 커지면 그 마진이 실제로 필요해진다.
       const px = Math.round(x / cellX);
       const pz = Math.round(z / cellZ);
       if (px !== cachePx || pz !== cachePz) rebuild(px, pz);
