@@ -227,6 +227,14 @@ G-NODE2(태스크 #220)이고, 그것이 없는 동안 이 줄은 약속일 뿐�
 2. **optional dep 해석 차이.** 같은 lockfile 로 npm 10 = 205 packages / npm 11 = **201**
    (`lightningcss` 계열 4개). 무해 — 저장소 참조 0건이고 `dist` 바이트 동일.
 
+**아직 안 맞은 축 둘** (감독 지시 2026-08-08 *"버전 매칭도 체크해"* 에서 나왔다):
+- **`@types/node` = 26, 런타임 = 24.** 타입이 런타임보다 앞서면 `typecheck` 가 **Node 24 에
+  없는 API 를 통과시킨다.** 이번 전환이 갭을 6→2 로 줄이긴 했다. → **태스크 #222**
+- **`frontend/vendor/three.module.js` = r160, npm three = r171.** 배포본은 전부 r171 이라
+  (vite 가 importmap 을 제거하고 번들로 해소한다 — `dist` 에 `vendor/three.module.js` 없음)
+  **라이브 리스크는 없다.** 다만 raw(비-vite) 서빙 경로로 열면 다른 판본이 돈다. → **태스크 #223**
+- **이 사이클의 executor 스모크 회차는 0회다**(위 표 각주). 문서에만 남으면 사라진다. → **태스크 #224**
+
 **파이프라인** ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml)): `main` push →
 0. **`verify` — 검증 게이트**(`uses: ./.github/workflows/ci.yml`). lint·typecheck·참조무결성·
    단위테스트 + 헤드리스 렌더 스모크. `deploy` 가 `needs: verify` 로 이어져 있어 **여기가
