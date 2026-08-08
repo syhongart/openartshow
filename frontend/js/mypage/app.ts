@@ -304,6 +304,20 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
       // `finally` 인 것이 요점이다. 로드가 실패해도 화면은 열려야 한다. 저장이
       // 깨졌다고 사용자가 프로필을 **고칠 수조차 없게** 되는 것이 더 나쁘다.
       root.classList.remove('is-loading');
+
+      // ── 아바타·옷장도 여기서 다시 그린다 (검수관 P6, 2026-08-08) ──────────
+      // 이 함수는 `uid` 를 갱신하는 유일한 자리다(`onAuthChange → reload`). 처음에는
+      // 옷장·썸네일을 **생성 시 1회**만 그렸는데, 그러면 계정이 바뀌었을 때 화면에
+      // **앞 계정의 옷장이 남고 그것을 누르면 뒤 계정 네임스페이스로 복사된다** —
+      // `ui-chibi-store` 가 "검수 반려 사례" 로 기록한 계정 간 오염과 같은 형태다.
+      //
+      // 지금은 mypage 에 로그인 UI 가 없어 도달 불가지만, 로그인 UI 가 붙는 순간
+      // 열린다. 여기 두는 것이 그때 가장 싸다.
+      //
+      // 프로필 로드 실패와 옷장은 무관하므로 `finally` 다 — 프로필이 안 실려도
+      // 옷장은 보여야 한다.
+      refreshAvatarThumb();
+      renderCloset();
     }
   }
 
@@ -416,7 +430,8 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
     if (data) thumb.src = data;
     setShown(thumb, Boolean(data));
   }
-  refreshAvatarThumb();
+  // 첫 렌더는 아래 `reload()` 의 `finally` 가 부른다(계정 전환 때도 같은 자리에서
+  // 다시 그리기 위해서다 — 검수관 P6). 여기서 또 부르면 부팅 때 두 번 그린다.
 
   // ── 내 옷장 (감독 지시 2026-08-08) ──────────────────────────────────────
   //
@@ -438,7 +453,7 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
     for (const slot of slots) {
       const cell = tpl.content.firstElementChild?.cloneNode(true) as HTMLElement | null;
       if (!cell) continue;
-      const name = String(slot?.name ?? '');
+      const name = slotLabel(slot);
       const img = cell.querySelector<HTMLImageElement>('[data-mp-closet="thumb"]');
       if (img) {
         // 썸네일이 없는 슬롯도 있다(옛 저장분). 빈 `src` 는 깨진 아이콘이 되므로 숨긴다.
@@ -463,7 +478,10 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
    */
   function wearFromCloset(slot: { look?: unknown; thumb?: unknown; name?: unknown } | null): void {
     if (!slot?.look) return;
-    const status = mp(root, 'save-status');
+    // ⚠ **프로필 저장 상태줄을 쓰지 않는다**(검수관 P5). 공유하면 "저장하지 않은 변경이
+    // 있습니다" 경고가 지워지고 초록으로 바뀌어 저장된 것처럼 읽힌다 — `dirty` 는 그대로라
+    // 실제로는 안 됐다. 갈아입기는 즉시 저장되는 별개 동작이므로 상태줄도 별개다.
+    const status = mp(root, 'closet-status');
     status?.classList.remove('is-ok', 'is-error');
     if (!saveStoredChibi(slot.look, uid)) {
       setText(status, '저장 공간이 부족해 갈아입지 못했습니다.');
@@ -477,8 +495,14 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
     // *"파란 후디 으로"* 가 나왔다 — 한국어 조사는 받침에 따라 `로`/`으로` 로 갈리고,
     // 옷 이름은 사용자가 정하므로 영문·숫자도 온다. 조사 판정기를 만드는 대신
     // 조사가 필요 없는 어순으로 쓴다.
-    setText(status, `갈아입었습니다 — ${String(slot.name ?? '')}`);
+    setText(status, `갈아입었습니다 — ${slotLabel(slot)}`);
     status?.classList.add('is-ok');
+  }
+
+  /** 표시용 이름. 빈 슬롯(옛 저장분)이 **라벨도 그림도 없는 버튼**이 되지 않게 한다(P11). */
+  function slotLabel(slot: { name?: unknown } | null): string {
+    const name = String(slot?.name ?? '').trim();
+    return name || '이름 없는 옷';
   }
   renderCloset();
 

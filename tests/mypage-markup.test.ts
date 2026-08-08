@@ -254,16 +254,40 @@ describe('캐릭터·계정 탭', () => {
     expect(doc.querySelector('[data-mp="closet-list"]')!.children.length).toBe(0);
   });
 
-  it('캐릭터 패널에 **스타일이 있다** — 없으면 왼쪽에 붙고 썸네일이 원본 크기로 나온다', () => {
-    // 이 패널은 마크업만 있고 CSS 가 0건이었다(감독 실기기에서 발견 —
-    // *"모바일에서는 중앙정렬로 나오게 해주고"*). 클래스만 붙어 있고 규칙이 없으면
-    // 화면에서만 어긋나고 어떤 검사도 안 걸린다.
+  // ⚠ **이것은 CSS 축 게이트가 아니다** (검수관 C2/GS-CSS1, 2026-08-08).
+  // 캐스케이드·특이성·상속을 **전혀 안 본다** — 다른 셀렉터가 이겨서 실제 화면이 안
+  // 중앙정렬돼도 통과한다. 문자열 존재만 본다. 백로그 `G-CSSVAR1`·「셀렉터 회귀 축」을
+  // 대체하지 않는다.
+  //
+  // 첫 판본은 `align-items: center` **한 줄만** 봤고 검출력이 반쪽이었다(실측:
+  // `display:flex` 를 지워도, `flex-direction` 을 지워도, `.avatar__frame` 규칙을 통째로
+  // 없애도 전부 통과). `align-items` 는 flex/grid 컨테이너가 아니면 **완전히 무효**이고
+  // 주축이 가로면 세로중앙이 된다 — 즉 감독 지시가 통째로 회귀해도 초록이었다.
+  // 그래서 **그 선언이 효력을 갖는 최소 조건 집합**을 함께 단언한다.
+  //
+  // 거짓 FAIL 위험: 나중에 `display:grid` + `place-items:center` 로 바꾸는 **올바른
+  // 수정**이 여기서 FAIL 한다. 그때는 정규식을 `(flex|grid)` 로 넓히지 말고 **명세를
+  // 다시 쓴다**(게이트가 정답을 벌주는 형태를 정규식으로 덮으면 검사가 장식이 된다).
+  it('캐릭터 패널 스타일이 **효력을 갖는 형태로** 있다 — 없으면 왼쪽에 붙고 원본 크기로 나온다', () => {
     const css = readFileSync(resolve(import.meta.dirname, '../frontend/css/mypage.css'), 'utf8');
-    expect(css, '.avatar 규칙이 없다').toMatch(/\.avatar\s*\{/);
-    expect(css, '.closet__grid 규칙이 없다').toMatch(/\.closet__grid\s*\{/);
-    // 중앙정렬이 감독 지시의 핵심이다.
-    const avatarRule = /\.avatar\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
-    expect(avatarRule, '중앙정렬이 아니다').toMatch(/align-items\s*:\s*center/);
+    const rule = (sel: string) => new RegExp(`${sel}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? null;
+
+    const avatar = rule('\\.avatar');
+    expect(avatar, '.avatar 규칙이 없다').not.toBe(null);
+    // 셋이 **함께** 있어야 세로 배치 + 가로 중앙이 된다. 하나라도 빠지면 무효다.
+    expect(avatar, 'flex 컨테이너가 아니면 align-items 가 무효다').toMatch(/display\s*:\s*flex/);
+    expect(avatar, '주축이 가로면 align-items:center 는 세로중앙이 된다').toMatch(/flex-direction\s*:\s*column/);
+    expect(avatar, '중앙정렬이 아니다 — 감독 지시의 핵심이다').toMatch(/align-items\s*:\s*center/);
+
+    // 썸네일이 원본 크기로 나오던 것이 이 diff 가 고친 사고다 — 프레임이 크기를 정한다.
+    const frame = rule('\\.avatar__frame');
+    expect(frame, '.avatar__frame 규칙이 없다 — 썸네일이 원본 크기가 된다').not.toBe(null);
+    expect(frame, '프레임이 크기를 정하지 않는다').toMatch(/width\s*:/);
+    const thumb = rule('\\.avatar__thumb');
+    expect(thumb, '.avatar__thumb 규칙이 없다').not.toBe(null);
+    expect(thumb, '프레임을 채우지 않는다').toMatch(/object-fit\s*:/);
+
+    expect(rule('\\.closet__grid'), '.closet__grid 규칙이 없다').not.toBe(null);
   });
 });
 

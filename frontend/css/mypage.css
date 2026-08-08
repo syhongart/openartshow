@@ -908,6 +908,17 @@ html, body {
   border-radius: var(--r-sm);
   padding: 12px 13px;
 }
+/* 갈아입기 결과 — **프로필 저장 상태줄과 별개다**(검수관 P5). 공유하면 미저장 경고가
+   지워져 저장된 것처럼 읽힌다. 비어 있을 때 자리를 차지하지 않도록 `:empty` 로 접는다. */
+.closet__status {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.closet__status:empty { display: none; }
+.closet__status.is-ok { color: var(--accent); }
+.closet__status.is-error { color: var(--danger); }
+
 .closet__grid {
   display: grid;
   /* `auto-fill` 이다 — `auto-fit` 이면 한 벌만 있을 때 그 칸이 패널 폭 전체로 늘어난다. */

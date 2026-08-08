@@ -25,6 +25,8 @@
 // 배포 전 스모크(실제 브라우저)가 본다.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createMyPage } from '../frontend/js/mypage/app.js';
 import { LocalProfileStore, type ProfileStore } from '../frontend/js/mypage/store.js';
 import { emptyProfile, type Profile } from '../frontend/js/mypage/schema.js';
@@ -35,6 +37,7 @@ import {
   saveCloset,
   readStoredChibi,
   readStoredChibiThumb,
+  saveStoredChibi,
 } from '../frontend/js/ui-chibi-store.js';
 
 /** 실제 마크업과 같이 `is-loading` 을 달고 시작한다 — 그것이 이 파일의 요점이다. */
@@ -83,7 +86,7 @@ const FIXTURE = `
   <img data-mp="avatar-thumb"><button data-mp="avatar-open"></button>
   <div data-mp="closet">
     <span data-mp="closet-count"></span>
-    <p data-mp="closet-empty" hidden></p>
+    <p data-mp="closet-empty" hidden></p><p data-mp="closet-status"></p>
     <div data-mp="closet-list"></div>
     <template data-mp="closet-cell"><button data-mp-closet="load">
       <img data-mp-closet="thumb" alt=""><span data-mp-closet="name"></span>
@@ -479,9 +482,17 @@ describe('캐릭터 편집 진입점 — 둘이 같은 곳으로 간다', () => 
 
 // 감독 지시 2026-08-08: *"옷장리스트가 나오게 해줘."*
 //
-// **편집기와 같은 저장소를 읽는가**가 요점이다. 여기서 형식을 흉내 낸 픽스처를 쓰면
-// `ui-chibi-store` 가 형식을 바꿔도 이 테스트만 초록으로 남는다 — 그래서 `saveCloset`
-// 을 그대로 불러 심는다.
+// **편집기와 같은 저장소를 읽는가**가 요점이라 `saveCloset` 을 그대로 불러 심는다.
+//
+// ⚠ **그러나 그것으로 묶이는 것은 「어디에」뿐이고 「무엇을」은 안 묶인다**
+// (검수관 C3 실측, 2026-08-08). 첫 판본 주석은 *"형식이 바뀌면 함께 깨져야 한다"* 고
+// 적었고 **거짓이었다** — `readCloset` 은 `Array.isArray` 외에 검증을 **0건** 하는 JSON
+// 통과기라, 편집기가 슬롯 키 `name` 을 `label` 로 바꿔도(= 사용자는 이름 없는 빈 버튼을
+// 보게 된다) 전체 2101 테스트에서 **추가 실패 0** 이었다. 형식을 다시 적은 곳은 아래
+// `SLOT_A/SLOT_B` 리터럴, 즉 **이 픽스처 자신**이었다.
+//
+// 그래서 문장을 고치는 대신 **참으로 만든다** — 맨 아래 「생산자 계약」 테스트가 편집기의
+// 슬롯 생성부를 읽어 키를 대조한다. 키 프리픽스(저장 위치) 축은 별개로 이미 잡힌다.
 describe('내 옷장', () => {
   async function bootApp() {
     const app = createMyPage(root, new LocalProfileStore(() => 1000));
@@ -537,18 +548,65 @@ describe('내 옷장', () => {
     expect(readStoredChibiThumb(uid)).toBe(SLOT_B.thumb);
     // 캐릭터 탭 썸네일도 즉시 따라와야 한다(안 따라오면 눌러도 아무 일 없어 보인다).
     expect(root.querySelector<HTMLImageElement>('[data-mp="avatar-thumb"]')!.src).toContain('BBBB');
-    expect(root.querySelector<HTMLElement>('[data-mp="save-status"]')!.textContent).toContain('갈아입었');
+    // ⚠ **Preview 아바타 축** (검수관 C1/M1). 첫 판본은 이 줄이 없어서 `refreshPreview()`
+    // 를 지워도 통과했다 — 갱신 지점 넷 중 하나에 측정기가 없었고, 그것은 화면에서
+    // 조용하다(캐릭터 탭만 바뀌고 위쪽 미리보기는 옛 옷 그대로 남는다).
+    expect(
+      root.querySelector<HTMLImageElement>('[data-mp="preview-avatar"]')!.src,
+      'Preview 아바타가 안 따라왔다 — 두 화면이 어긋난다',
+    ).toContain('BBBB');
+    // ⚠ **프로필 저장 상태줄이 아니라 옷장 전용 줄**이다(검수관 P5) — 공유하면
+    // "저장하지 않은 변경이 있습니다" 경고가 지워져 저장된 것처럼 읽힌다.
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-status"]')!.textContent).toContain('갈아입었');
     app.destroy();
   });
 
   it('`look` 이 없는 슬롯은 **아무 일도 하지 않는다** — 옛 저장분 방어', async () => {
+    // ⚠ **대조군을 먼저 심는다** (검수관 C1/M9, 2026-08-08).
+    // 첫 판본은 아무것도 안 심고 `before = null` 상태에서 `toEqual(before)` 를 단언했다.
+    // 그러면 가드를 약화했을 때(`!slot?.look` → `!slot`) `saveStoredChibi(undefined)` 가
+    // 문자열 `"undefined"` 를 넣고 → 읽기의 `JSON.parse` 가 던져 **`null` 을 반환**한다.
+    // 즉 **저장된 캐릭터가 파괴됐는데 `null === null` 로 통과**했다. 실측으로 확인된
+    // 검출력 0이고, 하루 전 같은 파일에서 나온 「측정기 생존」이 그대로 재발한 것이다.
+    saveStoredChibi({ species: 'human', outfit: 'original' }, currentUserId());
     saveCloset([{ id: 'c3', name: '깨진 것', ts: 3 }], currentUserId());
     const app = await bootApp();
+
     const before = readStoredChibi(currentUserId());
+    expect(before, '대조군이 null 이면 이 단언은 파괴를 못 잡는다').not.toBe(null);
 
     cells()[0].click();
 
     expect(readStoredChibi(currentUserId())).toEqual(before);
+    app.destroy();
+  });
+
+  // 검수관 P5. 갈아입기가 프로필 저장 상태줄을 쓰면 미저장 경고가 지워지고 초록으로
+  // 바뀐다 — `dirty` 는 그대로라 **저장이 안 됐는데 된 것처럼 읽힌다.**
+  it('갈아입어도 **미저장 경고를 지우지 않는다** — 상태줄이 별개다', async () => {
+    saveCloset([SLOT_A], currentUserId());
+    const app = await bootApp();
+
+    const input = root.querySelector<HTMLInputElement>('[data-mp-field="displayName"]')!;
+    input.value = '고친 이름';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const warning = root.querySelector<HTMLElement>('[data-mp="save-status"]')!.textContent;
+    expect(warning, '대조군이 비면 이 단언은 아무것도 안 잡는다').toContain('저장하지 않은');
+
+    cells()[0].click();
+
+    expect(root.querySelector<HTMLElement>('[data-mp="save-status"]')!.textContent).toBe(warning);
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-status"]')!.textContent).toContain('갈아입었');
+    app.destroy();
+  });
+
+  // 검수관 P11. 이름도 썸네일도 없는 옛 슬롯이 **라벨도 그림도 없는 빈 버튼**이 되면
+  // 스크린리더에는 " 입기" 로, 화면에는 빈칸으로 나온다.
+  it('이름이 빈 슬롯도 **읽을 수 있는 라벨**을 갖는다', async () => {
+    saveCloset([{ id: 'c9', ts: 9, look: { species: 'human' } }], currentUserId());
+    const app = await bootApp();
+    expect(cells()[0].textContent?.trim()).toBeTruthy();
+    expect(cells()[0].getAttribute('aria-label')).not.toBe(' 입기');
     app.destroy();
   });
 
@@ -559,5 +617,32 @@ describe('내 옷장', () => {
     // `src` 가 빈 `<img>` 는 브라우저에서 깨진 아이콘으로 나온다.
     expect(img.hidden).toBe(true);
     app.destroy();
+  });
+});
+
+// 옷장 슬롯의 **생산자는 편집기**(`ui-avatar-editor.ts`)이고 소비자가 마이페이지다.
+// 그 사이에는 검증이 없다 — `readCloset` 은 JSON 을 그대로 통과시킨다. 그래서 생산자가
+// 키 이름을 바꾸면 소비자는 조용히 빈 값을 그린다(실측: 이름 없는 빈 버튼).
+//
+// 이 검사는 **소스를 읽어 계약을 대조**한다. 런타임 값이 아니라 문자열을 보는 것이므로
+// 강한 축은 아니지만, 이 저장소에서 실제로 일어난 형태(생산자만 바꾸고 소비자를 잊음)를
+// 잡는다. **못 잡는 것**: 키 이름이 같은데 의미가 바뀌는 것(`thumb` 이 URL → Blob 등),
+// 편집기가 슬롯을 다른 자리에서도 만드는 경우(지금은 한 곳이다).
+describe('옷장 슬롯 — 생산자(편집기) 계약', () => {
+  it('편집기가 만드는 슬롯이 마이페이지가 읽는 키를 **전부** 가진다', () => {
+    const src = readFileSync(
+      resolve(import.meta.dirname, '../frontend/js/ui-avatar-editor.ts'),
+      'utf8',
+    );
+    const block = /const slot\s*=\s*\{([\s\S]*?)\n\s*\};/.exec(src);
+    expect(block, '편집기의 슬롯 생성부를 못 찾았다 — 이 검사가 낡았다').not.toBe(null);
+
+    const keys = new Set(
+      [...block![1].matchAll(/^\s*([A-Za-z_$][\w$]*)\s*:/gm)].map((m) => m[1]),
+    );
+    // 마이페이지가 실제로 읽는 것들(`app.ts` 의 `renderCloset`·`wearFromCloset`).
+    for (const key of ['name', 'look', 'thumb']) {
+      expect(keys.has(key), `편집기 슬롯에 '${key}' 가 없다 — 마이페이지가 빈 값을 그린다`).toBe(true);
+    }
   });
 });
