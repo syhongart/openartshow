@@ -24,7 +24,7 @@
 // 한 번도 열지 않는다**(`smoke/config.mjs` 가 `/app/index.html` 을 파라미터 없이만
 // 연다) — 딥링크 세션의 콘솔 에러 0 은 측정된 적이 없다.
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 
 // ── WebGL 렌더러만 스텁한다 ───────────────────────────────────────────────
 // jsdom 에는 WebGL 이 없어 `new THREE.WebGLRenderer()` 가 던진다. **three 전체를
@@ -84,11 +84,19 @@ function make2dStub(canvas: HTMLCanvasElement) {
   });
 }
 
+// 전역 패치는 **복원한다**(검수관 P-f). vitest 는 파일별 환경 격리라 지금은 안전하지만,
+// 이 파일에 다른 describe 가 붙는 순간 그 전제가 바뀐다.
+const ORIGINAL_GET_CONTEXT = HTMLCanvasElement.prototype.getContext;
+const ORIGINAL_TO_DATA_URL = HTMLCanvasElement.prototype.toDataURL;
 HTMLCanvasElement.prototype.getContext = function patched(this: HTMLCanvasElement, type: string) {
   if (type === '2d') return make2dStub(this) as unknown as CanvasRenderingContext2D;
   return null;
 } as typeof HTMLCanvasElement.prototype.getContext;
 HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,iVBORw0KGgo=';
+afterAll(() => {
+  HTMLCanvasElement.prototype.getContext = ORIGINAL_GET_CONTEXT;
+  HTMLCanvasElement.prototype.toDataURL = ORIGINAL_TO_DATA_URL;
+});
 
 /** `location` 을 갈아끼운다. jsdom 의 `location` 은 직접 대입이 막혀 있다. */
 function setSearch(search: string) {
@@ -285,14 +293,29 @@ describe('G-C — 닫는 네 경로 모두 복귀한다', () => {
 });
 
 // ── G-B(생산자 축) · 마이페이지 버튼이 실제로 딥링크를 만든다 ─────────────
-// ⚠ **뮤테이션 M3 이 이 축의 부재를 드러냈다**(2026-08-08). `mypage/app.ts` 의
-// `buildAvatarDeepLink(...)` 를 `'./index.html'` 리터럴로 되돌려도 **31개가 전부
-// 통과했다.** 위 G-B 는 URL 을 테스트가 직접 만들어 HUD 에 넣었을 뿐, **마이페이지
-// 버튼이 그 URL 을 만드는지는 아무도 안 봤다.**
+// 검수관 G-B 명세는 왕복 전체였다 — *"`createMyPage()` → `avatar-open` 클릭 → 가로챈
+// `location.href` → 그 search 를 HUD `initUI()` 에 주입"*. 처음에 앞 절반을 빼먹어
+// 마이페이지 버튼이 URL 을 만드는지는 아무도 안 보고 있었다.
 //
-// 검수관 G-B 명세는 원래 왕복 전체였다 — *"`createMyPage()` → `avatar-open` 클릭 →
-// 가로챈 `location.href` → 그 search 를 HUD `initUI()` 에 주입"*. 내가 앞 절반을
-// 빼먹었고, 그래서 "생산자와 소비자가 같은 프로토콜을 쓴다" 는 주장이 절반만 검증됐다.
+// ⚠ **이 축은 값 미러링을 잡지 못한다. 그 한계를 정확히 적는다** (검수관 조건 1).
+// 처음에 여기 *"뮤테이션 M3 이 이 축의 부재를 드러냈고 생산자 축으로 닫았다"* 고
+// 적었는데 **거짓이었다.** 검수관이 진짜 M3(생산자 호출을 첫 판본 리터럴
+// `'./index.html?avatar=1&back=mypage'` 로 되돌림)을 돌리니 **33건 전부 통과**했다.
+// 두 문자열이 **완전히 같기 때문**이다:
+// ```
+// 생산자 출력 : ./index.html?avatar=1&back=mypage
+// M3 리터럴   : ./index.html?avatar=1&back=mypage   → 동일
+// ```
+// **행동 등가 뮤테이션**이라 왕복 계약("어떤 문자열이 나오는가")으로는 **원리상**
+// 못 잡는다. 내가 확인했다고 적은 것은 `'./index.html'`(파라미터 없음)이었고 그건
+// 다른 뮤테이션이다 — 위임 지시서에 내가 잘못 적었다.
+//
+// **"안 깨진 뮤테이션" 에는 두 종류가 있다**(검수관 정리): 등가(행동 불변 — 축을
+// 늘려도 안 잡힌다)와 비등가인데 안 깨짐(진짜 사각 — 축을 만든다). 둘을 구분하지 않고
+// "축을 붙였다" 고 적으면 그것이 거짓 진술이다.
+//
+// 미러를 잡으려면 왕복이 아니라 **SSOT 를 갈아끼우고 생산자가 따라오는지**를 봐야
+// 한다 — 아래 「미러 검출」이 그것이다.
 describe('G-B(생산자) — 마이페이지 버튼 → HUD 왕복', () => {
   /** 딥링크에 필요한 최소 마크업. 나머지 조회는 전부 null 안전이다. */
   const MYPAGE_FIXTURE = '<div data-mp="root"><button data-mp="avatar-open"></button></div>';
@@ -345,5 +368,52 @@ describe('G-B(생산자) — 마이페이지 버튼 → HUD 왕복', () => {
     interceptNavigation(back);
     document.getElementById('lu-am-close')!.click();
     expect(back).toEqual(['./mypage.html']);
+  });
+});
+
+// ── 미러 검출 (검수관 조건 1-a) ───────────────────────────────────────────
+// **생산자가 SSOT 를 실제로 거치는가.** `buildAvatarDeepLink` 만 다른 파라미터 이름을
+// 내는 구현으로 갈아끼우고, 버튼이 만든 URL 이 그것을 따라오는지 본다. 리터럴로
+// 되돌아가면 SSOT 를 안 거치므로 따라오지 못한다 — 등가 뮤테이션도 여기서는 잡힌다.
+//
+// **못 잡는 것**: 상수(`AVATAR_PARAM`) 자체의 미러. 모듈 내부 상수 참조는 ESM mock 으로
+// 바뀌지 않는다(검수관 명세 R-1 의 한계 그대로).
+describe('미러 검출 — 생산자가 SSOT 를 거친다', () => {
+  it('**`buildAvatarDeepLink` 를 갈아끼우면 버튼이 만든 URL 도 바뀐다**', async () => {
+    vi.resetModules();
+    vi.doMock('../frontend/js/avatar-deeplink.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../frontend/js/avatar-deeplink.js')>();
+      return { ...actual, buildAvatarDeepLink: (page: string, back?: string) => `${page}?PROBE=1&PB=${back ?? ''}` };
+    });
+
+    document.body.innerHTML = '<div data-mp="root"><button data-mp="avatar-open"></button></div>';
+    const hrefs: string[] = [];
+    interceptNavigation(hrefs);
+
+    const { createMyPage } = await import('../frontend/js/mypage/app.js');
+    const app = createMyPage(document.querySelector('[data-mp="root"]')!);
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    document.querySelector<HTMLButtonElement>('[data-mp="avatar-open"]')!.click();
+    app.destroy();
+
+    expect(hrefs.length).toBe(1);
+    // 리터럴로 되돌아가 있으면 이 단언이 깨진다 — 그것이 이 축의 존재 이유다.
+    expect(hrefs[0], 'SSOT 를 거치지 않고 URL 을 만들고 있다').toContain('PROBE=1');
+
+    vi.doUnmock('../frontend/js/avatar-deeplink.js');
+    vi.resetModules();
+  });
+});
+
+// ── hash 보존 (검수관 P-e — 자기 명세의 누락이라고 밝힌 자리) ─────────────
+describe('딥링크 소비가 hash 를 건드리지 않는다', () => {
+  it('**`#gd=` 공유 갤러리가 살아남는다**', async () => {
+    // `artworks.js` 가 `#gd=`/`#gz=` 로 공유 갤러리를 읽고 `main-enterflow.ts` 가
+    // hash 로 갤러리 id 를 만든다. `?avatar=1#gd=...` 조합에서 hash 가 날아가면
+    // **공유 갤러리가 조용히 깨진다.** `?g=` 보존 단언과 같은 계열이다.
+    window.history.replaceState(null, '', `http://localhost/app/index.html?${AVATAR_PARAM}=1&${BACK_PARAM}=mypage#gd=abc123`);
+    await bootHud();
+    expect(window.location.hash).toBe('#gd=abc123');
+    expect(window.location.search).toBe('');
   });
 });

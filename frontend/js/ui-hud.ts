@@ -1242,6 +1242,10 @@ function applyAvatarDeepLink() {
   try {
     openChibiMaker();
   } catch (_) {
+    // **삼키지 말고 알린다** (검수관 권고). 조용히 return 하면 사용자는 "버튼을
+    // 눌렀는데 아무 일도 안 일어난다" 를 겪고 원인을 알 방법이 없다 — 이 저장소가
+    // `verify-live` 에서 고른 것과 같은 선택이다(막지 않고 알린다).
+    setStatus('캐릭터 디자인을 열 수 없습니다. 화면을 새로고침해 주세요.');
     return;
   }
 
