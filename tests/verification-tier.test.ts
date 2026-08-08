@@ -41,10 +41,22 @@ describe('진입점 SSOT', () => {
     expect(LIVE_ENTRIES.length + FLAGGED_ENTRIES.length).toBe(ENTRYPOINTS.length);
   });
 
-  it('behind-flag 세 페이지가 flagged 다', () => {
+  it('behind-flag 네 페이지가 flagged 다', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
+    //
+    // 목록을 여기 **적어 두는 것**이 이 검사의 요점이다. `FLAGGED_ENTRIES.length` 만
+    // 세거나 `exposure` 값의 유효성만 보면, 새 페이지를 flagged 로 넣는 순간 아무도
+    // 모르게 통과한다 — 그러면 `CLAUDE.md` 의 산문이 낡는다. 실제로 `builder.html` 이
+    // 라이브가 된 뒤에도 세 곳의 주석이 `behind-flag` 로 남아 있었고, 그 사이 라이브
+    // 페이지가 회귀 검사에서 빠져 있었다.
+    //
+    // 그러니 이 배열을 고칠 때는 **`CLAUDE.md` 의 behind-flag 문장도 같이 고친다.**
+    // 여기만 고치면 검사는 초록이 되고 산문은 계속 틀린 채로 남는다.
+    //
+    // 2026-08-08 `mypage.html` 추가 — 감독 지시로 착수한 마이페이지. 링크가 0 인 이유는
+    // 미완이어서가 아니라 로그인이 아직 mock 이기 때문이다(docs/MYPAGE-PLAN.md §3).
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
-    expect(flagged).toEqual(['lab-glb.html', 'visit.html', 'world2.html']);
+    expect(flagged).toEqual(['lab-glb.html', 'mypage.html', 'visit.html', 'world2.html']);
   });
 
   it('**`viteInput` 이 내는 경로가 실제 파일을 가리킨다** — 개수만 세면 빌드가 죽는다', () => {

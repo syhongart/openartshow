@@ -1,0 +1,850 @@
+/* frontend/css/mypage.css — 마이페이지 화면 스타일
+ *
+ * 색은 한 값도 여기 적지 않는다. mypage.html 상단 :root 가 tokens.css 의 --oas-* 를
+ * 이 페이지 이름(--ink·--surface·--pv-* …)에 이어 두었고, 이 파일은 그 이름만 쓴다.
+ * hex 를 여기 적는 순간 tokens.css 와 값 미러링이 되고, 한쪽만 고쳐도 아무도 모른다.
+ *
+ * 구조
+ *   1  기본·리셋            8  판정 문구 3상태(is-ok / is-error / is-pending)
+ *   2  셸·그리드            9  칩·카드 라디오
+ *   3  Preview(다크)       10  스위치·공개 설정
+ *   4  탭바               11  SNS·링크 행
+ *   5  패널·필드          12  계정·저장 액션바
+ *   6  입력 요소          13  반응형
+ *   7  버튼·아이콘        14  접근성
+ */
+
+/* ══ 1. 기본·리셋 ═══════════════════════════════════════════════════════════ */
+
+/* 플렉스·그리드 자식에서 display:flex 등이 hidden 을 이겨 버린다.
+   JS 가 hidden 하나로 전 요소를 숨기는 계약이므로 여기서 한 번 못박는다. */
+[hidden] { display: none !important; }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--app);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  /* landing·design·studio 와 같은 모바일 규율. 가로넘침이 나더라도 본문이
+     좌우로 밀리지 않게 하는 마지막 방어선이다(원인 제거는 각 컴포넌트에서 한다). */
+  overflow-x: hidden;
+}
+
+/* 인라인 SVG 아이콘 공통. 외부 아이콘 폰트·이미지를 쓰지 않으므로(자기완결)
+   선 굵기·캡을 여기서 한 번에 정한다. */
+.ico {
+  width: 1em; height: 1em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ══ 2. 셸·그리드 ═════════════════════════════════════════════════════════ */
+
+.mp {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 14px 40px;
+}
+
+/* 로딩 중에는 편집 영역을 잠근다. 값이 들어오기 전의 빈 폼을 사용자가 만지면
+   "비어 있던 값"을 저장해 버린다 — 빈 화면과 로드 실패는 구별되지 않으므로
+   만질 수 없게 하는 편이 안전하다. Preview 는 잠그지 않는다(읽기 전용이다). */
+.mp.is-loading .ed { opacity: .45; pointer-events: none; }
+.ed { transition: opacity .18s ease; }
+
+.mp__top {
+  padding: 26px 2px 18px;
+}
+.mp__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.mp__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  /* 그리드 자식이 콘텐츠 최소폭 때문에 트랙을 밀어내는 것을 막는다.
+     긴 URL·긴 별명이 들어와도 열이 넓어지지 않는다 = 가로넘침의 첫 번째 원인 차단. */
+  min-width: 0;
+}
+.mp__grid > * { min-width: 0; }
+
+/* ══ 3. Preview — 다크 반전 플레이트 ══════════════════════════════════════ */
+
+.pv {
+  /* 편집 영역과 절대 섞이지 않게 표면을 반전시킨다. 이유는 mypage.html :root 주석. */
+  background: var(--pv-bg);
+  border: 1px solid var(--pv-line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-pv);
+  padding: 14px 14px 16px;
+  color: var(--pv-ink);
+  overflow: hidden;
+}
+
+.pv__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--pv-accent);
+}
+.pv__eyebrow .ico { width: 14px; height: 14px; }
+
+.pv__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--pv-surface);
+  border: 1px solid var(--pv-line);
+  border-radius: var(--r-md);
+  padding: 18px 16px;
+  /* 값이 비면 JS 가 hidden 을 준다. 그 전에도(그리고 컨테이너가 빈 채로 남아도)
+     flex gap 이 유령 간격을 만들지 않도록 빈 자식은 접는다.
+     :empty 는 내용이 들어오는 순간 저절로 풀리므로 JS 의 hidden 과 싸우지 않는다. */
+}
+.pv__card > :empty { display: none; }
+.pv__card > * { margin: 0; min-width: 0; }
+
+/* 비공개 상태 — 카드 전체를 덮지 않고 상단에 잠금 띠를 세운다.
+   덮어 버리면 "무엇이 비공개가 됐는지"를 확인할 수 없다.
+   **브랜드 그린으로 칠하지 않는다.** 첫 판본은 accent 로 채웠는데 화면에서
+   초록 채움 배지가 "완료했습니다"로 읽혔다 — 비공개는 성공도 실패도 아닌
+   상태 고지다. 중성 표면 + 파선으로 두어 어느 쪽으로도 안 읽히게 한다. */
+.pv__lock {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--pv-ink);
+  background: var(--pv-surface-2);
+  border: 1px dashed var(--pv-line);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+}
+.pv__lock .ico { width: 14px; height: 14px; }
+.pv.is-private .pv__card { border-style: dashed; }
+.pv.is-private .pv__id,
+.pv.is-private .pv__bioshort,
+.pv.is-private .pv__bio,
+.pv.is-private .pv__loc,
+.pv.is-private .pv__genres,
+.pv.is-private .pv__links,
+.pv.is-private .pv__inquiry { opacity: .38; }
+
+.pv__id {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.pv__avatar {
+  position: relative;
+  flex: none;
+  width: 62px; height: 62px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--pv-surface-2);
+  border: 1px solid var(--pv-line);
+  display: grid;
+  place-items: center;
+}
+.pv__avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pv__avatar-fb {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--pv-dim);
+}
+.pv__names {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pv__name {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.pv__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--pv-dim);
+}
+.pv__nick { overflow-wrap: anywhere; }
+.pv__type {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--pv-accent);
+  border: 1px solid var(--pv-accent);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.pv__bioshort {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.pv__bio {
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--pv-dim);
+  white-space: pre-wrap;   /* 소개는 여러 줄이 정상이다(schema 가 \n 을 남긴다) */
+  overflow-wrap: anywhere;
+}
+.pv__loc {
+  font-size: 12px;
+  color: var(--pv-dim);
+  overflow-wrap: anywhere;
+}
+
+.pv__genres { display: flex; flex-wrap: wrap; gap: 6px; }
+.pv__genres > * {
+  font-size: 11px;
+  color: var(--pv-ink);
+  background: var(--pv-surface-2);
+  border: 1px solid var(--pv-line);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.pv__links { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.pv__links > a {
+  font-size: 12px;
+  color: var(--pv-accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  overflow-wrap: anywhere;
+}
+.pv__links > a:hover,
+.pv__links > a:focus-visible { border-bottom-color: currentColor; }
+
+.pv__inquiry {
+  align-self: flex-start;
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pv-cta-label);
+  background: var(--pv-cta);
+  border: 0;
+  border-radius: var(--r-sm);
+  padding: 9px 16px;
+}
+
+.pv__empty {
+  font-size: 12px;
+  color: var(--pv-dim);
+  border: 1px dashed var(--pv-line);
+  border-radius: var(--r-sm);
+  padding: 12px;
+  text-align: center;
+}
+
+/* ══ 4. 탭바 ══════════════════════════════════════════════════════════════
+ * 모바일에서 탭 7개를 어떻게 푸는가 — **가로 스크롤을 쓰지 않는다.**
+ *   가로 스크롤 탭바는 화면 밖 탭이 존재한다는 사실 자체가 안 보인다. 마이페이지는
+ *   자주 오는 화면이 아니라 "한 번 들어와 다 채우고 나가는" 화면이라, 어떤 항목이
+ *   남아 있는지가 첫 화면에 다 보여야 한다.
+ *   그래서 auto-fit 그리드로 접는다 — 폭에 따라 열 수가 저절로 바뀐다.
+ *     ~360px : 3열(3+3+1)   ~430px : 4열(4+3)   넓은 화면 : 7열 한 줄
+ *   미디어쿼리 없이 성립하므로 "어느 폭에서 깨지는가"를 따로 관리할 자리가 없다.
+ *   라벨은 nowrap + 말줄임 보험을 걸어 극단적으로 좁은 기기(320px)에서도 칸을
+ *   밀어내지 못하게 한다 = 본문 가로넘침 0. */
+.ed__tabs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 10px 0;
+  margin-bottom: 4px;
+  background: var(--bg);
+}
+.tab {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: var(--ink-body);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  padding: 9px 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* 탭 활성 전환은 **즉각적이어야 한다.** 140ms 로 두었더니 촬영 중간 프레임에
+     직전 탭이 초록과 흰색 사이의 회색으로 남았다 — 사람 눈에는 "눌렀는데 잔상이
+     남는" 느낌이 된다. 색 전환은 90ms 로 줄이고 테두리만 조금 길게 둔다. */
+  transition: color .09s ease, background .09s ease, border-color .14s ease;
+}
+.tab:hover { border-color: var(--line); }
+.tab[aria-selected="true"] {
+  color: var(--cta-label);
+  background: var(--cta);
+  border-color: var(--cta);
+}
+
+/* ══ 5. 패널·필드 ═════════════════════════════════════════════════════════ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-1);
+  padding: 20px 16px 24px;
+}
+
+.fld { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fld--set { border: 0; margin: 0; padding: 0; }   /* fieldset 기본 크롬 제거 */
+
+.fld__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.fld__label {
+  display: block;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--ink);
+}
+.fld__count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;   /* 숫자가 바뀔 때 자리가 흔들리지 않게 */
+  color: var(--ink-dim);
+}
+
+/* ══ 6. 입력 요소 ═════════════════════════════════════════════════════════ */
+
+.inp {
+  width: 100%;
+  min-width: 0;
+  font-family: inherit;
+  /* 16px 고정 — iOS 는 16px 미만 입력에 포커스가 가면 화면을 자동 확대하고,
+     그 확대가 곧 가로 스크롤이 된다. 폰트 크기가 여기서는 레이아웃 규율이다. */
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 11px 12px;
+  transition: border-color .14s ease, background .14s ease;
+}
+.inp:hover { border-color: var(--ink-dim); }
+.inp:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.inp--area { resize: vertical; min-height: 96px; }
+.inp--sel {
+  appearance: none;
+  /* 화살표는 배경 이미지(외부 파일·data URI)를 쓰지 않고 그라디언트 두 줄로 그린다 —
+     자기완결 규율에서 가장 새기 쉬운 자리가 select 화살표다. */
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%, currentColor 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 50%, currentColor 50%, currentColor 58%, transparent 58%);
+  background-position: right 15px center, right 11px center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* 파일 선택 — 브라우저 기본 버튼은 폭이 언어·OS 마다 달라 좁은 화면에서 넘친다.
+   input 을 덮고 라벨을 우리가 그린다. */
+.filepick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  cursor: pointer;
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px dashed var(--accent-line);
+  border-radius: var(--r-sm);
+  padding: 12px 16px;
+}
+.filepick:hover { background: var(--accent-soft); }
+.filepick .ico { width: 17px; height: 17px; }
+.filepick__txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filepick__input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  cursor: pointer;
+}
+
+.readout {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-body);
+  overflow-wrap: anywhere;
+}
+.readout:empty { display: none; }
+
+.notice {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-body);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-left: 3px solid var(--accent-line);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  overflow-wrap: anywhere;
+}
+.notice:empty { display: none; }
+
+/* ══ 7. 버튼·아이콘 ═══════════════════════════════════════════════════════ */
+
+.btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  border-radius: var(--r-sm);
+  padding: 12px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+.btn .ico { width: 15px; height: 15px; }
+.btn--wide { width: 100%; }
+
+.btn--cta {
+  color: var(--cta-label);
+  background: var(--cta);
+  border: 1px solid var(--cta);
+}
+.btn--cta:hover { background: var(--accent); border-color: var(--accent); }
+
+.btn--line {
+  color: var(--accent);
+  background: var(--surface);
+  border: 1px solid var(--accent-line);
+}
+.btn--line:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+/* 위험 동작 — 평상시에는 테두리만(오작동 유도 금지), 손이 닿으면 채워져 경고가 된다. */
+.btn--danger {
+  color: var(--danger);
+  background: transparent;
+  border: 1px solid var(--danger);
+}
+.btn--danger:hover { color: var(--surface); background: var(--danger); }
+
+.iconbtn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  display: inline-grid;
+  place-items: center;
+  width: 36px; height: 36px;
+  flex: none;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+  transition: color .14s ease, border-color .14s ease;
+}
+.iconbtn .ico { width: 16px; height: 16px; }
+.iconbtn--danger:hover { color: var(--danger); border-color: var(--danger); }
+
+/* ══ 8. 판정 문구 3상태 ═══════════════════════════════════════════════════
+ * is-ok / is-error / is-pending 을 **색만으로** 가르지 않는다. 색각 이상에서도,
+ * 흑백 인쇄에서도 셋이 구별돼야 하고, 무엇보다 is-pending 이 통과(✓)처럼 보이면
+ * 우리가 "못 잰 것을 통과로 말하는" 셈이 된다 — 지금은 서버가 없어 전역 중복을
+ * 확인할 수 없고, 그 사실이 사용자에게 그대로 전달돼야 한다.
+ *
+ * 그래서 네 축을 동시에 가른다:
+ *              색                기호   테두리   채움
+ *   is-ok      그린(accent)      ✓      실선     옅은 그린
+ *   is-error   테라코타(danger)  ✕      실선     없음
+ *   is-pending 중성 웜그레이     ?      **파선** 없음
+ *
+ * 핵심은 파선과 기호다. 파선 = "아직 확정되지 않았다"가 형태로 읽히고, 기호가
+ * ✓ 가 아니라 ? 이므로 승인 도장으로 오해될 여지가 없다. 채움을 is-ok 에만 준 것도
+ * 같은 이유다 — 채워진 배지는 "끝났다"로 읽힌다. */
+.msg {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1.55;
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  color: var(--ink-body);
+  overflow-wrap: anywhere;
+}
+/* 문구가 없으면 자리도 없다. JS 가 텍스트를 넣는 순간 저절로 나타난다. */
+.msg:empty { display: none; }
+
+.msg::before {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px; height: 16px;
+  margin-top: 1px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  border: 1px solid currentColor;
+  content: "·";
+}
+
+.msg.is-ok {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  font-weight: 700;
+}
+.msg.is-ok::before { content: "✓"; }
+
+.msg.is-error {
+  color: var(--danger);
+  border-color: var(--danger);
+  font-weight: 700;
+}
+.msg.is-error::before { content: "✕"; }
+
+.msg.is-pending {
+  color: var(--ink-dim);
+  background: transparent;
+  border-color: var(--line);
+  border-style: dashed;      /* ← 미확정을 색이 아니라 형태로 알린다 */
+  font-weight: 400;
+}
+.msg.is-pending::before {
+  content: "?";
+  border-style: dashed;
+}
+
+/* 추천 별명 — JS 가 <button> 을 채운다. */
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; }
+.suggest:empty { display: none; }
+.suggest > button {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  background: var(--surface-2);
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.suggest > button:hover { background: var(--accent-soft); }
+
+/* ══ 9. 칩·카드 라디오 ════════════════════════════════════════════════════
+ * 원래 input 을 화면 밖으로 밀지 않고 opacity 0 + 크기 0 으로 둔다 —
+ * display:none 이면 키보드 포커스와 폼 값 전달이 함께 사라진다. */
+.chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.chip { display: inline-flex; min-width: 0; }
+.chip input,
+.card input {
+  position: absolute;
+  opacity: 0;
+  width: 0; height: 0;
+  margin: 0;
+  pointer-events: none;
+}
+.chip__face {
+  display: inline-block;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--ink-body);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  transition: color .14s ease, border-color .14s ease, background .14s ease;
+}
+.chip__face:hover { border-color: var(--ink-dim); }
+.chip input:checked + .chip__face {
+  color: var(--cta-label);
+  background: var(--cta);
+  border-color: var(--cta);
+  font-weight: 700;
+}
+.chip input:focus-visible + .chip__face {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 7px;
+}
+.card { display: block; min-width: 0; }
+.card__face {
+  display: block;
+  cursor: pointer;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-body);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 13px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color .14s ease, border-color .14s ease, background .14s ease;
+}
+.card__face:hover { border-color: var(--ink-dim); }
+.card input:checked + .card__face {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.card input:focus-visible + .card__face {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ══ 10. 스위치·공개 설정 ═════════════════════════════════════════════════ */
+
+.swrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  cursor: pointer;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.swrow:last-child { border-bottom: 0; }
+.swrow__name { font-size: 13.5px; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+
+/* checkbox 를 appearance:none 으로 비우고 직접 그린다 — 계약이 data-mp-vis 를
+   input 자체에 요구하므로 래퍼 span 을 끼울 수 없다. */
+.sw {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  cursor: pointer;
+  margin: 0;
+  width: 46px; height: 27px;
+  border-radius: 999px;
+  background: var(--line);
+  border: 0;
+  transition: background .16s ease;
+}
+.sw::after {
+  content: "";
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 21px; height: 21px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(20,21,26,.30);
+  transition: transform .16s ease;
+}
+.sw:checked { background: var(--cta); }
+.sw:checked::after { transform: translateX(19px); }
+.sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sw--lg { width: 54px; height: 31px; }
+.sw--lg::after { width: 25px; height: 25px; }
+.sw--lg:checked::after { transform: translateX(23px); }
+
+.sw--sm { width: 38px; height: 22px; }
+.sw--sm::after { width: 16px; height: 16px; }
+.sw--sm:checked::after { transform: translateX(16px); }
+
+/* 마스터 스위치를 자식 5개와 다른 층에 둔다.
+   같은 층에 나열하면 "프로필 공개"를 껐는데 아래 토글이 켜진 채 보여서
+   무엇이 공개인지 오해한다. 층을 가르는 수단 셋을 동시에 쓴다:
+   ① 마스터만 채운 카드 ② 자식은 들여쓰기 + 좌측 종속선 ③ 꺼지면 자식 층에 덮개. */
+.master { display: flex; flex-direction: column; }
+.swrow--master {
+  border-bottom: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 16px 16px;
+}
+.swrow--master .swrow__name { font-size: 15px; font-weight: 700; }
+
+.master__kids {
+  position: relative;
+  margin: 0 0 0 14px;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--line-soft);
+}
+.master__veil { display: none; }
+
+/* :has() 미지원 브라우저에서는 덮개가 안 뜰 뿐 기능은 그대로다(우아한 저하). */
+.master:has(.sw--lg:not(:checked)) .master__kids > .swrow { opacity: .34; }
+.master:has(.sw--lg:not(:checked)) .master__veil {
+  display: block;
+  position: absolute;
+  inset: 0 0 0 16px;
+  border-radius: var(--r-sm);
+  /* 덮개는 색을 얹지 않고 사선만 긋는다 — "지금 이 값들은 효력이 없다"를
+     새 색 없이 알린다(tokens.css 에 '비활성' 색이 없다). */
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 7px,
+    rgba(20,21,26,.055) 7px 14px
+  );
+  pointer-events: none;
+}
+
+/* ══ 11. SNS·링크 행 ══════════════════════════════════════════════════════ */
+
+.links { display: flex; flex-direction: column; gap: 12px; }
+.links:empty { display: none; }
+
+.linkrow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  padding: 12px;
+}
+.linkrow__main {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  min-width: 0;
+}
+.linkrow__main > * { min-width: 0; }
+.linkrow__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.swrow--sm { border-bottom: 0; padding: 0; gap: 9px; }
+.swrow--sm .swrow__name { font-size: 12px; color: var(--ink-dim); }
+
+/* ══ 12. 계정·저장 액션바 ═════════════════════════════════════════════════ */
+
+/* 위험 구역. 첫 판본은 빨간 테두리 박스였는데 계정 탭 내용이 적어 **버튼 하나가 든
+   빈 상자**가 됐다 — 상자가 강조하는 것이 버튼이 아니라 여백이었다. 구획은 구분선으로
+   충분하고, 위험 신호는 버튼 자신(테두리 → hover 시 채움)이 이미 지고 있다. */
+.danger {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--line);
+}
+
+/* 저장은 어느 탭에 있든 손이 닿아야 한다 — 화면 하단에 붙인다.
+   탭 안이 아니라 탭 밖(패널 형제)에 두는 이유이기도 하다. */
+.actionbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 0;
+  background: var(--bg);
+  border-top: 1px solid var(--line-soft);
+}
+.actionbar__status {
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.actionbar .btn--cta { min-width: 116px; }
+
+/* ══ 13. 반응형 ═══════════════════════════════════════════════════════════ */
+
+@media (min-width: 560px) {
+  .mp { padding: 0 22px 48px; }
+  .panel { padding: 24px 22px 28px; }
+  .pv { padding: 18px 18px 20px; }
+  .linkrow__main { grid-template-columns: 168px 1fr; }
+}
+
+@media (min-width: 960px) {
+  .mp__grid {
+    grid-template-columns: 352px minmax(0, 1fr);
+    gap: 26px;
+    align-items: start;
+  }
+  /* Preview 가 편집 내내 시야에 남는다 — "편집이 즉시 반영된다"가 성립하는 조건.
+     모바일에서는 sticky 를 쓰지 않는다(세로 공간이 없어 폼을 덮는다). */
+  .pv { position: sticky; top: 14px; }
+  .mp__top { padding: 32px 2px 20px; }
+  .tab { font-size: 12px; padding: 10px 8px; }
+}
+
+/* ══ 14. 접근성 ═══════════════════════════════════════════════════════════ */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

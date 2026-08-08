@@ -61,6 +61,11 @@ export const ENTRYPOINTS = [
   { key: 'lab-glb', src: 'lab-glb.html', out: 'app/lab-glb.html', exposure: 'flagged' },
   // [실험] 오픈월드 커널 재작성 — 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서다.
   { key: 'world2', src: 'world2.html', out: 'app/world2.html', exposure: 'flagged' },
+  // 마이페이지(프로필 편집 + 공개 프로필 미리보기). 감독 지시 2026-08-08 로 착수했고,
+  // 라이브 노출은 감독·팀장 게이트다. 지금 링크가 0 인 이유는 미완이어서가 아니라
+  // **로그인이 아직 mock 이기 때문**이다 — 사용자 신원이 자칭 문자열인 동안에는 별명
+  // 소유권이 성립하지 않아 "내 프로필" 이라는 말이 절반만 참이다(docs/MYPAGE-PLAN.md §3).
+  { key: 'mypage', src: 'mypage.html', out: 'app/mypage.html', exposure: 'flagged' },
 ];
 
 /** 링크되어 방문자가 도달하는 진입점 */
