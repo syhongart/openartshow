@@ -230,6 +230,20 @@ const PATH_W = 80;
  */
 const PATH_SWING = 42;
 
+/**
+ * 잔디 얼룩 난수의 씨앗. **색이 아니다 — 6자리 hex 라 색으로 보일 뿐이다.**
+ *
+ * 이름을 붙인 이유가 그것이다. 이 파일의 색은 전부 팔레트를 경유하는데(`GRASS_BASE`),
+ * 이 값만 인라인 hex 로 남아 있어서 **`0x67a55e` 를 초록색으로 읽고 팔레트로 옮기려는
+ * 시도가 실제로 있었다**(색 리터럴 스캔이 정규식으로 세면 이것이 걸린다). 옮겼다면
+ * 팔레트에 난수 시드가 한 줄 앉고, 다음 사람이 그것을 잔디색으로 알고 조정한다.
+ *
+ * 이웃 파츠는 같은 자리를 8자리(`plaza.ts` 의 `0x51f0c3d1`)나 7자리(`tree.ts` 의
+ * `0x5eed7e3`)로 적어 우연히 그 오인을 피하고 있다 — **자릿수에 기대는 구별은 구별이
+ * 아니다.** 값은 바꾸지 않는다(바꾸면 얼룩 무늬가 통째로 달라진다).
+ */
+const GRASS_NOISE_SEED = 0x67a55e;
+
 function grassTexture(T: ThreeNS) {
   const S = GRASS_TEX;
   const canvas = document.createElement('canvas');
@@ -237,7 +251,7 @@ function grassTexture(T: ThreeNS) {
   canvas.height = S;
   const ctx = canvas.getContext('2d')!;
 
-  let a = 0x67a55e;
+  let a = GRASS_NOISE_SEED;
   const rnd = () => {
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);

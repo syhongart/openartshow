@@ -12,6 +12,7 @@
 // 돌리면 수반도 기둥도 한 번에 나온다. 병합이 필요 없고 파츠 계약도 그대로다.
 
 import type { PartSpec, PlacedPart } from './types.js';
+import { V } from './palette.js';
 import { plazaLandmark } from './plaza.js';
 
 /**
@@ -56,7 +57,7 @@ export const fountain: PartSpec = {
   tiers: ['near', 'mid'],
   salt: 0x1f2e3d4c,
   // 돌 색 셋. 텍스처가 없으므로 `tones` 가 곧 색이다(곱셈 함정 없음).
-  tones: [0x8d8577, 0x9a9184, 0x807868],
+  tones: [V.fountainStone, V.fountainStoneLit, V.fountainStoneShade],
 
   // 광장당 하나. 광장이 아닌 파셀은 0개다.
   // `PROFILE` 최대 반경 2.4 에 물받이 테두리 여유를 얹는다.

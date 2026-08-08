@@ -4,6 +4,7 @@
 // 오픈월드에서 그런 파셀이 드문드문 섞이면 세상이 버려진 인상을 준다.
 
 import type { PartSpec, PlacedPart } from './types.js';
+import { V } from './palette.js';
 import {
   roadDirs, pickInQuadrant, shuffledQuadrants, SETBACK, LAMP_CLEARANCE, EAVE,
 } from './road-topology.js';
@@ -43,7 +44,7 @@ export const building: PartSpec = {
   //
   // 명도 55% 대. 하늘(밝은 회청)보다는 어두워야 실루엣이 살고, 지면(40%)보다는 밝아야
   // 벽이 바닥에서 일어선 것으로 보인다.
-  tones: [0x8892a0, 0x929cab, 0x7d8794, 0x9aa4b2, 0x737d8a],
+  tones: [V.facade, V.facadeLit, V.facadeShade, V.facadePale, V.facadeDeep],
 
   // `1 + floor(rnd * max)` 의 상한이다. rnd < 1 이므로 max 를 넘지 않는다.
   //

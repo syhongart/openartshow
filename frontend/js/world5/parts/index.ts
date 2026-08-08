@@ -27,6 +27,7 @@
 // 달라지므로, 갱신 전에 겹침 게이트(`tests/world2-parcel-slots.test.ts`)를 먼저 본다.
 
 import { DEFAULT_LAYOUT, type PartSpec, type LayoutOptions } from './types.js';
+import { TINTS } from './palette.js';
 import type { Tier } from '../decide/lod.js';
 import { ground } from './ground.js';
 import { road } from './road.js';
@@ -120,7 +121,7 @@ export function maxPartsPerParcel(kind: string, opts: LayoutOptions = DEFAULT_LA
 
 /** 색 팔레트. 없는 종류는 흰색 — 눈에 띄어야 빠진 것을 안다 */
 export function tonesFor(kind: string): readonly number[] {
-  return BY_KIND.get(kind)?.tones ?? [0xffffff];
+  return BY_KIND.get(kind)?.tones ?? [TINTS.plain];
 }
 
 export { DEFAULT_LAYOUT };

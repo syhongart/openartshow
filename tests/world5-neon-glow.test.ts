@@ -111,7 +111,24 @@ describe('`neonGlow` 는 가로등 곡선의 일반화다', () => {
 });
 
 describe('`NeonGlow` 가 재질을 실제로 만진다', () => {
-  it('신고한 파츠 전부에 배선된다', () => {
+  // ⚠️ 이 자리에 **항진명제**가 있었다 (검수관 블로커 B3, 2026-08-08).
+  //
+  //     const { src } = stubPools(KINDS);   // KINDS = NEON_PARTS.map(p => p.kind)
+  //     expect(g.wired).toBe(NEON_PARTS.length);
+  //     expect(g.missing).toEqual([]);
+  //
+  // 스텁을 `NEON_PARTS` 로 만들어 놓고 "`NEON_PARTS` 전부가 배선됐다" 를 단언했으니
+  // **구성상 반드시 참**이다. 검출력 0 이었다.
+  //
+  // 정작 막아야 할 것 — *"파츠가 `neon` 을 신고했는데 그 파츠의 **실제 재질**에
+  // `emissiveIntensity` 가 없다"* — 는 아무 검사도 안 봤다. 그러면 `NeonGlow.missing`
+  // 에 들어가 **조용히 안 빛나고**, 그것이 정확히 이 파일이 고치겠다고 선언한 사고다.
+  //
+  // 실물을 보는 검사는 아래 "발광 신고와 실제 자산이 맞는다" 로 옮겼다.
+  it('스텁이 신고 목록을 덮으면 전부 배선된다 — 배선 로직 자체의 정상 경로', () => {
+    // 이것은 **`NeonGlow` 의 생성자 로직**을 보는 검사이지 파츠를 보는 검사가 아니다.
+    // 그 구분을 이름에 적어 둔다 — 안 적으면 다음 사람이 다시 "파츠가 다 배선됐다" 로
+    // 읽는다(B3 이 정확히 그 오독이었다).
     const { src } = stubPools(KINDS);
     const g = new NeonGlow(src);
     expect(g.wired).toBe(NEON_PARTS.length);
@@ -198,4 +215,100 @@ describe('네온이 블룸 문턱을 넘는다 — 넘지 못하면 켜도 화�
       expect(lit, `${p.kind}: 여유 없음`).toBeGreaterThan(BLOOM_THRESHOLD * 1.2);
     }
   });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// G3 — **실물 재질을 굽는다.** 스텁 풀은 배선 로직만 보고 파츠는 안 본다
+// ══════════════════════════════════════════════════════════════════════════
+//
+// 위 검사들은 전부 `stubPools` 로 만든 가짜 재질을 만진다. 그것이 검증하는 것은
+// `NeonGlow` 의 **로직**이고, 파츠가 실제로 발광 가능한 재질을 굽는지는 **하나도 안
+// 본다**. 검수관 블로커 B3 가 지적한 자리다 — 스텁을 `NEON_PARTS` 로 만들어 놓고
+// "`NEON_PARTS` 전부가 배선됐다" 를 단언하면 구성상 반드시 참이라 검출력이 0 이다.
+//
+// 실제로 깨질 수 있는 형태는 이것이다: 파츠가 `neon` 을 신고했는데 `asset()` 이
+// `emissive` 를 안 넣거나, `emissiveIntensity` 를 빼먹거나, `emissiveMap` 없이 굽는다.
+// 그러면 런타임에서 `NeonGlow` 는 재질을 찾아 값을 쓰지만 **화면은 그대로다**
+// (`emissive` 가 검정이면 세기를 곱해도 검정이고, 맵이 없으면 면 전체가 균일하게 뜬다).
+//
+// 그래서 여기서는 **실제 three 로 `asset(T)` 를 돌린다.** 캔버스만 스텁이다 —
+// jsdom 에 네이티브 canvas 가 없어 2D 컨텍스트를 흉내내야 하는데, 파츠가 캔버스에
+// 무엇을 그리는지는 이 게이트의 관심사가 아니다(색 축은 팔레트 이설 검증이 봤다).
+import * as T3 from 'three';
+import { PARTS } from '../frontend/js/world5/parts/index.js';
+import type { ThreeNS } from '../frontend/js/world5/parts/types.js';
+
+/** 2D 컨텍스트 스텁 — 호출을 받아 넘기기만 한다. 그린 결과는 이 게이트의 축이 아니다 */
+function stubCanvas() {
+  const ctx: Record<string, unknown> = {
+    fillStyle: '', strokeStyle: '', globalAlpha: 1, lineWidth: 1, font: '', textAlign: '',
+    textBaseline: '', globalCompositeOperation: 'source-over',
+  };
+  for (const m of [
+    'fillRect', 'strokeRect', 'clearRect', 'beginPath', 'closePath', 'moveTo', 'lineTo',
+    'arc', 'ellipse', 'rect', 'fill', 'stroke', 'save', 'restore', 'translate', 'rotate',
+    'scale', 'setTransform', 'fillText', 'strokeText', 'drawImage', 'quadraticCurveTo',
+    'bezierCurveTo', 'clip', 'setLineDash',
+  ]) ctx[m] = () => {};
+  ctx.createLinearGradient = () => ({ addColorStop: () => {} });
+  ctx.createRadialGradient = () => ({ addColorStop: () => {} });
+  ctx.measureText = () => ({ width: 10 });
+  ctx.getImageData = () => ({ data: new Uint8ClampedArray(4) });
+  ctx.putImageData = () => {};
+  return { width: 1, height: 1, getContext: () => ctx };
+}
+
+/**
+ * `asset()` 을 부르는 동안만 `document.createElement('canvas')` 를 스텁으로 돌린다.
+ * 전역을 영구히 바꾸면 다른 테스트 파일이 그것을 물려받아, 이 파일을 지워도 남는다.
+ */
+function withCanvas<R>(fn: () => R): R {
+  const g = globalThis as { document?: unknown };
+  const had = 'document' in g;
+  const prev = g.document;
+  g.document = { createElement: (tag: string) => (tag === 'canvas' ? stubCanvas() : {}) };
+  try {
+    return fn();
+  } finally {
+    if (had) g.document = prev; else delete g.document;
+  }
+}
+
+describe('G3 — 발광을 신고한 파츠가 실제로 발광 가능한 재질을 굽는다', () => {
+  // `NEON_PARTS` 는 kind 만 들고 있다. 실물 스펙을 찾아 `asset` 을 부른다.
+  const specs = NEON_PARTS.map((n) => {
+    const spec = PARTS.find((p) => p.kind === n.kind);
+    if (!spec) throw new Error(`발광 신고 파츠 '${n.kind}' 가 PARTS 에 없다`);
+    return { n, spec };
+  });
+
+  it('표본이 `NEON_PARTS` 전부를 덮는다', () => {
+    expect(specs.length).toBe(NEON_PARTS.length);
+    expect(specs.length).toBeGreaterThan(0);
+  });
+
+  for (const { n, spec } of specs) {
+    it(`${n.kind} — emissive 가 검정이 아니고 세기가 숫자이며 맵이 있다`, () => {
+      const built = withCanvas(() => spec.asset(T3 as unknown as ThreeNS));
+      const mat = built.material as unknown as {
+        emissive?: { getHex(): number };
+        emissiveIntensity?: number;
+        emissiveMap?: unknown;
+      };
+
+      // ① 세기가 **숫자**다. `undefined` 면 `NeonGlow` 가 `missing` 으로 흘려보내
+      //    그 파츠만 조용히 안 빛난다(위 `missing` 검사가 스텁으로 보던 그 경로의 실물).
+      expect(typeof mat.emissiveIntensity).toBe('number');
+
+      // ② `emissive` 색이 검정이 아니다. 검정이면 세기를 아무리 올려도 곱해서 0 이다 —
+      //    "값은 올라갔는데 화면은 그대로" 라는 가장 잡기 어려운 형태가 된다.
+      expect(mat.emissive).toBeDefined();
+      expect(mat.emissive!.getHex()).not.toBe(0x000000);
+
+      // ③ 발광 **맵**이 있다. 이 세계의 네온은 전부 "재질 하나 · 텍셀로 부위를 가른다"
+      //    기법이라(`tower.ts`·`bridge.ts`·`clocktower.ts` 주석), 맵이 없으면 창문만
+      //    빛나야 할 것이 벽 전체로 번진다.
+      expect(mat.emissiveMap).toBeTruthy();
+    });
+  }
 });

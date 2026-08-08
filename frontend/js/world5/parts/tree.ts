@@ -30,6 +30,10 @@
 // 최대 개수에 하한이 없다 — 나무가 0그루인 파셀은 광장처럼 읽혀서 오히려 자연스럽다.
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
+import { TINTS } from './palette.js';
+// 수피 텍스처의 바탕은 **색이 아니라 밝기 배수 1** 이라 팔레트를 경유하지 않는다 —
+// 경위는 `color.ts` 의 "색이 아닌 것 — 강도" 절.
+import { greyCss } from './color.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 import { plazaOccupied } from './plaza.js';
@@ -59,7 +63,7 @@ export const tree: PartSpec = {
   // 정점색이 곱해지므로 **흰색 근처**여야 한다. 예전 값(0x2f4a3a 같은 짙은 초록)은
   // 색 자체였는데, 이제는 곱셈기라 그대로 두면 나무가 새까매진다. 도로가 텍스처를 쓰며
   // 겪은 것과 같은 함정이고, "tones 는 곱셈기다" 테스트가 이 규약을 지킨다.
-  tones: [0xffffff, 0xe8f0e0, 0xf2ece0],
+  tones: [TINTS.plain, TINTS.foliage, TINTS.foliageWarm],
 
   /**
    * 수관 반경. 줄기 길이(`TRUNK_LEN` 2.6)에 가지가 2단 재귀로 뻗은 폭이라 실측 대신
@@ -177,6 +181,16 @@ function remapU(geo: InstanceType<ThreeNS['BufferGeometry']>, u0: number, u1: nu
 }
 
 /**
+ * 수피 텍스처의 바탕 밝기 — **곱셈 항등원(배수 1)이지 흰색이 아니다.**
+ *
+ * 수피는 색을 정점색이 정하고 이 텍스처는 **밝기 변주만** 맡는다(아래에서 `rgba(0,0,0,a)`
+ * 로 세로 줄무늬를 덮는 것이 그 변주다). 그래서 바탕은 "아직 아무것도 어둡게 하지 않은
+ * 상태" 여야 하고, 그것이 255 다. 팔레트의 흰색을 끌어다 쓰면 도시 톤을 손볼 때 누군가
+ * 이 값을 함께 만지고, 그 순간 수피가 통째로 물든다.
+ */
+const BARK_UNSHADED = 255;
+
+/**
  * 줄기 + 잎 한 장. **world1 `createLeafClusterTexture` 의 알고리즘 그대로다.**
  *
  * 투명 배경 위에 타원을 150개 흩뿌리되 중앙에 밀집시킨다(`pow(rand, 0.6)` — 지수가 1보다
@@ -197,7 +211,7 @@ function treeTexture(T: ThreeNS) {
 
   // ── 왼쪽: 수피 ──────────────────────────────────────────────────────────
   const barkW = S * 2 * LEAF_U0;
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = greyCss(BARK_UNSHADED);
   ctx.fillRect(0, 0, barkW, S);
   // 세로 줄무늬. 색이 아니라 **밝기 변주**다 — 실제 색은 정점색이 정한다.
   for (let i = 0; i < 90; i++) {

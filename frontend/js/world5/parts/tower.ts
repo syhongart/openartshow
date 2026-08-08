@@ -41,7 +41,7 @@ import { isTowerParcel } from './zoning.js';
 import { isCentralPark } from '../decide/grid.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 import { V, TINTS, TINT_SET } from './palette.js';
-import { hexCss } from './color.js';
+import { hexCss, greyCss, MASK_BLOCK } from './color.js';
 
 // 처마 여유(`EAVE`)·도로 셋백·가로등 여유는 전부 `road-topology.ts` 가 소유한다.
 // 여기 다시 적지 않는다 — 처음엔 적었고, 그것이 검수관 블로커였다(2026-08-02 B1).
@@ -206,25 +206,22 @@ export const tower: PartSpec = {
       emissive: TINTS.plain,
       emissiveMap: towerMask(T),
       /**
-       * ⚠️ **0 이 아니라 1 에서 시작한다 — `lamp.ts` 와 다르고, 그것이 지금은 옳다.**
+       * 부팅 초깃값. **실제 값은 `systems/neon-glow.ts` 가 정한다** — 이 파츠가
+       * `neon: { day, night }` 로 신고했고, 그 신고를 `NeonGlow` 가 부팅 첫 프레임에
+       * 읽어 시간대에 맞춰 덮어쓴다.
        *
-       * 가로등은 `emissiveIntensity: 0` 으로 시작해 하늘이 밤에 올린다. 그 배선은
-       * `features/sky.ts` 의 `applyLampGlow` 인데, 그 함수는
-       * `env.pools.materialOf('lamp')` **한 종류만** 만진다(실측: `emissiveIntensity`
-       * 를 쓰는 곳이 그 파일에 그 한 줄뿐이다). 즉 타워를 0 으로 두면 **낮에도 밤에도
-       * 영원히 꺼져 있다.**
+       * ⚠️ 이 자리에는 *"배선이 `materialOf('lamp')` 한 종류만 만지므로 0 으로 두면
+       * 영원히 꺼진다 … 배선이 생기면 이 값을 0 으로 되돌리고 이 문단을 지운다"* 는
+       * 문단이 있었다. **배선은 생겼는데 그 문단이 남아 있었다** — 검수관이 블로커로
+       * 잡았다(B4). 다음 사람에게 *"아직 배선이 없다"* 고 거짓말하는 주석이었고,
+       * 이 저장소가 세 번 명문화한 *"배선 유효성에 대한 거짓 진술은 다음 사람이
+       * 확인을 생략하게 만든다"* 에 정확히 해당한다.
        *
-       * 이 파일은 `parts/` 밖을 고칠 수 없으므로(이번 회차 경계) 배선을 만들 수 없다.
-       * 두 선택지 중 고른 것이 이 값이다:
-       *   · 0 으로 두고 "배선되면 켜진다"  → 감독 지시(*"밤에 건물 네온"*)가 화면에
-       *     **하나도 나타나지 않는다.** 못 잰 것을 통과로 적는 것과 같은 형태다.
-       *   · 1 로 두고 상시 점등            → 밤(이 세계의 기본 시간대)에서 정확하고,
-       *     낮에는 창·왕관이 실제보다 밝다.
-       *
-       * **밤이 기본 시간대이므로 후자가 화면에서 맞는 시간이 압도적으로 길다.**
-       * 다만 이것은 **미봉이지 완성이 아니다** — 낮/밤을 가르려면 조립부에서
-       * `materialOf('tower')` 도 함께 켜야 하고, 그 요청을 보고에 올렸다.
-       * 배선이 생기면 이 값을 0 으로 되돌리고 이 문단을 지운다.
+       * 값을 `1` 로 남겨 둔 이유: `NeonGlow` 가 못 찾는 경우(재질에 이 속성이 없거나
+       * 풀에 파츠가 없을 때)에도 **네온이 켜진 채로 남는 쪽**이 안전하다. 0 이면 그
+       * 실패가 "그냥 좀 어두운" 화면으로만 나타나 아무도 못 알아챈다 — 포크 직후가
+       * 정확히 그 상태였다. `NeonGlow.missing` 이 진단에 실리지만 진단을 여는 사람은
+       * 이미 뭔가 이상하다고 느낀 사람이다.
        */
       emissiveIntensity: 1,
       roughness: 0.8,
@@ -447,8 +444,8 @@ function towerMask(T: ThreeNS) {
   cv.width = MASK_TEXELS;
   cv.height = 1;
   const g = cv.getContext('2d')!;
-  // 검은 바탕 — 칠하지 않은 텍셀은 발광 0 이다
-  g.fillStyle = '#000';
+  // 검은 바탕 — 칠하지 않은 텍셀은 발광 0 이다(색이 아니라 강도. `color.ts` 참고)
+  g.fillStyle = greyCss(MASK_BLOCK);
   g.fillRect(0, 0, MASK_TEXELS, 1);
 
   /** 텍셀 하나를 팔레트 색으로. `a` 가 세기(검은 바탕과 섞이므로 그대로 배수가 된다) */

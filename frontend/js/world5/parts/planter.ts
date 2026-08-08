@@ -15,6 +15,7 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
+import { V, TINTS } from './palette.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 import { isPlaza, plazaOccupied } from './plaza.js';
@@ -34,7 +35,7 @@ export const planter: PartSpec = {
   salt: 0x2c8fd651,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다. 밝기만 흔들어 화분마다
   // 조금씩 다르게 보이게 한다.
-  tones: [0xffffff, 0xf0f4e8, 0xe4ecdc],
+  tones: [TINTS.plain, TINTS.plantPale, TINTS.plantSoft],
 
   // 덤불 반경 0.3 에 스케일을 곱한다. `place` 가 넣는 `sx` 가 그 스케일이다.
   footprint: (p) => PLANTER_RADIUS(p.sx),
@@ -84,9 +85,9 @@ export const planter: PartSpec = {
 };
 
 /** 화분 — 테라코타 */
-const POT = rgb(0x9a5b43);
+const POT = rgb(V.terracotta);
 /** 덤불 */
-const BUSH = rgb(0x4c6b42);
+const BUSH = rgb(V.shrub);
 
 /**
  * world1 `SG.planter` 를 되살렸다.

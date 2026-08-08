@@ -4,6 +4,7 @@
 // 여기에 틈이 생기면 아래 허공이 보이므로 셀 크기를 **정확히** 덮는다(여백 적용 안 함).
 
 import type { PartSpec } from './types.js';
+import { V, TINTS } from './palette.js';
 import { SEABED_Y } from '../decide/water.js';
 
 /**
@@ -86,12 +87,12 @@ export const ground: PartSpec = {
   //
   // 도로는 손대지 말라는 지시대로 두고 땅만 밝힌다. 명도 40% 대의 따뜻한 회갈색이면
   // 아스팔트(17%)와 확실히 갈리면서 잔디(정원)와도 어울린다.
-  tones: [0x6b6659, 0x746f61, 0x625e52],
+  tones: [V.soil, V.soilLit, V.soilShade],
 
   // `map` 이 없으므로 알베도의 원천은 위 `tones` 뿐이다 — 바탕은 곱셈 항등원(흰색)이다.
   // 이 필드가 있다는 것 자체가 *"나는 지면 평면이다"* 라는 신고이고, 밤 알베도 배수가
   // 여기서 유도된다(`decide/ground-albedo.ts`).
-  groundBase: 0xffffff,
+  groundBase: TINTS.plain,
 
   // 바닥에 깔리는 평면 — 그 위에 물건이 서는 것이 정상이라 겹침 개념이 없다.
   footprint: () => 0,

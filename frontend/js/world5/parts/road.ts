@@ -20,6 +20,7 @@ import type { PartSpec, PlacedPart } from './types.js';
 import { roadDirs, ROAD_SEG } from './road-topology.js';
 import { isPlaza } from './plaza.js';
 import { hexCss } from './color.js';
+import { V, TINTS } from './palette.js';
 
 export { GRAIN_R, ROAD_TEX };
 
@@ -28,7 +29,7 @@ export { GRAIN_R, ROAD_TEX };
  * 때문이다(`decide/ground-albedo.ts`) — 캔버스와 판정에 따로 적으면 한쪽만 고쳐도
  * 아무도 모른다.
  */
-export const ASPHALT_BASE = 0x2a2d33;
+export const ASPHALT_BASE = V.roadBase;
 
 export const road: PartSpec = {
   kind: 'road',
@@ -51,7 +52,7 @@ export const road: PartSpec = {
   // 흰색 하나만 둔다. 텍스처가 이미 최종 밝기와 얼룩을 담고 있으므로 곱셈 항등원이 맞다.
   // 파셀별 색 변주도 넣지 않는다 — 길은 이어진 하나로 읽혀야 하고, 파셀마다 미세하게
   // 색이 다르면 그 경계가 이음매로 드러난다.
-  tones: [0xffffff],
+  tones: [TINTS.plain],
 
   // 지면 평면 신고 + 알베도 원천. 도로는 알베도가 가장 낮아 밤 압축의 **기준 아래**에
   // 있고, 그래서 배수가 1(무변경)로 유도된다 — 밤에 길을 밝히는 것은 이 축의 일이 아니다.

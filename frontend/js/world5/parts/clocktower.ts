@@ -33,7 +33,7 @@ import { plazaLandmark, h2 } from './plaza.js';
 import { EAVE } from './road-topology.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 import { V, TINTS } from './palette.js';
-import { hexCss } from './color.js';
+import { hexCss, greyCss, MASK_BLOCK } from './color.js';
 
 /**
  * 탑 높이(미터). **12 → 22.**
@@ -128,13 +128,16 @@ export const clocktower: PartSpec = {
       emissive: TINTS.plain,
       emissiveMap: screenMask(T),
       /**
-       * **1 로 상시 점등한다.** `tower.ts` 는 같은 값을 "밤 배선이 없어서" 미봉으로
-       * 골랐지만, 여기서는 **그것이 오히려 정확하다** — 광고 스크린은 낮에도 켜져
-       * 있다. 광장 광고판이 낮에 꺼져 있으면 그게 고장 난 화면이다.
+       * 부팅 초깃값. 실제 값은 `systems/neon-glow.ts` 가 이 파츠의 `neon` 신고
+       * (`{ day: 0.9, night: 1 }`)를 읽어 시간대에 맞춰 정한다.
        *
-       * 그래도 배선은 필요하다: 낮에는 세기를 낮춰야 주변 광량에 묻혀 자연스럽고,
-       * 지금은 그 조절축이 없다(`features/sky.ts` 의 `applyLampGlow` 가
-       * `materialOf('lamp')` 한 종류만 만진다). 요청을 보고에 올렸다.
+       * **낮에도 0.9 로 거의 그대로 켜 둔다** — 대형 광고 스크린은 주간에 오히려 더
+       * 밝게 튼다(주변이 밝으니까). 광장 광고판이 낮에 꺼져 있으면 그게 고장 난
+       * 화면이다. 가로등(`day: 0`)과 정반대인 것이 의도다.
+       *
+       * ⚠️ 이 자리에는 *"낮에는 세기를 낮춰야 하는데 지금은 그 조절축이 없다"* 고
+       * 적혀 있었다. **`neon` 신고가 바로 그 조절축이고 이미 있다** — 검수관이
+       * 블로커로 잡았다(B4).
        */
       emissiveIntensity: 1,
       // 금속 프레임과 유리 스크린이 섞인 표면이다. 석재(0.85)보다 매끈해야 광고판으로
@@ -326,7 +329,8 @@ function screenMask(T: ThreeNS) {
   cv.width = MASK_TEXELS;
   cv.height = 1;
   const g = cv.getContext('2d')!;
-  g.fillStyle = '#000';
+  // 검은 바탕 — 칠하지 않은 텍셀은 발광 0 이다(색이 아니라 강도. `color.ts` 참고)
+  g.fillStyle = greyCss(MASK_BLOCK);
   g.fillRect(0, 0, MASK_TEXELS, 1);
 
   const put = (i: number, hex: number, a: number) => {

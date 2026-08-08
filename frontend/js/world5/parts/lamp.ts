@@ -21,7 +21,10 @@ import { bakePieces, rgb, type Piece } from './bake.js';
 import { roadDirs, LAMP_OFFSET, LAMP_CLEARANCE, lampAnchors } from './road-topology.js';
 // 색은 팔레트가 유일한 출처다. 등불색은 `decide/night.ts` 의 블룸 판정 기준이기도
 // 하므로 **양쪽이 같은 상수를 봐야 한다** — 그 경위는 `palette.ts` 의 `lampGlow` 주석.
-import { V } from './palette.js';
+import { V, TINTS } from './palette.js';
+// 마스크 텍셀은 **색이 아니라 발광 강도 0/1** 이라 팔레트를 경유하지 않는다 — 그
+// 판단의 경위는 `color.ts` 의 "색이 아닌 것 — 강도" 절.
+import { greyCss, MASK_BLOCK, MASK_PASS } from './color.js';
 // 밤 발광 세기. **여기서 숫자를 다시 적지 않는다** — 그 값은 블룸 문턱을 넘도록
 // 정해진 것이라(`decide/night.ts` 의 `LAMP_MAX_GLOW` 주석) 복제하면 정합이 깨진다.
 // `parts/` → `decide/` 방향은 이미 `types.ts` → `decide/lod.js` 로 열려 있다.
@@ -74,7 +77,7 @@ export const lamp: PartSpec = {
   neon: { day: 0, night: LAMP_MAX_GLOW },
   salt: 0x94d049bb,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다.
-  tones: [0xffffff],
+  tones: [TINTS.plain],
 
   // 방향당 하나이므로 최댓값은 방향 수다. **유도한다** — 4 를 적어 두면 방향이 늘 때
   // 슬롯이 모자라고, 그 부족은 `starved` 로만 나타나 원인을 찾기 어렵다.
@@ -183,9 +186,9 @@ export const lamp: PartSpec = {
 const LAMP_LIGHT = V.lampGlow;
 
 /** 기둥 — 어두운 금속. 갓과 대비돼야 실루엣이 산다 */
-const POST = rgb(0x4a4636);
+const POST = rgb(V.lampPost);
 /** 갓 — 유백. 자체발광과 함께 밤에 불빛으로 읽힌다 */
-const HEAD = rgb(0xd8cfa8);
+const HEAD = rgb(V.lampShade);
 
 /**
  * world1 `SG.lampPost` + `SG.lampHead` 의 치수 그대로.
@@ -222,8 +225,8 @@ function lampMask(T: ThreeNS) {
   const cv = document.createElement('canvas');
   cv.width = 2; cv.height = 1;
   const ctx = cv.getContext('2d')!;
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 1, 1);
-  ctx.fillStyle = '#fff'; ctx.fillRect(1, 0, 1, 1);
+  ctx.fillStyle = greyCss(MASK_BLOCK); ctx.fillRect(0, 0, 1, 1);
+  ctx.fillStyle = greyCss(MASK_PASS); ctx.fillRect(1, 0, 1, 1);
   const tex = new T.CanvasTexture(cv);
   tex.magFilter = T.NearestFilter;
   tex.minFilter = T.NearestFilter;

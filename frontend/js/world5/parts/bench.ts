@@ -18,6 +18,7 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
+import { V, TINTS } from './palette.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, takeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 import { isPlaza, plazaOccupied } from './plaza.js';
@@ -31,7 +32,7 @@ export const bench: PartSpec = {
   salt: 0x5f1d3a27,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다. 나무색 변주는 정점색이
   // 아니라 tones 의 밝기로 준다(같은 벤치가 조금씩 바래 보인다).
-  tones: [0xffffff, 0xeee6d8],
+  tones: [TINTS.plain, TINTS.aged],
 
   // 좌판 1.4 × 0.44. 회전이 직각 배수라 긴 변의 절반이 곧 반경이고, 앉을 자리를
   // 남기려 조금 더 준다. 상수 하나를 자리 탐색과 겹침 판정이 함께 본다 — 둘이 어긋나면
@@ -79,9 +80,9 @@ export const bench: PartSpec = {
 };
 
 /** 좌석 — 나무 */
-const SEAT = rgb(0x8a6a48);
+const SEAT = rgb(V.benchWood);
 /** 다리 — 좌석보다 어두운 나무. 같은 색이면 한 덩어리로 보인다 */
-const LEG = rgb(0x5f4a33);
+const LEG = rgb(V.benchWoodDeep);
 
 /**
  * world1 `SG.bench` 의 치수 그대로.

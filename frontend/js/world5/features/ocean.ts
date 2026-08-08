@@ -967,7 +967,7 @@ function riverGeometry(): { geo: THREE.BufferGeometry; baseUv: number[]; flow: n
           // 흐름 방향 — **정점의 x 로** 구한다(파셀 중심이 아니라). 한 파셀 안에서도
           // 좌우 끝의 접선이 달라야 굽이가 부드럽게 이어진다. 월드 (x,z) 를 UV 로
           // 옮길 때 v 축이 뒤집히므로(`0.5 - z/PLANE`) z 성분의 부호를 바꾼다.
-          const f = riverFlowAt(vx);
+          const f = riverFlowAt(vx, cellZ);
           flow.push(f.x, -f.z);
         }
       }
