@@ -230,6 +230,43 @@ export class LocalProfileStore implements ProfileStore {
 }
 
 /**
+ * 로그아웃할 때 이 기기에 남은 프로필을 **전부** 지운다.
+ *
+ * ── 왜 필요한가 (검수관 P5 · 라이브 승격 선결 조건) ──────────────────────
+ * `auth.logout()` 은 로그인 정보(`lu-auth-profile-v1`)만 지우고 `lu-profile::` 는
+ * 그대로 둔다. behind-flag(무링크)인 동안에는 문제가 아니었다 — 아무도 그 화면에
+ * 도달하지 못했다. **홈에서 링크로 접근 가능해지는 순간 성질이 달라진다.**
+ *
+ * 신원이 아직 mock 이라(`auth.js` 의 OAuth 키가 전부 빈 문자열) 사용자 식별자는
+ * `"google:아트러버"` 같은 **자칭 문자열**이다. 공용 PC 에서 뒷사람이 같은 이름을
+ * 자칭하면 앞사람의 **프로필 사진·활동 지역·전시 이력**을 그대로 본다.
+ * 아바타에도 같은 성질이 있지만 담기는 것이 다르다 — **mock 신원 위에 개인식별정보를
+ * 얹은 것은 마이페이지가 처음이다.**
+ *
+ * ── 이것으로 해결되지 않는 것 ────────────────────────────────────────────
+ * **신원 위조 자체는 못 막는다.** 로그아웃을 거치지 않고 브라우저를 닫아 버리면
+ * 저장이 남고, 실제 OAuth 가 없는 한 "같은 이름을 자칭하는 사람" 과 "본인" 을 구별할
+ * 방법이 없다. 여기서 줄이는 것은 **가장 흔한 경로**(로그아웃하고 자리를 뜬다)뿐이다.
+ * 근본 해소는 실제 OAuth 다 — `docs/MYPAGE-PLAN.md` §3, 백로그 `G-MP1`.
+ *
+ * 아바타(`lu-chibi-*`)는 **건드리지 않는다.** 그것은 이 변경 이전부터 있던 성질이고,
+ * 지우면 로그아웃한 사람이 꾸며 둔 캐릭터를 잃는다 — 이 함수가 고치려는 문제가 아니다.
+ */
+export function clearProfilesOnLogout(): void {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(PROFILE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) localStorage.removeItem(key);
+    localStorage.removeItem(NICKNAME_INDEX_KEY);
+  } catch {
+    /* 저장소가 막혀 있으면 할 수 있는 일이 없다 — 로그아웃 자체를 막지는 않는다 */
+  }
+}
+
+/**
  * 저장소에서 프로필을 읽되, 없으면 빈 프로필을 만든다. 화면은 `null` 을 다룰 필요가 없다.
  *
  * 활동 분야 기본값을 `member` 로 두는 것은 스키마의 몫이다 — 여기서 다시 정하지 않는다.

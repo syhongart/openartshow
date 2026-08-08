@@ -41,7 +41,7 @@ describe('진입점 SSOT', () => {
     expect(LIVE_ENTRIES.length + FLAGGED_ENTRIES.length).toBe(ENTRYPOINTS.length);
   });
 
-  it('behind-flag 네 페이지가 flagged 다', () => {
+  it('behind-flag 세 페이지가 flagged 다', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
     //
     // 목록을 여기 **적어 두는 것**이 이 검사의 요점이다. `FLAGGED_ENTRIES.length` 만
@@ -53,10 +53,11 @@ describe('진입점 SSOT', () => {
     // 그러니 이 배열을 고칠 때는 **`CLAUDE.md` 의 behind-flag 문장도 같이 고친다.**
     // 여기만 고치면 검사는 초록이 되고 산문은 계속 틀린 채로 남는다.
     //
-    // 2026-08-08 `mypage.html` 추가 — 감독 지시로 착수한 마이페이지. 링크가 0 인 이유는
-    // 미완이어서가 아니라 로그인이 아직 mock 이기 때문이다(docs/MYPAGE-PLAN.md §3).
+    // 2026-08-08 `mypage.html` 은 여기 있다가 **라이브로 승격**돼 빠졌다(감독 지시 —
+    // 랜딩 프로필 메뉴가 링크한다). 승격하는 순간 이 배열과 아래 GS-3 이 함께 빨간불이
+    // 됐다 — 그것이 이 두 검사의 존재 이유이고, 설계대로 동작한 실물 사례다.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
-    expect(flagged).toEqual(['lab-glb.html', 'mypage.html', 'visit.html', 'world2.html']);
+    expect(flagged).toEqual(['lab-glb.html', 'visit.html', 'world2.html']);
   });
 
   // ── GS-3 (검수관 명세, 블로커 B2) ────────────────────────────────────────

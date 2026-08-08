@@ -7,6 +7,11 @@
 //   - Naver:  네아로 JS SDK (naver_id_login)
 // 키는 아래 CONFIG에 채운다. 키가 비어 있으면 자동으로 mock 모드로 동작한다.
 
+// 로그아웃 시 마이페이지 프로필 정리. 저장 키를 아는 쪽(`mypage/store`)이 함수를
+// 갖고, 여기서는 부르기만 한다(값 미러링 회피). `store` 는 `auth` 를 import 하지
+// 않으므로 순환이 아니다.
+import { clearProfilesOnLogout } from './mypage/store.js';
+
 const CONFIG = {
   google: { clientId: '' }, // Google Cloud Console OAuth 클라이언트 ID
   kakao: { jsKey: '' },     // Kakao Developers JavaScript 키
@@ -99,6 +104,18 @@ export async function loginWith(provider) {
 export function logout() {
   profile = null;
   persist();
+  // ── 이 기기에 남은 프로필도 지운다 (검수관 P5) ──────────────────────────
+  // `persist()` 는 로그인 정보(`lu-auth-profile-v1`)만 지운다. 마이페이지 프로필
+  // (`lu-profile::<uid>`)은 그대로 남는데, 신원이 아직 mock 이라 사용자 식별자가
+  // **자칭 문자열**이다 — 공용 PC 에서 뒷사람이 같은 이름을 자칭하면 앞사람의
+  // 프로필 사진·활동 지역을 그대로 본다.
+  //
+  // behind-flag 인 동안에는 아무도 그 화면에 도달하지 못해 문제가 아니었다.
+  // **홈에서 링크로 접근 가능해지는 순간 성질이 달라진다**(감독 지시 2026-08-08).
+  //
+  // 문자열은 `mypage/store` 가 갖는다 — 여기 프리픽스를 다시 적으면 값 미러링이고,
+  // 한쪽만 고치면 지워지지 않는 것이 조용히 남는다.
+  clearProfilesOnLogout();
   emitChange();
 }
 
