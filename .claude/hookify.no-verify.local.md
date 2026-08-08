@@ -3,7 +3,7 @@ name: 게이트 우회 금지
 enabled: true
 event: bash
 action: block
-pattern: (--no-verify|-n\s+.*commit|commit\s+.*\s-n\b)
+pattern: (--no-verify|git\s+commit[^|;&]*\s-[a-zA-Z]*n[a-zA-Z]*(\s|$))
 ---
 
 `git commit --no-verify` 는 pre-commit 훅을 건너뛴다. 그 훅이 하는 일은 **`npm run gate`
@@ -12,3 +12,17 @@ pattern: (--no-verify|-n\s+.*commit|commit\s+.*\s-n\b)
 
 게이트가 실패하면 우회하지 말고 **실패한 이유를 고쳐라.** 통과 못 한 것을 통과로 만드는
 것이 이 저장소가 반복해서 당한 사고 형태다.
+
+**오탐이면** — `enabled: false` 로 이 규칙만 임시로 끄고, 왜 껐는지를 남긴다.
+
+> **첫 판본이 `grep -n commit` 과 `git log -n 3 | grep commit` 을 차단했다
+> (검수관 반려 B2, 2026-08-08).** `-n\s+.*commit` 이 `-n` 과 `commit` 이 한 줄에 있기만
+> 하면 발화했다. 추측이 아니라 **검수관의 리뷰 명령을 실제로 막았고**, `action: block` 은
+> warn 과 달리 무시할 수가 없어서 리뷰가 히어독으로 우회해야 했다.
+> 그래서 `-n` 대안을 **`git commit` 문맥 안**으로 좁혔다. `--no-verify` 는 그대로 전역이다
+> (pre-push 훅도 건너뛰므로 `git push --no-verify` 도 막아야 한다).
+>
+> **남은 한계**: `git commit -m "fix: -n 플래그"` 처럼 **따옴표 안**에 `-n` 이 들어가면
+> 여전히 걸린다. 히어독(`<<'EOF'`)은 훅이 걷어내지만 따옴표는 안 걷는다 — 거기까지
+> 파싱하려면 셸 문법을 다시 구현해야 하고 그 복잡도가 오탐보다 위험하다
+> (`scripts/hooks/guard-bash.mjs` 의 같은 판단).

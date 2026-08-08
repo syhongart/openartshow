@@ -32,7 +32,24 @@
 //
 // ── 쓰는 법 ─────────────────────────────────────────────────────────────────
 //   node scripts/await-until.mjs --timeout 900 --every 20 \
-//     --probe 'git ls-remote origin gh-pages | grep -q <sha> && exit 1 || exit 0'
+//     --probe 'git ls-remote origin gh-pages > /tmp/ls || exit 3;
+//              grep -q <sha> /tmp/ls && exit 0 || exit 1'
+//
+// **조회 실패와 "아직 아님" 을 probe 안에서 반드시 갈라라.** 조회 명령의 종료코드를 먼저
+// 보고(`|| exit 3`), 그 뒤에 내용을 판정한다.
+//
+// > **첫 판본의 예시가 정확히 그 구멍을 갖고 있었다 (검수관 반려 B5, 2026-08-08).**
+// > 그것은 이랬다:
+// >
+// >     --probe 'git ls-remote origin gh-pages | grep -q <sha> && exit 1 || exit 0'
+// >
+// > `git ls-remote` 가 죽어도 파이프 뒤의 `grep -q` 가 exit 1 을 내고 `|| exit 0` 이 그걸
+// > **「충족」으로 바꾼다.** 실측: 없는 리모트를 넣었더니 0초 1회차에 `[await] 충족` 이
+// > 나왔다. **이것은 원래 사고보다 나쁘다** — `except: print('wait')` 은 실패를 *"아직"* 으로
+// > 뭉개 10분을 잃었지만, 이 예시는 실패를 *"됐다"* 로 뭉개 **거짓 통과**를 만든다.
+// > 규약(아래 0/1/그 외)은 실측대로 옳았고, **구멍은 규약이 아니라 그 위에 얹은 예시**에
+// > 있었다. 그래서 예시를 파이프·`|| exit 0` 없는 형태로 바꾸고, probe 셸에 `pipefail` 을
+// > 켜고(아래 `spawnSync`), 이 성질을 `tests/await-until.test.ts` 가 지키게 했다.
 //
 // **`curl` 로 조건을 쓸 때는 `--fail` 을 반드시 붙여라.** 안 붙이면 403·404 에도 exit 0 이
 // 나서 이 파일이 막아주려는 바로 그 구멍이 다시 열린다.
@@ -65,7 +82,11 @@ const elapsed = () => Math.round((Date.now() - started) / 1000);
 
 for (;;) {
   round++;
-  const r = spawnSync('bash', ['-c', probe], { encoding: 'utf8' });
+  // `-o pipefail` — 파이프 **중간**의 실패가 사라지지 않게 한다. 이것이 없으면
+  // `조회 | grep` 형태의 probe 에서 조회가 죽어도 파이프라인 종료코드는 `grep` 것이 되고,
+  // 그러면 이 파일 전체가 막으려는 "못 물어본 것을 답으로 세는" 구멍이 probe 안쪽에 다시
+  // 열린다. 이 저장소는 게이트를 `| tail` 로 파이프해 종료코드를 삼킨 전례가 있다(CLAUDE.md).
+  const r = spawnSync('bash', ['-o', 'pipefail', '-c', probe], { encoding: 'utf8' });
   const code = r.status;
 
   if (code === 0) {

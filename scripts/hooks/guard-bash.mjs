@@ -29,8 +29,21 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const DIR = join(process.cwd(), '.claude');
+/**
+ * 규칙 디렉터리는 **이 파일 위치에서** 찾는다 — `process.cwd()` 가 아니다.
+ *
+ * ── 왜 (검수관 반려 B3, 2026-08-08) ────────────────────────────────────────
+ * 처음에는 `join(process.cwd(), '.claude')` 였다. 실측:
+ *   cwd=<저장소 루트>  + `git commit --no-verify` → exit 2 (막았다)
+ *   cwd=<루트>/frontend + 같은 명령              → **exit 0, stderr 비었음**
+ *   cwd=/tmp           + 같은 명령              → **exit 0, stderr 비었음**
+ * 하위 디렉터리에서 작업하는 것은 특별한 일이 아니다. 즉 **보호가 통째로, 조용히**
+ * 사라지는 형태였다 — 이 저장소가 "장식" 이라 부르는 그것이고, 규율의
+ * *"못 잰 것은 통과가 아니다"* 위반이다.
+ */
+const DIR = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '.claude');
 
 /** `---` 프런트매터를 아주 좁게 파싱한다. YAML 전체가 아니라 `키: 값` 한 줄들만 본다. */
 function parseRule(text, file) {
@@ -55,14 +68,25 @@ function parseRule(text, file) {
   };
 }
 
+/**
+ * 규칙을 읽는다. **"못 읽었다" 와 "규칙이 없다" 를 구별한다** — 첫 판본은 `catch { return [] }`
+ * 로 둘을 뭉갰고, 그래서 B3 의 조용한 실패가 성립했다. 여기서는 두 경우 모두 사유를
+ * `notice` 로 올려 호출부가 stderr 에 적는다.
+ */
 function loadRules() {
   let names;
   try {
     names = readdirSync(DIR).filter((f) => f.startsWith('hookify.') && f.endsWith('.local.md'));
-  } catch { return []; }
-  return names.map((f) => {
+  } catch (e) {
+    return { rules: [], notice: `규칙 디렉터리를 읽지 못했다(${DIR}): ${e.message}` };
+  }
+  if (!names.length) {
+    return { rules: [], notice: `규칙 파일이 0건이다(${DIR}) — 보호가 통째로 없는 상태다.` };
+  }
+  const rules = names.map((f) => {
     try { return parseRule(readFileSync(join(DIR, f), 'utf8'), f); } catch (e) { return { file: f, broken: String(e) }; }
   });
+  return { rules, notice: '' };
 }
 
 let raw = '';
@@ -90,7 +114,10 @@ if (typeof command !== 'string' || !command) process.exit(0);
  */
 const scanned = command.replace(/<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^\2$/gm, '<<HEREDOC');
 
-const rules = loadRules();
+const { rules, notice } = loadRules();
+// 규칙을 하나도 못 읽었으면 **그 사실 자체를 말한다.** 침묵하면 "규칙에 안 걸렸다" 와
+// "규칙이 아예 없었다" 가 구별되지 않는다(검수관 반려 B3).
+if (notice) process.stderr.write(`[guard] ${notice}\n`);
 const broken = rules.filter((r) => r.broken);
 if (broken.length) {
   // 못 읽은 규칙을 "규칙 없음" 으로 뭉개지 않는다. 조용히 넘어가면 보호가 사라진 것을 모른다.
@@ -104,6 +131,14 @@ const blocking = hits.filter((r) => r.action === 'block');
 const shown = blocking.length ? blocking : hits;
 const lines = shown.map((r) => `【${r.name}】 (${r.file})\n${r.body}`).join('\n\n');
 process.stderr.write(
-  `${blocking.length ? '차단' : '주의'} — 이 명령이 규칙에 걸렸다:\n\n  $ ${command}\n\n${lines}\n`,
+  `${blocking.length ? '차단' : '주의'} — 이 명령이 규칙에 걸렸다:\n\n  $ ${command}\n\n${lines}\n`
+  // 오탐일 때 무엇을 하면 되는지 **차단 메시지 자체가** 말해야 한다. 첫 판본은 "우회하지
+  // 말고 고쳐라" 라고만 했고, 정작 규칙이 틀렸을 때의 탈출로가 문서 어디에도 없었다
+  // (검수관 반려 B2 — 그 상태에서 규칙이 검수관의 리뷰 명령을 두 번 막았다).
+  + (blocking.length
+    ? '\n오탐이라고 판단되면: 해당 규칙 파일의 `enabled: false` 로 임시 해제하고 '
+      + '왜 껐는지를 남겨라(게시판·커밋 메시지). 규칙 자체가 틀렸으면 정규식을 고치고 '
+      + '`tests/hookify-guard.test.ts` 에 그 케이스를 추가한다.\n'
+    : ''),
 );
 process.exit(blocking.length ? 2 : 0);

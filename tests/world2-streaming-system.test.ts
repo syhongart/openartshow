@@ -178,32 +178,70 @@ describe('StreamingSystem — tier 변경이 재생성으로 새지 않는다(�
 // `retiered` 총계는 "몇 번 바뀌었나" 만 말한다. 한 방향으로 흘러간 것과 같은 경계를
 // 오간 것을 구별하지 못해서, 팀장이 건 판정 기준("42m 에 왕복 3건 이상이면 히스테리시스
 // 폭 확대 병행", 2026-08-07)을 그 수로는 잴 수 없었다. 방향을 나눠 센다.
+//
+// **부호는 `>0` 으로 못 지킨다** (검수관 권고 P5, 2026-08-08). 승격/강등을 뒤바꾸는
+// 뮤테이션이 22건 전부 초록이었다 — 이동 과도기에는 양쪽이 다 나오기 때문이다(실측:
+// 멀어짐 첫 8프레임에 promoted=3, demoted=6). 부호가 뒤집혀도 안 깨지면, 팀장 조건 3
+// (42m 왕복 3건 → 히스테리시스 확대)을 **반대로** 판정하게 된다. 그래서 대소를 본다.
+function sweep(sys: StreamingSystem, n = 8) {
+  let promoted = 0; let demoted = 0; let retiered = 0;
+  for (let i = 0; i < n; i++) {
+    sys.update(ctx());
+    const s = sys.stats();
+    promoted += s.promoted; demoted += s.demoted; retiered += s.retiered;
+  }
+  return { promoted, demoted, retiered };
+}
+
 describe('StreamingSystem — 교체 방향(승격·강등)', () => {
-  it('멀어지면 강등이 잡히고, 그 합이 retiered 를 넘지 않는다', () => {
+  it('멀어지면 **강등이 승격보다 많다** — 부호가 뒤집히면 깨진다', () => {
     const { sys, pos } = make();
     settle(sys);
     pos.x = 32; // 경계 밖으로 밀어 강등을 유도한다
-    let promoted = 0; let demoted = 0; let retiered = 0;
-    for (let i = 0; i < 8; i++) {
-      sys.update(ctx());
-      const s = sys.stats();
-      promoted += s.promoted; demoted += s.demoted; retiered += s.retiered;
-    }
+    const { promoted, demoted, retiered } = sweep(sys);
     expect(retiered).toBeGreaterThan(0);
-    expect(demoted).toBeGreaterThan(0);
+    expect(demoted, '멀어지는데 강등이 승격보다 적다 — 부호가 뒤집혔다').toBeGreaterThan(promoted);
     // 방향이 없는 교체(같은 tier 재적용)는 어느 쪽에도 안 세므로 합이 총계 이하다.
     expect(promoted + demoted).toBeLessThanOrEqual(retiered);
   });
 
+  // ── 여기서 멈춘다: 되돌아옴은 **대소로 못 잰다** (실측 2026-08-08) ──────────
+  // 검수관 권고 P5 는 되돌아옴에 `promoted > demoted` 를 제안했고, 나는 그대로 썼다가
+  // 실측에 반증당했다 — 되돌아와도 **promoted=3 vs demoted=6** 이다.
+  //
+  // 이유: 이동은 방향과 무관하게 강등이 우세하다. 새로 시야에 드는 파셀은 `build` 로
+  // 들어오지 `retier` 로 들어오지 않으므로 **승격에 안 세어지고**, 뒤에 남겨진 파셀은
+  // 전부 강등으로 세어진다. 즉 이 비대칭은 결함이 아니라 스트리밍의 성질이다.
+  //
+  // 그래서 부호 보증은 **위 「멀어지면」 하나가 전담**한다(뮤테이션으로 확인: 승격/강등을
+  // 뒤바꾸면 그 테스트가 깨진다). 여기서는 되돌아올 때 승격 경로가 **실행되는지**만 본다.
   it('되돌아오면 승격이 잡힌다 — 왕복을 볼 수 있는 유일한 축이다', () => {
     const { sys, pos } = make();
     settle(sys);
     pos.x = 32;
-    for (let i = 0; i < 8; i++) sys.update(ctx());
+    sweep(sys);
     pos.x = 0; // 제자리로 — 같은 경계를 되돌아온다
-    let promoted = 0;
-    for (let i = 0; i < 8; i++) { sys.update(ctx()); promoted += sys.stats().promoted; }
-    expect(promoted).toBeGreaterThan(0);
+    expect(sweep(sys).promoted).toBeGreaterThan(0);
+  });
+
+  it('정지 상태에서는 어느 쪽도 세지 않는다 — 유휴 노이즈가 왕복으로 보이면 안 된다', () => {
+    const { sys } = make();
+    settle(sys);
+    const { promoted, demoted, retiered } = sweep(sys);
+    expect({ promoted, demoted, retiered }).toEqual({ promoted: 0, demoted: 0, retiered: 0 });
+  });
+
+  // 재생성 폴백(`retier`→null)에서도 방향이 세지는가. 카운팅이 `retier()` 호출 **이전**이라
+  // 두 경로가 같이 지나야 하는데, 그것을 지나는 테스트가 없었다(검수관 권고 P6).
+  it('retier 가 null 이라 재생성으로 떨어져도 방향은 세어진다', () => {
+    const hard = fakeBuilder(false);
+    const { sys, pos } = make({ builder: hard.builder });
+    settle(sys);
+    pos.x = 32;
+    const { promoted, demoted, retiered } = sweep(sys);
+    expect(retiered).toBeGreaterThan(0);
+    expect(promoted + demoted, '재생성 경로에서 방향이 안 세어진다').toBeGreaterThan(0);
+    expect(hard.log.build).toBeGreaterThan(0); // 정말 재생성 경로를 지났다
   });
 });
 
