@@ -56,10 +56,21 @@ import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
  * 전진 틱 수와 틱 길이. **"몇 미터" 가 아니라 "얼마 동안" 이다** — 거리를 적으면 그것이
  * 곧 배치 의존이 된다.
  *
- * 충돌 OFF 는 이 시간 동안 계속 나아가고, ON 은 첫 장애물에서 멈춘다. 시간이 길수록 두
- * 값의 차이가 벌어져 판정이 안전해진다. 12틱 × 500ms = 6초 ≈ 30m(WALK_SPEED 5m/s).
+ * ── 왜 60틱(30초)인가 — **첫 판본 12틱은 아무것도 못 쟀다** (실측 2026-08-08) ──
+ * 처음에 *"12틱 × 500ms = 6초 ≈ 30m(WALK_SPEED 5m/s)"* 라고 적었고 **틀렸다.**
+ * 실측은 6초에 **11.5m** — 실효 1.9m/s 로 걷기 속도의 38% 다. 헤드리스가 ~4fps 라
+ * `dt` 클램프(0.1s)에 걸려 게임 시간이 실시간보다 훨씬 느리게 흐른다. **"m/s × 초"
+ * 로 거리를 추정한 것이 재는 축을 잘못 고른 것**이었다.
+ *
+ * 그 결과 ON·OFF 가 **둘 다 11.5m** 로 같았다. 충돌이 안 걸린 게 아니라 **충돌 지점
+ * (스폰 앞 25m)에 닿기도 전에 측정이 끝난 것**이다. 판정은 FAIL 이었지만 그 FAIL 이
+ * 말한 원인("배선 회귀 또는 축 상실")은 둘 다 사실이 아니었다.
+ *
+ * 30초면 실효 1.9m/s 로 약 57m 다 — 스폰 앞 첫 장애물(25m)을 확실히 지나친다.
+ * **시간을 추정으로 정하지 않는다**: 이 값이 충분한지는 아래 `MIN_OFF_M` 이 대조군
+ * 실측으로 매 회차 확인하고, 못 미치면 FAIL 로 말한다.
  */
-const TICKS = 12;
+const TICKS = 60;
 const TICK_MS = 500;
 
 /**
@@ -79,8 +90,13 @@ const MAX_RATIO = 0.9;
  * OFF 가 짧으면 비율 판정 자체가 무의미하다 — 둘 다 0m 면 `0 < 0 × 0.9` 가 거짓이라
  * FAIL 로 떨어지긴 하지만, 원인이 "충돌이 안 먹었다" 가 아니라 "아무도 안 걸었다" 이므로
  * 리포트가 다른 말을 해야 한다.
+ *
+ * **유도한다 — 손으로 적지 않는다.** 첫 판본은 `8` 이라는 상수였고, `TICKS` 를 12→60 으로
+ * 늘렸을 때 따라오지 않아 **하한이 실제 주행의 1/7 로 줄어드는** 형태였다(같은 커밋 안에서
+ * 값 미러링이 생긴 것이다). 보수적 실효 속도 0.5m/s 로 유도한다 — 실측 실효는 1.9m/s
+ * 이므로 4배 가까운 여유이고, 그만큼 러너 성능 편차에 강하다.
  */
-const MIN_OFF_M = 8;
+const MIN_OFF_M = (TICKS * TICK_MS) / 1000 * 0.5;
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -111,12 +127,28 @@ async function walkOnce(browser, origin, basePath, query, log) {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(e.message));
+  // **어느 자산이 실패했는지까지 남긴다.** 브라우저 콘솔의 404 문구는 URL 을 안 담아서
+  // "404 한 건" 만 보고는 원인을 짚을 수 없다 — 진단 한 회차를 그 상태로 날렸다.
+  page.on('response', (res) => {
+    if (res.status() >= 400) errors.push(`HTTP ${res.status()} ${res.url()}`);
+  });
+  page.on('requestfailed', (req) => {
+    errors.push(`요청 실패 ${req.url()} — ${req.failure()?.errorText ?? '이유 미상'}`);
+  });
   try {
     const url = `${origin}${basePath}app/world2.html${query}`;
     log(`접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
     const ready = await waitForWorld2Ready(page);
-    if (ready.reason) return { dist: null, reason: ready.reason, errors };
+    if (ready.reason) {
+      // **부팅 실패의 원인은 거의 늘 콘솔에 있다.** `reason` 만 올리면 "60초 안에 안 떴다"
+      // 라는 증상만 남고, 실제 원인(자산 404·모듈 예외)이 통째로 사라진다 — 그 상태로
+      // 진단을 한 회차 날렸다(2026-08-08).
+      return {
+        dist: null, errors,
+        reason: `${ready.reason}${errors.length ? ` · 콘솔 ${errors.length}건: ${errors.slice(0, 4).join(' | ')}` : ' · 콘솔은 조용했다'}`,
+      };
+    }
     await page.waitForTimeout(4000); // 초기 파셀
 
     const from = await at(page);
@@ -193,7 +225,11 @@ export async function runCollide({ browser, origin, basePath, log = console.log 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 if (import.meta.url === `file://${process.argv[1]}`) {
   await assembleSiteVite();
-  const server = await startServer(SITE_DIR);
+  // 둘째 인자가 **`BASE_PATH` strip** 이다 — 안 넘기면 `/openartshow/app/world2.html` 을
+  // 그대로 파일 경로로 찾아 404 가 된다. 형제 측정기 셋이 전부 넘기고 있는데 이 파일만
+  // 빠뜨려서 "부팅 실패" 로 두 회차를 날렸다(2026-08-08). 증상이 페이지 404 였는데
+  // `_site` 에는 파일이 있어서 조립 결함으로 오진했다.
+  const server = await startServer(SITE_DIR, BASE_PATH);
   const browser = await chromium.launch({
     executablePath: CHROMIUM_EXECUTABLE,
     args: CHROMIUM_ARGS,

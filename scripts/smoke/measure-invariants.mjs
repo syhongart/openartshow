@@ -177,9 +177,37 @@ const COVER_REVISITS = 1;
 /** 이 leg 에서 실제로 움직인 거리(m)가 이보다 작으면 막힌 것으로 본다 */
 const STUCK_M = 1.0;
 /** 목표를 채우려고 늘릴 수 있는 최대 leg 수. 도달하면 그대로 판정한다(무한 대기 금지) */
-const MAX_LEGS = 20;
-/** 막혔을 때 틀 각도. 90° 면 슬라이딩이 안 먹는 정면 충돌에서도 빠져나온다 */
-const TURN_RAD = Math.PI / 2;
+const MAX_LEGS = 24;
+
+/**
+ * 막혔을 때 어떻게 우회하는가. **사람이 하는 것을 흉내낸다 — 옆으로 비켜서 지나간다.**
+ *
+ * ── 첫 판본은 90° 회전이었고 제자리를 돌았다 (실측 2026-08-08) ────────────────
+ * *"막히면 `look(90°)`"* 로 짰더니 **21 leg·7회 전환에 고유 파셀이 1** 이었다. 당연하다 —
+ * 90° 를 네 번 돌면 출발 방향으로 돌아온다. 촘촘한 도시에서 그 사이클은 **사각형을 그리며
+ * 같은 칸을 맴도는** 궤적이 된다. "막히면 방향을 튼다" 는 발상은 맞았고 **각도 선택이
+ * 틀렸다.**
+ *
+ * 그래서 먼저 **스트레이프**를 시도한다: 시선을 유지한 채 좌·우 대각으로 전진하면
+ * `slide` 의 축분리가 옆 성분을 살려 장애물을 스쳐 지나간다. 방향(시선)이 보존되므로
+ * 사이클이 생기지 않는다. 좌우 둘 다 막힐 때만 시선을 튼다 — 그때는 골목 끝이다.
+ *
+ * `move(x, z)` 의 x 가 좌우 축이고 z 가 전후다(`player.setAxes`).
+ *
+ * ── 실측 (2026-08-08, 스폰 x=-3.5) ──────────────────────────────────────────
+ *   90° 회전판   21 leg · 시선 전환 7회 → 고유 파셀 **1** · 경로 `0,0`
+ *   스트레이프판 19 leg · 시선 전환 **0회** → 고유 파셀 **3** · 재방문 2
+ *                경로 `0,0 → 0,-1 → 0,-2 → 0,-1 → 0,0`
+ * 시선을 한 번도 안 틀고 목표를 채웠다 — 골목 끝(좌우 다 막힘)에 도달한 적이 없다는
+ * 뜻이고, 그래서 `TURN_RAD` 는 아직 **한 번도 실행되지 않은 경로**다. 남겨 두는 이유는
+ * 배치가 촘촘해지면 필요해지기 때문이지만, **검출력이 0 인 분기임을 알고 남긴다.**
+ */
+const DODGES = [
+  { ax: 1, az: -1, note: '우측 대각' },
+  { ax: -1, az: -1, note: '좌측 대각' },
+];
+/** 좌우 다 막혔을 때 틀 각도. 90° 가 아니라 **소수(素數)에 가까운 각**이라 사이클이 늦다 */
+const TURN_RAD = (Math.PI * 2) / 5;
 
 const show = (v) => (v === undefined || v === null ? '측정실패(값 없음)' : String(v));
 
@@ -336,8 +364,10 @@ export async function runInvariants({
     log('[2] 주행 — 고유 파셀 목표 ' + COVER_UNIQUE + '…');
     let legs = 0;
     let turns = 0;
+    let dodge = -1;        // -1 = 곧장 전진, 0·1 = 좌우 대각
     for (; legs < MAX_LEGS; legs++) {
-      await drive(page, 'move', 0, -1); // 전진(시선 방향)
+      const d = dodge < 0 ? { ax: 0, az: -1 } : DODGES[dodge];
+      await drive(page, 'move', d.ax, d.az);
       await page.waitForTimeout(WALK_MS);
       const c = await snap(`전진 ${legs + 1}`);
       const moved = (prev.wx == null || c.wx == null)
@@ -346,11 +376,18 @@ export async function runInvariants({
       prev = c;
       if (coverageOf(visits).unique >= COVER_UNIQUE && legs + 1 >= WALK_LEGS) break;
       if (moved != null && moved < STUCK_M) {
-        // 막혔다. 90° 틀고 계속 간다. 회전은 **개수 축과 독립된 증식원**이므로(위 ①의
-        // 근거) 여기서 도는 것도 그대로 판정 대상이다 — 표에 남는다.
-        await drive(page, 'look', TURN_RAD, 0);
-        await page.waitForTimeout(STEP_MS);
-        turns++;
+        // 막혔다. 좌 → 우 → (둘 다 막히면) 시선을 튼다. 회전은 **개수 축과 독립된
+        // 증식원**이므로(위 ①의 근거) 여기서 도는 것도 그대로 판정 대상이다 — 표에 남는다.
+        dodge += 1;
+        if (dodge >= DODGES.length) {
+          dodge = -1;
+          await drive(page, 'look', TURN_RAD, 0);
+          await page.waitForTimeout(STEP_MS);
+          turns++;
+        }
+      } else if (dodge >= 0) {
+        // 우회가 통했다 — 다시 곧장 전진으로 돌아간다(대각으로만 계속 가면 사선으로 흐른다).
+        dodge = -1;
       }
     }
     await drive(page, 'move', 0, 0);
@@ -387,7 +424,9 @@ export async function runInvariants({
 
     // ── 판정 ────────────────────────────────────────────────────────────────
     log('\n[결과] 기준선 대비 증가분 — 하나라도 + 면 증식이다\n');
-    log('  구간              geo   tex  pipe   draw  파셀');
+    // 좌표·파셀 칸을 함께 찍는다 — 개수만 보면 "세션이 어디에 있었나" 를 알 수 없고,
+    // 커버리지 FAIL 이 났을 때 어느 구간에서 멈췄는지 짚을 수단이 표 안에 없었다.
+    log('  구간              geo   tex  pipe   draw  파셀        위치        칸');
     let maxGeo = 0, maxTex = 0, maxPipe = 0, maxDraw = 0;
     for (const r of rows) {
       const d = (b, v) => (b == null || v == null ? '  ?' : (v - b > 0 ? `+${v - b}` : '  '));
@@ -399,7 +438,9 @@ export async function runInvariants({
         `  ${r.label.padEnd(16)} ${show(r.geo).padStart(4)}${d(base.geo, r.geo)} `
         + `${show(r.tex).padStart(4)}${d(base.tex, r.tex)} `
         + `${show(r.pipe).padStart(4)}${d(base.pipe, r.pipe)} `
-        + `${show(r.draw).padStart(6)} ${show(r.parcels).padStart(5)}`,
+        + `${show(r.draw).padStart(6)} ${show(r.parcels).padStart(5)}`
+        + `  ${r.wx == null ? '     ?,?    ' : `${r.wx.toFixed(1).padStart(6)},${r.wz.toFixed(1).padStart(6)}`}`
+        + `  ${r.px == null ? '?' : `${r.px},${r.pz}`}`,
       );
     }
 
