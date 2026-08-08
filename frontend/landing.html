@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 4블록은 sha256 핀, 외부호스트 0 정합(fetch·img 모두 self) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-kBmO7OoxO9Zo4P//dunmFD64rYjjSHwnJarrxkCgOWM=' 'sha256-ubkDsdnIYFmt+yqUk3l3XXJNsDRssVXQcRZ5q9HQY60=' 'sha256-ArsSLR0ijtWnvz98VTZQndfzuK9ptbpF24oKDANs1Mw=' 'sha256-eJwd9VtCCgsDkBNByn1t6dmYAiAMwGoG6WjOMptgUgo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-kBmO7OoxO9Zo4P//dunmFD64rYjjSHwnJarrxkCgOWM=' 'sha256-ubkDsdnIYFmt+yqUk3l3XXJNsDRssVXQcRZ5q9HQY60=' 'sha256-tsy7iXXcuLXQxK6jnal5DHNww5qC5PD0NaJqFYopcU8=' 'sha256-eJwd9VtCCgsDkBNByn1t6dmYAiAMwGoG6WjOMptgUgo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>OpenArtShow — 링크 하나로 열리는 나만의 미술관</title>
 <meta name="description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta property="og:type" content="website">
@@ -652,9 +652,20 @@
     border-radius: var(--r-card);
     box-shadow: var(--shadow-card-hover);
     opacity: 0; visibility: hidden; transform: translateY(-6px);
-    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s;
+    /* ⚠ `visibility` 를 그냥 `0.16s` 로 두면 **키보드로 메뉴를 열 수 없다.**
+       실측(2026-08-08): `.is-open` 을 붙인 직후 `getComputedStyle(menu).visibility` 가
+       여전히 `hidden` 이고(리플로우를 강제해도 그렇다), 그래서 같은 틱의 `.focus()` 가
+       먹지 않아 `document.activeElement` 가 `body` 로 떨어졌다. 250ms 뒤에 부르면 된다.
+       원인은 discrete 속성의 보간이다 — 크로미움은 전환 **중간 지점**에서 값을 바꾸므로
+       0.16s 의 절반 동안 hidden 으로 남는다.
+       처방은 표준형이다: **열 때는 즉시**(`0s`), **닫을 때만** 애니메이션이 끝난 뒤
+       (`0s linear 0.16s`) 숨긴다. 룩은 그대로다 — opacity·transform 은 안 건드렸다. */
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
   }
-  .nav-profile.is-open > .nav-profile-menu { opacity: 1; visibility: visible; transform: none; }
+  .nav-profile.is-open > .nav-profile-menu {
+    opacity: 1; visibility: visible; transform: none;
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s;
+  }
   .nav-profile-id {
     display: flex; align-items: center; gap: 10px;
     padding: 9px 10px 11px; min-width: 0;
@@ -1676,6 +1687,15 @@
     function focusProfileItem(wrap, i) {
       var items = profileItems(wrap);
       if (!items.length) return;
+      // 메뉴는 **방금** `.is-open` 이 붙었을 수 있다. 그 상태에서 `focus()` 가 먹으려면
+      // 메뉴가 이미 `visibility: visible` 이어야 하고, 그것을 보장하는 것은 **CSS 쪽**이다
+      // (`.nav-profile-menu` 의 `transition ... visibility 0s` — 그 줄 주석에 실측이 있다).
+      //
+      // ⚠ 여기서 강제 리플로우(`void wrap.offsetHeight`)로 고치려 했으나 **원인이
+      // 아니었다.** 실측(2026-08-08): 리플로우를 강제한 뒤에도 computed visibility 가
+      // `hidden` 이었다 — 스타일은 재계산됐고 **그 값이 hidden 이었던 것**이다. 원인은
+      // discrete 속성의 transition 이었다. 리플로우를 빼고도 1280·390 두 폭이 전부
+      // 통과하는 것을 실측했으므로 넣지 않는다(근거 없이 남은 방어는 다음 사람을 오도한다).
       items[((i % items.length) + items.length) % items.length].focus();
     }
 
