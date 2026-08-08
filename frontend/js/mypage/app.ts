@@ -37,6 +37,8 @@ import { q, qa, mp, field, fields, setText, setShown, writeValue } from './dom.j
 
 import { currentUserId, readStoredChibiThumb, makeThumbDataUrl } from '../ui-chibi-store.js';
 import { getProfile as authGetProfile, onAuthChange, isMockMode, PROVIDERS } from '../auth.js';
+// 딥링크 문자열을 여기 적지 않는다 — `avatar-deeplink.ts` 가 SSOT 다(검수관 P2).
+import { buildAvatarDeepLink } from '../avatar-deeplink.js';
 
 /** 별명 검사 디바운스(ms). 타이핑 중 매 글자마다 저장소를 뒤지지 않는다. */
 const NICKNAME_DEBOUNCE = 220;
@@ -373,7 +375,7 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   // `back=mypage` 는 돌아올 길이다 — 저장하든 닫든 여기로 되돌아온다.
   on(mp(root, 'avatar-open'), 'click', () => {
     if (dirty && !window.confirm('저장하지 않은 변경이 있습니다. 이동할까요?')) return;
-    window.location.href = './index.html?avatar=1&back=mypage';
+    window.location.href = buildAvatarDeepLink('./index.html', 'mypage');
   });
 
   // 로그인 상태가 바뀌면 그 사용자의 프로필로 갈아탄다. 아바타가 이미 그렇게
