@@ -105,14 +105,63 @@ function escapesW3(fromFile: string, spec: string): string | null {
   return relative(W3, abs).startsWith('..') ? out : null;
 }
 
-const FILES = walk(W3);
-const W2_FILES = walk(W2);
+/**
+ * 진입점 파일. **트리 밖에 있지만 격리의 첫 관문이다.**
+ *
+ * ── ⚠️ 이것이 빠져 있었다 (검수관 블로커 B2, 2026-08-08) ────────────────────
+ * 처음에는 표본이 `walk(W3)` 뿐이었다. `world3-boot.ts` 는 `frontend/js/` **직속**
+ * 이라 `frontend/js/world3/` 하위를 훑는 `walk` 에 걸리지 않는다. 검수관이 `walk`
+ * 로직을 재현해 실측했다:
+ *
+ *     walk(W3) 표본 크기: 81
+ *     world3-boot.ts 가 표본에 포함되는가: false
+ *     world3.html 이 표본에 포함되는가: false
+ *
+ * 그래서 `world3-boot.ts` 에 `import { startWorld2 } from './world2/main.js'` 한
+ * 줄을 넣어도 **아래 단언이 전부 통과했다.** 역방향도 같았다 — `world2-boot.ts` 가
+ * world3 를 참조해도 표본 밖이다.
+ *
+ * executor 의 뮤테이션 7종이 "전부 탐지" 로 나온 것이 이 구멍을 가렸다. 뮤테이션이
+ * 전부 **트리 안에서** 이뤄졌기 때문이다 — 표본에 없는 파일은 뮤테이션 케이스로
+ * 떠오르지도 않는다. *"테스트 통과는 검출력의 증거가 아니다"* 가 그대로 적용된다.
+ *
+ * **개수로 세지 말고 이름으로 못 박는다**(검수관 명세 GS-5). 개수 단언은 다음
+ * 리팩터에서 또 조용히 빠진다.
+ */
+const W3_ENTRY = join(FRONTEND, 'js/world3-boot.ts');
+const W2_ENTRY = join(FRONTEND, 'js/world2-boot.ts');
+const W3_HTML = join(FRONTEND, 'world3.html');
+
+const FILES = [...walk(W3), W3_ENTRY];
+const W2_FILES = [...walk(W2), W2_ENTRY];
 
 describe('world3 는 world2 를 한 줄도 참조하지 않는다', () => {
   it('소스를 실제로 훑었다 — 표본이 비면 아래 단언이 전부 공허해진다', () => {
     // 이 저장소가 실제로 당한 형태다: 임계값이 안 맞아 표본이 빈 배열이 되고 **빈 평균
     // 0 이 단언을 통과**했다. 표본 크기부터 못 박는다. world3 는 포크 시점에 60여 파일.
     expect(FILES.length).toBeGreaterThan(50);
+  });
+
+  it('**표본이 진입점을 포함한다** — 격리의 첫 관문이 게이트 밖이었다', () => {
+    // 개수가 아니라 **이름**으로 못 박는다(검수관 GS-5). 개수 단언은 리팩터에서
+    // 조용히 빠지고, 실제로 빠져 있었다 — 위 `W3_ENTRY` 주석 참고.
+    expect(FILES, 'world3-boot.ts 가 표본 밖이다').toContain(W3_ENTRY);
+    expect(W2_FILES, 'world2-boot.ts 가 역방향 표본 밖이다').toContain(W2_ENTRY);
+    // 진입점이 실재하지 않으면 위 `toContain` 은 통과하면서 아무 파일도 안 읽는다.
+    expect(existsSync(W3_ENTRY), 'world3-boot.ts 없음').toBe(true);
+    expect(existsSync(W2_ENTRY), 'world2-boot.ts 없음').toBe(true);
+  });
+
+  it('HTML 이 world3 트리 밖 스크립트를 불러오지 않는다', () => {
+    // 파일 참조는 JS import 만으로 새지 않는다. `world3.html` 이 `world2-boot.js` 를
+    // 가리키면 트리는 완벽히 격리돼 있는데 **페이지는 world2 를 띄운다** — 그리고
+    // 위 검사들은 전부 초록이다. 진입은 HTML 에서 시작하므로 여기도 본다.
+    const html = readFileSync(W3_HTML, 'utf8');
+    const srcs = [...html.matchAll(/<script[^>]*\ssrc=["']([^"']+)["']/g)].map((m) => m[1]);
+    expect(srcs.length, '스크립트 태그가 하나도 없다 — 표본이 비면 아래가 공허하다')
+      .toBeGreaterThan(0);
+    const stray = srcs.filter((s) => !/(^|\/)world3-boot\.js$/.test(s));
+    expect(stray, `world3.html 이 world3 밖 스크립트를 부른다`).toEqual([]);
   });
 
   it('`world2/` 로 향하는 import 가 0 이다 — 포크의 존재 이유', () => {

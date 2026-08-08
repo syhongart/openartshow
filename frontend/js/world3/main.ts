@@ -341,8 +341,21 @@ export async function startWorld3(canvas: HTMLCanvasElement): Promise<WorldHandl
    *
    * 초기값은 URL 이다. `readEnum` 이 목록 밖 값을 걸러 주므로 팔레트 조회가 `undefined`
    * 가 되는 일이 없다.
+   *
+   * ── 기본값을 `night` → `day` 로 바꿨다 (2026-08-08 포근마을) ───────────────
+   * world2 는 밤 룩을 개발 중이라 밤이 기본이었고, 포크가 그것을 그대로 물려받았다.
+   * 마을에서는 **틀린 기본값**이다. 이유 둘:
+   *
+   *   ① 이 세계의 본체가 파스텔 낮이다. 밤에 열면 파스텔 팔레트·잔디·지붕색이
+   *      거의 안 보이고, 감독이 링크를 눌렀을 때 보는 첫 화면이 바로 그 화면이다.
+   *   ② **밤 팔레트는 일부러 안 건드렸다.** `decide/night.ts` 에 `sky.js` 미러링이
+   *      남아 있어 그것을 먼저 정리하는 것이 순서라고 판정했다(`world3/sky.js` 의
+   *      `night` 블록 주석). 즉 지금 밤은 **마을 톤이 아직 안 온 상태**다 —
+   *      기본값으로 둘 이유가 없다.
+   *
+   * `?time=night` 로 여전히 볼 수 있다. 기본값을 옮기는 것이지 밤을 없애는 것이 아니다.
    */
-  let timeOfDay: SkyTime = readEnum('time', 'night', TIMES);
+  let timeOfDay: SkyTime = readEnum('time', 'day', TIMES);
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;

@@ -156,6 +156,14 @@ export function createVillageBgm(): VillageBgm {
   }
 
   async function start(): Promise<void> {
+    // ── 재진입 가드 (검수관 권고 P2) ──────────────────────────────────────
+    // `on = true` 는 `await ctx.resume()` **뒤**에 설정된다. 그 대기 중에 두 번째
+    // 클릭이 오면 `toggle()` 의 `if (on)` 이 아직 false 라 `start()` 가 두 번
+    // 들어오고, 아래 `setInterval` 이 `timer` 를 덮어쓴다 — **첫 interval 은 핸들을
+    // 잃어 영영 `clearInterval` 할 수 없다.** 소리를 꺼도 스케줄러가 계속 도는 셈이다.
+    //
+    // `timer` 로 가드하는 이유: `on` 은 resume 뒤에 서므로 경합 구간을 못 덮는다.
+    if (timer !== null) return;
     if (!ctx) {
       // 사파리는 접두사 붙은 이름만 가진 판본이 남아 있다. 없으면 조용히 포기한다 —
       // 소리는 곁들임이라 없다고 페이지가 못 돌 이유가 없다.
@@ -170,6 +178,14 @@ export function createVillageBgm(): VillageBgm {
     }
     // 제스처 안에서 부르지 않으면 `suspended` 로 남는다. 켤 때마다 깨운다.
     if (ctx.state === 'suspended') await ctx.resume();
+    // ── 과거로 밀린 커서를 끌어올린다 (검수관 권고 P1) ────────────────────
+    // `scheduledTo` 는 컨텍스트를 처음 만들 때만 초기화되고 `stop()` 은 건드리지
+    // 않는다. 껐다가 T초 뒤 켜면 `pump()` 의 `while (scheduledTo < currentTime +
+    // LOOKAHEAD)` 가 **그 T초 동안의 마디를 한꺼번에** 스케줄한다 — 마디당 노드가
+    // 약 11개이므로 10분 방치 후 재생이면 3,000개 넘는 노드를 한 프레임에 만든다.
+    // 시각이 과거라 **소리는 안 나는데** 3D 를 그리는 메인 스레드만 멈춘다. 증상이
+    // 소리 쪽에 안 나타나서 원인을 짚기 어려운 형태다.
+    scheduledTo = Math.max(scheduledTo, ctx.currentTime + 0.08);
     on = true;
     // 갑자기 튀어나오지 않게 0.6초 페이드인.
     master!.gain.cancelScheduledValues(ctx.currentTime);

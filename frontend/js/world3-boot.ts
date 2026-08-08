@@ -16,6 +16,13 @@ import { createVillageBgm } from './world3/audio/village-bgm.js';
 const bgmBtn = document.getElementById('w3-bgm');
 if (bgmBtn instanceof HTMLButtonElement) {
   const bgm = createVillageBgm();
+  // 정리 경로를 실제로 잇는다 (검수관 권고 P3). 언로드가 어차피 다 걷어가므로 실해는
+  // 없지만, `dispose()` 가 인터페이스에 있는데 **부르는 데가 하나도 없으면** 다음
+  // 사람이 "정리 경로가 있다" 로 읽는다 — 죽은 허가와 같은 형태다.
+  //
+  // `unload` 가 아니라 `pagehide` 다. 모바일 사파리는 탭을 백그라운드로 보낼 때
+  // `unload` 를 안 부르는 경우가 있고, 감독은 모바일에서 보신다.
+  window.addEventListener('pagehide', () => bgm.dispose(), { once: true });
   bgmBtn.addEventListener('click', () => {
     // `toggle()` 은 제스처 안에서 불려야 `AudioContext.resume()` 이 허용된다 —
     // 클릭 핸들러 안에서 `await` 앞에 두는 것이 그 조건이다.
