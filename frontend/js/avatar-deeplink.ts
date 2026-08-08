@@ -51,6 +51,12 @@ export function resolveBackTarget(key: string | null | undefined): string | null
   const target = BACK_TARGETS.get(key);
   // 형태 단언 — 화이트리스트에 나중에 외부 URL 이 들어오는 것까지 막는다(검수관 G-E).
   // 값을 추가하는 사람이 이 줄을 보고 "상대 경로여야 하는구나" 를 알게 된다.
+  //
+  // ⚠ **이것은 중복 방어다** (검수관 P-d, 실측). 이 줄을 지워도 테스트는 안 깨진다 —
+  // 목적(외부 URL 유입 차단)을 `tests/avatar-deeplink.test.ts` 의
+  // 「등록된 값은 전부 상대 경로다」가 **화이트리스트 값을 직접 훑어** 이미 강제하기
+  // 때문이다. 안 깨지는 것이 정상이고 장식이라는 뜻이 아니다 — 그쪽 축이 사라지는 날
+  // 이 줄이 유일한 방어가 된다.
   if (!target || !target.startsWith('./')) return null;
   return target;
 }
@@ -103,6 +109,13 @@ export function readAvatarDeepLink(search: string): DeepLinkIntent {
  * **다른 파라미터는 반드시 보존한다.** `?g=`(갤러리 전환)·`?debug=perf` 가 살아 있어야
  * 한다. "전부 지우기" 로 만들면 그 기능들이 조용히 깨지고, 그것을 잡는 단언이 없으면
  * 아무도 모른다(검수관이 보존 단언을 필수로 걸라고 명세한 이유다).
+ *
+ * ⚠ **"보존" 은 바이트 동일이 아니다** (검수관 P-g). `URLSearchParams.toString()` 이
+ * 살아남는 값을 재인코딩한다 — `?t=a%20b` 는 `?t=a+b` 로 나온다. 쿼리 문자열로서
+ * 의미는 같고(둘 다 공백) 딥링크가 있을 때만 일어나지만, 바이트 비교로 검사하는
+ * 소비자가 생기면 그때는 다른 값이다.
+ *
+ * hash 는 여기서 다루지 않는다 — 호출자가 붙인다(`?avatar=1#gd=...` 의 공유 갤러리).
  */
 export function stripDeepLinkParams(search: string): string {
   const params = new URLSearchParams(search || '');
