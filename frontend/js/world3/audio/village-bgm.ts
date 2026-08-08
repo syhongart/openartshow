@@ -115,6 +115,11 @@ export function createVillageBgm(): VillageBgm {
   /** 다음으로 예약을 마친 시각(ctx 시간). 여기까지는 이미 스케줄돼 있다 */
   let scheduledTo = 0;
   let on = false;
+  /**
+   * **`await` 앞에서 서는 동기 가드.** `on` 도 `timer` 도 `await ctx.resume()` 뒤에
+   * 설정되므로 그 대기 구간을 못 덮는다 — `start()` 주석 참고.
+   */
+  let starting = false;
 
   /**
    * **미리 예약하고 타이머로 따라간다.** `setInterval` 로 그때그때 소리를 내면 메인
@@ -156,14 +161,33 @@ export function createVillageBgm(): VillageBgm {
   }
 
   async function start(): Promise<void> {
-    // ── 재진입 가드 (검수관 권고 P2) ──────────────────────────────────────
-    // `on = true` 는 `await ctx.resume()` **뒤**에 설정된다. 그 대기 중에 두 번째
-    // 클릭이 오면 `toggle()` 의 `if (on)` 이 아직 false 라 `start()` 가 두 번
-    // 들어오고, 아래 `setInterval` 이 `timer` 를 덮어쓴다 — **첫 interval 은 핸들을
-    // 잃어 영영 `clearInterval` 할 수 없다.** 소리를 꺼도 스케줄러가 계속 도는 셈이다.
+    // ── 재진입 가드 (검수관 권고 P2, 처방 두 번째) ────────────────────────
+    // 두 번째 클릭이 `await ctx.resume()` 대기 중에 들어오면 `start()` 가 두 번
+    // 실행되고, 아래 `setInterval` 이 `timer` 를 덮어쓴다 — **첫 interval 은 핸들을
+    // 잃어 영영 `clearInterval` 할 수 없다.** 소리를 꺼도 스케줄러가 계속 돈다.
     //
-    // `timer` 로 가드하는 이유: `on` 은 resume 뒤에 서므로 경합 구간을 못 덮는다.
-    if (timer !== null) return;
+    // ⚠️ **첫 처방이 틀렸다** (검수관 조건 ②, 2026-08-08). `if (timer !== null)` 로
+    // 막고 그 옆에 *"`on` 은 resume 뒤에 서므로 경합 구간을 못 덮는다"* 라고 근거를
+    // 적었는데, **`timer` 도 정확히 같은 자리에 선다** — 설정이 `await` 뒤(`:195`)라
+    // 대기 중에는 여전히 `null` 이고 가드를 그대로 통과한다. 막았다고 적어 놓고
+    // 같은 축을 안 막은 것이고, 이번 회차의 블로커 B1 과 **똑같은 형태**다.
+    //
+    // 가드는 `await` **앞에서 동기적으로** 서야 한다. 그것이 `starting` 이다.
+    //
+    // (완화 요인이 있어 실해는 작았다 — `stop()` 이 컨텍스트를 suspend 하지 않으므로
+    //  재시작 경로에서는 `state === 'running'` 이라 `await` 이 실행되지 않고 `start()`
+    //  가 동기 완주한다. 위험은 **첫 켜기 더블탭** 한정이었다. 그래도 고친다:
+    //  근거가 성립하지 않는 주석을 남기는 것이 이 저장소가 반복해 데인 실패다.)
+    if (on || starting) return;
+    starting = true;
+    try {
+      await startInner();
+    } finally {
+      starting = false;
+    }
+  }
+
+  async function startInner(): Promise<void> {
     if (!ctx) {
       // 사파리는 접두사 붙은 이름만 가진 판본이 남아 있다. 없으면 조용히 포기한다 —
       // 소리는 곁들임이라 없다고 페이지가 못 돌 이유가 없다.
