@@ -1400,49 +1400,83 @@
   (function () {
     "use strict";
 
+    // ── 모바일 햄버거를 **가장 먼저** 배선한다 ────────────────────────────────
+    // 이 블록은 원래 이 스크립트 맨 아래에 있었고, 그래서 위쪽 어디서든 예외가 나면
+    // 통째로 실행되지 않았다. 실제로 그렇게 났다(2026-08-08, 감독 실기기):
+    // 로그인 상태에서 `renderNav()` 가 `escapeHtml is not defined` 로 죽었고,
+    // **메뉴가 열리지 않아 모바일에서 사이트를 돌아다닐 수 없었다.**
+    //
+    // 원인(스코프)은 아래에서 없앴지만 순서도 같이 고친다 — 내비게이션은 이 페이지의
+    // **탈출로**다. 프로필 표시나 CTA 같은 장식이 실패해도 살아 있어야 한다.
+    var burger = document.getElementById('navBurger');
+    var sheet = document.getElementById('navSheet');
+    function closeSheet() {
+      if (!sheet || !burger) return;
+      sheet.classList.remove('is-open');
+      burger.setAttribute('aria-expanded', 'false');
+    }
+    if (burger && sheet) {
+      burger.addEventListener('click', function () {
+        var open = !sheet.classList.contains('is-open');
+        sheet.classList.toggle('is-open', open);
+        burger.setAttribute('aria-expanded', String(open));
+      });
+      Array.prototype.forEach.call(sheet.querySelectorAll('a'), function (a) {
+        a.addEventListener('click', closeSheet);
+      });
+    }
+
     var navAuth = document.getElementById('navAuth');
     var nsAuth = document.getElementById('nsAuth');
 
-    function authButtonsHTML() {
-      return '<button class="nav-auth-link" type="button" data-auth-mode="login">로그인</button>' +
-        '<span class="nav-auth-sep"></span>' +
-        '<button class="nav-auth-link" type="button" data-auth-mode="signup">회원가입</button>';
+    /**
+     * 요소 하나. **문자열 HTML 을 쓰지 않는다** — 이 스크립트가 죽은 원인이 그것이었다.
+     * `escapeHtml` 은 위쪽 IIFE(`<script>` 1093줄) 안에 갇혀 있어 이 모듈에서 보이지 않는데,
+     * 프로필 이름을 문자열로 이어 붙이느라 그 함수를 불렀다. **로그인했을 때만** 그 가지를
+     * 타므로 로그아웃으로만 페이지를 여는 스모크·verify-live 가 전부 통과했다.
+     * `textContent` 로 넣으면 이스케이프가 애초에 필요 없다 — XSS 축도 같이 닫힌다.
+     */
+    function el(tag, cls, text) {
+      var n = document.createElement(tag);
+      if (cls) n.className = cls;
+      if (text != null) n.textContent = text;
+      return n;
     }
-    function wireAuthButtons(container, onOpen) {
-      Array.prototype.forEach.call(container.querySelectorAll('[data-auth-mode]'), function (b) {
+    /** 로그인/회원가입 두 버튼을 채운다(리스너까지). */
+    function fillAuthButtons(container, onOpen) {
+      container.textContent = '';
+      [['login', '로그인'], ['signup', '회원가입']].forEach(function (pair, i) {
+        if (i) container.appendChild(el('span', 'nav-auth-sep'));
+        var b = el('button', 'nav-auth-link', pair[1]);
+        b.type = 'button';
         b.addEventListener('click', function () {
           if (onOpen) onOpen();
-          openAuthModal({ mode: b.getAttribute('data-auth-mode') });
+          openAuthModal({ mode: pair[0] });
         });
+        container.appendChild(b);
       });
+    }
+    /** 프로필 + 로그아웃을 채운다. `withSep` 는 상단 내비만 쓰는 구분선. */
+    function fillProfile(container, p, withSep) {
+      container.textContent = '';
+      var wrap = el('span', 'nav-auth-profile');
+      wrap.appendChild(el('span', 'ini', p.initial || ''));
+      wrap.appendChild(document.createTextNode((p.name || '') + '님'));
+      container.appendChild(wrap);
+      if (withSep) container.appendChild(el('span', 'nav-auth-sep'));
+      var out = el('button', 'nav-auth-link', '로그아웃');
+      out.type = 'button';
+      out.addEventListener('click', function () { logout(); });
+      container.appendChild(out);
     }
 
     function renderNav() {
       var p = getProfile();
-
       if (nsAuth) {
-        nsAuth.innerHTML = p
-          ? '<span class="nav-auth-profile"><span class="ini">' + escapeHtml(p.initial) + '</span>' + escapeHtml(p.name) + '님</span>' +
-            '<button class="nav-auth-link" type="button" id="nsLogout">로그아웃</button>'
-          : authButtonsHTML();
-        if (p) {
-          nsAuth.querySelector('#nsLogout').addEventListener('click', function () { logout(); });
-        } else {
-          wireAuthButtons(nsAuth, closeSheet);
-        }
+        if (p) fillProfile(nsAuth, p, false); else fillAuthButtons(nsAuth, closeSheet);
       }
-
       if (navAuth) {
-        navAuth.innerHTML = p
-          ? '<span class="nav-auth-profile"><span class="ini">' + escapeHtml(p.initial) + '</span>' + escapeHtml(p.name) + '님</span>' +
-            '<span class="nav-auth-sep"></span>' +
-            '<button class="nav-auth-link" type="button" id="navLogout">로그아웃</button>'
-          : authButtonsHTML();
-        if (p) {
-          navAuth.querySelector('#navLogout').addEventListener('click', function () { logout(); });
-        } else {
-          wireAuthButtons(navAuth);
-        }
+        if (p) fillProfile(navAuth, p, true); else fillAuthButtons(navAuth);
       }
     }
 
@@ -1450,30 +1484,18 @@
     renderNav();
 
     // 상단 입장하기 CTA — 히어로 CTA가 화면에서 사라진 뒤에만 노출 (중복 방지)
+    // `navCta` 가 없으면 스크롤 동기화를 아예 걸지 않는다. 예전에는 null 이어도 그대로
+    // `.classList` 를 만져서, 마크업이 바뀌면 **매 스크롤마다** 예외가 났을 자리였다.
     var navCta = document.querySelector('.topnav .nav-cta');
     var hero = document.querySelector('.hero');
-    function syncNavCta() {
-      var passed = window.scrollY > (hero ? hero.offsetHeight * 0.6 : 400);
-      navCta.classList.toggle('is-shown', passed);
+    if (navCta) {
+      var syncNavCta = function () {
+        var passed = window.scrollY > (hero ? hero.offsetHeight * 0.6 : 400);
+        navCta.classList.toggle('is-shown', passed);
+      };
+      window.addEventListener('scroll', syncNavCta, { passive: true });
+      syncNavCta();
     }
-    window.addEventListener('scroll', syncNavCta, { passive: true });
-    syncNavCta();
-
-    // 모바일 햄버거
-    var burger = document.getElementById('navBurger');
-    var sheet = document.getElementById('navSheet');
-    function closeSheet() {
-      sheet.classList.remove('is-open');
-      burger.setAttribute('aria-expanded', 'false');
-    }
-    burger.addEventListener('click', function () {
-      var open = !sheet.classList.contains('is-open');
-      sheet.classList.toggle('is-open', open);
-      burger.setAttribute('aria-expanded', String(open));
-    });
-    Array.prototype.forEach.call(sheet.querySelectorAll('a'), function (a) {
-      a.addEventListener('click', closeSheet);
-    });
   })();
 </script>
 </body>
