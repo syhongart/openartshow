@@ -27,6 +27,12 @@ import {
   checkNickname,
   nicknameKey,
 } from './nickname.js';
+import { NICKNAME_INDEX_KEY, PROFILE_PREFIX } from './profile-storage.js';
+
+// 로그아웃 정리는 leaf 에 있다. 여기서 **재수출**하는 이유는 소비자 경로를 바꾸지 않기
+// 위해서다 — 다만 `auth.js` 는 이 배럴이 아니라 leaf 를 직접 import 해야 번들이 갈린다
+// (재수출을 거치면 이 모듈이 그래프에 다시 들어온다).
+export { clearProfilesOnLogout } from './profile-storage.js';
 
 export type SaveErrorCode = 'quota' | 'unavailable' | 'nickname' | 'unknown';
 
@@ -73,10 +79,10 @@ export interface ProfileStore {
 // `ui-chibi-store.ts` 의 `currentUserId()` 가 만드는 것과 **같은 문자열**이어야 한다 —
 // 프로필과 아바타가 같은 사용자에 붙어야 하므로. 그 함수를 여기서 다시 구현하지 않고
 // 호출자가 넘긴다(순환 import 회피 + 값 미러링 회피).
-
-const PROFILE_PREFIX = 'lu-profile::';
-/** 이 기기가 아는 별명 예약. `{ [nicknameKey]: uid }` */
-const NICKNAME_INDEX_KEY = 'lu-profile-nicknames-v1';
+//
+// 키 **값**은 leaf(`profile-storage.ts`)가 갖는다 — `auth.js` 가 로그아웃 정리를 위해
+// 이 파일을 import 하자 프로필 스키마·링크 플랫폼 표가 **랜딩·미술관 번들**에 실렸다
+// (검수관 P1 실측: auth 청크 1,186 B → 12,586 B). 값은 한 곳뿐이므로 SSOT 는 그대로다.
 
 function profileKey(uid: string): string {
   return PROFILE_PREFIX + uid;
@@ -228,6 +234,7 @@ export class LocalProfileStore implements ProfileStore {
     if (changed) writeIndex(index);
   }
 }
+
 
 /**
  * 저장소에서 프로필을 읽되, 없으면 빈 프로필을 만든다. 화면은 `null` 을 다룰 필요가 없다.

@@ -53,14 +53,15 @@ describe('진입점 SSOT', () => {
     // 그러니 이 배열을 고칠 때는 **`CLAUDE.md` 의 behind-flag 문장도 같이 고친다.**
     // 여기만 고치면 검사는 초록이 되고 산문은 계속 틀린 채로 남는다.
     //
-    // 2026-08-08 `mypage.html` 추가 — 감독 지시로 착수한 마이페이지. 링크가 0 인 이유는
-    // 미완이어서가 아니라 로그인이 아직 mock 이기 때문이다(docs/MYPAGE-PLAN.md §3).
+    // 2026-08-08 `mypage.html` 은 여기 있다가 **라이브로 승격**돼 빠졌다(감독 지시 —
+    // 랜딩 프로필 메뉴가 링크한다). 승격하는 순간 이 배열과 아래 GS-3 이 함께 빨간불이
+    // 됐다 — 그것이 이 두 검사의 존재 이유이고, 설계대로 동작한 실물 사례다.
     //
     // 2026-08-08 `world3.html` 추가 — world2 의 포크(포근마을). 감독 지시로 착수했고
     // 라이브 노출은 감독·팀장 게이트다.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
     expect(flagged).toEqual([
-      'lab-glb.html', 'mypage.html', 'visit.html', 'world2.html', 'world3.html',
+      'lab-glb.html', 'visit.html', 'world2.html', 'world3.html',
     ]);
   });
 

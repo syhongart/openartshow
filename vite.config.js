@@ -18,7 +18,6 @@
 import { defineConfig } from 'vite';
 import { resolve, dirname } from 'node:path';
 import { copyFileSync, mkdirSync, cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 // 배포 서브패스의 정의는 `scripts/site-url.mjs` 한 곳이다(검수관 B3). 여기 값을 따로
 // 적으면 도메인·저장소명을 옮길 때 한쪽만 고쳐도 아무도 모른다.
 import { BASE_PATH } from './scripts/site-url.mjs';
@@ -27,6 +26,9 @@ import { BASE_PATH } from './scripts/site-url.mjs';
 // `// behind-flag` 로 남아 있던 사고가 그것이었다.
 // `htmlRename` 은 아래에 **플러그인 함수**로 이미 있다(이름 충돌) — 맵 쪽을 개명해 받는다.
 import { viteInput, htmlRename as entryRenameMap } from './scripts/lib/entrypoints.mjs';
+// 인라인 script 의 CSP sha256 **계산 규약**의 SSOT. `tests/csp-inline-pins.test.ts` 가
+// 같은 모듈로 소스 HTML 을 검사하므로, 빌드가 쓰는 규약과 검사가 보는 규약이 갈리지 않는다.
+import { inlineExecScripts } from './scripts/lib/csp-inline.mjs';
 
 const r = (p) => resolve(import.meta.dirname, p);
 
@@ -64,8 +66,6 @@ export function tsJsFallback() {
 // 같은 곳에 있어야 검증 등급 판정기가 읽을 수 있고, 두 곳에 적으면 어긋난다.
 const HTML_RENAME = entryRenameMap();
 
-// 인라인 실행 script 타입(CSP script-src 해시 대상). ld+json·importmap 은 비실행.
-const EXEC_TYPES = new Set(['', 'module', 'text/javascript', 'application/javascript']);
 
 // ── 플러그인1: 자기완결(기존 b2a 보강) ──────────────────────────────
 //  (1) 산출 HTML 의 인라인 importmap 제거: three 는 bare specifier 로 이미 번들 해소.
@@ -129,23 +129,11 @@ function reconcileHtmlCsp(filePath) {
   html = html.replace(/[ \t]*<script type="importmap">[\s\S]*?<\/script>\n?/g, '');
 
   // 남은 인라인 실행 script 의 sha256 실측(최종 HTML 의 raw body 기준).
-  // ⚠️ HTML 주석 안의 `<script>` 텍스트(예: CSP 설명 주석)가 정규식 매치를 오염시키면
-  //    body 경계가 어긋나 브라우저 실제 해시와 불일치한다. 브라우저는 주석 안 script 를
-  //    무시하므로, 해시 스캔은 "주석 제거본"에서 한다(파일 자체는 주석 유지).
-  const scan = html.replace(/<!--[\s\S]*?-->/g, '');
-  const hashes = new Set();
-  const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = scriptRe.exec(scan)) !== null) {
-    const attrs = m[1];
-    const body = m[2];
-    if (/\bsrc\s*=/i.test(attrs)) continue; // 외부 참조 script 는 해시 불필요
-    const typeM = attrs.match(/\btype\s*=\s*["']?([^"'\s>]+)/i);
-    const type = typeM ? typeM[1].toLowerCase() : '';
-    if (!EXEC_TYPES.has(type)) continue; // ld+json·importmap 등 비실행
-    const h = createHash('sha256').update(body, 'utf8').digest('base64');
-    hashes.add(`'sha256-${h}'`);
-  }
+  // 계산 규약(주석 제거본에서 스캔 · 실행 type 판정 · body 원문 해시)은
+  // `scripts/lib/csp-inline.mjs` **한 곳**이다. 여기에 다시 적으면 그것이 곧 값 미러링이고,
+  // 규약이 미묘하게 갈리면 **"빌드는 통과했는데 검사가 빨간불"**(또는 그 반대)이 성립한다 —
+  // 소스 핀이 세 파일에서 어긋난 채 아무도 모르고 있던 것을 그 모듈 주석에 적어 뒀다.
+  const hashes = new Set(inlineExecScripts(html).map((s) => s.hash));
 
   // CSP meta 의 script-src 만 재작성(다른 디렉티브 보존).
   html = html.replace(

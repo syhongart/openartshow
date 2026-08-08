@@ -13,7 +13,7 @@
 // "가끔 깨지는 테스트" 로 취급돼 결국 아무도 안 본다.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LocalProfileStore, loadOrCreate } from '../frontend/js/mypage/store.js';
+import { LocalProfileStore, loadOrCreate, clearProfilesOnLogout } from '../frontend/js/mypage/store.js';
 import { emptyProfile, type Profile } from '../frontend/js/mypage/schema.js';
 
 let clock = 1_000;
@@ -178,5 +178,73 @@ describe('loadOrCreate', () => {
     const s = store();
     await s.save('u1', profile({ nickname: 'arthong' }));
     expect((await loadOrCreate(s, 'u1')).nickname).toBe('arthong');
+  });
+});
+
+// ── 로그아웃 시 프로필 정리 (검수관 P5 · 라이브 승격 선결 조건) ────────────
+// 마이페이지가 홈에서 링크로 접근 가능해지면서 성질이 달라진 자리다. 신원이 아직
+// mock 이라 사용자 식별자가 **자칭 문자열**이고, 공용 PC 에서 뒷사람이 같은 이름을
+// 자칭하면 앞사람의 프로필 사진·활동 지역을 그대로 본다.
+describe('clearProfilesOnLogout', () => {
+  it('**이 기기의 프로필을 전부 지운다** — 사용자 하나가 아니라 전부', async () => {
+    const s = store();
+    await s.save('google:A', profile({ nickname: 'aaa' }));
+    await s.save('guest', profile({ nickname: 'bbb' }));
+    expect(await s.load('google:A')).not.toBe(null);
+
+    clearProfilesOnLogout();
+
+    // 로그아웃하는 사람만 지우면 안 된다 — 앞사람이 로그아웃 없이 떠났을 수도 있고,
+    // 지금 로그아웃하는 사람은 그것을 모른다.
+    expect(await s.load('google:A')).toBe(null);
+    expect(await s.load('guest')).toBe(null);
+  });
+
+  it('별명 예약도 함께 푼다 — 안 그러면 지워진 프로필의 별명이 계속 막는다', async () => {
+    const s = store();
+    await s.save('google:A', profile({ nickname: 'arthong' }));
+    expect((await s.checkNickname('arthong', 'guest')).code).toBe('taken');
+
+    clearProfilesOnLogout();
+    expect((await s.checkNickname('arthong', 'guest')).ok).toBe(true);
+  });
+
+  it('**아바타는 건드리지 않는다** — 이 함수가 고치는 문제가 아니다', async () => {
+    // 아야모는 이 변경 이전부터 있던 성질이고, 지우면 로그아웃한 사람이 꾸며 둔
+    // 캐릭터를 잃는다.
+    localStorage.setItem('lu-chibi-look::google:A', '{"hair":"bob"}');
+    await store().save('google:A', profile());
+
+    clearProfilesOnLogout();
+    expect(localStorage.getItem('lu-chibi-look::google:A')).toBe('{"hair":"bob"}');
+  });
+
+  it('저장소가 막혀 있어도 던지지 않는다 — 로그아웃 자체를 막지 않는다', () => {
+    const original = Storage.prototype.removeItem;
+    Storage.prototype.removeItem = () => { throw new Error('blocked'); };
+    try {
+      expect(() => clearProfilesOnLogout()).not.toThrow();
+    } finally {
+      Storage.prototype.removeItem = original;
+    }
+  });
+});
+
+// ── auth.logout() 이 실제로 부르는가 — 경계를 건너는 지점 ──────────────────
+// 함수가 있다는 것과 그것이 불린다는 것은 다른 일이다. 이 저장소가 이름 붙인
+// *"계산된 값이 실제로 소비되는가"* 의 구멍이 정확히 여기 생길 수 있다.
+describe('auth.logout() 이 프로필을 정리한다', () => {
+  it('**로그아웃하면 프로필이 남지 않는다**', async () => {
+    const { loginWith, logout } = await import('../frontend/js/auth.js');
+    await loginWith('google');
+
+    const s = store();
+    await s.save('google:아트러버', profile({ nickname: 'arthong' }));
+    expect(await s.load('google:아트러버')).not.toBe(null);
+
+    logout();
+
+    // 이 단언이 깨지면 공용 PC 에서 뒷사람이 앞사람 프로필을 본다.
+    expect(await s.load('google:아트러버')).toBe(null);
   });
 });

@@ -54,6 +54,19 @@ export const ENTRYPOINTS = [
   { key: 'world', src: 'world.html', out: 'app/world.html', exposure: 'live' },
   // 라이브다 — `studio.html` 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다.
   { key: 'builder', src: 'builder.html', out: 'app/builder.html', exposure: 'live' },
+  // ── 마이페이지 — 2026-08-08 라이브 승격 ─────────────────────────────────
+  // 감독 지시: *"홈화면에 개인 프로필 사진을 누르면 서브메뉴가 나와서 개인 프로필
+  // 항목이 나오고 그것을 클릭하면 개인 프로필 편집하는 창으로 이동하게 해줘."*
+  // 랜딩(`landing.html`)의 프로필 메뉴가 링크한다.
+  //
+  // ⚠ **승격 시점에 무엇을 확인했나** (검수관 P5 가 선결 조건으로 걸어 둔 것):
+  //   · `auth.logout()` 이 `lu-profile::` 를 **지우게 했다**(`clearProfilesOnLogout`).
+  //     그전에는 안 지웠고, 신원이 mock 이라 공용 PC 에서 뒷사람이 같은 이름을
+  //     자칭하면 앞사람의 **프로필 사진·활동 지역**을 그대로 봤다.
+  //   · **그러나 신원 위조 자체는 여전히 못 막는다.** 로그아웃을 거치지 않고 브라우저를
+  //     닫으면 저장이 남는다. 근본 해소는 실제 OAuth 다 — `docs/MYPAGE-PLAN.md` §3,
+  //     백로그 `G-MP1`. **이 페이지가 라이브라는 것이 그 조건이 해소됐다는 뜻이 아니다.**
+  { key: 'mypage', src: 'mypage.html', out: 'app/mypage.html', exposure: 'live' },
 
   // ── behind-flag ─────────────────────────────────────────────────────────
   { key: 'visit', src: 'visit.html', out: 'app/visit.html', exposure: 'flagged' },
@@ -67,22 +80,6 @@ export const ENTRYPOINTS = [
   // `tests/world3-independence.test.ts` 가 지킨다 — 포크의 존재 이유가 격리이므로
   // 그것을 산문이 아니라 검사로 둔다(팀장 조건 2).
   { key: 'world3', src: 'world3.html', out: 'app/world3.html', exposure: 'flagged' },
-  // 마이페이지(프로필 편집 + 공개 프로필 미리보기). 감독 지시 2026-08-08 로 착수했고,
-  // 라이브 노출은 감독·팀장 게이트다. 지금 링크가 0 인 이유는 미완이어서가 아니라
-  // **로그인이 아직 mock 이기 때문**이다 — 사용자 신원이 자칭 문자열인 동안에는 별명
-  // 소유권이 성립하지 않아 "내 프로필" 이라는 말이 절반만 참이다(docs/MYPAGE-PLAN.md §3).
-  //
-  // ⚠ **`'live'` 로 바꾸기 전에 반드시 볼 것** (검수관 P5, 2026-08-08).
-  // 신원만 mock 인 게 아니라 **담기는 것도 달라졌다.** 이 페이지는 얼굴 사진일 수 있는
-  // dataURL·활동 지역·전시 이력을 `lu-profile::<uid>` 에 넣는데,
-  //   · `uid` 는 `ui-chibi-store.currentUserId()` 의 `provider:name` — **자칭 문자열**이다
-  //   · `auth.logout()` 은 `lu-profile::` 를 **지우지 않는다**
-  // 공용 PC 에서 뒷사람이 같은 이름을 자칭하면 앞사람의 프로필을 그대로 본다.
-  // 아바타에도 같은 성질이 있지만 담기는 것이 다르다 — **mock 신원 위에 개인식별정보를
-  // 얹은 것은 마이페이지가 처음이다.** behind-flag 인 동안은 문제가 아니고,
-  // 라이브 승격의 **선결 조건**이다(실제 OAuth + 로그아웃 시 프로필 정리).
-  // 전문은 `docs/MYPAGE-PLAN.md` §3, 백로그 항목은 `G-MP1`.
-  { key: 'mypage', src: 'mypage.html', out: 'app/mypage.html', exposure: 'flagged' },
 ];
 
 /** 링크되어 방문자가 도달하는 진입점 */
