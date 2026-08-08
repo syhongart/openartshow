@@ -242,7 +242,8 @@ function buildLobby() {
     text: '작가 스튜디오에서 나만의 전시 만들기 →',
   });
 
-  // 입장 폼(닉네임·캐릭터·소셜) — 재방문자에겐 접어두고 '바꾸기'로 펼친다 (A: 재방문 스마트 입장)
+  // 입장 폼(닉네임·캐릭터·소셜) — 재방문자에겐 접어두고 '캐릭터 꾸미기'로 펼친다
+  // (A: 재방문 스마트 입장). 그 버튼은 펼치는 동시에 편집기를 연다 — `buildQuickEnter` 참조.
   const formWrap = el('div', { className: 'lu-lobby-form' }, [
     nickLabel, nickInput, nickHint,
     charLabel, designBtn,
@@ -264,11 +265,21 @@ function buildLobby() {
     ]);
     const goBtn = el('button', { className: 'lu-quick-btn', type: 'button', text: '바로 입장' });
     goBtn.addEventListener('click', submit);
-    const changeBtn = el('button', { className: 'lu-quick-change', type: 'button', text: '닉네임·캐릭터 바꾸기' });
+    // 감독 지시 2026-08-08: *"닉네임 캐릭터 바꾸기에서 캬릭터 꾸미기로 바꾸고. 바로
+    // 편집창으로 이동하게 해줘."* — 라벨이 가리키는 곳으로 한 번에 간다. 예전에는 이
+    // 버튼이 폼을 펼치기만 했고, 편집기까지는 그 안의 [캐릭터 디자인]을 한 번 더 눌러야
+    // 했다(재방문자 기준 2탭).
+    //
+    // **폼을 펼치는 동작은 남긴다.** 편집기를 닫으면 그 뒤에 닉네임·입장 폼이 이미 펼쳐져
+    // 있어 닉네임 변경 경로가 유지된다 — 라벨에서 '닉네임'이 빠졌다고 기능까지 빼면
+    // 재방문자는 닉네임을 바꿀 자리가 사라진다(라벨 변경 ≠ 기능 제거).
+    const changeBtn = el('button', { className: 'lu-quick-change', type: 'button', text: '캐릭터 꾸미기' });
     changeBtn.addEventListener('click', () => {
       formWrap.classList.remove('lu-collapsed');
       quickEnter.style.display = 'none';
-      try { nickInput.focus(); } catch (_) {}
+      // nickInput.focus() 를 부르지 않는다 — 편집기가 곧바로 그 위에 열리므로, 뒤쪽
+      // 입력에 포커스를 주면 모바일에서 키보드가 편집기를 덮고 올라온다.
+      openChibiMaker();
     });
     quickEnter.append(avatar, greet, goBtn, changeBtn);
   }
