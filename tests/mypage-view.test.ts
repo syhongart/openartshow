@@ -17,7 +17,7 @@
 // (`mypage-markup.test.ts`)가 실제 HTML 파일을 읽어서 본다.
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { emptyProfile, type Profile } from '../frontend/js/mypage/schema.js';
+import { emptyProfile, normalizeProfile, type Profile } from '../frontend/js/mypage/schema.js';
 import { publicView } from '../frontend/js/mypage/visibility.js';
 import { renderPreview } from '../frontend/js/mypage/view-preview.js';
 import {
@@ -189,6 +189,33 @@ describe('renderPreview — 판정이 DOM 에 닿는가', () => {
     expect(a.getAttribute('rel')).toBe('noopener noreferrer');
     expect(a.getAttribute('href')).toBe('https://instagram.com/arthong');
     expect(a.textContent).toBe('@arthong');
+  });
+
+  // ── GS-2 (검수관 명세, 블로커 B1) ────────────────────────────────────────
+  // **경계를 건너는 지점**을 본다: 저장 정규화 → 공개 유도 → DOM 까지 실제로 돌려
+  // `href` 속성을 직접 읽는다.
+  //
+  // GS-1(순수 함수)만 두면 "정규화를 안 거치는 새 경로" 가 생겨도 안 걸리고,
+  // GS-2 만 두면 화면 쪽 방어가 정규화의 구멍을 덮어 가린다. **둘 다 필요하다** —
+  // 이 저장소가 M6·M16 에서 배운 것이 정확히 그것이다.
+  it('**악성 링크가 href 속성까지 도달하지 않는다** — 정규화→공개→DOM 전 구간', () => {
+    const evil = normalizeProfile({
+      nickname: 'arthong',
+      links: [
+        { platform: 'website', url: 'javascript:alert(1)' },
+        { platform: 'website', url: 'javascript://example.com/%0aalert(1)' },
+        { platform: 'website', url: 'https://safe.example/' },
+      ],
+    });
+    renderPreview(root, publicView(evil));
+
+    const anchors = Array.from(get('preview-links').querySelectorAll('a'));
+    expect(anchors.length).toBe(1);
+    for (const a of anchors) {
+      const href = a.getAttribute('href') ?? '';
+      expect(/^https?:/i.test(href), href).toBe(true);
+    }
+    expect(anchors[0].getAttribute('href')).toBe('https://safe.example/');
   });
 
   it('사용자가 적은 글은 마크업으로 실행되지 않는다', () => {
@@ -428,5 +455,26 @@ describe('링크 편집', () => {
   it('링크 개수 상한에서 더 늘지 않는다', () => {
     for (let i = 0; i < 20; i += 1) addLinkRow(root, noop);
     expect(root.querySelectorAll('[data-mp-link-row]').length).toBe(12);
+  });
+});
+
+describe('Preview — publicView 우회 통로가 없다 (검수관 P1)', () => {
+  it('**비공개면 아바타 썸네일도 뜨지 않는다** — options 가 판정을 우회하던 자리다', () => {
+    // 검수관 실측: 마스터 스위치를 끄면 `publicView` 가 `profileImage: null` 로
+    // 명시적으로 지우는데, `options.avatarThumb` 가 그 자리를 채워
+    // "프로필을 비공개로 설정했습니다" 안내와 아바타가 **동시에** 떴다.
+    // 화면이 스스로 모순되는 말을 하면 사용자는 무엇이 공개인지 판단할 수 없다.
+    const thumb = 'data:image/png;base64,iVBORw0KGgo=';
+
+    const open = filled();
+    renderPreview(root, publicView(open), { avatarThumb: thumb });
+    expect(get('preview-avatar').hidden).toBe(false);
+
+    const closed = filled();
+    closed.visibility.profile = false;
+    renderPreview(root, publicView(closed), { avatarThumb: thumb });
+    expect(get('preview-avatar').hidden).toBe(true);
+    expect(get('preview-avatar-fallback').hidden).toBe(false);
+    expect(get('preview-private').hidden).toBe(false);
   });
 });

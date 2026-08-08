@@ -52,6 +52,8 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   let profile: Profile = emptyProfile();
   let dirty = false;
   let nicknameTimer = 0;
+  // 한글 IME 조합 중인가. 조합 중에는 별명 판정을 미룬다 — 아래 `scheduleNicknameCheck` 참조.
+  let composing = false;
   const disposers: Array<() => void> = [];
 
   // ── 화면 갱신 ───────────────────────────────────────────────────────────
@@ -128,6 +130,14 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   }
 
   function scheduleNicknameCheck(): void {
+    // ── 한글 조합 중에는 판정하지 않는다 ─────────────────────────────────
+    // IME 는 조합 중에도 `input` 을 쏜다. "홍길동" 을 치면 중간에 `ㅎ`·`호`·`홍ㄱ` 이
+    // 지나가고, 그때마다 판정하면 **빨간 "자음·모음 하나만 쓸 수는 없습니다" 가
+    // 깜빡인다.** 사용자는 자기가 뭘 잘못 치고 있다고 읽는다.
+    //
+    // 조합이 끝나는 순간(`compositionend`)에 한 번만 본다. 영문·숫자 입력에는
+    // composition 이벤트가 없으므로 기존 동작 그대로다.
+    if (composing) return;
     window.clearTimeout(nicknameTimer);
     nicknameTimer = window.setTimeout(() => void runNicknameCheck(), NICKNAME_DEBOUNCE);
   }
@@ -313,6 +323,11 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   }
   for (const el of fields(root, 'nickname')) {
     on(el, 'input', scheduleNicknameCheck);
+    on(el, 'compositionstart', () => { composing = true; });
+    on(el, 'compositionend', () => {
+      composing = false;
+      scheduleNicknameCheck();
+    });
   }
 
   on(mp(root, 'link-add'), 'click', () => {

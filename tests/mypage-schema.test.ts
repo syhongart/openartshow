@@ -110,13 +110,49 @@ describe('normalizeProfile — 링크', () => {
     // 표본이 비어 통과하는 사고를 막는다 — 개수를 먼저 단언한다.
     expect(p.links.length).toBe(2);
     expect(p.links.map((l) => l.sortOrder)).toEqual([0, 1]);
-    expect(p.links[0].url).toBe('https://a.example');
+    // 끝의 `/` 는 URL 표준 정규화 결과다(`new URL(...).toString()`). B1 수정으로
+    // 정규화가 `safeLinkUrl` 을 지나면서 생겼다 — 단언을 **느슨하게 한 것이 아니라**
+    // 저장되는 실제 값이 바뀐 것이다.
+    expect(p.links[0].url).toBe('https://a.example/');
   });
 
   it('알 수 없는 플랫폼은 other 로 접어 넣는다 — 링크 자체를 잃지 않는다', () => {
     const p = normalizeProfile({ links: [{ platform: 'myspace', url: 'https://a.example' }] });
     expect(p.links.length).toBe(1);
     expect(p.links[0].platform).toBe('other');
+  });
+
+  // ── GS-1 (검수관 명세, 블로커 B1) ────────────────────────────────────────
+  // **저장에 실행 가능한 스킴이 남지 않는다.**
+  //
+  // 이 검사가 없던 동안 `javascript:alert(1)` 이 `normalizeProfile` → `publicView` →
+  // `renderPreview` 를 지나 `<a href>` 에 그대로 들어갔다(검수관이 실행으로 확인).
+  // 화면 경로의 `checkLink` 가 우연히 막고 있었을 뿐이고, 우리가 만들겠다고 코드에
+  // 적어 둔 `/@nickname` 공개 페이지에는 그 왕복이 없다.
+  //
+  // **GS-2(경계 통합)와 짝이다.** 하나만 두면 두 방어가 다시 서로를 가린다 —
+  // 이 diff 가 이미 M6·M16 으로 그 형태를 두 번 겪었다.
+  it('**위험 스킴 링크는 저장에서 제거된다** — 정규화가 마지막 문이다', () => {
+    const evil = [
+      'javascript:alert(1)',
+      'javascript://example.com/%0aalert(1)',
+      'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==',
+      'vbscript://example.com/x',
+      'file:///etc/passwd',
+    ];
+    for (const url of evil) {
+      const p = normalizeProfile({ links: [{ platform: 'website', url }] });
+      expect(p.links.length, url).toBe(0);
+    }
+    // 같은 입력에 정상 링크를 섞으면 정상만 남는다 — 통째로 버리지 않는다.
+    const mixed = normalizeProfile({
+      links: [
+        { platform: 'website', url: 'javascript:alert(1)' },
+        { platform: 'website', url: 'https://arthong.example/works' },
+      ],
+    });
+    expect(mixed.links.length).toBe(1);
+    expect(mixed.links[0].url).toBe('https://arthong.example/works');
   });
 
   it('링크 개수 상한을 넘기지 않는다', () => {

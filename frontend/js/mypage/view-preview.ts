@@ -10,6 +10,11 @@
 //
 // 나중에 `/@nickname` 공개 페이지가 생기면 **이 함수를 그대로 쓴다.** 두 벌로 만들면
 // 갈라지고, 갈라진 쪽이 공개 페이지면 사용자는 자기가 숨긴 것이 공개된 줄 모른다.
+//
+// ⚠ 이 머리말은 원래 *"`publicView()` 를 통과하지 않은 값은 애초에 여기 들어올 수 없다"*
+// 로 끝났고 **거짓이었다** — 두 번째 인자 `options` 가 그 통로였다(검수관 P1). 지금은
+// `options.avatarThumb` 도 `view.visible` 을 따르게 고쳤고 테스트로 고정했다. 앞으로
+// `options` 에 무언가를 더할 때는 **그것도 공개 판정을 따르는지** 먼저 본다.
 
 import { GENRES } from './schema.js';
 import { PLATFORMS } from './links.js';
@@ -44,9 +49,20 @@ export function renderPreview(root: ParentNode, view: PublicProfile, options: Pr
 
   // ── 아바타 ──────────────────────────────────────────────────────────────
   // 우선순위: 프로필 사진 → 아야모 썸네일 → 이니셜.
+  //
+  // ── `options` 도 공개 판정을 따른다 (검수관 P1, 2026-08-08) ──────────────
+  // 이 파일 머리말이 *"publicView() 를 통과하지 않은 값은 애초에 여기 들어올 수 없다"*
+  // 고 적었는데 **거짓이었다** — `options.avatarThumb` 가 그 통로였다. 검수관 실측:
+  // 마스터 스위치를 끄면 `publicView` 가 `profileImage: null` 로 명시적으로 지우는데,
+  // 썸네일이 그 자리를 채워 "프로필을 비공개로 설정했습니다" 안내와 아바타가 **동시에**
+  // 떴다.
+  //
+  // 실질 유출은 아니다(아야모는 미술관에서 이미 보인다). 그러나 **화면이 스스로
+  // 모순되는 말을 하면 사용자는 무엇이 공개인지 판단할 수 없게 된다.** 비공개는
+  // 비공개로 보여야 한다 — 그것이 이 카드가 존재하는 이유다.
   const img = mp<HTMLImageElement>(root, 'preview-avatar');
   const fallback = mp(root, 'preview-avatar-fallback');
-  const src = view.profileImage || options.avatarThumb || '';
+  const src = view.visible ? (view.profileImage || options.avatarThumb || '') : '';
   if (img) {
     if (src) img.src = src;
     else img.removeAttribute('src'); // 빈 src 는 브라우저가 현재 페이지를 다시 요청한다

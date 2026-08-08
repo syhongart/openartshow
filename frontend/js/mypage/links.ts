@@ -124,8 +124,10 @@ function fail(code: LinkErrorCode, message: string): LinkCheck {
 /** 핸들에 쓸 수 있는 문자. 플랫폼별로 미세하게 다르지만 교집합으로 좁게 잡는다. */
 const HANDLE_RE = /^[A-Za-z0-9._-]{1,50}$/;
 
-/** URL 최대 길이. `schema.ts` 의 `LIMITS.linkUrl.max` 와 같은 값을 여기 적지 않는다. */
-import { LIMITS } from './schema.js';
+/** URL 최대 길이. 값은 `limits.ts` 한 곳이다 — 여기 숫자를 다시 적지 않는다.
+ *  `schema.ts` 가 아니라 `limits.ts` 에서 받는 것이 요점이다(검수관 P2): schema 는
+ *  이 파일의 `PLATFORM_IDS` 를 쓰므로, 여기서 schema 를 되짚으면 순환이 된다. */
+import { LIMITS } from './limits.js';
 
 /**
  * 입력을 URL 로 정규화한다. 사용자는 셋 중 아무거나 넣을 수 있다:
@@ -180,6 +182,34 @@ function parseUrl(value: string): URL | null {
 /** `www.` 를 벗기고 소문자로. 호스트 비교는 항상 이 형태로 한다. */
 export function bareHost(url: URL): string {
   return url.hostname.toLowerCase().replace(/^www\./, '');
+}
+
+/**
+ * 저장해도 안전한 URL 인가. 안전하면 **정규화된 URL**, 아니면 빈 문자열.
+ *
+ * ── 왜 이 함수가 생겼나 (검수관 B1, 2026-08-08) ────────────────────────────
+ * `normalizeProfile` 이 링크 URL 의 스킴을 **안 보고 있었다.** 검수관이 실행으로
+ * 확인했다 — `javascript:alert(1)` 이 `normalizeProfile` → `publicView` →
+ * `renderPreview` 를 지나 `<a href>` 속성에 **그대로 들어갔다.**
+ *
+ * 당시 터지지 않은 이유는 화면 경로가 `readLinks()` → `checkLink` 라는 DOM 왕복을
+ * 거쳤기 때문이다. **그러나 그 방어는 우연이다.** `visibility.ts` 와 `view-preview.ts`
+ * 가 *"`/@nickname` 공개 페이지가 이 함수를 그대로 쓴다"* 고 약속했고, 그 경로에는
+ * DOM 왕복이 없다. 즉 우리가 계획을 실행하는 순간 저장형 XSS 가 된다.
+ *
+ * 방어 함수(`parseUrl`)는 이미 있었다 — **정규화 경로가 그것을 안 지날 뿐이었다.**
+ * 이 저장소가 이름 붙인 *"계산된 값이 실제로 소비되는가"* 의 구멍이고, 같은 파일이
+ * `profileImage` 는 화이트리스트로 막고 있었으니 **한 파일 안의 비대칭**이었다.
+ *
+ * 호스트 일치까지는 보지 않는다 — 그건 위험이 아니라 부정확이고, 입력 시점에
+ * `checkLink` 가 본다. 여기서 지키는 것은 **"실행 가능한 스킴이 저장에 남지 않는다"** 다.
+ */
+export function safeLinkUrl(platformId: string, urlText: string): string {
+  const normalized = normalizeLinkUrl(platformId, String(urlText ?? '').trim());
+  if (!normalized || normalized.length > LIMITS.linkUrl.max) return '';
+  // `normalizeLinkUrl` 이 이미 `parseUrl` 을 지나지만, 한 번 더 본다. 그 함수의 분기
+  // 하나(핸들 → URL 조립)는 `parseUrl` 을 거치지 않고 문자열을 만들기 때문이다.
+  return parseUrl(normalized) ? normalized : '';
 }
 
 /**

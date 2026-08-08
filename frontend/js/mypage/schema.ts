@@ -17,29 +17,10 @@
 //    복제하면 그 순간 값 미러링이고, 두 곳이 갈라지면 HUD 의 아바타와 프로필의
 //    아바타가 서로 다른 모습이 된다. 이 스키마는 **참조(avatarRef)만** 갖는다.
 
-/** 스키마 버전. 필드 의미가 바뀌면 올리고 `migrateProfile` 에 단계를 추가한다. */
-export const PROFILE_VERSION = 1;
-
-// ── 길이 상한 (SSOT) ──────────────────────────────────────────────────────
-// UI 의 maxlength·검증·서버 컬럼 정의가 전부 여기서 유도된다. 화면에 숫자를 다시
-// 적으면 한쪽만 고쳐도 아무도 모른다.
-export const LIMITS = {
-  nickname: { min: 2, max: 20 },
-  displayName: { min: 0, max: 40 },
-  bioShort: { min: 0, max: 80 },
-  /** 일반 회원. 작가는 `bioArtist` 를 쓴다 — 감독 안의 500 / 1,500 구분. */
-  bio: { min: 0, max: 500 },
-  bioArtist: { min: 0, max: 1500 },
-  location: { min: 0, max: 40 },
-  exhibitions: { min: 0, max: 1000 },
-  gallery: { min: 0, max: 60 },
-  linkUrl: { min: 0, max: 300 },
-  linkLabel: { min: 0, max: 30 },
-  /** 링크 개수 상한. 감독 안 "기타 링크 최대 3~5개" 를 전체 상한으로 승격했다. */
-  links: { min: 0, max: 12 },
-  /** 프로필 이미지 dataURL 바이트 상한. localStorage 전체가 보통 5MB 라 여유를 남긴다. */
-  profileImageBytes: { min: 0, max: 320 * 1024 },
-} as const;
+// 상한·버전은 `limits.ts` 한 곳이다(검수관 P2 — 순환 의존 해소). 여기서는 재수출만
+// 한다: 기존 소비자의 import 경로를 깨지 않으면서 값의 출처는 하나로 남긴다.
+export { PROFILE_VERSION, LIMITS, GENRE_MAX } from './limits.js';
+import { PROFILE_VERSION, LIMITS, GENRE_MAX } from './limits.js';
 
 // ── 활동 분야 ─────────────────────────────────────────────────────────────
 export const USER_TYPES = [
@@ -65,8 +46,6 @@ export const GENRES = [
   { id: 'etc', name: '기타' },
 ] as const;
 export type GenreId = (typeof GENRES)[number]['id'];
-/** 한 프로필이 고를 수 있는 장르 수. 전부 고르면 아무것도 안 고른 것과 같다. */
-export const GENRE_MAX = 4;
 
 // ── 아바타 참조 ───────────────────────────────────────────────────────────
 // 실제 파라미터는 `ui-chibi-store` 가 갖는다(위 주석). 여기는 "어느 시스템의
@@ -78,7 +57,7 @@ export interface AvatarRef {
 
 // ── SNS·외부 링크 (← user_social_links) ──────────────────────────────────
 // 플랫폼 목록의 정의는 `links.ts` 한 곳이다. 여기서는 타입만 받는다.
-import { PLATFORM_IDS, type PlatformId } from './links.js';
+import { PLATFORM_IDS, safeLinkUrl, type PlatformId } from './links.js';
 export type { PlatformId };
 
 export interface SocialLink {
@@ -198,8 +177,16 @@ function normalizeLinks(raw: unknown): SocialLink[] {
     const platform = typeof src.platform === 'string' && (PLATFORM_IDS as readonly string[]).includes(src.platform)
       ? (src.platform as PlatformId)
       : 'other';
-    const url = str(src.url, LIMITS.linkUrl.max);
-    if (!url) continue; // URL 없는 링크는 존재 이유가 없다
+    // ── 스킴을 여기서 막는다 (검수관 B1) ─────────────────────────────────
+    // 예전에는 `str(src.url, …)` 로 길이만 잘라 넣었다. 그래서 `javascript:alert(1)`
+    // 이 그대로 남아 `publicView` → `renderPreview` 를 지나 `<a href>` 에 들어갔다
+    // (검수관이 실행으로 확인). 화면 경로의 `checkLink` 가 우연히 막고 있었을 뿐이고,
+    // 공개 프로필 페이지에는 그 왕복이 없다.
+    //
+    // **정규화가 저장의 마지막 문이다.** UI 검증은 친절이지 방어가 아니다 —
+    // 손상된 저장·직접 편집된 JSON·서버에서 온 값이 전부 이 함수만 지난다.
+    const url = safeLinkUrl(platform, str(src.url, LIMITS.linkUrl.max));
+    if (!url) continue; // URL 이 없거나 안전하지 않으면 링크 자체를 버린다
     out.push({
       platform,
       url,

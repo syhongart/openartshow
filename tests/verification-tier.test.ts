@@ -59,6 +59,46 @@ describe('진입점 SSOT', () => {
     expect(flagged).toEqual(['lab-glb.html', 'mypage.html', 'visit.html', 'world2.html']);
   });
 
+  // ── GS-3 (검수관 명세, 블로커 B2) ────────────────────────────────────────
+  it('**`CLAUDE.md` 의 behind-flag 문장이 flagged 목록과 일치한다**', () => {
+    // ── 왜 생겼나 (2026-08-08) ───────────────────────────────────────────
+    // 바로 위 검사 옆에 내가 *"이 문장은 `CLAUDE.md` 와 짝이다 — 한쪽만 고치면 다른
+    // 쪽이 빨간불이 된다"* 고 적었다. **거짓이었다.** 검수관이 산문에서 `mypage.html`
+    // 만 지우고 게이트 전체를 돌려 **추가 실패 0** 을 실측했다. `CLAUDE.md` 를 읽는
+    // 테스트는 `gate.test.ts` 의 보호파일 축 하나뿐이었고, 산문은 어느 코드와도
+    // 묶여 있지 않았다.
+    //
+    // 게이트 유효성에 대한 거짓 진술은 **다음 사람이 확인을 생략하게** 만든다.
+    // 이 저장소는 그 대가를 이미 치렀다 — *"`main` 은 unprotected 다"* 가 틀린 채
+    // 남아 밸류에이션 봇이 7일 연속 거부당하는 동안 아무도 정책을 의심하지 않았다.
+    //
+    // 그래서 문장을 고치는 대신 **주장을 참으로 만든다.** 이제 진짜로 짝이다.
+    const claudeMd = readFileSync(join(REPO, 'CLAUDE.md'), 'utf8');
+
+    // **문장 범위를 좁힌다**(검수관이 지적한 거짓 FAIL 위험). 파일 전체에서
+    // `toContain` 하면 다른 절에 우연히 같은 파일명이 있을 때 통과해 버린다.
+    const line = claudeMd
+      .split('\n')
+      .find((l) => l.includes('**behind-flag**') && l.includes('어디에도 링크하지 않는 페이지는'));
+    expect(line, 'CLAUDE.md 에서 behind-flag 문장을 찾지 못했다').toBeTruthy();
+
+    // **목록 부분만 잘라낸다.** 그 줄은 뒤에 해설이 이어지고, 거기에는 라이브 파일명이
+    // 일부러 들어 있다(`builder.html` 이 라이브가 된 경위). 줄 전체를 반대 방향으로
+    // 검사하면 그 해설 때문에 거짓 FAIL 이 난다 — 실제로 처음 판본이 그렇게 깨졌다.
+    const listPart = line!.split('이다(라이브 미노출)')[0];
+    expect(listPart, '목록 부분을 잘라내지 못했다 — 문장 형식이 바뀌었다').not.toBe(line);
+
+    for (const e of FLAGGED_ENTRIES) {
+      expect(listPart, `${e.src} 가 CLAUDE.md behind-flag 목록에 없다`).toContain(e.src);
+    }
+
+    // 반대 방향도 본다 — 목록에만 남은 유령(라이브가 됐는데 안 지운 것).
+    // `builder.html` 이 정확히 그 형태로 오래 남아 있었다.
+    for (const e of ENTRYPOINTS.filter((x) => x.exposure === 'live')) {
+      expect(listPart, `${e.src} 는 라이브인데 behind-flag 목록에 남아 있다`).not.toContain(e.src);
+    }
+  });
+
   it('**`viteInput` 이 내는 경로가 실제 파일을 가리킨다** — 개수만 세면 빌드가 죽는다', () => {
     // ⚠ 이 검사는 **사고 뒤에 생겼다**(2026-08-05). 바로 아래 검사가 원래는 키 개수만
     // 봤고, 그래서 `viteInput(r)` 에서 `frontend/` 접두사가 사라진 것을 **게이트 6종이
