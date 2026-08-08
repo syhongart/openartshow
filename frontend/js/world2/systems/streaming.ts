@@ -20,7 +20,7 @@ import {
   computeWant, diffParcels, takeBudget, streamBudgetMs,
   type ParcelKey, type WantEntry,
 } from '../decide/stream.js';
-import { lookAheadCenter, type Tier, type TierBands } from '../decide/lod.js';
+import { lookAheadCenter, TIERS, type Tier, type TierBands } from '../decide/lod.js';
 
 /** 로드된 파셀 한 개. 빌더가 무엇을 담든 스트리밍은 들여다보지 않는다. */
 export interface ParcelHandle {
@@ -75,6 +75,16 @@ export interface StreamStats {
   built: number;
   released: number;
   retiered: number;
+  /**
+   * 교체의 **방향**. 직진 중이라면 강등만 나와야 한다 — 승격이 섞이면 그만큼이
+   * 경계 왕복이다(팀장 조건 3, 2026-08-07: 42m 에 왕복 3건 이상이면 히스테리시스
+   * 폭 확대를 병행한다).
+   *
+   * 왜 `retiered` 총계로 못 보는가: 그 수는 "몇 번 바뀌었나" 만 말하고, 한 방향으로
+   * 흘러간 것과 같은 경계를 오간 것을 구별하지 못한다. **재는 축이 없으면 판정도 없다.**
+   */
+  promoted: number;
+  demoted: number;
   /** 아직 못 따라잡은 작업 수 */
   pending: number;
   byTier: Record<string, number>;
@@ -88,7 +98,8 @@ export class StreamingSystem implements System {
   /** decide 계층에 넘길 tier 맵. handles와 항상 같이 갱신한다 */
   private readonly tiers = new Map<ParcelKey, Tier>();
   private last: StreamStats = {
-    loaded: 0, wanted: 0, built: 0, released: 0, retiered: 0, pending: 0, byTier: {},
+    loaded: 0, wanted: 0, built: 0, released: 0, retiered: 0,
+    promoted: 0, demoted: 0, pending: 0, byTier: {},
   };
   /** 초기 충전이 끝났는가 — 로딩 화면이 이걸 본다 */
   private settled = false;
@@ -117,7 +128,7 @@ export class StreamingSystem implements System {
     });
     const diff = diffParcels(want, this.tiers);
 
-    let built = 0, released = 0, retiered = 0;
+    let built = 0, released = 0, retiered = 0, promoted = 0, demoted = 0;
 
     // ① 언로드 먼저. 슬롯을 비워야 이번 프레임 로드가 그 자리를 쓸 수 있다.
     //    언로드는 예산에서 빼지 않는다 — 반납은 생성과 달리 GPU 자원을 만들지 않는다.
@@ -140,6 +151,12 @@ export class StreamingSystem implements System {
     for (const r of rt.run) {
       const h = this.handles.get(r.key);
       if (!h) continue;
+      // 방향을 **바꾸기 전에** 읽는다 — 아래에서 `this.tiers` 를 덮어쓴다.
+      const from = this.tiers.get(r.key);
+      if (from) {
+        const step = TIERS.indexOf(r.to) - TIERS.indexOf(from);
+        if (step < 0) promoted++; else if (step > 0) demoted++;
+      }
       const next = o.builder.retier?.(h, r.to) ?? null;
       if (next) {
         this.handles.set(r.key, next);
@@ -177,7 +194,7 @@ export class StreamingSystem implements System {
 
     this.last = {
       loaded: this.handles.size, wanted: want.length,
-      built, released, retiered, pending, byTier,
+      built, released, retiered, promoted, demoted, pending, byTier,
     };
 
     if (ctx.probe) {

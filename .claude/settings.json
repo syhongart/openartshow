@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/hooks/guard-bash.mjs",
+            "statusMessage": "명령 규칙 대조"
+          }
+        ]
+      }
     ]
   }
 }
