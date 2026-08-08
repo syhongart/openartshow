@@ -227,6 +227,8 @@ async function counts(page) {
       pz: s.parcel?.pz ?? null,
       wx: s.player?.x ?? null,
       wz: s.player?.z ?? null,
+      // 복귀 구간이 출발점으로 재조준할 때 쓴다(아래 `yawToward` 문단).
+      yaw: s.player?.yaw ?? null,
     };
   });
 }
@@ -242,6 +244,50 @@ export function coverageOf(seq) {
   const compact = seq.filter((k, i) => i === 0 || k !== seq[i - 1]);
   const unique = new Set(compact).size;
   return { unique, revisits: compact.length - unique, path: compact };
+}
+
+/**
+ * 커버리지가 목표를 채웠는가. **`coverageOf` 와 따로 export 하는 이유가 있다.**
+ *
+ * ── 검수관 조건 1 (2026-08-08) — 뮤테이션이 이 구멍을 실증했다 ────────────────
+ * 이 비교식은 원래 `runInvariants` 안에 인라인돼 있었고, 검수관이 `/tmp` 별도 클론에서
+ * `const covOk = true` 로 고정하는 뮤테이션을 돌렸더니 **`tests/world2-collide.test.ts`
+ * 26건이 전부 그대로 통과했다.** `coverageOf` 자체는 §5 가 단위 검증하고 배선은 §6 이
+ * 보는데, **그 둘 사이에 있는 임계 비교식은 아무도 안 봤다.**
+ *
+ * 이 게이트가 잡으려던 사고가 *"아무 데도 안 갔는데 PASS"* 였는데, **판정식이 죽어도
+ * 똑같은 일이 벌어지고 CI 는 초록**이었다 — 이 저장소가 *"판정/집행 분리의 구멍 — 경계를
+ * 건너는 지점은 아무도 안 본다"* 로 이미 이름 붙인 형태의 재발이다.
+ *
+ * 그래서 함수로 뽑아 테스트가 닿게 한다. 임계 상수(`COVER_UNIQUE`·`COVER_REVISITS`)는
+ * 여기서만 읽는다 — 두 곳에서 비교하면 한쪽만 고쳐도 아무도 모른다.
+ */
+export function covOkOf(cov) {
+  return cov.unique >= COVER_UNIQUE && cov.revisits >= COVER_REVISITS;
+}
+
+/**
+ * `facing(yaw) = (-sin yaw, -cos yaw)`(`systems/player.ts`)의 역함수 — 이 월드 방향을
+ * 보려면 yaw 가 얼마여야 하는가.
+ *
+ * **복귀 구간이 이것을 필요로 한다.** 예전에는 `look(π)`(뒤돌기) 한 번으로 왕복을
+ * 만들었는데, 우회가 붙자 **갈 때 경로가 직선이 아니게 되어 그 대칭이 깨졌다.**
+ * 스모크 실측(2026-08-08): 경로 `0,0 → 0,-1 → 1,-1 → 2,-1` — 대각으로 흘러 +x 로 두 칸
+ * 이동했고, 거기서 뒤돌면 원래 경로가 아닌 새 칸으로 간다. 재방문 **0** 으로 FAIL 했다.
+ *
+ * 그래서 "뒤돌기" 를 **"출발점을 향해 재조준"** 으로 바꾼다. 매 leg 마다 다시 조준하므로
+ * 중간에 우회로 흘러도 목표를 잃지 않는다.
+ */
+export function yawToward(from, to) {
+  return Math.atan2(-(to.x - from.x), -(to.z - from.z));
+}
+
+/** 최단 회전량으로 정규화. 안 하면 350° 를 왼쪽으로 도는 대신 오른쪽으로 한 바퀴 돈다 */
+export function shortestTurn(fromYaw, toYaw) {
+  let d = toYaw - fromYaw;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }
 
 /** `__world2` 조작 훅. 없으면 **측정 실패**다 — 조작 못 한 것을 통과로 적지 않는다. */
@@ -360,6 +406,8 @@ export async function runInvariants({
     let prev = await counts(page);
     if (!keyOf(prev)) throw new Error('stats().parcel 이 없다 — 커버리지를 잴 수 없다(측정 실패)');
     visits.push(keyOf(prev));
+    /** 출발 좌표. 복귀 구간이 **이 지점을 향해 매 leg 재조준한다** */
+    const start = { wx: prev.wx, wz: prev.wz };
 
     log('[2] 주행 — 고유 파셀 목표 ' + COVER_UNIQUE + '…');
     let legs = 0;
@@ -394,24 +442,48 @@ export async function runInvariants({
     const outLegs = legs + 1;
 
     // ── ③ 되돌아오기 — 언로드된 파셀을 다시 로드한다 ────────────────────────
+    //
     // **재방문이 핵심이다.** 슬롯 반납이 제대로 안 되면 여기서 개수가 오른다.
-    log('[3] 되돌아오기(재방문)…');
-    await drive(page, 'look', Math.PI, 0);
-    await page.waitForTimeout(STEP_MS);
-    for (let i = 0; i < outLegs; i++) {
-      await drive(page, 'move', 0, -1);
+    //
+    // ── `look(π)` 뒤돌기를 버렸다 (스모크 실측 2026-08-08) ─────────────────────
+    // 예전에는 뒤돌아 같은 leg 수만큼 걸으면 왕복이 됐다. **우회가 붙자 그 대칭이
+    // 깨졌다** — 갈 때 대각으로 흘러 경로가 직선이 아니면 뒤돌기는 원래 길이 아니다.
+    // 스모크 실측: 경로 `0,0 → 0,-1 → 1,-1 → 2,-1`(+x 로 두 칸 흘렀다) → 거기서 뒤돌면
+    // 새 칸으로 가서 **재방문 0** 으로 FAIL 했다. 내 로컬 회차는 우연히 직선이라 통과했고,
+    // 그래서 **로컬 PASS 가 스모크 PASS 를 보증하지 못했다.**
+    //
+    // 그러므로 방향을 **매 leg 마다 출발점으로 재조준한다.** 중간에 우회로 흘러도 목표를
+    // 잃지 않는다 — "돌아간다" 를 회전량이 아니라 **목표 좌표**로 정의한 것이다.
+    // 종료 조건도 leg 수가 아니라 **재방문 달성**이다(상한은 무한 대기 방지선).
+    log('[3] 되돌아오기(재방문) — 출발점으로 재조준…');
+    let back = 0;
+    let backDodge = -1;
+    for (; back < MAX_LEGS; back++) {
+      if (coverageOf(visits).revisits >= COVER_REVISITS && back >= outLegs) break;
+      if (prev.yaw != null && prev.wx != null) {
+        const want = yawToward({ x: prev.wx, z: prev.wz }, { x: start.wx, z: start.wz });
+        const turn = shortestTurn(prev.yaw, want);
+        // 미세 오차로 매 leg 마다 흔드는 것을 막는다 — 3° 미만이면 조준 그대로 둔다.
+        if (Math.abs(turn) > 0.05) {
+          await drive(page, 'look', turn, 0);
+          await page.waitForTimeout(STEP_MS);
+          turns++;
+        }
+      }
+      const d = backDodge < 0 ? { ax: 0, az: -1 } : DODGES[backDodge];
+      await drive(page, 'move', d.ax, d.az);
       await page.waitForTimeout(WALK_MS);
-      const c = await snap(`복귀 ${i + 1}`);
+      const c = await snap(`복귀 ${back + 1}`);
       const moved = (prev.wx == null || c.wx == null)
         ? null : Math.hypot(c.wx - prev.wx, c.wz - prev.wz);
       visits.push(keyOf(c));
       prev = c;
-      // 되돌아오는 길도 막힐 수 있다(90° 틀었으면 왕복 경로가 갈 때와 다르다).
-      // 목표는 "지나온 칸에 다시 들어가기" 이므로 여기서도 막히면 틀어서 계속 간다.
-      if (moved != null && moved < STUCK_M && coverageOf(visits).revisits < COVER_REVISITS) {
-        await drive(page, 'look', TURN_RAD, 0);
-        await page.waitForTimeout(STEP_MS);
-        turns++;
+      if (moved != null && moved < STUCK_M) {
+        backDodge += 1;
+        // 좌우 다 막혔으면 재조준에 맡긴다(다음 회차 첫 줄이 다시 출발점을 향한다).
+        if (backDodge >= DODGES.length) backDodge = -1;
+      } else if (backDodge >= 0) {
+        backDodge = -1;
       }
     }
     await drive(page, 'move', 0, 0);
@@ -420,7 +492,7 @@ export async function runInvariants({
     visits.push(keyOf(last));
 
     const cov = coverageOf(visits);
-    const covOk = cov.unique >= COVER_UNIQUE && cov.revisits >= COVER_REVISITS;
+    const covOk = covOkOf(cov);
 
     // ── 판정 ────────────────────────────────────────────────────────────────
     log('\n[결과] 기준선 대비 증가분 — 하나라도 + 면 증식이다\n');
@@ -456,7 +528,7 @@ export async function runInvariants({
     // ── G-COL1 — **세션이 실제로 돌아다녔는가** ──────────────────────────────
     log('\n  커버리지  고유 파셀 ' + cov.unique + `/${COVER_UNIQUE}`
       + `  재방문 ${cov.revisits}/${COVER_REVISITS}`
-      + `  (leg ${outLegs}×2 · 막혀서 튼 횟수 ${turns})`);
+      + `  (전진 ${outLegs} · 복귀 ${back} leg · 조준·전환 ${turns}회)`);
     log(`            경로 ${cov.path.join(' → ')}`);
     if (!covOk) {
       log('\n  ✗ FAIL — 세션이 목표만큼 돌아다니지 못했다. **개수 판정은 무의미하다.**');

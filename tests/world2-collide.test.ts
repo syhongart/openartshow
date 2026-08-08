@@ -33,9 +33,9 @@ import { readFileSync } from 'node:fs';
 import { blockersOf, blocked, slide, type Blocker } from '../frontend/js/world2/decide/collide.js';
 import { createCollider, DEFAULT_BODY_R } from '../frontend/js/world2/systems/collision.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
-import { PlayerSystem } from '../frontend/js/world2/systems/player.js';
+import { PlayerSystem, facing } from '../frontend/js/world2/systems/player.js';
 import type { FrameCtx } from '../frontend/js/world2/kernel.js';
-import { coverageOf } from '../scripts/smoke/measure-invariants.mjs';
+import { coverageOf, covOkOf, yawToward, shortestTurn } from '../scripts/smoke/measure-invariants.mjs';
 
 const frame = (dt: number, n = 1): FrameCtx =>
   ({ dt, ageMs: n * dt * 1000, frame: n, hidden: false, resumed: false, probe: () => {} });
@@ -276,6 +276,67 @@ describe('§5 게이트 — coverageOf 가 제자리 세션을 잡는다', () =>
     const c = coverageOf(['0,0', '0,0', '0,-1', '0,-1', '0,-1', '0,0']);
     expect(c.unique).toBe(2);
     expect(c.revisits).toBe(1);
+  });
+
+  // ── 임계 비교식 자체 — **검수관 조건 1** (2026-08-08) ─────────────────────
+  //
+  // 위 네 검사는 `coverageOf`(세는 함수)만 본다. **그 결과를 합격/불합격으로 바꾸는
+  // 비교식은 아무도 안 봤다.** 검수관이 `/tmp` 별도 클론에서 `covOk = true` 로 고정하는
+  // 뮤테이션을 돌렸더니 이 파일 26건이 **전부 그대로 통과**했다.
+  //
+  // 즉 이 게이트가 잡으려던 사고("아무 데도 안 갔는데 PASS")를 **판정식이 죽는 방식으로
+  // 똑같이 재현**할 수 있었고 CI 는 초록이었다. 그래서 `covOkOf` 를 함수로 뽑고 여기서
+  // 직접 겨냥한다 — §6(배선)보다 **한 층 아래**를 메우는 것이지 §6 을 대체하지 않는다.
+  describe('covOkOf — 두 조건이 모두 필요하다', () => {
+    it('고유 파셀이 부족하면 불합격', () => {
+      expect(covOkOf({ unique: 2, revisits: 1, path: [] })).toBe(false);
+    });
+
+    it('재방문이 0 이면 불합격 — 스모크가 실제로 이 모양으로 FAIL 했다', () => {
+      // 실측 경로 `0,0 → 0,-1 → 1,-1 → 2,-1`: 고유 4 인데 재방문 0.
+      // `&&` 를 `||` 로 바꾸면 이 케이스가 통과해 버린다 — 그 뮤테이션을 이 검사가 잡는다.
+      expect(covOkOf({ unique: 4, revisits: 0, path: [] })).toBe(false);
+    });
+
+    it('둘 다 채우면 합격', () => {
+      expect(covOkOf({ unique: 3, revisits: 1, path: [] })).toBe(true);
+    });
+
+    it('넉넉히 채워도 합격 — 임계가 상한이 아니다', () => {
+      expect(covOkOf({ unique: 5, revisits: 3, path: [] })).toBe(true);
+    });
+  });
+
+  // ── 복귀 재조준 수학 (스모크 FAIL 이 만든 것) ────────────────────────────
+  //
+  // `look(π)` 뒤돌기는 **갈 때 경로가 직선일 때만** 왕복이 된다. 우회가 붙어 대각으로
+  // 흐르자 그 전제가 깨져 재방문 0 으로 FAIL 했다. 방향을 회전량이 아니라 **목표 좌표**로
+  // 정의하는 쪽으로 바꿨고, 그 산술을 여기서 못 박는다.
+  describe('yawToward / shortestTurn — 출발점으로 재조준', () => {
+    it('-z 쪽 목표는 yaw 0 이다 — facing(0) = (0,-1) 이므로', () => {
+      expect(yawToward({ x: 0, z: 0 }, { x: 0, z: -10 })).toBeCloseTo(0, 6);
+    });
+
+    it('+z 쪽 목표는 yaw ±π 다 — 뒤돌기와 같은 값이어야 한다', () => {
+      expect(Math.abs(yawToward({ x: 0, z: 0 }, { x: 0, z: 10 }))).toBeCloseTo(Math.PI, 6);
+    });
+
+    it('facing(yawToward(...)) 가 실제로 목표를 향한다 — 규약을 직접 대조한다', () => {
+      // 값을 손으로 적지 않는다. `player.ts` 의 `facing` 을 그대로 불러 방향을 확인한다 —
+      // 그 규약이 바뀌면 이 검사가 먼저 깨져야 한다.
+      for (const to of [{ x: 5, z: -3 }, { x: -8, z: 12 }, { x: 0, z: -1 }, { x: 7, z: 0 }]) {
+        const f = facing(yawToward({ x: 0, z: 0 }, to));
+        const len = Math.hypot(to.x, to.z);
+        expect(f.x).toBeCloseTo(to.x / len, 6);
+        expect(f.z).toBeCloseTo(to.z / len, 6);
+      }
+    });
+
+    it('최단 회전으로 정규화한다 — 350° 를 한 바퀴 돌지 않는다', () => {
+      // 정규화가 없으면 이 값이 +6.11(오른쪽으로 350°)이 되어 세션이 헛돈다.
+      expect(shortestTurn(0, Math.PI * 2 - 0.17)).toBeCloseTo(-0.17, 6);
+      expect(shortestTurn(Math.PI - 0.1, -Math.PI + 0.1)).toBeCloseTo(0.2, 6);
+    });
   });
 });
 
