@@ -38,6 +38,7 @@
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { roadDirs, SETBACK, LAMP_CLEARANCE, EAVE } from './road-topology.js';
 import { isTowerParcel } from './zoning.js';
+import { isCentralPark } from '../decide/grid.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 import { V, TINTS, TINT_SET } from './palette.js';
 import { hexCss } from './color.js';
@@ -134,6 +135,9 @@ export const tower: PartSpec = {
 
   place: ({ px, pz, rnd, o }) => {
     if (!isTowerParcel(px, pz, o.cellX, o.cellZ)) return [];
+    // 공원 안에는 마천루가 서지 않는다. `isTowerParcel` 은 확률 판정이라 공원을
+    // 모르고, 모르면 잔디 한가운데 60m 짜리가 선다.
+    if (isCentralPark(px, pz)) return [];
 
     // ── 자리는 파셀 중앙 고정이다 ──────────────────────────────────────────
     // 사분면에 뽑지 않는다. 이유가 둘이다:

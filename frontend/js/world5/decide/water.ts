@@ -36,7 +36,9 @@
 // 깔린다(`features/ocean.ts` 의 `riverGeometry`); 큰 판 두 장을 겹치면 반투명이 이중으로
 // 곱해져 물빛 캘리브레이션이 무효가 되기 때문이다.
 
-import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid, PLAZA_R } from './grid.js';
+import {
+  GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid, PLAZA_R, isParkLake,
+} from './grid.js';
 
 // ── 강과 바다는 높이가 다르다 (감독 지시 2026-07-30) ────────────────────────
 // *"바다, 강은 중요해. 지금 보다 더 밑에 있게 하고 강은 땅보다 50 cm 밑, 바다는 땅보다
@@ -369,6 +371,16 @@ export function parcelWater(px: number, pz: number, cellX: number, cellZ: number
   // 강 기준선은 광장 가장자리를 **z 방향으로** 재서 유도하므로 `cellZ` 를 넘긴다
   // (`riverBase`). `cellX` 를 넘기면 두 셀이 달라지는 날 강이 조용히 밀린다.
   if (isRiver(px * cellX, pz * cellZ, cellZ)) return 'water';
+  // 센트럴파크 안의 호수 셋 (감독 지시 *"중앙에 호수도 넣어줘. 호수 3개 영역"*).
+  //
+  // **강과 같은 'water' 로 둔다** — 스트리밍이 그 칸을 아예 만들지 않아 지면에 구멍이
+  // 뚫리고 그리로 수면이 비친다. 호수를 위해 새 물 종류를 만들면 그 경로를 스트리밍·
+  // 미니맵·수영·다리가 각자 알아야 하고, 그 넷 중 하나만 모르면 **지도에는 있는데
+  // 걸어가면 없는 물**이 된다(이 파일 머리말이 경고하는 형태다).
+  //
+  // 자리는 격자가 정한다(`decide/grid.ts` 의 `isParkLake`). 좌표를 여기 적으면 공원을
+  // 옮기는 날 호수만 옛 자리에 남는다.
+  if (isParkLake(px, pz)) return 'water';
   // 물가 — 자기는 뭍인데 네 이웃 중 하나가 물인 칸
   if (
     parcelIsWater(px + 1, pz, cellX, cellZ) ||
@@ -382,7 +394,9 @@ export function parcelWater(px: number, pz: number, cellX: number, cellZ: number
 /** 이웃 판정용 — `parcelWater` 를 재귀 호출하면 물가의 물가까지 번진다 */
 function parcelIsWater(px: number, pz: number, cellX: number, cellZ: number): boolean {
   if (!inGrid(px, pz)) return true;
-  return isRiver(px * cellX, pz * cellZ, cellZ);
+  // 호수도 함께 본다 — 안 보면 호숫가가 'shore' 로 안 잡혀 미니맵에서 물가 색이
+  // 안 나오고, 나중에 물가 셋백을 붙일 때 호수만 빠진다.
+  return isRiver(px * cellX, pz * cellZ, cellZ) || isParkLake(px, pz);
 }
 
 // ── 수면 광택 — 시간대별 (감독 지시 2026-07-31 "반짝임부터 살려봐") ────────────

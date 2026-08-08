@@ -8,6 +8,7 @@ import {
   roadDirs, pickInQuadrant, shuffledQuadrants, SETBACK, LAMP_CLEARANCE, EAVE,
 } from './road-topology.js';
 import { isPlaza } from './plaza.js';
+import { isCentralPark } from '../decide/grid.js';
 import { isTowerParcel } from './zoning.js';
 
 /**
@@ -68,6 +69,13 @@ export const building: PartSpec = {
     // 겹친다 — `footprint` 경쟁으로는 못 막는다. 타워가 중앙 고정이라 언제나 먼저
     // 놓이고, 겹침 판정은 "앞선 것을 피한다" 이지 "뒤엣것을 밀어낸다" 가 아니다.
     if (isTowerParcel(px, pz, o.cellX, o.cellZ)) return [];
+    // 센트럴파크에도 짓지 않는다 (감독 지시 *"센트럴파크 공원도 넣고"*).
+    // 공원 판정은 **격자가 소유한다**(`decide/grid.ts` 의 `isCentralPark`) — 좌표를
+    // 여기 적으면 공원을 옮기는 날 건물만 옛 경계를 본다.
+    //
+    // 지면(`ground`·`garden`)과 나무는 그대로 깔린다. 도로도 지나간다 — 실제 도심
+    // 공원에도 횡단로가 있고, 도로까지 끊으면 공원이 **건널 수 없는 벽**이 된다.
+    if (isCentralPark(px, pz)) return [];
     const dirs = roadDirs(px, pz);
     // 1~4채. 예전엔 2~6이었고, 1000㎡ 당 3.91채로 world1(1.74채)의 **2.25배**였다.
     // 이제 2.44채 — world1 의 1.4배까지 내려온다. 하한을 1로 내린 것도 의도다:
