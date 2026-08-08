@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 4블록은 sha256 핀, 외부호스트 0 정합(fetch·img 모두 self) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-kBmO7OoxO9Zo4P//dunmFD64rYjjSHwnJarrxkCgOWM=' 'sha256-ubkDsdnIYFmt+yqUk3l3XXJNsDRssVXQcRZ5q9HQY60=' 'sha256-7ympbTxC3SBqd46tqKD/YvjmUEAGhIG1RJM55C4KNT4=' 'sha256-eJwd9VtCCgsDkBNByn1t6dmYAiAMwGoG6WjOMptgUgo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-kBmO7OoxO9Zo4P//dunmFD64rYjjSHwnJarrxkCgOWM=' 'sha256-ubkDsdnIYFmt+yqUk3l3XXJNsDRssVXQcRZ5q9HQY60=' 'sha256-ArsSLR0ijtWnvz98VTZQndfzuK9ptbpF24oKDANs1Mw=' 'sha256-eJwd9VtCCgsDkBNByn1t6dmYAiAMwGoG6WjOMptgUgo='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>OpenArtShow — 링크 하나로 열리는 나만의 미술관</title>
 <meta name="description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta property="og:type" content="website">
@@ -1637,6 +1637,15 @@
     //   ⑤ 포커스 이탈      · `document` focusin (키보드 Tab 으로 빠져나갈 때)
     //   ⑥ 브레이크포인트 횡단 · resize — 720px 위/아래에서 서로 다른 컨테이너가
     //      `display:none` 이 되므로, 열린 채 넘어가면 되돌아왔을 때 유령 상태가 된다.
+    //
+    // ⚠ **여섯이 서로 독립인 것은 아니다.** ④의 햄버거 절반은 ①과 **100% 중복**이다 —
+    // 뮤테이션 실측(2026-08-08): 버거 리스너를 지워도 테스트 29건이 전부 통과했고, 반대로
+    // ①만 지우면 「① 바깥 클릭」 하나만 실패하고 「④ 햄버거」는 통과했다. 두 경로가
+    // 상호 완전 중복이라는 뜻이다(`navBurger` 가 `navAuth`·`nsAuth` 의 **형제**라 메뉴 밖이고,
+    // 이 파일에 `stopPropagation` 이 0건이라 버거 클릭이 `document` 까지 버블링한다).
+    // 그래서 **버거 리스너를 지워도 어떤 테스트도 안 깨진다** — 지우려는 사람이 읽을 자리가
+    // 여기라 여기 적는다. 그래도 남기는 이유: ①이 나중에 좁아지면(특정 영역만 바깥으로
+    // 치는 식) 그때는 이 줄이 유일한 방어가 되고, 명시적 방어가 사라진 것은 조용하다.
     var openProfile = null;
 
     function profileTrigger(wrap) {
@@ -1686,6 +1695,8 @@
     // ④ 햄버거 시트 — **위 리스너에 손대지 않고 따로 건다.** 내비게이션은 이 페이지의
     //    탈출로이고, 프로필 쪽이 예외를 던져도 시트는 열려야 한다(리스너는 서로
     //    독립적으로 호출된다). 같은 이유로 `closeSheet` 도 고치지 않는다.
+    //    ⚠ 이 줄은 ①과 **완전 중복**이라 지워도 테스트가 안 깨진다 — 위 블록 주석의
+    //    뮤테이션 실측을 읽고 지울지 판단하라(테스트 통과는 여기서 근거가 아니다).
     if (burger) burger.addEventListener('click', function () { closeProfile(false); });
     var wasWide = window.innerWidth > 720;
     window.addEventListener('resize', function () {            // ⑥ 브레이크포인트 횡단
@@ -1749,6 +1760,12 @@
       var menu = el('div', 'nav-profile-menu');
       menu.setAttribute('data-nav-profile', 'menu');
       menu.setAttribute('role', 'menu');
+      // 트리거가 **어느** 메뉴를 여는지 보조기술에 알린다. 이 렌더는 데스크톱과 시트
+      // 두 곳에서 각각 돌므로 id 를 컨테이너에서 유도한다 — 고정 문자열을 쓰면 문서에
+      // 같은 id 가 둘 생기고, 그러면 `aria-controls` 가 엉뚱한 쪽을 가리킨다.
+      var menuId = 'nav-profile-menu--' + (container.id || 'x');
+      menu.id = menuId;
+      trigger.setAttribute('aria-controls', menuId);
 
       // [신원] `role="presentation"` — `role="menu"` 의 자식으로 유효한 것은
       // menuitem·group·separator 뿐이라, 신원 블록을 그대로 두면 ARIA 트리가

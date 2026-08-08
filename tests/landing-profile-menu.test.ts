@@ -25,10 +25,24 @@
 //   밖으로 나가는지(가로 넘침), 시트에서 아래 CTA 를 덮는지는 여기서 0이다. 그 축은
 //   디자이너 실측(`getBoundingClientRect`)이 유일하고, 스모크 `[5]` 는 팝오버를
 //   **원리상** 못 본다(absolute 요소는 `scrollWidth` 를 안 늘린다 — 디자이너 실측).
-// · `<script>` 블록 **구조**에 기댄다. IIFE 가 아니게 되거나 import 형태가 바뀌면 이
-//   하네스가 먼저 깨진다 — 조용히 통과하는 게 아니라 깨지는 쪽이라 안전한 실패다.
+// · **`focus()` 타이밍은 못 본다.** ↓/↑ 로 여는 경로는 `.is-open` 을 붙인 **같은 틱에**
+//   `.focus()` 를 부르는데, 데스크톱 팝오버의 닫힘 상태는 `visibility:hidden` 이고 시트는
+//   `display:none` 이다. jsdom 은 CSS 를 계산하지 않으므로 이 축이 원리상 0 이다
+//   (검수관 「확인 못 한 것」 1). 실브라우저 측정이 유일한 축이다.
 // · 실제 `auth.js` 를 안 부른다(스텁). 로그아웃이 프로필을 지우는지는
 //   `mypage-store.test.ts` 소관이고, 여기서는 **로그아웃 버튼이 그것을 부르는가**만 본다.
+//
+// ── ⚠ 여기 원래 거짓이 하나 적혀 있었다 (검수관 B2, 2026-08-08) ─────────────
+// *"IIFE 가 아니게 되면 이 하네스가 먼저 깨진다 — 조용히 통과하는 게 아니라 깨지는 쪽이라
+// 안전한 실패다"* 라고 적혀 있었고 **실측으로 반증됐다**: IIFE 와 `"use strict"` 를
+// 걷어내도 **29건 전부 통과**했고, 그 상태에서 `renderNav()` 안에 미선언 대입(= 8/8
+// 사고와 같은 형태)을 넣어도 **여전히 통과**했다.
+//
+// 원인은 `new Function` 본문이 **sloppy mode** 라는 것이다. 지금까지 strict 였던 것은
+// 원문 IIFE 안에 `"use strict"` 가 **우연히** 들어 있어서였고, 브라우저는
+// `<script type="module">` 이라 **항상 strict** 다. 즉 하네스가 브라우저보다 느슨했다.
+// 문장을 고치는 대신 `harnessSource()` 로 **참으로 만들었다** — GS-3 때와 같은 처방이다.
+// (게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다.)
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -46,6 +60,20 @@ function navBlockSource(): string {
   if (!block) throw new Error('auth.js 를 import 하는 module 블록을 못 찾았다 — 하네스가 낡았다');
   // `import ... from '...';` 줄만 걷어낸다. 나머지는 **한 글자도 고치지 않는다.**
   return block.replace(/^\s*import\s[\s\S]*?from\s*['"][^'"]+['"];\s*$/gm, '');
+}
+
+/**
+ * `new Function` 에 넣을 본문. **브라우저와 같은 모드로 맞추는 자리다.**
+ *
+ * 브라우저는 `<script type="module">` 이라 항상 strict 인데 `new Function` 본문은
+ * sloppy 다. 맞춰 주지 않으면 하네스가 **브라우저보다 느슨하게** 돌고, 미선언 참조가
+ * 조용히 전역을 만들어 8/8 사고와 같은 형태를 초록으로 통과시킨다(검수관 B2 실측).
+ *
+ * boot() 와 아래 생존 검사가 **둘 다 이 함수를 쓴다** — 한쪽만 strict 면 검사가
+ * 검사하지 않는 것을 보증하게 된다.
+ */
+function harnessSource(body: string): string {
+  return `'use strict';\n${body}`;
 }
 
 interface Harness {
@@ -69,7 +97,7 @@ function boot(profile: unknown): Harness {
 
   const args: Record<string, unknown> = { openAuthModal, getProfile, logout, onAuthChange };
   // eslint-disable-next-line no-new-func -- 인라인 소스를 원문 그대로 실행하는 것이 이 파일의 요점이다
-  const run = new Function(...INJECTED, navBlockSource());
+  const run = new Function(...INJECTED, harnessSource(navBlockSource()));
   run(...INJECTED.map((k) => args[k]));
 
   return {
@@ -119,6 +147,20 @@ describe('하네스 생존 — 이것이 깨지면 아래 통과는 「안 쟀�
     expect(triggers().length).toBe(0);
     expect(document.querySelectorAll('[data-nav-profile]').length).toBe(0);
   });
+
+  it('하네스가 **strict 로** 실행한다 — 브라우저의 module 과 같은 모드여야 한다', () => {
+    // sloppy 면 미선언 대입이 조용히 전역을 만든다. 2026-08-08 사고가 정확히 미선언
+    // 참조(`escapeHtml is not defined`)였는데, 하네스가 sloppy 면 그 형태의 결함을
+    // **초록으로 통과시킨다** — 이 테스트가 존재하는 이유가 그 사고다.
+    // boot() 와 **같은 `harnessSource()`** 를 쓴다. 여기만 strict 로 만들면 의미가 없다.
+    // eslint-disable-next-line no-new-func -- 하네스와 같은 조립 경로를 재는 것이 요점이다
+    const probe = new Function(...INJECTED, harnessSource('undeclaredProbeOops = 1;'));
+    expect(() => probe(...INJECTED.map(() => () => undefined))).toThrow(ReferenceError);
+    // 반대 방향도 못 박는다 — 이 단언이 없으면 위 throw 가 다른 이유로 났을 수 있다.
+    // eslint-disable-next-line no-new-func -- 대조군
+    const sloppy = new Function('undeclaredProbeOops2 = 1; return true;');
+    expect(sloppy(), 'new Function 기본이 sloppy 가 아니면 이 검사의 전제가 바뀐 것이다').toBe(true);
+  });
 });
 
 describe('DOM 계약', () => {
@@ -154,6 +196,20 @@ describe('DOM 계약', () => {
       expect(t.getAttribute('aria-haspopup')).toBe('menu');
       expect(t.getAttribute('aria-expanded')).toBe('false');
     }
+  });
+
+  it('트리거가 **어느** 메뉴를 여는지 알린다 — aria-controls (검수관 P9)', () => {
+    const ids = triggers().map((t) => {
+      const id = t.getAttribute('aria-controls');
+      expect(id, 'aria-controls 가 없다').toBeTruthy();
+      const menu = document.getElementById(id!);
+      expect(menu?.getAttribute('data-nav-profile'), '가리키는 것이 메뉴가 아니다').toBe('menu');
+      // **자기 메뉴**를 가리켜야 한다. 데스크톱과 시트 두 곳에 렌더되므로 고정 id 를
+      // 쓰면 문서에 같은 id 가 둘 생기고, 한쪽이 남의 메뉴를 가리키게 된다.
+      expect(wrapOf(t).contains(menu!), '남의 메뉴를 가리킨다').toBe(true);
+      return id;
+    });
+    expect(new Set(ids).size, '두 트리거가 같은 id 를 가리킨다').toBe(ids.length);
   });
 
   it('ARIA 트리가 유효하다 — menu 의 자식은 menuitem·separator·presentation 뿐', () => {

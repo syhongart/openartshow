@@ -10,7 +10,10 @@
 // 로그아웃 시 마이페이지 프로필 정리. 저장 키를 아는 쪽(`mypage/store`)이 함수를
 // 갖고, 여기서는 부르기만 한다(값 미러링 회피). `store` 는 `auth` 를 import 하지
 // 않으므로 순환이 아니다.
-import { clearProfilesOnLogout } from './mypage/store.js';
+// **leaf 를 직접** import 한다(`mypage/store.js` 재수출을 거치지 않는다). 거치면 프로필
+// 스키마·링크 플랫폼 표가 이 모듈 그래프에 딸려 들어와 **랜딩·미술관 번들**에 실린다 —
+// 실측으로 auth 청크가 1,186 B → 12,586 B 였다(검수관 P1).
+import { clearProfilesOnLogout } from './mypage/profile-storage.js';
 
 const CONFIG = {
   google: { clientId: '' }, // Google Cloud Console OAuth 클라이언트 ID
