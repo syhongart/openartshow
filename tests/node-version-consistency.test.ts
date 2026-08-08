@@ -1,5 +1,10 @@
 // G-NODE1 — Node 버전이 적힌 **세 축이 서로 다른 것을 말하지 않는가.**
 //
+// ── 경계 (팀장 판정 2026-08-08) ─────────────────────────────────────────────
+// **이 게이트는 YAML 을 구조로 해석하지 않는다(라인 스캔과 JSON 읽기뿐) — 구조 해석이
+// 필요한 규칙은 여기 추가하지 말고, 그 규칙이 잡을 결함이 실제로 한 번 발생한 뒤에
+// 진짜 파서(직접 의존으로 승격한)와 함께 별도 게이트로 열어라.**
+//
 // ── 왜 이 파일이 생겼나 (검수관 실측 2026-08-08) ────────────────────────────
 // Node 20 → 24 전환은 값을 **세 곳**에 적는다: `.nvmrc`(로컬 개발) ·
 // `package.json` 의 `engines.node`(npm) · `.github/workflows/**` 의 `node-version`(CI).
@@ -11,51 +16,95 @@
 //   → **게이트 6종 전부 PASS. exit 0.**
 //
 // 부팀장이 스스로 의심한 문장 — *"워크플로만 25 로 바꿔도 아무도 모른다"* — 이 참이었다.
-// 이 저장소의 규율은 *"같은 값을 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다"* 이고,
-// 그 처방은 문서가 아니라 검사다. 그래서 검사로 만든다.
 //
-// ── 검출력 실측 (2026-08-08, 별도 클론) ────────────────────────────────────
-// **통과는 검출력의 증거가 아니다.** 결함을 일부러 만들어 실제로 깨지는지 봤다.
+// ── 왜 규칙이 2개뿐인가 (팀장 판정 D, 2026-08-08) ───────────────────────────
+// 처음에는 규칙이 4개였다. 규칙3(버전 미지정 `setup-node` 0건)·규칙4(`setup-node` 보다
+// 앞선 node 실행 0건)은 워크플로 YAML 을 **job → step 으로 파싱**해야 해서 정규식 파서를
+// 뒀는데, **그 파서의 사각이 네 번 연속으로 뚫렸다.** 매번 "이제 잡는다" 고 적었고 매번
+// 검수관 실측으로 거짓이 됐다:
 //
-//   대조군(무수정)                                     5 passed / 0 failed
-//   M-A  ci.yml 의 node-version 2곳 → '25'             → 규칙1 FAIL ✓
-//   M-B  engines "^24" → ">=24"                        → 규칙2 FAIL ✓
-//   M-C  review-record.yml 의 node-version 줄 삭제      → 규칙3 FAIL ✓
-//   M-D  ci.yml verify job 의 setup-node 를 npm ci 뒤로 → 규칙4 FAIL ✓
-//   M-E  .nvmrc 24 → 22 (다른 축 그대로)               → 규칙1·2 FAIL ✓
-//   M-F  ci.yml step 들여쓰기 6칸 → 4칸 (YAML 유효)     → 「측정기 생존」FAIL ✓
-//   M-F + M-D                                          → 「측정기 생존」FAIL ✓
-//   M-F + M-C′                                         → 「측정기 생존」FAIL ✓
+//   1차  (게이트 없음)                        → 워크플로만 '25' 로 바꿔도 6종 전부 PASS
+//   2차  "형태가 달라지면 생존 검사가 잡는다"  → step 들여쓰기 6→4칸 → **5 passed**
+//   3차  "파일 단위로 바꿔 참으로 만들었다"    → **job 하나만** 4칸 → **5 passed**
+//   4차  job 단위로 내림                       → **또 뚫렸다**(아래 5차)
+//   5차  검수관이 판정 D 를 모르는 상태에서 독립 발견 —
+//        step 을 `      - run: npm ci` 가 아니라 대시만 줄에 두고 다음 줄에 `uses:` 를
+//        쓰면(YAML 유효, `safe_load` steps=8) 그 스텝이 **직전 스텝에 흡수**되어
+//        `setup-node` 를 `npm ci` 뒤로 옮긴 회귀(M-D 와 **같은 결함**)가 **5 passed** 로
+//        통과했다. **파일의 「못 잡는 것」 목록에 이 형태가 없었고**, 거기 적혀 있던
+//        둘(키 이름 변경·플로우 시퀀스)은 실측하니 생존 검사가 **시끄럽게** 잡는다 —
+//        **목록에는 잡히는 것이 적혀 있고 정작 조용한 것이 빠져 있었다.**
 //
-// **M-F 3케이스는 강화 전에 전부 5 passed 였다**(= 검출력 0). 아래 parseJobs 주석의 B-A 가
-// 그것이고, 생존 검사를 파일 단위로 바꾼 뒤 셋 다 단독으로 FAIL 한다.
+// 5차가 결정적이다. *"「못 잡는 것」을 정직하게 열거하면 된다"* 가 **원리적으로 불가능**
+// 하다는 뜻이기 때문이다 — 열거는 아는 것만 담고, 파서의 사각은 아는 범위 밖에서 열린다.
 //
-// 규칙2 허용 범위도 9케이스로 실측했다 —
-//   PASS: "24" · "^24" · "~24" · "24.x" · "24.19.0" · ">=24 <25"
-//   FAIL: ">=24"(상한 없음) · "^24 || ^26" · "*"
+// **네 번의 붕괴가 전부 파서 의존 축이었다.** 반면 규칙1은 라인 스캔이라 파서와 완전히
+// 독립이고, **원래 사고의 실제 형태(3축 드리프트)는 규칙1이 계속 잡았다.** 그리고 규칙3·4가
+// 예방하려던 결함(버전 미지정 `setup-node` / `setup-node` 앞 node 실행)은 이 저장소에서
+// **한 번도 발생한 적이 없다.**
 //
-// 전부 **기대한 규칙이** 깨졌다(엉뚱한 규칙이 대신 깨진 것이 아니다 — 그러면 규칙이 서로를
-// 가리고 있다는 뜻이라 축이 하나로 뭉개진 것이다). 규칙을 고칠 때는 이 표를 다시 뜬다.
-// 안 깨지는 케이스가 생기면 그 규칙은 그때부터 장식이다.
+// 팀장 판정: *"정규식 파서의 사각은 **열거가 안 된다** — 3차가 증명했다(명시한 사각 밖에서
+// 뚫렸다). 부분 검출력의 예방 게이트는 이 저장소가 가장 비싸게 배운 형태(게이트 유효성
+// 거짓 진술 → 다음 사람이 확인 생략)를 상시 재생산한다."*
+// → **규칙3·4와 파서를 통째로 삭제했다.** 절반만 남기면 실패 축이 그대로 남는다.
 //
-// ── 이 게이트가 **못 잡는 것** (적지 않으면 통과를 과신한다) ─────────────────
+// **그러므로 지금 못 잡는 것**(규칙3·4가 잡으려던 것 — 재상신 트리거다):
+//   · `node-version` 도 `node-version-file` 도 없는 `setup-node` 스텝
+//   · 같은 job 에서 `setup-node` 보다 **앞서** node/npm/npx 를 부르는 스텝
+//     (앞서 부르면 러너 기본 Node 로 도는데 로그만 보면 우리가 정한 버전처럼 읽힌다)
+//   **이 둘 중 하나가 실제로 병합되면 팀장에게 올린다** — 발생 실적이 생기면 비용 계산이
+//   바뀌고, 그때 진짜 파서(직접 의존 승격) 도입 여부를 판정한다.
+//
+// ── 이 게이트가 **여전히 못 잡는 것** ──────────────────────────────────────
 // · **`.nvmrc` 의 값이 옳은지는 안 본다.** 세 축이 나란히 EOL 버전을 가리켜도
 //   **정합이므로 통과한다** — 즉 **이번 사고(20 이 EOL 3개월)를 이 게이트는 못 막았을
-//   것이다.** EOL 감시는 별건이다(G-NODE2, 태스크 #220).
+//   것이다.** EOL 감시는 별건이다(G-NODE2, **태스크 #220** — 팀장 판정 D 로 우선순위가
+//   상대적으로 올라갔다).
 // · 러너가 실제로 그 버전을 설치했는지는 안 본다 — **선언만** 본다.
-// · `@types/node` 와 런타임의 갭은 안 본다(현재 types 26 vs 런타임 24).
+// · `@types/node` 와 런타임의 갭은 안 본다(현재 types 26 vs 런타임 24 — **태스크 #222**).
 // · Node 메이저에 딸려 오는 **npm 메이저 변경**은 안 본다(24 는 npm 11 을 데려온다).
 // · 외부 액션(`uses:`) 자신의 내부 런타임은 안 본다.
 //
 // ── 거짓 FAIL 위험 ─────────────────────────────────────────────────────────
-// ① 장차 `strategy.matrix` 로 **복수 Node 를 의도적으로** 테스트하게 되면 규칙 1이
-//    오탐한다(현재 매트릭스 0건 — 실측). 매트릭스를 도입하는 커밋은 이 게이트를 **먼저**
-//    고쳐야 한다. 안 고치면 늑대소년이 되고, 항상 우는 경보는 곧 무시된다.
-// ② 규칙2는 `engines.node` 의 **형태**를 본다(semver 파서가 없다). 위 허용 목록 밖의
+// ① 장차 `strategy.matrix` 로 **복수 Node 를 의도적으로** 테스트하게 되면 규칙1이
+//    오탐한다(현재 매트릭스 0건 — 실측). ⚠ **규칙1은 유일하게 실사고를 잡는 축이므로
+//    그 약화는 집행이 아니라 판정이다 — 팀장에게 올린다.**
+// ② 규칙2는 `engines.node` 의 **형태**를 본다(semver 파서가 없다). 아래 허용 목록 밖의
 //    표기를 쓰면 그 값이 라인 고정이더라도 FAIL 한다 — 실패 메시지가 허용 목록을
 //    알려주므로 막히지는 않지만, 새 표기를 쓸 거면 이 게이트를 먼저 고쳐라.
-// ③ 순수 액션 워크플로(`run:` 없이 `uses:` 만)를 추가하면 「측정기 생존」의
-//    `setup-node ≥ 1` 이 오탐한다 → `NO_NODE_WORKFLOWS` 에 넣는다.
+// ③ ⚠ **`node-version-file` 로 옮기면 이 게이트가 FAIL 한다 — 그런데 그 변경이 옳다.**
+//    워크플로 6곳을 `node-version-file: .nvmrc` 로 바꾸면 `node-version` 표기가 0건이 되어
+//    「측정기 생존」이 FAIL 한다(검수관 실측). 그러나 그것은 **이 게이트가 감시하는 값
+//    미러링 자체를 없애는 가장 올바른 수정**이다 — 세 축이 두 축이 되고 CI 가 `.nvmrc` 를
+//    직접 읽는다. **게이트가 정답을 벌주는 자리다.**
+//    그때는 게이트를 고쳐라: 생존 축을 *"`node-version` 표기 ≥ 1건"* 에서
+//    *"`node-version` 또는 `node-version-file` 표기 ≥ 1건"* 으로 넓히고, 규칙1은
+//    `node-version-file` 이 가리키는 파일이 `.nvmrc` 인지를 본다. **탈출로를 안 적어두면
+//    오탐이 작업을 세우고, 없는 탈출로를 적어두는 것은 그보다 나쁘다** — 그래서 대체안까지
+//    여기 적는다(검수관 조건 1, 2026-08-08).
+//
+// ── 검출력 실측 ────────────────────────────────────────────────────────────
+// **통과는 검출력의 증거가 아니다.** 결함을 일부러 만들어 실제로 깨지는지 본다.
+// (축소 후 재실측 — 아래 표는 규칙3·4 삭제 뒤의 것이다.)
+//
+// **이름이 아니라 적용 원문으로 적는다** — 이름만 적으면 다음 사람이 다른 것을 같은
+// 이름으로 부른다(태스크 #192 가 그 사고다).
+//
+//   대조군  무수정                                            → 3 passed / 0 failed
+//   M-A  `ci.yml` 의 `node-version: '24'` 2곳 → `'25'`        → 규칙1 FAIL
+//   M-B  `package.json` `"node": "^24"` → `">=24"`            → 규칙2 FAIL
+//   M-E  `.nvmrc` 의 `24` → `22` (다른 축 그대로)             → 규칙1·2 FAIL
+//   M-H  워크플로 4파일의 `node-version:` 표기를 전부 다른
+//        문자열로 치환(표기 0건)                              → 「측정기 생존」FAIL
+//
+// M-H 가 생존 축이다 — 표기가 0건이면 "정합" 과 "아무것도 안 봤다" 가 구별되지 않는다.
+// 규칙1도 vacuous pass 가 가능하기 때문에 라인 스캔으로 그것만 따로 단언한다.
+//
+// ⚠ **위임 실측 보고 2건이 틀린 적이 있다**(2026-08-08). executor 가 기대와 다른 결과를
+// 보고했는데 부팀장이 직접 재현하니 둘 다 기대대로였다 — 뮤테이션 **적용 자체를 실패**한
+// 것이지 게이트 결함이 아니었다(태스크 #192 와 같은 형태).
+// **"안 깨졌다" 는 보고는 게이트 결함과 뮤테이션 미적용을 구별하지 못한다** —
+// 기대와 어긋난 케이스는 위임자가 직접 재현한다.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -71,136 +120,68 @@ function nvmrcMajor(): number {
   return Number(m[1]);
 }
 
-interface Step { text: string; line: number }
-interface Job { name: string; file: string; steps: Step[] }
-
-/**
- * 워크플로 YAML 을 job → step 으로 쪼갠다. **정규식 파싱이라 근사값이다** —
- * js-yaml 은 이 저장소의 직접 의존이 아니라(transitive) 쓰지 않는다. transitive 를
- * import 하면 lockfile 이 바뀌는 날 게이트가 조용히 죽는다.
- *
- * ⚠ **이 자리에 원래 *"형태가 달라지면 「측정기 생존」 검사가 job 0건으로 떨어져 조용히
- * 통과하지 않는다"* 라고 적혀 있었고 거짓이었다**(검수관 실측 2026-08-08, 블로커 B-A).
- * `ci.yml` 의 step 들여쓰기를 6칸 → 4칸으로 바꾸면 **YAML 로는 완전히 유효하고 Actions 도
- * 정상 실행되는데**, 규칙3·4 의 검출력이 **0** 이 되고 생존 검사는 그대로 통과했다:
- *
- *   M-F(들여쓰기 4칸) + M-D  → 5 passed / 0 failed   (규칙4 검출력 0)
- *   M-F              + M-C′ → 5 passed / 0 failed   (규칙3 검출력 0)
- *
- * 떨어지는 것은 job 이 아니라 **step** 인데 step 을 세는 단언이 없었고, `setup-node ≥ 1`
- * 단언은 **전 파일 합산**이라 나머지 3파일이 채웠다. **문장을 고치는 대신 검사를 파일
- * 단위로 바꿔 그 주장을 참으로 만들었다**(GS-3 때와 같은 처방).
- *
- * 이 형태가 이 저장소에서 세 번째다 — behind-flag 괄호의 거짓 주장, hookify 검출력 0,
- * 그리고 이것. **「못 잡는 것」을 적는 것만으로는 부족하다. 적은 그 문장이 참인지도
- * 뮤테이션으로 확인해야 한다.**
- */
-function parseJobs(file: string, src: string): Job[] {
-  const lines = src.split('\n');
-  const jobs: Job[] = [];
-  let inJobs = false;
-  let cur: Job | null = null;
-  let curStep: Step | null = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const ln = lines[i];
-    if (/^jobs:\s*$/.test(ln)) { inJobs = true; continue; }
-    if (!inJobs) continue;
-    if (/^\S/.test(ln) && ln.trim() !== '') { inJobs = false; cur = null; curStep = null; continue; }
-
-    const jobHead = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(ln);
-    if (jobHead) {
-      cur = { name: jobHead[1], file, steps: [] };
-      jobs.push(cur);
-      curStep = null;
-      continue;
-    }
-    if (!cur) continue;
-
-    const stepHead = /^ {6}- /.exec(ln);
-    if (stepHead) {
-      curStep = { text: ln, line: i + 1 };
-      cur.steps.push(curStep);
-      continue;
-    }
-    // 스텝 본문(더 깊은 들여쓰기)은 그 스텝에 붙인다.
-    if (curStep && /^ {8}/.test(ln)) curStep.text += '\n' + ln;
-  }
-  return jobs;
-}
-
 function workflowFiles(): string[] {
   return readdirSync(WF_DIR).filter((f) => /\.ya?ml$/.test(f)).map((f) => join(WF_DIR, f));
 }
 
-/**
- * node 를 쓰지 않는 워크플로 — 「측정기 생존」의 `setup-node ≥ 1` 에서 **명시적으로** 뺀다.
- * 현재 해당 0건이다(실측). 순수 액션 워크플로(labeler 등)를 추가하면 여기 넣어야 하고,
- * **넣는 것 자체가 검토 신호**다 — 자동 면제로 두면 그 파일은 영원히 안 보이게 된다.
- */
-const NO_NODE_WORKFLOWS = new Set<string>([]);
-
-const isSetupNode = (s: Step) => /uses:\s*actions\/setup-node[@\s]/.test(s.text);
-const hasNodeVersion = (s: Step) => /\bnode-version:\s*['"]?[\w.*-]+/.test(s.text);
-const hasNodeVersionFile = (s: Step) => /\bnode-version-file:\s*\S/.test(s.text);
-
-/** 이 스텝이 `run:` 으로 node·npm·npx 를 부르는가. `cache: 'npm'` 같은 값은 제외된다. */
-function runsNode(s: Step): boolean {
-  const runs = [...s.text.matchAll(/\brun:\s*([\s\S]*?)(?=\n\s*[a-z-]+:|$)/g)].map((m) => m[1]);
-  return runs.some((r) => /(?:^|[\s;&|(])(?:node|npm|npx)(?:\s|$)/m.test(r));
+/** 워크플로 전체의 `node-version:` 표기. **라인 스캔이다 — YAML 을 구조로 읽지 않는다.** */
+function nodeVersionDecls(files: string[]): { file: string; line: number; value: string }[] {
+  const out: { file: string; line: number; value: string }[] = [];
+  for (const f of files) {
+    readFileSync(f, 'utf8').split('\n').forEach((ln, i) => {
+      const m = /\bnode-version:\s*['"]?([\w.*-]+)/.exec(ln);
+      if (m) out.push({ file: f, line: i + 1, value: m[1] });
+    });
+  }
+  return out;
 }
 
 describe('G-NODE1 — Node 버전 축 정합 (.nvmrc / engines / workflows)', () => {
   const M = nvmrcMajor();
   const files = workflowFiles();
-  const jobs = files.flatMap((f) => parseJobs(f, readFileSync(f, 'utf8')));
+  const decls = nodeVersionDecls(files);
 
-  it('측정기 생존 — 각 워크플로 파일을 실제로 읽었는가 (파일 단위)', () => {
-    // 이것이 없으면 아래 통과가 "정합이다" 인지 "아무것도 안 봤다" 인지 구별되지 않는다.
-    //
-    // **전 파일 합산이 아니라 파일 단위로 본다.** 합산이면 한 파일의 파싱이 통째로 죽어도
-    // 나머지가 채워서 통과한다 — 그것이 블로커 B-A 였다(위 parseJobs 주석).
+  // ── 측정기 생존 ───────────────────────────────────────────────────────────
+  // 이것이 없으면 아래 통과가 "정합이다" 인지 "아무것도 안 봤다" 인지 구별되지 않는다.
+  // 규칙1은 표기가 0건이면 **vacuous pass** 로 초록이 된다 — 그 구멍만 따로 막는다.
+  //
+  // ⚠ **이 축은 전 파일 합산이다** — 한 파일의 `node-version` 표기가 사라져도 다른 파일이
+  // 채우면 초록이 된다(검수관 실측: `review-record.yml` 의 표기 하나만 지우면 3 passed).
+  // 그 파일은 러너 기본 Node 로 도는데 게이트는 조용하다. **제목과 메시지가 파일 단위처럼
+  // 읽히지만 아니다** — B-A 로 지불한 것이 정확히 그 오독이라 여기 못 박는다.
+  // 파일 단위로 좁히려면 job/step 구조를 봐야 하고, 그것은 위 「경계」가 금지한다.
+  it('측정기 생존 — 워크플로에서 node-version 표기를 실제로 읽었는가', () => {
     expect(files.length, '워크플로 파일 0건').toBeGreaterThan(0);
-
-    const dead: string[] = [];
-    for (const f of files) {
-      const js = jobs.filter((j) => j.file === f);
-      const steps = js.flatMap((j) => j.steps);
-      if (js.length === 0) dead.push(`${f}: job 0건 — 파서가 형태 변화를 못 따라갔다`);
-      else if (steps.length === 0) dead.push(`${f}: step 0건 — 들여쓰기 형태가 바뀌었다`);
-      else if (!NO_NODE_WORKFLOWS.has(f.split('/').pop()!) && !steps.some(isSetupNode)) {
-        dead.push(`${f}: setup-node 스텝 0건 — node 를 안 쓰는 파일이면 NO_NODE_WORKFLOWS 에 넣어라`);
-      }
-    }
-    expect(dead, `측정기가 죽은 파일:\n  ${dead.join('\n  ')}`).toEqual([]);
+    expect(
+      decls.length,
+      'node-version 표기 0건 — 워크플로가 Node 버전을 선언하지 않거나 표기 형태가 바뀌었다.\n' +
+        '  둘 다 실제 문제다: 전자면 러너 기본 Node 로 돌고, 후자면 이 게이트가 아무것도 안 본다.',
+    ).toBeGreaterThan(0);
   });
 
-  // ── 규칙 1: 워크플로의 모든 node-version == .nvmrc 메이저 ──────────────────
-  // M-A 가 통과하던 자리가 여기다.
+  // ── 규칙1: 워크플로의 모든 node-version == .nvmrc 메이저 ──────────────────
+  // **이 게이트에서 유일하게 실사고를 잡는 축이다.** 라인 스캔이라 YAML 형태 변화와 무관하다.
   it(`규칙1 — 모든 node-version 이 .nvmrc(${M}) 와 같은 메이저다`, () => {
-    const bad: string[] = [];
-    for (const f of files) {
-      const src = readFileSync(f, 'utf8');
-      src.split('\n').forEach((ln, i) => {
-        const m = /\bnode-version:\s*['"]?([\w.*-]+)/.exec(ln);
-        if (!m) return;
-        const major = /^v?(\d+)/.exec(m[1]);
-        if (!major || Number(major[1]) !== M) bad.push(`${f}:${i + 1} → ${m[1]} (기대 ${M})`);
-      });
-    }
+    const bad = decls
+      .filter((d) => {
+        const major = /^v?(\d+)/.exec(d.value);
+        return !major || Number(major[1]) !== M;
+      })
+      .map((d) => `${d.file}:${d.line} → ${d.value} (기대 ${M})`);
     expect(bad, `.nvmrc(${M}) 와 어긋난 node-version:\n  ${bad.join('\n  ')}`).toEqual([]);
   });
 
-  // ── 규칙 2: engines.node 가 그 라인에 고정돼 있다 ─────────────────────────
+  // ── 규칙2: engines.node 가 그 라인에 고정돼 있다 ─────────────────────────
   // `>=24` 는 26·27 을 전부 허용한다. `ARCHITECTURE.md §7-0` 은 *"24 **하나로** 맞춘다"*
   // 고 선언하므로, 하한만 두면 문서와 값이 다른 것을 말하게 된다 —
-  // **2026-10-28 에 v26 이 LTS 가 되면 갈라진다**(검수관 C1).
+  // **2026-10-28 에 v26 이 LTS 가 되면 갈라진다.**
   it(`규칙2 — engines.node 가 ${M} 라인에 고정돼 있다 (하한만 두지 않는다)`, () => {
     const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
     const range = String(pkg?.engines?.node ?? '');
-    // 판정은 **"M+1 을 허용하는가"** 다. 첫 판본은 허용 형태를 좁게 열거해서
-    // `"24"`·`"~24"`·`"24.19.0"` 을 거부했는데(검수관 P-1 실측), 그 셋은 전부 라인 고정이거나
-    // **더 엄격하다.** 정당한 값이 막히면 다음 사람이 게이트를 우회한다 — 넓혔다.
+    // 판정 **의도**는 "M+1 을 허용하는가" 이고, **수단은 형태 열거**다(semver 파서가 없다 —
+    // 「거짓 FAIL 위험 ②」 참조). 첫 판본은 허용 형태를 좁게 열거해서 `"24"`·`"~24"`·
+    // `"24.19.0"` 을 거부했는데, 그 셋은 전부 라인 고정이거나 **더 엄격하다.**
+    // 정당한 값이 막히면 다음 사람이 게이트를 우회한다 — 넓혔다.
     const pinned = new RegExp(`^[\\^~]?${M}(\\.(?:\\d+|x)){0,2}$`).test(range); // 24 · ^24 · ~24.19 · 24.19.0 · 24.x
     const bounded = new RegExp(`^>=\\s*${M}(\\.\\d+){0,2}\\s+<\\s*${M + 1}(\\.\\d+){0,2}$`).test(range);
     expect(
@@ -209,33 +190,5 @@ describe('G-NODE1 — Node 버전 축 정합 (.nvmrc / engines / workflows)', ()
         `  허용: "${M}" · "^${M}" · "~${M}" · "${M}.x" · "${M}.19.0" · ">=${M} <${M + 1}"\n` +
         `  거부: ">=${M}"(상한 없음 — 26·27 을 허용한다) · "^${M} || ^${M + 2}" · "*"`,
     ).toBe(true);
-  });
-
-  // ── 규칙 3: 버전을 안 정하는 setup-node 가 없다 ───────────────────────────
-  // `node-version` 도 `node-version-file` 도 없으면 러너 기본값이 쓰인다 —
-  // 그 기본값은 우리가 정한 것이 아니고, 조용히 바뀐다.
-  it('규칙3 — 버전을 지정하지 않는 setup-node 스텝이 0건이다', () => {
-    const bad = jobs.flatMap((j) =>
-      j.steps
-        .filter((s) => isSetupNode(s) && !hasNodeVersion(s) && !hasNodeVersionFile(s))
-        .map((s) => `${j.file}:${s.line} (job ${j.name})`),
-    );
-    expect(bad, `버전 미지정 setup-node:\n  ${bad.join('\n  ')}`).toEqual([]);
-  });
-
-  // ── 규칙 4: setup-node 보다 앞서 node 를 부르는 스텝이 없다 ────────────────
-  // 앞서 부르면 **러너 기본 Node** 로 도는데, 로그만 보면 우리가 정한 버전으로 돈 것처럼
-  // 읽힌다. 실제 실행 버전과 선언 버전이 갈리는 형태 — 이 저장소가 가장 비싸게 배운 축이다.
-  it('규칙4 — 같은 job 에서 setup-node 앞에 node/npm/npx 실행이 0건이다', () => {
-    const bad: string[] = [];
-    for (const j of jobs) {
-      const setupAt = j.steps.findIndex(isSetupNode);
-      const runAt = j.steps.findIndex(runsNode);
-      if (runAt === -1) continue;
-      if (setupAt === -1 || runAt < setupAt) {
-        bad.push(`${j.file} (job ${j.name}): ${j.steps[runAt].line} 줄이 setup-node 보다 앞선다`);
-      }
-    }
-    expect(bad, `setup-node 이전 node 실행:\n  ${bad.join('\n  ')}`).toEqual([]);
   });
 });
