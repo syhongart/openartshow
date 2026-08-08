@@ -852,6 +852,24 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function close() {
     overlay.classList.remove('lu-open');
     state.chibiOpen = false;
+    // 닫힘 알림 — **경로가 늘면 여기로 모으라**는 아래 주석의 집행 지점이다.
+    // 딥링크 복귀(`?back=`)가 이것을 쓴다. 첫 판본은 저장(✓)·닫기(×) 버튼에 각각
+    // 리스너를 걸었고, 그래서 **ESC·배경클릭으로 닫으면 복귀가 안 됐다**(검수관 B2).
+    // 네 경로가 전부 여기를 지나므로 한 곳이면 충분하다.
+    if (typeof callbacks.onChibiMakerClosed === 'function') {
+      const cb = callbacks.onChibiMakerClosed;
+      // **1회성이다.** 남겨두면 세션 내내 살아 있어, 미술관에서 편집기를 다시 열고
+      // 저장할 때마다 페이지가 튕긴다(검수관 B1). 부르기 전에 지운다 — 콜백 안에서
+      // 예외가 나도 다음 close 에 또 돌지 않는다.
+      //
+      // ⚠ **부르고 나서 지우지 않는 이유**(검수관 확인). 그렇게 하면 복귀 실패 시
+      // 재시도 여지가 남는데, 그 트레이드오프를 일부러 반대로 골랐다: 복귀가
+      // 실패하는 상황은 대개 재시도해도 실패하고, 그때 훅이 남으면 정확히 B1 이
+      // 재발한다. **되돌리기 비싼 실패(미술관에서 튕김)와 싼 실패(사용자가
+      // 뒤로가기)** 중 싼 쪽을 골랐다.
+      callbacks.onChibiMakerClosed = null;
+      try { cb(); } catch (_) { /* 복귀 실패가 편집기 정리를 막지 않는다 */ }
+    }
     // 반드시 걷는다 — 안 걷으면 미술관이 멈춘 채로 남는다. close()는 ✓(저장)·×(닫기)·
     // ESC 가 모두 지나는 단일 지점이라 여기 한 곳이면 충분하다(경로가 늘면 여기로 모아라).
     setSceneCover('chibi-maker', false);
