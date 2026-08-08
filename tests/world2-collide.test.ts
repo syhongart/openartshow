@@ -31,10 +31,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { blockersOf, blocked, slide, type Blocker } from '../frontend/js/world2/decide/collide.js';
-import { createCollider } from '../frontend/js/world2/systems/collision.js';
+import { createCollider, DEFAULT_BODY_R } from '../frontend/js/world2/systems/collision.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
 import { PlayerSystem } from '../frontend/js/world2/systems/player.js';
 import type { FrameCtx } from '../frontend/js/world2/kernel.js';
+import { coverageOf } from '../scripts/smoke/measure-invariants.mjs';
 
 const frame = (dt: number, n = 1): FrameCtx =>
   ({ dt, ageMs: n * dt * 1000, frame: n, hidden: false, resumed: false, probe: () => {} });
@@ -67,9 +68,26 @@ describe('§1 판정 — decide/collide (순수)', () => {
 
   // 스폰이 겹쳤거나 파츠가 나중에 들어오면 몸이 원 안에 있을 수 있다. 그때 막아 버리면
   // **영원히 못 나온다** — 회복 가능한 쪽을 고른다.
-  it('이미 갇힌 상태면 판정을 끄고 걸어 나오게 둔다', () => {
-    const r = slide(10, 0, 1, 0, wall, 0.34);
+  it('이미 갇힌 상태면 걸어 나오게 둔다', () => {
+    const r = slide(10, 0, 1, 0, wall, DEFAULT_BODY_R);
     expect(r).toEqual({ x: 11, z: 0 });
+  });
+
+  // ── 갇힘 가드가 **자유이동이 아니다** (검수관 P5) ──────────────────────────
+  // 이 두 검사가 없던 동안 갇힘 분기는 `return { x: x+dx, z: z+dz }` 한 줄이었고, 그것은
+  // **원 안에 한 프레임 들어가면 그 프레임에 벽을 뚫고 어디로든 갈 수 있다**는 뜻이었다.
+  // 위 검사 하나로는 그 차이를 못 본다 — 중심에서 밖으로 나가는 이동은 두 판본 다 통과다.
+  it('갇힌 상태에서 **더 깊이** 들어가는 이동은 버린다', () => {
+    // 원 (10,0,r=2) · 몸 0.34 → 걸림 반경 2.34. (11.5,0) 은 거리 1.5 로 갇힌 상태다.
+    // 거기서 중심 쪽(-x)으로 가면 침투가 0.84 → 1.84 로 **늘어난다**.
+    const r = slide(11.5, 0, -1, 0, wall, DEFAULT_BODY_R);
+    expect(r).toEqual({ x: 11.5, z: 0 });
+  });
+
+  it('갇힌 상태에서 침투가 줄는 방향은 그대로 받는다 — 끼이면 안 된다', () => {
+    // 같은 자리에서 z 로 움직이면 중심과의 거리가 늘어 침투가 줄어든다.
+    const r = slide(11.5, 0, 0, 1, wall, DEFAULT_BODY_R);
+    expect(r).toEqual({ x: 11.5, z: 1 });
   });
 
   it('반경 0 인 파츠는 막지 않는다 — 지면·도로가 그렇게 선언돼 있다', () => {
@@ -97,17 +115,38 @@ describe('§2 조회 — systems/collision (근처 3×3 + 캐시)', () => {
     expect(c.count()).toBeGreaterThan(0);
   });
 
-  it('멀리 떨어진 두 지점은 서로 다른 것을 본다 — 캐시가 갱신된다', () => {
+  // ⚠ 이 검사의 제목은 원래 *"멀리 떨어진 두 지점은 서로 다른 것을 본다 — 캐시가
+  // 갱신된다"* 였고 **본문이 그것을 확인하지 않았다**(검수관 지적 P6). `near`·`far` 를
+  // 재놓고 `Number.isFinite` 만 봤으니, 캐시가 아예 갱신되지 않아도 통과한다 — 제목이
+  // 주장하는 축의 검출력이 0 이었다. 기대값을 **독립적으로 계산해** 대조한다.
+  it('선 파셀의 3×3 을 정확히 본다 — 캐시가 실제로 갱신된다', () => {
     const c = createCollider();
+    /**
+     * `collision.ts` 의 `rebuild` 가 내야 할 개수를 테스트가 따로 센다.
+     * **tier 를 `near` 로 고정한 것이 계약이다** — 대각을 `mid` 로 강등하면 `tiers:
+     * ['near']` 인 파츠(planter)가 조용히 빠지고, 그 회귀를 이 대조가 잡는다.
+     */
+    const expectAt = (px: number, pz: number) => {
+      let n = 0;
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const qx = px + dx;
+          const qz = pz + dz;
+          n += blockersOf(
+            parcelLayout(qx, qz, 'near', DEFAULT_LAYOUT),
+            qx * DEFAULT_LAYOUT.cellX, qz * DEFAULT_LAYOUT.cellZ,
+          ).length;
+        }
+      }
+      return n;
+    };
     c.resolve(0, 0, 0.01, 0);
-    const near = c.count();
+    expect(c.count()).toBe(expectAt(0, 0));
     c.resolve(DEFAULT_LAYOUT.cellX * 20, DEFAULT_LAYOUT.cellZ * 20, 0.01, 0);
-    const far = c.count();
-    // 개수가 같을 수는 있어도(우연) 캐시 키가 갱신됐는지는 아래 결정성으로 본다.
-    expect(Number.isFinite(near) && Number.isFinite(far)).toBe(true);
-    // 되돌아오면 처음과 같은 개수여야 한다 — `parcelLayout` 이 결정적이기 때문이다.
+    expect(c.count()).toBe(expectAt(20, 20));
+    // 되돌아오면 처음 값으로 — `parcelLayout` 이 결정적이기 때문이다.
     c.resolve(0, 0, 0.01, 0);
-    expect(c.count()).toBe(near);
+    expect(c.count()).toBe(expectAt(0, 0));
   });
 
   it('건물 한가운데로 걸어 들어가려 하면 막힌다', () => {
@@ -125,7 +164,7 @@ describe('§2 조회 — systems/collision (근처 3×3 + 캐시)', () => {
 
   it('빈 하늘(막을 것이 없는 좌표)에서는 그대로 간다', () => {
     // 파츠가 없는 곳을 찾을 수 없을 수도 있으므로, 빈 배열을 직접 넣어 확인한다.
-    expect(slide(0, 0, 5, 5, [], 0.34)).toEqual({ x: 5, z: 5 });
+    expect(slide(0, 0, 5, 5, [], DEFAULT_BODY_R)).toEqual({ x: 5, z: 5 });
   });
 });
 
@@ -198,5 +237,72 @@ describe('§4 배선 — main.ts 가 충돌을 플레이어에 연결한다 (정
 
   it('끄는 노브가 있다 — 갇히는 사고가 나면 링크로 빠져나온다', () => {
     expect(src).toMatch(/readNum\(\s*'collide'/);
+  });
+});
+
+// ── §5 게이트 — 스모크가 "안 돌아다닌 세션" 을 잡는가 (G-COL1) ──────────────
+//
+// 이 절이 생긴 경위가 이 파일에서 가장 중요한 교훈이다. 충돌을 붙이자 스모크 세션이
+// 스폰 앞 분수대에서 **6.9m 만 걷고 멈췄고**, 개수 게이트 `[7]`·`[7.6]` 은 **PASS 를
+// 보고했다.** 거짓말이 아니었다 — 아무 데도 안 갔으니 아무것도 안 늘었다.
+//
+// **게이트가 재는 축이 "개수" 였고, 그 축이 유효할 조건("세션이 실제로 움직였다")을
+// 아무도 안 봤다.** 그 조건을 판정으로 만든 것이 `coverageOf` + `covOk` 이고, 여기서
+// 그 판정 함수의 검출력을 확인한다.
+describe('§5 게이트 — coverageOf 가 제자리 세션을 잡는다', () => {
+  it('제자리에 머문 세션은 재방문 0 이다 — 이것이 압축의 존재 이유다', () => {
+    // 충돌 도입 직후 실제로 났던 모양: 같은 칸에서 leg 를 다 소모한다.
+    const c = coverageOf(['0,0', '0,0', '0,0', '0,0', '0,0']);
+    expect(c.unique).toBe(1);
+    expect(c.revisits).toBe(0);
+  });
+
+  it('연속 중복을 압축하지 않으면 제자리가 재방문으로 세어진다 — 대조 계산', () => {
+    // 압축을 뺀 계산(= 예전 방식으로 세면 어떻게 되는가)을 직접 해서, 위 검사가
+    // 지키는 것이 무엇인지 못 박는다. **압축 없이 세면 재방문 4 로 통과해 버린다.**
+    const seq = ['0,0', '0,0', '0,0', '0,0', '0,0'];
+    const naive = seq.length - new Set(seq).size;
+    expect(naive).toBe(4);
+    expect(coverageOf(seq).revisits).toBe(0);
+  });
+
+  it('건너갔다 돌아온 세션은 고유 3·재방문 2 다', () => {
+    const c = coverageOf(['0,0', '0,-1', '0,-2', '0,-1', '0,0']);
+    expect(c.unique).toBe(3);
+    expect(c.revisits).toBe(2);
+  });
+
+  it('한 칸 안에서 여러 leg 를 걸어도 고유 수는 안 늘어난다', () => {
+    const c = coverageOf(['0,0', '0,0', '0,-1', '0,-1', '0,-1', '0,0']);
+    expect(c.unique).toBe(2);
+    expect(c.revisits).toBe(1);
+  });
+});
+
+// ── §6 게이트 배선 — 커버리지가 판정에 실제로 곱해지는가 (정적·약함) ────────
+// §4 와 같은 성격의 약한 검사다. 스모크 모듈은 브라우저를 띄우므로 단위 테스트로
+// 돌릴 수 없고, **진짜 축은 executor 스모크 회차**다. 여기서 보는 것은 "판정식에서
+// 커버리지가 빠지지 않았는가" 하나다 — 그것이 빠지면 `coverageOf` 는 계산만 하고
+// 아무것도 막지 않는 장식이 된다(이 저장소가 여러 번 겪은 형태다).
+describe('§6 게이트 배선 — covOk 가 pass 와 status 에 닿는다 (정적·약함)', () => {
+  const inv = readFileSync('scripts/smoke/measure-invariants.mjs', 'utf8');
+  const run = readFileSync('scripts/smoke/run.mjs', 'utf8');
+
+  it('measure-invariants 의 pass 가 covOk 를 곱한다', () => {
+    expect(inv).toMatch(/const\s+pass\s*=[\s\S]{0,200}?covOk/);
+  });
+
+  it('run.mjs 가 [7]·[7.6] 에 covOk 를 하드 실패로 넘긴다 — observe 에서도 FAIL', () => {
+    // `perfStatus(pass, errors, hard)` 의 셋째 인자. observe 모드에서 INFO 로 내려가면
+    // CI 에서 무력해지므로 **하드 축**이어야 한다.
+    const calls = run.match(/perfStatus\(r\.pass,\s*r\.errors,\s*!r\.covOk\)/g) ?? [];
+    expect(calls.length, '[7]·[7.6] 두 곳 다 넘겨야 한다').toBe(2);
+  });
+
+  it('세션이 -z 고정 6회가 아니다 — 막히면 방향을 튼다', () => {
+    // 옛 형태(`for (let i = 0; i < WALK_LEGS; i++)` 안에서 move 만)는 배치에 막히면
+    // 0m 세션이 된다. 방향 전환이 사라지면 이 검사가 잡는다.
+    expect(inv).toMatch(/TURN_RAD/);
+    expect(inv).toMatch(/STUCK_M/);
   });
 });

@@ -22,25 +22,37 @@
 // (`waterSurfaceY`)이 이미 그 패턴이고 같은 문법을 따른다.
 //
 // ── 이 파일이 **하지 않는 것** ─────────────────────────────────────────────
-// · **렌더 tier 의 히스테리시스를 따라가지 않는다.** 여기서는 거리로만 tier 를 정한다
-//   (`tierFor(dist, null)`). 렌더는 경계에서 이전 tier 를 유지하므로 **밴드 경계의 파셀은
-//   잠깐 서로 다른 tier 를 볼 수 있다.** 그 파셀은 플레이어에서 최소 한 칸(32m) 떨어져
-//   있어 몸이 닿지 않는다 — 도달 불가라 무해하지만, **무해한 이유가 거리이지 설계가
-//   아니라는 것**을 적어 둔다. 파셀이 작아지면 이 전제가 깨진다.
+// · **3×3 은 전부 `near` 로 본다.** 여기 원래 `tierFor(거리, null)` 로 tier 를 정하고
+//   *"밴드 경계의 파셀은 **잠깐** 서로 다른 tier 를 볼 수 있다 … 최소 한 칸(32m) 떨어져
+//   있어 몸이 닿지 않는다"* 라고 적혀 있었는데 **두 문장 다 거짓이었다**(검수관 실측):
+//   ① `nearEnter = 1.15` 인데 대각 4칸의 거리는 `√2 = 1.414` 라 **잠깐이 아니라 상시**
+//      `mid` 로 강등됐다. 히스테리시스와 무관하다. 그래서 `tiers: ['near']` 인 `planter`
+//      가 대각 파셀에서 통째로 빠졌다(121파셀 대조 100건, 전부 planter).
+//   ② *"최소 한 칸(32m)"* 은 파셀 **중심** 사이 거리다. 파셀 **내용물**은 경계에서
+//      `margin`(2.5m) 안쪽까지 온다 — 실제 최소 간격은 32m 가 아니라 2.5m 였다.
+//   동작은 그때도 안전했지만(planter 유효 반경 0.85m < 2.5m) **안전을 준 것은 32m 도
+//   3×3 도 아니라 `margin` 이었다.** 지금은 전부 `near` 로 봐서 그 논증 자체가 필요 없다 —
+//   원 개수는 평균 88 → 91 수준으로 늘 뿐이고, `collide.ts` 가 선언한 *"보이는 자리 =
+//   막히는 자리"* 가 저절로 참이 된다.
 // · **스트리밍이 실제로 로드했는지 안 본다.** `parcelLayout` 이 순수·결정적이라 로드 여부와
 //   무관하게 같은 답이 나온다. 즉 **아직 안 그려진 건물에도 막힌다** — 로딩 중 벽을
 //   통과하는 것보다 이쪽이 낫다고 봤다.
 
 import { parcelLayout, DEFAULT_LAYOUT, type LayoutOptions } from '../decide/parcel-layout.js';
-import { tierFor, DEFAULT_BANDS, type TierBands } from '../decide/lod.js';
 import { blockersOf, slide, type Blocker } from '../decide/collide.js';
 
 export interface ColliderOptions {
-  cellX?: number;
-  cellZ?: number;
+  /**
+   * 파셀 배치 규칙. **셀 크기도 여기서 읽는다** — `layout.cellX`/`cellZ`.
+   *
+   * ⚠ 여기 원래 `cellX?`·`cellZ?` 가 **따로** 있었고 `layout` 에도 같은 필드가 있었다
+   * (검수관 지적 P4). 호출부는 `createCollider({ cellX: CELL_X, cellZ: CELL_Z, layout })`
+   * 처럼 둘 다 넘겼고, 그러면 **한쪽만 바꿨을 때 조회 격자와 배치 격자가 어긋난다** —
+   * 증상은 "파셀 경계 근처에서만 벽이 없다" 로 나타나 원인을 짚기 어렵다.
+   * 값이 하나뿐인 곳으로 좁혔다.
+   */
   layout?: LayoutOptions;
-  bands?: TierBands;
-  /** 플레이어 몸 반경(m). 빌더 아바타(0.34)와 같은 수준으로 둔다 */
+  /** 플레이어 몸 반경(m). 기본값과 그 근거는 `DEFAULT_BODY_R` 한 곳이다 */
   bodyRadius?: number;
 }
 
@@ -51,13 +63,29 @@ export interface Collider {
   count(): number;
 }
 
-const DEFAULT_BODY_R = 0.34;
+/**
+ * 플레이어 몸 반경(m).
+ *
+ * ── 왜 0.34 인가 — **여기 근거가 없었다**(검수관 지적 P3) ────────────────────
+ * `ColliderOptions.bodyRadius` 주석은 *"빌더 아바타(0.34)와 같은 수준"* 이라고 적고
+ * 있었는데, world1 계열(`world.js`·`visit.js`)의 플레이어 반경은 **0.3** 이다. 두 값이
+ * 다른 것 자체는 문제가 아니지만(빌더 아바타와 1인칭 플레이어는 다른 것이다) **어느
+ * 쪽을 따랐는지 읽는 사람이 알 수 없었다.**
+ *
+ * 판정: **0.3 보다 크게 잡는다.** 이유는 이 충돌이 원 하나로 몸을 근사하고
+ * (`decide/collide.ts`) 파츠 쪽 원도 `footprint` 로 근사하기 때문이다 — 양쪽이 근사면
+ * 오차가 겹치는 방향은 **뚫리는 쪽**이고, 감독 지시가 *"뚫고 가면 안 됨"* 이다(#71).
+ * 0.04m 는 그 방향의 여유다. 어깨너비 40cm 를 원으로 감싸는 값이기도 하다.
+ *
+ * **여기가 이 값의 SSOT 다** — `tests/world2-grid.test.ts` 의 스폰 요건이 이것을 읽는다.
+ * 테스트에 숫자를 다시 적으면 한쪽만 고쳐도 아무도 모른다.
+ */
+export const DEFAULT_BODY_R = 0.34;
 
 export function createCollider(opts: ColliderOptions = {}): Collider {
-  const cellX = opts.cellX ?? DEFAULT_LAYOUT.cellX;
-  const cellZ = opts.cellZ ?? DEFAULT_LAYOUT.cellZ;
   const layout = opts.layout ?? DEFAULT_LAYOUT;
-  const bands = opts.bands ?? DEFAULT_BANDS;
+  const cellX = layout.cellX;
+  const cellZ = layout.cellZ;
   const bodyR = opts.bodyRadius ?? DEFAULT_BODY_R;
 
   let cachePx = NaN;
@@ -69,12 +97,11 @@ export function createCollider(opts: ColliderOptions = {}): Collider {
     const out: Blocker[] = [];
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        // 거리로만 tier 를 정한다(위 「하지 않는 것」 참조). 'none' 은 파츠가 없다.
-        const tier = tierFor(Math.hypot(dx, dz), null, bands);
-        if (tier === 'none') continue;
+        // **전부 `near`** — 대각을 `mid` 로 보면 near 전용 파츠가 조용히 빠진다
+        // (위 「하지 않는 것」의 ①). 몸이 닿는 거리에서는 렌더가 보여주는 것을 전부 막는다.
         const qx = px + dx;
         const qz = pz + dz;
-        out.push(...blockersOf(parcelLayout(qx, qz, tier, layout), qx * cellX, qz * cellZ));
+        out.push(...blockersOf(parcelLayout(qx, qz, 'near', layout), qx * cellX, qz * cellZ));
       }
     }
     cache = out;

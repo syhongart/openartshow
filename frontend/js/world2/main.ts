@@ -134,8 +134,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 충돌(태스크 #182). `?collide=0` 으로 끈다 — 예전처럼 통과한다.
   // **끄는 노브를 두는 이유**: 스모크가 켬/끔을 대조군으로 비교할 수 있어야 "정말 막고
   // 있는가" 를 잴 수 있고, 벽에 갇히는 사고가 나면 감독이 링크 하나로 빠져나올 수 있다.
+  //
+  // ⚠ **`collide=0` 은 대조군 전용이다 — 게이트의 본 세션에 붙이지 않는다**(검수관 P7).
+  // 이 저장소는 그 사고를 이미 한 번 냈다: 게이트 넷이 `npc=0&vrm=0` 을 켜 둔 채
+  // *"개수가 상수다"* 를 선언했고, 그것은 **라이브에 없는 조건의 세계**였다
+  // (`scripts/smoke/world2-ready.mjs` 가 그 경위를 적고 있다). 충돌을 끄면 주행이
+  // 길어져 세션이 편해지는데, 그 편함은 **라이브가 아닌 것을 잰 대가**다.
+  // 라이브 상태 판정은 언제나 이 노브가 1 인 세션이 한다.
   const collide = readNum('collide', 1, 0, 1) === 1;
-  const collider = createCollider({ cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT });
+  // 셀 크기를 따로 넘기지 않는다 — `LAYOUT` 안에 있고, 두 곳에서 읽으면 어긋난다(P4).
+  const collider = createCollider({ layout: LAYOUT });
 
   const scene = new THREE.Scene();
   // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
@@ -736,6 +744,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 미러링이 되고, 감독이 강을 옮기는 순간 소리 없이 못 미치는 값이 된다.
       // 이 값을 보면 스모크는 **"0 보다 커질 때까지"** 만 걸으면 된다.
       player: { ...player.position, ...player.angles, submersion: player.submerged },
+      // ── 지금 선 파셀 (2026-08-08) ─────────────────────────────────────────
+      // `submersion` 과 **같은 이유로** 연다 — 스모크가 셀 크기를 알아야 하면 그 숫자가
+      // 곧 값 미러링이고, 셀을 바꾸는 순간 소리 없이 어긋난다. 게이트 `[7]` 의 세션이
+      // *"파셀을 몇 개나 건넜는가"* 를 판정하려면(검수관 반려 B1) 이 값이 필요하다.
+      //
+      // ⚠ `Math.round(월드/셀)` 이라는 규약은 이 저장소에 **여덟 곳 넘게 반복**돼 있다
+      // (`collision.ts`·`water.ts`·`minimap.ts`·`npc.ts`·`spawn-spot.ts` …). 여기가
+      // 아홉 번째다. 순수 함수 하나로 모으는 것이 맞지만 그것은 소비자 전부를 건드리는
+      // 별건이라 태스크로 남긴다 — **이 줄이 SSOT 라고 적지 않는다.**
+      parcel: { px: Math.round(player.position.x / CELL_X), pz: Math.round(player.position.z / CELL_Z) },
       frame: adapter!.frameStats(),
       pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
       // ── 그림자 축 (감독 지시 2026-08-02) ─────────────────────────────────

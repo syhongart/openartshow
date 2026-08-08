@@ -155,6 +155,32 @@ const STEP_MS = 700;
 const WALK_LEGS = 6;
 const WALK_MS = 1500;
 
+// ── 커버리지 목표 — **G-COL1** (검수관 반려 B1, 2026-08-08) ──────────────────
+//
+// 왜 목표가 필요한가: 이 세션은 오래 *"-z 로 6번 전진"* 이었고, 그것을 **주행이라고
+// 불렀을 뿐 주행인지 확인한 적이 없다.** 플레이어 충돌(#182)이 붙자 스폰 앞 분수대에서
+// 6.9m 만 걷고 멈췄고 — 파셀을 한 칸도 새로 안 밟았는데 — 게이트는 **PASS 로 보고했다.**
+// 개수가 늘지 않은 것은 사실이었다. 아무 데도 안 갔으니까.
+//
+// 그래서 "몇 미터 걸었나" 가 아니라 **"파셀을 몇 개 밟았나"** 를 판정으로 만든다.
+// 미터는 배치·속도·프레임률에 흔들리지만 파셀은 스트리밍의 단위 그 자체다 — `[7]` 이
+// 잡으려는 증식(슬롯 재사용 실패·재방문 누적)이 정확히 그 경계에서 일어난다.
+//
+// ⚠ **이 판정은 성능 축이 아니라 하드 실패다.** `SMOKE_PERF_GATES=observe` 에서도
+// INFO 로 내려가지 않는다(`run.mjs` 의 `perfStatus` 가 `hard` 로 받는다). observe 의
+// 정당화는 *"러너 성능 편차의 거짓 FAIL"* 인데, **세션이 안 움직인 것은 편차가 아니다.**
+//
+/** 고유 파셀 목표. 3 이면 "출발 칸 + 새 칸 둘" 이다 — 경계를 최소 두 번 넘는다 */
+const COVER_UNIQUE = 3;
+/** 재방문 목표. 슬롯 반납 실패는 **다시 들어갈 때**만 드러난다 */
+const COVER_REVISITS = 1;
+/** 이 leg 에서 실제로 움직인 거리(m)가 이보다 작으면 막힌 것으로 본다 */
+const STUCK_M = 1.0;
+/** 목표를 채우려고 늘릴 수 있는 최대 leg 수. 도달하면 그대로 판정한다(무한 대기 금지) */
+const MAX_LEGS = 20;
+/** 막혔을 때 틀 각도. 90° 면 슬라이딩이 안 먹는 정면 충돌에서도 빠져나온다 */
+const TURN_RAD = Math.PI / 2;
+
 const show = (v) => (v === undefined || v === null ? '측정실패(값 없음)' : String(v));
 
 async function counts(page) {
@@ -168,8 +194,26 @@ async function counts(page) {
       draw: s.frame?.draw ?? null,
       parcels: s.stream?.loaded ?? null,
       built: s.stream?.built ?? null,
+      // 커버리지 판정용. `null` 이면 훅이 안 열린 것이므로 **측정 실패로 다룬다**.
+      px: s.parcel?.px ?? null,
+      pz: s.parcel?.pz ?? null,
+      wx: s.player?.x ?? null,
+      wz: s.player?.z ?? null,
     };
   });
+}
+
+/**
+ * 방문 순서에서 커버리지를 센다.
+ *
+ * 연속 중복을 먼저 걷어낸다 — 한 파셀 안에서 여러 leg 를 걸은 것은 "재방문" 이 아니다.
+ * 압축하지 않으면 **제자리에서 멈춰 있어도 재방문 수가 올라가** 판정이 뒤집힌다(이 게이트가
+ * 잡으려는 바로 그 상황이 통과한다).
+ */
+export function coverageOf(seq) {
+  const compact = seq.filter((k, i) => i === 0 || k !== seq[i - 1]);
+  const unique = new Set(compact).size;
+  return { unique, revisits: compact.length - unique, path: compact };
 }
 
 /** `__world2` 조작 훅. 없으면 **측정 실패**다 — 조작 못 한 것을 통과로 적지 않는다. */
@@ -275,28 +319,71 @@ export async function runInvariants({
       await snap(`회전 ${Math.round(((i + 1) * 360) / SPIN_STEPS)}°`);
     }
 
-    // ── ② 직진 — 파셀 경계를 여러 번 넘는다 ─────────────────────────────────
-    log('[2] 직진 주행…');
-    for (let i = 0; i < WALK_LEGS; i++) {
-      await drive(page, 'move', 0, -1); // 전진
+    // ── ② 주행 — **파셀을 밟는다.** 미터를 세지 않는다 ───────────────────────
+    //
+    // 여기 원래 *"-z 로 6번 전진"* 이 박혀 있었다. 도시에 충돌이 없던 동안은 그것이
+    // 곧 주행이었지만, 충돌이 붙은 뒤로는 **앞에 무엇이 있느냐에 따라 0m 일 수도 있는
+    // 명령**이 됐다. 막히면 방향을 튼다 — 사람이 도시에서 하는 그것이다.
+    //
+    // 방향 전환은 **관측한 결과로만** 한다(움직인 거리 < `STUCK_M`). "여기쯤에서 틀어라"
+    // 를 미리 적으면 그것이 곧 배치의 값 미러링이고, 배치를 만지는 날 조용히 어긋난다.
+    const visits = [];
+    const keyOf = (c) => (c?.px == null || c?.pz == null ? null : `${c.px},${c.pz}`);
+    let prev = await counts(page);
+    if (!keyOf(prev)) throw new Error('stats().parcel 이 없다 — 커버리지를 잴 수 없다(측정 실패)');
+    visits.push(keyOf(prev));
+
+    log('[2] 주행 — 고유 파셀 목표 ' + COVER_UNIQUE + '…');
+    let legs = 0;
+    let turns = 0;
+    for (; legs < MAX_LEGS; legs++) {
+      await drive(page, 'move', 0, -1); // 전진(시선 방향)
       await page.waitForTimeout(WALK_MS);
-      await snap(`전진 ${i + 1}`);
+      const c = await snap(`전진 ${legs + 1}`);
+      const moved = (prev.wx == null || c.wx == null)
+        ? null : Math.hypot(c.wx - prev.wx, c.wz - prev.wz);
+      visits.push(keyOf(c));
+      prev = c;
+      if (coverageOf(visits).unique >= COVER_UNIQUE && legs + 1 >= WALK_LEGS) break;
+      if (moved != null && moved < STUCK_M) {
+        // 막혔다. 90° 틀고 계속 간다. 회전은 **개수 축과 독립된 증식원**이므로(위 ①의
+        // 근거) 여기서 도는 것도 그대로 판정 대상이다 — 표에 남는다.
+        await drive(page, 'look', TURN_RAD, 0);
+        await page.waitForTimeout(STEP_MS);
+        turns++;
+      }
     }
     await drive(page, 'move', 0, 0);
+    const outLegs = legs + 1;
 
     // ── ③ 되돌아오기 — 언로드된 파셀을 다시 로드한다 ────────────────────────
     // **재방문이 핵심이다.** 슬롯 반납이 제대로 안 되면 여기서 개수가 오른다.
     log('[3] 되돌아오기(재방문)…');
     await drive(page, 'look', Math.PI, 0);
     await page.waitForTimeout(STEP_MS);
-    for (let i = 0; i < WALK_LEGS; i++) {
+    for (let i = 0; i < outLegs; i++) {
       await drive(page, 'move', 0, -1);
       await page.waitForTimeout(WALK_MS);
-      await snap(`복귀 ${i + 1}`);
+      const c = await snap(`복귀 ${i + 1}`);
+      const moved = (prev.wx == null || c.wx == null)
+        ? null : Math.hypot(c.wx - prev.wx, c.wz - prev.wz);
+      visits.push(keyOf(c));
+      prev = c;
+      // 되돌아오는 길도 막힐 수 있다(90° 틀었으면 왕복 경로가 갈 때와 다르다).
+      // 목표는 "지나온 칸에 다시 들어가기" 이므로 여기서도 막히면 틀어서 계속 간다.
+      if (moved != null && moved < STUCK_M && coverageOf(visits).revisits < COVER_REVISITS) {
+        await drive(page, 'look', TURN_RAD, 0);
+        await page.waitForTimeout(STEP_MS);
+        turns++;
+      }
     }
     await drive(page, 'move', 0, 0);
     await page.waitForTimeout(1500);
-    await snap('정지');
+    const last = await snap('정지');
+    visits.push(keyOf(last));
+
+    const cov = coverageOf(visits);
+    const covOk = cov.unique >= COVER_UNIQUE && cov.revisits >= COVER_REVISITS;
 
     // ── 판정 ────────────────────────────────────────────────────────────────
     log('\n[결과] 기준선 대비 증가분 — 하나라도 + 면 증식이다\n');
@@ -325,12 +412,26 @@ export async function runInvariants({
       + `  ${judgeDraw ? '← 대조군이므로 **판정에 포함**' : '(참고 — 기본 세션에서는 컬링으로 정당하게 변한다)'}`,
     );
 
+    // ── G-COL1 — **세션이 실제로 돌아다녔는가** ──────────────────────────────
+    log('\n  커버리지  고유 파셀 ' + cov.unique + `/${COVER_UNIQUE}`
+      + `  재방문 ${cov.revisits}/${COVER_REVISITS}`
+      + `  (leg ${outLegs}×2 · 막혀서 튼 횟수 ${turns})`);
+    log(`            경로 ${cov.path.join(' → ')}`);
+    if (!covOk) {
+      log('\n  ✗ FAIL — 세션이 목표만큼 돌아다니지 못했다. **개수 판정은 무의미하다.**');
+      log('    아무 데도 안 갔으면 아무것도 안 늘어난다 — 그 PASS 는 게이트가 아니라 착시다.');
+      log('    막힌 자리는 위 경로의 마지막 칸이다. 배치(#149)나 스폰(`decide/grid.ts`)을 본다.');
+    }
+
     // 통과·실패는 백엔드 무관 카운터로만 가른다.
     // `draw` 는 **대조군에서만** 판정에 넣는다 — 기본 세션에서는 NPC 절두체 컬링 때문에
     // 정의상 상수가 아니고, 거기서 판정하면 게이트가 아니라 오탐 발생기가 된다.
-    const pass = maxGeo <= 0 && maxTex <= 0 && (!judgeDraw || maxDraw <= 0) && errors.length === 0;
+    //
+    // `covOk` 를 곱하는 이유는 위 G-COL1 문단 그대로다 — **못 잰 것은 통과가 아니다.**
+    const pass = maxGeo <= 0 && maxTex <= 0 && (!judgeDraw || maxDraw <= 0)
+      && errors.length === 0 && covOk;
     if (pass) {
-      log('\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다.');
+      log(`\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다 (파셀 ${cov.unique}개·재방문 ${cov.revisits}).`);
     } else if (judgeDraw && maxDraw > 0 && maxGeo <= 0 && maxTex <= 0) {
       log('\n  ✗ FAIL — 대조군에서 **드로우콜만** 늘었다.');
       log('    지오·텍스처는 그대로인데 draw 가 늘었다는 것은 **같은 자원을 더 많은 호출로**');
@@ -353,7 +454,7 @@ export async function runInvariants({
 
     log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
     await context.close();
-    return { pass, maxGeo, maxTex, maxPipe, maxDraw, rows, errors, base, baselineNote };
+    return { pass, maxGeo, maxTex, maxPipe, maxDraw, rows, errors, base, baselineNote, cov, covOk };
   }
 }
 

@@ -76,14 +76,44 @@ export function blocked(x: number, z: number, blockers: readonly Blocker[], body
 }
 
 /**
+ * 가장 깊은 침투량(m). 어느 원에도 안 걸렸으면 0.
+ *
+ * `blocked` 가 참/거짓만 내는 것과 달리 **얼마나** 들어갔는지를 낸다. 갇힘 탈출 판정에
+ * 필요하다 — "나가는 방향" 은 침투가 줄어드는 방향이고, 그것은 참/거짓으로는 못 가른다.
+ */
+export function penetration(
+  x: number, z: number, blockers: readonly Blocker[], bodyR: number,
+): number {
+  let worst = 0;
+  for (const b of blockers) {
+    const d = Math.hypot(x - b.x, z - b.z);
+    const pen = b.r + bodyR - d;
+    if (pen > worst) worst = pen;
+  }
+  return worst;
+}
+
+/**
  * 이동을 해석한다 — 막히면 **벽을 따라 미끄러진다.**
  *
  * **축을 나눠 따로 시도한다**(X 먼저, 그다음 Z). 한 번에 밀면 벽에 비스듬히 부딪혔을 때
  * 통째로 멈춰서 **끼인 것처럼 느껴진다.** 나눠 시도하면 막힌 축만 버려지고 나머지 축은
  * 살아서, 벽에 붙어도 옆으로 계속 걸어진다. world1·방문자뷰가 쓰던 방식과 같다.
  *
- * 시작점이 이미 원 안이면(스폰이 겹쳤거나 파츠가 나중에 들어온 경우) **그대로 통과시킨다** —
- * 밀어내려다 더 깊이 밀어 넣는 것보다, 걸어 나올 수 있게 두는 쪽이 회복 가능하다.
+ * ── 갇혔을 때 — **탈출 방향만 허용한다** (검수관 지적 P5) ────────────────────
+ * 여기 원래 *"시작점이 이미 원 안이면 **그대로 통과시킨다**"* 였다. 갇힘 해소는 됐지만
+ * **한 프레임이라도 원 안에 들어가면 그 프레임에 벽을 뚫고 어디로든 갈 수 있었다.**
+ * 스폰 겹침·부동소수 경계·나중에 들어온 파츠처럼 갇힘은 실제로 생기고, 그때 열리는
+ * 자유이동은 감독 지시(*"뚫고 가면 안 됨"*, #71)와 정면으로 어긋난다.
+ *
+ * 그래서 조건을 좁혔다: 갇힌 상태에서는 **침투가 늘지 않는 이동만** 받는다. 나가는 쪽·
+ * 벽을 따라 도는 쪽은 그대로 되고(회복 가능성 유지), 더 깊이 들어가는 쪽만 버린다.
+ * `<=` 인 것이 중요하다 — `<` 로 하면 침투가 똑같은 접선 방향 이동이 막혀 진짜로 끼인다.
+ *
+ * ⚠ **이것이 못 막는 것**: 갇힌 상태에서 한 걸음이 원 지름보다 크면 반대편으로 건너뛰는
+ * 것이 "침투 감소" 로 보여 허용된다. 실질 위험은 낮다 — 한 프레임 이동량은 `dt × 걷기
+ * 속도`(클램프 0.1s × 5m/s = 0.5m)이고 가장 작은 파츠 반경도 그보다 크다. **알고 남기는
+ * 구멍이지 해결된 문제가 아니다**(같은 계열의 터널링 여유는 태스크로 열려 있다).
  */
 export function slide(
   x: number, z: number,
@@ -92,8 +122,11 @@ export function slide(
   bodyR: number,
 ): { x: number; z: number } {
   if (blockers.length === 0) return { x: x + dx, z: z + dz };
-  // 갇힌 채로 시작하면 판정을 끈다. 안 그러면 두 축이 다 막혀 영원히 못 나온다.
-  if (blocked(x, z, blockers, bodyR)) return { x: x + dx, z: z + dz };
+  if (blocked(x, z, blockers, bodyR)) {
+    const before = penetration(x, z, blockers, bodyR);
+    const after = penetration(x + dx, z + dz, blockers, bodyR);
+    return after <= before ? { x: x + dx, z: z + dz } : { x, z };
+  }
 
   let nx = x;
   let nz = z;
