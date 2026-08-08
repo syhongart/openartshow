@@ -594,11 +594,121 @@
   .nav-auth-link:hover { color: var(--text-light); }
   .nav-auth-sep { width: 1px; height: 12px; background: rgba(242,242,240,0.25); }
   .nav-auth-profile { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(242,242,240,0.9); }
-  .nav-auth-profile .ini {
+  .nav-auth-profile .ini,
+  .nav-profile-id .ini {
     width: 24px; height: 24px; border-radius: 50%; display: inline-flex;
-    align-items: center; justify-content: center;
+    align-items: center; justify-content: center; flex: none;
     background: var(--violet-500); color: var(--text-dark); font-size: 12px; font-weight: 600;
   }
+  /* ── 프로필 계정 메뉴 (감독 지시 2026-08-08) ───────────────────────────────
+     프로필을 누르면 「개인 프로필」·「로그아웃」이 열린다. 로그아웃이 상단바에서
+     사라지고 메뉴 안으로 들어가는 것이 이 변경의 의도다.
+
+     구성은 SaaS 계정 메뉴의 표준 3블록이다(감독 지시 *"일반적인 saas 사이트처럼"*):
+       [신원] 아바타·이름·계정 — **지금 누구로 로그인해 있는가**. 이게 없으면 계정을
+              바꿨는지 알 수 없다. 트리거는 좁아서 이름까지밖에 못 담는다.
+       [항목] 아이콘 + 라벨
+       [로그아웃] 항상 맨 아래 + 구분선으로 분리 — 파괴적 동작이라 실수로 눌리면 안 된다.
+
+     `.nav-auth-profile` 은 원래 `<span>` 전용이었다 — 값을 새로 만들지 않고
+     버튼 리셋만 얹는다(뱃지·간격·글자색이 그대로 이어져 시각적 연속성이 유지된다).
+     색은 이 파일이 이미 쓰는 값만 재사용한다: 흰 계열 알파는 `.nav-auth-link`·
+     `.nav-sheet > a` 와 **같은 rgba(242,242,240,·)** 이고(hex 토큰에는 알파 분리
+     수단이 없다 — `--gold-soft` 주석 참조), 면·선·그림자는 `--surface-dark-1`·
+     `--border-dark`·`--shadow-card-hover` 토큰이다. radius 는 플레이트 시스템의
+     `--r-card`(3px) 하나 — 아바타 원형만 예외다(원래 그랬다). */
+  .nav-profile { position: relative; }
+  button.nav-auth-profile {
+    background: none; border: none; font-family: inherit; cursor: pointer;
+    padding: 5px 8px 5px 6px; border-radius: var(--r-card);
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.2s ease, background 0.2s ease;
+  }
+  /* 상태 셋이 구분된다 — 평소 / hover·focus / 열림. 열렸을 때 트리거가 **눌린 것으로
+     보여야** 메뉴가 어디서 나왔는지가 화면에 남는다. */
+  button.nav-auth-profile:hover { color: var(--text-light); background: rgba(242,242,240,0.06); }
+  .nav-auth-profile[aria-expanded="true"] { color: var(--text-light); background: rgba(242,242,240,0.1); }
+  .nav-profile-who { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
+  .nav-profile-who .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 계정(이메일/공급자)은 데스크톱 트리거에서는 감춘다 — 상단바가 좁다. 그 정보는
+     아래 신원 블록이 맡는다. 시트에서는 신원 블록 대신 여기가 맡는다(모바일 절 참조). */
+  .nav-profile-who .acct { display: none; }
+  .nav-profile-caret {
+    width: 10px; height: 10px; flex: none; opacity: 0.6;
+    transition: transform 0.2s ease;
+  }
+  .nav-auth-profile[aria-expanded="true"] .nav-profile-caret { transform: rotate(180deg); }
+  .nav-profile-menu {
+    /* 데스크톱: 상단바 아래로 떨어지는 팝오버. `.topnav` 가 z-index 100 으로
+       스태킹 컨텍스트를 만들므로 110 은 그 안에서의 순서다(입장하기 CTA 위).
+       `right: 0` 이라 트리거 오른쪽 끝에 정렬된다 — 트리거가 상단바 오른쪽에
+       붙어 있으므로 왼쪽 정렬이면 화면 밖으로 나간다. */
+    position: absolute; top: calc(100% + 12px); right: 0; z-index: 110;
+    min-width: 224px; max-width: min(280px, calc(100vw - 32px)); padding: 6px;
+    background: var(--surface-dark-1);
+    border: 1px solid var(--border-dark);
+    border-radius: var(--r-card);
+    box-shadow: var(--shadow-card-hover);
+    opacity: 0; visibility: hidden; transform: translateY(-6px);
+    /* ⚠ `visibility` 를 그냥 `0.16s` 로 두면 **키보드로 메뉴를 열 수 없다.**
+       실측(2026-08-08): `.is-open` 을 붙인 직후 `getComputedStyle(menu).visibility` 가
+       여전히 `hidden` 이고(리플로우를 강제해도 그렇다), 그래서 같은 틱의 `.focus()` 가
+       먹지 않아 `document.activeElement` 가 `body` 로 떨어졌다. 250ms 뒤에 부르면 된다.
+
+       **원인은 `t=0` 하나다.** `visibility` 는 transition 에서 discrete 의 **명시적
+       예외**라 한쪽 끝이 `visible` 이면 `0<t<1` 전 구간이 `visible` 인데, `t=0` 은 그
+       열린 구간 **밖**이라 시작값(`hidden`)이 나온다. 클래스를 붙인 같은 틱이 정확히
+       `t=0` 이다. 실측(수정 전 CSS 를 주입해 20ms 간격 샘플링):
+
+         t=0ms  vis=hidden op=0.00   ← focus() 가 여기서 불린다
+         t=21ms vis=visible op=0.10  ← 이미 visible
+
+       ⚠ 처음에는 이것을 *"크로미움이 전환 중간 지점에서 바꾸므로 0.16s 의 절반 동안
+       hidden"* 이라고 적었고 **틀렸다**(검수관 P13). 두 설명 모두 `t=0` 의 hidden 을
+       예측해서 관측만으로는 구별이 안 됐다 — 위 t=21ms 샘플이 구별한다.
+
+       처방은 표준형이다: **열 때는 즉시**(`0s`), **닫을 때만** 애니메이션이 끝난 뒤
+       (`0s linear 0.16s`) 숨긴다. **룩은 안 바뀐다 — 실측으로 확정했다**: 닫힘 곡선이
+       수정 전 `t=180ms op=0.00`, 수정 후 `t=183ms op=0.00` 이고 둘 다 `t=200ms` 에
+       `hidden` 이다(예외 규칙 덕에 수정 전에도 페이드아웃이 끝까지 보였다). */
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
+  }
+  .nav-profile.is-open > .nav-profile-menu {
+    opacity: 1; visibility: visible; transform: none;
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s;
+  }
+  .nav-profile-id {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px 11px; min-width: 0;
+  }
+  .nav-profile-id .ini { width: 34px; height: 34px; font-size: 14px; }
+  .nav-profile-id .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .nav-profile-id .nm {
+    font-size: 13px; font-weight: 600; color: var(--text-light);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 계정 줄은 보조 정보다 — 이름보다 한 단 낮은 명도로 위계를 만든다.
+     `--text-dim-light` 는 본문 dim 이라 이 크기에서는 아직 무겁다. */
+  .nav-profile-id .acct {
+    font-size: 11.5px; letter-spacing: 0.02em; color: rgba(242,242,240,0.52);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .nav-profile-item {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 9px 10px;
+    background: none; border: none; border-radius: var(--r-card);
+    font-family: inherit; font-size: 13px; font-weight: 500; letter-spacing: 0.02em;
+    color: rgba(242,242,240,0.8); text-align: left; text-decoration: none;
+    white-space: nowrap; cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .nav-profile-item:hover, .nav-profile-item:focus-visible {
+    background: rgba(242,242,240,0.08); color: var(--text-light);
+  }
+  /* 0.75 는 라벨(alpha 0.8)보다 가벼워 아이콘만 뒤로 물러나 보였다(육안 판정,
+     1280·390 스크린샷). 선 아이콘은 면적이 작아 같은 알파에서도 더 옅게 읽힌다. */
+  .nav-profile-item svg { width: 15px; height: 15px; flex: none; opacity: 0.85; }
+  .nav-profile-sep { height: 1px; margin: 5px 6px; background: rgba(242,242,240,0.12); }
   /* 로그인/회원가입 모달은 공용 컴포넌트(js/auth-modal.js)가 자체 스타일을 주입한다 — 여기선 정의하지 않음 */
   .topnav .nav-cta {
     /* 히어로의 "지금 입장하기"와 중복 노출 방지 — 히어로를 지나야 나타난다 */
@@ -801,6 +911,71 @@
     .ns-auth { display: flex; align-items: center; gap: 14px; padding: 12px 2px; }
     .ns-auth .nav-auth-link { font-size: 14px; padding: 0; }
     .ns-auth .nav-auth-profile { font-size: 14px; }
+    /* ── 시트 안에서는 **인라인 확장**이다 ────────────────────────────────
+       시트가 이미 펼쳐진 패널이므로, 그 위에 절대위치 팝오버를 띄우면 아래
+       「입장하기」를 덮는다. 대신 트리거 자체는 데스크톱과 **같은 버튼**으로
+       둔다 — 폭에 따라 같은 요소가 다르게 동작하면(한쪽은 메뉴, 한쪽은 그냥
+       나열) 배운 조작이 다른 기기에서 통하지 않는다. 여는 동작은 하나, 열린
+       모습만 화면에 맞춘다.
+       `.has-profile` 은 렌더가 붙인다 — `.ns-auth` 는 로그인 전(가로 2버튼)과
+       로그인 후(세로 메뉴) 두 상태를 같은 상자에 담기 때문이다. */
+    .ns-auth.has-profile { display: block; padding: 0; }
+    .ns-auth .nav-profile { width: 100%; }
+    .ns-auth button.nav-auth-profile {
+      width: 100%; padding: 11px 2px; font-size: 15px; font-weight: 500;
+      border-radius: 0; border-bottom: 1px solid rgba(242,242,240,0.08);
+    }
+    .ns-auth button.nav-auth-profile:hover,
+    .ns-auth .nav-auth-profile[aria-expanded="true"] { background: none; }
+    .ns-auth .nav-auth-profile .ini { width: 30px; height: 30px; font-size: 13px; }
+    /* 시트에서는 **트리거가 신원 블록을 겸한다** — 트리거 바로 아래에 아바타·이름을
+       또 그리면 같은 것이 두 번 나온다(데스크톱은 트리거가 상단바에 있어 안 겹친다). */
+    .ns-auth .nav-profile-who .acct {
+      display: block; margin-top: 1px;
+      font-size: 11.5px; font-weight: 400; letter-spacing: 0.02em;
+      color: rgba(242,242,240,0.52);
+    }
+    .ns-auth .nav-profile-id { display: none; }
+    .ns-auth .nav-profile-id + .nav-profile-sep { display: none; }
+    .ns-auth .nav-profile-caret { margin-left: auto; }
+    .ns-auth .nav-profile-menu {
+      /* `max-width` 를 반드시 풀어야 한다 — 팝오버용 280px 이 시트에도 걸려 있어서
+         메뉴가 시트보다 좁아졌고, 구분선이 짧게 끝나는 것으로 먼저 눈에 띄었다.
+         정작 비싼 쪽은 **터치 타깃**이다: 항목 폭이 시트 폭이 아니라 280px 이 되어
+         오른쪽 끝을 눌러도 안 눌린다(육안 판정 390 에서 발견). */
+      position: static; min-width: 0; max-width: none; padding: 0 0 0 6px; margin: 0;
+      background: none; border: none; box-shadow: none;
+      /* 팝오버 쪽 전환값을 되돌린다 — 여기서는 display 로 접는다(높이 애니메이션은
+         `role="menu"` 와 `menuitem` 사이에 래퍼를 끼워야 해서 ARIA 구조를 흐린다).
+
+         ⚠ **`transition: none` 은 닫힘 상태에서만 적용된다**(검수관 P15). 열림 규칙
+         `.nav-profile.is-open > .nav-profile-menu`(0,3,0)가 이 선택자(0,2,0)를 이기기
+         때문이다. 무해하다 — 값이 같아(`opacity 1→1`·`transform none→none`) 실제 전환이
+         없고, `nsProfileIn` 애니메이션은 (0,4,0)이라 그대로 산다.
+
+         그리고 이 세 줄이 **시트가 팝오버의 `visibility` 결함을 안 겪은 이유**다:
+         여기서는 `visibility: visible` 로 고정하고 `display` 로 접으므로 `visibility`
+         전환 자체가 없다. 즉 390 이 통과한 것은 **우연이 아니라 구조적**이다
+         (처음에 "레이아웃이 이미 갱신돼 있어서" 라고 적었고 틀렸다 — 검수관 P13). */
+      opacity: 1; visibility: visible; transform: none; transition: none;
+      display: none;
+    }
+    .ns-auth .nav-profile.is-open > .nav-profile-menu {
+      display: block; animation: nsProfileIn 0.18s ease both;
+    }
+    /* 시트 배경이 반투명(`.nav-sheet` alpha 0.96)이라 히어로 표제가 비쳐 올라온다.
+       팝오버는 불투명 면 위라 0.8 로 위계가 서지만, 여기서는 그 0.8 이 겹친 글자와
+       가까워진다 — 시트의 다른 항목(`.nav-sheet > a`)이 쓰는 0.9 에 맞춘다.
+       ⚠ 배경 알파 자체는 **건드리지 않았다**. 시트 항목 6개 전부의 룩이고 이
+       컴포넌트의 결정이 아니다(보고에 관측으로 올렸다). */
+    .ns-auth .nav-profile-item { padding: 12px 6px; font-size: 14px; color: rgba(242,242,240,0.9); }
+    /* 데스크톱 구분선의 좌우 6px 은 팝오버 패딩에 맞춘 값이다 — 시트는 패딩이
+       달라 그대로 두면 선이 항목 폭과 어긋난다(육안 판정, 390). */
+    .ns-auth .nav-profile-sep { margin: 4px 0; }
+    @keyframes nsProfileIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: none; }
+    }
     .ns-enter {
       display: block; margin-top: 10px; padding: 13px;
       background: var(--accent); color: var(--accent-ink); text-align: center;
@@ -867,11 +1042,19 @@
     .btn:active, .exh-card:active {
       transform: none;
     }
+    /* 프로필 메뉴는 **즉시 스냅**한다. caret 회전은 `transform: none` 으로 지우지
+       않는다 — 그것은 장식이 아니라 열림/닫힘을 알리는 표시다(색 대비만으로는
+       구분이 안 되는 상태값). */
+    .nav-profile-menu, .nav-profile-caret,
+    .ns-auth .nav-profile.is-open > .nav-profile-menu {
+      transition-duration: .01ms !important;
+      animation-duration: .01ms !important;
+    }
   }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/landing-K26BIeZK.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/landing-5XDrtAhG.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/feed-Cm56rHm1.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-aZ7HCW1S.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-hr07Qqp5.js">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-BtfeuGbd.css">
 </head>
