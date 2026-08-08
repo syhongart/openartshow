@@ -174,6 +174,39 @@ describe('StreamingSystem — tier 변경이 재생성으로 새지 않는다(�
   });
 });
 
+// ── 교체의 방향 ─────────────────────────────────────────────────────────────
+// `retiered` 총계는 "몇 번 바뀌었나" 만 말한다. 한 방향으로 흘러간 것과 같은 경계를
+// 오간 것을 구별하지 못해서, 팀장이 건 판정 기준("42m 에 왕복 3건 이상이면 히스테리시스
+// 폭 확대 병행", 2026-08-07)을 그 수로는 잴 수 없었다. 방향을 나눠 센다.
+describe('StreamingSystem — 교체 방향(승격·강등)', () => {
+  it('멀어지면 강등이 잡히고, 그 합이 retiered 를 넘지 않는다', () => {
+    const { sys, pos } = make();
+    settle(sys);
+    pos.x = 32; // 경계 밖으로 밀어 강등을 유도한다
+    let promoted = 0; let demoted = 0; let retiered = 0;
+    for (let i = 0; i < 8; i++) {
+      sys.update(ctx());
+      const s = sys.stats();
+      promoted += s.promoted; demoted += s.demoted; retiered += s.retiered;
+    }
+    expect(retiered).toBeGreaterThan(0);
+    expect(demoted).toBeGreaterThan(0);
+    // 방향이 없는 교체(같은 tier 재적용)는 어느 쪽에도 안 세므로 합이 총계 이하다.
+    expect(promoted + demoted).toBeLessThanOrEqual(retiered);
+  });
+
+  it('되돌아오면 승격이 잡힌다 — 왕복을 볼 수 있는 유일한 축이다', () => {
+    const { sys, pos } = make();
+    settle(sys);
+    pos.x = 32;
+    for (let i = 0; i < 8; i++) sys.update(ctx());
+    pos.x = 0; // 제자리로 — 같은 경계를 되돌아온다
+    let promoted = 0;
+    for (let i = 0; i < 8; i++) { sys.update(ctx()); promoted += sys.stats().promoted; }
+    expect(promoted).toBeGreaterThan(0);
+  });
+});
+
 describe('StreamingSystem — 커널 협조', () => {
   it('탭이 숨으면 아무것도 하지 않는다', () => {
     const { sys, fb } = make();
