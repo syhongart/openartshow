@@ -54,8 +54,17 @@
 // ② 규칙2는 `engines.node` 의 **형태**를 본다(semver 파서가 없다). 위 허용 목록 밖의
 //    표기를 쓰면 그 값이 라인 고정이더라도 FAIL 한다 — 실패 메시지가 허용 목록을
 //    알려주므로 막히지는 않지만, 새 표기를 쓸 거면 이 게이트를 먼저 고쳐라.
-// ③ 순수 액션 워크플로(`run:` 없이 `uses:` 만)를 추가하면 「측정기 생존」의
-//    `setup-node ≥ 1` 이 오탐한다 → `NO_NODE_WORKFLOWS` 에 넣는다.
+// ③ 순수 액션 워크플로(step 은 있는데 node 를 안 쓰는 파일 — labeler 등)를 추가하면
+//    「측정기 생존」의 `setup-node ≥ 1` 이 오탐한다 → `NO_NODE_WORKFLOWS` 에 넣는다.
+//    ⚠ 이 줄은 원래 **재사용 워크플로 호출 job**(`uses: ./.github/workflows/ci.yml`)까지
+//    같은 탈출로가 듣는 것처럼 적고 있었고 **거짓이었다**(검수관 C2, 실측). 그런 job 은
+//    step 이 0건이라 `NO_NODE_WORKFLOWS` 에 넣어도 **여전히 FAIL** 했고, 게다가
+//    `step 0건 — 들여쓰기 형태가 바뀌었다` 라는 **오진 메시지**로 다음 사람을 없는 문제로
+//    보냈다. 가설이 아니다 — `deploy.yml` 의 `verify:` job 이 이미 그 형태다. 지금은
+//    파서가 job 레벨 `uses:` 를 `reusable` 로 인식해 **목록에 넣을 필요 없이** 면제된다.
+//    **없는 탈출로를 적어두는 것은 탈출로가 없는 것보다 나쁘다.**
+// ④ 「측정기 생존」이 FAIL 한 회차에서는 규칙3·4 의 초록을 **근거로 쓰지 마라.**
+//    step 배열이 비면 순회 대상이 없어 vacuous pass 로 초록이 된다(검수관 P-D).
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -72,7 +81,12 @@ function nvmrcMajor(): number {
 }
 
 interface Step { text: string; line: number }
-interface Job { name: string; file: string; steps: Step[] }
+/**
+ * `reusable` — job 레벨(4칸) `uses:` 로 **재사용 워크플로를 호출하는** job.
+ * 그런 job 은 `steps` 가 원래 없다(`deploy.yml` 의 `verify:` 가 실물이다). step 0건을
+ * 결함으로 세면 즉시 오탐이 난다.
+ */
+interface Job { name: string; file: string; steps: Step[]; reusable: boolean }
 
 /**
  * 워크플로 YAML 을 job → step 으로 쪼갠다. **정규식 파싱이라 근사값이다** —
@@ -88,12 +102,27 @@ interface Job { name: string; file: string; steps: Step[] }
  *   M-F              + M-C′ → 5 passed / 0 failed   (규칙3 검출력 0)
  *
  * 떨어지는 것은 job 이 아니라 **step** 인데 step 을 세는 단언이 없었고, `setup-node ≥ 1`
- * 단언은 **전 파일 합산**이라 나머지 3파일이 채웠다. **문장을 고치는 대신 검사를 파일
- * 단위로 바꿔 그 주장을 참으로 만들었다**(GS-3 때와 같은 처방).
+ * 단언은 **전 파일 합산**이라 나머지 3파일이 채웠다. 그래서 검사를 **파일 단위**로 내렸다.
  *
- * 이 형태가 이 저장소에서 세 번째다 — behind-flag 괄호의 거짓 주장, hookify 검출력 0,
- * 그리고 이것. **「못 잡는 것」을 적는 것만으로는 부족하다. 적은 그 문장이 참인지도
- * 뮤테이션으로 확인해야 한다.**
+ * ⚠⚠ **그리고 그 처방에 *"주장을 참으로 만들었다"* 라고 적었는데 그것도 거짓이었다**
+ * (검수관 3차, 블로커 C1). 파일 단위로도 부족했다 — `ci.yml` 의 **smoke job 만** 4칸으로
+ * 낮추고 그 job 의 `setup-node` 를 `npm ci` 뒤로 옮기면(YAML 유효):
+ *
+ *   M-G(job 하나만 4칸 + setup-node 를 뒤로) → **5 passed / 0 failed**
+ *
+ * 같은 파일의 `verify` job 이 step 을 채워서 통과한 것이다. 진단이 한 단계 얕았다 —
+ * 원인은 *"합산의 단위"* 가 아니라 **생존 검사의 단위가 파서가 죽을 수 있는 최소 단위
+ * (job)보다 컸다**는 것이다. 지금은 **job 단위**로 내렸고 M-G 가 단독으로 FAIL 한다.
+ *
+ * **여전히 못 잡는 것**(이번에는 "참으로 만들었다" 고 쓰지 않는다): `steps:` 키 이름이
+ * 바뀌거나 플로우 시퀀스 표기(`steps: [{...}]`)를 쓰면 이 파서는 여전히 못 읽는다.
+ * job head(2칸) 들여쓰기가 바뀌면 파일 내 전 job 이 사라지지만 그것은 파일 단위 검사가
+ * 잡는다.
+ *
+ * 이 형태가 이 저장소에서 **네 번째다** — behind-flag 괄호의 거짓 주장, hookify 검출력 0,
+ * B-A, 그리고 이것. **세 번째를 고치는 커밋이 네 번째를 만들었다.** 교훈을 좁혀 적는다:
+ * **게이트를 강화한 뒤 "닫았다" 를 적기 전에, 강화가 닫은 것이 *케이스* 인지 *형태* 인지
+ * 구분하라.** 케이스를 닫고 형태를 닫았다고 적으면 다음 사람이 확인을 생략한다.
  */
 function parseJobs(file: string, src: string): Job[] {
   const lines = src.split('\n');
@@ -110,12 +139,16 @@ function parseJobs(file: string, src: string): Job[] {
 
     const jobHead = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(ln);
     if (jobHead) {
-      cur = { name: jobHead[1], file, steps: [] };
+      cur = { name: jobHead[1], file, steps: [], reusable: false };
       jobs.push(cur);
       curStep = null;
       continue;
     }
     if (!cur) continue;
+
+    // job 레벨(4칸) `uses:` = 재사용 워크플로 호출. **step 안의 `- uses:`(6칸)와 구별한다** —
+    // 넓게 잡으면 모든 job 이 면제되어 검사가 통째로 죽는다(검수관 명세 2 의 거짓 FAIL 위험).
+    if (/^ {4}uses:\s*\S/.test(ln)) { cur.reusable = true; continue; }
 
     const stepHead = /^ {6}- /.exec(ln);
     if (stepHead) {
@@ -165,10 +198,25 @@ describe('G-NODE1 — Node 버전 축 정합 (.nvmrc / engines / workflows)', ()
     const dead: string[] = [];
     for (const f of files) {
       const js = jobs.filter((j) => j.file === f);
-      const steps = js.flatMap((j) => j.steps);
-      if (js.length === 0) dead.push(`${f}: job 0건 — 파서가 형태 변화를 못 따라갔다`);
-      else if (steps.length === 0) dead.push(`${f}: step 0건 — 들여쓰기 형태가 바뀌었다`);
-      else if (!NO_NODE_WORKFLOWS.has(f.split('/').pop()!) && !steps.some(isSetupNode)) {
+      if (js.length === 0) { dead.push(`${f}: job 0건 — 파서가 형태 변화를 못 따라갔다`); continue; }
+
+      // ── job 단위 ────────────────────────────────────────────────────────
+      // **파일 단위로도 부족했다**(검수관 M-G): 한 job 만 다른 들여쓰기로 써도 그 job 의
+      // step 이 0건이 되는데, 같은 파일의 다른 job 이 채워서 통과했다. 파서가 죽을 수 있는
+      // **최소 단위가 job** 이므로 검사도 거기까지 내려간다.
+      for (const j of js) {
+        if (!j.reusable && j.steps.length === 0) {
+          dead.push(`${f} (job ${j.name}): step 0건 — 들여쓰기 형태가 바뀌었거나 파서가 못 읽었다`);
+        }
+      }
+
+      // ── 파일 단위: setup-node 존재 ──────────────────────────────────────
+      // 모든 job 이 재사용 워크플로 호출이면 이 파일 자체에 node 실행이 없다 → 면제.
+      // (`NO_NODE_WORKFLOWS` 는 step 은 있는데 node 를 안 쓰는 파일용이다. 예전에는 이
+      //  목록이 step 0건 검사 **뒤에만** 걸려서 재사용 워크플로 파일에는 탈출로가
+      //  아예 없었다 — 검수관 블로커 C2, 실측으로 확인된 결함이다.)
+      const exempt = NO_NODE_WORKFLOWS.has(f.split('/').pop()!) || js.every((j) => j.reusable);
+      if (!exempt && !js.some((j) => j.steps.some(isSetupNode))) {
         dead.push(`${f}: setup-node 스텝 0건 — node 를 안 쓰는 파일이면 NO_NODE_WORKFLOWS 에 넣어라`);
       }
     }
@@ -198,7 +246,8 @@ describe('G-NODE1 — Node 버전 축 정합 (.nvmrc / engines / workflows)', ()
   it(`규칙2 — engines.node 가 ${M} 라인에 고정돼 있다 (하한만 두지 않는다)`, () => {
     const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
     const range = String(pkg?.engines?.node ?? '');
-    // 판정은 **"M+1 을 허용하는가"** 다. 첫 판본은 허용 형태를 좁게 열거해서
+    // 판정 **의도**는 "M+1 을 허용하는가" 이고, **수단은 형태 열거**다(semver 파서가 없다 —
+    // 헤더 「거짓 FAIL 위험 ②」 참조). 첫 판본은 허용 형태를 좁게 열거해서
     // `"24"`·`"~24"`·`"24.19.0"` 을 거부했는데(검수관 P-1 실측), 그 셋은 전부 라인 고정이거나
     // **더 엄격하다.** 정당한 값이 막히면 다음 사람이 게이트를 우회한다 — 넓혔다.
     const pinned = new RegExp(`^[\\^~]?${M}(\\.(?:\\d+|x)){0,2}$`).test(range); // 24 · ^24 · ~24.19 · 24.19.0 · 24.x
