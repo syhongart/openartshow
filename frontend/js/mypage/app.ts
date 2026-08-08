@@ -328,6 +328,16 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
       composing = false;
       scheduleNicknameCheck();
     });
+    // ── 안전망 (검수관 R2) ────────────────────────────────────────────────
+    // 모바일 IME 는 `blur` 중 `compositionend` 를 빠뜨리는 알려진 버그가 있다.
+    // 그러면 `composing` 이 **영영 true 로 남아 별명 판정이 화면에서 영구히
+    // 멈춘다** — 사용자는 별명 칸에서 아무 피드백도 못 받고, 무엇이 잘못됐는지
+    // 알 방법이 없다. 조합이 끝날 다른 신호에서도 함께 푼다.
+    on(el, 'blur', () => {
+      composing = false;
+      scheduleNicknameCheck();
+    });
+    on(el, 'change', () => { composing = false; });
   }
 
   on(mp(root, 'link-add'), 'click', () => {

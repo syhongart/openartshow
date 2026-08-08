@@ -207,8 +207,18 @@ export function bareHost(url: URL): string {
 export function safeLinkUrl(platformId: string, urlText: string): string {
   const normalized = normalizeLinkUrl(platformId, String(urlText ?? '').trim());
   if (!normalized || normalized.length > LIMITS.linkUrl.max) return '';
-  // `normalizeLinkUrl` 이 이미 `parseUrl` 을 지나지만, 한 번 더 본다. 그 함수의 분기
-  // 하나(핸들 → URL 조립)는 `parseUrl` 을 거치지 않고 문자열을 만들기 때문이다.
+  // ── 이 줄은 **심층방어**다. 지금 막는 것이 없다 (검수관 R1, 실측) ──────────
+  // `normalizeLinkUrl` 의 분기 하나(핸들 → URL 조립)가 `parseUrl` 을 안 거치는 것은
+  // 참이다. 그러나 **거기서 위험한 값이 나오지는 않는다** — `HANDLE_RE` 가 `:` 와 `/`
+  // 를 금지하므로 그 분기의 결과는 항상 `https://` 리터럴로 시작한다.
+  //   실측: handle="javascript:x" → ""  ·  handle="a:b" → ""  ·  handle="@arthong" → https://…
+  // 그래서 이 줄을 지워도 **아무 테스트도 안 깨진다.** 그것이 정상이고, 장식이라는
+  // 뜻이 아니다.
+  //
+  // **언제 값을 하는가**: `HANDLE_RE` 를 넓히거나 `PLATFORMS[].path` 가 다른 모양의
+  // 문자열을 만들게 되는 날이다. 그때 이 줄이 유일한 방어가 된다.
+  // (조건을 안 적으면 다음 사람이 "안 깨지니 장식" 으로 읽고 뜯는다 — 이 저장소가
+  //  이름 붙인 *"참인 문장에서 성립하지 않는 결론을 뽑는 것"* 의 반대편 위험이다.)
   return parseUrl(normalized) ? normalized : '';
 }
 

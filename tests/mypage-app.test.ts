@@ -259,3 +259,94 @@ describe('destroy', () => {
     expect(root.querySelector('[data-mp="preview-bioshort"]')!.textContent).toBe(before);
   });
 });
+
+// ── GS-4 (검수관 명세, 2026-08-08) ──────────────────────────────────────────
+// **한글 IME 조합 중에는 별명 판정을 하지 않는다.**
+//
+// 검수관이 이 배선의 검출력이 **0** 임을 실측했다 — `if (composing) return;` 을 지워도,
+// `compositionend` 리스너를 통째로 지워도 152개가 전부 통과했다.
+//
+// 특히 `compositionend` 제거가 크다: `composing` 이 **영영 `true` 로 남아 별명 판정이
+// 화면에서 영구히 멈춘다.** 사용자는 별명 칸에서 아무 피드백도 못 받고 무엇이
+// 잘못됐는지 알 방법이 없다. 증상은 큰데 검사가 없는 형태다.
+//
+// ── 여기서 재는 것이 무엇인지 정확히 ──────────────────────────────────────
+// **IME 가 실기기에서 어떤 순서로 이벤트를 쏘는지는 못 잰다**(jsdom 이다).
+// 재는 것은 **`composing` 플래그가 판정을 막는가** — 그건 우리가 쓴 상태 기계라
+// jsdom 으로 완전히 잰다. 이 구별이 요점이다. 검수관 표현대로 *"재는 대상을 잘못
+// 잡으면"* 못 잴 것을 재려다 아무것도 안 재게 된다.
+describe('별명 — 한글 IME 조합', () => {
+  const feedback = () => root.querySelector<HTMLElement>('[data-mp-error="nickname"]')!;
+
+  /** 디바운스(220ms)보다 넉넉히 기다린다. */
+  const afterDebounce = () => new Promise((r) => setTimeout(r, 350));
+
+  async function boot() {
+    const app = createMyPage(root, new LocalProfileStore(() => 1000));
+    await settle();
+    return app;
+  }
+
+  it('**조합 중에는 판정이 뜨지 않는다** — 중간 자모에 빨간 경고가 깜빡이면 안 된다', async () => {
+    const app = await boot();
+    const input = root.querySelector<HTMLInputElement>('[data-mp-field="nickname"]')!;
+
+    input.dispatchEvent(new Event('compositionstart', { bubbles: true }));
+    // "홍길동" 을 치는 중간 상태. 이대로 판정하면 'jamo' 오류가 뜬다.
+    input.value = '홍ㄱ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await afterDebounce();
+
+    expect(feedback().textContent, '조합 중에 판정이 떴다').toBe('');
+    app.destroy();
+  });
+
+  it('**조합이 끝나면 한 번 판정한다**', async () => {
+    const app = await boot();
+    const input = root.querySelector<HTMLInputElement>('[data-mp-field="nickname"]')!;
+
+    input.dispatchEvent(new Event('compositionstart', { bubbles: true }));
+    input.value = '홍ㄱ';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await afterDebounce();
+    expect(feedback().textContent).toBe('');
+
+    input.value = '홍길동';
+    input.dispatchEvent(new Event('compositionend', { bubbles: true }));
+    await afterDebounce();
+
+    // 완성된 한글은 통과한다 — 그리고 중복은 모르는 상태다.
+    expect(feedback().textContent).toContain('쓸 수 있는 형식입니다');
+    expect(feedback().classList.contains('is-pending')).toBe(true);
+    app.destroy();
+  });
+
+  it('**`blur` 로도 조합이 풀린다** — 모바일 IME 가 compositionend 를 빠뜨려도 멈추지 않는다', async () => {
+    // 검수관 R2. `compositionend` 가 안 오면 `composing` 이 영영 true 로 남는다.
+    const app = await boot();
+    const input = root.querySelector<HTMLInputElement>('[data-mp-field="nickname"]')!;
+
+    input.dispatchEvent(new Event('compositionstart', { bubbles: true }));
+    input.value = '홍길동';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await afterDebounce();
+    expect(feedback().textContent).toBe('');
+
+    // compositionend 없이 blur 만 — 모바일에서 실제로 나는 형태.
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+    await afterDebounce();
+
+    expect(feedback().textContent, 'blur 뒤에도 판정이 멈춰 있다').not.toBe('');
+    app.destroy();
+  });
+
+  it('영문 입력은 조합 이벤트가 없으므로 그대로 즉시 판정한다', async () => {
+    const app = await boot();
+    const input = root.querySelector<HTMLInputElement>('[data-mp-field="nickname"]')!;
+    input.value = 'arthong';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await afterDebounce();
+    expect(feedback().textContent).toContain('쓸 수 있는 형식입니다');
+    app.destroy();
+  });
+});

@@ -65,6 +65,17 @@ export const ENTRYPOINTS = [
   // 라이브 노출은 감독·팀장 게이트다. 지금 링크가 0 인 이유는 미완이어서가 아니라
   // **로그인이 아직 mock 이기 때문**이다 — 사용자 신원이 자칭 문자열인 동안에는 별명
   // 소유권이 성립하지 않아 "내 프로필" 이라는 말이 절반만 참이다(docs/MYPAGE-PLAN.md §3).
+  //
+  // ⚠ **`'live'` 로 바꾸기 전에 반드시 볼 것** (검수관 P5, 2026-08-08).
+  // 신원만 mock 인 게 아니라 **담기는 것도 달라졌다.** 이 페이지는 얼굴 사진일 수 있는
+  // dataURL·활동 지역·전시 이력을 `lu-profile::<uid>` 에 넣는데,
+  //   · `uid` 는 `ui-chibi-store.currentUserId()` 의 `provider:name` — **자칭 문자열**이다
+  //   · `auth.logout()` 은 `lu-profile::` 를 **지우지 않는다**
+  // 공용 PC 에서 뒷사람이 같은 이름을 자칭하면 앞사람의 프로필을 그대로 본다.
+  // 아바타에도 같은 성질이 있지만 담기는 것이 다르다 — **mock 신원 위에 개인식별정보를
+  // 얹은 것은 마이페이지가 처음이다.** behind-flag 인 동안은 문제가 아니고,
+  // 라이브 승격의 **선결 조건**이다(실제 OAuth + 로그아웃 시 프로필 정리).
+  // 전문은 `docs/MYPAGE-PLAN.md` §3, 백로그 항목은 `G-MP1`.
   { key: 'mypage', src: 'mypage.html', out: 'app/mypage.html', exposure: 'flagged' },
 ];
 
