@@ -30,6 +30,7 @@ import {
   type MountedFeature,
 } from './features/index.js';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
+import { createCollider } from './systems/collision.js';
 import { fogBand } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { DEFAULT_BANDS } from './decide/lod.js';
@@ -129,6 +130,12 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     maxBuildings: DEFAULT_LAYOUT.maxBuildings * density,
     maxTrees: DEFAULT_LAYOUT.maxTrees * density,
   };
+
+  // 충돌(태스크 #182). `?collide=0` 으로 끈다 — 예전처럼 통과한다.
+  // **끄는 노브를 두는 이유**: 스모크가 켬/끔을 대조군으로 비교할 수 있어야 "정말 막고
+  // 있는가" 를 잴 수 있고, 벽에 갇히는 사고가 나면 감독이 링크 하나로 빠져나올 수 있다.
+  const collide = readNum('collide', 1, 0, 1) === 1;
+  const collider = createCollider({ cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT });
 
   const scene = new THREE.Scene();
   // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
@@ -316,6 +323,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     // 어떤 테스트도 안 걸렸겠지만, `water.ts:316` 주석이 경고하는 형태 그대로였다 —
     // *"`cellX` 를 넘기면 두 셀이 달라지는 날 강이 조용히 밀린다."*
     waterSurfaceY: (x, z) => surfaceYAt(x, z, CELL_Z),
+    // 벽에 막힌다(태스크 #182). 지형을 아는 것은 여기뿐이라는 규약이 물과 같다 —
+    // `PlayerSystem` 은 "이만큼 가려는데 실제로는 어디까지" 만 묻는다.
+    // **`LAYOUT` 을 넘긴다** — `?density=N` 으로 파츠가 늘면 충돌도 같이 늘어야
+    // "보이는데 안 막히는" 것이 안 생긴다.
+    resolveMove: collide ? collider.resolve : undefined,
     seabedY: SEABED_Y,
     onSubmerge: (alpha) => {
       if (!underwaterEl || alpha === lastAlpha) return;

@@ -161,6 +161,15 @@ export interface PlayerOptions {
 
   /** 이 좌표의 수면 높이(m). 물이 아니면 `null`. 안 주면 물 판정을 하지 않는다 */
   waterSurfaceY?: (x: number, z: number) => number | null;
+
+  // ── 벽에 막힌다 (감독 지시 2026-08-08 태스크 #182) ───────────────────────
+  //
+  // **물과 같은 주입 형태다.** 이 파일은 `decide/collide.ts` 도 세계의 건물 배치도
+  // 모른다 — "여기서 이만큼 움직이면 실제로는 어디까지 가는가" 라는 함수 하나만 안다.
+  // 그래서 빌더 미리보기처럼 세계가 없는 화면에서는 안 주면 그만이고(예전과 똑같이
+  // 통과한다), 테스트는 도시를 세우지 않고도 벽을 흉내낼 수 있다.
+  /** 이동 해석. 안 주면 충돌 없이 그대로 간다(예전 동작) */
+  resolveMove?: (x: number, z: number, dx: number, dz: number) => { x: number; z: number };
   /** 해저 높이(m). 완전히 잠기면 여기에 발이 닿는다 */
   seabedY?: number;
   /**
@@ -207,6 +216,7 @@ export class PlayerSystem implements System {
    */
   private lastSurfaceY: number | null = null;
   private readonly waterSurfaceY?: PlayerOptions['waterSurfaceY'];
+  private readonly resolveMove?: PlayerOptions['resolveMove'];
   private readonly seabed: number;
   private readonly onSubmerge?: PlayerOptions['onSubmerge'];
 
@@ -221,6 +231,7 @@ export class PlayerSystem implements System {
     if (opts.start?.yaw !== undefined) this.yaw = opts.start.yaw;
     this.apply = opts.applyCamera;
     this.waterSurfaceY = opts.waterSurfaceY;
+    this.resolveMove = opts.resolveMove;
     // 기본값을 두지 않는다 — 물 판정을 안 주면 어차피 안 쓰이고, 숫자를 여기 적으면
     // `decide/water.ts` 의 `SEABED_Y` 와 값 미러링이 된다.
     this.seabed = opts.seabedY ?? 0;
@@ -262,19 +273,32 @@ export class PlayerSystem implements System {
     const d = stick > 0
       ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, speed, ctx.dt, this.input.fast)
       : moveDelta(this.input, this.yaw, speed, ctx.dt);
+    // **실제로 간 거리**를 따로 잡는다. 충돌이 붙은 뒤로 `d`(가려던 양)와 실제가 갈린다.
+    let mx = 0;
+    let mz = 0;
     if (d.dx !== 0 || d.dz !== 0) {
-      this.x += d.dx;
-      this.z += d.dz;
-      const l = Math.hypot(d.dx, d.dz);
-      this.moveDir = { x: d.dx / l, z: d.dz / l };
+      // 충돌을 안 주면 그대로 간다 — 예전 동작이 기본값이다.
+      const next = this.resolveMove
+        ? this.resolveMove(this.x, this.z, d.dx, d.dz)
+        : { x: this.x + d.dx, z: this.z + d.dz };
+      mx = next.x - this.x;
+      mz = next.z - this.z;
+      this.x = next.x;
+      this.z = next.z;
+      const l = Math.hypot(mx, mz);
+      // 완전히 막혔으면 방향을 **갱신하지 않는다**. 0 으로 나누면 NaN 이 나가고,
+      // 마지막으로 향하던 쪽을 유지하는 편이 화면에서도 자연스럽다.
+      if (l > 0) this.moveDir = { x: mx / l, z: mz / l };
     }
 
     // 헤드밥 — 걷기 속도를 1로 본 비율로 흔든다.
     //
     // **이동량에서 역산한다**(입력 플래그가 아니라). 벽에 막혀 입력은 있는데 못 움직이는
-    // 상황에서 제자리 흔들림이 남으면 그게 더 어색하다. 지금은 충돌이 없지만 나중에
-    // 붙어도 이 식은 그대로 맞다.
-    const moved = ctx.dt > 0 ? Math.hypot(d.dx, d.dz) / ctx.dt : 0;
+    // 상황에서 제자리 흔들림이 남으면 그게 더 어색하다. 예전 이 주석은 *"지금은 충돌이
+    // 없지만 나중에 붙어도 이 식은 그대로 맞다"* 라고 적고 있었는데 **절반만 맞았다** —
+    // 식은 맞지만 `d`(가려던 양)를 넣고 있어서, 충돌이 붙는 순간 벽에 붙어 제자리 흔들림이
+    // 남았을 것이다. 충돌을 붙이면서 **실제 이동량**으로 바꿔 그 문장을 참으로 만들었다.
+    const moved = ctx.dt > 0 ? Math.hypot(mx, mz) / ctx.dt : 0;
     const ratio = this.speed > 0 ? moved / this.speed : 0;
     this.bobPhase = stepBobPhase(this.bobPhase, ratio, ctx.dt);
     // 지수 접근. dt 를 곱해 프레임레이트가 달라도 같은 시간에 같은 만큼 따라간다.
