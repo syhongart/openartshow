@@ -176,6 +176,13 @@ export const LIVE_PAGES = [
   // vite 번들 전용(`three/webgpu`·`three/addons/*` import)이라 baseline 모드에서는
   // raw 직서빙으로 부팅되지 않는다 — 그래서 vite 모드에서만 검사한다.
   { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // world3(포근마을): world2 의 포크라 **부팅 성질이 같다** — `three/webgpu` 를 쓰므로
+  // vite 전용이고, 날씨 코드도 그대로 승계한다. 그래서 world2 와 같은 플래그를 단다.
+  //
+  // 포크한 날 **처음부터** 넣는다. 바로 위 visit·lab-glb 가 "나중에 넣기로 하면 그 사이
+  // 검사 0 인 페이지가 배포된다" 를 실측으로 남겨 뒀고, 포크는 그 위험이 더 크다 —
+  // 파일이 1.9만 줄인데 그중 어느 것도 안 보게 된다.
+  { name: 'app/world3',        url: '/app/world3.html', webgl: true, viteOnly: true, weatherProbe: true },
   // ── visit·lab-glb: behind-flag 인데 **검사가 0이었다** (검수관 반려 B1, 2026-08-05) ──
   //
   // 검증 등급(#195)을 도입하면서 *"3등급이어도 자기완결·CSP 는 CI 스모크가 등급과 무관하게

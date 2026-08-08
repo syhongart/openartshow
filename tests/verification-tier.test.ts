@@ -55,8 +55,13 @@ describe('진입점 SSOT', () => {
     //
     // 2026-08-08 `mypage.html` 추가 — 감독 지시로 착수한 마이페이지. 링크가 0 인 이유는
     // 미완이어서가 아니라 로그인이 아직 mock 이기 때문이다(docs/MYPAGE-PLAN.md §3).
+    //
+    // 2026-08-08 `world3.html` 추가 — world2 의 포크(포근마을). 감독 지시로 착수했고
+    // 라이브 노출은 감독·팀장 게이트다.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
-    expect(flagged).toEqual(['lab-glb.html', 'mypage.html', 'visit.html', 'world2.html']);
+    expect(flagged).toEqual([
+      'lab-glb.html', 'mypage.html', 'visit.html', 'world2.html', 'world3.html',
+    ]);
   });
 
   // ── GS-3 (검수관 명세, 블로커 B2) ────────────────────────────────────────
