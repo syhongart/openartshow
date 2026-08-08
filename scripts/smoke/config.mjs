@@ -191,6 +191,11 @@ export const LIVE_PAGES = [
   // 필요 없다. **이 편입이 빠지면 `tests/verification-tier.test.ts` 의 G1 검사가 FAIL 한다.**
   { name: 'app/visit',         url: '/app/visit.html',  webgl: true },
   { name: 'app/lab-glb',       url: '/app/lab-glb.html', webgl: true },
+  // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
+  // 하면 그 사이 자기완결·CSP 검사가 0 인 페이지가 배포되고, 그것이 정확히 visit·
+  // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.
+  // three 를 참조하지 않는 폼 페이지라 webgl 대기가 필요 없다(유일하게 false 인 app/ 페이지).
+  { name: 'app/mypage',        url: '/app/mypage.html', webgl: false },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──
