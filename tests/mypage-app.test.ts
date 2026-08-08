@@ -358,9 +358,25 @@ describe('별명 — 한글 IME 조합', () => {
 // **두 진입점이 같은 곳으로 가는지**를 본다. 각각 따로 배선하면 미저장 확인이나 back
 // 타깃이 한쪽만 바뀌는 형태가 열리는데, 그것은 화면에서 조용하다(둘 다 "이동은 한다").
 describe('캐릭터 편집 진입점 — 둘이 같은 곳으로 간다', () => {
-  /** jsdom 은 실제 이동을 안 하므로 `href` 대입을 가로챈다. */
-  function captureNav(): { get(): string } {
+  /**
+   * jsdom 은 실제 이동을 안 하므로 `href` 대입을 가로챈다.
+   *
+   * ── ⚠ `reset()` 이 이 하네스의 핵심이다 (검수관 B1, 2026-08-08) ──────────────
+   * 첫 판본은 `get()` 만 있었고 **검출력이 0이었다.** `get()` 은 *마지막으로 대입된*
+   * href 를 돌려주는데, preview 클릭 **직전에 탭 클릭이 이미 값을 넣어 둔다.**
+   * 그래서 preview 배선을 통째로 지워도 잔상이 남아 네 단언이 **전부 통과**했다
+   * (실측: 배선 줄 삭제 → 전체 2053 테스트에서 추가 실패 **0**).
+   *
+   * **"같음" 을 단언하는 테스트는 "둘 다 안 움직임" 도 같음으로 읽는다.** 정합 검사에는
+   * **측정기 생존**(각 축이 실제로 값을 냈는가)이 반드시 함께 있어야 한다 — 이 저장소가
+   * `minY` 빈 배열의 평균 0 이 단언을 통과시킨 일로 이미 지불한 형태다.
+   *
+   * `restore()` 도 함께 둔다. `window.location` 을 Proxy 로 덮은 채 두면 뒤에 오는
+   * 테스트가 같은 전역을 읽어 오염된다.
+   */
+  function captureNav(): { get(): string; reset(): void; restore(): void } {
     let last = '';
+    const original = Object.getOwnPropertyDescriptor(window, 'location');
     const loc = window.location;
     Object.defineProperty(window, 'location', {
       configurable: true,
@@ -375,7 +391,13 @@ describe('캐릭터 편집 진입점 — 둘이 같은 곳으로 간다', () => 
         },
       }),
     });
-    return { get: () => last };
+    return {
+      get: () => last,
+      reset: () => { last = ''; },
+      restore: () => {
+        if (original) Object.defineProperty(window, 'location', original);
+      },
+    };
   }
 
   async function bootApp() {
@@ -388,20 +410,53 @@ describe('캐릭터 편집 진입점 — 둘이 같은 곳으로 간다', () => 
   it('「캐릭터」 탭 버튼과 Preview 신원 블록이 **같은 URL** 로 보낸다', async () => {
     const nav = captureNav();
     const app = await bootApp();
+    try {
+      nav.reset();
+      root.querySelector<HTMLElement>('[data-mp="avatar-open"]')!.click();
+      const fromTab = nav.get();
 
-    root.querySelector<HTMLElement>('[data-mp="avatar-open"]')!.click();
-    const fromTab = nav.get();
-    root.querySelector<HTMLElement>('[data-mp="preview-identity"]')!.click();
-    const fromPreview = nav.get();
+      // ⚠ **리셋하지 않으면 아래 전부가 잔상을 검사한다**(위 주석의 B1).
+      nav.reset();
+      root.querySelector<HTMLElement>('[data-mp="preview-identity"]')!.click();
+      const fromPreview = nav.get();
 
-    expect(fromTab, '탭 버튼이 이동하지 않았다').toBeTruthy();
-    expect(fromPreview, 'Preview 신원 블록이 이동하지 않았다').toBeTruthy();
-    expect(fromPreview).toBe(fromTab);
-    // 편집기가 **열린 채로** 열려야 한다. 로비에 떨어뜨리면 버튼이 약속한 것과 다르다.
-    expect(fromPreview).toContain('avatar=1');
-    // 돌아올 길이 있어야 한다 — 없으면 편집 후 미술관에 갇힌다.
-    expect(fromPreview).toContain('back=mypage');
+      expect(fromTab, '탭 버튼이 이동하지 않았다').toBeTruthy();
+      expect(fromPreview, 'Preview 신원 블록이 이동하지 않았다').toBeTruthy();
+      expect(fromPreview).toBe(fromTab);
+      // 편집기가 **열린 채로** 열려야 한다. 로비에 떨어뜨리면 버튼이 약속한 것과 다르다.
+      expect(fromPreview).toContain('avatar=1');
+      // 돌아올 길이 있어야 한다 — 없으면 편집 후 미술관에 갇힌다.
+      expect(fromPreview).toContain('back=mypage');
+    } finally {
+      app.destroy();
+      nav.restore();
+    }
+  });
 
-    app.destroy();
+  // 검수관 P2. 위 테스트는 **URL 만** 본다 — preview 쪽이 `goAvatarEditor` 를 안 쓰고
+  // 미저장 확인 없이 같은 URL 로 이동해도 원리상 못 잡는다. 그 축을 따로 건다.
+  it('미저장 변경이 있으면 **두 진입점 다** 확인을 묻는다', async () => {
+    const nav = captureNav();
+    const app = await bootApp();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    try {
+      // 값을 고쳐 dirty 로 만든다.
+      const input = root.querySelector<HTMLInputElement>('[data-mp-field="displayName"]')!;
+      input.value = '고친 이름';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+
+      for (const key of ['avatar-open', 'preview-identity']) {
+        confirmSpy.mockClear();
+        nav.reset();
+        root.querySelector<HTMLElement>(`[data-mp="${key}"]`)!.click();
+        expect(confirmSpy, `${key} 가 미저장 확인을 묻지 않았다`).toHaveBeenCalledTimes(1);
+        // 사용자가 취소했으므로 **이동하면 안 된다** — 여기서 편집 내용을 잃는다.
+        expect(nav.get(), `${key} 가 취소를 무시하고 이동했다`).toBe('');
+      }
+    } finally {
+      confirmSpy.mockRestore();
+      app.destroy();
+      nav.restore();
+    }
   });
 });

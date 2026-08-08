@@ -20,6 +20,22 @@
    JS 가 hidden 하나로 전 요소를 숨기는 계약이므로 여기서 한 번 못박는다. */
 [hidden] { display: none !important; }
 
+/* 눈에는 안 보이고 **스크린리더는 읽는** 텍스트. 신설 이유는 검수관 C1(2026-08-08):
+   `aria-label` 로 버튼 목적을 적으면 자손 텍스트(이름·별명·타입)를 통째로 **대체**해
+   버려서, 그 사용자만 Preview 카드의 내용을 못 읽게 된다.
+   `display:none`·`visibility:hidden` 은 접근성 트리에서도 사라지므로 쓸 수 없다 —
+   1px 로 줄이고 클립하는 것이 표준 처방이다. `white-space: nowrap` 이 없으면 긴 문구가
+   1px 폭에서 세로로 쪼개져 일부 리더가 글자를 하나씩 읽는다. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -143,7 +159,12 @@ html, body {
 }
 .pv__lock .ico { width: 14px; height: 14px; }
 .pv.is-private .pv__card { border-style: dashed; }
-.pv.is-private .pv__id,
+/* ⚠ `.pv__id` 는 **버튼이므로 자손에 건다** (검수관 C2, 2026-08-08).
+   CSS 합성 명세상 `opacity < 1` 은 요소를 그룹으로 묶어 **`outline` 을 포함한 자손
+   전체**에 적용된다. 버튼 자신에 걸면 `:focus-visible` 의 포커스 링까지 `.38` 로
+   흐려지고, 그러면 바로 아래 *"포커스 링은 지우지 않는다"* 는 주석이 거짓이 된다.
+   누를 수 있는 것 자체는 옳다 — 캐릭터 편집은 프로필 공개 여부와 무관하다. */
+.pv.is-private .pv__id > *,
 .pv.is-private .pv__bioshort,
 .pv.is-private .pv__bio,
 .pv.is-private .pv__loc,
@@ -160,7 +181,13 @@ html, body {
   gap: 13px;
   width: 100%;
   padding: 6px;
-  margin: -6px;            /* 터치 타깃만 넓히고 시각 위치는 그대로 둔다 */
+  /* 터치 타깃만 넓히고 시각 위치는 그대로 둔다.
+     ⚠ 이 음수 마진은 `.pv__card > * { margin: 0 }`(위)와 **특이성이 동점(0-1-0)** 이라
+     문서 순서로만 이긴다(검수관 P3). 저 규칙을 이 아래로 옮기거나
+     `.pv__card > .pv__id` 를 추가하면 **조용히 뒤집힌다** — 레이아웃이 6px 밀릴 뿐
+     에러도 테스트 실패도 나지 않는다. */
+  margin: -6px;
+  appearance: none;        /* 이 파일의 버튼 리셋 관례(검수관 P7) */
   border: 0;
   border-radius: 12px;
   background: none;
