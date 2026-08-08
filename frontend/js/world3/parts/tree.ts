@@ -1,30 +1,40 @@
-// 나무 — world1 의 재귀 가지를 한 덩어리로 구운 것.
+// 나무 — 3단 구형 캐노피에 열매가 달린 둥근 나무.
 //
-// ── 감독 지시 ────────────────────────────────────────────────────────────────
-// *"지금 있는 나무를 월드1의 나무로 바꿔보자."*
+// ── world2 는 무엇이었나, 그리고 왜 갈아엎었나 ──────────────────────────────
+// 직전 판본은 **world1 의 재귀 가지 나무를 한 덩어리로 구운 것**이었다(감독 지시
+// *"지금 있는 나무를 월드1의 나무로 바꿔보자"*). 가지가 2단으로 뻗고 잎은 알파가 뚫린
+// 평면 셋을 겹친 클러스터였다. 그 판본이 해결한 것과 그때 겪은 것은 아래에 남겨 둔다 —
+// **같은 벽에 다시 부딪히지 않으려면 그 이력이 필요하다.**
 //
-// 예전 이 파일은 6세그먼트 원뿔 하나(12삼각형)짜리 플레이스홀더였고, 주석이 스스로
-// "실루엣을 되찾는 작업이 대기 중" 이라 적고 있었다. 그 작업이다.
+//   · 잎을 정팔면체 덩어리로 만들었다가 감독이 *"나뭇잎 퀄리티 너무 떨어진다"* 로 잡았다.
+//     결론은 *"잎의 정체는 형태가 아니라 뚫린 실루엣"* 이었고, 그래서 알파 평면으로 갔다.
+//   · `transparent` 가 아니라 `alphaTest` 를 썼다. `transparent: true` 는 **파이프라인
+//     캐시키 축**이라 켜는 순간 재질이 갈리고 드로우콜도 갈린다.
+//   · 알파 잎은 그림자에서 사각형으로 찍혀 `castShadow` 를 껐다.
 //
-// ── 왜 그대로 못 가져오나 ────────────────────────────────────────────────────
-// world1 의 `buildDetailedTree`(`scene-trees.ts`)는 **Group + Mesh 수십 개**를 만든다 —
-// 재귀 가지마다 원기둥 하나, 잎 클러스터마다 알파 평면 셋. 재질도 수피 1 + 잎 3 종이다.
-// world1 은 파셀 단위로 재질별 병합을 해서 그루당 4드로우콜까지 줄였다.
+// ── 포근마을에서 왜 그 결론이 뒤집히는가 (2026-08-08) ──────────────────────
+// *"잎의 정체는 뚫린 실루엣"* 은 **사실적인 나무**에 대해 참이었다. 코지 빌리지 장르의
+// 나무는 사실적이지 않다 — 수관이 성기게 뚫려 있으면 안 되고, 오히려 **덩어리로 뭉친
+// 둥근 실루엣**이 그 룩의 핵심이다. 재는 축이 바뀐 것이지 앞 판정이 틀렸던 게 아니다.
 //
-// world2 는 **종류당 InstancedMesh 하나**다. 나무가 몇 그루든 드로우콜 1이어야 하고,
-// 그러려면 지오도 하나 재질도 하나여야 한다. 그래서 형태만 가져오고 조립을 다시 짰다:
+// 그래서 이번에는 반대로 간다:
 //
-//   · 재귀 가지 구조 — 그대로. `trunkLen 2.6 · trunkRad 0.22 · maxLevel 2` 는 world1 이
-//     `world.js:676` 에서 가로수에 쓰던 값 그대로다(라이브에서 검증된 비율).
-//   · 잎 — 알파 평면을 **저폴리 입체**로 바꿨다. 알파는 `transparent` 를 켜야 하고 그것이
-//     파이프라인 캐시키 축이라 재질이 하나 더 는다. 불투명 입체면 같은 재질에 담긴다.
-//   · 색 — 줄기(갈색)와 잎(초록)을 **정점색**으로 나눈다. `instanceColor` 는 인스턴스
-//     단위라 한 나무 안에서 두 색을 쓸 수 없다. 도로가 `tones` 를 흰색 근처로 두고
-//     텍스처를 곱하는 것과 같은 구조다 — 여기서는 텍스처 대신 정점색을 곱한다.
+//   · 잎 텍스처 **삭제**. 알파도 `alphaTest` 도 `DoubleSide` 도 없다 — 불투명 입체다.
+//     텍스처가 하나 줄고, 재질 설정이 다른 정점색 파츠(건물·화분)와 같아져 파이프라인
+//     조합도 줄어드는 쪽이다.
+//   · 재귀 가지 **삭제**. 가지 열셋을 뻗어도 구형 캐노피에 통째로 묻혀 한 톨도 안 보인다.
+//     줄기 하나만 남기고 그 삼각형을 캐노피에 썼다.
+//   · 캐노피 **구 3단**. 아래가 넓고 짙고, 위로 갈수록 작고 밝다. 3단인 것은 장르 관용구
+//     이자 실용이다 — 2단이면 눈사람이고 4단이면 원뿔로 수렴한다.
+//   · **열매.** 마을에 사람이 산다는 신호이고, 초록 덩어리에 보색 점을 찍어 실루엣이
+//     읽히게 한다.
+//
+// 삼각형 실측은 **214 → 260**(+21%)이다. 세그먼트를 어디까지 낮췄고 왜 거기서 멈췄는지는
+// 아래 `CANOPY` 주석에 표로 남겼다 — 각지게 보이는 것은 손해가 아니라 로우폴리 룩이다.
 //
 // ── 나무가 하나뿐인 문제 ────────────────────────────────────────────────────
 // 지오가 하나이므로 **세상의 모든 나무가 같은 모양**이다. world1 은 파셀마다 시드가
-// 달라 그루마다 달랐다. 이건 인스턴싱의 구조적 대가이고, 회전(4방향)·비균일 스케일·
+// 달라 그루마다 달랐다. 이건 인스턴싱의 구조적 대가이고, 회전(자유)·비균일 스케일·
 // 정점색 위의 `tones` 곱으로 흐트러뜨린다. 그래도 가까이서 보면 같은 나무다.
 //
 // 최대 개수에 하한이 없다 — 나무가 0그루인 파셀은 광장처럼 읽혀서 오히려 자연스럽다.
@@ -33,6 +43,8 @@ import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 import { plazaOccupied } from './plaza.js';
+import { bakePieces, rgb, type Piece } from './bake.js';
+import { V, TINTS } from './palette.js';
 
 export const tree: PartSpec = {
   kind: 'tree',
@@ -59,11 +71,15 @@ export const tree: PartSpec = {
   // 정점색이 곱해지므로 **흰색 근처**여야 한다. 예전 값(0x2f4a3a 같은 짙은 초록)은
   // 색 자체였는데, 이제는 곱셈기라 그대로 두면 나무가 새까매진다. 도로가 텍스처를 쓰며
   // 겪은 것과 같은 함정이고, "tones 는 곱셈기다" 테스트가 이 규약을 지킨다.
-  tones: [0xffffff, 0xe8f0e0, 0xf2ece0],
+  //
+  // 포근마을 개조에서 리터럴 셋(`0xffffff, 0xe8f0e0, 0xf2ece0`)을 팔레트 틴트로 옮겼다.
+  // 초록기(`mint`)와 노랑기(`butter`)만 쓴다 — 분홍·하늘색 틴트를 섞으면 곱셈이라
+  // 밝아지지 않고 **탁해지기만** 한다(곱셈은 어둡게만 만든다). 계절 변주가 필요해지면
+  // 틴트가 아니라 정점색 쪽을 갈라야 한다.
+  tones: [TINTS.plain, TINTS.mint, TINTS.butter],
 
   /**
-   * 수관 반경. 줄기 길이(`TRUNK_LEN` 2.6)에 가지가 2단 재귀로 뻗은 폭이라 실측 대신
-   * 비율로 잡는다 — 지오메트리가 three 안에서 만들어져 순수 판정에서는 잴 수 없다.
+   * 수관 반경. 스케일 1 기준이고 `footprint` 가 인스턴스 스케일을 곱한다.
    *
    * 넉넉한 쪽으로 잡는 것이 맞다. 나무는 겹치면 **한 덩어리로 뭉쳐 보여** 그루 수가
    * 읽히지 않는데, 그게 감독이 지적한 "겹쳐져 있는 것들" 의 큰 부분이다.
@@ -112,6 +128,9 @@ export const tree: PartSpec = {
       // 다양성은 **크기 자체**로 준다(감독: *"나무 크기를 똑같이 할 필요는 없지"*).
       // 0.6~1.9 면 어린 나무와 다 자란 나무가 세 배 차이라 한눈에 다르다. 비율은 ±6%
       // 안에서만 흔든다 — 그 이상 벌리면 늘린 티가 다시 난다.
+      //
+      // 구형 캐노피가 되면서 이 ±6% 가 **더 중요해졌다.** 구는 찌그러지면 즉시 알아
+      // 보이므로(평면 잎보다 눈에 잘 띈다), 이 범위를 넓히는 것은 그 자체로 룩의 결정이다.
       const s = 0.6 + rnd() * 1.3;
       const sy = s * (0.94 + rnd() * 0.12);
       const tone = Math.floor(rnd() * 3);
@@ -134,139 +153,119 @@ export const tree: PartSpec = {
   asset: (T) => ({
     geometry: buildTreeGeometry(T),
     material: new T.MeshStandardMaterial({
-      map: treeTexture(T),
-      // ── `alphaTest` 이지 `transparent` 가 아니다 ──────────────────────────
-      // 이 한 줄이 "재질 하나로 줄기와 알파 잎을 같이 담는" 것을 가능하게 한다.
-      // `transparent: true` 는 **파이프라인 캐시키 축**이라 켜는 순간 재질이 둘로
-      // 갈리고 드로우콜도 갈린다. 알파 컷아웃은 불투명 패스에서 처리되므로 같은
-      // 파이프라인에 남는다. world1 도 잎에 `alphaTest` 를 쓴다.
-      alphaTest: 0.5,
-      // 잎이 평면이라 뒷면도 보여야 한다. 뒤에서 보면 사라지는 잎은 없느니만 못하다.
-      side: T.DoubleSide,
-      // 정점색이 텍스처와 **함께 곱해진다.** 그래서 `tones` 는 흰색 근처여야 한다 —
-      // 어두운 톤을 곱하면 나무가 검게 죽는다(도로에서 이미 겪었다).
+      // 정점색이 곧 색이다 — 텍스처는 없다. `map`·`alphaTest`·`side` 를 전부 뺀 것이
+      // 이번 개조의 실질이고, 그만큼 재질이 건물·화분과 **같은 조합**이 됐다.
       vertexColors: true,
-      roughness: 0.9,
-      metalness: 0.05,
+      // 0.9 → 0.85. 잎에 아주 옅은 윤기를 남긴다. 완전 무광이면 구가 납작한 원으로
+      // 보여 3단으로 쌓은 의미가 사라진다 — 단끼리 갈리는 것은 색차만이 아니라
+      // 명암이다.
+      roughness: 0.85,
+      metalness: 0,
     }),
-    // 알파 잎은 그림자에서 사각형으로 찍힌다(투명 그림자 아티팩트). world1 도 같은
-    // 이유로 알파 재질의 castShadow 를 껐다.
+    // ⚠️ **`castShadow` 는 껐던 그대로 둔다.** 껐던 이유(알파 잎이 그림자에서 사각형으로
+    // 찍힌다)는 텍스처를 없앤 지금 사라졌고, 켜면 나무가 땅에 그림자를 드리워 룩이
+    // 확실히 좋아진다. 그런데 그림자 캐스터를 늘리는 것은 **성능 예산 축**이지 룩 축이
+    // 아니다(그림자맵 패스에 드로우콜과 삼각형이 그대로 더해진다). 이 diff 는 룩만
+    // 바꾸기로 한 것이므로 여기서 멈춘다 — 켜려면 성능 확인을 거친 별도 변경이다.
     castShadow: false,
     receiveShadow: false,
   }),
 };
 
 // ── 지오메트리 조립 ──────────────────────────────────────────────────────────
-
-/**
- * 텍스처에서 줄기 영역과 잎 영역을 가르는 U 좌표.
- *
- * 왼쪽 `[0, LEAF_U0]` 은 **완전 불투명**한 수피, 오른쪽 `[LEAF_U0, 1]` 은 알파가 뚫린
- * 잎이다. 한 장에 담는 이유는 재질을 하나로 유지하기 위해서다 — 텍스처를 둘로 나누면
- * 재질이 둘이 되고 드로우콜이 갈린다.
- *
- * 0.25 는 잎에 넓은 쪽을 준 것이다. 수피는 세로 줄무늬라 가로 해상도가 덜 필요하고,
- * 잎은 실루엣이 전부라 촘촘할수록 좋다.
- */
-export const LEAF_U0 = 0.25;
-
-/** 지오메트리의 U 좌표를 `[u0,u1]` 구간으로 눌러 넣는다 */
-function remapU(geo: InstanceType<ThreeNS['BufferGeometry']>, u0: number, u1: number): void {
-  const uv = geo.attributes.uv.array as Float32Array;
-  for (let i = 0; i < uv.length; i += 2) uv[i] = u0 + uv[i] * (u1 - u0);
-}
-
-/**
- * 줄기 + 잎 한 장. **world1 `createLeafClusterTexture` 의 알고리즘 그대로다.**
- *
- * 투명 배경 위에 타원을 150개 흩뿌리되 중앙에 밀집시킨다(`pow(rand, 0.6)` — 지수가 1보다
- * 작으면 분포가 안쪽으로 쏠린다). 그래야 가장자리가 성겨서 **실루엣이 뚫려 보인다.**
- * 잎맥 하이라이트도 같은 확률로 긋는다.
- *
- * 감독 판정 *"나뭇잎 퀄리티 너무 떨어진다"* 의 처방이 이것이다. 앞서 잎을 정팔면체
- * 덩어리로 만들었는데, 잎은 얇고 성긴 것이라 각진 입체로는 절대 안 보인다. **잎의
- * 정체는 형태가 아니라 뚫린 실루엣이다.**
- */
-function treeTexture(T: ThreeNS) {
-  const S = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = S * 2;   // 왼쪽 절반의 절반이 수피, 나머지가 잎
-  canvas.height = S;
-  const ctx = canvas.getContext('2d')!;
-  const rnd = rng(0x1eaf);
-
-  // ── 왼쪽: 수피 ──────────────────────────────────────────────────────────
-  const barkW = S * 2 * LEAF_U0;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, barkW, S);
-  // 세로 줄무늬. 색이 아니라 **밝기 변주**다 — 실제 색은 정점색이 정한다.
-  for (let i = 0; i < 90; i++) {
-    const x = rnd() * barkW;
-    const w = 1 + rnd() * 3;
-    const a = 0.06 + rnd() * 0.12;
-    ctx.fillStyle = `rgba(0,0,0,${a})`;
-    ctx.fillRect(x, 0, w, S);
-  }
-
-  // ── 오른쪽: 잎 클러스터 ─────────────────────────────────────────────────
-  const leafX = barkW;
-  const leafW = S * 2 - barkW;
-  for (let i = 0; i < 150; i++) {
-    const ang = rnd() * Math.PI * 2;
-    // 지수 0.6 — 중앙 밀집, 가장자리 성김. 이 한 값이 실루엣을 만든다.
-    const dist = Math.pow(rnd(), 0.6) * Math.min(leafW, S) * 0.45;
-    const x = leafX + leafW / 2 + Math.cos(ang) * dist;
-    const y = S / 2 + Math.sin(ang) * dist;
-    const len = 7 + rnd() * 13;
-    const wid = len * (0.4 + rnd() * 0.25);
-    // 밝기만 흔든다. 색조는 정점색이 준다 — 여기서 초록을 칠하면 정점색과 곱해져
-    // 두 번 어두워진다(값 미러링과 같은 형태의 함정이다).
-    const l = 62 + rnd() * 34;
-    ctx.fillStyle = `hsla(0, 0%, ${l}%, ${0.78 + rnd() * 0.22})`;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rnd() * Math.PI);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, len, wid, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (rnd() > 0.6) {   // 잎맥
-      ctx.strokeStyle = `hsla(0, 0%, ${Math.min(100, l + 18)}%, 0.5)`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(-len * 0.8, 0);
-      ctx.lineTo(len * 0.8, 0);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  const tex = new T.CanvasTexture(canvas);
-  tex.colorSpace = T.SRGBColorSpace;
-  return tex;
-}
-
-/** 줄기 색(정점색). 인스턴스 `tones` 가 이 위에 곱해진다 */
-const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
-/** 잎 색. 두 톤을 섞어 수관이 단색 덩어리로 안 보이게 한다 */
-const LEAF_A: readonly [number, number, number] = [0.34, 0.52, 0.30];
-const LEAF_B: readonly [number, number, number] = [0.26, 0.42, 0.24];
+//
+// **단위 나무: 피벗은 바닥**(y=0 이 땅). 인스턴스가 `sx`·`sy`·`sz` 로 늘린다.
 
 /**
  * 스케일 1일 때의 수관 반경(미터). `footprint` 가 여기에 인스턴스 스케일을 곱한다.
  *
- * 지오메트리는 three 안에서 가지 재귀로 만들어지므로 순수 판정에서 잴 수가 없다. 그래서
- * 줄기 길이(`TRUNK_LEN`)에 대한 **비율로 잡는다** — 가지가 2단(`MAX_LEVEL`)으로 뻗으며
- * 벌어지는 폭이 대략 줄기의 절반 안쪽이다.
+ * ── world2 에서 값이 안 바뀐 이유를 적어 둔다 ───────────────────────────────
+ * world2 는 이 값을 **비율로 추정**했다: 지오메트리가 가지 재귀로 three 안에서 만들어져
+ * 순수 판정에서는 잴 수가 없었고, *"실측이 아니라 상한"* 이라고 적혀 있었다.
  *
- * 실측이 아니라 상한이라는 것이 중요하다. 작게 잡으면 수관이 서로 파고들어 나무 여럿이
- * 한 덩어리로 뭉쳐 보이고, 그러면 그루 수가 읽히지 않는다.
+ * 구형 캐노피에서는 사정이 다르다 — 가장 넓은 단의 반지름(`CANOPY[0].r` = 1.10)에
+ * 열매 돌출(0.02)을 더한 **1.12 가 실측 상한**이다. 그런데도 1.3 을 그대로 둔다:
+ *
+ *   ① 이 값을 줄이면 나무가 서로 **더 가까이** 설 수 있게 되고, 그것은 배치의 변경이지
+ *      룩의 변경이 아니다. 룩만 바꾸는 diff 에서 파셀 슬롯 경쟁을 흔들지 않는다.
+ *   ② 0.18m 의 여유는 나무 사이에 숨 쉴 틈으로 남는다. `types.ts` 가 *"반경은 넉넉한
+ *      쪽으로"* 라고 적은 그 몫이고, 수관이 파고들면 그루 수가 안 읽힌다.
+ *
+ * **줄이려면 그때는 겹침 게이트를 함께 본다**(`tests/world2-parcel-slots.test.ts` 대응).
  */
 export const TREE_RADIUS_UNIT = 1.3;
 
-/** world1 `world.js:676` 이 가로수에 쓰던 값 그대로 */
-const TRUNK_LEN = 2.6;
-const TRUNK_RAD = 0.22;
-const MAX_LEVEL = 2;
+/**
+ * 줄기. world2 는 world1 가로수 값(`TRUNK_LEN 2.6`)을 그대로 썼는데, 그것은 **가지가
+ * 2단으로 더 뻗는 것을 전제한 길이**였다. 캐노피가 줄기 끝에 바로 얹히는 구조에서
+ * 2.6m 를 그대로 두면 나무가 전봇대처럼 서고 수관이 머리 위 한참 위에 뜬다.
+ *
+ * 1.7m 면 눈높이(1.7m)와 같아 **줄기 사이로 마을이 보이고** 캐노피가 시야 위쪽을
+ * 덮는다. 코지 빌리지 룩에서 나무는 가려 세우는 벽이 아니라 지붕 같은 것이다.
+ *
+ * 전체 높이는 4.19m 로 world2(가지 끝 대략 4.5m)와 거의 같다 — 스카이라인은 안 바뀐다.
+ */
+const TRUNK_LEN = 1.7;
+/** 밑동 반지름. 위(0.19)보다 굵어 아래가 벌어진다 — 굽 없이 땅에 박힌 느낌을 준다 */
+const TRUNK_RAD = 0.26;
+const TRUNK_TOP = 0.19;
+/**
+ * 줄기 세그먼트. 6이면 위에서 볼 때 육각이고, 캐노피에 절반이 묻혀 실제로 보이는 것은
+ * 세 면뿐이다. world2 는 5였다(가지가 열셋이라 개당 예산이 더 빡빡했다).
+ */
+const TRUNK_SEG = 6;
+
+/**
+ * 캐노피 3단. **아래가 넓고 짙고, 위로 갈수록 작고 밝다.**
+ *
+ * 밝기 순서가 판단이다 — 위쪽이 하늘빛을 더 받는다는 것이 실제 나무의 명암이고, 뒤집으면
+ * 수관이 위아래로 눌린 것처럼 보인다. 팔레트가 `leafDeep`·`leaf`·`leafLight` 세 단을
+ * 미리 갈라 둔 것이 이 구조를 위해서다.
+ *
+ *   `y`     줄기 끝(`TRUNK_LEN`)에서의 오프셋
+ *   `flat`  세로 눌림. 1.0 이면 정구인데, 그러면 세 단이 **공 세 개를 쌓은 눈사람**으로
+ *           보인다. 살짝 눌러야 수관이 옆으로 퍼진 나무가 된다. 위로 갈수록 1에 가깝게
+ *           둔 것은 꼭대기가 납작하면 실루엣이 잘린 것처럼 읽히기 때문이다.
+ *   `wseg`·`hseg`  세그먼트. 면이 눈에 보인다 — **그게 의도다.** 매끈한 구는 이 룩에서
+ *           오히려 플라스틱으로 읽힌다. 위로 갈수록 낮춘 것은 삼각형 예산이자 룩이다:
+ *           작은 단은 각져도 티가 안 나고, 오히려 꼭대기의 각이 로우폴리 악센트가 된다.
+ *
+ * ── 세그먼트는 **삼각형 실측**으로 정했다 (2026-08-08) ─────────────────────
+ * 첫 판본은 8×6 / 8×5 / 7×5 였고 나무 한 그루가 **304 삼각형**이었다. 직전 판본(가지
+ * 재귀 + 알파 잎)이 **214** 였으므로 42% 증가다. 나무는 far 까지 그려지고 파셀당 최대
+ * 여덟 그루라 세상 전체 삼각형에서 가장 큰 몫이고, 그 증가율을 그대로 두는 것은 룩
+ * 변경이 성능 예산을 먹는 것이다(*"성능은 스모크가 지킨다"*).
+ *
+ * 한 단씩 낮춰 **260** 으로 되받았다(+21%). 화면에서 잃은 것은 거의 없다 — 구가 8각에서
+ * 7각이 되는 것은 3m 밖에서 구별되지 않고, 이 룩은 애초에 각진 쪽을 지향한다.
+ *
+ * ⚠️ **여기서 더 줄이지 않는다.** 6각 이하로 내려가면 위에서 내려다볼 때 수관이 육각형
+ * 판으로 읽히기 시작한다 — 마을은 눈높이보다 위에서 보는 장면이 많다.
+ *
+ * ⚠️ 삼각형 수는 늘었지만 **픽셀 비용은 줄어든 쪽**이다: 직전 판본의 잎은 `DoubleSide` +
+ * `alphaTest` 라 백페이스 컬링이 없고 early-Z 도 못 썼다. 두 축이 반대로 움직였으므로
+ * *"삼각형이 늘었다"* 만으로 느려졌다고 결론짓지 말 것 — 판정은 실기기다.
+ *
+ * 각 단이 아래 단과 반드시 **겹쳐야** 한 덩어리로 보인다. 실측:
+ *   1단 상단 3.17 > 2단 하단 2.26  ·  2단 상단 3.78 > 3단 하단 3.09  ·  최고점 4.19
+ * 겹침이 끊기면 공중에 뜬 구가 되므로 `y` 를 만질 때 이 부등식들을 다시 본다.
+ */
+const CANOPY: readonly { r: number; y: number; flat: number; wseg: number; hseg: number; color: number }[] = [
+  { r: 1.10, y: 0.55, flat: 0.84, wseg: 8, hseg: 5, color: V.leafDeep },
+  { r: 0.86, y: 1.32, flat: 0.88, wseg: 7, hseg: 5, color: V.leaf },
+  { r: 0.60, y: 1.94, flat: 0.92, wseg: 6, hseg: 4, color: V.leafLight },
+];
+
+/**
+ * 열매. 정이십면체 하나(20삼각형)면 이 크기에서 구와 구별되지 않고 값이 1/4 이다.
+ *
+ * 넷인 것은 예산이자 룩이다 — 더 달면 과수원이 되고, 둘이면 우연히 붙은 점으로 보인다.
+ * 반지름 0.11m 는 캐노피 최하단(1.10m)의 10% 로, 멀어지면 색점으로 남는다.
+ */
+const FRUIT_R = 0.11;
+const FRUIT_COUNT = 4;
+/** 열매를 캐노피 표면보다 살짝 안쪽에 심는다. 1.0 이면 표면에 얹혀 떠 보인다 */
+const FRUIT_SINK = 0.92;
 
 /**
  * 결정론 난수. **씨앗이 고정이다** — 지오가 하나뿐이므로 나무 모양도 하나이고, 그것이
@@ -282,104 +281,47 @@ function rng(seed: number): () => number {
   };
 }
 
-interface Piece { geo: InstanceType<ThreeNS['BufferGeometry']>; color: readonly [number, number, number] }
-
-/**
- * 조각들을 **한 지오메트리로 굽는다.**
- *
- * `mergeGeometries`(three/addons)를 쓸 수 없다 — 파츠는 three 를 인자로만 받고
- * 애드온을 import 하지 않는다(런타임 의존 0 규율). 그래서 정점 배열을 직접 잇는다.
- *
- * 전부 non-indexed 로 통일하는 이유: 인덱스가 있는 것과 없는 것을 섞으면 인덱스 오프셋을
- * 다시 계산해야 하는데, 이 규모(수백 삼각형)에서는 그 복잡도가 정점 몇 개보다 비싸다.
- */
-function bake(T: ThreeNS, pieces: readonly Piece[]) {
-  const pos: number[] = [];
-  const nor: number[] = [];
-  const col: number[] = [];
-  const uvs: number[] = [];
-  for (const { geo, color } of pieces) {
-    const g = geo.index ? geo.toNonIndexed() : geo;
-    const p = g.attributes.position.array;
-    const n = g.attributes.normal.array;
-    const u = g.attributes.uv.array;
-    for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); }
-    for (let i = 0; i < u.length; i++) uvs.push(u[i]);
-    for (let i = 0; i < p.length / 3; i++) col.push(color[0], color[1], color[2]);
-    g.dispose();
-    if (g !== geo) geo.dispose();
-  }
-  const out = new T.BufferGeometry();
-  out.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-  out.setAttribute('normal', new T.Float32BufferAttribute(nor, 3));
-  out.setAttribute('color', new T.Float32BufferAttribute(col, 3));
-  out.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
-  return out;
-}
-
-/**
- * 재귀 가지 + 잎. world1 `buildDetailedTree` 의 구조를 그대로 따르되 Group 대신
- * **누적 행렬**을 넘긴다 — 최종 결과가 메시 트리가 아니라 정점 배열이어야 하므로
- * 부모 변환을 자식 지오에 직접 구워 넣어야 한다.
- */
 function buildTreeGeometry(T: ThreeNS) {
   const rnd = rng(0x5eed7e3);
   const pieces: Piece[] = [];
+  const add = (geo: Piece['geo'], color: number) => pieces.push({ geo, color: rgb(color) });
 
-  const leafAt = (m: InstanceType<ThreeNS['Matrix4']>, y: number, s: number) => {
-    // ── world1 과 같은 알파 평면이다 (감독 판정) ──────────────────────────────
-    // 한 번 정팔면체 덩어리로 만들었다가 감독이 **"나뭇잎 퀄리티 너무 떨어진다"** 로
-    // 잡았다. 당연하다 — 잎은 얇고 성긴 것이라 각진 다이아몬드로는 절대 안 보인다.
-    // 형태를 지오메트리로 만들려던 것이 애초에 방향을 잘못 잡은 것이고, 잎의 정체는
-    // **실루엣이 뚫린 텍스처**다.
-    //
-    // 평면 셋을 서로 다른 각도로 세운다. 어느 방향에서 봐도 최소 한 장은 정면을
-    // 향하므로 뭉치로 읽힌다 — world1 이 쓰던 방법 그대로다.
-    for (let i = 0; i < 3; i++) {
-      const w = (2.1 + rnd() * 0.5) * s;
-      const h = w * (0.72 + rnd() * 0.16);
-      const geo = new T.PlaneGeometry(w, h);
-      remapU(geo, LEAF_U0, 1);   // 텍스처의 잎 영역으로
-      const off = new T.Matrix4()
-        .makeTranslation(
-          (rnd() - 0.5) * 0.7 * s,
-          y + (rnd() - 0.5) * 0.6 * s,
-          (rnd() - 0.5) * 0.7 * s,
-        )
-        .multiply(new T.Matrix4().makeRotationY(rnd() * Math.PI))
-        .multiply(new T.Matrix4().makeRotationZ((rnd() - 0.5) * 0.7));
-      geo.applyMatrix4(new T.Matrix4().multiplyMatrices(m, off));
-      pieces.push({ geo, color: rnd() < 0.5 ? LEAF_A : LEAF_B });
-    }
-  };
+  // 줄기. 캐노피 최하단이 y=2.25 에 반지름 1.10 이므로 줄기 끝(1.7)은 구 안에 묻힌다 —
+  // 접합부를 따로 가릴 것이 필요 없다.
+  add(
+    new T.CylinderGeometry(TRUNK_TOP, TRUNK_RAD, TRUNK_LEN, TRUNK_SEG)
+      .translate(0, TRUNK_LEN / 2, 0),
+    V.trunk,
+  );
 
-  const branch = (level: number, len: number, rad: number, m: InstanceType<ThreeNS['Matrix4']>) => {
-    // 5세그먼트 — world1 은 7이었다. 가지가 열셋이라 둘씩 줄이면 체감 없이 삼각형이
-    // 50개쯤 준다. 가지는 대부분 잎에 가려 실루엣에 거의 기여하지 않는다.
-    const geo = new T.CylinderGeometry(rad * 0.62, rad, len, 5).translate(0, len / 2, 0);
-    remapU(geo, 0, LEAF_U0);   // 텍스처의 불투명(줄기) 영역으로
-    geo.applyMatrix4(m);
-    pieces.push({ geo, color: BARK });
+  // 캐노피 3단
+  for (const c of CANOPY) {
+    add(
+      new T.SphereGeometry(c.r, c.wseg, c.hseg)
+        .scale(1, c.flat, 1)
+        .translate(0, TRUNK_LEN + c.y, 0),
+      c.color,
+    );
+  }
 
-    if (level < MAX_LEVEL) {
-      const kids = 2 + (rnd() > 0.45 ? 1 : 0);
-      for (let k = 0; k < kids; k++) {
-        // 첫 분기는 완만하게, 깊을수록 크게 벌어진다 — world1 과 같은 규칙이다.
-        const tilt = (level === 0 ? 0.24 : 0.4 + level * 0.12) + rnd() * 0.3;
-        const yaw = (k / kids) * Math.PI * 2 + rnd() * 0.9;
-        const child = new T.Matrix4()
-          .multiplyMatrices(m, new T.Matrix4().makeTranslation(0, len * (0.8 + rnd() * 0.18), 0))
-          .multiply(new T.Matrix4().makeRotationY(yaw))
-          .multiply(new T.Matrix4().makeRotationZ(tilt));
-        branch(level + 1, len * (0.6 + rnd() * 0.18), rad * 0.6, child);
-      }
-      if (level >= 1 && rnd() > 0.45) leafAt(m, len * 0.75, 0.6);
-    } else {
-      leafAt(m, len * 0.9, 0.85);
-      if (rnd() > 0.5) leafAt(m, len * 0.55, 0.7);
-    }
-  };
+  // 열매. 아래 두 단에만 번갈아 단다 — 꼭대기 단은 작아서 열매가 붙으면 그 단이
+  // 열매인지 잎인지 구별이 안 된다.
+  for (let i = 0; i < FRUIT_COUNT; i++) {
+    const c = CANOPY[i % 2];
+    const theta = rnd() * Math.PI * 2;
+    // 극각을 적도~아래쪽으로만 뽑는다(`cos φ` 가 +0.25 ~ −0.63). 열매는 매달리는
+    // 것이라 수관 윗면에 얹히면 위에서만 보이고 눈높이에서는 안 보인다.
+    const phi = Math.PI * (0.42 + rnd() * 0.30);
+    const rr = c.r * FRUIT_SINK;
+    add(
+      new T.IcosahedronGeometry(FRUIT_R, 0).translate(
+        Math.sin(phi) * Math.cos(theta) * rr,
+        TRUNK_LEN + c.y + Math.cos(phi) * rr * c.flat,
+        Math.sin(phi) * Math.sin(theta) * rr,
+      ),
+      V.fruit,
+    );
+  }
 
-  branch(0, TRUNK_LEN, TRUNK_RAD, new T.Matrix4());
-  return bake(T, pieces);
+  return bakePieces(T, pieces);
 }

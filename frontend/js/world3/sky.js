@@ -32,19 +32,60 @@ const MOON_AZ = 0.30;
 const azWorld = (u) => u * Math.PI * 2 - Math.PI / 2;
 
 // 시간대×날씨 → 조명·안개 테이블. fog는 ⑨규칙에 따라 돔 최하단색과 동일하게 유지할 것.
+//
+// ── 포근마을 개조 (2026-08-08) ─────────────────────────────────────────────
+// **이 파일은 이제 world3 의 포크본이다**(`world3/sky.js`). 원본
+// `frontend/js/sky.js` 는 라이브 오픈월드가 계속 쓰고 있고, 여기 값을 바꿔도 저쪽은
+// 한 톨도 안 움직인다 — **포크한 이유가 정확히 이것이다.** 팔레트가 공유 파일에 있어
+// 마을 하늘색 하나 바꾸려면 라이브를 건드려야 했고, 그것이 감독이 *"파일 다 날릴 수
+// 있으니 독립적으로 해"* 라고 한 위험이다.
+//
+// 바꾼 것은 **`day` 와 `sunset` 뿐이다.** `night` 는 손대지 않았다 — 아래 night 블록
+// 주석 참고(미러링 때문이다).
+//
+// ── `hemiG` 를 왜 초록으로 옮겼나 ──────────────────────────────────────────
+// 반구광의 아래쪽 색은 **땅에서 튀어 올라오는 빛**이다. world2 의 바닥은 회흙색
+// (`0x6b6659`)이라 `hemiG` 가 탁한 카키(`0x8fa385`)인 것이 물리적으로 맞았다.
+// 마을 바닥은 잔디(`palette.ts` 의 `V.grass` = `0x86cf63`)다. 바닥이 초록인데
+// 반사광이 카키면 **그늘만 색이 안 맞는다** — 낮에는 티가 잘 안 나고 처마 밑·나무
+// 그늘에서만 드러나서, 원인을 짚기 어려운 종류의 어긋남이다.
+//
+// ⚠️ 그렇다고 `V.grass` 를 그대로 쓰지는 않았다. 반사광은 알베도보다 **어둡고
+// 옅다**(한 번 튄 빛이다). 그대로 넣으면 그늘이 형광 초록으로 뜬다 — world2 가
+// 잔디에서 겪은 형태다. 채도를 낮추고 명도를 내린 `0x9ec089` 를 쓴다.
+// **팔레트에서 유도하지 않고 여기 적는 이유**: `sky.js` 는 `parts/` 를 import 하지
+// 않는다(계층이 반대다). 유도하려면 의존 방향을 뒤집어야 하고, 그 대가가 이 한 줄의
+// 미러링보다 크다. 대신 이 주석이 짝을 명시한다 — `V.grass` 를 바꾸면 여기도 본다.
 const LIGHT = {
   day: {
-    clear:    { sun: 0xfff2dc, sunI: 0.95, hemiS: 0xcfe4f7, hemiG: 0x8fa385, hemiI: 1.0,  fog: 0xe9eef2, sunEl: 0.45 },
-    overcast: { sun: 0xdfe3e8, sunI: 0.35, hemiS: 0xb9c2cc, hemiG: 0x7d8578, hemiI: 0.9,  fog: 0xc3cad2, sunEl: 0.45 },
-    rain:     { sun: 0xc9d2dc, sunI: 0.25, hemiS: 0x9fa9b5, hemiG: 0x6d7570, hemiI: 0.85, fog: 0xa7b0ba, sunEl: 0.45 },
-    snow:     { sun: 0xe8ecf2, sunI: 0.4,  hemiS: 0xcdd6e0, hemiG: 0x9aa39c, hemiI: 0.95, fog: 0xd4dbe3, sunEl: 0.45 },
+    // 마을의 기본 화면이다. 여기 값이 곧 첫인상이라 가장 많이 만졌다.
+    //   sunI 0.95 → 1.02  햇빛을 살짝 올렸다. 파스텔은 밝아야 파스텔로 읽히고,
+    //                     어두우면 그냥 채도 낮은 색이 된다.
+    //   hemiS 회청 → 하늘파랑. 위에서 내려오는 빛이 파래야 크림색 벽에 파란 그늘이
+    //                     지고, 그 대비가 "맑은 날" 을 만든다.
+    //   fog   회백 → 옅은 하늘빛. 원경이 뿌옇게 흐려지는 대신 **파랗게 멀어진다.**
+    clear:    { sun: 0xfff6e4, sunI: 1.02, hemiS: 0xc2e6ff, hemiG: 0x9ec089, hemiI: 1.05, fog: 0xdff0fa, sunEl: 0.45 },
+    overcast: { sun: 0xe6ebf0, sunI: 0.38, hemiS: 0xc4d2de, hemiG: 0x8fae7f, hemiI: 0.95, fog: 0xd2dde6, sunEl: 0.45 },
+    rain:     { sun: 0xd2dae4, sunI: 0.27, hemiS: 0xacbac6, hemiG: 0x7f9a74, hemiI: 0.88, fog: 0xb8c4ce, sunEl: 0.45 },
+    snow:     { sun: 0xf0f4fa, sunI: 0.44, hemiS: 0xd8e4f0, hemiG: 0xa8b8a4, hemiI: 1.0,  fog: 0xe2ebf2, sunEl: 0.45 },
   },
   sunset: {
-    clear:    { sun: 0xffa25e, sunI: 0.9,  hemiS: 0xe8b48a, hemiG: 0x7a6a58, hemiI: 0.85, fog: 0xf2c9a2, sunEl: 0.06 },
-    overcast: { sun: 0xc9a284, sunI: 0.3,  hemiS: 0xa8968a, hemiG: 0x6d635a, hemiI: 0.8,  fog: 0xb5a292, sunEl: 0.06 },
-    rain:     { sun: 0xb08a74, sunI: 0.22, hemiS: 0x8d7f76, hemiG: 0x5d554e, hemiI: 0.75, fog: 0x97887c, sunEl: 0.06 },
-    snow:     { sun: 0xd8b49a, sunI: 0.35, hemiS: 0xc0aa9a, hemiG: 0x847a6e, hemiI: 0.85, fog: 0xd0b9a5, sunEl: 0.06 },
+    // 노을은 원래도 따뜻해서 크게 손댈 것이 없었다. 복숭아빛 쪽으로만 조금 밀고
+    // `hemiG` 를 잔디 반사에 맞췄다.
+    clear:    { sun: 0xffb075, sunI: 0.95, hemiS: 0xf5c4a0, hemiG: 0x8a8460, hemiI: 0.9,  fog: 0xf7d3b2, sunEl: 0.06 },
+    overcast: { sun: 0xd0ab8c, sunI: 0.32, hemiS: 0xb2a092, hemiG: 0x77735e, hemiI: 0.82, fog: 0xbeab9a, sunEl: 0.06 },
+    rain:     { sun: 0xb59079, sunI: 0.23, hemiS: 0x95877d, hemiG: 0x655f52, hemiI: 0.77, fog: 0x9e9084, sunEl: 0.06 },
+    snow:     { sun: 0xdfbca2, sunI: 0.37, hemiS: 0xc8b2a2, hemiG: 0x8d8472, hemiI: 0.87, fog: 0xd8c1ad, sunEl: 0.06 },
   },
+  // ── night 는 그대로 둔다 ─────────────────────────────────────────────────
+  // `decide/night.ts` 가 여기 `night.clear.fog`(0x3d4762)를 **복제해서** 하한으로
+  // 들고 있다(그 파일이 스스로 *"⚠️ sky.js 의 값을 복제한 것이라 미러링이다"* 라고
+  // 적어 뒀다). 여기만 고치면 밤 안개 하한이 옛 색을 가리키게 되고, 증상은 "밤에만
+  // 안개색이 어긋난다" 로 나타나 원인을 짚기 어렵다.
+  //
+  // 밤을 마을 톤으로 옮기는 것은 **미러링을 먼저 정리한 뒤**에 할 일이다. 지금
+  // 건드리지 않는 것이 판정이고, 그 경계를 여기 적어 둔다 —
+  // *"여기서 멈춘다" 를 안 적으면 다음 사람이 같은 고리를 또 돈다.*
   night: {
     clear:    { sun: 0xaebfe0, sunI: 0.24, hemiS: 0x39445c, hemiG: 0x232a24, hemiI: 0.55, fog: 0x3d4762, sunEl: 0.5, moon: true },
     overcast: { sun: 0x6d7890, sunI: 0.12, hemiS: 0x2c3340, hemiG: 0x1d211d, hemiI: 0.5,  fog: 0x272d3a, sunEl: 0.5, moon: true },

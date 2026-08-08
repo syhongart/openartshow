@@ -1,14 +1,23 @@
-// 건물 — 파셀의 뼈대. 저폴리 박스이고, 실루엣 변화는 크기와 회전이 전부다.
+// 집 — 마을의 뼈대. 크림색 벽에 사각뿔 지붕을 얹은 한 채짜리 오두막이다.
 //
 // 개수 하한이 2인 이유는 룩이다. 0~1채면 그 구획이 "아직 안 지어진 곳"처럼 보이고,
 // 오픈월드에서 그런 파셀이 드문드문 섞이면 세상이 버려진 인상을 준다.
+//
+// ── world2 의 박스에서 무엇이 바뀌었나 (2026-08-08 포근마을 개조) ───────────
+// 바뀐 것은 **지오메트리와 높이 두 가지뿐**이다. `place` 의 자리 뽑기·사분면 배정·
+// 겹침 반경은 한 줄도 안 건드렸다 — 그것들이 파셀 슬롯 예산과 겹침 게이트의 근거이고,
+// 룩을 바꾸자고 배치를 흔들면 "집이 예뻐졌는가" 와 "겹치지 않는가" 가 한 diff 에서
+// 갈리지 않는다. world2 가 *"나무 건물 가로등 겹쳐져 있는 것들이 보여"* 로 값을 치르고
+// 얻은 배치다.
 
-import type { PartSpec, PlacedPart } from './types.js';
+import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import {
   roadDirs, pickInQuadrant, shuffledQuadrants, SETBACK, LAMP_CLEARANCE, EAVE,
 } from './road-topology.js';
 import { isPlaza } from './plaza.js';
 import { isTowerParcel } from './zoning.js';
+import { bakePieces, rgb, type Piece } from './bake.js';
+import { V, TINT_SET } from './palette.js';
 
 /**
  * 바닥 한 변의 최소·최대(미터). **여기가 유일한 출처다** — 배치가 이 값으로 크기를 뽑고,
@@ -36,13 +45,15 @@ export const building: PartSpec = {
   kind: 'building',
   tiers: ['near', 'mid', 'far'], // 가장 멀리서도 보인다 — 스카이라인을 만드는 것이 건물이다
   salt: 0x7f4a7c15,
-  // 지면과 같은 이유로 밝혔다. 예전 값(0x3d4557 계열, 명도 27%)은 낮 하늘 아래서
-  // **새까만 덩어리**로 보였다 — 안개 너머 먼 건물은 희게 보이는데 눈앞 건물이 검으니
-  // 원근이 뒤집힌 것처럼 읽혔다.
-  //
-  // 명도 55% 대. 하늘(밝은 회청)보다는 어두워야 실루엣이 살고, 지면(40%)보다는 밝아야
-  // 벽이 바닥에서 일어선 것으로 보인다.
-  tones: [0x8892a0, 0x929cab, 0x7d8794, 0x9aa4b2, 0x737d8a],
+  /**
+   * **곱셈기다 — 색이 아니다.** 벽·지붕·문의 색은 정점에 굽혀 있고(`asset`),
+   * 여기 값은 거기에 곱해지는 집집마다의 옅은 색조 편차다.
+   *
+   * world2 는 여기에 회청색 5종을 적어 그것이 곧 벽색이었다. 정점색을 도입하면서
+   * 그 값을 그대로 두면 **회청 × 크림** 이 되어 마을이 탁해진다 — world2 가 나무에서
+   * 겪은 형태다(초록 tones × 초록 정점색으로 나무가 새까맣게 죽었다).
+   */
+  tones: TINT_SET,
 
   // `1 + floor(rnd * max)` 의 상한이다. rnd < 1 이므로 max 를 넘지 않는다.
   //
@@ -84,7 +95,17 @@ export const building: PartSpec = {
       // 정해진 크기가 도로나 가로등을 덮어도 알 수 없다 — 실제로 그랬다.
       const w = MIN_SIDE + rnd() * (MAX_SIDE - MIN_SIDE);
       const d = MIN_SIDE + rnd() * (MAX_SIDE - MIN_SIDE);
-      const h = 4 + rnd() * 16;
+      // ── 높이: 4~20m → 3.2~5.6m (포근마을 개조) ─────────────────────────
+      // world2 는 도시라 **높이가 덩치를 만들었다**(주석: *"도시의 덩치는 높이가
+      // 만들지 바닥 넓이가 만드는 것이 아니다"*). 마을은 그 반대다 — 20m 짜리 집은
+      // 아무리 크림색으로 칠해도 아파트로 읽힌다.
+      //
+      // 하한 3.2 는 지붕 몫(전체의 32%)을 빼고도 몸통이 2.2m 남는 값이다. 그보다
+      // 낮으면 문(1.4m)이 벽을 거의 다 차지해 창을 넣을 자리가 없다.
+      //
+      // **스카이라인은 랜드마크가 맡는다** — 등대(`tower.ts`)와 마을회관 종탑
+      // (`clocktower.ts`). 집이 낮아진 만큼 그 둘이 실제로 랜드마크가 됐다.
+      const h = 3.2 + rnd() * 2.4;
       const half = Math.max(w, d) / 2;
 
       // 안쪽 경계 = 셋백 + 자기 반폭 + 가로등 여유. 유도값이라 크기 상한을 바꿔도
@@ -108,9 +129,91 @@ export const building: PartSpec = {
   },
 
   asset: (T) => ({
-    geometry: new T.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
-    material: new T.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05 }),
+    geometry: buildHouseGeometry(T),
+    // 정점색이 곧 색이다 — `tones` 는 거기 곱해지는 틴트다(위 `tones` 주석).
+    material: new T.MeshStandardMaterial({
+      vertexColors: true,
+      // 0.85 → 0.72. 회반죽 벽에 아주 옅은 윤기를 준다. 완전 무광이면 파스텔이
+      // 종이처럼 납작해지고, 더 올리면 플라스틱으로 읽힌다.
+      roughness: 0.72,
+      metalness: 0.0,
+    }),
     castShadow: true,
     receiveShadow: true,
   }),
 };
+
+// ── 지오메트리 ──────────────────────────────────────────────────────────────
+//
+// **단위 집: 밑면 1×1, 전체 높이 1.** 인스턴스가 `sx`·`sy`·`sz` 로 늘린다.
+// 피벗은 바닥(y=0 이 땅) — 파츠 계약이다.
+//
+// 비균등 스케일이라 지붕도 함께 늘어난다. 그래서 `place` 의 높이 범위를 3.2~5.6 로
+// **좁혀 둔 것이 이 지오메트리의 전제**다: 1.75배 안에서는 지붕 비율 변화가 개체차로
+// 읽히고, world2 의 4~20m(5배)였다면 낮은 집은 지붕만 남고 높은 집은 첨탑이 된다.
+// 둘 중 하나를 바꾸면 다른 하나도 봐야 한다.
+
+/** 몸통이 차지하는 높이 비율. 나머지가 지붕 */
+const BODY_H = 0.68;
+
+/**
+ * 지붕 밑면이 벽보다 얼마나 넓은가(처마).
+ *
+ * **`EAVE` 를 넘으면 안 된다.** 겹침 반경이 `max(sx,sz)/2 + EAVE` 이므로, 처마가
+ * 그보다 나가면 이웃 집과 실제로 파고든다. 최대 변 6m 기준 돌출은
+ * `6 × (1.16-1) / 2 = 0.48m` 로 `EAVE`(0.6) 안이다 — 변을 키우면 여기를 다시 본다.
+ */
+const ROOF_SPREAD = 1.16;
+
+/** 사각뿔 밑면 반지름 ↔ 한 변. `ConeGeometry(r, h, 4)` 의 밑면 대각선이 `2r` 이다 */
+const SQ = Math.SQRT1_2;
+
+function buildHouseGeometry(T: ThreeNS) {
+  const pieces: Piece[] = [];
+  const add = (geo: Piece['geo'], color: number) => pieces.push({ geo, color: rgb(color) });
+
+  // 몸통. 벽 크림
+  add(new T.BoxGeometry(1, BODY_H, 1).translate(0, BODY_H / 2, 0), V.wall);
+
+  // 굽(벽 아랫단). 벽과 땅 사이를 끊어 주면 집이 땅에 **놓인** 것으로 보인다 —
+  // 없으면 벽이 땅에서 자란 것처럼 읽힌다.
+  add(new T.BoxGeometry(1.04, 0.1, 1.04).translate(0, 0.05, 0), V.wallBase);
+
+  // 지붕. 사각뿔을 45° 돌려 밑변을 축에 맞춘다(안 돌리면 마름모가 된다).
+  const roofH = 1 - BODY_H;
+  add(
+    new T.ConeGeometry(ROOF_SPREAD * SQ, roofH, 4)
+      .rotateY(Math.PI / 4)
+      .translate(0, BODY_H + roofH / 2, 0),
+    V.roof,
+  );
+
+  // 처마 띠. 지붕과 벽이 만나는 선을 한 겹 둘러 준다. 이 한 줄이 실루엣을 **로우폴리
+  // 답게** 만든다 — 원뿔이 벽에 바로 얹히면 접합부가 어중간하게 비친다.
+  add(
+    new T.BoxGeometry(ROOF_SPREAD, 0.045, ROOF_SPREAD).translate(0, BODY_H, 0),
+    V.roofShade,
+  );
+
+  // 문. 앞면(z+)에 살짝 띄워 붙인다. 벽과 같은 평면이면 z-파이팅이 난다.
+  add(new T.BoxGeometry(0.26, 0.42, 0.03).translate(0, 0.21, 0.5), V.door);
+  // 문 위 차양 — 작은 판 하나로 현관이 생긴다
+  add(new T.BoxGeometry(0.36, 0.03, 0.1).translate(0, 0.44, 0.53), V.trim);
+
+  // 창 둘. 문 양옆에 하나씩, 옆면(x±)에 하나씩 — 어느 각도에서 봐도 창이 하나는 보인다.
+  const win = (x: number, z: number, ry: number) => {
+    add(new T.BoxGeometry(0.2, 0.2, 0.03).rotateY(ry).translate(x, 0.4, z), V.trim);
+    add(new T.BoxGeometry(0.15, 0.15, 0.035).rotateY(ry).translate(x, 0.4, z), V.glass);
+  };
+  win(-0.3, 0.5, 0);
+  win(0.3, 0.5, 0);
+  win(0.5, 0, Math.PI / 2);
+  win(-0.5, 0, Math.PI / 2);
+
+  // 굴뚝. 지붕 경사면에 박히도록 중심에서 살짝 비껴 세운다. 정중앙이면 뾰족한
+  // 꼭대기와 겹쳐 지저분해진다.
+  add(new T.BoxGeometry(0.12, 0.3, 0.12).translate(0.22, BODY_H + 0.12, -0.22), V.brick);
+  add(new T.BoxGeometry(0.16, 0.04, 0.16).translate(0.22, BODY_H + 0.27, -0.22), V.wallBase);
+
+  return bakePieces(T, pieces);
+}

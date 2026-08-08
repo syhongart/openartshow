@@ -1,4 +1,4 @@
-// 정원 — 건축할 수 있는 땅을 눈에 보이게 하는 것.
+// 정원 — 건축할 수 있는 땅을 눈에 보이게 하는 것. 마을에서는 **꽃밭**이다.
 //
 // ── 감독 지시 ────────────────────────────────────────────────────────────────
 // *"바닥 격자 바닥이 잘 드러나지 않아. 도로는 지금 수준으로. 건축 올릴 수 있는 땅은
@@ -21,20 +21,20 @@
 // ── 광장에는 깔지 않는다 ────────────────────────────────────────────────────
 // 광장은 포장된 곳이다. 거기까지 잔디를 깔면 "건축 가능한 땅" 이라는 신호가 흐려지고,
 // 무엇보다 중앙 광장은 지을 수 없는 자리다.
+//
+// ── 잔디 패치에서 꽃밭으로 (2026-08-08 포근마을 개조) ──────────────────────
+// world2 의 이 판은 **결만 있는 잔디**였다. 마을에서는 거기에 꽃을 점점이 얹는다.
+// 지오메트리는 한 줄도 안 바뀌었다 — 판 하나에 텍스처 하나이고, 바뀐 것은 그 텍스처를
+// 굽는 캔버스뿐이다. **꽃을 지오메트리로 세우지 않은 것이 이 파일의 핵심 판단이다**:
+// 파셀 하나가 32m 이고 꽃은 15cm 라, 세우면 그루당 인스턴스가 수천 개가 되거나
+// (드로우콜) 판 하나에 수만 정점이 붙는다(개수 불변식). 텍스처면 둘 다 0이다.
 
-import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
+import type { PartSpec, ThreeNS } from './types.js';
 import { isPlaza } from './plaza.js';
 import { hexCss } from './color.js';
+import { V, TINTS } from './palette.js';
 
-export { BLADE_WIDTH, GRASS_TEX, GRASS_REPEAT };
-
-/**
- * 잔디 텍스처의 바탕색. 색상 100° 근처의 노랑기 있는 초록 — 순수한 초록(120°)은
- * 인공적이다. 원래 `'hsl(102, 34%, 52%)'` 였고 hex 로 옮긴 것은 밤 알베도 배수가 이 색의
- * **휘도**를 읽기 때문이다(`decide/ground-albedo.ts`). 변환 오차는 채널당 1/255 미만이라
- * 화면에서 구별되지 않는다.
- */
-export const GRASS_BASE = 0x74ae5b;
+export { BLADE_WIDTH, GRASS_TEX, GRASS_REPEAT, FLOWER_COUNT };
 
 export const garden: PartSpec = {
   kind: 'garden',
@@ -49,11 +49,20 @@ export const garden: PartSpec = {
   // 나무는 정점색이 색을 주므로 텍스처가 회색조였지만, 정원은 정점색이 없어 텍스처가
   // 색을 갖는다. 그래서 tones 는 **밝기 변주**만 맡는다 — 판마다 미세하게 달라야 잔디가
   // 한 장을 복사한 것처럼 안 보인다.
-  tones: [0xffffff, 0xf0f4ea, 0xe6efe0],
+  //
+  // 포근마을 개조에서 리터럴 셋(`0xffffff, 0xf0f4ea, 0xe6efe0`)을 팔레트 틴트로 옮겼다.
+  // 값의 뜻은 그대로다(거의 흰색, 초록·따뜻한 쪽으로만 아주 조금). `ground` 와 같은
+  // 조합을 쓰는데, 두 파츠가 **위아래로 7cm 간격에 겹쳐 깔리므로** 틴트 계열이 갈리면
+  // 그 경계가 색차로 드러난다.
+  tones: [TINTS.plain, TINTS.mint, TINTS.butter],
 
-  // 지면 평면 신고 + 알베도 원천. 밤 배수가 `GRASS_BASE` 휘도와 위 `tones` 평균에서
+  // 지면 평면 신고 + 알베도 원천. 밤 배수가 `V.grass` 휘도와 위 `tones` 평균에서
   // 유도된다(`decide/ground-albedo.ts`) — 잔디가 밤에 형광으로 뜨던 원인이 이 값이다.
-  groundBase: GRASS_BASE,
+  //
+  // world2 는 `GRASS_BASE = 0x74ae5b` 라는 이 파일 전용 상수였다. 팔레트가 생기면서
+  // 지웠다 — `ground` 의 잔디층과 **같은 초록이어야** 물가 단면과 화단이 한 땅으로
+  // 읽히는데, 두 파일에 각자 적으면 그것이 곧 값 미러링이다.
+  groundBase: V.grass,
 
   // ── 사분면 넷에서 통짜 한 장으로 (감독 판정) ──────────────────────────────
   // 감독: *"건물, 나무 있는 곳 바닥 정리가 필요해. 뭔가 건물이 어긋나있네."*
@@ -108,11 +117,11 @@ export const garden: PartSpec = {
 };
 
 /**
- * 잔디 텍스처.
+ * 잔디 텍스처. **꽃이 섞인 화단이다.**
  *
  * 단색 판이면 "색칠한 바닥" 이지 잔디가 아니다. 짧은 선을 촘촘히 그어 결을 만든다 —
  * 풀 한 포기를 그리는 게 아니라 **멀리서 봤을 때의 결**을 만드는 것이라, 이 정도
- * 해상도(128²)에서 선 굵기 1px 면 충분하다.
+ * 해상도에서 선 굵기 몇 픽셀이면 충분하다.
  *
  * **색은 여기서 준다.** 나무 잎은 정점색이 색을 맡아 텍스처가 회색조였지만, 정원은
  * 정점색이 없다. 그래서 초록을 텍스처에 칠하고 `tones` 는 밝기 변주만 맡는다 — 둘 다
@@ -133,11 +142,83 @@ export const garden: PartSpec = {
  *   선 개수 900 → 500  굵어진 만큼 줄여 밀도를 유지한다
  *   불투명도 0.6 → 0.32  출렁임의 **진폭**을 낮춘다. 대비가 낮으면 밉이 바뀌어도 덜 튄다
  *   반복 12 → 8        결이 1.5배 커져 화면에서 텍셀 밀도가 낮아진다
+ *
+ * **꽃도 이 기준을 그대로 받는다** — 아래 `FLOWER_*` 주석 참고. 꽃은 결보다 크므로
+ * 오히려 여유가 있는 쪽이다.
  */
 const BLADE_WIDTH = 2.5;
 const BLADE_COUNT = 500;
 const GRASS_TEX = 256;
 const GRASS_REPEAT = 8;
+
+/**
+ * 타일 하나가 실제로 덮는 거리(미터). 판이 파셀 한 칸(32m)이고 결을 8회 반복하므로
+ * 4m 다. **꽃 크기를 픽셀이 아니라 센티미터로 판단하려면 이 값이 필요하다** —
+ * 유도해 두면 반복 횟수를 바꿔도 아래 계산이 저절로 따라온다.
+ */
+const TILE_M = 32 / GRASS_REPEAT;
+/** 1픽셀이 덮는 거리(미터). 256px 로 4m → 1.56cm */
+const PX_M = TILE_M / GRASS_TEX;
+
+/**
+ * 타일 하나에 심는 꽃 송이 수.
+ *
+ * 12송이 / 16㎡ = **0.75송이/㎡**. 이 밀도가 판단이다 — 더 촘촘하면 잔디가 아니라
+ * 꽃밭 카펫이 되고, 마을에서 잔디는 대부분의 면적을 차지해야 하는 배경이다. 꽃은
+ * *"여기 사람이 산다"* 를 말하는 악센트이지 주인공이 아니다.
+ *
+ * ⚠️ **한계 — 4m 주기의 반복은 눈에 보인다.** 한 타일을 64번(8×8) 깔므로 꽃 배치가
+ * 그대로 되풀이된다. world2 의 잔디결도 같은 조건이었고 감독 화면에서 수용됐지만,
+ * 결은 무늬가 없고 꽃은 **점이라 자리가 기억된다**. 이것을 지우려면 판마다 다른 텍스처가
+ * 필요한데 그러면 텍스처 개수가 파셀 수만큼 늘어난다(개수 불변식). 밀도를 낮게 잡은 것이
+ * 그 반복을 완화하는 유일한 수단이다.
+ */
+const FLOWER_COUNT = 12;
+/**
+ * 꽃 한 송이의 지름(**미터**). 실제 화단 꽃무리 크기다.
+ *
+ * ── 왜 픽셀이 아니라 미터로 적는가 ──────────────────────────────────────────
+ * 텍스처 해상도(`GRASS_TEX`)나 반복 횟수(`GRASS_REPEAT`)를 건드리면 같은 픽셀 값이
+ * 다른 크기가 된다. world2 가 결 굵기를 밉맵 때문에 1 → 2.5 로 올리면서 해상도와 반복을
+ * **함께** 옮겼던 그 상황이다. 화면에서 판단하는 것은 언제나 실제 크기이므로 거기를
+ * 원천으로 두고 픽셀은 유도한다.
+ *
+ * 17cm 는 픽셀로 10.9px 이고, 밉 3단계(1.4px)까지 실루엣이 살아남는다 — 위 "2~3픽셀"
+ * 기준을 넉넉히 넘는다. 꽃이 멀어지면서 사라지는 것이 아니라 **초록에 섞여 색점으로
+ * 남는다**, 그게 맞다.
+ */
+const FLOWER_M = 0.17;
+/** 꽃 지름(픽셀) */
+const FLOWER_PX = FLOWER_M / PX_M;
+/** 꽃잎 하나의 반지름과 꽃 중심에서 꽃잎까지의 거리. 둘의 합이 꽃 반지름이다 */
+const PETAL_R = FLOWER_PX * 0.24;
+const PETAL_ORBIT = FLOWER_PX * 0.26;
+/** 꽃잎 장수. 5장이 꽃으로 읽히는 최소치다 — 4장이면 십자, 3장이면 삼각형으로 보인다 */
+const PETALS = 5;
+
+/**
+ * 꽃 색. **팔레트의 꽃 다섯을 그대로 쓴다.**
+ *
+ * 다섯이나 되는 이유는 마을 화면에 같은 색 꽃만 피면 그것이 곧 무늬로 읽히기 때문이다.
+ * 색상환을 넓게 도는 것이 의도다 — 파스텔이라 채도가 낮아 넓게 벌려도 번잡해지지 않는다.
+ */
+const FLOWER_COLORS: readonly number[] = [
+  V.flowerRed, V.flowerYellow, V.flowerWhite, V.flowerBlue, V.flowerPink,
+];
+
+/**
+ * 결·꽃 배치의 씨앗. **씨앗이 고정이다** — 텍스처가 하나뿐이므로 무늬도 하나이고,
+ * 그것이 빌드마다 달라지면 골든 스냅샷이 흔들린다.
+ *
+ * ⚠️ **십진수로 적는다.** 원래 `0x67a55e` 였고, `tests/world3-parts-assets.test.ts` 의
+ * 색 리터럴 검사가 이것을 **색으로 읽어 빨간불이 났다.** 6자리 16진수는 hex 색과 형태가
+ * 같아서 정규식으로는 구별할 방법이 없다.
+ *
+ * 검사에 예외를 뚫는 대신 표기를 바꿨다 — 예외 목록은 다음 사람이 **진짜 색을 그 뒤에
+ * 숨길 자리**가 되고, 그러면 "색은 팔레트 한 곳에서 온다" 는 문장이 조용히 거짓이 된다.
+ * 값 자체는 `0x67a55e` 와 같은 수라 무늬도 그대로다.
+ */
+const TEX_SEED = 6792542;
 
 function grassTexture(T: ThreeNS) {
   const S = GRASS_TEX;
@@ -146,7 +227,7 @@ function grassTexture(T: ThreeNS) {
   canvas.height = S;
   const ctx = canvas.getContext('2d')!;
 
-  let a = 0x67a55e;
+  let a = TEX_SEED;
   const rnd = () => {
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -154,12 +235,16 @@ function grassTexture(T: ThreeNS) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 
-  // 잔디 바탕. 색은 위 `GRASS_BASE` 하나이고 여기서는 CSS 로 되돌려 칠하기만 한다 —
+  // 잔디 바탕. 색은 팔레트의 `V.grass` 하나이고 여기서는 CSS 로 되돌려 칠하기만 한다 —
   // 밤 알베도 배수가 같은 상수의 휘도를 읽으므로 두 곳에 적으면 조용히 어긋난다.
-  ctx.fillStyle = hexCss(GRASS_BASE);
+  ctx.fillStyle = hexCss(V.grass);
   ctx.fillRect(0, 0, S, S);
   // 풀결 — 짧은 선을 위쪽으로 조금 기울여 긋는다. 밝기와 색조를 함께 흔들어야
   // 한 장을 반복해 깐 티가 덜 난다.
+  //
+  // HSL 범위는 `V.grass`(hsl 100°, 53%, 60%) 주위로 다시 잡았다. world2 잔디가
+  // 52% 명도였을 때의 `42~64%` 를 그대로 두면 **결이 바탕보다 어두운 쪽으로만** 깔려
+  // 밝힌 잔디가 도로 탁해진다 — 색을 올릴 때 같이 봐야 하는 값이다.
   ctx.lineWidth = BLADE_WIDTH;
   ctx.lineCap = 'round';   // 끝이 각지면 그 모서리가 다시 1px 디테일이 된다
   for (let i = 0; i < BLADE_COUNT; i++) {
@@ -167,13 +252,34 @@ function grassTexture(T: ThreeNS) {
     const y = rnd() * S;
     const len = 5 + rnd() * 9;
     const lean = (rnd() - 0.5) * 4;
-    const h = 96 + rnd() * 16;
-    const l = 42 + rnd() * 22;
-    ctx.strokeStyle = `hsla(${h}, 38%, ${l}%, 0.32)`;
+    const h = 94 + rnd() * 18;
+    const l = 52 + rnd() * 24;
+    ctx.strokeStyle = `hsla(${h}, 45%, ${l}%, 0.32)`;
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(x + lean, y - len);
     ctx.stroke();
+  }
+
+  // ── 꽃 ────────────────────────────────────────────────────────────────────
+  // 결 **위에** 그린다. 순서를 뒤집으면 풀결이 꽃잎을 가로질러 꽃이 찢어져 보인다.
+  //
+  // 타일 경계를 넘는 꽃은 **반대편에도 한 번 더 그린다**(3×3 오프셋). 안 그러면 경계에서
+  // 잘린 반쪽 꽃이 4m 마다 줄지어 나타나 격자를 오히려 드러낸다. 여백 안쪽에만 심어
+  // 피하는 방법도 있지만 그러면 꽃 없는 띠가 같은 격자를 그린다 — 랩이 유일하게
+  // 무늬를 안 만드는 해법이다. 캔버스 밖은 알아서 잘리므로 비용은 부팅 한 번의 호 몇 개다.
+  for (let i = 0; i < FLOWER_COUNT; i++) {
+    const cx = rnd() * S;
+    const cy = rnd() * S;
+    const color = FLOWER_COLORS[Math.floor(rnd() * FLOWER_COLORS.length)];
+    // 꽃잎 각도를 **미리 뽑는다.** 랩 복사본마다 다시 뽑으면 같은 꽃이 경계에서 다른
+    // 모양이 되어, 이어 붙은 것으로 안 보인다.
+    const spin = rnd() * Math.PI * 2;
+    for (const dx of [-S, 0, S]) {
+      for (const dy of [-S, 0, S]) {
+        drawFlower(ctx, cx + dx, cy + dy, color, spin);
+      }
+    }
   }
 
   const tex = new T.CanvasTexture(canvas);
@@ -189,4 +295,30 @@ function grassTexture(T: ThreeNS) {
   // 지글거린다 — 도로보다 오히려 심했다. 감독이 잡은 "텍스처가 운다" 의 큰 몫이다.
   tex.anisotropy = 16;
   return tex;
+}
+
+/**
+ * 꽃 한 송이. 꽃잎 원 다섯에 노란 꽃심 하나.
+ *
+ * 위에서 내려다보는 평면 텍스처라 **꽃은 정면 원으로 그린다** — 옆모습이나 줄기를 그리면
+ * 눈높이에서 볼 때 땅에 누운 그림이 되어 오히려 어색하다. 이 판을 보는 각도는 언제나
+ * 위에서다(카메라 눈높이 1.7m, 판은 y=0.07).
+ */
+function drawFlower(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, color: number, spin: number,
+): void {
+  ctx.fillStyle = hexCss(color);
+  for (let k = 0; k < PETALS; k++) {
+    const a = spin + (k / PETALS) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * PETAL_ORBIT, y + Math.sin(a) * PETAL_ORBIT, PETAL_R, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 꽃심. 꽃잎보다 작아 밉 두 단계면 사라지지만, 사라질 때 꽃잎 색과 평균돼 **밝아질
+  // 뿐** 이라 출렁임이 안 생긴다(어두운 점이면 반대다 — 밉이 오갈 때마다 깜빡인다).
+  ctx.fillStyle = hexCss(V.flowerYellow);
+  ctx.beginPath();
+  ctx.arc(x, y, PETAL_R * 0.75, 0, Math.PI * 2);
+  ctx.fill();
 }
