@@ -20,7 +20,7 @@ import {
 } from './schema.js';
 import { checkNickname, suggestNicknames, type NicknameCheck } from './nickname.js';
 import { publicView } from './visibility.js';
-import { LocalProfileStore, type ProfileStore } from './store.js';
+import { LocalProfileStore, type ProfileStore, type SaveResult } from './store.js';
 import { renderPreview } from './view-preview.js';
 import {
   applyLimits,
@@ -103,7 +103,20 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
       return;
     }
 
-    const check = await store.checkNickname(value, uid);
+    // 저장소가 터져도 타이핑이 멈추면 안 된다. 판정을 못 받으면 그 사실만 말하고
+    // 화면은 계속 돈다 — 여기서 던지면 디바운스 타이머가 unhandled rejection 을 낸다.
+    let check: NicknameCheck;
+    try {
+      check = await store.checkNickname(value, uid);
+    } catch {
+      renderNicknameFeedback(
+        root,
+        { ok: false, code: null, message: '별명을 확인하지 못했습니다.', pendingUniqueness: false },
+        [],
+        () => {},
+      );
+      return;
+    }
     const suggestions = check.code === 'taken'
       ? suggestNicknames(value, { uniquenessAuthoritative: store.authoritativeUniqueness })
       : [];
@@ -179,7 +192,14 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
     const { links, dropped } = readLinks(root);
     const next: Profile = { ...readForm(root, profile), links, profileImage: profile.profileImage };
 
-    const result = await store.save(uid, next);
+    let result: SaveResult;
+    try {
+      result = await store.save(uid, next);
+    } catch {
+      setText(status, '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      status?.classList.add('is-error');
+      return;
+    }
     if (!result.ok || !result.profile) {
       setText(status, result.message);
       status?.classList.add('is-error');
@@ -228,19 +248,42 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   }
 
   async function reload(): Promise<void> {
-    uid = currentUserId();
-    profile = (await store.load(uid)) ?? emptyProfile();
-    applyLimits(root, profile.userType);
-    writeForm(root, profile);
-    writeLinks(root, profile.links, { onChange: () => { refreshPreview(); markDirty(); } });
-    renderCounters(root, profile.userType);
-    reflectUserType(root, profile.userType);
-    reflectMasterSwitch(root, profile.visibility.profile);
-    renderAuthState();
-    refreshPreview();
-    void runNicknameCheck();
-    dirty = false;
-    setText(mp(root, 'save-status'), '');
+    try {
+      uid = currentUserId();
+      profile = (await store.load(uid)) ?? emptyProfile();
+      applyLimits(root, profile.userType);
+      writeForm(root, profile);
+      writeLinks(root, profile.links, { onChange: () => { refreshPreview(); markDirty(); } });
+      renderCounters(root, profile.userType);
+      reflectUserType(root, profile.userType);
+      reflectMasterSwitch(root, profile.visibility.profile);
+      renderAuthState();
+      refreshPreview();
+      void runNicknameCheck();
+      dirty = false;
+      setText(mp(root, 'save-status'), '');
+    } catch {
+      // ── 삼키지 않고 **사용자에게 말한다** ──────────────────────────────────
+      // 그냥 두면 unhandled promise rejection 이 되고, 그것은 스모크의 `pageerror`
+      // 축에 걸려 배포가 막힌다(실제로 이 테스트가 그렇게 잡았다). 더 중요한 것은
+      // 화면 쪽이다 — 프로필이 안 실렸는데 폼이 비어 보이면 사용자는 "내 정보가
+      // 날아갔다" 고 읽고, 그 위에 저장하면 진짜로 덮어쓴다.
+      setText(mp(root, 'save-status'), '프로필을 불러오지 못했습니다. 새로고침해 주세요.');
+      mp(root, 'save-status')?.classList.add('is-error');
+    } finally {
+      // ── `is-loading` 은 반드시 벗긴다 ─────────────────────────────────────
+      // 마크업이 이 클래스를 **초기값으로** 달고 오고(CSS 가 편집 영역에
+      // `pointer-events:none` 을 건다), 벗기는 책임은 JS 에 있다. 안 벗기면 화면이
+      // 열리긴 하는데 **아무것도 입력되지 않는다** — 에러도 안 나고 콘솔도 조용하다.
+      //
+      // 실제로 그렇게 났다(2026-08-08). 마크업과 로직을 둘이 나눠 만들면 이런 경계가
+      // 조용히 빈다: 마크업 쪽은 "JS 가 뗀다" 고 적었고, 로직 쪽은 그 문장을 못 봤다.
+      // 단위 테스트도 못 잡는다 — 픽스처에는 그 클래스가 없기 때문이다.
+      //
+      // `finally` 인 것이 요점이다. 로드가 실패해도 화면은 열려야 한다. 저장이
+      // 깨졌다고 사용자가 프로필을 **고칠 수조차 없게** 되는 것이 더 나쁘다.
+      root.classList.remove('is-loading');
+    }
   }
 
   // ── 배선 ────────────────────────────────────────────────────────────────
@@ -285,7 +328,12 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   on(mp(root, 'account-reset'), 'click', () => {
     // 되돌릴 수 없는 동작이다. 확인 없이 지우지 않는다.
     if (!window.confirm('프로필을 초기화합니다. 저장한 소개·링크·공개 설정이 모두 지워집니다. 계속할까요?')) return;
-    void store.remove(uid).then(() => reload());
+    void store.remove(uid)
+      .then(() => reload())
+      .catch(() => {
+        setText(mp(root, 'save-status'), '초기화하지 못했습니다.');
+        mp(root, 'save-status')?.classList.add('is-error');
+      });
   });
 
   // 아바타 편집기는 미술관 HUD 안에서 열린다(`ui-hud.ts`). 마이페이지에 그것을
