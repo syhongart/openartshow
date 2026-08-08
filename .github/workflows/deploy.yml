@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with: { node-version: '20', cache: 'npm' }
+        with: { node-version: '24', cache: 'npm' }
       # vite 빌드 도구 설치. 런타임 배포물은 npm 의존 0 — 이 의존성은 빌드 전용.
       # 배포엔 브라우저 불요 → playwright/puppeteer 브라우저 다운로드 억제(시간·실패 회피).
       #
@@ -130,7 +130,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '20'
+          node-version: '24'
       # puppeteer postinstall 의 Chrome 다운로드도 막는다. 알림 전용 job 에 네트워크
       # 실패 표면을 하나 더 다는 셈이고, 그 실패는 로그상 "라이브가 깨졌다"와 구별되지
       # 않는다(검수관 R3 — deploy job 에는 이미 있었다).
