@@ -38,9 +38,14 @@
 // · 외부 액션(`uses:`) 자신의 내부 런타임은 안 본다.
 //
 // ── 거짓 FAIL 위험 ─────────────────────────────────────────────────────────
-// 장차 `strategy.matrix` 로 **복수 Node 를 의도적으로** 테스트하게 되면 규칙 1이
-// 오탐한다(현재 매트릭스 0건 — 실측). 매트릭스를 도입하는 커밋은 이 게이트를 **먼저**
-// 고쳐야 한다. 안 고치면 늑대소년이 되고, 항상 우는 경보는 곧 무시된다.
+// ① 장차 `strategy.matrix` 로 **복수 Node 를 의도적으로** 테스트하게 되면 규칙 1이
+//    오탐한다(현재 매트릭스 0건 — 실측). 매트릭스를 도입하는 커밋은 이 게이트를 **먼저**
+//    고쳐야 한다. 안 고치면 늑대소년이 되고, 항상 우는 경보는 곧 무시된다.
+// ② 규칙2는 `engines.node` 의 **형태**를 본다(semver 파서가 없다). 위 허용 목록 밖의
+//    표기를 쓰면 그 값이 라인 고정이더라도 FAIL 한다 — 실패 메시지가 허용 목록을
+//    알려주므로 막히지는 않지만, 새 표기를 쓸 거면 이 게이트를 먼저 고쳐라.
+// ③ 순수 액션 워크플로(`run:` 없이 `uses:` 만)를 추가하면 「측정기 생존」의
+//    `setup-node ≥ 1` 이 오탐한다 → `NO_NODE_WORKFLOWS` 에 넣는다.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -61,9 +66,24 @@ interface Job { name: string; file: string; steps: Step[] }
 
 /**
  * 워크플로 YAML 을 job → step 으로 쪼갠다. **정규식 파싱이라 근사값이다** —
- * js-yaml 은 이 저장소의 직접 의존이 아니라(transitive) 쓰지 않는다. 지금 4파일은
- * 전부 `jobs:` → 2칸 job → 6칸 `- ` step 의 평범한 형태이고, 형태가 달라지면
- * 아래 「측정기 생존」 검사가 job 0건으로 떨어져 **조용히 통과하지 않는다.**
+ * js-yaml 은 이 저장소의 직접 의존이 아니라(transitive) 쓰지 않는다. transitive 를
+ * import 하면 lockfile 이 바뀌는 날 게이트가 조용히 죽는다.
+ *
+ * ⚠ **이 자리에 원래 *"형태가 달라지면 「측정기 생존」 검사가 job 0건으로 떨어져 조용히
+ * 통과하지 않는다"* 라고 적혀 있었고 거짓이었다**(검수관 실측 2026-08-08, 블로커 B-A).
+ * `ci.yml` 의 step 들여쓰기를 6칸 → 4칸으로 바꾸면 **YAML 로는 완전히 유효하고 Actions 도
+ * 정상 실행되는데**, 규칙3·4 의 검출력이 **0** 이 되고 생존 검사는 그대로 통과했다:
+ *
+ *   M-F(들여쓰기 4칸) + M-D  → 5 passed / 0 failed   (규칙4 검출력 0)
+ *   M-F              + M-C′ → 5 passed / 0 failed   (규칙3 검출력 0)
+ *
+ * 떨어지는 것은 job 이 아니라 **step** 인데 step 을 세는 단언이 없었고, `setup-node ≥ 1`
+ * 단언은 **전 파일 합산**이라 나머지 3파일이 채웠다. **문장을 고치는 대신 검사를 파일
+ * 단위로 바꿔 그 주장을 참으로 만들었다**(GS-3 때와 같은 처방).
+ *
+ * 이 형태가 이 저장소에서 세 번째다 — behind-flag 괄호의 거짓 주장, hookify 검출력 0,
+ * 그리고 이것. **「못 잡는 것」을 적는 것만으로는 부족하다. 적은 그 문장이 참인지도
+ * 뮤테이션으로 확인해야 한다.**
  */
 function parseJobs(file: string, src: string): Job[] {
   const lines = src.split('\n');
@@ -103,6 +123,13 @@ function workflowFiles(): string[] {
   return readdirSync(WF_DIR).filter((f) => /\.ya?ml$/.test(f)).map((f) => join(WF_DIR, f));
 }
 
+/**
+ * node 를 쓰지 않는 워크플로 — 「측정기 생존」의 `setup-node ≥ 1` 에서 **명시적으로** 뺀다.
+ * 현재 해당 0건이다(실측). 순수 액션 워크플로(labeler 등)를 추가하면 여기 넣어야 하고,
+ * **넣는 것 자체가 검토 신호**다 — 자동 면제로 두면 그 파일은 영원히 안 보이게 된다.
+ */
+const NO_NODE_WORKFLOWS = new Set<string>([]);
+
 const isSetupNode = (s: Step) => /uses:\s*actions\/setup-node[@\s]/.test(s.text);
 const hasNodeVersion = (s: Step) => /\bnode-version:\s*['"]?[\w.*-]+/.test(s.text);
 const hasNodeVersionFile = (s: Step) => /\bnode-version-file:\s*\S/.test(s.text);
@@ -118,15 +145,24 @@ describe('G-NODE1 — Node 버전 축 정합 (.nvmrc / engines / workflows)', ()
   const files = workflowFiles();
   const jobs = files.flatMap((f) => parseJobs(f, readFileSync(f, 'utf8')));
 
-  it('측정기 생존 — 워크플로와 job 을 실제로 읽었는가', () => {
+  it('측정기 생존 — 각 워크플로 파일을 실제로 읽었는가 (파일 단위)', () => {
     // 이것이 없으면 아래 통과가 "정합이다" 인지 "아무것도 안 봤다" 인지 구별되지 않는다.
-    // 파싱이 깨지면 여기서 먼저 빨간불이 난다.
+    //
+    // **전 파일 합산이 아니라 파일 단위로 본다.** 합산이면 한 파일의 파싱이 통째로 죽어도
+    // 나머지가 채워서 통과한다 — 그것이 블로커 B-A 였다(위 parseJobs 주석).
     expect(files.length, '워크플로 파일 0건').toBeGreaterThan(0);
-    expect(jobs.length, 'job 0건 — 파서가 YAML 형태 변화를 못 따라간 것이다').toBeGreaterThan(0);
-    expect(
-      jobs.filter((j) => j.steps.some(isSetupNode)).length,
-      'setup-node 를 쓰는 job 0건',
-    ).toBeGreaterThan(0);
+
+    const dead: string[] = [];
+    for (const f of files) {
+      const js = jobs.filter((j) => j.file === f);
+      const steps = js.flatMap((j) => j.steps);
+      if (js.length === 0) dead.push(`${f}: job 0건 — 파서가 형태 변화를 못 따라갔다`);
+      else if (steps.length === 0) dead.push(`${f}: step 0건 — 들여쓰기 형태가 바뀌었다`);
+      else if (!NO_NODE_WORKFLOWS.has(f.split('/').pop()!) && !steps.some(isSetupNode)) {
+        dead.push(`${f}: setup-node 스텝 0건 — node 를 안 쓰는 파일이면 NO_NODE_WORKFLOWS 에 넣어라`);
+      }
+    }
+    expect(dead, `측정기가 죽은 파일:\n  ${dead.join('\n  ')}`).toEqual([]);
   });
 
   // ── 규칙 1: 워크플로의 모든 node-version == .nvmrc 메이저 ──────────────────
@@ -152,15 +188,16 @@ describe('G-NODE1 — Node 버전 축 정합 (.nvmrc / engines / workflows)', ()
   it(`규칙2 — engines.node 가 ${M} 라인에 고정돼 있다 (하한만 두지 않는다)`, () => {
     const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
     const range = String(pkg?.engines?.node ?? '');
-    // 허용 형태를 열거한다. 새 형태를 쓰려면 이 게이트를 **먼저** 고쳐야 한다(의도적).
-    const ok =
-      new RegExp(`^\\^${M}(\\.\\d+){0,2}$`).test(range) ||     // ^24 · ^24.0.0
-      new RegExp(`^${M}\\.x$`).test(range) ||                  // 24.x
-      new RegExp(`^>=\\s*${M}(\\.\\d+){0,2}\\s+<\\s*${M + 1}(\\.\\d+){0,2}$`).test(range); // >=24 <25
+    // 판정은 **"M+1 을 허용하는가"** 다. 첫 판본은 허용 형태를 좁게 열거해서
+    // `"24"`·`"~24"`·`"24.19.0"` 을 거부했는데(검수관 P-1 실측), 그 셋은 전부 라인 고정이거나
+    // **더 엄격하다.** 정당한 값이 막히면 다음 사람이 게이트를 우회한다 — 넓혔다.
+    const pinned = new RegExp(`^[\\^~]?${M}(\\.(?:\\d+|x)){0,2}$`).test(range); // 24 · ^24 · ~24.19 · 24.19.0 · 24.x
+    const bounded = new RegExp(`^>=\\s*${M}(\\.\\d+){0,2}\\s+<\\s*${M + 1}(\\.\\d+){0,2}$`).test(range);
     expect(
-      ok,
-      `engines.node = ${JSON.stringify(range)} 가 ${M} 라인 고정이 아니다. ` +
-        `허용: "^${M}" · "${M}.x" · ">=${M} <${M + 1}"`,
+      pinned || bounded,
+      `engines.node = ${JSON.stringify(range)} 가 ${M} 라인 고정이 아니다.\n` +
+        `  허용: "${M}" · "^${M}" · "~${M}" · "${M}.x" · "${M}.19.0" · ">=${M} <${M + 1}"\n` +
+        `  거부: ">=${M}"(상한 없음 — 26·27 을 허용한다) · "^${M} || ^${M + 2}" · "*"`,
     ).toBe(true);
   });
 
