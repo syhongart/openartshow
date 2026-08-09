@@ -65,9 +65,29 @@ describe('§1-3 페이드 시간과 통과 시간의 관계 — 근거를 게이
   // 그래서 아무도 근거를 검산하지 않았다. **결론이 맞으면 근거는 검증되지 않는다.**
   // 여기서 실제 상수를 넣어 관계를 못 박는다 — 속도가 바뀌어 여유가 사라지면 깨진다.
 
-  it('기본 페이드가 통과 시간 안에 넉넉히 끝난다', () => {
-    const t = crossingSeconds(DEFAULT_LAYOUT.cellX, WALK_SPEED, RUN_MULT);
-    expect(t).toBeGreaterThan(FADE_SECONDS * 2);
+  // ── 기준이 달리기에서 **걷기로 바뀌었다** (감독 판정 2026-08-09) ──────────
+  // 종전 검사는 `달리기 통과 시간 > FADE_SECONDS × 2` 였고, 감독이 `?lodfade=2.5` 를
+  // 고르면서 그 부등식이 뒤집혔다(달리기 1.45초 < 2.5초). **값을 되돌리는 대신 무엇을
+  // 대가로 받았는지를 검사로 옮긴다** — 근거를 잃지 않으면서 판정을 존중하는 자리다.
+  it('기본 페이드가 **걷기** 통과 시간 안에 끝난다', () => {
+    const walk = crossingSeconds(DEFAULT_LAYOUT.cellX, WALK_SPEED, 1);
+    expect(walk).toBeGreaterThan(FADE_SECONDS);
+  });
+
+  // 이 검사는 **부등식이 뒤집혀 있다는 사실 자체**를 못 박는다. 누군가 나중에 값을
+  // 되돌리거나 속도를 바꿔 달리기 여유가 회복되면 여기가 깨지고, 그러면 위 상수 주석의
+  // "34% 잔여" 문단이 낡았다는 뜻이다 — 함께 고치라는 신호다.
+  it('달리기 기준으로는 상한을 넘는다 — 알고 넘긴 것이지 여유가 있는 게 아니다', () => {
+    const run = crossingSeconds(DEFAULT_LAYOUT.cellX, WALK_SPEED, RUN_MULT);
+    expect(run).toBeLessThan(FADE_SECONDS);
+  });
+
+  it('달릴 때 안개 안쪽 진입 시점의 노출이 상수 주석과 맞는다', () => {
+    const run = crossingSeconds(DEFAULT_LAYOUT.cellX, WALK_SPEED, RUN_MULT);
+    // `in` 커브 기준. 주석이 적은 "약 34%" 가 여기서 나온다.
+    const exposed = EASINGS.in(Math.min(1, run / FADE_SECONDS));
+    expect(exposed).toBeGreaterThan(0.25);
+    expect(exposed).toBeLessThan(0.45);
   });
 
   it('빨라질수록 통과 시간이 줄어든다(단조) — 여유가 잠식되는 방향을 안다', () => {
