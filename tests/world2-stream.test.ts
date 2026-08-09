@@ -150,6 +150,41 @@ describe('computeWant — 방향과 히스테리시스', () => {
   });
 });
 
+// ── 왜 look-ahead 가 꺼져 있는가 (감독 실기기 2026-08-09) ─────────────────────
+//
+// *"뒤에 조금만 가면 갑자기 사라져"* — 후진하니 강 건너 건물·가로등이 통째로 사라졌다.
+//
+// 원인은 `lookAheadCenter` 가 **판정 중심을 옮긴다**는 것이다. 진행방향 반경이 늘어나는
+// 만큼 반대쪽이 줄어드는 **제로섬**이고, 1인칭 후진에서 줄어드는 쪽은 **보고 있는 쪽**이다.
+//
+// 이 절은 그 손실을 **수치로 고정한다.** 값 판단(0 으로 둔다)은 `systems/streaming.ts` 의
+// `lookAhead` 주석이 SSOT 다 — 여기에 근거를 다시 적지 않는다. 여기가 지키는 것은
+// *"중심을 옮기면 반대쪽을 잃는다"* 라는 **성질**이고, 그 성질이 사라지면(예: 합집합
+// 방식으로 바뀌면) 이 테스트가 깨져서 알려준다.
+describe('lookAheadCenter — 중심 이동은 제로섬이다', () => {
+  /** 앞 = −z. `n` 셀 앞 파셀의 tier */
+  const front = (cz: number, dz: number, n: number) =>
+    tierOf(want({ cz, dirX: 0, dirZ: dz }), `0,${-n}`);
+
+  it('후진하며 중심을 뒤로 옮기면 64m 앞 파셀이 언로드된다 — 이것이 감독이 본 것', () => {
+    // ahead=0.5 를 후진 방향(+z)에 적용한 중심
+    expect(front(0, 0, 2)).toBe('far');        // 정지: 살아 있다
+    expect(front(+0.5, +1, 2)).toBeUndefined(); // 후진: 사라진다
+  });
+
+  it('전진에서는 반대쪽이 대신 사라진다 — 방향이 바뀌어도 총량은 안 는다', () => {
+    const back = (cz: number, dz: number, n: number) =>
+      tierOf(want({ cz, dirX: 0, dirZ: dz }), `0,${n}`);
+    expect(back(0, 0, 2)).toBe('far');          // 정지
+    expect(back(-0.5, -1, 2)).toBeUndefined();  // 전진: 뒤쪽 2셀이 사라진다
+  });
+
+  it('중심이 발밑이면 앞뒤가 대칭이다 — 지금 라이브가 이 상태다', () => {
+    expect(front(0, 0, 1)).toBe(tierOf(want(), '0,1'));
+    expect(front(0, 0, 2)).toBe(tierOf(want(), '0,2'));
+  });
+});
+
 describe('computeWant — 월드 경계', () => {
   it('limits 밖은 후보에서 제외한다', () => {
     const ws = want({ limits: { minPx: 0, maxPx: 10, minPz: 0, maxPz: 10 } });
