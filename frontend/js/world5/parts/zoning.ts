@@ -36,7 +36,7 @@ import { isCentralPlaza, GRID_W, GRID_H } from '../decide/grid.js';
 import { parcelWater } from '../decide/water.js';
 
 // ══════════════════════════════════════════════════════════════════════════
-// 도심 밀도 — **프리셋 하나로 묶는다** (팀장 판정 (다), 2026-08-09)
+// 도심 밀도 — **감독 판정으로 확정됐다** (2026-08-09). 노브는 함께 제거했다
 // ══════════════════════════════════════════════════════════════════════════
 //
 // ── 무엇이 잘못돼 있었나 ─────────────────────────────────────────────────────
@@ -82,28 +82,56 @@ import { parcelWater } from '../decide/water.js';
 // `parts/adfacade.ts`(타임스퀘어 광고 파사드)가, 랜드마크 1기는
 // `decide/grid.ts` 의 `LANDMARK_PARCEL` + `parts/tower.ts` 의 `LANDMARK_H` 가 맡는다.
 //
-// ⚠️ **이 노브는 감독 판정과 함께 제거한다**(태스크 #13). 확정값을 상수로 굳히고 판정을
-// 값 옆에 적는다 — 남으면 그때부터 장식이다.
+// ✅ **노브(`?dt=`)는 감독 판정과 함께 제거됐다**(태스크 #13, world5 라이브 승격의
+// 선결 조건이었다). 프리셋 셋을 라이브 링크로 열어 감독이 걸어 보고 *"기본"* 을
+// 고르셨고, 그 값이 아래 두 상수다. 판정 기록은 각 상수 옆에 있다.
+//
+// **왜 이 절이 남아 있나** — 위 실측표와 "명목은 거짓말한다" 는 판정 근거이지 노브의
+// 부속물이 아니다. 다음에 이 값을 만지는 사람이 읽어야 할 것이 여기 있다.
 
-/** 도심 밀도 프리셋. **감독이 카드로 고르는 단위**이고, 낱개 노브를 노출하지 않는다 */
-export interface DowntownPreset {
-  /** 도심이 세계에서 차지하는 **명목** 면적 비율. 반경은 여기서 유도한다 */
-  readonly share: number;
-  /** 도심 안 고층 타워 확률 */
-  readonly core: number;
-}
+/**
+ * 도심이 세계에서 차지하는 **명목** 면적 비율. 반경은 여기서 유도한다.
+ *
+ * ── 감독 판정: **기본(마천루 8기)** (2026-08-09) ─────────────────────────────
+ * 프리셋 셋을 라이브 링크로 열어 감독이 걸어 보고 고르셨다 — *"기본"*.
+ * 그래서 노브(`?dt=`)와 가변 상태를 **함께 제거하고** 그 값을 상수로 굳혔다.
+ * 남겨 두면 그때부터 장식이다(팀장 조건, 태스크 #13 — world5 라이브 승격의 선결 조건).
+ *
+ * 고를 수 있었던 것과 각각의 실측:
+ *
+ *   share  R  실효 도심  마천루   비고
+ *   0.19   4     34        3     `calm` — 도심이 좁고 랜드마크가 드물다
+ *   **0.19 4     34        8**   **채택.** 도심은 좁히되 마천루 수는 현행 보존
+ *   0.42   6     89       15     `dense` — 참고안의 *"꽉 찬 블록"* 쪽
+ */
+export const DOWNTOWN_SHARE = 0.19;
 
-export const DOWNTOWN_PRESETS = {
-  /** 마천루 3기. 도심이 좁고 랜드마크가 드물다 — 걷다 만나면 사건이 된다 */
-  calm: { share: 0.19, core: 0.12 },
-  /** 마천루 8기. **기본값** — 도심은 좁히되(축소 반영) 마천루 수는 현행을 보존한다 */
-  city: { share: 0.19, core: 0.24 },
-  /** 마천루 15기. 도심이 넓고 빽빽하다 — 참고안의 *"꽉 찬 블록"* 쪽 */
-  dense: { share: 0.42, core: 0.20 },
-} as const satisfies Record<string, DowntownPreset>;
-
-export type DowntownPresetName = keyof typeof DOWNTOWN_PRESETS;
-export const DEFAULT_DOWNTOWN_PRESET: DowntownPresetName = 'city';
+/**
+ * 도심 안 고층 타워 확률. **0.12 에서 올렸고, 그것이 이 회차의 판정이다.**
+ *
+ * ── 왜 올렸나 — 비율만 보존하면 랜드마크가 사라진다 ─────────────────────────
+ * `DOWNTOWN_R = 6` 은 world2(30×30) 시절 리터럴이었고 world5 가 20×20 으로 줄면서
+ * 도심이 18.8% → 42.3% 로 2.25배가 됐다. 팀장 판정은 면적 비율을 보존하는 유도
+ * (R=4)였는데, **그 판정의 전제가 실측으로 무너졌다.**
+ *
+ * 명목 42.3%(169칸) 중 실제로 타워가 설 수 있는 칸은 **89** 뿐이다(공원 20 · 광장 16 ·
+ * 물/물가 44 를 뺀다). R=4 로 줄이면 후보가 **34칸**이 되고, 확률 0.12 를 그대로 두면
+ * 마천루가 **8기 → 3기**로 준다. 20×20 뉴욕에 마천루 3기는 감독 지시 *"진짜 뉴욕처럼"* ·
+ * *"엠파이어 빌딩증 뉴욕 상징물"* 과 정면으로 부딪힌다.
+ *
+ * **그래서 R 을 줄이면서 확률을 함께 올린다 — 그것이 "축소를 따라간다" 의 진짜 의미다.**
+ * 면적만 따라가고 밀도를 안 따라가면 세계가 줄 때마다 랜드마크가 조용히 사라진다.
+ *
+ * ⚠️ **내가 브리프에 적은 기댓값(R=4 에서 9.7기)은 틀렸다.** `확률 × 명목 도심` 으로
+ * 계산했고 배제 조건을 안 뺐다 — 팀장이 *"명목치가 이미 거짓말하고 있다"* 고 지적한
+ * 바로 그 오류를, 지적받은 문서 안에서 반복했다. 실측은 3기였다. **비율을 축으로 값을
+ * 고르면 화면에 몇 개가 서는지를 아무도 모른 채 값이 정해진다.**
+ *
+ * 팀장 추인(2026-08-09): 성립 근거는 내 재량이 아니라 **감독 지시라는 상위 근거**다 —
+ * *"다음에 상위 근거 없이 「개방 승인이었으니 재량」으로 기본값을 바꾸면 그것은 사후
+ * 통지가 아니라 사전 판정 대상이다."*
+ */
+export const TOWER_P_CORE = 0.24;
 
 /**
  * 명목 면적 비율에서 도심 반경(파셀)을 유도한다. **리터럴을 적지 않는 자리다.**
@@ -118,34 +146,15 @@ export function downtownRadius(share: number): number {
   return Math.round((Math.sqrt(share * GRID_W * GRID_H) - 1) / 2);
 }
 
-// ── 현재 프리셋 ─────────────────────────────────────────────────────────────
-//
-// ⚠️ **이 파일에서 유일한 가변 상태다.** 순수 판정 파일에 상태를 두는 것은 규율에 어긋
-// 나지만, 대안이 더 나빴다: 프리셋을 인자로 흘리면 `isTowerParcel` → `tower.place` →
-// `building.place` 까지 서명이 번지고, 그 셋은 `PartSpec` 계약이라 파츠 전체가 바뀐다.
-//
-// 안전한 이유는 **쓰기가 부팅 한 번**이라는 것이다(`world5-boot.ts` 가 URL 을 읽어
-// 부른다). 파셀 배치는 스트리밍 시점에 계산되므로 그 뒤로는 상수와 구별되지 않는다.
-// 그리고 이 상태는 **노브와 함께 사라진다**(태스크 #13) — 영구 구조가 아니다.
-let current: DowntownPreset = DOWNTOWN_PRESETS[DEFAULT_DOWNTOWN_PRESET];
-
 /**
- * 프리셋을 고른다. **부팅 시 한 번만 부른다** — 이미 만들어진 파셀은 다시 계산되지 않아
- * 도중에 바꾸면 이미 로드된 구역과 새 구역이 다른 도시가 된다.
+ * 도심 반경(파셀). **순수 함수로 돌아왔다** — 감독 판정과 함께 가변 상태를 제거했다.
  *
- * @param name 프리셋 이름. 모르는 이름이면 기본값으로 떨어진다(fail-closed).
- * @returns 실제로 적용된 이름
+ * 노브가 있던 동안 이 파일에는 모듈 전역 `let current` 가 있었고, 순수 판정 파일에
+ * 상태를 두는 것이라 검수관이 특히 봐 달라고 한 자리였다. 그 상태는 **판정과 함께
+ * 사라지는 조건**으로만 승인됐고, 지금이 그 시점이다.
  */
-export function applyDowntownPreset(name: string | null | undefined): DowntownPresetName {
-  const key = (name ?? '') as DowntownPresetName;
-  const picked: DowntownPresetName = key in DOWNTOWN_PRESETS ? key : DEFAULT_DOWNTOWN_PRESET;
-  current = DOWNTOWN_PRESETS[picked];
-  return picked;
-}
-
-/** 지금 적용된 도심 반경(파셀). 프리셋의 `share` 에서 유도된다 */
 export function downtownR(): number {
-  return downtownRadius(current.share);
+  return downtownRadius(DOWNTOWN_SHARE);
 }
 
 /**
@@ -181,6 +190,6 @@ export function isTowerParcel(px: number, pz: number, cellX: number, cellZ: numb
   if (isPlaza(px, pz)) return false;
   if (roadDirs(px, pz).length === 0) return false;
   if (parcelWater(px, pz, cellX, cellZ) !== 'dry') return false;
-  const p = isDowntown(px, pz) ? current.core : TOWER_P_OUTER;
+  const p = isDowntown(px, pz) ? TOWER_P_CORE : TOWER_P_OUTER;
   return h2(px, pz, SALT_TOWER) / 4294967296 < p;
 }
