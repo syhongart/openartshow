@@ -392,7 +392,9 @@ export class PlayerSystem implements System {
     // 가리키다가 손을 떼는 순간 `facing` 이 앞을 가리킨다. 그 한 프레임의 뒤집힘이
     // **두 경로로 동시에** 새어 나갔다:
     //   ① `lookAheadCenter`(`systems/streaming.ts`) — 판정 중심이 1.0셀(32m) 점프
-    //   ② `computeWant` 의 진행방향 보너스(`decide/stream.ts:132`) — 로드 **우선순위** 역전
+    //   ② `computeWant` 의 진행방향 보너스(`decide/stream.ts` 의 `toward`) — 로드 **우선순위** 역전
+    //      (줄 번호를 안 적는다 — 검수관이 잡은 대로 이미 한 번 어긋났고, 줄 번호는
+    //       고칠 사람이 없는 값 미러링이다)
     // ②는 처음에 못 봤다. look-ahead 만 끄는 처방을 먼저 집행했는데 그것은 ①만 막고
     // ②를 남기는 **반쪽**이었다(팀장이 확인하라고 지목해서 찾았다).
     //
