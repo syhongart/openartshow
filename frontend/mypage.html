@@ -176,7 +176,14 @@
      JS 가 값을 넣기 전의 빈 폼이 "저장된 프로필이 비어 있다"로 읽히면 안 된다. -->
 <div class="mp is-loading" data-mp="root">
 
+  <!-- 홈으로 돌아가는 길. 마크업은 `studio.html` 의 같은 블록과 **한 글자도 다르지
+       않다** — 경위·판정은 그 파일의 `.homelink` 주석 한 곳이고, 룩은 `mypage.css`
+       의 같은 이름 블록이다(여기에 다시 적지 않는다). -->
   <header class="mp__top">
+    <a class="homelink" href="../" aria-label="OpenArtShow 홈으로">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 5 8 12l7 7"/></svg>
+      <span class="w-lead">Open</span>ArtShow<span class="dot">.</span>
+    </a>
     <h1 class="mp__title">MY PAGE</h1>
   </header>
 

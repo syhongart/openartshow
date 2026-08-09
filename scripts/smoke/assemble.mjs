@@ -28,7 +28,6 @@ set -euo pipefail
 rm -rf "$OUT" && mkdir -p "$OUT/app"
 cp frontend/landing.html "$OUT/index.html"
 cp frontend/guide.html   "$OUT/guide.html"
-cp frontend/design.html  "$OUT/design.html"
 cp frontend/about.html   "$OUT/about.html"
 cp -r frontend/.          "$OUT/app/"
 cp -r making devlog team valuation "$OUT/"

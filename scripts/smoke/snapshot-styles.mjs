@@ -13,12 +13,12 @@
 //   [A] 요소별 computed style — 최종 적용 결과. 실제로 보이는 것.
 //   [B] 커스텀 프로퍼티 확정값 — 토큰 그 자체. 소비 여부와 무관하게 값 변화를 잡는다.
 //
-// 왜 [B] 가 필요한가 — [A] 만 두고 뮤테이션했더니 **통과했다.** design.html 의
+// 왜 [B] 가 필요한가 — [A] 만 두고 뮤테이션했더니 **통과했다.** (당시) design.html 의
 // `--green-500` 은 유일한 소비처가 `.demo-card:hover` 인데, computed style 은 의사클래스
 // 상태를 재현하지 않아 값이 틀려도 [A] 에 안 나타난다. [B] 는 토큰 값을 직접 비교하므로
 // hover 전용이든 아무도 안 쓰는 죽은 토큰이든 전부 잡힌다.
 //
-// 검출력 실측(2026-07-31, design.html) — 셋 다 잡혔다:
+// 검출력 실측(2026-07-31, 당시의 design.html — 2026-08-09 폐지) — 셋 다 잡혔다:
 //   · hover 전용 토큰 `--green-500` 1비트 변조(#5f9e7d→#5f9e7e) → [B] 2건
 //   · 하드코딩 rgba 1비트 변조(31,214,119→31,214,120)          → [A] 8건
 //   · 토큰 참조 바꿔치기 var(--accent)→var(--gold)              → [A] 20건
@@ -69,7 +69,10 @@ const COLOR_PROPS = [
 // 색은 아니지만 토큰 파일을 잘못 옮기면 같이 무너지는 것들(레이아웃 토큰이 섞여 있는 :root 라서).
 const LAYOUT_PROPS = ['font-family', 'font-weight', 'font-size', 'letter-spacing', 'line-height', 'border-radius'];
 
-const DEFAULT_PAGES = ['design.html', 'landing.html', 'guide.html', 'about.html', 'studio.html', 'builder.html'];
+// `design.html` 은 2026-08-09 폐지로 빠졌다(경위 `docs/DESIGN.md §5-4`). 아래 검출력
+// 실측이 그 페이지에서 뜬 것이라 **근거 자체는 남겨 둔다** — 실측을 지우면 [B] 축이
+// 왜 있는지가 사라지고, 다음 사람이 "안 쓰는 축" 으로 읽고 걷어낸다.
+const DEFAULT_PAGES = ['landing.html', 'guide.html', 'about.html', 'studio.html', 'builder.html'];
 
 // 라이트/다크 양쪽을 뜬다 — about·guide 는 prefers-color-scheme 로 값이 갈린다.
 // 한쪽만 뜨면 나머지 한쪽의 회귀가 통째로 안 보인다.

@@ -130,7 +130,7 @@ describe('진입점 SSOT', () => {
     const input = viteInput((p: string) => p);
     expect(Object.keys(input)).toHaveLength(ENTRYPOINTS.length);
     const map = htmlRename();
-    // 항등 매핑(guide/about/design)은 들어가면 안 된다 — vite 가 맵에 없는 것은 그대로 둔다.
+    // 항등 매핑(guide/about)은 들어가면 안 된다 — vite 가 맵에 없는 것은 그대로 둔다.
     for (const [from, to] of Object.entries(map)) expect(from).not.toBe(to);
     expect(map['landing.html']).toBe('index.html');
     expect(map['world2.html']).toBe('app/world2.html');
