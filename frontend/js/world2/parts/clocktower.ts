@@ -24,8 +24,9 @@
 //
 // ── 옮기지 **않은** 것 ──────────────────────────────────────────────────────
 // 색이다. world3 팔레트는 마을용이라 그대로 오면 크림 벽 + 산호 지붕이 회청색 도시
-// 한복판에 선다. 어느 쪽이 맞는지는 화면으로만 갈리므로 두 안을 노브로 열어 뒀다 —
-// 아래 `PALETTES` 절.
+// 한복판에 선다. 화면으로만 갈리는 축이라 두 안(`?clock=village|city`)을 노브로 열어
+// 배포하고 감독 판정을 받았다 — **결과는 `city`** 이고, 진 쪽과 노브는 지웠다.
+// 경위와 근거는 아래 `PALETTE` 절.
 //
 // 치수(H·R·조각 배치)는 **한 값도 안 바꿨다.** 형태와 색을 동시에 바꾸면 화면에서 무엇
 // 때문에 달라졌는지 갈리지 않는다.
@@ -33,7 +34,6 @@
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { plazaLandmark } from './plaza.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
-import { readEnum } from '../url-knob.js';
 
 // ── 색 — **city 확정** (감독 판정 2026-08-09) ────────────────────────────────
 //
