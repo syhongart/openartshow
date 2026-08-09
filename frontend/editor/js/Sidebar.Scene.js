@@ -260,8 +260,6 @@ function SidebarScene( editor ) {
 		refreshEnvironmentUI();
 
 	} );
-	// 부팅 시 1회 적용. 위 주석대로 `setValue` 는 신호를 안 쏜다.
-	onEnvironmentChanged();
 
 	environmentRow.add( new UIText( strings.getKey( 'sidebar/scene/environment' ) ).setClass( 'Label' ) );
 	environmentRow.add( environmentType );
@@ -271,6 +269,24 @@ function SidebarScene( editor ) {
 	environmentRow.add( environmentEquirectangularTexture );
 
 	container.add( environmentRow );
+
+	// [OpenArtShow] 부팅 시 1회 적용 — `setValue` 는 UI 표시만 바꾸고 신호를 안 쏜다.
+	//
+	// ⚠️ **이 호출은 반드시 `environmentEquirectangularTexture` 선언 뒤에 있어야 한다.**
+	// 처음에 `setValue` 바로 아래(= 그 선언 앞)에 뒀다가 editor **부팅을 통째로 죽였다**:
+	// `onEnvironmentChanged` 가 `environmentEquirectangularTexture.getValue()` 를 읽는데
+	// 그 시점의 `const` 는 **TDZ** 라 `ReferenceError: Cannot access … before
+	// initialization` 이 난다.
+	//
+	// 내 오판은 *"함수 선언이라 hoisting 되니 위에서 불러도 된다"* 였다. 함수는 hoisting
+	// 되지만 **그 함수가 참조하는 `const` 는 안 된다** — 호출 시점이 선언보다 앞이면 죽는다.
+	//
+	// 파급이 컸다: 예외가 `new SidebarScene()` → `new Sidebar()` 를 타고 올라가
+	// `boot.js:41` 이 완료되지 못했고, 그 아래의 **Menubar·Resizer·드래그앤드롭 리스너**가
+	// 전부 안 붙었다. 렌더러도 Sidebar 하위(`Sidebar.Project.Renderer`)라 생성되지 않아
+	// `rendererCreated` 가 발화하지 않았다 — **캔버스조차 없는 빈 화면**이 됐다.
+	// **`console.error` 로는 0건이라 콘솔만 보는 점검으로는 안 잡힌다**(pageerror 축에서만).
+	onEnvironmentChanged();
 
 	function onEnvironmentChanged() {
 
