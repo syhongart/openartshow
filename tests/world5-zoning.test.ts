@@ -19,11 +19,10 @@
 // 팀장 원문: *"42.3% 라는 명목치가 이미 거짓말하고 있음을 브리프 스스로 실측했다."*
 // 그 간극이 사라지지 않도록 검사로 고정한다.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
-  DOWNTOWN_PRESETS, DEFAULT_DOWNTOWN_PRESET, downtownRadius, downtownR,
-  applyDowntownPreset, isDowntown, isTowerParcel, TOWER_P_OUTER,
-  type DowntownPresetName,
+  DOWNTOWN_SHARE, TOWER_P_CORE, TOWER_P_OUTER,
+  downtownRadius, DOWNTOWN_R, isDowntown, isTowerParcel,
 } from '../frontend/js/world5/parts/zoning.js';
 import { MAX_SPAWN_REACH } from '../frontend/js/world5/decide/npc-walk.js';
 import { MAP_R_VISIBLE } from '../frontend/js/world5/decide/minimap.js';
@@ -37,15 +36,12 @@ import { parcelWater } from '../frontend/js/world5/decide/water.js';
 const CX = DEFAULT_LAYOUT.cellX;
 const CZ = DEFAULT_LAYOUT.cellZ;
 
-// ⚠️ **프리셋은 모듈 전역 상태다**(`zoning.ts` 의 `let current`). 각 `it` 끝에서 손으로
-//    되돌리면 **앞선 단언이 실패하는 순간 복구가 안 돌아** 뒤 테스트가 오염된다 —
-//    실패 하나가 무관한 실패 여럿으로 번져 원인을 가린다(검수관 권고 P1, 2026-08-09).
-//    `afterEach` 는 단언 실패와 무관하게 돈다.
-afterEach(() => { applyDowntownPreset(DEFAULT_DOWNTOWN_PRESET); });
+// ✅ **전역 상태가 사라졌다** — 감독 판정과 함께 노브를 제거했으므로 `afterEach` 로
+//    프리셋을 되돌릴 것이 없다. 그 상태는 *"판정과 함께 사라지는 조건"* 으로만
+//    승인됐던 것이고(검수관·팀장), 지금 이 파일이 순수 함수만 부르는 것이 그 증거다.
 
-/** 그 프리셋에서 세계 전체에 서는 마천루 수 */
-function towerCount(name: DowntownPresetName): number {
-  applyDowntownPreset(name);
+/** 세계 전체에 서는 마천루 수 */
+function towerCount(): number {
   let n = 0;
   for (let px = GRID_MIN_X; px <= GRID_MAX_X; px++) {
     for (let pz = GRID_MIN_Z; pz <= GRID_MAX_Z; pz++) {
@@ -85,71 +81,59 @@ describe('도심 반경은 격자에서 유도된다', () => {
   });
 });
 
-describe('프리셋 — 감독이 고르는 단위는 낱개 노브가 아니다', () => {
-  it('기본값이 `city` 이고 그것이 프리셋 목록에 있다', () => {
-    expect(DEFAULT_DOWNTOWN_PRESET in DOWNTOWN_PRESETS).toBe(true);
-    expect(DEFAULT_DOWNTOWN_PRESET).toBe('city');
+describe('확정값 — 감독 판정 "기본"(마천루 8기)', () => {
+  // ★ 이 회차의 판정 그 자체다. 노브를 열어 감독이 고른 값이고, 노브는 함께 제거했다.
+  //   뮤테이션: `TOWER_P_CORE` 를 0.12(축소 미반영 시절 값)로 되돌리면 깨진다.
+  it('마천루가 정확히 8기 선다', () => {
+    expect(towerCount()).toBe(8);
   });
 
-  it('모르는 이름은 기본값으로 떨어진다 — fail-closed', () => {
-    expect(applyDowntownPreset('없는프리셋')).toBe(DEFAULT_DOWNTOWN_PRESET);
-    expect(applyDowntownPreset(null)).toBe(DEFAULT_DOWNTOWN_PRESET);
-    expect(applyDowntownPreset(undefined)).toBe(DEFAULT_DOWNTOWN_PRESET);
-    // URL 노브는 감독이 손으로 치는 값이라 오타가 온다. 그때 도시가 안 뜨는 것보다
-    // 기본 도시가 뜨는 편이 낫다.
+  // ⚠️ **이것이 왜 별도 검사인가** — 위 "8기" 만으로는 *"확률만 올려 우연히 8이 됐다"*
+  //    와 구별되지 않는다. 도심 반경이 실제로 줄어야(축소를 따라가야) 판정이 성립한다.
+  //    뮤테이션: `DOWNTOWN_SHARE` 를 0.42(현행 미반영)로 되돌리면 깨진다.
+  it('도심 반경이 축소를 따라간 값이다 — 면적 비율이 world2 실측을 보존한다', () => {
+    expect(DOWNTOWN_R).toBe(4);
+    // 명목 면적이 world2 의 18.8% 언저리다. 42.3%(축소 미반영)와는 두 배 이상 벌어진다.
+    const nominal = (2 * DOWNTOWN_R + 1) ** 2 / (GRID_W * GRID_H);
+    expect(nominal).toBeGreaterThan(0.15);
+    expect(nominal).toBeLessThan(0.25);
   });
 
-  it('프리셋을 바꾸면 도심 반경이 실제로 바뀐다 — 노브가 배선돼 있다', () => {
-    applyDowntownPreset('calm');
-    const small = downtownR();
-    applyDowntownPreset('dense');
-    const big = downtownR();
-    expect(big).toBeGreaterThan(small);
-    // 반경이 바뀌면 판정도 바뀌어야 한다. 값만 바뀌고 `isDowntown` 이 옛 상수를 보면
-    // 노브는 아무것도 안 한다 — 그 형태가 이 저장소의 단골 결함이다.
-    applyDowntownPreset('calm');
-    const edge = small + 1;
-    expect(isDowntown(edge, 0)).toBe(false);
-    applyDowntownPreset('dense');
-    expect(isDowntown(edge, 0)).toBe(true);
+  // 밀도와 면적이 **함께** 움직여야 한다는 것이 이 회차의 교훈이다. 면적만 따라가고
+  // 확률을 그대로 뒀다면 마천루가 3기가 됐고, 감독 지시와 정면으로 부딪혔을 것이다.
+  it('확률이 축소 이전 값보다 높다 — 좁아진 도심을 밀도로 보상한다', () => {
+    // 0.12 는 30×30 시절 값이다. 그 값을 그대로 두면 실측 3기다.
+    expect(TOWER_P_CORE).toBeGreaterThan(0.12);
+    // 그렇다고 아무 값이나 되는 것은 아니다 — 도심 밖(0.01)과의 격차가 곧 스카이라인이다.
+    expect(TOWER_P_CORE).toBeGreaterThan(TOWER_P_OUTER * 10);
+    expect(TOWER_P_CORE).toBeLessThan(0.5);
   });
 
-  // ★ 프리셋의 축은 면적이 아니라 **마천루 개수**다(`zoning.ts` 실측표).
-  //   비율만 보고 R 을 고르면 스카이라인이 몇 채로 서는지 아무도 모른 채 값이 정해진다 —
-  //   실제로 브리프의 기댓값(R=4 에서 9.7기)이 배제 조건을 안 뺀 값이라 틀렸고, 실측은
-  //   3기였다. 그 실측을 여기 고정한다.
-  it('프리셋별 마천루 수가 실측표와 같다', () => {
-    expect(towerCount('calm')).toBe(3);
-    expect(towerCount('city')).toBe(8);
-    expect(towerCount('dense')).toBe(15);
-  });
-
-  it('기본 프리셋이 현행 마천루 수를 보존한다 — 축소가 랜드마크를 지우지 않는다', () => {
-    // `city` 는 도심을 좁히면서(축소 반영) 확률을 올려 마천루 수를 유지한다. 이것이
-    // "축소를 따라간다" 의 진짜 의미다 — 면적 비율만 보존하면 마천루가 8기 → 3기가 되고
-    // 감독 지시 *"진짜 뉴욕처럼"* 과 정면으로 부딪힌다.
-    expect(towerCount(DEFAULT_DOWNTOWN_PRESET)).toBe(8);
-  });
-
-  it('마천루 수가 프리셋 순서대로 늘어난다 — 감독이 비교할 축이 단조다', () => {
-    const c = towerCount('calm'), m = towerCount('city'), d = towerCount('dense');
-    expect(m).toBeGreaterThan(c);
-    expect(d).toBeGreaterThan(m);
-  });
-
-  it('도심 밖 확률은 프리셋에 없다 — 축이 다르다', () => {
-    // 외따로 선 타워 하나가 도시의 끝을 알려주는 역할은 도심이 넓든 좁든 같다.
+  it('도심 밖 확률이 0 이 아니다 — 외따로 선 타워가 도시의 끝을 알려준다', () => {
     expect(TOWER_P_OUTER).toBeGreaterThan(0);
-    for (const p of Object.values(DOWNTOWN_PRESETS)) {
-      expect(Object.keys(p).sort()).toEqual(['core', 'share']);
-    }
+    expect(TOWER_P_OUTER).toBeLessThan(TOWER_P_CORE);
   });
+
+  // ⚠️ 이 자리에 **자기 이름을 못 지키는 검사**가 있었다 (검수관 조건 C-1, 2026-08-09).
+  //
+  //     it('`share` 상수가 반경 유도에 실제로 쓰인다 — 상수만 바꾸고 함수가 안 따라오면 깨진다')
+  //       expect(downtownR()).toBe(downtownRadius(DOWNTOWN_SHARE));
+  //
+  // **양변이 같은 상수를 읽는다.** 검수관 실측 — `downtownR()` 이 리터럴 `4` 를
+  // 돌려주게 해도 **10건 전부 통과**했다. 「유도를 리터럴로 되돌리기」가 이 회차 전체의
+  // 주제인데, 그것을 겨냥한다고 이름 붙인 검사가 정확히 그 형태를 통과시켰다.
+  //
+  // **검사를 고치는 대신 리터럴화할 자리를 없앴다** — `downtownR()` 함수를 지우고
+  // `DOWNTOWN_R = downtownRadius(DOWNTOWN_SHARE)` 상수 한 줄로 바꿨다. 유도가 곧
+  // 값이면 "본문이 유도를 안 쓴다" 는 상태가 존재할 수 없고, 그러면 감시할 것도 없다.
+  // 위 `반경이 4다` 검사가 `DOWNTOWN_SHARE` 회귀를 그대로 잡는다.
 });
 
 describe('명목 도심은 실효 도심보다 크다 — 비율이 거짓말하는 지점', () => {
   it('배제 조건이 실제로 칸을 걷어낸다', () => {
-    applyDowntownPreset('dense');   // 명목 42.3%
-    const R = downtownR();
+    // 확정값(R=4)에서 잰다. 노브가 있던 동안에는 `dense`(명목 42.3%)로 재서 간극이
+    // 더 크게 보였는데, 확정값에서도 간극은 그대로 성립한다 — 그것이 요점이다.
+    const R = DOWNTOWN_R;
     let nominal = 0, effective = 0;
     let park = 0, plaza = 0, wet = 0;
     for (let px = GRID_MIN_X; px <= GRID_MAX_X; px++) {

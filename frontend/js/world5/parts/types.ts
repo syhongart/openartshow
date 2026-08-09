@@ -107,6 +107,58 @@ export interface PlaceContext {
   radiusOf(p: PlacedPart): number;
 }
 
+/**
+ * 발광 마스크의 텍셀 하나 — **색과 세기.**
+ *
+ * `a` 는 검은 바탕에 `globalAlpha` 로 얹히므로 그대로 배수다: 이 텍셀을 읽는 조각의
+ * 실제 발광색은 `hex × a`, 그것에 다시 `emissiveIntensity` 가 곱해진다.
+ */
+export interface NeonTexel {
+  readonly hex: number;
+  /** 0~1. 0 이면 이 텍셀은 칠하지 않는다(= 발광 0) */
+  readonly a: number;
+}
+
+/**
+ * 발광 신고. `PartSpec.neon` 의 형태다.
+ *
+ * ── `texels`·`bloom` 은 왜 생겼나 (2026-08-09) ──────────────────────────────
+ * `tests/world5-neon-glow.test.ts` 에 *"네온이 블룸 문턱을 넘는다 — 넘지 못하면 켜도
+ * 화면이 그대로다"* 라는 검사가 있었고, 그 검사는 **`emissiveIntensity` 만** 보고
+ * 있었다. 실제 픽셀 휘도는 `luma(마스크 텍셀 색) × 텍셀 알파 × emissiveIntensity`
+ * 이므로, 앞의 두 항이 빠진 축은 **문턱을 넘는지 아닌지를 원리상 못 본다.**
+ *
+ * 그것이 이론상의 구멍이 아니라 **실제로 발생해 있었다** — 산술로 재 보니 네온을
+ * 신고한 다섯 파츠 중 `lamp` 하나만 넘고 나머지는 전부 미달이었는데(게시판
+ * 2026-08-09) 게이트는 내내 초록이었다. 그 파일 주석이 「못 재는 것」으로 정직하게
+ * 적어 두긴 했으나, **검사 이름이 주장하는 것과 검사가 실제로 하는 일이 달랐다.**
+ *
+ * 그래서 문장을 고치는 대신 **주장을 참으로 만든다**(GS-3 처방): 텍셀 명세를 파츠가
+ * 신고하고 마스크를 굽는 쪽이 **그 배열을 소비**한다. 두 곳에 적히지 않으므로 값
+ * 미러링이 없고, 검사는 실제로 구워지는 값을 읽는다.
+ */
+export interface NeonSpec {
+  readonly day: number;
+  readonly night: number;
+  /**
+   * **블룸 문턱을 넘는 것이 이 파츠의 의도인가.**
+   *
+   * `false` 가 "아직 못 했다" 가 아니라 **판정**이라는 것이 요점이다. 저층 갤러리
+   * 건물의 창은 번지지 않는 것이 맞다 — 실제 도시에서 번지는 것은 광고·랜드마크·
+   * 가로등이고, 창문까지 번지면 거리 전체가 발광판이 되어 위계가 사라진다.
+   *
+   * 그래서 검사는 **양방향**이다: `true` 인데 못 넘으면 빨간불, `false` 인데 넘어도
+   * 빨간불. 한 방향만 보면 "다 켜면 통과" 라는 빠져나갈 구멍이 남는다.
+   */
+  readonly bloom: boolean;
+  /**
+   * 발광 마스크 텍셀 명세. **함수인 것에 이유가 있다** — 파츠에 따라 이 배열이 파일
+   * 아래쪽에 정의된 상수(예: `building.ts` 의 `FACADE_CELLS`)에서 유도되고, 그러면
+   * 스펙 객체 리터럴이 평가되는 시점에는 아직 초기화 전이라 TDZ 로 터진다.
+   */
+  readonly texels: () => readonly NeonTexel[];
+}
+
 /** 부품 하나의 렌더 자산. 부팅 때 만들고 세션 내내 재사용한다. */
 export interface PartAsset {
   geometry: InstanceType<ThreeNS['BufferGeometry']>;
@@ -191,7 +243,7 @@ export interface PartSpec {
    * 맵 없이 세기만 올리면 파츠 **전체**가 균일하게 빛난다(창문만 켜지는 게 아니라
    * 벽까지). 마스크를 굽는 방법은 `parts/bake.ts` 의 `Piece.u` 주석에 있다.
    */
-  readonly neon?: { readonly day: number; readonly night: number };
+  readonly neon?: NeonSpec;
 
   /**
    * 한 파셀이 쓸 수 있는 최대 개수. **슬롯 예산의 근거**이므로 `place` 가 실제로 내는

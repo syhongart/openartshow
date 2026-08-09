@@ -8,20 +8,15 @@
 // 가 지킨다 — 포크의 존재 이유가 격리이므로 산문이 아니라 검사로 둔다.
 
 import { startWorld5 } from './world5/main.js';
-import { applyDowntownPreset } from './world5/parts/zoning.js';
-
-// ── 도심 밀도 프리셋 (`?dt=calm|city|dense`) ─────────────────────────────────
+// ── 도심 밀도 노브(`?dt=`)는 제거됐다 (2026-08-09) ──────────────────────────
 //
-// 감독이 화면으로 판정할 축이라 노브로 연다 — 값·룩·거리처럼 화면으로만 판정되는 것은
-// 글로 설득할 수 없다는 이 저장소의 결정 사이클 그대로다. 프리셋 정의와 각각의 마천루
-// 실측 개수는 `parts/zoning.ts` 한 곳이고 여기 다시 적지 않는다.
+// 프리셋 셋(마천루 3 / 8 / 15기)을 라이브 링크로 열어 감독이 걸어 보고 *"기본"* 을
+// 고르셨다. 확정된 값은 `world5/parts/zoning.ts` 의 `DOWNTOWN_SHARE`·`TOWER_P_CORE`
+// 상수이고, 판정 기록도 그 옆에 있다.
 //
-// **부팅 첫 줄에서 부른다** — 스트리밍이 시작된 뒤에 바꾸면 이미 만들어진 파셀과 새
-// 파셀이 다른 도시가 된다(`applyDowntownPreset` 주석).
-//
-// ⚠️ 감독 판정이 확정되면 이 블록과 `zoning.ts` 의 가변 상태를 **함께 제거한다**
-// (태스크 #13). 노브가 남으면 그때부터 장식이다.
-applyDowntownPreset(new URLSearchParams(location.search).get('dt'));
+// **노브를 남기지 않은 것이 조건이었다**(팀장, 태스크 #13 — world5 라이브 승격의 선결
+// 조건). 판정이 끝난 뒤에도 남은 노브는 그때부터 장식이고, 이 저장소는
+// `scripts/smoke/run.mjs` 의 `PERF_GATES` 주석에 같은 문장을 이미 적어 두었다.
 
 const canvas = document.getElementById('w5-canvas');
 if (canvas instanceof HTMLCanvasElement) {

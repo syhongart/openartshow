@@ -25,7 +25,9 @@ import {
   building, FACADE_CELLS, FACE_CELL, facadeUv, A_WIN_OFF, type MaskPaint,
 } from '../frontend/js/world5/parts/building.js';
 import { tower } from '../frontend/js/world5/parts/tower.js';
+import { SIDE_ACCENT } from '../frontend/js/world5/parts/building.js';
 import { V } from '../frontend/js/world5/parts/palette.js';
+import { PAVE_NEON } from '../frontend/js/world5/parts/plaza.js';
 import { NEON_PARTS } from '../frontend/js/world5/parts/index.js';
 import { DEFAULT_LAYOUT, type PlacedPart, type ThreeNS } from '../frontend/js/world5/parts/types.js';
 
@@ -153,6 +155,74 @@ describe('§1 색은 palette.ts 한 곳에서만 온다', () => {
       .filter((f) => !(f in EXEMPT))
       .filter((f) => /from '\.\/palette\.js'/.test(readFileSync(join(PARTS_DIR, f), 'utf8')));
     expect(users.length).toBeGreaterThan(files.length / 2);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// §1-b 색 **구성** — 리터럴이 아니라 어느 색을 얼마나 쓰는가
+// ══════════════════════════════════════════════════════════════════════════
+//
+// §1 은 "팔레트 밖 색을 썼는가" 를 본다. 그것만으로는 **팔레트 안 색을 어떻게 배분했는가**
+// 가 통째로 사각이다 — 감독이 2026-08-09 에 지적한 것(*"파스텔 무지개"*, *"바닥에 초록·
+// 분홍 형광 줄무늬"*)이 정확히 그 사각에서 나왔다. 네 네온색을 균등하게 뿌리는 것은
+// 리터럴 검사를 100% 통과한다.
+//
+// ⚠️ **이 절이 생긴 직접 계기는 뮤테이션 실측이다.** 광장 바닥의 네온 색을 옛 4색 균등으로
+// 되돌리는 뮤테이션이 **0 건 실패**로 통과했다(2026-08-09). 캔버스에 그린 결과는 게이트가
+// 읽을 수 없고, 그래서 그 구성은 아무 검사도 안 받고 있었다.
+
+describe('§1-b 네온 색 구성 — 도시가 축제 조명이 되지 않게', () => {
+  /**
+   * 광장 바닥 반사는 **위에 있는 광원의 색**이어야 한다. 광장을 밝히는 것은 가로등(앰버)과
+   * 광고 스크린의 흰 화면이고, 원색은 몇 점이다. 초록 광원은 아예 없다.
+   *
+   * 뮤테이션: `PAVE_NEON` 을 `[neonMagenta, neonCyan, neonAmber, neonLime]`(옛 값)으로
+   *           되돌리면 따뜻한 비율이 25% 로 떨어지고 라임이 들어와 둘 다 깨진다.
+   */
+  it('광장 바닥 반사는 따뜻한 쪽이 과반이다', () => {
+    expect(PAVE_NEON.length, '표본이 비었다').toBeGreaterThan(3);
+    const warm = PAVE_NEON.filter((c) => c === V.neonAmber || c === V.neonWhite).length;
+    expect(warm / PAVE_NEON.length, '광장 바닥이 원색에 먹혔다').toBeGreaterThan(0.5);
+  });
+
+  it('광장 바닥에 초록이 없다 — 반사에는 원천이 있어야 한다', () => {
+    expect(PAVE_NEON).not.toContain(V.neonLime);
+  });
+
+  /**
+   * 건물은 도시에 **가장 많은 파츠**다. 여덟 자리(네 셀 × 코니스·간판)를 네 색이 둘씩
+   * 나눠 가지면 거리 전체가 네 색으로 칠해지고, 그것이 광고 타워에서 감독이 본 무지개가
+   * 더 넓은 면적에 깔린 상태다.
+   *
+   * 뮤테이션: `SIDE_ACCENT` 를 옛 4색 순환(시안·마젠타·앰버·라임 각 둘)으로 되돌리면
+   *           앰버가 8 자리 중 2 로 떨어져 깨진다.
+   */
+  it('건물 강조색은 앰버가 과반이다 — 거리 전체가 원색으로 칠해지지 않게', () => {
+    const slots = SIDE_ACCENT.flatMap((a) => [a.cornice, a.sign]);
+    expect(slots.length, '표본이 비었다').toBeGreaterThan(4);
+    const amber = slots.filter((c) => c === V.neonAmber).length;
+    expect(amber / slots.length, '건물 강조색이 원색에 먹혔다').toBeGreaterThanOrEqual(0.5);
+  });
+
+  /** 코니스와 간판이 같은 색이면 두 축이 한 축으로 읽힌다 — 원래 규칙을 유지한다 */
+  it('한 셀 안에서 코니스와 간판 색이 다르다', () => {
+    for (const a of SIDE_ACCENT) expect(a.cornice).not.toBe(a.sign);
+  });
+
+  /**
+   * **`palette.ts` 가 `neonLime` 에 대해 하는 주장을 참으로 만든다**: *"네온 간판·광고
+   * 스크린에서는 쓰지 않는다. 지금 유일한 소비처는 `garden.ts` 의 밤 잔디 채도 보강이다."*
+   *
+   * 주장을 주석에만 적어 두면 다음 사람이 광고판에 라임을 하나 쓰고, 그 순간 문장이
+   * 조용히 거짓이 된다 — 이 저장소가 반복해서 데인 형태다(GS-3 처방).
+   *
+   * 뮤테이션: `clocktower.ts` 의 텍셀 하나를 `V.neonLime` 으로 바꾸면 깨진다.
+   */
+  it('`neonLime` 의 소비처는 잔디 하나다 — 팔레트 주석이 그렇게 주장한다', () => {
+    const partFiles = readdirSync(PARTS_DIR).filter((f) => f.endsWith('.ts'));
+    expect(partFiles.length, '표본이 비었다 — 빈 목록은 아래를 통과시킨다').toBeGreaterThan(10);
+    const users = partFiles.filter((f) => /\bV\.neonLime\b/.test(readFileSync(join(PARTS_DIR, f), 'utf8')));
+    expect(users, `neonLime 소비처: ${users.join(', ')}`).toEqual(['garden.ts']);
   });
 });
 
