@@ -245,7 +245,13 @@ export const LIVE_PAGES = [
   // `viteOnly`: editor 는 bare specifier `three`·`three/addons/` 를 쓴다. baseline
   // 직서빙(importmap 이 `vendor/three.module.js` = **r160**)에서는 버전이 어긋나므로
   // vite 번들(npm r171)에서만 돈다 — world2 와 같은 이유다.
-  { name: 'app/editor',        url: '/app/editor.html', webgl: true, viteOnly: true },
+  //
+  // `minViewport`: 320px 에서 335>320 이 난다(15px). editor 는 드래그·기즈모로 조작하는
+  // **데스크톱 전용 도구**라 초소형 폭이 설계 대상이 아니다 — 면제가 아니라 **대상 밖**이고,
+  // 제외된 칸 수는 `[5]` 판정 문구에 INFO 로 찍힌다(조용히 줄지 않는다).
+  // ⚠ 감독은 모바일로 링크를 여신다 — **모바일에서는 가로 스크롤이 생긴다는 뜻**이므로
+  // 그 사실을 보고에 적는다. 넓은 화면에서 쓰시는 것이 전제다.
+  { name: 'app/editor',        url: '/app/editor.html', webgl: true, viteOnly: true, minViewport: 375 },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──

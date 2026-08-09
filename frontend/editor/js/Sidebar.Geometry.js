@@ -5,7 +5,6 @@ import { UIPanel, UIRow, UIText, UIInput, UIButton, UISpan, UITextArea } from '.
 import { SetGeometryValueCommand } from './commands/SetGeometryValueCommand.js';
 
 import { SidebarGeometryBufferGeometry } from './Sidebar.Geometry.BufferGeometry.js';
-import { SidebarGeometryModifiers } from './Sidebar.Geometry.Modifiers.js';
 
 import { VertexNormalsHelper } from 'three/addons/helpers/VertexNormalsHelper.js';
 
@@ -269,7 +268,17 @@ function SidebarGeometry( editor ) {
 
 				if ( geometry.type === 'BufferGeometry' ) {
 
-					parameters.add( new SidebarGeometryModifiers( editor, object ) );
+					// [OpenArtShow] Modifiers(정점 tangent 계산) 제거.
+					// `Sidebar.Geometry.Modifiers.js` 가 `mikktspace.module.js` 를 **최상위 정적
+					// import** 하는데, 그 모듈이 로드 시점에 wasm 을 `data:` URI 로 fetch·instantiate
+					// 한다. 우리 CSP(`connect-src 'self' blob:` · `script-src 'self'`)가 둘 다 막는다.
+					//
+					// ⚠️ **그리고 editor 만의 문제가 아니었다.** three/addons 는 공유 청크
+					// (`vendor-three`)로 묶이므로, editor 가 정적 import 하는 순간 **미술관·world·
+					// builder 까지 그 청크를 받아** 같은 CSP 위반으로 죽었다(스모크 `[4]` 9개 페이지
+					// FAIL · `[6]` violation — editor 반입이 라이브를 깨뜨린 실물 사례다).
+					//
+					// 배치 도구에 tangent 재계산은 필요 없다.
 
 				} else {
 

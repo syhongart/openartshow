@@ -184,15 +184,8 @@ if ( hash.slice( 1, 6 ) === 'file=' ) {
 
 // ServiceWorker
 
-if ( 'serviceWorker' in navigator ) {
-
-	try {
-
-		navigator.serviceWorker.register( 'sw.js' );
-
-	} catch ( error ) {
-
-	}
-
-}
+// [OpenArtShow] ServiceWorker 등록 제거 — 원본 editor 는 `sw.js` 를 함께 배포하는데
+// 우리는 그 파일을 안 들여왔다(오프라인 캐시는 개발용 도구에 불필요하고, 캐시가 잡히면
+// 배포 갱신이 화면에 안 보인다). 등록만 남아 있어 404 + `Failed to register a
+// ServiceWorker` 예외가 났다.
 

@@ -329,17 +329,31 @@ function aggregateBrowser(pageResults, origin) {
   }
 
   // 검사5: 가로 넘침 0 (페이지 × 뷰포트)
+  //
+  // ── `minViewport` — 좁은 화면을 **면제받는 것이 아니라 대상이 아님을 적는다** ──
+  // `LIVE_PAGES` 항목이 `minViewport` 를 선언하면 그보다 좁은 뷰포트는 이 검사에서
+  // 빠지고, **빠진 만큼이 INFO 로 화면에 찍힌다**(조용히 줄어들면 그때부터 장식이다).
+  //
+  // 왜 필요했나: three.js editor 를 반입하니 320px 에서 335>320 이 났다(15px). editor 는
+  // 드래그·기즈모로 조작하는 **데스크톱 전용 도구**라 초소형 폭이 설계 대상이 아니다.
+  // 그렇다고 CSS 를 추측으로 고치면 외부 코드를 근거 없이 개조하는 것이고, 검사를
+  // 통째로 끄면 다른 페이지의 회귀까지 잃는다 — **어느 페이지가 어느 폭부터 유효한지**를
+  // 데이터로 두는 것이 두 손실을 다 피한다.
   const overflows = [];
+  const skipped = [];
   for (const p of pageResults) {
+    const min = LIVE_PAGES.find((x) => x.name === p.name)?.minViewport ?? 0;
     for (const o of p.overflow || []) {
+      if (o.vw < min) { skipped.push(`${p.name}@${o.vw}px`); continue; }
       if (o.overflow) overflows.push(`[${p.name}] ${o.vw}px: ${o.scrollWidth}>${o.innerWidth}`);
     }
   }
-  const totalCells = pageResults.length * VIEWPORTS.length;
+  const totalCells = pageResults.length * VIEWPORTS.length - skipped.length;
   if (overflows.length) {
     record('5', '가로 넘침 0', 'FAIL', `${overflows.length}건 넘침 — ${overflows.slice(0, 3).join(' | ')}`);
   } else {
-    record('5', '가로 넘침 0', 'PASS', `${totalCells}조합(${pageResults.length}페이지×${VIEWPORTS.length}뷰포트) 넘침 0`);
+    const note = skipped.length ? ` · minViewport 로 제외 ${skipped.length}칸(${skipped.join(', ')})` : '';
+    record('5', '가로 넘침 0', 'PASS', `${totalCells}조합 넘침 0${note}`);
   }
 
   // 검사6: CSP 부팅 (메타 유효 + violation 0)

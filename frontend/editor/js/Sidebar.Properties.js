@@ -30,7 +30,6 @@ function SidebarProperties( editor ) {
 
 	const geometryTab = getTabByTabId( container.tabs, 'geometryTab' );
 	const materialTab = getTabByTabId( container.tabs, 'materialTab' );
-	const scriptTab = getTabByTabId( container.tabs, 'scriptTab' );
 
 	function toggleTabs( object ) {
 
@@ -42,8 +41,6 @@ function SidebarProperties( editor ) {
 
 		materialTab.setHidden( ! object.material );
 
-		scriptTab.setHidden( object === editor.camera );
-
 		// set active tab
 
 		if ( container.selected === 'geometryTab' ) {
@@ -54,11 +51,11 @@ function SidebarProperties( editor ) {
 
 			container.select( materialTab.isHidden() ? 'objectTab' : 'materialTab' );
 
-		} else if ( container.selected === 'scriptTab' ) {
-
-			container.select( scriptTab.isHidden() ? 'objectTab' : 'scriptTab' );
-
 		}
+		// [OpenArtShow] `scriptTab` 분기 제거 — 탭 자체를 안 만든다(코드에디터 계열
+		// 1.2MB 를 안 들여왔다). 원본에는 여기와 위쪽 `getTabByTabId`·`setHidden` 까지
+		// **세 곳**에 참조가 있었고, 등록만 빼고 나머지를 안 지워서 오브젝트를 선택할
+		// 때마다 `Cannot read properties of undefined (reading 'setHidden')` 이 났다.
 
 	}
 

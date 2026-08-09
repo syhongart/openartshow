@@ -1,3 +1,12 @@
+// [OpenArtShow] 아이콘을 **문자열 경로가 아니라 import** 로 받는다.
+// 원본은 `img.src = 'images/translate.svg'` 였는데 그것은 **페이지 기준 상대경로**다.
+// 우리 배포는 `app/editor.html`(= `app/editor/` 가 아니라 `app/` 바로 밑)이라 브라우저가
+// `app/images/…` 를 찾아 404 가 났다 — 파일을 옮겨도 안 풀리는 형태였다.
+// import 로 두면 vite 가 해시 자산으로 굽고 URL 을 주므로 **페이지 위치와 무관**해진다.
+import translateSvg from '../images/translate.svg';
+import rotateSvg from '../images/rotate.svg';
+import scaleSvg from '../images/scale.svg';
+
 import { UIPanel, UIButton, UICheckbox } from './libs/ui.js';
 
 function Toolbar( editor ) {
@@ -12,7 +21,7 @@ function Toolbar( editor ) {
 
 	const translateIcon = document.createElement( 'img' );
 	translateIcon.title = strings.getKey( 'toolbar/translate' );
-	translateIcon.src = 'images/translate.svg';
+	translateIcon.src = translateSvg;
 
 	const translate = new UIButton();
 	translate.dom.className = 'Button selected';
@@ -26,7 +35,7 @@ function Toolbar( editor ) {
 
 	const rotateIcon = document.createElement( 'img' );
 	rotateIcon.title = strings.getKey( 'toolbar/rotate' );
-	rotateIcon.src = 'images/rotate.svg';
+	rotateIcon.src = rotateSvg;
 
 	const rotate = new UIButton();
 	rotate.dom.appendChild( rotateIcon );
@@ -39,7 +48,7 @@ function Toolbar( editor ) {
 
 	const scaleIcon = document.createElement( 'img' );
 	scaleIcon.title = strings.getKey( 'toolbar/scale' );
-	scaleIcon.src = 'images/scale.svg';
+	scaleIcon.src = scaleSvg;
 
 	const scale = new UIButton();
 	scale.dom.appendChild( scaleIcon );
