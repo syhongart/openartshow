@@ -737,10 +737,15 @@ async function runPerfGates(origin, browser) {
   try {
     const { runCollide } = await import('./measure-collide.mjs');
     const r = await runCollide({ browser, origin, basePath: BASE_PATH, log: quiet });
+    // **판정 근거를 둘 다 싣는다.** 자동 우회가 붙은 뒤로 충돌은 "막는 것" 보다
+    // "비껴가게 하는 것" 으로 나타나고, 그때 거리비는 임계를 못 넘는다(실측 0.92).
+    // 어느 축이 통과시켰는지 리포트가 말하지 않으면, 다음 사람이 거리비만 보고
+    // "임계에 아슬아슬하다" 로 오독한다 — **판정과 다른 그림을 주는 리포트**다.
     record(
       13, '플레이어 충돌(라이브)', r.pass ? 'PASS' : 'FAIL',
       r.pass
-        ? `ON ${r.onDist?.toFixed(1)}m / OFF ${r.offDist?.toFixed(1)}m = ${r.ratio?.toFixed(2)} — 충돌이 실제로 막았다`
+        ? `ON ${r.onDist?.toFixed(1)}m / OFF ${r.offDist?.toFixed(1)}m`
+          + ` = 거리비 ${r.ratio?.toFixed(2)} · 종점 이탈 ${r.drift?.toFixed(1)}m — 충돌이 궤적을 바꿨다`
         : `${r.reason} → \`npm run measure:collide\` 로 단독 실행해 본다`,
     );
   } catch (e) {
