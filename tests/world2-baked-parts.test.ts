@@ -170,6 +170,11 @@ describe('시계탑 — world3 종탑 이식', () => {
 
   // 팔레트가 12색이고 **12색 전부 실제로 칠해진다**(실측: 가장 적은 roof 24 정점,
   // 가장 많은 metal 528). 조각이 합쳐지거나 색 하나가 안 쓰이면 줄어든다.
+  //
+  // ⚠️ **이 축은 조각이 사라져도 안 움직일 수 있다.** 시계면을 통째로 지우는 뮤테이션
+  // (M7)에서 12계열이 **그대로 유지**됐다 — 시계면이 쓰는 `roofShade`·`trim`·`metal`
+  // 이 처마·차양·창틀·종 꼭지에도 이미 쓰이기 때문이다. 그때 잡은 것은 위의 정점 수다.
+  // 색 계열 수는 "팔레트를 다 쓰는가" 를 보는 축이지 "조각이 다 있는가" 가 아니다.
   it('정점색이 12계열이다 — 팔레트를 다 쓴다', () => {
     expect(colorFamilies(geo)).toBe(12);
   });
@@ -194,6 +199,8 @@ describe('시계탑 — world3 종탑 이식', () => {
     let maxR = 0;
     for (let i = 0; i < p.length; i += 3) maxR = Math.max(maxR, Math.hypot(p[i], p[i + 2]));
     expect(maxR).toBeLessThanOrEqual(clocktower.footprint!(CLOCK_AT_ORIGIN));
+    // ⚠️ 이 줄이 없으면 처마를 **줄이는** 변경이 통과한다 — 실측(M4, 2026-08-09):
+    // `2.44 → 2.30` 으로 좁혔을 때 상한 단언은 초록이고 **이 줄만 깨졌다.**
     expect(maxR).toBeCloseTo(1.725, 3);
   });
 
@@ -260,6 +267,26 @@ describe('시계탑 색 노브', () => {
     expect(Object.keys(PALETTES.city).sort()).toEqual(Object.keys(PALETTES.village).sort());
   });
 
+  /**
+   * ★ **12색이 하나도 겹치지 않는다.**
+   *
+   * ⚠️ 이 검사는 **뮤테이션이 시켜서 생겼다.** 아래 "실제로 다른 색을 낸다" 하나만
+   * 있을 때 `city.roof` 를 `village.roof` 와 **같은 값으로 바꿔도 22/22 통과**했다
+   * (M6, executor 실측 2026-08-09). 12색 중 1색만 겹치면 정점색 차이가 11/12 =
+   * **91.7%** 라 `> 0.9` 임계를 그냥 넘는다.
+   *
+   * 비율 단언은 "두 팔레트가 대체로 다르다" 까지만 말한다 — **어느 한 색이 잘못
+   * 복사됐는가**는 못 본다. 그래서 키별로 본다.
+   */
+  it('두 팔레트의 12색이 하나도 겹치지 않는다', () => {
+    const same = (Object.keys(PALETTES.village) as Array<keyof typeof PALETTES.village>)
+      .filter((k) => PALETTES.village[k] === PALETTES.city[k]);
+    expect(same).toEqual([]);
+  });
+
+  // 위가 **값**을 보고 이것이 **집행**을 본다 — 팔레트를 고쳐도 구운 결과가 안 바뀌면
+  // (예: `asset` 이 한쪽을 하드코딩) 위 검사는 초록인 채로 통과한다. 경계를 건너는
+  // 지점은 양쪽 테스트 어디에도 안 걸린다는 것이 이 저장소가 반복해 데인 형태다.
   it('village 와 city 가 실제로 다른 색을 낸다', () => {
     const a = withKnob('?clock=village', () => clocktower.asset(T).geometry.attributes.color.array);
     const b = withKnob('?clock=city', () => clocktower.asset(T).geometry.attributes.color.array);

@@ -109,6 +109,11 @@ export const PALETTES: Record<ClockLook, Palette> = {
  * **그리고 이것은 임시물이다.** 감독이 두 안 중 하나를 고르면 진 쪽과 이 함수를 함께
  * 지운다 — 노브를 남기면 다음 사람이 "둘 다 지원해야 하는 축" 으로 읽는다(world5 도심
  * 밀도 노브에서 겪었고, 그때도 확정 즉시 제거했다).
+ *
+ * ⚠️ **fallback 을 바꾸면 검사 두 곳이 깨진다.** `world2-baked-parts.test.ts` 는 모듈
+ * 최상단에서 지오를 한 번 굽는데 그 시점의 `location` 이 비어 있어 fallback 이 그대로
+ * 반영된다 — 그래서 fallback 을 `city` 로 돌리면 노브 검사뿐 아니라 **황동 종 검사**도
+ * 함께 깨진다(M5 실측). 검사가 이상한 것이 아니라 기본값이 실제로 룩을 정한다는 뜻이다.
  */
 export function clockLook(): ClockLook {
   return readEnum('clock', 'village', CLOCK_LOOKS) as ClockLook;
