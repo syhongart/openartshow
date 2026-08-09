@@ -206,6 +206,14 @@ export const LIVE_PAGES = [
   // 선결 조건이고, 잊히지 않도록 `tests/verification-tier.test.ts` 의 **GS-4** 가
   // 승격 자체를 막는다 — 산문으로만 남기지 않는다.
   { name: 'app/world3',        url: '/app/world3.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // world5(갤러리 스트리트): world2 의 포크라 부팅 성질이 world3 와 같다 —
+  // `three/webgpu` 를 쓰므로 vite 전용이고 날씨 코드도 그대로 승계한다.
+  //
+  // **안 받는 것은 world3 와 동일하다**(바로 위 world3 항목의 이연 명세 참고):
+  // `[7]`·`[7.6]`·`[8]` 은 `measure-invariants.mjs`·`measure-sky-warm.mjs` 가
+  // `/app/world2.html` 을 URL 하드코딩해 돌므로 여기도 안 온다. behind-flag 인
+  // 동안의 이연이고, 승격을 `tests/verification-tier.test.ts` 의 GS-4 가 막는다.
+  { name: 'app/world5',        url: '/app/world5.html', webgl: true, viteOnly: true, weatherProbe: true },
   // ── visit·lab-glb: behind-flag 인데 **검사가 0이었다** (검수관 반려 B1, 2026-08-05) ──
   //
   // 검증 등급(#195)을 도입하면서 *"3등급이어도 자기완결·CSP 는 CI 스모크가 등급과 무관하게

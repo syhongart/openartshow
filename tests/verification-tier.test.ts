@@ -59,9 +59,13 @@ describe('진입점 SSOT', () => {
     //
     // 2026-08-08 `world3.html` 추가 — world2 의 포크(포근마을). 감독 지시로 착수했고
     // 라이브 노출은 감독·팀장 게이트다.
+    //
+    // 2026-08-08 `world5.html` 추가 — world2 의 두 번째 포크(갤러리 스트리트).
+    // **`world4` 는 결번**이다(감독이 "월드5" 로 명시, 팀장 유지 판정). 결번 자체는
+    // GS-4 의 `/^world\d+$/` 판정과 무관하다 — 경위는 `entrypoints.mjs` 의 그 줄.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
     expect(flagged).toEqual([
-      'lab-glb.html', 'visit.html', 'world2.html', 'world3.html',
+      'lab-glb.html', 'visit.html', 'world2.html', 'world3.html', 'world5.html',
     ]);
   });
 
@@ -517,5 +521,9 @@ describe('GS-4 — 라이브 world 진입점은 성능 게이트가 실제로 �
     const flaggedKernels = FLAGGED_ENTRIES.filter((e) => isKernelWorld(e.key)).map((e) => e.key);
     expect(flaggedKernels).toContain('world2');
     expect(flaggedKernels).toContain('world3');
+    // `world5` — 결번(`world4`)을 건너뛴 숫자도 정규식이 잡는지 함께 못 박는다.
+    // 접두 매칭(`startsWith('world')`)이었다면 결번과 무관했겠지만, 숫자 접미로
+    // 좁힌 뒤에는 "연속된 숫자만 잡히는 것 아닌가" 가 실제 의문이 된다.
+    expect(flaggedKernels).toContain('world5');
   });
 });
