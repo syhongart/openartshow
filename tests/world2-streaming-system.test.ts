@@ -50,6 +50,11 @@ function mkSys(o: {
   dir?: { x: number; z: number };
   /** 진행 계수. 안 주면 옵션 자체를 넘기지 않는다 — 기본값 1 경로를 그대로 탄다 */
   speedFactor?: number;
+  /**
+   * look-ahead 거리(셀). **기본값이 0(꺼짐)이라 계수 축을 보려면 명시적으로 켜야 한다**
+   * (감독 지시 + 팀장 판정 2026-08-09 — `systems/streaming.ts` 소비 지점의 문단).
+   */
+  lookAhead?: number;
 } = {}) {
   const fb = fakeBuilder();
   const pos = o.pos ?? { x: 0, z: 0 };
@@ -60,6 +65,7 @@ function mkSys(o: {
     markDirty: o.markDirty,
     getDirection: o.dir ? () => o.dir! : undefined,
     getSpeedFactor: o.speedFactor === undefined ? undefined : () => o.speedFactor!,
+    lookAhead: o.lookAhead,
     // 이 파일은 **스트리밍 기계**를 본다 — 로드·반납·누수·예산. 그 성질은 물이 있든
     // 없든 같아야 하므로 지형을 끈다. 실제 월드는 이 옵션을 주지 않아 물이 걸린다.
     // (끄지 않으면 원점 두 파셀 옆 강 때문에 13이 11이 되고, 밴드가 바뀐 것도 강이
@@ -328,39 +334,47 @@ const tierSnapshot = (sys: StreamingSystem) =>
 
 describe('StreamingSystem — getSpeedFactor 가 look-ahead 를 접는다', () => {
   const dir = { x: 0, z: -1 };
+  // ⚠ **look-ahead 를 명시적으로 켠다** (감독 지시 + 팀장 판정 2026-08-09).
+  // 기본값이 `0`(꺼짐)으로 바뀌었다 — 후진 중 판정 중심이 몸 뒤로 밀려 LOD 교체가
+  // 폭주하던 것을 껐다(실측: 후진 동시 페이드 125 vs 전진 4 → 끈 뒤 0 vs 0).
+  //
+  // 이 절이 보는 것은 *"계수가 look-ahead 에 **곱해지는가**"* 이고, 그 성질은 look-ahead
+  // 가 켜져 있을 때만 관측된다. 기본값이 0 이라고 이 검사를 지우면 **곱셈이 사라져도
+  // 아무도 모른다** — 되살릴 날 배선이 죽어 있는 것을 그때 발견하게 된다.
+  const AHEAD = 0.5;   // 종전 기본값. 여기서만 쓰는 시험값이다
 
   it('계수 0 과 1 은 서로 다른 파셀 구성을 만든다', () => {
-    const a = make({ dir, speedFactor: 1 });
-    const b = make({ dir, speedFactor: 0 });
+    const a = make({ dir, speedFactor: 1, lookAhead: AHEAD });
+    const b = make({ dir, speedFactor: 0, lookAhead: AHEAD });
     settle(a.sys); settle(b.sys);
     expect(tierSnapshot(a.sys)).not.toBe(tierSnapshot(b.sys));
   });
 
   it('계수 0 은 방향을 안 준 것과 같다 — look-ahead 가 통째로 접힌다', () => {
-    const zero = make({ dir, speedFactor: 0 });
-    const none = make({});
+    const zero = make({ dir, speedFactor: 0, lookAhead: AHEAD });
+    const none = make({ lookAhead: AHEAD });
     settle(zero.sys); settle(none.sys);
     expect(tierSnapshot(zero.sys)).toBe(tierSnapshot(none.sys));
   });
 
   it('안 주면 1 과 같다 — 예전 동작이 기본값이다', () => {
-    const absent = make({ dir });
-    const one = make({ dir, speedFactor: 1 });
+    const absent = make({ dir, lookAhead: AHEAD });
+    const one = make({ dir, speedFactor: 1, lookAhead: AHEAD });
     settle(absent.sys); settle(one.sys);
     expect(tierSnapshot(absent.sys)).toBe(tierSnapshot(one.sys));
   });
 
   it('1 을 넘는 값·음수·NaN 은 0~1 로 가둔다 — 커지면 고치려던 증상이 되살아난다', () => {
-    const one = make({ dir, speedFactor: 1 });
-    const zero = make({ dir, speedFactor: 0 });
+    const one = make({ dir, speedFactor: 1, lookAhead: AHEAD });
+    const zero = make({ dir, speedFactor: 0, lookAhead: AHEAD });
     settle(one.sys); settle(zero.sys);
     for (const over of [3, 1e9]) {
-      const s = make({ dir, speedFactor: over });
+      const s = make({ dir, speedFactor: over, lookAhead: AHEAD });
       settle(s.sys);
       expect(tierSnapshot(s.sys), `${over} 가 1 로 안 잘렸다`).toBe(tierSnapshot(one.sys));
     }
     for (const bad of [-1, NaN]) {
-      const s = make({ dir, speedFactor: bad });
+      const s = make({ dir, speedFactor: bad, lookAhead: AHEAD });
       settle(s.sys);
       // 음수는 0 으로(뒤로 당기지 않는다), NaN 은 1 로(옵션이 없는 셈) 떨어진다.
       expect(tierSnapshot(s.sys)).toBe(tierSnapshot(bad < 0 ? zero.sys : one.sys));
@@ -378,5 +392,33 @@ describe('배선 — main.ts 가 speedFactor 를 스트리밍에 넘긴다 (정�
 
   it('player.speedFactor 를 getSpeedFactor 로 넘긴다', () => {
     expect(src, 'getSpeedFactor 배선이 없다').toMatch(/getSpeedFactor\s*:\s*\(\)\s*=>\s*player\.speedFactor/);
+  });
+});
+
+// ── look-ahead 기본값이 **꺼져 있는가** (감독 지시 + 팀장 판정 2026-08-09) ────
+//
+// 감독 실기기: *"뒤로 후진했다가 놓으면 앞이 갑자기 나타나"* · *"뒤로 뺄 때 더 빨리
+// lod 가 동작하는 것 같기도 해"* → *"근본원인을 찾아 복구해. 코드를 또 만들지 말고."*
+//
+// 기전과 실측은 `systems/streaming.ts` 의 소비 지점 한 곳에 있다(여기 다시 적지 않는다).
+// 요지만: `getDirection` 의 소스가 둘이고 **후진은 그 둘이 정반대가 되는 유일한 조작**
+// 이라, look-ahead 가 켜져 있으면 후진 내내 판정 중심이 몸 뒤로 밀린다.
+//
+// **이 검사가 없으면 기본값이 조용히 되살아나도 아무도 모른다.** 위 절은 `lookAhead`
+// 를 명시적으로 켜서 돌므로 기본값 회귀를 못 잡는다 — 그 사각을 여기서 막는다.
+describe('StreamingSystem — look-ahead 기본값은 꺼져 있다', () => {
+  it('방향을 줘도 판정 중심이 움직이지 않는다 — 방향 의존이 원리적으로 없다', () => {
+    const back = make({ dir: { x: 0, z: 1 } });    // 후진
+    const fwd = make({ dir: { x: 0, z: -1 } });    // 전진
+    settle(back.sys); settle(fwd.sys);
+    // 같은 자리에서 방향만 반대인데 결과가 같아야 한다. look-ahead 가 켜지면 갈린다.
+    expect(tierSnapshot(back.sys)).toBe(tierSnapshot(fwd.sys));
+  });
+
+  it('방향이 없는 세션과도 같다 — 기본값이 0 이라는 것의 다른 표현', () => {
+    const dirless = make({});
+    const back = make({ dir: { x: 0, z: 1 } });
+    settle(dirless.sys); settle(back.sys);
+    expect(tierSnapshot(back.sys)).toBe(tierSnapshot(dirless.sys));
   });
 });
