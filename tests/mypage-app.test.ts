@@ -25,14 +25,27 @@
 // 배포 전 스모크(실제 브라우저)가 본다.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createMyPage } from '../frontend/js/mypage/app.js';
 import { LocalProfileStore, type ProfileStore } from '../frontend/js/mypage/store.js';
 import { emptyProfile, type Profile } from '../frontend/js/mypage/schema.js';
+// 옷장은 **실제 저장소**를 쓴다 — 모킹하면 편집기와 같은 곳을 읽는다는 주장을
+// 검증하지 못하고, 형식이 어긋나도 테스트만 통과한다.
+import {
+  currentUserId,
+  saveCloset,
+  readStoredChibi,
+  readStoredChibiThumb,
+  saveStoredChibi,
+  saveStoredChibiThumb,
+} from '../frontend/js/ui-chibi-store.js';
 
 /** 실제 마크업과 같이 `is-loading` 을 달고 시작한다 — 그것이 이 파일의 요점이다. */
 const FIXTURE = `
 <div class="mp is-loading" data-mp="root">
   <div data-mp="preview">
+    <button data-mp="preview-identity"></button>
     <img data-mp="preview-avatar" alt=""><span data-mp="preview-avatar-fallback"></span>
     <h2 data-mp="preview-name"></h2><span data-mp="preview-nickname"></span>
     <span data-mp="preview-type"></span><p data-mp="preview-bioshort"></p>
@@ -72,6 +85,15 @@ const FIXTURE = `
   <input type="checkbox" data-mp-vis="email"><input type="checkbox" data-mp-vis="inquiry">
   <button data-mp="save"></button><span data-mp="save-status"></span>
   <img data-mp="avatar-thumb"><button data-mp="avatar-open"></button>
+  <div data-mp="closet">
+    <span data-mp="closet-count"></span>
+    <p data-mp="closet-empty" hidden><span data-mp="closet-empty-guest" hidden></span></p>
+    <p data-mp="closet-status"></p>
+    <div data-mp="closet-list"></div>
+    <template data-mp="closet-cell"><button data-mp-closet="load">
+      <img data-mp-closet="thumb" alt=""><span data-mp-closet="name"></span>
+    </button></template>
+  </div>
   <span data-mp="account-provider"></span><button data-mp="account-reset"></button>
   <p data-mp="account-notice"></p>
 </div>`;
@@ -348,5 +370,319 @@ describe('별명 — 한글 IME 조합', () => {
     await afterDebounce();
     expect(feedback().textContent).toContain('쓸 수 있는 형식입니다');
     app.destroy();
+  });
+});
+
+// 감독 지시 2026-08-08: *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로 바로 가게 하자"*
+// — Preview 의 아바타+이름 블록이 두 번째 진입점이다.
+//
+// **두 진입점이 같은 곳으로 가는지**를 본다. 각각 따로 배선하면 미저장 확인이나 back
+// 타깃이 한쪽만 바뀌는 형태가 열리는데, 그것은 화면에서 조용하다(둘 다 "이동은 한다").
+describe('캐릭터 편집 진입점 — 둘이 같은 곳으로 간다', () => {
+  /**
+   * jsdom 은 실제 이동을 안 하므로 `href` 대입을 가로챈다.
+   *
+   * ── ⚠ `reset()` 이 이 하네스의 핵심이다 (검수관 B1, 2026-08-08) ──────────────
+   * 첫 판본은 `get()` 만 있었고 **검출력이 0이었다.** `get()` 은 *마지막으로 대입된*
+   * href 를 돌려주는데, preview 클릭 **직전에 탭 클릭이 이미 값을 넣어 둔다.**
+   * 그래서 preview 배선을 통째로 지워도 잔상이 남아 네 단언이 **전부 통과**했다
+   * (실측: 배선 줄 삭제 → 전체 2053 테스트에서 추가 실패 **0**).
+   *
+   * **"같음" 을 단언하는 테스트는 "둘 다 안 움직임" 도 같음으로 읽는다.** 정합 검사에는
+   * **측정기 생존**(각 축이 실제로 값을 냈는가)이 반드시 함께 있어야 한다 — 이 저장소가
+   * `minY` 빈 배열의 평균 0 이 단언을 통과시킨 일로 이미 지불한 형태다.
+   *
+   * `restore()` 도 함께 둔다. `window.location` 을 Proxy 로 덮은 채 두면 뒤에 오는
+   * 테스트가 같은 전역을 읽어 오염된다.
+   */
+  function captureNav(): { get(): string; reset(): void; restore(): void } {
+    let last = '';
+    const original = Object.getOwnPropertyDescriptor(window, 'location');
+    const loc = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: new Proxy(loc, {
+        set(_t, prop, value) {
+          if (prop === 'href') { last = String(value); return true; }
+          return Reflect.set(loc, prop, value);
+        },
+        get(t, prop) {
+          const v = Reflect.get(t, prop);
+          return typeof v === 'function' ? v.bind(t) : v;
+        },
+      }),
+    });
+    return {
+      get: () => last,
+      reset: () => { last = ''; },
+      restore: () => {
+        if (original) Object.defineProperty(window, 'location', original);
+      },
+    };
+  }
+
+  async function bootApp() {
+    const app = createMyPage(root, new LocalProfileStore(() => 1000));
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    return app;
+  }
+
+  it('「캐릭터」 탭 버튼과 Preview 신원 블록이 **같은 URL** 로 보낸다', async () => {
+    const nav = captureNav();
+    const app = await bootApp();
+    try {
+      nav.reset();
+      root.querySelector<HTMLElement>('[data-mp="avatar-open"]')!.click();
+      const fromTab = nav.get();
+
+      // ⚠ **리셋하지 않으면 아래 전부가 잔상을 검사한다**(위 주석의 B1).
+      nav.reset();
+      root.querySelector<HTMLElement>('[data-mp="preview-identity"]')!.click();
+      const fromPreview = nav.get();
+
+      expect(fromTab, '탭 버튼이 이동하지 않았다').toBeTruthy();
+      expect(fromPreview, 'Preview 신원 블록이 이동하지 않았다').toBeTruthy();
+      expect(fromPreview).toBe(fromTab);
+      // 편집기가 **열린 채로** 열려야 한다. 로비에 떨어뜨리면 버튼이 약속한 것과 다르다.
+      expect(fromPreview).toContain('avatar=1');
+      // 돌아올 길이 있어야 한다 — 없으면 편집 후 미술관에 갇힌다.
+      expect(fromPreview).toContain('back=mypage');
+    } finally {
+      app.destroy();
+      nav.restore();
+    }
+  });
+
+  // 검수관 P2. 위 테스트는 **URL 만** 본다 — preview 쪽이 `goAvatarEditor` 를 안 쓰고
+  // 미저장 확인 없이 같은 URL 로 이동해도 원리상 못 잡는다. 그 축을 따로 건다.
+  it('미저장 변경이 있으면 **두 진입점 다** 확인을 묻는다', async () => {
+    const nav = captureNav();
+    const app = await bootApp();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    try {
+      // 값을 고쳐 dirty 로 만든다.
+      const input = root.querySelector<HTMLInputElement>('[data-mp-field="displayName"]')!;
+      input.value = '고친 이름';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+
+      for (const key of ['avatar-open', 'preview-identity']) {
+        confirmSpy.mockClear();
+        nav.reset();
+        root.querySelector<HTMLElement>(`[data-mp="${key}"]`)!.click();
+        expect(confirmSpy, `${key} 가 미저장 확인을 묻지 않았다`).toHaveBeenCalledTimes(1);
+        // 사용자가 취소했으므로 **이동하면 안 된다** — 여기서 편집 내용을 잃는다.
+        expect(nav.get(), `${key} 가 취소를 무시하고 이동했다`).toBe('');
+      }
+    } finally {
+      confirmSpy.mockRestore();
+      app.destroy();
+      nav.restore();
+    }
+  });
+});
+
+// 감독 지시 2026-08-08: *"옷장리스트가 나오게 해줘."*
+//
+// **편집기와 같은 저장소를 읽는가**가 요점이라 `saveCloset` 을 그대로 불러 심는다.
+//
+// ⚠ **그러나 그것으로 묶이는 것은 「어디에」뿐이고 「무엇을」은 안 묶인다**
+// (검수관 C3 실측, 2026-08-08). 첫 판본 주석은 *"형식이 바뀌면 함께 깨져야 한다"* 고
+// 적었고 **거짓이었다** — `readCloset` 은 `Array.isArray` 외에 검증을 **0건** 하는 JSON
+// 통과기라, 편집기가 슬롯 키 `name` 을 `label` 로 바꿔도(= 사용자는 이름 없는 빈 버튼을
+// 보게 된다) 전체 2101 테스트에서 **추가 실패 0** 이었다. 형식을 다시 적은 곳은 아래
+// `SLOT_A/SLOT_B` 리터럴, 즉 **이 픽스처 자신**이었다.
+//
+// 그래서 문장을 고치는 대신 **참으로 만든다** — 맨 아래 「생산자 계약」 테스트가 편집기의
+// 슬롯 생성부를 읽어 키를 대조한다. 키 프리픽스(저장 위치) 축은 별개로 이미 잡힌다.
+describe('내 옷장', () => {
+  async function bootApp() {
+    const app = createMyPage(root, new LocalProfileStore(() => 1000));
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    return app;
+  }
+
+  const SLOT_A = {
+    id: 'c1', name: '초록 원피스', ts: 1,
+    look: { species: 'human', outfit: 'dress' },
+    thumb: 'data:image/jpeg;base64,AAAA',
+  };
+  const SLOT_B = {
+    id: 'c2', name: '파란 후디', ts: 2,
+    look: { species: 'human', outfit: 'hoodie' },
+    thumb: 'data:image/jpeg;base64,BBBB',
+  };
+
+  const cells = () => Array.from(root.querySelectorAll<HTMLElement>('[data-mp-closet="load"]'));
+
+  it('비어 있으면 **안내를 보여주고 목록은 비운다**', async () => {
+    const app = await bootApp();
+    expect(cells().length).toBe(0);
+    // 빈 화면과 "로드 실패" 는 구별되지 않는다 — 문구가 그 구별을 만든다.
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-empty"]')!.hidden).toBe(false);
+    app.destroy();
+  });
+
+  it('저장된 옷을 **편집기와 같은 저장소에서** 읽어 그린다', async () => {
+    saveCloset([SLOT_A, SLOT_B], currentUserId());
+    const app = await bootApp();
+
+    expect(cells().length, '옷장 칸이 그려지지 않았다').toBe(2);
+    expect(cells()[0].textContent).toContain('초록 원피스');
+    expect(cells()[1].textContent).toContain('파란 후디');
+    // 이름만으로는 **무엇을 하는 버튼인지** 안 읽힌다.
+    expect(cells()[0].getAttribute('aria-label')).toBe('초록 원피스 입기');
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-empty"]')!.hidden).toBe(true);
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-count"]')!.textContent).toBe('2벌');
+    app.destroy();
+  });
+
+  it('누르면 **그 옷으로 갈아입는다** — 저장분과 썸네일이 함께 바뀐다', async () => {
+    saveCloset([SLOT_A, SLOT_B], currentUserId());
+    const app = await bootApp();
+
+    cells()[1].click();
+
+    const uid = currentUserId();
+    // `look` 만 바꾸고 썸네일을 안 바꾸면 화면과 실제 캐릭터가 어긋난다.
+    expect(readStoredChibi(uid)).toEqual(SLOT_B.look);
+    expect(readStoredChibiThumb(uid)).toBe(SLOT_B.thumb);
+    // 캐릭터 탭 썸네일도 즉시 따라와야 한다(안 따라오면 눌러도 아무 일 없어 보인다).
+    expect(root.querySelector<HTMLImageElement>('[data-mp="avatar-thumb"]')!.src).toContain('BBBB');
+    // ⚠ **Preview 아바타 축** (검수관 C1/M1). 첫 판본은 이 줄이 없어서 `refreshPreview()`
+    // 를 지워도 통과했다 — 갱신 지점 넷 중 하나에 측정기가 없었고, 그것은 화면에서
+    // 조용하다(캐릭터 탭만 바뀌고 위쪽 미리보기는 옛 옷 그대로 남는다).
+    expect(
+      root.querySelector<HTMLImageElement>('[data-mp="preview-avatar"]')!.src,
+      'Preview 아바타가 안 따라왔다 — 두 화면이 어긋난다',
+    ).toContain('BBBB');
+    // ⚠ **프로필 저장 상태줄이 아니라 옷장 전용 줄**이다(검수관 P5) — 공유하면
+    // "저장하지 않은 변경이 있습니다" 경고가 지워져 저장된 것처럼 읽힌다.
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-status"]')!.textContent).toContain('갈아입었');
+    app.destroy();
+  });
+
+  it('`look` 이 없는 슬롯은 **아무 일도 하지 않는다** — 옛 저장분 방어', async () => {
+    // ⚠ **대조군을 먼저 심는다** (검수관 C1/M9, 2026-08-08).
+    // 첫 판본은 아무것도 안 심고 `before = null` 상태에서 `toEqual(before)` 를 단언했다.
+    // 그러면 가드를 약화했을 때(`!slot?.look` → `!slot`) `saveStoredChibi(undefined)` 가
+    // 문자열 `"undefined"` 를 넣고 → 읽기의 `JSON.parse` 가 던져 **`null` 을 반환**한다.
+    // 즉 **저장된 캐릭터가 파괴됐는데 `null === null` 로 통과**했다. 실측으로 확인된
+    // 검출력 0이고, 하루 전 같은 파일에서 나온 「측정기 생존」이 그대로 재발한 것이다.
+    saveStoredChibi({ species: 'human', outfit: 'original' }, currentUserId());
+    saveCloset([{ id: 'c3', name: '깨진 것', ts: 3 }], currentUserId());
+    const app = await bootApp();
+
+    const before = readStoredChibi(currentUserId());
+    expect(before, '대조군이 null 이면 이 단언은 파괴를 못 잡는다').not.toBe(null);
+
+    cells()[0].click();
+
+    expect(readStoredChibi(currentUserId())).toEqual(before);
+    app.destroy();
+  });
+
+  // 검수관 E1. 옷장은 **로그인 전용**이라(편집기가 탭 자체를 숨긴다) 빈 안내에 로그인
+  // 문구를 덧붙였는데, 그것은 **게스트에게만 참**이다. 로그인 사용자에게 뜨면 거짓말이다.
+  //
+  // ⚠ 이 테스트가 생긴 경위 자체가 값이다 — 바로 앞 커밋에서 *"픽스처와 마크업이 갈린
+  // 곳은 전부 이 구멍이다"* 라고 **일반화를 적어 놓고**, 같은 커밋에서 이 요소를 마크업에
+  // 추가하면서 계약 배열에도 픽스처에도 안 넣었다. **일반화를 적은 순간 그 문장이 적용될
+  // 자리를 세지 않으면, 다음 사람은 그 문장을 읽고 확인을 생략한다.**
+  it('빈 옷장 안내 — 로그인 문구는 **게스트에게만** 뜬다', async () => {
+    const guest = await bootApp();
+    expect(
+      root.querySelector<HTMLElement>('[data-mp="closet-empty-guest"]')!.hidden,
+      '게스트에게 로그인 안내가 안 뜬다',
+    ).toBe(false);
+    guest.destroy();
+
+    // 로그인 상태를 만드는 수단은 저장소에 이미 있다(`mypage-store.test.ts` 와 같은 패턴).
+    const { loginWith } = await import('../frontend/js/auth.js');
+    await loginWith('google');
+    root = mount();
+    const member = await bootApp();
+    expect(
+      root.querySelector<HTMLElement>('[data-mp="closet-empty-guest"]')!.hidden,
+      '로그인 사용자에게 "로그인이 필요합니다" 가 뜬다 — 거짓말이다',
+    ).toBe(true);
+    member.destroy();
+  });
+
+  // 검수관 D2. 「갈아입기」 테스트가 `wearFromCloset` 안의 호출로 통과해 버려서,
+  // **부팅 때 썸네일이 아예 안 그려져도 초록**이었다. 그 축을 따로 건다.
+  it('부팅하면 저장된 아바타 썸네일을 **캐릭터 탭에 그린다**', async () => {
+    saveStoredChibiThumb('data:image/jpeg;base64,CCCC', currentUserId());
+    const app = await bootApp();
+    const img = root.querySelector<HTMLImageElement>('[data-mp="avatar-thumb"]')!;
+    expect(img.src, '부팅 시 썸네일이 안 그려졌다').toContain('CCCC');
+    expect(img.hidden).toBe(false);
+    app.destroy();
+  });
+
+  // 검수관 P5. 갈아입기가 프로필 저장 상태줄을 쓰면 미저장 경고가 지워지고 초록으로
+  // 바뀐다 — `dirty` 는 그대로라 **저장이 안 됐는데 된 것처럼 읽힌다.**
+  it('갈아입어도 **미저장 경고를 지우지 않는다** — 상태줄이 별개다', async () => {
+    saveCloset([SLOT_A], currentUserId());
+    const app = await bootApp();
+
+    const input = root.querySelector<HTMLInputElement>('[data-mp-field="displayName"]')!;
+    input.value = '고친 이름';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const warning = root.querySelector<HTMLElement>('[data-mp="save-status"]')!.textContent;
+    expect(warning, '대조군이 비면 이 단언은 아무것도 안 잡는다').toContain('저장하지 않은');
+
+    cells()[0].click();
+
+    expect(root.querySelector<HTMLElement>('[data-mp="save-status"]')!.textContent).toBe(warning);
+    expect(root.querySelector<HTMLElement>('[data-mp="closet-status"]')!.textContent).toContain('갈아입었');
+    app.destroy();
+  });
+
+  // 검수관 P11. 이름도 썸네일도 없는 옛 슬롯이 **라벨도 그림도 없는 빈 버튼**이 되면
+  // 스크린리더에는 " 입기" 로, 화면에는 빈칸으로 나온다.
+  it('이름이 빈 슬롯도 **읽을 수 있는 라벨**을 갖는다', async () => {
+    saveCloset([{ id: 'c9', ts: 9, look: { species: 'human' } }], currentUserId());
+    const app = await bootApp();
+    expect(cells()[0].textContent?.trim()).toBeTruthy();
+    expect(cells()[0].getAttribute('aria-label')).not.toBe(' 입기');
+    app.destroy();
+  });
+
+  it('썸네일이 없는 슬롯은 **깨진 이미지를 보이지 않는다**', async () => {
+    saveCloset([{ id: 'c4', name: '썸네일 없음', ts: 4, look: { species: 'human' } }], currentUserId());
+    const app = await bootApp();
+    const img = cells()[0].querySelector<HTMLImageElement>('[data-mp-closet="thumb"]')!;
+    // `src` 가 빈 `<img>` 는 브라우저에서 깨진 아이콘으로 나온다.
+    expect(img.hidden).toBe(true);
+    app.destroy();
+  });
+});
+
+// 옷장 슬롯의 **생산자는 편집기**(`ui-avatar-editor.ts`)이고 소비자가 마이페이지다.
+// 그 사이에는 검증이 없다 — `readCloset` 은 JSON 을 그대로 통과시킨다. 그래서 생산자가
+// 키 이름을 바꾸면 소비자는 조용히 빈 값을 그린다(실측: 이름 없는 빈 버튼).
+//
+// 이 검사는 **소스를 읽어 계약을 대조**한다. 런타임 값이 아니라 문자열을 보는 것이므로
+// 강한 축은 아니지만, 이 저장소에서 실제로 일어난 형태(생산자만 바꾸고 소비자를 잊음)를
+// 잡는다. **못 잡는 것**: 키 이름이 같은데 의미가 바뀌는 것(`thumb` 이 URL → Blob 등),
+// 편집기가 슬롯을 다른 자리에서도 만드는 경우(지금은 한 곳이다).
+describe('옷장 슬롯 — 생산자(편집기) 계약', () => {
+  it('편집기가 만드는 슬롯이 마이페이지가 읽는 키를 **전부** 가진다', () => {
+    const src = readFileSync(
+      resolve(import.meta.dirname, '../frontend/js/ui-avatar-editor.ts'),
+      'utf8',
+    );
+    const block = /const slot\s*=\s*\{([\s\S]*?)\n\s*\};/.exec(src);
+    expect(block, '편집기의 슬롯 생성부를 못 찾았다 — 이 검사가 낡았다').not.toBe(null);
+
+    const keys = new Set(
+      [...block![1].matchAll(/^\s*([A-Za-z_$][\w$]*)\s*:/gm)].map((m) => m[1]),
+    );
+    // 마이페이지가 실제로 읽는 것들(`app.ts` 의 `renderCloset`·`wearFromCloset`).
+    for (const key of ['name', 'look', 'thumb']) {
+      expect(keys.has(key), `편집기 슬롯에 '${key}' 가 없다 — 마이페이지가 빈 값을 그린다`).toBe(true);
+    }
   });
 });

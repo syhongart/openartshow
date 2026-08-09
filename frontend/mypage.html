@@ -13,8 +13,14 @@
      img-src 의 data: 는 프로필 사진이 dataURL 로 저장되기 때문에 **반드시** 필요하다. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>마이페이지 · OpenArtShow</title>
-<!-- behind-flag: 어디에도 링크하지 않는다. 검색 색인까지 막아 둔다 —
-     링크가 없어도 URL 이 노출되면 색인될 수 있고, 미완성 화면이 검색에 뜨는 것은 링크 노출과 같다. -->
+<!-- ⚠ 이 주석은 *"behind-flag: 어디에도 링크하지 않는다"* 였고 **더는 사실이 아니다**
+     (검수관 P9, 2026-08-08). 이 페이지는 2026-08-08 감독 지시로 **라이브 승격**됐고
+     랜딩의 프로필 메뉴가 링크한다(`scripts/lib/entrypoints.mjs` 의 `exposure: 'live'`).
+
+     그러나 `noindex` 는 **그대로 둔다 — 이유가 바뀌었을 뿐 결론은 같다.**
+     여기는 개인 프로필을 **편집하는** 화면이고 로그인한 본인에게만 의미가 있다. 검색에
+     떠서 좋을 것이 없고, 공개용은 나중에 붙을 `/@별명` 쪽이다(`docs/MYPAGE-PLAN.md`).
+     즉 "미완성이라 감춘다" 가 아니라 "공개 대상이 아니다" 다. -->
 <meta name="robots" content="noindex, nofollow">
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <link rel="stylesheet" href="./css/tokens.css">
@@ -105,7 +111,14 @@
       <div class="pv__card">
         <p class="pv__lock" data-mp="preview-private" hidden><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.3 10.6h11.4v9H6.3ZM8.6 10.6V7.9a3.4 3.4 0 0 1 6.8 0v2.7"/></svg>프로필을 비공개로 설정했습니다</p>
 
-        <div class="pv__id">
+        <!-- 감독 지시 2026-08-08: *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로 바로
+             가게 하자"* — 아바타+이름 블록이 그 진입점이다.
+
+             **`<button>` 이다.** Preview 는 "다른 사람이 보는 모습" 이지만 이 블록만은
+             편집 진입점을 겸한다. `<div>` + click 리스너로 두면 키보드로 도달할 수 없고
+             스크린리더가 누를 수 있다는 것을 모른다 — 「캐릭터」 탭의 같은 기능이 이미
+             버튼이므로 여기만 다르면 그쪽만 접근 가능해진다. -->
+        <button class="pv__id" type="button" data-mp="preview-identity">
           <span class="pv__avatar">
             <!-- img 자체에 계약 속성을 붙였다. JS 가 `el.src = …` 로 채울 수 있고,
                  src 없는 <img> 가 깨진 아이콘으로 보이지 않도록 hidden 으로 시작한다
@@ -120,7 +133,20 @@
               <span class="pv__type" data-mp="preview-type" hidden></span>
             </span>
           </span>
-        </div>
+          <!-- 누를 수 있다는 신호. 아이콘은 `aria-hidden` 이고, 목적은 바로 아래
+               시각 숨김 텍스트가 말한다. -->
+          <span class="pv__id-go" aria-hidden="true">
+            <svg class="ico" viewBox="0 0 24 24" focusable="false"><path d="M4 16.5V20h3.5L18 9.5 14.5 6 4 16.5Z"/><path d="M13.2 7.3 16.7 10.8"/></svg>
+          </span>
+          <!-- ⚠ **`aria-label` 을 쓰지 않는다** (검수관 C1, 2026-08-08).
+               `aria-label` 은 자손 텍스트보다 우선해 접근 이름을 **완전히 대체**한다.
+               첫 판본이 그렇게 했고, 그 결과 스크린리더 사용자는 이 카드에서 **자기
+               이름·별명·타입을 읽을 수 없었다** — `<div>` 였을 때는 읽혔으므로 회귀다.
+               접근성을 근거로 `<button>` 을 골라 놓고 다른 축의 접근성을 깎은 셈이다.
+               대신 시각 숨김 텍스트를 자손으로 두면 접근 이름이
+               "…이름·별명·타입 + 캐릭터 꾸미기" 로 **누적**된다. -->
+          <span class="sr-only">캐릭터 꾸미기</span>
+        </button>
 
         <p class="pv__bioshort" data-mp="preview-bioshort"></p>
         <p class="pv__bio" data-mp="preview-bio"></p>
@@ -206,6 +232,38 @@
             <img class="avatar__thumb" data-mp="avatar-thumb" alt="">
           </div>
           <button class="btn btn--line" type="button" data-mp="avatar-open">캐릭터 꾸미기</button>
+        </div>
+
+        <!-- ── 내 옷장 (감독 지시 2026-08-08: *"옷장리스트가 나오게 해줘"*) ──────
+             편집기(`ui-avatar-editor.ts`)의 「내 옷장」과 **같은 저장소**를 읽는다
+             (`readCloset`) — 여기에 목록을 다시 만들지 않는다. 저장·삭제는 편집기가
+             하고 여기서는 **입기**만 한다. 삭제를 여기 두지 않는 이유는 실수 비용이다:
+             옷 한 벌은 되돌릴 수단이 없고(서버 백업 0), 이 화면은 프로필을 고치러 온
+             사람이 지나가며 보는 자리다. -->
+        <div class="closet" data-mp="closet">
+          <div class="closet__head">
+            <h3 class="closet__title">내 옷장</h3>
+            <span class="closet__count" data-mp="closet-count"></span>
+          </div>
+          <!-- ⚠ 옷장은 **로그인 전용**이다(`ui-avatar-editor.ts` 가 로그인 없으면 옷장
+               탭 자체를 숨긴다). 그래서 문구가 "「캐릭터 꾸미기」에서 담으세요" 로만
+               끝나면 게스트는 없는 탭을 찾게 된다(검수관 P4). -->
+          <p class="closet__empty" data-mp="closet-empty" hidden>
+            아직 저장한 옷이 없습니다. 「캐릭터 꾸미기」에서 마음에 드는 모습을 옷장에 담아 보세요.<!--
+            --><span data-mp="closet-empty-guest" hidden> 옷장에 담으려면 로그인이 필요합니다.</span>
+          </p>
+          <!-- 갈아입기 결과는 **프로필 저장 상태줄과 나눠 쓰지 않는다**(검수관 P5).
+               공유하면 "저장하지 않은 변경이 있습니다" 경고가 지워지고 초록 "완료" 로
+               바뀌어, 저장이 된 것처럼 읽힌다(플래그는 그대로라 실제로는 안 됐다). -->
+          <p class="closet__status" data-mp="closet-status" aria-live="polite"></p>
+          <div class="closet__grid" data-mp="closet-list"></div>
+          <!-- 행 템플릿 — 목록은 JS 가 채운다(마크업에 옷 개수를 적지 않는다). -->
+          <template data-mp="closet-cell">
+            <button class="closet__cell" type="button" data-mp-closet="load">
+              <img class="closet__thumb" data-mp-closet="thumb" alt="">
+              <span class="closet__name" data-mp-closet="name"></span>
+            </button>
+          </template>
         </div>
       </section>
 

@@ -527,10 +527,16 @@ if (!PERF_GATE_MODES.includes(PERF_GATES)) {
  * 이 구멍이 실질적인 이유: 검사 `[4]` 콘솔 에러 0 은 **로드 시점**만 본다. 회전·주행·
  * 복귀와 날씨 12조합 순회 중에만 나는 에러를 보는 유일한 축이 `[7][7.6][8]` 이다. 그것을
  * 종료코드 밖에 두면 기능적으로 `continue-on-error: true` 와 같아진다.
+ *
+ * ── `hard` — 성능이 아닌 실패를 함께 받는다 (검수관 반려 B1, 2026-08-08) ──────
+ * `errors[]` 와 같은 성격의 축이 하나 더 생겼다: **G-COL1 커버리지**(세션이 실제로 파셀을
+ * 건넜는가). 안 움직인 세션은 개수가 늘 리가 없으니 `[7]` 은 초록을 내는데, 그 초록은
+ * 판정이 아니라 착시다. 러너 성능 편차와 무관하므로 observe 에서도 FAIL 이어야 한다 —
+ * 위 `errors[]` 문단의 논리를 그대로 적용한 것이다.
  */
-const perfStatus = (pass, errors) => {
+const perfStatus = (pass, errors, hard = false) => {
   if (pass) return 'PASS';
-  if (errors?.length) return 'FAIL';           // 하드 실패 — 관측 대상이 아니다
+  if (errors?.length || hard) return 'FAIL';   // 하드 실패 — 관측 대상이 아니다
   return PERF_GATES === 'observe' ? 'INFO' : 'FAIL';
 };
 const perfLabel = (s) => (PERF_GATES === 'observe' ? `${s}(관측)` : s);
@@ -549,11 +555,15 @@ async function runPerfGates(origin, browser) {
     // 관측인데, `runInvariants` 에 넘기는 `log` 가 `quiet` 라 화면에 안 나왔다.
     // 파일에만 남으면 사람이 못 읽고, 그때부터 장식이다.
     if (r.baselineNote) record(7.5, '기준선 추이(관측)', 'INFO', r.baselineNote);
+    // 커버리지(G-COL1)는 **성능이 아니라 세션 유효성**이므로 `hard` 로 넘긴다.
+    const covNote = `파셀 ${r.cov?.unique}개·재방문 ${r.cov?.revisits}`;
     record(
-      7, perfLabel('개수 불변식(세션)'), perfStatus(r.pass, r.errors),
+      7, perfLabel('개수 불변식(세션)'), perfStatus(r.pass, r.errors, !r.covOk),
       r.pass
-        ? `회전12·주행6·복귀6 내내 상수(${base})`
-        : `증식 — geo +${r.maxGeo} tex +${r.maxTex} pipe +${r.maxPipe} · ${base}`
+        ? `회전12·주행·복귀 내내 상수(${base} · ${covNote})`
+        : (r.covOk
+          ? `증식 — geo +${r.maxGeo} tex +${r.maxTex} pipe +${r.maxPipe} · ${base}`
+          : `세션이 안 돌아다녔다(${covNote}) — 개수 판정이 성립하지 않는다. 경로 ${r.cov?.path?.join(' → ')}`)
         + (r.errors.length ? ` · 콘솔 에러 ${r.errors.length}건(하드 실패 — 관측 대상 아님)` : '')
         + ' → `npm run measure:invariants` 로 구간별 표를 본다',
     );
@@ -628,10 +638,12 @@ async function runPerfGates(origin, browser) {
       query: DRAW_CONTROL_QUERY, judgeDraw: true,
     });
     record(
-      7.6, perfLabel('드로우콜 대조군'), perfStatus(r.pass, r.errors),
+      7.6, perfLabel('드로우콜 대조군'), perfStatus(r.pass, r.errors, !r.covOk),
       r.pass
-        ? `사람·GLB 없는 세계에서 draw 상수 (기준선 ${r.base?.draw})`
-        : `draw +${r.maxDraw} · geo +${r.maxGeo} tex +${r.maxTex} — 배칭이 깨졌거나 숨은 것이 보이게 됐다`
+        ? `사람·GLB 없는 세계에서 draw 상수 (기준선 ${r.base?.draw} · 파셀 ${r.cov?.unique}개·재방문 ${r.cov?.revisits})`
+        : (!r.covOk
+          ? `세션이 안 돌아다녔다(파셀 ${r.cov?.unique}개·재방문 ${r.cov?.revisits}) — draw 판정이 성립하지 않는다`
+          : `draw +${r.maxDraw} · geo +${r.maxGeo} tex +${r.maxTex} — 배칭이 깨졌거나 숨은 것이 보이게 됐다`)
         + (r.errors.length ? ` · 콘솔 에러 ${r.errors.length}건` : '')
         + ' → `node scripts/smoke/measure-invariants.mjs --control` 로 구간별 표를 본다',
     );
@@ -709,6 +721,30 @@ async function runPerfGates(origin, browser) {
     );
   } catch (e) {
     record(12, '수면 구현(?water=tsl)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
+  // ── [13] 플레이어 충돌 라이브 (G-COL2 — 검수관 반려 B2, 2026-08-08) ──────────
+  //
+  // `[11][12]` 와 같은 성격이다 — **성능이 아니라 이산 판정**이라 `perfStatus` 를 안 쓰고
+  // 언제나 판정한다.
+  //
+  // 왜 신설했나: 단위 테스트 24건이 판정·조회·집행·배선 네 층을 보는데, **라이브에서
+  // 실제로 막히는지 본 축이 0 이었다.** 배선 검사(§4)는 `main.ts` 소스에 `resolveMove:`
+  // 라는 글자가 있는지만 보므로 값이 `undefined` 로 계산되는 회귀를 통과시킨다.
+  //
+  // 판정은 **대조군 비율**이다(`&collide=0` 대비). 좌표·거리를 적지 않는다 — 근거와
+  // 한계는 `measure-collide.mjs` 헤더 한 곳이다.
+  try {
+    const { runCollide } = await import('./measure-collide.mjs');
+    const r = await runCollide({ browser, origin, basePath: BASE_PATH, log: quiet });
+    record(
+      13, '플레이어 충돌(라이브)', r.pass ? 'PASS' : 'FAIL',
+      r.pass
+        ? `ON ${r.onDist?.toFixed(1)}m / OFF ${r.offDist?.toFixed(1)}m = ${r.ratio?.toFixed(2)} — 충돌이 실제로 막았다`
+        : `${r.reason} → \`npm run measure:collide\` 로 단독 실행해 본다`,
+    );
+  } catch (e) {
+    record(13, '플레이어 충돌(라이브)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
 
   await recordRenderBackend(browser, origin);
@@ -848,6 +884,7 @@ async function main() {
       // 막으려던 그 형태를 `[11]` 에서 새로 만든 셈이었다.
       record(11, '물빠짐 상호작용', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(12, '수면 구현(?water=tsl)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      record(13, '플레이어 충돌(라이브)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
     }
   } finally {
     if (browser) await browser.close().catch(() => {});

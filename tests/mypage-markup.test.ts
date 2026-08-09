@@ -78,6 +78,54 @@ describe('Preview', () => {
   it('아바타 자리는 <img> 다 — JS 가 src 를 채운다', () => {
     expect(doc.querySelector('[data-mp="preview-avatar"]')?.tagName).toBe('IMG');
   });
+
+  // 감독 지시 2026-08-08: *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로 바로 가게 하자"*
+  it('신원 블록이 **버튼**이다 — 키보드로 도달할 수 있어야 한다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]');
+    // `<div>` + click 리스너로 두면 마우스에서만 동작하고, 「캐릭터」 탭의 같은 기능은
+    // 버튼이라 그쪽만 접근 가능해진다 — 같은 일을 하는 두 진입점의 접근성이 갈린다.
+    expect(el?.tagName).toBe('BUTTON');
+    expect(el?.getAttribute('type'), 'form 안이 아니어도 type 을 명시한다').toBe('button');
+  });
+
+  it('접근 이름이 **이름을 가리지 않는다** — `aria-label` 로 덮지 않는다 (검수관 C1)', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]')!;
+    // `aria-label`·`aria-labelledby` 는 자손 텍스트보다 우선해 접근 이름을 **완전히
+    // 대체**한다. 그러면 스크린리더 사용자는 이 카드에서 자기 이름·별명·타입을 못 읽는다
+    // — 그것이 이 카드의 목적인데. `<div>` 였을 때는 읽혔으므로 회귀가 된다.
+    expect(el.getAttribute('aria-label'), 'aria-label 이 이름을 덮는다').toBe(null);
+    expect(el.getAttribute('aria-labelledby'), 'labelledby 도 같은 문제를 만든다').toBe(null);
+    // 대신 목적은 시각 숨김 텍스트가 말한다 — 접근 이름이 "이름 + 목적" 으로 누적된다.
+    const sr = el.querySelector('.sr-only');
+    expect(sr, '목적을 알리는 시각 숨김 텍스트가 없다').not.toBe(null);
+    expect(sr?.textContent?.trim()).toBeTruthy();
+  });
+
+  it('`.sr-only` 가 **접근성 트리에서 사라지지 않게** 숨긴다', () => {
+    // `display:none`·`visibility:hidden` 이면 스크린리더도 못 읽어 C1 처방이 무의미해진다.
+    const css = readFileSync(resolve(import.meta.dirname, '../frontend/css/mypage.css'), 'utf8');
+    const rule = /\.sr-only\s*\{([^}]*)\}/.exec(css);
+    expect(rule, '.sr-only 규칙이 없다').not.toBe(null);
+    const body = rule![1];
+    expect(body, 'display:none 이면 리더도 못 읽는다').not.toMatch(/display\s*:\s*none/);
+    expect(body, 'visibility:hidden 이면 리더도 못 읽는다').not.toMatch(/visibility\s*:\s*hidden/);
+    expect(body, '실제로 숨기지 않는다').toMatch(/clip-path|clip\s*:/);
+  });
+
+  it('신원 블록이 아바타와 이름을 **품는다** — 감독이 지목한 그 영역이다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]')!;
+    expect(el.querySelector('[data-mp="preview-avatar"]'), '아바타').not.toBe(null);
+    expect(el.querySelector('[data-mp="preview-name"]'), '이름').not.toBe(null);
+  });
+
+  it('신원 블록 안에 **중첩 인터랙티브가 없다** — HTML 이 허용하지 않는다', () => {
+    const el = doc.querySelector('[data-mp="preview-identity"]')!;
+    // 검수관 P6 — 첫 판본은 `button, a[href], input, select, textarea` 뿐이었다.
+    // 막으려는 것이 "중첩 인터랙티브" 인데 목록이 그보다 좁으면 검사가 이름값을 못 한다.
+    const interactive = 'button, a[href], input, select, textarea, label, summary,'
+      + ' [tabindex], [contenteditable], audio[controls], video[controls], details, iframe';
+    expect(el.querySelectorAll(interactive).length).toBe(0);
+  });
 });
 
 describe('폼 필드', () => {
@@ -182,6 +230,68 @@ describe('캐릭터·계정 탭', () => {
     for (const name of ['avatar-open', 'avatar-thumb', 'account-provider', 'account-reset', 'account-notice']) {
       expect(has(`[data-mp="${name}"]`), name).toBe(true);
     }
+  });
+
+  // 감독 지시 2026-08-08: *"옷장리스트가 나오게 해줘."*
+  it('옷장 자리와 행 템플릿이 있다', () => {
+    // ⚠ `closet-status` 가 빠지면 갈아입기는 되는데 **아무 메시지도 안 뜬다**
+    // (`setText(null)` 이 조용한 no-op 이다) — 앱 테스트는 픽스처를 쓰므로 실제 마크업
+    // 누락을 원리상 못 본다(검수관 D3). **픽스처와 마크업이 갈린 곳은 전부 이 구멍이다.**
+    for (const name of ['closet', 'closet-list', 'closet-empty', 'closet-count', 'closet-status',
+      'closet-empty-guest']) {
+      expect(has(`[data-mp="${name}"]`), name).toBe(true);
+    }
+    const tpl = doc.querySelector<HTMLTemplateElement>('template[data-mp="closet-cell"]');
+    expect(tpl, '행 템플릿이 없다').not.toBe(null);
+    const frag = tpl!.content;
+    // 행의 루트가 하나여야 복제 후 `firstElementChild` 로 잡힌다.
+    expect(frag.children.length).toBe(1);
+    expect(frag.firstElementChild?.tagName, '칸은 눌리는 것이므로 버튼이다').toBe('BUTTON');
+    for (const part of ['load', 'thumb', 'name']) {
+      expect(frag.querySelector(`[data-mp-closet="${part}"]`) !== null, part).toBe(true);
+    }
+  });
+
+  it('옷 목록을 마크업에 적지 않았다 — JS 가 저장소에서 채운다', () => {
+    // 여기에 예시 칸을 적어 두면 로그인 전에도 남의 옷이 보이고, 저장소 형식이
+    // 바뀌어도 화면은 그대로라 어긋난 것을 아무도 모른다.
+    expect(doc.querySelector('[data-mp="closet-list"]')!.children.length).toBe(0);
+  });
+
+  // ⚠ **이것은 CSS 축 게이트가 아니다** (검수관 C2/GS-CSS1, 2026-08-08).
+  // 캐스케이드·특이성·상속을 **전혀 안 본다** — 다른 셀렉터가 이겨서 실제 화면이 안
+  // 중앙정렬돼도 통과한다. 문자열 존재만 본다. 백로그 `G-CSSVAR1`·「셀렉터 회귀 축」을
+  // 대체하지 않는다.
+  //
+  // 첫 판본은 `align-items: center` **한 줄만** 봤고 검출력이 반쪽이었다(실측:
+  // `display:flex` 를 지워도, `flex-direction` 을 지워도, `.avatar__frame` 규칙을 통째로
+  // 없애도 전부 통과). `align-items` 는 flex/grid 컨테이너가 아니면 **완전히 무효**이고
+  // 주축이 가로면 세로중앙이 된다 — 즉 감독 지시가 통째로 회귀해도 초록이었다.
+  // 그래서 **그 선언이 효력을 갖는 최소 조건 집합**을 함께 단언한다.
+  //
+  // 거짓 FAIL 위험: 나중에 `display:grid` + `place-items:center` 로 바꾸는 **올바른
+  // 수정**이 여기서 FAIL 한다. 그때는 정규식을 `(flex|grid)` 로 넓히지 말고 **명세를
+  // 다시 쓴다**(게이트가 정답을 벌주는 형태를 정규식으로 덮으면 검사가 장식이 된다).
+  it('캐릭터 패널 스타일이 **효력을 갖는 형태로** 있다 — 없으면 왼쪽에 붙고 원본 크기로 나온다', () => {
+    const css = readFileSync(resolve(import.meta.dirname, '../frontend/css/mypage.css'), 'utf8');
+    const rule = (sel: string) => new RegExp(`${sel}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? null;
+
+    const avatar = rule('\\.avatar');
+    expect(avatar, '.avatar 규칙이 없다').not.toBe(null);
+    // 셋이 **함께** 있어야 세로 배치 + 가로 중앙이 된다. 하나라도 빠지면 무효다.
+    expect(avatar, 'flex 컨테이너가 아니면 align-items 가 무효다').toMatch(/display\s*:\s*flex/);
+    expect(avatar, '주축이 가로면 align-items:center 는 세로중앙이 된다').toMatch(/flex-direction\s*:\s*column/);
+    expect(avatar, '중앙정렬이 아니다 — 감독 지시의 핵심이다').toMatch(/align-items\s*:\s*center/);
+
+    // 썸네일이 원본 크기로 나오던 것이 이 diff 가 고친 사고다 — 프레임이 크기를 정한다.
+    const frame = rule('\\.avatar__frame');
+    expect(frame, '.avatar__frame 규칙이 없다 — 썸네일이 원본 크기가 된다').not.toBe(null);
+    expect(frame, '프레임이 크기를 정하지 않는다').toMatch(/width\s*:/);
+    const thumb = rule('\\.avatar__thumb');
+    expect(thumb, '.avatar__thumb 규칙이 없다').not.toBe(null);
+    expect(thumb, '프레임을 채우지 않는다').toMatch(/object-fit\s*:/);
+
+    expect(rule('\\.closet__grid'), '.closet__grid 규칙이 없다').not.toBe(null);
   });
 });
 
