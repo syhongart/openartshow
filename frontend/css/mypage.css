@@ -99,14 +99,24 @@ html, body {
 }
 .mp__grid > * { min-width: 0; }
 
-/* ══ 3. Preview — 다크 반전 플레이트 ══════════════════════════════════════ */
+/* ══ 3. Preview — 라이트 플레이트 ═════════════════════════════════════════
+ * ⚠ 이 절의 제목은 오래 *"다크 반전 플레이트"* 였다. 2026-08-09 감독 판정으로 라이트가
+ *   됐다 — **원래 다크였는데 누가 망친 것이 아니다.** 다크는 감독 지시가 아니라 우리
+ *   자체 판단이었고(지시 0건 실측), 감독께 후보 셋을 보여 드리고 「다크를 버린다」를
+ *   받았다. 경위·조항(DESIGN.md §3-1)·대비 실측은 mypage.html :root 주석 한 곳이다.
+ *
+ * **이 절의 규칙은 그 전환에서 한 줄도 바뀌지 않았다**(아래 box-shadow 하나 빼고).
+ * 바뀐 것은 전부 `--pv-*` 토큰 값이다 — 2층 토큰 구조가 실제로 값을 한 자리다. */
 
 .pv {
-  /* 편집 영역과 절대 섞이지 않게 표면을 반전시킨다. 이유는 mypage.html :root 주석. */
+  /* 편집 영역과 섞이지 않게 **층**을 만든다(sand 프레임 → 흰 카드). 색 반전이 하던
+     일을 층과 이어브로우가 대신 진다. 이유는 mypage.html :root 주석. */
   background: var(--pv-bg);
   border: 1px solid var(--pv-line);
   border-radius: var(--r-lg);
-  box-shadow: var(--sh-pv);
+  /* 다크 시절의 `--sh-pv`(깊은 그림자)는 삭제했다 — 라이트 아래에서는 떠 보이는 게
+     아니라 때가 탄 것처럼 보인다. 근거는 mypage.html 의 그림자 토큰 주석. */
+  box-shadow: var(--sh-1);
   padding: 14px 14px 16px;
   color: var(--pv-ink);
   overflow: hidden;
@@ -353,7 +363,16 @@ html, body {
   padding: 10px 0;
   margin-bottom: 4px;
   background: var(--bg);
+  /* 탭 줄의 바닥선. 밑줄형 탭(아래)은 선택 표시가 **선**이므로 기준선이 없으면
+     밑줄이 허공에 뜬다. */
+  border-bottom: 1px solid var(--line);
 }
+/* 탭은 **밑줄형**이다 — 채운 알약이 아니다 (2026-08-09).
+   첫 판본은 흰 알약 7개였는데, 그 아래 `.panel` 도 순백이라 **탭과 패널이 같은 색**이었다.
+   그래서 탭바가 「떠 있는 버튼 줄」인지 「패널의 머리」인지 읽히지 않았고, 선택된 하나만
+   진녹색으로 튀고 나머지 6개는 배경에 잠겼다.
+   정본(guide 좌측 목차)의 언어는 **배경 없는 텍스트 + 얇은 선**이다. 같은 언어로 옮기면
+   흰 면이 한 겹 줄고 선택 상태가 색이 아니라 **위치**로도 읽힌다. */
 .tab {
   appearance: none;
   cursor: pointer;
@@ -361,10 +380,13 @@ html, body {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: .01em;
-  color: var(--ink-body);
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r-sm);
+  color: var(--ink-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  /* 밑줄은 `border-bottom` 이 아니라 inset box-shadow 다 — border 를 쓰면 선택 여부에
+     따라 요소 높이가 2px 달라져 탭 줄 전체가 흔들린다. */
+  box-shadow: inset 0 -2px 0 transparent;
   padding: 9px 6px;
   min-width: 0;
   white-space: nowrap;
@@ -375,23 +397,33 @@ html, body {
      남는" 느낌이 된다. 색 전환은 90ms 로 줄이고 테두리만 조금 길게 둔다. */
   transition: color .09s ease, background .09s ease, border-color .14s ease;
 }
-.tab:hover { border-color: var(--line); }
+.tab:hover { color: var(--ink); }
 .tab[aria-selected="true"] {
-  color: var(--cta-label);
-  background: var(--cta);
-  border-color: var(--cta);
+  color: var(--accent);
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 /* ══ 5. 패널·필드 ═════════════════════════════════════════════════════════ */
 
+/* 패널은 **면이 아니다** — 바탕 위에 콘텐츠를 직접 놓는다 (2026-08-09).
+   ── 왜 순백 카드를 걷어냈나 ────────────────────────────────────────────
+   첫 판본은 `--surface`(#ffffff) 채움 + 테두리 + 그림자의 카드였다. 세 가지가 겹쳤다:
+     ① 사이트 정본(studio·guide)에는 **흰 카드가 없다** — 둘 다 ivory 바탕에 직접 놓고
+        섹션 구분선으로 가른다. ivory(웜) 위의 순백(뉴트럴)은 "차가운 흰"으로 튄다.
+     ② 그 흰 면이 입력 채움(#fdfbf5)과 **대비 1.03** 이라 입력을 빈 구멍으로 만들었다
+        (근거·실측표는 mypage.html 의 `--surface-2` 주석).
+     ③ 탭(흰 알약)과도 같은 색이라 탭바의 소속이 안 읽혔다.
+   면을 없애면 셋이 한꺼번에 풀린다. 좌우 padding 을 0 으로 미는 것은 반응형 절에서 한다
+   (모바일은 카드가 없어도 화면 가장자리 여백이 필요하므로 폭별로 다르다). */
 .panel {
   display: flex;
   flex-direction: column;
   gap: 22px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--r-lg);
-  box-shadow: var(--sh-1);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   padding: 20px 16px 24px;
 }
 
@@ -443,6 +475,10 @@ html, body {
   background: var(--surface);
 }
 .inp--area { resize: vertical; min-height: 96px; }
+/* 폭 변형 `.inp--short`(별명·활동지역) · `.inp--mid`(작가명·한 줄 소개·소속갤러리) ·
+   `.inp--area` 의 **max-width 는 §13 반응형 한 곳**에 있다. 좁은 화면에서는 상한이
+   화면 폭보다 커서 아무 일도 안 하고, 오히려 잘못 걸면 모바일 입력이 좁아진다 —
+   그래서 값을 여기 두지 않는다(두 곳에 적으면 한쪽만 고쳐도 아무도 모른다). */
 .inp--sel {
   appearance: none;
   /* 화살표는 배경 이미지(외부 파일·data URI)를 쓰지 않고 그라디언트 두 줄로 그린다 —
@@ -978,7 +1014,28 @@ html, body {
 }
 
 /* 저장은 어느 탭에 있든 손이 닿아야 한다 — 화면 하단에 붙인다.
-   탭 안이 아니라 탭 밖(패널 형제)에 두는 이유이기도 하다. */
+   탭 안이 아니라 탭 밖(패널 형제)에 두는 이유이기도 하다.
+ *
+ * ⚠ **여기서 멈춘다 — 액션바를 뷰포트 바닥까지 밀지 마라. 실측으로 한 번 해봤고 나빴다.**
+ *   지적은 *"화면 아래 40%가 빈다"* 였고 실측도 그랬다(1440 에서 세로 71%, 1920 에서 59%).
+ *   처방으로 `.mp{min-height:100vh}` + 이 요소에 `margin-top:auto` 를 걸어 저장 줄을
+ *   화면 바닥에 붙였다. 결과:
+ *
+ *     축                    처방 전    처방 후
+ *     세로 사용률           71%        95%      ← 목표 달성
+ *     콘텐츠 바닥           638px      852px
+ *     폼 끝 ~ 저장 줄 간격  65px       300px    ← 여기가 문제였다
+ *
+ *   **수치는 통과했는데 화면은 더 나빠졌다.** 공백의 총량이 준 것이 아니라 위치가 옮겨
+ *   갔을 뿐이다 — 덩어리 **아래**에 있던 여백이 덩어리 **사이**로 왔다. 아래로 남는
+ *   여백은 「페이지의 끝」으로 읽히지만 사이에 벌어진 여백은 「빠진 것이 있다」로 읽힌다.
+ *
+ *   → **세로 사용률은 이 화면의 축이 아니다.** 폼이 짧은 것은 결함이 아니고, 비율을
+ *     올리는 처방은 비율만 올린다. 다음에 같은 지적을 받으면 이 표를 먼저 보라 —
+ *     고칠 것은 세로가 아니라 가로(입력 과폭)와 면 대비였다.
+ *
+ *   이것은 *"수치가 통과했다고 의도가 달성된 것은 아니다"* 의 실물 사례다. 지표 하나만
+ *   보고 보고했으면 이 처방은 성공으로 적혔을 것이다. */
 .actionbar {
   position: sticky;
   bottom: 0;
@@ -1021,6 +1078,31 @@ html, body {
   .pv { position: sticky; top: 14px; }
   .mp__top { padding: 32px 2px 20px; }
   .tab { font-size: 12px; padding: 10px 8px; }
+
+  /* 패널이 면을 잃었으므로(§5) 좌우 padding 도 뗀다 — 카드가 없는데 안쪽 여백만 남으면
+     라벨이 탭·액션바와 세로로 안 맞는다. 모바일에는 그대로 둔다(화면 가장자리 여백). */
+  .panel { padding: 22px 0 24px; gap: 26px; }
+
+  /* 입력 폭 상한 — 「별명」(최대 20자)이 **652px** 였다. 담을 내용에 폭을 맞춘다.
+     ⚠ 이것만으로는 화면이 안 바뀐다. 좁혀도 흰 위의 #fdfbf5 는 여전히 빈 구멍이라
+     허전하다 — `--surface-2` 의 sand 채움과 **함께**여야 면으로 읽힌다(그 주석의 실측표).
+     둘 중 효과가 큰 쪽은 채움이고, 폭은 거드는 쪽이다. */
+  .inp--short { max-width: 320px; }
+  .inp--mid { max-width: 520px; }
+  /* 긴 글은 폭이 아니라 **줄 길이**가 상한이다(한 줄 70자 남짓). 2단 편집열이 넓어지면
+     소개 textarea 가 1000px 을 넘고, 그건 좁은 것보다 읽기 나쁘다. */
+  .inp--area { max-width: 720px; }
+  .linkrow { max-width: 720px; }
+
+  /* 위계 — 라벨을 **세게** 하는 것이 아니라 **약하게** 한다.
+     12px/700/먹색 라벨이 16px 입력과 무게를 다투고 섹션 제목은 아예 없어서, 화면이
+     "강조가 없는" 게 아니라 "전부 강조라 평평한" 상태였다. 정본(studio
+     `label.field-label`)은 11px·자간 .1em·`--ink-body` 다 — 라벨이 물러나야 입력이 선다. */
+  .fld__label {
+    font-size: 11px;
+    letter-spacing: .1em;
+    color: var(--ink-body);
+  }
 }
 
 /* ══ 14. 접근성 ═══════════════════════════════════════════════════════════ */

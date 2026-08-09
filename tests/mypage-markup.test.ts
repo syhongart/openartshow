@@ -334,3 +334,130 @@ describe('자기완결·보안', () => {
     expect(css.replace(/\s+/g, ' ')).toMatch(/\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/i);
   });
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// 면 대비 — 2026-08-09 감독 지적 *"피씨에서 봤을때 디자인이 구린데"* 의 회귀 축.
+//
+// ── 왜 이 검사가 생겼나 ───────────────────────────────────────────────────
+// 그 지적의 직접 원인은 **입력 채움과 그 뒤 면의 대비가 1.03** 이었다는 것이다:
+//
+//     조합                                   명도 대비   판정
+//     입력 #fdfbf5 vs 패널 #ffffff (사고)      1.03      사람 눈에 사실상 같은 색
+//     입력 #efe6d3 vs 바탕 #F3F0E9 (정본)      1.09      studio.html 과 같은 조합
+//
+// 1.03 이면 입력이 「면」이 아니라 「테두리만 있는 빈 구멍」으로 읽히고, 그 상태에서는
+// 폭을 좁혀도 허전함이 안 풀린다(studio 는 같은 입력이 925px 인데 어색하지 않다).
+// **이 회귀를 잡는 검사가 그때까지 하나도 없었다** — 색 토큰은 전부 유효했고, 마크업
+// 계약도 온전했고, 게이트 6종이 전부 초록이었다. 값이 틀린 게 아니라 **두 값의 관계**가
+// 틀린 것이라 단일 값을 보는 검사로는 원리상 안 잡힌다.
+//
+// ── 못 보는 것 (통과로 적지 않는다) ───────────────────────────────────────
+// ① 캐스케이드·특이성을 안 본다. 다른 규칙이 이겨 실제 화면 색이 달라도 통과한다.
+// ② `.panel` 이 투명일 때 뒤가 `--bg` 라고 **가정**한다. 중간에 다른 면을 끼우면 그
+//    가정이 깨지는데 이 검사는 모른다.
+// ③ 대비가 충분해도 색이 어울리는지는 안 본다 — 그건 디자이너 육안 판정 소관이다.
+describe('면 대비 — 입력이 「빈 구멍」으로 보이지 않는가', () => {
+  // 임계값의 근거는 실측 두 점이다: 사고 1.03 / 정본 1.09. 그 사이를 끊는다.
+  // 올리면 정본(1.09)이 아슬아슬해지고, 내리면 사고(1.03)를 놓친다.
+  const MIN_SURFACE_CONTRAST = 1.06;
+  // UI 요소(채움 버튼)는 WCAG 비텍스트 대비 기준을 그대로 쓴다.
+  const MIN_UI_CONTRAST = 3;
+
+  const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  function varMap(css: string): Map<string, string> {
+    const m = new Map<string, string>();
+    for (const hit of stripComments(css).matchAll(/(--[a-z0-9-]+)\s*:\s*([^;}]+)/gi)) {
+      if (!m.has(hit[1])) m.set(hit[1], hit[2].trim());
+    }
+    return m;
+  }
+
+  /** `var(--a)` 체인을 끝까지 따라가 실제 값을 낸다. 미정의·순환이면 던진다. */
+  function resolve1(name: string, maps: Map<string, string>[], depth = 0): string {
+    if (depth > 12) throw new Error(`토큰 순환: ${name}`);
+    let v: string | undefined;
+    for (const mm of maps) if (mm.has(name)) { v = mm.get(name); break; }
+    if (v === undefined) throw new Error(`정의되지 않은 토큰: ${name}`);
+    const ref = /^var\(\s*(--[a-z0-9-]+)\s*\)$/i.exec(v);
+    return ref ? resolve1(ref[1], maps, depth + 1) : v;
+  }
+
+  function luminance(hex: string): number {
+    const h = hex.trim().replace('#', '');
+    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+    if (!/^[0-9a-f]{6}$/i.test(full)) throw new Error(`hex 가 아니다: ${hex}`);
+    const ch = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255)
+      .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  }
+  function contrast(a: string, b: string): number {
+    const [x, y] = [luminance(a), luminance(b)];
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  }
+
+  /** 규칙 블록에서 background 선언의 토큰 이름(또는 리터럴)을 뽑는다. */
+  function bgOf(css: string, selector: string): string | null {
+    const body = new RegExp(`(?:^|[\\s,}])${selector}\\s*\\{([^}]*)\\}`)
+      .exec(stripComments(css))?.[1];
+    if (body == null) throw new Error(`규칙이 없다: ${selector}`);
+    const bg = /background(?:-color)?\s*:\s*([^;]+)/.exec(body)?.[1]?.trim();
+    return bg ?? null;
+  }
+
+  let maps: Map<string, string>[];
+  let css: string;
+  beforeAll(() => {
+    css = readFileSync(resolve(import.meta.dirname, '../frontend/css/mypage.css'), 'utf8');
+    const tokens = readFileSync(resolve(import.meta.dirname, '../frontend/css/tokens.css'), 'utf8');
+    // 앞이 우선 — 페이지 2층(mypage.html :root)이 1층(tokens.css)을 덮는다.
+    maps = [varMap(html), varMap(tokens)];
+  });
+
+  const tokenOf = (decl: string) => /^var\(\s*(--[a-z0-9-]+)\s*\)$/i.exec(decl)?.[1] ?? null;
+
+  it('입력 채움이 그 뒤 면과 **구별된다** — 대비 1.03 회귀를 잡는다', () => {
+    const inpBg = bgOf(css, '\\.inp');
+    expect(inpBg, '.inp 에 background 선언이 없다').not.toBe(null);
+    const inpTok = tokenOf(inpBg!);
+    expect(inpTok, `.inp 배경이 토큰이 아니다(${inpBg}) — 색 리터럴은 이 파일에서 금지다`).not.toBe(null);
+
+    // 입력이 실제로 놓이는 면: `.panel` 이 칠하면 그 색, 투명이면 페이지 바탕(--bg).
+    const panelBg = bgOf(css, '\\.panel');
+    const behindTok = (panelBg == null || /^transparent$/i.test(panelBg))
+      ? '--bg'
+      : tokenOf(panelBg);
+    expect(behindTok, `.panel 배경이 토큰도 transparent 도 아니다(${panelBg})`).not.toBe(null);
+
+    const inpHex = resolve1(inpTok!, maps);
+    const behindHex = resolve1(behindTok!, maps);
+    const ratio = contrast(inpHex, behindHex);
+
+    expect(
+      ratio,
+      `입력(${inpTok} ${inpHex})이 그 뒤 면(${behindTok} ${behindHex})과 대비 ${ratio.toFixed(2)} 다. `
+      + `${MIN_SURFACE_CONTRAST} 미만이면 입력이 「면」이 아니라 「빈 구멍」으로 읽힌다 — `
+      + `2026-08-09 감독 지적의 직접 원인이 이 값 1.03 이었다.`,
+    ).toBeGreaterThanOrEqual(MIN_SURFACE_CONTRAST);
+  });
+
+  it('Preview 의 CTA 채움이 라이트 표면에서 **원색으로 튀지 않는다**', () => {
+    // 다크 시절 「작품 문의」는 --oas-cta(#1fd677) 채움이었다. 표면을 라이트로 되돌릴 때
+    // 이 토큰을 함께 안 바꾸면 아이보리 위 대비 1.69:1 의 형광 버튼이 남는다 —
+    // DESIGN.md 안티패턴 「풀채도 네온 대비」이자 UI 대비 기준(3:1) 미달이다.
+    const ctaHex = resolve1('--pv-cta', maps);
+    const onHex = resolve1('--pv-surface', maps);
+    const ratio = contrast(ctaHex, onHex);
+    expect(
+      ratio,
+      `--pv-cta(${ctaHex})가 --pv-surface(${onHex}) 위에서 대비 ${ratio.toFixed(2)} 다 `
+      + `(기준 ${MIN_UI_CONTRAST}). 라이트 표면에는 -ink 딥변형을 쓴다.`,
+    ).toBeGreaterThanOrEqual(MIN_UI_CONTRAST);
+  });
+
+  it('CTA 채움 위 **글자**도 읽힌다 — 채움만 고치고 라벨을 안 고치는 회귀를 잡는다', () => {
+    const ratio = contrast(resolve1('--pv-cta-label', maps), resolve1('--pv-cta', maps));
+    expect(ratio, `--pv-cta-label 이 --pv-cta 위에서 대비 ${ratio.toFixed(2)} 다`)
+      .toBeGreaterThanOrEqual(4.5);
+  });
+});
