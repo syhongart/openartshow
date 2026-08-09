@@ -252,7 +252,8 @@ function SidebarScene( editor ) {
 	// 않는다(`Viewport.js` 의 `case 'ModelViewer'`).
 	//
 	// ⚠️ 값만 바꾸면 **UI 표시만** 바뀐다. 실제 적용은 `onChange` 뿐이라 부팅 시에는 안
-	// 돈다 — 그래서 아래에서 한 번 직접 dispatch 한다.
+	// 돈다 — 그래서 아래에서 `rendererCreated` 를 받아 한 번 dispatch 한다(그 시점이어야
+	// 하는 이유는 그 자리 주석에 있다 — 여기서 두 번 틀렸다).
 	environmentType.setValue( 'ModelViewer' );
 	environmentType.onChange( function () {
 
@@ -272,21 +273,36 @@ function SidebarScene( editor ) {
 
 	// [OpenArtShow] 부팅 시 1회 적용 — `setValue` 는 UI 표시만 바꾸고 신호를 안 쏜다.
 	//
-	// ⚠️ **이 호출은 반드시 `environmentEquirectangularTexture` 선언 뒤에 있어야 한다.**
-	// 처음에 `setValue` 바로 아래(= 그 선언 앞)에 뒀다가 editor **부팅을 통째로 죽였다**:
-	// `onEnvironmentChanged` 가 `environmentEquirectangularTexture.getValue()` 를 읽는데
-	// 그 시점의 `const` 는 **TDZ** 라 `ReferenceError: Cannot access … before
-	// initialization` 이 난다.
+	// ⚠️ **생성자 본문에서 직접 부르면 안 된다. 두 번 시도했고 두 번 다 부팅을 죽였다.**
 	//
-	// 내 오판은 *"함수 선언이라 hoisting 되니 위에서 불러도 된다"* 였다. 함수는 hoisting
-	// 되지만 **그 함수가 참조하는 `const` 는 안 된다** — 호출 시점이 선언보다 앞이면 죽는다.
+	//   1회차 — `setValue` 바로 아래(= `environmentEquirectangularTexture` 선언 앞)에 뒀다.
+	//     `onEnvironmentChanged` 가 그 `const` 를 읽는데 **TDZ** 라 `ReferenceError:
+	//     Cannot access … before initialization`. 내 오판은 *"함수 선언이라 hoisting 되니
+	//     위에서 불러도 된다"* — 함수는 hoisting 되지만 **그 함수가 참조하는 `const` 는
+	//     안 된다.**
+	//   2회차 — 선언 **뒤**로 옮겼다. TDZ 는 사라졌는데 같은 자리에서 다른 예외가 났다:
+	//     `TypeError: Cannot read properties of null (reading 'fromScene')`. dispatch 를
+	//     받은 `Viewport.js` 의 `ModelViewer` 분기가 `pmremGenerator.fromScene(...)` 를
+	//     부르는데, 그 값은 `rendererCreated` 신호가 와야 채워진다. 그런데 그 신호를 쏘는
+	//     `SidebarProject`(렌더러 생성)는 `Sidebar.js` 에서 **`SidebarScene` 보다 나중에**
+	//     만들어진다 — 즉 생성자 시점의 `pmremGenerator` 는 **항상** null 이다. 타이밍
+	//     우연이 아니라 동기 실행 순서라 실기기에서도 100% 재현된다.
 	//
-	// 파급이 컸다: 예외가 `new SidebarScene()` → `new Sidebar()` 를 타고 올라가
-	// `boot.js:41` 이 완료되지 못했고, 그 아래의 **Menubar·Resizer·드래그앤드롭 리스너**가
-	// 전부 안 붙었다. 렌더러도 Sidebar 하위(`Sidebar.Project.Renderer`)라 생성되지 않아
-	// `rendererCreated` 가 발화하지 않았다 — **캔버스조차 없는 빈 화면**이 됐다.
-	// **`console.error` 로는 0건이라 콘솔만 보는 점검으로는 안 잡힌다**(pageerror 축에서만).
-	onEnvironmentChanged();
+	// **두 실패의 원인은 하나다 — "부팅 시 1회" 를 *어느 시점* 으로 잡을지를 내가 두 번 다
+	// 눈으로 읽고 정했다.** 그래서 시점을 추측하지 않고 **신호로 받는다**: 렌더러가 실제로
+	// 생긴 뒤에만 실행되므로 `pmremGenerator` 도 채워져 있고, 콜백 안이라 TDZ 도 없다.
+	// (리스너 실행 순서도 안전하다 — `Viewport` 가 `boot.js` 에서 `Sidebar` 보다 먼저
+	//  생성돼 `pmremGenerator` 를 채우는 리스너가 **먼저 등록**된다.)
+	//
+	// 덤: 렌더러가 재생성될 때(안티앨리어싱 토글 등)도 다시 발화하므로 새 `pmremGenerator`
+	// 로 환경맵이 다시 구워진다. 원본 editor 는 그때 환경이 날아간다.
+	//
+	// 파급이 컸던 이유를 남긴다: 예외가 `new SidebarScene()` → `new Sidebar()` 를 타고
+	// 올라가 `boot.js:41` 이 완료되지 못했고, 그 아래의 **Menubar·Resizer·드래그앤드롭
+	// 리스너**가 전부 안 붙었다 — **캔버스조차 없는 빈 화면.**
+	// **`console.error` 는 두 번 다 0건이었다** — 콘솔만 보는 점검으로는 안 잡히고
+	// pageerror 축에서만 잡힌다.
+	signals.rendererCreated.add( onEnvironmentChanged );
 
 	function onEnvironmentChanged() {
 
