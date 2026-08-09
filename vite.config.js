@@ -86,6 +86,13 @@ function selfContained() {
       mkdirSync(resolve(dist, 'app/vendor'), { recursive: true });
       // peerjs 는 전역 IIFE(window.Peer)라 ES 모듈 번들 대상이 아님 → self 로 정적 유지.
       copyFileSync(r('frontend/vendor/peerjs.min.js'), resolve(dist, 'app/vendor/peerjs.min.js'));
+      // signals(three.js editor 의존)도 **같은 이유로** 정적 유지한다.
+      // UMD 인데 꼬리가 `typeof module!=="undefined" ? module.exports=f : i.signals=f` 이고
+      // `(function(i){…})(this)` 로 전역을 받는다 — **ES 모듈 안에서는 `this` 가 undefined**
+      // 라 import 하면 `i.signals` 에서 TypeError 로 죽는다. 그래서 번들에 못 넣는다.
+      // (editor 의 나머지 js 는 전부 ES 모듈이라 vite 가 번들한다 — 이 파일 하나만 예외다.)
+      mkdirSync(resolve(dist, 'app/editor/js/libs'), { recursive: true });
+      copyFileSync(r('frontend/editor/js/libs/signals.min.js'), resolve(dist, 'app/editor/js/libs/signals.min.js'));
       for (const d of ['galleries', 'world', 'assets', 'utils']) {
         const src = r('frontend/' + d);
         if (existsSync(src)) cpSync(src, resolve(dist, 'app', d), { recursive: true });
@@ -221,6 +228,31 @@ export default defineConfig({
             || id.includes('node_modules/three/build/three.tsl')
             || id.includes('node_modules/three/examples/jsm/tsl/')
             || id.includes('node_modules/three/examples/jsm/lighting/')) return 'vendor-three-webgpu';
+          // ── editor 전용 addons 를 라이브 청크에서 떼어낸다 (검수관 반려 2026-08-09) ──
+          //
+          // ⚠️ **이 아래 광역 매칭이 라이브 페이지를 무겁게 만들고 있었다.**
+          // `node_modules/three` 를 통째로 한 청크에 묶으므로, three.js editor 를 반입하자
+          // 그것이 지원하는 **31개 포맷 로더**(3DM·FBX·Collada·VRML…)와 그 의존
+          // (`chevrotain` 등)이 전부 `vendor-three` 로 흡수됐다. 그 청크는 라이브 진입점
+          // (`app/index`·`world`·`builder`)이 `modulepreload` 로 **즉시 받는다** —
+          // editor 를 열어본 적 없는 방문자가 gzip **+174.75KB**(93KB→268KB, +160%)를
+          // 더 받고 있었다(검수관 독립 빌드 실측).
+          //
+          // 같은 광역 매칭이 wasm 사고의 뿌리이기도 했다(mikktspace·zstddec·meshopt 가
+          // 같은 경로로 공유 청크에 들어가 미술관·world·builder 를 CSP 위반으로 죽였다).
+          //
+          // **우리 코드(editor 제외)가 `examples/jsm/` 에서 쓰는 것은 실측 두 개뿐이다:**
+          //   · `loaders/GLTFLoader.js`      — world2 의 `glb-city.ts`
+          //   · `lighting/TiledLighting.js`  — 위 webgpu 분기가 이미 가져간다
+          // `GLTFLoader` 는 `utils/BufferGeometryUtils.js` 하나를 더 쓴다(실측: 68행).
+          // 그래서 **그 둘만 남기고 `examples/jsm/` 의 나머지는 editor 청크로 보낸다.**
+          //
+          // ⚠️ 이 규칙을 되돌리려면 위 실측을 다시 떠라 — 우리가 쓰는 addon 이 늘면
+          // 화이트리스트도 늘어야 하고, 빠뜨리면 그 모듈이 editor 청크로 가서
+          // **라이브 페이지가 editor 청크를 통째로 받는다**(지금보다 나빠진다).
+          if (id.includes('node_modules/three/examples/jsm/')
+            && !id.includes('/loaders/GLTFLoader.js')
+            && !id.includes('/utils/BufferGeometryUtils.js')) return 'vendor-three-editor';
           if (id.includes('node_modules/three')) return 'vendor-three';
           if (id.includes('node_modules/peerjs')) return 'vendor-peerjs';
         },

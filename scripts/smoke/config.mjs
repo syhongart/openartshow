@@ -234,6 +234,24 @@ export const LIVE_PAGES = [
   // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.
   // three 를 참조하지 않는 폼 페이지라 webgl 대기가 필요 없다(유일하게 false 인 app/ 페이지).
   { name: 'app/mypage',        url: '/app/mypage.html', webgl: false },
+  // ── editor: 배치 에디터(three.js editor 반입, 개발용 도구) ──────────────────
+  //
+  // behind-flag 지만 **처음부터** 넣는다 — 위 세 줄이 적어 둔 그 이유 그대로다.
+  // 특히 이 페이지는 **외부 코드를 통째로 들여온 것**이라 자기완결 검사가 가장 절실하다:
+  // 원본 three.js editor 는 CDN 세 곳(`@ffmpeg/ffmpeg`·`three-gpu-pathtracer`·
+  // `three-mesh-bvh`)을 부르고, 우리는 그것을 걷어냈다. **걷어낸 것이 정말 걷혔는지 재는
+  // 축이 `[C] 외부요청 0` 이고, 그 검사는 이 목록을 순회한다.**
+  //
+  // `viteOnly`: editor 는 bare specifier `three`·`three/addons/` 를 쓴다. baseline
+  // 직서빙(importmap 이 `vendor/three.module.js` = **r160**)에서는 버전이 어긋나므로
+  // vite 번들(npm r171)에서만 돈다 — world2 와 같은 이유다.
+  //
+  // `minViewport`: 320px 에서 335>320 이 난다(15px). editor 는 드래그·기즈모로 조작하는
+  // **데스크톱 전용 도구**라 초소형 폭이 설계 대상이 아니다 — 면제가 아니라 **대상 밖**이고,
+  // 제외된 칸 수는 `[5]` 판정 문구에 INFO 로 찍힌다(조용히 줄지 않는다).
+  // ⚠ 감독은 모바일로 링크를 여신다 — **모바일에서는 가로 스크롤이 생긴다는 뜻**이므로
+  // 그 사실을 보고에 적는다. 넓은 화면에서 쓰시는 것이 전제다.
+  { name: 'app/editor',        url: '/app/editor.html', webgl: true, viteOnly: true, minViewport: 375 },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──

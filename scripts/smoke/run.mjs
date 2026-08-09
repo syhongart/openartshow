@@ -329,17 +329,31 @@ function aggregateBrowser(pageResults, origin) {
   }
 
   // 검사5: 가로 넘침 0 (페이지 × 뷰포트)
+  //
+  // ── `minViewport` — 좁은 화면을 **면제받는 것이 아니라 대상이 아님을 적는다** ──
+  // `LIVE_PAGES` 항목이 `minViewport` 를 선언하면 그보다 좁은 뷰포트는 이 검사에서
+  // 빠지고, **빠진 만큼이 INFO 로 화면에 찍힌다**(조용히 줄어들면 그때부터 장식이다).
+  //
+  // 왜 필요했나: three.js editor 를 반입하니 320px 에서 335>320 이 났다(15px). editor 는
+  // 드래그·기즈모로 조작하는 **데스크톱 전용 도구**라 초소형 폭이 설계 대상이 아니다.
+  // 그렇다고 CSS 를 추측으로 고치면 외부 코드를 근거 없이 개조하는 것이고, 검사를
+  // 통째로 끄면 다른 페이지의 회귀까지 잃는다 — **어느 페이지가 어느 폭부터 유효한지**를
+  // 데이터로 두는 것이 두 손실을 다 피한다.
   const overflows = [];
+  const skipped = [];
   for (const p of pageResults) {
+    const min = LIVE_PAGES.find((x) => x.name === p.name)?.minViewport ?? 0;
     for (const o of p.overflow || []) {
+      if (o.vw < min) { skipped.push(`${p.name}@${o.vw}px`); continue; }
       if (o.overflow) overflows.push(`[${p.name}] ${o.vw}px: ${o.scrollWidth}>${o.innerWidth}`);
     }
   }
-  const totalCells = pageResults.length * VIEWPORTS.length;
+  const totalCells = pageResults.length * VIEWPORTS.length - skipped.length;
   if (overflows.length) {
     record('5', '가로 넘침 0', 'FAIL', `${overflows.length}건 넘침 — ${overflows.slice(0, 3).join(' | ')}`);
   } else {
-    record('5', '가로 넘침 0', 'PASS', `${totalCells}조합(${pageResults.length}페이지×${VIEWPORTS.length}뷰포트) 넘침 0`);
+    const note = skipped.length ? ` · minViewport 로 제외 ${skipped.length}칸(${skipped.join(', ')})` : '';
+    record('5', '가로 넘침 0', 'PASS', `${totalCells}조합 넘침 0${note}`);
   }
 
   // 검사6: CSP 부팅 (메타 유효 + violation 0)
@@ -383,6 +397,68 @@ function aggregateBrowser(pageResults, origin) {
       `${extAgg.length}개 페이지 외부요청 — 예: [${first.name}] ${first.externalRequests[0]}`);
   } else {
     record('C', '외부요청 0(자기완결)', 'PASS', `${pageResults.length}페이지 외부호스트 요청 0`);
+  }
+
+  // ── 가드 C2: **라이브가 받는 청크**에 wasm·외부호스트가 없다 ────────────
+  //
+  // `[C]` 는 "요청이 나갔는가" 를 본다. 그런데 번들 **안에** 들어간 것은 요청이 안 나가도
+  // 사고를 낸다 — 인라인 wasm 은 CSP(`script-src 'self'`)에 막혀 **페이지를 죽이고**,
+  // CDN 리터럴은 조건이 맞는 순간(예: WebXR 진입) 남의 서버를 부른다.
+  //
+  // ── 이 가드가 두 번 틀렸다. 그 경위가 이 주석의 요점이다 (2026-08-09) ────
+  // three.js editor 반입에서 CSP 사고를 쫓았다. 처음엔 **이름 문자열**(`mikktspace`)로
+  // 세서 놓쳤고, 그래서 **base64 매직(`AGFzbQ`)** 으로 바꿨다. 그것도 틀렸다 —
+  // `meshopt_decoder` 는 wasm 을 base64 가 아닌 형태로 들고 있어서 **가드가 PASS 인 채로
+  // 페이지가 계속 죽었다.** 유입 경로가 넷이었다(mikktspace·zstddec×2·meshopt).
+  //
+  // 그리고 **검수관이 다섯째를 잡았다** — 가드가 아니라 별도 클론 빌드로. `vite.config.js`
+  // 의 `node_modules/three` 광역 매칭 때문에 editor 의 31개 포맷 로더가 라이브 공유 청크로
+  // 흡수돼 **미술관 방문자가 gzip +174KB 를 더 받고 있었다.** 그때까지 `[C]`·`[C2]` 둘 다
+  // 그 축을 안 봤다.
+  //
+  // 그래서 대상을 **"라이브 HTML 이 참조하는 청크"** 로 좁히고 축을 셋으로 늘렸다.
+  // editor 청크는 editor 만 받으므로 이 판정에서 빠진다(behind-flag 도구다).
+  //
+  // 한계 셋:
+  //  ① 정적 스캔이다. 문자열을 조각내 조립하거나 런타임에 만들면 못 잡는다.
+  //  ② **크기 회귀는 안 잰다**(기준값 관리가 필요하다 — 검수관 권고, 별건).
+  //  ③ **런타임 전용 동적 import 청크는 스캔 밖이다**(검수관 재확인에서 발견).
+  //     아래 수집은 HTML 의 `<script>`/`<link>` **정적 참조만** 본다. 그런데
+  //     `main.js` 의 `?debug=perf`·`world-boot.js` 의 `?debug=hud` 처럼 조건 뒤에서
+  //     `import()` 하는 청크는 vite 가 modulepreload 하지 않아 HTML 에 안 적히고,
+  //     그래서 여기 안 걸린다 — **라이브 페이지에서 실제로 도달 가능한데도.**
+  //     지금은 무해하다(검수관 실측: `debug-hud`·`debug-perf` 둘 다 wasm·CDN 0).
+  //     동적 청크까지 보려면 수집을 `_bundle` 전체로 넓히고 editor 계열만 빼는 쪽이
+  //     맞는데, 그러면 editor 전용 청크를 이름으로 골라내야 해서 새 미러링이 생긴다.
+  //     그 교환을 아직 안 했다는 것을 적어 둔다.
+  const bundleDir = path.join(SITE_DIR, '_bundle');
+  const liveChunks = new Set();
+  const htmlFiles = [];
+  for (const dir of [SITE_DIR, path.join(SITE_DIR, 'app')]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) if (f.endsWith('.html')) htmlFiles.push(path.join(dir, f));
+  }
+  for (const h of htmlFiles) {
+    if (path.basename(h) === 'editor.html') continue;   // behind-flag 도구 — 라이브가 안 받는다
+    for (const m of fs.readFileSync(h, 'utf8').matchAll(/_bundle\/([^"'\s>]+\.js)/g)) liveChunks.add(m[1]);
+  }
+  const findings = [];
+  for (const f of liveChunks) {
+    const full = path.join(bundleDir, f);
+    if (!fs.existsSync(full)) continue;
+    const txt = fs.readFileSync(full, 'utf8');
+    if (txt.includes('AGFzbQ')) findings.push(`${f}: base64 wasm`);
+    if (/WebAssembly\s*\.\s*(instantiate|compile)/.test(txt)) findings.push(`${f}: WebAssembly 호출`);
+    for (const m of txt.matchAll(/https:\/\/(cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|esm\.sh)/g)) {
+      findings.push(`${f}: CDN 리터럴 ${m[1]}`);
+    }
+  }
+  const uniq = [...new Set(findings)];
+  if (uniq.length) {
+    record('C2', '라이브 청크 wasm·CDN 0', 'FAIL',
+      `${uniq.length}건 — ${uniq.slice(0, 3).join(' | ')} · 라이브 진입점이 받는 청크다`);
+  } else {
+    record('C2', '라이브 청크 wasm·CDN 0', 'PASS', `라이브 청크 ${liveChunks.size}개에 wasm·CDN 리터럴 0`);
   }
 }
 
