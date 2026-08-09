@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-nav-page="about">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -118,7 +118,14 @@
     gap: clamp(14px, 3vw, 34px);
     flex-wrap: wrap;
   }
-  .topnav a {
+  /* `button` 이 셀렉터에 함께 있는 이유 — 주 메뉴 노브(`?nav=`, `js/nav-knob.js`)가
+     후보 B·C·D 에서 로그인·회원가입을 `<button>` 으로 넣는다(링크가 아니라 모달을
+     연다). 룩은 이 규칙 하나가 정해야 한다 — 노브 쪽 CSS 에 같은 값을 다시 적으면
+     그 순간 값 미러링이고, 한쪽만 고치는 날 서브 메뉴만 색이 갈린다.
+     ⚠ **현행(노브 없음) 화면은 이 확장에 영향받지 않는다**: `.topnav` 안에 `button`
+     이 0개라 매칭 대상이 없고, `:is(a, button)` 의 명시도는 `a` 단독과 같은 (0,1,1)
+     이라 캐스케이드 순위도 그대로다. */
+  .topnav a, .topnav button {
     text-decoration: none;
     color: rgba(255,255,255,0.72);
     font-size: 12px;
@@ -129,8 +136,8 @@
     border-bottom: 1px solid transparent;
     padding-bottom: 2px;
   }
-  .topnav a:hover { color: #fff; border-color: var(--accent-dark); }
-  .topnav a.current { color: var(--accent-dark); }
+  .topnav :is(a, button):hover { color: #fff; border-color: var(--accent-dark); }
+  .topnav :is(a, button).current { color: var(--accent-dark); }
 
   /* ------------------------------------------------------------------ hero */
   .hero {
@@ -469,6 +476,9 @@
   }
 })();
 </script>
+
+<!-- 주 메뉴 통합 후보 노브(`?nav=a|b|c|d`). 노브가 없으면 DOM 을 한 노드도 만지지 않는다. -->
+<script type="module" src="./js/nav-knob.js"></script>
 
 </body>
 </html>
