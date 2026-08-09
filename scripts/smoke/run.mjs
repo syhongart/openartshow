@@ -398,6 +398,39 @@ function aggregateBrowser(pageResults, origin) {
   } else {
     record('C', '외부요청 0(자기완결)', 'PASS', `${pageResults.length}페이지 외부호스트 요청 0`);
   }
+
+  // ── 가드 C2: 번들에 인라인된 wasm 0 ─────────────────────────────────────
+  //
+  // **`[C]` 가 통과해도 자기완결이 완성이 아니다.** `[C]` 는 "외부 호스트를 부르는가" 만
+  // 본다. 그런데 번들 **안에** base64 로 인라인된 wasm 은 외부로 나가지 않으면서도
+  // `WebAssembly.instantiate()` 에서 우리 CSP(`script-src 'self'`, `'wasm-unsafe-eval'`
+  // 없음)에 막혀 **페이지를 통째로 죽인다.**
+  //
+  // ── 왜 검사로 만들었나 — 같은 형태를 세 번 놓쳤다 (2026-08-09) ──────────
+  // three.js editor 반입 때 CDN 3곳을 걷고 "자기완결 됐다" 고 적었는데, wasm 유입 경로가
+  // **셋 더** 있었다: `Sidebar.Geometry.Modifiers.js`(mikktspace) → `Loader.js`(KTX2Loader)
+  // → `libs/ui.three.js`(KTX2Loader). 하나 걷을 때마다 "이제 끝" 이라고 판단했고 세 번 다
+  // 틀렸다. **이름 문자열(`mikktspace`)로 세어서 놓쳤고, wasm 매직(`AGFzbQ`)으로 세어서야**
+  // 드러났다 — 검사 축이 틀렸던 것이다.
+  //
+  // 그 사이 editor 를 열지도 않은 **미술관·world·builder 가 죽어 있었다**(three/addons 는
+  // manualChunks 로 공유 청크에 묶이므로 한 페이지의 import 가 전 페이지에 퍼진다).
+  //
+  // 한계: 매직만 본다. wasm 을 다른 인코딩으로 넣거나 런타임에 조립하면 못 잡는다.
+  const bundleDir = path.join(SITE_DIR, '_bundle');
+  const wasmHits = [];
+  if (fs.existsSync(bundleDir)) {
+    for (const f of fs.readdirSync(bundleDir)) {
+      if (!f.endsWith('.js')) continue;
+      if (fs.readFileSync(path.join(bundleDir, f), 'utf8').includes('AGFzbQ')) wasmHits.push(f);
+    }
+  }
+  if (wasmHits.length) {
+    record('C2', '번들 인라인 wasm 0', 'FAIL',
+      `${wasmHits.length}개 청크에 wasm — ${wasmHits.slice(0, 3).join(', ')} · CSP script-src 에 'wasm-unsafe-eval' 이 없어 그 페이지가 죽는다`);
+  } else {
+    record('C2', '번들 인라인 wasm 0', 'PASS', '번들 청크에 base64 wasm 매직 0');
+  }
 }
 
 // ── 검사9: 라이선스 고지 (법무 §6, 2026-07-31) ─────────────────────────────

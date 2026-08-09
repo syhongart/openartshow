@@ -279,7 +279,7 @@ function Loader( editor ) {
 						editor.execute( new AddObjectCommand( editor, scene ) );
 
 						loader.dracoLoader.dispose();
-						loader.ktx2Loader.dispose();
+						loader.ktx2Loader?.dispose();  // [OpenArtShow] KTX2Loader 를 안 붙인다(위 주석)
 
 					} );
 
@@ -309,7 +309,7 @@ function Loader( editor ) {
 						editor.execute( new AddObjectCommand( editor, scene ) );
 
 						loader.dracoLoader.dispose();
-						loader.ktx2Loader.dispose();
+						loader.ktx2Loader?.dispose();  // [OpenArtShow] KTX2Loader 를 안 붙인다(위 주석)
 
 					} );
 
@@ -922,7 +922,7 @@ function Loader( editor ) {
 						editor.execute( new AddObjectCommand( editor, scene ) );
 
 						loader.dracoLoader.dispose();
-						loader.ktx2Loader.dispose();
+						loader.ktx2Loader?.dispose();  // [OpenArtShow] KTX2Loader 를 안 붙인다(위 주석)
 
 					} );
 
@@ -944,7 +944,7 @@ function Loader( editor ) {
 						editor.execute( new AddObjectCommand( editor, scene ) );
 
 						loader.dracoLoader.dispose();
-						loader.ktx2Loader.dispose();
+						loader.ktx2Loader?.dispose();  // [OpenArtShow] KTX2Loader 를 안 붙인다(위 주석)
 
 					} );
 
@@ -962,21 +962,33 @@ function Loader( editor ) {
 
 		const { GLTFLoader } = await import( 'three/addons/loaders/GLTFLoader.js' );
 		const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
-		const { KTX2Loader } = await import( 'three/addons/loaders/KTX2Loader.js' );
 		const { MeshoptDecoder } = await import( 'three/addons/libs/meshopt_decoder.module.js' );
 
 		const dracoLoader = new DRACOLoader();
 		dracoLoader.setDecoderPath( '../examples/jsm/libs/draco/gltf/' );
 
-		const ktx2Loader = new KTX2Loader( manager );
-		ktx2Loader.setTranscoderPath( '../examples/jsm/libs/basis/' );
-
-		editor.signals.rendererDetectKTX2Support.dispatch( ktx2Loader );
-
 		const loader = new GLTFLoader( manager );
 		loader.setDRACOLoader( dracoLoader );
-		loader.setKTX2Loader( ktx2Loader );
 		loader.setMeshoptDecoder( MeshoptDecoder );
+
+		// [OpenArtShow] KTX2Loader 제거 — **이것이 라이브 페이지를 깨뜨린 진짜 원인이었다.**
+		//
+		// `KTX2Loader` 가 `zstddec.module.js` 를 끌어오고, 그 모듈은 **wasm 을 base64 로
+		// 인라인**해 들고 있다가 `WebAssembly.instantiate()` 를 부른다. 우리 CSP 는
+		// `script-src 'self'` 이고 `'wasm-unsafe-eval'` 이 없어 그 지점에서 막힌다.
+		//
+		// ⚠️ **동적 import 인데도 공유 청크에 들어갔다.** vite 의 manualChunks 가
+		// `node_modules/three` 를 `vendor-three` 로 묶으므로 동적/정적과 무관하게 그쪽으로
+		// 간다 — 그래서 editor 를 열지 않은 **미술관·world·builder 까지** 같은 위반으로
+		// 죽었다(스모크 `[6]` 이 세 페이지를 지목).
+		//
+		// 앞선 회차에 같은 형태를 `mikktspace`(Modifiers)에서 한 번 걷었는데 **wasm 을
+		// 인라인한 모듈이 하나 더 있었다.** 문자열 `mikktspace` 로만 확인해서 놓쳤고,
+		// **wasm 매직(`AGFzbQ`)으로 다시 세어서야** 드러났다 — 검사 축이 틀렸던 것이다.
+		//
+		// 잃는 것: KTX2 로 압축된 텍스처를 가진 GLB 를 못 읽는다. 어차피 transcoder 경로가
+		// `../examples/jsm/libs/basis/`(우리 배포에 없는 경로)라 **원래도 못 읽었다.**
+		// 일반 GLB(PNG/JPEG 텍스처)는 영향 없다.
 
 		return loader;
 

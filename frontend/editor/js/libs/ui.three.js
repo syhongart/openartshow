@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
@@ -112,33 +111,24 @@ class UITexture extends UISpan {
 
 			} else if ( extension === 'ktx2' ) {
 
-				reader.addEventListener( 'load', function ( event ) {
-
-					const arrayBuffer = event.target.result;
-					const blobURL = URL.createObjectURL( new Blob( [ arrayBuffer ] ) );
-					const ktx2Loader = new KTX2Loader();
-					ktx2Loader.setTranscoderPath( '../../examples/jsm/libs/basis/' );
-					editor.signals.rendererDetectKTX2Support.dispatch( ktx2Loader );
-
-					ktx2Loader.load( blobURL, function ( texture ) {
-
-						texture.colorSpace = THREE.SRGBColorSpace;
-						texture.sourceFile = file.name;
-						texture.needsUpdate = true;
-
-						cache.set( hash, texture );
-
-						scope.setValue( texture );
-
-						if ( scope.onChangeCallback ) scope.onChangeCallback( texture );
-						ktx2Loader.dispose();
-
-					} );
-
-				} );
-
-				reader.readAsArrayBuffer( file );
-
+				// [OpenArtShow] KTX2 텍스처 입력 제거.
+				//
+				// 원본은 이 파일 최상단에서 `KTX2Loader` 를 **정적 import** 했다. 그 로더가
+				// `zstddec.module.js` 를 끌어오고, 그 모듈은 wasm 을 base64 로 인라인해 들고
+				// 있다가 `WebAssembly.instantiate()` 를 부른다 — 우리 CSP(`script-src 'self'`,
+				// `'wasm-unsafe-eval'` 없음)가 그 지점에서 막는다.
+				//
+				// ⚠️ `ui.three.js` 는 editor UI 의 **핵심 라이브러리라 항상 로드**되고,
+				// three/addons 는 vite manualChunks 로 공유 청크(`vendor-three`)에 묶인다.
+				// 그래서 editor 를 열지 않은 **미술관·world·builder 까지** 같은 위반으로 죽었다.
+				//
+				// 이 파일이 **마지막 유입 경로**였다 — 앞서 `Sidebar.Geometry.Modifiers.js`
+				// (mikktspace)와 `Loader.js`(KTX2Loader)를 걷고도 남아 있었고, 이름 문자열이
+				// 아니라 **wasm 매직(`AGFzbQ`)으로 번들을 세어서야** 여기가 드러났다.
+				//
+				// 어차피 transcoder 경로가 우리 배포에 없는 폴더라 **원래도 못 읽었다.**
+				console.warn( '[OpenArtShow] KTX2 텍스처는 지원하지 않는다 — PNG/JPEG 를 쓰라.' );
+				return;
 			} else if ( file.type.match( 'image.*' ) ) {
 
 				reader.addEventListener( 'load', function ( event ) {
