@@ -41,7 +41,7 @@ describe('진입점 SSOT', () => {
     expect(LIVE_ENTRIES.length + FLAGGED_ENTRIES.length).toBe(ENTRYPOINTS.length);
   });
 
-  it('behind-flag 네 페이지가 flagged 다', () => {
+  it('behind-flag 여섯 페이지가 flagged 다', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
     //
     // 목록을 여기 **적어 두는 것**이 이 검사의 요점이다. `FLAGGED_ENTRIES.length` 만
@@ -63,9 +63,14 @@ describe('진입점 SSOT', () => {
     // 2026-08-08 `world5.html` 추가 — world2 의 두 번째 포크(갤러리 스트리트).
     // **`world4` 는 결번**이다(감독이 "월드5" 로 명시, 팀장 유지 판정). 결번 자체는
     // GS-4 의 `/^world\d+$/` 판정과 무관하다 — 경위는 `entrypoints.mjs` 의 그 줄.
+    //
+    // 2026-08-09 `editor.html` 추가 — three.js editor 반입(배치 도구). ⚠ **성격이
+    // 다르다**: 앞의 다섯은 "채택 판정 전인 실험" 이지만 이것은 감독 지시(*"에디터는
+    // 개발용으로만 쓸거니"*)로 **방문자에게 제공할 계획이 없는 도구**다. 즉 `flagged`
+    // 가 종착지일 수 있고, 여기서 빠지는 것이 목표가 아니다.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
     expect(flagged).toEqual([
-      'lab-glb.html', 'visit.html', 'world2.html', 'world3.html', 'world5.html',
+      'editor.html', 'lab-glb.html', 'visit.html', 'world2.html', 'world3.html', 'world5.html',
     ]);
   });
 

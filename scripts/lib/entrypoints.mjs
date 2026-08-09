@@ -90,6 +90,15 @@ export const ENTRYPOINTS = [
   // 접미로 판정하므로 결번과 무관하게 자동 편입된다. 이 줄은 다음 사람이
   // *"world4 가 어디 갔나"* 를 찾는 고리를 막으려고 있다.
   { key: 'world5', src: 'world5.html', out: 'app/world5.html', exposure: 'flagged' },
+  // [도구] 배치 에디터 — three.js r171 `editor/` 반입. 감독 지시 2026-08-09
+  // *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능? glb파일을 내가 직접 넣고"* →
+  // *"three.js 방식이니깐. 거기 에디터를 깃에서 가지고 와서 활용하는방안"*.
+  //
+  // ⚠️ **다른 flagged 와 성격이 다르다.** world2/3/5 는 "채택 판정 전인 실험 월드" 지만
+  // 이것은 **방문자에게 제공할 계획이 없는 도구**다 — 감독 지시 *"에디터는 개발용으로만
+  // 쓸거니"*. 그래서 라이브 승격이 목표가 아니고, `flagged` 가 종착지일 수 있다.
+  // (그래도 `flagged` 인 이상 자기완결·CSP 는 걸린다 — 배포되고 URL 직접 접근이 되므로.)
+  { key: 'editor', src: 'editor.html', out: 'app/editor.html', exposure: 'flagged' },
 ];
 
 /** 링크되어 방문자가 도달하는 진입점 */

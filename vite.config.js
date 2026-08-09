@@ -86,6 +86,13 @@ function selfContained() {
       mkdirSync(resolve(dist, 'app/vendor'), { recursive: true });
       // peerjs 는 전역 IIFE(window.Peer)라 ES 모듈 번들 대상이 아님 → self 로 정적 유지.
       copyFileSync(r('frontend/vendor/peerjs.min.js'), resolve(dist, 'app/vendor/peerjs.min.js'));
+      // signals(three.js editor 의존)도 **같은 이유로** 정적 유지한다.
+      // UMD 인데 꼬리가 `typeof module!=="undefined" ? module.exports=f : i.signals=f` 이고
+      // `(function(i){…})(this)` 로 전역을 받는다 — **ES 모듈 안에서는 `this` 가 undefined**
+      // 라 import 하면 `i.signals` 에서 TypeError 로 죽는다. 그래서 번들에 못 넣는다.
+      // (editor 의 나머지 js 는 전부 ES 모듈이라 vite 가 번들한다 — 이 파일 하나만 예외다.)
+      mkdirSync(resolve(dist, 'app/editor/js/libs'), { recursive: true });
+      copyFileSync(r('frontend/editor/js/libs/signals.min.js'), resolve(dist, 'app/editor/js/libs/signals.min.js'));
       for (const d of ['galleries', 'world', 'assets', 'utils']) {
         const src = r('frontend/' + d);
         if (existsSync(src)) cpSync(src, resolve(dist, 'app', d), { recursive: true });
