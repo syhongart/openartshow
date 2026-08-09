@@ -47,7 +47,7 @@
     --gold-deep: var(--violet-600);
     --gold-soft: rgba(95,158,125,0.5);   /* oas-accent 50%알파 — hex 토큰엔 알파분리 수단이 없다(tokens.css 76행 참조) */
     --paper: var(--bg-dark);
-    --r-card: 3px;        /* 갤러리 플레이트 — 유일한 radius */
+    --r-card: var(--oas-r-plate);   /* 갤러리 플레이트 — 이 페이지의 유일한 radius(1층 tokens.css) */
     --green-100: var(--violet-100);
     --green-300: var(--violet-300);
     --green-500: var(--violet-500);
@@ -81,8 +81,9 @@
     --lh-body-loose: 1.85;
     --fs-caption: 12px;                  /* 캡션·메타·라벨 소 */
     --fs-label: 13px;                    /* 라벨 대 */
-    --shadow-card-hover: 0 6px 16px rgba(20, 21, 26, 0.28);
-    --shadow-card-hover-deep: 0 10px 24px rgba(95, 158, 125, 0.16);
+    /* 다크 표면용 그림자 — 값은 1층 tokens.css 가 한 자리다(§5-3 표면별 표). */
+    --shadow-card-hover: var(--oas-shadow-lift);
+    --shadow-card-hover-deep: var(--oas-shadow-lift-accent);
     /* ---- 모션: CSS linear() 스프링 곡선 (감독 승인 "생기" 데모 재사용, §7 모션 절제 — 상시 아님, 상호작용 순간만) ---- */
     --spring-soft: linear(0, 0.135, 0.417, 0.708, 0.933, 1.067, 1.122, 1.121, 1.091, 1.053, 1.020, 0.998, 0.987, 0.984, 0.987, 0.991, 0.996, 0.999, 1.001, 1.002, 1.002, 1.001, 1.001, 1, 1);
     --spring-press: linear(0, 0.163, 0.516, 0.881, 1.144, 1.264, 1.260, 1.178, 1.074, 0.987, 0.937, 0.925, 0.940, 0.967, 0.994, 1.013, 1.020, 1.019, 1.012, 1.005, 0.998, 0.995, 0.994, 0.996, 1);
@@ -789,7 +790,7 @@
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   }
   .photo-card {
-    background: #fffdf7; border-radius: 2px; padding: 10px 10px 14px;
+    background: #fffdf7; border-radius: var(--oas-r-hair); padding: 10px 10px 14px;
     box-shadow: 0 12px 30px rgba(0,0,0,0.45);
     transform: rotate(var(--tilt, 0deg));
     transition: transform 0.25s ease;

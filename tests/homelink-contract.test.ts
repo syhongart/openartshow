@@ -24,6 +24,18 @@
 //   자간 정본 같은 판정은 각 파일 주석이 지고 이 검사는 그것을 모른다.
 // - **`@media` 안의 재정의**: 최상위 블록만 본다. 한쪽이 미디어쿼리에서 값을 덮으면
 //   여기는 통과한다.
+// - **그룹 셀렉터 재선언**: `.a, .homelink { … }` 는 정규식이 안 잡는다 — 그렇게 쓰면
+//   아래 「중복 금지」 축도 함께 빠져나간다(`ruleBody` 주석의 거짓 FAIL 절 참조).
+//
+// ── 2026-08-09 보강 — 검수관이 **승인 뒤에** 뮤테이션을 더 돌려 찾은 사각 둘 ───────
+// 둘 다 병합 차단은 아니었으나 하나는 실제 위험이었다:
+//   S1 **거짓 통과**: `mypage.css` 하단에 `.homelink { font-size:20px }` 를 덧붙이면
+//      17 passed 였다(CSS 는 나중 규칙이 이기는데 첫 매치만 봤다) → `ruleBody` 가
+//      중복을 **던진다** + 아래 전용 항목이 명시적으로 단언한다.
+//   S2 **거짓 FAIL**: `var(--accent, #1e6742)` 처럼 fallback 만 붙여도 1 failed 였다
+//      → `resolveToken` 이 fallback 인자를 읽는다.
+// 교훈은 값이 아니라 절차다 — *"뮤테이션은 「몇 종을 돌렸나」가 아니라 「어느 축을
+// 돌렸나」다. 요구자가 예시로 적은 뮤테이션만 돌리면 요구자가 고른 축만 검증된다."*
 // - ⚠ **파서의 사각을 상속한다**: `link-color-safety.test.ts` 의 헬퍼를 재사용하는데,
 //   그 파일이 실제로 두 번 고장났다(HTML 통째 파싱 시 `<script>` 중괄호가 깊이에
 //   섞임 / CSS 주석이 셀렉터에 붙음). 여기서는 `<style>` 본문만 떼어 쓰고 주석을
@@ -45,7 +57,7 @@ function styleText(html: string): string {
 const decomment = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /**
- * 최상위에서 `selector { … }` 블록 본문을 꺼낸다.
+ * 최상위에서 `selector { … }` 블록 본문을 **전부** 꺼낸다.
  * 중첩(`@media`) 안쪽은 보지 않는다 — 위 「못 잡는 것」에 적은 그대로다.
  *
  * ⚠ `selector` 는 **이미 정규식으로 이스케이프된 문자열**을 받는다(`'\\.homelink'`).
@@ -54,21 +66,52 @@ const decomment = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, '');
  * 드러났다 — 초록으로 고장났으면 그대로 붙었을 것이다(이 사이클에 그 형태를
  * 디자이너가 두 번, 검수관이 한 번 겪었다).
  */
-function ruleBody(css: string, selector: string): string | null {
+function ruleBodies(css: string, selector: string): string[] {
   const src = decomment(css);
-  const re = new RegExp(`(^|[};])\\s*${selector}\\s*\\{`, 'm');
-  const m = re.exec(src);
-  if (!m) return null;
-  const start = src.indexOf('{', m.index + m[0].length - 1) + 1;
-  let depth = 1;
-  for (let i = start; i < src.length; i += 1) {
-    if (src[i] === '{') depth += 1;
-    else if (src[i] === '}') {
-      depth -= 1;
-      if (depth === 0) return src.slice(start, i);
+  const re = new RegExp(`(^|[};])\\s*${selector}\\s*\\{`, 'gm');
+  const out: string[] = [];
+  for (const m of src.matchAll(re)) {
+    const start = src.indexOf('{', m.index + m[0].length - 1) + 1;
+    let depth = 1;
+    for (let i = start; i < src.length; i += 1) {
+      if (src[i] === '{') depth += 1;
+      else if (src[i] === '}') {
+        depth -= 1;
+        if (depth === 0) { out.push(src.slice(start, i)); break; }
+      }
     }
   }
-  return null;
+  return out;
+}
+
+/**
+ * 한 블록만 꺼낸다. **중복이 있으면 던진다** — 통과가 아니라 실패로 만든다.
+ *
+ * ── 왜 (검수관 사각 S1, 2026-08-09) ────────────────────────────────────────
+ * 첫 판본은 `re.exec` 로 **첫 매치만** 봤다. 그런데 CSS 는 같은 명시도면 **나중 규칙이
+ * 이긴다** — 검수관이 `mypage.css` **하단에** `.homelink { font-size: 20px }` 를 덧붙이자
+ * 화면은 갈렸는데 이 검사는 **17 passed** 였다. 값 미러링을 막으려고 만든 게이트가
+ * 미러링의 가장 흔한 형태(같은 파일 안 중복 선언)를 **원리상 못 보고 있었다.**
+ *
+ * 처방으로 「마지막 매치를 본다」가 아니라 **「중복 자체를 금지한다」** 를 골랐다
+ * (검수관 권고 ⓑ). 이 게이트의 목적이 *"값이 두 곳에 있어도 갈리지 않게"* 인데,
+ * 한 파일 안의 중복을 허용하면 값이 사는 자리가 **셋**이 된다 — 목적과 정면으로 어긋난다.
+ *
+ * 거짓 FAIL 위험: 낮다. 이 정규식은 앞이 `^`·`}`·`;` 일 때만 잡으므로
+ * `.homelink.is-active {`(셀렉터가 다름)도, `.a, .homelink {`(앞이 `,`)도 안 걸린다.
+ * ⚠ **뒤집으면 그 둘은 「중복이어도 못 잡는다」는 뜻이기도 하다** — 그룹 셀렉터로
+ * 다시 선언하면 이 검사를 빠져나간다. 실측(2026-08-09): 지금 두 파일에 `.homelink`
+ * 최상위 선언은 각 1건이고 그룹 선언은 0건이다.
+ */
+function ruleBody(css: string, selector: string): string | null {
+  const all = ruleBodies(css, selector);
+  if (all.length > 1) {
+    throw new Error(
+      `«${selector}» 최상위 규칙이 ${all.length}개다 — CSS 는 나중 규칙이 이기므로 ` +
+        '값이 어느 것인지 이 검사로는 판정할 수 없다. 중복 선언을 하나로 합쳐라.',
+    );
+  }
+  return all[0] ?? null;
 }
 
 /** 블록 본문에서 한 속성값을 꺼낸다(공백 정규화). */
@@ -78,14 +121,27 @@ function decl(body: string, prop: string): string | null {
   return m ? m[1].trim().replace(/\s+/g, ' ') : null;
 }
 
-/** `var(--x)` → 페이지 `:root` → `tokens.css` 로 내려가 종단 hex 를 얻는다. */
+/**
+ * `var(--x)` → 페이지 `:root` → `tokens.css` 로 내려가 종단 hex 를 얻는다.
+ *
+ * ── fallback 인자를 받는다 (검수관 사각 S2, 2026-08-09) ──────────────────────
+ * 첫 판본의 정규식은 `^var\(\s*(--[\w-]+)\s*\)$` 라 **`var(--x, 기본값)` 표기를 아예
+ * 못 읽었다.** 검수관이 `var(--accent)` → `var(--accent, #1e6742)`(값은 동일, fallback 만
+ * 추가)로 바꾸자 **1 failed** — 화면은 1픽셀도 안 바뀌는데 게이트가 울었다.
+ * 남의 표기가 아니다: 이 저장소가 실제로 쓰는 형태이고(`gallery.css:166`), 거짓 FAIL 은
+ * 거짓 통과보다 조용히 비싸다 — 매번 우는 경보는 결국 아무도 안 보게 된다.
+ *
+ * 해석 순서는 **CSS 실제 동작과 같다**: 토큰이 정의돼 있으면 그 값, 없을 때만 fallback.
+ * 그래서 fallback 이 정의값과 달라도 검출력이 죽지 않는다 — 정의값끼리 비교한다.
+ */
 function resolveToken(value: string, pageRoot: string, tokens: string): string {
   let cur = value.trim();
   for (let i = 0; i < 8; i += 1) {
-    const m = /^var\(\s*(--[\w-]+)\s*\)$/.exec(cur);
+    const m = /^var\(\s*(--[\w-]+)\s*(?:,([\s\S]*))?\)$/.exec(cur);
     if (!m) return cur.toLowerCase();
     const name = m[1];
-    const next = decl(pageRoot, name) ?? decl(tokens, name);
+    const fallback = m[2]?.trim();
+    const next = decl(pageRoot, name) ?? decl(tokens, name) ?? (fallback || undefined);
     if (!next) return `«${name} 미해결»`;
     cur = next;
   }
@@ -108,6 +164,22 @@ describe('.homelink — studio·mypage 동형 계약', () => {
   it('두 곳에 규칙이 **둘 다** 있다 — 한쪽이 사라지면 계약이 깨진다', () => {
     expect(A, 'studio.html 의 <style> 에서 .homelink 를 못 찾았다').not.toBe(null);
     expect(B, 'frontend/css/mypage.css 에서 .homelink 를 못 찾았다').not.toBe(null);
+  });
+
+  // 검수관 사각 S1. 위 `A`·`B` 는 모듈 로드 시점에 `ruleBody` 를 거치므로 중복이 있으면
+  // 이 파일 전체가 이미 터진다 — 그래도 여기서 **한 번 더 명시적으로** 센다.
+  // 이유: 던지기만 하면 실패가 «어느 셀렉터의 몇 개» 인지 스택에 묻히고, 무엇보다
+  // 「이 게이트가 중복을 본다」가 테스트 이름으로 **읽히지 않는다**. 읽히지 않는 보호는
+  // 다음 사람이 같은 뮤테이션을 다시 돌려서야 존재를 안다.
+  it.each([
+    ['studio.html', () => studioCss],
+    ['mypage.css', () => decomment(mypageCss)],
+  ])('%s — `.homelink` 계열이 한 파일 안에서 **중복 선언되지 않았다**', (_f, get) => {
+    const css = get();
+    for (const sel of ['\\.homelink', '\\.homelink svg', '\\.homelink \\.dot', '\\.homelink:hover']) {
+      const n = ruleBodies(css, sel).length;
+      expect(n, `«${sel}» 이 ${n}개 선언됐다 — 나중 규칙이 이기므로 값이 조용히 갈린다`).toBeLessThan(2);
+    }
   });
 
   // 형태값 — 문자열로 같아야 한다. 색은 아래에서 따로 본다(이름이 달라도 되기 때문).

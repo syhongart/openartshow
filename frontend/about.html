@@ -56,7 +56,11 @@
     /* 에세이 전용 타이포 토큰 */
     --fs-body-lg: clamp(16px, 1.55vw, 18px);
     --lh-body-loose: 1.85;
-    color-scheme: light dark;
+    /* ⚠ 2026-08-09: `light dark` 에서 **`light` 고정**으로 바꿨다(팀장 판정 (b) 전부 고정).
+       아래 `@media (prefers-color-scheme: dark)` 블록을 지우는 것만으로는 고정이 안 된다 —
+       이 한 줄이 남아 있으면 OS 다크에서 **스크롤바·폼 컨트롤 같은 UA 크롬만** 다크로
+       남아, 라이트 지면에 다크 크롬이 붙는 더 어색한 상태가 된다. 두 줄은 함께 움직인다. */
+    color-scheme: light;
   }
 
   * { box-sizing: border-box; }
@@ -232,7 +236,7 @@
     align-items: center;
     gap: 8px;
     padding: 13px 26px;
-    border-radius: 999px;
+    border-radius: var(--oas-r-pill);
     font-size: 13.5px;
     letter-spacing: 0.04em;
     text-decoration: none;
@@ -289,24 +293,25 @@
     .btn { justify-content: center; }
   }
 
-  /* -------------------------------------------------------- dark mode */
-  @media (prefers-color-scheme: dark) {
-    :root {
-      /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다.
-         --coral 3종은 다크 표면으로 돌아가므로 원래 설계(vivid 채움 + 어두운 라벨)로 복귀. */
-      --accent: var(--oas-accent);
-      --paper: var(--oas-dark-anchor);
-      --paper-2: var(--oas-dark-1);
-      --line: var(--oas-dark-line);
-      --text: var(--oas-on-dark);
-      --text-dim: var(--oas-on-dark-dim);
-      --coral: var(--oas-cta);
-      --coral-hover: var(--oas-cta-hi);
-      --coral-label: var(--oas-cta-label);
-    }
-    .btn-outline { color: var(--text); }
-    footer a.mail { border-bottom-color: rgba(95,158,125,0.4); }
-  }
+  /* ---------------------------------------------- 테마 — 라이트 고정 (2026-08-09)
+     여기에는 `@media (prefers-color-scheme: dark)` 블록이 있었다. **지웠다.**
+
+     왜 — 사이트 6페이지 중 `about`·`guide` **둘만** OS 다크에 반응하고 나머지 넷
+     (`landing`·`studio`·`builder`·`mypage`)은 라이트 고정이었다. 그래서 OS 다크
+     사용자가 홈 → 소개 → 스튜디오로 걸으면 **다크 → 다크 → 라이트**로 튀었다.
+     한 사이트가 걷는 도중에 표면 모드를 바꾸는 것은 §3-1(*"모든 화면은 둘 중 하나의
+     표면 모드에 속한다"*)이 금지하는 상태다.
+
+     팀장 판정 **(b) 전부 고정** — 넷을 다크로 늘리는 쪽이 아니라 둘을 라이트로 맞추는
+     쪽이다. **다크 모드 전면 도입은 별도 설계 분기이고 감독 판정 사안**이다(백로그 G-DARK1).
+     이 두 페이지를 다크로 되돌리는 것으로는 그 분기를 대신할 수 없다 — 나머지 넷이
+     그대로면 튐이 방향만 바뀐다.
+
+     ⚠ 아래 `[data-theme]` 두 블록은 **남겨 둔다. 그러나 지금 아무 효과가 없다** —
+     이 속성을 설정하는 코드가 저장소 전체에 **0건**이다(2026-08-09 실측. `studio.html` 의
+     `data-theme` 은 전시 조명 프리셋이라 다른 물건이다). 죽은 셀렉터를 남기는 이유는
+     G-DARK1 이 열릴 때의 출발점이기 때문이고, **「다크 토글이 이미 있다」로 읽지 말라**는
+     것이 이 문단의 목적이다. */
   :root[data-theme="dark"] {
     /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
     --accent: var(--oas-accent);
@@ -358,7 +363,7 @@
   button:focus-visible {
     outline: 2px solid var(--accent-dark);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
   }
 </style>
 </head>

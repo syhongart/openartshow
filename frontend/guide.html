@@ -36,7 +36,10 @@
     --line: var(--oas-warm-gray-300);
     --text: var(--oas-ink-cool);
     --text-dim: var(--oas-ink-dim);
-    color-scheme: light dark;
+    /* ⚠ 2026-08-09: `light dark` 에서 **`light` 고정**으로 바꿨다(팀장 판정 (b) 전부 고정).
+       아래 다크 절의 주석과 함께 읽는다 — `@media` 블록만 지우면 OS 다크에서 UA 크롬
+       (스크롤바·폼 컨트롤)만 다크로 남는다. 두 줄은 함께 움직인다. */
+    color-scheme: light;
   }
 
   * { box-sizing: border-box; }
@@ -432,26 +435,14 @@
     .topnav { display: none; }
   }
 
-  /* -------------------------------------------------------- dark mode */
-  @media (prefers-color-scheme: dark) {
-    :root {
-      /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
-      --accent: var(--oas-accent);
-      --paper: var(--oas-dark-anchor);
-      --paper-2: var(--oas-dark-1);
-      --line: var(--oas-dark-line);
-      --text: var(--oas-on-dark);
-      --text-dim: var(--oas-on-dark-dim);
-    }
-    .card { background: var(--paper-2); }
-    .key {
-      background: linear-gradient(#3a3a3d, var(--paper-2));
-      border-color: var(--line);
-      box-shadow: 0 2px 0 var(--paper), 0 3px 3px rgba(0,0,0,0.4);
-      color: var(--text);
-    }
-    footer a.mail { border-bottom-color: rgba(95,158,125,0.4); }
-  }
+  /* ---------------------------------------------- 테마 — 라이트 고정 (2026-08-09)
+     `@media (prefers-color-scheme: dark)` 블록을 지웠다. 경위·근거는 `about.html` 의
+     같은 자리 주석 **한 곳**이다(6페이지 중 둘만 반응해 걷는 도중 표면 모드가 튀었다 →
+     팀장 판정 (b) 전부 고정 · 다크 전면 도입은 감독 판정 사안, 백로그 G-DARK1).
+     여기에 같은 문장을 다시 적지 않는다.
+
+     ⚠ 아래 `[data-theme]` 두 블록은 남아 있으나 **이 속성을 설정하는 코드가 저장소에
+     0건**이라 지금은 아무 효과가 없다. 「다크 토글이 이미 있다」로 읽지 말 것. */
   :root[data-theme="dark"] {
     /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
     --accent: var(--oas-accent);
@@ -505,7 +496,11 @@
   summary:focus-visible {
     outline: 2px solid var(--accent-dark);
     outline-offset: 2px;
-    border-radius: 2px;
+    /* `about.html` 의 **같은 `:focus-visible` 규칙**이 이미 토큰을 쓰므로 여기도 잇는다
+       (값 불변 — 2px 그대로). 이 파일의 나머지 radius(4·5·6·14px)는 랜딩군에서 혼자
+       이탈한 값이라 **안 이었다**: 부분 치환은 「이 파일은 토큰을 쓴다」로 읽히게 만들어
+       더 혼란스럽다. 그 경계는 `docs/BACKLOG.md` 의 `G-RAD1`. */
+    border-radius: var(--oas-r-hair);
   }
 </style>
 </head>
