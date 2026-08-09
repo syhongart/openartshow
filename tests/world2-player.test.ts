@@ -280,3 +280,67 @@ describe('걷는 속도 — 자동차가 아니어야 한다', () => {
     expect(Math.hypot(p.position.x, p.position.z)).toBeCloseTo(WALK_SPEED, 6);
   });
 });
+
+// ── speedFactor — "안 눌러서 안 감" 과 "눌렀는데 못 감" 은 다른 상태다 ──────────
+//
+// 이 절은 **검수관 반려 B2** 로 생겼다. 첫 판본은 이동량만 보고 계수를 갱신했는데,
+// 이동량은 두 상태에서 똑같이 0 이다. 그래서 손을 뗀 정상 상태까지 *"막혔다"* 로 읽혀
+// `direction` getter 가 문서에 적어 둔 기능(*"서서 둘러볼 때 그쪽을 미리 올린다"*)이
+// 약 1초 만에 죽었다. 지금 규약은 **입력이 있을 때만 갱신하고, 없으면 얼린다.**
+describe('PlayerSystem.speedFactor — 진행 계수의 의미', () => {
+  const blockAll = () => (x: number, z: number) => ({ x, z });
+
+  it('부팅 직후는 1 이다 — 안 움직여 본 것은 막힌 것이 아니다', () => {
+    expect(new PlayerSystem().speedFactor).toBe(1);
+  });
+
+  it('입력이 없으면 아무리 오래 서 있어도 1 을 지킨다', () => {
+    const p = new PlayerSystem({ speed: 10 });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    expect(p.speedFactor).toBe(1);
+  });
+
+  it('눌렀는데 못 가면 0 으로 내려간다', () => {
+    const p = new PlayerSystem({ speed: 10, resolveMove: blockAll() });
+    p.setInput({ forward: true });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    expect(p.speedFactor).toBeLessThan(0.05);
+  });
+
+  it('막힌 뒤 손을 떼도 1 로 튀어 오르지 않는다 — 그러면 깜빡임이 되살아난다', () => {
+    const p = new PlayerSystem({ speed: 10, resolveMove: blockAll() });
+    p.setInput({ forward: true });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    const stuck = p.speedFactor;
+    p.setInput({ ...NO_INPUT });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    expect(p.speedFactor).toBeCloseTo(stuck, 9);
+  });
+
+  it('막힘이 풀리면 회복한다 — 얼리는 것이지 잠그는 것이 아니다', () => {
+    let wall = true;
+    const p = new PlayerSystem({
+      speed: 10,
+      resolveMove: (x, z, dx, dz) => (wall ? { x, z } : { x: x + dx, z: z + dz }),
+    });
+    p.setInput({ forward: true });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    expect(p.speedFactor).toBeLessThan(0.05);
+    wall = false;
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: 200 + i }));
+    expect(p.speedFactor).toBeGreaterThan(0.9);
+  });
+
+  it('제자리 헤드밥은 반대로 꺼진다 — 두 필드를 따로 둔 이유가 여기 있다', () => {
+    const ys: number[] = [];
+    const p = new PlayerSystem({
+      speed: 10,
+      resolveMove: blockAll(),
+      applyCamera: (_x, y) => { ys.push(y); },
+    });
+    p.setInput({ forward: true });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    const tail = ys.slice(-40);
+    expect(Math.max(...tail) - Math.min(...tail)).toBeLessThan(1e-3);
+  });
+});

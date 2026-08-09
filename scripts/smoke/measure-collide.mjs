@@ -23,10 +23,16 @@
 //     같은 조작 시퀀스를 두 세션에 준다
 //       기본        (충돌 ON)  → 이동 거리 dOn
 //       &collide=0  (충돌 OFF) → 이동 거리 dOff
-//     판정: dOn < dOff × MAX_RATIO
+//     판정: dOn < dOff × MAX_RATIO   **또는**   두 세션 종점 사이 거리 > MIN_DRIFT_M
 //
 // 절대 거리도, 막히는 지점도, 무엇이 막는지도 몰라도 된다. 알아야 하는 것은 **"충돌을
-// 켜면 덜 간다"** 하나뿐이고, 그것이 이 기능의 정의다.
+// 켜면 덜 갔거나 다른 데로 갔다"** 하나뿐이다.
+//
+// ⚠ **둘째 축은 나중에 붙었다** (감독 판정 2026-08-08 *"플레이어 자동 우회"*). 자동
+// 우회가 들어오면서 충돌이 **막는 것**이 아니라 **비껴가게 하는 것**으로 나타났고,
+// 거리비 하나로는 그 작동이 안 보인다(실측 0.92 — 임계 0.9 미달로 거짓 FAIL). 이
+// 헤더는 한 회차 동안 *"판정은 거리비 하나뿐"* 이라고 적힌 채로 남아 있었다(검수관
+// 권고 P3) — 게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다.
 //
 // ── 이 게이트가 **못 잡는 것** (정직하게) ────────────────────────────────────
 // · **무엇이 막는가** — 어느 파츠의 `footprint` 가 옳은지는 안 본다. 나무가 안 막고
@@ -53,25 +59,51 @@ import { assembleSiteVite } from './assemble.mjs';
 import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
 
 /**
- * 전진 틱 수와 틱 길이. **"몇 미터" 가 아니라 "얼마 동안" 이다** — 거리를 적으면 그것이
- * 곧 배치 의존이 된다.
+ * 대조군이 **반드시 걸어야 하는 거리**(m). 여기 도달하면 즉시 멈춘다.
  *
- * ── 왜 60틱(30초)인가 — **첫 판본 12틱은 아무것도 못 쟀다** (실측 2026-08-08) ──
- * 처음에 *"12틱 × 500ms = 6초 ≈ 30m(WALK_SPEED 5m/s)"* 라고 적었고 **틀렸다.**
- * 실측은 6초에 **11.5m** — 실효 1.9m/s 로 걷기 속도의 38% 다. 헤드리스가 ~4fps 라
- * `dt` 클램프(0.1s)에 걸려 게임 시간이 실시간보다 훨씬 느리게 흐른다. **"m/s × 초"
- * 로 거리를 추정한 것이 재는 축을 잘못 고른 것**이었다.
+ * ── 왜 시간이 아니라 거리인가 — **시간 기준은 CI 에서 무너졌다** (실측 2026-08-09) ──
+ * 이 자리는 원래 `TICKS = 60`(30초)이었고, 그 주석은 *"'몇 미터' 가 아니라 '얼마 동안'
+ * 이다 — 거리를 적으면 그것이 곧 배치 의존이 된다"* 라고 적고 있었다. **논리가 반쪽만
+ * 맞았다.** 거리를 적으면 배치 의존인 것은 사실이지만, 시간을 적으면 **러너 성능 의존**
+ * 이 되고 그 대가가 더 크다 — 회차마다 **어느 구간을 걷는지가 달라진다.**
  *
- * 그 결과 ON·OFF 가 **둘 다 11.5m** 로 같았다. 충돌이 안 걸린 게 아니라 **충돌 지점
- * (스폰 앞 25m)에 닿기도 전에 측정이 끝난 것**이다. 판정은 FAIL 이었지만 그 FAIL 이
- * 말한 원인("배선 회귀 또는 축 상실")은 둘 다 사실이 아니었다.
+ * 실측: 같은 커밋(`4546a19`)·같은 30초에
  *
- * 30초면 실효 1.9m/s 로 약 57m 다 — 스폰 앞 첫 장애물(25m)을 확실히 지나친다.
- * **시간을 추정으로 정하지 않는다**: 이 값이 충분한지는 아래 `MIN_OFF_M` 이 대조군
- * 실측으로 매 회차 확인하고, 못 미치면 FAIL 로 말한다.
+ *     이 환경(4코어 CPU 래스터)   ON 84.8m / OFF 81.5m · 이탈 3.3m → PASS
+ *     GitHub Actions 러너         ON 73.8m / OFF 74.0m · 이탈 0.4m → **FAIL**
+ *
+ * 충돌이 안 걸린 게 아니었다. **74~85m 구간에 있는 첫 유효 장애물에 CI 가 닿지 못한
+ * 것**이다. 그리고 그 FAIL 이 지목한 원인 둘(*"배선 회귀"*·*"축 상실"*)은 **또 둘 다
+ * 사실이 아니었다** — 12틱 판본에서 이미 한 번 겪은 그 형태다. 같은 실수를 두 번 했고,
+ * 원인도 같다: **재는 축을 시간으로 잡으면 무엇을 지나갔는지가 보장되지 않는다.**
+ *
+ * 100m 인 이유: 위 실측이 첫 유효 장애물을 74~85m 사이로 좁혔고, 100m 면 그것을 확실히
+ * 지난다. **이것은 "결과 좌표" 가 아니라 "측정 성립 조건" 이다** — 원래 주석이 금지한
+ * 것(*"z 3.5 에서 멈춰야 한다"*)은 판정을 배치에 묶는 것이고, 이 값은 판정이 아니라
+ * **판정할 자격을 얻기 위해 걸어야 하는 최소 거리**다. 실제로 예전의 `MIN_OFF_M`(대조군
+ * 최소 거리 사후 검사)이 이미 그 역할을 하고 있었고, 여기서 그것을 **사후 검사에서 종료
+ * 조건으로 승격**한 것뿐이다(그래서 그 상수는 없앴다 — 아래 문단).
+ *
+ * ⚠ **이 값은 실측 두 회차에만 근거가 있다 — 유도한 값이 아니다**(검수관 권고, 2026-08-09).
+ * 이 저장소는 *"실측에 여유를 얹은 값은 근거가 아니다"* 를 명문화하고 있고, 100 은 정확히
+ * 그 형태다. 원칙적으로는 `decide/grid.ts` 의 격자 상수에서 유도할 수 있다 — `SPAWN.z`
+ * 10 에서 −z 로 걸으면 광장(`PLAZA_R` 1 → 3×3 파셀, 셀 32m)을 벗어나는 데 약 58m 이고,
+ * 막을 것이 서는 첫 파셀 열은 그 바깥이다. 실측 74~85m 와 방향이 맞물린다.
+ * **그러므로 `GRID_W`·`GRID_H`·`PLAZA_R`·셀 크기·`SPAWN` 중 무엇이든 바뀌면 이 값을
+ * 다시 본다.** 안 보면 이 게이트는 조용히 축을 잃는다(대조군이 목표에 닿았는데 그 구간에
+ * 아무것도 없는 상태 — 리포트는 "충돌이 안 걸렸다" 로 말하지만 사실이 아니다).
  */
-const TICKS = 60;
+const TARGET_M = 100;
 const TICK_MS = 500;
+
+/**
+ * 목표 거리까지 걷는 데 허용하는 최대 틱. 넘으면 **측정 무효 FAIL**(못 잰 것은 통과가 아니다).
+ *
+ * 240틱 = 120초. CI 실측 실효 속력(74m/30s ≈ 2.5m/s)이면 100m 는 약 40초·80틱이고,
+ * 그보다 **3배 느린 러너**까지 흡수한다. 보통 회차는 80틱 근처에서 조기 종료하므로
+ * 이 상한이 걸리는 일 자체가 신호다 — 러너가 이상하게 느리거나 주행이 막혔다는 뜻이다.
+ */
+const MAX_TICKS = 240;
 
 /**
  * 충돌 ON 이 OFF 대비 이 비율보다 **적게** 가야 한다.
@@ -84,19 +116,30 @@ const TICK_MS = 500;
  */
 const MAX_RATIO = 0.9;
 
+// ── `MIN_OFF_M` 은 없앴다 — `TARGET_M` 이 그 일을 한다 (2026-08-09) ──────────────
+// *"대조군이 최소 이만큼은 가야 측정이 성립한다"* 는 **사후 검사**였다. 지금은 대조군이
+// 목표에 닿을 때까지 걷고, 못 닿으면 그 자체가 무효 판정이다. 하한 상수를 따로 두면
+// `TARGET_M` 과 값 미러링이 되고, 그것은 이 파일이 이미 한 번 겪은 형태다(첫 판본의
+// 하한 `8` 이 `TICKS` 변경을 따라오지 않아 실제 주행의 1/7 로 줄었다).
+
 /**
- * 충돌 OFF 세션이 최소 이만큼은 가야 측정이 성립한다(m). **못 잰 것은 통과가 아니다.**
+ * 두 세션의 **종점 사이 거리**가 이보다 크면 "충돌이 경로를 틀었다" 로 본다(m).
  *
- * OFF 가 짧으면 비율 판정 자체가 무의미하다 — 둘 다 0m 면 `0 < 0 × 0.9` 가 거짓이라
- * FAIL 로 떨어지긴 하지만, 원인이 "충돌이 안 먹었다" 가 아니라 "아무도 안 걸었다" 이므로
- * 리포트가 다른 말을 해야 한다.
+ * 자동 우회가 붙은 뒤로 충돌은 **막는 것**보다 **비껴가게 하는 것**으로 나타난다.
+ * 거리비만 보면 그 작동이 안 보인다 — 순수 모듈 실측에서 우회 전 25.3m / 우회 후
+ * 198.1m(200m 시도)로, 거리비 0.99 라 거짓 FAIL 이 났다.
  *
- * **유도한다 — 손으로 적지 않는다.** 첫 판본은 `8` 이라는 상수였고, `TICKS` 를 12→60 으로
- * 늘렸을 때 따라오지 않아 **하한이 실제 주행의 1/7 로 줄어드는** 형태였다(같은 커밋 안에서
- * 값 미러링이 생긴 것이다). 보수적 실효 속도 0.5m/s 로 유도한다 — 실측 실효는 1.9m/s
- * 이므로 4배 가까운 여유이고, 그만큼 러너 성능 편차에 강하다.
+ * 2m 인 이유: 우회가 한 번이라도 걸리면 **원 하나를 돌아간다.** 가장 작은 파츠(화분)의
+ * 유효 반경이 `footprint 0.405~0.51 + bodyR 0.34` = **0.745~0.85m** 이므로 그 왕복만으로
+ * 1.5m 이상이 벌어지고, 실제로는 여러 번 걸린다(실측 4.3m). 몸 반경(`DEFAULT_BODY_R`
+ * 0.34)의 6배이기도 하다 — 부동소수·프레임률 편차로 이만큼 벌어질 수는 없다.
+ *
+ * ⚠ 첫 판본은 *"가장 작은 파츠의 유효 반경이 0.85m"* 라고 적었는데 **0.85 는 그 범위의
+ * 최댓값**이다(검수관 권고 P2, `parts/planter.ts:28,66` 실측). 결론(2m)은 어느 하한을
+ * 써도 실측 4.3m 에 한참 못 미치므로 바뀌지 않지만, 근거 문장이 틀린 채로 남으면 다음
+ * 사람이 이 임계를 만질 때 없는 여유를 믿는다.
  */
-const MIN_OFF_M = (TICKS * TICK_MS) / 1000 * 0.5;
+const MIN_DRIFT_M = 2;
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -120,8 +163,14 @@ async function at(page) {
   });
 }
 
-/** 한 세션을 열어 정면으로 `TICKS` 만큼 걷고 **이동 거리**를 낸다 */
-async function walkOnce(browser, origin, basePath, query, log) {
+/**
+ * 한 세션을 열어 정면으로 걷고 **이동 거리**를 낸다.
+ *
+ * `fixedTicks` 를 주면 **거리와 무관하게 그 틱만큼** 걷는다(기본 세션이 대조군과 같은
+ * 조작량을 받게 하려는 것이다 — 이것이 없으면 두 세션이 다른 양을 조작받아 비교가
+ * 성립하지 않는다). 안 주면 `TARGET_M` 도달 또는 `MAX_TICKS` 소진까지 걷는다.
+ */
+async function walkOnce(browser, origin, basePath, query, log, fixedTicks = null) {
   const context = await browser.newContext({ viewport: { width: 1024, height: 640 } });
   const page = await context.newPage();
   const errors = [];
@@ -157,14 +206,24 @@ async function walkOnce(browser, origin, basePath, query, log) {
     }
     // `yaw = 0` 이 −z 를 보므로 축 `(0,-1)` 이 정면 전진이다.
     await drive(page, 'move', 0, -1);
-    for (let i = 0; i < TICKS; i++) await page.waitForTimeout(TICK_MS);
+    const limit = fixedTicks ?? MAX_TICKS;
+    let ticks = 0;
+    let last = from;
+    for (; ticks < limit; ticks++) {
+      await page.waitForTimeout(TICK_MS);
+      // 고정 틱 모드에서는 거리를 안 본다 — 대조군이 정한 조작량을 그대로 받는 것이 목적이다.
+      if (fixedTicks !== null) continue;
+      last = await at(page);
+      if (num(last.x) === null) break;
+      if (Math.hypot(last.x - from.x, last.z - from.z) >= TARGET_M) { ticks++; break; }
+    }
     await drive(page, 'move', 0, 0);
     await page.waitForTimeout(TICK_MS);
     const to = await at(page);
     // **직선거리로 잰다.** 경로 길이가 아니라 시작점→끝점이다 — 충돌이 옆으로 미끄러뜨리면
     // 경로는 길어지지만 "앞으로 나아간 정도" 는 직선거리가 더 정직하다.
     const dist = Math.hypot(to.x - from.x, to.z - from.z);
-    return { dist, from, to, reason: null, errors };
+    return { dist, from, to, ticks, reason: null, errors };
   } finally {
     await context.close();
   }
@@ -184,10 +243,23 @@ export async function runCollide({ browser, origin, basePath, log = console.log 
   if (off.reason) {
     return { pass: false, reason: `대조군 실패: ${off.reason}`, onDist: null, offDist: null, ratio: null, errors: off.errors };
   }
-  log(`  이동 ${off.dist.toFixed(1)}m  (${off.from.x.toFixed(1)},${off.from.z.toFixed(1)}) → (${off.to.x.toFixed(1)},${off.to.z.toFixed(1)})`);
+  log(`  이동 ${off.dist.toFixed(1)}m  (${off.from.x.toFixed(1)},${off.from.z.toFixed(1)}) → (${off.to.x.toFixed(1)},${off.to.z.toFixed(1)})  ${off.ticks}틱`);
 
-  log('[2] 기본 — 충돌 ON');
-  const on = await walkOnce(browser, origin, basePath, WORLD2_QUERY, log);
+  // **대조군이 목표에 못 닿았으면 여기서 끝낸다** — 기본 세션을 도는 것은 시간 낭비이고,
+  // 그 결과로 내리는 판정은 어차피 무효다(어느 구간을 걸었는지 보장되지 않는다).
+  if (off.dist < TARGET_M) {
+    return {
+      pass: false, onDist: null, offDist: off.dist, ratio: null, drift: null, errors: off.errors,
+      reason: `대조군이 ${MAX_TICKS}틱(${(MAX_TICKS * TICK_MS) / 1000}초) 안에 ${off.dist.toFixed(1)}m 밖에 못 갔다`
+        + `(목표 ${TARGET_M}m) — 충돌 판정이 아니라 **주행 자체가 성립하지 않았다.** `
+        + '러너가 이상하게 느리거나 조작 훅·프레임률에 문제가 있다. 임계를 낮춰 넘기지 않는다',
+    };
+  }
+
+  // **기본 세션은 대조군과 같은 틱을 받는다.** 거리로 끊으면 "충돌 때문에 덜 갔다" 를
+  // 잴 수가 없다 — 목표에 닿을 때까지 계속 걸어버리기 때문이다.
+  log(`[2] 기본 — 충돌 ON (대조군과 같은 ${off.ticks}틱)`);
+  const on = await walkOnce(browser, origin, basePath, WORLD2_QUERY, log, off.ticks);
   const errors = [...off.errors, ...on.errors];
   if (on.reason) {
     return { pass: false, reason: `기본 세션 실패: ${on.reason}`, onDist: null, offDist: off.dist, ratio: null, errors };
@@ -195,31 +267,43 @@ export async function runCollide({ browser, origin, basePath, log = console.log 
   log(`  이동 ${on.dist.toFixed(1)}m  (${on.from.x.toFixed(1)},${on.from.z.toFixed(1)}) → (${on.to.x.toFixed(1)},${on.to.z.toFixed(1)})`);
 
   const ratio = off.dist > 0 ? on.dist / off.dist : null;
-  log(`\n[판정] ON/OFF = ${ratio === null ? '측정실패' : ratio.toFixed(2)} (임계 < ${MAX_RATIO})`);
+  // 두 세션의 **종점 사이 거리**. 충돌이 경로를 틀었으면 여기가 벌어진다.
+  const drift = Math.hypot(on.to.x - off.to.x, on.to.z - off.to.z);
+  log(`\n[판정] ON/OFF 거리비 ${ratio === null ? '측정실패' : ratio.toFixed(2)} (임계 < ${MAX_RATIO})`);
+  log(`       종점 이탈 ${drift.toFixed(1)}m (임계 > ${MIN_DRIFT_M})`);
 
-  if (off.dist < MIN_OFF_M) {
+  // ── 판정: **덜 갔거나, 다른 데로 갔거나** (자동 우회 도입 2026-08-08) ─────────
+  //
+  // 첫 판본은 거리비 하나였다(`ON/OFF < 0.9`). 자동 우회(`decide/collide.ts` 의 접선
+  // 슬라이딩)를 붙이자 **막혀도 계속 걷게 되어 그 축이 무효가 됐다** — 순수 모듈 실측:
+  // 스폰에서 200m 시도에 우회 전 25.3m, 우회 후 **198.1m**(막힌 프레임 3495 → 1).
+  // 거리비로는 0.99 라 **거짓 FAIL** 이 난다.
+  //
+  // 그래서 축을 **"충돌이 궤적에 영향을 줬는가"** 로 넓힌다. 둘 중 하나면 성립한다:
+  //   ① 덜 갔다      — 우회가 안 통하는 자리(정통 충돌·막다른 곳)
+  //   ② 다른 데로 갔다 — 우회가 통한 자리(옆으로 스쳐 지나갔다)
+  //
+  // 이 둘은 **같은 기능의 두 얼굴**이고, 어느 쪽도 안 나타나면 충돌이 실제로 안 걸린
+  // 것이다. 우회를 붙이기 전에도 ①이 성립했으므로 이 축은 **양쪽 판본에서 유효**하다.
+  const lessFar = ratio !== null && ratio < MAX_RATIO;
+  const veered = drift > MIN_DRIFT_M;
+  if (!lessFar && !veered) {
     return {
-      pass: false, onDist: on.dist, offDist: off.dist, ratio, errors,
-      reason: `대조군이 ${off.dist.toFixed(1)}m 밖에 안 갔다(최소 ${MIN_OFF_M}m) — 충돌 판정이 아니라 `
-        + '**주행 자체가 성립하지 않았다.** 조작 훅·프레임률을 먼저 본다',
-    };
-  }
-  if (ratio === null || ratio >= MAX_RATIO) {
-    return {
-      pass: false, onDist: on.dist, offDist: off.dist, ratio, errors,
-      reason: `충돌을 켜도 같은 거리를 갔다(ON ${on.dist.toFixed(1)}m / OFF ${off.dist.toFixed(1)}m) — `
+      pass: false, onDist: on.dist, offDist: off.dist, ratio, drift, errors,
+      reason: `충돌을 켜도 **같은 거리를 같은 방향으로** 갔다(ON ${on.dist.toFixed(1)}m / `
+        + `OFF ${off.dist.toFixed(1)}m · 종점 이탈 ${drift.toFixed(1)}m) — `
         + '`resolveMove` 가 실제로 안 걸렸거나(배선 회귀), 걷는 방향에 막을 것이 없다(축 상실). '
         + '**임계를 느슨하게 하는 것으로 넘기지 않는다**',
     };
   }
   if (errors.length) {
     return {
-      pass: false, onDist: on.dist, offDist: off.dist, ratio, errors,
-      reason: `충돌은 막았으나 콘솔 에러 ${errors.length}건: ${errors.slice(0, 2).join(' | ')}`,
+      pass: false, onDist: on.dist, offDist: off.dist, ratio, drift, errors,
+      reason: `충돌은 걸렸으나 콘솔 에러 ${errors.length}건: ${errors.slice(0, 2).join(' | ')}`,
     };
   }
-  log('  ✓ PASS — 충돌을 켜면 실제로 덜 간다.');
-  return { pass: true, reason: null, onDist: on.dist, offDist: off.dist, ratio, errors };
+  log(`  ✓ PASS — 충돌이 궤적을 바꿨다(${lessFar ? '덜 갔다' : ''}${lessFar && veered ? ' · ' : ''}${veered ? '옆으로 비켰다' : ''}).`);
+  return { pass: true, reason: null, onDist: on.dist, offDist: off.dist, ratio, drift, errors };
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────

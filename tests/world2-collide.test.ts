@@ -33,6 +33,7 @@ import { readFileSync } from 'node:fs';
 import { blockersOf, blocked, slide, type Blocker } from '../frontend/js/world2/decide/collide.js';
 import { createCollider, DEFAULT_BODY_R } from '../frontend/js/world2/systems/collision.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
+import { SPAWN } from '../frontend/js/world2/decide/grid.js';
 import { PlayerSystem, facing } from '../frontend/js/world2/systems/player.js';
 import type { FrameCtx } from '../frontend/js/world2/kernel.js';
 import { coverageOf, covOkOf, yawToward, shortestTurn } from '../scripts/smoke/measure-invariants.mjs';
@@ -88,6 +89,33 @@ describe('§1 판정 — decide/collide (순수)', () => {
     // 같은 자리에서 z 로 움직이면 중심과의 거리가 늘어 침투가 줄어든다.
     const r = slide(11.5, 0, 0, 1, wall, DEFAULT_BODY_R);
     expect(r).toEqual({ x: 11.5, z: 1 });
+  });
+
+  // ── 자동 우회 — **접선으로 스쳐 지나간다** (감독 판정 2026-08-08) ────────────
+  //
+  // 축분리는 **비스듬히** 부딪힐 때만 미끄러진다. 두 축이 함께 막히면 완전히 서는데,
+  // 감독 실기기에서 *"분수대에 끼일때"* 로 확인됐다. 막은 원의 표면 방향으로 흘려보낸다.
+  //
+  // **실효 실측**(순수 모듈, 스폰에서 200m 직진 시도):
+  //   우회 없음  이동 25.3m · 막힌 프레임 3495/4000
+  //   우회 있음  이동 **198.1m** · 막힌 프레임 **1**/4000
+  // ⚠ **인공 픽스처로는 이 축을 못 잡는다** — 처음에 원 하나를 대각으로 맞히는 검사를
+  // 썼는데 실패했다. 대각 정통은 법선과 이동이 일직선이라 **접선이 정확히 0** 이고,
+  // 비스듬하게 하면 이번엔 축분리가 한 축을 살려서 접선까지 안 온다. 즉 **한 원짜리
+  // 픽스처에서는 축분리가 이미 접선 역할을 한다.** 우회가 버는 것은 **여러 원이 축
+  // 방향을 각각 막는** 실제 배치이고, 그래서 검사도 실제 배치로 한다(§2 에 있다).
+  it('완전 정면(접선 0)은 그대로 선다 — 좌우 정보가 없으면 고르지 않는다', () => {
+    // (7,0) 에서 원 (10,0) 중심으로 정확히 +x. 법선과 이동이 일직선이라 접선이 0.
+    const r = slide(7, 0, 1, 0, wall, DEFAULT_BODY_R);
+    expect(r).toEqual({ x: 7, z: 0 });
+  });
+
+  it('우회로 흘러가도 원 안으로는 못 들어간다 — 우회는 통과가 아니다', () => {
+    // 접선이 다른 원에 막히면 제자리다. 어느 경로로 끝나든 **결과가 원 밖**이어야 한다.
+    for (const [dx, dz] of [[1, 0], [0.7, 0.7], [0.2, 0.9], [-0.5, 0.5]]) {
+      const r = slide(7.5, 0.3, dx, dz, wall, DEFAULT_BODY_R);
+      expect(blocked(r.x, r.z, wall, DEFAULT_BODY_R), `d=(${dx},${dz})`).toBe(false);
+    }
   });
 
   it('반경 0 인 파츠는 막지 않는다 — 지면·도로가 그렇게 선언돼 있다', () => {
@@ -160,6 +188,33 @@ describe('§2 조회 — systems/collision (근처 3×3 + 캐시)', () => {
     const startX = t.x + t.r + 0.5;
     const moved = c.resolve(startX, t.z, -0.4, 0);
     expect(moved.x, '건물 안으로 들어갔다').toBeGreaterThan(startX - 0.4);
+  });
+
+  // ── 자동 우회의 실효 — **실제 배치에서만 드러난다** (감독 판정 2026-08-08) ────
+  //
+  // 감독 실기기: *"분수대에 끼일때"*. 처방은 두 축 다 막히면 막은 원의 **표면 방향**으로
+  // 흘려보내는 것(`decide/collide.ts` 의 접선 투영)이다.
+  //
+  // §1 에 적은 대로 **한 원짜리 픽스처로는 이 축을 못 잡는다.** 우회가 실제로 버는 것은
+  // 여러 원이 x·z 축을 각각 막아 축분리가 둘 다 버리는 상황이고, 그건 도시 배치에서 나온다.
+  //
+  // 실측(스폰에서 200m 직진 시도, 5cm 스텝):
+  //   우회 없음  이동 25.3m · 막힌 프레임 3495/4000
+  //   우회 있음  이동 **198.1m** · 막힌 프레임 **1**/4000
+  //
+  // 임계 100m 는 그 중간이다 — 우회를 되돌리면 25.3m 로 떨어져 **이 검사가 깨진다.**
+  it('스폰에서 200m 직진 — 우회가 없으면 25m 에서 멈춘다', () => {
+    const c = createCollider();
+    const step = 0.05;
+    let x: number = SPAWN.x;
+    let z: number = SPAWN.z;
+    let moved = 0;
+    for (let i = 0; i < 4000; i++) {
+      const r = c.resolve(x, z, 0, -step);
+      moved += Math.hypot(r.x - x, r.z - z);
+      x = r.x; z = r.z;
+    }
+    expect(moved, '접선 우회가 빠지면 25m 대로 떨어진다').toBeGreaterThan(100);
   });
 
   it('빈 하늘(막을 것이 없는 좌표)에서는 그대로 간다', () => {
