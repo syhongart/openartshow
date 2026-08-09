@@ -34,19 +34,52 @@
      마이페이지는 캔버스가 없고 **긴 폼 + 읽는 텍스트**라 studio 쪽 문제다. studio 가
      이미 라이트 표면 + -ink 딥변형 컨벤션으로 서 있으므로 같은 계열로 잇는다.
 
-     ── 단 Preview 만 다크로 반전한다 ───────────────────────────────────────
-     이 화면의 핵심 요구가 *"Preview 는 남이 보는 모습이고, 편집 영역과 시각적으로 확실히
-     구분돼야 한다"* 이다. 테두리·여백만으로 가르면 스크롤 중에 경계가 흐려진다.
-     표면 자체를 반전시키면 두 영역이 **한 화면에서 절대 섞이지 않는다** — 그리고 그 다크
-     플레이트가 builder 의 글래스 플레이트 언어와도 이어져 새 룩을 만들지 않는다.
-     그래서 --pv-* 는 --oas-dark-* / --oas-on-dark-* 계열로, 나머지는 라이트 계열로 잇는다.
-     accent 도 표면에 따라 갈린다(라이트 위 --oas-accent-ink, 다크 위 --oas-accent) —
-     tokens.css 가 그 분기를 이미 이름으로 갖고 있으므로 여기서는 고르기만 한다. */
+     ── Preview 도 라이트다 (2026-08-09 감독 판정) ──────────────────────────
+     ⚠ **이 자리에는 원래 "Preview 만 다크로 반전한다" 가 적혀 있었다.** 근거는
+     *"남이 보는 모습이니 편집 영역과 절대 섞이면 안 된다"* 였고, 그 판단 자체는 **감독
+     지시가 아니라 우리 자체 판단**이었다(`MYPAGE-PLAN.md`·`BOARD.md`·`DEVLOG.md` 어디에도
+     다크 지시 0건 — 2026-08-09 실측). 감독이 PC 화면을 보고 *"디자인이 구린데"* 라고
+     지적해 후보 셋(다크를 띠로 / 다크를 버림 / 다크 유지)을 만들어 여쭈었고, *"다크는
+     내가 정한 것"* 이라는 선택지를 함께 드렸으나 감독은 그것을 고르지 않고 **「다크를
+     버린다」를 채택**했다. 즉 뒤집어도 되는 판단이었음이 확인됐다.
+
+     **다음 사람에게**: 이 화면이 원래 다크였다가 누가 망친 것이 아니다. 되돌리지 마라.
+
+     되돌린 근거는 취향이 아니라 조항이다 — `docs/DESIGN.md §3-1` 이
+     *"개별 컴포넌트가 임의로 반대 모드의 배경색을 쓰지 않는다"* 이고, 같은 표가
+     **「작가 프로필 = 라이트 에디토리얼」** 로 이 화면의 표면 모드를 이미 정해 두었다.
+     사이트의 정본 라이트 언어(studio·guide)는 다크를 **가로 띠**(내비·히어로)로만 쓰고
+     본문 안에 다크 카드를 박지 않는다.
+
+     라이트 위 대비 실측(WCAG, sand #efe6d3 배경 기준) — 전부 기준 통과:
+       그린 텍스트 --oas-green-text  5.51:1   본문 --oas-ink-cool   12.98:1
+       보조 --oas-ink-dim            4.71:1   CTA  --oas-cta-ink     6.55:1
+
+     "절대 안 섞임" 은 색 반전 대신 **sand 프레임 + 흰 카드 + 그린 이어브로우** 세 겹이
+     진다. --pv-* 이름은 그대로 두고 값만 라이트로 다시 잇는다 — 그래서 mypage.css 의
+     `.pv` 규칙은 이 전환에서 **한 줄도 바뀌지 않았다**(2층 토큰 구조가 값을 한 자리다). */
   :root{
     /* 편집 영역(라이트) */
     --bg:var(--oas-ivory);
     --surface:var(--oas-white);
-    --surface-2:var(--oas-paper);
+    /* 입력·칩·카드라디오·링크행의 **채움면**.
+       ── 왜 --oas-paper 가 아니라 --oas-sand-100 인가 (2026-08-09 실측) ──────
+       원래 값은 --oas-paper(#fdfbf5)였고, 그것이 감독 지적 *"디자인이 구린데"* 의
+       직접 원인이었다. 문제는 색 자체가 아니라 **바로 뒤 면과의 대비**다:
+
+         조합                                      명도 대비
+         입력 #fdfbf5  vs  패널 #ffffff (현행)      1.03   ← 사람 눈에 사실상 같은 색
+         입력 #efe6d3  vs  바탕 #F3F0E9 (studio)    1.09
+
+       1.03 이면 입력이 「면」이 아니라 **「테두리만 있는 빈 구멍」** 으로 읽힌다. 그래서
+       별명 입력(최대 20자)이 652px 인 것이 그대로 허전함이 됐다.
+       ⚠ **폭을 좁히는 처방은 이 문제를 안 푼다** — studio 는 같은 입력이 **925px** 인데도
+       어색하지 않다. 채움이 있어 면으로 읽히기 때문이다. 폭 상한(.inp--short/--mid)은
+       함께 넣었지만 그것만으로는 화면이 안 바뀐다. 둘 중 효과가 큰 쪽은 **이 한 줄**이다.
+
+       --oas-paper 는 DESIGN.md §3-1 이 이미 **레거시로 이관**한 토큰이기도 하다
+       ("페이지 레벨 배경 앵커 역할을 --bg-light 에 넘긴다"). */
+    --surface-2:var(--oas-sand-100);
     --panel:var(--oas-panel);
     --line:var(--oas-warm-gray-300);
     --line-soft:var(--oas-border-light);
@@ -61,16 +94,63 @@
     --danger:var(--oas-danger);
     --warn:var(--oas-warn-ink);
 
-    /* Preview(다크 반전) */
-    --pv-bg:var(--oas-dark-anchor);
-    --pv-surface:var(--oas-dark-1);
-    --pv-surface-2:var(--oas-dark-2);
-    --pv-line:var(--oas-dark-line);
-    --pv-ink:var(--oas-on-dark);
-    --pv-dim:var(--oas-on-dark-dim);
-    --pv-accent:var(--oas-accent);
-    --pv-cta:var(--oas-cta);
-    --pv-cta-label:var(--oas-cta-label);
+    /* 폼 필드 폭 상한 — 담을 내용의 길이에 맞춘다(≥560px 에서만 발동, mypage.css §13).
+       세 단계뿐이고 그 이상 쪼개지 않는다: 짧은 값 / 한 줄 이름 / 긴 글·행 묶음.
+         --w-short  별명(20자)·작가명처럼 **한눈에 끝나는 값**
+         --w-mid    활동분야 카드·판정 문구처럼 한 줄짜리 덩어리
+         --w-wide   소개 textarea·링크 행·필드 묶음. 긴 글은 폭이 아니라 **줄 길이**가
+                    상한이다(한 줄 70자 남짓)
+       ⚠ **토큰으로 올린 이유**: 첫 판본은 `720px` 를 3곳, `520px` 를 3곳에 리터럴로
+       적었고 교차리뷰가 값 미러링으로 잡았다(조건 R2). 색·구름 고도·테스트 임계값에서
+       이미 세 번 지불한 형태다.
+       ⚠ 함께 지운 것: `.inp--area { max-width: 720px }` 는 **죽은 선언**이었다 —
+       부모 `.fld` 가 이미 720 이라 자식의 720 은 발동할 수 없다. 검수관이 삭제
+       뮤테이션으로 실측했다(7개 폭 전부 폭 변화 0 · 34 passed). 반면 `.linkrow` 는
+       `<template>` 안에 있어 렌더되면 `.panel` 직속이라(`.fld` 밖) 자체 상한이
+       필요하다 — 같은 720 이어도 죽은 선언이 아니다. */
+    --w-short:320px;
+    --w-mid:520px;
+    --w-wide:720px;
+
+    /* Preview — 라이트(위 주석의 감독 판정). 편집 영역과 **같은 계열**이므로 구분은
+       색 반전이 아니라 층(sand 프레임 → 흰 카드)과 이어브로우가 진다.
+       accent·cta 가 -ink 딥변형인 것이 핵심이다 — 원색(--oas-accent/--oas-cta)은
+       라이트 위에서 대비 1.69~1.85:1 로 UI 기준(3:1) 미달이다(tokens.css 주석).
+       실제로 다크 시절 「작품 문의」가 --oas-cta(#1fd677) 채움이었고, 라이트 배경에서
+       그대로 두면 DESIGN.md 안티패턴 「풀채도 네온 대비」에 걸린다.
+
+       ── ⚠ --pv-bg 와 --pv-surface-2 가 **같은 값인 것은 의도다** ───────────
+       읽는 사람이 반드시 걸리는 자리라 근거를 적는다. 이 화면의 Preview 는 **4층**이고,
+       대비는 「토큰끼리」가 아니라 **DOM 에서 실제로 맞닿는 면끼리** 성립한다:
+
+         층                     토큰               맞닿는 뒤 면        대비
+         body                   --bg (ivory)       —                   —
+         .pv 프레임             --pv-bg            body                1.0899
+         .pv__card              --pv-surface       .pv                 1.2404
+         .pv__lock/__avatar/    --pv-surface-2     .pv__card           1.2404
+           __genres 칩
+
+       --pv-bg 와 --pv-surface-2 는 **서로 맞닿지 않는다** — 사이에 불투명한
+       .pv__card(흰색)가 있다. 그래서 둘이 같은 값이어도 화면에서 겹쳐 보이는 자리가
+       없다. 참고로 다크 시절 같은 자리(.pv__lock dark-2 on .pv__card dark-1)는
+       **1.1588** 이었으므로, 라이트 전환은 이 축에서 **회귀가 아니라 개선**이다.
+
+       **그러나 이 안전은 조건부다** — .pv__card 가 배경을 잃는 순간(투명·삭제) 두 면이
+       직접 맞닿아 대비가 **정확히 1.00** 이 된다. 그 회귀는 눈으로만 잡히므로
+       `tests/mypage-markup.test.ts` 의 「Preview 층 사슬」이 막는다: .pv__card 의
+       불투명 배경 + 사슬 각 단의 대비를 함께 단언한다.
+
+       두 토큰의 **이름이 갈려 있으므로 값이 같아도 서로 독립적으로 바꿀 수 있다**
+       (한쪽만 고치면 그 순간 갈린다 — 연동된 것이 아니다). */
+    --pv-bg:var(--oas-sand-100);
+    --pv-surface:var(--oas-white);
+    --pv-surface-2:var(--oas-sand-100);
+    --pv-line:var(--oas-warm-gray-300);
+    --pv-ink:var(--oas-ink-cool);
+    --pv-dim:var(--oas-ink-dim);
+    --pv-accent:var(--oas-accent-ink);
+    --pv-cta:var(--oas-cta-ink);
+    --pv-cta-label:var(--oas-white);
 
     /* 형태·틴트 — 오프셋·블러는 형태지만 **틴트는 색이다.**
        rgba(20,21,26) 은 --oas-dark-anchor(#14151A) 의 rgb 표기다. hex 토큰에서 알파만
@@ -81,7 +161,10 @@
     --r-lg:14px; --r-md:10px; --r-sm:7px;
     --sh-1:0 2px 6px rgba(20,21,26,.05);
     --sh-2:0 8px 20px rgba(20,21,26,.10);
-    --sh-pv:0 18px 38px -14px rgba(20,21,26,.42);
+    /* ⚠ `--sh-pv`(0 18px 38px -14px, 알파 .42)는 **삭제했다.** 다크 플레이트를 배경에서
+       띄우기 위한 깊은 그림자였는데, 같은 값이 라이트 표면 아래로 가면 카드가 떠 보이는
+       게 아니라 **때가 탄 것처럼** 보인다. 라이트용으로 값을 새로 적으면 --sh-1 과
+       거의 같은 값을 두 곳에 적는 미러링이 되므로, `.pv` 가 --sh-1 을 그대로 쓴다. */
     --sh-knob:0 1px 3px rgba(20,21,26,.30);
     --veil-stripe:rgba(20,21,26,.055);
     --app:var(--app-font, -apple-system,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif);
@@ -185,7 +268,7 @@
             <label class="fld__label" for="mp-nickname">별명</label>
             <span class="fld__count" data-mp-count="nickname"></span>
           </div>
-          <input class="inp" id="mp-nickname" type="text" data-mp-field="nickname" autocomplete="off" spellcheck="false">
+          <input class="inp inp--short" id="mp-nickname" type="text" data-mp-field="nickname" autocomplete="off" spellcheck="false">
           <p class="msg" data-mp-error="nickname"></p>
           <div class="suggest" data-mp-suggest="nickname"></div>
         </div>
@@ -194,7 +277,7 @@
           <div class="fld__head">
             <label class="fld__label" for="mp-displayname">작가명</label>
           </div>
-          <input class="inp" id="mp-displayname" type="text" data-mp-field="displayName" autocomplete="off">
+          <input class="inp inp--mid" id="mp-displayname" type="text" data-mp-field="displayName" autocomplete="off">
           <p class="msg" data-mp-error="displayName"></p>
         </div>
 
@@ -275,7 +358,7 @@
             <label class="fld__label" for="mp-bioshort">한 줄 소개</label>
             <span class="fld__count" data-mp-count="bioShort"></span>
           </div>
-          <input class="inp" id="mp-bioshort" type="text" data-mp-field="bioShort">
+          <input class="inp inp--mid" id="mp-bioshort" type="text" data-mp-field="bioShort">
           <p class="msg" data-mp-error="bioShort"></p>
         </div>
 
@@ -292,7 +375,7 @@
           <div class="fld__head">
             <label class="fld__label" for="mp-location">활동 지역</label>
           </div>
-          <input class="inp" id="mp-location" type="text" data-mp-field="location">
+          <input class="inp inp--short" id="mp-location" type="text" data-mp-field="location">
           <p class="msg" data-mp-error="location"></p>
         </div>
 
@@ -364,7 +447,7 @@
           <div class="fld__head">
             <label class="fld__label" for="mp-gallery">소속 갤러리</label>
           </div>
-          <input class="inp" id="mp-gallery" type="text" data-mp-field="gallery">
+          <input class="inp inp--mid" id="mp-gallery" type="text" data-mp-field="gallery">
           <p class="msg" data-mp-error="gallery"></p>
         </div>
 

@@ -50,6 +50,14 @@ function mkSys(o: {
   dir?: { x: number; z: number };
   /** 진행 계수. 안 주면 옵션 자체를 넘기지 않는다 — 기본값 1 경로를 그대로 탄다 */
   speedFactor?: number;
+  /**
+   * look-ahead 거리(셀). 안 주면 **라이브 기본값(0 = 꺼짐)** 을 탄다.
+   *
+   * 명시할 수 있게 연 이유: 기본값이 0 이 된 뒤로 `speedFactor` 배선을 검사하려면
+   * 곱할 대상이 필요하다. **그 배선은 여전히 살아 있고**(다시 켤 때 짝이 된다),
+   * 그것이 끊기는 것과 기본값이 0 인 것은 다른 일이다.
+   */
+  lookAhead?: number;
 } = {}) {
   const fb = fakeBuilder();
   const pos = o.pos ?? { x: 0, z: 0 };
@@ -60,6 +68,7 @@ function mkSys(o: {
     markDirty: o.markDirty,
     getDirection: o.dir ? () => o.dir! : undefined,
     getSpeedFactor: o.speedFactor === undefined ? undefined : () => o.speedFactor!,
+    lookAhead: o.lookAhead,
     // 이 파일은 **스트리밍 기계**를 본다 — 로드·반납·누수·예산. 그 성질은 물이 있든
     // 없든 같아야 하므로 지형을 끈다. 실제 월드는 이 옵션을 주지 않아 물이 걸린다.
     // (끄지 않으면 원점 두 파셀 옆 강 때문에 13이 11이 되고, 밴드가 바뀐 것도 강이
@@ -326,45 +335,79 @@ describe('StreamingSystem — tier 맵 일관성', () => {
 const tierSnapshot = (sys: StreamingSystem) =>
   [...sys.tierMap.entries()].map(([k, t]) => `${k}=${t}`).sort().join(' ');
 
-describe('StreamingSystem — getSpeedFactor 가 look-ahead 를 접는다', () => {
+// ⚠ **아래 두 절은 지금 라이브에서 아무것도 안 지킨다** — `lookAhead` 기본값이 0 이라
+// 계수를 곱할 대상이 없기 때문이다(2026-08-09, 감독 실기기 *"뒤에 조금만 가면 갑자기
+// 사라져"*). 그래서 각 케이스에 `lookAhead` 를 **명시적으로 준다.** 배선이 끊기는 것과
+// 기본값이 0 인 것은 다른 일이고, 다시 켤 때 이 검사가 필요하다.
+// 기본값이 0 이라는 사실 자체는 바로 아래 절이 따로 못 박는다.
+describe('StreamingSystem — getSpeedFactor 가 look-ahead 를 접는다 (lookAhead 를 켠 상태)', () => {
   const dir = { x: 0, z: -1 };
+  const AHEAD = 0.5; // 기본값이 0 이 되기 전의 값. 여기서만 쓴다
 
   it('계수 0 과 1 은 서로 다른 파셀 구성을 만든다', () => {
-    const a = make({ dir, speedFactor: 1 });
-    const b = make({ dir, speedFactor: 0 });
+    const a = make({ dir, speedFactor: 1, lookAhead: AHEAD });
+    const b = make({ dir, speedFactor: 0, lookAhead: AHEAD });
     settle(a.sys); settle(b.sys);
     expect(tierSnapshot(a.sys)).not.toBe(tierSnapshot(b.sys));
   });
 
   it('계수 0 은 방향을 안 준 것과 같다 — look-ahead 가 통째로 접힌다', () => {
-    const zero = make({ dir, speedFactor: 0 });
-    const none = make({});
+    const zero = make({ dir, speedFactor: 0, lookAhead: AHEAD });
+    const none = make({ lookAhead: AHEAD });
     settle(zero.sys); settle(none.sys);
     expect(tierSnapshot(zero.sys)).toBe(tierSnapshot(none.sys));
   });
 
   it('안 주면 1 과 같다 — 예전 동작이 기본값이다', () => {
-    const absent = make({ dir });
-    const one = make({ dir, speedFactor: 1 });
+    const absent = make({ dir, lookAhead: AHEAD });
+    const one = make({ dir, speedFactor: 1, lookAhead: AHEAD });
     settle(absent.sys); settle(one.sys);
     expect(tierSnapshot(absent.sys)).toBe(tierSnapshot(one.sys));
   });
 
   it('1 을 넘는 값·음수·NaN 은 0~1 로 가둔다 — 커지면 고치려던 증상이 되살아난다', () => {
-    const one = make({ dir, speedFactor: 1 });
-    const zero = make({ dir, speedFactor: 0 });
+    const one = make({ dir, speedFactor: 1, lookAhead: AHEAD });
+    const zero = make({ dir, speedFactor: 0, lookAhead: AHEAD });
     settle(one.sys); settle(zero.sys);
     for (const over of [3, 1e9]) {
-      const s = make({ dir, speedFactor: over });
+      const s = make({ dir, speedFactor: over, lookAhead: AHEAD });
       settle(s.sys);
       expect(tierSnapshot(s.sys), `${over} 가 1 로 안 잘렸다`).toBe(tierSnapshot(one.sys));
     }
     for (const bad of [-1, NaN]) {
-      const s = make({ dir, speedFactor: bad });
+      const s = make({ dir, speedFactor: bad, lookAhead: AHEAD });
       settle(s.sys);
       // 음수는 0 으로(뒤로 당기지 않는다), NaN 은 1 로(옵션이 없는 셈) 떨어진다.
       expect(tierSnapshot(s.sys)).toBe(tierSnapshot(bad < 0 ? zero.sys : one.sys));
     }
+  });
+});
+
+// ── 기본값이 0 이라는 것 자체를 못 박는다 (감독 실기기 2026-08-09) ─────────────
+//
+// *"뒤에 조금만 가면 갑자기 사라져"* — 후진하니 64m 앞 건물이 통째로 언로드됐다.
+// `lookAheadCenter` 가 판정 중심을 옮기는 **제로섬**이라, 1인칭 후진에서는 화면 정면이
+// 반경 밖으로 밀려난다. 근거와 값 판단은 `systems/streaming.ts` 의 `lookAhead` 주석
+// 한 곳이다 — 여기에 다시 적지 않는다.
+//
+// **이 절이 없으면 기본값을 되돌려도 아무 검사도 안 깨진다.** 바로 위 절은 `lookAhead`
+// 를 명시적으로 주므로 기본값과 무관하고, `world2-stream.test.ts` 의 제로섬 표도
+// 순수 함수라 기본값을 안 본다. 그 사이가 정확히 이 결함이 통과하던 구멍이다.
+describe('StreamingSystem — lookAhead 기본값은 0 이다 (판정 중심을 안 옮긴다)', () => {
+  it('방향을 줘도 파셀 구성이 정지 상태와 같다', () => {
+    const still = make({});
+    const fwd = make({ dir: { x: 0, z: -1 } });
+    const back = make({ dir: { x: 0, z: +1 } });
+    settle(still.sys); settle(fwd.sys); settle(back.sys);
+    expect(tierSnapshot(fwd.sys), '전진이 중심을 옮겼다 — 반대쪽을 잃는다').toBe(tierSnapshot(still.sys));
+    expect(tierSnapshot(back.sys), '후진이 중심을 옮겼다 — 보는 쪽을 잃는다').toBe(tierSnapshot(still.sys));
+  });
+
+  it('후진해도 앞쪽 2셀(64m) 파셀이 살아 있다 — 감독이 본 그 파셀이다', () => {
+    const back = make({ dir: { x: 0, z: +1 } });
+    settle(back.sys);
+    // 앞 = −z. 정지 기준 far 밴드 안이므로 반드시 로드돼 있어야 한다.
+    expect(back.sys.tierMap.get('0,-2'), '후진 중 64m 앞이 사라졌다').toBeDefined();
   });
 });
 
