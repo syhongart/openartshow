@@ -197,8 +197,14 @@ export class PlayerSystem implements System {
   private axes = { x: 0, z: 0 };
   /** 실제로 움직인 방향(스트리밍 look-ahead용). 멈추면 마지막 방향을 유지한다 */
   private moveDir = { x: 0, z: 0 };
-  /** 실제로 낸 속력 ÷ 걷기 속도, 평활값(0~1). 스트리밍 look-ahead 가 읽는다 */
-  private moveFactor = 0;
+  /**
+   * 실제로 낸 속력 ÷ 걷기 속도, 평활값(0~1). 스트리밍 look-ahead 가 읽는다.
+   *
+   * **1 로 시작한다** — 아직 한 번도 안 움직인 것은 *"막혔다"* 가 아니다. 0 으로 두면
+   * 부팅 직후 가만히 서 있는 동안 look-ahead 가 접혀, 이 필드가 생기기 전의 동작(항상
+   * 전개)이 이유 없이 바뀐다.
+   */
+  private moveFactor = 1;
   /** 헤드밥 위상(rad) */
   private bobPhase = 0;
   /**
@@ -278,7 +284,10 @@ export class PlayerSystem implements System {
     // **실제로 간 거리**를 따로 잡는다. 충돌이 붙은 뒤로 `d`(가려던 양)와 실제가 갈린다.
     let mx = 0;
     let mz = 0;
-    if (d.dx !== 0 || d.dz !== 0) {
+    // **가려고 했는가.** 아래 진행 계수가 이것을 본다 — "안 눌러서 안 감" 과 "눌렀는데
+    // 못 감" 은 이동량만으로는 구별되지 않는다(둘 다 0 이다).
+    const wanted = d.dx !== 0 || d.dz !== 0;
+    if (wanted) {
       // 충돌을 안 주면 그대로 간다 — 예전 동작이 기본값이다.
       const next = this.resolveMove
         ? this.resolveMove(this.x, this.z, d.dx, d.dz)
@@ -315,7 +324,21 @@ export class PlayerSystem implements System {
     // 시상수를 헤드밥(dt×8)보다 **느리게**(dt×3, ~0.33초) 잡는다. 헤드밥은 걸음에 붙어야
     // 즉각적이어야 하지만, 스트리밍 판정은 급할수록 손해다 — 빨리 따라갈수록 경계에서
     // 자주 흔들린다.
-    this.moveFactor += (Math.min(1, ratio) - this.moveFactor) * Math.min(1, ctx.dt * 3);
+    //
+    // ⚠ **입력이 없으면 갱신하지 않는다 — 직전 값을 그대로 얼린다** (검수관 반려 B2).
+    // 첫 판본은 입력 유무를 안 보고 `ratio` 만 먹였고, 그것이 **손을 뗀 정상 상태까지
+    // "막혔다" 로 취급**했다. 그러면 `direction` getter 가 문서에 적어 둔 기능 — *"서서
+    // 둘러볼 때 그쪽을 미리 올린다"* — 이 약 1초 만에 죽는다(τ=1/(3dt), 직접 계산).
+    // 헤드밥은 반대로 **꺼져야** 맞으므로(제자리 흔들림) 위 `bobIntensity` 는 그대로 둔다.
+    // 두 필드를 따로 둔 판단(바로 위 문단)이 여기서 값을 한다.
+    //
+    // 얼리는 것이 0/1 로 튀는 것보다 나은 이유: 끼인 채 눌렀다 뗐다 하면 목표를 1 로
+    // 복원하는 설계는 look-ahead 를 0↔0.5셀(16m) 로 왕복시켜 **감독이 보고한 깜빡임을
+    // 그대로 되살린다.** 얼리면 끼임 중에는 접힌 채 유지되고, 실제로 다시 걸어지는
+    // 순간에만 회복된다.
+    if (wanted) {
+      this.moveFactor += (Math.min(1, ratio) - this.moveFactor) * Math.min(1, ctx.dt * 3);
+    }
 
     // ── 물 (감독 지시 *"강에 사람이 빠지게해줘"*) ──────────────────────────────
     // **이동한 뒤에** 판정한다. 이동 전 좌표로 물어보면 물가를 넘어선 프레임에 아직
@@ -371,6 +394,8 @@ export class PlayerSystem implements System {
    * 스트리밍 look-ahead 가 이것을 곱한다 — 막혀 있으면 0 에 가까워져 판정 중심이 발밑에
    * 고정된다. look-ahead 의 목적이 *"가려는 쪽 파셀을 미리 올린다"* 이므로, 못 가는
    * 동안 앞을 당겨 보는 것은 목적에 어긋난 채 경계만 흔드는 일이다.
+   *
+   * **입력이 없는 동안은 얼어 있다**(위 `update` 참조) — 손을 뗀 것은 막힌 것이 아니다.
    */
   get speedFactor(): number { return this.moveFactor; }
   get angles(): { yaw: number; pitch: number } { return { yaw: this.yaw, pitch: this.pitch }; }
