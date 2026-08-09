@@ -249,10 +249,10 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 여기는 <b>지금 이렇게 생겼고 이런 값을 치르고 있다</b>를 적습니다.</p>
 
 <div class="arch-stats">
-  <div class="stat"><span class="n">166,536</span><span class="k">자체 코드 줄</span></div>
+  <div class="stat"><span class="n">167,075</span><span class="k">자체 코드 줄</span></div>
   <div class="stat"><span class="n">600</span><span class="k">자체 파일</span></div>
   <div class="stat"><span class="n">59,583</span><span class="k">벤더 줄</span></div>
-  <div class="stat"><span class="n">22.6%</span><span class="k">테스트 / 구현</span></div>
+  <div class="stat"><span class="n">22.7%</span><span class="k">테스트 / 구현</span></div>
 </div>
 
 <h2 class="sec">영역별 규모</h2>
@@ -265,7 +265,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
       <td>앱 코어 frontend/js</td>
       <td class="num">75,288</td>
       <td class="num">264</td>
-      <td class="pct"><span class="bar" style="--w:100.0%"></span><span class="pv">45.2%</span></td>
+      <td class="pct"><span class="bar" style="--w:100.0%"></span><span class="pv">45.1%</span></td>
     </tr>
     <tr>
       <td>벤더(제3자)</td>
@@ -275,27 +275,27 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr>
       <td>테스트</td>
-      <td class="num">30,706</td>
+      <td class="num">30,933</td>
       <td class="num">125</td>
-      <td class="pct"><span class="bar" style="--w:40.8%"></span><span class="pv">18.4%</span></td>
+      <td class="pct"><span class="bar" style="--w:41.1%"></span><span class="pv">18.5%</span></td>
     </tr>
     <tr>
       <td>오픈월드 world2</td>
       <td class="num">18,910</td>
       <td class="num">80</td>
-      <td class="pct"><span class="bar" style="--w:25.1%"></span><span class="pv">11.4%</span></td>
+      <td class="pct"><span class="bar" style="--w:25.1%"></span><span class="pv">11.3%</span></td>
     </tr>
     <tr>
       <td>문서</td>
-      <td class="num">14,665</td>
+      <td class="num">14,778</td>
       <td class="num">29</td>
-      <td class="pct"><span class="bar" style="--w:19.5%"></span><span class="pv">8.8%</span></td>
+      <td class="pct"><span class="bar" style="--w:19.6%"></span><span class="pv">8.8%</span></td>
     </tr>
     <tr>
       <td>HTML 페이지</td>
-      <td class="num">8,040</td>
+      <td class="num">8,123</td>
       <td class="num">14</td>
-      <td class="pct"><span class="bar" style="--w:10.7%"></span><span class="pv">4.8%</span></td>
+      <td class="pct"><span class="bar" style="--w:10.8%"></span><span class="pv">4.9%</span></td>
     </tr>
     <tr>
       <td>빌드 스크립트</td>
@@ -317,9 +317,9 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr>
       <td>frontend 기타</td>
-      <td class="num">3,208</td>
+      <td class="num">3,324</td>
       <td class="num">6</td>
-      <td class="pct"><span class="bar" style="--w:4.3%"></span><span class="pv">1.9%</span></td>
+      <td class="pct"><span class="bar" style="--w:4.4%"></span><span class="pv">2.0%</span></td>
     </tr>
     <tr>
       <td>CI 워크플로</td>
@@ -360,7 +360,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr class="d1">
       <td><code>*.html</code></td>
-      <td class="num">8,040</td>
+      <td class="num">8,123</td>
       <td class="num">14</td>
       <td class="desc">진입 페이지</td>
     </tr>
@@ -378,13 +378,13 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr class="d0">
       <td><code>tests/<wbr></code></td>
-      <td class="num">30,706</td>
+      <td class="num">30,933</td>
       <td class="num">125</td>
       <td class="desc">단위·통합 테스트</td>
     </tr>
     <tr class="d0">
       <td><code>docs/<wbr></code></td>
-      <td class="num">14,665</td>
+      <td class="num">14,778</td>
       <td class="num">29</td>
       <td class="desc">원칙·이력·설계</td>
     </tr>
@@ -408,7 +408,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
       <li><b>규율이 문서가 아니라 게이트다</b> 린트·타입·참조무결성·테스트가 <code>npm run gate</code> 한 번으로 돌고, 통과 스탬프가 <strong>커밋 훅에서 대조</strong>된다 — 게이트를 안 돌리거나 돌린 뒤 파일을 고치면 커밋 자체가 막힌다. 손으로 조립하던 때 같은 실패를 두 번 하고 구조로 옮겼다.</li>
       <li><b>분해해도 부르는 쪽이 안 깨진다</b> 파일을 쪼갤 때 원래 이름을 <strong>얇은 재수출 배럴</strong>로 남긴다 (<code>space-render.js</code>·<code>ui.js</code>·<code>chibi.js</code>). 내부는 자유롭게 재배치하고 소비자의 import 경로는 그대로다.</li>
       <li><b>서버에 저장하지 않는다 — 파라미터가 곧 공간</b> 전시 공간과 아바타는 JSON 스키마로 표현되어 링크·localStorage 에만 담긴다. 렌더는 기기에서 파생된다. 계정 서버도, 유출될 DB 도 없다.</li>
-      <li><b>안전망이 두껍다 — 테스트 30,706줄</b> 구현 대비 22.6% 다. 다만 <strong>통과가 검출력의 증거는 아니다</strong> — 결함을 고치면 그 결함을 일부러 되살려 테스트가 실제로 깨지는지(뮤테이션) 확인한다. 안 깨지면 게이트가 아니라 장식이다.</li>
+      <li><b>안전망이 두껍다 — 테스트 30,933줄</b> 구현 대비 22.7% 다. 다만 <strong>통과가 검출력의 증거는 아니다</strong> — 결함을 고치면 그 결함을 일부러 되살려 테스트가 실제로 깨지는지(뮤테이션) 확인한다. 안 깨지면 게이트가 아니라 장식이다.</li>
     </ul>
   </section>
   <section class="con">
