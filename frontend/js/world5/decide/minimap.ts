@@ -18,6 +18,8 @@
 import { roadDirs, type Dir } from '../parts/road-topology.js';
 import { isPlaza, plazaLandmark, type PlazaLandmark } from '../parts/plaza.js';
 import { parcelWater, type WaterClass } from './water.js';
+// 지도 반경을 격자에서 유도한다(`MAP_R_VISIBLE`).
+import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from './grid.js';
 
 /** 미니맵 한 칸(= 파셀 하나)에 그릴 것 */
 export interface MapCell {
@@ -86,3 +88,27 @@ export function nearestLandmark(
   }
   return best;
 }
+
+/**
+ * 지도 반경(파셀). **격자에서 유도한다** — 세계 끝이 언제나 지도 안에 들어온다.
+ *
+ * 감독 지시 *"월드2도 유한세계"* 가 지도에서 읽히려면 **끝이 보여야 한다.** 7(±224m)
+ * 이었을 때는 어느 방향으로 가도 지도 끝까지 육지라 무한한 세계와 구분되지 않았다.
+ *
+ * ⚠️ **여기 `8` 이 적혀 있었고 근거는 "섬 반경이 240m 이므로" 였다**(2026-08-09 전수
+ * 점검). 그 원형 섬(`ISLAND_R`)은 격자로 바뀌면서 **이미 사라진 개념**이다. world5 의
+ * 세계 반경은 320m(10 파셀)이라 8 이면 ±256m — **지도에 바다가 안 나온다.** 즉 이 값이
+ * 지키려던 바로 그 조건을 스스로 어긴 상태였고, 주석은 사라진 섬을 근거로 들고 있었다.
+ *
+ * 옛 주석은 *"`ISLAND_R / cell` 로 유도할 수도 있지만 섬이 커지면 칸이 작아져 길이 안
+ * 읽히게 되므로 손으로 정하는 편이 정직하다"* 고 적었다. **유도를 피한 그 판단이 값을
+ * 낡게 만들었다** — 정직한 쪽은 손으로 적는 것이 아니라, 무엇을 보장하는지를 산술로
+ * 적고 그 보장이 깨지면 드러나게 두는 것이다.
+ *
+ * `+1` 은 세계 끝 바깥 한 줄을 뜻한다. 딱 맞추면 가장자리가 지도 테두리에 붙어 "끝" 인지
+ * "잘린 것" 인지 구별되지 않는다 — 바다 한 줄이 보여야 끝으로 읽힌다.
+ *
+ * 세계가 아주 커지면 칸이 작아져 길이 안 읽히는 문제는 **그대로 남는다.** 그때는 크기가
+ * 아니라 표현(전체 지도 / 확대 지도 전환)을 다시 정해야 한다.
+ */
+export const MAP_R_VISIBLE = Math.max(GRID_MAX_X + 1, -GRID_MIN_X, GRID_MAX_Z + 1, -GRID_MIN_Z) + 1;

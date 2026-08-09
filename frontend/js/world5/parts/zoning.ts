@@ -32,42 +32,125 @@
 
 import { roadDirs } from './road-topology.js';
 import { isPlaza, h2 } from './plaza.js';
-import { isCentralPlaza } from '../decide/grid.js';
+import { isCentralPlaza, GRID_W, GRID_H } from '../decide/grid.js';
 import { parcelWater } from '../decide/water.js';
 
-/**
- * 도심 반경(파셀). 중앙 광장에서 이 거리 안이 도심이다.
- *
- * 6 파셀 = 192m. 세계가 30×30(960m) 이므로 **한 변의 40%** 가 도심이다. 이보다 좁으면
- * 도심이 광장 몇 칸 수준이라 "지구" 로 안 읽히고, 넓으면 도심 아닌 곳이 없어져 대비가
- * 사라진다.
- *
- * 체비쇼프 거리(`max(|px|,|pz|)`)를 쓴다 — 격자가 사각형이므로 도심도 사각형이어야
- * 블록 경계와 어긋나지 않는다. 원형으로 자르면 모서리 파셀만 애매하게 반쯤 걸린다.
- */
-export const DOWNTOWN_R = 6;
+// ══════════════════════════════════════════════════════════════════════════
+// 도심 밀도 — **프리셋 하나로 묶는다** (팀장 판정 (다), 2026-08-09)
+// ══════════════════════════════════════════════════════════════════════════
+//
+// ── 무엇이 잘못돼 있었나 ─────────────────────────────────────────────────────
+// `DOWNTOWN_R = 6` 은 world2(30×30) 시절 리터럴이었고 주석은 *"세계가 30×30(960m)
+// 이므로 한 변의 40%"* 라고 적고 있었다. world5 가 20×20 으로 줄면서 **값은 그대로인데
+// 세계가 줄어** 도심이 18.8% → 42.3% 로 2.25배가 됐다. 같은 원인이 이번 회차에만
+// 강 진폭·공원 배치·NPC 스폰 범위·미니맵 반경에서 났다 — 다섯 번째다.
+//
+// ── ★ 명목 비율은 거짓말한다 (팀장 조건 3, 실측으로 확인) ────────────────────
+// 도심이 42.3% 라는 것은 **명목**이다. `isTowerParcel` 이 광장·물·길없음을 배제하고
+// 공원에는 타워가 안 서므로, R=6 의 명목 169칸에서 실제로 타워가 설 수 있는 칸은 **89**
+// 뿐이다(공원 20 · 광장 16 · 물/물가 44 를 뺀다). 실효는 22.3% 다.
+//
+// 그래서 **프리셋의 축은 면적 비율이 아니라 마천루 실측 개수**다. 비율만 보고 R 을 고르면
+// 스카이라인이 몇 채로 서는지를 아무도 모른 채 값이 정해진다 — 실제로 브리프에 적은
+// 기댓값(R=4 에서 9.7기)이 배제 조건을 안 뺀 값이라 **틀렸고, 실측은 3기였다.**
+//
+// ── 실측표 (격자 20×20, 기본 레이아웃) ──────────────────────────────────────
+//
+//   share   R   실효 도심   마천루   비고
+//   0.19    4      34         3      P_CORE 0.12 — 도심이 좁고 마천루가 드물다
+//   0.19    4      34         8      P_CORE 0.24 — **기본**. 현행 마천루 수를 보존한다
+//   0.19    4      34        10      P_CORE 0.30
+//   0.42    6      89         8      P_CORE 0.12 — 현행(축소 미반영). 도심만 넓다
+//   0.42    6      89        15      P_CORE 0.20
+//
+// **R 을 줄이면서 확률을 함께 올리는 것이 "축소를 따라간다" 의 진짜 의미다.** 도심 면적
+// 비율만 보존하고 확률을 그대로 두면 마천루가 8기 → 3기로 줄어, 감독 지시 *"진짜
+// 뉴욕처럼"* 과 정면으로 부딪힌다. 팀장이 프리셋으로 묶으라고 한 이유가 이것이다 —
+// *"노브 3개를 따로 물으면 판정이 아니라 숙제가 된다."*
+//
+// ⚠️ **어느 프리셋에서도 스폰 far 반경(76.8m) 안의 마천루는 0기다.** 중앙 광장 3×3(96m)이
+// 그 반경을 통째로 먹기 때문이고, 이 값으로는 풀리지 않는다 — 광장을 채우는 일(타임스퀘어)
+// 과 랜드마크 1기를 고정 좌표로 두는 일이 그 처방이다(태스크 #14).
+//
+// ⚠️ **이 노브는 감독 판정과 함께 제거한다**(태스크 #13). 확정값을 상수로 굳히고 판정을
+// 값 옆에 적는다 — 남으면 그때부터 장식이다.
+
+/** 도심 밀도 프리셋. **감독이 카드로 고르는 단위**이고, 낱개 노브를 노출하지 않는다 */
+export interface DowntownPreset {
+  /** 도심이 세계에서 차지하는 **명목** 면적 비율. 반경은 여기서 유도한다 */
+  readonly share: number;
+  /** 도심 안 고층 타워 확률 */
+  readonly core: number;
+}
+
+export const DOWNTOWN_PRESETS = {
+  /** 마천루 3기. 도심이 좁고 랜드마크가 드물다 — 걷다 만나면 사건이 된다 */
+  calm: { share: 0.19, core: 0.12 },
+  /** 마천루 8기. **기본값** — 도심은 좁히되(축소 반영) 마천루 수는 현행을 보존한다 */
+  city: { share: 0.19, core: 0.24 },
+  /** 마천루 15기. 도심이 넓고 빽빽하다 — 참고안의 *"꽉 찬 블록"* 쪽 */
+  dense: { share: 0.42, core: 0.20 },
+} as const satisfies Record<string, DowntownPreset>;
+
+export type DowntownPresetName = keyof typeof DOWNTOWN_PRESETS;
+export const DEFAULT_DOWNTOWN_PRESET: DowntownPresetName = 'city';
 
 /**
- * 고층 타워 확률. **도심 안과 밖이 다르다** — 이 차이가 곧 스카이라인의 형태다.
+ * 명목 면적 비율에서 도심 반경(파셀)을 유도한다. **리터럴을 적지 않는 자리다.**
  *
- * ── 이 값들은 아직 실측되지 않았다 (정직하게) ───────────────────────────────
- * 디자이너가 제안한 시작값이고, `PLAZA_P` 처럼 "최근접 거리 중앙값" 을 실측해 고른 것이
- * **아니다.** 광장은 601×601 격자에 400지점을 샘플링해 안개 가시거리와 비교했는데
- * (`plaza.ts` 의 `PLAZA_P` 주석), 타워는 그 작업을 아직 안 했다.
+ * 도심은 체비쇼프 반경이므로 `(2R+1)²` 칸이다. 그것이 `share × GRID_W × GRID_H` 가
+ * 되게 하는 R 을 풀면 `R = (√(share·W·H) − 1) / 2` 이고, 칸은 정수이므로 반올림한다.
  *
- * 대신 **테스트가 분포를 못 박는다**(`tests/world2-zoning.test.ts`) — 도심 밀도가 외곽의
- * 몇 배인지, 도심에서 타워끼리 얼마나 떨어져 있는지를 단언한다. 값을 바꾸면 그 단언이
- * 깨지므로, 바꿀 때 "무엇이 달라지는지" 를 보고 바꾸게 된다.
+ * 체비쇼프 거리를 쓰는 이유는 그대로다 — 격자가 사각형이므로 도심도 사각형이어야
+ * 블록 경계와 어긋나지 않는다. 원형으로 자르면 모서리 파셀만 애매하게 반쯤 걸린다.
  */
-export const TOWER_P_CORE = 0.12;
-/** 도심 밖. 0 이 아닌 것은 의도다 — 외따로 선 타워 하나가 도시의 끝을 알려준다 */
+export function downtownRadius(share: number): number {
+  return Math.round((Math.sqrt(share * GRID_W * GRID_H) - 1) / 2);
+}
+
+// ── 현재 프리셋 ─────────────────────────────────────────────────────────────
+//
+// ⚠️ **이 파일에서 유일한 가변 상태다.** 순수 판정 파일에 상태를 두는 것은 규율에 어긋
+// 나지만, 대안이 더 나빴다: 프리셋을 인자로 흘리면 `isTowerParcel` → `tower.place` →
+// `building.place` 까지 서명이 번지고, 그 셋은 `PartSpec` 계약이라 파츠 전체가 바뀐다.
+//
+// 안전한 이유는 **쓰기가 부팅 한 번**이라는 것이다(`world5-boot.ts` 가 URL 을 읽어
+// 부른다). 파셀 배치는 스트리밍 시점에 계산되므로 그 뒤로는 상수와 구별되지 않는다.
+// 그리고 이 상태는 **노브와 함께 사라진다**(태스크 #13) — 영구 구조가 아니다.
+let current: DowntownPreset = DOWNTOWN_PRESETS[DEFAULT_DOWNTOWN_PRESET];
+
+/**
+ * 프리셋을 고른다. **부팅 시 한 번만 부른다** — 이미 만들어진 파셀은 다시 계산되지 않아
+ * 도중에 바꾸면 이미 로드된 구역과 새 구역이 다른 도시가 된다.
+ *
+ * @param name 프리셋 이름. 모르는 이름이면 기본값으로 떨어진다(fail-closed).
+ * @returns 실제로 적용된 이름
+ */
+export function applyDowntownPreset(name: string | null | undefined): DowntownPresetName {
+  const key = (name ?? '') as DowntownPresetName;
+  const picked: DowntownPresetName = key in DOWNTOWN_PRESETS ? key : DEFAULT_DOWNTOWN_PRESET;
+  current = DOWNTOWN_PRESETS[picked];
+  return picked;
+}
+
+/** 지금 적용된 도심 반경(파셀). 프리셋의 `share` 에서 유도된다 */
+export function downtownR(): number {
+  return downtownRadius(current.share);
+}
+
+/**
+ * 도심 밖 고층 타워 확률. **프리셋에 안 넣었다 — 축이 다르다.**
+ *
+ * 0 이 아닌 것은 의도다: 외따로 선 타워 하나가 도시의 끝을 알려준다. 그 역할은 도심이
+ * 넓든 좁든 같으므로 프리셋마다 다를 이유가 없고, 넣으면 감독이 고를 것이 하나 늘 뿐이다.
+ */
 export const TOWER_P_OUTER = 0.01;
 
 const SALT_TOWER = 0x7f4a7c15;
 
-/** 중앙 광장 기준 체비쇼프 거리가 `DOWNTOWN_R` 이하인가 */
+/** 중앙 광장 기준 체비쇼프 거리가 도심 반경 이하인가 */
 export function isDowntown(px: number, pz: number): boolean {
-  return Math.max(Math.abs(px), Math.abs(pz)) <= DOWNTOWN_R;
+  return Math.max(Math.abs(px), Math.abs(pz)) <= downtownR();
 }
 
 /**
@@ -88,6 +171,6 @@ export function isTowerParcel(px: number, pz: number, cellX: number, cellZ: numb
   if (isPlaza(px, pz)) return false;
   if (roadDirs(px, pz).length === 0) return false;
   if (parcelWater(px, pz, cellX, cellZ) !== 'dry') return false;
-  const p = isDowntown(px, pz) ? TOWER_P_CORE : TOWER_P_OUTER;
+  const p = isDowntown(px, pz) ? current.core : TOWER_P_OUTER;
   return h2(px, pz, SALT_TOWER) / 4294967296 < p;
 }

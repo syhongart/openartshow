@@ -22,6 +22,7 @@
 import { inGrid } from './grid.js';
 import { parcelWater } from './water.js';
 import { roadDirs, type Dir } from '../parts/road-topology.js';
+import { GRID_W, GRID_H } from './grid.js';
 
 /** 격자 좌표 한 칸 */
 export interface Cell {
@@ -218,3 +219,21 @@ export function reachFor(
   }
   return max;
 }
+
+/**
+ * 인원이 많을 때 밴드를 넓힐 수 있는 **상한**(셀). **격자에서 유도한다.**
+ *
+ * 세계 한 변의 절반이면 어디에 서 있든 세계 전체가 후보에 든다. 더 키워도 후보가 안
+ * 늘고 루프만 길어진다 — 그래서 여기서 멈춘다.
+ * (`decide/grid.ts` 가 격자 밖을 걸러 주므로 넘겨도 안전하지만, 무의미한 순회다.)
+ *
+ * ⚠️ **여기 `15` 가 적혀 있었고 그것이 30×30 시절 값이었다**(2026-08-09 전수 점검).
+ * 주석은 *"세계 한 변이 30 파셀이므로 그 절반"* 이라고 유도를 **설명**하고 있었지만
+ * 값은 리터럴이라, world5 가 20×20 으로 줄었을 때 따라오지 않았다. 설명은 유도가
+ * 아니다 — 같은 형태가 이번 회차에 다섯 곳에서 났다(강 진폭·공원 배치·도심 반경·
+ * 미니맵 반경·여기).
+ *
+ * 가로세로가 다를 수 있으므로 **큰 쪽**을 쓴다. 작은 쪽을 쓰면 긴 축에서 세계 끝이
+ * 후보에서 빠지고, 그 빠짐은 "NPC 가 저쪽에는 잘 안 간다" 로만 나타나 원인을 못 짚는다.
+ */
+export const MAX_SPAWN_REACH = Math.ceil(Math.max(GRID_W, GRID_H) / 2);

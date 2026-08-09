@@ -32,7 +32,7 @@
 import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import {
-  nextDir, stepOf, pickNearby, yawOf, reachFor, cellKey, type Cell,
+  nextDir, stepOf, pickNearby, yawOf, reachFor, cellKey, MAX_SPAWN_REACH, type Cell,
 } from '../decide/npc-walk.js';
 import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
 import {
@@ -131,14 +131,9 @@ export const SPAWN_REACH = Math.max(1, Math.floor(FOG_NEAR_CELLS / Math.SQRT2));
  */
 export const SPAWN_RING = SPAWN_REACH;
 
-/**
- * 인원이 많을 때 밴드를 넓힐 수 있는 **상한**(셀).
- *
- * 세계 한 변이 30 파셀이므로 그 절반이면 어디에 서 있든 세계 전체가 후보에 든다.
- * 더 키워도 후보가 안 늘고 루프만 길어진다 — 그래서 여기서 멈춘다.
- * (`decide/grid.ts` 가 격자 밖을 걸러 주므로 넘겨도 안전하지만, 무의미한 순회다.)
- */
-const MAX_SPAWN_REACH = 15;
+// `MAX_SPAWN_REACH` 는 `decide/npc-walk.ts` 로 옮겼다 — 판정은 `decide/`, 집행은
+// 여기다. 이 파일은 `three/webgpu` 를 import 하므로 단위테스트가 닿지 못하고, 그래서
+// 격자 유도가 게이트 없이 남을 뻔했다(2026-08-09 전수 점검에서 리터럴로 발견된 값이다).
 
 /** 목표 도달 판정(m) */
 const ARRIVE = 0.35;

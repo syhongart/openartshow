@@ -13,21 +13,12 @@
 // 그마저도 60fps 로 돌릴 이유가 없어 0.1초 간격으로 제한한다. 미니맵이 프레임 예산을
 // 먹으면 본말이 뒤집힌다.
 
-import { mapCells, nearestLandmark } from '../decide/minimap.js';
+import { mapCells, nearestLandmark, MAP_R_VISIBLE as R_VISIBLE } from '../decide/minimap.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
-/**
- * 지도 반경(파셀). 8 = 17×17 칸 = **±256m**.
- *
- * 섬 반경이 240m 이므로 이 값이면 **섬 전체가 지도 한 장에 들어온다.** 감독 지시
- * *"월드2도 유한세계"* 가 지도에서 읽히려면 끝이 보여야 한다 — 7(±224m)이었을 때는
- * 어느 방향으로 가도 지도 끝까지 육지라 무한한 세계와 구분되지 않았다.
- *
- * 섬이 커지면 여기도 함께 봐야 한다. `ISLAND_R / cell` 로 유도할 수도 있지만 그러면
- * 섬이 커질 때 칸이 자동으로 작아져 길이 안 읽히게 된다 — 그때는 크기가 아니라 표현
- * (전체 지도 / 확대 지도 전환)을 다시 정해야 하므로, 손으로 정하는 편이 정직하다.
- */
-const R_VISIBLE = 8;
+// `R_VISIBLE` 은 `decide/minimap.ts` 로 옮겼다 — 판정은 `decide/`, 집행은 여기다.
+// 이 파일은 캔버스 DOM 을 잡으므로 단위테스트가 닿지 못하고, 그래서 격자 유도가 게이트
+// 없이 남을 뻔했다(2026-08-09 전수 점검에서 리터럴로 발견된 값이다).
 
 /**
  * 실제로 훑는 반경(파셀). **화면에 보이는 반경보다 넓다.**
