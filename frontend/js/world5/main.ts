@@ -33,7 +33,10 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import { fogBand } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { DEFAULT_BANDS } from './decide/lod.js';
-import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
+// **`MAX_H` 가 아니라 `WORLD_MAX_H` 다.** 랜드마크 마천루(96m)가 일반 상한(60m)을
+// 넘으므로, 옛 이름을 그대로 뒀다면 그 한 채의 꼭대기 그림자만 소리 없이 잘렸다 —
+// `tower.ts`·`clocktower.ts`·`bridge.ts` 가 셋 다 경고하고 있던 그 함정이다.
+import { WORLD_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
 // 원인을 짐작하기 어렵다(검수관이 잡은 열 번째 지점).
@@ -75,7 +78,7 @@ const SHADOW_MAP = 1024;
  * "그림자가 없다"로만 보여 원인을 짚기 어렵다.
  */
 const SHADOW = shadowFrustum(
-  DEFAULT_LAYOUT.cellX, DEFAULT_BANDS.nearExit, TOWER_MAX_H, SHADOW_MAP,
+  DEFAULT_LAYOUT.cellX, DEFAULT_BANDS.nearExit, WORLD_MAX_H, SHADOW_MAP,
 );
 
 /*

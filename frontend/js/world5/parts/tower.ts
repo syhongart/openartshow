@@ -38,7 +38,8 @@
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { roadDirs, SETBACK, LAMP_CLEARANCE, EAVE } from './road-topology.js';
 import { isTowerParcel } from './zoning.js';
-import { isCentralPark } from '../decide/grid.js';
+import { isCentralPark, isLandmarkParcel } from '../decide/grid.js';
+import { parcelWater } from '../decide/water.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 import { V, TINTS, TINT_SET } from './palette.js';
 import { hexCss, greyCss, MASK_BLOCK } from './color.js';
@@ -92,6 +93,77 @@ const MIN_H = 32;
  */
 export const MAX_H = 60;
 
+// ══════════════════════════════════════════════════════════════════════════
+// 랜드마크 — **어디서 봐도 보이는 한 기** (감독 지시 2026-08-08)
+// ══════════════════════════════════════════════════════════════════════════
+//
+// *"엠파이어 빌딩 등 뉴욕 상징물을 넣어줘."*
+//
+// ── 무엇이 문제였나 ─────────────────────────────────────────────────────────
+// 위 `MIN_H`~`MAX_H`(32~60m)로 세계에 여덟 기가 서는데 **전부 고만고만하다.** 높이가
+// 1.88배 안에서 흩어질 뿐이라 어느 하나도 "저기가 중심이다" 를 말하지 못하고, 그러면
+// 도시에 방향 감각이 안 생긴다. 감독이 말한 상징물은 스카이라인의 **최고점**이다.
+//
+// ── 왜 배치가 아니라 높이로 푸는가 ──────────────────────────────────────────
+// 자리는 `decide/grid.ts` 의 `isLandmarkParcel` 이 좌표로 못 박는다(확률로는 "딱 한 기"
+// 를 만들 수 없다 — 그쪽 주석에 유도가 있다). 여기서는 그 칸에 **같은 아르데코 양식의
+// 가장 큰 개체**를 세운다. 새 파츠를 만들지 않은 이유가 셋이다:
+//   · 개수 불변식(`smoke:vite` `[7]`)에 파츠가 하나 늘지 않는다 — 위험이 가장 작다
+//   · `isTowerParcel` 의 배제 조건(광장·물·길없음)을 그대로 물려받는다
+//   · **상징물은 그 도시의 건물이어야 한다.** 양식이 다르면 랜드마크가 아니라 이물이다
+//
+// ── 높이 96m 의 유도 ────────────────────────────────────────────────────────
+// 일반 개체는 32~60m 로 흩어지고 그 비가 1.88 이다. 랜드마크가 최상위 개체(60m)보다
+// **그 비만큼 크면** 확실히 다른 위계가 되지만(113m) 비례가 7:1 을 넘어 가늘어진다 —
+// 위 `MIN_H` 주석이 정한 이 파츠의 비례 범위가 2.5:1 ~ 6.7:1 이다.
+//
+// 그래서 **비례를 먼저 고정하고 높이를 그 안에서 최대로 잡는다**: 6:1 은 범위 안에
+// 남는 가장 가는 값이고, 바닥은 배치 부등식이 허락하는 한계에서 나온다.
+//
+//     파셀 반폭 16 − (SETBACK 6.0 + LAMP_CLEARANCE 0.9) − EAVE 0.6 = 8.5m
+//     → 한 변 17m 까지 가능. 여기서 16m 를 쓴다(아래 `LANDMARK_SIDE`)
+//     → 높이 = 16 × 6 = 96m = `MAX_H` 의 1.6배
+//
+// ⚠️ **이 값은 화면에서 확인되지 않았다.** 헤드리스는 WebGL 이고 감독 기기는 WebGPU 라
+// 톤매핑·안개 뒤의 인상이 같지 않다 — *"압도적인가"* 는 감독 화면이 유일한 판정
+// 수단이다. 여기서 보증하는 것은 **구조가 성립한다**(딱 한 기다·스폰에서 로드된다·
+// 그림자가 안 잘린다)까지다.
+
+/** 랜드마크의 높이:바닥 비. 이 파츠의 비례 범위(2.5~6.7:1) 안에서 가장 가는 값 */
+const LANDMARK_RATIO = 6;
+/**
+ * 랜드마크의 바닥 한 변(m). 배치 부등식의 한계(17m)에서 한 뼘 물러선 값이다.
+ *
+ * 물러선 몫은 여유가 아니라 **도로 폭이 바뀔 여지**다 — `road-topology.ts` 의
+ * `ROAD_SEG` 는 감독 지시로 이미 두 번 바뀌었고, 그때마다 `SETBACK` 이 따라 움직인다.
+ * 한계에 딱 붙여 두면 다음 지시 한 줄에 랜드마크가 **소리 없이 사라진다**(아래
+ * `place` 의 `maxHalf` 가드가 `[]` 를 돌려주고, 그 실패는 아무 카운터에도 안 잡힌다 —
+ * 그 가드 주석이 잃은 관측을 기록하고 있다).
+ */
+const LANDMARK_SIDE = 16;
+
+/** 랜드마크의 높이(m). 비례와 바닥에서 유도한다 — 리터럴 96 을 적지 않는다 */
+export const LANDMARK_H = LANDMARK_SIDE * LANDMARK_RATIO;
+
+/**
+ * **세계에서 가장 높은 구조물(m).** 그림자 카메라가 이 값을 프러스텀 깊이로 삼는다
+ * (`main.ts` 의 `shadowFrustum(…, WORLD_MAX_H, …)`).
+ *
+ * ⚠️ `MAX_H` 가 아니라 이것을 쓴다. 랜드마크가 생기기 전에는 둘이 같았고 `main.ts` 가
+ * `MAX_H` 를 직접 읽고 있었는데, 그대로 뒀다면 **96m 짜리의 꼭대기 그림자만 소리 없이
+ * 잘렸을 것**이다 — 화면에서 원인을 짚기 가장 어려운 형태이고, 이 파일과
+ * `clocktower.ts`·`bridge.ts` 가 셋 다 그 함정을 경고하고 있었다.
+ *
+ * `Math.max` 로 유도하는 이유는 어느 쪽이 더 높아질지 모르기 때문이다. 일반 상한을
+ * 랜드마크보다 높이는 변경이 와도 이 값이 저절로 따라온다.
+ *
+ * ── 무엇이 바뀌고 무엇이 안 바뀌나 ────────────────────────────────────────
+ * `shadowFrustum` 에서 이 값은 `depth = half + maxHeight` 에만 쓰인다. **반폭(`half`)은
+ * 안 건드리므로 텍셀 크기 = 그림자 경계의 선명도가 그대로다** — 감독이 요구한
+ * 하드라이트(2026-08-02)를 되돌리지 않는다. 늘어나는 것은 정투영의 깊이 범위뿐이다.
+ */
+export const WORLD_MAX_H = Math.max(MAX_H, LANDMARK_H);
+
 export const tower: PartSpec = {
   kind: 'tower',
   // far 까지 그린다. 고층의 의미는 **멀리서 보이는 것**이라, near 에만 두면 다가가야
@@ -134,10 +206,25 @@ export const tower: PartSpec = {
   maxPerParcel: () => 1,
 
   place: ({ px, pz, rnd, o }) => {
-    if (!isTowerParcel(px, pz, o.cellX, o.cellZ)) return [];
+    // **랜드마크는 확률을 묻지 않는다.** 자리를 격자가 좌표로 정했으므로 여기서 다시
+    // 뽑으면 그 결정이 무효가 된다. 물·길없음 같은 지형 배제는 아래에서 함께 받는다.
+    const landmark = isLandmarkParcel(px, pz);
+    if (!landmark && !isTowerParcel(px, pz, o.cellX, o.cellZ)) return [];
     // 공원 안에는 마천루가 서지 않는다. `isTowerParcel` 은 확률 판정이라 공원을
     // 모르고, 모르면 잔디 한가운데 60m 짜리가 선다.
     if (isCentralPark(px, pz)) return [];
+    // 랜드마크 칸이라도 **물 위에는 안 세운다.** `isTowerParcel` 이 갖고 있던 배제를
+    // 확률과 함께 건너뛰었으므로 지형 조건만 여기서 되받는다 — 좌표를 못 박는다는 것이
+    // "바다에도 세운다" 는 뜻은 아니다.
+    //
+    // ⚠️ **이 가지는 지금 도달 불가능하다** — `LANDMARK_PARCEL`(2,0)이 뭍이라 조건이
+    // 참이 되는 입력이 없고, 이 줄을 지우는 뮤테이션은 아무 검사도 깨뜨리지 못한다
+    // (실측했다). 위 `maxHalf` 가드와 같은 성격이고, 처방도 같다:
+    // `tests/world5-times-square.test.ts` 가 **전제**(그 칸이 뭍이라는 것)를 대신
+    // 단언한다. 강 진폭·바다 경계가 이 칸을 적시는 날 그 검사가 먼저 빨간불이 되고,
+    // 그때 비로소 이 줄이 실효를 갖는다. **검출력이 지금 0 이라는 사실을 적어 둔다** —
+    // 안 적으면 다음 사람이 이 방어를 검사가 지키는 것으로 읽는다.
+    if (landmark && parcelWater(px, pz, o.cellX, o.cellZ) !== 'dry') return [];
 
     // ── 자리는 파셀 중앙 고정이다 ──────────────────────────────────────────
     // 사분면에 뽑지 않는다. 이유가 둘이다:
@@ -151,12 +238,29 @@ export const tower: PartSpec = {
     //
     // 높이와 바닥을 **같은 난수로 상관시킨다** — 독립으로 뽑으면 "낮고 뚱뚱한" 개체가
     // 나와 비례가 2.5:1 아래로 내려가고, 그러면 타워가 아니라 창고로 보인다.
+    //
+    // ⚠️ **난수는 랜드마크에서도 같은 횟수를 소비한다.** 아래에서 값을 덮어쓸 뿐
+    // `rnd()` 호출을 건너뛰지 않는다 — 이 파츠의 난수 흐름은 파셀 전용이라 지금은
+    // 건너뛰어도 다른 파셀에 영향이 없지만, `place` 가 나중에 인스턴스를 둘 이상
+    // 내게 되면 그 순간 흐름이 어긋나고 증상은 "랜드마크 파셀만 배치가 다르다" 로
+    // 나타난다(이 저장소가 `salt` 를 파츠마다 가른 것이 같은 축의 방어다).
     const bulk = rnd();
-    const side = MIN_SIDE + bulk * (MAX_SIDE - MIN_SIDE);
+    const rawSide = MIN_SIDE + bulk * (MAX_SIDE - MIN_SIDE);
     // 높이는 조금 더 흔든다 — 바닥이 같아도 높이가 다르면 스카이라인에 굴곡이 생긴다.
-    const h = MIN_H + (bulk * 0.6 + rnd() * 0.4) * (MAX_H - MIN_H);
-    const ry = Math.floor(rnd() * 4) * (Math.PI / 2);
-    const tone = Math.floor(rnd() * TINT_SET.length);
+    const rawH = MIN_H + (bulk * 0.6 + rnd() * 0.4) * (MAX_H - MIN_H);
+    const rawRy = Math.floor(rnd() * 4) * (Math.PI / 2);
+    const rawTone = Math.floor(rnd() * TINT_SET.length);
+
+    const side = landmark ? LANDMARK_SIDE : rawSide;
+    const h = landmark ? LANDMARK_H : rawH;
+    // 랜드마크는 회전을 흔들지 않는다. 개체가 하나뿐이라 **다양성을 만들 상대가 없고**,
+    // 회전이 고정이면 창 스트립이 있는 면이 어느 방위에 오는지가 결정론이 된다 —
+    // 스크린샷 대조로 회귀를 볼 수 있는 것은 그 성질 덕이다.
+    const ry = landmark ? 0 : rawRy;
+    // 틴트는 가장 밝은 것(`TINTS.plain`, 편차 없음)으로 고정한다. 곱셈기이므로 이것이
+    // 석재 정점색을 그대로 통과시키는 유일한 값이고, 랜드마크가 이웃보다 어두워질
+    // 여지를 없앤다.
+    const tone = landmark ? 0 : rawTone;
 
     // 도로가 있는 파셀에서 중앙 고정이 셋백을 지키는지 **유도로 확인한다.**
     // 중앙에서 파셀 변까지 `cellX/2`, 거기서 도로 셋백과 가로등 여유를 빼면 설 수 있는

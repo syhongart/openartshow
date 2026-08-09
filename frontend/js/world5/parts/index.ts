@@ -39,6 +39,7 @@ import { tree } from './tree.js';
 import { lamp } from './lamp.js';
 import { fountain } from './fountain.js';
 import { clocktower } from './clocktower.js';
+import { adfacade } from './adfacade.js';
 import { bridge } from './bridge.js';
 import { bench } from './bench.js';
 import { planter } from './planter.js';
@@ -57,7 +58,11 @@ export const PARTS = [
   // 중앙 광장이 겹치지 않아 다툴 일이 없다 — 순서는 그 사실이 언젠가 바뀔 때를 위한
   // 방어다(`tower` 를 `building` 앞에 둔 것과 같은 성격).
   bridge,
-  fountain, clocktower,
+  // 광장 한가운데(분수대·광고 타워) 다음에 광장 **테두리**(광고 파사드)다. 셋 다
+  // 자리가 격자 고정이라 서로 양보할 여지가 없고, 실제로 다투지도 않는다 — 파사드는
+  // 파셀 중심에서 `rimInset`(7.9m)만큼 물러나 서고 광고 타워의 실루엣 반경은 3.6m 다.
+  // 순서는 **뒤에 오는 나무·벤치가 이 셋을 전부 피하게** 만드는 것이 목적이다.
+  fountain, clocktower, adfacade,
   // 타워는 건물보다 **앞**이다. 파셀당 한 채가 중앙 고정이라 자리를 양보할 수 없고,
   // 건물은 사분면에서 뽑으므로 물러설 여지가 있다. 다만 지금은 `zoning.ts` 가 두
   // 파셀 집합을 배타로 가르므로 실제로 겹칠 일은 없다 — 순서는 그 판정이 언젠가

@@ -180,8 +180,50 @@ describe('riverFlowAt — 유도가 곡선과 맞는가', () => {
   // 약속이 깨졌고, 인자를 추가했다. **그 추가가 의미를 갖는지**를 여기서 본다 —
   // 안에서 상수 셀을 쓰고 인자를 무시해도 컴파일은 통과하고 흐름만 어긋난다.
   it('셀 크기에 실제로 의존한다 — 인자를 무시하면 깨진다', () => {
+    // ⚠️ 표본은 **정의역 안**이어야 한다. 처음에는 `CZ * 2`(=64)를 썼는데 그것은
+    //    `2 × RIVER_HALF`(48) 밖이라 유도가 퇴화하는 영역이다 — 검사가 그 위에 서
+    //    있었다(검수관 C2). 지금은 `swingBySlope` 가 거기서 던지므로 이 검사는 예외로
+    //    깨지겠지만, **깨지는 이유가 재려던 것과 다르면 그것은 검사가 아니다.**
     const a = riverFlowAt(200, CZ);
-    const b = riverFlowAt(200, CZ * 2);
+    const b = riverFlowAt(200, CZ * 0.75);
     expect(a.z).not.toBeCloseTo(b.z, 4);
+  });
+});
+
+describe('유도의 정의역 — 밖에서는 조용히 퇴화하지 않고 던진다 (검수관 C2)', () => {
+  it('정의역 밖 셀에서 `riverCenterZ` 가 던진다', () => {
+    // `cell ≥ 2 × RIVER_HALF` 면 파셀이 강을 표현할 수 없다. 실측(검수관):
+    // cell=48 에서 굽이가 0(직선), cell=64 에서 강 덩어리가 2개(끊김)였다.
+    expect(() => riverCenterZ(0, 2 * RIVER_HALF)).toThrow(RangeError);
+    expect(() => riverCenterZ(0, 2 * RIVER_HALF + 16)).toThrow(RangeError);
+    // 경계 바로 안쪽은 멀쩡해야 한다 — 던지는 범위가 넓으면 그것도 결함이다.
+    expect(() => riverCenterZ(0, 2 * RIVER_HALF - 8)).not.toThrow();
+  });
+
+  it('메시지가 무엇을 해야 하는지 말한다 — 던지기만 하면 다음 사람이 막힌다', () => {
+    let msg = '';
+    try { riverCenterZ(0, 2 * RIVER_HALF); } catch (e) { msg = String(e); }
+    // 정의역 값과 함께 "무엇을 다시 정해야 하는지" 가 있어야 한다.
+    expect(msg).toContain(String(2 * RIVER_HALF));
+    expect(msg).toContain('RIVER_HALF');
+  });
+
+  // ★ P2 — `RIVER_SOUTH_BANK` 제약은 기본 레이아웃에서 **지지 않는다**(64 vs 35.1).
+  //   지지 않는 제약은 검출력이 0 이라 "죽은 코드" 로 오해받고 지워지기 쉽다.
+  //   검수관 실측: `cell ≤ 28` 에서 `byBank` 가 이긴다. 그 셀을 표본으로 넣어 닫는다.
+  it('작은 셀에서는 남쪽 둔치 제약이 이긴다 — 죽은 제약이 아니다', () => {
+    const SMALL = 16;
+    // 그 셀에서 남쪽 뭍이 정확히 `RIVER_SOUTH_BANK` 줄로 깎인다 — 기울기 제약이
+    // 이겼다면 더 넉넉했을 것이다(기본 셀에서는 4줄이다).
+    let minRows = Infinity;
+    for (let px = GRID_MIN_X; px <= GRID_MAX_X; px++) {
+      let rows = 0;
+      for (let pz = GRID_MAX_Z; pz >= GRID_MIN_Z; pz--) {
+        if (parcelWater(px, pz, SMALL, SMALL) === 'water') break;
+        rows++;
+      }
+      minRows = Math.min(minRows, rows);
+    }
+    expect(minRows).toBe(RIVER_SOUTH_BANK);
   });
 });

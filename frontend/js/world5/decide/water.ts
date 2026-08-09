@@ -177,6 +177,12 @@ export function worldHalfExtent(cell: number): number {
  *
  * 그래서 진폭도 파장도 **세계 크기에 대한 비율**로 적는다. 격자를 다시 바꾸면 강의
  * 성격(세계를 한 번 가로지르는 굽이)이 저절로 보존된다.
+ *
+ * ⚠️ **단 셀 크기에는 정의역이 있다** — `cell < 2 × RIVER_HALF`(48). 그 밖에서는
+ * 파셀이 강을 표현할 수 없어 굽이가 사라지거나 강이 끊긴다. 위 문장을 "어떤 격자에서도
+ * 저절로 따라온다" 로 읽으면 안 된다(검수관 C2, 2026-08-09 — 그 일반 보증이 실측으로
+ * 반증됐다). 유도와 그 근거는 `swingBySlope` 에 있고, 정의역을 벗어나면 그 함수가
+ * **던진다.** `tests/world5-water.test.ts` 가 양쪽을 다 검사한다.
  */
 const RIVER_WAVE_SHAPE = [
   /**
@@ -322,9 +328,41 @@ function riverSwing(cell: number): number {
  * 사이에서 **공통 칸이 사라져** 강이 끊겼다. 그래서 실측이 아니라 **상한**으로 적는다.
  */
 function swingBySlope(cell: number): number {
+  const limit = riverSlopeLimit(cell);
+  // ── ★ 정의역 밖에서 **조용히 퇴화한다** — 그래서 시끄럽게 터뜨린다 (검수관 C2) ──
+  //
+  // `riverSlopeLimit = 2·RIVER_HALF/cell − 1` 은 `cell ≥ 2·RIVER_HALF`(48)에서 0 이하가
+  // 된다. 그러면 이 함수가 **음수**를 돌려주고 `Math.min` 이 그것을 그대로 고른다 —
+  // 하한이 없기 때문이다. 검수관 실측:
+  //
+  //   cell=32  limit= 0.500  중심선  96.0~155.7  강 덩어리 1  ← 정상
+  //   cell=48  limit= 0.000  중심선 128.0~128.0  강 덩어리 1  ← 굽이 0. 직선이 됐다
+  //   cell=64  limit=−0.250  중심선 100.3~160.0  강 덩어리 2  ← **끊겼다**
+  //
+  // **이 함수가 존재하는 이유가 정확히 그 지점에서 뒤집힌다.** 강이 끊기는 것을 막으려고
+  // 만든 상한이 강을 끊는다.
+  //
+  // 그리고 이 파일 머리말은 *"격자를 다시 바꾸면 강의 성격이 저절로 보존된다"* 라고
+  // **일반 보증**으로 적고 있었다. 정의역 밖에서 거짓인 문장이고, 이 저장소는 그 형태로
+  // 이미 세 번 값을 치렀다(behind-flag 괄호 · hookify 검출력 · `main` unprotected).
+  // 다음 사람은 "저절로 따라온다" 를 읽고 셀을 바꾼다.
+  //
+  // **하한을 두지 않고 던지는 이유**: 하한은 또 하나의 조용한 퇴화다(굽이가 0 에 붙어도
+  // 아무도 모른다). 정의역 밖은 값을 고를 문제가 아니라 **파셀이 강을 표현할 수 없는
+  // 영역**이므로, 그때는 강 폭이나 지면 해상도를 다시 정해야 한다.
+  //
+  // 정상 경로 비용은 비교 하나다. 이 함수는 `riverFlowAt` 을 통해 정점마다 불리지만
+  // 이미 배열을 할당하고 있어 비교 하나는 묻힌다.
+  if (limit <= 0) {
+    throw new RangeError(
+      `[world5/water] 이 유도의 정의역은 cell < ${2 * RIVER_HALF} 다(강 폭 2×RIVER_HALF). `
+      + `cell=${cell} 에서 기울기 상한이 ${limit} 이라 굽이가 사라지거나 강이 끊긴다. `
+      + `셀을 그만큼 키우려면 RIVER_HALF 나 지면 해상도를 함께 다시 정해야 한다.`,
+    );
+  }
   const worldW = worldHalfExtent(cell) * 2;
   const shapeSum = RIVER_WAVE_SHAPE.reduce((a, w) => a + w.ampShare / w.cycleShare, 0);
-  return (riverSlopeLimit(cell) * worldW) / (2 * Math.PI * shapeSum);
+  return (limit * worldW) / (2 * Math.PI * shapeSum);
 }
 
 /** 그 셀 크기에서 실제로 쓰이는 굽이 파동(진폭·파장은 미터). 비율 명세에서 유도한다 */

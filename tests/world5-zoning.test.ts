@@ -19,7 +19,7 @@
 // 팀장 원문: *"42.3% 라는 명목치가 이미 거짓말하고 있음을 브리프 스스로 실측했다."*
 // 그 간극이 사라지지 않도록 검사로 고정한다.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   DOWNTOWN_PRESETS, DEFAULT_DOWNTOWN_PRESET, downtownRadius, downtownR,
   applyDowntownPreset, isDowntown, isTowerParcel, TOWER_P_OUTER,
@@ -36,6 +36,12 @@ import { parcelWater } from '../frontend/js/world5/decide/water.js';
 
 const CX = DEFAULT_LAYOUT.cellX;
 const CZ = DEFAULT_LAYOUT.cellZ;
+
+// ⚠️ **프리셋은 모듈 전역 상태다**(`zoning.ts` 의 `let current`). 각 `it` 끝에서 손으로
+//    되돌리면 **앞선 단언이 실패하는 순간 복구가 안 돌아** 뒤 테스트가 오염된다 —
+//    실패 하나가 무관한 실패 여럿으로 번져 원인을 가린다(검수관 권고 P1, 2026-08-09).
+//    `afterEach` 는 단언 실패와 무관하게 돈다.
+afterEach(() => { applyDowntownPreset(DEFAULT_DOWNTOWN_PRESET); });
 
 /** 그 프리셋에서 세계 전체에 서는 마천루 수 */
 function towerCount(name: DowntownPresetName): number {
@@ -91,7 +97,6 @@ describe('프리셋 — 감독이 고르는 단위는 낱개 노브가 아니다
     expect(applyDowntownPreset(undefined)).toBe(DEFAULT_DOWNTOWN_PRESET);
     // URL 노브는 감독이 손으로 치는 값이라 오타가 온다. 그때 도시가 안 뜨는 것보다
     // 기본 도시가 뜨는 편이 낫다.
-    applyDowntownPreset(DEFAULT_DOWNTOWN_PRESET);
   });
 
   it('프리셋을 바꾸면 도심 반경이 실제로 바뀐다 — 노브가 배선돼 있다', () => {
@@ -107,7 +112,6 @@ describe('프리셋 — 감독이 고르는 단위는 낱개 노브가 아니다
     expect(isDowntown(edge, 0)).toBe(false);
     applyDowntownPreset('dense');
     expect(isDowntown(edge, 0)).toBe(true);
-    applyDowntownPreset(DEFAULT_DOWNTOWN_PRESET);
   });
 
   // ★ 프리셋의 축은 면적이 아니라 **마천루 개수**다(`zoning.ts` 실측표).
@@ -118,7 +122,6 @@ describe('프리셋 — 감독이 고르는 단위는 낱개 노브가 아니다
     expect(towerCount('calm')).toBe(3);
     expect(towerCount('city')).toBe(8);
     expect(towerCount('dense')).toBe(15);
-    applyDowntownPreset(DEFAULT_DOWNTOWN_PRESET);
   });
 
   it('기본 프리셋이 현행 마천루 수를 보존한다 — 축소가 랜드마크를 지우지 않는다', () => {
@@ -126,14 +129,12 @@ describe('프리셋 — 감독이 고르는 단위는 낱개 노브가 아니다
     // "축소를 따라간다" 의 진짜 의미다 — 면적 비율만 보존하면 마천루가 8기 → 3기가 되고
     // 감독 지시 *"진짜 뉴욕처럼"* 과 정면으로 부딪힌다.
     expect(towerCount(DEFAULT_DOWNTOWN_PRESET)).toBe(8);
-    applyDowntownPreset(DEFAULT_DOWNTOWN_PRESET);
   });
 
   it('마천루 수가 프리셋 순서대로 늘어난다 — 감독이 비교할 축이 단조다', () => {
     const c = towerCount('calm'), m = towerCount('city'), d = towerCount('dense');
     expect(m).toBeGreaterThan(c);
     expect(d).toBeGreaterThan(m);
-    applyDowntownPreset(DEFAULT_DOWNTOWN_PRESET);
   });
 
   it('도심 밖 확률은 프리셋에 없다 — 축이 다르다', () => {
@@ -175,7 +176,6 @@ describe('명목 도심은 실효 도심보다 크다 — 비율이 거짓말하
     // 간극이 **작지 않다** — 명목의 절반 언저리다. "조금 다르다" 가 아니라 "비율을
     // 그대로 읽으면 두 배 틀린다" 가 이 검사의 요점이다.
     expect(effective).toBeLessThan(nominal * 0.7);
-    applyDowntownPreset(DEFAULT_DOWNTOWN_PRESET);
   });
 });
 

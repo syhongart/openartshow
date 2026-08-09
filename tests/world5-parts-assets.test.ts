@@ -54,11 +54,31 @@ const CSS_HEX = /['"]#[0-9a-fA-F]{3,8}['"]/g;
  */
 const EXEMPT_LINE = /NOISE_SEED/;
 
+/**
+ * 주석을 걷어낸다. **줄 끝 주석까지 걷는다** — 검수관 조건 C3(2026-08-09).
+ *
+ * ── 왜 고쳤나: 게이트가 정답을 벌주고 있었다 ────────────────────────────────
+ * 처음에는 `/^\s*\/\//`, 즉 **줄 전체가 주석인 것만** 걷었다. 그래서 이런 줄이 위반으로
+ * 잡혔다(검수관 실측 재현):
+ *
+ *     const A_ROOF = 0.18; // 예전 값은 0x8892a0 톤이었다
+ *
+ * 이 저장소의 핵심 규율이 *"판정을 값 **옆에** 기록한다 — 왜 그 값인지, 실측 표, 그리고
+ * 판정이 뒤집혔으면 왜 틀렸는지까지"* 다. 옛 색을 값 옆에 적는 것은 **규율이 시키는
+ * 일**인데 게이트가 그것을 FAIL 로 만들었다. 2026-08-08 `node-version-file` 조건 1 과
+ * 같은 형태다.
+ *
+ * ⚠️ **문자열 안의 `//` 도 함께 걷힌다.** URL(`http://`)이 파츠 코드에 있으면 그 뒤가
+ * 잘린다. 지금은 자기완결 규율(외부 호스트 0)이라 파츠에 URL 이 없고, 있으면 그것이
+ * 먼저 문제다 — 즉 이 한계는 **다른 규율이 막아 준다.** 걷어낸 뒤 남는 것에만 색
+ * 정규식을 돌리므로, 잘려서 놓치는 것이 있다면 그건 문자열 안의 색이고 그건 애초에
+ * 팔레트로 가야 할 값이다(놓치는 방향이 안전한 쪽이다).
+ */
 function stripComments(src: string): string {
   return src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .split('\n')
-    .filter((l) => !/^\s*\/\//.test(l))
+    .map((l) => l.replace(/\/\/.*$/, ''))
     .filter((l) => !EXEMPT_LINE.test(l))
     .join('\n');
 }
@@ -109,6 +129,13 @@ describe('§1 색은 palette.ts 한 곳에서만 온다', () => {
     // 충돌해 검사가 곧 꺼진다.
     expect(findColorLiterals('// 예전 값은 0xabcdef 였다')).toEqual([]);
     expect(findColorLiterals('/* 0xabcdef */\nconst x = 1;')).toEqual([]);
+    // ★ **줄 끝 주석**도 걷어야 한다 (검수관 C3). 이 저장소는 판정을 값 옆에 적는 것이
+    //   규율이라, 안 걷으면 게이트가 규율을 따른 코드를 벌준다. 아래가 그 실측 재현이다.
+    expect(findColorLiterals('const A_ROOF = 0.18; // 예전 값은 0x8892a0 톤이었다')).toEqual([]);
+    expect(findColorLiterals("const x = 1; // '#ff00aa' 였다")).toEqual([]);
+    // 그러면서 **같은 줄의 코드 쪽 위반은 여전히 잡아야 한다** — 주석을 붙이면 통과하는
+    //   구멍이 되면 그것이 더 나쁘다.
+    expect(findColorLiterals('const c = 0xabcdef; // 왜 이 색인지')).toEqual(['0xabcdef']);
     // 8자리는 시드다.
     expect(findColorLiterals('const salt = 0x7f4a7c15;')).toEqual([]);
     // 줄 면제가 실제로 걸린다.
