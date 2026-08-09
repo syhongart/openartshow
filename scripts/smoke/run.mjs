@@ -419,8 +419,18 @@ function aggregateBrowser(pageResults, origin) {
   // 그래서 대상을 **"라이브 HTML 이 참조하는 청크"** 로 좁히고 축을 셋으로 늘렸다.
   // editor 청크는 editor 만 받으므로 이 판정에서 빠진다(behind-flag 도구다).
   //
-  // 한계: 정적 스캔이다. 문자열을 조각내 조립하거나 런타임에 만들면 못 잡는다.
-  // **크기 회귀는 아직 안 잰다**(기준값 관리가 필요하다 — 검수관 권고, 별건).
+  // 한계 셋:
+  //  ① 정적 스캔이다. 문자열을 조각내 조립하거나 런타임에 만들면 못 잡는다.
+  //  ② **크기 회귀는 안 잰다**(기준값 관리가 필요하다 — 검수관 권고, 별건).
+  //  ③ **런타임 전용 동적 import 청크는 스캔 밖이다**(검수관 재확인에서 발견).
+  //     아래 수집은 HTML 의 `<script>`/`<link>` **정적 참조만** 본다. 그런데
+  //     `main.js` 의 `?debug=perf`·`world-boot.js` 의 `?debug=hud` 처럼 조건 뒤에서
+  //     `import()` 하는 청크는 vite 가 modulepreload 하지 않아 HTML 에 안 적히고,
+  //     그래서 여기 안 걸린다 — **라이브 페이지에서 실제로 도달 가능한데도.**
+  //     지금은 무해하다(검수관 실측: `debug-hud`·`debug-perf` 둘 다 wasm·CDN 0).
+  //     동적 청크까지 보려면 수집을 `_bundle` 전체로 넓히고 editor 계열만 빼는 쪽이
+  //     맞는데, 그러면 editor 전용 청크를 이름으로 골라내야 해서 새 미러링이 생긴다.
+  //     그 교환을 아직 안 했다는 것을 적어 둔다.
   const bundleDir = path.join(SITE_DIR, '_bundle');
   const liveChunks = new Set();
   const htmlFiles = [];
