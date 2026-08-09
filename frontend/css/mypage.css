@@ -1095,18 +1095,20 @@ html, body {
      ⚠ 이것만으로는 화면이 안 바뀐다. 좁혀도 흰 위의 #fdfbf5 는 여전히 빈 구멍이라
      허전하다 — `--surface-2` 의 sand 채움과 **함께**여야 면으로 읽힌다.
      결정의 전문과 실측표는 **mypage.html 의 `--surface-2` 주석 한 곳**이다. */
-  .inp--short { max-width: 320px; }
-  .inp--mid { max-width: 520px; }
-  /* 긴 글은 폭이 아니라 **줄 길이**가 상한이다(한 줄 70자 남짓). */
-  .inp--area { max-width: 720px; }
-  .linkrow { max-width: 720px; }
+  /* 폭 값은 **토큰이 SSOT 다**(정의는 mypage.html `:root`). 첫 판본은 `720px` 를 3곳,
+     `520px` 를 3곳에 리터럴로 적었고 교차리뷰가 **값 미러링**으로 잡았다(조건 R2) —
+     이 저장소가 색·고도·테스트 임계값에서 **세 번** 지불한 그 형태다. 한쪽만 고치면
+     아무도 모른다. */
+  .inp--short { max-width: var(--w-short); }
+  .inp--mid { max-width: var(--w-mid); }
+  .linkrow { max-width: var(--w-wide); }
 
   /* 입력만 재우면 **같은 줄의 다른 것들이 전폭으로 남는다** — 판정 문구·활동분야 카드·
      파일선택이 그랬다(교차리뷰 P5). 입력 옆이 비어 있는 것과 그 아래 상자가 전폭인 것이
      한 화면에 같이 있으면 과폭 인상이 그대로 남는다. 그룹째로 재운다. */
-  .fld { max-width: 720px; }
-  .cards { max-width: 520px; }
-  .msg { max-width: 520px; }
+  .fld { max-width: var(--w-wide); }
+  .cards { max-width: var(--w-mid); }
+  .msg { max-width: var(--w-mid); }
   /* `.filepick` 은 `inline-flex` 인데도 전폭이었다 — `.fld` 가 flex 컨테이너라
      **flex item 의 기본 stretch 가 inline 성질을 덮는다.** 내용 폭으로 되돌린다. */
   .filepick { align-self: flex-start; }
