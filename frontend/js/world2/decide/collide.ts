@@ -132,5 +132,48 @@ export function slide(
   let nz = z;
   if (dx !== 0 && !blocked(x + dx, nz, blockers, bodyR)) nx = x + dx;
   if (dz !== 0 && !blocked(nx, z + dz, blockers, bodyR)) nz = z + dz;
-  return { x: nx, z: nz };
+  if (nx !== x || nz !== z) return { x: nx, z: nz };
+
+  // ── 두 축 다 막혔다 → **접선으로 스쳐 지나간다** (감독 판정 2026-08-08) ──────
+  //
+  // 감독 지시: *"플레이어 자동 우회"* — 실기기에서 *"분수대에 끼일때"* 를 확인한 뒤.
+  //
+  // 축분리는 **비스듬히** 부딪힐 때만 미끄러진다. 정면으로 정통 충돌하면 두 축이 함께
+  // 죽어 완전히 선다(스폰 x=0 이 6.9m 만 걷고 멈춘 것이 그 경우였다). 사람은 그럴 때
+  // 옆으로 비켜 지나가므로, 막은 원의 **표면 방향**으로 이동을 흘려보낸다.
+  //
+  // 법선 `n`(원 중심 → 몸)에서 이동의 법선 성분을 빼면 접선 성분만 남는다:
+  //     t = d - (d·n) n
+  // 이것이 3D 게임의 표준 처방이고, 벽을 따라 자연스럽게 흐른다.
+  //
+  // ── 왜 "가장 가까운" 원인가 ────────────────────────────────────────────────
+  // 여러 원이 동시에 막을 수 있는데, 지금 몸을 세운 것은 **표면이 가장 가까운** 원이다.
+  // 그 법선이 곧 빠져나갈 방향을 정한다. 더 먼 원의 법선으로 흘리면 그 원 쪽으로
+  // 파고들 수 있고, 그때는 아래 마지막 검사가 걸러 제자리에 둔다.
+  //
+  // ── 이 처방이 **하지 않는 것** ────────────────────────────────────────────
+  // · **완전 정면(접선 성분 0)은 그대로 선다.** 원 중심과 정확히 일직선이면 좌우 어느
+  //   쪽으로 갈지 정보가 없다 — 임의로 고르면 그것이 *"안 눌렀는데 옆으로 간다"* 의
+  //   극단이다. 부동소수라 실사용에서 정확히 0 인 경우는 사실상 없고, 스폰도 옆으로
+  //   옮겼다(`decide/grid.ts`).
+  // · **접선으로도 막히면 멈춘다.** 좁은 틈에 낀 경우가 그렇고, 억지로 밀어내면
+  //   그것이 벽 통과다.
+  let best: Blocker | null = null;
+  let bestGap = Infinity;
+  for (const b of blockers) {
+    const d = Math.hypot(x - b.x, z - b.z) - b.r;
+    if (d < bestGap) { bestGap = d; best = b; }
+  }
+  if (!best) return { x, z };
+  const nlen = Math.hypot(x - best.x, z - best.z);
+  if (!(nlen > 1e-6)) return { x, z };   // 정확히 중심 — 법선이 정의되지 않는다
+  const nxn = (x - best.x) / nlen;
+  const nzn = (z - best.z) / nlen;
+  const dot = dx * nxn + dz * nzn;
+  const tx = dx - dot * nxn;
+  const tz = dz - dot * nzn;
+  // 접선 성분이 거의 0 이면 완전 정면이다 — 위 문단대로 세운다.
+  if (Math.hypot(tx, tz) < 1e-6) return { x, z };
+  if (!blocked(x + tx, z + tz, blockers, bodyR)) return { x: x + tx, z: z + tz };
+  return { x, z };
 }

@@ -50,6 +50,33 @@ export interface StreamingOptions {
   getPosition: () => { x: number; z: number };
   /** 이동/시선 방향(월드). 없으면 방향 보너스 0 */
   getDirection?: () => { x: number; z: number };
+  /**
+   * 실제 진행 정도(0~1). `lookAhead` 에 곱해진다. **없으면 1**(예전 동작).
+   *
+   * ── 왜 생겼나 (감독 실기기 2026-08-08) ────────────────────────────────────
+   * *"분수대에 끼일때. 멀리있는 lod가 나왔다가 안나왔다가 해"*
+   *
+   * `getDirection` 은 소스가 둘이고(조작 중 = 실제 이동 방향 / 손 뗌 = 시선 방향)
+   * 충돌이 붙은 뒤로 **막히면 앞쪽 값이 낡은 채 굳는다.** 그래서 벽에 끼인 채
+   * 눌렀다 뗐다 하면 방향이 크게 튀고, `lookAheadCenter` 가 판정 중심을 최대
+   * **1.0셀(32m)** 옮긴다.
+   *
+   * 실측(순수 모듈, 2.0셀 거리의 파셀 하나를 방향만 돌려 관찰):
+   *
+   *     방향   0°  거리 1.968셀  far
+   *     방향  90°  거리 1.403셀  **mid**
+   *     방향 180°  거리 1.968셀  far
+   *     방향 270°  거리 2.403셀  **none** ← 사라진다
+   *
+   * LOD 히스테리시스 폭은 near 0.15셀·far 0.30셀 — **중심 진동이 3~6배 압도한다.**
+   * 깜빡임을 막으라고 둔 여유대역이 무력화된 것이다.
+   *
+   * 처방은 밴드를 넓히는 것이 아니라 **진동 자체를 없애는 것**이다. look-ahead 의 목적이
+   * *"가려는 쪽 파셀을 미리 올린다"* 이므로 **못 가는 동안에는 미리 올릴 이유가 없다.**
+   * 막히면 이 계수가 0 에 가까워져 판정 중심이 발밑에 고정되고, 방향이 뭐로 튀든
+   * 결과가 안 변한다.
+   */
+  getSpeedFactor?: () => number;
   bands?: TierBands;
   limits?: { minPx: number; maxPx: number; minPz: number; maxPz: number };
   /**
@@ -120,7 +147,12 @@ export class StreamingSystem implements System {
     // 미터 → 셀. 이 환산은 이 두 줄에만 존재한다.
     const cellPx = pos.x / o.cellX;
     const cellPz = pos.z / o.cellZ;
-    const c = lookAheadCenter(cellPx, cellPz, dir.x, dir.z, o.lookAhead ?? 0.5);
+    // look-ahead 를 **실제 진행 정도로 줄인다**(위 `getSpeedFactor` 문단). 안 주면 1 —
+    // 예전 동작이 기본값이다. 음수·NaN 이 들어와도 0~1 로 가둔다: 이 값이 커지면
+    // 판정 중심이 더 멀리 튀어 고치려던 증상을 되살린다.
+    const raw = o.getSpeedFactor?.() ?? 1;
+    const factor = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
+    const c = lookAheadCenter(cellPx, cellPz, dir.x, dir.z, (o.lookAhead ?? 0.5) * factor);
 
     const want = computeWant({
       cx: c.x, cz: c.z, dirX: dir.x, dirZ: dir.z,

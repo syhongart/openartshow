@@ -98,6 +98,20 @@ const MAX_RATIO = 0.9;
  */
 const MIN_OFF_M = (TICKS * TICK_MS) / 1000 * 0.5;
 
+/**
+ * 두 세션의 **종점 사이 거리**가 이보다 크면 "충돌이 경로를 틀었다" 로 본다(m).
+ *
+ * 자동 우회가 붙은 뒤로 충돌은 **막는 것**보다 **비껴가게 하는 것**으로 나타난다.
+ * 거리비만 보면 그 작동이 안 보인다 — 순수 모듈 실측에서 우회 전 25.3m / 우회 후
+ * 198.1m(200m 시도)로, 거리비 0.99 라 거짓 FAIL 이 났다.
+ *
+ * 2m 인 이유: 우회가 한 번이라도 걸리면 **원 하나를 돌아간다.** 가장 작은 파츠의
+ * 유효 반경이 0.85m 이므로 그 왕복만으로 1.7m 가 벌어지고, 실제로는 여러 번 걸린다
+ * (실측 4.3m). 몸 반경(`DEFAULT_BODY_R` 0.34)의 6배이기도 하다 — 부동소수·프레임률
+ * 편차로 이만큼 벌어질 수는 없다.
+ */
+const MIN_DRIFT_M = 2;
+
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 async function drive(page, fn, ...args) {
@@ -195,31 +209,50 @@ export async function runCollide({ browser, origin, basePath, log = console.log 
   log(`  이동 ${on.dist.toFixed(1)}m  (${on.from.x.toFixed(1)},${on.from.z.toFixed(1)}) → (${on.to.x.toFixed(1)},${on.to.z.toFixed(1)})`);
 
   const ratio = off.dist > 0 ? on.dist / off.dist : null;
-  log(`\n[판정] ON/OFF = ${ratio === null ? '측정실패' : ratio.toFixed(2)} (임계 < ${MAX_RATIO})`);
+  // 두 세션의 **종점 사이 거리**. 충돌이 경로를 틀었으면 여기가 벌어진다.
+  const drift = Math.hypot(on.to.x - off.to.x, on.to.z - off.to.z);
+  log(`\n[판정] ON/OFF 거리비 ${ratio === null ? '측정실패' : ratio.toFixed(2)} (임계 < ${MAX_RATIO})`);
+  log(`       종점 이탈 ${drift.toFixed(1)}m (임계 > ${MIN_DRIFT_M})`);
 
   if (off.dist < MIN_OFF_M) {
     return {
-      pass: false, onDist: on.dist, offDist: off.dist, ratio, errors,
+      pass: false, onDist: on.dist, offDist: off.dist, ratio, drift, errors,
       reason: `대조군이 ${off.dist.toFixed(1)}m 밖에 안 갔다(최소 ${MIN_OFF_M}m) — 충돌 판정이 아니라 `
         + '**주행 자체가 성립하지 않았다.** 조작 훅·프레임률을 먼저 본다',
     };
   }
-  if (ratio === null || ratio >= MAX_RATIO) {
+  // ── 판정: **덜 갔거나, 다른 데로 갔거나** (자동 우회 도입 2026-08-08) ─────────
+  //
+  // 첫 판본은 거리비 하나였다(`ON/OFF < 0.9`). 자동 우회(`decide/collide.ts` 의 접선
+  // 슬라이딩)를 붙이자 **막혀도 계속 걷게 되어 그 축이 무효가 됐다** — 순수 모듈 실측:
+  // 스폰에서 200m 시도에 우회 전 25.3m, 우회 후 **198.1m**(막힌 프레임 3495 → 1).
+  // 거리비로는 0.99 라 **거짓 FAIL** 이 난다.
+  //
+  // 그래서 축을 **"충돌이 궤적에 영향을 줬는가"** 로 넓힌다. 둘 중 하나면 성립한다:
+  //   ① 덜 갔다      — 우회가 안 통하는 자리(정통 충돌·막다른 곳)
+  //   ② 다른 데로 갔다 — 우회가 통한 자리(옆으로 스쳐 지나갔다)
+  //
+  // 이 둘은 **같은 기능의 두 얼굴**이고, 어느 쪽도 안 나타나면 충돌이 실제로 안 걸린
+  // 것이다. 우회를 붙이기 전에도 ①이 성립했으므로 이 축은 **양쪽 판본에서 유효**하다.
+  const lessFar = ratio !== null && ratio < MAX_RATIO;
+  const veered = drift > MIN_DRIFT_M;
+  if (!lessFar && !veered) {
     return {
-      pass: false, onDist: on.dist, offDist: off.dist, ratio, errors,
-      reason: `충돌을 켜도 같은 거리를 갔다(ON ${on.dist.toFixed(1)}m / OFF ${off.dist.toFixed(1)}m) — `
+      pass: false, onDist: on.dist, offDist: off.dist, ratio, drift, errors,
+      reason: `충돌을 켜도 **같은 거리를 같은 방향으로** 갔다(ON ${on.dist.toFixed(1)}m / `
+        + `OFF ${off.dist.toFixed(1)}m · 종점 이탈 ${drift.toFixed(1)}m) — `
         + '`resolveMove` 가 실제로 안 걸렸거나(배선 회귀), 걷는 방향에 막을 것이 없다(축 상실). '
         + '**임계를 느슨하게 하는 것으로 넘기지 않는다**',
     };
   }
   if (errors.length) {
     return {
-      pass: false, onDist: on.dist, offDist: off.dist, ratio, errors,
-      reason: `충돌은 막았으나 콘솔 에러 ${errors.length}건: ${errors.slice(0, 2).join(' | ')}`,
+      pass: false, onDist: on.dist, offDist: off.dist, ratio, drift, errors,
+      reason: `충돌은 걸렸으나 콘솔 에러 ${errors.length}건: ${errors.slice(0, 2).join(' | ')}`,
     };
   }
-  log('  ✓ PASS — 충돌을 켜면 실제로 덜 간다.');
-  return { pass: true, reason: null, onDist: on.dist, offDist: off.dist, ratio, errors };
+  log(`  ✓ PASS — 충돌이 궤적을 바꿨다(${lessFar ? '덜 갔다' : ''}${lessFar && veered ? ' · ' : ''}${veered ? '옆으로 비켰다' : ''}).`);
+  return { pass: true, reason: null, onDist: on.dist, offDist: off.dist, ratio, drift, errors };
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
