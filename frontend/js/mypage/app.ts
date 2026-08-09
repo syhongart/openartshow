@@ -35,7 +35,16 @@ import {
 import { writeLinks, readLinks, addLinkRow } from './view-links.js';
 import { q, qa, mp, field, fields, setText, setShown, writeValue } from './dom.js';
 
-import { currentUserId, readStoredChibiThumb, makeThumbDataUrl } from '../ui-chibi-store.js';
+import {
+  currentUserId,
+  readStoredChibiThumb,
+  makeThumbDataUrl,
+  // 옷장은 편집기와 **같은 저장소**를 쓴다 — 형식(`{ id, name, look, thumb, ts }`)은
+  // `ui-chibi-store` 가 소유하고 여기서 다시 정의하지 않는다.
+  readCloset,
+  saveStoredChibi,
+  saveStoredChibiThumb,
+} from '../ui-chibi-store.js';
 import { getProfile as authGetProfile, onAuthChange, isMockMode, PROVIDERS } from '../auth.js';
 // 딥링크 문자열을 여기 적지 않는다 — `avatar-deeplink.ts` 가 SSOT 다(검수관 P2).
 import { buildAvatarDeepLink } from '../avatar-deeplink.js';
@@ -295,6 +304,20 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
       // `finally` 인 것이 요점이다. 로드가 실패해도 화면은 열려야 한다. 저장이
       // 깨졌다고 사용자가 프로필을 **고칠 수조차 없게** 되는 것이 더 나쁘다.
       root.classList.remove('is-loading');
+
+      // ── 아바타·옷장도 여기서 다시 그린다 (검수관 P6, 2026-08-08) ──────────
+      // 이 함수는 `uid` 를 갱신하는 유일한 자리다(`onAuthChange → reload`). 처음에는
+      // 옷장·썸네일을 **생성 시 1회**만 그렸는데, 그러면 계정이 바뀌었을 때 화면에
+      // **앞 계정의 옷장이 남고 그것을 누르면 뒤 계정 네임스페이스로 복사된다** —
+      // `ui-chibi-store` 가 "검수 반려 사례" 로 기록한 계정 간 오염과 같은 형태다.
+      //
+      // 지금은 mypage 에 로그인 UI 가 없어 도달 불가지만, 로그인 UI 가 붙는 순간
+      // 열린다. 여기 두는 것이 그때 가장 싸다.
+      //
+      // 프로필 로드 실패와 옷장은 무관하므로 `finally` 다 — 프로필이 안 실려도
+      // 옷장은 보여야 한다.
+      refreshAvatarThumb();
+      renderCloset();
     }
   }
 
@@ -373,10 +396,16 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   // 편집기 자체는 미술관 HUD 소유라(`ui-hud.ts`) 마이페이지 안에 인라인으로 띄우려면
   // HUD 컨텍스트를 흉내 내야 한다. 그 대신 딥링크로 **편집기가 열린 상태로** 보낸다.
   // `back=mypage` 는 돌아올 길이다 — 저장하든 닫든 여기로 되돌아온다.
-  on(mp(root, 'avatar-open'), 'click', () => {
+  //
+  // 진입점이 **둘**이다(감독 지시 2026-08-08 *"빨간 표시를 누르면 캐릭터 꾸미기 화면으로
+  // 바로 가게 하자"* — Preview 의 아바타+이름 블록). 같은 함수를 공유한다: 두 곳에
+  // 각각 적으면 미저장 확인이나 back 타깃이 한쪽만 바뀌는 형태가 열린다.
+  const goAvatarEditor = () => {
     if (dirty && !window.confirm('저장하지 않은 변경이 있습니다. 이동할까요?')) return;
     window.location.href = buildAvatarDeepLink('./index.html', 'mypage');
-  });
+  };
+  on(mp(root, 'avatar-open'), 'click', goAvatarEditor);
+  on(mp(root, 'preview-identity'), 'click', goAvatarEditor);
 
   // 로그인 상태가 바뀌면 그 사용자의 프로필로 갈아탄다. 아바타가 이미 그렇게
   // 동작하고 있어(`ui-chibi-store`), 프로필만 안 따라가면 두 개가 어긋난다.
@@ -394,12 +423,101 @@ export function createMyPage(root: HTMLElement, store: ProfileStore = new LocalP
   disposers.push(() => window.removeEventListener('beforeunload', beforeUnload));
 
   // 아바타 썸네일(캐릭터 탭)
-  const thumb = mp<HTMLImageElement>(root, 'avatar-thumb');
-  if (thumb) {
+  function refreshAvatarThumb(): void {
+    const thumb = mp<HTMLImageElement>(root, 'avatar-thumb');
+    if (!thumb) return;
     const data = readStoredChibiThumb(uid);
     if (data) thumb.src = data;
     setShown(thumb, Boolean(data));
   }
+  // 첫 렌더는 아래 `reload()` 의 `finally` 가 부른다(계정 전환 때도 같은 자리에서
+  // 다시 그리기 위해서다 — 검수관 P6). 여기서 또 부르면 부팅 때 두 번 그린다.
+
+  // ── 내 옷장 (감독 지시 2026-08-08) ──────────────────────────────────────
+  //
+  // 편집기(`ui-avatar-editor.ts`)의 「내 옷장」과 **같은 저장소**를 읽는다. 목록 형식을
+  // 여기 다시 정의하지 않는다 — `{ id, name, look, thumb, ts }` 는 그쪽이 소유한다.
+  //
+  // 여기서는 **입기**만 한다. 저장·삭제는 편집기 몫이다(삭제는 되돌릴 수단이 없고,
+  // 이 화면은 프로필을 고치러 온 사람이 지나가며 보는 자리라 실수 비용이 크다).
+  function renderCloset(): void {
+    const list = mp(root, 'closet-list');
+    const tpl = root.querySelector<HTMLTemplateElement>('template[data-mp="closet-cell"]');
+    if (!list || !tpl) return;
+
+    const slots = readCloset(uid);
+    list.textContent = '';
+    setShown(mp(root, 'closet-empty'), slots.length === 0);
+    // 옷장은 **로그인 전용**이다(편집기가 탭 자체를 숨긴다). 그 안내는 게스트에게만 참이라
+    // 로그인 사용자에게는 감춘다 — 안 그러면 이미 로그인한 사람에게 거짓말이 된다(Q2).
+    setShown(mp(root, 'closet-empty-guest'), slots.length === 0 && !authGetProfile());
+    // 계정이 바뀌면 앞 계정의 "갈아입었습니다" 가 남는다(Q3).
+    setText(mp(root, 'closet-status'), '');
+    mp(root, 'closet-status')?.classList.remove('is-ok', 'is-error');
+    setText(mp(root, 'closet-count'), slots.length ? `${slots.length}벌` : '');
+
+    for (const slot of slots) {
+      const cell = tpl.content.firstElementChild?.cloneNode(true) as HTMLElement | null;
+      if (!cell) continue;
+      const name = slotLabel(slot);
+      const img = cell.querySelector<HTMLImageElement>('[data-mp-closet="thumb"]');
+      if (img) {
+        // 썸네일이 없는 슬롯도 있다(옛 저장분). 빈 `src` 는 깨진 아이콘이 되므로 숨긴다.
+        if (slot?.thumb) img.src = String(slot.thumb);
+        setShown(img, Boolean(slot?.thumb));
+        img.alt = '';
+      }
+      setText(cell.querySelector('[data-mp-closet="name"]'), name);
+      // 접근 이름은 자손 텍스트(옷 이름)로 만들어지는데, 그것만으로는 **무엇을 하는
+      // 버튼인지**가 안 읽힌다. 그래서 목적을 덧붙인다.
+      cell.setAttribute('aria-label', `${name} 입기`);
+      cell.addEventListener('click', () => wearFromCloset(slot));
+      list.appendChild(cell);
+    }
+  }
+
+  /**
+   * 옷장의 한 벌을 **지금 캐릭터로 만든다.**
+   *
+   * 3D 편집기를 열지 않고 저장만 갈아 끼운다 — 옷장 슬롯이 `look` 과 `thumb` 를 함께
+   * 들고 있어서 가능하다. 미술관은 다음 진입 때 `readActiveChibi()` 로 이 값을 읽는다.
+   */
+  function wearFromCloset(slot: { look?: unknown; thumb?: unknown; name?: unknown } | null): void {
+    if (!slot?.look) return;
+    // ⚠ **프로필 저장 상태줄을 쓰지 않는다**(검수관 P5). 공유하면 "저장하지 않은 변경이
+    // 있습니다" 경고가 지워지고 초록으로 바뀌어 저장된 것처럼 읽힌다 — `dirty` 는 그대로라
+    // 실제로는 안 됐다. 갈아입기는 즉시 저장되는 별개 동작이므로 상태줄도 별개다.
+    const status = mp(root, 'closet-status');
+    status?.classList.remove('is-ok', 'is-error');
+    if (!saveStoredChibi(slot.look, uid)) {
+      setText(status, '저장 공간이 부족해 갈아입지 못했습니다.');
+      status?.classList.add('is-error');
+      return;
+    }
+    if (slot.thumb) saveStoredChibiThumb(String(slot.thumb), uid);
+    refreshAvatarThumb();
+    refreshPreview();   // Preview 아바타도 같이 바뀐다 — 안 바꾸면 두 화면이 어긋난다
+    // ⚠ **조사를 붙이지 않는다.** `"…으로 갈아입었습니다"` 로 썼더니 실측에서
+    // *"파란 후디 으로"* 가 나왔다 — 한국어 조사는 받침에 따라 `로`/`으로` 로 갈리고,
+    // 옷 이름은 사용자가 정하므로 영문·숫자도 온다. 조사 판정기를 만드는 대신
+    // 조사가 필요 없는 어순으로 쓴다.
+    setText(status, `갈아입었습니다 — ${slotLabel(slot)}`);
+    status?.classList.add('is-ok');
+  }
+
+  /** 표시용 이름. 빈 슬롯(옛 저장분)이 **라벨도 그림도 없는 버튼**이 되지 않게 한다(P11). */
+  function slotLabel(slot: { name?: unknown } | null): string {
+    const name = String(slot?.name ?? '').trim();
+    return name || '이름 없는 옷';
+  }
+
+  // ⚠ 여기서 `renderCloset()` 을 부르지 않는다 — 첫 렌더는 아래 `reload()` 의 `finally`
+  // 가 한다. 그래야 **계정 전환 때도 같은 자리에서 다시 그린다**(검수관 P6).
+  //
+  // 이 줄은 한 번 남아 있었고 그 사실을 내가 못 봤다: "초기 호출을 제거했다" 고 보고까지
+  // 했는데 치환 문자열이 원문과 안 맞아 **no-op** 이었다. 발견은 뮤테이션이 했다 —
+  // `reload()` 쪽 호출을 지워도 테스트가 통과했고, 그 이유가 여기 남은 중복이었다.
+  // **적용 diff 를 안 보면 "고쳤다" 가 거짓이 된다**(게시판 2026-08-08 과 같은 형태).
 
   selectTab('basic');
   void reload();
