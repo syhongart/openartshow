@@ -28,7 +28,7 @@
 // `Piece.u` 로 마스크 텍셀을 한 점 고정하면 **판마다 다른 색으로 빛난다**. 감독이
 // 요구한 "자작 추상 패턴·색 블록" 이 정확히 이 구조다.
 
-import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
+import type { NeonTexel, PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { plazaLandmark, h2 } from './plaza.js';
 import { EAVE } from './road-topology.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
@@ -85,8 +85,28 @@ export const clocktower: PartSpec = {
   /**
    * 발광 신고(`PartSpec.neon`). 광고 타워. **낮에도 거의 그대로 켜져 있다** — 대형 스크린은 주간에 오히려
    *  더 밝게 튼다(주변이 밝으니까). 0 으로 두면 낮에 검은 판때기가 된다.
+   *
+   * ── `night` 를 1 → 1.55 로 올렸다 (2026-08-09) ────────────────────────────
+   * 광고 타워는 세계에서 가장 밝아야 하는데(가로등을 빼면) **아무것도 블룸 문턱을
+   * 넘지 못하고 있었다.** 흰 패널이 0.925 × 0.80 × 1 = 0.740 으로 문턱(0.75)에
+   * 0.01 차이로 미달이었다 — 켜져 있는데 번지지 않는, 화면에서 원인을 짚기 가장
+   * 어려운 형태다(`decide/night.ts` 의 `LAMP_MAX_GLOW` 가 존재하는 이유가 정확히
+   * 같은 사고였다).
+   *
+   * 1.55 는 흰 패널이 문턱에 **여유를 두고** 서게 하는 값이다:
+   * `luma(neonWhite) 0.961 × 0.86 × 1.55 = 1.281` — 문턱 0.75 의 1.7배.
+   * 여유를 두는 이유는 이 저장소가 이미 값을 치른 자리라서다. 문턱에 겨우 닿는 값은
+   * 다음 조정에서 조용히 죽는다.
+   *
+   * ⚠️ **위계가 이 값의 상한을 정한다** — 광고 타워 > 마천루 > 다리 > 건물.
+   * 가로등(`LAMP_MAX_GLOW` 1.8)만 이보다 위다.
    */
-  neon: { day: 0.9, night: 1 },
+  neon: {
+    day: 0.9,
+    night: 1.55,
+    bloom: true,
+    texels: () => TEXELS,
+  },
   salt: 0x5a6b7c8d,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다.
   //
@@ -133,8 +153,12 @@ export const clocktower: PartSpec = {
       emissive: TINTS.plain,
       emissiveMap: screenMask(T),
       /**
-       * 부팅 초깃값. 실제 값은 `systems/neon-glow.ts` 가 이 파츠의 `neon` 신고
-       * (`{ day: 0.9, night: 1 }`)를 읽어 시간대에 맞춰 정한다.
+       * 부팅 초깃값. 실제 값은 `systems/neon-glow.ts` 가 **위 `neon` 신고를 읽어**
+       * 시간대에 맞춰 정한다.
+       *
+       * ⚠️ 여기 괄호에 그 신고의 값을 복사해 적어 두었었다(`{ day: 0.9, night: 1 }`).
+       * 밤 세기를 1.55 로 올리는 순간 **거짓이 됐다** — 다른 파일의 값도 아니고 같은
+       * 파일 위쪽 값을 베낀 것이라 더 눈에 안 띈다. 값은 한 곳에만 둔다.
        *
        * **낮에도 0.9 로 거의 그대로 켜 둔다** — 대형 광고 스크린은 주간에 오히려 더
        * 밝게 튼다(주변이 밝으니까). 광장 광고판이 낮에 꺼져 있으면 그게 고장 난
@@ -205,7 +229,15 @@ const M = {
   magenta: 1,
   cyan: 2,
   amber: 3,
-  lime: 4,
+  /**
+   * 따뜻한 화면. **`lime` 이 있던 자리다** (2026-08-09).
+   *
+   * 초록 광고는 실제 맨해튼 야경에서 드물고, 잔디·가로수와 대역이 겹쳐 도시의 색
+   * 위계를 식물과 섞는다(`palette.ts` 의 `neonLime` 주석). 텍셀을 지우지 않고
+   * **역할을 바꾼** 것은, 지우면 인덱스가 밀려 `M.*` 를 쓰는 자리가 전부 어긋나기
+   * 때문이다 — 죽은 텍셀을 남기는 것도 구멍이라 자리를 다시 채웠다.
+   */
+  warm: 4,
   /** 흰 패널 — 색만 있으면 유원지가 된다. 흰 화면 하나가 도시를 만든다 */
   white: 5,
   /** 어두운 화면 — 전환 중 */
@@ -226,10 +258,41 @@ function texel(i: number): number {
  */
 const SALT_SCREEN = 0x2e5b8a11;
 
-/** 켜진 화면 8종 중 무엇인가. 꺼진 쪽에 무게를 조금 준다 */
+/**
+ * 판 하나가 어느 상태인가. **배열의 무게가 곧 화면의 색 구성이다.**
+ *
+ * ── 옛 배분이 만든 것: 파스텔 무지개 (감독 관측 2026-08-09) ─────────────────
+ * 옛 배분은 `[magenta, cyan, amber, lime, white, dim, dark, dark]` 였다. 여덟 중
+ * **다섯이 밝고 그중 넷이 서로 다른 원색**이라, 63 장이 네 색으로 고르게 갈렸다.
+ *
+ * 헤드리스 실측(960×600, 스폰 정면, 광고 타워 영역): 네온 대역 픽셀이 amber 7.4% ·
+ * cyan 6.9% · lime 5.5% · magenta 5.2% 로 **최대 계열이 28%** 였다. 균등하다는 뜻이고,
+ * 균등한 색은 축제 조명이지 도시가 아니다. 감독이 *"파스텔 무지개"* 로 본 그 화면이다.
+ *
+ * ── 새 배분의 근거 ──────────────────────────────────────────────────────────
+ * 실제 타임스퀘어 사진에서 화면 대다수는 **흰빛과 따뜻한 톤**이고 강한 원색은 몇 점이다.
+ * 그리고 **꺼진 판이 섞여 있어야 켜진 판이 켜져 보인다** — 이 파일이 원래부터 그렇게
+ * 적어 두었고, 옛 배분은 그 문장을 지키지 못했다(꺼진 쪽이 3/8 뿐).
+ *
+ *   밝게 켜짐 4/12 (33%) · 중간 2/12 (17%) · 꺼진 쪽 6/12 (50%)
+ *
+ * 원색을 **줄인 것이 아니라 소수로 만든 것**이 요점이다. 마젠타 한 장, 시안 한 장이
+ * 흰 화면 사이에 있으면 그 두 장이 오히려 눈에 든다. 넷이 고르게 있으면 서로를 지운다.
+ *
+ * ── 꺼진 쪽을 40% 에서 50% 로 다시 올렸다 (같은 회차의 2차 판정) ──────────
+ * 첫 조정은 배분을 `[white, white, amber, warm, magenta, cyan, dim, dark×3]` 로 잡았다.
+ * 무지개는 사라졌지만(헤드리스 실측: 최대 계열 28% → 45%, 채도 0.141 → 0.202) **켜진
+ * 판이 6/10 이라 화면이 밝은 격자로 균질해졌다** — 광고판이 아니라 흰 타일 벽으로
+ * 보였다. 이 파일이 처음부터 적어 둔 문장을 내가 두 번 못 지킨 것이다:
+ * *"전부 최대로 켜면 색 덩어리 하나가 되어 오히려 광고판으로 안 읽힌다."*
+ *
+ * 색만 수렴시키고 **밝은 면적을 안 줄이면** 무지개가 흰 격자로 바뀔 뿐이다. 실제
+ * 타임스퀘어에서 밝은 화면은 어두운 구조물 사이에 **띄엄띄엄** 박혀 있다.
+ */
 const SCREEN_STATES: readonly number[] = [
-  M.magenta, M.cyan, M.amber, M.lime, M.white,
-  M.dim, M.dark, M.dark,
+  M.white, M.amber, M.magenta, M.cyan,
+  M.warm, M.dim,
+  M.dark, M.dark, M.dark, M.dark, M.dark, M.dark,
 ];
 
 function buildAdTower(T: ThreeNS): InstanceType<ThreeNS['BufferGeometry']> {
@@ -272,8 +335,9 @@ function buildAdTower(T: ThreeNS): InstanceType<ThreeNS['BufferGeometry']> {
         .rotateY(a)
         .translate(Math.sin(a) * R * 0.97, (Y.podiumTop + Y.screenTop) / 2, Math.cos(a) * R * 0.97),
       color: rgb(V.signPlate),
-      // 모서리마다 색을 갈라 탑이 한 색으로 뭉치지 않게 한다
-      u: texel([M.amber, M.lime, M.magenta][i]),
+      // 모서리마다 색을 갈라 탑이 한 색으로 뭉치지 않게 한다. **흰빛을 하나 끼운다** —
+      // 세 모서리가 다 색이면 윤곽선까지 무지개에 합류한다(2026-08-09).
+      u: texel([M.amber, M.white, M.magenta][i]),
     });
   }
 
@@ -338,23 +402,16 @@ function screenMask(T: ThreeNS) {
   g.fillStyle = greyCss(MASK_BLOCK);
   g.fillRect(0, 0, MASK_TEXELS, 1);
 
-  const put = (i: number, hex: number, a: number) => {
-    g.globalAlpha = a;
-    g.fillStyle = hexCss(hex);
+  // **명세를 소비한다 — 값을 여기 다시 적지 않는다.** 예전에는 이 자리에 `put(...)`
+  // 일곱 줄이 색과 세기를 직접 들고 있었고, 그래서 블룸 문턱 검사가 그 값을 볼 방법이
+  // 없었다(캔버스는 jsdom 에서 못 읽는다). `TEXELS` 에서 굽고 검사도 거기서 읽는다.
+  TEXELS.forEach((t, i) => {
+    if (t.a <= 0) return;
+    g.globalAlpha = t.a;
+    g.fillStyle = hexCss(t.hex);
     g.fillRect(i, 0, 1, 1);
     g.globalAlpha = 1;
-  };
-
-  // 세기는 전부 **상대비**다. 절대 밝기는 `emissiveIntensity` 와 톤매핑이 정하고 그
-  // 둘은 헤드리스(WebGL)와 감독 기기(WebGPU)에서 다르다 — 여기 값을 실측이라고
-  // 적을 수 없다. 고정하는 것은 순서뿐이다: 네온 4색 ≳ 흰 패널 ≫ 어두운 화면 ≫ 꺼짐.
-  put(M.magenta, V.neonMagenta, 0.95);
-  put(M.cyan, V.neonCyan, 0.92);
-  put(M.amber, V.neonAmber, 0.90);
-  put(M.lime, V.neonLime, 0.88);
-  put(M.white, V.signInk, 0.80);
-  put(M.dim, V.windowCool, 0.34);
-  put(M.dark, V.signPlate, 0.10);
+  });
 
   const tex = new T.CanvasTexture(cv);
   tex.magFilter = T.NearestFilter;
@@ -362,3 +419,36 @@ function screenMask(T: ThreeNS) {
   tex.generateMipmaps = false;
   return tex;
 }
+
+/**
+ * 텍셀 명세. **인덱스가 곧 `M.*` 값**이므로 순서를 바꾸면 조각의 색이 통째로 어긋난다
+ * (`tests/world5-neon-glow.test.ts` 가 길이와 `M` 정합을 검사한다).
+ *
+ * 세기는 전부 **상대비**다. 절대 밝기는 `emissiveIntensity` 와 톤매핑이 정하고 그 둘은
+ * 헤드리스(WebGL)와 감독 기기(WebGPU)에서 다르다 — 여기 값을 실측이라고 적을 수 없다.
+ *
+ * 고정하는 것은 순서뿐이고, 그 순서는 **알파가 아니라 `luma(색) × 알파`** 다:
+ *
+ *   흰 .826 > 시안 .611 > 앰버 .600 > 따뜻 .518 > 마젠타 .314 > dim .301 > dark .025
+ *
+ * ⚠️ **알파 순서와 다르다** — 마젠타는 알파가 가장 높은데(0.95) 색이 어두워
+ * (`luma` 0.331) 실제로는 아래에서 두 번째다. 알파만 보고 순서를 적으면 화면과
+ * 어긋난 문장이 남는다(`tests/world5-times-square.test.ts` 의 같은 축이 실제로 그
+ * 형태였고 이번에 고쳤다).
+ *
+ * ⚠️ **흰 패널이 원색보다 앞으로 왔다** (2026-08-09). 옛 순서는 *"네온 4색 ≳ 흰 패널"*
+ * 이었는데, 그 순서가 파스텔의 절반을 만들고 있었다 — 흰빛의 상대휘도는 0.96 이고
+ * 마젠타는 0.33 이라, 원색을 흰 패널보다 밝게 만들려면 톤매핑이 채도를 빼는 구간까지
+ * 밀어 올려야 한다. **번지는 것은 흰빛이 맡고 색은 원색이 맡는다**(`palette.ts` 의
+ * `neonWhite` 주석에 그 역할 분담의 전말이 있다).
+ */
+const TEXELS: readonly NeonTexel[] = [
+  { hex: V.signPlate, a: 0 },        // M.off — 칠하지 않는다
+  { hex: V.neonMagenta, a: 0.95 },   // M.magenta
+  { hex: V.neonCyan, a: 0.92 },      // M.cyan
+  { hex: V.neonAmber, a: 0.90 },     // M.amber
+  { hex: V.windowWarm, a: 0.62 },    // M.warm
+  { hex: V.neonWhite, a: 0.86 },     // M.white — 이 파츠에서 유일하게 블룸 문턱을 넘는다
+  { hex: V.windowCool, a: 0.34 },    // M.dim
+  { hex: V.signPlate, a: 0.10 },     // M.dark
+];

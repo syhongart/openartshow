@@ -26,7 +26,7 @@
 // 순서를 바꾸면 배치 골든 스냅샷이 깨진다. 이제는 배열 순서만이 아니라 **세상 자체가**
 // 달라지므로, 갱신 전에 겹침 게이트(`tests/world2-parcel-slots.test.ts`)를 먼저 본다.
 
-import { DEFAULT_LAYOUT, type PartSpec, type LayoutOptions } from './types.js';
+import { DEFAULT_LAYOUT, type PartSpec, type LayoutOptions, type NeonTexel } from './types.js';
 import { TINTS } from './palette.js';
 import type { Tier } from '../decide/lod.js';
 import { ground } from './ground.js';
@@ -130,7 +130,7 @@ export function tonesFor(kind: string): readonly number[] {
 }
 
 export { DEFAULT_LAYOUT };
-export type { PartSpec, PlacedPart, PartAsset, LayoutOptions, ResolvedLayout, PlaceContext, ThreeNS } from './types.js';
+export type { PartSpec, PlacedPart, PartAsset, LayoutOptions, ResolvedLayout, PlaceContext, ThreeNS, NeonTexel, NeonSpec } from './types.js';
 
 /**
  * 발광을 신고한 파츠 — `PartSpec.neon` 을 가진 것들.
@@ -149,6 +149,29 @@ export type { PartSpec, PlacedPart, PartAsset, LayoutOptions, ResolvedLayout, Pl
  * 때마다 저쪽을 고쳐야 하고, 안 고치면 **조용히 안 빛난다** — 포크 직후가 정확히 그
  * 상태였다(`features/sky.ts` 가 `materialOf('lamp')` 한 종류만 만지고 있었다).
  */
-export const NEON_PARTS: readonly { kind: string; day: number; night: number }[] =
+export const NEON_PARTS: readonly NeonPart[] =
   PARTS.filter((p) => p.neon !== undefined)
-    .map((p) => ({ kind: p.kind, day: p.neon!.day, night: p.neon!.night }));
+    .map((p) => ({
+      kind: p.kind,
+      day: p.neon!.day,
+      night: p.neon!.night,
+      bloom: p.neon!.bloom,
+      // **여기서 부른다.** `texels` 가 함수인 이유는 파츠 안에서의 초기화 순서 때문이고
+      // (`types.ts` 의 `NeonSpec`), 이 시점에는 모든 파츠 모듈이 평가를 마쳤다.
+      texels: p.neon!.texels(),
+    }));
+
+/**
+ * 발광 파츠 한 종의 신고 — `PartSpec.neon` 에 `kind` 를 붙인 것.
+ *
+ * `texels` 를 여기까지 나르는 것이 요점이다. **블룸 문턱을 넘는지는 `emissiveIntensity`
+ * 만으로 판정할 수 없다** — 실제 픽셀 휘도는 `luma(텍셀 색) × 텍셀 알파 × 세기` 이고,
+ * 앞의 두 항이 없으면 검사는 그 축을 원리상 못 본다(경위는 `types.ts` 의 `NeonSpec`).
+ */
+export interface NeonPart {
+  readonly kind: string;
+  readonly day: number;
+  readonly night: number;
+  readonly bloom: boolean;
+  readonly texels: readonly NeonTexel[];
+}

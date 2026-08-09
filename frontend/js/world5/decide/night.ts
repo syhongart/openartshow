@@ -423,3 +423,45 @@ export function neonGlow(spec: { day: number; night: number }, n: number): numbe
   if (k <= 0) return spec.day;
   return spec.day + (spec.night - spec.day) * Math.min(1, 0.35 + k * 0.65);
 }
+
+/**
+ * 이 파츠가 화면에 내는 **가장 밝은 발광 픽셀의 휘도.** 블룸 문턱과 비교하는 값이다.
+ *
+ * ── 왜 `emissiveIntensity` 만으로는 안 되는가 ───────────────────────────────
+ * 발광 픽셀의 색은 `emissive × emissiveMap 텍셀` 이고 거기에 `emissiveIntensity` 가
+ * 곱해진다. 네온 파츠들은 `emissive` 를 흰색(곱셈 항등원)으로 두고 색을 마스크 텍셀에
+ * 칠하므로, 최종 휘도는
+ *
+ *     luma(텍셀 색) × 텍셀 알파 × emissiveIntensity
+ *
+ * 다. 세기만 보는 검사는 앞의 두 항을 못 보고, 그래서 **문턱을 넘는지 아닌지에 대해
+ * 아무 말도 하지 못한다.** 실제로 그 상태에서 다섯 파츠 중 넷이 미달인 채 게이트가
+ * 내내 초록이었다(게시판 2026-08-09).
+ *
+ * ── 왜 최댓값인가 ──────────────────────────────────────────────────────────
+ * 블룸은 **문턱을 넘는 픽셀만** 걸러 번지게 한다. 파츠 전체가 밝을 필요가 없고 부위
+ * 하나면 된다 — 마천루는 랜턴, 다리는 케이블, 광고판은 흰 패널이 그 부위다. 평균을
+ * 쓰면 "꺼진 창이 많아서" 같은 이유로 판정이 흐려진다.
+ *
+ * ── 못 재는 것 ─────────────────────────────────────────────────────────────
+ * ① **`emissiveMap.colorSpace` 가 네 파츠 전부 미설정이다.** three 의 기본은
+ *    `NoColorSpace`(선형 취급)라, 캔버스에 sRGB 로 칠한 값이 선형으로 읽힌다. 즉 여기
+ *    계산은 **sRGB 숫자 기준의 상대 비교**이고 실제 GPU 값과는 감마만큼 어긋난다.
+ *    어긋남의 방향은 전 파츠 공통이므로 **순서와 문턱 통과 여부의 상대 판정은 살아
+ *    있지만**, 이 값을 절대 밝기라고 적을 수는 없다.
+ * ② **`scenePass` 가 톤매핑 전인지는 코드로만 읽었다**(`features/postfx.ts` 가
+ *    `outputNode = scenePass.add(bloom(scenePass))` 로 조립한다). three 내부 동작이라
+ *    실측이 아니다. 톤매핑 후라면 문턱을 넘는 값이 더 적어지므로, 이 계산은 **낙관
+ *    쪽**이다 — 못 넘는다는 판정은 안전하고 넘는다는 판정에는 여유가 필요하다.
+ *    그래서 검사가 문턱에 여유 배수를 요구한다.
+ * ③ 블룸 자체는 **WebGPU 에서만 켜진다**(WebGL 백엔드에서 부팅이 깨져 막아 두었다).
+ *    헤드리스로는 이 축을 화면에서 확인할 방법이 없다.
+ */
+export function neonPeak(
+  spec: { day: number; night: number; texels: readonly { hex: number; a: number }[] },
+  n: number,
+): number {
+  let top = 0;
+  for (const t of spec.texels) top = Math.max(top, luma(t.hex) * t.a);
+  return top * neonGlow(spec, n);
+}

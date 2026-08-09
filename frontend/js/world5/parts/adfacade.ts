@@ -29,7 +29,7 @@
 // 그 변에 광고 파사드를 세우는 판단이 이 파일의 몫이다(`plazaLandmark` 가 광장 칸 역할
 // 에서 분수대·광고 타워를 고르는 것과 같은 배치).
 
-import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
+import type { NeonTexel, PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { plazaRimSides, type PlazaRimSide } from '../decide/grid.js';
 import { plazaOccupied, h2 } from './plaza.js';
 import { SETBACK, LAMP_CLEARANCE, EAVE } from './road-topology.js';
@@ -149,13 +149,26 @@ export const adfacade: PartSpec = {
    * `day` 가 0 이 아닌 것은 광고 타워와 같은 이유다 — 대형 스크린은 주간에 오히려 더
    * 밝게 튼다(주변이 밝으니까). 낮에 꺼져 있으면 그건 고장 난 화면이다.
    *
-   * ⚠️ **광고 타워(`{0.9, 1}`)보다 낮에 조금 어둡다.** 광장의 주인공은 한가운데 탑이고
-   * 파사드는 그것을 둘러싼 배경이다. 밤 값이 같은 1 인 것은 세기 축이 여기서 끝나지
-   * 않기 때문이다 — 최종 밝기는 `emissiveIntensity × 마스크 텍셀`이고, 아래 마스크가
-   * 광고 타워보다 한 단 어둡게 잡혀 있다. 두 파츠는 서로를 import 하지 않으므로 그
-   * 관계는 검사가 지킨다.
+   * ⚠️ **광고 타워보다 어둡다 — 이제 밤에도 그렇다.** 광장의 주인공은 한가운데 탑이고
+   * 파사드는 그것을 둘러싼 배경이다.
+   *
+   * ── 밤 값이 같은 1 이던 것을 갈랐다 (2026-08-09) ──────────────────────────
+   * 이 자리에는 *"밤 값이 같은 1 인 것은 세기 축이 여기서 끝나지 않기 때문이다 —
+   * 최종 밝기는 `emissiveIntensity × 마스크 텍셀` 이고 아래 마스크가 한 단 어둡다"*
+   * 라고 적혀 있었다. 그 설명은 참이었지만 **둘 다 문턱을 못 넘는 상태**였으므로
+   * 위계가 화면에 나타나지 않았다 — 헤드리스 실측에서 파사드 영역이 광고 타워 영역
+   * **보다 밝았다**(밝은 픽셀 비율 38.1% 대 27.9%). 면적과 거리가 세기 차를 뒤집은
+   * 것이고, 그 상태에서 "마스크가 한 단 어둡다" 는 화면에 대해 아무 말도 못 한다.
+   *
+   * 1.40 은 흰 패널이 문턱을 넘되(0.961 × 0.72 × 1.40 = **0.969**) 광고 타워의 같은
+   * 부위(1.281)에는 **못 미치는** 값이다. 두 축(세기·마스크)이 같은 방향을 가리킨다.
    */
-  neon: { day: 0.85, night: 1 },
+  neon: {
+    day: 0.85,
+    night: 1.40,
+    bloom: true,
+    texels: () => TEXELS,
+  },
   salt: 0x3ac7f1d9,
   /**
    * **곱셈기다.** 색은 정점에 굽혀 있고(`asset`) 여기 값은 거기 곱해지는 개체별 편차다.
@@ -303,7 +316,11 @@ const M = {
   magenta: 1,
   cyan: 2,
   amber: 3,
-  lime: 4,
+  /**
+   * 따뜻한 화면. **`lime` 이 있던 자리다** (2026-08-09) — 경위는 `clocktower.ts` 의
+   * 같은 자리 한 곳이다. 지우지 않고 역할만 바꾼 이유도 같다(인덱스가 `M.*` 다).
+   */
+  warm: 4,
   /** 흰 패널 — 색만 있으면 유원지가 된다 */
   white: 5,
   /** 어두운 화면 — 전환 중 */
@@ -320,10 +337,22 @@ function texel(i: number): number {
 /** 스크린 색 뽑기용 소금. 결정론이라야 "저 파란 화면 옆" 같은 장소 기억이 성립한다 */
 const SALT_SCREEN = 0x6d4b28f1;
 
-/** 켜진 화면 여덟 중 무엇인가. 꺼진 쪽에 무게를 준다 — 꺼진 판이 섞여야 켜진 판이 켜져 보인다 */
+/**
+ * 판 하나가 어느 상태인가. 꺼진 판이 섞여야 켜진 판이 켜져 보인다.
+ *
+ * 배분의 근거(옛 4색 균등이 만든 파스텔 무지개, 실측, 꺼진 쪽을 절반으로 둔 유도)는
+ * `clocktower.ts` 한 곳이 소유한다 — 여기서 다시 적으면 값 미러링이다.
+ *
+ * ⚠️ **광고 타워보다 한 단 더 꺼져 있다**(밝게 켜짐 3/12 대 4/12). 광장의 주인공은
+ * 한가운데 탑이고 파사드는 배경이다. 세기·마스크에 이어 **켜진 면적**까지 세 축이 같은
+ * 방향을 가리켜야 하는데, 앞의 둘만으로는 화면에서 뒤집혔다 — 실측에서 파사드 영역의
+ * 밝은 픽셀 비율이 광고 타워 영역보다 높았다(45.0% 대 29.9%). 파사드는 광장 네 변을
+ * 두르고 더 가까이 서므로 **면적이 세기 차를 이긴다.**
+ */
 const SCREEN_STATES: readonly number[] = [
-  M.magenta, M.cyan, M.amber, M.lime, M.white,
-  M.dim, M.dark, M.dark,
+  M.white, M.amber, M.magenta,
+  M.warm, M.cyan,
+  M.dim, M.dark, M.dark, M.dark, M.dark, M.dark, M.dark,
 ];
 
 function buildFacade(T: ThreeNS): InstanceType<ThreeNS['BufferGeometry']> {
@@ -425,7 +454,10 @@ function buildFacade(T: ThreeNS): InstanceType<ThreeNS['BufferGeometry']> {
  *
  * 절대 밝기는 `emissiveIntensity` 와 톤매핑이 정하고 그 둘은 헤드리스(WebGL)와 감독
  * 기기(WebGPU)에서 다르다 — **여기 값을 실측이라고 적을 수 없다.** 고정하는 것은
- * 순서뿐이다: 네온 4색 ≳ 흰 패널 ≫ 어두운 화면 ≫ 거의 꺼짐.
+ * 순서뿐이다: 흰 패널 ≳ 원색 ≫ 따뜻한 화면 ≫ 어두운 화면 ≫ 거의 꺼짐.
+ *
+ * ⚠️ **흰 패널이 원색보다 앞으로 왔다** (2026-08-09). 근거는 `clocktower.ts` 의 같은
+ * 자리에 한 번 적혀 있다 — 여기서 되풀이하지 않는다.
  */
 function facadeMask(T: ThreeNS) {
   const cv = document.createElement('canvas');
@@ -436,20 +468,14 @@ function facadeMask(T: ThreeNS) {
   g.fillStyle = greyCss(MASK_BLOCK);
   g.fillRect(0, 0, MASK_TEXELS, 1);
 
-  const put = (i: number, hex: number, a: number) => {
-    g.globalAlpha = a;
-    g.fillStyle = hexCss(hex);
+  // **명세를 소비한다 — 값을 여기 다시 적지 않는다**(경위는 `types.ts` 의 `NeonSpec`).
+  TEXELS.forEach((t, i) => {
+    if (t.a <= 0) return;
+    g.globalAlpha = t.a;
+    g.fillStyle = hexCss(t.hex);
     g.fillRect(i, 0, 1, 1);
     g.globalAlpha = 1;
-  };
-
-  put(M.magenta, V.neonMagenta, 0.82);
-  put(M.cyan, V.neonCyan, 0.80);
-  put(M.amber, V.neonAmber, 0.78);
-  put(M.lime, V.neonLime, 0.76);
-  put(M.white, V.signInk, 0.68);
-  put(M.dim, V.windowCool, 0.28);
-  put(M.dark, V.signPlate, 0.08);
+  });
 
   const tex = new T.CanvasTexture(cv);
   tex.magFilter = T.NearestFilter;
@@ -457,3 +483,21 @@ function facadeMask(T: ThreeNS) {
   tex.generateMipmaps = false;
   return tex;
 }
+
+/**
+ * 텍셀 명세. **인덱스가 곧 `M.*` 값**이다.
+ *
+ * ⚠️ **전부 광고 타워보다 한 단 낮다.** 광장의 주인공은 한가운데 탑이고 파사드는 그것을
+ * 둘러싼 배경이다 — 배경이 더 밝으면 시선이 갈 곳을 잃는다. 두 파츠는 서로를 import
+ * 하지 않으므로 그 관계는 `tests/world5-times-square.test.ts` 가 지킨다.
+ */
+const TEXELS: readonly NeonTexel[] = [
+  { hex: V.signPlate, a: 0 },        // M.off
+  { hex: V.neonMagenta, a: 0.82 },   // M.magenta
+  { hex: V.neonCyan, a: 0.80 },      // M.cyan
+  { hex: V.neonAmber, a: 0.78 },     // M.amber
+  { hex: V.windowWarm, a: 0.52 },    // M.warm
+  { hex: V.neonWhite, a: 0.72 },     // M.white — 이 파츠에서 유일하게 문턱을 넘는다
+  { hex: V.windowCool, a: 0.28 },    // M.dim
+  { hex: V.signPlate, a: 0.08 },     // M.dark
+];

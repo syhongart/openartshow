@@ -74,7 +74,22 @@ export const lamp: PartSpec = {
    *  밤 세기는 `LAMP_MAX_GLOW` 를 그대로 쓴다: 그 값이 **블룸 문턱을 넘도록**
    *  정해진 값이라(`decide/night.ts`) 여기서 따로 정하면 그 정합이 깨진다.
    */
-  neon: { day: 0, night: LAMP_MAX_GLOW },
+  neon: {
+    day: 0,
+    night: LAMP_MAX_GLOW,
+    bloom: true,
+    /**
+     * **이 파츠만 마스크 구조가 다르다.** 다른 네온 파츠는 마스크 텍셀에 색을 칠하고
+     * `emissive` 를 흰색(곱셈 항등원)으로 두는데, 가로등은 반대다 — `emissive` 가
+     * 등불색을 들고 마스크는 회색조 0/255(= 알파 0/1)로 **어느 조각이 빛나는가**만
+     * 가른다(`lampMask`).
+     *
+     * 그래서 "발광 텍셀의 색 × 알파" 라는 계약을 여기서는 `LAMP_LIGHT × 1` 로 만족한다.
+     * 두 구조가 같은 계약을 만족하는 것이 요점이고, 그 덕에 블룸 문턱 검사가 파츠마다
+     * 다른 코드를 쓰지 않아도 된다.
+     */
+    texels: () => [{ hex: LAMP_LIGHT, a: MASK_PASS / 255 }],
+  },
   salt: 0x94d049bb,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다.
   tones: [TINTS.plain],

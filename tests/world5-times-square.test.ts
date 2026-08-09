@@ -38,10 +38,12 @@ import {
 } from '../frontend/js/world5/parts/adfacade.js';
 import { clocktower } from '../frontend/js/world5/parts/clocktower.js';
 import { tower, MAX_H, LANDMARK_H, WORLD_MAX_H } from '../frontend/js/world5/parts/tower.js';
-import { plazaOccupied } from '../frontend/js/world5/parts/plaza.js';
+import { plazaOccupied, isPlaza } from '../frontend/js/world5/parts/plaza.js';
+// 랜드마크 전제 단언(검수관 C-2)이 `isTowerParcel` 의 세 배제 조건을 그대로 잰다.
+import { roadDirs } from '../frontend/js/world5/parts/road-topology.js';
 import { SETBACK, LAMP_CLEARANCE, EAVE } from '../frontend/js/world5/parts/road-topology.js';
 import { NEON_PARTS } from '../frontend/js/world5/parts/index.js';
-import { V } from '../frontend/js/world5/parts/palette.js';
+import { V, luma } from '../frontend/js/world5/parts/palette.js';
 import {
   DEFAULT_LAYOUT, type PlacedPart, type PlaceContext, type ThreeNS,
 } from '../frontend/js/world5/parts/types.js';
@@ -613,6 +615,38 @@ describe('§4 랜드마크', () => {
     expect(parcelWater(LANDMARK_PARCEL.px, LANDMARK_PARCEL.pz, O.cellX, O.cellZ)).toBe('dry');
   });
 
+  /**
+   * ★ **물 전제에는 짝이 있었어야 했다** (검수관 조건 C-2, 2026-08-09).
+   *
+   * `tower.place` 의 랜드마크 분기는 `isTowerParcel` 을 통째로 우회한다. 그 함수가
+   * 배제하는 것은 셋인데(**부광장** · 길없음 · 물), 랜드마크가 다시 받는 것은 **물
+   * 하나**다. 위 검사가 물 전제를 잰 것처럼 **부광장 전제도 재야 한다.**
+   *
+   * ── 내가 이 단언을 넣지 말자고 했고, 틀렸다 ────────────────────────────────
+   * *"도달 불가능한 조건에 검사를 붙이는 것은 장식"* 이라고 반론했는데 **두 물건을
+   * 혼동한 것이다.** 도달 불가능한 것은 `tower.place` 의 **코드 가지**이고, 전제
+   * 단언은 *「도달 불가능하다는 사실 자체」* 를 감시한다 — 방향이 반대다. 전자는
+   * 영영 안 깨지고, 후자는 **전제가 깨지는 날** 깨진다.
+   *
+   * 검수관이 실측으로 갈랐다: 도로 위상이 바뀌어 `(2,0)` 이 부광장이 되는 상황을
+   * 시뮬레이션하니 **85건 전부 통과**했다. 96m 랜드마크가 광장 한복판에 서는데 어느
+   * 축도 안 본다. `isTowerParcel` 이 광장을 배제하는 이유가 *"트인 곳이 목적인 자리다.
+   * 거기 60m 짜리를 세우면 광장이 아니다"* 인데, 랜드마크는 그 배제를 우회한다.
+   *
+   * 좌표를 옮기는 경로는 이미 막혀 있다(`스폰에서 처음부터 로드되는 자리다` 가 어느
+   * 칸으로 옮겨도 깨진다). **남은 구멍은 위상 쪽 하나**이고 이 단언이 그것을 메운다.
+   *
+   * 뮤테이션: `isPlaza` 가 이 칸에서 참이 되도록 도로 위상·확률을 바꾸면 깨진다.
+   */
+  it('랜드마크 자리가 부광장이 아니다 — 광장 한복판에 96m 가 서지 않는다', () => {
+    expect(isPlaza(LANDMARK_PARCEL.px, LANDMARK_PARCEL.pz)).toBe(false);
+    // 중앙 광장도 아니다. 이쪽은 `LANDMARK_PARCEL = PLAZA_R + 1` 이라 정의상 밖이지만,
+    // 그 유도가 바뀌는 날 조용히 안으로 들어올 수 있다.
+    expect(isCentralPlaza(LANDMARK_PARCEL.px, LANDMARK_PARCEL.pz)).toBe(false);
+    // 길이 있다 — 갈 수 없는 랜드마크는 랜드마크가 아니다(`isTowerParcel` 의 셋째 배제).
+    expect(roadDirs(LANDMARK_PARCEL.px, LANDMARK_PARCEL.pz).length).toBeGreaterThan(0);
+  });
+
   // 뮤테이션: `LANDMARK_RATIO` 를 8 로 올리면 비례 범위를 벗어나 깨진다.
   it('비례가 이 파츠의 범위(2.5:1 ~ 6.7:1) 안이다', () => {
     const { p } = allTowers(SEEDS[0]).find(({ px, pz }) => isLandmarkParcel(px, pz))!;
@@ -812,16 +846,42 @@ describe('§5 광고 파사드의 발광', () => {
    * 얼룩이 된다. 절대값은 톤매핑에 달렸으므로(헤드리스 WebGL ≠ 감독 WebGPU) **고정하는
    * 것은 순서뿐**이다.
    *
-   * 뮤테이션: `put(M.dark, …, 0.08)` 을 0.9 로 올리면 깨진다.
+   * ── 축을 알파에서 **실제 휘도**로 옮겼다 (2026-08-09) ──────────────────────
+   * 옛 단언은 `alpha` 만 내림차순으로 정렬해 *"네온 4색 ≳ 흰 패널"* 을 못 박고 있었다.
+   * 그 축은 **화면 순서를 못 본다** — 발광 픽셀의 밝기는 `luma(색) × alpha` 이고, 색을
+   * 빼면 어두운 색의 높은 알파와 밝은 색의 낮은 알파가 구별되지 않는다.
+   *
+   * 실측이 그 차이를 보여 준다. 지금 값에서 알파 순서와 휘도 순서가 **다르다**:
+   *
+   *   알파:  magenta .82 > cyan .80 > amber .78 > white .72 > warm .52 > dim .28 > dark .08
+   *   휘도:  white .692 > cyan .531 > amber .520 > warm .434 > magenta .271 > dim .248 > dark .020
+   *
+   * 마젠타는 알파가 가장 높은데 실제로는 dim 다음으로 어둡다(`luma(neonMagenta)` 가
+   * 0.331 로 흰빛의 1/3 이라서다). 즉 옛 단언은 **참이면서 화면에 대해 아무 말도 하지
+   * 않는** 상태였고, 이번 회차에 블룸 문턱 검사가 같은 형태로 죽어 있던 것과 같은
+   * 사고다(`tests/world5-neon-glow.test.ts` 의 그 블록 주석).
+   *
+   * 그래서 순서 자체도 바뀌었다 — **흰 패널이 맨 위**다. 근거는 `palette.ts` 의
+   * `neonWhite` 주석 한 곳이 소유한다(번지는 것은 흰빛이 맡고 색은 원색이 맡는다).
+   *
+   * 뮤테이션: `TEXELS` 의 `M.dark` 알파를 0.9 로 올리면 마지막 부등식이 깨지고,
+   *           `M.white` 색을 `V.neonMagenta` 로 바꾸면 첫 부등식이 깨진다.
    */
-  it('네온 4색 ≳ 흰 패널 ≫ 어두운 화면 ≫ 거의 꺼짐', () => {
-    const alphas = maskPaints(adfacade).map((p) => p.alpha).sort((a, b) => b - a);
-    // 네온 넷 + 흰 패널 + dim + dark = 일곱 칠
-    expect(alphas.length).toBe(7);
-    const [n1, , , n4, white, dim, dark] = alphas;
-    expect(n4).toBeGreaterThan(white);           // 네온 넷이 흰 패널보다 밝다
-    expect(white).toBeGreaterThan(dim * 2);      // 흰 패널이 전환 중 화면보다 확실히 밝다
-    expect(dim).toBeGreaterThan(dark * 2);       // 전환 중이 거의 꺼진 것보다 확실히 밝다
-    expect(n1).toBeLessThan(1);                  // 세기는 배수라 1 을 넘으면 마스크가 포화된다
+  it('실제 발광 휘도: 흰 패널 ≫ 어두운 화면 ≫ 거의 꺼짐', () => {
+    const paints = maskPaints(adfacade);
+    // 원색 넷(마젠타·시안·앰버) + 따뜻한 화면 + 흰 패널 + dim + dark = 일곱 칠
+    expect(paints.length).toBe(7);
+    const lit = paints.map((p) => ({ ...p, L: luma(parseInt(p.fill.slice(1), 16)) * p.alpha }))
+      .sort((a, b) => b.L - a.L);
+    const [top, , , , , dim, dark] = lit;
+
+    // ① 가장 밝은 것은 **흰 패널**이다 — 원색이 아니다.
+    expect(luma(parseInt(top.fill.slice(1), 16)), '가장 밝은 칠이 흰빛이 아니다')
+      .toBeGreaterThan(0.9);
+    // ② 켜진 것 중 가장 어두운 것도 전환 중 화면보다 밝다 — 그래야 "꺼진 판" 이 갈린다.
+    expect(lit[4].L, '켜진 판이 전환 중 화면에 묻힌다').toBeGreaterThan(dim.L);
+    expect(dim.L).toBeGreaterThan(dark.L * 2);
+    // ③ 알파는 배수라 1 을 넘으면 마스크가 포화된다.
+    expect(Math.max(...paints.map((p) => p.alpha))).toBeLessThan(1);
   });
 });

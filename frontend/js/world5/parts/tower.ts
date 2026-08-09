@@ -35,7 +35,7 @@
 //
 // 이격은 값으로 기록한다(팀장 조건 ②) — 아래 상수 주석이 그 기록이다.
 
-import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
+import type { NeonTexel, PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { roadDirs, SETBACK, LAMP_CLEARANCE, EAVE } from './road-topology.js';
 import { isTowerParcel } from './zoning.js';
 import { isCentralPark, isLandmarkParcel } from '../decide/grid.js';
@@ -173,8 +173,21 @@ export const tower: PartSpec = {
    * 발광 신고(`PartSpec.neon`). 마천루. 낮에도 **완전히 끄지 않는다** — 사무실 창은 대낮에도 일부 켜져
    *  있고, 0 으로 두면 낮 화면에서 건물이 통짜 회색 덩어리가 된다.
    *  0.25 는 "있는 듯 없는 듯" 을 노린 값이고 화면 판정 전이다.
+   *
+   * ── `night` 1 → 1.30 (2026-08-09) ────────────────────────────────────────
+   * 위계상 광고 타워(1.55)·광고 파사드(1.40) 다음이고 다리(1.15)·건물(1.05) 위다.
+   *
+   * 이 값에서 문턱을 넘는 것은 **랜턴 층 하나**다(0.884 × 0.95 × 1.30 = **1.092**).
+   * 왕관은 0.762 로 문턱을 겨우 넘고 창은 한참 아래인데, 그것이 의도다 — 마천루에서
+   * 밤에 번져야 하는 것은 꼭대기이지 사무실 창이 아니다. 창까지 번지면 건물이 발광
+   * 덩어리가 되어 **층이 사라진다.**
    */
-  neon: { day: 0.25, night: 1 },
+  neon: {
+    day: 0.25,
+    night: 1.30,
+    bloom: true,
+    texels: () => TEXELS,
+  },
   salt: 0x5bd1e995,
   /**
    * **곱셈기다 — 색이 아니다.** 석재·유리·창의 색은 이제 정점에 굽혀 있고(`asset`),
@@ -565,30 +578,14 @@ function towerMask(T: ThreeNS) {
   g.fillStyle = greyCss(MASK_BLOCK);
   g.fillRect(0, 0, MASK_TEXELS, 1);
 
-  /** 텍셀 하나를 팔레트 색으로. `a` 가 세기(검은 바탕과 섞이므로 그대로 배수가 된다) */
-  const put = (i: number, hex: number, a: number) => {
-    g.globalAlpha = a;
-    g.fillStyle = hexCss(hex);
+  // **명세를 소비한다 — 값을 여기 다시 적지 않는다**(경위는 `types.ts` 의 `NeonSpec`).
+  TEXELS.forEach((t, i) => {
+    if (t.a <= 0) return;
+    g.globalAlpha = t.a;
+    g.fillStyle = hexCss(t.hex);
     g.fillRect(i, 0, 1, 1);
     g.globalAlpha = 1;
-  };
-
-  // ── 세기 값의 근거 ─────────────────────────────────────────────────────
-  // 전부 **상대비**로 잡았다. 절대 밝기는 `emissiveIntensity`(현재 1)와 톤매핑이
-  // 정하고, 그 둘은 헤드리스(WebGL/swiftshader)와 감독 기기(WebGPU)에서 다르다 —
-  // **여기서 절대값을 실측했다고 적을 수 없다.** 대신 서로의 비만 고정한다:
-  //
-  //   왕관 > 랜턴 ≫ 창 > 업라이트 밑동 > 업라이트 위
-  //
-  // 이 순서가 뒤집히면 룩이 무너진다(예: 업라이트가 창보다 밝으면 벽이 형광판이 된다).
-  // 감독 화면에서 절대값을 조정할 때도 **비는 유지**한다.
-  put(M.winWarm, V.windowWarm, 0.50);
-  put(M.winCool, V.windowCool, 0.40);
-  put(M.upLit, V.neonAmber, 0.30);
-  put(M.upDim, V.neonAmber, 0.13);
-  put(M.crown, V.neonAmber, 0.88);
-  put(M.lantern, V.windowCool, 0.95);
-  put(M.mast, V.aviationRed, 1.0);
+  });
 
   const tex = new T.CanvasTexture(cv);
   tex.magFilter = T.NearestFilter;
@@ -596,3 +593,36 @@ function towerMask(T: ThreeNS) {
   tex.generateMipmaps = false;
   return tex;
 }
+
+/**
+ * 텍셀 명세. **인덱스가 곧 `M.*` 값**이다.
+ *
+ * ── 세기 값의 근거 ─────────────────────────────────────────────────────────
+ * 전부 **상대비**로 잡았다. 절대 밝기는 `emissiveIntensity` 와 톤매핑이 정하고, 그 둘은
+ * 헤드리스(WebGL/swiftshader)와 감독 기기(WebGPU)에서 다르다 — **여기서 절대값을
+ * 실측했다고 적을 수 없다.** 대신 서로의 비만 고정한다:
+ *
+ *   랜턴 .840 > 왕관 .586 > 마스트 .437 > 창(따뜻) .418 > 창(차가움) .354
+ *   > 업라이트 밑동 .200 > 업라이트 위 .087
+ *
+ * 값은 `luma(색) × 알파` 다 — **알파만으로는 이 순서가 안 나온다.** 마스트는 알파가
+ * 1.0 으로 가장 높은데 색이 어두워(`aviationRed` 의 luma 0.437) 실제로는 네 번째다.
+ *
+ * 이 순서가 뒤집히면 룩이 무너진다(예: 업라이트가 창보다 밝으면 벽이 형광판이 된다).
+ * 감독 화면에서 절대값을 조정할 때도 **비는 유지**한다.
+ *
+ * ⚠️ 위 순서는 오래 *"왕관 > 랜턴"* 이라고 적혀 있었고 **알파와 어긋나 있었다** —
+ * 알파는 랜턴 0.95 · 왕관 0.88 이라 그때도 랜턴이 위였고, 색까지 넣으면
+ * (`windowCool` 0.884 대 `neonAmber` 0.666) 차이가 더 벌어진다. 문장이 값을 설명하지
+ * 못하면 다음 사람이 문장을 믿고 값을 고친다. 값 쪽이 옳으므로 문장을 고쳤다.
+ */
+const TEXELS: readonly NeonTexel[] = [
+  { hex: V.signPlate, a: 0 },        // M.off
+  { hex: V.windowWarm, a: 0.50 },    // M.winWarm
+  { hex: V.windowCool, a: 0.40 },    // M.winCool
+  { hex: V.neonAmber, a: 0.30 },     // M.upLit
+  { hex: V.neonAmber, a: 0.13 },     // M.upDim
+  { hex: V.neonAmber, a: 0.88 },     // M.crown
+  { hex: V.windowCool, a: 0.95 },    // M.lantern — 이 파츠에서 블룸 문턱을 넘는 부위
+  { hex: V.aviationRed, a: 1.0 },    // M.mast
+];

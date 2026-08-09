@@ -50,7 +50,7 @@
 // 근본 해법은 물 파셀을 "지면 없이 파츠만" 로드하는 것인데, 그것은 스트리밍 계층의
 // 변경이라 파츠가 결정할 일이 아니다 — 조립부에 보고했다.
 
-import type { PartSpec, PlacedPart, ThreeNS, ResolvedLayout } from './types.js';
+import type { NeonTexel, PartSpec, PlacedPart, ThreeNS, ResolvedLayout } from './types.js';
 import { DEFAULT_LAYOUT } from './types.js';
 import { EAVE } from './road-topology.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
@@ -269,8 +269,19 @@ export const bridge: PartSpec = {
   /**
    * 발광 신고(`PartSpec.neon`). 다리 조명. 낮에는 끈다 — 케이블 조명은 야경의 물건이고, 낮에 켜면
    *  케이블이 흰 선으로 떠서 실루엣이 뭉갠다.
+   *
+   * ── `night` 1 → 1.15 (2026-08-09) ────────────────────────────────────────
+   * 위계상 마천루(1.30) 아래, 일반 건물(1.05) 위다. 이 값에서 케이블이 문턱을 넘는다
+   * (0.961 × 0.85 × 1.15 = **0.939**) — **다리에서 번져야 하는 것은 곡선 하나**이고,
+   * 상판(0.442)과 항공등(0.502)은 아래에 둔다. 상판이 함께 번지면 현수교의 곡선이
+   * 직선 두 줄에 묻힌다(아래 텍셀 명세의 순서가 같은 말을 한다).
    */
-  neon: { day: 0, night: 1 },
+  neon: {
+    day: 0,
+    night: 1.15,
+    bloom: true,
+    texels: () => TEXELS,
+  },
   salt: 0x3c7fa2e9,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다. 다리는 세계에 서너 개뿐이고
   // 전부 같은 구조물이므로 개체차를 둘 이유가 없다.
@@ -528,20 +539,14 @@ function bridgeMask(T: ThreeNS) {
   g.fillStyle = greyCss(MASK_BLOCK);
   g.fillRect(0, 0, MASK_TEXELS, 1);
 
-  const put = (i: number, hex: number, a: number) => {
-    g.globalAlpha = a;
-    g.fillStyle = hexCss(hex);
+  // **명세를 소비한다 — 값을 여기 다시 적지 않는다**(경위는 `types.ts` 의 `NeonSpec`).
+  TEXELS.forEach((t, i) => {
+    if (t.a <= 0) return;
+    g.globalAlpha = t.a;
+    g.fillStyle = hexCss(t.hex);
     g.fillRect(i, 0, 1, 1);
     g.globalAlpha = 1;
-  };
-
-  // 상대비만 고정한다 — 절대 밝기는 `emissiveIntensity` 와 톤매핑이 정하고 그 둘은
-  // 헤드리스(WebGL)와 감독 기기(WebGPU)에서 다르다. 순서: 항공등 > 케이블 > 상판.
-  // 케이블이 상판보다 밝은 것이 요점이다. 현수교의 야경은 **곡선**이 만들고, 상판
-  // 조명이 더 밝으면 그냥 빛나는 직선 두 줄이 된다.
-  put(M.cable, V.lampGlow, 0.72);
-  put(M.deck, V.windowWarm, 0.46);
-  put(M.beacon, V.aviationRed, 1.0);
+  });
 
   const tex = new T.CanvasTexture(cv);
   tex.magFilter = T.NearestFilter;
@@ -549,3 +554,33 @@ function bridgeMask(T: ThreeNS) {
   tex.generateMipmaps = false;
   return tex;
 }
+
+/**
+ * 텍셀 명세. **인덱스가 곧 `M.*` 값**이다.
+ *
+ * 상대비만 고정한다 — 절대 밝기는 `emissiveIntensity` 와 톤매핑이 정하고 그 둘은
+ * 헤드리스(WebGL)와 감독 기기(WebGPU)에서 다르다. 순서: **케이블 > 항공등 > 상판.**
+ * 케이블이 상판보다 밝은 것이 요점이다. 현수교의 야경은 **곡선**이 만들고, 상판 조명이
+ * 더 밝으면 그냥 빛나는 직선 두 줄이 된다.
+ *
+ * ── 케이블 색을 `V.lampGlow` 에서 `V.neonWhite` 로 바꿨다 (2026-08-09) ──────
+ * 이유가 둘이다.
+ * ① **가로등과 색이 같았다.** 다리 케이블 조명이 가로등 불빛과 같은 색이면, 강 건너
+ *    불빛 줄이 "가로등이 물 위로 이어진 것" 으로 읽힌다. 다리가 다리로 보이려면 색이
+ *    갈려야 한다.
+ * ② **문턱을 넘을 수 없는 색이었다.** `lampGlow` 의 상대휘도는 0.805 라, 위계가
+ *    허락하는 세기(1.15)에서 문턱을 넘으려면 알파가 0.97 이 필요했다 — 그러면 케이블이
+ *    거의 순백으로 타서 전구가 아니라 형광관이 된다. 흰빛(0.961)으로 바꾸면 알파
+ *    0.85 로 여유를 두고 넘는다.
+ *
+ * ⚠️ 순서 서술이 *"항공등 > 케이블"* 이라고 적혀 있었고 **알파와는 맞았지만 화면과는
+ * 달랐다** — 항공등의 색(`aviationRed`)은 휘도가 0.437 이라 알파 1.0 에서도 실제
+ * 밝기는 케이블보다 낮았다. `emissiveIntensity` 만 보면 못 보이고 색까지 넣어야
+ * 보이는 어긋남이고, 이번에 그 축을 게이트로 만든 이유가 이것이다.
+ */
+const TEXELS: readonly NeonTexel[] = [
+  { hex: V.bridgeSteel, a: 0 },      // M.off
+  { hex: V.neonWhite, a: 0.85 },     // M.cable — 이 파츠에서 블룸 문턱을 넘는 부위
+  { hex: V.windowWarm, a: 0.46 },    // M.deck
+  { hex: V.aviationRed, a: 1.0 },    // M.beacon
+];

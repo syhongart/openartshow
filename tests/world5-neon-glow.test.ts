@@ -22,7 +22,7 @@
 import { describe, it, expect } from 'vitest';
 import { NeonGlow, type MaterialSource } from '../frontend/js/world5/systems/neon-glow.js';
 import { NEON_PARTS } from '../frontend/js/world5/parts/index.js';
-import { neonGlow, lampGlow, nightness, LAMP_MAX_GLOW } from '../frontend/js/world5/decide/night.js';
+import { neonGlow, neonPeak, lampGlow, nightness, LAMP_MAX_GLOW } from '../frontend/js/world5/decide/night.js';
 import { BLOOM_THRESHOLD } from '../frontend/js/world5/features/postfx-params.js';
 
 /**
@@ -198,21 +198,73 @@ describe('네온이 블룸 문턱을 넘는다 — 넘지 못하면 켜도 화�
   // 정상 동작하면서 걸리는 픽셀이 0** 이었고, 감독 화면에는 *"가로등 똑같은데"* 로만
   // 나타났다. 코드도 설정도 멀쩡한데 결과만 없는 형태다.
   //
-  // ⚠️ **못 재는 것**: 여기서 보는 것은 `emissiveIntensity` 이지 최종 화면 휘도가
-  // 아니다. 실제로 걸리는 픽셀 수는 톤매핑·색공간·백엔드를 거친 뒤에 정해지고,
-  // **헤드리스는 WebGL·감독 실기기는 WebGPU** 라 그 경로가 다르다. 이 검사는
-  // "세기가 문턱 아래로 내려가는 것"을 막을 뿐, 켜졌다는 증명이 아니다.
-  it('밤 세기가 문턱보다 크다', () => {
+  // ── 이 블록이 **바로 그 사고를 재현하고 있었다** (2026-08-09) ──────────────
+  // 여기 있던 두 검사는 `neonGlow(p, night)`, 즉 **`emissiveIntensity` 만** 봤다.
+  // 실제 픽셀 휘도는 `luma(마스크 텍셀 색) × 텍셀 알파 × 세기` 이므로 앞의 두 항이
+  // 빠진 축은 문턱 통과 여부를 **원리상 못 본다.**
+  //
+  // 그리고 그것이 이론이 아니었다 — 산술로 재 보니 다섯 파츠 중 `lamp` 하나만 넘고
+  // 나머지는 전부 미달인데 검사는 초록이었다(게시판 2026-08-09). 옛 주석이 그 사실을
+  // 「못 재는 것」으로 정직하게 적어 두긴 했으나, **블록 이름이 주장하는 것과 검사가
+  // 실제로 하는 일이 달랐다.** 그런 검사는 다음 사람이 확인을 생략하게 만든다.
+  //
+  // 그래서 문장을 고치는 대신 **주장을 참으로 만들었다**: 파츠가 텍셀 명세를 신고하고
+  // (`PartSpec.neon.texels`) 마스크를 굽는 쪽이 그 배열을 소비한다. 아래 검사는 굽는
+  // 값과 같은 배열을 읽는다.
+  //
+  // ⚠️ **여전히 못 재는 것**: 톤매핑·색공간·백엔드는 그대로 사각이다. 그 셋이 무엇을
+  // 어느 방향으로 어긋내는지는 `decide/night.ts` 의 `neonPeak` 주석 한 곳에 있다 —
+  // 여기에 다시 적지 않는다.
+  const peakOf = (p: (typeof NEON_PARTS)[number]) => neonPeak(p, nightness('night'));
+
+  it('표본이 실재하고 양쪽 신고가 다 있다 — 한쪽만 있으면 아래 두 검사 중 하나가 공허하다', () => {
+    // 이 단언이 없으면 `bloom: true` 파츠가 0 개일 때 "전부 넘는다" 가 자동으로 참이
+    // 된다. 항진명제를 막는 자리다.
+    expect(NEON_PARTS.filter((p) => p.bloom).length, 'bloom:true 파츠가 없다').toBeGreaterThan(2);
+    expect(NEON_PARTS.filter((p) => !p.bloom).length, 'bloom:false 파츠가 없다').toBeGreaterThan(0);
     for (const p of NEON_PARTS) {
-      const lit = neonGlow(p, nightness('night'));
-      expect(lit, `${p.kind}: 밤 세기가 블룸 문턱 이하다`).toBeGreaterThan(BLOOM_THRESHOLD);
+      expect(p.texels.length, `${p.kind}: 텍셀 명세가 비었다`).toBeGreaterThan(0);
+    }
+  });
+
+  it('`bloom: true` 파츠의 가장 밝은 부위가 문턱을 넘는다', () => {
+    for (const p of NEON_PARTS.filter((x) => x.bloom)) {
+      expect(peakOf(p), `${p.kind}: 최대 발광 휘도가 블룸 문턱 이하다`)
+        .toBeGreaterThan(BLOOM_THRESHOLD);
     }
   });
 
   it('여유가 실재한다 — 문턱에 겨우 닿는 값은 다음 조정에서 죽는다', () => {
-    for (const p of NEON_PARTS) {
-      const lit = neonGlow(p, nightness('night'));
-      expect(lit, `${p.kind}: 여유 없음`).toBeGreaterThan(BLOOM_THRESHOLD * 1.2);
+    // 1.2 배는 옛 검사에서 물려받은 여유다. 근거는 그때와 같고(문턱에 겨우 닿는 값은
+    // 다음 조정에서 조용히 죽는다), 축이 실제 휘도로 바뀌면서 **의미가 생겼다** —
+    // 옛 축에서 이 배수는 `emissiveIntensity` 에 대한 것이라 화면과 관계가 없었다.
+    for (const p of NEON_PARTS.filter((x) => x.bloom)) {
+      expect(peakOf(p), `${p.kind}: 여유 없음`).toBeGreaterThan(BLOOM_THRESHOLD * 1.2);
+    }
+  });
+
+  it('`bloom: false` 파츠는 문턱을 **넘지 않는다** — 위계를 조용히 깨는 변경을 막는다', () => {
+    // 한 방향만 보면 "다 켜면 통과" 라는 구멍이 남는다. 저층 건물 창이 번지기 시작하면
+    // 거리 전체가 발광판이 되고 도시의 깊이가 사라진다 — 그것이 이 방향의 대상이다.
+    for (const p of NEON_PARTS.filter((x) => !x.bloom)) {
+      expect(peakOf(p), `${p.kind}: 넘지 않기로 신고해 놓고 문턱을 넘었다`)
+        .toBeLessThan(BLOOM_THRESHOLD);
+    }
+  });
+
+  it('세기 위계가 신고 순서대로다 — 가로등 > 광고 타워 > 광고 파사드 > 마천루 > 다리 > 건물', () => {
+    // 감독 지시(2026-08-09 *"진짜 뉴욕처럼 세련되게"*)로 여섯 파츠의 밤 세기를 함께
+    // 올리면서 생긴 관계다. 위계가 없으면 "무엇을 보라는 곳인지" 가 사라진다 —
+    // 실측에서 실제로 뒤집혀 있었다(광고 파사드 영역이 광고 타워 영역보다 밝았다).
+    const order = ['lamp', 'clock', 'adfacade', 'tower', 'bridge', 'building'];
+    const night = (k: string) => {
+      const p = NEON_PARTS.find((x) => x.kind === k);
+      expect(p, `${k} 가 발광 신고 목록에 없다`).toBeTruthy();
+      return p!.night;
+    };
+    for (let i = 1; i < order.length; i++) {
+      expect(night(order[i - 1]), `${order[i - 1]} 가 ${order[i]} 보다 어둡다`)
+        .toBeGreaterThan(night(order[i]));
     }
   });
 });
@@ -339,6 +391,84 @@ describe('G3 — 발광을 신고한 파츠가 실제로 발광 가능한 재질
 // 들어가는지**를 본다. `emissiveIntensity` 는 three 기본값이 1 이라 "숫자인가" 로는
 // 아무것도 못 재지만, "밤에 **신고한 night 값**이 되는가" 는 파츠·신고·배선 셋이 전부
 // 이어져야만 참이 된다.
+/**
+ * 마스크를 **실제로 굽게 하고 무엇을 칠했는지 기록한다.** `stubCanvas` 는 호출을
+ * 흘려보내기만 하므로 이 축을 못 본다.
+ */
+function recordMaskPaints(spec: { asset(T: ThreeNS): unknown }) {
+  const paints: Array<{ x: number; w: number; fill: string; alpha: number }> = [];
+  const ctx: Record<string, unknown> = {
+    fillStyle: '', strokeStyle: '', globalAlpha: 1, lineWidth: 1, font: '', textAlign: '',
+    textBaseline: '', globalCompositeOperation: 'source-over', lineCap: 'butt',
+  };
+  ctx.fillRect = (x: number, _y: number, w: number) => {
+    paints.push({ x, w, fill: String(ctx.fillStyle), alpha: Number(ctx.globalAlpha) });
+  };
+  for (const m of [
+    'strokeRect', 'clearRect', 'beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'ellipse',
+    'rect', 'fill', 'stroke', 'save', 'restore', 'translate', 'rotate', 'scale', 'setTransform',
+    'fillText', 'strokeText', 'drawImage', 'quadraticCurveTo', 'bezierCurveTo', 'clip', 'setLineDash',
+  ]) ctx[m] = () => {};
+  ctx.createLinearGradient = () => ({ addColorStop: () => {} });
+  ctx.createRadialGradient = () => ({ addColorStop: () => {} });
+  ctx.measureText = () => ({ width: 10 });
+  ctx.getImageData = () => ({ data: new Uint8ClampedArray(4) });
+  ctx.putImageData = () => {};
+  const g = globalThis as { document?: unknown };
+  const had = 'document' in g;
+  const prev = g.document;
+  g.document = {
+    createElement: (tag: string) =>
+      (tag === 'canvas' ? { width: 1, height: 1, getContext: () => ctx } : {}),
+  };
+  try {
+    spec.asset(T3 as unknown as ThreeNS);
+  } finally {
+    if (had) g.document = prev; else delete g.document;
+  }
+  // 한 텍셀짜리 칠만. 바탕(폭 = 텍셀 수)은 칠이 아니라 배경이다.
+  return paints.filter((p) => p.w === 1);
+}
+
+describe('G4 — 신고한 텍셀 명세가 **실제로 구워지는 값**과 같다', () => {
+  // ── 이 검사가 없으면 위의 블룸 축 전체가 거짓이 될 수 있다 ─────────────────
+  // 문턱 판정은 `NEON_PARTS[].texels` 를 읽는다. 그런데 마스크를 굽는 쪽이 그 배열을
+  // 안 쓰고 값을 따로 들고 있으면, **명세는 문턱을 넘는데 화면은 그대로**인 상태가
+  // 성립한다 — 이번 회차가 고친 바로 그 사고를 한 단계 안쪽에서 재현하는 형태다.
+  //
+  // 그래서 실제로 굽게 하고 칠을 기록해 대조한다. 소비 코드를 지우고 `put(...)` 을
+  // 손으로 되살리는 뮤테이션이 여기서 잡힌다.
+  //
+  // ⚠️ **대상은 8×1(또는 4×1) 컬러 마스크를 쓰는 파츠뿐이다.**
+  //  · `lamp` 은 구조가 다르다 — `emissive` 가 색을 들고 마스크는 회색조 0/255 다.
+  //    그래서 "칠한 색 = 텍셀 색" 이 성립하지 않아 이 대조를 적용할 수 없다.
+  //  · `building` 은 아틀라스에 수백 번 칠하고, 명세를 그 아틀라스(`FACADE_CELLS`)에서
+  //    **유도**하므로 미러링이 구조적으로 없다.
+  //  둘을 조용히 빼면 그 자체가 구멍이라 아래에서 **명시적으로 센다.**
+  const EXEMPT = new Set(['lamp', 'building']);
+  const targets = NEON_PARTS.filter((n) => !EXEMPT.has(n.kind))
+    .map((n) => ({ n, spec: PARTS.find((p) => p.kind === n.kind)! }));
+
+  it('표본이 실재하고 면제가 예상대로다 — 면제가 늘면 이 축이 조용히 줄어든다', () => {
+    expect(targets.length, '대조 대상이 없다').toBeGreaterThan(2);
+    for (const { spec } of targets) expect(spec, '스펙을 못 찾았다').toBeTruthy();
+    // 면제 목록이 실재하는 파츠를 가리키는가. 죽은 예외는 구멍이다.
+    for (const k of EXEMPT) {
+      expect(NEON_PARTS.map((n) => n.kind), `${k} 가 발광 목록에 없다`).toContain(k);
+    }
+  });
+
+  it('구운 칠의 (색, 세기) 집합이 명세와 정확히 같다', () => {
+    for (const { n, spec } of targets) {
+      const baked = recordMaskPaints(spec)
+        .map((p) => `${p.fill}@${p.alpha.toFixed(4)}`).sort();
+      const declared = n.texels.filter((t) => t.a > 0)
+        .map((t) => `#${t.hex.toString(16).padStart(6, '0')}@${t.a.toFixed(4)}`).sort();
+      expect(baked, `${n.kind}: 구운 마스크가 명세와 다르다`).toEqual(declared);
+    }
+  });
+});
+
 describe('G3-b — 실물 재질이 `NeonGlow` 로 실제로 켜진다', () => {
   it('밤에 모든 신고 파츠의 세기가 신고한 night 값이 된다', () => {
     const mats = new Map<string, { emissiveIntensity?: number }>();

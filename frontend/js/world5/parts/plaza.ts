@@ -200,6 +200,20 @@ const PAVE_TEX = 512;
  */
 const CROSSWALK_BAND = 0.15;
 
+/**
+ * 광장 바닥에 번지는 **네온 반사의 색 구성.** 뽑기는 균등이므로 **중복이 곧 가중치**다.
+ *
+ * `paveTexture` 안 지역 상수였는데 밖으로 올렸다 — 캔버스에 그린 결과는 게이트가 읽을
+ * 수 없어서, 안에 두면 이 구성이 **아무 검사도 안 받는다.** 실제로 뮤테이션에서
+ * 확인했다: 옛 4색 균등으로 되돌려도 게이트가 0 건 실패였다.
+ *
+ * 무엇을 지키는가는 `tests/world5-parts-assets.test.ts` 가 적는다.
+ */
+export const PAVE_NEON: readonly number[] = [
+  V.neonAmber, V.neonAmber, V.neonAmber, V.neonAmber,
+  V.neonWhite, V.neonWhite, V.neonWhite,
+];
+
 export const plazaFloor: PartSpec = {
   kind: 'plaza',
   // far 까지 그린다. 광장은 **멀리서 보여야 다가갈 이유가 생기는** 자리이고
@@ -357,13 +371,29 @@ function paveTexture(T: ThreeNS) {
   //
   // 세로로 길게 긋는 것이 핵심이다 — 물에 비친 빛은 **광원 쪽으로 늘어난다.**
   // 동그랗게 칠하면 색칠한 얼룩이지 반사가 아니다.
-  const NEON = [V.neonMagenta, V.neonCyan, V.neonAmber, V.neonLime];
+  // ── 색은 **위에 있는 광원**이 정한다 (2026-08-09) ─────────────────────────
+  //
+  // 옛 배열은 `[magenta, cyan, amber, lime]` 넷을 **균등**하게 뽑았다. 감독이 그 결과를
+  // 화면에서 잡았다: *"바닥에 초록·분홍 형광 줄무늬가 원근으로 뻗어 있었다. 도로
+  // 차선인지 잔디인지 광고 반사인지 나는 구별하지 못했다."*
+  //
+  // 구별이 안 된 것이 정확한 관측이다 — **반사에는 원천이 있어야 하는데** 광장 위에
+  // 초록 광원이 없다. 실제로 이 광장을 밝히는 것은 가로등(앰버)과 광고 스크린의 흰
+  // 화면이고, 원색은 몇 점이다. 그래서 배열의 무게를 그 구성에 맞춘다:
+  //
+  //   앰버 3/7 · 흰빛 2/7 · 마젠타 1/7 · 시안 1/7   (라임 0)
+  //
+  // 헤드리스 실측으로 이 줄무늬가 광장 바닥 픽셀의 **13%** 를 물들이고 있음을 확인했다
+  // (극단값 주입 대조: 네온 색을 순수 빨강으로 바꾸자 같은 영역의 대역이 통째로 옮겨
+  // 갔다). 면적이 이만큼이면 색 선택이 곧 광장의 인상이다.
   g.lineCap = 'round';
   for (let i = 0; i < 34; i++) {
     const x = rnd() * S;
     const y = rnd() * S;
     const len = 30 + rnd() * 90;
-    g.strokeStyle = `${hexCss(NEON[Math.floor(rnd() * NEON.length)])}1f`;
+    // 알파 `1f`(12%) → `16`(8.6%). 감독이 *"형광"* 이라 부른 것은 채도만이 아니라
+    // 세기이기도 하다 — 젖은 바닥에 번진 자국은 바닥색을 물들이지 덮지 않는다.
+    g.strokeStyle = `${hexCss(PAVE_NEON[Math.floor(rnd() * PAVE_NEON.length)])}16`;
     // 굵기 5~11px. 3px 아래로 내려가면 밉맵 첫 단계에서 절반이 사라져 카메라가
     // 흔들릴 때 색이 깜빡인다(감독이 잡은 "텍스처가 운다" 와 같은 축).
     g.lineWidth = 5 + rnd() * 6;

@@ -22,7 +22,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DOWNTOWN_SHARE, TOWER_P_CORE, TOWER_P_OUTER,
-  downtownRadius, downtownR, isDowntown, isTowerParcel,
+  downtownRadius, DOWNTOWN_R, isDowntown, isTowerParcel,
 } from '../frontend/js/world5/parts/zoning.js';
 import { MAX_SPAWN_REACH } from '../frontend/js/world5/decide/npc-walk.js';
 import { MAP_R_VISIBLE } from '../frontend/js/world5/decide/minimap.js';
@@ -92,9 +92,9 @@ describe('확정값 — 감독 판정 "기본"(마천루 8기)', () => {
   //    와 구별되지 않는다. 도심 반경이 실제로 줄어야(축소를 따라가야) 판정이 성립한다.
   //    뮤테이션: `DOWNTOWN_SHARE` 를 0.42(현행 미반영)로 되돌리면 깨진다.
   it('도심 반경이 축소를 따라간 값이다 — 면적 비율이 world2 실측을 보존한다', () => {
-    expect(downtownR()).toBe(4);
+    expect(DOWNTOWN_R).toBe(4);
     // 명목 면적이 world2 의 18.8% 언저리다. 42.3%(축소 미반영)와는 두 배 이상 벌어진다.
-    const nominal = (2 * downtownR() + 1) ** 2 / (GRID_W * GRID_H);
+    const nominal = (2 * DOWNTOWN_R + 1) ** 2 / (GRID_W * GRID_H);
     expect(nominal).toBeGreaterThan(0.15);
     expect(nominal).toBeLessThan(0.25);
   });
@@ -114,16 +114,26 @@ describe('확정값 — 감독 판정 "기본"(마천루 8기)', () => {
     expect(TOWER_P_OUTER).toBeLessThan(TOWER_P_CORE);
   });
 
-  it('`share` 상수가 반경 유도에 실제로 쓰인다 — 상수만 바꾸고 함수가 안 따라오면 깨진다', () => {
-    expect(downtownR()).toBe(downtownRadius(DOWNTOWN_SHARE));
-  });
+  // ⚠️ 이 자리에 **자기 이름을 못 지키는 검사**가 있었다 (검수관 조건 C-1, 2026-08-09).
+  //
+  //     it('`share` 상수가 반경 유도에 실제로 쓰인다 — 상수만 바꾸고 함수가 안 따라오면 깨진다')
+  //       expect(downtownR()).toBe(downtownRadius(DOWNTOWN_SHARE));
+  //
+  // **양변이 같은 상수를 읽는다.** 검수관 실측 — `downtownR()` 이 리터럴 `4` 를
+  // 돌려주게 해도 **10건 전부 통과**했다. 「유도를 리터럴로 되돌리기」가 이 회차 전체의
+  // 주제인데, 그것을 겨냥한다고 이름 붙인 검사가 정확히 그 형태를 통과시켰다.
+  //
+  // **검사를 고치는 대신 리터럴화할 자리를 없앴다** — `downtownR()` 함수를 지우고
+  // `DOWNTOWN_R = downtownRadius(DOWNTOWN_SHARE)` 상수 한 줄로 바꿨다. 유도가 곧
+  // 값이면 "본문이 유도를 안 쓴다" 는 상태가 존재할 수 없고, 그러면 감시할 것도 없다.
+  // 위 `반경이 4다` 검사가 `DOWNTOWN_SHARE` 회귀를 그대로 잡는다.
 });
 
 describe('명목 도심은 실효 도심보다 크다 — 비율이 거짓말하는 지점', () => {
   it('배제 조건이 실제로 칸을 걷어낸다', () => {
     // 확정값(R=4)에서 잰다. 노브가 있던 동안에는 `dense`(명목 42.3%)로 재서 간극이
     // 더 크게 보였는데, 확정값에서도 간극은 그대로 성립한다 — 그것이 요점이다.
-    const R = downtownR();
+    const R = DOWNTOWN_R;
     let nominal = 0, effective = 0;
     let park = 0, plaza = 0, wet = 0;
     for (let px = GRID_MIN_X; px <= GRID_MAX_X; px++) {
