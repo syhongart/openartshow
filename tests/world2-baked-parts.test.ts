@@ -26,7 +26,7 @@ import * as THREE from 'three';
 import { lamp } from '../frontend/js/world2/parts/lamp.js';
 import { bench } from '../frontend/js/world2/parts/bench.js';
 import { planter } from '../frontend/js/world2/parts/planter.js';
-import { clocktower, PALETTES, clockLook, H as CLOCK_H } from '../frontend/js/world2/parts/clocktower.js';
+import { clocktower, PALETTE, H as CLOCK_H } from '../frontend/js/world2/parts/clocktower.js';
 import { rgb } from '../frontend/js/world2/parts/bake.js';
 import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
 import type { ThreeNS } from '../frontend/js/world2/parts/types.js';
@@ -171,6 +171,12 @@ describe('시계탑 — world3 종탑 이식', () => {
   // 팔레트가 12색이고 **12색 전부 실제로 칠해진다**(실측: 가장 적은 roof 24 정점,
   // 가장 많은 metal 528). 조각이 합쳐지거나 색 하나가 안 쓰이면 줄어든다.
   //
+  // ★ **이 단언은 색상 중복 사고도 겸해서 잡는다**(검수관 뮤테이션 실측 2026-08-09):
+  // `PALETTE.roof` 를 `PALETTE.wall` 과 같은 값으로 바꾸면 계열이 12→11 로 떨어져 깨진다.
+  // 노브가 있던 시절의 "두 팔레트 키별 비교" 검사가 감독 판정으로 사라졌는데, 그 축을
+  // 이 단언이 이미 덮고 있어 **대체 검사를 새로 만들 필요가 없었다.** 적어 두지 않으면
+  // 다음 사람이 "중복 검사가 없네" 하고 재발견 수고를 한다.
+  //
   // ⚠️ **이 축은 조각이 사라져도 안 움직일 수 있다.** 시계면을 통째로 지우는 뮤테이션
   // (M7)에서 12계열이 **그대로 유지**됐다 — 시계면이 쓰는 `roofShade`·`trim`·`metal`
   // 이 처마·차양·창틀·종 꼭지에도 이미 쓰이기 때문이다. 그때 잡은 것은 위의 정점 수다.
@@ -234,7 +240,7 @@ describe('시계탑 — world3 종탑 이식', () => {
   it('종탑 안에 황동 종이 걸려 있다', () => {
     const p = geo.attributes.position.array;
     const c = geo.attributes.color.array;
-    const want = rgb(PALETTES.village.brass);
+    const want = rgb(PALETTE.brass);
     let bell = 0;
     for (let i = 0; i < c.length; i += 3) {
       const y = p[i + 1];
@@ -248,64 +254,5 @@ describe('시계탑 — world3 종탑 이식', () => {
   // 4각 탑이므로 좌우 대칭이다. 한쪽 조각만 빠지면 색 계열·정점 수가 그대로여도 여기서 걸린다.
   it('좌우 대칭이다', () => {
     expect(xBalance(geo)).toBeLessThan(0.01);
-  });
-});
-
-// ── 색 노브 — 두 안이 실제로 다르고, 형태는 같다 ─────────────────────────────
-//
-// 감독 판정 대기 중인 임시 노브다(`?clock=village|city`). 판정이 나면 진 쪽과 함께
-// 이 describe 도 지운다.
-describe('시계탑 색 노브', () => {
-  const withKnob = <R,>(search: string, fn: () => R): R => {
-    const g = globalThis as unknown as { location?: { search: string } };
-    const prev = g.location;
-    g.location = { search };
-    try { return fn(); } finally { g.location = prev; }
-  };
-
-  it('두 팔레트가 같은 키를 채운다 — 하나라도 비면 그 조각이 검게 굽힌다', () => {
-    expect(Object.keys(PALETTES.city).sort()).toEqual(Object.keys(PALETTES.village).sort());
-  });
-
-  /**
-   * ★ **12색이 하나도 겹치지 않는다.**
-   *
-   * ⚠️ 이 검사는 **뮤테이션이 시켜서 생겼다.** 아래 "실제로 다른 색을 낸다" 하나만
-   * 있을 때 `city.roof` 를 `village.roof` 와 **같은 값으로 바꿔도 22/22 통과**했다
-   * (M6, executor 실측 2026-08-09). 12색 중 1색만 겹치면 정점색 차이가 11/12 =
-   * **91.7%** 라 `> 0.9` 임계를 그냥 넘는다.
-   *
-   * 비율 단언은 "두 팔레트가 대체로 다르다" 까지만 말한다 — **어느 한 색이 잘못
-   * 복사됐는가**는 못 본다. 그래서 키별로 본다.
-   */
-  it('두 팔레트의 12색이 하나도 겹치지 않는다', () => {
-    const same = (Object.keys(PALETTES.village) as Array<keyof typeof PALETTES.village>)
-      .filter((k) => PALETTES.village[k] === PALETTES.city[k]);
-    expect(same).toEqual([]);
-  });
-
-  // 위가 **값**을 보고 이것이 **집행**을 본다 — 팔레트를 고쳐도 구운 결과가 안 바뀌면
-  // (예: `asset` 이 한쪽을 하드코딩) 위 검사는 초록인 채로 통과한다. 경계를 건너는
-  // 지점은 양쪽 테스트 어디에도 안 걸린다는 것이 이 저장소가 반복해 데인 형태다.
-  it('village 와 city 가 실제로 다른 색을 낸다', () => {
-    const a = withKnob('?clock=village', () => clocktower.asset(T).geometry.attributes.color.array);
-    const b = withKnob('?clock=city', () => clocktower.asset(T).geometry.attributes.color.array);
-    expect(a.length).toBe(b.length);
-    let diff = 0;
-    for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-3) diff++;
-    // 두 팔레트가 12색 전부 다르므로 대부분의 성분이 갈려야 한다.
-    expect(diff / a.length).toBeGreaterThan(0.9);
-  });
-
-  it('색만 바뀌고 형태는 한 점도 안 움직인다', () => {
-    const a = withKnob('?clock=village', () => clocktower.asset(T).geometry.attributes.position.array);
-    const b = withKnob('?clock=city', () => clocktower.asset(T).geometry.attributes.position.array);
-    expect(Array.from(b)).toEqual(Array.from(a));
-  });
-
-  it('목록 밖 값은 village 로 떨어진다 — 손으로 고친 URL 이 화면을 깨뜨리지 않는다', () => {
-    expect(withKnob('?clock=nope', clockLook)).toBe('village');
-    expect(withKnob('', clockLook)).toBe('village');
-    expect(withKnob('?clock=city', clockLook)).toBe('city');
   });
 });
