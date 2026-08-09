@@ -236,13 +236,32 @@ function SidebarScene( editor ) {
 		'ModelViewer': 'ModelViewer'
 
 	} ).setWidth( '150px' );
-	environmentType.setValue( 'None' );
+	// [OpenArtShow] 기본값을 `None` → `ModelViewer` 로 바꿨다.
+	//
+	// 감독 실사용 보고(2026-08-09): *"불러와 지고. 어느정도 동작은 하는데 텍스쳐뷰가
+	// 안되네. 그래서 어둡게보여. 와이어프레임은 보여"*
+	//
+	// 원본 editor 는 환경을 `None` 으로 시작한다. 그러면 **씬에 조명도 환경맵도 없어서**
+	// GLB 의 PBR 재질(`MeshStandardMaterial`)이 받을 빛이 0 이다 — 검게 나온다.
+	// 와이어프레임은 조명을 안 타므로 그것만 보였던 것이다. **우리가 만든 결함이 아니라
+	// 원본 기본값**이고, 사용자가 Scene 탭에서 매번 바꿔야 했다.
+	//
+	// 이 도구의 용도는 *"GLB 를 불러와 놓고 보는 것"* 이다. 첫 화면이 캄캄하면 도구로서
+	// 결함이므로 기본값을 바꾼다. `ModelViewer` 는 `RoomEnvironment`(three 내장, 파일
+	// 없음)를 PMREM 으로 구워 환경광을 준다 — 외부 자산을 안 받으므로 자기완결에 걸리지
+	// 않는다(`Viewport.js` 의 `case 'ModelViewer'`).
+	//
+	// ⚠️ 값만 바꾸면 **UI 표시만** 바뀐다. 실제 적용은 `onChange` 뿐이라 부팅 시에는 안
+	// 돈다 — 그래서 아래에서 한 번 직접 dispatch 한다.
+	environmentType.setValue( 'ModelViewer' );
 	environmentType.onChange( function () {
 
 		onEnvironmentChanged();
 		refreshEnvironmentUI();
 
 	} );
+	// 부팅 시 1회 적용. 위 주석대로 `setValue` 는 신호를 안 쏜다.
+	onEnvironmentChanged();
 
 	environmentRow.add( new UIText( strings.getKey( 'sidebar/scene/environment' ) ).setClass( 'Label' ) );
 	environmentRow.add( environmentType );
