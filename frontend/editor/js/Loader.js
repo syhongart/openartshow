@@ -707,23 +707,20 @@ function Loader( editor ) {
 
 			{
 
-				reader.addEventListener( 'load', async function ( event ) {
-
-					const contents = event.target.result;
-
-					const { VRMLLoader } = await import( 'three/addons/loaders/VRMLLoader.js' );
-
-					const result = new VRMLLoader().parse( contents );
-
-					editor.execute( new AddObjectCommand( editor, result ) );
-
-				}, false );
-				reader.readAsText( file );
-
+				// [OpenArtShow] VRML 로더 제거 — **chevrotain(파서 라이브러리)을 통째로 끌어온다.**
+				//
+				// `VRMLLoader` 가 `three/examples/jsm/libs/chevrotain.module.min.js` 를 import
+				// 하는데, 그 파일에는 `unpkg.com`·`chevrotain.io` 리터럴이 들어 있고 크기도
+				// 크다. 반입 당시 그것이 **라이브 공유 청크로 흡수돼 미술관 홈페이지가
+				// gzip +174KB 를 더 받고 있었다**(검수관 독립 빌드 실측).
+				//
+				// 청크 분리(`vite.config.js` 의 `vendor-three-editor`)로 라이브 영향은 없어졌지만,
+				// **VRML 은 배치 도구에 필요 없다** — 감독 요구는 GLB 다. 라이선스 미확인
+				// 의존을 배포에 남길 이유가 없어 여기서 뺀다.
+				console.warn( '[OpenArtShow] VRML(.wrl) 은 지원하지 않는다 — GLB 를 쓰라.' );
 				break;
 
 			}
-
 			case 'xyz':
 
 			{
@@ -962,14 +959,28 @@ function Loader( editor ) {
 
 		const { GLTFLoader } = await import( 'three/addons/loaders/GLTFLoader.js' );
 		const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
-		const { MeshoptDecoder } = await import( 'three/addons/libs/meshopt_decoder.module.js' );
 
 		const dracoLoader = new DRACOLoader();
 		dracoLoader.setDecoderPath( '../examples/jsm/libs/draco/gltf/' );
 
 		const loader = new GLTFLoader( manager );
 		loader.setDRACOLoader( dracoLoader );
-		loader.setMeshoptDecoder( MeshoptDecoder );
+
+		// [OpenArtShow] MeshoptDecoder 제거 — **세 번째이자 마지막 wasm 유입 경로였다.**
+		//
+		// `meshopt_decoder.module.js` 는 wasm 을 **base64 가 아닌 형태**로 들고 있다가
+		// 모듈 평가 시점에 `WebAssembly.validate()`/`instantiate()` 를 부른다.
+		// 우리 CSP(`script-src 'self'`, `'wasm-unsafe-eval'` 없음)가 거기서 막는다.
+		//
+		// ⚠️ **내가 만든 `[C2]` 가드가 이것을 못 잡았다.** 그 가드는 base64 매직(`AGFzbQ`)만
+		// 셌고, 앞의 둘(mikktspace·zstddec)은 base64 였지만 이것은 아니었다 —
+		// **가드가 PASS 인 채로 페이지가 계속 죽었다.** 검사 축을 `WebAssembly.` 호출로
+		// 바꿔서야 잡힌다(같은 커밋에서 고쳤다).
+		//
+		// 파급은 앞의 둘과 같다: three/addons 는 manualChunks 로 공유 청크에 묶이므로
+		// editor 를 열지도 않은 미술관·world·builder 가 함께 죽었다.
+		//
+		// 잃는 것: meshopt 로 압축된 GLB 를 못 읽는다. 일반 GLB 는 영향 없다.
 
 		// [OpenArtShow] KTX2Loader 제거 — **이것이 라이브 페이지를 깨뜨린 진짜 원인이었다.**
 		//

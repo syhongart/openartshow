@@ -3,7 +3,6 @@ import * as THREE from 'three';
 import { HTMLMesh } from 'three/addons/interactive/HTMLMesh.js';
 import { InteractiveGroup } from 'three/addons/interactive/InteractiveGroup.js';
 
-import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 class XR {
 
@@ -122,14 +121,14 @@ class XR {
 
 				//
 
-				const controllerModelFactory = new XRControllerModelFactory();
-
+				// [OpenArtShow] XRControllerModelFactory 제거 — **실행되면 남의 서버를 부른다.**
+				// 이 팩토리는 컨트롤러 3D 모델을 `cdn.jsdelivr.net` 의 `@webxr-input-profiles`
+				// 에서 받는다(기본 경로). 자기완결 위반이고, 배치 도구에 VR 컨트롤러 모델이
+				// 필요 없다. 컨트롤러 자체(레이·선택)는 위 `controller1/2` 가 그대로 한다.
 				const controllerGrip1 = renderer.xr.getControllerGrip( 0 );
-				controllerGrip1.add( controllerModelFactory.createControllerModel( controllerGrip1 ) );
 				controllers.add( controllerGrip1 );
 
 				const controllerGrip2 = renderer.xr.getControllerGrip( 1 );
-				controllerGrip2.add( controllerModelFactory.createControllerModel( controllerGrip2 ) );
 				controllers.add( controllerGrip2 );
 
 				// menu
