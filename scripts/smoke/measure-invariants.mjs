@@ -459,6 +459,12 @@ export async function runInvariants({
     let back = 0;
     let backDodge = -1;
     for (; back < MAX_LEGS; back++) {
+      // ── 왜 `back >= outLegs` 를 함께 요구하는가 (검수관 비블로커, 2026-08-08) ──
+      // 재방문 조건만 두면 **첫 leg 에 끝날 수 있다** — 출발점 바로 옆 칸에서 되돌아서면
+      // 한 걸음에 원래 칸을 다시 밟는다. 그러면 "갔다가 돌아왔다" 가 아니라 경계에서
+      // 한 번 흔든 것이고, 정작 재보려던 것(멀리 가서 **언로드된** 파셀을 다시 로드)이
+      // 일어나지 않는다. 갈 때 쓴 leg 만큼은 돌아오게 해서 **언로드가 실제로 걸린
+      // 거리**를 왕복하게 만든다.
       if (coverageOf(visits).revisits >= COVER_REVISITS && back >= outLegs) break;
       if (prev.yaw != null && prev.wx != null) {
         const want = yawToward({ x: prev.wx, z: prev.wz }, { x: start.wx, z: start.wz });
@@ -533,7 +539,17 @@ export async function runInvariants({
     if (!covOk) {
       log('\n  ✗ FAIL — 세션이 목표만큼 돌아다니지 못했다. **개수 판정은 무의미하다.**');
       log('    아무 데도 안 갔으면 아무것도 안 늘어난다 — 그 PASS 는 게이트가 아니라 착시다.');
-      log('    막힌 자리는 위 경로의 마지막 칸이다. 배치(#149)나 스폰(`decide/grid.ts`)을 본다.');
+      // **두 원인을 가른다** (검수관 비블로커, 2026-08-08). 첫 판본은 무조건 *"막힌 자리를
+      // 보라"* 고만 적었는데, leg 상한을 다 쓰고 끝난 것과 실제로 벽에 갇힌 것은 처방이
+      // 다르다 — 전자는 하네스 예산 문제(상한을 올리거나 목표를 낮춘다)이고 후자만 배치·
+      // 스폰 문제다. 안 가르면 다음 사람이 매번 배치부터 뒤진다.
+      const spent = outLegs >= MAX_LEGS || back >= MAX_LEGS;
+      if (spent) {
+        log(`    원인 후보 ①: **leg 상한(${MAX_LEGS})을 소진했다** — 전진 ${outLegs}·복귀 ${back}.`);
+        log('      느린 러너에서 leg 당 이동이 줄면 여기 걸린다. 하네스 예산(MAX_LEGS·WALK_MS)을 먼저 본다.');
+      }
+      log(`    원인 후보 ${spent ? '②' : '①'}: **실제로 막혔다** — 마지막 칸이 위 경로의 끝이다.`);
+      log('      배치(#149)나 스폰(`decide/grid.ts`)을 본다. 상한을 안 쓰고 끝났으면 이쪽이다.');
     }
 
     // 통과·실패는 백엔드 무관 카운터로만 가른다.

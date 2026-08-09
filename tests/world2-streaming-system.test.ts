@@ -6,6 +6,7 @@
 // 새로 태어나던 것이 스파이크의 원인이었다.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { StreamingSystem, type ParcelBuilder, type ParcelHandle } from '../frontend/js/world2/systems/streaming.js';
 import type { FrameCtx } from '../frontend/js/world2/kernel.js';
 import type { Tier } from '../frontend/js/world2/decide/lod.js';
@@ -45,6 +46,10 @@ function mkSys(o: {
   builder?: ParcelBuilder;
   pos?: { x: number; z: number };
   markDirty?: () => void;
+  /** look-ahead 방향. 안 주면 예전처럼 방향이 없다(중심 = 발밑) */
+  dir?: { x: number; z: number };
+  /** 진행 계수. 안 주면 옵션 자체를 넘기지 않는다 — 기본값 1 경로를 그대로 탄다 */
+  speedFactor?: number;
 } = {}) {
   const fb = fakeBuilder();
   const pos = o.pos ?? { x: 0, z: 0 };
@@ -53,6 +58,8 @@ function mkSys(o: {
     cellX: 32, cellZ: 32,
     getPosition: () => pos,
     markDirty: o.markDirty,
+    getDirection: o.dir ? () => o.dir! : undefined,
+    getSpeedFactor: o.speedFactor === undefined ? undefined : () => o.speedFactor!,
     // 이 파일은 **스트리밍 기계**를 본다 — 로드·반납·누수·예산. 그 성질은 물이 있든
     // 없든 같아야 하므로 지형을 끈다. 실제 월드는 이 옵션을 주지 않아 물이 걸린다.
     // (끄지 않으면 원점 두 파셀 옆 강 때문에 13이 11이 되고, 밴드가 바뀐 것도 강이
@@ -304,5 +311,72 @@ describe('StreamingSystem — tier 맵 일관성', () => {
     pos.x = 32 * 4;
     settle(sys);
     expect([...sys.tierMap.values()].includes('none' as Tier)).toBe(false);
+  });
+});
+
+// ── 진행 계수가 look-ahead 에 실제로 곱해지는가 (판정→집행 경계) ──────────────
+//
+// **검수관 반려 B1 로 생긴 절이다.** `player.speedFactor`(계산) → `main.ts`(배선) →
+// 여기(소비) 로 이어지는 경계를 아무 테스트도 안 보고 있었다. `CLAUDE.md` 가 이름까지
+// 붙여 경고하는 형태다 — *"판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다"*.
+//
+// 관측은 **로드된 파셀의 tier 맵**으로 한다. 계수가 look-ahead 를 줄이면 판정 중심이
+// 발밑으로 당겨지고, 그러면 진행 방향 파셀의 tier 가 실제로 달라진다. 중간 변수를
+// 들여다보지 않고 **화면에 나가는 결과**로 재는 것이 요점이다.
+const tierSnapshot = (sys: StreamingSystem) =>
+  [...sys.tierMap.entries()].map(([k, t]) => `${k}=${t}`).sort().join(' ');
+
+describe('StreamingSystem — getSpeedFactor 가 look-ahead 를 접는다', () => {
+  const dir = { x: 0, z: -1 };
+
+  it('계수 0 과 1 은 서로 다른 파셀 구성을 만든다', () => {
+    const a = make({ dir, speedFactor: 1 });
+    const b = make({ dir, speedFactor: 0 });
+    settle(a.sys); settle(b.sys);
+    expect(tierSnapshot(a.sys)).not.toBe(tierSnapshot(b.sys));
+  });
+
+  it('계수 0 은 방향을 안 준 것과 같다 — look-ahead 가 통째로 접힌다', () => {
+    const zero = make({ dir, speedFactor: 0 });
+    const none = make({});
+    settle(zero.sys); settle(none.sys);
+    expect(tierSnapshot(zero.sys)).toBe(tierSnapshot(none.sys));
+  });
+
+  it('안 주면 1 과 같다 — 예전 동작이 기본값이다', () => {
+    const absent = make({ dir });
+    const one = make({ dir, speedFactor: 1 });
+    settle(absent.sys); settle(one.sys);
+    expect(tierSnapshot(absent.sys)).toBe(tierSnapshot(one.sys));
+  });
+
+  it('1 을 넘는 값·음수·NaN 은 0~1 로 가둔다 — 커지면 고치려던 증상이 되살아난다', () => {
+    const one = make({ dir, speedFactor: 1 });
+    const zero = make({ dir, speedFactor: 0 });
+    settle(one.sys); settle(zero.sys);
+    for (const over of [3, 1e9]) {
+      const s = make({ dir, speedFactor: over });
+      settle(s.sys);
+      expect(tierSnapshot(s.sys), `${over} 가 1 로 안 잘렸다`).toBe(tierSnapshot(one.sys));
+    }
+    for (const bad of [-1, NaN]) {
+      const s = make({ dir, speedFactor: bad });
+      settle(s.sys);
+      // 음수는 0 으로(뒤로 당기지 않는다), NaN 은 1 로(옵션이 없는 셈) 떨어진다.
+      expect(tierSnapshot(s.sys)).toBe(tierSnapshot(bad < 0 ? zero.sys : one.sys));
+    }
+  });
+});
+
+// ── 배선 — main.ts 가 두 끝을 이었는가 (정적·약함) ────────────────────────────
+//
+// 위 절은 계수를 **직접 주입**하므로 조립부를 보지 않는다. `main.ts:getSpeedFactor` 한
+// 줄이 지워져도 위 검사는 전부 초록이다. 그 구멍을 좁힌다 — `world2-collide.test.ts` §4
+// 와 같은 성격이고 같은 한계를 갖는다(글자가 있는지만 본다).
+describe('배선 — main.ts 가 speedFactor 를 스트리밍에 넘긴다 (정적·약함)', () => {
+  const src = readFileSync('frontend/js/world2/main.ts', 'utf8');
+
+  it('player.speedFactor 를 getSpeedFactor 로 넘긴다', () => {
+    expect(src, 'getSpeedFactor 배선이 없다').toMatch(/getSpeedFactor\s*:\s*\(\)\s*=>\s*player\.speedFactor/);
   });
 });

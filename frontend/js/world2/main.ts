@@ -595,6 +595,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           cellX: CELL_X, cellZ: CELL_Z,
           getPosition: () => player.position,
           getDirection: () => player.direction,
+          // 막히면 look-ahead 를 접는다 — 감독 실기기 "분수대에 끼일때 멀리있는 lod가
+          // 나왔다가 안나왔다가" 의 처방. 근거는 `streaming.ts` 의 `getSpeedFactor` 한 곳.
+          getSpeedFactor: () => player.speedFactor,
           markDirty: () => kernel?.markDirty(),
         });
 

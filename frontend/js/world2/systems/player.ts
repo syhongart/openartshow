@@ -197,6 +197,14 @@ export class PlayerSystem implements System {
   private axes = { x: 0, z: 0 };
   /** 실제로 움직인 방향(스트리밍 look-ahead용). 멈추면 마지막 방향을 유지한다 */
   private moveDir = { x: 0, z: 0 };
+  /**
+   * 실제로 낸 속력 ÷ 걷기 속도, 평활값(0~1). 스트리밍 look-ahead 가 읽는다.
+   *
+   * **1 로 시작한다** — 아직 한 번도 안 움직인 것은 *"막혔다"* 가 아니다. 0 으로 두면
+   * 부팅 직후 가만히 서 있는 동안 look-ahead 가 접혀, 이 필드가 생기기 전의 동작(항상
+   * 전개)이 이유 없이 바뀐다.
+   */
+  private moveFactor = 1;
   /** 헤드밥 위상(rad) */
   private bobPhase = 0;
   /**
@@ -276,7 +284,10 @@ export class PlayerSystem implements System {
     // **실제로 간 거리**를 따로 잡는다. 충돌이 붙은 뒤로 `d`(가려던 양)와 실제가 갈린다.
     let mx = 0;
     let mz = 0;
-    if (d.dx !== 0 || d.dz !== 0) {
+    // **가려고 했는가.** 아래 진행 계수가 이것을 본다 — "안 눌러서 안 감" 과 "눌렀는데
+    // 못 감" 은 이동량만으로는 구별되지 않는다(둘 다 0 이다).
+    const wanted = d.dx !== 0 || d.dz !== 0;
+    if (wanted) {
       // 충돌을 안 주면 그대로 간다 — 예전 동작이 기본값이다.
       const next = this.resolveMove
         ? this.resolveMove(this.x, this.z, d.dx, d.dz)
@@ -303,6 +314,31 @@ export class PlayerSystem implements System {
     this.bobPhase = stepBobPhase(this.bobPhase, ratio, ctx.dt);
     // 지수 접근. dt 를 곱해 프레임레이트가 달라도 같은 시간에 같은 만큼 따라간다.
     this.bobIntensity += (Math.min(1, ratio) - this.bobIntensity) * Math.min(1, ctx.dt * 8);
+
+    // ── 스트리밍용 진행 계수 (감독 실기기 2026-08-08) ──────────────────────────
+    //
+    // **헤드밥과 같은 원천에서 나오지만 별도 필드로 둔다.** 값이 같아 보인다고 공유하면
+    // 다음에 한쪽 감각을 만질 때 다른 쪽이 조용히 딸려간다 — 이 저장소가 "값 미러링" 으로
+    // 이름 붙인 것의 반대 형태(의도가 다른 둘이 한 값을 쓰는 것)다.
+    //
+    // 시상수를 헤드밥(dt×8)보다 **느리게**(dt×3, ~0.33초) 잡는다. 헤드밥은 걸음에 붙어야
+    // 즉각적이어야 하지만, 스트리밍 판정은 급할수록 손해다 — 빨리 따라갈수록 경계에서
+    // 자주 흔들린다.
+    //
+    // ⚠ **입력이 없으면 갱신하지 않는다 — 직전 값을 그대로 얼린다** (검수관 반려 B2).
+    // 첫 판본은 입력 유무를 안 보고 `ratio` 만 먹였고, 그것이 **손을 뗀 정상 상태까지
+    // "막혔다" 로 취급**했다. 그러면 `direction` getter 가 문서에 적어 둔 기능 — *"서서
+    // 둘러볼 때 그쪽을 미리 올린다"* — 이 약 1초 만에 죽는다(τ=1/(3dt), 직접 계산).
+    // 헤드밥은 반대로 **꺼져야** 맞으므로(제자리 흔들림) 위 `bobIntensity` 는 그대로 둔다.
+    // 두 필드를 따로 둔 판단(바로 위 문단)이 여기서 값을 한다.
+    //
+    // 얼리는 것이 0/1 로 튀는 것보다 나은 이유: 끼인 채 눌렀다 뗐다 하면 목표를 1 로
+    // 복원하는 설계는 look-ahead 를 0↔0.5셀(16m) 로 왕복시켜 **감독이 보고한 깜빡임을
+    // 그대로 되살린다.** 얼리면 끼임 중에는 접힌 채 유지되고, 실제로 다시 걸어지는
+    // 순간에만 회복된다.
+    if (wanted) {
+      this.moveFactor += (Math.min(1, ratio) - this.moveFactor) * Math.min(1, ctx.dt * 3);
+    }
 
     // ── 물 (감독 지시 *"강에 사람이 빠지게해줘"*) ──────────────────────────────
     // **이동한 뒤에** 판정한다. 이동 전 좌표로 물어보면 물가를 넘어선 프레임에 아직
@@ -331,11 +367,37 @@ export class PlayerSystem implements System {
    */
   get eyeHeight(): number { return this.eye; }
   /** 이동 방향. 정지 중이면 시선 방향을 쓴다 — 서서 둘러볼 때 그쪽을 미리 올리려는 것 */
+  /**
+   * 스트리밍이 "어느 쪽을 미리 올릴까" 에 쓰는 방향.
+   *
+   * ⚠ **소스가 둘이고 그 사이를 오간다** — 조작 중이면 `moveDir`(마지막으로 **실제로**
+   * 간 방향), 손을 떼면 `facing(yaw)`(지금 보는 방향). 충돌이 붙기 전에는 둘이 거의
+   * 같았지만, 이제 **막히면 `moveDir` 가 갱신되지 않고 낡은 채 굳는다**(위 `update` 의
+   * `if (l > 0)`). 그래서 벽에 끼인 채 눌렀다 뗐다 하면 두 값이 크게 어긋난다.
+   *
+   * 감독 실기기 2026-08-08: *"분수대에 끼일때. 멀리있는 lod가 나왔다가 안나왔다가 해"* —
+   * 그 어긋남이 `lookAheadCenter` 를 통해 판정 중심을 최대 1.0셀(32m) 흔들었고,
+   * LOD 히스테리시스 폭(0.15~0.30셀)을 압도했다. **여기를 고치는 대신** 진행 계수
+   * (`speedFactor`)로 look-ahead 자체를 줄이는 쪽을 골랐다 — 방향 소스를 통일하려면
+   * "손 뗐을 때 어디를 미리 올릴까" 라는 별개 문제를 먼저 풀어야 하고, 막혀서 못 가는
+   * 동안에는 **어느 방향이든 미리 올릴 이유가 없다**는 것이 더 단순한 참이다.
+   */
   get direction(): { x: number; z: number } {
     const keys = this.input.forward || this.input.back || this.input.left || this.input.right;
     const stick = Math.hypot(this.axes.x, this.axes.z) > 0;
     return (keys || stick) ? this.moveDir : facing(this.yaw);
   }
+
+  /**
+   * 실제 진행 정도(0~1). **가려던 양이 아니라 간 양**에서 나온다.
+   *
+   * 스트리밍 look-ahead 가 이것을 곱한다 — 막혀 있으면 0 에 가까워져 판정 중심이 발밑에
+   * 고정된다. look-ahead 의 목적이 *"가려는 쪽 파셀을 미리 올린다"* 이므로, 못 가는
+   * 동안 앞을 당겨 보는 것은 목적에 어긋난 채 경계만 흔드는 일이다.
+   *
+   * **입력이 없는 동안은 얼어 있다**(위 `update` 참조) — 손을 뗀 것은 막힌 것이 아니다.
+   */
+  get speedFactor(): number { return this.moveFactor; }
   get angles(): { yaw: number; pitch: number } { return { yaw: this.yaw, pitch: this.pitch }; }
   /** 잠김 정도(0~1). 0 = 마른 땅, 1 = 완전히 가라앉음 */
   get submerged(): number { return this.submersion; }
