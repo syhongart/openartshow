@@ -35,89 +35,50 @@ import { plazaLandmark } from './plaza.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 import { readEnum } from '../url-knob.js';
 
-// ── 색 — 두 안을 노브로 연다 (감독 판정 대기) ────────────────────────────────
+// ── 색 — **city 확정** (감독 판정 2026-08-09) ────────────────────────────────
 //
-// 지오메트리는 world3 것을 그대로 옮겼지만 **색은 그대로 옮길 수 없다.** world3 팔레트는
+// 지오메트리는 world3 것을 그대로 옮겼지만 **색은 그대로 옮길 수 없었다.** world3 팔레트는
 // 마을용이라 벽이 크림(`0xfff2df`)이고 지붕이 산호(`0xe8705f`)인데, world2 는 건물이
 // 회청(`0x8892a0` 계열)·타워가 회백(`0xb8bcc4` 계열)인 도시다.
 //
-// 어느 쪽이 맞는지는 **화면으로만 갈린다** — 크림+산호가 회색 도시에서 광장 랜드마크로
-// 도드라지는 그림일 수도 있고, 그냥 튀는 것일 수도 있다. 글로 정할 수 없으므로 두 안을
-// 노브로 만들어 감독께 링크로 드린다(`?clock=village` / `?clock=city`).
+// 글로 정할 수 없는 축이라 **두 안(`?clock=village|city`)을 만들어 배포하고 감독께 링크로**
+// 드렸다. 감독 판정: ***city***.
 //
-// **판정이 나면 진 쪽을 지우고 이 주석에 왜 그쪽이었는지를 적는다.** 노브를 남겨 두면
-// 다음 사람이 "둘 다 지원해야 하는 축" 으로 읽는다 — world5 도심 밀도 노브에서 겪었다.
+// **판정이 내 예상을 뒤집었다.** 나는 `village` 를 권장으로 올렸다 — 근거는 ① 감독 지시
+// (*"동물의 숲에 있는 시계탑을 world2로 교체"*)의 문자적 해석이고 ② 회청 도시에서 크림+산호가
+// 확 도드라져 광장 랜드마크로 읽힌다는 것이었다. 감독은 **덜 튀는 쪽**을 골랐다.
+//
+// 그래서 내 ②는 근거가 아니라 **취향의 진술**이었다 — "도드라진다" 를 나는 장점으로 셌고
+// 감독은 그렇게 세지 않았다. 도시의 랜드마크는 배경과 싸워서 되는 것이 아니라 **같은 어휘
+// 안에서 높이와 형태로** 되는 것이고, 그 판단은 화면을 보는 사람 몫이다.
+// ①도 과했다 — 감독이 지정한 것은 **형태**였지 색까지가 아니었다.
+//
+// 다음에 이 색을 만질 사람에게: **`village` 팔레트는 지웠다.** 되살리고 싶으면
+// `world3/parts/palette.ts` 의 `V` 에 원본이 있다(그쪽 독블록에 역참조를 적어 뒀다).
 
-/** 종탑이 쓰는 색 이름. 두 팔레트가 **같은 키**를 채워야 한다(빠지면 타입이 잡는다) */
+/** 종탑이 쓰는 색 이름 */
 interface Palette {
   stone: number; wall: number; wallBase: number; door: number; glass: number;
   trim: number; roof: number; roofShade: number; brass: number; metal: number;
   wood: number; woodDeep: number;
 }
 
-export const CLOCK_LOOKS = ['village', 'city'] as const;
-export type ClockLook = (typeof CLOCK_LOOKS)[number];
-
-export const PALETTES: Record<ClockLook, Palette> = {
-  /**
-   * **village — world3 값 그대로.** 감독 지시(*"동물의 숲에 있는 시계탑을 world2로
-   * 교체"*)를 문자 그대로 읽은 안이다. 색까지 마을 것이라 도시에서 확실히 도드라진다.
-   *
-   * ⚠️ 값을 world3 `palette.ts` 에서 **복사**했다. 두 세계는 독립적으로 진화하므로
-   * 참조가 아니라 복사가 맞지만, 그 결과 같은 숫자가 두 곳에 있다 — world3 팔레트를
-   * 고쳐도 여기는 안 따라온다. 그것이 **의도**다(따라오면 world2 룩이 남의 세계 사정으로
-   * 바뀐다). 다음 사람이 미러링 사고로 오해하지 않도록 적어 둔다.
-   */
-  village: {
-    stone: 0xe0d8c8, wall: 0xfff2df, wallBase: 0xe8d5bb, door: 0xa9714a,
-    glass: 0xa8d8ea, trim: 0xfffaf0, roof: 0xe8705f, roofShade: 0xc25a4c,
-    brass: 0xe0a94f, metal: 0x6b5544, wood: 0xc99863, woodDeep: 0xa77b4c,
-  },
-  /**
-   * **city — 같은 형태에 도시 톤.** 벽을 `tower.ts` 의 회백(`0xb8bcc4` 계열)에 붙이고
-   * 기단을 한 단 어둡게 깔았다.
-   *
-   * 지붕만 무채색으로 안 갔다 — **구리 녹청**(`0x4d8a79`)이다. 벽·기단·금속을 전부 회색
-   * 계열로 맞추면 12m 짜리가 배경 건물과 같은 색이 되어 랜드마크가 아니라 작은 건물로
-   * 읽힌다. 녹청은 회청 도시와 색상환에서 갈리면서도 도시 시계탑의 관용색이라 튀지 않는다.
-   * (world3 의 산호 지붕이 마을에서 하던 역할을 도시 어휘로 바꿔 놓은 자리다.)
-   */
-  city: {
-    stone: 0x9aa0a8, wall: 0xc3c7cd, wallBase: 0xa8adb5, door: 0x4e5157,
-    glass: 0x93b6cc, trim: 0xdfe3e8, roof: 0x4d8a79, roofShade: 0x3d6f61,
-    brass: 0xc9a55e, metal: 0x515861, wood: 0x8a7458, woodDeep: 0x6b5844,
-  },
-};
-
 /**
- * 어느 안으로 그릴지. 기본값은 **village** — 감독 지시의 문자적 해석이 기본이고,
- * `city` 는 대안으로 연다.
+ * 도시 톤. 벽을 `tower.ts` 의 회백(`0xb8bcc4` 계열)에 붙이고 기단을 한 단 어둡게 깔았다.
  *
- * `asset()` 에서 한 번만 읽는다(파츠는 부팅 때 자산을 한 번 만든다). 그래서 노브를
- * 바꾸려면 새로고침이 필요하다 — 런타임 토글이 아니다.
+ * **지붕만 무채색이 아니다 — 구리 녹청(`0x4d8a79`).** 벽·기단·금속을 전부 회색 계열로
+ * 맞추면 12m 짜리가 배경 건물과 같은 색이 되어 랜드마크가 아니라 작은 건물로 읽힌다.
+ * 녹청은 회청 도시와 색상환에서 갈리면서도 도시 시계탑의 관용색이라 튀지 않는다.
+ * (world3 의 산호 지붕이 마을에서 하던 역할을 도시 어휘로 옮겨 놓은 자리다.)
  *
- * ── ⚠️ `parts/` 가 URL 을 읽는 **첫 사례**다 ────────────────────────────────
- * 실측: 노브를 읽는 곳은 `systems/`·`features/`·`main.ts` 뿐이고 `parts/` 는 **0건**
- * 이었다. 우연이 아니라 경계로 보인다 — 파츠가 결정적이어야 배치 골든과 개수 불변식이
- * 선다.
- *
- * **그 경계를 여기서 깨지 않는 이유**: 이 노브는 `asset()`(색)에만 닿고 `place()` 는
- * 한 줄도 안 본다. 골든은 `place` 결과만 해시하고, 개수 불변식은 지오·재질 **개수**를
- * 보는데 둘 다 팔레트와 무관하게 1·1 이다. 즉 노브를 어느 쪽으로 돌려도 두 게이트의
- * 입력이 안 변한다.
- *
- * **그리고 이것은 임시물이다.** 감독이 두 안 중 하나를 고르면 진 쪽과 이 함수를 함께
- * 지운다 — 노브를 남기면 다음 사람이 "둘 다 지원해야 하는 축" 으로 읽는다(world5 도심
- * 밀도 노브에서 겪었고, 그때도 확정 즉시 제거했다).
- *
- * ⚠️ **fallback 을 바꾸면 검사 두 곳이 깨진다.** `world2-baked-parts.test.ts` 는 모듈
- * 최상단에서 지오를 한 번 굽는데 그 시점의 `location` 이 비어 있어 fallback 이 그대로
- * 반영된다 — 그래서 fallback 을 `city` 로 돌리면 노브 검사뿐 아니라 **황동 종 검사**도
- * 함께 깨진다(M5 실측). 검사가 이상한 것이 아니라 기본값이 실제로 룩을 정한다는 뜻이다.
+ * ⚠️ 이 값들을 회색 쪽으로 더 밀지 마라 — 그러면 위 문단이 말한 "배경과 같은 색" 이 된다.
+ * 감독이 고른 것은 **무채색**이 아니라 **차분한 도시 톤 + 녹청 포인트** 다.
  */
-export function clockLook(): ClockLook {
-  return readEnum('clock', 'village', CLOCK_LOOKS) as ClockLook;
-}
+export const PALETTE: Palette = {
+  stone: 0x9aa0a8, wall: 0xc3c7cd, wallBase: 0xa8adb5, door: 0x4e5157,
+  glass: 0x93b6cc, trim: 0xdfe3e8, roof: 0x4d8a79, roofShade: 0x3d6f61,
+  brass: 0xc9a55e, metal: 0x515861, wood: 0x8a7458, woodDeep: 0x6b5844,
+};
 
 /**
  * 탑 전체 높이(미터). **12. 옛 판과 같은 값이고, 일부러 안 건드렸다.**
@@ -174,21 +135,18 @@ export const clocktower: PartSpec = {
     return out;
   },
 
-  asset: (T) => {
-    const P = PALETTES[clockLook()];
-    return {
-      geometry: buildBelfryGeometry(T, P),
-      material: new T.MeshStandardMaterial({
-        vertexColors: true,
-        // 건물(0.85)보다 조금 매끈하게. 석재 기단·회벽·목재 종탑이 섞여 있어 어느
-        // 한쪽으로 몰면 한 재질만 어색해진다 — 중간값으로 둔다.
-        roughness: 0.75,
-        metalness: 0.0,
-      }),
-      castShadow: true,
-      receiveShadow: true,
-    };
-  },
+  asset: (T) => ({
+    geometry: buildBelfryGeometry(T),
+    material: new T.MeshStandardMaterial({
+      vertexColors: true,
+      // 건물(0.85)보다 조금 매끈하게. 석재 기단·회벽·목재 종탑이 섞여 있어 어느
+      // 한쪽으로 몰면 한 재질만 어색해진다 — 중간값으로 둔다.
+      roughness: 0.75,
+      metalness: 0.0,
+    }),
+    castShadow: true,
+    receiveShadow: true,
+  }),
 };
 
 // ── 지오메트리 ──────────────────────────────────────────────────────────────
@@ -236,7 +194,7 @@ function faceX(y: number): number {
   return bodyR(y) * Math.SQRT1_2;
 }
 
-function buildBelfryGeometry(T: ThreeNS, P: Palette) {
+function buildBelfryGeometry(T: ThreeNS) {
   const pieces: Piece[] = [];
   const add = (geo: Piece['geo'], color: number) => pieces.push({ geo, color: rgb(color) });
 
@@ -251,33 +209,33 @@ function buildBelfryGeometry(T: ThreeNS, P: Palette) {
     add(new T.BoxGeometry(a, h, a).translate(0, y + h / 2, 0), color);
 
   // ── 기단 ────────────────────────────────────────────────────────────────
-  quad(1.44, 1.50, 0.30, 0.00, P.stone);
+  quad(1.44, 1.50, 0.30, 0.00, PALETTE.stone);
   // 굽. 벽과 땅 사이를 끊어 주면 건물이 땅에 **놓인** 것으로 보인다(집과 같은 처방).
-  quad(1.42, 1.44, 0.22, 0.30, P.wallBase);
+  quad(1.42, 1.44, 0.22, 0.30, PALETTE.wallBase);
 
   // ── 몸통(탑 1층) ────────────────────────────────────────────────────────
-  quad(BODY_R1, BODY_R0, BODY_H, BODY_Y0, P.wall);
+  quad(BODY_R1, BODY_R0, BODY_H, BODY_Y0, PALETTE.wall);
 
   // 문. 광장을 향하는 z+ 면. 벽과 같은 평면이면 z-파이팅이 나므로 살짝 띄운다.
-  add(new T.BoxGeometry(0.90, 2.00, 0.10).translate(0, 1.30, faceX(1.30)), P.door);
+  add(new T.BoxGeometry(0.90, 2.00, 0.10).translate(0, 1.30, faceX(1.30)), PALETTE.door);
   // 문 위 차양 — 현관이 있어야 "들어갈 수 있는 건물" 로 읽힌다. 이 판 하나가 그 일을
   // 전부 한다(조각 하나로 값이 가장 큰 자리다).
-  add(new T.BoxGeometry(1.34, 0.14, 0.36).translate(0, 2.42, faceX(2.42) + 0.13), P.trim);
+  add(new T.BoxGeometry(1.34, 0.14, 0.36).translate(0, 2.42, faceX(2.42) + 0.13), PALETTE.trim);
 
   // 창. 양 옆면에 하나씩 — 정면은 문과 시계가 이미 쓰고 있다.
   for (const s of [1, -1]) {
-    add(new T.BoxGeometry(0.10, 0.86, 0.66).translate(s * faceX(2.90), 2.90, 0), P.trim);
-    add(new T.BoxGeometry(0.11, 0.70, 0.52).translate(s * faceX(2.90), 2.90, 0), P.glass);
+    add(new T.BoxGeometry(0.10, 0.86, 0.66).translate(s * faceX(2.90), 2.90, 0), PALETTE.trim);
+    add(new T.BoxGeometry(0.11, 0.70, 0.52).translate(s * faceX(2.90), 2.90, 0), PALETTE.glass);
   }
 
   // ── 시계면 ──────────────────────────────────────────────────────────────
-  clockFaces(T, add, P);
+  clockFaces(T, add);
 
   // 1층 처마. 지붕선을 한 겹 둘러 주면 실루엣이 로우폴리답게 끊긴다.
-  slab(2.36, 0.16, 4.90, P.roofShade);
+  slab(2.36, 0.16, 4.90, PALETTE.roofShade);
 
   // ── 종탑 ────────────────────────────────────────────────────────────────
-  slab(1.90, 0.12, 5.06, P.wallBase);
+  slab(1.90, 0.12, 5.06, PALETTE.wallBase);
   /**
    * **네 기둥만 세운다.** 막힌 단으로 만들고 어두운 판을 붙여 "뚫린 것처럼" 보이게 하는
    * 편이 조각 수는 적지만, 그러면 종이 안 보인다. 종탑에서 종이 안 보이면 그냥 2층이다.
@@ -290,33 +248,33 @@ function buildBelfryGeometry(T: ThreeNS, P: Palette) {
     for (const sz of [1, -1]) {
       add(
         new T.BoxGeometry(POST, 3.10, POST).translate(sx * POST_OFF, 5.18 + 1.55, sz * POST_OFF),
-        P.wall,
+        PALETTE.wall,
       );
     }
   }
-  slab(1.90, 0.24, 8.28, P.wallBase);
+  slab(1.90, 0.24, 8.28, PALETTE.wallBase);
 
   // ── 종 ──────────────────────────────────────────────────────────────────
   // 8각 원뿔대 하나로 종이 된다 — 아래가 벌어지고 위가 좁으면 눈은 그것을 종으로 읽는다.
   // 아랫단에 살짝 넓은 테를 두르는 것이 결정적이다. 없으면 그냥 고깔이다.
-  add(new T.CylinderGeometry(0.30, 0.54, 0.80, 8).translate(0, 6.92, 0), P.brass);
-  add(new T.CylinderGeometry(0.54, 0.58, 0.12, 8).translate(0, 6.58, 0), P.wood);
+  add(new T.CylinderGeometry(0.30, 0.54, 0.80, 8).translate(0, 6.92, 0), PALETTE.brass);
+  add(new T.CylinderGeometry(0.54, 0.58, 0.12, 8).translate(0, 6.58, 0), PALETTE.wood);
   // 종 꼭지(고리)와 나무 걸이 보. 보가 없으면 종이 공중에 떠 있다.
-  add(new T.CylinderGeometry(0.07, 0.10, 0.18, 6).translate(0, 7.41, 0), P.metal);
-  add(new T.BoxGeometry(1.60, 0.18, 0.20).translate(0, 7.59, 0), P.woodDeep);
+  add(new T.CylinderGeometry(0.07, 0.10, 0.18, 6).translate(0, 7.41, 0), PALETTE.metal);
+  add(new T.BoxGeometry(1.60, 0.18, 0.20).translate(0, 7.59, 0), PALETTE.woodDeep);
 
   // ── 지붕 ────────────────────────────────────────────────────────────────
   // 처마 띠를 지붕보다 **먼저** 5cm 낮게 깔아 상판과 지붕 사이를 끊는다.
   // 한 변 2.44 → 외접 1.725 로, `footprint`(1.8) 안에서 가장 큰 조각이다.
-  slab(2.44, 0.10, 8.47, P.roofShade);
+  slab(2.44, 0.10, 8.47, PALETTE.roofShade);
   // 사각뿔. `ConeGeometry(r, h, 4)` 의 `r` 은 밑면 **외접원** 반지름이다.
   add(
     new T.ConeGeometry(1.70, 2.60, 4).rotateY(QUAD).translate(0, 8.52 + 1.30, 0),
-    P.roof,
+    PALETTE.roof,
   );
   // 첨탑과 꼭대기 구슬. 실루엣의 마지막 7%인데 없으면 사각뿔이 뭉툭하게 끝난다.
-  add(new T.CylinderGeometry(0.05, 0.08, 0.55, 6).translate(0, 11.395, 0), P.metal);
-  add(new T.OctahedronGeometry(0.20).translate(0, H - 0.20, 0), P.brass);
+  add(new T.CylinderGeometry(0.05, 0.08, 0.55, 6).translate(0, 11.395, 0), PALETTE.metal);
+  add(new T.OctahedronGeometry(0.20).translate(0, H - 0.20, 0), PALETTE.brass);
 
   return bakePieces(T, pieces);
 }
@@ -331,7 +289,7 @@ function buildBelfryGeometry(T: ThreeNS, P: Palette) {
  * 각 면은 z+ 기준으로 만들고 `rotateY` 로 돌린다. **회전을 `translate` 뒤에 걸어야**
  * 위치까지 함께 돈다 — 순서를 뒤집으면 네 시계가 전부 z+ 에 겹쳐 쌓인다.
  */
-function clockFaces(T: ThreeNS, add: (geo: Piece['geo'], color: number) => void, P: Palette): void {
+function clockFaces(T: ThreeNS, add: (geo: Piece['geo'], color: number) => void): void {
   /** 시계 중심 높이. 1층 처마(4.90) 바로 아래, 문 차양(2.42) 위 */
   const CY = 4.00;
   const RAD = 0.58;
@@ -350,7 +308,7 @@ function clockFaces(T: ThreeNS, add: (geo: Piece['geo'], color: number) => void,
         .rotateZ((-deg * Math.PI) / 180)
         .translate(0, CY, z)
         .rotateY(ry),
-      P.metal,
+      PALETTE.metal,
     );
   };
 
@@ -360,12 +318,12 @@ function clockFaces(T: ThreeNS, add: (geo: Piece['geo'], color: number) => void,
     // 테두리 → 판 순으로 겹쳐 깐다. 크림 벽(0.9545)에 흰 판(0.9817)만 놓으면 명도차가
     // 0.027 이라 시계가 벽에 묻힌다 — `road.ts` 가 잔디/흙에서 겪은 것과 같은 형태다.
     // 지붕 그늘색(0.4357)으로 링을 두르면 차가 0.55 로 벌어져 멀리서도 원이 읽힌다.
-    add(new T.CircleGeometry(RAD + 0.08, DIAL).translate(0, CY, z + 0.010).rotateY(ry), P.roofShade);
-    add(new T.CircleGeometry(RAD, DIAL).translate(0, CY, z + 0.020).rotateY(ry), P.trim);
+    add(new T.CircleGeometry(RAD + 0.08, DIAL).translate(0, CY, z + 0.010).rotateY(ry), PALETTE.roofShade);
+    add(new T.CircleGeometry(RAD, DIAL).translate(0, CY, z + 0.020).rotateY(ry), PALETTE.trim);
     // 바늘은 **10시 10분.** 시계 이미지의 관습이고, 두 바늘이 겹치지 않아 작게 보일 때도
     // 시계로 읽힌다(world2 텍스처판에서 그대로 가져온 판단이다).
     hand(300, 0.50, 0.075, z + 0.030, ry);
     hand(60, 0.72, 0.050, z + 0.030, ry);
-    add(new T.CircleGeometry(0.07, 8).translate(0, CY, z + 0.040).rotateY(ry), P.metal);
+    add(new T.CircleGeometry(0.07, 8).translate(0, CY, z + 0.040).rotateY(ry), PALETTE.metal);
   }
 }
