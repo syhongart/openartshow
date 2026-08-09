@@ -43,10 +43,11 @@ export const ENTRYPOINTS = [
   { key: 'landing', src: 'landing.html', out: 'index.html', exposure: 'live' },
   { key: 'guide', src: 'guide.html', out: 'guide.html', exposure: 'live' },
   { key: 'about', src: 'about.html', out: 'about.html', exposure: 'live' },
-  // design 은 배포되지만 `LIVE_PAGES` 에는 없다 — 어느 스모크도 크롤링하지 않는다
-  // (검수관 권고 5, 태스크 #169). **노출 상태와 검증 대상은 다른 축**이므로 여기서는
-  // 노출만 적는다: 링크되어 있으므로 `live` 다. 검증 편입은 그 태스크 소관.
-  { key: 'design', src: 'design.html', out: 'design.html', exposure: 'live' },
+  // ⚠ **`design.html` 은 2026-08-09 에 폐지됐다.** 여기 있던 항목은 *"링크되어
+  // 있으므로 `live` 다"* 라고 적고 있었고 **그 문장이 거짓이었다** — 폐지 시점에
+  // 저장소 전체에서 `href` 로 그 파일을 가리키는 곳이 **0건**이었다(실측). 즉
+  // 아무도 도달할 수 없는 페이지를 「라이브」로 분류한 채 배포하고 있었다.
+  // 폐지 경위·판정은 `docs/DESIGN.md §5-4` 한 곳이다.
 
   // ── 앱군(app/ 배포) ──────────────────────────────────────────────────────
   { key: 'index', src: 'index.html', out: 'app/index.html', exposure: 'live' },

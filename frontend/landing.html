@@ -108,7 +108,14 @@
     overflow-x: hidden;
     width: 100%;
   }
-  a { text-decoration: none; }
+  /* `color: inherit` 는 **안전망**이다 — 이 페이지에는 오래 `a` 기본 글자색이 없었고,
+     그래서 색을 따로 안 준 링크는 전부 **UA 기본 `#0000EE`** 가 됐다. 전시 카드가
+     그것으로 드러났다(다크 카드 위 대비 1.71, 2026-08-09). 한 곳을 고치는 것으로는
+     같은 사고가 다음 링크에서 또 난다 — **파랑이 나올 자리 자체를 없앤다.**
+     `guide.html`·`about.html` 이 이미 같은 한 줄을 쓴다(새 관습이 아니다).
+     명시도 (0,0,1) 이라 어떤 클래스 규칙도 이것을 이긴다 = 기존 링크 색은 불변이다
+     (실측: 안전망 투입 전후로 7페이지 계산색 차이 0). */
+  a { color: inherit; text-decoration: none; }
   img, canvas { max-width: 100%; }
   .eyebrow {
     font-size: 12px;
@@ -430,6 +437,25 @@
     gap: 22px;
   }
   .exh-card {
+    /* ⚠ 이 카드는 `<a>` 다(`exhGrid` 렌더가 `createElement("a")` 로 만든다). 그런데
+       오랫동안 `color` 선언이 없어서 **UA 기본 링크색 `#0000EE`** 가 걸렸고, 색을 따로
+       안 준 자식(`.exh-name`)이 그것을 상속해 다크 카드(`#1F2128`) 위에서 **대비
+       1.71** 로 나왔다(2026-08-09 실측). 형제인 `.exh-meta`·`.exh-enter` 는 자기 색이
+       있어 멀쩡했고, 그래서 「한 줄만 파랗다」로 보였다.
+
+       **`.exh-name` 이 아니라 여기에 건다.** 원인은 그 자식이 아니라 이 `<a>` 이고,
+       자식마다 색을 적는 처방은 카드에 새 자식이 붙는 날 같은 사고를 다시 낸다 —
+       통로를 막는 것과 원인을 고치는 것은 다르다. 형제 둘은 (0,2,0) 이라
+       이 선언 (0,1,0) 을 이기므로 영향받지 않는다(실측: 6.05·9.02 불변).
+       실측 결과 1.71 → 14.66.
+
+       ⚠ 위쪽 `a { color: inherit }` 안전망이 있으니 이 줄이 없어도 파랑은 안 나온다.
+       그런데도 **남긴다** — 안전망은 「사고가 나도 파랑은 아니다」를 보장할 뿐이고,
+       이 카드가 무슨 잉크를 쓰는지는 별개 결정이다. 카드는 자기 면(`--bg-panel`)을
+       선언하므로 **자기 잉크도 선언한다**: 대비는 토큰끼리가 아니라 맞닿는 면끼리
+       성립하고, 이 글자가 맞닿는 것은 body 그라디언트가 아니라 카드 면이다.
+       지금 두 값이 같은 것은 다크 표면 위 본문 잉크가 하나여서지 우연이 아니다. */
+    color: var(--text-light);
     border: 1px solid var(--border-light);
     padding: 30px 26px;
     display: flex;
@@ -903,7 +929,24 @@
       transition: transform 0.25s ease, opacity 0.25s ease;
     }
     .nav-sheet.is-open { transform: none; opacity: 1; pointer-events: auto; }
-    .nav-sheet > a {
+    /* ⚠ `:not(.ns-enter)` 가 왜 붙어 있나 — **명시도 사고를 구조로 닫는다.**
+       이 규칙은 원래 `.nav-sheet > a` (0,1,1) 였고, 그래서 아래 `.ns-enter` (0,1,0)의
+       `color: var(--accent-ink)` 를 **이기고 있었다.** 값은 맞게 적혀 있는데 적용이
+       안 되는 상태라 코드를 읽어서는 안 보였다 — 비비드 그린 채움 위에 밝은 회백
+       라벨이 얹혀 **대비 1.60** 이었다(2026-08-09 실측. `DESIGN.md §3-4`
+       *"다크 표면 원색 채움 위엔 --text-dark 라벨"* 위반이기도 하다).
+
+       **`!important` 로 덮지 않았다.** 그것은 캐스케이드 싸움을 한 겹 더 쌓는 것이고,
+       다음에 이 자리를 만지는 사람이 또 같은 싸움을 해야 한다. 결함의 형태는
+       「규칙이 대상을 너무 넓게 잡았다」이므로 **대상을 정확히 한다** — 시트의
+       메뉴 링크와 CTA 버튼은 애초에 다른 것이다.
+
+       ⚠ `.ns-enter` 가 이 규칙에서 빠져도 잃는 것이 없다: `display`·`padding`·
+       `font-size`·`font-weight` 는 자기 값이 있고, `border-bottom` 은 바로 아래
+       `:last-of-type` 이 이미 `none` 으로 지우고 있었다(그 줄은 `.ns-enter` 가
+       마지막 `<a>` 라 여전히 걸린다 — 이제 지울 것이 없어 무해하게 남는다).
+       실측: 1.60 → 8.54, 형제 메뉴 링크 13.31 불변. */
+    .nav-sheet > a:not(.ns-enter) {
       display: block; padding: 13px 2px;
       font-size: 15px; font-weight: 500; color: rgba(242,242,240,0.9);
       border-bottom: 1px solid rgba(242,242,240,0.08);
