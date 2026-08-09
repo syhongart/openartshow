@@ -515,11 +515,19 @@ featured/패널)로만 갈랐는데, 실측해 보면 같은 그림자가 **표�
 | `--oas-shadow-whisper` | `0 2px 6px rgba(20,21,26,.05)` | 기본 상태의 미세한 부상감 | `studio` 3건 · `mypage` `--sh-1` |
 | `--oas-shadow-panel` | `0 8px 20px rgba(20,21,26,.10)` | 모달·시트·사이드 패널 | `studio` 2건 |
 
+> ⚠ 위 「실물」 열은 **2026-08-09 교차리뷰에서 한 번 틀렸다**(조건 2). `--oas-shadow-lift`
+> 를 `landing` 4건으로 적었는데 실측은 **5건**이었고(`landing.html:355·398·482·686·841`),
+> `--oas-shadow-panel` 은 `mypage` 의 `--sh-2` 가 같은 값인데 세지 않았다(그 토큰은 소비처
+> 0이라 같은 리뷰에서 제거됐다 — 지금 표는 정확하다).
+> **바로 직전 커밋의 제목이 *"실측이라 적은 수치가 틀렸다"* 였고 같은 사이클에서 재발했다.**
+> 이 열은 손으로 세는 값이라 코드가 바뀌면 조용히 낡는다 — **개수를 인용하기 전에 다시
+> 세라.** 세는 명령: `grep -c "var(--shadow-card-hover)" frontend/landing.html`
+
 **다크 몰입 표면** (`landing`·`builder`)
 
 | 토큰 | 값 | 용도 | 실물 |
 |---|---|---|---|
-| `--oas-shadow-lift` | `0 6px 16px rgba(20,21,26,.28)` | 카드·버튼 hover·팝오버 | `landing` `--shadow-card-hover` 4건 |
+| `--oas-shadow-lift` | `0 6px 16px rgba(20,21,26,.28)` | 카드·버튼 hover·팝오버 | `landing` `--shadow-card-hover` **5건** |
 | `--oas-shadow-lift-accent` | `0 10px 24px rgba(95,158,125,.16)` | featured 카드 hover — **green-500 틴트** | `landing` `--shadow-card-hover-deep` |
 
 #### 왜 알파가 `.05`/`.10` 과 `.28` 로 갈리는가 — 산술 실측 (2026-08-09)
