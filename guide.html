@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-nav-page="guide">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -96,7 +96,10 @@
     gap: clamp(14px, 3vw, 34px);
     flex-wrap: wrap;
   }
-  .topnav a {
+  /* `button` 이 셀렉터에 함께 있는 이유는 `about.html` 의 같은 자리 주석 **한 곳**이다
+     (요지: 주 메뉴 노브가 로그인·회원가입을 `<button>` 으로 넣고, 룩은 이 규칙 하나가
+     정한다. 현행 화면은 `.topnav` 안 `button` 이 0개라 영향 0). */
+  .topnav a, .topnav button {
     text-decoration: none;
     color: rgba(255,255,255,0.72);
     font-size: 12px;
@@ -107,8 +110,8 @@
     border-bottom: 1px solid transparent;
     padding-bottom: 2px;
   }
-  .topnav a:hover { color: #fff; border-color: var(--accent-dark); }
-  .topnav a.current { color: var(--accent-dark); }
+  .topnav :is(a, button):hover { color: #fff; border-color: var(--accent-dark); }
+  .topnav :is(a, button).current { color: var(--accent-dark); }
 
   /* ------------------------------------------------------------------ hero */
   .hero {
@@ -501,6 +504,8 @@
     border-radius: var(--oas-r-hair);
   }
 </style>
+  <script type="module" crossorigin src="/openartshow/_bundle/preload-helper-DASV_Wa7.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/nav-knob-ByHR1Yet.js"></script>
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-CejtQNix.css">
 </head>
@@ -906,6 +911,8 @@
   }
 })();
 </script>
+
+<!-- 주 메뉴 통합 후보 노브(`?nav=a|b|c|d`). 노브가 없으면 DOM 을 한 노드도 만지지 않는다. -->
 
 </body>
 </html>
