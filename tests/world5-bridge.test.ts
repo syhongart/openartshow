@@ -20,7 +20,7 @@ import { DEFAULT_LAYOUT } from '../frontend/js/world5/parts/types.js';
 import type { PlaceContext } from '../frontend/js/world5/parts/types.js';
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, SPAWN } from '../frontend/js/world5/decide/grid.js';
 import { DEFAULT_BANDS } from '../frontend/js/world5/decide/lod.js';
-import { parcelWater } from '../frontend/js/world5/decide/water.js';
+import { parcelWater, isRiver } from '../frontend/js/world5/decide/water.js';
 
 const O = DEFAULT_LAYOUT;
 const CX = O.cellX;
@@ -77,6 +77,30 @@ describe('다리 — 실제로 서는가 (B2)', () => {
     // 깨지고, 그때 주석의 "서너 개" 도 함께 다시 세게 된다.
     const cols = new Set(bridgeOwners().map((b) => b.px));
     expect(cols.size).toBe(3);
+  });
+
+  // ⚠️ **열 개수만으로는 모자랐다** — 뮤테이션 실측이 그것을 보여 줬다(2026-08-08).
+  //    `place` ③ 의 `isRiver` 가드를 지우자 다리가 3곳에서 **6곳**으로 늘었는데,
+  //    늘어난 셋이 전부 `px = 0` 열이라 **열 수는 3 그대로였고 위 검사는 초록이었다.**
+  //    같은 열에 몇 개가 서는지를 아무도 안 봤다.
+  it('다리를 소유한 파셀이 정확히 셋이다 — 열당 하나', () => {
+    expect(bridgeOwners().length).toBe(3);
+  });
+
+  // ★ 위 뮤테이션이 만든 화면은 **센트럴파크 연못 위의 현수교 셋**이었다
+  //   (`(0,−9)` 저수지 · `(0,−7)` 호수 · `(0,−4)` 연못). 강이 아닌 물도 `parcelWater`
+  //   가 `'water'` 로 주므로 ②④⑤ 는 전부 만족하고, 유일하게 그것을 가르는 것이 ③ 이다.
+  //
+  //   바다 쪽은 ⑤ 가 이미 막는다(바다는 무한하므로 `limit` 안에 건너편 뭍이 안 나온다).
+  //   그래서 ③ 이 실제로 지키는 것은 **호수**이고, 그 축을 여기서 잰다.
+  it('다리가 건너는 물은 전부 강이다 — 공원 호수 위에 서지 않는다', () => {
+    for (const b of bridgeOwners()) {
+      // 구간 `spans` 개가 `pz+1 … pz+spans−1` 의 물 칸을 덮는다(마지막 구간이 건너편
+      // 물가에 닿는다). 그 물 칸이 전부 강이어야 한다.
+      for (let i = 1; i < b.spans; i++) {
+        expect(isRiver(b.px * CX, (b.pz + i) * CZ, CZ)).toBe(true);
+      }
+    }
   });
 
   it('소유 파셀은 뭍이고 그 남쪽 이웃이 물이다 — 한쪽만 소유하는 규칙', () => {

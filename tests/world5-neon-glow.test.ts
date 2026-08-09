@@ -296,9 +296,23 @@ describe('G3 — 발광을 신고한 파츠가 실제로 발광 가능한 재질
         emissiveMap?: unknown;
       };
 
-      // ① 세기가 **숫자**다. `undefined` 면 `NeonGlow` 가 `missing` 으로 흘려보내
-      //    그 파츠만 조용히 안 빛난다(위 `missing` 검사가 스텁으로 보던 그 경로의 실물).
-      expect(typeof mat.emissiveIntensity).toBe('number');
+      // ⚠️ ① 자리에 **또 항진명제가 있었다** — `expect(typeof mat.emissiveIntensity)
+      //    .toBe('number')`. B3 를 고치면서 같은 형태를 한 칸 옆에 다시 만든 것이다.
+      //
+      //    뮤테이션 실측이 잡았다(2026-08-08): `bridge.ts` 의 `emissiveIntensity: 1,`
+      //    줄을 통째로 지워도 **안 깨졌다.** 원인은 three 다 —
+      //    `new MeshStandardMaterial({})` 의 `emissiveIntensity` 기본값이 **1**이라
+      //    (실측: `emissive` 는 `0x000000`, `emissiveMap` 은 `null`), 파츠가 무엇을
+      //    하든 이 단언은 항상 참이다. 검출력이 구조적으로 0 이었다.
+      //
+      //    그리고 그 뮤테이션은 **결함도 아니었다** — 기본값이 1 이므로 명시하든 말든
+      //    화면이 같다. 즉 이 축은 실물 재질에서 잴 것이 없다. 스텁 재질(`{}`)에서만
+      //    의미가 있고, 그것은 위 `missing` 검사가 이미 본다.
+      //
+      //    잴 것이 없는 축을 지우는 대신 **잴 것이 있는 축으로 바꾼다** — 아래 별도
+      //    describe 가 실물 재질을 실물 `NeonGlow` 에 물려 값이 실제로 들어가는지 본다.
+      //    `emissive`·`emissiveMap` 은 기본값이 각각 검정·null 이라 아래 두 단언은
+      //    파츠가 실제로 넣어야만 통과한다(뮤테이션 M9·M10 이 둘 다 잡았다).
 
       // ② `emissive` 색이 검정이 아니다. 검정이면 세기를 아무리 올려도 곱해서 0 이다 —
       //    "값은 올라갔는데 화면은 그대로" 라는 가장 잡기 어려운 형태가 된다.
@@ -311,4 +325,59 @@ describe('G3 — 발광을 신고한 파츠가 실제로 발광 가능한 재질
       expect(mat.emissiveMap).toBeTruthy();
     });
   }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// G3-b — **실물 재질 × 실물 `NeonGlow`.** 위 두 층이 각각 옳아도 안 이어질 수 있다
+// ══════════════════════════════════════════════════════════════════════════
+//
+// 위 `stubPools` 검사는 `NeonGlow` 의 로직만 보고, G3 검사는 파츠가 굽는 재질만 본다.
+// **둘을 잇는 지점은 어느 쪽도 안 본다** — 이 저장소가 "판정/집행 경계는 아무도 안
+// 본다" 로 이미 데인 자리다(`CLAUDE.md` 검증 규율).
+//
+// 여기서는 파츠가 실제로 구운 재질을 `NeonGlow` 에 물려 **밤에 신고한 값이 그 재질에
+// 들어가는지**를 본다. `emissiveIntensity` 는 three 기본값이 1 이라 "숫자인가" 로는
+// 아무것도 못 재지만, "밤에 **신고한 night 값**이 되는가" 는 파츠·신고·배선 셋이 전부
+// 이어져야만 참이 된다.
+describe('G3-b — 실물 재질이 `NeonGlow` 로 실제로 켜진다', () => {
+  it('밤에 모든 신고 파츠의 세기가 신고한 night 값이 된다', () => {
+    const mats = new Map<string, { emissiveIntensity?: number }>();
+    withCanvas(() => {
+      for (const n of NEON_PARTS) {
+        const spec = PARTS.find((p) => p.kind === n.kind)!;
+        mats.set(n.kind, spec.asset(T3 as unknown as ThreeNS).material as unknown as {
+          emissiveIntensity?: number;
+        });
+      }
+    });
+    const g = new NeonGlow({ materialOf: (k: string) => mats.get(k) ?? null });
+    g.apply('night');
+
+    // 실물 재질은 전부 발광 가능하므로 `missing` 이 비어야 한다. 하나라도 남으면
+    // 그 파츠는 런타임에서 영원히 안 빛난다 — 감독 지시가 화면에 안 나타나는 상태다.
+    expect(g.missing).toEqual([]);
+    expect(g.wired).toBe(NEON_PARTS.length);
+
+    for (const n of NEON_PARTS) {
+      expect(mats.get(n.kind)!.emissiveIntensity).toBeCloseTo(n.night, 6);
+    }
+  });
+
+  it('낮으로 되돌리면 day 값으로 정확히 내려간다', () => {
+    const mats = new Map<string, { emissiveIntensity?: number }>();
+    withCanvas(() => {
+      for (const n of NEON_PARTS) {
+        const spec = PARTS.find((p) => p.kind === n.kind)!;
+        mats.set(n.kind, spec.asset(T3 as unknown as ThreeNS).material as unknown as {
+          emissiveIntensity?: number;
+        });
+      }
+    });
+    const g = new NeonGlow({ materialOf: (k: string) => mats.get(k) ?? null });
+    g.apply('night');
+    g.apply('day');
+    for (const n of NEON_PARTS) {
+      expect(mats.get(n.kind)!.emissiveIntensity).toBeCloseTo(n.day, 6);
+    }
+  });
 });
