@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<meta name="robots" content="noindex, nofollow">
+		<!--
+		  배치 에디터 — **three.js editor 를 반입한 개발용 도구다.**
+
+		  감독 지시(2026-08-09): *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능?
+		  glb파일을 내가 직접 넣고"* → *"three.js 방식이니깐. 거기 에디터를 깃에서
+		  가지고 와서 활용하는방안"* → *"에디터는 개발용으로만 쓸거니. 법무의견 필요없어"*
+
+		  behind-flag: 어디에도 링크하지 않는다. **방문자에게 제공하는 기능이 아니라
+		  감독·팀이 쓰는 도구다.** 라이브 노출은 감독·팀장 게이트를 거친다.
+
+		  ── 원본에서 무엇을 뺐나 (자기완결) ────────────────────────────────
+		  three.js r171 `editor/` 원본은 외부 CDN 세 곳을 부른다. 우리 원칙은
+		  *"방문자 브라우저가 남의 서버를 부르지 마라"* 이므로 전부 걷었다:
+		    · `@ffmpeg/ffmpeg`      → 비디오 내보내기 탭 등록 제거(`Sidebar.Project.js`)
+		    · `three-gpu-pathtracer` ┐ `Viewport.Pathtracer.js` 를 **공개 API 8개를 유지한
+		    · `three-mesh-bvh`       ┘ no-op 으로 교체**(`Viewport.js` 가 8곳에서 부른다)
+		  그리고 코드 에디터 계열(codemirror·acorn·ternjs·esprima·jsonlint, **1.2MB**)도
+		  뺐다 — 배치 도구에 스크립트 편집이 필요 없다. 결과: 140파일 2.3MB → **105파일 772K**,
+		  외부 호스트 참조 **0**.
+
+		  ⚠️ **이 화면은 WebGL 로 그린다. world2 는 WebGPU 다.**
+		  r171 editor 에는 렌더러 선택이 없고(WebGPU 옵션은 r183+), three 버전 업그레이드는
+		  팀장 조건으로 금지돼 있다. **배치(위치·회전·크기)는 정확히 옮겨가지만 색·조명은
+		  여기서 본 것과 world2 가 다를 수 있다** — 룩 판정은 world2 라이브에서 한다.
+		-->
+		<!-- GLTFLoader 가 GLB 내장 텍스처를 디코드할 때 ImageBitmapLoader 가 버퍼뷰를
+		     Blob→objectURL 로 만들고 fetch() 로 읽는다. 'self' 만으로는 그 blob: fetch 가
+		     막혀 텍스처가 통째로 로드 실패한다(lab-glb.html 이 헤드리스로 발견한 것을 계승). -->
+		<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'">
+		<title>배치 에디터 (개발용) · OpenArtShow</title>
+		<script type="module" crossorigin src="/openartshow/_bundle/editor-CS1ZNxII.js"></script>
+		<link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js">
+		<link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-BVCe5QSU.js">
+		<link rel="modulepreload" crossorigin href="/openartshow/_bundle/preload-helper-DASV_Wa7.js">
+		<link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-editor-DWLWLXmk.js">
+		<link rel="stylesheet" crossorigin href="/openartshow/_bundle/editor-BNVbXneu.css">
+	</head>
+	<body>
+
+
+
+
+
+
+		<script src="./editor/js/libs/signals.min.js"></script>
+
+	</body>
+</html>
