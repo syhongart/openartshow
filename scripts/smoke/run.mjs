@@ -828,6 +828,31 @@ async function runPerfGates(origin, browser) {
     record(13, '플레이어 충돌(라이브)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
 
+  // ── [14] G-CLICK: 「보이는데 눌러도 아무 일이 없는 버튼」 (검수관 명세 2026-08-10) ──
+  //
+  // `[11][12][13]` 과 같은 성격이다 — **성능이 아니라 이산 판정**이라 `perfStatus` 를
+  // 안 쓰고 **observe 에서도 언제나 판정한다.** 클릭했더니 모달이 떴는가는 편차가 없다.
+  //
+  // 왜 신설했나: 주 메뉴 통일에서 임시 노브를 걷을 때 **그 노브가 하던 JS 배선**을 함께
+  // 잃을 뻔했다. 마크업만 옮기면 **버튼이 보이는데 눌러도 아무 일이 없고**, 그 상태를
+  // 이 저장소의 어떤 게이트도 못 잡는다 — `[4]` 는 `console.error` 만 담는데
+  // `subnav.js` 의 실패 경로는 `console.warn` 이고, `LIVE_PAGES` 에는 **클릭이 0건**이며,
+  // 색 스냅샷은 요소도 색도 맞으니 통과시킨다. 그때는 **1회성 위임으로 손으로** 닫았고
+  // 그것은 게이트가 아니었다(백로그 `G-CLICK`).
+  //
+  // 대상·판정 기준·**못 잡는 것**은 `measure-click.mjs` 헤더 **한 곳**이다 —
+  // 여기에 다시 적지 않는다.
+  try {
+    const { runClick } = await import('./measure-click.mjs');
+    const r = await runClick({ browser, origin, basePath: BASE_PATH, log: quiet });
+    record(14, '클릭 상호작용(로그인 모달)', r.pass ? 'PASS' : 'FAIL', r.pass
+      ? r.summary
+      : `${r.summary} → \`npm run measure:click\` 로 단독 실행해 본다`);
+  } catch (e) {
+    // 못 잰 것은 통과가 아니다 — `[11][12][13]` 과 같은 규약.
+    record(14, '클릭 상호작용(로그인 모달)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
   await recordRenderBackend(browser, origin);
 }
 
