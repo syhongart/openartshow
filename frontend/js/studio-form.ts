@@ -419,7 +419,10 @@ export function createForm(ctx, deps) {
         lockCards[ci].style.opacity = '0.45';
         var lockBadge = document.createElement('span');
         lockBadge.textContent = '\uD83D\uDD12 프리미엄';
-        lockBadge.style.cssText = 'font-size:11px;color:#6b6459;margin-left:auto;white-space:nowrap;';
+        // 색은 토큰으로 — `#6b6459` 는 `--oas-ink-dim` 의 원값 복사였다(값은 맞고
+        // 자리가 틀렸다). 같은 사각에 있던 `studio-plan.ts` 의 폐기 바이올렛과 함께
+        // 정리했다. `var()` 는 인라인 스타일에서도 해소된다 — 경위는 그 파일 주석.
+        lockBadge.style.cssText = 'font-size:11px;color:var(--ink-dim);margin-left:auto;white-space:nowrap;';
         lockCards[ci].appendChild(lockBadge);
         lockCards[ci].querySelector('input').disabled = true;
       }

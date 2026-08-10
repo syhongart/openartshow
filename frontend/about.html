@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" data-nav-page="about">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20,10 +20,11 @@
 <meta name="twitter:description" content="작품이 공간에서 말하게 하라 — 대관료도, 액자값도, 창고비도 없이 브라우저 하나로 여는 3D 미술관 OpenArtShow 소개">
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
-<!-- 경로 규칙: about.html은 deploy.yml에서 루트(_site/about.html)로 승격 배포된다(landing/guide/design 급 공개 페이지).
+<!-- 경로 규칙: about.html은 deploy.yml에서 루트(_site/about.html)로 승격 배포된다(landing/guide 급 공개 페이지).
      vendor 폰트는 소스 실경로 기준 ./vendor/fonts/fonts.css로 참조한다 — vite가 실존 파일만 번들·경로 rewrite하므로
      (→ /openartshow/_bundle/fonts-*.css) 배포 위치와 무관하게 동작한다. 과거 ./app/vendor/... 로 적혀 있었으나 그
-     경로엔 파일이 없어 rewrite가 일어나지 않고 그대로 emit돼 라이브 404를 냈다(landing·guide·about·design 4개 페이지).
+     경로엔 파일이 없어 rewrite가 일어나지 않고 그대로 emit돼 라이브 404를 냈다(당시 landing·guide·about·design
+     4개 페이지 — design.html 은 2026-08-09 폐지, `docs/DESIGN.md §5-4`).
      되돌리지 말 것. 나머지 상대경로(브랜드·
      랜딩 ./index.html, 전시장 ./app/, 가이드 ./guide.html)도 전부 루트 기준으로 정합. 이 승격은 A단계 스모크 하네스가
      app/ 배포 시 CTA 404를 발견해 근본 해결한 것(deploy.yml에 cp web/about.html _site/about.html 추가). -->
@@ -55,7 +56,11 @@
     /* 에세이 전용 타이포 토큰 */
     --fs-body-lg: clamp(16px, 1.55vw, 18px);
     --lh-body-loose: 1.85;
-    color-scheme: light dark;
+    /* ⚠ 2026-08-09: `light dark` 에서 **`light` 고정**으로 바꿨다(팀장 판정 (b) 전부 고정).
+       아래 `@media (prefers-color-scheme: dark)` 블록을 지우는 것만으로는 고정이 안 된다 —
+       이 한 줄이 남아 있으면 OS 다크에서 **스크롤바·폼 컨트롤 같은 UA 크롬만** 다크로
+       남아, 라이트 지면에 다크 크롬이 붙는 더 어색한 상태가 된다. 두 줄은 함께 움직인다. */
+    color-scheme: light;
   }
 
   * { box-sizing: border-box; }
@@ -113,7 +118,14 @@
     gap: clamp(14px, 3vw, 34px);
     flex-wrap: wrap;
   }
-  .topnav a {
+  /* `button` 이 셀렉터에 함께 있는 이유 — 주 메뉴 노브(`?nav=`, `js/nav-knob.js`)가
+     후보 B·C·D 에서 로그인·회원가입을 `<button>` 으로 넣는다(링크가 아니라 모달을
+     연다). 룩은 이 규칙 하나가 정해야 한다 — 노브 쪽 CSS 에 같은 값을 다시 적으면
+     그 순간 값 미러링이고, 한쪽만 고치는 날 서브 메뉴만 색이 갈린다.
+     ⚠ **현행(노브 없음) 화면은 이 확장에 영향받지 않는다**: `.topnav` 안에 `button`
+     이 0개라 매칭 대상이 없고, `:is(a, button)` 의 명시도는 `a` 단독과 같은 (0,1,1)
+     이라 캐스케이드 순위도 그대로다. */
+  .topnav a, .topnav button {
     text-decoration: none;
     color: rgba(255,255,255,0.72);
     font-size: 12px;
@@ -124,8 +136,8 @@
     border-bottom: 1px solid transparent;
     padding-bottom: 2px;
   }
-  .topnav a:hover { color: #fff; border-color: var(--accent-dark); }
-  .topnav a.current { color: var(--accent-dark); }
+  .topnav :is(a, button):hover { color: #fff; border-color: var(--accent-dark); }
+  .topnav :is(a, button).current { color: var(--accent-dark); }
 
   /* ------------------------------------------------------------------ hero */
   .hero {
@@ -231,7 +243,7 @@
     align-items: center;
     gap: 8px;
     padding: 13px 26px;
-    border-radius: 999px;
+    border-radius: var(--oas-r-pill);
     font-size: 13.5px;
     letter-spacing: 0.04em;
     text-decoration: none;
@@ -288,24 +300,25 @@
     .btn { justify-content: center; }
   }
 
-  /* -------------------------------------------------------- dark mode */
-  @media (prefers-color-scheme: dark) {
-    :root {
-      /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다.
-         --coral 3종은 다크 표면으로 돌아가므로 원래 설계(vivid 채움 + 어두운 라벨)로 복귀. */
-      --accent: var(--oas-accent);
-      --paper: var(--oas-dark-anchor);
-      --paper-2: var(--oas-dark-1);
-      --line: var(--oas-dark-line);
-      --text: var(--oas-on-dark);
-      --text-dim: var(--oas-on-dark-dim);
-      --coral: var(--oas-cta);
-      --coral-hover: var(--oas-cta-hi);
-      --coral-label: var(--oas-cta-label);
-    }
-    .btn-outline { color: var(--text); }
-    footer a.mail { border-bottom-color: rgba(95,158,125,0.4); }
-  }
+  /* ---------------------------------------------- 테마 — 라이트 고정 (2026-08-09)
+     여기에는 `@media (prefers-color-scheme: dark)` 블록이 있었다. **지웠다.**
+
+     왜 — 사이트 6페이지 중 `about`·`guide` **둘만** OS 다크에 반응하고 나머지 넷
+     (`landing`·`studio`·`builder`·`mypage`)은 라이트 고정이었다. 그래서 OS 다크
+     사용자가 홈 → 소개 → 스튜디오로 걸으면 **다크 → 다크 → 라이트**로 튀었다.
+     한 사이트가 걷는 도중에 표면 모드를 바꾸는 것은 §3-1(*"모든 화면은 둘 중 하나의
+     표면 모드에 속한다"*)이 금지하는 상태다.
+
+     팀장 판정 **(b) 전부 고정** — 넷을 다크로 늘리는 쪽이 아니라 둘을 라이트로 맞추는
+     쪽이다. **다크 모드 전면 도입은 별도 설계 분기이고 감독 판정 사안**이다(백로그 G-DARK1).
+     이 두 페이지를 다크로 되돌리는 것으로는 그 분기를 대신할 수 없다 — 나머지 넷이
+     그대로면 튐이 방향만 바뀐다.
+
+     ⚠ 아래 `[data-theme]` 두 블록은 **남겨 둔다. 그러나 지금 아무 효과가 없다** —
+     이 속성을 설정하는 코드가 저장소 전체에 **0건**이다(2026-08-09 실측. `studio.html` 의
+     `data-theme` 은 전시 조명 프리셋이라 다른 물건이다). 죽은 셀렉터를 남기는 이유는
+     G-DARK1 이 열릴 때의 출발점이기 때문이고, **「다크 토글이 이미 있다」로 읽지 말라**는
+     것이 이 문단의 목적이다. */
   :root[data-theme="dark"] {
     /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
     --accent: var(--oas-accent);
@@ -357,7 +370,7 @@
   button:focus-visible {
     outline: 2px solid var(--accent-dark);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
   }
 </style>
 </head>
@@ -463,6 +476,9 @@
   }
 })();
 </script>
+
+<!-- 주 메뉴 통합 후보 노브(`?nav=a|b|c|d`). 노브가 없으면 DOM 을 한 노드도 만지지 않는다. -->
+<script type="module" src="./js/nav-knob.js"></script>
 
 </body>
 </html>

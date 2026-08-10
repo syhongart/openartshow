@@ -111,7 +111,9 @@ export const DEPLOY_SHA_FILE = '_deploy-sha.txt';
 const REQUIRED_FILES_COMMON = [
   'index.html',            // 랜딩 (landing.html → 루트 index.html)
   'guide.html',            // 가이드 루트 (과거 404 사고 지점)
-  'design.html',           // 디자인 루트
+  // 'design.html' 은 2026-08-09 폐지 — 정본은 `docs/DESIGN.md`·`css/tokens.css` 다.
+  // 이 목록에서 빠지면 조립 결과에 그 파일이 없어야 통과한다(= 폐지가 실제로 배포에
+  // 반영됐는지를 이 줄의 **부재**가 검사한다). 경위는 `docs/DESIGN.md §5-4`.
   'about.html',            // 소개 루트 (공개 페이지 정본)
   'app/index.html',        // 미술관
   'app/studio.html',       // 스튜디오
@@ -165,7 +167,7 @@ export const LIVE_PAGES = [
   { name: 'app/studio',        url: '/app/studio.html', webgl: true },
   { name: 'guide',             url: '/guide.html',      webgl: false },
   // about 정본 URL은 루트 /about.html (deploy.yml: about.html→_site/about.html, landing/
-  // guide/design 급 공개 페이지). about.html은 루트 기준 상대경로(브랜드·랜딩 ./index.html,
+  // guide 급 공개 페이지). about.html은 루트 기준 상대경로(브랜드·랜딩 ./index.html,
   // 전시장 ./app/)라 루트 배포에서 정합. _site/app/about.html은 app/landing.html과 같은
   // `cp -r frontend/. _site/app/` 부산물 사본(어떤 페이지도 링크 안 함)이라 검사하지 않는다.
   { name: 'about',             url: '/about.html',      webgl: false },

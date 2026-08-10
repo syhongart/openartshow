@@ -159,8 +159,15 @@
        곳에만** 모은다 — mypage.css 안에는 색 리터럴이 0이어야 하고, 실제로 0이다.
        tokens.css 가 `rgb(from …)` 을 쓸 수 있게 되는 날 이 다섯 줄만 갈아끼우면 된다. */
     --r-lg:14px; --r-md:10px; --r-sm:7px;
-    --sh-1:0 2px 6px rgba(20,21,26,.05);
-    --sh-2:0 8px 20px rgba(20,21,26,.10);
+    /* studio 의 --shadow-whisper 와 **같은 값이었다**. 1층으로 올려 미러링을 끝냈다(§5-3).
+       ⚠ 이 주석은 한 번 **범위를 넘겨 적혔다**(교차리뷰 조건 1) — 바로 아래 `--sh-2` 가
+       `--oas-shadow-panel` 과 같은 값인 채 리터럴로 남아 있었는데 *"미러링을 끝냈다"* 고
+       썼다. 게다가 그 토큰은 소비처가 **저장소 전체 0건**이었다. 같은 커밋이
+       `--oas-shadow-card-hover`/`-deep` 을 지운 근거가 *"죽은 토큰이면 무해하지만 **죽은
+       정본 후보**는 유해하다"* 였으므로 그 기준이 그대로 적용되는 대상이었다 —
+       **같은 사이클 안에서 내 기준을 내가 어겼다.** 지웠다. 필요해지면
+       `var(--oas-shadow-panel)` 로 잇는다(값이 이미 거기 있다). */
+    --sh-1:var(--oas-shadow-whisper);
     /* ⚠ `--sh-pv`(0 18px 38px -14px, 알파 .42)는 **삭제했다.** 다크 플레이트를 배경에서
        띄우기 위한 깊은 그림자였는데, 같은 값이 라이트 표면 아래로 가면 카드가 떠 보이는
        게 아니라 **때가 탄 것처럼** 보인다. 라이트용으로 값을 새로 적으면 --sh-1 과
@@ -176,7 +183,14 @@
      JS 가 값을 넣기 전의 빈 폼이 "저장된 프로필이 비어 있다"로 읽히면 안 된다. -->
 <div class="mp is-loading" data-mp="root">
 
+  <!-- 홈으로 돌아가는 길. 마크업은 `studio.html` 의 같은 블록과 **한 글자도 다르지
+       않다** — 경위·판정은 그 파일의 `.homelink` 주석 한 곳이고, 룩은 `mypage.css`
+       의 같은 이름 블록이다(여기에 다시 적지 않는다). -->
   <header class="mp__top">
+    <a class="homelink" href="../" aria-label="OpenArtShow 홈으로">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 5 8 12l7 7"/></svg>
+      <span class="w-lead">Open</span>ArtShow<span class="dot">.</span>
+    </a>
     <h1 class="mp__title">MY PAGE</h1>
   </header>
 
