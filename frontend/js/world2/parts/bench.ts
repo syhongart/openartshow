@@ -27,7 +27,9 @@ const BENCH_RADIUS = 0.95;
 
 export const bench: PartSpec = {
   kind: 'bench',
-  tiers: ['near', 'mid'],
+  // 전 계층 — mid→far 강등(56m, 안개 19%)이 벤치를 걷어내는 순간이 깜빡임의 한 겹이었다
+  // (감독 실측 2026-08-10). 근거·경계는 `planter.ts` 의 tiers 주석 한 곳이다.
+  tiers: ['near', 'mid', 'far'],
   salt: 0x5f1d3a27,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다. 나무색 변주는 정점색이
   // 아니라 tones 의 밝기로 준다(같은 벤치가 조금씩 바래 보인다).

@@ -34,9 +34,9 @@ import {
 } from './features/index.js';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import { createCollider } from './systems/collision.js';
-import { fogBand } from './decide/fog.js';
+import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
-import { DEFAULT_BANDS, scaleBands, withNearExit } from './decide/lod.js';
+import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
@@ -361,10 +361,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   //   ?nearx=2.0   64.0m (안개 50%)
   // 왜 이 축인지·보정 규칙은 `decide/lod.ts` 의 `withNearExit` 한 곳이다.
   const nearx = readNum('nearx', 0, 0, 2.2);
-  const TIER_BANDS = withNearExit(
+  // `?calm=1` — 파셀 **생성**을 안개 100% 지점(fog far) 뒤로 민다(팀장 판정 (a′)).
+  // 소멸 축은 파츠 tiers 전 계층 연장이 이미 코드 기본으로 막았고(`parts/planter.ts`),
+  // 이 노브는 남은 생성 축의 후보다 — 감독 판정이 나면 기본으로 승격한다.
+  // 왜 farEnter 인지·farExit 가 따라오는 규칙은 `decide/lod.ts` 의 `withFarEnter` 한 곳.
+  const calm = readNum('calm', 0, 0, 1) > 0;
+  let TIER_BANDS = withNearExit(
     scaleBands(DEFAULT_BANDS, readNum('band', 1, 0.5, 4)),
     nearx > 0 ? nearx : Number.NaN,
   );
+  if (calm) TIER_BANDS = withFarEnter(TIER_BANDS, FOG_FAR_CELLS);
 
   // ── 어디서 출발할 것인가 (감독 실기기 2026-08-09) ─────────────────────────
   //
