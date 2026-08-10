@@ -607,10 +607,17 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           // 페이드 판정이 그 흔들림을 따라가면 같은 자리에서 회차마다 다르게 보인다.
           // 여기서 재는 것은 *"이 거리에서 안개가 감춰줄 수 있는 최대"* 이고 그것은
           // 밴드에서만 나온다 — `decide/fog.ts` 가 그 SSOT 다.
+          //
+          // ⚠ **`fogDist` 를 곱한다**(검수관 비블로커 P1, 2026-08-09). 안 곱하면
+          // `?fogd=` 를 켠 순간 **판정과 화면이 어긋난다** — 예: `?fogd=3` 이면 씬 안개는
+          // 153.6m 부터인데 판정은 51.2m 를 써서, 80m 앞 부품을 "완전히 안개에 묻혔다" 로
+          // 보고 검정으로 덮는다. **고치려던 번쩍이 그 조합에서 되살아난다.**
+          // 기본값(1)에서는 무해하지만 감독이 두 노브를 함께 여는 순간 판정이 오염된다.
           fogAt: fadeMode === 'fog' ? undefined : (x, z) => {
             const dx = x - player.position.x;
             const dz = z - player.position.z;
-            return fogFactorAt(Math.hypot(dx, dz), fogBand(CELL_X));
+            const b = fogBand(CELL_X);
+            return fogFactorAt(Math.hypot(dx, dz), { near: b.near * fogDist, far: b.far * fogDist });
           },
         });
         builder = new PooledParcelBuilder({
