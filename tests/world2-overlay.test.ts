@@ -135,10 +135,14 @@
 // `check-refs.mjs` 의 실제 대상 목록을 읽어 확인한다 — 사람이 세지 않는다. 이 파일이 어느
 // 소스에 import 되는 날 그 단언이 깨지고, **그때 이 문단을 갱신하게 된다.**
 //
-// ⚠ 그리고 더 정확한 진술은 이것이다(검수관 P26): **이 diff 는 전부 주석이라 `tsc`·`vitest`
-// 의 실질 검출력도 0 이다.** 주석은 어느 축도 검사하지 않는다. 그래서 여기 적는 문장은
-// 게이트가 아니라 **약속**이고, 약속은 낡는다 — 이 파일의 반려 사슬 다섯 건이 전부 거기서
-// 났다. 낡지 않게 하는 유일한 방법은 문장을 **단언으로 바꾸는 것**이다.
+// ⚠ 그리고 더 정확한 진술은 이것이다(검수관 P26): **주석은 어느 축도 검사하지 않는다.**
+// 그래서 여기 적는 문장은 게이트가 아니라 **약속**이고, 약속은 낡는다 — 이 파일의 반려 사슬
+// 다섯 건이 전부 거기서 났다(산문만 고치는 왕복이 다섯 번, 다섯 번 다 산문이 틀렸다).
+// 낡지 않게 하는 유일한 방법은 문장을 **단언으로 바꾸는 것**이다.
+//
+// 그 회차들에는 *"이 diff 는 전부 주석이라 `tsc`·`vitest` 의 실질 검출력도 0"* 이 참이었다.
+// **지금은 아니다** — 아래에 실행되는 단언이 둘 붙었다(`게이트 커버리지` · `두 함수가
+// 다르다`). 시제를 안 고치면 이 문단 자체가 방금 말한 그 낡음의 사례가 된다.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -170,15 +174,27 @@ describe('게이트 커버리지 — 산문 대신 실행이 말한다', () => {
     const { checkRefs } = await import('../scripts/smoke/check-refs.mjs');
     const { covered } = checkRefs() as { covered: string[] };
 
-    // `frontend/js` 직속은 root 라 언제나 들어온다(대조군 — 목록 자체가 비면 이 단언이
-    // 공허해진다. 옛 `minY(120)` 이 빈 표본으로 통과한 그 형태를 막는다).
+    // 대조군 ① — `frontend/js` 직속은 root 라 언제나 들어온다. 목록이 비면 아래 `not`
+    // 단언이 공허하게 통과하는데, 옛 `minY(120)` 이 빈 표본으로 통과한 그 형태다.
     expect(covered).toContain('frontend/js/space.ts');
 
-    // 이 파일은 아무도 import 하지 않으므로 그래프에 없다.
-    // ⚠ **이 단언이 깨지면 고장이 아니라 신호다** — 누군가 `overlay.ts` 를 배선했다는 뜻이고,
-    // 그때는 이 파일 헤더의 커버리지 문단과 `verification-tier` 판정 근거가 함께 바뀐다
-    // (검수관 P27). 단언을 지우지 말고 **문단을 갱신하라.**
-    expect(covered).not.toContain('frontend/js/world2/decide/overlay.ts');
+    // 대조군 ② — **하위 디렉터리인데 import 그래프로 도달하는** 파일(검수관 B12).
+    // ①만 있으면 `covered` 가 root 목록으로 퇴화해도 살아남는다 — 실측으로 그 뮤테이션이
+    // **0 failed** 였다. 헤더와 `check-refs.mjs` 가 둘 다 *"하위는 도달할 때만 들어온다"* 를
+    // 주장하는데 그 주장을 재는 축이 없었던 것이고, **그것이 이 파일 반려 사슬 다섯 건의
+    // 형태 그대로다** — 산문을 단언으로 옮겼는데 옮겨진 단언에 같은 구멍이 남아 있었다.
+    expect(covered).toContain('frontend/js/world2/decide/lod.ts');
+
+    // ⚠ 위 두 대조군은 **특정 파일에 묶여 있다**(검수관 P30). 그 파일이 개명·이동하면 여기가
+    // 빨간불이 나는데 그것은 **커버리지 회귀가 아니다** — 다른 root/하위 파일로 갈아 끼우면
+    // 된다. 원인을 오독하지 않도록 적어 둔다.
+
+    expect(
+      covered,
+      '★ 이 단언이 깨진 것은 고장이 아니라 신호다 — 누군가 overlay.ts 를 배선했다는 뜻이다. '
+      + '단언을 지우거나 뒤집지 말고, 이 파일 헤더의 커버리지 문단과 verification-tier 판정 '
+      + '근거를 갱신하라(검수관 P27).',
+    ).not.toContain('frontend/js/world2/decide/overlay.ts');
   });
 });
 
@@ -502,8 +518,13 @@ describe('validateOverlay — 내보내기 관문', () => {
     const { overlay, issues } = validateOverlay(raw);
 
     expect(issues).toEqual([{ index: 0, reason: 'bad-number' }]);
-    expect(overlay.items).toHaveLength(0);          // 관문은 항목째 버린다
-    expect(loadOverlay(raw).items).toHaveLength(1); // 런타임은 x:0 으로 살린다
+    expect(overlay.items).toHaveLength(0); // 관문은 항목째 버린다
+    expect(
+      loadOverlay(raw).items,
+      '★ 이 단언이 깨진 것은 설계가 바뀌었다는 신호다 — 두 함수를 완전 일치시켰다면 '
+      + 'overlay.ts 의 validateOverlay JSDoc "소비자가 반드시 읽을 것" 절도 함께 거짓이 된다. '
+      + '단언만 지우고 지나가지 말고 둘을 같이 고쳐라.',
+    ).toHaveLength(1); // 런타임은 x:0 으로 살린다
     expect(loadOverlay(raw).items[0].x).toBe(0);
   });
 
