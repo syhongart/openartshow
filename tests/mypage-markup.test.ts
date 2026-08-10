@@ -403,21 +403,48 @@ describe('면 대비 — 입력이 「빈 구멍」으로 보이지 않는가', 
     return m;
   }
 
-  /** `var(--a)` 체인을 끝까지 따라가 실제 값을 낸다. 미정의·순환이면 던진다. */
+  /**
+   * `var(--a)` 체인을 끝까지 따라가 실제 값을 낸다. 미정의·순환이면 던진다.
+   *
+   * ⚠ **`rgb(var(--x-rgb))` 도 따라간다**(2026-08-09 추가). 1층 `tokens.css` 가 알파를
+   * 붙일 수 있는 색을 **채널 원본 + hex 파생** 구조로 바꾸면서 최종 값이 hex 가 아닌
+   * 토큰이 생겼다(경위는 `tokens.css` 의 `--oas-green-text-rgb` 한 곳). 이 함수는
+   * `var(--a)` **단독** 형태만 알았기 때문에 그 파생 선언을 문자열 그대로 돌려줬고,
+   * `luminance` 가 `hex 가 아니다` 로 던졌다 — **색도 대비도 안 바뀌었는데** 3건이 FAIL 했다.
+   * 즉 깨진 것은 이 검사가 재려던 것(면 대비)이 아니라 *"1층 토큰의 최종 값은 hex 다"*
+   * 라는 파서의 암묵 전제다. 임계값·단언은 한 글자도 안 바꿨다.
+   */
   function resolve1(name: string, maps: Map<string, string>[], depth = 0): string {
     if (depth > 12) throw new Error(`토큰 순환: ${name}`);
     let v: string | undefined;
     for (const mm of maps) if (mm.has(name)) { v = mm.get(name); break; }
     if (v === undefined) throw new Error(`정의되지 않은 토큰: ${name}`);
     const ref = /^var\(\s*(--[a-z0-9-]+)\s*\)$/i.exec(v);
-    return ref ? resolve1(ref[1], maps, depth + 1) : v;
+    if (ref) return resolve1(ref[1], maps, depth + 1);
+    // `rgb(var(--x-rgb))` — 안쪽 채널 토큰을 해소해 `rgb(R G B)` 로 만든다.
+    const wrapped = /^rgba?\(\s*var\(\s*(--[a-z0-9-]+)\s*\)\s*\)$/i.exec(v);
+    if (wrapped) return `rgb(${resolve1(wrapped[1], maps, depth + 1)})`;
+    return v;
   }
 
-  function luminance(hex: string): number {
-    const h = hex.trim().replace('#', '');
-    const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
-    if (!/^[0-9a-f]{6}$/i.test(full)) throw new Error(`hex 가 아니다: ${hex}`);
-    const ch = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255)
+  /**
+   * hex 또는 `rgb(R G B)` / `rgb(R, G, B)` 를 상대휘도로. **읽을 수 없으면 던진다** —
+   * 알 수 없는 표기를 0 이나 기본값으로 때우면 대비가 조용히 아무 값이나 되고, 그러면
+   * 이 검사는 통과하지만 아무것도 안 재는 상태가 된다(못 잰 것은 통과가 아니다).
+   */
+  function luminance(color: string): number {
+    const raw = color.trim();
+    let rgb: number[] | null = null;
+    const m = /^rgba?\(\s*(\d{1,3})[\s,]+(\d{1,3})[\s,]+(\d{1,3})\s*[,)/]?/.exec(raw);
+    if (m) {
+      rgb = [Number(m[1]), Number(m[2]), Number(m[3])];
+    } else {
+      const h = raw.replace('#', '');
+      const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+      if (!/^[0-9a-f]{6}$/i.test(full)) throw new Error(`색을 읽을 수 없다: ${color}`);
+      rgb = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+    }
+    const ch = rgb.map((c) => c / 255)
       .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
     return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
   }
