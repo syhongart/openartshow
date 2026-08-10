@@ -124,15 +124,14 @@ export const POS_LIMIT = 100_000;
 /**
  * 회전은 **주기적이라 클램프하지 않고 접는다.** `POS_LIMIT` 의 근거(1e9 에 찍히면 부동
  * 소수 정밀도가 무너진다)가 회전에도 같이 적용되는데(검수관 P12), 클램프하면 3π 가
- * 2π(=0)로 잘려 **π 여야 할 회전이 0이 된다.** `%` 는 부호를 보존하며 주기만 접으므로
- * 정상 입력(`-0.5`)을 건드리지 않는다 — 그래서 `clamped` 오탐이 안 난다.
+ * 2π(=0)로 잘려 **π 여야 할 회전이 0이 된다.** `%` 는 부호를 보존하며 주기만 접는다
+ * (`-3π` → `-π`, `-0.5` → `-0.5`, `-0` 오탐 없음 — 검수관 실측).
+ *
+ * ⚠ 여기 원래 *"그래서 `clamped` 오탐이 안 난다"* 라고 적었는데 **정상 범위에서만 참**이다
+ * (검수관 P17). `|ry| ≥ 2π` 면 값이 실제로 바뀌므로 보고는 되어야 한다 — 다만 그것은
+ * 잘린 것이 아니라 접힌 것이라 `validateOverlay` 가 `folded` 로 사유를 나눈다.
  */
 const foldRy = (v: unknown): number => num(v, 0) % (Math.PI * 2);
-
-/** 계약이 아는 항목 키. 여기 없는 키는 `validateOverlay` 가 `unknown-field` 로 보고한다. */
-const KNOWN_ITEM_KEYS = new Set(['src', 'x', 'y', 'z', 'ry', 's']);
-/** 계약이 아는 최상위 키. */
-const KNOWN_ROOT_KEYS = new Set(['version', 'items']);
 
 /** 항목 하나의 수치 정규화. `normalizeOverlay` 와 `validateOverlay` 가 **함께** 쓴다. */
 function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem {
@@ -145,6 +144,20 @@ function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem 
     s: clamp(item.s, S_MIN, S_MAX, 1),
   };
 }
+
+// ── 계약이 아는 키 — **목록을 적지 않고 유도한다** (검수관 B6) ────────────────
+// 처음에는 `new Set(['src','x','y','z','ry','s'])` 라고 **따로 적었다.** 값 미러링이고,
+// 위험한 방향은 소실 쪽이었다. 검수관 뮤테이션 실측 — 화이트리스트에만 `'name'` 을 더하고
+// `normalizeItem` 은 그대로 두자 **0 failed** 였는데, 그 상태에서 `{name:'hall'}` 이
+// `issues: []`("커밋 가능") 판정을 받으며 출력에서 사라졌다. **B4 가 그대로 재발하는데
+// 게이트가 초록이었다.**
+//
+// 유도하면 어긋날 자리가 없다. `normalizeItem` 은 `function` 선언이라 hoisting 되지만
+// ⚠️ **그 함수가 참조하는 `POS_LIMIT`·`S_MIN`·`S_MAX`·`foldRy` 는 `const` 라 TDZ 다.**
+// 그래서 이 두 줄은 **반드시 `normalizeItem` 과 그 상수들보다 아래**에 있어야 한다 —
+// 이 저장소는 `Sidebar.Scene.js` 에서 정확히 그 TDZ 로 부팅을 한 번 죽였다.
+const KNOWN_ITEM_KEYS = new Set(Object.keys(normalizeItem({}, '')));
+const KNOWN_ROOT_KEYS = new Set(Object.keys(emptyOverlay()));
 
 /**
  * 임의의 입력을 유효한 `Overlay` 로 만든다. **던지지 않는다.**
@@ -172,10 +185,48 @@ export function normalizeOverlay(raw: unknown): Overlay {
 }
 
 /** 버전 필드를 읽는다. 없거나 숫자가 아니면 v1 로 본다(손으로 쓴 파일을 받아 준다). */
-function readVersion(raw: unknown): number {
+function readVersion(raw: unknown): number | 'invalid' | 'absent' {
   const o = raw as Record<string, unknown> | null;
-  if (!o || typeof o !== 'object') return OVERLAY_VERSION;
-  return typeof o.version === 'number' && Number.isFinite(o.version) ? o.version : OVERLAY_VERSION;
+  if (!o || typeof o !== 'object' || !('version' in o)) return 'absent';
+  const v = o.version;
+  // 정수 + 1 이상만 버전이다. `'1'`·`null`·`NaN`·`1.5`·`0`·`-3` 은 **해석할 수 없는 값**이지
+  // "v1" 이 아니다 — 예전에는 전부 조용히 v1 로 뭉갰고, 그것이 B5 반려 사유였다.
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) return 'invalid';
+  return v;
+}
+
+/**
+ * 버전 판정 + 마이그레이션. **`loadOverlay` 와 `validateOverlay` 가 이것만 부른다.**
+ *
+ * ⚠ 이 함수가 없던 판본이 **두 번 반려됐다.**
+ *   · B4 — `loadOverlay` 에만 버전 가드를 두어 `validateOverlay` 가 미래 버전 파일을
+ *     *"커밋 가능"* 으로 통과시켰다. 두 함수가 같은 파일에 **다른 말**을 했다.
+ *   · B5·B7 — 가드를 양쪽에 복사했더니 이번엔 ① `> OVERLAY_VERSION` **한 방향만** 봐서
+ *     `{version: 0}`·`{version: '1'}`·`{version: null}` 이 issues 0 으로 통과하며 버전이
+ *     소실됐고(계약 문장은 *"버전도 사라지지 않는다"* 라고 적고 있었다) ② 마이그레이션
+ *     자리가 `loadOverlay` 에만 있어 **v2 가 생기는 순간 두 함수가 또 갈라지도록** 예약돼
+ *     있었다.
+ *
+ * 그래서 복사를 그만두고 **한 곳으로 뽑았다.** 갈라질 자리가 없으면 갈라지지 않는다.
+ * 새 버전을 만들 때 손댈 곳도 여기 하나다.
+ */
+function prepareRaw(raw: unknown): { raw: unknown; issues: OverlayIssue[] } {
+  const version = readVersion(raw);
+
+  if (version === 'invalid') return { raw: null, issues: [{ reason: 'version-invalid' }] };
+
+  // 미래 버전(파일이 코드보다 새롭다)은 내용을 신뢰할 수 없다. 빈 것으로 떨어뜨린다 —
+  // 부분적으로 해석해 이상한 마을을 보여주는 것보다 아무것도 안 얹는 편이 낫다.
+  if (version !== 'absent' && version > OVERLAY_VERSION) {
+    return { raw: null, issues: [{ reason: 'version-too-new' }] };
+  }
+
+  // ── 마이그레이션 자리. v1 뿐이라 아직 비어 있다. ──────────────────────────
+  // v2 를 만들 때 **여기 한 곳**에 넣는다. `normalizeOverlay` 앞이라는 것이 조건이다
+  // (그 함수가 출력 `version` 을 현재 값으로 덮어쓰므로 순서가 뒤집히면 죽는다 — B1).
+  //   if (version !== 'absent' && version < 2) raw = migrateV1toV2(raw);
+
+  return { raw, issues: [] };
 }
 
 /**
@@ -193,26 +244,16 @@ function readVersion(raw: unknown): number {
  * 봤다"* 그 형태다. 그래서 진입점을 **함수 하나로 좁히고** 테스트도 이 함수로 건다.
  */
 export function loadOverlay(raw: unknown): Overlay {
-  const version = readVersion(raw);
-
-  // 미래 버전(파일이 코드보다 새롭다)은 내용을 신뢰할 수 없다. 빈 것으로 떨어뜨린다 —
-  // 부분적으로 해석해 이상한 마을을 보여주는 것보다 아무것도 안 얹는 편이 낫다.
-  if (version > OVERLAY_VERSION) return emptyOverlay();
-
-  // ── 마이그레이션 자리. v1 뿐이라 아직 비어 있다. ──────────────────────────
-  // v2 를 만들 때 여기에 넣는다. **`normalizeOverlay` 앞이라는 것이 조건이다.**
-  //   if (version < 2) raw = migrateV1toV2(raw);
-
-  return normalizeOverlay(raw);
+  return normalizeOverlay(prepareRaw(raw).raw);
 }
 
 /** `validateOverlay` 가 돌려주는 거부·변경 사유. */
 export interface OverlayIssue {
-  /** 항목 인덱스. 파일 전체에 대한 사유(`items-not-array`·`version-too-new`)에는 없다. */
+  /** 항목 인덱스. 파일 전체에 대한 사유(`items-not-array`·`version-*`)에는 없다. */
   index?: number;
   reason:
-    | 'not-object' | 'unsafe-src' | 'bad-number' | 'clamped'
-    | 'items-not-array' | 'version-too-new' | 'unknown-field';
+    | 'not-object' | 'unsafe-src' | 'bad-number' | 'clamped' | 'folded'
+    | 'items-not-array' | 'version-too-new' | 'version-invalid' | 'unknown-field';
 }
 
 /**
@@ -233,24 +274,26 @@ export interface OverlayIssue {
  * 필드도 조용히 사라지지 않는다. 나중에 의도적 정규화(예: 경로 정규화)를 넣는다면 그것도
  * 사유로 보고하거나 이 문장을 먼저 고쳐야 한다.
  *
- * ⚠ **그 문장은 한 번 거짓이었다**(검수관 B4 반려). `version` 을 아예 안 읽어서
- * `{version: 999, …}` 가 `issues: []` 로 **"커밋 가능"** 판정을 받으면서 999 가 소실되고
- * 미래 버전 내용이 그대로 해석됐다 — `loadOverlay` 는 같은 입력에 items 0 을 내는데,
- * 진입점만 좁히고 **같은 `raw` 를 받는 형제 함수에는 가드를 안 둔 것**이다(B1 을 고치며
- * 만든 사각). 미지 필드도 같았다: `normalizeItem` 이 6키 화이트리스트라 `sx`·`name` 이
- * 조용히 버려졌다. 둘이 겹치면 **v2 파일을 v1 코드로 검증했을 때 "문제 없음" 판정과 함께
- * 버전·신규 필드가 모두 날아간 파일이 커밋된다.**
+ * ⚠ **그 문장은 두 번 거짓이었다.**
+ *   · B4 — `version` 을 아예 안 읽어 `{version: 999}` 가 *"커밋 가능"* 판정을 받으며 999 가
+ *     소실되고 미래 버전 내용이 그대로 해석됐다. `loadOverlay` 는 같은 입력에 items 0 을
+ *     냈으니 **두 함수가 같은 파일에 다른 말**을 한 것이다. 미지 필드도 같았다 —
+ *     `normalizeItem` 이 6키 화이트리스트라 `sx`·`name` 이 조용히 버려졌다.
+ *   · B5 — 그것을 고치며 문장에 *"버전도"* 를 **새로 써넣었는데**, 가드는
+ *     `> OVERLAY_VERSION` **한 방향만** 봤다. 실측 반례 6건: `{version: 0}`·`{-3}`·`{'1'}`·
+ *     `{'abc'}`·`{null}`·`{NaN}` 이 전부 `issues: []` 로 통과하며 버전이 v1 로 덮였다.
+ *     **한쪽만 고치고 문장은 전체를 주장한** B1→B4 와 똑같은 형태를, 문장을 넓히면서 했다.
+ *
+ * 지금은 버전 처리를 `prepareRaw` **한 곳**에 두고 `loadOverlay` 와 이 함수가 그것만
+ * 부른다 — 갈라질 자리가 없으면 갈라지지 않는다.
  */
 export function validateOverlay(raw: unknown): { overlay: Overlay; issues: OverlayIssue[] } {
-  const o = raw as Record<string, unknown> | null;
-  const issues: OverlayIssue[] = [];
+  // 버전 판정·마이그레이션은 `loadOverlay` 와 **같은 함수**를 쓴다(위 주석 참조).
+  const prepared = prepareRaw(raw);
+  if (prepared.issues.length > 0) return { overlay: emptyOverlay(), issues: prepared.issues };
 
-  // 버전 판정이 먼저다 — `loadOverlay` 와 **같은 순서**여야 두 함수가 같은 파일에 대해
-  // 같은 말을 한다. 이 가드가 없으면 관문만 통과시키고 런타임은 안 얹는 상태가 된다.
-  if (readVersion(raw) > OVERLAY_VERSION) {
-    issues.push({ reason: 'version-too-new' });
-    return { overlay: emptyOverlay(), issues };
-  }
+  const o = prepared.raw as Record<string, unknown> | null;
+  const issues: OverlayIssue[] = [];
 
   if (!o || typeof o !== 'object' || !Array.isArray(o.items)) {
     issues.push({ reason: 'items-not-array' });
@@ -279,9 +322,14 @@ export function validateOverlay(raw: unknown): { overlay: Overlay; issues: Overl
     items.push(norm);
 
     // 값이 바뀌었으면 그것도 사유다 — "관문 통과 = 무손실" 이어야 편집 UI 가 믿을 수 있다.
-    for (const k of ['x', 'y', 'z', 'ry', 's'] as const) {
+    for (const k of ['x', 'y', 'z', 's'] as const) {
       if (item[k] !== undefined && item[k] !== norm[k]) { issues.push({ index, reason: 'clamped' }); break; }
     }
+
+    // 회전만 사유를 나눈다(검수관 P17). 3π → π 는 **잘린 것이 아니라 접힌 것**이고 같은
+    // 회전이다. `clamped` 로 묶으면 편집 UI 가 *"잘렸다"* 고 표시해 감독이 값을 잃은 줄
+    // 안다. 보고는 하되 이름이 원인을 가리지 않게 한다.
+    if (item.ry !== undefined && item.ry !== norm.ry) issues.push({ index, reason: 'folded' });
 
     // 계약이 모르는 필드는 출력에서 사라진다 — 사라진다는 사실 자체가 보고 대상이다.
     for (const k of Object.keys(item)) {

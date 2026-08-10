@@ -73,6 +73,12 @@
 //   ④ `foldRy` 를 클램프로 교체                → 1 failed ✓  (기대 π vs 실측 2π)
 //   ⑤ `S_MAX` 100 → 10                        → 1 failed ✓  ← **2회차의 0 failed 가 메워졌다**
 //
+// ⚠ **5회차(B5·B6·B7 해소분)는 아직 안 쟀다** — `version-invalid`·화이트리스트 유도·
+// `prepareRaw` 공유·`folded` 분리 넷. 발주해 두었고 결과는 다음 커밋에서 채운다.
+// 검수관 지정: **M1 형태**(화이트리스트에만 키를 더하는 뮤테이션)를 반드시 포함할 것.
+// 그런데 유도로 바꾼 뒤에는 M1 을 만들 수가 없다 — 그 자리를 *"유도를 목록으로 되돌리기"*
+// 로 대신한다. **뮤테이션이 불가능해진 것과 검출되는 것은 다른 일**이므로 그렇게 적는다.
+//
 // ⑤가 위 P2 판정의 실증이다. **핀 단언 3줄로 그 사각이 닫혔다** — *"리터럴이면 값 미러링,
 // 심볼이면 사각, 둘 다 구멍이라 고를 수 있는 것이 아니다"* 라던 내 판단이 틀렸음을 이 줄이
 // 보인다. 사각을 정직하게 적는 것과 사각을 **닫을 수 있는데 안 닫는 것**은 다른 일이다.
@@ -145,9 +151,16 @@ describe('loadOverlay — 소비자 진입점 (통합 경로)', () => {
     expect(loadOverlay(raw).items).toHaveLength(1);
   });
 
-  it('version 이 없거나 숫자가 아니면 v1 로 받아 준다 — 손으로 쓴 파일', () => {
+  it('version 이 아예 없으면 v1 로 받아 준다 — 손으로 쓴 파일', () => {
     expect(loadOverlay({ items: [{ src: 'assets/models/a.glb' }] }).items).toHaveLength(1);
-    expect(loadOverlay({ version: 'x', items: [{ src: 'assets/models/a.glb' }] }).items).toHaveLength(1);
+  });
+
+  // ★ 검수관 B5. 예전에는 이것들을 **전부 조용히 v1 로 뭉갰고**, 그 상태에서 계약 문장은
+  //   *"버전도 사라지지 않는다"* 라고 적혀 있었다. "없다" 와 "해석할 수 없다" 는 다르다.
+  it('해석할 수 없는 version 은 v1 로 뭉개지 않고 거부한다', () => {
+    for (const v of ['1', 'abc', null, NaN, 0, -3, 1.5]) {
+      expect(loadOverlay({ version: v, items: [{ src: 'assets/models/a.glb' }] }).items).toHaveLength(0);
+    }
   });
 
   it('쓰레기 입력에도 빈 오버레이를 돌려준다', () => {
@@ -309,6 +322,51 @@ describe('validateOverlay — 내보내기 관문', () => {
   it('최상위 미지 필드도 본다', () => {
     const { issues } = validateOverlay({ version: OVERLAY_VERSION, items: [], meta: { author: 'x' } });
     expect(issues).toEqual([{ reason: 'unknown-field' }]);
+  });
+
+  it('해석할 수 없는 version 을 사유로 보고한다 — 조용히 v1 로 덮지 않는다', () => {
+    for (const v of ['1', 'abc', null, NaN, 0, -3, 1.5]) {
+      const { overlay, issues } = validateOverlay({
+        version: v, items: [{ src: 'assets/models/a.glb' }],
+      });
+      expect(issues).toEqual([{ reason: 'version-invalid' }]);
+      expect(overlay.items).toHaveLength(0);
+    }
+  });
+
+  it('회전이 접히면 clamped 가 아니라 folded 로 보고한다 — 잘린 게 아니다', () => {
+    const { issues } = validateOverlay({
+      items: [{ src: 'assets/models/a.glb', ry: Math.PI * 3 }],
+    });
+    expect(issues).toEqual([{ index: 0, reason: 'folded' }]);
+  });
+
+  // ★ 검수관 G-1. 계약 문장(*"issues 가 비면 무손실"*)을 케이스로 강제한다 — version 도
+  //   키도 값도. `Object.is` 인 것은 `-0`/`+0` 오탐을 막기 위해서다(검수관 지정).
+  it('issues 가 비면 라운드트립이 무손실이다 — version·키·값 전부', () => {
+    const cases: Array<Record<string, unknown>> = [
+      { version: OVERLAY_VERSION, items: [{ src: 'assets/models/a.glb', x: 1, y: 2, z: 3, ry: 0.5, s: 2 }] },
+      { items: [{ src: 'assets/models/b.glb', x: -7.5, y: 0, z: 12, ry: -1.25, s: 0.5 }] },
+      { version: OVERLAY_VERSION, items: [] },
+    ];
+    for (const raw of cases) {
+      const { overlay, issues } = validateOverlay(raw);
+      expect(issues).toEqual([]);
+      if ('version' in raw) expect(overlay.version).toBe(raw.version);
+      const inItems = raw.items as Array<Record<string, unknown>>;
+      inItems.forEach((item, i) => {
+        const out = overlay.items[i] as unknown as Record<string, unknown>;
+        for (const k of Object.keys(item)) expect(Object.is(out[k], item[k])).toBe(true);
+      });
+    }
+  });
+
+  // ★ 검수관 G-3. 개수만 비교하면 부족하다 — 값까지 같아야 "같은 말" 이다.
+  it('issues 가 비면 loadOverlay 와 items 가 값까지 같다', () => {
+    const raw = { items: [{ src: 'assets/models/a.glb', x: 1, y: 2, z: 3, ry: 0.5, s: 2 }] };
+    const { overlay, issues } = validateOverlay(raw);
+    expect(issues).toEqual([]);
+    expect(loadOverlay(raw).items).toEqual(overlay.items);
   });
 
   it('전부 정상이면 issues 가 비어 있다 — 이것이 커밋 가능 조건이다', () => {
