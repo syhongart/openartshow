@@ -342,6 +342,12 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 색 페이드가 왜 이걸 대신 못 하는지는 `systems/parcel-grow.ts` 머리 한 곳이다.
   const growSecs = readNum('grow', GROW_SECONDS, 0, 3);
 
+  // 적응 품질(해상도 강등·프레임 캡·tier 압력)을 통째로 끈다. **비교 실험 전용** —
+  // 감독 실기기 "이동 중 밝기가 살짝 변함"(2026-08-10)에서 안개·헤드밥이 실측으로
+  // 기각된 뒤 남은 이동-반응 축이 적응 해상도 하나라, 켬/끔 두 링크로 가른다.
+  // 기본값 1 = 현행 그대로. 끄면 저사양 기기 보호가 사라지므로 상시 사용 금지.
+  const adaptOn = readNum('adapt', 1, 0, 1) > 0;
+
   // ── 어디서 출발할 것인가 (감독 실기기 2026-08-09) ─────────────────────────
   //
   // 감독: *"가까이 가면 뭔가 건물이 번쩍해"*
@@ -753,7 +759,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 예외를 시스템 순서로 표현하게 되어, 읽는 사람이 그 규칙을 알아야 한다.
         // `parcelGrow` 도 `streaming` 뒤 — 이번 프레임에 태어난 슬롯이 이번 프레임에
         // 시작 스케일로 줄어 있어야 완성 크기가 한 프레임도 안 비친다(fade 와 같은 이유).
-        kernel.add(streaming).add(parcelFade).add(parcelGrow).add(adapt);
+        // `?adapt=0` 이면 등록만 생략한다(생성은 유지 — snapshot 소비자가 null 분기
+        // 없이 초기값을 읽는다). 등록이 없으면 update 가 안 돌아 해상도·캡·압력 집행 0.
+        kernel.add(streaming).add(parcelFade).add(parcelGrow);
+        if (adaptOn) kernel.add(adapt);
         kernel.start();
 
         // 커널이 돌아야 파셀이 채워진다 — 여기서 블로킹 루프를 돌면 교착한다.
