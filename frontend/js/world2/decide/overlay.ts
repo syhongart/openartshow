@@ -214,9 +214,12 @@ function readVersion(raw: unknown): number | 'invalid' | 'absent' {
   const v = o.version;
   // 정수 + 1 이상만 버전이다. 해석할 수 없는 값들은 **"v1" 이 아니라 거부**다 — 예전에는
   // 전부 조용히 v1 로 뭉갰고 그것이 B5 반려 사유였다.
-  // (거부되는 값의 **목록은 여기 적지 않는다.** `tests/world2-overlay.test.ts` 의
+  // (거부되는 값의 **완전 목록은 여기 적지 않는다.** `tests/world2-overlay.test.ts` 의
   //  `INVALID_VERSIONS` 한 곳이고, 목록을 주석에 복사하면 규칙이 바뀔 때 조용히 낡는다 —
-  //  검수관 P22. 이 파일의 반려 사슬이 전부 그 형태였다.)
+  //  검수관 P22. 이 파일의 반려 사슬이 전부 그 형태였다.
+  //  ⚠ 이 파일 아래쪽에 값이 몇 개 나열된 곳이 둘 있는데 그것은 **과거 시점의 실측 반례**
+  //  서술이지 규칙의 사본이 아니다 — 규칙이 바뀌어도 낡지 않으므로 이 문장과 충돌하지
+  //  않는다. 둘을 구별하지 않으면 다음 사람이 두 문장 사이에서 멈춘다(검수관 P23).)
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) return 'invalid';
   return v;
 }
