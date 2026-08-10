@@ -124,3 +124,8 @@ qa-tmp/
 # 않으려고 처음부터 무시한다 — CI 처럼 매번 새 러너인 곳에서는 직전 값이 없고,
 # 그 경우 "첫 회차" 로 적힌다(변화 없음으로 적지 않는다).
 /.smoke-baseline.jsonl
+
+# G-LOCK 의 조립 락 디렉터리(`scripts/smoke/assemble.mjs` 의 `withDistLock`).
+# 프로세스가 쥐고 있는 동안만 존재하고 `finally` 에서 지워진다 — 워킹트리에 남아 있으면
+# 그 자체가 "누가 죽었다" 는 신호이므로 추적하지 않는다(커밋되면 모든 클론이 잠긴다).
+/.smoke-vite.lock/
