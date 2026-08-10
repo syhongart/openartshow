@@ -341,6 +341,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 새 부품이 땅에서 자라는 시간. `?grow=0` 이 종전 동작(즉시 완성 크기 = 팝).
   // 색 페이드가 왜 이걸 대신 못 하는지는 `systems/parcel-grow.ts` 머리 한 곳이다.
   const growSecs = readNum('grow', GROW_SECONDS, 0, 3);
+  // `?shrink=` — 반납 수축 시간(초). 후진 그림자 명멸(#218, ?shint=0 으로 축 확정)의
+  // 처방 후보다: 키 큰 캐스터의 그림자가 0.25s 에 걷히는 것이 명멸의 핵이라, 시간을
+  // 늘려 연속 변화로 만든다. 근거·경계는 `systems/parcel-grow.ts` 의 SHRINK_SECONDS
+  // 주석 한 곳. 감독 판정이 나면 그 값을 기본으로 승격한다(팀장 조건 2, 2026-08-10).
+  const shrinkSecs = readNum('shrink', 0, 0, 3);
 
   // 적응 품질(해상도 강등·프레임 캡·tier 압력)을 통째로 끈다. **비교 실험 전용** —
   // 감독 실기기 "이동 중 밝기가 살짝 변함"(2026-08-10)에서 안개·헤드밥이 실측으로
@@ -727,6 +732,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         parcelGrow = new ParcelGrowSystem({
           pools: pools!,
           duration: growSecs,
+          // 0(노브 미지정)이면 undefined → 시스템 기본(SHRINK_SECONDS)을 쓴다.
+          shrinkSecs: shrinkSecs > 0 ? shrinkSecs : undefined,
           gate: () => streaming?.ready ?? false,
         });
         builder = new PooledParcelBuilder({

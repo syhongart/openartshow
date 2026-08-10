@@ -129,6 +129,26 @@ describe('수축 소멸 — 사라질 때도 팝이 없다', () => {
     expect(grow.pending).toBe(0);
   });
 
+  it('shrinkSecs 가 수축 속도를 실제로 바꾼다 — ?shrink= 노브의 집행 검사', () => {
+    // 같은 경과 시간(0.2s)에서: 기본(0.25s)은 거의 다 줄었고, 2.0s 는 아직 크다.
+    // 이 단언이 없으면 노브가 옵션만 받고 안 쓰는 no-op 이어도 아무도 모른다.
+    const mkWith = (shrinkSecs?: number) => {
+      const { pools, calls } = stubPools();
+      const grow = new ParcelGrowSystem({ pools, duration: 0.4, shrinkSecs, gate: () => true });
+      const pool = createSlotPool(pools, undefined, grow.sink());
+      const h = pool.acquire('building')!;
+      pool.setTransform(h, T.x, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+      grow.update({ dt: 10, hidden: false } as never); // 다 자란 상태
+      pool.release(h);
+      grow.update({ dt: 0.2, hidden: false } as never);
+      return last(calls, h).sy / T.sy;
+    };
+    const fast = mkWith(undefined); // 기본 0.25s — 0.2s 면 수축 80%+ 진행
+    const slow = mkWith(2.0);       // 노브 2.0s — 0.2s 면 수축 10% 구간
+    expect(slow).toBeGreaterThan(fast);
+    expect(slow).toBeGreaterThan(0.5); // 2.0s 수축이 0.2s 만에 절반 아래로 내려가면 안 쓴 것
+  });
+
   it('자라다 만 채 죽으면 그 크기에서 줄어든다 — 커졌다 죽는 역팝이 없다', () => {
     const { grow, pool, h, calls } = setup(0.4);
     grow.update({ dt: 0.1, hidden: false } as never); // 일부만 자람
