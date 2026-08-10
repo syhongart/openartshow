@@ -44,6 +44,21 @@ export interface GrowSink {
   place(h: SlotHandle, t: SlotTransform): void;
   /** 슬롯이 반납된다. 진행 중이면 버린다 */
   release(h: SlotHandle): void;
+  /**
+   * 슬롯을 **줄어들게 한 뒤** 반납한다. `done` 이 실제 반납(`pools.release`)이다.
+   *
+   * ── 왜 반납을 미루는가 (감독 마크 실측 2026-08-10, 두 번째 회차) ──────────
+   * 등장을 자라게 한 뒤에도 반짝임이 남았고, 마크 직전 1초의 이벤트는 **tier강등
+   * 41.6m·56.0m** — 강등은 부품을 즉시 지운다. 41.6m 는 안개 0% 라 즉시 소멸이
+   * 그대로 반짝임이다. 소멸도 크기로 가리려면 **반납을 애니메이션이 끝날 때까지
+   * 미루는 수밖에 없다**(반납된 슬롯은 즉시 재사용되므로 만질 수 없다).
+   *
+   * ── 대가: 죽는 동안 슬롯을 점유한다 ────────────────────────────────────
+   * 수축 시간만큼 슬롯 반환이 늦어 순간 점유가 예산을 넘을 수 있다 — 그때는
+   * `starved` 가 오르고 HUD·게이트에 보인다(조용히 안 틀린다). 수축을 등장(0.4s)
+   * 보다 짧게 두는 이유가 이것이다.
+   */
+  retire(h: SlotHandle, done: () => void): void;
 }
 
 export interface ParcelGrowOptions {
@@ -58,7 +73,17 @@ export interface ParcelGrowOptions {
 interface Entry {
   t: SlotTransform;
   elapsed: number;
+  /** 수축 중이면 반납 콜백. 애니메이션이 끝나는 순간 부른다 */
+  done?: () => void;
+  /** 수축 시작 시점의 스케일 배수(자라다 만 채 죽으면 1 이 아니다) */
+  from?: number;
 }
+
+/**
+ * 수축 시간(초). 등장(GROW_SECONDS)보다 짧다 — 죽는 동안 슬롯을 점유하므로
+ * (위 `retire` 주석) 짧을수록 예산 압박이 작고, 소멸은 등장보다 시선을 덜 끈다.
+ */
+const SHRINK_SECONDS = 0.25;
 
 /**
  * 진행 중인 성장 애니메이션. 핸들 객체를 키로 쓰는 이유는 `parcel-fade.ts` 와 같다 —
@@ -72,6 +97,13 @@ export class ParcelGrowSystem implements System {
   private readonly ease: FadeEase;
   private readonly gate: () => boolean;
   private readonly entries = new Map<SlotHandle, Entry>();
+  /**
+   * 핸들별 마지막 완성 자세. 수축이 어느 자세에서 줄어들지 알아야 한다 — 성장 엔트리는
+   * 끝나면 지워지므로 여기 따로 남긴다. WeakMap 이라 핸들이 죽으면 저절로 사라진다.
+   */
+  private readonly lastPose = new WeakMap<SlotHandle, SlotTransform>();
+  /** 지금 진행 중인 성장 엔트리의 현재 배수 — 자라다 만 채 죽을 때 수축 시작점 */
+  private readonly curScale = new Map<SlotHandle, number>();
 
   constructor(opts: ParcelGrowOptions) {
     this.pools = opts.pools;
@@ -84,7 +116,8 @@ export class ParcelGrowSystem implements System {
   sink(): GrowSink {
     return {
       place: (h, t) => this.begin(h, t),
-      release: (h) => { this.entries.delete(h); },
+      release: (h) => { this.entries.delete(h); this.curScale.delete(h); },
+      retire: (h, done) => this.retire(h, done),
     };
   }
 
@@ -92,14 +125,32 @@ export class ParcelGrowSystem implements System {
   get pending(): number { return this.entries.size; }
 
   private begin(h: SlotHandle, t: SlotTransform): void {
+    this.lastPose.set(h, { ...t }); // 수축이 출발할 자세 — gate·duration 과 무관하게 기억
     if (!(this.duration > 0) || !this.gate()) {
       this.entries.delete(h); // 재사용 슬롯에 옛 성장이 남지 않게
+      this.curScale.delete(h);
       return; // setTransform 은 이미 완성 자세를 썼다 — 종전 동작 그대로
     }
     this.entries.set(h, { t: { ...t }, elapsed: 0 });
+    this.curScale.set(h, START_SCALE);
     // 첫 프레임을 기다리지 않고 지금 줄인다. 안 그러면 update 전에 완성 크기로 한 번
     // 렌더돼 — 고치려는 팝 그 자체가 한 프레임 보인다(`parcel-fade.ts` 와 같은 함정).
     this.apply(h, t, START_SCALE);
+  }
+
+  private retire(h: SlotHandle, done: () => void): void {
+    const pose = this.lastPose.get(h);
+    // 자세를 모르거나(한 번도 안 놓임) 기능이 꺼져 있으면 종전대로 즉시 반납.
+    if (!pose || !(this.duration > 0) || !this.gate()) {
+      this.entries.delete(h);
+      this.curScale.delete(h);
+      done();
+      return;
+    }
+    // 자라다 만 채 죽으면 그 크기에서 줄어든다 — 1 에서 다시 시작하면 커졌다 죽는
+    // 역방향 팝이 생긴다.
+    const from = this.curScale.get(h) ?? 1;
+    this.entries.set(h, { t: pose, elapsed: 0, done, from });
   }
 
   private apply(h: SlotHandle, t: SlotTransform, k: number): void {
@@ -109,19 +160,40 @@ export class ParcelGrowSystem implements System {
   update(ctx: FrameCtx): void {
     if (this.entries.size === 0) return;
     for (const [h, e] of this.entries) {
-      if (h.index < 0) { this.entries.delete(h); continue; } // 죽은 핸들 — fade 와 동일
+      if (h.index < 0) { this.entries.delete(h); this.curScale.delete(h); continue; }
       e.elapsed += ctx.dt;
+      if (e.done) {
+        // ── 수축 — from → 0. 끝나는 프레임에 실제 반납이 일어난다 ──────────────
+        const mix = fadeMix(e.elapsed, SHRINK_SECONDS, this.ease);
+        const k = Math.max(START_SCALE, (e.from ?? 1) * (1 - mix));
+        this.apply(h, e.t, k);
+        if (mix >= 1) {
+          this.entries.delete(h);
+          this.curScale.delete(h);
+          e.done(); // pools.release — 이 순간부터 슬롯이 재사용 가능해진다
+        }
+        continue;
+      }
+      // ── 성장 — START_SCALE → 1 ─────────────────────────────────────────────
       const mix = fadeMix(e.elapsed, this.duration, this.ease);
-      this.apply(h, e.t, Math.max(START_SCALE, mix));
+      const k = Math.max(START_SCALE, mix);
+      this.curScale.set(h, k);
+      this.apply(h, e.t, k);
       if (mix >= 1) {
         // 끝값을 정확히 박는다. 보간 마지막 값은 mix=1 이라 이미 정확하지만, 위
         // `Math.max` 가 있는 한 이 줄이 완성 자세의 유일한 보증이다.
         this.apply(h, e.t, 1);
         this.entries.delete(h);
+        this.curScale.delete(h);
       }
     }
     ctx.probe?.('parcel_growing', this.entries.size);
   }
 
-  dispose(): void { this.entries.clear(); }
+  dispose(): void {
+    // 수축 중이던 슬롯의 반납 콜백을 먼저 흘려보낸다 — 버리면 슬롯이 영원히 점유된다.
+    for (const [, e] of this.entries) e.done?.();
+    this.entries.clear();
+    this.curScale.clear();
+  }
 }

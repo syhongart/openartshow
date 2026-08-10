@@ -68,6 +68,12 @@ export interface PlaceSink {
     x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number;
   }): void;
   release?(h: SlotHandle): void;
+  /**
+   * 반납을 **가로챈다** — `done` 이 실제 반납이고, 구현이 줄어드는 애니메이션을 끝낸 뒤
+   * 부른다. 없으면 즉시 반납(종전 동작). 왜 미루는지는 `parcel-grow.ts` 의 `retire`
+   * 주석 한 곳이다.
+   */
+  retire?(h: SlotHandle, done: () => void): void;
 }
 
 /**
@@ -110,8 +116,10 @@ export function createSlotPool(pools: InstancePools, sink?: ToneSink, grow?: Pla
       // 순서가 중요하다: 풀에 반납하면 핸들이 죽은 표식(index=-1)을 달아 sink 가 자기
       // 항목을 못 찾는다. 먼저 sink 에서 걷고 반납한다.
       sink?.release?.(h);
-      grow?.release?.(h);
-      pools.release(h);
+      // 수축 훅이 있으면 반납을 **그쪽에 맡긴다** — 줄어드는 애니메이션이 끝난 프레임에
+      // `pools.release` 가 불린다. 없으면 종전대로 즉시.
+      if (grow?.retire) grow.retire(h, () => pools.release(h));
+      else pools.release(h);
     },
   };
 }
