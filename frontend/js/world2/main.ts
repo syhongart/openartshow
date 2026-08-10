@@ -362,8 +362,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 왜 이 축인지·보정 규칙은 `decide/lod.ts` 의 `withNearExit` 한 곳이다.
   const nearx = readNum('nearx', 0, 0, 2.2);
   // `?calm=1` — 파셀 **생성**을 안개 100% 지점(fog far) 뒤로 민다(팀장 판정 (a′)).
-  // 소멸 축은 파츠 tiers 전 계층 연장이 이미 코드 기본으로 막았고(`parts/planter.ts`),
-  // 이 노브는 남은 생성 축의 후보다 — 감독 판정이 나면 기본으로 승격한다.
+  // ⚠ **기본으로 승격하지 않는다 — 여기서 멈춘다**(감독 판정 2026-08-10 *"자라나는것
+  // 느낌 좋다"*). 파셀이 자라나며 등장하는 것을 나는 "깜빡임의 한 겹"으로 규정했지만
+  // 감독은 그 화면을 **연출로 긍정**했다 — 수치가 이상한 것과 화면이 잘못된 것은 다른
+  // 일이다. 노브는 진단 대조용으로만 남긴다(등장을 숨긴 화면과의 A/B). 감독이 남긴
+  // 문제는 "반짝임"이고 그것은 이 축이 아니다.
   // 왜 farEnter 인지·farExit 가 따라오는 규칙은 `decide/lod.ts` 의 `withFarEnter` 한 곳.
   const calm = readNum('calm', 0, 0, 1) > 0;
   let TIER_BANDS = withNearExit(
