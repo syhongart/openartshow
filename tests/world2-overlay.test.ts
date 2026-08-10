@@ -73,6 +73,10 @@
 //   ④ `foldRy` 를 클램프로 교체                → 1 failed ✓  (기대 π vs 실측 2π)
 //   ⑤ `S_MAX` 100 → 10                        → 1 failed ✓  ← **2회차의 0 failed 가 메워졌다**
 //
+// 이 ⑤가 위 P2 판정의 실증이다. **핀 단언 3줄로 그 사각이 닫혔다** — *"리터럴이면 값 미러링,
+// 심볼이면 사각, 둘 다 구멍이라 고를 수 있는 것이 아니다"* 라던 내 판단이 틀렸음을 이 줄이
+// 보인다. 사각을 정직하게 적는 것과 사각을 **닫을 수 있는데 안 닫는 것**은 다른 일이다.
+//
 // ── 뮤테이션 실측 5회차 — B5·B6·B7 해소분 (2026-08-10, executor) ────────────
 //   ① `readVersion` 정수·범위 검사 완화 (B5 재현)      → 2 failed ✓
 //   ② 화이트리스트 유도 → 목록 + `'name'` (검수관 M1)  → **0 failed**
@@ -89,6 +93,7 @@
 // 그래서 축을 직접 보는 단언을 넣었다 — *"계약이 안다고 한 키는 반드시 출력에 실린다"*
 // (어떤 키를 주든 **모른다고 보고하거나 실제로 싣거나** 둘 중 하나여야 한다. 화이트리스트에만
 // 있고 출력에 없는 키는 "안다" 면서 버리는 것이고 그것이 B4·B6 이 서 있던 자리다).
+//
 // ── 뮤테이션 6회차 — 그 단언이 정말 잡는가 (2026-08-10, executor) ───────────
 //   ① `KNOWN_ITEM_KEYS` 유도 → 목록 + `'name'`  → **1 failed** ✓  (5회차엔 0 failed 였다)
 //   ② `KNOWN_ROOT_KEYS` 유도 → 목록 + `'meta'`  → **2 failed** ✓
@@ -96,15 +101,35 @@
 // 5회차의 사각이 닫혔다. **"구조로 막았다" 를 그 구조를 지키는 축으로 뒷받침한 것**이
 // 이 두 줄이고, 그 전까지는 같은 문장이 주석일 뿐이었다.
 //
-// ⑤가 위 P2 판정의 실증이다. **핀 단언 3줄로 그 사각이 닫혔다** — *"리터럴이면 값 미러링,
-// 심볼이면 사각, 둘 다 구멍이라 고를 수 있는 것이 아니다"* 라던 내 판단이 틀렸음을 이 줄이
-// 보인다. 사각을 정직하게 적는 것과 사각을 **닫을 수 있는데 안 닫는 것**은 다른 일이다.
+// ── 검수관 독립 재현 (2026-08-10) ───────────────────────────────────────────
+// 위 6건을 별도 worktree 에서 다시 돌려 **수치까지 일치**함을 확인했고, 내가 안 잰 8건을
+// 추가로 걸었다. 그중 둘이 중요하다:
+//   · **N4·N5 — 유도를 넓히는 방향만이 아니라 *좁히는* 방향도 잡힌다**(`'ry'` 제거 → 6
+//     failed, 최상위 `'version'` 제거 → 2 failed). 나는 넓히는 축만 쟀다.
+//   · **N7 — `prepareRaw` 의 `version !== 'absent'` 는 0 failed.** 결함이 아니라 **죽은
+//     가드**다(`'absent' > 1` 은 NaN 비교라 언제나 false). 그 자리 주석에 적어 뒀다.
+// 그리고 계약 문장 두 개(*"issues 가 비면 무손실"*·*"두 함수가 같은 말을 한다"*)를
+// **26,100 케이스 퍼즈**로 직접 쳐서 위반 0 을 얻었다 — B2·B4·B5·B7 네 번의 반려가 겨냥한
+// 축이 이제 실제로 참이다.
+//
+// ⚠ **`npm run gate` 6종을 "이 파일이 6개 축의 검사를 받았다" 로 읽지 마라**(검수관 실측).
+// `eslint.config.js` 가 `**/*.{js,mjs}` 라 **`.ts` 를 아예 안 본다**(의도된 설계이고 `tsc`
+// strict 가 대신 본다). 이 diff 를 실제로 본 축은 **tsc 와 vitest 둘**이다.
 
 import { describe, it, expect } from 'vitest';
 import {
   OVERLAY_VERSION, S_MIN, S_MAX, POS_LIMIT,
   emptyOverlay, isSafeSrc, normalizeOverlay, loadOverlay, validateOverlay,
 } from '../frontend/js/world2/decide/overlay.js';
+
+/**
+ * 해석할 수 없는 `version` 값. **이 목록의 SSOT 는 여기 한 곳이다**(검수관 P22).
+ *
+ * 원래 이 배열이 테스트 두 곳 + `overlay.ts` 주석 두 곳, 합쳐 **네 곳**에 있었다. 테스트
+ * 쪽은 규칙이 바뀌면 빨간불이 나지만 **주석은 조용히 낡는다** — 그것이 이 파일의 반려 사슬
+ * 전체가 서 있던 고장 방식이다(B8 이 정확히 그렇게 났다).
+ */
+const INVALID_VERSIONS = ['1', 'abc', null, NaN, 0, -3, 1.5];
 
 describe('isSafeSrc — 자산 경로 경계', () => {
   it('저장소 상대경로를 허용한다', () => {
@@ -175,7 +200,7 @@ describe('loadOverlay — 소비자 진입점 (통합 경로)', () => {
   // ★ 검수관 B5. 예전에는 이것들을 **전부 조용히 v1 로 뭉갰고**, 그 상태에서 계약 문장은
   //   *"버전도 사라지지 않는다"* 라고 적혀 있었다. "없다" 와 "해석할 수 없다" 는 다르다.
   it('해석할 수 없는 version 은 v1 로 뭉개지 않고 거부한다', () => {
-    for (const v of ['1', 'abc', null, NaN, 0, -3, 1.5]) {
+    for (const v of INVALID_VERSIONS) {
       expect(loadOverlay({ version: v, items: [{ src: 'assets/models/a.glb' }] }).items).toHaveLength(0);
     }
   });
@@ -370,7 +395,7 @@ describe('validateOverlay — 내보내기 관문', () => {
   });
 
   it('해석할 수 없는 version 을 사유로 보고한다 — 조용히 v1 로 덮지 않는다', () => {
-    for (const v of ['1', 'abc', null, NaN, 0, -3, 1.5]) {
+    for (const v of INVALID_VERSIONS) {
       const { overlay, issues } = validateOverlay({
         version: v, items: [{ src: 'assets/models/a.glb' }],
       });

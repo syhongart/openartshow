@@ -184,13 +184,39 @@ export function normalizeOverlay(raw: unknown): Overlay {
   return { version: OVERLAY_VERSION, items };
 }
 
-/** 버전 필드를 읽는다. 없거나 숫자가 아니면 v1 로 본다(손으로 쓴 파일을 받아 준다). */
+/**
+ * 버전 필드를 읽어 **세 갈래**로 나눈다 — `'absent'`(필드가 아예 없다) · `'invalid'`(있는데
+ * 해석할 수 없다) · 숫자. **`'absent'` 만 v1 로 받아 준다**(손으로 쓴 파일 관용).
+ *
+ * ⚠ 여기 원래 *"없거나 숫자가 아니면 v1 로 본다"* 라고 적혀 있었고 **B5 를 고친 그 커밋에서
+ * 거짓이 됐다**(검수관 B8). 이 파일의 반려 사슬이 전부 *"주석이 코드보다 강한"* 형태였는데,
+ * 그것을 고친 커밋이 같은 자리에 같은 형태를 하나 남겼다 — 이번엔 방향이 반대로 **주석이
+ * 코드보다 관대**했다. 고친 자리 바로 옆이 가장 위험한 자리다.
+ *
+ * ── 왜 `'invalid'` 를 v1 로 관용하지 않는가 (검수관 P21) ─────────────────────
+ * **이 선택에는 대가가 있다.** `"version": "1"` 같은 따옴표 오타 하나로 **마을 전체가
+ * 런타임에서 조용히 사라진다**(`loadOverlay` → 빈 오버레이, 경고 없음). 그리고 그것은 이
+ * 파일이 몇 줄 아래에 적은 철학과 정면으로 충돌한다 — *"한 항목이 깨졌다고 마을 전체가 안
+ * 뜨면 원인을 못 찾는다. 깨진 항목만 조용히 버린다."*
+ *
+ * 그래도 fail-closed 를 고른 이유는 **형제 함수 일치**다. 관용하면 `validateOverlay` 는
+ * *"이 파일은 v1 이다"* 라고 판정하는데 파일에 적힌 것은 `"1"` 이고, 나중에 v2 마이그레이션이
+ * 그 파일을 무엇으로 볼지는 아무도 모른다. **해석할 수 없는 것을 해석한 척하는 것이 조용한
+ * 소실보다 나쁘다** — B5 가 정확히 그 형태였다.
+ *
+ * ⚠ **미해결**: 경고할 자리가 없다. `validateOverlay` 는 `version-invalid` 사유를 내지만
+ * 런타임 경로(`loadOverlay`)는 조용하다. 소비자가 붙을 때(태스크 #25) 콘솔 경고든 화면이든
+ * **보이게 만들 자리를 정한다.** 그때까지 이 선택은 "정했다" 가 아니라 "빚이 있다" 로 읽는다.
+ */
 function readVersion(raw: unknown): number | 'invalid' | 'absent' {
   const o = raw as Record<string, unknown> | null;
   if (!o || typeof o !== 'object' || !('version' in o)) return 'absent';
   const v = o.version;
-  // 정수 + 1 이상만 버전이다. `'1'`·`null`·`NaN`·`1.5`·`0`·`-3` 은 **해석할 수 없는 값**이지
-  // "v1" 이 아니다 — 예전에는 전부 조용히 v1 로 뭉갰고, 그것이 B5 반려 사유였다.
+  // 정수 + 1 이상만 버전이다. 해석할 수 없는 값들은 **"v1" 이 아니라 거부**다 — 예전에는
+  // 전부 조용히 v1 로 뭉갰고 그것이 B5 반려 사유였다.
+  // (거부되는 값의 **목록은 여기 적지 않는다.** `tests/world2-overlay.test.ts` 의
+  //  `INVALID_VERSIONS` 한 곳이고, 목록을 주석에 복사하면 규칙이 바뀔 때 조용히 낡는다 —
+  //  검수관 P22. 이 파일의 반려 사슬이 전부 그 형태였다.)
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) return 'invalid';
   return v;
 }
@@ -217,6 +243,11 @@ function prepareRaw(raw: unknown): { raw: unknown; issues: OverlayIssue[] } {
 
   // 미래 버전(파일이 코드보다 새롭다)은 내용을 신뢰할 수 없다. 빈 것으로 떨어뜨린다 —
   // 부분적으로 해석해 이상한 마을을 보여주는 것보다 아무것도 안 얹는 편이 낫다.
+  //
+  // ⚠ `version !== 'absent'` 는 **런타임에서 아무것도 안 막는다**(검수관 N7 실측 —
+  // 이 절을 지워도 0 failed 다). `'absent' > 1` 은 NaN 비교라 언제나 false 이기 때문이다.
+  // TS 타입 내로잉에 필요해서 두는 것이고, *"이 가드가 absent 를 막고 있다"* 로 읽으면
+  // 틀린다. 죽은 가드를 살아 있는 것으로 읽으면 다음 사람이 그 축을 검사한 것으로 센다.
   if (version !== 'absent' && version > OVERLAY_VERSION) {
     return { raw: null, issues: [{ reason: 'version-too-new' }] };
   }
@@ -286,6 +317,16 @@ export interface OverlayIssue {
  *
  * 지금은 버전 처리를 `prepareRaw` **한 곳**에 두고 `loadOverlay` 와 이 함수가 그것만
  * 부른다 — 갈라질 자리가 없으면 갈라지지 않는다.
+ *
+ * ── ⚠ 소비자가 반드시 읽을 것 (검수관 GS-O2) ────────────────────────────────
+ * **두 함수가 같은 말을 하는 것은 `issues` 가 빌 때뿐이다.** 비지 않으면 결과가 다르다 —
+ * 예를 들어 `{src: 'assets/models/a.glb', x: 'NaN'}` 은 `loadOverlay` 가 `x: 0` 으로
+ * **살리고** 이 함수는 `bad-number` 로 **항목째 버린다.**
+ *
+ * 그래서 편집 UI 의 화면 미리보기가 `loadOverlay` 를 쓰면 **화면에 있는 모델이 내보내기에서
+ * 사라진다.** 미리보기와 내보내기가 같은 함수를 보게 하거나, 다르다는 것을 화면에 표시해야
+ * 한다 — 소비자(태스크 #25·#26)가 정할 자리다. 여기 적어 두는 이유는 그 판단이 **이 파일을
+ * 읽지 않는 사람에게 필요하기** 때문이다.
  */
 export function validateOverlay(raw: unknown): { overlay: Overlay; issues: OverlayIssue[] } {
   // 버전 판정·마이그레이션은 `loadOverlay` 와 **같은 함수**를 쓴다(위 주석 참조).
