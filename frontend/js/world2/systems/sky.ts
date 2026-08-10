@@ -320,6 +320,29 @@ export class SkySystem implements System {
   /** 플레이어 위치 — 그림자 카메라를 따라오게 하는 데 쓴다 */
   private readonly getPos: () => { x: number; z: number };
   private readonly sunDist: number;
+
+  /**
+   * 마지막으로 이벤트에 실은 조명·안개 값. **변했을 때만** 찍으려고 들고 있다.
+   *
+   * ── 왜 (감독 실기기 2026-08-10) ────────────────────────────────────────────
+   * *"뒤로 갈때 그림자가 꺼지던지 조명이 꺼진것같아"*
+   *
+   * 코드를 읽어서는 여기까지가 한계였다 — 조명 세기는 **시간대에만** 의존하고
+   * (`applyDayContrast`), 그림자 프리즈(`freezeShadows`)는 world2 에서 **호출부가 0건**
+   * 이며, 적응계는 그림자 제어기를 아예 두지 않는다(`decide/adapt.ts` 머리 주석).
+   * 즉 **코드상으로는 후진이 조명을 건드릴 경로가 없다.**
+   *
+   * 그런데 감독 화면에서는 그렇게 보인다. 둘 중 하나다 — 내가 못 본 경로가 있거나,
+   * 조명이 아닌 다른 것이 조명처럼 보이거나. **그 둘을 가르는 것이 이 값들이다.**
+   * 안 변하면 조명은 범인이 아니고, 변하면 무엇이 언제 변했는지가 그 자리에 찍힌다.
+   *
+   * `-1` 은 "아직 한 번도 안 찍었다" 는 뜻이다(세기·거리는 음수가 될 수 없다).
+   * 첫 프레임에 반드시 한 번 찍혀 **기준값이 리포트에 남는다** — 기준이 없으면
+   * 나중 값이 높은지 낮은지 읽는 사람이 알 수 없다.
+   */
+  private lastSunI = -1;
+  private lastHemiI = -1;
+  private lastFogFar = -1;
   private readonly dayLight?: Partial<DayLightMix>;
   /**
    * 수평선 밴드. `?hz=0` 이거나 `eyeHeight` 를 안 받으면 `null` 이고, 그때 화면은
@@ -471,6 +494,35 @@ export class SkySystem implements System {
     this.liftNightLights();
     this.applyDayContrast();
     this.updateHorizon(p, ctx.dt);
+    this.probeLighting(ctx);
+  }
+
+  /**
+   * 조명·안개가 **변했을 때만** 이벤트로 낸다. 위 `lastSunI` 주석이 근거의 SSOT 다.
+   *
+   * 매 프레임 찍지 않는 이유: 60Hz 로 쌓으면 이벤트 상한(600건)이 10초에 차서 마크
+   * 주변이 통째로 밀려난다 — **계측이 계측을 지우는** 형태가 된다.
+   */
+  private probeLighting(ctx: FrameCtx): void {
+    if (!ctx.probe) return;
+    const si = (this.sun as unknown as SunLike).intensity;
+    if (Number.isFinite(si) && si !== this.lastSunI) {
+      this.lastSunI = si;
+      ctx.probe('ev:태양세기', si);
+    }
+    const hi = (this.hemi as unknown as HemiLike).intensity;
+    if (Number.isFinite(hi) && hi !== this.lastHemiI) {
+      this.lastHemiI = hi;
+      ctx.probe('ev:반구광', hi);
+    }
+    // 안개 far 는 **거리로 어두워지는 두 번째 후보**다. 조명이 안 변하는데 화면이
+    // 어두워지면 이쪽을 본다(밤 안개색은 거의 검정이라 far 가 줄면 더 빨리 묻힌다).
+    const fog = this.scene.fog as { far?: number } | null;
+    const ff = fog?.far;
+    if (typeof ff === 'number' && Number.isFinite(ff) && ff !== this.lastFogFar) {
+      this.lastFogFar = ff;
+      ctx.probe('ev:안개far', ff);
+    }
   }
 
   /**
