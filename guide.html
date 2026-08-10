@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" data-nav-page="guide">
+<html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -93,12 +93,12 @@
 
   .topnav {
     display: flex;
+    align-items: center;
     gap: clamp(14px, 3vw, 34px);
     flex-wrap: wrap;
   }
   /* `button` 이 셀렉터에 함께 있는 이유는 `about.html` 의 같은 자리 주석 **한 곳**이다
-     (요지: 주 메뉴 노브가 로그인·회원가입을 `<button>` 으로 넣고, 룩은 이 규칙 하나가
-     정한다. 현행 화면은 `.topnav` 안 `button` 이 0개라 영향 0). */
+     (요지: 주 메뉴의 로그인·회원가입이 `<button>` 이고, 룩은 이 규칙 하나가 정한다). */
   .topnav a, .topnav button {
     text-decoration: none;
     color: rgba(255,255,255,0.72);
@@ -112,6 +112,22 @@
   }
   .topnav :is(a, button):hover { color: #fff; border-color: var(--accent-dark); }
   .topnav :is(a, button).current { color: var(--accent-dark); }
+  /* 아래 셋(버튼 껍데기 벗기기 · 슬롯 `display:contents` · 구분자)의 근거는 전부
+     `about.html` 의 같은 자리 주석 **한 곳**이다 — 여기에 다시 적지 않는다. */
+  .topnav button {
+    background: none;
+    border-width: 0 0 1px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .nav-auth-slot { display: contents; }
+  .topnav .nav-sep {
+    flex: none;
+    align-self: center;
+    width: 1px;
+    height: 12px;
+    background: rgba(255,255,255,0.25);
+  }
 
   /* ------------------------------------------------------------------ hero */
   .hero {
@@ -435,7 +451,9 @@
     details.toc-mobile summary { list-style: none; }
     details.toc-mobile summary::-webkit-details-marker { display: none; }
     .toc { padding-top: 12px; }
-    .topnav { display: none; }
+    /* ⚠ 여기에 `.topnav { display: none; }` 이 있었다. **지웠다** — 경위·근거·남는
+       한계(wrap 배치의 상단바 두께, 제대로 된 처방은 시트)는 `about.html` 의 같은 자리
+       주석 **한 곳**이다. 여기에 다시 적지 않는다. */
   }
 
   /* ---------------------------------------------- 테마 — 라이트 고정 (2026-08-09)
@@ -444,8 +462,11 @@
      팀장 판정 (b) 전부 고정 · 다크 전면 도입은 감독 판정 사안, 백로그 G-DARK1).
      여기에 같은 문장을 다시 적지 않는다.
 
-     ⚠ 아래 `[data-theme]` 두 블록은 남아 있으나 **이 속성을 설정하는 코드가 저장소에
-     0건**이라 지금은 아무 효과가 없다. 「다크 토글이 이미 있다」로 읽지 말 것. */
+     ⚠ 아래 `[data-theme]` 두 블록은 남아 있으나 **`frontend/` 라이브 진입점에 이 속성을
+     설정하는 코드가 0건**이라 지금은 아무 효과가 없다. 「다크 토글이 이미 있다」로 읽지
+     말 것. — 이 줄도 *"저장소에 0건"* 이라고 적고 있었고 부정확했다(검수관 P1). 배포
+     대상 밖 시안 파일에 1건 있다는 실측과 「그래도 범위를 좁혀 적는 이유」는
+     `about.html` 의 같은 자리 주석 **한 곳**이다 — 여기에 다시 적지 않는다. */
   :root[data-theme="dark"] {
     /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
     --accent: var(--oas-accent);
@@ -510,7 +531,7 @@
   }
 </style>
   <script type="module" crossorigin src="/openartshow/_bundle/preload-helper-DASV_Wa7.js"></script>
-  <script type="module" crossorigin src="/openartshow/_bundle/nav-knob-ByHR1Yet.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/subnav-CaUZIS-J.js"></script>
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-Dn3d6B3v.css">
 </head>
@@ -520,12 +541,22 @@
 
 <div class="topbar">
   <a class="brand" href="./index.html"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
-  <nav class="topnav">
-    <a href="./index.html">랜딩</a>
+  <!-- 주 메뉴 — 홈(`landing.html`)·`about.html` 과 **같은 구성·같은 명칭**이다.
+       감독 판정(2026-08-10, 후보 B)과 바뀐 것 셋의 근거는 `about.html` 의 같은 자리
+       주석 **한 곳**이다 — 여기에 다시 적지 않는다. -->
+  <nav class="topnav" aria-label="주 메뉴">
+    <a href="./index.html#exhibitions">전시</a>
+    <a href="./index.html#photowall">포토월</a>
+    <a href="./index.html#pricing">요금제</a>
     <a href="./about.html">소개</a>
-    <a href="./app/">전시장 입장</a>
-    <a href="./app/studio.html">작가 스튜디오</a>
-    <a href="./guide.html" class="current">이용 안내</a>
+    <a href="./guide.html" class="current">가이드</a>
+    <span class="nav-sep" aria-hidden="true"></span>
+    <span class="nav-auth-slot" id="navAuthSlot">
+      <button type="button" data-auth-mode="login">로그인</button>
+      <button type="button" data-auth-mode="signup">회원가입</button>
+    </span>
+    <span class="nav-sep" aria-hidden="true"></span>
+    <a href="./app/">입장하기</a>
   </nav>
 </div>
 
@@ -917,7 +948,7 @@
 })();
 </script>
 
-<!-- 주 메뉴 통합 후보 노브(`?nav=a|b|c|d`). 노브가 없으면 DOM 을 한 노드도 만지지 않는다. -->
+<!-- 주 메뉴 로그인 영역 배선. 메뉴 마크업은 위 `.topnav` 에 있고 이 파일은 배선만 한다. -->
 
 </body>
 </html>
