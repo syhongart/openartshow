@@ -428,6 +428,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       body: document.getElementById('w2-hud-body')!,
       copy: document.getElementById('w2-hud-copy')!,
       toggle: document.getElementById('w2-hud-toggle')!,
+      // 마크 버튼은 **없어도 된다** — 위 조건절에 넣지 않은 이유가 그것이다.
+      // 진단용 추가물이 HUD 전체를 인질로 잡으면, 버튼 하나 오타에 실기기 수치를
+      // 통째로 못 받는다.
+      mark: document.getElementById('w2-hud-mark'),
     }, {
       backend: () => adapter?.backend ?? '—',
       counts: () => {

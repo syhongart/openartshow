@@ -216,6 +216,12 @@ export class StreamingSystem implements System {
       this.handles.delete(k);
       this.tiers.delete(k);
       released++;
+      if (ctx.probe) {
+        const pk = k.indexOf(',');
+        const dx = Number(k.slice(0, pk)) * o.cellX - pos.x;
+        const dz = Number(k.slice(pk + 1)) * o.cellZ - pos.z;
+        ctx.probe('ev:파셀반납', Math.hypot(dx, dz));
+      }
     }
 
     // ② 예산 산정. dt는 초 단위이므로 ms로 환산한다.
@@ -233,6 +239,19 @@ export class StreamingSystem implements System {
       if (from) {
         const step = TIERS.indexOf(r.to) - TIERS.indexOf(from);
         if (step < 0) promoted++; else if (step > 0) demoted++;
+        // ── 이벤트로도 낸다 (감독 지시 2026-08-10 *"로그 더 추가해서 원인을 파악"*) ──
+        // 총계(`promoted`·`demoted`)는 *"몇 번"* 만 말하고 **언제**를 잃는다. 감독이
+        // 보고한 증상은 *"뒤로 움직이는 **순간**"* 이라 시점이 전부다.
+        //
+        // 값은 **파셀 중심까지의 거리(m)** 다 — tier 이름은 이름에 들어 있고, 정작
+        // 궁금한 것은 *"얼마나 가까운 데서 일어났나"* 이기 때문이다. 눈앞(30m)에서
+        // 나는 것과 저 끝(70m)에서 나는 것은 화면에서 전혀 다른 일이다.
+        if (ctx.probe) {
+          const pk = r.key.indexOf(',');
+          const dx = Number(r.key.slice(0, pk)) * o.cellX - pos.x;
+          const dz = Number(r.key.slice(pk + 1)) * o.cellZ - pos.z;
+          ctx.probe(step < 0 ? 'ev:tier승격' : 'ev:tier강등', Math.hypot(dx, dz));
+        }
       }
       const next = o.builder.retier?.(h, r.to) ?? null;
       if (next) {
@@ -257,6 +276,9 @@ export class StreamingSystem implements System {
       this.handles.set(w.key, h);
       this.tiers.set(w.key, w.tier);
       built++;
+      if (ctx.probe) {
+        ctx.probe('ev:파셀생성', Math.hypot(w.px * o.cellX - pos.x, w.pz * o.cellZ - pos.z));
+      }
     }
 
     // 파셀이 바뀌었으면 다음 프레임은 반드시 그린다. 프레임 캡에 걸려 새 파셀이 한 박자
