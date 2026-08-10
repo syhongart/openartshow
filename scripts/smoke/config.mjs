@@ -111,7 +111,9 @@ export const DEPLOY_SHA_FILE = '_deploy-sha.txt';
 const REQUIRED_FILES_COMMON = [
   'index.html',            // 랜딩 (landing.html → 루트 index.html)
   'guide.html',            // 가이드 루트 (과거 404 사고 지점)
-  'design.html',           // 디자인 루트
+  // 'design.html' 은 2026-08-09 폐지 — 정본은 `docs/DESIGN.md`·`css/tokens.css` 다.
+  // 이 목록에서 빠지면 조립 결과에 그 파일이 없어야 통과한다(= 폐지가 실제로 배포에
+  // 반영됐는지를 이 줄의 **부재**가 검사한다). 경위는 `docs/DESIGN.md §5-4`.
   'about.html',            // 소개 루트 (공개 페이지 정본)
   'app/index.html',        // 미술관
   'app/studio.html',       // 스튜디오
@@ -139,7 +141,14 @@ export const REQUIRED_FILES_BY_MODE = {
 export const REQUIRED_FILES = REQUIRED_FILES_BASELINE;
 
 // ── 라이브 페이지 목록 (검사4/5/6 + 가드A/B 대상) ────────────────────
-// behind-flag 페이지(visit.html·lab-glb.html·world2.html)는 라이브 미노출이라 제외.
+// ⚠️ 이 이름(`LIVE_PAGES`)은 **"라이브 노출 목록" 이 아니라 "검증 대상 목록" 이다.**
+// behind-flag 페이지도 여기 들어온다 — 링크 노출 여부와 검증 여부는 다른 축이다.
+// 노출 상태의 SSOT 는 `scripts/lib/entrypoints.mjs` 의 `exposure` 다.
+//
+// ⚠️ 바로 아래 줄은 **2026-08-08 까지 거짓이었다**(검수관 권고 P6). *"behind-flag
+// 페이지는 제외"* 라고 적혀 있었는데 목록은 그것들을 이미 **포함**하고 있었다
+// (2026-08-05 검수관 반려 B1 로 visit·lab-glb 가 편입됐고 world2 는 그 전부터 있었다).
+// 산문만 낡은 채 남아 있었고, world3 를 추가하면서도 그대로 지나칠 뻔했다.
 // world.html 은 B-2b 에서 정식 노출(sitemap 등재)로 편입 → 검사 대상에 포함.
 // builder.html 도 라이브다 — studio.html 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다
 // (감독·팀장 게이트를 거친 정당한 해제). 이 주석이 오래 builder 를 behind-flag 로 적어
@@ -158,7 +167,7 @@ export const LIVE_PAGES = [
   { name: 'app/studio',        url: '/app/studio.html', webgl: true },
   { name: 'guide',             url: '/guide.html',      webgl: false },
   // about 정본 URL은 루트 /about.html (deploy.yml: about.html→_site/about.html, landing/
-  // guide/design 급 공개 페이지). about.html은 루트 기준 상대경로(브랜드·랜딩 ./index.html,
+  // guide 급 공개 페이지). about.html은 루트 기준 상대경로(브랜드·랜딩 ./index.html,
   // 전시장 ./app/)라 루트 배포에서 정합. _site/app/about.html은 app/landing.html과 같은
   // `cp -r frontend/. _site/app/` 부산물 사본(어떤 페이지도 링크 안 함)이라 검사하지 않는다.
   { name: 'about',             url: '/about.html',      webgl: false },
@@ -176,6 +185,37 @@ export const LIVE_PAGES = [
   // vite 번들 전용(`three/webgpu`·`three/addons/*` import)이라 baseline 모드에서는
   // raw 직서빙으로 부팅되지 않는다 — 그래서 vite 모드에서만 검사한다.
   { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // world3(포근마을): world2 의 포크라 **부팅 성질이 같다** — `three/webgpu` 를 쓰므로
+  // vite 전용이고, 날씨 코드도 그대로 승계한다. 그래서 world2 와 같은 플래그를 단다.
+  //
+  // 포크한 날 **처음부터** 넣는다. 바로 위 visit·lab-glb 가 "나중에 넣기로 하면 그 사이
+  // 검사 0 인 페이지가 배포된다" 를 실측으로 남겨 뒀고, 포크는 그 위험이 더 크다 —
+  // 파일이 1.9만 줄인데 그중 어느 것도 안 보게 된다.
+  //
+  // ── ⚠️ world3 가 **안 받는 것** (검수관 명세, 조건 5 이연) ──────────────
+  // 이 줄에 들어 있다고 "world3 도 스모크 대상" 으로 읽으면 틀린다. 받는 것은
+  //   `[4]`  로드 시점 — 콘솔 에러·pageerror·CSP·자기완결·404
+  //   `[4b]` 날씨 4종 전환 + 번개 (전환 후 프레임 갱신까지 실제로 밟는다)
+  // 두 축뿐이다. **안 받는 것**:
+  //   `[7]`   개수 불변식 — 회전·주행·재방문 세션 시뮬
+  //   `[7.6]` 드로우콜 대조군
+  //   `[8]`   하늘 예열(날씨 첫 등장)
+  // 이 셋은 `measure-invariants.mjs`·`measure-sky-warm.mjs` 가 `/app/world2.html` 을
+  // **URL 로 하드코딩**해서 돌기 때문이다. 즉 world3 는 **조작 중에만 나는 콘솔
+  // 에러를 보는 축이 `[4b]` 하나**이고, 회전·주행 세션은 아무도 안 본다.
+  //
+  // behind-flag 인 동안의 이연이다(팀장 조건 5 → 검수관 이연 판정). 라이브 승격의
+  // 선결 조건이고, 잊히지 않도록 `tests/verification-tier.test.ts` 의 **GS-4** 가
+  // 승격 자체를 막는다 — 산문으로만 남기지 않는다.
+  { name: 'app/world3',        url: '/app/world3.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // world5(갤러리 스트리트): world2 의 포크라 부팅 성질이 world3 와 같다 —
+  // `three/webgpu` 를 쓰므로 vite 전용이고 날씨 코드도 그대로 승계한다.
+  //
+  // **안 받는 것은 world3 와 동일하다**(바로 위 world3 항목의 이연 명세 참고):
+  // `[7]`·`[7.6]`·`[8]` 은 `measure-invariants.mjs`·`measure-sky-warm.mjs` 가
+  // `/app/world2.html` 을 URL 하드코딩해 돌므로 여기도 안 온다. behind-flag 인
+  // 동안의 이연이고, 승격을 `tests/verification-tier.test.ts` 의 GS-4 가 막는다.
+  { name: 'app/world5',        url: '/app/world5.html', webgl: true, viteOnly: true, weatherProbe: true },
   // ── visit·lab-glb: behind-flag 인데 **검사가 0이었다** (검수관 반려 B1, 2026-08-05) ──
   //
   // 검증 등급(#195)을 도입하면서 *"3등급이어도 자기완결·CSP 는 CI 스모크가 등급과 무관하게
@@ -191,6 +231,29 @@ export const LIVE_PAGES = [
   // 필요 없다. **이 편입이 빠지면 `tests/verification-tier.test.ts` 의 G1 검사가 FAIL 한다.**
   { name: 'app/visit',         url: '/app/visit.html',  webgl: true },
   { name: 'app/lab-glb',       url: '/app/lab-glb.html', webgl: true },
+  // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
+  // 하면 그 사이 자기완결·CSP 검사가 0 인 페이지가 배포되고, 그것이 정확히 visit·
+  // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.
+  // three 를 참조하지 않는 폼 페이지라 webgl 대기가 필요 없다(유일하게 false 인 app/ 페이지).
+  { name: 'app/mypage',        url: '/app/mypage.html', webgl: false },
+  // ── editor: 배치 에디터(three.js editor 반입, 개발용 도구) ──────────────────
+  //
+  // behind-flag 지만 **처음부터** 넣는다 — 위 세 줄이 적어 둔 그 이유 그대로다.
+  // 특히 이 페이지는 **외부 코드를 통째로 들여온 것**이라 자기완결 검사가 가장 절실하다:
+  // 원본 three.js editor 는 CDN 세 곳(`@ffmpeg/ffmpeg`·`three-gpu-pathtracer`·
+  // `three-mesh-bvh`)을 부르고, 우리는 그것을 걷어냈다. **걷어낸 것이 정말 걷혔는지 재는
+  // 축이 `[C] 외부요청 0` 이고, 그 검사는 이 목록을 순회한다.**
+  //
+  // `viteOnly`: editor 는 bare specifier `three`·`three/addons/` 를 쓴다. baseline
+  // 직서빙(importmap 이 `vendor/three.module.js` = **r160**)에서는 버전이 어긋나므로
+  // vite 번들(npm r171)에서만 돈다 — world2 와 같은 이유다.
+  //
+  // `minViewport`: 320px 에서 335>320 이 난다(15px). editor 는 드래그·기즈모로 조작하는
+  // **데스크톱 전용 도구**라 초소형 폭이 설계 대상이 아니다 — 면제가 아니라 **대상 밖**이고,
+  // 제외된 칸 수는 `[5]` 판정 문구에 INFO 로 찍힌다(조용히 줄지 않는다).
+  // ⚠ 감독은 모바일로 링크를 여신다 — **모바일에서는 가로 스크롤이 생긴다는 뜻**이므로
+  // 그 사실을 보고에 적는다. 넓은 화면에서 쓰시는 것이 전제다.
+  { name: 'app/editor',        url: '/app/editor.html', webgl: true, viteOnly: true, minViewport: 375 },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──

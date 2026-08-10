@@ -16,7 +16,9 @@
 // 주의:
 // - player.js는 보호파일(라이브 미술관 서비스 중)이므로 직접 import 하지 않음 — 텍스트로만 읽음
 // - builder.html·landing.html·visit.html은 HTML 인라인 스크립트(모듈 import 불가) — 텍스트로만 읽음
-// - 못 잡는 것: 문자열 조립(rgb()/hsl() 표기), design.html 제외(색 샘플 정당)
+// - 못 잡는 것: 문자열 조립(rgb()/hsl() 표기)
+//   (2026-08-09 이전에는 "design.html 제외(색 샘플 정당)"도 여기 있었다 — 그 페이지가
+//    폐지되면서 예외 자체가 사라졌다. 경위는 `docs/DESIGN.md §5-4`)
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';

@@ -41,10 +41,77 @@ describe('진입점 SSOT', () => {
     expect(LIVE_ENTRIES.length + FLAGGED_ENTRIES.length).toBe(ENTRYPOINTS.length);
   });
 
-  it('behind-flag 세 페이지가 flagged 다', () => {
+  it('behind-flag 여섯 페이지가 flagged 다', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
+    //
+    // 목록을 여기 **적어 두는 것**이 이 검사의 요점이다. `FLAGGED_ENTRIES.length` 만
+    // 세거나 `exposure` 값의 유효성만 보면, 새 페이지를 flagged 로 넣는 순간 아무도
+    // 모르게 통과한다 — 그러면 `CLAUDE.md` 의 산문이 낡는다. 실제로 `builder.html` 이
+    // 라이브가 된 뒤에도 세 곳의 주석이 `behind-flag` 로 남아 있었고, 그 사이 라이브
+    // 페이지가 회귀 검사에서 빠져 있었다.
+    //
+    // 그러니 이 배열을 고칠 때는 **`CLAUDE.md` 의 behind-flag 문장도 같이 고친다.**
+    // 여기만 고치면 검사는 초록이 되고 산문은 계속 틀린 채로 남는다.
+    //
+    // 2026-08-08 `mypage.html` 은 여기 있다가 **라이브로 승격**돼 빠졌다(감독 지시 —
+    // 랜딩 프로필 메뉴가 링크한다). 승격하는 순간 이 배열과 아래 GS-3 이 함께 빨간불이
+    // 됐다 — 그것이 이 두 검사의 존재 이유이고, 설계대로 동작한 실물 사례다.
+    //
+    // 2026-08-08 `world3.html` 추가 — world2 의 포크(포근마을). 감독 지시로 착수했고
+    // 라이브 노출은 감독·팀장 게이트다.
+    //
+    // 2026-08-08 `world5.html` 추가 — world2 의 두 번째 포크(갤러리 스트리트).
+    // **`world4` 는 결번**이다(감독이 "월드5" 로 명시, 팀장 유지 판정). 결번 자체는
+    // GS-4 의 `/^world\d+$/` 판정과 무관하다 — 경위는 `entrypoints.mjs` 의 그 줄.
+    //
+    // 2026-08-09 `editor.html` 추가 — three.js editor 반입(배치 도구). ⚠ **성격이
+    // 다르다**: 앞의 다섯은 "채택 판정 전인 실험" 이지만 이것은 감독 지시(*"에디터는
+    // 개발용으로만 쓸거니"*)로 **방문자에게 제공할 계획이 없는 도구**다. 즉 `flagged`
+    // 가 종착지일 수 있고, 여기서 빠지는 것이 목표가 아니다.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
-    expect(flagged).toEqual(['lab-glb.html', 'visit.html', 'world2.html']);
+    expect(flagged).toEqual([
+      'editor.html', 'lab-glb.html', 'visit.html', 'world2.html', 'world3.html', 'world5.html',
+    ]);
+  });
+
+  // ── GS-3 (검수관 명세, 블로커 B2) ────────────────────────────────────────
+  it('**`CLAUDE.md` 의 behind-flag 문장이 flagged 목록과 일치한다**', () => {
+    // ── 왜 생겼나 (2026-08-08) ───────────────────────────────────────────
+    // 바로 위 검사 옆에 내가 *"이 문장은 `CLAUDE.md` 와 짝이다 — 한쪽만 고치면 다른
+    // 쪽이 빨간불이 된다"* 고 적었다. **거짓이었다.** 검수관이 산문에서 `mypage.html`
+    // 만 지우고 게이트 전체를 돌려 **추가 실패 0** 을 실측했다. `CLAUDE.md` 를 읽는
+    // 테스트는 `gate.test.ts` 의 보호파일 축 하나뿐이었고, 산문은 어느 코드와도
+    // 묶여 있지 않았다.
+    //
+    // 게이트 유효성에 대한 거짓 진술은 **다음 사람이 확인을 생략하게** 만든다.
+    // 이 저장소는 그 대가를 이미 치렀다 — *"`main` 은 unprotected 다"* 가 틀린 채
+    // 남아 밸류에이션 봇이 7일 연속 거부당하는 동안 아무도 정책을 의심하지 않았다.
+    //
+    // 그래서 문장을 고치는 대신 **주장을 참으로 만든다.** 이제 진짜로 짝이다.
+    const claudeMd = readFileSync(join(REPO, 'CLAUDE.md'), 'utf8');
+
+    // **문장 범위를 좁힌다**(검수관이 지적한 거짓 FAIL 위험). 파일 전체에서
+    // `toContain` 하면 다른 절에 우연히 같은 파일명이 있을 때 통과해 버린다.
+    const line = claudeMd
+      .split('\n')
+      .find((l) => l.includes('**behind-flag**') && l.includes('어디에도 링크하지 않는 페이지는'));
+    expect(line, 'CLAUDE.md 에서 behind-flag 문장을 찾지 못했다').toBeTruthy();
+
+    // **목록 부분만 잘라낸다.** 그 줄은 뒤에 해설이 이어지고, 거기에는 라이브 파일명이
+    // 일부러 들어 있다(`builder.html` 이 라이브가 된 경위). 줄 전체를 반대 방향으로
+    // 검사하면 그 해설 때문에 거짓 FAIL 이 난다 — 실제로 처음 판본이 그렇게 깨졌다.
+    const listPart = line!.split('이다(라이브 미노출)')[0];
+    expect(listPart, '목록 부분을 잘라내지 못했다 — 문장 형식이 바뀌었다').not.toBe(line);
+
+    for (const e of FLAGGED_ENTRIES) {
+      expect(listPart, `${e.src} 가 CLAUDE.md behind-flag 목록에 없다`).toContain(e.src);
+    }
+
+    // 반대 방향도 본다 — 목록에만 남은 유령(라이브가 됐는데 안 지운 것).
+    // `builder.html` 이 정확히 그 형태로 오래 남아 있었다.
+    for (const e of ENTRYPOINTS.filter((x) => x.exposure === 'live')) {
+      expect(listPart, `${e.src} 는 라이브인데 behind-flag 목록에 남아 있다`).not.toContain(e.src);
+    }
   });
 
   it('**`viteInput` 이 내는 경로가 실제 파일을 가리킨다** — 개수만 세면 빌드가 죽는다', () => {
@@ -63,7 +130,7 @@ describe('진입점 SSOT', () => {
     const input = viteInput((p: string) => p);
     expect(Object.keys(input)).toHaveLength(ENTRYPOINTS.length);
     const map = htmlRename();
-    // 항등 매핑(guide/about/design)은 들어가면 안 된다 — vite 가 맵에 없는 것은 그대로 둔다.
+    // 항등 매핑(guide/about)은 들어가면 안 된다 — vite 가 맵에 없는 것은 그대로 둔다.
     for (const [from, to] of Object.entries(map)) expect(from).not.toBe(to);
     expect(map['landing.html']).toBe('index.html');
     expect(map['world2.html']).toBe('app/world2.html');
@@ -377,5 +444,91 @@ describe('등급표', () => {
       }
       expect(t.why).not.toMatch(/선택|필요시/);
     }
+  });
+});
+
+// ── GS-4 (검수관 명세, 2026-08-08) ─────────────────────────────────────────
+//
+// **라이브 승격 시 성능 게이트 동반 강제.**
+//
+// ── 왜 생겼나 ───────────────────────────────────────────────────────────────
+// world3(포근마을) 포크를 검수하면서 팀장 조건 5(*"[7][7.6][8] 상당 게이트를 world3
+// 에도 건다"*)가 **이연**으로 판정됐다. 근거는 셋이었다: ① world3 는 behind-flag 라
+// 라이브 진입점에서 도달 불가 ② 그 게이트들은 CI 에서 `SMOKE_PERF_GATES=observe` 라
+// 성능 수치 판정이 종료코드에 영향이 없다 ③ 4코어·GPU 0 환경에서 브라우저 세션을
+// 하나 더 늘리는 비용이 크다.
+//
+// **이연은 면제가 아니다.** 그런데 이연을 산문으로만 남기면 승격하는 날 조용히
+// 잊힌다 — CLAUDE.md 가 *"관측은 면제가 아니라 데이터 수집이다. 승격 없이 남으면
+// 그때부터 장식이다"* 라고 적은 바로 그 형태다. 그래서 **승격 자체를 조건으로 건다**:
+// `flagged` → `live` 로 바꾸는 커밋은 이 검사를 함께 통과해야 한다.
+//
+// 실측 근거(2026-08-08): `measure-invariants.mjs`·`measure-sky-warm.mjs` 가
+// `/app/world2.html` 을 URL 로 하드코딩하고 있어 world3 는 이 축을 전혀 안 받는다.
+describe('GS-4 — 라이브 world 진입점은 성능 게이트가 실제로 연다', () => {
+  const MEASURE = ['scripts/smoke/measure-invariants.mjs', 'scripts/smoke/measure-sky-warm.mjs'];
+
+  it('측정 스크립트가 실재한다 — 없으면 아래 검사가 공허하다', () => {
+    // 표본 검사. 파일이 사라지거나 이름이 바뀌면 `srcOf` 가 빈 문자열을 돌려주고,
+    // 그러면 "포함하지 않는다" 가 거짓으로 통과할 수 있다.
+    for (const p of MEASURE) expect(existsSync(join(REPO, p)), `${p} 없음`).toBe(true);
+  });
+
+  /**
+   * 이 게이트의 대상 — **world2 커널 계열 진입점**(`world2`·`world3`·…).
+   *
+   * ⚠️ `key: 'world'`(라이브 오픈월드, world1)는 **뺀다.** 검수관 명세는 *"key 가
+   * `world` 로 시작하는 항목마다"* 였는데, 그대로 넣었더니 즉시 FAIL 했다 — 실측이
+   * 드러낸 것은 결함이 아니라 **범위 오류**다: `measure-invariants.mjs` 가 재는
+   * 개수 불변식(파이프라인·지오·텍스처 상수성)은 world2 커널이 도입한 개념이고,
+   * world1 은 그 구조를 갖고 있지 않다. world1 을 이 게이트에 넣는 것은 "없는 축을
+   * 재라" 는 요구가 된다.
+   *
+   * 그래서 **숫자 접미**로 가른다. `world4` 가 생기면 자동으로 편입된다.
+   */
+  const isKernelWorld = (key: string) => /^world\d+$/.test(key);
+
+  it('`live` 인 world 커널 진입점을 `[7][7.6]`·`[8]` 측정이 실제로 연다', () => {
+    // ⚠️ **거짓 FAIL 위험**: 측정 스크립트가 URL 상수 대신 진입점 목록 순회로
+    // 리팩터되면 이 문자열 매칭이 빗나가 정당한 코드를 FAIL 시킨다. 그때는 이 검사를
+    // 함께 고치는 것이 정답이다 — 검사를 지우는 것이 아니라.
+    //
+    // ⚠️ **못 잡는 것**: 스크립트가 그 URL 을 **열기만** 하고 판정을 안 하는 경우.
+    // 문자열의 존재는 "그 페이지를 잰다" 를 증명하지 않는다. 승격 때는 항목별
+    // PASS 로그를 눈으로 확인하는 것이 함께 필요하다(검수관 선결 조건 (가)).
+    const srcs = MEASURE.map((p) => ({ p, src: readFileSync(join(REPO, p), 'utf8') }));
+    const missing: string[] = [];
+    for (const e of LIVE_ENTRIES) {
+      if (!isKernelWorld(e.key)) continue;
+      for (const { p, src } of srcs) {
+        if (!src.includes(e.out)) missing.push(`${e.key}(${e.out}) ← ${p}`);
+      }
+    }
+    // 실패 메시지가 곧 처방이 된다: "이 진입점을 라이브로 올리려면 저 측정에 넣어라".
+    expect(missing).toEqual([]);
+  });
+
+  it('**지금은 대상이 0 이다** — 그 사실 자체를 못 박는다', () => {
+    // ⚠️ 위 검사는 현재 **빈 루프**다. 라이브 world 커널 진입점이 없기 때문이고,
+    // 빈 루프는 언제나 통과한다 — 이 저장소가 빈 표본으로 통과한 전례가 여럿이라
+    // 그냥 두면 "게이트가 있다" 는 착각만 남는다.
+    //
+    // 그래서 **0 이라는 사실을 단언한다.** 이 숫자가 늘어나는 순간(= 승격) 위
+    // 검사가 실제로 돌기 시작하고, 그 전에 여기가 먼저 빨간불이 되어 승격하는
+    // 사람에게 "성능 게이트를 함께 옮겨라" 를 알린다. **이연이 잊히지 않게 하는
+    // 장치가 바로 이 줄이다.**
+    expect(LIVE_ENTRIES.filter((e) => isKernelWorld(e.key)).map((e) => e.key)).toEqual([]);
+  });
+
+  it('대상 후보가 flagged 에 실재한다 — 목록이 비면 위 두 검사가 공허하다', () => {
+    // world2·world3 가 flagged 에서 사라지면(삭제되거나 key 규칙이 바뀌면) 이
+    // 게이트 전체가 아무것도 지키지 않게 된다. 후보의 존재를 함께 못 박는다.
+    const flaggedKernels = FLAGGED_ENTRIES.filter((e) => isKernelWorld(e.key)).map((e) => e.key);
+    expect(flaggedKernels).toContain('world2');
+    expect(flaggedKernels).toContain('world3');
+    // `world5` — 결번(`world4`)을 건너뛴 숫자도 정규식이 잡는지 함께 못 박는다.
+    // 접두 매칭(`startsWith('world')`)이었다면 결번과 무관했겠지만, 숫자 접미로
+    // 좁힌 뒤에는 "연속된 숫자만 잡히는 것 아닌가" 가 실제 의문이 된다.
+    expect(flaggedKernels).toContain('world5');
   });
 });

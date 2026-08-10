@@ -155,6 +155,60 @@ const STEP_MS = 700;
 const WALK_LEGS = 6;
 const WALK_MS = 1500;
 
+// ── 커버리지 목표 — **G-COL1** (검수관 반려 B1, 2026-08-08) ──────────────────
+//
+// 왜 목표가 필요한가: 이 세션은 오래 *"-z 로 6번 전진"* 이었고, 그것을 **주행이라고
+// 불렀을 뿐 주행인지 확인한 적이 없다.** 플레이어 충돌(#182)이 붙자 스폰 앞 분수대에서
+// 6.9m 만 걷고 멈췄고 — 파셀을 한 칸도 새로 안 밟았는데 — 게이트는 **PASS 로 보고했다.**
+// 개수가 늘지 않은 것은 사실이었다. 아무 데도 안 갔으니까.
+//
+// 그래서 "몇 미터 걸었나" 가 아니라 **"파셀을 몇 개 밟았나"** 를 판정으로 만든다.
+// 미터는 배치·속도·프레임률에 흔들리지만 파셀은 스트리밍의 단위 그 자체다 — `[7]` 이
+// 잡으려는 증식(슬롯 재사용 실패·재방문 누적)이 정확히 그 경계에서 일어난다.
+//
+// ⚠ **이 판정은 성능 축이 아니라 하드 실패다.** `SMOKE_PERF_GATES=observe` 에서도
+// INFO 로 내려가지 않는다(`run.mjs` 의 `perfStatus` 가 `hard` 로 받는다). observe 의
+// 정당화는 *"러너 성능 편차의 거짓 FAIL"* 인데, **세션이 안 움직인 것은 편차가 아니다.**
+//
+/** 고유 파셀 목표. 3 이면 "출발 칸 + 새 칸 둘" 이다 — 경계를 최소 두 번 넘는다 */
+const COVER_UNIQUE = 3;
+/** 재방문 목표. 슬롯 반납 실패는 **다시 들어갈 때**만 드러난다 */
+const COVER_REVISITS = 1;
+/** 이 leg 에서 실제로 움직인 거리(m)가 이보다 작으면 막힌 것으로 본다 */
+const STUCK_M = 1.0;
+/** 목표를 채우려고 늘릴 수 있는 최대 leg 수. 도달하면 그대로 판정한다(무한 대기 금지) */
+const MAX_LEGS = 24;
+
+/**
+ * 막혔을 때 어떻게 우회하는가. **사람이 하는 것을 흉내낸다 — 옆으로 비켜서 지나간다.**
+ *
+ * ── 첫 판본은 90° 회전이었고 제자리를 돌았다 (실측 2026-08-08) ────────────────
+ * *"막히면 `look(90°)`"* 로 짰더니 **21 leg·7회 전환에 고유 파셀이 1** 이었다. 당연하다 —
+ * 90° 를 네 번 돌면 출발 방향으로 돌아온다. 촘촘한 도시에서 그 사이클은 **사각형을 그리며
+ * 같은 칸을 맴도는** 궤적이 된다. "막히면 방향을 튼다" 는 발상은 맞았고 **각도 선택이
+ * 틀렸다.**
+ *
+ * 그래서 먼저 **스트레이프**를 시도한다: 시선을 유지한 채 좌·우 대각으로 전진하면
+ * `slide` 의 축분리가 옆 성분을 살려 장애물을 스쳐 지나간다. 방향(시선)이 보존되므로
+ * 사이클이 생기지 않는다. 좌우 둘 다 막힐 때만 시선을 튼다 — 그때는 골목 끝이다.
+ *
+ * `move(x, z)` 의 x 가 좌우 축이고 z 가 전후다(`player.setAxes`).
+ *
+ * ── 실측 (2026-08-08, 스폰 x=-3.5) ──────────────────────────────────────────
+ *   90° 회전판   21 leg · 시선 전환 7회 → 고유 파셀 **1** · 경로 `0,0`
+ *   스트레이프판 19 leg · 시선 전환 **0회** → 고유 파셀 **3** · 재방문 2
+ *                경로 `0,0 → 0,-1 → 0,-2 → 0,-1 → 0,0`
+ * 시선을 한 번도 안 틀고 목표를 채웠다 — 골목 끝(좌우 다 막힘)에 도달한 적이 없다는
+ * 뜻이고, 그래서 `TURN_RAD` 는 아직 **한 번도 실행되지 않은 경로**다. 남겨 두는 이유는
+ * 배치가 촘촘해지면 필요해지기 때문이지만, **검출력이 0 인 분기임을 알고 남긴다.**
+ */
+const DODGES = [
+  { ax: 1, az: -1, note: '우측 대각' },
+  { ax: -1, az: -1, note: '좌측 대각' },
+];
+/** 좌우 다 막혔을 때 틀 각도. 90° 가 아니라 **소수(素數)에 가까운 각**이라 사이클이 늦다 */
+const TURN_RAD = (Math.PI * 2) / 5;
+
 const show = (v) => (v === undefined || v === null ? '측정실패(값 없음)' : String(v));
 
 async function counts(page) {
@@ -168,8 +222,72 @@ async function counts(page) {
       draw: s.frame?.draw ?? null,
       parcels: s.stream?.loaded ?? null,
       built: s.stream?.built ?? null,
+      // 커버리지 판정용. `null` 이면 훅이 안 열린 것이므로 **측정 실패로 다룬다**.
+      px: s.parcel?.px ?? null,
+      pz: s.parcel?.pz ?? null,
+      wx: s.player?.x ?? null,
+      wz: s.player?.z ?? null,
+      // 복귀 구간이 출발점으로 재조준할 때 쓴다(아래 `yawToward` 문단).
+      yaw: s.player?.yaw ?? null,
     };
   });
+}
+
+/**
+ * 방문 순서에서 커버리지를 센다.
+ *
+ * 연속 중복을 먼저 걷어낸다 — 한 파셀 안에서 여러 leg 를 걸은 것은 "재방문" 이 아니다.
+ * 압축하지 않으면 **제자리에서 멈춰 있어도 재방문 수가 올라가** 판정이 뒤집힌다(이 게이트가
+ * 잡으려는 바로 그 상황이 통과한다).
+ */
+export function coverageOf(seq) {
+  const compact = seq.filter((k, i) => i === 0 || k !== seq[i - 1]);
+  const unique = new Set(compact).size;
+  return { unique, revisits: compact.length - unique, path: compact };
+}
+
+/**
+ * 커버리지가 목표를 채웠는가. **`coverageOf` 와 따로 export 하는 이유가 있다.**
+ *
+ * ── 검수관 조건 1 (2026-08-08) — 뮤테이션이 이 구멍을 실증했다 ────────────────
+ * 이 비교식은 원래 `runInvariants` 안에 인라인돼 있었고, 검수관이 `/tmp` 별도 클론에서
+ * `const covOk = true` 로 고정하는 뮤테이션을 돌렸더니 **`tests/world2-collide.test.ts`
+ * 26건이 전부 그대로 통과했다.** `coverageOf` 자체는 §5 가 단위 검증하고 배선은 §6 이
+ * 보는데, **그 둘 사이에 있는 임계 비교식은 아무도 안 봤다.**
+ *
+ * 이 게이트가 잡으려던 사고가 *"아무 데도 안 갔는데 PASS"* 였는데, **판정식이 죽어도
+ * 똑같은 일이 벌어지고 CI 는 초록**이었다 — 이 저장소가 *"판정/집행 분리의 구멍 — 경계를
+ * 건너는 지점은 아무도 안 본다"* 로 이미 이름 붙인 형태의 재발이다.
+ *
+ * 그래서 함수로 뽑아 테스트가 닿게 한다. 임계 상수(`COVER_UNIQUE`·`COVER_REVISITS`)는
+ * 여기서만 읽는다 — 두 곳에서 비교하면 한쪽만 고쳐도 아무도 모른다.
+ */
+export function covOkOf(cov) {
+  return cov.unique >= COVER_UNIQUE && cov.revisits >= COVER_REVISITS;
+}
+
+/**
+ * `facing(yaw) = (-sin yaw, -cos yaw)`(`systems/player.ts`)의 역함수 — 이 월드 방향을
+ * 보려면 yaw 가 얼마여야 하는가.
+ *
+ * **복귀 구간이 이것을 필요로 한다.** 예전에는 `look(π)`(뒤돌기) 한 번으로 왕복을
+ * 만들었는데, 우회가 붙자 **갈 때 경로가 직선이 아니게 되어 그 대칭이 깨졌다.**
+ * 스모크 실측(2026-08-08): 경로 `0,0 → 0,-1 → 1,-1 → 2,-1` — 대각으로 흘러 +x 로 두 칸
+ * 이동했고, 거기서 뒤돌면 원래 경로가 아닌 새 칸으로 간다. 재방문 **0** 으로 FAIL 했다.
+ *
+ * 그래서 "뒤돌기" 를 **"출발점을 향해 재조준"** 으로 바꾼다. 매 leg 마다 다시 조준하므로
+ * 중간에 우회로 흘러도 목표를 잃지 않는다.
+ */
+export function yawToward(from, to) {
+  return Math.atan2(-(to.x - from.x), -(to.z - from.z));
+}
+
+/** 최단 회전량으로 정규화. 안 하면 350° 를 왼쪽으로 도는 대신 오른쪽으로 한 바퀴 돈다 */
+export function shortestTurn(fromYaw, toYaw) {
+  let d = toYaw - fromYaw;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }
 
 /** `__world2` 조작 훅. 없으면 **측정 실패**다 — 조작 못 한 것을 통과로 적지 않는다. */
@@ -275,32 +393,118 @@ export async function runInvariants({
       await snap(`회전 ${Math.round(((i + 1) * 360) / SPIN_STEPS)}°`);
     }
 
-    // ── ② 직진 — 파셀 경계를 여러 번 넘는다 ─────────────────────────────────
-    log('[2] 직진 주행…');
-    for (let i = 0; i < WALK_LEGS; i++) {
-      await drive(page, 'move', 0, -1); // 전진
+    // ── ② 주행 — **파셀을 밟는다.** 미터를 세지 않는다 ───────────────────────
+    //
+    // 여기 원래 *"-z 로 6번 전진"* 이 박혀 있었다. 도시에 충돌이 없던 동안은 그것이
+    // 곧 주행이었지만, 충돌이 붙은 뒤로는 **앞에 무엇이 있느냐에 따라 0m 일 수도 있는
+    // 명령**이 됐다. 막히면 방향을 튼다 — 사람이 도시에서 하는 그것이다.
+    //
+    // 방향 전환은 **관측한 결과로만** 한다(움직인 거리 < `STUCK_M`). "여기쯤에서 틀어라"
+    // 를 미리 적으면 그것이 곧 배치의 값 미러링이고, 배치를 만지는 날 조용히 어긋난다.
+    const visits = [];
+    const keyOf = (c) => (c?.px == null || c?.pz == null ? null : `${c.px},${c.pz}`);
+    let prev = await counts(page);
+    if (!keyOf(prev)) throw new Error('stats().parcel 이 없다 — 커버리지를 잴 수 없다(측정 실패)');
+    visits.push(keyOf(prev));
+    /** 출발 좌표. 복귀 구간이 **이 지점을 향해 매 leg 재조준한다** */
+    const start = { wx: prev.wx, wz: prev.wz };
+
+    log('[2] 주행 — 고유 파셀 목표 ' + COVER_UNIQUE + '…');
+    let legs = 0;
+    let turns = 0;
+    let dodge = -1;        // -1 = 곧장 전진, 0·1 = 좌우 대각
+    for (; legs < MAX_LEGS; legs++) {
+      const d = dodge < 0 ? { ax: 0, az: -1 } : DODGES[dodge];
+      await drive(page, 'move', d.ax, d.az);
       await page.waitForTimeout(WALK_MS);
-      await snap(`전진 ${i + 1}`);
+      const c = await snap(`전진 ${legs + 1}`);
+      const moved = (prev.wx == null || c.wx == null)
+        ? null : Math.hypot(c.wx - prev.wx, c.wz - prev.wz);
+      visits.push(keyOf(c));
+      prev = c;
+      if (coverageOf(visits).unique >= COVER_UNIQUE && legs + 1 >= WALK_LEGS) break;
+      if (moved != null && moved < STUCK_M) {
+        // 막혔다. 좌 → 우 → (둘 다 막히면) 시선을 튼다. 회전은 **개수 축과 독립된
+        // 증식원**이므로(위 ①의 근거) 여기서 도는 것도 그대로 판정 대상이다 — 표에 남는다.
+        dodge += 1;
+        if (dodge >= DODGES.length) {
+          dodge = -1;
+          await drive(page, 'look', TURN_RAD, 0);
+          await page.waitForTimeout(STEP_MS);
+          turns++;
+        }
+      } else if (dodge >= 0) {
+        // 우회가 통했다 — 다시 곧장 전진으로 돌아간다(대각으로만 계속 가면 사선으로 흐른다).
+        dodge = -1;
+      }
     }
     await drive(page, 'move', 0, 0);
+    const outLegs = legs + 1;
 
     // ── ③ 되돌아오기 — 언로드된 파셀을 다시 로드한다 ────────────────────────
+    //
     // **재방문이 핵심이다.** 슬롯 반납이 제대로 안 되면 여기서 개수가 오른다.
-    log('[3] 되돌아오기(재방문)…');
-    await drive(page, 'look', Math.PI, 0);
-    await page.waitForTimeout(STEP_MS);
-    for (let i = 0; i < WALK_LEGS; i++) {
-      await drive(page, 'move', 0, -1);
+    //
+    // ── `look(π)` 뒤돌기를 버렸다 (스모크 실측 2026-08-08) ─────────────────────
+    // 예전에는 뒤돌아 같은 leg 수만큼 걸으면 왕복이 됐다. **우회가 붙자 그 대칭이
+    // 깨졌다** — 갈 때 대각으로 흘러 경로가 직선이 아니면 뒤돌기는 원래 길이 아니다.
+    // 스모크 실측: 경로 `0,0 → 0,-1 → 1,-1 → 2,-1`(+x 로 두 칸 흘렀다) → 거기서 뒤돌면
+    // 새 칸으로 가서 **재방문 0** 으로 FAIL 했다. 내 로컬 회차는 우연히 직선이라 통과했고,
+    // 그래서 **로컬 PASS 가 스모크 PASS 를 보증하지 못했다.**
+    //
+    // 그러므로 방향을 **매 leg 마다 출발점으로 재조준한다.** 중간에 우회로 흘러도 목표를
+    // 잃지 않는다 — "돌아간다" 를 회전량이 아니라 **목표 좌표**로 정의한 것이다.
+    // 종료 조건도 leg 수가 아니라 **재방문 달성**이다(상한은 무한 대기 방지선).
+    log('[3] 되돌아오기(재방문) — 출발점으로 재조준…');
+    let back = 0;
+    let backDodge = -1;
+    for (; back < MAX_LEGS; back++) {
+      // ── 왜 `back >= outLegs` 를 함께 요구하는가 (검수관 비블로커, 2026-08-08) ──
+      // 재방문 조건만 두면 **첫 leg 에 끝날 수 있다** — 출발점 바로 옆 칸에서 되돌아서면
+      // 한 걸음에 원래 칸을 다시 밟는다. 그러면 "갔다가 돌아왔다" 가 아니라 경계에서
+      // 한 번 흔든 것이고, 정작 재보려던 것(멀리 가서 **언로드된** 파셀을 다시 로드)이
+      // 일어나지 않는다. 갈 때 쓴 leg 만큼은 돌아오게 해서 **언로드가 실제로 걸린
+      // 거리**를 왕복하게 만든다.
+      if (coverageOf(visits).revisits >= COVER_REVISITS && back >= outLegs) break;
+      if (prev.yaw != null && prev.wx != null) {
+        const want = yawToward({ x: prev.wx, z: prev.wz }, { x: start.wx, z: start.wz });
+        const turn = shortestTurn(prev.yaw, want);
+        // 미세 오차로 매 leg 마다 흔드는 것을 막는다 — 3° 미만이면 조준 그대로 둔다.
+        if (Math.abs(turn) > 0.05) {
+          await drive(page, 'look', turn, 0);
+          await page.waitForTimeout(STEP_MS);
+          turns++;
+        }
+      }
+      const d = backDodge < 0 ? { ax: 0, az: -1 } : DODGES[backDodge];
+      await drive(page, 'move', d.ax, d.az);
       await page.waitForTimeout(WALK_MS);
-      await snap(`복귀 ${i + 1}`);
+      const c = await snap(`복귀 ${back + 1}`);
+      const moved = (prev.wx == null || c.wx == null)
+        ? null : Math.hypot(c.wx - prev.wx, c.wz - prev.wz);
+      visits.push(keyOf(c));
+      prev = c;
+      if (moved != null && moved < STUCK_M) {
+        backDodge += 1;
+        // 좌우 다 막혔으면 재조준에 맡긴다(다음 회차 첫 줄이 다시 출발점을 향한다).
+        if (backDodge >= DODGES.length) backDodge = -1;
+      } else if (backDodge >= 0) {
+        backDodge = -1;
+      }
     }
     await drive(page, 'move', 0, 0);
     await page.waitForTimeout(1500);
-    await snap('정지');
+    const last = await snap('정지');
+    visits.push(keyOf(last));
+
+    const cov = coverageOf(visits);
+    const covOk = covOkOf(cov);
 
     // ── 판정 ────────────────────────────────────────────────────────────────
     log('\n[결과] 기준선 대비 증가분 — 하나라도 + 면 증식이다\n');
-    log('  구간              geo   tex  pipe   draw  파셀');
+    // 좌표·파셀 칸을 함께 찍는다 — 개수만 보면 "세션이 어디에 있었나" 를 알 수 없고,
+    // 커버리지 FAIL 이 났을 때 어느 구간에서 멈췄는지 짚을 수단이 표 안에 없었다.
+    log('  구간              geo   tex  pipe   draw  파셀        위치        칸');
     let maxGeo = 0, maxTex = 0, maxPipe = 0, maxDraw = 0;
     for (const r of rows) {
       const d = (b, v) => (b == null || v == null ? '  ?' : (v - b > 0 ? `+${v - b}` : '  '));
@@ -312,7 +516,9 @@ export async function runInvariants({
         `  ${r.label.padEnd(16)} ${show(r.geo).padStart(4)}${d(base.geo, r.geo)} `
         + `${show(r.tex).padStart(4)}${d(base.tex, r.tex)} `
         + `${show(r.pipe).padStart(4)}${d(base.pipe, r.pipe)} `
-        + `${show(r.draw).padStart(6)} ${show(r.parcels).padStart(5)}`,
+        + `${show(r.draw).padStart(6)} ${show(r.parcels).padStart(5)}`
+        + `  ${r.wx == null ? '     ?,?    ' : `${r.wx.toFixed(1).padStart(6)},${r.wz.toFixed(1).padStart(6)}`}`
+        + `  ${r.px == null ? '?' : `${r.px},${r.pz}`}`,
       );
     }
 
@@ -325,12 +531,36 @@ export async function runInvariants({
       + `  ${judgeDraw ? '← 대조군이므로 **판정에 포함**' : '(참고 — 기본 세션에서는 컬링으로 정당하게 변한다)'}`,
     );
 
+    // ── G-COL1 — **세션이 실제로 돌아다녔는가** ──────────────────────────────
+    log('\n  커버리지  고유 파셀 ' + cov.unique + `/${COVER_UNIQUE}`
+      + `  재방문 ${cov.revisits}/${COVER_REVISITS}`
+      + `  (전진 ${outLegs} · 복귀 ${back} leg · 조준·전환 ${turns}회)`);
+    log(`            경로 ${cov.path.join(' → ')}`);
+    if (!covOk) {
+      log('\n  ✗ FAIL — 세션이 목표만큼 돌아다니지 못했다. **개수 판정은 무의미하다.**');
+      log('    아무 데도 안 갔으면 아무것도 안 늘어난다 — 그 PASS 는 게이트가 아니라 착시다.');
+      // **두 원인을 가른다** (검수관 비블로커, 2026-08-08). 첫 판본은 무조건 *"막힌 자리를
+      // 보라"* 고만 적었는데, leg 상한을 다 쓰고 끝난 것과 실제로 벽에 갇힌 것은 처방이
+      // 다르다 — 전자는 하네스 예산 문제(상한을 올리거나 목표를 낮춘다)이고 후자만 배치·
+      // 스폰 문제다. 안 가르면 다음 사람이 매번 배치부터 뒤진다.
+      const spent = outLegs >= MAX_LEGS || back >= MAX_LEGS;
+      if (spent) {
+        log(`    원인 후보 ①: **leg 상한(${MAX_LEGS})을 소진했다** — 전진 ${outLegs}·복귀 ${back}.`);
+        log('      느린 러너에서 leg 당 이동이 줄면 여기 걸린다. 하네스 예산(MAX_LEGS·WALK_MS)을 먼저 본다.');
+      }
+      log(`    원인 후보 ${spent ? '②' : '①'}: **실제로 막혔다** — 마지막 칸이 위 경로의 끝이다.`);
+      log('      배치(#149)나 스폰(`decide/grid.ts`)을 본다. 상한을 안 쓰고 끝났으면 이쪽이다.');
+    }
+
     // 통과·실패는 백엔드 무관 카운터로만 가른다.
     // `draw` 는 **대조군에서만** 판정에 넣는다 — 기본 세션에서는 NPC 절두체 컬링 때문에
     // 정의상 상수가 아니고, 거기서 판정하면 게이트가 아니라 오탐 발생기가 된다.
-    const pass = maxGeo <= 0 && maxTex <= 0 && (!judgeDraw || maxDraw <= 0) && errors.length === 0;
+    //
+    // `covOk` 를 곱하는 이유는 위 G-COL1 문단 그대로다 — **못 잰 것은 통과가 아니다.**
+    const pass = maxGeo <= 0 && maxTex <= 0 && (!judgeDraw || maxDraw <= 0)
+      && errors.length === 0 && covOk;
     if (pass) {
-      log('\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다.');
+      log(`\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다 (파셀 ${cov.unique}개·재방문 ${cov.revisits}).`);
     } else if (judgeDraw && maxDraw > 0 && maxGeo <= 0 && maxTex <= 0) {
       log('\n  ✗ FAIL — 대조군에서 **드로우콜만** 늘었다.');
       log('    지오·텍스처는 그대로인데 draw 가 늘었다는 것은 **같은 자원을 더 많은 호출로**');
@@ -353,7 +583,7 @@ export async function runInvariants({
 
     log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
     await context.close();
-    return { pass, maxGeo, maxTex, maxPipe, maxDraw, rows, errors, base, baselineNote };
+    return { pass, maxGeo, maxTex, maxPipe, maxDraw, rows, errors, base, baselineNote, cov, covOk };
   }
 }
 
@@ -383,7 +613,11 @@ async function cli() {
   }
 }
 
-// `import.meta.main` 은 Node 20 에 없다. argv 로 판별한다.
+// argv 로 파일명을 보고 판별한다.
+// ⚠ 원래 적혀 있던 근거 *"`import.meta.main` 은 Node 20 에 없다"* 는 **낡았다** —
+// 실측 2026-08-08: Node 22·24 둘 다 `import.meta.main` 이 있다(저장소는 24 로 옮겼다).
+// 코드는 그대로 둔다(동작에 문제가 없다). 근거가 바뀌면 근거를 고쳐 적는다 —
+// 낡은 근거를 남겨두면 다음 사람이 그것을 읽고 틀린 판단을 한다. (검수관 P1)
 if (process.argv[1] && process.argv[1].endsWith('measure-invariants.mjs')) {
   cli().catch((e) => { console.error(`측정 실패(판정 아님): ${e.message}`); process.exit(2); });
 }

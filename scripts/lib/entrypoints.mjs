@@ -43,10 +43,11 @@ export const ENTRYPOINTS = [
   { key: 'landing', src: 'landing.html', out: 'index.html', exposure: 'live' },
   { key: 'guide', src: 'guide.html', out: 'guide.html', exposure: 'live' },
   { key: 'about', src: 'about.html', out: 'about.html', exposure: 'live' },
-  // design 은 배포되지만 `LIVE_PAGES` 에는 없다 — 어느 스모크도 크롤링하지 않는다
-  // (검수관 권고 5, 태스크 #169). **노출 상태와 검증 대상은 다른 축**이므로 여기서는
-  // 노출만 적는다: 링크되어 있으므로 `live` 다. 검증 편입은 그 태스크 소관.
-  { key: 'design', src: 'design.html', out: 'design.html', exposure: 'live' },
+  // ⚠ **`design.html` 은 2026-08-09 에 폐지됐다.** 여기 있던 항목은 *"링크되어
+  // 있으므로 `live` 다"* 라고 적고 있었고 **그 문장이 거짓이었다** — 폐지 시점에
+  // 저장소 전체에서 `href` 로 그 파일을 가리키는 곳이 **0건**이었다(실측). 즉
+  // 아무도 도달할 수 없는 페이지를 「라이브」로 분류한 채 배포하고 있었다.
+  // 폐지 경위·판정은 `docs/DESIGN.md §5-4` 한 곳이다.
 
   // ── 앱군(app/ 배포) ──────────────────────────────────────────────────────
   { key: 'index', src: 'index.html', out: 'app/index.html', exposure: 'live' },
@@ -54,6 +55,19 @@ export const ENTRYPOINTS = [
   { key: 'world', src: 'world.html', out: 'app/world.html', exposure: 'live' },
   // 라이브다 — `studio.html` 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다.
   { key: 'builder', src: 'builder.html', out: 'app/builder.html', exposure: 'live' },
+  // ── 마이페이지 — 2026-08-08 라이브 승격 ─────────────────────────────────
+  // 감독 지시: *"홈화면에 개인 프로필 사진을 누르면 서브메뉴가 나와서 개인 프로필
+  // 항목이 나오고 그것을 클릭하면 개인 프로필 편집하는 창으로 이동하게 해줘."*
+  // 랜딩(`landing.html`)의 프로필 메뉴가 링크한다.
+  //
+  // ⚠ **승격 시점에 무엇을 확인했나** (검수관 P5 가 선결 조건으로 걸어 둔 것):
+  //   · `auth.logout()` 이 `lu-profile::` 를 **지우게 했다**(`clearProfilesOnLogout`).
+  //     그전에는 안 지웠고, 신원이 mock 이라 공용 PC 에서 뒷사람이 같은 이름을
+  //     자칭하면 앞사람의 **프로필 사진·활동 지역**을 그대로 봤다.
+  //   · **그러나 신원 위조 자체는 여전히 못 막는다.** 로그아웃을 거치지 않고 브라우저를
+  //     닫으면 저장이 남는다. 근본 해소는 실제 OAuth 다 — `docs/MYPAGE-PLAN.md` §3,
+  //     백로그 `G-MP1`. **이 페이지가 라이브라는 것이 그 조건이 해소됐다는 뜻이 아니다.**
+  { key: 'mypage', src: 'mypage.html', out: 'app/mypage.html', exposure: 'live' },
 
   // ── behind-flag ─────────────────────────────────────────────────────────
   { key: 'visit', src: 'visit.html', out: 'app/visit.html', exposure: 'flagged' },
@@ -61,6 +75,31 @@ export const ENTRYPOINTS = [
   { key: 'lab-glb', src: 'lab-glb.html', out: 'app/lab-glb.html', exposure: 'flagged' },
   // [실험] 오픈월드 커널 재작성 — 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서다.
   { key: 'world2', src: 'world2.html', out: 'app/world2.html', exposure: 'flagged' },
+  // [실험] 포근마을 — world2 의 **포크**다(분기 근거·no-sync 정책은
+  // `frontend/js/world3/README.md`). 감독 지시 2026-08-08 *"월드3으로 하고 … 독립적으로
+  // 해"* 로 착수했다. world2 파일을 한 줄도 import 하지 않으며 그 사실은
+  // `tests/world3-independence.test.ts` 가 지킨다 — 포크의 존재 이유가 격리이므로
+  // 그것을 산문이 아니라 검사로 둔다(팀장 조건 2).
+  { key: 'world3', src: 'world3.html', out: 'app/world3.html', exposure: 'flagged' },
+  // [실험] 갤러리 스트리트 — world2 의 **포크**다(분기 근거·no-sync 정책은
+  // `frontend/js/world5/README.md`). 감독 지시 2026-08-08 *"월드3 킵해놓고. 월드5를
+  // 만들어보자 … 뉴욕 갤러리 거리를 만들고 싶어. 맨해탄 다리도 있고"* 로 착수했다.
+  //
+  // ⚠️ **`world4` 는 결번이다.** 감독이 명시적으로 "월드5" 라고 지시했고, 팀장이
+  // *"명시 발화에 정정을 되묻는 것은 이미 답이 있는 질문이고 그 왕복이 감독 시간을
+  // 쓴다"* 로 유지 판정했다. 기능상 문제는 없다 — GS-4 의 `/^world\d+$/` 가 숫자
+  // 접미로 판정하므로 결번과 무관하게 자동 편입된다. 이 줄은 다음 사람이
+  // *"world4 가 어디 갔나"* 를 찾는 고리를 막으려고 있다.
+  { key: 'world5', src: 'world5.html', out: 'app/world5.html', exposure: 'flagged' },
+  // [도구] 배치 에디터 — three.js r171 `editor/` 반입. 감독 지시 2026-08-09
+  // *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능? glb파일을 내가 직접 넣고"* →
+  // *"three.js 방식이니깐. 거기 에디터를 깃에서 가지고 와서 활용하는방안"*.
+  //
+  // ⚠️ **다른 flagged 와 성격이 다르다.** world2/3/5 는 "채택 판정 전인 실험 월드" 지만
+  // 이것은 **방문자에게 제공할 계획이 없는 도구**다 — 감독 지시 *"에디터는 개발용으로만
+  // 쓸거니"*. 그래서 라이브 승격이 목표가 아니고, `flagged` 가 종착지일 수 있다.
+  // (그래도 `flagged` 인 이상 자기완결·CSP 는 걸린다 — 배포되고 URL 직접 접근이 되므로.)
+  { key: 'editor', src: 'editor.html', out: 'app/editor.html', exposure: 'flagged' },
 ];
 
 /** 링크되어 방문자가 도달하는 진입점 */

@@ -161,6 +161,15 @@ export interface PlayerOptions {
 
   /** 이 좌표의 수면 높이(m). 물이 아니면 `null`. 안 주면 물 판정을 하지 않는다 */
   waterSurfaceY?: (x: number, z: number) => number | null;
+
+  // ── 벽에 막힌다 (감독 지시 2026-08-08 태스크 #182) ───────────────────────
+  //
+  // **물과 같은 주입 형태다.** 이 파일은 `decide/collide.ts` 도 세계의 건물 배치도
+  // 모른다 — "여기서 이만큼 움직이면 실제로는 어디까지 가는가" 라는 함수 하나만 안다.
+  // 그래서 빌더 미리보기처럼 세계가 없는 화면에서는 안 주면 그만이고(예전과 똑같이
+  // 통과한다), 테스트는 도시를 세우지 않고도 벽을 흉내낼 수 있다.
+  /** 이동 해석. 안 주면 충돌 없이 그대로 간다(예전 동작) */
+  resolveMove?: (x: number, z: number, dx: number, dz: number) => { x: number; z: number };
   /** 해저 높이(m). 완전히 잠기면 여기에 발이 닿는다 */
   seabedY?: number;
   /**
@@ -188,6 +197,14 @@ export class PlayerSystem implements System {
   private axes = { x: 0, z: 0 };
   /** 실제로 움직인 방향(스트리밍 look-ahead용). 멈추면 마지막 방향을 유지한다 */
   private moveDir = { x: 0, z: 0 };
+  /**
+   * 실제로 낸 속력 ÷ 걷기 속도, 평활값(0~1). 스트리밍 look-ahead 가 읽는다.
+   *
+   * **1 로 시작한다** — 아직 한 번도 안 움직인 것은 *"막혔다"* 가 아니다. 0 으로 두면
+   * 부팅 직후 가만히 서 있는 동안 look-ahead 가 접혀, 이 필드가 생기기 전의 동작(항상
+   * 전개)이 이유 없이 바뀐다.
+   */
+  private moveFactor = 1;
   /** 헤드밥 위상(rad) */
   private bobPhase = 0;
   /**
@@ -207,6 +224,7 @@ export class PlayerSystem implements System {
    */
   private lastSurfaceY: number | null = null;
   private readonly waterSurfaceY?: PlayerOptions['waterSurfaceY'];
+  private readonly resolveMove?: PlayerOptions['resolveMove'];
   private readonly seabed: number;
   private readonly onSubmerge?: PlayerOptions['onSubmerge'];
 
@@ -221,6 +239,7 @@ export class PlayerSystem implements System {
     if (opts.start?.yaw !== undefined) this.yaw = opts.start.yaw;
     this.apply = opts.applyCamera;
     this.waterSurfaceY = opts.waterSurfaceY;
+    this.resolveMove = opts.resolveMove;
     // 기본값을 두지 않는다 — 물 판정을 안 주면 어차피 안 쓰이고, 숫자를 여기 적으면
     // `decide/water.ts` 의 `SEABED_Y` 와 값 미러링이 된다.
     this.seabed = opts.seabedY ?? 0;
@@ -262,23 +281,64 @@ export class PlayerSystem implements System {
     const d = stick > 0
       ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, speed, ctx.dt, this.input.fast)
       : moveDelta(this.input, this.yaw, speed, ctx.dt);
-    if (d.dx !== 0 || d.dz !== 0) {
-      this.x += d.dx;
-      this.z += d.dz;
-      const l = Math.hypot(d.dx, d.dz);
-      this.moveDir = { x: d.dx / l, z: d.dz / l };
+    // **실제로 간 거리**를 따로 잡는다. 충돌이 붙은 뒤로 `d`(가려던 양)와 실제가 갈린다.
+    let mx = 0;
+    let mz = 0;
+    // **가려고 했는가.** 아래 진행 계수가 이것을 본다 — "안 눌러서 안 감" 과 "눌렀는데
+    // 못 감" 은 이동량만으로는 구별되지 않는다(둘 다 0 이다).
+    const wanted = d.dx !== 0 || d.dz !== 0;
+    if (wanted) {
+      // 충돌을 안 주면 그대로 간다 — 예전 동작이 기본값이다.
+      const next = this.resolveMove
+        ? this.resolveMove(this.x, this.z, d.dx, d.dz)
+        : { x: this.x + d.dx, z: this.z + d.dz };
+      mx = next.x - this.x;
+      mz = next.z - this.z;
+      this.x = next.x;
+      this.z = next.z;
+      const l = Math.hypot(mx, mz);
+      // 완전히 막혔으면 방향을 **갱신하지 않는다**. 0 으로 나누면 NaN 이 나가고,
+      // 마지막으로 향하던 쪽을 유지하는 편이 화면에서도 자연스럽다.
+      if (l > 0) this.moveDir = { x: mx / l, z: mz / l };
     }
 
     // 헤드밥 — 걷기 속도를 1로 본 비율로 흔든다.
     //
     // **이동량에서 역산한다**(입력 플래그가 아니라). 벽에 막혀 입력은 있는데 못 움직이는
-    // 상황에서 제자리 흔들림이 남으면 그게 더 어색하다. 지금은 충돌이 없지만 나중에
-    // 붙어도 이 식은 그대로 맞다.
-    const moved = ctx.dt > 0 ? Math.hypot(d.dx, d.dz) / ctx.dt : 0;
+    // 상황에서 제자리 흔들림이 남으면 그게 더 어색하다. 예전 이 주석은 *"지금은 충돌이
+    // 없지만 나중에 붙어도 이 식은 그대로 맞다"* 라고 적고 있었는데 **절반만 맞았다** —
+    // 식은 맞지만 `d`(가려던 양)를 넣고 있어서, 충돌이 붙는 순간 벽에 붙어 제자리 흔들림이
+    // 남았을 것이다. 충돌을 붙이면서 **실제 이동량**으로 바꿔 그 문장을 참으로 만들었다.
+    const moved = ctx.dt > 0 ? Math.hypot(mx, mz) / ctx.dt : 0;
     const ratio = this.speed > 0 ? moved / this.speed : 0;
     this.bobPhase = stepBobPhase(this.bobPhase, ratio, ctx.dt);
     // 지수 접근. dt 를 곱해 프레임레이트가 달라도 같은 시간에 같은 만큼 따라간다.
     this.bobIntensity += (Math.min(1, ratio) - this.bobIntensity) * Math.min(1, ctx.dt * 8);
+
+    // ── 스트리밍용 진행 계수 (감독 실기기 2026-08-08) ──────────────────────────
+    //
+    // **헤드밥과 같은 원천에서 나오지만 별도 필드로 둔다.** 값이 같아 보인다고 공유하면
+    // 다음에 한쪽 감각을 만질 때 다른 쪽이 조용히 딸려간다 — 이 저장소가 "값 미러링" 으로
+    // 이름 붙인 것의 반대 형태(의도가 다른 둘이 한 값을 쓰는 것)다.
+    //
+    // 시상수를 헤드밥(dt×8)보다 **느리게**(dt×3, ~0.33초) 잡는다. 헤드밥은 걸음에 붙어야
+    // 즉각적이어야 하지만, 스트리밍 판정은 급할수록 손해다 — 빨리 따라갈수록 경계에서
+    // 자주 흔들린다.
+    //
+    // ⚠ **입력이 없으면 갱신하지 않는다 — 직전 값을 그대로 얼린다** (검수관 반려 B2).
+    // 첫 판본은 입력 유무를 안 보고 `ratio` 만 먹였고, 그것이 **손을 뗀 정상 상태까지
+    // "막혔다" 로 취급**했다. 그러면 `direction` getter 가 문서에 적어 둔 기능 — *"서서
+    // 둘러볼 때 그쪽을 미리 올린다"* — 이 약 1초 만에 죽는다(τ=1/(3dt), 직접 계산).
+    // 헤드밥은 반대로 **꺼져야** 맞으므로(제자리 흔들림) 위 `bobIntensity` 는 그대로 둔다.
+    // 두 필드를 따로 둔 판단(바로 위 문단)이 여기서 값을 한다.
+    //
+    // 얼리는 것이 0/1 로 튀는 것보다 나은 이유: 끼인 채 눌렀다 뗐다 하면 목표를 1 로
+    // 복원하는 설계는 look-ahead 를 0↔0.5셀(16m) 로 왕복시켜 **감독이 보고한 깜빡임을
+    // 그대로 되살린다.** 얼리면 끼임 중에는 접힌 채 유지되고, 실제로 다시 걸어지는
+    // 순간에만 회복된다.
+    if (wanted) {
+      this.moveFactor += (Math.min(1, ratio) - this.moveFactor) * Math.min(1, ctx.dt * 3);
+    }
 
     // ── 물 (감독 지시 *"강에 사람이 빠지게해줘"*) ──────────────────────────────
     // **이동한 뒤에** 판정한다. 이동 전 좌표로 물어보면 물가를 넘어선 프레임에 아직
@@ -306,12 +366,89 @@ export class PlayerSystem implements System {
    * **현재 눈의 월드 y 가 아니다** — 그것은 잠김에 따라 움직이므로 카메라에서 읽는다.
    */
   get eyeHeight(): number { return this.eye; }
-  /** 이동 방향. 정지 중이면 시선 방향을 쓴다 — 서서 둘러볼 때 그쪽을 미리 올리려는 것 */
+  /**
+   * 스트리밍이 "어느 쪽을 미리 올릴까" 에 쓰는 방향.
+   * **소스는 `moveDir` 하나다** — 마지막으로 실제로 간 방향. 근거는 아래 본문.
+   *
+   * ⚠ 이 주석은 오래 *"소스가 둘이고 그 사이를 오간다 … 여기를 고치는 대신 진행 계수로
+   * look-ahead 자체를 줄이는 쪽을 골랐다"* 라고 적고 있었다. 그 선택이 **틀렸다**(2026-08-09).
+   * 당시 근거였던 감독 실기기 2026-08-08 *"분수대에 끼일때. 멀리있는 lod가 나왔다가
+   * 안나왔다가 해"* 는 지금도 참이고, 그때 진단한 기전(어긋난 방향이 `lookAheadCenter` 를
+   * 통해 판정 중심을 최대 1.0셀=32m 흔들어 LOD 히스테리시스 0.15~0.30셀을 압도한다)도 참이다.
+   * **틀린 것은 처방이다** — 통로(look-ahead)를 좁혔을 뿐 원인(소스 이원화)을 남겼고,
+   * 그래서 후진에서 같은 증상이 더 크게 재현됐다. 기록을 지우지 않고 여기 남긴다:
+   * 다음에 "여기를 고치는 대신" 이 떠오르면 그것이 통로인지 원인인지부터 가른다.
+   */
   get direction(): { x: number; z: number } {
-    const keys = this.input.forward || this.input.back || this.input.left || this.input.right;
-    const stick = Math.hypot(this.axes.x, this.axes.z) > 0;
-    return (keys || stick) ? this.moveDir : facing(this.yaw);
+    // ── 폴백을 없앴다 — **소스는 `moveDir` 하나다** (감독 지시 + 팀장 판정 2026-08-09) ──
+    //
+    // 원래 `(keys || stick) ? this.moveDir : facing(this.yaw)` 였고, 그 폴백의 명분은
+    // 위 주석의 *"서서 둘러볼 때 그쪽을 미리 올린다"* 였다. **그 기능이 결함의 원인이었다.**
+    //
+    // 감독 실기기: *"지금 다 뒤로 후진했다가. 놓으면 앞이 갑자기 나타나"* ·
+    // *"뒤로 뺄때 더빨리 lod가 동작하는 것 같기도해"*
+    //
+    // **후진은 두 소스가 정반대가 되는 유일한 조작이다.** 후진 중 `moveDir` 는 뒤를
+    // 가리키다가 손을 떼는 순간 `facing` 이 앞을 가리킨다. 그 한 프레임의 뒤집힘이
+    // **두 경로로 동시에** 새어 나갔다:
+    //   ① `lookAheadCenter`(`systems/streaming.ts`) — 판정 중심이 1.0셀(32m) 점프
+    //   ② `computeWant` 의 진행방향 보너스(`decide/stream.ts` 의 `toward`) — 로드 **우선순위** 역전
+    //      (줄 번호를 안 적는다 — 검수관이 잡은 대로 이미 한 번 어긋났고, 줄 번호는
+    //       고칠 사람이 없는 값 미러링이다)
+    // ②는 처음에 못 봤다. look-ahead 만 끄는 처방을 먼저 집행했는데 그것은 ①만 막고
+    // ②를 남기는 **반쪽**이었다(팀장이 확인하라고 지목해서 찾았다).
+    //
+    // ── 실측 (2026-08-09, 헤드리스 swiftshader, `?time=day&weather=clear`) ─────
+    // 같은 probe 를 두 판본에 돌렸다 — 이 커밋(`98ab9f3`)과 그 부모(`d282b10`, 폴백 있음).
+    // 각각 전진 2회·후진 2회, 4초 주행 뒤 손을 떼고 관찰한다.
+    // **jump = 손 뗀 직후 800ms 의 교체 합**이고, 결함이 나타나는 자리가 여기다.
+    //
+    //   판본                  | 전진 jump retier | 후진 jump retier | 후진 jump 강등
+    //   폴백 있음(d282b10)    |        0         |    **6**(3+3)    |   3+3 (전부 강등)
+    //   폴백 없음(이 커밋)    |        0         |    **0**         |     0
+    //
+    // 후진 2회가 3·3 으로 **동일하게 재현**됐고 전진은 양쪽 다 0 이다. 교체가 전부
+    // **강등**이라는 것이 결정적이다 — 손 떼는 순간 방향이 앞으로 뒤집혀 뒤쪽 파셀이
+    // 내려간 것이고, 위 기전과 부호가 맞는다.
+    //
+    // ⚠ **push(주행) 구간은 두 판본을 직접 비교할 수 없다.** 전진 push retier 가
+    // 폴백 있음 2 · 없음 16 으로 뒤집혀 있는데, 이건 회귀가 아니라 **출발 상태가 다른**
+    // 것이다: 폴백이 있으면 부팅 직후 서 있는 동안에도 `facing` 이 앞을 가리켜 앞쪽
+    // 파셀이 미리 승격돼 있고, 없으면 `moveDir={0,0}` 이라 발밑만 올라와 있다. 그래서
+    // 걷기 시작할 때 승격이 몰린다(승10/강6 대 승1/강0, built 는 4 대 1 로 작다).
+    // **화면에서 문제인지는 확인 못 했다** — 감독이 지적한 적 없는 축이고, 여기서 새
+    // 축을 열지 않는다. 처방 후보(초기 `moveDir` 를 스폰 yaw 로 1회 설정)와 함께
+    // 태스크로 남긴다.
+    //
+    // ⚠ 이 자리에 원래 *"폴백 있음 **후진 125 · 전진 4**"* 가 적혀 있었다. 그 수치를
+    // 낸 스크립트는 스크래치 정리와 함께 사라져 **재현할 수 없어** 지웠다. 재현 못 하는
+    // 수를 근거로 남기면 다음 사람이 그것과 새 실측을 비교하려 든다.
+    //
+    // ── 왜 look-ahead 를 끄지 않고 여기를 고쳤나 ────────────────────────────
+    // 감독 반문: *"뒤로 가도 예측로딩 하면 안되나?"* — **맞는 지적이다.** 후진 중 뒤쪽을
+    // 미리 올리는 것은 정상 동작이고, 그것까지 끄는 것은 원인이 아니라 **원인이 드러나는
+    // 통로**를 막는 일이었다. 여기를 고치면 전·후진 예측 로딩을 **둘 다 지키면서**
+    // 점프만 없앤다.
+    //
+    // ── 여기서 멈춘다 ──────────────────────────────────────────────────────
+    // **"정지 중 시선 예측" 은 다시 넣지 않는다.** 그것이 이 고리의 시작이었다. 서서
+    // 두리번거릴 때 보는 쪽을 미리 올리고 싶어지면, 방향을 갈아끼우는 방식이 아니라
+    // 별도 축으로 설계한다 — 그때 이 문단을 먼저 읽어라.
+    //
+    // 부팅 직후 `moveDir` 는 `{0,0}` 이고 `lookAheadCenter` 가 그대로 발밑을 낸다.
+    return this.moveDir;
   }
+
+  /**
+   * 실제 진행 정도(0~1). **가려던 양이 아니라 간 양**에서 나온다.
+   *
+   * 스트리밍 look-ahead 가 이것을 곱한다 — 막혀 있으면 0 에 가까워져 판정 중심이 발밑에
+   * 고정된다. look-ahead 의 목적이 *"가려는 쪽 파셀을 미리 올린다"* 이므로, 못 가는
+   * 동안 앞을 당겨 보는 것은 목적에 어긋난 채 경계만 흔드는 일이다.
+   *
+   * **입력이 없는 동안은 얼어 있다**(위 `update` 참조) — 손을 뗀 것은 막힌 것이 아니다.
+   */
+  get speedFactor(): number { return this.moveFactor; }
   get angles(): { yaw: number; pitch: number } { return { yaw: this.yaw, pitch: this.pitch }; }
   /** 잠김 정도(0~1). 0 = 마른 땅, 1 = 완전히 가라앉음 */
   get submerged(): number { return this.submersion; }

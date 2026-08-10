@@ -18,7 +18,6 @@
 import { defineConfig } from 'vite';
 import { resolve, dirname } from 'node:path';
 import { copyFileSync, mkdirSync, cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 // 배포 서브패스의 정의는 `scripts/site-url.mjs` 한 곳이다(검수관 B3). 여기 값을 따로
 // 적으면 도메인·저장소명을 옮길 때 한쪽만 고쳐도 아무도 모른다.
 import { BASE_PATH } from './scripts/site-url.mjs';
@@ -27,6 +26,9 @@ import { BASE_PATH } from './scripts/site-url.mjs';
 // `// behind-flag` 로 남아 있던 사고가 그것이었다.
 // `htmlRename` 은 아래에 **플러그인 함수**로 이미 있다(이름 충돌) — 맵 쪽을 개명해 받는다.
 import { viteInput, htmlRename as entryRenameMap } from './scripts/lib/entrypoints.mjs';
+// 인라인 script 의 CSP sha256 **계산 규약**의 SSOT. `tests/csp-inline-pins.test.ts` 가
+// 같은 모듈로 소스 HTML 을 검사하므로, 빌드가 쓰는 규약과 검사가 보는 규약이 갈리지 않는다.
+import { inlineExecScripts } from './scripts/lib/csp-inline.mjs';
 
 const r = (p) => resolve(import.meta.dirname, p);
 
@@ -64,8 +66,6 @@ export function tsJsFallback() {
 // 같은 곳에 있어야 검증 등급 판정기가 읽을 수 있고, 두 곳에 적으면 어긋난다.
 const HTML_RENAME = entryRenameMap();
 
-// 인라인 실행 script 타입(CSP script-src 해시 대상). ld+json·importmap 은 비실행.
-const EXEC_TYPES = new Set(['', 'module', 'text/javascript', 'application/javascript']);
 
 // ── 플러그인1: 자기완결(기존 b2a 보강) ──────────────────────────────
 //  (1) 산출 HTML 의 인라인 importmap 제거: three 는 bare specifier 로 이미 번들 해소.
@@ -86,6 +86,13 @@ function selfContained() {
       mkdirSync(resolve(dist, 'app/vendor'), { recursive: true });
       // peerjs 는 전역 IIFE(window.Peer)라 ES 모듈 번들 대상이 아님 → self 로 정적 유지.
       copyFileSync(r('frontend/vendor/peerjs.min.js'), resolve(dist, 'app/vendor/peerjs.min.js'));
+      // signals(three.js editor 의존)도 **같은 이유로** 정적 유지한다.
+      // UMD 인데 꼬리가 `typeof module!=="undefined" ? module.exports=f : i.signals=f` 이고
+      // `(function(i){…})(this)` 로 전역을 받는다 — **ES 모듈 안에서는 `this` 가 undefined**
+      // 라 import 하면 `i.signals` 에서 TypeError 로 죽는다. 그래서 번들에 못 넣는다.
+      // (editor 의 나머지 js 는 전부 ES 모듈이라 vite 가 번들한다 — 이 파일 하나만 예외다.)
+      mkdirSync(resolve(dist, 'app/editor/js/libs'), { recursive: true });
+      copyFileSync(r('frontend/editor/js/libs/signals.min.js'), resolve(dist, 'app/editor/js/libs/signals.min.js'));
       for (const d of ['galleries', 'world', 'assets', 'utils']) {
         const src = r('frontend/' + d);
         if (existsSync(src)) cpSync(src, resolve(dist, 'app', d), { recursive: true });
@@ -129,23 +136,11 @@ function reconcileHtmlCsp(filePath) {
   html = html.replace(/[ \t]*<script type="importmap">[\s\S]*?<\/script>\n?/g, '');
 
   // 남은 인라인 실행 script 의 sha256 실측(최종 HTML 의 raw body 기준).
-  // ⚠️ HTML 주석 안의 `<script>` 텍스트(예: CSP 설명 주석)가 정규식 매치를 오염시키면
-  //    body 경계가 어긋나 브라우저 실제 해시와 불일치한다. 브라우저는 주석 안 script 를
-  //    무시하므로, 해시 스캔은 "주석 제거본"에서 한다(파일 자체는 주석 유지).
-  const scan = html.replace(/<!--[\s\S]*?-->/g, '');
-  const hashes = new Set();
-  const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = scriptRe.exec(scan)) !== null) {
-    const attrs = m[1];
-    const body = m[2];
-    if (/\bsrc\s*=/i.test(attrs)) continue; // 외부 참조 script 는 해시 불필요
-    const typeM = attrs.match(/\btype\s*=\s*["']?([^"'\s>]+)/i);
-    const type = typeM ? typeM[1].toLowerCase() : '';
-    if (!EXEC_TYPES.has(type)) continue; // ld+json·importmap 등 비실행
-    const h = createHash('sha256').update(body, 'utf8').digest('base64');
-    hashes.add(`'sha256-${h}'`);
-  }
+  // 계산 규약(주석 제거본에서 스캔 · 실행 type 판정 · body 원문 해시)은
+  // `scripts/lib/csp-inline.mjs` **한 곳**이다. 여기에 다시 적으면 그것이 곧 값 미러링이고,
+  // 규약이 미묘하게 갈리면 **"빌드는 통과했는데 검사가 빨간불"**(또는 그 반대)이 성립한다 —
+  // 소스 핀이 세 파일에서 어긋난 채 아무도 모르고 있던 것을 그 모듈 주석에 적어 뒀다.
+  const hashes = new Set(inlineExecScripts(html).map((s) => s.hash));
 
   // CSP meta 의 script-src 만 재작성(다른 디렉티브 보존).
   html = html.replace(
@@ -233,6 +228,31 @@ export default defineConfig({
             || id.includes('node_modules/three/build/three.tsl')
             || id.includes('node_modules/three/examples/jsm/tsl/')
             || id.includes('node_modules/three/examples/jsm/lighting/')) return 'vendor-three-webgpu';
+          // ── editor 전용 addons 를 라이브 청크에서 떼어낸다 (검수관 반려 2026-08-09) ──
+          //
+          // ⚠️ **이 아래 광역 매칭이 라이브 페이지를 무겁게 만들고 있었다.**
+          // `node_modules/three` 를 통째로 한 청크에 묶으므로, three.js editor 를 반입하자
+          // 그것이 지원하는 **31개 포맷 로더**(3DM·FBX·Collada·VRML…)와 그 의존
+          // (`chevrotain` 등)이 전부 `vendor-three` 로 흡수됐다. 그 청크는 라이브 진입점
+          // (`app/index`·`world`·`builder`)이 `modulepreload` 로 **즉시 받는다** —
+          // editor 를 열어본 적 없는 방문자가 gzip **+174.75KB**(93KB→268KB, +160%)를
+          // 더 받고 있었다(검수관 독립 빌드 실측).
+          //
+          // 같은 광역 매칭이 wasm 사고의 뿌리이기도 했다(mikktspace·zstddec·meshopt 가
+          // 같은 경로로 공유 청크에 들어가 미술관·world·builder 를 CSP 위반으로 죽였다).
+          //
+          // **우리 코드(editor 제외)가 `examples/jsm/` 에서 쓰는 것은 실측 두 개뿐이다:**
+          //   · `loaders/GLTFLoader.js`      — world2 의 `glb-city.ts`
+          //   · `lighting/TiledLighting.js`  — 위 webgpu 분기가 이미 가져간다
+          // `GLTFLoader` 는 `utils/BufferGeometryUtils.js` 하나를 더 쓴다(실측: 68행).
+          // 그래서 **그 둘만 남기고 `examples/jsm/` 의 나머지는 editor 청크로 보낸다.**
+          //
+          // ⚠️ 이 규칙을 되돌리려면 위 실측을 다시 떠라 — 우리가 쓰는 addon 이 늘면
+          // 화이트리스트도 늘어야 하고, 빠뜨리면 그 모듈이 editor 청크로 가서
+          // **라이브 페이지가 editor 청크를 통째로 받는다**(지금보다 나빠진다).
+          if (id.includes('node_modules/three/examples/jsm/')
+            && !id.includes('/loaders/GLTFLoader.js')
+            && !id.includes('/utils/BufferGeometryUtils.js')) return 'vendor-three-editor';
           if (id.includes('node_modules/three')) return 'vendor-three';
           if (id.includes('node_modules/peerjs')) return 'vendor-peerjs';
         },

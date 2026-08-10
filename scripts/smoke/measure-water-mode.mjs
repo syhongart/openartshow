@@ -186,7 +186,11 @@ async function cli() {
   }
 }
 
-// `import.meta.main` 은 Node 20 에 없다. argv 로 판별한다.
+// argv 로 파일명을 보고 판별한다.
+// ⚠ 원래 적혀 있던 근거 *"`import.meta.main` 은 Node 20 에 없다"* 는 **낡았다** —
+// 실측 2026-08-08: Node 22·24 둘 다 `import.meta.main` 이 있다(저장소는 24 로 옮겼다).
+// 코드는 그대로 둔다(동작에 문제가 없다). 근거가 바뀌면 근거를 고쳐 적는다 —
+// 낡은 근거를 남겨두면 다음 사람이 그것을 읽고 틀린 판단을 한다. (검수관 P1)
 if (process.argv[1] && process.argv[1].endsWith('measure-water-mode.mjs')) {
   cli().catch((e) => { console.error(`측정 실패(판정 아님): ${e.message}`); process.exit(2); });
 }

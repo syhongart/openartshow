@@ -129,12 +129,37 @@ describe('PlayerSystem', () => {
     expect(seen[1]).toBeGreaterThan(0); // 눈높이
   });
 
-  it('정지 중에는 시선 방향을 direction으로 준다 — 서서 둘러볼 때 그쪽을 미리 올린다', () => {
-    const p = new PlayerSystem();
-    p.look(100, 0);
+  // ── `direction` 의 소스는 하나다 (2026-08-09) ──────────────────────────────
+  // 이 자리에 원래 *"정지 중에는 시선 방향을 direction으로 준다 — 서서 둘러볼 때 그쪽을
+  // 미리 올린다"* 가 있었고, **그 기능이 감독 실기기 결함의 원인이었다.**
+  // 근거·경위는 `player.ts` 의 `direction` getter 본문 한 곳이다(여기에 다시 적지 않는다).
+  it('정지 중에도 마지막으로 간 방향을 유지한다 — 시선으로 갈아끼우지 않는다', () => {
+    const p = new PlayerSystem({ speed: 10 });
+    p.setInput({ right: true });
+    p.update(ctx({ dt: 0.1 }));
+    const moving = { ...p.direction };
+    p.setInput({ ...NO_INPUT });
+    p.look(100, 0);                       // 손을 떼고 시선을 크게 돌린다
+    for (let i = 0; i < 20; i++) p.update(ctx({ dt: 0.1, frame: i + 2 }));
+    expect(p.direction.x).toBeCloseTo(moving.x, 9);
+    expect(p.direction.z).toBeCloseTo(moving.z, 9);
+  });
+
+  // **후진은 두 소스가 정반대가 되는 유일한 조작이다.** 폴백이 되살아나면 여기서
+  // 부호가 뒤집힌다 — 위 테스트는 `look` 을 안 돌리는 판본에서는 우연히 통과할 수 있어서
+  // (yaw=0 에서 facing 과 moveDir 가 같은 축이다) 이 케이스를 따로 둔다.
+  it('후진 뒤 손을 떼도 방향이 뒤집히지 않는다 — 감독 실기기 "놓으면 앞이 갑자기 나타나"', () => {
+    const p = new PlayerSystem({ speed: 10 });
+    p.setInput({ back: true });
+    p.update(ctx({ dt: 0.1 }));
+    const back = { ...p.direction };
     const f = facing(p.angles.yaw);
-    expect(p.direction.x).toBeCloseTo(f.x, 9);
-    expect(p.direction.z).toBeCloseTo(f.z, 9);
+    // 전제 확인 — 후진 방향과 시선이 실제로 반대여야 이 테스트가 의미를 갖는다.
+    expect(back.x * f.x + back.z * f.z).toBeLessThan(-0.99);
+    p.setInput({ ...NO_INPUT });
+    for (let i = 0; i < 20; i++) p.update(ctx({ dt: 0.1, frame: i + 2 }));
+    expect(p.direction.x).toBeCloseTo(back.x, 9);
+    expect(p.direction.z).toBeCloseTo(back.z, 9);
   });
 
   it('이동 중에는 이동 방향을 준다', () => {
@@ -143,6 +168,13 @@ describe('PlayerSystem', () => {
     p.update(ctx({ dt: 0.1 }));
     expect(Math.hypot(p.direction.x, p.direction.z)).toBeCloseTo(1, 6);
     expect(p.direction.x).toBeCloseTo(1, 6);
+  });
+
+  it('한 번도 안 움직였으면 0 이다 — 발밑을 낸다(폴백이 없으므로 시선을 안 본다)', () => {
+    const p = new PlayerSystem();
+    p.look(100, 0);
+    expect(p.direction.x).toBe(0);
+    expect(p.direction.z).toBe(0);
   });
 
   it('look이 시선을 돌리고 피치를 가둔다', () => {
@@ -278,5 +310,73 @@ describe('걷는 속도 — 자동차가 아니어야 한다', () => {
     p.setInput({ forward: true });
     p.update(ctx({ dt: 1 }));
     expect(Math.hypot(p.position.x, p.position.z)).toBeCloseTo(WALK_SPEED, 6);
+  });
+});
+
+// ── speedFactor — "안 눌러서 안 감" 과 "눌렀는데 못 감" 은 다른 상태다 ──────────
+//
+// 이 절은 **검수관 반려 B2** 로 생겼다. 첫 판본은 이동량만 보고 계수를 갱신했는데,
+// 이동량은 두 상태에서 똑같이 0 이다. 그래서 손을 뗀 정상 상태까지 *"막혔다"* 로 읽혀
+// look-ahead 가 약 1초 만에 접혔다. 지금 규약은 **입력이 있을 때만 갱신하고, 없으면 얼린다.**
+//
+// (원래 이 문단은 그 피해를 *"`direction` getter 가 문서에 적어 둔 기능 — 서서 둘러볼 때
+// 그쪽을 미리 올린다 — 이 죽었다"* 라고 적고 있었다. **그 기능은 2026-08-09 에 없앴다**
+// — 그것이 후진 결함의 원인이었다. 계수 자체는 여전히 유효하다: 막혀서 못 가는 동안
+// 예측을 접는다는 목적은 방향 소스와 독립이다.)
+describe('PlayerSystem.speedFactor — 진행 계수의 의미', () => {
+  const blockAll = () => (x: number, z: number) => ({ x, z });
+
+  it('부팅 직후는 1 이다 — 안 움직여 본 것은 막힌 것이 아니다', () => {
+    expect(new PlayerSystem().speedFactor).toBe(1);
+  });
+
+  it('입력이 없으면 아무리 오래 서 있어도 1 을 지킨다', () => {
+    const p = new PlayerSystem({ speed: 10 });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    expect(p.speedFactor).toBe(1);
+  });
+
+  it('눌렀는데 못 가면 0 으로 내려간다', () => {
+    const p = new PlayerSystem({ speed: 10, resolveMove: blockAll() });
+    p.setInput({ forward: true });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    expect(p.speedFactor).toBeLessThan(0.05);
+  });
+
+  it('막힌 뒤 손을 떼도 1 로 튀어 오르지 않는다 — 그러면 깜빡임이 되살아난다', () => {
+    const p = new PlayerSystem({ speed: 10, resolveMove: blockAll() });
+    p.setInput({ forward: true });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    const stuck = p.speedFactor;
+    p.setInput({ ...NO_INPUT });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    expect(p.speedFactor).toBeCloseTo(stuck, 9);
+  });
+
+  it('막힘이 풀리면 회복한다 — 얼리는 것이지 잠그는 것이 아니다', () => {
+    let wall = true;
+    const p = new PlayerSystem({
+      speed: 10,
+      resolveMove: (x, z, dx, dz) => (wall ? { x, z } : { x: x + dx, z: z + dz }),
+    });
+    p.setInput({ forward: true });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    expect(p.speedFactor).toBeLessThan(0.05);
+    wall = false;
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: 200 + i }));
+    expect(p.speedFactor).toBeGreaterThan(0.9);
+  });
+
+  it('제자리 헤드밥은 반대로 꺼진다 — 두 필드를 따로 둔 이유가 여기 있다', () => {
+    const ys: number[] = [];
+    const p = new PlayerSystem({
+      speed: 10,
+      resolveMove: blockAll(),
+      applyCamera: (_x, y) => { ys.push(y); },
+    });
+    p.setInput({ forward: true });
+    for (let i = 0; i < 200; i++) p.update(ctx({ dt: 0.1, frame: i + 1 }));
+    const tail = ys.slice(-40);
+    expect(Math.max(...tail) - Math.min(...tail)).toBeLessThan(1e-3);
   });
 });

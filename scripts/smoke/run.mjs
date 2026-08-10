@@ -329,17 +329,31 @@ function aggregateBrowser(pageResults, origin) {
   }
 
   // 검사5: 가로 넘침 0 (페이지 × 뷰포트)
+  //
+  // ── `minViewport` — 좁은 화면을 **면제받는 것이 아니라 대상이 아님을 적는다** ──
+  // `LIVE_PAGES` 항목이 `minViewport` 를 선언하면 그보다 좁은 뷰포트는 이 검사에서
+  // 빠지고, **빠진 만큼이 INFO 로 화면에 찍힌다**(조용히 줄어들면 그때부터 장식이다).
+  //
+  // 왜 필요했나: three.js editor 를 반입하니 320px 에서 335>320 이 났다(15px). editor 는
+  // 드래그·기즈모로 조작하는 **데스크톱 전용 도구**라 초소형 폭이 설계 대상이 아니다.
+  // 그렇다고 CSS 를 추측으로 고치면 외부 코드를 근거 없이 개조하는 것이고, 검사를
+  // 통째로 끄면 다른 페이지의 회귀까지 잃는다 — **어느 페이지가 어느 폭부터 유효한지**를
+  // 데이터로 두는 것이 두 손실을 다 피한다.
   const overflows = [];
+  const skipped = [];
   for (const p of pageResults) {
+    const min = LIVE_PAGES.find((x) => x.name === p.name)?.minViewport ?? 0;
     for (const o of p.overflow || []) {
+      if (o.vw < min) { skipped.push(`${p.name}@${o.vw}px`); continue; }
       if (o.overflow) overflows.push(`[${p.name}] ${o.vw}px: ${o.scrollWidth}>${o.innerWidth}`);
     }
   }
-  const totalCells = pageResults.length * VIEWPORTS.length;
+  const totalCells = pageResults.length * VIEWPORTS.length - skipped.length;
   if (overflows.length) {
     record('5', '가로 넘침 0', 'FAIL', `${overflows.length}건 넘침 — ${overflows.slice(0, 3).join(' | ')}`);
   } else {
-    record('5', '가로 넘침 0', 'PASS', `${totalCells}조합(${pageResults.length}페이지×${VIEWPORTS.length}뷰포트) 넘침 0`);
+    const note = skipped.length ? ` · minViewport 로 제외 ${skipped.length}칸(${skipped.join(', ')})` : '';
+    record('5', '가로 넘침 0', 'PASS', `${totalCells}조합 넘침 0${note}`);
   }
 
   // 검사6: CSP 부팅 (메타 유효 + violation 0)
@@ -383,6 +397,68 @@ function aggregateBrowser(pageResults, origin) {
       `${extAgg.length}개 페이지 외부요청 — 예: [${first.name}] ${first.externalRequests[0]}`);
   } else {
     record('C', '외부요청 0(자기완결)', 'PASS', `${pageResults.length}페이지 외부호스트 요청 0`);
+  }
+
+  // ── 가드 C2: **라이브가 받는 청크**에 wasm·외부호스트가 없다 ────────────
+  //
+  // `[C]` 는 "요청이 나갔는가" 를 본다. 그런데 번들 **안에** 들어간 것은 요청이 안 나가도
+  // 사고를 낸다 — 인라인 wasm 은 CSP(`script-src 'self'`)에 막혀 **페이지를 죽이고**,
+  // CDN 리터럴은 조건이 맞는 순간(예: WebXR 진입) 남의 서버를 부른다.
+  //
+  // ── 이 가드가 두 번 틀렸다. 그 경위가 이 주석의 요점이다 (2026-08-09) ────
+  // three.js editor 반입에서 CSP 사고를 쫓았다. 처음엔 **이름 문자열**(`mikktspace`)로
+  // 세서 놓쳤고, 그래서 **base64 매직(`AGFzbQ`)** 으로 바꿨다. 그것도 틀렸다 —
+  // `meshopt_decoder` 는 wasm 을 base64 가 아닌 형태로 들고 있어서 **가드가 PASS 인 채로
+  // 페이지가 계속 죽었다.** 유입 경로가 넷이었다(mikktspace·zstddec×2·meshopt).
+  //
+  // 그리고 **검수관이 다섯째를 잡았다** — 가드가 아니라 별도 클론 빌드로. `vite.config.js`
+  // 의 `node_modules/three` 광역 매칭 때문에 editor 의 31개 포맷 로더가 라이브 공유 청크로
+  // 흡수돼 **미술관 방문자가 gzip +174KB 를 더 받고 있었다.** 그때까지 `[C]`·`[C2]` 둘 다
+  // 그 축을 안 봤다.
+  //
+  // 그래서 대상을 **"라이브 HTML 이 참조하는 청크"** 로 좁히고 축을 셋으로 늘렸다.
+  // editor 청크는 editor 만 받으므로 이 판정에서 빠진다(behind-flag 도구다).
+  //
+  // 한계 셋:
+  //  ① 정적 스캔이다. 문자열을 조각내 조립하거나 런타임에 만들면 못 잡는다.
+  //  ② **크기 회귀는 안 잰다**(기준값 관리가 필요하다 — 검수관 권고, 별건).
+  //  ③ **런타임 전용 동적 import 청크는 스캔 밖이다**(검수관 재확인에서 발견).
+  //     아래 수집은 HTML 의 `<script>`/`<link>` **정적 참조만** 본다. 그런데
+  //     `main.js` 의 `?debug=perf`·`world-boot.js` 의 `?debug=hud` 처럼 조건 뒤에서
+  //     `import()` 하는 청크는 vite 가 modulepreload 하지 않아 HTML 에 안 적히고,
+  //     그래서 여기 안 걸린다 — **라이브 페이지에서 실제로 도달 가능한데도.**
+  //     지금은 무해하다(검수관 실측: `debug-hud`·`debug-perf` 둘 다 wasm·CDN 0).
+  //     동적 청크까지 보려면 수집을 `_bundle` 전체로 넓히고 editor 계열만 빼는 쪽이
+  //     맞는데, 그러면 editor 전용 청크를 이름으로 골라내야 해서 새 미러링이 생긴다.
+  //     그 교환을 아직 안 했다는 것을 적어 둔다.
+  const bundleDir = path.join(SITE_DIR, '_bundle');
+  const liveChunks = new Set();
+  const htmlFiles = [];
+  for (const dir of [SITE_DIR, path.join(SITE_DIR, 'app')]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) if (f.endsWith('.html')) htmlFiles.push(path.join(dir, f));
+  }
+  for (const h of htmlFiles) {
+    if (path.basename(h) === 'editor.html') continue;   // behind-flag 도구 — 라이브가 안 받는다
+    for (const m of fs.readFileSync(h, 'utf8').matchAll(/_bundle\/([^"'\s>]+\.js)/g)) liveChunks.add(m[1]);
+  }
+  const findings = [];
+  for (const f of liveChunks) {
+    const full = path.join(bundleDir, f);
+    if (!fs.existsSync(full)) continue;
+    const txt = fs.readFileSync(full, 'utf8');
+    if (txt.includes('AGFzbQ')) findings.push(`${f}: base64 wasm`);
+    if (/WebAssembly\s*\.\s*(instantiate|compile)/.test(txt)) findings.push(`${f}: WebAssembly 호출`);
+    for (const m of txt.matchAll(/https:\/\/(cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|esm\.sh)/g)) {
+      findings.push(`${f}: CDN 리터럴 ${m[1]}`);
+    }
+  }
+  const uniq = [...new Set(findings)];
+  if (uniq.length) {
+    record('C2', '라이브 청크 wasm·CDN 0', 'FAIL',
+      `${uniq.length}건 — ${uniq.slice(0, 3).join(' | ')} · 라이브 진입점이 받는 청크다`);
+  } else {
+    record('C2', '라이브 청크 wasm·CDN 0', 'PASS', `라이브 청크 ${liveChunks.size}개에 wasm·CDN 리터럴 0`);
   }
 }
 
@@ -527,10 +603,16 @@ if (!PERF_GATE_MODES.includes(PERF_GATES)) {
  * 이 구멍이 실질적인 이유: 검사 `[4]` 콘솔 에러 0 은 **로드 시점**만 본다. 회전·주행·
  * 복귀와 날씨 12조합 순회 중에만 나는 에러를 보는 유일한 축이 `[7][7.6][8]` 이다. 그것을
  * 종료코드 밖에 두면 기능적으로 `continue-on-error: true` 와 같아진다.
+ *
+ * ── `hard` — 성능이 아닌 실패를 함께 받는다 (검수관 반려 B1, 2026-08-08) ──────
+ * `errors[]` 와 같은 성격의 축이 하나 더 생겼다: **G-COL1 커버리지**(세션이 실제로 파셀을
+ * 건넜는가). 안 움직인 세션은 개수가 늘 리가 없으니 `[7]` 은 초록을 내는데, 그 초록은
+ * 판정이 아니라 착시다. 러너 성능 편차와 무관하므로 observe 에서도 FAIL 이어야 한다 —
+ * 위 `errors[]` 문단의 논리를 그대로 적용한 것이다.
  */
-const perfStatus = (pass, errors) => {
+const perfStatus = (pass, errors, hard = false) => {
   if (pass) return 'PASS';
-  if (errors?.length) return 'FAIL';           // 하드 실패 — 관측 대상이 아니다
+  if (errors?.length || hard) return 'FAIL';   // 하드 실패 — 관측 대상이 아니다
   return PERF_GATES === 'observe' ? 'INFO' : 'FAIL';
 };
 const perfLabel = (s) => (PERF_GATES === 'observe' ? `${s}(관측)` : s);
@@ -549,11 +631,15 @@ async function runPerfGates(origin, browser) {
     // 관측인데, `runInvariants` 에 넘기는 `log` 가 `quiet` 라 화면에 안 나왔다.
     // 파일에만 남으면 사람이 못 읽고, 그때부터 장식이다.
     if (r.baselineNote) record(7.5, '기준선 추이(관측)', 'INFO', r.baselineNote);
+    // 커버리지(G-COL1)는 **성능이 아니라 세션 유효성**이므로 `hard` 로 넘긴다.
+    const covNote = `파셀 ${r.cov?.unique}개·재방문 ${r.cov?.revisits}`;
     record(
-      7, perfLabel('개수 불변식(세션)'), perfStatus(r.pass, r.errors),
+      7, perfLabel('개수 불변식(세션)'), perfStatus(r.pass, r.errors, !r.covOk),
       r.pass
-        ? `회전12·주행6·복귀6 내내 상수(${base})`
-        : `증식 — geo +${r.maxGeo} tex +${r.maxTex} pipe +${r.maxPipe} · ${base}`
+        ? `회전12·주행·복귀 내내 상수(${base} · ${covNote})`
+        : (r.covOk
+          ? `증식 — geo +${r.maxGeo} tex +${r.maxTex} pipe +${r.maxPipe} · ${base}`
+          : `세션이 안 돌아다녔다(${covNote}) — 개수 판정이 성립하지 않는다. 경로 ${r.cov?.path?.join(' → ')}`)
         + (r.errors.length ? ` · 콘솔 에러 ${r.errors.length}건(하드 실패 — 관측 대상 아님)` : '')
         + ' → `npm run measure:invariants` 로 구간별 표를 본다',
     );
@@ -628,10 +714,12 @@ async function runPerfGates(origin, browser) {
       query: DRAW_CONTROL_QUERY, judgeDraw: true,
     });
     record(
-      7.6, perfLabel('드로우콜 대조군'), perfStatus(r.pass, r.errors),
+      7.6, perfLabel('드로우콜 대조군'), perfStatus(r.pass, r.errors, !r.covOk),
       r.pass
-        ? `사람·GLB 없는 세계에서 draw 상수 (기준선 ${r.base?.draw})`
-        : `draw +${r.maxDraw} · geo +${r.maxGeo} tex +${r.maxTex} — 배칭이 깨졌거나 숨은 것이 보이게 됐다`
+        ? `사람·GLB 없는 세계에서 draw 상수 (기준선 ${r.base?.draw} · 파셀 ${r.cov?.unique}개·재방문 ${r.cov?.revisits})`
+        : (!r.covOk
+          ? `세션이 안 돌아다녔다(파셀 ${r.cov?.unique}개·재방문 ${r.cov?.revisits}) — draw 판정이 성립하지 않는다`
+          : `draw +${r.maxDraw} · geo +${r.maxGeo} tex +${r.maxTex} — 배칭이 깨졌거나 숨은 것이 보이게 됐다`)
         + (r.errors.length ? ` · 콘솔 에러 ${r.errors.length}건` : '')
         + ' → `node scripts/smoke/measure-invariants.mjs --control` 로 구간별 표를 본다',
     );
@@ -709,6 +797,60 @@ async function runPerfGates(origin, browser) {
     );
   } catch (e) {
     record(12, '수면 구현(?water=tsl)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
+  // ── [13] 플레이어 충돌 라이브 (G-COL2 — 검수관 반려 B2, 2026-08-08) ──────────
+  //
+  // `[11][12]` 와 같은 성격이다 — **성능이 아니라 이산 판정**이라 `perfStatus` 를 안 쓰고
+  // 언제나 판정한다.
+  //
+  // 왜 신설했나: 단위 테스트 24건이 판정·조회·집행·배선 네 층을 보는데, **라이브에서
+  // 실제로 막히는지 본 축이 0 이었다.** 배선 검사(§4)는 `main.ts` 소스에 `resolveMove:`
+  // 라는 글자가 있는지만 보므로 값이 `undefined` 로 계산되는 회귀를 통과시킨다.
+  //
+  // 판정은 **대조군 비율**이다(`&collide=0` 대비). 좌표·거리를 적지 않는다 — 근거와
+  // 한계는 `measure-collide.mjs` 헤더 한 곳이다.
+  try {
+    const { runCollide } = await import('./measure-collide.mjs');
+    const r = await runCollide({ browser, origin, basePath: BASE_PATH, log: quiet });
+    // **판정 근거를 둘 다 싣는다.** 자동 우회가 붙은 뒤로 충돌은 "막는 것" 보다
+    // "비껴가게 하는 것" 으로 나타나고, 그때 거리비는 임계를 못 넘는다(실측 0.92).
+    // 어느 축이 통과시켰는지 리포트가 말하지 않으면, 다음 사람이 거리비만 보고
+    // "임계에 아슬아슬하다" 로 오독한다 — **판정과 다른 그림을 주는 리포트**다.
+    record(
+      13, '플레이어 충돌(라이브)', r.pass ? 'PASS' : 'FAIL',
+      r.pass
+        ? `ON ${r.onDist?.toFixed(1)}m / OFF ${r.offDist?.toFixed(1)}m`
+          + ` = 거리비 ${r.ratio?.toFixed(2)} · 종점 이탈 ${r.drift?.toFixed(1)}m — 충돌이 궤적을 바꿨다`
+        : `${r.reason} → \`npm run measure:collide\` 로 단독 실행해 본다`,
+    );
+  } catch (e) {
+    record(13, '플레이어 충돌(라이브)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
+  // ── [14] G-CLICK: 「보이는데 눌러도 아무 일이 없는 버튼」 (검수관 명세 2026-08-10) ──
+  //
+  // `[11][12][13]` 과 같은 성격이다 — **성능이 아니라 이산 판정**이라 `perfStatus` 를
+  // 안 쓰고 **observe 에서도 언제나 판정한다.** 클릭했더니 모달이 떴는가는 편차가 없다.
+  //
+  // 왜 신설했나: 주 메뉴 통일에서 임시 노브를 걷을 때 **그 노브가 하던 JS 배선**을 함께
+  // 잃을 뻔했다. 마크업만 옮기면 **버튼이 보이는데 눌러도 아무 일이 없고**, 그 상태를
+  // 이 저장소의 어떤 게이트도 못 잡는다 — `[4]` 는 `console.error` 만 담는데
+  // `subnav.js` 의 실패 경로는 `console.warn` 이고, `LIVE_PAGES` 에는 **클릭이 0건**이며,
+  // 색 스냅샷은 요소도 색도 맞으니 통과시킨다. 그때는 **1회성 위임으로 손으로** 닫았고
+  // 그것은 게이트가 아니었다(백로그 `G-CLICK`).
+  //
+  // 대상·판정 기준·**못 잡는 것**은 `measure-click.mjs` 헤더 **한 곳**이다 —
+  // 여기에 다시 적지 않는다.
+  try {
+    const { runClick } = await import('./measure-click.mjs');
+    const r = await runClick({ browser, origin, basePath: BASE_PATH, log: quiet });
+    record(14, '클릭 상호작용(로그인 모달)', r.pass ? 'PASS' : 'FAIL', r.pass
+      ? r.summary
+      : `${r.summary} → \`npm run measure:click\` 로 단독 실행해 본다`);
+  } catch (e) {
+    // 못 잰 것은 통과가 아니다 — `[11][12][13]` 과 같은 규약.
+    record(14, '클릭 상호작용(로그인 모달)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
 
   await recordRenderBackend(browser, origin);
@@ -848,6 +990,12 @@ async function main() {
       // 막으려던 그 형태를 `[11]` 에서 새로 만든 셈이었다.
       record(11, '물빠짐 상호작용', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(12, '수면 구현(?water=tsl)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      record(13, '플레이어 충돌(라이브)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      // `[14]` 도 같은 이유로 적는다(검수관 권고 2026-08-10). ⚠ **바로 위 주석이
+      // `[11]` 에 대해 경계한 그 형태를 `[14]` 에서 또 만들었다** — 신설할 때 이 목록에
+      // 넣는 것을 잊었고, 검수관이 코드를 읽어 잡았다. 경고문이 바로 위에 있는데도
+      // 재현됐다는 것이 이 자리의 값이다: **목록에 넣는 것이 규율이 아니라 손이다.**
+      record(14, '클릭 상호작용(로그인 모달)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
     }
   } finally {
     if (browser) await browser.close().catch(() => {});

@@ -13,7 +13,7 @@ import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
 import { PooledParcelBuilder } from './systems/parcel-builder.js';
 import { ParcelFadeSystem } from './systems/parcel-fade.js';
-import { FADE_SECONDS, FADE_EASE, FADE_EASES } from './decide/lod-fade.js';
+import { FADE_SECONDS, FADE_EASE, FADE_EASES, fogFactorAt } from './decide/lod-fade.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
@@ -30,6 +30,7 @@ import {
   type MountedFeature,
 } from './features/index.js';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
+import { createCollider } from './systems/collision.js';
 import { fogBand } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { DEFAULT_BANDS } from './decide/lod.js';
@@ -129,6 +130,20 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     maxBuildings: DEFAULT_LAYOUT.maxBuildings * density,
     maxTrees: DEFAULT_LAYOUT.maxTrees * density,
   };
+
+  // 충돌(태스크 #182). `?collide=0` 으로 끈다 — 예전처럼 통과한다.
+  // **끄는 노브를 두는 이유**: 스모크가 켬/끔을 대조군으로 비교할 수 있어야 "정말 막고
+  // 있는가" 를 잴 수 있고, 벽에 갇히는 사고가 나면 감독이 링크 하나로 빠져나올 수 있다.
+  //
+  // ⚠ **`collide=0` 은 대조군 전용이다 — 게이트의 본 세션에 붙이지 않는다**(검수관 P7).
+  // 이 저장소는 그 사고를 이미 한 번 냈다: 게이트 넷이 `npc=0&vrm=0` 을 켜 둔 채
+  // *"개수가 상수다"* 를 선언했고, 그것은 **라이브에 없는 조건의 세계**였다
+  // (`scripts/smoke/world2-ready.mjs` 가 그 경위를 적고 있다). 충돌을 끄면 주행이
+  // 길어져 세션이 편해지는데, 그 편함은 **라이브가 아닌 것을 잰 대가**다.
+  // 라이브 상태 판정은 언제나 이 노브가 1 인 세션이 한다.
+  const collide = readNum('collide', 1, 0, 1) === 1;
+  // 셀 크기를 따로 넘기지 않는다 — `LAYOUT` 안에 있고, 두 곳에서 읽으면 어긋난다(P4).
+  const collider = createCollider({ layout: LAYOUT });
 
   const scene = new THREE.Scene();
   // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
@@ -266,6 +281,19 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const lodFade = readNum('lodfade', FADE_SECONDS, 0, 5);
   const lodEase = readEnum('lodease', FADE_EASE, FADE_EASES);
 
+  // ── 어디서 출발할 것인가 (감독 실기기 2026-08-09) ─────────────────────────
+  //
+  // 감독: *"가까이 가면 뭔가 건물이 번쩍해"*
+  //
+  //   ?fademode=near  (기본) 그 자리의 **안개가 감춰주는 만큼만** 안개색을 섞는다
+  //   ?fademode=fog          종전 — 거리와 무관하게 **무조건 안개색**으로 덮는다
+  //
+  // 왜 `fog` 가 번쩍이 되는지(안개는 51.2m 부터인데 부품은 50.07m·20.22m 에서도
+  // 태어난다)는 `decide/lod-fade.ts` 의 `fogFactorAt` 한 곳이다 — 여기에 다시 적지 않는다.
+  // `fog` 를 남겨 둔 이유는 **감독이 두 판본을 화면에서 비교해야 하기 때문**이고,
+  // 판정이 끝나면 진 쪽을 걷어낸다(사이클 2항: 후보를 여럿 동시에).
+  const fadeMode = readEnum('fademode', 'near', ['near', 'fog'] as const);
+
   // 걷는 감각 — 감독 실기기에서 값을 확정하기 위해 URL 로 연다.
   //
   //   ?speed=N  걷기 속도(m/s)      기본 5      달리기는 ×2.2
@@ -316,6 +344,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     // 어떤 테스트도 안 걸렸겠지만, `water.ts:316` 주석이 경고하는 형태 그대로였다 —
     // *"`cellX` 를 넘기면 두 셀이 달라지는 날 강이 조용히 밀린다."*
     waterSurfaceY: (x, z) => surfaceYAt(x, z, CELL_Z),
+    // 벽에 막힌다(태스크 #182). 지형을 아는 것은 여기뿐이라는 규약이 물과 같다 —
+    // `PlayerSystem` 은 "이만큼 가려는데 실제로는 어디까지" 만 묻는다.
+    // **`LAYOUT` 을 넘긴다** — `?density=N` 으로 파츠가 늘면 충돌도 같이 늘어야
+    // "보이는데 안 막히는" 것이 안 생긴다.
+    resolveMove: collide ? collider.resolve : undefined,
     seabedY: SEABED_Y,
     onSubmerge: (alpha) => {
       if (!underwaterEl || alpha === lastAlpha) return;
@@ -566,6 +599,26 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           // `three/webgpu` 는 `Fog` 타입을 재수출하지 않아 구조로 읽는다.
           fadeColor: () => (scene.fog as { color?: THREE.Color } | null)?.color ?? fogFallback,
           gate: () => streaming?.ready ?? false,
+          // 그 자리가 안개에 얼마나 묻혔는가. `fog` 모드는 **항상 1** — 거리를 안 보고
+          // 무조건 덮던 종전 동작이고, 감독이 두 판본을 비교하기 위한 대조군이다.
+          //
+          // ⚠ **밴드는 `scene.fog` 에서 읽지 않고 `fogBand(CELL_X)` 로 유도한다.** 씬의
+          // 안개는 시간대·날씨가 흔들고(`night-lights.ts` 가 밤에 색을 들어올린다),
+          // 페이드 판정이 그 흔들림을 따라가면 같은 자리에서 회차마다 다르게 보인다.
+          // 여기서 재는 것은 *"이 거리에서 안개가 감춰줄 수 있는 최대"* 이고 그것은
+          // 밴드에서만 나온다 — `decide/fog.ts` 가 그 SSOT 다.
+          //
+          // ⚠ **`fogDist` 를 곱한다**(검수관 비블로커 P1, 2026-08-09). 안 곱하면
+          // `?fogd=` 를 켠 순간 **판정과 화면이 어긋난다** — 예: `?fogd=3` 이면 씬 안개는
+          // 153.6m 부터인데 판정은 51.2m 를 써서, 80m 앞 부품을 "완전히 안개에 묻혔다" 로
+          // 보고 검정으로 덮는다. **고치려던 번쩍이 그 조합에서 되살아난다.**
+          // 기본값(1)에서는 무해하지만 감독이 두 노브를 함께 여는 순간 판정이 오염된다.
+          fogAt: fadeMode === 'fog' ? undefined : (x, z) => {
+            const dx = x - player.position.x;
+            const dz = z - player.position.z;
+            const b = fogBand(CELL_X);
+            return fogFactorAt(Math.hypot(dx, dz), { near: b.near * fogDist, far: b.far * fogDist });
+          },
         });
         builder = new PooledParcelBuilder({
           pool: createSlotPool(pools!, parcelFade.sink()), cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
@@ -575,6 +628,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           cellX: CELL_X, cellZ: CELL_Z,
           getPosition: () => player.position,
           getDirection: () => player.direction,
+          // 막히면 look-ahead 를 접는다 — 감독 실기기 "분수대에 끼일때 멀리있는 lod가
+          // 나왔다가 안나왔다가" 의 처방. 근거는 `streaming.ts` 의 `getSpeedFactor` 한 곳.
+          getSpeedFactor: () => player.speedFactor,
           markDirty: () => kernel?.markDirty(),
         });
 
@@ -724,6 +780,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 미러링이 되고, 감독이 강을 옮기는 순간 소리 없이 못 미치는 값이 된다.
       // 이 값을 보면 스모크는 **"0 보다 커질 때까지"** 만 걸으면 된다.
       player: { ...player.position, ...player.angles, submersion: player.submerged },
+      // ── 지금 선 파셀 (2026-08-08) ─────────────────────────────────────────
+      // `submersion` 과 **같은 이유로** 연다 — 스모크가 셀 크기를 알아야 하면 그 숫자가
+      // 곧 값 미러링이고, 셀을 바꾸는 순간 소리 없이 어긋난다. 게이트 `[7]` 의 세션이
+      // *"파셀을 몇 개나 건넜는가"* 를 판정하려면(검수관 반려 B1) 이 값이 필요하다.
+      //
+      // ⚠ `Math.round(월드/셀)` 이라는 규약은 이 저장소에 **여덟 곳 넘게 반복**돼 있다
+      // (`collision.ts`·`water.ts`·`minimap.ts`·`npc.ts`·`spawn-spot.ts` …). 여기가
+      // 아홉 번째다. 순수 함수 하나로 모으는 것이 맞지만 그것은 소비자 전부를 건드리는
+      // 별건이라 태스크로 남긴다 — **이 줄이 SSOT 라고 적지 않는다.**
+      parcel: { px: Math.round(player.position.x / CELL_X), pz: Math.round(player.position.z / CELL_Z) },
       frame: adapter!.frameStats(),
       pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
       // ── 그림자 축 (감독 지시 2026-08-02) ─────────────────────────────────
@@ -750,6 +816,20 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
       // 여유 배수를 1로 내린 뒤로는 이 값이 예산의 유일한 감시 수단이다.
       builder: builder!.stats(),
+      // ── LOD 페이드가 **실제로 걸리는가** (2026-08-07) ──────────────────
+      // 감독이 *"디졸브는 별차이가 없네"* 라고 했을 때, 나는 그 원인을 다른 데서
+      // 찾기 시작했다 — **페이드가 돌기는 하는지 한 번도 안 재보고.** 그 추측이
+      // 안개 정합이라는 틀린 진단으로 이어졌고 커밋했다가 되돌렸다.
+      //
+      // `pending` 이 이동 중에도 0 이면 페이드가 한 번도 안 걸린 것이고, 그러면
+      // 화면 차이가 없는 것이 당연하다. **"효과가 없다" 와 "안 돈다" 는 다른 일이다.**
+      fade: {
+        pending: parcelFade?.pending ?? null,
+        duration: lodFade,
+        ease: lodEase,
+        // 게이트가 닫혀 있으면 `sink` 가 즉시 확정한다 — 초기 충전 중 상태를 구별한다.
+        gated: !(streaming?.ready ?? false),
+      },
       /** 켜진 기능 목록 — 리포트만 보고 "무엇이 켜진 상태에서 잰 것인가"를 알 수 있어야 한다 */
       features: features.map((m) => m.name),
       // 기능별 진단. **여기에 기능별 분기가 없다** — 각 기능이 스스로 내놓는다.
