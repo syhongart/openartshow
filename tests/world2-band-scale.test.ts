@@ -4,7 +4,8 @@
 // 결함(전환이 화면을 흔든다)을 노브 자신이 만들게 된다. 그 구멍을 이 검사가 막는다.
 
 import { describe, it, expect } from 'vitest';
-import { scaleBands, withNearExit, validBands, DEFAULT_BANDS, tierFor } from '../frontend/js/world2/decide/lod.js';
+import { scaleBands, withNearExit, withFarEnter, validBands, DEFAULT_BANDS, tierFor } from '../frontend/js/world2/decide/lod.js';
+import { kindsFor } from '../frontend/js/world2/parts/index.js';
 
 describe('scaleBands', () => {
   it('배율을 곱해도 ENTER<EXIT 순서가 산다 — 노브 범위 전체', () => {
@@ -54,5 +55,36 @@ describe('withNearExit — 깜빡임 처방 후보(?nearx=)', () => {
     expect(withNearExit(DEFAULT_BANDS, Number.NaN)).toBe(DEFAULT_BANDS);
     expect(withNearExit(DEFAULT_BANDS, 0)).toBe(DEFAULT_BANDS);
     expect(withNearExit(DEFAULT_BANDS, DEFAULT_BANDS.nearExit)).toBe(DEFAULT_BANDS);
+  });
+});
+
+describe('withFarEnter — 생성을 안개 뒤로(?calm=)', () => {
+  it('안개 100% 지점(2.40)으로 밀어도 순서 불변식이 살고 폭이 유지된다', () => {
+    const b = withFarEnter(DEFAULT_BANDS, 2.40);
+    expect(validBands(b)).toBe(true);
+    expect(b.farEnter).toBe(2.40);
+    // 생성↔반납 히스테리시스 폭(0.30) 유지 — 죽으면 경계에서 파셀이 명멸한다.
+    expect(b.farExit - b.farEnter).toBeCloseTo(DEFAULT_BANDS.farExit - DEFAULT_BANDS.farEnter);
+    // near·mid 무변경 — 그 전환들은 tiers 연장으로 이미 화면상 no-op 이다.
+    expect(b.nearExit).toBe(DEFAULT_BANDS.nearExit);
+    expect(b.midExit).toBe(DEFAULT_BANDS.midExit);
+  });
+
+  it('퇴화 입력(0·NaN·동일값)은 원본 그대로', () => {
+    expect(withFarEnter(DEFAULT_BANDS, Number.NaN)).toBe(DEFAULT_BANDS);
+    expect(withFarEnter(DEFAULT_BANDS, 0)).toBe(DEFAULT_BANDS);
+    expect(withFarEnter(DEFAULT_BANDS, DEFAULT_BANDS.farEnter)).toBe(DEFAULT_BANDS);
+  });
+});
+
+describe('tiers 전 계층 연장 — 소멸 사건이 정말 사라졌는가', () => {
+  it('near→mid→far 어느 전환에서도 종류 집합이 같다 — retier 가 화면상 no-op', () => {
+    // 이 단언이 처방 (a′)의 소멸 축 그 자체다. 어떤 파츠든 tiers 를 도로 좁히면
+    // 여기가 깨진다 — planter.ts 주석의 "다시 좁히면 깜빡임이 되살아난다"의 검사판.
+    const near = new Set(kindsFor('near'));
+    const mid = new Set(kindsFor('mid'));
+    const far = new Set(kindsFor('far'));
+    expect([...near].sort()).toEqual([...mid].sort());
+    expect([...mid].sort()).toEqual([...far].sort());
   });
 });

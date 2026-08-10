@@ -108,9 +108,12 @@ describe('불변식 ② tier 포함관계 — 건물이 순간이동하지 않�
 });
 
 describe('kindsFor — tier별 구성', () => {
-  it('near가 가장 많고 far가 가장 적다', () => {
-    expect(kindsFor('near').length).toBeGreaterThan(kindsFor('mid').length);
-    expect(kindsFor('mid').length).toBeGreaterThan(kindsFor('far').length);
+  it('세 tier 의 종류 집합이 같다 — 소멸 사건 제거 규약 (2026-08-10)', () => {
+    // ⚠ 이 단언은 원래 *"near 가 가장 많고 far 가 가장 적다"* 였고 그 규약이 **깜빡임의
+    // 원인이었다** — tier 강등이 종류를 걷어내는 순간이 화면에서 잡혔다(감독 실측,
+    // 근거는 `parts/planter.ts` 의 tiers 주석 한 곳). 지금 규약은 반대다: 전환이
+    // 어떤 종류도 안 바꿔야 한다. 처방 자체의 검사판은 `world2-band-scale.test.ts` 다.
+    expect([...kindsFor('near')].sort()).toEqual([...kindsFor('far')].sort());
   });
 
   it('모든 tier에 ground와 building이 있다 — 빈 파셀은 구멍으로 보인다', () => {

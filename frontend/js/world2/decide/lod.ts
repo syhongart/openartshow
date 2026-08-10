@@ -79,6 +79,29 @@ export function withNearExit(b: TierBands, nearExit: number): TierBands {
   return { nearEnter, nearExit, midEnter, midExit, farEnter, farExit };
 }
 
+/**
+ * 파셀 **생성 거리**(farEnter)를 지정 값으로 밀고, farExit 는 원래 폭을 유지한 채 따라간다.
+ *
+ * ── 왜 (팀장 판정 (a′), 2026-08-10) ─────────────────────────────────────────
+ * 깜빡임의 마지막 겹은 파셀 생성이다 — farEnter 2.10셀=67.2m 는 안개 진행 62.5% 지점이라
+ * 파셀 전체(건물 포함)가 자라나며 등장하는 것이 **반쯤 보인다**(감독 마크 리포트에
+ * "파셀생성 67.2 반복"이 실제로 찍혔다). 생성을 안개 100% 지점(=fog far) 뒤로 밀면
+ * 등장이 화면에 안 보인다. 소멸 축은 여기가 아니라 파츠 `tiers` 전 계층 연장이 막는다
+ * (`parts/planter.ts` 의 tiers 주석 한 곳).
+ *
+ * farExit 폭(0.30)을 유지하는 이유: 폭이 좁아지면 생성↔반납 히스테리시스가 죽어 경계에서
+ * 파셀이 태어났다 죽었다 반복한다. near·mid 는 건드리지 않는다 — 그 전환들은 이제
+ * 화면상 no-op 이라(위 tiers 연장) 밀 이유가 없다.
+ */
+export function withFarEnter(b: TierBands, farEnter: number): TierBands {
+  if (!(farEnter > 0) || farEnter === b.farEnter) return b;
+  return {
+    ...b,
+    farEnter: Math.max(b.midExit, farEnter),
+    farExit: Math.max(b.midExit, farEnter) + (b.farExit - b.farEnter),
+  };
+}
+
 /** ENTER < EXIT 불변식 검사. 밴드를 만드는 모든 경로가 이걸 통과해야 한다. */
 export function validBands(b: TierBands): boolean {
   return b.nearEnter < b.nearExit
