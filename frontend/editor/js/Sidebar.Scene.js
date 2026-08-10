@@ -228,6 +228,15 @@ function SidebarScene( editor ) {
 
 	const environmentRow = new UIRow();
 
+	// [OpenArtShow] 사용자가 환경을 직접 골랐는가. 아래 `applyBootEnvironment` 의 유일한
+	// 가드이고 `environmentType.onChange` 에서만 켜진다.
+	//
+	// ⚠️ **선언이 여기 있는 이유**: 대입은 바로 아래 `onChange` 콜백 안이고 선언은 원래
+	// 70줄쯤 아래에 있었다. DOM 이벤트로만 실행되니 실제 TDZ 는 안 났지만, **이 파일은
+	// 1회차에 정확히 TDZ 로 부팅을 죽였다**(아래 주석 참조). 검수관 권고 P9 — 비용 1줄로
+	// 위험을 0으로 만든다.
+	let userChoseEnvironment = false;
+
 	const environmentType = new UISelect().setOptions( {
 
 		'None': '',
@@ -298,11 +307,6 @@ function SidebarScene( editor ) {
 	//     놓았고, 이 콜백이 그 **오염된 값을 읽어** dispatch 했기 때문이다. 예외는 0건,
 	//     부팅도 정상 — **아무것도 안 깨진 채로 조용히 틀렸다.**
 	//
-	// 세 번의 공통 원인은 하나다 — **"부팅 시 1회" 를 *어느 시점* 으로 잡을지를 매번 눈으로
-	// 읽고 정했다.** 그래서 시점을 추측하지 않는다: 렌더러 생성을 **신호로 받고**(그때는
-	// `pmremGenerator` 가 채워져 있다), 값도 **여기서 직접 세팅한 뒤** dispatch 한다
-	// (그러면 `refreshUI()` 가 무엇을 해놨든 무관하다).
-	//
 	//   4회차 — 3회차 처방(`rendererCreated` + 1회 가드)은 **새 프로필에서만** 맞았다.
 	//     검수관이 잡았다: `boot.js` 가 부팅 뒤 **비동기로** `editor.fromJSON(state)` 를
 	//     돌려 autosave 를 복원하는데, `Editor.js` 의 `setScene` 이
@@ -330,7 +334,6 @@ function SidebarScene( editor ) {
 	// 0건이었다** — 콘솔만 보는 점검으로는 하나도 안 잡히고 pageerror 축에서만 잡힌다.
 	// 3·4회차는 그 pageerror 축으로도 안 잡혔다(예외가 없으므로) — **화면을 봐야 잡힌다.**
 	const BOOT_ENVIRONMENT = 'ModelViewer';
-	let userChoseEnvironment = false;
 
 	function applyBootEnvironment() {
 
@@ -359,6 +362,12 @@ function SidebarScene( editor ) {
 	// autosave 복원이 끝나면 `setScene` 이 이 신호를 쏜다. 복원된 state 에 환경이 없으면
 	// 여기서 채운다. GLB 임포트 등으로도 자주 발화하지만 위 두 가드가 전부 걸러낸다.
 	signals.sceneGraphChanged.add( applyBootEnvironment );
+
+	// File ▸ New. `Editor.clear()` 는 `environment` 를 null 로 놓고 `editorCleared` 만 쏘므로
+	// (`sceneGraphChanged` 가 아니다) 위 줄에 안 걸린다 — 없으면 빈 씬이 캄캄한 채로 남는다
+	// (검수관 P11). **조건 가드로 바꾼 덕에 첫 import 때 자기치유가 되긴 한다** — 1회 가드
+	// 였으면 New 이후 영구히 어두웠다. 그래도 빈 씬부터 밝은 편이 맞다.
+	signals.editorCleared.add( applyBootEnvironment );
 
 	function onEnvironmentChanged() {
 

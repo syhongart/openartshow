@@ -121,6 +121,19 @@ export const S_MAX = 100;
 // 정밀도가 살아 있는 범위로 자른다.
 export const POS_LIMIT = 100_000;
 
+/**
+ * 회전은 **주기적이라 클램프하지 않고 접는다.** `POS_LIMIT` 의 근거(1e9 에 찍히면 부동
+ * 소수 정밀도가 무너진다)가 회전에도 같이 적용되는데(검수관 P12), 클램프하면 3π 가
+ * 2π(=0)로 잘려 **π 여야 할 회전이 0이 된다.** `%` 는 부호를 보존하며 주기만 접으므로
+ * 정상 입력(`-0.5`)을 건드리지 않는다 — 그래서 `clamped` 오탐이 안 난다.
+ */
+const foldRy = (v: unknown): number => num(v, 0) % (Math.PI * 2);
+
+/** 계약이 아는 항목 키. 여기 없는 키는 `validateOverlay` 가 `unknown-field` 로 보고한다. */
+const KNOWN_ITEM_KEYS = new Set(['src', 'x', 'y', 'z', 'ry', 's']);
+/** 계약이 아는 최상위 키. */
+const KNOWN_ROOT_KEYS = new Set(['version', 'items']);
+
 /** 항목 하나의 수치 정규화. `normalizeOverlay` 와 `validateOverlay` 가 **함께** 쓴다. */
 function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem {
   return {
@@ -128,7 +141,7 @@ function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem 
     x: clamp(item.x, -POS_LIMIT, POS_LIMIT, 0),
     y: clamp(item.y, -POS_LIMIT, POS_LIMIT, 0),
     z: clamp(item.z, -POS_LIMIT, POS_LIMIT, 0),
-    ry: num(item.ry, 0),
+    ry: foldRy(item.ry),
     s: clamp(item.s, S_MIN, S_MAX, 1),
   };
 }
@@ -195,9 +208,11 @@ export function loadOverlay(raw: unknown): Overlay {
 
 /** `validateOverlay` 가 돌려주는 거부·변경 사유. */
 export interface OverlayIssue {
-  /** 항목 인덱스. 파일 전체에 대한 사유(`items-not-array`)에는 없다. */
+  /** 항목 인덱스. 파일 전체에 대한 사유(`items-not-array`·`version-too-new`)에는 없다. */
   index?: number;
-  reason: 'not-object' | 'unsafe-src' | 'bad-number' | 'clamped' | 'items-not-array';
+  reason:
+    | 'not-object' | 'unsafe-src' | 'bad-number' | 'clamped'
+    | 'items-not-array' | 'version-too-new' | 'unknown-field';
 }
 
 /**
@@ -214,16 +229,36 @@ export interface OverlayIssue {
  * 축이었다 — 편집 UI 가 *"issues 0 = 안전"* 으로 읽으면 **전부 사라진 파일을 안전하다고
  * 표시**한다.
  *
- * 즉 이 함수의 계약은 **`issues` 가 비면 무손실**이다. 나중에 의도적 정규화(예: 경로
- * 정규화)를 넣는다면 그것도 사유로 보고하거나 이 문장을 먼저 고쳐야 한다.
+ * 즉 이 함수의 계약은 **`issues` 가 비면 무손실**이다 — 값도, 버전도, 이 계약이 모르는
+ * 필드도 조용히 사라지지 않는다. 나중에 의도적 정규화(예: 경로 정규화)를 넣는다면 그것도
+ * 사유로 보고하거나 이 문장을 먼저 고쳐야 한다.
+ *
+ * ⚠ **그 문장은 한 번 거짓이었다**(검수관 B4 반려). `version` 을 아예 안 읽어서
+ * `{version: 999, …}` 가 `issues: []` 로 **"커밋 가능"** 판정을 받으면서 999 가 소실되고
+ * 미래 버전 내용이 그대로 해석됐다 — `loadOverlay` 는 같은 입력에 items 0 을 내는데,
+ * 진입점만 좁히고 **같은 `raw` 를 받는 형제 함수에는 가드를 안 둔 것**이다(B1 을 고치며
+ * 만든 사각). 미지 필드도 같았다: `normalizeItem` 이 6키 화이트리스트라 `sx`·`name` 이
+ * 조용히 버려졌다. 둘이 겹치면 **v2 파일을 v1 코드로 검증했을 때 "문제 없음" 판정과 함께
+ * 버전·신규 필드가 모두 날아간 파일이 커밋된다.**
  */
 export function validateOverlay(raw: unknown): { overlay: Overlay; issues: OverlayIssue[] } {
   const o = raw as Record<string, unknown> | null;
   const issues: OverlayIssue[] = [];
 
+  // 버전 판정이 먼저다 — `loadOverlay` 와 **같은 순서**여야 두 함수가 같은 파일에 대해
+  // 같은 말을 한다. 이 가드가 없으면 관문만 통과시키고 런타임은 안 얹는 상태가 된다.
+  if (readVersion(raw) > OVERLAY_VERSION) {
+    issues.push({ reason: 'version-too-new' });
+    return { overlay: emptyOverlay(), issues };
+  }
+
   if (!o || typeof o !== 'object' || !Array.isArray(o.items)) {
     issues.push({ reason: 'items-not-array' });
     return { overlay: emptyOverlay(), issues };
+  }
+
+  for (const k of Object.keys(o)) {
+    if (!KNOWN_ROOT_KEYS.has(k)) { issues.push({ reason: 'unknown-field' }); break; }
   }
 
   const items: OverlayItem[] = [];
@@ -246,6 +281,11 @@ export function validateOverlay(raw: unknown): { overlay: Overlay; issues: Overl
     // 값이 바뀌었으면 그것도 사유다 — "관문 통과 = 무손실" 이어야 편집 UI 가 믿을 수 있다.
     for (const k of ['x', 'y', 'z', 'ry', 's'] as const) {
       if (item[k] !== undefined && item[k] !== norm[k]) { issues.push({ index, reason: 'clamped' }); break; }
+    }
+
+    // 계약이 모르는 필드는 출력에서 사라진다 — 사라진다는 사실 자체가 보고 대상이다.
+    for (const k of Object.keys(item)) {
+      if (!KNOWN_ITEM_KEYS.has(k)) { issues.push({ index, reason: 'unknown-field' }); break; }
     }
   });
 

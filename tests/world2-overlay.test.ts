@@ -39,10 +39,19 @@
 // "상수가 100 인가" 가 아니다. 후자를 테스트로 고정하려면 값을 테스트에 **또** 적어야
 // 하고, 그것이 이 저장소가 세 번 겪은 값 미러링이다(옛 `minY(120)` 사고).
 //
-// ⚠ **그러므로 상수 값 자체의 회귀는 이 파일이 안 잡는다. 잡는 것은 화면이다** —
-// `S_MAX` 가 10 이 되면 큰 모델이 더 이상 안 커지고, `POS_LIMIT` 가 1000 이 되면 먼
-// 배치가 잘린다. 둘 다 눈에 보인다. 못 잡는 것을 적어 두는 것이 규율이고 여기가 그 자리다.
-// 이 문장을 지우고 "7/7 검출" 로 적으면 다음 사람이 이 사각을 모른다.
+// ⚠ 그래서 **상수 값 자체를 못박는 단언을 따로 뒀다**(아래 `상수 핀` 절). 처음에는 그러지
+// 않고 *"상수 값의 회귀는 이 파일이 안 잡는다. 잡는 것은 화면이다"* 라고 적었는데, 그 판단이
+// **두 군데 틀렸다**(검수관 P2 — 절반 인정, 전제 기각):
+//
+//   ① **이지선다가 아니었다.** 행위 단언은 지금처럼 심볼로 두고 값 핀 단언을 **따로** 두면
+//      된다(비용 3줄). 값 미러링이 위험한 이유는 *"두 곳이 조용히 어긋나는 것"* 인데, 핀
+//      단언은 어긋나면 **반드시 빨간불**이라 조용히 어긋날 수가 없다. 내가 근거로 든
+//      `minY(120)` 사고는 **정반대 형태**였다 — 낡은 임계값이 표본을 빈 배열로 만들어
+//      **공허하게 통과**했다. 핀 단언은 공허하게 통과할 수 없다.
+//   ② **보상통제 주장 자체가 거짓이었다.** 같은 diff 의 `overlay.ts` 헤더가 **집행 지점 0**
+//      이라고 적고 있다 — 오버레이를 그리는 소비자가 아직 없으므로 `S_MAX` 가 10 이 돼도
+//      화면에 아무 변화가 없다. *"화면이 잡는다"* 는 소비자가 붙은 뒤에나 참이고, 그때까지는
+//      **아무 축도 안 잡고 있었다.** 보상통제를 적을 때는 그것이 **지금** 작동하는지를 본다.
 //
 // 검수관 P2 가 지적한 **원래** 결함은 이것과 별개였고 실제로 닫혔다: 예전 단언이
 // `toBeLessThanOrEqual(100)` 이라 `s: 1e9` 가 **50 으로** 잘못 클램프돼도 통과했다.
@@ -56,9 +65,8 @@
 // 커밋하라"* 고 요구했다 — 그대로 따랐으면 **구멍 뚫린 정규식이, 그리고 되살린 B1 결함이
 // 커밋될 뻔했다.** 뮤테이션 중 워킹트리는 커밋 대상이 아니다.
 //
-// ⚠ 그리고 그 뮤테이션이 워킹트리에 얹혀 있는 동안 자동 훅이 *"미커밋 변경을 커밋하라"* 고
-// 요구했다 — 그대로 따랐으면 **구멍 뚫린 정규식이 커밋될 뻔했다.** 뮤테이션 중 워킹트리는
-// 커밋 대상이 아니다.
+// ⚠ **4회차(B4 해소분)는 아직 안 쟀다** — `version-too-new`·`unknown-field`(항목·최상위)·
+// `ry` 주기 접기·상수 핀 넷. 발주해 두었고 결과는 다음 커밋에서 이 자리에 채운다.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -140,6 +148,18 @@ describe('loadOverlay — 소비자 진입점 (통합 경로)', () => {
   });
 });
 
+describe('상수 핀 — 값이 바뀌면 소리가 나야 한다', () => {
+  // 아래 다른 단언들은 상수를 **심볼로** 읽으므로 값이 바뀌면 기대값도 함께 움직인다.
+  // 그 축이 지키는 것은 "clamp 가 상수를 쓰는가" 이고, "상수가 얼마인가" 는 여기서만 잡힌다.
+  // 값을 바꿀 정당한 이유가 생기면 이 줄도 함께 고치면 된다 — 요점은 **조용히** 바뀌지
+  // 않는 것이다.
+  it('경계 상수는 이 값이다', () => {
+    expect(S_MIN).toBe(0.01);
+    expect(S_MAX).toBe(100);
+    expect(POS_LIMIT).toBe(100_000);
+  });
+});
+
 describe('emptyOverlay — 공유되지 않는다', () => {
   it('호출할 때마다 새 객체를 준다 — 한 소비자의 push 가 다른 소비자에게 보이면 안 된다', () => {
     const a = emptyOverlay();
@@ -194,6 +214,21 @@ describe('normalizeOverlay — 던지지 않고 정규화한다', () => {
     expect(out.items[0].x).toBe(-POS_LIMIT);
   });
 
+  // 회전만 클램프가 아니라 주기 접기다(검수관 P12). 클램프하면 3π 가 2π(=0)로 잘려
+  // **π 여야 할 회전이 0** 이 된다 — 좌표와 달리 회전은 주기적이라 축이 다르다.
+  it('회전은 주기를 접는다 — 3π 는 π 이고 정상 입력은 안 건드린다', () => {
+    const out = normalizeOverlay({
+      items: [
+        { src: 'assets/models/a.glb', ry: Math.PI * 3 },
+        { src: 'assets/models/b.glb', ry: -0.5 },
+        { src: 'assets/models/c.glb', ry: 1e12 },
+      ],
+    });
+    expect(out.items[0].ry).toBeCloseTo(Math.PI);
+    expect(out.items[1].ry).toBe(-0.5);
+    expect(Math.abs(out.items[2].ry)).toBeLessThan(Math.PI * 2);
+  });
+
   it('항목이 객체가 아니면 건너뛴다', () => {
     const out = normalizeOverlay({ items: [null, 'x', 42, { src: 'assets/models/a.glb' }] });
     expect(out.items).toHaveLength(1);
@@ -241,6 +276,30 @@ describe('validateOverlay — 내보내기 관문', () => {
       expect(overlay).toEqual({ version: OVERLAY_VERSION, items: [] });
       expect(issues).toEqual([{ reason: 'items-not-array' }]);
     }
+  });
+
+  // ★ 검수관 B4 가 만든 단언 둘. 진입점(`loadOverlay`)만 좁히고 **같은 `raw` 를 받는
+  //   형제 함수에는 가드를 안 둔 것**이 B1 을 고치며 생긴 사각이었다.
+  it('미래 버전은 관문에서도 사유로 보고한다 — 두 함수가 같은 파일에 같은 말을 해야 한다', () => {
+    const raw = { version: OVERLAY_VERSION + 1, items: [{ src: 'assets/models/a.glb', x: 1 }] };
+    const { overlay, issues } = validateOverlay(raw);
+    expect(issues).toEqual([{ reason: 'version-too-new' }]);
+    expect(overlay.items).toHaveLength(0);
+    // 관문이 "커밋 가능" 이라 했는데 런타임은 안 얹는 상태가 되면 안 된다.
+    expect(loadOverlay(raw).items).toHaveLength(0);
+  });
+
+  it('계약이 모르는 항목 필드가 사라지면 사유로 보고한다 — v2 파일을 v1 이 검증할 때', () => {
+    const { overlay, issues } = validateOverlay({
+      items: [{ src: 'assets/models/a.glb', x: 1, y: 0, z: 0, ry: 0, s: 1, sx: 5, name: 'hall' }],
+    });
+    expect(issues).toEqual([{ index: 0, reason: 'unknown-field' }]);
+    expect(Object.keys(overlay.items[0]).sort()).toEqual(['ry', 's', 'src', 'x', 'y', 'z']);
+  });
+
+  it('최상위 미지 필드도 본다', () => {
+    const { issues } = validateOverlay({ version: OVERLAY_VERSION, items: [], meta: { author: 'x' } });
+    expect(issues).toEqual([{ reason: 'unknown-field' }]);
   });
 
   it('전부 정상이면 issues 가 비어 있다 — 이것이 커밋 가능 조건이다', () => {
