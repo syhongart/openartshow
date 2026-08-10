@@ -54,6 +54,31 @@ export function scaleBands(b: TierBands, k: number): TierBands {
   };
 }
 
+/**
+ * near 전환점(nearExit)을 지정 거리로 밀고, 뒤 밴드들을 순서가 살게 최소 보정한다.
+ *
+ * ── 왜 (팀장 판정 2026-08-10, 처방 (a)) ─────────────────────────────────────
+ * 깜빡임의 원인이 tier 전환(강등선 nearExit 1.30셀=41.6m — 안개 0% 완전 노출)의
+ * 부품 교체로 **실측 확정**됐다(`?band=2` 에서 소멸, 감독 판정 "깜빡이는건 없어졌어").
+ * 처방은 교체를 안개가 감춰주는 거리 뒤로 미는 것 — fademode=near 철학("그 자리
+ * 안개가 감춰주는 만큼만")과 같은 축이다. **얼마나 밀어야 충분한지는 화면으로만
+ * 판정되므로** 값을 노브(`?nearx=`)로 열어 후보를 비교한다(결정 사이클 2항).
+ *
+ * 보정 규칙: nearEnter 는 원래 폭(0.15)을 유지해 히스테리시스가 살고, mid·far 는
+ * ENTER<EXIT 순서가 깨지는 만큼만 바깥으로 밀린다(원래 값보다 안으로 오지 않는다).
+ * far 가 밀리면 렌더 반경이 안개 far(2.40)를 넘을 수 있다 — 그 구간은 안개 100%
+ * 뒤라 화면에는 안 보이고 슬롯 예산만 는다(예산은 밴드에서 유도되므로 따라온다).
+ */
+export function withNearExit(b: TierBands, nearExit: number): TierBands {
+  if (!(nearExit > 0) || nearExit === b.nearExit) return b;
+  const nearEnter = nearExit - (b.nearExit - b.nearEnter);
+  const midEnter = Math.max(b.midEnter, nearExit);
+  const midExit = Math.max(b.midExit, midEnter + (b.midExit - b.midEnter));
+  const farEnter = Math.max(b.farEnter, midExit);
+  const farExit = Math.max(b.farExit, farEnter + (b.farExit - b.farEnter));
+  return { nearEnter, nearExit, midEnter, midExit, farEnter, farExit };
+}
+
 /** ENTER < EXIT 불변식 검사. 밴드를 만드는 모든 경로가 이걸 통과해야 한다. */
 export function validBands(b: TierBands): boolean {
   return b.nearEnter < b.nearExit
