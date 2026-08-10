@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ko" data-nav-page="about">
+<html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -115,16 +115,15 @@
 
   .topnav {
     display: flex;
+    align-items: center;
     gap: clamp(14px, 3vw, 34px);
     flex-wrap: wrap;
   }
-  /* `button` 이 셀렉터에 함께 있는 이유 — 주 메뉴 노브(`?nav=`, `js/nav-knob.js`)가
-     후보 B·C·D 에서 로그인·회원가입을 `<button>` 으로 넣는다(링크가 아니라 모달을
-     연다). 룩은 이 규칙 하나가 정해야 한다 — 노브 쪽 CSS 에 같은 값을 다시 적으면
-     그 순간 값 미러링이고, 한쪽만 고치는 날 서브 메뉴만 색이 갈린다.
-     ⚠ **현행(노브 없음) 화면은 이 확장에 영향받지 않는다**: `.topnav` 안에 `button`
-     이 0개라 매칭 대상이 없고, `:is(a, button)` 의 명시도는 `a` 단독과 같은 (0,1,1)
-     이라 캐스케이드 순위도 그대로다. */
+  /* `button` 이 셀렉터에 함께 있는 이유 — 주 메뉴의 로그인·회원가입이 `<button>` 이다
+     (이동이 아니라 모달을 연다). 룩은 이 규칙 **하나**가 정한다: 배선 스크립트
+     (`js/subnav.js`)나 다른 규칙에 같은 값을 다시 적으면 그 순간 값 미러링이고,
+     한쪽만 고치는 날 로그인·회원가입만 색이 갈린다.
+     `:is(a, button)` 의 명시도는 `a` 단독과 같은 (0,1,1)이라 캐스케이드 순위도 그대로다. */
   .topnav a, .topnav button {
     text-decoration: none;
     color: rgba(255,255,255,0.72);
@@ -138,6 +137,32 @@
   }
   .topnav :is(a, button):hover { color: #fff; border-color: var(--accent-dark); }
   .topnav :is(a, button).current { color: var(--accent-dark); }
+  /* 브라우저 기본 버튼 껍데기만 벗긴다. 위 규칙이 `border-bottom` 만 덮으므로 나머지
+     세 면의 기본 테두리가 남는다 — 그것만 0 으로 접는다. 색·크기·자간은 위 규칙 소관. */
+  .topnav button {
+    background: none;
+    border-width: 0 0 1px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  /* 로그인 영역은 순수 그룹이다 — 레이아웃에 관여하지 않아야 `.topnav` 의 flex 가
+     버튼 하나하나를 직접 배치하고(줄바꿈 포함), 로그인 상태로 갈릴 때도 간격이 같다. */
+  .nav-auth-slot { display: contents; }
+  /* 관람 항목 | 로그인·회원가입 | 입장하기 를 가르는 구분자.
+     ⚠ 첫 판본은 `background: currentColor` + opacity 로 「값을 안 정하는」 쪽을 골랐고
+     **화면에서 안 보였다**(육안 실측 2026-08-09, 데스크톱·모바일 모두). `.topnav` 에도
+     `.topbar` 에도 `color` 선언이 없어 상속된 것이 본문 잉크였고, 다크 밴드 위에서는
+     사실상 검정이다 — 링크는 `color` 를 자기 규칙으로 따로 받으므로 「인접 링크와 같은
+     색」이라는 전제 자체가 틀렸다. **값을 안 적는 것이 값을 틀리게 적는 것보다 낫지
+     않았다.** 그래서 명시한다: 링크의 흰 계열 알파(0.72)보다 낮춰 구분자가 항목을
+     이기지 않게 한다. 0.25 는 홈 `.nav-auth-sep` 과 같은 역할·같은 알파다. */
+  .topnav .nav-sep {
+    flex: none;
+    align-self: center;
+    width: 1px;
+    height: 12px;
+    background: rgba(255,255,255,0.25);
+  }
 
   /* ------------------------------------------------------------------ hero */
   .hero {
@@ -292,7 +317,16 @@
 
   /* --------------------------------------------------------------- mobile */
   @media (max-width: 640px) {
-    .topnav { display: none; }
+    /* ⚠ 여기에 `.topnav { display: none; }` 이 있었다. **지웠다** — 그 줄 때문에
+       ≤640px 에서 주 메뉴가 **통째로 없었다**(홈처럼 햄버거 시트로 옮긴 것이 아니라
+       그냥 사라졌다: 서브에는 시트가 없다). 메뉴를 홈 기준으로 통일해 놓고 폰에서만
+       안 보이면 통일이 반쪽이고, **감독은 모바일로 보신다** — 판정하신 화면(`?nav=b`)이
+       메뉴가 보이는 쪽이었다.
+       넘침이 안 나는 근거는 `.topnav` 의 `flex-wrap: wrap` 이다(폭이 모자라면 줄로
+       내려간다). 실측 320·390·640 에서 가로넘침 0.
+       **여기서 멈추는 경계**: 제대로 된 처방은 홈처럼 **시트**를 주는 것이고 그것은
+       룩 설계라 별건이다(백로그 `KNOB3`). 지금 것은 항목 수가 늘면 상단바가 세 줄까지
+       두꺼워지는 wrap 배치다 — 그 한계를 알고 쓴다. */
     .hero { padding: 64px clamp(16px, 5vw, 32px) 52px; }
     .essay-main { padding: 48px clamp(16px, 5vw, 24px) 24px; }
     .essay-section { margin-bottom: 52px; }
@@ -341,10 +375,22 @@
      정의가 없다**고 읽는다(실제로는 둘은 원래 다크다).
 
      ⚠ 아래 `[data-theme]` 두 블록은 **남겨 둔다. 그러나 지금 아무 효과가 없다** —
-     이 속성을 설정하는 코드가 저장소 전체에 **0건**이다(2026-08-09 실측. `studio.html` 의
-     `data-theme` 은 전시 조명 프리셋이라 다른 물건이다). 죽은 셀렉터를 남기는 이유는
-     G-DARK1 이 열릴 때의 출발점이기 때문이고, **「다크 토글이 이미 있다」로 읽지 말라**는
-     것이 이 문단의 목적이다. */
+     **`frontend/` 라이브 진입점 어디에도** 이 속성을 설정하는 코드가 **0건**이다
+     (2026-08-10 재실측). `studio.html` 의 `data-theme` 은 전시 조명 프리셋이라 다른
+     물건이다.
+
+     ⚠⚠ 이 줄은 *"저장소 **전체**에 0건"* 이라고 적고 있었고 **부정확했다**(검수관 P1,
+     2026-08-09). 실측하면 `docs/mockups/openartshow-screens.html:1304` 에
+     `root.setAttribute('data-theme', next)` 가 **1건 있다.** 결론(죽은 셀렉터)은
+     그대로다 — 그 파일은 `scripts/lib/entrypoints.mjs` 의 `ENTRYPOINTS` 에 없는
+     독립 시안이라 **빌드 대상이 아니고 배포물에도 들어가지 않는다**(조립본 실측:
+     `_site` 에 그 파일 0건). 즉 이 페이지의 토글을 켜 주는 코드는 아니다.
+     **그런데도 문장을 고치는 이유**: 결론이 같아도 **범위를 실측 없이 「전체」로 적으면
+     다음 사람이 그 말을 믿고 안 찾는다.** 이 저장소가 `main` unprotected 오기로 7일을
+     잃은 것이 정확히 그 형태다. 절대 표현은 실측한 범위로 좁혀 적는다.
+
+     죽은 셀렉터를 남기는 이유는 G-DARK1 이 열릴 때의 출발점이기 때문이고,
+     **「다크 토글이 이미 있다」로 읽지 말라**는 것이 이 문단의 목적이다. */
   :root[data-theme="dark"] {
     /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
     --accent: var(--oas-accent);
@@ -414,12 +460,30 @@
 
 <div class="topbar">
   <a class="brand" href="./index.html"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
-  <nav class="topnav">
-    <a href="./index.html">랜딩</a>
+  <!-- 주 메뉴 — 홈(`landing.html`)과 **같은 구성·같은 명칭**이다. 감독 판정 2026-08-10:
+       후보 넷을 `?nav=` 노브로 라이브 비교하고 **B(홈 기준 통일)** 를 고르셨다.
+       바뀐 것 셋: ①「랜딩」 제거(왼쪽 브랜드 로고가 이미 홈 링크라 역할이 겹쳤다)
+       ②「이용 안내」→「가이드」·「전시장 입장」→「입장하기」(같은 목적지를 두 이름으로
+       부르던 것을 홈 쪽으로 통일) ③「작가 스튜디오」는 여기서 빠지고 홈의 auth 영역에만
+       선다 — 서브·홈 비대칭은 노브 B 가 그린 그대로이고, 감독이 그 화면을 보고 고르셨다.
+       앵커 셋은 `./index.html#…` 으로 **홈으로 건너뛴다**: 이 페이지에는 그 섹션이 없어
+       `#exhibitions` 만 쓰면 아무 데도 안 간다. -->
+  <nav class="topnav" aria-label="주 메뉴">
+    <a href="./index.html#exhibitions">전시</a>
+    <a href="./index.html#photowall">포토월</a>
+    <a href="./index.html#pricing">요금제</a>
     <a href="./about.html" class="current">소개</a>
-    <a href="./app/">전시장 입장</a>
-    <a href="./app/studio.html">작가 스튜디오</a>
-    <a href="./guide.html">이용 안내</a>
+    <a href="./guide.html">가이드</a>
+    <span class="nav-sep" aria-hidden="true"></span>
+    <!-- 로그인·회원가입은 `<a>` 가 아니라 `<button>` 이다(이동이 아니라 모달을 연다).
+         룩은 아래 `.topnav a, .topnav button` 규칙 하나가 정한다. 배선은
+         `js/subnav.js` — 로그인 상태에서는 이 자리가 이름 링크로 갈린다. -->
+    <span class="nav-auth-slot" id="navAuthSlot">
+      <button type="button" data-auth-mode="login">로그인</button>
+      <button type="button" data-auth-mode="signup">회원가입</button>
+    </span>
+    <span class="nav-sep" aria-hidden="true"></span>
+    <a href="./app/">입장하기</a>
   </nav>
 </div>
 
@@ -511,8 +575,8 @@
 })();
 </script>
 
-<!-- 주 메뉴 통합 후보 노브(`?nav=a|b|c|d`). 노브가 없으면 DOM 을 한 노드도 만지지 않는다. -->
-<script type="module" src="./js/nav-knob.js"></script>
+<!-- 주 메뉴 로그인 영역 배선. 메뉴 마크업은 위 `.topnav` 에 있고 이 파일은 배선만 한다. -->
+<script type="module" src="./js/subnav.js"></script>
 
 </body>
 </html>
