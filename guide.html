@@ -360,7 +360,9 @@
     border-radius: 6px;
     padding: 20px;
   }
-  .diff-card.gold { border-color: rgba(61,107,80,0.5); background: linear-gradient(180deg, rgba(61,107,80,0.06), transparent 40%); }  /* 라이트 표면 — green-text(ink) rgb */
+  /* 테두리·워시 둘 다 `--accent`(= green-text)의 알파 변형이다. 값을 여기 적지 않고 1층
+     채널 토큰을 참조한다 — 폐기색이 박혀 있던 자리다(경위는 `css/tokens.css` 한 곳). */
+  .diff-card.gold { border-color: rgb(var(--oas-green-text-rgb) / 0.5); background: linear-gradient(180deg, rgb(var(--oas-green-text-rgb) / 0.06), transparent 40%); }
   .diff-card h4 { margin: 0 0 8px; font-weight: 500; font-size: 15px; }
   .diff-card ul { margin: 10px 0 0; padding-left: 18px; font-size: 13.5px; color: var(--text-dim); }
   .diff-card ul li { margin-bottom: 6px; }
@@ -407,7 +409,7 @@
   footer .brand .w-lead { color: var(--accent); }
   footer .brand .dot { color: var(--text-dim); }
   footer p { color: var(--text-dim); font-size: 13px; margin: 12px 0 0; }
-  footer a.mail { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(61,107,80,0.4); }  /* 라이트 표면 — green-text(ink) rgb */
+  footer a.mail { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgb(var(--oas-green-text-rgb) / 0.4); }
 
   /* --------------------------------------------------------------- mobile */
   @media (max-width: 880px) {
@@ -447,6 +449,9 @@
   :root[data-theme="dark"] {
     /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
     --accent: var(--oas-accent);
+    /* 히어로 밴드가 다크 지면에 녹는 결함(대비 1.000)의 수선. 경위·산술은 `about.html` 의
+       같은 자리 주석 **한 곳**이다 — 여기에 다시 적지 않는다. */
+    --ink: var(--oas-dark-1);
     --paper: var(--oas-dark-anchor);
     --paper-2: var(--oas-dark-1);
     --line: var(--oas-dark-line);
@@ -470,7 +475,7 @@
     --text: var(--oas-ink-cool);
     --text-dim: var(--oas-ink-dim);
   }
-  :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(61,107,80,0.4); }  /* green-text(ink) rgb */
+  :root[data-theme="light"] footer a.mail { border-bottom-color: rgb(var(--oas-green-text-rgb) / 0.4); }
 
   /* ---------- P1-①: skip-link + focus-visible (기존 focus 스타일 0 — 최소 보강) ---------- */
   .skip-link {
@@ -507,7 +512,7 @@
   <script type="module" crossorigin src="/openartshow/_bundle/preload-helper-DASV_Wa7.js"></script>
   <script type="module" crossorigin src="/openartshow/_bundle/nav-knob-ByHR1Yet.js"></script>
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
-  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-CejtQNix.css">
+  <link rel="stylesheet" crossorigin href="/openartshow/_bundle/tokens-Dn3d6B3v.css">
 </head>
 <body>
 
