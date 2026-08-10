@@ -106,6 +106,26 @@ const SHADOW_BAND = readNum('shband', DEFAULT_BANDS.farExit, 0.5, 4);
 const SHADOW_MAP = Math.round(readNum('smap', 2048, 256, 4096));
 
 /**
+ * 그림자 진하기(0=없음 · 1=완전 검정). three r171 `LightShadow.intensity`.
+ *
+ * ── 왜 여는가 (팀장 원인 보고 2026-08-10, 감독 채택 A안) ────────────────────
+ * *"뒤로 움직이는 순간 건물 밝기가 바뀌어"* 의 직접 원인은 **캐스터의 이산 등장**이다:
+ * 파셀이 60~70m 지점에서 태어나는 순간 그 타워(60m)의 그림자(낮 고도 47.4° 에서 ~55m)가
+ * 시야 안 건물 위로 **한 프레임에** 떨어진다. 받는 쪽은 결백하다 — r171 WebGPU 는 그림자
+ * 맵 범위 밖을 강제 "밝음" 처리하므로(three.webgpu.js:21137) 어두워지는 방법은 새 캐스터
+ * 등장뿐이고, 그 자리는 스트리밍 경계뿐이다. 감독 실측 다섯 축(페이드 OFF·낮·GLB OFF·
+ * 범위 4배·태양 OFF)이 전부 이 하나로 설명된다.
+ *
+ * 이 값은 그 이산 사건을 없애지 않는다 — **켜지고 꺼질 때의 대비를 줄인다.** 1.0 이면
+ * 완전 검정이 통째로 떨어지고, 0.5 면 절반 농도라 튐이 절반이 된다. 근본 처방(키 큰
+ * 파츠의 로드 반경을 그림자 길이만큼 확장)은 별건 태스크다.
+ *
+ * 기본값은 종전(1.0)이다 — 판정 전에 룩을 바꾸지 않는다. 감독 판정이 오면 그 값과
+ * 근거를 여기 적고 기본값을 옮긴다.
+ */
+const SHADOW_INTENSITY = readNum('shint', 1, 0, 1);
+
+/**
  * 그림자 카메라 파라미터. **한 번 유도해 두 곳이 함께 쓴다** — 조명 설정(프러스텀)과
  * 하늘(`shadowDist`, 태양을 얼마나 물릴지)이 따로 계산하면 짝이 어긋나고, 그 어긋남은
  * "그림자가 없다"로만 보여 원인을 짚기 어렵다.
@@ -428,6 +448,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       body: document.getElementById('w2-hud-body')!,
       copy: document.getElementById('w2-hud-copy')!,
       toggle: document.getElementById('w2-hud-toggle')!,
+      // 마크 버튼은 **없어도 된다** — 위 조건절에 넣지 않은 이유가 그것이다.
+      // 진단용 추가물이 HUD 전체를 인질로 잡으면, 버튼 하나 오타에 실기기 수치를
+      // 통째로 못 받는다.
+      mark: document.getElementById('w2-hud-mark'),
     }, {
       backend: () => adapter?.backend ?? '—',
       counts: () => {
@@ -514,6 +538,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         dir.shadow.camera.near = SHADOW.near;
         dir.shadow.camera.far = SHADOW.far;
         dir.shadow.normalBias = SHADOW.normalBias;
+        // 진하기. `?shint=` — 근거는 위 `SHADOW_INTENSITY` 주석 한 곳이다.
+        (dir.shadow as unknown as { intensity: number }).intensity = SHADOW_INTENSITY;
         dir.shadow.camera.updateProjectionMatrix();
         // **타깃을 씬에 넣는다.** three 는 `target.matrixWorld` 로 광원 방향을 정하는데,
         // 씬 밖 객체는 갱신되지 않아 타깃을 옮겨도 반영이 안 된다. 기본 타깃은 월드
