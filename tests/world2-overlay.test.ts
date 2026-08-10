@@ -73,11 +73,23 @@
 //   ④ `foldRy` 를 클램프로 교체                → 1 failed ✓  (기대 π vs 실측 2π)
 //   ⑤ `S_MAX` 100 → 10                        → 1 failed ✓  ← **2회차의 0 failed 가 메워졌다**
 //
-// ⚠ **5회차(B5·B6·B7 해소분)는 아직 안 쟀다** — `version-invalid`·화이트리스트 유도·
-// `prepareRaw` 공유·`folded` 분리 넷. 발주해 두었고 결과는 다음 커밋에서 채운다.
-// 검수관 지정: **M1 형태**(화이트리스트에만 키를 더하는 뮤테이션)를 반드시 포함할 것.
-// 그런데 유도로 바꾼 뒤에는 M1 을 만들 수가 없다 — 그 자리를 *"유도를 목록으로 되돌리기"*
-// 로 대신한다. **뮤테이션이 불가능해진 것과 검출되는 것은 다른 일**이므로 그렇게 적는다.
+// ── 뮤테이션 실측 5회차 — B5·B6·B7 해소분 (2026-08-10, executor) ────────────
+//   ① `readVersion` 정수·범위 검사 완화 (B5 재현)      → 2 failed ✓
+//   ② 화이트리스트 유도 → 목록 + `'name'` (검수관 M1)  → **0 failed**
+//   ③ `validateOverlay` 가 `prepareRaw` 미사용 (B7)    → 2 failed ✓
+//   ④ `folded` 를 `clamped` 로 흡수                    → 1 failed ✓
+//   ⑤ `foldRy` 삭제 (회전을 안 접음)                   → 2 failed ✓
+//
+// ⚠ **②의 0 failed 를 "유도가 결함을 봉쇄했으니 됐다" 로 읽으면 절반만 맞다.** 유도를
+// 유지하는 한 M1 형태를 만들 수 없는 것은 사실이지만, **유도를 목록으로 되돌리는 변경
+// 자체는 아무도 안 잡고 있었다** — 누가 *"목록이 명시적이라 읽기 좋다"* 며 되돌리면 사각이
+// 조용히 다시 열리고 게이트는 초록이다. "구조로 막았다" 는 그 구조가 유지될 때만 참이고,
+// **구조를 지키는 축이 없으면 그 문장도 결국 주석일 뿐이다.**
+//
+// 그래서 축을 직접 보는 단언을 넣었다 — *"계약이 안다고 한 키는 반드시 출력에 실린다"*
+// (어떤 키를 주든 **모른다고 보고하거나 실제로 싣거나** 둘 중 하나여야 한다. 화이트리스트에만
+// 있고 출력에 없는 키는 "안다" 면서 버리는 것이고 그것이 B4·B6 이 서 있던 자리다).
+// ⚠ **그 단언이 실제로 M1 을 잡는지는 6회차에서 잰다 — 아직 안 쟀다.**
 //
 // ⑤가 위 P2 판정의 실증이다. **핀 단언 3줄로 그 사각이 닫혔다** — *"리터럴이면 값 미러링,
 // 심볼이면 사각, 둘 다 구멍이라 고를 수 있는 것이 아니다"* 라던 내 판단이 틀렸음을 이 줄이
@@ -317,6 +329,34 @@ describe('validateOverlay — 내보내기 관문', () => {
     });
     expect(issues).toEqual([{ index: 0, reason: 'unknown-field' }]);
     expect(Object.keys(overlay.items[0]).sort()).toEqual(['ry', 's', 'src', 'x', 'y', 'z']);
+  });
+
+  // ★ 유도(`KNOWN_ITEM_KEYS = Object.keys(normalizeItem(…))`)를 **목록으로 되돌리는 변경**
+  //   자체를 막는 단언. 유도 구조가 M1 결함 클래스를 봉쇄하는 것은 맞지만, **그 구조를
+  //   되돌리는 것은 아무도 안 잡았다** — 5회차 뮤테이션 ②가 0 failed 였던 이유다
+  //   ("읽기 좋다" 며 목록으로 되돌리면 사각이 조용히 다시 열린다).
+  //
+  //   불변식: 어떤 키를 주든 **모른다고 보고하거나(unknown-field) 실제로 출력에 싣거나**
+  //   둘 중 하나여야 한다. 화이트리스트에만 있고 출력에는 없는 키는 *"안다"* 고 해놓고
+  //   버리는 것이고, 그것이 B4·B6 이 서 있던 자리다.
+  it('계약이 안다고 한 키는 반드시 출력에 실린다 — 화이트리스트만 늘리는 변경을 막는다', () => {
+    for (const k of ['name', 'sx', 'sy', 'tag', 'color', 'id', 'meta']) {
+      const { overlay, issues } = validateOverlay({
+        items: [{ src: 'assets/models/a.glb', [k]: 1 }],
+      });
+      const flagged = issues.some((i) => i.reason === 'unknown-field');
+      const present = k in (overlay.items[0] as unknown as Record<string, unknown>);
+      expect(flagged || present).toBe(true);
+    }
+  });
+
+  it('최상위도 같다 — 안다고 한 키는 출력에 실린다', () => {
+    for (const k of ['meta', 'author', 'notes']) {
+      const { overlay, issues } = validateOverlay({ version: OVERLAY_VERSION, items: [], [k]: 1 });
+      const flagged = issues.some((i) => i.reason === 'unknown-field');
+      const present = k in (overlay as unknown as Record<string, unknown>);
+      expect(flagged || present).toBe(true);
+    }
   });
 
   it('최상위 미지 필드도 본다', () => {
