@@ -41,8 +41,19 @@ export function createPartAssets(): Record<PartKind, PartAsset> {
  * 파일이 페이드를 **모른다** — 페이드를 걷어내는 날 `parcel-fade.ts` 만 지우면 된다.
  */
 export interface ToneSink {
-  /** 슬롯이 최종적으로 가져야 할 색(팔레트 hex). 즉시 칠할지 서서히 칠할지는 구현이 정한다 */
-  apply(h: SlotHandle, hex: number): void;
+  /**
+   * 슬롯이 최종적으로 가져야 할 색(팔레트 hex). 즉시 칠할지 서서히 칠할지는 구현이 정한다.
+   *
+   * `x`·`z` 는 **그 부품이 실제로 선 월드 좌표**다. 페이드가 *"여기는 안개가 얼마나
+   * 감춰주는가"* 를 알아야 하기 때문에 연다 — 파셀 중심이 아니라 **부품 자리**여야 한다
+   * (감독 실기기 2026-08-09 *"가까이 가면 뭔가 건물이 번쩍해"*: 부품은 파셀 중심보다
+   * 최대 반 셀 가까이서 태어나고, 그 거리에서는 안개가 0% 다. 근거는 `decide/lod-fade.ts`
+   * 의 `fogFactorAt` 주석 한 곳).
+   *
+   * **없을 수도 있다** — `setTransform` 보다 `setTone` 이 먼저 오는 호출자가 생기면
+   * 좌표를 모른다. 그때는 구현이 종전 동작으로 떨어져야 한다(`undefined` 를 넘긴다).
+   */
+  apply(h: SlotHandle, hex: number, x?: number, z?: number): void;
   /** 슬롯이 반납된다. 진행 중인 상태가 있으면 여기서 버린다 */
   release?(h: SlotHandle): void;
 }
@@ -55,13 +66,27 @@ export interface ToneSink {
  */
 export function createSlotPool(pools: InstancePools, sink?: ToneSink): SlotPool {
   const c = new THREE.Color();
+  // 마지막으로 놓인 자리. `setTone` 이 sink 에 넘겨줄 좌표다.
+  //
+  // **핸들별로 기억한다** — 한 프레임에 부품 수십 개가 놓이므로 단일 변수로는 섞인다.
+  // `WeakMap` 인 이유는 핸들이 죽으면 저절로 사라져야 하기 때문이다(정리 코드가 하나
+  // 늘면 그것을 안 부르는 경로가 생긴다).
+  //
+  // ⚠ **순서에 기대고 있다** — 빌더가 `setTransform` 을 `setTone` 보다 먼저 부른다
+  // (`parcel-builder.ts:207-208`). 뒤집히면 좌표를 모르고, 그때는 `undefined` 가 넘어가
+  // 페이드가 종전 동작(안개색으로 덮기)으로 떨어진다. **조용히 틀리지 않고 조용히
+  // 예전으로 돌아간다** — 그 성질을 테스트가 못 박는다.
+  const placed = new WeakMap<SlotHandle, { x: number; z: number }>();
   return {
     acquire: (key) => pools.acquire(key),
-    setTransform: (h, x, y, z, ry, sx, sy, sz) => pools.setTransform(h, x, y, z, ry, sx, sy, sz),
+    setTransform: (h, x, y, z, ry, sx, sy, sz) => {
+      placed.set(h, { x, z });
+      pools.setTransform(h, x, y, z, ry, sx, sy, sz);
+    },
     setTone: (h, tone) => {
       const palette = tonesFor(h.key);
       const hex = palette[tone % palette.length] ?? palette[0];
-      if (sink) { sink.apply(h, hex); return; }
+      if (sink) { const p = placed.get(h); sink.apply(h, hex, p?.x, p?.z); return; }
       c.setHex(hex);
       pools.setColor(h, c);
     },

@@ -13,7 +13,7 @@ import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
 import { PooledParcelBuilder } from './systems/parcel-builder.js';
 import { ParcelFadeSystem } from './systems/parcel-fade.js';
-import { FADE_SECONDS, FADE_EASE, FADE_EASES } from './decide/lod-fade.js';
+import { FADE_SECONDS, FADE_EASE, FADE_EASES, fogFactorAt } from './decide/lod-fade.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
@@ -280,6 +280,19 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 기본값은 **감독 판정 대기 중인 잠정치**이고, 판정은 이 두 노브로 받는다.
   const lodFade = readNum('lodfade', FADE_SECONDS, 0, 5);
   const lodEase = readEnum('lodease', FADE_EASE, FADE_EASES);
+
+  // ── 어디서 출발할 것인가 (감독 실기기 2026-08-09) ─────────────────────────
+  //
+  // 감독: *"가까이 가면 뭔가 건물이 번쩍해"*
+  //
+  //   ?fademode=near  (기본) 그 자리의 **안개가 감춰주는 만큼만** 안개색을 섞는다
+  //   ?fademode=fog          종전 — 거리와 무관하게 **무조건 안개색**으로 덮는다
+  //
+  // 왜 `fog` 가 번쩍이 되는지(안개는 51.2m 부터인데 부품은 50.07m·20.22m 에서도
+  // 태어난다)는 `decide/lod-fade.ts` 의 `fogFactorAt` 한 곳이다 — 여기에 다시 적지 않는다.
+  // `fog` 를 남겨 둔 이유는 **감독이 두 판본을 화면에서 비교해야 하기 때문**이고,
+  // 판정이 끝나면 진 쪽을 걷어낸다(사이클 2항: 후보를 여럿 동시에).
+  const fadeMode = readEnum('fademode', 'near', ['near', 'fog'] as const);
 
   // 걷는 감각 — 감독 실기기에서 값을 확정하기 위해 URL 로 연다.
   //
@@ -586,6 +599,26 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           // `three/webgpu` 는 `Fog` 타입을 재수출하지 않아 구조로 읽는다.
           fadeColor: () => (scene.fog as { color?: THREE.Color } | null)?.color ?? fogFallback,
           gate: () => streaming?.ready ?? false,
+          // 그 자리가 안개에 얼마나 묻혔는가. `fog` 모드는 **항상 1** — 거리를 안 보고
+          // 무조건 덮던 종전 동작이고, 감독이 두 판본을 비교하기 위한 대조군이다.
+          //
+          // ⚠ **밴드는 `scene.fog` 에서 읽지 않고 `fogBand(CELL_X)` 로 유도한다.** 씬의
+          // 안개는 시간대·날씨가 흔들고(`night-lights.ts` 가 밤에 색을 들어올린다),
+          // 페이드 판정이 그 흔들림을 따라가면 같은 자리에서 회차마다 다르게 보인다.
+          // 여기서 재는 것은 *"이 거리에서 안개가 감춰줄 수 있는 최대"* 이고 그것은
+          // 밴드에서만 나온다 — `decide/fog.ts` 가 그 SSOT 다.
+          //
+          // ⚠ **`fogDist` 를 곱한다**(검수관 비블로커 P1, 2026-08-09). 안 곱하면
+          // `?fogd=` 를 켠 순간 **판정과 화면이 어긋난다** — 예: `?fogd=3` 이면 씬 안개는
+          // 153.6m 부터인데 판정은 51.2m 를 써서, 80m 앞 부품을 "완전히 안개에 묻혔다" 로
+          // 보고 검정으로 덮는다. **고치려던 번쩍이 그 조합에서 되살아난다.**
+          // 기본값(1)에서는 무해하지만 감독이 두 노브를 함께 여는 순간 판정이 오염된다.
+          fogAt: fadeMode === 'fog' ? undefined : (x, z) => {
+            const dx = x - player.position.x;
+            const dz = z - player.position.z;
+            const b = fogBand(CELL_X);
+            return fogFactorAt(Math.hypot(dx, dz), { near: b.near * fogDist, far: b.far * fogDist });
+          },
         });
         builder = new PooledParcelBuilder({
           pool: createSlotPool(pools!, parcelFade.sink()), cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
