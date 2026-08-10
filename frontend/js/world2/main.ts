@@ -36,7 +36,7 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import { createCollider } from './systems/collision.js';
 import { fogBand } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
-import { DEFAULT_BANDS, scaleBands } from './decide/lod.js';
+import { DEFAULT_BANDS, scaleBands, withNearExit } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
@@ -353,7 +353,18 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 용의자(tier강등)를 분리하는 스위치다. 왜·한계는 `decide/lod.ts` 의 `scaleBands`
   // 한 곳이다. 기본값 1 = 현행 그대로. builder 와 streaming 이 **같은** 밴드를 받아야
   // 격자 생성과 tier 판정이 정합한다(한쪽만 주면 예산과 판정이 어긋난다).
-  const TIER_BANDS = scaleBands(DEFAULT_BANDS, readNum('band', 1, 0.5, 4));
+  //
+  // `?nearx=` 는 깜빡임 상시 처방 후보(팀장 판정 (a), 2026-08-10) — near 전환점만
+  // 안개 뒤로 민다. 후보 비교용이고 감독 판정이 나면 이긴 값을 기본으로 승격한다.
+  //   ?nearx=1.6   51.2m (안개 시작점 — 감춤 0%부터 시작)
+  //   ?nearx=1.75  56.0m (안개 19%)
+  //   ?nearx=2.0   64.0m (안개 50%)
+  // 왜 이 축인지·보정 규칙은 `decide/lod.ts` 의 `withNearExit` 한 곳이다.
+  const nearx = readNum('nearx', 0, 0, 2.2);
+  const TIER_BANDS = withNearExit(
+    scaleBands(DEFAULT_BANDS, readNum('band', 1, 0.5, 4)),
+    nearx > 0 ? nearx : Number.NaN,
+  );
 
   // ── 어디서 출발할 것인가 (감독 실기기 2026-08-09) ─────────────────────────
   //
