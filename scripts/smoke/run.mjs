@@ -991,6 +991,11 @@ async function main() {
       record(11, '물빠짐 상호작용', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(12, '수면 구현(?water=tsl)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(13, '플레이어 충돌(라이브)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      // `[14]` 도 같은 이유로 적는다(검수관 권고 2026-08-10). ⚠ **바로 위 주석이
+      // `[11]` 에 대해 경계한 그 형태를 `[14]` 에서 또 만들었다** — 신설할 때 이 목록에
+      // 넣는 것을 잊었고, 검수관이 코드를 읽어 잡았다. 경고문이 바로 위에 있는데도
+      // 재현됐다는 것이 이 자리의 값이다: **목록에 넣는 것이 규율이 아니라 손이다.**
+      record(14, '클릭 상호작용(로그인 모달)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
     }
   } finally {
     if (browser) await browser.close().catch(() => {});
