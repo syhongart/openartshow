@@ -149,6 +149,26 @@ describe('수축 소멸 — 사라질 때도 팝이 없다', () => {
     expect(slow).toBeGreaterThan(0.5); // 2.0s 수축이 0.2s 만에 절반 아래로 내려가면 안 쓴 것
   });
 
+  it('shrinkEase 가 수축 곡선을 실제로 바꾼다 — ?shrinkease= 노브의 집행 검사', () => {
+    // 같은 시간(수축 25% 지점)에서: 'out'(종전)은 초반 가속이라 많이 줄었고,
+    // 'in'(초반 느림)은 아직 거의 그대로여야 한다. 등장 ease 와 분리됐다는 증거다.
+    const mkWith = (shrinkEase?: 'in' | 'out') => {
+      const { pools, calls } = stubPools();
+      const grow = new ParcelGrowSystem({ pools, duration: 0.4, shrinkSecs: 1.0, shrinkEase, gate: () => true });
+      const pool = createSlotPool(pools, undefined, grow.sink());
+      const h = pool.acquire('building')!;
+      pool.setTransform(h, T.x, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+      grow.update({ dt: 10, hidden: false } as never);
+      pool.release(h);
+      grow.update({ dt: 0.25, hidden: false } as never);
+      return last(calls, h).sy / T.sy;
+    };
+    const eased = mkWith('in');
+    const legacy = mkWith('out');
+    expect(eased).toBeGreaterThan(legacy);
+    expect(eased).toBeGreaterThan(0.85); // t=0.25 의 in(t²)=6.25% 감쇠 — 90%+ 남아야 맞다
+  });
+
   it('자라다 만 채 죽으면 그 크기에서 줄어든다 — 커졌다 죽는 역팝이 없다', () => {
     const { grow, pool, h, calls } = setup(0.4);
     grow.update({ dt: 0.1, hidden: false } as never); // 일부만 자람

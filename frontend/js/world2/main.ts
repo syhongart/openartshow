@@ -346,6 +346,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 늘려 연속 변화로 만든다. 근거·경계는 `systems/parcel-grow.ts` 의 SHRINK_SECONDS
   // 주석 한 곳. 감독 판정이 나면 그 값을 기본으로 승격한다(팀장 조건 2, 2026-08-10).
   const shrinkSecs = readNum('shrink', 0, 0, 3);
+  // `?shrinkease=` — 수축 전용 이징(lin·in·out·smooth). 시간 축과 분리해 판정하기
+  // 위한 것(팀장 조건 1: 'out' 앞쏠림이 시간 후보 판정을 오염시킨다). 왜 분리인지는
+  // `systems/parcel-grow.ts` 의 shrinkEase 주석 한 곳. 기본 'out' = 종전 동작
+  // (등장 ease 와 동일값이라 "미지정"과 구별할 필요가 없다).
+  const shrinkEase = readEnum('shrinkease', 'out', FADE_EASES);
 
   // 적응 품질(해상도 강등·프레임 캡·tier 압력)을 통째로 끈다. **비교 실험 전용** —
   // 감독 실기기 "이동 중 밝기가 살짝 변함"(2026-08-10)에서 안개·헤드밥이 실측으로
@@ -734,6 +739,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           duration: growSecs,
           // 0(노브 미지정)이면 undefined → 시스템 기본(SHRINK_SECONDS)을 쓴다.
           shrinkSecs: shrinkSecs > 0 ? shrinkSecs : undefined,
+          shrinkEase,
           gate: () => streaming?.ready ?? false,
         });
         builder = new PooledParcelBuilder({
