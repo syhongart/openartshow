@@ -36,7 +36,7 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import { createCollider } from './systems/collision.js';
 import { fogBand } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
-import { DEFAULT_BANDS } from './decide/lod.js';
+import { DEFAULT_BANDS, scaleBands } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
@@ -348,6 +348,13 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 기본값 1 = 현행 그대로. 끄면 저사양 기기 보호가 사라지므로 상시 사용 금지.
   const adaptOn = readNum('adapt', 1, 0, 1) > 0;
 
+  // tier 밴드 배율. **진단 전용** — `?band=2` 면 강등선(nearExit 41.6m)이 83.2m 로
+  // 밀려 후진 코스에서 tier 전환이 사실상 사라진다. 마크 리포트가 지목한 마지막
+  // 용의자(tier강등)를 분리하는 스위치다. 왜·한계는 `decide/lod.ts` 의 `scaleBands`
+  // 한 곳이다. 기본값 1 = 현행 그대로. builder 와 streaming 이 **같은** 밴드를 받아야
+  // 격자 생성과 tier 판정이 정합한다(한쪽만 주면 예산과 판정이 어긋난다).
+  const TIER_BANDS = scaleBands(DEFAULT_BANDS, readNum('band', 1, 0.5, 4));
+
   // ── 어디서 출발할 것인가 (감독 실기기 2026-08-09) ─────────────────────────
   //
   // 감독: *"가까이 가면 뭔가 건물이 번쩍해"*
@@ -567,7 +574,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       pools: () => {
         pools = new InstancePools(scene);
         const assets = createPartAssets();
-        const budget = PooledParcelBuilder.poolBudget({ layout: LAYOUT });
+        // `?band=` 를 여기에도 넘긴다 — 예산이 밴드를 안 따라오면 배율>1 에서 슬롯이
+        // 모자라(starved) "부품이 안 그려지는" 오염이 실험 결과를 덮는다.
+        const budget = PooledParcelBuilder.poolBudget({ layout: LAYOUT, bands: TIER_BANDS });
         for (const kind of ALL_KINDS) {
           const a = assets[kind];
           pools.create({
@@ -706,6 +715,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         });
         streaming = new StreamingSystem({
           builder,
+          bands: TIER_BANDS,
           cellX: CELL_X, cellZ: CELL_Z,
           getPosition: () => player.position,
           getDirection: () => player.direction,

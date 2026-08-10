@@ -32,6 +32,28 @@ export const DEFAULT_BANDS: TierBands = {
   farEnter: 2.10, farExit: 2.40,
 };
 
+/**
+ * 밴드 전체를 같은 배율로 늘리거나 줄인다(`?band=` 진단 노브).
+ *
+ * ── 왜 (감독 실기기 2026-08-10 "후진 중 밝기 살짝 하락 → 정지 시 회복") ─────
+ * 안개·헤드밥·적응 해상도·전환 연출·태양(그림자)이 전부 감독 실측으로 기각된 뒤,
+ * 마크 리포트 창의 유일한 사건이 tier강등(41.6m)이었다. 강등선 자체를 코스 밖으로
+ * 밀어 "강등이 없는 세계"를 만들면 이 축을 최종 분리할 수 있다 — 그 실험 스위치다.
+ *
+ * 모든 필드에 **같은** 양수를 곱하므로 ENTER<EXIT 순서(히스테리시스 불변식)가
+ * 보존된다. 배율이 1이면 원본 객체를 그대로 돌려준다(기본 경로 무비용).
+ * ⚠ 안개(`decide/fog.ts` 의 `FOG_FAR_CELLS`)는 이 배율을 따라가지 않는다 —
+ * 진단 전용이고, 상시 값으로 쓰려면 안개·그림자 밴드와 함께 설계해야 한다.
+ */
+export function scaleBands(b: TierBands, k: number): TierBands {
+  if (!(k > 0) || k === 1) return b;
+  return {
+    nearEnter: b.nearEnter * k, nearExit: b.nearExit * k,
+    midEnter: b.midEnter * k, midExit: b.midExit * k,
+    farEnter: b.farEnter * k, farExit: b.farExit * k,
+  };
+}
+
 /** ENTER < EXIT 불변식 검사. 밴드를 만드는 모든 경로가 이걸 통과해야 한다. */
 export function validBands(b: TierBands): boolean {
   return b.nearEnter < b.nearExit
