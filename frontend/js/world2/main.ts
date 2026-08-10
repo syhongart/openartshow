@@ -13,7 +13,10 @@ import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
 import { PooledParcelBuilder } from './systems/parcel-builder.js';
 import { ParcelFadeSystem } from './systems/parcel-fade.js';
-import { FADE_SECONDS, FADE_EASE, FADE_EASES, fogFactorAt } from './decide/lod-fade.js';
+import { ParcelGrowSystem } from './systems/parcel-grow.js';
+import {
+  FADE_SECONDS, FADE_EASE, FADE_EASES, GROW_SECONDS, fogFactorAt,
+} from './decide/lod-fade.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
@@ -335,6 +338,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 기본값은 **감독 판정 대기 중인 잠정치**이고, 판정은 이 두 노브로 받는다.
   const lodFade = readNum('lodfade', FADE_SECONDS, 0, 5);
   const lodEase = readEnum('lodease', FADE_EASE, FADE_EASES);
+  // 새 부품이 땅에서 자라는 시간. `?grow=0` 이 종전 동작(즉시 완성 크기 = 팝).
+  // 색 페이드가 왜 이걸 대신 못 하는지는 `systems/parcel-grow.ts` 머리 한 곳이다.
+  const growSecs = readNum('grow', GROW_SECONDS, 0, 3);
 
   // ── 어디서 출발할 것인가 (감독 실기기 2026-08-09) ─────────────────────────
   //
@@ -416,6 +422,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let adapt: AdaptSystem | null = null;
   let builder: PooledParcelBuilder | null = null;
   let parcelFade: ParcelFadeSystem | null = null;
+  let parcelGrow: ParcelGrowSystem | null = null;
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
   let features: MountedFeature[] = [];
 
@@ -681,8 +688,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             return fogFactorAt(Math.hypot(dx, dz), { near: b.near * fogDist, far: b.far * fogDist });
           },
         });
+        parcelGrow = new ParcelGrowSystem({
+          pools: pools!,
+          duration: growSecs,
+          gate: () => streaming?.ready ?? false,
+        });
         builder = new PooledParcelBuilder({
-          pool: createSlotPool(pools!, parcelFade.sink()), cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
+          pool: createSlotPool(pools!, parcelFade.sink(), parcelGrow.sink()),
+          cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
         });
         streaming = new StreamingSystem({
           builder,
@@ -737,7 +750,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // (60fps·0.45초 기준 (16.67/450)² ≈ 0.14%) —
         // 순서를 뒤집어 없앨 수도 있으나 그러면 "이번 프레임 것은 다음 프레임부터" 라는
         // 예외를 시스템 순서로 표현하게 되어, 읽는 사람이 그 규칙을 알아야 한다.
-        kernel.add(streaming).add(parcelFade).add(adapt);
+        // `parcelGrow` 도 `streaming` 뒤 — 이번 프레임에 태어난 슬롯이 이번 프레임에
+        // 시작 스케일로 줄어 있어야 완성 크기가 한 프레임도 안 비친다(fade 와 같은 이유).
+        kernel.add(streaming).add(parcelFade).add(parcelGrow).add(adapt);
         kernel.start();
 
         // 커널이 돌아야 파셀이 채워진다 — 여기서 블로킹 루프를 돌면 교착한다.

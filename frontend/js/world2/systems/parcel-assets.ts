@@ -59,12 +59,25 @@ export interface ToneSink {
 }
 
 /**
+ * 배치가 확정된 자세를 받는 문. 구현은 `systems/parcel-grow.ts`(스케일 인).
+ * `ToneSink` 와 같은 이유로 **소비자 쪽**에 인터페이스를 둔다 — 걷어내는 날
+ * `parcel-grow.ts` 만 지우면 된다.
+ */
+export interface PlaceSink {
+  place(h: SlotHandle, t: {
+    x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number;
+  }): void;
+  release?(h: SlotHandle): void;
+}
+
+/**
  * `InstancePools` 를 파셀 빌더가 쓰는 좁은 인터페이스로 감싼다.
  * 여기서만 tone 번호 → 팔레트 hex 변환이 일어난다.
  *
  * @param sink 색을 가로챌 문. 생략하면 종전대로 즉시 칠한다(페이드 없음).
+ * @param grow 자세를 가로챌 문. 생략하면 종전대로 즉시 완성 크기다(성장 없음).
  */
-export function createSlotPool(pools: InstancePools, sink?: ToneSink): SlotPool {
+export function createSlotPool(pools: InstancePools, sink?: ToneSink, grow?: PlaceSink): SlotPool {
   const c = new THREE.Color();
   // 마지막으로 놓인 자리. `setTone` 이 sink 에 넘겨줄 좌표다.
   //
@@ -82,6 +95,9 @@ export function createSlotPool(pools: InstancePools, sink?: ToneSink): SlotPool 
     setTransform: (h, x, y, z, ry, sx, sy, sz) => {
       placed.set(h, { x, z });
       pools.setTransform(h, x, y, z, ry, sx, sy, sz);
+      // 완성 자세를 쓴 **뒤에** 알린다 — grow 가 곧바로 시작 스케일로 줄여 쓴다.
+      // 순서를 뒤집으면 grow 가 줄인 것을 위 줄이 도로 완성 크기로 덮는다.
+      grow?.place(h, { x, y, z, ry, sx, sy, sz });
     },
     setTone: (h, tone) => {
       const palette = tonesFor(h.key);
@@ -94,6 +110,7 @@ export function createSlotPool(pools: InstancePools, sink?: ToneSink): SlotPool 
       // 순서가 중요하다: 풀에 반납하면 핸들이 죽은 표식(index=-1)을 달아 sink 가 자기
       // 항목을 못 찾는다. 먼저 sink 에서 걷고 반납한다.
       sink?.release?.(h);
+      grow?.release?.(h);
       pools.release(h);
     },
   };
