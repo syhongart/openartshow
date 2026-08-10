@@ -26,11 +26,18 @@ import { fadeMix, FADE_SECONDS, FADE_EASE, type FadeEase } from '../decide/lod-f
 
 /** 페이드 임시 색. 모듈 로드 시 1회 — 프레임 루프에서 할당하지 않는다 */
 const _cur = new THREE.Color();
-const _from = new THREE.Color();
 
 interface Entry {
   /** 이 슬롯이 최종적으로 가져야 할 색 */
   target: THREE.Color;
+  /**
+   * 이 슬롯이 **출발한 색**. 슬롯마다 다르다 — 그 자리의 안개가 감춰주는 만큼만
+   * 안개색을 섞은 값이기 때문이다(아래 `startColor`).
+   *
+   * 예전에는 이 필드가 없었고 `update` 가 매 프레임 `fadeColor()` 하나를 모두에게
+   * 썼다. 그것이 "번쩍" 의 직접 원인이다.
+   */
+  from: THREE.Color;
   /** 경과(초) */
   elapsed: number;
 }
@@ -48,6 +55,22 @@ export interface ParcelFadeOptions {
   fadeColor: () => THREE.Color;
   /** 페이드를 걸어도 되는가. 초기 충전이 끝났는지를 본다 */
   gate: () => boolean;
+  /**
+   * 그 부품 자리가 **안개에 얼마나 묻혀 있는가**(0~1). 0 이면 안개색을 하나도 안 섞는다.
+   *
+   * ── 왜 열었나 (감독 실기기 2026-08-09) ─────────────────────────────────────
+   * *"가까이 가면 뭔가 건물이 번쩍해"*
+   *
+   * 안 주면 **항상 1** — 즉 종전 동작(무조건 안개색으로 덮기)이다. 그것이 결함이었다:
+   * 안개는 51.2m 부터 시작하는데 부품은 **50.07m(건물)·20.22m(화분)** 에서도 태어나고,
+   * 그 거리에서 거의 검정(`0x0b0d12`)으로 덮으면 디졸브가 아니라 **검은 덩어리가
+   * 나타났다 밝아지는 것**이 된다. 실측 표와 유도는 `decide/lod-fade.ts` 의
+   * `fogFactorAt` 주석 한 곳이다 — 여기에 다시 적지 않는다.
+   *
+   * ⚠ **호출자가 `?fademode=fog` 로 이 함수를 상수 1 로 만들 수 있다** — 감독이 두
+   * 판본을 화면에서 비교하기 위한 노브다. 판정이 끝나면 진 쪽을 걷어낸다.
+   */
+  fogAt?: (x: number, z: number) => number;
 }
 
 /**
@@ -66,6 +89,7 @@ export class ParcelFadeSystem implements System {
   private readonly ease: FadeEase;
   private readonly fadeColor: () => THREE.Color;
   private readonly gate: () => boolean;
+  private readonly fogAt: (x: number, z: number) => number;
   private readonly entries = new Map<SlotHandle, Entry>();
 
   constructor(opts: ParcelFadeOptions) {
@@ -74,6 +98,24 @@ export class ParcelFadeSystem implements System {
     this.ease = opts.ease ?? FADE_EASE;
     this.fadeColor = opts.fadeColor;
     this.gate = opts.gate;
+    // 안 주면 항상 1 — **종전 동작이 기본값이다**(무조건 안개색으로 덮는다).
+    this.fogAt = opts.fogAt ?? (() => 1);
+  }
+
+  /**
+   * 이 자리에서 페이드가 **출발할 색**. 목표색에 안개색을 그만큼만 섞는다.
+   *
+   *   안개율 1 → 안개색 그대로(먼 곳. 종전과 같다)
+   *   안개율 0 → **목표색 그대로** → 페이드 폭 0 → 아무 일도 안 일어난다
+   *
+   * 좌표를 모르면(`x`·`z` 가 `undefined`) 종전대로 안개색을 쓴다 — 조용히 틀리는 것보다
+   * 조용히 예전으로 돌아가는 편이 낫다.
+   */
+  private startColor(out: THREE.Color, target: THREE.Color, x?: number, z?: number): THREE.Color {
+    if (x === undefined || z === undefined) return out.copy(this.fadeColor());
+    const k = this.fogAt(x, z);
+    const f = Number.isFinite(k) ? Math.min(1, Math.max(0, k)) : 1;
+    return out.copy(target).lerp(this.fadeColor(), f);
   }
 
   /**
@@ -84,7 +126,7 @@ export class ParcelFadeSystem implements System {
    */
   sink(): ToneSink {
     return {
-      apply: (h, hex) => this.begin(h, hex),
+      apply: (h, hex, x, z) => this.begin(h, hex, x, z),
       release: (h) => { this.entries.delete(h); },
     };
   }
@@ -92,7 +134,7 @@ export class ParcelFadeSystem implements System {
   /** 지금 페이드 중인 슬롯 수. HUD·테스트가 본다 */
   get pending(): number { return this.entries.size; }
 
-  private begin(h: SlotHandle, hex: number): void {
+  private begin(h: SlotHandle, hex: number, x?: number, z?: number): void {
     // 페이드가 꺼져 있거나 초기 충전 중이면 종전과 똑같이 즉시 확정한다.
     if (!(this.duration > 0) || !this.gate()) {
       _cur.setHex(hex);
@@ -100,24 +142,31 @@ export class ParcelFadeSystem implements System {
       this.entries.delete(h); // 재사용 슬롯에 옛 페이드가 남아 있지 않게
       return;
     }
-    const e = this.entries.get(h);
+    let e = this.entries.get(h);
     if (e) { e.target.setHex(hex); e.elapsed = 0; } // 슬롯 재사용 — 처음부터 다시
-    else this.entries.set(h, { target: new THREE.Color(hex), elapsed: 0 });
-    // 첫 프레임을 기다리지 않고 지금 안개색으로 덮는다. 안 그러면 `update` 가 오기 전에
-    // 한 프레임이 렌더돼 **바로 그 프레임에 팝인이 보인다** — 고치려는 것 자체다.
-    this.pools.setColor(h, this.fadeColor());
+    else {
+      e = { target: new THREE.Color(hex), from: new THREE.Color(), elapsed: 0 };
+      this.entries.set(h, e);
+    }
+    // 출발색을 **이 슬롯 자리 기준으로** 정한다. 안개가 0% 인 거리면 목표색과 같아져
+    // 페이드가 아무 일도 안 한다 — 그것이 맞다(안개가 안 감춰주는데 덮으면 "번쩍" 이다).
+    this.startColor(e.from, e.target, x, z);
+    // 첫 프레임을 기다리지 않고 지금 덮는다. 안 그러면 `update` 가 오기 전에 한 프레임이
+    // 렌더돼 **바로 그 프레임에 팝인이 보인다** — 고치려는 것 자체다.
+    this.pools.setColor(h, e.from);
   }
 
   update(ctx: FrameCtx): void {
     if (this.entries.size === 0) return;
-    _from.copy(this.fadeColor());
     for (const [h, e] of this.entries) {
       // 반납된 슬롯은 죽은 핸들 표식을 단다(`release` 가 index=-1). 이사 간 것이 아니므로
       // 여기서 걷어낸다 — 안 걷으면 `setColor` 가 조용히 무시돼 목록만 자란다.
       if (h.index < 0) { this.entries.delete(h); continue; }
       e.elapsed += ctx.dt;
       const mix = fadeMix(e.elapsed, this.duration, this.ease);
-      _cur.copy(_from).lerp(e.target, mix);
+      // **엔트리마다 자기 출발색에서** 간다. 예전에는 `fadeColor()` 하나를 모두에게
+      // 썼고, 그래서 안개가 0% 인 자리의 부품도 검정에서 출발했다.
+      _cur.copy(e.from).lerp(e.target, mix);
       this.pools.setColor(h, _cur);
       if (mix >= 1) {
         // 끝값을 한 번 더 박는다. **뮤테이션으로 확인했다 — 이 줄을 지워도 테스트가
