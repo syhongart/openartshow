@@ -50,6 +50,8 @@ export interface FeatureEnv {
    * **함께** 유도한 값이다 — 하늘이 이 값으로 태양을 배치해야 프러스텀과 짝이 맞는다.
    */
   readonly shadowDist: number;
+  /** 그림자 텍셀 한 변(m). 태양 추종점 스냅용 — `decide/shadow.ts` 유도값 */
+  readonly shadowTexel: number;
   /** 월드 셀 크기(미터) */
   readonly cell: number;
 

@@ -94,3 +94,49 @@ export function shadowFrustum(
 
   return { half, dist, near, far, texel, normalBias };
 }
+
+/**
+ * 그림자 카메라의 추종점을 **텍셀 격자에 스냅**한다.
+ *
+ * ── 왜 (감독 실기기 2026-08-10 "걷는 중 순간 번쩍" · PC 도 동일) ─────────────
+ * 그림자 카메라는 플레이어를 따라다닌다. 서브텍셀만큼만 이동해도 그림자 맵의
+ * 래스터화가 매 프레임 미세하게 달라져 **씬의 모든 그림자 경계가 기어다니듯
+ * 반짝인다.** 이산 사건이 아니라서 📍 마크 창에 아무것도 안 찍혔고(0건), 백엔드와
+ * 무관하며, 태양을 끄면 사라진다 — 남은 증상과 전부 일치했다. 추종점이 텍셀
+ * 격자 위로만 움직이면 카메라 이동이 곧 맵의 정수 픽셀 이동이라 래스터화가 다시
+ * 계산될 자리가 없다.
+ *
+ * ── 왜 월드 XZ 가 아니라 광원 기저에서 스냅하는가 ───────────────────────────
+ * 그림자 맵의 픽셀 격자는 **광원에서 본 평면** 위에 있다. 월드 XZ 에서 스냅하면
+ * 태양이 기울어진 만큼 격자가 어긋나 스냅이 반쪽이 된다. 그래서 광원 방향에 수직인
+ * 정규직교 기저(right = dir × worldUp, up = right × dir)를 만들어 그 축 위에서
+ * 양자화하고 되돌린다. 추종점의 y 는 항상 0 이라(호출자 규약) 입력은 x·z 만 받는다.
+ *
+ * @param x,z          추종점(플레이어 발밑, y=0)
+ * @param dirX,dirY,dirZ 태양 → 씬 방향(정규화 가정. `getSunDir` 이 준다)
+ * @param texel        그림자 맵 텍셀 한 변의 월드 크기(m). 위 `shadowFrustum().texel`
+ */
+export function snapToShadowTexel(
+  x: number, z: number,
+  dirX: number, dirY: number, dirZ: number,
+  texel: number,
+): { x: number; z: number } {
+  if (!(texel > 0) || !Number.isFinite(x) || !Number.isFinite(z)) return { x, z };
+  // right = dir × (0,1,0) — 태양이 정수리에 있으면(수평 성분 0) 기저가 퇴화하므로
+  // 스냅하지 않고 그대로 돌려준다(그때는 격자가 월드 XZ 와 일치해 흔들림도 없다).
+  let rx = dirZ, rz = -dirX;
+  const rl = Math.hypot(rx, rz);
+  if (rl < 1e-6) return { x, z };
+  rx /= rl; rz /= rl;
+  // up' = right × dir 의 수평 방향. 추종점이 y=0 평면에 있으므로 수평 성분만 쓴다.
+  // 이 축의 그림자 맵 좌표는 수평 이동량 × |dirY| 로 압축되므로(광원이 기울수록 지면이
+  // 비스듬히 보인다), **정수 텍셀 이동이 되려면 월드 보폭이 texel/|dirY| 여야 한다.**
+  const ay = Math.abs(dirY);
+  if (ay < 1e-3) return { x, z }; // 수평 태양 — 지면이 모로 보여 스냅이 무의미하다
+  const ux = -rz, uz = rx;
+  const stepV = texel / ay;
+  // 기저 좌표로 사영 → 축별 보폭으로 양자화 → 월드로 복원.
+  const a = Math.round((x * rx + z * rz) / texel) * texel;
+  const b = Math.round((x * ux + z * uz) / stepV) * stepV;
+  return { x: a * rx + b * ux, z: a * rz + b * uz };
+}

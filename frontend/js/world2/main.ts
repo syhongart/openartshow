@@ -597,6 +597,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             // 프러스텀과 **같은 유도**에서 나온 값이라야 짝이 맞는다. 하늘이 태양을
             // 이보다 가깝게 놓으면 타워 꼭대기가 그림자 카메라 뒤로 밀린다.
             shadowDist: SHADOW.dist,
+            shadowTexel: SHADOW.texel,
             doc: typeof document !== 'undefined' ? document : null,
             time: () => timeOfDay,
             setTime: (t) => { timeOfDay = t; },

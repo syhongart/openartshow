@@ -61,6 +61,7 @@ export const skyFeature: Feature = {
         // 날씨는 아직 소비자가 하늘 하나이므로 여기서 URL 을 읽는다. 헤드리스 측정과
         // 감독 확인이 링크 하나로 끝나야 하므로 노브 자체는 유지한다.
         sunDist: env.shadowDist,
+        shadowTexel: env.shadowTexel,
         // 낮 대비 — 감독이 실기기에서 값을 비교할 수 있게 연다(밤 노브 `nsun`/`nhemi` 전례).
         dayLight: {
           sun: readNum('dsun', DAY_SUN_I, 0, 6),
