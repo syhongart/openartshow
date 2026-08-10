@@ -259,6 +259,10 @@ function SidebarScene( editor ) {
 	// 기본값 적용은 전부 아래 `rendererCreated` **한 곳**에서 한다(그 자리 주석 참조).
 	environmentType.onChange( function () {
 
+		// [OpenArtShow] 사용자가 직접 고른 순간부터 부팅 기본값은 다시 끼어들지 않는다.
+		// 이 플래그가 `applyBootEnvironment` 의 유일한 가드다(아래 주석 참조).
+		userChoseEnvironment = true;
+
 		onEnvironmentChanged();
 		refreshEnvironmentUI();
 
@@ -299,27 +303,62 @@ function SidebarScene( editor ) {
 	// `pmremGenerator` 가 채워져 있다), 값도 **여기서 직접 세팅한 뒤** dispatch 한다
 	// (그러면 `refreshUI()` 가 무엇을 해놨든 무관하다).
 	//
-	// `applied` 가드가 있는 이유: `rendererCreated` 는 렌더러가 **재생성**될 때도 발화한다
-	// (안티앨리어싱 토글 등). 가드가 없으면 그때마다 사용자가 고른 환경을 기본값으로
-	// **되돌린다** — 부팅 기본값과 사용자 선택을 섞지 않는다.
+	//   4회차 — 3회차 처방(`rendererCreated` + 1회 가드)은 **새 프로필에서만** 맞았다.
+	//     검수관이 잡았다: `boot.js` 가 부팅 뒤 **비동기로** `editor.fromJSON(state)` 를
+	//     돌려 autosave 를 복원하는데, `Editor.js` 의 `setScene` 이
+	//     `scene.environment = <저장값>` 으로 덮고 `sceneGraphChanged` 를 쏜다 →
+	//     `refreshUI()` 가 또 `'None'` 으로 되돌린다. `fromJSON` 의 복구 분기는
+	//     `json.environment === 'ModelViewer'` 일 때만 도는데, **이 커밋 이전에 저장된
+	//     state 에는 그 값이 없다**(당시 환경이 None 이었으니 `toJSON` 이 `null` 로 적었다).
+	//     그리고 1회 가드는 이미 소진돼 재적용이 없다.
+	//     ⚠ **감독이 증상을 신고한 그 브라우저가 정확히 이 경우다** — GLB 를 한 번 불러온
+	//     세션이면 autosave state 가 남아 있다. 헤드리스 새 컨텍스트는 IndexedDB 가 비어
+	//     `fromJSON` 이 아예 안 돌므로 executor 의 `3/3 PASS` 는 이 경로를 **못 쟀다.**
+	//     못 잰 것이 통과로 적힐 뻔했다.
+	//
+	// 네 번의 공통 원인은 하나다 — **"부팅 시 1회" 를 *어느 시점* 으로 잡을지를 매번 눈으로
+	// 읽고 정했다.** 그래서 시점을 고르는 것을 그만둔다. 대신 **조건**으로 적는다:
+	// *"사용자가 고르기 전까지, 씬에 환경이 없으면 채운다."* 그러면 그 조건이 언제
+	// 참이 되든(렌더러 생성·autosave 복원·그 밖의 아직 모르는 경로) 저절로 걸린다.
+	//
+	// 가드가 **시점 1회가 아니라 사용자 선택 여부**인 것이 요점이다. 1회 가드는 복원처럼
+	// 더 늦은 경로에서 소진돼 있고, 무가드는 사용자가 고른 `None` 을 되돌린다.
 	//
 	// 파급을 남긴다: 1·2회차의 예외는 `new SidebarScene()` → `new Sidebar()` 를 타고 올라가
 	// `boot.js` 가 완료되지 못했고, 그 아래의 **Menubar·Resizer·드래그앤드롭 리스너**가
-	// 전부 안 붙었다 — **캔버스조차 없는 빈 화면.** 그리고 **`console.error` 는 세 번 다
+	// 전부 안 붙었다 — **캔버스조차 없는 빈 화면.** 그리고 **`console.error` 는 네 번 다
 	// 0건이었다** — 콘솔만 보는 점검으로는 하나도 안 잡히고 pageerror 축에서만 잡힌다.
-	// 3회차는 그 pageerror 축으로도 안 잡혔다(예외가 없으므로) — **화면을 봐야 잡힌다.**
+	// 3·4회차는 그 pageerror 축으로도 안 잡혔다(예외가 없으므로) — **화면을 봐야 잡힌다.**
 	const BOOT_ENVIRONMENT = 'ModelViewer';
-	let bootEnvironmentApplied = false;
-	signals.rendererCreated.add( function () {
+	let userChoseEnvironment = false;
 
-		if ( bootEnvironmentApplied ) return;
-		bootEnvironmentApplied = true;
+	function applyBootEnvironment() {
+
+		if ( userChoseEnvironment ) return;              // 사용자 선택이 언제나 우선
+		if ( editor.scene.environment !== null ) return; // 이미 있으면 건드리지 않는다
 
 		environmentType.setValue( BOOT_ENVIRONMENT );
 		onEnvironmentChanged();
 		refreshEnvironmentUI();
 
+	}
+
+	signals.rendererCreated.add( function () {
+
+		// 렌더러가 새로 생겼으면 현재 환경을 **이 렌더러 기준으로 다시 굽는다.**
+		// `ModelViewer` 의 환경맵은 렌더러에 딸린 `PMREMGenerator` 가 만든 렌더타깃이라,
+		// 안티앨리어싱 토글 등으로 렌더러가 재생성되면 `Viewport.js` 가 그 생성기를
+		// `dispose()` 한다 — 다시 굽지 않으면 **폐기된 텍스처**가 씬에 남는다.
+		// (부팅 때는 select 가 `'None'` 이라 여기서 걸리지 않고 아래가 채운다.)
+		if ( environmentType.getValue() !== 'None' ) onEnvironmentChanged();
+
+		applyBootEnvironment();
+
 	} );
+
+	// autosave 복원이 끝나면 `setScene` 이 이 신호를 쏜다. 복원된 state 에 환경이 없으면
+	// 여기서 채운다. GLB 임포트 등으로도 자주 발화하지만 위 두 가드가 전부 걸러낸다.
+	signals.sceneGraphChanged.add( applyBootEnvironment );
 
 	function onEnvironmentChanged() {
 
