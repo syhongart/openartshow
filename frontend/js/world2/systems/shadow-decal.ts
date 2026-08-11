@@ -1,21 +1,23 @@
-// world2/systems/shadow-decal.ts — 그림자 데칼의 **집행**.
+// world2/systems/shadow-decal.ts — 접촉그림자(AO 블롭)의 **집행**.
 //
 // 판정은 `decide/shadow-decal.ts`(순수 산술), 굽기는 `parts/shadow.ts`(캔버스), 여기는
 // 그 둘을 슬롯 풀에 붙이는 배선이다. 셋을 나눈 이유는 감독 지시 *"별도 베이킹 파일로
 // 분리해"* 이기도 하고, 각각 다른 것을 테스트해야 하기 때문이기도 하다 — 산술은 three
 // 없이, 굽기는 캔버스로, 배선은 실제 풀 위에서.
 //
-// ── 이 파일이 하는 일 셋 ────────────────────────────────────────────────────
-// ① **워프** — 배치가 정한 그림자 자세(= 캐스터 자세 복사)를 태양에서 유도한 자세로 바꾼다.
-// ② **등록부** — 살아 있는 데칼 핸들과 그 **원본**(캐스터) 자세를 기억한다. 태양이 바뀌면
-//    원본에서 다시 유도해야 하므로, 워프된 결과가 아니라 원본을 들고 있어야 한다.
-// ③ **재베이킹** — 아틀라스를 다시 굽고 등록부 전체의 자세를 다시 적용한다. 감독의
-//    「그림자 굽기」 버튼이 부르는 것이 이것이고, 시간대·태양이 바뀔 때도 자동으로 돈다.
+// ── 2026-08-11(2회차) — 태양 축이 사라졌다 ─────────────────────────────────
+// 감독이 방향성 penumbra 데칼을 폐기하고 빌더의 접촉그림자를 지목했다(경위는
+// `decide/shadow-decal.ts` 머리 한 곳). 이 파일에서 **없어진 것**:
+//   ① `sunDir` 옵션과 광원에서 태양 방향을 되읽던 배선(`main.ts` 쪽도 함께)
+//   ② `SunGround`·`shadowSpan` 소비, 자세의 방위 회전·후방 오프셋
+//   ③ 재굽기 지문(`key()`)의 태양 성분과 그 소수 3자리 라운딩
+//   ④ `maxLen`·`tail`·`style` 노브
+// **남은 것**: 캐스터 밑동 반경 실측(`measure`) → 블롭 크기, 시간대 농도, 굽기 버튼.
 //
-// ── 시간대 전환 때 자세 재계산은 **선택이 아니라 요구사항**이다 ─────────────
-// 낮·노을은 태양 방위(`SUN_AZ`)를 쓰고 밤은 달 방위(`MOON_AZ`)를 쓴다 — 즉 **방위각이
-// 바뀐다.** 텍스처만 다시 굽고 자세를 고정하면 밤에 그림자가 낮 방향을 가리킨 채 남는다.
-// 그 증상은 헤드리스에서 안 보이고 감독 실기기에서만 보인다.
+// ── 시간대는 이제 **농도만** 움직인다 ───────────────────────────────────────
+// 예전에는 밤에 달 방위(`MOON_AZ`)로 넘어가면서 그림자가 통째로 돌았고, 그래서 시간대
+// 전환 때 자세 재계산이 **요구사항**이었다. 접촉그림자는 방향이 없으므로 자세가 시간대와
+// 무관하다 — 그런데도 `reapply` 를 남긴 이유는 아래 그 함수 주석에 있다.
 
 import type { FrameCtx, System } from '../kernel.js';
 import type { InstancePools, SlotHandle } from './instancing.js';
@@ -24,50 +26,40 @@ import type { SlotPool } from './parcel-builder.js';
 import type { PartAsset, PartSpec, ThreeNS } from '../parts/types.js';
 import type { SkyTime } from '../decide/night.js';
 import {
-  sunGround, shadowSpan, decalTransform, densityFor,
-  SHADOW_MAX_LEN, SHADOW_Y, SHADOW_DENSITY, SHADOW_SOFT, SHADOW_TAIL, SHADOW_STYLE,
-  type SunGround, type ShadowStyle,
+  decalTransform, densityFor,
+  SHADOW_Y, SHADOW_DENSITY, SHADOW_SOFT,
 } from '../decide/shadow-decal.js';
-import { bakeAtlas, casterProfiles, shadowKindOf, SHADOW_DRAW_PX, type BakeEntry } from '../parts/shadow.js';
+import { bakeAtlas, casterKinds, shadowKindOf, SHADOW_DRAW_PX } from '../parts/shadow.js';
 
 /** 노브가 미는 값. 슬라이더가 **이 객체를 직접 고친다** — 새로 만들면 배선이 끊긴다 */
 export interface ShadowDecalOpts {
   /** 그리는 해상도(px). `?shres` */
   res: number;
-  /** 농도(시간대 배수 적용 전). `?shdark` */
+  /** 농도 배수(시간대 배수 적용 전). `?shdark`. 1 이 빌더 원본 */
   density: number;
-  /** 부드러움(penumbra 확산). `?shsoft` — 의미 변경은 `SHADOW_SOFT` 주석 */
+  /** 중간 스톱 위치 손잡이. `?shsoft` — 의미 변경은 `SHADOW_SOFT` 주석 */
   soft: number;
-  /** 꼬리 알파 바닥값. `?shtail` — 의미 변경은 `SHADOW_TAIL` 주석 */
-  tail: number;
-  /** 길이 상한(m). `?shlen` */
-  maxLen: number;
   /** 데칼 높이(m). `?shy` */
   y: number;
   /** 0 이면 완전 투명하게 굽는다(룩 A/B 전용 — 슬롯도 드로우콜도 그대로다). `?shdec` */
   on: number;
-  /**
-   * 룩 후보. `?shstyle`
-   *
-   * 슬라이더에 안 올린다 — `knob-bar` 는 수치 축뿐이고, 무엇보다 이것은 **감독이 셋을
-   * 나란히 놓고 고르는 축**이라 링크 세 개가 슬라이더 하나보다 낫다(판정 사이클이 링크로
-   * 돈다). 값이 정해지면 `SHADOW_STYLE` 기본값으로 옮기고 이 노브는 남는다.
-   */
-  style: ShadowStyle;
 }
 
 export function defaultOpts(): ShadowDecalOpts {
   return {
     res: SHADOW_DRAW_PX, density: SHADOW_DENSITY, soft: SHADOW_SOFT,
-    tail: SHADOW_TAIL, maxLen: SHADOW_MAX_LEN, y: SHADOW_Y, on: 1,
-    style: SHADOW_STYLE,
+    y: SHADOW_Y, on: 1,
   };
 }
 
-/** 캐스터 하나의 **단위 치수**(스케일 1 기준). 지오 bounding box 에서 실측한다 */
+/**
+ * 캐스터 하나의 **단위 치수**(스케일 1 기준). 지오 bounding box 에서 실측한다.
+ *
+ * ⚠ 높이(`h`)가 없다. 방향성 그림자는 길이가 `h·cot(고도)` 였지만 접촉그림자는 발밑
+ * 원이라 높이와 무관하다 — 빌더도 `AO_GROUNDED` 를 밑면 크기로만 정한다. 60m 타워와
+ * 벤치의 그림자 크기 차이는 **밑동 반경**에서만 나온다.
+ */
 interface CasterDims {
-  /** 높이(m) */
-  h: number;
   /** 밑동 반경(m) — 가로·세로 반폭 중 큰 쪽(외접) */
   r: number;
 }
@@ -76,10 +68,8 @@ export interface ShadowDecalOptions {
   pools: InstancePools;
   /** 부팅 때 만든 파츠 자산. 캐스터 지오의 bounding box 를 여기서 실측한다 */
   assets: Record<string, PartAsset>;
-  /** 파츠 목록 — 캐스터와 골격을 여기서 유도한다(목록을 다시 적지 않는다) */
+  /** 파츠 목록 — 캐스터를 여기서 유도한다(목록을 다시 적지 않는다) */
   parts: readonly PartSpec[];
-  /** 씬 → 광원 방향(정규화). `systems/sky.ts` 가 매 프레임 갱신하는 광원에서 읽는다 */
-  sunDir: () => { x: number; y: number; z: number };
   time: () => SkyTime;
   opts: ShadowDecalOpts;
 }
@@ -91,28 +81,28 @@ export class ShadowDecalSystem implements System {
   /** kind → 단위 치수. 부팅 때 한 번 실측하고 끝 */
   private readonly dims = new Map<string, CasterDims>();
   /** 아틀라스 셀 순서 — `parts/shadow.ts` 의 `shadowParts` 와 **같은 순서**여야 한다 */
-  private readonly cells: { kind: string; profile: 'round' | 'box' | 'post' }[];
+  private readonly cells: string[];
   /**
    * 살아 있는 데칼과 그 **원본**(캐스터) 자세.
    *
-   * `Map` 이지 `WeakMap` 이 아니다 — 재베이킹이 **전체를 순회**해야 하는데 WeakMap 은
+   * `Map` 이지 `WeakMap` 이 아니다 — 재적용이 **전체를 순회**해야 하는데 WeakMap 은
    * 순회가 안 된다. 대신 `release` 에서 반드시 걷어야 하고, 그것을 안 하면 죽은 핸들이
    * 쌓여 재사용된 남의 슬롯을 덮어쓴다(그 경로를 배선 테스트가 본다).
    */
   private readonly live = new Map<SlotHandle, SlotTransform>();
   private pool: SlotPool | null = null;
 
-  /** 마지막으로 구운 태양·시간대·옵션. 이것이 바뀌면 다시 굽는다 */
+  /** 마지막으로 구운 시간대·옵션. 이것이 바뀌면 다시 굽는다 */
   private lastKey = '';
   /** 마지막 굽기 소요(ms). 진단·버튼 라벨이 읽는다 */
   lastBakeMs = 0;
 
   constructor(o: ShadowDecalOptions) {
     this.o = o;
-    this.cells = casterProfiles(o.parts);
-    for (const c of this.cells) {
-      const a = o.assets[c.kind];
-      this.dims.set(c.kind, a ? measure(a) : { h: 1, r: 0.5 });
+    this.cells = casterKinds(o.parts);
+    for (const kind of this.cells) {
+      const a = o.assets[kind];
+      this.dims.set(kind, a ? measure(a) : { r: 0.5 });
     }
   }
 
@@ -121,8 +111,7 @@ export class ShadowDecalSystem implements System {
    *
    * `pools.setTransform` 을 직접 부르지 않는 이유: 그러면 `parcel-grow` 가 새 자세를
    * 모른 채 옛 자세로 수축해 데칼이 엉뚱한 데로 줄어든다. 어댑터를 다시 타면 성장·색
-   * 배선이 전부 따라오고, 감독이 버튼을 눌렀을 때 데칼이 **다시 자라나며** 갈아 끼워진다 —
-   * 눌렀는데 아무 일도 안 일어난 것처럼 보이지 않는다.
+   * 배선이 전부 따라온다.
    */
   attach(pool: SlotPool): void { this.pool = pool; }
 
@@ -137,28 +126,24 @@ export class ShadowDecalSystem implements System {
     };
   }
 
-  /** 캐스터 자세 → 데칼 자세. 태양이 지평선 아래면 0 스케일(= 안 보임) */
+  /**
+   * 캐스터 자세 → 접촉그림자 자세.
+   *
+   * 위치는 캐스터 그대로다(발밑). 크기만 밑동 반경에서 유도한다.
+   */
   private poseOf(shadowKind: string, t: SlotTransform): SlotTransform {
-    const g = this.ground();
     const casterKind = shadowKind.slice('shadow:'.length);
     const d = this.dims.get(casterKind);
-    if (!g || !d || this.o.opts.on <= 0) {
+    if (!d || this.o.opts.on <= 0) {
       // 0 스케일은 이 저장소의 "안 쓰는 슬롯" 규약과 같은 수단이다(`instancing.ts` 의
       // `ZERO`). `visible=false` 나 `count` 축소를 쓰지 않는 이유가 거기 적혀 있다.
       return { ...t, sx: 0, sy: 0, sz: 0 };
     }
     // 인스턴스 스케일을 단위 치수에 곱한다 — 건물은 `sx·sz` 가 3~8m 로 흔들리고 나무는
     // 0.6~1.9배다. 단위 치수만 쓰면 큰 나무와 작은 나무의 그림자가 같아진다.
-    const h = d.h * t.sy;
     const r = d.r * Math.max(t.sx, t.sz);
-    const span = shadowSpan(h, r, g, this.o.opts.maxLen);
-    const p = decalTransform(t.x, t.z, span, g);
+    const p = decalTransform(t.x, t.z, r);
     return { x: p.x, y: this.o.opts.y, z: p.z, ry: p.ry, sx: p.sx, sy: 1, sz: p.sz };
-  }
-
-  private ground(): SunGround | null {
-    const d = this.o.sunDir();
-    return sunGround(d.x, d.y, d.z);
   }
 
   /**
@@ -168,18 +153,9 @@ export class ShadowDecalSystem implements System {
    */
   bake(): number {
     const t0 = nowMs();
-    const g = this.ground();
     const density = this.o.opts.on > 0 ? densityFor(this.o.time(), this.o.opts.density) : 0;
-    const entries: BakeEntry[] = this.cells.map((c, index) => {
-      const d = this.dims.get(c.kind) ?? { h: 1, r: 0.5 };
-      // 실루엣은 **종류당 하나**다. 인스턴스마다 스케일이 다르지만 인스턴스별 UV 가
-      // 불가능하므로 단위 치수로 굽고 자세로 늘린다. 그 근사의 한계는 이 파일 끝 참조.
-      const span = shadowSpan(d.h, d.r, g ?? { ux: 0, uz: 1, cot: 1 }, this.o.opts.maxLen);
-      return { index, profile: c.profile, span };
-    });
-    bakeAtlas(entries, {
-      res: this.o.opts.res, density, soft: this.o.opts.soft, tail: this.o.opts.tail,
-      style: this.o.opts.style,
+    bakeAtlas(this.cells.length, {
+      res: this.o.opts.res, density, soft: this.o.opts.soft,
     });
     this.reapply();
     this.lastKey = this.key();
@@ -187,7 +163,27 @@ export class ShadowDecalSystem implements System {
     return this.lastBakeMs;
   }
 
-  /** 살아 있는 데칼 전부의 자세를 원본에서 다시 유도해 쓴다 */
+  /**
+   * 살아 있는 데칼 전부의 자세를 원본에서 다시 유도해 쓴다.
+   *
+   * ── 태양이 사라졌는데 왜 남기는가 (2026-08-11 2회차 판정) ──────────────────
+   * 이 경로는 **워프 때문에** 생겼고, 워프는 남았다. 지금 자세를 실제로 움직이는 것은
+   * `?shy`(높이)와 `?shdec`(0 스케일) 둘이고, 크기 배수를 노브로 여는 것이 다음 판정
+   * 회차의 유력한 축이다(크기는 화면으로만 판정된다 — 값을 글로 못 정한다). 재적용이
+   * 없으면 그 순간 **굽기 버튼이 텍스처만 갈고 자세를 안 고치는** 상태가 되고, 화면에서는
+   * "버튼을 눌렀는데 절반만 바뀐다" 로 읽힌다.
+   *
+   * ⚠ **`setTransform` 이 아니라 `retarget` 이다.** 처음에 `setTransform` 을 썼고 그것이
+   * 검수관 반려 사유였다 — 그 경로는 `grow.place` 를 타서 성장을 START_SCALE 로 되감는다
+   * (실측: sx 4 → 0.08). 슬라이더는 드래그하는 **동안** 값을 밀므로, 감독이 농도를
+   * 조절하는 내내 화면의 모든 그림자가 쪼그라들었다 자라기를 반복했다. 폐지한 실시간
+   * 그림자의 명멸과 증상이 같다. 근거는 `parcel-grow.ts` 의 `retarget` 주석 한 곳이다.
+   * **이 체인(`parcel-assets.retarget` → `parcel-grow.retarget`)의 유일한 소비자가 여기다**
+   * — 지우면 체인이 통째로 죽고, 되살릴 때 같은 반려를 다시 받는다.
+   *
+   * `retarget` 이 없는 풀(구형 소비자)이면 자세 갱신을 **건너뛴다.** 조용히
+   * `setTransform` 으로 떨어지면 그 되감기가 되살아나므로, 차라리 안 하는 편이 낫다.
+   */
   private reapply(): void {
     const pool = this.pool;
     if (!pool) return;
@@ -195,29 +191,23 @@ export class ShadowDecalSystem implements System {
       // 죽은 핸들은 건너뛴다. `release` 에서 걷지만, 풀이 직접 반납한 경로(`grow` 밖에서
       // 죽는 경우)는 여기로 오지 않으므로 한 번 더 본다.
       if (h.index < 0) { this.live.delete(h); continue; }
-      // 어댑터를 다시 탄다 — 워프가 다시 불려 새 태양 자세가 나오고, `live` 도 같은
-      // 원본으로 덮어써진다(원본이 원본으로 갱신되므로 값이 표류하지 않는다).
-      //
-      // ⚠ **`setTransform` 이 아니라 `retarget` 이다.** 처음에 `setTransform` 을 썼고
-      // 그것이 검수관 반려 사유였다 — 그 경로는 `grow.place` 를 타서 성장을 START_SCALE
-      // 로 되감는다(실측: sx 4 → 0.08). 슬라이더는 드래그하는 **동안** 값을 밀므로,
-      // 감독이 농도를 조절하는 내내 화면의 모든 그림자가 쪼그라들었다 자라기를 반복했다.
-      // 폐지한 실시간 그림자의 명멸과 증상이 같다. 근거는 `parcel-grow.ts` 의 `retarget`.
-      //
-      // `retarget` 이 없는 풀(구형 소비자)이면 자세 갱신을 **건너뛴다.** 조용히
-      // `setTransform` 으로 떨어지면 그 되감기가 되살아나므로, 차라리 안 하는 편이 낫다.
+      // 어댑터를 다시 탄다 — 워프가 다시 불려 새 자세가 나오고, `live` 도 같은 원본으로
+      // 덮어써진다(원본이 원본으로 갱신되므로 값이 표류하지 않는다).
       pool.retarget?.(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
     }
   }
 
-  /** 다시 구워야 하는지 판정하는 지문. 태양 방향·시간대·노브가 전부 들어간다 */
+  /**
+   * 다시 구워야 하는지 판정하는 지문. 시간대·노브가 전부 들어간다.
+   *
+   * ⚠ 태양 성분이 빠지면서 **소수 3자리 라운딩도 함께 없앴다.** 그것은 태양 방향이 매
+   * 프레임 미세하게 흔들려서(플레이어 추종 스냅) 넣었던 장치이고, 지금 이 지문에는
+   * 연속적으로 흔들리는 성분이 하나도 없다 — 전부 노브와 열거형이다. 그래서 재굽기가
+   * 노브를 만지거나 시간대가 넘어갈 때만 돈다.
+   */
   private key(): string {
-    const d = this.o.sunDir();
     const o = this.o.opts;
-    // 태양 방향은 소수 3자리까지만 본다. 매 프레임 미세하게 흔들리는데(플레이어 추종
-    // 스냅) 그때마다 다시 구우면 굽기가 프레임 예산을 먹는다.
-    const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'x');
-    return `${f(d.x)},${f(d.y)},${f(d.z)}|${this.o.time()}|${o.res}|${o.density}|${o.soft}|${o.tail}|${o.maxLen}|${o.y}|${o.on}|${o.style}`;
+    return `${this.o.time()}|${o.res}|${o.density}|${o.soft}|${o.y}|${o.on}`;
   }
 
   update(ctx: FrameCtx): void {
@@ -225,9 +215,9 @@ export class ShadowDecalSystem implements System {
     if (this.key() === this.lastKey) return;
     const ms = this.bake();
     ctx.probe?.('shadow_bake_ms', ms);
-    // 굽기가 프레임 예산을 먹으면 알린다. 지금 규모(셀 8개 × 128² + 행렬 ≤504)에서는
-    // 넘을 일이 없다고 보지만, **그 판단을 근거 없이 믿지 않기 위해** 축을 남긴다.
-    // 실기기에서 이 경고가 뜨면 그때 `bakeAtlas` 안 루프를 chunk 로 쪼갠다.
+    // 굽기가 프레임 예산을 먹으면 알린다. 지금 규모(그라디언트 1회 + 셀 8개 복사 + 행렬
+    // ≤504)에서는 넘을 일이 없다고 보지만, **그 판단을 근거 없이 믿지 않기 위해** 축을
+    // 남긴다. 실기기에서 이 경고가 뜨면 그때 `bakeAtlas` 안 루프를 chunk 로 쪼갠다.
     if (ms > 8) ctx.probe?.('ev:그림자굽기지연', Math.round(ms));
   }
 
@@ -248,6 +238,9 @@ export class ShadowDecalSystem implements System {
  * **치수를 파츠 선언에 적지 않는 이유가 이것이다** — 지오를 고치면 여기가 따라온다.
  * 적어 두었다면 시계탑을 새로 만든 날(2026-08-09) 그림자만 옛 크기로 남았을 것이고,
  * 그 증상은 "그림자가 물건보다 크다" 로만 드러난다.
+ *
+ * **빌더의 `AO_GROUNDED` 표를 옮겨 오지 않는 이유도 같다** — 그 표는 손으로 적은 절대
+ * 미터라 지오 변경을 안 따라온다. 배수 하나로 유도하는 근거는 `BLOB_SCALE` 주석 한 곳.
  */
 function measure(a: PartAsset): CasterDims {
   const g = a.geometry as unknown as {
@@ -256,13 +249,12 @@ function measure(a: PartAsset): CasterDims {
   };
   if (!g.boundingBox) g.computeBoundingBox();
   const b = g.boundingBox;
-  if (!b) return { h: 1, r: 0.5 };
-  const h = Math.max(0.1, b.max.y - b.min.y);
-  // 외접 반경. 각진 캐스터가 45° 돌아서면 실제 폭이 √2배가 되지만, 인스턴스별 실루엣이
-  // 불가능하므로 여기서 근사한다 — **알고 남기는 사각**이다(이 파일 머리 참조).
+  if (!b) return { r: 0.5 };
+  // 외접 반경. 각진 캐스터가 45° 돌아서면 실제 폭이 √2배가 되지만, 원형 블롭에는 방향이
+  // 없으므로 그 편차가 화면에 안 나타난다(방향성 데칼에서는 사각이었다).
   const rx = Math.max(Math.abs(b.min.x), Math.abs(b.max.x));
   const rz = Math.max(Math.abs(b.min.z), Math.abs(b.max.z));
-  return { h, r: Math.max(0.05, Math.max(rx, rz)) };
+  return { r: Math.max(0.05, Math.max(rx, rz)) };
 }
 
 function nowMs(): number {
