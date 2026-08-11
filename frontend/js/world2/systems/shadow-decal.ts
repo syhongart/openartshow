@@ -187,7 +187,16 @@ export class ShadowDecalSystem implements System {
       if (h.index < 0) { this.live.delete(h); continue; }
       // 어댑터를 다시 탄다 — 워프가 다시 불려 새 태양 자세가 나오고, `live` 도 같은
       // 원본으로 덮어써진다(원본이 원본으로 갱신되므로 값이 표류하지 않는다).
-      pool.setTransform(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
+      //
+      // ⚠ **`setTransform` 이 아니라 `retarget` 이다.** 처음에 `setTransform` 을 썼고
+      // 그것이 검수관 반려 사유였다 — 그 경로는 `grow.place` 를 타서 성장을 START_SCALE
+      // 로 되감는다(실측: sx 4 → 0.08). 슬라이더는 드래그하는 **동안** 값을 밀므로,
+      // 감독이 농도를 조절하는 내내 화면의 모든 그림자가 쪼그라들었다 자라기를 반복했다.
+      // 폐지한 실시간 그림자의 명멸과 증상이 같다. 근거는 `parcel-grow.ts` 의 `retarget`.
+      //
+      // `retarget` 이 없는 풀(구형 소비자)이면 자세 갱신을 **건너뛴다.** 조용히
+      // `setTransform` 으로 떨어지면 그 되감기가 되살아나므로, 차라리 안 하는 편이 낫다.
+      pool.retarget?.(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
     }
   }
 

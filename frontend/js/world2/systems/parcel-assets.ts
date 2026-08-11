@@ -67,6 +67,13 @@ export interface PlaceSink {
   place(h: SlotHandle, t: {
     x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number;
   }): void;
+  /**
+   * **살아 있는 슬롯의 목표 자세만 바뀌었다.** 구현은 성장을 되감지 않아야 한다.
+   * 근거는 `parcel-grow.ts` 의 `retarget` 주석 한 곳(검수관 반려 2026-08-11).
+   */
+  retarget?(h: SlotHandle, t: {
+    x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number;
+  }): void;
   release?(h: SlotHandle): void;
   /**
    * 반납을 **가로챈다** — `done` 이 실제 반납이고, 구현이 줄어드는 애니메이션을 끝낸 뒤
@@ -135,6 +142,15 @@ export function createSlotPool(
       // 완성 자세를 쓴 **뒤에** 알린다 — grow 가 곧바로 시작 스케일로 줄여 쓴다.
       // 순서를 뒤집으면 grow 가 줄인 것을 위 줄이 도로 완성 크기로 덮는다.
       grow?.place(h, t);
+    },
+    retarget: (h, x, y, z, ry, sx, sy, sz) => {
+      // `setTransform` 과 **같은 워프**를 탄다 — 태양이 바뀐 만큼 자세가 다시 유도돼야 한다.
+      const t = warp ? warp.map(h, { x, y, z, ry, sx, sy, sz }) : { x, y, z, ry, sx, sy, sz };
+      placed.set(h, { x: t.x, z: t.z });
+      pools.setTransform(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
+      // **`place` 가 아니라 `retarget`** 이다. 이 한 줄이 이 경로의 존재 이유다 —
+      // `place` 는 "새 배치" 를 뜻해 성장을 START_SCALE 로 되감는다(검수관 반려 2026-08-11).
+      grow?.retarget?.(h, t);
     },
     setTone: (h, tone) => {
       const palette = tonesFor(h.key);

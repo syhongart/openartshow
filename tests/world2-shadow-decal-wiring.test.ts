@@ -17,6 +17,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import * as THREE from 'three';
 import { ShadowDecalSystem, defaultOpts } from '../frontend/js/world2/systems/shadow-decal.js';
 import { createSlotPool } from '../frontend/js/world2/systems/parcel-assets.js';
+import { ParcelGrowSystem } from '../frontend/js/world2/systems/parcel-grow.js';
 import { _resetAtlasForTest, atlasOf, paintCell, SHADOW_ATLAS_PX } from '../frontend/js/world2/parts/shadow.js';
 import { shadowSpan } from '../frontend/js/world2/decide/shadow-decal.js';
 import { PARTS } from '../frontend/js/world2/parts/index.js';
@@ -318,5 +319,116 @@ describe('⑤ 페인터가 판정을 실제로 소비한다 — 미러링이 없
     paintCell(spy, 100, { index: 0, profile: 'round', span }, opts);
     paintCell(spy, 100, { index: 0, profile: 'post', span }, opts);
     expect(seen[1][2]).toBeLessThan(seen[0][2]); // post 의 가로 반경이 더 작다
+  });
+});
+
+// ⑥ ── warp 와 grow 를 **함께** 연결한다 (검수관 반려 2026-08-11 의 재발 방지) ─────
+//
+// 이 절이 없어서 반려를 받았다. 위 ①~⑤ 는 `createSlotPool(pools, undefined, undefined, warp)`
+// 로 **grow sink 를 비워 두고** 돌았고, 그래서 "재적용이 성장을 되감는다" 를 아무도 못 봤다.
+// 검수관 실측: 재굽기 직후 sx 4 → 0.08(= START_SCALE × 4), `grow.pending` 0 → 1.
+//
+// ── 이 결함이 화면에서 언제 보이는가 ────────────────────────────────────────
+// 개발자 슬라이더는 `input` 이벤트로 **드래그하는 동안 계속** 값을 민다(`knob-bar.ts` 가
+// 그렇게 설계돼 있다 — "미는 **동안** 물이 변해야 한다"). 즉 감독이 그림자 농도를 조절하는
+// 내내 화면의 모든 그림자가 쪼그라들었다 자라기를 반복했을 것이다. **폐지한 실시간 그림자의
+// 명멸과 증상이 같다** — 고치려던 것을 새 경로로 되살릴 뻔했다.
+//
+// 교훈(검수관 게시판): 판정/집행 경계를 **두 곳 이상** 새로 이을 때는 "각 경로가 개별로
+// 테스트됐는가" 가 아니라 **"두 경로가 같은 진입점에서 만날 때 함께 테스트됐는가"** 를 묻는다.
+describe('⑥ warp + grow 동시 연결 — 재적용이 성장을 되감지 않는다', () => {
+  function setupWithGrow(duration = 0.4) {
+    const { pools, calls } = stubPools();
+    const opts = defaultOpts();
+    const dir = { x: 0.7, y: 0.7, z: 0.14 };
+    const sys = new ShadowDecalSystem({
+      pools, assets: assetsFor(), parts: PARTS,
+      sunDir: () => dir, time: () => 'day', opts,
+    });
+    const grow = new ParcelGrowSystem({ pools, duration, gate: () => true });
+    const pool = createSlotPool(pools, undefined, grow.sink(), sys.warp());
+    sys.attach(pool);
+    return { sys, grow, pool, calls, opts, dir };
+  }
+
+  it('★ 다 자란 데칼은 재굽기 후에도 완성 크기다 — 되감기지 않는다', () => {
+    const { sys, grow, pool, calls, opts } = setupWithGrow();
+    const h = pool.acquire('shadow:tree')!;
+    pool.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    grow.update({ dt: 10, hidden: false } as never); // 다 자란다
+    const grown = last(calls, h).sx;
+    expect(grown).toBeGreaterThan(0);
+    expect(grow.pending).toBe(0);
+
+    opts.density = 0.9; // 슬라이더를 민 것과 같다
+    sys.bake();
+
+    // 되감겼다면 여기서 START_SCALE(0.02) 배가 나온다.
+    expect(last(calls, h).sx).toBeCloseTo(grown, 4);
+    expect(grow.pending).toBe(0); // 성장 엔트리가 새로 생기지도 않았다
+  });
+
+  it('★ 슬라이더를 연속으로 밀어도 매번 되감기지 않는다', () => {
+    // `input` 이벤트가 드래그 중 수십 번 오는 상황을 그대로 재현한다.
+    const { sys, grow, pool, calls, opts } = setupWithGrow();
+    const h = pool.acquire('shadow:building')!;
+    pool.setTransform(h, 3, 0, 4, 0, 2, 5, 2);
+    grow.update({ dt: 10, hidden: false } as never);
+    const grown = last(calls, h).sx;
+
+    for (const d of [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8]) {
+      opts.density = d;
+      sys.bake();
+      expect(last(calls, h).sx).toBeCloseTo(grown, 4);
+    }
+    expect(grow.pending).toBe(0);
+  });
+
+  it('자라는 중에 재굽기하면 자라던 배수가 유지된다 — 처음으로 돌아가지 않는다', () => {
+    const { sys, grow, pool, calls, opts } = setupWithGrow(0.4);
+    const h = pool.acquire('shadow:tree')!;
+    pool.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    grow.update({ dt: 0.2, hidden: false } as never); // 절반쯤 자람
+    const mid = last(calls, h).sx;
+
+    opts.soft = 0.3;
+    sys.bake();
+
+    // 절반쯤 자란 상태가 유지돼야 한다(START_SCALE 로 떨어지면 안 된다).
+    const after = last(calls, h).sx;
+    expect(after).toBeGreaterThan(mid * 0.5);
+    expect(grow.pending).toBe(1); // 아직 자라는 중 — 엔트리는 살아 있다
+  });
+
+  it('재굽기 뒤 수축은 **새** 자세에서 출발한다 — lastPose 가 갱신됐다', () => {
+    // `retarget` 이 `lastPose` 를 안 고치면 반납 때 옛 자리로 줄어든다. 태양을 돌려
+    // 자세를 크게 바꾼 뒤 수축시켜 그 자리를 본다.
+    const { sys, grow, pool, calls, dir } = setupWithGrow();
+    const h = pool.acquire('shadow:tree')!;
+    pool.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    grow.update({ dt: 10, hidden: false } as never);
+
+    dir.x = -0.7; dir.z = -0.14; // 태양 반대편으로
+    sys.bake();
+    const moved = last(calls, h);
+
+    pool.release(h);
+    grow.update({ dt: 0.05, hidden: false } as never);
+    const shrinking = last(calls, h);
+    // 줄어드는 위치가 **재굽기 후 자세**여야 한다.
+    expect(shrinking.x).toBeCloseTo(moved.x, 4);
+    expect(shrinking.z).toBeCloseTo(moved.z, 4);
+    expect(shrinking.sx).toBeLessThan(moved.sx);
+  });
+
+  it('캐스터는 이 경로에 끼지 않는다 — 재굽기가 건물을 만지지 않는다', () => {
+    const { sys, grow, pool, calls, opts } = setupWithGrow();
+    const b = pool.acquire('building')!;
+    pool.setTransform(b, 1, 0, 2, 0.3, 4, 9, 4);
+    grow.update({ dt: 10, hidden: false } as never);
+    const before = calls.get(b)!.length;
+    opts.density = 0.7;
+    sys.bake();
+    expect(calls.get(b)!.length).toBe(before); // 호출 0회 추가
   });
 });
