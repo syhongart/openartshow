@@ -120,6 +120,7 @@ export const clocktower: PartSpec = {
   tones: [0xffffff],
 
   // 사각 기둥이라 모서리까지가 반경이다(`R` = 외접원 반경).
+  shadowProfile: 'box',
   footprint: () => R + 0.4,
 
   maxPerParcel: () => 1,

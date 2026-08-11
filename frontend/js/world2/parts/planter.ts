@@ -42,6 +42,7 @@ export const planter: PartSpec = {
   tones: [0xffffff, 0xf0f4e8, 0xe4ecdc],
 
   // 덤불 반경 0.3 에 스케일을 곱한다. `place` 가 넣는 `sx` 가 그 스케일이다.
+  shadowProfile: 'round',
   footprint: (p) => PLANTER_RADIUS(p.sx),
 
   maxPerParcel: () => 3,

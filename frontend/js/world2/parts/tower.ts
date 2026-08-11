@@ -85,6 +85,7 @@ export const tower: PartSpec = {
   tones: TONES,
 
   /** 바닥 사각형을 감싸는 원. 회전이 직각 배수라 긴 변의 절반 + 처마면 충분하다 */
+  shadowProfile: 'box',
   footprint: (p) => Math.max(p.sx, p.sz) * 0.5 + EAVE,
 
   maxPerParcel: () => 1,

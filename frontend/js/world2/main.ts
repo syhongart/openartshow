@@ -28,6 +28,7 @@ import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
+import { findKnobBar, attachKnobBar, attachKnobActions } from './ui/knob-bar.js';
 import {
   FEATURES, mountFeatures, combineDrawGroupKey, drawGroupKeyOf, collectDiagnostics, prewarmFeatures,
   type MountedFeature,
@@ -36,12 +37,17 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import { createCollider } from './systems/collision.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
+import { ShadowDecalSystem, defaultOpts as shadowDecalDefaults } from './systems/shadow-decal.js';
+import {
+  SHADOW_DENSITY, SHADOW_SOFT, SHADOW_TAIL, SHADOW_MAX_LEN, SHADOW_Y,
+} from './decide/shadow-decal.js';
+import { SHADOW_DRAW_PX, SHADOW_DRAW_MAX } from './parts/shadow.js';
 import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
 // 원인을 짐작하기 어렵다(검수관이 잡은 열 번째 지점).
-import { ALL_KINDS } from './parts/index.js';
+import { ALL_KINDS, PARTS } from './parts/index.js';
 // URL 노브는 `url-knob.ts` 가 유일한 구현이다 — 여기·`postfx.ts`·`features/sky.ts` 가
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
 import { readNum, readEnum } from './url-knob.js';
@@ -146,6 +152,32 @@ const SHADOW_INTENSITY = readNum('shint', 0, 0, 1);
 const SHADOW = shadowFrustum(
   DEFAULT_LAYOUT.cellX, SHADOW_BAND, TOWER_MAX_H, SHADOW_MAP,
 );
+
+/**
+ * **그림자 데칼(베이킹) 노브 일곱.** 감독 지시 2026-08-11 *"해상도 조정옵션도 만들고.
+ * 기타 세부옵션을 넣자."*
+ *
+ * 기본값을 여기 적지 않는다 — 전부 소비처 상수를 fallback 으로 읽는다. 같은 값을 두 곳에
+ * 적으면 한쪽만 고쳐도 아무도 모른다(이 저장소가 색·수치·임계값에서 세 번 데인 형태).
+ *
+ * 다섯은 슬라이더로도 열려 있다(`ui/knob-bar.ts`). 나머지 둘(`shy`·`shdec`)은 URL 전용이다 —
+ * `shy` 는 z-fighting 이 기기마다 다를 때의 탈출구이고 `shdec` 는 룩 A/B 대조군이라,
+ * 슬라이더에 올리면 감독이 매번 지나치며 건드릴 축이 둘 늘 뿐이다.
+ *
+ * ⚠ **`?shdec=0` 은 기능을 끄지 않는다** — 슬롯도 드로우콜도 그대로이고 알파만 0 이다.
+ * 룩 A/B 는 이것으로 하고(다른 축이 하나도 안 움직인다), **드로우콜 비용 A/B 를 하려면
+ * `parts/index.ts` 에서 `shadowParts` 한 줄을 지운다.** 그것이 이 저장소가 기능을 끄는
+ * 방식이고, 노브로 흉내 내면 "껐는데 왜 draw 가 그대로냐" 로 오독된다.
+ */
+const SHADOW_DECAL_OPTS = {
+  res: Math.round(readNum('shres', SHADOW_DRAW_PX, 8, SHADOW_DRAW_MAX)),
+  density: readNum('shdark', SHADOW_DENSITY, 0, 1),
+  soft: readNum('shsoft', SHADOW_SOFT, 0, 0.5),
+  tail: readNum('shtail', SHADOW_TAIL, 0, 1),
+  maxLen: readNum('shlen', SHADOW_MAX_LEN, 4, 64),
+  y: readNum('shy', SHADOW_Y, 0.16, 0.5),
+  on: readNum('shdec', 1, 0, 1),
+};
 
 /*
  * 동시 파셀 수 상수(`MAX_PARCELS = 20`)를 여기서 없앴다.
@@ -474,6 +506,18 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let streaming: StreamingSystem | null = null;
   let adapt: AdaptSystem | null = null;
   let builder: PooledParcelBuilder | null = null;
+  let shadowDecal: ShadowDecalSystem | null = null;
+  /**
+   * 그림자 데칼 노브의 **살아 있는 값**. 슬라이더가 이 객체를 직접 고치고 시스템이 매
+   * 프레임 되읽는다 — 새 객체로 갈아치우면 시스템이 든 참조가 옛 것이라 배선이 끊긴다.
+   */
+  const shadowOpts = { ...shadowDecalDefaults(), ...SHADOW_DECAL_OPTS };
+  /**
+   * 부팅 때 만든 파츠 자산. **그림자 데칼이 캐스터 지오의 bounding box 를 실측**하려면
+   * 필요하다 — 치수를 파츠 선언에 적지 않기로 한 대가로, 자산을 조립 시점 밖으로 들고
+   * 나온다(`pools()` 지역 변수였다).
+   */
+  let partAssets: ReturnType<typeof createPartAssets> | null = null;
   let parcelFade: ParcelFadeSystem | null = null;
   let parcelGrow: ParcelGrowSystem | null = null;
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
@@ -617,6 +661,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       pools: () => {
         pools = new InstancePools(scene);
         const assets = createPartAssets();
+        partAssets = assets;
         // `?band=` 를 여기에도 넘긴다 — 예산이 밴드를 안 따라오면 배율>1 에서 슬롯이
         // 모자라(starved) "부품이 안 그려지는" 오염이 실험 결과를 덮는다.
         const budget = PooledParcelBuilder.poolBudget({ layout: LAYOUT, bands: TIER_BANDS });
@@ -755,10 +800,85 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           shrinkEase,
           gate: () => streaming?.ready ?? false,
         });
+        // 그림자 데칼 — **빌더보다 먼저** 만든다(페이드·성장과 같은 이유: 슬롯 어댑터
+        // 안쪽에 워프를 꽂아야 배치가 정한 자세를 가로챌 수 있다).
+        //
+        // 태양 방향은 **광원에서 되읽는다.** `SUN_AZ`·고도표를 여기로 복사하면 밤에 달
+        // 방위로 넘어가는 것을 놓치고, 그 증상은 "밤에 그림자가 엉뚱한 쪽" 이라 헤드리스가
+        // 못 잡는다. `systems/sky.ts` 가 매 프레임 `sun.position`·`sun.target.position` 을
+        // 쓰고 있으므로 그 차이가 곧 방향이다.
+        shadowDecal = new ShadowDecalSystem({
+          pools: pools!,
+          assets: partAssets!,
+          parts: PARTS,
+          sunDir: () => {
+            const s = sun;
+            if (!s) return { x: 0, y: 1, z: 0 };
+            const dx = s.position.x - s.target.position.x;
+            const dy = s.position.y - s.target.position.y;
+            const dz = s.position.z - s.target.position.z;
+            const l = Math.hypot(dx, dy, dz) || 1;
+            return { x: dx / l, y: dy / l, z: dz / l };
+          },
+          time: () => timeOfDay,
+          opts: shadowOpts,
+        });
+        // 어댑터를 변수로 든다 — 빌더와 재적용이 **같은 것**을 써야 한다. 각자 만들면
+        // 워프·성장·색이 두 벌이 되고, 재베이킹이 빌더가 모르는 자세를 쓴다.
+        const slotPool = createSlotPool(
+          pools!, parcelFade.sink(), parcelGrow.sink(), shadowDecal.warp(),
+        );
         builder = new PooledParcelBuilder({
-          pool: createSlotPool(pools!, parcelFade.sink(), parcelGrow.sink()),
+          pool: slotPool,
           cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
         });
+        shadowDecal.attach(slotPool);
+
+        // ── 개발자 옵션: 슬라이더 다섯 + 굽기 버튼 ──────────────────────────
+        // 감독 지시 2026-08-11 *"베이킹 버튼을 누르면 구워지고 적용되게하자. 해상도
+        // 조정옵션도 만들고. 기타 세부옵션을 넣자."* — 카드 판정으로 **월드 화면 안**에
+        // 두기로 확정했다(홈 진입점은 이번 회차 제외, 팀장 판정 2026-08-11: 홈에서
+        // 링크하면 world2 가 사실상 라이브 승격이고 그것은 #119 에 묶인 별도 결정이다).
+        //
+        // 수면 노브와 **같은 바에 누적**된다 — 감독이 말한 것은 조절 막대 하나였다.
+        const bar = findKnobBar(document);
+        if (bar) {
+          const base = shadowDecalDefaults();
+          // `key` 는 **URL 노브 이름**이고 `field` 는 옵션 필드다. 둘을 나란히 받는 이유:
+          // 슬라이더에서 값을 고른 감독이 그대로 `?shdark=0.6` 을 쳐서 링크로 만들 수
+          // 있어야 한다(이 저장소의 판정 사이클이 링크로 돈다). 필드명을 그대로 쓰면
+          // 화면의 이름과 주소의 이름이 갈라진다.
+          const knob = (
+            key: string, field: keyof typeof base, label: string,
+            min: number, max: number, step: number,
+          ) => ({
+            key, label, min, max, step,
+            value: () => shadowOpts[field],
+            // 기본값과 다르면 "지정됨" 이다. `readNumOpt` 를 안 쓴 이유: 이 값들은
+            // 시간대별 기본값이 없어(농도의 시간대 배수는 판정이 따로 곱한다) 상황에
+            // 따라 흔들리지 않는다 — 상수와 비교하면 충분하다.
+            overridden: () => shadowOpts[field] !== base[field],
+            set: (v: number) => { shadowOpts[field] = v; },
+            reset: () => { shadowOpts[field] = base[field]; },
+          });
+          attachKnobBar(bar, [
+            knob('shdark', 'density', '그림자', 0, 1, 0.05),
+            knob('shsoft', 'soft', '번짐', 0, 0.5, 0.01),
+            knob('shlen', 'maxLen', '길이', 4, 64, 1),
+            knob('shtail', 'tail', '꼬리', 0, 1, 0.05),
+            knob('shres', 'res', '해상도', 8, SHADOW_DRAW_MAX, 8),
+          ]);
+          attachKnobActions(bar, [{
+            key: 'shbake',
+            label: '그림자 굽기',
+            // 소요를 돌려주면 버튼 옆에 잠깐 뜬다. 같은 값으로 다시 구우면 화면이 안
+            // 바뀌는데, 그때 아무 반응이 없으면 **버튼이 고장 난 것으로 읽힌다.**
+            run: () => `${Math.round(shadowDecal?.bake() ?? 0)}ms`,
+          }]);
+        }
+        // 부팅 중에 한 번 굽는다. 첫 파셀이 놓이기 전에 아틀라스가 비어 있으면 그 프레임에
+        // 투명한 사각이 뜨고, 그것이 "처음에 그림자가 없다" 로 읽힌다.
+        shadowDecal.bake();
         streaming = new StreamingSystem({
           builder,
           bands: TIER_BANDS,
@@ -818,6 +938,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // `?adapt=0` 이면 등록만 생략한다(생성은 유지 — snapshot 소비자가 null 분기
         // 없이 초기값을 읽는다). 등록이 없으면 update 가 안 돌아 해상도·캡·압력 집행 0.
         kernel.add(streaming).add(parcelFade).add(parcelGrow);
+        // 그림자 데칼은 **페이드·성장 뒤**다. 그것들이 이번 프레임에 놓은 슬롯을 보고
+        // 태양이 바뀌었는지 판정해야 하는데, 앞에 두면 한 프레임 늦은 자세로 굽는다.
+        if (shadowDecal) kernel.add(shadowDecal);
         if (adaptOn) kernel.add(adapt);
         kernel.start();
 

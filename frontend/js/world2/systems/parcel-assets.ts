@@ -76,14 +76,41 @@ export interface PlaceSink {
   retire?(h: SlotHandle, done: () => void): void;
 }
 
+/** 자세 하나 */
+export interface SlotTransform {
+  x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number;
+}
+
+/**
+ * 배치가 정한 자세를 **다른 자세로 바꾸는 문**. 구현은 `systems/shadow-decal.ts`.
+ *
+ * ── 왜 필요한가 ─────────────────────────────────────────────────────────────
+ * 그림자 데칼은 캐스터 자세를 복사해 태어나고(`parts/shadow.ts` 의 `place`), 실제로 놓일
+ * 자리는 **태양 방향에서** 나온다. 그런데 배치는 순수 함수라 태양을 알 수 없고(알면 배치
+ * 골든이 시간대마다 흔들린다), 태양은 매 프레임 움직인다. 그래서 변환을 배치가 아니라
+ * **놓는 길목**에서 한다.
+ *
+ * ── 관심 없는 키는 그대로 돌려준다 ──────────────────────────────────────────
+ * 이 문은 **모든** 슬롯의 자세를 지나간다. 구현이 키를 안 보고 전부 손대면 건물이 눕는다 —
+ * 그것을 `world2-shadow-decal-wiring.test.ts` 가 "캐스터 행렬은 바이트 동일" 로 단언한다.
+ */
+export interface PoseWarp {
+  map(h: SlotHandle, t: SlotTransform): SlotTransform;
+  /** 슬롯이 반납된다. 살아있는 핸들 등록부에서 걷을 기회 */
+  release?(h: SlotHandle): void;
+}
+
 /**
  * `InstancePools` 를 파셀 빌더가 쓰는 좁은 인터페이스로 감싼다.
  * 여기서만 tone 번호 → 팔레트 hex 변환이 일어난다.
  *
  * @param sink 색을 가로챌 문. 생략하면 종전대로 즉시 칠한다(페이드 없음).
  * @param grow 자세를 가로챌 문. 생략하면 종전대로 즉시 완성 크기다(성장 없음).
+ * @param warp 자세를 **바꿀** 문. 생략하면 배치가 정한 자세 그대로다(그림자 없음).
  */
-export function createSlotPool(pools: InstancePools, sink?: ToneSink, grow?: PlaceSink): SlotPool {
+export function createSlotPool(
+  pools: InstancePools, sink?: ToneSink, grow?: PlaceSink, warp?: PoseWarp,
+): SlotPool {
   const c = new THREE.Color();
   // 마지막으로 놓인 자리. `setTone` 이 sink 에 넘겨줄 좌표다.
   //
@@ -99,11 +126,15 @@ export function createSlotPool(pools: InstancePools, sink?: ToneSink, grow?: Pla
   return {
     acquire: (key) => pools.acquire(key),
     setTransform: (h, x, y, z, ry, sx, sy, sz) => {
-      placed.set(h, { x, z });
-      pools.setTransform(h, x, y, z, ry, sx, sy, sz);
+      // 워프가 **가장 먼저**다. 뒤에 오는 것들(풀 행렬·페이드 좌표·성장 시작 자세)이 전부
+      // 같은 자세를 봐야 한다 — 풀에만 워프를 적용하고 grow 에 원본을 넘기면, grow 가
+      // 원본을 "완성 자세" 로 기억해 수축할 때 그리로 튄다.
+      const t = warp ? warp.map(h, { x, y, z, ry, sx, sy, sz }) : { x, y, z, ry, sx, sy, sz };
+      placed.set(h, { x: t.x, z: t.z });
+      pools.setTransform(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
       // 완성 자세를 쓴 **뒤에** 알린다 — grow 가 곧바로 시작 스케일로 줄여 쓴다.
       // 순서를 뒤집으면 grow 가 줄인 것을 위 줄이 도로 완성 크기로 덮는다.
-      grow?.place(h, { x, y, z, ry, sx, sy, sz });
+      grow?.place(h, t);
     },
     setTone: (h, tone) => {
       const palette = tonesFor(h.key);
@@ -116,6 +147,9 @@ export function createSlotPool(pools: InstancePools, sink?: ToneSink, grow?: Pla
       // 순서가 중요하다: 풀에 반납하면 핸들이 죽은 표식(index=-1)을 달아 sink 가 자기
       // 항목을 못 찾는다. 먼저 sink 에서 걷고 반납한다.
       sink?.release?.(h);
+      // 워프도 같은 이유로 먼저 걷는다. 안 걷으면 등록부가 죽은 핸들을 들고 있다가
+      // 재베이킹 때 **재사용된 남의 슬롯**을 태양 자세로 덮어쓴다.
+      warp?.release?.(h);
       // 수축 훅이 있으면 반납을 **그쪽에 맡긴다** — 줄어드는 애니메이션이 끝난 프레임에
       // `pools.release` 가 불린다. 없으면 종전대로 즉시.
       if (grow?.retire) grow.retire(h, () => pools.release(h));
