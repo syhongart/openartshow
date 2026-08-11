@@ -33,6 +33,7 @@
 
 import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { plazaLandmark } from './plaza.js';
+import { ROAD_SURFACE_Y } from './road.js';
 import { bakePieces, rgb, type Piece } from './bake.js';
 
 // ── 색 — **city 확정** (감독 판정 2026-08-09) ────────────────────────────────
@@ -121,6 +122,10 @@ export const clocktower: PartSpec = {
 
   // 사각 기둥이라 모서리까지가 반경이다(`R` = 외접원 반경) — 그것은 `footprint` 얘기다.
   // **그림자는 원**이다(감독 판정 2026-08-11 — 사각 그늘은 벤치만).
+  // 광장 정중앙 고정이라 도로 중심 조각(무조건 그려진다) **위에** 선다.
+  // 배치 `y` 는 밑동 불변식 때문에 0 이므로 여기서 신고한다 — 근거는
+  // `types.ts` 의 `standsOn` 주석 한 곳.
+  standsOn: ROAD_SURFACE_Y,
   shadowProfile: 'round',
   footprint: () => R + 0.4,
 
