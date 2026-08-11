@@ -119,8 +119,9 @@ export const clocktower: PartSpec = {
   //  바뀌어도 곱셈이라는 사실은 그대로다 — 파츠 자산 테스트가 두 경우를 함께 본다.)
   tones: [0xffffff],
 
-  // 사각 기둥이라 모서리까지가 반경이다(`R` = 외접원 반경).
-  shadowProfile: 'box',
+  // 사각 기둥이라 모서리까지가 반경이다(`R` = 외접원 반경) — 그것은 `footprint` 얘기다.
+  // **그림자는 원**이다(감독 판정 2026-08-11 — 사각 그늘은 벤치만).
+  shadowProfile: 'round',
   footprint: () => R + 0.4,
 
   maxPerParcel: () => 1,

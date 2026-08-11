@@ -40,6 +40,7 @@ import { shadowFrustum } from './decide/shadow.js';
 import { ShadowDecalSystem, defaultOpts as shadowDecalDefaults } from './systems/shadow-decal.js';
 import {
   SHADOW_DENSITY, SHADOW_DENSITY_MAX, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_Y,
+  SHADOW_BLEND, SHADOW_BLENDS, LEAF_DEPTH, LEAF_DEPTH_MAX,
 } from './decide/shadow-decal.js';
 import { SHADOW_DRAW_PX, SHADOW_DRAW_MIN, SHADOW_DRAW_MAX } from './parts/shadow.js';
 import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
@@ -185,6 +186,13 @@ const SHADOW_DECAL_OPTS = {
   soft: readNum('shsoft', SHADOW_SOFT, 0, SHADOW_SOFT_MAX),
   y: readNum('shy', SHADOW_Y, 0.16, 0.5),
   on: readNum('shdec', 1, 0, 1),
+  // 합성 모드. **감독 화면이 깨졌을 때 링크 하나로 되돌리는 수단이다** — `three/webgpu`
+  // 에서 `MultiplyBlending` 이 동작하는지 헤드리스로 검증할 방법이 이 저장소에 없다.
+  // 근거 전문은 `decide/shadow-decal.ts` 의 「합성 모드」 절 마지막 문단 한 곳이다.
+  blend: readEnum('shblend', SHADOW_BLEND, SHADOW_BLENDS),
+  // 잎 그림자 깊이. 감독이 *"얼룩덩덩하게"* 를 고르며 산만할 위험을 함께 들었으므로,
+  // 0 으로 밀면 나무가 매끈한 원으로 돌아온다(재배포 없이 판정을 뒤집는 축).
+  leaf: readNum('shleaf', LEAF_DEPTH, 0, LEAF_DEPTH_MAX),
 };
 
 /*

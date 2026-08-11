@@ -25,11 +25,13 @@ import type { PoseWarp, SlotTransform } from './parcel-assets.js';
 import type { SlotPool } from './parcel-builder.js';
 import type { PartAsset, PartSpec, ThreeNS } from '../parts/types.js';
 import type { SkyTime } from '../decide/night.js';
+import type { ShadowBlend } from '../decide/shadow-decal.js';
 import {
-  decalTransform, densityFor,
-  SHADOW_Y, SHADOW_DENSITY, SHADOW_SOFT,
+  decalTransform, decalTransformRect, densityFor,
+  SHADOW_Y, SHADOW_DENSITY, SHADOW_SOFT, SHADOW_BLEND, LEAF_DEPTH,
 } from '../decide/shadow-decal.js';
-import { bakeAtlas, casterKinds, shadowKindOf, SHADOW_DRAW_PX } from '../parts/shadow.js';
+import type { CasterCell, ShadowShape } from '../parts/shadow.js';
+import { bakeAtlas, casterProfiles, shadowKindOf, SHADOW_DRAW_PX } from '../parts/shadow.js';
 
 /** 노브가 미는 값. 슬라이더가 **이 객체를 직접 고친다** — 새로 만들면 배선이 끊긴다 */
 export interface ShadowDecalOpts {
@@ -43,12 +45,16 @@ export interface ShadowDecalOpts {
   y: number;
   /** 0 이면 완전 투명하게 굽는다(룩 A/B 전용 — 슬롯도 드로우콜도 그대로다). `?shdec` */
   on: number;
+  /** 합성 모드. `?shblend` — WebGPU 되돌림 수단이다. 근거는 판정 파일의 「합성 모드」 절 */
+  blend: ShadowBlend;
+  /** 잎 그림자 깊이. `?shleaf` — 0 이면 나무도 매끈한 원이 된다 */
+  leaf: number;
 }
 
 export function defaultOpts(): ShadowDecalOpts {
   return {
     res: SHADOW_DRAW_PX, density: SHADOW_DENSITY, soft: SHADOW_SOFT,
-    y: SHADOW_Y, on: 1,
+    y: SHADOW_Y, on: 1, blend: SHADOW_BLEND, leaf: LEAF_DEPTH,
   };
 }
 
@@ -60,8 +66,17 @@ export function defaultOpts(): ShadowDecalOpts {
  * 벤치의 그림자 크기 차이는 **밑동 반경**에서만 나온다.
  */
 interface CasterDims {
-  /** 밑동 반경(m) — 가로·세로 반폭 중 큰 쪽(외접) */
+  /** 밑동 반경(m) — 가로·세로 반폭 중 큰 쪽(외접). **원형 실루엣이 쓰는 값** */
   r: number;
+  /**
+   * 축별 반폭(m). **사각 실루엣만 쓴다.**
+   *
+   * 벤치는 1.4×0.44 로 가로세로 3.2:1 이라, 외접 반경 하나로 정사각 평면을 만들면 사각
+   * 그림자가 **정사각**이 되어 감독 지시(*"형태가 사각형이면 사각형그림자"*)가 화면에서
+   * 성립하지 않는다. 원형이 이 값을 안 쓰는 이유는 `decalTransformRect` 주석에 있다.
+   */
+  rx: number;
+  rz: number;
 }
 
 export interface ShadowDecalOptions {
@@ -81,7 +96,11 @@ export class ShadowDecalSystem implements System {
   /** kind → 단위 치수. 부팅 때 한 번 실측하고 끝 */
   private readonly dims = new Map<string, CasterDims>();
   /** 아틀라스 셀 순서 — `parts/shadow.ts` 의 `shadowParts` 와 **같은 순서**여야 한다 */
-  private readonly cells: string[];
+  private readonly cells: CasterCell[];
+  /** 셀별 실루엣. `bakeAtlas` 가 이 순서로 굽는다 — `cells` 에서 유도하므로 어긋날 수 없다 */
+  private readonly shapes: ShadowShape[];
+  /** kind → 실루엣. 자세 유도가 사각인지 물어보는 자리 */
+  private readonly shapeOf = new Map<string, ShadowShape>();
   /**
    * 살아 있는 데칼과 그 **원본**(캐스터) 자세.
    *
@@ -99,10 +118,12 @@ export class ShadowDecalSystem implements System {
 
   constructor(o: ShadowDecalOptions) {
     this.o = o;
-    this.cells = casterKinds(o.parts);
-    for (const kind of this.cells) {
-      const a = o.assets[kind];
-      this.dims.set(kind, a ? measure(a) : { r: 0.5 });
+    this.cells = casterProfiles(o.parts);
+    this.shapes = this.cells.map((c) => c.shape);
+    for (const c of this.cells) {
+      const a = o.assets[c.kind];
+      this.dims.set(c.kind, a ? measure(a) : { r: 0.5, rx: 0.5, rz: 0.5 });
+      this.shapeOf.set(c.kind, c.shape);
     }
   }
 
@@ -141,8 +162,11 @@ export class ShadowDecalSystem implements System {
     }
     // 인스턴스 스케일을 단위 치수에 곱한다 — 건물은 `sx·sz` 가 3~8m 로 흔들리고 나무는
     // 0.6~1.9배다. 단위 치수만 쓰면 큰 나무와 작은 나무의 그림자가 같아진다.
-    const r = d.r * Math.max(t.sx, t.sz);
-    const p = decalTransform(t.x, t.z, r);
+    // ⚠ 사각은 축을 **따로** 곱한다. 원형이 `max(sx,sz)` 하나로 가는 것은 방향이 없어서
+    // 였고(그 근거는 `measure` 주석), 사각에는 그 면제가 없다.
+    const p = this.shapeOf.get(casterKind) === 'box'
+      ? decalTransformRect(t.x, t.z, d.rx * t.sx, d.rz * t.sz, t.ry)
+      : decalTransform(t.x, t.z, d.r * Math.max(t.sx, t.sz));
     return { x: p.x, y: this.o.opts.y, z: p.z, ry: p.ry, sx: p.sx, sy: 1, sz: p.sz };
   }
 
@@ -154,8 +178,9 @@ export class ShadowDecalSystem implements System {
   bake(): number {
     const t0 = nowMs();
     const density = this.o.opts.on > 0 ? densityFor(this.o.time(), this.o.opts.density) : 0;
-    bakeAtlas(this.cells.length, {
+    bakeAtlas(this.shapes, {
       res: this.o.opts.res, density, soft: this.o.opts.soft,
+      blend: this.o.opts.blend, leaf: this.o.opts.leaf,
     });
     this.reapply();
     this.lastKey = this.key();
@@ -207,7 +232,10 @@ export class ShadowDecalSystem implements System {
    */
   private key(): string {
     const o = this.o.opts;
-    return `${this.o.time()}|${o.res}|${o.density}|${o.soft}|${o.y}|${o.on}`;
+    // ⚠ `blend`·`leaf` 를 빠뜨리면 **노브를 밀어도 다시 굽지 않는다** — 지문이 같아
+    // `update` 가 조기 반환하고, 화면에서는 "URL 을 붙였는데 아무 일도 안 일어난다" 로만
+    // 드러난다. 새 노브를 여는 사람은 반드시 이 줄을 함께 본다.
+    return `${this.o.time()}|${o.res}|${o.density}|${o.soft}|${o.y}|${o.on}|${o.blend}|${o.leaf}`;
   }
 
   update(ctx: FrameCtx): void {
@@ -215,9 +243,23 @@ export class ShadowDecalSystem implements System {
     if (this.key() === this.lastKey) return;
     const ms = this.bake();
     ctx.probe?.('shadow_bake_ms', ms);
-    // 굽기가 프레임 예산을 먹으면 알린다. 지금 규모(그라디언트 1회 + 셀 8개 복사 + 행렬
-    // ≤504)에서는 넘을 일이 없다고 보지만, **그 판단을 근거 없이 믿지 않기 위해** 축을
-    // 남긴다. 실기기에서 이 경고가 뜨면 그때 `bakeAtlas` 안 루프를 chunk 로 쪼갠다.
+    // 굽기가 프레임 예산을 먹으면 알린다.
+    //
+    // ⚠ **이 판단의 근거는 2026-08-11 에 정정됐다**(검수관 재확인 §4). 직전 주석은
+    // *"지금 규모(그라디언트 1회 + 셀 8개 복사 + 행렬 ≤504)에서는 넘을 일이 없다"* 라고
+    // 적었고, 그 규모 서술은 **2회차의 「한 번 그려 복사」 모델**이다. 지금은 셀마다 다시
+    // 그린다 — 원형 그라디언트 6회 + 픽셀 루프 2회(`O(res²)`, `?shres=128` 이면 셀당
+    // 16,384 픽셀)다. 즉 *"넘을 일이 없다"* 의 **근거가 낡았지 결론이 틀렸다는 뜻은
+    // 아니다** — 실측이 없으므로 결론은 여전히 미확인이다.
+    //
+    // **그래서 축을 남기는 이유가 더 커졌다.** 이 경고가 유일한 실측 수단이고, 실기기에서
+    // 뜨면 `bakeAtlas` 안 루프를 chunk 로 쪼갠다.
+    //
+    // ⚠⚠ 이것이 이번 회차에 **세 번째로 발견된 낡은 서술**이다(`parts/shadow.ts` 머리 →
+    // `decide/shadow-decal.ts` 의 `atlasGrid` → 여기). 셋 다 같은 사실("셀마다 그리는가")을
+    // 각자 다시 서술하고 있었고, 나는 앞의 둘을 고치면서 **매번 나머지를 못 봤다.** 굽기
+    // 모델을 다음에 또 바꾸는 사람은 이 세 파일을 **함께** 그렙해라 — 값 미러링이 색·수치가
+    // 아니라 **산문**에서도 성립한다는 것이 이 세 건의 교훈이다.
     if (ms > 8) ctx.probe?.('ev:그림자굽기지연', Math.round(ms));
   }
 
@@ -249,12 +291,20 @@ function measure(a: PartAsset): CasterDims {
   };
   if (!g.boundingBox) g.computeBoundingBox();
   const b = g.boundingBox;
-  if (!b) return { r: 0.5 };
+  if (!b) return { r: 0.5, rx: 0.5, rz: 0.5 };
   // 외접 반경. 각진 캐스터가 45° 돌아서면 실제 폭이 √2배가 되지만, 원형 블롭에는 방향이
-  // 없으므로 그 편차가 화면에 안 나타난다(방향성 데칼에서는 사각이었다).
+  // 없으므로 그 편차가 화면에 안 나타난다.
+  // ⚠ **사각 실루엣에는 그 면제가 없다** — 데칼이 캐스터 `ry` 를 따라 돌기 때문에 45°
+  // 회전이 그대로 보인다. 다만 world2 파츠 배치는 회전이 직각 배수라(각 파츠의 `footprint`
+  // 주석이 그것을 근거로 반경을 잡고 있다) 지금은 도달하지 않는다. 자유 회전 배치가
+  // 들어오는 날 여기가 먼저 깨진다.
   const rx = Math.max(Math.abs(b.min.x), Math.abs(b.max.x));
   const rz = Math.max(Math.abs(b.min.z), Math.abs(b.max.z));
-  return { r: Math.max(0.05, Math.max(rx, rz)) };
+  return {
+    r: Math.max(0.05, Math.max(rx, rz)),
+    rx: Math.max(0.05, rx),
+    rz: Math.max(0.05, rz),
+  };
 }
 
 function nowMs(): number {

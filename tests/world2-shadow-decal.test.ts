@@ -26,6 +26,9 @@ import {
   BLOB_INNER_R, BLOB_OUTER_R, BLOB_CORE_ALPHA, BLOB_MID_ALPHA, BLOB_MID_STOP,
   MID_STOP_HARD, MID_STOP_SOFT, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_DENSITY,
   SHADOW_DENSITY_MAX,
+  // ── 3회차(2026-08-11) 신설 축 — 곱하기 합성 + 형태별 실루엣 ──
+  alphaCurve, roundBoxSD, leafNoise, decalTransformRect,
+  RECT_CORNER, SHADOW_BLEND, SHADOW_BLENDS,
 } from '../frontend/js/world2/decide/shadow-decal.js';
 
 describe('그라디언트 — 빌더 값을 그대로 재현하는가', () => {
@@ -340,5 +343,150 @@ describe('densityFor — 시간대 농도', () => {
     expect(densityFor('day', 1.3)).toBeCloseTo(1.3, 9);
     expect(densityFor('day', 99)).toBe(SHADOW_DENSITY_MAX);
     expect(densityFor('day', -5)).toBe(0);
+  });
+});
+
+// ── 3회차(2026-08-11): 곱하기 합성 + 형태별 실루엣 ──────────────────────────
+//
+// 감독 지시 둘(*"포토샵 합성 기능으로 적용"* · *"형태가 사각형이면 사각형그림자"*)의 산술
+// 부분이다. 픽셀로 실제 굽는 것은 배선 테스트가 본다 — 여기서는 그 픽셀이 타는 **식**만.
+
+describe('⑤ 사각 실루엣의 거리 함수', () => {
+  const H = 0.5;
+
+  it('중심에서 0, 경계에서 반폭 — 원의 hypot 과 같은 척도다', () => {
+    // `paintShaped` 가 `rad = OUTER_R + SD` 로 원과 같은 알파 곡선을 태운다. 그 전제가
+    // "중심 SD = −반폭, 경계 SD = 0" 이다. 이게 깨지면 사각만 페이드가 어긋나고,
+    // 증상은 "벤치 그림자만 진하다/옅다" 로만 드러난다.
+    expect(roundBoxSD(0, 0, H, H, 0)).toBeCloseTo(-H, 9);
+    expect(roundBoxSD(H, 0, H, H, 0)).toBeCloseTo(0, 9);
+    expect(roundBoxSD(0, H, H, H, 0)).toBeCloseTo(0, 9);
+    // 모서리 반경이 있어도 변의 중점은 여전히 경계다.
+    expect(roundBoxSD(H, 0, H, H, H * 0.85)).toBeCloseTo(0, 9);
+  });
+
+  it('★ 모서리를 둥글리면 대각선 방향이 안쪽으로 들어온다 (감독: "많이 둥글게")', () => {
+    // 이것이 "둥글다" 의 조작적 정의다. 각진 사각은 대각선 꼭짓점이 `√2·H` 까지 뻗지만,
+    // 둥글리면 그보다 가까워진다. 반대로 **변의 중점은 안 움직인다** — 그래야 길쭉한
+    // 알약이지 타원이 아니다.
+    const sharpCorner = roundBoxSD(H, H, H, H, 0);
+    const roundCorner = roundBoxSD(H, H, H, H, H * RECT_CORNER);
+    expect(roundCorner).toBeGreaterThan(sharpCorner);
+    // 변 중점은 반경과 무관하게 경계(0)다.
+    expect(roundBoxSD(H, 0, H, H, H * RECT_CORNER)).toBeCloseTo(0, 9);
+  });
+
+  it('모서리 반경이 반폭을 넘어도 뒤집히지 않는다 — 짧은 변 기준으로 잘린다', () => {
+    // `RECT_CORNER` 를 1 초과로 올리는 날 여기가 먼저 걸린다. 자르지 않으면 SD 가
+    // 양수 영역으로 접혀 **중심이 바깥으로 판정**되고, 그림자가 도넛이 된다.
+    const wide = roundBoxSD(0, 0, 1.0, 0.2, 99);
+    expect(wide).toBeLessThan(0);
+    expect(wide).toBeCloseTo(-0.2, 9);
+  });
+
+  it('가로세로가 다르면 긴 축으로 늘어난다 — 벤치가 알약이 되는 근거', () => {
+    // 벤치 밑면 1.4×0.44(3.2:1). 짧은 축 경계가 긴 축 경계보다 훨씬 가깝다.
+    const hx = 0.7; const hz = 0.22;
+    expect(roundBoxSD(hx, 0, hx, hz, hz * RECT_CORNER)).toBeCloseTo(0, 9);
+    expect(roundBoxSD(hz, 0, hx, hz, hz * RECT_CORNER)).toBeLessThan(0);
+  });
+});
+
+describe('⑥ 알파 곡선 — 사각·얼룩이 원과 같은 페이드를 탄다', () => {
+  it('스톱 셋을 그대로 재현한다 — 원형 그라디언트와 어긋나면 한 화면에 두 페이드가 산다', () => {
+    const soft = SHADOW_SOFT; const dens = 1;
+    const stops = blobStops(soft, dens);
+    const curve = alphaCurve(soft, dens);
+    for (const s of stops) expect(curve(s.t)).toBeCloseTo(s.a, 9);
+  });
+
+  it('스톱 사이를 선형 보간한다 — 캔버스 그라디언트가 하는 것과 같다', () => {
+    const curve = alphaCurve(SHADOW_SOFT, 1);
+    const mid = midStopFor(SHADOW_SOFT);
+    const half = curve(mid * 0.5);
+    expect(half).toBeCloseTo((BLOB_CORE_ALPHA + BLOB_MID_ALPHA) / 2, 6);
+  });
+
+  it('구간 밖을 자른다 — 음수·1 초과·NaN 이 알파로 새지 않는다', () => {
+    const curve = alphaCurve(SHADOW_SOFT, 1);
+    expect(curve(-1)).toBeCloseTo(BLOB_CORE_ALPHA, 9);
+    expect(curve(2)).toBe(0);
+    // NaN 은 0(=중심)으로 떨어진다. 그대로 흘리면 `addColorStop`·ImageData 가 깨진다.
+    expect(Number.isFinite(curve(NaN))).toBe(true);
+  });
+
+  it('농도 0 이면 전 구간 0 — `?shdec=0` 이 실제로 투명하다', () => {
+    const curve = alphaCurve(SHADOW_SOFT, 0);
+    for (const s of [0, 0.3, 0.7, 1]) expect(curve(s)).toBe(0);
+  });
+});
+
+describe('⑦ 잎 노이즈 — 결정론이어야 무늬가 안 춤춘다', () => {
+  it('★ 같은 좌표면 언제나 같은 값이다 (굽기를 반복해도 무늬 불변)', () => {
+    // `Math.random` 을 쓰면 감독이 농도 슬라이더를 미는 내내 나무 그림자가 바뀐다.
+    for (const [u, v] of [[0.3, -1.7], [0, 0], [12.5, 8.25]] as const) {
+      expect(leafNoise(u, v)).toBe(leafNoise(u, v));
+    }
+  });
+
+  it('0~1 을 벗어나지 않는다 — 알파를 깎는 계수라 범위를 넘으면 부호가 뒤집힌다', () => {
+    for (let i = 0; i < 400; i++) {
+      const u = (i % 20) * 0.37 - 3.7;
+      const v = Math.floor(i / 20) * 0.53 - 5.3;
+      const n = leafNoise(u, v);
+      expect(n).toBeGreaterThanOrEqual(0);
+      expect(n).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('★ 상수가 아니다 — 얼룩이 실제로 얼룩진다', () => {
+    // 해시가 깨져 상수를 뱉으면 나무가 그냥 조금 옅은 원이 되고, 화면에서만 드러난다.
+    const vals = new Set<number>();
+    for (let i = 0; i < 60; i++) vals.add(leafNoise(i * 0.7, i * 1.3));
+    expect(vals.size).toBeGreaterThan(30);
+  });
+
+  it('격자 경계에서 튀지 않는다 — smoothstep 이 이어 준다', () => {
+    // 보간이 빠지면 칸 경계가 격자무늬로 보인다. 아주 가까운 두 점의 값 차가 작아야 한다.
+    const a = leafNoise(2 - 1e-4, 3.3);
+    const b = leafNoise(2 + 1e-4, 3.3);
+    expect(Math.abs(a - b)).toBeLessThan(0.01);
+  });
+});
+
+describe('⑧ 사각 데칼 자세 — 축별 반경 + 캐스터 회전', () => {
+  it('축마다 다른 크기가 나온다 — 정사각으로 뭉개면 벤치가 벤치로 안 보인다', () => {
+    const p = decalTransformRect(3, -4, 0.7, 0.22, 0);
+    expect(p.x).toBe(3);
+    expect(p.z).toBe(-4);
+    expect(p.sx / p.sz).toBeCloseTo(0.7 / 0.22, 9);
+    // 원형과 **같은 배수 계약**을 쓴다. 어긋나면 벤치 그림자만 크기가 튄다.
+    expect(p.sx).toBeCloseTo(2 * 0.7 * BLOB_SCALE * DECAL_SCALE, 9);
+  });
+
+  it('★ 캐스터 회전을 따라간다 — 원형이 `ry:0` 인 것과 짝이다', () => {
+    expect(decalTransformRect(0, 0, 1, 0.3, 1.234).ry).toBeCloseTo(1.234, 9);
+    // 원형은 여전히 안 돈다(그 계약이 살아 있는지 함께 본다).
+    expect(decalTransform(0, 0, 1).ry).toBe(0);
+  });
+
+  it('NaN·음수 반경을 0 으로 떨어뜨린다 — 인스턴스 행렬이 NaN 이면 화면이 검게 덮인다', () => {
+    const p = decalTransformRect(0, 0, NaN, -3, NaN);
+    expect(p.sx).toBe(0);
+    expect(p.sz).toBe(0);
+    expect(p.ry).toBe(0);
+  });
+});
+
+describe('⑨ 합성 모드 상수', () => {
+  it('기본은 곱하기다 — 감독 지시가 그것이다', () => {
+    expect(SHADOW_BLEND).toBe('multiply');
+  });
+
+  it('★ 되돌림 경로가 열려 있다 — WebGPU 에서 깨졌을 때의 유일한 수단', () => {
+    // 이 저장소에는 `MultiplyBlending` 을 헤드리스로 검증할 축이 없다(확정 한계).
+    // `normal` 이 목록에서 빠지면 감독 화면이 깨졌을 때 되돌릴 방법이 재배포뿐이 된다.
+    expect(SHADOW_BLENDS).toContain('normal');
+    expect(SHADOW_BLENDS).toContain('multiply');
   });
 });
