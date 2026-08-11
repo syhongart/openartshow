@@ -42,6 +42,7 @@ import {
 } from '../frontend/js/world2/decide/shadow-decal.js';
 import { PARTS } from '../frontend/js/world2/parts/index.js';
 import { ROAD_SURFACE_Y } from '../frontend/js/world2/parts/road.js';
+import { LEAF_DEPTH_ON } from '../frontend/js/world2/decide/shadow-decal.js';
 import type { InstancePools, SlotHandle } from '../frontend/js/world2/systems/instancing.js';
 import type { PartAsset, ThreeNS } from '../frontend/js/world2/parts/types.js';
 
@@ -880,18 +881,21 @@ describe('⑥ 굽은 픽셀 — 실루엣이 실제로 그 형태인가', () => 
       return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
     };
     const roundSd = sd(ring(bakeCell('foliage', R, 'multiply', 0))); // 얼룩 0 = 원
-    const leafSd = sd(ring(bakeCell('foliage', R)));
+    const leafSd = sd(ring(bakeCell('foliage', R, 'multiply', LEAF_DEPTH_ON)));
     // 원은 등거리 점에서 **완전히** 같아야 한다 — 남는 것은 8비트 양자화(1/255 ≈ 0.004)뿐.
     expect(roundSd).toBeLessThan(1 / 255);
     expect(leafSd).toBeGreaterThan(roundSd * 3);
   });
 
-  it('★ `?shleaf=0` 이면 나무가 매끈한 원으로 돌아온다 — 되돌림 노브가 실제로 듣는다', () => {
-    // 감독이 *"산만해 보일 위험"* 을 알고 고른 축이라, 되돌릴 수 있어야 판정이 뒤집힌다.
+  it('★★ 얼룩 노브가 양방향으로 듣는다 — 감독이 이 노브로 판정을 뒤집었다', () => {
+    // ⚠ **기본값이 0 이 됐다**(감독 실기기 판정 2026-08-11: *"3번으로 확정"* = `?shleaf=0`).
+    // 카드에서는 *"얼룩덩덩하게"* 를 골랐는데 화면에서는 껐다 — **글로 고른 것과 화면에서
+    // 고른 것이 갈렸고**, 되돌림 노브를 미리 만들어 둔 덕분에 재배포 없이 링크 한 번으로
+    // 판정이 끝났다. 그 노브가 살아 있는지가 이 테스트다.
     // 얼룩 0 은 **사각과도 다르고 기본 얼룩과도 다른** 순수 원이어야 한다: 등거리 두 점의
     // 세기가 같고(원), 기본 얼룩에서는 그 등식이 깨진다.
     const flat = bakeCell('foliage', RES, 'multiply', 0);
-    const leafy = bakeCell('foliage', RES);
+    const leafy = bakeCell('foliage', RES, 'multiply', LEAF_DEPTH_ON);
     const d = 10;
     const diag = Math.round(d / Math.SQRT2);
     const flatAxis = shadeAt(flat, RES, C + d, C, true);
@@ -984,8 +988,8 @@ describe('⑦ 곱하기 합성 — 굽는 그림이 재질과 짝인가', () => 
 describe('⑧ 결정론 — 굽기를 반복해도 무늬가 안 바뀐다', () => {
   it('★ 같은 옵션으로 두 번 구우면 픽셀이 완전히 같다', () => {
     // `Math.random` 이 섞이면 감독이 슬라이더를 미는 내내 나무 그림자가 춤춘다.
-    const a = bakeCell('foliage', 48);
-    const b = bakeCell('foliage', 48);
+    const a = bakeCell('foliage', 48, 'multiply', LEAF_DEPTH_ON);
+    const b = bakeCell('foliage', 48, 'multiply', LEAF_DEPTH_ON);
     expect(Array.from(a.data)).toEqual(Array.from(b.data));
   });
 });
@@ -1201,7 +1205,7 @@ describe('⑨-4 노브가 재굽기를 발화한다 (뮤테이션 M10 — 0 fail
     const first = c.count();
     sys.update(ctx);
     expect(c.count()).toBe(first);
-    opts.leaf = 0;
+    opts.leaf = LEAF_DEPTH_ON;   // 기본이 0 이므로 켜는 쪽으로 민다
     sys.update(ctx);
     expect(c.count()).toBeGreaterThan(first);
   });

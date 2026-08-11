@@ -28,7 +28,7 @@ import {
   SHADOW_DENSITY_MAX,
   // ── 3회차(2026-08-11) 신설 축 — 곱하기 합성 + 형태별 실루엣 ──
   alphaCurve, roundBoxSD, leafNoise, decalTransformRect,
-  RECT_CORNER, SHADOW_BLEND, SHADOW_BLENDS,
+  RECT_CORNER, SHADOW_BLEND, SHADOW_BLENDS, LEAF_DEPTH, LEAF_DEPTH_ON, LEAF_DEPTH_MAX,
 } from '../frontend/js/world2/decide/shadow-decal.js';
 
 describe('그라디언트 — 빌더 값을 그대로 재현하는가', () => {
@@ -488,6 +488,18 @@ describe('⑨ 합성 모드 상수', () => {
     // (`⑦` 절이 두 모드가 같은 밝기를 냄을 픽셀로 확인한다), 그래서 경로는 남겼다.
     // 기본값만 화면 판정을 따른다.
     expect(SHADOW_BLEND).toBe('normal');
+  });
+
+  it('★★ 나무 얼룩은 기본이 꺼짐이다 — 감독이 화면으로 껐다 (2026-08-11)', () => {
+    // 카드에서는 *"얼룩덩덩하게"* 를 골랐고, 배포본을 본 뒤 판정이 뒤집혔다:
+    // *"3번으로 확정"*(= `?shleaf=0`). **글로 고른 것과 화면에서 고른 것이 갈렸다.**
+    //
+    // 이 단언이 없으면 누가 "감독이 얼룩을 원했다" 는 카드 기록만 보고 기본값을 되돌린다.
+    // 화면 판정이 카드보다 뒤이고, 뒤가 최종이다.
+    expect(LEAF_DEPTH).toBe(0);
+    // 켜는 경로는 살아 있다 — 지우면 다음 사람이 같은 구현을 처음부터 만든다.
+    expect(LEAF_DEPTH_ON).toBeGreaterThan(0);
+    expect(LEAF_DEPTH_ON).toBeLessThanOrEqual(LEAF_DEPTH_MAX);
   });
 
   it('★ 되돌림 경로가 열려 있다 — WebGPU 에서 깨졌을 때의 유일한 수단', () => {
