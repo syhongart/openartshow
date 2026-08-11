@@ -28,7 +28,7 @@ import type { SkyTime } from '../decide/night.js';
 import type { ShadowBlend } from '../decide/shadow-decal.js';
 import {
   decalTransform, decalTransformRect, densityFor,
-  SHADOW_Y, SHADOW_DENSITY, SHADOW_SOFT, SHADOW_BLEND, LEAF_DEPTH,
+  SHADOW_LIFT, SHADOW_DENSITY, SHADOW_SOFT, SHADOW_BLEND, LEAF_DEPTH,
 } from '../decide/shadow-decal.js';
 import type { CasterCell, ShadowShape } from '../parts/shadow.js';
 import { bakeAtlas, casterProfiles, shadowKindOf, SHADOW_DRAW_PX } from '../parts/shadow.js';
@@ -41,7 +41,7 @@ export interface ShadowDecalOpts {
   density: number;
   /** 중간 스톱 위치 손잡이. `?shsoft` — 의미 변경은 `SHADOW_SOFT` 주석 */
   soft: number;
-  /** 데칼 높이(m). `?shy` */
+  /** 캐스터 발밑에서 띄우는 높이(m). `?shy` — 절대 높이가 아니다(`SHADOW_LIFT` 주석) */
   y: number;
   /** 0 이면 완전 투명하게 굽는다(룩 A/B 전용 — 슬롯도 드로우콜도 그대로다). `?shdec` */
   on: number;
@@ -54,7 +54,7 @@ export interface ShadowDecalOpts {
 export function defaultOpts(): ShadowDecalOpts {
   return {
     res: SHADOW_DRAW_PX, density: SHADOW_DENSITY, soft: SHADOW_SOFT,
-    y: SHADOW_Y, on: 1, blend: SHADOW_BLEND, leaf: LEAF_DEPTH,
+    y: SHADOW_LIFT, on: 1, blend: SHADOW_BLEND, leaf: LEAF_DEPTH,
   };
 }
 
@@ -167,7 +167,11 @@ export class ShadowDecalSystem implements System {
     const p = this.shapeOf.get(casterKind) === 'box'
       ? decalTransformRect(t.x, t.z, d.rx * t.sx, d.rz * t.sz, t.ry)
       : decalTransform(t.x, t.z, d.r * Math.max(t.sx, t.sz));
-    return { x: p.x, y: this.o.opts.y, z: p.z, ry: p.ry, sx: p.sx, sy: 1, sz: p.sz };
+    // ⚠ **높이는 캐스터 발밑에서 띄운다** (감독 실기기 판정 2026-08-11: *"그림자가 바닥
+    // 위에 떠있어"*). 직전 판본은 `y: this.o.opts.y` 로 **절대 높이**를 썼고, 그 값이
+    // 도로(0.14) 기준이라 잔디(0) 위 파츠는 그림자가 20cm 공중에 떴다. 파츠 피벗이
+    // 바닥이므로 `t.y` 가 곧 그 파츠가 선 지면 높이다 — 근거는 `SHADOW_LIFT` 주석.
+    return { x: p.x, y: t.y + this.o.opts.y, z: p.z, ry: p.ry, sx: p.sx, sy: 1, sz: p.sz };
   }
 
   /**

@@ -142,6 +142,39 @@ describe('① 워프는 그림자 키만 건드린다', () => {
     expect(last(calls, h)).toEqual(t);
   });
 
+  // ── ⚠ 높이 축이 통째로 비어 있었다 (감독 실기기 2026-08-11) ─────────────────
+  // 감독: *"그림자가 바닥 위에 떠있어."*
+  //
+  // 원인은 데칼 y 가 **절대 높이 0.20 고정**이었던 것이다(도로 0.14 를 넘기려 잡은 값).
+  // 잔디(0) 위 파츠는 그림자가 20cm 공중에 떴다. **그런데 아래 기존 테스트가 통과하고
+  // 있었다** — 캐스터 `y` 를 언제나 0 으로만 줬기 때문에 `t.y + lift` 와 `절대 lift` 가
+  // 우연히 같은 값이었다. 픽셀까지 검사하면서도 **캐스터가 서 있는 높이를 한 번도 안
+  // 바꿔 본 것**이고, 그래서 감독 화면에서만 드러났다.
+  //
+  // 이 저장소가 *"판정/집행 분리의 구멍"* 이라고 부르는 것과는 또 다른 형태다 —
+  // 여기서는 **입력 공간의 한 축을 아예 안 밟았다.** 상수를 고정값으로 두면 그 축이
+  // 테스트에서 사라진다는 것을 기억할 자리다.
+  it('★★ 그림자가 캐스터 발밑에 붙는다 — 도로 위에 서도 안 뜬다', () => {
+    const { pool, calls, opts } = setup();
+    const onRoad = pool.acquire('shadow:tree')!;
+    const onGrass = pool.acquire('shadow:tree')!;
+    // 파츠 피벗은 바닥이므로 `y` 가 곧 그 파츠가 선 지면 높이다(도로 0.14 · 잔디 0).
+    pool.setTransform(onRoad, 0, 0.14, 0, 0, 1, 1, 1);
+    pool.setTransform(onGrass, 0, 0, 0, 0, 1, 1, 1);
+    // 각자 자기 지면에서 **같은 만큼** 떠 있다 — 절대 높이면 이 등식이 깨진다.
+    expect(last(calls, onRoad).y).toBeCloseTo(0.14 + opts.y, 12);
+    expect(last(calls, onGrass).y).toBeCloseTo(0 + opts.y, 12);
+    // 두 그림자의 높이차 = 두 지면의 높이차. 절대 높이였다면 차가 0 이었다.
+    expect(last(calls, onRoad).y - last(calls, onGrass).y).toBeCloseTo(0.14, 12);
+  });
+
+  it('★ 띄우는 값이 눈에 띌 만큼 크지 않다 — 그것이 이번 결함의 정체다', () => {
+    // 감독이 본 것은 20cm 였다. 기본값이 그 자릿수로 돌아가면 같은 반려가 다시 온다.
+    // 상한(`?shy`)까지 밀어도 20cm 를 넘지 않게 판정 상수가 막는다.
+    expect(defaultOpts().y).toBeLessThanOrEqual(0.05);
+    expect(defaultOpts().y).toBeGreaterThan(0);  // 0 이면 z-fighting 이 난다
+  });
+
   it('★ 그림자는 발밑 그 자리에 눕는다 — 방향으로 밀리지 않는다', () => {
     // 이번 교체의 실질이 여기다. 옛 단언은 "태양 반대쪽으로 밀렸다" 였고, 지금 밀리면
     // 그것이 회귀다.
@@ -153,7 +186,8 @@ describe('① 워프는 그림자 키만 건드린다', () => {
     expect(c.z).toBe(-3);
     expect(c.ry).toBe(0);           // 파츠가 돌아도 그림자는 안 돈다
     expect(c.sy).toBe(1);           // 평면이라 두께가 없다
-    expect(c.y).toBeCloseTo(opts.y, 12); // 도로 위 높이로 옮겨졌다
+    // 캐스터 발밑(`t.y`=0)에서 띄운 높이. **절대 높이가 아니다** — 위 ★★ 절 참조.
+    expect(c.y).toBeCloseTo(0 + opts.y, 12);
     expect(c.sx).toBeCloseTo(c.sz, 12);  // 정사각
     // 크기가 판정에서 나왔다 — 자기 상수로 다시 계산하면 여기서 갈린다.
     expect(c.sx).toBeCloseTo(decalTransform(5, -3, CASTER_R * 7).sx, 9);
@@ -903,9 +937,11 @@ describe('⑦ 곱하기 합성 — 굽는 그림이 재질과 짝인가', () => 
     const mat = at.material as unknown as { blending: number };
     const { sys } = setup();
     sys.bake();
-    // 기본은 곱하기. 재질이 Normal 로 남아 있으면 흰 바탕 회색이 그대로 알파 합성돼
-    // **그림자가 흰 사각으로 보인다.**
-    expect(mat.blending).toBe(THREE.MultiplyBlending);
+    // ⚠ **기본이 `normal` 로 뒤집혔다**(감독 화면 판정 2026-08-11). 굽는 그림과 재질이
+    // 어긋나면 곱하기 셀(흰 바탕 회색)이 알파 합성돼 **그림자가 흰 사각**으로 보이거나,
+    // 반대로 알파 셀이 곱해져 **전면 검정**이 된다. 어느 방향이든 화면이 통째로 깨지므로
+    // 기본값이 무엇이든 이 짝은 성립해야 한다 — 그 성질을 ⑨-3 이 두 방향으로 본다.
+    expect(mat.blending).toBe(THREE.NormalBlending);
   });
 });
 
@@ -1117,7 +1153,7 @@ describe('⑨-4 노브가 재굽기를 발화한다 (뮤테이션 M10 — 0 fail
     expect(first).toBeGreaterThan(0);
     sys.update(ctx);                       // 아무것도 안 바뀜 → 다시 굽지 않는다
     expect(c.count()).toBe(first);
-    opts.blend = 'normal';                 // 노브를 민다
+    opts.blend = 'multiply';               // 노브를 민다(기본이 normal 이므로 반대로)
     sys.update(ctx);
     expect(c.count()).toBeGreaterThan(first);
   });
