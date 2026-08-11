@@ -19,7 +19,10 @@ import { ShadowDecalSystem, defaultOpts } from '../frontend/js/world2/systems/sh
 import { createSlotPool } from '../frontend/js/world2/systems/parcel-assets.js';
 import { ParcelGrowSystem } from '../frontend/js/world2/systems/parcel-grow.js';
 import { _resetAtlasForTest, atlasOf, paintCell, SHADOW_ATLAS_PX } from '../frontend/js/world2/parts/shadow.js';
-import { shadowSpan } from '../frontend/js/world2/decide/shadow-decal.js';
+import {
+  shadowSpan, decalLocalZ, styleOf, penumbraPlan,
+  SHADOW_PAD, SHADOW_STYLE, SHADOW_STYLES,
+} from '../frontend/js/world2/decide/shadow-decal.js';
 import { PARTS } from '../frontend/js/world2/parts/index.js';
 import type { InstancePools, SlotHandle } from '../frontend/js/world2/systems/instancing.js';
 import type { PartAsset, ThreeNS } from '../frontend/js/world2/parts/types.js';
@@ -273,52 +276,349 @@ describe('④ 반납이 등록부에서 걷힌다', () => {
 });
 
 describe('⑤ 페인터가 판정을 실제로 소비한다 — 미러링이 없는가', () => {
+  /**
+   * 캔버스 호출을 전부 기록하는 스파이.
+   *
+   * ⚠ **`ellipse` 만 보던 옛 스파이로는 이제 부족하다.** 2026-08-11 재설계로 실루엣이
+   * 「밑동 타원 + 꼬리 사다리꼴」한 path 가 됐고 그것을 `layers` 겹 그린다. 좌표가
+   * `moveTo`·`lineTo`·`roundRect` 로도 나가므로, 전부 모아야 "실루엣이 여백 안에 있는가"
+   * 를 볼 수 있다 — 그것이 감독 반려의 직접 원인이었던 축이다.
+   */
+  function tracer() {
+    const ellipses: number[][] = [];
+    const pts: { x: number; y: number }[] = [];
+    const alphas: number[] = [];
+    const blurs: string[] = [];
+    const stops: { t: number; a: number }[] = [];
+    const spy = {
+      ...ctx2d,
+      set globalAlpha(v: number) { alphas.push(v); },
+      get globalAlpha() { return 1; },
+      set filter(v: string) { blurs.push(v); },
+      get filter() { return 'none'; },
+      ellipse(...a: number[]) {
+        ellipses.push(a);
+        const [cx, cy, rx, ry] = a;
+        pts.push({ x: cx - rx, y: cy - ry }, { x: cx + rx, y: cy + ry });
+      },
+      moveTo(x: number, y: number) { pts.push({ x, y }); },
+      lineTo(x: number, y: number) { pts.push({ x, y }); },
+      quadraticCurveTo(_a: number, _b: number, x: number, y: number) { pts.push({ x, y }); },
+      roundRect(x: number, y: number, w: number, h: number) {
+        pts.push({ x, y }, { x: x + w, y: y + h });
+      },
+      createLinearGradient: () => ({
+        addColorStop(t: number, c: string) {
+          stops.push({ t, a: Number(/[\d.]+\)$/.exec(c)?.[0].slice(0, -1) ?? 'NaN') });
+        },
+      }),
+    } as unknown as CanvasRenderingContext2D;
+    return { spy, ellipses, pts, alphas, blurs, stops };
+  }
+
+  const OPTS = { density: 1, soft: 0.3, tail: 0.2 } as const;
+
   it('밑동 타원의 세로 반경이 shadowSpan 의 blobFrac 에서 나온다', () => {
     // ── 이 저장소의 **대표적 미러링 사고**를 겨눈다 ─────────────────────────
     // 굽는 쪽이 `blobFrac` 을 자기 상수(예: 0.3)로 계산하면, 실루엣 밑동과 자세 정렬이
     // 갈라져 **그림자가 물건에서 떨어져 나온다.** 그런데 양쪽 산술 테스트는 각각
     // 통과한다 — 판정/집행 경계를 건너는 지점이라 어느 쪽에도 안 걸린다.
     //
-    // 그래서 캔버스 호출을 가로채 `ellipse` 의 세로 반경이 정말 `res·blobFrac/2` 인지 본다.
-    const seen: number[][] = [];
-    const spy = {
-      ...ctx2d,
-      ellipse(...a: number[]) { seen.push(a); },
-    } as unknown as CanvasRenderingContext2D;
-
+    // ⚠ 옛 단언은 `ry === res·blobFrac/2` 였다. **여백이 생겨 기준이 `inner` 로 바뀌었고**,
+    // 밑동 중심도 `decalLocalZ` 를 통과한다. 두 식 모두 판정 쪽 상수에서 유도하므로
+    // 미러링을 겨누는 성질은 그대로다 — 오히려 `SHADOW_PAD` 라는 축이 하나 늘었다.
+    const t = tracer();
     const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
     const res = 100;
-    paintCell(spy, res, { index: 0, profile: 'round', span }, {
-      res, density: 1, soft: 0, tail: 0.2,
-    });
+    // 확산 0(`soft:0`)이면 코어 등고선만 남아 원본 실루엣 치수를 직접 볼 수 있다.
+    paintCell(t.spy, res, { index: 0, profile: 'round', span }, { ...OPTS, res, soft: 0 });
 
-    expect(seen.length).toBe(1);
-    const [cx, cy, rx, ry] = seen[0];
-    expect(ry).toBeCloseTo(res * span.blobFrac / 2, 4); // 세로 반경 = blobFrac 유도
-    expect(cy).toBeCloseTo(res * span.blobFrac / 2, 4); // 중심도 같은 값(셀 위쪽=발밑)
-    expect(rx).toBeCloseTo(res * 0.5, 4);               // 가로는 셀 폭 전체 = 2r
+    const inner = res * (1 - 2 * SHADOW_PAD);
+    // 확산이 0 이라 모든 겹이 같은 도형이다 — 겹 수만큼 불린다.
+    expect(t.ellipses.length).toBe(styleOf(SHADOW_STYLE).layers);
+    const [cx, cy, rx, ry] = t.ellipses[0];
+    expect(ry).toBeCloseTo(inner * span.blobFrac / 2, 4);
+    expect(cy).toBeCloseTo((decalLocalZ(span.blobFrac / 2) + 0.5) * res, 4);
+    expect(rx).toBeCloseTo(inner * 0.5, 4);
     expect(cx).toBeCloseTo(res * 0.5, 4);
   });
 
+  it('실루엣이 캔버스 경계에 닿지 않는다 — 감독 반려의 직접 원인을 막는다', () => {
+    // ── 이 단언이 이번 재설계의 **핵심 회귀 게이트**다 ────────────────────────
+    // 옛 판본은 `rx = res·0.5`·`cy − ry = 0`·꼬리가 `res` 까지라 사방이 경계에 닿아
+    // 있었고, 그래서 블러를 아무리 걸어도 알파가 0 으로 갈 자리가 없었다(헤드리스 실측:
+    // 경계 알파가 셀 최대치의 31~39%). 여백을 지우거나 확산 상한을 풀면 여기서 깨진다.
+    for (const style of SHADOW_STYLES) {
+      for (const soft of [0, 0.3, 0.5]) {
+        for (const profile of ['round', 'box', 'post'] as const) {
+          const t = tracer();
+          const res = 100;
+          const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+          paintCell(t.spy, res, { index: 0, profile, span }, { ...OPTS, res, soft, style });
+          const tag = `${style}/${profile}/soft=${soft}`;
+          expect(t.pts.length, tag).toBeGreaterThan(0);
+          for (const p of t.pts) {
+            // 여유는 블러 몫이다. 도형 자체는 여백 안에 있어야 한다.
+            expect(p.x, `${tag} x=${p.x}`).toBeGreaterThanOrEqual(0);
+            expect(p.x, `${tag} x=${p.x}`).toBeLessThanOrEqual(res);
+            expect(p.y, `${tag} y=${p.y}`).toBeGreaterThanOrEqual(0);
+            expect(p.y, `${tag} y=${p.y}`).toBeLessThanOrEqual(res);
+          }
+        }
+      }
+    }
+  });
+
+  it('완전그늘이 끝으로 갈수록 좁아진다 — 폭 일정한 직사각형이 아니다', () => {
+    // ── 진단 ② ("꼬리가 폭 일정한 직사각형이다") ─────────────────────────────
+    // 옛 판본은 `fillRect` 하나라 꼬리 폭이 상수였다(실측: y40·70·100·126 모두 같은 폭).
+    //
+    // ⚠ **처음에는 "최외곽이 끝에서 넓어진다" 로 단언했고 그것은 틀린 주장이 됐다.**
+    // 최외곽 등고선은 이제 **원본 실루엣 그 자체**이고(바깥 확장을 없앴다), 원본 실루엣의
+    // 폭은 `span.width` 로 일정한 것이 맞다 — 그림자의 바깥 경계는 평행광 근사에서 실제로
+    // 평행하다. 끝으로 갈수록 넓어지는 것은 **반그림자**이고, 그것은 전체 폭이 아니라
+    // **완전그늘이 좁아지는 것**으로 나타난다. 그 성질을 여기서 본다.
+    const res = 100;
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+    const t = tracer();
+    paintCell(t.spy, res, { index: 0, profile: 'round', span }, { ...OPTS, res, soft: 0.5 });
+    // 사다리꼴 꼭짓점 넷이 겹마다 나온다. 밑동 y(=위쪽 두 점)와 끝 y 를 갈라 폭을 잰다.
+    const cy = (decalLocalZ(span.blobFrac / 2) + 0.5) * res;
+    const halfAt = (near: boolean) => {
+      const sel = t.pts.filter((p) => (near ? Math.abs(p.y - cy) < 0.6 : p.y > cy + 1));
+      // ⚠ 중앙점을 뺀다 — 둥근 꼬리 끝의 `quadraticCurveTo` 종점이 `(cx, endY)` 라
+      // 반폭 0 으로 들어오고, 그러면 아래 `min` 단언이 **무엇을 해도 통과**한다.
+      return sel.map((p) => Math.abs(p.x - res / 2)).filter((h) => h > 1);
+    };
+    const footHalves = halfAt(true);
+    const tipHalves = halfAt(false);
+    // 최외곽(= 원본 실루엣)은 밑동과 끝의 폭이 같다 — 바깥 경계는 평행하다.
+    expect(Math.max(...tipHalves)).toBeCloseTo(Math.max(...footHalves), 3);
+    // 코어의 끝은 코어의 밑동보다 확실히 좁다 = 완전그늘이 멀어질수록 사라진다.
+    expect(Math.min(...tipHalves)).toBeLessThan(Math.min(...footHalves) * 0.75);
+    // 그리고 그 좁아짐은 겹마다 다르다 — 한 겹만 좁히면 부채꼴이 안 생긴다.
+    expect(new Set(tipHalves.map((h) => h.toFixed(2))).size).toBeGreaterThan(3);
+  });
+
+  it('접지부의 반그림자가 꼬리 끝보다 좁다 — 발밑이 선명하고 끝이 흐리다', () => {
+    // ── 진단 ④ ("블러 반경이 전 영역 균일하다. 실제는 접지부가 선명하고 끝이 흐리다") ──
+    // ⚠ **처음에는 이것을 "겹마다 블러가 다른가" 로 단언했고 축을 잘못 잡은 것이었다.**
+    // 블러는 등고선 **계단**을 메우는 것이라 겹마다 다를 이유가 없다(`penumbraPlan` 주석).
+    // 접지·끝의 선명도 차이를 만드는 것은 **등고선이 벌어지는 폭**이고, 그것은
+    // `contactTight`(밑동) 대 `flare`+`umbraTaper`(끝)가 정한다. 그 폭을 직접 잰다.
+    const res = 100;
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+    const t = tracer();
+    paintCell(t.spy, res, { index: 0, profile: 'round', span }, { ...OPTS, res, soft: 0.5 });
+
+    // 밑동 반경들의 퍼짐 = 접지부 반그림자 폭.
+    const footR = t.ellipses.map((e) => e[2]);
+    const footSpread = Math.max(...footR) - Math.min(...footR);
+    // 끝 반폭들의 퍼짐 = 꼬리 끝 반그림자 폭.
+    const cy = (decalLocalZ(span.blobFrac / 2) + 0.5) * res;
+    const tipHalf = t.pts.filter((p) => p.y > cy + 1).map((p) => Math.abs(p.x - res / 2));
+    const tipSpread = Math.max(...tipHalf) - Math.min(...tipHalf);
+
+    expect(footSpread).toBeGreaterThan(0);              // 접지부에도 반그림자는 있다
+    expect(tipSpread).toBeGreaterThan(footSpread * 1.5); // 끝이 확실히 더 넓다
+
+    // ⚠ 위 두 줄만으로는 **부족했다** — 뮤테이션 실측(2026-08-11): `contactTight` 를
+    // `flare` 로 바꿔(= 접지·끝 구분을 없애) 돌려도 0 failed 였다. `umbraTaper` 가 끝을
+    // 따로 벌려 주는 바람에 비율 단언이 계속 통과한 것이다. 그래서 접지부 폭이 **판정
+    // 쪽 `contactTight` 에서 나왔는지**를 직접 대조한다 — 이 저장소의 미러링 축과 같다.
+    const sp = styleOf(SHADOW_STYLE);
+    const rx = res * (1 - 2 * SHADOW_PAD) * 0.5;
+    const plan = penumbraPlan(0.5, res, rx, sp);
+    expect(footSpread).toBeCloseTo(plan.inner * sp.contactTight, 4);
+    // 끝 폭은 `flare` 와 `umbraTaper` 를 **둘 다** 소비한다. 정확한 등식은 못 쓴다 —
+    // 이 표본에는 밑동 타원의 아래쪽 경계점(`cy + ryb`)도 섞여 들어온다. 하한만 본다.
+    expect(tipSpread).toBeGreaterThanOrEqual(plan.inner * sp.flare + rx * sp.umbraTaper - 1e-4);
+  });
+
+  it('블러가 등고선 간격에서 나온다 — 계단이 경계로 읽히지 않는다', () => {
+    // 옛 판본은 `blur = soft·res` 라 간격과 무관했다. 지금은 간격이 정하므로
+    // `layers` 를 바꾸면 블러가 **따라 변해야** 한다.
+    const res = 100;
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+    const blurOf = (style: (typeof SHADOW_STYLES)[number]) => {
+      const t = tracer();
+      paintCell(t.spy, res, { index: 0, profile: 'round', span }, { ...OPTS, res, soft: 0.5, style });
+      const v = t.blurs.filter((b) => b !== 'none');
+      expect(v.length, style).toBeGreaterThan(0); // 블러가 아예 없으면 계단이 보인다
+      return Number(/[\d.]+/.exec(v[0])![0]);
+    };
+    // 룩마다 간격·`blurK` 가 달라 블러도 달라야 한다.
+    expect(new Set(SHADOW_STYLES.map(blurOf)).size).toBe(SHADOW_STYLES.length);
+
+    // `soft=0` 이면 반그림자가 없으므로 블러도 없다 — 하드 실루엣으로 되돌아간다.
+    const hard = tracer();
+    paintCell(hard.spy, res, { index: 0, profile: 'round', span }, { ...OPTS, res, soft: 0 });
+    expect(hard.blurs.every((b) => b === 'none')).toBe(true);
+  });
+
+  it('농도가 겹 수만큼 누적되지 않는다 — 정확히 한 번만 곱해진다', () => {
+    // 실측으로 잡은 결함이다 — `globalAlpha = density` 를 겹마다 쓰면 `contact`(6겹)가
+    // density 0.45 에서도 알파 248/255 로 구워졌다. `?shdark` 가 사실상 죽는다.
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+    const run = (density: number) => {
+      const t = tracer();
+      paintCell(t.spy, 100, { index: 0, profile: 'round', span }, {
+        res: 100, density, soft: 0.3, tail: 0.2, style: 'contact',
+      });
+      return t;
+    };
+    const sp = styleOf('contact');
+    const t = run(0.45);
+    // 등고선 알파는 `density` 와 **무관**하고 겹마다 같다. 마지막 곱셈 단계에서만 다르다.
+    const layerAlphas = t.alphas.slice(0, sp.layers);
+    expect(new Set(layerAlphas).size).toBe(1);
+    expect(1 - Math.pow(1 - layerAlphas[0], sp.layers)).toBeCloseTo(sp.core, 6);
+    // 농도는 마지막 합성 단계에 정확히 한 번 온다.
+    expect(t.alphas.at(-1)).toBeCloseTo(0.45, 9);
+    // 농도를 바꿔도 등고선 알파는 안 변한다 — 변하면 겹 수만큼 누적된다는 뜻이다.
+    expect(run(0.9).alphas[0]).toBeCloseTo(layerAlphas[0], 9);
+  });
+
+  it('감쇠를 마지막에 한 번 곱한다 — 겹마다 곱하면 밴딩이 layers 배로 증폭된다', () => {
+    // ── 화면의 가로 줄무늬를 없앤 수정을 지키는 단언 (2026-08-11) ──────────────
+    // 겹마다 그라디언트를 `fillStyle` 로 걸면 겹당 소스 알파가 매번 8비트로 양자화되고,
+    // 그 1 단위 오차가 겹 수만큼 증폭돼 계단이 된다. 실측 세로 프로파일에서 계단 **수가
+    // `layers` 와 정확히 같았고**, 그라디언트 스톱을 4배로 늘려도 그대로였다.
+    // `destination-in` 으로 마지막에 한 번 곱하면 양자화가 한 번만 일어난다.
+    const ops: string[] = [];
+    const seq: string[] = [];
+    const grads: unknown[] = [];
+    const base = {
+      ...ctx2d,
+      set globalCompositeOperation(v: string) { ops.push(v); },
+      get globalCompositeOperation() { return 'source-over'; },
+      set fillStyle(v: unknown) { seq.push(typeof v === 'string' ? v : 'gradient'); },
+      get fillStyle() { return '#000'; },
+      fillRect() { seq.push('fillRect'); },
+      fill() { seq.push('fill'); },
+      createLinearGradient() { const g = { addColorStop() {} }; grads.push(g); return g; },
+    } as unknown as CanvasRenderingContext2D;
+
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+    paintCell(base, 100, { index: 0, profile: 'round', span }, { ...OPTS, res: 100 });
+
+    // 그라디언트는 **한 번만** 만들어진다(겹마다 만들면 굽기 소요도 layers 배가 된다).
+    expect(grads.length).toBe(1);
+    expect(ops).toContain('destination-in');
+    // 등고선은 전부 순수 검정으로 채워지고, 그라디언트는 마지막 `fillRect` 에만 쓰인다.
+    const gradAt = seq.indexOf('gradient');
+    expect(gradAt).toBeGreaterThan(seq.indexOf('fill'));      // 스택을 다 그린 뒤다
+    expect(seq.slice(gradAt)).toContain('fillRect');
+    expect(seq.slice(0, gradAt)).not.toContain('fillRect');
+    expect(seq.slice(gradAt)).not.toContain('fill');          // 곱셈 뒤로는 안 그린다
+  });
+
+  it('꼬리 그라디언트가 0 에서 끝난다 — 알파가 뚝 끊기지 않는다', () => {
+    // 진단 ②/③. 옛 판본의 마지막 스톱은 `tail`(기본 0.2)이었고 그 값에서 잘렸다.
+    const t = tracer();
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+    paintCell(t.spy, 100, { index: 0, profile: 'round', span }, { ...OPTS, res: 100, tail: 1 });
+    expect(t.stops.length).toBeGreaterThan(0);
+    const last = t.stops.filter((s) => s.t === 1);
+    expect(last.length).toBeGreaterThan(0);
+    for (const s of last) expect(s.a).toBe(0);
+    // `tail=1`(옛 규약이면 균일한 띠)에서도 끝이 0 이다.
+    expect(t.stops.filter((s) => s.t === 0).every((s) => s.a === 1)).toBe(true);
+  });
+
   it('span 이 달라지면 밑동도 달라진다 — 상수를 박아 두면 여기서 걸린다', () => {
-    const seen: number[][] = [];
-    const spy = { ...ctx2d, ellipse(...a: number[]) { seen.push(a); } } as unknown as CanvasRenderingContext2D;
-    const opts = { res: 100, density: 1, soft: 0, tail: 0.2 };
+    const t = tracer();
+    const o = { ...OPTS, res: 100, soft: 0 };
     // 긴 그림자(cot 큼) → 밑동이 전체에서 차지하는 비가 작다.
-    paintCell(spy, 100, { index: 0, profile: 'round', span: shadowSpan(10, 2, { ux: 1, uz: 0, cot: 4 }, 999) }, opts);
+    paintCell(t.spy, 100, { index: 0, profile: 'round', span: shadowSpan(10, 2, { ux: 1, uz: 0, cot: 4 }, 999) }, o);
+    const longRy = t.ellipses[0][3];
+    const t2 = tracer();
     // 짧은 그림자 → 밑동 비가 크다.
-    paintCell(spy, 100, { index: 0, profile: 'round', span: shadowSpan(10, 2, { ux: 1, uz: 0, cot: 0.2 }, 999) }, opts);
-    expect(seen[1][3]).toBeGreaterThan(seen[0][3] * 2);
+    paintCell(t2.spy, 100, { index: 0, profile: 'round', span: shadowSpan(10, 2, { ux: 1, uz: 0, cot: 0.2 }, 999) }, o);
+    expect(t2.ellipses[0][3]).toBeGreaterThan(longRy * 2);
   });
 
   it('post 골격은 폭이 좁다 — 가로등이 나무만 한 그늘을 만들지 않는다', () => {
-    const seen: number[][] = [];
-    const spy = { ...ctx2d, ellipse(...a: number[]) { seen.push(a); } } as unknown as CanvasRenderingContext2D;
     const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
-    const opts = { res: 100, density: 1, soft: 0, tail: 0.2 };
-    paintCell(spy, 100, { index: 0, profile: 'round', span }, opts);
-    paintCell(spy, 100, { index: 0, profile: 'post', span }, opts);
-    expect(seen[1][2]).toBeLessThan(seen[0][2]); // post 의 가로 반경이 더 작다
+    const o = { ...OPTS, res: 100, soft: 0 };
+    const a = tracer(); paintCell(a.spy, 100, { index: 0, profile: 'round', span }, o);
+    const b = tracer(); paintCell(b.spy, 100, { index: 0, profile: 'post', span }, o);
+    expect(b.ellipses[0][2]).toBeLessThan(a.ellipses[0][2]); // post 의 가로 반경이 더 작다
+  });
+
+  it('정수리 태양은 꼬리를 안 그린다 — 그림자가 원이다', () => {
+    // `blobFrac = 1` 이면 밑동만 남아야 한다. 확산분이 삐져나오면 원이 원이 아니게 된다.
+    const t = tracer();
+    const span = shadowSpan(10, 2, { ux: 0, uz: 1, cot: 0 }, 999);
+    expect(span.blobFrac).toBeCloseTo(1, 9);
+    paintCell(t.spy, 100, { index: 0, profile: 'round', span }, { ...OPTS, res: 100, soft: 0.5 });
+    // 사다리꼴이 그려졌다면 `lineTo` 가 나온다. 타원의 `moveTo` 만 있어야 한다.
+    const lines = t.pts.length - t.ellipses.length * 2 - t.ellipses.length; // moveTo 1 + 경계 2
+    expect(lines).toBe(0);
+  });
+
+  it('`?shres` 를 낮춰도 실루엣이 무너지지 않는다 — 절대 픽셀이 없다', () => {
+    // 좌표를 절대 픽셀로 박으면 낮은 res 에서 실루엣이 캔버스를 벗어나거나 사라진다.
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+    for (const res of [8, 16, 32, 64, 128]) {
+      const t = tracer();
+      paintCell(t.spy, res, { index: 0, profile: 'round', span }, { ...OPTS, res });
+      const [cx, cy, rx, ry] = t.ellipses[0];
+      // 치수가 res 에 **비례**한다 — 그것이 곧 해상도 독립이다.
+      expect(rx / res, `res=${res}`).toBeCloseTo(t.ellipses[0][2] / res, 9);
+      expect(cx, `res=${res}`).toBeCloseTo(res * 0.5, 6);
+      expect(ry, `res=${res}`).toBeGreaterThan(0);
+      for (const p of t.pts) {
+        expect(p.x, `res=${res}`).toBeGreaterThanOrEqual(0);
+        expect(p.x, `res=${res}`).toBeLessThanOrEqual(res);
+      }
+      expect(cy, `res=${res}`).toBeLessThan(res);
+    }
+  });
+
+  it('겹 하나에 beginPath 가 한 번뿐이다 — 밑동이 꼬리를 지우지 않는다', () => {
+    // ── 뮤테이션이 **뚫고 나간 자리**를 메운다 (2026-08-11) ────────────────────
+    // `roundRect` 헬퍼에 `beginPath()` 를 되살리는 뮤테이션이 위 단언 전부를 통과했다.
+    // 밑동과 꼬리가 **한 path** 가 된 뒤로 그 한 줄은 앞서 그린 사다리꼴을 통째로 버리고,
+    // 증상은 "각진 물건(`box`)만 그림자에 꼬리가 없다" 로 나타난다. 스파이는 path 상태를
+    // 흉내 내지 못하므로(전부 no-op) 좌표로는 원리상 못 잡는다 — **호출 순서**로 본다.
+    const layers = styleOf(SHADOW_STYLE).layers;
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+
+    /** `native` 가 false 면 `roundRect` 없는 환경(폴백 경로)을 강제한다 */
+    const seqOf = (profile: 'round' | 'box' | 'post', native: boolean) => {
+      const seq: string[] = [];
+      const base = {
+        ...ctx2d,
+        beginPath() { seq.push('begin'); },
+        fill() { seq.push('fill'); },
+      } as Record<string, unknown>;
+      if (!native) delete base.roundRect;
+      paintCell(base as unknown as CanvasRenderingContext2D, 100,
+        { index: 0, profile, span }, { ...OPTS, res: 100 });
+      return seq.join(',');
+    };
+
+    const want = Array(layers).fill('begin,fill').join(',');
+    for (const profile of ['round', 'box', 'post'] as const) {
+      for (const native of [true, false]) {
+        expect(seqOf(profile, native), `${profile}/${native ? 'native' : 'fallback'}`).toBe(want);
+      }
+    }
+  });
+
+  it('룩 후보가 실제로 다른 그림을 만든다 — `?shstyle` 이 장식이 아니다', () => {
+    const span = shadowSpan(10, 2, { ux: 1, uz: 0, cot: 1.5 }, 999);
+    const shapeOf = (style: (typeof SHADOW_STYLES)[number]) => {
+      const t = tracer();
+      paintCell(t.spy, 100, { index: 0, profile: 'round', span }, {
+        ...OPTS, res: 100, soft: 0.4, style,
+      });
+      return { layers: t.ellipses.length, alpha: t.alphas[0], pts: t.pts.length };
+    };
+    const s = shapeOf('soft'), c = shapeOf('contact'), d = shapeOf('diffuse');
+    expect(new Set([s.layers, c.layers, d.layers]).size).toBe(3);
+    expect(new Set([s.alpha, c.alpha, d.alpha]).size).toBe(3);
   });
 });
 

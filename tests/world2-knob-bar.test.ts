@@ -26,7 +26,7 @@ function putMarkup() {
   document.body.innerHTML = `
     <div id="w2-sliders" data-open="0" data-dirty="0" hidden>
       <button id="w2-sliders-toggle" type="button" aria-expanded="false" aria-controls="w2-sliders-body">
-        <span class="cap">수면</span><span class="dirty-dot"></span><span class="caret">▾</span>
+        <span class="cap">개발자 옵션</span><span class="dirty-dot"></span><span class="caret">▾</span>
       </button>
       <div id="w2-sliders-body" hidden></div>
     </div>`;

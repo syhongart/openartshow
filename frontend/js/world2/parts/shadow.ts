@@ -22,9 +22,36 @@
 // 지오의 `boundingBox` 에서 실측하고, 여기에는 골격 한 글자만 온다(`shadowProfile`).
 //
 // 룩이 부족하다는 판정이 나오면 **교체 지점은 `paintCell()` 하나다.** 나머지 구조는 그대로.
+//
+// ── § 남는 사각 ─────────────────────────────────────────────────────────────
+// 이 절은 **인용되기 전에 없었다.** `BakeEntry.span` 주석이 *"(§ 남는 사각)"* 을 가리키고
+// 있었는데 그런 절이 이 파일에도 어디에도 없었다(2026-08-11 실측). 존재하지 않는 근거를
+// 인용하는 것은 이 저장소가 바로 앞 회차에 검수관 반려로 맞은 형태다(`types.ts` 주석이
+// 없는 테스트를 인용했던 B2). 문장을 지우는 대신 **절을 만들어 참으로 되돌린다.**
+//
+// ① **지면 전용이다.** 벽에 지는 그림자도, 파츠끼리 서로 드리우는 그림자도 없다. 데칼이
+//    지면에 누운 평면 하나라서 구조적으로 불가능하고, 옵션으로 켤 수 있는 것이 아니다.
+//    **감독 판정 2026-08-11: "이대로 좋다"** — 배포 후 이 한계를 명시해 확인받았고, 벽
+//    그림자는 별건으로도 열지 않기로 했다. 다시 논의가 열리는 조건은 감독이 화면을 보고
+//    접지감이 부족하다고 판정할 때뿐이다.
+// ② **인스턴스마다 실루엣이 같다.** 셀은 종류당 하나이고 치수는 그 종류의 **대표값**이다
+//    (`casterProfiles` 가 `boundingBox` 에서 뜬다). 인스턴스별 UV 가 없으므로 원리상
+//    바꿀 수 없다 — 같은 종류의 건물이 크기가 달라도 그림자 비율은 하나다.
+// ③ **회전한 각진 캐스터의 폭이 최대 √2 배 넓다.** 밑동을 외접원으로 근사하기 때문이다.
+//    ②와 같은 이유로 인스턴스별 보정이 불가능하다.
+// ④ **색 페이드가 데칼에 안 걸린다.** 검정은 어떤 색과 곱해도 검정이라 `parcel-fade` 가
+//    무력하다. 등장·소멸은 `parcel-grow` 의 스케일이 전담한다 — 그래서 그림자만 페이드
+//    없이 나타나는데, 스케일이 0에서 자라므로 화면에서는 "커지며 나타난다" 로 읽힌다.
+// ⑤ **저고도에서 밑동이 진행 방향으로 늘어난다.** 물리적으로는 안 늘어나야 한다. 굽는 쪽과
+//    변환 쪽이 같은 `blobFrac` 을 보므로 어긋나지는 않는다. 안 재본 것은 *"화면에서 눈에
+//    띄는가"* 하나이고, `?time=sunset` 실기기 판정으로 닫는다.
 
 import type { PartSpec, PlacedPart, PlaceContext, ThreeNS, ResolvedLayout } from './types.js';
-import { atlasGrid, type ShadowSpan } from '../decide/shadow-decal.js';
+import {
+  atlasGrid, decalLocalZ, penumbraPlan, tailAlpha, styleOf,
+  SHADOW_PAD, SHADOW_STYLE,
+  type ShadowSpan, type ShadowStyle, type StyleProfile,
+} from '../decide/shadow-decal.js';
 
 /**
  * 아틀라스 한 변(px). **세션 내내 상수다** — 이 값이 바뀌면 캔버스 백킹 스토어가 새로
@@ -49,10 +76,12 @@ export interface BakeOpts {
   res: number;
   /** 농도 0~1. 시간대 배수가 이미 곱해진 값이 온다 */
   density: number;
-  /** 블러 반경(셀 픽셀 비). `?shsoft` */
+  /** 부드러움 손잡이(penumbra 확산). `?shsoft` — 의미는 `SHADOW_SOFT` 주석 참조 */
   soft: number;
-  /** 꼬리 끝 알파 0~1. `?shtail` */
+  /** 꼬리 알파 바닥값 0~1. `?shtail` — 의미는 `SHADOW_TAIL` 주석 참조 */
   tail: number;
+  /** 룩 후보. `?shstyle`. 없으면 기본 룩 */
+  style?: ShadowStyle;
 }
 
 /** 셀 하나를 굽는 데 필요한 것 */
@@ -132,74 +161,260 @@ function ensureAtlas(T: ThreeNS): Atlas | null {
 // ── 셀 그리기 ───────────────────────────────────────────────────────────────
 
 /**
+ * `post`(가로등) 골격의 폭 계수. 기둥이 가늘다 — 좁히지 않으면 **차폐 반경**만큼 넓은
+ * 그림자가 져 가로등이 나무만 한 그늘을 만든다(`footprint` 는 통행 여유이지 실루엣이 아니다).
+ */
+const POST_WIDTH = 0.34;
+
+/** `box` 골격 모서리 반경 ÷ 짧은 반경. 완전한 직각은 번지게 해도 인공적으로 읽힌다 */
+const BOX_CORNER = 0.22;
+
+/**
+ * 둥근 골격의 꼬리 끝 둥글기 ÷ 끝 반폭. 끝이 캔버스 아래로 나가지 않게 **안쪽으로** 둥글린다
+ * (바깥으로 부풀리면 여백을 넘어 잘린다 — 그러면 고치려던 하드컷이 그 자리에 다시 생긴다).
+ */
+const TIP_ROUND = 0.35;
+
+/**
  * 셀 하나를 스크래치 캔버스에 그린다. **여기가 룩의 전부다.**
  *
+ * ── 2026-08-11 재설계 — 감독 반려 *"딱딱하고 실제 그림자와 너무 달라"* ─────────
+ * 옛 판본은 「알파 1 의 하드 실루엣 + 전역 블러 한 방」이었고 네 곳에서 실제 그림자와
+ * 갈라졌다. 넷 다 헤드리스로 실측하고 고쳤다:
+ *
+ *   ① **실루엣이 캔버스 경계에 닿아 있었다** → 알파가 0 으로 갈 자리가 없어 사방이 직선으로
+ *      끊겼다(실측표는 `SHADOW_PAD` 주석). → 여백을 넣고 `DECAL_SCALE` 로 상쇄한다.
+ *   ② **꼬리가 폭 일정한 직사각형이었다**(실측: y=40·70·100·126 모두 폭 128px). 실제
+ *      penumbra 는 캐스터에서 멀어질수록 넓어진다. → 사다리꼴 + `flare`.
+ *   ③ **알파가 선형 감쇠 하나뿐이었다**(실측 세로 프로파일 130→25 의 직선). 실제는 접지부가
+ *      진하고 급격히 흐려진다. → `tailAlpha` 의 `tailPow` 곡선.
+ *   ④ **블러가 전 영역 균일했다.** 실제는 접지부가 선명하고 끝이 흐리다. → 등고선마다
+ *      확산량이 다르고 블러도 그 확산량에 비례한다(`blurK`).
+ *
+ * ── 어떻게 그리는가 — **penumbra 등고선 스택** ─────────────────────────────
+ * 같은 실루엣을 `layers` 겹 그린다. 겹 `i` 는 원본에서 `spread·f` 만큼 바깥으로 밀린
+ * 등고선이고(`f = i/(layers−1)`, 0 이 코어), 접지부는 `contactTight` 배·끝은 `flare` 배로
+ * **다르게** 민다. 그래서 안쪽일수록 여러 겹이 겹쳐 진해지고 바깥으로 갈수록 옅어진다 —
+ * 그것이 곧 반그림자다. 겹마다 알파를 낮추는 대신 **겹 수로 알파가 흔들리지 않게** 겹당
+ * 알파를 `core` 에서 역산한다.
+ *
+ * 밑동과 꼬리는 **하나의 path** 로 그린다. 따로 `fill()` 하면 겹치는 부분이 두 번 합성돼
+ * 밑동 둘레에 이음선이 보인다(옛 판본이 밑동을 나중에 그려 그 문제를 피하고 있었는데,
+ * 그 대가로 꼬리 알파가 밑동에 못 걸렸다).
+ *
  * ── 좌표 규약 (`decide/shadow-decal.ts` 의 `decalTransform` 과 짝) ──────────
- *   캔버스 **위쪽**(y=0) = 발밑        캔버스 **아래쪽**(y=res) = 그림자 끝
- * 가로(x)는 그림자 폭 전체이고, 월드에서 `sx = 2r` 로 스케일되므로 **가로 지름 1 = 2r**,
- * 세로 지름 `blobFrac` = 2r 이다. 그래서 텍스처 공간의 타원이 월드에서 정확히 **원**이 된다.
+ *   캔버스 **위쪽** = 발밑        캔버스 **아래쪽** = 그림자 끝
+ * ⚠ **`y=0`·`y=res` 가 아니다** — 실루엣은 여백만큼 안쪽이고, 그 변환이 `decalLocalZ` 다.
+ * 가로(x)는 그림자 폭 전체이고 월드에서 `sx` 로 스케일되므로 텍스처 공간의 타원이 월드에서
+ * 정확히 **원**이 된다.
  *
  * `blobFrac` 을 인자로 받는 것이 중요하다 — 여기서 자체 상수로 계산하면 굽는 실루엣과
  * 놓는 자세가 갈라지고, 증상은 "그림자 밑동이 물건에서 떨어져 있다" 로만 나타난다.
  * 산술 테스트는 양쪽 다 통과한다. 그래서 테스트가 **같은 `shadowSpan` 호출에서 나왔는지**
  * 를 본다.
+ *
+ * ── `?shres` 를 낮춰도 안 무너진다 ─────────────────────────────────────────
+ * 절대 픽셀이 한 군데도 없다. 모든 길이가 `res` 비례이고, 유일한 절대 임계값은 "이 도형을
+ * 그릴 가치가 있는가" 판정(0.5px)뿐이다.
  */
 export function paintCell(
   x: CanvasRenderingContext2D, res: number, e: BakeEntry, o: BakeOpts,
 ): void {
   x.save();
   x.clearRect(0, 0, res, res);
-  x.globalAlpha = Math.min(1, Math.max(0, o.density));
-  // 블러는 셀 크기에 비례한다 — 절대 픽셀로 두면 해상도를 낮출 때 상대적으로 더 흐려진다.
-  const blur = Math.max(0, o.soft) * res;
-  if (blur > 0.01) x.filter = `blur(${blur.toFixed(2)}px)`;
-  x.fillStyle = '#000';
 
-  // 0 에 붙으면 밑동이 사라지고 1 을 넘으면 셀을 벗어난다. 둘 다 `shadowSpan` 이 내지
-  // 않는 값이지만, 여기서 잘라 두면 그 계약이 깨져도 화면이 조용히 비지는 않는다.
+  const sp = styleOf(o.style ?? SHADOW_STYLE);
+  const density = Math.min(1, Math.max(0, o.density));
+
+  // 0 에 붙으면 밑동이 사라지고 1 을 넘으면 실루엣이 여백을 먹는다. 둘 다 `shadowSpan` 이
+  // 내지 않는 값이지만, 여기서 잘라 두면 그 계약이 깨져도 화면이 조용히 비지는 않는다.
   const bf = Math.min(1, Math.max(0.02, e.span.blobFrac));
-  const cy = res * bf / 2;          // 밑동 중심 y
-  const ry = res * bf / 2;          // 밑동 세로 반경
-  // `post`(가로등)는 기둥이 가늘다. 폭을 좁히지 않으면 **차폐 반경**만큼 넓은 그림자가 져
-  // 가로등이 나무만 한 그늘을 만든다 — `footprint` 는 통행 여유이지 실루엣이 아니다.
-  const wf = e.profile === 'post' ? 0.34 : 1;
-  const rx = res * 0.5 * wf;
+
+  // 실루엣 영역 — 여백 안쪽. `decalLocalZ` 가 놓는 쪽과 공유되는 유일한 변환이다.
+  /** 실루엣 정규화 t(0=발밑, 1=끝) → 캔버스 y */
+  const yOf = (t: number) => (decalLocalZ(t) + 0.5) * res;
+  const inner = res * (1 - 2 * SHADOW_PAD);
   const cx = res * 0.5;
+  const wf = e.profile === 'post' ? POST_WIDTH : 1;
+  const rx = inner * 0.5 * wf;   // 밑동 가로 반경
+  const ry = inner * bf * 0.5;   // 밑동 세로 반경
+  const cy = yOf(bf / 2);        // 밑동 중심 y
+  const endY = yOf(1);           // 실루엣 꼬리 끝
 
-  // ① 꼬리 — 밑동 중심에서 끝까지. 알파가 1 → tail 로 선형 감쇠한다.
-  //    밑동보다 **먼저** 그린다: 나중에 그리면 감쇠한 꼬리가 밑동 위를 덮어 밑동이 옅어진다.
-  if (cy < res - 0.5) {
-    const g = x.createLinearGradient(0, cy, 0, res);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(1, `rgba(0,0,0,${Math.min(1, Math.max(0, o.tail))})`);
-    x.fillStyle = g;
-    x.fillRect(cx - rx, cy, rx * 2, res - cy);
-  }
+  // 반그림자 설계 셋. **안쪽이 주력, 바깥이 보조**이고 블러는 등고선 간격이 정한다 —
+  // 셋이 서로 묶여 있어 판정 쪽이 함께 낸다(근거는 `penumbraPlan` 주석).
+  const plan = penumbraPlan(o.soft, res, rx, sp);
+  const n = Math.max(2, Math.round(sp.layers));
+  // 겹쳐 그린 **누적**이 `core` 가 되도록 겹당 알파를 역산한다: 1−(1−a)ⁿ = core.
+  // 농도(`density`)는 여기서 곱하지 않는다 — 마지막 `destination-in` 에서 한 번 곱한다.
+  //
+  // ⚠ 이 역산이 없으면 `layers` 를 바꿀 때마다 진하기가 따라 변해 **룩 비교가 성립하지
+  //   않는다**(16겹인 `diffuse` 만 유독 진해진다).
+  // ⚠ 그리고 `globalAlpha = density` 를 겹마다 쓰면 **농도가 겹 수만큼 누적된다** — 실측:
+  //   `contact`(6겹·density 0.45)가 알파 248/255 로 구워져 `?shdark` 가 사실상 죽었다.
+  const a = 1 - Math.pow(1 - Math.min(1, Math.max(0, sp.core)), 1 / n);
 
-  // ② 밑동 — 골격이 여기서만 갈린다.
+  // **바깥 겹부터** 그린다. 순서는 알파 합성상 무관하지만(검정끼리는 교환법칙이 성립한다 —
+  // 재질 주석의 `depthWrite:false` 근거와 같은 성질), 블러가 큰 것을 먼저 깔아야 육안으로
+  // 디버깅할 때 층이 쌓이는 순서가 자연스럽다.
+  // 꼬리가 있는지는 **확산 전** 치수로 한 번만 판정한다. 겹마다 따로 보면 확산이 큰 바깥
+  // 겹에만 꼬리가 생겨 룩이 겹 사이에서 갈라진다.
+  const hasTail = endY > cy + ry + 0.5;
+
+  // 블러는 겹마다 같다 — 등고선 **간격**을 메우는 것이 목적이라 겹마다 다를 이유가 없다.
+  // (접지부가 선명하고 끝이 흐린 것은 블러가 아니라 `contactTight` < `flare` 가 만든다:
+  //  밑동에서 등고선이 촘촘하고 끝에서 벌어진다.)
+  const filter = plan.blur > 0.01 ? `blur(${plan.blur.toFixed(3)}px)` : 'none';
+
+  // ── ① 등고선 스택은 **순수 검정**으로 그린다 ────────────────────────────────
+  // 꼬리 감쇠도 농도도 여기서 곱하지 않는다. 이유는 아래 ② 참조.
   x.fillStyle = '#000';
-  if (e.profile === 'box') {
-    // 각진 밑동. 모서리를 조금 둥글려 둔다 — 완전한 직각은 블러를 먹여도 인공적으로 읽힌다.
-    const r = Math.min(rx, ry) * 0.22;
-    roundRect(x, cx - rx, cy - ry, rx * 2, ry * 2, r);
-    x.fill();
-  } else {
-    // round·post — 타원. 월드에서는 원이다(위 규약).
-    x.beginPath();
-    x.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+
+  for (let i = n - 1; i >= 0; i--) {
+    // `f = 1` 이 **원본 실루엣**(= 월드에서 재는 그림자 경계), `f = 0` 이 안쪽으로 물러난
+    // 코어(완전그늘). 등고선은 밖으로 나가지 않는다 — 여백은 블러 몫이다.
+    const f = i / (n - 1);
+    const shrink = plan.inner * (1 - f);
+    const db = -shrink * sp.contactTight;   // 접지부 오프셋(안쪽)
+    const de = -shrink * sp.flare;          // 끝 오프셋(안쪽)
+    x.filter = filter;
+    x.globalAlpha = a;
+    // 밑동이 통째로 사라지면 실루엣이 끊긴다. `ry` 는 긴 그림자에서 아주 작아질 수 있어
+    // (`blobFrac` 0.07 대) 안쪽 확산이 그것을 넘길 수 있다 — 바닥을 깔아 둔다.
+    const rxb = Math.max(rx * 0.08, rx + db);
+    const ryb = Math.max(ry * 0.08, ry + db);
+    // 끝 반폭은 오프셋에 더해 `umbraTaper` 만큼 **더** 좁아진다. `f=1` 에서는 0 이므로
+    // 최외곽은 원본 폭 + 바깥 확장 그대로다.
+    const rxe = Math.max(rx * 0.05, rx + de - rx * sp.umbraTaper * (1 - f));
+    // ⚠ **꼬리 끝 y 는 겹마다 바꾸지 않는다.** 첫 판본은 `endY + de` 였고, 그러면 겹마다
+    // 다른 높이에 **수평 직선**이 생긴다 — 확대 렌더에서 `diffuse`(9겹)가 줄무늬로 보였다.
+    // 세로 계단은 블러가 잘 먹지만 가로 직선은 블러를 먹여도 직선으로 남는다.
+    // 코어가 끝까지 뻗는 것은 문제가 아니다 — 소멸은 `tailAlpha` 가 담당하고, `umbraTaper`
+    // 가 폭을 좁혀 코어는 끝에서 뾰족해진다.
+    tracePath(x, cx, cy, rxb, ryb, endY, rxe, hasTail, e.profile);
     x.fill();
   }
+
+  // ── ② 꼬리 감쇠와 농도를 **마지막에 한 번** 곱한다 ──────────────────────────
+  //
+  // ⚠ **이것이 화면의 가로 줄무늬를 없앤 수정이다** (2026-08-11 실측). 처음에는 겹마다
+  // 그라디언트를 `fillStyle` 로 걸었고, 그러면 **겹당 소스 알파가 매번 8비트로 양자화된다.**
+  // 겹당 알파가 0.046(=11/255)일 때 그라디언트가 조금 변해도 반올림 결과가 한동안 같은
+  // 정수에 머물다 1 씩 뛰고, 그 1 이 **겹 수만큼 증폭**돼 12 단위 계단이 된다.
+  //
+  // 실측(세로 알파 프로파일, `soft`·중앙선): 107,107,107,107,107,107,107,100,100,100,100,
+  // 100,100,92,92,… — **평평한 구간 6~12px + 계단 크기 7~12**. 계단 **수가 `layers` 와
+  // 정확히 같았다**(11~12개). 스톱을 12→48 로 늘려도 그대로였다 — 원인이 그라디언트 해상도가
+  // 아니라 합성 경로였기 때문이다. 겹을 늘릴수록 오히려 **심해지는** 종류의 결함이다.
+  //
+  // `destination-in` 은 이미 그려진 알파에 소스 알파를 **곱한다.** 그래서 양자화가 딱 한 번
+  // 일어나고, 등고선 스택은 알파 0.23 대(=60/255)로 그려져 상대 오차가 20분의 1이 된다.
+  //
+  // 부수 효과로 `?shdark` 도 정확해졌다 — 농도가 겹 수와 무관하게 정확히 한 번 곱해진다.
+  x.globalCompositeOperation = 'destination-in';
+  x.filter = 'none';
+  x.globalAlpha = density;
+  // 꼬리 알파는 **밑동 중심 → 실루엣 끝** 을 기준으로 한다. 밑동 위쪽(t<0)은 첫 스톱(1)
+  // 으로, 끝 너머(t>1)는 마지막 스톱(0)으로 clamp 되므로 범위 밖을 따로 적을 필요가 없다.
+  x.fillStyle = hasTail ? tailGradient(x, cy, endY, o.tail, sp) : '#000';
+  x.fillRect(0, 0, res, res);
 
   x.restore();
 }
 
-/** `roundRect` 가 없는 환경(구형 jsdom)을 위한 폴백 */
+/**
+ * 밑동 + 꼬리를 **하나의 path** 로 그린다.
+ *
+ * 두 subpath 가 겹치지만 nonzero winding 이라 한 번만 칠해진다 — 따로 `fill()` 하는 것과
+ * 결정적으로 다른 지점이다(따로 하면 겹친 곳이 두 번 합성돼 이음선이 생긴다).
+ *
+ * @param cy   밑동 중심 y
+ * @param rxb  밑동 가로 반경(확산 포함)
+ * @param ryb  밑동 세로 반경(확산 포함)
+ * @param endY 꼬리 끝 y(확산 포함)
+ * @param rxe  꼬리 끝 반폭 — `rxb` 보다 크면 벌어지고, 작으면 좁아진다(umbra taper)
+ * @param hasTail 꼬리를 그리는가. **호출자가 확산 전 치수로 한 번 판정한 값**이다
+ */
+function tracePath(
+  x: CanvasRenderingContext2D,
+  cx: number, cy: number, rxb: number, ryb: number,
+  endY: number, rxe: number, hasTail: boolean, profile: BakeEntry['profile'],
+): void {
+  x.beginPath();
+  // ① 꼬리 사다리꼴. **밑동 밖으로 나갈 때만** 그린다 — 정수리 태양(blobFrac=1)이면
+  //    꼬리가 없어야 하는데, 조건 없이 그리면 확산분만큼 삐져나와 원이 원이 아니게 된다.
+  //
+  // ⚠ **감기 순서가 오른쪽에서 시작하는 것이 중요하다.** 왼쪽에서 시작하면 밑동(타원·
+  //    `roundRect` 둘 다 반시계)과 **반대 방향**이 되고, nonzero winding 이 겹친 구간을
+  //    0 으로 만들어 **밑동 아래쪽에 가로 구멍이 뚫린다.** 첫 판본이 그랬고 실측으로
+  //    잡았다(세로 알파 프로파일 …175, 160, **1**, 154… — 한 줄만 알파 1 로 꺼져 있었다).
+  if (hasTail) {
+    x.moveTo(cx + rxb, cy);
+    if (profile === 'box') {
+      // 각진 캐스터의 그림자 끝은 옥상 실루엣이라 평평하다.
+      x.lineTo(cx + rxe, endY);
+      x.lineTo(cx - rxe, endY);
+    } else {
+      // 둥근 캐스터(나무·기둥)의 끝은 둥글다. 직선으로 끊으면 그 가로선이 블러를 먹여도
+      // 남아 "그림자가 잘렸다" 로 읽힌다 — 세로 계단과 달리 블러가 가로선을 못 지운다.
+      const tip = rxe * TIP_ROUND;
+      x.lineTo(cx + rxe, endY - tip);
+      x.quadraticCurveTo(cx + rxe, endY, cx, endY);
+      x.quadraticCurveTo(cx - rxe, endY, cx - rxe, endY - tip);
+    }
+    x.lineTo(cx - rxb, cy);
+    x.closePath();
+  }
+  // ② 밑동 — 골격이 여기서만 갈린다.
+  if (profile === 'box') {
+    roundRect(x, cx - rxb, cy - ryb, rxb * 2, ryb * 2, Math.min(rxb, ryb) * BOX_CORNER);
+  } else {
+    // round·post — 타원. 월드에서는 원이다(좌표 규약).
+    x.moveTo(cx + rxb, cy);
+    x.ellipse(cx, cy, rxb, ryb, 0, 0, Math.PI * 2);
+  }
+}
+
+/**
+ * 꼬리 세로 알파 그라디언트. 곡선 자체는 판정(`tailAlpha`)이 소유하고 여기서는 표본만 뜬다.
+ *
+ * ── 스톱 수가 룩을 좌우한다 (2026-08-11 실측) ───────────────────────────────
+ * 처음에 12 로 뒀고 **그것이 화면의 가로 줄무늬였다.** 캔버스 그라디언트는 스톱 사이를
+ * **선형 보간**하므로 곡선이 12구간 꺾은선이 된다. 값은 이어지지만 **기울기가 꺾이고**,
+ * 사람 눈은 그 불연속(마하 밴드)을 밝기 계단으로 읽는다. 확대 렌더에서 꼬리 전체에
+ * 균일 간격 줄무늬가 났고, 그 간격이 정확히 꼬리 길이 ÷ 12 였다.
+ *
+ * 블러로는 못 지운다 — 블러는 도형 경계를 뭉개지 그라디언트 안쪽을 건드리지 않는다.
+ * 스톱을 촘촘히 하는 것이 유일한 처방이고, 스톱은 **한 번만** 만들면 되므로 비싸지 않다.
+ */
+function tailGradient(
+  x: CanvasRenderingContext2D, cy: number, endY: number, tail: number, sp: StyleProfile,
+): CanvasGradient {
+  const STOPS = 48;
+  const g = x.createLinearGradient(0, cy, 0, endY);
+  for (let k = 0; k <= STOPS; k++) {
+    const t = k / STOPS;
+    g.addColorStop(t, `rgba(0,0,0,${tailAlpha(t, tail, sp.tailPow).toFixed(4)})`);
+  }
+  return g;
+}
+
+/**
+ * 둥근 사각 **subpath** 를 현재 path 에 더한다. `roundRect` 가 없는 환경(구형 jsdom)을 위한
+ * 폴백을 포함한다.
+ *
+ * ⚠ **`beginPath()` 를 부르지 않는다** — 2026-08-11 재설계에서 밑동이 꼬리와 **하나의 path**
+ * 가 됐기 때문이다. 여기서 path 를 새로 열면 앞서 그린 꼬리 사다리꼴이 통째로 버려지고,
+ * 증상은 "`box` 골격만 꼬리가 없다" 로 나타난다.
+ *
+ * 감기 방향은 다른 subpath(사다리꼴·타원)와 **같은 시계방향**이어야 한다. 반대로 감으면
+ * nonzero winding 이 겹친 부분을 0 으로 만들어 밑동에 구멍이 뚫린다.
+ */
 function roundRect(
   x: CanvasRenderingContext2D, px: number, py: number, w: number, h: number, r: number,
 ): void {
   const rr = Math.max(0, Math.min(r, w / 2, h / 2));
-  if (typeof x.roundRect === 'function') { x.beginPath(); x.roundRect(px, py, w, h, rr); return; }
-  x.beginPath();
+  if (typeof x.roundRect === 'function') { x.roundRect(px, py, w, h, rr); return; }
   x.moveTo(px + rr, py);
   x.lineTo(px + w - rr, py); x.quadraticCurveTo(px + w, py, px + w, py + rr);
   x.lineTo(px + w, py + h - rr); x.quadraticCurveTo(px + w, py + h, px + w - rr, py + h);
