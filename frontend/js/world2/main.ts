@@ -39,10 +39,9 @@ import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { ShadowDecalSystem, defaultOpts as shadowDecalDefaults } from './systems/shadow-decal.js';
 import {
-  SHADOW_DENSITY, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_TAIL, SHADOW_MAX_LEN, SHADOW_Y,
-  SHADOW_STYLE, SHADOW_STYLES,
+  SHADOW_DENSITY, SHADOW_DENSITY_MAX, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_Y,
 } from './decide/shadow-decal.js';
-import { SHADOW_DRAW_PX, SHADOW_DRAW_MAX } from './parts/shadow.js';
+import { SHADOW_DRAW_PX, SHADOW_DRAW_MIN, SHADOW_DRAW_MAX } from './parts/shadow.js';
 import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
@@ -155,17 +154,21 @@ const SHADOW = shadowFrustum(
 );
 
 /**
- * **그림자 데칼(베이킹) 노브 여덟.** 감독 지시 2026-08-11 *"해상도 조정옵션도 만들고.
+ * **접촉그림자(베이킹) 노브 다섯.** 감독 지시 2026-08-11 *"해상도 조정옵션도 만들고.
  * 기타 세부옵션을 넣자."*
  *
  * 기본값을 여기 적지 않는다 — 전부 소비처 상수를 fallback 으로 읽는다. 같은 값을 두 곳에
  * 적으면 한쪽만 고쳐도 아무도 모른다(이 저장소가 색·수치·임계값에서 세 번 데인 형태).
  *
- * 다섯은 슬라이더로도 열려 있다(`ui/knob-bar.ts`). 나머지 셋(`shy`·`shdec`·`shstyle`)은 URL
- * 전용이다 — `shy` 는 z-fighting 이 기기마다 다를 때의 탈출구이고 `shdec` 는 룩 A/B
- * 대조군이라, 슬라이더에 올리면 감독이 매번 지나치며 건드릴 축이 늘 뿐이다. `shstyle` 은
- * **수치 축이 아니라 열거형**이라 슬라이더에 올릴 수가 없고, 그것이 오히려 맞다 — 후보
- * 비교는 링크 세 개로 하는 것이 이 저장소의 판정 사이클이다.
+ * ⚠ **여덟에서 셋이 빠졌다**(2026-08-11 2회차). 감독이 방향성 그림자를 폐기하고 빌더의
+ * 접촉그림자를 지목하면서 `?shlen`(길이 상한)·`?shtail`(꼬리 알파)·`?shstyle`(penumbra 룩
+ * 후보)이 **가리킬 대상을 잃었다** — 접촉그림자에는 길이도 꼬리도 등고선 스택도 없다.
+ * 값을 남겨 두면 노브를 밀어도 아무 일이 안 일어나고, 그것이 이 저장소가 *"관측은 면제가
+ * 아니라 데이터 수집"* 이라고 적어 둔 장식 상태다.
+ *
+ * 셋은 슬라이더로도 열려 있다(`ui/knob-bar.ts`). 나머지 둘(`shy`·`shdec`)은 URL 전용이다 —
+ * `shy` 는 z-fighting 이 기기마다 다를 때의 탈출구이고 `shdec` 는 룩 A/B 대조군이라,
+ * 슬라이더에 올리면 감독이 매번 지나치며 건드릴 축이 늘 뿐이다.
  *
  * ⚠ **`?shdec=0` 은 기능을 끄지 않는다** — 슬롯도 드로우콜도 그대로이고 알파만 0 이다.
  * 룩 A/B 는 이것으로 하고(다른 축이 하나도 안 움직인다), **드로우콜 비용 A/B 를 하려면
@@ -173,18 +176,15 @@ const SHADOW = shadowFrustum(
  * 방식이고, 노브로 흉내 내면 "껐는데 왜 draw 가 그대로냐" 로 오독된다.
  */
 const SHADOW_DECAL_OPTS = {
-  res: Math.round(readNum('shres', SHADOW_DRAW_PX, 8, SHADOW_DRAW_MAX)),
-  density: readNum('shdark', SHADOW_DENSITY, 0, 1),
-  // 상한을 `0.5` 로 적지 않는다 — 슬라이더(아래)와 확산 정규화의 분모까지 **세 곳**이
+  res: Math.round(readNum('shres', SHADOW_DRAW_PX, SHADOW_DRAW_MIN, SHADOW_DRAW_MAX)),
+  // 상한이 1 이 아니다 — 기본값이 이미 1(빌더 원본)이라 1 로 자르면 노브가 한쪽으로만
+  // 열린다. 근거는 `SHADOW_DENSITY_MAX` 주석.
+  density: readNum('shdark', SHADOW_DENSITY, 0, SHADOW_DENSITY_MAX),
+  // 상한을 `1` 로 적지 않는다 — 슬라이더(아래)와 스톱 위치 정규화의 분모까지 **세 곳**이
   // 같은 값을 봐야 한다. 한 곳에만 적고 나머지가 읽는다.
   soft: readNum('shsoft', SHADOW_SOFT, 0, SHADOW_SOFT_MAX),
-  tail: readNum('shtail', SHADOW_TAIL, 0, 1),
-  maxLen: readNum('shlen', SHADOW_MAX_LEN, 4, 64),
   y: readNum('shy', SHADOW_Y, 0.16, 0.5),
   on: readNum('shdec', 1, 0, 1),
-  // 룩 후보. 목록은 `decide` 가 소유한다 — 여기에 다시 적으면 후보를 하나 늘릴 때
-  // 한쪽만 고쳐도 아무도 모른다.
-  style: readEnum('shstyle', SHADOW_STYLE, SHADOW_STYLES),
 };
 
 /*
@@ -808,26 +808,17 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           shrinkEase,
           gate: () => streaming?.ready ?? false,
         });
-        // 그림자 데칼 — **빌더보다 먼저** 만든다(페이드·성장과 같은 이유: 슬롯 어댑터
+        // 접촉그림자 — **빌더보다 먼저** 만든다(페이드·성장과 같은 이유: 슬롯 어댑터
         // 안쪽에 워프를 꽂아야 배치가 정한 자세를 가로챌 수 있다).
         //
-        // 태양 방향은 **광원에서 되읽는다.** `SUN_AZ`·고도표를 여기로 복사하면 밤에 달
-        // 방위로 넘어가는 것을 놓치고, 그 증상은 "밤에 그림자가 엉뚱한 쪽" 이라 헤드리스가
-        // 못 잡는다. `systems/sky.ts` 가 매 프레임 `sun.position`·`sun.target.position` 을
-        // 쓰고 있으므로 그 차이가 곧 방향이다.
+        // ⚠ **`sunDir` 이 없어졌다**(2026-08-11 2회차). 예전에는 광원에서 태양 방향을
+        // 되읽어 넘겼고 — `SUN_AZ` 표를 복사하지 않기 위한 배선이었다 — 그림자가 그
+        // 반대쪽으로 누웠다. 감독이 방향성 그림자를 폐기하고 빌더의 접촉그림자를
+        // 지목하면서 이 시스템이 태양을 **아예 안 본다.** 시간대는 농도만 움직인다.
         shadowDecal = new ShadowDecalSystem({
           pools: pools!,
           assets: partAssets!,
           parts: PARTS,
-          sunDir: () => {
-            const s = sun;
-            if (!s) return { x: 0, y: 1, z: 0 };
-            const dx = s.position.x - s.target.position.x;
-            const dy = s.position.y - s.target.position.y;
-            const dz = s.position.z - s.target.position.z;
-            const l = Math.hypot(dx, dy, dz) || 1;
-            return { x: dx / l, y: dy / l, z: dz / l };
-          },
           time: () => timeOfDay,
           opts: shadowOpts,
         });
@@ -842,7 +833,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         });
         shadowDecal.attach(slotPool);
 
-        // ── 개발자 옵션: 슬라이더 다섯 + 굽기 버튼 ──────────────────────────
+        // ── 개발자 옵션: 슬라이더 셋 + 굽기 버튼 ────────────────────────────
         // 감독 지시 2026-08-11 *"베이킹 버튼을 누르면 구워지고 적용되게하자. 해상도
         // 조정옵션도 만들고. 기타 세부옵션을 넣자."* — 카드 판정으로 **월드 화면 안**에
         // 두기로 확정했다(홈 진입점은 이번 회차 제외, 팀장 판정 2026-08-11: 홈에서
@@ -856,9 +847,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           // 슬라이더에서 값을 고른 감독이 그대로 `?shdark=0.6` 을 쳐서 링크로 만들 수
           // 있어야 한다(이 저장소의 판정 사이클이 링크로 돈다). 필드명을 그대로 쓰면
           // 화면의 이름과 주소의 이름이 갈라진다.
-          // 슬라이더는 **수치 축만** 받는다. `keyof typeof base` 를 그대로 쓰면 열거형인
-          // `style` 까지 후보에 들어와, 슬라이더가 룩 이름에 숫자를 대입하는 코드가
-          // 타입검사를 통과한다. 숫자 필드만 남긴다.
+          // 슬라이더는 **수치 축만** 받는다. 지금은 옵션이 전부 숫자라 `keyof typeof base`
+          // 와 같지만 필터를 남긴다 — 열거형 노브(예전 `style`)가 다시 생기는 날 그것을
+          // 빠뜨리면, 슬라이더가 열거형에 숫자를 대입하는 코드가 타입검사를 통과한다.
           type NumField = {
             [K in keyof typeof base]: (typeof base)[K] extends number ? K : never
           }[keyof typeof base];
@@ -876,11 +867,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             reset: () => { shadowOpts[field] = base[field]; },
           });
           attachKnobBar(bar, [
-            knob('shdark', 'density', '그림자', 0, 1, 0.05),
-            knob('shsoft', 'soft', '번짐', 0, SHADOW_SOFT_MAX, 0.01),
-            knob('shlen', 'maxLen', '길이', 4, 64, 1),
-            knob('shtail', 'tail', '꼬리', 0, 1, 0.05),
-            knob('shres', 'res', '해상도', 8, SHADOW_DRAW_MAX, 8),
+            knob('shdark', 'density', '그림자', 0, SHADOW_DENSITY_MAX, 0.05),
+            // 「번짐」 이 클수록 가장자리가 넓게 퍼진다 — 노브 값과 스톱 위치는 방향이
+            // 반대이고, 그 뒤집기는 판정(`midStopFor`)이 한다. 여기서 뒤집지 않는다.
+            knob('shsoft', 'soft', '번짐', 0, SHADOW_SOFT_MAX, 0.02),
+            knob('shres', 'res', '해상도', SHADOW_DRAW_MIN, SHADOW_DRAW_MAX, 8),
           ]);
           attachKnobActions(bar, [{
             key: 'shbake',
