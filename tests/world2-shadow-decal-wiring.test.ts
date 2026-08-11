@@ -41,6 +41,7 @@ import {
   BLOB_INNER_R, BLOB_OUTER_R, BLOB_SCALE, DECAL_SCALE, SHADOW_SOFT,
 } from '../frontend/js/world2/decide/shadow-decal.js';
 import { PARTS } from '../frontend/js/world2/parts/index.js';
+import { ROAD_SURFACE_Y } from '../frontend/js/world2/parts/road.js';
 import type { InstancePools, SlotHandle } from '../frontend/js/world2/systems/instancing.js';
 import type { PartAsset, ThreeNS } from '../frontend/js/world2/parts/types.js';
 
@@ -166,6 +167,41 @@ describe('① 워프는 그림자 키만 건드린다', () => {
     expect(last(calls, onGrass).y).toBeCloseTo(0 + opts.y, 12);
     // 두 그림자의 높이차 = 두 지면의 높이차. 절대 높이였다면 차가 0 이었다.
     expect(last(calls, onRoad).y - last(calls, onGrass).y).toBeCloseTo(0.14, 12);
+  });
+
+  it('★★ 도로판 위에 서는 캐스터는 그림자도 도로 위다 (검수관 블로커 B2)', () => {
+    // ⚠ **이 단언이 없어서 `standsOn` 배선 전체가 검출력 0 이었다.** 검수관이 뮤테이션
+    // 둘로 실측했다: ① `poseOf` 의 `groundOf` 항 삭제 ② 파츠의 `standsOn` 선언 삭제 —
+    // **두 방향 다 2571/2571 통과.** 배선은 살아 있었는데(`setup()` 이 실제 `PARTS` 를
+    // 쓰므로 맵은 채워진다) **`shadow:fountain` 을 잡는 테스트가 0건**이라 그 경로를
+    // 아무 단언도 안 탔다.
+    //
+    // 이 저장소가 이름 붙인 "판정/집행 분리의 구멍" 이다 — `standsOn` 은 판정(파츠 신고)과
+    // 집행(그림자가 `y` 에 더함) 사이에 **새 경계를 만들었고**, 경계를 건너는 지점은
+    // 양쪽 테스트 어디에도 안 걸린다. 새 경계를 만들 때마다 이 축을 함께 만들어야 한다.
+    const { pool, calls, opts } = setup();
+    const onSlab = pool.acquire('shadow:fountain')!;
+    const onGrass = pool.acquire('shadow:tree')!;
+    // 둘 다 배치 `y` 는 0 이다(밑동 불변식) — 갈리는 것은 `standsOn` 신고뿐이다.
+    pool.setTransform(onSlab, 0, 0, 0, 0, 1, 1, 1);
+    pool.setTransform(onGrass, 0, 0, 0, 0, 1, 1, 1);
+    // 광장 랜드마크: 도로판 위 + 띄움. 이 값이 없으면 그림자가 도로에 가려 사라진다.
+    expect(last(calls, onSlab).y).toBeCloseTo(ROAD_SURFACE_Y + opts.y, 12);
+    // 잔디 파츠는 그대로 — 보정이 **전부에** 걸리면 일반 그림자가 도로 높이만큼 뜬다.
+    expect(last(calls, onGrass).y).toBeCloseTo(opts.y, 12);
+    // 두 높이차 = 도로판 높이. 보정이 죽으면 0 이 된다(그것이 뮤테이션이 노리는 지점).
+    expect(last(calls, onSlab).y - last(calls, onGrass).y).toBeCloseTo(ROAD_SURFACE_Y, 12);
+  });
+
+  it('★ 도로판 위 신고가 실제 파츠 선언에서 온다 — 시스템이 지어내지 않는다', () => {
+    // `groundOf` 가 파츠 신고가 아니라 자기 상수를 보면 위 단언은 통과하면서 계약이 깨진다.
+    // 신고 쪽(`PartSpec.standsOn`)이 실제로 그 값인지 레지스트리에서 직접 확인한다.
+    const fountain = PARTS.find((p) => p.kind === 'fountain');
+    const clock = PARTS.find((p) => p.kind === 'clock');
+    expect(fountain?.standsOn).toBe(ROAD_SURFACE_Y);
+    expect(clock?.standsOn).toBe(ROAD_SURFACE_Y);
+    // 잔디 파츠는 신고하지 않는다 — 신고가 번지면 전부 뜬다.
+    expect(PARTS.find((p) => p.kind === 'tree')?.standsOn).toBeUndefined();
   });
 
   it('★ 띄우는 값이 눈에 띌 만큼 크지 않다 — 그것이 이번 결함의 정체다', () => {
