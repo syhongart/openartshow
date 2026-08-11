@@ -387,8 +387,16 @@ export function bakeAtlas(shapes: readonly ShadowShape[], o: BakeOpts): number {
   const want = blend === 'multiply' ? at.T.MultiplyBlending : at.T.NormalBlending;
   if (mat.blending !== want) {
     mat.blending = want;
-    // 셰이더 프로그램이 아니라 블렌딩 상태만 바뀌지만, three 는 재질 캐시 키에 이것을
-    // 넣으므로 갱신 신호를 준다. 안 주면 **첫 전환이 다음 프레임에 안 반영된다.**
+    // ⚠ **이 줄의 근거는 2026-08-11 에 정정됐다**(검수관 §② — three 0.171.0 소스 실측).
+    // 직전 주석은 *"안 주면 첫 전환이 다음 프레임에 안 반영된다"* 라고 **단정**했고 그것은
+    // 거짓이다: `WebGPUBackend.needsRenderUpdate` 가 매 렌더마다 `data.blending !==
+    // material.blending` 을 **직접 비교**해 파이프라인을 재생성한다 — `needsUpdate` 와
+    // 무관하다. 뮤테이션으로도 이 줄을 지운 채 93/93 통과했다.
+    //
+    // **그런데도 남긴다**: WebGL 백엔드(헤드리스·구형 기기 폴백)는 재질 프로그램 캐시를
+    // 쓰고, 두 백엔드가 같은 코드를 타는 이상 더 보수적인 쪽에 맞추는 것이 싸다. 지우는
+    // 것이 얻는 것은 한 줄이고 잃을 수 있는 것은 "특정 백엔드에서만 전환이 안 먹는" 형태의
+    // 버그다. **근거 없는 확신을 근거 있는 보수로 바꾼 것이지, 필요해서 남긴 것이 아니다.**
     mat.needsUpdate = true;
   }
 

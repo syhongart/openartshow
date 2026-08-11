@@ -37,7 +37,7 @@ import {
   _resetAtlasForTest, atlasOf, paintBlob, SHADOW_ATLAS_PX, SHADOW_DRAW_MIN,
 } from '../frontend/js/world2/parts/shadow.js';
 import {
-  blobStops, decalTransform, midStopFor,
+  blobStops, decalTransform, decalTransformRect, midStopFor,
   BLOB_INNER_R, BLOB_OUTER_R, BLOB_SCALE, DECAL_SCALE, SHADOW_SOFT,
 } from '../frontend/js/world2/decide/shadow-decal.js';
 import { PARTS } from '../frontend/js/world2/parts/index.js';
@@ -915,5 +915,222 @@ describe('⑧ 결정론 — 굽기를 반복해도 무늬가 안 바뀐다', () 
     const a = bakeCell('foliage', 48);
     const b = bakeCell('foliage', 48);
     expect(Array.from(a.data)).toEqual(Array.from(b.data));
+  });
+});
+
+// ── ⑨ 검수관 블로커 + 뮤테이션 구멍 (2026-08-11) ───────────────────────────
+//
+// **이 절은 전부 "테스트가 없어서 뮤테이션이 안 잡힌 자리"다.** 넷 중 셋은 내가 설계한
+// 뮤테이션(M3·M5·M10)이 0 failed 로 드러냈고, 하나는 **검수관이 내 뮤테이션 목록 밖에서**
+// 찾았다(§④ 블로커). 네 개를 나란히 두는 이유는 형태가 같아서다 — 굽는 쪽은 픽셀까지
+// 봤는데 **놓는 쪽·전환 경로·원형 경로**를 안 봤다.
+
+/** 축이 다른 bounding box 스텁 — `stubAsset` 은 rx=rz 라 사각 분기를 못 가른다 */
+function stubAssetXZ(h: number, rx: number, rz: number): PartAsset {
+  return {
+    geometry: {
+      boundingBox: { min: { x: -rx, y: 0, z: -rz }, max: { x: rx, y: h, z: rz } },
+      computeBoundingBox() {},
+    },
+    material: {}, castShadow: false, receiveShadow: false,
+  } as unknown as PartAsset;
+}
+
+describe('⑨-1 사각 실루엣이 놓는 쪽까지 간다 (검수관 블로커 §④)', () => {
+  // ⚠ **이 테스트가 없어서 `poseOf` 의 box 분기를 통째로 죽여도 44/44 가 통과했다**
+  // (검수관 뮤테이션 실측). 원인은 헬퍼 `stubAsset` 이 모든 캐스터에 **대칭** bounding
+  // box(rx=rz)를 주는 것이었다 — 그러면 `decalTransformRect` 와 `decalTransform` 이
+  // 우연히 같은 `sx/sz` 를 낸다. `decalTransformRect` 의 **산술**은 순수 테스트가 잘
+  // 보고 있었지만 **그 함수가 벤치에 대해 실제로 불리는지**는 아무 데도 안 봤다.
+  //
+  // CLAUDE.md 가 명시한 "판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다" 의
+  // 실물이다. 이 분기가 조용히 깨지면 이번 감독 지시의 **핵심 산출물**(벤치=사각)이
+  // 원형으로 되돌아가는데 CI 는 초록이다.
+
+  /** 벤치만 비대칭(3.2:1 — 실제 밑면 1.4×0.44 비율)으로 준 시스템 */
+  function setupAsym() {
+    const { pools, calls } = stubPools();
+    const opts = defaultOpts();
+    const assets: Record<string, PartAsset> = {};
+    for (const p of PARTS) {
+      if (!p.shadowProfile) continue;
+      assets[p.kind] = p.kind === 'bench'
+        ? stubAssetXZ(1, 0.7, 0.22)   // 가로 3.2 : 세로 1
+        : stubAsset(10, CASTER_R);
+    }
+    const sys = new ShadowDecalSystem({ pools, assets, parts: PARTS, time: () => 'day', opts });
+    const pool = createSlotPool(pools, undefined, undefined, sys.warp());
+    sys.attach(pool);
+    return { sys, pool, calls };
+  }
+
+  it('★ 벤치 그림자는 길쭉하다 — 밑면 비율이 실제로 전달된다', () => {
+    const { pool, calls } = setupAsym();
+    const h = pool.acquire('shadow:bench')!;
+    pool.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    const c = last(calls, h);
+    // 정사각이면 사각 분기가 안 탄 것이다 — 그것이 죽은 분기의 증상이다.
+    expect(c.sx).not.toBeCloseTo(c.sz, 6);
+    expect(c.sx / c.sz).toBeCloseTo(0.7 / 0.22, 6);
+    // 판정 함수와 정확히 같은 값이어야 한다(집행이 자기 식으로 다시 계산하지 않는가).
+    expect(c.sx).toBeCloseTo(decalTransformRect(0, 0, 0.7, 0.22, 0).sx, 9);
+  });
+
+  it('★ 벤치 그림자는 캐스터를 따라 돈다 — 원형이 안 도는 것과 짝이다', () => {
+    // 벤치가 90° 돌았는데 그늘만 안 돌면 그것이 곧 결함이다. 반대로 원형은 돌면 안 된다
+    // (`decalTransform` 의 `ry:0` 계약) — 두 성질을 한 테스트에서 대조한다.
+    const { pool, calls } = setupAsym();
+    const bench = pool.acquire('shadow:bench')!;
+    const tree = pool.acquire('shadow:tree')!;
+    pool.setTransform(bench, 0, 0, 0, Math.PI / 2, 1, 1, 1);
+    pool.setTransform(tree, 0, 0, 0, Math.PI / 2, 1, 1, 1);
+    expect(last(calls, bench).ry).toBeCloseTo(Math.PI / 2, 9);
+    expect(last(calls, tree).ry).toBe(0);
+  });
+
+  it('★ 인스턴스 스케일이 축마다 따로 곱해진다 — 긴 벤치가 정사각이 되지 않는다', () => {
+    // `d.rx * t.sx` / `d.rz * t.sz` 를 `max(t.sx,t.sz)` 하나로 뭉개면 여기서 걸린다.
+    const { pool, calls } = setupAsym();
+    const h = pool.acquire('shadow:bench')!;
+    pool.setTransform(h, 0, 0, 0, 0, 2, 1, 1);   // x 만 2배
+    const c = last(calls, h);
+    expect(c.sx / c.sz).toBeCloseTo((0.7 * 2) / 0.22, 6);
+  });
+
+  it('원형 캐스터는 비대칭 bbox 를 줘도 정사각을 유지한다 — 룩이 안 바뀐다', () => {
+    // 축별 반경을 원형에도 적용하면 **모든 그림자가 타원이 된다.** 그것은 감독이 승인한
+    // 룩이 아니다(`decalTransformRect` 주석의 분리 근거). 그 경계를 못 박는다.
+    const { pools, calls } = stubPools();
+    const opts = defaultOpts();
+    const assets: Record<string, PartAsset> = {};
+    for (const p of PARTS) if (p.shadowProfile) assets[p.kind] = stubAssetXZ(10, 3, 1);
+    const sys = new ShadowDecalSystem({ pools, assets, parts: PARTS, time: () => 'day', opts });
+    const pool = createSlotPool(pools, undefined, undefined, sys.warp());
+    const h = pool.acquire('shadow:tree')!;
+    pool.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    expect(last(calls, h).sx).toBeCloseTo(last(calls, h).sz, 9);
+  });
+});
+
+describe('⑨-2 원형 경로의 곱하기 (뮤테이션 M3 — 0 failed 였다)', () => {
+  // ⚠ **원형 경로의 흰 바탕 블록을 통째로 지워도 93/93 이 통과했다.** 그 한 줄이 없으면
+  // 곱셈 결과가 `dst × 0` 이라 **원형 그림자 여섯 종이 전면 검정**이 된다 — 화면이 크게
+  // 깨지는 결함인데 테스트가 조용했다. 내가 픽셀 검사를 사각·얼룩에만 붙이고 원형은
+  // *"기존 경로라 안 바뀌었다"* 며 넘긴 탓이다. **안 바뀐 경로에 새 모드가 추가된 것**을
+  // 놓쳤다.
+
+  it('★ 곱하기면 흰 바탕을 먼저 깐다 — 없으면 원형 그림자가 전면 검정이 된다', () => {
+    const ops: string[] = [];
+    const spy = {
+      ...ctx2d,
+      set fillStyle(v: unknown) { ops.push(`fill=${String(v)}`); },
+      get fillStyle() { return ''; },
+      fillRect() { ops.push('rect'); },
+      createRadialGradient: () => { ops.push('grad'); return { addColorStop() {} }; },
+    } as unknown as CanvasRenderingContext2D;
+    paintBlob(spy, 32, { res: 32, density: 1, soft: SHADOW_SOFT, blend: 'multiply' }, 'round');
+    // 흰색 지정 → 채우기 가 그라디언트보다 **먼저** 와야 한다.
+    const white = ops.indexOf('fill=#ffffff');
+    const grad = ops.indexOf('grad');
+    expect(white, `순서: ${ops.join(' ')}`).toBeGreaterThanOrEqual(0);
+    expect(white).toBeLessThan(grad);
+    // 흰 바탕 채우기가 실제로 있었다(지정만 하고 안 칠하면 소용없다).
+    expect(ops.slice(white, grad)).toContain('rect');
+  });
+
+  it('normal 이면 흰 바탕을 깔지 않는다 — 옛 동작이 그대로 남아야 대조군이 된다', () => {
+    const ops: string[] = [];
+    const spy = {
+      ...ctx2d,
+      set fillStyle(v: unknown) { ops.push(`fill=${String(v)}`); },
+      get fillStyle() { return ''; },
+      fillRect() { ops.push('rect'); },
+      createRadialGradient: () => { ops.push('grad'); return { addColorStop() {} }; },
+    } as unknown as CanvasRenderingContext2D;
+    paintBlob(spy, 32, { res: 32, density: 1, soft: SHADOW_SOFT, blend: 'normal' }, 'round');
+    expect(ops).not.toContain('fill=#ffffff');
+  });
+});
+
+describe('⑨-3 합성 모드 전환 (뮤테이션 M5 — 0 failed 였다)', () => {
+  // ⚠ 기존 단언은 **기본값만** 봤다. `ensureAtlas` 가 이미 기본 모드로 재질을 만들므로
+  // `bakeAtlas` 의 갱신 블록을 지워도 기본 경로는 초록이다. 실제로 확인해야 하는 것은
+  // **전환**이다 — `?shblend=normal` 을 붙였을 때 재질이 따라오는가.
+
+  it('★ `?shblend=normal` 이면 재질이 NormalBlending 으로 간다', () => {
+    mountAtlas();
+    const at = atlasOf()!;
+    const { pools } = stubPools();
+    const opts = { ...defaultOpts(), blend: 'normal' as const };
+    const sys = new ShadowDecalSystem({
+      pools, assets: assetsFor(), parts: PARTS, time: () => 'day', opts,
+    });
+    sys.bake();
+    expect((at.material as unknown as { blending: number }).blending)
+      .toBe(THREE.NormalBlending);
+  });
+
+  it('★ 굽는 그림과 재질이 같은 값에서 나온다 — 어긋나면 화면이 통째로 깨진다', () => {
+    // multiply 로 구웠는데 재질이 Normal 이면 흰 바탕 회색이 그대로 알파 합성돼
+    // **그림자가 흰 사각**으로 보인다. 반대면 전면 검정이다. 두 방향 다 본다.
+    mountAtlas();
+    const at = atlasOf()!;
+    const mat = at.material as unknown as { blending: number };
+    for (const [blend, want] of [
+      ['normal', THREE.NormalBlending], ['multiply', THREE.MultiplyBlending],
+    ] as const) {
+      const { pools } = stubPools();
+      const sys = new ShadowDecalSystem({
+        pools, assets: assetsFor(), parts: PARTS, time: () => 'day',
+        opts: { ...defaultOpts(), blend },
+      });
+      sys.bake();
+      expect(mat.blending, `blend=${blend}`).toBe(want);
+    }
+  });
+});
+
+describe('⑨-4 노브가 재굽기를 발화한다 (뮤테이션 M10 — 0 failed 였다)', () => {
+  // ⚠ `key()` 에서 `blend`·`leaf` 를 지워도 통과했다. 그러면 **노브를 밀어도 지문이 같아
+  // 다시 굽지 않는다** — 화면에서는 "URL 을 붙였는데 아무 일도 안 일어난다" 로만 드러난다.
+
+  const ctx = { hidden: false, probe: () => {} } as never;
+
+  function bakeCounter() {
+    mountAtlas();
+    const at = atlasOf()!;
+    let bakes = 0;
+    const spy = {
+      ...ctx2d,
+      createRadialGradient: () => { bakes++; return { addColorStop() {} }; },
+    } as unknown as CanvasRenderingContext2D;
+    (at as { sctx: CanvasRenderingContext2D }).sctx = spy;
+    (at as { ctx: CanvasRenderingContext2D }).ctx = spy;
+    return { count: () => bakes };
+  }
+
+  it('★ `?shblend` 를 바꾸면 다시 굽는다', () => {
+    const c = bakeCounter();
+    const { sys, opts } = setup();
+    sys.update(ctx);
+    const first = c.count();
+    expect(first).toBeGreaterThan(0);
+    sys.update(ctx);                       // 아무것도 안 바뀜 → 다시 굽지 않는다
+    expect(c.count()).toBe(first);
+    opts.blend = 'normal';                 // 노브를 민다
+    sys.update(ctx);
+    expect(c.count()).toBeGreaterThan(first);
+  });
+
+  it('★ `?shleaf` 를 바꾸면 다시 굽는다', () => {
+    const c = bakeCounter();
+    const { sys, opts } = setup();
+    sys.update(ctx);
+    const first = c.count();
+    sys.update(ctx);
+    expect(c.count()).toBe(first);
+    opts.leaf = 0;
+    sys.update(ctx);
+    expect(c.count()).toBeGreaterThan(first);
   });
 });
