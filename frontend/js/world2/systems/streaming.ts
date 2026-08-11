@@ -207,6 +207,15 @@ export class StreamingSystem implements System {
 
     let built = 0, released = 0, retiered = 0, promoted = 0, demoted = 0;
 
+    // ── 이벤트 방위 태그 (감독 마크 실측 강화, 2026-08-10) ──────────────────
+    // 거리만으로는 마크 ±2.5초 창의 사건이 **화면 안(앞)인지 등 뒤인지** 안 갈렸다 —
+    // "앞으로 갈 때 번개치듯" 리포트에서 승격·강등 5건이 잡혔는데 전부 용의선상에
+    // 남았다. 진행 방향과의 내적 부호로 앞/뒤를 이름에 박는다. 값(거리)은 그대로다.
+    // 정지 상태(dir≈0)면 방향이 없으므로 태그를 생략한다 — 없는 정보를 지어내지 않는다.
+    const hasDir = Math.hypot(dir.x, dir.z) > 1e-3;
+    const sideOf = (dx: number, dz: number): string =>
+      hasDir ? ((dx * dir.x + dz * dir.z) >= 0 ? '(앞)' : '(뒤)') : '';
+
     // ① 언로드 먼저. 슬롯을 비워야 이번 프레임 로드가 그 자리를 쓸 수 있다.
     //    언로드는 예산에서 빼지 않는다 — 반납은 생성과 달리 GPU 자원을 만들지 않는다.
     for (const k of diff.unload) {
@@ -220,7 +229,7 @@ export class StreamingSystem implements System {
         const pk = k.indexOf(',');
         const dx = Number(k.slice(0, pk)) * o.cellX - pos.x;
         const dz = Number(k.slice(pk + 1)) * o.cellZ - pos.z;
-        ctx.probe('ev:파셀반납', Math.hypot(dx, dz));
+        ctx.probe(`ev:파셀반납${sideOf(dx, dz)}`, Math.hypot(dx, dz));
       }
     }
 
@@ -250,7 +259,7 @@ export class StreamingSystem implements System {
           const pk = r.key.indexOf(',');
           const dx = Number(r.key.slice(0, pk)) * o.cellX - pos.x;
           const dz = Number(r.key.slice(pk + 1)) * o.cellZ - pos.z;
-          ctx.probe(step < 0 ? 'ev:tier승격' : 'ev:tier강등', Math.hypot(dx, dz));
+          ctx.probe(`ev:${step < 0 ? 'tier승격' : 'tier강등'}${sideOf(dx, dz)}`, Math.hypot(dx, dz));
         }
       }
       const next = o.builder.retier?.(h, r.to) ?? null;
@@ -277,7 +286,9 @@ export class StreamingSystem implements System {
       this.tiers.set(w.key, w.tier);
       built++;
       if (ctx.probe) {
-        ctx.probe('ev:파셀생성', Math.hypot(w.px * o.cellX - pos.x, w.pz * o.cellZ - pos.z));
+        const dx = w.px * o.cellX - pos.x;
+        const dz = w.pz * o.cellZ - pos.z;
+        ctx.probe(`ev:파셀생성${sideOf(dx, dz)}`, Math.hypot(dx, dz));
       }
     }
 

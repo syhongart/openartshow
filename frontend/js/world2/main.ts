@@ -341,6 +341,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 새 부품이 땅에서 자라는 시간. `?grow=0` 이 종전 동작(즉시 완성 크기 = 팝).
   // 색 페이드가 왜 이걸 대신 못 하는지는 `systems/parcel-grow.ts` 머리 한 곳이다.
   const growSecs = readNum('grow', GROW_SECONDS, 0, 3);
+  // `?shrink=` — 반납 수축 시간(초). 후진 그림자 명멸(#218, ?shint=0 으로 축 확정)의
+  // 처방 후보다: 키 큰 캐스터의 그림자가 0.25s 에 걷히는 것이 명멸의 핵이라, 시간을
+  // 늘려 연속 변화로 만든다. 근거·경계는 `systems/parcel-grow.ts` 의 SHRINK_SECONDS
+  // 주석 한 곳. 감독 판정이 나면 그 값을 기본으로 승격한다(팀장 조건 2, 2026-08-10).
+  const shrinkSecs = readNum('shrink', 0, 0, 3);
+  // `?shrinkease=` — 수축 전용 이징(lin·in·out·smooth). 시간 축과 분리해 판정하기
+  // 위한 것(팀장 조건 1: 'out' 앞쏠림이 시간 후보 판정을 오염시킨다). 왜 분리인지는
+  // `systems/parcel-grow.ts` 의 shrinkEase 주석 한 곳. 기본 'out' = 종전 동작
+  // (등장 ease 와 동일값이라 "미지정"과 구별할 필요가 없다).
+  const shrinkEase = readEnum('shrinkease', 'out', FADE_EASES);
 
   // 적응 품질(해상도 강등·프레임 캡·tier 압력)을 통째로 끈다. **비교 실험 전용** —
   // 감독 실기기 "이동 중 밝기가 살짝 변함"(2026-08-10)에서 안개·헤드밥이 실측으로
@@ -362,8 +372,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 왜 이 축인지·보정 규칙은 `decide/lod.ts` 의 `withNearExit` 한 곳이다.
   const nearx = readNum('nearx', 0, 0, 2.2);
   // `?calm=1` — 파셀 **생성**을 안개 100% 지점(fog far) 뒤로 민다(팀장 판정 (a′)).
-  // 소멸 축은 파츠 tiers 전 계층 연장이 이미 코드 기본으로 막았고(`parts/planter.ts`),
-  // 이 노브는 남은 생성 축의 후보다 — 감독 판정이 나면 기본으로 승격한다.
+  // ⚠ **기본으로 승격하지 않는다 — 여기서 멈춘다**(감독 판정 2026-08-10 *"자라나는것
+  // 느낌 좋다"*). 파셀이 자라나며 등장하는 것을 나는 "깜빡임의 한 겹"으로 규정했지만
+  // 감독은 그 화면을 **연출로 긍정**했다 — 수치가 이상한 것과 화면이 잘못된 것은 다른
+  // 일이다. 노브는 진단 대조용으로만 남긴다(등장을 숨긴 화면과의 A/B). 감독이 남긴
+  // 문제는 "반짝임"이고 그것은 이 축이 아니다.
   // 왜 farEnter 인지·farExit 가 따라오는 규칙은 `decide/lod.ts` 의 `withFarEnter` 한 곳.
   const calm = readNum('calm', 0, 0, 1) > 0;
   let TIER_BANDS = withNearExit(
@@ -724,6 +737,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         parcelGrow = new ParcelGrowSystem({
           pools: pools!,
           duration: growSecs,
+          // 0(노브 미지정)이면 undefined → 시스템 기본(SHRINK_SECONDS)을 쓴다.
+          shrinkSecs: shrinkSecs > 0 ? shrinkSecs : undefined,
+          shrinkEase,
           gate: () => streaming?.ready ?? false,
         });
         builder = new PooledParcelBuilder({
