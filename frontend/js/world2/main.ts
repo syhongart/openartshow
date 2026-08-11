@@ -39,7 +39,8 @@ import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { ShadowDecalSystem, defaultOpts as shadowDecalDefaults } from './systems/shadow-decal.js';
 import {
-  SHADOW_DENSITY, SHADOW_SOFT, SHADOW_TAIL, SHADOW_MAX_LEN, SHADOW_Y,
+  SHADOW_DENSITY, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_TAIL, SHADOW_MAX_LEN, SHADOW_Y,
+  SHADOW_STYLE, SHADOW_STYLES,
 } from './decide/shadow-decal.js';
 import { SHADOW_DRAW_PX, SHADOW_DRAW_MAX } from './parts/shadow.js';
 import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
@@ -154,15 +155,17 @@ const SHADOW = shadowFrustum(
 );
 
 /**
- * **그림자 데칼(베이킹) 노브 일곱.** 감독 지시 2026-08-11 *"해상도 조정옵션도 만들고.
+ * **그림자 데칼(베이킹) 노브 여덟.** 감독 지시 2026-08-11 *"해상도 조정옵션도 만들고.
  * 기타 세부옵션을 넣자."*
  *
  * 기본값을 여기 적지 않는다 — 전부 소비처 상수를 fallback 으로 읽는다. 같은 값을 두 곳에
  * 적으면 한쪽만 고쳐도 아무도 모른다(이 저장소가 색·수치·임계값에서 세 번 데인 형태).
  *
- * 다섯은 슬라이더로도 열려 있다(`ui/knob-bar.ts`). 나머지 둘(`shy`·`shdec`)은 URL 전용이다 —
- * `shy` 는 z-fighting 이 기기마다 다를 때의 탈출구이고 `shdec` 는 룩 A/B 대조군이라,
- * 슬라이더에 올리면 감독이 매번 지나치며 건드릴 축이 둘 늘 뿐이다.
+ * 다섯은 슬라이더로도 열려 있다(`ui/knob-bar.ts`). 나머지 셋(`shy`·`shdec`·`shstyle`)은 URL
+ * 전용이다 — `shy` 는 z-fighting 이 기기마다 다를 때의 탈출구이고 `shdec` 는 룩 A/B
+ * 대조군이라, 슬라이더에 올리면 감독이 매번 지나치며 건드릴 축이 늘 뿐이다. `shstyle` 은
+ * **수치 축이 아니라 열거형**이라 슬라이더에 올릴 수가 없고, 그것이 오히려 맞다 — 후보
+ * 비교는 링크 세 개로 하는 것이 이 저장소의 판정 사이클이다.
  *
  * ⚠ **`?shdec=0` 은 기능을 끄지 않는다** — 슬롯도 드로우콜도 그대로이고 알파만 0 이다.
  * 룩 A/B 는 이것으로 하고(다른 축이 하나도 안 움직인다), **드로우콜 비용 A/B 를 하려면
@@ -172,11 +175,16 @@ const SHADOW = shadowFrustum(
 const SHADOW_DECAL_OPTS = {
   res: Math.round(readNum('shres', SHADOW_DRAW_PX, 8, SHADOW_DRAW_MAX)),
   density: readNum('shdark', SHADOW_DENSITY, 0, 1),
-  soft: readNum('shsoft', SHADOW_SOFT, 0, 0.5),
+  // 상한을 `0.5` 로 적지 않는다 — 슬라이더(아래)와 확산 정규화의 분모까지 **세 곳**이
+  // 같은 값을 봐야 한다. 한 곳에만 적고 나머지가 읽는다.
+  soft: readNum('shsoft', SHADOW_SOFT, 0, SHADOW_SOFT_MAX),
   tail: readNum('shtail', SHADOW_TAIL, 0, 1),
   maxLen: readNum('shlen', SHADOW_MAX_LEN, 4, 64),
   y: readNum('shy', SHADOW_Y, 0.16, 0.5),
   on: readNum('shdec', 1, 0, 1),
+  // 룩 후보. 목록은 `decide` 가 소유한다 — 여기에 다시 적으면 후보를 하나 늘릴 때
+  // 한쪽만 고쳐도 아무도 모른다.
+  style: readEnum('shstyle', SHADOW_STYLE, SHADOW_STYLES),
 };
 
 /*
@@ -848,8 +856,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           // 슬라이더에서 값을 고른 감독이 그대로 `?shdark=0.6` 을 쳐서 링크로 만들 수
           // 있어야 한다(이 저장소의 판정 사이클이 링크로 돈다). 필드명을 그대로 쓰면
           // 화면의 이름과 주소의 이름이 갈라진다.
+          // 슬라이더는 **수치 축만** 받는다. `keyof typeof base` 를 그대로 쓰면 열거형인
+          // `style` 까지 후보에 들어와, 슬라이더가 룩 이름에 숫자를 대입하는 코드가
+          // 타입검사를 통과한다. 숫자 필드만 남긴다.
+          type NumField = {
+            [K in keyof typeof base]: (typeof base)[K] extends number ? K : never
+          }[keyof typeof base];
           const knob = (
-            key: string, field: keyof typeof base, label: string,
+            key: string, field: NumField, label: string,
             min: number, max: number, step: number,
           ) => ({
             key, label, min, max, step,
@@ -863,7 +877,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           });
           attachKnobBar(bar, [
             knob('shdark', 'density', '그림자', 0, 1, 0.05),
-            knob('shsoft', 'soft', '번짐', 0, 0.5, 0.01),
+            knob('shsoft', 'soft', '번짐', 0, SHADOW_SOFT_MAX, 0.01),
             knob('shlen', 'maxLen', '길이', 4, 64, 1),
             knob('shtail', 'tail', '꼬리', 0, 1, 0.05),
             knob('shres', 'res', '해상도', 8, SHADOW_DRAW_MAX, 8),

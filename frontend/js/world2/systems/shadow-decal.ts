@@ -25,8 +25,8 @@ import type { PartAsset, PartSpec, ThreeNS } from '../parts/types.js';
 import type { SkyTime } from '../decide/night.js';
 import {
   sunGround, shadowSpan, decalTransform, densityFor,
-  SHADOW_MAX_LEN, SHADOW_Y, SHADOW_DENSITY, SHADOW_SOFT, SHADOW_TAIL,
-  type SunGround,
+  SHADOW_MAX_LEN, SHADOW_Y, SHADOW_DENSITY, SHADOW_SOFT, SHADOW_TAIL, SHADOW_STYLE,
+  type SunGround, type ShadowStyle,
 } from '../decide/shadow-decal.js';
 import { bakeAtlas, casterProfiles, shadowKindOf, SHADOW_DRAW_PX, type BakeEntry } from '../parts/shadow.js';
 
@@ -36,9 +36,9 @@ export interface ShadowDecalOpts {
   res: number;
   /** 농도(시간대 배수 적용 전). `?shdark` */
   density: number;
-  /** 블러. `?shsoft` */
+  /** 부드러움(penumbra 확산). `?shsoft` — 의미 변경은 `SHADOW_SOFT` 주석 */
   soft: number;
-  /** 꼬리 끝 알파. `?shtail` */
+  /** 꼬리 알파 바닥값. `?shtail` — 의미 변경은 `SHADOW_TAIL` 주석 */
   tail: number;
   /** 길이 상한(m). `?shlen` */
   maxLen: number;
@@ -46,12 +46,21 @@ export interface ShadowDecalOpts {
   y: number;
   /** 0 이면 완전 투명하게 굽는다(룩 A/B 전용 — 슬롯도 드로우콜도 그대로다). `?shdec` */
   on: number;
+  /**
+   * 룩 후보. `?shstyle`
+   *
+   * 슬라이더에 안 올린다 — `knob-bar` 는 수치 축뿐이고, 무엇보다 이것은 **감독이 셋을
+   * 나란히 놓고 고르는 축**이라 링크 세 개가 슬라이더 하나보다 낫다(판정 사이클이 링크로
+   * 돈다). 값이 정해지면 `SHADOW_STYLE` 기본값으로 옮기고 이 노브는 남는다.
+   */
+  style: ShadowStyle;
 }
 
 export function defaultOpts(): ShadowDecalOpts {
   return {
     res: SHADOW_DRAW_PX, density: SHADOW_DENSITY, soft: SHADOW_SOFT,
     tail: SHADOW_TAIL, maxLen: SHADOW_MAX_LEN, y: SHADOW_Y, on: 1,
+    style: SHADOW_STYLE,
   };
 }
 
@@ -170,6 +179,7 @@ export class ShadowDecalSystem implements System {
     });
     bakeAtlas(entries, {
       res: this.o.opts.res, density, soft: this.o.opts.soft, tail: this.o.opts.tail,
+      style: this.o.opts.style,
     });
     this.reapply();
     this.lastKey = this.key();
@@ -207,7 +217,7 @@ export class ShadowDecalSystem implements System {
     // 태양 방향은 소수 3자리까지만 본다. 매 프레임 미세하게 흔들리는데(플레이어 추종
     // 스냅) 그때마다 다시 구우면 굽기가 프레임 예산을 먹는다.
     const f = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : 'x');
-    return `${f(d.x)},${f(d.y)},${f(d.z)}|${this.o.time()}|${o.res}|${o.density}|${o.soft}|${o.tail}|${o.maxLen}|${o.y}|${o.on}`;
+    return `${f(d.x)},${f(d.y)},${f(d.z)}|${this.o.time()}|${o.res}|${o.density}|${o.soft}|${o.tail}|${o.maxLen}|${o.y}|${o.on}|${o.style}`;
   }
 
   update(ctx: FrameCtx): void {
