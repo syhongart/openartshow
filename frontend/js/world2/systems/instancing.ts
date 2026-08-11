@@ -195,6 +195,8 @@ export class InstancePools {
    * 그려질 수 있다.** 감독 실기기 마크(전진 중 "회색 건물이 순간 검정→본색")의
    * ±2.5s 창에서 앞쪽 사건이 파셀생성(색 일괄 setTone) 하나뿐이었고, 그림자 off·
    * GLB off·색 페이드 off 에서도 남았다 — 이 비대칭이 마지막 용의자였다.
+   * **확정** — Dynamic 전환 배포 후 감독 실기기 "정확히 개선 되었어"(2026-08-11).
+   * 이 setUsage 를 지우면 WebGPU 실기기에서만 재발하고 헤드리스는 못 잡는다.
    */
   setColor(h: SlotHandle, color: THREE.Color): void {
     const p = this.pools.get(h.key);
