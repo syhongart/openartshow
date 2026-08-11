@@ -39,7 +39,7 @@ import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { ShadowDecalSystem, defaultOpts as shadowDecalDefaults } from './systems/shadow-decal.js';
 import {
-  SHADOW_DENSITY, SHADOW_DENSITY_MAX, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_Y,
+  SHADOW_DENSITY, SHADOW_DENSITY_MAX, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_LIFT, SHADOW_LIFT_MAX,
   SHADOW_BLEND, SHADOW_BLENDS, LEAF_DEPTH, LEAF_DEPTH_MAX,
 } from './decide/shadow-decal.js';
 import { SHADOW_DRAW_PX, SHADOW_DRAW_MIN, SHADOW_DRAW_MAX } from './parts/shadow.js';
@@ -184,7 +184,10 @@ const SHADOW_DECAL_OPTS = {
   // 상한을 `1` 로 적지 않는다 — 슬라이더(아래)와 스톱 위치 정규화의 분모까지 **세 곳**이
   // 같은 값을 봐야 한다. 한 곳에만 적고 나머지가 읽는다.
   soft: readNum('shsoft', SHADOW_SOFT, 0, SHADOW_SOFT_MAX),
-  y: readNum('shy', SHADOW_Y, 0.16, 0.5),
+  // ⚠ **절대 높이가 아니라 캐스터 발밑에서 띄우는 값이다**(감독 실기기 2026-08-11:
+  // *"그림자가 바닥 위에 떠있어"*). 하한이 0.16 이었던 것은 절대 높이일 때 도로
+  // (0.14)를 넘겨야 했기 때문이고, 상대 띄움에는 그 제약이 없다 — 0 까지 연다.
+  y: readNum('shy', SHADOW_LIFT, 0, SHADOW_LIFT_MAX),
   on: readNum('shdec', 1, 0, 1),
   // 합성 모드. **감독 화면이 깨졌을 때 링크 하나로 되돌리는 수단이다** — `three/webgpu`
   // 에서 `MultiplyBlending` 이 동작하는지 헤드리스로 검증할 방법이 이 저장소에 없다.
