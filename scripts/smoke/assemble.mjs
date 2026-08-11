@@ -100,13 +100,105 @@ export function assembleSite(targetDir = SITE_DIR) {
   });
 }
 
+// ── G-LOCK: `dist/` 동시 조립 경합 방지 ────────────────────────────────────
+//
+// **이 저장소에서 두 번 사고를 냈다**(2026-08-10). `vite build` 는 `dist/` 를 **비우고
+// 다시 채운다** — 두 프로세스가 겹치면 한쪽이 **빌드 중간 상태**를 서빙하게 되고,
+// 증상은 `_bundle/` 누락 · 변환 전 원본 경로 404(`app/js/world2-boot.js`) · 부팅
+// 타임아웃이다. 실제로 **6항목 거짓 FAIL** 이 났고(검수관 `vite build` × executor
+// `smoke:vite`), **그 뒤 부팀장이 직접 돌린 회차에도 같은 경합이 재현**됐다.
+//
+// 그때까지 이것을 막던 것은 **위임 프롬프트에 손으로 적는 주의문뿐**이었고 **두 번 다
+// 실패했다.** 원인은 규율을 안 읽어서가 아니다 — *"브라우저는 하나씩"* 을 **브라우저
+// 축으로만** 읽었고 **빌드 산출물 디렉터리 공유**라는 축을 아무도 안 봤다. 사람이
+// 매번 옳게 읽어야 하는 보호는 보호가 아니므로 구조로 옮긴다.
+//
+// **락 스코프는 이 함수 전체다**(build + `$OUT` 복사까지, 검수관 명세). `vite build`
+// 만 잠그면 *"A 가 build 를 끝내고 락 해제 → B 가 build 시작(dist 를 rm) → A 가 cp 하는
+// 도중 dist 가 사라짐"* 이 그대로 남는다 — 실제 사고가 그 cp 구간을 포함한 형태였다.
+//
+// **의존성 0**: `mkdirSync(recursive:false)` 는 이미 존재하면 `EEXIST` 로 실패하는
+// 원자적 연산이다. 자기완결 원칙상 락 라이브러리를 새로 들이지 않는다.
+const LOCK_DIR = path.join(ROOT, '.smoke-vite.lock');
+
+/**
+ * stale 판정은 **시간이 아니라 PID 생존**이다(검수관 명세).
+ *
+ * *"오래됐으면 뺏는다"* 는 형용사이고, 느린 회차를 **정상 보유자에게서 빼앗는다**.
+ * `process.kill(pid, 0)` 은 신호를 보내지 않고 **존재 여부만** 묻는 표준 관용구다 —
+ * `ESRCH` 면 그 프로세스는 없다(= stale). 이것은 셀 수 있는 사실이다.
+ *
+ * ⚠ 못 잡는 것: **PID 재사용**. 죽은 뒤 같은 번호가 다른 프로세스에 붙으면 살아 있는
+ * 것으로 보여 락이 안 풀린다. 그때는 아래 FAIL 메시지가 안내하는 수동 해제로 빠진다 —
+ * **자동으로 뺏지 않는다**(자동 탈취는 이 파일이 막으려는 사고를 되살린다).
+ */
+function readLockHolder() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(LOCK_DIR, 'owner.json'), 'utf8'));
+    try {
+      process.kill(raw.pid, 0);
+      return { ...raw, alive: true };
+    } catch (e) {
+      return { ...raw, alive: e.code !== 'ESRCH' };
+    }
+  } catch {
+    // 락 디렉터리는 있는데 owner.json 을 못 읽는다 = 기록 직전에 죽었다. stale 로 본다.
+    return null;
+  }
+}
+
+/**
+ * `dist/` 를 만지는 구간을 배타적으로 감싼다.
+ *
+ * **획득 실패 시 즉시 FAIL 한다 — 폴링하지 않는다.** `await-until.mjs` 가 세운 규율과
+ * 같다: 기다림은 *"무엇을 기다리는지"* 가 분명할 때만 정당하고, 여기서 상대는 최대
+ * 11분짜리 빌드다. 조용히 기다리면 **호출자는 자기가 왜 느린지 모른다.**
+ *
+ * 메시지에 **보유자 PID·시작시각·해제 명령**을 넣는다 — hookify 차단 메시지가 탈출로를
+ * 스스로 안내하는 것과 같은 형태다. 탈출로를 안 적으면 오탐이 작업을 세운다(실제로
+ * hookify 가 검수관 리뷰 명령을 두 번 막았다).
+ *
+ * **CI 배제 분기를 넣지 않는다**(검수관 명세). CI 러너는 job 마다 별도 VM 이라 경합이
+ * 구조적으로 없어 락은 즉시 획득되고 비용이 사실상 0 이다. `if (!process.env.CI)` 로
+ * 가르면 **CI 에서 한 번도 안 도는 코드 경로**가 생겨 그 자체가 새 사각이 된다.
+ */
+export function withDistLock(fn) {
+  try {
+    fs.mkdirSync(LOCK_DIR, { recursive: false });
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    const holder = readLockHolder();
+    if (holder?.alive) {
+      throw new Error(
+        `dist/ 조립 락을 다른 프로세스가 쥐고 있다 — pid ${holder.pid}, 시작 ${holder.startedAt}.\n` +
+          `  같은 dist/ 를 두 프로세스가 쓰면 빌드 중간 상태를 서빙해 거짓 FAIL 이 난다(실사고 2회).\n` +
+          `  그 프로세스가 끝나기를 기다렸다가 다시 돌려라. 이미 죽은 것이 확실하면: rm -rf ${LOCK_DIR}`,
+      );
+    }
+    // stale — 보유자가 죽었다. 회수하고 이어간다.
+    fs.rmSync(LOCK_DIR, { recursive: true, force: true });
+    fs.mkdirSync(LOCK_DIR, { recursive: false });
+  }
+  try {
+    fs.writeFileSync(
+      path.join(LOCK_DIR, 'owner.json'),
+      JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }),
+    );
+    return fn();
+  } finally {
+    fs.rmSync(LOCK_DIR, { recursive: true, force: true });
+  }
+}
+
 // _site 를 vite 조립 방식으로 조립(vite build 포함). 실패 시 예외 전파.
 export function assembleSiteVite(targetDir = SITE_DIR) {
   requireGenerated();
-  execFileSync('bash', ['-c', ASSEMBLE_VITE_SH], {
-    cwd: ROOT,
-    stdio: 'pipe',
-    env: { ...process.env, OUT: targetDir, DEPLOY_SHA_FILE: DEPLOY_SHA_FILE },
+  return withDistLock(() => {
+    execFileSync('bash', ['-c', ASSEMBLE_VITE_SH], {
+      cwd: ROOT,
+      stdio: 'pipe',
+      env: { ...process.env, OUT: targetDir, DEPLOY_SHA_FILE: DEPLOY_SHA_FILE },
+    });
   });
 }
 

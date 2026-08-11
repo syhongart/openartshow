@@ -55,6 +55,10 @@ export const building: PartSpec = {
    * **이 반경이 배치 한계와 같은 값을 봐야 한다.** 그러지 않아서 실제로 겹쳤다 — 아래
    * `EAVE` 주석 참고.
    */
+  // 그림자는 **원**이다 — 지오는 박스지만 감독이 사각 그늘을 벤치에만 주기로 판정했다
+  // (카드 2026-08-11: *"벤치만"*). 큰 건물은 사각 그늘이 인공적으로 읽힌다는 판정이다.
+  // 지오를 따라 `box` 로 되돌리지 마라 — 근거는 `parts/types.ts` 의 그 필드 주석 한 곳.
+  shadowProfile: 'round',
   footprint: (p) => Math.max(p.sx, p.sz) * 0.5 + EAVE,
 
   maxPerParcel: (o) => o.maxBuildings,

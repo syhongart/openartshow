@@ -13,6 +13,7 @@
 
 import type { PartSpec, PlacedPart } from './types.js';
 import { plazaLandmark } from './plaza.js';
+import { ROAD_SURFACE_Y } from './road.js';
 
 /**
  * 옆면 프로파일. `(반지름, 높이)` 를 아래에서 위로.
@@ -53,13 +54,22 @@ export const fountain: PartSpec = {
   // 는 근거로 간격을 정했는데, 내가 가시 반경을 그 절반 아래로 잡아 리듬 자체를 깼다.
   //
   // 분수대는 높이 1.7m 라 far(76.8m)에서는 어차피 몇 픽셀이다. 안개 경계에서 보이면 된다.
-  tiers: ['near', 'mid'],
+  //
+  // 그런데도 far 를 더한 이유는 가시성이 아니라 **소멸 사건 제거**다 — mid→far 강등이
+  // 분수를 걷어내는 순간이 깜빡임의 한 겹이었다(감독 실측 2026-08-10). 근거·경계는
+  // `planter.ts` 의 tiers 주석 한 곳이다.
+  tiers: ['near', 'mid', 'far'],
   salt: 0x1f2e3d4c,
   // 돌 색 셋. 텍스처가 없으므로 `tones` 가 곧 색이다(곱셈 함정 없음).
   tones: [0x8d8577, 0x9a9184, 0x807868],
 
   // 광장당 하나. 광장이 아닌 파셀은 0개다.
   // `PROFILE` 최대 반경 2.4 에 물받이 테두리 여유를 얹는다.
+  // 광장 정중앙 고정이라 도로 중심 조각(무조건 그려진다) **위에** 선다.
+  // 배치 `y` 는 밑동 불변식 때문에 0 이므로 여기서 신고한다 — 근거는
+  // `types.ts` 의 `standsOn` 주석 한 곳.
+  standsOn: ROAD_SURFACE_Y,
+  shadowProfile: 'round',
   footprint: () => 2.7,
 
   maxPerParcel: () => 1,

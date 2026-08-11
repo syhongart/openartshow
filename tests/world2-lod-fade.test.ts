@@ -15,12 +15,12 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three/webgpu';
 import {
   EASINGS, FADE_EASES, fadeMix, residualAtSpawn,
-  crossingCells, crossingSeconds, FADE_SECONDS,
+  crossingCells, crossingSeconds, FADE_SECONDS, fogFactorAt,
 } from '../frontend/js/world2/decide/lod-fade.js';
 import { DEFAULT_BANDS } from '../frontend/js/world2/decide/lod.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
 import { WALK_SPEED, RUN_MULT } from '../frontend/js/world2/systems/player.js';
-import { FOG_FAR_CELLS } from '../frontend/js/world2/decide/fog.js';
+import { FOG_FAR_CELLS, fogBand } from '../frontend/js/world2/decide/fog.js';
 import { InstancePools } from '../frontend/js/world2/systems/instancing.js';
 import { createSlotPool } from '../frontend/js/world2/systems/parcel-assets.js';
 import { ParcelFadeSystem } from '../frontend/js/world2/systems/parcel-fade.js';
@@ -117,7 +117,7 @@ describe('§1-2 등장 지점의 잔여 대비 — "팍" 의 크기', () => {
 });
 
 /** 실물 풀 하나를 세운다. 렌더러 없이 CPU 버퍼만 쓴다 */
-function scaffold(opts: { duration: number; gate: boolean }) {
+function scaffold(opts: { duration: number; gate: boolean; fogAt?: (x: number, z: number) => number }) {
   const parent = new THREE.Object3D();
   const pools = new InstancePools(parent);
   pools.create({
@@ -136,6 +136,7 @@ function scaffold(opts: { duration: number; gate: boolean }) {
     ease: 'lin',
     fadeColor: () => fadeFrom,
     gate: () => opts.gate,
+    fogAt: opts.fogAt,
   });
   const slot = createSlotPool(pools, fade.sink());
   const target = new THREE.Color(tonesFor('building')[0]);
@@ -264,5 +265,105 @@ describe('§3 슬롯 반납 swap 이 색을 함께 옮긴다 (#214 회귀)', () 
     expect(survivor.r).toBeCloseTo(0, 5); // 빨강이 얹히지 않았다
     expect(survivor.g).toBeCloseTo(1, 5);
     expect(h1.index).toBe(0);
+  });
+});
+
+// ── §4 안개가 0% 인 거리에서는 덮지 않는다 (감독 실기기 2026-08-09) ─────────────
+//
+// *"가까이 가면 뭔가 건물이 번쩍해"* — 페이드가 **거리와 무관하게** 안개색(거의 검정)으로
+// 덮고 있었다. 안개는 51.2m 부터인데 부품은 50.07m·20.22m 에서도 태어난다. 근거와 실측
+// 표는 `decide/lod-fade.ts` 의 `fogFactorAt` 주석 한 곳이다 — 여기에 다시 적지 않는다.
+describe('§4 fogFactorAt — 그 거리에서 안개가 얼마나 감춰주는가', () => {
+  const band = fogBand(DEFAULT_LAYOUT.cellX);
+
+  it('안개 시작 전은 0 — 하나도 안 감춰준다', () => {
+    expect(fogFactorAt(0, band)).toBe(0);
+    expect(fogFactorAt(band.near - 0.001, band)).toBe(0);
+    expect(fogFactorAt(band.near, band)).toBe(0);
+  });
+
+  it('안개가 닫힌 뒤는 1', () => {
+    expect(fogFactorAt(band.far, band)).toBe(1);
+    expect(fogFactorAt(band.far * 10, band)).toBe(1);
+  });
+
+  it('사이는 선형이다 — 중간이 0.5', () => {
+    expect(fogFactorAt((band.near + band.far) / 2, band)).toBeCloseTo(0.5, 9);
+  });
+
+  it('밴드가 뒤집혔거나 폭이 0 이어도 NaN 을 내지 않는다', () => {
+    const flat = { near: 50, far: 50 };
+    expect(fogFactorAt(10, flat)).toBe(0);
+    expect(fogFactorAt(50, flat)).toBe(1);
+  });
+});
+
+describe('§4-2 집행 — 안개 0% 자리는 페이드가 아무 일도 안 한다', () => {
+  it('fogAt 이 0 이면 첫 프레임부터 목표색이다 — 검정에서 출발하지 않는다', () => {
+    const { slot, target, parent } = scaffold({ duration: 1, gate: true, fogAt: () => 0 });
+    const h = slot.acquire('building')!;
+    slot.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    slot.setTone(h, 0);
+    // `begin` 이 즉시 덮는 그 순간을 본다(update 전).
+    const c = colorAt(parent, h.index);
+    expect(c.r).toBeCloseTo(target.r, 5);
+    expect(c.g).toBeCloseTo(target.g, 5);
+    expect(c.b).toBeCloseTo(target.b, 5);
+  });
+
+  it('fogAt 이 1 이면 종전대로 안개색에서 출발한다', () => {
+    const { slot, parent } = scaffold({ duration: 1, gate: true, fogAt: () => 1 });
+    const h = slot.acquire('building')!;
+    slot.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    slot.setTone(h, 0);
+    const c = colorAt(parent, h.index);
+    expect(c.r).toBeCloseTo(0, 5); // fadeColor 는 scaffold 에서 검정
+    expect(c.g).toBeCloseTo(0, 5);
+    expect(c.b).toBeCloseTo(0, 5);
+  });
+
+  it('fogAt 을 안 주면 항상 1 — **종전 동작이 기본값이다**', () => {
+    const { slot, parent } = scaffold({ duration: 1, gate: true });
+    const h = slot.acquire('building')!;
+    slot.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    slot.setTone(h, 0);
+    expect(colorAt(parent, h.index).r).toBeCloseTo(0, 5);
+  });
+
+  it('중간값이면 그만큼만 섞는다 — 출발색이 목표색과 안개색 사이다', () => {
+    const { slot, target, parent } = scaffold({ duration: 1, gate: true, fogAt: () => 0.5 });
+    const h = slot.acquire('building')!;
+    slot.setTransform(h, 0, 0, 0, 0, 1, 1, 1);
+    slot.setTone(h, 0);
+    const c = colorAt(parent, h.index);
+    expect(c.r).toBeCloseTo(target.r * 0.5, 5);
+  });
+
+  it('좌표를 모르면 종전으로 떨어진다 — 조용히 틀리지 않고 조용히 예전이 된다', () => {
+    // `setTransform` 없이 `setTone` 만 부른다(호출 순서가 뒤집힌 미래의 호출자).
+    const { slot, parent } = scaffold({ duration: 1, gate: true, fogAt: () => 0 });
+    const h = slot.acquire('building')!;
+    slot.setTone(h, 0);
+    expect(colorAt(parent, h.index).r).toBeCloseTo(0, 5);
+  });
+
+  it('슬롯마다 자기 출발색을 지킨다 — 한 색을 모두에게 쓰지 않는다', () => {
+    // 가까운 것(안개 0)과 먼 것(안개 1)을 함께 띄우고 update 를 한 번 돌린다.
+    const near = 0, far = 999;
+    const { slot, fade, target, parent } = scaffold({
+      duration: 1, gate: true, fogAt: (x) => (x === far ? 1 : 0),
+    });
+    const a = slot.acquire('building')!;
+    slot.setTransform(a, near, 0, 0, 0, 1, 1, 1);
+    slot.setTone(a, 0);
+    const b = slot.acquire('building')!;
+    slot.setTransform(b, far, 0, 0, 0, 1, 1, 1);
+    slot.setTone(b, 0);
+    fade.update(frame(0.1));
+    const ca = colorAt(parent, a.index);
+    const cb = colorAt(parent, b.index);
+    expect(ca.r).toBeCloseTo(target.r, 5);                 // 안개 0 — 이미 제 색
+    expect(cb.r).toBeCloseTo(target.r * 0.1, 5);           // 안개 1 — 10% 만 왔다
+    expect(cb.r).toBeLessThan(ca.r);
   });
 });

@@ -32,6 +32,15 @@ import {
 export interface SlotPool {
   acquire(key: string): SlotHandle | null;
   setTransform(h: SlotHandle, x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number): void;
+  /**
+   * **이미 놓인 슬롯의 자세만 다시 쓴다.** 빌더는 쓰지 않는다 — 그림자 데칼 재베이킹처럼
+   * "같은 슬롯을 그대로 두고 자세만 갱신" 하는 소비자를 위한 문이다.
+   *
+   * `setTransform` 과 갈라 놓은 이유: 그쪽은 **새 배치**를 뜻해서 성장 애니메이션을 처음부터
+   * 돌린다. 재적용에 그것을 태우면 자세를 고칠 때마다 부품이 되감긴다(검수관 반려
+   * 2026-08-11 — 실측으로 sx 4 → 0.08 재현). 근거는 `parcel-grow.ts` 의 `retarget` 주석.
+   */
+  retarget?(h: SlotHandle, x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number): void;
   setTone(h: SlotHandle, tone: number): void;
   release(h: SlotHandle): void;
 }
