@@ -186,6 +186,15 @@ export class InstancePools {
    * LOD 페이드(`systems/parcel-fade.ts`)가 등장 중인 슬롯 색을 프레임마다 고쳐 쓴다.
    * 그래서 행렬과 **같은 방식으로 구간만** 올린다 — 예전에는 여기서 곧장
    * `needsUpdate = true` 를 세워 풀 전체(max×3 float)를 매번 재업로드했다.
+   *
+   * ── usage 는 Dynamic 이어야 한다 (#216 해소, 감독 마크 실측 2026-08-11) ──
+   * 이 버퍼는 오래 기본값(StaticDrawUsage)으로 만들어지고 있었다 — 갱신 빈도는 위
+   * 문단대로 "매 프레임"인데 선언은 "안 바뀐다"였다(행렬만 Dynamic 인 비대칭, 검수관
+   * 성능 권고 #216). WebGPU 백엔드는 이 선언을 업로드 전략에 쓰므로, static 선언
+   * 버퍼가 갱신되는 프레임에 **재할당된 GPU 버퍼(0 초기화 = 검정)가 한 프레임
+   * 그려질 수 있다.** 감독 실기기 마크(전진 중 "회색 건물이 순간 검정→본색")의
+   * ±2.5s 창에서 앞쪽 사건이 파셀생성(색 일괄 setTone) 하나뿐이었고, 그림자 off·
+   * GLB off·색 페이드 off 에서도 남았다 — 이 비대칭이 마지막 용의자였다.
    */
   setColor(h: SlotHandle, color: THREE.Color): void {
     const p = this.pools.get(h.key);
@@ -194,6 +203,7 @@ export class InstancePools {
     if (!p.mesh.instanceColor) {
       // 최초 1회만 생성 — 이것도 부팅 중에 미리 깨워두는 게 좋다(warmColors 참조).
       p.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(p.spec.max * 3).fill(1), 3);
+      p.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     }
     p.mesh.setColorAt(h.index, color);
     this.touchColor(p, h.index);
@@ -207,6 +217,8 @@ export class InstancePools {
     const p = this.pools.get(key);
     if (!p || p.mesh.instanceColor) return;
     p.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(p.spec.max * 3).fill(1), 3);
+    // 행렬(위 setUsage)과 같은 이유 + 같은 실측 — usage 는 생성 직후 여기서만 정한다.
+    p.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     p.mesh.instanceColor.needsUpdate = true;
   }
 
