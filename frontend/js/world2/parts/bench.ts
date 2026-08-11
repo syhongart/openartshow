@@ -38,6 +38,7 @@ export const bench: PartSpec = {
   // 좌판 1.4 × 0.44. 회전이 직각 배수라 긴 변의 절반이 곧 반경이고, 앉을 자리를
   // 남기려 조금 더 준다. 상수 하나를 자리 탐색과 겹침 판정이 함께 본다 — 둘이 어긋나면
   // "안 겹친다고 판정한 자리에 놓았는데 겹치는" 상태가 된다.
+  shadowProfile: 'box',
   footprint: () => BENCH_RADIUS,
 
   maxPerParcel: () => 2,

@@ -141,6 +141,15 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
       for (let pz = -3; pz <= 3; pz++) {
         for (const p of at(px, pz)) {
           if (p.kind === 'ground') continue; // 지면은 셀 전체를 덮는다
+          // 그림자 데칼은 **자기 자리를 뽑지 않는다** — 캐스터 자세를 그대로 복사하므로
+          // (`parts/shadow.ts` 의 `place`), 여기서 다시 재면 같은 좌표를 두 번 재는 것이고
+          // `shadow:lamp` 처럼 예외를 종류마다 또 열거해야 한다. 복사라는 사실 자체는
+          // `world2-parcel-layout-golden.test.ts` 의 「자세가 캐스터의 복사다」 가 단언한다.
+          //
+          // ⚠ 그림자가 **월드에서** 파셀 경계를 넘는 것은 사실이고 의도다(태양 저고도).
+          // 그 경계는 좌표가 아니라 길이 상한이 정한다 — `SHADOW_MAX_LEN` 과
+          // `world2-shadow-decal.test.ts` 의 상한 단언이 그 축이다.
+          if (p.kind.startsWith('shadow:')) continue;
           const lx = p.kind === 'lamp' ? DEFAULT_LAYOUT.cellX / 2 : halfX;
           const lz = p.kind === 'lamp' ? DEFAULT_LAYOUT.cellZ / 2 : halfZ;
           expect(Math.abs(p.x), `${p.kind} x`).toBeLessThanOrEqual(lx + 1e-9);

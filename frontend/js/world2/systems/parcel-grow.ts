@@ -42,6 +42,14 @@ const START_SCALE = 0.02;
 export interface GrowSink {
   /** 슬롯이 자리를 잡았다. 지금부터 자라기 시작한다 */
   place(h: SlotHandle, t: SlotTransform): void;
+  /**
+   * **이미 살아 있는 슬롯의 목표 자세만 바뀌었다.** 성장을 되감지 않는다.
+   *
+   * `place` 와 갈라 놓은 이유는 구현부(`retarget`) 주석 한 곳에 있다 — 요약하면
+   * `place` 가 "새 배치" 를 뜻하기 때문이고, 그 전제를 그림자 데칼 재베이킹이 처음
+   * 깼다(검수관 반려 2026-08-11).
+   */
+  retarget?(h: SlotHandle, t: SlotTransform): void;
   /** 슬롯이 반납된다. 진행 중이면 버린다 */
   release(h: SlotHandle): void;
   /**
@@ -140,6 +148,7 @@ export class ParcelGrowSystem implements System {
   sink(): GrowSink {
     return {
       place: (h, t) => this.begin(h, t),
+      retarget: (h, t) => this.retarget(h, t),
       release: (h) => { this.entries.delete(h); this.curScale.delete(h); },
       retire: (h, done) => this.retire(h, done),
     };
@@ -160,6 +169,37 @@ export class ParcelGrowSystem implements System {
     // 첫 프레임을 기다리지 않고 지금 줄인다. 안 그러면 update 전에 완성 크기로 한 번
     // 렌더돼 — 고치려는 팝 그 자체가 한 프레임 보인다(`parcel-fade.ts` 와 같은 함정).
     this.apply(h, t, START_SCALE);
+  }
+
+  /**
+   * **이미 살아 있는 슬롯의 목표 자세만 바꾼다.** 성장을 처음부터 다시 시작하지 않는다.
+   *
+   * ── 왜 `begin` 과 갈라야 했나 (검수관 반려, 2026-08-11 실측 재현) ──────────
+   * `begin` 은 `place` 를 **"이 슬롯이 새로 배치됐다"** 로 읽고 무조건 `START_SCALE`(0.02)
+   * 로 되감는다. 그 전제는 오래 조용히 성립했다 — 시스템 전체에서 `setTransform` 이 핸들
+   * 생애 동안 정확히 한 번만 불렸기 때문이다.
+   *
+   * 그림자 데칼의 재베이킹(`systems/shadow-decal.ts` 의 `reapply`)이 그 전제를 처음으로
+   * 깼다. 태양이나 노브가 바뀌면 살아 있는 데칼 전부의 자세를 다시 써야 하는데, 그것이
+   * `place` 를 타면서 **매번 성장이 되감겼다.** 검수관 실측: 재굽기 직후 `sx` 가 4 →
+   * 0.08(= START_SCALE × 4), `pending` 0 → 1.
+   *
+   * 화면에서 이것이 언제 보이는가가 핵심이다 — 개발자 슬라이더는 `input` 이벤트로
+   * **드래그하는 동안 계속** 값을 민다. 즉 감독이 농도를 조절하는 내내 화면의 모든
+   * 그림자가 쪼그라들었다 자라기를 반복한다. **폐지한 실시간 그림자의 명멸과 증상이 같다.**
+   *
+   * 여기서는 진행 중인 배수(`curScale`)를 **유지한 채** 새 자세로 다시 그린다. 자라는
+   * 중이었으면 자라던 크기 그대로 새 자리에서 계속 자라고, 다 자랐으면 완성 크기로 옮긴다.
+   */
+  private retarget(h: SlotHandle, t: SlotTransform): void {
+    // 수축이 출발할 자세는 갱신한다 — 안 하면 반납 때 옛 자리로 줄어든다.
+    this.lastPose.set(h, { ...t });
+    const e = this.entries.get(h);
+    if (e) e.t = { ...t }; // 진행 중인 성장의 목표도 새 자세로
+    // 진행 중이면 그 배수, 아니면 완성(1). `setTransform` 이 이미 완성 자세를 썼으므로
+    // 배수가 1 이면 다시 쓸 것이 없다.
+    const k = this.curScale.get(h);
+    if (k !== undefined) this.apply(h, t, k);
   }
 
   private retire(h: SlotHandle, done: () => void): void {

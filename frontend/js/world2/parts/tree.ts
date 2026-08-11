@@ -68,6 +68,7 @@ export const tree: PartSpec = {
    * 넉넉한 쪽으로 잡는 것이 맞다. 나무는 겹치면 **한 덩어리로 뭉쳐 보여** 그루 수가
    * 읽히지 않는데, 그게 감독이 지적한 "겹쳐져 있는 것들" 의 큰 부분이다.
    */
+  shadowProfile: 'round',
   footprint: (p) => TREE_RADIUS_UNIT * p.sx,
 
   // `floor(rnd * (max + 1))` 의 상한이다. rnd < 1 이므로 max 를 넘지 않는다.

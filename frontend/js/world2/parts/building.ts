@@ -55,6 +55,7 @@ export const building: PartSpec = {
    * **이 반경이 배치 한계와 같은 값을 봐야 한다.** 그러지 않아서 실제로 겹쳤다 — 아래
    * `EAVE` 주석 참고.
    */
+  shadowProfile: 'box',
   footprint: (p) => Math.max(p.sx, p.sz) * 0.5 + EAVE,
 
   maxPerParcel: (o) => o.maxBuildings,

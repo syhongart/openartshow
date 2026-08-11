@@ -72,6 +72,7 @@ export const lamp: PartSpec = {
    * 값은 `road-topology.ts` 에 있다. 슬롯 배치가 "가로등 자리는 비운다" 를 계산할 때
    * 같은 값을 봐야 하고, 가로등이 안 그려지는 tier 에서도 그 예약은 유지돼야 한다.
    */
+  shadowProfile: 'post',
   footprint: () => LAMP_CLEARANCE,
 
   /**
