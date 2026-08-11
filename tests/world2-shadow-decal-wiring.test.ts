@@ -47,10 +47,18 @@ import type { PartAsset, ThreeNS } from '../frontend/js/world2/parts/types.js';
 // jsdom 에는 네이티브 캔버스가 없어 `getContext` 가 null 이다. 여기서 보는 것은 **배선**
 // (같은 캔버스에 다시 그리는가·텍스처 참조가 그대로인가)이므로 그리기는 no-op 이어도 된다.
 // `world2-baked-parts.test.ts` 가 같은 이유로 같은 스텁을 쓴다.
+// ⚠ `createImageData`/`putImageData` 는 **no-op 이 아니다.** 사각·얼룩 실루엣은 픽셀을
+// 직접 계산하므로(`paintShaped`), 스텁이 진짜 버퍼를 돌려줘야 그 산술이 실제로 돈다.
+// no-op 으로 두면 실루엣 코드가 **한 줄도 실행되지 않은 채** 배선 테스트가 초록이 된다 —
+// 이 저장소가 *"테스트 통과는 검출력의 증거가 아니다"* 라고 적어 둔 그 형태다.
 const ctx2d = {
   fillStyle: '' as unknown, filter: '', globalAlpha: 1,
   save() {}, restore() {}, clearRect() {}, fillRect() {}, drawImage() {},
   createRadialGradient: () => ({ addColorStop() {} }),
+  createImageData: (w: number, h: number) => ({
+    data: new Uint8ClampedArray(w * h * 4), width: w, height: h,
+  }),
+  putImageData() {},
 };
 (HTMLCanvasElement.prototype as unknown as { getContext: () => unknown }).getContext = () => ctx2d;
 
@@ -363,17 +371,27 @@ describe('③ 굽기 불변식 — 개수가 늘지 않는다', () => {
     expect(Math.round(seen.at(-1)! / BLOB_OUTER_R)).toBeGreaterThanOrEqual(SHADOW_DRAW_MIN);
   });
 
-  it('★ 셀마다 다시 그리지 않는다 — 한 번 그려 셀 수만큼 복사한다', () => {
-    // 모든 셀이 같은 원형 블롭이므로 굽기 비용이 셀 수와 무관해야 한다. 셀마다 다시
-    // 그리면 캐스터가 늘 때마다 굽기가 선형으로 비싸지고, 그 증상은 프레임 히칭뿐이라
-    // 아무 단언도 안 걸린다.
+  it('★ 셀마다 다시 그린다 — 실루엣이 종류마다 다르다 (감독 지시 2026-08-11)', () => {
+    // ⚠ **이 단언은 2026-08-11 에 뒤집혔다.** 직전 판본은 *"한 번 그려 셀 수만큼 복사한다"*
+    // 였고 `gradients === 1` 을 단언했다. 그때는 모든 셀이 같은 원형 블롭이라 그것이 옳았다.
+    // 감독이 *"형태가 사각형이면 사각형그림자. 원형이면 원형 그림자면 해."* 를 지시하면서
+    // 셀마다 그림이 달라졌으므로, 한 번만 그리면 **벤치도 나무도 원이 된다** — 즉 옛 단언을
+    // 그대로 두면 지시를 어긴 상태가 초록으로 통과한다.
+    //
+    // 뒤집으면서 **비용 축을 잃지 않는다**: 굽기가 셀 수에 비례해졌다는 사실 자체를 여기서
+    // 못 박고(경로별 횟수 합 = 셀 수), 실제 소요는 `update` 의 8ms 경고가 실측한다.
     mountAtlas();
     const at = atlasOf()!;
-    let gradients = 0;
+    let gradients = 0;   // 원형(round·post) 경로
+    let pixels = 0;      // 사각·얼룩(box·foliage) 경로
     let copies = 0;
     const spy = {
       ...ctx2d,
       createRadialGradient: () => { gradients++; return { addColorStop() {} }; },
+      createImageData: (w: number, h: number) => {
+        pixels++;
+        return { data: new Uint8ClampedArray(w * h * 4), width: w, height: h };
+      },
       drawImage() { copies++; },
     } as unknown as CanvasRenderingContext2D;
     (at as { sctx: CanvasRenderingContext2D }).sctx = spy;
@@ -381,8 +399,14 @@ describe('③ 굽기 불변식 — 개수가 늘지 않는다', () => {
 
     const { sys } = setup();
     sys.bake();
-    expect(gradients).toBe(1);
-    expect(copies).toBe(sys.stats().cells);
+    const cells = sys.stats().cells;
+    // 셀 하나당 정확히 한 번 그린다 — 두 경로의 합이 셀 수다.
+    expect(gradients + pixels).toBe(cells);
+    expect(copies).toBe(cells);
+    // 감독 판정: 사각(벤치) 하나 + 얼룩(나무) 하나 = 픽셀 경로 **정확히 둘**. 이 숫자가
+    // 흔들리면 파츠 배정이 바뀐 것이고, 그 판정은 카드로만 뒤집을 수 있다.
+    expect(pixels).toBe(2);
+    expect(gradients).toBe(cells - 2);
   });
 });
 
@@ -673,5 +697,223 @@ describe('⑦ 크기 계약이 판정과 집행에서 하나다', () => {
     expect(last(calls, h).sx).toBeCloseTo(2 * r * BLOB_SCALE * DECAL_SCALE, 9);
     // 그라디언트 바깥 반경이 월드에서 `r · BLOB_SCALE` 이다 — 두 상수가 상쇄된다.
     expect(last(calls, h).sx * BLOB_OUTER_R).toBeCloseTo(r * BLOB_SCALE, 9);
+  });
+});
+
+// ── ⑥ 3회차(2026-08-11): 굽은 픽셀을 직접 본다 ─────────────────────────────
+//
+// 감독 지시 둘의 **결과물**을 픽셀로 확인한다. 위 절들은 "몇 번 그렸나" 를 세지만, 그것은
+// 사각이 실제로 사각인지 아무것도 말해 주지 않는다 — 원형 그라디언트를 8번 그려도 횟수
+// 단언은 전부 초록이다. 이 저장소가 *"테스트 통과는 검출력의 증거가 아니다"* 라고 적어 둔
+// 그 자리라, 실루엣을 **실물로** 판정한다.
+
+/** 굽은 ImageData 를 가로채는 컨텍스트 */
+function pixelCtx(): { ctx: CanvasRenderingContext2D; get(): ImageData | null } {
+  let out: ImageData | null = null;
+  const ctx = {
+    ...ctx2d,
+    createImageData: (w: number, h: number) => ({
+      data: new Uint8ClampedArray(w * h * 4), width: w, height: h,
+    }),
+    putImageData: (img: ImageData) => { out = img; },
+  } as unknown as CanvasRenderingContext2D;
+  return { ctx, get: () => out };
+}
+
+/**
+ * 픽셀의 **그늘 세기** 0~1. 두 합성 모드를 한 척도로 읽는다.
+ *   normal   검정을 알파로 얹으므로 알파가 곧 세기
+ *   multiply 회색을 곱하므로 `1 − 밝기` 가 세기
+ * 두 모드가 같은 값을 내야 한다는 것이 아래 「같은 밝기」 절의 요점이다.
+ */
+function shadeAt(img: ImageData, res: number, px: number, py: number, mul: boolean): number {
+  const i = (py * res + px) * 4;
+  return mul ? 1 - img.data[i]! / 255 : img.data[i + 3]! / 255;
+}
+
+/**
+ * 셀을 굽고 픽셀을 돌려준다.
+ *
+ * ⚠ **`'round'` 는 여기서 못 쓴다** — 원형은 `createRadialGradient` 경로라 픽셀을 직접
+ * 만들지 않는다(그 경로는 이 변경에서 한 줄도 안 바뀌었고, 스톱 대조는 ⑤ 절이 본다).
+ * 원형과 비교해야 할 때는 **`'foliage'` + `leaf: 0`** 을 쓴다 — 얼룩 깊이가 0 이면 남는
+ * 것이 순수 원형 프로파일이라, 그것이 곧 "픽셀로 그린 원" 이다.
+ */
+function bakeCell(
+  shape: 'box' | 'foliage', res: number,
+  blend: 'multiply' | 'normal' = 'multiply', leaf?: number,
+): ImageData {
+  const p = pixelCtx();
+  paintBlob(p.ctx, res, { res, density: 1, soft: SHADOW_SOFT, blend, leaf }, shape);
+  const img = p.get();
+  if (!img) throw new Error('굽기가 픽셀을 내지 않았다 — paintShaped 경로를 안 탄 것이다');
+  return img;
+}
+
+describe('⑥ 굽은 픽셀 — 실루엣이 실제로 그 형태인가', () => {
+  const RES = 64;
+  const C = RES / 2;
+
+  it('★ 사각은 대각선이 축방향보다 멀리 간다 — 원이면 같아야 한다', () => {
+    // **원과 사각을 가르는 조작적 정의다.** 원은 중심에서 등거리면 세기가 같지만, 사각은
+    // 같은 거리라도 대각선 쪽이 실루엣 안쪽에 더 깊이 들어 있다. `paintShaped` 의
+    // `roundBoxSD` 를 `hypot` 으로 되돌리면(= 실루엣 분기 제거) 이 단언이 깨진다.
+    const box = bakeCell('box', RES);
+    const round = bakeCell('foliage', RES, 'multiply', 0); // 얼룩 0 = 순수 원형
+    // 중심에서 같은 유클리드 거리의 두 점 — 축방향과 대각선.
+    const d = 12;
+    const diag = Math.round(d / Math.SQRT2);
+    const axisBox = shadeAt(box, RES, C + d, C, true);
+    const diagBox = shadeAt(box, RES, C + diag, C + diag, true);
+    const axisRound = shadeAt(round, RES, C + d, C, true);
+    const diagRound = shadeAt(round, RES, C + diag, C + diag, true);
+    // 원: 등거리면 세기가 (거의) 같다.
+    expect(Math.abs(axisRound - diagRound)).toBeLessThan(0.02);
+    // 사각: 대각선 쪽이 더 진하다(안쪽이다).
+    expect(diagBox).toBeGreaterThan(axisBox + 0.02);
+  });
+
+  it('★ 사각 모서리가 둥글다 — 감독 판정 "많이 둥글게"', () => {
+    // 각진 사각이면 꼭짓점까지 실루엣이 차 있다. 둥글리면 꼭짓점이 비어 세기가 0 이다.
+    const box = bakeCell('box', RES);
+    // 셀 모서리에서 살짝 안쪽 — `BLOB_OUTER_R`(0.469) 사각의 꼭짓점 부근.
+    const k = Math.round(RES * BLOB_OUTER_R) - 2;
+    const corner = shadeAt(box, RES, C + k, C + k, true);
+    const edgeMid = shadeAt(box, RES, C + k, C, true);
+    // 변 중점에는 실루엣이 남아 있고, 꼭짓점은 잘려 나갔다.
+    expect(corner).toBeLessThan(edgeMid);
+    expect(corner).toBeLessThan(0.02);
+  });
+
+  it('★ 얼룩은 원보다 들쭉날쭉하다 — 감독 판정 "얼룩덩덩하게"', () => {
+    // 같은 반경 링을 따라 세기를 재면, 원은 **정확히** 일정하고 얼룩은 흩어진다.
+    //
+    // ⚠ 정확한 등거리를 얻으려면 **두 가지**를 함께 맞춰야 한다. 둘 다 실측으로 배웠다:
+    //   ① 링 좌표를 `Math.round` 로 잡으면 실제 반경이 흔들린다 → 원에서 분산 0.011.
+    //      그래서 **피타고라스 수**를 쓴다: 13² = 12²+5² = 13²+0².
+    //   ② 그래도 0.010 이 남았다. 원인은 **짝수 해상도에 중심 픽셀이 없다는 것**이다 —
+    //      `res=64` 에서 중심(u=0)은 px=31.5 이므로 `C±13` 이 서로 다른 거리가 된다
+    //      (실측: u = +0.211 vs −0.195). **홀수 해상도**면 중심 픽셀이 존재해
+    //      (`res=65` → px=32 가 정확히 u=0) 대칭이 정확해진다.
+    // 실측에 여유를 얹는 대신 오차원을 없앤 것이다.
+    const R = 65;          // 홀수 — 중심 픽셀이 존재한다
+    const CC = (R - 1) / 2; // = 32, 정확히 u=0
+    const EXACT_R13 = [
+      [13, 0], [0, 13], [-13, 0], [0, -13],
+      [12, 5], [5, 12], [-12, 5], [5, -12],
+      [-5, 12], [12, -5], [-12, -5], [-5, -12],
+    ] as const;
+    const ring = (img: ImageData): number[] =>
+      EXACT_R13.map(([dx, dy]) => shadeAt(img, R, CC + dx, CC + dy, true));
+    const sd = (xs: number[]): number => {
+      const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+      return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
+    };
+    const roundSd = sd(ring(bakeCell('foliage', R, 'multiply', 0))); // 얼룩 0 = 원
+    const leafSd = sd(ring(bakeCell('foliage', R)));
+    // 원은 등거리 점에서 **완전히** 같아야 한다 — 남는 것은 8비트 양자화(1/255 ≈ 0.004)뿐.
+    expect(roundSd).toBeLessThan(1 / 255);
+    expect(leafSd).toBeGreaterThan(roundSd * 3);
+  });
+
+  it('★ `?shleaf=0` 이면 나무가 매끈한 원으로 돌아온다 — 되돌림 노브가 실제로 듣는다', () => {
+    // 감독이 *"산만해 보일 위험"* 을 알고 고른 축이라, 되돌릴 수 있어야 판정이 뒤집힌다.
+    // 얼룩 0 은 **사각과도 다르고 기본 얼룩과도 다른** 순수 원이어야 한다: 등거리 두 점의
+    // 세기가 같고(원), 기본 얼룩에서는 그 등식이 깨진다.
+    const flat = bakeCell('foliage', RES, 'multiply', 0);
+    const leafy = bakeCell('foliage', RES);
+    const d = 10;
+    const diag = Math.round(d / Math.SQRT2);
+    const flatAxis = shadeAt(flat, RES, C + d, C, true);
+    const flatDiag = shadeAt(flat, RES, C + diag, C + diag, true);
+    expect(Math.abs(flatAxis - flatDiag)).toBeLessThan(0.02);
+    // 노브가 실제로 픽셀을 바꾼다 — 안 그러면 `?shleaf` 가 장식이다.
+    expect(Array.from(flat.data)).not.toEqual(Array.from(leafy.data));
+  });
+
+  it('가장자리는 두 실루엣 모두 0 이다 — 하드컷이 없다', () => {
+    // 셀 경계에 잔여가 남으면 확대 합성 때 **직선이 선다**. 앞 회차 감독 반려
+    // (*"딱딱하다"*)와 같은 형태의 결함이라 사각·얼룩에서도 확인한다.
+    for (const shape of ['box', 'foliage'] as const) {
+      const img = bakeCell(shape, RES);
+      for (const [px, py] of [[0, 0], [RES - 1, 0], [0, RES - 1], [RES - 1, RES - 1],
+        [C, 0], [0, C]] as const) {
+        expect(shadeAt(img, RES, px, py, true), `${shape} (${px},${py})`).toBeLessThan(0.01);
+      }
+    }
+  });
+});
+
+describe('⑦ 곱하기 합성 — 굽는 그림이 재질과 짝인가', () => {
+  const RES = 32;
+
+  it('★ 곱하기 셀은 전면 불투명이다 — 투명 자리는 곱셈에서 검정으로 읽힌다', () => {
+    // `MultiplyBlending` 은 알파를 안 본다. 알파 0 인 자리를 남기면 그 픽셀의 RGB(0)가
+    // 그대로 곱해져 **가장자리가 검게 탄다.** 이 단언이 그 사고를 막는다.
+    const img = bakeCell('box', RES);
+    for (let i = 3; i < img.data.length; i += 4) expect(img.data[i]).toBe(255);
+  });
+
+  it('★ 곱하기 셀의 가장자리는 흰색이다 — 곱해도 밑이 안 변해야 그림자가 없다', () => {
+    const img = bakeCell('foliage', RES);
+    const i = 0; // 좌상단 = 실루엣 바깥
+    expect(img.data[i]).toBe(255);
+    expect(img.data[i + 1]).toBe(255);
+    expect(img.data[i + 2]).toBe(255);
+  });
+
+  it('곱하기 셀은 무채색이다 — 색을 여는 것은 다음 회차의 축이다', () => {
+    // 지금은 회색 곱하기다(판정 파일 「합성 모드」 절). 채널이 갈라지면 그림자가 물든다.
+    const img = bakeCell('box', RES);
+    for (let i = 0; i < img.data.length; i += 4) {
+      expect(img.data[i]).toBe(img.data[i + 1]);
+      expect(img.data[i]).toBe(img.data[i + 2]);
+    }
+  });
+
+  it('normal 셀은 검정 + 가변 알파다 — 옛 동작 그대로', () => {
+    const img = bakeCell('box', RES, 'normal');
+    let maxA = 0;
+    for (let i = 0; i < img.data.length; i += 4) {
+      expect(img.data[i]).toBe(0);
+      maxA = Math.max(maxA, img.data[i + 3]!);
+    }
+    expect(maxA).toBeGreaterThan(100);
+  });
+
+  it('★★ 두 모드가 같은 밝기를 낸다 — 감독 판정 "진하기는 지금과 같게"', () => {
+    // **이 변경의 핵심 계약이다.** 곱하기로 옮기면서 룩이 같이 움직이면, 감독이 화면에서
+    // 무엇이 바뀐 것인지 분리할 수 없고 `?shblend` 도 대조군 구실을 못 한다.
+    // `dst·(1−a)` 와 `dst·v`(v = 1−a)가 같은 값이라는 산술을 픽셀로 확인한다.
+    for (const shape of ['box', 'foliage'] as const) {
+      const mul = bakeCell(shape, RES, 'multiply');
+      const nrm = bakeCell(shape, RES, 'normal');
+      for (let py = 0; py < RES; py += 5) {
+        for (let px = 0; px < RES; px += 5) {
+          expect(shadeAt(mul, RES, px, py, true), `${shape} (${px},${py})`)
+            .toBeCloseTo(shadeAt(nrm, RES, px, py, false), 2);
+        }
+      }
+    }
+  });
+
+  it('★ 굽기가 재질의 합성 모드를 세운다 — 그림과 재질이 어긋나면 화면이 통째로 깨진다', () => {
+    mountAtlas();
+    const at = atlasOf()!;
+    const mat = at.material as unknown as { blending: number };
+    const { sys } = setup();
+    sys.bake();
+    // 기본은 곱하기. 재질이 Normal 로 남아 있으면 흰 바탕 회색이 그대로 알파 합성돼
+    // **그림자가 흰 사각으로 보인다.**
+    expect(mat.blending).toBe(THREE.MultiplyBlending);
+  });
+});
+
+describe('⑧ 결정론 — 굽기를 반복해도 무늬가 안 바뀐다', () => {
+  it('★ 같은 옵션으로 두 번 구우면 픽셀이 완전히 같다', () => {
+    // `Math.random` 이 섞이면 감독이 슬라이더를 미는 내내 나무 그림자가 춤춘다.
+    const a = bakeCell('foliage', 48);
+    const b = bakeCell('foliage', 48);
+    expect(Array.from(a.data)).toEqual(Array.from(b.data));
   });
 });

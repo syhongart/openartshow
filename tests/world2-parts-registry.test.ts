@@ -197,10 +197,35 @@ describe('그림자 골격 선언 — 빠뜨리면 그 파츠만 조용히 그�
     expect(flats).toBeGreaterThan(0);
   });
 
-  it('골격 값이 허용된 셋 중 하나다', () => {
+  it('골격 값이 허용된 넷 중 하나다', () => {
     for (const p of PARTS) {
       if (!p.shadowProfile) continue;
-      expect(['round', 'box', 'post'], p.kind).toContain(p.shadowProfile);
+      expect(['round', 'box', 'post', 'foliage'], p.kind).toContain(p.shadowProfile);
+    }
+  });
+
+  // ── 감독 판정을 **파츠 배정으로** 지킨다 (카드 2026-08-11) ──────────────────
+  // *"형태가 사각형이면 사각형그림자"* 를 받고 사각 대상을 물었을 때 감독이 **"벤치만"** 을
+  // 골랐다. 그 판정은 지금 8개 파일에 한 줄씩 흩어져 있어(각 파츠의 `shadowProfile`),
+  // 누가 건물을 `box` 로 되돌려도 **아무 테스트도 안 걸리는** 상태였다. 배정 자체를 단언해
+  // 그 순간 빨간불이 되게 한다.
+  //
+  // ⚠ 이 단언은 **감독이 판정을 바꾸면 함께 고쳐야 한다** — 그것이 의도다. 화면 판정이
+  // 뒤집혔는데 테스트가 조용하면, 다음 사람은 옛 판정을 현재 사양으로 읽는다.
+  it('사각 그림자는 벤치뿐이고 얼룩은 나무뿐이다 (감독 판정 2026-08-11)', () => {
+    const by = (v: string): string[] =>
+      PARTS.filter((p) => p.shadowProfile === v).map((p) => p.kind).sort();
+    expect(by('box')).toEqual(['bench']);
+    expect(by('foliage')).toEqual(['tree']);
+    // 각진 지오인 건물·시계탑·타워가 **원형 그늘**이라는 것이 이 판정의 핵심이다.
+    // 지오를 따라 `box` 로 되돌리면 여기서 걸린다.
+    // ⚠ 시계탑의 `kind` 는 파일명과 달리 **`'clock'`** 이다. 처음에 `'clocktower'` 로 적었고
+    // 이 단언이 잡았다 — 없는 kind 를 찾으면 `undefined` 가 되므로, **존재부터 단언**하지
+    // 않으면 오타가 조용히 통과하는 형태가 된다(`not.toBe('box')` 로 썼다면 그랬을 것이다).
+    for (const kind of ['building', 'clock', 'tower']) {
+      const p = PARTS.find((q) => q.kind === kind);
+      expect(p, `${kind}: 파츠가 없다 — kind 오타이거나 파츠가 사라졌다`).toBeTruthy();
+      expect(p?.shadowProfile, `${kind}: 지오는 박스지만 그림자는 원이어야 한다`).toBe('round');
     }
   });
 

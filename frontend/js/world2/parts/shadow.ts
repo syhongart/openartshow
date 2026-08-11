@@ -10,13 +10,25 @@
 // 좋을거 같애."* 지목된 것은 `space-assembler.ts` 의 접촉그림자 AO 플레인이다. 경위·값의
 // 근거는 `decide/shadow-decal.ts` 머리 주석 한 곳이다 — 여기에 다시 적지 않는다.
 //
-// **이 파일에서 사라진 것**: 골격(`round`/`box`/`post`)별 실루엣, `tracePath`(밑동 타원 +
-// 꼬리 사다리꼴), `roundRect` 폴백, `tailGradient`, penumbra 등고선 스택과 겹당 알파 역산,
-// `destination-in` 곱셈 단계, `POST_WIDTH`·`BOX_CORNER`·`TIP_ROUND`. 전부 **방향이 있는
-// 그림자**를 그리기 위한 장치였고, 원형 블롭에는 대응물이 없다.
+// **그때 사라진 것**: `tracePath`(밑동 타원 + 꼬리 사다리꼴), `tailGradient`, penumbra
+// 등고선 스택과 겹당 알파 역산, `destination-in` 곱셈 단계, `POST_WIDTH`·`TIP_ROUND`.
+// 전부 **방향이 있는 그림자**를 그리기 위한 장치였고, 원형 블롭에는 대응물이 없다.
 //
-// 남은 그림은 **방사형 그라디언트 한 방**이다. 그래서 셀마다 다시 그릴 것도 없어졌다 —
-// 한 번 그려 셀마다 복사한다(`bakeAtlas`).
+// ── 2026-08-11(3회차) — 실루엣이 되살아나고 합성이 곱하기로 바뀌었다 ────────
+// 감독이 배포본을 보고 둘을 지시했다: ① *"그림자 부분이 채도가 떨어지니 보기 싫다.
+// 포토샵 합성 기능으로 적용"* ② *"형태가 사각형이면 사각형그림자. 원형이면 원형 그림자면
+// 해."* 경위·판정표·산술 근거는 `decide/shadow-decal.ts` 의 「합성 모드」·「실루엣」 두
+// 절이다 — 여기에 다시 적지 않는다.
+//
+// ⚠ **바로 위 문단이 2회차에 *"골격별 실루엣이 사라졌다"* 라고 적고 있었고, 지금은 그것이
+// 거짓이다.** 문장을 지우는 대신 회차를 나눠 남긴다 — 사라졌다가 **되살아난** 것과 애초에
+// 없었던 것은 다음 사람에게 전혀 다른 정보다. 실제로 2회차 주석이 *"되살리려면 `paintBlob`
+// 을 종류별로 가르고 `bakeAtlas` 의 셀 복사를 되돌려야 한다"* 라고 적어 둔 덕분에 이번
+// 작업의 범위가 조사 없이 정해졌다.
+//
+// 지금 그리는 그림은 **넷**이다: 원형(`round`·`post`)은 방사형 그라디언트 한 방, 사각
+// (`box` — 벤치만)과 얼룩(`foliage` — 나무)은 픽셀 계산이다. 그래서 **셀마다 다시 그린다**
+// (2회차의 "한 번 그려 복사" 는 폐기됐다).
 //
 // ⚠ 이름이 겹치는 것이 이미 둘 있다 — 혼동하지 마라:
 //   `parts/bake.ts`        지오메트리 **병합**(정점 잇기). 라이트 베이킹이 아니다.
@@ -34,17 +46,25 @@
 //    보고할 다음 사람을 위해 여기 적는다.
 // ③ **인스턴스마다 실루엣이 같다.** 셀은 종류당 하나이고 인스턴스별 UV 가 없다. 다만
 //    **크기는 다르다** — 자세의 `sx·sz` 가 인스턴스 스케일을 반영한다.
-// ④ **밑동이 원이다.** 각진 캐스터(건물·시계탑)도 원형 그늘이 진다. 빌더도 사각 파츠
-//    (`vitrine`·`bench`)에 원형 AO 를 쓰고 있고 감독이 그 룩을 지목했다. 골격별 실루엣을
-//    되살리려면 `paintBlob` 을 종류별로 가르고 `bakeAtlas` 의 셀 복사를 되돌려야 한다.
+// ④ **[해소 — 2026-08-11]** 예전에 *"밑동이 원이다"* 로 적혀 있던 자리다. 감독 지시로
+//    실루엣이 되살아났다. 다만 **각진 캐스터가 전부 각진 그늘을 갖는 것은 아니다** —
+//    감독이 사각을 **벤치에만** 주기로 판정했고(카드 2026-08-11), 건물·시계탑·타워는
+//    지오가 박스인 채로 원형 그늘을 유지한다. 그것을 결함으로 보고할 다음 사람을 위해
+//    적는다: 그 배정은 각 파츠의 `shadowProfile` 한 줄이고, 근거는 그 줄 위 주석이다.
 // ⑤ **색 페이드가 데칼에 안 걸린다.** 검정은 어떤 색과 곱해도 검정이라 `parcel-fade` 가
 //    무력하다. 등장·소멸은 `parcel-grow` 의 스케일이 전담한다 — 그래서 그림자만 페이드
 //    없이 나타나는데, 스케일이 0에서 자라므로 화면에서는 "커지며 나타난다" 로 읽힌다.
 
 import type { PartSpec, PlacedPart, PlaceContext, ThreeNS, ResolvedLayout } from './types.js';
+import type { ShadowBlend } from '../decide/shadow-decal.js';
 import {
   atlasGrid, blobStops, BLOB_INNER_R, BLOB_OUTER_R,
+  alphaCurve, roundBoxSD, leafNoise,
+  RECT_CORNER, LEAF_DEPTH, LEAF_CELLS, SHADOW_BLEND,
 } from '../decide/shadow-decal.js';
+
+/** 실루엣 — 파츠의 `shadowProfile` 이 그대로 온다 */
+export type ShadowShape = NonNullable<PartSpec['shadowProfile']>;
 
 /**
  * 아틀라스 한 변(px). **세션 내내 상수다** — 이 값이 바뀌면 캔버스 백킹 스토어가 새로
@@ -110,6 +130,16 @@ export interface BakeOpts {
   density: number;
   /** 중간 스톱 위치 손잡이. `?shsoft` — 의미는 `SHADOW_SOFT` 주석 참조 */
   soft: number;
+  /**
+   * 합성 모드. `?shblend` — 근거는 `decide/shadow-decal.ts` 의 「합성 모드」 절.
+   *
+   * 생략하면 기본(`multiply`)이다. **옵셔널인 것은 편의가 아니라 테스트 계약이다** —
+   * 기존 호출부(`paintBlob(x, res, {res, density, soft})`)가 그대로 돌아야 원형 경로의
+   * 회귀를 이 변경과 분리해 읽을 수 있다.
+   */
+  blend?: ShadowBlend;
+  /** 잎 그림자 깊이. `?shleaf` — 생략하면 `LEAF_DEPTH` */
+  leaf?: number;
 }
 
 // ── 아틀라스 싱글턴 ─────────────────────────────────────────────────────────
@@ -126,6 +156,15 @@ interface Atlas {
   sctx: CanvasRenderingContext2D;
   texture: InstanceType<ThreeNS['Texture']>;
   material: InstanceType<ThreeNS['Material']>;
+  /**
+   * 재질을 만든 three 네임스페이스. **합성 모드를 굽기 때마다 다시 세우기 위해** 들고 있다.
+   *
+   * ⚠ 부팅 순서에 기대지 않으려고 이렇게 했다. `?shblend` 는 URL 노브라 `main.ts` 가 읽는데,
+   * 아틀라스는 첫 `asset(T)` 에서 만들어진다 — 그 둘의 선후를 규율로 지키는 대신 **매 굽기가
+   * 값을 다시 쓰게** 한다. 순서 의존은 어긴 순간 조용히 기본값으로 돌아가고, 그 증상은
+   * "URL 을 붙였는데 아무 일도 안 일어난다" 로만 드러난다.
+   */
+  T: ThreeNS;
 }
 
 let _atlas: Atlas | null = null;
@@ -162,20 +201,33 @@ function ensureAtlas(T: ThreeNS): Atlas | null {
 
   const material = new T.MeshBasicMaterial({
     map: texture,
+    // **`transparent` 는 `multiply` 에서도 true 다.** 이 플래그는 "알파를 쓴다" 가 아니라
+    // 렌더 큐를 정한다 — false 면 불투명 큐로 가서 **지면보다 먼저** 그려질 수 있고,
+    // 그러면 곱할 대상(`dst`)이 아직 없다. 곱하기 합성은 밑에 그려진 것이 있어야 성립한다.
     transparent: true,
     // 그림자는 깊이를 쓰지 않는다. 쓰면 데칼끼리·지면과 z-fighting 이 나고, 안 써도
-    // 될 이유가 있다 — 검정을 알파 블렌딩하면 결과가 `(1−a₁)(1−a₂)·dst` 라
-    // **교환법칙이 성립한다.** 겹치는 순서가 프레임마다 뒤집혀도 화면이 안 바뀐다.
-    // (빌더의 AO 재질도 같은 이유로 `depthWrite:false` 다.)
+    // 될 이유가 있다 — **두 합성 모드 모두 교환법칙이 성립한다.** 알파 블렌딩은
+    // `(1−a₁)(1−a₂)·dst`, 곱하기는 `v₁·v₂·dst` 로 둘 다 곱의 순서를 안 탄다. 겹치는
+    // 순서가 프레임마다 뒤집혀도 화면이 안 바뀐다.
+    // ⚠ 예전 주석은 근거를 *"검정을 알파 블렌딩하면"* 으로만 적어 **Normal 을 전제**했다.
+    // 합성 모드가 노브가 된 이상 그 근거는 절반만 참이라 양쪽을 다 적는다.
     depthWrite: false,
-    // 안개는 **켠다.** 먼 그림자가 안개색으로 수렴하는데, 그 거리에서는 지면도 같은
-    // 안개색이라 결과적으로 사라진다. 끄면 안개 속에서 검은 얼룩만 남는다.
+    // 안개는 **켠다 — 곱하기에서도 맞다.** three fog 는 프래그먼트 색을 안개색으로 섞으므로
+    // (`mix(color, fogColor, f)`) 먼 데칼의 곱할 색이 안개색으로 수렴한다. 안개색이 밝으면
+    // 곱해도 밑이 안 변해 그림자가 사라지고, 그 거리에서는 지면도 이미 안개색이라 결과가
+    // 같다. ⚠ 안개색이 **어두운** 시간대(밤)에는 먼 지면이 한 번 더 어두워질 수 있는데,
+    // 밤은 농도 자체가 0.35 배라 폭이 작다 — 실기기에서 보이면 `?shblend=normal` 로 분리해
+    // 판정한다(그 노브가 대조군 역할을 겸한다).
     fog: true,
-    // 조명을 받지 않는다(Basic). 시간대에 따른 농도는 **캔버스 알파**가 담당한다 —
+    // 합성 모드. 굽는 그림과 **짝이다** — `multiply` 는 흰 바탕 회색을, `normal` 은
+    // 투명 바탕 검정을 굽는다. 어긋나면 화면이 전면 검정이 되거나 그림자가 사라진다.
+    // `bakeAtlas` 가 매 굽기마다 이 값을 다시 세운다(부팅 순서에 기대지 않기 위해서다).
+    blending: SHADOW_BLEND === 'multiply' ? T.MultiplyBlending : T.NormalBlending,
+    // 조명을 받지 않는다(Basic). 시간대에 따른 농도는 **캔버스**가 담당한다 —
     // 조명에 맡기면 밤에 그림자가 밝아지는 모순이 생긴다.
   });
 
-  _atlas = { canvas: a.c, ctx: a.x, scratch: s.c, sctx: s.x, texture, material };
+  _atlas = { canvas: a.c, ctx: a.x, scratch: s.c, sctx: s.x, texture, material, T };
   return _atlas;
 }
 
@@ -197,20 +249,109 @@ function ensureAtlas(T: ThreeNS): Atlas | null {
  * 굽기를 반복할수록 알파가 누적돼 `?shdark` 가 죽는다 — 앞 회차에 겹당 알파 누적으로
  * 정확히 그 결함을 겪었다(density 0.45 가 알파 248/255 로 구워졌다).
  */
-export function paintBlob(x: CanvasRenderingContext2D, res: number, o: BakeOpts): void {
+export function paintBlob(
+  x: CanvasRenderingContext2D, res: number, o: BakeOpts, shape: ShadowShape = 'round',
+): void {
+  const mul = (o.blend ?? SHADOW_BLEND) === 'multiply';
   x.save();
   x.clearRect(0, 0, res, res);
-  const c = res * 0.5;
-  const g = x.createRadialGradient(
-    c, c, res * BLOB_INNER_R,
-    c, c, res * BLOB_OUTER_R,
-  );
-  for (const s of blobStops(o.soft, o.density)) {
-    g.addColorStop(s.t, `rgba(0,0,0,${s.a.toFixed(4)})`);
+  if (shape === 'box' || shape === 'foliage') {
+    paintShaped(x, res, o, shape, mul);
+  } else {
+    // ── 원형(`round`·`post`) — 이 경로는 **한 줄도 안 바뀌었다** ─────────────
+    // 곱하기는 흰 바탕을 먼저 깔아 얻는다. `source-over` 로 검정 알파를 얹으면 결과가
+    // `255·(1−a)` 회색이고, 그것이 곧 `dst×src = dst·(1−a)` 로 Normal 과 **같은 밝기**다.
+    // 스톱 계산을 뒤집을 필요가 없다 — 뒤집으면 두 모드가 서로 다른 산술을 타게 되고,
+    // 그러면 `?shblend` 가 대조군 구실을 못 한다(합성 말고도 달라져 버린다).
+    if (mul) {
+      x.fillStyle = '#ffffff';
+      x.fillRect(0, 0, res, res);
+    }
+    const c = res * 0.5;
+    const g = x.createRadialGradient(
+      c, c, res * BLOB_INNER_R,
+      c, c, res * BLOB_OUTER_R,
+    );
+    for (const s of blobStops(o.soft, o.density)) {
+      g.addColorStop(s.t, `rgba(0,0,0,${s.a.toFixed(4)})`);
+    }
+    x.fillStyle = g;
+    x.fillRect(0, 0, res, res);
   }
-  x.fillStyle = g;
-  x.fillRect(0, 0, res, res);
   x.restore();
+}
+
+/**
+ * 사각·얼룩 실루엣을 **픽셀로** 그린다.
+ *
+ * ── 왜 캔버스 API 가 아니라 픽셀인가 — 실패 이력 둘을 피한 것이다 ───────────
+ * `createRadialGradient` 는 원형만 되므로 사각의 부드러운 가장자리는 다른 수단이 필요한데,
+ * 이 저장소가 이미 데인 둘이 있다:
+ *   ① **`filter: blur()`** — 캔버스 경계 밖 번짐이 잘려 가장자리에 직선이 선다. 감독
+ *      반려(*"딱딱하다"*)의 직접 원인이었다.
+ *   ② **등고선 스택** — 겹마다 알파가 8비트로 반올림돼 오차가 겹 수만큼 증폭된다. 스톱을
+ *      12→48 로 늘려도 줄무늬가 안 사라진 것이 그 증거다(`blobStops` 주석).
+ * 픽셀 계산은 **양자화가 마지막 한 번뿐**이라 둘 다 성립하지 않는다. 그리고 모서리 반경·
+ * 얼룩 깊이를 정확히 제어할 수 있어 판정을 노브로 열 수 있다.
+ *
+ * ── 원형과 **같은 곡선**을 탄다 ─────────────────────────────────────────────
+ * `rad` 를 셀 한 변 기준 "반경" 으로 통일한다 — 원은 `hypot`, 사각은 `OUTER_R + SDF` 다.
+ * 둘 다 **중심에서 0, 외곽에서 `BLOB_OUTER_R`** 이 되도록 맞췄으므로 그 뒤 알파 매핑은
+ * 같은 식이고, 한 화면에서 두 종류의 페이드가 섞여 보이지 않는다.
+ *
+ * ── 비용 ────────────────────────────────────────────────────────────────────
+ * `res²` 픽셀 × 이 실루엣을 쓰는 셀 수(지금 둘 — 벤치·나무)다. 최악 `?shres=128` 에서
+ * 2×16,384 = 32,768 픽셀이고, 굽기 예산 경고(8ms)는 `update` 가 실측해 `ev:그림자굽기지연`
+ * 으로 올린다 — **추측으로 괜찮다고 적지 않는다.**
+ */
+function paintShaped(
+  x: CanvasRenderingContext2D, res: number, o: BakeOpts,
+  shape: 'box' | 'foliage', mul: boolean,
+): void {
+  const img = x.createImageData(res, res);
+  const data = img.data;
+  const curve = alphaCurve(o.soft, o.density);
+  // 얼룩 깊이. `box` 에는 0 이다 — 벤치에 잎 그림자가 질 이유가 없다.
+  const rawLeaf = o.leaf ?? LEAF_DEPTH;
+  const leaf = shape === 'foliage' && Number.isFinite(rawLeaf)
+    ? Math.min(1, Math.max(0, rawLeaf)) : 0;
+  // 그라디언트 오프셋으로 되돌리는 역수. `blobRadiusAt` 의 역함수다 — 그 함수가 순방향
+  // (`INNER + s·(OUTER−INNER)`)이므로 여기 상수를 다시 적는 것이 아니라 되푸는 것이다.
+  const span = BLOB_OUTER_R - BLOB_INNER_R;
+  const inv = span > 0 ? 1 / span : 0;
+  const corner = BLOB_OUTER_R * RECT_CORNER;
+
+  for (let py = 0; py < res; py++) {
+    for (let px = 0; px < res; px++) {
+      // 셀 한 변을 1 로 본 중심 기준 좌표. **절대 픽셀이 없다** — `?shres` 를 낮춰도
+      // 실루엣이 안 무너지는 것이 이 파일의 계약이다(`paintBlob` 머리 주석).
+      const u = (px + 0.5) / res - 0.5;
+      const v = (py + 0.5) / res - 0.5;
+      const rad = shape === 'box'
+        // 사각 반폭을 `BLOB_OUTER_R` 로 잡아 **외곽 계약을 원과 공유**한다. 이 값이
+        // 곧 `DECAL_SCALE`·`BLOB_SCALE` 이 가정하는 그 반경이라, 사각으로 바꿔도 데칼
+        // 평면 크기 계산이 그대로 성립한다(그러지 않으면 벤치 그림자만 크기가 어긋난다).
+        ? BLOB_OUTER_R + roundBoxSD(u, v, BLOB_OUTER_R, BLOB_OUTER_R, corner)
+        : Math.hypot(u, v);
+      let a = curve((rad - BLOB_INNER_R) * inv);
+      if (leaf > 0) {
+        // 잎 사이로 새는 빛 — 알파를 **깎는다**. 가장자리는 이미 `a→0` 이라 곱해도
+        // 0 이므로 하드컷이 생기지 않는다(노이즈를 더하는 방식이면 생긴다).
+        a *= 1 - leaf * leafNoise(u * LEAF_CELLS, v * LEAF_CELLS);
+      }
+      const i = (py * res + px) * 4;
+      if (mul) {
+        // 곱할 회색. 알파는 쓰지 않는다 — `MultiplyBlending` 이 안 보기 때문이고,
+        // 그래서 **셀 전체가 불투명**해야 한다(투명 자리는 곱셈에서 검정으로 읽힌다).
+        const g = Math.round(255 * (1 - a));
+        data[i] = g; data[i + 1] = g; data[i + 2] = g; data[i + 3] = 255;
+      } else {
+        data[i] = 0; data[i + 1] = 0; data[i + 2] = 0;
+        data[i + 3] = Math.round(255 * a);
+      }
+    }
+  }
+  x.putImageData(img, 0, 0);
 }
 
 /**
@@ -219,25 +360,42 @@ export function paintBlob(x: CanvasRenderingContext2D, res: number, o: BakeOpts)
  * 만드는 GPU 객체가 **0** 인 것이 계약이다 — 같은 캔버스에 다시 그리고 `needsUpdate` 만
  * 세운다. `canvas.width` 를 건드리지 않는 이유는 파일 머리 `SHADOW_ATLAS_PX` 주석에 있다.
  *
- * ⚠ **셀마다 다시 그리지 않는다.** 모든 셀이 같은 원형 블롭이므로 스크래치에 한 번 그려
- * 셀 수만큼 `drawImage` 한다 — 굽기 비용이 셀 수와 무관해졌다(앞 회차는 셀마다 등고선을
- * 10~16겹 그렸다). 골격별 실루엣을 되살리는 날 이 루프를 되돌린다(§ 남는 사각 ④).
+ * ⚠ **셀마다 다시 그린다 — 2026-08-11 에 되돌렸다.** 직전 판본은 *"모든 셀이 같은 원형
+ * 블롭이므로 한 번 그려 복사한다"* 였고, 같은 주석이 *"골격별 실루엣을 되살리는 날 이
+ * 루프를 되돌린다(§ 남는 사각 ④)"* 라고 적어 두었다. **감독이 그날을 불렀다** — *"형태가
+ * 사각형이면 사각형그림자. 원형이면 원형 그림자면 해."* 그래서 굽기 비용이 다시 셀 수에
+ * 비례한다. 그 대가는 `update` 의 8ms 경고 축이 실측으로 지킨다.
  *
- * @param cells 셀 수 = 캐스터 종류 수
+ * @param shapes 셀별 실루엣. **길이가 곧 셀 수**이고 순서는 `casterProfiles` 와 같아야
+ *               한다 — 어긋나면 벤치 자리에 나무 얼룩이 구워진다.
  * @returns 채운 셀 수. 캔버스가 없으면 0
  */
-export function bakeAtlas(cells: number, o: BakeOpts): number {
+export function bakeAtlas(shapes: readonly ShadowShape[], o: BakeOpts): number {
   const at = _atlas;
   if (!at) return 0;
-  const n = Math.max(0, Math.floor(cells));
+  const n = shapes.length;
   // 하한은 상수가 소유한다 — 근거는 `SHADOW_DRAW_MIN` 주석의 실측표.
   const raw = Number.isFinite(o.res) ? o.res : SHADOW_DRAW_PX;
   const res = Math.round(Math.min(SHADOW_DRAW_MAX, Math.max(SHADOW_DRAW_MIN, raw)));
   const grid = atlasGrid(n, SHADOW_ATLAS_PX);
+
+  // 합성 모드를 **굽기마다** 다시 세운다. 이유는 `Atlas.T` 주석(부팅 순서 비의존).
+  // 굽는 그림과 재질이 어긋나면 화면이 전면 검정이 되거나 그림자가 통째로 사라지므로,
+  // 둘을 같은 함수 안에서 한 값(`blend`)으로 정하는 것이 이 배선의 요점이다.
+  const blend = o.blend ?? SHADOW_BLEND;
+  const mat = at.material as unknown as { blending: number; needsUpdate: boolean };
+  const want = blend === 'multiply' ? at.T.MultiplyBlending : at.T.NormalBlending;
+  if (mat.blending !== want) {
+    mat.blending = want;
+    // 셰이더 프로그램이 아니라 블렌딩 상태만 바뀌지만, three 는 재질 캐시 키에 이것을
+    // 넣으므로 갱신 신호를 준다. 안 주면 **첫 전환이 다음 프레임에 안 반영된다.**
+    mat.needsUpdate = true;
+  }
+
   at.ctx.clearRect(0, 0, SHADOW_ATLAS_PX, SHADOW_ATLAS_PX);
-  paintBlob(at.sctx, res, o);
   for (let i = 0; i < n; i++) {
     const cell = grid.cellOf(i);
+    paintBlob(at.sctx, res, { ...o, blend }, shapes[i]!);
     // 스크래치의 `res × res` 만 잘라 셀 크기로 확대한다. `res` 가 작을수록 뭉개진다.
     at.ctx.drawImage(at.scratch, 0, 0, res, res, cell.px, cell.py, cell.size, cell.size);
   }
@@ -271,17 +429,29 @@ export function shadowParts(base: readonly PartSpec[]): PartSpec[] {
   return casters.map((c, i) => makeShadowPart(c, i, casters.length));
 }
 
+/** 아틀라스 셀 하나 = 캐스터 종류 하나 */
+export interface CasterCell {
+  kind: string;
+  /** 이 종류의 그림자 실루엣. 파츠가 `shadowProfile` 로 신고한 값 그대로다 */
+  shape: ShadowShape;
+}
+
 /**
- * 캐스터 kind 목록. 굽는 쪽·놓는 쪽이 이 **순서대로** 셀을 잡는다 — 격자 인덱스의 SSOT.
+ * 캐스터 목록. 굽는 쪽·놓는 쪽이 이 **순서대로** 셀을 잡는다 — 격자 인덱스의 SSOT.
  *
- * ⚠ 예전 이름은 `casterProfiles` 였고 `{kind, profile}` 을 돌려줬다. 골격
- * (`round`/`box`/`post`)은 방향성 실루엣을 그릴 때만 쓰였고 원형 블롭에는 대응물이 없다
- * (§ 남는 사각 ④). **`shadowProfile` 필드 자체는 파츠 선언에 남긴다** — 캐스터 신고 수단
- * 이고, 레지스트리 테스트가 `footprint() > 0 ⇔ shadowProfile` 동치를 그것으로 본다.
- * 값이 다시 필요해지는 날 여기 시그니처만 되돌리면 된다.
+ * ⚠ **2026-08-11 에 `casterKinds`(kind 만) → 이 형태로 되돌렸다.** 직전 판본이 골격을
+ * 떨어뜨리면서 *"값이 다시 필요해지는 날 여기 시그니처만 되돌리면 된다"* 라고 적어 두었고,
+ * 감독 지시(*"형태가 사각형이면 사각형그림자"*)로 그날이 왔다. 그때 적어 둔 대로 **시그니처
+ * 하나만** 되돌렸다 — 파츠 선언은 손댈 필요가 없었다(신고가 계속 살아 있었기 때문이다).
+ * 미래를 위해 남긴 메모가 실제로 값을 한 이 사례를 지운다면, 다음 사람은 같은 판단에서
+ * 필드를 지우는 쪽을 고를 것이다.
  */
-export function casterKinds(base: readonly PartSpec[]): string[] {
-  return base.filter((s) => s.shadowProfile).map((s) => s.kind);
+export function casterProfiles(base: readonly PartSpec[]): CasterCell[] {
+  const out: CasterCell[] = [];
+  for (const s of base) {
+    if (s.shadowProfile) out.push({ kind: s.kind, shape: s.shadowProfile });
+  }
+  return out;
 }
 
 function makeShadowPart(caster: PartSpec, index: number, count: number): PartSpec {
