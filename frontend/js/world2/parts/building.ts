@@ -6,6 +6,7 @@
 import type { PartSpec, PlacedPart } from './types.js';
 import {
   roadDirs, pickInQuadrant, shuffledQuadrants, SETBACK, LAMP_CLEARANCE, EAVE,
+  type Dir,
 } from './road-topology.js';
 import { isPlaza } from './plaza.js';
 import { isTowerParcel } from './zoning.js';
@@ -31,6 +32,46 @@ const MAX_SIDE = 6;
 // 하면서 미러링이 생겼기 때문이다(검수관 블로커 2026-08-02 B1). 이 값이 왜 있는지와
 // 무엇을 잘못했다 고쳤는지의 기록도 그 파일에 함께 옮겼다 —
 // **사고 이력은 값을 따라간다.** 값만 옮기고 이력을 남기면 다음 사람이 값만 본다.
+
+/**
+ * 재표집 횟수. **자리를 못 찾으면 그 채는 안 선다** — 늘려도 없는 자리가 생기지 않는다.
+ *
+ * 12 인 이유: 사분면 넷을 세 바퀴 돈다. 자리가 있으면 대개 첫 바퀴에 잡히고, 세 바퀴를
+ * 다 헛돌면 파셀이 이미 포화한 것이다. 이 값을 올리면 포화 근처에서 배치가 조금 촘촘해지고
+ * 비용이 선형으로 는다 — `?density=1`(기본)에서는 **한 번도 안 불린다**.
+ */
+const FREE_TRIES = 12;
+
+/**
+ * 이미 놓인 것들을 피해 자리를 찾는다. 못 찾으면 `null`.
+ *
+ * 사분면을 순환하며(`quads[(i + t) % 4]`) 표집하는 것은 한 사분면만 두드리다 실패하는
+ * 것을 막기 위해서다 — 붐비는 쪽과 빈 쪽이 갈리는데 그것을 모르고 시작하기 때문이다.
+ */
+function findFree(
+  rnd: () => number,
+  halfX: number,
+  halfZ: number,
+  dirs: readonly Dir[],
+  inset: number,
+  reach: number,
+  quads: readonly number[],
+  i: number,
+  others: readonly PlacedPart[],
+  radiusOf: (p: PlacedPart) => number,
+): { x: number; z: number } | null {
+  for (let t = 0; t < FREE_TRIES; t++) {
+    const pos = pickInQuadrant(rnd, halfX, halfZ, dirs, quads[(i + t) % quads.length], inset);
+    let ok = true;
+    for (const p of others) {
+      const r = radiusOf(p);
+      if (r <= 0) continue; // 평면(지면·도로)은 겹침 개념이 없다
+      if (Math.hypot(pos.x - p.x, pos.z - p.z) < reach + r) { ok = false; break; }
+    }
+    if (ok) return pos;
+  }
+  return null;
+}
 
 export const building: PartSpec = {
   kind: 'building',
@@ -63,7 +104,7 @@ export const building: PartSpec = {
 
   maxPerParcel: (o) => o.maxBuildings,
 
-  place: ({ px, pz, rnd, o, halfX, halfZ }) => {
+  place: ({ px, pz, rnd, o, halfX, halfZ, placed, radiusOf }) => {
     // 광장에는 짓지 않는다. 채수 하한을 1로 내려도 어느 파셀에나 한 채는 서므로,
     // "아무것도 없는 트인 곳" 은 이 예외로만 생긴다.
     if (isPlaza(px, pz)) return [];
@@ -104,7 +145,26 @@ export const building: PartSpec = {
       const outerX = Math.min(halfX, o.cellX / 2 - reach);
       const outerZ = Math.min(halfZ, o.cellZ / 2 - reach);
 
-      const pos = pickInQuadrant(rnd, outerX, outerZ, dirs, quads[i], inset);
+      // ── 사분면이 동나면 자리를 찾아 놓는다 (2026-08-12) ──────────────────
+      // `i < 4` 는 **한 줄도 안 바뀐다** — 사분면 1:1 배정이 겹침을 구조적으로 막는
+      // 그 경로 그대로다. `?density=1`(기본) 에서는 `n ≤ 4` 라 아래 분기를 절대 안 탄다.
+      //
+      // 5채째부터가 문제였다. `shuffledQuadrants` 는 언제나 4개를 돌려주므로
+      // `quads[4]` 는 `undefined` 이고, `road-topology.ts` 의 `quad & 1` 은
+      // `undefined & 1 === 0` 이라 **예외도 NaN 도 없이 사분면 0 으로 떨어졌다.**
+      // 순열이라 거기엔 이미 건물이 서 있다 — 실측: `density=2` 에서 겹침 3,192건
+      // (21×21 파셀·3 tier, 최대 4.27m). 화면에만 나타나는 형태라 아무도 못 봤다.
+      //
+      // **왜 서브셀 분할이 아닌가**: 사분면을 2×2 로 쪼개면 폭이 3.3m 인데 건물 반경은
+      // 최대 3.6m 다 — 자리가 기하학적으로 부족해 쪼개도 겹친다. 공간이 없는데 규칙만
+      // 바꾸는 것은 답이 아니다. 그래서 **자리가 되는 만큼만 놓는다**(나무가 이미 쓰는
+      // 방식 — `tree.ts` 의 `freeSlots`). 밀도를 올리면 채수가 상한이 아니라 **파셀이
+      // 감당하는 만큼**에서 포화한다. 그것이 정직한 동작이다.
+      const pos = i < 4
+        ? pickInQuadrant(rnd, outerX, outerZ, dirs, quads[i], inset)
+        : findFree(rnd, outerX, outerZ, dirs, inset, reach, quads, i, [...placed, ...out], radiusOf);
+      // 자리가 없으면 이 채는 포기한다.
+      if (!pos) continue;
       const tone = Math.floor(rnd() * 5);
       out.push({ kind: 'building', x: pos.x, z: pos.z, y: 0, ry, sx: w, sy: h, sz: d, tone });
     }
