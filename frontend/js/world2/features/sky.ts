@@ -10,7 +10,7 @@
 // 지금 `sky.js`는 라이브 `world.js`도 쓰는 공유 파일이라 건드리면 라이브가 위험하다.
 // 이 계약이 먼저 서 있으면, 쪼갠 조각들을 여기에 얹기만 하면 된다.
 
-import { SkySystem } from '../systems/sky.js';
+import { SkySystem, SKY_BLUE, SKY_BLUE_MAX, CLOUD_CURVE } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
 import {
   nightness, lampGlow, TIMES, type SkyTime,
@@ -113,6 +113,19 @@ export const skyFeature: Feature = {
         // `0` 이면 `sky.js` 가 팔레트를 그대로 돌려주므로 라이브와 완전히 같다 —
         // 되돌리는 방법이 `?fogsky=0` 하나로 끝난다.
         fogTint: readNum('fogsky', FOG_SKY_TINT, 0, 1),
+
+        // ── 파란 하늘 (`?skyblue=`) · 둥근 지구의 구름 (`?cloudcurve=`) ──
+        // 감독 지시 2026-08-12: *"파란 하늘 만들어보자. 지금 하늘 색이 파랗지 않아."*
+        // + *"지구는 둥글고 구름은 지구를 중심으로 구형으로 있어서 하늘의 구름이 지금과
+        // 다르게 보여."*
+        //
+        // 둘 다 **0 이면 옛 화면 그대로**라 되돌림이 링크 하나다. 이 노브를 여는 이유는
+        // 위 `fogsky` 와 같다 — 색·룩은 수치로 정할 수 없고 감독 화면이 유일한 게이트인데,
+        // 헤드리스는 WebGL 이고 감독 기기는 WebGPU 라 여기서 본 것이 저기서 같지 않다.
+        //
+        // 값의 뜻·수식은 각각 `sky.js` 의 `dayStops`·`cloudElev` 머리말 한 곳이다.
+        skyBlue: readNum('skyblue', SKY_BLUE, 0, SKY_BLUE_MAX),
+        cloudCurve: readNum('cloudcurve', CLOUD_CURVE, 0, 1),
 
         // ── 수평선 밴드 (`?hz=`) ─────────────────────────────────────────
         // 감독 실기기 2026-08-05, 태스크 #202: 바다에서 하늘과 바다의 경계가 없다.
