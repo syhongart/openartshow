@@ -32,6 +32,7 @@ import type { Object3D } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import type { EditSession, LoadProgress, OverlayEntry, OverlayHost } from '../edit/types.js';
 import { loadOverlay, type OverlayItem } from '../decide/overlay.js';
+import { disableMatExtensions } from '../systems/glb-material.js';
 import { readNum } from '../url-knob.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { surfaceY } from '../parts/surface.js';
@@ -166,6 +167,21 @@ export const overlayFeature: Feature = {
 
       const p = loadGLB!(url, relay)
         .then((m) => {
+          // ⚠ **이 한 줄이 없으면 감독 실기기에서 화면이 멈춘다.**
+          //
+          // `three/webgpu` 는 `sheen`·`clearcoat`·`anisotropy`·`ior` 를 처리하다 렌더
+          // 파이프라인 생성에 실패하고, 그러면 **그 뒤 모든 프레임이 통째로 무효**가 된다
+          // (2026-08-12 감독 콘솔: `TSL.NormalNode: Vertex attribute "normal" not found` →
+          // `[Invalid RenderPipeline "renderPipeline_m.DarkShine_*"]` 가 매 프레임).
+          //
+          // 이것은 새 발견이 아니다 — **감독이 2026-07-29 에 이미 판정한 것**이고
+          // (`raw` 안 보임 / `noext` 보임), `glb-city` 는 그때 기본을 `noext` 로 옮겼다.
+          // **오버레이만 그 처방을 안 받고 있었다.** 같은 자산(`lab-space.glb`)이 그 확장을
+          // 전부 쓰는데도.
+          //
+          // 헤드리스는 WebGL 이라 이 축을 **원리적으로 못 본다.** 그래서 게이트가 아니라
+          // *"GLB 를 놓는 경로는 반드시 이 함수를 지난다"* 는 구조가 유일한 방어다.
+          disableMatExtensions(m);
           // GLB 의 `castShadow`/`receiveShadow` 기본값은 false 다 — 켜지 않으면 감독이 놓은
           // 물건만 그림자 없이 서 있게 된다(`glb-city.ts` 가 같은 자리에서 한 번 데였다).
           m.traverse((o: Object3D) => { o.castShadow = true; o.receiveShadow = true; });

@@ -19,7 +19,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { glbCityFeature, gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, EXT_OFF } from '../frontend/js/world2/features/glb-city.js';
+import { EXT_OFF } from '../frontend/js/world2/systems/glb-material.js';
+import { glbCityFeature, gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS } from '../frontend/js/world2/features/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 import { PLAZA_WEST, isCentralPlaza } from '../frontend/js/world2/decide/grid.js';

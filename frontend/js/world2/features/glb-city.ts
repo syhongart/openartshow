@@ -77,6 +77,7 @@ import type { Object3D, Scene } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import { readNum, readEnum } from '../url-knob.js';
 import { PLAZA_WEST } from '../decide/grid.js';
+import { EXT_OFF, disableMatExtensions } from '../systems/glb-material.js';
 
 /** 실험 상한. 이보다 크면 브라우저가 죽는 쪽에 가까워 측정 자체가 안 된다 */
 const MAX_COPIES = 200;
@@ -544,16 +545,9 @@ export const CARRY_MAPS = [
   'side', 'flatShading', 'vertexColors',
 ] as const;
 
-/** 확장이 만드는 속성. `noext` 는 이 값들만 **끄고** 재질 클래스는 그대로 둔다. */
-export const EXT_OFF: Record<string, number> = {
-  sheen: 0, sheenRoughness: 0,
-  clearcoat: 0, clearcoatRoughness: 0,
-  specularIntensity: 1, // 1 이 "확장 없음"과 같은 상태다(0 은 반사를 아예 죽인다)
-  anisotropy: 0,
-  iridescence: 0,
-  transmission: 0,
-  ior: 1.5, // glTF 기본값
-};
+// `EXT_OFF`·`disableMatExtensions` 는 `systems/glb-material.ts` 가 소유한다 — 오버레이도
+// 같은 처방이 필요한데 **다른 기능이 `glb-city` 를 import 하지 않는다**는 규율이 게이트로
+// 집행되기 때문이다(아래 `noext` 분기 참조).
 
 export const MAT_MODES = ['swap', 'std', 'noext', 'raw'] as const;
 export type MatMode = (typeof MAT_MODES)[number];
@@ -567,24 +561,7 @@ function applyMatMode(model: Object3D, THREE: ThreeNS, mat: MatMode, flat: boole
   if (mat === 'raw') return 0;
   if (mat === 'swap') return swapMaterials(model, THREE, flat, false);
   if (mat === 'std') return swapMaterials(model, THREE, flat, true);
-  // noext — 클래스는 그대로 두고 확장 값만 끈다. 재질 인스턴스를 새로 만들지 않으므로
-  // 개수도 그대로다(clone 이 참조를 공유하니 한 번 고치면 N 채 전부에 적용된다).
-  const seen = new Set<unknown>();
-  let n = 0;
-  model.traverse((o: Object3D & { isMesh?: boolean; material?: unknown }) => {
-    if (!o.isMesh || !o.material) return;
-    const list = Array.isArray(o.material) ? o.material : [o.material];
-    for (const m of list as Array<Record<string, unknown>>) {
-      if (!m || seen.has(m)) continue;
-      seen.add(m);
-      let touched = false;
-      for (const [k, v] of Object.entries(EXT_OFF)) {
-        if (typeof m[k] === 'number') { m[k] = v; touched = true; }
-      }
-      if (touched) n++;
-    }
-  });
-  return n;
+  return disableMatExtensions(model);
 }
 
 interface SrcMat { map?: unknown; color?: unknown; roughness?: number }

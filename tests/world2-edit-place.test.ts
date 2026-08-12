@@ -300,4 +300,62 @@ describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
   it('진행 콜백을 loadAsync 에 실제로 넘긴다', () => {
     expect(src).toContain('loader.loadAsync(url, onProgress)');
   });
+
+  // ── 실기기 WebGPU 사각 (2026-08-12 감독 신고) ────────────────────────────
+  // `three/webgpu` 는 `sheen`·`clearcoat`·`anisotropy`·`ior` 를 처리하다 렌더 파이프라인
+  // 생성에 실패하고, 그러면 그 뒤 **모든 프레임이 무효**가 된다. 감독이 2026-07-29 에
+  // 이미 판정한 것(`raw` 안 보임 / `noext` 보임)인데 오버레이만 그 처방을 안 받고 있었다.
+  //
+  // ⚠ **헤드리스는 WebGL 이라 이 축을 원리적으로 못 잰다.** 그래서 «화면이 멀쩡한가» 가
+  // 아니라 «놓는 경로가 그 함수를 지나는가» 를 잰다. 약한 축인 것을 알고 쓴다 —
+  // 실기기 판정은 감독 확인이 유일하다.
+  it('로드한 모델이 확장 끄기를 거친다 — 안 거치면 실기기에서 렌더가 죽는다', () => {
+    expect(src).toContain("import { disableMatExtensions } from '../systems/glb-material.js'");
+    expect(src).toContain('disableMatExtensions(m);');
+  });
+
+  it('확장 끄기가 modelOf 안에 있다 — 캐시된 뒤에 걸면 이미 늦다', () => {
+    const modelOf = src.slice(src.indexOf('function modelOf('), src.indexOf('function applyEntry('));
+    expect(modelOf).toContain('disableMatExtensions(m);');
+  });
+});
+
+describe('확장 끄기 자체가 값을 실제로 끄는가', () => {
+  it('EXT_OFF 의 키를 가진 재질만 골라 값을 바꾼다', async () => {
+    const { disableMatExtensions, EXT_OFF } = await import('../frontend/js/world2/systems/glb-material.js');
+
+    // 감독 실기기 로그에 나온 그 재질을 흉내낸다 — 확장 넷을 다 켠 상태
+    const hot = { sheen: 1, clearcoat: 0.8, anisotropy: 0.5, ior: 2.4, color: 0xffffff };
+    const cold = { color: 0x808080 };  // 확장이 없는 재질은 안 건드려야 한다
+    const coldBefore = { ...cold };
+
+    const model = {
+      traverse(fn: (o: unknown) => void) {
+        fn({ isMesh: true, material: hot });
+        fn({ isMesh: true, material: cold });
+        fn({ isMesh: false, material: { sheen: 1 } });  // Mesh 가 아니면 건드리지 않는다
+      },
+    };
+    const n = disableMatExtensions(model as never);
+
+    expect(n, '확장을 가진 재질 하나만 바뀐다').toBe(1);
+    expect(hot.sheen).toBe(EXT_OFF.sheen);
+    expect(hot.clearcoat).toBe(EXT_OFF.clearcoat);
+    expect(hot.anisotropy).toBe(EXT_OFF.anisotropy);
+    expect(hot.ior).toBe(EXT_OFF.ior);
+    expect(hot.color, '확장이 아닌 값은 그대로다').toBe(0xffffff);
+    expect(cold).toEqual(coldBefore);
+  });
+
+  it('같은 재질을 두 번 세지 않는다 — clone 이 참조를 공유한다', async () => {
+    const { disableMatExtensions } = await import('../frontend/js/world2/systems/glb-material.js');
+    const shared = { sheen: 1 };
+    const model = {
+      traverse(fn: (o: unknown) => void) {
+        fn({ isMesh: true, material: shared });
+        fn({ isMesh: true, material: shared });
+      },
+    };
+    expect(disableMatExtensions(model as never)).toBe(1);
+  });
 });
