@@ -23,7 +23,8 @@
 // 이 파일 작성 직후 6건을 되살려 검출력을 쟀다. 결과는 커밋 메시지와 PR 본문에 있다.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { dirname, resolve as pathResolve } from 'node:path';
 import {
   emptyOverlay, loadOverlay, validateOverlay, normalizeOverlay,
   OVERLAY_VERSION, S_MAX, POS_LIMIT,
@@ -39,6 +40,46 @@ function part(over: Partial<PlacedPart> = {}): PlacedPart {
 
 function parcel(over: Partial<FrozenParcel> = {}): FrozenParcel {
   return { px: 3, pz: -7, parts: [part()], ...over };
+}
+
+// ── import 그래프 추적 (팀장 집행 축 ①) ─────────────────────────────────────
+// 소스에서 **모듈 지정자 문자열**을 전부 뽑는다. `from '…'` · `import('…')` ·
+// `export … from '…'` 이 한 정규식에 잡히고, 줄바꿈이 어디에 있든 상관없다.
+function specifiersOf(file: string): string[] {
+  const src = readFileSync(file, 'utf8');
+  return [...src.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+}
+
+/** 상대 지정자를 실제 파일로. 이 저장소는 `.ts` 소스를 `.js` 로 가리킨다 */
+function resolvePath(fromDir: string, spec: string): string | null {
+  if (!spec.startsWith('.')) return null; // 패키지(three 등)는 따라가지 않는다
+  const base = pathResolve(fromDir, spec);
+  for (const c of [base.replace(/\.js$/, '.ts'), base, `${base}.ts`, `${base}/index.ts`]) {
+    if (existsSync(c) && statSync(c).isFile()) return c;
+  }
+  return null;
+}
+
+function listFiles(dir: string): string[] {
+  return readdirSync(dir)
+    .filter((n) => n.endsWith('.ts'))
+    .map((n) => `${dir}/${n}`);
+}
+
+/** 뿌리에서 **전이적으로** 닿는 소스 전부 */
+function reachableFrom(roots: string[]): Set<string> {
+  const seen = new Set<string>();
+  const queue = roots.map((r) => pathResolve(r));
+  while (queue.length > 0) {
+    const f = queue.pop()!;
+    if (seen.has(f) || !existsSync(f)) continue;
+    seen.add(f);
+    for (const spec of specifiersOf(f)) {
+      const next = resolvePath(dirname(f), spec);
+      if (next && !seen.has(next)) queue.push(next);
+    }
+  }
+  return seen;
 }
 
 describe('v2 · 파셀 동결을 담는다', () => {
@@ -195,12 +236,26 @@ describe('v2 · v1 파일을 무손실로 올려 읽는다', () => {
 
 // ── 팀장 집행 축 ①③ (2026-08-12 판정) ──────────────────────────────────────
 describe('파셀 동결 예외가 «전역» 으로 새지 않는다', () => {
-  it('① 생성기가 동결 계약을 import 하지 않는다 — 동결은 생성기 바깥에서만 적용된다', () => {
-    const gen = readFileSync('frontend/js/world2/decide/parcel-layout.ts', 'utf8');
-    // import 문만 본다 — 주석에서 계약 파일을 «참조» 하는 것은 정상이고 오히려 권장된다.
-    const imports = gen.split('\n').filter((l) => /^\s*import\b/.test(l)).join('\n');
-    expect(imports).not.toContain('overlay');
-    expect(imports).not.toContain('freeze');
+  it('① 생성기가 동결 계약에 닿지 않는다 — 전이적으로', () => {
+    // ⚠ 첫 판본은 *"`import` 로 시작하는 줄"* 만 문자열로 봤고, 검수관이 **세 형태로
+    // 우회됨을 실측**했다(2026-08-12): ① 멀티라인 import(경로가 둘째 줄에 있다)
+    // ② barrel 재수출 경유 ③ 동적 `import()` 표현식(줄이 `const` 로 시작한다).
+    // 팀장 조건이 *"문서가 아니라 **검사**가 막아야 한다"* 였으므로 가장 정직한 형태만
+    // 잡는 검사는 조건을 충족하지 못한다.
+    //
+    // 그래서 ① **모듈 지정자 문자열 전부**를 보고(멀티라인·동적 import 가 함께 잡힌다)
+    // ② **그래프를 따라간다**(barrel 경유가 잡힌다).
+    //
+    // 범위도 넓혔다 — 팀장 조건 원문은 `parcel-layout.ts` 를 특정했지만 실제 배치를
+    // 계산하는 코드는 `parts/*.ts` 에도 있다(검수관 P4). 조건의 **목적**은 «생성기가 동결을
+    // 모르게» 이므로 생성기 전부를 뿌리로 둔다.
+    const reached = reachableFrom([
+      'frontend/js/world2/decide/parcel-layout.ts',
+      ...listFiles('frontend/js/world2/parts'),
+    ]);
+    const contract = resolvePath('frontend/js/world2/decide', './overlay.js');
+    expect(contract, '계약 파일 경로가 풀려야 한다 — 안 풀리면 이 검사는 공허하다').not.toBeNull();
+    expect([...reached].filter((f) => f.includes('decide/overlay'))).toEqual([]);
   });
 
   it('③ 스키마가 «파셀 키 없는 오버라이드» 를 표현할 수 없다', () => {
