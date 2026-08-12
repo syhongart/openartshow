@@ -105,6 +105,10 @@ const BLOCK: Array<[rule: string, name: string, cmd: string]> = [
   ['hookify.checkout-revert.local.md', '되돌림(-c 설정 주입)', 'git -c core.x=1 checkout -- a.ts'],
   ['hookify.checkout-revert.local.md', '되돌림(&& 뒤)', 'cd /tmp && git checkout -- a.ts'],
   ['hookify.checkout-revert.local.md', '되돌림(루프 안)', 'for f in a b; do git checkout HEAD -- $f; done'],
+  // ↓ 명령치환 두 표기. `$()` 는 시작 대안 `(` 로 잡혔는데 **백틱은 통과했다**(검수관 M1).
+  //   셸에서 동등한 문법이라 한쪽만 보는 것은 실질적 구멍이었다 — 문자 하나로 닫았다.
+  ['hookify.checkout-revert.local.md', '되돌림($() 안)', 'echo $(git checkout -- a.ts)'],
+  ['hookify.checkout-revert.local.md', '되돌림(백틱 안)', 'echo `git checkout -- a.ts`'],
   ['hookify.restore-discard.local.md', 'restore 로 미커밋 폐기', 'git restore frontend/js/sky.js'],
   ['hookify.restore-discard.local.md', 'restore --staged', 'git restore --staged frontend/js/a.ts'],
 ];
