@@ -376,7 +376,13 @@ export function paintBase(ctx, W, H, Hh, stops, fogRGB) {
 // ── 하늘돔 리페인트 ──
 // 돔은 완전 구(equirect): v=0 천정, v=0.5 지평선, v=1 천저. 하늘은 상반부(0..Hh)에만
 // 그리고 하반부는 fog색 단색(지면에 가려 안 보이지만 지평선 이음새 방지 ⑨). — 실측 교정.
-function paintSky(ctx, W, H, time, weather, opts) {
+// `export` 인 이유는 `paintBase` 와 같다 — **집행을 밖에서 볼 수 있어야 하기 때문이다.**
+// 순수 판정(`dayStops`·`cloudElev`)만 테스트하면 *"판정한 값이 실제로 소비되는가"* 가
+// 아무 데도 안 걸린다. 이 저장소는 그 구멍으로 이미 값을 치렀고(구름 `alpha` 미소비),
+// 이번에도 *"캔버스가 필요해 못 돌린다"* 로 넘어가려다 검수관에게 반려당했다 —
+// `tests/world2-ocean.test.ts` 가 `getContext` 를 스텁해 굽기 코드를 그대로 돌리는
+// 선례를 이미 갖고 있었다.
+export function paintSky(ctx, W, H, time, weather, opts) {
   const rnd = seeded(0xa17c + SKY_TIMES.indexOf(time) * 7 + SKY_WEATHERS.indexOf(weather) * 31);
   // 지평선(⑨)과 `scene.fog` 가 **같은 팔레트 조회**를 거쳐야 정합이 유지된다.
   const L = lightOf(time, weather, opts.fogTint);
