@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>world2 URL 노브 전량 공개 — 화면을 주소로 고르는 71개 — OpenArtShow</title>
+<meta name="description" content="감독 지시: *"&amp;fogskys=1 이런 다양한 옵션을 개발일지에 적어줘."*">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-08-12-1eb73e.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="world2 URL 노브 전량 공개 — 화면을 주소로 고르는 71개 — OpenArtShow">
+<meta property="og:description" content="감독 지시: *"&amp;fogskys=1 이런 다양한 옵션을 개발일지에 적어줘."*">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-08-12-1eb73e.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"world2 URL 노브 전량 공개 — 화면을 주소로 고르는 71개","datePublished":"2026-08-12","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-08-12-1eb73e.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>:root { --oas-green-100: #e3efe7; --oas-green-300: #8fd0ab; --oas-green-500: #5f9e7d; --oas-green-600: #4e8a6a; --oas-green-700: #3f7a5c; --oas-green-800: #2c5844; --oas-green-900: #14261d; --oas-green-text-rgb: 30 103 66; --oas-green-text: rgb(var(--oas-green-text-rgb)); --oas-vivid: #1fd677; --oas-vivid-hi: #25e481; --oas-vivid-ink: #0d2417; --oas-violet-100: #EAE5FF; --oas-violet-300: #AB99FF; --oas-violet-500: #8B72FF; --oas-violet-600: #6C4DFF; --oas-violet-ink: #5733FF; --oas-cyan-500: #72E6E1; --oas-cyan-600: #26D9D1; --oas-coral-500: #FF705E; --oas-coral-600: #FF331A; --oas-coral-900: #660B00; --oas-coral-ink: #CC1700; --oas-violet-soft: rgba(139,114,255,0.5); --oas-dark-anchor: #14151A; --oas-dark-1: #1F2128; --oas-dark-2: #2A2C37; --oas-dark-line: #3A3D4B; --oas-paper: #fdfbf5; --oas-paper-deep: #f6f1e4; --oas-ivory: #F3F0E9; --oas-white-rgb: 255 255 255; --oas-white: rgb(var(--oas-white-rgb)); --oas-sand-100: #efe6d3; --oas-sand-300: #ddccae; --oas-panel: #fffdf9; --oas-ink: #17140f; --oas-ink-cool: #202124; --oas-ink-body: #57503f; --oas-ink-dim: #6b6459; --oas-border-light: #e6dfcf; --oas-warm-gray-300: #cfc6b8; --oas-warm-gray-500: #a49a8c; --oas-on-dark-rgb: 245 245 242; --oas-on-dark: rgb(var(--oas-on-dark-rgb)); --oas-on-dark-warm-rgb: 242 242 240; --oas-on-dark-warm: rgb(var(--oas-on-dark-warm-rgb)); --oas-on-dark-dim: #9A9EB1; --oas-on-dark-dim-warm: #a6a6a4; --oas-danger: #b0503f; --oas-accent: var(--oas-green-500); --oas-accent-ink: var(--oas-green-text); --oas-accent-soft: var(--oas-green-300); --oas-accent-deep: var(--oas-green-600); --oas-cta: var(--oas-vivid); --oas-cta-hi: var(--oas-vivid-hi); --oas-cta-label: var(--oas-vivid-ink); --oas-cta-ink: var(--oas-green-800); --oas-status: var(--oas-cyan-500); --oas-status-hi: var(--oas-cyan-600); --oas-warn: var(--oas-coral-500); --oas-warn-hi: var(--oas-coral-600); --oas-warn-ink: var(--oas-coral-ink); --oas-r-hair: 2px; --oas-r-plate: 3px; --oas-r-pill: 999px; --oas-shadow-whisper: 0 2px 6px rgba(20, 21, 26, 0.05); --oas-shadow-panel: 0 8px 20px rgba(20, 21, 26, 0.10); --oas-shadow-lift: 0 6px 16px rgba(20, 21, 26, 0.28); --oas-shadow-lift-accent: 0 10px 24px rgba(95, 158, 125, 0.16); }
+/* 색: tokens.css 의 원시 팔레트를 셸 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+:root{--gold:var(--oas-green-500);--gold-text:var(--oas-green-text);--paper:var(--oas-paper);
+--paper-deep:var(--oas-paper-deep);--panel:var(--oas-panel);
+--ink:var(--oas-ink);--ink-body:var(--oas-ink-body);--ink-dim:var(--oas-ink-dim);
+--line:var(--oas-border-light);--g100:var(--oas-green-100);--g300:var(--oas-green-300);
+--g500:var(--oas-green-500);--g600:var(--oas-green-600);--g700:var(--oas-green-700);
+--g800:var(--oas-green-800);--g900:var(--oas-green-900);--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-08-12</div>
+<h1>🛠️ world2 URL 노브 전량 공개 — 화면을 주소로 고르는 71개</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>감독 지시: *"<code>&amp;fogskys=1</code> 이런 다양한 옵션을 개발일지에 적어줘."*</p>
+<p>그 앞에 사고가 하나 있었다. 감독이 확정 링크로 보낸 주소가 이랬다:</p>
+<pre><code>world2.html?skyblue=3?cloudh=1
+                     ↑ 두 번째 물음표</code></pre>
+<p>브라우저는 이것을 <code>skyblue = "3?cloudh=1"</code> <strong>한 덩어리</strong>로 읽는다. 숫자가 아니니 기본값으로 떨어지고 <code>cloudh</code> 는 키로 인식조차 안 된다. <strong>감독이 "이것으로 결정하자" 고 판단한 화면은 아무 노브도 안 걸린 기본 화면이었다.</strong> 값을 확정할 뻔했다.</p>
+<p>노브가 71개인데 <strong>목록이 어디에도 없었다.</strong> 소스의 <code>readNum('...')</code> 호출을 뒤져야 알 수 있었고, 그러니 감독은 내가 링크로 준 것만 쓸 수 있었다. 이 문서가 그 목록이다.</p>
+<p>---</p>
+<h3>쓰는 법 — 구분자는 <code>&amp;</code> 하나뿐이다</h3>
+<pre><code>https://syhongart.github.io/openartshow/app/world2.html?skyblue=2&amp;cloudh=0.4&amp;fogsky=1
+                                                       ↑첫 것만 ?    ↑나머지는 전부 &amp;</code></pre>
+<ul><li><strong>범위를 벗어난 값은 잘린다.</strong> <code>cloudh=99</code> 는 상한으로 clamp 되지 <code>99</code> 가 되지 않는다.</li><li><strong>숫자가 아니면 기본값으로 떨어진다.</strong> 조용히 무시되므로 화면이 안 바뀌면 오타를 의심한다.</li><li>이 노브들은 <strong>world2 전용</strong>이다. 다른 페이지에 붙여도 안 먹는다.</li></ul>
+<p>---</p>
+<h3>오늘 확정된 값 (감독 판정 2026-08-12)</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>확정값</th><th>감독 판정</th></tr></thead><tbody><tr><td><code>skyblue</code></td><td><strong>2</strong></td><td>*"파란 하늘 만들어보자. 지금 하늘 색이 파랗지 않아"* → 후보 비교 후 2</td></tr><tr><td><code>cloudh</code></td><td><strong>0.4</strong></td><td>*"구름이 뒤로... 쭉 늘어진"* → 키우는 방향으로 0.4</td></tr><tr><td><code>fogsky</code> (낮)</td><td><strong>1</strong></td><td>*"주간일때는 흰색말고 하늘색어때"*</td></tr><tr><td><code>fogskyn</code> (밤)</td><td><strong>0</strong></td><td>*"야간은 원래가 좋아. 연기 파란거 말고. 주간/야간 따로 가야해"*</td></tr><tr><td><code>fogskys</code> (노을)</td><td><strong>0</strong></td><td><strong>감독 미판정</strong> — 밤 근거를 준용했다. <code>?fogskys=1</code> 로 켜서 볼 수 있다</td></tr></tbody></table></div>
+<p>이제 이 값들이 기본이므로 <strong>주소에 아무것도 안 붙여도 그 화면</strong>이다. 되돌리려면 <code>?skyblue=0&amp;cloudh=0&amp;fogsky=0</code>.</p>
+<p>---</p>
+<h3>하늘·구름·안개</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>skyblue</code></td><td>2</td><td>0~4</td><td>낮 하늘의 파랑. 0=옛 화면, 1 초과는 외삽이라 더 진해진다</td></tr><tr><td><code>cloudcurve</code></td><td>1</td><td>0~1</td><td>구름 원근을 둥근 지구 기준으로. 0=각도에 선형(옛 동작)</td></tr><tr><td><code>cloudh</code></td><td>0.4</td><td>0~1</td><td>구름이 지평선 쪽으로 늘어지는 정도. 0=지정 안 함(0.05로 떨어짐)</td></tr><tr><td><code>fogsky</code></td><td>1</td><td>0~1</td><td><strong>낮</strong> 안개를 하늘색으로</td></tr><tr><td><code>fogskys</code></td><td>0</td><td>0~1</td><td><strong>노을</strong> 안개를 하늘색으로</td></tr><tr><td><code>fogskyn</code></td><td>0</td><td>0~1</td><td><strong>밤</strong> 안개를 하늘색으로</td></tr><tr><td><code>fogd</code></td><td>1</td><td>0~20</td><td>안개 거리 배수. 0=안개 끔</td></tr><tr><td><code>dome</code></td><td>520</td><td>300~6000</td><td>하늘 돔 반경(m)</td></tr><tr><td><code>star</code></td><td>0.25</td><td>0.1~2</td><td>별 크기 배수</td></tr><tr><td><code>hz</code></td><td>시간대별</td><td>0~0.9</td><td>수평선 밴드 세기. <strong>지정 안 하면 시간대 기본</strong>이 산다</td></tr><tr><td><code>time</code></td><td>night</td><td><code>day</code> <code>sunset</code> <code>night</code></td><td>시간대 고정</td></tr><tr><td><code>weather</code></td><td>clear</td><td><code>clear</code> <code>overcast</code> <code>rain</code> <code>snow</code></td><td>날씨 고정</td></tr></tbody></table></div>
+<h3>밤 밝기</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>nhemi</code></td><td>1.2</td><td>0~4</td><td>반구광 하한</td></tr><tr><td><code>nsun</code></td><td>0.34</td><td>0~4</td><td>달빛 하한</td></tr><tr><td><code>nexp</code></td><td>1.4</td><td>0.2~3</td><td>톤매핑 노출 하한</td></tr><tr><td><code>nfog</code></td><td>0</td><td>0~4</td><td>안개 밝기 배수</td></tr><tr><td><code>nground</code></td><td>1.0</td><td>0.2~4</td><td>반구광 지면색 배수</td></tr><tr><td><code>glift</code></td><td>2.4</td><td>1~(유도값)</td><td>지면 알베도 상향</td></tr></tbody></table></div>
+<h3>낮 밝기</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>dsun</code></td><td>1.3</td><td>0~6</td><td>태양광 세기</td></tr><tr><td><code>dhemi</code></td><td>0.55</td><td>0~4</td><td>반구광 세기</td></tr></tbody></table></div>
+<h3>그림자</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>shdec</code></td><td>1</td><td>0~1</td><td>접촉그림자 표시. 0=끔</td></tr><tr><td><code>shdark</code></td><td>1</td><td>0~1.6</td><td>그림자 농도</td></tr><tr><td><code>shsoft</code></td><td>(유도값)</td><td>0~1</td><td>가장자리 번짐</td></tr><tr><td><code>shres</code></td><td>64</td><td>16~128</td><td>그림자 텍스처 해상도(px)</td></tr><tr><td><code>shy</code></td><td>0.02</td><td>0~0.2</td><td>바닥에서 띄우는 높이(m)</td></tr><tr><td><code>shleaf</code></td><td>0</td><td>0~1</td><td>나무 그림자 얼룩 깊이</td></tr><tr><td><code>shblend</code></td><td>normal</td><td><code>multiply</code> <code>normal</code></td><td>합성 방식</td></tr><tr><td><code>shint</code></td><td>0</td><td>0~1</td><td>실시간 그림자 세기. 기본 0(감독 판정으로 껐다)</td></tr><tr><td><code>shband</code></td><td>2.4</td><td>0.5~4</td><td>그림자 카메라 반폭(셀 배수)</td></tr><tr><td><code>smap</code></td><td>2048</td><td>256~4096</td><td>그림자 맵 해상도</td></tr></tbody></table></div>
+<h3>도시·지형</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>density</code></td><td>1</td><td>1~8</td><td>건물·나무를 함께 늘린다</td></tr><tr><td><code>bld</code></td><td>1</td><td>1~8</td><td>건물만</td></tr><tr><td><code>tree</code></td><td>1</td><td>1~8</td><td>나무만</td></tr><tr><td><code>gsurf</code></td><td>1</td><td>0~1</td><td>잔디·도로 위 표면 가산. 0=2026-08-12 이전 동작</td></tr><tr><td><code>glb</code></td><td>1</td><td>0~200</td><td>GLB 빌딩 복사본 수</td></tr><tr><td><code>glbmode</code></td><td>glb</td><td><code>glb</code> <code>box</code> <code>flat</code></td><td>GLB 렌더 방식</td></tr><tr><td><code>glbmat</code></td><td>noext</td><td><code>swap</code> <code>std</code> <code>noext</code> <code>raw</code></td><td>GLB 재질 처리</td></tr><tr><td><code>glbraw</code></td><td>0</td><td>0~1</td><td>GLB 원본 재질 그대로</td></tr><tr><td><code>collide</code></td><td>1</td><td>0~1</td><td>충돌. 0=통과(대조군 전용)</td></tr></tbody></table></div>
+<h3>물</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>water</code></td><td>std</td><td><code>std</code> <code>tsl</code></td><td>물 렌더 방식</td></tr><tr><td><code>wamp</code></td><td>0.2</td><td>0~0.75</td><td>파고(m)</td></tr><tr><td><code>wstd</code></td><td>0.65</td><td>0~1</td><td>진행파 : 정재파 배분</td></tr><tr><td><code>wpatch</code></td><td>1</td><td>0~1</td><td>패치 방식. 0=옛 평면</td></tr><tr><td><code>wns</code></td><td>시간대별</td><td>0~3</td><td>물결 세기</td></tr><tr><td><code>wrough</code></td><td>시간대별</td><td>0~1</td><td>거칠기</td></tr><tr><td><code>wspark</code></td><td>시간대별</td><td>0~2</td><td>윤슬</td></tr><tr><td><code>wopa</code></td><td>시간대별</td><td>0~1</td><td>투명도</td></tr><tr><td><code>wflow</code></td><td>강 기본</td><td>0~10</td><td>흐름 속도</td></tr></tbody></table></div>
+<blockquote>물 노브 다섯(<code>wns</code>·<code>wrough</code>·<code>wspark</code>·<code>wopa</code>·<code>wflow</code>)은 **지정 안 하면 시간대별<br>기본값이 산다.** 값을 주는 순간만 그것으로 덮는다 — 낮 기본값이 밤에도 걸리는<br>사고를 한 번 냈고, 그래서 "지정 안 됨"과 "그 값을 지정함"을 구별하게 만들었다.<br>화면 아래 슬라이더로 밀면 <strong>주소가 같이 갱신된다</strong> — 찾은 값을 그대로 보내면 된다.</blockquote>
+<h3>등장·성능</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>lodfade</code></td><td>0.45</td><td>0~5</td><td>멀리서 나타날 때 페이드(초)</td></tr><tr><td><code>lodease</code></td><td>in</td><td><code>lin</code> <code>in</code> <code>out</code> <code>smooth</code></td><td>페이드 곡선</td></tr><tr><td><code>grow</code></td><td>0.4</td><td>0~3</td><td>자라나는 시간(초)</td></tr><tr><td><code>shrink</code></td><td>0</td><td>0~3</td><td>사라질 때 수축(초)</td></tr><tr><td><code>shrinkease</code></td><td>out</td><td><code>lin</code> <code>in</code> <code>out</code> <code>smooth</code></td><td>수축 곡선</td></tr><tr><td><code>fademode</code></td><td>near</td><td><code>near</code> <code>fog</code></td><td>페이드 출발색 기준</td></tr><tr><td><code>adapt</code></td><td>1</td><td>0~1</td><td>적응 품질. 0=끔(비교 실험용)</td></tr><tr><td><code>band</code></td><td>1</td><td>0.5~4</td><td>LOD 밴드 배율</td></tr><tr><td><code>prewarm</code></td><td>1</td><td>0~1</td><td>부팅 예열</td></tr><tr><td><code>nearx</code></td><td>0</td><td>0~2.2</td><td>near 전환점 오프셋(진단용)</td></tr><tr><td><code>calm</code></td><td>0</td><td>0~1</td><td>파셀 생성을 안개 뒤로(진단용)</td></tr></tbody></table></div>
+<h3>걷기</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>speed</code></td><td>5</td><td>1~20</td><td>걷기 속도(m/s)</td></tr><tr><td><code>eye</code></td><td>1.7</td><td>0.5~3</td><td>눈높이(m)</td></tr><tr><td><code>bob</code></td><td>0.045</td><td>0~0.2</td><td>걸을 때 상하 흔들림(m)</td></tr><tr><td><code>at</code></td><td>default</td><td><code>default</code> <code>river</code> <code>sea</code></td><td>시작 지점</td></tr></tbody></table></div>
+<h3>후처리·진단</h3>
+<div class="tbl"><table><thead><tr><th>노브</th><th>기본</th><th>범위</th><th>무엇이 바뀌나</th></tr></thead><tbody><tr><td><code>bloom</code></td><td>켬</td><td><code>0</code>=끔</td><td>블룸 전체</td></tr><tr><td><code>bloomstr</code></td><td>1.15</td><td>0~8</td><td>블룸 세기</td></tr><tr><td><code>bloomrad</code></td><td>0.07</td><td>0~8</td><td>블룸 반경</td></tr><tr><td><code>bloomthr</code></td><td>0.75</td><td>0~8</td><td>블룸 문턱</td></tr><tr><td><code>overlay</code></td><td>1</td><td>0~1</td><td>화면 오버레이</td></tr><tr><td><code>edit</code></td><td>0</td><td>0~1</td><td>편집 모드</td></tr><tr><td><code>npc</code></td><td>켬</td><td><code>0</code>=끔</td><td>사람</td></tr><tr><td><code>vrm</code></td><td>켬</td><td><code>0</code>=끔</td><td>VRM 아바타</td></tr></tbody></table></div>
+<p>---</p>
+<h3>자주 쓸 조합</h3>
+<p><strong>낮 전체를 본다</strong> <code>?time=day</code></p>
+<p><strong>밤에 노을 안개를 켜서 비교한다</strong> <code>?time=sunset&amp;fogskys=1</code></p>
+<p><strong>오늘 확정 이전 화면으로 되돌린다</strong> <code>?skyblue=0&amp;cloudh=0&amp;fogsky=0</code></p>
+<p><strong>도시를 빽빽하게</strong> <code>?density=4</code></p>
+<p><strong>대조군(성능 판정용) — 사람·GLB·아바타를 끈다</strong> <code>?npc=0&amp;vrm=0&amp;glb=0</code></p>
+<p>---</p>
+<h3>왜 노브를 여는가</h3>
+<p>색·거리·룩은 <strong>글로 설득할 수 없다.</strong> 그리고 이 저장소에는 재는 축이 하나 더 없다 — 헤드리스 검증 환경은 WebGL(swiftshader)이고 감독 실기기는 WebGPU다. 톤매핑을 거친 최종 색이 두 곳에서 같지 않으므로, 내가 여기서 본 화면은 판정 근거가 못 된다.</p>
+<p>그래서 후보를 값으로 열고 배포한 뒤 <strong>링크로 비교</strong>한다. 감독이 탭 한 번으로 A/B 를 보고 고르면 그 값을 기본으로 굽는다. 오늘 하늘 파랑이 그렇게 정해졌고(1.5 상한이 판정을 가로막고 있어서 4로 열었다), 구름 늘어짐도 그렇게 정해졌다.</p>
+<h3>이 목록의 한계 — 숨기지 않는다</h3>
+<ul><li><strong><code>hz</code>·물 다섯은 "기본값"이 하나가 아니다.</strong> 시간대마다 다르고, 노브를 안 주면 그 분기가 살아 있다. 표에 "시간대별"이라고만 적은 이유다 — 수치를 적으면 그것이 값 미러링이고, 시간대 분기를 바꾸는 날 이 문서만 옛 수치로 남는다.</li><li><strong><code>shsoft</code>·<code>glift</code> 는 다른 상수에서 유도된다.</strong> 고정 숫자가 아니라 계산식이라 "유도값"으로 적었다. 실제 값은 그 상수의 주석이 소유한다.</li><li><strong>이 표는 손으로 뽑았고 게이트가 지키지 않는다.</strong> 노브가 하나 늘어도 이 문서는 조용히 낡는다. 노브 목록을 소스에서 뽑아 검사하는 축은 아직 없다.</li></ul>
+</article>
+<div class="pn"><a href="./2026-08-08-857474.html"><span class="lbl">← 이전 기록</span>마이페이지 — 서버가 없는 채로 공개 프로필의 구조를 먼저 세운다</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.<br><a href="../licenses/">오픈소스 고지</a></footer>
+</body>
+</html>
