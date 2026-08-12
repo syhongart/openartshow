@@ -2,9 +2,9 @@
 //
 // ── 왜 별도 파일인가 ────────────────────────────────────────────────────────
 // 그 파일의 겹침 불변식은 `parcelLayout(px, pz, tier)` 를 **레이아웃 인자 없이** 부른다
-// → `DEFAULT_LAYOUT`(`maxBuildings: 4`) 만 본다. 그런데 `?density=N` 노브가
-// `main.ts:259` 에서 `maxBuildings` 를 `4 × N` 으로 만든다. **밀도를 올린 세계는 어느
-// 검사도 좌표를 보지 않았다.**
+// → `DEFAULT_LAYOUT`(`maxBuildings: 4`) 만 본다. 그런데 `?density=`·`?bld=`·`?tree=` 노브가
+// `decide/village-rules.ts` 의 `villageLayout` 으로 그 상한을 배수만큼 올린다.
+// **밀도를 올린 세계는 어느 검사도 좌표를 보지 않았다.**
 //
 // ── 커버리지 착시 ───────────────────────────────────────────────────────────
 // `world2-slot-budget.test.ts:210-221` 이 `maxBuildings * 8`(=32) 로 실제 스트리밍을
@@ -23,10 +23,8 @@
 // `98539a6`(07-27 14:00). 7시간 뒤에 들어온 제약이 기존 노브와 화해되지 않았다.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parcelLayout, DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
+import { villageLayout, MUL_MAX } from '../frontend/js/world2/decide/village-rules.js';
 import { specFor } from '../frontend/js/world2/parts/index.js';
 import type { PlacedPart, LayoutOptions } from '../frontend/js/world2/parts/types.js';
 
@@ -47,21 +45,18 @@ function overlapsAt(px: number, pz: number, tier: (typeof TIERS)[number], layout
   return bad;
 }
 
-/** `?density=N` 이 만드는 레이아웃. `main.ts:257-261` 과 **같은 식**이어야 한다. */
-function densityLayout(n: number): LayoutOptions {
-  return {
-    ...DEFAULT_LAYOUT,
-    maxBuildings: DEFAULT_LAYOUT.maxBuildings * n,
-    maxTrees: DEFAULT_LAYOUT.maxTrees * n,
-  };
-}
+/**
+ * `?density=N` 이 만드는 레이아웃. **`main.ts` 와 같은 함수를 부른다** — 곱셈을 여기
+ * 다시 적으면 규칙이 바뀔 때 한쪽만 낡는다(`decide/village-rules.ts` 헤더 참조).
+ */
+const densityLayout = (n: number): LayoutOptions => villageLayout({ density: n });
+
+// 노브 범위의 양 끝과 중간. 상한을 실제로 덮는지는 아래 「노브 상한과 짝」이 단언한다
+// — 목록을 손으로 적는 이상 그것이 낡지 않게 하는 축이 따로 있어야 한다.
+const DENSITIES = [1, 2, 4, 8];
 
 describe('밀도를 올려도 겹치지 않는다', () => {
-  // 노브 상한이 8 이므로(`main.ts:232` `readNum('density', 1, 1, 8)`) 그 양 끝과 중간을 본다.
-  // 값을 여기 적는 대신 노브에서 유도하고 싶지만 `readDensity` 는 `location` 을 읽는
-  // 브라우저 함수라 테스트에서 못 부른다 — 대신 **상한을 벗어나면 이 목록이 낡는다**는
-  // 것을 아래 `노브 상한과 짝` 단언이 잡는다.
-  for (const n of [1, 2, 4, 8]) {
+  for (const n of DENSITIES) {
     it(`density=${n} — 21×21 파셀 × 3 tier 에서 겹치는 쌍이 하나도 없다`, () => {
       const layout = densityLayout(n);
       const bad: string[] = [];
@@ -74,36 +69,66 @@ describe('밀도를 올려도 겹치지 않는다', () => {
     });
   }
 
-  it('밀도를 올리면 건물이 실제로 늘어난다 — 겹침을 막느라 아무것도 안 놓으면 노브가 죽는다', () => {
-    // 겹침 0 은 "건물을 하나도 안 놓는다" 로도 달성된다. 그 퇴화를 막는 짝 단언이다.
-    const count = (n: number) => {
-      let total = 0;
+  it('사분면 넷을 넘겨 실제로 더 놓는다 — 이게 `findFree` 가 사는지 보는 유일한 축', () => {
+    // ⚠ 처음엔 *"총 건물 수가 늘어나는가"* 로 적었고 **장식이었다**(executor 뮤테이션 M4:
+    // `findFree` 를 항상 `null` 로 만들어도 **0 failed**). 5채째부터 전부 포기해도
+    // `n = 1 + floor(rnd() × maxBuildings)` 의 분포 때문에 총합은 여전히 늘기 때문이다 —
+    // `density=1` 은 `n ∈ [1,4]`(평균 2.5), `density=8` 은 4에서 잘려도 평균 3.6.
+    // **참인 문장에서 성립하지 않는 결론을 뽑은 것**이고, 이 저장소가 이름 붙인 그 고장이다.
+    //
+    // 재는 축을 바꾼다: `findFree` 가 죽으면 **한 파셀에 5채 이상이 원리상 불가능**하다.
+    // 사분면이 넷뿐이기 때문이다. 그러니 그것을 직접 센다.
+    const maxPerParcel = (n: number) => {
+      let most = 0;
       for (let px = -6; px <= 6; px++) {
         for (let pz = -6; pz <= 6; pz++) {
-          total += parcelLayout(px, pz, 'near', densityLayout(n))
+          const c = parcelLayout(px, pz, 'near', densityLayout(n))
             .filter((p) => p.kind === 'building').length;
+          if (c > most) most = c;
         }
       }
-      return total;
+      return most;
     };
-    const one = count(1);
-    const eight = count(8);
-    expect(one).toBeGreaterThan(0);
-    expect(eight, `density=1 은 ${one}채, density=8 은 ${eight}채 — 늘지 않으면 노브가 장식이다`)
-      .toBeGreaterThan(one);
+    expect(maxPerParcel(1), 'density=1 에서 한 파셀 최대 건물 수').toBeLessThanOrEqual(4);
+    expect(
+      maxPerParcel(MUL_MAX),
+      `★ density=${MUL_MAX} 인데 한 파셀에 5채 이상이 한 번도 안 섰다 — findFree 가 자리를 `
+      + '전혀 못 찾고 있다(또는 죽었다). 겹침 0 은 "아무것도 안 놓는다" 로도 달성된다.',
+    ).toBeGreaterThan(4);
   });
 });
 
 describe('노브 상한과 짝', () => {
-  it('main.ts 의 density 상한이 8 이다 — 위 목록이 그 상한을 덮는다', () => {
-    // 상한이 바뀌면 위 `[1,2,4,8]` 이 조용히 낡는다. 소스를 직접 읽어 못박는다 —
-    // 값을 테스트에 복사하는 것이 아니라 **두 곳이 어긋나면 빨간불**이 되게 하는 축이다.
-    const src = readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'frontend/js/world2/main.ts'),
-      'utf8',
-    );
-    const m = src.match(/readNum\('density',\s*1,\s*1,\s*(\d+)\)/);
-    expect(m, "★ main.ts 에서 `readNum('density', 1, 1, N)` 을 못 찾았다 — 노브가 바뀌었으면 위 목록도 함께 본다.").not.toBeNull();
-    expect(Number(m![1]), '★ density 상한이 바뀌었다 — 위 겹침 검사의 n 목록을 갱신하라.').toBe(8);
+  it('겹침 검사가 노브 상한을 실제로 덮는다', () => {
+    // 위 `[1,2,4,8]` 은 손으로 적은 목록이라 `MUL_MAX` 가 오르면 조용히 낡는다 —
+    // 그러면 "밀도를 다 봤다" 가 거짓이 된다. 상한을 **심볼로** 읽어 대조한다.
+    expect(
+      DENSITIES,
+      `★ 노브 상한이 ${MUL_MAX} 인데 겹침 검사가 거기까지 안 간다 — 목록을 갱신하라.`,
+    ).toContain(MUL_MAX);
+  });
+
+  it('곱 상한이 기존 노브의 최대치를 넘지 않는다 — 아무도 안 재본 세계를 열지 않는다', () => {
+    // `?density` 하나만 있던 시절의 최대치가 곧 스모크·게이트가 돌아 본 범위다.
+    // `density × building` 을 그대로 두면 4×8×8 = 256 이 되는데 그것은 미측정 영역이다.
+    const both = villageLayout({ density: MUL_MAX, building: MUL_MAX, tree: MUL_MAX });
+    const densityOnly = villageLayout({ density: MUL_MAX });
+    expect(both.maxBuildings).toBe(densityOnly.maxBuildings);
+    expect(both.maxTrees).toBe(densityOnly.maxTrees);
+  });
+
+  it('배수가 전부 1 이면 기본 레이아웃 **그 자체**를 돌려준다', () => {
+    // 참조 동등성이다. 감독이 매일 보는 화면이 이 곱셈을 **지나지 않는다**는 것을
+    // 눈이 아니라 단언이 말하게 한다.
+    expect(villageLayout({})).toBe(DEFAULT_LAYOUT);
+    expect(villageLayout({ density: 1, building: 1, tree: 1 })).toBe(DEFAULT_LAYOUT);
+    expect(villageLayout({ density: 2 })).not.toBe(DEFAULT_LAYOUT);
+  });
+
+  it('범위 밖 배수는 클램프된다 — 손으로 친 `?bld=99` 가 마을을 날리지 않게', () => {
+    expect(villageLayout({ building: 999 }).maxBuildings)
+      .toBe(villageLayout({ building: MUL_MAX }).maxBuildings);
+    expect(villageLayout({ building: 0 })).toBe(DEFAULT_LAYOUT);
+    expect(villageLayout({ building: NaN })).toBe(DEFAULT_LAYOUT);
   });
 });
