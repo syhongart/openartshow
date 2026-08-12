@@ -35,12 +35,20 @@ type PlaceCall = {
   resolve(e: OverlayEntry | null): void;
 };
 
-/** 스텁 three — `mode.ts` 가 쓰는 것만 만든다(`ThreeNS` 참조) */
-function makeThree() {
+type Ray = { origin: { x: number; y: number; z: number }; direction: { x: number; y: number; z: number } };
+
+/**
+ * 스텁 three — `mode.ts` 가 쓰는 것만 만든다(`ThreeNS` 참조).
+ *
+ * `rays` 로 만들어진 광선을 밖에 넘긴다 — 테스트가 **쏘는 방향을 바꿔** 하늘/지면을
+ * 가려 쏠 수 있어야 한다(아래 「하늘 클릭」 축).
+ */
+function makeThree(rays: Ray[]) {
   return {
     Raycaster: class {
       // 위에서 아래로 쏜다 → y=0 평면 교차가 원점 근처에서 성립한다
-      ray = { origin: { x: 0, y: 10, z: 0 }, direction: { x: 0, y: -1, z: 0 } };
+      ray: Ray = { origin: { x: 0, y: 10, z: 0 }, direction: { x: 0, y: -1, z: 0 } };
+      constructor() { rays.push(this.ray); }
       setFromCamera(): void { /* NDC 는 이 축에서 안 본다 */ }
       intersectObjects(): { object: unknown }[] { return []; }
     },
@@ -63,7 +71,7 @@ function makeThree() {
   };
 }
 
-function makeHost(calls: PlaceCall[], failure: { why: string | null }) {
+function makeHost(calls: PlaceCall[], failure: { why: string | null }, rays: Ray[]) {
   const doc = document;
   const canvas = doc.createElement('canvas');
   doc.body.append(canvas);
@@ -76,7 +84,7 @@ function makeHost(calls: PlaceCall[], failure: { why: string | null }) {
 
   const entries: OverlayEntry[] = [];
   const host: OverlayHost = {
-    THREE: makeThree(),
+    THREE: makeThree(rays),
     camera: {} as never,
     canvas,
     doc,
@@ -115,17 +123,19 @@ describe('편집 모드 · 놓기 행위', () => {
   let calls: PlaceCall[];
   let failure: { why: string | null };
   let canvas: HTMLCanvasElement;
+  let rays: Ray[];
 
   beforeEach(async () => {
     document.body.innerHTML = '';
     calls = [];
     failure = { why: null };
+    rays = [];
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
       json: async () => ({ models: ['a.glb'] }),
     })));
 
-    const made = makeHost(calls, failure);
+    const made = makeHost(calls, failure, rays);
     canvas = made.canvas;
     session = startEditMode(made.host, { modelsUrl: '/models.json', onBlobUrl: () => { } });
     await settle();
@@ -208,6 +218,21 @@ describe('편집 모드 · 놓기 행위', () => {
     const t = panelText();
     expect(t).toContain('2.0MB');
     expect(t, '퍼센트를 지어내면 안 된다').not.toContain('%');
+  });
+
+  it('하늘을 클릭하면 침묵하지 않고 말한다', async () => {
+    // 광선을 위로 돌린다 = 지면 평면과 안 만난다.
+    // 실기 실측(2026-08-12, 1280×800): 화면 중앙 y=50% 가 정확히 이 경우였다 — 거기는
+    // 지평선이라 안 놓이는데 **아무 말도 안 했다.** 화면은 「지면을 클릭하면 놓입니다」
+    // 라고 안내하고 있었으므로 감독에게는 «또 안 먹네» 로 읽힌다.
+    expect(rays.length, '스텁 광선이 잡혀야 한다').toBeGreaterThan(0);
+    rays[0].direction.y = 1;
+
+    clickGround();
+    await settle();
+
+    expect(calls.length, '하늘 클릭은 로드를 시작하지 않는다').toBe(0);
+    expect(panelText(), '침묵하면 안 된다').toContain('하늘');
   });
 
   it('실패하면 실제 사유를 화면에 적는다 — 콘솔로 미루지 않는다', async () => {

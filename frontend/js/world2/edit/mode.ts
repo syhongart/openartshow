@@ -444,6 +444,11 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     if (pendingSrc) {
       const at = groundAt();
       if (at) void placeAt(pendingSrc, at);
+      // 하늘을 클릭하면 광선이 지면 평면과 안 만나 `null` 이 온다. 예전엔 여기서 **아무
+      // 말도 안 했다** — 화면은 「지면을 클릭하면 놓입니다」 라고 안내해 놓고 침묵하니
+      // «또 안 먹네» 가 된다(실측 2026-08-12: 1280×800 에서 화면 중앙 y=50% 는 지평선이라
+      // 안 놓이고, y=62% 부터 놓였다). 침묵이 이번 사고의 절반이었다.
+      else say('그 자리는 하늘입니다 — 화면 아래쪽 땅을 클릭하세요.', true);
       return;
     }
     selected = null;
