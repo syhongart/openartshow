@@ -1,0 +1,6 @@
+{
+  "_": "배치 편집(?edit=1) 팔레트에 뜨는 GLB 목록. frontend/assets/models/ 의 실제 파일과 짝이고, tests/world2-overlay-wiring.test.ts 가 그 짝을 대조한다.",
+  "models": [
+    "lab-space.glb"
+  ]
+}
