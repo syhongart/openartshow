@@ -10,7 +10,7 @@
 // 지금 `sky.js`는 라이브 `world.js`도 쓰는 공유 파일이라 건드리면 라이브가 위험하다.
 // 이 계약이 먼저 서 있으면, 쪼갠 조각들을 여기에 얹기만 하면 된다.
 
-import { SkySystem, SKY_BLUE, SKY_BLUE_MAX, CLOUD_CURVE } from '../systems/sky.js';
+import { SkySystem, SKY_BLUE, SKY_BLUE_MAX, CLOUD_CURVE, CLOUD_H_MAX } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
 import {
   nightness, lampGlow, TIMES, type SkyTime,
@@ -126,6 +126,9 @@ export const skyFeature: Feature = {
         // 값의 뜻·수식은 각각 `sky.js` 의 `dayStops`·`cloudElev` 머리말 한 곳이다.
         skyBlue: readNum('skyblue', SKY_BLUE, 0, SKY_BLUE_MAX),
         cloudCurve: readNum('cloudcurve', CLOUD_CURVE, 0, 1),
+        // 구름이 세로로 늘어지면 이 값을 **키운다**(감독 실기기 2026-08-12).
+        // 실제 물리값은 하한(0.0003)이고 기본은 체감값이다 — 근거는 `sky.js` 의 `CLOUD_EPS`.
+        cloudH: readNum('cloudh', 0, 0, CLOUD_H_MAX),
 
         // ── 수평선 밴드 (`?hz=`) ─────────────────────────────────────────
         // 감독 실기기 2026-08-05, 태스크 #202: 바다에서 하늘과 바다의 경계가 없다.
