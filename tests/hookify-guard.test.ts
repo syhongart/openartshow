@@ -102,6 +102,9 @@ const BLOCK: Array<[rule: string, name: string, cmd: string]> = [
   ['hookify.checkout-revert.local.md', '되돌림(옵션+상대ref)', 'git checkout -q HEAD~1 -- frontend/js/sky.js'],
   ['hookify.checkout-revert.local.md', '되돌림(conflict 옵션+ref)', 'git checkout --theirs HEAD -- a.ts'],
   ['hookify.checkout-revert.local.md', '되돌림(-C 로 경로 지정)', 'git -C /tmp/x checkout -- a.ts'],
+  ['hookify.checkout-revert.local.md', '되돌림(-c 설정 주입)', 'git -c core.x=1 checkout -- a.ts'],
+  ['hookify.checkout-revert.local.md', '되돌림(&& 뒤)', 'cd /tmp && git checkout -- a.ts'],
+  ['hookify.checkout-revert.local.md', '되돌림(루프 안)', 'for f in a b; do git checkout HEAD -- $f; done'],
   ['hookify.restore-discard.local.md', 'restore 로 미커밋 폐기', 'git restore frontend/js/sky.js'],
   ['hookify.restore-discard.local.md', 'restore --staged', 'git restore --staged frontend/js/a.ts'],
 ];
@@ -147,6 +150,24 @@ describe('hookify 규칙 — 통과시켜야 하는 것 (오탐 방지)', () => 
     'git diff --stat -- frontend/',
     'git show HEAD -- docs/BOARD.md',
     'grep -n checkout CLAUDE.md',
+    // ↓ **검수관 블로커 B2** 가 실측한 오탐 형태들. lookbehind 판(`(?<![-=\w])`)은
+    //   등호형(`--grep=checkout`)만 막고 **공백형을 안 막았다** — git 옵션은
+    //   `--opt value` 도 유효하고, 그쪽이 오히려 자연스럽다. "오탐 0" 이라는 비교표가
+    //   그 형태를 **안 재고** 낸 결론이었다(B1 과 같은 형태의 재발).
+    'git log --grep checkout -- CLAUDE.md',
+    'git log --author checkout -- CLAUDE.md',
+    // ↓ 같은 뿌리(브랜치명이 checkout 으로 끝나는 read-only 조회) — 검수관 비블로커 권고.
+    'git log refs/heads/checkout -- CLAUDE.md',
+    'git log origin/checkout -- CLAUDE.md',
+    // ↓ 서브커맨드 위치를 보는 패턴이 다른 git 서브커맨드를 오탐하지 않는지.
+    'git stash push -- frontend/js/a.ts',
+    'git add -- frontend/js/a.ts',
+    'git rm --cached -- a.ts',
+    'git blame -- frontend/js/sky.js',
+    'git log --pretty=%s -- CLAUDE.md',
+    'git config --get checkout.defaultRemote',
+    'git branch -D checkout',
+    'git rev-parse --verify checkout',
     // ↓ 검수관 B2 가 실측한 오탐 2건. **이 두 명령이 실제로 리뷰를 멈춰 세웠다.**
     'grep -n commit CLAUDE.md',
     'git log -n 3 | grep commit',
