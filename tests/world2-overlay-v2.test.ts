@@ -132,6 +132,27 @@ describe('v2 · 못 쓰는 것은 버리되 버렸다고 말한다', () => {
     expect(issues.some((i) => i.reason === 'unknown-field')).toBe(true);
   });
 
+  // ⚠ 아래 두 축은 **뮤테이션이 사각을 드러내서** 추가된 것이다(2026-08-12).
+  // `normalizeOverlay` 의 `if (norm.kind === '') continue;` 를 지웠는데 **0 failed** 였다 —
+  // 위 「파츠 종류를 모르면…」 은 `validateOverlay`(관문)만 보고, **런타임 경로가 같은
+  // 판단을 하는지는 아무도 안 보고 있었다.** 이 파일이 반려 사슬 내내 싸운 *"두 함수가
+  // 같은 파일에 다른 말을 한다"* 가 v2 에서 그대로 재발할 자리였다.
+  it('런타임 경로도 kind 빈 파츠를 버린다 — 관문과 같은 말을 해야 한다', () => {
+    const back = loadOverlay({
+      version: OVERLAY_VERSION, items: [],
+      parcels: [parcel({ parts: [part(), part({ kind: '' })] })],
+    });
+    expect(back.parcels[0].parts).toHaveLength(1);
+    expect(back.parcels[0].parts[0].kind).toBe('building');
+  });
+
+  it('issues 가 비면 두 경로가 같은 파셀을 낸다', () => {
+    const raw = { version: OVERLAY_VERSION, items: [], parcels: [parcel()] };
+    const v = validateOverlay(raw);
+    expect(v.issues).toEqual([]);
+    expect(loadOverlay(raw).parcels).toEqual(v.overlay.parcels);
+  });
+
   it('파츠 수치가 NaN 이면 파셀째 버린다 — 반쯤 깨진 배치를 얹는 것이 더 나쁘다', () => {
     const { overlay, issues } = validateOverlay({
       version: OVERLAY_VERSION, items: [],
