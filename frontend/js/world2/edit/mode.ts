@@ -119,6 +119,17 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   let snapOn = true;
   /** 내보내기 2단 클릭 — 손실이 있으면 1차는 저장하지 않는다 */
   let armed = false;
+  /**
+   * GLB 를 받는 중인가. **받는 동안 새 배치를 받지 않는다.**
+   *
+   * 왜 잠그나 (감독 신고 2026-08-12 *"완전히 굳어 탭을 닫아야 했다"*): 진행 표시가 없던
+   * 시절엔 눌러도 화면이 그대로라 «안 먹었나» 하고 다시 누르게 된다. 그러면 12.9MB 자산이
+   * 여러 벌 동시에 파싱되고 각각이 붙는 순간 프레임이 멈춘다 — 한 번의 히칭이 아니라
+   * **누적**이 탭을 죽였다. 진행 표시(아래 `placeAt`)와 이 잠금은 **짝이다**: 표시만 있고
+   * 잠금이 없으면 조급한 연타가 그대로 통과하고, 잠금만 있고 표시가 없으면 잠긴 것이
+   * 멈춘 것과 구별되지 않는다.
+   */
+  let busy = false;
 
   // ── 편집은 «켜는 것»이다. 기본은 주행 (감독 신고 2026-08-12) ───────────────
   // 처음엔 `?edit=1` 이 곧 편집 모드 상시 켜짐이었고, 그것이 **주행을 통째로 죽였다.**
@@ -348,27 +359,64 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   }
 
   // ── 배치 ────────────────────────────────────────────────────────────────
+  /** 받은 바이트를 MB 로. 소수 한 자리면 12.9MB 짜리에서 눈에 띄게 움직인다 */
+  function mb(bytes: number): string {
+    return (bytes / 1048576).toFixed(1);
+  }
+
   async function placeAt(src: string, at: { x: number; z: number }, blobUrl?: string): Promise<void> {
-    say(`${src.replace(/^assets\/models\//, '')} 놓는 중…`);
-    const e = await host.place(src, { x: at.x, y: host.surfaceAt(at.x, at.z), z: at.z }, blobUrl);
-    if (!e) { say('로드에 실패했습니다 — 콘솔의 진단을 보세요.', true); return; }
-    selected = e;
-    // 놓은 자리가 카메라 코앞이면 **건물 안에 갇힌 것처럼 보인다**(실측 2026-08-12:
-    // 스폰 4m 앞에 26m 자산을 놓으니 벽이 화면을 채웠다). `glb-city` 가 *"원점이 곧
-    // 스폰 지점인데 거기 미술관을 세워 조이스틱이 안 먹는 것처럼 보였다"* 로 이미 겪은
-    // 축이다. 거기서는 칸을 비웠지만 여기서는 감독이 고른 자리를 옮길 수 없으니 **말한다.**
-    say('놓았습니다. 화면이 막히면 S 로 물러나거나 「− 크기」로 줄이세요.');
-    refresh();
+    if (busy) { say('아직 불러오는 중입니다 — 끝나면 놓입니다.'); return; }
+    busy = true;
+    const label = src.replace(/^assets\/models\//, '');
+    say(`${label} 불러오는 중…`);
+    try {
+      const e = await host.place(
+        src, { x: at.x, y: host.surfaceAt(at.x, at.z), z: at.z }, blobUrl,
+        (pct, loaded) => {
+          // `pct === null` 은 총 용량을 모른다는 뜻이다 — 지어내지 않고 받은 양만 적는다.
+          say(pct === null
+            ? `${label} ${mb(loaded)}MB 받는 중…`
+            : `${label} ${Math.round(pct)}% (${mb(loaded)}MB)`);
+        },
+      );
+      if (!e) {
+        // 예전엔 여기가 *"콘솔의 진단을 보세요"* 였는데 이 경로에 `console.*` 호출이
+        // **0건**이었다 — 감독이 콘솔을 열어도 아무것도 없는 막다른 길이었다.
+        const why = host.lastFailure();
+        say(why ? `놓지 못했습니다 — ${why}` : '놓지 못했습니다 — 파일을 읽을 수 없습니다.', true);
+        return;
+      }
+      selected = e;
+      // 놓은 자리가 카메라 코앞이면 **건물 안에 갇힌 것처럼 보인다**(실측 2026-08-12:
+      // 스폰 4m 앞에 26m 자산을 놓으니 벽이 화면을 채웠다). `glb-city` 가 *"원점이 곧
+      // 스폰 지점인데 거기 미술관을 세워 조이스틱이 안 먹는 것처럼 보였다"* 로 이미 겪은
+      // 축이다. 거기서는 칸을 비웠지만 여기서는 감독이 고른 자리를 옮길 수 없으니 **말한다.**
+      say('놓았습니다. 화면이 막히면 S 로 물러나거나 「− 크기」로 줄이세요.');
+    } finally {
+      // 성공이든 실패든 잠금을 푼다 — `finally` 가 아니면 로드 실패 한 번이 편집을
+      // 세션 내내 잠근다.
+      busy = false;
+      refresh();
+    }
   }
 
   async function duplicate(): Promise<void> {
     if (!selected) { say('먼저 물건을 클릭해 고르세요.'); return; }
+    // 복제도 `host.place` 를 탄다. 원본이 캐시에 있으면 빨리 끝나지만 **미리보기(blob)는
+    // 캐시 키가 달라 다시 받을 수 있으므로** 같은 잠금을 건다.
+    if (busy) { say('아직 불러오는 중입니다 — 끝나면 복제합니다.'); return; }
+    busy = true;
     const s = selected;
-    const e = await host.place(
-      s.src, { x: s.x + 2, y: s.y, z: s.z + 2, ry: s.ry, s: s.s },
-      s.preview ? previewUrls.get(s.src) : undefined,
-    );
-    if (e) { selected = e; refresh(); }
+    try {
+      const e = await host.place(
+        s.src, { x: s.x + 2, y: s.y, z: s.z + 2, ry: s.ry, s: s.s },
+        s.preview ? previewUrls.get(s.src) : undefined,
+      );
+      if (e) selected = e;
+    } finally {
+      busy = false;
+      refresh();
+    }
   }
 
   function removeSelected(): void {
