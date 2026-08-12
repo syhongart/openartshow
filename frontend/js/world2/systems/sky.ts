@@ -229,9 +229,32 @@ export interface SkyState {
   lite?: boolean;
 }
 
+/**
+ * 낮 하늘 파랑 강도. 감독 지시 2026-08-12: *"지금 하늘 색이 파랗지 않아"*.
+ *
+ * 0 이면 옛 화면과 **바이트 동일**이고 1 이 새 기본이다(`?skyblue` 로 연다). 유도·근거는
+ * `sky.js` 의 `dayStops` 머리말 한 곳 — 여기에 색을 다시 적지 않는다.
+ */
+export const SKY_BLUE = 1;
+/** `?skyblue` 상한. 1 초과는 외삽이라 더 진해진다 — 감독이 화면에서 고를 여지를 남긴다. */
+export const SKY_BLUE_MAX = 1.5;
+
+/**
+ * 구름 곡률 원근 강도. 감독 지시 2026-08-12: *"지구는 둥글고 구름은 지구를 중심으로
+ * 구형으로 있어서 하늘의 구름이 지금과 다르게 보여"*.
+ *
+ * 0 이면 옛 동작(각도에 선형), 1 이 새 기본이다(`?cloudcurve`). 수식은 `sky.js` 의
+ * `cloudElev` 머리말 한 곳이다.
+ */
+export const CLOUD_CURVE = 1;
+
 export interface SkyOptions {
   /** 소프트웨어 렌더 여부 — 크로스페이드 스냅·저해상 돔·강수 축소 분기 */
   soft?: boolean;
+  /** 낮 하늘 파랑(`?skyblue`). 생략하면 `SKY_BLUE` */
+  skyBlue?: number;
+  /** 구름 곡률 원근(`?cloudcurve`). 생략하면 `CLOUD_CURVE` */
+  cloudCurve?: number;
   /** 초기 시간대·날씨. 오픈월드 기본은 야간 맑음(커밋 `318addf` 감독 확정) */
   time?: string;
   weather?: string;
@@ -414,6 +437,11 @@ export class SkySystem implements System {
       waterY: null,
       fogTint: opts.fogTint ?? 0,
       starScale: STAR_SCALE,
+      // 감독 지시 2026-08-12 — *"파란 하늘"* 과 *"둥근 지구의 구름"*. `sky.js` 쪽 기본은
+      // 0(옛 화면)이고 **world2 만 새 값을 기본으로 켠다** — 판정을 받은 것이 이 월드의
+      // 화면이기 때문이다. 근거·수식은 `sky.js` 의 `cloudElev`·`dayStops` 머리말 한 곳이다.
+      skyBlue: opts.skyBlue ?? SKY_BLUE,
+      cloudCurve: opts.cloudCurve ?? CLOUD_CURVE,
     });
     // 수평선 밴드 — 바다와 하늘의 경계(태스크 #202). 왜 이 축인지·왜 안개 far 를 밀지
     // 않는지는 `decide/horizon.ts` 머리말 한 곳이 소유한다.

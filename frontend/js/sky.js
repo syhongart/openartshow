@@ -138,6 +138,93 @@ function fbm(n, u, v, oct, P) {
   return s / norm;
 }
 
+// ── 구름 원근: 지구는 둥글다 (감독 지시 2026-08-12) ──────────────────────────
+//
+// 감독: *"실제로는 지구는 둥글고 구름은 지구를 중심으로 구형으로 있어서. 하늘의 구름이
+// 지금과 다르게 보여."*
+//
+// 옛 구름장은 노이즈를 **각도 좌표에 그대로** 그렸다 — 고도 10°든 60°든 구름 알갱이가
+// 같은 크기다. 실제 하늘은 구름이 고도 `h` 의 **층**에 깔려 있고, 시선이 낮아질수록 그
+// 층을 얕게 자르므로 같은 각도 안에 훨씬 먼 거리가 담긴다. 그래서 구름이 지평선 쪽으로
+// 갈수록 촘촘히 압축되며 수렴한다.
+//
+// **곡률이 결정적인 이유**: 땅이 평평하면 수평거리가 `h/tanθ` 라 θ→0 에서 **발산**한다
+// (지평선에서 구름이 무한히 뭉개진다). 둥근 지구에서는 시선이 구름 구면과 반드시 만나므로
+// 유한한 값 `√(2Rh)` 에 **수렴**한다 — 실제 하늘에서 구름장이 지평선에 닿아 딱 끊기며
+// 가장자리를 만드는 것이 이것이다. 감독이 화면에서 없다고 한 것도 그 끊김이다.
+//
+// 시선(고도각 θ)과 구름 구면(반지름 R+h)의 교점까지 거리:
+//     d = −R·sinθ + √(R²sin²θ + 2Rh + h²)
+// 그 지점의 수평 오프셋 `x = d·cosθ` 를 노이즈 좌표로 쓴다. `ε = h/R` 로 무차원화하면
+// R 이 소거되어 **구름 고도비 하나**가 룩을 정한다.
+//
+// ⚠ **세로(고도)만 휜다.** 가로도 같은 배수로 압축하는 것이 물리적으로 맞지만, `u` 는
+// 방위각이라 equirect 돔에서 **360° 로 감겨야 한다**(`wrapS = RepeatWrapping`). 스케일을
+// 곱하면 이음매가 갈라진다. 그래서 가로 압축은 **못 한다** — 룩의 핵인 "지평선으로 층이
+// 몰리는 것"은 세로 축이 만들고, 가로는 그대로 둔다. 이 한계를 지우지 마라.
+const CLOUD_EPS = 3.1e-4;
+// 구름 고도 / 지구 반경. 적운 밑면 ≈ 2km, 지구 반경 6371km → 3.14e-4.
+// 이 값이 **작을수록 지평선이 멀어 보이고**(구름이 낮게 깔림) 클수록 완만하다.
+// 화면에서 조절하는 축은 `curve`(아래) 하나로 충분해 이 값은 노브로 열지 않았다 —
+// 두 노브가 같은 룩을 서로 상쇄하면 감독이 무엇을 고른 것인지 화면에서 분리되지 않는다.
+
+/**
+ * 구름 노이즈의 **세로 샘플 좌표**. `v` 는 0=천정 → 1=지평선.
+ *
+ * `curve=0` 이면 옛 동작(`v/2`, 각도에 선형)과 **정확히 같다** — 되돌림 링크의 근거다.
+ * `curve=1` 이면 위 구면 교차로 완전히 휜다. 양 끝(천정·지평선)은 두 경로가 일치하고
+ * 중간 고도만 지평선 쪽으로 밀린다.
+ *
+ * @param {number} v 0=천정, 1=지평선
+ * @param {number} curve 0..1 곡률 강도
+ * @returns {number} 노이즈 세로 좌표(옛 코드의 `yl` 과 같은 범위 0..0.5)
+ */
+export function cloudElev(v, curve) {
+  const lin = v / 2;
+  if (!(curve > 0)) return lin;
+  const th = (1 - v) * Math.PI / 2;
+  const s = Math.sin(th), e = CLOUD_EPS;
+  const x = (-s + Math.sqrt(s * s + 2 * e + e * e)) * Math.cos(th) / e;
+  const xMax = Math.sqrt(2 * e + e * e) / e; // θ=0 — 지평선까지 √(2Rh)/h
+  const cur = (x / xMax) * 0.5;
+  return lin + (cur - lin) * Math.min(1, curve);
+}
+
+// ── 낮 하늘 파랑 (감독 지시 2026-08-12: *"지금 하늘 색이 파랗지 않아"*) ────────
+//
+// 옛 스톱은 천정에만 파랑이 있었다: `#3f86c8` → 0.62 `#8cbae0` → 0.93 `#bdd6ea` → 안개색.
+// **화면에 실제로 보이는 하늘은 대부분 v=0.5~1 구간**이고(눈높이에서 위를 거의 안 본다),
+// 그 대역이 이미 흰기 지배라 하늘이 파랗게 읽히지 않았다. 옛 주석은 *"파랑을 지평선
+// 가까이까지 끌어내려"* 라고 적고 있었으나 값이 그 문장을 따라오지 않았다.
+//
+// ⚠ **채도를 올리는 것이 아니라 파랑을 낮은 고도까지 유지하는 것**이 처방이다. 천정만
+// 더 진하게 만들면 화면에서 보이지도 않는 자리가 바뀌고 시야 대역은 그대로다.
+const DAY_STOPS_OLD = [[0, 0x3f86c8], [0.62, 0x8cbae0], [0.93, 0xbdd6ea]];
+// ⚠ 첫 판본은 `[0x2f6fb8, 0x69a6da, 0xa8cae6]` 이었고 **테스트가 반려했다** — 옛 색과
+// 청-적 차이가 137 로 **똑같았다.** 세 채널을 나란히 낮춰 그냥 어두워졌을 뿐이고,
+// "밝기만 낮추면 파래지지 않는다" 는 이 저장소가 이미 적어 둔 문장을 그대로 밟았다.
+// 지금 값은 **빨강을 낮추고 파랑은 지킨다** — 청-적 차이 137→167 / 84→125 / 45→78.
+const DAY_STOPS_BLUE = [[0, 0x2678cd], [0.62, 0x5fa0dc], [0.93, 0x96bee4]];
+
+/**
+ * 낮·맑음 하늘의 수직 그라디언트 스톱.
+ *
+ * `blue=0` 이면 옛 값과 **바이트 단위로 같다**(되돌림 링크의 근거). `blue=1` 이 새 기본,
+ * `blue>1` 은 외삽이라 더 진해진다 — 감독이 화면에서 고르는 축이다.
+ *
+ * @param {number} blue 0..1.5
+ * @param {number[]} fogRGB 지평선 스톱(안개색) — 이음새 제거의 핵이라 그대로 둔다
+ */
+export function dayStops(blue, fogRGB) {
+  const k = Math.max(0, blue);
+  const out = DAY_STOPS_OLD.map(([t, oldHex], i) => {
+    const a = rgb(oldHex), b = rgb(DAY_STOPS_BLUE[i][1]);
+    return [t, a.map((c, j) => Math.max(0, Math.min(255, Math.round(c + (b[j] - c) * k))))];
+  });
+  out.push([1, fogRGB]);
+  return out;
+}
+
 // 노이즈 구름장 — 저해상 밀도장(D)을 만들고 상하 밀도차로 자기음영(위가 옅으면 = 구름
 // 윗면 = 밝음)한 뒤 돔 상반부에 확대 합성. mode: 'cumulus'(맑은 하늘 조각구름 밴드) /
 // 'layer'(먹구름·눈구름 전천 구조).
@@ -153,8 +240,11 @@ function paintCloudLayer(ctx, rnd, W, Hh, o) {
       ? Math.min(1, Math.max(0, (v - 0.15) / 0.2)) * (1 - Math.max(0, (v - 0.9) / 0.1) * 0.55)
       : (1 - Math.max(0, (v - 0.78) / 0.22) * 0.85) * Math.min(1, Math.max(0, (v - 0.02) / 0.1));
     if (prof <= 0) continue;
+    // ⚠ y 루프에서 **한 번만** 계산한다. x 루프 안에 두면 512×256 = 131k 회가 되고,
+    // 값은 x 에 의존하지 않으므로 전부 같은 수를 다시 구하는 것이다.
+    const yl = cloudElev(v, o.curve ?? 0);
     for (let x = 0; x < LW; x++) {
-      const u = x / LW, yl = y / LW;
+      const u = x / LW;
       let field;
       if (o.mode === 'cumulus') {
         const mask = fbm(n, u, yl + 37, 3, 6);  // 저주파 — 구름 덩어리 배치(중형 다수)
@@ -286,7 +376,13 @@ export function paintBase(ctx, W, H, Hh, stops, fogRGB) {
 // ── 하늘돔 리페인트 ──
 // 돔은 완전 구(equirect): v=0 천정, v=0.5 지평선, v=1 천저. 하늘은 상반부(0..Hh)에만
 // 그리고 하반부는 fog색 단색(지면에 가려 안 보이지만 지평선 이음새 방지 ⑨). — 실측 교정.
-function paintSky(ctx, W, H, time, weather, opts) {
+// `export` 인 이유는 `paintBase` 와 같다 — **집행을 밖에서 볼 수 있어야 하기 때문이다.**
+// 순수 판정(`dayStops`·`cloudElev`)만 테스트하면 *"판정한 값이 실제로 소비되는가"* 가
+// 아무 데도 안 걸린다. 이 저장소는 그 구멍으로 이미 값을 치렀고(구름 `alpha` 미소비),
+// 이번에도 *"캔버스가 필요해 못 돌린다"* 로 넘어가려다 검수관에게 반려당했다 —
+// `tests/world2-ocean.test.ts` 가 `getContext` 를 스텁해 굽기 코드를 그대로 돌리는
+// 선례를 이미 갖고 있었다.
+export function paintSky(ctx, W, H, time, weather, opts) {
   const rnd = seeded(0xa17c + SKY_TIMES.indexOf(time) * 7 + SKY_WEATHERS.indexOf(weather) * 31);
   // 지평선(⑨)과 `scene.fog` 가 **같은 팔레트 조회**를 거쳐야 정합이 유지된다.
   const L = lightOf(time, weather, opts.fogTint);
@@ -312,7 +408,9 @@ function paintSky(ctx, W, H, time, weather, opts) {
        [1, fogRGB]]
     // 파랑을 지평선 가까이까지 끌어내려 하늘이 비어 보이지 않게 — 흰 헤이즈가 이르면
     // 저고도(시점에서 보이는 대부분의 하늘)에서 흰 구름이 배경에 묻힌다
-    : time === 'day' ? [[0, rgb(0x3f86c8)], [0.62, rgb(0x8cbae0)], [0.93, rgb(0xbdd6ea)], [1, fogRGB]]
+    // 낮 파랑은 `dayStops` 가 소유한다(감독 지시 2026-08-12). 여기에 색을 다시 적으면
+    // 그것이 값 미러링이다 — `blue=0` 이 옛 값과 바이트 동일인 것이 되돌림의 근거다.
+    : time === 'day' ? dayStops(opts.blue ?? 0, fogRGB)
     // 베이스는 차분하게 — 타오르는 부분은 태양 방위 글로우가 담당(방위 비대칭 ①)
     : time === 'sunset' ? [[0, rgb(0x2e3d6b)], [0.45, rgb(0x6a5a8e)], [0.72, rgb(0xa06a74)], [1, fogRGB]]
     : [[0, rgb(0x070a16)], [0.55, rgb(0x141b30)], [0.85, rgb(0x232c46)], [1, fogRGB]];
@@ -495,7 +593,7 @@ function paintSky(ctx, W, H, time, weather, opts) {
     // ③ 구름층 — fBm 전천 구조(밝은 틈·어두운 밑면이 노이즈 밀도장에서 자연 발생)
     const lit = cloudTop.map((v) => Math.min(255, (v * cloudK * 1.45 + 26) | 0));
     const shd = cloudTop.map((v) => (v * cloudK * 0.5) | 0);
-    paintCloudLayer(ctx, rnd, W, Hh, { mode: 'layer', thr: 0.34, softEdge: 0.3, alphaMax: snowy ? 0.6 : 0.66, tint: lit, shade: shd, soft: opts.soft });
+    paintCloudLayer(ctx, rnd, W, Hh, { mode: 'layer', thr: 0.34, softEdge: 0.3, alphaMax: snowy ? 0.6 : 0.66, tint: lit, shade: shd, soft: opts.soft, curve: opts.curve ?? 0 });
     if (weather === 'rain') { // 지평선 비 커튼(사선 얼룩)
       ctx.save(); ctx.globalAlpha = 0.1;
       for (let i = 0; i < 9; i++) {
@@ -599,13 +697,13 @@ export function paintTwinkleStars(ctxA, ctxB, W, Hh, scale = 1) {
 
 // 맑음 뭉게구름 전용 페인터 — 투명 배경 캔버스에 구름만. 흐르는 구름 레이어(가로 스크롤)용.
 // 시드를 시간대 무관 고정(0xC10D) → 낮↔일몰 전환 시 구름 형태 유지되고 톤만 바뀌어 자연스럽다.
-function paintClearClouds(ctx, W, Hh, time, soft) {
+function paintClearClouds(ctx, W, Hh, time, soft, curve = 0) {
   ctx.clearRect(0, 0, W, Hh * 2);
   const rnd = seeded(0xc10d);
   const tint = time === 'sunset' ? [255, 216, 182] : [255, 255, 255];
   const shade = time === 'sunset' ? [172, 126, 132] : [138, 154, 172];
   // thr 상향(구름 면적 축소 — 파란 하늘이 조각구름 사이로 보이게, 감독 "뭉쳐진 느낌" 해소)
-  paintCloudLayer(ctx, rnd, W, Hh, { mode: 'cumulus', thr: 0.56, softEdge: 0.13, alphaMax: 0.92, tint, shade, soft });
+  paintCloudLayer(ctx, rnd, W, Hh, { mode: 'cumulus', thr: 0.56, softEdge: 0.13, alphaMax: 0.92, tint, shade, soft, curve });
   for (let i = 0; i < 5; i++) { // 원경 층운
     const y = Hh * (0.74 + rnd() * 0.16), len = W * (0.1 + rnd() * 0.16), x = rnd() * W;
     const hgt = 2.4 + rnd() * 3;
@@ -648,7 +746,11 @@ function synthThunder(delayS) {
   } catch (_) { /* 무음 폴백 */ }
 }
 
-export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = 0, starScale = 1 }) {
+export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = 0, starScale = 1,
+  // 감독 지시 2026-08-12 — 화면에서 고르는 두 축. 기본 0 은 **옛 화면 그대로**다.
+  // 새 값을 기본으로 삼는 것은 world2 쪽(`systems/sky.ts`)이고, 여기서 0 인 이유는
+  // world1 을 비롯한 다른 소비자의 화면을 이 파일이 말없이 바꾸지 않기 위해서다.
+  skyBlue = 0, cloudCurve = 0 }) {
   const state = { time: 'day', weather: 'clear', fx: { rainbow: false, aurora: false }, flashSafe: false, precip: 1 };
   // ── B-2 저사양 오버드로우 축소 ──
   // 모바일 타일드 GPU는 불투명 오브젝트의 오버드로우는 제거하지만 transparent·가산블렌딩 레이어
@@ -1071,7 +1173,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     const L = lightOf(state.time, state.weather, fogTint);
     const fade = (o.fade === undefined ? 1.8 : o.fade) * (soft ? 0 : 1); // 저사양은 스냅
     // `fogTint` 를 돔 페인터에도 넘긴다 — 안 넘기면 지평선만 원래 색으로 남아 ⑨ 가 깨진다.
-    const pOpts = { soft, lowRes: false, fogTint }; // 돔 2048 고정(위 주석) — 저해상 별 경로 사용 안 함
+    const pOpts = { soft, lowRes: false, fogTint, blue: skyBlue, curve: cloudCurve }; // 돔 2048 고정(위 주석) — 저해상 별 경로 사용 안 함
     if (changedDome && fade > 0) {
       paintSky(domeB.ctx, DOME_W, DOME_H, state.time, state.weather, pOpts);
       domeB.tex.needsUpdate = true;
@@ -1097,7 +1199,7 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     // [B-2 오버드로우 축소 — 팀장 재판정/부팀장] lite(저사양 위기)에선 구름을 숨긴다(visible=false).
     // opacity 배수는 alpha-blend fill을 못 줄이지만(픽셀은 그대로 셰이딩·블렌딩) visible=false는 이 대형
     // 상반부 레이어를 아예 안 그려 실제 fill을 던다. 위기 한정이라 평상시 룩 무영향, 해제 시 setLite가 복원.
-    if (wantCloud) { paintClearClouds(cloudCtx, DOME_W, DOME_H / 2, state.time, soft); cloudTex.needsUpdate = true; cloudMesh.visible = !lite; }
+    if (wantCloud) { paintClearClouds(cloudCtx, DOME_W, DOME_H / 2, state.time, soft, cloudCurve); cloudTex.needsUpdate = true; cloudMesh.visible = !lite; }
     cloudFade.from = cloudMesh.material.opacity;
     cloudFade.to = wantCloud ? 1 : 0;
     if (phase !== 1) { cloudMesh.material.opacity = cloudFade.to; cloudMesh.visible = cloudFade.to > 0 && !lite; }
