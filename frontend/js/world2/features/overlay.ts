@@ -11,6 +11,18 @@
 // 묶으면 파셀을 드나들 때마다 지오·텍스처가 오르내려 [7] 게이트가 증식으로 읽는다.
 // 배치 수가 곧 상수이므로 `drawGroupKey` 는 그 수를 낸다(0개면 `'0'`).
 //
+// ── `?edit=1` 없는 세션에 무엇이 도는가 — **"영향 0" 이 아니다** (검수관 P1) ──
+// 정확히는 **편집 청크 영향 0** 이다. 이 기능 자체는 `?overlay=` 기본값 1 이라 기본
+// 세션에서도 켜지고, `world2-overlay.json` fetch 가 **한 건 나간다.** 배치가 0개면
+// 거기서 끝난다(GLTFLoader 도, `edit/mode.js` 도 안 받는다).
+//
+// 실측(2026-08-12, `vite preview` + 헤드리스): 기본 세션 응답 38건 · 4xx 0 · 콘솔 에러 0
+// (`?overlay=0` 은 37건 — 차이 1건이 이 fetch 다). `?edit=1` 세션도 콘솔 에러 0.
+//
+// ⚠ **진단은 `window.__world2.stats().overlay` 에 있다** — `window.__world2.overlay` 가
+// 아니다(`main.ts:1129` 의 `...collectDiagnostics(features)` 가 `stats()` 안에 있다).
+// 이 자리를 틀리게 적어 위임 보낸 탓에 *"진단 미노출"* 이라는 거짓 FAIL 이 한 번 났다.
+//
 // ── base 결합은 여기 한 곳이다 ──────────────────────────────────────────────
 // 계약의 `src` 는 `assets/models/…` 상대경로이고, 런타임 실제 경로는 `/app/assets/models/`,
 // 저장소 안 위치는 `frontend/assets/models/` 다. 세 표기를 잇는 것은 아래 `assetUrl`

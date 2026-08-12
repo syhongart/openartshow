@@ -54,7 +54,7 @@ type ThreeNS = {
     visible: boolean;
     renderOrder: number;
   };
-  RingGeometry: new (inner: number, outer: number, seg: number) => unknown;
+  RingGeometry: new (inner: number, outer: number, seg: number) => { dispose?(): void };
   MeshBasicMaterial: new (p: Record<string, unknown>) => { dispose?(): void };
   Box3: new () => { min: XYZ; max: XYZ; setFromObject(o: never): unknown };
   DoubleSide: number;
@@ -195,7 +195,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   const markerMat = new THREE.MeshBasicMaterial({
     color: 0x8b72ff, transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide,
   });
-  const marker = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 40), markerMat);
+  // 지오메트리도 변수로 든다 — `dispose` 에서 재질만 회수하면 링 지오가 남는다(검수관 P3).
+  const markerGeo = new THREE.RingGeometry(0.86, 1, 40);
+  const marker = new THREE.Mesh(markerGeo, markerMat);
   marker.rotation.x = -Math.PI / 2;
   marker.visible = false;
   marker.renderOrder = 999;
@@ -270,7 +272,11 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     const e = await host.place(src, { x: at.x, y: host.surfaceAt(at.x, at.z), z: at.z }, blobUrl);
     if (!e) { say('로드에 실패했습니다 — 콘솔의 진단을 보세요.', true); return; }
     selected = e;
-    say('놓았습니다. 끌어서 옮기세요.');
+    // 놓은 자리가 카메라 코앞이면 **건물 안에 갇힌 것처럼 보인다**(실측 2026-08-12:
+    // 스폰 4m 앞에 26m 자산을 놓으니 벽이 화면을 채웠다). `glb-city` 가 *"원점이 곧
+    // 스폰 지점인데 거기 미술관을 세워 조이스틱이 안 먹는 것처럼 보였다"* 로 이미 겪은
+    // 축이다. 거기서는 칸을 비웠지만 여기서는 감독이 고른 자리를 옮길 수 없으니 **말한다.**
+    say('놓았습니다. 화면이 막히면 S 로 물러나거나 「− 크기」로 줄이세요.');
     refresh();
   }
 
@@ -461,7 +467,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       doc.removeEventListener('drop', onDrop);
       panel.remove();
       style.remove();
+      (host.root as unknown as { remove(o: never): void }).remove(marker as never);
       markerMat.dispose?.();
+      markerGeo.dispose?.();
     },
   };
 }
