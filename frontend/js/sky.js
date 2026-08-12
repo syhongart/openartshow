@@ -76,15 +76,71 @@ function mixHex(a, b, k) {
 }
 
 /**
- * 시간대×날씨 팔레트. `tint`(0..1)만큼 안개를 `FOG_SKY` 쪽으로 민다.
+ * 안개 하늘색 계수 — 숫자면 전 시간대 공통, 객체면 시간대별.
+ *
+ * 이 파일은 `.js` 라 타입이 **기본값에서 추론된다** — `tint = 0` 만 두면 TS 가 `number`
+ * 로 굳혀 객체를 넘기는 호출부가 전부 에러가 된다(실제로 그렇게 났다). 그래서 별칭을
+ * 명시한다. 값 목록(`day`·`sunset`·`night`)을 여기 적지 않는 것은 `LIGHT` 테이블이
+ * 시간대의 SSOT 이기 때문이다 — 여기에 적으면 시간대가 늘어나는 날 이 줄만 남는다.
+ *
+ * @typedef {number | { [k: string]: number | undefined }} FogTintArg
+ */
+
+/**
+ * `tint` 를 **그 시간대의 계수**로 푼다.
+ *
+ * @param {FogTintArg} tint
+ * @param {string} time
+ * @returns {number}
+ *
+ * 숫자면 전 시간대에 같은 값(옛 뜻 — 이 인자의 첫 판본이 그랬고 라이브 `world.js` 는
+ * 지금도 아무것도 안 넘긴다). 객체면 `{ day, sunset, night }` 중 그 시간대의 값이다.
+ *
+ * ⚠ **뜻이 둘이 아니다.** 이 인자의 뜻은 언제나 *"시간대별 계수"* 이고 숫자는 그것의
+ * 축약형이다 — 세 시간대에 같은 값을 적는 것과 같다. 뜻이 둘이면 다음 사람이 어느
+ * 쪽인지 매번 되짚어야 하고, 그것이 값 미러링과 같은 형태의 사고를 만든다.
+ */
+function tintAt(tint, time) {
+  if (typeof tint === 'number') return tint;
+  return tint?.[time] ?? 0;
+}
+
+/**
+ * 시간대×날씨 팔레트. `tint`만큼 안개를 `FOG_SKY` 쪽으로 민다.
  *
  * `tint` 가 0(기본)이면 **테이블 객체를 그대로** 돌려준다 — 사본조차 만들지 않으므로
  * 기존 소비자의 동작이 한 톨도 달라지지 않는다.
+ *
+ * ── 왜 시간대별인가 (감독 판정 2026-08-12) ──────────────────────────────────
+ * 이 인자는 처음에 **스칼라**였고, 그 옆 주석(`FOG_SKY_TINT`)이 이렇게 적고 있었다:
+ *
+ *   *"물리적으로도 이 방향이 맞다 — 원거리 대기는 레일리 산란으로 푸르게 수렴한다.
+ *   그래서 시간대를 가리지 않고 전 팔레트에 같은 계수를 건다. 밤만 손대면 낮·노을과
+ *   톤이 갈리고, 그건 '약간 하늘색'이 아니라 '밤만 다른 세계'가 된다."*
+ *
+ * **감독이 화면을 보고 정확히 그 반대로 판정했다** — *"주간일때는 흰색말고 하늘색어때"*
+ * → 확인 후 *"야간은 원래가 좋아. 연기 파란거 말고. 주간/야간 따로 가야해."*
+ *
+ * 내 규정이 왜 틀렸나: 레일리 산란이 푸른 것은 **햇빛이 대기를 통과할 때**다. 밤에는
+ * 그 광원이 없다 — 밤하늘이 검은 것과 같은 이유다. 그러니 밤 안개를 하늘색으로 미는
+ * 것은 물리의 연장이 아니라 **물리를 시간대에 상관없이 적용한 오류**였다. 화면에서는
+ * 그것이 감독 표현대로 *"파란 연기"* 로 읽혔다. "톤이 갈린다" 는 걱정도 빗나갔다 —
+ * 낮과 밤은 애초에 팔레트가 통째로 다르고, 갈리는 것이 정상이다.
+ *
+ * **경계**: 노을(`sunset`)은 감독이 판정하지 않았다. 기본을 0 으로 두는 것은 밤의
+ * 근거를 준용한 것이다(해가 지평선에 걸린 시간대의 정체성은 따뜻한 주황이고, 거기에
+ * 하늘색을 섞으면 그 축이 탁해진다 — 밤에서 잡힌 것과 같은 형태). 화면 판정이
+ * 필요하면 `?fogskys=` 로 켠다. 이 값을 추측으로 채우지 않는다.
+ *
+ * @param {string} time
+ * @param {string} weather
+ * @param {FogTintArg} [tint]
  */
 export function lightOf(time, weather, tint = 0) {
   const L = LIGHT[time][weather];
-  if (!(tint > 0)) return L;
-  return { ...L, fog: mixHex(L.fog, FOG_SKY, Math.min(1, tint)) };
+  const k = tintAt(tint, time);
+  if (!(k > 0)) return L;
+  return { ...L, fog: mixHex(L.fog, FOG_SKY, Math.min(1, k)) };
 }
 
 const seeded = (s0) => { let s = s0 | 0; return () => { s |= 0; s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
@@ -755,7 +811,22 @@ function synthThunder(delayS) {
   } catch (_) { /* 무음 폴백 */ }
 }
 
-export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = 0, starScale = 1,
+// ── `fogTint` 의 기본값에 캐스트가 붙어 있는 이유 (검수관 블로커 B1, 2026-08-12) ──
+// 이 파일은 `.js` 라 인자 타입이 **기본값에서만** 추론된다. `fogTint = 0` 이면 `number`
+// 로 굳어 시간대별 객체를 넘기는 world2 조립부가 에러가 난다. 그래서 기본값 표현식
+// 자체에 타입을 붙인다 — 그 인자 하나만 넓어지고 나머지는 추론 그대로다.
+//
+// ⚠ **첫 판본은 `@param {{fogTint?: FogTintArg} & Record<string, any>} opts` 였고 그것이
+// 블로커였다.** 인터섹션의 인덱스 시그니처가 `fogTint` 외 **모든 키를 `any` 로 넓혀**,
+// world2 호출부에서 `soft`·`waterY`·`starScale`·`skyBlue`·`cloudCurve`·`cloudH` 여섯의
+// 타입 검사가 통째로 사라졌다. 검수관이 base(`a170350`) 대비 오타입 뮤테이션으로
+// **6/6 미검출**을 실측했다 — 주석은 *"`fogTint` 만 타입을 명시한다"* 라고 적고 있었고
+// 그 문장이 거짓이었다. 게이트가 조용히 사라지는 이 저장소의 상습 사고 형태 그대로다.
+//
+// `@param {FogTintArg} [opts.fogTint]` 점 표기 단독도 안 된다(검수관 실측 — 오히려
+// 전 필드가 `number` 로 오판정됐다). 전체를 typedef 로 다시 적는 길은 값 미러링이라
+// 택하지 않았다. 이 캐스트가 실제로 일곱 인자를 지키는지는 뮤테이션으로 잰다(7/7 검출).
+export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = /** @type {FogTintArg} */ (0), starScale = 1,
   // 감독 지시 2026-08-12 — 화면에서 고르는 두 축. 기본 0 은 **옛 화면 그대로**다.
   // 새 값을 기본으로 삼는 것은 world2 쪽(`systems/sky.ts`)이고, 여기서 0 인 이유는
   // world1 을 비롯한 다른 소비자의 화면을 이 파일이 말없이 바꾸지 않기 위해서다.
