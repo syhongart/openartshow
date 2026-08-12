@@ -249,10 +249,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const density = readDensity();
   // 밀도는 배치 판정에만 곱한다. 풀 예산은 이 레이아웃에서 자동으로 파생되므로
   // 두 곳에 따로 적지 않는다(값 미러링 금지).
-  const LAYOUT = density === 1 ? DEFAULT_LAYOUT : {
+  // 표면 가산 되돌림 노브. 기본 1(켬) — `?gsurf=0` 이면 실물이 전부 지면(y=0)에 놓여
+  // **2026-08-12 이전 화면**이 된다(잔디에 7cm 잠기고 그림자가 판 아래로 묻힌다).
+  // 감독이 새 화면과 옛 화면을 재배포 없이 나란히 보기 위한 축이다 — 근거 전문은
+  // `parts/types.ts` 의 `surface` 주석 한 곳.
+  const surface = readNum('gsurf', DEFAULT_LAYOUT.surface, 0, 1);
+  const LAYOUT = density === 1 && surface === DEFAULT_LAYOUT.surface ? DEFAULT_LAYOUT : {
     ...DEFAULT_LAYOUT,
     maxBuildings: DEFAULT_LAYOUT.maxBuildings * density,
     maxTrees: DEFAULT_LAYOUT.maxTrees * density,
+    surface,
   };
 
   // 충돌(태스크 #182). `?collide=0` 으로 끈다 — 예전처럼 통과한다.

@@ -45,6 +45,8 @@ export const ASPHALT_BASE = 0x2a2d33;
 
 export const road: PartSpec = {
   kind: 'road',
+  // 바닥 판이다 — `place` 의 y 가 이미 절대 높이다(표면 가산 대상 아님). `types.ts` 참조.
+  absoluteY: true,
   // far 까지 그린다. 멀리서 길이 이어져 보이는 것이 "도시 안에 있다"는 인상의 대부분이고,
   // 조각당 2삼각형이라 far 까지 넣어도 삼각형 예산에 거의 영향이 없다.
   tiers: ['near', 'mid', 'far'],
