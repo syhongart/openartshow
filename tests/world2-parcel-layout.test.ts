@@ -13,6 +13,7 @@ import {
 } from '../frontend/js/world2/decide/parcel-layout.js';
 import { isTowerParcel } from '../frontend/js/world2/parts/zoning.js';
 import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
+import { surfaceY } from '../frontend/js/world2/parts/surface.js';
 import { ALL_KINDS } from '../frontend/js/world2/parts/index.js';
 
 const at = (px: number, pz: number, tier: 'near' | 'mid' | 'far' = 'near') => parcelLayout(px, pz, tier);
@@ -180,7 +181,19 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   // 실물은 정확히 0 을 요구할 수 있고, 판은 필요한 만큼 벌릴 수 있다.
   const DECALS = new Set(['ground', 'garden', 'road']);
 
-  it('실물 부품은 밑동이 정확히 땅에 있다', () => {
+  // ⚠ **2026-08-12 에 재는 축을 고쳤다** (감독 발견 → 팀장 판정 B).
+  // 이 단언은 오래 `expect(p.y).toBe(0)` 이었고, 문장(*"밑동이 땅에 있다"*)은 내내 참인데
+  // **결론이 거짓**이었다 — `y=0` 은 **지면 판 상단**이지 화면에서 밟는 바닥이 아니다.
+  // 그 위를 잔디 판(0.07)이 파셀째 덮고 도로(0.14)가 또 얹히므로, `y=0` 으로 놓인 실물은
+  // 실제로는 잔디에 **7cm 잠겨** 있었다(그림자는 판 아래로 묻혀 아예 안 보였다).
+  // 참인 문장에서 성립하지 않는 결론을 뽑은 두 번째 사례다(첫 번째는 `info.memory` —
+  // *"객체를 부팅 때 다 만들어 둔다"* 가 참이면서 GPU 자원 계단을 못 막았던 그것).
+  //
+  // 이제 표면 높이는 `decide/parcel-layout.ts` 가 한 곳에서 더하고, 파츠가 내는 것은
+  // **로컬 높이**다. 그래서 여기서 보는 것도 로컬(= 최종 y − 그 자리 표면 높이)이다.
+  // 표면 정합 자체는 `tests/world2-surface.test.ts` 가 따로 본다 — 두 축을 한 단언에
+  // 섞으면 어느 쪽이 깨졌는지 구별되지 않는다.
+  it('실물 부품은 로컬 밑동이 정확히 0 이다 — 표면 위에 정확히 얹힌다', () => {
     // ── 한 파셀로는 모자란다 ─────────────────────────────────────────────
     // 처음엔 `at(4,-4)` 한 파셀만 봤다. 나무를 8cm 띄우는 뮤테이션이 **살아남았다** —
     // 그 파셀에 나무가 없었기 때문이다. `checked > 0` 을 넣어 뒀지만 그건 "무언가는
@@ -195,7 +208,7 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
         for (const p of at(px, pz)) {
           if (DECALS.has(p.kind)) continue;
           seen.add(p.kind);
-          expect(p.y).toBe(0);
+          expect(p.y - surfaceY(px, pz, p.x, p.z)).toBe(0);
         }
       }
     }

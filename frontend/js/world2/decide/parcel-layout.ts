@@ -21,6 +21,7 @@
 
 import { PARTS, specFor, kindsFor, maxPartsPerParcel, outermostTierFor, type PartKind } from '../parts/index.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
+import { surfaceY } from '../parts/surface.js';
 import type { LayoutOptions, PlacedPart } from '../parts/types.js';
 
 export type { PartKind };
@@ -92,7 +93,23 @@ export function parcelLayout(
     // `out` 을 그대로 넘긴다 — 뒤에 오는 파츠가 앞서 놓인 것을 보고 자리를 피한다.
     // 목록 순서가 곧 우선순위이고, 그래서 `parts/index.ts` 의 배열 순서가 룩에 영향을
     // 준다(예전에는 "실제 동작은 순서와 무관" 했다. 이제 아니다).
-    out.push(...spec.place({ px, pz, rnd, o, halfX, halfZ, placed: out, radiusOf }));
+    const made = spec.place({ px, pz, rnd, o, halfX, halfZ, placed: out, radiusOf });
+
+    // ── 표면 높이를 여기 한 곳에서 더한다 (팀장 판정 B, 2026-08-12) ──────────
+    // 파츠는 **지면 기준 상대 높이**만 안다(밑동이면 y=0). 실제로 밟는 바닥은 그 자리에
+    // 깔린 판이 정하고(잔디 0.07 · 도로 0.14 · 광장 0), 그 판정은 `parts/surface.ts` 다.
+    //
+    // **왜 파츠마다가 아니라 여기인가**: 파츠는 계속 늘고 새 파츠를 만드는 사람이 이
+    // 가산을 잊으면 **조용히 잠긴다** — 이번 결함이 감독 스크린샷이 오기까지 아무에게도
+    // 안 보였던 그 형태다. 호출부가 하나뿐(`spec.place` 는 저장소 전체에서 이 줄에서만
+    // 불린다)이라 여기 두면 새 파츠가 자동으로 따라온다.
+    //
+    // 반대로 **바닥 판과 그림자는 이미 절대 y** 를 갖고 태어나므로 빼야 한다(`absoluteY`).
+    // 그림자가 여기 드는 이유가 덜 자명하다 — `parts/shadow.ts` 의 `place` 가 **캐스터
+    // 자세를 복사**하는데, 캐스터는 위 순회에서 **이미 가산된 뒤**라(파츠 목록 순서상
+    // 그림자가 캐스터보다 뒤다) 여기서 또 더하면 이중 가산이다.
+    if (spec.absoluteY) out.push(...made);
+    else for (const p of made) out.push({ ...p, y: p.y + surfaceY(px, pz, p.x, p.z) * o.surface });
   }
   return out;
 }
