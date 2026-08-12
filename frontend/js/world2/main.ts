@@ -20,6 +20,7 @@ import {
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
+import { villageLayout, MUL_MIN, MUL_MAX } from './decide/village-rules.js';
 import { spawnFor, SPAWN_SPOTS, type SpawnSpot } from './decide/spawn-spot.js';
 import { waterSurfaceY as surfaceYAt, SEABED_Y } from './decide/water.js';
 import { AdaptSystem } from './systems/adapt.js';
@@ -51,7 +52,7 @@ import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 import { ALL_KINDS, PARTS } from './parts/index.js';
 // URL 노브는 `url-knob.ts` 가 유일한 구현이다 — 여기·`postfx.ts`·`features/sky.ts` 가
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
-import { readNum, readEnum } from './url-knob.js';
+import { readNum, readEnum, readNumOpt, writeNumOpt } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
 // 카메라 far 를 여기서 유도한다 — 아래 `PerspectiveCamera` 주석 참고.
 import { DOME_MAX } from './systems/sky.js';
@@ -229,7 +230,9 @@ const SHADOW_DECAL_OPTS = {
  * 하기 위해서다. 별도 빌드를 만들면 "무엇을 쟀는지"가 또 흐려진다.
  */
 function readDensity(): number {
-  return Math.round(readNum('density', 1, 1, 8));
+  // 범위는 `decide/village-rules.ts` 가 소유한다 — `?bld=`·`?tree=` 와 **같은 축**이라
+  // 여기에 8 을 다시 적으면 한쪽만 고쳐도 아무도 모른다.
+  return Math.round(readNum('density', MUL_MIN, MUL_MIN, MUL_MAX));
 }
 
 
@@ -254,12 +257,18 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 감독이 새 화면과 옛 화면을 재배포 없이 나란히 보기 위한 축이다 — 근거 전문은
   // `parts/types.ts` 의 `surface` 주석 한 곳.
   const surface = readNum('gsurf', DEFAULT_LAYOUT.surface, 0, 1);
-  const LAYOUT = density === 1 && surface === DEFAULT_LAYOUT.surface ? DEFAULT_LAYOUT : {
-    ...DEFAULT_LAYOUT,
-    maxBuildings: DEFAULT_LAYOUT.maxBuildings * density,
-    maxTrees: DEFAULT_LAYOUT.maxTrees * density,
-    surface,
-  };
+  // ── 마을 규칙 노브 (감독 지시 *"너가 만든 규율을 내가 편집하고"*) ──────────
+  // `?density=` 는 건물·나무를 **함께** 올린다(부하 시험용, 이름 유지). `?bld=`·`?tree=`
+  // 는 한쪽만 올린다 — *"나무만 늘리기"* 가 안 되던 것을 연다.
+  //
+  // **곱셈은 `decide/village-rules.ts` 한 곳**이다. 여기와 슬라이더와 테스트가 같은
+  // 함수를 부르므로 규칙이 바뀌면 셋이 함께 바뀐다(값 미러링 금지).
+  const bldMul = Math.round(readNum('bld', MUL_MIN, MUL_MIN, MUL_MAX));
+  const treeMul = Math.round(readNum('tree', MUL_MIN, MUL_MIN, MUL_MAX));
+  const LAYOUT = villageLayout(
+    { density, building: bldMul, tree: treeMul },
+    surface === DEFAULT_LAYOUT.surface ? undefined : { surface },
+  );
 
   // 충돌(태스크 #182). `?collide=0` 으로 끈다 — 예전처럼 통과한다.
   // **끄는 노브를 두는 이유**: 스모크가 켬/끔을 대조군으로 비교할 수 있어야 "정말 막고
@@ -895,7 +904,41 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             knob('shsoft', 'soft', '번짐', 0, SHADOW_SOFT_MAX, 0.02),
             knob('shres', 'res', '해상도', SHADOW_DRAW_MIN, SHADOW_DRAW_MAX, 8),
           ]);
+          // ── 마을 규칙 슬라이더 (감독 지시 *"너가 만든 규율을 내가 편집하고"*) ──
+          // ⚠ **이 셋은 미는 즉시 반영되지 않는다.** 슬롯 풀이 부팅 1회에 봉인되므로
+          // (`pools.seal()` — 개수 불변식) 마을을 다시 지으려면 새로고침이 필요하다.
+          // 그래서 `set()` 은 **주소만** 쓰고 아래 「마을 적용」 버튼이 새로고침한다.
+          // 감독 카드 판정(2026-08-11): *"새로고침 괜찮다"*.
+          //
+          // 슬라이더가 움직이는데 화면이 안 변하면 **고장으로 읽힌다.** 버튼 라벨이
+          // 그 사실을 말하는 유일한 자리다.
+          const ruleKnob = (key: string, label: string) => ({
+            key, label, min: MUL_MIN, max: MUL_MAX, step: 1,
+            // 주소를 읽는다 — `set()` 이 주소에 쓰므로 슬라이더가 민 자리에 머문다.
+            value: () => readNum(key, MUL_MIN, MUL_MIN, MUL_MAX),
+            overridden: () => readNumOpt(key, MUL_MIN, MUL_MAX) !== null,
+            set: (v: number) => writeNumOpt(key, v),
+            reset: () => writeNumOpt(key, null),
+          });
+          attachKnobBar(bar, [
+            ruleKnob('bld', '건물'),
+            ruleKnob('tree', '나무'),
+            ruleKnob('density', '전체'),
+          ]);
           attachKnobActions(bar, [{
+            key: 'w2rules',
+            label: '마을 적용 (새로고침)',
+            run: () => {
+              // 부팅 때 쓴 값과 같으면 새로고침이 낭비다 — 그리고 아무 일도 안 일어나면
+              // 감독은 버튼이 고장 났다고 읽는다. 그래서 말로 답한다.
+              const same = readNum('bld', MUL_MIN, MUL_MIN, MUL_MAX) === bldMul
+                && readNum('tree', MUL_MIN, MUL_MIN, MUL_MAX) === treeMul
+                && Math.round(readNum('density', MUL_MIN, MUL_MIN, MUL_MAX)) === density;
+              if (same) return '지금 값 그대로';
+              location.reload();
+              return '적용 중…';
+            },
+          }, {
             key: 'shbake',
             label: '그림자 굽기',
             // 소요를 돌려주면 버튼 옆에 잠깐 뜬다. 같은 값으로 다시 구우면 화면이 안
