@@ -237,7 +237,9 @@ export interface SkyState {
  */
 export const SKY_BLUE = 1;
 /** `?skyblue` 상한. 1 초과는 외삽이라 더 진해진다 — 감독이 화면에서 고를 여지를 남긴다. */
-export const SKY_BLUE_MAX = 1.5;
+export const SKY_BLUE_MAX = 4;
+// ⚠ 1.5 였던 것을 올렸다 — 감독 실기기 2026-08-12: *"더 진한 파랑보다 더 파란것을 보고
+// 싶어."* 상한이 판정을 가로막고 있었다. 외삽이라 빨강이 0 에 닿으면 더는 안 파래진다.
 
 /**
  * 구름 곡률 원근 강도. 감독 지시 2026-08-12: *"지구는 둥글고 구름은 지구를 중심으로
@@ -248,6 +250,16 @@ export const SKY_BLUE_MAX = 1.5;
  */
 export const CLOUD_CURVE = 1;
 
+/**
+ * 구름 고도비(`?cloudh`). 감독 실기기 2026-08-12: *"구름이 뒤로... 쭉 늘어진."*
+ *
+ * 생략하면 `sky.js` 의 `CLOUD_EPS`(체감값 0.05)를 쓴다. **실제 물리값 0.0003 도
+ * 노브로 볼 수 있다** — 왜 실제 값이 화면을 깨뜨리는지는 `sky.js` 의 `CLOUD_EPS`
+ * 머리말 한 곳이다.
+ */
+export const CLOUD_H_MIN = 0.0003;
+export const CLOUD_H_MAX = 0.4;
+
 export interface SkyOptions {
   /** 소프트웨어 렌더 여부 — 크로스페이드 스냅·저해상 돔·강수 축소 분기 */
   soft?: boolean;
@@ -255,6 +267,8 @@ export interface SkyOptions {
   skyBlue?: number;
   /** 구름 곡률 원근(`?cloudcurve`). 생략하면 `CLOUD_CURVE` */
   cloudCurve?: number;
+  /** 구름 고도비(`?cloudh`). 생략하면 `sky.js` 기본 */
+  cloudH?: number;
   /** 초기 시간대·날씨. 오픈월드 기본은 야간 맑음(커밋 `318addf` 감독 확정) */
   time?: string;
   weather?: string;
@@ -442,6 +456,7 @@ export class SkySystem implements System {
       // 화면이기 때문이다. 근거·수식은 `sky.js` 의 `cloudElev`·`dayStops` 머리말 한 곳이다.
       skyBlue: opts.skyBlue ?? SKY_BLUE,
       cloudCurve: opts.cloudCurve ?? CLOUD_CURVE,
+      cloudH: opts.cloudH ?? 0,
     });
     // 수평선 밴드 — 바다와 하늘의 경계(태스크 #202). 왜 이 축인지·왜 안개 far 를 밀지
     // 않는지는 `decide/horizon.ts` 머리말 한 곳이 소유한다.
