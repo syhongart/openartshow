@@ -960,6 +960,33 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
       0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1,
     ]), 2));
+    // ── `normal` 은 이 재질이 안 쓴다. 그런데 **없으면 WebGPU 가 경고를 찍는다** ──────
+    // 감독 실기기 콘솔 2026-08-12: `TSL.NormalNode: Vertex attribute "normal" not found
+    // on geometry.` **2건**.
+    //
+    // 원인이 정확히 여기다. three 의 노드 파이프라인(`three.webgpu`)은 재질이 조명을
+    // 안 받아도 `normalLocal` 을 빌드하고, 그 안에서 `geometry.hasAttribute('normal')`
+    // 이 false 면 경고 후 `vec3(0,1,0)` 로 폴백한다. **렌더는 정상이고 화면 영향은 0**
+    // 이지만(Basic 재질이라 이 값을 안 쓴다) 콘솔에 매번 남는다.
+    //
+    // **2건인 이유는 `side: DoubleSide` 다.** WebGPU 는 앞/뒤면을 파이프라인 둘로 굽고
+    // (실측: 같은 지오메트리가 `side:0` 과 `side:1` 로 각각 한 번씩 보고됐다), 경고
+    // 캐시가 파이프라인 단위라 두 번 난다. 밤 맑음 기본 화면에서도 뜨는 것은
+    // `prewarm()` 이 부팅에 잠든 강수 레이어를 잠시 켜 파이프라인을 미리 굽기 때문이다
+    // — 의도된 동작이고, 그래서 눈이 안 보이는 화면에서도 콘솔에 남는다.
+    //
+    // 값은 교차 평면 각각의 면법선이다(XY 판 → +Z, YZ 판 → +X). 8정점 × 3 = 96바이트라
+    // 개수 불변식[7]·메모리에 영향이 없고, WebGL 경로는 이 속성을 아예 안 본다.
+    //
+    // ⚠ **헤드리스 기본 설정으로는 이 결함을 못 잡는다** — `three.webgpu` 가 WebGL 로
+    // 폴백하면 이 경로가 통째로 안 돈다(실측: 조립본 · `?weather=snow`/`rain` 강제
+    // 포함 전부 0건). 재현하려면 크로미움에 `--enable-unsafe-webgpu
+    // --use-webgpu-adapter=swiftshader` 를 줘야 한다. 그 조건에서 **고치기 전 2건 →
+    // 고친 뒤 0건 → normal 을 다시 지우면 2건**을 실측했다(뮤테이션까지 확인).
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([
+      0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,   // XY 평면 → +Z
+      1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0,   // YZ 평면 → +X
+    ]), 3));
     g.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
     return g;
   })());
