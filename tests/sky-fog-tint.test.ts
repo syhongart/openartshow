@@ -153,7 +153,15 @@ describe('지평선과 안개가 같은 값을 본다 — 정합이 이 변경�
   });
 
   it('createSkySystem 이 계수를 받고 기본이 0 이다 — 라이브는 무변경', () => {
-    expect(src).toMatch(/export function createSkySystem\(\{[^}]*fogTint = 0[^}]*\}\)/);
+    // 시그니처를 **잘라서** 본다. 예전에는 `\{[^}]*fogTint = 0[^}]*\}\)` 로 중괄호
+    // 블록 전체를 한 정규식으로 잡았는데, 기본값에 JSDoc 캐스트(`/** @type {…} */`)가
+    // 붙자 그 안의 `}` 에서 `[^}]*` 가 멈춰 **거짓 FAIL** 이 났다. 검사 의도(= 기본이
+    // 0 이라 라이브가 무변경)는 그대로이고 매칭 방식만 바꾼다.
+    const i = src.indexOf('export function createSkySystem(');
+    expect(i, 'createSkySystem 정의를 못 찾았다').toBeGreaterThan(-1);
+    const sig = src.slice(i, i + 800);
+    // 캐스트가 있든 없든 **기본값이 0** 이면 통과. 다른 값이면 잡는다.
+    expect(sig).toMatch(/fogTint = (?:\/\*\*[\s\S]*?\*\/\s*\()?0[\s),]/);
   });
 
   it('★ world2 조립부가 세 노브를 전부 넘긴다 — 하나라도 빠지면 그 시간대가 죽는다', () => {

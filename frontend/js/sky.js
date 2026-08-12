@@ -811,15 +811,22 @@ function synthThunder(delayS) {
   } catch (_) { /* 무음 폴백 */ }
 }
 
-/**
- * `fogTint` 만 타입을 명시한다 — 기본값 `0` 에서 `number` 로 추론되어 시간대별 객체를
- * 넘기는 world2 조립부가 에러가 난다(`.js` 라 시그니처 타입이 기본값에서만 온다).
- * 나머지 인자는 이 파일이 `.js` 로 남아 있는 동안 추론 그대로 둔다 — 여기서 전체
- * 시그니처를 JSDoc 으로 다시 적으면 그것이 곧 값 미러링이다.
- *
- * @param {{ fogTint?: FogTintArg } & Record<string, any>} opts
- */
-export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = 0, starScale = 1,
+// ── `fogTint` 의 기본값에 캐스트가 붙어 있는 이유 (검수관 블로커 B1, 2026-08-12) ──
+// 이 파일은 `.js` 라 인자 타입이 **기본값에서만** 추론된다. `fogTint = 0` 이면 `number`
+// 로 굳어 시간대별 객체를 넘기는 world2 조립부가 에러가 난다. 그래서 기본값 표현식
+// 자체에 타입을 붙인다 — 그 인자 하나만 넓어지고 나머지는 추론 그대로다.
+//
+// ⚠ **첫 판본은 `@param {{fogTint?: FogTintArg} & Record<string, any>} opts` 였고 그것이
+// 블로커였다.** 인터섹션의 인덱스 시그니처가 `fogTint` 외 **모든 키를 `any` 로 넓혀**,
+// world2 호출부에서 `soft`·`waterY`·`starScale`·`skyBlue`·`cloudCurve`·`cloudH` 여섯의
+// 타입 검사가 통째로 사라졌다. 검수관이 base(`a170350`) 대비 오타입 뮤테이션으로
+// **6/6 미검출**을 실측했다 — 주석은 *"`fogTint` 만 타입을 명시한다"* 라고 적고 있었고
+// 그 문장이 거짓이었다. 게이트가 조용히 사라지는 이 저장소의 상습 사고 형태 그대로다.
+//
+// `@param {FogTintArg} [opts.fogTint]` 점 표기 단독도 안 된다(검수관 실측 — 오히려
+// 전 필드가 `number` 로 오판정됐다). 전체를 typedef 로 다시 적는 길은 값 미러링이라
+// 택하지 않았다. 이 캐스트가 실제로 일곱 인자를 지키는지는 뮤테이션으로 잰다(7/7 검출).
+export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft = false, onApply = null, waterY = null, fogTint = /** @type {FogTintArg} */ (0), starScale = 1,
   // 감독 지시 2026-08-12 — 화면에서 고르는 두 축. 기본 0 은 **옛 화면 그대로**다.
   // 새 값을 기본으로 삼는 것은 world2 쪽(`systems/sky.ts`)이고, 여기서 0 인 이유는
   // world1 을 비롯한 다른 소비자의 화면을 이 파일이 말없이 바꾸지 않기 위해서다.
