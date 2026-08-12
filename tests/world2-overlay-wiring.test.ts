@@ -39,6 +39,81 @@ describe('라이브 격리 — `?edit=1` 없는 세션이 편집 코드를 안 �
   });
 });
 
+describe('주행이 산다 — 편집 리스너는 편집 모드에서만 붙는다', () => {
+  // ⚠ **이 절은 감독 신고에서 생겼다**(2026-08-12): *"저 위에 링크 클릭하면 마우스 터치,
+  // 키보드 동작안해."* `?edit=1` 이 편집 모드 상시 켜짐이라 편집 리스너가 캔버스 클릭을
+  // 캡처 단계에서 끊었고, 그래서 `main.ts` 의 포인터락 요청이 **영영 안 불렸다** →
+  // 마우스를 움직여도 시점이 안 돈다.
+  //
+  // 배포 전 검증은 *"포인터락 미발생 = PASS"* 로 쟀다. 감독에게 그것은 성공이 아니라
+  // *"화면이 안 돌아간다"* 였다 — **재는 축이 틀렸다.** 그래서 여기서는 반대 방향을 본다.
+  const src = () => read('frontend/js/world2/edit/mode.ts');
+
+  it('편집 리스너 등록이 전부 bindEditListeners 안에 있다', () => {
+    const s = src();
+    const bindStart = s.indexOf('function bindEditListeners');
+    const bindEnd = s.indexOf('function unbindEditListeners');
+    expect(bindStart, 'bindEditListeners 가 없다').toBeGreaterThan(-1);
+    expect(bindEnd).toBeGreaterThan(bindStart);
+
+    // 편집 조작을 가로채는 리스너들. `keydown` 은 모드 키(`onModeKey`)가 상시라 뺀다.
+    const GRABBY = ['click', 'contextmenu', 'pointerdown', 'pointermove', 'pointerup', 'drop'];
+    const outside: string[] = [];
+    for (const m of s.matchAll(/doc\.addEventListener\('([a-z]+)'/g)) {
+      const at = m.index ?? 0;
+      if (at >= bindStart && at < bindEnd) continue; // bind 안이면 정상
+      if (GRABBY.includes(m[1])) outside.push(m[1]);
+    }
+    expect(
+      outside,
+      '★ 편집 리스너가 bindEditListeners 밖에서 붙는다 = 주행 중에도 살아 있다는 뜻이다.'
+      + ' 그러면 캔버스 클릭이 포인터락에 못 가고 마우스로 시점이 안 돈다(감독 신고 2026-08-12).',
+    ).toEqual([]);
+  });
+
+  it('bind 와 unbind 가 같은 이벤트 집합을 다룬다 — 한쪽만 늘면 떼지 못한 리스너가 남는다', () => {
+    const s = src();
+    const slice = (from: string, to: string) => {
+      const a = s.indexOf(from), b = to ? s.indexOf(to) : s.length;
+      return s.slice(a, b > a ? b : s.length);
+    };
+    const evs = (chunk: string, verb: string) =>
+      [...chunk.matchAll(new RegExp(`doc\\.${verb}EventListener\\('([a-z]+)'`, 'g'))]
+        .map((m) => m[1]).sort();
+    const added = evs(slice('function bindEditListeners', 'function unbindEditListeners'), 'add');
+    const removed = evs(slice('function unbindEditListeners', '// 모드 키만 상시다'), 'remove');
+    expect(added.length).toBeGreaterThan(0);
+    expect(removed, '★ bind/unbind 가 어긋났다 — 편집을 꺼도 남는 리스너가 주행을 계속 막는다.')
+      .toEqual(added);
+  });
+
+  it('부팅 직후는 주행 모드다', () => {
+    // `editing` 초기값이 `true` 면 이번 사고가 그대로 재발한다.
+    expect(src()).toMatch(/let editing = false;/);
+    expect(src()).toMatch(/panel\.dataset\.mode = 'drive';/);
+  });
+
+  it('맥 키보드에도 삭제가 있다 — `Delete` 코드의 키가 없는 기기가 있다', () => {
+    expect(src()).toMatch(/case 'Delete': case 'Backspace':/);
+  });
+
+  it('pointercancel 도 드래그를 정리한다 — 터치에서 pointerup 이 안 오는 경로', () => {
+    expect(src()).toMatch(/addEventListener\('pointercancel', onPointerUp\)/);
+  });
+
+  it('패널이 왼쪽에 붙지 않는다 — 터치 이동 판정이 화면 왼쪽 절반이다', () => {
+    // `decide/touch.ts` 의 `x < viewportWidth / 2` 가 이동 영역이고 조이스틱은 캔버스가
+    // 받는다. 폭 212px 패널을 왼쪽에 두면 가로 모드에서 엄지 기둥을 통째로 덮는다.
+    const css = src().slice(src().indexOf('const CSS'), src().indexOf('export function startEditMode'));
+    const panelRule = css.slice(css.indexOf('#w2-edit{'), css.indexOf('}', css.indexOf('#w2-edit{')));
+    expect(panelRule, '★ 편집 패널이 화면 왼쪽에 붙었다 — 모바일 이동 조이스틱을 덮는다.')
+      .not.toMatch(/(^|;)\s*left:/);
+    expect(panelRule).toMatch(/right:/);
+    expect(panelRule, '★ safe-area 를 안 쓴다 — iOS 노치·홈 인디케이터와 겹친다.')
+      .toMatch(/env\(safe-area-inset-/);
+  });
+});
+
 describe('팔레트 매니페스트는 실제 파일과 짝이다', () => {
   // 손으로 관리하는 목록이라 어긋난다. 어긋나면 팔레트 버튼이 404 를 부르는데, 화면에는
   // "로드 실패" 만 뜨고 원인이 목록이라는 것은 안 보인다.
