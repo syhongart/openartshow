@@ -231,6 +231,18 @@ function normalizePart(p: Record<string, unknown>): PlacedPart {
   };
 }
 
+/**
+ * 동결 파셀 객체를 **만드는 유일한 자리.** `KNOWN_PARCEL_KEYS` 가 이 함수의 출력에서 키를
+ * 읽으므로 필드가 늘면 여기 한 곳만 고치면 화이트리스트가 따라온다.
+ *
+ * ⚠ 처음엔 `{ px: 0, pz: 0, parts: [] } satisfies FrozenParcel` 리터럴이었다. 검수관 실측
+ * (P2): `satisfies` 는 **필수** 필드 확장만 막고(3곳 컴파일 에러) **선택적** 필드를 더하면
+ * 에러 0 이라 화이트리스트가 그 필드를 조용히 놓친다. 유도로 바꾸면 어긋날 자리가 없다.
+ */
+function makeParcel(px: number, pz: number, parts: PlacedPart[]): FrozenParcel {
+  return { px, pz, parts };
+}
+
 // ── 계약이 아는 키 — **목록을 적지 않고 유도한다** (검수관 B6) ────────────────
 // 처음에는 `new Set(['src','x','y','z','ry','s'])` 라고 **따로 적었다.** 값 미러링이고,
 // 위험한 방향은 소실 쪽이었다. 검수관 뮤테이션 실측 — 화이트리스트에만 `'name'` 을 더하고
@@ -247,7 +259,7 @@ const KNOWN_ROOT_KEYS = new Set(Object.keys(emptyOverlay()));
 const KNOWN_PART_KEYS = new Set(Object.keys(normalizePart({})));
 // 파셀 껍데기의 키도 같은 원리로 유도한다 — `parts` 는 배열이라 정규화 결과에서 못 뽑으므로
 // 최소 형태 하나를 만들어 그 키를 읽는다.
-const KNOWN_PARCEL_KEYS = new Set(Object.keys({ px: 0, pz: 0, parts: [] } satisfies FrozenParcel));
+const KNOWN_PARCEL_KEYS = new Set(Object.keys(makeParcel(0, 0, [])));
 
 /**
  * 임의의 입력을 유효한 `Overlay` 로 만든다. **던지지 않는다.**
@@ -281,7 +293,12 @@ export function normalizeOverlay(raw: unknown): Overlay {
     if (typeof parcel.px !== 'number' || typeof parcel.pz !== 'number') continue;
     if (!Number.isFinite(parcel.px) || !Number.isFinite(parcel.pz)) continue;
 
-    const rawParts = Array.isArray(parcel.parts) ? parcel.parts : [];
+    // ⚠ `parts` 가 배열이 아니면 **파셀째 버린다.** 빈 배열로 살려 두면 관문
+    // (`validateOverlay`)은 그 파셀을 버리는데 런타임은 «파츠 0개인 파셀» 로 살려서
+    // 화면에 «경고는 떴는데 파셀이 남아 있다» 가 된다(검수관 P3 실측). 이 파일이 B4·B5·B7
+    // 로 세 번 반려된 *"두 함수가 같은 파일에 다른 말"* 이 그대로 재발하는 자리다.
+    if (!Array.isArray(parcel.parts)) continue;
+    const rawParts: unknown[] = parcel.parts;
     const parts: PlacedPart[] = [];
     for (const pt of rawParts) {
       const part = pt as Record<string, unknown> | null;
@@ -290,7 +307,7 @@ export function normalizeOverlay(raw: unknown): Overlay {
       if (norm.kind === '') continue; // 종류를 모르면 그릴 수 없다
       parts.push(norm);
     }
-    parcels.push({ px: int(parcel.px, 0), pz: int(parcel.pz, 0), parts });
+    parcels.push(makeParcel(int(parcel.px, 0), int(parcel.pz, 0), parts));
   }
 
   return { version: OVERLAY_VERSION, items, parcels };
@@ -589,7 +606,7 @@ export function validateOverlay(
         }
       }
 
-      parcels.push({ px, pz, parts });
+      parcels.push(makeParcel(px, pz, parts));
     });
   }
 

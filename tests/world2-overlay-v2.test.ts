@@ -47,8 +47,23 @@ function parcel(over: Partial<FrozenParcel> = {}): FrozenParcel {
 // `export … from '…'` 이 한 정규식에 잡히고, 줄바꿈이 어디에 있든 상관없다.
 function specifiersOf(file: string): string[] {
   const src = readFileSync(file, 'utf8');
-  return [...src.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  // 따옴표 세 종류를 전부 본다 — 검수관이 **백틱을 뚫었다**(U5: `` import(`./overlay.js`) ``).
+  return [...src.matchAll(/(?:from|import)\s*\(?\s*['"`]([^'"`]+)['"`]/g)].map((m) => m[1]);
 }
+
+/**
+ * ⚠ **이 검사가 원리적으로 못 잡는 것** — 한계를 여기 적어 둔다(검수관 U6 실측 + 팀장 상신).
+ *
+ *   · **문자열 연결**: `import('./over' + 'lay.js')` — 지정자가 실행 시점에야 정해진다.
+ *   · **변수 경로**: `const p = './overlay.js'; import(p);`
+ *   · **코드 인라인 복제**: 동결 로직을 import 없이 그대로 베껴 넣으면 import 가 0이라
+ *     **어떤 정적 import-그래프 검사로도** 잡히지 않는다.
+ *
+ * 앞의 둘은 정적 분석으로 잡으려면 상수 전파가 필요하고, 셋째는 import 축 자체를 벗어난다.
+ * **정적 검사의 설계상 한계**이므로 이 축은 «정직한 실수를 막는 장치» 이지 «적대적 우회를
+ * 막는 장치» 가 아니다 — 그 구별을 안 적어 두면 다음 사람이 이 검사를 후자로 읽는다.
+ */
+const STATIC_LIMITS = ['문자열 연결', '변수 경로', '코드 인라인 복제'] as const;
 
 /** 상대 지정자를 실제 파일로. 이 저장소는 `.ts` 소스를 `.js` 로 가리킨다 */
 function resolvePath(fromDir: string, spec: string): string | null {
@@ -255,7 +270,16 @@ describe('파셀 동결 예외가 «전역» 으로 새지 않는다', () => {
     ]);
     const contract = resolvePath('frontend/js/world2/decide', './overlay.js');
     expect(contract, '계약 파일 경로가 풀려야 한다 — 안 풀리면 이 검사는 공허하다').not.toBeNull();
-    expect([...reached].filter((f) => f.includes('decide/overlay'))).toEqual([]);
+    // 경로 **정확 일치**로 본다. `includes('decide/overlay')` 는 나중에 `decide/overlay-x.ts`
+    // 같은 무관한 파일이 생기면 거짓 FAIL 을 낸다(검수관 권고).
+    expect([...reached].filter((f) => f === contract)).toEqual([]);
+  });
+
+  it('① 이 검사가 «무엇을 못 잡는지» 를 스스로 적고 있다', () => {
+    // 한계를 코드 밖 산문에만 적으면 낡는다. 목록을 **값으로** 두고 그 값이 헤더 주석과
+    // 함께 살아 있게 한다 — 이 축이 «적대적 우회를 막는다» 로 오독되는 것을 막는 자리다.
+    expect(STATIC_LIMITS).toContain('문자열 연결');
+    expect(STATIC_LIMITS).toContain('코드 인라인 복제');
   });
 
   it('③ 스키마가 «파셀 키 없는 오버라이드» 를 표현할 수 없다', () => {
