@@ -37,7 +37,7 @@ export interface OverlayItem {
    * **자기완결 위반이 저장소에 커밋된다.** 커밋된 뒤에는 아무도 안 본다.
    *
    * ⚠ **여기 적힌 것은 접두가 붙기 전의 값이다.** 런타임 실제 경로는 `/app/assets/models/`
-   * 이고(`features/glb-city.ts` 의 `modelUrl()`), 저장소 안 위치는 `frontend/assets/models/`
+   * 이고(`features/overlay.ts` 의 `assetUrl()`), 저장소 안 위치는 `frontend/assets/models/`
    * 다 — **같은 파일의 표기가 셋**이다. base 결합은 소비자 한 곳에서만 하고 그 지점을
    * 여기 적는다. 세 표기가 각각 굳으면 값 미러링이다(검수관 P3).
    */
