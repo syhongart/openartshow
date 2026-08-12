@@ -60,18 +60,44 @@ type ThreeNS = {
   DoubleSide: number;
 };
 
+// ── 위치는 **오른쪽**이다 (감독 신고 2026-08-12) ──────────────────────────────
+// 처음엔 좌상단이었고 그것이 모바일에서 조작을 죽였다. 터치 조이스틱은 별도 오버레이가
+// 아니라 **캔버스가 받고**(`main.ts` 의 `attachTouchControls(canvas, …)`), 판정 영역이
+// **화면 왼쪽 절반 전체**다(`decide/touch.ts` 의 `x < viewportWidth / 2`). 폭 212px 짜리
+// 패널을 왼쪽에 두면 가로 모드에서 **왼쪽 엄지 기둥을 통째로 덮는다** — 그 위 터치는
+// 캔버스에 도달조차 못 한다(패널이 `pointer-events:auto` 이고 `z-index:40` 이므로).
+//
+// 오른쪽 절반은 시선 드래그 영역이라 같은 문제가 있지만, **접힌 상태가 기본**이라
+// 실제로 가리는 것은 작은 버튼 하나다. 그리고 이동을 못 하는 것이 시점을 못 도는 것보다
+// 훨씬 치명적이다(움직일 수 없으면 아무것도 못 한다).
+//
+// `env(safe-area-inset-*)` 를 쓴다 — world2.html 의 기존 패널 넷이 전부 그렇게 하고,
+// 이 저장소는 그것을 빠뜨려 한 번 데였다(DEVLOG *"iOS에서 safe-area env()가 전부 0(치명)"*).
 const CSS = `
-#w2-edit{position:fixed;left:8px;top:8px;z-index:40;width:212px;font:11px/1.35 system-ui,sans-serif;
-  color:#F5F5F2;background:rgba(11,13,18,.86);border:1px solid #3A3D4B;border-radius:10px;padding:8px;
-  backdrop-filter:blur(6px);max-height:calc(100dvh - 16px);overflow:auto}
-#w2-edit h4{margin:0 0 6px;font-size:11px;letter-spacing:.04em;color:#8B72FF}
+#w2-edit{position:fixed;z-index:40;font:11px/1.35 system-ui,sans-serif;
+  right:calc(8px + env(safe-area-inset-right,0px));top:calc(8px + env(safe-area-inset-top,0px));
+  width:212px;color:#F5F5F2;background:rgba(11,13,18,.86);border:1px solid #3A3D4B;
+  border-radius:10px;padding:8px;backdrop-filter:blur(6px);
+  max-height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+  overflow:auto}
+/* 접힌 상태 — 주행 중에는 이것이 기본이다. 화면을 거의 안 가린다 */
+#w2-edit[data-open="0"]{width:auto;padding:0;background:none;border:0;backdrop-filter:none;overflow:visible}
+#w2-edit[data-open="0"] .body{display:none}
+#w2-edit .head{display:flex;gap:6px;align-items:center}
+#w2-edit h4{margin:0;font-size:11px;letter-spacing:.04em;color:#8B72FF;flex:1 1 auto}
+#w2-edit[data-open="0"] h4{display:none}
 #w2-edit .row{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0}
 #w2-edit button{flex:1 1 auto;min-width:30px;padding:4px 5px;font:11px/1 system-ui,sans-serif;
   color:#F5F5F2;background:#1A1D26;border:1px solid #3A3D4B;border-radius:6px;cursor:pointer}
 #w2-edit button:hover{border-color:#8B72FF}
 #w2-edit button[data-on="1"]{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
+/* 토글 버튼은 접혔을 때 유일하게 보이는 것이라 손가락이 닿을 크기여야 한다 */
+#w2-edit .toggle{flex:0 0 auto;padding:8px 12px;font-size:12px;
+  background:rgba(11,13,18,.86);border-color:#3A3D4B;backdrop-filter:blur(6px)}
+#w2-edit[data-mode="edit"] .toggle{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
 #w2-edit .note{color:#9A9EB1;margin:4px 0 0}
 #w2-edit .warn{color:#FFC46B}
+#w2-edit .lead{color:#F5F5F2;margin:6px 0 0;font-size:12px}
 #w2-edit .sel{color:#72E6E1}
 #w2-edit hr{border:0;border-top:1px solid #3A3D4B;margin:6px 0}
 #w2-edit .pal button{flex:1 1 100%;text-align:left}
@@ -93,6 +119,22 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   let snapOn = true;
   /** 내보내기 2단 클릭 — 손실이 있으면 1차는 저장하지 않는다 */
   let armed = false;
+
+  // ── 편집은 «켜는 것»이다. 기본은 주행 (감독 신고 2026-08-12) ───────────────
+  // 처음엔 `?edit=1` 이 곧 편집 모드 상시 켜짐이었고, 그것이 **주행을 통째로 죽였다.**
+  // 편집 리스너가 캔버스 클릭을 캡처 단계에서 끊으므로 `main.ts` 의 포인터락 요청이
+  // 영영 안 불리고, `main.ts` 의 `onMove` 는 `pointerLockElement === canvas` 일 때만
+  // `player.look()` 을 부른다 → **마우스를 움직여도 시점이 안 돈다.**
+  //
+  // 감독 신고: *"저 위에 링크 클릭하면 마우스 터치, 키보드 동작안해."*
+  //
+  // ⚠ **검증이 이것을 놓친 방식이 핵심이다.** 나는 *"포인터락 미발생 = PASS"* 로 쟀다.
+  // 감독에게 그것은 성공이 아니라 *"화면이 안 돌아간다"* 였다. 값이 아니라 **재는 축이
+  // 틀렸다** — 그래서 지금은 두 축을 함께 건다(주행 중엔 걸리고, 편집 중엔 안 걸린다).
+  //
+  // 그래서 뒤집는다: `?edit=1` 은 *"편집 도구를 쓸 수 있게 한다"* 만 뜻하고 부팅 직후는
+  // **주행 모드**다(리스너를 아예 안 붙인다 = 라이브와 동일). 편집은 버튼·`Tab` 으로 켠다.
+  let editing = false;
 
   // ── 패널 ────────────────────────────────────────────────────────────────
   const style = doc.createElement('style');
@@ -125,7 +167,10 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   const rowOps = el('div', 'row');
   const rowOut = el('div', 'row');
   const status = el('div', 'note', 'GLB 를 이 화면에 끌어다 놓거나, 위에서 골라 지면을 클릭.');
-  const hint = el('div', 'note', '좌드래그 이동 · 우드래그 시점 · Q/E 회전 · R/F 크기 · Z/X 높이 · Del 삭제');
+  const hint = el('div', 'note', '');
+  /** 접힘/펼침 + 편집/주행을 함께 쥔 버튼. 접혔을 때 화면에 남는 유일한 것이다 */
+  const toggle = button('✏️ 편집', () => { setEditing(!editing); });
+  toggle.className = 'toggle';
 
   const nudge = (fn: (e: OverlayEntry) => void) => () => {
     if (!selected) { say('먼저 물건을 클릭해 고르세요.'); return; }
@@ -155,8 +200,14 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   );
   rowOut.append(button('JSON 내보내기', () => { exportNow(); }));
 
-  panel.append(title, palette, el('hr'), selLine, rowRot, rowScale, rowY, rowOps,
+  const head = el('div', 'head');
+  head.append(title, toggle);
+  const body = el('div', 'body');
+  body.append(palette, el('hr'), selLine, rowRot, rowScale, rowY, rowOps,
     el('hr'), rowOut, status, hint);
+  panel.append(head, body);
+  panel.dataset.open = '0';
+  panel.dataset.mode = 'drive';
   doc.body.appendChild(panel);
 
   function say(msg: string, warn = false): void {
@@ -183,10 +234,40 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       hint.textContent = `⚠ ${previews}개는 저장소에 없는 파일입니다 — JSON 과 함께 그 GLB 도 주셔야 배포에 붙습니다.`;
     } else {
       hint.className = 'note';
-      hint.textContent = '좌드래그 이동 · 우드래그 시점 · Q/E 회전 · R/F 크기 · Z/X 높이 · Del 삭제';
+      hint.textContent = '좌드래그 이동 · 우드래그 시점 · Q/E 회전 · R/F 크기 · Z/X 높이 · Del·⌫ 삭제';
     }
     marker.visible = selected !== null;
     if (selected) placeMarker(selected);
+  }
+
+  // ── 모드 전환 ───────────────────────────────────────────────────────────
+  // **주행 모드에서는 리스너를 아예 안 붙인다.** 조건문으로 걸러내는 것이 아니라
+  // 붙였다 떼는 것이 요점이다 — 조건이 하나라도 새면 주행이 또 죽고, 그 실패는 감독
+  // 화면에서만 드러난다(이번 사고가 정확히 그랬다).
+  function setEditing(on: boolean): void {
+    if (on === editing) return;
+    editing = on;
+    panel.dataset.open = on ? '1' : '0';
+    panel.dataset.mode = on ? 'edit' : 'drive';
+    toggle.textContent = on ? '✕ 편집 끝' : '✏️ 편집';
+    if (on) {
+      bindEditListeners();
+      // 편집에 들어오면 주행 모드의 포인터락을 푼다. 안 그러면 커서가 없어 못 집는다.
+      try { doc.exitPointerLock?.(); } catch { /* 애초에 안 걸려 있었다 */ }
+      // ⚠ **이 한 줄이 이번 사고의 절반이다.** 시점 조작이 우드래그로 바뀌는데 그 안내가
+      // 패널 맨 아래 작은 글씨에만 있었다. 감독은 마우스를 움직여도 화면이 안 도니
+      // *"아무것도 안 먹는다"* 로 읽었다. 모드가 바뀌는 순간 크게 말한다.
+      say('편집 모드 — 시점은 마우스 오른쪽 버튼 드래그. 이동은 WASD 그대로.');
+      status.className = 'lead';
+    } else {
+      unbindEditListeners();
+      selected = null;
+      pendingSrc = null;
+      dragging = null;
+      orbiting = false;
+      say('주행 모드 — 화면을 클릭하면 마우스로 시점이 돕니다.');
+    }
+    refresh();
   }
 
   // ── 선택 표시 ───────────────────────────────────────────────────────────
@@ -333,6 +414,10 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     refresh();
   };
 
+  // `pointercancel` 도 같은 정리를 한다 — 터치에서 브라우저가 제스처를 가로채면
+  // `pointerup` 이 **안 온다.** 그러면 `dragging` 이 영구히 남아 이후 모든 손가락이
+  // 물건을 끌고 다닌다. 이 저장소는 이미 그 축을 안다(`builder.js` 의
+  // *"브라우저가 제스처를 가로챌 때(pointercancel) — 커밋 없이 정리만"*) — 여기만 빠져 있었다.
   const onPointerUp = () => { dragging = null; orbiting = false; };
 
   // 캔버스 클릭이 포인터락으로 가는 것을 **캡처 단계**에서 끊는다(위 헤더 참조).
@@ -344,11 +429,20 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   // ── 키 ──────────────────────────────────────────────────────────────────
   // 주행 키(WASD·화살표·Shift)는 `main.ts` 가 소유한다. 여기서 쓰는 것은 그 목록에 없는
   // 것뿐이라 서로 가로채지 않는다.
+  const EDIT_KEYS = new Set([
+    'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyZ', 'KeyX', 'Delete', 'Backspace',
+  ]);
+
   const onKeyDown = (ev: KeyboardEvent) => {
-    if (!selected) return;
     const t = ev.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
-    let hit = true;
+    if (!EDIT_KEYS.has(ev.code)) return;
+    // ⚠ **말없이 죽지 않는다.** 예전에는 `if (!selected) return` 이 맨 위에 있어서
+    // 아무것도 안 골랐을 때 편집키가 **침묵**했다 — 같은 조작의 패널 버튼은
+    // *"먼저 물건을 클릭해 고르세요"* 라고 말하는데 키만 조용했다. 조작이 안 먹는 것과
+    // 대상이 없는 것은 다른 일이고, 화면이 그것을 갈라 줘야 한다.
+    if (!selected) { say('먼저 물건을 클릭해 고르세요.'); return; }
+    ev.preventDefault();
     switch (ev.code) {
       case 'KeyQ': selected.ry -= RY_STEP; break;
       case 'KeyE': selected.ry += RY_STEP; break;
@@ -356,13 +450,21 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       case 'KeyF': selected.s = scaleBy(selected.s, 1 / S_STEP); break;
       case 'KeyZ': selected.y -= Y_STEP; break;
       case 'KeyX': selected.y += Y_STEP; break;
-      case 'Delete': removeSelected(); return;
-      default: hit = false;
+      // `Backspace` 도 받는다 — **맥 키보드에는 `Delete` 코드의 키가 없다**(그 자리가
+      // `Backspace` 다). hint 가 "Del 삭제" 를 광고하는데 맥에서는 영구 무반응이었다.
+      case 'Delete': case 'Backspace': removeSelected(); return;
     }
-    if (!hit) return;
-    ev.preventDefault();
     host.apply(selected);
     refresh();
+  };
+
+  /** 모드 전환 단축키. 편집 중이 아닐 때도 들어야 하므로 **항상** 붙어 있다. */
+  const onModeKey = (ev: KeyboardEvent) => {
+    if (ev.code !== 'Tab') return;
+    const t = ev.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    ev.preventDefault(); // 포커스 이동을 막는다 — 안 막으면 패널 버튼으로 포커스가 튄다
+    setEditing(!editing);
   };
 
   // ── 끌어다 놓기 ─────────────────────────────────────────────────────────
@@ -441,30 +543,49 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   }
 
   // ── 배선 ────────────────────────────────────────────────────────────────
-  // 편집에 들어오면 주행 모드의 포인터락을 먼저 푼다. 안 그러면 커서가 없는 채로 시작한다.
-  try { doc.exitPointerLock?.(); } catch { /* 애초에 안 걸려 있었다 */ }
+  // **편집 리스너는 편집 모드에서만 붙어 있다.** 주행 중에는 하나도 없으므로 이 모듈이
+  // 주행에 미치는 영향이 **구조적으로 0** 이다 — 조건문으로 걸러내면 조건 하나가 새는
+  // 순간 주행이 또 죽고, 그 실패는 감독 화면에서만 드러난다.
+  let bound = false;
 
-  doc.addEventListener('click', onClickCapture, true);
-  doc.addEventListener('contextmenu', onContextMenu);
-  doc.addEventListener('pointerdown', onPointerDown);
-  doc.addEventListener('pointermove', onPointerMove);
-  doc.addEventListener('pointerup', onPointerUp);
-  doc.addEventListener('keydown', onKeyDown);
-  doc.addEventListener('dragover', onDragOver);
-  doc.addEventListener('drop', onDrop);
+  function bindEditListeners(): void {
+    if (bound) return;
+    bound = true;
+    doc.addEventListener('click', onClickCapture, true);
+    doc.addEventListener('contextmenu', onContextMenu);
+    doc.addEventListener('pointerdown', onPointerDown);
+    doc.addEventListener('pointermove', onPointerMove);
+    doc.addEventListener('pointerup', onPointerUp);
+    doc.addEventListener('pointercancel', onPointerUp);
+    doc.addEventListener('keydown', onKeyDown);
+    doc.addEventListener('dragover', onDragOver);
+    doc.addEventListener('drop', onDrop);
+  }
 
+  function unbindEditListeners(): void {
+    if (!bound) return;
+    bound = false;
+    doc.removeEventListener('click', onClickCapture, true);
+    doc.removeEventListener('contextmenu', onContextMenu);
+    doc.removeEventListener('pointerdown', onPointerDown);
+    doc.removeEventListener('pointermove', onPointerMove);
+    doc.removeEventListener('pointerup', onPointerUp);
+    doc.removeEventListener('pointercancel', onPointerUp);
+    doc.removeEventListener('keydown', onKeyDown);
+    doc.removeEventListener('dragover', onDragOver);
+    doc.removeEventListener('drop', onDrop);
+  }
+
+  // 모드 키만 상시다 — 편집이 꺼져 있어도 `Tab` 으로 켤 수 있어야 한다.
+  doc.addEventListener('keydown', onModeKey);
+
+  say('편집하려면 오른쪽 위 「편집」 버튼(또는 Tab). 지금은 평소처럼 걸어다닐 수 있습니다.');
   refresh();
 
   return {
     dispose() {
-      doc.removeEventListener('click', onClickCapture, true);
-      doc.removeEventListener('contextmenu', onContextMenu);
-      doc.removeEventListener('pointerdown', onPointerDown);
-      doc.removeEventListener('pointermove', onPointerMove);
-      doc.removeEventListener('pointerup', onPointerUp);
-      doc.removeEventListener('keydown', onKeyDown);
-      doc.removeEventListener('dragover', onDragOver);
-      doc.removeEventListener('drop', onDrop);
+      unbindEditListeners();
+      doc.removeEventListener('keydown', onModeKey);
       panel.remove();
       style.remove();
       (host.root as unknown as { remove(o: never): void }).remove(marker as never);
