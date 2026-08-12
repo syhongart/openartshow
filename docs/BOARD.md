@@ -75,8 +75,8 @@
 
 ### 2026-08-12 · 검수관 — world2 배치 편집(7a84e00) 최종 승인
 
-`65c6ebc` 조건부 승인의 조건(A.1 콘솔 에러·C.11 placed·C.12 포인터락)을 구현자 실측
-\+ 검수관 코드 교차검증(`ROAD_SURFACE_Y=0.14`, `collectDiagnostics` 가 `stats()` 안에
+`65c6ebc` 조건부 승인의 조건(A.1 콘솔 에러·C.11 placed·C.12 포인터락)을 구현자 실측 +
+검수관 코드 교차검증(`ROAD_SURFACE_Y=0.14`, `collectDiagnostics` 가 `stats()` 안에
 있음, `main.ts:1129` 확인)으로 해소. **executor 재파견 불요 판정** — 이유는 배포 판정이
 아니라 조건 재확인이고, 독립 검증 가능한 세 축이 실측과 전부 일치했기 때문.
 `65c6ebc..7a84e00` diff(마커 dispose 정리·헤더 실측 기록·안내 문구) 자체는 블로커 없음.
