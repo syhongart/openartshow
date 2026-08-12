@@ -9,7 +9,7 @@
 // 바뀐다 — 어긋날 자리가 없다.
 
 import { DEFAULT_LAYOUT } from '../parts/types.js';
-import type { LayoutOptions } from '../parts/types.js';
+import type { LayoutOptions, ResolvedLayout } from '../parts/types.js';
 
 /** 노브 배수 셋. 전부 1 이면 기본 마을이다. */
 export interface VillageMul {
@@ -52,7 +52,7 @@ const clampMul = (v: number): number => {
  * 살아 있고, 무엇보다 **감독이 매일 보는 화면이 이 파일을 지나지 않는다**는 것이
  * 눈으로 확인된다.
  */
-export function villageLayout(mul: Partial<VillageMul>, extra?: Partial<LayoutOptions>): LayoutOptions {
+export function villageLayout(mul: Partial<VillageMul>, extra?: Partial<LayoutOptions>): ResolvedLayout {
   const density = clampMul(mul.density ?? MUL_MIN);
   const building = clampMul(mul.building ?? MUL_MIN);
   const tree = clampMul(mul.tree ?? MUL_MIN);
