@@ -81,6 +81,20 @@ const BLOCK: Array<[rule: string, name: string, cmd: string]> = [
   ['hookify.hand-wait-loop.local.md', '손으로 짠 대기 루프(sleep)', 'until grep -q ok /tmp/log; do sleep 10; done'],
   ['hookify.checkout-revert.local.md', '워킹트리를 옛 판본으로', 'git checkout db0b70c -- frontend/js/a.ts'],
   ['hookify.checkout-revert.local.md', '워킹트리를 옛 판본으로(짧은 sha)', 'git checkout 1a71c8e -- scripts/x.mjs'],
+  // ↓ **2026-08-12 에 실제로 사고를 낸 두 형태다.** 규칙이 이미 있는 상태에서 났고,
+  //   패턴이 `[0-9a-f]{7,40}` 으로 sha 만 봐서 둘 다 통과했다(executor 실행 실측).
+  //   ③ executor 가 `HEAD` 형태로 부팀장의 staged 수정을 날렸고
+  //   ④ 그 처방을 쓴 부팀장이 몇 시간 뒤 ref 생략 형태로 자기 수정을 날렸다.
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(HEAD)', 'git checkout HEAD -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(ref 생략)', 'git checkout -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(원격 ref)', 'git checkout origin/main -- scripts/x.mjs'],
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(상대 ref)', 'git checkout HEAD~1 -- docs/a.md'],
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(전체)', 'git checkout -- .'],
+  // ↓ `restore` 는 `checkout -- ` 와 같은 일을 하는 새 이름이다. 기존 규칙 본문이
+  //   *"restore 는 대상 밖"* 이라고 **사각을 정확히 적어 두고 닫지는 않았고**, 그 사이
+  //   같은 계열 사고가 두 번 더 났다.
+  ['hookify.restore-discard.local.md', 'restore 로 미커밋 폐기', 'git restore frontend/js/sky.js'],
+  ['hookify.restore-discard.local.md', 'restore --staged', 'git restore --staged frontend/js/a.ts'],
 ];
 
 describe('hookify 규칙 — 차단해야 하는 것', () => {
@@ -110,6 +124,12 @@ describe('hookify 규칙 — 통과시켜야 하는 것 (오탐 방지)', () => 
     'git push --force-with-lease origin main', // 남의 커밋을 안 덮는다 — 허용이 규약
     'git push -u origin claude/my-branch', // `-u` 에는 f 가 없다
     'git checkout -b claude/새-브랜치', // 브랜치 생성은 되돌리기가 아니다
+    // ↓ 되돌리기 패턴을 `(\S+\s+)?--\s` 로 넓히면서 함께 못 박는다. 이 넷은 워킹트리
+    //   파일을 버리지 않으므로 막으면 오탐이다 — `--` 뒤에 **공백**이 없거나 `--` 가 없다.
+    'git checkout main', // 브랜치 전환
+    'git checkout --track origin/feature-x',
+    'git checkout --detach HEAD',
+    'git switch -c claude/새-브랜치',
     // ↓ 검수관 B2 가 실측한 오탐 2건. **이 두 명령이 실제로 리뷰를 멈춰 세웠다.**
     'grep -n commit CLAUDE.md',
     'git log -n 3 | grep commit',
