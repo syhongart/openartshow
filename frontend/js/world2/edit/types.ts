@@ -8,6 +8,15 @@
 
 import type { Object3D, Camera } from 'three/webgpu';
 
+/**
+ * 로드 진행 알림.
+ *
+ * `pct` 가 **`null` 이면 총 용량을 모른다는 뜻**이다 — 그때는 퍼센트를 지어내지 않고
+ * 받은 양만 말한다(`lab-glb.js:192-199` 가 세운 규약). 지어낸 퍼센트는 100%에서 멈춰
+ * 있는 바가 되고, 그건 없느니만 못하다.
+ */
+export type LoadProgress = (pct: number | null, loadedBytes: number) => void;
+
 /** 씬에 놓인 배치 하나. **가변이다** — 편집이 값을 바꾸고 `apply` 로 씬에 반영한다. */
 export interface OverlayEntry {
   /** 세션 안에서만 유효한 식별자. 내보내기에는 안 나간다 */
@@ -50,13 +59,22 @@ export interface OverlayHost {
   entries(): readonly OverlayEntry[];
   /**
    * 배치한다. `blobUrl` 이 있으면 그 주소로 로드하고 항목을 `preview` 로 표시한다.
-   * 로드 실패면 `null`(화면에 사유를 띄우는 것은 부르는 쪽 몫).
+   * 로드 실패면 `null` — 사유는 `lastFailure()` 로 묻는다.
    */
   place(
     src: string,
     at: { x: number; y: number; z: number; ry?: number; s?: number },
     blobUrl?: string,
+    onProgress?: LoadProgress,
   ): Promise<OverlayEntry | null>;
+  /**
+   * `place` 가 마지막으로 `null` 을 낸 이유.
+   *
+   * 왜 필요한가: 예전에는 화면이 *"콘솔의 진단을 보세요"* 라고 말했는데 이 경로에
+   * `console.*` 호출이 **0건**이었다 — 감독이 콘솔을 열어도 아무것도 없다. 거짓 안내는
+   * 안내가 아니라 막다른 길이다(검수관 지적, 2026-08-12).
+   */
+  lastFailure(): string | null;
   remove(e: OverlayEntry): void;
   /** 항목의 x·y·z·ry·s 를 씬에 반영한다 */
   apply(e: OverlayEntry): void;

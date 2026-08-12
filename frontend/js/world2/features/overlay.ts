@@ -30,8 +30,9 @@
 
 import type { Object3D } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
-import type { EditSession, OverlayEntry, OverlayHost } from '../edit/types.js';
+import type { EditSession, LoadProgress, OverlayEntry, OverlayHost } from '../edit/types.js';
 import { loadOverlay, type OverlayItem } from '../decide/overlay.js';
+import { disableMatExtensions } from '../systems/glb-material.js';
 import { readNum } from '../url-knob.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { surfaceY } from '../parts/surface.js';
@@ -102,13 +103,22 @@ export const overlayFeature: Feature = {
 
     const diag: Diag = { state: 'idle', placed: 0, failed: [], edit: wantEdit };
     const entries: OverlayEntry[] = [];
-    /** 로드한 원본 모델. 같은 `src` 를 여러 번 놓아도 지오·재질을 공유한다 */
-    const models = new Map<string, Object3D>();
+    /**
+     * 로드한 원본 모델. 같은 `src` 를 여러 번 놓아도 지오·재질을 공유한다.
+     *
+     * ⚠ **완료본이 아니라 «진행 중인 약속»을 담는다.** 완료본만 담으면 로드가 끝나기
+     * 전에 같은 것을 또 부를 때 캐시가 비어 있어 **같은 파일을 처음부터 다시 받는다.**
+     * 팔레트의 자산이 12.9MB 라 그것이 N벌 동시에 파싱되면 탭이 죽는다 — 감독 신고
+     * (2026-08-12 *"지엘비 씬에 놓으려고 하면 멈춘다"*)의 직접 경로가 이것이었다.
+     */
+    const models = new Map<string, Promise<Object3D | null>>();
+    /** `place` 가 마지막으로 `null` 을 낸 이유. 화면이 그것을 말한다 */
+    let lastFail: string | null = null;
     /** 미리보기로 만든 임시 주소. 떠날 때 회수한다 */
     const blobUrls = new Set<string>();
     let root: Object3D | null = null;
     let THREE: ThreeGroupNS | null = null;
-    let loadGLB: ((url: string) => Promise<Object3D>) | null = null;
+    let loadGLB: ((url: string, onProgress?: (ev: ProgressEvent) => void) => Promise<Object3D>) | null = null;
     let edit: EditSession | null = null;
     let nextId = 1;
     let disposed = false;
@@ -122,7 +132,10 @@ export const overlayFeature: Feature = {
       ]);
       THREE = ns as unknown as ThreeGroupNS;
       const loader = new GLTFLoader();
-      loadGLB = async (url: string) => (await loader.loadAsync(url)).scene as unknown as Object3D;
+      // `loadAsync(url, onProgress)` — three 의 `Loader.loadAsync` 가 2번째 인자를 그대로
+      // `load()` 의 진행 콜백으로 넘긴다(r171 `src/loaders/Loader.js:19-25` 실측).
+      loadGLB = async (url: string, onProgress?: (ev: ProgressEvent) => void) =>
+        (await loader.loadAsync(url, onProgress)).scene as unknown as Object3D;
       if (!root) {
         const g = new (ns as unknown as ThreeGroupNS).Group();
         g.name = 'world2:overlay';
@@ -131,20 +144,60 @@ export const overlayFeature: Feature = {
       }
     }
 
-    async function modelOf(key: string, url: string): Promise<Object3D | null> {
+    function modelOf(key: string, url: string, onProgress?: LoadProgress): Promise<Object3D | null> {
+      // **진행 중인 것도 돌려준다** — 이 한 줄이 중복 로드를 막는다(위 `models` 주석).
       const hit = models.get(key);
       if (hit) return hit;
-      try {
-        const m = await loadGLB!(url);
-        // GLB 의 `castShadow`/`receiveShadow` 기본값은 false 다 — 켜지 않으면 감독이 놓은
-        // 물건만 그림자 없이 서 있게 된다(`glb-city.ts` 가 같은 자리에서 한 번 데였다).
-        m.traverse((o: Object3D) => { o.castShadow = true; o.receiveShadow = true; });
-        models.set(key, m);
-        return m;
-      } catch (e) {
-        diag.failed.push(`${key}: ${e instanceof Error ? e.message : String(e)}`);
-        return null;
-      }
+
+      // ⚠ 아래에서 `.catch` 가 `models.delete(key)` 를 하는데 `models.set(key, p)` 는 그
+      // **뒤에** 온다. 순서가 뒤집혀 «실패한 약속이 캐시에 영구히 남는» 것처럼 읽히지만
+      // 그렇지 않다 — `loadGLB` 가 `async` 함수라 **동기적으로 reject 할 수 없고**,
+      // `then`/`catch` 콜백은 언제나 마이크로태스크로 미뤄진다. 그래서 동기 실행인
+      // `set` 이 항상 먼저다. (검수관이 이 지점을 블로커 후보로 짚었고 실측으로 기우로
+      // 판정됐다 — 다음 사람이 같은 우려를 다시 하지 않게 적어 둔다.)
+
+      const relay = onProgress
+        ? (ev: ProgressEvent) => {
+          // 총 용량을 서버가 안 주면(`lengthComputable === false`) **퍼센트를 지어내지
+          // 않는다** — `null` 을 넘겨 받은 양만 말하게 한다.
+          const total = ev.lengthComputable && ev.total > 0 ? ev.total : 0;
+          onProgress(total > 0 ? (ev.loaded / total) * 100 : null, ev.loaded);
+        }
+        : undefined;
+
+      const p = loadGLB!(url, relay)
+        .then((m) => {
+          // ⚠ **이 한 줄이 없으면 감독 실기기에서 화면이 멈춘다.**
+          //
+          // `three/webgpu` 는 `sheen`·`clearcoat`·`anisotropy`·`ior` 를 처리하다 렌더
+          // 파이프라인 생성에 실패하고, 그러면 **그 뒤 모든 프레임이 통째로 무효**가 된다
+          // (2026-08-12 감독 콘솔: `TSL.NormalNode: Vertex attribute "normal" not found` →
+          // `[Invalid RenderPipeline "renderPipeline_m.DarkShine_*"]` 가 매 프레임).
+          //
+          // 이것은 새 발견이 아니다 — **감독이 2026-07-29 에 이미 판정한 것**이고
+          // (`raw` 안 보임 / `noext` 보임), `glb-city` 는 그때 기본을 `noext` 로 옮겼다.
+          // **오버레이만 그 처방을 안 받고 있었다.** 같은 자산(`lab-space.glb`)이 그 확장을
+          // 전부 쓰는데도.
+          //
+          // 헤드리스는 WebGL 이라 이 축을 **원리적으로 못 본다.** 그래서 게이트가 아니라
+          // *"GLB 를 놓는 경로는 반드시 이 함수를 지난다"* 는 구조가 유일한 방어다.
+          disableMatExtensions(m);
+          // GLB 의 `castShadow`/`receiveShadow` 기본값은 false 다 — 켜지 않으면 감독이 놓은
+          // 물건만 그림자 없이 서 있게 된다(`glb-city.ts` 가 같은 자리에서 한 번 데였다).
+          m.traverse((o: Object3D) => { o.castShadow = true; o.receiveShadow = true; });
+          return m;
+        })
+        .catch((e: unknown) => {
+          lastFail = `${key}: ${e instanceof Error ? e.message : String(e)}`;
+          diag.failed.push(lastFail);
+          // **실패는 캐시하지 않는다.** 남겨 두면 그 `src` 는 세션 내내 되살아나지
+          // 못한다(일시적 네트워크 실패가 영구 실패가 된다).
+          models.delete(key);
+          return null;
+        });
+
+      models.set(key, p);
+      return p;
     }
 
     function applyEntry(e: OverlayEntry): void {
@@ -164,11 +217,13 @@ export const overlayFeature: Feature = {
       src: string,
       at: { x: number; y: number; z: number; ry?: number; s?: number },
       blobUrl?: string,
+      onProgress?: LoadProgress,
     ): Promise<OverlayEntry | null> {
       await ensureLoader();
       if (disposed || !THREE || !root) return null;
       const key = blobUrl ?? src;
-      const model = await modelOf(key, blobUrl ?? assetUrl(src));
+      lastFail = null;
+      const model = await modelOf(key, blobUrl ?? assetUrl(src), onProgress);
       if (!model || disposed) return null;
 
       // 피벗 보정 — 자산마다 로컬 원점이 제각각이라 상수로 적으면 자산 교체에 낡는다.
@@ -195,6 +250,21 @@ export const overlayFeature: Feature = {
       applyEntry(entry);
       entries.push(entry);
       diag.placed = entries.length;
+
+      // ── 붙인 직후가 가장 위험한 프레임이다 ────────────────────────────────
+      // 부팅 루프는 `ATTACH_BATCH` 마다 프레임을 넘기고 끝에서 한 번 예열한다(아래).
+      // 그런데 **편집 중 한 개씩 놓는 경로는 그 루프를 안 탄다** — 붙이자마자 첫 렌더가
+      // 오고, 거기서 지오·텍스처·파이프라인이 한꺼번에 GPU 에 올라간다. `glb-city.ts` 가
+      // 같은 자산으로 **감독 실기기 1,072ms 히칭**을 실측해 프레임 분할을 넣은 그 구간인데
+      // 이쪽에만 빠져 있었다(감독 신고 2026-08-12).
+      //
+      // `root` 전체가 아니라 **새로 붙은 holder 만** 연다 — 예열 창(부팅)은 이미 지났고,
+      // 이미 놓인 것까지 다시 열면 그것들의 컬링이 매번 흔들린다. `npc.ts` 의
+      // *"VRM 은 비동기라 예열 창을 이미 지났을 수 있다 — 합류하는 체만 다시 연다"* 와
+      // 같은 처방이다.
+      await nextFrame();
+      if (disposed) return entry;
+      await warmUp(entry.holder);
       return entry;
     }
 
@@ -225,6 +295,7 @@ export const overlayFeature: Feature = {
       get root() { return root as Object3D; },
       entries: () => entries,
       place,
+      lastFailure: () => lastFail,
       remove,
       apply: applyEntry,
       toRaw,
