@@ -1,4 +1,29 @@
-// world2/decide/overlay.ts — **사용자 배치 오버레이 계약 v1.** 순수 함수만.
+// world2/decide/overlay.ts — **사용자 배치 오버레이 계약 v2.** 순수 함수만.
+//
+// ── v2 가 더한 것: «파셀 동결» (감독 판정 2026-08-12) ────────────────────────
+// v1 은 «GLB 를 얹는다» 만 담았다. 감독이 **마을 건물·나무도 기즈모로 옮기겠다**고 해서
+// 그것을 담을 자리가 필요해졌는데, 여기서 이 계약의 가장 어려운 문제가 나왔다.
+//
+// **마을 파츠에는 이름이 없다.** `PlacedPart`(`parts/types.ts`)에 `id` 도 `index` 도 없고,
+// 후보 키 `(px,pz,kind,i)` 는 **노브 한 번에 무효가 된다.** 실측(2026-08-12, 파셀 (3,-7) near):
+//
+//     기본        building 3채 · tree 3그루
+//     ?bld=2      building 3채(동일) + 1채 추가 · tree **0그루**
+//
+// 구조적 원인은 `tree.ts` 가 `[...placed, ...out]`(먼저 놓인 것 전부)을 피해 빈 슬롯을 구하고
+// 없으면 `break` 하는 것이다 — **건물이 늘면 나무가 전멸**하고, 살아남아도 슬롯 후보 수가
+// 바뀌어 같은 난수가 다른 자리를 가리킨다. 즉 «3번 나무» 라는 표시는 슬라이더 한 번에
+// **엉뚱한 나무를 가리키거나 아무것도 안 가리키게** 된다.
+//
+// **감독 판정이 이 문제를 없앴다** — *"손본 구역은 슬라이더에서 빠진다"*.
+// 편집한 파셀은 `parcelLayout` 을 부르지 않고 **저장된 배치 배열 전체**를 쓴다. 배열 안에서
+// 인덱스가 자기 완결적이므로 **파츠를 가리킬 키가 아예 필요 없다.**
+//
+// 대가는 정직하다: 그 파셀은 「파라미터가 곧 공간」에서 이탈해 «감독이 만든 것» 이 된다.
+// ⚠ **경계는 파셀 단위이고 전역이 아니다.** 동결하지 않은 파셀은 그대로 계산된다.
+// ⚠ **동결은 `parcelLayout` «바깥»에서 적용한다** — 그 함수의 출력을 바꾸면 골든 해시
+//   (`world2-parcel-layout-golden.test.ts`, 38,241 파츠의 9필드 전체)가 깨진다. 깨지면
+//   해시를 갱신할 것이 아니라 **설계가 틀린 것이다.**
 //
 // ── 왜 이 계층이 필요한가 ────────────────────────────────────────────────────
 // 감독 요구는 *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능? glb파일을 내가 직접
@@ -26,6 +51,8 @@
 // 서버를 부르는 자기완결 위반도 이 경로에서는 발생하지 않는다.
 // ⚠ 이것은 **감독 발화의 해석으로 공백을 메운 판정**이다. 감독이 다르게 판단하면 그것이
 // 최종이고, 그때는 `src` 검증 규칙(아래)이 가장 먼저 바뀌는 자리다.
+
+import type { PlacedPart } from '../parts/types.js';
 
 /** 배치 항목 하나. */
 export interface OverlayItem {
@@ -57,12 +84,41 @@ export interface OverlayItem {
   s: number;
 }
 
+/**
+ * 편집으로 **동결된 파셀** 하나. 이 파셀은 `parcelLayout` 을 부르지 않고 `parts` 를 쓴다.
+ *
+ * ⚠ **`parts` 는 `near` 기준 전체 배치다.** tier(far/mid/near)로 줄이는 것은 **소비자 몫**이고
+ * 이 계약은 tier 를 담지 않는다. tier 별로 세 벌 저장하면 크기가 3배가 되고, 무엇보다
+ * `parcel-layout.ts` 불변식 ②(*"far ⊆ mid ⊆ near 이고 공통 원소의 위치가 동일"*)를 **데이터로
+ * 표현하게 되어** 그 성질을 데이터가 깰 수 있다. near 하나만 두면 그 성질은 필터 규칙이
+ * 소유한다.
+ *
+ * ⚠ **`kind` 의 유효성은 이 계약이 판정하지 않는다.** 유효한 파츠 종류 목록은 `parts/` 가
+ * 소유하고(`ALL_KINDS`), 계약이 그것을 복사하면 파츠가 늘 때마다 두 곳이 갈라진다 —
+ * 이 파일이 반려 사슬 내내 싸운 바로 그 형태다. 여기서는 «비어 있지 않은 문자열» 까지만
+ * 보고, **모르는 종류를 어떻게 할지는 소비자가 정하고 화면에 말한다.**
+ */
+export interface FrozenParcel {
+  /** 파셀 격자 좌표(정수) */
+  px: number;
+  pz: number;
+  /** 그 파셀의 배치 전체(near 기준). 빈 배열이면 «아무것도 없는 파셀» 이다 */
+  parts: PlacedPart[];
+}
+
 export interface Overlay {
   version: number;
   items: OverlayItem[];
+  /**
+   * 동결된 파셀. v1 파일에는 없고 마이그레이션이 `[]` 로 채운다.
+   *
+   * 비어 있는 것이 **정상**이다 — 감독이 마을을 손대기 전까지는 계속 `[]` 이고, 그때는
+   * world2 가 v1 과 완전히 같게 동작한다.
+   */
+  parcels: FrozenParcel[];
 }
 
-export const OVERLAY_VERSION = 1;
+export const OVERLAY_VERSION = 2;
 
 /**
  * 빈 오버레이. **상수가 아니라 팩토리인 이유**(검수관 P1): 상수로 두면 한 소비자가
@@ -70,7 +126,7 @@ export const OVERLAY_VERSION = 1;
  * 소비자가 나중에 조용히 실패하는 것보다 매번 새로 주는 편이 안전하다.
  */
 export function emptyOverlay(): Overlay {
-  return { version: OVERLAY_VERSION, items: [] };
+  return { version: OVERLAY_VERSION, items: [], parcels: [] };
 }
 
 // ── 자산 경로 검증 (팀장 조건 c) ─────────────────────────────────────────────
@@ -145,6 +201,36 @@ function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem 
   };
 }
 
+/** 정수로 접는다. 파셀 좌표는 격자 인덱스라 소수가 의미 없다 */
+const int = (v: unknown, d: number): number => {
+  const n = num(v, NaN);
+  return Number.isFinite(n) ? Math.trunc(n) : d;
+};
+
+/**
+ * 파츠 하나의 수치 정규화. `PlacedPart` 와 **필드가 1:1이어야 한다** — 아니면 동결 파셀을
+ * 다시 읽을 때 조용히 다른 배치가 된다.
+ *
+ * ⚠ `tone` 은 **팔레트 인덱스**이고 색이 아니다(`parts/types.ts`: *"실제 색은 파츠의 `tones`
+ * 가 정한다"*). 자유 색을 허용하면 텍스처가 있는 파츠에서 이 저장소가 이미 겪은 *"길이 안
+ * 보였다"* 를 재현한다. 그래서 **0 이상 정수**만 받고 상한은 파츠가 소유한다.
+ */
+function normalizePart(p: Record<string, unknown>): PlacedPart {
+  return {
+    kind: typeof p.kind === 'string' ? p.kind : '',
+    x: clamp(p.x, -POS_LIMIT, POS_LIMIT, 0),
+    z: clamp(p.z, -POS_LIMIT, POS_LIMIT, 0),
+    y: clamp(p.y, -POS_LIMIT, POS_LIMIT, 0),
+    ry: foldRy(p.ry),
+    // 비균등 스케일 — v1 이 *"필요해지면 옵션 필드로 더한다"* 고 이연해 둔 것을 v2 가
+    // 해소한다. 마을 파츠는 애초에 비균등이 기본이다(`building.ts` 가 w·d·h 를 각각 뽑는다).
+    sx: clamp(p.sx, S_MIN, S_MAX, 1),
+    sy: clamp(p.sy, S_MIN, S_MAX, 1),
+    sz: clamp(p.sz, S_MIN, S_MAX, 1),
+    tone: Math.max(0, int(p.tone, 0)),
+  };
+}
+
 // ── 계약이 아는 키 — **목록을 적지 않고 유도한다** (검수관 B6) ────────────────
 // 처음에는 `new Set(['src','x','y','z','ry','s'])` 라고 **따로 적었다.** 값 미러링이고,
 // 위험한 방향은 소실 쪽이었다. 검수관 뮤테이션 실측 — 화이트리스트에만 `'name'` 을 더하고
@@ -158,6 +244,10 @@ function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem 
 // 이 저장소는 `Sidebar.Scene.js` 에서 정확히 그 TDZ 로 부팅을 한 번 죽였다.
 const KNOWN_ITEM_KEYS = new Set(Object.keys(normalizeItem({}, '')));
 const KNOWN_ROOT_KEYS = new Set(Object.keys(emptyOverlay()));
+const KNOWN_PART_KEYS = new Set(Object.keys(normalizePart({})));
+// 파셀 껍데기의 키도 같은 원리로 유도한다 — `parts` 는 배열이라 정규화 결과에서 못 뽑으므로
+// 최소 형태 하나를 만들어 그 키를 읽는다.
+const KNOWN_PARCEL_KEYS = new Set(Object.keys({ px: 0, pz: 0, parts: [] } satisfies FrozenParcel));
 
 /**
  * 임의의 입력을 유효한 `Overlay` 로 만든다. **던지지 않는다.**
@@ -181,7 +271,29 @@ export function normalizeOverlay(raw: unknown): Overlay {
     if (!isSafeSrc(item.src)) continue; // 경로가 안전하지 않으면 항목째 버린다
     items.push(normalizeItem(item, item.src));
   }
-  return { version: OVERLAY_VERSION, items };
+
+  const rawParcels = Array.isArray(o.parcels) ? o.parcels : [];
+  const parcels: FrozenParcel[] = [];
+  for (const pc of rawParcels) {
+    const parcel = pc as Record<string, unknown> | null;
+    if (!parcel || typeof parcel !== 'object') continue;
+    // 파셀 좌표가 수가 아니면 **어느 파셀인지 모르는 동결**이라 얹을 자리가 없다 — 버린다.
+    if (typeof parcel.px !== 'number' || typeof parcel.pz !== 'number') continue;
+    if (!Number.isFinite(parcel.px) || !Number.isFinite(parcel.pz)) continue;
+
+    const rawParts = Array.isArray(parcel.parts) ? parcel.parts : [];
+    const parts: PlacedPart[] = [];
+    for (const pt of rawParts) {
+      const part = pt as Record<string, unknown> | null;
+      if (!part || typeof part !== 'object') continue;
+      const norm = normalizePart(part);
+      if (norm.kind === '') continue; // 종류를 모르면 그릴 수 없다
+      parts.push(norm);
+    }
+    parcels.push({ px: int(parcel.px, 0), pz: int(parcel.pz, 0), parts });
+  }
+
+  return { version: OVERLAY_VERSION, items, parcels };
 }
 
 /**
@@ -239,10 +351,25 @@ function readVersion(raw: unknown): number | 'invalid' | 'absent' {
  * 그래서 복사를 그만두고 **한 곳으로 뽑았다.** 갈라질 자리가 없으면 갈라지지 않는다.
  * 새 버전을 만들 때 손댈 곳도 여기 하나다.
  */
-function prepareRaw(raw: unknown): { raw: unknown; issues: OverlayIssue[] } {
+/**
+ * v1 → v2. **배치는 한 톨도 안 바뀐다** — `parcels: []` 를 더할 뿐이다.
+ *
+ * ⚠ *"`normalizeOverlay` 가 어차피 `parcels` 없으면 `[]` 로 채우니 이 함수는 없어도 된다"* 가
+ * 맞다. 그래도 두는 이유는 **버전 사슬이 서 있어야 v3 가 생길 때 갈라질 자리가 없기**
+ * 때문이다 — 이 파일이 B4·B5·B7 로 세 번 반려된 이유가 전부 «두 함수가 다른 말을 함» 이었고,
+ * 그 처방이 *"복사를 그만두고 한 곳으로 뽑았다"* 였다. 사슬의 첫 고리를 비워 두면 다음
+ * 사람이 그것을 `loadOverlay` 쪽에만 넣는다.
+ */
+function migrateV1toV2(raw: unknown): unknown {
+  const o = raw as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object') return raw;
+  return { ...o, version: OVERLAY_VERSION, parcels: Array.isArray(o.parcels) ? o.parcels : [] };
+}
+
+function prepareRaw(raw: unknown): { raw: unknown; issues: OverlayIssue[]; migrated: boolean } {
   const version = readVersion(raw);
 
-  if (version === 'invalid') return { raw: null, issues: [{ reason: 'version-invalid' }] };
+  if (version === 'invalid') return { raw: null, issues: [{ reason: 'version-invalid' }], migrated: false };
 
   // 미래 버전(파일이 코드보다 새롭다)은 내용을 신뢰할 수 없다. 빈 것으로 떨어뜨린다 —
   // 부분적으로 해석해 이상한 마을을 보여주는 것보다 아무것도 안 얹는 편이 낫다.
@@ -252,15 +379,18 @@ function prepareRaw(raw: unknown): { raw: unknown; issues: OverlayIssue[] } {
   // TS 타입 내로잉에 필요해서 두는 것이고, *"이 가드가 absent 를 막고 있다"* 로 읽으면
   // 틀린다. 죽은 가드를 살아 있는 것으로 읽으면 다음 사람이 그 축을 검사한 것으로 센다.
   if (version !== 'absent' && version > OVERLAY_VERSION) {
-    return { raw: null, issues: [{ reason: 'version-too-new' }] };
+    return { raw: null, issues: [{ reason: 'version-too-new' }], migrated: false };
   }
 
-  // ── 마이그레이션 자리. v1 뿐이라 아직 비어 있다. ──────────────────────────
-  // v2 를 만들 때 **여기 한 곳**에 넣는다. `normalizeOverlay` 앞이라는 것이 조건이다
-  // (그 함수가 출력 `version` 을 현재 값으로 덮어쓰므로 순서가 뒤집히면 죽는다 — B1).
-  //   if (version !== 'absent' && version < 2) raw = migrateV1toV2(raw);
+  // ── 마이그레이션 자리 — **여기 한 곳이다.** ────────────────────────────────
+  // `normalizeOverlay` **앞**이라는 것이 조건이다(그 함수가 출력 `version` 을 현재 값으로
+  // 덮어쓰므로 순서가 뒤집히면 마이그레이션이 언제나 «이미 최신» 으로 즉시 반환한다 — B1).
+  //
+  // `'absent'`(버전 필드가 아예 없는 손글씨 파일)도 v1 로 보고 태운다.
+  const migrated = version === 'absent' || version < OVERLAY_VERSION;
+  if (migrated) raw = migrateV1toV2(raw);
 
-  return { raw, issues: [] };
+  return { raw, issues: [], migrated };
 }
 
 /**
@@ -285,9 +415,20 @@ export function loadOverlay(raw: unknown): Overlay {
 export interface OverlayIssue {
   /** 항목 인덱스. 파일 전체에 대한 사유(`items-not-array`·`version-*`)에는 없다. */
   index?: number;
+  /** 동결 파셀 인덱스. 파셀 쪽 사유에만 붙는다(`index` 는 `items` 쪽이다) */
+  parcel?: number;
   reason:
     | 'not-object' | 'unsafe-src' | 'bad-number' | 'clamped' | 'folded'
-    | 'items-not-array' | 'version-too-new' | 'version-invalid' | 'unknown-field';
+    | 'items-not-array' | 'version-too-new' | 'version-invalid' | 'unknown-field'
+    // ── v2 가 더한 사유 ──────────────────────────────────────────────────────
+    /** 동결 파셀의 `px`·`pz` 가 수가 아니다 — 어느 파셀인지 몰라 얹을 자리가 없다 */
+    | 'parcel-no-coord'
+    /** 루트의 `parcels` 가 있는데 배열이 아니다 — 동결이 통째로 사라진다 */
+    | 'parcels-not-array'
+    /** 동결 파셀의 `parts` 가 배열이 아니다 */
+    | 'parts-not-array'
+    /** 파츠의 `kind` 가 비었다 — 무엇을 그릴지 모른다 */
+    | 'part-no-kind';
 }
 
 /**
@@ -331,17 +472,31 @@ export interface OverlayIssue {
  * 한다 — 소비자(태스크 #25·#26)가 정할 자리다. 여기 적어 두는 이유는 그 판단이 **이 파일을
  * 읽지 않는 사람에게 필요하기** 때문이다.
  */
-export function validateOverlay(raw: unknown): { overlay: Overlay; issues: OverlayIssue[] } {
+export function validateOverlay(
+  raw: unknown,
+): { overlay: Overlay; issues: OverlayIssue[]; migrated: boolean } {
   // 버전 판정·마이그레이션은 `loadOverlay` 와 **같은 함수**를 쓴다(위 주석 참조).
   const prepared = prepareRaw(raw);
-  if (prepared.issues.length > 0) return { overlay: emptyOverlay(), issues: prepared.issues };
+  if (prepared.issues.length > 0) {
+    return { overlay: emptyOverlay(), issues: prepared.issues, migrated: false };
+  }
 
   const o = prepared.raw as Record<string, unknown> | null;
   const issues: OverlayIssue[] = [];
 
+  // ⚠ 마이그레이션은 `issues` 에 **넣지 않는다.** 처음엔 넣었고 기존 계약 테스트 10건이
+  // 즉시 빨간불이 됐는데, 그 빨간불이 옳았다 — `issues` 는 *"감독이 봐야 할 손실"* 이고
+  // 편집 UI 는 그것이 비어야 1차 클릭에서 저장한다. v1 파일을 열 때마다 «손실 있음» 경고가
+  // 뜨면 그 경고가 무의미해지고, 진짜 손실이 났을 때 감독이 그것을 무시하게 된다.
+  //
+  // 그렇다고 숨기지도 않는다 — 계약 문장이 *"의도적 정규화를 넣는다면 그것도 사유로 보고하거나
+  // 이 문장을 먼저 고쳐야 한다"* 라고 적어 뒀으므로 **반환값에 `migrated` 를 따로 낸다.**
+  // 「issues 가 비면 무손실」은 그대로 참이고(배치·값·필드는 하나도 안 바뀐다), 바뀌는 것은
+  // `version` 하나이며 그것은 별도 채널로 알린다.
+
   if (!o || typeof o !== 'object' || !Array.isArray(o.items)) {
     issues.push({ reason: 'items-not-array' });
-    return { overlay: emptyOverlay(), issues };
+    return { overlay: emptyOverlay(), issues, migrated: prepared.migrated };
   }
 
   for (const k of Object.keys(o)) {
@@ -381,5 +536,62 @@ export function validateOverlay(raw: unknown): { overlay: Overlay; issues: Overl
     }
   });
 
-  return { overlay: { version: OVERLAY_VERSION, items }, issues };
+  // ── 동결 파셀 (v2) ────────────────────────────────────────────────────────
+  // `items` 와 **같은 규칙**으로 본다: 못 쓰는 것은 버리되 버렸다는 사실을 보고하고,
+  // 값이 바뀌었으면 그것도 보고한다. 「issues 가 비면 무손실」은 파셀에도 적용된다.
+  const parcels: FrozenParcel[] = [];
+  if (o.parcels !== undefined && !Array.isArray(o.parcels)) {
+    issues.push({ reason: 'parcels-not-array' });
+  } else {
+    const rawParcels: unknown[] = Array.isArray(o.parcels) ? o.parcels : [];
+    rawParcels.forEach((pc: unknown, parcel: number) => {
+      const p = pc as Record<string, unknown> | null;
+      if (!p || typeof p !== 'object') { issues.push({ parcel, reason: 'not-object' }); return; }
+
+      const okCoord = typeof p.px === 'number' && typeof p.pz === 'number'
+        && Number.isFinite(p.px) && Number.isFinite(p.pz);
+      if (!okCoord) { issues.push({ parcel, reason: 'parcel-no-coord' }); return; }
+      if (!Array.isArray(p.parts)) { issues.push({ parcel, reason: 'parts-not-array' }); return; }
+
+      const px = int(p.px, 0);
+      const pz = int(p.pz, 0);
+      // 파셀 좌표는 격자 인덱스라 소수가 잘린다 — 잘렸으면 그것도 변경이다.
+      if (px !== p.px || pz !== p.pz) issues.push({ parcel, reason: 'clamped' });
+
+      for (const k of Object.keys(p)) {
+        if (!KNOWN_PARCEL_KEYS.has(k)) { issues.push({ parcel, reason: 'unknown-field' }); break; }
+      }
+
+      const parts: PlacedPart[] = [];
+      for (const pt of p.parts as unknown[]) {
+        const part = pt as Record<string, unknown> | null;
+        if (!part || typeof part !== 'object') { issues.push({ parcel, reason: 'not-object' }); continue; }
+
+        for (const k of ['x', 'y', 'z', 'ry', 'sx', 'sy', 'sz', 'tone'] as const) {
+          const v = part[k];
+          if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v))) {
+            issues.push({ parcel, reason: 'bad-number' });
+            return;
+          }
+        }
+
+        const norm = normalizePart(part);
+        if (norm.kind === '') { issues.push({ parcel, reason: 'part-no-kind' }); continue; }
+        parts.push(norm);
+
+        for (const k of ['x', 'y', 'z', 'sx', 'sy', 'sz', 'tone'] as const) {
+          if (part[k] !== undefined && part[k] !== norm[k]) { issues.push({ parcel, reason: 'clamped' }); break; }
+        }
+        if (part.ry !== undefined && part.ry !== norm.ry) issues.push({ parcel, reason: 'folded' });
+
+        for (const k of Object.keys(part)) {
+          if (!KNOWN_PART_KEYS.has(k)) { issues.push({ parcel, reason: 'unknown-field' }); break; }
+        }
+      }
+
+      parcels.push({ px, pz, parts });
+    });
+  }
+
+  return { overlay: { version: OVERLAY_VERSION, items, parcels }, issues, migrated: prepared.migrated };
 }

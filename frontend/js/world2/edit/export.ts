@@ -28,6 +28,14 @@ const REASON_KO: Record<OverlayIssue['reason'], string> = {
   'version-too-new': '파일 버전이 코드보다 새로움',
   'version-invalid': '버전을 해석할 수 없음',
   'unknown-field': '계약이 모르는 필드가 사라짐',
+  // ── v2 (파셀 동결) ────────────────────────────────────────────────────────
+  // ⚠ `migrated` 는 여기 **없다.** 그것은 손실이 아니라 알림이라 `issues` 가 아닌 별도
+  // 필드로 온다(`validateOverlay` 의 `migrated`). 사유 목록에 넣으면 v1 파일을 열 때마다
+  // «손실 있음» 이 떠서 그 경고 자체가 무의미해진다.
+  'parcel-no-coord': '동결 파셀에 좌표가 없음',
+  'parcels-not-array': 'parcels 가 배열이 아님',
+  'parts-not-array': '동결 파셀의 parts 가 배열이 아님',
+  'part-no-kind': '파츠 종류를 알 수 없음',
 };
 
 /**
