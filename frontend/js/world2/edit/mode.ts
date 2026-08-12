@@ -637,6 +637,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
 
   return {
     dispose() {
+      // 로드 중에 떠나면 `busy` 가 `true` 로 남는다. 지금은 리스너를 다 떼므로 재진입
+      // 경로가 없어 실해는 없지만, 세션을 되살리는 경로가 생기면 그때 조용히 잠긴다.
+      busy = false;
       unbindEditListeners();
       doc.removeEventListener('keydown', onModeKey);
       panel.remove();

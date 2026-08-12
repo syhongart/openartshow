@@ -220,6 +220,33 @@ describe('편집 모드 · 놓기 행위', () => {
     expect(t, '퍼센트를 지어내면 안 된다').not.toContain('%');
   });
 
+  it('「복제」도 로드 중에는 잠긴다', async () => {
+    // 검수관이 실측한 사각이다(2026-08-12): `duplicate()` 의 `busy` 잠금을 지워도
+    // **0 failed** 였다 — 이 파일이 복제 경로를 아예 안 밟고 있었다. 코드는 안전했지만
+    // *"다음에 이 잠금이 깨져도 이 스위트로는 안 드러난다"* 는 것이 문제다.
+    //
+    // ⚠ 순서가 중요하다. `duplicate()` 는 `if (!selected)` 를 **먼저** 보므로 아무것도
+    // 안 놓인 상태로 누르면 잠금에 닿기도 전에 빠져나간다. 그래서 하나를 먼저 놓아
+    // `selected` 를 만든 뒤, 두 번째 로드가 도는 중에 복제를 누른다.
+    clickGround();
+    await settle();
+    calls[0].resolve(entryOf(SRC));
+    await settle();
+
+    clickGround();
+    await settle();
+    expect(calls.length, '두 번째 로드가 시작돼 있어야 한다').toBe(2);
+
+    const dup = [...document.querySelectorAll<HTMLButtonElement>('#w2-edit button')]
+      .find((b) => b.textContent === '복제');
+    expect(dup, '「복제」 버튼이 있어야 한다').toBeTruthy();
+    dup!.click();
+    await settle();
+
+    expect(calls.length, '로드 중 복제는 새 로드를 만들지 않는다').toBe(2);
+    expect(panelText()).toContain('아직 불러오는 중');
+  });
+
   it('하늘을 클릭하면 침묵하지 않고 말한다', async () => {
     // 광선을 위로 돌린다 = 지면 평면과 안 만난다.
     // 실기 실측(2026-08-12, 1280×800): 화면 중앙 y=50% 가 정확히 이 경우였다 — 거기는

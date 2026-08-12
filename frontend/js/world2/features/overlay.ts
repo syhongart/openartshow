@@ -148,6 +148,13 @@ export const overlayFeature: Feature = {
       const hit = models.get(key);
       if (hit) return hit;
 
+      // ⚠ 아래에서 `.catch` 가 `models.delete(key)` 를 하는데 `models.set(key, p)` 는 그
+      // **뒤에** 온다. 순서가 뒤집혀 «실패한 약속이 캐시에 영구히 남는» 것처럼 읽히지만
+      // 그렇지 않다 — `loadGLB` 가 `async` 함수라 **동기적으로 reject 할 수 없고**,
+      // `then`/`catch` 콜백은 언제나 마이크로태스크로 미뤄진다. 그래서 동기 실행인
+      // `set` 이 항상 먼저다. (검수관이 이 지점을 블로커 후보로 짚었고 실측으로 기우로
+      // 판정됐다 — 다음 사람이 같은 우려를 다시 하지 않게 적어 둔다.)
+
       const relay = onProgress
         ? (ev: ProgressEvent) => {
           // 총 용량을 서버가 안 주면(`lengthComputable === false`) **퍼센트를 지어내지
