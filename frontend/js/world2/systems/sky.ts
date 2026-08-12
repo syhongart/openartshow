@@ -47,7 +47,7 @@ import {
   applyNightFloor, type HemiLike, type SunLike, type ExposureLike, type FogLike,
 } from './night-lights.js';
 import { createHorizonBand, bandStrength, type HorizonBand } from './horizon.js';
-import type { NightTune } from '../decide/night.js';
+import type { NightTune, SkyTime } from '../decide/night.js';
 import { nightness } from '../decide/night.js';
 import { dayLightMix, type DayLightMix } from '../decide/daylight.js';
 import { snapToShadowTexel } from '../decide/shadow.js';
@@ -235,7 +235,9 @@ export interface SkyState {
  * 0 이면 옛 화면과 **바이트 동일**이고 1 이 새 기본이다(`?skyblue` 로 연다). 유도·근거는
  * `sky.js` 의 `dayStops` 머리말 한 곳 — 여기에 색을 다시 적지 않는다.
  */
-export const SKY_BLUE = 1;
+export const SKY_BLUE = 2;
+// ⚠ 1 → 2 (감독 실기기 확정 2026-08-12). 감독이 `?skyblue=2&cloudh=0.4&fogsky=1` 링크를
+// 보고 *"이것으로 결정하자"* 로 판정했다. 1 은 그 판정 직전의 후보였다.
 /** `?skyblue` 상한. 1 초과는 외삽이라 더 진해진다 — 감독이 화면에서 고를 여지를 남긴다. */
 export const SKY_BLUE_MAX = 4;
 // ⚠ 1.5 였던 것을 올렸다 — 감독 실기기 2026-08-12: *"더 진한 파랑보다 더 파란것을 보고
@@ -258,7 +260,29 @@ export const CLOUD_CURVE = 1;
  * 머리말 한 곳이다.
  */
 export const CLOUD_H_MIN = 0.0003;
-export const CLOUD_H_MAX = 0.4;
+export const CLOUD_H_MAX = 1;
+// ⚠ 상한 0.4 → 1 (2026-08-12). 감독이 확정한 값이 **정확히 옛 상한(0.4)** 이라 그
+// 판정이 "0.4 가 좋다" 인지 "상한이 막고 있다" 인지 갈리지 않는다. `?skyblue` 상한이
+// 같은 이유로 이미 한 번 올라갔다(1.5→4, *"더 진한 파랑보다 더 파란것을 보고 싶어"*).
+// **끝값이 판정을 가로막으면 그 자리에서 나온 판정은 값이 아니라 벽을 잰 것이다.**
+
+/**
+ * 구름 고도비 기본값 — 감독 확정 2026-08-12 (`?cloudh=0.4`).
+ *
+ * 0 은 *"지정 안 함"* 이라 `sky.js` 의 `CLOUD_EPS`(0.05)로 떨어진다. 그 값에서 감독이
+ * *"구름이 뒤로... 쭉 늘어진"* 을 지적했고, 키우는 방향으로 후보를 열어 0.4 가 확정됐다.
+ */
+export const CLOUD_H = 0.4;
+
+/**
+ * 안개 하늘색 틴트 — 숫자는 전 시간대 공통(축약형), 객체는 시간대별.
+ *
+ * 시간대 목록은 `SkyTime` 을 **유도해서** 쓴다 — 여기에 `'day' | 'sunset' | 'night'` 를
+ * 다시 적으면 시간대가 하나 늘어나는 날 이 타입만 옛 목록에 남는다(값 미러링).
+ * `Partial` 인 것은 일부만 지정하는 소비자를 위한 것이고, 빠진 시간대는 `sky.js` 의
+ * `lightOf` 가 0(= 팔레트 원본)으로 읽는다.
+ */
+export type FogTint = number | Readonly<Partial<Record<SkyTime, number>>>;
 
 export interface SkyOptions {
   /** 소프트웨어 렌더 여부 — 크로스페이드 스냅·저해상 돔·강수 축소 분기 */
@@ -267,7 +291,7 @@ export interface SkyOptions {
   skyBlue?: number;
   /** 구름 곡률 원근(`?cloudcurve`). 생략하면 `CLOUD_CURVE` */
   cloudCurve?: number;
-  /** 구름 고도비(`?cloudh`). 생략하면 `sky.js` 기본 */
+  /** 구름 고도비(`?cloudh`). 생략하면 `CLOUD_H` */
   cloudH?: number;
   /** 초기 시간대·날씨. 오픈월드 기본은 야간 맑음(커밋 `318addf` 감독 확정) */
   time?: string;
@@ -287,8 +311,11 @@ export interface SkyOptions {
    * 이미 그렇게 깨뜨려 감독이 *"안개가 안보여"* 로 잡은 적이 있다.
    *
    * 기본 0 이면 `sky.js` 가 테이블 객체를 그대로 돌려주므로 라이브와 완전히 같다.
+   *
+   * **숫자면 전 시간대 공통, 객체면 시간대별**이다(감독 판정 2026-08-12 *"주간/야간 따로
+   * 가야해"*). 뜻·근거는 `sky.js` 의 `lightOf` 머리말 한 곳이다.
    */
-  fogTint?: number;
+  fogTint?: FogTint;
   /**
    * 광원을 타깃에서 얼마나 물릴 것인가(m). **그림자 카메라의 위치를 정하는 값**이다.
    *
@@ -415,7 +442,7 @@ export class SkySystem implements System {
    */
   private horizonDim = -1;
   /** 팔레트 조회에 그대로 넘긴다 — 안개 틴트가 걸린 색이 곧 지평선 색이다 */
-  private readonly fogTint: number;
+  private readonly fogTint: FogTint;
 
   constructor(
     scene: THREE.Scene,
@@ -456,7 +483,7 @@ export class SkySystem implements System {
       // 화면이기 때문이다. 근거·수식은 `sky.js` 의 `cloudElev`·`dayStops` 머리말 한 곳이다.
       skyBlue: opts.skyBlue ?? SKY_BLUE,
       cloudCurve: opts.cloudCurve ?? CLOUD_CURVE,
-      cloudH: opts.cloudH ?? 0,
+      cloudH: opts.cloudH ?? CLOUD_H,
     });
     // 수평선 밴드 — 바다와 하늘의 경계(태스크 #202). 왜 이 축인지·왜 안개 far 를 밀지
     // 않는지는 `decide/horizon.ts` 머리말 한 곳이 소유한다.
