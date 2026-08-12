@@ -102,13 +102,6 @@ export class ShadowDecalSystem implements System {
   /** kind → 실루엣. 자세 유도가 사각인지 물어보는 자리 */
   private readonly shapeOf = new Map<string, ShadowShape>();
   /**
-   * kind → 그 파츠가 **서는 지면의 높이**(m). 파츠의 `standsOn` 신고를 그대로 읽는다.
-   *
-   * 없으면 0(잔디)이다. 이 값이 없으면 광장 랜드마크(도로판 0.14 위)의 그림자가 도로
-   * **아래** 12cm 에 깔려 사라진다 — 근거는 `parts/types.ts` 의 `standsOn` 주석 한 곳.
-   */
-  private readonly groundOf = new Map<string, number>();
-  /**
    * 살아 있는 데칼과 그 **원본**(캐스터) 자세.
    *
    * `Map` 이지 `WeakMap` 이 아니다 — 재적용이 **전체를 순회**해야 하는데 WeakMap 은
@@ -131,8 +124,6 @@ export class ShadowDecalSystem implements System {
       const a = o.assets[c.kind];
       this.dims.set(c.kind, a ? measure(a) : { r: 0.5, rx: 0.5, rz: 0.5 });
       this.shapeOf.set(c.kind, c.shape);
-      const spec = o.parts.find((q) => q.kind === c.kind);
-      if (spec?.standsOn) this.groundOf.set(c.kind, spec.standsOn);
     }
   }
 
@@ -180,8 +171,13 @@ export class ShadowDecalSystem implements System {
     // 위에 떠있어"*). 직전 판본은 `y: this.o.opts.y` 로 **절대 높이**를 썼고, 그 값이
     // 도로(0.14) 기준이라 잔디(0) 위 파츠는 그림자가 20cm 공중에 떴다. 파츠 피벗이
     // 바닥이므로 `t.y` 가 곧 그 파츠가 선 지면 높이다 — 근거는 `SHADOW_LIFT` 주석.
+    //
+    // ⚠⚠ 여기 `standsOn` 신고를 더하던 항이 있었고 **2026-08-12 에 걷었다**(팀장 판정).
+    // 그 항은 "도로 위 랜드마크의 배치 y 가 0 이라 12cm 모자란다" 를 메우는 것이었는데,
+    // 이제 `decide/parcel-layout.ts` 가 표면 높이를 **배치 단계에서** 더하므로 `t.y` 가
+    // 이미 도로 상단(0.14)이다. 남겨 두면 0.28 로 **이중 가산**된다.
     return {
-      x: p.x, y: t.y + (this.groundOf.get(casterKind) ?? 0) + this.o.opts.y, z: p.z,
+      x: p.x, y: t.y + this.o.opts.y, z: p.z,
       ry: p.ry, sx: p.sx, sy: 1, sz: p.sz,
     };
   }

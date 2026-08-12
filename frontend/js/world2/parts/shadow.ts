@@ -466,6 +466,10 @@ function makeShadowPart(caster: PartSpec, index: number, count: number): PartSpe
   const kind = shadowKindOf(caster.kind);
   return {
     kind,
+    // ⚠ **캐스터 자세를 복사해 태어나므로 y 가 이미 절대 높이다**(표면 가산 대상 아님).
+    // 캐스터는 파츠 목록에서 그림자보다 앞이라 `decide/parcel-layout.ts` 가 이미 더한
+    // 뒤이고, 여기서 또 더하면 이중 가산이다. 근거 전문은 `types.ts` 의 `absoluteY`.
+    absoluteY: true,
     // tier 는 캐스터와 **같아야 한다.** 좁히면 그 tier 에서 물건은 있고 그림자만 사라진다.
     tiers: caster.tiers,
     // 난수를 쓰지 않지만 소금은 종류마다 달라야 한다는 규약을 지킨다(뒤에 난수를 쓰게 될 때

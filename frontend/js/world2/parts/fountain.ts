@@ -13,7 +13,6 @@
 
 import type { PartSpec, PlacedPart } from './types.js';
 import { plazaLandmark } from './plaza.js';
-import { ROAD_SURFACE_Y } from './road.js';
 
 /**
  * 옆면 프로파일. `(반지름, 높이)` 를 아래에서 위로.
@@ -66,9 +65,9 @@ export const fountain: PartSpec = {
   // 광장당 하나. 광장이 아닌 파셀은 0개다.
   // `PROFILE` 최대 반경 2.4 에 물받이 테두리 여유를 얹는다.
   // 광장 정중앙 고정이라 도로 중심 조각(무조건 그려진다) **위에** 선다.
-  // 배치 `y` 는 밑동 불변식 때문에 0 이므로 여기서 신고한다 — 근거는
-  // `types.ts` 의 `standsOn` 주석 한 곳.
-  standsOn: ROAD_SURFACE_Y,
+  // ⚠ 그 사실을 여기서 `standsOn: ROAD_SURFACE_Y` 로 신고했었고 **2026-08-12 에 걷었다**
+  // (팀장 판정). 높이는 파츠가 아니라 **자리**의 속성이라 `parts/surface.ts` 가 답한다 —
+  // 이 파츠는 도로 위에 서므로 그쪽 `onRoad` 분기가 같은 0.14 를 준다.
   shadowProfile: 'round',
   footprint: () => 2.7,
 
