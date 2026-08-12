@@ -26,10 +26,21 @@ import { GARDEN_SURFACE_Y } from '../frontend/js/world2/parts/garden.js';
 import { ROAD_SURFACE_Y } from '../frontend/js/world2/parts/road.js';
 import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
 import { roadDirs, onRoad } from '../frontend/js/world2/parts/road-topology.js';
+import { PARTS } from '../frontend/js/world2/parts/index.js';
 
 const at = (px: number, pz: number, tier: 'near' | 'mid' | 'far' = 'near') => parcelLayout(px, pz, tier);
-/** 자기 절대 y 를 갖고 태어나는 것들 — 가산 대상이 아니다(`PartSpec.absoluteY`) */
-const PLATES = new Set(['ground', 'garden', 'road']);
+
+/**
+ * 자기 절대 y 를 갖고 태어나는 종류 — 가산 대상이 아니다.
+ *
+ * ⚠ **`['ground','garden','road']` 처럼 손으로 적지 않는다**(검수관 블로커, 팀장 조건 2).
+ * 첫 판본이 그렇게 적었고, `world2-parcel-layout.test.ts` 의 같은 리터럴과 합쳐 **하드코딩
+ * 집합이 둘**이 됐다. 그러면 다음에 바닥 판을 늘리며 `absoluteY: true` 를 제대로 신고해도
+ * 두 테스트 파일을 각각 고치는 것을 잊어 원인과 무관한 실패로 뜬다 — 이 저장소가 세 번
+ * 겪은 값 미러링을 **막으려고 만든 필드 옆에서** 그대로 재현한 형태다.
+ * 실제 신고(`PartSpec.absoluteY`)에서 유도하면 파츠가 늘어도 따라온다.
+ */
+const ABSOLUTE = new Set(PARTS.filter((p) => p.absoluteY).map((p) => p.kind));
 
 /** 파셀 안에서 길이 안 닿는 지점 하나. 없으면 null */
 function offRoadSpot(dirs: readonly ReturnType<typeof roadDirs>[number][]): [number, number] | null {
@@ -100,8 +111,9 @@ describe('surfaceY — 그 자리에서 밟는 바닥 높이', () => {
 });
 
 describe('배치 정합 — 실물이 표면 위에 정확히 얹힌다', () => {
-  const realThings = (ps: PlacedPart[]) =>
-    ps.filter((p) => !PLATES.has(p.kind) && !p.kind.startsWith('shadow:'));
+  // 그림자도 `absoluteY` 라 이 한 줄에 함께 걸러진다 — `startsWith('shadow:')` 를 따로
+  // 적으면 그것이 또 하나의 손으로 적은 목록이다.
+  const realThings = (ps: PlacedPart[]) => ps.filter((p) => !ABSOLUTE.has(p.kind));
 
   it('★★ 잔디 위 실물은 잔디 윗면에 선다 — 잠기지 않는다', () => {
     // 이 단언이 이번 결함의 정면이다. 가산이 죽으면 전부 0 이 되어 깨진다.
@@ -160,7 +172,7 @@ describe('배치 정합 — 실물이 표면 위에 정확히 얹힌다', () => 
     const off = parcelLayout(px, pz, 'near', { ...DEFAULT_LAYOUT, surface: 0 });
     let checked = 0;
     for (const p of off) {
-      if (PLATES.has(p.kind)) continue;
+      if (ABSOLUTE.has(p.kind)) continue;
       if (onRoad(p.x, p.z, dirs)) continue;
       expect(p.y, `${p.kind}`).toBe(0);   // 옛 상태 = 전부 지면
       checked++;

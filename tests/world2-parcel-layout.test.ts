@@ -14,7 +14,7 @@ import {
 import { isTowerParcel } from '../frontend/js/world2/parts/zoning.js';
 import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
 import { surfaceY } from '../frontend/js/world2/parts/surface.js';
-import { ALL_KINDS } from '../frontend/js/world2/parts/index.js';
+import { ALL_KINDS, PARTS } from '../frontend/js/world2/parts/index.js';
 
 const at = (px: number, pz: number, tier: 'near' | 'mid' | 'far' = 'near') => parcelLayout(px, pz, tier);
 const only = (ps: PlacedPart[], k: PartKind) => ps.filter((p) => p.kind === k);
@@ -179,7 +179,27 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   //
   // 하나의 상한으로 둘을 재면 실물 쪽이 헐거워진다(0.1 까지 떠도 통과). 갈라 놓으면
   // 실물은 정확히 0 을 요구할 수 있고, 판은 필요한 만큼 벌릴 수 있다.
-  const DECALS = new Set(['ground', 'garden', 'road']);
+  // ⚠ **손으로 적지 않는다**(검수관 블로커, 팀장 조건 2). 예전에는 여기 리터럴이
+  // 하나뿐이라 견딜 만했으나, 2026-08-12 에 `PartSpec.absoluteY` 라는 **실제 신고**가
+  // 생겼으므로 그것에서 유도한다. 손으로 적으면 바닥 판을 늘릴 때 신고와 이 목록이
+  // 갈라지고, 그때 나는 실패는 원인을 안 가리킨다.
+  //
+  // 그림자도 `absoluteY` 라 함께 빠진다 — 그쪽은 캐스터 자세를 복사하므로 "밑동" 이라는
+  // 개념 자체가 없고, 캐스터와 같은 높이인지는 `world2-surface.test.ts` 가 전수로 본다.
+  const DECALS = new Set(PARTS.filter((p) => p.absoluteY).map((p) => p.kind));
+
+  /**
+   * **지면을 덮는 평면**. 위 `DECALS` 와 다르다 — 그쪽은 "표면 가산에서 빠지는 것"
+   * (바닥 판 + 그림자)이고, 이쪽은 "판끼리 깊이를 다투는 것"(바닥 판만)이다.
+   *
+   * 두 축을 하나로 합치려다 실패했다: 그림자를 판으로 취급하니 잔디(0.07)와 그림자
+   * (캐스터 발밑 = 0.07)가 같은 높이라 **판 간격 검사가 깨졌다.** 그림자는 판이 아니고
+   * 깊이 다툼은 `depthWrite:false` 로 다룬다 — 같은 집합에 넣을 수 없다.
+   *
+   * 신고는 `PartSpec.groundBase` 다(*"지면을 덮는 평면이면 그 텍스처 바탕색"*). 여기서도
+   * 종류 이름을 손으로 적지 않는다.
+   */
+  const PLATES = new Set(PARTS.filter((p) => p.groundBase !== undefined).map((p) => p.kind));
 
   // ⚠ **2026-08-12 에 재는 축을 고쳤다** (감독 발견 → 팀장 판정 B).
   // 이 단언은 오래 `expect(p.y).toBe(0)` 이었고, 문장(*"밑동이 땅에 있다"*)은 내내 참인데
@@ -218,7 +238,7 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   it('바닥 판은 지면 바로 위에 얹힌다 — 깊이 다툼을 피할 만큼만', () => {
     let checked = 0;
     for (const p of at(4, -4)) {
-      if (!DECALS.has(p.kind)) continue;
+      if (!PLATES.has(p.kind)) continue;
       checked++;
       expect(p.y).toBeGreaterThanOrEqual(0);
       // 20cm 를 넘으면 판이 실제로 떠 보이기 시작한다. 지금 최대는 도로의 14cm 다.
@@ -229,7 +249,7 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
 
   it('바닥 판끼리 높이가 겹치지 않는다 — 같은 높이면 지글거린다', () => {
     const ys = new Map<string, number>();
-    for (const p of at(4, -4)) if (DECALS.has(p.kind)) ys.set(p.kind, p.y);
+    for (const p of at(4, -4)) if (PLATES.has(p.kind)) ys.set(p.kind, p.y);
     const sorted = [...ys.values()].sort((a, b) => a - b);
     for (let i = 1; i < sorted.length; i++) {
       // 5cm 는 벌어져야 먼 거리에서도 순서가 유지된다
