@@ -93,6 +93,15 @@ const BLOCK: Array<[rule: string, name: string, cmd: string]> = [
   // ↓ `restore` 는 `checkout -- ` 와 같은 일을 하는 새 이름이다. 기존 규칙 본문이
   //   *"restore 는 대상 밖"* 이라고 **사각을 정확히 적어 두고 닫지는 않았고**, 그 사이
   //   같은 계열 사고가 두 번 더 났다.
+  // ↓ **검수관 블로커 B1(2026-08-12) 이 실측한 미탐 4형태.** 첫 수정 `(\S+\s+)?` 는
+  //   선행 토큰을 **최대 1개**만 허용해 「옵션+ref」 두 토큰이면 뚫렸다. 그런데 문서에는
+  //   *"ref 유무·형태와 무관하게 잡는다"* 라고 적혀 있었다 — 게이트 유효성에 대한 거짓
+  //   진술이 다음 사람의 확인을 생략시키는, 이 저장소가 반복해서 값을 치른 형태다.
+  ['hookify.checkout-revert.local.md', '되돌림(옵션+ref: -f)', 'git checkout -f HEAD -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '되돌림(옵션+ref: --quiet)', 'git checkout --quiet HEAD -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '되돌림(옵션+상대ref)', 'git checkout -q HEAD~1 -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '되돌림(conflict 옵션+ref)', 'git checkout --theirs HEAD -- a.ts'],
+  ['hookify.checkout-revert.local.md', '되돌림(-C 로 경로 지정)', 'git -C /tmp/x checkout -- a.ts'],
   ['hookify.restore-discard.local.md', 'restore 로 미커밋 폐기', 'git restore frontend/js/sky.js'],
   ['hookify.restore-discard.local.md', 'restore --staged', 'git restore --staged frontend/js/a.ts'],
 ];
@@ -130,6 +139,14 @@ describe('hookify 규칙 — 통과시켜야 하는 것 (오탐 방지)', () => 
     'git checkout --track origin/feature-x',
     'git checkout --detach HEAD',
     'git switch -c claude/새-브랜치',
+    // ↓ 패턴을 「선행 토큰 0개 이상」으로 넓히면서 **함께 못 박는다.** 단순 확장
+    //   (`checkout\s+(?:\S+\s+)*--\s`)은 아래 첫 줄을 **오탐한다** — `--grep=checkout`
+    //   뒤에 ` -- path` 가 이어져 매치하기 때문이다. 그래서 `(?<![-=\w])` 를 붙였다.
+    //   이 규칙들이 과거 검수관의 리뷰 명령을 두 번 막은 전례가 있어 오탐을 특히 좁혔다.
+    'git log --grep=checkout -- CLAUDE.md',
+    'git diff --stat -- frontend/',
+    'git show HEAD -- docs/BOARD.md',
+    'grep -n checkout CLAUDE.md',
     // ↓ 검수관 B2 가 실측한 오탐 2건. **이 두 명령이 실제로 리뷰를 멈춰 세웠다.**
     'grep -n commit CLAUDE.md',
     'git log -n 3 | grep commit',

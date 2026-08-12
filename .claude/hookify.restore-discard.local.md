@@ -34,6 +34,11 @@ pattern: git\s+restore\b
 
 ## 못 잡는 것
 
+- **`git -C <path> restore <path>`** — 패턴이 `git\s+restore` 라 `git` 과 `restore` 사이에
+  다른 토큰이 끼면 **못 잡는다**(실측 근거: 같은 형태를 `checkout` 규칙에서 검수관이
+  블로커로 잡았다 — 거기는 `(?:\S+\s+)*` 로 열었고 여기는 안 열었다).
+  이 자리를 넓히려면 `npm run restore-*` 류 오탐을 먼저 재야 한다 — 안 재고 넓히면
+  같은 실수를 방향만 바꿔 반복하는 것이다.
 - `git stash` · `git reset --hard` · `git clean -fd` — 일부러 뺐다(복구 절차에서 쓴다).
   근거는 `hookify.checkout-revert.local.md` 의 같은 절.
 - `eval`·변수 치환. Bash 이외의 경로.

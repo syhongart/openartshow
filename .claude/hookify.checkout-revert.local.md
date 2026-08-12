@@ -3,7 +3,7 @@ name: 워킹트리를 옛 판본으로 되돌리지 마라
 enabled: true
 event: bash
 action: block
-pattern: checkout\s+(\S+\s+)?--\s
+pattern: (?<![-=\w])checkout\s+(?:\S+\s+)*--\s
 ---
 
 `git checkout [<ref>] -- <path>` 로 되돌리면 **그 경로의 미커밋 작업이 즉시 사라진다.**
@@ -27,8 +27,26 @@ staged 해 둔 검수관 블로커 수정을 날렸다(자백). `git status` 의
 
 **③④ 는 이 규칙이 이미 존재하는 상태에서 났다.** 패턴이 `[0-9a-f]{7,40}` 으로 **sha
 형태만** 보고 있었고, `HEAD` 도 ref 생략도 그 밖이었다. 규칙이 조용했던 것은 안전해서가
-아니라 **그 형태를 안 봐서**였다. 지금 패턴 `(\S+\s+)?--\s` 는 ref 유무·형태와 무관하게
-`-- <path>` 를 잡는다.
+아니라 **그 형태를 안 봐서**였다.
+
+⚠ **첫 수정도 한쪽만 열었다 (검수관 블로커 B1, 2026-08-12).** `(\S+\s+)?--\s` 로 넓히고
+이 자리에 *"ref 유무·형태와 무관하게 잡는다"* 라고 적었는데 **거짓이었다.** `?` 는 선행
+토큰을 **최대 1개**만 허용하므로 **옵션 1개 + ref 1개**가 오면 뚫린다 — 검수관 실측:
+
+    git checkout -f HEAD -- x        → PASSED (미탐)
+    git checkout --quiet HEAD -- x   → PASSED
+    git checkout -q HEAD~1 -- x      → PASSED
+    git checkout --theirs HEAD -- x  → PASSED
+
+스크립트 자동화(`-q` + ref)나 conflict 처리(`--theirs` + ref)에서 실제로 나오는 형태다.
+**게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다** — `main`
+unprotected 오기가 7일을 잃은 그 형태가 여기서 재발했다.
+
+지금 패턴은 `(?<![-=\w])checkout\s+(?:\S+\s+)*--\s` 다:
+- `(?:\S+\s+)*` — 선행 토큰 **0개 이상**(옵션·ref 몇 개가 오든 잡는다)
+- `(?<![-=\w])` — **오탐 방지**. 이것이 없으면 `git log --grep=checkout -- CLAUDE.md` 가
+  막힌다(`--grep=checkout` 뒤에 ` -- path` 가 이어져 매치한다). 실측으로 잡았고, 이
+  규칙들이 과거 검수관의 리뷰 명령을 두 번 막은 전례가 있어 오탐을 특히 좁혔다.
 
 ## 이 규칙이 통과시키는 것 (오탐 방지 — 되돌리기가 아니다)
 
@@ -54,6 +72,8 @@ staged 해 둔 검수관 블로커 수정을 날렸다(자백). `git status` 의
 
 ## 이 규칙이 **여전히** 못 잡는 것
 
+- **`git -C <path> restore`** — `restore` 규칙이 `git\s+restore` 로 붙어 있어 `-C` 가
+  끼면 못 잡는다(이 규칙은 `checkout` 전용이라 애초에 대상 밖). 사각으로 남긴다.
 - `git stash` · `git reset --hard` · `git clean -fd` — **일부러 뺐다.** 셋 다 복구 절차에서
   실제로 쓴다(2026-08-12 에 브랜치 ref 가 gh-pages 로 덮어써졌을 때 `reset --hard` 로
   복구했다). 막으면 사고 대응이 막힌다. **오늘 사고를 낸 형태가 아니다.**
