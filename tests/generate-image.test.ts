@@ -127,6 +127,17 @@ describe('G-PATH 출력 경로 — 감독의 오타가 저장소를 안 망가�
     expect(() => resolveOutPath('.', ROOT)).toThrow();
   });
 
+  // ⚠ **run #2 수정이 새로 연 표면**(검수관 P1). `path.extname` 이 `.png` 를 내므로
+  //   확장자 검사만으로는 통과한다. 그 값이 `GITHUB_ENV` 에 append 되면 **개행 뒤에
+  //   임의의 `key=value` 줄**이 들어간다.
+  it.each([
+    'frontend/img/a\nfoo=bar.png',
+    'frontend/img/a\rb.png',
+    'frontend/img/a\u0000b.png',
+  ])('제어문자가 든 경로는 거부한다: %j', (p) => {
+    expect(() => resolveOutPath(p, ROOT)).toThrow(/제어문자/);
+  });
+
   it('허용 확장자는 이미지뿐이다 — .svg 는 일부러 빠져 있다', () => {
     expect([...ALLOWED_EXT].sort()).toEqual(['.jpeg', '.jpg', '.png', '.webp']);
     expect(ALLOWED_EXT.has('.svg')).toBe(false);
@@ -206,10 +217,10 @@ describe('G-EXT 실제 형식에 확장자를 맞추는가 (run #2 가 죽은 �
   const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(8)]);
 
   it.each([
-    [() => makePng(), 'PNG', '.png'],
-    [() => JPEG, 'JPEG', '.jpg'],
-    [() => WEBP, 'WEBP', '.webp'],
-  ])('바이트로 형식을 판정한다: %#', (make, label, ext) => {
+    ['PNG', () => makePng(), '.png'],
+    ['JPEG', () => JPEG, '.jpg'],
+    ['WEBP', () => WEBP, '.webp'],
+  ])('바이트로 형식을 판정한다 — %s', (label, make, ext) => {
     expect(detectImageFormat((make as () => Buffer)())).toEqual({ label, ext });
   });
 
@@ -774,5 +785,40 @@ describe('G-WF 워크플로가 스크립트와 어긋나지 않는가', () => {
     const m = yml.match(/\n      out:[\s\S]{0,400}?default:\s*'([^']+)'/);
     expect(m, '워크플로에서 기본 out 을 못 찾았다 — 형식이 바뀌었는지 보라').not.toBeNull();
     expect(() => resolveOutPath(m![1], '/repo')).not.toThrow();
+  });
+});
+
+// ⚠⚠ **이 절은 실제 사고에서 나왔다**(2026-08-13, run #2 수정 회차).
+//   내가 `resolveOutPath` 에 제어문자 거부를 넣으면서 **정규식 안에 리터럴 제어문자를
+//   그대로 써 넣었다**(`0x00`·`0x1f`·`0x7f` 3바이트). 그러면:
+//     · `grep` 이 그 파일을 **binary file** 로 취급해 검색이 안 된다
+//     · diff·리뷰 화면에서 안 보인다
+//     · **게이트 6종이 전부 통과했다** — eslint 는 제어문자 정규식을 안 잡고(실측 exit 0),
+//       typecheck 는 `checkJs:false` 라 `.mjs` 를 안 보고, 동작은 같아서 테스트도 통과했다
+//   즉 **아무도 못 보는 오염**이 커밋 직전까지 갔다. 그 뒤 뮤테이션을 돌리려 했더니
+//   `grep: binary file matches` 가 떠서 발견했다 — 우연히 잡은 것이다.
+//   ⚠ 이 검사가 **못 잡는 것**: 여기 적은 경로 밖(범위를 좁게 잡았다) · 탭·개행은 정상이라
+//   통과 · 제어문자가 **문자열 리터럴** 안에 의도적으로 필요한 경우(그런 코드가 생기면
+//   이 검사를 고쳐야 한다 — 지금은 0건이다).
+describe('G-CTRL 소스에 리터럴 제어문자가 없는가 (실제 오염 사고)', () => {
+  const ROOT = path.resolve(__dirname, '..');
+  const TARGETS = [
+    'scripts/generate-image.mjs',
+    'scripts/png-chunks.mjs',
+    'tests/generate-image.test.ts',
+    '.github/workflows/generate-image.yml',
+  ];
+
+  it.each(TARGETS)('%s 에 제어문자가 없다', (rel) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel));
+    const bad: string[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      const b = raw[i];
+      // 탭(0x09)·개행(0x0a)·복귀(0x0d)만 허용한다.
+      if (b < 0x09 || b === 0x0b || b === 0x0c || (b >= 0x0e && b < 0x20) || b === 0x7f) {
+        bad.push(`offset ${i}: 0x${b.toString(16).padStart(2, '0')}`);
+      }
+    }
+    expect(bad, `${rel} 에 제어문자가 있다 — grep 이 binary 로 취급하고 리뷰에서 안 보인다`).toEqual([]);
   });
 });

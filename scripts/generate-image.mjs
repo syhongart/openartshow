@@ -96,6 +96,15 @@ export function maskSecrets(text, key) {
  * @param {string} [root] 저장소 루트(테스트에서 주입)
  */
 export function resolveOutPath(outPath, root = ROOT) {
+  // ⚠ **제어문자를 거부한다**(검수관 P1). `frontend/img/a\nfoo=bar.png` 는 `path.extname`
+  //   이 `.png` 를 내므로 아래 확장자 검사를 **통과한다.** 그러면 그 값이 `GITHUB_ENV` 에
+  //   `OUT=…` 으로 append 될 때 **개행 뒤에 임의의 `key=value` 줄이 들어간다.**
+  //   dispatch 는 write 권한자만 누르므로 실질 위험은 낮지만, **이 표면은 run #2 수정이
+  //   새로 연 것**이다. 막는 자리를 여기 하나로 둔다(SSOT — `GITHUB_ENV` 쓰는 쪽에
+  //   따로 적으면 값 미러링이다).
+  if (/[\u0000-\u001f\u007f]/.test(String(outPath))) {
+    throw new Error('출력 경로에 제어문자가 있다');
+  }
   const abs = path.resolve(root, outPath);
   const rel = path.relative(root, abs);
   // ⚠ `rel === ''`(루트 자신)은 **아래 확장자 검사와 겹친다** — 루트는 확장자가 없으므로
@@ -113,11 +122,6 @@ export function resolveOutPath(outPath, root = ROOT) {
   return abs;
 }
 
-/**
- * 바이트를 보고 형식을 판정하고 확장자와 일치하는지 확인한다.
- * @param {Buffer} buf
- * @param {string} ext 소문자 확장자(`.png` 등)
- */
 /**
  * 바이트를 보고 **실제 형식**을 판정한다. 확장자를 안 본다.
  *
@@ -157,6 +161,13 @@ export function reconcileExtension(absPath, buf) {
   return { path: absPath.slice(0, absPath.length - ext.length) + fmt.ext, changed: true, label: fmt.label };
 }
 
+/**
+ * 크기 상한과 매직바이트를 검사한다.
+ * ⚠ `reconcileExtension` **뒤에서 부르면 매직 축은 동어반복**이다(호출부 주석 참조).
+ * @param {Buffer} buf
+ * @param {string} ext 소문자 확장자(`.png` 등)
+ * @returns {string} 판정된 형식 라벨
+ */
 export function assertImageBytes(buf, ext) {
   if (buf.length === 0) throw new Error('생성된 이미지가 0바이트다');
   if (buf.length > MAX_BYTES) {
@@ -427,7 +438,15 @@ async function main() {
   if (changed) {
     console.log(`⚠ 요청 확장자(${ext})와 실제 형식(${label})이 달라 **${finalExt}** 로 저장한다.`);
   }
-  // 크기·매직바이트 검사는 그대로 태운다 — 확장자를 맞췄다고 검사를 건너뛰지 않는다.
+  // ⚠ 검사는 그대로 태우되 **이 자리에서 매직 축은 동어반복이다**(검수관 B2 실측).
+  //   `reconcileExtension` 이 **이미 바이트로 형식을 판정한 뒤** 그 형식의 확장자를
+  //   넘기므로, 매직 검사가 여기서 던지는 일은 구조적으로 없다(36케이스 throw 0).
+  //   `0바이트다` 메시지는 **도달조차 안 한다** — 빈 버퍼는 `reconcileExtension` 이
+  //   `알려진 이미지 형식이 아니다` 로 먼저 던진다.
+  //   **실질 검출력은 `MAX_BYTES` 하나뿐이다.** 첫 판본은 *"검사를 그대로 태운다 —
+  //   확장자를 맞췄다고 건너뛰지 않는다"* 라고만 적었고, 코드상 참이지만 **검출력을
+  //   오도**했다. 남겨 두는 이유는 `reconcileExtension` 이 나중에 바뀌어도 크기 축이
+  //   살아 있게 하는 것이고, 그 이상을 주장하지 않는다.
   assertImageBytes(buf, finalExt);
 
   const finalRel = path.relative(ROOT, finalAbs);
@@ -438,8 +457,18 @@ async function main() {
   // ⚠ 뒷 스텝(artifact·메타데이터 열거·커밋)이 **실제 저장 경로**를 써야 한다. 확장자가
   //   바뀌었는데 `inputs.out` 을 그대로 쓰면 *"생성물이 없다"* 로 죽는다 — 파일은 있는데
   //   다른 이름으로 있다. `rel`(요청 경로)이 아니라 이 값이 진실이다.
-  if (process.env.GITHUB_OUTPUT) {
-    fs.appendFileSync(process.env.GITHUB_OUTPUT, `path=${finalRel}\n`);
+  //
+  // ⚠⚠ **`GITHUB_OUTPUT` 이 아니라 `GITHUB_ENV` 를 쓴다**(검수관 C3). output 으로 내보내면
+  //   뒷 스텝마다 `${{ steps.gen.outputs.path || env.OUT }}` 를 **손으로 적어야** 하고,
+  //   첫 판본이 실제로 그것을 **세 곳**에 적었다 — `inputs.out` 을 네 곳에 적었다가 job
+  //   레벨 `env.OUT` 으로 모았던 P-b 의 **재발**이다(같은 자리에서 두 번째).
+  //   `GITHUB_ENV` 에 쓰면 job 레벨 `OUT` 이 **다음 스텝부터** 갱신되므로 워크플로에
+  //   표현식이 0곳이 되고, 이 스텝이 죽으면 원본이 그대로 남아 artifact 의 `if: always()`
+  //   도 의도대로 동작한다.
+  //   ⚠ **이 배선에는 검사가 0이다** — `main()` 을 export 하지 않아 여기를 지워도 테스트가
+  //   안 깨진다(검수관 실측 M-3). 백로그 `G-MAIN` 이 그 축이다.
+  if (process.env.GITHUB_ENV) {
+    fs.appendFileSync(process.env.GITHUB_ENV, `OUT=${finalRel}\n`);
   }
 }
 

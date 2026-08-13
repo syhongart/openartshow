@@ -189,7 +189,6 @@ jobs:
           fi
 
       - name: 이미지 생성
-        id: gen
         env:
           # **환경변수로만 넘긴다** — 명령줄 인자는 프로세스 목록에 남는다.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -212,16 +211,19 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: generated-image-${{ github.run_id }}
-          # ⚠ 여기만 **검증 전 원본 경로**를 쓴다(검수관 P-b). 스크립트가 정규화한 값을
-          #   쓰려면 그 스크립트가 성공해야 하는데, 이 스텝은 **실패했을 때가 존재 이유**다.
-          #   즉 `if: always()` 라서 **`resolveOutPath` 를 통과하지 못한 값으로도 실행된다**
-          #   (검수관 P-g). dispatch 는 write 권한자만 누르므로 위협모델상 실질 증가는 0이고,
+          # ⚠ **`env.OUT` 은 gen 의 성패에 따라 다른 값이다**(검수관 B1 — 첫 판본 주석은
+          #   *"여기만 검증 전 원본 경로를 쓴다"* 였고 이 배선으로 **거짓이 됐다**):
+          #     · gen 성공 → 스크립트가 `GITHUB_ENV` 로 갱신한 **실제 저장 경로**(확장자가
+          #       바뀌었을 수 있다). `resolveOutPath` 를 통과한 값이다.
+          #     · gen 실패 → job 레벨 원본(`inputs.out`). **검증을 통과 못 한 값일 수 있다** —
+          #       `if: always()` 라 그래도 실행된다(검수관 P-g). dispatch 는 write 권한자만
+          #       누르므로 위협모델상 실질 증가는 0이고,
           #   upload-artifact v4 는 hidden file 을 기본 제외하므로 `.git/` 은 안 올라간다.
           #   ⚠ **다만 그 두 문장은 문서 기억 대조이고 실행으로 확인하지 못했다**(검수관 P-h —
           #   `api.github.com` 403 이라 워크플로를 한 번도 돌리지 못했고, 이 저장소에
           #   actionlint 가 없어 `env` context 유효성을 정적으로 재는 축도 0이다).
           #   **"검수관이 확인했다" 로 적지 마라 — 검수관도 같은 이유로 못 쟀다.**
-          path: ${{ steps.gen.outputs.path || env.OUT }}
+          path: ${{ env.OUT }}
           # ⚠ `error` 가 아니라 `warn` 인 이유: 생성 스텝이 키 오류로 죽으면 파일이 아예
           #   없는데, 그때 이 스텝까지 빨간불이면 **진짜 원인이 로그에서 묻힌다.**
           #   실물이 없는 채로 진행되지는 않는다 — 다음 스텝의 `readFileSync` 가 죽는다.
@@ -241,10 +243,6 @@ jobs:
         #   `png-chunks.mjs` 의 `ACCEPTED` 에 근거와 함께 올려야 다음 회차가 통과한다.
         #   그 목록은 **비어 있는 채로 시작한다** — 우리는 아직 실물을 본 적이 없다.
         #   그래서 **첫 dispatch 는 여기서 실패하는 것이 정상**이고, 그것이 설계다.
-        env:
-          # ⚠ 확장자가 바뀌었을 수 있다 — 스크립트가 실제 저장 경로를 출력한다.
-          #   `inputs.out` 을 그대로 쓰면 파일은 있는데 다른 이름이라 못 찾는다.
-          OUT: ${{ steps.gen.outputs.path || env.OUT }}
         run: node scripts/png-chunks.mjs "$OUT" --fail-on-extra
 
       - name: 브랜치에 올리고 PR 을 연다
@@ -252,8 +250,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PROMPT: ${{ inputs.prompt }}
           ASPECT: ${{ inputs.aspect }}
-          # 위와 같은 이유 — 실제 저장 경로를 쓴다.
-          OUT: ${{ steps.gen.outputs.path || env.OUT }}
         run: |
           set -euo pipefail
           # ⚠ 세 사건을 갈라 본다(검수관 P1). 첫 판본은 `git status` 빈 출력 하나로
@@ -296,7 +292,8 @@ jobs:
             echo "| 항목 | 값 |"
             echo "| --- | --- |"
             echo "| 경로 | \`${OUT}\` |"
-            echo "| 요청 비율 | ${ASPECT} |"
+            echo "| **요청** 비율 | ${ASPECT} — ⚠ Imagen(\`:predict\`) 경로에서만 적용된다. Gemini(\`generateContent\`) 로 갔으면 **무시됐다** |"
+            echo "| 실제 경로 | \`${OUT}\` (모델이 준 형식에 맞춰 확장자가 바뀌었을 수 있다) |"
             echo "| run | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} |"
             echo
             echo "**프롬프트**"
