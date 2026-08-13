@@ -353,6 +353,9 @@ const JPEG_FIXTURE = Buffer.from([
   //   SOS 가 파일 끝 2바이트면 **읽히지 않는다.** 실물 모양에 맞춘다.
 ]);
 describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)', () => {
+  // ⚠ 파일명이 `.png` 인데 JPEG 버퍼도 넣는다(검수관 P-l). 의도다 — `inspect` 는
+  //   **매직 바이트**로 형식을 가르지 확장자를 안 본다. 확장자를 맞추면 그 사실이
+  //   가려지고, 다음 사람이 "확장자로 판정하나" 로 읽는다.
   const run = (buf: Buffer, extraArgs: string[] = []) => {
     const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'oas-chunk-')), 'x.png');
     fs.writeFileSync(f, buf);
@@ -454,8 +457,12 @@ describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', 
   //   **이름 자체가 만들어질 수 없다.** 그런데 목록에 있으면 오분류를 통과시킨다 —
   //   `m !== 0xc4` 를 지워 DHT 를 SOF4 로 오분류시켜도 **78개가 전부 초록**이었다.
   //   유령 항목을 지우고, 그것들이 **다시 들어오지 못하게** 여기서 세운다.
+  // ⚠ 이름을 **"낼 수 없는"** 에서 **"정상 파일에서는 안 내는"** 으로 좁힌다(검수관 C-7).
+  //   전자는 실측으로 거짓이다 — SOS **앞에** 그 마커를 둔 조작 파일에서는 열거된다.
+  //   테스트 이름은 **실패했을 때 사람이 읽는 문장**이고, 파서를 SOS 뒤까지 넓히려는
+  //   사람이 읽는 자리다. 거기 틀린 전제가 있으면 그 사람이 잘못된 판단을 한다.
   it.each(['SOI', 'EOI', 'RST0', 'RST7', 'DNL'])(
-    'JPEG 의 %s 는 목록에 없다 — 파서가 낼 수 없는 이름이다',
+    'JPEG 의 %s 는 목록에 없다 — 정상 파일에서는 안 나오고, 나와도 확인 대상이면 된다',
     (t) => expect(RENDER.jpeg.has(t)).toBe(false),
   );
 
