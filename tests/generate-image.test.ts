@@ -856,41 +856,70 @@ describe('G-WF2 워크플로 env 키와 GITHUB_ENV 가 충돌하지 않는가', 
 //   → 규율을 검사로 만든다. **기준선이 0이라 지금이 붙이기 가장 싼 시점이다.**
 //   ⚠ **못 잡는 것**: `env:` 로 넘긴 뒤 셸에서 **인용 없이** 쓰는 것(`$VAR` vs `"$VAR"`) ·
 //   `eval` · 액션 `with:` 입력을 통한 경로. 이 검사는 *"본문에 보간하지 않는다"* 만 본다.
-describe('G-WF3 run: 블록 안에 표현식을 보간하지 않는가', () => {
+describe('G-WF3 run: 안에 표현식을 보간하지 않는가', () => {
   const DIR = path.resolve(__dirname, '../.github/workflows');
+  const FILES = fs.readdirSync(DIR).filter((f) => f.endsWith('.yml'));
 
-  it.each(fs.readdirSync(DIR).filter((f) => f.endsWith('.yml')))(
-    '%s 의 run: 본문에 ${{ }} 가 없다',
-    (file) => {
-      const lines = fs.readFileSync(path.join(DIR, file), 'utf8').split(String.fromCharCode(10));
-      const hits: string[] = [];
-      let i = 0;
-      while (i < lines.length) {
-        const m = lines[i].match(/^(\s*)run:\s*\|?\s*$/);
-        if (!m) { i += 1; continue; }
-        const indent = m[1].length;
-        let j = i + 1;
-        for (; j < lines.length; j++) {
-          const l = lines[j];
-          if (l.trim() && l.search(/\S/) <= indent) break;
-          // ⚠ **주석 줄은 반드시 뺀다** — 이 저장소는 `${{ }}` 를 문서화 목적으로
-          //   주석에 적는다(검수관이 지목한 거짓 FAIL 위험 ②).
-          if (l.trim() && !l.trim().startsWith('#') && l.includes('${{')) {
-            hits.push(`${file}:${j + 1}: ${l.trim().slice(0, 60)}`);
-          }
-        }
-        i = j;
+  /** 한 워크플로에서 셸로 실행되는 줄들을 모은다. 반환 `[줄번호, 내용]`. */
+  function shellLines(yml: string): Array<[number, string]> {
+    const lines = yml.split(String.fromCharCode(10));
+    const out: Array<[number, string]> = [];
+    let i = 0;
+    while (i < lines.length) {
+      // ⚠⚠ **두 형태를 다 본다**(검수관 C5). 첫 판본은 블록 스칼라 `run: |` 만 잡았고,
+      //   저장소의 `run:` **31개 중 4개**(13%)만 검사했다. 단일 라인 `run: node …` 은
+      //   블록과 **똑같이 셸로 실행되는데** 시야 밖이었다 — 실증으로 인젝션을 주입해도
+      //   통과했다. 게다가 `ci.yml`·`deploy.yml`·`review-record.yml` 은 블록 스칼라가
+      //   **0개**라 그 세 파일은 **아무것도 검사하지 않은 채 초록**이었다.
+      // ⚠ **블록을 먼저 본다.** `run: |` 은 단일 라인 패턴(`\S.*`)에도 걸리므로 순서가
+      //   반대면 블록 본문이 통째로 안 읽힌다 — 첫 판본이 그랬고, 총합 단언이 잡았다.
+      const block = lines[i].match(/^(\s*)run:\s*[|>]-?\s*$/);
+      if (!block) {
+        const single = lines[i].match(/^\s*run:\s+(\S.*)$/);
+        if (single) out.push([i + 1, single[1]]);
+        i += 1;
+        continue;
       }
-      expect(hits, '외부 입력은 예외 없이 env: 로 넘긴다 — 본문 보간은 셸 인젝션이다').toEqual([]);
-    },
-  );
+      const indent = block[1].length;
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        const l = lines[j];
+        if (l.trim() && l.search(/\S/) <= indent) break;
+        if (l.trim()) out.push([j + 1, l.trim()]);
+      }
+      i = j;
+    }
+    return out;
+  }
 
-  it('run: 블록을 실제로 찾아냈다 — 파싱이 깨져 0곳으로 보이는 것이 아니다', () => {
-    // 거짓 PASS 방향. `run:` 을 하나도 못 찾으면 위 검사는 **항상 통과**한다.
-    const all = fs.readdirSync(DIR).filter((f) => f.endsWith('.yml'))
-      .map((f) => fs.readFileSync(path.join(DIR, f), 'utf8'))
-      .join(String.fromCharCode(10));
-    expect(all.split(String.fromCharCode(10)).filter((l) => /^\s*run:\s*\|?\s*$/.test(l)).length).toBeGreaterThan(3);
+  it.each(FILES)('%s 의 run: 안에 ${{ }} 가 없다', (file) => {
+    const found = shellLines(fs.readFileSync(path.join(DIR, file), 'utf8'));
+    // ⚠ **파일마다** 하나라도 찾았는지 먼저 본다(검수관 P6). 합산으로만 보면
+    //   `ci.yml` 처럼 한 형태만 쓰는 파일이 **0건을 검사하며 초록**인 것을 못 잡는다.
+    expect(found.length, `${file} 에서 run: 을 하나도 못 찾았다 — 파싱이 깨졌다`).toBeGreaterThan(0);
+    const hits = found
+      // 이 저장소는 `${{ }}` 를 **문서화 목적으로 주석에 적는다**(거짓 FAIL 위험 ②).
+      .filter(([, l]) => !l.startsWith('#') && l.includes('${{'))
+      .map(([n, l]) => `${file}:${n}: ${l.slice(0, 60)}`);
+    expect(hits, '외부 입력은 예외 없이 env: 로 넘긴다 — 본문 보간은 셸 인젝션이다').toEqual([]);
+  });
+
+  // ⚠ `toBeGreaterThan(3)` 은 **실측 4에 맞춘 값**이었다(검수관 P5) — 블록 하나만 줄어도
+  //   거짓 FAIL 이고, `CLAUDE.md` 가 *"「실측에 여유를 얹은 값」은 근거가 아니다"* 로 못 박은
+  //   형태다. 두 형태를 다 세면 분모가 31로 커져 그 취약함이 사라진다.
+  // ⚠ **임계값을 실측에 맞추지 않는다**(검수관 P5). 첫 판본은 `toBeGreaterThan(3)` 이었고
+  //   실측 4에 아슬아슬하게 맞춘 값이라 블록 하나만 줄어도 거짓 FAIL 이었다 —
+  //   `CLAUDE.md` 가 *"「실측에 여유를 얹은 값」은 근거가 아니다"* 로 못 박은 형태다.
+  //   대신 **두 방식을 계산해 관계를 단언한다**: 두 형태를 다 세면 블록만 셀 때보다 많다.
+  //   숫자가 바뀌어도 저절로 따라오고, 전제(파일 구성)가 바뀌어도 다시 실측할 필요가 없다.
+  it('블록 스칼라만 세는 것보다 많이 잡는다 — 사각이 닫혔다', () => {
+    const blockOnly = FILES.reduce((n, f) => {
+      const lines = fs.readFileSync(path.join(DIR, f), 'utf8').split(String.fromCharCode(10));
+      return n + lines.filter((l) => /^\s*run:\s*[|>]-?\s*$/.test(l)).length;
+    }, 0);
+    const both = FILES.reduce((n, f) => n + shellLines(fs.readFileSync(path.join(DIR, f), 'utf8')).length, 0);
+    expect(blockOnly, '블록 스칼라를 하나도 못 찾았다 — 대조 자체가 성립 안 한다').toBeGreaterThan(0);
+    expect(both).toBeGreaterThan(blockOnly);
   });
 });
 
