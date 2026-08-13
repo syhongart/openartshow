@@ -215,14 +215,20 @@ describe('G-MODEL 모델 후보 — 순서가 재현 가능한가, 변종이 앞
   // ⚠⚠ **run #1 이 죽은 자리다**(2026-08-13 실측). 이름 내림차순 정렬이라
   //   `ultra`(u) 가 `generate`(g) 를 앞섰고, 그 모델이 `HTTP 404 · NOT_FOUND` 를 냈다.
   //   재현성을 위해 넣은 정렬이 **하필 접근 안 되는 변종을 최우선으로 만들었다.**
-  it.each(['ultra', 'fast', 'preview', 'exp'])(
+  // ⚠⚠ **표준 짝의 버전을 일부러 낮춘다.** 같은 버전(`4.0`)으로 두면 변종 판정이
+  //   무너져도 이름 내림차순이 우연히 같은 답을 내서 **검출력이 0**이 된다 —
+  //   실측: `experimental` 대안을 지워도 **0 failed** 였다(검수관 N-1).
+  //   버전을 낮추면 갈린다: 변종 판정이 살아 있으면 `3.0` 표준이 앞서고, 판정이
+  //   무너지면 둘 다 표준이 되어 **버전 내림차순으로 `4.0` 변종이 앞선다.**
+  //   *"내가 만든 케이스가 우연히 통과한다"* 는 오늘 **세 번째**다.
+  it.each(['ultra', 'fast', 'preview', 'exp', 'experimental'])(
     '%s 변종은 표준 모델보다 뒤에 온다 (run #1 이 죽은 자리)',
     (v) => {
       const c = first([
         M(`imagen-4.0-${v}-generate-001`, ['predict']),
-        M('imagen-4.0-generate-001', ['predict']),
+        M('imagen-3.0-generate-001', ['predict']),
       ]);
-      expect(c.model).toBe('imagen-4.0-generate-001');
+      expect(c.model).toBe('imagen-3.0-generate-001');
     },
   );
 
@@ -298,6 +304,17 @@ describe('G-MODEL 모델 후보 — 순서가 재현 가능한가, 변종이 앞
     ] as never);
     expect(candidates).toHaveLength(1);
     expect(candidates[0].kind).toBe('predict');
+  });
+
+  // ⚠ **검수관 N-3**: 첫 수정은 이름(`!/^imagen-\d/`)으로 배제해 **커버리지를 줄였다** —
+  //   `imagen` 이 `generateContent` 만 신고하면 후보에서 완전히 탈락했다. `imagen` 이
+  //   predict 전용이라는 것은 **실물 응답을 본 적 없는 가정**이다.
+  it('imagen 이 generateContent 만 신고하면 그 후보로 살아남는다', () => {
+    const { candidates } = pickImageModels([
+      M('imagen-5.0-generate-001', ['generateContent']),
+    ] as never);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].kind).toBe('generateContent');
   });
 
   it('imagen 이 아닌 이미지 모델은 generateContent 후보로 남는다', () => {
@@ -395,6 +412,16 @@ describe('G-FALLBACK 후보가 실패하면 다음으로 가는가 (run #1 이 �
     });
     expect(tried).toEqual(['a', 'b', 'c']);
     expect(r.picked).toBeNull();
+  });
+
+  // ⚠ **검수관 N-2 / G-LOG1**: 429 로 중단하면 시도한 수 < 후보 수다. 로그가
+  //   "후보 N개가 전부 실패했다" 라고 적으면 **시도하지 않은 것을 실패로 적는 것**이다.
+  //   문구가 아니라 **개수의 출처**를 잰다 — `failures` 가 실제 시도 수와 같은가.
+  it('429 로 중단하면 failures 가 시도한 수만큼만 쌓인다', async () => {
+    const r = await generateWithFallback([C('a'), C('b'), C('c')], async () => {
+      throw new Error('HTTP 429 · RESOURCE_EXHAUSTED');
+    });
+    expect(r.failures).toHaveLength(1);
   });
 
   it('후보가 0개면 조용히 성공하지 않는다', async () => {

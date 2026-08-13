@@ -213,7 +213,13 @@ export function pickImageModels(list) {
     { kind: 'predict', test: (m) => /^imagen-\d/.test(m.name) && supports(m, 'predict') },
     {
       kind: 'generateContent',
-      test: (m) => /image/.test(m.name) && !/^imagen-\d/.test(m.name) && supports(m, 'generateContent'),
+      // ⚠ 배제 조건이 **이름이 아니라 「이미 후보인가」** 다(검수관 N-3). 첫 수정은
+      //   `!/^imagen-\d/` 로 이름을 배제했는데 그러면 **커버리지가 줄었다** — `imagen` 이
+      //   `generateContent` 만 신고하는 경우 후보에서 **완전히 탈락**한다(실측 대조:
+      //   이전 판본은 잡았다). `imagen` 이 predict 전용이라는 것은 **우리가 실물 응답을
+      //   본 적 없는 가정**이다. `!supports(m,'predict')` 로 바꾸면 tier1 에 이미 들어간
+      //   것만 빠지므로 중복 제거와 커버리지를 **둘 다** 얻는다.
+      test: (m) => /image/.test(m.name) && !supports(m, 'predict') && supports(m, 'generateContent'),
     },
   ];
   const candidates = [];
@@ -348,7 +354,15 @@ async function main() {
     //   그 제한의 근거는 보안담당 ⑥ — *"이 키가 어느 티어에서 무엇에 접근 가능한지를
     //   공개 로그에 광고한다"*. 실패 경로에도 같은 제한을 건다. 진단에 필요한 것은
     //   **처음 몇 개의 사유**이지 전수가 아니다.
-    console.error(`후보 ${candidates.length}개가 전부 실패했다. 앞 5개 사유:`);
+    // ⚠ 개수는 `candidates.length` 가 아니라 **`failures.length`**(실제 시도한 수)다
+    //   (검수관 N-2). `429` 로 조기 중단하면 후보가 10개여도 시도한 것은 1개인데,
+    //   *"후보 10개가 전부 실패했다"* 라고 적으면 **시도하지 않은 것을 실패로 적는 것**이다.
+    //   이번 회차의 주제(*"실패 사유 목록이 다음 진단의 근거"*)에 정면으로 걸린다.
+    const stopped = failures.length < candidates.length;
+    console.error(
+      `후보 ${candidates.length}개 중 ${failures.length}개를 시도해 전부 실패했다`
+      + `${stopped ? ' (중단됨 — 남은 후보는 시도하지 않았다)' : ''}. 앞 5개 사유:`,
+    );
     for (const f of failures.slice(0, 5)) console.error(`  ${f}`);
     process.exit(1);
   }
