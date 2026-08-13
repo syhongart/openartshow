@@ -151,9 +151,43 @@ describe('편집 모드 · 놓기 행위', () => {
     calls[0].resolve(entryOf(SRC));
     await settle();
 
+    // ⚠ **놓으면 고르기가 풀린다**(감독 신고 2026-08-13 「흩어뿌리기」). 그래서 또 놓으려면
+    // 팔레트에서 다시 고른다. 이 줄이 없으면 이 축은 «잠금이 풀렸나» 가 아니라
+    // «고르기가 남아 있나» 를 재게 되고, 두 가지가 뒤섞이면 어느 쪽이 깨졌는지 모른다.
+    document.querySelector<HTMLButtonElement>('#w2-edit button[data-src]')!.click();
+
     clickGround();
     await settle();
     expect(calls.length, '끝난 뒤에는 다시 놓인다').toBe(2);
+  });
+
+  it('★ 놓은 뒤의 지면 클릭은 또 놓지 않는다 (감독 신고 「흩어뿌리기」)', async () => {
+    // *"지금은 클릭하면 다시 선택되었으면 하는데.. 지금은 흩어뿌리기 식으로 되어 있어."*
+    // `pendingSrc` 가 **팔레트 버튼으로만** 풀려서, 한 번 고르면 그 뒤 모든 지면 클릭이
+    // «또 놓기» 가 됐다. 방금 놓은 것을 옮기려고 옆을 클릭하면 하나가 더 생긴다.
+    clickGround();
+    await settle();
+    expect(calls.length, '첫 클릭에서는 놓여야 한다').toBe(1);
+    calls[0].resolve(entryOf(SRC));
+    await settle();
+
+    clickGround();
+    await settle();
+    expect(calls.length, '★ 고르기가 안 풀려 또 놓였다').toBe(1);
+  });
+
+  it('로드가 실패하면 고르기가 남는다 — 다시 시도할 수 있어야 한다', async () => {
+    // 성공했을 때만 푼다. 실패했는데 고르기까지 풀리면 «왜 안 놓였지» 하는 순간에
+    // 다시 고르는 단계가 하나 더 붙는다.
+    clickGround();
+    await settle();
+    failure.why = 'HTTP 404';
+    calls[0].resolve(null);
+    await settle();
+
+    clickGround();
+    await settle();
+    expect(calls.length, '실패 뒤에는 고르기가 남아 바로 재시도된다').toBe(2);
   });
 
   it('로드 실패로 끝나도 잠금이 풀린다', async () => {
@@ -198,6 +232,10 @@ describe('편집 모드 · 놓기 행위', () => {
     await settle();
     calls[0].resolve(entryOf(SRC));
     await settle();
+
+    // 놓으면 고르기가 풀리므로(감독 신고 2026-08-13) 두 번째 로드를 만들려면 다시 고른다.
+    // 이 축이 재는 것은 «복제가 busy 잠금에 걸리는가» 이고 두 번째 로드는 **수단**이다.
+    document.querySelector<HTMLButtonElement>('#w2-edit button[data-src]')!.click();
 
     clickGround();
     await settle();
@@ -325,3 +363,4 @@ describe('확장 끄기 자체가 값을 실제로 끄는가', () => {
     expect(disableMatExtensions(model as never)).toBe(1);
   });
 });
+
