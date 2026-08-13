@@ -867,20 +867,30 @@ describe('G-WF3 run: 안에 표현식을 보간하지 않는가', () => {
     let i = 0;
     while (i < lines.length) {
       // ⚠⚠ **두 형태를 다 본다**(검수관 C5). 첫 판본은 블록 스칼라 `run: |` 만 잡았고,
-      //   저장소의 `run:` **31개 중 4개**(13%)만 검사했다. 단일 라인 `run: node …` 은
+      //   저장소의 `run:` 31개 중 일부만 검사했다(정확한 분포: 블록 4 · 단일 20 ·
+      //   `- run:` 7 — 검수관 첫 보고의 「31개 중 4개」는 `run: |-` 를 단일로 센 값이었다). 단일 라인 `run: node …` 은
       //   블록과 **똑같이 셸로 실행되는데** 시야 밖이었다 — 실증으로 인젝션을 주입해도
       //   통과했다. 게다가 `ci.yml`·`deploy.yml`·`review-record.yml` 은 블록 스칼라가
       //   **0개**라 그 세 파일은 **아무것도 검사하지 않은 채 초록**이었다.
       // ⚠ **블록을 먼저 본다.** `run: |` 은 단일 라인 패턴(`\S.*`)에도 걸리므로 순서가
       //   반대면 블록 본문이 통째로 안 읽힌다 — 첫 판본이 그랬고, 총합 단언이 잡았다.
-      const block = lines[i].match(/^(\s*)run:\s*[|>]-?\s*$/);
+      // ⚠⚠ **`- run:` 도 잡는다**(검수관 C6). 첫 판본은 두 정규식 모두 `\s*` 뒤에 바로
+      //   `run:` 을 요구해 YAML 시퀀스 항목 형태를 **못 봤다** — 놓친 것 7개이고 그중
+      //   `deploy.yml` 의 `- run: |` **블록 두 개는 본문 전체가 시야 밖**이었다.
+      //   실증: 그 블록에 `${{ github.event.head_commit.message }}` 를 주입해도 통과했다.
+      //   `deploy.yml` 은 **배포 매니페스트**이고 그 값은 이 검사가 막겠다고 선언한
+      //   바로 그 벡터다. `P6`(파일마다 하나라도 찾았는가) 도 이것을 못 막았다 —
+      //   `deploy.yml` 에서 3줄은 찾으므로 통과한다(**부분적으로 찾으면 통과**하는 형태).
+      const block = lines[i].match(/^(\s*)(- )?run:\s*[|>]-?\s*$/);
       if (!block) {
-        const single = lines[i].match(/^\s*run:\s+(\S.*)$/);
+        const single = lines[i].match(/^\s*(?:- )?run:\s+(\S.*)$/);
         if (single) out.push([i + 1, single[1]]);
         i += 1;
         continue;
       }
-      const indent = block[1].length;
+      // ⚠ `- run: |` 에서 `run` 키의 실제 컬럼은 `- ` 만큼 오른쪽이다. 안 더하면 본문
+      //   경계 판정이 어긋난다 — 이 회차가 이미 한 번 겪은 경계 버그의 재발 자리다.
+      const indent = block[1].length + (block[2] ? block[2].length : 0);
       let j = i + 1;
       for (; j < lines.length; j++) {
         const l = lines[j];
@@ -915,7 +925,7 @@ describe('G-WF3 run: 안에 표현식을 보간하지 않는가', () => {
   it('블록 스칼라만 세는 것보다 많이 잡는다 — 사각이 닫혔다', () => {
     const blockOnly = FILES.reduce((n, f) => {
       const lines = fs.readFileSync(path.join(DIR, f), 'utf8').split(String.fromCharCode(10));
-      return n + lines.filter((l) => /^\s*run:\s*[|>]-?\s*$/.test(l)).length;
+      return n + lines.filter((l) => /^\s*(?:- )?run:\s*[|>]-?\s*$/.test(l)).length;
     }, 0);
     const both = FILES.reduce((n, f) => n + shellLines(fs.readFileSync(path.join(DIR, f), 'utf8')).length, 0);
     expect(blockOnly, '블록 스칼라를 하나도 못 찾았다 — 대조 자체가 성립 안 한다').toBeGreaterThan(0);
