@@ -566,9 +566,30 @@ describe('마을 파츠를 클릭으로 고른다 (행위)', () => {
 // 편집키 · 삭제). **하나만 `commit()` 을 빠뜨려도 그 경로에서만 조용히 안 저장된다** —
 // 화면은 바뀌었는데 파일에는 없는 형태이고, 감독은 내보내기를 열어 봐야 안다.
 
-/** 편집키 하나를 누른다 */
-function pressKey(code: string): void {
-  document.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true }));
+/**
+ * 편집키 하나를 누른다. **편집이 그 키를 먹었으면 `true`**.
+ *
+ * 반환값이 곧 «주행이 살아 있는가» 의 축이다 — 편집은 자기가 처리한 키만
+ * `preventDefault`·`stopPropagation` 한다(`input.ts`). 주행(`main.ts`)은 window 에 붙어
+ * 있어서 document 버블 뒤에 오므로, 여기서 `true` 가 나오면 그 키는 주행에 안 간다.
+ *
+ * `key`(찍힌 글자)를 따로 받는 이유: 모달의 숫자·부호·소수점은 `code` 가 아니라 `key` 로
+ * 본다(자판 배열에 안 묶이게 — `decide/modal-edit.ts`).
+ */
+function pressKey(code: string, key = ''): boolean {
+  const ev = new KeyboardEvent('keydown', { code, key, bubbles: true, cancelable: true });
+  document.dispatchEvent(ev);
+  return ev.defaultPrevented;
+}
+
+/**
+ * 마우스를 옮긴다. **모달은 키로 시작하므로 시작점이 마지막 이동 자리다** —
+ * 모달을 열기 전에 한 번 불러 두지 않으면 시작점이 (0,0) 이라 첫 이동에 값이 튄다.
+ */
+function movePointer(x: number, y: number): void {
+  document.dispatchEvent(new PointerEvent('pointermove', {
+    clientX: x, clientY: y, bubbles: true,
+  }));
 }
 
 /** 마을 건물 하나를 골라 둔 하네스 */
@@ -605,7 +626,10 @@ describe('마을 파츠를 조작하면 그 구역이 동결된다 (행위)', ()
     expect(frozenPart(h)?.y, '★ 높이가 저장되지 않았다').toBeGreaterThan(0);
   });
 
-  it('★ 크기 키는 **비율을 유지한 채** 민다 — 비균등이 무너지면 건물이 정육면체가 된다', () => {
+  it('★ 크기 버튼은 **비율을 유지한 채** 민다 — 비균등이 무너지면 건물이 정육면체가 된다', () => {
+    // ⚠ 이 축은 원래 `KeyR`(크게) 를 눌렀다. **`R` 은 회전 모달로 갔다**(블렌더 표준) —
+    // 키가 사라진 것이 아니라 옮겨간 것이라, 같은 성질을 남은 경로(패널 버튼)로 잰다.
+    // 모달 `S` 경로의 같은 성질은 아래 「블렌더식 모달 조작」 절이 따로 본다.
     const h = makeHarness({
       parts: {
         '0,0': [{ kind: 'building', x: 5, y: 0, z: 3, ry: 0, sx: 4, sy: 8, sz: 2, tone: 0 }] as PlacedPart[],
@@ -615,7 +639,7 @@ describe('마을 파츠를 조작하면 그 구역이 동결된다 (행위)', ()
     h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
     pressTab();
     clickAt(h);
-    pressKey('KeyR'); // 크게
+    [...h.doc.querySelectorAll('button')].find((b) => b.textContent === '크기 +')!.click();
     const p = frozenPart(h)!;
     expect(p.sx, '★ 크기가 안 커졌다').toBeGreaterThan(4);
     // 4 : 8 : 2 = 1 : 2 : 0.5 가 유지돼야 한다.
@@ -798,5 +822,232 @@ describe('아웃라이너 — 구역 목록 (행위)', () => {
     expect(outlinerEl(h)?.dataset.mode).toBe('edit');
     pressTab();
     expect(outlinerEl(h)?.dataset.mode, '★ 주행으로 돌아왔는데 편집 목록이 남는다').toBe('drive');
+  });
+});
+
+// ── 블렌더식 모달 조작 (W5 E2) ──────────────────────────────────────────────
+//
+// 감독 지시 2026-08-13: *"나도 블랜더 잘써서 오히려 그런 방식이 편하지."*
+//
+// 산술과 상태 기계는 `tests/world2-modal-edit.test.ts` 가 **직접 부르는** 축으로 본다.
+// 여기서 재는 것은 그것이 **실제로 배선됐는가** 다 — W4 에서 순수 함수는 맞는데 조립부가
+// 안 부르는 형태가 두 번 나왔고(N10·N12), 순수 축만으로는 안 잡혔다.
+//
+// ⚠ **이 절의 절반은 「주행이 사는가」 다.** `S` 는 주행의 «뒤로» 이고(`main.ts:1252`),
+// `R` 은 브라우저 새로고침(⌘R)과 겹친다. 편집이 그 키를 언제 먹고 언제 안 먹는지가
+// 곧 «걸어다닐 수 있는가» 라서, 값 검사보다 이쪽이 더 비싼 축이다.
+
+/** 패널 맨 아래 hint 줄. 화면이 광고하는 키 목록이다 */
+const hintText = (h: Harness): string => {
+  const notes = [...h.doc.querySelectorAll('#w2-edit .note')];
+  return notes[notes.length - 1]?.textContent ?? '';
+};
+
+/** 비균등 스케일 건물 하나만 있는 구역 — 비율 유지 축이 쓴다 */
+const SCALED_FIXTURE: VillageFixture = {
+  parts: {
+    '0,0': [{ kind: 'building', x: 5, y: 0, z: 3, ry: 0, sx: 4, sy: 8, sz: 2, tone: 0 }] as PlacedPart[],
+  },
+};
+
+/** 마을 건물을 골라 두고 **마우스 시작점까지 정한** 하네스 */
+function modalReady(vf: VillageFixture = VILLAGE_FIXTURE): Harness {
+  const h = pickedVillage(vf);
+  movePointer(400, 300);
+  return h;
+}
+
+describe('블렌더식 모달 — 주행이 산다 (행위)', () => {
+  it('★ 아무것도 안 골랐으면 `S` 는 주행 키 그대로다', () => {
+    // 이 하나가 이번 회차에서 가장 비싼 축이다. `S` 를 무조건 가로채면 편집 모드에서
+    // **뒤로 걷기가 통째로 죽는다** — 2026-08-12 에 편집이 주행을 죽인 그 형태다.
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(h.doc, '하네스 확인용').toBeTruthy();
+    expect(pressKey('KeyS', 's'), '★ 안 골랐는데 편집이 S 를 먹었다 — 뒤로 걷기가 죽는다').toBe(false);
+    expect(pressKey('KeyG', 'g'), '★ 안 골랐는데 편집이 G 를 먹었다').toBe(false);
+    expect(pressKey('KeyR', 'r'), '★ 안 골랐는데 편집이 R 을 먹었다').toBe(false);
+  });
+
+  it('고른 뒤에는 G·R·S 가 모달을 연다', () => {
+    for (const [code, key] of [['KeyG', 'g'], ['KeyR', 'r'], ['KeyS', 's']] as const) {
+      const h = modalReady();
+      expect(pressKey(code, key), `★ ${key} 가 모달을 안 연다`).toBe(true);
+      expect(h.doc.body.textContent, '★ 모달이 열렸는데 화면이 아무 말도 안 한다')
+        .toMatch(/이동|회전|크기/);
+      h.session.dispose();
+    }
+  });
+
+  it('★ 모달 중에도 WASD 는 통과한다 — 조작하며 걸어다닐 수 있어야 한다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    expect(h.doc.getElementById('w2-edit'), '패널 확인용').toBeTruthy();
+    for (const [code, key] of [['KeyW', 'w'], ['KeyA', 'a'], ['KeyD', 'd']] as const) {
+      expect(pressKey(code, key), `★ 조작 중 ${key} 가 막혔다 — 주행이 죽는다`).toBe(false);
+    }
+  });
+
+  it('★ 조합키는 안 가로챈다 — ⌘R·Ctrl+S 가 죽으면 브라우저가 망가진다', () => {
+    const h = modalReady();
+    expect(h.doc, '하네스 확인용').toBeTruthy();
+    for (const mod of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      const ev = new KeyboardEvent('keydown', {
+        code: 'KeyR', key: 'r', bubbles: true, cancelable: true, ...mod,
+      });
+      document.dispatchEvent(ev);
+      expect(ev.defaultPrevented, `★ ${JSON.stringify(mod)} + R 을 편집이 먹었다`).toBe(false);
+    }
+  });
+
+  it('★ 없어진 키를 화면이 광고하지 않는다 — R/F 크기는 S 모달로 갔다', () => {
+    // hint 는 키 목록의 **두 번째 사본**이라(태스크 #44) 한쪽만 고치면 «화면이 광고하는
+    // 키가 안 먹는다» 가 난다. 실제로 이 회차에 R/F 를 빼면서 그 어긋남이 났다.
+    // ⚠ hint 는 **아무것도 안 골랐을 때**의 화면이다 — 마을을 고르면 그 자리를 「손본
+    // 구역」 안내가 차지한다(`dom.ts` 의 `refresh`). 그것도 실제 화면이라 여기서 축을
+    // 나눈다: 문구는 선택 없는 상태에서, 키가 실제로 죽었는지는 고른 상태에서 본다.
+    const idle = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(hintText(idle), '★ hint 가 사라진 R/F 크기를 아직 광고한다').not.toContain('R/F');
+    expect(hintText(idle), '★ hint 가 새 모달 키를 안 알려준다').toContain('G 이동');
+    idle.session.dispose();
+
+    const h = modalReady();
+    expect(h.doc.getElementById('w2-edit'), '패널 확인용').toBeTruthy();
+    expect(pressKey('KeyF', 'f'), '★ F 가 아직 먹는다 — hint 와 어긋난다').toBe(false);
+  });
+});
+
+describe('블렌더식 모달 — 마우스가 따라온다 (행위)', () => {
+  it('★ G 로 밀고 좌클릭하면 그 자리에 확정된다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    movePointer(600, 300); // +200px = +10m (MOVE_PER_PX = 0.05)
+    clickAt(h);
+    expect(h.frozen.size, '★ 확정했는데 저장되지 않았다').toBe(1);
+    expect(frozenPart(h)?.x, '★ 마우스를 따라오지 않았다 — 모달이 배선되지 않았다')
+      .toBeCloseTo(15, 6);
+  });
+
+  it('★ Enter 로도 확정된다 — 손을 마우스에서 안 떼는 사람이 있다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    movePointer(600, 300);
+    expect(pressKey('Enter', 'Enter'), 'Enter 를 편집이 안 먹었다').toBe(true);
+    expect(frozenPart(h)?.x).toBeCloseTo(15, 6);
+  });
+
+  it('★ Esc 는 **시작 자리로 되돌린다** — 그리고 동결도 안 남긴다', () => {
+    // 취소가 값을 안 되돌리면 «되돌렸다고 생각한 것이 그대로 남는» 최악의 형태다.
+    // 동결까지 남으면 그 구역이 밀도 슬라이더에서 영영 빠진다.
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    movePointer(900, 300);
+    expect(pressKey('Escape', 'Escape'), 'Escape 를 편집이 안 먹었다').toBe(true);
+    expect(h.frozen.size, '★ 취소했는데 구역이 「손본 구역」이 됐다').toBe(0);
+    // 값이 실제로 되돌아갔는지는 **다음 조작을 확정시켜** 본다 — 취소 자체는 저장을
+    // 안 하므로 저장소만 봐서는 «되돌렸다» 와 «애초에 안 옮겼다» 가 구별되지 않는다.
+    pressKey('KeyE');
+    expect(frozenPart(h)?.x, '★ Esc 를 눌러도 옮긴 자리가 남았다').toBeCloseTo(5, 6);
+  });
+
+  it('★ 우클릭도 취소다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    movePointer(900, 300);
+    h.canvas.dispatchEvent(new PointerEvent('pointerdown', {
+      button: 2, clientX: 900, clientY: 300, bubbles: true,
+    }));
+    expect(h.frozen.size, '★ 우클릭 취소가 동결을 남겼다').toBe(0);
+    pressKey('KeyE');
+    expect(frozenPart(h)?.x, '★ 우클릭으로 취소해도 옮긴 자리가 남았다').toBeCloseTo(5, 6);
+  });
+
+  it('★ 축을 고정하면 그 축으로만 간다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    expect(pressKey('KeyX', 'x'), 'X 를 편집이 안 먹었다').toBe(true);
+    movePointer(600, 900); // 가로 +200px · 세로 +600px
+    clickAt(h);
+    const p = frozenPart(h)!;
+    expect(p.x, '★ X 축 이동이 안 먹는다').toBeCloseTo(15, 6);
+    expect(p.z, '★ X 로 고정했는데 z 가 움직였다').toBeCloseTo(3, 6);
+  });
+
+  it('★ 숫자를 치면 마우스를 무시하고 그 값이 된다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    pressKey('KeyX', 'x');
+    pressKey('Digit7', '7');
+    movePointer(9999, 9999); // 손이 떨려도 값이 안 흔들려야 한다
+    pressKey('Enter', 'Enter');
+    expect(frozenPart(h)?.x, '★ 7 을 쳤는데 마우스 이동량이 섞였다').toBeCloseTo(12, 6);
+  });
+
+  it('★ R 은 회전이다 — 도(°)로 친다', () => {
+    const h = modalReady();
+    pressKey('KeyR', 'r');
+    pressKey('Digit9', '9');
+    pressKey('Digit0', '0');
+    pressKey('Enter', 'Enter');
+    expect(frozenPart(h)?.ry, '★ 90 을 쳤는데 90° 가 아니다').toBeCloseTo(Math.PI / 2, 6);
+  });
+
+  it('★ S 는 크기이고 **비율을 유지한다** — 무너지면 건물이 정육면체가 된다', () => {
+    const h = modalReady(SCALED_FIXTURE);
+    pressKey('KeyS', 's');
+    pressKey('Digit2', '2');
+    pressKey('Enter', 'Enter');
+    const p = frozenPart(h)!;
+    expect(p.sx, '★ 2배를 쳤는데 안 커졌다').toBeCloseTo(8, 6);
+    // 4 : 8 : 2 = 1 : 2 : 0.5 가 유지돼야 한다.
+    expect(p.sy / p.sx, '★ 모달 크기 조작이 비율을 무너뜨렸다').toBeCloseTo(2, 6);
+    expect(p.sz / p.sx).toBeCloseTo(0.5, 6);
+  });
+
+  it('★ 오버레이 항목도 같은 문으로 옮긴다 — 두 형태가 갈라지지 않는다', () => {
+    const h = makeHarness();
+    const e = addEntry(h);
+    h.hits.push({ object: e.holder });
+    pressTab();
+    clickAt(h);
+    movePointer(400, 300);
+    pressKey('KeyG', 'g');
+    pressKey('KeyX', 'x');
+    pressKey('Digit4', '4');
+    pressKey('Enter', 'Enter');
+    expect(e.x, '★ GLB 는 모달로 안 움직인다 — 어댑터가 한쪽만 배선됐다').toBeCloseTo(4, 6);
+  });
+
+  it('★ 화면이 지금 무엇을 하는지 말한다 — 모달은 보이는 핸들이 없다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    movePointer(500, 300);
+    expect(h.doc.body.textContent, '★ 조작 중인데 화면이 아무 말도 안 한다').toContain('이동');
+    pressKey('KeyX', 'x');
+    expect(h.doc.body.textContent, '★ 고정한 축이 화면에 안 보인다').toContain('이동 X');
+    pressKey('Escape', 'Escape');
+    expect(h.doc.body.textContent, '★ 끝났는데 조작 문구가 남아 있다 — 진행 중인지 알 수 없다')
+      .not.toContain('이동 X:');
+  });
+
+  it('★ 선택이 바뀌면 진행 중 조작이 끝난다 — 새 대상이 옛 자리로 튀지 않는다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    movePointer(900, 300);
+    outlinerItems(h)[0].click(); // tree #0 으로 갈아탄다
+    movePointer(1200, 300);      // 모달이 살아 있으면 나무가 끌려간다
+    pressKey('KeyE');            // 확정시켜 저장된 값을 본다
+    expect(frozenPart(h, 'tree')?.x, '★ 새 대상이 옛 조작에 끌려갔다').toBeCloseTo(-9, 6);
+  });
+
+  it('모달 중에는 기즈모·드래그가 안 듣는다 — 두 조작이 겹치지 않는다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    // 기즈모 핸들 위를 지나가도 모달만 먹는다.
+    if (h.gizmoHandle()) h.hits.push({ object: h.gizmoHandle() });
+    movePointer(600, 300);
+    clickAt(h);
+    expect(frozenPart(h)?.x, '★ 모달 중 다른 조작이 끼어들었다').toBeCloseTo(15, 6);
   });
 });

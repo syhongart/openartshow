@@ -10,8 +10,10 @@
 
 import { isSafeSrc } from '../decide/overlay.js';
 import type { OverlayHost } from './types.js';
-import { RY_STEP, S_STEP, Y_STEP, select, type EditState } from './state.js';
-import { nudgeScale } from './target.js';
+import { RY_STEP, Y_STEP, select, type EditState } from './state.js';
+import {
+  applyDelta, modalDelta, modalLabel, modalOpener, readModalKey, ZERO_DELTA,
+} from '../decide/modal-edit.js';
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
@@ -42,9 +44,23 @@ export function createInput(deps: InputDeps): Input {
   const { host, st, panel, picker, actions } = deps;
   const doc = host.doc;
   const canvas = host.canvas;
+  /**
+   * 마지막 마우스 자리. **모달은 키로 시작하므로 시작점을 따로 기억해야 한다** —
+   * 그 순간의 `PointerEvent` 가 없기 때문이다. 이것이 없으면 `G` 를 누른 직후 첫
+   * 마우스 이동에 물건이 화면 끝으로 튄다(시작점이 0,0 이 되므로).
+   */
+  let mouseX = 0;
+  let mouseY = 0;
 
   // ── 포인터 ──────────────────────────────────────────────────────────────
   const onPointerDown = (ev: PointerEvent) => {
+    // 모달 중 클릭은 **확정/취소**다. 캔버스 밖이어도 받는다 — 조작 중에 커서가
+    // 패널 위로 나가도 확정할 수 있어야 한다(블렌더도 그렇다).
+    if (st.modal) {
+      if (ev.button === 0) endModal(true);
+      else if (ev.button === 2) endModal(false);
+      return;
+    }
     if (ev.target !== canvas) return;
     if (ev.button === 2) { st.orbiting = true; return; }
     if (ev.button !== 0) return;
@@ -100,7 +116,56 @@ export function createInput(deps: InputDeps): Input {
     panel.refresh();
   };
 
+  /**
+   * 지금 모달 상태로 대상 값을 다시 만든다. **마우스 이동과 숫자 타이핑이 같은 자리로
+   * 들어온다** — 타이핑도 즉시 화면에 보여야 하므로 둘이 갈라지면 안 된다.
+   */
+  const applyModal = () => {
+    const m = st.modal;
+    const t = st.target;
+    const from = st.modalFrom;
+    if (!m || !t || !from) return;
+    const d = modalDelta(m.kind, m.axis, m.digits, mouseX - m.startX, mouseY - m.startY);
+    const p = applyDelta(from, d);
+    t.x = p.x; t.y = p.y; t.z = p.z; t.ry = p.ry; t.s = p.s;
+    // 조작 중에는 `apply` 만 — 확정은 끝낼 때 한 번이다(`target.ts` 헤더).
+    t.apply();
+    // 블렌더가 헤더에 적는 그것. **화면이 지금 무엇을 하고 있는지 말한다** — 모달은
+    // 눈에 보이는 핸들이 없어서, 이 한 줄이 없으면 «키를 눌렀는데 뭐가 시작된 건지»
+    // 를 알 수 없다(기즈모는 잡은 축이 색으로 보이지만 모달은 아무것도 안 보인다).
+    panel.say(`${modalLabel(m, d)}  ·  X/Y/Z 축 · 숫자 입력 · 클릭·Enter 확정 · Esc 취소`);
+    panel.refresh();
+  };
+
+  /** 모달 조작을 끝낸다. `keep=false` 면 시작 자세로 되돌린다(취소) */
+  const endModal = (keep: boolean) => {
+    const t = st.target;
+    const from = st.modalFrom;
+    if (t && from) {
+      if (keep) {
+        t.commit();
+      } else {
+        // 취소 — 델타 0 을 적용하면 시작 자세다. `commit` 을 **안 부르므로** 동결도
+        // 안 생긴다(마을 파츠를 잘못 건드렸다가 무르는 경로가 여기다).
+        const p = applyDelta(from, ZERO_DELTA);
+        t.x = p.x; t.y = p.y; t.z = p.z; t.ry = p.ry; t.s = p.s;
+        t.apply();
+      }
+    }
+    st.modal = null;
+    st.modalFrom = null;
+    // 상태 줄이 조작 문구(`이동 X: 2.5m`)를 든 채 남으면 **끝났는지 아닌지**가 화면에서
+    // 구별되지 않는다 — 모달은 보이는 핸들이 없으므로 그 줄이 유일한 표지다.
+    panel.say(keep ? '확정했습니다.' : '취소했습니다 — 시작 자리로 되돌렸습니다.');
+    panel.refresh();
+  };
+
   const onPointerMove = (ev: PointerEvent) => {
+    mouseX = ev.clientX;
+    mouseY = ev.clientY;
+    // ⚠ **모달이 가장 먼저다.** 조작 중에는 기즈모도 드래그도 안 듣는다 — 블렌더가
+    // 그렇고, 안 그러면 `G` 로 밀던 중 기즈모 위를 지나가면 두 조작이 겹친다.
+    if (st.modal) { applyModal(); return; }
     if (st.orbiting) { host.look(ev.movementX, ev.movementY); return; }
     if (deps.gizmo.dragging) {
       if (!picker.castFrom(ev)) return;
@@ -141,15 +206,67 @@ export function createInput(deps: InputDeps): Input {
   const onContextMenu = (ev: Event) => { if (ev.target === canvas) ev.preventDefault(); };
 
   // ── 키 ──────────────────────────────────────────────────────────────────
-  // 주행 키(WASD·화살표·Shift)는 `main.ts` 가 소유한다. 여기서 쓰는 것은 그 목록에 없는
-  // 것뿐이라 서로 가로채지 않는다.
+  // 주행 키(WASD·화살표·Shift)는 `main.ts` 가 소유한다.
+  //
+  // ⚠ **모달(`G`/`R`/`S`)이 들어오면서 그 «서로 안 겹친다» 가 깨졌다** — `S` 는 주행의
+  // «뒤로» 다(`main.ts:1252` 의 `KeyS: 'back'`). 두 가지로 지킨다:
+  //   ① **대상을 골랐을 때만** 모달을 연다. 아무것도 안 골랐으면 `S` 는 그냥 뒤로 걷는다.
+  //   ② 모달이 실제로 먹은 키만 `stopPropagation()` 한다. 편집은 **document** 에,
+  //      주행은 **window** 에 붙어 있어서 버블 순서가 document → window 다 —
+  //      즉 등록 순서와 무관하게 **구조적으로** 우리가 먼저 보고 끊을 수 있다.
+  //      (`keyup` 은 안 막는다. 막으면 주행이 «눌린 채» 로 굳는다.)
+  //
+  // ⚠ **`R`/`F`(크기)를 키에서 뺐다.** 블렌더에서 `R` 은 회전이고 감독이 *"블랜더 잘써서
+  // 오히려 그런 방식이 편하지"* 라고 했다 — 표준 쪽을 남긴다. 크기는 `S` 모달로 간다.
+  // 패널의 「− 크기 / 크기 +」 버튼은 그대로라 조작 수단이 사라지지는 않는다.
   const EDIT_KEYS = new Set([
-    'KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyZ', 'KeyX', 'Delete', 'Backspace',
+    'KeyQ', 'KeyE', 'KeyZ', 'KeyX', 'Delete', 'Backspace',
   ]);
 
   const onKeyDown = (ev: KeyboardEvent) => {
     const t = ev.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    // 조합키는 브라우저·OS 것이다(⌘R 새로고침, Ctrl+Shift+I). 가로채면 안 된다 —
+    // 특히 `R`·`S` 는 모달 여는 키라 이 가드가 없으면 저장·새로고침을 먹는다.
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+
+    // ── 모달이 가장 먼저다 ────────────────────────────────────────────────
+    // 조작 중에는 숫자·`Escape`·축 키를 받아야 하므로 `EDIT_KEYS` 걸러내기보다 앞이다.
+    if (st.modal) {
+      const act = readModalKey(st.modal, ev.code, ev.key);
+      // 모르는 키는 **통과시킨다** — 조작 중에도 WASD 로 걸어다닐 수 있어야 한다
+      // (델타는 월드 기준이라 카메라가 움직여도 값은 안 흔들린다).
+      if (!act) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (act.act === 'cancel') { endModal(false); return; }
+      if (act.act === 'commit') { endModal(true); return; }
+      // 상태는 **갈아 끼운다**(불변 객체) — 제자리 수정하면 «어디서 바뀌었나» 가 흩어진다.
+      st.modal = act.act === 'axis'
+        ? { ...st.modal, axis: act.axis }
+        : { ...st.modal, digits: act.digits };
+      applyModal();
+      return;
+    }
+
+    // ── 모달 진입 ─────────────────────────────────────────────────────────
+    const opener = modalOpener(ev.code);
+    if (opener) {
+      // ⚠ **대상이 없으면 조용히 통과한다.** 여기서 «먼저 고르세요» 를 말하면 `S` 로
+      // 뒤로 걸을 때마다 안내가 뜬다 — 아래 `EDIT_KEYS` 의 «말없이 죽지 않는다» 와
+      // 반대로 가는 것이 맞는 자리다. 저 키들은 편집 전용이고 이 키는 **주행과 공유**다.
+      if (!st.target) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const sel = st.target;
+      st.modal = { kind: opener, axis: null, digits: '', startX: mouseX, startY: mouseY };
+      st.modalFrom = { x: sel.x, y: sel.y, z: sel.z, ry: sel.ry, s: sel.s };
+      // 시작 즉시 한 번 그린다 — 마우스를 움직이기 전에도 «무엇이 시작됐는지» 가 보여야
+      // 한다(델타 0 이라 값은 안 변한다).
+      applyModal();
+      return;
+    }
+
     if (!EDIT_KEYS.has(ev.code)) return;
     // ⚠ **말없이 죽지 않는다.** 예전에는 `if (!selected) return` 이 맨 위에 있어서
     // 아무것도 안 골랐을 때 편집키가 **침묵**했다 — 같은 조작의 패널 버튼은
@@ -161,8 +278,6 @@ export function createInput(deps: InputDeps): Input {
     switch (ev.code) {
       case 'KeyQ': sel.ry -= RY_STEP; break;
       case 'KeyE': sel.ry += RY_STEP; break;
-      case 'KeyR': nudgeScale(sel, S_STEP); break;
-      case 'KeyF': nudgeScale(sel, 1 / S_STEP); break;
       case 'KeyZ': sel.y -= Y_STEP; break;
       case 'KeyX': sel.y += Y_STEP; break;
       // `Backspace` 도 받는다 — **맥 키보드에는 `Delete` 코드의 키가 없다**(그 자리가

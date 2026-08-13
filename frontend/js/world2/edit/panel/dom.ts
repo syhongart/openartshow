@@ -168,7 +168,11 @@ export function createPanel(
         + ' 「구역 되돌리기」로 계산 배치로 돌아갑니다.';
     } else {
       hint.className = 'note';
-      hint.textContent = '좌드래그 이동 · 우드래그 시점 · Q/E 회전 · R/F 크기 · Z/X 높이 · Del·⌫ 삭제';
+      // ⚠ 이 줄은 **키 목록의 두 번째 사본이다**(첫 번째는 `input.ts` 의 `EDIT_KEYS`
+      // 와 `modalOpener`). 값 미러링이고, 한쪽만 고치면 «화면이 광고하는 키가 안 먹는다»
+      // 가 난다 — 실제로 R/F 를 뺄 때 이 줄을 함께 고쳐야 했다. 태스크 #44 가 그것이다.
+      hint.textContent = 'G 이동 · R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · X/Y/Z 축 고정 · 숫자 입력)'
+        + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
     }
     inspector.sync(st.target);
     outliner.sync();

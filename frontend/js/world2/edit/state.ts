@@ -14,6 +14,7 @@
 
 import type { OverlayEntry, OverlayHost, VillagePick } from './types.js';
 import { overlayTarget, villageTarget, type EditTarget } from './target.js';
+import type { ModalState, Pose } from '../decide/modal-edit.js';
 
 /** 회전 한 번. 24등분이라 세 번이면 45°, 여섯 번이면 90° 다. */
 export const RY_STEP = Math.PI / 12;
@@ -106,6 +107,20 @@ export interface EditState {
    * 다른 곳에서 `st.selected = …` 를 직접 쓰면 그 순간 불변식이 깨진다.
    */
   target: EditTarget | null;
+  /**
+   * 진행 중인 **블렌더식 모달 조작**(G/R/S). `null` 이면 조작 중이 아니다.
+   *
+   * 짝인 `modalFrom` 과 **함께 움직인다** — 상태만 있고 스냅샷이 없으면 취소가
+   * 불가능하고, 스냅샷만 있고 상태가 없으면 되돌릴 계기가 없다.
+   */
+  modal: ModalState | null;
+  /**
+   * 조작을 시작한 순간의 자세. **취소가 여기로 되돌린다.**
+   *
+   * 매 프레임 «직전 값에 더하기» 로 만들면 되돌릴 원본이 없다 — 언제나 이것에
+   * 델타를 더해 현재 값을 만든다(근거는 `decide/modal-edit.ts` 헤더).
+   */
+  modalFrom: Pose | null;
   pendingSrc: string | null;
   dragging: OverlayEntry | null;
   dragPlaneY: number;
@@ -149,6 +164,8 @@ export function createEditState(): EditState {
     selected: null,
     villageSel: null,
     target: null,
+    modal: null,
+    modalFrom: null,
     pendingSrc: null,
     dragging: null,
     dragPlaneY: 0,
@@ -179,6 +196,10 @@ export function select(
   host: OverlayHost,
   what: { entry: OverlayEntry } | { village: VillagePick } | null,
 ): void {
+  // ⚠ **선택이 바뀌면 진행 중 모달은 끝난다.** 안 끝내면 옛 대상의 스냅샷을 든 채
+  // 새 대상을 밀게 되고, 취소하면 **새 대상이 옛 대상의 자리로 튄다.**
+  st.modal = null;
+  st.modalFrom = null;
   if (what && 'entry' in what) {
     st.selected = what.entry;
     st.villageSel = null;
