@@ -1,0 +1,102 @@
+name: generate-image
+
+# Gemini 로 이미지를 만들어 **PR 로** 올린다.
+#
+# ── 왜 수동(`workflow_dispatch`)인가 ──────────────────────────────────────
+# 이미지는 **감독이 원할 때 한 번** 만드는 것이다. push·schedule 로 돌리면 요금이
+# 자동으로 나가고, 그것을 막는 장치가 이 저장소에 없다.
+#
+# ── 왜 `main` 에 직접 push 하지 않고 PR 인가 (보안담당 ⑦) ────────────────
+# `GITHUB_TOKEN` 의 push 는 **다른 워크플로를 발화하지 않는다**(`valuation.yml` 이 이미
+# 그 성질을 기록해 뒀다). CI 가 자산을 `main` 에 직접 밀면 **필수 상태검사
+# (`verify`·`smoke`)가 안 도는 경로**가 새로 생긴다 — `main` 은 보호돼 있는데 그 보호를
+# 우회하는 문이 열리는 셈이다. PR 로 올리면 평소 게이트를 그대로 탄다.
+#
+# ── secret 안전 조항 (보안담당 경계 2026-08-10) ───────────────────────────
+#  · **`pull_request_target` 을 쓰지 않는다.** 그것을 켜는 순간 **포크 PR 의 코드가
+#    secret 컨텍스트에서 실행**된다. 저장소 전체에 0건이고 앞으로도 0건이다.
+#  · **`ci.yml` 에 secret 스텝을 넣지 않는다.** 거기엔 `pull_request:` 트리거가 있어
+#    포크 PR 에서 secret 이 **빈 문자열**로 들어온다 → *"빈 키로 돌았는데 통과한 것처럼"*
+#    보이는 형태가 생긴다(이 저장소가 이름 붙인 "못 잰 것이 통과로 적히는 경향").
+#    그래서 **이 워크플로는 독립**이다.
+#  · **액션은 SHA 로 고정**한다(태그 핀은 mutable — 공급망 경로).
+#  · **로그 마스킹을 방어로 세지 않는다.** GitHub 은 `secrets.*` 를 `***` 로 가리지만
+#    **변형되면 못 가린다**(base64·URL 인코딩·부분 문자열). 그래서 스크립트가 응답
+#    본문을 통째로 찍지 않고 필요한 필드만 뽑는다(`scripts/generate-image.mjs`).
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: '어떤 그림인가 (영어로 쓰면 결과가 더 좋다)'
+        required: true
+        type: string
+      out:
+        description: '저장 경로'
+        required: false
+        default: 'frontend/img/hero.png'
+        type: string
+      aspect:
+        description: '비율'
+        required: false
+        default: '16:9'
+        type: choice
+        options: ['16:9', '4:3', '1:1', '3:4', '9:16']
+
+# 최상위는 최소로 두고, 필요한 job 에서만 올린다(`ci.yml` 과 같은 패턴).
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    # PR 을 만들려면 쓰기가 필요하다 — **이 job 에만** 준다.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: '24' }
+
+      - name: 이미지 생성
+        env:
+          # **환경변수로만 넘긴다** — 명령줄 인자는 프로세스 목록에 남는다.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IMAGE_PROMPT: ${{ inputs.prompt }}
+          IMAGE_OUT: ${{ inputs.out }}
+          IMAGE_ASPECT: ${{ inputs.aspect }}
+        run: node scripts/generate-image.mjs
+
+      - name: PR 로 올린다
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUT: ${{ inputs.out }}
+          PROMPT: ${{ inputs.prompt }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- "$OUT")" ]; then
+            echo "생성물이 없다 — 앞 스텝이 파일을 안 만들었다."
+            exit 1
+          fi
+          BRANCH="claude/generated-image-${GITHUB_RUN_ID}"
+          git config user.email noreply@anthropic.com
+          git config user.name Claude
+          git checkout -b "$BRANCH"
+          git add -- "$OUT"
+          # ⚠ 커밋 메시지에 프롬프트를 **본문으로만** 넣는다. 제목에 넣으면 길이·따옴표로
+          #   깨지고, `-m` 에 직접 보간하면 셸 인젝션 표면이 된다 — 파일로 넘긴다.
+          {
+            echo "이미지를 생성한다 — $(basename "$OUT")"
+            echo
+            echo "workflow_dispatch 로 감독이 실행했다. 프롬프트는 아래와 같다."
+            echo
+            printf '%s\n' "$PROMPT"
+            echo
+            echo "생성 경로·모델·크기는 이 run 의 로그에 있다(키는 안 찍힌다)."
+          } > /tmp/msg.txt
+          git commit -F /tmp/msg.txt
+          git push -u origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "이미지를 생성한다 — $(basename "$OUT")" \
+            --body-file /tmp/msg.txt
