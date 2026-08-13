@@ -16,6 +16,7 @@ import { scaleBy } from '../../decide/edit-pick.js';
 import type { OverlayEntry, OverlayHost } from '../types.js';
 import { RY_STEP, S_STEP, Y_STEP, type EditState } from '../state.js';
 import { CSS } from './css.js';
+import { createInspector } from './inspector.js';
 
 /** 패널이 «자기가 못 하는 일» 을 넘기는 곳. 조립자(`mode.ts`)가 채운다. */
 export interface PanelHandlers {
@@ -78,6 +79,7 @@ export function createPanel(
   const rowY = el('div', 'row');
   const rowOps = el('div', 'row');
   const rowOut = el('div', 'row');
+  const inspector = createInspector(host, st, () => { refresh(); });
   const status = el('div', 'note', 'GLB 를 이 화면에 끌어다 놓거나, 위에서 골라 지면을 클릭.');
   const hint = el('div', 'note', '');
   /** 접힘/펼침 + 편집/주행을 함께 쥔 버튼. 접혔을 때 화면에 남는 유일한 것이다 */
@@ -115,7 +117,7 @@ export function createPanel(
   const head = el('div', 'head');
   head.append(title, toggle);
   const body = el('div', 'body');
-  body.append(palette, el('hr'), selLine, rowRot, rowScale, rowY, rowOps,
+  body.append(palette, el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
     el('hr'), rowOut, status, hint);
   panel.append(head, body);
   panel.dataset.open = '0';
@@ -149,6 +151,7 @@ export function createPanel(
       hint.className = 'note';
       hint.textContent = '좌드래그 이동 · 우드래그 시점 · Q/E 회전 · R/F 크기 · Z/X 높이 · Del·⌫ 삭제';
     }
+    inspector.sync(st.selected);
     onRefresh();
   }
 

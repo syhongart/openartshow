@@ -268,3 +268,80 @@ describe('기즈모 경계 — 계산이 실제로 항목에 먹는가', () => {
     expect((group as { visible: boolean }).visible, '★ 편집을 껐는데 기즈모가 보인다').toBe(false);
   });
 });
+
+// ── 수치 입력 — 기즈모가 못 하는 «정확히 얼마» ──────────────────────────────
+
+function fields(): HTMLInputElement[] {
+  return [...document.querySelectorAll<HTMLInputElement>('#w2-edit .fld input')];
+}
+
+describe('수치 입력 (행위)', () => {
+  it('다섯 칸이 있다 — x·y·z·회전·크기', () => {
+    makeHarness();
+    expect(fields().length).toBe(5);
+  });
+
+  it('고르면 현재 값이 뜬다', () => {
+    const h = makeHarness();
+    h.entry.x = 3.5;
+    h.entry.ry = Math.PI / 2;
+    // 값이 바뀐 뒤의 갱신은 refresh 를 타므로, 조작 하나로 그것을 유발한다
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', bubbles: true, cancelable: true }));
+    const [x, , , deg] = fields();
+    expect(Number(x.value), '★ 좌표가 칸에 안 뜬다').toBeCloseTo(3.5, 2);
+    // 회전은 **도**로 보여야 한다 — 라디안을 치라고 하면 「90도」를 넣을 방법이 없다.
+    expect(Number(deg.value)).toBeGreaterThan(89);
+  });
+
+  it('치면 항목이 바뀌고 씬에 반영된다', () => {
+    const h = makeHarness();
+    const before = h.applied;
+    const [x] = fields();
+    x.value = '12.5';
+    x.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(h.entry.x, '★ 친 값이 항목에 안 들어갔다').toBeCloseTo(12.5, 5);
+    expect(h.applied, '★ 씬 반영이 안 불렸다 — 수만 바뀌고 화면은 그대로다').toBeGreaterThan(before);
+  });
+
+  it('회전 칸은 도로 받아 라디안으로 넣는다', () => {
+    const h = makeHarness();
+    const deg = fields()[3];
+    deg.value = '90';
+    deg.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(h.entry.ry).toBeCloseTo(Math.PI / 2, 5);
+  });
+
+  it('★ 치는 중인 칸은 refresh 가 덮어쓰지 않는다', () => {
+    // 이 축이 없으면 기즈모 드래그가 프레임마다 refresh 를 불러 **타이핑이 불가능**해진다.
+    // 실제로 값을 치다가 화면을 살짝 건드리기만 해도 입력이 통째로 날아간다.
+    const h = makeHarness();
+    const [x] = fields();
+    x.focus();
+    x.value = '7.5';             // 치고 있는 중
+    h.entry.x = 999;             // 딴 데서 값이 바뀐 상황
+    // 드래그 등으로 refresh 가 도는 것을 흉내낸다
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', bubbles: true, cancelable: true }));
+    expect(x.value, '★ 치는 중에 입력칸이 덮어써졌다 — 값을 칠 수 없게 된다').toBe('7.5');
+  });
+
+  it('★ 칸을 비워도 좌표가 0 으로 튀지 않는다', () => {
+    // `type=number` 는 중간 입력을 못 담는다 — 사용자가 `-` 나 `7.` 를 치는 순간 브라우저가
+    // value 를 **빈 문자열**로 바꾼다. 그때 `Number('')` 는 **0** 이고 finite 라서,
+    // 「지우고 다시 친다」 라는 가장 흔한 동작에서 물건이 원점으로 순간이동한다.
+    // 이 축이 실제로 그 결함을 잡았다(구현 직후, 2026-08-13).
+    const h = makeHarness();
+    h.entry.x = 42;
+    const [x] = fields();
+    x.value = '';
+    x.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(h.entry.x, '★ 칸을 비웠더니 좌표가 0 이 됐다').toBe(42);
+  });
+
+  it('아무것도 안 골랐으면 칸이 잠긴다', () => {
+    const h = makeHarness();
+    // 빈 곳을 클릭해 선택을 푼다
+    h.hits.length = 0;
+    h.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 400, clientY: 500, bubbles: true }));
+    expect(fields().every((f) => f.disabled), '★ 대상이 없는데 칸이 열려 있다').toBe(true);
+  });
+});

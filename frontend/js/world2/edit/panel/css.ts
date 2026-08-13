@@ -45,4 +45,13 @@ export const CSS = `
 #w2-edit .sel{color:#72E6E1}
 #w2-edit hr{border:0;border-top:1px solid #3A3D4B;margin:6px 0}
 #w2-edit .pal button{flex:1 1 100%;text-align:left}
+/* 수치 칸 — 다섯이 한 줄에 들어가야 패널이 안 길어진다 */
+#w2-edit .insp{gap:3px}
+#w2-edit .fld{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:2px}
+#w2-edit .fld span{color:#9A9EB1;font-size:10px;text-align:center}
+#w2-edit .fld input{width:100%;min-width:0;box-sizing:border-box;padding:3px 4px;
+  font:11px/1 system-ui,sans-serif;color:#F5F5F2;background:#1A1D26;
+  border:1px solid #3A3D4B;border-radius:5px}
+#w2-edit .fld input:focus{outline:none;border-color:#8B72FF}
+#w2-edit .fld input:disabled{opacity:.4}
 `;

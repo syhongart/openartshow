@@ -28,6 +28,7 @@ import {
   type Axis, type Ray3,
 } from '../decide/gizmo-math.js';
 import { scaleBy } from '../decide/edit-pick.js';
+import { readNum } from '../url-knob.js';
 import type { OverlayEntry, OverlayHost } from './types.js';
 import type { EditState, StubMesh, ThreeNS } from './state.js';
 
@@ -44,7 +45,13 @@ export type Handle =
  * 쉬운가» 를 못 잰다. 지금 값은 «카메라에서 10m 떨어진 물건의 기즈모가 약 1.2m» 가 되게
  * 잡은 것이고, 근거가 아니라 **출발점**이다. `?giz=` 노브로 열어 감독 판정을 받는다.
  */
-export const GIZMO_K = 0.12;
+export const GIZMO_K_DEFAULT = 0.12;
+
+/**
+ * 실제로 쓰는 값. **`?giz=` 로 열려 있다**(팀장 조건 2 — 조작감 판정을 감독 화면에서
+ * 받는다). 범위는 «거의 안 보임 ~ 화면을 덮음» 을 양끝으로 잡았다.
+ */
+export const GIZMO_K = readNum('giz', GIZMO_K_DEFAULT, 0.02, 0.6);
 
 /** 축 색 — 블렌더·마야가 공유하는 관례다(X 빨강 · Y 초록 · Z 파랑) */
 const AXIS_COLOR: Record<Axis, number> = { x: 0xff5566, y: 0x66dd77, z: 0x5599ff };
