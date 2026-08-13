@@ -939,6 +939,84 @@ describe('G-WF 워크플로가 스크립트와 어긋나지 않는가', () => {
   });
 });
 
+// ⚠⚠ **이 절은 백로그 `G-META3` 이다 — 검수관 5차 권고 P-j 가 지정한 처리 시점(첫 dispatch
+//   회차)에 도달해서 만들었다.** `png-chunks.mjs` 헤더의 한계 목록과 `generate-image.yml` 이
+//   PR 본문에 찍는 「못 본 것」 표가 **같은 내용을 각각 손으로** 적고 있었고, 검수관이
+//   **같은 자리에서 두 번** 어긋난 것을 잡았다(4차 "4/3", 5차 "4/5"). 세 번째로는 이번
+//   회차에 어긋났다 — 팀장 조건 3 으로 헤더를 정정하면서 표의 「청크 내용」 행을 안 고쳐
+//   **거짓 진술이 담긴 PR 본문**이 될 뻔했다. 위험이 세 번 현실화된 뒤에야 검사가 생긴다.
+//
+//   **자유 산문 정규식을 쓰지 않는다**(검수관 명세). 헤더 불릿의 `[표: …]` 마커라는
+//   **구조**를 읽는다 — hookify 회차에서 산문 정규식의 검출력이 조용히 0이 된 그 형태를
+//   피한다.
+//
+//   ⚠ **이 게이트가 못 잡는 것**(검수관이 명세에 미리 적어 둔 둘 + 내가 하나 더 닫았다):
+//     ① **표 행의 내용이 맞는가** — 대응 **존재**만 본다. 「청크 내용」 행의 설명이 다시
+//        거짓이 돼도 키가 살아 있으면 통과한다.
+//     ② **양쪽에 다 없는 한계** — 헤더에 안 적으면 통과한다. 즉 *"한계를 빠뜨리지 않았다"*
+//        가 아니라 *"두 곳이 어긋나지 않았다"* 만 보증한다.
+//     ③ (닫음) **마커를 안 단 새 불릿** — 이건 ②로 새어 나갈 수 있었다. 불릿 총수와 마커
+//        총수를 대조해 막는다. 마커 없는 불릿을 추가하면 빨간불이다.
+//
+//   **뮤테이션 실측 2026-08-13 — 6종 전부 빨간불** (`npx vitest run tests/generate-image.test.ts`):
+//     N1 헤더 마커 하나 제거          → 2 failed
+//     N2 표 행 하나 제거              → 1 failed
+//     N3 표 헤더 문구 변경(못 찾게)   → 2 failed   ← 빈 집합끼리 비교로 새지 않는다
+//     N4 마커 키 오타                 → 1 failed
+//     N5 제외 마커 `-` 를 실제 키로   → 2 failed
+//     N6 마커 없는 새 불릿 추가       → 1 failed   ← 위 ③ 이 참임을 재는 유일한 케이스
+//   N6 이 없으면 ③ 은 **주장일 뿐**이다. 이 저장소가 반복해서 넘어진 형태가 그것이다 —
+//   *"이제 잡힌다"* 를 실측 없이 적고, 보고는 사라지고 주석만 남는다.
+describe('G-MIRROR 한계 목록이 두 곳에서 어긋나지 않는가 (G-META3)', () => {
+  const SRC = fs.readFileSync(path.resolve(__dirname, '../scripts/png-chunks.mjs'), 'utf8');
+  const YML = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/generate-image.yml'), 'utf8');
+
+  /** 헤더 한계 절의 불릿 접두. 마커는 `[표: 키]`, 표 대상이 아니면 키가 `-`. */
+  const BULLET = /^\/\/ {2}· /gm;
+  const MARKED = /^\/\/ {2}· \[표: (.+?)\]/gm;
+
+  const markers = [...SRC.matchAll(MARKED)].map((m) => m[1]);
+  const headerKeys = markers.filter((k) => k !== '-');
+
+  /**
+   * PR 본문의 「못 본 것」 표에서 첫 열을 뽑는다.
+   * ⚠ **블록으로 좁힌다** — 이 워크플로에는 표가 둘이고(위쪽은 요청/값 표), 파일 전체를
+   *   훑으면 `| **요청** 경로 |` 같은 다른 표 행이 섞인다(`G-WF` 의 P-5 와 같은 형태).
+   *   행이 아닌 줄을 만나면 **멈춘다** — 뒤에 오는 표까지 먹지 않기 위해서다.
+   */
+  const tableKeys = (() => {
+    const at = YML.indexOf('| 못 본 것 | 왜 |');
+    if (at < 0) return null;
+    const out: string[] = [];
+    for (const line of YML.slice(at).split('\n').slice(2)) {
+      const m = line.match(/echo "\| \*\*(.+?)\*\* \|/);
+      if (!m) break;
+      out.push(m[1]);
+    }
+    return out;
+  })();
+
+  it('헤더의 모든 불릿에 마커가 붙어 있다 — 마커 없는 불릿은 대조를 빠져나간다', () => {
+    expect(markers).toHaveLength([...SRC.matchAll(BULLET)].length);
+  });
+
+  it('「못 본 것」 표를 워크플로에서 찾을 수 있다', () => {
+    // 표를 못 찾으면 아래 대조가 **빈 집합끼리 비교해 통과**한다 — 검출력이 조용히 0이
+    // 되는 그 형태다. 그래서 못 찾은 것 자체를 실패로 만든다.
+    expect(tableKeys, '워크플로에서 「못 본 것」 표를 못 찾았다 — 형식이 바뀌었는지 보라').not.toBeNull();
+    expect(tableKeys!.length).toBeGreaterThan(0);
+  });
+
+  it('헤더 마커와 표의 키가 정확히 일치한다', () => {
+    expect([...tableKeys!].sort()).toEqual([...headerKeys].sort());
+  });
+
+  it('표 대상이 아닌 항목이 표에 없다 — `-` 마커가 실제로 제외로 동작한다', () => {
+    expect(markers).toContain('-');          // 제외 케이스가 있어야 이 축이 의미를 갖는다
+    expect(headerKeys.length).toBeLessThan(markers.length);
+  });
+});
+
 // ⚠⚠ **이 절은 실제 사고에서 나왔다**(2026-08-13, run #2 수정 회차).
 //   내가 `resolveOutPath` 에 제어문자 거부를 넣으면서 **정규식 안에 리터럴 제어문자를
 //   그대로 써 넣었다**(`0x00`·`0x1f`·`0x7f` 3바이트). 그러면:
