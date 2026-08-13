@@ -334,8 +334,11 @@ export function normalizeOverlay(raw: unknown): Overlay {
  * 소실보다 나쁘다** — B5 가 정확히 그 형태였다.
  *
  * ⚠ **미해결**: 경고할 자리가 없다. `validateOverlay` 는 `version-invalid` 사유를 내지만
- * 런타임 경로(`loadOverlay`)는 조용하다. 소비자가 붙을 때(태스크 #25) 콘솔 경고든 화면이든
- * **보이게 만들 자리를 정한다.** 그때까지 이 선택은 "정했다" 가 아니라 "빚이 있다" 로 읽는다.
+ * 런타임 경로(`loadOverlay`)는 조용하다. 콘솔 경고든 화면이든 **보이게 만들 자리를 정한다** —
+ * 태스크 #53. 그때까지 이 선택은 "정했다" 가 아니라 "빚이 있다" 로 읽는다.
+ * ⚠ 이 줄은 오래 **태스크 #25** 를 가리키고 있었고 **그 태스크는 이미 끝났다**(오버레이 소비
+ * = glb-city 일반화). 링크가 죽으면 빚이 아무 데도 안 걸린 채 잊힌다 — 검수관이 재제출
+ * 리뷰에서 잡았다(P-2, 2026-08-13). 빚을 주석에만 적고 태스크로 뽑지 않으면 같은 일이 또 난다.
  */
 function readVersion(raw: unknown): number | 'invalid' | 'absent' {
   const o = raw as Record<string, unknown> | null;
