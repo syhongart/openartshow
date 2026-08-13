@@ -11,17 +11,7 @@
      ① frame-src 없음(유튜브 임베드가 없다. 프레임을 아예 안 쓰므로 default-src 'self' 가 덮는다)
      ② script-src 에 'unsafe-inline' 없음(인라인 실행 script 0. studio.html 과 같은 수준)
      img-src 의 data: 는 프로필 사진이 dataURL 로 저장되기 때문에 **반드시** 필요하다. -->
-<!-- ⚠ `connect-src` 에 **Gemini 오리진 하나**를 열었다 — 이 저장소에서 `'self'` 밖으로
-     나가는 예외는 승인 근거를 남기지 않으면 다음 사람이 출처를 못 찾는다(실제로 peerjs·
-     `img-src https:` 예외가 그 상태였다, 2026-08-08 실측).
-
-     **승인**: 팀장 판정 2026-08-10 — 감독 요구(*"제미나이 키 입력하는곳이 안나온다"* →
-     *"키를 어디에 넣어.."*)에 대해 **페이지 단위 개방**으로 결정. 전역 개방은 `img-src
-     https:` 와일드카드 전례(보안담당 R-4)의 반복이므로 금지.
-     **범위**: 이 페이지의 「키 확인」 버튼이 키 유효성을 1회 검증하는 호출뿐이다.
-     평론가(LLM) 승격으로 world 계열 페이지를 여는 것은 **그때 별도 결정 요청**이고
-     이 판정에 포함되지 않는다. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>마이페이지 · OpenArtShow</title>
 <!-- ⚠ 이 주석은 *"behind-flag: 어디에도 링크하지 않는다"* 였고 **더는 사실이 아니다**
      (검수관 P9, 2026-08-08). 이 페이지는 2026-08-08 감독 지시로 **라이브 승격**됐고
@@ -526,31 +516,6 @@
             <span class="fld__label">로그인 수단</span>
           </div>
           <p class="readout" data-mp="account-provider"></p>
-        </div>
-
-        <!-- ── Gemini API 키 (감독 요구 2026-08-10 · 팀장 판정으로 이 자리) ──────
-             왜 「계정」 탭인가: 키는 **프로필 정보가 아니라 계정 설정**이다. 그리고 이
-             페이지는 호스트 본인만 보는 화면이라 발행·공유(`#gz=`) 경로에서 가장 멀다.
-
-             ⚠ **로그인이 이 키를 지켜주지 않는다.** `localStorage` 의 경계는 로그인이
-             아니라 **오리진**이다 — 근거는 `js/mypage/gemini-key.ts` 헤더 한 곳이다.
-             `type="password"` 는 **어깨너머 노출**만 막는다(저장은 평문이다). -->
-        <div class="fld">
-          <div class="fld__head">
-            <span class="fld__label" id="mp-gemini-label">Gemini API 키</span>
-          </div>
-          <input class="inp inp--mid" id="mp-gemini" type="password" autocomplete="off"
-                 spellcheck="false" aria-labelledby="mp-gemini-label"
-                 aria-describedby="mp-gemini-help" placeholder="AIza…">
-          <p class="hint" id="mp-gemini-help">
-            이 브라우저에만 저장됩니다 — 서버로 보내지 않고, 전시 공유 링크에도 실리지 않습니다.
-            로그아웃하면 지워집니다. <strong>요금은 이 키의 소유자에게 청구됩니다.</strong>
-            비우고 저장하면 삭제됩니다.
-          </p>
-          <div class="fld__row">
-            <button class="btn" type="button" data-mp="gemini-verify">키 확인</button>
-            <span class="readout" data-mp="gemini-status" role="status" aria-live="polite"></span>
-          </div>
         </div>
 
         <div class="danger">

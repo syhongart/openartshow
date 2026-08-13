@@ -14,9 +14,6 @@
 // 스키마·링크 플랫폼 표가 이 모듈 그래프에 딸려 들어와 **랜딩·미술관 번들**에 실린다 —
 // 실측으로 auth 청크가 1,186 B → 12,586 B 였다(검수관 P1).
 import { clearProfilesOnLogout } from './mypage/profile-storage.js';
-// 키 전용 leaf 를 **직접** import 한다 — `mypage/store.js` 재수출을 거치면 프로필
-// 스키마가 auth 청크로 딸려 들어온다(`profile-storage.ts` 헤더의 실측 그대로).
-import { clearGeminiKeyOnLogout } from './mypage/gemini-key.js';
 
 const CONFIG = {
   google: { clientId: '' }, // Google Cloud Console OAuth 클라이언트 ID
@@ -122,16 +119,6 @@ export function logout() {
   // 문자열은 `mypage/store` 가 갖는다 — 여기 프리픽스를 다시 적으면 값 미러링이고,
   // 한쪽만 고치면 지워지지 않는 것이 조용히 남는다.
   clearProfilesOnLogout();
-  // Gemini API 키도 같은 경로에서 지운다 (팀장 조건 2026-08-10).
-  //
-  // **공용 기기가 이유다** — 가족 PC·PC방에서 로그아웃한 뒤 키가 남으면 다음 사람이
-  // 그 브라우저로 **감독의 요금을 쓴다.** 프로필 정리와 **같은 자리**에 있어야
-  // "로그아웃했는데 이것만 안 지워졌다" 가 안 생긴다.
-  //
-  // ⚠ 이것이 *"로그인이 키를 지켜준다"* 는 뜻은 아니다 — `localStorage` 의 경계는
-  // 로그인이 아니라 **오리진**이고, 같은 오리진 JS 는 로그인과 무관하게 키를 읽는다.
-  // 근거는 `mypage/gemini-key.ts` 헤더 한 곳이다(여기에 다시 적지 않는다).
-  clearGeminiKeyOnLogout();
   emitChange();
 }
 
