@@ -76,15 +76,23 @@ export interface RaycastMesh {
  * 편집이 **마을 배치**에 닿는 좁은 문. `VillageParcels`(`systems/village-parcels.ts`)가
  * 그대로 만족한다.
  *
- * ⚠ 지금은 읽기 하나뿐이다. 동결을 **거는** 문(`freeze`)은 아직 안 연다 — 쓰는 소비자가
- * 없는데 문을 미리 내면 «준비됨» 이 «충족됨» 으로 읽힌다(이 저장소가 계약 조건 c 에서
- * 정확히 그 형태로 한 번 데였다). 편집이 실제로 옮기기 시작할 때 함께 연다.
+ * ⚠ 쓰기 둘(`freeze`·`thaw`)은 **W4 ②-d 에서 열렸다.** 그전까지 읽기뿐이었고, 그때
+ * 이 자리에 *"쓰는 소비자가 없는데 문을 미리 내면 «준비됨» 이 «충족됨» 으로 읽힌다"*
+ * 라고 적어 두었다. 지금은 소비자가 있다 — `edit/target.ts` 의 마을 어댑터 하나다.
+ *
+ * ⚠⚠ **`freeze` 는 그 파셀을 통째로 다시 만든다.** 드래그처럼 연속으로 부르면 건물이
+ * 프레임마다 사라졌다 다시 자란다. 부르는 자리를 «조작이 끝났을 때» 로 좁히는 것은
+ * 이 문이 아니라 소비자 몫이고, `EditTarget` 이 `apply`/`commit` 을 가른 이유가 그것이다.
  */
 export interface VillageRead {
   /** 그 파셀의 지금 배치(near 기준 전체). 동결이 있으면 그것, 없으면 계산값 */
   partsAt(px: number, pz: number): PlacedPart[];
   /** 이 파셀이 동결됐는가 — 화면이 «손본 구역» 임을 말해야 한다 */
   isFrozen(px: number, pz: number): boolean;
+  /** 동결을 걸거나 갈아 끼운다. **그 파셀이 다시 만들어진다** */
+  freeze(px: number, pz: number, parts: readonly PlacedPart[]): void;
+  /** 동결을 푼다 — 계산 배치로 돌아간다 */
+  thaw(px: number, pz: number): void;
 }
 
 /**

@@ -7,7 +7,8 @@
 //   · 회전 — 수평 링 하나. 잡고 돌리면 `ry` 가 바뀐다.
 //   · 크기 — 링 위의 작은 상자. 바깥으로 끌면 커진다.
 //
-// **왜 회전이 링 하나인가**: `OverlayEntry` 가 드는 회전은 `ry`(Y축) **하나**다. 3축
+// **왜 회전이 링 하나인가**: 편집 대상(`EditTarget`)이 드는 회전은 `ry`(Y축) **하나**다.
+// 오버레이 계약도 마을 파츠(`PlacedPart`)도 그 하나만 갖는다. 3축
 // 회전을 주려면 계약과 소비자까지 함께 늘려야 하고, 그것은 이 단계의 범위가 아니다.
 // 지금 데이터로 «이동·회전·크기» 세 가지가 전부 손에 잡힌다 — 부족하면 감독이 말한다.
 //
@@ -36,7 +37,8 @@ import {
 } from '../decide/gizmo-math.js';
 import { scaleBy } from '../decide/edit-pick.js';
 import { readNum } from '../url-knob.js';
-import type { OverlayEntry, OverlayHost } from './types.js';
+import type { OverlayHost } from './types.js';
+import type { EditTarget } from './target.js';
 import type { StubMesh, ThreeNS } from './state.js';
 
 /** 잡을 수 있는 것 */
@@ -77,7 +79,7 @@ const SCALE_AT = RING_R;
 
 export interface Gizmo {
   /** 선택이 바뀌면 부른다. `null` 이면 숨긴다 */
-  attach(e: OverlayEntry | null): void;
+  attach(e: EditTarget | null): void;
   /** 광선에 걸린 핸들. 축 막대·링·상자 중 하나이거나 `null` */
   hitTest(hits: readonly { object: unknown }[]): Handle | null;
   /** 드래그 시작. 잡은 순간의 기준값을 기억한다 */
@@ -152,7 +154,7 @@ export function createGizmo(host: OverlayHost): Gizmo {
   addPart(cube, { kind: 'scale' });
 
   // ── 붙이기·따라가기 ─────────────────────────────────────────────────────
-  let target: OverlayEntry | null = null;
+  let target: EditTarget | null = null;
   let size = 1;
 
   function place(): void {
@@ -194,7 +196,7 @@ export function createGizmo(host: OverlayHost): Gizmo {
   }
 
   return {
-    attach(e: OverlayEntry | null): void {
+    attach(e: EditTarget | null): void {
       target = e;
       group.visible = e !== null;
       if (e) { place(); startLoop(); } else stopLoop();

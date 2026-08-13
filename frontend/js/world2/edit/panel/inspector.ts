@@ -12,17 +12,18 @@
 // 부르므로, 값을 치다가 실수로 화면을 건드리면 입력이 통째로 날아간다.
 // 그래서 **포커스가 있는 칸은 건드리지 않는다**(아래 `sync`).
 
-import type { OverlayEntry, OverlayHost } from '../types.js';
+import type { OverlayHost } from '../types.js';
 import type { EditState } from '../state.js';
+import type { EditTarget } from '../target.js';
 
 /** 한 줄짜리 수치 칸의 정의. 읽기와 쓰기를 짝으로 둔다 — 한쪽만 고치면 조용히 어긋난다 */
 interface Field {
   key: string;
   label: string;
-  /** 항목 → 화면에 보일 수 */
-  get(e: OverlayEntry): number;
-  /** 화면의 수 → 항목. 범위 밖이면 아무것도 안 한다 */
-  set(e: OverlayEntry, v: number): void;
+  /** 대상 → 화면에 보일 수 */
+  get(e: EditTarget): number;
+  /** 화면의 수 → 대상. 범위 밖이면 아무것도 안 한다 */
+  set(e: EditTarget, v: number): void;
   /** 소수 몇 자리로 보일 것인가 */
   digits: number;
   step: number;
@@ -52,7 +53,7 @@ const FIELDS: readonly Field[] = [
 export interface Inspector {
   readonly root: HTMLElement;
   /** 선택·값이 바뀌었을 때. **포커스가 있는 칸은 안 건드린다** */
-  sync(e: OverlayEntry | null): void;
+  sync(e: EditTarget | null): void;
 }
 
 export function createInspector(
@@ -79,7 +80,7 @@ export function createInspector(
     // 않는다 — 값 미러링을 만들지 않는다.
 
     const commit = () => {
-      if (!st.selected) return;
+      if (!st.target) return;
       // ⚠ **빈 칸을 먼저 막는다 — `Number('')` 는 `0` 이고 그것은 finite 다.**
       // `type=number` 는 중간 입력을 담지 못한다: 사용자가 `-` 나 `7.` 를 치는 순간
       // 브라우저가 value 를 **빈 문자열로 바꾼다**(유효한 부동소수점이 아니라서).
@@ -88,8 +89,14 @@ export function createInspector(
       if (inp.value.trim() === '') return;
       const v = Number(inp.value);
       if (!Number.isFinite(v)) return;
-      f.set(st.selected, v);
-      host.apply(st.selected);
+      f.set(st.target, v);
+      st.target.apply();
+      // ⚠ **수치칸은 타이핑 한 글자마다 확정한다.** 드래그와 달리 «손을 떼는 순간» 이
+      // 없기 때문이다 — `blur` 를 기다리면 값을 치고 다른 데를 클릭할 때까지 마을
+      // 파셀이 안 바뀌고, 그 사이 화면과 수치가 다른 것을 말한다.
+      // 마을에서는 이것이 곧 파셀 재빌드라 타이핑 중 건물이 깜빡인다 — 그 대가를
+      // 아는 채로 고른 것이고, 거슬리면 `blur` 확정으로 옮긴다(그때는 위 문제가 돌아온다).
+      st.target.commit();
       onChanged();
     };
     inp.addEventListener('input', commit);
@@ -103,7 +110,7 @@ export function createInspector(
 
   return {
     root,
-    sync(e: OverlayEntry | null): void {
+    sync(e: EditTarget | null): void {
       const on = e !== null;
       for (const f of FIELDS) {
         const inp = inputs.get(f.key);

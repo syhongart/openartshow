@@ -40,7 +40,7 @@
 // 리스너에 도달하기 전에 멈출 수 있다. 대신 시점 회전은 **우클릭 드래그**로 준다.
 
 import type { EditSession, OverlayHost } from './types.js';
-import { createEditState } from './state.js';
+import { createEditState, select } from './state.js';
 import { createPicker } from './pick.js';
 import { createGizmo } from './gizmo.js';
 import { createPanel } from './panel/dom.js';
@@ -69,14 +69,14 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     toggleEditing: () => { setEditing(!st.editing); },
     duplicate: () => { void actions.duplicate(); },
     removeSelected: () => { actions.removeSelected(); },
+    thawSelected: () => { actions.thawSelected(); },
     exportNow: () => { actions.exportNow(); },
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
-    // ⚠ 링은 마을 파츠에도 뜨지만 **기즈모는 아직 안 붙는다**(W4 ②-c 는 집기까지다).
-    // 그래서 마을을 고르면 «골랐다는 표시는 있는데 조작 핸들은 없는» 상태가 정상이고,
-    // 패널이 그것을 말한다. 이 비대칭을 안 적으면 다음 사람이 배선 누락으로 읽는다.
+    // 둘 다 마을 파츠에 붙는다(W4 ②-d). 기즈모가 무엇을 미는지는 `st.target` 이 알고,
+    // 링은 «어느 자리인가» 라서 원본 선택을 본다 — 그래서 인자가 서로 다르다.
     picker.syncMarker();
-    gizmo.attach(st.selected);
+    gizmo.attach(st.target);
   });
 
   const actions = createActions(host, st, panel);
@@ -103,8 +103,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     } else {
       input.unbind();
       gizmo.attach(null);
-      st.selected = null;
-      st.villageSel = null;
+      select(st, host, null);
       st.pendingSrc = null;
       st.dragging = null;
       st.orbiting = false;
