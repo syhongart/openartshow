@@ -32,6 +32,8 @@ import {
   maskSecrets,
   resolveOutPath,
   assertImageBytes,
+  detectImageFormat,
+  reconcileExtension,
   pickImageModels,
   generateWithFallback,
   call,
@@ -196,6 +198,53 @@ describe('G-BYTES 내용 검증 — 확장자와 실제 형식이 어긋나면 �
     expect(assertImageBytes(ok, '.webp')).toBe('WEBP');
     const bad = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), Buffer.alloc(8)]);
     expect(() => assertImageBytes(bad, '.webp')).toThrow(/WebP 가 아니다/);
+  });
+});
+
+describe('G-EXT 실제 형식에 확장자를 맞추는가 (run #2 가 죽은 자리)', () => {
+  const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(20)]);
+  const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(8)]);
+
+  it.each([
+    [() => makePng(), 'PNG', '.png'],
+    [() => JPEG, 'JPEG', '.jpg'],
+    [() => WEBP, 'WEBP', '.webp'],
+  ])('바이트로 형식을 판정한다: %#', (make, label, ext) => {
+    expect(detectImageFormat((make as () => Buffer)())).toEqual({ label, ext });
+  });
+
+  it('알 수 없는 바이트는 null 이다 — 짐작하지 않는다', () => {
+    expect(detectImageFormat(Buffer.from('not an image'))).toBeNull();
+  });
+
+  // ⚠⚠ **run #2 가 여기서 죽었다.** Imagen 이 전부 404 라 Gemini 로 폴백했고, 그 모델이
+  //   이미지를 돌려줬는데 요청 경로가 `hero.png` 여서 `내용이 PNG 이 아니다` 로 거부됐다.
+  //   **모델이 무슨 형식을 줄지 우리가 정할 수 없다.**
+  it('요청이 .png 인데 JPEG 이 오면 확장자를 바꾼다', () => {
+    const r = reconcileExtension('/repo/frontend/img/hero.png', JPEG);
+    expect(r.path).toBe('/repo/frontend/img/hero.jpg');
+    expect(r.changed).toBe(true);
+    expect(r.label).toBe('JPEG');
+  });
+
+  it('형식이 맞으면 경로를 안 건드린다', () => {
+    const r = reconcileExtension('/repo/frontend/img/hero.png', makePng());
+    expect(r.path).toBe('/repo/frontend/img/hero.png');
+    expect(r.changed).toBe(false);
+  });
+
+  // `.jpeg` 와 `.jpg` 는 둘 다 맞다 — 굳이 바꾸면 요청한 이름이 사라진다.
+  it('.jpeg 요청에 JPEG 이 오면 그대로 둔다', () => {
+    expect(reconcileExtension('/repo/a/b.jpeg', JPEG).changed).toBe(false);
+  });
+
+  it('알 수 없는 형식이면 던진다 — 아무 확장자나 붙이지 않는다', () => {
+    expect(() => reconcileExtension('/repo/a/b.png', Buffer.from('nope'))).toThrow(/알려진 이미지 형식이 아니다/);
+  });
+
+  // 디렉터리 이름에 점이 있어도 파일 확장자만 바꾼다.
+  it('경로 중간의 점을 건드리지 않는다', () => {
+    expect(reconcileExtension('/repo/v1.2/hero.png', JPEG).path).toBe('/repo/v1.2/hero.jpg');
   });
 });
 

@@ -118,6 +118,45 @@ export function resolveOutPath(outPath, root = ROOT) {
  * @param {Buffer} buf
  * @param {string} ext 소문자 확장자(`.png` 등)
  */
+/**
+ * 바이트를 보고 **실제 형식**을 판정한다. 확장자를 안 본다.
+ *
+ * ⚠ run #2 가 이것을 필요하게 만들었다. Imagen `:predict` 가 이 키로 **전부 404** 라
+ * 폴백이 `gemini-3.1-flash-lite-image` 로 넘어갔고, **그 모델은 이미지를 돌려줬는데**
+ * 요청 경로가 `hero.png` 여서 `내용이 PNG 이 아니다` 로 거부됐다. 안전장치는 정직하게
+ * 동작했지만, **모델이 무슨 형식을 줄지 우리가 정할 수 없다**는 것을 몰랐던 것이 문제다.
+ * → 이제 실제 형식에 **확장자를 맞춘다**(내용을 바꾸지 않는다 — 그건 거짓말이다).
+ * @returns {{label:string, ext:string}|null}
+ */
+export function detectImageFormat(buf) {
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    return { label: 'PNG', ext: '.png' };
+  }
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return { label: 'JPEG', ext: '.jpg' };
+  }
+  if (buf.length >= 12
+    && buf.subarray(0, 4).toString('latin1') === 'RIFF'
+    && buf.subarray(8, 12).toString('latin1') === 'WEBP') {
+    return { label: 'WEBP', ext: '.webp' };
+  }
+  return null;
+}
+
+/**
+ * 요청 경로의 확장자를 **실제 형식에 맞춘다.** 형식이 같으면 그대로 둔다.
+ * @returns {{path:string, changed:boolean, label:string}}
+ */
+export function reconcileExtension(absPath, buf) {
+  const fmt = detectImageFormat(buf);
+  if (!fmt) throw new Error('알려진 이미지 형식이 아니다 — PNG·JPEG·WebP 가 아니다');
+  const ext = path.extname(absPath).toLowerCase();
+  // `.jpeg` 를 요청했는데 JPEG 이 왔으면 바꾸지 않는다(둘 다 맞다).
+  const same = ext === fmt.ext || (fmt.ext === '.jpg' && ext === '.jpeg');
+  if (same) return { path: absPath, changed: false, label: fmt.label };
+  return { path: absPath.slice(0, absPath.length - ext.length) + fmt.ext, changed: true, label: fmt.label };
+}
+
 export function assertImageBytes(buf, ext) {
   if (buf.length === 0) throw new Error('생성된 이미지가 0바이트다');
   if (buf.length > MAX_BYTES) {
@@ -376,14 +415,32 @@ async function main() {
   }
 
   const buf = Buffer.from(b64, 'base64');
-  const label = assertImageBytes(buf, ext);
   if (mimeType && !mimeType.startsWith('image/')) {
     throw new Error(`응답 mimeType 이 이미지가 아니다: ${mimeType}`);
   }
 
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, buf);
-  console.log(`저장: ${rel} (${label}, ${Math.round(buf.length / 1024)}KB, mimeType=${mimeType || '미신고'})`);
+  // ⚠ **모델이 무슨 형식을 줄지 우리가 정할 수 없다**(run #2 실측). 요청 경로가
+  //   `hero.png` 인데 Gemini 가 다른 형식을 돌려줘 안전장치가 거부했다. 내용을 바꾸는
+  //   것은 거짓말이므로 **확장자를 실제 형식에 맞춘다.**
+  const { path: finalAbs, changed, label } = reconcileExtension(abs, buf);
+  const finalExt = path.extname(finalAbs).toLowerCase();
+  if (changed) {
+    console.log(`⚠ 요청 확장자(${ext})와 실제 형식(${label})이 달라 **${finalExt}** 로 저장한다.`);
+  }
+  // 크기·매직바이트 검사는 그대로 태운다 — 확장자를 맞췄다고 검사를 건너뛰지 않는다.
+  assertImageBytes(buf, finalExt);
+
+  const finalRel = path.relative(ROOT, finalAbs);
+  fs.mkdirSync(path.dirname(finalAbs), { recursive: true });
+  fs.writeFileSync(finalAbs, buf);
+  console.log(`저장: ${finalRel} (${label}, ${Math.round(buf.length / 1024)}KB, mimeType=${mimeType || '미신고'})`);
+
+  // ⚠ 뒷 스텝(artifact·메타데이터 열거·커밋)이 **실제 저장 경로**를 써야 한다. 확장자가
+  //   바뀌었는데 `inputs.out` 을 그대로 쓰면 *"생성물이 없다"* 로 죽는다 — 파일은 있는데
+  //   다른 이름으로 있다. `rel`(요청 경로)이 아니라 이 값이 진실이다.
+  if (process.env.GITHUB_OUTPUT) {
+    fs.appendFileSync(process.env.GITHUB_OUTPUT, `path=${finalRel}\n`);
+  }
 }
 
 // import 될 때는 안 돈다(테스트가 위 함수들을 부를 수 있게).
