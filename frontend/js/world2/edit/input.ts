@@ -173,6 +173,14 @@ export function createInput(deps: InputDeps): Input {
     const url = URL.createObjectURL(file);
     deps.onBlobUrl(url);
     actions.previewUrls.set(src, url);
+    // ⚠ **드롭은 `pendingSrc` 를 안 본다** — 파일명에서 `src` 를 직접 만든다. 그래서
+    // 팔레트에서 뭔가 골라 둔 채 드롭해도 그 «고른 것» 이 아니라 **드롭한 파일**이 놓인다.
+    //
+    // 다만 부수효과가 하나 있다: `placeAt` 이 성공하면 고르기를 푸는데(감독 신고
+    // 「흩어뿌리기」 처방), 그 해제가 **드롭으로 놓았을 때도** 일어난다. 즉 골라 둔 것이
+    // 함께 풀린다. 해로운 동작은 아니고 «놓았으면 다루기로 넘어간다» 와 일관되지만,
+    // 적어 두지 않으면 다음 사람이 «왜 드롭했더니 팔레트 고르기가 풀리지» 를 재조사한다
+    // (검수관 권고 P2, 2026-08-13).
     void actions.placeAt(src, at, url);
   };
 
