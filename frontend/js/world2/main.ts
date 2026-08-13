@@ -296,7 +296,13 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 라이브 상태 판정은 언제나 이 노브가 1 인 세션이 한다.
   const collide = readNum('collide', 1, 0, 1) === 1;
   // 셀 크기를 따로 넘기지 않는다 — `LAYOUT` 안에 있고, 두 곳에서 읽으면 어긋난다(P4).
-  const collider = createCollider({ layout: LAYOUT });
+  // ⚠ **빌더와 같은 조회를 넘긴다.** 한쪽에만 주입하면 렌더와 충돌이 다른 마을을 보고,
+  // 그 증상은 «건물은 저기 있는데 여기서 막힌다» 다 — `collide.ts` 가 선언한
+  // «보이는 자리 = 막히는 자리» 가 깨지는 자리가 정확히 여기다.
+  const collider = createCollider({
+    layout: LAYOUT,
+    frozenAt: (px, pz, tier) => village.lookup(px, pz, tier),
+  });
 
   const scene = new THREE.Scene();
   // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
@@ -988,7 +994,17 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 없으므로 **떠 있는 파셀도 0개**다 — 다시 만들 것이 애초에 없고, 이후 build 가
         // 저장소를 저절로 읽는다. 순서를 뒤집어 고치려 하지 마라(스트리밍이 빌더를
         // 요구하고 빌더가 풀을 요구한다).
-        village.onChange((px, pz) => { streaming?.invalidate(px, pz); });
+        village.onChange((px, pz) => {
+          streaming?.invalidate(px, pz);
+          // 충돌 캐시도 함께 버린다. 캐시는 «플레이어가 선 파셀» 로만 갱신되므로
+          // (`collision.ts` 의 `rebuild`), 감독이 **제자리에 선 채** 건물을 옮기면
+          // 그 파셀이 그대로라 캐시가 안 바뀐다 → 옛 자리에 계속 막힌다.
+          //
+          // 파셀을 안 가리고 통째로 버리는 이유: 캐시는 3×3 을 **한 배열로 뭉쳐** 들고
+          // 있어서 어느 파셀에서 온 원인지 구별할 수 없다. 편집 중에만 나는 일이고
+          // 다시 만드는 비용은 파셀 9개분이라 가릴 값이 없다.
+          collider.invalidate();
+        });
 
         adapt = new AdaptSystem({
           dpr: window.devicePixelRatio || 1,

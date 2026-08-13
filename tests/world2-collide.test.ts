@@ -34,6 +34,7 @@ import { blockersOf, blocked, slide, type Blocker } from '../frontend/js/world2/
 import { createCollider, DEFAULT_BODY_R } from '../frontend/js/world2/systems/collision.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
 import { SPAWN } from '../frontend/js/world2/decide/grid.js';
+import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
 import { PlayerSystem, facing } from '../frontend/js/world2/systems/player.js';
 import type { FrameCtx } from '../frontend/js/world2/kernel.js';
 import { coverageOf, covOkOf, yawToward, shortestTurn } from '../scripts/smoke/measure-invariants.mjs';
@@ -420,5 +421,100 @@ describe('§6 게이트 배선 — covOk 가 pass 와 status 에 닿는다 (정�
     // 0m 세션이 된다. 방향 전환이 사라지면 이 검사가 잡는다.
     expect(inv).toMatch(/TURN_RAD/);
     expect(inv).toMatch(/STUCK_M/);
+  });
+});
+
+// ── 동결이 충돌에도 먹는가 (W4 ④) ───────────────────────────────────────────
+//
+// `collide.ts` 가 선언한 것은 **«보이는 자리 = 막히는 자리»** 다. 렌더(빌더)와 충돌이
+// 각자 배치를 구하므로, 한쪽만 동결을 보면 그 선언이 깨진다 — 증상은 둘이고 **둘 다
+// 화면에서만** 드러난다: 옮긴 건물을 통과해 걸어지거나, 지운 건물이 보이지 않는 벽으로
+// 남는다.
+//
+// ⚠ 캐시 무효화가 이 절의 절반이다. 캐시는 «플레이어가 선 파셀» 로만 갱신되는데
+// (`rebuild` 의 `cachePx`/`cachePz`), 편집 중에는 **제자리에 선 채** 건물을 옮기는 것이
+// 기본 자세다. 그러면 파셀이 안 바뀌어 캐시가 그대로 남는다.
+
+describe('충돌이 동결을 본다 (W4 ④)', () => {
+  const CELL = 32;
+  /** 파셀 (0,0) 로컬 (6, 0) 에 건물 하나 — 원점에서 +x 로 6m */
+  const at = (x: number, z: number): PlacedPart[] =>
+    [{ kind: 'building', x, y: 0, z, ry: 0, sx: 3, sy: 3, sz: 3, tone: 0 } as PlacedPart];
+
+  /**
+   * 원점에서 **건물 자리(+x 6m)로** 걸어 실제로 얼마나 갔나.
+   *
+   * ⚠ 목표를 건물 **안**에 두는 것이 조건이다. 첫 판본은 12m 를 걸었는데 그 목표가
+   * 건물 반대편(반경 ~1.7m + 몸 0.34m 밖)이라 **막는 코드가 있어도 통과**했다 —
+   * 네 축이 한꺼번에 빨간불이 되어 드러났다. 「막힌다」를 재려면 막히는 자리를 찍어야 한다.
+   */
+  const walkX = (c: ReturnType<typeof createCollider>): number =>
+    c.resolve(0, 0, 6, 0).x;
+
+  it('★ 동결이 없으면 예전 그대로 — 계산 배치로 막는다', () => {
+    const a = createCollider();
+    const b = createCollider({ frozenAt: () => null });
+    expect(walkX(b), '★ null(안 손댔다)이 계산 경로를 안 탔다').toBe(walkX(a));
+  });
+
+  it('★ 동결한 건물이 막는다 — 계산에는 없는 자리다', () => {
+    const c = createCollider({ frozenAt: (px, pz) => (px === 0 && pz === 0 ? at(6, 0) : []) });
+    // 건물 반경(sx 3)만큼 막히므로 6m 까지 못 간다.
+    expect(walkX(c), '★ 동결한 건물을 통과했다 — 화면에 있는 것이 안 막는다').toBeLessThan(6);
+  });
+
+  it('★ 빈 배열로 동결하면 막을 것이 없다 — 「다 지웠다」', () => {
+    const c = createCollider({ frozenAt: () => [] });
+    expect(walkX(c), '★ 지운 건물이 보이지 않는 벽으로 남았다').toBe(6);
+  });
+
+  it('★ 옮기면 옛 자리는 뚫리고 새 자리가 막는다', () => {
+    let parts = at(6, 0);
+    const c = createCollider({ frozenAt: (px, pz) => (px === 0 && pz === 0 ? parts : []) });
+    expect(walkX(c)).toBeLessThan(6);
+
+    // 건물을 옆으로 치운다(+z 로 20m).
+    parts = at(6, 20);
+    c.invalidate();
+    expect(walkX(c), '★ 옮겼는데 옛 자리에 계속 막힌다').toBe(6);
+  });
+
+  it('★ `invalidate` 없이는 안 바뀐다 — 그래서 그 문이 계약의 일부다', () => {
+    // 이 축은 «캐시가 실제로 있다» 를 못 박는다. 캐시가 없어지면 빨간불이 되고,
+    // 그때 `invalidate` 와 그 호출부(`main.ts`)를 함께 재검토하게 된다.
+    let parts = at(6, 0);
+    const c = createCollider({ frozenAt: (px, pz) => (px === 0 && pz === 0 ? parts : []) });
+    expect(walkX(c)).toBeLessThan(6);
+    parts = at(6, 20);
+    expect(
+      walkX(c),
+      '★ 캐시가 사라졌다 — `invalidate` 의 존재 이유를 다시 판정하라(지금은 무해하다)',
+    ).toBeLessThan(6);
+  });
+
+  it('손대지 않은 파셀은 계산 그대로 — 경계는 파셀 단위다', () => {
+    const only00 = createCollider({ frozenAt: (px, pz) => (px === 0 && pz === 0 ? [] : null) });
+    const plain = createCollider();
+    // ⚠ `count()` 전에 `resolve` 를 한 번 태운다 — 캐시는 `resolve` 가 만든다.
+    // 첫 판본은 그냥 `count()` 를 불러 **둘 다 0** 이었고, 그것이 「비었다」로 읽혔다.
+    only00.resolve(0, 0, 0, 0);
+    plain.resolve(0, 0, 0, 0);
+    // 파셀 (0,0) 만 비웠으므로 이웃 파셀의 원은 그대로 남아야 한다.
+    expect(only00.count(), '★ 한 파셀을 비웠더니 3×3 이 통째로 비었다').toBeGreaterThan(0);
+    expect(only00.count()).toBeLessThan(plain.count());
+  });
+});
+
+describe('배선 — main.ts 가 충돌에도 동결을 먹이는가 (정적·약함)', () => {
+  const src = readFileSync('frontend/js/world2/main.ts', 'utf8');
+
+  it('collider 에 frozenAt 을 주입한다', () => {
+    expect(src, '★ 렌더만 동결을 본다 — 「보이는 자리 = 막히는 자리」가 깨진다')
+      .toMatch(/createCollider\(\{[\s\S]{0,200}frozenAt:\s*\(px,\s*pz,\s*tier\)\s*=>\s*village\.lookup\(/);
+  });
+
+  it('동결이 바뀌면 충돌 캐시도 버린다', () => {
+    expect(src, '★ 제자리에서 옮기면 옛 자리에 계속 막힌다')
+      .toMatch(/collider\.invalidate\(\)/);
   });
 });
