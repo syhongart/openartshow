@@ -162,6 +162,28 @@ export const ACCEPTED = new Set([
   // 예) 'caBX',  // run #123 에서 확인 — C2PA 매니페스트 12KB. 팀장 판정 2026-__-__.
 ]);
 
+/**
+ * 확인되지 않은 청크를 고른다. **판정 로직을 여기로 뺀 이유가 검출력이다.**
+ *
+ * ⚠ 뮤테이션 N10 실측(2026-08-13): `main()` 안에서 `&& !ACCEPTED.has(c.type)` 를 **지워도
+ * 테스트가 안 깨졌다.** `ACCEPTED` 가 빈 집합이라 그 조건이 항상 참이어서, 있으나 없으나
+ * 결과가 같았기 때문이다. 즉 **팀장 조건의 핵심 장치(사람이 실물을 보고 통과시킨다)에
+ * 검사가 0이었다** — 목록에 항목을 넣는 날 그것이 동작하는지 아무도 모르는 상태였다.
+ *
+ * 순수 함수로 빼고 `accepted` 를 주입 가능하게 하면, **비어 있지 않은 목록**에 대해서도
+ * 검사할 수 있다. 환경변수로 목록을 넓히는 방법도 있었지만 그건 게이트를 우회하는
+ * 구멍이 된다 — 검사를 위해 보호를 뚫지 않는다.
+ *
+ * @param {Array<{type:string,length:number}>} chunks
+ * @param {'png'|'jpeg'|'webp'} kind
+ * @param {Set<string>} [accepted] 사람이 통과시킨 청크. 테스트에서 주입한다.
+ */
+export function findExtra(chunks, kind, accepted = ACCEPTED) {
+  const render = RENDER[kind];
+  if (!render) return chunks;
+  return chunks.filter((c) => !render.has(c.type) && !accepted.has(c.type));
+}
+
 function main() {
   const args = process.argv.slice(2);
   const failOnExtra = args.includes('--fail-on-extra');
@@ -184,7 +206,7 @@ function main() {
     return;
   }
   const essential = RENDER[kind];
-  const extra = chunks.filter((c) => !essential.has(c.type) && !ACCEPTED.has(c.type));
+  const extra = findExtra(chunks, kind);
   console.log(`형식: ${kind.toUpperCase()} · 청크 ${chunks.length}개`);
   for (const c of chunks) {
     const mark = essential.has(c.type) ? ' ' : ACCEPTED.has(c.type) ? '·' : '＋';

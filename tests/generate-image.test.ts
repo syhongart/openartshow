@@ -35,7 +35,7 @@ import {
   ALLOWED_EXT,
   MAX_BYTES,
 } from '../scripts/generate-image.mjs';
-import { inspect, pngChunks, jpegSegments, RENDER } from '../scripts/png-chunks.mjs';
+import { inspect, pngChunks, jpegSegments, findExtra, ACCEPTED, RENDER } from '../scripts/png-chunks.mjs';
 
 const KEY = 'AIzaSyTESTKEY_0123456789abcdefghijkl';
 const ODD_KEY = 'sk-proj-9f2b7c1d4e-NOTGOOGLESHAPED';
@@ -361,6 +361,45 @@ describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)'
 
   it('텍스트 청크(tEXt)도 잡는다 — 메타데이터는 렌더 목록에 없다', () => {
     expect(run(makePng([['tEXt', Buffer.from('Comment\0hello')]]), ['--fail-on-extra']).status).toBe(1);
+  });
+});
+
+// ⚠ **이 절은 뮤테이션 N10 이 만든 것이다**(2026-08-13). `main()` 안에서
+//   `&& !ACCEPTED.has(c.type)` 를 지워도 **아무 테스트도 안 깨졌다** — `ACCEPTED` 가 빈
+//   집합이라 조건이 항상 참이어서다. 팀장 조건의 핵심 장치(*"사람이 실물을 보고 통과"*)에
+//   **검사가 0** 이었고, 목록에 항목을 넣는 날 그것이 동작하는지 아무도 몰랐을 것이다.
+//   "통과는 검출력의 증거가 아니다" 가 정확히 이 형태다 — 72개가 전부 초록이었다.
+describe('G-ACCEPT 사람이 통과시킨 청크만 통과하는가 (N10 이 뚫은 자리)', () => {
+  const chunks = [
+    { type: 'IHDR', length: 13 },
+    { type: 'caBX', length: 999 },
+    { type: 'tEXt', length: 20 },
+  ];
+
+  it('빈 목록이면 렌더가 아닌 것이 전부 잡힌다', () => {
+    expect(findExtra(chunks, 'png', new Set()).map((c) => c.type)).toEqual(['caBX', 'tEXt']);
+  });
+
+  // ⚠ 이것이 N10 이 못 보던 축이다 — **목록이 비어 있지 않을 때** 실제로 걸러지는가.
+  it('통과시킨 것만 빠지고 나머지는 남는다', () => {
+    expect(findExtra(chunks, 'png', new Set(['caBX'])).map((c) => c.type)).toEqual(['tEXt']);
+  });
+
+  it('둘 다 통과시키면 0개가 된다', () => {
+    expect(findExtra(chunks, 'png', new Set(['caBX', 'tEXt']))).toHaveLength(0);
+  });
+
+  it('렌더 청크는 통과 목록과 무관하게 애초에 안 잡힌다', () => {
+    expect(findExtra(chunks, 'png', new Set()).some((c) => c.type === 'IHDR')).toBe(false);
+  });
+
+  // 목록이 늘어나는 것 자체가 위험 신호다 — 근거 없이 늘면 통과 도장이 된다.
+  it('기본 ACCEPTED 는 비어 있다 — 아직 실물을 본 적이 없다', () => {
+    expect(ACCEPTED.size).toBe(0);
+  });
+
+  it('알 수 없는 형식이면 전부 확인 대상이다 — 조용히 0개로 만들지 않는다', () => {
+    expect(findExtra(chunks, 'gif' as 'png', new Set())).toHaveLength(3);
   });
 });
 
