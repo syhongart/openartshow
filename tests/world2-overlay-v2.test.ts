@@ -62,6 +62,24 @@ function specifiersOf(file: string): string[] {
  * 앞의 둘은 정적 분석으로 잡으려면 상수 전파가 필요하고, 셋째는 import 축 자체를 벗어난다.
  * **정적 검사의 설계상 한계**이므로 이 축은 «정직한 실수를 막는 장치» 이지 «적대적 우회를
  * 막는 장치» 가 아니다 — 그 구별을 안 적어 두면 다음 사람이 이 검사를 후자로 읽는다.
+ *
+ * ── 팀장 판정 (2026-08-13, 상신 «한계 3종 수용 여부») ────────────────────────
+ * **수용 + 문서화 승인.** 근거 셋을 그대로 옮긴다:
+ *   1. 남는 우회 3종은 전부 **의도적 회피 형태**다 — hookify 에서 이미 확정한 게이트 원칙
+ *      (*"적대적 우회를 막는 것이 아니라 습관으로 저지르는 것을 막는 장치"*)과 일관된다.
+ *   2. 출력을 바꾸는 실질 침해는 어느 경로로 들어와도 **골든 해시가 깨진다** — ③(인라인
+ *      복제) 포함. 정적 축 = 조기 경보 / 해시 = 실효 게이트의 이중 구조라 사각이 무방비
+ *      구간은 아니다.
+ *   3. 대안(런타임 스파이·이름 grep)은 ③에 원리상 무력하거나 오탐으로 작업을 세운다 —
+ *      검출력 증분이 비용을 정당화하지 못한다.
+ *
+ * ⚠ **그러나 «해시가 최종 방어선» 으로 끝내지 않는다 — 해시 축에도 자기 한계가 있다**
+ * (팀장 조건 1). **침해 코드와 골든 해시 갱신을 한 커밋에 함께 넣으면 해시 축도 초록이다.**
+ * 그 경우 남는 검출 수단은 «해시 갱신 diff 를 사람이 본다» 뿐이고, 그것은 게이트가 아니라
+ * 리뷰다. 이 문장을 빼면 «해시가 다 잡는다» 라는 **과대 진술**이 되고, 그 형태가 이
+ * 저장소에서 이미 두 번 대가를 치렀다(`main` unprotected 오기로 7일 · behind-flag 산문이
+ * 짝 없는 테스트를 짝이라고 주장). 게이트 유효성에 대한 과대 진술은 다음 사람이 확인을
+ * 생략하게 만든다.
  */
 const STATIC_LIMITS = ['문자열 연결', '변수 경로', '코드 인라인 복제'] as const;
 
@@ -178,6 +196,50 @@ describe('v2 · 못 쓰는 것은 버리되 버렸다고 말한다', () => {
       version: OVERLAY_VERSION, items: [], parcels: [{ px: 0, pz: 0, parts: 5 }],
     });
     expect(issues.some((i) => i.reason === 'parts-not-array')).toBe(true);
+  });
+
+  // ⚠ 아래 둘은 **뮤테이션이 사각을 드러내서** 추가됐다(2026-08-12, 별도 클론 실측).
+  // 검수관 P2·P3 를 고쳤는데 **그 고침을 되돌려도 0 failed** 였다 — 고쳤다는 것과 고침이
+  // 지켜진다는 것은 다른 일이다.
+  it('parts 가 배열이 아니면 두 경로가 똑같이 파셀째 버린다 (P3)', () => {
+    const raw = { version: OVERLAY_VERSION, items: [], parcels: [{ px: 0, pz: 0, parts: 'x' }] };
+    const v = validateOverlay(raw);
+    expect(v.overlay.parcels, '관문은 파셀째 버린다').toEqual([]);
+    // 런타임이 «파츠 0개인 파셀» 로 살리면 화면에 «경고는 떴는데 파셀이 남아 있다» 가 된다.
+    expect(loadOverlay(raw).parcels, '런타임도 같은 판단을 해야 한다').toEqual(v.overlay.parcels);
+  });
+
+  it('계약이 모르는 «파셀» 필드가 사라지면 보고한다', () => {
+    // ⚠ 이 축이 보는 것은 **«여분 키를 보고한다» 뿐이다.** 첫 판본은 여기에 *"화이트리스트를
+    // 목록으로 되돌리는 회귀를 잡는다"* 고 적었고 **그것은 거짓이었다** — 별도 클론에서
+    // `KNOWN_PARCEL_KEYS` 를 하드코딩 목록으로 되돌려도 **0 failed** 였다. 당연하다.
+    // 지금 키 집합이 같으면 유도든 목록이든 **출력이 같다.** 유도가 지키는 것은 «필드가
+    // 늘 때 화이트리스트가 따라오는가» 이고, 그것을 재는 축은 바로 아래 라운드트립이다.
+    const { issues } = validateOverlay({
+      version: OVERLAY_VERSION, items: [],
+      parcels: [{ ...parcel(), note: 'x' } as unknown as FrozenParcel],
+    });
+    expect(issues.some((i) => i.reason === 'unknown-field')).toBe(true);
+  });
+
+  it('계약이 스스로 내놓은 것을 되먹이면 무손실이다 — 화이트리스트 유도 (P2)', () => {
+    // **화이트리스트를 «목록으로 적지 마라» 를 검사로 만든 자리다**(검수관 B6).
+    // 계약이 산출한 파셀·파츠를 그대로 다시 입력으로 넣는다. 화이트리스트가 정규화 함수의
+    // 출력에서 유도되면 새 필드가 늘어도 양쪽이 **함께** 늘어 무손실이 유지된다. 목록으로
+    // 적혀 있으면 필드를 하나 늘리는 순간 산출에는 있고 목록에는 없어서 **계약이 자기가
+    // 만든 것을 «모르는 필드» 라고 부른다.**
+    // 실측(별도 클론): 목록으로 되돌린 뒤 `FrozenParcel` 에 필드 하나를 더하면 이 축만
+    // 빨간불이 되고, 유도 상태에서 같은 필드를 더하면 초록이다 — 검출력이 유도 축에만 있다.
+    const produced = validateOverlay({
+      version: OVERLAY_VERSION, items: [], parcels: [parcel()],
+    }).overlay.parcels;
+    expect(produced.length, '되먹일 산출이 있어야 축이 성립한다').toBe(1);
+    expect(produced[0].parts.length, '파츠도 함께 되먹인다').toBeGreaterThan(0);
+
+    const again = validateOverlay({ version: OVERLAY_VERSION, items: [], parcels: produced });
+    const keys = `파셀 ${Object.keys(produced[0]).join(',')} · 파츠 ${Object.keys(produced[0].parts[0]).join(',')}`;
+    expect(again.issues, `계약이 자기 산출을 모른다 — ${keys}`).toEqual([]);
+    expect(again.overlay.parcels, '되먹인 결과가 원본과 달라졌다').toEqual(produced);
   });
 
   it('계약이 모르는 파츠 필드가 사라지면 보고한다', () => {
