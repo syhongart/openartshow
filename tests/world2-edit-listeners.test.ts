@@ -43,6 +43,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { startEditMode } from '../frontend/js/world2/edit/mode.js';
 import type { EditSession, OverlayEntry, OverlayHost } from '../frontend/js/world2/edit/types.js';
+import { makeThreeStub } from './helpers/three-stub.js';
 
 /** 편집 조작을 가로채는 리스너들. `keydown` 은 모드 키(`Tab`)가 상시라 따로 본다. */
 const GRABBY = ['click', 'contextmenu', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'drop'];
@@ -116,28 +117,7 @@ function makeHarness(): Harness {
   const removed: OverlayEntry[] = [];
   const root = { children: [] as unknown[], add() { }, remove() { } };
 
-  const THREE = {
-    Raycaster: class {
-      ray = { origin: { x: 0, y: 10, z: 0 }, direction: { x: 0, y: -1, z: 0 } };
-      setFromCamera(): void { }
-      intersectObjects(): { object: unknown }[] { return hits; }
-    },
-    Mesh: class {
-      position = { set(): void { } };
-      rotation = { x: 0 };
-      scale = { setScalar(): void { } };
-      visible = false;
-      renderOrder = 0;
-    },
-    RingGeometry: class { dispose(): void { } },
-    MeshBasicMaterial: class { dispose(): void { } },
-    Box3: class {
-      min = { x: Infinity, y: Infinity, z: Infinity };
-      max = { x: -Infinity, y: -Infinity, z: -Infinity };
-      setFromObject(): void { }
-    },
-    DoubleSide: 2,
-  };
+  const THREE = makeThreeStub({ hits: () => hits });
 
   const host: OverlayHost = {
     THREE,

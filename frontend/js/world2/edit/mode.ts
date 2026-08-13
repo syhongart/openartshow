@@ -5,6 +5,7 @@
 // 붙으면 1000행을 넘고 그때는 분해 자체가 대공사가 되므로 **키우기 전에** 갈랐다.
 //   `state.ts`      상수 + 가변 상태
 //   `pick.ts`       광선·선택 링
+//   `gizmo.ts`      3축 기즈모(산술은 `decide/gizmo-math.ts`)
 //   `panel/`        css · dom(say/refresh) · palette
 //   `actions.ts`    놓기·복제·삭제·내보내기
 //   `input.ts`      리스너와 «언제 붙어 있는가»
@@ -21,14 +22,16 @@
 // ⚠ **분해로 늘어난 파일들도 같은 청크에 있어야 한다** — 전부 이 파일 아래로만 매달리고
 // 라이브 모듈이 정적으로 가리키지 않으므로 그 성질이 유지된다.
 //
-// ── `TransformControls` 를 안 쓰는 이유 ─────────────────────────────────────
-// `vite.config.js` 의 청크 화이트리스트가 `examples/jsm/` 중 `GLTFLoader`·
-// `BufferGeometryUtils` 만 허용한다. 그 밖을 쓰면 라이브가 editor 청크를 통째로 받는다.
-// `Raycaster` 는 three 코어라 무료다 — 그래서 gizmo 대신 **광선 ∩ 지면**으로 옮긴다.
-// ⚠ 이 근거는 **번들 격리**이지 «three 가 두 벌 올라간다» 가 아니다(실측 2026-08-13:
-// r171 부터 `three.module.js` 와 `three.webgpu.js` 가 둘 다 `three.core.js` 를 import 해
-// `Object3D`·`Vector3` 가 동일하고, `vite.config.js` 도 코어를 별도 청크로 가른다).
-// 기즈모를 붙일 때 다시 판정한다 — 태스크 #50.
+// ── 기즈모는 **자작**이다 (팀장 판정 2026-08-13) ────────────────────────────
+// ⚠ 이 절은 오래 *"`TransformControls` 를 안 쓰는 이유 … gizmo 대신 광선 ∩ 지면으로
+// 옮긴다"* 라고 적혀 있었고 **이제 거짓이다** — 기즈모가 실제로 붙었다.
+//
+// 상신해 판정을 받았다: three 의 `TransformControls`(화이트리스트 확장 또는 vendor 복사)
+// vs 자작 → **자작.** 근거·조건·재론 조건의 SSOT 는 `decide/gizmo-math.ts` 헤더 한 곳이다
+// — 여기에 다시 적지 않는다.
+//
+// 여기서만 참인 것 하나: 청크 화이트리스트(`vite.config.js`)가 `examples/jsm/` 중
+// `GLTFLoader`·`BufferGeometryUtils` 만 허용하고, 자작은 **그것을 안 건드린다.**
 //
 // ── 포인터락 (`main.ts` 무수정) ─────────────────────────────────────────────
 // 주행 모드는 캔버스 클릭으로 포인터락에 들어간다(`main.ts:1179`). 편집 중에 그것이
@@ -39,6 +42,7 @@
 import type { EditSession, OverlayHost } from './types.js';
 import { createEditState } from './state.js';
 import { createPicker } from './pick.js';
+import { createGizmo } from './gizmo.js';
 import { createPanel } from './panel/dom.js';
 import { loadPalette } from './panel/palette.js';
 import { createActions } from './actions.js';
@@ -56,6 +60,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   const st = createEditState();
 
   const picker = createPicker(host, st);
+  const gizmo = createGizmo(host, st);
 
   // `panel` 은 조작 핸들러를 필요로 하고 그 핸들러는 `panel` 을 필요로 한다. 함수 선언은
   // 호이스팅되므로 **이름으로 먼저 묶고 실행 시점에 채워진 값을 본다** — 조립자가 이
@@ -65,12 +70,16 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     duplicate: () => { void actions.duplicate(); },
     removeSelected: () => { actions.removeSelected(); },
     exportNow: () => { actions.exportNow(); },
-  }, () => { picker.syncMarker(st.selected); });
+  }, () => {
+    // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
+    picker.syncMarker(st.selected);
+    gizmo.attach(st.selected);
+  });
 
   const actions = createActions(host, st, panel);
 
   const input = createInput({
-    host, st, panel, picker, actions,
+    host, st, panel, picker, actions, gizmo,
     toggleEditing: () => { setEditing(!st.editing); },
     onBlobUrl: opts.onBlobUrl,
   });
@@ -90,6 +99,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       panel.sayLead('편집 모드 — 시점은 마우스 오른쪽 버튼 드래그. 이동은 WASD 그대로.');
     } else {
       input.unbind();
+      gizmo.attach(null);
       st.selected = null;
       st.pendingSrc = null;
       st.dragging = null;
@@ -116,6 +126,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       input.unbindAlways();
       panel.dispose();
       picker.dispose();
+      gizmo.dispose();
     },
   };
 }

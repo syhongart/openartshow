@@ -15,6 +15,7 @@ import { RY_STEP, S_STEP, Y_STEP, type EditState } from './state.js';
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
+import type { Gizmo } from './gizmo.js';
 
 export interface InputDeps {
   host: OverlayHost;
@@ -22,6 +23,7 @@ export interface InputDeps {
   panel: Panel;
   picker: Picker;
   actions: Actions;
+  gizmo: Gizmo;
   /** `Tab` 과 토글 버튼이 부르는 것. 모드 전환은 조립자(`mode.ts`)가 소유한다 */
   toggleEditing(): void;
   /** 드래그드롭으로 만든 임시 주소를 소비자에게 넘겨 회수하게 한다 */
@@ -48,6 +50,15 @@ export function createInput(deps: InputDeps): Input {
     if (ev.button !== 0) return;
     if (!picker.castFrom(ev)) return;
 
+    // ⚠ **기즈모가 항목보다 먼저다.** 핸들은 물건 위에 겹쳐 그려지므로(`depthTest:false`)
+    // 항목을 먼저 찾으면 축을 잡으려던 클릭이 «물건 선택» 으로 먹힌다 — 그러면 기즈모가
+    // 있어도 못 쓴다. 광선은 한 번만 쏘고 결과를 두 소비자가 나눠 본다.
+    const handle = deps.gizmo.hitTest(picker.intersect());
+    if (handle) {
+      deps.gizmo.begin(handle, picker.ray());
+      return;
+    }
+
     const hit = picker.pick();
     if (hit) {
       st.selected = hit;
@@ -72,6 +83,13 @@ export function createInput(deps: InputDeps): Input {
 
   const onPointerMove = (ev: PointerEvent) => {
     if (st.orbiting) { host.look(ev.movementX, ev.movementY); return; }
+    if (deps.gizmo.dragging) {
+      if (!picker.castFrom(ev)) return;
+      if (!deps.gizmo.update(picker.ray())) return; // 축과 나란하거나 값이 안 바뀐 프레임
+      if (st.selected) host.apply(st.selected);
+      panel.refresh();
+      return;
+    }
     if (!st.dragging) return;
     if (!picker.castFrom(ev)) return;
     const at = picker.planeAt(st.dragPlaneY);
@@ -86,7 +104,7 @@ export function createInput(deps: InputDeps): Input {
   // `pointerup` 이 **안 온다.** 그러면 `dragging` 이 영구히 남아 이후 모든 손가락이
   // 물건을 끌고 다닌다. 이 저장소는 이미 그 축을 안다(`builder.js` 의
   // *"브라우저가 제스처를 가로챌 때(pointercancel) — 커밋 없이 정리만"*) — 여기만 빠져 있었다.
-  const onPointerUp = () => { st.dragging = null; st.orbiting = false; };
+  const onPointerUp = () => { st.dragging = null; st.orbiting = false; deps.gizmo.end(); };
 
   // 캔버스 클릭이 포인터락으로 가는 것을 **캡처 단계**에서 끊는다(`mode.ts` 헤더 참조).
   const onClickCapture = (ev: Event) => {

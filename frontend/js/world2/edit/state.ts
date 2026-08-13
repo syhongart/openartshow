@@ -38,17 +38,44 @@ export type ThreeNS = {
     setFromCamera(coords: { x: number; y: number }, cam: unknown): void;
     intersectObjects(objs: unknown[], recursive: boolean): { object: unknown }[];
   };
-  Mesh: new (g: unknown, m: unknown) => {
-    position: { set(x: number, y: number, z: number): void };
-    rotation: { x: number };
-    scale: { setScalar(s: number): void };
-    visible: boolean;
-    renderOrder: number;
-  };
-  RingGeometry: new (inner: number, outer: number, seg: number) => { dispose?(): void };
-  MeshBasicMaterial: new (p: Record<string, unknown>) => { dispose?(): void };
+  Mesh: new (g: unknown, m: unknown) => StubMesh;
+  Group: new () => StubGroup;
+  RingGeometry: new (inner: number, outer: number, seg: number) => Disposable;
+  BoxGeometry: new (w: number, h: number, d: number) => Disposable;
+  CylinderGeometry: new (rt: number, rb: number, h: number, seg: number) => Disposable;
+  ConeGeometry: new (r: number, h: number, seg: number) => Disposable;
+  MeshBasicMaterial: new (p: Record<string, unknown>) => Disposable;
   Box3: new () => { min: XYZ; max: XYZ; setFromObject(o: never): unknown };
   DoubleSide: number;
+};
+
+export type Disposable = { dispose?(): void };
+
+/**
+ * three 의 `Mesh` 중 편집이 실제로 만지는 것만.
+ *
+ * ⚠ **필드를 늘리면 테스트 스텁도 늘려야 한다** — 구조 타입이라 빠진 필드가 곧 컴파일
+ * 에러다. 그것이 이 타입의 값이기도 하다: 편집이 three 의 무엇에 기대고 있는지가 한
+ * 곳에 적혀 있어서, 스텁으로 실제 코드를 돌리는 행위 테스트가 성립한다.
+ */
+export type StubMesh = {
+  position: { x: number; y: number; z: number; set(x: number, y: number, z: number): void };
+  rotation: { x: number; y: number; z: number };
+  scale: { setScalar(s: number): void; set(x: number, y: number, z: number): void };
+  visible: boolean;
+  renderOrder: number;
+  /** 어느 핸들인가를 여기 적는다 — 레이캐스트가 맞힌 메시에서 되찾는다 */
+  userData: Record<string, unknown>;
+};
+
+export type StubGroup = {
+  position: { set(x: number, y: number, z: number): void };
+  rotation: { x: number; y: number; z: number };
+  scale: { setScalar(s: number): void };
+  visible: boolean;
+  children: unknown[];
+  add(o: never): void;
+  remove(o: never): void;
 };
 
 /** 편집 세션이 들고 있는 전부. 모듈들이 **같은 객체**를 본다. */

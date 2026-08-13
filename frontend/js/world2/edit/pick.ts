@@ -9,6 +9,7 @@
 // 그때는 개수 불변식과 좌표 결정론을 함께 건드리므로 별도 단계로 잡혀 있다.
 
 import { ndcOf, rayPlaneY, snapTo } from '../decide/edit-pick.js';
+import type { Ray3 } from '../decide/gizmo-math.js';
 import type { OverlayEntry, OverlayHost } from './types.js';
 import { SNAP, type EditState, type ThreeNS } from './state.js';
 
@@ -21,6 +22,13 @@ export interface Picker {
   planeAt(y: number): { x: number; z: number } | null;
   /** 광선에 걸린 오버레이 항목. 없으면 `null` */
   pick(): OverlayEntry | null;
+  /**
+   * 광선에 걸린 것 **전부**(가까운 순). 기즈모 핸들이 여기 섞여 온다 — 기즈모 그룹도
+   * `host.root` 의 자식이라 같은 레이캐스트에 잡히고, 그래서 광선을 두 번 쏘지 않는다.
+   */
+  intersect(): readonly { object: unknown }[];
+  /** 지금 광선. 기즈모 산술이 쓴다(three 타입을 순수 계층에 넘기지 않으려고 평평하게 준다) */
+  ray(): Ray3;
   /** 선택 링을 그 항목 위로. `null` 이면 숨긴다 */
   syncMarker(e: OverlayEntry | null): void;
   dispose(): void;
@@ -84,11 +92,14 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
     return host.entries().find((e) => (e.holder as unknown) === cur) ?? null;
   }
 
-  function pick(): OverlayEntry | null {
-    const hits = raycaster.intersectObjects(
+  function intersect(): readonly { object: unknown }[] {
+    return raycaster.intersectObjects(
       (host.root as unknown as { children: unknown[] }).children, true,
     );
-    for (const h of hits) {
+  }
+
+  function pick(): OverlayEntry | null {
+    for (const h of intersect()) {
       const e = entryOf(h.object);
       if (e) return e;
     }
@@ -112,6 +123,11 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
     groundAt,
     planeAt,
     pick,
+    intersect,
+    ray(): Ray3 {
+      const o = raycaster.ray.origin, d = raycaster.ray.direction;
+      return { ox: o.x, oy: o.y, oz: o.z, dx: d.x, dy: d.y, dz: d.z };
+    },
     syncMarker,
     dispose() {
       (host.root as unknown as { remove(o: never): void }).remove(marker as never);
