@@ -9,6 +9,37 @@
 //   ② 편집 종료 시 복원은 `PlayerSystem` 책임 — 복원 후 주행 모델과 동일
 //   ③ **편집이 꺼진 상태에서 주행 동작 변경 0**
 //
+// ── 검출력 실측 (2026-08-13, 별도 클론) ─────────────────────────────────────
+// 이 파일 + `tests/world2-orbit.test.ts` 대조군 **41 passed**(실측 시점 `5de8c8a`).
+//
+//   O-1  `orbitStep` 이 반경 클램프를 통째로 안 한다        → **5 failed**
+//   O-2  하한(`R_MIN`)만 제거                             → **4 failed**
+//   O-3  시선각을 0.05rad 틀어 낸다                        → **3 failed**
+//   O-4  `pitchTo` 부호 뒤집기                            → **5 failed**
+//   O-5  `atan2` → `atan`(나눗셈)                         → **0 → 1 failed** ⚠ 아래
+//   O-6  휠 방향 뒤집기                                    → **2 failed**
+//   O-7  중심에 서 있을 때 안 밀어낸다                      → **1 failed**
+//   O-8  리프트가 카메라에 안 나간다                        → **2 failed**
+//   O-9  리프트 상한 제거                                  → **2 failed**
+//   O-10 `endOrbit` 이 리프트를 안 걷는다                   → **1 failed**
+//   O-11 `endOrbit` 이 갇힘을 안 푼다                       → **1 failed**
+//   O-12 `endOrbit` 이 `orbitFrom` 을 안 비운다             → **0 → 1 failed** ⚠ 아래
+//   O-13 `main.ts` 에 죽은 `player.orbit(...)` 한 줄 추가    → **2 failed**
+//
+// ⚠ **0 failed 가 둘 나왔고 원인이 서로 달랐다.**
+//
+// **O-5 는 「거의 등가」였다.** `atan2(y, 0) = ±π/2` 이고 `atan(±∞) = ±π/2` 라 대부분의
+// 입력에서 결과가 같다 — **한 점만 빼고.** 눈과 대상이 같은 높이이고 수평거리도 0 이면
+// `atan2(0,0) = 0` 인데 `atan(0/0) = NaN` 이다. 「거의 등가」와 「등가」는 다른 일이고,
+// 그 한 점을 축으로 만드니 1 failed(재현 확인).
+//
+// **O-12 는 축이 빈 검사였다 — 그리고 이 회차에 같은 형태를 두 번째로 했다**(앞의 P-C 는
+// 파셀 (0,0) 이었다). 두 가지가 겹쳤다: ① 궤도를 `dYaw=0`·`kRadius=1` 로 돌아 **위치가
+// 안 변했고** ② 벽이 **절대 좌표 클램프**라 출발점과 무관하게 도착점이 같았다.
+// **두 값이 구별될 수 없는 자리에 픽스처를 놓은 것**이다. 경로에 의존하는 벽으로 바꾸고
+// 실제로 돌게 하니 1 failed(재현 확인). 좌표가 얽힌 검사에서는 「그 값이 우연히 같아지는
+// 자리」를 먼저 의심한다.
+//
 // ── 여기서 못 재는 것 ───────────────────────────────────────────────────────
 // **조작감**이다. 픽셀당 회전량·리프트 속도가 손에 맞는지는 감독 화면에서만 갈린다.
 // 그리고 궤도 중심을 「화면 중앙 지면」으로 잡는 근사(`edit/input.ts` 의 `orbitCenter`)가
@@ -172,17 +203,48 @@ describe('편집 종료 — 주행 모델로 되돌린다 (팀장 조건 ②③)
     expect(p.position, '★ 궤도를 안 썼는데 자리가 움직였다').toEqual({ x: 30, z: 0 });
   });
 
-  it('★ 복원 뒤 다시 궤도를 돌면 **새 출발점**에서 기억한다', () => {
-    // `orbitFrom` 을 안 비우면 두 번째 편집 세션이 **첫 번째 자리**로 복원한다.
-    const wall = (x: number, z: number, dx: number, dz: number) =>
-      ({ x: Math.min(5, x + dx), z: z + dz });
-    const p = new PlayerSystem({ start: { x: 0, z: 30 }, resolveMove: wall });
-    p.orbit(0, 0, 0, 0, 0, 1);
+  it('★ 편집 세션은 서로 독립이다 — 두 번째가 **첫 자리**로 복원하지 않는다', () => {
+    // `orbitFrom` 을 안 비우면 두 번째 편집 세션의 복원이 **첫 세션 출발점**에서
+    // 계산된다. 화면에서는 «편집을 두 번 켰다 껐더니 엉뚱한 데 서 있다» 로만 보인다.
+    //
+    // ⚠ **이 축의 첫 판본은 빈 검사였다**(O-12 뮤테이션, 0 failed). 두 가지가 겹쳤다:
+    //   ① 궤도를 `dYaw=0`·`kRadius=1` 로 돌아 **위치가 안 변했다**
+    //   ② 벽이 **절대 좌표 클램프**(`Math.min(5, x+dx)`)라 출발점과 무관하게 도착점이
+    //      같았다 — `resolveMove` 가 idempotent 면 `orbitFrom` 이 낡아도 결과가 같다
+    // 즉 **두 값이 구별될 수 없는 자리에 픽스처를 놓았다.** 이 회차에 같은 형태를 두 번
+    // 했다(앞의 P-C 는 파셀 (0,0) 이었다). 좌표가 얽힌 검사에서는 「그 값이 우연히
+    // 같아지는 자리」를 먼저 의심한다.
+    //
+    // 처방: **경로에 의존하는 벽**(한 프레임에 z 로 3m 이상 못 간다)을 쓰고 실제로 돈다.
+    const slowZ = (x: number, z: number, dx: number, dz: number) =>
+      ({ x: x + dx, z: z + Math.max(-3, Math.min(3, dz)) });
+
+    const p = new PlayerSystem({ start: { x: 0, z: 30 }, resolveMove: slowZ });
+    p.orbit(0, 0, 0, Math.PI / 2, 0, 1); // 첫 세션
     p.endOrbit();
     const between = { ...p.position };
-    p.orbit(0, 0, 0, 0, 0, 1);
+    p.orbit(0, 0, 0, Math.PI / 2, 0, 1); // 두 번째 세션
     p.endOrbit();
-    expect(p.position, '★ 두 번째 세션이 첫 자리로 되돌아갔다').toEqual(between);
+
+    // **같은 두 번째 세션을 새 플레이어로 재현**한 것과 같아야 한다. 정상값을 손으로
+    // 적으면 그것은 구현 박제이고, 계수를 바꾸는 날 이 축이 이유 없이 빨간불이 된다.
+    const q = new PlayerSystem({ start: between, resolveMove: slowZ });
+    q.orbit(0, 0, 0, Math.PI / 2, 0, 1);
+    q.endOrbit();
+    expect(p.position, '★ 두 번째 세션이 첫 세션 출발점에서 복원했다').toEqual(q.position);
+  });
+
+  it('★ `endOrbit()` 을 두 번 불러도 자리가 더 안 움직인다', () => {
+    // `setEditing(false)` 와 `dispose()` 가 둘 다 부를 수 있는 경로다(`edit/mode.ts`).
+    // 두 번째가 또 복원을 돌리면 감독은 «편집을 껐는데 한 번 더 밀렸다» 를 본다.
+    const slowZ = (x: number, z: number, dx: number, dz: number) =>
+      ({ x: x + dx, z: z + Math.max(-3, Math.min(3, dz)) });
+    const p = new PlayerSystem({ start: { x: 0, z: 30 }, resolveMove: slowZ });
+    p.orbit(0, 0, 0, Math.PI / 2, 0, 1);
+    p.endOrbit();
+    const after = { ...p.position };
+    p.endOrbit();
+    expect(p.position, '★ 두 번째 `endOrbit` 이 자리를 또 밀었다').toEqual(after);
   });
 });
 
