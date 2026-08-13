@@ -96,6 +96,15 @@ export function maskSecrets(text, key) {
  * @param {string} [root] 저장소 루트(테스트에서 주입)
  */
 export function resolveOutPath(outPath, root = ROOT) {
+  // ⚠ **제어문자를 거부한다**(검수관 P1). `frontend/img/a\nfoo=bar.png` 는 `path.extname`
+  //   이 `.png` 를 내므로 아래 확장자 검사를 **통과한다.** 그러면 그 값이 `GITHUB_ENV` 에
+  //   `OUT=…` 으로 append 될 때 **개행 뒤에 임의의 `key=value` 줄이 들어간다.**
+  //   dispatch 는 write 권한자만 누르므로 실질 위험은 낮지만, **이 표면은 run #2 수정이
+  //   새로 연 것**이다. 막는 자리를 여기 하나로 둔다(SSOT — `GITHUB_ENV` 쓰는 쪽에
+  //   따로 적으면 값 미러링이다).
+  if (/[\u0000-\u001f\u007f]/.test(String(outPath))) {
+    throw new Error('출력 경로에 제어문자가 있다');
+  }
   const abs = path.resolve(root, outPath);
   const rel = path.relative(root, abs);
   // ⚠ `rel === ''`(루트 자신)은 **아래 확장자 검사와 겹친다** — 루트는 확장자가 없으므로
@@ -114,9 +123,50 @@ export function resolveOutPath(outPath, root = ROOT) {
 }
 
 /**
- * 바이트를 보고 형식을 판정하고 확장자와 일치하는지 확인한다.
+ * 바이트를 보고 **실제 형식**을 판정한다. 확장자를 안 본다.
+ *
+ * ⚠ run #2 가 이것을 필요하게 만들었다. Imagen `:predict` 가 이 키로 **전부 404** 라
+ * 폴백이 `gemini-3.1-flash-lite-image` 로 넘어갔고, **그 모델은 이미지를 돌려줬는데**
+ * 요청 경로가 `hero.png` 여서 `내용이 PNG 이 아니다` 로 거부됐다. 안전장치는 정직하게
+ * 동작했지만, **모델이 무슨 형식을 줄지 우리가 정할 수 없다**는 것을 몰랐던 것이 문제다.
+ * → 이제 실제 형식에 **확장자를 맞춘다**(내용을 바꾸지 않는다 — 그건 거짓말이다).
+ * @returns {{label:string, ext:string}|null}
+ */
+export function detectImageFormat(buf) {
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    return { label: 'PNG', ext: '.png' };
+  }
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return { label: 'JPEG', ext: '.jpg' };
+  }
+  if (buf.length >= 12
+    && buf.subarray(0, 4).toString('latin1') === 'RIFF'
+    && buf.subarray(8, 12).toString('latin1') === 'WEBP') {
+    return { label: 'WEBP', ext: '.webp' };
+  }
+  return null;
+}
+
+/**
+ * 요청 경로의 확장자를 **실제 형식에 맞춘다.** 형식이 같으면 그대로 둔다.
+ * @returns {{path:string, changed:boolean, label:string}}
+ */
+export function reconcileExtension(absPath, buf) {
+  const fmt = detectImageFormat(buf);
+  if (!fmt) throw new Error('알려진 이미지 형식이 아니다 — PNG·JPEG·WebP 가 아니다');
+  const ext = path.extname(absPath).toLowerCase();
+  // `.jpeg` 를 요청했는데 JPEG 이 왔으면 바꾸지 않는다(둘 다 맞다).
+  const same = ext === fmt.ext || (fmt.ext === '.jpg' && ext === '.jpeg');
+  if (same) return { path: absPath, changed: false, label: fmt.label };
+  return { path: absPath.slice(0, absPath.length - ext.length) + fmt.ext, changed: true, label: fmt.label };
+}
+
+/**
+ * 크기 상한과 매직바이트를 검사한다.
+ * ⚠ `reconcileExtension` **뒤에서 부르면 매직 축은 동어반복**이다(호출부 주석 참조).
  * @param {Buffer} buf
  * @param {string} ext 소문자 확장자(`.png` 등)
+ * @returns {string} 판정된 형식 라벨
  */
 export function assertImageBytes(buf, ext) {
   if (buf.length === 0) throw new Error('생성된 이미지가 0바이트다');
@@ -376,14 +426,58 @@ async function main() {
   }
 
   const buf = Buffer.from(b64, 'base64');
-  const label = assertImageBytes(buf, ext);
   if (mimeType && !mimeType.startsWith('image/')) {
     throw new Error(`응답 mimeType 이 이미지가 아니다: ${mimeType}`);
   }
 
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, buf);
-  console.log(`저장: ${rel} (${label}, ${Math.round(buf.length / 1024)}KB, mimeType=${mimeType || '미신고'})`);
+  // ⚠ **모델이 무슨 형식을 줄지 우리가 정할 수 없다**(run #2 실측). 요청 경로가
+  //   `hero.png` 인데 Gemini 가 다른 형식을 돌려줘 안전장치가 거부했다. 내용을 바꾸는
+  //   것은 거짓말이므로 **확장자를 실제 형식에 맞춘다.**
+  const { path: finalAbs, changed, label } = reconcileExtension(abs, buf);
+  const finalExt = path.extname(finalAbs).toLowerCase();
+  if (changed) {
+    console.log(`⚠ 요청 확장자(${ext})와 실제 형식(${label})이 달라 **${finalExt}** 로 저장한다.`);
+  }
+  // ⚠ 검사는 그대로 태우되 **이 자리에서 매직 축은 동어반복이다**(검수관 B2 실측).
+  //   `reconcileExtension` 이 **이미 바이트로 형식을 판정한 뒤** 그 형식의 확장자를
+  //   넘기므로, 매직 검사가 여기서 던지는 일은 구조적으로 없다(36케이스 throw 0).
+  //   `0바이트다` 메시지는 **도달조차 안 한다** — 빈 버퍼는 `reconcileExtension` 이
+  //   `알려진 이미지 형식이 아니다` 로 먼저 던진다.
+  //   **실질 검출력은 `MAX_BYTES` 하나뿐이다.** 첫 판본은 *"검사를 그대로 태운다 —
+  //   확장자를 맞췄다고 건너뛰지 않는다"* 라고만 적었고, 코드상 참이지만 **검출력을
+  //   오도**했다. 남겨 두는 이유는 `reconcileExtension` 이 나중에 바뀌어도 크기 축이
+  //   살아 있게 하는 것이고, 그 이상을 주장하지 않는다.
+  assertImageBytes(buf, finalExt);
+
+  const finalRel = path.relative(ROOT, finalAbs);
+  fs.mkdirSync(path.dirname(finalAbs), { recursive: true });
+  fs.writeFileSync(finalAbs, buf);
+  console.log(`저장: ${finalRel} (${label}, ${Math.round(buf.length / 1024)}KB, mimeType=${mimeType || '미신고'})`);
+
+  // ⚠ 뒷 스텝(artifact·메타데이터 열거·커밋)이 **실제 저장 경로**를 써야 한다. 확장자가
+  //   바뀌었는데 `inputs.out` 을 그대로 쓰면 *"생성물이 없다"* 로 죽는다 — 파일은 있는데
+  //   다른 이름으로 있다. `rel`(요청 경로)이 아니라 이 값이 진실이다.
+  //
+  // ⚠⚠ **`GITHUB_OUTPUT` 이 아니라 `GITHUB_ENV` 를 쓴다**(검수관 C3). output 으로 내보내면
+  //   뒷 스텝마다 `${{ steps.gen.outputs.path || env.OUT }}` 를 **손으로 적어야** 하고,
+  //   첫 판본이 실제로 그것을 **세 곳**에 적었다 — `inputs.out` 을 네 곳에 적었다가 job
+  //   레벨 `env.OUT` 으로 모았던 P-b 의 **재발**이다(같은 자리에서 두 번째).
+  //   `GITHUB_ENV` 에 쓰면 다음 스텝부터 값이 보이므로 워크플로 표현식이 줄고, 이 스텝이
+  //   죽으면 값이 아예 안 생겨 뒷 스텝이 원본으로 떨어진다.
+  //
+  // ⚠⚠ **`OUT` 이 아니라 `SAVED_PATH` 다 — 이름을 가르는 것이 요점이다**(검수관 B3).
+  //   첫 판본은 job 레벨 `env: OUT` 과 **같은 이름**으로 썼다. 그러면 둘이 충돌하고
+  //   **어느 쪽이 이기는지에 의존**하게 되는데, 그 우선순위를 이 저장소는 확인한 적이 없다
+  //   (실행 0 · actionlint 0 · **저장소 전체에 `GITHUB_ENV` 선례 0건**).
+  //   워크플로 `env:` 키가 이긴다면 뒷 스텝의 `$OUT` 은 원본에 고정되고 — **확장자가 바뀐
+  //   회차에만** 메타데이터 스텝이 ENOENT 로 죽는다. `if-no-files-found: warn` 이라
+  //   실물도 조용히 안 남는다. **이번 수정이 대비한 바로 그 케이스에서만 실패한다.**
+  //   이름을 가르면 **어느 우선순위가 참이든 정답이 나온다**(fail-closed).
+  //   ⚠ **이 배선에는 검사가 0이다** — `main()` 을 export 하지 않아 여기를 지워도 테스트가
+  //   안 깨진다(검수관 실측 M-3). 백로그 `G-MAIN` 이 그 축이다.
+  if (process.env.GITHUB_ENV) {
+    fs.appendFileSync(process.env.GITHUB_ENV, `SAVED_PATH=${finalRel}\n`);
+  }
 }
 
 // import 될 때는 안 돈다(테스트가 위 함수들을 부를 수 있게).

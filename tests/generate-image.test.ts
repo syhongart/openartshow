@@ -32,6 +32,8 @@ import {
   maskSecrets,
   resolveOutPath,
   assertImageBytes,
+  detectImageFormat,
+  reconcileExtension,
   pickImageModels,
   generateWithFallback,
   call,
@@ -125,6 +127,17 @@ describe('G-PATH 출력 경로 — 감독의 오타가 저장소를 안 망가�
     expect(() => resolveOutPath('.', ROOT)).toThrow();
   });
 
+  // ⚠ **run #2 수정이 새로 연 표면**(검수관 P1). `path.extname` 이 `.png` 를 내므로
+  //   확장자 검사만으로는 통과한다. 그 값이 `GITHUB_ENV` 에 append 되면 **개행 뒤에
+  //   임의의 `key=value` 줄**이 들어간다.
+  it.each([
+    'frontend/img/a\nfoo=bar.png',
+    'frontend/img/a\rb.png',
+    'frontend/img/a\u0000b.png',
+  ])('제어문자가 든 경로는 거부한다: %j', (p) => {
+    expect(() => resolveOutPath(p, ROOT)).toThrow(/제어문자/);
+  });
+
   it('허용 확장자는 이미지뿐이다 — .svg 는 일부러 빠져 있다', () => {
     expect([...ALLOWED_EXT].sort()).toEqual(['.jpeg', '.jpg', '.png', '.webp']);
     expect(ALLOWED_EXT.has('.svg')).toBe(false);
@@ -196,6 +209,53 @@ describe('G-BYTES 내용 검증 — 확장자와 실제 형식이 어긋나면 �
     expect(assertImageBytes(ok, '.webp')).toBe('WEBP');
     const bad = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), Buffer.alloc(8)]);
     expect(() => assertImageBytes(bad, '.webp')).toThrow(/WebP 가 아니다/);
+  });
+});
+
+describe('G-EXT 실제 형식에 확장자를 맞추는가 (run #2 가 죽은 자리)', () => {
+  const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(20)]);
+  const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(8)]);
+
+  it.each([
+    ['PNG', () => makePng(), '.png'],
+    ['JPEG', () => JPEG, '.jpg'],
+    ['WEBP', () => WEBP, '.webp'],
+  ])('바이트로 형식을 판정한다 — %s', (label, make, ext) => {
+    expect(detectImageFormat((make as () => Buffer)())).toEqual({ label, ext });
+  });
+
+  it('알 수 없는 바이트는 null 이다 — 짐작하지 않는다', () => {
+    expect(detectImageFormat(Buffer.from('not an image'))).toBeNull();
+  });
+
+  // ⚠⚠ **run #2 가 여기서 죽었다.** Imagen 이 전부 404 라 Gemini 로 폴백했고, 그 모델이
+  //   이미지를 돌려줬는데 요청 경로가 `hero.png` 여서 `내용이 PNG 이 아니다` 로 거부됐다.
+  //   **모델이 무슨 형식을 줄지 우리가 정할 수 없다.**
+  it('요청이 .png 인데 JPEG 이 오면 확장자를 바꾼다', () => {
+    const r = reconcileExtension('/repo/frontend/img/hero.png', JPEG);
+    expect(r.path).toBe('/repo/frontend/img/hero.jpg');
+    expect(r.changed).toBe(true);
+    expect(r.label).toBe('JPEG');
+  });
+
+  it('형식이 맞으면 경로를 안 건드린다', () => {
+    const r = reconcileExtension('/repo/frontend/img/hero.png', makePng());
+    expect(r.path).toBe('/repo/frontend/img/hero.png');
+    expect(r.changed).toBe(false);
+  });
+
+  // `.jpeg` 와 `.jpg` 는 둘 다 맞다 — 굳이 바꾸면 요청한 이름이 사라진다.
+  it('.jpeg 요청에 JPEG 이 오면 그대로 둔다', () => {
+    expect(reconcileExtension('/repo/a/b.jpeg', JPEG).changed).toBe(false);
+  });
+
+  it('알 수 없는 형식이면 던진다 — 아무 확장자나 붙이지 않는다', () => {
+    expect(() => reconcileExtension('/repo/a/b.png', Buffer.from('nope'))).toThrow(/알려진 이미지 형식이 아니다/);
+  });
+
+  // 디렉터리 이름에 점이 있어도 파일 확장자만 바꾼다.
+  it('경로 중간의 점을 건드리지 않는다', () => {
+    expect(reconcileExtension('/repo/v1.2/hero.png', JPEG).path).toBe('/repo/v1.2/hero.jpg');
   });
 });
 
@@ -725,5 +785,173 @@ describe('G-WF 워크플로가 스크립트와 어긋나지 않는가', () => {
     const m = yml.match(/\n      out:[\s\S]{0,400}?default:\s*'([^']+)'/);
     expect(m, '워크플로에서 기본 out 을 못 찾았다 — 형식이 바뀌었는지 보라').not.toBeNull();
     expect(() => resolveOutPath(m![1], '/repo')).not.toThrow();
+  });
+});
+
+// ⚠⚠ **이 절은 실제 사고에서 나왔다**(2026-08-13, run #2 수정 회차).
+//   내가 `resolveOutPath` 에 제어문자 거부를 넣으면서 **정규식 안에 리터럴 제어문자를
+//   그대로 써 넣었다**(`0x00`·`0x1f`·`0x7f` 3바이트). 그러면:
+//     · `grep` 이 그 파일을 **binary file** 로 취급해 검색이 안 된다
+//     · diff·리뷰 화면에서 안 보인다
+//     · **게이트 6종이 전부 통과했다** — eslint 는 제어문자 정규식을 안 잡고(실측 exit 0),
+//       typecheck 는 `checkJs:false` 라 `.mjs` 를 안 보고, 동작은 같아서 테스트도 통과했다
+//   즉 **아무도 못 보는 오염**이 커밋 직전까지 갔다. 그 뒤 뮤테이션을 돌리려 했더니
+//   `grep: binary file matches` 가 떠서 발견했다 — 우연히 잡은 것이다.
+//   ⚠ 이 검사가 **못 잡는 것**: 여기 적은 경로 밖(범위를 좁게 잡았다) · 탭·개행은 정상이라
+//   통과 · 제어문자가 **문자열 리터럴** 안에 의도적으로 필요한 경우(그런 코드가 생기면
+//   이 검사를 고쳐야 한다 — 지금은 0건이다).
+// ⚠⚠ **이 절은 검수관이 낸 처방이 블로커를 만든 데서 나왔다**(2026-08-13, B3).
+//   `GITHUB_OUTPUT` 표현식 미러링 3곳을 없애려고 `GITHUB_ENV` 로 옮겼는데, 그때 쓴 이름이
+//   워크플로 job 레벨 `env: OUT` 과 **같았다.** 그러면 둘이 충돌하고 **어느 쪽이 이기는지에
+//   의존**하게 되는데, 그 우선순위를 이 저장소는 확인한 적이 없다(실행 0 · actionlint 0 ·
+//   **`GITHUB_ENV` 선례 0건**). 워크플로 `env:` 가 이긴다면 **확장자가 바뀐 회차에만**
+//   뒷 스텝이 원본 경로를 보고 ENOENT 로 죽는다 — 이번 수정이 대비한 그 케이스에서만.
+//   → 처방은 우선순위 판정이 아니라 **충돌 금지**다. 이름을 가르면 어느 쪽이 참이든
+//   정답이 나온다(fail-closed). 그 규칙을 여기서 지킨다.
+//   ⚠ **못 잡는 것**: 우선순위 자체는 여전히 못 잰다. 이 검사는 *"충돌을 만들지 않는다"*
+//   만 보증한다 — 그래서 충돌을 금지하는 것이 처방이다.
+describe('G-WF2 워크플로 env 키와 GITHUB_ENV 가 충돌하지 않는가', () => {
+  const YML = fs.readFileSync(
+    path.resolve(__dirname, '../.github/workflows/generate-image.yml'), 'utf8',
+  );
+  const SCRIPT = fs.readFileSync(path.resolve(__dirname, '../scripts/generate-image.mjs'), 'utf8');
+
+  // 스크립트가 `GITHUB_ENV` 에 append 하는 변수명을 뽑는다.
+  const written = [...SCRIPT.matchAll(/GITHUB_ENV,\s*`(\w+)=/g)].map((m) => m[1]);
+
+  it('스크립트가 GITHUB_ENV 에 쓰는 이름을 찾을 수 있다', () => {
+    // ⚠ 못 찾으면 아래 교집합이 **공집합이 되어 통과**한다 — 거짓 PASS 방향이다.
+    //   그래서 "찾았는가" 를 먼저 단언한다(검수관 명세의 거짓 FAIL 항).
+    expect(written.length, 'GITHUB_ENV append 형태가 바뀌었다 — 정규식을 고쳐라').toBeGreaterThan(0);
+  });
+
+  it('그 이름이 워크플로의 어떤 env: 키와도 겹치지 않는다', () => {
+    // 워크플로의 `env:` 블록 아래 키들. 값은 안 본다 — 이름만 필요하다.
+    const envKeys = new Set<string>();
+    const lines = YML.split(String.fromCharCode(10));
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^\s*env:\s*$/.test(lines[i])) continue;
+      const indent = lines[i].search(/\S/);
+      for (let j = i + 1; j < lines.length; j++) {
+        const l = lines[j];
+        if (!l.trim() || l.trim().startsWith('#')) continue;
+        if (l.search(/\S/) <= indent) break;
+        const m = l.match(/^\s*([A-Za-z_]\w*):/);
+        if (m) envKeys.add(m[1]);
+      }
+    }
+    expect(envKeys.size, 'env: 블록을 하나도 못 찾았다 — 파싱이 깨졌다').toBeGreaterThan(0);
+    const clash = written.filter((w) => envKeys.has(w));
+    expect(clash, `GITHUB_ENV 이름이 워크플로 env: 키와 충돌한다 — 우선순위에 의존하게 된다`).toEqual([]);
+  });
+});
+
+// ⚠⚠ **셸 인젝션이 실제로 성립했던 자리다**(2026-08-13, 검수관 B4).
+//   PR 본문 표를 고치며 `${{ inputs.out }}` 를 `run:` 셸 본문에 직접 보간했다.
+//   `frontend/img/a";whoami;#.png` 는 `resolveOutPath` 를 **통과한다**(제어문자 없음 ·
+//   루트 하위 · `path.extname` 이 `.png` 를 낸다). 그 값으로 `echo` 를 돌리니
+//   **`whoami` 가 실행됐다.** 그 스텝 env 에는 `GH_TOKEN`(contents·PR write)이 있다.
+//   저장소 전체에서 `run:` 안에 표현식을 보간한 자리는 **그 한 곳뿐**이었다 —
+//   확립된 규율에서 벗어난 유일한 자리를 그 수정이 만들었다.
+//   → 규율을 검사로 만든다. **기준선이 0이라 지금이 붙이기 가장 싼 시점이다.**
+//   ⚠ **못 잡는 것**: `env:` 로 넘긴 뒤 셸에서 **인용 없이** 쓰는 것(`$VAR` vs `"$VAR"`) ·
+//   `eval` · 액션 `with:` 입력을 통한 경로. 이 검사는 *"본문에 보간하지 않는다"* 만 본다.
+describe('G-WF3 run: 안에 표현식을 보간하지 않는가', () => {
+  const DIR = path.resolve(__dirname, '../.github/workflows');
+  const FILES = fs.readdirSync(DIR).filter((f) => f.endsWith('.yml'));
+
+  /** 한 워크플로에서 셸로 실행되는 줄들을 모은다. 반환 `[줄번호, 내용]`. */
+  function shellLines(yml: string): Array<[number, string]> {
+    const lines = yml.split(String.fromCharCode(10));
+    const out: Array<[number, string]> = [];
+    let i = 0;
+    while (i < lines.length) {
+      // ⚠⚠ **두 형태를 다 본다**(검수관 C5). 첫 판본은 블록 스칼라 `run: |` 만 잡았고,
+      //   저장소의 `run:` 31개 중 일부만 검사했다(정확한 분포: 블록 4 · 단일 20 ·
+      //   `- run:` 7 — 검수관 첫 보고의 「31개 중 4개」는 `run: |-` 를 단일로 센 값이었다). 단일 라인 `run: node …` 은
+      //   블록과 **똑같이 셸로 실행되는데** 시야 밖이었다 — 실증으로 인젝션을 주입해도
+      //   통과했다. 게다가 `ci.yml`·`deploy.yml`·`review-record.yml` 은 블록 스칼라가
+      //   **0개**라 그 세 파일은 **아무것도 검사하지 않은 채 초록**이었다.
+      // ⚠ **블록을 먼저 본다.** `run: |` 은 단일 라인 패턴(`\S.*`)에도 걸리므로 순서가
+      //   반대면 블록 본문이 통째로 안 읽힌다 — 첫 판본이 그랬고, 총합 단언이 잡았다.
+      // ⚠⚠ **`- run:` 도 잡는다**(검수관 C6). 첫 판본은 두 정규식 모두 `\s*` 뒤에 바로
+      //   `run:` 을 요구해 YAML 시퀀스 항목 형태를 **못 봤다** — 놓친 것 7개이고 그중
+      //   `deploy.yml` 의 `- run: |` **블록 두 개는 본문 전체가 시야 밖**이었다.
+      //   실증: 그 블록에 `${{ github.event.head_commit.message }}` 를 주입해도 통과했다.
+      //   `deploy.yml` 은 **배포 매니페스트**이고 그 값은 이 검사가 막겠다고 선언한
+      //   바로 그 벡터다. `P6`(파일마다 하나라도 찾았는가) 도 이것을 못 막았다 —
+      //   `deploy.yml` 에서 3줄은 찾으므로 통과한다(**부분적으로 찾으면 통과**하는 형태).
+      const block = lines[i].match(/^(\s*)(- )?run:\s*[|>]-?\s*$/);
+      if (!block) {
+        const single = lines[i].match(/^\s*(?:- )?run:\s+(\S.*)$/);
+        if (single) out.push([i + 1, single[1]]);
+        i += 1;
+        continue;
+      }
+      // ⚠ `- run: |` 에서 `run` 키의 실제 컬럼은 `- ` 만큼 오른쪽이다. 안 더하면 본문
+      //   경계 판정이 어긋난다 — 이 회차가 이미 한 번 겪은 경계 버그의 재발 자리다.
+      const indent = block[1].length + (block[2] ? block[2].length : 0);
+      let j = i + 1;
+      for (; j < lines.length; j++) {
+        const l = lines[j];
+        if (l.trim() && l.search(/\S/) <= indent) break;
+        if (l.trim()) out.push([j + 1, l.trim()]);
+      }
+      i = j;
+    }
+    return out;
+  }
+
+  it.each(FILES)('%s 의 run: 안에 ${{ }} 가 없다', (file) => {
+    const found = shellLines(fs.readFileSync(path.join(DIR, file), 'utf8'));
+    // ⚠ **파일마다** 하나라도 찾았는지 먼저 본다(검수관 P6). 합산으로만 보면
+    //   `ci.yml` 처럼 한 형태만 쓰는 파일이 **0건을 검사하며 초록**인 것을 못 잡는다.
+    expect(found.length, `${file} 에서 run: 을 하나도 못 찾았다 — 파싱이 깨졌다`).toBeGreaterThan(0);
+    const hits = found
+      // 이 저장소는 `${{ }}` 를 **문서화 목적으로 주석에 적는다**(거짓 FAIL 위험 ②).
+      .filter(([, l]) => !l.startsWith('#') && l.includes('${{'))
+      .map(([n, l]) => `${file}:${n}: ${l.slice(0, 60)}`);
+    expect(hits, '외부 입력은 예외 없이 env: 로 넘긴다 — 본문 보간은 셸 인젝션이다').toEqual([]);
+  });
+
+  // ⚠ `toBeGreaterThan(3)` 은 **실측 4에 맞춘 값**이었다(검수관 P5) — 블록 하나만 줄어도
+  //   거짓 FAIL 이고, `CLAUDE.md` 가 *"「실측에 여유를 얹은 값」은 근거가 아니다"* 로 못 박은
+  //   형태다. 두 형태를 다 세면 분모가 31로 커져 그 취약함이 사라진다.
+  // ⚠ **임계값을 실측에 맞추지 않는다**(검수관 P5). 첫 판본은 `toBeGreaterThan(3)` 이었고
+  //   실측 4에 아슬아슬하게 맞춘 값이라 블록 하나만 줄어도 거짓 FAIL 이었다 —
+  //   `CLAUDE.md` 가 *"「실측에 여유를 얹은 값」은 근거가 아니다"* 로 못 박은 형태다.
+  //   대신 **두 방식을 계산해 관계를 단언한다**: 두 형태를 다 세면 블록만 셀 때보다 많다.
+  //   숫자가 바뀌어도 저절로 따라오고, 전제(파일 구성)가 바뀌어도 다시 실측할 필요가 없다.
+  it('블록 스칼라만 세는 것보다 많이 잡는다 — 사각이 닫혔다', () => {
+    const blockOnly = FILES.reduce((n, f) => {
+      const lines = fs.readFileSync(path.join(DIR, f), 'utf8').split(String.fromCharCode(10));
+      return n + lines.filter((l) => /^\s*(?:- )?run:\s*[|>]-?\s*$/.test(l)).length;
+    }, 0);
+    const both = FILES.reduce((n, f) => n + shellLines(fs.readFileSync(path.join(DIR, f), 'utf8')).length, 0);
+    expect(blockOnly, '블록 스칼라를 하나도 못 찾았다 — 대조 자체가 성립 안 한다').toBeGreaterThan(0);
+    expect(both).toBeGreaterThan(blockOnly);
+  });
+});
+
+describe('G-CTRL 소스에 리터럴 제어문자가 없는가 (실제 오염 사고)', () => {
+  const ROOT = path.resolve(__dirname, '..');
+  const TARGETS = [
+    'scripts/generate-image.mjs',
+    'scripts/png-chunks.mjs',
+    'tests/generate-image.test.ts',
+    '.github/workflows/generate-image.yml',
+  ];
+
+  it.each(TARGETS)('%s 에 제어문자가 없다', (rel) => {
+    const raw = fs.readFileSync(path.join(ROOT, rel));
+    const bad: string[] = [];
+    for (let i = 0; i < raw.length; i++) {
+      const b = raw[i];
+      // 탭(0x09)·개행(0x0a)·복귀(0x0d)만 허용한다.
+      if (b < 0x09 || b === 0x0b || b === 0x0c || (b >= 0x0e && b < 0x20) || b === 0x7f) {
+        bad.push(`offset ${i}: 0x${b.toString(16).padStart(2, '0')}`);
+      }
+    }
+    expect(bad, `${rel} 에 제어문자가 있다 — grep 이 binary 로 취급하고 리뷰에서 안 보인다`).toEqual([]);
   });
 });
