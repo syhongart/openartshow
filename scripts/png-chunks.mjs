@@ -28,9 +28,12 @@
 // **목록을 비워 둔 채 시작하는 것이 요점이다** — 무엇이 들어오는지 우리가 아직 못 봤다.
 //
 // ── 한계 (통과로 적지 않기 위해 적는다) ──────────────────────────────────
-//  · **청크 이름과 바이트 수만** 본다. 내용을 해석하지 않는다 — C2PA 매니페스트가
-//    무엇을 주장하는지, SynthID 가 픽셀에 어떻게 박혔는지는 **이 축으로 안 보인다.**
-//    ⚠ 그래서 `ACCEPTED` 로 통과시킨 **타입**의 청크는 회차마다 내용이 달라도 통과한다.
+//  · **청크 이름 · 바이트 수 · 페이로드 선두 64B** 까지만 본다. C2PA 매니페스트가 무엇을
+//    주장하는지, SynthID 가 픽셀에 어떻게 박혔는지는 **이 축으로 안 보인다.**
+//    ⚠ 이 줄은 오래 *"이름과 바이트 수만 본다 → 그래서 `ACCEPTED` 로 통과시킨 **타입**은
+//    회차마다 내용이 달라도 통과한다"* 라고 적혀 있었고, 팀장 조건 3(내용 판별)을 넣으면서
+//    **거짓이 됐다.** 지금 남는 한계는 더 좁고 여전히 실재한다: 규칙이 보는 것은 **선두
+//    64B 의 구조 헤더**뿐이라, 그 뒤 수 KB 의 **매니페스트 본문은 무엇이 바뀌어도 통과한다.**
 //    실물 확인은 이 스크립트가 아니라 **워크플로의 artifact** 가 담당한다(검수관 B-3).
 //  · **잘리거나 손상된 파일을 못 잡는다.** `IEND` 없이 끝나도 extra 가 0이면 통과다.
 //    길이 필드가 거짓이면 열거가 어긋나 **뒤쪽 청크가 통째로 안 보인다** — 그때도
@@ -57,7 +60,7 @@ export function pngChunks(buf) {
   while (off + 8 <= buf.length) {
     const length = buf.readUInt32BE(off);
     const type = buf.subarray(off + 4, off + 8).toString('latin1');
-    out.push({ type, length });
+    out.push({ type, length, at: off + 8 });  // at = 데이터 시작(len 4 + type 4)
     if (type === 'IEND') break;
     off += 12 + length; // len(4) + type(4) + data + crc(4)
     // ⚠ 여기 있던 `if (length < 0 || off <= 0) break; // 무한루프 방지` 를 지웠다.
@@ -110,9 +113,10 @@ export function jpegSegments(buf) {
   while (off + 4 <= buf.length) {
     if (buf[off] !== 0xff) break;
     const marker = buf[off + 1];
-    if (marker === 0xda) { out.push({ type: 'SOS', length: buf.length - off }); break; }
+    if (marker === 0xda) { out.push({ type: 'SOS', length: buf.length - off, at: off + 2 }); break; }
     const length = buf.readUInt16BE(off + 2);
-    out.push({ type: jpegMarkerName(marker), length });
+    // at = 페이로드 시작(마커 2 + 길이필드 2). 길이필드는 자기 자신을 포함한다.
+    out.push({ type: jpegMarkerName(marker), length, at: off + 4 });
     off += 2 + length;
   }
   return out;
@@ -125,7 +129,7 @@ export function webpChunks(buf) {
   while (off + 8 <= buf.length) {
     const type = buf.subarray(off, off + 4).toString('latin1');
     const length = buf.readUInt32LE(off + 4);
-    out.push({ type, length });
+    out.push({ type, length, at: off + 8 });
     off += 8 + length + (length % 2); // 홀수면 패딩 1
   }
   return out;
@@ -218,9 +222,34 @@ export function inspect(buf) {
 //    `frontend/assets/sky/night.jpg` 는 `APP1`(EXIF)·`APP13`(Photoshop IRB)·`APP14` 이고,
 //    APP1·APP13 도 `RENDER` 에 없어 **똑같이 이 판단을 요구한다.** EXIF 는 촬영 기기·위치가
 //    들어가는 자리라 올릴 때 특히 조심하라. 첫 dispatch 에서 마주칠 확률이 높다.
-export const ACCEPTED = new Set([
-  // 예) 'caBX',  // run #123 에서 확인 — C2PA 매니페스트 12KB. 팀장 판정 2026-__-__.
-]);
+export const ACCEPTED = [
+  {
+    type: 'APP11',
+    // ⚠ **이름만으로 통과시키지 않는다 — 내용까지 본다**(팀장 조건 2026-08-13, 조건 3).
+    //   검수관이 반복해서 경고한 자리다: `APP11` 은 **컨테이너 마커**라 C2PA 말고 다른
+    //   것도 같은 이름으로 온다. 이름만 올리면 *"그 이름으로 오는 것은 앞으로 뭐든
+    //   통과한다."* 그 경고를 **주석이 아니라 검사로** 해소한다.
+    //   판별: 페이로드 선두가 JUMBF 박스(`jumb`)이고 label 이 `c2pa` 인가.
+    //
+    //   **뮤테이션 실측 2026-08-13 (팀장 조건 3 — "실제로 빨간불이 되는지 실측하고 기록")**:
+    //   결함을 7종 심어 전부 빨간불을 봤다. `npx vitest run tests/generate-image.test.ts` 기준.
+    //     M1 PNG `at` 을 4 어긋나게      → 1 failed
+    //     M2 JPEG `at` 을 2 어긋나게     → 2 failed
+    //     M3 WebP `at` 을 4 어긋나게     → 1 failed
+    //     M4 `main()` 이 `buf` 를 안 넘김 → 2 failed   ← C-3 이 "여전히 0" 이라던 축
+    //     M5 통과 로그 블록 제거          → 1 failed
+    //     M6 `jumb` 요구 제거(부분일치)   → 2 failed   ← **이 규칙의 본체**
+    //     M7 `peek` 창 64→128            → 2 failed   ← 창을 넓히면 여기서 멈춘다
+    //   M6 가 본체다: 그것만 무너지면 `Adobe XMP Core 5.6 c2pa` 같은 **평범한 문자열이
+    //   C2PA 로 통과한다.** M4 는 검수관 C-3 이 *"`main()` 이 기본 인자를 넘기는가는 검사가
+    //   0"* 이라고 적어 둔 바로 그 축이고, `ACCEPTED` 에 항목이 생긴 지금 닫혔다.
+    match: (head) => head.includes('jumb') && head.includes('c2pa'),
+    why: 'run #4(31717695950) 에서 처음 관측 — APP11 5.9KB. C2PA 매니페스트로 추정되고,\n'
+      + '         팀장 판정 A(보존)의 대상이다. 실제 선두 문자열은 그 run 로그에 남는다.\n'
+      + '         ⚠ 이 규칙은 **fail-closed** 다 — 선두에 `jumb`+`c2pa` 가 없으면 통과하지\n'
+      + '         않고 팀장 재상신으로 간다(팀장 조건 2).',
+  },
+];
 
 /**
  * 확인되지 않은 청크를 고른다. **판정 로직을 여기로 뺀 이유가 검출력이다.**
@@ -234,21 +263,63 @@ export const ACCEPTED = new Set([
  * 검사할 수 있다. 환경변수로 목록을 넓히는 방법도 있었지만 그건 게이트를 우회하는
  * 구멍이 된다 — 검사를 위해 보호를 뚫지 않는다.
  *
- * ⚠ **이것으로 절반만 닫혔다**(검수관 C-3 실측). 이 함수의 검출력은 생겼지만,
- * **`main()` 이 기본 인자로 `ACCEPTED` 를 넘기는가**는 여전히 검사가 0이다 —
- * `main()` 의 호출을 `findExtra(chunks, kind, new Set())` 로 바꿔도 테스트가 안 깨진다.
- * 그 축이 처음 동작하는 날은 여전히 **`caBX` 를 목록에 올리는 날**이고, N10 이 지적한
- * 날짜 그대로다. 목록이 비어 있는 동안은 원리상 못 잰다 — **"닫혔다" 로 적지 않는다.**
- * 실패 방향이 거짓 FAIL 쪽이라(사람이 즉시 알아챈다) 블로커로 다루지 않을 뿐이다.
+ * ⚠ **이 자리는 오래 "절반만 닫혔다" 였고 2026-08-13 에 닫혔다**(검수관 C-3 → 실측 해소).
+ * 그때 적혀 있던 것은 *"`main()` 이 기본 인자를 넘기는가는 여전히 검사가 0이고, 그 축이
+ * 처음 동작하는 날은 목록에 항목을 올리는 날"* 이었다. **그 날이 왔다** — `ACCEPTED` 에
+ * APP11 규칙이 생겼고, 그러자 원리상 못 재던 것이 재진다. 뮤테이션 둘로 실측했다:
+ *   · `main()` 이 `buf` 를 안 넘김        → 2 failed (fail-closed 로 뒤집혀 진짜도 막힌다)
+ *   · `main()` 이 `accepted` 를 `[]` 로   → 2 failed
+ * 검수관의 진단은 맞았고 **처방도 맞았다** — 목록이 비어 있는 동안 못 재는 것은 이 설계의
+ * 성질이었지, 고쳐야 할 결함이 아니었다. 다시 비면 다시 못 잰다: **항목을 지우는 사람은
+ * 이 두 뮤테이션이 함께 죽는다는 것을 알고 지워라.**
  *
- * @param {Array<{type:string,length:number}>} chunks
+ * @param {Array<{type:string,length:number,at:number}>} chunks
  * @param {'png'|'jpeg'|'webp'} kind
- * @param {Set<string>} [accepted] 사람이 통과시킨 청크. 테스트에서 주입한다.
+ * @param {Buffer|null} [buf] 원본 바이트. **없으면 내용을 못 보므로 아무것도 통과 못 한다.**
+ * @param {Array<{type:string,match:(head:string)=>boolean}>} [accepted]
+ *   사람이 실물을 보고 통과시킨 규칙. **타입 집합이 아니라 내용 판별 규칙이다**(팀장 조건 3).
+ *   테스트에서 주입한다.
  */
-export function findExtra(chunks, kind, accepted = ACCEPTED) {
+export function findExtra(chunks, kind, buf = null, accepted = ACCEPTED) {
   const render = RENDER[kind];
   if (!render) return chunks;
-  return chunks.filter((c) => !render.has(c.type) && !accepted.has(c.type));
+  return chunks.filter((c) => {
+    if (render.has(c.type)) return false;
+    // ⚠ `buf` 가 없으면 내용을 못 보므로 **통과시키지 않는다**(fail-closed).
+    //   "못 봤다" 와 "봤는데 괜찮다" 를 같게 취급하지 않는다.
+    return !accepted.some((rule) => rule.type === c.type && buf && rule.match(peek(buf, c)));
+  });
+}
+
+/**
+ * 청크 페이로드 **선두 64바이트**를 인쇄 가능 문자로만 찍는다. 나머지는 `.`.
+ *
+ * ⚠⚠ **경계는 유도값이다 — 여유를 얹은 값이 아니다**(팀장 판정 2026-08-13, 조건 1).
+ * C2PA 는 JPEG `APP11` 안에 JUMBF 로 실리고, 성격 판별에 필요한 구조가 페이로드 **선두**에
+ * 온다:
+ *
+ *     CI 2B + En 2B + Z 4B  = 8B   (APP11 공통 헤더)
+ *     box length 4B + `jumb` 4B    = 8B
+ *     box length 4B + `jumd` 4B    = 8B
+ *     UUID 16B + toggles 1B        = 17B
+ *     label `c2pa\0`               = 5B
+ *                                  ───────
+ *                                    46B  + 정렬 여유 → **64B**
+ *
+ * 그 자리에 오는 것은 **규격상 구조 헤더**이지 서명·키 자료가 아니다(그것들은 수 KB 뒤다).
+ * 그래서 *"모르는 것을 공개 로그에 찍는다"* 의 위험이 상한을 갖는다.
+ * hex 는 안 찍는다 — 판별에 필요한 것은 `jumb`·`jumd`·`c2pa` **문자열 존재**뿐이고,
+ * 인쇄 필터가 UUID·바이너리를 가린다.
+ */
+export function peek(buf, chunk, n = 64) {
+  const start = Math.max(0, chunk.at | 0);
+  const end = Math.min(buf.length, start + n);
+  let out = '';
+  for (let i = start; i < end; i++) {
+    const b = buf[i];
+    out += b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '.';
+  }
+  return out;
 }
 
 function main() {
@@ -273,7 +344,7 @@ function main() {
     return;
   }
   const essential = RENDER[kind];
-  const extra = findExtra(chunks, kind);
+  const extra = findExtra(chunks, kind, buf);
   // ⚠ 화면 표시는 **`extra` 를 기준으로** 정한다. 첫 판본은 `essential`·`ACCEPTED` 를
   //   여기서 다시 조회해 **같은 판정을 두 곳에서** 했고(검수관 P-c), 그러면 판정 로직을
   //   고칠 때 화면의 `＋` 와 실제 차단 목록이 어긋난다 — 값 미러링과 같은 형태다.
@@ -283,10 +354,22 @@ function main() {
     const mark = extraTypes.has(c.type) ? '＋' : essential.has(c.type) ? ' ' : '·';
     console.log(`  ${mark} ${c.type.padEnd(22)} ${String(c.length).padStart(9)} bytes`);
   }
+  // **통과한 것도 찍는다.** 첫 판본은 `·`(ACCEPTED 통과)를 마크만 하고 지나갔는데, 그러면
+  // 팀장 조건의 취지 —*"사람이 실물을 보고 통과시킨다"*— 가 **정작 통과하는 회차에** 깨진다:
+  // 규칙이 보는 것은 선두 64B 뿐이고 그 뒤 수 KB 의 매니페스트 본문은 회차마다 달라도 통과한다.
+  // 로그에 안 남으면 나중에 *"그때 무엇이 통과했나"* 를 물을 자리가 없다.
+  // ⚠ 판정은 `extraTypes`·`essential` 에서 **유도**한다 — `ACCEPTED` 를 여기서 다시 조회하면
+  //   같은 판정이 두 곳에 생긴다(검수관 P-c 가 지적한 그 형태).
+  const passed = chunks.filter((c) => !extraTypes.has(c.type) && !essential.has(c.type));
+  if (passed.length) {
+    console.log(`\n· 로 표시한 ${passed.length}개는 **사람이 근거를 적어 통과시킨 것**이다(ACCEPTED): ${passed.map((c) => c.type).join(', ')}`);
+    for (const c of passed) console.log(`    ${c.type.padEnd(8)} ${peek(buf, c)}`);
+  }
   if (extra.length) {
     const bytes = extra.reduce((a, c) => a + c.length, 0);
     console.log(`\n＋ 로 표시한 ${extra.length}개(${KB(bytes)})가 **이미지 데이터가 아닌 것**이다: ${extra.map((c) => c.type).join(', ')}`);
-    console.log('  내용은 해석하지 않았다 — 이름과 크기만 본 것이다.');
+    console.log('  이름과 크기 말고 **선두 64바이트의 인쇄 가능 문자**를 함께 찍는다:');
+    for (const c of extra) console.log(`    ${c.type.padEnd(8)} ${peek(buf, c)}`);
     if (failOnExtra) {
       console.error('::error::확인되지 않은 메타데이터가 있어 커밋 전에 세운다(팀장 조건 2026-08-13, 분기 A).');
       console.error('  사람이 위 목록을 읽고 판정하라. 예상대로면 png-chunks.mjs 의 ACCEPTED 에 근거와 함께 올린다.');

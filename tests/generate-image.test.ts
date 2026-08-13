@@ -40,7 +40,7 @@ import {
   ALLOWED_EXT,
   MAX_BYTES,
 } from '../scripts/generate-image.mjs';
-import { inspect, pngChunks, jpegSegments, findExtra, ACCEPTED, RENDER } from '../scripts/png-chunks.mjs';
+import { inspect, pngChunks, jpegSegments, findExtra, peek, ACCEPTED, RENDER } from '../scripts/png-chunks.mjs';
 
 const KEY = 'AIzaSyTESTKEY_0123456789abcdefghijkl';
 const ODD_KEY = 'sk-proj-9f2b7c1d4e-NOTGOOGLESHAPED';
@@ -654,6 +654,71 @@ describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)'
     const noApp2 = Buffer.concat([JPEG_FIXTURE.subarray(0, 8), JPEG_FIXTURE.subarray(16)]);
     expect(run(noApp2, ['--fail-on-extra']).status).toBe(0);
   });
+
+  // ⚠⚠ **팀장 조건 3 의 뮤테이션을 CLI 축에서 못 박는다**(2026-08-13).
+  //   *"c2pa 가 아닌 가짜 APP11 로 게이트가 실제로 빨간불이 되는지 실측하고 기록한다."*
+  //   위 `G-ACCEPT` 는 `findExtra` 를 **직접** 부르므로 `main()` 이 `buf` 를 넘기는지,
+  //   기본 `ACCEPTED` 를 쓰는지는 안 본다 — 워크플로가 부르는 것은 **CLI** 다.
+  //   스크래치에서 6케이스를 돌려 6/6 을 봤지만 **스크래치는 지워진다.** 남겨야 검사다.
+  describe('APP11 통과 규칙 — 이름이 같아도 내용이 다르면 CLI 가 죽는다', () => {
+    const seg = (marker: number, payload: Buffer) => {
+      const len = Buffer.alloc(2);
+      len.writeUInt16BE(payload.length + 2);
+      return Buffer.concat([Buffer.from([0xff, marker]), len, payload]);
+    };
+    /** 렌더 청크만 있는 최소 JPEG + 끼워 넣을 세그먼트. */
+    const jpegWith = (...extra: Buffer[]) => Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      seg(0xe0, Buffer.from('JFIF\0\x01\x02\0\0\x01\0\x01\0\0', 'latin1')),
+      seg(0xdb, Buffer.alloc(65)), seg(0xc0, Buffer.alloc(15)), seg(0xc4, Buffer.alloc(29)),
+      ...extra,
+      Buffer.from([0xff, 0xda, 0x00, 0x0c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    ]);
+    /** APP11: CI2+En2+Z4 → jumb 슈퍼박스 → jumd 설명박스 → UUID16+toggles1 → label. */
+    const app11 = (label: string, pad = 17) => seg(0xeb, Buffer.concat([
+      Buffer.from('JP', 'latin1'), Buffer.alloc(6),
+      Buffer.alloc(4), Buffer.from('jumb', 'latin1'),
+      Buffer.alloc(4), Buffer.from('jumd', 'latin1'),
+      Buffer.alloc(pad),
+      Buffer.from(`${label}\0`, 'latin1'), Buffer.alloc(200),
+    ]));
+
+    it('진짜 C2PA(jumb + c2pa)는 통과한다', () => {
+      expect(run(jpegWith(app11('c2pa')), ['--fail-on-extra']).status).toBe(0);
+    });
+
+    it('JUMBF 인데 label 이 c2pa 가 아니면 죽는다', () => {
+      expect(run(jpegWith(app11('xmp ')), ['--fail-on-extra']).status).toBe(1);
+    });
+
+    it('c2pa 문자열만 있고 jumb 가 없으면 죽는다 — 부분일치로 안 뚫린다', () => {
+      const fake = seg(0xeb, Buffer.concat([
+        Buffer.from('JP', 'latin1'), Buffer.alloc(6),
+        Buffer.from('Adobe XMP Core 5.6 c2pa', 'latin1'), Buffer.alloc(200),
+      ]));
+      expect(run(jpegWith(fake), ['--fail-on-extra']).status).toBe(1);
+    });
+
+    // 64B 창의 **경계 자체**를 검사한다. 창이 넓어지면 이 케이스가 통과로 뒤집히므로,
+    // `peek` 기본값을 손대는 사람이 여기서 멈춘다.
+    it('c2pa 가 64바이트 창 밖이면 못 본 것이다 — fail-closed', () => {
+      expect(run(jpegWith(app11('c2pa', 80)), ['--fail-on-extra']).status).toBe(1);
+    });
+
+    it('APP11 이 아예 없으면 통과한다 — 위 케이스들이 형식 탓이 아니다', () => {
+      expect(run(jpegWith(), ['--fail-on-extra']).status).toBe(0);
+    });
+
+    // 통과한 회차에도 **무엇이 통과했는지 로그에 남는다.** 안 남기면 팀장 조건의 취지
+    // (*"사람이 실물을 보고 통과시킨다"*)가 정작 통과하는 회차에 깨진다 — 규칙이 보는
+    // 것은 선두 64B 뿐이고 그 뒤 매니페스트 본문은 회차마다 달라도 통과하기 때문이다.
+    it('통과시킨 것도 선두 64바이트를 찍는다', () => {
+      const r = run(jpegWith(app11('c2pa')), ['--fail-on-extra']);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toMatch(/사람이 근거를 적어 통과시킨 것/);
+      expect(r.stdout).toMatch(/APP11\s+JP\.+jumb\.+jumd/);
+    });
+  });
 });
 
 // ⚠ **이 절은 뮤테이션 N10 이 만든 것이다**(2026-08-13). `main()` 안에서
@@ -661,37 +726,123 @@ describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)'
 //   집합이라 조건이 항상 참이어서다. 팀장 조건의 핵심 장치(*"사람이 실물을 보고 통과"*)에
 //   **검사가 0** 이었고, 목록에 항목을 넣는 날 그것이 동작하는지 아무도 몰랐을 것이다.
 //   "통과는 검출력의 증거가 아니다" 가 정확히 이 형태다 — 72개가 전부 초록이었다.
-describe('G-ACCEPT 사람이 통과시킨 청크만 통과하는가 (N10 이 뚫은 자리)', () => {
-  const chunks = [
-    { type: 'IHDR', length: 13 },
-    { type: 'caBX', length: 999 },
-    { type: 'tEXt', length: 20 },
-  ];
+describe('G-ACCEPT 통과 규칙이 이름이 아니라 내용을 보는가 (팀장 조건 3)', () => {
+  // ⚠⚠ **팀장 판정 2026-08-13(조건 3)으로 성격이 바뀐 절이다.** 전에는 `ACCEPTED` 가
+  //   **타입 화이트리스트**였고, 검수관이 반복해서 경고했다: `APP11`·`APP2` 는
+  //   **컨테이너 마커**라 여러 종류가 같은 이름으로 온다 — 이름만 올리면 *"그 이름으로
+  //   오는 것은 앞으로 뭐든 통과한다."* 팀장이 그 경고를 **주석이 아니라 검사로**
+  //   해소하라고 판정했다: `type` + `match(페이로드 선두)` 둘 다 맞아야 통과한다.
+  const PAYLOAD = Buffer.from('....jumb....jumd..................c2pa\0manifest-body');
+  const pngWith = (type: string) => {
+    const buf = makePng([[type, PAYLOAD]]);
+    return { buf, chunks: inspect(buf).chunks };
+  };
+  const RULE = { type: 'caBX', match: (h: string) => h.includes('jumb') && h.includes('c2pa') };
 
-  it('빈 목록이면 렌더가 아닌 것이 전부 잡힌다', () => {
-    expect(findExtra(chunks, 'png', new Set()).map((c) => c.type)).toEqual(['caBX', 'tEXt']);
+  it('규칙이 있어도 buf 가 없으면 통과시키지 않는다 (fail-closed)', () => {
+    // **"못 봤다" 와 "봤는데 괜찮다" 를 같게 취급하지 않는다.**
+    const { chunks } = pngWith('caBX');
+    expect(findExtra(chunks, 'png', null, [RULE]).map((c) => c.type)).toContain('caBX');
   });
 
-  // ⚠ 이것이 N10 이 못 보던 축이다 — **목록이 비어 있지 않을 때** 실제로 걸러지는가.
-  it('통과시킨 것만 빠지고 나머지는 남는다', () => {
-    expect(findExtra(chunks, 'png', new Set(['caBX'])).map((c) => c.type)).toEqual(['tEXt']);
+  it('buf 가 있고 내용이 맞으면 통과한다', () => {
+    const { buf, chunks } = pngWith('caBX');
+    expect(findExtra(chunks, 'png', buf, [RULE]).map((c) => c.type)).not.toContain('caBX');
   });
 
-  it('둘 다 통과시키면 0개가 된다', () => {
-    expect(findExtra(chunks, 'png', new Set(['caBX', 'tEXt']))).toHaveLength(0);
+  // ⚠ **이것이 검수관 경고를 닫는 케이스다.** 이름은 같은데 내용이 다르면 막혀야 한다.
+  it('이름이 같아도 내용이 다르면 막힌다 — 컨테이너 마커의 최악 사례', () => {
+    const buf = makePng([['caBX', Buffer.from('some other payload entirely')]]);
+    const { chunks } = inspect(buf);
+    expect(findExtra(chunks, 'png', buf, [RULE]).map((c) => c.type)).toContain('caBX');
   });
 
-  it('렌더 청크는 통과 목록과 무관하게 애초에 안 잡힌다', () => {
-    expect(findExtra(chunks, 'png', new Set()).some((c) => c.type === 'IHDR')).toBe(false);
+  it('규칙에 없는 타입은 내용과 무관하게 막힌다', () => {
+    const { buf, chunks } = pngWith('tEXt');
+    expect(findExtra(chunks, 'png', buf, [RULE]).map((c) => c.type)).toContain('tEXt');
   });
 
-  // 목록이 늘어나는 것 자체가 위험 신호다 — 근거 없이 늘면 통과 도장이 된다.
-  it('기본 ACCEPTED 는 비어 있다 — 아직 실물을 본 적이 없다', () => {
-    expect(ACCEPTED.size).toBe(0);
+  it('렌더 청크는 규칙과 무관하게 애초에 안 잡힌다', () => {
+    const { buf, chunks } = pngWith('caBX');
+    expect(findExtra(chunks, 'png', buf, [RULE]).some((c) => c.type === 'IHDR')).toBe(false);
   });
 
   it('알 수 없는 형식이면 전부 확인 대상이다 — 조용히 0개로 만들지 않는다', () => {
-    expect(findExtra(chunks, 'gif' as 'png', new Set())).toHaveLength(3);
+    const chunks = [{ type: 'IHDR', length: 13, at: 0 }, { type: 'caBX', length: 9, at: 0 }];
+    expect(findExtra(chunks, 'gif' as 'png', null, [])).toHaveLength(2);
+  });
+
+  // 실물 규칙 자체를 못 박는다 — 근거 없이 늘어나면 통과 도장이 된다.
+  it('기본 ACCEPTED 는 APP11 규칙 하나이고 c2pa 를 요구한다', () => {
+    expect(ACCEPTED).toHaveLength(1);
+    expect(ACCEPTED[0].type).toBe('APP11');
+    expect(ACCEPTED[0].match('....jumb....jumd....c2pa')).toBe(true);
+    expect(ACCEPTED[0].match('....jumb....jumd....xxxx')).toBe(false);  // c2pa 없음
+    expect(ACCEPTED[0].match('....xxxx....jumd....c2pa')).toBe(false);  // jumb 없음
+    expect(ACCEPTED[0].why).toMatch(/run #4/);
+  });
+});
+
+describe('G-PEEK 페이로드 선두를 안전하게 찍는가 (팀장 조건 1)', () => {
+  it('인쇄 가능 문자만 통과하고 나머지는 점이다', () => {
+    const buf = Buffer.from([0x00, 0x01, 0x41, 0x42, 0x1f, 0x43, 0x7f, 0x80]);
+    expect(peek(buf, { type: 'x', length: 8, at: 0 })).toBe('..AB.C..');
+  });
+
+  // ⚠ 64는 여유치가 아니라 **유도값**이다(팀장 조건 1): JUMBF 판별에 필요한 구조가
+  //   46바이트이고 정렬 여유를 더해 64다. 그 자리에 오는 것은 규격상 **구조 헤더**이지
+  //   서명·키 자료가 아니다 — 그것들은 수 KB 뒤다.
+  it('기본 64바이트를 넘지 않는다 — 「모르는 것을 로그에」의 상한이다', () => {
+    expect(peek(Buffer.alloc(1000, 0x41), { type: 'x', length: 1000, at: 0 })).toHaveLength(64);
+  });
+
+  it('파일 끝을 넘어가지 않는다', () => {
+    expect(peek(Buffer.from('AB'), { type: 'x', length: 2, at: 0 })).toBe('AB');
+  });
+
+  it('오프셋이 음수여도 안 죽는다', () => {
+    expect(() => peek(Buffer.from('AB'), { type: 'x', length: 2, at: -5 })).not.toThrow();
+  });
+
+  // ⚠⚠ **위 넷은 `at` 을 손으로 넣는다 — 그래서 파서가 계산한 `at` 이 맞는지는 검사가 0이다.**
+  //   이것이 조용한 축이 아니다: `at` 이 몇 바이트 어긋나면 `peek` 이 엉뚱한 자리를 읽고
+  //   **진짜 C2PA 도 `jumb` 판별에 실패해 계속 FAIL** 한다. 실패 방향은 안전하지만
+  //   **사람을 「규칙을 넓히자」로 유도한다** — 이 파일이 내내 경계해 온 그 동선이다.
+  //   각 형식의 헤더 크기가 다르므로(PNG len4+type4, JPEG 마커2+길이2, WebP fourcc4+size4)
+  //   **셋을 따로 못 박는다.** 한 곳만 맞아도 나머지가 조용히 어긋날 수 있다.
+  describe('파서가 계산한 at 이 실제 페이로드 선두를 가리키는가', () => {
+    const MARK = 'PAYLOAD-STARTS-HERE';
+
+    it('PNG', () => {
+      const buf = makePng([['tEXt', Buffer.from(MARK)]]);
+      const c = inspect(buf).chunks.find((x) => x.type === 'tEXt')!;
+      expect(peek(buf, c)).toMatch(new RegExp(`^${MARK}`));
+    });
+
+    it('JPEG', () => {
+      const payload = Buffer.from(MARK);
+      const len = Buffer.alloc(2);
+      len.writeUInt16BE(payload.length + 2);
+      const buf = Buffer.concat([
+        Buffer.from([0xff, 0xd8]),
+        Buffer.from([0xff, 0xeb]), len, payload,        // APP11
+        Buffer.from([0xff, 0xda, 0x00, 0x08, 1, 0, 0, 0, 0x12, 0x34]), // SOS
+      ]);
+      const c = inspect(buf).chunks.find((x) => x.type === 'APP11')!;
+      expect(peek(buf, c)).toMatch(new RegExp(`^${MARK}`));
+    });
+
+    it('WebP', () => {
+      const payload = Buffer.from(`${MARK}!`);            // 짝수 길이(패딩 회피)
+      const size = Buffer.alloc(4);
+      size.writeUInt32LE(payload.length);
+      const buf = Buffer.concat([
+        Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'),
+        Buffer.from('XMP '), size, payload,
+      ]);
+      const c = inspect(buf).chunks.find((x) => x.type === 'XMP ')!;
+      expect(peek(buf, c)).toMatch(new RegExp(`^${MARK}`));
+    });
   });
 });
 
@@ -731,7 +882,7 @@ describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', 
   //   같은 회차의 C-3 에서는 *"절반, 원리상 못 잰다"* 로 정확히 적었는데 여기엔 그 정직함이
   //   안 갔다. **보고는 사라지고 주석은 남는다.**
   it('RENDER.jpeg 에 SOF4 가 되돌아오면 잡힌다 (목록 회귀 축 — 파서 축이 아니다)', () => {
-    expect(findExtra([{ type: 'SOF4', length: 100 }], 'jpeg', new Set())).toHaveLength(1);
+    expect(findExtra([{ type: 'SOF4', length: 100, at: 0 }], 'jpeg', null, [])).toHaveLength(1);
   });
 
   it.each(['iCCP', 'sBIT', 'sPLT', 'hIST', 'cICP', 'acTL', 'fcTL', 'fdAT'])(
@@ -768,7 +919,7 @@ describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', 
   it('APP2 가 APP0 으로 읽히지 않는다 — 그러면 C2PA 컨테이너가 통과한다', () => {
     const types = jpegSegments(JPEG_FIXTURE).map((s) => s.type);
     expect(types).toContain('APP2');
-    expect(findExtra(jpegSegments(JPEG_FIXTURE), 'jpeg', new Set()).map((c) => c.type)).toEqual(['APP2']);
+    expect(findExtra(jpegSegments(JPEG_FIXTURE), 'jpeg', null, []).map((c) => c.type)).toEqual(['APP2']);
   });
 });
 
