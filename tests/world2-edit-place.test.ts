@@ -26,6 +26,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { startEditMode } from '../frontend/js/world2/edit/mode.js';
 import type { EditSession, OverlayEntry, OverlayHost, LoadProgress } from '../frontend/js/world2/edit/types.js';
+import { makeThreeStub, type StubRay } from './helpers/three-stub.js';
 
 const SRC = 'assets/models/a.glb';
 
@@ -35,43 +36,8 @@ type PlaceCall = {
   resolve(e: OverlayEntry | null): void;
 };
 
-type Ray = { origin: { x: number; y: number; z: number }; direction: { x: number; y: number; z: number } };
 
-/**
- * 스텁 three — `mode.ts` 가 쓰는 것만 만든다(`ThreeNS` 참조).
- *
- * `rays` 로 만들어진 광선을 밖에 넘긴다 — 테스트가 **쏘는 방향을 바꿔** 하늘/지면을
- * 가려 쏠 수 있어야 한다(아래 「하늘 클릭」 축).
- */
-function makeThree(rays: Ray[]) {
-  return {
-    Raycaster: class {
-      // 위에서 아래로 쏜다 → y=0 평면 교차가 원점 근처에서 성립한다
-      ray: Ray = { origin: { x: 0, y: 10, z: 0 }, direction: { x: 0, y: -1, z: 0 } };
-      constructor() { rays.push(this.ray); }
-      setFromCamera(): void { /* NDC 는 이 축에서 안 본다 */ }
-      intersectObjects(): { object: unknown }[] { return []; }
-    },
-    Mesh: class {
-      position = { set(): void { } };
-      rotation = { x: 0 };
-      scale = { setScalar(): void { } };
-      visible = false;
-      renderOrder = 0;
-    },
-    RingGeometry: class { dispose(): void { } },
-    MeshBasicMaterial: class { dispose(): void { } },
-    // `min.x === Infinity` 는 «빈 상자» 표시다 — 마커 반지름이 기본값으로 간다
-    Box3: class {
-      min = { x: Infinity, y: Infinity, z: Infinity };
-      max = { x: -Infinity, y: -Infinity, z: -Infinity };
-      setFromObject(): void { }
-    },
-    DoubleSide: 2,
-  };
-}
-
-function makeHost(calls: PlaceCall[], failure: { why: string | null }, rays: Ray[]) {
+function makeHost(calls: PlaceCall[], failure: { why: string | null }, rays: StubRay[]) {
   const doc = document;
   const canvas = doc.createElement('canvas');
   doc.body.append(canvas);
@@ -84,7 +50,7 @@ function makeHost(calls: PlaceCall[], failure: { why: string | null }, rays: Ray
 
   const entries: OverlayEntry[] = [];
   const host: OverlayHost = {
-    THREE: makeThree(rays),
+    THREE: makeThreeStub({ rays }),
     camera: {} as never,
     canvas,
     doc,
@@ -123,7 +89,7 @@ describe('편집 모드 · 놓기 행위', () => {
   let calls: PlaceCall[];
   let failure: { why: string | null };
   let canvas: HTMLCanvasElement;
-  let rays: Ray[];
+  let rays: StubRay[];
 
   beforeEach(async () => {
     document.body.innerHTML = '';

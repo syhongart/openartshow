@@ -39,73 +39,40 @@ describe('라이브 격리 — `?edit=1` 없는 세션이 편집 코드를 안 �
   });
 });
 
-describe('주행이 산다 — 편집 리스너는 편집 모드에서만 붙는다', () => {
-  // ⚠ **이 절은 감독 신고에서 생겼다**(2026-08-12): *"저 위에 링크 클릭하면 마우스 터치,
-  // 키보드 동작안해."* `?edit=1` 이 편집 모드 상시 켜짐이라 편집 리스너가 캔버스 클릭을
-  // 캡처 단계에서 끊었고, 그래서 `main.ts` 의 포인터락 요청이 **영영 안 불렸다** →
-  // 마우스를 움직여도 시점이 안 돈다.
+describe('편집 패널의 화면 위치 — CSS 는 소스로만 잴 수 있다', () => {
+  // ── 여기 있던 다섯 축은 **행위 테스트로 승격됐다**(2026-08-13) ───────────────
+  // `tests/world2-edit-listeners.test.ts` 가 `startEditMode` 를 스텁 host 로 돌리고
+  // 살아 있는 리스너 수를 직접 센다. 대조표(하나도 버리지 않았다):
   //
-  // 배포 전 검증은 *"포인터락 미발생 = PASS"* 로 쟀다. 감독에게 그것은 성공이 아니라
-  // *"화면이 안 돌아간다"* 였다 — **재는 축이 틀렸다.** 그래서 여기서는 반대 방향을 본다.
-  const src = () => read('frontend/js/world2/edit/mode.ts');
-
-  it('편집 리스너 등록이 전부 bindEditListeners 안에 있다', () => {
-    const s = src();
-    const bindStart = s.indexOf('function bindEditListeners');
-    const bindEnd = s.indexOf('function unbindEditListeners');
-    expect(bindStart, 'bindEditListeners 가 없다').toBeGreaterThan(-1);
-    expect(bindEnd).toBeGreaterThan(bindStart);
-
-    // 편집 조작을 가로채는 리스너들. `keydown` 은 모드 키(`onModeKey`)가 상시라 뺀다.
-    const GRABBY = ['click', 'contextmenu', 'pointerdown', 'pointermove', 'pointerup', 'drop'];
-    const outside: string[] = [];
-    for (const m of s.matchAll(/doc\.addEventListener\('([a-z]+)'/g)) {
-      const at = m.index ?? 0;
-      if (at >= bindStart && at < bindEnd) continue; // bind 안이면 정상
-      if (GRABBY.includes(m[1])) outside.push(m[1]);
-    }
-    expect(
-      outside,
-      '★ 편집 리스너가 bindEditListeners 밖에서 붙는다 = 주행 중에도 살아 있다는 뜻이다.'
-      + ' 그러면 캔버스 클릭이 포인터락에 못 가고 마우스로 시점이 안 돈다(감독 신고 2026-08-12).',
-    ).toEqual([]);
-  });
-
-  it('bind 와 unbind 가 같은 이벤트 집합을 다룬다 — 한쪽만 늘면 떼지 못한 리스너가 남는다', () => {
-    const s = src();
-    const slice = (from: string, to: string) => {
-      const a = s.indexOf(from), b = to ? s.indexOf(to) : s.length;
-      return s.slice(a, b > a ? b : s.length);
-    };
-    const evs = (chunk: string, verb: string) =>
-      [...chunk.matchAll(new RegExp(`doc\\.${verb}EventListener\\('([a-z]+)'`, 'g'))]
-        .map((m) => m[1]).sort();
-    const added = evs(slice('function bindEditListeners', 'function unbindEditListeners'), 'add');
-    const removed = evs(slice('function unbindEditListeners', '// 모드 키만 상시다'), 'remove');
-    expect(added.length).toBeGreaterThan(0);
-    expect(removed, '★ bind/unbind 가 어긋났다 — 편집을 꺼도 남는 리스너가 주행을 계속 막는다.')
-      .toEqual(added);
-  });
-
-  it('부팅 직후는 주행 모드다', () => {
-    // `editing` 초기값이 `true` 면 이번 사고가 그대로 재발한다.
-    expect(src()).toMatch(/let editing = false;/);
-    expect(src()).toMatch(/panel\.dataset\.mode = 'drive';/);
-  });
-
-  it('맥 키보드에도 삭제가 있다 — `Delete` 코드의 키가 없는 기기가 있다', () => {
-    expect(src()).toMatch(/case 'Delete': case 'Backspace':/);
-  });
-
-  it('pointercancel 도 드래그를 정리한다 — 터치에서 pointerup 이 안 오는 경로', () => {
-    expect(src()).toMatch(/addEventListener\('pointercancel', onPointerUp\)/);
-  });
+  //   옛 축(소스 텍스트)                    → 새 축(행위)
+  //   ① 등록이 전부 bindEditListeners 안에  → 「부팅 직후 … 리스너가 하나도 없다」
+  //   ② bind/unbind 가 같은 집합            → 「켜면 붙고, 끄면 **전부** 뗀다」
+  //                                          + 「여러 번 켜고 꺼도 새지 않는다」(신규)
+  //   ③ 부팅 직후는 주행 모드                → 「부팅 직후 … 리스너가 하나도 없다」
+  //   ④ 맥 키보드 Delete/Backspace          → 「Backspace 가 실제로 삭제를 부른다」
+  //   ⑤ pointercancel 이 드래그 정리         → 「pointercancel 뒤 이동이 물건을 안 끈다」
+  //
+  // **왜 옮겼나 — 두 가지가 겹쳤다.**
+  // (a) 소스 텍스트 축이 약하다는 것은 이미 실측돼 있었다: 검수관이 뮤테이션 4종으로
+  //     두들겨 **넷째가 안 잡히는 것을 확인했다**(2026-08-12). 부팅부에서 bind 를 무조건
+  //     부르면 주행이 그대로 죽는데 20/20 통과였다 — 등록 코드의 **위치**는 정상이었기
+  //     때문이다. 새 축 ①③은 그 형태를 잡는다(리스너를 세므로 «언제 불렸나» 를 본다).
+  // (b) 2026-08-13 의 파일 분해에서 이 다섯이 **일제히 빨간불**이 됐다. 동작은 하나도
+  //     안 바뀌었는데 코드가 `input.ts` 로 옮겨갔을 뿐이다. 경로만 고쳐 옮기면 이번
+  //     구현 형태(`bindEditListeners` 라는 이름, 그 두 함수의 전후 관계)를 박제할 뿐이라
+  //     다음 리팩터에 또 깨진다. 태스크 #43 이 이 승격을 이미 열어 두고 있었다.
+  //
+  // **아래 한 축만 여기 남는다** — CSS 는 jsdom 이 레이아웃을 계산하지 않아 행위로 잴
+  // 수단이 없다. 소스 텍스트가 유일한 축이므로 그 한계를 안 채로 남긴다.
+  const css = () => read('frontend/js/world2/edit/panel/css.ts');
 
   it('패널이 왼쪽에 붙지 않는다 — 터치 이동 판정이 화면 왼쪽 절반이다', () => {
     // `decide/touch.ts` 의 `x < viewportWidth / 2` 가 이동 영역이고 조이스틱은 캔버스가
     // 받는다. 폭 212px 패널을 왼쪽에 두면 가로 모드에서 엄지 기둥을 통째로 덮는다.
-    const css = src().slice(src().indexOf('const CSS'), src().indexOf('export function startEditMode'));
-    const panelRule = css.slice(css.indexOf('#w2-edit{'), css.indexOf('}', css.indexOf('#w2-edit{')));
+    const s = css();
+    const at = s.indexOf('#w2-edit{');
+    expect(at, '#w2-edit 규칙을 못 찾았다 — 이 검사가 공허해진다').toBeGreaterThan(-1);
+    const panelRule = s.slice(at, s.indexOf('}', at));
     expect(panelRule, '★ 편집 패널이 화면 왼쪽에 붙었다 — 모바일 이동 조이스틱을 덮는다.')
       .not.toMatch(/(^|;)\s*left:/);
     expect(panelRule).toMatch(/right:/);
