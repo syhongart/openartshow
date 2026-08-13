@@ -20,6 +20,7 @@
 //
 // ⚠ `innerHTML` 을 쓰지 않는다 — 이 저장소의 UI 규약(`knob-bar.ts` 의 XSS 근거).
 
+import { isShadowKey } from '../../systems/shadow-decal.js';
 import type { OverlayHost, VillagePick } from '../types.js';
 import type { EditState } from '../state.js';
 
@@ -31,11 +32,15 @@ export interface Outliner {
 }
 
 /**
- * 파츠 한 줄에 보일 이름. `kind` 를 그대로 쓰되 그림자는 애초에 목록에 안 온다
- * (`partsAt` 은 저장 형태 = 캐스터만 — `decide/parcel-freeze.ts` 의 `stripShadows`).
+ * 파츠 한 줄에 보일 이름.
  *
- * ⚠ 그 성질이 깨지면 목록에 `shadow:building` 이 뜬다. 그때 고칠 곳은 여기가 아니라
- * 저장 경로다 — 집을 수 없는 것이 목록에 있으면 클릭이 죽은 줄로 보인다.
+ * ⚠ 이 자리에 원래 *"그림자는 애초에 목록에 안 온다 — `partsAt` 은 저장 형태 = 캐스터만"*
+ * 이라고 적었고 **거짓이었다**(테스트가 즉시 빨간불). `partsAt` 은 **동결된 파셀에서만**
+ * 캐스터만 낸다(`toStored`). 아직 안 손댄 파셀은 `parcelLayout` 을 그대로 내므로
+ * **그림자가 섞여 온다** — 마을 배치의 33%가 `shadow:*` 다(검수관 실측).
+ *
+ * 그래서 목록이 직접 거른다(아래 `draw`). 집을 수 없는 것이 목록에 있으면 클릭이
+ * 죽은 줄로 보인다 — 실제로 `pick.ts` 가 데칼을 거르므로 눌러도 아무 일이 안 난다.
  */
 function labelOf(kind: string, index: number): string {
   return `${kind} #${index}`;
@@ -73,6 +78,10 @@ export function createOutliner(
     const parts = host.village?.partsAt(v.px, v.pz) ?? [];
     clear();
     parts.forEach((p, i) => {
+      // ⚠ 그림자는 **표시에서만** 뺀다 — `i` 는 원본 배열 인덱스 그대로여야 한다.
+      // 걸러낸 뒤 다시 세면 «목록 3번» 과 «배열 3번» 이 달라져 엉뚱한 것이 조작된다.
+      // 판정은 `shadow-decal.ts` 의 `isShadowKey` 한 곳이 소유한다(접두를 다시 안 적는다).
+      if (isShadowKey(p.kind)) return;
       const b = doc.createElement('button');
       b.type = 'button';
       b.textContent = labelOf(p.kind, i);

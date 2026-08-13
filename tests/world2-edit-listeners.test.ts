@@ -727,3 +727,76 @@ describe('조작 경로마다 동결이 저장된다 (행위)', () => {
     ).toBeCloseTo(10, 6);
   });
 });
+
+// ── 아웃라이너 (W5 E1) ──────────────────────────────────────────────────────
+//
+// 「이 구역에 뭐가 있나」를 목록으로 보여주고, 클릭하면 3D 클릭과 **같은 경로**로 고른다.
+// 갈라지면 «목록으로 고른 것은 기즈모가 안 붙는다» 가 나고 화면에서만 드러난다.
+//
+// ⚠ 넓은 화면에서만 보이는 것은 **CSS 미디어 쿼리**가 정한다(`css.ts`). jsdom 은 실제
+// 레이아웃을 안 하므로 **가시성은 여기서 못 잰다** — DOM 이 있고 클릭이 먹는가만 본다.
+// 「PC 에서 실제로 보이는가」는 감독 화면이 유일한 판정이다.
+
+const outlinerEl = (h: Harness) => h.doc.getElementById('w2-outliner');
+const outlinerItems = (h: Harness) =>
+  [...(outlinerEl(h)?.querySelectorAll('.items button') ?? [])] as HTMLButtonElement[];
+
+describe('아웃라이너 — 구역 목록 (행위)', () => {
+  it('아무것도 안 골랐으면 목록이 비어 있다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(outlinerEl(h), '아웃라이너 DOM 이 없다').toBeTruthy();
+    expect(outlinerItems(h), '★ 안 골랐는데 목록이 차 있다').toHaveLength(0);
+  });
+
+  it('★ 마을을 고르면 그 구역의 파츠가 전부 뜬다', () => {
+    const h = pickedVillage();
+    const items = outlinerItems(h);
+    // 픽스처는 tree·building·shadow:building 셋인데 **그림자는 저장 형태에 없다**
+    // (`partsAt` 은 캐스터만 — `stripShadows`). 즉 목록에 2개만 와야 한다.
+    expect(items.map((b) => b.textContent), '★ 그림자가 목록에 떴다 — 집을 수 없는 것이다')
+      .toEqual(['tree #0', 'building #1']);
+  });
+
+  it('★ 고른 것이 목록에서 강조된다', () => {
+    const h = pickedVillage();
+    const on = outlinerItems(h).filter((b) => b.dataset.on === '1');
+    expect(on, '★ 무엇을 골랐는지 목록이 말하지 않는다').toHaveLength(1);
+    expect(on[0].textContent).toBe('building #1');
+  });
+
+  it('★ 목록을 클릭하면 3D 클릭과 같은 경로로 고른다 — 기즈모까지 붙는다', () => {
+    const h = pickedVillage();
+    // 지금은 building #1 이 골라져 있다. 목록에서 tree #0 으로 바꾼다.
+    outlinerItems(h)[0].click();
+    expect(h.doc.body.textContent, '★ 목록 클릭이 선택을 안 바꿨다').toContain('마을: tree');
+    expect(h.gizmoHandle(), '★ 목록으로 고르면 기즈모가 안 붙는다 — 경로가 갈렸다').toBeDefined();
+    const m = h.marker();
+    expect(m?.visible, '★ 목록으로 골랐는데 선택 링이 안 뜬다').toBe(true);
+    // 링은 **그 파츠 자리**여야 한다. 처음 클릭한 파츠 자리에 남으면 안 된다.
+    expect([m?.position?.x, m?.position?.z], '★ 링이 옛 파츠 자리에 남았다').toEqual([-9, -9]);
+  });
+
+  it('★ 목록으로 고른 뒤 조작하면 그 파츠가 바뀐다 — 표시만 옮겨간 게 아니다', () => {
+    const h = pickedVillage();
+    outlinerItems(h)[0].click(); // tree #0
+    pressKey('KeyE');            // 회전
+    expect(frozenPart(h, 'tree')?.ry, '★ 목록으로 고른 것이 조작에 안 걸린다').toBeGreaterThan(0);
+    expect(frozenPart(h, 'building')?.ry, '★ 엉뚱한 파츠가 돌았다').toBe(0);
+  });
+
+  it('빈 곳을 클릭하면 목록도 비워진다 — 화면에 안 보이는 것이 골라지지 않게', () => {
+    const h = pickedVillage();
+    expect(outlinerItems(h).length).toBeGreaterThan(0);
+    h.villageHits.length = 0;
+    clickAt(h);
+    expect(outlinerItems(h), '★ 옛 구역 목록이 남았다').toHaveLength(0);
+  });
+
+  it('편집을 끄면 아웃라이너가 주행 모드로 표시된다', () => {
+    const h = pickedVillage();
+    expect(outlinerEl(h)?.dataset.mode).toBe('edit');
+    pressTab();
+    expect(outlinerEl(h)?.dataset.mode, '★ 주행으로 돌아왔는데 편집 목록이 남는다').toBe('drive');
+  });
+});

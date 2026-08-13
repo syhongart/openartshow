@@ -70,6 +70,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     duplicate: () => { void actions.duplicate(); },
     removeSelected: () => { actions.removeSelected(); },
     thawSelected: () => { actions.thawSelected(); },
+    // 아웃라이너 목록 클릭 → **3D 클릭과 같은 함수.** 여기서 갈라지면 «목록으로 고른
+    // 것은 기즈모가 안 붙는다» 가 나고, 그 어긋남은 화면에서만 드러난다.
+    pickVillage: (v) => { select(st, host, { village: v }); panel.refresh(); },
     exportNow: () => { actions.exportNow(); },
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
