@@ -303,7 +303,10 @@ describe('loadOverlay — 소비자 진입점 (통합 경로)', () => {
 
   it('쓰레기 입력에도 빈 오버레이를 돌려준다', () => {
     for (const v of [null, undefined, 42, 'x', [], {}]) {
-      expect(loadOverlay(v)).toEqual({ version: OVERLAY_VERSION, items: [] });
+      // ⚠ 형태를 리터럴로 적지 않는다 — 계약에 필드가 늘면 «빈 것을 돌려준다» 와
+      // 무관한 이유로 깨진다(v2 의 `parcels` 가 실제로 그렇게 깼다). 형태 자체는
+      // 아래 「빈 오버레이의 형태」 한 곳에서만 못 박는다.
+      expect(loadOverlay(v)).toEqual(emptyOverlay());
     }
   });
 });
@@ -433,7 +436,7 @@ describe('validateOverlay — 내보내기 관문', () => {
   it('items 가 배열이 아니면 사유로 보고한다 — "issues 0 = 안전" 이 거짓이면 안 된다', () => {
     for (const raw of [null, undefined, 42, {}, { items: 'x' }, { items: null }]) {
       const { overlay, issues } = validateOverlay(raw);
-      expect(overlay).toEqual({ version: OVERLAY_VERSION, items: [] });
+      expect(overlay).toEqual(emptyOverlay());
       expect(issues).toEqual([{ reason: 'items-not-array' }]);
     }
   });
