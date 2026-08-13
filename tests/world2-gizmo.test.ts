@@ -17,7 +17,7 @@
 // 이 WebGPU 실기기에서 실제로 그려지는가. 셋 다 감독 화면에서만 판정되고, 팀장 조건 2가
 // 그 확인을 **한 번의 왕복에 묶으라**고 지정했다. 통과로 적지 않는다.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import {
   AXIS_DIR, angleDelta, closestOnAxis, gizmoScale, ringAngle, scaleFactorFromDrag,
 } from '../frontend/js/world2/decide/gizmo-math.js';
@@ -107,10 +107,31 @@ type Harness = {
   canvas: HTMLCanvasElement;
   root: { children: unknown[] };
   applied: number;
+  /** `host.toRaw()` 가 돌려줄 것. 테스트가 «손실 있는 데이터» 를 만들 수 있게 연다 */
+  raw: { value: unknown };
 };
 
 let current: EditSession | null = null;
-afterEach(() => { current?.dispose(); current = null; document.body.innerHTML = ''; });
+
+/**
+ * `requestAnimationFrame` 호출 수. 기즈모 루프가 «언제 도는가» 를 재는 유일한 수단이다 —
+ * 내부 상태를 안 들여다보고 **밖에서 관측**한다.
+ */
+let rafCount = 0;
+const realRaf = globalThis.requestAnimationFrame;
+beforeEach(() => {
+  rafCount = 0;
+  globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+    rafCount++;
+    return realRaf(cb);
+  }) as typeof globalThis.requestAnimationFrame;
+});
+afterEach(() => {
+  current?.dispose();
+  current = null;
+  globalThis.requestAnimationFrame = realRaf;
+  document.body.innerHTML = '';
+});
 
 type GizmoMesh = { userData: { gizmo?: { kind: string; axis?: string } } };
 
@@ -127,6 +148,7 @@ function makeHarness(): Harness {
   const root = { children: [] as unknown[], add(o: unknown) { root.children.push(o); }, remove() { } };
   const entries: OverlayEntry[] = [];
   const state = { applied: 0 };
+  const raw = { value: { version: 2, items: [], parcels: [] } as unknown };
 
   const host: OverlayHost = {
     THREE: makeThreeStub({ rays, hits: () => hits }),
@@ -142,7 +164,7 @@ function makeHarness(): Harness {
     lastFailure: () => null,
     remove() { },
     apply() { state.applied++; },
-    toRaw: () => ({ version: 2, items: [], parcels: [] }),
+    toRaw: () => raw.value,
     look() { },
     surfaceAt: () => 0,
   };
@@ -165,7 +187,7 @@ function makeHarness(): Harness {
   hits.length = 0;
 
   return {
-    session, entry, hits, canvas, root,
+    session, entry, hits, canvas, root, raw,
     ray: rays[0],
     get applied() { return state.applied; },
   };
@@ -267,6 +289,28 @@ describe('기즈모 경계 — 계산이 실제로 항목에 먹는가', () => {
     const group = h.root.children.find((c) => Array.isArray((c as { children?: unknown[] }).children));
     expect((group as { visible: boolean }).visible, '★ 편집을 껐는데 기즈모가 보인다').toBe(false);
   });
+
+  it('★ 붙을 것이 없으면 프레임을 안 잡는다', async () => {
+    // ⚠ **검수관 P3 가 잡은 것**: 헤더 주석이 *"편집이 꺼지면 멈춘다"* 라고 적고 있었는데
+    // 실제로는 세션 진입 즉시 시작해 `dispose` 까지 돌았다. `target === null` 이면 계산이
+    // 없어 실해는 미미했지만 **주석-코드 불일치**는 이 저장소가 반복해서 걸린 형태다.
+    // 코드를 문장에 맞춘 뒤, 그 문장을 **검사로** 만든다 — 안 그러면 다시 갈라진다.
+    const h = makeHarness();
+    const settle = () => new Promise((r) => setTimeout(r, 40));
+
+    await settle();
+    const running = rafCount;
+    await settle();
+    expect(rafCount, '붙어 있는 동안은 프레임을 잡아야 한다').toBeGreaterThan(running);
+
+    // 빈 곳을 클릭해 선택을 푼다 → `attach(null)`
+    h.hits.length = 0;
+    h.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 400, clientY: 500, bubbles: true }));
+    await settle();
+    const stopped = rafCount;
+    await settle();
+    expect(rafCount, '★ 뗐는데도 루프가 계속 돈다 — 주석이 거짓이 된다').toBe(stopped);
+  });
 });
 
 // ── 수치 입력 — 기즈모가 못 하는 «정확히 얼마» ──────────────────────────────
@@ -343,5 +387,57 @@ describe('수치 입력 (행위)', () => {
     h.hits.length = 0;
     h.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 400, clientY: 500, bubbles: true }));
     expect(fields().every((f) => f.disabled), '★ 대상이 없는데 칸이 열려 있다').toBe(true);
+  });
+});
+
+// ── 내보내기 — 검수관 권고 P1 (2026-08-13) ──────────────────────────────────
+// 분해로 `exportNow` 가 `mode.ts` → `actions.ts` 로 옮겨갔는데 **통합 테스트가 없었다.**
+// 검수관이 옛 판본과 텍스트 대조로 «로직 그대로» 를 확인해 블로커에서 뺐지만, 이 파일을
+// 또 만질 때 회귀를 못 잡는 것은 그대로다.
+
+describe('내보내기 (행위)', () => {
+  function clickExport(): void {
+    const btn = [...document.querySelectorAll<HTMLButtonElement>('#w2-edit button')]
+      .find((b) => b.textContent === 'JSON 내보내기');
+    expect(btn, '내보내기 버튼을 못 찾았다 — 이 검사가 공허해진다').toBeTruthy();
+    btn?.click();
+  }
+
+  it('무손실이면 한 번에 저장한다', () => {
+    const h = makeHarness();
+    const saved: string[] = [];
+    const realCreate = URL.createObjectURL;
+    URL.createObjectURL = ((b: Blob) => { saved.push(b.type); return 'blob:x'; }) as typeof URL.createObjectURL;
+    const realRevoke = URL.revokeObjectURL;
+    URL.revokeObjectURL = (() => { }) as typeof URL.revokeObjectURL;
+    try {
+      clickExport();
+      expect(saved.length, '★ 무손실인데 저장이 안 됐다').toBe(1);
+      expect(saved[0]).toBe('application/json');
+      void h;
+    } finally {
+      URL.createObjectURL = realCreate;
+      URL.revokeObjectURL = realRevoke;
+    }
+  });
+
+  it('★ 손실이 있으면 1차 클릭에서 저장하지 않는다 — 2차에 저장한다', () => {
+    // 계약이 «버렸다» 고 말하는 데이터를 만든다(경로가 커밋 불가한 항목).
+    const h = makeHarness();
+    h.raw.value = { version: 2, items: [{ src: '../secret.glb' }], parcels: [] };
+    const saved: string[] = [];
+    const realCreate = URL.createObjectURL;
+    URL.createObjectURL = ((b: Blob) => { saved.push(b.type); return 'blob:x'; }) as typeof URL.createObjectURL;
+    const realRevoke = URL.revokeObjectURL;
+    URL.revokeObjectURL = (() => { }) as typeof URL.revokeObjectURL;
+    try {
+      clickExport();
+      expect(saved.length, '★ 손실이 있는데 1차 클릭에서 그대로 저장했다').toBe(0);
+      clickExport();
+      expect(saved.length, '★ 2차 클릭에서도 저장이 안 됐다 — 감독이 내보낼 방법이 없다').toBe(1);
+    } finally {
+      URL.createObjectURL = realCreate;
+      URL.revokeObjectURL = realRevoke;
+    }
   });
 });

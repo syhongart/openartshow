@@ -60,7 +60,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   const st = createEditState();
 
   const picker = createPicker(host, st);
-  const gizmo = createGizmo(host, st);
+  const gizmo = createGizmo(host);
 
   // `panel` 은 조작 핸들러를 필요로 하고 그 핸들러는 `panel` 을 필요로 한다. 함수 선언은
   // 호이스팅되므로 **이름으로 먼저 묶고 실행 시점에 채워진 값을 본다** — 조립자가 이

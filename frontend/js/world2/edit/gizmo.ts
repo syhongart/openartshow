@@ -20,8 +20,15 @@
 // ── 왜 자체 rAF 루프를 도는가 ───────────────────────────────────────────────
 // 기즈모는 **화면에서 일정 크기**로 보여야 하므로(안 그러면 멀리 있는 물건의 기즈모가
 // 점이 된다) 카메라가 움직일 때마다 배율을 다시 잡아야 한다. 그런데 `OverlayHost` 에는
-// 프레임 훅이 없다 — 소비자를 고치는 대신 **편집 모드에서만 도는 rAF** 를 여기서 돈다.
-// 그리는 것은 메인 루프이고 이 루프는 위치·배율만 갱신한다. 편집이 꺼지면 멈춘다.
+// 프레임 훅이 없다 — 소비자를 고치는 대신 **붙어 있는 동안만 도는 rAF** 를 여기서 돈다.
+// 그리는 것은 메인 루프이고 이 루프는 위치·배율만 갱신한다.
+//
+// ⚠ **첫 판본은 이 자리에 *"편집이 꺼지면 멈춘다"* 라고 적었고 거짓이었다**(검수관 P3,
+// 2026-08-13). 실제로는 `startEditMode` 진입 즉시 — 주행 모드에서도 — 루프가 시작해
+// 세션이 끝날 때까지 돌았다. `setEditing(false)` 는 `attach(null)` 로 `target` 만 비웠다.
+// `target === null` 이면 계산이 없어 실해는 미미했지만, **주석-코드 불일치가 이 저장소가
+// 반복해서 걸린 형태**다. 문장을 고치는 대신 **코드를 문장에 맞췄다** — 지금은 `attach`
+// 가 루프를 켜고 끈다(붙을 것이 없으면 프레임을 안 잡는다).
 
 import {
   AXIS_DIR, angleDelta, closestOnAxis, gizmoScale, ringAngle, scaleFactorFromDrag,
@@ -30,7 +37,7 @@ import {
 import { scaleBy } from '../decide/edit-pick.js';
 import { readNum } from '../url-knob.js';
 import type { OverlayEntry, OverlayHost } from './types.js';
-import type { EditState, StubMesh, ThreeNS } from './state.js';
+import type { StubMesh, ThreeNS } from './state.js';
 
 /** 잡을 수 있는 것 */
 export type Handle =
@@ -83,7 +90,7 @@ export interface Gizmo {
   dispose(): void;
 }
 
-export function createGizmo(host: OverlayHost, st: EditState): Gizmo {
+export function createGizmo(host: OverlayHost): Gizmo {
   const THREE = host.THREE as ThreeNS;
   const disposables: { dispose?(): void }[] = [];
 
@@ -161,13 +168,15 @@ export function createGizmo(host: OverlayHost, st: EditState): Gizmo {
     group.rotation.y = target.ry;
   }
 
-  // 편집 모드에서만 도는 루프. 그리지 않는다 — 위치·배율만 맞춘다.
+  // 붙어 있는 동안만 도는 루프. 그리지 않는다 — 위치·배율만 맞춘다.
   let raf = 0;
   const tick = () => {
-    if (target) place();
+    if (!target) { raf = 0; return; }   // 뗐으면 다음 프레임을 안 잡는다
+    place();
     raf = requestAnimationFrame(tick);
   };
-  raf = requestAnimationFrame(tick);
+  function startLoop(): void { if (raf === 0) raf = requestAnimationFrame(tick); }
+  function stopLoop(): void { if (raf !== 0) { cancelAnimationFrame(raf); raf = 0; } }
 
   // ── 드래그 ──────────────────────────────────────────────────────────────
   let active: Handle | null = null;
@@ -188,7 +197,7 @@ export function createGizmo(host: OverlayHost, st: EditState): Gizmo {
     attach(e: OverlayEntry | null): void {
       target = e;
       group.visible = e !== null;
-      if (e) place();
+      if (e) { place(); startLoop(); } else stopLoop();
     },
 
     hitTest(hits: readonly { object: unknown }[]): Handle | null {
@@ -246,12 +255,10 @@ export function createGizmo(host: OverlayHost, st: EditState): Gizmo {
     get dragging(): boolean { return active !== null; },
 
     dispose(): void {
-      cancelAnimationFrame(raf);
+      stopLoop();
       (host.root as unknown as { remove(o: never): void }).remove(group as never);
       for (const d of disposables) d.dispose?.();
       handleOf.clear();
-      // `st` 는 여기서 안 만진다 — 선택 상태의 주인은 조립자다.
-      void st;
     },
   };
 }
