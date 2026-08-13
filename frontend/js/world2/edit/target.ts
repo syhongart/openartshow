@@ -23,10 +23,21 @@
 //   `apply()`   드래그 중 매 프레임. **싼 것만** — 오버레이는 씬 반영, 마을은 아무것도 안 함
 //   `commit()`  손을 뗐을 때 한 번. 마을은 여기서 동결한다
 //
-// ⚠ 그 대가는 정직하게 적는다: **드래그 중에 마을 건물은 따라오지 않는다.** 따라오는
-// 것은 선택 링과 기즈모이고, 놓는 순간 건물이 그 자리에 다시 선다. 감독이 «따라오게
-// 해줘» 라고 하면 그때는 이 판단이 아니라 **슬롯 자세만 갱신하는 문**(`SlotPool.retarget`)
-// 을 편집에 여는 쪽으로 간다 — 그것은 개수 불변식의 집행 지점을 건드리므로 별도 결정이다.
+// ⚠ **그날이 왔다 (W5 E2.5, 팀장 판정 2026-08-13).** 이 자리에 원래 *"드래그 중에 마을
+// 건물은 따라오지 않는다 … 감독이 «따라오게 해줘» 라고 하면 그때는 슬롯 자세만 갱신하는
+// 문(`SlotPool.retarget`)을 편집에 여는 쪽으로 간다"* 라고 적혀 있었고, 감독 지시
+// *"gpu지원으로 쾌적하게 움직이게 하자"* 로 그 탈출로를 실제로 탔다.
+//
+// 그래서 지금 `apply()` 는 **그 파츠가 올라간 슬롯 하나의 행렬만** 다시 쓴다. 파셀
+// 재빌드 0, 인스턴스 행렬 1개 = GPU 가 하던 일 그대로다. 열린 문은 좁다 —
+// 핸들+자세를 받는 함수 하나이고(`OverlayHost.retargetSlot`), `acquire`·`release` 는
+// 안 열렸다. **슬롯 개수는 구조적으로 안 변한다**(`parcel-assets.ts` 의 `retarget` 이
+// `p.used` 를 안 건드린다 — 실측). `commit()` 이 확정 때 한 번 동결하는 것은 그대로다.
+//
+// ⚠⚠ 남은 대가 둘을 정직하게 적는다:
+//   ① **아웃라이너 목록에서 고른 것은 안 따라온다** — 슬롯을 모른다(`VillagePick.slot`).
+//   ② **그림자는 확정할 때 맞춰진다** — 캐스터 슬롯만 밀고 데칼 슬롯은 안 민다. 짝을
+//      맞추려 들면 «그림자를 저장하지 않고 유도한다»(W4 B1 처방)가 무너진다.
 
 import { scaleBy } from '../decide/edit-pick.js';
 import type { PlacedPart } from '../parts/types.js';
@@ -81,7 +92,21 @@ export function overlayTarget(host: OverlayHost, e: OverlayEntry): EditTarget {
  * 지금 그런 경로는 없지만(슬라이더는 파셀 재생성을 요구한다) 이 전제가 깨지면
  * «옮겼더니 엉뚱한 것이 움직인다» 가 된다.
  */
-export function villageTarget(host: OverlayHost, v: VillagePick): EditTarget | null {
+export function villageTarget(
+  host: OverlayHost,
+  v: VillagePick,
+  /**
+   * **조작 중 슬롯이 죽었다** — 스트리밍이 그 파셀을 걷어갔다는 뜻이다. 한 번만 부른다.
+   *
+   * 왜 콜백인가: 어댑터는 화면을 모르고(문구를 여기 적으면 편집 UI 가 이 계층으로
+   * 샌다), 소비자는 다섯이다(기즈모·수치칸·버튼·키·모달). 다섯 곳에서 각자 판정하면
+   * 그 문장이 다섯 벌이 된다. **판정은 여기 한 곳, 문구는 화면 한 곳**으로 가른다.
+   *
+   * ⚠ 이것이 없으면 조작이 **조용히** 아무 일도 안 한다 — 팀장이 조건으로 못 박은
+   * *"조용히 no-op 만 남기면 «가끔 안 움직인다» 가 된다"* 가 정확히 그 형태다.
+   */
+  onDetach?: () => void,
+): EditTarget | null {
   const village = host.village;
   if (!village) return null;
   const parts = village.partsAt(v.px, v.pz);
@@ -100,6 +125,9 @@ export function villageTarget(host: OverlayHost, v: VillagePick): EditTarget | n
     z: v.pz * host.cellZ + lz,
   });
 
+  /** 슬롯이 죽은 것을 **한 번만** 알린다 — 매 프레임 같은 말을 하면 화면이 도배된다 */
+  let told = false;
+
   return {
     kind: 'village',
     // 파츠는 **파셀 로컬 좌표**를 들고 화면은 월드 좌표를 쓴다. 변환은 여기 한 곳이다 —
@@ -116,8 +144,26 @@ export function villageTarget(host: OverlayHost, v: VillagePick): EditTarget | n
       p.sy = base.sy * m;
       p.sz = base.sz * m;
     },
-    // 드래그 중에는 아무것도 안 한다 — 여기서 동결하면 파셀이 프레임마다 다시 만들어진다.
-    apply() { },
+    /**
+     * **그 파츠가 올라간 슬롯 하나만** 다시 쓴다. 동결(= 파셀 재빌드)은 여기서 안 한다 —
+     * 프레임마다 부르면 건물이 사라졌다 자라기를 반복한다(이 파일 헤더).
+     *
+     * ⚠ 슬롯을 모르거나(목록에서 골랐다) 문이 안 열린 소비자면 **W4 동작 그대로**
+     * 아무 일도 안 한다. 그 둘은 정상 상태라 알리지 않는다 — 알릴 것은 «있었는데
+     * 죽었다» 하나뿐이고, 그것이 아래 `told` 분기다.
+     */
+    apply() {
+      const slot = v.slot;
+      if (!slot || !host.retargetSlot) return;
+      if (slot.index < 0) {
+        if (!told) { told = true; onDetach?.(); }
+        return;
+      }
+      const w = world(p.x, p.z);
+      host.retargetSlot(slot, {
+        x: w.x, y: p.y, z: w.z, ry: p.ry, sx: p.sx, sy: p.sy, sz: p.sz,
+      });
+    },
     commit() { village.freeze(v.px, v.pz, parts); },
     remove() {
       parts.splice(v.index, 1);

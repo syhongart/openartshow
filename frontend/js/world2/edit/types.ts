@@ -59,7 +59,31 @@ export interface VillageRaycast {
    */
   raycastTargets(): readonly unknown[];
   refreshBounds(): void;
-  ownerAt(mesh: unknown, instanceId: number): { readonly key: string } | null;
+  /**
+   * 맞힌 인스턴스의 **슬롯 핸들**. 빈 슬롯이면 `null`.
+   *
+   * ⚠ `index` 는 W5 E2.5 에서 열렸다 — 그전까지 `{ key }` 만 냈다. 이것이 있어야
+   * «이 파츠가 어느 슬롯인가» 를 **역인덱스 없이** 손에 넣는다(W4 ②-c 가 역인덱스를
+   * 일부러 안 만든 이유: 라이브가 그 비용을 낸다). 고르는 그 순간 이미 답이 오므로
+   * 만들 필요가 없었다.
+   *
+   * ⚠⚠ **`index` 는 살아 있는 동안만 유효하다.** 슬롯이 반납되면 `-1` 이 박히고
+   * (`instancing.ts` 의 `release`), 그 시점부터 이 핸들로는 아무것도 못 민다.
+   * 반납은 조작 중에도 일어난다(카메라가 멀어지면 스트리밍이 파셀을 걷는다).
+   */
+  ownerAt(mesh: unknown, instanceId: number): SlotRef | null;
+}
+
+/**
+ * 슬롯 하나를 가리키는 것. `SlotHandle`(`systems/instancing.ts`)이 그대로 만족한다.
+ *
+ * **가변 `index` 를 읽기 전용으로 받는 것이 의도**다 — 편집은 이 값을 **읽기만** 한다.
+ * 풀이 `release` 의 swap 에서 제자리로 고쳐 주므로(`instancing.ts:302`) 편집이 쥔 채로도
+ * 계속 맞고, 죽으면 `-1` 이 된다. 편집이 이것을 쓰면 그 계약이 깨진다.
+ */
+export interface SlotRef {
+  readonly key: string;
+  readonly index: number;
 }
 
 /**
@@ -113,6 +137,15 @@ export interface VillagePick {
   readonly z: number;
   /** 이미 손본 파셀인가 */
   readonly frozen: boolean;
+  /**
+   * 이 파츠가 지금 올라가 있는 **슬롯**. 조작 중 실시간 반영이 이것 하나에 달려 있다.
+   *
+   * `null` 인 경로가 실제로 있다 — **아웃라이너 목록에서 고르면** 레이캐스트를 안 타므로
+   * 슬롯을 모른다(3D 클릭만 `ownerAt` 을 거친다). 그때는 조작이 확정 시점에 보인다.
+   * 목록에서도 실시간으로 보이게 하려면 「파츠 → 슬롯」 역인덱스가 필요하고, 그것이
+   * 바로 W4 ②-c 가 라이브 비용 때문에 안 만든 것이다 — 필요해지면 **편집 세션에서만** 만든다.
+   */
+  readonly slot: SlotRef | null;
 }
 
 /**
@@ -168,6 +201,19 @@ export interface OverlayHost {
   look(dx: number, dy: number): void;
   /** 그 자리에서 밟는 바닥 높이(m) */
   surfaceAt(x: number, z: number): number;
+  /**
+   * **이미 점유한 슬롯의 자세만 다시 쓴다** — 조작 중 마을 파츠가 손을 따라오게 하는 문.
+   *
+   * 없으면(`undefined`) 조작이 확정 시점에만 보인다 = W4 의 동작 그대로다. 그래서 선택
+   * 사양으로 둔다 — 이 문을 안 여는 소비자(테스트 하네스 등)가 그대로 돈다.
+   *
+   * ⚠ **개수는 안 변한다.** 슬롯을 만들거나 반납하는 문은 여기 없고, 그것이 편집에
+   * `SlotPool` 전체를 안 넘기는 이유다(위 `VillageRaycast` 헤더 · 팀장 판정 2026-08-13).
+   */
+  retargetSlot?(
+    slot: SlotRef,
+    t: { x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number },
+  ): void;
 }
 
 /** 편집 모드를 켠다. 반환값이 정리 핸들이다. */

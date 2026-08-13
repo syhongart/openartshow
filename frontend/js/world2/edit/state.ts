@@ -121,6 +121,17 @@ export interface EditState {
    * 델타를 더해 현재 값을 만든다(근거는 `decide/modal-edit.ts` 헤더).
    */
   modalFrom: Pose | null;
+  /**
+   * 조작 중 **슬롯이 죽었다** — 스트리밍이 그 파셀을 걷어갔다는 뜻이고, 그 시점부터
+   * 조작이 화면에 안 보인다.
+   *
+   * ⚠ **편집 자체는 살아 있다.** 값은 계속 바뀌고 확정(`commit`)은 저장소에 제대로
+   * 쓰이므로 그 구역에 다시 가면 반영돼 있다. 끊긴 것은 **미리보기**뿐이다 —
+   * 화면이 그 둘을 갈라 말해야 한다(`panel/dom.ts` 의 `refresh`).
+   *
+   * 세우는 자리는 마을 어댑터의 `onDetach` 하나이고, 푸는 자리는 `select()` 다.
+   */
+  detached: boolean;
   pendingSrc: string | null;
   dragging: OverlayEntry | null;
   dragPlaneY: number;
@@ -166,6 +177,7 @@ export function createEditState(): EditState {
     target: null,
     modal: null,
     modalFrom: null,
+    detached: false,
     pendingSrc: null,
     dragging: null,
     dragPlaneY: 0,
@@ -200,6 +212,9 @@ export function select(
   // 새 대상을 밀게 되고, 취소하면 **새 대상이 옛 대상의 자리로 튄다.**
   st.modal = null;
   st.modalFrom = null;
+  // 새로 고른 것의 슬롯은 살아 있다 — 옛 선택의 «끊김» 을 물려주면 멀쩡한 조작에
+  // 경고가 붙는다.
+  st.detached = false;
   if (what && 'entry' in what) {
     st.selected = what.entry;
     st.villageSel = null;
@@ -207,7 +222,9 @@ export function select(
     return;
   }
   if (what && 'village' in what) {
-    const t = villageTarget(host, what.village);
+    // 어댑터는 화면을 모르고 소비자는 다섯이다 — **판정은 어댑터 한 곳, 표시는 화면
+    // 한 곳**으로 가른다. 여기가 그 둘을 잇는 자리다(`target.ts` 의 `onDetach`).
+    const t = villageTarget(host, what.village, () => { st.detached = true; });
     st.selected = null;
     st.villageSel = t ? what.village : null;
     st.target = t;

@@ -57,6 +57,29 @@ export interface FeatureEnv {
    * 도달하기 때문이다.
    */
   readonly village: VillageParcels;
+  /**
+   * **이미 점유한 슬롯의 자세만 다시 쓴다.** 편집이 조작 중 매 프레임 부른다.
+   *
+   * ⚠ 이것도 위 *"읽기 전용으로 다룬다"* 의 **예외**이고, 바로 위 `village` 와 **같은
+   * 논리 구조**다 — 소유는 조립부(`main.ts` 의 `slotPool`)에 두고 여기서는 **통로만**
+   * 연다. 커널 규약(「System 은 상태를 공유하지 않는다」)이 뒷문으로 안 깨지는 이유:
+   * 이 함수가 만지는 것은 다른 System 의 상태가 아니라 **조립부가 소유한 슬롯 풀**이고,
+   * 그 변경이 빌더·그림자 재베이킹과 **같은 어댑터**(같은 워프·같은 성장 sink)를 탄다.
+   *
+   * ── 왜 `slotPool` 자체를 안 넘기나 (팀장 판정 2026-08-13) ─────────────────
+   * `SlotPool` 에는 `acquire`·`release` 가 있고, 그것을 기능에 넘기면 개수 불변식의
+   * 집행 지점(`pools.seal()`)이 뒷문으로 열린다 — `edit/types.ts` 가 명시적으로 세운
+   * 경계다. 그래서 **핸들 + 자세만** 받는 함수 하나로 좁힌다. 슬롯 개수는 구조적으로
+   * 안 변한다(`parcel-assets.ts` 의 `retarget` 이 `p.used` 를 안 건드린다 — 실측).
+   *
+   * ⚠⚠ **핸들이 죽었으면 아무 일도 안 일어난다**(`instancing.ts` 의 `setTransform`
+   * 가드). 그것을 화면이 말하는 일은 부르는 쪽 몫이다 — 조용한 no-op 은 «가끔 안
+   * 움직인다» 가 된다.
+   */
+  readonly retargetSlot: (
+    h: { readonly key: string; readonly index: number },
+    t: { x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number },
+  ) => void;
   /** 씬 조명. 개수가 고정이라 커널이 소유하고, 기능은 색·강도만 빌려 쓴다 */
   readonly sun: DirectionalLight;
   readonly hemi: HemisphereLight;

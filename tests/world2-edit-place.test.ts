@@ -368,3 +368,36 @@ describe('확장 끄기 자체가 값을 실제로 끄는가', () => {
   });
 });
 
+
+// ── 슬롯 재타겟 배선 (W5 E2.5) ──────────────────────────────────────────────
+//
+// ⚠ **행위 테스트가 이 축을 원리적으로 못 본다.** `world2-edit-listeners.test.ts` 는
+// 자기 `OverlayHost` 를 만들어 `retargetSlot` 을 직접 꽂으므로, 조립부(`features/overlay.ts`
+// → `main.ts`)가 그 문을 안 이어도 **전부 통과한다.** W4 의 N10 뮤테이션이 정확히
+// 그 형태로 0 failed 였다(2026-08-13).
+//
+// 그래서 배선을 정적으로 못 박는다. 텍스트 축이라 약하다는 것을 알고 쓴다 — 「어디에
+// 적혀 있나」만 보고 「실제로 불리나」는 안 본다. 실기기 판정은 감독 확인이 유일하다.
+describe('소비자 · 편집이 슬롯 자세를 밀 수 있게 이어져 있다', () => {
+  const overlay = readFileSync('frontend/js/world2/features/overlay.ts', 'utf8');
+  const main = readFileSync('frontend/js/world2/main.ts', 'utf8');
+
+  it('오버레이 기능이 env 의 문을 편집 host 로 넘긴다', () => {
+    expect(overlay, '★ 문이 안 이어졌다 — 조작 중 마을 건물이 안 따라온다')
+      .toContain('retargetSlot: env.retargetSlot');
+  });
+
+  it('조립부가 그 문을 슬롯 어댑터의 `retarget` 에 잇는다 — `setTransform` 이 아니다', () => {
+    // `setTransform` 을 쓰면 성장 중인 슬롯이 다음 프레임에 옛 목표로 되돌아가고,
+    // 수축(`lastPose`)도 옛 자리로 튄다(팀장 판정 2026-08-13 의 (다) 기각 근거).
+    expect(main, '★ 조립부가 문을 안 채운다').toContain('retargetSlot: (h, t) =>');
+    expect(main, '★ `retarget` 이 아니라 다른 문에 이었다')
+      .toContain('slotPool?.retarget?.(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz)');
+  });
+
+  it('★ 편집에 `acquire`·`release` 는 안 넘어간다 — 개수 불변식의 뒷문', () => {
+    // 팀장 판정의 핵심 조건이다. `slotPool` 자체를 넘기면 그 순간 `seal()` 이 뚫린다.
+    expect(overlay, '★ 슬롯 풀 어댑터가 통째로 편집에 넘어갔다')
+      .not.toMatch(/slotPool\s*[:,]/);
+  });
+});

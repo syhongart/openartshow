@@ -96,6 +96,14 @@ export function createOutliner(
           px: v.px, pz: v.pz, index: i, kind: p.kind,
           x: v.px * host.cellX + p.x, y: p.y, z: v.pz * host.cellZ + p.z,
           frozen: host.village?.isFrozen(v.px, v.pz) ?? false,
+          // ⚠ **목록에서 고른 것은 슬롯을 모른다** — 레이캐스트를 안 타므로 `ownerAt`
+          // 이 안 불린다. 그래서 조작이 **확정 시점에** 보인다(3D 클릭은 실시간).
+          // 알려면 「파츠 → 슬롯」 역인덱스가 필요하고 그것이 W4 ②-c 가 라이브 비용
+          // 때문에 안 만든 그것이다 — 감독이 이 차이를 지적하면 **편집 세션에서만** 만든다.
+          //
+          // 타입이 이 사실을 강제한다: `slot` 이 필수라 여기서 `null` 을 **적어야 한다**.
+          // 빠뜨리면 컴파일이 막는다(실제로 이 회차에 그렇게 드러났다).
+          slot: null,
         });
       });
       list.appendChild(b);

@@ -219,10 +219,27 @@ export class InstancePools {
     return h;
   }
 
-  /** 슬롯 행렬을 쓴다. 위치·회전·스케일만 — 재질은 절대 만지지 않는다(파이프라인 재생성). */
+  /**
+   * 슬롯 행렬을 쓴다. 위치·회전·스케일만 — 재질은 절대 만지지 않는다(파이프라인 재생성).
+   *
+   * ⚠ **죽은 핸들 가드는 2026-08-13 에 붙었다** — 그전까지 `setColor`(아래)에만 있고
+   * 여기에는 없는 **비대칭**이었다. 그 비대칭이 조용했던 이유는 이 메서드를 부르는 곳이
+   * 빌더의 `acquire` 직후(항상 살아 있다)와 `retarget` 체인(그쪽에 이미 자기 가드가
+   * 있다)뿐이었기 때문이다. 즉 **동작 변경 0** 이고, 여는 것은 새 소비자를 위한 안전이다.
+   *
+   * 편집이 조작 중 매 프레임 이것을 타면서 창이 열린다: 조작하는 동안 카메라가 멀어지면
+   * 스트리밍이 그 파셀을 반납하고 핸들이 죽는다(`release` 가 `index = -1` 을 박는다).
+   * 가드가 없으면 `setMatrixAt(-1, …)` 과 `touch(p, -1)` 이 불려 **업로드 구간(`loRange`)이
+   * 음수로 오염된다.**
+   *
+   * ⚠⚠ 이 가드는 버퍼 오염만 막는다 — **조작 대상이 사라진 것을 화면이 말하는 일은
+   * 별개다**(팀장 조건, 2026-08-13). 조용히 no-op 만 남기면 «가끔 안 움직인다» 가 된다.
+   * 그 축은 편집 쪽(`edit/target.ts` 의 `onDetach`)이 소유한다.
+   */
   setTransform(h: SlotHandle, x: number, y: number, z: number, ry = 0, sx = 1, sy = 1, sz = 1): void {
     const p = this.pools.get(h.key);
     if (!p) return;
+    if (h.index < 0) return; // 죽은 핸들 — 남의 슬롯을 밀지 않는다(`setColor` 와 짝)
     _v.set(x, y, z);
     _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry);
     _s.set(sx, sy, sz);

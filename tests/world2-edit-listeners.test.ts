@@ -109,6 +109,12 @@ function grabbyCount(live: Map<string, number>): number {
   return n;
 }
 
+/** `retargetSlot` 한 번의 인자 전부 — 슬롯과 자세를 평평하게 편다 */
+type RetargetCall = {
+  key: string; index: number;
+  x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number;
+};
+
 type Harness = {
   session: EditSession;
   live: Map<string, number>;
@@ -132,6 +138,11 @@ type Harness = {
   marker: () => { visible?: boolean; position?: { x: number; z: number } } | undefined;
   /** 편집이 건 동결. 키는 `px,pz` */
   frozen: Map<string, PlacedPart[]>;
+  /**
+   * 조작 중 슬롯에 밀린 자세들(순서대로). **여기가 «손을 따라오는가» 의 유일한 축이다** —
+   * jsdom 에는 화면이 없으므로 «무엇이 슬롯으로 나갔는가» 로만 잴 수 있다.
+   */
+  retargeted: RetargetCall[];
   /**
    * 기즈모 핸들 메시 하나. **드래그 경로를 재려면 이것이 필요하다** — 핸들을 `hits` 에
    * 넣어야 `gizmo.hitTest` 가 잡고 `dragging` 이 켜진다. P1 뮤테이션(손 뗄 때 확정 안 함)이
@@ -157,7 +168,14 @@ interface VillageFixture {
   parts?: Record<string, PlacedPart[]>;
   frozen?: (px: number, pz: number) => boolean;
   /** 맞힌 인스턴스의 주인. `null` 이면 «빈 슬롯» */
-  owner?: { key: string } | null;
+  owner?: { key: string; index: number } | null;
+  /**
+   * `retargetSlot` 문을 열 것인가. 기본은 **연다**(라이브와 같다).
+   *
+   * `false` 로 닫으면 문이 없는 소비자가 된다 — 조작이 확정 시점에만 보이는 W4 동작
+   * 그대로다. 그 경로가 여전히 도는지 재는 축이 있다.
+   */
+  retarget?: boolean;
 }
 
 function makeHarness(vf?: VillageFixture): Harness {
@@ -185,6 +203,8 @@ function makeHarness(vf?: VillageFixture): Harness {
   const removed: OverlayEntry[] = [];
   /** 편집이 건 동결. 테스트가 «무엇이 저장됐나» 를 직접 본다 */
   const frozenStore = new Map<string, PlacedPart[]>();
+  /** `retargetSlot` 이 받은 것 전부(순서대로). 조작 중 실시간 반영을 재는 축 */
+  const retargeted: RetargetCall[] = [];
   // ⚠ `add`/`remove` 가 **실제로 담는다.** 빈 함수였을 때 선택 링(`pick.ts` 의 marker)이
   // 어디에도 안 남아서 «링이 떴는가» 를 재는 축이 통째로 불가능했다 — N11 뮤테이션이
   // 0 failed 로 그 구멍을 드러냈다(2026-08-13).
@@ -223,9 +243,14 @@ function makeHarness(vf?: VillageFixture): Harness {
       ? {
         raycastTargets: () => [villageMesh],
         refreshBounds: () => { order.push('refreshBounds'); },
-        ownerAt: () => (vf.owner === undefined ? { key: 'building' } : vf.owner),
+        ownerAt: () => (vf.owner === undefined ? { key: 'building', index: 3 } : vf.owner),
       }
       : null,
+    // 조작 중 실시간 반영(W5 E2.5). **마지막으로 밀린 자세를 그대로 담는다** — 화면이
+    // 없는 하네스에서 «따라왔는가» 를 재는 유일한 축이다.
+    retargetSlot: vf && vf.retarget !== false
+      ? (slot, t) => { retargeted.push({ key: slot.key, index: slot.index, ...t }); }
+      : undefined,
     village: vf
       ? {
         partsAt: (px, pz) => (frozenStore.get(`${px},${pz}`) ?? vf.parts?.[`${px},${pz}`] ?? [])
@@ -247,6 +272,7 @@ function makeHarness(vf?: VillageFixture): Harness {
   return {
     session, live, doc, canvas, entries, removed, hits, root, villageHits, villageMesh, order,
     frozen: frozenStore,
+    retargeted,
     gizmoHandle: () => {
       for (const c of root.children as { children?: unknown[] }[]) {
         const kids = c?.children;
@@ -481,7 +507,7 @@ describe('마을 파츠를 클릭으로 고른다 (행위)', () => {
   it('★ 그림자 데칼은 집히지 않는다 — 집을 수 없는 것이다', () => {
     // 픽스처 배치에 `shadow:building` 이 **실제로 있다.** 안 거르면 매칭이 성공해서
     // 감독은 «건물을 눌렀는데 그림자가 골라진» 상태가 된다.
-    const h = makeHarness({ ...VILLAGE_FIXTURE, owner: { key: 'shadow:building' } });
+    const h = makeHarness({ ...VILLAGE_FIXTURE, owner: { key: 'shadow:building', index: 3 } });
     h.villageMesh.at = { x: 5, y: 0, z: 3 };
     h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
     pressTab();
@@ -496,7 +522,7 @@ describe('마을 파츠를 클릭으로 고른다 (행위)', () => {
     const h = makeHarness({
       ...VILLAGE_FIXTURE,
       // 첫 히트는 배치에 없는 자리, 둘째는 건물 자리.
-      owner: { key: 'building' },
+      owner: { key: 'building', index: 3 },
     });
     const ghost = {
       at: { x: 17, y: 0, z: 17 },
@@ -1077,5 +1103,145 @@ describe('블렌더식 모달 — 마우스가 따라온다 (행위)', () => {
     movePointer(600, 300);
     clickAt(h);
     expect(frozenPart(h)?.x, '★ 모달 중 다른 조작이 끼어들었다').toBeCloseTo(15, 6);
+  });
+});
+
+// ── 조작 중 실시간 반영 (W5 E2.5) ───────────────────────────────────────────
+//
+// 감독 지시 2026-08-13: *"gpu지원으로 쾌적하게 움직이게 하자."*
+// W4 는 «드래그 중 마을 건물이 안 따라온다» 를 대가로 받아들이고 탈출로를 적어 두었다
+// (`edit/target.ts` 헤더). 팀장 판정(2026-08-13)으로 그 탈출로를 탔다 — 슬롯 자세만
+// 갱신하는 좁은 문 하나(`OverlayHost.retargetSlot`).
+//
+// ⚠ **jsdom 에는 화면이 없다.** 그래서 «따라왔는가» 를 픽셀로 못 잰다 — 대신 «무엇이
+// 슬롯으로 나갔는가»(`h.retargeted`)로 잰다. 실제로 그 자세가 눈에 보이는지는 감독
+// 실기기가 유일한 판정이고, 여기서 재는 것은 **경로가 실제로 이어졌는가** 다.
+
+/** 마지막으로 슬롯에 밀린 자세 */
+const lastPush = (h: Harness): RetargetCall | undefined => h.retargeted[h.retargeted.length - 1];
+
+describe('조작 중 슬롯이 손을 따라온다 (행위)', () => {
+  it('★ 확정하기 **전에** 이미 슬롯이 밀린다 — 이것이 이 회차의 전부다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    movePointer(600, 300); // +200px = +10m
+    expect(h.retargeted.length, '★ 조작 중인데 슬롯이 안 밀렸다 — 건물이 안 따라온다')
+      .toBeGreaterThan(0);
+    expect(h.frozen.size, '★ 조작 중에 동결이 났다 — 파셀이 프레임마다 다시 만들어진다')
+      .toBe(0);
+  });
+
+  it('★ 밀린 자세는 **월드 좌표**다 — 파셀 로컬을 그대로 보내면 원점 근처로 순간이동한다', () => {
+    // 픽스처의 건물은 파셀 (0,0) 의 로컬 (5, 3) 이다. 파셀 원점이 (0,0) 이라 이 축만으로는
+    // 두 좌표계가 구별되지 않으므로, **옮긴 뒤의 값**으로 본다(+10m → 15).
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    pressKey('KeyX', 'x');
+    movePointer(600, 300);
+    const p = lastPush(h)!;
+    expect(p.x, '★ 슬롯에 밀린 x 가 조작 결과와 다르다').toBeCloseTo(15, 6);
+    expect(p.z, '★ X 로 고정했는데 z 가 함께 나갔다').toBeCloseTo(3, 6);
+  });
+
+  it('★ 고른 그 슬롯에 민다 — 키·번호가 어긋나면 남의 건물이 움직인다', () => {
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    movePointer(600, 300);
+    const p = lastPush(h)!;
+    expect(p.key, '★ 엉뚱한 종류의 슬롯을 밀었다').toBe('building');
+    expect(p.index, '★ 엉뚱한 번호의 슬롯을 밀었다').toBe(3);
+  });
+
+  it('★ 회전·크기도 함께 나간다 — 위치만 따라오면 반쪽이다', () => {
+    const h = modalReady(SCALED_FIXTURE);
+    pressKey('KeyR', 'r');
+    pressKey('Digit9', '9');
+    pressKey('Digit0', '0');
+    const rot = lastPush(h)!;
+    expect(rot.ry, '★ 회전이 슬롯에 안 나갔다').toBeCloseTo(Math.PI / 2, 6);
+
+    pressKey('Escape', 'Escape');
+    pressKey('KeyS', 's');
+    pressKey('Digit2', '2');
+    const sc = lastPush(h)!;
+    expect(sc.sx, '★ 크기가 슬롯에 안 나갔다').toBeCloseTo(8, 6);
+    expect(sc.sy / sc.sx, '★ 슬롯에 나간 크기가 비율을 잃었다').toBeCloseTo(2, 6);
+  });
+
+  it('기즈모·키·버튼도 같은 경로다 — 모달만 되면 조작 수단이 갈린다', () => {
+    const h = pickedVillage();
+    pressKey('KeyE'); // 회전 키 한 번
+    expect(h.retargeted.length, '★ 편집키 조작이 슬롯에 안 나갔다').toBeGreaterThan(0);
+    expect(lastPush(h)?.ry, '회전이 반영되지 않았다').toBeGreaterThan(0);
+  });
+
+  it('★ 오버레이(GLB)는 슬롯을 안 탄다 — 마을 인스턴스가 아니다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    const e = addEntry(h);
+    h.hits.push({ object: e.holder });
+    pressTab();
+    clickAt(h);
+    pressKey('KeyE');
+    expect(h.retargeted, '★ GLB 조작이 마을 슬롯을 밀었다 — 엉뚱한 건물이 움직인다')
+      .toHaveLength(0);
+  });
+
+  it('★ 문이 없는 소비자는 W4 동작 그대로다 — 확정 때만 보인다', () => {
+    // `retargetSlot` 은 선택 사양이다(`OverlayHost`). 안 여는 소비자가 깨지면 안 된다.
+    const h = pickedVillage({ ...VILLAGE_FIXTURE, retarget: false });
+    pressKey('KeyE');
+    expect(h.retargeted, '문을 안 열었는데 밀렸다').toHaveLength(0);
+    expect(frozenPart(h)?.ry, '★ 문이 없으면 확정까지 죽는다 — 편집 자체가 망가졌다')
+      .toBeGreaterThan(0);
+  });
+
+  it('아웃라이너 목록에서 고른 것은 안 따라온다 — 슬롯을 모른다(알려진 한계)', () => {
+    // ⚠ 이것을 **통과 축으로 적는 것이 정직하다** — 목록 클릭은 레이캐스트를 안 타서
+    // `ownerAt` 이 안 불린다. 감독이 이 차이를 지적하면 편집 세션 전용 역인덱스를
+    // 만든다(`edit/types.ts` 의 `VillagePick.slot` 주석). 지금은 «확정하면 보인다» 다.
+    const h = pickedVillage();
+    h.retargeted.length = 0;
+    outlinerItems(h)[0].click(); // tree #0
+    pressKey('KeyE');
+    expect(h.retargeted, '목록 경로가 슬롯을 알게 됐다 — 그러면 이 주석을 지워라')
+      .toHaveLength(0);
+    expect(frozenPart(h, 'tree')?.ry, '★ 목록으로 고른 것의 확정까지 죽었다')
+      .toBeGreaterThan(0);
+  });
+});
+
+describe('조작 중 슬롯이 죽으면 (행위)', () => {
+  /** 스트리밍이 이미 걷어간 슬롯을 집은 상태 */
+  const detached = () => pickedVillage({ ...VILLAGE_FIXTURE, owner: { key: 'building', index: -1 } });
+
+  it('★ 화면이 말한다 — 조용한 no-op 은 «가끔 안 움직인다» 가 된다', () => {
+    // 팀장 조건 (나)-1: *"조용히 no-op 만 남기면 «가끔 안 움직인다»가 된다."*
+    const h = detached();
+    pressKey('KeyE');
+    expect(h.doc.body.textContent, '★ 미리보기가 끊겼는데 화면이 아무 말도 안 한다')
+      .toContain('미리보기가 끊겼');
+  });
+
+  it('★ 그래도 편집과 저장은 산다 — 끊긴 것은 미리보기뿐이다', () => {
+    const h = detached();
+    pressKey('KeyE');
+    expect(frozenPart(h)?.ry, '★ 슬롯이 죽었다고 저장까지 죽었다 — 조작을 통째로 잃는다')
+      .toBeGreaterThan(0);
+  });
+
+  it('★ 죽은 슬롯에는 밀지 않는다 — 남의 건물이 움직인다', () => {
+    const h = detached();
+    pressKey('KeyE');
+    expect(h.retargeted, '★ index < 0 인 슬롯에 자세를 밀었다').toHaveLength(0);
+  });
+
+  it('★ 다시 고르면 경고가 풀린다 — 멀쩡한 조작에 옛 경고가 붙지 않게', () => {
+    const h = detached();
+    pressKey('KeyE');
+    expect(h.doc.body.textContent).toContain('미리보기가 끊겼');
+    // 살아 있는 것을 다시 고른다(목록 경로 — 슬롯은 없지만 정상 상태다).
+    outlinerItems(h)[0].click();
+    expect(h.doc.body.textContent, '★ 새로 골랐는데 옛 경고가 남았다')
+      .not.toContain('미리보기가 끊겼');
   });
 });

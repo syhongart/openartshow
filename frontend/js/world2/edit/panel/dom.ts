@@ -159,7 +159,13 @@ export function createPanel(
         + (st.villageSel?.frozen ? ' · 손본 구역' : '')
       : `선택: 없음 · 배치 ${host.entries().length}개`;
     const previews = host.entries().filter((e) => e.preview).length;
-    if (previews > 0) {
+    if (st.detached) {
+      // ⚠ **끊긴 것은 미리보기뿐이다** — 값은 계속 바뀌고 확정도 정상이다(`state.ts`).
+      // 그 둘을 갈라 말하지 않으면 감독이 «편집이 죽었다» 로 읽고 조작을 멈춘다.
+      hint.className = 'note warn';
+      hint.textContent = '⚠ 그 구역이 화면에서 멀어져 미리보기가 끊겼습니다 —'
+        + ' 조작과 저장은 그대로 됩니다. 가까이 가서 다시 고르면 다시 보입니다.';
+    } else if (previews > 0) {
       hint.className = 'note warn';
       hint.textContent = `⚠ ${previews}개는 저장소에 없는 파일입니다 — JSON 과 함께 그 GLB 도 주셔야 배포에 붙습니다.`;
     } else if (st.villageSel) {

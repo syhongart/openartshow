@@ -109,3 +109,85 @@ describe('인스턴스 레이캐스트 — 경계구 캐시 지뢰', () => {
     expect(targets[0]).toBeInstanceOf(THREE.InstancedMesh);
   });
 });
+
+// ── 죽은 핸들 (W5 E2.5 선결, 팀장 조건 (나)-1) ──────────────────────────────
+//
+// 편집이 조작 중 **매 프레임** 슬롯 자세를 다시 쓰게 되면서 창이 하나 열렸다:
+// 조작하는 동안 카메라가 멀어지면 스트리밍이 그 파셀을 반납하고, 편집이 쥔 핸들이
+// 그 순간 죽는다. 그 뒤 호출이 `index = -1` 로 들어간다.
+//
+// ⚠ **이 절이 그 창을 실제로 재현한다** — 「부재를 grep 으로 판정하지 않는다」(W4 반려
+// B1 의 교훈)이므로, 「그런 경로가 있을 것이다」가 아니라 **핸들을 쥔 채 반납이 일어나고
+// 그 핸들이 죽는다**를 실물 `InstancePools` 로 보인다.
+//
+// 재는 것은 **업로드 구간의 오염**이다. `setMatrixAt(-1, …)` 자체는 Float32Array 의
+// 음수 인덱스 쓰기라 조용히 버려지지만, 짝인 `touch(p, -1)` 은 `loRange` 를 -1 로
+// 낮추고 그것이 `flush()` 에서 `start: -16` 으로 GPU 에 나간다.
+describe('죽은 핸들에 자세를 쓰지 않는다 — setColor 와 대칭', () => {
+  it('★ 핸들을 쥔 채 반납이 일어나고, 그 핸들은 죽는다 (창의 실재)', () => {
+    const p = setup();
+    const h = p.acquire('building')!;
+    p.setTransform(h, FAR_X, 0, 0);
+    expect(h.index, '점유 직후에는 살아 있다').toBeGreaterThanOrEqual(0);
+    // 스트리밍이 그 파셀을 걷는다 — 편집은 이 호출을 모른다(다른 System 이다).
+    p.release(h);
+    expect(h.index, '★ 반납해도 핸들이 살아 있는 것처럼 보인다 — 그러면 남의 슬롯을 민다')
+      .toBe(-1);
+  });
+
+  it('★ 죽은 핸들로 자세를 쓰면 업로드 구간이 오염되지 않는다', () => {
+    const p = setup();
+    const live = p.acquire('building')!;
+    const dead = p.acquire('building')!;
+    p.setTransform(live, FAR_X, 0, 0);
+    p.release(dead);
+
+    // 살아 있는 슬롯 하나를 정상적으로 민다 — 여기까지가 정상 구간이다.
+    p.setTransform(live, FAR_X + 1, 0, 0);
+    // 그리고 편집이 죽은 핸들로 한 번 더 민다(조작 중 반납된 그 프레임).
+    p.setTransform(dead, FAR_X + 2, 0, 0);
+    p.flush();
+
+    const attr = p.raycastTargets()[0] as THREE.InstancedMesh;
+    const a = attr.instanceMatrix as unknown as {
+      updateRanges?: { start: number; count: number }[];
+      updateRange?: { offset: number; count: number };
+    };
+    const start = a.updateRanges?.[0]?.start ?? a.updateRange?.offset ?? 0;
+    expect(start, '★ 업로드 구간이 음수로 시작한다 — 죽은 핸들(-1)이 loRange 를 낮췄다')
+      .toBeGreaterThanOrEqual(0);
+  });
+
+  it('★ 죽은 핸들이 살아 있는 슬롯의 자세를 덮지 않는다', () => {
+    const p = setup();
+    const live = p.acquire('building')!;
+    const dead = p.acquire('building')!;
+    p.setTransform(live, FAR_X, 7, 0);
+    p.release(dead);
+    p.setTransform(dead, -999, -999, -999);
+
+    const mesh = p.raycastTargets()[0] as THREE.InstancedMesh;
+    const m = new THREE.Matrix4();
+    mesh.getMatrixAt(live.index, m);
+    expect(m.elements[13], '★ 죽은 핸들이 남의 슬롯을 밀었다').toBeCloseTo(7, 6);
+  });
+
+  it('★ 반납 swap 은 이사 온 핸들의 index 를 **제자리** 고친다 — 편집이 쥔 채로 산다', () => {
+    // E2.5 가 이것에 의존한다: 편집이 고를 때 받은 핸들을 조작 내내 들고 있는데,
+    // 그 사이 **다른** 파셀이 반납되면 swap 이 일어나 내 인스턴스가 이사할 수 있다.
+    // 핸들이 제자리 갱신되지 않으면 그때부터 남의 슬롯을 민다.
+    const p = setup();
+    const a = p.acquire('building')!;
+    const b = p.acquire('building')!;
+    p.setTransform(a, 10, 1, 0);
+    p.setTransform(b, 20, 2, 0);
+    const bWas = b.index;
+    p.release(a); // 마지막(b)이 a 자리로 이사한다
+
+    expect(b.index, '★ 이사 온 핸들의 index 가 안 고쳐졌다').not.toBe(bWas);
+    const mesh = p.raycastTargets()[0] as THREE.InstancedMesh;
+    const m = new THREE.Matrix4();
+    mesh.getMatrixAt(b.index, m);
+    expect(m.elements[13], '★ 핸들이 가리키는 자리에 그 파츠가 없다').toBeCloseTo(2, 6);
+  });
+});

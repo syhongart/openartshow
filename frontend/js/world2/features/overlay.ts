@@ -303,6 +303,9 @@ export const overlayFeature: Feature = {
       // 만질 수 없다는 것이지 여기서 변환하는 데 있지 않다.
       instances: env.pools,
       village: env.village,
+      // 조작 중 실시간 반영(W5 E2.5). **개수는 안 변한다** — 이미 점유한 슬롯의 행렬만
+      // 다시 쓰는 함수 하나이고, `acquire`·`release` 는 안 넘어간다(팀장 판정 2026-08-13).
+      retargetSlot: env.retargetSlot,
       entries: () => entries,
       place,
       lastFailure: () => lastFail,
