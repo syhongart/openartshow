@@ -25,24 +25,30 @@
 // 그래서 `--fail-on-extra` 를 만들었다. 비-필수 청크가 하나라도 있으면 **커밋 전에**
 // job 을 세운다 — 그때 사람이 로그를 읽고, 유형이 예상대로(C2PA·XMP 등)면 아래
 // `ACCEPTED` 에 근거와 함께 올려 통과시킨다. 예상 밖이면 팀장 재상신이다.
-// **목록을 비워 둔 채 시작하는 것이 요점이다** — 무엇이 들어오는지 우리가 아직 못 봤다.
+// ⚠ 이 자리는 오래 *"목록을 비워 둔 채 시작하는 것이 요점이다 — 아직 못 봤다"* 였다.
+//   **그 시기는 지났다**(검수관 B-3): run #4 에서 APP11 을 보고 규칙 하나가 올라갔다.
+//   지금 요점은 목록이 비어 있는 것이 아니라 **올릴 때 규격 위치까지 요구하는 것**이다.
 //
 // ── 한계 (통과로 적지 않기 위해 적는다) ──────────────────────────────────
-//  · **청크 이름과 바이트 수만** 본다. 내용을 해석하지 않는다 — C2PA 매니페스트가
-//    무엇을 주장하는지, SynthID 가 픽셀에 어떻게 박혔는지는 **이 축으로 안 보인다.**
-//    ⚠ 그래서 `ACCEPTED` 로 통과시킨 **타입**의 청크는 회차마다 내용이 달라도 통과한다.
+//  · [표: 청크 내용] **청크 이름 · 바이트 수 · 페이로드 선두**까지만 본다 — 판별은 `MATCH_WINDOW`
+//    (45B), 로그는 64B. C2PA 매니페스트가 무엇을 주장하는지, SynthID 가 픽셀에 어떻게
+//    박혔는지는 **이 축으로 안 보인다.**
+//    ⚠ 이 줄은 오래 *"이름과 바이트 수만 본다 → 그래서 `ACCEPTED` 로 통과시킨 **타입**은
+//    회차마다 내용이 달라도 통과한다"* 라고 적혀 있었고, 팀장 조건 3(내용 판별)을 넣으면서
+//    **거짓이 됐다.** 지금 남는 한계는 더 좁고 여전히 실재한다: 규칙이 보는 것은 **선두
+//    45B 의 구조 헤더**뿐이라, 그 뒤 수 KB 의 **매니페스트 본문은 무엇이 바뀌어도 통과한다.**
 //    실물 확인은 이 스크립트가 아니라 **워크플로의 artifact** 가 담당한다(검수관 B-3).
-//  · **잘리거나 손상된 파일을 못 잡는다.** `IEND` 없이 끝나도 extra 가 0이면 통과다.
+//  · [표: 손상·절단된 파일] **잘리거나 손상된 파일을 못 잡는다.** `IEND` 없이 끝나도 extra 가 0이면 통과다.
 //    길이 필드가 거짓이면 열거가 어긋나 **뒤쪽 청크가 통째로 안 보인다** — 그때도
 //    "0개" 로 보인다. 구조 검증은 이 축의 일이 아니다(검수관 P-6).
-//  · ⚠ **트레일러를 아예 안 본다 — 파일이 정상이어도 그렇다**(검수관 C-4 실측).
+//  · [표: 트레일러에 붙은 것] ⚠ **트레일러를 아예 안 본다 — 파일이 정상이어도 그렇다**(검수관 C-4 실측).
 //    `pngChunks` 는 `IEND` 에서, `jpegSegments` 는 **첫 SOS** 에서 멈춘다. 그 뒤에 붙은
 //    것은 구조적으로 시야 밖이다: PNG `IEND` 뒤에 `caBX` 를, JPEG 첫 SOS 뒤에 `APP11`
 //    (JUMBF)을 넣어 실측했더니 **둘 다 exit 0 · "확인되지 않은 청크 0개"** 였다.
 //    위 「길이 필드가 거짓이면」과 **다른 사건**이다 — 저건 손상된 파일, 이건 무결한 파일.
-//  · **픽셀에 박힌 워터마크는 원리상 못 잡는다.** SynthID 는 메타데이터가 아니라
+//  · [표: SynthID 워터마크] **픽셀에 박힌 워터마크는 원리상 못 잡는다.** SynthID 는 메타데이터가 아니라
 //    이미지 데이터 자체를 건드리므로 청크를 다 지워도 남는다.
-//  · `--fail-on-extra` 없이는 종료코드가 **항상 0** 이다 — 그때는 게이트가 아니라 관측이다.
+//  · [표: -] `--fail-on-extra` 없이는 종료코드가 **항상 0** 이다 — 그때는 게이트가 아니라 관측이다.
 //    ⚠ 이 줄은 첫 판본에서 *"종료코드는 항상 0"* 이라고만 적혀 있었고, 같은 회차에
 //    `--fail-on-extra` 를 얹으면서 **거짓이 됐다.** 값과 문장을 같이 고친다.
 import fs from 'node:fs';
@@ -57,7 +63,7 @@ export function pngChunks(buf) {
   while (off + 8 <= buf.length) {
     const length = buf.readUInt32BE(off);
     const type = buf.subarray(off + 4, off + 8).toString('latin1');
-    out.push({ type, length });
+    out.push({ type, length, at: off + 8 });  // at = 데이터 시작(len 4 + type 4)
     if (type === 'IEND') break;
     off += 12 + length; // len(4) + type(4) + data + crc(4)
     // ⚠ 여기 있던 `if (length < 0 || off <= 0) break; // 무한루프 방지` 를 지웠다.
@@ -110,9 +116,14 @@ export function jpegSegments(buf) {
   while (off + 4 <= buf.length) {
     if (buf[off] !== 0xff) break;
     const marker = buf[off + 1];
-    if (marker === 0xda) { out.push({ type: 'SOS', length: buf.length - off }); break; }
+    // ⚠ `at` 은 다른 세그먼트와 **같은 규약**(마커 2 + 길이필드 2 뒤)이어야 한다. 첫 판본은
+    //   `off + 2` 라 혼자 길이 필드를 가리켰다(검수관 P-6). SOS 는 렌더 청크라 지금은
+    //   `peek` 을 안 타서 무해하지만, 파서를 SOS 뒤까지 넓히면 그 순간 어긋난다.
+    //   `length` 가 「나머지 전부」인 것은 의도다 — 스캔 데이터는 길이 필드로 안 끝난다.
+    if (marker === 0xda) { out.push({ type: 'SOS', length: buf.length - off, at: off + 4 }); break; }
     const length = buf.readUInt16BE(off + 2);
-    out.push({ type: jpegMarkerName(marker), length });
+    // at = 페이로드 시작(마커 2 + 길이필드 2). 길이필드는 자기 자신을 포함한다.
+    out.push({ type: jpegMarkerName(marker), length, at: off + 4 });
     off += 2 + length;
   }
   return out;
@@ -125,7 +136,7 @@ export function webpChunks(buf) {
   while (off + 8 <= buf.length) {
     const type = buf.subarray(off, off + 4).toString('latin1');
     const length = buf.readUInt32LE(off + 4);
-    out.push({ type, length });
+    out.push({ type, length, at: off + 8 });
     off += 8 + length + (length % 2); // 홀수면 패딩 1
   }
   return out;
@@ -202,13 +213,22 @@ export function inspect(buf) {
   return { kind: null, chunks: [] };
 }
 
-// 사람이 실물을 보고 통과시킨 청크. **비어 있는 채로 시작한다** — 아직 아무것도 안 봤다.
-// 채울 때는 반드시 **어느 run 에서 무엇을 보고 넣었는지**를 옆에 적는다. 근거 없이
-// 늘어나면 이 목록은 게이트가 아니라 통과 도장이 된다.
+// 사람이 실물을 보고 통과시킨 청크. 채울 때는 반드시 **어느 run 에서 무엇을 보고 넣었는지**
+// 를 옆에 적는다. 근거 없이 늘어나면 이 목록은 게이트가 아니라 통과 도장이 된다.
+//
+// ⚠ **이 줄은 오래 *"비어 있는 채로 시작한다 — 아직 아무것도 안 봤다"* 였고 2026-08-13 에
+//   거짓이 됐다**(검수관 B-3). run #4(`31717695950`)에서 APP11 이 관측돼 아래 규칙이 올라갔다.
+//   *"비어 있는 것이 요점"* 이라는 설계 서술은 **첫 dispatch 이전의 상태**를 말한 것이고,
+//   그 시기는 지났다. 지금의 요점은 「비어 있다」가 아니라 **「올릴 때 무엇을 요구하는가」** 다.
 //
 // 🛑 **여기에 무언가를 올리기 전에 `RENDER.jpeg` 위의 ⚠⚠⚠ 를 읽어라.**
-//    특히 **`APP2`·`APP11` 은 절대 올리지 마라** — 컨테이너 마커라 ICC 프로파일도
-//    C2PA 매니페스트도 같은 이름으로 온다. "ICC 네" 하고 올리는 순간 C2PA 가 함께 통과한다.
+//    ⚠ 이 자리는 오래 *"`APP2`·`APP11` 은 **절대** 올리지 마라"* 였고, 아래 코드가 APP11 을
+//    올리면서 **주석이 코드를 금지하는 상태**가 됐다(검수관 B-3). 금지를 정확히 다시 적는다:
+//    **이름만으로는 절대 올리지 마라.** 컨테이너 마커라 ICC 프로파일도 C2PA 매니페스트도
+//    같은 이름으로 온다. "ICC 네" 하고 이름만 올리는 순간 C2PA 가 함께 통과한다.
+//    올리려면 **규격 위치를 고정한 내용 판별**이 있어야 한다 — 아래 APP11 규칙이 그 형태이고,
+//    그 규칙의 첫 판본이 `includes` 두 번이었다가 **fail-open 으로 반려됐다.**
+//    *"내용을 본다"* 로는 부족하고 *"어디에 있는지까지 본다"* 여야 한다.
 //    (검수관 C-6: 사람의 동선은 *로그 → 아래 stderr 안내 → **이 상수*** 다. 경고가
 //    `RENDER` 안에만 있으면 **목록을 고치는 사람**은 읽고 **올릴지 판단하는 사람**은 못 읽는다.
 //    조건부 경고를 `main()` 로그에 넣는 방법도 있었으나 그러면 `'APP2'`·`'APP11'` 이라는
@@ -218,9 +238,76 @@ export function inspect(buf) {
 //    `frontend/assets/sky/night.jpg` 는 `APP1`(EXIF)·`APP13`(Photoshop IRB)·`APP14` 이고,
 //    APP1·APP13 도 `RENDER` 에 없어 **똑같이 이 판단을 요구한다.** EXIF 는 촬영 기기·위치가
 //    들어가는 자리라 올릴 때 특히 조심하라. 첫 dispatch 에서 마주칠 확률이 높다.
-export const ACCEPTED = new Set([
-  // 예) 'caBX',  // run #123 에서 확인 — C2PA 매니페스트 12KB. 팀장 판정 2026-__-__.
-]);
+export const ACCEPTED = [
+  {
+    type: 'APP11',
+    // ⚠ **이름만으로 통과시키지 않는다 — 내용까지 본다**(팀장 조건 2026-08-13, 조건 3).
+    //   검수관이 반복해서 경고한 자리다: `APP11` 은 **컨테이너 마커**라 C2PA 말고 다른
+    //   것도 같은 이름으로 온다. 이름만 올리면 *"그 이름으로 오는 것은 앞으로 뭐든
+    //   통과한다."* 그 경고를 **주석이 아니라 검사로** 해소한다.
+    //   판별: JUMBF 구조가 **규격 위치에** 있고 label 이 `c2pa` 인가.
+    //
+    //   ⚠⚠⚠ **첫 판본은 `head.includes('jumb') && head.includes('c2pa')` 였고 그것은
+    //   fail-OPEN 이었다**(검수관 B-1 반려 2026-08-13, 부팀장 재현). C2PA manifest store 의
+    //   JUMBF content-type UUID 는 `63 32 70 61 00 11 …` 이고 **앞 4바이트가 ASCII `c2pa`** 다.
+    //   즉 페이로드 24번지에 `c2pa` 가 **항상 있다.** 그래서 `includes('c2pa')` 는 label 을
+    //   보지 않는다 — 실측(실물 UUID 를 넣은 픽스처, CLI `--fail-on-extra`):
+    //
+    //       label 이 `xmp ` 여도        → exit 0   ← 막아야 하는데 통과
+    //       label 이 아예 없어도        → exit 0
+    //       `c2pa`·`jumb` 순서가 역전돼도 → exit 0
+    //
+    //   **가장 값진 것은 값이 아니라 내가 틀린 방식이다.** 나는 *"실물을 못 봤지만 규격에서
+    //   유도했고, 틀렸으면 fail-closed 라 사람이 알아챈다"* 고 적었다. 실측 방향은
+    //   **fail-open** 이었다 — 유도할 때 UUID 의 ASCII 성질을 안 봤기 때문이다.
+    //   **「틀려도 안전한 방향」이라는 판단 자체가 실측 대상이다.**
+    //   테스트가 이것을 못 본 이유도 기록해 둔다: 픽스처가 UUID 자리를 `alloc(17)`(0바이트)로
+    //   채워 **실물의 핵심 성질이 대역에 없었다.** 게시판이 이름 붙인 「네 번째 원인」이다.
+    //
+    //   그래서 **오프셋을 고정한다.** 문자열이 어디에 있든 상관없다는 판별은 판별이 아니다.
+    //     idx 12..15 `jumb` — JUMBF 슈퍼박스 타입 (앞 8B = CI/En/Z, 이어 box length 4B)
+    //     idx 20..23 `jumd` — description box 타입
+    //     idx 41..44 `c2pa` — label (UUID 16B + toggles 1B 뒤)
+    //   UUID 자리(24..27)는 **일부러 판별에 안 넣는다.** 실물을 아직 못 봤고, 규격값이
+    //   버전에 따라 다를 여지를 배제 못 한다. 넣으면 더 좁아지지만 거짓 FAIL 이 늘고,
+    //   거짓 FAIL 이 반복되면 사람이 *"규칙을 넓히자"* 로 유도된다 — 이 파일이 내내
+    //   경계한 동선이다. 위 세 자리만으로 위 실측 3건이 전부 막힌다.
+    //   **뮤테이션 실측 (2차 — 반려 해소분)**. `npx vitest run tests/generate-image.test.ts`:
+    //     R1  `includes` 로 원상복구       → 7 failed   ← 반려의 본체가 되살아난다
+    //     R2  label 위치 검사만 제거       → 6 failed
+    //     R3  `jumb` 위치 검사만 제거      → 1 failed
+    //     R15 `jumd` 위치 검사만 제거      → 1 failed
+    //     R4  `MATCH_WINDOW` 45→44        → 5 failed
+    //     R6  `passed` 에서 `!essential`   → 3 failed
+    //     R7  `passed` 에서 `!extraSet`    → 2 failed
+    //     R8  `extraSet` 을 타입 집합으로  → 1 failed
+    //     R9  근거(`why`) 로그 제거        → 1 failed
+    //     R10 SOS `at` 을 `off+2` 로       → 1 failed
+    //     R11 워크플로 표 행 제거          → 1 failed
+    //     R12 헤더 마커 제거               → 2 failed
+    //     R13 `peek` 로그 폭 64→128       → 1 failed
+    //     R5  판별 창을 기본값으로         → **0 failed(등가)** — `MATCH_WINDOW` 주석 참조
+    //   ⚠ **R3·R15 는 처음에 0 failed 였다.** 기존 케이스들이 나머지 두 조건만으로도 전부
+    //     갈려서 `jumb`/`jumd` 는 있으나 없으나 결과가 같았다 — 세 검사를 한 케이스로
+    //     뭉뚱그려 재면 늘 이렇게 된다(뮤테이션 N10 이 처음 지적한 형태). **각 조건만
+    //     어긋난 입력**을 따로 넣어 닫았다.
+    //   ⚠ 1차 실측(M1~M8: `at` 오프셋·`main()` 배선)은 그대로 유효하다. 다만 **M6·M7 은
+    //     이 개정으로 형태가 바뀌어 R3/R15·R13 이 대신한다** — 옛 이름으로 재현하려 하면
+    //     치환 문자열이 없다.
+    match: (head) =>
+      head.slice(12, 16) === 'jumb'
+      && head.slice(20, 24) === 'jumd'
+      && head.slice(41, 45) === 'c2pa',
+    // ⚠ `why` 첫 줄은 **CLI 로그에 그대로 찍힌다**(검수관 P-2). 사람이 통과 판정을 읽는
+    //   자리이므로 규칙의 실제 동작과 어긋나면 안 된다 — 첫 판본은 *"선두에 jumb+c2pa 가
+    //   없으면"* 이라고 적어 **위치를 안 보는 것처럼** 말했고, 그것이 곧 반려된 그 구현이다.
+    why: '규격 위치 고정 — idx12 `jumb` · idx20 `jumd` · idx41 label `c2pa`. run #4\n'
+      + '         (31717695950) 에서 APP11 5.9KB 로 처음 관측됐고 팀장 판정 A(보존)의\n'
+      + '         대상이다. 실제 선두 문자열은 그 run 로그에 남는다.\n'
+      + '         ⚠ **fail-closed** — 셋 중 하나라도 위치가 어긋나면 통과하지 않고 팀장\n'
+      + '         재상신으로 간다(팀장 조건 2). 이름만 맞는 APP11 은 통과 못 한다.',
+  },
+];
 
 /**
  * 확인되지 않은 청크를 고른다. **판정 로직을 여기로 뺀 이유가 검출력이다.**
@@ -234,21 +321,102 @@ export const ACCEPTED = new Set([
  * 검사할 수 있다. 환경변수로 목록을 넓히는 방법도 있었지만 그건 게이트를 우회하는
  * 구멍이 된다 — 검사를 위해 보호를 뚫지 않는다.
  *
- * ⚠ **이것으로 절반만 닫혔다**(검수관 C-3 실측). 이 함수의 검출력은 생겼지만,
- * **`main()` 이 기본 인자로 `ACCEPTED` 를 넘기는가**는 여전히 검사가 0이다 —
- * `main()` 의 호출을 `findExtra(chunks, kind, new Set())` 로 바꿔도 테스트가 안 깨진다.
- * 그 축이 처음 동작하는 날은 여전히 **`caBX` 를 목록에 올리는 날**이고, N10 이 지적한
- * 날짜 그대로다. 목록이 비어 있는 동안은 원리상 못 잰다 — **"닫혔다" 로 적지 않는다.**
- * 실패 방향이 거짓 FAIL 쪽이라(사람이 즉시 알아챈다) 블로커로 다루지 않을 뿐이다.
+ * ⚠ **이 자리는 오래 "절반만 닫혔다" 였고 2026-08-13 에 닫혔다**(검수관 C-3 → 실측 해소).
+ * 그때 적혀 있던 것은 *"`main()` 이 기본 인자를 넘기는가는 여전히 검사가 0이고, 그 축이
+ * 처음 동작하는 날은 목록에 항목을 올리는 날"* 이었다. **그 날이 왔다** — `ACCEPTED` 에
+ * APP11 규칙이 생겼고, 그러자 원리상 못 재던 것이 재진다. 뮤테이션 둘로 실측했다:
+ *   · `main()` 이 `buf` 를 안 넘김        → 2 failed (fail-closed 로 뒤집혀 진짜도 막힌다)
+ *   · `main()` 이 `accepted` 를 `[]` 로   → 2 failed
+ * 검수관의 진단은 맞았고 **처방도 맞았다** — 목록이 비어 있는 동안 못 재는 것은 이 설계의
+ * 성질이었지, 고쳐야 할 결함이 아니었다. 다시 비면 다시 못 잰다: **항목을 지우는 사람은
+ * 이 두 뮤테이션이 함께 죽는다는 것을 알고 지워라.**
  *
- * @param {Array<{type:string,length:number}>} chunks
+ * @param {Array<{type:string,length:number,at:number}>} chunks
  * @param {'png'|'jpeg'|'webp'} kind
- * @param {Set<string>} [accepted] 사람이 통과시킨 청크. 테스트에서 주입한다.
+ * @param {Buffer|null} [buf] 원본 바이트. **없으면 내용을 못 보므로 아무것도 통과 못 한다.**
+ * @param {Array<{type:string,match:(head:string)=>boolean}>} [accepted]
+ *   사람이 실물을 보고 통과시킨 규칙. **타입 집합이 아니라 내용 판별 규칙이다**(팀장 조건 3).
+ *   테스트에서 주입한다.
  */
-export function findExtra(chunks, kind, accepted = ACCEPTED) {
+export function findExtra(chunks, kind, buf = null, accepted = ACCEPTED) {
   const render = RENDER[kind];
   if (!render) return chunks;
-  return chunks.filter((c) => !render.has(c.type) && !accepted.has(c.type));
+  return chunks.filter((c) => {
+    if (render.has(c.type)) return false;
+    // ⚠ `buf` 가 없으면 내용을 못 보므로 **통과시키지 않는다**(fail-closed).
+    //   "못 봤다" 와 "봤는데 괜찮다" 를 같게 취급하지 않는다.
+    // ⚠⚠ 판별에는 **`MATCH_WINDOW`(유도값)** 를 넘긴다 — `peek` 의 기본값 64는 로그 표시용
+    //   선택이라 판별 근거가 될 수 없다. 두 값을 갈라 두면 로그 폭을 만지는 사람이
+    //   판별을 건드리지 못한다.
+    return !accepted.some((rule) => rule.type === c.type && buf && rule.match(peek(buf, c, MATCH_WINDOW)));
+  });
+}
+
+/**
+ * 판별에 필요한 창 — **유도값이다**(팀장 조건 1).
+ *
+ * `ACCEPTED` 의 APP11 규칙이 보는 최대 인덱스는 label 끝인 **44** 이고, 문자열 길이로는
+ * 45 다. 유도 표(전부 규격 고정 크기):
+ *
+ *     CI 2B + En 2B + Z 4B         = 8B    → idx 0..7    APP11 공통 헤더
+ *     box length 4B + `jumb` 4B    = 8B    → idx 8..15   (타입은 12..15)
+ *     box length 4B + `jumd` 4B    = 8B    → idx 16..23  (타입은 20..23)
+ *     UUID 16B                     = 16B   → idx 24..39
+ *     toggles 1B                   = 1B    → idx 40
+ *     label `c2pa`                 = 4B    → idx 41..44
+ *                                  ─────
+ *                                    45B   ← 이 값
+ *
+ * **45 보다 크게 잡아도 판별 결과는 같다**(오프셋 고정이라 뒤쪽을 안 본다). 작으면 label
+ * 비교가 짧아져 **전부 막힌다** — 틀리는 방향이 fail-closed 다.
+ *
+ * 뮤테이션 실측:
+ *   · R4 `45 → 44`                                → 5 failed  (값에는 검출력이 있다)
+ *   · R5 판별 호출을 `peek(buf,c)`(기본 64)로 되돌림 → **0 failed — 등가 뮤테이션이다**
+ *   · Z4 `45 → 60`(검수관 실측)                     → **0 failed**
+ *
+ * ⚠ **검출력은 한 방향뿐이다**(검수관 Q-1). 줄이면 잡히고(R4) **늘리면 아무도 안 잡는다**(Z4).
+ * 위 *"45 보다 크게 잡아도 결과는 같다"* 가 곧 그 뜻인데, 성질만 적고 **검사가 없다는 말은
+ * 안 적혀 있었다.** 이 값을 키우는 변경은 게이트를 통과한다 — 그것이 무해하다는 근거는
+ * 오프셋 고정뿐이고, 판별을 다시 위치 무관하게 바꾸는 순간 그 근거도 사라진다.
+ *
+ * ⚠ **R5 가 0인 것을 숨기지 않는다.** 오프셋 고정이라 창이 45 이상이면 무엇이든 결과가
+ * 같으므로, 판별에 이 상수를 넘기는 것은 **런타임 동작을 바꾸지 않는다.** 그런데도 나누어
+ * 둔 이유는 하나뿐이다 — **어느 값이 유도값인가**를 코드가 말하게 하려는 것이고, 팀장
+ * 조건 1 이 요구한 것이 정확히 그 구분이다(`peek` 의 64는 유도가 아니라 표시상의 선택이다).
+ * 즉 이 분리가 지키는 것은 동작이 아니라 **근거의 소재**다. 그것을 「검출력 있음」으로
+ * 적으면 다음 사람이 없는 방어를 믿는다.
+ */
+export const MATCH_WINDOW = 45;
+
+/**
+ * 청크 페이로드 선두를 인쇄 가능 문자로만 찍는다. 나머지는 `.`.
+ *
+ * ⚠ **기본값 64는 유도값이 아니라 로그 표시상의 선택이다** — 정직하게 적는다(검수관 B-2).
+ * 첫 판본은 *"46B + 정렬 여유 → 64B"* 라고 적으면서 바로 위에서 *"경계는 유도값이다 —
+ * 여유를 얹은 값이 아니다"* 라고 단언했다. **같은 블록 안에서 모순**이었고, 18B 는 어떤
+ * 규격 항목에서도 안 나온다(46을 8·16바이트 정렬해도 48이다). 규율이 지목한 형태 그대로다:
+ * *"실측에 여유를 얹은 값은 근거가 아니다."*
+ *
+ * 유도값은 위 `MATCH_WINDOW`(45) 이고 **판별은 그것만 쓴다.** 여기 64는 사람이 로그를 읽을
+ * 때 label 뒤 몇 바이트를 더 보면 *왜* 판별에 실패했는지 보이기 때문에 고른 값이다 —
+ * 근거가 아니라 판단이고, 판별에는 영향이 없다.
+ *
+ * 넓혀도 위험이 늘지 않는 이유: 그 구간은 여전히 JUMBF 구조 헤더이고 서명·키 자료는 수 KB
+ * 뒤다. ⚠ 단 **이 상한은 `ACCEPTED` 가 통과시킨 청크에 대해서만 성립한다** — `peek` 은
+ * extra(정의상 *모르는 것*) 에도 쓰이고 그쪽에는 이런 보장이 없다(검수관 P-3).
+ * 생성 이미지라 촬영 EXIF 같은 경로가 없어 실질 위험은 낮지만, **낮은 것과 없는 것은 다르다.**
+ * hex 는 안 찍는다 — 판별에 필요한 것은 고정 위치의 문자열뿐이고, 인쇄 필터가 바이너리를 가린다.
+ */
+export function peek(buf, chunk, n = 64) {
+  const start = Math.max(0, chunk.at | 0);
+  const end = Math.min(buf.length, start + n);
+  let out = '';
+  for (let i = start; i < end; i++) {
+    const b = buf[i];
+    out += b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '.';
+  }
+  return out;
 }
 
 function main() {
@@ -273,20 +441,50 @@ function main() {
     return;
   }
   const essential = RENDER[kind];
-  const extra = findExtra(chunks, kind);
+  const extra = findExtra(chunks, kind, buf);
   // ⚠ 화면 표시는 **`extra` 를 기준으로** 정한다. 첫 판본은 `essential`·`ACCEPTED` 를
   //   여기서 다시 조회해 **같은 판정을 두 곳에서** 했고(검수관 P-c), 그러면 판정 로직을
   //   고칠 때 화면의 `＋` 와 실제 차단 목록이 어긋난다 — 값 미러링과 같은 형태다.
-  const extraTypes = new Set(extra.map((c) => c.type));
+  // ⚠⚠ **타입 집합이 아니라 청크 객체로 가른다**(검수관 P-1). 첫 판본은
+  //   `new Set(extra.map((c) => c.type))` 였고, **같은 타입이 여럿일 때 무너졌다** —
+  //   C2PA 매니페스트가 64KB 를 넘으면 JPEG XT 규격상 `APP11` 이 여러 세그먼트로 쪼개지고
+  //   2번째부터는 `jumb` 헤더가 없다. 그러면 하나는 extra 인데 타입이 같아서 **통과한
+  //   세그먼트까지 `＋` 로 찍히고**, 동시에 `passed` 에서도 빠져 **그 peek 로그가 사라진다.**
+  //   `extra` 는 `chunks` 를 필터한 결과라 같은 객체 참조다 — 그것으로 가르면 정확하다.
+  const extraSet = new Set(extra);
   console.log(`형식: ${kind.toUpperCase()} · 청크 ${chunks.length}개`);
   for (const c of chunks) {
-    const mark = extraTypes.has(c.type) ? '＋' : essential.has(c.type) ? ' ' : '·';
+    const mark = extraSet.has(c) ? '＋' : essential.has(c.type) ? ' ' : '·';
     console.log(`  ${mark} ${c.type.padEnd(22)} ${String(c.length).padStart(9)} bytes`);
+  }
+  // **통과한 것도 찍는다.** 첫 판본은 `·`(ACCEPTED 통과)를 마크만 하고 지나갔는데, 그러면
+  // 팀장 조건의 취지 —*"사람이 실물을 보고 통과시킨다"*— 가 **정작 통과하는 회차에** 깨진다:
+  // 규칙이 보는 것은 선두 `MATCH_WINDOW` 바이트뿐이고 그 뒤 수 KB 의 매니페스트 본문은
+  // 회차마다 달라도 통과한다. 로그에 안 남으면 *"그때 무엇이 통과했나"* 를 물을 자리가 없다.
+  // ⚠ 판정은 `extraSet`·`essential` 에서 **유도**한다 — `ACCEPTED` 를 여기서 다시 조회하면
+  //   같은 판정이 두 곳에 생긴다(검수관 P-c 가 지적한 그 형태).
+  const passed = chunks.filter((c) => !extraSet.has(c) && !essential.has(c.type));
+  if (passed.length) {
+    console.log(`\n· 로 표시한 ${passed.length}개는 **사람이 근거를 적어 통과시킨 것**이다(ACCEPTED): ${passed.map((c) => c.type).join(', ')}`);
+    // ⚠ `why` 를 **함께 찍는다**(검수관 P-2). 안 찍으면 사람의 동선이 로그에서 끊긴다 —
+    //   로그는 *"통과했다"* 만 말하고 *"무슨 근거로"* 는 소스를 열어야 나온다.
+    for (const c of passed) {
+      console.log(`    ${c.type.padEnd(8)} ${peek(buf, c)}`);
+      // ⚠ **지금은 `ACCEPTED[0]` 와 등가라 이 `find` 에 검출력이 0이다**(검수관 Q-2 실측:
+      //   `ACCEPTED[0]` 로 바꿔도 0 failed). 규칙이 하나뿐이어서다. **항목이 둘이 되는 날 —
+      //   PNG 회차의 `caBX` 규칙을 넣는 날 — 엉뚱한 근거가 로그에 찍힌다.** 뮤테이션 N10 이
+      //   지적한 형태(*"목록이 비어 있는 동안은 원리상 못 잰다"*)가 한 칸 옮겨 온 것이고,
+      //   그때 이 줄을 지키는 검사를 함께 넣어야 한다.
+      const rule = ACCEPTED.find((r) => r.type === c.type);
+      if (rule) console.log(`      근거: ${rule.why.split('\n')[0].trim()}`);
+    }
   }
   if (extra.length) {
     const bytes = extra.reduce((a, c) => a + c.length, 0);
     console.log(`\n＋ 로 표시한 ${extra.length}개(${KB(bytes)})가 **이미지 데이터가 아닌 것**이다: ${extra.map((c) => c.type).join(', ')}`);
-    console.log('  내용은 해석하지 않았다 — 이름과 크기만 본 것이다.');
+    // 판별 창(45B)이 아니라 **로그 폭**(peek 기본값)이다 — 둘을 섞어 말하지 않는다.
+    console.log('  이름과 크기 말고 **선두 64바이트의 인쇄 가능 문자**를 함께 찍는다(판별은 앞 45바이트만 쓴다):');
+    for (const c of extra) console.log(`    ${c.type.padEnd(8)} ${peek(buf, c)}`);
     if (failOnExtra) {
       console.error('::error::확인되지 않은 메타데이터가 있어 커밋 전에 세운다(팀장 조건 2026-08-13, 분기 A).');
       console.error('  사람이 위 목록을 읽고 판정하라. 예상대로면 png-chunks.mjs 의 ACCEPTED 에 근거와 함께 올린다.');
