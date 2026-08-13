@@ -24,6 +24,7 @@ import {
   ALL_KINDS, kindsFor, maxPartsPerParcel, outermostTierFor,
   type LayoutOptions, type PartKind,
 } from '../parts/index.js';
+import type { PlacedPart } from '../parts/types.js';
 
 /**
  * 슬롯 풀에 필요한 것만 추린 인터페이스. `InstancePools`가 그대로 만족한다(tone 변환만
@@ -58,6 +59,15 @@ export interface ParcelBuilderOptions {
   pool: SlotPool;
   cellX: number;
   cellZ: number;
+  /**
+   * **동결된 파셀의 배치.** `null` 이면 계산한다(`parcelLayout`).
+   *
+   * 감독이 손으로 옮긴 구역은 계산이 아니라 저장된 배열을 쓴다 — 판정·근거의 SSOT 는
+   * `decide/parcel-freeze.ts` 한 곳이다. 여기서는 «주입받는다» 는 사실만 안다:
+   * 빌더가 계약(`decide/overlay.ts`)을 직접 import 하면 생성기 계층이 편집 데이터를
+   * 알게 되고, 그것을 막는 것이 팀장 조건의 집행 축 ① 이다(테스트가 그 축을 지킨다).
+   */
+  frozenAt?(px: number, pz: number, tier: Exclude<Tier, 'none'>): readonly PlacedPart[] | null;
   layout?: LayoutOptions;
   /** 동시에 떠 있을 수 있는 최대 파셀 수 — 풀 예산 산정에 쓴다 */
   maxParcels?: number;
@@ -74,6 +84,8 @@ export class PooledParcelBuilder implements ParcelBuilder {
   private readonly cellX: number;
   private readonly cellZ: number;
   private readonly layout: LayoutOptions;
+  /** 동결 조회. 없으면 언제나 계산한다(라이브 기본값) */
+  private readonly frozenAt?: ParcelBuilderOptions['frozenAt'];
   private starved = 0;
   private byKindStarved: Record<string, number> = {};
 
@@ -82,6 +94,7 @@ export class PooledParcelBuilder implements ParcelBuilder {
     this.cellX = opts.cellX;
     this.cellZ = opts.cellZ;
     this.layout = { ...DEFAULT_LAYOUT, cellX: opts.cellX, cellZ: opts.cellZ, ...opts.layout };
+    this.frozenAt = opts.frozenAt;
   }
 
   /**
@@ -199,7 +212,12 @@ export class PooledParcelBuilder implements ParcelBuilder {
 
   /** 한 종류의 부품을 배치대로 채운다. tier를 인자로 받는다(핸들 상태에 기대지 않는다). */
   private fill(h: PooledHandle, kind: PartKind, tier: Exclude<Tier, 'none'>): void {
-    const parts = parcelLayout(h.px, h.pz, tier, this.layout);
+    // ⚠ **동결이 계산을 대신하는 유일한 자리다.** `parcelLayout` 안에 분기를 넣으면 골든
+    // 해시가 깨지고, 그때 고칠 것은 해시가 아니라 설계다(`parcel-layout.ts` 헤더).
+    // `null` 과 빈 배열은 다른 뜻이다 — `null` = 안 손댔다(계산해라), 빈 배열 = 손대서
+    // 전부 지웠다(아무것도 놓지 마라). `??` 가 아니라 명시적 분기인 이유가 그것이다.
+    const frozen = this.frozenAt?.(h.px, h.pz, tier) ?? null;
+    const parts = frozen !== null ? frozen : parcelLayout(h.px, h.pz, tier, this.layout);
     const ox = h.px * this.cellX;
     const oz = h.pz * this.cellZ;
     const slots: SlotHandle[] = [];
