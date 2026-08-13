@@ -329,6 +329,29 @@ describe('G-CALL safeError 가 실제로 소비되는가 (순수 함수 검사�
   });
 });
 
+// ⚠⚠ **이 픽스처가 4차 반려의 본체다**(검수관 B-5). 첫 판본은 `DQT`·`SOF0`·`SOS` 셋뿐
+//   이었고, 그래서 `jpegMarkerName` 의 **DHT·APPn 계열 매핑에 검출력이 0** 이었다.
+//   검수관이 실물 JPEG 으로 뮤테이션 둘을 돌려 갈랐다:
+//     · M-A `m !== 0xc4` 제거(DHT→SOF4, **거짓 FAIL** 방향) → CLI exit 1 로 잡힘,
+//       그러나 **테스트 86개는 전부 초록**
+//     · M-B APPn 을 전부 `'APP0'` 으로(APP2·APP11 이 렌더로, **거짓 PASS** 방향)
+//       → **CLI 도 exit 0, 테스트도 초록 — 양쪽 다 0**
+//   M-B 가 본체다. 한 줄 회귀로 **C2PA 매니페스트가 게이트를 통과**하는데, 이 게이트의
+//   존재 이유가 바로 그것을 막는 것이다. M-A 는 빨간불이라 사람이 알아채지만
+//   **M-B 는 조용하다.**
+//   그래서 픽스처에 **DHT 와 APP2 를 넣는다.** `toContain` 이 아니라 `toEqual` 인 것도
+//   조건이다 — 오분류는 "빠지고 다른 것이 들어오는" 형태라 포함 검사로는 안 잡힌다.
+const JPEG_FIXTURE = Buffer.from([
+  0xff, 0xd8,                                // SOI (파서는 여기 다음부터 읽는다)
+  0xff, 0xdb, 0x00, 0x04, 0, 0,              // DQT
+  0xff, 0xe2, 0x00, 0x06, 0x49, 0x43, 0x43, 0x00, // APP2 — ICC 이자 C2PA 컨테이너
+  0xff, 0xc0, 0x00, 0x04, 0, 0,              // SOF0
+  0xff, 0xc4, 0x00, 0x04, 0, 0,              // DHT  ← 0xc4 는 SOF4 가 아니다
+  0xff, 0xda, 0x00, 0x08, 1, 0, 0, 0,        // SOS
+  0x12, 0x34, 0x56, 0x78,                    // 압축 데이터
+  // ⚠ 압축데이터를 붙이는 것은 장식이 아니다 — 루프가 `off + 4 <= length` 라
+  //   SOS 가 파일 끝 2바이트면 **읽히지 않는다.** 실물 모양에 맞춘다.
+]);
 describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)', () => {
   const run = (buf: Buffer, extraArgs: string[] = []) => {
     const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'oas-chunk-')), 'x.png');
@@ -361,6 +384,20 @@ describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)'
 
   it('텍스트 청크(tEXt)도 잡는다 — 메타데이터는 렌더 목록에 없다', () => {
     expect(run(makePng([['tEXt', Buffer.from('Comment\0hello')]]), ['--fail-on-extra']).status).toBe(1);
+  });
+
+  // ⚠ **CLI 축의 거짓 PASS 를 잡는 자리**(검수관 B-5 / 뮤테이션 M-B). APPn 매핑이
+  //   무너져 `APP2` 가 `APP0`(렌더)으로 읽히면 **C2PA 컨테이너가 통째로 통과한다.**
+  //   검수관 실측에서는 CLI 도 테스트도 그것을 못 잡았다 — 이 케이스가 CLI 쪽을 닫는다.
+  it('APP2 가 있는 JPEG 은 커밋 전에 죽는다 — C2PA 컨테이너 자리다', () => {
+    const r = run(JPEG_FIXTURE, ['--fail-on-extra']);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toContain('APP2');
+  });
+
+  it('APP2 가 없는 JPEG 은 통과한다 — 위 케이스가 형식 탓이 아님을 못 박는다', () => {
+    const noApp2 = Buffer.concat([JPEG_FIXTURE.subarray(0, 8), JPEG_FIXTURE.subarray(16)]);
+    expect(run(noApp2, ['--fail-on-extra']).status).toBe(0);
   });
 });
 
@@ -427,9 +464,14 @@ describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', 
     (t) => expect(RENDER.jpeg.has(t)).toBe(false),
   );
 
-  // 유령 항목이 사라졌으므로 이제 **오분류가 실제로 잡힌다.** 위 목록이 되돌아가면
-  // 이 케이스가 깨진다 — 그것이 P-a 를 닫는 축이다.
-  it('DHT 가 SOF4 로 오분류되면 확인 대상으로 잡힌다', () => {
+  // ⚠ **이 케이스가 잡는 것은 「목록 회귀」뿐이다 — 파서 오분류가 아니다.**
+  //   첫 판본은 여기 *"이제 오분류가 실제로 잡힌다"* 라고 적었고 **실측을 앞선 단언**이었다
+  //   (검수관 B-5). 파서가 DHT 를 SOF4 로 읽어도 이 케이스는 안 깨진다 — `SOF4` 라는
+  //   **입력을 내가 직접 넣어 주기** 때문이다. 파서 축은 아래 `G-RENDER` 의 `JPEG_FIXTURE`
+  //   세 케이스가 담당한다.
+  //   같은 회차의 C-3 에서는 *"절반, 원리상 못 잰다"* 로 정확히 적었는데 여기엔 그 정직함이
+  //   안 갔다. **보고는 사라지고 주석은 남는다.**
+  it('RENDER.jpeg 에 SOF4 가 되돌아오면 잡힌다 (목록 회귀 축 — 파서 축이 아니다)', () => {
     expect(findExtra([{ type: 'SOF4', length: 100 }], 'jpeg', new Set())).toHaveLength(1);
   });
 
@@ -453,19 +495,21 @@ describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', 
     (t) => expect(RENDER.jpeg.has(t)).toBe(false),
   );
 
+
   it('JPEG 마커에 이름이 붙는다 — 숫자로 남으면 정체불명으로 분류된다', () => {
-    // SOI + DQT(길이 4) + SOF0(길이 4) + SOS + 압축데이터.
-    // ⚠ 압축데이터를 붙이는 것은 장식이 아니다 — 루프가 `off + 4 <= length` 라
-    //   SOS 가 파일 끝 2바이트면 **읽히지 않는다.** 실제 JPEG 은 SOS 뒤에 항상
-    //   데이터가 오므로 픽스처를 실물 모양에 맞춘다(안 그러면 통과하는 이유가 다르다).
-    const jpeg = Buffer.from([
-      0xff, 0xd8,
-      0xff, 0xdb, 0x00, 0x04, 0, 0,
-      0xff, 0xc0, 0x00, 0x04, 0, 0,
-      0xff, 0xda, 0x00, 0x08, 1, 0, 0, 0,
-      0x12, 0x34, 0x56, 0x78,
-    ]);
-    expect(jpegSegments(jpeg).map((s) => s.type)).toEqual(['DQT', 'SOF0', 'SOS']);
+    expect(jpegSegments(JPEG_FIXTURE).map((s) => s.type)).toEqual(['DQT', 'APP2', 'SOF0', 'DHT', 'SOS']);
+  });
+
+  // M-A 를 잡는 축. DHT 가 SOF4 로 읽히면 위 `toEqual` 이 깨진다.
+  it('0xc4 는 DHT 다 — SOF4 로 읽히면 안 된다', () => {
+    expect(jpegSegments(JPEG_FIXTURE).map((s) => s.type)).not.toContain('SOF4');
+  });
+
+  // M-B 를 잡는 축. APP2 가 APP0 으로 읽히면 **C2PA 가 렌더로 통과한다.**
+  it('APP2 가 APP0 으로 읽히지 않는다 — 그러면 C2PA 컨테이너가 통과한다', () => {
+    const types = jpegSegments(JPEG_FIXTURE).map((s) => s.type);
+    expect(types).toContain('APP2');
+    expect(findExtra(jpegSegments(JPEG_FIXTURE), 'jpeg', new Set()).map((c) => c.type)).toEqual(['APP2']);
   });
 });
 
