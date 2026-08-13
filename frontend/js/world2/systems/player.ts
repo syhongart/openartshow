@@ -139,6 +139,24 @@ export function bobHeight(phase: number, intensity: number, amp = BOB_AMPLITUDE)
  */
 export const LIFT_MAX = 40;
 
+/**
+ * 편집 종료 복원을 나누는 **걸음 길이(m)**. 근거는 충돌 캐시의 커버 범위다.
+ *
+ * `systems/collision.ts` 의 `Collider.resolve` 는 넘겨받은 자리 기준 3×3 파셀만 캐시하고,
+ * 그 파일이 실측해 적어 둔 여유가 **«플레이어 앞뒤로 최소 `cellX`»** 다(지금 32m).
+ * 걸음이 그 안에 있으면 목표가 언제나 캐시 안에 든다.
+ *
+ * 8m 는 그 여유의 **4분의 1** — `Math.round` 를 쓰는 이유와 같은 논리다(결함을 막아서가
+ * 아니라 마진을 벌어서). 최악(반경 80m 반대편, 160m)에도 20걸음이고, 편집을 끌 때
+ * 한 번뿐이라 비용이 화면에 안 나타난다.
+ *
+ * ⚠ **셀 크기를 여기서 읽지 않는다** — `PlayerSystem` 은 충돌 구현도 레이아웃도 모르고
+ * (`resolveMove` 를 주입받을 뿐이다), 그것을 알게 하면 이 클래스가 세계 지형에 묶인다.
+ * 대신 **그 전제를 테스트가 실제 `Collider` 로 지킨다**(`tests/world2-player-orbit.test.ts`).
+ * 셀이 8m 이하로 줄면 그 축이 빨간불이 되고, 그때 이 값을 재론한다.
+ */
+export const RESTORE_STEP = 8;
+
 /** 피치를 수직 한계 안으로 가둔다 — 넘어가면 화면이 뒤집힌다. */
 export function clampPitch(pitch: number): number {
   const lim = Math.PI / 2 - 0.05;
@@ -364,9 +382,37 @@ export class PlayerSystem implements System {
     const from = this.orbitFrom;
     this.orbitFrom = null;
     if (from === null || !this.resolveMove) return;
-    const safe = this.resolveMove(from.x, from.z, this.x - from.x, this.z - from.z);
-    this.x = safe.x;
-    this.z = safe.z;
+
+    // ⚠⚠ **한 번에 넣지 않는다 — 검수관 반려(2026-08-13).**
+    //
+    // 첫 판본은 `resolveMove(from.x, from.z, 전체이동량)` 을 **한 번** 불렀고 그것이
+    // 조용히 틀렸다. 충돌 구현(`systems/collision.ts` 의 `Collider.resolve`)은 **첫 인자
+    // 자리 기준 3×3 파셀**만 캐시하는데(`rebuild`), 궤도는 최대 반경 80m 라 그 커버를
+    // 넘게 움직일 수 있다. 그러면 목표 자리의 건물이 **캐시에 아예 없어** 통과한다.
+    //
+    // 검수관 실측: 건물 정중앙을 목표로 `resolve(0, 0, 100, 0)` → `{x:100, z:0}`(통과).
+    // 같은 건물·같은 이동량인데 캐시가 목표 근처에서 만들어졌으면 완전히 막혔다.
+    // **캐시가 어느 자리 기준인가**에 따라 갈린 것이다.
+    //
+    // 그래서 **걸어간다**: 짧은 걸음으로 나누면 걸음마다 캐시가 따라온다. 주행이 이
+    // 전제 위에서 도는 것과 같다(한 프레임 이동량이 작아 문제가 안 됐다) — 궤도만
+    // 한 번에 크게 움직여서 그 전제를 깼다.
+    let x = from.x;
+    let z = from.z;
+    const totalX = this.x - x;
+    const totalZ = this.z - z;
+    const steps = Math.max(1, Math.ceil(Math.hypot(totalX, totalZ) / RESTORE_STEP));
+    const sx = totalX / steps;
+    const sz = totalZ / steps;
+    for (let i = 0; i < steps; i++) {
+      const next = this.resolveMove(x, z, sx, sz);
+      // 완전히 막혔으면 더 가도 같다 — 남은 걸음의 캐시 재빌드 비용을 아낀다.
+      if (next.x === x && next.z === z) break;
+      x = next.x;
+      z = next.z;
+    }
+    this.x = x;
+    this.z = z;
   }
 
   update(ctx: FrameCtx): void {

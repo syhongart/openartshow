@@ -40,6 +40,16 @@
 // 실제로 돌게 하니 1 failed(재현 확인). 좌표가 얽힌 검사에서는 「그 값이 우연히 같아지는
 // 자리」를 먼저 의심한다.
 //
+// ── 검수관 반려 해소분 검출력 실측 (2026-08-13, 별도 클론) ──────────────────
+// 대조군 이 파일 25 passed.
+//
+//   B-1 복원을 예전처럼 **한 번에** (검수관이 찾은 결함 재현)  → **1 failed**
+//   B-2 걸음(`RESTORE_STEP`)을 캐시 커버보다 크게 (8 → 200)    → **2 failed**
+//
+// B-2 가 둘인 것이 요점이다 — 결함 자체(갇힘)와 **그 전제가 깨졌다는 신호**(걸음이
+// 커버를 넘는다)가 따로 잡힌다. 전제 축이 없으면 셀 크기가 줄어드는 날 갇힘 축만
+// 조용히 빨간불이 되고, 원인을 찾는 데 시간이 든다.
+//
 // ── 여기서 못 재는 것 ───────────────────────────────────────────────────────
 // **조작감**이다. 픽셀당 회전량·리프트 속도가 손에 맞는지는 감독 화면에서만 갈린다.
 // 그리고 궤도 중심을 「화면 중앙 지면」으로 잡는 근사(`edit/input.ts` 의 `orbitCenter`)가
@@ -341,5 +351,91 @@ describe('궤도 문의 소비자는 편집뿐이다 (팀장 조건 1)', () => {
     // 가장 위험한 회귀 형태: 주행 쪽에서 «카메라를 여기로 옮기자» 며 이 문을 쓰기 시작하는 것.
     const main = readFileSync(join(W2, 'main.ts'), 'utf8');
     expect(/\.orbit\(|\.endOrbit\(/.test(main), '★ main.ts 가 궤도 문을 쓴다').toBe(false);
+  });
+});
+
+// ── 복원이 **실제 충돌 구현**을 상대로 성립하는가 (검수관 반려, 2026-08-13) ──
+//
+// ⚠ **이 절이 생긴 이유가 위 절들의 한계다.** 위에서 쓴 mock `resolveMove`(`wall`·`slowZ`)
+// 는 좌표에만 반응하는 순수 함수라, 실제 `Collider` 의 핵심 성질 — **넘겨받은 자리 기준
+// 3×3 파셀만 캐시한다** — 를 전혀 흉내내지 않는다. 그래서 42축이 전부 초록인 채로
+// 결함이 살아 있었다.
+//
+// 검수관 실측: 건물 정중앙을 목표로 `resolve(0, 0, 100, 0)` → `{x:100, z:0}`(통과).
+// 같은 건물·같은 이동량인데 캐시가 목표 근처에서 만들어졌으면 완전히 막혔다.
+// **캐시가 어느 자리 기준인가**에 따라 통과와 차단으로 갈린 것이다.
+//
+// 「테스트 통과는 검출력의 증거가 아니다」가 정확히 이 자리다 — 통과한 42축은
+// **실제 구현이 아닌 것**을 상대로 통과했다.
+
+import { createCollider, DEFAULT_BODY_R } from '../frontend/js/world2/systems/collision.js';
+import { DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
+import { RESTORE_STEP } from '../frontend/js/world2/systems/player.js';
+import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
+
+/** 파셀 하나에만 큰 건물을 세운 세계. 나머지는 빈 구역 */
+function worldWithBuildingAt(px: number, pz: number) {
+  const building: PlacedPart[] = [
+    { kind: 'building', x: 0, y: 0, z: 0, ry: 0, sx: 6, sy: 12, sz: 6, tone: 0 },
+  ];
+  // `frozenAt` 이 `null` 이 아닌 배열을 내면 빌더·충돌이 **계산 대신 그것을** 쓴다.
+  return createCollider({
+    frozenAt: (qx, qz) => (qx === px && qz === pz ? building : []),
+  });
+}
+
+describe('복원이 실제 `Collider` 를 상대로 성립한다 (검수관 반려 해소)', () => {
+  const CELL = DEFAULT_LAYOUT.cellX;
+  /** 건물을 세운 파셀과 그 월드 중심 */
+  const PX = 3;
+  const CX = PX * CELL;
+
+  it('★ 멀리 궤도를 돌아 건물 한가운데서 편집을 꺼도 **갇히지 않는다**', () => {
+    const collider = worldWithBuildingAt(PX, 0);
+    const p = new PlayerSystem({
+      start: { x: 0, z: 0 },
+      resolveMove: (x, z, dx, dz) => collider.resolve(x, z, dx, dz),
+    });
+
+    // 건물을 중심으로 궤도를 잡고 끝까지 줌인한다 — 하한 반경(3m)이 건물 반경보다
+    // 작아서 **궤도 자체는 건물 안으로 들어간다**(그것이 의도다, 팀장 판정 3).
+    p.orbit(CX, 0, 0, 0, 0, 1);
+    for (let i = 0; i < 40; i++) p.orbit(CX, 0, 0, 0, 0, 0.5);
+    const inside = Math.hypot(p.position.x - CX, p.position.z);
+    expect(inside, '하네스 확인 — 궤도가 건물 안까지 들어가야 이 축이 의미가 있다')
+      .toBeLessThan(4);
+    // 그리고 출발점에서 캐시 커버(3×3 파셀) 밖까지 왔어야 한다.
+    expect(Math.hypot(p.position.x, p.position.z),
+      '하네스 확인 — 캐시 커버 안에서 끝나면 결함이 재현되지 않는다')
+      .toBeGreaterThan(CELL * 1.5);
+
+    p.endOrbit();
+
+    // 이제 건물 밖에 서 있어야 한다. 반경은 `blockersOf` 가 정하므로 여기서 그 수를
+    // 다시 적지 않고 **몸 반경보다 멀다**로만 본다 — 갇혔으면 0 에 가깝다.
+    const after = Math.hypot(p.position.x - CX, p.position.z);
+    expect(after, '★ 편집을 껐는데 건물 안에 갇혔다 — 복원이 충돌 캐시 밖을 봤다')
+      .toBeGreaterThan(DEFAULT_BODY_R);
+    expect(after, '★ 건물 밖이긴 한데 궤도가 끝난 자리보다 안쪽이다').toBeGreaterThan(inside);
+  });
+
+  it('★ 걸음 길이가 충돌 캐시 커버 안에 있다 — 이 전제가 깨지면 위 축이 조용히 죽는다', () => {
+    // `RESTORE_STEP` 의 근거가 「캐시가 최소 `cellX` 를 커버한다」이므로, 셀이 줄거나
+    // 걸음이 늘면 그 전제가 깨진다. 값을 주석에만 적어 두면 아무도 안 본다.
+    expect(RESTORE_STEP, '★ 복원 걸음이 충돌 캐시 커버를 넘는다 — `player.ts` 의'
+      + ' `RESTORE_STEP` 주석이 근거로 삼은 전제가 깨졌다').toBeLessThanOrEqual(CELL);
+  });
+
+  it('가까운 복원은 예전처럼 한 걸음이다 — 나누기가 짧은 이동을 안 바꾼다', () => {
+    const collider = worldWithBuildingAt(99, 99); // 건물은 멀리 — 막을 것이 없다
+    const p = new PlayerSystem({
+      start: { x: 0, z: 0 },
+      resolveMove: (x, z, dx, dz) => collider.resolve(x, z, dx, dz),
+    });
+    p.orbit(0, 0, 0, 0, 0, 1);              // (0,0) → 하한으로 밀려 (0, 3)
+    const at = { ...p.position };
+    p.endOrbit();
+    expect(p.position.x).toBeCloseTo(at.x, 6);
+    expect(p.position.z).toBeCloseTo(at.z, 6);
   });
 });
