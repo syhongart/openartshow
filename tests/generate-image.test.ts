@@ -846,6 +846,54 @@ describe('G-WF2 워크플로 env 키와 GITHUB_ENV 가 충돌하지 않는가', 
   });
 });
 
+// ⚠⚠ **셸 인젝션이 실제로 성립했던 자리다**(2026-08-13, 검수관 B4).
+//   PR 본문 표를 고치며 `${{ inputs.out }}` 를 `run:` 셸 본문에 직접 보간했다.
+//   `frontend/img/a";whoami;#.png` 는 `resolveOutPath` 를 **통과한다**(제어문자 없음 ·
+//   루트 하위 · `path.extname` 이 `.png` 를 낸다). 그 값으로 `echo` 를 돌리니
+//   **`whoami` 가 실행됐다.** 그 스텝 env 에는 `GH_TOKEN`(contents·PR write)이 있다.
+//   저장소 전체에서 `run:` 안에 표현식을 보간한 자리는 **그 한 곳뿐**이었다 —
+//   확립된 규율에서 벗어난 유일한 자리를 그 수정이 만들었다.
+//   → 규율을 검사로 만든다. **기준선이 0이라 지금이 붙이기 가장 싼 시점이다.**
+//   ⚠ **못 잡는 것**: `env:` 로 넘긴 뒤 셸에서 **인용 없이** 쓰는 것(`$VAR` vs `"$VAR"`) ·
+//   `eval` · 액션 `with:` 입력을 통한 경로. 이 검사는 *"본문에 보간하지 않는다"* 만 본다.
+describe('G-WF3 run: 블록 안에 표현식을 보간하지 않는가', () => {
+  const DIR = path.resolve(__dirname, '../.github/workflows');
+
+  it.each(fs.readdirSync(DIR).filter((f) => f.endsWith('.yml')))(
+    '%s 의 run: 본문에 ${{ }} 가 없다',
+    (file) => {
+      const lines = fs.readFileSync(path.join(DIR, file), 'utf8').split(String.fromCharCode(10));
+      const hits: string[] = [];
+      let i = 0;
+      while (i < lines.length) {
+        const m = lines[i].match(/^(\s*)run:\s*\|?\s*$/);
+        if (!m) { i += 1; continue; }
+        const indent = m[1].length;
+        let j = i + 1;
+        for (; j < lines.length; j++) {
+          const l = lines[j];
+          if (l.trim() && l.search(/\S/) <= indent) break;
+          // ⚠ **주석 줄은 반드시 뺀다** — 이 저장소는 `${{ }}` 를 문서화 목적으로
+          //   주석에 적는다(검수관이 지목한 거짓 FAIL 위험 ②).
+          if (l.trim() && !l.trim().startsWith('#') && l.includes('${{')) {
+            hits.push(`${file}:${j + 1}: ${l.trim().slice(0, 60)}`);
+          }
+        }
+        i = j;
+      }
+      expect(hits, '외부 입력은 예외 없이 env: 로 넘긴다 — 본문 보간은 셸 인젝션이다').toEqual([]);
+    },
+  );
+
+  it('run: 블록을 실제로 찾아냈다 — 파싱이 깨져 0곳으로 보이는 것이 아니다', () => {
+    // 거짓 PASS 방향. `run:` 을 하나도 못 찾으면 위 검사는 **항상 통과**한다.
+    const all = fs.readdirSync(DIR).filter((f) => f.endsWith('.yml'))
+      .map((f) => fs.readFileSync(path.join(DIR, f), 'utf8'))
+      .join(String.fromCharCode(10));
+    expect(all.split(String.fromCharCode(10)).filter((l) => /^\s*run:\s*\|?\s*$/.test(l)).length).toBeGreaterThan(3);
+  });
+});
+
 describe('G-CTRL 소스에 리터럴 제어문자가 없는가 (실제 오염 사고)', () => {
   const ROOT = path.resolve(__dirname, '..');
   const TARGETS = [

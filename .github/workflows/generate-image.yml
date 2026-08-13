@@ -253,6 +253,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PROMPT: ${{ inputs.prompt }}
           ASPECT: ${{ inputs.aspect }}
+          # ⚠ **`run:` 본문에 `${{ }}` 를 보간하지 않는다**(검수관 B4). 첫 판본은
+          #   PR 본문 표에 `${{ inputs.out }}` 를 직접 적었고 **셸 인젝션이 성립했다** —
+          #   `frontend/img/a";whoami;#.png` 가 `resolveOutPath` 를 **통과하고**
+          #   (제어문자 없음·루트 하위·extname `.png`) 그 값으로 `echo` 를 돌리니
+          #   `whoami` 가 실행됐다(검수관 로컬 bash 실증). 이 스텝 env 에는
+          #   `GH_TOKEN`(contents·PR write)이 있다.
+          #   저장소 전체에서 `run:` 안에 표현식을 보간한 자리는 그 한 곳뿐이었다 —
+          #   **확립된 규율에서 벗어난 유일한 자리를 내가 만들었다.**
+          REQUESTED_OUT: ${{ inputs.out }}
         run: |
           set -euo pipefail
           # 실제 저장 경로를 여기서 한 번만 푼다 — 아래는 전부 이 값을 쓴다.
@@ -296,7 +305,7 @@ jobs:
             echo
             echo "| 항목 | 값 |"
             echo "| --- | --- |"
-            echo "| **요청** 경로 | \`${{ inputs.out }}\` |"
+            echo "| **요청** 경로 | \`${REQUESTED_OUT}\` |"
             echo "| **요청** 비율 | ${ASPECT} — ⚠ Imagen(\`:predict\`) 경로에서만 적용된다. Gemini(\`generateContent\`) 로 갔으면 **무시됐다** |"
             echo "| **실제 저장** 경로 | \`${OUT}\` (모델이 준 형식에 맞춰 확장자가 바뀌었을 수 있다) |"
             echo "| run | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} |"
