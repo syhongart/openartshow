@@ -104,8 +104,18 @@ on:
       prompt:
         # ⚠ 이 문구는 **세 곳에 공개된다** — 이 run 의 Inputs, PR 본문, 그리고 공개
         #   저장소이므로 로그인 없이 열린다(보안담당 실측). 개인정보를 적지 마라.
-        description: '어떤 그림인가 (영어 권장 · 공개 저장소의 실행 기록에 남는다)'
-        required: true
+        #
+        # ⚠⚠ **기본값을 넣은 이유**: run #1 에서 감독이 이 긴 문장을 **손으로 붙여넣어야
+        #   했다.** 감독은 모바일에서 보고 계시고, 재시도할 때마다 같은 일을 반복하는 것은
+        #   *"내가 이것을 계속 볼수는 없잖아"* 라는 지시와 정면으로 어긋난다. 기본값이
+        #   있으면 **버튼 한 번**이다.
+        #   기본 문구는 디자이너 시안 B(히어로 하단 밴드, 2026-08-13)다. 벽을 비우라고
+        #   적은 것은 IP 회피이자 컨셉이다 — `FOUNDING.md` 의 *"작가가 자기 전시를 여는
+        #   창(窓)"*. 카피가 *쉽다* 를 말하는 동안 이미지는 *걸릴 자리가 비어 있다* 를
+        #   말한다(같은 말을 두 번 하지 않는다).
+        description: '어떤 그림인가 (비우면 홈 히어로 기본 시안 · 공개 기록에 남는다)'
+        required: false
+        default: 'Looking down a long empty museum corridor from just above floor level: polished dark concrete catching a faint sage-green glow, bare charcoal walls receding into blackness. The top edge dissolves completely into flat near-black with no horizon and no ceiling visible. All detail lives in the lower half — floor sheen, a wall base, one soft pool of light on the ground. Photographic, low camera height, wide angle, very low contrast, muted and desaturated. No text, no lettering, no watermark, no signage, no logos, no people, no faces. The walls are completely bare — no artworks, no paintings. Not in the style of any named artist or museum.'
         type: string
       out:
         description: '저장 경로 (frontend/ 아래 · png/jpg/webp 만)'
