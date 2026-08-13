@@ -12,6 +12,7 @@ import { createRendererAdapter, type RendererAdapter } from './adapters/renderer
 import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
 import { PooledParcelBuilder } from './systems/parcel-builder.js';
+import { createVillageParcels } from './systems/village-parcels.js';
 import { ParcelFadeSystem } from './systems/parcel-fade.js';
 import { ParcelGrowSystem } from './systems/parcel-grow.js';
 import {
@@ -269,6 +270,19 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     { density, building: bldMul, tree: treeMul },
     surface === DEFAULT_LAYOUT.surface ? undefined : { surface },
   );
+
+  // ── 동결 파셀 저장소 ──────────────────────────────────────────────────────
+  // 감독이 손본 구역은 계산이 아니라 저장된 배열을 쓴다(판정·근거는
+  // `decide/parcel-freeze.ts`·`systems/village-parcels.ts`). 여기서 만드는 이유는
+  // **소유가 조립부에 있어야 하기 때문**이다 — 오버레이 기능은 파일을 읽어 앉힐 뿐이고,
+  // 그 기능을 빼도 마을 배치가 사라지면 안 된다.
+  //
+  // 비어 있는 것이 라이브의 기본값이다. 비면 `lookup` 이 즉시 `null` 을 내므로 빌더는
+  // 예전과 똑같이 전부 계산한다.
+  //
+  // ⚠ `LAYOUT` 을 넘기는 것이 조건이다. 저장소의 `partsAt` 이 계산 경로를 쓰는데 그것이
+  // 조립부와 다른 레이아웃이면 «집으려고 스냅샷을 떴더니 화면과 다른 배치» 가 된다.
+  const village = createVillageParcels({ layout: LAYOUT });
 
   // 충돌(태스크 #182). `?collide=0` 으로 끈다 — 예전처럼 통과한다.
   // **끄는 노브를 두는 이유**: 스모크가 켬/끔을 대조군으로 비교할 수 있어야 "정말 막고
@@ -734,7 +748,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         features = mountFeatures(
           FEATURES,
           {
-            scene, camera, adapter: adapter!, player, pools: pools!,
+            scene, camera, adapter: adapter!, player, pools: pools!, village,
             sun: sun!, hemi: hemi!, cell: CELL_X,
             // 프러스텀과 **같은 유도**에서 나온 값이라야 짝이 맞는다. 하늘이 태양을
             // 이보다 가깝게 놓으면 타워 꼭대기가 그림자 카메라 뒤로 밀린다.
@@ -861,6 +875,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         builder = new PooledParcelBuilder({
           pool: slotPool,
           cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
+          // 빌더는 저장소를 **모른다** — 조회 함수 하나만 받는다. 생성기 계층이 편집
+          // 데이터를 알게 되는 것을 막는 팀장 조건의 집행 축 ①(W4 ① 커밋).
+          frozenAt: (px, pz, tier) => village.lookup(px, pz, tier),
         });
         shadowDecal.attach(slotPool);
 
@@ -960,6 +977,18 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           getSpeedFactor: () => player.speedFactor,
           markDirty: () => kernel?.markDirty(),
         });
+
+        // ── 동결이 바뀌면 그 파셀을 다시 만든다 ──────────────────────────────
+        // 이미 떠 있는 파셀은 슬롯을 build 시점에 한 번 쓰고 그 뒤로 아무도 다시 읽지
+        // 않는다. 이 한 줄이 없으면 «편집했는데 화면이 그대로다 → 새로고침하면 반영돼
+        // 있다» 가 된다(화면에서만 드러나는 형태).
+        //
+        // ⚠ **등록이 늦어도 유실이 아니다.** 기능 조립(`pools()`)이 여기보다 먼저라
+        // 오버레이가 부르는 `setAll` 이 이 줄보다 앞설 수 있는데, 그 시점엔 스트리밍이
+        // 없으므로 **떠 있는 파셀도 0개**다 — 다시 만들 것이 애초에 없고, 이후 build 가
+        // 저장소를 저절로 읽는다. 순서를 뒤집어 고치려 하지 마라(스트리밍이 빌더를
+        // 요구하고 빌더가 풀을 요구한다).
+        village.onChange((px, pz) => { streaming?.invalidate(px, pz); });
 
         adapt = new AdaptSystem({
           dpr: window.devicePixelRatio || 1,

@@ -282,7 +282,12 @@ export const overlayFeature: Feature = {
       }));
       // `version` 을 상수로 적지 않고 계약이 만든 형태를 그대로 쓴다 — `emptyOverlay()`
       // 가 버전을 소유한다.
-      return { version: loadOverlay(null).version, items };
+      //
+      // ⚠ **동결 파셀은 이 기능이 들고 있지 않다** — 소유는 조립부(`env.village`)다.
+      // 그래도 내보내기는 여기서 낸다: 계약 파일 하나에 `items` 와 `parcels` 가 함께
+      // 담기므로, 저장소가 자기 몫만 따로 내면 두 조각을 합칠 자리가 또 생긴다.
+      // 편집을 한 번도 안 했어도 **읽은 것이 그대로 나가야 한다**(왕복 무손실).
+      return { version: loadOverlay(null).version, items, parcels: env.village.list() };
     }
 
     const host: OverlayHost = {
@@ -318,6 +323,13 @@ export const overlayFeature: Feature = {
         if (disposed) return;
 
         const overlay = loadOverlay(raw);
+        // ── 동결 파셀을 먼저 앉힌다 ──────────────────────────────────────────
+        // GLB 배치(`items`)보다 **앞**인 이유: 이쪽은 프레임을 넘기지 않고 끝나는 반면
+        // `place` 루프는 자산을 받느라 오래 걸린다. 뒤로 미루면 그동안 감독은 옛 마을을
+        // 보게 되고, 다 받은 뒤에야 파셀이 통째로 다시 만들어진다.
+        //
+        // 비어 있으면 아무 일도 없다 — `setAll([])` 은 이전 동결이 없을 때 알림도 안 낸다.
+        env.village.setAll(overlay.parcels);
         for (let i = 0; i < overlay.items.length; i++) {
           const it = overlay.items[i];
           await place(it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s });
@@ -349,7 +361,11 @@ export const overlayFeature: Feature = {
     })();
 
     return {
-      diagnostics: () => ({ ...diag, failed: diag.failed.slice(0, 4) }),
+      // `frozen` 은 `diag` 에 넣지 않고 여기서 읽는다 — 저장소가 소유하는 값이라
+      // 복사해 두면 갈라진다(편집이 저장소를 직접 고치므로 복사본은 즉시 낡는다).
+      diagnostics: () => ({
+        ...diag, failed: diag.failed.slice(0, 4), frozen: env.village.size(),
+      }),
       // 배치 수가 곧 상태다. 0개도 유효한 그룹이라 `'0'` 을 낸다 — `null` 을 내면 이
       // 기능이 기본 켜짐인 탓에 드로우콜 축이 **영원히 판정 불가**가 된다(`glb-city`·
       // `npc` 가 그렇게 만들어 감독 리포트가 두 번 "측정 안 됨" 을 냈다).

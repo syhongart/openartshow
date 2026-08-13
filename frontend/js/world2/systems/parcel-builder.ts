@@ -16,6 +16,7 @@
 
 import type { SlotHandle } from './instancing.js';
 import type { ParcelBuilder, ParcelHandle } from './streaming.js';
+import { parcelKey } from '../decide/stream.js';
 import {
   type Tier, type TierBands, DEFAULT_BANDS, tierReach, maxLatticePoints,
 } from '../decide/lod.js';
@@ -162,7 +163,10 @@ export class PooledParcelBuilder implements ParcelBuilder {
 
   build(px: number, pz: number, tier: Exclude<Tier, 'none'>): ParcelHandle {
     const h: PooledHandle = {
-      key: `${px},${pz}`, tier, px, pz, byKind: new Map(),
+      // 키 형식은 `decide/stream.ts` 가 소유한다. 여기 리터럴로 적혀 있었고 그것은 값
+      // 미러링이었다 — 스트리밍이 자기 맵 키를 따로 만들므로 두 형식이 갈라져도 지금은
+      // 아무 증상이 없다. **증상 없는 미러링이 가장 오래 산다.**
+      key: parcelKey(px, pz), tier, px, pz, byKind: new Map(),
     };
     for (const kind of kindsFor(tier)) this.fill(h, kind, tier);
     return h;
