@@ -406,10 +406,32 @@ describe('G-ACCEPT 사람이 통과시킨 청크만 통과하는가 (N10 이 뚫
 describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', () => {
   // ⚠ 첫 판본은 이 목록이 부실해 **정상 JPEG 이 100% FAIL** 했다(검수관 B-1 실측).
   //   DQT·DHT·SOF0 은 문자 그대로 이미지 데이터인데 "이미지가 아닌 것" 으로 분류됐다.
-  it.each(['DQT', 'DHT', 'SOF0', 'SOF2', 'SOS', 'APP0', 'APP14', 'RST0'])(
+  it.each(['DQT', 'DHT', 'SOF0', 'SOF2', 'SOS', 'APP0', 'APP14'])(
     'JPEG 의 %s 는 렌더 데이터다',
     (t) => expect(RENDER.jpeg.has(t)).toBe(true),
   );
+
+  // ⚠ **첫 판본은 `RST0` 도 여기 있었고 그것이 결함이었다**(검수관 P-a 실측).
+  //   파서가 첫 SOS 에서 멈추므로 `RST0`·`SOI`·`EOI`·`DNL` 은 **절대 열거되지 않고**,
+  //   `SOF4`·`SOF8`·`SOF12` 는 `jpegMarkerName` 이 그 코드를 DHT·JPG·DAC 로 빼므로
+  //   **이름 자체가 만들어질 수 없다.** 그런데 목록에 있으면 오분류를 통과시킨다 —
+  //   `m !== 0xc4` 를 지워 DHT 를 SOF4 로 오분류시켜도 **78개가 전부 초록**이었다.
+  //   유령 항목을 지우고, 그것들이 **다시 들어오지 못하게** 여기서 세운다.
+  it.each(['SOI', 'EOI', 'RST0', 'RST7', 'DNL'])(
+    'JPEG 의 %s 는 목록에 없다 — 파서가 낼 수 없는 이름이다',
+    (t) => expect(RENDER.jpeg.has(t)).toBe(false),
+  );
+
+  it.each(['SOF4', 'SOF8', 'SOF12'])(
+    '%s 는 존재할 수 없는 이름이다 — 그 코드는 DHT·JPG·DAC 다',
+    (t) => expect(RENDER.jpeg.has(t)).toBe(false),
+  );
+
+  // 유령 항목이 사라졌으므로 이제 **오분류가 실제로 잡힌다.** 위 목록이 되돌아가면
+  // 이 케이스가 깨진다 — 그것이 P-a 를 닫는 축이다.
+  it('DHT 가 SOF4 로 오분류되면 확인 대상으로 잡힌다', () => {
+    expect(findExtra([{ type: 'SOF4', length: 100 }], 'jpeg', new Set())).toHaveLength(1);
+  });
 
   it.each(['iCCP', 'sBIT', 'sPLT', 'hIST', 'cICP', 'acTL', 'fcTL', 'fdAT'])(
     'PNG 의 %s 는 렌더 데이터다',
