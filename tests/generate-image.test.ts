@@ -800,6 +800,52 @@ describe('G-WF 워크플로가 스크립트와 어긋나지 않는가', () => {
 //   ⚠ 이 검사가 **못 잡는 것**: 여기 적은 경로 밖(범위를 좁게 잡았다) · 탭·개행은 정상이라
 //   통과 · 제어문자가 **문자열 리터럴** 안에 의도적으로 필요한 경우(그런 코드가 생기면
 //   이 검사를 고쳐야 한다 — 지금은 0건이다).
+// ⚠⚠ **이 절은 검수관이 낸 처방이 블로커를 만든 데서 나왔다**(2026-08-13, B3).
+//   `GITHUB_OUTPUT` 표현식 미러링 3곳을 없애려고 `GITHUB_ENV` 로 옮겼는데, 그때 쓴 이름이
+//   워크플로 job 레벨 `env: OUT` 과 **같았다.** 그러면 둘이 충돌하고 **어느 쪽이 이기는지에
+//   의존**하게 되는데, 그 우선순위를 이 저장소는 확인한 적이 없다(실행 0 · actionlint 0 ·
+//   **`GITHUB_ENV` 선례 0건**). 워크플로 `env:` 가 이긴다면 **확장자가 바뀐 회차에만**
+//   뒷 스텝이 원본 경로를 보고 ENOENT 로 죽는다 — 이번 수정이 대비한 그 케이스에서만.
+//   → 처방은 우선순위 판정이 아니라 **충돌 금지**다. 이름을 가르면 어느 쪽이 참이든
+//   정답이 나온다(fail-closed). 그 규칙을 여기서 지킨다.
+//   ⚠ **못 잡는 것**: 우선순위 자체는 여전히 못 잰다. 이 검사는 *"충돌을 만들지 않는다"*
+//   만 보증한다 — 그래서 충돌을 금지하는 것이 처방이다.
+describe('G-WF2 워크플로 env 키와 GITHUB_ENV 가 충돌하지 않는가', () => {
+  const YML = fs.readFileSync(
+    path.resolve(__dirname, '../.github/workflows/generate-image.yml'), 'utf8',
+  );
+  const SCRIPT = fs.readFileSync(path.resolve(__dirname, '../scripts/generate-image.mjs'), 'utf8');
+
+  // 스크립트가 `GITHUB_ENV` 에 append 하는 변수명을 뽑는다.
+  const written = [...SCRIPT.matchAll(/GITHUB_ENV,\s*`(\w+)=/g)].map((m) => m[1]);
+
+  it('스크립트가 GITHUB_ENV 에 쓰는 이름을 찾을 수 있다', () => {
+    // ⚠ 못 찾으면 아래 교집합이 **공집합이 되어 통과**한다 — 거짓 PASS 방향이다.
+    //   그래서 "찾았는가" 를 먼저 단언한다(검수관 명세의 거짓 FAIL 항).
+    expect(written.length, 'GITHUB_ENV append 형태가 바뀌었다 — 정규식을 고쳐라').toBeGreaterThan(0);
+  });
+
+  it('그 이름이 워크플로의 어떤 env: 키와도 겹치지 않는다', () => {
+    // 워크플로의 `env:` 블록 아래 키들. 값은 안 본다 — 이름만 필요하다.
+    const envKeys = new Set<string>();
+    const lines = YML.split(String.fromCharCode(10));
+    for (let i = 0; i < lines.length; i++) {
+      if (!/^\s*env:\s*$/.test(lines[i])) continue;
+      const indent = lines[i].search(/\S/);
+      for (let j = i + 1; j < lines.length; j++) {
+        const l = lines[j];
+        if (!l.trim() || l.trim().startsWith('#')) continue;
+        if (l.search(/\S/) <= indent) break;
+        const m = l.match(/^\s*([A-Za-z_]\w*):/);
+        if (m) envKeys.add(m[1]);
+      }
+    }
+    expect(envKeys.size, 'env: 블록을 하나도 못 찾았다 — 파싱이 깨졌다').toBeGreaterThan(0);
+    const clash = written.filter((w) => envKeys.has(w));
+    expect(clash, `GITHUB_ENV 이름이 워크플로 env: 키와 충돌한다 — 우선순위에 의존하게 된다`).toEqual([]);
+  });
+});
+
 describe('G-CTRL 소스에 리터럴 제어문자가 없는가 (실제 오염 사고)', () => {
   const ROOT = path.resolve(__dirname, '..');
   const TARGETS = [

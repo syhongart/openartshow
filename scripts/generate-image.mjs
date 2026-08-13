@@ -462,13 +462,21 @@ async function main() {
   //   뒷 스텝마다 `${{ steps.gen.outputs.path || env.OUT }}` 를 **손으로 적어야** 하고,
   //   첫 판본이 실제로 그것을 **세 곳**에 적었다 — `inputs.out` 을 네 곳에 적었다가 job
   //   레벨 `env.OUT` 으로 모았던 P-b 의 **재발**이다(같은 자리에서 두 번째).
-  //   `GITHUB_ENV` 에 쓰면 job 레벨 `OUT` 이 **다음 스텝부터** 갱신되므로 워크플로에
-  //   표현식이 0곳이 되고, 이 스텝이 죽으면 원본이 그대로 남아 artifact 의 `if: always()`
-  //   도 의도대로 동작한다.
+  //   `GITHUB_ENV` 에 쓰면 다음 스텝부터 값이 보이므로 워크플로 표현식이 줄고, 이 스텝이
+  //   죽으면 값이 아예 안 생겨 뒷 스텝이 원본으로 떨어진다.
+  //
+  // ⚠⚠ **`OUT` 이 아니라 `SAVED_PATH` 다 — 이름을 가르는 것이 요점이다**(검수관 B3).
+  //   첫 판본은 job 레벨 `env: OUT` 과 **같은 이름**으로 썼다. 그러면 둘이 충돌하고
+  //   **어느 쪽이 이기는지에 의존**하게 되는데, 그 우선순위를 이 저장소는 확인한 적이 없다
+  //   (실행 0 · actionlint 0 · **저장소 전체에 `GITHUB_ENV` 선례 0건**).
+  //   워크플로 `env:` 키가 이긴다면 뒷 스텝의 `$OUT` 은 원본에 고정되고 — **확장자가 바뀐
+  //   회차에만** 메타데이터 스텝이 ENOENT 로 죽는다. `if-no-files-found: warn` 이라
+  //   실물도 조용히 안 남는다. **이번 수정이 대비한 바로 그 케이스에서만 실패한다.**
+  //   이름을 가르면 **어느 우선순위가 참이든 정답이 나온다**(fail-closed).
   //   ⚠ **이 배선에는 검사가 0이다** — `main()` 을 export 하지 않아 여기를 지워도 테스트가
   //   안 깨진다(검수관 실측 M-3). 백로그 `G-MAIN` 이 그 축이다.
   if (process.env.GITHUB_ENV) {
-    fs.appendFileSync(process.env.GITHUB_ENV, `OUT=${finalRel}\n`);
+    fs.appendFileSync(process.env.GITHUB_ENV, `SAVED_PATH=${finalRel}\n`);
   }
 }
 
