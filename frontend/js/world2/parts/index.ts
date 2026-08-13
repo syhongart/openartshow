@@ -39,7 +39,7 @@ import { fountain } from './fountain.js';
 import { clocktower } from './clocktower.js';
 import { bench } from './bench.js';
 import { planter } from './planter.js';
-import { shadowParts } from './shadow.js';
+import { shadowParts, casterProfiles } from './shadow.js';
 
 /**
  * 실물 파츠. **그림자는 여기 없다** — 아래에서 유도한다.
@@ -58,6 +58,17 @@ const BASE = [
   building, lamp,
   tree, bench, planter,
 ] as const;
+
+/**
+ * **그림자를 드리우는 종류.** `shadowProfile` 을 신고한 파츠에서 **유도한다** — 목록을
+ * 손으로 적으면 파츠가 늘 때 한쪽만 낡는다.
+ *
+ * 동결 경로가 이것을 쓴다: 편집이 저장하는 배열은 캐스터만 담고, 그림자는 조회 시점에
+ * `shadowOf` 로 다시 유도된다(`decide/parcel-freeze.ts`). 그 이유는 `shadowOf` 헤더 한 곳이다.
+ */
+export const SHADOW_CASTERS: ReadonlySet<string> = new Set(
+  casterProfiles(BASE).map((c) => c.kind),
+);
 
 /**
  * 켜져 있는 파츠 전부 = 실물 + **그 그림자**.

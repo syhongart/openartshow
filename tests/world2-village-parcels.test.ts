@@ -42,7 +42,9 @@ describe('동결 저장소 — 가변·복사·알림', () => {
   it('freeze 한 것이 lookup 으로 나온다', () => {
     const v = createVillageParcels();
     v.freeze(3, -7, [part('building', 1, 2)]);
-    expect(v.lookup(3, -7, 'near')).toHaveLength(1);
+    // 캐스터 1 + 유도된 그림자 1. 그림자는 **저장되지 않고 조회 때 만들어진다**
+    // (검수관 반려 B1 — 근거는 `decide/parcel-freeze.ts` 의 `withShadows` 절).
+    expect(v.lookup(3, -7, 'near')).toHaveLength(2);
     expect(v.lookup(0, 0, 'near'), '다른 파셀은 그대로 계산이다').toBeNull();
     expect(v.isFrozen(3, -7)).toBe(true);
   });
@@ -71,7 +73,7 @@ describe('동결 저장소 — 가변·복사·알림', () => {
     mine[0].x = 999;
     mine.push(part('tree', 5, 5));
     const got = v.lookup(0, 0, 'near')!;
-    expect(got).toHaveLength(1);
+    expect(got).toHaveLength(2); // 캐스터 + 유도된 그림자
     expect(got[0].x, '원소를 얕게 들었다 — 입력이 저장소로 샌다').toBe(1);
   });
 
@@ -82,7 +84,7 @@ describe('동결 저장소 — 가변·복사·알림', () => {
     snap[0].parts[0].x = 999;
     snap[0].parts.push(part('tree', 0, 0));
     expect(v.lookup(0, 0, 'near')![0].x, '출력이 저장소를 가리킨다').toBe(1);
-    expect(v.lookup(0, 0, 'near')).toHaveLength(1);
+    expect(v.lookup(0, 0, 'near')).toHaveLength(2); // 캐스터 + 그림자
 
     const got = v.partsAt(0, 0);
     got[0].x = 777;
@@ -248,7 +250,7 @@ describe('경계 — 동결이 화면까지 온다', () => {
     expect(
       marked(),
       '★ 동결이 화면에 안 왔다 — `frozenAt` 주입·`onChange` 배선·`invalidate` 중 하나가 끊겼다',
-    ).toHaveLength(1);
+    ).toHaveLength(2); // 건물 + 그 그림자(같은 자리)
     expect(
       live.size,
       '동결(1개)이 원래 배치를 대신해야 한다 — 늘었다면 옛 슬롯이 안 반납된 것이다',
@@ -289,7 +291,7 @@ describe('경계 — 동결이 화면까지 온다', () => {
     settle();
     village.setAll([{ px: 0, pz: 0, parts: [part('building', MARK.x, MARK.z)] }]);
     settle();
-    expect(marked(), '★ 파일에서 읽은 동결이 화면에 안 왔다').toHaveLength(1);
+    expect(marked(), '★ 파일에서 읽은 동결이 화면에 안 왔다').toHaveLength(2);
   });
 
   it('안 떠 있는 파셀의 invalidate 는 false — 할 일이 없다', () => {
@@ -368,5 +370,94 @@ describe('배선 — 오버레이가 파일과 저장소를 잇는가 (정적·�
     // N10 뮤테이션(문을 `null` 로)이 0 failed 로 그 구멍을 드러냈다(2026-08-13).
     expect(src, '레이캐스트 문이 안 열렸다').toMatch(/instances:\s*env\.pools/);
     expect(src, '배치 조회 문이 안 열렸다').toMatch(/village:\s*env\.village/);
+  });
+});
+
+// ── 그림자가 캐스터를 따라간다 (검수관 반려 B1, 2026-08-13) ─────────────────
+//
+// **이 절은 반려에서 생겼다.** W4 ④ 는 *"그림자는 손댈 것이 없었다 — `parcel-layout.ts`
+// 에 `shadow:` 가 한 건도 없다"* 라는 grep 결과로 범위를 줄였는데, 그 문장은 참이면서
+// 결론이 거짓이었다: `PARTS = [...BASE, ...shadowParts(BASE)]` 를 순회하므로 배치에
+// 그림자가 **대량으로** 들어간다(검수관 실측 11×11 파셀 3,716개 중 1,238개, 33%).
+//
+// 그 결과 편집이 캐스터만 옮기고 짝 그림자는 옛 자리에 남았다 — 게이트 6종·45축·
+// 뮤테이션 5종 전부가 이 클래스를 안 봐서 통과했다. **못 잰 것이 통과로 적힌** 사례다.
+//
+// 처방은 짝 맞추기가 아니라 **저장하지 않기**다(자세가 두 벌이면 반드시 갈라진다).
+// 그래서 여기서 재는 것은 «짝이 맞는가» 가 아니라 **«그림자가 캐스터에서 나오는가»** 다.
+
+const shadowsOf = (parts: readonly PlacedPart[]) => parts.filter((p) => p.kind.startsWith('shadow:'));
+const castersOf = (parts: readonly PlacedPart[]) => parts.filter((p) => !p.kind.startsWith('shadow:'));
+
+describe('그림자는 저장되지 않고 유도된다', () => {
+  it('★ 저장에는 그림자가 없다 — 내보내기 파일에도 안 나간다', () => {
+    const v = createVillageParcels();
+    // 편집이 스냅샷을 뜨면 계산 배치가 그대로 오고, 거기엔 그림자가 섞여 있다.
+    const snap = v.partsAt(3, -7);
+    expect(shadowsOf(snap).length, '전제가 깨졌다 — 계산 배치에 그림자가 없다').toBeGreaterThan(0);
+
+    v.freeze(3, -7, snap);
+    const stored = v.list()[0].parts;
+    expect(shadowsOf(stored), '★ 그림자가 저장됐다 — 캐스터를 옮기면 짝이 옛 자리에 남는다')
+      .toHaveLength(0);
+    expect(castersOf(stored).length, '캐스터까지 사라졌다').toBe(castersOf(snap).length);
+  });
+
+  it('★ 조회에는 그림자가 붙는다 — 손본 구역만 그림자가 사라지면 안 된다', () => {
+    const v = createVillageParcels();
+    v.freeze(0, 0, [part('building', 1, 2)]);
+    const got = v.lookup(0, 0, 'near')!;
+    expect(shadowsOf(got), '★ 동결한 파셀에 그림자가 안 붙었다').toHaveLength(1);
+    expect(shadowsOf(got)[0].kind).toBe('shadow:building');
+  });
+
+  it('★ 캐스터를 옮기면 그림자가 **그 자리로** 온다 — 반려된 결함 그 자체', () => {
+    const v = createVillageParcels();
+    v.freeze(0, 0, [part('building', 1, 2)]);
+    // 감독이 건물을 옮긴다(편집 경로가 하는 일 = 캐스터를 고쳐 다시 freeze).
+    v.freeze(0, 0, [part('building', 30, 40)]);
+    const sh = shadowsOf(v.lookup(0, 0, 'near')!);
+    expect(sh, '그림자가 통째로 사라졌다').toHaveLength(1);
+    expect(
+      [sh[0].x, sh[0].z],
+      '★ 옮겼는데 그림자가 옛 자리에 남았다 — 유령 그림자(검수관 B1 실측 형태)',
+    ).toEqual([30, 40]);
+  });
+
+  it('★ 캐스터를 지우면 그림자도 사라진다 — 그림자만 남지 않는다', () => {
+    const v = createVillageParcels();
+    v.freeze(0, 0, [part('building', 1, 2), part('tree', 9, 9)]);
+    expect(shadowsOf(v.lookup(0, 0, 'near')!)).toHaveLength(2);
+    // 건물만 지운다.
+    v.freeze(0, 0, [part('tree', 9, 9)]);
+    const sh = shadowsOf(v.lookup(0, 0, 'near')!);
+    expect(sh, '★ 지운 건물의 그림자가 남았다').toHaveLength(1);
+    expect(sh[0].kind).toBe('shadow:tree');
+  });
+
+  it('★ 그림자가 붙은 것을 다시 저장해도 배로 늘지 않는다 — 왕복 안정', () => {
+    // 편집은 `lookup` 이 아니라 `partsAt` 을 쓰지만, 파일을 읽고(그림자가 섞여 있을 수
+    // 있다) 다시 쓰는 경로가 있으므로 멱등이어야 한다.
+    const v = createVillageParcels();
+    v.freeze(0, 0, [part('building', 1, 2)]);
+    const withSh = v.lookup(0, 0, 'near')!; // 캐스터 1 + 그림자 1
+    v.freeze(0, 0, withSh);
+    expect(v.list()[0].parts, '★ 저장에 그림자가 섞였다').toHaveLength(1);
+    expect(v.lookup(0, 0, 'near'), '★ 그림자가 배로 늘었다').toHaveLength(2);
+  });
+
+  it('그림자를 안 드리우는 종류에는 안 붙는다', () => {
+    const v = createVillageParcels();
+    v.freeze(0, 0, [part('ground', 0, 0)]);
+    expect(shadowsOf(v.lookup(0, 0, 'near')!), '★ 바닥에 그림자가 생겼다').toHaveLength(0);
+  });
+
+  it('★ 파일에서 읽은 것에 그림자가 섞여 있어도 걷어낸다 (setAll)', () => {
+    const v = createVillageParcels();
+    v.setAll([{ px: 0, pz: 0, parts: [part('building', 1, 2), part('shadow:building', 99, 99)] }]);
+    const stored = v.list()[0].parts;
+    expect(stored, '★ 파일의 그림자가 그대로 저장됐다 — 옛 자리에 고정된다').toHaveLength(1);
+    const sh = shadowsOf(v.lookup(0, 0, 'near')!);
+    expect([sh[0].x, sh[0].z], '★ 파일에 적힌 옛 그림자 좌표가 살아남았다').toEqual([1, 2]);
   });
 });

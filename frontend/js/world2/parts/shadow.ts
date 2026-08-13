@@ -417,6 +417,28 @@ export function bakeAtlas(shapes: readonly ShadowShape[], o: BakeOpts): number {
 export function shadowKindOf(casterKind: string): string { return `shadow:${casterKind}`; }
 
 /**
+ * 캐스터 파츠 하나 → 그 그림자 파츠 하나. **자세를 그대로 복사한다.**
+ *
+ * ── 왜 함수로 뽑았나 (검수관 반려 B1, 2026-08-13) ───────────────────────────
+ * 이 규칙이 `makeShadowPart` 의 `place` 안에만 있었고, 그래서 **계산 경로에서만** 돌았다.
+ * 편집이 파셀을 동결하면 `parcelLayout` 이 다시 안 돌므로(`parcel-builder.ts` 의 `fill`)
+ * 유도가 끊긴다 — 실측: 건물을 옮기면 그림자는 옛 자리에 그대로 남고, 지워도 그림자
+ * 개수가 안 줄었다.
+ *
+ * 그때 «편집이 짝을 맞춰 함께 옮긴다» 로 고치면 자세가 **두 벌**이 되어 반드시 갈라진다
+ * (이 저장소가 값 미러링으로 반복해 데인 형태). 그래서 동결은 캐스터만 담고, 그림자는
+ * 조회 시점에 **여기서 다시 유도한다** — 계산 경로가 하는 것과 같은 패턴이다.
+ */
+export function shadowOf(p: PlacedPart): PlacedPart {
+  return {
+    kind: shadowKindOf(p.kind),
+    x: p.x, z: p.z, y: p.y, ry: p.ry,
+    sx: p.sx, sy: p.sy, sz: p.sz,
+    tone: 0,
+  };
+}
+
+/**
  * 캐스터 파츠 목록에서 그림자 파츠들을 만든다.
  *
  * ── 왜 파츠로 만드는가 ──────────────────────────────────────────────────────
@@ -484,7 +506,9 @@ function makeShadowPart(caster: PartSpec, index: number, count: number): PartSpe
       const out: PlacedPart[] = [];
       for (const p of ctx.placed) {
         if (p.kind !== caster.kind) continue;
-        out.push({ kind, x: p.x, z: p.z, y: p.y, ry: p.ry, sx: p.sx, sy: p.sy, sz: p.sz, tone: 0 });
+        // 규칙은 `shadowOf` 한 곳이다 — 편집(동결) 경로가 같은 유도를 다시 해야 하고,
+        // 두 곳에 적으면 «옮긴 건물의 그림자만 옛 자리에 남는» 형태로 갈라진다.
+        out.push(shadowOf(p));
       }
       return out;
     },

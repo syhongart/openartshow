@@ -20,7 +20,7 @@
 // 화면이 그대로다 → 새로고침하면 반영돼 있다» 가 되고, 그건 화면에서만 드러난다.
 // 그래서 저장과 알림을 **한 함수 안에 묶는다** — 부르는 쪽이 잊을 자리를 없앤다.
 
-import { forTier, keyOf } from '../decide/parcel-freeze.js';
+import { forTier, keyOf, stripShadows, withShadows } from '../decide/parcel-freeze.js';
 import type { FrozenParcel } from '../decide/overlay.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../decide/parcel-layout.js';
 import type { LayoutOptions } from '../parts/index.js';
@@ -96,6 +96,16 @@ function copyParts(parts: readonly PlacedPart[]): PlacedPart[] {
   return parts.map((p) => ({ ...p }));
 }
 
+/**
+ * **저장할 형태로 만든다 — 캐스터만.**
+ *
+ * 그림자를 저장하면 편집이 캐스터를 옮길 때 짝이 옛 자리에 남는다(검수관 반려 B1 실측).
+ * 근거와 처방의 SSOT 는 `decide/parcel-freeze.ts` 의 `withShadows` 절 한 곳이다.
+ */
+function toStored(parts: readonly PlacedPart[]): PlacedPart[] {
+  return copyParts(stripShadows(parts));
+}
+
 export function createVillageParcels(opts: VillageParcelsOptions = {}): VillageParcels {
   const layout: LayoutOptions = { ...DEFAULT_LAYOUT, ...opts.layout };
   /** 키(`keyOf`) → 그 파셀의 near 기준 배치 */
@@ -119,10 +129,15 @@ export function createVillageParcels(opts: VillageParcelsOptions = {}): VillageP
       if (index.size === 0) return null;
       const parts = index.get(keyOf(px, pz));
       if (parts === undefined) return null;
-      // ⚠ 매 호출 새 배열이 나온다(`forTier` 가 `filter`). 캐시를 **일부러 안 넣었다** —
-      // 무효화 축이 하나 더 생기고, 그 축은 «편집했는데 옛 배치가 나온다» 로만 드러난다.
-      // 비용은 계산 경로(`parcelLayout`: 난수 + 충돌 검사)보다 확실히 싸다.
-      return forTier(parts, tier);
+      // ⚠ **그림자를 여기서 다시 만든다.** 저장은 캐스터만 하므로(`toStored`) 빌더에게
+      // 줄 때 유도해 붙여야 한다 — 안 붙이면 «손본 구역만 그림자가 통째로 사라진다».
+      // 근거는 `decide/parcel-freeze.ts` 의 `withShadows` 절.
+      //
+      // ⚠ 매 호출 새 배열이 나온다(`forTier` 가 `filter`, `withShadows` 가 `map`).
+      // 캐시를 **일부러 안 넣었다** — 무효화 축이 하나 더 생기고, 그 축은 «편집했는데 옛
+      // 배치가 나온다» 로만 드러난다. 비용은 계산 경로(`parcelLayout`: 난수 + 충돌
+      // 검사)보다 확실히 싸다.
+      return forTier(withShadows(parts), tier);
     },
 
     isFrozen(px, pz) {
@@ -139,7 +154,7 @@ export function createVillageParcels(opts: VillageParcelsOptions = {}): VillageP
 
     freeze(px, pz, parts) {
       const key = keyOf(px, pz);
-      index.set(key, copyParts(parts));
+      index.set(key, toStored(parts));
       coords.set(key, { px: px | 0, pz: pz | 0 });
       notify(px, pz);
     },
@@ -162,7 +177,7 @@ export function createVillageParcels(opts: VillageParcelsOptions = {}): VillageP
         const px = p.px | 0;
         const pz = p.pz | 0;
         const key = keyOf(px, pz);
-        index.set(key, copyParts(p.parts));
+        index.set(key, toStored(p.parts));
         coords.set(key, { px, pz });
         touched.set(key, { px, pz });
       }

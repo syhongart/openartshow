@@ -138,3 +138,57 @@ describe('동결은 계산을 오염시키지 않는다', () => {
     expect(after).toEqual(before);
   });
 });
+
+// ── 그림자 유도 — 순수 (검수관 반려 B1 처방) ────────────────────────────────
+//
+// ⚠ **이 절은 뮤테이션이 요구해서 생겼다.** 저장소 통합 축(`world2-village-parcels`)만
+// 있을 때 두 결함이 **0 failed** 였다:
+//   R3 `withShadows` 가 유도 전에 안 걷어낸다  → 저장 경로(`toStored`)가 이미 걷어내서 도달 못 함
+//   R5 캐스터 목록을 안 거른다                 → `forTier` 가 `kindsFor` 로 이미 필터
+// 둘 다 «다른 것이 막아 주고 있어서» 안 깨진 것이고, 그 방어가 사라지는 날 조용히 열린다.
+// 순수 함수를 직접 부르면 그 가림막이 없다.
+
+import { stripShadows, withShadows } from '../frontend/js/world2/decide/parcel-freeze.js';
+
+describe('stripShadows / withShadows — 순수', () => {
+  it('stripShadows 는 `shadow:` 접두만 걷어낸다', () => {
+    const mixed = [part('building', 1, 2), part('shadow:building', 1, 2), part('tree', 3, 4)];
+    expect(stripShadows(mixed).map((p) => p.kind)).toEqual(['building', 'tree']);
+  });
+
+  it('★ withShadows 는 캐스터 뒤에 그림자를 붙인다 — 순서가 계약이다', () => {
+    // 그림자가 **캐스터 뒤**여야 한다. `makeShadowPart` 의 `absoluteY` 가 «캐스터는
+    // 파츠 목록에서 그림자보다 앞이라 표면 높이를 이미 더한 뒤» 라는 순서에 기댄다.
+    const out = withShadows([part('building', 1, 2)]);
+    expect(out.map((p) => p.kind)).toEqual(['building', 'shadow:building']);
+  });
+
+  it('★ 그림자는 캐스터 자세를 그대로 복사한다', () => {
+    const caster = { ...part('building', 7, 9), y: 3, ry: 1.5, sx: 2, sy: 4, sz: 6 };
+    const sh = withShadows([caster])[1];
+    expect([sh.x, sh.z, sh.y, sh.ry], '★ 자세가 안 따라왔다 — 그림자가 딴 데 눕는다')
+      .toEqual([7, 9, 3, 1.5]);
+    expect([sh.sx, sh.sy, sh.sz], '★ 크기가 안 따라왔다').toEqual([2, 4, 6]);
+  });
+
+  it('★ 그림자를 안 드리우는 종류에는 안 붙는다 — `forTier` 가 없어도', () => {
+    // 통합 경로에서는 `forTier` 가 `shadow:ground` 를 걸러 준다. 여기서는 그 가림막이
+    // 없으므로 **이 검사만이** 캐스터 필터의 검출력이다.
+    const out = withShadows([part('ground', 0, 0), part('road', 1, 1)]);
+    expect(out.map((p) => p.kind), '★ 바닥·도로에 그림자가 생겼다').toEqual(['ground', 'road']);
+  });
+
+  it('★ 이미 그림자가 섞여 있으면 먼저 걷어낸다 — 왕복마다 배로 늘지 않는다', () => {
+    // 통합 경로에서는 저장(`toStored`)이 먼저 걷어내 이 분기에 도달하지 않는다.
+    // 순수 함수를 직접 쓰는 소비자가 생기는 날 이 검사가 유일한 방어다.
+    const once = withShadows([part('building', 1, 2)]);
+    const twice = withShadows(once);
+    expect(twice, '★ 그림자가 배로 늘었다').toHaveLength(2);
+    expect(twice.filter((p) => p.kind.startsWith('shadow:'))).toHaveLength(1);
+  });
+
+  it('빈 배열은 빈 배열 — 「다 지웠다」가 유지된다', () => {
+    expect(withShadows([])).toEqual([]);
+    expect(stripShadows([])).toEqual([]);
+  });
+});

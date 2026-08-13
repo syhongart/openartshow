@@ -95,3 +95,52 @@ export function createFrozenLookup(
     return parts === undefined ? null : forTier(parts, tier);
   };
 }
+
+// ── 그림자는 저장하지 않고 **유도한다** (검수관 반려 B1, 2026-08-13) ─────────
+//
+// 마을 배치에는 `shadow:*` 파츠가 **실제로 들어 있다** — 11×11 파셀 샘플에서 3,716개 중
+// 1,238개(33%)가 그것이다(검수관 실측). `parcel-layout.ts` 안에 `shadow:` 리터럴이 없다는
+// 것은 참이지만 `PARTS = [...BASE, ...shadowParts(BASE)]` 를 순회하므로 대량 생성된다.
+// **참인 문장에서 성립하지 않는 결론을 뽑은 것**이고, 그 오류로 W4 ④ 가 반려됐다.
+//
+// 문제: 편집이 캐스터 하나를 옮기면 같은 배열의 짝 그림자는 그대로 남는다. 동결된 파셀은
+// `parcelLayout` 을 다시 안 돌므로 유도가 끊긴다 — 실측으로 «옮기면 옛 자리에 유령 그림자,
+// 지우면 그림자만 남음» 이 재현됐다.
+//
+// **처방은 짝을 맞추는 것이 아니라 저장하지 않는 것이다.** 짝을 맞추면 자세가 두 벌이 되어
+// 반드시 갈라진다(이 저장소가 값 미러링으로 반복해 데인 형태 — 캔버스 색·구름 고도·테스트
+// 임계값). 그림자는 캐스터의 **파생물**이므로 소유자를 하나로 둔다:
+//
+//   저장(`freeze`)  캐스터만 담는다        ← `stripShadows`
+//   조회(`lookup`)  그림자를 다시 유도한다  ← `withShadows`
+//
+// 그러면 편집이 어떤 경로로 캐스터를 바꾸든(기즈모·수치칸·버튼·키·삭제) 그림자가 저절로
+// 따라온다. **새 편집 경로가 생겨도 빠뜨릴 자리가 없다** — 그것이 짝 맞추기와의 차이다.
+
+import { shadowOf } from '../parts/shadow.js';
+import { SHADOW_CASTERS } from '../parts/index.js';
+
+/** `shadow:` 접두 파츠를 걷어낸다. 동결로 **저장할 것**을 만드는 자리 */
+export function stripShadows(parts: readonly PlacedPart[]): PlacedPart[] {
+  return parts.filter((p) => !p.kind.startsWith('shadow:'));
+}
+
+/**
+ * 캐스터에서 그림자를 유도해 **뒤에 붙인다.** 동결을 빌더에게 **줄 때**의 자리.
+ *
+ * ⚠ 순서가 계약이다 — 그림자는 캐스터 **뒤**에 온다. `parcel-layout.ts` 가 캐스터를 먼저
+ * 놓고 그림자를 뒤에 놓으며(`PARTS` 순서), `makeShadowPart` 의 `absoluteY` 주석이
+ * *"캐스터는 파츠 목록에서 그림자보다 앞이라 이미 표면 높이를 더한 뒤"* 라고 그 순서에
+ * 기대고 있다. 앞에 붙이면 y 가 이중 가산된다.
+ *
+ * ⚠ 이미 그림자가 섞여 있으면 **먼저 걷어낸다.** 안 그러면 파일을 한 번 읽고 다시 저장할
+ * 때마다 그림자가 배로 늘어난다.
+ */
+export function withShadows(parts: readonly PlacedPart[]): PlacedPart[] {
+  const casters = stripShadows(parts);
+  const out: PlacedPart[] = [...casters];
+  for (const p of casters) {
+    if (SHADOW_CASTERS.has(p.kind)) out.push(shadowOf(p));
+  }
+  return out;
+}
