@@ -132,8 +132,14 @@ export function assertImageBytes(buf, ext) {
   return spec.label;
 }
 
-async function call(pathname, init, key) {
-  const res = await fetch(`${API}${pathname}`, {
+/**
+ * API 왕복 한 번. **`safeError` 를 실제로 소비하는 자리라 export 한다** — 순수 함수만
+ * 검사하면 *"계산된 값이 실제로 소비되는가"* 가 양쪽 테스트 어디에도 안 걸린다
+ * (`CLAUDE.md` 가 "판정/집행 분리의 구멍" 이라 부르는 형태. 검수관 P-1).
+ * @param {typeof fetch} [fetchImpl] 테스트에서 주입한다. 기본은 전역 `fetch`.
+ */
+export async function call(pathname, init, key, fetchImpl = fetch) {
+  const res = await fetchImpl(`${API}${pathname}`, {
     ...init,
     headers: { 'x-goog-api-key': key, 'content-type': 'application/json', ...(init?.headers || {}) },
   });

@@ -30,6 +30,11 @@
 // ── 한계 (통과로 적지 않기 위해 적는다) ──────────────────────────────────
 //  · **청크 이름과 바이트 수만** 본다. 내용을 해석하지 않는다 — C2PA 매니페스트가
 //    무엇을 주장하는지, SynthID 가 픽셀에 어떻게 박혔는지는 **이 축으로 안 보인다.**
+//    ⚠ 그래서 `ACCEPTED` 로 통과시킨 **타입**의 청크는 회차마다 내용이 달라도 통과한다.
+//    실물 확인은 이 스크립트가 아니라 **워크플로의 artifact** 가 담당한다(검수관 B-3).
+//  · **잘리거나 손상된 파일을 못 잡는다.** `IEND` 없이 끝나도 extra 가 0이면 통과다.
+//    길이 필드가 거짓이면 열거가 어긋나 **뒤쪽 청크가 통째로 안 보인다** — 그때도
+//    "0개" 로 보인다. 구조 검증은 이 축의 일이 아니다(검수관 P-6).
 //  · **픽셀에 박힌 워터마크는 원리상 못 잡는다.** SynthID 는 메타데이터가 아니라
 //    이미지 데이터 자체를 건드리므로 청크를 다 지워도 남는다.
 //  · `--fail-on-extra` 없이는 종료코드가 **항상 0** 이다 — 그때는 게이트가 아니라 관측이다.
@@ -50,22 +55,43 @@ export function pngChunks(buf) {
     out.push({ type, length });
     if (type === 'IEND') break;
     off += 12 + length; // len(4) + type(4) + data + crc(4)
-    if (length < 0 || off <= 0) break; // 손상된 파일에서 무한루프 방지
+    // ⚠ 여기 있던 `if (length < 0 || off <= 0) break; // 무한루프 방지` 를 지웠다.
+    //   **도달 불가였다**(검수관 P-3 실측: `readUInt32BE` 치역이 `[0, 2³²-1]` 이라 음수가
+    //   될 수 없고 `off` 는 8부터 단조증가한다 — 무작위 20만 케이스에서 참 0회).
+    //   실제 종료 보장은 위 `off + 8 <= buf.length` 다. 죽은 방어를 "무한루프 방지" 라고
+    //   적어 두면 다음 사람이 그것을 믿고 진짜 방어를 건드린다.
   }
   return out;
 }
 
-/** JPEG 마커 세그먼트 열거. `APPn`·`COM` 이 메타데이터가 실리는 자리다. */
+/** JPEG 마커 이름. 숫자 그대로 두면 이미지 데이터가 "정체불명" 으로 보인다. */
+function jpegMarkerName(m) {
+  if (m >= 0xe0 && m <= 0xef) return `APP${m - 0xe0}`;
+  if (m >= 0xd0 && m <= 0xd7) return `RST${m - 0xd0}`;
+  // SOFn — 프레임 헤더. 0xc4·0xc8·0xcc 는 SOF 가 아니라 아래 표에 있다.
+  if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return `SOF${m - 0xc0}`;
+  return {
+    0xc4: 'DHT', 0xc8: 'JPG', 0xcc: 'DAC', 0xd8: 'SOI', 0xd9: 'EOI',
+    0xda: 'SOS', 0xdb: 'DQT', 0xdc: 'DNL', 0xdd: 'DRI', 0xde: 'DHP',
+    0xdf: 'EXP', 0xfe: 'COM',
+  }[m] || `0x${m.toString(16)}`;
+}
+
+/**
+ * JPEG 마커 세그먼트 열거.
+ * ⚠ 첫 판본은 `APPn`·`COM` 만 이름 붙이고 나머지를 `0xdb` 처럼 숫자로 뒀는데, 그러면
+ * **DQT(양자화 테이블)·DHT(허프만 테이블) 같은 순수 이미지 데이터가 「정체불명」으로
+ * 분류돼 정상 JPEG 이 100% 막혔다**(검수관 B-1 실측). 이름을 다 붙인다.
+ */
 export function jpegSegments(buf) {
   const out = [];
   let off = 2; // SOI
   while (off + 4 <= buf.length) {
     if (buf[off] !== 0xff) break;
     const marker = buf[off + 1];
-    if (marker === 0xda) { out.push({ type: 'SOS(이후 압축데이터)', length: buf.length - off }); break; }
+    if (marker === 0xda) { out.push({ type: 'SOS', length: buf.length - off }); break; }
     const length = buf.readUInt16BE(off + 2);
-    const name = marker >= 0xe0 && marker <= 0xef ? `APP${marker - 0xe0}` : marker === 0xfe ? 'COM' : `0x${marker.toString(16)}`;
-    out.push({ type: name, length });
+    out.push({ type: jpegMarkerName(marker), length });
     off += 2 + length;
   }
   return out;
@@ -84,11 +110,38 @@ export function webpChunks(buf) {
   return out;
 }
 
-// 이미지 데이터 그 자체 — 여기 없는 것이 "딸려 온 것" 이다.
-const ESSENTIAL = {
-  png: new Set(['IHDR', 'PLTE', 'IDAT', 'IEND', 'tRNS', 'gAMA', 'cHRM', 'sRGB', 'bKGD', 'pHYs']),
-  jpeg: new Set(['APP0', 'SOS(이후 압축데이터)']),
-  webp: new Set(['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ANIM', 'ANMF']),
+// 화면을 그리는 데 쓰이는 것. **여기 없는 것이 "딸려 온 것"** 이다.
+//
+// ⚠ **첫 판본은 이 목록이 부실해 정상 파일을 막았다**(검수관 B-1, 전부 실측):
+//   · JPEG 은 `APP0`·`SOS` 둘뿐이라 **DQT(양자화 테이블)·DHT(허프만 테이블)·SOF0 이
+//     extra 로 잡혀 정상 JPEG 이 100% FAIL** 했다. 문자 그대로 이미지 데이터인 것을
+//     스크립트가 *"이미지 데이터가 아닌 것"* 이라고 출력했다.
+//   · PNG 은 `iCCP`(ICC 색 프로파일)·`sBIT`·`sPLT`·`hIST` 가 빠져 FAIL 했다.
+//   위험은 job 이 죽는 것이 아니라 **사람이 그것들을 `ACCEPTED` 에 올리게 유도되는 것**
+//   이다 — 그러면 아래 `ACCEPTED` 가 첫 회차에 통과 도장이 된다.
+//
+// **분류 기준**: 화면을 그리거나 색을 맞추는 데 쓰이면 여기. **텍스트·시각·서명처럼
+// 「이미지가 아닌 것을 실어 나르는」 청크는 일부러 뺐다** — `tEXt`·`zTXt`·`iTXt`·`eXIf`·
+// `tIME` 이 그것이고, C2PA 매니페스트(`caBX`)처럼 표준에 없는 것도 자동으로 걸린다.
+export const RENDER = {
+  // PNG 1.2 + 3rd edition(HDR: cICP·mDCv·cLLi) + APNG(acTL·fcTL·fdAT).
+  png: new Set([
+    'IHDR', 'PLTE', 'IDAT', 'IEND',
+    'tRNS', 'cHRM', 'gAMA', 'iCCP', 'sBIT', 'sRGB', 'bKGD', 'hIST', 'pHYs', 'sPLT',
+    'cICP', 'mDCv', 'cLLi',
+    'acTL', 'fcTL', 'fdAT',
+  ]),
+  // SOFn·DHT·DQT·DRI 등은 전부 압축 구조다. APP0(JFIF)·APP14(Adobe 색변환)는 렌더에
+  // 필요하므로 포함하고, **나머지 APPn 은 메타데이터 자리라 뺀다**(APP1=EXIF,
+  // APP2=ICC/C2PA, APP11=JUMBF/C2PA).
+  jpeg: new Set([
+    'SOI', 'EOI', 'SOS', 'DQT', 'DHT', 'DRI', 'DNL', 'DHP', 'EXP', 'DAC', 'JPG',
+    ...Array.from({ length: 16 }, (_, i) => `SOF${i}`),
+    ...Array.from({ length: 8 }, (_, i) => `RST${i}`),
+    'APP0', 'APP14',
+  ]),
+  // `ICCP` 는 색 프로파일이라 렌더. `EXIF`·`XMP ` 는 메타라 뺀다.
+  webp: new Set(['VP8 ', 'VP8L', 'VP8X', 'ALPH', 'ANIM', 'ANMF', 'ICCP']),
 };
 
 export function inspect(buf) {
@@ -130,7 +183,7 @@ function main() {
     }
     return;
   }
-  const essential = ESSENTIAL[kind];
+  const essential = RENDER[kind];
   const extra = chunks.filter((c) => !essential.has(c.type) && !ACCEPTED.has(c.type));
   console.log(`형식: ${kind.toUpperCase()} · 청크 ${chunks.length}개`);
   for (const c of chunks) {

@@ -22,16 +22,20 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import {
   safeError,
   maskSecrets,
   resolveOutPath,
   assertImageBytes,
   pickImageModel,
+  call,
   ALLOWED_EXT,
   MAX_BYTES,
 } from '../scripts/generate-image.mjs';
-import { inspect, pngChunks } from '../scripts/png-chunks.mjs';
+import { inspect, pngChunks, jpegSegments, RENDER } from '../scripts/png-chunks.mjs';
 
 const KEY = 'AIzaSyTESTKEY_0123456789abcdefghijkl';
 const ODD_KEY = 'sk-proj-9f2b7c1d4e-NOTGOOGLESHAPED';
@@ -280,6 +284,127 @@ describe('G-META 메타데이터 열거 — 딸려 온 것이 보이는가', () 
 
   it('알 수 없는 형식은 kind 가 null 이다 — 깨끗하다고 적지 않는다', () => {
     expect(inspect(Buffer.from('not an image at all')).kind).toBeNull();
+  });
+});
+
+// ⚠ **여기부터가 재검수에서 「검사 0건」으로 반려된 축이다**(검수관 B-2·P-1).
+//   앞의 순수 함수 검사가 아무리 촘촘해도, **그 값이 실제로 소비되는가**와
+//   **게이트가 exit 1 을 내는가**는 별개의 축이고 둘 다 0이었다.
+
+describe('G-CALL safeError 가 실제로 소비되는가 (순수 함수 검사와 별개 축)', () => {
+  const res = (status: number, body: string) => ({ ok: status < 400, status, text: async () => body });
+
+  it('에러 응답이 safeError 를 거쳐 나온다 — 본문이 안 샌다', async () => {
+    const fake = (async () => res(400, JSON.stringify({ error: { message: `key ${KEY} bad` } }))) as unknown as typeof fetch;
+    await expect(call('/models', { method: 'GET' }, KEY, fake)).rejects.toThrow(/\[KEY\]/);
+    await expect(call('/models', { method: 'GET' }, KEY, fake)).rejects.not.toThrow(new RegExp(KEY.slice(4)));
+  });
+
+  // 200 인데 JSON 이 아닌 응답(프록시 인터셉트 등). Node 의 JSON.parse 에러 메시지는
+  // **본문 앞 10자를 반향**하므로 그것을 그대로 던지면 새어 나간다.
+  it('200 인데 비-JSON 이면 본문 조각이 안 새어 나온다', async () => {
+    const leak = `<html>proxy ${KEY}</html>`;
+    const fake = (async () => res(200, leak)) as unknown as typeof fetch;
+    await expect(call('/models', { method: 'GET' }, KEY, fake)).rejects.toThrow(/응답이 JSON 이 아니다/);
+    await expect(call('/models', { method: 'GET' }, KEY, fake)).rejects.not.toThrow(/html|proxy/);
+  });
+
+  it('키는 헤더로만 간다 — URL 에 안 실린다', async () => {
+    let seenUrl = '';
+    let seenHeaders: Record<string, string> = {};
+    const fake = (async (url: string, init: RequestInit) => {
+      seenUrl = url;
+      seenHeaders = init.headers as Record<string, string>;
+      return res(200, '{"models":[]}');
+    }) as unknown as typeof fetch;
+    await call('/models', { method: 'GET' }, KEY, fake);
+    expect(seenUrl).not.toContain(KEY);
+    expect(seenUrl).not.toContain('key=');
+    expect(seenHeaders['x-goog-api-key']).toBe(KEY);
+  });
+
+  it('정상 JSON 은 파싱해서 돌려준다 — 실패 경로만 있는 검사가 아니다', async () => {
+    const fake = (async () => res(200, '{"models":[{"name":"models/x"}]}')) as unknown as typeof fetch;
+    expect((await call('/models', { method: 'GET' }, KEY, fake)).models).toHaveLength(1);
+  });
+});
+
+describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)', () => {
+  const run = (buf: Buffer, extraArgs: string[] = []) => {
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'oas-chunk-')), 'x.png');
+    fs.writeFileSync(f, buf);
+    const r = spawnSync('node', [path.resolve(__dirname, '../scripts/png-chunks.mjs'), f, ...extraArgs], {
+      encoding: 'utf8',
+    });
+    fs.rmSync(path.dirname(f), { recursive: true, force: true });
+    return r;
+  };
+
+  it('깨끗한 PNG 는 통과한다', () => {
+    expect(run(makePng(), ['--fail-on-extra']).status).toBe(0);
+  });
+
+  it('C2PA 매니페스트가 있으면 커밋 전에 죽는다', () => {
+    const r = run(makePng([['caBX', Buffer.from('manifest')]]), ['--fail-on-extra']);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/커밋 전에 세운다/);
+  });
+
+  it('플래그가 없으면 열거만 하고 안 죽는다 — 관측 모드', () => {
+    expect(run(makePng([['caBX', Buffer.from('manifest')]])).status).toBe(0);
+  });
+
+  // **못 읽은 것을 「깨끗하다」로 적지 않는다** — 형식 미판독은 fail-closed 여야 한다.
+  it('형식을 못 읽으면 통과시키지 않는다', () => {
+    expect(run(Buffer.from('this is not an image'), ['--fail-on-extra']).status).toBe(1);
+  });
+
+  it('텍스트 청크(tEXt)도 잡는다 — 메타데이터는 렌더 목록에 없다', () => {
+    expect(run(makePng([['tEXt', Buffer.from('Comment\0hello')]]), ['--fail-on-extra']).status).toBe(1);
+  });
+});
+
+describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', () => {
+  // ⚠ 첫 판본은 이 목록이 부실해 **정상 JPEG 이 100% FAIL** 했다(검수관 B-1 실측).
+  //   DQT·DHT·SOF0 은 문자 그대로 이미지 데이터인데 "이미지가 아닌 것" 으로 분류됐다.
+  it.each(['DQT', 'DHT', 'SOF0', 'SOF2', 'SOS', 'APP0', 'APP14', 'RST0'])(
+    'JPEG 의 %s 는 렌더 데이터다',
+    (t) => expect(RENDER.jpeg.has(t)).toBe(true),
+  );
+
+  it.each(['iCCP', 'sBIT', 'sPLT', 'hIST', 'cICP', 'acTL', 'fcTL', 'fdAT'])(
+    'PNG 의 %s 는 렌더 데이터다',
+    (t) => expect(RENDER.png.has(t)).toBe(true),
+  );
+
+  it('WebP 의 ICCP 는 렌더 데이터다 (색 프로파일)', () => {
+    expect(RENDER.webp.has('ICCP')).toBe(true);
+  });
+
+  // 반대 방향 — 이것들이 렌더에 들어가면 게이트가 통과 도장이 된다.
+  it.each(['tEXt', 'zTXt', 'iTXt', 'eXIf', 'caBX'])(
+    'PNG 의 %s 는 렌더가 아니다 — 잡혀야 한다',
+    (t) => expect(RENDER.png.has(t)).toBe(false),
+  );
+
+  it.each(['APP1', 'APP2', 'APP11', 'COM'])(
+    'JPEG 의 %s 는 렌더가 아니다 — 메타데이터 자리다',
+    (t) => expect(RENDER.jpeg.has(t)).toBe(false),
+  );
+
+  it('JPEG 마커에 이름이 붙는다 — 숫자로 남으면 정체불명으로 분류된다', () => {
+    // SOI + DQT(길이 4) + SOF0(길이 4) + SOS + 압축데이터.
+    // ⚠ 압축데이터를 붙이는 것은 장식이 아니다 — 루프가 `off + 4 <= length` 라
+    //   SOS 가 파일 끝 2바이트면 **읽히지 않는다.** 실제 JPEG 은 SOS 뒤에 항상
+    //   데이터가 오므로 픽스처를 실물 모양에 맞춘다(안 그러면 통과하는 이유가 다르다).
+    const jpeg = Buffer.from([
+      0xff, 0xd8,
+      0xff, 0xdb, 0x00, 0x04, 0, 0,
+      0xff, 0xc0, 0x00, 0x04, 0, 0,
+      0xff, 0xda, 0x00, 0x08, 1, 0, 0, 0,
+      0x12, 0x34, 0x56, 0x78,
+    ]);
+    expect(jpegSegments(jpeg).map((s) => s.type)).toEqual(['DQT', 'SOF0', 'SOS']);
   });
 });
 
