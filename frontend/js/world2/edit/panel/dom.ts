@@ -134,7 +134,17 @@ export function createPanel(
     for (const b of palette.querySelectorAll('button')) {
       b.dataset.on = b.dataset.src === st.pendingSrc ? '1' : '0';
     }
-    if (!st.selected) {
+    if (!st.selected && st.villageSel) {
+      // ── 마을 파츠 (W4 ②-c) ────────────────────────────────────────────────
+      // **아직 조작할 수 없다는 것을 화면이 말한다.** 링만 뜨고 기즈모도 수치칸도 안
+      // 붙는 상태인데, 그것을 안 말하면 «골랐는데 아무것도 안 먹는다» 가 된다 —
+      // 2026-08-12 사고(편집 모드에서 시점이 안 돌던 것)가 정확히 «화면이 침묵해서»
+      // 커진 형태다.
+      const v = st.villageSel;
+      selLine.textContent = `마을: ${v.kind} · 파셀 (${v.px}, ${v.pz}) #${v.index}`
+        + ` · ${v.x.toFixed(1)}, ${v.z.toFixed(1)}`
+        + (v.frozen ? ' · 손본 구역' : '');
+    } else if (!st.selected) {
       selLine.textContent = `선택: 없음 · 배치 ${host.entries().length}개`;
     } else {
       const sel = st.selected;
@@ -147,6 +157,9 @@ export function createPanel(
     if (previews > 0) {
       hint.className = 'note warn';
       hint.textContent = `⚠ ${previews}개는 저장소에 없는 파일입니다 — JSON 과 함께 그 GLB 도 주셔야 배포에 붙습니다.`;
+    } else if (st.villageSel) {
+      hint.className = 'note';
+      hint.textContent = '마을 파츠는 아직 고르기만 됩니다 — 옮기기·지우기는 다음 회차입니다.';
     } else {
       hint.className = 'note';
       hint.textContent = '좌드래그 이동 · 우드래그 시점 · Q/E 회전 · R/F 크기 · Z/X 높이 · Del·⌫ 삭제';

@@ -12,7 +12,7 @@
 // ⚠ **이 파일은 «동작 변경 0» 분해의 일부다.** 값도 의미도 분해 전과 같아야 한다 —
 // 여기서 상수를 손보고 싶어지면 그것은 별도 커밋이다.
 
-import type { OverlayEntry } from './types.js';
+import type { OverlayEntry, VillagePick } from './types.js';
 
 /** 회전 한 번. 24등분이라 세 번이면 45°, 여섯 번이면 90° 다. */
 export const RY_STEP = Math.PI / 12;
@@ -36,8 +36,12 @@ export type ThreeNS = {
   Raycaster: new () => {
     ray: { origin: XYZ; direction: XYZ };
     setFromCamera(coords: { x: number; y: number }, cam: unknown): void;
-    intersectObjects(objs: unknown[], recursive: boolean): { object: unknown }[];
+    // `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다 — 그래서 선택 필드다.
+    // 이것이 없으면 마을 파츠를 «몇 번째 인스턴스인가» 로 환원할 방법이 없다.
+    intersectObjects(objs: unknown[], recursive: boolean): { object: unknown; instanceId?: number }[];
   };
+  /** 맞힌 인스턴스의 자세를 읽는다. 편집은 **이동 성분만** 본다(`elements[12..14]`) */
+  Matrix4: new () => { elements: ArrayLike<number> };
   Mesh: new (g: unknown, m: unknown) => StubMesh;
   Group: new () => StubGroup;
   RingGeometry: new (inner: number, outer: number, seg: number) => Disposable;
@@ -81,6 +85,18 @@ export type StubGroup = {
 /** 편집 세션이 들고 있는 전부. 모듈들이 **같은 객체**를 본다. */
 export interface EditState {
   selected: OverlayEntry | null;
+  /**
+   * 고른 **마을 파츠**. `selected` 와 **동시에 채워지지 않는다** — 선택은 하나다.
+   *
+   * ⚠ 두 칸으로 나눈 것은 임시가 아니라 판단이다. 마을 파츠와 오버레이 항목은 만질 수
+   * 있는 것이 다르다(전자는 비균등 `sx·sy·sz`, 후자는 균등 `s`). 한 칸에 합치려면
+   * 공통 인터페이스를 먼저 정해야 하고, 그 설계는 기즈모·인스펙터·액션 셋을 함께
+   * 건드린다 — 이번 회차(집기)에서 하면 «집기가 되는지» 를 화면에서 판정할 수 없게 된다.
+   *
+   * **불변식: 둘 중 최대 하나만 채워진다.** 채우는 자리를 `input.ts` 한 곳으로 좁혀
+   * 지키고, 그것을 테스트가 본다(둘 다 채워지면 링과 패널이 서로 다른 것을 가리킨다).
+   */
+  villageSel: VillagePick | null;
   pendingSrc: string | null;
   dragging: OverlayEntry | null;
   dragPlaneY: number;
@@ -122,6 +138,7 @@ export interface EditState {
 export function createEditState(): EditState {
   return {
     selected: null,
+    villageSel: null,
     pendingSrc: null,
     dragging: null,
     dragPlaneY: 0,

@@ -15,11 +15,20 @@ export type StubRay = {
   direction: { x: number; y: number; z: number };
 };
 
+/** 레이캐스트 한 건. `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다 */
+export type StubHit = { object: unknown; instanceId?: number };
+
 export interface ThreeStubOptions {
   /** 만들어진 광선이 여기 쌓인다 — 테스트가 방향을 바꿔 쓴다 */
   rays?: StubRay[];
-  /** 레이캐스트가 돌려줄 것. 매번 불린다(테스트가 도중에 바꿀 수 있게) */
-  hits?: () => readonly { object: unknown }[];
+  /**
+   * 레이캐스트가 돌려줄 것. 매번 불린다(테스트가 도중에 바꿀 수 있게).
+   *
+   * **인자로 대상 목록을 받는다** — 편집은 광선을 두 곳에 쏜다(오버레이 루트의 자식들,
+   * 그리고 마을 인스턴스 메시들). 목록을 안 보면 두 경로가 같은 히트를 받아서,
+   * «마을을 집었다» 를 재려는 테스트가 오버레이 쪽에서 먼저 걸린다.
+   */
+  hits?: (objs: readonly unknown[]) => readonly StubHit[];
 }
 
 /**
@@ -39,7 +48,9 @@ export function makeThreeStub(opts: ThreeStubOptions = {}) {
       ray: StubRay = { origin: { x: 0, y: 10, z: 0 }, direction: { x: 0, y: -1, z: 0 } };
       constructor() { rays?.push(this.ray); }
       setFromCamera(): void { /* NDC 는 이 축에서 안 본다 */ }
-      intersectObjects(): readonly { object: unknown }[] { return hits ? hits() : []; }
+      intersectObjects(objs: readonly unknown[]): readonly StubHit[] {
+        return hits ? hits(objs) : [];
+      }
     },
     Mesh: class {
       position = {
@@ -74,6 +85,12 @@ export function makeThreeStub(opts: ThreeStubOptions = {}) {
       min = { x: Infinity, y: Infinity, z: Infinity };
       max = { x: -Infinity, y: -Infinity, z: -Infinity };
       setFromObject(): void { }
+    },
+    // 편집은 **이동 성분만** 읽는다(`elements[12..14]`). 테스트가 인스턴스 위치를
+    // 지정하려면 `getMatrixAt` 이 이 배열을 채우면 되므로, 여기서는 빈 4×4 단위행렬만
+    // 준다 — 값은 맞힌 메시 쪽(테스트가 만든 가짜 인스턴스 메시)이 써 넣는다.
+    Matrix4: class {
+      elements: number[] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     },
     DoubleSide: 2,
   };

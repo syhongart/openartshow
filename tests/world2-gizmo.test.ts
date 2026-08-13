@@ -166,6 +166,10 @@ function makeHarness(): Harness {
     apply() { state.applied++; },
     toRaw: () => raw.value,
     look() { },
+    // 마을 파츠는 이 파일들의 축이 아니다 — 문을 닫아 두면 `pickVillage` 가 즉시
+    // `null` 을 내고 오버레이만 집던 예전 경로가 그대로 돈다.
+    instances: null,
+    village: null,
     surfaceAt: () => 0,
   };
 

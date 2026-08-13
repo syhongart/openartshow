@@ -62,6 +62,9 @@ export function createInput(deps: InputDeps): Input {
     const hit = picker.pick();
     if (hit) {
       st.selected = hit;
+      // **선택은 하나다.** 오버레이를 골랐으면 마을 선택은 풀린다 — 안 풀면 링과 패널이
+      // 서로 다른 것을 가리킨다(`state.ts` 의 `villageSel` 불변식).
+      st.villageSel = null;
       st.dragging = hit;
       st.dragPlaneY = hit.y;
       panel.refresh();
@@ -77,7 +80,22 @@ export function createInput(deps: InputDeps): Input {
       else panel.say('그 자리는 하늘입니다 — 화면 아래쪽 땅을 클릭하세요.', true);
       return;
     }
+
+    // ── 마을 파츠 (W4 ②-c) ──────────────────────────────────────────────────
+    // **오버레이보다 뒤다.** 감독이 놓은 GLB 가 마을 건물에 겹쳐 있으면 놓은 쪽이
+    // 먼저 잡혀야 한다 — 마을은 어디에나 있고 GLB 는 일부러 그 자리에 둔 것이다.
+    // 그리고 **놓기(`pendingSrc`)보다도 뒤다**: 팔레트에서 고른 상태로 건물을 클릭하면
+    // 의도는 «여기 놓는다» 이지 «저 건물을 고른다» 가 아니다.
+    const vhit = picker.pickVillage();
+    if (vhit) {
+      st.selected = null; // 선택은 하나다
+      st.villageSel = vhit;
+      panel.refresh();
+      return;
+    }
+
     st.selected = null;
+    st.villageSel = null;
     panel.refresh();
   };
 

@@ -361,4 +361,12 @@ describe('배선 — 오버레이가 파일과 저장소를 잇는가 (정적·�
     expect(src, 'toRaw 가 parcels 를 빠뜨린다 — 편집한 마을이 저장되지 않는다')
       .toMatch(/parcels:\s*env\.village\.list\(\)/);
   });
+
+  it('편집에 마을 문 둘을 연다 (W4 ②-c)', () => {
+    // ⚠ 이 축이 없으면 «집기» 를 재는 행위 테스트가 전부 초록인데 **실제 세션에서는
+    // 아무것도 안 집힌다** — 그쪽은 자기 host 를 만들어 문을 직접 물리기 때문이다.
+    // N10 뮤테이션(문을 `null` 로)이 0 failed 로 그 구멍을 드러냈다(2026-08-13).
+    expect(src, '레이캐스트 문이 안 열렸다').toMatch(/instances:\s*env\.pools/);
+    expect(src, '배치 조회 문이 안 열렸다').toMatch(/village:\s*env\.village/);
+  });
 });

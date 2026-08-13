@@ -7,6 +7,7 @@
 // 파일에 두면 그 질문이 아예 생기지 않는다.
 
 import type { Object3D, Camera } from 'three/webgpu';
+import type { PlacedPart } from '../parts/types.js';
 
 /**
  * 로드 진행 알림.
@@ -39,11 +40,82 @@ export interface OverlayEntry {
 }
 
 /**
+ * 편집이 **마을 인스턴스**에 닿는 좁은 문. `InstancePools` 가 그대로 만족한다.
+ *
+ * 풀 전체를 넘기지 않는 이유는 `SlotPool`(`parcel-builder.ts`)과 같다 — 편집이 슬롯을
+ * 만들거나 반납할 수 있게 되면 개수 불변식의 집행 지점(`seal()`)이 뒷문으로 열린다.
+ * 여기 있는 셋은 전부 **읽기**다.
+ *
+ * ⚠ `refreshBounds` 를 레이캐스트 **전에** 부르지 않으면 «멀리 있는 것이 가끔 안
+ * 집힌다» 가 기본 동작이다. 이유와 실증은 `systems/instancing.ts` 의 그 메서드 한 곳이다.
+ */
+export interface VillageRaycast {
+  /**
+   * ⚠ `unknown[]` 인 것은 **의도**다. 여기에 `RaycastMesh` 를 요구하면 `InstancePools` 가
+   * 구조적으로 불합격한다 — 그쪽이 `Object3D[]` 로 선언돼 있고 `getMatrixAt` 은
+   * `InstancedMesh` 에만 있기 때문이다. 목록의 정적 타입을 좁히는 대신 **맞힌 것 하나를**
+   * 좁힌다(아래 `RaycastMesh`). 실제로 그 시점에는 `instanceId` 가 왔다는 사실이
+   * «이것은 인스턴스 메시다» 를 이미 말해 준다.
+   */
+  raycastTargets(): readonly unknown[];
+  refreshBounds(): void;
+  ownerAt(mesh: unknown, instanceId: number): { readonly key: string } | null;
+}
+
+/**
+ * 레이캐스트가 **맞힌** 인스턴스 메시. 편집이 실제로 읽는 것만 적은 구조 타입.
+ *
+ * `getMatrixAt` 하나가 이 회차의 요점이다 — 맞힌 인스턴스의 **위치**가 나와야 그것을
+ * 파셀·파츠로 되짚을 수 있다(`decide/village-pick.ts` 헤더).
+ */
+export interface RaycastMesh {
+  getMatrixAt(index: number, target: { elements: ArrayLike<number> }): void;
+}
+
+/**
+ * 편집이 **마을 배치**에 닿는 좁은 문. `VillageParcels`(`systems/village-parcels.ts`)가
+ * 그대로 만족한다.
+ *
+ * ⚠ 지금은 읽기 하나뿐이다. 동결을 **거는** 문(`freeze`)은 아직 안 연다 — 쓰는 소비자가
+ * 없는데 문을 미리 내면 «준비됨» 이 «충족됨» 으로 읽힌다(이 저장소가 계약 조건 c 에서
+ * 정확히 그 형태로 한 번 데였다). 편집이 실제로 옮기기 시작할 때 함께 연다.
+ */
+export interface VillageRead {
+  /** 그 파셀의 지금 배치(near 기준 전체). 동결이 있으면 그것, 없으면 계산값 */
+  partsAt(px: number, pz: number): PlacedPart[];
+  /** 이 파셀이 동결됐는가 — 화면이 «손본 구역» 임을 말해야 한다 */
+  isFrozen(px: number, pz: number): boolean;
+}
+
+/**
+ * 마을 파츠 하나를 가리키는 **세션 안의 이름**.
+ *
+ * ⚠ `index` 는 «그 순간의 배열에서 몇 번째» 다. 파셀을 동결하기 전까지 그 배열은 계산
+ * 결과이므로 **밀도 노브가 바뀌면 다른 것을 가리킨다** — 계약(`decide/overlay.ts`)이
+ * «파츠에는 이름이 없다» 로 길게 적은 그 문제다. 그래서 이 값을 저장하지 않는다.
+ */
+export interface VillagePick {
+  readonly px: number;
+  readonly pz: number;
+  readonly index: number;
+  readonly kind: string;
+  /** 월드 좌표 — 선택 링을 놓는 자리 */
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  /** 이미 손본 파셀인가 */
+  readonly frozen: boolean;
+}
+
+/**
  * 편집이 씬에 닿는 유일한 통로. 소비자(`features/overlay.ts`)가 구현한다.
  *
  * 편집 모듈이 `env.scene` 을 직접 뒤지지 않게 하는 것이 요점이다 — 그러면 오버레이가
- * 아닌 것(마을 파츠·하늘)까지 집을 수 있고, 그것은 개수 불변식과 좌표 결정론을 함께
- * 건드리는 경로다. 이번 회차의 편집 대상은 **오버레이 항목뿐**이다.
+ * 아닌 것(하늘·지면·GLB)까지 집을 수 있다.
+ *
+ * ⚠ 이 문단은 오래 *"이번 회차의 편집 대상은 **오버레이 항목뿐**"* 으로 끝났고 **W4 에서
+ * 거짓이 됐다** — 마을 파츠가 대상이 됐다. 다만 접근 방식은 그대로다: 씬을 뒤지는 대신
+ * 좁은 문(`instances`·`village`)을 받는다.
  */
 export interface OverlayHost {
   /** 동적 import 로 받아 둔 `three/webgpu` 네임스페이스. 편집이 또 import 하지 않는다 */
@@ -55,6 +127,10 @@ export interface OverlayHost {
   readonly cellZ: number;
   /** 레이캐스트 대상이 되는 루트. 자식이 곧 항목 holder 다 */
   readonly root: Object3D;
+  /** 마을 인스턴스 레이캐스트. 없으면 마을 파츠를 집지 않는다(오버레이만) */
+  readonly instances: VillageRaycast | null;
+  /** 마을 배치 조회. 없으면 마을 파츠를 집지 않는다 */
+  readonly village: VillageRead | null;
 
   entries(): readonly OverlayEntry[];
   /**

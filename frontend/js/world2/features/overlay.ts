@@ -298,6 +298,11 @@ export const overlayFeature: Feature = {
       cellX: DEFAULT_LAYOUT.cellX,
       cellZ: DEFAULT_LAYOUT.cellZ,
       get root() { return root as Object3D; },
+      // 마을 파츠를 집는 두 문. `InstancePools`·`VillageParcels` 가 **구조적으로** 좁은
+      // 인터페이스를 만족하므로 어댑터가 필요 없다 — 그 좁힘의 값은 편집이 풀 전체를
+      // 만질 수 없다는 것이지 여기서 변환하는 데 있지 않다.
+      instances: env.pools,
+      village: env.village,
       entries: () => entries,
       place,
       lastFailure: () => lastFail,
