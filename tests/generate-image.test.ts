@@ -16,8 +16,10 @@
 // "가려졌다" 를 확인하는 것이 아니라 **원문이 출력에 남아 있지 않은지**를 본다.
 //
 // ⚠ **이 파일이 못 보는 것**: 네트워크 왕복 전체, 실제 Gemini 응답의 모양,
-//    `main()` 의 흐름. `pickImageModel` 은 우리가 지어낸 목록에 대한 **우선순위**만
-//    검사한다 — 실제 `/models` 응답이 그 모양인지는 **키가 없어 못 쟀다**.
+//    `main()` 의 흐름. `pickImageModels` 는 우리가 지어낸 목록에 대한 **순서**만 검사한다.
+//    ⚠ run #1 이 그 한계를 실물로 보여줬다 — 메서드 목록이 `predict` 라고 말한 모델이
+//    `HTTP 404` 를 냈다. **목록이 말하는 것과 서버가 받아 주는 것은 다르고, 그 차이는
+//    불러 봐야만 안다.** 그래서 호출부에 폴백을 넣었고 그 폴백은 여기서 안 잰다.
 
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
@@ -30,7 +32,8 @@ import {
   maskSecrets,
   resolveOutPath,
   assertImageBytes,
-  pickImageModel,
+  pickImageModels,
+  generateWithFallback,
   call,
   ALLOWED_EXT,
   MAX_BYTES,
@@ -196,56 +199,143 @@ describe('G-BYTES 내용 검증 — 확장자와 실제 형식이 어긋나면 �
   });
 });
 
-describe('G-MODEL 모델 선택 — 재현 가능한가, 지원 여부를 보는가', () => {
+describe('G-MODEL 모델 후보 — 순서가 재현 가능한가, 변종이 앞서지 않는가', () => {
   const M = (name: string, methods: string[]) => ({ name: `models/${name}`, supportedGenerationMethods: methods });
+  const first = (list: unknown[]) => pickImageModels(list as never).candidates[0];
 
   it('predict 를 지원하는 imagen 을 최우선으로 고른다', () => {
-    const r = pickImageModel([
+    const c = first([
       M('gemini-2.5-flash-image', ['generateContent']),
       M('imagen-4.0-generate-001', ['predict']),
     ]);
-    expect(r.model).toBe('imagen-4.0-generate-001');
-    expect(r.kind).toBe('predict');
+    expect(c.model).toBe('imagen-4.0-generate-001');
+    expect(c.kind).toBe('predict');
+  });
+
+  // ⚠⚠ **run #1 이 죽은 자리다**(2026-08-13 실측). 이름 내림차순 정렬이라
+  //   `ultra`(u) 가 `generate`(g) 를 앞섰고, 그 모델이 `HTTP 404 · NOT_FOUND` 를 냈다.
+  //   재현성을 위해 넣은 정렬이 **하필 접근 안 되는 변종을 최우선으로 만들었다.**
+  it.each(['ultra', 'fast', 'preview', 'exp'])(
+    '%s 변종은 표준 모델보다 뒤에 온다 (run #1 이 죽은 자리)',
+    (v) => {
+      const c = first([
+        M(`imagen-4.0-${v}-generate-001`, ['predict']),
+        M('imagen-4.0-generate-001', ['predict']),
+      ]);
+      expect(c.model).toBe('imagen-4.0-generate-001');
+    },
+  );
+
+  // ⚠ 변종이 **사라지는** 것은 아니다 — 뒤로 갈 뿐이다. 표준이 404 를 내면 시도한다.
+  it('변종도 후보에는 남는다 — 표준이 실패하면 써야 한다', () => {
+    const { candidates } = pickImageModels([
+      M('imagen-4.0-ultra-generate-001', ['predict']),
+      M('imagen-4.0-generate-001', ['predict']),
+    ] as never);
+    expect(candidates.map((c) => c.model)).toEqual([
+      'imagen-4.0-generate-001',
+      'imagen-4.0-ultra-generate-001',
+    ]);
   });
 
   // ⚠ 첫 판본은 `supportedGenerationMethods` 를 **안 읽으면서** 주석에 *"실제로 쓸 수
   //   있는"* 이라고 적었다(검수관 P4). 목록에 있다는 것과 부를 수 있다는 것은 다르다.
-  it('predict 를 지원하지 않는 imagen 은 고르지 않는다', () => {
-    const r = pickImageModel([
-      M('imagen-3.0-fast', ['embedContent']),
+  //   ⚠⚠ 그리고 **메서드가 맞아도 부를 수 있는 것은 아니다** — run #1 의 404 가 그것이다.
+  //   그래서 이 검사는 「고른다」가 아니라 「순서」만 보증한다. 실제 가부는 호출부가
+  //   차례로 시도해서 확인한다.
+  it('predict 를 지원하지 않는 imagen 은 predict 후보에 안 넣는다', () => {
+    const c = first([
+      M('imagen-3.0-nope', ['embedContent']),
       M('gemini-2.5-flash-image', ['generateContent']),
     ]);
-    expect(r.model).toBe('gemini-2.5-flash-image');
-    expect(r.kind).toBe('generateContent');
+    expect(c.model).toBe('gemini-2.5-flash-image');
+    expect(c.kind).toBe('generateContent');
   });
 
-  // 같은 키로 두 번 돌렸을 때 다른 모델이 뽑히면 안 된다.
-  it('응답 배열 순서가 바뀌어도 같은 모델이 나온다', () => {
+  // 같은 키로 두 번 돌렸을 때 순서가 달라지면 안 된다.
+  it('응답 배열 순서가 바뀌어도 후보 순서가 같다', () => {
     const a = [M('imagen-3.0-generate-002', ['predict']), M('imagen-4.0-generate-001', ['predict'])];
-    expect(pickImageModel(a).model).toBe(pickImageModel([...a].reverse()).model);
+    const names = (l: unknown[]) => pickImageModels(l as never).candidates.map((c) => c.model);
+    expect(names(a)).toEqual(names([...a].reverse()));
   });
 
-  it('버전이 높은 쪽을 고른다 — 숫자로 비교한다', () => {
-    const r = pickImageModel([
+  it('버전이 높은 쪽을 먼저 시도한다 — 숫자로 비교한다', () => {
+    const c = first([
       M('imagen-4.0-generate-001', ['predict']),
       M('imagen-10.0-generate-001', ['predict']),
     ]);
-    expect(r.model).toBe('imagen-10.0-generate-001');
+    expect(c.model).toBe('imagen-10.0-generate-001');
   });
 
   it('메서드 목록이 아예 없는 응답이면 이름으로 폴백하고 그 사실을 알린다', () => {
-    const r = pickImageModel([{ name: 'models/imagen-4.0-generate-001' }]);
-    expect(r.model).toBe('imagen-4.0-generate-001');
+    const r = pickImageModels([{ name: 'models/imagen-4.0-generate-001' }] as never);
+    expect(r.candidates[0].model).toBe('imagen-4.0-generate-001');
     expect(r.hasMethods).toBe(false);
   });
 
-  it('이미지 모델이 없으면 null 이다 — 아무거나 고르지 않는다', () => {
-    expect(pickImageModel([M('gemini-2.5-pro', ['generateContent'])]).model).toBeNull();
+  it('이미지 모델이 없으면 후보 0개다 — 아무거나 고르지 않는다', () => {
+    expect(pickImageModels([M('gemini-2.5-pro', ['generateContent'])] as never).candidates).toHaveLength(0);
   });
 
   it('빈 응답에도 안 죽는다', () => {
-    expect(pickImageModel(undefined).model).toBeNull();
-    expect(pickImageModel([]).model).toBeNull();
+    expect(pickImageModels(undefined as never).candidates).toHaveLength(0);
+    expect(pickImageModels([] as never).candidates).toHaveLength(0);
+  });
+});
+
+describe('G-FALLBACK 후보가 실패하면 다음으로 가는가 (run #1 이 죽은 자리)', () => {
+  const C = (model: string) => ({ model, kind: 'predict' });
+
+  it('첫 후보가 성공하면 거기서 멈춘다 — 요금을 더 쓰지 않는다', async () => {
+    const tried: string[] = [];
+    const r = await generateWithFallback([C('a'), C('b')], async (c) => {
+      tried.push(c.model);
+      return { b64: 'x' };
+    });
+    expect(tried).toEqual(['a']);
+    expect(r.picked!.model).toBe('a');
+  });
+
+  // ⚠ run #1 실물: `imagen-4.0-ultra-generate-001` 이 `HTTP 404 · NOT_FOUND` 를 냈다.
+  it('404 를 내면 다음 후보로 간다', async () => {
+    const r = await generateWithFallback([C('ultra'), C('std')], async (c) => {
+      if (c.model === 'ultra') throw new Error('HTTP 404 · NOT_FOUND');
+      return { b64: 'ok' };
+    });
+    expect(r.picked!.model).toBe('std');
+    expect(r.out.b64).toBe('ok');
+  });
+
+  it('실패 사유를 모아 둔다 — 왜 이 모델이 됐는지 다음 사람이 봐야 한다', async () => {
+    const r = await generateWithFallback([C('a'), C('b')], async (c) => {
+      if (c.model === 'a') throw new Error('HTTP 404 · NOT_FOUND');
+      return { b64: 'ok' };
+    });
+    expect(r.failures).toEqual(['a: HTTP 404 · NOT_FOUND']);
+  });
+
+  it('전부 실패하면 picked 가 null 이고 사유가 전부 남는다', async () => {
+    const r = await generateWithFallback([C('a'), C('b')], async () => {
+      throw new Error('HTTP 403 · PERMISSION_DENIED');
+    });
+    expect(r.picked).toBeNull();
+    expect(r.failures).toHaveLength(2);
+  });
+
+  it('후보가 0개면 조용히 성공하지 않는다', async () => {
+    const r = await generateWithFallback([], async () => ({ b64: 'x' }));
+    expect(r.picked).toBeNull();
+  });
+
+  it('실패를 로그로 알린다 — 조용히 넘어가지 않는다', async () => {
+    const lines: string[] = [];
+    await generateWithFallback([C('a'), C('b')], async (c) => {
+      if (c.model === 'a') throw new Error('HTTP 404 · NOT_FOUND');
+      return { b64: 'ok' };
+    }, (m) => lines.push(m));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('404');
+    expect(lines[0]).toContain('다음 후보로 간다');
   });
 });
 

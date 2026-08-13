@@ -155,11 +155,28 @@ export async function call(pathname, init, key, fetchImpl = fetch) {
 }
 
 /**
- * 이 키로 **실제로 쓸 수 있는** 이미지 생성 모델을 찾는다.
- * "쓸 수 있다" 를 코드가 보증하는 방법: `supportedGenerationMethods` 를 본다.
- * 목록에 있다는 것과 `:predict`/`:generateContent` 를 지원한다는 것은 다른 일이다.
+ * 이 키로 쓸 수 있는 이미지 생성 모델 **후보를 순서대로** 돌려준다.
+ *
+ * ⚠⚠ **첫 판본은 하나만 골랐고 run #1 이 그 자리에서 죽었다**(2026-08-13 실측):
+ *
+ *     모델: imagen-4.0-ultra-generate-001 (predict)
+ *     실패: HTTP 404 · NOT_FOUND
+ *
+ * 두 가지가 겹쳤다. ① 이름 **내림차순** 정렬이라 `ultra`(u) 가 `generate`(g) 를 앞섰다 —
+ * 재현성을 위해 넣은 정렬이 **하필 접근 안 되는 변종을 최우선으로 만들었다.**
+ * ② `supportedGenerationMethods` 에 `predict` 가 있어도 **그 키로 실제 호출이 되는지는
+ * 다른 일이다.** 목록이 말하는 것과 서버가 받아 주는 것이 다르고, 그 차이는 **불러 봐야만**
+ * 안다. 첫 판본 주석은 *"「쓸 수 있다」를 코드가 보증한다"* 고 적었는데 **보증하지 못했다.**
+ *
+ * 그래서 판정을 **하나 고르기**에서 **순서 매기기**로 바꾼다. 호출부가 차례로 시도하고,
+ * 실패하면 다음으로 간다. 목록만 보고 확정하지 않는다.
+ *
+ * 정렬 규칙(재현성은 유지한다 — 같은 응답이면 같은 순서):
+ *   1. 변종보다 **표준**을 앞에 둔다(`ultra`·`fast`·`preview`·`exp` 는 뒤로).
+ *      run #1 이 정확히 이 규칙의 부재로 죽었다.
+ *   2. 그다음 버전 **내림차순**(`numeric` 이라 `imagen-10` 이 `imagen-4` 뒤로 안 간다).
  */
-export function pickImageModel(list) {
+export function pickImageModels(list) {
   const models = (list || []).map((m) => ({
     name: String(m?.name || '').replace(/^models\//, ''),
     methods: Array.isArray(m?.supportedGenerationMethods) ? m.supportedGenerationMethods : [],
@@ -169,23 +186,53 @@ export function pickImageModel(list) {
   const hasMethods = models.some((m) => m.methods.length > 0);
   const supports = (m, method) => (hasMethods ? m.methods.includes(method) : true);
 
+  // 특수 변종은 별도 권한·엔드포인트를 요구하는 일이 있다. 표준을 먼저 시도한다.
+  const VARIANT = /(ultra|fast|preview|exp|experimental)/i;
+  const order = (a, b) =>
+    (VARIANT.test(a.name) ? 1 : 0) - (VARIANT.test(b.name) ? 1 : 0)
+    || b.name.localeCompare(a.name, 'en', { numeric: true });
+
   const tiers = [
     { kind: 'predict', test: (m) => /^imagen-\d/.test(m.name) && supports(m, 'predict') },
-    {
-      kind: 'generateContent',
-      test: (m) => /image/.test(m.name) && supports(m, 'generateContent'),
-    },
+    { kind: 'generateContent', test: (m) => /image/.test(m.name) && supports(m, 'generateContent') },
   ];
+  const candidates = [];
   for (const tier of tiers) {
-    const hits = models.filter(tier.test);
-    if (!hits.length) continue;
-    // ⚠ `find` 로 **응답 배열 순서**의 첫 매치를 쓰면 같은 키로 두 번 돌렸을 때 다른
-    // 모델이 뽑힐 수 있다(검수관 P4). 이름으로 내림차순 정렬해 재현성을 만든다 —
-    // `numeric` 이라 `imagen-10` 이 `imagen-4` 뒤로 가지 않는다.
-    hits.sort((a, b) => b.name.localeCompare(a.name, 'en', { numeric: true }));
-    return { model: hits[0].name, kind: tier.kind, hasMethods, all: models.map((m) => m.name) };
+    for (const m of models.filter(tier.test).sort(order)) {
+      candidates.push({ model: m.name, kind: tier.kind, methods: m.methods });
+    }
   }
-  return { model: null, kind: null, hasMethods, all: models.map((m) => m.name) };
+  return { candidates, hasMethods, all: models.map((m) => m.name) };
+}
+
+/**
+ * 후보를 **순서대로 시도**하고 처음 성공한 것을 돌려준다.
+ *
+ * ⚠ **run #1 이 이것이 없어 죽었다.** 첫 후보가 `HTTP 404 · NOT_FOUND` 를 내자 그 자리에서
+ * 끝났다 — 목록에 있고 `supportedGenerationMethods` 도 맞는데 호출이 안 되는 조합이
+ * 실재한다. 그 차이는 **불러 봐야만** 안다.
+ *
+ * `main()` 안에 두지 않고 빼낸 이유는 **검사할 수 있게 하려는 것**이다. 오늘 이 회차에서
+ * 같은 형태로 세 번 걸렸다(빈 화이트리스트·유령 항목·「잡힌다」 단언) — 폴백을 넣고
+ * *"이제 안 죽는다"* 라고 적는 것이 네 번째가 될 자리였다.
+ *
+ * @param {Array<{model:string,kind:string}>} candidates
+ * @param {(c:{model:string,kind:string}) => Promise<any>} run 실제 호출. 테스트에서 주입한다.
+ * @param {(msg:string) => void} [log]
+ */
+export async function generateWithFallback(candidates, run, log = () => {}) {
+  const failures = [];
+  for (const c of candidates) {
+    try {
+      return { picked: c, out: await run(c), failures };
+    } catch (e) {
+      // `e.message` 는 `safeError` 가 이미 좁혔다(키 없음). 그대로 남긴다 —
+      // 실패 사유를 안 남기면 "왜 이 모델이 됐나" 를 다음 사람이 못 본다.
+      failures.push(`${c.model}: ${e.message}`);
+      log(`· ${c.model}(${c.kind}) 실패 — ${e.message}. 다음 후보로 간다.`);
+    }
+  }
+  return { picked: null, out: null, failures };
 }
 
 /** Imagen 계열(`:predict`)로 생성. 반환은 `{ b64, mimeType }`. */
@@ -237,26 +284,41 @@ async function main() {
   const rel = path.relative(ROOT, abs);
   const ext = path.extname(abs).toLowerCase();
 
-  const { model, kind, hasMethods, all } = pickImageModel((await call('/models', { method: 'GET' }, key)).models);
-  if (!model) {
+  const { candidates, hasMethods, all } = pickImageModels((await call('/models', { method: 'GET' }, key)).models);
+  if (!candidates.length) {
     // **모델 이름만**, 그것도 앞 5개만 찍는다. 전체 목록은 이 키가 어느 티어에서
     // 무엇에 접근 가능한지를 공개 로그에 광고한다(보안담당 ⑥).
     console.error('이 키로 쓸 수 있는 이미지 생성 모델을 못 찾았다.');
     console.error(`조회된 모델 ${all.length}개 중 앞 5개: ${all.slice(0, 5).join(', ')}`);
     process.exit(1);
   }
-  console.log(`모델: ${model} (${kind})`);
+  console.log(`후보 ${candidates.length}개: ${candidates.slice(0, 5).map((c) => `${c.model}(${c.kind})`).join(' → ')}`);
   if (!hasMethods) {
     console.log('⚠ 응답에 supportedGenerationMethods 가 없어 **이름만으로** 골랐다 — 실제 지원 여부는 확인 못 했다.');
   }
 
-  const { b64, mimeType } = kind === 'predict'
-    ? await genImagen(key, model, prompt, aspect)
-    : await genGemini(key, model, prompt);
+  // ⚠⚠ **후보를 순서대로 시도한다.** run #1 은 첫 후보(`imagen-4.0-ultra-generate-001`)가
+  //   `HTTP 404 · NOT_FOUND` 를 내자 **그 자리에서 죽었다.** 목록에 있고 메서드도 맞는데
+  //   호출이 안 되는 조합이 실재한다 — 그것은 **불러 봐야만** 안다.
+  //   실패 사유를 매 후보마다 남긴다. 안 남기면 "왜 이 모델이 됐나" 를 다음 사람이 못 본다.
+  const { picked, out, failures } = await generateWithFallback(
+    candidates,
+    (c) => (c.kind === 'predict'
+      ? genImagen(key, c.model, prompt, aspect)
+      : genGemini(key, c.model, prompt)),
+    (m) => console.log(m),
+  );
+  if (!picked) {
+    console.error(`후보 ${candidates.length}개가 전부 실패했다:`);
+    for (const f of failures) console.error(`  ${f}`);
+    process.exit(1);
+  }
+  const { b64, mimeType } = out;
+  console.log(`모델: ${picked.model} (${picked.kind})`);
 
   // ⚠ Gemini 계열은 `aspect` 를 안 받는다. 감독이 `9:16` 을 고르고 이 경로로 갔으면
   // **비율이 조용히 무시된 것**이고, 그것을 모르면 다시 dispatch 해서 요금이 또 나간다.
-  if (kind !== 'predict') {
+  if (picked.kind !== 'predict') {
     console.log(`⚠ 비율 '${aspect}' 는 이 모델 경로(generateContent)에서 소비되지 않았다 — 요청대로 안 나올 수 있다.`);
   }
 
