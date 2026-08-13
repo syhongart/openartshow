@@ -277,6 +277,60 @@ describe('G-MODEL 모델 후보 — 순서가 재현 가능한가, 변종이 앞
     expect(pickImageModels([M('gemini-2.5-pro', ['generateContent'])] as never).candidates).toHaveLength(0);
   });
 
+  // ⚠⚠ **검수관 B-1 이 실측한 회귀다 — 내가 폴백을 넣으면서 만들었다.**
+  //   `imagen` 안에 `image` 가 들어 있어 tier1(`/^imagen-\d/`)과 tier2(`/image/`)가
+  //   **같은 모델에 동시 매치**한다. 이전 판본은 첫 tier 에서 `return` 해 구조적으로
+  //   불가능했는데, 누적으로 바꾸면서 열렸다. `hasMethods=false` 면 `supports()` 가
+  //   항상 참이라 **모든 imagen 이 반드시 2배**가 되고, `imagen-x:generateContent` 는
+  //   거의 확실히 실패할 호출이라 `failures` 목록에 **구조적 노이즈**를 넣는다.
+  //   이번 개정의 존재 이유가 *"실패 사유 목록이 다음 진단의 근거"* 인데 그 근거를 갉는다.
+  it('메서드 목록이 없어도 같은 모델이 두 번 오지 않는다', () => {
+    const { candidates } = pickImageModels([
+      { name: 'models/imagen-4.0-generate-001' },
+      { name: 'models/imagen-4.0-ultra-generate-001' },
+    ] as never);
+    expect(new Set(candidates.map((c) => c.model)).size).toBe(candidates.length);
+  });
+
+  it('imagen 이 generateContent 도 신고해도 두 번 오지 않는다', () => {
+    const { candidates } = pickImageModels([
+      M('imagen-4.0-generate-001', ['predict', 'generateContent']),
+    ] as never);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].kind).toBe('predict');
+  });
+
+  it('imagen 이 아닌 이미지 모델은 generateContent 후보로 남는다', () => {
+    const { candidates } = pickImageModels([
+      M('gemini-2.5-flash-image', ['generateContent']),
+    ] as never);
+    expect(candidates.map((c) => c.kind)).toEqual(['generateContent']);
+  });
+
+  // ⚠ `exp`·`fast` 는 부분 문자열이라 경계가 없으면 표준 이름에 우연히 들어갔을 때
+  //   오탐한다(검수관 P-1). 하이픈 경계를 쓰는지 본다.
+  // ⚠⚠ **첫 판본은 이 케이스가 우연히 통과했다**(내 뮤테이션 R-2 = 0 failed).
+  //   `fastidious` 와 `fast-001` 을 나란히 뒀는데, 경계를 지우면 **둘 다** 변종이 되어
+  //   순서가 그대로였다 — 즉 경계가 있으나 없으나 결과가 같아 **검출력이 0**이었다.
+  //   짝을 **변종이 아닌 표준**과 맞춰야 갈린다: 경계가 있으면 `ultrasonic` 은 표준이라
+  //   이름 내림차순으로 앞서고, 경계를 지우면 변종으로 몰려 뒤로 밀린다.
+  //   *"내가 만든 케이스가 우연히 통과한다"* 는 오늘 이 회차에서 두 번째다.
+  it('변종 판정은 하이픈 경계를 쓴다 — 부분 문자열로 오탐하지 않는다', () => {
+    const { candidates } = pickImageModels([
+      M('imagen-4.0-generate-001', ['predict']),     // 표준
+      M('imagen-4.0-ultrasonic-001', ['predict']),   // 'ultra' 를 품지만 변종이 아니다
+    ] as never);
+    expect(candidates[0].model).toBe('imagen-4.0-ultrasonic-001');
+  });
+
+  it('진짜 변종은 표준보다 뒤다 — 위 케이스가 경계 때문임을 못 박는다', () => {
+    const { candidates } = pickImageModels([
+      M('imagen-4.0-ultra-001', ['predict']),
+      M('imagen-4.0-generate-001', ['predict']),
+    ] as never);
+    expect(candidates[0].model).toBe('imagen-4.0-generate-001');
+  });
+
   it('빈 응답에도 안 죽는다', () => {
     expect(pickImageModels(undefined as never).candidates).toHaveLength(0);
     expect(pickImageModels([] as never).candidates).toHaveLength(0);
@@ -320,6 +374,27 @@ describe('G-FALLBACK 후보가 실패하면 다음으로 가는가 (run #1 이 �
     });
     expect(r.picked).toBeNull();
     expect(r.failures).toHaveLength(2);
+  });
+
+  // ⚠ 429 는 후보를 바꿔도 안 풀리고 N번 두드리면 악화된다(검수관 P-3).
+  it('429 를 만나면 남은 후보를 두드리지 않는다', async () => {
+    const tried: string[] = [];
+    const r = await generateWithFallback([C('a'), C('b'), C('c')], async (c) => {
+      tried.push(c.model);
+      throw new Error('HTTP 429 · RESOURCE_EXHAUSTED');
+    });
+    expect(tried).toEqual(['a']);
+    expect(r.picked).toBeNull();
+  });
+
+  it('429 가 아닌 실패는 계속 시도한다 — 429 만 특별하다', async () => {
+    const tried: string[] = [];
+    const r = await generateWithFallback([C('a'), C('b'), C('c')], async (c) => {
+      tried.push(c.model);
+      throw new Error('HTTP 404 · NOT_FOUND');
+    });
+    expect(tried).toEqual(['a', 'b', 'c']);
+    expect(r.picked).toBeNull();
   });
 
   it('후보가 0개면 조용히 성공하지 않는다', async () => {
@@ -616,7 +691,11 @@ describe('G-WF 워크플로가 스크립트와 어긋나지 않는가', () => {
   it('workflow 의 기본 out 이 resolveOutPath 를 통과한다', async () => {
     const { readFileSync } = await import('node:fs');
     const yml = readFileSync(path.resolve(__dirname, '../.github/workflows/generate-image.yml'), 'utf8');
-    const m = yml.match(/default:\s*'([^']+\.(?:png|jpg|jpeg|webp))'/);
+    // ⚠ **`out:` 블록으로 앵커를 좁힌다**(검수관 P-5). 첫 판본은 파일의 **첫 매치**를
+    //   썼는데, `prompt` 의 default 가 `out` 보다 **앞에** 온다. 지금은 프롬프트에
+    //   그 확장자로 끝나는 조각이 없어 **우연히** 통과할 뿐이고, 프롬프트에 `hero.png`
+    //   같은 단어가 들어가는 순간 엉뚱한 값을 검사하게 된다.
+    const m = yml.match(/\n      out:[\s\S]{0,400}?default:\s*'([^']+)'/);
     expect(m, '워크플로에서 기본 out 을 못 찾았다 — 형식이 바뀌었는지 보라').not.toBeNull();
     expect(() => resolveOutPath(m![1], '/repo')).not.toThrow();
   });

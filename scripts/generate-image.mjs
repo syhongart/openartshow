@@ -29,7 +29,13 @@
 //     하위 + 이미지 확장자만 허용. 공격 방어가 아니라 **감독의 오타 방어**다.
 //  ④ 모델 선택이 응답 **배열 순서**에 의존했고 `supportedGenerationMethods` 를 안 봤다.
 //     주석은 *"실제로 쓸 수 있는"* 이라고 적고 있었다 — 참인 전제에서 성립하지 않는
-//     결론이다(검수관 P4). → 지원 메서드를 보고, 순서 대신 버전으로 고른다.
+//     결론이다(검수관 P4).
+//     ⚠⚠ **그때 넣은 처방(「지원 메서드를 보고 순서 대신 버전으로 고른다」)은 run #1 에서
+//     무효화됐다.** 실물 실행이 두 가지를 보여줬다: ⓐ 버전 정렬만으로는 부족했다 —
+//     이름 내림차순이라 `ultra` 가 표준을 앞섰고 그 모델이 404 였다 ⓑ **메서드가
+//     `predict` 라고 말해도 호출이 되는 것은 아니다.** 그래서 지금은 **고르지 않고
+//     순서를 매겨 차례로 시도한다**(`pickImageModels` + `generateWithFallback`).
+//     헤더만 읽고 *"메서드를 보면 된다"* 로 읽지 마라 — 그 전제가 실물로 깨졌다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -187,14 +193,28 @@ export function pickImageModels(list) {
   const supports = (m, method) => (hasMethods ? m.methods.includes(method) : true);
 
   // 특수 변종은 별도 권한·엔드포인트를 요구하는 일이 있다. 표준을 먼저 시도한다.
-  const VARIANT = /(ultra|fast|preview|exp|experimental)/i;
+  // ⚠ **하이픈 경계를 쓴다**(검수관 P-1). `exp`·`fast` 는 부분 문자열이라 경계가 없으면
+  //   표준 모델 이름에 우연히 들어갔을 때 오탐한다. 그리고 `experimental` 은 첫 판본에
+  //   있었는데 **도달 불가**였다 — `exp` 가 먼저 매치한다(뮤테이션: 지워도 0 failed).
+  //   경계를 넣으면서 `exp` 와 `experimental` 이 서로 다른 토큰이 되므로 **둘 다 적는다.**
+  const VARIANT = /-(ultra|fast|preview|exp|experimental)(-|$)/i;
   const order = (a, b) =>
     (VARIANT.test(a.name) ? 1 : 0) - (VARIANT.test(b.name) ? 1 : 0)
     || b.name.localeCompare(a.name, 'en', { numeric: true });
 
+  // ⚠⚠ **tier2 에서 imagen 을 배제한다**(검수관 B-1). `imagen` 안에 `image` 가 들어 있어
+  //   `/^imagen-\d/` 와 `/image/` 가 **같은 모델에 동시 매치**한다. 이전 판본은 첫 tier 에서
+  //   `return` 해 구조적으로 불가능했는데, 누적으로 바꾸면서 **내가 회귀를 만들었다.**
+  //   `hasMethods=false` 면 `supports()` 가 항상 참이라 **모든 imagen 이 반드시 2배**가 되고,
+  //   `imagen-x:generateContent` 는 거의 확실히 실패할 호출이라 **`failures` 목록에 구조적
+  //   노이즈**를 넣는다 — 이번 개정의 존재 이유가 *"실패 사유 목록이 다음 진단의 근거"*
+  //   인데 그 근거를 스스로 갉는다. 요금도 그만큼 더 나간다.
   const tiers = [
     { kind: 'predict', test: (m) => /^imagen-\d/.test(m.name) && supports(m, 'predict') },
-    { kind: 'generateContent', test: (m) => /image/.test(m.name) && supports(m, 'generateContent') },
+    {
+      kind: 'generateContent',
+      test: (m) => /image/.test(m.name) && !/^imagen-\d/.test(m.name) && supports(m, 'generateContent'),
+    },
   ];
   const candidates = [];
   for (const tier of tiers) {
@@ -213,8 +233,15 @@ export function pickImageModels(list) {
  * 실재한다. 그 차이는 **불러 봐야만** 안다.
  *
  * `main()` 안에 두지 않고 빼낸 이유는 **검사할 수 있게 하려는 것**이다. 오늘 이 회차에서
- * 같은 형태로 세 번 걸렸다(빈 화이트리스트·유령 항목·「잡힌다」 단언) — 폴백을 넣고
- * *"이제 안 죽는다"* 라고 적는 것이 네 번째가 될 자리였다.
+ * 같은 형태로 세 번 걸렸다(빈 화이트리스트·유령 항목·「잡힌다」 단언).
+ *
+ * ⚠⚠ **그런데 잰 것은 이 함수 내부뿐이다 — `main()` 이 후보를 온전히 넘기는가는 검사 0이다**
+ * (검수관 B-2 실측). `main()` 의 `generateWithFallback(candidates, …)` 를
+ * `candidates.slice(0, 1)` 로 바꿔도 **101개가 전부 초록**이다. **run #1 을 죽인 바로 그
+ * 형태(첫 후보만 시도)를 되살려도 게이트가 통과한다.**
+ * 그러니 *"폴백을 빼냈으니 이제 검사된다"* 는 절반만 참이다 — 네 번째가 될 자리였는데
+ * 실제로 절반은 네 번째가 됐다. 남은 축은 백로그 `G-FB2` 이고, 급조하지 않는 이유는
+ * 6차 회차와 같다(검사를 급조하면 검출력 미확인 케이스가 또 들어온다).
  *
  * @param {Array<{model:string,kind:string}>} candidates
  * @param {(c:{model:string,kind:string}) => Promise<any>} run 실제 호출. 테스트에서 주입한다.
@@ -230,6 +257,14 @@ export async function generateWithFallback(candidates, run, log = () => {}) {
       // 실패 사유를 안 남기면 "왜 이 모델이 됐나" 를 다음 사람이 못 본다.
       failures.push(`${c.model}: ${e.message}`);
       log(`· ${c.model}(${c.kind}) 실패 — ${e.message}. 다음 후보로 간다.`);
+      // ⚠ **429(rate limit)만 즉시 멈춘다**(검수관 P-3). 다른 오류는 모델별 권한 문제라
+      //   다음 후보를 시도하는 것이 맞지만, rate limit 은 **후보를 바꿔도 안 풀리고**
+      //   N번 두드리면 오히려 악화된다. 나머지는 안 가른다 — 키 없음·경로 검증·`/models`
+      //   조회는 전부 이 루프 **밖 앞쪽**이라 여기로 안 온다.
+      if (/HTTP 429/.test(String(e.message))) {
+        log('· 429 는 후보를 바꿔도 안 풀린다 — 여기서 멈춘다.');
+        break;
+      }
     }
   }
   return { picked: null, out: null, failures };
@@ -309,8 +344,12 @@ async function main() {
     (m) => console.log(m),
   );
   if (!picked) {
-    console.error(`후보 ${candidates.length}개가 전부 실패했다:`);
-    for (const f of failures) console.error(`  ${f}`);
+    // ⚠ 성공 경로(`:322`)는 5개로 자르는데 여기만 전체를 찍고 있었다(검수관 P-2).
+    //   그 제한의 근거는 보안담당 ⑥ — *"이 키가 어느 티어에서 무엇에 접근 가능한지를
+    //   공개 로그에 광고한다"*. 실패 경로에도 같은 제한을 건다. 진단에 필요한 것은
+    //   **처음 몇 개의 사유**이지 전수가 아니다.
+    console.error(`후보 ${candidates.length}개가 전부 실패했다. 앞 5개 사유:`);
+    for (const f of failures.slice(0, 5)) console.error(`  ${f}`);
     process.exit(1);
   }
   const { b64, mimeType } = out;
