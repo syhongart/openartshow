@@ -178,6 +178,7 @@ export function createPanel(
       // 와 `modalOpener`). 값 미러링이고, 한쪽만 고치면 «화면이 광고하는 키가 안 먹는다»
       // 가 난다 — 실제로 R/F 를 뺄 때 이 줄을 함께 고쳐야 했다. 태스크 #44 가 그것이다.
       hint.textContent = 'G 이동 · R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · X/Y/Z 축 고정 · 숫자 입력)'
+        + ' · 중클릭(또는 Alt+좌)드래그 = 대상 중심으로 돌기 · Shift+드래그 = 위아래 · 휠 = 줌'
         + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
     }
     inspector.sync(st.target);

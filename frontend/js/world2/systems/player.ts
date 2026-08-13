@@ -5,6 +5,7 @@
 
 import type { FrameCtx, System } from '../kernel.js';
 import { stepSubmersion, eyeYAt, underwaterAlpha, swimSpeedMult } from '../decide/swim.js';
+import { orbitStep, pitchTo } from '../decide/orbit.js';
 
 export interface MoveInput {
   forward: boolean;
@@ -127,6 +128,17 @@ export function bobHeight(phase: number, intensity: number, amp = BOB_AMPLITUDE)
   return Math.sin(phase) * amp * Math.max(0, Math.min(1, intensity));
 }
 
+/**
+ * 편집 궤도로 올라갈 수 있는 최대 눈높이 가산(m).
+ *
+ * 40m 인 근거: 마을에서 가장 높은 파츠가 시계탑이고 건물이 12m 언저리다. 그 두 배를
+ * 넘게 올라가면 파셀 하나가 화면에 다 들어와 «어느 구역을 보고 있나» 가 오히려 흐려진다.
+ *
+ * ⚠ **화면에서만 판정된다.** 이 값은 근거가 아니라 출발점이고, 감독이 «더 올라가고
+ * 싶다» 고 하면 노브로 열어 판정을 받는다.
+ */
+export const LIFT_MAX = 40;
+
 /** 피치를 수직 한계 안으로 가둔다 — 넘어가면 화면이 뒤집힌다. */
 export function clampPitch(pitch: number): number {
   const lim = Math.PI / 2 - 0.05;
@@ -213,6 +225,25 @@ export class PlayerSystem implements System {
    */
   private bobIntensity = 0;
 
+  /**
+   * **편집 궤도의 가산 눈높이(m). 주행에서는 언제나 0 이다.**
+   *
+   * `eye`(위 `readonly`)를 안 건드리는 것이 팀장 조건 1 이다 — 그것은 생성자가 정하는
+   * 주행의 값이고, 수평선 밴드(`decide/horizon.ts`)가 `get eyeHeight()` 로 읽어 간다.
+   * 편집이 그것을 밀면 **편집 중에 수평선이 따라 움직인다.**
+   *
+   * 상한을 여기가 소유한다(`LIFT_MAX`) — 소비자가 각자 클램프하면 «휠은 막히는데
+   * 드래그는 안 막힌다» 같은 형태가 난다.
+   */
+  private lift = 0;
+  /**
+   * 궤도를 **시작한 자리**. 없으면 궤도 중이 아니다.
+   *
+   * 이 자리는 주행으로 도달한 곳이라 **반드시 유효**하고, 그래서 `endOrbit()` 의 충돌
+   * 복원이 여기서 출발한다(팀장 조건 3).
+   */
+  private orbitFrom: { x: number; z: number } | null = null;
+
   /** 잠김 정도(0~1). `decide/swim.ts` 가 시간으로 진행시킨다 */
   private submersion = 0;
   /**
@@ -268,6 +299,74 @@ export class PlayerSystem implements System {
   lookBy(yawDelta: number, pitchDelta: number): void {
     if (Number.isFinite(yawDelta)) this.yaw += yawDelta;
     if (Number.isFinite(pitchDelta)) this.pitch = clampPitch(this.pitch + pitchDelta);
+  }
+
+  // ── 편집 궤도 (W5 E3, 팀장 판정 (A-2)+(D) 2026-08-13) ──────────────────────
+  //
+  // **이 클래스 사상 첫 위치 쓰기 문이다.** 그전까지 `x`·`z` 는 `update()` 만 움직였고
+  // 밖에서는 `get position()` 으로 읽기만 됐다.
+  //
+  // ── 왜 «좌표» 가 아니라 «중심 + 델타» 인가 (팀장 (A-1) 기각) ────────────────
+  // `moveTo(x, z)` 를 열면 **임의 순간이동**이 가능해지고, 그 문은 이번 용도보다 언제나
+  // 넓다. 여기서는 편집이 «어디로» 를 정하지 못하고 «이 중심 주위로 얼마나» 만 말한다 —
+  // 산술·충돌·복원 책임이 소유자(이 클래스)에 남는다.
+  //
+  // ── 충돌을 안 태운다 (팀장 판정 3) ─────────────────────────────────────────
+  // 궤도의 주 사용례가 **건물 사이·건물 주위**다. 충돌로 원호가 끊기면 도구로서 실패한다
+  // (안 넣느니만 못하다). 실해는 «편집을 끄는 순간 갇힘» 하나뿐이므로 매 프레임이 아니라
+  // **종료 지점 한 곳**에서 막는다 — `endOrbit()`.
+  //
+  // ⚠ **주행은 이 문을 안 쓴다.** 편집(`?edit=1`)에서만 불리고, 그것을
+  // `tests/world2-player-orbit.test.ts` 의 호출처 축이 지킨다.
+
+  /**
+   * 대상을 중심으로 **한 걸음 돈다.** 시선은 늘 그 대상을 향한다.
+   *
+   * @param cx,cy,cz  궤도 중심(월드). `cy` 는 내려다보는 각을 정한다
+   * @param dYaw      이번에 돌 각(rad)
+   * @param dHeight   눈높이 증분(m). 위로 올라가면 내려다보게 된다
+   * @param kRadius   반경 배수(1 = 그대로)
+   */
+  orbit(cx: number, cy: number, cz: number, dYaw: number, dHeight: number, kRadius: number): void {
+    // 처음 도는 순간의 자리를 기억한다 — **주행으로 도달한 곳이라 반드시 유효**하고,
+    // 그것이 `endOrbit()` 의 복원 출발점이 된다(팀장 조건 3).
+    if (this.orbitFrom === null) this.orbitFrom = { x: this.x, z: this.z };
+
+    const p = orbitStep({ x: this.x, z: this.z }, cx, cz, dYaw, kRadius);
+    this.x = p.x;
+    this.z = p.z;
+    this.yaw = p.yaw;
+
+    if (Number.isFinite(dHeight)) {
+      this.lift = Math.min(LIFT_MAX, Math.max(0, this.lift + dHeight));
+    }
+
+    // 눈의 월드 y — **헤드밥은 뺀다.** 그것은 프레임마다 흔들리는 값이라 넣으면 시선이
+    // 떨린다(궤도 중에는 안 걷고 있으므로 실제로도 거의 0 이다).
+    const r = Math.hypot(p.x - cx, p.z - cz);
+    this.pitch = clampPitch(pitchTo(this.eye + this.lift, cy, r));
+  }
+
+  /**
+   * 편집을 끝낸다 — **주행 모델로 되돌린다.** 두 가지를 원복한다.
+   *
+   * ① **눈높이.** 리프트를 걷어 주행과 완전히 같은 상태가 된다.
+   * ② **갇힘.** 궤도가 충돌을 무시하므로 벽 안에 서 있을 수 있다. 궤도를 시작한
+   *    자리(주행으로 도달했으니 유효)에서 지금 자리로 **걸어가 본다** — 막히면 막힌
+   *    자리에 선다. 순간이동으로 되돌리지 않는 이유는 감독이 편집 중에 실제로 이동한
+   *    거리를 통째로 무르면 «편집을 껐더니 딴 데 서 있다» 가 되기 때문이다.
+   *
+   * ⚠ 충돌 판정을 안 받은 구성(`resolveMove` 미주입)에서는 ②가 **no-op** 이다 —
+   * 그때는 애초에 벽이 없어 갇힐 수 없다.
+   */
+  endOrbit(): void {
+    this.lift = 0;
+    const from = this.orbitFrom;
+    this.orbitFrom = null;
+    if (from === null || !this.resolveMove) return;
+    const safe = this.resolveMove(from.x, from.z, this.x - from.x, this.z - from.z);
+    this.x = safe.x;
+    this.z = safe.z;
   }
 
   update(ctx: FrameCtx): void {
@@ -349,7 +448,12 @@ export class PlayerSystem implements System {
 
     // 뭍에서의 눈높이(헤드밥 포함)를 만들어 넘긴다. 잠길수록 이 값의 기여가 줄어
     // **헤드밥이 저절로 잦아든다** — 물속에서 흔들림을 따로 끄는 코드가 필요 없다.
-    const groundEye = this.eye + bobHeight(this.bobPhase, this.bobIntensity, this.bobAmp);
+    // ⚠ **`lift` 를 여기서만 더한다.** `eyeYAt` 의 마지막 인자에는 안 넣는다 — 그것은
+    // 물속에서 눈이 어디에 잠기는가를 정하는 값이고, 편집 궤도는 물 위 40m 를 다루므로
+    // 잠김이 0 이라 관측 가능한 차이가 없다. 두 곳에 더하면 «떠 있는데 물속 틴트가
+    // 걸린다» 같은 형태가 열린다.
+    const groundEye = this.eye + this.lift
+      + bobHeight(this.bobPhase, this.bobIntensity, this.bobAmp);
     const eyeY = eyeYAt(this.submersion, groundEye, this.seabed, this.eye);
 
     this.apply?.(this.x, eyeY, this.z, this.yaw, this.pitch);

@@ -14,6 +14,7 @@ import { RY_STEP, Y_STEP, select, type EditState } from './state.js';
 import {
   applyDelta, modalDelta, modalLabel, modalOpener, readModalKey, ZERO_DELTA,
 } from '../decide/modal-edit.js';
+import { ORBIT_LIFT_PER_PX, ORBIT_YAW_PER_PX, zoomFactor } from '../decide/orbit.js';
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
@@ -52,6 +53,69 @@ export function createInput(deps: InputDeps): Input {
   let mouseX = 0;
   let mouseY = 0;
 
+  // ── 궤도 시점 (W5 E3) ───────────────────────────────────────────────────
+  //
+  // 감독 카드 판정 2026-08-13: 「시점(E3)까지 만들고 한 번에」.
+  //
+  // 지금까지 편집의 시점은 **우드래그로 고개만 돌리는 것**이었다. 제자리에서 둘러볼 수는
+  // 있어도 **건물 뒤로 돌아가 볼 수는 없었다** — 옮긴 것이 뒤에서 어떻게 보이는지가
+  // 편집에서 가장 자주 필요한 확인인데 그게 안 됐다.
+  //
+  // 조작은 블렌더를 따른다: **중클릭 드래그** = 궤도, `Alt`+좌드래그 = 같은 것(중클릭이
+  // 없는 트랙패드용), **휠** = 줌. `Shift`+드래그 = 위아래(눈높이).
+  //
+  // ⚠ **팬은 안 넣는다**(팀장 승인). 궤도 중심이 「고른 것」이므로 **다른 것을 클릭하는
+  // 것이 곧 팬**이다. 문이 좁을수록 좋고, 감독이 필요하다고 하면 그때 연다.
+
+  /** 궤도 드래그 중인가. `null` 이면 아니다 */
+  let orbitDrag: { shift: boolean } | null = null;
+
+  /**
+   * 무엇을 중심으로 도는가.
+   *
+   * 고른 것이 있으면 그것, 없으면 **지금 보고 있는 지면**이다. 아무것도 안 골랐다고
+   * 궤도를 죽이면 «클릭부터 해야 화면이 돈다» 가 되고, 그것은 둘러보려는 사람에게
+   * 순서를 강요하는 것이다.
+   *
+   * ⚠ 화면 중앙 지면을 구하려면 광선이 필요한데, 그 광선은 **포인터 위치**로만 쏠 수
+   * 있다(`picker.castFrom` 이 이벤트를 받는다). 중클릭 드래그 중에는 포인터가 곧
+   * 시선이 아니므로 근사다 — 감독이 «중심이 엉뚱하다» 고 하면 그때 화면 중앙 광선을
+   * 따로 연다(지금은 그 문이 없다).
+   */
+  const orbitCenter = (ev: PointerEvent): { x: number; y: number; z: number } | null => {
+    const t = st.target;
+    if (t) return { x: t.x, y: t.y, z: t.z };
+    if (!picker.castFrom(ev)) return null;
+    const at = picker.planeAt(0);
+    return at ? { x: at.x, y: 0, z: at.z } : null;
+  };
+
+  /** 궤도 한 걸음. 문이 없는 소비자면 **조용히 아무것도 안 한다** */
+  const stepOrbit = (ev: PointerEvent, dx: number, dy: number, kRadius: number): void => {
+    if (!host.orbit) return;
+    const c = orbitCenter(ev);
+    if (!c) return;
+    // `Shift` 는 **위아래**다 — 가로 이동을 무시하고 눈높이만 민다. 두 축을 동시에
+    // 열면 대각선 드래그에서 «돌면서 올라가» 어디를 보고 있었는지 놓친다.
+    const shift = orbitDrag?.shift ?? false;
+    host.orbit(
+      c.x, c.y, c.z,
+      shift ? 0 : -dx * ORBIT_YAW_PER_PX,
+      shift ? -dy * ORBIT_LIFT_PER_PX : 0,
+      kRadius,
+    );
+  };
+
+  const onWheel = (ev: WheelEvent) => {
+    if (!host.orbit || ev.target !== canvas) return;
+    // 편집 중 휠은 **줌 전용**이다. 안 막으면 페이지가 스크롤되고, 편집 패널이 길어지는
+    // 넓은 화면에서 그것이 실제로 일어난다.
+    ev.preventDefault();
+    const c = orbitCenter(ev as unknown as PointerEvent);
+    if (!c) return;
+    host.orbit(c.x, c.y, c.z, 0, 0, zoomFactor(ev.deltaY));
+  };
+
   // ── 포인터 ──────────────────────────────────────────────────────────────
   const onPointerDown = (ev: PointerEvent) => {
     // 모달 중 클릭은 **확정/취소**다. 캔버스 밖이어도 받는다 — 조작 중에 커서가
@@ -63,6 +127,14 @@ export function createInput(deps: InputDeps): Input {
     }
     if (ev.target !== canvas) return;
     if (ev.button === 2) { st.orbiting = true; return; }
+    // 중클릭(1) 또는 `Alt`+좌클릭 = 궤도. 후자는 **중클릭이 없는 트랙패드**용이고
+    // 블렌더도 같은 대안을 준다(그쪽은 환경설정 «Emulate 3 Button Mouse»).
+    if (ev.button === 1 || (ev.button === 0 && ev.altKey)) {
+      orbitDrag = { shift: ev.shiftKey };
+      // 중클릭 기본 동작(자동 스크롤)을 막는다 — 안 막으면 커서가 스크롤 모드로 바뀐다.
+      ev.preventDefault();
+      return;
+    }
     if (ev.button !== 0) return;
     if (!picker.castFrom(ev)) return;
 
@@ -166,6 +238,9 @@ export function createInput(deps: InputDeps): Input {
     // ⚠ **모달이 가장 먼저다.** 조작 중에는 기즈모도 드래그도 안 듣는다 — 블렌더가
     // 그렇고, 안 그러면 `G` 로 밀던 중 기즈모 위를 지나가면 두 조작이 겹친다.
     if (st.modal) { applyModal(); return; }
+    // 궤도가 **고개 돌리기보다 먼저다** — 둘 다 드래그라 순서가 곧 «어느 버튼이 이기는가»
+    // 이고, 중클릭을 눌렀는데 시선만 도는 것은 조작이 안 먹는 것으로 읽힌다.
+    if (orbitDrag) { stepOrbit(ev, ev.movementX, ev.movementY, 1); return; }
     if (st.orbiting) { host.look(ev.movementX, ev.movementY); return; }
     if (deps.gizmo.dragging) {
       if (!picker.castFrom(ev)) return;
@@ -196,6 +271,9 @@ export function createInput(deps: InputDeps): Input {
     if (st.dragging || deps.gizmo.dragging) st.target?.commit();
     st.dragging = null;
     st.orbiting = false;
+    // ⚠ 여기서 `endOrbit()` 을 부르지 **않는다.** 그것은 «편집을 끝냈다» 이지 «드래그를
+    // 놓았다» 가 아니다 — 손을 뗄 때마다 눈높이가 지면으로 떨어지면 궤도가 성립하지 않는다.
+    orbitDrag = null;
     deps.gizmo.end();
   };
 
@@ -360,6 +438,9 @@ export function createInput(deps: InputDeps): Input {
       doc.addEventListener('pointermove', onPointerMove);
       doc.addEventListener('pointerup', onPointerUp);
       doc.addEventListener('pointercancel', onPointerUp);
+      // `passive: false` 여야 `preventDefault()` 가 먹는다 — 기본값이 passive 인
+      // 브라우저가 있고, 그러면 줌이 페이지 스크롤과 함께 일어난다.
+      doc.addEventListener('wheel', onWheel, { passive: false });
       doc.addEventListener('keydown', onKeyDown);
       doc.addEventListener('dragover', onDragOver);
       doc.addEventListener('drop', onDrop);
@@ -373,6 +454,7 @@ export function createInput(deps: InputDeps): Input {
       doc.removeEventListener('pointermove', onPointerMove);
       doc.removeEventListener('pointerup', onPointerUp);
       doc.removeEventListener('pointercancel', onPointerUp);
+      doc.removeEventListener('wheel', onWheel);
       doc.removeEventListener('keydown', onKeyDown);
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);

@@ -313,6 +313,12 @@ export const overlayFeature: Feature = {
       apply: applyEntry,
       toRaw,
       look: (dx, dy) => env.player.look(dx, dy),
+      // 궤도 시점(W5 E3). `look` 과 나란히 **위임만** 한다 — 산술은 `PlayerSystem` 이
+      // 소유하고 이 기능은 통로다(팀장 판정 (A-2)).
+      orbit: (cx, cy, cz, dYaw, dHeight, kRadius) => {
+        env.player.orbit(cx, cy, cz, dYaw, dHeight, kRadius);
+      },
+      endOrbit: () => { env.player.endOrbit(); },
       surfaceAt(x, z) {
         const p = parcelOf(x, z, DEFAULT_LAYOUT.cellX, DEFAULT_LAYOUT.cellZ);
         return surfaceY(p.px, p.pz, p.lx, p.lz);
