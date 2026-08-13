@@ -41,8 +41,13 @@
 // 드러나는 형태라 게이트가 없으면 감독이 발견한다.
 //
 // ── 모달 조작(W5 E2) 검출력 실측 (2026-08-13, 별도 클론) ────────────────────
-// **이 파일 + `tests/world2-modal-edit.test.ts` 를 함께 돌린 대조군 97 passed.**
-// 두 파일에 걸쳐 잡히므로 표를 여기 **한 곳**에만 둔다(순수 쪽 헤더가 이리로 가리킨다).
+// **이 파일 + `tests/world2-modal-edit.test.ts` 를 함께 돌린 대조군 97 passed
+// — 실측 시점 `602f628`.** 두 파일에 걸쳐 잡히므로 표를 여기 **한 곳**에만 둔다
+// (순수 쪽 헤더가 이리로 가리킨다).
+//
+// ⚠ **대조군 숫자에는 실측 커밋을 붙인다.** 그냥 «97 passed» 라고만 적으면 축이 늘 때마다
+// 낡고, 다음 사람은 그것을 «지금 돌리면 97» 로 읽는다(검수관 비블로커, 2026-08-13 —
+// 실제로 이 줄이 그렇게 낡아 있었다). 시점을 붙이면 **그때의 사실**이라 낡지 않는다.
 //
 //   M-A 취소가 값을 안 되돌린다(`endModal` 의 복원 제거)    → **2 failed**
 //   M-B 확정이 `commit` 을 안 부른다                       → **7 failed**
@@ -70,7 +75,7 @@
 //
 // ── 실시간 반영(W5 E2.5) 검출력 실측 (2026-08-13, 별도 클론) ────────────────
 // 이 파일 + `world2-modal-edit` + `world2-instancing-raycast` + `world2-edit-place`
-// 를 함께 돌린 대조군 **139 passed**.
+// 를 함께 돌린 대조군 **139 passed** — 실측 시점 `34a4703`.
 //
 //   P-A `instancing.ts` 의 죽은 핸들 가드 제거              → **1 failed**
 //   P-B 조작 중 슬롯을 안 민다(`retargetSlot` 호출 제거)     → **6 failed**
@@ -93,6 +98,17 @@
 // *"파셀 원점이 (0,0) 이라 이 축만으로는 두 좌표계가 구별되지 않으므로 옮긴 뒤의 값으로
 // 본다"* — 옮겨도 오프셋이 0 이면 여전히 같은 수다. **관측은 맞았고 결론이 안 따라왔다.**
 // 처방: `OFFSET_FIXTURE`(파셀 (2,-1))를 만들어 다시 재니 **1 failed**(재현 확인).
+//
+// ── 검수관 반려 해소분 검출력 실측 (2026-08-13, 별도 클론) ──────────────────
+// 조건부 승인의 블로커 둘을 해소하며 세운 축이 실제로 잡는지 재확인했다.
+// 이 파일 + `world2-parcel-grow` 대조군 **89 passed**(실측 시점 `d237f99` + 해소분).
+//
+//   Q-1 모달 중 «여는 키를 삼키는» 처방 제거 (B2 재발)   → **2 failed**
+//   Q-2 `parcel-assets` 가 `retarget` 대신 `place` 호출  → **2 failed**
+//   Q-3 `parcel-grow.retarget` 의 `lastPose` 미갱신       → **1 failed**
+//
+// Q-2·Q-3 은 팀장 조건 ①(성장 중 드래그 실측)의 축이 실제로 그 두 결함을 잡는다는
+// 뜻이다 — 그 축은 `tests/world2-parcel-grow.test.ts` 끝 절에 있다.
 //
 // ⚠ 실측 위생 하나 더: 마지막 뮤테이션(P-K)이 **되돌려지지 않은 채** 클론에 남아 있었다.
 // 앞선 측정은 오염되지 않았지만(P-K 가 마지막이었다), 순서가 달랐으면 그 뒤 전부가
@@ -996,13 +1012,38 @@ describe('블렌더식 모달 — 주행이 산다 (행위)', () => {
     }
   });
 
-  it('★ 모달 중에도 WASD 는 통과한다 — 조작하며 걸어다닐 수 있어야 한다', () => {
+  it('★ 모달 중에도 W·A·D 는 통과한다 — 조작하며 걸어다닐 수 있어야 한다', () => {
     const h = modalReady();
     pressKey('KeyG', 'g');
     expect(h.doc.getElementById('w2-edit'), '패널 확인용').toBeTruthy();
     for (const [code, key] of [['KeyW', 'w'], ['KeyA', 'a'], ['KeyD', 'd']] as const) {
       expect(pressKey(code, key), `★ 조작 중 ${key} 가 막혔다 — 주행이 죽는다`).toBe(false);
     }
+  });
+
+  it('★ 모달 중 반복 `S` 가 주행으로 새지 않는다 (검수관 반려 B2)', () => {
+    // 검수관 jsdom 재현(2026-08-13): 첫 `S` 는 모달을 열고(먹힘), **두 번째부터
+    // `defaultPrevented=false`** 가 되어 window 로 올라갔다. `main.ts` 의
+    // `KEYS.KeyS = 'back'` 이 그것을 받아 **크기 모달이 열린 채 뒤로 걷기가 함께
+    // 켜진다.** OS 키 반복(누르고 있기)이 그 상황을 만든다.
+    const h = modalReady();
+    expect(pressKey('KeyS', 's'), '첫 S 는 모달을 연다').toBe(true);
+    expect(pressKey('KeyS', 's'), '★ 반복 S 가 주행으로 샌다 — 크기 조작 중 뒤로 걷는다')
+      .toBe(true);
+    expect(pressKey('KeyS', 's'), '★ 세 번째도 샌다').toBe(true);
+    expect(h.doc.body.textContent, '반복 입력이 조작을 망가뜨리지도 않아야 한다')
+      .toContain('크기');
+  });
+
+  it('★ 모달 중 다른 모달 키도 삼킨다 — G 조작 중 S 가 뒤로 걷기로 새지 않게', () => {
+    // 「모달 중 조작 키는 주행으로 안 샌다」한 문장으로 설명되는 규칙이다. 「모달을 연
+    // 그 키만」으로 좁히면 G 모달에서는 S 가 살고 S 모달에서는 죽어, 같은 키가 상황따라
+    // 다르게 동작한다.
+    const h = modalReady();
+    pressKey('KeyG', 'g');
+    expect(h.doc.getElementById('w2-edit'), '패널 확인용').toBeTruthy();
+    expect(pressKey('KeyS', 's'), '★ 이동 조작 중 S 가 주행으로 샌다').toBe(true);
+    expect(pressKey('KeyR', 'r'), '★ 이동 조작 중 R 이 샌다').toBe(true);
   });
 
   it('★ 조합키는 안 가로챈다 — ⌘R·Ctrl+S 가 죽으면 브라우저가 망가진다', () => {

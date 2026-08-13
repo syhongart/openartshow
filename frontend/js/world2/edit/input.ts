@@ -234,9 +234,27 @@ export function createInput(deps: InputDeps): Input {
     // 조작 중에는 숫자·`Escape`·축 키를 받아야 하므로 `EDIT_KEYS` 걸러내기보다 앞이다.
     if (st.modal) {
       const act = readModalKey(st.modal, ev.code, ev.key);
-      // 모르는 키는 **통과시킨다** — 조작 중에도 WASD 로 걸어다닐 수 있어야 한다
-      // (델타는 월드 기준이라 카메라가 움직여도 값은 안 흔들린다).
-      if (!act) return;
+      if (!act) {
+        // ⚠ **모달을 여는 키(G/R/S)는 모달 중에도 삼킨다** — 검수관 반려 B2, 2026-08-13.
+        //
+        // `readModalKey` 는 `S` 를 축·숫자·확정·취소 어디에도 안 넣으므로 `null` 을 내고,
+        // 그러면 이 return 이 `stopPropagation` **앞**이라 이벤트가 window 로 올라간다.
+        // `main.ts` 의 `KEYS` 가 `KeyS: 'back'` 이므로 **크기 모달이 열린 채 뒤로 걷기가
+        // 함께 켜진다.** 검수관 jsdom 재현: 첫 `S` 는 `defaultPrevented=true`(모달을
+        // 연다), 두 번째부터 `false`(주행으로 샌다) — OS 키 반복이 그것을 만든다.
+        //
+        // 그래서 **여는 키만** 삼킨다. `W`·`A`·`D` 는 그대로 통과하므로 아래 «모르는 키는
+        // 통과» 규칙과 충돌하지 않는다. 대가는 정직하게 적는다: **모달 중에는 뒤로
+        // 걷기가 안 된다**(`S` 가 죽는다). 앞·옆으로는 걸어다닐 수 있다.
+        //
+        // 왜 «모달을 연 그 키만» 이 아니라 «여는 키 전부» 인가: 후자는 상태에 안 묶여
+        // «모달 중 조작 키는 주행으로 안 샌다» 한 문장으로 설명된다. 전자는 G 모달에서는
+        // `S` 가 살고 S 모달에서는 죽어, 같은 키가 상황따라 다르게 동작한다.
+        if (modalOpener(ev.code)) { ev.preventDefault(); ev.stopPropagation(); }
+        // 그 외 모르는 키는 **통과시킨다** — 조작 중에도 WASD 로 걸어다닐 수 있어야 한다
+        // (델타는 월드 기준이라 카메라가 움직여도 값은 안 흔들린다).
+        return;
+      }
       ev.preventDefault();
       ev.stopPropagation();
       if (act.act === 'cancel') { endModal(false); return; }
