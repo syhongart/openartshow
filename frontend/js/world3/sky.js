@@ -818,6 +818,16 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
       0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1,
     ]), 2));
+    // `normal` 이 없으면 WebGPU 가 경고를 찍는다 — 근거·실측·부호는 `frontend/js/sky.js`
+    // 의 같은 지점 주석 **한 곳**이 소유한다(여기 다시 적지 않는다). 값만 같게 둔다.
+    //
+    // ⚠ 이 파일은 `frontend/js/sky.js` 의 **사본**이고 world2 판을 먼저 고쳤다. 사본이
+    // 뒤에 남아 갈라지는 것이 이 저장소의 상습 형태라(태스크 #233 — `lookAhead` 가
+    // world2 만 고쳐져 셋이 갈렸다) 같은 사이클에 맞춰 둔다.
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([
+      0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,      // XY 평면 → +Z
+      -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0,  // YZ 평면 → -X (와인딩 기준)
+    ]), 3));
     g.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
     return g;
   })());

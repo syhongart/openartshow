@@ -81,6 +81,36 @@ const BLOCK: Array<[rule: string, name: string, cmd: string]> = [
   ['hookify.hand-wait-loop.local.md', '손으로 짠 대기 루프(sleep)', 'until grep -q ok /tmp/log; do sleep 10; done'],
   ['hookify.checkout-revert.local.md', '워킹트리를 옛 판본으로', 'git checkout db0b70c -- frontend/js/a.ts'],
   ['hookify.checkout-revert.local.md', '워킹트리를 옛 판본으로(짧은 sha)', 'git checkout 1a71c8e -- scripts/x.mjs'],
+  // ↓ **2026-08-12 에 실제로 사고를 낸 두 형태다.** 규칙이 이미 있는 상태에서 났고,
+  //   패턴이 `[0-9a-f]{7,40}` 으로 sha 만 봐서 둘 다 통과했다(executor 실행 실측).
+  //   ③ executor 가 `HEAD` 형태로 부팀장의 staged 수정을 날렸고
+  //   ④ 그 처방을 쓴 부팀장이 몇 시간 뒤 ref 생략 형태로 자기 수정을 날렸다.
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(HEAD)', 'git checkout HEAD -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(ref 생략)', 'git checkout -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(원격 ref)', 'git checkout origin/main -- scripts/x.mjs'],
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(상대 ref)', 'git checkout HEAD~1 -- docs/a.md'],
+  ['hookify.checkout-revert.local.md', '워킹트리 되돌림(전체)', 'git checkout -- .'],
+  // ↓ `restore` 는 `checkout -- ` 와 같은 일을 하는 새 이름이다. 기존 규칙 본문이
+  //   *"restore 는 대상 밖"* 이라고 **사각을 정확히 적어 두고 닫지는 않았고**, 그 사이
+  //   같은 계열 사고가 두 번 더 났다.
+  // ↓ **검수관 블로커 B1(2026-08-12) 이 실측한 미탐 4형태.** 첫 수정 `(\S+\s+)?` 는
+  //   선행 토큰을 **최대 1개**만 허용해 「옵션+ref」 두 토큰이면 뚫렸다. 그런데 문서에는
+  //   *"ref 유무·형태와 무관하게 잡는다"* 라고 적혀 있었다 — 게이트 유효성에 대한 거짓
+  //   진술이 다음 사람의 확인을 생략시키는, 이 저장소가 반복해서 값을 치른 형태다.
+  ['hookify.checkout-revert.local.md', '되돌림(옵션+ref: -f)', 'git checkout -f HEAD -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '되돌림(옵션+ref: --quiet)', 'git checkout --quiet HEAD -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '되돌림(옵션+상대ref)', 'git checkout -q HEAD~1 -- frontend/js/sky.js'],
+  ['hookify.checkout-revert.local.md', '되돌림(conflict 옵션+ref)', 'git checkout --theirs HEAD -- a.ts'],
+  ['hookify.checkout-revert.local.md', '되돌림(-C 로 경로 지정)', 'git -C /tmp/x checkout -- a.ts'],
+  ['hookify.checkout-revert.local.md', '되돌림(-c 설정 주입)', 'git -c core.x=1 checkout -- a.ts'],
+  ['hookify.checkout-revert.local.md', '되돌림(&& 뒤)', 'cd /tmp && git checkout -- a.ts'],
+  ['hookify.checkout-revert.local.md', '되돌림(루프 안)', 'for f in a b; do git checkout HEAD -- $f; done'],
+  // ↓ 명령치환 두 표기. `$()` 는 시작 대안 `(` 로 잡혔는데 **백틱은 통과했다**(검수관 M1).
+  //   셸에서 동등한 문법이라 한쪽만 보는 것은 실질적 구멍이었다 — 문자 하나로 닫았다.
+  ['hookify.checkout-revert.local.md', '되돌림($() 안)', 'echo $(git checkout -- a.ts)'],
+  ['hookify.checkout-revert.local.md', '되돌림(백틱 안)', 'echo `git checkout -- a.ts`'],
+  ['hookify.restore-discard.local.md', 'restore 로 미커밋 폐기', 'git restore frontend/js/sky.js'],
+  ['hookify.restore-discard.local.md', 'restore --staged', 'git restore --staged frontend/js/a.ts'],
 ];
 
 describe('hookify 규칙 — 차단해야 하는 것', () => {
@@ -110,6 +140,38 @@ describe('hookify 규칙 — 통과시켜야 하는 것 (오탐 방지)', () => 
     'git push --force-with-lease origin main', // 남의 커밋을 안 덮는다 — 허용이 규약
     'git push -u origin claude/my-branch', // `-u` 에는 f 가 없다
     'git checkout -b claude/새-브랜치', // 브랜치 생성은 되돌리기가 아니다
+    // ↓ 되돌리기 패턴을 `(\S+\s+)?--\s` 로 넓히면서 함께 못 박는다. 이 넷은 워킹트리
+    //   파일을 버리지 않으므로 막으면 오탐이다 — `--` 뒤에 **공백**이 없거나 `--` 가 없다.
+    'git checkout main', // 브랜치 전환
+    'git checkout --track origin/feature-x',
+    'git checkout --detach HEAD',
+    'git switch -c claude/새-브랜치',
+    // ↓ 패턴을 「선행 토큰 0개 이상」으로 넓히면서 **함께 못 박는다.** 단순 확장
+    //   (`checkout\s+(?:\S+\s+)*--\s`)은 아래 첫 줄을 **오탐한다** — `--grep=checkout`
+    //   뒤에 ` -- path` 가 이어져 매치하기 때문이다. 그래서 `(?<![-=\w])` 를 붙였다.
+    //   이 규칙들이 과거 검수관의 리뷰 명령을 두 번 막은 전례가 있어 오탐을 특히 좁혔다.
+    'git log --grep=checkout -- CLAUDE.md',
+    'git diff --stat -- frontend/',
+    'git show HEAD -- docs/BOARD.md',
+    'grep -n checkout CLAUDE.md',
+    // ↓ **검수관 블로커 B2** 가 실측한 오탐 형태들. lookbehind 판(`(?<![-=\w])`)은
+    //   등호형(`--grep=checkout`)만 막고 **공백형을 안 막았다** — git 옵션은
+    //   `--opt value` 도 유효하고, 그쪽이 오히려 자연스럽다. "오탐 0" 이라는 비교표가
+    //   그 형태를 **안 재고** 낸 결론이었다(B1 과 같은 형태의 재발).
+    'git log --grep checkout -- CLAUDE.md',
+    'git log --author checkout -- CLAUDE.md',
+    // ↓ 같은 뿌리(브랜치명이 checkout 으로 끝나는 read-only 조회) — 검수관 비블로커 권고.
+    'git log refs/heads/checkout -- CLAUDE.md',
+    'git log origin/checkout -- CLAUDE.md',
+    // ↓ 서브커맨드 위치를 보는 패턴이 다른 git 서브커맨드를 오탐하지 않는지.
+    'git stash push -- frontend/js/a.ts',
+    'git add -- frontend/js/a.ts',
+    'git rm --cached -- a.ts',
+    'git blame -- frontend/js/sky.js',
+    'git log --pretty=%s -- CLAUDE.md',
+    'git config --get checkout.defaultRemote',
+    'git branch -D checkout',
+    'git rev-parse --verify checkout',
     // ↓ 검수관 B2 가 실측한 오탐 2건. **이 두 명령이 실제로 리뷰를 멈춰 세웠다.**
     'grep -n commit CLAUDE.md',
     'git log -n 3 | grep commit',
