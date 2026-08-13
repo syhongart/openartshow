@@ -6,13 +6,16 @@
 
 import { reviewOverlay } from './export.js';
 import type { OverlayEntry, OverlayHost } from './types.js';
-import type { EditState } from './state.js';
+import { select, type EditState } from './state.js';
+import { thawParcel } from './target.js';
 import type { Panel } from './panel/dom.js';
 
 export interface Actions {
   placeAt(src: string, at: { x: number; z: number }, blobUrl?: string): Promise<void>;
   duplicate(): Promise<void>;
   removeSelected(): void;
+  /** 고른 마을 파츠가 속한 파셀의 동결을 푼다 */
+  thawSelected(): void;
   exportNow(): void;
   /** 드래그드롭한 파일의 임시 주소. 복제할 때 같은 주소를 다시 쓴다 */
   readonly previewUrls: Map<string, string>;
@@ -94,9 +97,29 @@ export function createActions(host: OverlayHost, st: EditState, panel: Panel): A
   }
 
   function removeSelected(): void {
-    if (!st.selected) { panel.say('먼저 물건을 클릭해 고르세요.'); return; }
-    host.remove(st.selected);
-    st.selected = null;
+    if (!st.target) { panel.say('먼저 물건을 클릭해 고르세요.'); return; }
+    // 무엇을 지웠는지 말한다 — 마을 파츠는 지우면 **그 구역이 「손본 구역」이 된다.**
+    // 되돌릴 방법이 있다는 것을 그 자리에서 알려야 «지웠는데 되살릴 수가 없다» 가 안 된다.
+    const wasVillage = st.target.kind === 'village';
+    if (!st.target.remove()) { panel.say('지울 수 없습니다.', true); return; }
+    select(st, host, null);
+    if (wasVillage) panel.say('지웠습니다 — 이 구역은 「손본 구역」이 됐습니다. 「구역 되돌리기」로 되살립니다.');
+    panel.refresh();
+  }
+
+  /**
+   * 고른 마을 파츠가 속한 **파셀의 동결을 푼다** — 계산 배치로 돌아간다.
+   *
+   * 파츠 하나만 되돌릴 수 없는 이유는 계약이다: 동결은 배열 전체이고, 계산 배치의
+   * «그 하나» 를 가리킬 이름이 애초에 없다(`decide/overlay.ts` 가 길게 적은 그 문제).
+   */
+  function thawSelected(): void {
+    const v = st.villageSel;
+    if (!v) { panel.say('마을 건물이나 나무를 먼저 고르세요.'); return; }
+    if (!v.frozen) { panel.say('이 구역은 아직 손대지 않았습니다 — 되돌릴 것이 없습니다.'); return; }
+    if (!thawParcel(host, v)) { panel.say('되돌릴 수 없습니다.', true); return; }
+    select(st, host, null);
+    panel.say(`파셀 (${v.px}, ${v.pz}) 를 되돌렸습니다 — 계산 배치로 돌아갑니다.`);
     panel.refresh();
   }
 
@@ -125,5 +148,5 @@ export function createActions(host: OverlayHost, st: EditState, panel: Panel): A
     panel.say(`저장했습니다 · ${rev.summary}`);
   }
 
-  return { placeAt, duplicate, removeSelected, exportNow, previewUrls };
+  return { placeAt, duplicate, removeSelected, thawSelected, exportNow, previewUrls };
 }

@@ -40,8 +40,22 @@
 
 import { parcelLayout, DEFAULT_LAYOUT, type LayoutOptions } from '../decide/parcel-layout.js';
 import { blockersOf, slide, type Blocker } from '../decide/collide.js';
+import type { PlacedPart } from '../parts/types.js';
 
 export interface ColliderOptions {
+  /**
+   * **동결된 파셀의 배치.** `null` 이면 계산한다(`parcelLayout`).
+   *
+   * 빌더(`parcel-builder.ts`)가 받는 것과 **같은 함수**를 받는 것이 조건이다 — 조립부가
+   * 한쪽에만 주입하면 렌더와 충돌이 다른 마을을 보게 되고, 그 증상은 «건물은 저기 있는데
+   * 여기서 막힌다» 다. 충돌은 언제나 `near` 로 묻는다(3×3 전부 `near` 로 보는 이유는
+   * 아래 「하지 않는 것」 ①).
+   *
+   * 충돌 계층이 계약(`decide/overlay.ts`)을 직접 import 하지 않는 것도 빌더와 같다 —
+   * 조회 함수 하나만 받는다.
+   */
+  frozenAt?(px: number, pz: number, tier: 'near' | 'mid' | 'far'): readonly PlacedPart[] | null;
+
   /**
    * 파셀 배치 규칙. **셀 크기도 여기서 읽는다** — `layout.cellX`/`cellZ`.
    *
@@ -61,6 +75,15 @@ export interface Collider {
   resolve(x: number, z: number, dx: number, dz: number): { x: number; z: number };
   /** 지금 캐시에 든 원 개수 — 진단용(테스트가 "정말 뭔가 보고 있는가" 를 확인한다) */
   count(): number;
+  /**
+   * 캐시를 버린다 — 다음 `resolve` 가 다시 만든다.
+   *
+   * ⚠ **이 문이 없으면 편집이 반쪽이 된다.** 캐시는 «플레이어가 선 파셀» 로만 갱신되므로
+   * (`rebuild` 의 `cachePx`/`cachePz`), 감독이 **제자리에 선 채** 건물을 옮기면 그 파셀은
+   * 그대로라 캐시가 안 바뀐다 → 옮긴 건물의 **옛 자리에 계속 막히고** 새 자리는 통과한다.
+   * 화면과 몸이 다른 말을 하는 형태이고, 편집 중에는 바로 그 자세가 기본이다.
+   */
+  invalidate(): void;
 }
 
 /**
@@ -84,6 +107,7 @@ export const DEFAULT_BODY_R = 0.34;
 
 export function createCollider(opts: ColliderOptions = {}): Collider {
   const layout = opts.layout ?? DEFAULT_LAYOUT;
+  const frozenAt = opts.frozenAt;
   const cellX = layout.cellX;
   const cellZ = layout.cellZ;
   const bodyR = opts.bodyRadius ?? DEFAULT_BODY_R;
@@ -101,7 +125,16 @@ export function createCollider(opts: ColliderOptions = {}): Collider {
         // (위 「하지 않는 것」의 ①). 몸이 닿는 거리에서는 렌더가 보여주는 것을 전부 막는다.
         const qx = px + dx;
         const qz = pz + dz;
-        out.push(...blockersOf(parcelLayout(qx, qz, 'near', layout), qx * cellX, qz * cellZ));
+        // ⚠ **동결이 계산을 대신하는 자리** — 빌더(`parcel-builder.ts` 의 `fill`)와 **같은
+        // 규칙**이어야 한다. 한쪽만 동결을 보면 «보이는 자리 = 막히는 자리»(`collide.ts` 의
+        // 선언)가 깨져서, 옮긴 건물을 통과하거나 지운 건물이 보이지 않는 벽으로 남는다.
+        //
+        // `null` 과 빈 배열은 다른 뜻이다: `null` = 안 손댔다(계산해라), 빈 배열 = 손대서
+        // 전부 지웠다(막을 것이 없다). `??` 는 `null`/`undefined` 만 걸러 내므로 빈 배열은
+        // 그대로 통과한다 — 그것이 여기서 필요한 동작이다.
+        const frozen = frozenAt?.(qx, qz, 'near') ?? null;
+        const parts = frozen !== null ? frozen : parcelLayout(qx, qz, 'near', layout);
+        out.push(...blockersOf(parts, qx * cellX, qz * cellZ));
       }
     }
     cache = out;
@@ -129,5 +162,13 @@ export function createCollider(opts: ColliderOptions = {}): Collider {
       return slide(x, z, dx, dz, cache, bodyR);
     },
     count() { return cache.length; },
+
+    invalidate() {
+      // 좌표를 `NaN` 으로 되돌리면 다음 `resolve` 의 «같은 파셀인가» 비교가 반드시 거짓이
+      // 되어 `rebuild` 를 탄다(`NaN !== NaN`). 캐시 배열만 비우는 것으로는 부족하다 —
+      // 그러면 «원이 0개인 파셀» 과 구별되지 않아 다시 만들 계기가 없다.
+      cachePx = NaN;
+      cachePz = NaN;
+    },
   };
 }

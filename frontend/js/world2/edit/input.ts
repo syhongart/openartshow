@@ -9,9 +9,9 @@
 // 예외는 `Tab` 하나다. 편집이 꺼져 있어도 켤 수 있어야 하므로 상시 붙는다.
 
 import { isSafeSrc } from '../decide/overlay.js';
-import { scaleBy } from '../decide/edit-pick.js';
 import type { OverlayHost } from './types.js';
-import { RY_STEP, S_STEP, Y_STEP, type EditState } from './state.js';
+import { RY_STEP, S_STEP, Y_STEP, select, type EditState } from './state.js';
+import { nudgeScale } from './target.js';
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
@@ -61,7 +61,9 @@ export function createInput(deps: InputDeps): Input {
 
     const hit = picker.pick();
     if (hit) {
-      st.selected = hit;
+      // **선택을 바꾸는 자리는 `select()` 하나다** — 세 칸이 함께 움직여야 링·패널·
+      // 기즈모가 같은 것을 가리킨다(`state.ts` 의 불변식).
+      select(st, host, { entry: hit });
       st.dragging = hit;
       st.dragPlaneY = hit.y;
       panel.refresh();
@@ -77,7 +79,24 @@ export function createInput(deps: InputDeps): Input {
       else panel.say('그 자리는 하늘입니다 — 화면 아래쪽 땅을 클릭하세요.', true);
       return;
     }
-    st.selected = null;
+
+    // ── 마을 파츠 (W4 ②-c) ──────────────────────────────────────────────────
+    // **오버레이보다 뒤다.** 감독이 놓은 GLB 가 마을 건물에 겹쳐 있으면 놓은 쪽이
+    // 먼저 잡혀야 한다 — 마을은 어디에나 있고 GLB 는 일부러 그 자리에 둔 것이다.
+    // 그리고 **놓기(`pendingSrc`)보다도 뒤다**: 팔레트에서 고른 상태로 건물을 클릭하면
+    // 의도는 «여기 놓는다» 이지 «저 건물을 고른다» 가 아니다.
+    const vhit = picker.pickVillage();
+    if (vhit) {
+      select(st, host, { village: vhit });
+      // ⚠ 마을 파츠는 **좌드래그로 안 끈다**(`st.dragging` 을 안 채운다). 그 경로는
+      // 지면 평면 교차로 x·z 를 매 프레임 밀어 넣는데, 마을에서는 그것이 곧 파셀
+      // 재빌드라 건물이 드래그 내내 깜빡인다. 옮기기는 **기즈모 축**으로 한다 —
+      // 판단과 그 대가는 `target.ts` 헤더 한 곳이다.
+      panel.refresh();
+      return;
+    }
+
+    select(st, host, null);
     panel.refresh();
   };
 
@@ -86,7 +105,9 @@ export function createInput(deps: InputDeps): Input {
     if (deps.gizmo.dragging) {
       if (!picker.castFrom(ev)) return;
       if (!deps.gizmo.update(picker.ray())) return; // 축과 나란하거나 값이 안 바뀐 프레임
-      if (st.selected) host.apply(st.selected);
+      // **드래그 중에는 `apply` 만.** 확정(`commit`)은 손을 뗄 때 한 번이다 —
+      // 마을에서 매 프레임 확정하면 파셀이 프레임마다 다시 만들어진다(`target.ts`).
+      st.target?.apply();
       panel.refresh();
       return;
     }
@@ -104,7 +125,14 @@ export function createInput(deps: InputDeps): Input {
   // `pointerup` 이 **안 온다.** 그러면 `dragging` 이 영구히 남아 이후 모든 손가락이
   // 물건을 끌고 다닌다. 이 저장소는 이미 그 축을 안다(`builder.js` 의
   // *"브라우저가 제스처를 가로챌 때(pointercancel) — 커밋 없이 정리만"*) — 여기만 빠져 있었다.
-  const onPointerUp = () => { st.dragging = null; st.orbiting = false; deps.gizmo.end(); };
+  const onPointerUp = () => {
+    // **여기가 확정 지점이다.** 드래그가 실제로 있었을 때만 부른다 — 빈 곳을 클릭했다
+    // 떼는 것만으로 파셀이 다시 만들어지면 헛일이다.
+    if (st.dragging || deps.gizmo.dragging) st.target?.commit();
+    st.dragging = null;
+    st.orbiting = false;
+    deps.gizmo.end();
+  };
 
   // 캔버스 클릭이 포인터락으로 가는 것을 **캡처 단계**에서 끊는다(`mode.ts` 헤더 참조).
   const onClickCapture = (ev: Event) => {
@@ -127,21 +155,23 @@ export function createInput(deps: InputDeps): Input {
     // 아무것도 안 골랐을 때 편집키가 **침묵**했다 — 같은 조작의 패널 버튼은
     // *"먼저 물건을 클릭해 고르세요"* 라고 말하는데 키만 조용했다. 조작이 안 먹는 것과
     // 대상이 없는 것은 다른 일이고, 화면이 그것을 갈라 줘야 한다.
-    if (!st.selected) { panel.say('먼저 물건을 클릭해 고르세요.'); return; }
+    if (!st.target) { panel.say('먼저 물건을 클릭해 고르세요.'); return; }
     ev.preventDefault();
-    const sel = st.selected;
+    const sel = st.target;
     switch (ev.code) {
       case 'KeyQ': sel.ry -= RY_STEP; break;
       case 'KeyE': sel.ry += RY_STEP; break;
-      case 'KeyR': sel.s = scaleBy(sel.s, S_STEP); break;
-      case 'KeyF': sel.s = scaleBy(sel.s, 1 / S_STEP); break;
+      case 'KeyR': nudgeScale(sel, S_STEP); break;
+      case 'KeyF': nudgeScale(sel, 1 / S_STEP); break;
       case 'KeyZ': sel.y -= Y_STEP; break;
       case 'KeyX': sel.y += Y_STEP; break;
       // `Backspace` 도 받는다 — **맥 키보드에는 `Delete` 코드의 키가 없다**(그 자리가
       // `Backspace` 다). hint 가 "Del 삭제" 를 광고하는데 맥에서는 영구 무반응이었다.
       case 'Delete': case 'Backspace': actions.removeSelected(); return;
     }
-    host.apply(sel);
+    sel.apply();
+    // 키 한 번은 «조작이 끝났다» 이다 — 버튼과 같다.
+    sel.commit();
     panel.refresh();
   };
 

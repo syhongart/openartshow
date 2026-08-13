@@ -137,6 +137,58 @@ export class InstancePools {
   /** 풀이 있는가 — 소비자가 없는 키를 조용히 무시하지 않게 명시 확인용 */
   has(key: string): boolean { return this.pools.has(key); }
 
+  // ── 레이캐스트 지원 (편집 모드 전용) ────────────────────────────────────
+  // 라이브는 이 셋을 안 부른다. `?edit=1` 에서 마을 파츠를 **클릭으로 집기** 위한 문이다.
+
+  /**
+   * 레이캐스트 대상 메시들. `intersectObjects` 에 그대로 넘긴다.
+   *
+   * 씬 그래프를 훑지 않고 여기서 주는 이유: 이 그룹 아래에는 인스턴스 메시만 있고,
+   * 소비자가 `scene` 을 뒤지기 시작하면 하늘·지면·GLB 까지 걸려 «집을 수 없는 것을
+   * 집었다» 가 된다.
+   */
+  raycastTargets(): THREE.Object3D[] {
+    return [...this.pools.values()].map((p) => p.mesh);
+  }
+
+  /**
+   * ⚠⚠ **레이캐스트 전에 반드시 부른다.** 안 부르면 «멀리 있는 것이 가끔 안 집힌다» 가
+   * **기본 동작**이고 경고도 예외도 없다.
+   *
+   * 이유: three 의 `InstancedMesh.raycast()` 는 `boundingSphere` 로 먼저 거른 뒤에야
+   * 인스턴스를 훑는다. 그런데 그 경계구는 **한 번 계산되면 캐시되고 `setMatrixAt` 이
+   * 무효화하지 않는다.** 이 저장소에서는 특히 위험한데, 부팅 때 전 슬롯을 `ZERO` 행렬로
+   * 채우므로(`create()`) 첫 계산이 **원점 근처의 작은 구**로 잡힌다 — 그 뒤 파셀이
+   * 아무리 멀리 채워져도 광선이 그 구를 안 지나면 **인스턴스를 아예 안 본다.**
+   *
+   * ⚠ `frustumCulled = false` 는 이것을 안 막는다 — 그것은 **렌더** 컬링만 끈다.
+   * 레이캐스트는 별개 경로이고 경계구를 그대로 본다.
+   *
+   * 비용은 «쓰는 슬롯 수만큼 훑기» 이고 **클릭당 한 번**이라 무시할 만하다. 스트리밍이
+   * 계속 도는 세계라 캐시를 살려 둘 방법이 마땅치 않다 — 매번 다시 잡는 쪽이 안전하다.
+   */
+  refreshBounds(): void {
+    for (const p of this.pools.values()) {
+      p.mesh.computeBoundingSphere();
+    }
+  }
+
+  /**
+   * 레이캐스트가 맞힌 (메시, 인스턴스 번호) → 그 슬롯을 쥔 핸들. 없으면 `null`.
+   *
+   * `owners` 는 슬롯 반납 때 **swap-remove** 로 재배치되므로(`release`), 여기서 얻은
+   * 핸들은 **그 순간의 것**이다. 오래 들고 있으면 다른 파츠를 가리키게 된다 — 집은
+   * 즉시 «어느 파셀의 무엇인가» 로 환원하고 핸들 자체를 보관하지 마라.
+   */
+  ownerAt(mesh: THREE.Object3D, instanceId: number): SlotHandle | null {
+    for (const p of this.pools.values()) {
+      if (p.mesh !== mesh) continue;
+      if (instanceId < 0 || instanceId >= p.owners.length) return null;
+      return p.owners[instanceId];
+    }
+    return null;
+  }
+
   /**
    * 그 종류의 재질. 없으면 `null`.
    *

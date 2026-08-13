@@ -12,9 +12,9 @@
 //
 // ⚠ `innerHTML` 을 쓰지 않는다 — 이 저장소의 UI 규약이다(`knob-bar.ts` 의 XSS 근거).
 
-import { scaleBy } from '../../decide/edit-pick.js';
-import type { OverlayEntry, OverlayHost } from '../types.js';
+import type { OverlayHost } from '../types.js';
 import { RY_STEP, S_STEP, Y_STEP, type EditState } from '../state.js';
+import { describe as describeTarget, nudgeScale, type EditTarget } from '../target.js';
 import { CSS } from './css.js';
 import { createInspector } from './inspector.js';
 
@@ -23,6 +23,8 @@ export interface PanelHandlers {
   toggleEditing(): void;
   duplicate(): void;
   removeSelected(): void;
+  /** 고른 마을 파츠가 속한 파셀을 계산 배치로 되돌린다 */
+  thawSelected(): void;
   exportNow(): void;
 }
 
@@ -86,10 +88,12 @@ export function createPanel(
   const toggle = button('✏️ 편집', () => { handlers.toggleEditing(); });
   toggle.className = 'toggle';
 
-  const nudge = (fn: (e: OverlayEntry) => void) => () => {
-    if (!st.selected) { say('먼저 물건을 클릭해 고르세요.'); return; }
-    fn(st.selected);
-    host.apply(st.selected);
+  const nudge = (fn: (t: EditTarget) => void) => () => {
+    if (!st.target) { say('먼저 물건을 클릭해 고르세요.'); return; }
+    fn(st.target);
+    st.target.apply();
+    // 버튼 한 번은 «조작이 끝났다» 이다 — 드래그와 달리 이어질 프레임이 없다.
+    st.target.commit();
     refresh();
   };
 
@@ -98,19 +102,23 @@ export function createPanel(
     button('회전 ↻', nudge((e) => { e.ry += RY_STEP; })),
   );
   rowScale.append(
-    button('− 크기', nudge((e) => { e.s = scaleBy(e.s, 1 / S_STEP); })),
-    button('크기 +', nudge((e) => { e.s = scaleBy(e.s, S_STEP); })),
+    button('− 크기', nudge((t) => { nudgeScale(t, 1 / S_STEP); })),
+    button('크기 +', nudge((t) => { nudgeScale(t, S_STEP); })),
   );
   rowY.append(
     button('− 높이', nudge((e) => { e.y -= Y_STEP; })),
     button('높이 +', nudge((e) => { e.y += Y_STEP; })),
-    button('바닥에', nudge((e) => { e.y = host.surfaceAt(e.x, e.z); })),
+    button('바닥에', nudge((t) => { t.y = t.ground(); })),
   );
   const snapBtn = button('격자 0.5m', () => { st.snapOn = !st.snapOn; refresh(); });
+  // 「구역 되돌리기」는 **마을을 골랐을 때만** 뜬다. 늘 보이면 «무엇이 되돌아가는가» 가
+  // 모호하고(오버레이 배치는 파셀 개념이 없다), 안 보이면 되돌릴 방법이 없는 줄 안다.
+  const thawBtn = button('구역 되돌리기', () => { handlers.thawSelected(); });
   rowOps.append(
     snapBtn,
     button('복제', () => { handlers.duplicate(); }),
     button('삭제', () => { handlers.removeSelected(); }),
+    thawBtn,
   );
   rowOut.append(button('JSON 내보내기', () => { handlers.exportNow(); }));
 
@@ -131,27 +139,29 @@ export function createPanel(
 
   function refresh(): void {
     snapBtn.dataset.on = st.snapOn ? '1' : '0';
+    thawBtn.hidden = st.villageSel === null;
     for (const b of palette.querySelectorAll('button')) {
       b.dataset.on = b.dataset.src === st.pendingSrc ? '1' : '0';
     }
-    if (!st.selected) {
-      selLine.textContent = `선택: 없음 · 배치 ${host.entries().length}개`;
-    } else {
-      const sel = st.selected;
-      const name = sel.src.replace(/^assets\/models\//, '');
-      selLine.textContent = `선택: ${name}${sel.preview ? ' (미리보기)' : ''}`
-        + ` · ${sel.x.toFixed(1)}, ${sel.y.toFixed(2)}, ${sel.z.toFixed(1)}`
-        + ` · ${((sel.ry * 180) / Math.PI).toFixed(0)}° · ×${sel.s.toFixed(2)}`;
-    }
+    // 문안은 `target.ts` 의 `describe` 한 곳이 만든다 — 두 형태의 표시를 여기서 나누면
+    // 새 형태가 생길 때마다 이 분기가 자란다.
+    selLine.textContent = st.target
+      ? describeTarget(st.target, st.selected, st.villageSel)
+        + (st.villageSel?.frozen ? ' · 손본 구역' : '')
+      : `선택: 없음 · 배치 ${host.entries().length}개`;
     const previews = host.entries().filter((e) => e.preview).length;
     if (previews > 0) {
       hint.className = 'note warn';
       hint.textContent = `⚠ ${previews}개는 저장소에 없는 파일입니다 — JSON 과 함께 그 GLB 도 주셔야 배포에 붙습니다.`;
+    } else if (st.villageSel) {
+      hint.className = 'note';
+      hint.textContent = '마을 파츠 — 옮기면 그 구역이 「손본 구역」이 되어 밀도 슬라이더에서 빠집니다.'
+        + ' 「구역 되돌리기」로 계산 배치로 돌아갑니다.';
     } else {
       hint.className = 'note';
       hint.textContent = '좌드래그 이동 · 우드래그 시점 · Q/E 회전 · R/F 크기 · Z/X 높이 · Del·⌫ 삭제';
     }
-    inspector.sync(st.selected);
+    inspector.sync(st.target);
     onRefresh();
   }
 

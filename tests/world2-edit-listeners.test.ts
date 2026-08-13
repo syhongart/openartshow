@@ -43,7 +43,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { startEditMode } from '../frontend/js/world2/edit/mode.js';
 import type { EditSession, OverlayEntry, OverlayHost } from '../frontend/js/world2/edit/types.js';
-import { makeThreeStub } from './helpers/three-stub.js';
+import { makeThreeStub, type StubHit } from './helpers/three-stub.js';
+import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
 
 /** 편집 조작을 가로채는 리스너들. `keydown` 은 모드 키(`Tab`)가 상시라 따로 본다. */
 const GRABBY = ['click', 'contextmenu', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'drop'];
@@ -88,7 +89,29 @@ type Harness = {
   entries: OverlayEntry[];
   removed: OverlayEntry[];
   /** 광선에 걸릴 것. 비우면 «빈 곳을 클릭» 이 된다 */
-  hits: { object: unknown }[];
+  hits: StubHit[];
+  /**
+   * **마을 인스턴스** 광선에 걸릴 것. 위 `hits` 와 갈라 둔 이유: 편집은 광선을 두 곳에
+   * 쏘고(오버레이 루트의 자식들 · 슬롯 풀의 인스턴스 메시들) 한 배열을 공유하면
+   * «마을을 집었다» 를 재려는 케이스가 오버레이 쪽에서 먼저 걸린다.
+   */
+  villageHits: StubHit[];
+  /** 마을 인스턴스 메시(가짜). `getMatrixAt` 이 내는 위치를 테스트가 정한다 */
+  villageMesh: { at: { x: number; y: number; z: number } };
+  /** `refreshBounds` · `intersectObjects` 의 **호출 순서**가 여기 쌓인다 */
+  order: string[];
+  /** 선택 링. 「어느 것을 골랐나」를 화면이 실제로 말하는지 재는 유일한 축이다 */
+  marker: () => { visible?: boolean; position?: { x: number; z: number } } | undefined;
+  /** 편집이 건 동결. 키는 `px,pz` */
+  frozen: Map<string, PlacedPart[]>;
+  /**
+   * 기즈모 핸들 메시 하나. **드래그 경로를 재려면 이것이 필요하다** — 핸들을 `hits` 에
+   * 넣어야 `gizmo.hitTest` 가 잡고 `dragging` 이 켜진다. P1 뮤테이션(손 뗄 때 확정 안 함)이
+   * 0 failed 로 그 구멍을 드러냈다(2026-08-13).
+   */
+  gizmoHandle: () => unknown;
+  /** 수치칸(X·Y·Z·°·×) */
+  fields: () => HTMLInputElement[];
   /**
    * 씬 루트. **테스트가 이것을 알아야 항목을 «고를» 수 있다** — `pick.ts` 의 `entryOf`
    * 는 맞은 오브젝트에서 부모를 거슬러 «부모가 root 인 것» 을 찾아 항목으로 환원한다.
@@ -101,7 +124,15 @@ type Harness = {
 let current: EditSession | null = null;
 afterEach(() => { current?.dispose(); current = null; document.body.innerHTML = ''; });
 
-function makeHarness(): Harness {
+interface VillageFixture {
+  /** 파셀 → 배치. 없는 파셀이면 빈 배열 */
+  parts?: Record<string, PlacedPart[]>;
+  frozen?: (px: number, pz: number) => boolean;
+  /** 맞힌 인스턴스의 주인. `null` 이면 «빈 슬롯» */
+  owner?: { key: string } | null;
+}
+
+function makeHarness(vf?: VillageFixture): Harness {
   const { doc, live } = spyDoc();
   const canvas = document.createElement('canvas');
   document.body.append(canvas);
@@ -112,12 +143,36 @@ function makeHarness(): Harness {
     toJSON() { return {}; },
   }) as DOMRect;
 
-  const hits: { object: unknown }[] = [];
+  const hits: StubHit[] = [];
+  const villageHits: StubHit[] = [];
+  const order: string[] = [];
+  // 가짜 인스턴스 메시. `at` 이 곧 `getMatrixAt` 이 낼 이동 성분이다.
+  const villageMesh = {
+    at: { x: 0, y: 0, z: 0 },
+    getMatrixAt(_i: number, m: { elements: number[] }): void {
+      m.elements[12] = this.at.x; m.elements[13] = this.at.y; m.elements[14] = this.at.z;
+    },
+  };
   const entries: OverlayEntry[] = [];
   const removed: OverlayEntry[] = [];
-  const root = { children: [] as unknown[], add() { }, remove() { } };
+  /** 편집이 건 동결. 테스트가 «무엇이 저장됐나» 를 직접 본다 */
+  const frozenStore = new Map<string, PlacedPart[]>();
+  // ⚠ `add`/`remove` 가 **실제로 담는다.** 빈 함수였을 때 선택 링(`pick.ts` 의 marker)이
+  // 어디에도 안 남아서 «링이 떴는가» 를 재는 축이 통째로 불가능했다 — N11 뮤테이션이
+  // 0 failed 로 그 구멍을 드러냈다(2026-08-13).
+  const root = {
+    children: [] as unknown[],
+    add(o: unknown) { this.children.push(o); },
+    remove(o: unknown) { const i = this.children.indexOf(o); if (i >= 0) this.children.splice(i, 1); },
+  };
 
-  const THREE = makeThreeStub({ hits: () => hits });
+  const THREE = makeThreeStub({
+    hits: (objs) => {
+      const village = objs.includes(villageMesh);
+      order.push(village ? 'cast:village' : 'cast:overlay');
+      return village ? villageHits : hits;
+    },
+  });
 
   const host: OverlayHost = {
     THREE,
@@ -134,13 +189,51 @@ function makeHarness(): Harness {
     apply() { },
     toRaw: () => ({ version: 2, items: [], parcels: [] }),
     look() { },
+    // 마을 문은 **옵션이다.** 안 열면 `pickVillage` 가 즉시 `null` 을 내고 오버레이만
+    // 집던 예전 경로가 그대로 돈다 — 이 파일의 기존 축들은 그 상태를 전제로 한다.
+    instances: vf
+      ? {
+        raycastTargets: () => [villageMesh],
+        refreshBounds: () => { order.push('refreshBounds'); },
+        ownerAt: () => (vf.owner === undefined ? { key: 'building' } : vf.owner),
+      }
+      : null,
+    village: vf
+      ? {
+        partsAt: (px, pz) => (frozenStore.get(`${px},${pz}`) ?? vf.parts?.[`${px},${pz}`] ?? [])
+          .map((p) => ({ ...p })),
+        isFrozen: (px, pz) => frozenStore.has(`${px},${pz}`) || (vf.frozen?.(px, pz) ?? false),
+        // 실제 저장소(`systems/village-parcels.ts`)의 **관찰 가능한 성질만** 흉내낸다:
+        // 넣으면 그 뒤 `partsAt` 이 그것을 낸다. 파셀 재빌드는 여기서 안 재진다
+        // (그 축은 `world2-village-parcels.test.ts` 의 경계 절이 실제 부품으로 본다).
+        freeze: (px, pz, parts) => { frozenStore.set(`${px},${pz}`, parts.map((p) => ({ ...p }))); },
+        thaw: (px, pz) => { frozenStore.delete(`${px},${pz}`); },
+      }
+      : null,
     surfaceAt: () => 0,
   };
 
   // 팔레트 요청은 이 축과 무관하다 — 목록이 없으면 끌어다 놓기만 쓰는 정상 경로로 간다.
   const session = startEditMode(host, { modelsUrl: 'about:blank', onBlobUrl() { } });
   current = session;
-  return { session, live, doc, canvas, entries, removed, hits, root };
+  return {
+    session, live, doc, canvas, entries, removed, hits, root, villageHits, villageMesh, order,
+    frozen: frozenStore,
+    gizmoHandle: () => {
+      for (const c of root.children as { children?: unknown[] }[]) {
+        const kids = c?.children;
+        if (!Array.isArray(kids)) continue;
+        const found = (kids as { userData?: Record<string, unknown> }[])
+          .find((k) => k?.userData?.gizmo);
+        if (found) return found;
+      }
+      return undefined;
+    },
+    fields: () => [...doc.querySelectorAll('#w2-edit input[type="number"]')] as HTMLInputElement[],
+    // `pick.ts` 가 선택 링에 `renderOrder = 999` 를 준다. 기즈모는 `Group` 이라 안 섞인다.
+    marker: () => (root.children as { renderOrder?: number; visible?: boolean; position?: { x: number; z: number } }[])
+      .find((c) => c?.renderOrder === 999),
+  };
 }
 
 /** 항목 하나를 씬에 있는 것처럼 꾸미고, 광선에 걸리게 한다 */
@@ -270,5 +363,367 @@ describe('드래그가 갇히지 않는다 (행위)', () => {
     const x = e.x;
     document.dispatchEvent(new PointerEvent('pointermove', { clientX: 100, clientY: 550, bubbles: true }));
     expect(e.x, '★ pointercancel 뒤에도 드래그가 살아 있다 — 이후 모든 터치가 물건을 끈다').toBe(x);
+  });
+});
+
+// ── 마을 파츠 집기 (W4 ②-c) ─────────────────────────────────────────────────
+//
+// 여기서 재는 것은 **클릭 한 번이 무엇을 고르는가**다. 순수 환원(`matchPart`)과 picker
+// 단위 축은 `world2-village-pick.test.ts` 가 본다 — 이 파일은 그 위, 「리스너가 붙은
+// 실제 세션에서 상태가 어떻게 되는가」다.
+//
+// ⚠ 두 선택 칸(`selected`·`villageSel`)이 **동시에 채워지면** 링과 패널이 서로 다른 것을
+// 가리킨다. 그 불변식은 여기서만 잴 수 있다(picker 는 상태를 안 쓴다).
+
+/**
+ * 파셀 (0,0) 로컬 (5, 3) 에 건물 하나. 셀 40 이므로 월드도 (5, 3) 이다.
+ *
+ * ⚠ **그림자 데칼 파츠를 같은 자리에 넣는다.** 배치 배열에는 실제로 들어 있고
+ * (`kindsFor` 가 `shadow:*` 를 포함한다), 그것이 없으면 「데칼은 안 집힌다」 축이
+ * **다른 이유로** 통과한다 — 배열에 없는 종류라 매칭이 실패할 뿐이다. N2 뮤테이션이
+ * 0 failed 로 그 빈 검사를 드러냈다(2026-08-13).
+ */
+const VILLAGE_FIXTURE = {
+  parts: {
+    '0,0': [
+      { kind: 'tree', x: -9, y: 0, z: -9, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 },
+      { kind: 'building', x: 5, y: 0, z: 3, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 },
+      { kind: 'shadow:building', x: 5, y: 0, z: 3, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 },
+    ] as PlacedPart[],
+  },
+};
+
+function clickAt(h: Harness, x = 400, y = 500): void {
+  h.canvas.dispatchEvent(new PointerEvent('pointerdown', {
+    button: 0, clientX: x, clientY: y, bubbles: true,
+  }));
+}
+
+describe('마을 파츠를 클릭으로 고른다 (행위)', () => {
+  it('★ 건물을 클릭하면 파셀·인덱스로 환원된다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent, '★ 마을 파츠를 못 집었다').toContain('마을: building');
+    expect(h.doc.body.textContent).toContain('파셀 (0, 0) #1');
+  });
+
+  it('★ 레이캐스트 **전에** 경계구를 다시 잡는다 — 안 하면 멀리 있는 것이 안 집힌다', () => {
+    // W4 ②-a 가 실증한 지뢰다. `frustumCulled=false` 로는 안 막히고 경고도 없다 —
+    // 순서가 뒤집히면 화면에는 «어떤 건물은 클릭이 안 먹는다» 로만 드러난다.
+    const h = makeHarness(VILLAGE_FIXTURE);
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    const rb = h.order.indexOf('refreshBounds');
+    const cast = h.order.indexOf('cast:village');
+    expect(rb, 'refreshBounds 가 아예 안 불렸다').toBeGreaterThanOrEqual(0);
+    expect(rb, '★ 경계구를 레이캐스트 뒤에 잡았다 — 캐시된 옛 구로 걸러진다').toBeLessThan(cast);
+  });
+
+  it('★ 오버레이 항목이 먼저다 — 겹쳐 있으면 놓은 GLB 를 고른다', () => {
+    // 마을은 어디에나 있고 GLB 는 일부러 그 자리에 둔 것이다.
+    const h = makeHarness(VILLAGE_FIXTURE);
+    const e = addEntry(h);
+    h.hits.push({ object: e.holder });
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent, '★ 마을이 오버레이를 가로챘다').not.toContain('마을: building');
+    expect(h.doc.body.textContent).toContain('선택: a.glb');
+  });
+
+  it('★ 빈 곳을 클릭하면 마을 선택도 풀린다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent).toContain('마을: building');
+    h.villageHits.length = 0;
+    clickAt(h);
+    expect(h.doc.body.textContent, '★ 안 고른 것이 계속 골라진 채로 남는다').not.toContain('마을: building');
+    expect(h.doc.body.textContent).toContain('선택: 없음');
+  });
+
+  it('★ 그림자 데칼은 집히지 않는다 — 집을 수 없는 것이다', () => {
+    // 픽스처 배치에 `shadow:building` 이 **실제로 있다.** 안 거르면 매칭이 성공해서
+    // 감독은 «건물을 눌렀는데 그림자가 골라진» 상태가 된다.
+    const h = makeHarness({ ...VILLAGE_FIXTURE, owner: { key: 'shadow:building' } });
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent, '★ 데칼이 집혔다 — 지면 근처 클릭이 전부 여기서 끝난다')
+      .not.toContain('마을:');
+  });
+
+  it('★ 환원 못 한 히트 **뒤에** 있는 것을 집는다 — 첫 건에서 멈추지 않는다', () => {
+    // 광선은 가까운 순으로 여러 건을 낸다. 앞의 하나가 환원되지 않는다고 멈추면
+    // 그 뒤에 있는 «집을 수 있는 것» 까지 못 집는다 — «어떤 각도에서만 안 집힌다» 다.
+    const h = makeHarness({
+      ...VILLAGE_FIXTURE,
+      // 첫 히트는 배치에 없는 자리, 둘째는 건물 자리.
+      owner: { key: 'building' },
+    });
+    const ghost = {
+      at: { x: 17, y: 0, z: 17 },
+      getMatrixAt(_i: number, m: { elements: number[] }): void {
+        m.elements[12] = 17; m.elements[13] = 0; m.elements[14] = 17;
+      },
+    };
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: ghost, instanceId: 0 }, { object: h.villageMesh, instanceId: 1 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent, '★ 첫 히트가 환원 실패하자 그 뒤를 안 봤다')
+      .toContain('파셀 (0, 0) #1');
+  });
+
+  it('★ 마을을 고르면 선택 링이 그 자리에 뜬다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    const m = h.marker();
+    expect(m, '선택 링을 못 찾았다 — 하네스가 root 를 안 담고 있다').toBeDefined();
+    expect(m?.visible, '★ 골랐는데 링이 안 뜬다 — 무엇을 골랐는지 화면이 침묵한다').toBe(true);
+    expect([m?.position?.x, m?.position?.z], '★ 링이 엉뚱한 자리에 떴다').toEqual([5, 3]);
+  });
+
+  it('★ 오버레이를 고르면 마을 안내가 사라진다 — 선택은 하나다', () => {
+    // `villageSel` 이 안 풀리면 패널 아래 안내가 «마을 파츠는 아직 고르기만…» 으로
+    // 남는다. 선택은 GLB 인데 안내는 마을을 말하는 상태다.
+    const h = makeHarness(VILLAGE_FIXTURE);
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent).toContain('「손본 구역」이 되어');
+
+    const e = addEntry(h);
+    h.hits.push({ object: e.holder });
+    clickAt(h);
+    expect(h.doc.body.textContent, '★ GLB 를 골랐는데 마을 안내가 남아 있다')
+      .not.toContain('「손본 구역」이 되어');
+  });
+
+  it('★ 편집을 끄면 마을 선택도 풀린다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent).toContain('마을: building');
+    pressTab(); // 주행으로
+    expect(h.doc.body.textContent, '★ 주행으로 돌아왔는데 고른 것이 남아 있다')
+      .not.toContain('마을: building');
+    expect(h.marker()?.visible, '★ 주행 모드인데 선택 링이 떠 있다').toBe(false);
+  });
+
+  it('환원할 수 없는 히트는 조용히 넘긴다 — 엉뚱한 것을 고르지 않는다', () => {
+    // 배치에 없는 자리를 맞혔다(파셀은 맞지만 그 자리에 building 이 없다).
+    const h = makeHarness(VILLAGE_FIXTURE);
+    h.villageMesh.at = { x: 17, y: 0, z: 17 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent, '★ 「가장 가까운 것」을 집어 엉뚱한 건물이 골라졌다')
+      .not.toContain('마을:');
+  });
+
+  it('손본 파셀이면 화면이 그렇게 말한다', () => {
+    const h = makeHarness({ ...VILLAGE_FIXTURE, frozen: () => true });
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent).toContain('손본 구역');
+  });
+
+  it('마을 문이 닫힌 세션은 예전 그대로다 — 라이브 격리', () => {
+    const h = makeHarness(); // 문을 안 연다
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.order, '★ 문이 닫혔는데 마을에 광선을 쐈다').not.toContain('cast:village');
+    expect(h.doc.body.textContent).toContain('선택: 없음');
+  });
+});
+
+// ── 마을 파츠 옮기기·지우기·되돌리기 (W4 ②-d) ───────────────────────────────
+//
+// 여기서 재는 것은 **조작이 동결로 이어지는가**다. 「동결이 화면까지 오는가」는
+// `world2-village-parcels.test.ts` 의 경계 절이 실제 빌더·스트리밍으로 본다.
+//
+// ⚠ 이 절의 존재 이유: 조작 경로가 다섯이다(기즈모 드래그 · 수치칸 · 조작 버튼 ·
+// 편집키 · 삭제). **하나만 `commit()` 을 빠뜨려도 그 경로에서만 조용히 안 저장된다** —
+// 화면은 바뀌었는데 파일에는 없는 형태이고, 감독은 내보내기를 열어 봐야 안다.
+
+/** 편집키 하나를 누른다 */
+function pressKey(code: string): void {
+  document.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true }));
+}
+
+/** 마을 건물 하나를 골라 둔 하네스 */
+function pickedVillage(vf: VillageFixture = VILLAGE_FIXTURE): Harness {
+  const h = makeHarness(vf);
+  h.villageMesh.at = { x: 5, y: 0, z: 3 };
+  h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+  pressTab();
+  clickAt(h);
+  return h;
+}
+
+/** 저장된 동결에서 그 파츠를 꺼낸다. 파셀 키는 기본이 원점이다 */
+function frozenPart(h: Harness, kind = 'building', key = '0,0'): PlacedPart | undefined {
+  return h.frozen.get(key)?.find((p) => p.kind === kind);
+}
+
+describe('마을 파츠를 조작하면 그 구역이 동결된다 (행위)', () => {
+  it('고르기만 해서는 동결되지 않는다 — 손대지 않은 구역은 계산 그대로', () => {
+    const h = pickedVillage();
+    expect(h.frozen.size, '★ 클릭만 했는데 구역이 「손본 구역」이 됐다').toBe(0);
+  });
+
+  it('★ 편집키(회전)가 동결로 이어진다', () => {
+    const h = pickedVillage();
+    pressKey('KeyE');
+    expect(h.frozen.size, '★ 회전했는데 저장되지 않았다').toBe(1);
+    expect(frozenPart(h)?.ry, '회전이 반영되지 않았다').toBeGreaterThan(0);
+  });
+
+  it('★ 높이 키가 동결로 이어진다', () => {
+    const h = pickedVillage();
+    pressKey('KeyX');
+    expect(frozenPart(h)?.y, '★ 높이가 저장되지 않았다').toBeGreaterThan(0);
+  });
+
+  it('★ 크기 키는 **비율을 유지한 채** 민다 — 비균등이 무너지면 건물이 정육면체가 된다', () => {
+    const h = makeHarness({
+      parts: {
+        '0,0': [{ kind: 'building', x: 5, y: 0, z: 3, ry: 0, sx: 4, sy: 8, sz: 2, tone: 0 }] as PlacedPart[],
+      },
+    });
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    pressKey('KeyR'); // 크게
+    const p = frozenPart(h)!;
+    expect(p.sx, '★ 크기가 안 커졌다').toBeGreaterThan(4);
+    // 4 : 8 : 2 = 1 : 2 : 0.5 가 유지돼야 한다.
+    expect(p.sy / p.sx).toBeCloseTo(2, 5);
+    expect(p.sz / p.sx).toBeCloseTo(0.5, 5);
+  });
+
+  it('★ 지우면 배열에서 빠진 채로 동결된다 — 「다 지웠다」와 「안 손댔다」', () => {
+    const h = pickedVillage();
+    pressKey('Delete');
+    const parts = h.frozen.get('0,0');
+    expect(parts, '★ 지웠는데 저장되지 않았다 — 재방문하면 되살아난다').toBeDefined();
+    expect(parts?.some((p) => p.kind === 'building'), '★ 지운 건물이 남아 있다').toBe(false);
+    expect(parts?.some((p) => p.kind === 'tree'), '★ 옆의 나무까지 지웠다').toBe(true);
+  });
+
+  it('★ 되돌리기가 동결을 푼다', () => {
+    const h = pickedVillage({ ...VILLAGE_FIXTURE, frozen: () => true });
+    pressKey('KeyE');
+    expect(h.frozen.size).toBe(1);
+    // 「구역 되돌리기」 버튼을 찾아 누른다.
+    const btn = [...h.doc.querySelectorAll('button')].find((b) => b.textContent === '구역 되돌리기');
+    expect(btn, '되돌리기 버튼이 없다').toBeDefined();
+    btn!.click();
+    expect(h.frozen.size, '★ 되돌렸는데 동결이 남아 있다').toBe(0);
+  });
+
+  it('되돌리기 버튼은 마을을 골랐을 때만 보인다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    const btn = [...h.doc.querySelectorAll('button')].find((b) => b.textContent === '구역 되돌리기');
+    expect(btn?.hidden, '★ 아무것도 안 골랐는데 되돌리기가 보인다').toBe(true);
+    h.villageMesh.at = { x: 5, y: 0, z: 3 };
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    clickAt(h);
+    expect(btn?.hidden, '★ 마을을 골랐는데 되돌리기가 안 보인다').toBe(false);
+  });
+
+  it('★ 오버레이 항목은 예전 그대로다 — 조작해도 동결이 생기지 않는다', () => {
+    // 어댑터 도입이 오버레이 경로를 바꾸면 안 된다(동작 변경 0).
+    const h = makeHarness(VILLAGE_FIXTURE);
+    const e = addEntry(h);
+    h.hits.push({ object: e.holder });
+    pressTab();
+    clickAt(h);
+    const before = e.ry;
+    pressKey('KeyE');
+    expect(e.ry, '★ GLB 회전이 안 먹는다').not.toBe(before);
+    expect(h.frozen.size, '★ GLB 를 만졌는데 마을 구역이 동결됐다').toBe(0);
+  });
+});
+
+// ── 조작 경로 다섯이 **전부** 확정하는가 ────────────────────────────────────
+//
+// ⚠ **이 절은 뮤테이션이 만들었다.** 위 절만 있을 때 «확정을 빠뜨린다» 를 심어 보니
+// 편집키 경로만 잡히고 **기즈모 드래그·조작 버튼·수치칸 셋은 0 failed** 였다
+// (P1·P3·P4, 2026-08-13). 경로마다 `commit()` 을 따로 부르는 구조라, 하나가 빠지면
+// **그 경로에서만** 조용히 안 저장된다 — 화면은 바뀌었는데 파일에는 없는 형태다.
+
+describe('조작 경로마다 동결이 저장된다 (행위)', () => {
+  it('★ 기즈모를 잡았다 놓으면 확정된다', () => {
+    const h = pickedVillage();
+    const handle = h.gizmoHandle();
+    expect(handle, '기즈모 핸들을 못 찾았다 — 이 축이 빈 검사가 된다').toBeDefined();
+    // 핸들을 광선에 물려 잡는다(`gizmo.hitTest` → `begin` → `dragging`).
+    h.hits.push({ object: handle });
+    clickAt(h);
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    expect(h.frozen.size, '★ 기즈모로 옮기고 놓았는데 저장되지 않았다').toBe(1);
+  });
+
+  it('빈 곳을 클릭했다 떼는 것만으로는 확정하지 않는다 — 헛일을 안 한다', () => {
+    const h = pickedVillage();
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    expect(h.frozen.size, '★ 아무것도 안 했는데 파셀이 다시 만들어진다').toBe(0);
+  });
+
+  it('★ 조작 버튼(회전)이 확정한다', () => {
+    const h = pickedVillage();
+    const btn = [...h.doc.querySelectorAll('button')].find((b) => b.textContent === '회전 ↻');
+    expect(btn, '회전 버튼이 없다').toBeDefined();
+    btn!.click();
+    expect(h.frozen.size, '★ 버튼으로 회전했는데 저장되지 않았다').toBe(1);
+    expect(frozenPart(h)?.ry).toBeGreaterThan(0);
+  });
+
+  it('★ 수치칸이 확정하고, **월드 좌표를 파셀 로컬로** 되돌린다', () => {
+    // 파셀 (1,0) 을 쓰는 것이 요점이다. 원점 파셀이면 월드=로컬이라 변환 결함이 안 보인다.
+    const h = makeHarness({
+      parts: {
+        '1,0': [{ kind: 'building', x: 5, y: 0, z: 3, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 }] as PlacedPart[],
+      },
+    });
+    h.villageMesh.at = { x: 45, y: 0, z: 3 }; // 셀 40 → 파셀 (1,0) 의 로컬 (5,3)
+    h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
+    pressTab();
+    clickAt(h);
+    expect(h.doc.body.textContent, '파셀 (1,0) 을 못 집었다').toContain('파셀 (1, 0)');
+
+    const [fx] = h.fields();
+    expect(fx, '수치칸을 못 찾았다').toBeDefined();
+    fx.value = '50';
+    fx.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(h.frozen.size, '★ 수치를 쳤는데 저장되지 않았다').toBe(1);
+    expect(
+      frozenPart(h, 'building', '1,0')?.x,
+      '★ 월드 좌표가 그대로 저장됐다 — 파셀 원점을 안 뺐다(건물이 파셀 하나만큼 날아간다)',
+    ).toBeCloseTo(10, 6);
   });
 });

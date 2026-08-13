@@ -17,7 +17,7 @@
 
 import type { FrameCtx, System } from '../kernel.js';
 import {
-  computeWant, diffParcels, takeBudget, streamBudgetMs,
+  computeWant, diffParcels, takeBudget, streamBudgetMs, parcelKey,
   type ParcelKey, type WantEntry,
 } from '../decide/stream.js';
 import { lookAheadCenter, TIERS, type Tier, type TierBands } from '../decide/lod.js';
@@ -332,6 +332,40 @@ export class StreamingSystem implements System {
 
   /** 현재 tier 맵의 읽기 전용 뷰(HUD·불변식 검사용) */
   get tierMap(): ReadonlyMap<ParcelKey, Tier> { return this.tiers; }
+
+  /**
+   * 그 파셀을 **버린다.** 다음 `update` 가 `want` 에 다시 넣어 새로 만든다.
+   *
+   * ── 왜 «다시 만든다» 가 아니라 «버린다» 인가 ───────────────────────────────
+   * 여기서 곧바로 `build` 하면 **프레임 예산 밖에서** 파셀이 생긴다. 스트리밍이 예산을
+   * 두는 이유가 그것인데(`streamBudgetMs`), 편집이 그 규약의 뒷문이 되면 «감독이 건물을
+   * 옮길 때마다 한 프레임 튄다» 가 된다. 버리기만 하면 다음 `update` 의 `diff.load` 에
+   * 정상 진입해 예산·우선순위를 그대로 탄다.
+   *
+   * 반납은 예산에서 빼지 않는다는 규약(위 ①)과도 같은 방향이다 — 반납은 GPU 자원을
+   * 만들지 않는다.
+   *
+   * ⚠ **한 프레임(또는 예산에 밀리면 여러 프레임) 동안 그 파셀이 비어 보인다.** 편집
+   * 중에는 그것이 «지웠다가 다시 놓는» 피드백으로 읽히지만, 드래그처럼 연속으로 부르면
+   * 건물이 계속 되감긴다(성장 애니메이션이 처음부터 돈다 — `parcel-grow.ts`). 연속
+   * 조작은 놓는 순간에만 이것을 불러야 한다 — 그 판단은 편집 UI 몫이고 여기서 못 막는다.
+   *
+   * @returns 실제로 버렸으면 `true`. 안 떠 있던 파셀이면 `false`(할 일이 없다 —
+   *          아직 안 만들어졌으므로 다음 build 가 새 동결을 저절로 읽는다)
+   */
+  invalidate(px: number, pz: number): boolean {
+    // 키 형식은 `decide/stream.ts` 가 소유한다. 여기서 `${px},${pz}` 를 다시 적으면
+    // 형식이 바뀔 때 이 문만 조용히 어긋나고, 그 증상은 «편집이 어떤 파셀에는 안 먹는다» 다.
+    const key = parcelKey(px, pz);
+    const h = this.handles.get(key);
+    if (!h) return false;
+    this.opts.builder.release(h);
+    this.handles.delete(key);
+    this.tiers.delete(key);
+    // `settled` 는 건드리지 않는다 — 되돌리면 편집할 때마다 로딩 화면이 다시 뜬다.
+    this.opts.markDirty?.();
+    return true;
+  }
 
   dispose(): void {
     for (const h of this.handles.values()) this.opts.builder.release(h);

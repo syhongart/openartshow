@@ -12,7 +12,8 @@
 // ⚠ **이 파일은 «동작 변경 0» 분해의 일부다.** 값도 의미도 분해 전과 같아야 한다 —
 // 여기서 상수를 손보고 싶어지면 그것은 별도 커밋이다.
 
-import type { OverlayEntry } from './types.js';
+import type { OverlayEntry, OverlayHost, VillagePick } from './types.js';
+import { overlayTarget, villageTarget, type EditTarget } from './target.js';
 
 /** 회전 한 번. 24등분이라 세 번이면 45°, 여섯 번이면 90° 다. */
 export const RY_STEP = Math.PI / 12;
@@ -36,8 +37,12 @@ export type ThreeNS = {
   Raycaster: new () => {
     ray: { origin: XYZ; direction: XYZ };
     setFromCamera(coords: { x: number; y: number }, cam: unknown): void;
-    intersectObjects(objs: unknown[], recursive: boolean): { object: unknown }[];
+    // `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다 — 그래서 선택 필드다.
+    // 이것이 없으면 마을 파츠를 «몇 번째 인스턴스인가» 로 환원할 방법이 없다.
+    intersectObjects(objs: unknown[], recursive: boolean): { object: unknown; instanceId?: number }[];
   };
+  /** 맞힌 인스턴스의 자세를 읽는다. 편집은 **이동 성분만** 본다(`elements[12..14]`) */
+  Matrix4: new () => { elements: ArrayLike<number> };
   Mesh: new (g: unknown, m: unknown) => StubMesh;
   Group: new () => StubGroup;
   RingGeometry: new (inner: number, outer: number, seg: number) => Disposable;
@@ -81,6 +86,26 @@ export type StubGroup = {
 /** 편집 세션이 들고 있는 전부. 모듈들이 **같은 객체**를 본다. */
 export interface EditState {
   selected: OverlayEntry | null;
+  /**
+   * 고른 **마을 파츠**. `selected` 와 **동시에 채워지지 않는다** — 선택은 하나다.
+   *
+   * ⚠ 이 주석은 ②-c 에서 *"한 칸에 합치려면 공통 인터페이스를 먼저 정해야 한다"* 로
+   * 끝났다. ②-d 가 그 인터페이스를 만들었다(`target.ts` 의 `EditTarget`) — 다만 **이
+   * 칸은 남는다.** 어댑터는 «미는 다섯 값» 만 알고, «무엇을 골랐나»(파셀 좌표·인덱스·
+   * 손본 구역인가)는 화면이 말해야 하는 별개 정보이기 때문이다.
+   *
+   * **불변식: 둘 중 최대 하나만 채워진다.** 채우는 자리는 `select()` **하나**이고,
+   * 그것을 테스트가 본다(둘 다 채워지면 링과 패널이 서로 다른 것을 가리킨다).
+   */
+  villageSel: VillagePick | null;
+  /**
+   * 지금 고른 것의 **조작 어댑터**. 기즈모·수치칸·조작 버튼이 이것만 본다.
+   *
+   * 위 두 칸과 **함께 움직인다** — 어긋나면 «패널은 건물을 말하는데 기즈모는 GLB 를
+   * 민다» 가 된다. 그래서 셋을 바꾸는 자리를 `select()` **하나로 좁혔다**(아래).
+   * 다른 곳에서 `st.selected = …` 를 직접 쓰면 그 순간 불변식이 깨진다.
+   */
+  target: EditTarget | null;
   pendingSrc: string | null;
   dragging: OverlayEntry | null;
   dragPlaneY: number;
@@ -122,6 +147,8 @@ export interface EditState {
 export function createEditState(): EditState {
   return {
     selected: null,
+    villageSel: null,
+    target: null,
     pendingSrc: null,
     dragging: null,
     dragPlaneY: 0,
@@ -131,4 +158,41 @@ export function createEditState(): EditState {
     busy: false,
     editing: false,
   };
+}
+
+/**
+ * 선택을 바꾸는 **유일한 자리.** 세 칸(`selected`·`villageSel`·`target`)이 함께 움직인다.
+ *
+ * ── 왜 함수로 좁히나 ────────────────────────────────────────────────────────
+ * 칸이 셋인데 대입이 여섯 파일에 흩어져 있으면, 새 경로가 하나 생길 때마다 «세 개 다
+ * 썼는가» 를 사람이 기억해야 한다. 이 저장소는 그 형태로 이미 데였다 — 분해 회차의
+ * M5 뮤테이션(«state 두 벌»)이 정확히 «패널이 보는 것과 조작이 바꾸는 것이 갈린다» 였다.
+ *
+ * **선택은 하나다**: 오버레이를 고르면 마을 선택이 풀리고, 반대도 같다.
+ *
+ * ⚠ 마을 어댑터는 `null` 을 낼 수 있다(문이 닫혔다·인덱스가 배열 밖·종류 불일치).
+ * 그때는 **아무것도 안 고른 것**으로 떨어진다 — 표시만 남기고 조작이 안 되는 상태를
+ * 만들지 않는다. 그 상태가 정확히 «골랐는데 아무것도 안 먹는다» 이기 때문이다.
+ */
+export function select(
+  st: EditState,
+  host: OverlayHost,
+  what: { entry: OverlayEntry } | { village: VillagePick } | null,
+): void {
+  if (what && 'entry' in what) {
+    st.selected = what.entry;
+    st.villageSel = null;
+    st.target = overlayTarget(host, what.entry);
+    return;
+  }
+  if (what && 'village' in what) {
+    const t = villageTarget(host, what.village);
+    st.selected = null;
+    st.villageSel = t ? what.village : null;
+    st.target = t;
+    return;
+  }
+  st.selected = null;
+  st.villageSel = null;
+  st.target = null;
 }
