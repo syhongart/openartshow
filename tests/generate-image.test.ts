@@ -691,7 +691,11 @@ describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)'
     /**
      * 실물에 가까운 APP11.
      * idx 0..7 CI+En+Z · 12..15 `jumb` · 20..23 `jumd` · 24..39 UUID · 40 toggles · 41.. label
-     * @param label `null` 이면 label 을 통째로 뺀다(실물에서 안 오는 모양 — 판별이 막아야 한다)
+     * @param label `null` 이면 label 을 통째로 뺀다.
+     *   ⚠ 첫 판본은 *"실물에서 안 오는 모양"* 이라고 적었는데 **확인 안 된 단정**이었다
+     *   (검수관 Q-4). JUMBF description box 의 toggles 는 label 을 **선택적**으로 두므로
+     *   label 없는 JUMBF 는 규격 위반이 아니다. 막는 것은 옳지만 이유가 다르다 —
+     *   *"C2PA store 에서는 label 이 필수인데 **실물을 아직 못 봤으므로** 없으면 막는다"*.
      * @param uuidPad UUID 자리 크기. 16이 실물. 늘리면 label 이 판별 창 밖으로 밀린다.
      */
     const app11 = (label: string | null, uuidPad = 16) => seg(0xeb, Buffer.concat([
@@ -1126,6 +1130,9 @@ describe('G-MIRROR 한계 목록이 두 곳에서 어긋나지 않는가 (G-META
    * 이 파일의 다른 불릿이 **3칸 들여쓰기라는 우연** 덕이었다 — 검수관이 한계 절 **밖**에
    * `//  · ` 불릿을 넣어 1 failed 를 실측했다. 절 밖의 산문은 이 대조의 대상이 아니다.
    * 절을 못 찾으면 아래에서 실패한다(빈 집합끼리 비교로 새지 않게).
+   * ⚠ **이 좁힘 자체에는 검출력이 0이다**(검수관 Q-3 실측: `to` 를 `SRC.length` 로 되돌려도
+   * 0 failed) — 지금 절 밖에 `//  · ` 불릿이 하나도 없어서다. 즉 위 문장은 **주장**이고,
+   * 그것을 지키는 검사는 없다. 방향이 fail-closed(거짓 FAIL)라 블로커로 다루지 않을 뿐이다.
    */
   const LIMITS = (() => {
     const from = SRC.indexOf('── 한계 (');
