@@ -54,4 +54,28 @@ export const CSS = `
   border:1px solid #3A3D4B;border-radius:5px}
 #w2-edit .fld input:focus{outline:none;border-color:#8B72FF}
 #w2-edit .fld input:disabled{opacity:.4}
+
+/* ── 아웃라이너 — **넓은 화면에서만** (감독 지시 2026-08-13, PC 전용 씬 편집) ──────
+   기본이 display:none 인 것이 요점이다. 위 「위치는 오른쪽이다」 판정이 왼쪽을 막았고
+   (터치 조이스틱 기둥), 그 제약은 **좁은 화면에서만** 성립한다. 폭 판정은 여기 한 곳이고
+   JS 는 폭을 모른다 — 두 곳이 각자 재면 «패널은 떴는데 스타일이 안 왔다» 가 난다. */
+#w2-outliner{display:none}
+@media (min-width:1024px){
+  #w2-outliner{display:flex;flex-direction:column;gap:4px;position:fixed;z-index:40;
+    left:calc(8px + env(safe-area-inset-left,0px));top:calc(8px + env(safe-area-inset-top,0px));
+    width:196px;color:#F5F5F2;background:rgba(11,13,18,.86);border:1px solid #3A3D4B;
+    border-radius:10px;padding:8px 9px;backdrop-filter:blur(6px);
+    max-height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+    overflow:auto}
+  /* 주행 모드에서는 감춘다 — 편집 도구가 걸어다니는 화면을 가리지 않는다. */
+  #w2-edit[data-mode="drive"] ~ #w2-outliner,
+  #w2-outliner[data-mode="drive"]{display:none}
+  #w2-outliner h4{margin:0;font:600 12px/1.2 system-ui,sans-serif;color:#8B72FF}
+  #w2-outliner .items{display:flex;flex-direction:column;gap:2px}
+  #w2-outliner .items button{text-align:left;padding:3px 6px;
+    font:11px/1.3 system-ui,sans-serif;color:#F5F5F2;background:#1A1D26;
+    border:1px solid #3A3D4B;border-radius:5px;cursor:pointer}
+  #w2-outliner .items button[data-on="1"]{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
+  #w2-outliner .note{color:#9A9EB1;margin:0;font-size:10px}
+}
 `;

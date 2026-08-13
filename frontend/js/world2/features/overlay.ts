@@ -303,6 +303,9 @@ export const overlayFeature: Feature = {
       // 만질 수 없다는 것이지 여기서 변환하는 데 있지 않다.
       instances: env.pools,
       village: env.village,
+      // 조작 중 실시간 반영(W5 E2.5). **개수는 안 변한다** — 이미 점유한 슬롯의 행렬만
+      // 다시 쓰는 함수 하나이고, `acquire`·`release` 는 안 넘어간다(팀장 판정 2026-08-13).
+      retargetSlot: env.retargetSlot,
       entries: () => entries,
       place,
       lastFailure: () => lastFail,
@@ -310,6 +313,12 @@ export const overlayFeature: Feature = {
       apply: applyEntry,
       toRaw,
       look: (dx, dy) => env.player.look(dx, dy),
+      // 궤도 시점(W5 E3). `look` 과 나란히 **위임만** 한다 — 산술은 `PlayerSystem` 이
+      // 소유하고 이 기능은 통로다(팀장 판정 (A-2)).
+      orbit: (cx, cy, cz, dYaw, dHeight, kRadius) => {
+        env.player.orbit(cx, cy, cz, dYaw, dHeight, kRadius);
+      },
+      endOrbit: () => { env.player.endOrbit(); },
       surfaceAt(x, z) {
         const p = parcelOf(x, z, DEFAULT_LAYOUT.cellX, DEFAULT_LAYOUT.cellZ);
         return surfaceY(p.px, p.pz, p.lx, p.lz);
@@ -362,6 +371,20 @@ export const overlayFeature: Feature = {
       } catch (e) {
         diag.state = 'failed';
         diag.error = e instanceof Error ? e.message : String(e);
+        // ⚠ **콘솔에도 낸다 — 이 한 줄이 게이트의 눈이다** (검수관 블로커, 2026-08-13).
+        //
+        // 이 `catch` 는 오버레이 로드부터 `startEditMode()` 까지를 통째로 감싼다. 즉
+        // 편집 패널·기즈모·피커·액션·입력·팔레트 초기화 중 **어디서 던져도** 여기로 온다.
+        // 그런데 `diag` 는 `window.__world2.stats().overlay` 로만 노출되고, 스모크의
+        // `collectPage` 는 그 필드를 **한 번도 안 읽는다** — 콘솔과 pageerror 만 본다.
+        //
+        // 그래서 이 줄이 없으면 «편집 화면이 통째로 안 뜨는데 게이트는 초록» 이 성립한다.
+        // `?edit=1` 을 스모크에 넣은 바로 그 회차에 검수관이 이 사각을 짚었다 —
+        // 주석으로 «못 잡는다» 를 적는 대신 **잡게 만드는** 쪽을 골랐다.
+        //
+        // ⚠ 부작용을 알고 넣는다: 이제 이 경로의 실패가 **스모크를 빨간불로 만든다.**
+        // 그것이 목적이다. 조용히 실패하던 것이 있었다면 지금 드러난다.
+        console.error('[world2:overlay] 오버레이/편집 초기화 실패', e);
       }
     })();
 

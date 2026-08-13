@@ -70,6 +70,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     duplicate: () => { void actions.duplicate(); },
     removeSelected: () => { actions.removeSelected(); },
     thawSelected: () => { actions.thawSelected(); },
+    // 아웃라이너 목록 클릭 → **3D 클릭과 같은 함수.** 여기서 갈라지면 «목록으로 고른
+    // 것은 기즈모가 안 붙는다» 가 나고, 그 어긋남은 화면에서만 드러난다.
+    pickVillage: (v) => { select(st, host, { village: v }); panel.refresh(); },
     exportNow: () => { actions.exportNow(); },
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
@@ -102,6 +105,11 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       panel.sayLead('편집 모드 — 시점은 마우스 오른쪽 버튼 드래그. 이동은 WASD 그대로.');
     } else {
       input.unbind();
+      // ⚠ **궤도를 먼저 걷는다** (W5 E3, 팀장 조건 2·3). 편집 중에는 눈높이가 떠 있고
+      // 충돌을 무시했으므로 벽 안에 서 있을 수 있다 — 주행으로 돌아가기 전에
+      // `PlayerSystem` 이 둘 다 원복한다. 이 한 줄이 빠지면 감독이 편집을 끈 뒤
+      // **공중에 뜬 채 건물 안에 갇힌다.**
+      host.endOrbit?.();
       gizmo.attach(null);
       select(st, host, null);
       st.pendingSrc = null;
@@ -125,6 +133,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       // 로드 중에 떠나면 `busy` 가 `true` 로 남는다. 지금은 리스너를 다 떼므로 재진입
       // 경로가 없어 실해는 없지만, 세션을 되살리는 경로가 생기면 그때 조용히 잠긴다.
       st.busy = false;
+      // 편집을 켜 둔 채 세션이 끝나는 경로다(`?edit=1` 을 떼고 새로고침 등). `setEditing`
+      // 을 안 거치므로 여기서도 걷어야 «떠 있는 채 갇힘» 이 안 남는다.
+      if (st.editing) host.endOrbit?.();
       input.unbind();
       input.unbindAlways();
       panel.dispose();

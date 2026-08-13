@@ -178,6 +178,10 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
       return {
         px: p.px, pz: p.pz, index: m.index, kind: owner.key,
         x: wx, y: wy, z: wz, frozen: vil.isFrozen(p.px, p.pz),
+        // ⚠ **맞힌 그 슬롯을 그대로 들고 간다.** 조작 중 실시간 반영이 이것 하나에
+        // 달려 있고, 역인덱스를 안 만들어도 되는 이유가 여기다 — 고르는 순간 이미
+        // 답이 온다(W4 ②-c 가 «라이브가 그 비용을 낸다» 로 안 만든 그것).
+        slot: owner,
       };
     }
     return null;

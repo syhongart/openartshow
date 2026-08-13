@@ -11,7 +11,7 @@ import { Kernel } from './kernel.js';
 import { createRendererAdapter, type RendererAdapter } from './adapters/renderer.js';
 import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
-import { PooledParcelBuilder } from './systems/parcel-builder.js';
+import { PooledParcelBuilder, type SlotPool } from './systems/parcel-builder.js';
 import { createVillageParcels } from './systems/village-parcels.js';
 import { ParcelFadeSystem } from './systems/parcel-fade.js';
 import { ParcelGrowSystem } from './systems/parcel-grow.js';
@@ -249,6 +249,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let adapter: RendererAdapter | null = null;
   let pools: InstancePools | null = null;
   let kernel: Kernel | null = null;
+  /**
+   * 빌더·그림자 재베이킹·편집이 **함께 쓰는** 슬롯 어댑터.
+   *
+   * 여기 위쪽에 있는 이유는 순서다: 기능 조립(`pools` 단계)이 이것을 만드는 `stream`
+   * 단계보다 **먼저** 돈다. 그래서 `FeatureEnv.retargetSlot` 은 값이 아니라 **늦게 읽는
+   * 클로저**로 넘어간다 — 편집이 실제로 부르는 시점(감독이 조작할 때)에는 이미 채워져 있다.
+   */
+  let slotPool: SlotPool | null = null;
 
   const density = readDensity();
   // 밀도는 배치 판정에만 곱한다. 풀 예산은 이 레이아웃에서 자동으로 파생되므로
@@ -755,6 +763,12 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           FEATURES,
           {
             scene, camera, adapter: adapter!, player, pools: pools!, village,
+            // ⚠ **값이 아니라 클로저다** — 이 조립(`pools` 단계)이 `slotPool` 을 만드는
+            // `stream` 단계보다 먼저 돈다. 편집이 실제로 부르는 시점에는 채워져 있다.
+            // 그전에 불리면 조용히 아무 일도 안 한다(그때는 마을 자체가 아직 없다).
+            retargetSlot: (h, t) => {
+              slotPool?.retarget?.(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
+            },
             sun: sun!, hemi: hemi!, cell: CELL_X,
             // 프러스텀과 **같은 유도**에서 나온 값이라야 짝이 맞는다. 하늘이 태양을
             // 이보다 가깝게 놓으면 타워 꼭대기가 그림자 카메라 뒤로 밀린다.
@@ -875,7 +889,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         });
         // 어댑터를 변수로 든다 — 빌더와 재적용이 **같은 것**을 써야 한다. 각자 만들면
         // 워프·성장·색이 두 벌이 되고, 재베이킹이 빌더가 모르는 자세를 쓴다.
-        const slotPool = createSlotPool(
+        slotPool = createSlotPool(
           pools!, parcelFade.sink(), parcelGrow.sink(), shadowDecal.warp(),
         );
         builder = new PooledParcelBuilder({

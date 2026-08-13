@@ -193,3 +193,69 @@ describe('수축 소멸 — 사라질 때도 팝이 없다', () => {
     expect(h.index).toBe(-1);
   });
 });
+
+// ── 성장 중 편집 드래그 (W5 E2.5 · 팀장 결정2 조건① 실측) ───────────────────
+//
+// 팀장 조건 원문(2026-08-13, `docs/BOARD.md`): *"성장 중 파츠 드래그 1케이스 실측 —
+// `parcel-grow.ts:151` 이 자기 `retarget`(:194, curScale 유지)을 어댑터로 공급하므로
+// **편집의 매 프레임 호출이 그 구현을 경유하는지 명시**."*
+//
+// ⚠ **처음엔 이것을 코드 리딩으로만 확인하고 브리프에 적었다** — 검수관 반려 B1
+// (2026-08-13): *"이 저장소가 반복해서 이름 붙인 함정(참인 문장에서 성립하지 않는
+// 결론을 뽑는 것)을 코드 리딩만으로 재현하지 않는다. 팀장이 «실측»을 명시했는데
+// 구조 논증으로 대체된 것 자체가 조건 미해소다."* 맞는 지적이라 축으로 만든다.
+//
+// 왜 이 창이 실제로 열려 있나: 파셀은 카메라가 다가가면 **자라면서** 나타나고, 감독은
+// 그 몇 백 ms 안에 건물을 집어 밀 수 있다. 편집이 `place` 를 타면 그 순간 부품이
+// `START_SCALE`(0.02)로 되감기고, 드래그하는 내내 그 되감기가 반복된다 —
+// 폐지한 실시간 그림자의 명멸과 같은 증상이다(검수관 반려 2026-08-11 이 그것을
+// 그림자 재베이킹에서 실측했고, 편집은 **같은 문을 세 번째로 쓰는 소비자**다).
+describe('성장 중에 편집이 자세를 밀어도 되감기지 않는다', () => {
+  it('★ 자라던 배수를 유지한 채 **새 자세로** 계속 자란다', () => {
+    const { grow, pool, h, calls } = setup(0.4);
+    grow.update({ dt: 0.2, hidden: false } as never); // 절반쯤 자랐다
+    const mid = last(calls, h).sy;
+    expect(mid, '중간 크기여야 이 축이 의미가 있다').toBeGreaterThan(T.sy * 0.2);
+    expect(mid).toBeLessThan(T.sy);
+
+    // 편집이 그 프레임에 건물을 +10m 민다 — `SlotPool.retarget` 이 그 문이다.
+    pool.retarget!(h, T.x + 10, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+
+    const after = last(calls, h);
+    expect(after.x, '★ 새 자리로 안 갔다 — 편집이 화면에 안 보인다').toBe(T.x + 10);
+    expect(after.sy, '★ 성장이 START_SCALE 로 되감겼다 — 드래그 내내 부품이 쪼그라든다')
+      .toBeCloseTo(mid, 6);
+    expect(grow.pending, '성장이 취소되면 안 된다 — 계속 자라야 한다').toBe(1);
+  });
+
+  it('★ 그대로 두면 **새 자세의** 완성 크기로 끝난다 — 목표가 갱신됐다', () => {
+    const { grow, pool, h, calls } = setup(0.4);
+    grow.update({ dt: 0.2, hidden: false } as never);
+    pool.retarget!(h, T.x + 10, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+    grow.update({ dt: 10, hidden: false } as never);
+    expect(last(calls, h), '★ 성장이 끝나며 옛 자리로 되돌아갔다')
+      .toEqual({ ...T, x: T.x + 10 });
+  });
+
+  it('★ 다 자란 뒤에 밀면 완성 크기 그대로 옮겨간다 — 다시 자라지 않는다', () => {
+    const { grow, pool, h, calls } = setup(0.4);
+    grow.update({ dt: 10, hidden: false } as never); // 완성
+    expect(grow.pending).toBe(0);
+    pool.retarget!(h, T.x + 10, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+    expect(last(calls, h), '★ 다 자란 것을 밀었더니 크기가 흔들렸다')
+      .toEqual({ ...T, x: T.x + 10 });
+    expect(grow.pending, '★ 다 자란 것이 다시 자라기 시작했다').toBe(0);
+  });
+
+  it('★ 수축 시작 자세도 **옮긴 자리**로 갱신된다 — 반납 때 옛 자리로 안 튄다', () => {
+    // 팀장이 (다)안(`pools.setTransform` 직접 호출)을 기각한 근거 중 하나가 이것이다:
+    // *"`lastPose` 를 안 갱신해 다 자란 슬롯도 반납(수축) 때 옛 자리로 튄다."*
+    // 그 성질이 `retarget` 경로에서는 지켜지는지 본다.
+    const { grow, pool, h, calls } = setup(0.4);
+    grow.update({ dt: 10, hidden: false } as never);
+    pool.retarget!(h, T.x + 10, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+    pool.release(h); // 스트리밍이 그 파셀을 걷는다 → 수축이 시작된다
+    grow.update({ dt: 0.05, hidden: false } as never);
+    expect(last(calls, h).x, '★ 반납이 시작되자 건물이 옛 자리로 튀었다').toBe(T.x + 10);
+  });
+});
