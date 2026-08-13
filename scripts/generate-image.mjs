@@ -29,7 +29,13 @@
 //     하위 + 이미지 확장자만 허용. 공격 방어가 아니라 **감독의 오타 방어**다.
 //  ④ 모델 선택이 응답 **배열 순서**에 의존했고 `supportedGenerationMethods` 를 안 봤다.
 //     주석은 *"실제로 쓸 수 있는"* 이라고 적고 있었다 — 참인 전제에서 성립하지 않는
-//     결론이다(검수관 P4). → 지원 메서드를 보고, 순서 대신 버전으로 고른다.
+//     결론이다(검수관 P4).
+//     ⚠⚠ **그때 넣은 처방(「지원 메서드를 보고 순서 대신 버전으로 고른다」)은 run #1 에서
+//     무효화됐다.** 실물 실행이 두 가지를 보여줬다: ⓐ 버전 정렬만으로는 부족했다 —
+//     이름 내림차순이라 `ultra` 가 표준을 앞섰고 그 모델이 404 였다 ⓑ **메서드가
+//     `predict` 라고 말해도 호출이 되는 것은 아니다.** 그래서 지금은 **고르지 않고
+//     순서를 매겨 차례로 시도한다**(`pickImageModels` + `generateWithFallback`).
+//     헤더만 읽고 *"메서드를 보면 된다"* 로 읽지 마라 — 그 전제가 실물로 깨졌다.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -155,11 +161,28 @@ export async function call(pathname, init, key, fetchImpl = fetch) {
 }
 
 /**
- * 이 키로 **실제로 쓸 수 있는** 이미지 생성 모델을 찾는다.
- * "쓸 수 있다" 를 코드가 보증하는 방법: `supportedGenerationMethods` 를 본다.
- * 목록에 있다는 것과 `:predict`/`:generateContent` 를 지원한다는 것은 다른 일이다.
+ * 이 키로 쓸 수 있는 이미지 생성 모델 **후보를 순서대로** 돌려준다.
+ *
+ * ⚠⚠ **첫 판본은 하나만 골랐고 run #1 이 그 자리에서 죽었다**(2026-08-13 실측):
+ *
+ *     모델: imagen-4.0-ultra-generate-001 (predict)
+ *     실패: HTTP 404 · NOT_FOUND
+ *
+ * 두 가지가 겹쳤다. ① 이름 **내림차순** 정렬이라 `ultra`(u) 가 `generate`(g) 를 앞섰다 —
+ * 재현성을 위해 넣은 정렬이 **하필 접근 안 되는 변종을 최우선으로 만들었다.**
+ * ② `supportedGenerationMethods` 에 `predict` 가 있어도 **그 키로 실제 호출이 되는지는
+ * 다른 일이다.** 목록이 말하는 것과 서버가 받아 주는 것이 다르고, 그 차이는 **불러 봐야만**
+ * 안다. 첫 판본 주석은 *"「쓸 수 있다」를 코드가 보증한다"* 고 적었는데 **보증하지 못했다.**
+ *
+ * 그래서 판정을 **하나 고르기**에서 **순서 매기기**로 바꾼다. 호출부가 차례로 시도하고,
+ * 실패하면 다음으로 간다. 목록만 보고 확정하지 않는다.
+ *
+ * 정렬 규칙(재현성은 유지한다 — 같은 응답이면 같은 순서):
+ *   1. 변종보다 **표준**을 앞에 둔다(`ultra`·`fast`·`preview`·`exp` 는 뒤로).
+ *      run #1 이 정확히 이 규칙의 부재로 죽었다.
+ *   2. 그다음 버전 **내림차순**(`numeric` 이라 `imagen-10` 이 `imagen-4` 뒤로 안 간다).
  */
-export function pickImageModel(list) {
+export function pickImageModels(list) {
   const models = (list || []).map((m) => ({
     name: String(m?.name || '').replace(/^models\//, ''),
     methods: Array.isArray(m?.supportedGenerationMethods) ? m.supportedGenerationMethods : [],
@@ -169,23 +192,88 @@ export function pickImageModel(list) {
   const hasMethods = models.some((m) => m.methods.length > 0);
   const supports = (m, method) => (hasMethods ? m.methods.includes(method) : true);
 
+  // 특수 변종은 별도 권한·엔드포인트를 요구하는 일이 있다. 표준을 먼저 시도한다.
+  // ⚠ **하이픈 경계를 쓴다**(검수관 P-1). `exp`·`fast` 는 부분 문자열이라 경계가 없으면
+  //   표준 모델 이름에 우연히 들어갔을 때 오탐한다. 그리고 `experimental` 은 첫 판본에
+  //   있었는데 **도달 불가**였다 — `exp` 가 먼저 매치한다(뮤테이션: 지워도 0 failed).
+  //   경계를 넣으면서 `exp` 와 `experimental` 이 서로 다른 토큰이 되므로 **둘 다 적는다.**
+  const VARIANT = /-(ultra|fast|preview|exp|experimental)(-|$)/i;
+  const order = (a, b) =>
+    (VARIANT.test(a.name) ? 1 : 0) - (VARIANT.test(b.name) ? 1 : 0)
+    || b.name.localeCompare(a.name, 'en', { numeric: true });
+
+  // ⚠⚠ **tier2 에서 imagen 을 배제한다**(검수관 B-1). `imagen` 안에 `image` 가 들어 있어
+  //   `/^imagen-\d/` 와 `/image/` 가 **같은 모델에 동시 매치**한다. 이전 판본은 첫 tier 에서
+  //   `return` 해 구조적으로 불가능했는데, 누적으로 바꾸면서 **내가 회귀를 만들었다.**
+  //   `hasMethods=false` 면 `supports()` 가 항상 참이라 **모든 imagen 이 반드시 2배**가 되고,
+  //   `imagen-x:generateContent` 는 거의 확실히 실패할 호출이라 **`failures` 목록에 구조적
+  //   노이즈**를 넣는다 — 이번 개정의 존재 이유가 *"실패 사유 목록이 다음 진단의 근거"*
+  //   인데 그 근거를 스스로 갉는다. 요금도 그만큼 더 나간다.
   const tiers = [
     { kind: 'predict', test: (m) => /^imagen-\d/.test(m.name) && supports(m, 'predict') },
     {
       kind: 'generateContent',
-      test: (m) => /image/.test(m.name) && supports(m, 'generateContent'),
+      // ⚠ 배제 조건이 **이름이 아니라 「이미 후보인가」** 다(검수관 N-3). 첫 수정은
+      //   `!/^imagen-\d/` 로 이름을 배제했는데 그러면 **커버리지가 줄었다** — `imagen` 이
+      //   `generateContent` 만 신고하는 경우 후보에서 **완전히 탈락**한다(실측 대조:
+      //   이전 판본은 잡았다). `imagen` 이 predict 전용이라는 것은 **우리가 실물 응답을
+      //   본 적 없는 가정**이다. `!supports(m,'predict')` 로 바꾸면 tier1 에 이미 들어간
+      //   것만 빠지므로 중복 제거와 커버리지를 **둘 다** 얻는다.
+      test: (m) => /image/.test(m.name) && !supports(m, 'predict') && supports(m, 'generateContent'),
     },
   ];
+  const candidates = [];
   for (const tier of tiers) {
-    const hits = models.filter(tier.test);
-    if (!hits.length) continue;
-    // ⚠ `find` 로 **응답 배열 순서**의 첫 매치를 쓰면 같은 키로 두 번 돌렸을 때 다른
-    // 모델이 뽑힐 수 있다(검수관 P4). 이름으로 내림차순 정렬해 재현성을 만든다 —
-    // `numeric` 이라 `imagen-10` 이 `imagen-4` 뒤로 가지 않는다.
-    hits.sort((a, b) => b.name.localeCompare(a.name, 'en', { numeric: true }));
-    return { model: hits[0].name, kind: tier.kind, hasMethods, all: models.map((m) => m.name) };
+    for (const m of models.filter(tier.test).sort(order)) {
+      candidates.push({ model: m.name, kind: tier.kind, methods: m.methods });
+    }
   }
-  return { model: null, kind: null, hasMethods, all: models.map((m) => m.name) };
+  return { candidates, hasMethods, all: models.map((m) => m.name) };
+}
+
+/**
+ * 후보를 **순서대로 시도**하고 처음 성공한 것을 돌려준다.
+ *
+ * ⚠ **run #1 이 이것이 없어 죽었다.** 첫 후보가 `HTTP 404 · NOT_FOUND` 를 내자 그 자리에서
+ * 끝났다 — 목록에 있고 `supportedGenerationMethods` 도 맞는데 호출이 안 되는 조합이
+ * 실재한다. 그 차이는 **불러 봐야만** 안다.
+ *
+ * `main()` 안에 두지 않고 빼낸 이유는 **검사할 수 있게 하려는 것**이다. 오늘 이 회차에서
+ * 같은 형태로 세 번 걸렸다(빈 화이트리스트·유령 항목·「잡힌다」 단언).
+ *
+ * ⚠⚠ **그런데 잰 것은 이 함수 내부뿐이다 — `main()` 이 후보를 온전히 넘기는가는 검사 0이다**
+ * (검수관 B-2 실측). `main()` 의 `generateWithFallback(candidates, …)` 를
+ * `candidates.slice(0, 1)` 로 바꿔도 **101개가 전부 초록**이다. **run #1 을 죽인 바로 그
+ * 형태(첫 후보만 시도)를 되살려도 게이트가 통과한다.**
+ * 그러니 *"폴백을 빼냈으니 이제 검사된다"* 는 절반만 참이다 — 네 번째가 될 자리였는데
+ * 실제로 절반은 네 번째가 됐다. 남은 축은 백로그 `G-FB2` 이고, 급조하지 않는 이유는
+ * 6차 회차와 같다(검사를 급조하면 검출력 미확인 케이스가 또 들어온다).
+ *
+ * @param {Array<{model:string,kind:string}>} candidates
+ * @param {(c:{model:string,kind:string}) => Promise<any>} run 실제 호출. 테스트에서 주입한다.
+ * @param {(msg:string) => void} [log]
+ */
+export async function generateWithFallback(candidates, run, log = () => {}) {
+  const failures = [];
+  for (const c of candidates) {
+    try {
+      return { picked: c, out: await run(c), failures };
+    } catch (e) {
+      // `e.message` 는 `safeError` 가 이미 좁혔다(키 없음). 그대로 남긴다 —
+      // 실패 사유를 안 남기면 "왜 이 모델이 됐나" 를 다음 사람이 못 본다.
+      failures.push(`${c.model}: ${e.message}`);
+      log(`· ${c.model}(${c.kind}) 실패 — ${e.message}. 다음 후보로 간다.`);
+      // ⚠ **429(rate limit)만 즉시 멈춘다**(검수관 P-3). 다른 오류는 모델별 권한 문제라
+      //   다음 후보를 시도하는 것이 맞지만, rate limit 은 **후보를 바꿔도 안 풀리고**
+      //   N번 두드리면 오히려 악화된다. 나머지는 안 가른다 — 키 없음·경로 검증·`/models`
+      //   조회는 전부 이 루프 **밖 앞쪽**이라 여기로 안 온다.
+      if (/HTTP 429/.test(String(e.message))) {
+        log('· 429 는 후보를 바꿔도 안 풀린다 — 여기서 멈춘다.');
+        break;
+      }
+    }
+  }
+  return { picked: null, out: null, failures };
 }
 
 /** Imagen 계열(`:predict`)로 생성. 반환은 `{ b64, mimeType }`. */
@@ -237,26 +325,53 @@ async function main() {
   const rel = path.relative(ROOT, abs);
   const ext = path.extname(abs).toLowerCase();
 
-  const { model, kind, hasMethods, all } = pickImageModel((await call('/models', { method: 'GET' }, key)).models);
-  if (!model) {
+  const { candidates, hasMethods, all } = pickImageModels((await call('/models', { method: 'GET' }, key)).models);
+  if (!candidates.length) {
     // **모델 이름만**, 그것도 앞 5개만 찍는다. 전체 목록은 이 키가 어느 티어에서
     // 무엇에 접근 가능한지를 공개 로그에 광고한다(보안담당 ⑥).
     console.error('이 키로 쓸 수 있는 이미지 생성 모델을 못 찾았다.');
     console.error(`조회된 모델 ${all.length}개 중 앞 5개: ${all.slice(0, 5).join(', ')}`);
     process.exit(1);
   }
-  console.log(`모델: ${model} (${kind})`);
+  console.log(`후보 ${candidates.length}개: ${candidates.slice(0, 5).map((c) => `${c.model}(${c.kind})`).join(' → ')}`);
   if (!hasMethods) {
     console.log('⚠ 응답에 supportedGenerationMethods 가 없어 **이름만으로** 골랐다 — 실제 지원 여부는 확인 못 했다.');
   }
 
-  const { b64, mimeType } = kind === 'predict'
-    ? await genImagen(key, model, prompt, aspect)
-    : await genGemini(key, model, prompt);
+  // ⚠⚠ **후보를 순서대로 시도한다.** run #1 은 첫 후보(`imagen-4.0-ultra-generate-001`)가
+  //   `HTTP 404 · NOT_FOUND` 를 내자 **그 자리에서 죽었다.** 목록에 있고 메서드도 맞는데
+  //   호출이 안 되는 조합이 실재한다 — 그것은 **불러 봐야만** 안다.
+  //   실패 사유를 매 후보마다 남긴다. 안 남기면 "왜 이 모델이 됐나" 를 다음 사람이 못 본다.
+  const { picked, out, failures } = await generateWithFallback(
+    candidates,
+    (c) => (c.kind === 'predict'
+      ? genImagen(key, c.model, prompt, aspect)
+      : genGemini(key, c.model, prompt)),
+    (m) => console.log(m),
+  );
+  if (!picked) {
+    // ⚠ 성공 경로(`:322`)는 5개로 자르는데 여기만 전체를 찍고 있었다(검수관 P-2).
+    //   그 제한의 근거는 보안담당 ⑥ — *"이 키가 어느 티어에서 무엇에 접근 가능한지를
+    //   공개 로그에 광고한다"*. 실패 경로에도 같은 제한을 건다. 진단에 필요한 것은
+    //   **처음 몇 개의 사유**이지 전수가 아니다.
+    // ⚠ 개수는 `candidates.length` 가 아니라 **`failures.length`**(실제 시도한 수)다
+    //   (검수관 N-2). `429` 로 조기 중단하면 후보가 10개여도 시도한 것은 1개인데,
+    //   *"후보 10개가 전부 실패했다"* 라고 적으면 **시도하지 않은 것을 실패로 적는 것**이다.
+    //   이번 회차의 주제(*"실패 사유 목록이 다음 진단의 근거"*)에 정면으로 걸린다.
+    const stopped = failures.length < candidates.length;
+    console.error(
+      `후보 ${candidates.length}개 중 ${failures.length}개를 시도해 전부 실패했다`
+      + `${stopped ? ' (중단됨 — 남은 후보는 시도하지 않았다)' : ''}. 앞 5개 사유:`,
+    );
+    for (const f of failures.slice(0, 5)) console.error(`  ${f}`);
+    process.exit(1);
+  }
+  const { b64, mimeType } = out;
+  console.log(`모델: ${picked.model} (${picked.kind})`);
 
   // ⚠ Gemini 계열은 `aspect` 를 안 받는다. 감독이 `9:16` 을 고르고 이 경로로 갔으면
   // **비율이 조용히 무시된 것**이고, 그것을 모르면 다시 dispatch 해서 요금이 또 나간다.
-  if (kind !== 'predict') {
+  if (picked.kind !== 'predict') {
     console.log(`⚠ 비율 '${aspect}' 는 이 모델 경로(generateContent)에서 소비되지 않았다 — 요청대로 안 나올 수 있다.`);
   }
 
