@@ -67,6 +67,37 @@
 // **적용조차 못 한 채** 0 failed 를 냈다. 그것은 «검사가 약하다» 가 아니라 «뮤테이션이
 // 안 심겼다» 이고, 둘은 화면에서 똑같이 보인다. 수작업으로 다시 심어 1 failed 를 확인했다.
 // **0 failed 를 만나면 검사를 의심하기 전에 뮤테이션이 실제로 들어갔는지부터 본다.**
+//
+// ── 실시간 반영(W5 E2.5) 검출력 실측 (2026-08-13, 별도 클론) ────────────────
+// 이 파일 + `world2-modal-edit` + `world2-instancing-raycast` + `world2-edit-place`
+// 를 함께 돌린 대조군 **139 passed**.
+//
+//   P-A `instancing.ts` 의 죽은 핸들 가드 제거              → **1 failed**
+//   P-B 조작 중 슬롯을 안 민다(`retargetSlot` 호출 제거)     → **6 failed**
+//   P-C 슬롯에 **파셀 로컬** 좌표를 보낸다                   → **0 → 1 failed** ⚠ 아래
+//   P-D 죽었다고 알리지 않는다(조용한 no-op)                → **2 failed**
+//   P-E 죽은 슬롯에도 민다(`index < 0` 검사 제거)           → **3 failed**
+//   P-F 고른 슬롯을 안 들고 간다(`slot: owner` → `null`)    → **7 failed**
+//   P-G 소비자가 문을 안 잇는다(`overlay.ts`)               → **1 failed**
+//   P-H 조립부가 `retarget` 대신 `setTransform` 을 쓴다      → **1 failed**
+//   P-I 새로 골라도 경고가 안 풀린다                        → **1 failed**
+//   P-J 목록 경로가 가짜 슬롯을 든다                        → **1 failed**
+//   P-K 반납 swap 이 핸들 index 를 안 고친다                → **1 failed**
+//
+// ⚠⚠ **P-C 가 0 failed 였고, 그것이 이 회차에서 가장 값진 결과다.**
+// 원인은 픽스처였다 — 그때 축은 파셀 **(0,0)** 에서 쟀고, 원점 파셀에서는 «파셀 로컬»과
+// «월드»가 **같은 수**라 두 좌표계를 구별하는 검사가 **원리적으로 성립하지 않는다.**
+// 즉 「검사가 약하다」가 아니라 **축이 비어 있었다.**
+//
+// 더 뼈아픈 것은 첫 판본이 **그 사실을 알아채고도 틀린 처방을 적었다**는 점이다:
+// *"파셀 원점이 (0,0) 이라 이 축만으로는 두 좌표계가 구별되지 않으므로 옮긴 뒤의 값으로
+// 본다"* — 옮겨도 오프셋이 0 이면 여전히 같은 수다. **관측은 맞았고 결론이 안 따라왔다.**
+// 처방: `OFFSET_FIXTURE`(파셀 (2,-1))를 만들어 다시 재니 **1 failed**(재현 확인).
+//
+// ⚠ 실측 위생 하나 더: 마지막 뮤테이션(P-K)이 **되돌려지지 않은 채** 클론에 남아 있었다.
+// 앞선 측정은 오염되지 않았지만(P-K 가 마지막이었다), 순서가 달랐으면 그 뒤 전부가
+// 오염된다. 그리고 P-K 는 지시(`moved.index` 한 줄만 삭제)와 달리 **줄 전체**가
+// 지워져 있었다 — 결과는 유효하나 심은 것이 명세와 다르면 그 숫자의 의미도 달라진다.
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { startEditMode } from '../frontend/js/world2/edit/mode.js';
@@ -646,10 +677,18 @@ function movePointer(x: number, y: number): void {
   }));
 }
 
-/** 마을 건물 하나를 골라 둔 하네스 */
-function pickedVillage(vf: VillageFixture = VILLAGE_FIXTURE): Harness {
+/**
+ * 마을 건물 하나를 골라 둔 하네스.
+ *
+ * `at` 은 그 인스턴스의 **월드** 자리다 — `parcelOf` 가 이것에서 파셀을 역산하므로
+ * 픽스처의 파셀 키와 짝이 맞아야 한다(`OFFSET_FIXTURE` 주석 참조).
+ */
+function pickedVillage(
+  vf: VillageFixture = VILLAGE_FIXTURE,
+  at: { x: number; y: number; z: number } = { x: 5, y: 0, z: 3 },
+): Harness {
   const h = makeHarness(vf);
-  h.villageMesh.at = { x: 5, y: 0, z: 3 };
+  h.villageMesh.at = at;
   h.villageHits.push({ object: h.villageMesh, instanceId: 0 });
   pressTab();
   clickAt(h);
@@ -905,11 +944,35 @@ const SCALED_FIXTURE: VillageFixture = {
 };
 
 /** 마을 건물을 골라 두고 **마우스 시작점까지 정한** 하네스 */
-function modalReady(vf: VillageFixture = VILLAGE_FIXTURE): Harness {
-  const h = pickedVillage(vf);
+function modalReady(
+  vf: VillageFixture = VILLAGE_FIXTURE,
+  at?: { x: number; y: number; z: number },
+): Harness {
+  const h = pickedVillage(vf, at);
   movePointer(400, 300);
   return h;
 }
+
+/**
+ * **원점이 아닌 파셀**에 건물 하나 — 파셀 (2,-1) 이므로 월드 오프셋이 (80, -40) 이다.
+ *
+ * ⚠ **이 픽스처는 뮤테이션 실측이 만들게 했다.** 원점 파셀(0,0)에서는 «파셀 로컬» 과
+ * «월드» 가 **같은 수**라, 슬롯에 어느 쪽을 보내든 값이 같다 — 두 좌표계를 구별하는
+ * 축이 **원리적으로 성립하지 않는다.** P-C 뮤테이션(`x: w.x` → `x: p.x`)이 0 failed 로
+ * 그것을 드러냈다(2026-08-13).
+ *
+ * ⚠⚠ 첫 판본은 그 사실을 **알아채고도 틀린 처방을 적었다**: *"파셀 원점이 (0,0) 이라
+ * 이 축만으로는 두 좌표계가 구별되지 않으므로 옮긴 뒤의 값으로 본다"* — 옮겨도 오프셋이
+ * 0 이면 여전히 같은 수다. **관측은 맞았고 결론이 안 따라왔다**(이 저장소가 이름 붙여
+ * 둔 형태: *"참인 문장에서 성립하지 않는 결론을 뽑는 것"*).
+ */
+const OFFSET_FIXTURE: VillageFixture = {
+  parts: {
+    '2,-1': [{ kind: 'building', x: 5, y: 0, z: 3, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 }] as PlacedPart[],
+  },
+};
+/** 위 픽스처의 건물이 실제로 서 있는 월드 자리 — 파셀 (2,-1) 로 역산된다 */
+const OFFSET_AT = { x: 2 * 40 + 5, y: 0, z: -1 * 40 + 3 };
 
 describe('블렌더식 모달 — 주행이 산다 (행위)', () => {
   it('★ 아무것도 안 골랐으면 `S` 는 주행 키 그대로다', () => {
@@ -1131,16 +1194,31 @@ describe('조작 중 슬롯이 손을 따라온다 (행위)', () => {
       .toBe(0);
   });
 
-  it('★ 밀린 자세는 **월드 좌표**다 — 파셀 로컬을 그대로 보내면 원점 근처로 순간이동한다', () => {
-    // 픽스처의 건물은 파셀 (0,0) 의 로컬 (5, 3) 이다. 파셀 원점이 (0,0) 이라 이 축만으로는
-    // 두 좌표계가 구별되지 않으므로, **옮긴 뒤의 값**으로 본다(+10m → 15).
-    const h = modalReady();
+  it('★ 밀린 자세는 **월드 좌표**다 — 로컬을 그대로 보내면 건물이 원점 쪽으로 순간이동한다', () => {
+    // **원점이 아닌 파셀에서 재야 한다** — 근거는 `OFFSET_FIXTURE` 주석 한 곳이다.
+    // 건물은 파셀 (2,-1) 의 로컬 (5, 3) = 월드 (85, -37) 에 있다. X 로 +10m 밀면
+    // 월드 95 / 로컬 15 라 두 좌표계가 **다른 수**가 된다.
+    const h = modalReady(OFFSET_FIXTURE, OFFSET_AT);
+    pressKey('KeyG', 'g');
+    pressKey('KeyX', 'x');
+    movePointer(600, 300); // +200px = +10m
+    const p = lastPush(h)!;
+    expect(p.x, '★ 슬롯에 파셀 로컬 x 가 나갔다 — 건물이 파셀 원점 쪽으로 튄다')
+      .toBeCloseTo(95, 6);
+    expect(p.z, '★ 슬롯에 파셀 로컬 z 가 나갔다').toBeCloseTo(-37, 6);
+  });
+
+  it('★ 확정도 같은 자리에 저장된다 — 화면과 파일이 갈라지면 안 된다', () => {
+    // 슬롯에는 월드를, 저장소에는 **파셀 로컬**을 쓴다. 두 변환이 어긋나면 «조작할 땐
+    // 맞았는데 새로고침하면 옮겨져 있다» 가 난다 — 확정 뒤에야 드러나는 형태다.
+    const h = modalReady(OFFSET_FIXTURE, OFFSET_AT);
     pressKey('KeyG', 'g');
     pressKey('KeyX', 'x');
     movePointer(600, 300);
-    const p = lastPush(h)!;
-    expect(p.x, '★ 슬롯에 밀린 x 가 조작 결과와 다르다').toBeCloseTo(15, 6);
-    expect(p.z, '★ X 로 고정했는데 z 가 함께 나갔다').toBeCloseTo(3, 6);
+    clickAt(h);
+    const saved = frozenPart(h, 'building', '2,-1');
+    expect(saved?.x, '★ 저장된 x 가 파셀 로컬이 아니다').toBeCloseTo(15, 6);
+    expect(saved?.z, '★ 저장된 z 가 바뀌었다').toBeCloseTo(3, 6);
   });
 
   it('★ 고른 그 슬롯에 민다 — 키·번호가 어긋나면 남의 건물이 움직인다', () => {
