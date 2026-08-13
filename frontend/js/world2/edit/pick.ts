@@ -1,0 +1,230 @@
+// world2/edit/pick.ts — **화면 좌표 → 세계 좌표**, 그리고 «무엇을 집었나».
+//
+// 산술 자체는 `decide/edit-pick.ts` 가 순수 함수로 갖고 있다(three 없이 시험 가능).
+// 여기 있는 것은 그 함수들을 **실제 카메라·씬에 물리는 배선**이다 — 광선을 쏘고, 맞은
+// 것에서 오버레이 항목을 되찾고, 선택 링을 그 자리에 놓는다.
+//
+// ⚠ 이 헤더는 오래 *"마을 파츠는 애초에 대상이 아니다"* 로 끝났고 **W4 ②-c 에서 거짓이
+// 됐다.** 지금은 `pickVillage()` 가 인스턴스 메시를 따로 쏴서 건물·나무를 집는다.
+// 두 경로가 갈라져 있는 것이 요점이다:
+//
+//   `pick()`        `host.root` 아래(오버레이 GLB) — 맞은 것이 곧 항목이다
+//   `pickVillage()` 슬롯 풀의 인스턴스 — 맞은 것을 **위치로 되짚어** 파셀·인덱스로 환원한다
+//
+// 환원이 필요한 이유와 그것이 성립하는 조건은 `decide/village-pick.ts` 헤더 한 곳이다.
+
+import { ndcOf, rayPlaneY, snapTo } from '../decide/edit-pick.js';
+import { parcelOf } from '../decide/edit-pick.js';
+import { matchPart } from '../decide/village-pick.js';
+import { isShadowKey } from '../systems/shadow-decal.js';
+import type { Ray3 } from '../decide/gizmo-math.js';
+import type { OverlayEntry, OverlayHost, RaycastMesh, VillagePick } from './types.js';
+import { SNAP, type EditState, type ThreeNS } from './state.js';
+
+export interface Picker {
+  /** 이 이벤트 좌표로 광선을 갱신한다. 캔버스 밖이면 `false` */
+  castFrom(ev: { clientX: number; clientY: number }): boolean;
+  /** 광선이 **지면**과 만나는 자리(표면 높이 반영 + 스냅) */
+  groundAt(): { x: number; z: number } | null;
+  /** 광선이 주어진 높이의 수평면과 만나는 자리(스냅) */
+  planeAt(y: number): { x: number; z: number } | null;
+  /** 광선에 걸린 오버레이 항목. 없으면 `null` */
+  pick(): OverlayEntry | null;
+  /**
+   * 광선에 걸린 것 **전부**(가까운 순). 기즈모 핸들이 여기 섞여 온다 — 기즈모 그룹도
+   * `host.root` 의 자식이라 같은 레이캐스트에 잡히고, 그래서 광선을 두 번 쏘지 않는다.
+   */
+  intersect(): readonly { object: unknown }[];
+  /**
+   * 광선에 걸린 **마을 파츠**. 없으면 `null`.
+   *
+   * `pick()` 과 별개 경로인 이유·환원이 성립하는 조건은 이 파일 헤더와
+   * `decide/village-pick.ts` 헤더에 있다.
+   */
+  pickVillage(): VillagePick | null;
+  /** 지금 광선. 기즈모 산술이 쓴다(three 타입을 순수 계층에 넘기지 않으려고 평평하게 준다) */
+  ray(): Ray3;
+  /**
+   * 선택 링을 지금 고른 것 위로 놓는다. **무엇이 골라져 있는지는 상태가 안다** —
+   * 부르는 쪽이 «오버레이 먼저, 없으면 마을» 순서를 다시 적으면 그 순서가 두 곳이 된다.
+   */
+  syncMarker(): void;
+  dispose(): void;
+}
+
+/**
+ * 마을 파츠 선택 링의 반경(m).
+ *
+ * 「어느 것을 골랐나」만 말하면 되므로 실제 치수를 재지 않는다. 마을 파츠는 건물 밑동이
+ * 3~8m, 나무가 1~2m 라 그 사이에서 **양쪽 다 알아볼 수 있는** 크기를 골랐다 — 작은
+ * 나무에서는 링이 조금 크고 큰 건물에서는 조금 작다. 정확히 감싸려면 파츠 자산의
+ * 밑동 반경(`parts/shadow.ts` 의 `measure`)이 필요하고, 그것을 편집으로 끌어오는 값이
+ * 이 정밀도보다 크지 않다.
+ */
+const VILLAGE_MARK_R = 2.2;
+
+export function createPicker(host: OverlayHost, st: EditState): Picker {
+  const THREE = host.THREE as ThreeNS;
+  const canvas = host.canvas;
+  const raycaster = new THREE.Raycaster();
+
+  // ── 선택 표시 ───────────────────────────────────────────────────────────
+  // 바닥 링 하나. `MeshBasicMaterial` 은 이 저장소가 두 백엔드에서 이미 쓰는 수단이다
+  // (`systems/horizon.ts` 헤더). gizmo 를 안 쓰는 것과 같은 이유로 헬퍼도 안 쓴다.
+  const markerMat = new THREE.MeshBasicMaterial({
+    color: 0x8b72ff, transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide,
+  });
+  // 지오메트리도 변수로 든다 — `dispose` 에서 재질만 회수하면 링 지오가 남는다(검수관 P3).
+  const markerGeo = new THREE.RingGeometry(0.86, 1, 40);
+  const marker = new THREE.Mesh(markerGeo, markerMat);
+  marker.rotation.x = -Math.PI / 2;
+  marker.visible = false;
+  marker.renderOrder = 999;
+  (host.root as unknown as { add(o: never): void }).add(marker as never);
+
+  function castFrom(ev: { clientX: number; clientY: number }): boolean {
+    const rect = (canvas as unknown as { getBoundingClientRect(): DOMRect }).getBoundingClientRect();
+    const ndc = ndcOf(ev.clientX, ev.clientY, rect);
+    if (!ndc) return false;
+    raycaster.setFromCamera(ndc, host.camera);
+    return true;
+  }
+
+  function groundAt(): { x: number; z: number } | null {
+    const o = raycaster.ray.origin, d = raycaster.ray.direction;
+    // 먼저 y=0 으로 잡고, 그 자리의 표면 높이로 한 번 더 잡는다. 잔디(0.07)·도로(0.14)가
+    // 서로 다른 높이라 한 번만 재면 물건이 잠기거나 뜬다(감독 발견 2026-08-12 와 같은 축).
+    const first = rayPlaneY({ ox: o.x, oy: o.y, oz: o.z, dx: d.x, dy: d.y, dz: d.z }, 0);
+    if (!first) return null;
+    const sy = host.surfaceAt(first.x, first.z);
+    const second = rayPlaneY({ ox: o.x, oy: o.y, oz: o.z, dx: d.x, dy: d.y, dz: d.z }, sy) ?? first;
+    return st.snapOn
+      ? { x: snapTo(second.x, SNAP), z: snapTo(second.z, SNAP) }
+      : second;
+  }
+
+  function planeAt(y: number): { x: number; z: number } | null {
+    const o = raycaster.ray.origin, d = raycaster.ray.direction;
+    const p = rayPlaneY({ ox: o.x, oy: o.y, oz: o.z, dx: d.x, dy: d.y, dz: d.z }, y);
+    if (!p) return null;
+    return st.snapOn ? { x: snapTo(p.x, SNAP), z: snapTo(p.z, SNAP) } : p;
+  }
+
+  /** 맞은 오브젝트에서 **오버레이 항목**을 되찾는다. 마을 파츠는 애초에 대상이 아니다. */
+  function entryOf(obj: unknown): OverlayEntry | null {
+    let cur = obj as { parent?: unknown } | null;
+    const root = host.root as unknown;
+    while (cur && (cur as { parent?: unknown }).parent !== root) {
+      cur = (cur as { parent?: unknown }).parent as { parent?: unknown } | null;
+    }
+    if (!cur) return null;
+    return host.entries().find((e) => (e.holder as unknown) === cur) ?? null;
+  }
+
+  function intersect(): readonly { object: unknown }[] {
+    return raycaster.intersectObjects(
+      (host.root as unknown as { children: unknown[] }).children, true,
+    );
+  }
+
+  function pick(): OverlayEntry | null {
+    for (const h of intersect()) {
+      const e = entryOf(h.object);
+      if (e) return e;
+    }
+    return null;
+  }
+
+  /** 맞힌 인스턴스의 이동 성분을 담는다. 클릭당 한 번이라 재사용해도 안전하다 */
+  const mat = new THREE.Matrix4();
+
+  function pickVillage(): VillagePick | null {
+    const inst = host.instances;
+    const vil = host.village;
+    // 소비자가 안 물렸으면 마을은 대상이 아니다 — 오버레이만 집던 예전 동작 그대로다.
+    if (!inst || !vil) return null;
+
+    // ⚠⚠ **레이캐스트 전에 반드시.** 안 부르면 «멀리 있는 것이 가끔 안 집힌다» 가
+    // 기본 동작이고 경고도 예외도 없다(근거·실증은 `instancing.ts` 의 `refreshBounds`).
+    inst.refreshBounds();
+    const targets = inst.raycastTargets();
+    if (targets.length === 0) return null;
+
+    // `false` — 인스턴스 메시 자신이 대상이고 자식은 없다.
+    const hits = raycaster.intersectObjects(targets as unknown[], false);
+    for (const h of hits) {
+      const id = h.instanceId;
+      if (typeof id !== 'number') continue;
+      const owner = inst.ownerAt(h.object, id);
+      // 빈 슬롯(`ZERO` 행렬)은 주인이 없다. 광선에 걸릴 일도 거의 없지만 조기에 끊는다.
+      if (!owner) continue;
+      // 그림자 데칼은 **집을 수 없는 것**이다. 안 거르면 지면 근처 클릭이 전부 여기서
+      // 끝나 «바닥을 눌렀는데 아무것도 안 집힌다» 가 된다. 판정은 `shadow-decal.ts` 소유.
+      if (isShadowKey(owner.key)) continue;
+
+      // 여기서 좁힌다 — `instanceId` 가 왔다는 사실이 «인스턴스 메시다» 를 말해 준다.
+      (h.object as RaycastMesh).getMatrixAt(id, mat);
+      const e = mat.elements;
+      // 열 우선 4×4 의 이동 성분은 12·13·14 다.
+      const wx = e[12], wy = e[13], wz = e[14];
+      if (!Number.isFinite(wx) || !Number.isFinite(wy) || !Number.isFinite(wz)) continue;
+
+      const p = parcelOf(wx, wz, host.cellX, host.cellZ);
+      const m = matchPart(vil.partsAt(p.px, p.pz), owner.key, p.lx, p.lz);
+      // 환원 실패는 **다음 히트를 본다.** 여기서 `null` 로 끝내면 앞의 한 건 때문에
+      // 뒤에 있는 집을 수 있는 것까지 못 집는다.
+      if (!m) continue;
+
+      return {
+        px: p.px, pz: p.pz, index: m.index, kind: owner.key,
+        x: wx, y: wy, z: wz, frozen: vil.isFrozen(p.px, p.pz),
+      };
+    }
+    return null;
+  }
+
+  /** 링을 그 자리에 놓는다. `null` 이면 숨긴다 — 표시의 유일한 자리 */
+  function showMarker(at: { x: number; y: number; z: number; r: number } | null): void {
+    marker.visible = at !== null;
+    if (!at) return;
+    marker.scale.setScalar(at.r);
+    marker.position.set(at.x, at.y + 0.06, at.z);
+  }
+
+  function syncMarker(): void {
+    const e = st.selected;
+    if (e) {
+      const box = new THREE.Box3();
+      box.setFromObject(e.holder as never);
+      const r = box.min.x === Infinity
+        ? 2
+        : Math.max(1, Math.hypot(box.max.x - box.min.x, box.max.z - box.min.z) / 2);
+      showMarker({ x: e.x, y: e.y, z: e.z, r });
+      return;
+    }
+    const v = st.villageSel;
+    // 마을 파츠는 holder 가 없다 — `Box3` 로 잴 대상 자체가 없으므로 반경을 상수로 둔다.
+    // 정확한 치수는 `parts/shadow.ts` 의 `measure` 가 알지만, 그것을 여기로 끌어오면
+    // 편집이 파츠 자산 계층에 붙는다. 「어느 것을 골랐나」에 필요한 정밀도가 아니다.
+    showMarker(v ? { x: v.x, y: v.y, z: v.z, r: VILLAGE_MARK_R } : null);
+  }
+
+  return {
+    castFrom,
+    groundAt,
+    planeAt,
+    pick,
+    pickVillage,
+    intersect,
+    ray(): Ray3 {
+      const o = raycaster.ray.origin, d = raycaster.ray.direction;
+      return { ox: o.x, oy: o.y, oz: o.z, dx: d.x, dy: d.y, dz: d.z };
+    },
+    syncMarker,
+    dispose() {
+      (host.root as unknown as { remove(o: never): void }).remove(marker as never);
+      markerMat.dispose?.();
+      markerGeo.dispose?.();
+    },
+  };
+}

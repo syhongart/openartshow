@@ -17,7 +17,7 @@
 
 import type { FrameCtx, System } from '../kernel.js';
 import {
-  computeWant, diffParcels, takeBudget, streamBudgetMs,
+  computeWant, diffParcels, takeBudget, streamBudgetMs, parcelKey,
   type ParcelKey, type WantEntry,
 } from '../decide/stream.js';
 import { lookAheadCenter, TIERS, type Tier, type TierBands } from '../decide/lod.js';
@@ -207,6 +207,15 @@ export class StreamingSystem implements System {
 
     let built = 0, released = 0, retiered = 0, promoted = 0, demoted = 0;
 
+    // ── 이벤트 방위 태그 (감독 마크 실측 강화, 2026-08-10) ──────────────────
+    // 거리만으로는 마크 ±2.5초 창의 사건이 **화면 안(앞)인지 등 뒤인지** 안 갈렸다 —
+    // "앞으로 갈 때 번개치듯" 리포트에서 승격·강등 5건이 잡혔는데 전부 용의선상에
+    // 남았다. 진행 방향과의 내적 부호로 앞/뒤를 이름에 박는다. 값(거리)은 그대로다.
+    // 정지 상태(dir≈0)면 방향이 없으므로 태그를 생략한다 — 없는 정보를 지어내지 않는다.
+    const hasDir = Math.hypot(dir.x, dir.z) > 1e-3;
+    const sideOf = (dx: number, dz: number): string =>
+      hasDir ? ((dx * dir.x + dz * dir.z) >= 0 ? '(앞)' : '(뒤)') : '';
+
     // ① 언로드 먼저. 슬롯을 비워야 이번 프레임 로드가 그 자리를 쓸 수 있다.
     //    언로드는 예산에서 빼지 않는다 — 반납은 생성과 달리 GPU 자원을 만들지 않는다.
     for (const k of diff.unload) {
@@ -216,6 +225,12 @@ export class StreamingSystem implements System {
       this.handles.delete(k);
       this.tiers.delete(k);
       released++;
+      if (ctx.probe) {
+        const pk = k.indexOf(',');
+        const dx = Number(k.slice(0, pk)) * o.cellX - pos.x;
+        const dz = Number(k.slice(pk + 1)) * o.cellZ - pos.z;
+        ctx.probe(`ev:파셀반납${sideOf(dx, dz)}`, Math.hypot(dx, dz));
+      }
     }
 
     // ② 예산 산정. dt는 초 단위이므로 ms로 환산한다.
@@ -233,6 +248,19 @@ export class StreamingSystem implements System {
       if (from) {
         const step = TIERS.indexOf(r.to) - TIERS.indexOf(from);
         if (step < 0) promoted++; else if (step > 0) demoted++;
+        // ── 이벤트로도 낸다 (감독 지시 2026-08-10 *"로그 더 추가해서 원인을 파악"*) ──
+        // 총계(`promoted`·`demoted`)는 *"몇 번"* 만 말하고 **언제**를 잃는다. 감독이
+        // 보고한 증상은 *"뒤로 움직이는 **순간**"* 이라 시점이 전부다.
+        //
+        // 값은 **파셀 중심까지의 거리(m)** 다 — tier 이름은 이름에 들어 있고, 정작
+        // 궁금한 것은 *"얼마나 가까운 데서 일어났나"* 이기 때문이다. 눈앞(30m)에서
+        // 나는 것과 저 끝(70m)에서 나는 것은 화면에서 전혀 다른 일이다.
+        if (ctx.probe) {
+          const pk = r.key.indexOf(',');
+          const dx = Number(r.key.slice(0, pk)) * o.cellX - pos.x;
+          const dz = Number(r.key.slice(pk + 1)) * o.cellZ - pos.z;
+          ctx.probe(`ev:${step < 0 ? 'tier승격' : 'tier강등'}${sideOf(dx, dz)}`, Math.hypot(dx, dz));
+        }
       }
       const next = o.builder.retier?.(h, r.to) ?? null;
       if (next) {
@@ -257,6 +285,11 @@ export class StreamingSystem implements System {
       this.handles.set(w.key, h);
       this.tiers.set(w.key, w.tier);
       built++;
+      if (ctx.probe) {
+        const dx = w.px * o.cellX - pos.x;
+        const dz = w.pz * o.cellZ - pos.z;
+        ctx.probe(`ev:파셀생성${sideOf(dx, dz)}`, Math.hypot(dx, dz));
+      }
     }
 
     // 파셀이 바뀌었으면 다음 프레임은 반드시 그린다. 프레임 캡에 걸려 새 파셀이 한 박자
@@ -299,6 +332,40 @@ export class StreamingSystem implements System {
 
   /** 현재 tier 맵의 읽기 전용 뷰(HUD·불변식 검사용) */
   get tierMap(): ReadonlyMap<ParcelKey, Tier> { return this.tiers; }
+
+  /**
+   * 그 파셀을 **버린다.** 다음 `update` 가 `want` 에 다시 넣어 새로 만든다.
+   *
+   * ── 왜 «다시 만든다» 가 아니라 «버린다» 인가 ───────────────────────────────
+   * 여기서 곧바로 `build` 하면 **프레임 예산 밖에서** 파셀이 생긴다. 스트리밍이 예산을
+   * 두는 이유가 그것인데(`streamBudgetMs`), 편집이 그 규약의 뒷문이 되면 «감독이 건물을
+   * 옮길 때마다 한 프레임 튄다» 가 된다. 버리기만 하면 다음 `update` 의 `diff.load` 에
+   * 정상 진입해 예산·우선순위를 그대로 탄다.
+   *
+   * 반납은 예산에서 빼지 않는다는 규약(위 ①)과도 같은 방향이다 — 반납은 GPU 자원을
+   * 만들지 않는다.
+   *
+   * ⚠ **한 프레임(또는 예산에 밀리면 여러 프레임) 동안 그 파셀이 비어 보인다.** 편집
+   * 중에는 그것이 «지웠다가 다시 놓는» 피드백으로 읽히지만, 드래그처럼 연속으로 부르면
+   * 건물이 계속 되감긴다(성장 애니메이션이 처음부터 돈다 — `parcel-grow.ts`). 연속
+   * 조작은 놓는 순간에만 이것을 불러야 한다 — 그 판단은 편집 UI 몫이고 여기서 못 막는다.
+   *
+   * @returns 실제로 버렸으면 `true`. 안 떠 있던 파셀이면 `false`(할 일이 없다 —
+   *          아직 안 만들어졌으므로 다음 build 가 새 동결을 저절로 읽는다)
+   */
+  invalidate(px: number, pz: number): boolean {
+    // 키 형식은 `decide/stream.ts` 가 소유한다. 여기서 `${px},${pz}` 를 다시 적으면
+    // 형식이 바뀔 때 이 문만 조용히 어긋나고, 그 증상은 «편집이 어떤 파셀에는 안 먹는다» 다.
+    const key = parcelKey(px, pz);
+    const h = this.handles.get(key);
+    if (!h) return false;
+    this.opts.builder.release(h);
+    this.handles.delete(key);
+    this.tiers.delete(key);
+    // `settled` 는 건드리지 않는다 — 되돌리면 편집할 때마다 로딩 화면이 다시 뜬다.
+    this.opts.markDirty?.();
+    return true;
+  }
 
   dispose(): void {
     for (const h of this.handles.values()) this.opts.builder.release(h);

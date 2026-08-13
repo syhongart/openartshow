@@ -85,6 +85,8 @@ export const tower: PartSpec = {
   tones: TONES,
 
   /** 바닥 사각형을 감싸는 원. 회전이 직각 배수라 긴 변의 절반 + 처마면 충분하다 */
+  // 그림자는 **원**이다(감독 판정 2026-08-11 — 사각 그늘은 벤치만). 지오는 박스다.
+  shadowProfile: 'round',
   footprint: (p) => Math.max(p.sx, p.sz) * 0.5 + EAVE,
 
   maxPerParcel: () => 1,

@@ -53,6 +53,7 @@ import { minimapFeature } from './minimap.js';
 import { npcFeature } from './npc.js';
 import { postfxFeature } from './postfx.js';
 import { glbCityFeature } from './glb-city.js';
+import { overlayFeature } from './overlay.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -66,6 +67,11 @@ export const FEATURES: readonly Feature[] = [
   // 기능이라 평상시에는 꺼져 있다 — `?glb=` 가 없으면 `create` 가 `null` 이라 로더
   // 코드조차 내려받지 않는다. 실험이 끝나면 이 줄과 파일을 함께 지운다.
   glbCityFeature,
+  // ── 사용자 배치 (`assets/world2-overlay.json`) ────────────────────────────
+  // 감독이 `?edit=1` 화면에서 놓고 내보낸 JSON 을 읽어 얹는다. **가산 레이어**라 마을
+  // 기본 배치 계산에는 손대지 않는다. 파일이 비어 있으면(지금이 그렇다) 아무것도 안 붙고,
+  // 그때도 GLTFLoader 를 내려받지 않는다 — 배치가 0개면 로더가 필요 없기 때문이다.
+  overlayFeature,
   // 후보정은 **맨 마지막**이다. 렌더 경로를 통째로 가로채므로, 앞선 기능이 씬에 무엇을
   // 넣든 그 결과 위에서 동작해야 한다. 여기서 한 줄을 지우면 후보정이 통째로 빠지고
   // 어댑터는 기본 렌더 경로로 남는다.

@@ -10,7 +10,7 @@
 // 지금 `sky.js`는 라이브 `world.js`도 쓰는 공유 파일이라 건드리면 라이브가 위험하다.
 // 이 계약이 먼저 서 있으면, 쪼갠 조각들을 여기에 얹기만 하면 된다.
 
-import { SkySystem } from '../systems/sky.js';
+import { SkySystem, SKY_BLUE, SKY_BLUE_MAX, CLOUD_CURVE, CLOUD_H, CLOUD_H_MAX } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
 import {
   nightness, lampGlow, TIMES, type SkyTime,
@@ -27,17 +27,33 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 const WEATHERS = ['clear', 'overcast', 'rain', 'snow'] as const;
 
 /**
- * 안개를 하늘색으로 미는 기본 계수 (감독 지시 *"약간 하늘색으로"*).
+ * 안개를 하늘색으로 미는 계수 — **시간대마다 다르다** (감독 판정 2026-08-12).
  *
- * 물리적으로도 이 방향이 맞다 — 원거리 대기는 레일리 산란으로 푸르게 수렴한다. 그래서
- * 시간대를 가리지 않고 **전 팔레트에 같은 계수**를 건다. 밤만 손대면 낮·노을과 톤이
- * 갈리고, 그건 "약간 하늘색"이 아니라 "밤만 다른 세계"가 된다.
+ * ── 값과 그 근거 ────────────────────────────────────────────────────────────
+ * | 시간대 | 값 | 근거 |
+ * |---|---|---|
+ * | `day` | **1** | 감독이 `?fogsky=1` 링크를 보고 확정: *"주간일때는 흰색말고 하늘색어때"* |
+ * | `night` | **0** | 감독 판정: *"야간은 원래가 좋아. 연기 파란거 말고."* |
+ * | `sunset` | **0** | 감독 미판정 — 밤의 근거를 준용(아래) |
  *
- * 0.12 는 *약간* 의 해석이다. 밤 맑음 `#3d4762` 가 `#455472` 가 되어 남색이 조금 열리는
- * 정도이고, 낮 맑음 `#e9eef2` 는 `#dce7f0` 으로 흰 기가 빠진다. **감독 판정 전의
- * 출발점**이지 확정값이 아니다 — `?fogsky=` 로 조정한다.
+ * ⚠ **이 자리는 원래 스칼라 하나(`FOG_SKY_TINT = 0.12`)였고, 그 주석은 시간대를
+ * 가르는 것을 명시적으로 반대하고 있었다** — *"밤만 손대면 낮·노을과 톤이 갈리고, 그건
+ * '약간 하늘색'이 아니라 '밤만 다른 세계'가 된다."* 감독이 화면을 보고 그 반대로
+ * 판정했다. **내 규정이 왜 틀렸는지는 `sky.js` 의 `lightOf` 머리말 한 곳**에 적었다
+ * (레일리 산란은 햇빛이 있을 때의 현상이고, 밤에 그것을 적용한 것이 오류였다).
+ *
+ * **경계 — 노을은 판정을 안 받았다.** 0 은 밤의 근거를 준용한 것이지 감독 판정이
+ * 아니다. 필요하면 `?fogskys=` 로 켜서 화면으로 정한다. 추측한 값을 판정처럼 적지
+ * 않는다.
+ *
+ * 예전 기본 0.12 의 뜻(*약간*)은 이제 어디에도 안 걸린다 — 낮이 1 로 확정됐으므로
+ * *"약간"* 이라는 해석 자체가 감독 판정으로 대체됐다. 되돌리려면 `?fogsky=0.12`.
  */
-export const FOG_SKY_TINT = 0.12;
+export const FOG_SKY_TINT_DAY = 1;
+/** 노을 — 감독 미판정, 밤 근거 준용. 위 표의 경계 항 참조 */
+export const FOG_SKY_TINT_SUNSET = 0;
+/** 밤 — 감독 판정 *"야간은 원래가 좋아. 연기 파란거 말고."* 0 이면 팔레트 원본 그대로다 */
+export const FOG_SKY_TINT_NIGHT = 0;
 
 export const skyFeature: Feature = {
   name: 'sky',
@@ -61,6 +77,7 @@ export const skyFeature: Feature = {
         // 날씨는 아직 소비자가 하늘 하나이므로 여기서 URL 을 읽는다. 헤드리스 측정과
         // 감독 확인이 링크 하나로 끝나야 하므로 노브 자체는 유지한다.
         sunDist: env.shadowDist,
+        shadowTexel: env.shadowTexel,
         // 낮 대비 — 감독이 실기기에서 값을 비교할 수 있게 연다(밤 노브 `nsun`/`nhemi` 전례).
         dayLight: {
           sun: readNum('dsun', DAY_SUN_I, 0, 6),
@@ -102,16 +119,43 @@ export const skyFeature: Feature = {
           groundScale: readNum('nground', NIGHT_GROUND_SCALE, 0.2, 4),
         },
 
-        // ── 안개 하늘색 틴트 (`?fogsky=`) ────────────────────────────────
-        // 감독: *"안개를 약간 하늘색으로 하면 어떨까."*
+        // ── 안개 하늘색 틴트 — 시간대별 (`?fogsky=` · `?fogskys=` · `?fogskyn=`) ──
+        // 감독 판정 2026-08-12: *"주간일때는 흰색말고 하늘색어때"* → 확인 후
+        // *"야간은 원래가 좋아. 연기 파란거 말고. 주간/야간 따로 가야해."*
+        //
+        // **노브가 셋인 것은 판정이 시간대마다 따로 나기 때문**이다. 하나로 두면
+        // 감독이 낮을 고치는 순간 밤이 함께 움직이고, 그러면 어느 쪽 판정인지
+        // 갈리지 않는다 — 그것이 이 회차에 실제로 일어난 일이다.
         //
         // 노브를 여는 이유는 밤 밝기와 같다 — **헤드리스는 WebGL, 감독 기기는
         // WebGPU** 라 톤매핑을 거친 최종 색이 같지 않다. 색은 수치로 정할 수 없고
         // 감독 화면이 유일한 게이트이므로, 링크에서 바로 돌려 볼 수 있어야 한다.
         //
-        // `0` 이면 `sky.js` 가 팔레트를 그대로 돌려주므로 라이브와 완전히 같다 —
-        // 되돌리는 방법이 `?fogsky=0` 하나로 끝난다.
-        fogTint: readNum('fogsky', FOG_SKY_TINT, 0, 1),
+        // 셋 다 `0` 이면 `sky.js` 가 팔레트 객체를 그대로 돌려주므로 라이브와 완전히
+        // 같다 — 되돌림이 `?fogsky=0&fogskys=0&fogskyn=0` 으로 끝난다.
+        fogTint: {
+          day: readNum('fogsky', FOG_SKY_TINT_DAY, 0, 1),
+          sunset: readNum('fogskys', FOG_SKY_TINT_SUNSET, 0, 1),
+          night: readNum('fogskyn', FOG_SKY_TINT_NIGHT, 0, 1),
+        },
+
+        // ── 파란 하늘 (`?skyblue=`) · 둥근 지구의 구름 (`?cloudcurve=`) ──
+        // 감독 지시 2026-08-12: *"파란 하늘 만들어보자. 지금 하늘 색이 파랗지 않아."*
+        // + *"지구는 둥글고 구름은 지구를 중심으로 구형으로 있어서 하늘의 구름이 지금과
+        // 다르게 보여."*
+        //
+        // 둘 다 **0 이면 옛 화면 그대로**라 되돌림이 링크 하나다. 이 노브를 여는 이유는
+        // 위 `fogsky` 와 같다 — 색·룩은 수치로 정할 수 없고 감독 화면이 유일한 게이트인데,
+        // 헤드리스는 WebGL 이고 감독 기기는 WebGPU 라 여기서 본 것이 저기서 같지 않다.
+        //
+        // 값의 뜻·수식은 각각 `sky.js` 의 `dayStops`·`cloudElev` 머리말 한 곳이다.
+        skyBlue: readNum('skyblue', SKY_BLUE, 0, SKY_BLUE_MAX),
+        cloudCurve: readNum('cloudcurve', CLOUD_CURVE, 0, 1),
+        // 구름이 세로로 늘어지면 이 값을 **키운다**(감독 실기기 2026-08-12).
+        // 실제 물리값은 하한(0.0003)이고 기본은 감독 확정값이다 — 근거는 `CLOUD_H`.
+        // 하한은 0 그대로 둔다 — 0 은 *"지정 안 함"* 이라 `sky.js` 의 `CLOUD_EPS` 로
+        // 떨어진다. 즉 `?cloudh=0` 이 이 확정 이전의 화면으로 되돌리는 링크다.
+        cloudH: readNum('cloudh', CLOUD_H, 0, CLOUD_H_MAX),
 
         // ── 수평선 밴드 (`?hz=`) ─────────────────────────────────────────
         // 감독 실기기 2026-08-05, 태스크 #202: 바다에서 하늘과 바다의 경계가 없다.

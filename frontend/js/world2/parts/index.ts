@@ -39,8 +39,15 @@ import { fountain } from './fountain.js';
 import { clocktower } from './clocktower.js';
 import { bench } from './bench.js';
 import { planter } from './planter.js';
+import { shadowParts, casterProfiles } from './shadow.js';
 
-export const PARTS = [
+/**
+ * 실물 파츠. **그림자는 여기 없다** — 아래에서 유도한다.
+ *
+ * `as const` 를 유지하는 것이 중요하다: `PartKind` 유니온이 이 배열에서 나오므로,
+ * 그림자를 여기 섞으면 종류 타입이 통째로 `string` 으로 넓어진다.
+ */
+const BASE = [
   ground, garden, road,
   fountain, clocktower,
   // 타워는 건물보다 **앞**이다. 파셀당 한 채가 중앙 고정이라 자리를 양보할 수 없고,
@@ -52,8 +59,32 @@ export const PARTS = [
   tree, bench, planter,
 ] as const;
 
-/** 파츠 종류 유니온. 목록에서 유도되므로 파츠를 넣고 빼면 타입이 저절로 따라온다. */
-export type PartKind = (typeof PARTS)[number]['kind'];
+/**
+ * **그림자를 드리우는 종류.** `shadowProfile` 을 신고한 파츠에서 **유도한다** — 목록을
+ * 손으로 적으면 파츠가 늘 때 한쪽만 낡는다.
+ *
+ * 동결 경로가 이것을 쓴다: 편집이 저장하는 배열은 캐스터만 담고, 그림자는 조회 시점에
+ * `shadowOf` 로 다시 유도된다(`decide/parcel-freeze.ts`). 그 이유는 `shadowOf` 헤더 한 곳이다.
+ */
+export const SHADOW_CASTERS: ReadonlySet<string> = new Set(
+  casterProfiles(BASE).map((c) => c.kind),
+);
+
+/**
+ * 켜져 있는 파츠 전부 = 실물 + **그 그림자**.
+ *
+ * 그림자는 손으로 적지 않는다 — `shadowProfile` 을 신고한 파츠에서 `shadowParts` 가
+ * 유도한다. 캐스터를 하나 추가하면 그림자도 저절로 따라오고, 목록이 두 곳으로 갈리지
+ * 않는다. 그림자가 **뒤에 오는 것이 필수**다: `PlaceContext.placed` 는 앞선 것만 담으므로,
+ * 앞에 있으면 그림자가 캐스터 좌표를 못 받아 **조용히 0개**가 된다.
+ */
+export const PARTS = [...BASE, ...shadowParts(BASE)] as readonly PartSpec[];
+
+/**
+ * 파츠 종류 유니온. **실물에서만 유도한다** — 그림자를 섞으면 `PartSpec[]` 이 되어
+ * 리터럴 유니온이 통째로 `string` 으로 넓어진다.
+ */
+export type PartKind = (typeof BASE)[number]['kind'] | `shadow:${(typeof BASE)[number]['kind']}`;
 
 export const ALL_KINDS: readonly PartKind[] = PARTS.map((p) => p.kind as PartKind);
 

@@ -31,6 +31,7 @@ import type { System } from '../kernel.js';
 import type { RendererAdapter } from '../adapters/renderer.js';
 import type { InstancePools } from '../systems/instancing.js';
 import type { PlayerSystem } from '../systems/player.js';
+import type { VillageParcels } from '../systems/village-parcels.js';
 
 /**
  * 기능이 조립 시점에 받을 수 있는 것들. **읽기 전용으로 다룬다** — 기능이 이걸 통해 서로의
@@ -42,6 +43,20 @@ export interface FeatureEnv {
   readonly player: PlayerSystem;
   /** 슬롯 풀. 이미 `seal()`된 상태다 — 기능이 새 풀을 만들 수 없다(개수 불변식) */
   readonly pools: InstancePools;
+  /**
+   * 마을 파셀의 **동결 저장소**. 감독이 손본 구역이 여기 담긴다.
+   *
+   * ⚠ 이것은 위 *"읽기 전용으로 다룬다"* 의 **예외**다 — 쓰기 문(`freeze`·`thaw`·
+   * `setAll`)이 열려 있다. 예외인 이유: 동결은 «어느 한 기능의 상태» 가 아니라 **월드
+   * 자체의 상태**다. 마을을 만드는 것은 코어(빌더·스트리밍)이고 오버레이 기능은 그것을
+   * 파일에서 읽어 앉힐 뿐이다. 기능이 소유하면 그 기능을 빼는 순간 마을 배치가 사라진다.
+   *
+   * 그래서 소유는 조립부에 두고 여기서는 **통로만** 연다. 커널 규약(「System 은 상태를
+   * 공유하지 않는다」)이 뒷문으로 깨지지 않는 것은, 이것을 만지는 것이 System 이 아니라
+   * 조립부가 만든 저장소이고 그 변경이 **스트리밍 재빌드라는 정규 경로**로만 화면에
+   * 도달하기 때문이다.
+   */
+  readonly village: VillageParcels;
   /** 씬 조명. 개수가 고정이라 커널이 소유하고, 기능은 색·강도만 빌려 쓴다 */
   readonly sun: DirectionalLight;
   readonly hemi: HemisphereLight;
@@ -50,6 +65,8 @@ export interface FeatureEnv {
    * **함께** 유도한 값이다 — 하늘이 이 값으로 태양을 배치해야 프러스텀과 짝이 맞는다.
    */
   readonly shadowDist: number;
+  /** 그림자 텍셀 한 변(m). 태양 추종점 스냅용 — `decide/shadow.ts` 유도값 */
+  readonly shadowTexel: number;
   /** 월드 셀 크기(미터) */
   readonly cell: number;
 

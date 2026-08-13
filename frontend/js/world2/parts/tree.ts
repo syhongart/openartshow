@@ -68,6 +68,12 @@ export const tree: PartSpec = {
    * 넉넉한 쪽으로 잡는 것이 맞다. 나무는 겹치면 **한 덩어리로 뭉쳐 보여** 그루 수가
    * 읽히지 않는데, 그게 감독이 지적한 "겹쳐져 있는 것들" 의 큰 부분이다.
    */
+  // 잎 실루엣. 감독이 카드에서 고른 것은 *"얼룩덩덩하게"* 였지만, 배포본을 보고
+  // *"산만하면 `?shleaf=0` 으로 확정"* 으로 **뒤집었다**(2026-08-11). 그래서 기본
+  // 깊이(`LEAF_DEPTH`)가 0 이고 **화면에서는 매끈한 원으로 나온다** — 이 신고가
+  // 'foliage' 인 것은 얼룩을 그릴 **경로가 살아 있다**는 뜻이지 켜져 있다는 뜻이 아니다.
+  // 켜려면 `?shleaf=0.55`. 화면 판정은 값 옆에(`decide/shadow-decal.ts` 의 `LEAF_DEPTH`).
+  shadowProfile: 'foliage',
   footprint: (p) => TREE_RADIUS_UNIT * p.sx,
 
   // `floor(rnd * (max + 1))` 의 상한이다. rnd < 1 이므로 max 를 넘지 않는다.

@@ -29,14 +29,20 @@ const PLANTER_RADIUS = (s: number) => 0.3 * s + 0.15;
 
 export const planter: PartSpec = {
   kind: 'planter',
-  // 벤치보다도 작다(0.8m). near 에서만 — mid 에서도 이미 점 하나다.
-  tiers: ['near'],
+  // ⚠ 전 계층인 이유는 "멀리서 보여서"가 **아니다** — 0.8m 라 mid 에서도 점 하나다.
+  // tier 강등이 이 종류를 걷어내는 순간이 화면에서 **깜빡임**으로 잡혔다(감독 실측
+  // 2026-08-10: ?band=2 로 전환을 전부 밀면 "깜빡이는건 없어졌어"). 전 계층으로 두면
+  // retier 가 어느 종류도 안 바꿔 화면상 no-op 이 된다 — 소멸 사건 자체의 제거다
+  // (팀장 판정 (a′) 조건 1). **성능 명목으로 다시 좁히면 그 깜빡임이 되살아난다.**
+  // 비용은 인스턴스 슬롯뿐이고(draw 는 인스턴싱이라 불변) 예산은 밴드에서 유도된다.
+  tiers: ['near', 'mid', 'far'],
   salt: 0x2c8fd651,
   // 정점색이 색을 주므로 **흰색 근처**여야 한다 — 곱셈기다. 밝기만 흔들어 화분마다
   // 조금씩 다르게 보이게 한다.
   tones: [0xffffff, 0xf0f4e8, 0xe4ecdc],
 
   // 덤불 반경 0.3 에 스케일을 곱한다. `place` 가 넣는 `sx` 가 그 스케일이다.
+  shadowProfile: 'round',
   footprint: (p) => PLANTER_RADIUS(p.sx),
 
   maxPerParcel: () => 3,

@@ -81,6 +81,10 @@ const BUILD_MIX: Record<string, string> = {
   // `^\s*import` 로 시작하는 줄만 봐서 `await import(…)` 형태를 놓쳤고, 검수관 리뷰도
   // 놓쳤다. 동적 import 를 보게 만든 것이 실제로 값을 했다 — 기록으로 남긴다.
   'avatars/vrm.ts': 'SkeletonUtils.clone(addons) — 혼합 확인됨·영향 미판정',
+  // ⚠ `glb-city.ts` 와 **같은 혼합이고 같은 미판정**이다(#120). 여기가 셋째 지점이다.
+  // 다른 점은 이쪽이 실험이 아니라 **감독이 배치한 것을 배포하는 경로**라는 것 —
+  // 즉 #120 이 판정되면 그 결과를 실제로 짊어지는 자리가 여기다.
+  'features/overlay.ts': 'GLTFLoader(addons) — 혼합 확인됨·원인 미판정(#120)',
 };
 
 /** `.ts`·`.js` 소스를 모두 모은다 */

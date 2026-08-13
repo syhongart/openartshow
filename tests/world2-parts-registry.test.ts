@@ -18,6 +18,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { PARTS, ALL_KINDS, kindsFor, outermostTierFor, maxPartsPerParcel, tonesFor } from '../frontend/js/world2/parts/index.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
+import { atlasGrid } from '../frontend/js/world2/decide/shadow-decal.js';
+import { SHADOW_ATLAS_PX } from '../frontend/js/world2/parts/shadow.js';
 
 const TIERS = ['near', 'mid', 'far'] as const;
 
@@ -169,3 +171,72 @@ function mulberry(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+describe('그림자 골격 선언 — 빠뜨리면 그 파츠만 조용히 그림자가 없다', () => {
+  // ── 이 절은 검수관 반려로 생겼다 (블로커 2, 2026-08-11) ────────────────────
+  // `parts/types.ts` 의 `shadowProfile` 주석이 *"`tests/world2-parts-registry.test.ts` 가
+  // 두 조건의 동치를 단언한다 — 빠뜨리면 빨간불이다"* 라고 적었는데, **그 검사가 없었다.**
+  // 실측: 그 파일에 `shadowProfile` 문자열이 0건. 지금은 8개 캐스터에 전부 붙어 있어
+  // 우연히 참이었지만, 그 참을 지키는 것은 아무것도 없었다.
+  //
+  // 이 저장소가 반복해 못 박은 형태다 — **게이트 유효성에 대한 거짓 진술은 다음 사람이
+  // 확인을 생략하게 만든다.** 문장을 지우는 대신 검사를 만들어 문장을 참으로 되돌린다.
+  it('footprint() > 0 ⇔ shadowProfile 선언 (전 파츠)', () => {
+    // 대표 인스턴스로 footprint 를 잰다. 파츠마다 스케일 의존이 다르므로(건물은
+    // `max(sx,sz)` 를 보고 나무는 `sx` 를 본다) 1배 인스턴스를 공통 표본으로 쓴다.
+    const probe = { kind: '', x: 0, z: 0, y: 0, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 };
+    let casters = 0, flats = 0;
+    for (const p of PARTS) {
+      const solid = p.footprint({ ...probe, kind: p.kind }) > 0;
+      if (solid) casters++; else flats++;
+      expect(Boolean(p.shadowProfile), `${p.kind}: footprint>0=${solid} 인데 shadowProfile=${p.shadowProfile}`)
+        .toBe(solid);
+    }
+    // 양쪽이 비어 있으면 위 루프가 헛돈다 — 빈 표본이 단언을 통과시킨 전례가 있다.
+    expect(casters).toBeGreaterThan(0);
+    expect(flats).toBeGreaterThan(0);
+  });
+
+  it('골격 값이 허용된 넷 중 하나다', () => {
+    for (const p of PARTS) {
+      if (!p.shadowProfile) continue;
+      expect(['round', 'box', 'post', 'foliage'], p.kind).toContain(p.shadowProfile);
+    }
+  });
+
+  // ── 감독 판정을 **파츠 배정으로** 지킨다 (카드 2026-08-11) ──────────────────
+  // *"형태가 사각형이면 사각형그림자"* 를 받고 사각 대상을 물었을 때 감독이 **"벤치만"** 을
+  // 골랐다. 그 판정은 지금 8개 파일에 한 줄씩 흩어져 있어(각 파츠의 `shadowProfile`),
+  // 누가 건물을 `box` 로 되돌려도 **아무 테스트도 안 걸리는** 상태였다. 배정 자체를 단언해
+  // 그 순간 빨간불이 되게 한다.
+  //
+  // ⚠ 이 단언은 **감독이 판정을 바꾸면 함께 고쳐야 한다** — 그것이 의도다. 화면 판정이
+  // 뒤집혔는데 테스트가 조용하면, 다음 사람은 옛 판정을 현재 사양으로 읽는다.
+  it('사각 그림자는 벤치뿐이고 얼룩은 나무뿐이다 (감독 판정 2026-08-11)', () => {
+    const by = (v: string): string[] =>
+      PARTS.filter((p) => p.shadowProfile === v).map((p) => p.kind).sort();
+    expect(by('box')).toEqual(['bench']);
+    expect(by('foliage')).toEqual(['tree']);
+    // 각진 지오인 건물·시계탑·타워가 **원형 그늘**이라는 것이 이 판정의 핵심이다.
+    // 지오를 따라 `box` 로 되돌리면 여기서 걸린다.
+    // ⚠ 시계탑의 `kind` 는 파일명과 달리 **`'clock'`** 이다. 처음에 `'clocktower'` 로 적었고
+    // 이 단언이 잡았다 — 없는 kind 를 찾으면 `undefined` 가 되므로, **존재부터 단언**하지
+    // 않으면 오타가 조용히 통과하는 형태가 된다(`not.toBe('box')` 로 썼다면 그랬을 것이다).
+    for (const kind of ['building', 'clock', 'tower']) {
+      const p = PARTS.find((q) => q.kind === kind);
+      expect(p, `${kind}: 파츠가 없다 — kind 오타이거나 파츠가 사라졌다`).toBeTruthy();
+      expect(p?.shadowProfile, `${kind}: 지오는 박스지만 그림자는 원이어야 한다`).toBe('round');
+    }
+  });
+
+  it('아틀라스 셀이 캐스터를 다 담고, 셀이 너무 작아지지 않는다', () => {
+    // 캐스터가 늘면 셀이 작아져 실루엣이 뭉개진다. 그 판단을 격자 함수가 삼키지 않게
+    // **넘어가는 순간 여기서 빨간불**이 되도록 하한을 둔다(근거는 `atlasGrid` 주석).
+    const casters = PARTS.filter((p) => p.shadowProfile).length;
+    const g = atlasGrid(casters, SHADOW_ATLAS_PX);
+    expect(g.cellPx).toBeGreaterThanOrEqual(64);
+    // 마지막 셀이 캔버스를 넘지 않는다.
+    const lastCell = g.cellOf(casters - 1);
+    expect(lastCell.px + lastCell.size).toBeLessThanOrEqual(SHADOW_ATLAS_PX);
+  });
+});

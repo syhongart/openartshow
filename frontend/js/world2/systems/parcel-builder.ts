@@ -16,6 +16,7 @@
 
 import type { SlotHandle } from './instancing.js';
 import type { ParcelBuilder, ParcelHandle } from './streaming.js';
+import { parcelKey } from '../decide/stream.js';
 import {
   type Tier, type TierBands, DEFAULT_BANDS, tierReach, maxLatticePoints,
 } from '../decide/lod.js';
@@ -24,6 +25,7 @@ import {
   ALL_KINDS, kindsFor, maxPartsPerParcel, outermostTierFor,
   type LayoutOptions, type PartKind,
 } from '../parts/index.js';
+import type { PlacedPart } from '../parts/types.js';
 
 /**
  * 슬롯 풀에 필요한 것만 추린 인터페이스. `InstancePools`가 그대로 만족한다(tone 변환만
@@ -32,6 +34,15 @@ import {
 export interface SlotPool {
   acquire(key: string): SlotHandle | null;
   setTransform(h: SlotHandle, x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number): void;
+  /**
+   * **이미 놓인 슬롯의 자세만 다시 쓴다.** 빌더는 쓰지 않는다 — 그림자 데칼 재베이킹처럼
+   * "같은 슬롯을 그대로 두고 자세만 갱신" 하는 소비자를 위한 문이다.
+   *
+   * `setTransform` 과 갈라 놓은 이유: 그쪽은 **새 배치**를 뜻해서 성장 애니메이션을 처음부터
+   * 돌린다. 재적용에 그것을 태우면 자세를 고칠 때마다 부품이 되감긴다(검수관 반려
+   * 2026-08-11 — 실측으로 sx 4 → 0.08 재현). 근거는 `parcel-grow.ts` 의 `retarget` 주석.
+   */
+  retarget?(h: SlotHandle, x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number): void;
   setTone(h: SlotHandle, tone: number): void;
   release(h: SlotHandle): void;
 }
@@ -49,6 +60,15 @@ export interface ParcelBuilderOptions {
   pool: SlotPool;
   cellX: number;
   cellZ: number;
+  /**
+   * **동결된 파셀의 배치.** `null` 이면 계산한다(`parcelLayout`).
+   *
+   * 감독이 손으로 옮긴 구역은 계산이 아니라 저장된 배열을 쓴다 — 판정·근거의 SSOT 는
+   * `decide/parcel-freeze.ts` 한 곳이다. 여기서는 «주입받는다» 는 사실만 안다:
+   * 빌더가 계약(`decide/overlay.ts`)을 직접 import 하면 생성기 계층이 편집 데이터를
+   * 알게 되고, 그것을 막는 것이 팀장 조건의 집행 축 ① 이다(테스트가 그 축을 지킨다).
+   */
+  frozenAt?(px: number, pz: number, tier: Exclude<Tier, 'none'>): readonly PlacedPart[] | null;
   layout?: LayoutOptions;
   /** 동시에 떠 있을 수 있는 최대 파셀 수 — 풀 예산 산정에 쓴다 */
   maxParcels?: number;
@@ -65,6 +85,8 @@ export class PooledParcelBuilder implements ParcelBuilder {
   private readonly cellX: number;
   private readonly cellZ: number;
   private readonly layout: LayoutOptions;
+  /** 동결 조회. 없으면 언제나 계산한다(라이브 기본값) */
+  private readonly frozenAt?: ParcelBuilderOptions['frozenAt'];
   private starved = 0;
   private byKindStarved: Record<string, number> = {};
 
@@ -73,6 +95,7 @@ export class PooledParcelBuilder implements ParcelBuilder {
     this.cellX = opts.cellX;
     this.cellZ = opts.cellZ;
     this.layout = { ...DEFAULT_LAYOUT, cellX: opts.cellX, cellZ: opts.cellZ, ...opts.layout };
+    this.frozenAt = opts.frozenAt;
   }
 
   /**
@@ -140,7 +163,10 @@ export class PooledParcelBuilder implements ParcelBuilder {
 
   build(px: number, pz: number, tier: Exclude<Tier, 'none'>): ParcelHandle {
     const h: PooledHandle = {
-      key: `${px},${pz}`, tier, px, pz, byKind: new Map(),
+      // 키 형식은 `decide/stream.ts` 가 소유한다. 여기 리터럴로 적혀 있었고 그것은 값
+      // 미러링이었다 — 스트리밍이 자기 맵 키를 따로 만들므로 두 형식이 갈라져도 지금은
+      // 아무 증상이 없다. **증상 없는 미러링이 가장 오래 산다.**
+      key: parcelKey(px, pz), tier, px, pz, byKind: new Map(),
     };
     for (const kind of kindsFor(tier)) this.fill(h, kind, tier);
     return h;
@@ -190,7 +216,12 @@ export class PooledParcelBuilder implements ParcelBuilder {
 
   /** 한 종류의 부품을 배치대로 채운다. tier를 인자로 받는다(핸들 상태에 기대지 않는다). */
   private fill(h: PooledHandle, kind: PartKind, tier: Exclude<Tier, 'none'>): void {
-    const parts = parcelLayout(h.px, h.pz, tier, this.layout);
+    // ⚠ **동결이 계산을 대신하는 유일한 자리다.** `parcelLayout` 안에 분기를 넣으면 골든
+    // 해시가 깨지고, 그때 고칠 것은 해시가 아니라 설계다(`parcel-layout.ts` 헤더).
+    // `null` 과 빈 배열은 다른 뜻이다 — `null` = 안 손댔다(계산해라), 빈 배열 = 손대서
+    // 전부 지웠다(아무것도 놓지 마라). `??` 가 아니라 명시적 분기인 이유가 그것이다.
+    const frozen = this.frozenAt?.(h.px, h.pz, tier) ?? null;
+    const parts = frozen !== null ? frozen : parcelLayout(h.px, h.pz, tier, this.layout);
     const ox = h.px * this.cellX;
     const oz = h.pz * this.cellZ;
     const slots: SlotHandle[] = [];

@@ -62,6 +62,23 @@ export interface KnobBar {
   dispose(): void;
 }
 
+/**
+ * 누르면 무언가를 하는 버튼 하나. **슬라이더가 아니라 동작이다.**
+ *
+ * 첫 소비자는 감독의 「그림자 굽기」다(지시 2026-08-11 *"내가 베이킹 버튼을 누르면
+ * 구워지고 적용되게하자"*). 슬라이더는 값을 밀지만 굽기는 **밀 값이 없다** — 지금 상태로
+ * 다시 굽는 것이라 `KnobSpec` 에 안 맞는다.
+ */
+export interface KnobAction {
+  readonly key: string;
+  readonly label: string;
+  /** 눌렀다. 돌려준 문자열이 있으면 라벨 옆에 잠깐 띄운다(예: 소요 ms) */
+  run(): string | void;
+}
+
+/** 토글이 이미 배선된 바. `attachKnobBar`·`attachKnobActions` 가 함께 본다 */
+const wiredToggles = new WeakSet<HTMLElement>();
+
 /** 문서에서 바를 찾는다. 없으면 null — 바 없이도 월드는 돈다 */
 export function findKnobBar(doc: Document): KnobBarParts | null {
   const panel = doc.getElementById('w2-sliders');
@@ -175,6 +192,15 @@ export function attachKnobBar(parts: KnobBarParts, specs: readonly KnobSpec[]): 
     toggle.setAttribute('aria-expanded', String(!open));
     body.hidden = open;
   };
+  // ⚠ **토글은 바 하나에 한 번만 건다** (검수관 권고, 태스크 #173 — *"두 번째 소비자를
+  // 붙이기 전 필수"*). 이 함수는 소비자마다 불리는데 `toggle`·`body` 는 **공유**다.
+  // 두 번 걸면 클릭 한 번에 핸들러가 둘 돌아 열리자마자 닫힌다 — 패널이 아예 안 열린다.
+  //
+  // 행 이벤트(`input`·`click`)는 중복돼도 무해하다. 각 핸들러가 `rows.find` 로 **자기
+  // 행만** 찾고 남의 키는 그대로 흘려보내기 때문이다. 토글만 상태를 뒤집으므로 토글만
+  // 문제다 — 그 비대칭을 여기 적어 두지 않으면 다음 사람이 셋 다 감싸거나 셋 다 놔둔다.
+  const alreadyWired = wiredToggles.has(toggle);
+  if (!alreadyWired) wiredToggles.add(toggle);
 
   // `input` 이지 `change` 가 아니다 — 미는 **동안** 물이 변해야 한다. 그것이 이
   // 도구의 전부다. `change` 는 손을 뗄 때만 와서 "밀어보며 고르는" 일이 안 된다.
@@ -200,7 +226,7 @@ export function attachKnobBar(parts: KnobBarParts, specs: readonly KnobSpec[]): 
     sync();
   };
 
-  toggle.addEventListener('click', onToggle);
+  if (!alreadyWired) toggle.addEventListener('click', onToggle);
   body.addEventListener('input', onInput);
   body.addEventListener('click', onClick);
 
@@ -212,13 +238,93 @@ export function attachKnobBar(parts: KnobBarParts, specs: readonly KnobSpec[]): 
   return {
     sync,
     dispose() {
-      toggle.removeEventListener('click', onToggle);
+      // 토글 리스너는 **떼지 않는다.** 소비자가 여럿이므로 하나가 떠난다고 떼면 남은
+      // 소비자의 패널이 안 열린다. 리스너 하나가 남아도 패널이 숨겨지면 무해하고,
+      // 다시 붙일 때는 위 `wiredToggles` 가 중복을 막는다.
       body.removeEventListener('input', onInput);
       body.removeEventListener('click', onClick);
       for (const r of rows) r.row.remove();
       rows.length = 0;
       // 마지막 소비자가 떠나면 바를 도로 감춘다. 남은 행이 없는데 상자만 떠 있으면
       // 위와 같은 이유로 고장처럼 보인다.
+      if (body.childElementCount === 0) panel.hidden = true;
+    },
+  };
+}
+
+/**
+ * 동작 버튼을 바에 붙인다. 슬라이더와 **같은 바에 누적**된다(`attachKnobBar` 와 같은 규약).
+ *
+ * ── 왜 눌린 결과를 라벨에 띄우는가 ──────────────────────────────────────────
+ * 굽기는 화면이 거의 안 바뀔 수도 있다 — 같은 값으로 다시 구우면 결과가 같으니 당연하다.
+ * 그때 아무 반응이 없으면 감독은 **버튼이 고장 났다고 읽는다.** 소요 ms 를 잠깐 띄우면
+ * "돌긴 돌았다" 가 화면에 남는다. `sky-panel.ts` 가 반려를 표시하는 것과 같은 이유다.
+ */
+export function attachKnobActions(
+  parts: KnobBarParts, actions: readonly KnobAction[],
+): { dispose(): void } {
+  const { panel, toggle, body } = parts;
+  const doc = panel.ownerDocument;
+  const rows: HTMLElement[] = [];
+  const timers: ReturnType<typeof setTimeout>[] = [];
+
+  for (const a of actions) {
+    const row = doc.createElement('div');
+    row.className = 'w2-slide-row w2-slide-act';
+    row.dataset.key = a.key;
+
+    const btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.className = 'w2-slide-run';
+    btn.dataset.run = a.key;
+    // `innerHTML` 을 쓰지 않는다 — `attachKnobBar` 머리의 XSS 근거와 같다.
+    btn.textContent = a.label;
+
+    const out = doc.createElement('span');
+    out.className = 'w2-slide-val';
+
+    row.append(btn, out);
+    body.append(row);
+    rows.push(row);
+  }
+
+  const onClick = (e: Event) => {
+    const t = e.target as HTMLElement | null;
+    const b = t?.closest<HTMLElement>('button[data-run]');
+    if (!b) return;
+    const a = actions.find((x) => x.key === b.dataset.run);
+    if (!a) return;
+    const msg = a.run();
+    const out = b.parentElement?.querySelector<HTMLElement>('.w2-slide-val');
+    if (out && typeof msg === 'string') {
+      out.textContent = msg;
+      // 남겨 두면 다음에 눌렀을 때 옛 값이 새 값처럼 읽힌다.
+      timers.push(setTimeout(() => { out.textContent = ''; }, 1600));
+    }
+  };
+
+  const onToggle = () => {
+    const open = panel.getAttribute('data-open') === '1';
+    panel.setAttribute('data-open', open ? '0' : '1');
+    toggle.setAttribute('aria-expanded', String(!open));
+    body.hidden = open;
+  };
+  // 슬라이더 없이 버튼만 붙는 경우가 있으므로 여기서도 토글을 본다. 중복 방지 근거는
+  // `attachKnobBar` 쪽 주석 한 곳이다.
+  if (!wiredToggles.has(toggle)) {
+    wiredToggles.add(toggle);
+    toggle.addEventListener('click', onToggle);
+  }
+  body.addEventListener('click', onClick);
+  if (rows.length > 0) panel.hidden = false;
+
+  return {
+    dispose() {
+      body.removeEventListener('click', onClick);
+      for (const t of timers) clearTimeout(t);
+      timers.length = 0;
+      for (const r of rows) r.remove();
+      rows.length = 0;
       if (body.childElementCount === 0) panel.hidden = true;
     },
   };

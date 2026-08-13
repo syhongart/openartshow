@@ -47,9 +47,10 @@ import {
   applyNightFloor, type HemiLike, type SunLike, type ExposureLike, type FogLike,
 } from './night-lights.js';
 import { createHorizonBand, bandStrength, type HorizonBand } from './horizon.js';
-import type { NightTune } from '../decide/night.js';
+import type { NightTune, SkyTime } from '../decide/night.js';
 import { nightness } from '../decide/night.js';
 import { dayLightMix, type DayLightMix } from '../decide/daylight.js';
+import { snapToShadowTexel } from '../decide/shadow.js';
 import { readNum } from '../url-knob.js';
 import type { FrameCtx, System } from '../kernel.js';
 
@@ -228,9 +229,70 @@ export interface SkyState {
   lite?: boolean;
 }
 
+/**
+ * 낮 하늘 파랑 강도. 감독 지시 2026-08-12: *"지금 하늘 색이 파랗지 않아"*.
+ *
+ * 0 이면 옛 화면과 **바이트 동일**이고 1 이 새 기본이다(`?skyblue` 로 연다). 유도·근거는
+ * `sky.js` 의 `dayStops` 머리말 한 곳 — 여기에 색을 다시 적지 않는다.
+ */
+export const SKY_BLUE = 2;
+// ⚠ 1 → 2 (감독 실기기 확정 2026-08-12). 감독이 `?skyblue=2&cloudh=0.4&fogsky=1` 링크를
+// 보고 *"이것으로 결정하자"* 로 판정했다. 1 은 그 판정 직전의 후보였다.
+/** `?skyblue` 상한. 1 초과는 외삽이라 더 진해진다 — 감독이 화면에서 고를 여지를 남긴다. */
+export const SKY_BLUE_MAX = 4;
+// ⚠ 1.5 였던 것을 올렸다 — 감독 실기기 2026-08-12: *"더 진한 파랑보다 더 파란것을 보고
+// 싶어."* 상한이 판정을 가로막고 있었다. 외삽이라 빨강이 0 에 닿으면 더는 안 파래진다.
+
+/**
+ * 구름 곡률 원근 강도. 감독 지시 2026-08-12: *"지구는 둥글고 구름은 지구를 중심으로
+ * 구형으로 있어서 하늘의 구름이 지금과 다르게 보여"*.
+ *
+ * 0 이면 옛 동작(각도에 선형), 1 이 새 기본이다(`?cloudcurve`). 수식은 `sky.js` 의
+ * `cloudElev` 머리말 한 곳이다.
+ */
+export const CLOUD_CURVE = 1;
+
+/**
+ * 구름 고도비(`?cloudh`). 감독 실기기 2026-08-12: *"구름이 뒤로... 쭉 늘어진."*
+ *
+ * 생략하면 `sky.js` 의 `CLOUD_EPS`(체감값 0.05)를 쓴다. **실제 물리값 0.0003 도
+ * 노브로 볼 수 있다** — 왜 실제 값이 화면을 깨뜨리는지는 `sky.js` 의 `CLOUD_EPS`
+ * 머리말 한 곳이다.
+ */
+export const CLOUD_H_MIN = 0.0003;
+export const CLOUD_H_MAX = 1;
+// ⚠ 상한 0.4 → 1 (2026-08-12). 감독이 확정한 값이 **정확히 옛 상한(0.4)** 이라 그
+// 판정이 "0.4 가 좋다" 인지 "상한이 막고 있다" 인지 갈리지 않는다. `?skyblue` 상한이
+// 같은 이유로 이미 한 번 올라갔다(1.5→4, *"더 진한 파랑보다 더 파란것을 보고 싶어"*).
+// **끝값이 판정을 가로막으면 그 자리에서 나온 판정은 값이 아니라 벽을 잰 것이다.**
+
+/**
+ * 구름 고도비 기본값 — 감독 확정 2026-08-12 (`?cloudh=0.4`).
+ *
+ * 0 은 *"지정 안 함"* 이라 `sky.js` 의 `CLOUD_EPS`(0.05)로 떨어진다. 그 값에서 감독이
+ * *"구름이 뒤로... 쭉 늘어진"* 을 지적했고, 키우는 방향으로 후보를 열어 0.4 가 확정됐다.
+ */
+export const CLOUD_H = 0.4;
+
+/**
+ * 안개 하늘색 틴트 — 숫자는 전 시간대 공통(축약형), 객체는 시간대별.
+ *
+ * 시간대 목록은 `SkyTime` 을 **유도해서** 쓴다 — 여기에 `'day' | 'sunset' | 'night'` 를
+ * 다시 적으면 시간대가 하나 늘어나는 날 이 타입만 옛 목록에 남는다(값 미러링).
+ * `Partial` 인 것은 일부만 지정하는 소비자를 위한 것이고, 빠진 시간대는 `sky.js` 의
+ * `lightOf` 가 0(= 팔레트 원본)으로 읽는다.
+ */
+export type FogTint = number | Readonly<Partial<Record<SkyTime, number>>>;
+
 export interface SkyOptions {
   /** 소프트웨어 렌더 여부 — 크로스페이드 스냅·저해상 돔·강수 축소 분기 */
   soft?: boolean;
+  /** 낮 하늘 파랑(`?skyblue`). 생략하면 `SKY_BLUE` */
+  skyBlue?: number;
+  /** 구름 곡률 원근(`?cloudcurve`). 생략하면 `CLOUD_CURVE` */
+  cloudCurve?: number;
+  /** 구름 고도비(`?cloudh`). 생략하면 `CLOUD_H` */
+  cloudH?: number;
   /** 초기 시간대·날씨. 오픈월드 기본은 야간 맑음(커밋 `318addf` 감독 확정) */
   time?: string;
   weather?: string;
@@ -249,8 +311,11 @@ export interface SkyOptions {
    * 이미 그렇게 깨뜨려 감독이 *"안개가 안보여"* 로 잡은 적이 있다.
    *
    * 기본 0 이면 `sky.js` 가 테이블 객체를 그대로 돌려주므로 라이브와 완전히 같다.
+   *
+   * **숫자면 전 시간대 공통, 객체면 시간대별**이다(감독 판정 2026-08-12 *"주간/야간 따로
+   * 가야해"*). 뜻·근거는 `sky.js` 의 `lightOf` 머리말 한 곳이다.
    */
-  fogTint?: number;
+  fogTint?: FogTint;
   /**
    * 광원을 타깃에서 얼마나 물릴 것인가(m). **그림자 카메라의 위치를 정하는 값**이다.
    *
@@ -259,6 +324,13 @@ export interface SkyOptions {
    * 사라지는데, 화면에는 "원래 그림자가 없는 것" 과 똑같이 보인다.
    */
   sunDist?: number;
+  /**
+   * 그림자 맵 텍셀 한 변의 월드 크기(m). 있으면 태양 추종점을 이 격자에 스냅한다 —
+   * 서브텍셀 이동이 만드는 그림자 반짝임을 없앤다(`decide/shadow.ts` 의
+   * `snapToShadowTexel` 주석이 근거의 SSOT). `sunDist` 와 함께 `shadowFrustum()` 이
+   * 유도한 값을 조립부가 주입한다. 없으면 스냅 없이 종전 동작.
+   */
+  shadowTexel?: number;
   /**
    * 낮 조명 세기(URL 노브). 없으면 `decide/daylight.ts` 의 상수.
    *
@@ -320,6 +392,31 @@ export class SkySystem implements System {
   /** 플레이어 위치 — 그림자 카메라를 따라오게 하는 데 쓴다 */
   private readonly getPos: () => { x: number; z: number };
   private readonly sunDist: number;
+  /** 그림자 텍셀(m). 0 이면 스냅 없음 — `SkyOptions.shadowTexel` 참조 */
+  private readonly shadowTexel: number;
+
+  /**
+   * 마지막으로 이벤트에 실은 조명·안개 값. **변했을 때만** 찍으려고 들고 있다.
+   *
+   * ── 왜 (감독 실기기 2026-08-10) ────────────────────────────────────────────
+   * *"뒤로 갈때 그림자가 꺼지던지 조명이 꺼진것같아"*
+   *
+   * 코드를 읽어서는 여기까지가 한계였다 — 조명 세기는 **시간대에만** 의존하고
+   * (`applyDayContrast`), 그림자 프리즈(`freezeShadows`)는 world2 에서 **호출부가 0건**
+   * 이며, 적응계는 그림자 제어기를 아예 두지 않는다(`decide/adapt.ts` 머리 주석).
+   * 즉 **코드상으로는 후진이 조명을 건드릴 경로가 없다.**
+   *
+   * 그런데 감독 화면에서는 그렇게 보인다. 둘 중 하나다 — 내가 못 본 경로가 있거나,
+   * 조명이 아닌 다른 것이 조명처럼 보이거나. **그 둘을 가르는 것이 이 값들이다.**
+   * 안 변하면 조명은 범인이 아니고, 변하면 무엇이 언제 변했는지가 그 자리에 찍힌다.
+   *
+   * `-1` 은 "아직 한 번도 안 찍었다" 는 뜻이다(세기·거리는 음수가 될 수 없다).
+   * 첫 프레임에 반드시 한 번 찍혀 **기준값이 리포트에 남는다** — 기준이 없으면
+   * 나중 값이 높은지 낮은지 읽는 사람이 알 수 없다.
+   */
+  private lastSunI = -1;
+  private lastHemiI = -1;
+  private lastFogFar = -1;
   private readonly dayLight?: Partial<DayLightMix>;
   /**
    * 수평선 밴드. `?hz=0` 이거나 `eyeHeight` 를 안 받으면 `null` 이고, 그때 화면은
@@ -345,7 +442,7 @@ export class SkySystem implements System {
    */
   private horizonDim = -1;
   /** 팔레트 조회에 그대로 넘긴다 — 안개 틴트가 걸린 색이 곧 지평선 색이다 */
-  private readonly fogTint: number;
+  private readonly fogTint: FogTint;
 
   constructor(
     scene: THREE.Scene,
@@ -367,6 +464,7 @@ export class SkySystem implements System {
     this.nightTune = opts.nightTune;
     this.getPos = getPos;
     this.sunDist = opts.sunDist ?? SUN_DIST_FALLBACK;
+    this.shadowTexel = opts.shadowTexel ?? 0;
     this.dayLight = opts.dayLight;
     this.dome = makeDome();
     this.dome.name = 'world2:sky';
@@ -380,6 +478,12 @@ export class SkySystem implements System {
       waterY: null,
       fogTint: opts.fogTint ?? 0,
       starScale: STAR_SCALE,
+      // 감독 지시 2026-08-12 — *"파란 하늘"* 과 *"둥근 지구의 구름"*. `sky.js` 쪽 기본은
+      // 0(옛 화면)이고 **world2 만 새 값을 기본으로 켠다** — 판정을 받은 것이 이 월드의
+      // 화면이기 때문이다. 근거·수식은 `sky.js` 의 `cloudElev`·`dayStops` 머리말 한 곳이다.
+      skyBlue: opts.skyBlue ?? SKY_BLUE,
+      cloudCurve: opts.cloudCurve ?? CLOUD_CURVE,
+      cloudH: opts.cloudH ?? CLOUD_H,
     });
     // 수평선 밴드 — 바다와 하늘의 경계(태스크 #202). 왜 이 축인지·왜 안개 far 를 밀지
     // 않는지는 `decide/horizon.ts` 머리말 한 곳이 소유한다.
@@ -414,7 +518,12 @@ export class SkySystem implements System {
     //
     // 타깃 높이를 0 으로 두는 것은 지면 기준이기 때문이다. 눈높이를 따라가면 카메라가
     // 위아래로 흔들려 그림자 텍셀이 매 프레임 어긋난다.
-    const p = this.getPos();
+    // 추종점을 텍셀 격자에 스냅한다 — 서브텍셀 이동이 만드는 그림자 반짝임 방지.
+    // 근거는 `decide/shadow.ts` 의 `snapToShadowTexel` 주석 한 곳이다.
+    const raw = this.getPos();
+    const p = this.shadowTexel > 0
+      ? snapToShadowTexel(raw.x, raw.z, d.x, d.y, d.z, this.shadowTexel)
+      : raw;
     this.sun.target.position.set(p.x, 0, p.z);
     // 타깃은 씬에 들어 있어야 갱신된다(조립부가 `scene.add(dir.target)` 를 한다).
     // 그래도 여기서 한 번 더 미는 이유: 프레임 순서상 렌더보다 늦게 갱신되면 한 프레임
@@ -471,6 +580,35 @@ export class SkySystem implements System {
     this.liftNightLights();
     this.applyDayContrast();
     this.updateHorizon(p, ctx.dt);
+    this.probeLighting(ctx);
+  }
+
+  /**
+   * 조명·안개가 **변했을 때만** 이벤트로 낸다. 위 `lastSunI` 주석이 근거의 SSOT 다.
+   *
+   * 매 프레임 찍지 않는 이유: 60Hz 로 쌓으면 이벤트 상한(600건)이 10초에 차서 마크
+   * 주변이 통째로 밀려난다 — **계측이 계측을 지우는** 형태가 된다.
+   */
+  private probeLighting(ctx: FrameCtx): void {
+    if (!ctx.probe) return;
+    const si = (this.sun as unknown as SunLike).intensity;
+    if (Number.isFinite(si) && si !== this.lastSunI) {
+      this.lastSunI = si;
+      ctx.probe('ev:태양세기', si);
+    }
+    const hi = (this.hemi as unknown as HemiLike).intensity;
+    if (Number.isFinite(hi) && hi !== this.lastHemiI) {
+      this.lastHemiI = hi;
+      ctx.probe('ev:반구광', hi);
+    }
+    // 안개 far 는 **거리로 어두워지는 두 번째 후보**다. 조명이 안 변하는데 화면이
+    // 어두워지면 이쪽을 본다(밤 안개색은 거의 검정이라 far 가 줄면 더 빨리 묻힌다).
+    const fog = this.scene.fog as { far?: number } | null;
+    const ff = fog?.far;
+    if (typeof ff === 'number' && Number.isFinite(ff) && ff !== this.lastFogFar) {
+      this.lastFogFar = ff;
+      ctx.probe('ev:안개far', ff);
+    }
   }
 
   /**

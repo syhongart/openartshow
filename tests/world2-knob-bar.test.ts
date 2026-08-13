@@ -26,7 +26,7 @@ function putMarkup() {
   document.body.innerHTML = `
     <div id="w2-sliders" data-open="0" data-dirty="0" hidden>
       <button id="w2-sliders-toggle" type="button" aria-expanded="false" aria-controls="w2-sliders-body">
-        <span class="cap">수면</span><span class="dirty-dot"></span><span class="caret">▾</span>
+        <span class="cap">개발자 옵션</span><span class="dirty-dot"></span><span class="caret">▾</span>
       </button>
       <div id="w2-sliders-body" hidden></div>
     </div>`;
@@ -307,12 +307,38 @@ describe('attachKnobBar — 정리', () => {
     expect(s.state.sets).toEqual([]);
   });
 
-  it('토글 리스너도 뗀다', () => {
+  // ⚠ **이 단언은 2026-08-11 에 뒤집혔다.** 예전에는 *"토글 리스너도 뗀다"* 였고
+  // `dispose` 뒤 클릭이 무시되는 것을 옳다고 봤다. 그것이 옳았던 것은 **소비자가 하나뿐일
+  // 때**다 — 수면 노브 말고는 아무도 이 바를 안 쓰던 시절의 계약이다.
+  //
+  // 두 번째 소비자(그림자 데칼)를 붙이면서 계약이 바뀌었다: `toggle` 과 `body` 는
+  // **공유 자원**이므로 한 소비자가 떠난다고 토글을 떼면 **남은 소비자의 패널이 안 열린다.**
+  // 그래서 토글은 바 단위로 한 번만 걸고 떼지 않는다(근거는 `knob-bar.ts` 의 `wiredToggles`
+  // 주석 한 곳, 검수관 권고 태스크 #173 — *"두 번째 소비자를 붙이기 전 필수"*).
+  //
+  // 리스너가 남는 대가는 무엇인가: 행이 0이면 패널이 `hidden` 이라 **클릭이 도달하지
+  // 않는다.** 아래 단언이 그 사실을 못 박는다 — 리스너가 남아도 사용자에게 보이는 동작은
+  // 종전과 같다.
+  it('dispose 뒤에도 토글 리스너는 남는다 — 그러나 패널이 숨겨져 도달하지 않는다', () => {
     const bar = attachKnobBar(findKnobBar(document)!, [makeSpec('a', 1).spec]);
     bar.dispose();
     const panel = $<HTMLElement>('#w2-sliders');
+    expect(panel.hidden).toBe(true); // 감춰졌다 — 사용자는 누를 수 없다
+    // 그래도 강제로 쏘면 리스너는 살아 있다. 그것이 다중 소비자를 위한 대가다.
     $<HTMLButtonElement>('#w2-sliders-toggle').click();
-    expect(panel.dataset.open).toBe('0');   // 안 열린다
+    expect(panel.dataset.open).toBe('1');
+  });
+
+  it('★ 두 번 붙여도 토글이 한 번만 걸린다 — 두 번째 소비자가 패널을 못 열게 하지 않는다', () => {
+    // 이 단언이 없으면 그림자 노브를 붙이는 순간 **패널이 아예 안 열린다**(클릭 한 번에
+    // 핸들러가 둘 돌아 열자마자 닫힌다). 화면에서는 "슬라이더가 사라졌다" 로 읽힌다.
+    attachKnobBar(findKnobBar(document)!, [makeSpec('a', 1).spec]);
+    attachKnobBar(findKnobBar(document)!, [makeSpec('b', 2).spec]);
+    const panel = $<HTMLElement>('#w2-sliders');
+    $<HTMLButtonElement>('#w2-sliders-toggle').click();
+    expect(panel.dataset.open).toBe('1');
+    $<HTMLButtonElement>('#w2-sliders-toggle').click();
+    expect(panel.dataset.open).toBe('0');
   });
 
   it('다른 소비자의 행이 남아 있으면 바를 안 감춘다', () => {
