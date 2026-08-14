@@ -46,12 +46,14 @@ export function createInput(deps: InputDeps): Input {
   const doc = host.doc;
   const canvas = host.canvas;
   /**
-   * 마지막 마우스 자리. **모달은 키로 시작하므로 시작점을 따로 기억해야 한다** —
-   * 그 순간의 `PointerEvent` 가 없기 때문이다. 이것이 없으면 `G` 를 누른 직후 첫
-   * 마우스 이동에 물건이 화면 끝으로 튄다(시작점이 0,0 이 되므로).
+   * 마지막 마우스 **가로** 자리. **모달은 키로 시작하므로 시작점을 따로 기억해야 한다** —
+   * 그 순간의 `PointerEvent` 가 없기 때문이다. 이것이 없으면 `R` 을 누른 직후 첫
+   * 마우스 이동에 물건이 통째로 돌아간다(시작점이 0 이 되므로).
+   *
+   * ⚠ 세로는 안 쓴다 — 회전도 크기도 축이 하나뿐이다(`decide/modal-edit.ts` 헤더).
+   * 이동 모달이 있던 시절에는 세로가 z·y 였고 `mouseY` 도 함께 있었다.
    */
   let mouseX = 0;
-  let mouseY = 0;
 
   // ── 궤도 시점 (W5 E3) ───────────────────────────────────────────────────
   //
@@ -197,7 +199,9 @@ export function createInput(deps: InputDeps): Input {
     const t = st.target;
     const from = st.modalFrom;
     if (!m || !t || !from) return;
-    const d = modalDelta(m.kind, m.axis, m.digits, mouseX - m.startX, mouseY - m.startY);
+    // ⚠ **가로만 본다.** 회전도 크기도 축이 하나뿐이라 세로 이동은 볼 것이 없다
+    // (이동 모달이 있던 시절에는 세로가 z·y 였다 — `decide/modal-edit.ts` 헤더).
+    const d = modalDelta(m.kind, m.digits, mouseX - m.startX);
     const p = applyDelta(from, d);
     t.x = p.x; t.y = p.y; t.z = p.z; t.ry = p.ry; t.s = p.s;
     // 조작 중에는 `apply` 만 — 확정은 끝낼 때 한 번이다(`target.ts` 헤더).
@@ -205,7 +209,7 @@ export function createInput(deps: InputDeps): Input {
     // 블렌더가 헤더에 적는 그것. **화면이 지금 무엇을 하고 있는지 말한다** — 모달은
     // 눈에 보이는 핸들이 없어서, 이 한 줄이 없으면 «키를 눌렀는데 뭐가 시작된 건지»
     // 를 알 수 없다(기즈모는 잡은 축이 색으로 보이지만 모달은 아무것도 안 보인다).
-    panel.say(`${modalLabel(m, d)}  ·  X/Y/Z 축 · 숫자 입력 · 클릭·Enter 확정 · Esc 취소`);
+    panel.say(`${modalLabel(m, d)}  ·  숫자 입력 · 클릭·Enter 확정 · Esc 취소`);
     panel.refresh();
   };
 
@@ -226,7 +230,7 @@ export function createInput(deps: InputDeps): Input {
     }
     st.modal = null;
     st.modalFrom = null;
-    // 상태 줄이 조작 문구(`이동 X: 2.5m`)를 든 채 남으면 **끝났는지 아닌지**가 화면에서
+    // 상태 줄이 조작 문구(`회전: 45.0°`)를 든 채 남으면 **끝났는지 아닌지**가 화면에서
     // 구별되지 않는다 — 모달은 보이는 핸들이 없으므로 그 줄이 유일한 표지다.
     panel.say(keep ? '확정했습니다.' : '취소했습니다 — 시작 자리로 되돌렸습니다.');
     panel.refresh();
@@ -234,9 +238,8 @@ export function createInput(deps: InputDeps): Input {
 
   const onPointerMove = (ev: PointerEvent) => {
     mouseX = ev.clientX;
-    mouseY = ev.clientY;
     // ⚠ **모달이 가장 먼저다.** 조작 중에는 기즈모도 드래그도 안 듣는다 — 블렌더가
-    // 그렇고, 안 그러면 `G` 로 밀던 중 기즈모 위를 지나가면 두 조작이 겹친다.
+    // 그렇고, 안 그러면 `R` 로 돌리던 중 기즈모 위를 지나가면 두 조작이 겹친다.
     if (st.modal) { applyModal(); return; }
     // 궤도가 **고개 돌리기보다 먼저다** — 둘 다 드래그라 순서가 곧 «어느 버튼이 이기는가»
     // 이고, 중클릭을 눌렀는데 시선만 도는 것은 조작이 안 먹는 것으로 읽힌다.
@@ -338,9 +341,7 @@ export function createInput(deps: InputDeps): Input {
       if (act.act === 'cancel') { endModal(false); return; }
       if (act.act === 'commit') { endModal(true); return; }
       // 상태는 **갈아 끼운다**(불변 객체) — 제자리 수정하면 «어디서 바뀌었나» 가 흩어진다.
-      st.modal = act.act === 'axis'
-        ? { ...st.modal, axis: act.axis }
-        : { ...st.modal, digits: act.digits };
+      st.modal = { ...st.modal, digits: act.digits };
       applyModal();
       return;
     }
@@ -355,7 +356,7 @@ export function createInput(deps: InputDeps): Input {
       ev.preventDefault();
       ev.stopPropagation();
       const sel = st.target;
-      st.modal = { kind: opener, axis: null, digits: '', startX: mouseX, startY: mouseY };
+      st.modal = { kind: opener, digits: '', startX: mouseX };
       st.modalFrom = { x: sel.x, y: sel.y, z: sel.z, ry: sel.ry, s: sel.s };
       // 시작 즉시 한 번 그린다 — 마우스를 움직이기 전에도 «무엇이 시작됐는지» 가 보여야
       // 한다(델타 0 이라 값은 안 변한다).

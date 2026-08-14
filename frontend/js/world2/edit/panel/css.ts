@@ -59,6 +59,24 @@ export const CSS = `
    기본이 display:none 인 것이 요점이다. 위 「위치는 오른쪽이다」 판정이 왼쪽을 막았고
    (터치 조이스틱 기둥), 그 제약은 **좁은 화면에서만** 성립한다. 폭 판정은 여기 한 곳이고
    JS 는 폭을 모른다 — 두 곳이 각자 재면 «패널은 떴는데 스타일이 안 왔다» 가 난다. */
+/* ── 선택 배지 (W6) — 화면 상단 중앙, 큰 글씨 ────────────────────────────
+   왼쪽을 안 쓰는 이유는 이 파일 헤더가 못 박은 그것이다(조이스틱 판정 영역).
+   **아웃라이너와 달리 미디어 쿼리 밖이다** — 「뭘 골랐나」는 좁은 화면에서도 필요하고,
+   상단 중앙은 조이스틱·패널·아웃라이너 어느 것과도 안 겹친다. */
+#w2-badge{position:fixed;z-index:45;pointer-events:none;
+  left:50%;transform:translateX(-50%);
+  top:calc(10px + env(safe-area-inset-top,0px));
+  max-width:min(60vw,520px)}
+/* 안 골랐거나 주행 중이면 없다 — 「선택: 없음」을 크게 띄우지 않는다 */
+#w2-badge[data-on="0"],#w2-badge[data-mode="drive"]{display:none}
+#w2-badge .name{
+  font:600 17px/1.35 system-ui,sans-serif;color:#F5F5F2;
+  background:rgba(11,13,18,.82);border:1px solid #8B72FF;border-radius:9px;
+  padding:6px 13px;backdrop-filter:blur(6px);
+  text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  /* 밝은 하늘 위에서도 읽히게 — 배경만으로는 부족하다 */
+  text-shadow:0 1px 3px rgba(0,0,0,.7)}
+
 #w2-outliner{display:none}
 @media (min-width:1024px){
   #w2-outliner{display:flex;flex-direction:column;gap:4px;position:fixed;z-index:40;

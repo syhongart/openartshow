@@ -18,6 +18,7 @@ import { describe as describeTarget, nudgeScale, type EditTarget } from '../targ
 import { CSS } from './css.js';
 import { createInspector } from './inspector.js';
 import { createOutliner } from './outliner.js';
+import { createBadge } from './badge.js';
 
 /** 패널이 «자기가 못 하는 일» 을 넘기는 곳. 조립자(`mode.ts`)가 채운다. */
 export interface PanelHandlers {
@@ -91,6 +92,9 @@ export function createPanel(
   // 아웃라이너는 **패널 밖**에 산다(왼쪽 별도 컨테이너). 넓은 화면에서만 보이는 것은
   // CSS 가 정하고 여기서는 폭을 모른다 — `css.ts` 의 미디어 쿼리 한 곳이 판정한다.
   const outliner = createOutliner(host, st, (v) => { handlers.pickVillage(v); });
+  // 배지도 패널 **밖**에 산다(화면 상단 중앙). 근거는 `badge.ts` 헤더 한 곳이다 —
+  // 「뭘 골랐는지」를 크게 말하는 것이 이 회차 감독 요구다.
+  const badge = createBadge(host, st);
   const status = el('div', 'note', 'GLB 를 이 화면에 끌어다 놓거나, 위에서 골라 지면을 클릭.');
   const hint = el('div', 'note', '');
   /** 접힘/펼침 + 편집/주행을 함께 쥔 버튼. 접혔을 때 화면에 남는 유일한 것이다 */
@@ -154,9 +158,12 @@ export function createPanel(
     }
     // 문안은 `target.ts` 의 `describe` 한 곳이 만든다 — 두 형태의 표시를 여기서 나누면
     // 새 형태가 생길 때마다 이 분기가 자란다.
+    // ⚠ 동결 여부는 **저장소에 직접 묻는다** — `st.villageSel.frozen` 은 고른 순간의
+    // 스냅샷이라 조작해서 동결시켜도 안 바뀐다(`target.ts` 의 `describeShort` 주석).
+    const v = st.villageSel;
+    const frozenNow = v ? (host.village?.isFrozen(v.px, v.pz) ?? v.frozen) : false;
     selLine.textContent = st.target
-      ? describeTarget(st.target, st.selected, st.villageSel)
-        + (st.villageSel?.frozen ? ' · 손본 구역' : '')
+      ? describeTarget(st.target, st.selected, v) + (frozenNow ? ' · 손본 구역' : '')
       : `선택: 없음 · 배치 ${host.entries().length}개`;
     const previews = host.entries().filter((e) => e.preview).length;
     if (st.detached) {
@@ -177,12 +184,13 @@ export function createPanel(
       // ⚠ 이 줄은 **키 목록의 두 번째 사본이다**(첫 번째는 `input.ts` 의 `EDIT_KEYS`
       // 와 `modalOpener`). 값 미러링이고, 한쪽만 고치면 «화면이 광고하는 키가 안 먹는다»
       // 가 난다 — 실제로 R/F 를 뺄 때 이 줄을 함께 고쳐야 했다. 태스크 #44 가 그것이다.
-      hint.textContent = 'G 이동 · R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · X/Y/Z 축 고정 · 숫자 입력)'
+      hint.textContent = 'R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · 숫자 입력)'
         + ' · 중클릭(또는 Alt+좌)드래그 = 대상 중심으로 돌기 · Shift+드래그 = 위아래 · 휠 = 줌'
         + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
     }
     inspector.sync(st.target);
     outliner.sync();
+    badge.sync();
     onRefresh();
   }
 
@@ -196,6 +204,7 @@ export function createPanel(
       panel.dataset.mode = editing ? 'edit' : 'drive';
       // 주행 중에는 아웃라이너를 감춘다 — 편집 도구가 걸어다니는 화면을 가리지 않는다.
       outliner.root.dataset.mode = editing ? 'edit' : 'drive';
+      badge.setMode(editing);
       toggle.textContent = editing ? '✕ 편집 끝' : '✏️ 편집';
     },
     sayLead(msg: string): void {
@@ -205,6 +214,7 @@ export function createPanel(
     el,
     button,
     dispose(): void {
+      badge.dispose();
       outliner.dispose();
       panel.remove();
       style.remove();
