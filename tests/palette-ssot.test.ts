@@ -174,7 +174,16 @@ describe('[2] 이은 페이지 — 같은 색을 토큰과 리터럴로 섞어 �
   //     · `--oas-paper-rgb` **추가** — 신설 채널. `topnav`·`nav-sheet` 반투명 배경이
   //       종이색에 알파를 요구한다.
   const LINKED: Record<string, string[]> = {
-    'landing.html': ['--oas-on-dark-rgb', '--oas-paper-rgb', '--oas-green-text-rgb'],
+    // ⚠ 2026-08-14 재제출에서 **넷이 늘었다**(검수관 반려 B2 해소). 전부 「환영」 방향이다:
+    //   `--oas-ink-rgb`·`--oas-ink-body-rgb` — 1층 hex 를 채널로 나눠 신설했다. 그 전에는
+    //     `landing.html` 이 같은 값을 **로컬 채널에 리터럴로 복사**하고 있었는데(`--tint-rgb:
+    //     23 20 15`), 이 검사가 **1층에 `-rgb` 채널이 있는 색만** 보므로 통째로 사각이었다.
+    //     검수관 실측: 이 처방을 적용하자 **즉시 2 failed** 로 실제 리터럴을 잡았다.
+    //   `--oas-panel-rgb`·`--oas-paper-deep-rgb` — 반투명 표면·히어로 wash 가 알파를 요구한다.
+    'landing.html': [
+      '--oas-on-dark-rgb', '--oas-paper-rgb', '--oas-green-text-rgb',
+      '--oas-ink-rgb', '--oas-ink-body-rgb', '--oas-panel-rgb', '--oas-paper-deep-rgb',
+    ],
     'about.html': ['--oas-green-text-rgb'],
     'guide.html': ['--oas-green-text-rgb'],
   };
