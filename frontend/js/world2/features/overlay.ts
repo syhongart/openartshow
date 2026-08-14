@@ -287,7 +287,14 @@ export const overlayFeature: Feature = {
       // 그래도 내보내기는 여기서 낸다: 계약 파일 하나에 `items` 와 `parcels` 가 함께
       // 담기므로, 저장소가 자기 몫만 따로 내면 두 조각을 합칠 자리가 또 생긴다.
       // 편집을 한 번도 안 했어도 **읽은 것이 그대로 나가야 한다**(왕복 무손실).
-      return { version: loadOverlay(null).version, items, parcels: env.village.list() };
+      return {
+        version: loadOverlay(null).version,
+        items,
+        parcels: env.village.list(),
+        // 표면 재질도 소유는 조립부(`FeatureEnv.surfaces`)다 — 동결 파셀과 같은 이유로
+        // 내보내기만 여기서 낸다. 편집을 한 번도 안 했어도 **읽은 것이 그대로 나가야 한다.**
+        surfaces: env.surfaces(),
+      };
     }
 
     const host: OverlayHost = {
@@ -350,6 +357,10 @@ export const overlayFeature: Feature = {
         //
         // 비어 있으면 아무 일도 없다 — `setAll([])` 은 이전 동결이 없을 때 알림도 안 낸다.
         env.village.setAll(overlay.parcels);
+        // 표면 재질(W7)도 여기서 흘려보낸다. **동결 파셀과 같은 자리인 것이 중요하다** —
+        // 둘 다 프레임을 안 넘기고 끝나므로, GLB 를 받는 동안 감독이 옛 재질의 마을을
+        // 보는 일이 없다. 집행은 `features/surface-paint.ts` 가 다음 프레임에 한다.
+        env.setSurfaces(overlay.surfaces);
         for (let i = 0; i < overlay.items.length; i++) {
           const it = overlay.items[i];
           await place(it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s });

@@ -56,6 +56,7 @@ import { ALL_KINDS, PARTS } from './parts/index.js';
 import { readNum, readEnum, readNumOpt, writeNumOpt } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
 import { SHADING_MODES, type ShadingMode } from './decide/shading.js';
+import type { SurfaceSetting } from './decide/surface-material.js';
 // 카메라 far 를 여기서 유도한다 — 아래 `PerspectiveCamera` 주석 참고.
 import { DOME_MAX } from './systems/sky.js';
 
@@ -614,6 +615,17 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    * `readEnum` 이 목록 밖 값을 걸러 주므로 `shadingSpec` 이 모르는 값을 받는 일이 없다.
    */
   let shadingMode: ShadingMode = readEnum('shading', 'material', SHADING_MODES);
+  /**
+   * 표면 재질 설정(W7). **월드 상태이고 조립부가 소유한다**(위 `shadingMode` 와 같은 이유).
+   *
+   * ⚠ **바뀔 때만 새 배열을 낸다.** 집행(`features/surface-paint.ts`)이 참조 동등성으로
+   * «안 바뀌었다» 를 판정하므로, 배열을 제자리에서 고치면 화면이 안 따라온다. 매 프레임
+   * 전 표면을 훑지 않기 위한 축이고, 대가가 이 규약이다.
+   *
+   * 초기값은 비어 있고 — 즉 **어느 표면도 안 건드린 지금 화면** — 오버레이 JSON 을 읽은
+   * 뒤 `setSurfaces` 로 채워진다.
+   */
+  let surfaces: readonly SurfaceSetting[] = [];
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;
@@ -791,6 +803,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             setTime: (t) => { timeOfDay = t; },
             shading: () => shadingMode,
             setShading: (m) => { shadingMode = m; },
+            surfaces: () => surfaces,
+            setSurfaces: (s) => { surfaces = s; },
           },
           (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
         );

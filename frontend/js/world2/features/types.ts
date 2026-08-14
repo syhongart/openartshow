@@ -28,6 +28,7 @@
 import type { Scene, DirectionalLight, HemisphereLight, Camera } from 'three/webgpu';
 import type { SkyTime } from '../decide/night.js';
 import type { ShadingMode } from '../decide/shading.js';
+import type { SurfaceSetting } from '../decide/surface-material.js';
 import type { System } from '../kernel.js';
 import type { RendererAdapter } from '../adapters/renderer.js';
 import type { InstancePools } from '../systems/instancing.js';
@@ -152,6 +153,22 @@ export interface FeatureEnv {
    * 하늘 엔진 대신 setter 만 받는 그 구조).
    */
   readonly setShading: (m: ShadingMode) => void;
+
+  /**
+   * 표면 재질 설정(W7). **`time`·`shading` 과 같은 모양이고 같은 이유다** — 월드 상태라
+   * 조립부가 소유하고 여기서는 통로만 연다.
+   *
+   * ⚠ **참조가 같으면 «안 바뀌었다» 는 뜻이다.** 집행(`features/surface-paint.ts`)이 매
+   * 프레임 그것으로 판정하므로, 조립부는 **바뀔 때만 새 배열**을 낸다(제자리 수정 금지).
+   * 제자리로 고치면 화면이 안 따라오고, 그 실패는 «가끔 안 먹는다» 로만 보인다.
+   */
+  readonly surfaces: () => readonly SurfaceSetting[];
+
+  /**
+   * 표면 설정을 갈아 끼운다. 부르는 자리는 둘이다 — 부팅에 오버레이 JSON 을 읽은 뒤,
+   * 그리고 편집 패널이 슬라이더를 움직였을 때.
+   */
+  readonly setSurfaces: (s: readonly SurfaceSetting[]) => void;
 
   /** UI를 붙일 문서. 없는 환경(테스트)에서는 null */
   readonly doc: Document | null;
