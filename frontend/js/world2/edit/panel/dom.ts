@@ -194,8 +194,14 @@ export function createPanel(
       shadeBtns[i]!.dataset.on = SHADING_MODES[i] === curShade ? '1' : '0';
     }
     thawBtn.hidden = st.villageSel === null;
+    // 팔레트 강조 — **두 칸을 함께 본다**(W6 E). 파츠 버튼은 `src` 가 없으므로 `src` 만
+    // 보면 «파츠를 골랐는데 아무것도 강조 안 된다» 가 된다. 대조는 라벨이 아니라
+    // `data-asset`/`data-id` 로 한다 — 라벨은 사람이 읽는 것이고 언제든 바뀐다.
     for (const b of palette.querySelectorAll('button')) {
-      b.dataset.on = b.dataset.src === st.pendingSrc ? '1' : '0';
+      const on = b.dataset.asset === 'part'
+        ? b.dataset.id === st.pendingPart
+        : b.dataset.src === st.pendingSrc && st.pendingSrc !== null;
+      b.dataset.on = on ? '1' : '0';
     }
     // 문안은 `target.ts` 의 `describe` 한 곳이 만든다 — 두 형태의 표시를 여기서 나누면
     // 새 형태가 생길 때마다 이 분기가 자란다.

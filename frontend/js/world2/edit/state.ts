@@ -134,6 +134,18 @@ export interface EditState {
    */
   detached: boolean;
   pendingSrc: string | null;
+  /**
+   * 팔레트에서 고른 **마을 파츠** 종류(W6 E). `null` 이면 안 골랐다.
+   *
+   * ⚠ **`pendingSrc` 와 동시에 채워지지 않는다** — 위 `selected`/`villageSel` 과 같은
+   * 불변식이고 같은 이유다: 지면을 클릭했을 때 «GLB 를 놓을지 파츠를 놓을지» 가 둘로
+   * 갈리면 안 된다. 채우는 자리를 팔레트 한 곳으로 좁혔고 테스트가 그것을 본다.
+   *
+   * 왜 `pendingSrc` 에 접두사를 붙여 겸용하지 않았나: 놓는 경로가 **전혀 다르다**
+   * (GLB 는 비동기 로드 + 오버레이 항목, 파츠는 파셀 동결 배열 편집). 한 칸에 담으면
+   * 그 분기가 문자열 파싱이 되고, 파싱은 형식을 두 곳에 적는 일이다.
+   */
+  pendingPart: string | null;
   dragging: OverlayEntry | null;
   dragPlaneY: number;
   orbiting: boolean;
@@ -196,6 +208,7 @@ export function createEditState(): EditState {
     modalFrom: null,
     detached: false,
     pendingSrc: null,
+    pendingPart: null,
     dragging: null,
     dragPlaneY: 0,
     orbiting: false,

@@ -120,6 +120,7 @@ import { startEditMode } from '../frontend/js/world2/edit/mode.js';
 import type { EditSession, OverlayEntry, OverlayHost } from '../frontend/js/world2/edit/types.js';
 import { makeThreeStub, type StubHit } from './helpers/three-stub.js';
 import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
+import { maxPartsPerParcel } from '../frontend/js/world2/parts/index.js';
 import {
   SHADING_LABEL, SHADING_MODES, type ShadingMode,
 } from '../frontend/js/world2/decide/shading.js';
@@ -1737,5 +1738,159 @@ describe('셰이딩 뷰 — 키와 버튼이 문에 닿는다 (행위)', () => {
     const h = makeHarness(VILLAGE_FIXTURE);
     pressTab();
     expect(h.doc.body.textContent, '★ 안내에 Shift+Z 가 없다').toContain('Shift+Z');
+  });
+});
+
+// ── 에셋 라이브러리 (W6 E) ──────────────────────────────────────────────────
+//
+// 감독 카드 확정 2026-08-14: **마을 파츠부터 노출.**
+//
+// 목록 구성·검색·상한 판정은 `tests/world2-asset-library.test.ts` 가 순수 계층에서
+// 본다. 여기서 재는 것은 **화면에서 그 경로가 실제로 도는가** 다 — 순수 함수가 맞아도
+// 팔레트가 안 부르면 감독 화면에서는 아무 일도 안 난다.
+
+/** 팔레트의 파츠 버튼(색 스와치가 붙어 있고 `data-asset="part"` 다) */
+function partButton(h: Harness, label: string): HTMLButtonElement | undefined {
+  return ([...h.doc.querySelectorAll('#w2-edit .pal button')] as HTMLButtonElement[])
+    .find((b) => b.dataset.asset === 'part' && b.textContent === label);
+}
+
+function searchBox(h: Harness): HTMLInputElement {
+  return h.doc.querySelector('#w2-edit .pal .find') as HTMLInputElement;
+}
+
+function typeSearch(h: Harness, q: string): void {
+  const s = searchBox(h);
+  s.value = q;
+  s.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** 파셀 (0,0) 의 지금 배치 */
+function partsAt00(h: Harness): PlacedPart[] {
+  return h.frozen.get('0,0') ?? (VILLAGE_FIXTURE.parts['0,0'] as PlacedPart[]);
+}
+
+describe('에셋 라이브러리 — 마을 파츠를 놓는다 (행위)', () => {
+  it('★ 마을 파츠가 팔레트에 뜬다 — 그전에는 목록에 **아예 없었다**', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(partButton(h, '나무'), '★ 나무가 목록에 없다').toBeDefined();
+    expect(partButton(h, '건물'), '★ 건물이 목록에 없다').toBeDefined();
+  });
+
+  it('★ 바닥 평면은 목록에 안 뜬다 — 「한 개 더」가 의미를 갖지 않는다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(partButton(h, '지면'), '★ 지면을 놓을 수 있는 것처럼 보인다').toBeUndefined();
+    expect(partButton(h, '길'), '★ 길을 놓을 수 있는 것처럼 보인다').toBeUndefined();
+  });
+
+  it('★ 고르고 지면을 클릭하면 그 구역에 항목이 는다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    const before = partsAt00(h).filter((p) => p.kind === 'tree').length;
+    partButton(h, '나무')!.click();
+    clickAt(h);
+    const after = partsAt00(h).filter((p) => p.kind === 'tree').length;
+    expect(after, '★ 놓았는데 배치가 그대로다').toBe(before + 1);
+  });
+
+  it('★ 놓으면 「손본 구역」이 됐다고 말한다 — 밀도 슬라이더에서 빠지는 이유다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    partButton(h, '나무')!.click();
+    clickAt(h);
+    expect(h.frozen.has('0,0'), '★ 놓았는데 동결이 안 걸렸다').toBe(true);
+    expect(h.doc.body.textContent, '★ 손본 구역이 됐다는 말이 없다').toContain('손본 구역');
+  });
+
+  it('★ 놓으면 고르기가 풀린다 — 감독이 「흩어뿌리기」라고 부른 그 문제', () => {
+    // 안 풀면 그 뒤 모든 지면 클릭이 «또 놓기» 가 되고, 방금 놓은 것을 옮기려고 옆을
+    // 클릭하는 순간 하나가 더 생긴다(감독 신고 2026-08-13).
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    partButton(h, '나무')!.click();
+    clickAt(h);
+    const after1 = partsAt00(h).filter((p) => p.kind === 'tree').length;
+    clickAt(h, 420, 520);
+    expect(partsAt00(h).filter((p) => p.kind === 'tree').length,
+      '★ 두 번째 클릭에 또 놓였다').toBe(after1);
+  });
+
+  it('★ 상한을 넘기면 **거절하고 이유를 말한다** — 조용히 안 놓이면 「가끔 안 먹는다」다', () => {
+    // 상한을 넘겨 놓으면 슬롯이 모자라 그 구역이 조용히 덜 그려진다.
+    const cap = maxPartsPerParcel('tree');
+    const full = Array.from({ length: cap }, (_, i) => (
+      { kind: 'tree', x: i, y: 0, z: 0, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 }
+    )) as PlacedPart[];
+    const h = makeHarness({ parts: { '0,0': full } });
+    pressTab();
+    partButton(h, '나무')!.click();
+    clickAt(h);
+    expect((h.frozen.get('0,0') ?? full).filter((p) => p.kind === 'tree').length,
+      '★ 상한을 넘겨 놓였다').toBe(cap);
+    expect(h.doc.body.textContent, '★ 거절하면서 아무 말도 안 한다').toContain(String(cap));
+  });
+
+  it('★ 파츠와 GLB 를 **동시에** 못 고른다 — 지면 클릭이 무엇을 놓을지 갈린다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    partButton(h, '나무')!.click();
+    const on = () => ([...h.doc.querySelectorAll('#w2-edit .pal button')] as HTMLButtonElement[])
+      .filter((b) => b.dataset.on === '1');
+    expect(on().length, '★ 고른 것이 하나가 아니다').toBe(1);
+    expect(on()[0].dataset.id).toBe('tree');
+  });
+
+  it('같은 것을 다시 누르면 푼다 — 마음이 바뀌었을 때 되돌릴 자리가 그것뿐이다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    partButton(h, '나무')!.click();
+    partButton(h, '나무')!.click();
+    clickAt(h);
+    expect(h.frozen.has('0,0'), '★ 풀었는데 놓였다').toBe(false);
+    expect(h.doc.body.textContent, '★ 풀었다고 말하지 않는다').toContain('해제');
+  });
+
+  it('★ 검색이 목록을 줄인다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(partButton(h, '건물'), '★ 처음부터 건물이 없다').toBeDefined();
+    typeSearch(h, '나무');
+    expect(partButton(h, '나무'), '★ 검색어에 맞는 것까지 사라졌다').toBeDefined();
+    expect(partButton(h, '건물'), '★ 검색이 목록을 안 줄인다').toBeUndefined();
+  });
+
+  it('★ 검색을 비우면 다 돌아온다 — 비면 「고장났다」로 읽힌다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    typeSearch(h, '나무');
+    typeSearch(h, '');
+    expect(partButton(h, '건물'), '★ 검색을 비웠는데 안 돌아온다').toBeDefined();
+  });
+
+  it('★ 편집을 끄면 고르기가 풀린다 — 아니면 주행에서 지면 클릭이 나무를 심는다', () => {
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    partButton(h, '나무')!.click();
+    pressTab();  // 주행으로
+    pressTab();  // 다시 편집으로
+    clickAt(h);
+    expect(h.frozen.has('0,0'), '★ 모드를 오갔는데 고르기가 살아 있다').toBe(false);
+  });
+
+  it('마을을 못 만지는 소비자에서는 말하고 안 죽는다', () => {
+    // `village` 문이 없는 화면(빌더 미리보기 등). 파츠 버튼 자체가 뜨긴 한다 —
+    // 목록은 코드에서 나오므로. 누르면 화면이 이유를 말해야 한다.
+    const h = makeHarness();
+    pressTab();
+    // ⚠ **여기서 빠져나가지 않는다.** 첫 판본은 `if (!b) return` 이었고 그것은 빈
+    //   검사다 — 팔레트가 통째로 비어도 통과한다. 파츠 목록은 코드에서 나오므로
+    //   마을 문이 없어도 **떠 있어야 한다**는 것 자체가 축이다.
+    const b = partButton(h, '나무');
+    expect(b, '★ 마을 문이 없다고 파츠 목록까지 사라졌다').toBeDefined();
+    b!.click();
+    expect(() => clickAt(h)).not.toThrow();
+    expect(h.doc.body.textContent, '★ 못 놓는 이유를 안 말한다').toContain('마을을 만질 수 없');
   });
 });

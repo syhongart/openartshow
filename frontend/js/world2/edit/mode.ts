@@ -125,6 +125,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       gizmo.attach(null);
       select(st, host, null);
       st.pendingSrc = null;
+      // 파츠 고르기도 함께 푼다(W6 E) — 하나만 풀면 주행에서 돌아왔을 때 «지면을
+      // 클릭했더니 나무가 생긴다» 가 된다.
+      st.pendingPart = null;
       st.dragging = null;
       st.orbiting = false;
       panel.say('주행 모드 — 화면을 클릭하면 마우스로 시점이 돕니다.');

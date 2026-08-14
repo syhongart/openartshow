@@ -45,6 +45,19 @@ export const CSS = `
 #w2-edit .sel{color:#72E6E1}
 #w2-edit hr{border:0;border-top:1px solid #3A3D4B;margin:6px 0}
 #w2-edit .pal button{flex:1 1 100%;text-align:left}
+/* ── 에셋 라이브러리 (W6 E) ────────────────────────────────────────────────
+   검색칸 · 카테고리 제목 · 색 스와치. 목록이 길어지므로 팔레트에 최대 높이를 주고
+   그 안에서만 스크롤한다 — 안 주면 파츠 8개 + GLB 가 패널을 화면 밖까지 밀어낸다. */
+#w2-edit .pal{max-height:34vh;overflow-y:auto}
+#w2-edit .pal .find{width:100%;box-sizing:border-box;padding:4px 6px;margin:0 0 4px;
+  font:11px/1.2 system-ui,sans-serif;color:#F5F5F2;background:#1A1D26;
+  border:1px solid #3A3D4B;border-radius:5px}
+#w2-edit .pal .find:focus{outline:none;border-color:#8B72FF}
+#w2-edit .cat{display:flex;flex-wrap:wrap;gap:3px}
+#w2-edit .cat-h{flex:1 1 100%;color:#9A9EB1;font-size:10px;margin:4px 0 1px}
+/* 스와치는 라벨 앞 작은 사각. 파츠에만 붙는다 — 「어떤 계열인가」를 공짜로 말한다 */
+#w2-edit .sw{display:inline-block;width:9px;height:9px;margin-right:5px;
+  border-radius:2px;border:1px solid rgba(0,0,0,.35);vertical-align:-1px}
 /* 수치 칸 — 다섯이 한 줄에 들어가야 패널이 안 길어진다 */
 #w2-edit .insp{gap:3px}
 #w2-edit .fld{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:2px}

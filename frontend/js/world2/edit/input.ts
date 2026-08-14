@@ -263,6 +263,16 @@ export function createInput(deps: InputDeps): Input {
       else panel.say('그 자리는 하늘입니다 — 화면 아래쪽 땅을 클릭하세요.', true);
       return;
     }
+    // ── 마을 파츠 놓기 (W6 E) ───────────────────────────────────────────────
+    // GLB 놓기와 **나란히** 둔다. 둘은 `state.ts` 의 불변식으로 동시에 차지 않으므로
+    // 순서가 동작을 가르지 않는다 — 그래도 위에 두는 것은 «놓기는 고르기보다 먼저» 라는
+    // 같은 규칙을 따르기 위해서다(아래 마을 파츠 **선택**보다 앞이어야 한다).
+    if (st.pendingPart) {
+      const at = picker.groundAt();
+      if (at) actions.placePartAt(st.pendingPart, at);
+      else panel.say('그 자리는 하늘입니다 — 화면 아래쪽 땅을 클릭하세요.', true);
+      return;
+    }
 
     // ── 마을 파츠 (W4 ②-c) ──────────────────────────────────────────────────
     // **오버레이보다 뒤다.** 감독이 놓은 GLB 가 마을 건물에 겹쳐 있으면 놓은 쪽이
