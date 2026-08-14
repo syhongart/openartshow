@@ -415,6 +415,62 @@ jobs:
             echo "처음 보는 청크가 있었다면 job 이 커밋 전에 죽어 이 PR 자체가 없다. 그때도 이미지는"
             echo "run 의 artifact 에 남는다."
           } > /tmp/pr-body.md
-          gh pr create --base main --head "$BRANCH" \
-            --title "이미지를 생성한다 — ${BASENAME}" \
-            --body-file /tmp/pr-body.md
+          # ── PR 생성 ─────────────────────────────────────────────────────
+          # ⚠ **이 저장소에서 `gh pr create` 는 항상 실패한다.** 실측: run #1~#5 **5회 전부**
+          #   같은 자리에서 죽었다(run 31757052567 로그):
+          #     pull request create failed: GraphQL: GitHub Actions is not permitted
+          #     to create or approve pull requests (createPullRequest)
+          #   Settings → Actions → General → Workflow permissions 의 체크박스이고
+          #   **워크플로가 스스로 켤 수 없다.**
+          #   그런데 **바로 위 `git push` 는 5회 다 성공했다** — 그림은 생성·열거·커밋·push 가
+          #   전부 끝나 브랜치에 올라가 있는데 job 만 빨간불이었다. 감독이 버튼을 누를 때마다
+          #   보이는 그 실패는 **거짓 신호**이고, 거짓 신호는 진짜 실패를 가린다.
+          #   → 이 실패 **하나만** 통과시킨다.
+          # ⚠⚠ **전부 무시하지 않는다.** 이 저장소가 데인 형태가 *"실패가 조용했다"* 다
+          #   (독립 스모크 10회가 즉시 죽었는데 위임 보고에는 "완료" 로 올라온 사고).
+          #   그래서 **권한 문구가 매치될 때만** 통과이고, 그 외 실패는 종료코드 1 로 죽는다.
+          #   설정이 나중에 켜지면 첫 분기로 들어가 PR 이 정상적으로 열린다 — 그때 이 분기는
+          #   저절로 안 쓰이고, 지울 필요도 없다.
+          if gh pr create --base main --head "$BRANCH" \
+               --title "이미지를 생성한다 — ${BASENAME}" \
+               --body-file /tmp/pr-body.md 2> /tmp/pr-err.txt; then
+            echo "PR 을 열었다."
+          elif grep -q 'not permitted to create or approve pull requests' /tmp/pr-err.txt; then
+            cat /tmp/pr-err.txt >&2
+            {
+              echo "## PR 은 자동으로 안 열렸다 — 브랜치는 올라갔다"
+              echo
+              echo '```'
+              echo "${BRANCH}"
+              echo '```'
+              echo
+              echo "**그림 자체는 정상이다.** 생성 · 메타데이터 열거 · 커밋 · push 가 모두 끝났다."
+              echo "막힌 것은 PR 을 여는 동작 하나뿐이고, 원인은 저장소 설정"
+              echo "(Settings → Actions → General → Workflow permissions)이다 —"
+              echo "**워크플로가 켤 수 없는 축이다.**"
+              echo
+              echo "부팀장이 이 브랜치로 PR 을 연다. 본문은 이 run 의"
+              echo "\`pr-body-${GITHUB_RUN_ID}\` artifact 에 그대로 들어 있다."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            cat /tmp/pr-err.txt >&2
+            echo "::error::PR 생성이 **알려진 권한 사유가 아닌** 이유로 실패했다. 위 stderr 를 봐라."
+            exit 1
+          fi
+
+      # PR 본문을 artifact 로 남긴다 — 위 스텝이 권한 때문에 PR 을 못 열면 사람이 이것으로 연다.
+      # ⚠ **이게 없으면 `G-MIRROR` 가 지키는 「못 본 것」 표가 어느 PR 에도 안 실린다.** 테스트는
+      #   초록인데 산출물이 아무 데도 없는 상태가 되고, 그때부터 그 테스트는 장식이다. 실제로
+      #   지금까지 5회 전부 PR 이 안 열렸으므로 **그 표는 한 번도 사람 눈앞에 간 적이 없다.**
+      # ⚠⚠ **못 쟀다**: `upload-artifact` v4 가 workspace 밖 절대경로(`/tmp/...`)를 올리는지
+      #   실행으로 확인하지 못했다 — 이 환경은 `api.github.com` 403 이라 dispatch 를 못 누르고,
+      #   저장소에 actionlint 도 없다. 그래서 `if-no-files-found: warn` 이다(실패해도 job 을
+      #   죽이지 않는다 — 이 스텝은 편의이고, 그림과 브랜치는 이미 위에서 확정됐다).
+      #   **"확인했다" 로 적지 마라.** 첫 dispatch 가 이 축의 첫 실측이다.
+      - name: PR 본문을 artifact 로 남긴다
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pr-body-${{ github.run_id }}
+          path: /tmp/pr-body.md
+          if-no-files-found: warn
