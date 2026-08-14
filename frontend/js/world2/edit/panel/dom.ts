@@ -20,6 +20,7 @@ import { createInspector } from './inspector.js';
 import { createOutliner } from './outliner.js';
 import { createBadge } from './badge.js';
 import type { ViewSide } from '../../decide/orbit.js';
+import { SHADING_LABEL, SHADING_MODES, type ShadingMode } from '../../decide/shading.js';
 
 /** 패널이 «자기가 못 하는 일» 을 넘기는 곳. 조립자(`mode.ts`)가 채운다. */
 export interface PanelHandlers {
@@ -35,6 +36,8 @@ export interface PanelHandlers {
   pickVillage(v: VillagePick): void;
   /** 정해진 시점으로 간다(W6). **키와 같은 함수로 이어져야 한다** */
   setView(side: ViewSide | 'focus'): void;
+  /** 셰이딩을 그 모드로(W6). 위와 같은 이유로 키와 한 함수다 */
+  setShading(m: ShadingMode): void;
   exportNow(): void;
 }
 
@@ -92,6 +95,7 @@ export function createPanel(
   const rowOps = el('div', 'row');
   const rowOut = el('div', 'row');
   const rowView = el('div', 'row');
+  const rowShade = el('div', 'row');
   const inspector = createInspector(host, st, () => { refresh(); });
   // 아웃라이너는 **패널 밖**에 산다(왼쪽 별도 컨테이너). 넓은 화면에서만 보이는 것은
   // CSS 가 정하고 여기서는 폭을 모른다 — `css.ts` 의 미디어 쿼리 한 곳이 판정한다.
@@ -149,12 +153,23 @@ export function createPanel(
     button('우', () => { handlers.setView('right'); }),
     button('확대', () => { handlers.setView('focus'); }),
   );
+  // ── 셰이딩 뷰 (W6, 감독 지시 2026-08-13) ──────────────────────────────────
+  // *"그리고 와이어 프레임 뷰. 솔리드 뷰도 구현해줘."*
+  //
+  // 라벨은 `SHADING_LABEL` 한 곳에서 온다 — 여기에 «와이어» 라고 직접 적으면 키 안내
+  // (`input.ts`)와 값 미러링이 되고, 한쪽만 고쳐도 아무도 모른다.
+  //
+  // 버튼은 **절대 지정**이고 `Shift+Z` 는 토글이다. 다른 함수인 이유는 `Input.setShading`
+  // 주석 한 곳에 있다.
+  const shadeBtns = SHADING_MODES.map((m) =>
+    button(SHADING_LABEL[m], () => { handlers.setShading(m); }));
+  rowShade.append(...shadeBtns);
 
   const head = el('div', 'head');
   head.append(title, toggle);
   const body = el('div', 'body');
   body.append(palette, el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
-    el('hr'), rowView, rowOut, status, hint);
+    el('hr'), rowView, rowShade, rowOut, status, hint);
   panel.append(head, body);
   panel.dataset.open = '0';
   panel.dataset.mode = 'drive';
@@ -167,6 +182,17 @@ export function createPanel(
 
   function refresh(): void {
     snapBtn.dataset.on = st.snapOn ? '1' : '0';
+    // ── 셰이딩 버튼 ────────────────────────────────────────────────────────
+    // **지금 모드를 강조한다.** 없으면 눌러도 화면이 그대로인 모드(재질)에서 «안 먹었나» 가
+    // 된다 — 이 저장소가 «조작이 안 먹는 것과 대상이 없는 것은 다른 일» 로 여러 번 적은 축이다.
+    //
+    // 문이 없는 소비자(빌더 미리보기·테스트 하네스)에서는 **행 자체를 감춘다.** 누를 수
+    // 없는 버튼을 보여주는 것은 안내가 아니라 막다른 길이다.
+    const curShade = host.shading?.() ?? null;
+    rowShade.hidden = curShade === null;
+    for (let i = 0; i < shadeBtns.length; i++) {
+      shadeBtns[i]!.dataset.on = SHADING_MODES[i] === curShade ? '1' : '0';
+    }
     thawBtn.hidden = st.villageSel === null;
     for (const b of palette.querySelectorAll('button')) {
       b.dataset.on = b.dataset.src === st.pendingSrc ? '1' : '0';
@@ -201,7 +227,7 @@ export function createPanel(
       // 가 난다 — 실제로 R/F 를 뺄 때 이 줄을 함께 고쳐야 했다. 태스크 #44 가 그것이다.
       hint.textContent = 'R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · 숫자 입력)'
         + ' · 중클릭(또는 Alt+좌)드래그 = 대상 중심으로 돌기 · Shift+드래그 = 위아래 · 휠 = 줌'
-        + ' · 시점 1 정면 / 3 우 / 7 탑 / 9 좌 · F 확대'
+        + ' · 시점 1 정면 / 3 우 / 7 탑 / 9 좌 · F 확대 · Shift+Z 와이어 토글'
         + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
     }
     inspector.sync(st.target);

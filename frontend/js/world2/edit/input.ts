@@ -18,6 +18,7 @@ import {
   FOCUS_VIEW, ORBIT_LIFT_PER_PX, ORBIT_YAW_PER_PX, VIEW_PRESETS, zoomFactor,
   type ViewSide,
 } from '../decide/orbit.js';
+import { SHADING_LABEL, toggleWire, type ShadingMode } from '../decide/shading.js';
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
@@ -46,6 +47,14 @@ export interface Input {
    * 실제로 겪은 형태 — `panel/dom.ts` 의 `nudge` 주석).
    */
   setView(side: ViewSide | 'focus'): void;
+  /**
+   * 셰이딩을 바꾼다(W6). 패널 버튼이 쓴다 — `setView` 와 **같은 이유로** 키와 한 함수다.
+   *
+   * ⚠ 이것은 **절대 지정**이고 `Shift+Z` 는 토글이다. 둘이 다른 함수인 것이 의도다:
+   * 버튼은 «솔리드로 가라» 이고 키는 «와이어와 직전을 오가라» 라서, 하나로 합치면
+   * 버튼을 누를 때마다 「돌아갈 자리」가 흔들린다.
+   */
+  setShading(m: ShadingMode): void;
   /** 편집 여부와 무관하게 붙는 것(`Tab`). 세션 시작·끝에 한 번씩 */
   bindAlways(): void;
   unbindAlways(): void;
@@ -144,6 +153,38 @@ export function createInput(deps: InputDeps): Input {
     const t = st.target;
     if (!t) { panel.say('먼저 물건을 클릭해 고르세요 — 그것을 중심으로 봅니다.'); return true; }
     host.orbitTo(t.x, t.y, t.z, preset);
+    panel.refresh();
+    return true;
+  };
+
+  // ── 셰이딩 뷰 (W6) ──────────────────────────────────────────────────────
+  //
+  // 감독 지시 2026-08-13: *"그리고 와이어 프레임 뷰. 솔리드 뷰도 구현해줘."*
+  //
+  // ⚠ **`shading`·`setShading` 은 짝으로만 쓴다.** 하나만 있으면 토글이 «지금 무엇인가»
+  // 를 몰라 성립하지 않는다 — 문이 없는 소비자(빌더 미리보기·테스트 하네스)에서는
+  // **조용히 아무것도 안 한다**(`goView` 가 `orbitTo` 를 다루는 방식과 같다).
+
+  /** 그 모드로 **간다**(절대 지정). 패널 버튼이 쓴다 */
+  const goShading = (m: ShadingMode): boolean => {
+    if (!host.shading || !host.setShading) return false;
+    // ⚠ 돌아갈 자리도 여기서 함께 움직인다 — 버튼으로 솔리드에 갔다가 `Shift+Z` 를
+    // 누르면 와이어로 갔다가 **솔리드로** 돌아와야 한다. 이것을 빠뜨리면 버튼과 키가
+    // 서로 다른 히스토리를 보게 된다.
+    if (m !== 'wire') st.shadingBack = m;
+    host.setShading(m);
+    panel.say(`셰이딩: ${SHADING_LABEL[m]}`);
+    panel.refresh();
+    return true;
+  };
+
+  /** `Shift+Z` — 와이어와 **직전 모드**를 오간다(블렌더가 그 자리를 쓴다) */
+  const toggleShading = (): boolean => {
+    if (!host.shading || !host.setShading) return false;
+    const r = toggleWire(host.shading(), st.shadingBack);
+    st.shadingBack = r.back;
+    host.setShading(r.mode);
+    panel.say(`셰이딩: ${SHADING_LABEL[r.mode]}`);
     panel.refresh();
     return true;
   };
@@ -421,6 +462,20 @@ export function createInput(deps: InputDeps): Input {
       return;
     }
 
+    // ── 셰이딩 토글 ───────────────────────────────────────────────────────
+    // ⚠ **`EDIT_KEYS` 보다 반드시 앞이다.** `KeyZ` 가 거기 들어 있어서(높이 내리기)
+    // 뒤에 두면 `Shift+Z` 가 셰이딩이 아니라 높이로 간다 — 같은 키가 조합에 따라 갈리는
+    // 자리라 순서가 곧 동작이다.
+    //
+    // 블렌더의 `Z`(셰이딩 파이 메뉴)는 **안 쓴다**: 우리 `Z`/`X` 가 이미 높이이고, 같은
+    // 키가 상황에 따라 다르게 동작하는 것은 `G` 를 걷어내면서 방금 없앤 그 문제다.
+    if (ev.shiftKey && ev.code === 'KeyZ') {
+      if (!toggleShading()) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+
     if (!EDIT_KEYS.has(ev.code)) return;
     // ⚠ **말없이 죽지 않는다.** 예전에는 `if (!selected) return` 이 맨 위에 있어서
     // 아무것도 안 골랐을 때 편집키가 **침묵**했다 — 같은 조작의 패널 버튼은
@@ -520,6 +575,7 @@ export function createInput(deps: InputDeps): Input {
     setView(side): void {
       goView(side === 'focus' ? FOCUS_VIEW : VIEW_PRESETS[side]);
     },
+    setShading(m): void { goShading(m); },
     bindAlways(): void { doc.addEventListener('keydown', onModeKey); },
     unbindAlways(): void { doc.removeEventListener('keydown', onModeKey); },
   };

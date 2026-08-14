@@ -120,6 +120,9 @@ import { startEditMode } from '../frontend/js/world2/edit/mode.js';
 import type { EditSession, OverlayEntry, OverlayHost } from '../frontend/js/world2/edit/types.js';
 import { makeThreeStub, type StubHit } from './helpers/three-stub.js';
 import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
+import {
+  SHADING_LABEL, SHADING_MODES, type ShadingMode,
+} from '../frontend/js/world2/decide/shading.js';
 
 /** 편집 조작을 가로채는 리스너들. `keydown` 은 모드 키(`Tab`)가 상시라 따로 본다. */
 const GRABBY = ['click', 'contextmenu', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'drop'];
@@ -192,6 +195,12 @@ type Harness = {
   retargeted: RetargetCall[];
   /** `orbitTo` 로 나간 시점 요청. 「키·버튼이 실제로 문에 닿았는가」를 잰다 */
   views: { cx: number; cy: number; cz: number; lift: number; radius: number; yaw: number | null }[];
+  /** `setShading` 으로 나간 요청(순서대로). 같은 이유로 «문에 닿았는가» 를 잰다 */
+  shadings: ShadingMode[];
+  /** 지금 월드가 들고 있는 셰이딩. 토글 왕복을 재려면 마지막 요청이 아니라 이것을 본다 */
+  shadingNow: () => ShadingMode;
+  /** 패널의 셰이딩 버튼 셋. 라벨로 찾는다 — 그것이 화면에 보이는 이름이다 */
+  shadeButtons: () => HTMLButtonElement[];
   /**
    * 기즈모 핸들 메시 하나. **드래그 경로를 재려면 이것이 필요하다** — 핸들을 `hits` 에
    * 넣어야 `gizmo.hitTest` 가 잡고 `dragging` 이 켜진다. P1 뮤테이션(손 뗄 때 확정 안 함)이
@@ -225,6 +234,16 @@ interface VillageFixture {
    * 그대로다. 그 경로가 여전히 도는지 재는 축이 있다.
    */
   retarget?: boolean;
+  /**
+   * 셰이딩 문(`shading`·`setShading`)을 열 것인가. 기본은 **연다**(라이브와 같다).
+   *
+   * `false` 로 닫으면 문이 없는 소비자가 된다(빌더 미리보기 등) — 그때 편집은 버튼과
+   * 키를 **조용히 무시**해야 하고, 그 경로를 재는 축이 있다. 문이 없는데 뭔가 하려 들면
+   * 그것이 곧 «없는 문에 대고 예외를 던지는» 경로다.
+   */
+  shadingDoor?: boolean;
+  /** 세션 시작 셰이딩. `?shading=` 로 들어온 세션을 흉내낸다 */
+  shadingStart?: ShadingMode;
 }
 
 function makeHarness(vf?: VillageFixture): Harness {
@@ -255,6 +274,11 @@ function makeHarness(vf?: VillageFixture): Harness {
   /** `retargetSlot` 이 받은 것 전부(순서대로). 조작 중 실시간 반영을 재는 축 */
   const retargeted: RetargetCall[] = [];
   const views: Harness['views'] = [];
+  // 셰이딩 문(W6). **월드 상태를 흉내낸다** — `setShading` 이 값을 실제로 바꿔야 다음
+  // `shading()` 이 그것을 읽고, 그래야 `Shift+Z` 토글의 왕복을 잴 수 있다. 기록만 하고
+  // 값을 안 바꾸면 토글이 언제나 같은 자리에서 출발해 왕복 축이 통째로 빈 검사가 된다.
+  let shadingNow: ShadingMode = vf?.shadingStart ?? 'material';
+  const shadings: ShadingMode[] = [];
   // ⚠ `add`/`remove` 가 **실제로 담는다.** 빈 함수였을 때 선택 링(`pick.ts` 의 marker)이
   // 어디에도 안 남아서 «링이 떴는가» 를 재는 축이 통째로 불가능했다 — N11 뮤테이션이
   // 0 failed 로 그 구멍을 드러냈다(2026-08-13).
@@ -319,6 +343,12 @@ function makeHarness(vf?: VillageFixture): Harness {
     orbitTo: (cx, cy, cz, preset) => {
       views.push({ cx, cy, cz, lift: preset.lift, radius: preset.radius, yaw: preset.yaw });
     },
+    // 셰이딩 문(W6). 짝으로만 열고 닫는다 — 하나만 있으면 토글이 «지금 무엇인가» 를
+    // 몰라 성립하지 않는다(`edit/types.ts` 의 그 주석을 픽스처가 그대로 지킨다).
+    ...(vf?.shadingDoor === false ? {} : {
+      shading: () => shadingNow,
+      setShading: (m: ShadingMode) => { shadingNow = m; shadings.push(m); },
+    }),
   };
 
   // 팔레트 요청은 이 축과 무관하다 — 목록이 없으면 끌어다 놓기만 쓰는 정상 경로로 간다.
@@ -329,6 +359,10 @@ function makeHarness(vf?: VillageFixture): Harness {
     frozen: frozenStore,
     retargeted,
     views,
+    shadings,
+    shadingNow: () => shadingNow,
+    shadeButtons: () => [...doc.querySelectorAll('#w2-edit button')]
+      .filter((b) => SHADING_MODES.some((m) => SHADING_LABEL[m] === b.textContent)) as HTMLButtonElement[],
     gizmoHandle: () => {
       for (const c of root.children as { children?: unknown[] }[]) {
         const kids = c?.children;
@@ -686,8 +720,10 @@ describe('마을 파츠를 클릭으로 고른다 (행위)', () => {
  * `key`(찍힌 글자)를 따로 받는 이유: 모달의 숫자·부호·소수점은 `code` 가 아니라 `key` 로
  * 본다(자판 배열에 안 묶이게 — `decide/modal-edit.ts`).
  */
-function pressKey(code: string, key = ''): boolean {
-  const ev = new KeyboardEvent('keydown', { code, key, bubbles: true, cancelable: true });
+function pressKey(code: string, key = '', mods: { shiftKey?: boolean } = {}): boolean {
+  const ev = new KeyboardEvent('keydown', {
+    code, key, bubbles: true, cancelable: true, ...mods,
+  });
   document.dispatchEvent(ev);
   return ev.defaultPrevented;
 }
@@ -1569,5 +1605,109 @@ describe('정해진 시점 — 키와 버튼이 문에 닿는다 (행위)', () =
     for (const want of ['탑', '정면', '좌', '우', '확대']) {
       expect(labels, `★ 「${want}」 버튼이 없다`).toContain(want);
     }
+  });
+});
+
+// ── 셰이딩 뷰 (W6) ──────────────────────────────────────────────────────────
+//
+// 감독 지시 2026-08-13: *"그리고 와이어 프레임 뷰. 솔리드 뷰도 구현해줘."*
+//
+// 값(어느 재질이 꽂히는가)은 `tests/world2-shading.test.ts` 가 판정·집행 계층에서 본다.
+// 여기서 재는 것은 **키·버튼이 실제로 그 문에 닿는가** 다.
+
+describe('셰이딩 뷰 — 키와 버튼이 문에 닿는다 (행위)', () => {
+  it('★ Shift+Z 가 와이어를 켠다', () => {
+    const h = pickedVillage();
+    expect(pressKey('KeyZ', 'Z', { shiftKey: true }), '★ Shift+Z 를 편집이 안 먹었다').toBe(true);
+    expect(h.shadings, '★ 셰이딩 문이 안 불렸다').toEqual(['wire']);
+  });
+
+  it('★ Z 단독은 **높이**다 — 셰이딩으로 새면 기존 조작이 죽는다', () => {
+    // `KeyZ` 가 `EDIT_KEYS`(높이 내리기)에도 있어서 분기 **순서가 곧 동작**이다.
+    // 셰이딩 분기를 `EDIT_KEYS` 뒤로 옮기면 이 축이 빨간불이 된다.
+    const h = pickedVillage();
+    const y0 = h.frozen.size;
+    expect(pressKey('KeyZ'), '★ Z 를 편집이 안 먹었다').toBe(true);
+    expect(h.shadings, '★ Z 단독이 셰이딩을 바꿨다').toEqual([]);
+    // 높이 조작은 마을 파츠를 동결시킨다 — «무언가 실제로 일어났다» 의 관측 가능한 흔적.
+    expect(h.frozen.size, '★ Z 가 높이를 안 움직였다').toBeGreaterThan(y0);
+  });
+
+  it('★ Shift+Z 를 두 번 누르면 돌아온다 — 토글이지 편도가 아니다', () => {
+    const h = pickedVillage();
+    pressKey('KeyZ', 'Z', { shiftKey: true });
+    pressKey('KeyZ', 'Z', { shiftKey: true });
+    expect(h.shadings, '★ 왕복이 아니다').toEqual(['wire', 'material']);
+    expect(h.shadingNow(), '★ 원래 자리로 안 돌아왔다').toBe('material');
+  });
+
+  it('★ 솔리드에서 갔다 오면 **솔리드**로 돌아온다 — 머티리얼로 튕기지 않는다', () => {
+    // 「돌아갈 자리」를 버튼이 함께 갱신하지 않으면 여기서 머티리얼이 나온다.
+    const h = pickedVillage();
+    h.shadeButtons().find((b) => b.textContent === SHADING_LABEL.solid)!.click();
+    pressKey('KeyZ', 'Z', { shiftKey: true });
+    pressKey('KeyZ', 'Z', { shiftKey: true });
+    expect(h.shadingNow(), '★ 보던 솔리드가 사라졌다').toBe('solid');
+  });
+
+  it('★ ?shading=wire 로 시작한 세션은 첫 토글에 머티리얼로 간다', () => {
+    // 돌아갈 자리가 와이어면 «눌렀는데 또 와이어» 가 되어 키가 죽은 것으로 보인다.
+    const h = pickedVillage({ ...VILLAGE_FIXTURE, shadingStart: 'wire' });
+    pressKey('KeyZ', 'Z', { shiftKey: true });
+    expect(h.shadingNow(), '★ 와이어에서 못 빠져나온다').toBe('material');
+  });
+
+  it('★ 패널 버튼도 **같은 문**으로 간다 — 그리고 절대 지정이다', () => {
+    const h = pickedVillage();
+    const wire = h.shadeButtons().find((b) => b.textContent === SHADING_LABEL.wire)!;
+    wire.click();
+    wire.click();
+    // 버튼은 토글이 아니다 — 두 번 눌러도 그 모드다. 토글이면 「와이어로 가라」가
+    // 「와이어면 나가라」가 되어 버튼 라벨이 거짓말을 한다.
+    expect(h.shadingNow(), '★ 버튼이 토글처럼 동작한다').toBe('wire');
+    expect(h.shadings, '★ 버튼이 문을 안 불렀다').toEqual(['wire', 'wire']);
+  });
+
+  it('셰이딩 버튼 셋이 다 있고 지금 모드가 강조된다', () => {
+    const h = pickedVillage();
+    expect(h.shadeButtons().length, '★ 버튼이 셋이 아니다').toBe(SHADING_MODES.length);
+    // 강조가 없으면 «화면이 그대로인 모드»(재질)에서 눌러도 먹었는지 알 수 없다.
+    const on = () => h.shadeButtons().filter((b) => b.dataset.on === '1').map((b) => b.textContent);
+    expect(on(), '★ 시작 모드가 강조되지 않는다').toEqual([SHADING_LABEL.material]);
+    h.shadeButtons().find((b) => b.textContent === SHADING_LABEL.wire)!.click();
+    expect(on(), '★ 바꿨는데 강조가 안 따라온다').toEqual([SHADING_LABEL.wire]);
+  });
+
+  it('★ 모달 중에는 Shift+Z 가 안 먹는다 — 조작이 먼저다', () => {
+    const h = pickedVillage();
+    movePointer(400, 300);
+    pressKey('KeyR', 'r');
+    pressKey('KeyZ', 'Z', { shiftKey: true });
+    expect(h.shadings, '★ 조작 중에 셰이딩이 바뀌었다').toEqual([]);
+  });
+
+  it('★ 문이 없는 소비자에서는 **조용히** 무시한다 — 예외도, 흔적도 없다', () => {
+    // 빌더 미리보기·테스트 하네스처럼 셰이딩을 안 여는 소비자가 있다.
+    const h = pickedVillage({ ...VILLAGE_FIXTURE, shadingDoor: false });
+    expect(() => pressKey('KeyZ', 'Z', { shiftKey: true })).not.toThrow();
+    expect(h.shadings, '★ 없는 문이 불렸다').toEqual([]);
+  });
+
+  it('★ 문이 없으면 버튼을 아예 안 보여준다 — 누를 수 없는 버튼은 막다른 길이다', () => {
+    const h = pickedVillage({ ...VILLAGE_FIXTURE, shadingDoor: false });
+    const row = h.shadeButtons()[0]?.parentElement as HTMLElement | undefined;
+    expect(row?.hidden, '★ 못 쓰는 버튼이 화면에 남는다').toBe(true);
+  });
+
+  it('화면이 광고하는 키와 실제 키가 같다 — Shift+Z', () => {
+    // hint 는 키 목록의 **두 번째 사본**이다(태스크 #44). 한쪽만 고치면 «화면이
+    // 광고하는 키가 안 먹는다» 가 난다.
+    //
+    // ⚠ **아무것도 안 고른 상태로 잰다** — 무언가 고르면 hint 가 그 대상 안내로 바뀌어
+    // 키 목록이 통째로 사라진다(기존 동작이고 이번 범위가 아니다). 고른 상태로 재면
+    // 이 축이 언제나 빨간불이라 축 자체가 못 선다.
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(h.doc.body.textContent, '★ 안내에 Shift+Z 가 없다').toContain('Shift+Z');
   });
 });

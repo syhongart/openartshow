@@ -54,6 +54,7 @@ import { npcFeature } from './npc.js';
 import { postfxFeature } from './postfx.js';
 import { glbCityFeature } from './glb-city.js';
 import { overlayFeature } from './overlay.js';
+import { shadingFeature } from './shading.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -72,6 +73,14 @@ export const FEATURES: readonly Feature[] = [
   // 기본 배치 계산에는 손대지 않는다. 파일이 비어 있으면(지금이 그렇다) 아무것도 안 붙고,
   // 그때도 GLTFLoader 를 내려받지 않는다 — 배치가 0개면 로더가 필요 없기 때문이다.
   overlayFeature,
+  // ── 셰이딩 뷰 (`?shading=solid|wire`) ─────────────────────────────────────
+  // 감독 지시 *"와이어 프레임 뷰. 솔리드 뷰도 구현해줘."* — `scene.overrideMaterial` 을
+  // 꽂는다. **후보정보다 앞**이어야 한다: 후보정은 씬을 렌더타깃에 받아 가공하므로,
+  // 오버라이드가 이미 걸린 결과 위에서 돌아야 «와이어 화면에 블룸» 이 성립한다.
+  //
+  // 오버레이(편집)보다 뒤인 것도 의도다 — 편집이 그 프레임에 놓은 것도 함께 덮인다.
+  // 새로 놓은 물건만 원래 재질로 남으면 그것이 곧 «셰이딩이 안 먹는 것» 으로 보인다.
+  shadingFeature,
   // 후보정은 **맨 마지막**이다. 렌더 경로를 통째로 가로채므로, 앞선 기능이 씬에 무엇을
   // 넣든 그 결과 위에서 동작해야 한다. 여기서 한 줄을 지우면 후보정이 통째로 빠지고
   // 어댑터는 기본 렌더 경로로 남는다.

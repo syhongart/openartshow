@@ -27,6 +27,7 @@
 // 내부 네임스페이스 재수출에 걸려 타입이 안 잡힌다(TS2694).
 import type { Scene, DirectionalLight, HemisphereLight, Camera } from 'three/webgpu';
 import type { SkyTime } from '../decide/night.js';
+import type { ShadingMode } from '../decide/shading.js';
 import type { System } from '../kernel.js';
 import type { RendererAdapter } from '../adapters/renderer.js';
 import type { InstancePools } from '../systems/instancing.js';
@@ -128,6 +129,30 @@ export interface FeatureEnv {
    * 그대로 주지 않고 **이 setter 를 거치는 것만** 준다.
    */
   readonly setTime: (t: SkyTime) => void;
+
+  /**
+   * 지금 어떤 셰이딩인가 — 머티리얼 / 솔리드 / 와이어.
+   *
+   * ── 왜 `time`/`setTime` 과 **같은 모양**인가 ───────────────────────────────
+   * 새 패턴을 만들지 않았다. 이것도 «어느 한 기능의 상태» 가 아니라 **월드를 보는 방식**
+   * 이고, 그래서 소유는 조립부에 두고 여기서는 통로만 연다. 값으로 주면 조립 시점의
+   * 모드가 영원히 굳고(세션 중 버튼·URL·키로 바뀐다), 셰이딩 기능이 혼자 들고 있으면
+   * 편집 패널이 그 기능을 직접 만져야 해서 커널 규약이 뒷문으로 깨진다.
+   *
+   * 위 `time` 주석이 길게 적은 사고 — 후보정이 반구광 세기로 시간대를 **추측**하다가
+   * 밤 하한이 낮 값보다 커지면서 블룸이 통째로 꺼진 일 — 이 그 규약을 안 지켰을 때의
+   * 모습이다. 상태를 공식으로 열지 않으면 소비자가 관측으로 지어낸다.
+   */
+  readonly shading: () => ShadingMode;
+
+  /**
+   * 셰이딩을 바꾼다. 부르는 자리는 셋이다 — 조립부 초기화(`?shading=`), 편집 패널 버튼,
+   * 편집 키(`Shift+Z`). 셋 다 **이 setter 를 거친다**: 편집에 셰이딩 기능의 컨트롤을
+   * 그대로 주지 않는 것이 `setTime` 과 같은 이유다(`features/sky.ts` 의 神 모드 패널이
+   * 하늘 엔진 대신 setter 만 받는 그 구조).
+   */
+  readonly setShading: (m: ShadingMode) => void;
+
   /** UI를 붙일 문서. 없는 환경(테스트)에서는 null */
   readonly doc: Document | null;
   /**

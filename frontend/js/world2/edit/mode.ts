@@ -47,6 +47,7 @@ import { createPanel } from './panel/dom.js';
 import { loadPalette } from './panel/palette.js';
 import { createActions } from './actions.js';
 import { createInput } from './input.js';
+import { safeBack } from '../decide/shading.js';
 
 export interface EditOptions {
   /** 팔레트 목록(`assets/models/index.json`) 의 실제 주소 */
@@ -58,6 +59,13 @@ export interface EditOptions {
 export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession {
   const doc = host.doc;
   const st = createEditState();
+  // `Shift+Z` 가 와이어에서 **돌아갈 자리**를 세션 시작 값으로 맞춘다(W6).
+  //
+  // `createEditState()` 는 소비자를 모르므로 `'material'` 로 시작한다. 그런데 세션이
+  // `?shading=solid` 로 들어왔으면 첫 토글이 와이어→**머티리얼**로 튕겨 «내가 보던
+  // 솔리드가 사라진다» 가 된다. 조건은 `safeBack` 하나가 소유한다(`?shading=wire`
+  // 로 시작하면 돌아갈 곳이 없어 머티리얼이다).
+  st.shadingBack = safeBack(host.shading?.() ?? 'material');
 
   const picker = createPicker(host, st);
   const gizmo = createGizmo(host);
@@ -75,6 +83,8 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     pickVillage: (v) => { select(st, host, { village: v }); panel.refresh(); },
     // 시점 버튼과 시점 키는 **같은 함수**다 — `input` 이 소유하고 패널은 부르기만 한다.
     setView: (side) => { input.setView(side); },
+    // 셰이딩도 마찬가지 — 버튼과 `Shift+Z` 가 한 구현을 본다(W6).
+    setShading: (m) => { input.setShading(m); },
     exportNow: () => { actions.exportNow(); },
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
