@@ -182,6 +182,21 @@ on:
         #   `no amber`·`no warm gradient along the horizon or above the rooftops`)를 달고
         #   **하늘의 난색 요구를 통째로 지웠다.** 그래서 `only` 도 참이 된다.
         #
+        #   ⚠⚠ **시각 수식은 `in the blue hour` **하나**다 — 두 개를 쓰지 마라**(검수관 조건
+        #   C-A·C-A′). 같은 자리에서 **방향만 바꿔 두 번 틀렸다**:
+        #     1차  `long after the sun has dropped below the horizon`
+        #          → 감독이 고른 **「해 진 직후」와 반대**이고, blue hour 보다 **뒤**(어두운 쪽).
+        #            게다가 바로 위 주석은 「직후」라고 적고 있어 **주석과 값이 갈라졌다.**
+        #     2차  `in the first minutes after the sun has gone below the horizon`
+        #          → 방향을 뒤집었더니 이번엔 blue hour 보다 **앞**(노을 쪽)이 됐다.
+        #            blue hour 는 태양 고도 −4°~−6°(일몰 후 20~40분)이고 `first minutes` 는
+        #            0°~−1° 라 **20~40분 어긋난다.** 그리고 그 구간이 **지평선 난색이 최대인
+        #            구간**이라 바로 위에서 세운 노을 가드 5개와 정면 충돌한다.
+        #   **처방은 문구 교체가 아니라 조립 제거다.** 이 저장소가 이미 쓴 문장이 그대로
+        #   적용된다 — *"매번 손으로 조립하니 매번 다르게 틀렸다. 조립을 없애면 틀릴 자리가
+        #   없다."* `in the blue hour` 하나로 **결과 색이 지정되고**, 감독 카드의 「해 진 직후 ·
+        #   푸른 시간」이 정확히 그 구간이다. 수식을 더 붙이면 그때부터 충돌 가능성이 생긴다.
+        #
         #   ⚠ **이 축에는 이미 알려진 지뢰가 있다** — 위 `⚠⚠⚠` 문단이 적은 *"너무
         #   어두운데."* 가 그것이다(대상은 그 문단에 적힌 옛 산출물 = run #4. 이 파일 안에서
         #   같은 인용을 두 번 적지 않는다 — 검수관 조건 C2. `landing.html` 에도 같은 문장이
@@ -199,7 +214,11 @@ on:
         #   **peak 지점**에서 **0.9%** 다(⚠ α 수치를 여기 적지 않는다 — 스톱은 `landing.html`
         #   의 `--hero-wash-peak` 한 곳이고 그 자리 주석이 *"강도·색만 노브 축"* 이라고
         #   **바뀔 값임을 명시**한다. 첫 판본은 그 두 α 를 숫자로 박아 값 미러링이 됐다 —
-        #   검수관 권고 P8). 즉 화면에서 살아남는 것은 **상단 ~30%** 가 사실상 전부인데, 이
+        #   검수관 권고 P8). ⚠ **위 세 채도(15.5/5.2/0.9)는 「현행 peak 기준 계산」이다**
+        #   — α 를 안 적었어도 **그 α 에서 유도된 값**이라 `--hero-wash-peak` 를 바꾸면 셋 다
+        #   낡는다(검수관 권고 P11). 아래 재검토 트리거는 「배치 구현 회차」만 걸므로
+        #   **`peak` 를 만지는 회차도 이 문단을 본다.**
+        #   즉 화면에서 살아남는 것은 **상단 ~30%** 가 사실상 전부인데, 이
         #   프롬프트는 따뜻한 요소를 mid/lower 에 둔다. **의도와 반대 방향일 수 있다.**
         #   ⚠⚠ 다만 **이미지를 히어로에 배치하는 코드는 아직 없다**(`frontend/img/` 0건,
         #   `.hero` 는 파티클 캔버스). 위 계산은 *"생성 이미지는 밝기를 통제할 수 없으므로
@@ -216,7 +235,7 @@ on:
         #   바뀌면 모델이 창문에 글자를 넣을 수도 있다. 통과 이력을 면제로 쓰지 않는다.
         description: '어떤 그림인가 (비우면 홈 히어로 기본 시안 · 공개 기록에 남는다)'
         required: false
-        default: 'A wide illustrated street scene of an unnamed, invented city in the blue hour, in the first minutes after the sun has gone below the horizon, viewed at pedestrian eye level. Cool low-saturation palette throughout: pale periwinkle, dusty slate blue, soft lavender grey. The sky is a calm even blue-grey across its whole width — no sunset colours at all, no orange, no pink, no amber, no warm gradient along the horizon or above the rooftops. Keep the whole scene light and airy — this is the bright half hour of blue dusk, not night: no black, no heavy shadow, no stars, no moon, and the street itself stays evenly and clearly lit. Soft hand-drawn linework with gentle painterly shading, flat storybook style, no photorealism. Composition: the upper third is open sky, a long soft gradient of pale blue-grey — this area must stay simple and uncluttered. Mid ground: rows of low stone and plaster townhouses receding in one-point perspective on both sides, with shuttered upper windows and cloth awnings, their facades in cool muted tones. Ground floor shopfronts on the right are small art galleries with lit windows; the soft lamplight inside them is the only warm colour anywhere in the picture. Framed pictures are visible inside as soft abstract colour blocks with no discernible imagery. A few figures walk the street and pause at the windows — drawn tiny, reduced to simple silhouettes, low in saturation, with no facial features at all, so they read as atmosphere rather than characters. The lower third is plain light blue-grey pavement, still clearly bright, with soft even light and no detail. Keep all important elements inside the central 60% of the width — the outer edges will be cropped on narrow screens. Absolutely no text, no letters, no signage, no logos, no watermarks. No recognisable real people. No recognisable real-world landmarks, buildings, or brands.'
+        default: 'A wide illustrated street scene of an unnamed, invented city in the blue hour, viewed at pedestrian eye level. Cool low-saturation palette throughout: pale periwinkle, dusty slate blue, soft lavender grey. The sky is a calm even blue-grey across its whole width — no sunset colours at all, no orange, no pink, no amber, no warm gradient along the horizon or above the rooftops. Keep the whole scene light and airy — this is the bright half hour of blue dusk, not night: no black, no heavy shadow, no stars, no moon, and the street itself stays evenly and clearly lit. Soft hand-drawn linework with gentle painterly shading, flat storybook style, no photorealism. Composition: the upper third is open sky, a long soft gradient of pale blue-grey — this area must stay simple and uncluttered. Mid ground: rows of low stone and plaster townhouses receding in one-point perspective on both sides, with shuttered upper windows and cloth awnings, their facades in cool muted tones. Ground floor shopfronts on the right are small art galleries with lit windows; the soft lamplight inside them is the only warm colour anywhere in the picture. Framed pictures are visible inside as soft abstract colour blocks with no discernible imagery. A few figures walk the street and pause at the windows — drawn tiny, reduced to simple silhouettes, low in saturation, with no facial features at all, so they read as atmosphere rather than characters. The lower third is plain light blue-grey pavement, still clearly bright, with soft even light and no detail. Keep all important elements inside the central 60% of the width — the outer edges will be cropped on narrow screens. Absolutely no text, no letters, no signage, no logos, no watermarks. No recognisable real people. No recognisable real-world landmarks, buildings, or brands.'
         type: string
       out:
         description: '저장 경로 (frontend/ 아래 · png/jpg/webp 만)'
