@@ -40,7 +40,7 @@ import {
   ALLOWED_EXT,
   MAX_BYTES,
 } from '../scripts/generate-image.mjs';
-import { inspect, pngChunks, jpegSegments, findExtra, ACCEPTED, RENDER } from '../scripts/png-chunks.mjs';
+import { inspect, pngChunks, jpegSegments, findExtra, peek, ACCEPTED, RENDER } from '../scripts/png-chunks.mjs';
 
 const KEY = 'AIzaSyTESTKEY_0123456789abcdefghijkl';
 const ODD_KEY = 'sk-proj-9f2b7c1d4e-NOTGOOGLESHAPED';
@@ -654,6 +654,141 @@ describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)'
     const noApp2 = Buffer.concat([JPEG_FIXTURE.subarray(0, 8), JPEG_FIXTURE.subarray(16)]);
     expect(run(noApp2, ['--fail-on-extra']).status).toBe(0);
   });
+
+  // ⚠⚠ **팀장 조건 3 의 뮤테이션을 CLI 축에서 못 박는다**(2026-08-13).
+  //   *"c2pa 가 아닌 가짜 APP11 로 게이트가 실제로 빨간불이 되는지 실측하고 기록한다."*
+  //   위 `G-ACCEPT` 는 `findExtra` 를 **직접** 부르므로 `main()` 이 `buf` 를 넘기는지,
+  //   기본 `ACCEPTED` 를 쓰는지는 안 본다 — 워크플로가 부르는 것은 **CLI** 다.
+  //   스크래치에서 6케이스를 돌려 6/6 을 봤지만 **스크래치는 지워진다.** 남겨야 검사다.
+  describe('APP11 통과 규칙 — 이름이 같아도 내용이 다르면 CLI 가 죽는다', () => {
+    const seg = (marker: number, payload: Buffer) => {
+      const len = Buffer.alloc(2);
+      len.writeUInt16BE(payload.length + 2);
+      return Buffer.concat([Buffer.from([0xff, marker]), len, payload]);
+    };
+    /** 렌더 청크만 있는 최소 JPEG + 끼워 넣을 세그먼트. */
+    const jpegWith = (...extra: Buffer[]) => Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      seg(0xe0, Buffer.from('JFIF\0\x01\x02\0\0\x01\0\x01\0\0', 'latin1')),
+      seg(0xdb, Buffer.alloc(65)), seg(0xc0, Buffer.alloc(15)), seg(0xc4, Buffer.alloc(29)),
+      ...extra,
+      Buffer.from([0xff, 0xda, 0x00, 0x0c, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+    ]);
+    // ⚠⚠⚠ **이 픽스처가 검수관 반려 B-1 의 본체다**(2026-08-13). 첫 판본은 UUID 자리를
+    //   `Buffer.alloc(17)`(0바이트)로 채웠고, 그래서 **실물의 핵심 성질이 대역에 없었다** —
+    //   C2PA manifest store 의 JUMBF content-type UUID 는 `63 32 70 61 …` 이라 **앞 4바이트가
+    //   ASCII `c2pa`** 다. 실물에는 페이로드 24번지에 `c2pa` 가 **항상 있다.**
+    //   그 결과 당시 규칙(`includes('jumb') && includes('c2pa')`)이 label 을 아예 안 보는데도
+    //   `it('label 이 c2pa 가 아니면 죽는다')` 가 **초록이었다.** 실물로 재현하면 fail-OPEN
+    //   3건이었다(label 이 `xmp ` / label 없음 / 순서 역전 — 전부 exit 0).
+    //   게시판이 이름 붙인 **「네 번째 원인 — 대역이 실물의 핵심 성질을 안 가지고 있다」** 다.
+    //   **이 UUID 를 상수로 뽑아 두는 것이 요점이다.** 0바이트로 되돌리면 아래 케이스 여럿이
+    //   의미를 잃는데, 그때 테스트는 여전히 초록이다.
+    const C2PA_UUID = Buffer.from([
+      0x63, 0x32, 0x70, 0x61, 0x00, 0x11, 0x00, 0x10,   // 'c' '2' 'p' 'a' …
+      0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71,
+    ]);
+    /**
+     * 실물에 가까운 APP11.
+     * idx 0..7 CI+En+Z · 12..15 `jumb` · 20..23 `jumd` · 24..39 UUID · 40 toggles · 41.. label
+     * @param label `null` 이면 label 을 통째로 뺀다.
+     *   ⚠ 첫 판본은 *"실물에서 안 오는 모양"* 이라고 적었는데 **확인 안 된 단정**이었다
+     *   (검수관 Q-4). JUMBF description box 의 toggles 는 label 을 **선택적**으로 두므로
+     *   label 없는 JUMBF 는 규격 위반이 아니다. 막는 것은 옳지만 이유가 다르다 —
+     *   *"C2PA store 에서는 label 이 필수인데 **실물을 아직 못 봤으므로** 없으면 막는다"*.
+     * @param uuidPad UUID 자리 크기. 16이 실물. 늘리면 label 이 판별 창 밖으로 밀린다.
+     */
+    const app11 = (label: string | null, uuidPad = 16) => seg(0xeb, Buffer.concat([
+      Buffer.from('JP', 'latin1'), Buffer.alloc(6),
+      Buffer.alloc(4), Buffer.from('jumb', 'latin1'),
+      Buffer.alloc(4), Buffer.from('jumd', 'latin1'),
+      uuidPad === 16 ? C2PA_UUID : Buffer.concat([C2PA_UUID, Buffer.alloc(uuidPad - 16)]),
+      Buffer.alloc(1),                                   // toggles
+      label === null ? Buffer.alloc(0) : Buffer.from(`${label}\0`, 'latin1'),
+      Buffer.alloc(200),
+    ]));
+
+    it('진짜 C2PA 는 통과한다', () => {
+      expect(run(jpegWith(app11('c2pa')), ['--fail-on-extra']).status).toBe(0);
+    });
+
+    // ⚠ 아래 셋이 **B-1 재현 케이스**다. 규칙이 `includes` 로 돌아가면 셋 다 exit 0 이 된다.
+    it('label 이 c2pa 가 아니면 죽는다 — UUID 의 c2pa 에 속지 않는다', () => {
+      expect(run(jpegWith(app11('xmp ')), ['--fail-on-extra']).status).toBe(1);
+    });
+
+    it('label 이 아예 없으면 죽는다 — UUID 만으로 통과하지 않는다', () => {
+      expect(run(jpegWith(app11(null)), ['--fail-on-extra']).status).toBe(1);
+    });
+
+    it('규격 위치가 아닌 자리의 문자열은 안 쳐준다 — 순서가 역전돼도 죽는다', () => {
+      const scrambled = seg(0xeb, Buffer.concat([
+        Buffer.from('JP', 'latin1'), Buffer.alloc(6),
+        Buffer.from('....c2pa............jumb....', 'latin1'), Buffer.alloc(200),
+      ]));
+      expect(run(jpegWith(scrambled), ['--fail-on-extra']).status).toBe(1);
+    });
+
+    it('c2pa 문자열만 있고 JUMBF 구조가 없으면 죽는다', () => {
+      const fake = seg(0xeb, Buffer.concat([
+        Buffer.from('JP', 'latin1'), Buffer.alloc(6),
+        Buffer.from('Adobe XMP Core 5.6 c2pa', 'latin1'), Buffer.alloc(200),
+      ]));
+      expect(run(jpegWith(fake), ['--fail-on-extra']).status).toBe(1);
+    });
+
+    // 판별 창(`MATCH_WINDOW` = 45)의 **경계**다. UUID 자리를 늘려 label 을 창 밖으로 밀면
+    // 못 본 것이므로 막혀야 한다 — 창을 줄이는 방향으로 틀려도 fail-closed 임을 못 박는다.
+    it('label 이 판별 창 밖으로 밀리면 못 본 것이다 — fail-closed', () => {
+      expect(run(jpegWith(app11('c2pa', 80)), ['--fail-on-extra']).status).toBe(1);
+    });
+
+    it('APP11 이 아예 없으면 통과한다 — 위 케이스들이 형식 탓이 아니다', () => {
+      expect(run(jpegWith(), ['--fail-on-extra']).status).toBe(0);
+    });
+
+    // 통과한 회차에도 **무엇이 통과했는지 로그에 남는다.** 안 남기면 팀장 조건의 취지
+    // (*"사람이 실물을 보고 통과시킨다"*)가 정작 통과하는 회차에 깨진다 — 규칙이 보는
+    // 것은 선두 45B 뿐이고 그 뒤 매니페스트 본문은 회차마다 달라도 통과하기 때문이다.
+    it('통과시킨 것도 선두 바이트와 근거를 찍는다', () => {
+      const r = run(jpegWith(app11('c2pa')), ['--fail-on-extra']);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toMatch(/사람이 근거를 적어 통과시킨 것/);
+      expect(r.stdout).toMatch(/APP11\s+JP\.+jumb\.+jumd/);
+      expect(r.stdout).toMatch(/근거: .*run #4/);   // 검수관 P-2 — 동선이 로그에서 안 끊긴다
+    });
+
+    // ⚠⚠ **검수관 B-5**: `passed` 분류에 뮤테이션 검출력이 0이었다. 기존 단언은 *"목록에
+    //   APP11 이 있는가"* 만 보고 *"다른 게 섞이는가"* 를 안 봤다. 그래서 `!essential` 이나
+    //   `!extraSet` 조건을 지워도 153개가 전부 초록이었다 — 렌더 청크가 전부 *"사람이 근거를
+    //   적어 통과시킨 것"* 으로 찍히거나, **게이트가 세운 청크가 「통과」로 찍혀도** 아무도
+    //   안 잡는 상태였다.
+    const passedList = (stdout: string) =>
+      stdout.match(/· 로 표시한 \d+개는 .*?\(ACCEPTED\): (.+)/)?.[1].trim() ?? null;
+
+    it('통과 목록에 렌더 청크가 섞이지 않는다', () => {
+      expect(passedList(run(jpegWith(app11('c2pa')), ['--fail-on-extra']).stdout)).toBe('APP11');
+    });
+
+    it('게이트가 세운 청크는 통과 목록에 안 들어간다', () => {
+      const r = run(jpegWith(seg(0xe1, Buffer.from('Exif\0\0', 'latin1'))), ['--fail-on-extra']);
+      expect(r.status).toBe(1);
+      expect(passedList(r.stdout)).toBeNull();   // 통과한 것이 0개면 절이 아예 안 나온다
+    });
+
+    // ⚠ **검수관 P-1**: 같은 타입이 여럿일 때 타입 집합으로는 못 가른다. C2PA 매니페스트가
+    //   64KB 를 넘으면 JPEG XT 규격상 `APP11` 이 쪼개지고 2번째부터는 `jumb` 헤더가 없다.
+    //   그때 하나는 통과, 하나는 extra 여야 하는데 타입으로 가르면 **둘 다 같은 쪽**으로 간다.
+    it('같은 타입이 둘일 때 하나만 extra 로 갈린다 — 다중 APP11', () => {
+      const orphan = seg(0xeb, Buffer.concat([
+        Buffer.from('JP', 'latin1'), Buffer.alloc(6), Buffer.alloc(300),  // 이어지는 조각
+      ]));
+      const r = run(jpegWith(app11('c2pa'), orphan), ['--fail-on-extra']);
+      expect(r.status).toBe(1);                      // 헤더 없는 조각은 확인 대상이다
+      expect(r.stdout).toMatch(/＋ 로 표시한 1개/);   // 둘 다가 아니라 하나
+      expect(passedList(r.stdout)).toBe('APP11');    // 통과한 쪽의 로그가 사라지지 않는다
+    });
+  });
 });
 
 // ⚠ **이 절은 뮤테이션 N10 이 만든 것이다**(2026-08-13). `main()` 안에서
@@ -661,37 +796,196 @@ describe('G-META2 게이트가 실제로 exit 1 을 내는가 (--fail-on-extra)'
 //   집합이라 조건이 항상 참이어서다. 팀장 조건의 핵심 장치(*"사람이 실물을 보고 통과"*)에
 //   **검사가 0** 이었고, 목록에 항목을 넣는 날 그것이 동작하는지 아무도 몰랐을 것이다.
 //   "통과는 검출력의 증거가 아니다" 가 정확히 이 형태다 — 72개가 전부 초록이었다.
-describe('G-ACCEPT 사람이 통과시킨 청크만 통과하는가 (N10 이 뚫은 자리)', () => {
-  const chunks = [
-    { type: 'IHDR', length: 13 },
-    { type: 'caBX', length: 999 },
-    { type: 'tEXt', length: 20 },
-  ];
+describe('G-ACCEPT 통과 규칙이 이름이 아니라 내용을 보는가 (팀장 조건 3)', () => {
+  // ⚠⚠ **팀장 판정 2026-08-13(조건 3)으로 성격이 바뀐 절이다.** 전에는 `ACCEPTED` 가
+  //   **타입 화이트리스트**였고, 검수관이 반복해서 경고했다: `APP11`·`APP2` 는
+  //   **컨테이너 마커**라 여러 종류가 같은 이름으로 온다 — 이름만 올리면 *"그 이름으로
+  //   오는 것은 앞으로 뭐든 통과한다."* 팀장이 그 경고를 **주석이 아니라 검사로**
+  //   해소하라고 판정했다: `type` + `match(페이로드 선두)` 둘 다 맞아야 통과한다.
+  // ⚠⚠⚠ **주입 대역은 실물 규칙과 같은 형태여야 한다**(검수관 반려 B-1 의 교훈을 이 절에도
+  //   적용한다). 첫 판본의 `RULE` 은 `includes` 두 번이었는데, 그 사이 실물 `ACCEPTED` 는
+  //   **오프셋 고정**으로 바뀌었다. 대역이 실물보다 헐거우면 이 절은 *"주입이 되는가"* 만
+  //   재고 *"주입된 것이 실물처럼 엄격한가"* 는 못 잰다 — 검수관이 픽스처에서 지적한
+  //   「대역이 실물의 핵심 성질을 안 가짐」이 **검사 코드에서** 반복되는 형태다.
+  const OFF = { jumb: 12, jumd: 20, label: 41 };   // JUMBF 규격 위치(스크립트와 같은 값)
+  /** 규격 위치에 토큰을 박은 페이로드. `label` 이 null 이면 label 자리를 비운다. */
+  const jumbf = (label: string | null, uuid = 'UUID------------') => {
+    const b = Buffer.alloc(60, 0x2e);              // '.' 로 채운다
+    b.write('jumb', OFF.jumb, 'latin1');
+    b.write('jumd', OFF.jumd, 'latin1');
+    b.write(uuid.slice(0, 16), 24, 'latin1');      // UUID 자리(실물은 앞 4B 가 'c2pa')
+    if (label !== null) b.write(label, OFF.label, 'latin1');
+    return b;
+  };
+  /** 규칙은 문자열을 받는다 — `peek` 이 1바이트→1문자로 찍으므로 오프셋이 보존된다. */
+  const head = (b: Buffer) => b.toString('latin1');
+  const PAYLOAD = jumbf('c2pa');
+  const pngWith = (type: string) => {
+    const buf = makePng([[type, PAYLOAD]]);
+    return { buf, chunks: inspect(buf).chunks };
+  };
+  const RULE = {
+    type: 'caBX',
+    match: (h: string) =>
+      h.slice(OFF.jumb, OFF.jumb + 4) === 'jumb'
+      && h.slice(OFF.jumd, OFF.jumd + 4) === 'jumd'
+      && h.slice(OFF.label, OFF.label + 4) === 'c2pa',
+  };
 
-  it('빈 목록이면 렌더가 아닌 것이 전부 잡힌다', () => {
-    expect(findExtra(chunks, 'png', new Set()).map((c) => c.type)).toEqual(['caBX', 'tEXt']);
+  it('규칙이 있어도 buf 가 없으면 통과시키지 않는다 (fail-closed)', () => {
+    // **"못 봤다" 와 "봤는데 괜찮다" 를 같게 취급하지 않는다.**
+    const { chunks } = pngWith('caBX');
+    expect(findExtra(chunks, 'png', null, [RULE]).map((c) => c.type)).toContain('caBX');
   });
 
-  // ⚠ 이것이 N10 이 못 보던 축이다 — **목록이 비어 있지 않을 때** 실제로 걸러지는가.
-  it('통과시킨 것만 빠지고 나머지는 남는다', () => {
-    expect(findExtra(chunks, 'png', new Set(['caBX'])).map((c) => c.type)).toEqual(['tEXt']);
+  it('buf 가 있고 내용이 맞으면 통과한다', () => {
+    const { buf, chunks } = pngWith('caBX');
+    expect(findExtra(chunks, 'png', buf, [RULE]).map((c) => c.type)).not.toContain('caBX');
   });
 
-  it('둘 다 통과시키면 0개가 된다', () => {
-    expect(findExtra(chunks, 'png', new Set(['caBX', 'tEXt']))).toHaveLength(0);
+  // ⚠ **이것이 검수관 경고를 닫는 케이스다.** 이름은 같은데 내용이 다르면 막혀야 한다.
+  it('이름이 같아도 내용이 다르면 막힌다 — 컨테이너 마커의 최악 사례', () => {
+    const buf = makePng([['caBX', Buffer.from('some other payload entirely')]]);
+    const { chunks } = inspect(buf);
+    expect(findExtra(chunks, 'png', buf, [RULE]).map((c) => c.type)).toContain('caBX');
   });
 
-  it('렌더 청크는 통과 목록과 무관하게 애초에 안 잡힌다', () => {
-    expect(findExtra(chunks, 'png', new Set()).some((c) => c.type === 'IHDR')).toBe(false);
+  it('규칙에 없는 타입은 내용과 무관하게 막힌다', () => {
+    const { buf, chunks } = pngWith('tEXt');
+    expect(findExtra(chunks, 'png', buf, [RULE]).map((c) => c.type)).toContain('tEXt');
   });
 
-  // 목록이 늘어나는 것 자체가 위험 신호다 — 근거 없이 늘면 통과 도장이 된다.
-  it('기본 ACCEPTED 는 비어 있다 — 아직 실물을 본 적이 없다', () => {
-    expect(ACCEPTED.size).toBe(0);
+  it('렌더 청크는 규칙과 무관하게 애초에 안 잡힌다', () => {
+    const { buf, chunks } = pngWith('caBX');
+    expect(findExtra(chunks, 'png', buf, [RULE]).some((c) => c.type === 'IHDR')).toBe(false);
   });
 
   it('알 수 없는 형식이면 전부 확인 대상이다 — 조용히 0개로 만들지 않는다', () => {
-    expect(findExtra(chunks, 'gif' as 'png', new Set())).toHaveLength(3);
+    const chunks = [{ type: 'IHDR', length: 13, at: 0 }, { type: 'caBX', length: 9, at: 0 }];
+    expect(findExtra(chunks, 'gif' as 'png', null, [])).toHaveLength(2);
+  });
+
+  // 실물 규칙 자체를 못 박는다 — 근거 없이 늘어나면 통과 도장이 된다.
+  it('기본 ACCEPTED 는 APP11 규칙 하나이고 규격 위치까지 요구한다', () => {
+    expect(ACCEPTED).toHaveLength(1);
+    expect(ACCEPTED[0].type).toBe('APP11');
+    expect(ACCEPTED[0].match(head(jumbf('c2pa')))).toBe(true);
+    expect(ACCEPTED[0].match(head(jumbf('xmp ')))).toBe(false);   // label 이 다르다
+    expect(ACCEPTED[0].match(head(jumbf(null)))).toBe(false);     // label 이 없다
+    expect(ACCEPTED[0].why).toMatch(/run #4/);
+  });
+
+  // ⚠⚠⚠ **검수관 반려 B-1 을 순수 함수 축에서 못 박는다.** 실물 UUID 앞 4바이트가 ASCII
+  //   `c2pa` 라, `includes('c2pa')` 로 돌아가면 **label 이 무엇이든 통과한다.**
+  //   이 케이스가 없으면 규칙을 `includes` 로 되돌려도 아무도 안 잡는다 — 실제로 그랬다.
+  it('UUID 의 c2pa 를 label 로 착각하지 않는다 (B-1)', () => {
+    expect(ACCEPTED[0].match(head(jumbf('xmp ', 'c2pa\0\x11\0\x10\x80\0\0\xaa\0\x38\x9b\x71')))).toBe(false);
+    expect(ACCEPTED[0].match(head(jumbf(null, 'c2pa\0\x11\0\x10\x80\0\0\xaa\0\x38\x9b\x71')))).toBe(false);
+    // 반대쪽도 못 박는다 — 실물 UUID 가 있고 label 도 맞으면 통과해야 한다(거짓 FAIL 방지).
+    expect(ACCEPTED[0].match(head(jumbf('c2pa', 'c2pa\0\x11\0\x10\x80\0\0\xaa\0\x38\x9b\x71')))).toBe(true);
+  });
+
+  it('규격 위치가 아닌 자리의 토큰은 안 쳐준다 — 순서 역전', () => {
+    const b = Buffer.alloc(60, 0x2e);
+    b.write('c2pa', OFF.jumb, 'latin1');   // 자리를 서로 바꾼다
+    b.write('jumb', OFF.label, 'latin1');
+    expect(ACCEPTED[0].match(b.toString('latin1'))).toBe(false);
+  });
+
+  // ⚠⚠ **세 검사를 각각 단독으로 무너뜨리는 케이스다.** 뮤테이션 R3 이 이 자리를 열었다:
+  //   `jumb` 위치 검사를 지워도 **0 failed** 였다 — 기존 케이스들이 `jumd`·label 로도 전부
+  //   갈려서, `jumb` 조건은 있으나 없으나 결과가 같았다. 뮤테이션 N10 이 처음 지적한
+  //   *"조건이 항상 참이면 검사가 0"* 과 같은 형태이고, 검사 셋을 한 케이스로 뭉뚱그려
+  //   재면 늘 이렇게 된다. **각 조건에 대해 그것만 다른 입력**을 준다.
+  it.each([
+    ['jumb', { jumd: true, label: true }],
+    ['jumd', { jumb: true, label: true }],
+    ['label', { jumb: true, jumd: true }],
+  ])('%s 하나만 규격 위치에서 어긋나도 막힌다', (_missing, present: Record<string, boolean>) => {
+    const b = Buffer.alloc(60, 0x2e);
+    if (present.jumb) b.write('jumb', OFF.jumb, 'latin1');
+    if (present.jumd) b.write('jumd', OFF.jumd, 'latin1');
+    if (present.label) b.write('c2pa', OFF.label, 'latin1');
+    expect(ACCEPTED[0].match(b.toString('latin1'))).toBe(false);
+  });
+
+  it('셋이 다 맞으면 통과한다 — 위 셋이 「무조건 false」가 아님을 못 박는다', () => {
+    expect(ACCEPTED[0].match(head(jumbf('c2pa')))).toBe(true);
+  });
+});
+
+describe('G-PEEK 페이로드 선두를 안전하게 찍는가 (팀장 조건 1)', () => {
+  it('인쇄 가능 문자만 통과하고 나머지는 점이다', () => {
+    const buf = Buffer.from([0x00, 0x01, 0x41, 0x42, 0x1f, 0x43, 0x7f, 0x80]);
+    expect(peek(buf, { type: 'x', length: 8, at: 0 })).toBe('..AB.C..');
+  });
+
+  // ⚠ 64는 여유치가 아니라 **유도값**이다(팀장 조건 1): JUMBF 판별에 필요한 구조가
+  //   46바이트이고 정렬 여유를 더해 64다. 그 자리에 오는 것은 규격상 **구조 헤더**이지
+  //   서명·키 자료가 아니다 — 그것들은 수 KB 뒤다.
+  it('기본 64바이트를 넘지 않는다 — 「모르는 것을 로그에」의 상한이다', () => {
+    expect(peek(Buffer.alloc(1000, 0x41), { type: 'x', length: 1000, at: 0 })).toHaveLength(64);
+  });
+
+  it('파일 끝을 넘어가지 않는다', () => {
+    expect(peek(Buffer.from('AB'), { type: 'x', length: 2, at: 0 })).toBe('AB');
+  });
+
+  it('오프셋이 음수여도 안 죽는다', () => {
+    expect(() => peek(Buffer.from('AB'), { type: 'x', length: 2, at: -5 })).not.toThrow();
+  });
+
+  // ⚠⚠ **위 넷은 `at` 을 손으로 넣는다 — 그래서 파서가 계산한 `at` 이 맞는지는 검사가 0이다.**
+  //   이것이 조용한 축이 아니다: `at` 이 몇 바이트 어긋나면 `peek` 이 엉뚱한 자리를 읽고
+  //   **진짜 C2PA 도 `jumb` 판별에 실패해 계속 FAIL** 한다. 실패 방향은 안전하지만
+  //   **사람을 「규칙을 넓히자」로 유도한다** — 이 파일이 내내 경계해 온 그 동선이다.
+  //   각 형식의 헤더 크기가 다르므로(PNG len4+type4, JPEG 마커2+길이2, WebP fourcc4+size4)
+  //   **셋을 따로 못 박는다.** 한 곳만 맞아도 나머지가 조용히 어긋날 수 있다.
+  describe('파서가 계산한 at 이 실제 페이로드 선두를 가리키는가', () => {
+    const MARK = 'PAYLOAD-STARTS-HERE';
+
+    it('PNG', () => {
+      const buf = makePng([['tEXt', Buffer.from(MARK)]]);
+      const c = inspect(buf).chunks.find((x) => x.type === 'tEXt')!;
+      expect(peek(buf, c)).toMatch(new RegExp(`^${MARK}`));
+    });
+
+    it('JPEG', () => {
+      const payload = Buffer.from(MARK);
+      const len = Buffer.alloc(2);
+      len.writeUInt16BE(payload.length + 2);
+      const buf = Buffer.concat([
+        Buffer.from([0xff, 0xd8]),
+        Buffer.from([0xff, 0xeb]), len, payload,        // APP11
+        Buffer.from([0xff, 0xda, 0x00, 0x08, 1, 0, 0, 0, 0x12, 0x34]), // SOS
+      ]);
+      const c = inspect(buf).chunks.find((x) => x.type === 'APP11')!;
+      expect(peek(buf, c)).toMatch(new RegExp(`^${MARK}`));
+    });
+
+    // ⚠ **SOS 만 규약이 달랐다**(검수관 P-6). `at` 이 혼자 길이 필드를 가리켜서, 파서를
+    //   SOS 뒤까지 넓히는 순간 어긋난다. 지금은 SOS 가 렌더 청크라 `peek` 을 안 타므로
+    //   **무해한데, 무해한 것과 맞는 것은 다르다** — 고친 것을 지키는 검사가 없으면 되돌아간다.
+    it('JPEG SOS 도 다른 세그먼트와 같은 규약이다', () => {
+      const buf = Buffer.concat([
+        Buffer.from([0xff, 0xd8]),
+        Buffer.from([0xff, 0xda, 0x00, 0x08]), Buffer.from(MARK),   // SOS: 마커2+길이2 뒤가 페이로드
+      ]);
+      const c = inspect(buf).chunks.find((x) => x.type === 'SOS')!;
+      expect(peek(buf, c)).toMatch(new RegExp(`^${MARK}`));
+    });
+
+    it('WebP', () => {
+      const payload = Buffer.from(`${MARK}!`);            // 짝수 길이(패딩 회피)
+      const size = Buffer.alloc(4);
+      size.writeUInt32LE(payload.length);
+      const buf = Buffer.concat([
+        Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'),
+        Buffer.from('XMP '), size, payload,
+      ]);
+      const c = inspect(buf).chunks.find((x) => x.type === 'XMP ')!;
+      expect(peek(buf, c)).toMatch(new RegExp(`^${MARK}`));
+    });
   });
 });
 
@@ -731,7 +1025,7 @@ describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', 
   //   같은 회차의 C-3 에서는 *"절반, 원리상 못 잰다"* 로 정확히 적었는데 여기엔 그 정직함이
   //   안 갔다. **보고는 사라지고 주석은 남는다.**
   it('RENDER.jpeg 에 SOF4 가 되돌아오면 잡힌다 (목록 회귀 축 — 파서 축이 아니다)', () => {
-    expect(findExtra([{ type: 'SOF4', length: 100 }], 'jpeg', new Set())).toHaveLength(1);
+    expect(findExtra([{ type: 'SOF4', length: 100, at: 0 }], 'jpeg', null, [])).toHaveLength(1);
   });
 
   it.each(['iCCP', 'sBIT', 'sPLT', 'hIST', 'cICP', 'acTL', 'fcTL', 'fdAT'])(
@@ -768,7 +1062,7 @@ describe('G-RENDER 렌더 청크 목록 — 정상 파일을 막지 않는가', 
   it('APP2 가 APP0 으로 읽히지 않는다 — 그러면 C2PA 컨테이너가 통과한다', () => {
     const types = jpegSegments(JPEG_FIXTURE).map((s) => s.type);
     expect(types).toContain('APP2');
-    expect(findExtra(jpegSegments(JPEG_FIXTURE), 'jpeg', new Set()).map((c) => c.type)).toEqual(['APP2']);
+    expect(findExtra(jpegSegments(JPEG_FIXTURE), 'jpeg', null, []).map((c) => c.type)).toEqual(['APP2']);
   });
 });
 
@@ -785,6 +1079,110 @@ describe('G-WF 워크플로가 스크립트와 어긋나지 않는가', () => {
     const m = yml.match(/\n      out:[\s\S]{0,400}?default:\s*'([^']+)'/);
     expect(m, '워크플로에서 기본 out 을 못 찾았다 — 형식이 바뀌었는지 보라').not.toBeNull();
     expect(() => resolveOutPath(m![1], '/repo')).not.toThrow();
+  });
+});
+
+// ⚠⚠ **이 절은 백로그 `G-META3` 이다 — 검수관 5차 권고 P-j 가 지정한 처리 시점(첫 dispatch
+//   회차)에 도달해서 만들었다.** `png-chunks.mjs` 헤더의 한계 목록과 `generate-image.yml` 이
+//   PR 본문에 찍는 「못 본 것」 표가 **같은 내용을 각각 손으로** 적고 있었고, 검수관이
+//   **같은 자리에서 두 번** 어긋난 것을 잡았다(4차 "4/3", 5차 "4/5"). 세 번째로는 이번
+//   회차에 어긋났다 — 팀장 조건 3 으로 헤더를 정정하면서 표의 「청크 내용」 행을 안 고쳐
+//   **거짓 진술이 담긴 PR 본문**이 될 뻔했다. 위험이 세 번 현실화된 뒤에야 검사가 생긴다.
+//
+//   **자유 산문 정규식을 쓰지 않는다**(검수관 명세). 헤더 불릿의 `[표: …]` 마커라는
+//   **구조**를 읽는다 — hookify 회차에서 산문 정규식의 검출력이 조용히 0이 된 그 형태를
+//   피한다.
+//
+//   ⚠ **이 게이트가 못 잡는 것**(검수관이 명세에 미리 적어 둔 둘 + 내가 하나 더 닫았다):
+//     ① **표 행의 내용이 맞는가** — 대응 **존재**만 본다. 「청크 내용」 행의 설명이 다시
+//        거짓이 돼도 키가 살아 있으면 통과한다.
+//     ② **양쪽에 다 없는 한계** — 헤더에 안 적으면 통과한다. 즉 *"한계를 빠뜨리지 않았다"*
+//        가 아니라 *"두 곳이 어긋나지 않았다"* 만 보증한다.
+//     ③ (닫음) **마커를 안 단 새 불릿** — 이건 ②로 새어 나갈 수 있었다. 불릿 총수와 마커
+//        총수를 대조해 막는다. 마커 없는 불릿을 추가하면 빨간불이다.
+//     ④ **양쪽에 같은 오타** — 키를 양쪽에서 똑같이 잘못 적으면 일치하므로 통과한다
+//        (검수관 실측 X5 **0 failed**). ①이 표 행의 *내용*만 다루고 **첫 열**은 안 다뤄서
+//        이 자리가 비어 있었다. 대조가 보증하는 것은 *"두 곳이 같다"* 이지 *"맞다"* 가 아니다.
+//
+//   **뮤테이션 실측 2026-08-13 — 6종 전부 빨간불** (`npx vitest run tests/generate-image.test.ts`):
+//     N1 헤더 마커 하나 제거          → 2 failed
+//     N2 표 행 하나 제거              → 1 failed
+//     N3 표 헤더 문구 변경(못 찾게)   → 2 failed   ← 빈 집합끼리 비교로 새지 않는다
+//     N4 마커 키 오타                 → 1 failed
+//     N5 제외 마커 `-` 를 실제 키로   → 2 failed
+//     N6 마커 없는 새 불릿 추가       → 1 failed   ← 위 ③ 이 참임을 재는 유일한 케이스
+//     N7 헤더 마커 **5개 전부** 제거  → 3 failed   ← 「빈 집합끼리 비교」의 반대 방향
+//   N7 은 처음에 **추론으로만** 적혀 있었다("불일치로 잡힐 것이다"). N3 이 표를 못 찾는
+//   방향을 막았으니 그 반대 방향(마커가 0개)도 막힐 것이라고 미뤄 짚은 것인데, 그것은
+//   *"재지 않고 통과로 적는" 그 형태*라 실제로 쟀다. 셋 다 다른 단언에서 잡힌다.
+//   N6 이 없으면 ③ 은 **주장일 뿐**이다. 이 저장소가 반복해서 넘어진 형태가 그것이다 —
+//   *"이제 잡힌다"* 를 실측 없이 적고, 보고는 사라지고 주석만 남는다.
+describe('G-MIRROR 한계 목록이 두 곳에서 어긋나지 않는가 (G-META3)', () => {
+  const SRC = fs.readFileSync(path.resolve(__dirname, '../scripts/png-chunks.mjs'), 'utf8');
+  const YML = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/generate-image.yml'), 'utf8');
+
+  /** 헤더 한계 절의 불릿 접두. 마커는 `[표: 키]`, 표 대상이 아니면 키가 `-`. */
+  const BULLET = /^\/\/ {2}· /gm;
+  const MARKED = /^\/\/ {2}· \[표: (.+?)\]/gm;
+
+  /**
+   * ⚠ **절로 좁힌다**(검수관 P-4). 첫 판본은 파일 전체를 훑었고, 그때 안 걸린 것은
+   * 이 파일의 다른 불릿이 **3칸 들여쓰기라는 우연** 덕이었다 — 검수관이 한계 절 **밖**에
+   * `//  · ` 불릿을 넣어 1 failed 를 실측했다. 절 밖의 산문은 이 대조의 대상이 아니다.
+   * 절을 못 찾으면 아래에서 실패한다(빈 집합끼리 비교로 새지 않게).
+   * ⚠ **이 좁힘 자체에는 검출력이 0이다**(검수관 Q-3 실측: `to` 를 `SRC.length` 로 되돌려도
+   * 0 failed) — 지금 절 밖에 `//  · ` 불릿이 하나도 없어서다. 즉 위 문장은 **주장**이고,
+   * 그것을 지키는 검사는 없다. 방향이 fail-closed(거짓 FAIL)라 블로커로 다루지 않을 뿐이다.
+   */
+  const LIMITS = (() => {
+    const from = SRC.indexOf('── 한계 (');
+    const to = SRC.indexOf('\nimport ');
+    return from >= 0 && to > from ? SRC.slice(from, to) : null;
+  })();
+
+  const markers = LIMITS ? [...LIMITS.matchAll(MARKED)].map((m) => m[1]) : [];
+  const headerKeys = markers.filter((k) => k !== '-');
+
+  /**
+   * PR 본문의 「못 본 것」 표에서 첫 열을 뽑는다.
+   * ⚠ **블록으로 좁힌다** — 이 워크플로에는 표가 둘이고(위쪽은 요청/값 표), 파일 전체를
+   *   훑으면 `| **요청** 경로 |` 같은 다른 표 행이 섞인다(`G-WF` 의 P-5 와 같은 형태).
+   *   행이 아닌 줄을 만나면 **멈춘다** — 뒤에 오는 표까지 먹지 않기 위해서다.
+   */
+  const tableKeys = (() => {
+    const at = YML.indexOf('| 못 본 것 | 왜 |');
+    if (at < 0) return null;
+    const out: string[] = [];
+    for (const line of YML.slice(at).split('\n').slice(2)) {
+      const m = line.match(/echo "\| \*\*(.+?)\*\* \|/);
+      if (!m) break;
+      out.push(m[1]);
+    }
+    return out;
+  })();
+
+  it('한계 절을 찾을 수 있다 — 못 찾으면 대조가 빈 집합끼리 통과한다', () => {
+    expect(LIMITS, 'png-chunks.mjs 에서 한계 절을 못 찾았다 — 형식이 바뀌었는지 보라').not.toBeNull();
+  });
+
+  it('한계 절의 모든 불릿에 마커가 붙어 있다 — 마커 없는 불릿은 대조를 빠져나간다', () => {
+    expect(markers).toHaveLength([...LIMITS!.matchAll(BULLET)].length);
+  });
+
+  it('「못 본 것」 표를 워크플로에서 찾을 수 있다', () => {
+    // 표를 못 찾으면 아래 대조가 **빈 집합끼리 비교해 통과**한다 — 검출력이 조용히 0이
+    // 되는 그 형태다. 그래서 못 찾은 것 자체를 실패로 만든다.
+    expect(tableKeys, '워크플로에서 「못 본 것」 표를 못 찾았다 — 형식이 바뀌었는지 보라').not.toBeNull();
+    expect(tableKeys!.length).toBeGreaterThan(0);
+  });
+
+  it('헤더 마커와 표의 키가 정확히 일치한다', () => {
+    expect([...tableKeys!].sort()).toEqual([...headerKeys].sort());
+  });
+
+  it('표 대상이 아닌 항목이 표에 없다 — `-` 마커가 실제로 제외로 동작한다', () => {
+    expect(markers).toContain('-');          // 제외 케이스가 있어야 이 축이 의미를 갖는다
+    expect(headerKeys.length).toBeLessThan(markers.length);
   });
 });
 
