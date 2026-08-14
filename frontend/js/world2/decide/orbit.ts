@@ -157,6 +157,76 @@ export function orbitStep(
   };
 }
 
+// ── 정해진 시점 (W6, 감독 지시 2026-08-13) ──────────────────────────────────
+//
+// 감독: *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등. 진짜 전문 에디터로 만들어줘."*
+//
+// ⚠ **위 `orbitStep` 은 델타이고 이쪽은 절대다.** 「탑에서 본다」는 지금 각도가 얼마든
+// **같은 자리로 간다** 는 뜻이라 델타로는 표현할 수 없다(현재 각을 알아야 하는데 그것을
+// 편집에 알리면 문이 넓어진다). 그래서 절대 자세를 내는 함수를 따로 둔다 —
+// 소비자(`systems/player.ts`)가 「어디에 설지」를 그대로 받는다.
+//
+// ── 방향 규약은 `orbitStep` 과 같은 각이다 ──────────────────────────────────
+// 궤도각 θ 에서 플레이어는 `(cx + r·sinθ, cz + r·cosθ)` 에 서고 그 각이 곧 시선이다
+// (헤더의 유도). 그래서 어느 쪽에서 보는가는 θ 하나로 정해진다:
+//
+//   θ = 0     → 대상의 **+Z 쪽**에 서서 −Z 를 본다 = **정면(Front)**
+//   θ = +π/2  → **+X 쪽** = **우측(Right)**
+//   θ = −π/2  → **−X 쪽** = **좌측(Left)**
+//   θ = π     → **−Z 쪽** = **후면(Back)**
+//
+// 블렌더의 넘패드 1/3/7 과 같은 개념이고, 축 이름도 그쪽 규약(월드 축 기준)을 따른다.
+
+/** 어느 쪽에서 보는가 */
+export type ViewSide = 'front' | 'back' | 'left' | 'right' | 'top';
+
+/** 정해진 시점 하나 — 어디에 서서 얼마나 올라가는가 */
+export interface ViewPreset {
+  /** 궤도각(rad). `top` 은 각을 유지해야 자연스러워서 `null` 이다 */
+  readonly yaw: number | null;
+  /** 대상 위로 얼마나(m) */
+  readonly lift: number;
+  /** 대상에서 얼마나 떨어져(m) */
+  readonly radius: number;
+}
+
+/**
+ * 정해진 시점의 값.
+ *
+ * `radius` 24m·`lift` 10m 인 근거: 마을 건물이 12m 언저리이므로 그 두 배 거리에서
+ * 살짝 위를 잡으면 건물 하나와 그 이웃이 함께 들어온다. **화면에서만 판정되는 값이고**
+ * 감독이 «너무 멀다/가깝다» 고 하면 여기 한 곳을 고친다.
+ *
+ * ⚠ `top` 만 `yaw: null` 이다 — 위에서 내려다볼 때 **방위까지 바꾸면** 감독이 보던
+ * 방향을 잃는다(블렌더도 Top 은 현재 방위를 유지하지 않지만, 우리는 궤도라 각이 곧
+ * 서는 자리다). 지금 각을 유지한 채 올라가는 것이 «위에서 본다» 에 가깝다.
+ */
+export const VIEW_PRESETS: Readonly<Record<ViewSide, ViewPreset>> = {
+  front: { yaw: 0, lift: 10, radius: 24 },
+  back: { yaw: Math.PI, lift: 10, radius: 24 },
+  right: { yaw: Math.PI / 2, lift: 10, radius: 24 },
+  left: { yaw: -Math.PI / 2, lift: 10, radius: 24 },
+  // 위에서 본다 — 높이가 반경보다 훨씬 커야 내려다보는 각이 선다.
+  top: { yaw: null, lift: 38, radius: 8 },
+};
+
+/**
+ * **고른 것에 다가간다**(블렌더·로블록스의 `F`). 방위는 지금 것을 유지한다.
+ *
+ * 왜 방위를 안 바꾸나: 「확대」는 *보던 쪽에서 더 가까이* 라는 뜻이지 *정면으로 돌아라*
+ * 가 아니다. 각을 바꾸면 감독이 방금 맞춘 시점을 잃는다.
+ */
+export const FOCUS_VIEW: ViewPreset = { yaw: null, lift: 4, radius: 9 };
+
+/** 시점 하나의 절대 자리. `yaw` 가 `null` 이면 `keepYaw` 를 그대로 쓴다 */
+export function orbitAt(
+  cx: number, cz: number, preset: ViewPreset, keepYaw: number,
+): OrbitPose {
+  const a = preset.yaw ?? (Number.isFinite(keepYaw) ? keepYaw : 0);
+  const r = clampRadius(preset.radius);
+  return { x: cx + r * Math.sin(a), z: cz + r * Math.cos(a), yaw: a };
+}
+
 /** 반경을 허용 범위로. 유한하지 않으면 하한 */
 export function clampRadius(r: number): number {
   if (!Number.isFinite(r)) return R_MIN;

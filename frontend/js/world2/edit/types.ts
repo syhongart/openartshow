@@ -8,6 +8,7 @@
 
 import type { Object3D, Camera } from 'three/webgpu';
 import type { PlacedPart } from '../parts/types.js';
+import type { ViewPreset } from '../decide/orbit.js';
 
 /**
  * 로드 진행 알림.
@@ -215,6 +216,14 @@ export interface OverlayHost {
     cx: number, cy: number, cz: number,
     dYaw: number, dHeight: number, kRadius: number,
   ): void;
+  /**
+   * **정해진 시점으로 간다**(탑·좌·우·정면, `F` 확대). W6.
+   *
+   * `orbit` 이 델타인 것과 달리 이쪽은 **절대**다 — 「탑에서 본다」는 지금 각이 얼마든
+   * 같은 자리로 간다는 뜻이라 델타로 표현할 수 없다. 그래도 문은 **더 좁다**: 편집이
+   * 임의 자세를 못 주고 정해진 값(`ViewPreset`) 중 하나만 고른다.
+   */
+  orbitTo?(cx: number, cy: number, cz: number, preset: ViewPreset): void;
   /**
    * 편집이 끝났다 — 눈높이를 걷고 갇힘을 푼다.
    *

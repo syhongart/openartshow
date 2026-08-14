@@ -14,7 +14,10 @@ import { RY_STEP, Y_STEP, select, type EditState } from './state.js';
 import {
   applyDelta, modalDelta, modalLabel, modalOpener, readModalKey, ZERO_DELTA,
 } from '../decide/modal-edit.js';
-import { ORBIT_LIFT_PER_PX, ORBIT_YAW_PER_PX, zoomFactor } from '../decide/orbit.js';
+import {
+  FOCUS_VIEW, ORBIT_LIFT_PER_PX, ORBIT_YAW_PER_PX, VIEW_PRESETS, zoomFactor,
+  type ViewSide,
+} from '../decide/orbit.js';
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
@@ -36,6 +39,13 @@ export interface InputDeps {
 export interface Input {
   bind(): void;
   unbind(): void;
+  /**
+   * 정해진 시점으로 간다(W6). 패널 버튼이 쓴다 — **키와 같은 함수**여야 한다.
+   *
+   * 두 곳이 각자 구현하면 «버튼은 안내하는데 키는 침묵» 같은 어긋남이 난다(이 저장소가
+   * 실제로 겪은 형태 — `panel/dom.ts` 의 `nudge` 주석).
+   */
+  setView(side: ViewSide | 'focus'): void;
   /** 편집 여부와 무관하게 붙는 것(`Tab`). 세션 시작·끝에 한 번씩 */
   bindAlways(): void;
   unbindAlways(): void;
@@ -106,6 +116,36 @@ export function createInput(deps: InputDeps): Input {
       shift ? -dy * ORBIT_LIFT_PER_PX : 0,
       kRadius,
     );
+  };
+
+  // ── 정해진 시점 (W6) ────────────────────────────────────────────────────
+  //
+  // 감독 지시 2026-08-13: *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등."*
+  //
+  // 블렌더의 넘패드 1/3/7 을 따르되 **일반 숫자열도 받는다** — 노트북에는 넘패드가 없고,
+  // 그러면 그 기기에서 이 기능이 통째로 없는 것이 된다.
+  //
+  // ⚠ **모달 중에는 숫자가 타이핑이다.** 그래서 이 표는 모달 분기 **뒤**에서만 본다
+  // (`onKeyDown` 의 순서). 모달이 먼저라 겹치지 않는다.
+  const VIEW_KEYS: Readonly<Record<string, ViewSide>> = {
+    Digit1: 'front', Numpad1: 'front',
+    Digit3: 'right', Numpad3: 'right',
+    Digit7: 'top', Numpad7: 'top',
+    Digit9: 'left', Numpad9: 'left',
+  };
+
+  /**
+   * 그 시점으로 간다. 중심은 **고른 것**, 없으면 지금 서 있는 자리 앞이 아니라
+   * **아무 일도 안 한다** — 중심이 없으면 「무엇을 중심으로 도는가」가 정의되지 않고,
+   * 임의로 정하면 감독이 보던 자리에서 튄다.
+   */
+  const goView = (preset: { yaw: number | null; lift: number; radius: number }): boolean => {
+    if (!host.orbitTo) return false;
+    const t = st.target;
+    if (!t) { panel.say('먼저 물건을 클릭해 고르세요 — 그것을 중심으로 봅니다.'); return true; }
+    host.orbitTo(t.x, t.y, t.z, preset);
+    panel.refresh();
+    return true;
   };
 
   const onWheel = (ev: WheelEvent) => {
@@ -364,6 +404,23 @@ export function createInput(deps: InputDeps): Input {
       return;
     }
 
+    // ── 정해진 시점 ───────────────────────────────────────────────────────
+    // 모달 **뒤**다(위 분기가 먼저 return 한다) — 조작 중에는 숫자가 타이핑이다.
+    const side = VIEW_KEYS[ev.code];
+    if (side !== undefined) {
+      if (!goView(VIEW_PRESETS[side])) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    if (ev.code === 'KeyF') {
+      // 「확대」 — 방위는 지금 것을 유지한다(`FOCUS_VIEW` 주석).
+      if (!goView(FOCUS_VIEW)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+
     if (!EDIT_KEYS.has(ev.code)) return;
     // ⚠ **말없이 죽지 않는다.** 예전에는 `if (!selected) return` 이 맨 위에 있어서
     // 아무것도 안 골랐을 때 편집키가 **침묵**했다 — 같은 조작의 패널 버튼은
@@ -459,6 +516,9 @@ export function createInput(deps: InputDeps): Input {
       doc.removeEventListener('keydown', onKeyDown);
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
+    },
+    setView(side): void {
+      goView(side === 'focus' ? FOCUS_VIEW : VIEW_PRESETS[side]);
     },
     bindAlways(): void { doc.addEventListener('keydown', onModeKey); },
     unbindAlways(): void { doc.removeEventListener('keydown', onModeKey); },

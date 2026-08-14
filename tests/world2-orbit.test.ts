@@ -181,3 +181,89 @@ describe('내려다보는 각 — **음수가 아래**다', () => {
     expect(Math.abs(pitchTo(20, 0, 100))).toBeLessThan(Math.abs(pitchTo(20, 0, 10)));
   });
 });
+
+// ── 정해진 시점 (W6) ────────────────────────────────────────────────────────
+//
+// 감독 지시 2026-08-13: *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등."*
+//
+// **방향 규약이 이 절의 전부다.** 「좌」와 「우」가 뒤바뀌면 감독이 버튼을 누를 때마다
+// 반대편으로 가고, 그것은 화면에서만 드러난다. 그래서 `facing` 을 실제로 태워 잰다.
+
+import { orbitAt, VIEW_PRESETS, FOCUS_VIEW } from '../frontend/js/world2/decide/orbit.js';
+
+describe('정해진 시점 — 어느 쪽에서 보는가', () => {
+  const CX = 10;
+  const CZ = -5;
+
+  it('★ 정면은 대상의 **+Z 쪽**에 선다', () => {
+    const p = orbitAt(CX, CZ, VIEW_PRESETS.front, 0);
+    expect(p.z, '★ 정면이 +Z 쪽이 아니다').toBeGreaterThan(CZ);
+    expect(p.x).toBeCloseTo(CX, 6);
+  });
+
+  it('★ 우측은 **+X 쪽** — 좌측과 반대다', () => {
+    const r = orbitAt(CX, CZ, VIEW_PRESETS.right, 0);
+    const l = orbitAt(CX, CZ, VIEW_PRESETS.left, 0);
+    expect(r.x, '★ 우측이 +X 쪽이 아니다').toBeGreaterThan(CX);
+    expect(l.x, '★ 좌측이 −X 쪽이 아니다').toBeLessThan(CX);
+    // 정확히 거울상이어야 한다 — 한쪽만 틀리면 「좌우가 이상하다」로만 보인다.
+    expect(r.x - CX).toBeCloseTo(-(l.x - CX), 6);
+  });
+
+  it('후면은 −Z 쪽 — 정면의 반대다', () => {
+    const f = orbitAt(CX, CZ, VIEW_PRESETS.front, 0);
+    const b = orbitAt(CX, CZ, VIEW_PRESETS.back, 0);
+    expect(b.z - CZ).toBeCloseTo(-(f.z - CZ), 6);
+  });
+
+  it('★ 어느 시점에서든 시선이 대상을 향한다', () => {
+    // 이 축이 「시점」의 존재 이유다. 각이 틀리면 그 자리로 가긴 하는데 딴 데를 본다.
+    for (const [name, preset] of Object.entries(VIEW_PRESETS)) {
+      const p = orbitAt(CX, CZ, preset, 1.234);
+      expect(aimsAt(p, CX, CZ), `★ ${name} 에서 대상이 화면 밖이다`).toBeCloseTo(1, 10);
+    }
+    expect(aimsAt(orbitAt(CX, CZ, FOCUS_VIEW, 1.234), CX, CZ)).toBeCloseTo(1, 10);
+  });
+
+  it('★ 탑과 확대는 **지금 방위를 유지한다** — 보던 방향을 잃지 않는다', () => {
+    // `yaw: null` 이 그 뜻이다. 위에서 볼 때 방위까지 바꾸면 감독이 맞춰 둔 시점을 잃는다.
+    for (const keep of [0, 1.2, -2.5]) {
+      expect(orbitAt(CX, CZ, VIEW_PRESETS.top, keep).yaw, '★ 탑이 방위를 바꿨다')
+        .toBeCloseTo(keep, 10);
+      expect(orbitAt(CX, CZ, FOCUS_VIEW, keep).yaw, '★ 확대가 방위를 바꿨다')
+        .toBeCloseTo(keep, 10);
+    }
+  });
+
+  it('★ 탑은 **높이가 반경보다 훨씬 크다** — 안 그러면 내려다보는 각이 안 선다', () => {
+    expect(VIEW_PRESETS.top.lift, '★ 탑이 옆에서 보는 각이 됐다')
+      .toBeGreaterThan(VIEW_PRESETS.top.radius * 2);
+  });
+
+  it('★ 확대는 다른 어느 시점보다 **가깝다** — 그것이 「확대」의 정의다', () => {
+    // ⚠ **수평 반경이 아니라 실제(3D) 거리로 잰다.** 탑은 반경이 8m 로 작지만 38m 위에
+    // 있어 실제로는 가장 멀다 — 반경만 비교하면 「확대가 탑보다 멀다」는 거짓 실패가
+    // 난다(첫 판본이 그랬다). 「가깝다」는 눈에서 대상까지의 거리다.
+    const dist = (p: { lift: number; radius: number }) => Math.hypot(p.radius, p.lift);
+    for (const [name, preset] of Object.entries(VIEW_PRESETS)) {
+      expect(dist(FOCUS_VIEW), `★ 확대가 ${name} 보다 멀다`).toBeLessThan(dist(preset));
+    }
+  });
+
+  it('반경은 허용 범위 안이다 — 프리셋도 클램프를 지난다', () => {
+    for (const preset of [...Object.values(VIEW_PRESETS), FOCUS_VIEW]) {
+      const p = orbitAt(CX, CZ, preset, 0);
+      const r = Math.hypot(p.x - CX, p.z - CZ);
+      expect(r).toBeGreaterThanOrEqual(R_MIN);
+      expect(r).toBeLessThanOrEqual(R_MAX);
+    }
+  });
+
+  it('망가진 방위에도 자리를 잃지 않는다', () => {
+    for (const bad of [NaN, Infinity]) {
+      const p = orbitAt(CX, CZ, VIEW_PRESETS.top, bad);
+      expect(Number.isFinite(p.x) && Number.isFinite(p.z) && Number.isFinite(p.yaw),
+        `★ keepYaw=${bad} 에서 좌표가 깨졌다`).toBe(true);
+    }
+  });
+});

@@ -19,6 +19,7 @@ import { CSS } from './css.js';
 import { createInspector } from './inspector.js';
 import { createOutliner } from './outliner.js';
 import { createBadge } from './badge.js';
+import type { ViewSide } from '../../decide/orbit.js';
 
 /** 패널이 «자기가 못 하는 일» 을 넘기는 곳. 조립자(`mode.ts`)가 채운다. */
 export interface PanelHandlers {
@@ -32,6 +33,8 @@ export interface PanelHandlers {
    * 갈라지면 «목록으로 고른 것은 기즈모가 안 붙는다» 가 난다.
    */
   pickVillage(v: VillagePick): void;
+  /** 정해진 시점으로 간다(W6). **키와 같은 함수로 이어져야 한다** */
+  setView(side: ViewSide | 'focus'): void;
   exportNow(): void;
 }
 
@@ -88,6 +91,7 @@ export function createPanel(
   const rowY = el('div', 'row');
   const rowOps = el('div', 'row');
   const rowOut = el('div', 'row');
+  const rowView = el('div', 'row');
   const inspector = createInspector(host, st, () => { refresh(); });
   // 아웃라이너는 **패널 밖**에 산다(왼쪽 별도 컨테이너). 넓은 화면에서만 보이는 것은
   // CSS 가 정하고 여기서는 폭을 모른다 — `css.ts` 의 미디어 쿼리 한 곳이 판정한다.
@@ -134,12 +138,23 @@ export function createPanel(
     thawBtn,
   );
   rowOut.append(button('JSON 내보내기', () => { handlers.exportNow(); }));
+  // ── 정해진 시점 (W6, 감독 지시 2026-08-13) ────────────────────────────────
+  // *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등."*
+  // 버튼과 키가 **같은 함수**로 간다(`handlers.setView` → `input.setView`) — 각자
+  // 구현하면 한쪽만 고쳐져 어긋난다.
+  rowView.append(
+    button('탑', () => { handlers.setView('top'); }),
+    button('정면', () => { handlers.setView('front'); }),
+    button('좌', () => { handlers.setView('left'); }),
+    button('우', () => { handlers.setView('right'); }),
+    button('확대', () => { handlers.setView('focus'); }),
+  );
 
   const head = el('div', 'head');
   head.append(title, toggle);
   const body = el('div', 'body');
   body.append(palette, el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
-    el('hr'), rowOut, status, hint);
+    el('hr'), rowView, rowOut, status, hint);
   panel.append(head, body);
   panel.dataset.open = '0';
   panel.dataset.mode = 'drive';
@@ -186,6 +201,7 @@ export function createPanel(
       // 가 난다 — 실제로 R/F 를 뺄 때 이 줄을 함께 고쳐야 했다. 태스크 #44 가 그것이다.
       hint.textContent = 'R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · 숫자 입력)'
         + ' · 중클릭(또는 Alt+좌)드래그 = 대상 중심으로 돌기 · Shift+드래그 = 위아래 · 휠 = 줌'
+        + ' · 시점 1 정면 / 3 우 / 7 탑 / 9 좌 · F 확대'
         + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
     }
     inspector.sync(st.target);

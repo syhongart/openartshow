@@ -190,6 +190,8 @@ type Harness = {
    * jsdom 에는 화면이 없으므로 «무엇이 슬롯으로 나갔는가» 로만 잴 수 있다.
    */
   retargeted: RetargetCall[];
+  /** `orbitTo` 로 나간 시점 요청. 「키·버튼이 실제로 문에 닿았는가」를 잰다 */
+  views: { cx: number; cy: number; cz: number; lift: number; radius: number; yaw: number | null }[];
   /**
    * 기즈모 핸들 메시 하나. **드래그 경로를 재려면 이것이 필요하다** — 핸들을 `hits` 에
    * 넣어야 `gizmo.hitTest` 가 잡고 `dragging` 이 켜진다. P1 뮤테이션(손 뗄 때 확정 안 함)이
@@ -252,6 +254,7 @@ function makeHarness(vf?: VillageFixture): Harness {
   const frozenStore = new Map<string, PlacedPart[]>();
   /** `retargetSlot` 이 받은 것 전부(순서대로). 조작 중 실시간 반영을 재는 축 */
   const retargeted: RetargetCall[] = [];
+  const views: Harness['views'] = [];
   // ⚠ `add`/`remove` 가 **실제로 담는다.** 빈 함수였을 때 선택 링(`pick.ts` 의 marker)이
   // 어디에도 안 남아서 «링이 떴는가» 를 재는 축이 통째로 불가능했다 — N11 뮤테이션이
   // 0 failed 로 그 구멍을 드러냈다(2026-08-13).
@@ -311,6 +314,11 @@ function makeHarness(vf?: VillageFixture): Harness {
       }
       : null,
     surfaceAt: () => 0,
+    // 시점 문(W6). **실제로 불렸는가**만 기록한다 — 카메라가 어디로 갔는지는
+    // `PlayerSystem` 의 일이고 `tests/world2-player-orbit.test.ts` 가 본다.
+    orbitTo: (cx, cy, cz, preset) => {
+      views.push({ cx, cy, cz, lift: preset.lift, radius: preset.radius, yaw: preset.yaw });
+    },
   };
 
   // 팔레트 요청은 이 축과 무관하다 — 목록이 없으면 끌어다 놓기만 쓰는 정상 경로로 간다.
@@ -320,6 +328,7 @@ function makeHarness(vf?: VillageFixture): Harness {
     session, live, doc, canvas, entries, removed, hits, root, villageHits, villageMesh, order,
     frozen: frozenStore,
     retargeted,
+    views,
     gizmoHandle: () => {
       for (const c of root.children as { children?: unknown[] }[]) {
         const kids = c?.children;
@@ -1081,9 +1090,17 @@ describe('블렌더식 모달 — 주행이 산다 (행위)', () => {
     expect(hintText(idle), '★ hint 가 남은 모달 키를 안 알려준다').toContain('R 회전');
     idle.session.dispose();
 
+    // ⚠ **`F` 는 이제 「확대」다**(W6, 감독 지시 *"f누르면 확대"*). 옛 축은 「F 가 안
+    // 먹는다」로 R/F 크기 제거를 확인했는데, 지금 F 가 먹는 것은 **다른 뜻**이다.
+    // 그래서 「크기가 안 바뀐다」로 재는 쪽이 옳다 — 키가 살아 있다는 사실만으로는
+    // 옛 기능이 남았는지 알 수 없다.
     const h = modalReady();
-    expect(h.doc.getElementById('w2-edit'), '패널 확인용').toBeTruthy();
-    expect(pressKey('KeyF', 'f'), '★ F 가 아직 먹는다 — hint 와 어긋난다').toBe(false);
+    const before = h.doc.body.textContent ?? '';
+    expect(before, '하네스 확인 — 고른 것이 있어야 크기를 잴 수 있다').toContain('×1.00');
+    pressKey('KeyF', 'f');
+    expect(h.doc.body.textContent, '★ F 가 아직 크기를 바꾼다 — 옛 기능이 남았다')
+      .toContain('×1.00');
+    expect(h.frozen.size, '★ F 가 조작으로 잡혀 동결이 났다').toBe(0);
   });
 });
 
@@ -1470,5 +1487,87 @@ describe('선택 배지 — 뭘 골랐는지 화면이 말한다 (행위)', () =
     const h = pickedVillage();
     expect(h.doc.head.textContent ?? '', '★ 배지가 포인터를 먹는다')
       .toContain('#w2-badge{position:fixed;z-index:45;pointer-events:none');
+  });
+});
+
+// ── 정해진 시점 (W6) ────────────────────────────────────────────────────────
+//
+// 감독 지시 2026-08-13: *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등."*
+//
+// 값(어느 각·얼마나 멀리)은 `tests/world2-orbit.test.ts` 가 순수 계층에서 본다.
+// 여기서 재는 것은 **키·버튼이 실제로 그 문에 닿는가** 다 — 순수 함수가 맞아도
+// 조립부가 안 부르면 화면에서는 아무 일도 안 난다(W4 의 N10·N12 가 그 형태였다).
+
+describe('정해진 시점 — 키와 버튼이 문에 닿는다 (행위)', () => {
+  it('★ 숫자 키가 시점을 바꾼다 — 1 정면 · 3 우 · 7 탑 · 9 좌', () => {
+    const h = pickedVillage();
+    for (const code of ['Digit1', 'Digit3', 'Digit7', 'Digit9']) {
+      expect(pressKey(code), `★ ${code} 를 편집이 안 먹었다`).toBe(true);
+    }
+    expect(h.views.length, '★ 시점 문이 안 불렸다').toBe(4);
+    // 넷이 서로 달라야 한다 — 같으면 표가 한 값을 가리키고 있다.
+    const yaws = h.views.map((v) => v.yaw);
+    expect(new Set(yaws.map(String)).size, '★ 네 시점이 같은 곳을 본다').toBeGreaterThan(2);
+  });
+
+  it('★ 넘패드도 받는다 — 노트북에 넘패드가 없어 일반 숫자열도 받는 것과 짝이다', () => {
+    const h = pickedVillage();
+    expect(pressKey('Numpad7'), '★ 넘패드를 안 받는다').toBe(true);
+    expect(h.views[0]?.yaw, '★ 탑이 방위를 유지하지 않는다').toBeNull();
+  });
+
+  it('★ F 는 확대다 — 다른 시점보다 가깝고 방위를 유지한다', () => {
+    const h = pickedVillage();
+    pressKey('Digit1'); // 정면
+    pressKey('KeyF');
+    const [front, focus] = h.views;
+    expect(focus, '★ F 가 시점 문을 안 불렀다').toBeDefined();
+    expect(Math.hypot(focus.radius, focus.lift), '★ 확대가 정면보다 멀다')
+      .toBeLessThan(Math.hypot(front.radius, front.lift));
+    expect(focus.yaw, '★ 확대가 방위를 바꿨다 — 보던 쪽을 잃는다').toBeNull();
+  });
+
+  it('★ 고른 것을 중심으로 본다 — 아니면 엉뚱한 데를 돈다', () => {
+    const h = pickedVillage();
+    pressKey('Digit1');
+    const v = h.views[0];
+    // 픽스처의 건물은 파셀 (0,0) 의 로컬 (5,0,3) = 월드 같은 값(원점 파셀).
+    expect([v.cx, v.cz], '★ 고른 것이 아니라 딴 데를 중심으로 잡았다').toEqual([5, 3]);
+  });
+
+  it('★ 아무것도 안 골랐으면 **말하고** 안 움직인다', () => {
+    // 중심이 없으면 「무엇을 중심으로 도는가」가 정의되지 않는다. 임의로 정하면
+    // 감독이 보던 자리에서 튄다 — 침묵보다 안내가 낫다.
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(pressKey('Digit7'), '★ 안 골랐는데 키가 그냥 통과했다').toBe(true);
+    expect(h.views.length, '★ 안 골랐는데 시점이 움직였다').toBe(0);
+    expect(h.doc.body.textContent, '★ 아무 말도 안 한다').toContain('먼저 물건을 클릭');
+  });
+
+  it('★ 모달 중에는 숫자가 **타이핑**이다 — 시점으로 새지 않는다', () => {
+    const h = pickedVillage();
+    movePointer(400, 300);
+    pressKey('KeyR', 'r');
+    pressKey('Digit7', '7');
+    expect(h.views.length, '★ 조작 중 숫자가 시점을 바꿨다 — 타이핑이 죽는다').toBe(0);
+    expect(h.doc.body.textContent, '★ 타이핑이 화면에 안 보인다').toContain('7');
+  });
+
+  it('★ 패널 버튼도 **같은 문**으로 간다 — 키와 갈라지면 한쪽만 고쳐진다', () => {
+    const h = pickedVillage();
+    const btn = [...h.doc.querySelectorAll('button')].find((b) => b.textContent === '탑');
+    expect(btn, '★ 탑 버튼이 없다').toBeDefined();
+    btn!.click();
+    expect(h.views.length, '★ 버튼이 시점 문을 안 불렀다').toBe(1);
+    expect(h.views[0].yaw, '★ 버튼이 키와 다른 값을 보냈다').toBeNull();
+  });
+
+  it('시점 버튼 다섯이 다 있다 — 화면이 광고하는 것과 짝이다', () => {
+    const h = pickedVillage();
+    const labels = [...h.doc.querySelectorAll('button')].map((b) => b.textContent);
+    for (const want of ['탑', '정면', '좌', '우', '확대']) {
+      expect(labels, `★ 「${want}」 버튼이 없다`).toContain(want);
+    }
   });
 });

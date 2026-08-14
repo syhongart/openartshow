@@ -318,6 +318,7 @@ export const overlayFeature: Feature = {
       orbit: (cx, cy, cz, dYaw, dHeight, kRadius) => {
         env.player.orbit(cx, cy, cz, dYaw, dHeight, kRadius);
       },
+      orbitTo: (cx, cy, cz, preset) => { env.player.orbitTo(cx, cy, cz, preset); },
       endOrbit: () => { env.player.endOrbit(); },
       surfaceAt(x, z) {
         const p = parcelOf(x, z, DEFAULT_LAYOUT.cellX, DEFAULT_LAYOUT.cellZ);
