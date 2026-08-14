@@ -162,23 +162,46 @@ on:
         #     2026-08-13 지적(*"생성 이미지가 작품 자리를 차지한다"*)이 히어로에서 재현된다.
         #     `FOUNDING.md` 의 *"작가가 자기 전시를 여는 창(窓)"* 과도 어긋난다.
         #
-        #   ⚠⚠⚠⚠ **빛을 골든아워 → 블루아워로 바꿨다 (감독 지시 2026-08-14: *"노을로
+        #   ⚠⚠⚠ **빛을 골든아워 → 블루아워로 바꿨다 (감독 지시 2026-08-14: *"노을로
         #   하지말자"*).** 구도·인물·글자 금지·이름 없는 도시는 **전부 그대로**다 — 감독이
         #   문제 삼은 것은 빛 하나이고, 감독이 문제라고 하지 않은 것을 내가 문제로 규정하지
         #   않는다(CLAUDE.md 의 「가장 비쌌던 실수는 0번」).
         #   **후보 둘을 화면으로 비교한 뒤의 판정이다** — run #6(옅은 톤)·#7(진한 테라코타)를
         #   나란히 올렸고, 감독이 둘 다 아니라 **축 자체**를 바꿨다. 그 다음 카드에서
         #   **「해 진 직후 · 푸른 시간」** 을 골랐다(다른 후보: 맑은 낮 · 흐린 날 · 이른 아침).
-        #   ⚠ **이 축에는 이미 알려진 지뢰가 있다** — 감독은 2026-08-14 에 어두운 산출물을
-        #   보고 *"너무 어두운데."* 라고 했다. 블루아워는 그 방향으로 미끄러지기 쉽다.
-        #   그래서 프롬프트가 **밝기를 세 번 못 박는다**: `light and airy` ·
-        #   `the bright half hour after the sun has gone, not night` ·
-        #   `no black, no heavy shadow, no stars, no moon`. 이 문구들을 지우면 그 지뢰를
-        #   밟는다. 홈 배경이 크림(`--oas-paper-deep`)이라 어두운 그림은 톤에서 끊긴다 —
-        #   라이트 전환(PR #184)을 한 이유가 그것이다.
-        #   **따뜻한 색은 사라진 것이 아니라 자리를 옮겼다**: 하늘이 아니라 **쇼윈도 불빛**
-        #   에만 남는다(`warm amber light spilling only from the shop windows`). 갤러리가
-        #   열려 있다는 인상이 그 대비에서 나온다.
+        #
+        #   ⚠ **가드는 양쪽에 대칭으로 단다**(검수관 반려 B1). 첫 판본은 **밤 방향 가드만
+        #   7개**(`light and airy`·`not night`·`no black`·`no heavy shadow`·`no stars`·
+        #   `no moon` 등)를 달고 **노을 방향은 0개**였다. 그 상태로 긍정문에
+        #   `just after **sunset**` 과 `a faint warm blush just above the rooftops` 를
+        #   **남겨 두었다** — 감독이 거부한 바로 그 서명을 요구한 것이다. 게다가 같은
+        #   프롬프트가 `warm ... **only** from the shop windows` 라고 해 **문면이 충돌**했고,
+        #   `only` 가 무력화되면 하늘 전체가 따뜻해지는 경로가 열린다. 지난 회차의
+        #   *"사람을 넣으면서 사람을 금지"* 와 같은 유형이다.
+        #   → 지금은 노을 가드 5개(`no sunset colours at all`·`no orange`·`no pink`·
+        #   `no amber`·`no warm gradient along the horizon or above the rooftops`)를 달고
+        #   **하늘의 난색 요구를 통째로 지웠다.** 그래서 `only` 도 참이 된다.
+        #
+        #   ⚠ **이 축에는 이미 알려진 지뢰가 있다** — 위 `⚠⚠⚠` 문단이 적은 *"너무
+        #   어두운데."* 가 그것이다(대상은 그 문단에 적힌 옛 산출물 = run #4. 이 파일 안에서
+        #   같은 인용을 두 번 적지 않는다 — 검수관 조건 C2. `landing.html` 에도 같은 문장이
+        #   있으나 **그쪽은 랜딩 초안을 가리켜 대상이 다르다**). 블루아워는 그 방향으로
+        #   미끄러지기 쉬우므로 밝기 가드를 유지하고 `the street itself stays evenly and
+        #   clearly lit` · `still clearly bright` 로 **긍정 앵커를 보강**했다(검수관 P1·P2 —
+        #   `brightly lit windows` 는 어두운 주변을 전제하는 표현이라 `lit` 으로 낮췄다).
+        #   홈 배경이 크림(`--oas-paper-deep`)이라 어두운 그림은 톤에서 끊긴다 — 라이트
+        #   전환(PR #184)을 한 이유가 그것이다.
+        #
+        #   ⚠ **따뜻한 색이 「쇼윈도로 자리를 옮겼다」는 것은 아직 화면으로 확인되지 않았다**
+        #   (검수관 조건 C1 — 첫 판본은 이것을 단정했다). 히어로 wash 는 아래로 갈수록 크림을
+        #   덮으므로(스톱은 `landing.html` 의 `--hero-wash-*` 한 곳) **채도가 급격히 죽는다** —
+        #   검수관 재계산으로 pale periwinkle 15.5% → α0.434 에서 **5.2%** → α0.70 에서
+        #   **0.9%** 다. 즉 화면에서 살아남는 것은 **상단 ~30%** 가 사실상 전부인데, 이
+        #   프롬프트는 따뜻한 요소를 mid/lower 에 둔다. **의도와 반대 방향일 수 있다.**
+        #   ⚠⚠ 다만 **이미지를 히어로에 배치하는 코드는 아직 없다**(`frontend/img/` 0건,
+        #   `.hero` 는 파티클 캔버스). 위 계산은 *"생성 이미지는 밝기를 통제할 수 없으므로
+        #   최악값으로 판정"* 이라는 기존 설계 전제 위의 **추론**이고 실측이 아니다. 배치를
+        #   구현하는 회차에 **이 문단부터 다시 본다.**
         #
         #   ⚠ **못 잰 것**: 이 프롬프트로 실제 무엇이 나오는지는 안 돌려봤다. 그리고
         #   CLAUDE.md 가 적은 대로 *"프롬프트에서 이름을 빼도 실존 대상 재현 확률이 0 이
@@ -190,7 +213,7 @@ on:
         #   바뀌면 모델이 창문에 글자를 넣을 수도 있다. 통과 이력을 면제로 쓰지 않는다.
         description: '어떤 그림인가 (비우면 홈 히어로 기본 시안 · 공개 기록에 남는다)'
         required: false
-        default: 'A wide illustrated street scene of an unnamed, invented city just after sunset, in the blue hour, viewed at pedestrian eye level. Cool low-saturation palette: pale periwinkle, dusty slate blue, soft lavender grey, with warm amber light spilling only from the shop windows. Keep the whole scene light and airy — this is the bright half hour after the sun has gone, not night: no black, no heavy shadow, no stars, no moon. Soft hand-drawn linework with gentle painterly shading, flat storybook style, no photorealism. Composition: the upper third is open sky with a long soft gradient from pale blue-grey down to a faint warm blush just above the rooftops — this area must stay simple and uncluttered. Mid ground: rows of low stone and plaster townhouses receding in one-point perspective on both sides, with shuttered upper windows and cloth awnings, their facades in cool muted tones. Ground floor shopfronts on the right are small art galleries with brightly lit windows; framed pictures are visible inside as soft abstract colour blocks with no discernible imagery, and their warm glow pools gently onto the pavement. A few figures walk the street and pause at the windows — drawn tiny, reduced to simple silhouettes, low in saturation, with no facial features at all, so they read as atmosphere rather than characters. The lower third is plain pale pavement with soft reflected light and no detail. Keep all important elements inside the central 60% of the width — the outer edges will be cropped on narrow screens. Absolutely no text, no letters, no signage, no logos, no watermarks. No recognisable real people. No recognisable real-world landmarks, buildings, or brands.'
+        default: 'A wide illustrated street scene of an unnamed, invented city in the blue hour, long after the sun has dropped below the horizon, viewed at pedestrian eye level. Cool low-saturation palette throughout: pale periwinkle, dusty slate blue, soft lavender grey. The sky is a calm even blue-grey across its whole width — no sunset colours at all, no orange, no pink, no amber, no warm gradient along the horizon or above the rooftops. Keep the whole scene light and airy — this is the bright half hour of blue dusk, not night: no black, no heavy shadow, no stars, no moon, and the street itself stays evenly and clearly lit. Soft hand-drawn linework with gentle painterly shading, flat storybook style, no photorealism. Composition: the upper third is open sky, a long soft gradient of pale blue-grey — this area must stay simple and uncluttered. Mid ground: rows of low stone and plaster townhouses receding in one-point perspective on both sides, with shuttered upper windows and cloth awnings, their facades in cool muted tones. Ground floor shopfronts on the right are small art galleries with lit windows; the soft lamplight inside them is the only warm colour anywhere in the picture. Framed pictures are visible inside as soft abstract colour blocks with no discernible imagery. A few figures walk the street and pause at the windows — drawn tiny, reduced to simple silhouettes, low in saturation, with no facial features at all, so they read as atmosphere rather than characters. The lower third is plain light blue-grey pavement, still clearly bright, with soft even light and no detail. Keep all important elements inside the central 60% of the width — the outer edges will be cropped on narrow screens. Absolutely no text, no letters, no signage, no logos, no watermarks. No recognisable real people. No recognisable real-world landmarks, buildings, or brands.'
         type: string
       out:
         description: '저장 경로 (frontend/ 아래 · png/jpg/webp 만)'
