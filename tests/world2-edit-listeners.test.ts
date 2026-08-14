@@ -1650,6 +1650,34 @@ describe('셰이딩 뷰 — 키와 버튼이 문에 닿는다 (행위)', () => {
     expect(h.shadingNow(), '★ 보던 솔리드가 사라졌다').toBe('solid');
   });
 
+  it('★ 버튼으로 와이어에 들어가도 **직전 모드**로 나온다', () => {
+    // ⚠ 이 축은 **뮤테이션이 만들어 낸 것**이다(M6, 2026-08-14). `goShading` 의
+    // `shadingBack` 갱신을 지워도 처음엔 `0 failed` 였다 — 그때 걸어 본 경로가
+    // 「버튼 솔리드 → 키 → 키」였고, **첫 키 토글이 돌아갈 자리를 `cur` 로 덮어써서**
+    // 차이가 지워졌기 때문이다(`toggleWire` 가 와이어로 갈 때 `back: cur` 를 낸다).
+    //
+    // 차이는 **와이어에 버튼으로 들어갈 때만** 드러난다 — 그때는 토글을 안 거치므로
+    // 돌아갈 자리를 갱신할 사람이 `goShading` 뿐이다. 그 경로가 이것이다.
+    const h = pickedVillage();
+    const btn = (m: ShadingMode) =>
+      h.shadeButtons().find((b) => b.textContent === SHADING_LABEL[m])!;
+    btn('solid').click();
+    btn('wire').click();
+    pressKey('KeyZ', 'Z', { shiftKey: true });
+    expect(h.shadingNow(), '★ 와이어에서 나왔더니 보던 솔리드가 아니라 머티리얼이다')
+      .toBe('solid');
+  });
+
+  it('★ 아무것도 안 골라도 셰이딩은 먹는다 — 화면 전체의 상태이지 대상의 속성이 아니다', () => {
+    // ⚠ 이 축도 뮤테이션이 만들어 냈다(M5). 셰이딩 분기가 `if (!st.target)` 검사보다
+    // 뒤로 가면 «먼저 물건을 클릭해 고르세요» 로 죽는데, 고른 상태로만 재면 그 결함이
+    // 영원히 안 보인다.
+    const h = makeHarness(VILLAGE_FIXTURE);
+    pressTab();
+    expect(pressKey('KeyZ', 'Z', { shiftKey: true }), '★ 안 골랐다고 키가 통과했다').toBe(true);
+    expect(h.shadings, '★ 안 골랐다고 셰이딩이 죽었다').toEqual(['wire']);
+  });
+
   it('★ ?shading=wire 로 시작한 세션은 첫 토글에 머티리얼로 간다', () => {
     // 돌아갈 자리가 와이어면 «눌렀는데 또 와이어» 가 되어 키가 죽은 것으로 보인다.
     const h = pickedVillage({ ...VILLAGE_FIXTURE, shadingStart: 'wire' });

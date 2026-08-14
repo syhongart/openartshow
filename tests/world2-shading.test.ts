@@ -137,9 +137,14 @@ describe('셰이딩 — Shift+Z 토글', () => {
   it('솔리드에서 갔다 오면 **솔리드**로 돌아온다 — 머티리얼로 튕기지 않는다', () => {
     // 블렌더의 `Shift+Z` 가 «와이어 ↔ 직전» 인 이유. 머티리얼로 튕기면 솔리드로 보던
     // 작업이 매번 끊긴다.
-    const a = toggleWire('solid', 'solid');
+    //
+    // ⚠ **`back` 인자를 `cur` 와 다르게 준다.** 첫 판본은 `toggleWire('solid','solid')`
+    // 였고 그것은 **픽스처가 두 값을 구별 못 하는 자리**였다 — 「`cur` 를 새 `back` 으로
+    // 삼는다」와 「받은 `back` 을 그대로 물려준다」가 같은 답을 내서, 둘을 바꾸는 결함이
+    // 통과한다. 뮤테이션 `0 failed` 의 세 번째 원인이 정확히 이 형태다.
+    const a = toggleWire('solid', 'material');
     expect(a.mode).toBe('wire');
-    expect(a.back).toBe('solid');
+    expect(a.back, '★ 와이어로 갈 때 돌아갈 자리가 «지금 모드» 가 아니다').toBe('solid');
     const b = toggleWire(a.mode, a.back);
     expect(b.mode, '★ 직전 모드가 아니라 머티리얼로 돌아왔다').toBe('solid');
   });
