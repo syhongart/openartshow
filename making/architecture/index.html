@@ -12,7 +12,7 @@
 <meta property="og:description" content="파일 구조·규모 실측과 아키텍처의 강점·치르는 값.">
 <meta property="og:url" content="https://syhongart.github.io/openartshow/making/architecture/">
 <link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
-<style>:root { --oas-green-100: #e3efe7; --oas-green-300: #8fd0ab; --oas-green-500: #5f9e7d; --oas-green-600: #4e8a6a; --oas-green-700: #3f7a5c; --oas-green-800: #2c5844; --oas-green-900: #14261d; --oas-green-text-rgb: 30 103 66; --oas-green-text: rgb(var(--oas-green-text-rgb)); --oas-vivid: #1fd677; --oas-vivid-hi: #25e481; --oas-vivid-ink: #0d2417; --oas-violet-100: #EAE5FF; --oas-violet-300: #AB99FF; --oas-violet-500: #8B72FF; --oas-violet-600: #6C4DFF; --oas-violet-ink: #5733FF; --oas-cyan-500: #72E6E1; --oas-cyan-600: #26D9D1; --oas-coral-500: #FF705E; --oas-coral-600: #FF331A; --oas-coral-900: #660B00; --oas-coral-ink: #CC1700; --oas-violet-soft: rgba(139,114,255,0.5); --oas-dark-anchor: #14151A; --oas-dark-1: #1F2128; --oas-dark-2: #2A2C37; --oas-dark-line: #3A3D4B; --oas-paper: #fdfbf5; --oas-paper-deep: #f6f1e4; --oas-ivory: #F3F0E9; --oas-white-rgb: 255 255 255; --oas-white: rgb(var(--oas-white-rgb)); --oas-sand-100: #efe6d3; --oas-sand-300: #ddccae; --oas-panel: #fffdf9; --oas-ink: #17140f; --oas-ink-cool: #202124; --oas-ink-body: #57503f; --oas-ink-dim: #6b6459; --oas-border-light: #e6dfcf; --oas-warm-gray-300: #cfc6b8; --oas-warm-gray-500: #a49a8c; --oas-on-dark-rgb: 245 245 242; --oas-on-dark: rgb(var(--oas-on-dark-rgb)); --oas-on-dark-warm-rgb: 242 242 240; --oas-on-dark-warm: rgb(var(--oas-on-dark-warm-rgb)); --oas-on-dark-dim: #9A9EB1; --oas-on-dark-dim-warm: #a6a6a4; --oas-danger: #b0503f; --oas-accent: var(--oas-green-500); --oas-accent-ink: var(--oas-green-text); --oas-accent-soft: var(--oas-green-300); --oas-accent-deep: var(--oas-green-600); --oas-cta: var(--oas-vivid); --oas-cta-hi: var(--oas-vivid-hi); --oas-cta-label: var(--oas-vivid-ink); --oas-cta-ink: var(--oas-green-800); --oas-status: var(--oas-cyan-500); --oas-status-hi: var(--oas-cyan-600); --oas-warn: var(--oas-coral-500); --oas-warn-hi: var(--oas-coral-600); --oas-warn-ink: var(--oas-coral-ink); --oas-r-hair: 2px; --oas-r-plate: 3px; --oas-r-pill: 999px; --oas-shadow-whisper: 0 2px 6px rgba(20, 21, 26, 0.05); --oas-shadow-panel: 0 8px 20px rgba(20, 21, 26, 0.10); --oas-shadow-lift: 0 6px 16px rgba(20, 21, 26, 0.28); --oas-shadow-lift-accent: 0 10px 24px rgba(95, 158, 125, 0.16); }
+<style>:root { --oas-green-100: #e3efe7; --oas-green-300: #8fd0ab; --oas-green-500: #5f9e7d; --oas-green-600: #4e8a6a; --oas-green-700: #3f7a5c; --oas-green-800: #2c5844; --oas-green-900: #14261d; --oas-green-text-rgb: 30 103 66; --oas-green-text: rgb(var(--oas-green-text-rgb)); --oas-vivid: #1fd677; --oas-vivid-hi: #25e481; --oas-vivid-ink: #0d2417; --oas-violet-100: #EAE5FF; --oas-violet-300: #AB99FF; --oas-violet-500: #8B72FF; --oas-violet-600: #6C4DFF; --oas-violet-ink: #5733FF; --oas-cyan-500: #72E6E1; --oas-cyan-600: #26D9D1; --oas-coral-500: #FF705E; --oas-coral-600: #FF331A; --oas-coral-900: #660B00; --oas-coral-ink: #CC1700; --oas-violet-soft: rgba(139,114,255,0.5); --oas-dark-anchor: #14151A; --oas-dark-1: #1F2128; --oas-dark-2: #2A2C37; --oas-dark-line: #3A3D4B; --oas-paper-rgb: 253 251 245; --oas-paper: rgb(var(--oas-paper-rgb)); --oas-paper-deep-rgb: 246 241 228; --oas-paper-deep: rgb(var(--oas-paper-deep-rgb)); --oas-ivory: #F3F0E9; --oas-white-rgb: 255 255 255; --oas-white: rgb(var(--oas-white-rgb)); --oas-sand-100: #efe6d3; --oas-sand-300: #ddccae; --oas-panel-rgb: 255 253 249; --oas-panel: rgb(var(--oas-panel-rgb)); --oas-cyan-ink: #0f6360; --oas-status-ink: var(--oas-cyan-ink); --oas-ink-rgb: 23 20 15; --oas-ink: rgb(var(--oas-ink-rgb)); --oas-ink-cool: #202124; --oas-ink-body-rgb: 87 80 63; --oas-ink-body: rgb(var(--oas-ink-body-rgb)); --oas-ink-dim: #6b6459; --oas-border-light: #e6dfcf; --oas-warm-gray-300: #cfc6b8; --oas-warm-gray-500: #a49a8c; --oas-on-dark-rgb: 245 245 242; --oas-on-dark: rgb(var(--oas-on-dark-rgb)); --oas-on-dark-warm-rgb: 242 242 240; --oas-on-dark-warm: rgb(var(--oas-on-dark-warm-rgb)); --oas-on-dark-dim: #9A9EB1; --oas-on-dark-dim-warm: #a6a6a4; --oas-danger: #b0503f; --oas-accent: var(--oas-green-500); --oas-accent-ink: var(--oas-green-text); --oas-accent-soft: var(--oas-green-300); --oas-accent-deep: var(--oas-green-600); --oas-cta: var(--oas-vivid); --oas-cta-hi: var(--oas-vivid-hi); --oas-cta-label: var(--oas-vivid-ink); --oas-cta-ink: var(--oas-green-800); --oas-status: var(--oas-cyan-500); --oas-status-hi: var(--oas-cyan-600); --oas-warn: var(--oas-coral-500); --oas-warn-hi: var(--oas-coral-600); --oas-warn-ink: var(--oas-coral-ink); --oas-r-hair: 2px; --oas-r-plate: 3px; --oas-r-pill: 999px; --oas-shadow-whisper: 0 2px 6px rgba(20, 21, 26, 0.05); --oas-shadow-panel: 0 8px 20px rgba(20, 21, 26, 0.10); --oas-shadow-lift: 0 6px 16px rgba(20, 21, 26, 0.28); --oas-shadow-lift-accent: 0 10px 24px rgba(95, 158, 125, 0.16); }
 /* 색: tokens.css 의 원시 팔레트를 셸 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
 :root{--gold:var(--oas-green-500);--gold-text:var(--oas-green-text);--paper:var(--oas-paper);
 --paper-deep:var(--oas-paper-deep);--panel:var(--oas-panel);
@@ -249,7 +249,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 여기는 <b>지금 이렇게 생겼고 이런 값을 치르고 있다</b>를 적습니다.</p>
 
 <div class="arch-stats">
-  <div class="stat"><span class="n">213,169</span><span class="k">자체 코드 줄</span></div>
+  <div class="stat"><span class="n">213,374</span><span class="k">자체 코드 줄</span></div>
   <div class="stat"><span class="n">769</span><span class="k">자체 파일</span></div>
   <div class="stat"><span class="n">59,583</span><span class="k">벤더 줄</span></div>
   <div class="stat"><span class="n">24.8%</span><span class="k">테스트 / 구현</span></div>
@@ -275,7 +275,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr>
       <td>테스트</td>
-      <td class="num">42,339</td>
+      <td class="num">42,359</td>
       <td class="num">156</td>
       <td class="pct"><span class="bar" style="--w:56.0%"></span><span class="pv">19.9%</span></td>
     </tr>
@@ -283,25 +283,25 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
       <td>오픈월드 world2</td>
       <td class="num">27,613</td>
       <td class="num">110</td>
-      <td class="pct"><span class="bar" style="--w:36.5%"></span><span class="pv">13.0%</span></td>
+      <td class="pct"><span class="bar" style="--w:36.5%"></span><span class="pv">12.9%</span></td>
     </tr>
     <tr>
       <td>frontend 기타</td>
-      <td class="num">23,854</td>
+      <td class="num">23,876</td>
       <td class="num">105</td>
-      <td class="pct"><span class="bar" style="--w:31.5%"></span><span class="pv">11.2%</span></td>
+      <td class="pct"><span class="bar" style="--w:31.6%"></span><span class="pv">11.2%</span></td>
     </tr>
     <tr>
       <td>문서</td>
-      <td class="num">17,877</td>
+      <td class="num">17,910</td>
       <td class="num">30</td>
-      <td class="pct"><span class="bar" style="--w:23.6%"></span><span class="pv">8.4%</span></td>
+      <td class="pct"><span class="bar" style="--w:23.7%"></span><span class="pv">8.4%</span></td>
     </tr>
     <tr>
       <td>HTML 페이지</td>
-      <td class="num">7,996</td>
+      <td class="num">8,126</td>
       <td class="num">15</td>
-      <td class="pct"><span class="bar" style="--w:10.6%"></span><span class="pv">3.8%</span></td>
+      <td class="pct"><span class="bar" style="--w:10.7%"></span><span class="pv">3.8%</span></td>
     </tr>
     <tr>
       <td>빌드 스크립트</td>
@@ -360,7 +360,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr class="d1">
       <td><code>*.html</code></td>
-      <td class="num">7,996</td>
+      <td class="num">8,126</td>
       <td class="num">15</td>
       <td class="desc">진입 페이지</td>
     </tr>
@@ -378,13 +378,13 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr class="d0">
       <td><code>tests/<wbr></code></td>
-      <td class="num">42,339</td>
+      <td class="num">42,359</td>
       <td class="num">156</td>
       <td class="desc">단위·통합 테스트</td>
     </tr>
     <tr class="d0">
       <td><code>docs/<wbr></code></td>
-      <td class="num">17,877</td>
+      <td class="num">17,910</td>
       <td class="num">30</td>
       <td class="desc">원칙·이력·설계</td>
     </tr>
@@ -408,7 +408,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
       <li><b>규율이 문서가 아니라 게이트다</b> 린트·타입·참조무결성·테스트가 <code>npm run gate</code> 한 번으로 돌고, 통과 스탬프가 <strong>커밋 훅에서 대조</strong>된다 — 게이트를 안 돌리거나 돌린 뒤 파일을 고치면 커밋 자체가 막힌다. 손으로 조립하던 때 같은 실패를 두 번 하고 구조로 옮겼다.</li>
       <li><b>분해해도 부르는 쪽이 안 깨진다</b> 파일을 쪼갤 때 원래 이름을 <strong>얇은 재수출 배럴</strong>로 남긴다 (<code>space-render.js</code>·<code>ui.js</code>·<code>chibi.js</code>). 내부는 자유롭게 재배치하고 소비자의 import 경로는 그대로다.</li>
       <li><b>서버에 저장하지 않는다 — 파라미터가 곧 공간</b> 전시 공간과 아바타는 JSON 스키마로 표현되어 링크·localStorage 에만 담긴다. 렌더는 기기에서 파생된다. 계정 서버도, 유출될 DB 도 없다.</li>
-      <li><b>안전망이 두껍다 — 테스트 42,339줄</b> 구현 대비 24.8% 다. 다만 <strong>통과가 검출력의 증거는 아니다</strong> — 결함을 고치면 그 결함을 일부러 되살려 테스트가 실제로 깨지는지(뮤테이션) 확인한다. 안 깨지면 게이트가 아니라 장식이다.</li>
+      <li><b>안전망이 두껍다 — 테스트 42,359줄</b> 구현 대비 24.8% 다. 다만 <strong>통과가 검출력의 증거는 아니다</strong> — 결함을 고치면 그 결함을 일부러 되살려 테스트가 실제로 깨지는지(뮤테이션) 확인한다. 안 깨지면 게이트가 아니라 장식이다.</li>
     </ul>
   </section>
   <section class="con">
@@ -431,8 +431,8 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
   <thead><tr><th>파일</th><th class="num">줄</th></tr></thead>
   <tbody>
     <tr><td><code>frontend/<wbr>js/<wbr>world.js</code></td><td class="num">2,372</td></tr>
+    <tr><td><code>frontend/<wbr>landing.html</code></td><td class="num">2,141</td></tr>
     <tr><td><code>frontend/<wbr>editor/<wbr>js/<wbr>Strings.js</code></td><td class="num">2,029</td></tr>
-    <tr><td><code>frontend/<wbr>landing.html</code></td><td class="num">2,011</td></tr>
     <tr><td><code>tests/<wbr>world2-ocean.test.ts</code></td><td class="num">1,806</td></tr>
     <tr><td><code>frontend/<wbr>css/<wbr>gallery.css</code></td><td class="num">1,746</td></tr>
     <tr><td><code>frontend/<wbr>js/<wbr>world2/<wbr>features/<wbr>ocean.ts</code></td><td class="num">1,712</td></tr>
