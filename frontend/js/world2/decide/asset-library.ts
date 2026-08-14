@@ -136,6 +136,48 @@ export function filterAssets(items: readonly AssetItem[], query: string): AssetI
   return items.filter((a) => a.label.toLowerCase().includes(q) || a.id.toLowerCase().includes(q));
 }
 
+// ── 고르기 판정 ─────────────────────────────────────────────────────────────
+
+/**
+ * 지금 고른 것. **둘 중 최대 하나만 채워진다** — `EditState` 의 `pendingSrc`/`pendingPart`
+ * 와 같은 불변식이고, 그것이 이 타입이 존재하는 이유다.
+ *
+ * 지면을 클릭했을 때 «GLB 를 놓을지 파츠를 놓을지» 가 둘로 갈리면 안 된다. 그래서 배타성을
+ * **순수 함수의 성질**로 끌어냈다.
+ */
+export interface Picked {
+  readonly src: string | null;
+  readonly part: string | null;
+}
+
+export const NOTHING_PICKED: Picked = { src: null, part: null };
+
+/**
+ * 하나를 고른다. **같은 것을 다시 고르면 푼다.**
+ *
+ * 되돌릴 자리가 그것밖에 없다 — 고른 뒤 마음이 바뀌었을 때 3D 클릭은 이미 «놓기» 가
+ * 되어 버린다.
+ *
+ * ── 왜 순수 함수인가 (뮤테이션 실측 2026-08-14) ──────────────────────────
+ * 처음엔 이 로직이 `panel/palette.ts` 안에 있었고, 「파츠를 고를 때 `pendingSrc` 를
+ * 비운다」를 지우는 뮤테이션(N4)이 **`0 failed`** 였다. 원인이 둘이었다:
+ *
+ *   ② 축이 빔 — 그 축은 GLB 를 **먼저 고르지 않아서** `pendingSrc` 가 애초에 `null`
+ *      이었다. 비우는 줄을 지워도 여전히 `null` 이라 차이가 안 난다
+ *   ③ 픽스처 한계 — 하네스의 GLB 목록이 비어 있어(fetch 실패) **그 시나리오를 쓸
+ *      수조차 없었다.** 버튼이 없으니 «GLB 고르고 파츠 고르기» 를 재현할 방법이 없다
+ *
+ * DOM 픽스처를 키우는 대신 **판정을 끌어냈다.** 배타성은 화면의 성질이 아니라 규칙의
+ * 성질이고, 규칙이면 three 도 DOM 도 없이 왕복을 다 밟아 볼 수 있다.
+ */
+export function pickAsset(cur: Picked, a: AssetItem): Picked {
+  if (a.kind === 'part') {
+    return { src: null, part: cur.part === a.id ? null : a.id };
+  }
+  const src = `assets/models/${a.id}`;
+  return { src: cur.src === src ? null : src, part: null };
+}
+
 // ── 놓기 판정 ───────────────────────────────────────────────────────────────
 //
 // ⚠⚠ **이 절이 이 회차에서 가장 위험한 곳이다.** 마을 파츠를 하나 놓는다는 것은 그 파셀의

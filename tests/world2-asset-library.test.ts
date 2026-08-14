@@ -18,7 +18,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  PART_LABEL, canPlacePart, filterAssets, modelAssets, newPart, partAssets, placeable,
+  NOTHING_PICKED, PART_LABEL, canPlacePart, filterAssets, modelAssets, newPart, partAssets,
+  pickAsset, placeable,
 } from '../frontend/js/world2/decide/asset-library.js';
 import { PARTS, maxPartsPerParcel, tonesFor } from '../frontend/js/world2/parts/index.js';
 import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
@@ -104,6 +105,58 @@ describe('에셋 라이브러리 — 검색', () => {
     const before = items.length;
     filterAssets(items, '나무');
     expect(items).toHaveLength(before);
+  });
+});
+
+describe('에셋 라이브러리 — 고르기 (파츠와 GLB 는 배타다)', () => {
+  const tree = partAssets(['tree'], tonesFor)[0]!;
+  const bench = partAssets(['bench'], tonesFor)[0]!;
+  const glb = modelAssets(['museum.glb'])[0]!;
+
+  it('파츠를 고르면 파츠만 찬다', () => {
+    expect(pickAsset(NOTHING_PICKED, tree)).toEqual({ src: null, part: 'tree' });
+  });
+
+  it('GLB 를 고르면 GLB 만 찬다', () => {
+    expect(pickAsset(NOTHING_PICKED, glb))
+      .toEqual({ src: 'assets/models/museum.glb', part: null });
+  });
+
+  it('★ GLB 를 고른 뒤 파츠를 고르면 **GLB 가 비워진다**', () => {
+    // ⚠ 이 축이 뮤테이션(N4)이 만들어 낸 것이다. 이 로직이 `palette.ts` 안에 있었을 때는
+    // 「파츠를 고를 때 `pendingSrc` 를 비운다」를 지워도 `0 failed` 였다 — 그 축이 GLB 를
+    // **먼저 고르지 않아서** 애초에 `null` 이었고(축이 빔), 하네스의 GLB 목록이 비어 있어
+    // 그 시나리오를 쓸 수조차 없었다(픽스처 한계). 판정을 끌어내니 둘 다 사라졌다.
+    const a = pickAsset(NOTHING_PICKED, glb);
+    const b = pickAsset(a, tree);
+    expect(b.src, '★ 파츠를 골랐는데 GLB 가 남아 있다 — 지면 클릭이 무엇을 놓을지 갈린다')
+      .toBeNull();
+    expect(b.part).toBe('tree');
+  });
+
+  it('★ 파츠를 고른 뒤 GLB 를 고르면 **파츠가 비워진다**', () => {
+    const a = pickAsset(NOTHING_PICKED, tree);
+    const b = pickAsset(a, glb);
+    expect(b.part, '★ GLB 를 골랐는데 파츠가 남아 있다').toBeNull();
+    expect(b.src).toBe('assets/models/museum.glb');
+  });
+
+  it('★ 어떤 순서로 골라도 둘이 동시에 차지 않는다', () => {
+    let cur = NOTHING_PICKED;
+    for (const a of [tree, glb, bench, glb, tree, tree, bench]) {
+      cur = pickAsset(cur, a);
+      expect(cur.src !== null && cur.part !== null, '★ 둘이 동시에 찼다').toBe(false);
+    }
+  });
+
+  it('같은 것을 다시 고르면 푼다 — 되돌릴 자리가 그것뿐이다', () => {
+    expect(pickAsset(pickAsset(NOTHING_PICKED, tree), tree)).toEqual(NOTHING_PICKED);
+    expect(pickAsset(pickAsset(NOTHING_PICKED, glb), glb)).toEqual(NOTHING_PICKED);
+  });
+
+  it('다른 것을 고르면 갈아탄다 — 푸는 것이 아니다', () => {
+    const a = pickAsset(NOTHING_PICKED, tree);
+    expect(pickAsset(a, bench).part, '★ 다른 파츠를 골랐는데 해제됐다').toBe('bench');
   });
 });
 

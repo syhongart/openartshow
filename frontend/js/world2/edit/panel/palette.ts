@@ -21,7 +21,7 @@
 import type { EditState } from '../state.js';
 import type { Panel } from './dom.js';
 import {
-  filterAssets, modelAssets, partAssets, type AssetItem,
+  filterAssets, modelAssets, partAssets, pickAsset, type AssetItem,
 } from '../../decide/asset-library.js';
 import { PARTS, tonesFor } from '../../parts/index.js';
 
@@ -81,24 +81,17 @@ export function loadPalette(panel: Panel, st: EditState, modelsUrl: string): voi
   }
 
   /**
-   * 고른다. **둘 중 하나만 채운다** — `pendingSrc` 와 `pendingPart` 가 동시에 차면
-   * 지면 클릭이 무엇을 놓을지 갈린다(`state.ts` 의 그 불변식).
+   * 고른다. **판정은 `pickAsset` 이 한다** — 여기는 그 결과를 상태에 옮길 뿐이다.
    *
-   * 같은 것을 다시 누르면 **푼다.** 고른 뒤 마음이 바뀌었을 때 되돌릴 자리가 그것밖에
-   * 없다(3D 클릭은 놓기가 되어 버린다).
+   * 배타성(둘이 동시에 안 찬다)과 「같은 것을 다시 누르면 푼다」가 그 함수의 성질이고,
+   * 그래서 DOM 없이 왕복을 다 밟아 볼 수 있다. 여기 두었을 때는 뮤테이션이 못 잡았다 —
+   * 근거는 `decide/asset-library.ts` 의 `pickAsset` 헤더 한 곳이다.
    */
   function pick(a: AssetItem): void {
-    if (a.kind === 'part') {
-      const same = st.pendingPart === a.id;
-      st.pendingSrc = null;
-      st.pendingPart = same ? null : a.id;
-    } else {
-      const src = `assets/models/${a.id}`;
-      const same = st.pendingSrc === src;
-      st.pendingPart = null;
-      st.pendingSrc = same ? null : src;
-    }
-    panel.say(st.pendingSrc || st.pendingPart
+    const next = pickAsset({ src: st.pendingSrc, part: st.pendingPart }, a);
+    st.pendingSrc = next.src;
+    st.pendingPart = next.part;
+    panel.say(next.src || next.part
       ? '지면을 클릭하면 놓입니다.'
       : '고르기를 해제했습니다.');
     panel.refresh();
