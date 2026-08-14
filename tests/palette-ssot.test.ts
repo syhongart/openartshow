@@ -162,8 +162,28 @@ describe('[2] 이은 페이지 — 같은 색을 토큰과 리터럴로 섞어 �
   // 조용히 빠지기 때문이다(케이스가 23→22 로 줄었고, 줄어든 것은 아무도 안 본다).
   // `link-color-safety.test.ts` 가 안전망 유무를 양방향으로 세는 이유와 **같은 형태**이고,
   // 그 주석을 읽고도 한 방향으로 만들었다가 뮤테이션에서 잡혔다.
+  // ⚠⚠ **기준선이 2026-08-14 라이트 전환으로 바뀌었다.** 「줄었다」가 둘 있으므로 경위를
+  //   적어 둔다 — 위 실패 메시지는 감소를 *"리터럴로 되돌아간 것"* 으로 의심하는데,
+  //   이번은 **그 형태가 아니다**:
+  //     · `--oas-white-rgb` · `--oas-on-dark-warm-rgb` **제거** — 리터럴로 되돌린 것이 아니라
+  //       `landing.html` 의 로컬 채널(`--tint-rgb`·`--tint-warm-rgb`)로 **옮겼다.** 다크에서
+  //       「밝은 면·선·글자」였던 알파 오버레이 30여 곳이 라이트에서는 잉크여야 하는데,
+  //       1층 「흰색」 토큰에 잉크 값을 덮어쓰면 SSOT 의 이름이 역할을 잃는다(디자이너 권고).
+  //     · `--oas-green-text-rgb` **추가** — 글로우 3곳의 `rgba(30,103,66,·)` 리터럴을 이었다.
+  //       바로 이 검사가 잡아 준 것이다(내가 라이트 글로우를 리터럴로 새로 넣었다).
+  //     · `--oas-paper-rgb` **추가** — 신설 채널. `topnav`·`nav-sheet` 반투명 배경이
+  //       종이색에 알파를 요구한다.
   const LINKED: Record<string, string[]> = {
-    'landing.html': ['--oas-white-rgb', '--oas-on-dark-rgb', '--oas-on-dark-warm-rgb'],
+    // ⚠ 2026-08-14 재제출에서 **넷이 늘었다**(검수관 반려 B2 해소). 전부 「환영」 방향이다:
+    //   `--oas-ink-rgb`·`--oas-ink-body-rgb` — 1층 hex 를 채널로 나눠 신설했다. 그 전에는
+    //     `landing.html` 이 같은 값을 **로컬 채널에 리터럴로 복사**하고 있었는데(`--tint-rgb:
+    //     23 20 15`), 이 검사가 **1층에 `-rgb` 채널이 있는 색만** 보므로 통째로 사각이었다.
+    //     검수관 실측: 이 처방을 적용하자 **즉시 2 failed** 로 실제 리터럴을 잡았다.
+    //   `--oas-panel-rgb`·`--oas-paper-deep-rgb` — 반투명 표면·히어로 wash 가 알파를 요구한다.
+    'landing.html': [
+      '--oas-on-dark-rgb', '--oas-paper-rgb', '--oas-green-text-rgb',
+      '--oas-ink-rgb', '--oas-ink-body-rgb', '--oas-panel-rgb', '--oas-paper-deep-rgb',
+    ],
     'about.html': ['--oas-green-text-rgb'],
     'guide.html': ['--oas-green-text-rgb'],
   };
