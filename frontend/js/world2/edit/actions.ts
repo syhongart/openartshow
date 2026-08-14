@@ -95,6 +95,21 @@ export function createActions(host: OverlayHost, st: EditState, panel: Panel): A
    * 파츠가 이미 신고한 `maxPartsPerParcel(kind)` 를 쓴다(근거는 `decide/asset-library.ts`
    * 의 「놓기 판정」 절 한 곳 — 여기에 다시 적지 않는다).
    *
+   * ⚠ **이 호출은 `DEFAULT_LAYOUT` 을 쓴다**(인자를 안 넘긴다). 그런데 실제 슬롯 예산
+   * (`systems/parcel-builder.ts` 의 `poolBudget`)이 보는 것은 `main.ts` 의 `LAYOUT` 이고,
+   * 그것은 `?bld=`·`?tree=`·`?density=` 노브로 `villageLayout()` 이 만든 **다른 레이아웃일
+   * 수 있다.** 두 곳이 서로 다른 layout 을 참조하는 값 미러링 형태다(검수관 비블로커 1).
+   *
+   * **지금은 안전하고, 안전한 이유가 우연이 아니다**: `decide/village-rules.ts:25` 의
+   * `MUL_MIN = 1` 이 배수의 하한이고 `clampMul` 이 `Math.max(MUL_MIN, n)` 로 집행하므로,
+   * 노브가 만든 `maxBuildings`·`maxTrees` 는 **언제나 `DEFAULT_LAYOUT` 값 이상**이다.
+   * 즉 편집이 쓰는 상한이 실제 예산보다 **작은 쪽으로만** 어긋난다 — 더 엄격히 거절할
+   * 뿐 초과 배치는 구조적으로 안 난다.
+   *
+   * ⚠⚠ **`MUL_MIN` 을 1 아래로 내리면 이 보장이 깨진다.** 그때는 노브가 예산을 줄이는데
+   * 편집은 기본값 기준으로 허용해 초과가 성립한다. 그 값을 만지는 사람이 여기를 안 볼
+   * 것이므로 **`village-rules.ts` 의 `MUL_MIN` 옆에도 이 종속을 적어 두었다.**
+   *
    * ⚠ **거절은 반드시 말한다.** 조용히 안 놓이면 «가끔 안 먹는다» 가 되고, 그것이 이
    * 저장소에서 가장 비쌌던 형태다(감독 신고 2026-08-12 이 그랬다).
    */
