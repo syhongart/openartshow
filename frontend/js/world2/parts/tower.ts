@@ -78,6 +78,8 @@ const TONES = [0xb8bcc4, 0xc3c0b8, 0xaeb5bd, 0xc8c4ba, 0xb2b8c0];
 
 export const tower: PartSpec = {
   kind: 'tower',
+  /** 감독이 심리스 텍스처를 얹는 표면 (W7) — 목록은 여기서 유도된다 */
+  paintable: true,
   // far 까지 그린다. 고층의 의미는 **멀리서 보이는 것**이라, near 에만 두면 다가가야
   // 나타나는 유령이 된다 — 스카이라인이 성립하지 않는다.
   tiers: ['near', 'mid', 'far'],

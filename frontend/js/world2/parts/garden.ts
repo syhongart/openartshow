@@ -50,6 +50,8 @@ export const GARDEN_SURFACE_Y = 0.07;
 
 export const garden: PartSpec = {
   kind: 'garden',
+  /** 감독이 심리스 텍스처를 얹는 표면 (W7) — 목록은 여기서 유도된다 */
+  paintable: true,
   // 바닥 판이다 — `place` 의 y 가 이미 절대 높이다(표면 가산 대상 아님). `types.ts` 참조.
   absoluteY: true,
   // far 까지 그린다. **격자를 드러내는 것이 이 파츠의 목적**이라 멀리서 보일 때
