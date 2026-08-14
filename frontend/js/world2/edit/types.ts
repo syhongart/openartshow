@@ -8,6 +8,8 @@
 
 import type { Object3D, Camera } from 'three/webgpu';
 import type { PlacedPart } from '../parts/types.js';
+import type { ViewPreset } from '../decide/orbit.js';
+import type { ShadingMode } from '../decide/shading.js';
 
 /**
  * 로드 진행 알림.
@@ -215,6 +217,30 @@ export interface OverlayHost {
     cx: number, cy: number, cz: number,
     dYaw: number, dHeight: number, kRadius: number,
   ): void;
+  /**
+   * **정해진 시점으로 간다**(탑·좌·우·정면, `F` 확대). W6.
+   *
+   * `orbit` 이 델타인 것과 달리 이쪽은 **절대**다 — 「탑에서 본다」는 지금 각이 얼마든
+   * 같은 자리로 간다는 뜻이라 델타로 표현할 수 없다. 그래도 문은 **더 좁다**: 편집이
+   * 임의 자세를 못 주고 정해진 값(`ViewPreset`) 중 하나만 고른다.
+   */
+  orbitTo?(cx: number, cy: number, cz: number, preset: ViewPreset): void;
+  /**
+   * 지금 어떤 셰이딩인가 / 셰이딩을 바꾼다 (W6). 감독 지시 *"와이어 프레임 뷰. 솔리드
+   * 뷰도 구현해줘."*
+   *
+   * `orbit` 과 같은 이유로 **둘 다 선택 사양**이다 — 셰이딩을 안 여는 소비자(빌더
+   * 미리보기·테스트 하네스)가 있고, 그때 편집은 버튼과 키를 **조용히 무시**한다.
+   *
+   * ⚠ **둘이 짝이다.** `setShading` 만 있고 `shading` 이 없으면 `Shift+Z` 토글이
+   * «지금 무엇인가» 를 몰라 성립하지 않는다. 편집 쪽에서 둘 다 있을 때만 키를 배선한다.
+   *
+   * 「돌아갈 자리」(`Shift+Z` 가 와이어에서 복귀할 모드)는 **여기 없다** — 편집 세션
+   * 안의 UI 상태라 `EditState` 가 소유한다. 월드는 «지금 무엇으로 그리는가» 만 알면 되고,
+   * 그것을 여기 두면 편집을 안 쓰는 세션까지 편집의 히스토리를 들고 있게 된다.
+   */
+  shading?(): ShadingMode;
+  setShading?(m: ShadingMode): void;
   /**
    * 편집이 끝났다 — 눈높이를 걷고 갇힘을 푼다.
    *

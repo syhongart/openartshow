@@ -318,7 +318,13 @@ export const overlayFeature: Feature = {
       orbit: (cx, cy, cz, dYaw, dHeight, kRadius) => {
         env.player.orbit(cx, cy, cz, dYaw, dHeight, kRadius);
       },
+      orbitTo: (cx, cy, cz, preset) => { env.player.orbitTo(cx, cy, cz, preset); },
       endOrbit: () => { env.player.endOrbit(); },
+      // 셰이딩(W6). 여기도 **위임만** 한다 — 상태는 조립부가 소유하고(`FeatureEnv.shading`)
+      // 집행은 `features/shading.ts` 다. 이 기능은 편집이 그 문에 닿는 통로일 뿐이라,
+      // 오버레이를 빼도 URL 노브는 그대로 산다.
+      shading: () => env.shading(),
+      setShading: (m) => { env.setShading(m); },
       surfaceAt(x, z) {
         const p = parcelOf(x, z, DEFAULT_LAYOUT.cellX, DEFAULT_LAYOUT.cellZ);
         return surfaceY(p.px, p.pz, p.lx, p.lz);

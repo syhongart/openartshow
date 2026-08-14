@@ -55,6 +55,7 @@ import { ALL_KINDS, PARTS } from './parts/index.js';
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
 import { readNum, readEnum, readNumOpt, writeNumOpt } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
+import { SHADING_MODES, type ShadingMode } from './decide/shading.js';
 // 카메라 far 를 여기서 유도한다 — 아래 `PerspectiveCamera` 주석 참고.
 import { DOME_MAX } from './systems/sky.js';
 
@@ -602,6 +603,17 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    * 가 되는 일이 없다.
    */
   let timeOfDay: SkyTime = readEnum('time', 'night', TIMES);
+  /**
+   * 어떤 셰이딩으로 보는가 — **월드를 보는 방식이고 조립부가 소유한다**(바로 위
+   * `timeOfDay` 와 같은 이유·같은 모양).
+   *
+   * 감독 지시 *"와이어 프레임 뷰. 솔리드 뷰도 구현해줘."* 에서 왔다. 바꾸는 자리는
+   * 셋이고(URL·편집 패널 버튼·`Shift+Z`) 전부 `env.setShading` 하나로 모인다.
+   *
+   * 기본값이 `material` 인 것은 «노브를 안 켠 세션의 화면은 지금 그대로» 라는 뜻이다.
+   * `readEnum` 이 목록 밖 값을 걸러 주므로 `shadingSpec` 이 모르는 값을 받는 일이 없다.
+   */
+  let shadingMode: ShadingMode = readEnum('shading', 'material', SHADING_MODES);
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;
@@ -777,6 +789,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             doc: typeof document !== 'undefined' ? document : null,
             time: () => timeOfDay,
             setTime: (t) => { timeOfDay = t; },
+            shading: () => shadingMode,
+            setShading: (m) => { shadingMode = m; },
           },
           (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
         );

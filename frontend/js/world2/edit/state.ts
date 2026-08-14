@@ -15,6 +15,7 @@
 import type { OverlayEntry, OverlayHost, VillagePick } from './types.js';
 import { overlayTarget, villageTarget, type EditTarget } from './target.js';
 import type { ModalState, Pose } from '../decide/modal-edit.js';
+import type { ShadingMode } from '../decide/shading.js';
 
 /** 회전 한 번. 24등분이라 세 번이면 45°, 여섯 번이면 90° 다. */
 export const RY_STEP = Math.PI / 12;
@@ -133,6 +134,18 @@ export interface EditState {
    */
   detached: boolean;
   pendingSrc: string | null;
+  /**
+   * 팔레트에서 고른 **마을 파츠** 종류(W6 E). `null` 이면 안 골랐다.
+   *
+   * ⚠ **`pendingSrc` 와 동시에 채워지지 않는다** — 위 `selected`/`villageSel` 과 같은
+   * 불변식이고 같은 이유다: 지면을 클릭했을 때 «GLB 를 놓을지 파츠를 놓을지» 가 둘로
+   * 갈리면 안 된다. 채우는 자리를 팔레트 한 곳으로 좁혔고 테스트가 그것을 본다.
+   *
+   * 왜 `pendingSrc` 에 접두사를 붙여 겸용하지 않았나: 놓는 경로가 **전혀 다르다**
+   * (GLB 는 비동기 로드 + 오버레이 항목, 파츠는 파셀 동결 배열 편집). 한 칸에 담으면
+   * 그 분기가 문자열 파싱이 되고, 파싱은 형식을 두 곳에 적는 일이다.
+   */
+  pendingPart: string | null;
   dragging: OverlayEntry | null;
   dragPlaneY: number;
   orbiting: boolean;
@@ -168,6 +181,22 @@ export interface EditState {
    * **주행 모드**다(리스너를 아예 안 붙인다 = 라이브와 동일). 편집은 버튼·`Tab` 으로 켠다.
    */
   editing: boolean;
+  /**
+   * `Shift+Z`(와이어 토글)가 **와이어에서 돌아갈 자리**. W6.
+   *
+   * 블렌더의 `Shift+Z` 는 «와이어 ↔ 직전» 이지 «와이어 ↔ 머티리얼» 이 아니다. 솔리드로
+   * 보다가 잠깐 속을 확인하고 돌아오면 솔리드여야 한다 — 머티리얼로 튕기면 도구가 아니라
+   * 장난감이 된다.
+   *
+   * ⚠ **월드가 아니라 편집이 소유한다.** 월드(`FeatureEnv.shading`)는 «지금 무엇으로
+   * 그리는가» 만 알면 되고, 「돌아갈 자리」는 편집 세션 안의 UI 히스토리다. 저기 두면
+   * 편집을 안 쓰는 세션까지 편집의 히스토리를 들고 있게 된다(`edit/types.ts` 의
+   * `shading`/`setShading` 주석과 짝이다).
+   *
+   * 절대 `'wire'` 가 되지 않는다 — 갱신하는 자리가 `decide/shading.ts` 의 `toggleWire`
+   * 하나이고 그 함수가 구조적으로 보장한다.
+   */
+  shadingBack: ShadingMode;
 }
 
 export function createEditState(): EditState {
@@ -179,6 +208,7 @@ export function createEditState(): EditState {
     modalFrom: null,
     detached: false,
     pendingSrc: null,
+    pendingPart: null,
     dragging: null,
     dragPlaneY: 0,
     orbiting: false,
@@ -186,6 +216,9 @@ export function createEditState(): EditState {
     armed: false,
     busy: false,
     editing: false,
+    // 세션이 `?shading=wire` 로 시작하면 돌아갈 곳이 없다 — 머티리얼로 둔다.
+    // 그 판정은 `initialBack` 하나가 소유한다(여기에 조건을 다시 적지 않는다).
+    shadingBack: 'material',
   };
 }
 

@@ -5,7 +5,7 @@
 
 import type { FrameCtx, System } from '../kernel.js';
 import { stepSubmersion, eyeYAt, underwaterAlpha, swimSpeedMult } from '../decide/swim.js';
-import { orbitStep, pitchTo } from '../decide/orbit.js';
+import { orbitAt, orbitStep, pitchTo, type ViewPreset } from '../decide/orbit.js';
 
 export interface MoveInput {
   forward: boolean;
@@ -361,6 +361,34 @@ export class PlayerSystem implements System {
 
     // 눈의 월드 y — **헤드밥은 뺀다.** 그것은 프레임마다 흔들리는 값이라 넣으면 시선이
     // 떨린다(궤도 중에는 안 걷고 있으므로 실제로도 거의 0 이다).
+    const r = Math.hypot(p.x - cx, p.z - cz);
+    this.pitch = clampPitch(pitchTo(this.eye + this.lift, cy, r));
+  }
+
+  /**
+   * **정해진 시점으로 간다** (탑·좌·우·정면, 그리고 `F` 확대). W6, 감독 지시 2026-08-13.
+   *
+   * ── 왜 `orbit()` 으로 안 되나 ───────────────────────────────────────────
+   * 그쪽은 **델타**다 — 「지금 각에서 얼마나 더」. 「탑에서 본다」는 지금 각이 얼마든
+   * **같은 자리로 간다** 는 뜻이라 델타로 표현할 수 없다. 편집에 현재 각을 알려 주면
+   * 델타를 계산할 수 있지만, 그것은 문을 넓히는 쪽이다(팀장 판정 (A-2) 의 정신은
+   * «편집이 어디로 갈지 못 정한다» 였다).
+   *
+   * **이 문은 오히려 더 좁다** — 편집은 임의 자세를 못 주고 `ViewPreset`(정해진 값)만
+   * 고른다. 산술·클램프·충돌 기록은 전부 여기 남는다.
+   *
+   * ⚠ `orbit()` 과 같은 규율을 따른다: 충돌을 안 태우고, 시작 자리를 기억해
+   * `endOrbit()` 이 갇힘을 푼다.
+   */
+  orbitTo(cx: number, cy: number, cz: number, preset: ViewPreset): void {
+    if (this.orbitFrom === null) this.orbitFrom = { x: this.x, z: this.z };
+
+    const p = orbitAt(cx, cz, preset, this.yaw);
+    this.x = p.x;
+    this.z = p.z;
+    this.yaw = p.yaw;
+    this.lift = Math.min(LIFT_MAX, Math.max(0, preset.lift));
+
     const r = Math.hypot(p.x - cx, p.z - cz);
     this.pitch = clampPitch(pitchTo(this.eye + this.lift, cy, r));
   }

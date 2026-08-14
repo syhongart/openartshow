@@ -18,6 +18,9 @@ import { describe as describeTarget, nudgeScale, type EditTarget } from '../targ
 import { CSS } from './css.js';
 import { createInspector } from './inspector.js';
 import { createOutliner } from './outliner.js';
+import { createBadge } from './badge.js';
+import type { ViewSide } from '../../decide/orbit.js';
+import { SHADING_LABEL, SHADING_MODES, type ShadingMode } from '../../decide/shading.js';
 
 /** 패널이 «자기가 못 하는 일» 을 넘기는 곳. 조립자(`mode.ts`)가 채운다. */
 export interface PanelHandlers {
@@ -31,6 +34,10 @@ export interface PanelHandlers {
    * 갈라지면 «목록으로 고른 것은 기즈모가 안 붙는다» 가 난다.
    */
   pickVillage(v: VillagePick): void;
+  /** 정해진 시점으로 간다(W6). **키와 같은 함수로 이어져야 한다** */
+  setView(side: ViewSide | 'focus'): void;
+  /** 셰이딩을 그 모드로(W6). 위와 같은 이유로 키와 한 함수다 */
+  setShading(m: ShadingMode): void;
   exportNow(): void;
 }
 
@@ -87,10 +94,15 @@ export function createPanel(
   const rowY = el('div', 'row');
   const rowOps = el('div', 'row');
   const rowOut = el('div', 'row');
+  const rowView = el('div', 'row');
+  const rowShade = el('div', 'row');
   const inspector = createInspector(host, st, () => { refresh(); });
   // 아웃라이너는 **패널 밖**에 산다(왼쪽 별도 컨테이너). 넓은 화면에서만 보이는 것은
   // CSS 가 정하고 여기서는 폭을 모른다 — `css.ts` 의 미디어 쿼리 한 곳이 판정한다.
   const outliner = createOutliner(host, st, (v) => { handlers.pickVillage(v); });
+  // 배지도 패널 **밖**에 산다(화면 상단 중앙). 근거는 `badge.ts` 헤더 한 곳이다 —
+  // 「뭘 골랐는지」를 크게 말하는 것이 이 회차 감독 요구다.
+  const badge = createBadge(host, st);
   const status = el('div', 'note', 'GLB 를 이 화면에 끌어다 놓거나, 위에서 골라 지면을 클릭.');
   const hint = el('div', 'note', '');
   /** 접힘/펼침 + 편집/주행을 함께 쥔 버튼. 접혔을 때 화면에 남는 유일한 것이다 */
@@ -130,12 +142,34 @@ export function createPanel(
     thawBtn,
   );
   rowOut.append(button('JSON 내보내기', () => { handlers.exportNow(); }));
+  // ── 정해진 시점 (W6, 감독 지시 2026-08-13) ────────────────────────────────
+  // *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등."*
+  // 버튼과 키가 **같은 함수**로 간다(`handlers.setView` → `input.setView`) — 각자
+  // 구현하면 한쪽만 고쳐져 어긋난다.
+  rowView.append(
+    button('탑', () => { handlers.setView('top'); }),
+    button('정면', () => { handlers.setView('front'); }),
+    button('좌', () => { handlers.setView('left'); }),
+    button('우', () => { handlers.setView('right'); }),
+    button('확대', () => { handlers.setView('focus'); }),
+  );
+  // ── 셰이딩 뷰 (W6, 감독 지시 2026-08-13) ──────────────────────────────────
+  // *"그리고 와이어 프레임 뷰. 솔리드 뷰도 구현해줘."*
+  //
+  // 라벨은 `SHADING_LABEL` 한 곳에서 온다 — 여기에 «와이어» 라고 직접 적으면 키 안내
+  // (`input.ts`)와 값 미러링이 되고, 한쪽만 고쳐도 아무도 모른다.
+  //
+  // 버튼은 **절대 지정**이고 `Shift+Z` 는 토글이다. 다른 함수인 이유는 `Input.setShading`
+  // 주석 한 곳에 있다.
+  const shadeBtns = SHADING_MODES.map((m) =>
+    button(SHADING_LABEL[m], () => { handlers.setShading(m); }));
+  rowShade.append(...shadeBtns);
 
   const head = el('div', 'head');
   head.append(title, toggle);
   const body = el('div', 'body');
   body.append(palette, el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
-    el('hr'), rowOut, status, hint);
+    el('hr'), rowView, rowShade, rowOut, status, hint);
   panel.append(head, body);
   panel.dataset.open = '0';
   panel.dataset.mode = 'drive';
@@ -148,15 +182,35 @@ export function createPanel(
 
   function refresh(): void {
     snapBtn.dataset.on = st.snapOn ? '1' : '0';
+    // ── 셰이딩 버튼 ────────────────────────────────────────────────────────
+    // **지금 모드를 강조한다.** 없으면 눌러도 화면이 그대로인 모드(재질)에서 «안 먹었나» 가
+    // 된다 — 이 저장소가 «조작이 안 먹는 것과 대상이 없는 것은 다른 일» 로 여러 번 적은 축이다.
+    //
+    // 문이 없는 소비자(빌더 미리보기·테스트 하네스)에서는 **행 자체를 감춘다.** 누를 수
+    // 없는 버튼을 보여주는 것은 안내가 아니라 막다른 길이다.
+    const curShade = host.shading?.() ?? null;
+    rowShade.hidden = curShade === null;
+    for (let i = 0; i < shadeBtns.length; i++) {
+      shadeBtns[i]!.dataset.on = SHADING_MODES[i] === curShade ? '1' : '0';
+    }
     thawBtn.hidden = st.villageSel === null;
+    // 팔레트 강조 — **두 칸을 함께 본다**(W6 E). 파츠 버튼은 `src` 가 없으므로 `src` 만
+    // 보면 «파츠를 골랐는데 아무것도 강조 안 된다» 가 된다. 대조는 라벨이 아니라
+    // `data-asset`/`data-id` 로 한다 — 라벨은 사람이 읽는 것이고 언제든 바뀐다.
     for (const b of palette.querySelectorAll('button')) {
-      b.dataset.on = b.dataset.src === st.pendingSrc ? '1' : '0';
+      const on = b.dataset.asset === 'part'
+        ? b.dataset.id === st.pendingPart
+        : b.dataset.src === st.pendingSrc && st.pendingSrc !== null;
+      b.dataset.on = on ? '1' : '0';
     }
     // 문안은 `target.ts` 의 `describe` 한 곳이 만든다 — 두 형태의 표시를 여기서 나누면
     // 새 형태가 생길 때마다 이 분기가 자란다.
+    // ⚠ 동결 여부는 **저장소에 직접 묻는다** — `st.villageSel.frozen` 은 고른 순간의
+    // 스냅샷이라 조작해서 동결시켜도 안 바뀐다(`target.ts` 의 `describeShort` 주석).
+    const v = st.villageSel;
+    const frozenNow = v ? (host.village?.isFrozen(v.px, v.pz) ?? v.frozen) : false;
     selLine.textContent = st.target
-      ? describeTarget(st.target, st.selected, st.villageSel)
-        + (st.villageSel?.frozen ? ' · 손본 구역' : '')
+      ? describeTarget(st.target, st.selected, v) + (frozenNow ? ' · 손본 구역' : '')
       : `선택: 없음 · 배치 ${host.entries().length}개`;
     const previews = host.entries().filter((e) => e.preview).length;
     if (st.detached) {
@@ -177,12 +231,14 @@ export function createPanel(
       // ⚠ 이 줄은 **키 목록의 두 번째 사본이다**(첫 번째는 `input.ts` 의 `EDIT_KEYS`
       // 와 `modalOpener`). 값 미러링이고, 한쪽만 고치면 «화면이 광고하는 키가 안 먹는다»
       // 가 난다 — 실제로 R/F 를 뺄 때 이 줄을 함께 고쳐야 했다. 태스크 #44 가 그것이다.
-      hint.textContent = 'G 이동 · R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · X/Y/Z 축 고정 · 숫자 입력)'
+      hint.textContent = 'R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · 숫자 입력)'
         + ' · 중클릭(또는 Alt+좌)드래그 = 대상 중심으로 돌기 · Shift+드래그 = 위아래 · 휠 = 줌'
+        + ' · 시점 1 정면 / 3 우 / 7 탑 / 9 좌 · F 확대 · Shift+Z 와이어 토글'
         + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
     }
     inspector.sync(st.target);
     outliner.sync();
+    badge.sync();
     onRefresh();
   }
 
@@ -196,6 +252,7 @@ export function createPanel(
       panel.dataset.mode = editing ? 'edit' : 'drive';
       // 주행 중에는 아웃라이너를 감춘다 — 편집 도구가 걸어다니는 화면을 가리지 않는다.
       outliner.root.dataset.mode = editing ? 'edit' : 'drive';
+      badge.setMode(editing);
       toggle.textContent = editing ? '✕ 편집 끝' : '✏️ 편집';
     },
     sayLead(msg: string): void {
@@ -205,6 +262,7 @@ export function createPanel(
     el,
     button,
     dispose(): void {
+      badge.dispose();
       outliner.dispose();
       panel.remove();
       style.remove();

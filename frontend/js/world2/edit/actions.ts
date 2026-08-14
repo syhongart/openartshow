@@ -5,6 +5,9 @@
 // 화면에 없으면 전부 «또 안 먹네» 로 읽힌다 — 감독 신고 2026-08-12 가 그 형태였다.
 
 import { reviewOverlay } from './export.js';
+import { canPlacePart, newPart, PART_LABEL } from '../decide/asset-library.js';
+import { parcelOf } from '../decide/edit-pick.js';
+import { maxPartsPerParcel } from '../parts/index.js';
 import type { OverlayEntry, OverlayHost } from './types.js';
 import { select, type EditState } from './state.js';
 import { thawParcel } from './target.js';
@@ -12,6 +15,13 @@ import type { Panel } from './panel/dom.js';
 
 export interface Actions {
   placeAt(src: string, at: { x: number; z: number }, blobUrl?: string): Promise<void>;
+  /**
+   * **마을 파츠**를 그 자리에 놓는다(W6 E). GLB 와 달리 로드가 없어 동기다.
+   *
+   * 놓는다 = 그 파셀의 배치 배열에 항목을 하나 더해 **동결**한다. 그래서 놓는 순간
+   * 그 구역이 「손본 구역」이 되고 밀도 슬라이더에서 빠진다 — 화면이 그 사실을 말한다.
+   */
+  placePartAt(kind: string, at: { x: number; z: number }): void;
   duplicate(): Promise<void>;
   removeSelected(): void;
   /** 고른 마을 파츠가 속한 파셀의 동결을 푼다 */
@@ -75,6 +85,55 @@ export function createActions(host: OverlayHost, st: EditState, panel: Panel): A
       st.busy = false;
       panel.refresh();
     }
+  }
+
+  /**
+   * 마을 파츠를 놓는다(W6 E, 감독 카드 확정 *"마을 파츠부터 노출"*).
+   *
+   * ── 개수 불변식과 부딪히는 자리다 ─────────────────────────────────────────
+   * 항목이 하나 늘면 재빌드가 GPU 인스턴스 슬롯을 하나 더 집는다. 상한은 **만들지 않고**
+   * 파츠가 이미 신고한 `maxPartsPerParcel(kind)` 를 쓴다(근거는 `decide/asset-library.ts`
+   * 의 「놓기 판정」 절 한 곳 — 여기에 다시 적지 않는다).
+   *
+   * ⚠ **이 호출은 `DEFAULT_LAYOUT` 을 쓴다**(인자를 안 넘긴다). 그런데 실제 슬롯 예산
+   * (`systems/parcel-builder.ts` 의 `poolBudget`)이 보는 것은 `main.ts` 의 `LAYOUT` 이고,
+   * 그것은 `?bld=`·`?tree=`·`?density=` 노브로 `villageLayout()` 이 만든 **다른 레이아웃일
+   * 수 있다.** 두 곳이 서로 다른 layout 을 참조하는 값 미러링 형태다(검수관 비블로커 1).
+   *
+   * **지금은 안전하고, 안전한 이유가 우연이 아니다**: `decide/village-rules.ts:25` 의
+   * `MUL_MIN = 1` 이 배수의 하한이고 `clampMul` 이 `Math.max(MUL_MIN, n)` 로 집행하므로,
+   * 노브가 만든 `maxBuildings`·`maxTrees` 는 **언제나 `DEFAULT_LAYOUT` 값 이상**이다.
+   * 즉 편집이 쓰는 상한이 실제 예산보다 **작은 쪽으로만** 어긋난다 — 더 엄격히 거절할
+   * 뿐 초과 배치는 구조적으로 안 난다.
+   *
+   * ⚠⚠ **`MUL_MIN` 을 1 아래로 내리면 이 보장이 깨진다.** 그때는 노브가 예산을 줄이는데
+   * 편집은 기본값 기준으로 허용해 초과가 성립한다. 그 값을 만지는 사람이 여기를 안 볼
+   * 것이므로 **`village-rules.ts` 의 `MUL_MIN` 옆에도 이 종속을 적어 두었다.**
+   *
+   * ⚠ **거절은 반드시 말한다.** 조용히 안 놓이면 «가끔 안 먹는다» 가 되고, 그것이 이
+   * 저장소에서 가장 비쌌던 형태다(감독 신고 2026-08-12 이 그랬다).
+   */
+  function placePartAt(kind: string, at: { x: number; z: number }): void {
+    const village = host.village;
+    if (!village) { panel.say('이 화면에서는 마을을 만질 수 없습니다.', true); return; }
+    const p = parcelOf(at.x, at.z, host.cellX, host.cellZ);
+    // ⚠ `partsAt` 은 **매 호출 새 배열**이다(`village-parcels.ts` 가 그렇게 보증한다).
+    //   그래서 여기에 밀어 넣어도 저장소의 것이 오염되지 않는다 — `freeze` 가 확정한다.
+    const parts = village.partsAt(p.px, p.pz);
+    const v = canPlacePart(kind, parts, maxPartsPerParcel(kind));
+    if (!v.ok) { panel.say(v.reason ?? '놓을 수 없습니다.', true); return; }
+    // 높이는 **바닥 판이 정한다**(잔디 0.07 · 도로 0.14 · 광장 0). `surfaceAt` 이 계산
+    // 배치와 같은 `surfaceY` 를 타므로 새로 놓은 것도 같은 높이에 앉는다.
+    //
+    // ⚠ 되돌림 노브 `?gsurf=` 의 배수는 **안 탄다** — 그 노브는 옛 화면과 나란히 보려고
+    //   연 것이고 편집으로 놓은 것까지 따라가게 하면 저장된 값이 노브에 따라 달라진다.
+    parts.push(newPart(kind, p.lx, p.lz, host.surfaceAt(at.x, at.z)));
+    village.freeze(p.px, p.pz, parts);
+    // 놓았으면 고르기를 푼다 — GLB 와 같은 이유다(감독 신고 2026-08-13 *"흩어뿌리기 식"*).
+    st.pendingPart = null;
+    panel.say(`${PART_LABEL[kind] ?? kind} 을(를) 놓았습니다 —`
+      + ` 이 구역은 「손본 구역」이 됐습니다. 클릭해 고르면 옮길 수 있습니다.`);
+    panel.refresh();
   }
 
   async function duplicate(): Promise<void> {
@@ -148,5 +207,5 @@ export function createActions(host: OverlayHost, st: EditState, panel: Panel): A
     panel.say(`저장했습니다 · ${rev.summary}`);
   }
 
-  return { placeAt, duplicate, removeSelected, thawSelected, exportNow, previewUrls };
+  return { placeAt, placePartAt, duplicate, removeSelected, thawSelected, exportNow, previewUrls };
 }

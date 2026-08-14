@@ -14,7 +14,11 @@ import { RY_STEP, Y_STEP, select, type EditState } from './state.js';
 import {
   applyDelta, modalDelta, modalLabel, modalOpener, readModalKey, ZERO_DELTA,
 } from '../decide/modal-edit.js';
-import { ORBIT_LIFT_PER_PX, ORBIT_YAW_PER_PX, zoomFactor } from '../decide/orbit.js';
+import {
+  FOCUS_VIEW, ORBIT_LIFT_PER_PX, ORBIT_YAW_PER_PX, VIEW_PRESETS, zoomFactor,
+  type ViewSide,
+} from '../decide/orbit.js';
+import { SHADING_LABEL, toggleWire, type ShadingMode } from '../decide/shading.js';
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
@@ -36,6 +40,21 @@ export interface InputDeps {
 export interface Input {
   bind(): void;
   unbind(): void;
+  /**
+   * 정해진 시점으로 간다(W6). 패널 버튼이 쓴다 — **키와 같은 함수**여야 한다.
+   *
+   * 두 곳이 각자 구현하면 «버튼은 안내하는데 키는 침묵» 같은 어긋남이 난다(이 저장소가
+   * 실제로 겪은 형태 — `panel/dom.ts` 의 `nudge` 주석).
+   */
+  setView(side: ViewSide | 'focus'): void;
+  /**
+   * 셰이딩을 바꾼다(W6). 패널 버튼이 쓴다 — `setView` 와 **같은 이유로** 키와 한 함수다.
+   *
+   * ⚠ 이것은 **절대 지정**이고 `Shift+Z` 는 토글이다. 둘이 다른 함수인 것이 의도다:
+   * 버튼은 «솔리드로 가라» 이고 키는 «와이어와 직전을 오가라» 라서, 하나로 합치면
+   * 버튼을 누를 때마다 「돌아갈 자리」가 흔들린다.
+   */
+  setShading(m: ShadingMode): void;
   /** 편집 여부와 무관하게 붙는 것(`Tab`). 세션 시작·끝에 한 번씩 */
   bindAlways(): void;
   unbindAlways(): void;
@@ -46,12 +65,14 @@ export function createInput(deps: InputDeps): Input {
   const doc = host.doc;
   const canvas = host.canvas;
   /**
-   * 마지막 마우스 자리. **모달은 키로 시작하므로 시작점을 따로 기억해야 한다** —
-   * 그 순간의 `PointerEvent` 가 없기 때문이다. 이것이 없으면 `G` 를 누른 직후 첫
-   * 마우스 이동에 물건이 화면 끝으로 튄다(시작점이 0,0 이 되므로).
+   * 마지막 마우스 **가로** 자리. **모달은 키로 시작하므로 시작점을 따로 기억해야 한다** —
+   * 그 순간의 `PointerEvent` 가 없기 때문이다. 이것이 없으면 `R` 을 누른 직후 첫
+   * 마우스 이동에 물건이 통째로 돌아간다(시작점이 0 이 되므로).
+   *
+   * ⚠ 세로는 안 쓴다 — 회전도 크기도 축이 하나뿐이다(`decide/modal-edit.ts` 헤더).
+   * 이동 모달이 있던 시절에는 세로가 z·y 였고 `mouseY` 도 함께 있었다.
    */
   let mouseX = 0;
-  let mouseY = 0;
 
   // ── 궤도 시점 (W5 E3) ───────────────────────────────────────────────────
   //
@@ -104,6 +125,81 @@ export function createInput(deps: InputDeps): Input {
       shift ? -dy * ORBIT_LIFT_PER_PX : 0,
       kRadius,
     );
+  };
+
+  // ── 정해진 시점 (W6) ────────────────────────────────────────────────────
+  //
+  // 감독 지시 2026-08-13: *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등."*
+  //
+  // 블렌더의 넘패드 1/3/7 을 따르되 **일반 숫자열도 받는다** — 노트북에는 넘패드가 없고,
+  // 그러면 그 기기에서 이 기능이 통째로 없는 것이 된다.
+  //
+  // ⚠ **모달 중에는 숫자가 타이핑이다.** 그래서 이 표는 모달 분기 **뒤**에서만 본다
+  // (`onKeyDown` 의 순서). 모달이 먼저라 겹치지 않는다.
+  const VIEW_KEYS: Readonly<Record<string, ViewSide>> = {
+    Digit1: 'front', Numpad1: 'front',
+    Digit3: 'right', Numpad3: 'right',
+    Digit7: 'top', Numpad7: 'top',
+    Digit9: 'left', Numpad9: 'left',
+  };
+
+  /**
+   * 그 시점으로 간다. 중심은 **고른 것**, 없으면 지금 서 있는 자리 앞이 아니라
+   * **아무 일도 안 한다** — 중심이 없으면 「무엇을 중심으로 도는가」가 정의되지 않고,
+   * 임의로 정하면 감독이 보던 자리에서 튄다.
+   */
+  const goView = (preset: { yaw: number | null; lift: number; radius: number }): boolean => {
+    if (!host.orbitTo) return false;
+    const t = st.target;
+    if (!t) { panel.say('먼저 물건을 클릭해 고르세요 — 그것을 중심으로 봅니다.'); return true; }
+    host.orbitTo(t.x, t.y, t.z, preset);
+    panel.refresh();
+    return true;
+  };
+
+  // ── 셰이딩 뷰 (W6) ──────────────────────────────────────────────────────
+  //
+  // 감독 지시 2026-08-13: *"그리고 와이어 프레임 뷰. 솔리드 뷰도 구현해줘."*
+  //
+  // ⚠ **`shading`·`setShading` 은 짝으로만 쓴다.** 하나만 있으면 토글이 «지금 무엇인가»
+  // 를 몰라 성립하지 않는다 — 문이 없는 소비자(빌더 미리보기·테스트 하네스)에서는
+  // **조용히 아무것도 안 한다**(`goView` 가 `orbitTo` 를 다루는 방식과 같다).
+
+  /** 그 모드로 **간다**(절대 지정). 패널 버튼이 쓴다 */
+  const goShading = (m: ShadingMode): boolean => {
+    if (!host.shading || !host.setShading) return false;
+    // ⚠ **돌아갈 자리도 여기서 함께 움직인다.** 이 줄이 없으면 버튼과 키가 서로 다른
+    // 히스토리를 보게 된다.
+    //
+    // ── 이 줄이 실제로 필요한 경로는 좁다 (뮤테이션 실측 2026-08-14) ───────
+    // 이 줄을 지우는 뮤테이션(M6)이 처음 돌린 축 전체에서 `0 failed` 였다. 등가로 보이기
+    // 쉬운데 **등가가 아니다** — 그때 걸어 본 경로(버튼 솔리드 → `Shift+Z` → `Shift+Z`)는
+    // 첫 토글이 `toggleWire` 의 `back: cur` 로 돌아갈 자리를 **덮어써서** 차이를 지운다.
+    //
+    // 차이가 드러나는 것은 **와이어에 버튼으로 들어갔을 때**다:
+    //
+    //     버튼 솔리드 → 버튼 와이어 → `Shift+Z`
+    //       이 줄 있음: 돌아갈 자리 = solid  → **솔리드**로 나간다 (블렌더 기대)
+    //       이 줄 없음: 돌아갈 자리 = 초기값 → 머티리얼로 튕겨 보던 화면을 잃는다
+    //
+    // 그 경로를 밟는 축을 테스트에 넣었다. **`0 failed` 를 등가로 단정하지 않은 것이
+    // 이 줄을 살렸다** — 지웠으면 감독 화면에서만 드러나는 결함이 됐다.
+    if (m !== 'wire') st.shadingBack = m;
+    host.setShading(m);
+    panel.say(`셰이딩: ${SHADING_LABEL[m]}`);
+    panel.refresh();
+    return true;
+  };
+
+  /** `Shift+Z` — 와이어와 **직전 모드**를 오간다(블렌더가 그 자리를 쓴다) */
+  const toggleShading = (): boolean => {
+    if (!host.shading || !host.setShading) return false;
+    const r = toggleWire(host.shading(), st.shadingBack);
+    st.shadingBack = r.back;
+    host.setShading(r.mode);
+    panel.say(`셰이딩: ${SHADING_LABEL[r.mode]}`);
+    panel.refresh();
+    return true;
   };
 
   const onWheel = (ev: WheelEvent) => {
@@ -167,6 +263,16 @@ export function createInput(deps: InputDeps): Input {
       else panel.say('그 자리는 하늘입니다 — 화면 아래쪽 땅을 클릭하세요.', true);
       return;
     }
+    // ── 마을 파츠 놓기 (W6 E) ───────────────────────────────────────────────
+    // GLB 놓기와 **나란히** 둔다. 둘은 `state.ts` 의 불변식으로 동시에 차지 않으므로
+    // 순서가 동작을 가르지 않는다 — 그래도 위에 두는 것은 «놓기는 고르기보다 먼저» 라는
+    // 같은 규칙을 따르기 위해서다(아래 마을 파츠 **선택**보다 앞이어야 한다).
+    if (st.pendingPart) {
+      const at = picker.groundAt();
+      if (at) actions.placePartAt(st.pendingPart, at);
+      else panel.say('그 자리는 하늘입니다 — 화면 아래쪽 땅을 클릭하세요.', true);
+      return;
+    }
 
     // ── 마을 파츠 (W4 ②-c) ──────────────────────────────────────────────────
     // **오버레이보다 뒤다.** 감독이 놓은 GLB 가 마을 건물에 겹쳐 있으면 놓은 쪽이
@@ -197,7 +303,9 @@ export function createInput(deps: InputDeps): Input {
     const t = st.target;
     const from = st.modalFrom;
     if (!m || !t || !from) return;
-    const d = modalDelta(m.kind, m.axis, m.digits, mouseX - m.startX, mouseY - m.startY);
+    // ⚠ **가로만 본다.** 회전도 크기도 축이 하나뿐이라 세로 이동은 볼 것이 없다
+    // (이동 모달이 있던 시절에는 세로가 z·y 였다 — `decide/modal-edit.ts` 헤더).
+    const d = modalDelta(m.kind, m.digits, mouseX - m.startX);
     const p = applyDelta(from, d);
     t.x = p.x; t.y = p.y; t.z = p.z; t.ry = p.ry; t.s = p.s;
     // 조작 중에는 `apply` 만 — 확정은 끝낼 때 한 번이다(`target.ts` 헤더).
@@ -205,7 +313,7 @@ export function createInput(deps: InputDeps): Input {
     // 블렌더가 헤더에 적는 그것. **화면이 지금 무엇을 하고 있는지 말한다** — 모달은
     // 눈에 보이는 핸들이 없어서, 이 한 줄이 없으면 «키를 눌렀는데 뭐가 시작된 건지»
     // 를 알 수 없다(기즈모는 잡은 축이 색으로 보이지만 모달은 아무것도 안 보인다).
-    panel.say(`${modalLabel(m, d)}  ·  X/Y/Z 축 · 숫자 입력 · 클릭·Enter 확정 · Esc 취소`);
+    panel.say(`${modalLabel(m, d)}  ·  숫자 입력 · 클릭·Enter 확정 · Esc 취소`);
     panel.refresh();
   };
 
@@ -226,7 +334,7 @@ export function createInput(deps: InputDeps): Input {
     }
     st.modal = null;
     st.modalFrom = null;
-    // 상태 줄이 조작 문구(`이동 X: 2.5m`)를 든 채 남으면 **끝났는지 아닌지**가 화면에서
+    // 상태 줄이 조작 문구(`회전: 45.0°`)를 든 채 남으면 **끝났는지 아닌지**가 화면에서
     // 구별되지 않는다 — 모달은 보이는 핸들이 없으므로 그 줄이 유일한 표지다.
     panel.say(keep ? '확정했습니다.' : '취소했습니다 — 시작 자리로 되돌렸습니다.');
     panel.refresh();
@@ -234,9 +342,8 @@ export function createInput(deps: InputDeps): Input {
 
   const onPointerMove = (ev: PointerEvent) => {
     mouseX = ev.clientX;
-    mouseY = ev.clientY;
     // ⚠ **모달이 가장 먼저다.** 조작 중에는 기즈모도 드래그도 안 듣는다 — 블렌더가
-    // 그렇고, 안 그러면 `G` 로 밀던 중 기즈모 위를 지나가면 두 조작이 겹친다.
+    // 그렇고, 안 그러면 `R` 로 돌리던 중 기즈모 위를 지나가면 두 조작이 겹친다.
     if (st.modal) { applyModal(); return; }
     // 궤도가 **고개 돌리기보다 먼저다** — 둘 다 드래그라 순서가 곧 «어느 버튼이 이기는가»
     // 이고, 중클릭을 눌렀는데 시선만 도는 것은 조작이 안 먹는 것으로 읽힌다.
@@ -338,9 +445,7 @@ export function createInput(deps: InputDeps): Input {
       if (act.act === 'cancel') { endModal(false); return; }
       if (act.act === 'commit') { endModal(true); return; }
       // 상태는 **갈아 끼운다**(불변 객체) — 제자리 수정하면 «어디서 바뀌었나» 가 흩어진다.
-      st.modal = act.act === 'axis'
-        ? { ...st.modal, axis: act.axis }
-        : { ...st.modal, digits: act.digits };
+      st.modal = { ...st.modal, digits: act.digits };
       applyModal();
       return;
     }
@@ -355,11 +460,53 @@ export function createInput(deps: InputDeps): Input {
       ev.preventDefault();
       ev.stopPropagation();
       const sel = st.target;
-      st.modal = { kind: opener, axis: null, digits: '', startX: mouseX, startY: mouseY };
+      st.modal = { kind: opener, digits: '', startX: mouseX };
       st.modalFrom = { x: sel.x, y: sel.y, z: sel.z, ry: sel.ry, s: sel.s };
       // 시작 즉시 한 번 그린다 — 마우스를 움직이기 전에도 «무엇이 시작됐는지» 가 보여야
       // 한다(델타 0 이라 값은 안 변한다).
       applyModal();
+      return;
+    }
+
+    // ── 정해진 시점 ───────────────────────────────────────────────────────
+    // 모달 **뒤**다(위 분기가 먼저 return 한다) — 조작 중에는 숫자가 타이핑이다.
+    const side = VIEW_KEYS[ev.code];
+    if (side !== undefined) {
+      if (!goView(VIEW_PRESETS[side])) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    if (ev.code === 'KeyF') {
+      // 「확대」 — 방위는 지금 것을 유지한다(`FOCUS_VIEW` 주석).
+      if (!goView(FOCUS_VIEW)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+
+    // ── 셰이딩 토글 ───────────────────────────────────────────────────────
+    // 블렌더의 `Z`(셰이딩 파이 메뉴)는 **안 쓴다**: 우리 `Z`/`X` 가 이미 높이이고, 같은
+    // 키가 상황에 따라 다르게 동작하는 것은 `G` 를 걷어내면서 방금 없앤 그 문제다.
+    //
+    // ── 이 분기가 **무엇보다** 앞이어야 하는가 (뮤테이션 실측 2026-08-14) ───
+    // 처음엔 *"`EDIT_KEYS` 보다 반드시 앞이다"* 라고 적었고 **과장이었다.** 뮤테이션
+    // M5(이 블록을 `EDIT_KEYS` 검사 **뒤**로 이동)가 `0 failed` 였고, 원인은 등가였다 —
+    // `KeyZ` 는 `EDIT_KEYS` 의 원소라 그 검사를 통과하고, 아래 `switch` 보다 앞이기만
+    // 하면 동작이 같다.
+    //
+    // **진짜 경계는 둘이다:**
+    //   ① 아래 `switch (ev.code)` 보다 앞 — 뒤로 가면 `case 'KeyZ'` 가 높이를 내린다
+    //   ② 아래 `if (!st.target)` 보다 앞 — 뒤로 가면 아무것도 안 골랐을 때 셰이딩이
+    //      *"먼저 물건을 클릭해 고르세요"* 로 **죽는다.** 셰이딩은 **선택과 무관한**
+    //      화면 전체의 상태라 그 안내가 성립하지 않는다
+    //
+    // ②를 지키는 축이 테스트에 있다(안 고른 상태로 `Shift+Z` 를 눌러 본다). 과장된
+    // 주석을 약하게 고치는 대신 **못 박는 축을 만들어** 남은 문장을 참으로 만들었다.
+    if (ev.shiftKey && ev.code === 'KeyZ') {
+      if (!toggleShading()) return;
+      ev.preventDefault();
+      ev.stopPropagation();
       return;
     }
 
@@ -459,6 +606,10 @@ export function createInput(deps: InputDeps): Input {
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
     },
+    setView(side): void {
+      goView(side === 'focus' ? FOCUS_VIEW : VIEW_PRESETS[side]);
+    },
+    setShading(m): void { goShading(m); },
     bindAlways(): void { doc.addEventListener('keydown', onModeKey); },
     unbindAlways(): void { doc.removeEventListener('keydown', onModeKey); },
   };

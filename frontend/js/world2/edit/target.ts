@@ -204,6 +204,34 @@ export function describe(t: EditTarget, e: OverlayEntry | null, v: VillagePick |
 }
 
 /**
+ * 화면 배지에 쓸 **짧은 이름**. 좌표·회전·크기는 안 넣는다.
+ *
+ * ── 왜 `describe()` 와 따로 두나 ────────────────────────────────────────────
+ * 저쪽은 패널 한 줄용이라 자세를 전부 적는다(그것이 수치칸 옆이라 맞다). 배지는
+ * **화면 한가운데 큰 글씨**라 길면 시선을 가린다 — 감독이 원한 것은 «내가 뭘 선택했는지»
+ * 이지 «그것이 몇 미터에 있는지» 가 아니다(그건 수치칸이 이미 말한다).
+ *
+ * ⚠ **이름 규칙은 `describe()` 와 같아야 한다** — 「마을: building」 과 「building #1」 이
+ * 서로 다른 것을 가리키는 것처럼 보이면 안 된다. 그래서 접두(`마을:`·파일명 정리)를
+ * 여기서 새로 정하지 않고 저쪽과 같은 형태를 쓴다.
+ */
+export function describeShort(
+  t: EditTarget, e: OverlayEntry | null, v: VillagePick | null,
+): string | null {
+  if (t.kind === 'overlay' && e) {
+    return e.src.replace(/^assets\/models\//, '') + (e.preview ? ' (미리보기)' : '');
+  }
+  // ⚠ **「손본 구역」을 여기서 안 붙인다.** `v.frozen` 은 **고른 순간의 스냅샷**이라
+  // 조작해서 동결시켜도 안 바뀐다 — 화면이 «방금 손봤는데 손본 구역이 아니라고 한다» 가
+  // 된다. 부르는 쪽이 저장소에 **현재 값**을 물어 붙인다(`dom.ts`·`badge.ts` 가 같은
+  // 형태로 한다). 실측으로 드러난 결함이고 패널 한 줄도 같은 형태였다.
+  if (v) return `${v.kind} #${v.index} · 구역 (${v.px}, ${v.pz})`;
+  // 어댑터는 있는데 둘 다 없는 경우 — 지금 그런 경로는 없지만 `null` 을 내면
+  // 배지가 **숨는다**. 「선택: 없음」 같은 문구를 크게 띄우는 것보다 낫다.
+  return null;
+}
+
+/**
  * `PlacedPart` 를 만드는 자리 하나 — 복제가 쓴다.
  *
  * 필드를 손으로 나열하지 않고 **펼친다.** 계약(`normalizePart`)이 9필드를 소유하고,
