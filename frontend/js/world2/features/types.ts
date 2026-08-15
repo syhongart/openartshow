@@ -170,6 +170,32 @@ export interface FeatureEnv {
    */
   readonly setSurfaces: (s: readonly SurfaceSetting[]) => void;
 
+  /**
+   * 그 표면의 재질. **파츠든 물이든 여기 하나로 답한다**(W7).
+   *
+   * ── 팀장 판정 2026-08-15 ────────────────────────────────────────────────
+   * *"물 재질은 조립부 소유 레지스트리(`env.surfaceMaterial`)로 모은다 — (나)InstancePools
+   * 얹기는 슬롯 풀의 의미론을 오염시키고(물은 슬롯을 안 쓴다), (다)ocean 자체 집행은
+   * dispose 경로가 두 벌이 된다(값 미러링 사고 형태). 회수는 한 곳, 소유는 조립부, 기능은
+   * 등록·읽기 통로만."*
+   *
+   * 조립부가 파츠 풀(`pools.materialOf`)과 등록분을 합쳐 답하므로, 집행 쪽은 «이게 파츠인가
+   * 물인가» 를 몰라도 된다 — 그 구분이 집행에 새면 표면이 늘 때마다 분기가 하나씩 는다.
+   */
+  readonly surfaceMaterial: (kind: string) => unknown;
+
+  /**
+   * 자기 재질을 표면 레지스트리에 신고한다. **파츠 풀 밖에 있는 것만** 부른다(물).
+   *
+   * ⚠ **이 저장소에서 「기능 → 조립부」 방향은 이것이 처음이다.** 지금까지는 조립부가
+   * 기능에 통로를 주는 단방향이었다. 소유 모델은 안 바뀐다(상태는 여전히 조립부가 든다)
+   * — 다만 등록 **시점**이 계약이 되므로, 늦게 등록하면 그 프레임의 반영이 빈다.
+   * 폴링(`surface-paint` 의 `update`)이 다음 프레임에 잡지만 그것에 기대지 않는다:
+   * `tests/world2-surface-registry.test.ts` 가 부팅 완료 시점의 등록을 단언한다
+   * (팀장 조건 1 — 주석이 아니라 검사로 강제한다).
+   */
+  readonly registerSurfaceMaterial: (kind: string, material: unknown) => void;
+
   /** UI를 붙일 문서. 없는 환경(테스트)에서는 null */
   readonly doc: Document | null;
   /**

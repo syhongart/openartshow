@@ -18,9 +18,11 @@ import { describe as describeTarget, nudgeScale, type EditTarget } from '../targ
 import { CSS } from './css.js';
 import { createInspector } from './inspector.js';
 import { createOutliner } from './outliner.js';
+import { createSurfacePanel, type SurfacePanel } from './surface.js';
 import { createBadge } from './badge.js';
 import type { ViewSide } from '../../decide/orbit.js';
 import { SHADING_LABEL, SHADING_MODES, type ShadingMode } from '../../decide/shading.js';
+import type { SurfaceSetting } from '../../decide/surface-material.js';
 
 /** 패널이 «자기가 못 하는 일» 을 넘기는 곳. 조립자(`mode.ts`)가 채운다. */
 export interface PanelHandlers {
@@ -38,6 +40,19 @@ export interface PanelHandlers {
   setView(side: ViewSide | 'focus'): void;
   /** 셰이딩을 그 모드로(W6). 위와 같은 이유로 키와 한 함수다 */
   setShading(m: ShadingMode): void;
+
+  /**
+   * 표면 재질 목록(W7 · 「월드스튜디오」). **`setShading` 과 같은 이유로 선택 사양이다** —
+   * 소비자가 문을 안 주면 그 칸만 빠지고 나머지 편집은 그대로 산다.
+   *
+   * ⚠ **셋이 짝이다.** `surfaces` 만 있고 `setSurfaces` 가 없으면 읽기 전용 슬라이더가
+   * 되어 «움직이는데 아무 일도 안 난다» 는 거짓 UI 가 되므로, 조립이 **둘 다 있을 때만**
+   * 패널을 만든다. `previewUrl` 은 없어도 된다(미리보기 없이 `src` 만 저장된다).
+   */
+  surfaces?(): readonly SurfaceSetting[];
+  setSurfaces?(s: readonly SurfaceSetting[]): void;
+  previewUrl?(file: File): string | null;
+
   exportNow(): void;
 }
 
@@ -100,6 +115,19 @@ export function createPanel(
   // 아웃라이너는 **패널 밖**에 산다(왼쪽 별도 컨테이너). 넓은 화면에서만 보이는 것은
   // CSS 가 정하고 여기서는 폭을 모른다 — `css.ts` 의 미디어 쿼리 한 곳이 판정한다.
   const outliner = createOutliner(host, st, (v) => { handlers.pickVillage(v); });
+  /**
+   * 표면 재질(W7 · 「월드스튜디오」). **선택과 무관한 전역 패널**이라 인스펙터와 자리가
+   * 다르다 — 재질은 종류당 하나를 온 세계가 공유하므로 «무엇을 골랐는가» 와 상관없이 먹는다.
+   * 그래서 아래 조립에서도 셰이딩(역시 화면 전체 상태) 옆에 둔다.
+   */
+  const surface: SurfacePanel | null = handlers.surfaces && handlers.setSurfaces
+    ? createSurfacePanel(host, {
+      surfaces: handlers.surfaces,
+      setSurfaces: handlers.setSurfaces,
+      say: (m, warn) => { say(m, warn); },
+      previewUrl: handlers.previewUrl,
+    })
+    : null;
   // 배지도 패널 **밖**에 산다(화면 상단 중앙). 근거는 `badge.ts` 헤더 한 곳이다 —
   // 「뭘 골랐는지」를 크게 말하는 것이 이 회차 감독 요구다.
   const badge = createBadge(host, st);
@@ -169,7 +197,11 @@ export function createPanel(
   head.append(title, toggle);
   const body = el('div', 'body');
   body.append(palette, el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
-    el('hr'), rowView, rowShade, rowOut, status, hint);
+    el('hr'), rowView, rowShade);
+  // 표면 재질은 **없을 수도 있다** — 소비자가 문(`surfaces`/`setSurfaces`)을 안 주면 그
+  // 칸만 빠지고 나머지 편집은 그대로 산다(`setShading` 이 세운 규약과 같다).
+  if (surface) body.append(el('hr'), surface.root);
+  body.append(rowOut, status, hint);
   panel.append(head, body);
   panel.dataset.open = '0';
   panel.dataset.mode = 'drive';

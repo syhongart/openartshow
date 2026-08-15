@@ -126,11 +126,12 @@ class FakeMaterial {
   get needsUpdate(): boolean { return false; }
 }
 
-/** 칠할 수 있는 표면 — **손으로 안 적는다.** 파츠 레지스트리에서 유도한다 */
-const TARGETS: readonly SurfaceKind[] = (SURFACE_KINDS as readonly SurfaceKind[])
-  .filter((k) => !isWorldUv(k));
-const WATER: readonly SurfaceKind[] = (SURFACE_KINDS as readonly SurfaceKind[])
-  .filter((k) => isWorldUv(k));
+/** 칠할 수 있는 표면 — **손으로 안 적는다.** 계약에서 유도한다 */
+const TARGETS: readonly SurfaceKind[] = SURFACE_KINDS as readonly SurfaceKind[];
+/** 그중 물. 파츠 풀 밖에 있어 **레지스트리로만** 닿는다 */
+const WATER: readonly SurfaceKind[] = TARGETS.filter((k) => isWorldUv(k));
+/** 파츠 쪽. 풀에서 온다 */
+const PARTS_TARGETS: readonly SurfaceKind[] = TARGETS.filter((k) => !isWorldUv(k));
 
 interface Harness {
   mats: Map<string, FakeMaterial>;
@@ -159,6 +160,13 @@ async function mount(opts: {
     if (opts.missing?.includes(k)) continue;
     mats.set(k, new FakeMaterial());
   }
+  /**
+   * 레지스트리 — 파츠 풀 밖의 재질(물). **부팅 전에 미리 채운다**: 실물에서도 `ocean` 이
+   * 자기 메시를 만드는 시점이 `surfacePaintFeature.create` 보다 앞이다(`FEATURES` 배열
+   * 순서 — ocean 이 surface 보다 먼저다).
+   */
+  const registry = new Map<string, unknown>();
+  for (const w of WATER) if (!opts.missing?.includes(w)) registry.set(w, mats.get(w));
   for (const [key, tex] of Object.entries(opts.foreign ?? {})) {
     const [kind, slot] = key.split(':');
     const m = mats.get(kind);
@@ -166,11 +174,21 @@ async function mount(opts: {
   }
 
   const asked: string[] = [];
+  /**
+   * **파츠 풀에 무엇을 물었나.** 조립부는 파츠 풀과 레지스트리를 합쳐 답하는데, 물이 풀에
+   * 들어가면 슬롯 의미론이 오염된다(팀장이 그 선택지를 기각한 이유다) — 그래서 «풀은
+   * 물에 대해 null 을 낸다» 를 잴 수 있게 대역을 갈라 둔다.
+   */
+  const poolKeys = new Set(PARTS_TARGETS as readonly string[]);
   let surfaces: readonly SurfaceSetting[] = opts.initial ?? [];
   const env = {
-    pools: {
-      materialOf(key: string) { asked.push(key); return mats.get(key) ?? null; },
+    // 조립부(`main.ts`)와 **같은 합성 규칙**을 쓴다 — 대역이 실물의 핵심 성질을 갖게 하는
+    // 것이 이 파일의 규약이고, 여기서 규칙이 갈리면 「조립부에서만 나는 결함」이 생긴다.
+    surfaceMaterial(kind: string) {
+      asked.push(kind);
+      return (poolKeys.has(kind) ? mats.get(kind) : undefined) ?? registry.get(kind) ?? null;
     },
+    registerSurfaceMaterial(kind: string, m: unknown) { registry.set(kind, m); },
     surfaces: () => surfaces,
     setSurfaces: (s: readonly SurfaceSetting[]) => { surfaces = s; },
   };
@@ -216,15 +234,31 @@ describe('부팅', () => {
     expect(FakeTexture.made).toHaveLength(0);
   });
 
-  it('물(sea·bed)은 `materialOf` 로 조회조차 하지 않는다 — ocean.ts 소관이다', async () => {
-    const h = await mount();
-    expect(WATER.length).toBeGreaterThan(0); // 축이 비지 않았는가
-    for (const w of WATER) expect(h.asked).not.toContain(w);
-  });
-
   it('칠할 수 있는 표면은 전부 조회한다 — 하나라도 빠지면 그 표면만 못 칠한다', async () => {
     const h = await mount();
     for (const t of TARGETS) expect(h.asked).toContain(t);
+  });
+
+  // ⚠ 이 축은 옛 판본에서 *"물은 `materialOf` 로 **조회조차** 하지 않는다"* 였고 **이제
+  //   유효하지 않다.** 그때는 물 재질에 닿을 문이 아예 없었다(파츠 풀 밖이라 `materialOf`
+  //   가 못 찾는다). 지금은 조립부 레지스트리가 그 문이고(팀장 판정 2026-08-15), 물도
+  //   정식 대상이다 — 그래서 «안 묻는다» 가 아니라 **«무엇을 통해 오는가»** 를 잰다.
+  it('물은 파츠 풀이 아니라 **레지스트리**에서 온다 — 슬롯 의미론을 안 더럽힌다', async () => {
+    const h = await mount();
+    expect(WATER.length, '물이 대상에서 통째로 빠졌다 — 감독 요구는 「물속 포함」이다')
+      .toBeGreaterThan(0);
+    for (const w of WATER) {
+      expect(h.asked, `${w} 를 조회는 한다`).toContain(w);
+      // 대역의 풀은 물에 null 을 낸다(위 `poolKeys`). 그런데도 재질을 얻어 칠했다면
+      // 레지스트리를 거쳤다는 뜻이다.
+      expect(h.mats.get(w), `${w} 재질이 있어야 이 축이 성립한다`).toBeTruthy();
+    }
+  });
+
+  it('레지스트리에 물이 안 들어와 있으면 그 표면만 조용히 건너뛴다', async () => {
+    const w = WATER[0];
+    const h = await mount({ missing: [w], initial: [setting(w, { map: A })] });
+    expect(h.owned()).toBe(0);
   });
 
   it('재질이 없는 종류는 조용히 건너뛴다 — 던지지 않는다', async () => {

@@ -23,8 +23,33 @@ import {
  *
  * 이 둘만 **월드 좌표 UV** 를 갖는다(`ocean.ts:966` — `vx / PLANE + 0.5`). 그래서 각도
  * 제약을 안 받는다(아래 `isWorldUv`).
+ *
+ * ⚠ 이 목록은 **UV 성질** 을 가르는 것이고 「칠할 수 있는가」가 아니다. 둘은 다르다 —
+ * 바로 아래 `PAINTABLE_WATER` 가 그 차이다.
  */
 export const WATER_SURFACES = ['sea', 'bed'] as const;
+
+/**
+ * **칠할 수 있는 물 — 해저뿐이다. 수면(`sea`)은 일부러 뺐다.**
+ *
+ * ── 실측이 이 경계를 그었다 (2026-08-15) ────────────────────────────────────
+ * 수면의 일렁임은 재질 파라미터가 아니라 **텍스처 `offset` 을 매 프레임 굴리는 것**이다
+ * (`ocean.ts:1475`·`:1484`·`:1487` 이 `normA`·`tint`·`sparkle` 의 offset 을 굴린다).
+ * 그 슬롯에 다른 텍스처를 꽂으면 **굴러가는 텍스처가 재질에서 떨어져 나가** offset 은
+ * 계속 도는데 화면에는 아무 영향이 없다 — 즉 **물이 멈춘다.** 게다가 `repeat` 도
+ * `PLANE / RIPPLE_M` 으로 고정된 전제가 있어(`:714`·`:822`·`:910`) 배율 노브와 충돌한다.
+ *
+ * 해저는 그 전제가 없다 — `bedMat` 은 `map: pebble` 하나뿐이고 `update()` 가 안 굴린다.
+ *
+ * **감독 요구를 벗어나지 않는다.** 감독이 말한 것은 *"땅. 잔디. **물속**"* 이고 카드에서
+ * 고른 것은 「물속 포함」이다. 물속 = 해저다 — 수면은 언급된 적이 없다.
+ *
+ * **여기서 멈춘다.** 수면을 열려면 일렁임을 «텍스처 교체와 공존하는 형태»(예: 우리 텍스처를
+ * ocean 의 offset 굴림 대상으로 등록)로 바꾸는 것이 선결이고, 그것은 물 구현 자체를 건드리는
+ * 별도 설계 분기다. 이 문장을 안 적으면 다음 사람이 «물은 되는데 수면만 왜 없지» 로 같은
+ * 고리를 돈다.
+ */
+export const PAINTABLE_WATER = ['bed'] as const;
 
 /**
  * 칠할 수 있는 표면 전체.
@@ -37,7 +62,7 @@ export const WATER_SURFACES = ['sea', 'bed'] as const;
  * ⚠⚠ **광장은 목록에 없다.** `parts/plaza.ts` 는 순수 판정 함수뿐이고 포장 파츠가 실재하지
  * 않는다(실측) — 광장 바닥은 `ground` 가 그린다(태스크 #17 이 그 사실을 이미 적었다).
  */
-export const SURFACE_KINDS: readonly string[] = [...PAINTABLE_KINDS, ...WATER_SURFACES];
+export const SURFACE_KINDS: readonly string[] = [...PAINTABLE_KINDS, ...PAINTABLE_WATER];
 
 /**
  * 표면 종류. `PartKind` 를 물려받는다 — 좁히려면 여기에 파츠 이름을 다시 적어야 하고
@@ -52,7 +77,7 @@ export const SURFACE_KINDS: readonly string[] = [...PAINTABLE_KINDS, ...WATER_SU
  * `tests/world2-surface-material.test.ts` 의 커버리지 축이 잡는다. 이 문장을 «타입이
  * 조금 넓다» 로 줄여 적지 마라 — 다음 사람이 컴파일러를 믿고 확인을 생략한다.
  */
-export type SurfaceKind = PartKind | (typeof WATER_SURFACES)[number];
+export type SurfaceKind = PartKind | (typeof PAINTABLE_WATER)[number];
 
 /** 아는 표면인가. 계약 정규화가 모르는 종류를 버리는 축 */
 export function isSurfaceKind(v: unknown): v is SurfaceKind {
@@ -66,7 +91,7 @@ export const SURFACE_LABEL: Readonly<Record<SurfaceKind, string>> = {
   road: '길',
   building: '건물 벽',
   tower: '타워',
-  sea: '수면',
+  // 수면(`sea`)은 없다 — `PAINTABLE_WATER` 주석 한 곳이 그 이유다.
   bed: '물속 바닥',
 };
 
@@ -89,7 +114,10 @@ export const SURFACE_LABEL: Readonly<Record<SurfaceKind, string>> = {
  * 그래서 월드 UV 가 아닌 표면에는 아래 두 제약을 **계약 수준에서** 건다.
  */
 export function isWorldUv(kind: SurfaceKind): boolean {
-  return kind === 'sea' || kind === 'bed';
+  // 목록에서 **유도한다** — 이름을 여기 다시 적으면 물이 늘 때 한쪽만 낡는다.
+  // ⚠ `WATER_SURFACES` 지 `PAINTABLE_WATER` 가 아니다: 수면은 칠할 수 없어도 **월드 UV 라는
+  //   성질은 그대로**다. 두 목록을 합치면 그 구분이 사라진다.
+  return (WATER_SURFACES as readonly string[]).includes(kind);
 }
 
 // ── 회전 ────────────────────────────────────────────────────────────────────
@@ -229,6 +257,28 @@ export interface SurfaceSetting {
 }
 
 /**
+ * 맵 슬롯 넷. **여기가 유일한 선언 지점이다.**
+ *
+ * 집행(`features/surface-paint.ts`)과 화면(`edit/panel/surface.ts`)이 **둘 다** 이 목록을
+ * 훑는다 — 어느 한쪽에 적으면 다른 쪽이 낡고, 증상은 «새 슬롯만 화면에 안 뜬다» 또는
+ * «화면에는 있는데 안 먹는다» 라 원인을 짚기 어렵다.
+ *
+ * ⚠ `SurfaceSetting` 의 필드에서 **유도할 수 없다** — 맵은 전부 선택 필드라 기본값 객체에
+ * 아예 나타나지 않는다. 그래서 목록은 손으로 적고, **`tests/world2-surface-material.test.ts`
+ * 가 「정규화 결과에서 텍스처 경로를 받는 키 집합」과 대조**한다(런타임 유도라 낡지 않는다).
+ */
+export const MAP_SLOTS = ['map', 'normalMap', 'metalnessMap', 'roughnessMap'] as const;
+export type MapSlot = (typeof MAP_SLOTS)[number];
+
+/** 화면에 쓰는 이름. `Record` 라 슬롯을 늘리면 컴파일러가 라벨 누락을 잡는다 */
+export const SLOT_LABEL: Readonly<Record<MapSlot, string>> = {
+  map: '색(디퓨즈)',
+  normalMap: '굴곡(노말)',
+  metalnessMap: '메탈릭',
+  roughnessMap: '거칠기',
+};
+
+/**
  * 기본값 — **「손대지 않은 것과 같은 화면」**이어야 한다.
  *
  * `roughness: 1`·`metalness: 0` 은 반사를 지운 상태이고, 맵이 전부 없으므로 집행 쪽이
@@ -241,8 +291,63 @@ export function defaultSetting(kind: SurfaceKind): SurfaceSetting {
 
 /** 아무 맵도 안 붙은 설정인가 — 집행이 «건드릴 것이 없다» 를 빨리 판정하는 축 */
 export function hasNoMaps(s: SurfaceSetting): boolean {
-  return s.map === undefined && s.normalMap === undefined
-    && s.metalnessMap === undefined && s.roughnessMap === undefined;
+  return MAP_SLOTS.every((slot) => s[slot] === undefined);
+}
+
+// ── 목록 다루기 (화면이 쓴다) ───────────────────────────────────────────────
+
+/**
+ * 그 표면의 현재 설정. 목록에 없으면 **기본값**이다 — 「생략 = 지금 동작」의 읽기 쪽이다.
+ *
+ * 화면이 «아직 안 만진 표면» 도 슬라이더로 보여줘야 하므로 `null` 을 내지 않는다.
+ */
+export function settingOf(
+  list: readonly SurfaceSetting[], kind: SurfaceKind,
+): SurfaceSetting {
+  return list.find((s) => s.kind === kind) ?? defaultSetting(kind);
+}
+
+/**
+ * 한 표면의 설정을 고쳐 **새 목록**을 낸다.
+ *
+ * ⚠ **반드시 새 배열이다.** 집행(`features/surface-paint.ts`)이 참조 동등성으로 «안
+ * 바뀌었다» 를 판정한다 — 제자리에서 고치면 슬라이더를 움직여도 화면이 안 따라온다.
+ * 그 규약의 근거는 `FeatureEnv.surfaces` 주석 한 곳이다.
+ *
+ * ⚠⚠ **아무 맵도 없고 값도 기본값이면 목록에서 뺀다.** 안 그러면 감독이 텍스처를 걷은 뒤에도
+ * 내보낸 JSON 에 빈 항목이 쌓이고, 그것을 다시 읽으면 «설정이 있다» 로 보인다(집행은
+ * `hasNoMaps` 로 되돌리므로 화면은 같지만, **파일과 화면이 다른 말을 하는 것**이 문제다).
+ */
+export function upsertSetting(
+  list: readonly SurfaceSetting[],
+  kind: SurfaceKind,
+  patch: Partial<Omit<SurfaceSetting, 'kind'>>,
+): readonly SurfaceSetting[] {
+  const next = normalizeSetting(kind, { ...settingOf(list, kind), ...patch });
+  const rest = list.filter((s) => s.kind !== kind);
+  return isDefaultSetting(next) ? rest : [...rest, next];
+}
+
+/** 「손대지 않은 것과 같음」인가 — 목록에서 뺄지 판정하는 축 */
+export function isDefaultSetting(s: SurfaceSetting): boolean {
+  const d = defaultSetting(s.kind);
+  return hasNoMaps(s) && s.repeat === d.repeat && s.turns === d.turns
+    && s.metalness === d.metalness && s.roughness === d.roughness;
+}
+
+/**
+ * 감독이 떨어뜨린 **파일 이름**을 계약이 받는 `src` 로.
+ *
+ * GLB 와 같은 흐름이다(`edit/input.ts` 의 `onDrop`) — 감독이 파일을 놓으면 화면은 `blob:`
+ * 으로 즉시 보여 주고, 저장되는 `src` 는 **`assets/textures/<이름>`** 이다. 그 파일을
+ * 저장소에 커밋하는 것은 내(부팀장) 몫이고, 커밋 전에는 다시 열었을 때 그림이 안 뜬다.
+ *
+ * 안전하지 않은 이름은 `null` — 호출자가 **왜 안 되는지**를 화면에 말한다. 여기서 고쳐
+ * 주지 않는 이유는 이름을 몰래 바꾸면 감독이 커밋할 파일명과 어긋나기 때문이다.
+ */
+export function textureSrcFor(fileName: string): string | null {
+  const src = `assets/textures/${fileName}`;
+  return isSafeTextureSrc(src) ? src : null;
 }
 
 /**

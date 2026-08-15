@@ -98,6 +98,15 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     setView: (side) => { input.setView(side); },
     // 셰이딩도 마찬가지 — 버튼과 `Shift+Z` 가 한 구현을 본다(W6).
     setShading: (m) => { input.setShading(m); },
+    // ── 표면 재질(W7 · 「월드스튜디오」) ───────────────────────────────────
+    // **위임만** 한다 — 목록의 소유는 조립부(`FeatureEnv.surfaces`)이고 집행은
+    // `features/surface-paint.ts` 다. 이 모듈은 화면이 그 문에 닿는 통로일 뿐이라,
+    // 편집을 빼도 오버레이 JSON 의 표면 설정은 그대로 산다.
+    //
+    // 셋 다 host 가 안 주면 `undefined` 이고, 그러면 패널이 그 칸을 통째로 안 만든다.
+    surfaces: host.surfaces,
+    setSurfaces: host.setSurfaces,
+    previewUrl: host.previewUrl,
     exportNow: () => { actions.exportNow(); },
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).

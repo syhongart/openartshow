@@ -90,6 +90,28 @@ export const CSS = `
   /* 밝은 하늘 위에서도 읽히게 — 배경만으로는 부족하다 */
   text-shadow:0 1px 3px rgba(0,0,0,.7)}
 
+/* ── 표면 재질 패널 (W7 · 「월드스튜디오」) ─────────────────────────────────
+   강조색 #8B72FF 는 이 파일이 이미 여러 곳에서 쓰고 있다(태스크 #55 가 그 흩어짐을
+   추적 중이므로 **새 색을 만들지 않는다**). 드롭존만 상태를 셋으로 가른다:
+   비어 있음 / 채워짐(data-on) / 지금 위에 끌고 있음(data-over). */
+#w2-edit .surf{display:flex;flex-direction:column;gap:5px}
+#w2-edit .surf .lbl{color:#9A9EB1;font-size:10px;min-width:44px}
+#w2-edit .surf .num{color:#F5F5F2;font-size:10px;min-width:34px;text-align:right}
+#w2-edit .surf-pick{display:flex;flex-wrap:wrap;gap:3px}
+#w2-edit .surf-pick button[data-on="1"]{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
+#w2-edit .surf-row{display:flex;align-items:center;gap:5px}
+#w2-edit .surf-row input[type="range"]{flex:1;min-width:0;accent-color:#8B72FF}
+#w2-edit .surf-row button[data-on="1"]{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
+#w2-edit .surf-slots{display:flex;flex-direction:column;gap:3px}
+#w2-edit .surf-slot{display:flex;align-items:center;gap:5px;padding:3px 5px;
+  border:1px dashed #3A3D4B;border-radius:6px}
+#w2-edit .surf-slot[data-on="1"]{border-style:solid;border-color:#8B72FF}
+/* 끌고 있는 동안 칸이 스스로 «여기» 라고 말한다 — 드롭 대상이 곧 «어디에 바르는가» 라서
+   그 피드백이 없으면 감독이 엉뚱한 칸에 놓는다. */
+#w2-edit .surf-slot[data-over="1"]{background:rgba(139,114,255,.22);border-color:#8B72FF}
+#w2-edit .surf-slot .sname{flex:1;min-width:0;font-size:10px;color:#F5F5F2;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#w2-edit .surf-slot button{padding:1px 6px;line-height:1.2}
 #w2-outliner{display:none}
 @media (min-width:1024px){
   #w2-outliner{display:flex;flex-direction:column;gap:4px;position:fixed;z-index:40;

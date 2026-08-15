@@ -21,11 +21,14 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  SURFACE_KINDS, SURFACE_LABEL, UV_CENTER, REPEAT_MAX, REPEAT_MIN,
-  clamp01, clampRepeat, defaultSetting, glossToRoughness, hasNoMaps, isQuarterTurns,
-  isSafeTextureSrc, isSurfaceKind, isWorldUv, normalizeSetting, normalizeTurns,
-  roughnessToGloss, turnsToRadians, type SurfaceKind,
+  MAP_SLOTS, PAINTABLE_WATER, SLOT_LABEL, SURFACE_KINDS, SURFACE_LABEL, UV_CENTER,
+  REPEAT_MAX, REPEAT_MIN, WATER_SURFACES,
+  clamp01, clampRepeat, defaultSetting, glossToRoughness, hasNoMaps, isDefaultSetting,
+  isQuarterTurns, isSafeTextureSrc, isSurfaceKind, isWorldUv, normalizeSetting, normalizeTurns,
+  roughnessToGloss, settingOf, textureSrcFor, turnsToRadians, upsertSetting,
+  type SurfaceKind, type SurfaceSetting,
 } from '../frontend/js/world2/decide/surface-material.js';
+import { PAINTABLE_KINDS } from '../frontend/js/world2/parts/index.js';
 import {
   emptyOverlay, normalizeOverlay, validateOverlay,
 } from '../frontend/js/world2/decide/overlay.js';
@@ -49,7 +52,28 @@ describe('표면 재질 — 무엇을 칠할 수 있는가', () => {
   it('★ 물만 월드 UV 다 — 이 구분이 각도 제약의 근거다', () => {
     // `ocean.ts:966` 이 `vx / PLANE + 0.5` 로 월드 좌표에서 UV 를 낸다. 마을 파츠는
     // 파셀 로컬 0~1 이라 회전하면 파셀 변마다 이음매가 생긴다.
-    expect(SURFACE_KINDS.filter(isWorldUv)).toEqual(['sea', 'bed']);
+    //
+    // ⚠ 기대값을 **손으로 안 적는다.** 옛 판본은 `['sea','bed']` 를 박아 두었고, 수면이
+    // 목록에서 빠지자(아래 축) 그 리터럴이 그대로 낡았다 — 값 미러링이다.
+    expect(SURFACE_KINDS.filter(isWorldUv)).toEqual([...PAINTABLE_WATER]);
+    // 파츠 쪽에는 월드 UV 가 하나도 없어야 한다 — 있으면 각도 제약의 근거가 무너진다.
+    expect(PAINTABLE_KINDS.filter((k) => isWorldUv(k))).toEqual([]);
+  });
+
+  it('★ 수면(sea)은 칠할 수 없다 — 텍스처를 얹으면 일렁임이 멈춘다', () => {
+    // ── 이 축이 지키는 것 ──────────────────────────────────────────────────
+    // 수면의 일렁임은 재질 파라미터가 아니라 **텍스처 `offset` 을 매 프레임 굴리는 것**이다
+    // (`ocean.ts` 의 `update()` 가 `normA`·`tint`·`sparkle` 의 offset 을 굴린다). 그 슬롯에
+    // 다른 텍스처를 꽂으면 굴러가는 텍스처가 재질에서 떨어져 나가 **물이 멈춘다.**
+    //
+    // 그래서 계약이 애초에 수면을 못 담게 한다(fail-closed). 이 축을 지우면 그 보호가
+    // 통째로 사라지고, 증상은 «물이 안 움직인다» 인데 원인은 계약이라 짚기 어렵다.
+    expect(SURFACE_KINDS).not.toContain('sea');
+    expect(isSurfaceKind('sea')).toBe(false);
+    // 그래도 **월드 UV 라는 성질은 남는다** — 둘은 다른 판정이고, 합치면 수면을 다시 열
+    // 때(일렁임과 공존하는 형태를 찾으면) 각도 제약을 처음부터 다시 세워야 한다.
+    expect(isWorldUv('sea' as never)).toBe(true);
+    expect(WATER_SURFACES).toContain('sea');
   });
 
   it('모르는 종류를 안 받는다', () => {
@@ -261,5 +285,95 @@ describe('오버레이 계약 — surfaces', () => {
       surfaces: SURFACE_KINDS.map((kind: SurfaceKind) => ({ kind, map: SAFE_TEX, repeat: 4 })),
     });
     expect(o.surfaces).toHaveLength(SURFACE_KINDS.length);
+  });
+});
+
+// ── 맵 슬롯 목록이 계약과 어긋나지 않는가 ──────────────────────────────────
+
+describe('맵 슬롯', () => {
+  it('★ MAP_SLOTS 가 계약의 텍스처 필드 전부다 — 손목록이 낡는 것을 막는다', () => {
+    // 목록을 손으로 적을 수밖에 없는 자리다(맵은 전부 선택 필드라 기본값 객체에 안 나온다).
+    // 그래서 **정규화 결과에서 유도한 집합**과 대조한다 — 런타임 유도라 낡지 않는다.
+    //
+    // 이 축이 없으면 슬롯을 늘렸을 때 집행(`features/surface-paint.ts`)과 화면
+    // (`edit/panel/surface.ts`)이 새 슬롯을 못 보고, 증상은 «그 슬롯만 안 먹는다» 다.
+    const all = Object.fromEntries(MAP_SLOTS.map((s) => [s, SAFE_TEX]));
+    const norm = normalizeSetting('garden', all) as unknown as Record<string, unknown>;
+    const actual = Object.keys(norm).filter((k) => norm[k] === SAFE_TEX).sort();
+    expect(actual).toEqual([...MAP_SLOTS].sort());
+  });
+
+  it('슬롯마다 한국어 이름이 있고 서로 다르다', () => {
+    for (const s of MAP_SLOTS) expect(SLOT_LABEL[s], `★ 「${s}」 이름 없음`).toBeTruthy();
+    expect(new Set(Object.values(SLOT_LABEL)).size).toBe(MAP_SLOTS.length);
+  });
+
+  it('hasNoMaps 가 슬롯을 하나도 안 빠뜨린다', () => {
+    // 슬롯마다 그것 **하나만** 채워 본다 — `hasNoMaps` 가 어느 하나를 안 보면 여기서 걸린다.
+    for (const s of MAP_SLOTS) {
+      const one = normalizeSetting('garden', { [s]: SAFE_TEX });
+      expect(hasNoMaps(one), `★ ${s} 만 붙었는데 «맵 없음» 이라고 한다`).toBe(false);
+    }
+    expect(hasNoMaps(defaultSetting('garden'))).toBe(true);
+  });
+});
+
+// ── 화면이 쓰는 목록 조작 ──────────────────────────────────────────────────
+
+describe('목록 다루기', () => {
+  it('목록에 없는 표면은 기본값으로 읽힌다 — 화면이 «안 만진 것» 도 보여줘야 한다', () => {
+    expect(settingOf([], 'garden')).toEqual(defaultSetting('garden'));
+  });
+
+  it('★ upsert 는 언제나 새 배열이다 — 참조 동등성이 집행의 판정 축이다', () => {
+    const before: readonly SurfaceSetting[] = [];
+    const after = upsertSetting(before, 'garden', { map: SAFE_TEX });
+    expect(after).not.toBe(before);
+    // 제자리 수정이 아니라는 것을 원본으로도 확인한다
+    expect(before).toHaveLength(0);
+  });
+
+  it('같은 표면을 두 번 고쳐도 항목이 하나다', () => {
+    let list = upsertSetting([], 'garden', { map: SAFE_TEX });
+    list = upsertSetting(list, 'garden', { repeat: 8 });
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ kind: 'garden', map: SAFE_TEX, repeat: 8 });
+  });
+
+  it('★ 기본값으로 되돌리면 목록에서 빠진다 — 파일과 화면이 다른 말을 하지 않게', () => {
+    let list = upsertSetting([], 'garden', { map: SAFE_TEX, repeat: 8 });
+    expect(list).toHaveLength(1);
+    list = upsertSetting(list, 'garden', { map: undefined, repeat: 1 });
+    expect(list, '★ 빈 항목이 남았다 — 다시 읽으면 «설정이 있다» 로 보인다').toHaveLength(0);
+  });
+
+  it('다른 표면은 안 건드린다', () => {
+    let list = upsertSetting([], 'garden', { map: SAFE_TEX });
+    list = upsertSetting(list, 'road', { map: SAFE_TEX });
+    list = upsertSetting(list, 'garden', { map: undefined });
+    expect(list.map((s) => s.kind)).toEqual(['road']);
+  });
+
+  it('isDefaultSetting 이 네 수치를 다 본다', () => {
+    // 하나씩만 바꿔 본다 — 어느 하나를 안 보면 여기서 걸린다.
+    expect(isDefaultSetting(defaultSetting('garden'))).toBe(true);
+    for (const patch of [{ repeat: 2 }, { turns: 1 as const }, { metalness: 1 }, { roughness: 0 }]) {
+      const s = { ...defaultSetting('garden'), ...patch };
+      expect(isDefaultSetting(s), `★ ${JSON.stringify(patch)} 를 안 본다`).toBe(false);
+    }
+  });
+});
+
+describe('드롭한 파일 이름 → 계약의 src', () => {
+  it('평범한 이름은 assets/textures/ 아래로 간다', () => {
+    expect(textureSrcFor('grass.png')).toBe('assets/textures/grass.png');
+    expect(textureSrcFor('wall_01.jpg')).toBe('assets/textures/wall_01.jpg');
+  });
+
+  it('★ 위험한 이름은 null — 몰래 고쳐 주지 않는다', () => {
+    // 고쳐 주면 감독이 커밋할 파일명과 어긋난다. 그래서 거절하고 **왜인지 화면이 말한다**.
+    for (const bad of ['../secret.png', 'a//b.png', 'x.exe', 'x.PNG', '한글.png', 'a/./b.png']) {
+      expect(textureSrcFor(bad), `★ 「${bad}」 가 통과했다`).toBeNull();
+    }
   });
 });

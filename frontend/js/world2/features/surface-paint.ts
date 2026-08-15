@@ -67,14 +67,17 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 const THREE = THREE_NS as unknown as ThreeNS;
 
 /**
- * 집행 대상 — `SURFACE_KINDS` 중 **파츠 쪽만**.
+ * 집행 대상 — `SURFACE_KINDS` **전부**.
  *
- * 물(`sea`·`bed`)은 `features/ocean.ts` 소관이라 이 기능이 `materialOf` 로 닿지 못한다
- * (다음 단계). 목록을 손으로 안 적고 `isWorldUv` **판정 하나로** 가른다 — 파츠가 늘면
- * `paintable` 신고만으로 따라오고, 물이 늘어도 저절로 빠진다.
+ * ⚠ 이 상수는 한때 `.filter((k) => !isWorldUv(k))` 로 물을 빼고 있었다. 그때는 물 재질에
+ * 닿을 문이 없었기 때문이고(파츠 풀 밖이라 `pools.materialOf` 가 못 찾는다), 지금은
+ * 조립부 레지스트리가 그 문이다(`env.surfaceMaterial` — 팀장 판정 2026-08-15).
+ *
+ * **그래서 여기서 물을 가르지 않는다.** 「칠할 수 있는가」는 `SURFACE_KINDS` 가 이미
+ * 판정했고(수면은 거기서 빠진다 — `PAINTABLE_WATER` 주석), 집행이 그것을 또 거르면 판정이
+ * 두 곳이 된다. 재질이 실제로 없는 종류는 아래 `snapshot` 이 `null` 로 조용히 건너뛴다.
  */
-const PAINT_TARGETS: readonly SurfaceKind[] = (SURFACE_KINDS as readonly SurfaceKind[])
-  .filter((k) => !isWorldUv(k));
+const PAINT_TARGETS: readonly SurfaceKind[] = SURFACE_KINDS as readonly SurfaceKind[];
 
 /**
  * 우리가 만지는 재질에서 실제로 읽고 쓰는 것만.
@@ -143,8 +146,13 @@ export const surfacePaintFeature: Feature = {
     /** 마지막으로 반영한 설정. 참조가 같으면 아무것도 안 한다 */
     let applied: readonly SurfaceSetting[] = [];
 
+    /**
+     * ⚠ **`env.pools` 를 직접 안 본다.** 조립부가 파츠 풀과 레지스트리를 합쳐 답하므로,
+     * 이 기능은 «이게 파츠인가 물인가» 를 모른다 — 그 구분이 여기 새면 표면이 늘 때마다
+     * 분기가 하나씩 는다(팀장 판정 2026-08-15).
+     */
     function materialOf(kind: SurfaceKind): PaintTarget | null {
-      return env.pools.materialOf(kind) as unknown as PaintTarget | null;
+      return (env.surfaceMaterial(kind) ?? null) as PaintTarget | null;
     }
 
     function snapshot(kind: SurfaceKind): Baseline | null {

@@ -332,6 +332,17 @@ export const overlayFeature: Feature = {
       // 오버레이를 빼도 URL 노브는 그대로 산다.
       shading: () => env.shading(),
       setShading: (m) => { env.setShading(m); },
+      // 표면 재질(W7). 셰이딩과 **같은 이유로 위임만** 한다 — 목록의 소유는 조립부이고
+      // 집행은 `features/surface-paint.ts` 다. 이 기능은 편집이 그 문에 닿는 통로다.
+      surfaces: () => env.surfaces(),
+      setSurfaces: (s) => { env.setSurfaces(s); },
+      // 떨어뜨린 이미지를 즉시 보여줄 임시 주소. **회수를 소비자에게 맡긴다** — GLB 미리보기가
+      // 이미 그 형태이고(`blobUrls`), 여기서 따로 모으면 회수 경로가 두 벌이 된다.
+      previewUrl: (file: File) => {
+        const url = URL.createObjectURL(file);
+        blobUrls.add(url);
+        return url;
+      },
       surfaceAt(x, z) {
         const p = parcelOf(x, z, DEFAULT_LAYOUT.cellX, DEFAULT_LAYOUT.cellZ);
         return surfaceY(p.px, p.pz, p.lx, p.lz);
