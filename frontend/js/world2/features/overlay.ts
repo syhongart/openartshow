@@ -23,10 +23,14 @@
 // 아니다(`main.ts:1129` 의 `...collectDiagnostics(features)` 가 `stats()` 안에 있다).
 // 이 자리를 틀리게 적어 위임 보낸 탓에 *"진단 미노출"* 이라는 거짓 FAIL 이 한 번 났다.
 //
-// ── base 결합은 여기 한 곳이다 ──────────────────────────────────────────────
+// ── base 결합은 `asset-url.ts` 한 곳이다 ────────────────────────────────────
 // 계약의 `src` 는 `assets/models/…` 상대경로이고, 런타임 실제 경로는 `/app/assets/models/`,
-// 저장소 안 위치는 `frontend/assets/models/` 다. 세 표기를 잇는 것은 아래 `assetUrl`
-// 하나다 — 소비자가 늘 때마다 결합을 다시 적으면 값 미러링이 된다.
+// 저장소 안 위치는 `frontend/assets/models/` 다. 세 표기를 잇는 것은 `assetUrl` 하나다 —
+// 소비자가 늘 때마다 결합을 다시 적으면 값 미러링이 된다.
+//
+// ⚠ 이 절은 오래 *"아래 `assetUrl` 하나다"* 라고 적혀 있었고 그 함수가 **이 파일 안에**
+// 있었다. W7 에서 소비자가 실제로 늘어(표면 텍스처) 문장이 거짓이 될 참이었으므로,
+// 주석을 고치는 대신 **함수를 모듈로 올려 문장을 참으로 유지했다**(`asset-url.ts`).
 
 import type { Object3D } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
@@ -37,12 +41,21 @@ import { readNum } from '../url-knob.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { surfaceY } from '../parts/surface.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
+// base 결합은 `asset-url.ts` **한 곳**이다. W7 에서 소비자가 둘이 되면서 모듈로 올렸다.
+import { assetUrl } from '../asset-url.js';
 
 /** 배포된 배치 파일. 없거나 비어 있으면 아무것도 안 얹는다. */
 const OVERLAY_JSON = 'assets/world2-overlay.json';
 
 /** 팔레트에 뜰 모델 목록. `frontend/assets/models/index.json` 과 짝이다. */
 const MODELS_JSON = 'assets/models/index.json';
+
+/**
+ * 커밋된 텍스처 목록(W7). `scripts/gen-textures.mjs` 가 파일과 **함께** 굽고,
+ * `tests/world2-textures.test.ts` 가 그 짝을 검사한다 — 손으로 관리하면 어긋나고,
+ * 증상은 「목록에 있는데 404」 라 원인이 목록이라는 것이 화면에 안 보인다.
+ */
+const TEXTURES_JSON = 'assets/textures/index.json';
 
 /**
  * 한 프레임에 붙일 개수. `glb-city.ts` 의 `ATTACH_BATCH` 와 같은 근거다(한 프레임에 다
@@ -52,12 +65,6 @@ const ATTACH_BATCH = 4;
 
 /** 예열 프레임. `glb-city.ts` 의 `WARMUP_FRAMES` 와 같은 축이다(첫 렌더에 GPU 자원이 오른다). */
 const WARMUP_FRAMES = 2;
-
-function assetUrl(rel: string): string {
-  const base = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/';
-  const root = base.endsWith('/') ? base.slice(0, -1) : base;
-  return `${root}/app/${rel}`;
-}
 
 interface Diag {
   state: 'idle' | 'loading' | 'ready' | 'failed';
@@ -287,7 +294,14 @@ export const overlayFeature: Feature = {
       // 그래도 내보내기는 여기서 낸다: 계약 파일 하나에 `items` 와 `parcels` 가 함께
       // 담기므로, 저장소가 자기 몫만 따로 내면 두 조각을 합칠 자리가 또 생긴다.
       // 편집을 한 번도 안 했어도 **읽은 것이 그대로 나가야 한다**(왕복 무손실).
-      return { version: loadOverlay(null).version, items, parcels: env.village.list() };
+      return {
+        version: loadOverlay(null).version,
+        items,
+        parcels: env.village.list(),
+        // 표면 재질도 소유는 조립부(`FeatureEnv.surfaces`)다 — 동결 파셀과 같은 이유로
+        // 내보내기만 여기서 낸다. 편집을 한 번도 안 했어도 **읽은 것이 그대로 나가야 한다.**
+        surfaces: env.surfaces(),
+      };
     }
 
     const host: OverlayHost = {
@@ -325,6 +339,27 @@ export const overlayFeature: Feature = {
       // 오버레이를 빼도 URL 노브는 그대로 산다.
       shading: () => env.shading(),
       setShading: (m) => { env.setShading(m); },
+      // 표면 재질(W7). 셰이딩과 **같은 이유로 위임만** 한다 — 목록의 소유는 조립부이고
+      // 집행은 `features/surface-paint.ts` 다. 이 기능은 편집이 그 문에 닿는 통로다.
+      surfaces: () => env.surfaces(),
+      setSurfaces: (s) => { env.setSurfaces(s); },
+      // 떨어뜨린 이미지를 그 `src` 자리에서 즉시 보여지게 한다. **회수는 여기 한 곳**이다 —
+      // GLB 미리보기가 이미 `blobUrls` 로 모아 떠날 때 지우고 있어서, 표면 텍스처를 위해
+      // 또 모으면 회수 경로가 두 벌이 된다.
+      // ── 커밋된 텍스처 목록 ─────────────────────────────────────────────
+      // **실패해도 조용하다** — 파일이 아직 0장인 것이 정상 상태이고, 그때 경고를 띄우면
+      // 정상이 오류로 보인다(패널이 빈 목록으로 그냥 산다).
+      listTextures: async () => {
+        const res = await fetch(assetUrl(TEXTURES_JSON), { cache: 'no-cache' });
+        if (!res.ok) return [];
+        const raw = (await res.json()) as { textures?: unknown };
+        return Array.isArray(raw.textures) ? raw.textures.filter((t) => typeof t === 'string') : [];
+      },
+      registerPreview: (src: string, file: File) => {
+        const url = URL.createObjectURL(file);
+        blobUrls.add(url);
+        env.setTexturePreview(src, url);
+      },
       surfaceAt(x, z) {
         const p = parcelOf(x, z, DEFAULT_LAYOUT.cellX, DEFAULT_LAYOUT.cellZ);
         return surfaceY(p.px, p.pz, p.lx, p.lz);
@@ -350,6 +385,10 @@ export const overlayFeature: Feature = {
         //
         // 비어 있으면 아무 일도 없다 — `setAll([])` 은 이전 동결이 없을 때 알림도 안 낸다.
         env.village.setAll(overlay.parcels);
+        // 표면 재질(W7)도 여기서 흘려보낸다. **동결 파셀과 같은 자리인 것이 중요하다** —
+        // 둘 다 프레임을 안 넘기고 끝나므로, GLB 를 받는 동안 감독이 옛 재질의 마을을
+        // 보는 일이 없다. 집행은 `features/surface-paint.ts` 가 다음 프레임에 한다.
+        env.setSurfaces(overlay.surfaces);
         for (let i = 0; i < overlay.items.length; i++) {
           const it = overlay.items[i];
           await place(it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s });

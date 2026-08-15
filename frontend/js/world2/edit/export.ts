@@ -36,6 +36,12 @@ const REASON_KO: Record<OverlayIssue['reason'], string> = {
   'parcels-not-array': 'parcels 가 배열이 아님',
   'parts-not-array': '동결 파셀의 parts 가 배열이 아님',
   'part-no-kind': '파츠 종류를 알 수 없음',
+  // ── W7 (표면 재질) ────────────────────────────────────────────────────────
+  // ⚠ 이 표가 `Record<OverlayIssue['reason'], string>` 인 것이 값 미러링을 막는 축이다 —
+  // 계약에 사유를 더하면 **컴파일이 여기서 멈춘다.** 실제로 W7 에서 그렇게 멈췄다.
+  'surfaces-not-array': 'surfaces 가 배열이 아님',
+  'surface-unknown-kind': '칠할 수 없는 표면 종류',
+  'surface-unsafe-texture': '텍스처 경로가 커밋 불가',
 };
 
 /**

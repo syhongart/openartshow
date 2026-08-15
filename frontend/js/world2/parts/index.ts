@@ -88,6 +88,20 @@ export type PartKind = (typeof BASE)[number]['kind'] | `shadow:${(typeof BASE)[n
 
 export const ALL_KINDS: readonly PartKind[] = PARTS.map((p) => p.kind as PartKind);
 
+/**
+ * **심리스 텍스처를 얹을 수 있는 파츠**(W7). 파츠의 `paintable` 신고에서 **유도한다**.
+ *
+ * 목록을 손으로 적으면 파츠가 늘 때 낡고, 증상은 «새 파츠만 칠할 수 없음» 이라 원인을
+ * 짐작하기 어렵다 — `tests/world2-parts-registry.test.ts` 가 그 형태를 막는다(실제로
+ * W7 첫 판본이 그 축에 잡혔다).
+ *
+ * ⚠ 물(`sea`·`bed`)은 파츠가 아니므로 여기 없다. 표면 전체 목록은
+ * `decide/surface-material.ts` 의 `SURFACE_KINDS` 가 이것 + 물 둘로 만든다.
+ */
+export const PAINTABLE_KINDS: readonly PartKind[] = PARTS
+  .filter((p) => p.paintable)
+  .map((p) => p.kind as PartKind);
+
 const BY_KIND = new Map<string, PartSpec>(PARTS.map((p) => [p.kind, p]));
 
 /** 종류로 스펙을 찾는다. 없는 종류는 null — 호출자가 판단한다 */

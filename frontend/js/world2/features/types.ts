@@ -28,6 +28,7 @@
 import type { Scene, DirectionalLight, HemisphereLight, Camera } from 'three/webgpu';
 import type { SkyTime } from '../decide/night.js';
 import type { ShadingMode } from '../decide/shading.js';
+import type { SurfaceSetting } from '../decide/surface-material.js';
 import type { System } from '../kernel.js';
 import type { RendererAdapter } from '../adapters/renderer.js';
 import type { InstancePools } from '../systems/instancing.js';
@@ -152,6 +153,94 @@ export interface FeatureEnv {
    * 하늘 엔진 대신 setter 만 받는 그 구조).
    */
   readonly setShading: (m: ShadingMode) => void;
+
+  /**
+   * 표면 재질 설정(W7). **`time`·`shading` 과 같은 모양이고 같은 이유다** — 월드 상태라
+   * 조립부가 소유하고 여기서는 통로만 연다.
+   *
+   * ⚠ **참조가 같으면 «안 바뀌었다» 는 뜻이다.** 집행(`features/surface-paint.ts`)이 매
+   * 프레임 그것으로 판정하므로, 조립부는 **바뀔 때만 새 배열**을 낸다(제자리 수정 금지).
+   * 제자리로 고치면 화면이 안 따라오고, 그 실패는 «가끔 안 먹는다» 로만 보인다.
+   */
+  readonly surfaces: () => readonly SurfaceSetting[];
+
+  /**
+   * 표면 설정을 갈아 끼운다. 부르는 자리는 둘이다 — 부팅에 오버레이 JSON 을 읽은 뒤,
+   * 그리고 편집 패널이 슬라이더를 움직였을 때.
+   */
+  readonly setSurfaces: (s: readonly SurfaceSetting[]) => void;
+
+  /**
+   * 그 표면의 재질. **파츠든 물이든 여기 하나로 답한다**(W7).
+   *
+   * ── 팀장 판정 2026-08-15 ────────────────────────────────────────────────
+   * *"물 재질은 조립부 소유 레지스트리(`env.surfaceMaterial`)로 모은다 — (나)InstancePools
+   * 얹기는 슬롯 풀의 의미론을 오염시키고(물은 슬롯을 안 쓴다), (다)ocean 자체 집행은
+   * dispose 경로가 두 벌이 된다(값 미러링 사고 형태). 회수는 한 곳, 소유는 조립부, 기능은
+   * 등록·읽기 통로만."*
+   *
+   * 조립부가 파츠 풀(`pools.materialOf`)과 등록분을 합쳐 답하므로, 집행 쪽은 «이게 파츠인가
+   * 물인가» 를 몰라도 된다 — 그 구분이 집행에 새면 표면이 늘 때마다 분기가 하나씩 는다.
+   */
+  readonly surfaceMaterial: (kind: string) => unknown;
+
+  /**
+   * 자기 재질을 표면 레지스트리에 신고한다. **파츠 풀 밖에 있는 것만** 부른다(물).
+   *
+   * ⚠ **이 저장소에서 「기능 → 조립부」 방향은 이것이 처음이다.** 지금까지는 조립부가
+   * 기능에 통로를 주는 단방향이었다. 소유 모델은 안 바뀐다 — 상태는 여전히 조립부가 든다.
+   *
+   * **언제 등록해도 된다.** 집행(`surface-paint.ts`)이 두 가지를 함께 갖췄기 때문이다:
+   * ① 부팅 스냅샷을 **지연으로도** 뜨고(`baseOf`), ② 재질을 못 찾은 표면을 `pending` 에
+   * 담아 **설정이 안 바뀌어도 다음 폴링에 다시 시도한다.**
+   *
+   * ⚠ **②가 없으면 ①만으로는 부족하다**(검수관 블로커 B2). `update()` 가 참조 동등성으로
+   * 조기 반환하므로, 지연 스냅샷만 있으면 «다음 폴링» 이 아니라 «다음 **설정 변경**» 까지
+   * 반영이 미뤄진다 — 그리고 **방문자 세션은 설정이 부팅에 딱 한 번 온다.** 즉 늦게 등록된
+   * 표면이 방문자에게 영구히 안 칠해진다. 이 문장이 참인 것은 두 장치가 **함께** 서 있기
+   * 때문이고, 어느 하나를 걷어내면 다시 거짓이 된다.
+   *
+   * ⚠⚠ **이 문단은 두 번 거짓이었다** — 그리고 두 번 다 검수관이 잡았다(2026-08-15).
+   *   B1  스냅샷을 뜨는 곳이 부팅 루프 하나뿐이라 늦게 등록된 표면이 **영구히** 못 칠해졌다.
+   *       동작하던 이유는 `FEATURES` 배열 순서가 우연히 맞아서였다.
+   *   B2  ①만 고치고 *"다음 폴링에서 반영된다"* 라고 적었는데, `update()` 의 조기 반환 때문에
+   *       **방문자 경로에서는 그대로 영구 불능**이었다. 증상이 편집자에게만 안 보였을 뿐이다.
+   *
+   * 두 번 다 **문장을 약하게 고치는 대신 집행을 고쳐 문장을 참으로 만들었다**(GS-3 전례).
+   * 그리고 두 번 다 «주석이 약속하는 명제» 와 «검사가 재는 명제» 가 어긋난 것이 문제였다 —
+   * B2 는 테스트 주석이 *"새 배열을 줘야 폴링이 본다"* 라고 적고 있는데 절 헤더는 *"그 약속이
+   * 참인지 못 박는다"* 라고 했다. **문장과 검사가 같은 명제를 재야 한다.**
+   *
+   * 지키는 축 셋:
+   *   · `tests/world2-ocean.test.ts` 의 「표면 재질 레지스트리」 절 — 부팅 등록·재질 동일성.
+   *     실제 `oceanFeature.create` 를 태우고, 등록 호출을 지우면 4축이 깨진다(실측).
+   *   · `tests/world2-surface-paint.test.ts` 의 「늦은 등록」 절 — 부팅에 없던 표면도 나중에
+   *     등록되면 칠해지고 되돌려진다.
+   *   · 같은 절의 **「설정 재공급 없이」** 축 — 위 ②가 참인지를 재는 자리다. 설정을 다시 주지
+   *     **않고** 폴링만 돌려 반영되는지 본다(B2 회귀).
+   */
+  readonly registerSurfaceMaterial: (kind: string, material: unknown) => void;
+
+  /**
+   * 그 텍스처를 실제로 받아올 주소(W7). **집행이 URL 을 스스로 만들지 않는다.**
+   *
+   * 두 가지를 한 자리에서 흡수한다:
+   *   ① base 결합 — 계약의 `assets/textures/…` 는 상대 표기이고 실제는 `<base>/app/…` 다
+   *      (`asset-url.ts` 한 곳).
+   *   ② **드롭 미리보기** — 감독이 방금 떨어뜨린 파일은 저장소에 아직 없다. 그때는
+   *      `blob:` 주소로 바꿔치기해 **커밋 전에도 화면에서 보이게** 한다.
+   *
+   * ⚠ 계약에는 `blob:` 이 절대 안 들어간다(`isSafeTextureSrc` 가 절대 URL 을 막는다).
+   *   미리보기는 **세션 안에서만** 살고, 내보낸 JSON 에는 언제나 상대 `src` 가 나간다 —
+   *   GLB 가 `place(src, at, blobUrl)` 로 세운 규약과 같다.
+   */
+  readonly textureUrl: (src: string) => string;
+
+  /**
+   * 드롭한 파일의 임시 주소를 등록한다. **회수는 등록한 쪽 몫이다** — 오버레이가 이미
+   * `blobUrls` 로 모아 떠날 때 지우고 있어서, 여기서 또 모으면 회수 경로가 두 벌이 된다.
+   */
+  readonly setTexturePreview: (src: string, url: string) => void;
 
   /** UI를 붙일 문서. 없는 환경(테스트)에서는 null */
   readonly doc: Document | null;

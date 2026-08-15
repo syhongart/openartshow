@@ -79,6 +79,8 @@ function findFree(
 
 export const building: PartSpec = {
   kind: 'building',
+  /** 감독이 심리스 텍스처를 얹는 표면 (W7) — 목록은 여기서 유도된다 */
+  paintable: true,
   tiers: ['near', 'mid', 'far'], // 가장 멀리서도 보인다 — 스카이라인을 만드는 것이 건물이다
   salt: 0x7f4a7c15,
   // 지면과 같은 이유로 밝혔다. 예전 값(0x3d4557 계열, 명도 27%)은 낮 하늘 아래서

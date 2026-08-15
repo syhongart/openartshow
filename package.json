@@ -24,6 +24,7 @@
     "measure:sky-warm": "node scripts/smoke/measure-sky-warm.mjs",
     "measure:invariants": "node scripts/smoke/measure-invariants.mjs",
     "measure:submerge": "node scripts/smoke/measure-submerge.mjs",
+    "measure:surface": "node scripts/smoke/measure-surface-textures.mjs",
     "measure:water-mode": "node scripts/smoke/measure-water-mode.mjs",
     "measure:collide": "node scripts/smoke/measure-collide.mjs",
     "measure:click": "node scripts/smoke/measure-click.mjs"

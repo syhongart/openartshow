@@ -55,6 +55,7 @@ import { postfxFeature } from './postfx.js';
 import { glbCityFeature } from './glb-city.js';
 import { overlayFeature } from './overlay.js';
 import { shadingFeature } from './shading.js';
+import { surfacePaintFeature } from './surface-paint.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -73,6 +74,16 @@ export const FEATURES: readonly Feature[] = [
   // 기본 배치 계산에는 손대지 않는다. 파일이 비어 있으면(지금이 그렇다) 아무것도 안 붙고,
   // 그때도 GLTFLoader 를 내려받지 않는다 — 배치가 0개면 로더가 필요 없기 때문이다.
   overlayFeature,
+  // ── 표면 재질 (심리스 텍스처) ─────────────────────────────────────────────
+  // 감독 지시 *"땅의 텍스쳐 심리스를 주면 그대로 적용할수있게 … 타일링 배율 … 각도 조절"*
+  // — 파츠 재질의 맵 슬롯을 갈아 끼운다. **오버레이보다 뒤**여야 한다: 설정이 오버레이
+  // JSON 에서 오므로, 앞에 있으면 부팅 첫 프레임에 «아직 안 읽은 상태» 를 반영하고 다음
+  // 프레임에 한 번 더 반영한다(화면에는 안 보이지만 재질을 두 번 만진다).
+  //
+  // 셰이딩보다 **앞**인 것도 같은 이유다. 셰이딩은 `overrideMaterial` 로 씬 전체를 덮으므로
+  // 그 프레임에 재질이 무엇이든 결과가 같지만, 순서가 «재질을 정하고 → 덮는다» 여야
+  // 다음 사람이 읽을 때 뒤집히지 않는다.
+  surfacePaintFeature,
   // ── 셰이딩 뷰 (`?shading=solid|wire`) ─────────────────────────────────────
   // 감독 지시 *"와이어 프레임 뷰. 솔리드 뷰도 구현해줘."* — `scene.overrideMaterial` 을
   // 꽂는다. **후보정보다 앞**이어야 한다: 후보정은 씬을 렌더타깃에 받아 가공하므로,

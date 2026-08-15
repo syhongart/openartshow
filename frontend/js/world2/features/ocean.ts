@@ -1030,6 +1030,20 @@ export const oceanFeature: Feature = {
     const bed = new THREE.Mesh(geo, bedMat);
     bed.position.y = SEABED_Y;
 
+    // ── 표면 재질 편집(W7)이 해저에 닿는 문 ──────────────────────────────────
+    // 감독 지시 2026-08-14: *"땅. 잔디. **물속**"*. 해저 재질은 파츠 풀 밖에 있어
+    // `pools.materialOf` 로는 못 찾으므로 **조립부 레지스트리에 신고**한다.
+    //
+    // 팀장 판정 2026-08-15: *"회수는 한 곳, 소유는 조립부, 기능은 등록·읽기 통로만."*
+    // 여기서 하는 일은 신고 한 줄이 전부이고, 텍스처 로드·회수·변환은 전부
+    // `features/surface-paint.ts` 가 한다 — 그것을 이쪽에도 두면 dispose 경로가 두 벌이 된다.
+    //
+    // ⚠ **수면(`seaMat`)은 신고하지 않는다.** 일렁임이 `normA`·`tint`·`sparkle` 의 `offset`
+    //   을 매 프레임 굴리는 것이라(아래 `update()`), 그 슬롯을 갈아 끼우면 굴러가는 텍스처가
+    //   재질에서 떨어져 나가 **물이 멈춘다.** 근거와 재론 조건은
+    //   `decide/surface-material.ts` 의 `PAINTABLE_WATER` 주석 한 곳이다.
+    env.registerSurfaceMaterial('bed', bedMat);
+
     // ── 수면 구현 분기 (감독 지시 2026-08-01, 팀장 판정 B) ────────────────────
     // `?water=tsl` 이면 TSL 노드 물(`ocean-tsl.ts`)을 쓴다. 기본은 기존 물.
     // **요청이 곧 채택은 아니다** — 노드 재질은 WebGPU 전용이라 백엔드가 함께 정한다.

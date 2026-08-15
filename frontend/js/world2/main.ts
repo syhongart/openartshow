@@ -56,7 +56,9 @@ import { ALL_KINDS, PARTS } from './parts/index.js';
 import { readNum, readEnum, readNumOpt, writeNumOpt } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
 import { SHADING_MODES, type ShadingMode } from './decide/shading.js';
+import type { SurfaceSetting } from './decide/surface-material.js';
 // 카메라 far 를 여기서 유도한다 — 아래 `PerspectiveCamera` 주석 참고.
+import { assetUrl } from './asset-url.js';
 import { DOME_MAX } from './systems/sky.js';
 
 // 셀 크기는 **레이아웃이 소유한다.** 여기 `32` 를 다시 적으면 안 된다.
@@ -614,6 +616,37 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    * `readEnum` 이 목록 밖 값을 걸러 주므로 `shadingSpec` 이 모르는 값을 받는 일이 없다.
    */
   let shadingMode: ShadingMode = readEnum('shading', 'material', SHADING_MODES);
+  /**
+   * 표면 재질 설정(W7). **월드 상태이고 조립부가 소유한다**(위 `shadingMode` 와 같은 이유).
+   *
+   * ⚠ **바뀔 때만 새 배열을 낸다.** 집행(`features/surface-paint.ts`)이 참조 동등성으로
+   * «안 바뀌었다» 를 판정하므로, 배열을 제자리에서 고치면 화면이 안 따라온다. 매 프레임
+   * 전 표면을 훑지 않기 위한 축이고, 대가가 이 규약이다.
+   *
+   * 초기값은 비어 있고 — 즉 **어느 표면도 안 건드린 지금 화면** — 오버레이 JSON 을 읽은
+   * 뒤 `setSurfaces` 로 채워진다.
+   */
+  let surfaces: readonly SurfaceSetting[] = [];
+
+  /**
+   * 파츠 풀 **밖에** 있는 표면 재질(W7). 지금은 물(해저)뿐이다.
+   *
+   * 팀장 판정 2026-08-15: *"물 재질은 조립부 소유 레지스트리로 모은다 — InstancePools 얹기는
+   * 슬롯 풀의 의미론을 오염시키고(물은 슬롯을 안 쓴다), ocean 자체 집행은 dispose 경로가 두
+   * 벌이 된다. 회수는 한 곳, 소유는 조립부, 기능은 등록·읽기 통로만."*
+   *
+   * `unknown` 인 것이 의도다 — 조립부는 이 재질로 **아무것도 안 한다**. 넘겨받아 들고 있다가
+   * 집행에 돌려줄 뿐이고, 그래서 three 타입을 알 필요가 없다.
+   */
+  const extraSurfaces = new Map<string, unknown>();
+
+  /**
+   * 드롭 미리보기(W7) — 계약의 `src` → 세션 안에서만 사는 `blob:` 주소.
+   *
+   * 감독이 방금 떨어뜨린 파일은 저장소에 아직 없으므로 그대로는 404 다. 이 표가 있는 동안만
+   * 그 자리를 대신하고, **내보낸 JSON 에는 언제나 상대 `src` 가 나간다.**
+   */
+  const texturePreviews = new Map<string, string>();
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;
@@ -791,6 +824,18 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             setTime: (t) => { timeOfDay = t; },
             shading: () => shadingMode,
             setShading: (m) => { shadingMode = m; },
+            surfaces: () => surfaces,
+            setSurfaces: (s) => { surfaces = s; },
+            // 파츠 풀이 먼저다 — 물 이름과 파츠 이름이 겹칠 일은 없지만, 겹치면 파츠가
+            // 이긴다(레지스트리는 «풀 밖에 있는 것» 을 위한 자리이고 덮어쓰기용이 아니다).
+            // 느낌표는 바로 위 `pools: pools!` 와 같은 근거다 — 이 리터럴은 풀을 만든 뒤에만
+            // 조립되고, 이 화살표는 그보다 더 뒤(기능이 부를 때)에 실행된다.
+            surfaceMaterial: (kind) => pools!.materialOf(kind) ?? extraSurfaces.get(kind) ?? null,
+            registerSurfaceMaterial: (kind, m) => { extraSurfaces.set(kind, m); },
+            // 미리보기가 있으면 그것이 이긴다 — 감독이 방금 떨어뜨린 것이 저장소 판본보다
+            // 새롭다(같은 이름으로 다시 떨어뜨려 고치는 흐름이 그것이다).
+            textureUrl: (src) => texturePreviews.get(src) ?? assetUrl(src),
+            setTexturePreview: (src, url) => { texturePreviews.set(src, url); },
           },
           (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
         );

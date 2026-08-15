@@ -267,6 +267,8 @@ type Tod = 'day' | 'sunset' | 'night';
 function mount(initial: Tod = 'day', backend = 'WebGL') {
   const added: Added[] = [];
   const removed: Added[] = [];
+  /** 표면 재질 레지스트리에 신고된 것 — 팀장 조건 1 의 관측 지점 */
+  const registered = new Map<string, unknown>();
   let tod: Tod = initial;
   const env = {
     scene: { add: (m: Added) => added.push(m), remove: (m: Added) => removed.push(m) },
@@ -278,12 +280,20 @@ function mount(initial: Tod = 'day', backend = 'WebGL') {
     // **라이브의 최악 조건**을 기본 대조군으로 삼으려는 것이다 — `navigator.gpu` 가
     // 없는 기기가 실제 방문자의 다수이고, 그 경로가 깨지면 월드가 통째로 안 뜬다.
     adapter: { backend },
+    /**
+     * 표면 재질 레지스트리(W7). **ocean 이 자기 해저 재질을 여기 신고한다.**
+     *
+     * 팀장 조건 1(2026-08-15): *"등록 시점 계약을 주석이 아니라 검사로 강제한다"* —
+     * 그래서 대역이 등록을 **기록**하고, 아래 「표면 재질 등록」 절이 그것을 단언한다.
+     * 등록 호출을 지우면 그 축이 깨진다(주석은 안 깨진다).
+     */
+    registerSurfaceMaterial: (kind: string, m: unknown) => { registered.set(kind, m); },
   };
   // 실제 Feature 계약 전체를 만들지 않는다 — ocean 이 쓰는 것만 준다.
   const inst = oceanFeature.create(env as never)!;
   const sea = () => added.find((m) => m.name === 'ocean')!.material;
   return {
-    inst, added, removed, sea,
+    inst, added, removed, sea, registered,
     setTime: (t: Tod) => { tod = t; },
     // 바다 패치가 플레이어를 따라 움직이는지 보려면 플레이어가 **실제로 움직여야** 한다
     // (팀장 판정 A). 고정 좌표만 쓰면 그 가지가 통째로 미검증으로 남는다 — TSL 분기가
@@ -1689,6 +1699,9 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
       const env = {
         scene: { add: (m: Added) => added.push(m), remove: () => {} },
         player, doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+        // 표면 재질 레지스트리는 **계약 필수**다(W7). 옵셔널로 두면 «없어도 조용히
+        // 넘어간다» 가 되어 등록 강제(팀장 조건 1)가 약해진다 — 그래서 여기서도 준다.
+        registerSurfaceMaterial: () => {},
       };
       const inst = mod.oceanFeature.create(env as never)!;
       const mesh = added.find((x) => x.name === 'ocean-wave2')!;
@@ -1710,6 +1723,8 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
         scene: { add: (m: Added) => added.push(m), remove: () => {} },
         player: { position: { x: 0, z: 0 } },
         doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+        // 레지스트리는 계약 필수다 — 근거는 위 하네스 주석 한 곳.
+        registerSurfaceMaterial: () => {},
       };
       const inst = mod.oceanFeature.create(env as never)!;
       inst.system!.update({ dt: 1 } as never);
@@ -1731,6 +1746,8 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
         scene: { add: (m: Added) => added.push(m), remove: () => {} },
         player: { position: { x: 0, z: 0 } },
         doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+        // 레지스트리는 계약 필수다 — 근거는 위 하네스 주석 한 곳.
+        registerSurfaceMaterial: () => {},
       };
       const inst = mod.oceanFeature.create(env as never)!;
       inst.system!.update({ dt: 1 } as never);
@@ -1801,5 +1818,54 @@ describe('층2 월드 스케일 정합 (G5)', () => {
       Math.abs(ratio - Math.round(ratio)),
       `스냅 ${SEA_PATCH_METRICS.snap.toFixed(3)}m 가 무늬의 ${ratio.toFixed(4)} 배다`,
     ).toBeLessThan(1e-9);
+  });
+});
+
+// ── 표면 재질 레지스트리 (W7 — 팀장 조건 1·2) ──────────────────────────────
+//
+// 팀장 판정 2026-08-15: *"물 재질은 조립부 소유 레지스트리(`env.surfaceMaterial`)로 모은다
+// — InstancePools 얹기는 슬롯 풀의 의미론을 오염시키고(물은 슬롯을 안 쓴다), ocean 자체
+// 집행은 dispose 경로가 두 벌이 된다. 회수는 한 곳, 소유는 조립부, 기능은 등록·읽기 통로만."*
+//
+// 조건 1: *"등록 시점 계약을 **주석이 아니라 검사로** 강제한다. 부팅 완료 시점에 등록을
+// 단언하고 뮤테이션으로 검출력을 확인한다 — 안 깨지면 장식이다."*
+//
+// ⚠ 이 절은 `mount()` 를 태우므로 **실제 `oceanFeature.create` 가 돈다.** 정적 문자열
+//   검사가 아니다 — 등록 호출을 지우면 아래 축이 실제로 깨진다.
+
+describe('표면 재질 레지스트리', () => {
+  it('★ 부팅에 해저(bed)를 신고한다 — 안 하면 물속을 칠할 문이 통째로 없다', () => {
+    const h = mount();
+    expect(h.registered.has('bed'), '★ 해저가 레지스트리에 없다 — 감독 요구는 「물속 포함」이다')
+      .toBe(true);
+  });
+
+  it('★ 신고한 것이 **해저 메시가 실제로 쓰는 그 재질**이다 (조건 2 — 판정/집행 경계)', () => {
+    // 다른 재질을 신고하면 «칠했는데 화면은 그대로» 가 된다. 순수 축으로는 안 걸리는
+    // 자리라(양쪽 다 각자 옳다) 여기서 씬에 올라간 메시와 대조한다.
+    const h = mount();
+    const bedMesh = h.added.find((m) => m.name === 'seabed');
+    expect(bedMesh, '★ 해저 메시를 씬에서 못 찾았다 — 이름이 바뀌었으면 이 축부터 고친다')
+      .toBeTruthy();
+    expect(h.registered.get('bed')).toBe(bedMesh!.material);
+  });
+
+  it('★ 수면(sea)은 신고하지 않는다 — 신고하면 일렁임이 멈춘다', () => {
+    // 일렁임은 `normA`·`tint`·`sparkle` 의 `offset` 을 매 프레임 굴리는 것이라, 그 슬롯을
+    // 갈아 끼우면 굴러가는 텍스처가 재질에서 떨어져 나간다. 근거·재론 조건은
+    // `decide/surface-material.ts` 의 `PAINTABLE_WATER` 주석 한 곳.
+    const h = mount();
+    expect(h.registered.has('sea'), '★ 수면이 신고됐다 — 칠하면 물이 멈춘다').toBe(false);
+    // 그리고 신고한 것은 **해저 하나뿐**이어야 한다 — 물 메시가 다섯인데 하나만 연다.
+    expect([...h.registered.keys()]).toEqual(['bed']);
+  });
+
+  it('시간대·백엔드가 달라도 신고는 그대로다 — 부팅 경로가 갈려도 문이 닫히지 않는다', () => {
+    for (const tod of ['day', 'sunset', 'night'] as const) {
+      for (const backend of ['WebGL', 'WebGPU']) {
+        const h = mount(tod, backend);
+        expect(h.registered.has('bed'), `★ ${tod}/${backend} 에서 신고가 빠졌다`).toBe(true);
+      }
+    }
   });
 });

@@ -10,6 +10,7 @@ import type { Object3D, Camera } from 'three/webgpu';
 import type { PlacedPart } from '../parts/types.js';
 import type { ViewPreset } from '../decide/orbit.js';
 import type { ShadingMode } from '../decide/shading.js';
+import type { SurfaceSetting } from '../decide/surface-material.js';
 
 /**
  * 로드 진행 알림.
@@ -241,6 +242,22 @@ export interface OverlayHost {
    */
   shading?(): ShadingMode;
   setShading?(m: ShadingMode): void;
+
+  /**
+   * 표면 재질 목록(W7 · 「월드스튜디오」). **`shading` 과 같은 이유로 선택 사양이다** —
+   * 소비자가 안 주면 그 칸만 빠지고 나머지 편집은 그대로 산다.
+   *
+   * ⚠ **앞의 둘이 짝이다.** `surfaces` 만 있고 `setSurfaces` 가 없으면 움직이는데 아무 일도
+   * 안 나는 슬라이더가 되므로, 패널은 **둘 다 있을 때만** 만들어진다(`panel/dom.ts`).
+   *
+   * `registerPreview` 는 떨어뜨린 파일을 그 `src` 자리에서 즉시 보여지게 등록한다. 없어도
+   * 되고, 그때는 미리보기 없이 `src` 만 저장된다 — 파일을 커밋해야 그림이 뜬다.
+   */
+  surfaces?(): readonly SurfaceSetting[];
+  setSurfaces?(s: readonly SurfaceSetting[]): void;
+  registerPreview?(src: string, file: File): void;
+  /** 커밋된 텍스처 목록. 없거나 실패하면 드롭만 쓸 수 있다 */
+  listTextures?(): Promise<readonly string[]>;
   /**
    * 편집이 끝났다 — 눈높이를 걷고 갇힘을 푼다.
    *

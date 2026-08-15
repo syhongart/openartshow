@@ -53,6 +53,10 @@
 // 최종이고, 그때는 `src` 검증 규칙(아래)이 가장 먼저 바뀌는 자리다.
 
 import type { PlacedPart } from '../parts/types.js';
+import {
+  SURFACE_KINDS, defaultSetting, isSurfaceKind, normalizeSetting,
+  type SurfaceKind, type SurfaceSetting,
+} from './surface-material.js';
 
 /** 배치 항목 하나. */
 export interface OverlayItem {
@@ -116,6 +120,27 @@ export interface Overlay {
    * world2 가 v1 과 완전히 같게 동작한다.
    */
   parcels: FrozenParcel[];
+  /**
+   * **표면 재질 설정**(W7). 감독 지시 *"심리스텍스처. 디퓨저맵. 노말맵. 하이라이트.
+   * 메탈릭. 러프니스 조절하게 하자"*.
+   *
+   * ── 왜 배치가 아니라 **최상위**인가 ──────────────────────────────────────
+   * 재질은 **종류당 하나를 온 세계가 공유한다**(`systems/parcel-assets.ts:29-31` 이 부팅에
+   * 종류마다 딱 한 번 `spec.asset(THREE)` 를 부르고, `parcel-builder.ts` 에 `new Material`
+   * 은 0건 — 실측). 그러므로 재질 설정은 «어느 배치» 의 속성이 아니라 «어느 종류» 의
+   * 전역 상태다. `PlacedPart` 에 넣으면 같은 값이 파셀 수만큼 복제된다.
+   *
+   * ── 왜 버전을 안 올리나 (팀장 판정 1, 2026-08-14) ────────────────────────
+   * 이 계약이 스스로 세운 확장 원칙을 그대로 따른다 — 위 `OverlayItem.s` 주석이 인용하는
+   * `space.ts` 의 「옵션 필드를 버전 불변으로 더한다(생략 = 기존 동작)」 전례 넷.
+   * v3 로 올리면 실질 변환이 없는 빈 마이그레이션이 하나 더 생기고, 그것은
+   * *"신규 필드는 마이그레이션이 아니라 normalize 가 기본값으로 채운다"* 는 원칙을
+   * 계약이 스스로 어기는 것이다.
+   *
+   * 구버전 코드가 이 필드를 만나면 **조용히 무시하지 않는다** — `KNOWN_ROOT_KEYS` 검사가
+   * `unknown-field` 로 보고한다(팀장이 내 브리프의 과장을 정정한 지점이다).
+   */
+  surfaces: SurfaceSetting[];
 }
 
 export const OVERLAY_VERSION = 2;
@@ -126,7 +151,11 @@ export const OVERLAY_VERSION = 2;
  * 소비자가 나중에 조용히 실패하는 것보다 매번 새로 주는 편이 안전하다.
  */
 export function emptyOverlay(): Overlay {
-  return { version: OVERLAY_VERSION, items: [], parcels: [] };
+  // ⚠ `surfaces` 를 여기 넣는 것이 **`KNOWN_ROOT_KEYS` 를 자동으로 따라오게 하는 축**이다
+  //   (`:258` 이 `Object.keys(emptyOverlay())` 로 유도한다). 팀장 조건 c-2 가 경계한
+  //   «정상 JSON 이 unknown-field 로 오보되는 역방향 함정» 이 이 유도 덕에 구조적으로
+  //   안 생긴다 — 그래도 그 케이스를 테스트에 넣는다(조건 c-2 는 축을 요구한다).
+  return { version: OVERLAY_VERSION, items: [], parcels: [], surfaces: [] };
 }
 
 // ── 자산 경로 검증 (팀장 조건 c) ─────────────────────────────────────────────
@@ -310,7 +339,24 @@ export function normalizeOverlay(raw: unknown): Overlay {
     parcels.push(makeParcel(int(parcel.px, 0), int(parcel.pz, 0), parts));
   }
 
-  return { version: OVERLAY_VERSION, items, parcels };
+  // ── 표면 재질 (W7) ────────────────────────────────────────────────────────
+  // **종류 하나당 최대 하나**로 접는다. 같은 종류가 두 번 오면 **뒤엣것이 이긴다** —
+  // 배열 순서가 곧 «나중에 칠한 것» 이라는 자연스러운 읽기이고, 그렇게 정하지 않으면
+  // 「둘 중 어느 것이 화면에 뜨는가」가 소비자마다 갈린다.
+  const rawSurfaces = Array.isArray(o.surfaces) ? o.surfaces : [];
+  const byKind = new Map<SurfaceKind, SurfaceSetting>();
+  for (const s of rawSurfaces) {
+    const row = s as Record<string, unknown> | null;
+    if (!row || typeof row !== 'object') continue;
+    // 모르는 종류는 **버린다** — 칠할 표면이 없으면 설정이 갈 곳이 없다.
+    if (!isSurfaceKind(row.kind)) continue;
+    byKind.set(row.kind, normalizeSetting(row.kind, row));
+  }
+  // 선언 순서로 낸다 — 같은 입력이 같은 JSON 을 내야 «내보내기 했더니 순서만 바뀌었다»
+  // 가 안 생긴다(`git diff` 가 그것을 실변경으로 읽는다).
+  const surfaces = SURFACE_KINDS.filter((k) => byKind.has(k)).map((k) => byKind.get(k)!);
+
+  return { version: OVERLAY_VERSION, items, parcels, surfaces };
 }
 
 /**
@@ -448,8 +494,32 @@ export interface OverlayIssue {
     /** 동결 파셀의 `parts` 가 배열이 아니다 */
     | 'parts-not-array'
     /** 파츠의 `kind` 가 비었다 — 무엇을 그릴지 모른다 */
-    | 'part-no-kind';
+    | 'part-no-kind'
+    // ── W7 이 더한 사유 ──────────────────────────────────────────────────────
+    /** 루트의 `surfaces` 가 있는데 배열이 아니다 — 표면 설정이 통째로 사라진다 */
+    | 'surfaces-not-array'
+    /** 표면 종류를 모른다 — 칠할 자리가 없다 */
+    | 'surface-unknown-kind'
+    /** 표면 텍스처 경로가 안전하지 않다 — 그 맵만 버려진다 */
+    | 'surface-unsafe-texture';
+  /** 표면 설정 인덱스. 표면 쪽 사유에만 붙는다 */
+  surface?: number;
 }
+
+/**
+ * 표면 설정의 **수치 필드 목록. 손으로 안 적고 유도한다.**
+ *
+ * ⚠ 팀장 조건 c-1(2026-08-14)이 겨냥한 자리다. 이 파일의 나머지 검사 배열은 전부 손으로
+ * 적힌 리터럴이고(`:585`·`:643`·`:655`), 그래서 필드를 더할 때 세 줄을 같이 안 고치면
+ * `bad-number`·`clamped` 검출이 **조용히 0** 이 된다 — 이 파일이 세 번 반려된 형태다.
+ *
+ * `defaultSetting` 의 출력에서 `typeof === 'number'` 인 키를 뽑으면 **필드를 더하는 순간
+ * 검사도 따라온다.** 기존 배열을 못 고치는 것은 그쪽이 `PlacedPart`(다른 파일 소유)를
+ * 보기 때문이고, 이 새 축에서는 그 제약이 없다.
+ */
+const SURFACE_NUM_KEYS = Object.entries(defaultSetting('ground'))
+  .filter(([, v]) => typeof v === 'number')
+  .map(([k]) => k) as readonly (keyof SurfaceSetting)[];
 
 /**
  * 내보내기 관문. `loadOverlay` 와 달리 **무엇이 왜 거부·변경됐는지**를 함께 돌려준다.
@@ -613,5 +683,50 @@ export function validateOverlay(
     });
   }
 
-  return { overlay: { version: OVERLAY_VERSION, items, parcels }, issues, migrated: prepared.migrated };
+  // ── 표면 재질 (W7) ────────────────────────────────────────────────────────
+  const surfaces: SurfaceSetting[] = [];
+  if (o.surfaces !== undefined && !Array.isArray(o.surfaces)) {
+    // `parcels-not-array` 와 같은 처방 — 통째로 사라지는 것을 말한다.
+    issues.push({ reason: 'surfaces-not-array' });
+  } else if (Array.isArray(o.surfaces)) {
+    const seen = new Map<SurfaceKind, SurfaceSetting>();
+    o.surfaces.forEach((s: unknown, surface: number) => {
+      const row = s as Record<string, unknown> | null;
+      if (!row || typeof row !== 'object') { issues.push({ surface, reason: 'not-object' }); return; }
+      if (!isSurfaceKind(row.kind)) { issues.push({ surface, reason: 'surface-unknown-kind' }); return; }
+      const norm = normalizeSetting(row.kind, row);
+
+      // 맵 넷 중 «값은 있는데 정규화가 버린 것» 이 곧 안전하지 않은 경로다.
+      for (const k of ['map', 'normalMap', 'metalnessMap', 'roughnessMap'] as const) {
+        if (row[k] !== undefined && norm[k] === undefined) {
+          issues.push({ surface, reason: 'surface-unsafe-texture' });
+          break;
+        }
+      }
+      // 수치는 **유도된 목록**으로 본다(위 `SURFACE_NUM_KEYS` 주석).
+      for (const k of SURFACE_NUM_KEYS) {
+        const v = row[k];
+        if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v))) {
+          issues.push({ surface, reason: 'bad-number' });
+          break;
+        }
+      }
+      for (const k of SURFACE_NUM_KEYS) {
+        if (row[k] !== undefined && row[k] !== norm[k]) {
+          issues.push({ surface, reason: 'clamped' });
+          break;
+        }
+      }
+      seen.set(row.kind, norm);
+    });
+    // 정규화와 **같은 순서 규칙**을 쓴다 — 두 함수가 다른 순서를 내면 «내보내기 했더니
+    // 순서만 바뀌었다» 가 되고, 그것이 이 파일이 세 번 반려된 «다른 말» 의 한 형태다.
+    for (const k of SURFACE_KINDS) { const v = seen.get(k); if (v) surfaces.push(v); }
+  }
+
+  return {
+    overlay: { version: OVERLAY_VERSION, items, parcels, surfaces },
+    issues,
+    migrated: prepared.migrated,
+  };
 }
