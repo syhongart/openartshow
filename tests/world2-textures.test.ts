@@ -54,13 +54,13 @@ describe('텍스처 매니페스트', () => {
   });
 
   it('생성기가 이 목록을 만든다 — 손으로 채우는 자리가 아니다', () => {
+    // ⚠ 첫 판본은 여기서 `if (!gen.includes(name)) continue; expect(gen).toContain(name);`
+    //   를 돌렸고 그것은 **항등 단언이라 검출력이 0** 이었다(검수관 P2). 지웠다.
+    //
+    //   개별 파일이 생성기 산출인지 손 커밋인지는 **여기서 가릴 수 없다** — 감독이 준
+    //   파일을 내가 손으로 넣는 것이 정상 경로이기 때문이다(그것이 이 기능의 본류다).
+    //   그래서 이 축이 지키는 것은 «목록을 굽는 자리가 생성기에 있다» 하나로 좁힌다.
     const gen = fs.readFileSync(path.join(ROOT, 'scripts/gen-textures.mjs'), 'utf8');
     expect(gen, '★ 생성기가 index.json 을 안 굽는다').toContain('index.json');
-    for (const name of manifest.textures) {
-      // 생성기가 만든 것이 아니면(감독이 준 파일을 손으로 넣은 경우) 이 축은 건너뛴다 —
-      // 그런 파일이 있는 것 자체는 정상이다.
-      if (!gen.includes(name)) continue;
-      expect(gen).toContain(name);
-    }
   });
 });

@@ -155,6 +155,31 @@ export const surfacePaintFeature: Feature = {
       return (env.surfaceMaterial(kind) ?? null) as PaintTarget | null;
     }
 
+    /**
+     * 그 종류의 부팅 스냅샷. **없으면 지금 뜬다.**
+     *
+     * ⚠ **이 지연이 검수관 블로커 B1 의 해소다**(2026-08-15). 그전에는 `create()` 의 부팅
+     * 루프가 `base` 의 **유일한** 기록 지점이었고, `applyOne`/`reset` 은 `base` 가 비면 즉시
+     * 반환했다. 즉 그 시점에 재질이 아직 없던 표면(늦게 등록되는 물 같은 것)은 «다음 프레임에
+     * 폴링이 잡는다» 가 아니라 **세션 전체에서 영구히** 칠할 수도 되돌릴 수도 없었다.
+     *
+     * 지금 동작하는 이유가 `FEATURES` 배열 순서가 우연히 맞아서(ocean 이 surface 보다 앞)
+     * 라는 것이 문제였다 — `FeatureEnv.registerSurfaceMaterial` 주석이 그 순서 의존을
+     * 모르는 사람에게 «안전망이 있다» 고 약속하고 있었다. 주석을 약하게 고치는 대신 **그
+     * 문장이 참이 되게** 만든다(GS-3 전례와 같은 처방).
+     *
+     * **늦게 떠도 안전한 이유**: `base` 가 비어 있다는 것은 우리가 그 표면을 **한 번도 안
+     * 만졌다**는 뜻이다(만지려면 `base` 가 있어야 한다). 그러니 지금 뜨는 상태가 곧 원래
+     * 상태다 — 우리 텍스처를 «원래» 로 오인할 경로가 없다.
+     */
+    function baseOf(kind: SurfaceKind): Baseline | null {
+      const hit = base.get(kind);
+      if (hit) return hit;
+      const snap = snapshot(kind);
+      if (snap) base.set(kind, snap);
+      return snap;
+    }
+
     function snapshot(kind: SurfaceKind): Baseline | null {
       const m = materialOf(kind);
       if (!m) return null;
@@ -222,7 +247,7 @@ export const surfacePaintFeature: Feature = {
      */
     function applyOne(s: SurfaceSetting): void {
       const m = materialOf(s.kind);
-      const b = base.get(s.kind);
+      const b = baseOf(s.kind);
       if (!m || !b) return;
 
       let structural = false;
@@ -233,7 +258,9 @@ export const surfacePaintFeature: Feature = {
 
         if (src === undefined) {
           // 이 슬롯이 걷혔다 — 우리 것을 회수하고 부팅 상태로 되돌린다.
-          if (prev) { release(key); structural = m[slot] !== b.original[slot]; }
+          // `||=` 다 — 앞 슬롯이 세운 값을 뒤 슬롯이 덮으면 안 된다(검수관 P1). 아래 두
+          // 자리는 `= true` 인데 여기만 대입이라 형태가 어긋나 있었다.
+          if (prev) { release(key); structural ||= m[slot] !== b.original[slot]; }
           m[slot] = b.original[slot] ?? null;
           continue;
         }
@@ -256,7 +283,7 @@ export const surfacePaintFeature: Feature = {
     /** 그 종류를 부팅 상태로 완전히 되돌린다. **우리가 만든 것만 회수한다** */
     function reset(kind: SurfaceKind): void {
       const m = materialOf(kind);
-      const b = base.get(kind);
+      const b = baseOf(kind);
       if (!m || !b) return;
       let structural = false;
       for (const slot of MAP_SLOTS) {
@@ -270,10 +297,9 @@ export const surfacePaintFeature: Feature = {
     }
 
     // ── 부팅 ────────────────────────────────────────────────────────────────
-    for (const kind of PAINT_TARGETS) {
-      const snap = snapshot(kind);
-      if (snap) base.set(kind, snap);
-    }
+    // 부팅에 뜰 수 있는 것은 지금 뜬다. **못 뜬 것은 `baseOf` 가 나중에 뜬다** — 그것이
+    // 위 B1 해소의 요점이고, 이 루프가 유일한 기록 지점이 아니게 된 이유다.
+    for (const kind of PAINT_TARGETS) baseOf(kind);
     applied = env.surfaces();
     for (const s of applied) applyOne(s);
 

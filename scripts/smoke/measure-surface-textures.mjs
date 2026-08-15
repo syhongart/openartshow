@@ -51,6 +51,18 @@
 // ②③은 «있으면 좋은 이중 확인» 이다. 실증하려면 `owned` 를 안 지우는 뮤테이션과 `reset()`
 // 의 회수를 지우는 뮤테이션을 각각 돌린다.
 //
+// ── ⚠ 거짓 FAIL 위험이 하나 있다 — 이산성 논거가 덮지 못하는 축 (검수관 P4) ──
+// 판정식에 `errors.length === 0` 이 들어 있다. 위 「성능 게이트가 아니다」 절의 논거는
+// **개수가 이산이라 편차가 없다** 인데, **콘솔 에러는 개수가 아니다.**
+//
+// 그리고 `?edit=1` 은 지금까지 `LIVE_PAGES` 로 **로드 시점만** 검사받았다 — 이 게이트가
+// 처음으로 **조작 중** 에러까지 배포를 막는다. 편집 화면에서만 나는 산발적 에러(네트워크
+// 흔들림·리소스 경합)가 거짓 FAIL 이 될 창이 열려 있고, **그 창의 폭을 아직 안 쟀다.**
+//
+// 남겨 두는 이유: 조작 중 에러를 아무도 안 보는 것이 더 위험하다(`features/overlay.ts` 의
+// catch 가 `console.error` 를 내는 것도 같은 판단이었다 — 검수관 블로커로 들어간 자리다).
+// 회차가 쌓여 거짓 FAIL 이 실제로 나면 그때 이 축만 INFO 로 내린다.
+//
 // ── 못 잡는 것 (정직하게) ───────────────────────────────────────────────────
 // · **룩** — 무늬가 이어지는가·배율이 적당한가는 감독 실기기뿐이다. 여기서는 개수만 본다.
 // · **WebGPU** — 헤드리스는 SwiftShader(코어 WebGLRenderer)다. `MeshStandardNodeMaterial`
@@ -175,10 +187,18 @@ export async function runSurfaceTextures({ browser, origin, basePath, log = cons
         return [...sel.querySelectorAll('option')].map((o) => o.value).filter(Boolean);
       });
     } catch {
-      return fail(
-        '고를 수 있는 텍스처가 2장 미만이다 — 순환 교체가 성립하지 않아 회수를 잴 수 없다'
-        + ' (`assets/textures/index.json` 과 실제 파일을 본다)',
-      );
+      // 원인을 **가려서** 말한다(검수관 P5). 한 문장으로 뭉개면 fail-closed 라 안전하긴
+      // 해도 원인 추적이 늦어진다 — 목록이 비었나 · select 가 없나 · fetch 가 늦나는
+      // 고치는 자리가 전혀 다르다.
+      const why = await page.evaluate(() => {
+        const sel = document.querySelector('#w2-edit .surf-slot[data-slot="map"] select');
+        if (!sel) return 'select 요소가 없다 — 패널 구조가 바뀌었다';
+        const n = sel.querySelectorAll('option').length;
+        return n <= 1
+          ? '목록이 비어 있다 — `assets/textures/index.json` fetch 가 실패했거나 파일이 0장이다'
+          : `고를 수 있는 텍스처가 ${n - 1}장뿐이다 — 순환 교체에 2장 이상이 필요하다`;
+      }).catch(() => '페이지 조회 자체가 실패했다');
+      return fail(`${why} — 순환 교체가 성립하지 않아 회수를 잴 수 없다`);
     }
 
     /** 그 슬롯에 이 `src` 를 건다. **화면의 실제 경로**를 탄다 */

@@ -139,6 +139,8 @@ interface Harness {
   asked: string[];
   /** 드롭 미리보기 표. 조립부가 소유하는 것의 대역이라 테스트가 직접 채운다 */
   previews: Map<string, string>;
+  /** 부팅 뒤 등록 */
+  registerLate(kind: string): void;
   set(list: readonly SurfaceSetting[]): void;
   update(): void;
   diag(): Record<string, unknown>;
@@ -153,6 +155,13 @@ async function mount(opts: {
   missing?: readonly string[];
   /** 이 종류의 이 슬롯에는 파츠가 만든 텍스처가 이미 붙어 있다 */
   foreign?: Record<string, ForeignTexture>;
+  /**
+   * 이 종류는 **부팅 뒤에** 레지스트리에 들어온다(늦은 등록).
+   *
+   * 실물에서 이것이 나는 경로: `FEATURES` 배열 순서가 바뀌거나, ocean 이 지연 초기화되거나,
+   * 새 물 표면이 비동기로 등록될 때. 검수관 블로커 B1 이 이 자리였다.
+   */
+  late?: readonly string[];
 } = {}): Promise<Harness> {
   const { surfacePaintFeature } = await import(
     '../frontend/js/world2/features/surface-paint.js'
@@ -170,7 +179,10 @@ async function mount(opts: {
   const registry = new Map<string, unknown>();
   /** 드롭 미리보기 — 조립부가 소유하는 표의 대역 */
   const previews = new Map<string, string>();
-  for (const w of WATER) if (!opts.missing?.includes(w)) registry.set(w, mats.get(w));
+  for (const w of WATER) {
+    if (opts.missing?.includes(w) || opts.late?.includes(w)) continue;
+    registry.set(w, mats.get(w));
+  }
   for (const [key, tex] of Object.entries(opts.foreign ?? {})) {
     const [kind, slot] = key.split(':');
     const m = mats.get(kind);
@@ -209,6 +221,8 @@ async function mount(opts: {
     asked,
     previews,
     set(list) { surfaces = list; },
+    /** 부팅 뒤에 재질을 신고한다 — 실물의 `registerSurfaceMaterial` 과 같은 문이다 */
+    registerLate(kind: string) { env.registerSurfaceMaterial(kind, mats.get(kind)); },
     // 이 기능의 `update` 는 프레임 컨텍스트를 안 읽는다(폴링 한 줄) — 그래서 빈 것을 준다
     update() { inst.system?.update({} as never); },
     diag: () => (inst.diagnostics?.() ?? {}) as Record<string, unknown>,
@@ -585,5 +599,63 @@ describe('주소', () => {
     await mount({ initial: [setting(kind, { map: A, normalMap: B })] });
     const srcs = FakeTexture.made.map((t) => (t.image as FakeImage).src);
     expect(srcs).toEqual([`/app/${A}`, `/app/${B}`]);
+  });
+});
+
+// ── G. 늦은 등록 — 부팅에 없던 재질도 칠할 수 있는가 (검수관 블로커 B1) ────
+//
+// `FeatureEnv.registerSurfaceMaterial` 주석이 *"늦게 등록하면 그 프레임의 반영이 빈다.
+// 폴링이 다음 프레임에 잡는다"* 라고 약속한다. **그 약속이 참인지를 여기서 못 박는다.**
+//
+// 그전에는 거짓이었다: `base` 를 채우는 곳이 `create()` 부팅 루프 하나뿐이라, 그 시점에
+// 재질이 없던 표면은 «그 프레임» 이 아니라 **세션 전체에서 영구히** 칠할 수도 되돌릴 수도
+// 없었다. 지금 동작하던 이유는 `FEATURES` 배열 순서가 우연히 맞아서였다(ocean 이 앞).
+//
+// 검수관 판정: *"문장을 고치는 대신 주장을 참으로 만드는 것이 이 저장소 처방이다(GS-3
+// 전례). 어느 쪽이든 **검사로 못 박는 것**이 옳다."*
+
+describe('늦은 등록', () => {
+  const LATE = WATER[0];
+
+  it('★ 부팅에 없던 표면도 나중에 등록되면 칠해진다 — 영구 불능이 아니다', async () => {
+    const h = await mount({ late: [LATE] });
+    // 아직 재질이 없다 — 설정을 줘도 아무 일이 없어야 한다(던지지 않는다)
+    h.set([setting(LATE, { map: A })]);
+    h.update();
+    expect(h.owned(), '재질이 없는데 텍스처를 만들었다').toBe(0);
+
+    // 늦게 등록된다
+    h.registerLate(LATE);
+    // **새 배열**을 줘야 폴링이 본다 — 참조 동등성이 판정 축이다
+    h.set([setting(LATE, { map: A })]);
+    h.update();
+    expect(h.owned(), '★ 늦게 등록된 표면이 영구히 안 칠해진다 — B1 회귀').toBe(1);
+    expect(h.mats.get(LATE)!.map).toBeInstanceOf(FakeTexture);
+  });
+
+  it('★ 늦게 등록된 표면도 되돌릴 수 있다 — 스냅샷이 그때 떠야 한다', async () => {
+    const h = await mount({ late: [LATE] });
+    h.registerLate(LATE);
+    const m = h.mats.get(LATE)!;
+    const was = { metalness: m.metalness, roughness: m.roughness };
+    h.set([setting(LATE, { map: A, metalness: 1, roughness: 0 })]);
+    h.update();
+    expect(m.metalness).toBe(1);
+    h.dispose();
+    expect(m.metalness, '★ 되돌릴 기준선이 없다').toBe(was.metalness);
+    expect(m.roughness).toBe(was.roughness);
+  });
+
+  it('늦게 뜬 스냅샷이 **우리 텍스처를 원래 값으로 오인하지 않는다**', async () => {
+    // `base` 가 비었다는 것은 우리가 그 표면을 한 번도 안 만졌다는 뜻이라 안전하다는 것이
+    // 지연 스냅샷의 근거다. 그 근거가 실제로 성립하는지 본다 — 칠한 뒤에 걷어도 원래
+    // 상태(맵 없음)로 돌아와야 한다.
+    const h = await mount({ late: [LATE] });
+    h.registerLate(LATE);
+    h.set([setting(LATE, { map: A })]);
+    h.update();
+    h.set([setting(LATE)]);
+    h.update();
+    expect(h.mats.get(LATE)!.map, '★ 우리 텍스처가 「원래 값」으로 굳었다').toBe(null);
   });
 });
