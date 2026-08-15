@@ -604,8 +604,14 @@ describe('주소', () => {
 
 // ── G. 늦은 등록 — 부팅에 없던 재질도 칠할 수 있는가 (검수관 블로커 B1) ────
 //
-// `FeatureEnv.registerSurfaceMaterial` 주석이 *"늦게 등록하면 그 프레임의 반영이 빈다.
-// 폴링이 다음 프레임에 잡는다"* 라고 약속한다. **그 약속이 참인지를 여기서 못 박는다.**
+// `FeatureEnv.registerSurfaceMaterial` 주석이 *"언제 등록해도 된다 … 설정이 안 바뀌어도 다음
+// 폴링에 다시 시도한다"* 라고 약속한다. **그 약속이 참인지를 여기서 못 박는다.**
+//
+// ⚠ 첫 판본은 이 헤더가 «약속을 못 박는다» 라고 적으면서 **다른 명제를 쟀다**(검수관 B2) —
+// 축 1이 `h.set([...])` 로 설정을 다시 주고 있었고, 주석 스스로 *"새 배열을 줘야 폴링이
+// 본다"* 라고 적어 두었다. 즉 검사가 재는 것은 «설정을 다시 주면 반영된다» 였고 약속은
+// «폴링이 잡는다» 였다. **문장과 검사가 같은 명제를 재야 한다** — 아래 「설정 재공급 없이」
+// 축이 그 간극을 메운다.
 //
 // 그전에는 거짓이었다: `base` 를 채우는 곳이 `create()` 부팅 루프 하나뿐이라, 그 시점에
 // 재질이 없던 표면은 «그 프레임» 이 아니라 **세션 전체에서 영구히** 칠할 수도 되돌릴 수도
@@ -657,5 +663,51 @@ describe('늦은 등록', () => {
     h.set([setting(LATE)]);
     h.update();
     expect(h.mats.get(LATE)!.map, '★ 우리 텍스처가 「원래 값」으로 굳었다').toBe(null);
+  });
+});
+
+// ── H. 설정 재공급 없이 (검수관 블로커 B2) ────────────────────────────────
+//
+// **방문자 세션이 이 축의 실물이다.** 설정은 `features/overlay.ts` 가 부팅에 딱 한 번
+// `setSurfaces` 로 주고, 방문자는 편집을 안 하므로 그 참조가 세션 내내 안 바뀐다.
+// 그래서 «설정을 다시 주면 반영된다» 는 방문자에게 아무 보장도 아니다 — 그 재공급이
+// 오지 않기 때문이다.
+//
+// 위 「늦은 등록」 축들은 설정을 다시 주고 잰다. 여기서는 **다시 주지 않는다.**
+
+describe('설정 재공급 없이', () => {
+  const LATE = WATER[0];
+
+  it('★ 늦게 등록된 재질이 **폴링만으로** 잡힌다 — 방문자 세션의 유일한 경로다', async () => {
+    // 부팅에 설정은 이미 있고 재질만 없다 — 방문자가 늦은 등록을 만나는 형태 그대로다.
+    const h = await mount({ late: [LATE], initial: [setting(LATE, { map: A })] });
+    expect(h.owned(), '재질이 없는데 텍스처를 만들었다').toBe(0);
+
+    h.registerLate(LATE);
+    // **설정을 다시 주지 않는다.** 폴링만 돈다.
+    h.update();
+
+    expect(h.owned(), '★ 폴링이 안 잡는다 — 방문자에게 영구히 안 칠해진다(B2 회귀)').toBe(1);
+    expect(h.mats.get(LATE)!.map).toBeInstanceOf(FakeTexture);
+  });
+
+  it('미해결이 없으면 폴링이 아무것도 안 한다 — 조기 반환이 그대로 산다', async () => {
+    const kind = PARTS_TARGETS[0];
+    const list = [setting(kind, { map: A })];
+    const h = await mount({ initial: list });
+    const t = FakeTexture.made[0];
+    for (let i = 0; i < 5; i++) h.update();
+    // 재질을 다시 만들지도, 버리지도 않는다 — `pending` 이 비면 비용이 0 이어야 한다
+    expect(FakeTexture.made).toHaveLength(1);
+    expect(t.disposed).toBe(0);
+  });
+
+  it('한 번 잡히면 다시 안 만든다 — 재시도가 매 프레임 반복되지 않는다', async () => {
+    const h = await mount({ late: [LATE], initial: [setting(LATE, { map: A })] });
+    h.registerLate(LATE);
+    h.update();
+    const made = FakeTexture.made.length;
+    for (let i = 0; i < 5; i++) h.update();
+    expect(FakeTexture.made).toHaveLength(made);
   });
 });

@@ -145,6 +145,25 @@ export const surfacePaintFeature: Feature = {
     const owned = new Map<string, Owned>();
     /** 마지막으로 반영한 설정. 참조가 같으면 아무것도 안 한다 */
     let applied: readonly SurfaceSetting[] = [];
+    /**
+     * **재질을 아직 못 찾은 표면.** 비어 있으면 폴링이 추가 비용을 안 낸다.
+     *
+     * ── 왜 이것이 있나 (검수관 블로커 B2, 2026-08-15) ─────────────────────
+     * `update()` 는 `want === applied` 면 조기 반환한다. 그래서 지연 스냅샷(`baseOf`)만으로는
+     * **설정이 다시 오지 않으면 영원히 도달하지 않는다** — 그리고 방문자 세션은 설정이
+     * 부팅에 딱 한 번 오므로(`features/overlay.ts` 의 `setSurfaces`) 참조가 세션 내내 안
+     * 바뀐다. 즉 늦게 등록된 표면이 **방문자에게 영구히 안 칠해진다.**
+     *
+     * 검수관은 「주석을 사실로 좁히기」를 권했고 그것도 옳다(등록을 부팅 중에 끝내는 것이
+     * 올바른 계약이다). **그런데도 코드를 고치는 쪽을 골랐다**: 그 실패가 **조용하기**
+     * 때문이다. 문서로만 막으면 다음 사람이 규율을 어겼을 때 화면에 아무 말도 안 나오고,
+     * 증상은 «그 표면만 안 칠해진다» 라 원인을 짚기 어렵다. 이 저장소는 「조용한 no-op 을
+     * 만들지 않는다」를 규율로 갖고 있다.
+     *
+     * 비용은 정상 경로에서 **`pending.size === 0` 비교 하나**다 — 미해결이 없으면 조기
+     * 반환이 그대로 산다.
+     */
+    const pending = new Set<SurfaceKind>();
 
     /**
      * ⚠ **`env.pools` 를 직접 안 본다.** 조립부가 파츠 풀과 레지스트리를 합쳐 답하므로,
@@ -168,9 +187,19 @@ export const surfacePaintFeature: Feature = {
      * 모르는 사람에게 «안전망이 있다» 고 약속하고 있었다. 주석을 약하게 고치는 대신 **그
      * 문장이 참이 되게** 만든다(GS-3 전례와 같은 처방).
      *
-     * **늦게 떠도 안전한 이유**: `base` 가 비어 있다는 것은 우리가 그 표면을 **한 번도 안
-     * 만졌다**는 뜻이다(만지려면 `base` 가 있어야 한다). 그러니 지금 뜨는 상태가 곧 원래
-     * 상태다 — 우리 텍스처를 «원래» 로 오인할 경로가 없다.
+     * **늦게 떠도 안전한 이유**는 전제 둘 위에 서 있다:
+     *   ① `base` 가 비었다 = 우리가 그 표면을 **한 번도 안 만졌다**(만지려면 `base` 가 있어야
+     *      `applyOne` 이 진행된다). 이것은 코드 구조가 보장한다 — 검수관이 실측으로 확인했다.
+     *   ② 안 만졌다 = **지금이 원래 상태다.**
+     *
+     * ⚠ **②는 조건부 참이다**(검수관 P8). 스냅샷 6필드(맵 넷 + `metalness`/`roughness`)를
+     * **세션 중 바꾸는 소비자가 없을 때만** 성립한다. 지금은 실측 0건이다 — `ocean.ts` 의
+     * `roughness` 대입 2곳은 `seaMat`·`layer2Mat` 이고 **둘 다 레지스트리 미등록**이며,
+     * `glb-city.ts` 는 파츠 풀 밖이다.
+     *
+     * 시간대별로 해저 러프니스를 바꾸는 기능 같은 것이 생기면 **지연 스냅샷이 그 순간 값을
+     * 「원래」로 굳힌다.** 그때는 이 함수가 아니라 그쪽이 부팅에 등록을 끝내야 한다.
+     * 조건을 안 적으면 다음 사람이 ②를 무조건 참으로 읽는다.
      */
     function baseOf(kind: SurfaceKind): Baseline | null {
       const hit = base.get(kind);
@@ -248,7 +277,12 @@ export const surfacePaintFeature: Feature = {
     function applyOne(s: SurfaceSetting): void {
       const m = materialOf(s.kind);
       const b = baseOf(s.kind);
-      if (!m || !b) return;
+      if (!m || !b) {
+        // 아직 재질이 없다. **다음 폴링에 다시 시도한다** — 설정이 안 바뀌어도.
+        pending.add(s.kind);
+        return;
+      }
+      pending.delete(s.kind);
 
       let structural = false;
       for (const slot of MAP_SLOTS) {
@@ -308,7 +342,10 @@ export const surfacePaintFeature: Feature = {
         name: 'surface',
         update() {
           const want = env.surfaces();
-          if (want === applied) return; // 참조가 같으면 아무것도 안 바뀌었다
+          // ⚠ **`pending` 이 비었을 때만 조기 반환한다**(검수관 B2). 참조 동등성만 보면
+          //   늦게 등록된 재질이 설정 재공급 전까지 영영 안 잡히고, 방문자 세션은 설정이
+          //   부팅 1회라 그 «재공급» 이 오지 않는다. 근거는 `pending` 선언 주석 한 곳이다.
+          if (want === applied && pending.size === 0) return;
           // **목록에서 통째로 빠진 표면은 되돌린다.** 이것이 없으면 감독이 한 표면의 설정을
           // 지웠을 때 화면에만 남고, 내보낸 JSON 과 화면이 갈린다.
           const now = new Set(want.map((s) => s.kind));
