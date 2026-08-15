@@ -28,17 +28,59 @@
 // 그대로이고 하단이 배경으로 흘러드는 성질도 유지된다(실측: peak 0.30 에서도 히어로 하단
 // 2% 244,240,228 vs 다음 섹션 246,241,228, RGB 거리 2.63).
 //
-// ⚠ **0.384 아래는 본문 대비 AA(4.5:1) 미달이다** — 1280 폭에서 `.tagline-ko` 가 하한이고,
-// 그 값은 이 그림에 대해 **유도**된 것이다(근거·유도 사슬은 `landing.html` 의
-// `--hero-wash-peak` 선언 옆 한 곳). 노브는 그 아래도 **막지 않는다**: 판정용 비교 자료이고,
-// 감독이 «더 줄여도 되는가» 를 화면으로 보시는 것이 이 장치의 목적이다. 대신 미달 구간에서는
-// 배지가 그 사실을 화면에 적는다 — **막지 않고 알린다**(`verify-live` 와 같은 원리).
+// ── 대비 판정 — **두 축을 섞지 않는다**(검수관 반려 B1) ────────────────────
+// 첫 판본은 `FOG_AA_FLOOR = 0.384` 하나로 판정했고, 그래서 **채택값 0.35 에서 배지가
+// «AA 미달» 을 주장했다.** 실측(검수관, 배포본 1280×800): `?fog=0.35` 화면과 노브 없는
+// 기본 화면은 **대비값이 소수점까지 동일한데**, 앞쪽에만 미달 낙인이 붙어 있었다.
+// 같은 픽셀에 상반된 판정이 라이브에 동시에 존재한 것이다.
+//
+// 원인은 값이 아니라 **축이 하나였던 것**이다. 0.384 는 **산술 유도**값이고 렌더 기준이
+// 아니다 — `landing.html` 의 `--hero-wash-peak` 선언 옆 ④가 실측한 대로 **1280 렌더는
+// 산술보다 항상 높다**(+0.26~0.60). 그래서 산술로 미달인 구간이 렌더로는 통과일 수 있고,
+// 실제로 0.35 가 그 구간이다(렌더 `.tagline-sub` 1280 **4.56** · 390 **4.98**, 여유 0.06).
+// ⚠ 요소 이름을 적는다 — 이 자리를 «tagline» 으로 뭉뚱그린 것이 반려 B4 였다.
+// `.tagline-sub` 는 `.tagline-ko`(1280 4.82)의 **자식**이고 둘의 값이 다르다.
+//
+// 그러므로 판정을 **렌더로 실측된 두 점**으로 한다. 그 사이는 «안 재봤다» 이지 «미달» 이
+// 아니다 — 이 저장소의 규율이 *"못 잰 것은 통과가 아니다"* 인데, 그 대우인 *"못 잰 것을
+// 미달로 적는 것"* 도 같은 결함이다(둘 다 재지 않은 것에 판정을 붙인다).
+// 노브는 어느 구간도 **막지 않는다**: 감독이 «더 줄여도 되는가» 를 화면으로 보시는 것이
+// 이 장치의 목적이다. 배지는 **막지 않고 알린다**(`verify-live` 와 같은 원리).
 
 /** URL 파라미터 이름. */
 export const FOG_PARAM = 'fog';
 
-/** AA 4.5:1 하한(유도값). 이 아래에서 배지가 경고를 단다. SSOT 는 `landing.html` 주석. */
-export const FOG_AA_FLOOR = 0.384;
+/**
+ * **산술** 유도 하한. `contrast(--ink, bg(α)) = 4.5` 를 푼 값이고 **렌더 기준이 아니다.**
+ * 유도 사슬의 SSOT 는 `landing.html` 의 `--hero-wash-peak` 선언 옆 한 곳.
+ *
+ * ⚠ **이 상수로 화면 판정을 하지 마라.** 그렇게 해서 채택값이 미달로 낙인찍혔다(위 주석).
+ * 남겨 두는 이유는 유도와 렌더가 **얼마나 갈리는지**가 이 자리의 안전 여유를 읽는 축이기
+ * 때문이다 — 0.384(산술) vs 0.35(렌더 통과)의 차가 곧 «산술이 보수적인 쪽으로 틀린 폭» 이다.
+ */
+export const FOG_ARITH_FLOOR = 0.384;
+
+/** **렌더로** AA(4.5:1) 통과가 실측된 가장 낮은 값. 감독 채택값과 같다. */
+export const FOG_RENDER_PASS_FLOOR = 0.35;
+
+/** **렌더로** AA 미달이 실측된 가장 높은 값(`fog=0`, 1280: `.tagline-sub` 2.66 · h1 2.62). */
+export const FOG_RENDER_FAIL_MAX = 0;
+
+/**
+ * 렌더 실측 기준 판정. **세 값이고, 가운데가 「안 재봤다」다.**
+ *
+ * `'unknown'` 을 `'fail'` 로 접지 않는 이유: 접으면 배지가 재지 않은 구간에 대해 미달을
+ * **주장**하게 된다. 판정용 노브에서 없는 근거로 붙인 라벨은 감독의 비교를 오염시킨다 —
+ * `readFogPeak` 이 범위 밖을 클램프하지 않고 무시하는 것과 같은 이유다.
+ *
+ * @param {number} v
+ * @returns {'pass'|'unknown'|'fail'}
+ */
+export function fogVerdict(v) {
+  if (v >= FOG_RENDER_PASS_FLOOR) return 'pass';
+  if (v <= FOG_RENDER_FAIL_MAX) return 'fail';
+  return 'unknown';
+}
 
 /**
  * `?fog=` 를 읽는다. **모르는 값은 전부 `null`(= 기본값 유지)로 떨어진다** — 오타·빈 값·
@@ -94,16 +136,25 @@ export function applyFogKnob(search, root, doc) {
  * 스타일은 인라인이다 — CSS 파일을 건드리면 기본 경로에 영향이 갈 수 있고, 이 배지는
  * 판정이 끝나면 노브와 함께 걷힌다.
  * ⚠ **글자에 알파를 얹지 않는다**(`landing.html` `:root` 주석의 규칙) — 불투명 색만 쓴다.
+ *
+ * 문구는 `fogVerdict` 의 세 값을 그대로 적는다. **`pass` 에 아무 말도 안 붙이는 것이
+ * 요점이다** — 채택값이 그 구간이고, 거기에 경고를 달았던 것이 반려 사유였다.
  */
+const BADGE = {
+  pass:    { text: v => `fog=${v}`, bg: '#17140f' },
+  unknown: { text: v => `fog=${v}  ·  대비 미측정(렌더 통과 하한 ${FOG_RENDER_PASS_FLOOR})`, bg: '#6b5324' },
+  fail:    { text: v => `fog=${v}  ·  본문 대비 AA 미달(렌더 실측)`, bg: '#7a2e2e' },
+};
+
 function mountBadge(doc, v) {
   const el = doc.createElement('div');
-  const low = v < FOG_AA_FLOOR;
+  const b = BADGE[fogVerdict(v)];
   el.setAttribute('data-fog-badge', '');
-  el.textContent = low ? `fog=${v}  ·  AA 미달(하한 ${FOG_AA_FLOOR})` : `fog=${v}`;
+  el.textContent = b.text(v);
   el.style.cssText = [
     'position:fixed', 'z-index:99999', 'left:50%', 'bottom:14px', 'transform:translateX(-50%)',
     'padding:6px 12px', 'border-radius:999px',
-    `background:${low ? '#7a2e2e' : '#17140f'}`, 'color:#f6f1e4',
+    `background:${b.bg}`, 'color:#f6f1e4',
     'font:600 12px/1.2 system-ui,sans-serif', 'letter-spacing:0.04em',
     'pointer-events:none', 'white-space:nowrap',
   ].join(';');
