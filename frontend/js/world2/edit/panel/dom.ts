@@ -51,7 +51,8 @@ export interface PanelHandlers {
    */
   surfaces?(): readonly SurfaceSetting[];
   setSurfaces?(s: readonly SurfaceSetting[]): void;
-  previewUrl?(file: File): string | null;
+  registerPreview?(src: string, file: File): void;
+  listTextures?(): Promise<readonly string[]>;
 
   exportNow(): void;
 }
@@ -125,7 +126,8 @@ export function createPanel(
       surfaces: handlers.surfaces,
       setSurfaces: handlers.setSurfaces,
       say: (m, warn) => { say(m, warn); },
-      previewUrl: handlers.previewUrl,
+      registerPreview: handlers.registerPreview,
+      listTextures: handlers.listTextures,
     })
     : null;
   // 배지도 패널 **밖**에 산다(화면 상단 중앙). 근거는 `badge.ts` 헤더 한 곳이다 —

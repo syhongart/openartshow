@@ -109,8 +109,10 @@ export const CSS = `
 /* 끌고 있는 동안 칸이 스스로 «여기» 라고 말한다 — 드롭 대상이 곧 «어디에 바르는가» 라서
    그 피드백이 없으면 감독이 엉뚱한 칸에 놓는다. */
 #w2-edit .surf-slot[data-over="1"]{background:rgba(139,114,255,.22);border-color:#8B72FF}
-#w2-edit .surf-slot .sname{flex:1;min-width:0;font-size:10px;color:#F5F5F2;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#w2-edit .surf-slot select{flex:1;min-width:0;font:10px/1.3 system-ui,sans-serif;
+  color:#F5F5F2;background:#1A1D26;border:1px solid #3A3D4B;border-radius:5px;padding:2px 4px}
+/* 「커밋 대기」만 여기 뜬다 — 파일 이름은 select 가 이미 말하고 있다. */
+#w2-edit .surf-slot .sname{font-size:10px;color:#8B72FF;white-space:nowrap}
 #w2-edit .surf-slot button{padding:1px 6px;line-height:1.2}
 #w2-outliner{display:none}
 @media (min-width:1024px){

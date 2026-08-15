@@ -191,10 +191,32 @@ export interface FeatureEnv {
    * 기능에 통로를 주는 단방향이었다. 소유 모델은 안 바뀐다(상태는 여전히 조립부가 든다)
    * — 다만 등록 **시점**이 계약이 되므로, 늦게 등록하면 그 프레임의 반영이 빈다.
    * 폴링(`surface-paint` 의 `update`)이 다음 프레임에 잡지만 그것에 기대지 않는다:
-   * `tests/world2-surface-registry.test.ts` 가 부팅 완료 시점의 등록을 단언한다
-   * (팀장 조건 1 — 주석이 아니라 검사로 강제한다).
+   * **`tests/world2-ocean.test.ts` 의 「표면 재질 레지스트리」 절**이 부팅 완료 시점의 등록을
+   * 단언한다(팀장 조건 1 — 주석이 아니라 검사로 강제한다). 그 절은 실제 `oceanFeature.create`
+   * 를 태우므로 정적 문자열 검사가 아니고, 등록 호출을 지우면 4축이 깨지는 것을 실측했다.
    */
   readonly registerSurfaceMaterial: (kind: string, material: unknown) => void;
+
+  /**
+   * 그 텍스처를 실제로 받아올 주소(W7). **집행이 URL 을 스스로 만들지 않는다.**
+   *
+   * 두 가지를 한 자리에서 흡수한다:
+   *   ① base 결합 — 계약의 `assets/textures/…` 는 상대 표기이고 실제는 `<base>/app/…` 다
+   *      (`asset-url.ts` 한 곳).
+   *   ② **드롭 미리보기** — 감독이 방금 떨어뜨린 파일은 저장소에 아직 없다. 그때는
+   *      `blob:` 주소로 바꿔치기해 **커밋 전에도 화면에서 보이게** 한다.
+   *
+   * ⚠ 계약에는 `blob:` 이 절대 안 들어간다(`isSafeTextureSrc` 가 절대 URL 을 막는다).
+   *   미리보기는 **세션 안에서만** 살고, 내보낸 JSON 에는 언제나 상대 `src` 가 나간다 —
+   *   GLB 가 `place(src, at, blobUrl)` 로 세운 규약과 같다.
+   */
+  readonly textureUrl: (src: string) => string;
+
+  /**
+   * 드롭한 파일의 임시 주소를 등록한다. **회수는 등록한 쪽 몫이다** — 오버레이가 이미
+   * `blobUrls` 로 모아 떠날 때 지우고 있어서, 여기서 또 모으면 회수 경로가 두 벌이 된다.
+   */
+  readonly setTexturePreview: (src: string, url: string) => void;
 
   /** UI를 붙일 문서. 없는 환경(테스트)에서는 null */
   readonly doc: Document | null;

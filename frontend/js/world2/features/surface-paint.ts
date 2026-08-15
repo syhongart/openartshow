@@ -170,7 +170,12 @@ export const surfacePaintFeature: Feature = {
      * 감독이 못 본 채로 규약이 굳는다. `decide/surface-material.ts` 의 `isSafeTextureSrc` 를
      * 이미 통과한 경로만 오므로 실패는 «커밋된 파일이 실제로 없다» 뿐이다.
      *
-     * ⚠ **`map` 만 sRGB 다.** 노말·메탈릭·러프니스는 색이 아니라 수치라 선형으로 읽어야
+     * ⚠ **주소는 `env.textureUrl` 이 만든다** — 여기서 `src` 를 그대로 넣지 않는다. 그 함수가
+     * base 결합(`asset-url.ts`)과 **드롭 미리보기**(감독이 방금 떨어뜨렸고 아직 커밋 안 된
+     * 파일 → `blob:`)를 한 자리에서 흡수한다. 상대 경로를 그대로 써도 대개는 맞아서 빠뜨리기
+     * 쉬운 자리이고, 로컬에서는 되고 base 가 붙은 배포에서만 깨진다.
+     *
+     * ⚠⚠ **`map` 만 sRGB 다.** 노말·메탈릭·러프니스는 색이 아니라 수치라 선형으로 읽어야
      * 한다 — sRGB 로 읽으면 굴곡과 광택이 전부 어긋나고, 증상이 «텍스처가 좀 이상하다» 라
      * 원인을 짚기 어렵다(`parts/garden.ts:210` 이 색 텍스처에만 sRGB 를 세우는 것과 같은 규약).
      */
@@ -181,7 +186,7 @@ export const surfacePaintFeature: Feature = {
       tex.wrapT = THREE.RepeatWrapping;
       if (slot === 'map') tex.colorSpace = THREE.SRGBColorSpace;
       img.onload = () => { tex.needsUpdate = true; };
-      img.src = src;
+      img.src = env.textureUrl(src);
       return tex;
     }
 

@@ -58,6 +58,7 @@ import { TIMES, type SkyTime } from './decide/night.js';
 import { SHADING_MODES, type ShadingMode } from './decide/shading.js';
 import type { SurfaceSetting } from './decide/surface-material.js';
 // 카메라 far 를 여기서 유도한다 — 아래 `PerspectiveCamera` 주석 참고.
+import { assetUrl } from './asset-url.js';
 import { DOME_MAX } from './systems/sky.js';
 
 // 셀 크기는 **레이아웃이 소유한다.** 여기 `32` 를 다시 적으면 안 된다.
@@ -638,6 +639,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    * 집행에 돌려줄 뿐이고, 그래서 three 타입을 알 필요가 없다.
    */
   const extraSurfaces = new Map<string, unknown>();
+
+  /**
+   * 드롭 미리보기(W7) — 계약의 `src` → 세션 안에서만 사는 `blob:` 주소.
+   *
+   * 감독이 방금 떨어뜨린 파일은 저장소에 아직 없으므로 그대로는 404 다. 이 표가 있는 동안만
+   * 그 자리를 대신하고, **내보낸 JSON 에는 언제나 상대 `src` 가 나간다.**
+   */
+  const texturePreviews = new Map<string, string>();
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;
@@ -823,6 +832,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             // 조립되고, 이 화살표는 그보다 더 뒤(기능이 부를 때)에 실행된다.
             surfaceMaterial: (kind) => pools!.materialOf(kind) ?? extraSurfaces.get(kind) ?? null,
             registerSurfaceMaterial: (kind, m) => { extraSurfaces.set(kind, m); },
+            // 미리보기가 있으면 그것이 이긴다 — 감독이 방금 떨어뜨린 것이 저장소 판본보다
+            // 새롭다(같은 이름으로 다시 떨어뜨려 고치는 흐름이 그것이다).
+            textureUrl: (src) => texturePreviews.get(src) ?? assetUrl(src),
+            setTexturePreview: (src, url) => { texturePreviews.set(src, url); },
           },
           (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
         );

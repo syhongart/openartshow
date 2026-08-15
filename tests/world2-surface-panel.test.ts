@@ -29,20 +29,35 @@ import {
 
 interface Said { msg: string; warn: boolean }
 
-function mount(opts: { initial?: readonly SurfaceSetting[]; noPreview?: boolean } = {}) {
+function mount(opts: {
+  initial?: readonly SurfaceSetting[];
+  noPreview?: boolean;
+  /** 커밋된 텍스처 파일명 목록 */
+  textures?: readonly string[];
+  /** 목록 fetch 가 실패하는 경우 */
+  listFails?: boolean;
+} = {}) {
   let surfaces: readonly SurfaceSetting[] = opts.initial ?? [];
   /** `setSurfaces` 가 받은 배열들. **참조를 그대로 모은다** — 동등성을 재려면 그래야 한다 */
   const pushed: (readonly SurfaceSetting[])[] = [];
   const said: Said[] = [];
   const previewed: string[] = [];
+  /** 목록 로드가 끝났는가 — 비동기라 기다릴 손잡이가 필요하다 */
+  let listed: Promise<void> = Promise.resolve();
 
   const panel = createSurfacePanel({ doc: document } as never, {
     surfaces: () => surfaces,
     setSurfaces: (s) => { pushed.push(s); surfaces = s; },
     say: (msg, warn = false) => { said.push({ msg, warn }); },
-    previewUrl: opts.noPreview ? undefined : (f: File) => {
-      previewed.push(f.name);
-      return `blob:fake/${f.name}`;
+    registerPreview: opts.noPreview ? undefined : (src: string, f: File) => {
+      previewed.push(`${src}|${f.name}`);
+    },
+    listTextures: () => {
+      const p = opts.listFails
+        ? Promise.reject(new Error('네트워크'))
+        : Promise.resolve(opts.textures ?? []);
+      listed = p.then(() => undefined);
+      return p;
     },
   });
   document.body.append(panel.root);
@@ -57,6 +72,8 @@ function mount(opts: { initial?: readonly SurfaceSetting[]; noPreview?: boolean 
     pushed,
     said,
     previewed,
+    // 패널이 목록을 «기다리지 않고» 붙이므로, 테스트는 그 다음 마이크로태스크까지 기다린다
+    get listed() { return listed.then(() => new Promise<void>((r) => { setTimeout(r, 0); })); },
     get surfaces() { return surfaces; },
     root: panel.root,
     q,
@@ -270,7 +287,48 @@ describe('맵 슬롯', () => {
     expect(box.dataset.on).toBe('');
     fileDrop(box, 'grass.png');
     expect(box.dataset.on).toBe('1');
-    expect(box.querySelector('.sname')?.textContent).toBe('grass.png');
+    // 파일 이름은 `select` 가 말한다 — `.sname` 은 「아직 커밋 안 됐다」 만 말한다.
+    expect((box.querySelector('select') as HTMLSelectElement).value)
+      .toBe('assets/textures/grass.png');
+    expect(box.querySelector('.sname')?.textContent).toBe('커밋 대기');
+  });
+
+  it('★ 드롭한 것이 고르기 목록에도 들어간다 — 없으면 화면이 「비어 있음」으로 되돌아간다', () => {
+    const h = mount();
+    fileDrop(h.slot('map'), 'grass.png');
+    const opts = [...h.slot('map').querySelectorAll('option')].map((o) => o.value);
+    expect(opts).toContain('assets/textures/grass.png');
+  });
+
+  it('★ 목록에서 고르면 그 슬롯에 들어간다 — 커밋된 텍스처를 쓰는 경로다', async () => {
+    const h = mount({ textures: ['stone-tile.png', 'brick.png'] });
+    await h.listed;
+    const sel = h.slot('map').querySelector('select') as HTMLSelectElement;
+    expect([...sel.querySelectorAll('option')].map((o) => o.value))
+      .toEqual(['', 'assets/textures/brick.png', 'assets/textures/stone-tile.png']);
+    sel.value = 'assets/textures/brick.png';
+    sel.dispatchEvent(new Event('change'));
+    expect(settingOf(h.surfaces, FIRST).map).toBe('assets/textures/brick.png');
+  });
+
+  it('「없음」을 고르면 걷힌다', async () => {
+    const h = mount({ textures: ['brick.png'] });
+    await h.listed;
+    const sel = h.slot('map').querySelector('select') as HTMLSelectElement;
+    sel.value = 'assets/textures/brick.png';
+    sel.dispatchEvent(new Event('change'));
+    sel.value = '';
+    sel.dispatchEvent(new Event('change'));
+    expect(settingOf(h.surfaces, FIRST).map).toBeUndefined();
+  });
+
+  it('목록을 못 받아도 드롭은 그대로 된다 — 파일 0장이 정상 상태다', async () => {
+    const h = mount({ listFails: true });
+    await h.listed.catch(() => {});
+    fileDrop(h.slot('map'), 'a.png');
+    expect(settingOf(h.surfaces, FIRST).map).toBe('assets/textures/a.png');
+    // 조용해야 한다 — 정상 상태를 오류로 말하지 않는다
+    expect(h.said.filter((x) => x.warn)).toHaveLength(0);
   });
 
   it('미리보기 문이 없어도 저장은 된다 — 없으면 커밋해야 그림이 뜬다', () => {
@@ -279,10 +337,12 @@ describe('맵 슬롯', () => {
     expect(settingOf(h.surfaces, FIRST).map).toBe('assets/textures/a.png');
   });
 
-  it('미리보기 문이 있으면 떨어뜨린 파일로 부른다', () => {
+  it('미리보기 문이 있으면 src 와 파일을 함께 넘긴다', () => {
     const h = mount();
     fileDrop(h.slot('map'), 'a.png');
-    expect(h.previewed).toEqual(['a.png']);
+    // **`src` 와 파일을 함께** 넘긴다 — 조립부가 그 자리를 blob 으로 대신해야 하므로
+    // 파일만으로는 «어느 자리인가» 를 모른다.
+    expect(h.previewed).toEqual(['assets/textures/a.png|a.png']);
   });
 });
 

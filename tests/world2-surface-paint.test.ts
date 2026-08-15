@@ -137,6 +137,8 @@ interface Harness {
   mats: Map<string, FakeMaterial>;
   /** `materialOf` 가 어떤 키로 불렸나 — 물이 새는지 보는 축 */
   asked: string[];
+  /** 드롭 미리보기 표. 조립부가 소유하는 것의 대역이라 테스트가 직접 채운다 */
+  previews: Map<string, string>;
   set(list: readonly SurfaceSetting[]): void;
   update(): void;
   diag(): Record<string, unknown>;
@@ -166,6 +168,8 @@ async function mount(opts: {
    * 순서 — ocean 이 surface 보다 먼저다).
    */
   const registry = new Map<string, unknown>();
+  /** 드롭 미리보기 — 조립부가 소유하는 표의 대역 */
+  const previews = new Map<string, string>();
   for (const w of WATER) if (!opts.missing?.includes(w)) registry.set(w, mats.get(w));
   for (const [key, tex] of Object.entries(opts.foreign ?? {})) {
     const [kind, slot] = key.split(':');
@@ -189,6 +193,11 @@ async function mount(opts: {
       return (poolKeys.has(kind) ? mats.get(kind) : undefined) ?? registry.get(kind) ?? null;
     },
     registerSurfaceMaterial(kind: string, m: unknown) { registry.set(kind, m); },
+    // 조립부가 base 결합과 드롭 미리보기를 함께 흡수한다(`main.ts`). 대역은 그 **형태만**
+    // 흉내낸다 — 여기서 `src` 를 그대로 돌려주면 「집행이 URL 을 스스로 만든다」는 결함이
+    // 통과해 버린다(아래 「주소」 절이 그 축이다).
+    textureUrl: (src: string) => previews.get(src) ?? `/app/${src}`,
+    setTexturePreview: (src: string, url: string) => { previews.set(src, url); },
     surfaces: () => surfaces,
     setSurfaces: (s: readonly SurfaceSetting[]) => { surfaces = s; },
   };
@@ -198,6 +207,7 @@ async function mount(opts: {
   return {
     mats,
     asked,
+    previews,
     set(list) { surfaces = list; },
     // 이 기능의 `update` 는 프레임 컨텍스트를 안 읽는다(폴링 한 줄) — 그래서 빈 것을 준다
     update() { inst.system?.update({} as never); },
@@ -540,5 +550,40 @@ describe('폴링', () => {
     // 같은 src 라 새로 만들지도 버리지도 않는다 — 반영은 변환 재설정으로 끝난다
     expect(FakeTexture.made).toHaveLength(1);
     expect(FakeTexture.made[0].disposed).toBe(0);
+  });
+});
+
+// ── F. 주소 — 집행이 URL 을 스스로 만들지 않는가 ───────────────────────────
+//
+// base 결합(`asset-url.ts`)과 드롭 미리보기를 **조립부가 한 자리에서** 흡수한다. 집행이
+// `src` 를 그대로 `img.src` 에 넣으면 두 가지가 조용히 깨진다:
+//   ① base 가 붙은 배포에서만 404 (로컬에서는 상대 경로가 우연히 맞는다)
+//   ② 감독이 방금 떨어뜨린 파일이 커밋 전에는 안 보인다
+// 둘 다 **이 환경에서 재현되지 않는** 형태라 축이 없으면 통과한다.
+
+describe('주소', () => {
+  it('★ `env.textureUrl` 을 거친다 — src 를 그대로 쓰지 않는다', async () => {
+    const kind = TARGETS[0];
+    await mount({ initial: [setting(kind, { map: A })] });
+    const img = FakeTexture.made[0].image as FakeImage;
+    expect(img.src, '★ 상대 경로를 그대로 넣었다 — base 가 붙은 배포에서만 깨진다')
+      .toBe(`/app/${A}`);
+  });
+
+  it('★ 드롭 미리보기가 있으면 그것을 쓴다 — 커밋 전에도 화면에 뜬다', async () => {
+    const kind = TARGETS[0];
+    const h = await mount();
+    h.previews.set(A, 'blob:preview-1');
+    h.set([setting(kind, { map: A })]);
+    h.update();
+    const img = FakeTexture.made[0].image as FakeImage;
+    expect(img.src).toBe('blob:preview-1');
+  });
+
+  it('슬롯 넷이 각자 자기 주소를 받는다', async () => {
+    const kind = TARGETS[0];
+    await mount({ initial: [setting(kind, { map: A, normalMap: B })] });
+    const srcs = FakeTexture.made.map((t) => (t.image as FakeImage).src);
+    expect(srcs).toEqual([`/app/${A}`, `/app/${B}`]);
   });
 });

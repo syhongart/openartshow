@@ -49,10 +49,21 @@ export interface SurfacePanelDeps {
   /** 화면에 한 줄 말한다. 거절 사유를 감독이 봐야 한다 */
   say(msg: string, warn?: boolean): void;
   /**
-   * 드롭한 파일을 즉시 보여줄 `blob:` 주소. 커밋 전에도 화면에서 확인하려면 이것이 필요하다.
-   * **없으면 미리보기 없이 `src` 만 저장된다** — 그때는 파일을 커밋해야 그림이 뜬다.
+   * 떨어뜨린 파일을 **그 `src` 자리에서 즉시 보여지게** 등록한다. 커밋 전에도 화면에서
+   * 확인하려면 이것이 필요하다.
+   *
+   * ⚠ **주소를 여기로 돌려받지 않는다.** 계약에는 `blob:` 이 절대 안 들어가므로(절대 URL
+   * 금지) 패널이 그 주소를 들고 있을 이유가 없다 — 소유는 조립부이고 집행이 거기서 읽는다.
+   * 없으면 미리보기 없이 `src` 만 저장된다(파일을 커밋해야 그림이 뜬다).
    */
-  previewUrl?(file: File): string | null;
+  registerPreview?(src: string, file: File): void;
+  /**
+   * 저장소에 커밋된 텍스처 목록(`assets/textures/index.json`). **없어도 편집은 된다** —
+   * 그때는 드롭만 쓸 수 있고 목록 칸이 비어 있다(`palette.ts` 가 GLB 목록에서 세운 규약).
+   *
+   * 비동기지만 **기다리지 않는다**: 슬라이더와 드롭은 목록과 무관하게 즉시 동작해야 한다.
+   */
+  listTextures?(): Promise<readonly string[]>;
 }
 
 export function createSurfacePanel(
@@ -145,10 +156,15 @@ export function createSurfacePanel(
 
   // ── 맵 슬롯 넷 ────────────────────────────────────────────────────────────
   const slotBox = el('div', 'surf-slots');
-  const slotRows = new Map<MapSlot, { box: HTMLElement; name: HTMLElement }>();
+  const slotRows = new Map<
+    MapSlot, { box: HTMLElement; name: HTMLElement; sel: HTMLSelectElement }
+  >();
   for (const slot of MAP_SLOTS) {
     const box = el('div', 'surf-slot');
     box.dataset.slot = slot;
+    // 커밋된 텍스처를 고르는 문. **드롭과 짝이다** — 감독이 준 파일은 드롭으로 들어오고,
+    // 이미 저장소에 있는 것은 여기서 고른다. 둘 다 결국 같은 `src` 를 낸다.
+    const sel = doc.createElement('select');
     const name = el('span', 'sname', '비어 있음');
     const clear = doc.createElement('button');
     clear.type = 'button';
@@ -171,8 +187,12 @@ export function createSurfacePanel(
       onDropFile(slot, (ev as DragEvent).dataTransfer?.files?.[0] ?? null);
     });
 
-    box.append(el('span', 'lbl', SLOT_LABEL[slot]), name, clear);
-    slotRows.set(slot, { box, name });
+    sel.addEventListener('change', () => {
+      const v = sel.value;
+      patch({ [slot]: v || undefined });
+    });
+    box.append(el('span', 'lbl', SLOT_LABEL[slot]), sel, name, clear);
+    slotRows.set(slot, { box, name, sel });
     slotBox.append(box);
   }
 
@@ -194,23 +214,49 @@ export function createSurfacePanel(
       return;
     }
     // 미리보기는 있으면 좋고 없어도 진행한다 — 저장되는 값은 어느 쪽이든 `src` 다.
-    const preview = deps.previewUrl?.(file) ?? null;
-    if (preview) previews.set(src, preview);
+    deps.registerPreview?.(src, file);
+    dropped.add(src);
+    if (!known.has(src)) { known.add(src); fillOptions(); }
     patch({ [slot]: src });
     deps.say(`${SURFACE_LABEL[kind]} · ${SLOT_LABEL[slot]} ← ${file.name}`);
   }
 
   /**
-   * 드롭 미리보기 주소. **계약에는 안 들어간다** — `blob:` 은 세션이 끝나면 죽고,
-   * 계약이 절대 URL 을 금지하는 이유도 그것이다(`isSafeTextureSrc`).
+   * 이 세션에서 **떨어뜨린** `src` 들. 「무엇을 커밋해야 하는가」의 근거다.
    *
-   * ⚠ 지금은 **모아 두기만 한다.** 집행이 이것을 읽는 문은 아직 없어서, 커밋 전에는 그림이
-   * 안 뜨고 슬롯 이름만 바뀐다. 그 문을 여는 것은 다음 회차이고, 그전까지 이 Map 은
-   * 「무엇을 커밋해야 하는가」의 목록 노릇을 한다(`pending()`).
+   * 미리보기 주소 자체는 여기 없다 — 조립부가 소유하고 집행이 읽는다. 패널이 알아야 할
+   * 것은 «이 그림은 아직 저장소에 없다» 뿐이라 이름 집합으로 충분하다.
    */
-  const previews = new Map<string, string>();
+  const dropped = new Set<string>();
 
   const pendingLine = el('div', 'note');
+
+  /**
+   * 고를 수 있는 텍스처 `src` 들 — 커밋된 목록 + 이 세션에서 떨어뜨린 것.
+   *
+   * 드롭한 것을 함께 담는 이유: 담지 않으면 `<select>` 에 그 항목이 없어서 `sync` 가
+   * 값을 못 맞추고, 화면이 «비어 있음» 으로 되돌아간 것처럼 보인다(실제 설정은 살아 있는데).
+   */
+  const known = new Set<string>();
+
+  function fillOptions(): void {
+    const list = [...known].sort();
+    for (const { sel } of slotRows.values()) {
+      const keep = sel.value;
+      sel.textContent = '';
+      const none = doc.createElement('option');
+      none.value = '';
+      none.textContent = '— 없음 —';
+      sel.append(none);
+      for (const src of list) {
+        const o = doc.createElement('option');
+        o.value = src;
+        o.textContent = src.replace('assets/textures/', '');
+        sel.append(o);
+      }
+      sel.value = keep;
+    }
+  }
 
   // ── 조립 ──────────────────────────────────────────────────────────────────
   root.append(title, pickBox, repRow, rotRow, gloss.row, metal.row, slotBox, pendingLine);
@@ -229,11 +275,12 @@ export function createSurfacePanel(
     for (const slot of MAP_SLOTS) {
       const row = slotRows.get(slot)!;
       const src = s[slot];
-      row.name.textContent = src ? src.replace('assets/textures/', '') : '비어 있음';
+      row.name.textContent = src && dropped.has(src) ? '커밋 대기' : '';
+      row.sel.value = src ?? '';
       row.box.dataset.on = src ? '1' : '';
     }
     // 커밋해야 할 파일이 있으면 그것을 말한다 — 안 적으면 «그림이 왜 안 뜨지» 가 된다.
-    const need = [...previews.keys()].filter((src) => used().has(src));
+    const need = [...dropped].filter((src) => used().has(src));
     pendingLine.textContent = need.length
       ? `커밋 대기 ${need.length}개: ${need.map((s2) => s2.replace('assets/textures/', '')).join(', ')}`
       : '';
@@ -248,6 +295,23 @@ export function createSurfacePanel(
     return out;
   }
 
+  // 이미 설정에 들어 있는 것부터 목록에 넣는다 — 커밋된 JSON 을 읽고 들어온 경우,
+  // 목록 fetch 가 늦거나 실패해도 «고른 것» 이 화면에서 사라지지 않는다.
+  for (const s of deps.surfaces()) {
+    for (const slot of MAP_SLOTS) { const v = s[slot]; if (v) known.add(v); }
+  }
+  fillOptions();
   sync();
+
+  // **기다리지 않는다** — 목록이 늦게 와도 그때 붙으면 된다(`palette.ts` 와 같은 규약).
+  void deps.listTextures?.().then((names) => {
+    for (const n of names) known.add(`assets/textures/${n}`);
+    fillOptions();
+    sync();
+  }).catch(() => {
+    // 목록을 못 받아도 드롭은 그대로 된다. 조용히 넘어가는 것이 맞다 —
+    // 여기서 경고를 띄우면 «파일이 아직 0장» 인 정상 상태가 오류로 보인다.
+  });
+
   return { root, sync };
 }

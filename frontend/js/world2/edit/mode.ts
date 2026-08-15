@@ -106,7 +106,8 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     // 셋 다 host 가 안 주면 `undefined` 이고, 그러면 패널이 그 칸을 통째로 안 만든다.
     surfaces: host.surfaces,
     setSurfaces: host.setSurfaces,
-    previewUrl: host.previewUrl,
+    registerPreview: host.registerPreview,
+    listTextures: host.listTextures,
     exportNow: () => { actions.exportNow(); },
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
