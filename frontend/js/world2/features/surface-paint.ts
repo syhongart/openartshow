@@ -162,6 +162,11 @@ export const surfacePaintFeature: Feature = {
      *
      * 비용은 정상 경로에서 **`pending.size === 0` 비교 하나**다 — 미해결이 없으면 조기
      * 반환이 그대로 산다.
+     *
+     * ⚠ **비면 유지되게 만드는 것이 아래 `update()` 의 정리 절이다**(검수관 P10). 그것이
+     * 없으면 재질이 영영 안 오는 표면(물 없는 세계에 `bed` 설정이 담긴 오버레이 등)이
+     * `pending` 에 영구히 남고, 그러면 **조기 반환이 세션 내내 죽는다** — 위 「비용은 비교
+     * 하나」가 그 경우에 거짓이 된다.
      */
     const pending = new Set<SurfaceKind>();
 
@@ -350,6 +355,10 @@ export const surfacePaintFeature: Feature = {
           // 지웠을 때 화면에만 남고, 내보낸 JSON 과 화면이 갈린다.
           const now = new Set(want.map((s) => s.kind));
           for (const s of applied) if (!now.has(s.kind)) reset(s.kind);
+          // 목록에서 빠진 표면은 **미해결 목록에서도 뺀다**(검수관 P10). `reset` 은
+          // `baseOf` 가 null 이면 조기 반환하므로 거기서는 안 빠진다 — 그대로 두면
+          // 「재질이 영영 안 오는 표면」이 조기 반환을 영구히 죽인다.
+          for (const kind of pending) if (!now.has(kind)) pending.delete(kind);
           applied = want;
           for (const s of want) applyOne(s);
         },

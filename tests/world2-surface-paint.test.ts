@@ -50,6 +50,17 @@
 //   L2  `update()` 의 `pending` 조건을 지운다     1 failed
 //   L3  `pending.add` 를 지운다                   1 failed
 //
+// 검수관 권고로 고친 축 둘도 실측했다(기준선 38):
+//
+//   M-P9   `update()` 의 조기 반환을 지운다        1 failed
+//   M-P10  `pending` 정리 절을 지운다              1 failed
+//
+// ⚠ **P10 축은 첫 판본이 검출력 0 이었다**(뮤테이션 `0 failed`). 목록을 통째로 비워서
+// 쟀는데, `want` 가 비면 `applyOne` 이 0회 돌아 **조회 자체가 없다** — 조기 반환이 죽었는지
+// 살았는지 구별이 안 된다. 재질이 있는 표면을 하나 남기게 고쳐 1 failed 가 됐다.
+// 이 세션에서 **축 자체가 틀린 것이 세 번째**다(앞의 둘: 확대 판정을 수평 반경으로 잼 ·
+// 정규화/검증 순서를 `items` 없이 비교). 뮤테이션을 안 돌렸으면 셋 다 통과로 적혔다.
+//
 // L2·L3 이 깨는 축은 **같은 하나**다(「폴링만으로 잡힌다」). 두 뮤테이션이 같은 경로의
 // 앞뒤를 끊기 때문이고, 그 축이 B2 의 유일한 실물 검출 지점이라는 뜻이다 — 지우면 방문자
 // 영구 불능이 다시 조용해진다.
@@ -701,15 +712,48 @@ describe('설정 재공급 없이', () => {
     expect(h.mats.get(LATE)!.map).toBeInstanceOf(FakeTexture);
   });
 
-  it('미해결이 없으면 폴링이 아무것도 안 한다 — 조기 반환이 그대로 산다', async () => {
+  it('★ 미해결이 없으면 폴링이 조기 반환한다 — 재질을 조회조차 안 한다', async () => {
+    // ⚠ 첫 판본은 제목이 «조기 반환이 그대로 산다» 인데 **재는 것은 「텍스처를 재생성하지
+    //   않는다」였다**(검수관 P9). 그것은 조기 반환이 죽어도 통과한다 — `applyOne` 이
+    //   `prev.src === src` 로 재생성을 안 하기 때문이다. 실제로 L2 뮤테이션이 이 축을 안
+    //   깼고 그것이 증거였다.
+    //
+    //   B1·B2 와 **같은 형태**다: 문장과 검사가 다른 명제를 잰다. 그래서 `materialOf`
+    //   조회 횟수로 바꾼다 — 조기 반환이 살아 있으면 `update()` 는 재질을 **안 묻는다.**
     const kind = PARTS_TARGETS[0];
-    const list = [setting(kind, { map: A })];
-    const h = await mount({ initial: list });
-    const t = FakeTexture.made[0];
+    const h = await mount({ initial: [setting(kind, { map: A })] });
+    const before = h.asked.length;
     for (let i = 0; i < 5; i++) h.update();
-    // 재질을 다시 만들지도, 버리지도 않는다 — `pending` 이 비면 비용이 0 이어야 한다
-    expect(FakeTexture.made).toHaveLength(1);
-    expect(t.disposed).toBe(0);
+    expect(h.asked.length, '★ 폴링이 매 프레임 재질을 조회한다 — 조기 반환이 죽었다')
+      .toBe(before);
+  });
+
+  it('★ 재질이 영영 안 오는 표면은 목록에서 빠질 때 미해결에서도 빠진다', async () => {
+    // 검수관 P10. `reset` 은 `baseOf` 가 null 이면 조기 반환하므로 거기서는 안 빠진다 —
+    // 그대로 두면 **조기 반환이 세션 내내 죽는다**(물 없는 세계에 `bed` 설정이 담긴
+    // 오버레이가 실제 경로다).
+    // ⚠ **목록을 통째로 비우면 이 축이 아무것도 못 잰다**(첫 판본이 그랬고 뮤테이션
+    //   `0 failed` 로 드러났다). `want` 가 비면 `applyOne` 이 0회 돌아 조회 자체가 없고,
+    //   그러면 조기 반환이 죽었는지 살았는지 구별이 안 된다. 그래서 **재질이 있는 표면을
+    //   하나 남긴다** — 조기 반환이 죽으면 그 표면을 매 프레임 다시 조회한다.
+    const GHOST = WATER[0];          // 재질이 영영 안 온다
+    const ALIVE = PARTS_TARGETS[0];  // 재질이 있다
+    const h = await mount({
+      missing: [GHOST],
+      initial: [setting(GHOST, { map: A }), setting(ALIVE, { map: A })],
+    });
+    h.update();
+    const asked1 = h.asked.length;
+    h.update();
+    expect(h.asked.length, '미해결이 있으니 계속 조회한다(재시도 중)').toBeGreaterThan(asked1);
+
+    // 유령 표면을 목록에서 뺀다 → 미해결에서도 빠져야 조기 반환이 되살아난다
+    h.set([setting(ALIVE, { map: A })]);
+    h.update();
+    const asked2 = h.asked.length;
+    h.update();
+    expect(h.asked.length, '★ 미해결이 영구히 남아 조기 반환이 죽었다 — 매 프레임 조회한다')
+      .toBe(asked2);
   });
 
   it('한 번 잡히면 다시 안 만든다 — 재시도가 매 프레임 반복되지 않는다', async () => {
