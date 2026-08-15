@@ -773,6 +773,32 @@ async function runPerfGates(origin, browser) {
     record(11, '물빠짐 상호작용', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
 
+  // ── [11.5] 표면 재질 편집 세션 (W7 · 태스크 #71) ───────────────────────────
+  //
+  // **성능 게이트가 아니다** — `[11]` 과 같은 부류다. 재는 것이 개수라 이산이고, 회수가
+  // 서 있으면 델타 0 · 없으면 교체 횟수만큼 증가라 그 사이에 편차가 들어올 자리가 없다.
+  //
+  // 이 축이 왜 신설됐나: `[7]` 개수 불변식이 **`?edit=1` 을 안 연다**(`WORLD2_QUERY` 에
+  // 없다). `?edit=1` 은 `LIVE_PAGES` 항목이라 로드 시점 검사만 받고, 그 config 주석이
+  // 스스로 *"조작 중 결함을 보려면 세션을 시뮬레이션하는 별도 스크립트가 필요하다 — 이
+  // 항목은 그것이 아니다"* 라고 적어 두었다. 텍스처 교체를 넣는 회차에 그 «별도 스크립트»
+  // 를 함께 만든다 — 기능만 넣고 미루면 조용히 새는 자리가 된다.
+  //
+  // 번호가 `11.5` 인 것은 `[12]` 가 이미 수면 구현이기 때문이다(끼워 넣는다).
+  try {
+    const { runSurfaceTextures } = await import('./measure-surface-textures.mjs');
+    const r = await runSurfaceTextures({ browser, origin, basePath: BASE_PATH, log: quiet });
+    record(
+      11.5, '표면 재질 편집 세션', r.pass ? 'PASS' : 'FAIL',
+      r.pass
+        ? `${r.swaps}회 교체에 텍스처 증가 0 (선택지 ${r.options}장 · 보유 ${r.after?.owned} 유지 · 걷어냄 0)`
+        : `${r.reason} → \`npm run measure:surface\` 로 단독 실행해 본다`,
+    );
+  } catch (e) {
+    // 못 잰 것은 통과가 아니다 — `[7][8][11]` 과 같은 규약.
+    record(11.5, '표면 재질 편집 세션', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
   // ── [12] 수면 구현 (감독 지시 2026-08-01 · 팀장 조건 3) ─────────────────────
   //
   // `[11]` 과 같은 성격이다 — **성능 게이트가 아니라 이산 판정**이라 `perfStatus` 를
@@ -989,6 +1015,8 @@ async function main() {
       // 남기면 **리포트에서 통째로 사라져** "스모크: 통과" 만 보인다 — 바로 위 두 줄이
       // 막으려던 그 형태를 `[11]` 에서 새로 만든 셈이었다.
       record(11, '물빠짐 상호작용', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      // `[11.5]` 도 같은 이유다 — 성능 게이트가 아닌데 `runPerfGates()` 안에 배선돼 있다.
+      record(11.5, '표면 재질 편집 세션', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(12, '수면 구현(?water=tsl)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(13, '플레이어 충돌(라이브)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       // `[14]` 도 같은 이유로 적는다(검수관 권고 2026-08-10). ⚠ **바로 위 주석이
