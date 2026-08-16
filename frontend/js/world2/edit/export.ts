@@ -42,6 +42,14 @@ const REASON_KO: Record<OverlayIssue['reason'], string> = {
   'surfaces-not-array': 'surfaces 가 배열이 아님',
   'surface-unknown-kind': '칠할 수 없는 표면 종류',
   'surface-unsafe-texture': '텍스처 경로가 커밋 불가',
+  // ── W8-4 (벽에 건 작품) ───────────────────────────────────────────────────
+  // ⚠ 이 표가 `Record<...>` 인 것이 값 미러링을 막는 축이라고 위에 적혀 있고, W8-4 에서
+  // **또 그대로 멈췄다** — 계약에 사유를 더하자 컴파일이 여기서 났다. 두 번째 실물 사례다.
+  'arts-not-array': 'arts 가 배열이 아님',
+  'art-not-object': '작품 항목이 객체가 아님',
+  'art-unsafe-src': '작품 이미지 경로가 커밋 불가',
+  'art-bad-number': '작품 좌표가 숫자가 아님',
+  'art-clamped': '작품 크기가 범위로 잘림',
 };
 
 /**
