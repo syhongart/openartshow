@@ -108,14 +108,43 @@ describe('⑤ 미술관 GLB 예열 배선', () => {
       .toBeLessThan(ready);
   });
 
-  it('finally 에서 컬링을 되돌린다 — 안 되돌리면 드로우콜이 상시 늘고 아무 지표도 못 잡는다', () => {
-    // 함수 본문만 떼어 본다. 파일 전체에서 정규식을 돌리면 다른 `finally` 를 잡을 수 있다.
+  // ⚠ **이 검사가 바뀐 이유를 적는다**(2026-08-16, W8-2). 그전에는 `glb-city.ts` 의
+  // `warmUp` **본문 텍스트**에서 `finally { … frustumCulled = true }` 를 찾았다. 구현이
+  // `world-shared/attach-loop.ts` 로 이관되면서 그 검사가 **자기 대상을 잃고 FAIL 했다** —
+  // 이관이 보호를 지웠다는 뜻이 아니라, **텍스트 위치를 보는 검사가 원래 그만큼 약했다**는
+  // 뜻이다(같은 파일에 그대로 두면서 `finally` 만 다른 함수로 빼도 통과했을 것이다).
+  //
+  // 지금 원복 보장을 실제로 지키는 것은 **행동 검사**다 —
+  // `tests/world-shared-attach-loop.test.ts` 의 *"중간에 던져도 컬링이 꺼진 채 남지 않는다"*
+  // 가 함수를 진짜로 돌려 던지게 하고 `frustumCulled` 를 확인한다. 텍스트보다 강하다.
+  //
+  // 그러면 여기 남는 몫은 **배선**이다: glb-city 가 그 공유 구현을 실제로 부르는가.
+  // 배선이 끊기면(손으로 짠 루프로 되돌아가면) 행동 검사는 여전히 초록인 채 이 자산만
+  // 보호를 잃는다 — 그 구멍을 이 검사가 막는다.
+  it('예열 구현이 공유 모듈이다 — 손으로 다시 짜면 원복 보장이 행동 검사 밖으로 나간다', () => {
     const i = src.indexOf('async function warmUp(');
     expect(i, 'warmUp 함수 정의를 못 찾았다').toBeGreaterThan(-1);
     const body = src.slice(i, src.indexOf('\n}', i));
-    const fin = body.match(/finally\s*\{([\s\S]*?)\}/);
-    expect(fin, 'warmUp 에 finally 가 없다 — 복구가 예외 경로를 안 탄다').not.toBeNull();
+    expect(body, '★ warmUp 이 `warmUpNode` 를 안 부른다 — 원복(`finally`) 보장이 어디에 있는지 알 수 없다')
+      .toMatch(/warmUpNode\s*\(/);
+    // 그리고 그 공유 구현이 실제로 `finally` 로 원복하는지는 **소유한 파일에서** 본다.
+    const shared = read('world-shared/attach-loop.ts');
+    const j = shared.indexOf('export async function warmUpNode(');
+    expect(j, 'warmUpNode 정의를 못 찾았다').toBeGreaterThan(-1);
+    const sharedBody = shared.slice(j, shared.indexOf('\n}', j));
+    const fin = sharedBody.match(/finally\s*\{([\s\S]*?)\}/);
+    expect(fin, 'warmUpNode 에 finally 가 없다 — 복구가 예외 경로를 안 탄다').not.toBeNull();
     expect(fin![1], 'finally 안에서 frustumCulled 를 되돌리지 않는다')
       .toMatch(/frustumCulled\s*=\s*true/);
+  });
+
+  // ── 붙이는 루프도 공유 모듈이어야 한다 (2026-08-16, W8-2) ──────────────────
+  // 손으로 짠 `for` 로 되돌아가면 **프레임 넘김 횟수를 세는 축이 사라진다** — 이 파일의
+  // 루프는 이관 전까지 그 축이 하나도 없었고, 그래서 「배치마다만 넘긴다」가 지켜지는지
+  // 아무도 검사하지 못했다.
+  it('붙이는 루프가 attachAll 이다 — 손으로 짜면 배치 규약을 재는 축이 없어진다', () => {
+    expect(src, '★ glb-city 가 attachAll 을 안 쓴다').toContain('attachAll({');
+    expect(src, '★ ATTACH_BATCH 를 공유 모듈에서 받지 않는다')
+      .toMatch(/import\s*\{[\s\S]*?ATTACH_BATCH[\s\S]*?\}\s*from\s*'\.\/attach-loop\.js'/);
   });
 });

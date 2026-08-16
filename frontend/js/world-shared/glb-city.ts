@@ -80,6 +80,9 @@
 
 import type { Object3D, Scene } from 'three/webgpu';
 import { EXT_OFF, disableMatExtensions } from './glb-material.js';
+import {
+  attachAll, warmUpNode, ATTACH_BATCH, WARMUP_FRAMES, type CullableNode,
+} from './attach-loop.js';
 
 // ── 이 모듈은 **어느 세계인지 모른다** (팀장 규칙 R2, 2026-08-16) ────────────
 //
@@ -734,53 +737,61 @@ async function placeGrid(
     ? { x: 0, y: 0, z: 0 }   // 메시가 없다 — 보정할 것도 없다
     : { x: -(box.min.x + box.max.x) / 2, y: -box.min.y, z: -(box.min.z + box.max.z) / 2 };
 
-  for (let i = 0; i < cells.length; i++) {
-    // ── 회전은 **바깥 그룹**이 한다 ─────────────────────────────────────────
-    // 보정 오프셋은 모델의 로컬 좌표계 값이다. 같은 객체에 회전과 보정을 함께 주면
-    // 보정까지 회전해 자리가 어긋난다. 안쪽에서 보정하고 바깥에서 돌리면 순서가
-    // 분리된다. 그룹은 드로우콜을 만들지 않으므로 개수 축에는 무해하다.
-    const holder = new THREE.Group();
-    const copy = model.clone(true);
-    copy.position.set(fix.x, fix.y, fix.z);
-    holder.add(copy as never);
-    holder.position.set(cells[i].x, 0, cells[i].z);
-    holder.rotation.y = cells[i].ry;
-    root.add(holder as never);
-    // ── 월드 행렬을 **명시적으로** 갱신한다 ────────────────────────────────
-    // 감독 판정 네 번 동안 미술관이 안 보였고, 다섯 번째에 갑자기 보였다. 그 사이
-    // 내가 넣은 것은 **진단 코드뿐**이다 — `Box3().setFromObject(root)`.
-    //
-    // 그 호출은 부작용으로 자식 전체의 월드 행렬을 강제 갱신한다. 즉 **진단이
-    // 우연히 고쳤을 가능성이 높다.** three 는 보통 렌더 직전에 씬 전체를 갱신하지만,
-    // 여기서는 부착을 프레임에 걸쳐 나눠 하므로 갱신 시점과 어긋날 수 있다.
-    // 행렬이 낡으면 프러스텀 컬링이 **원점 기준**으로 판정해 32m 앞 건물도 화면
-    // 밖으로 취급한다 — 삼각형은 잡히는데 화면에는 없던 증상과 정확히 맞는다.
-    //
-    // 원인을 확정하지는 못했다(헤드리스는 WebGL 이라 이 증상이 재현되지 않는다).
-    // 다만 **진단이 부작용으로 고치는 상태를 남겨 둘 수는 없다.** 진단을 빼면
-    // 다시 깨지고, 그때는 아무도 이유를 모른다.
-    //
-    // 갱신은 **씬에 붙은 쪽**(그룹)에서 건다 — 복제본에서 걸면 그룹의 회전·위치가
-    // 아직 안 반영된 행렬로 자식만 갱신된다.
-    (holder as unknown as Object3D).updateMatrixWorld(true);
-    // 한 프레임에 다 붙이면 그 프레임이 통째로 멈춘다 — 감독 실기기에서 **1,072ms**
-    // 히칭 1회가 그것이었다. 배치마다 프레임을 넘기면 같은 총량이 여러 프레임에 흩어져
-    // 화면이 계속 돈다. 총 시간은 오히려 조금 늘지만 **멈추지 않는다.**
-    if ((i + 1) % ATTACH_BATCH === 0) {
-      onStep(i + 1);
+  // ── 루프는 `attach-loop.ts` 가 소유한다 (2026-08-16, W8-2 — 백로그 #38 완결) ──
+  // 그전에는 여기와 `world2/features/overlay.ts` 에 **같은 모양의 루프가 따로** 있었고,
+  // 검수관이 *"`ATTACH_BATCH`·`WARMUP_FRAMES` 공유 상수 승격 검토"* 로 그 자리를 이미
+  // 지목했다. 공유하면 얻는 것이 상수 통일보다 크다 — **순수 함수라 프레임 넘김 횟수를
+  // 브라우저 없이 셀 수 있다**(`tests/world-shared-attach-loop.test.ts`). 이 파일의 루프는
+  // 그전까지 그 축을 재는 수단이 하나도 없었다.
+  //
+  // `onStep` 은 배치 경계에서 불려야 하므로 `nextFrame` 을 감싸 그 자리에서 낸다 —
+  // 공유 루프에 진행 보고 콜백을 더하지 않는다(그 계약은 «붙이고 프레임을 넘긴다» 하나다).
+  let placed = 0;
+  await attachAll({
+    items: cells,
+    nextFrame: async () => {
+      onStep(placed);
       await nextFrame();
-    }
-  }
+    },
+    batch: ATTACH_BATCH,
+    place: async (cell, i) => {
+      // ── 회전은 **바깥 그룹**이 한다 ───────────────────────────────────────
+      // 보정 오프셋은 모델의 로컬 좌표계 값이다. 같은 객체에 회전과 보정을 함께 주면
+      // 보정까지 회전해 자리가 어긋난다. 안쪽에서 보정하고 바깥에서 돌리면 순서가
+      // 분리된다. 그룹은 드로우콜을 만들지 않으므로 개수 축에는 무해하다.
+      const holder = new THREE.Group();
+      const copy = model.clone(true);
+      copy.position.set(fix.x, fix.y, fix.z);
+      holder.add(copy as never);
+      holder.position.set(cell.x, 0, cell.z);
+      holder.rotation.y = cell.ry;
+      root.add(holder as never);
+      // ── 월드 행렬을 **명시적으로** 갱신한다 ──────────────────────────────
+      // 감독 판정 네 번 동안 미술관이 안 보였고, 다섯 번째에 갑자기 보였다. 그 사이
+      // 내가 넣은 것은 **진단 코드뿐**이다 — `Box3().setFromObject(root)`.
+      //
+      // 그 호출은 부작용으로 자식 전체의 월드 행렬을 강제 갱신한다. 즉 **진단이
+      // 우연히 고쳤을 가능성이 높다.** three 는 보통 렌더 직전에 씬 전체를 갱신하지만,
+      // 여기서는 부착을 프레임에 걸쳐 나눠 하므로 갱신 시점과 어긋날 수 있다.
+      // 행렬이 낡으면 프러스텀 컬링이 **원점 기준**으로 판정해 32m 앞 건물도 화면
+      // 밖으로 취급한다 — 삼각형은 잡히는데 화면에는 없던 증상과 정확히 맞는다.
+      //
+      // 원인을 확정하지는 못했다(헤드리스는 WebGL 이라 이 증상이 재현되지 않는다).
+      // 다만 **진단이 부작용으로 고치는 상태를 남겨 둘 수는 없다.** 진단을 빼면
+      // 다시 깨지고, 그때는 아무도 이유를 모른다.
+      //
+      // 갱신은 **씬에 붙은 쪽**(그룹)에서 건다 — 복제본에서 걸면 그룹의 회전·위치가
+      // 아직 안 반영된 행렬로 자식만 갱신된다.
+      (holder as unknown as Object3D).updateMatrixWorld(true);
+      // 한 프레임에 다 붙이면 그 프레임이 통째로 멈춘다 — 감독 실기기에서 **1,072ms**
+      // 히칭 1회가 그것이었다. 배치마다 프레임을 넘기면 같은 총량이 여러 프레임에 흩어져
+      // 화면이 계속 돈다. 총 시간은 오히려 조금 늘지만 **멈추지 않는다.**
+      // (넘기는 것은 `attachAll` 의 몫이다 — 여기서 넘기면 배치가 무의미해진다.)
+      placed = i + 1;
+    },
+  });
   onStep(cells.length);
 }
-
-/**
- * 한 프레임에 붙일 채수. 작을수록 부드럽고 총 시간이 길어진다.
- *
- * 한 채가 메시 78개라 4채면 프레임당 312개 — 헤드리스에서 프레임 하나가 감당하는 양이다.
- * 이 값을 1 로 내리면 더 부드럽지만 50채에 50프레임(≈0.8초)이 더 든다.
- */
-const ATTACH_BATCH = 4;
 
 /**
  * **최초 렌더 예열.** 잠시 컬링을 끄고 두 프레임 돌린 뒤 원상복구한다.
@@ -824,26 +835,14 @@ const ATTACH_BATCH = 4;
  * WebGPU 에서 같은 효과인지 여기서는 확인할 수 없다(팀장 조건 4).
  */
 async function warmUp(root: Object3D): Promise<void> {
-  const touched: Object3D[] = [];
-  try {
-    root.traverse((o: Object3D) => {
-      if (o.frustumCulled) { o.frustumCulled = false; touched.push(o); }
-    });
-    for (let i = 0; i < WARMUP_FRAMES; i++) await nextFrame();
-  } finally {
-    for (const o of touched) o.frustumCulled = true;
-  }
+  // 구현은 `attach-loop.ts` 가 소유한다(2026-08-16, W8-2). 위 문단들이 **왜** 예열하는지의
+  // 근거이고 — 광장 서쪽 베어링 ~73°, geo +78·tex +22·pipe +6 계단, `finally` 원복 —
+  // 그것들은 이 자산 고유의 실측이라 여기 남는다. 옮긴 것은 **어떻게** 뿐이다.
+  //
+  // ⚠ `WARMUP_FRAMES = 2` 의 실측 근거도 그 파일로 함께 옮겼다 — 값과 근거가 갈라지면
+  // 다음 사람이 값만 보고 고친다.
+  await warmUpNode(root as unknown as CullableNode, nextFrame, WARMUP_FRAMES);
 }
-
-/**
- * 예열에 돌릴 프레임 수. **2 는 실측으로 정해졌다** — 이 값으로 개수 불변식이 통과했고,
- * 예열을 아예 빼면 다시 FAIL 한다(뮤테이션 확인).
- *
- * 모자라면 증상은 **다시 FAIL** 이지 조용한 악화가 아니다 — 개수 불변식이 계속 감시한다.
- * 부팅 예열(`main.ts`)의 프레임 수와 다른 것은 서로 다른 축이라 그렇고, 값 미러링이
- * 아니다(한쪽을 고쳐도 다른 쪽이 틀려지지 않는다).
- */
-const WARMUP_FRAMES = 2;
 
 /** 다음 프레임까지 양보한다. `requestAnimationFrame` 이 없는 환경(테스트)에서도 돈다 */
 function nextFrame(): Promise<void> {

@@ -155,6 +155,16 @@ const STEP_MS = 700;
 const WALK_LEGS = 6;
 const WALK_MS = 1500;
 
+// ── 정착 대기 둘 (W8-2 에서 이름을 줬다 — 본문에 익명으로 박혀 있었다) ────────
+// ⚠ **근거를 못 찾았다.** 관례로 굳은 값이고 커밋 이력에도 실측이 없다. 그리고 이 시간
+// 대기가 이 파일에 남은 마지막 주사위다 — GLB·VRM·오버레이는 `world2-ready.mjs` 가
+// **상태**로 기다리는데 파셀 스트리밍만 그 밖이다. `stream.pending === 0` 으로 바꾸면
+// 기준선 시점이 달라져 골든이 통째로 움직인다 — 실측 없이 건드릴 축이 아니다(태스크 #82).
+/** 부팅 뒤 초기 파셀 정착(ms). 부팅 중 상승은 정상이므로 **기준선을 그 뒤에** 잡는다 */
+const SETTLE_MS = 8000;
+/** 멈춘 뒤 마지막 스냅 전 정착(ms). 이동 중 시작된 스트리밍이 끝나야 한다 */
+const STOP_SETTLE_MS = 1500;
+
 // ── 커버리지 목표 — **G-COL1** (검수관 반려 B1, 2026-08-08) ──────────────────
 //
 // 왜 목표가 필요한가: 이 세션은 오래 *"-z 로 6번 전진"* 이었고, 그것을 **주행이라고
@@ -354,9 +364,8 @@ export async function runInvariants({
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
     const ready = await waitForWorld2Ready(page);
     if (ready.reason) throw new Error(ready.reason);
-    // 초기 파셀이 다 붙을 때까지. 부팅 중 개수가 오르는 것은 정상이므로 **기준선을
-    // 그 뒤에 잡는다** — 안 그러면 정상 상승이 위반으로 찍힌다.
-    await page.waitForTimeout(8000);
+    // 초기 파셀이 다 붙을 때까지. 근거는 `SETTLE_MS` 선언 자리 한 곳이다.
+    await page.waitForTimeout(SETTLE_MS);
 
     const base = await counts(page);
     if (!base) throw new Error('stats() 를 못 읽었다 — 측정이 성립하지 않는다');
@@ -493,7 +502,7 @@ export async function runInvariants({
       }
     }
     await drive(page, 'move', 0, 0);
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(STOP_SETTLE_MS);
     const last = await snap('정지');
     visits.push(keyOf(last));
 

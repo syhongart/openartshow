@@ -37,6 +37,9 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import type { EditSession, LoadProgress, OverlayEntry, OverlayHost } from '../edit/types.js';
 import { loadOverlay, type OverlayItem } from '../decide/overlay.js';
 import { disableMatExtensions } from '../../world-shared/glb-material.js';
+import {
+  ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
+} from '../../world-shared/attach-loop.js';
 import { readNum } from '../url-knob.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { surfaceY } from '../parts/surface.js';
@@ -57,23 +60,50 @@ const MODELS_JSON = 'assets/models/index.json';
  */
 const TEXTURES_JSON = 'assets/textures/index.json';
 
-/**
- * 한 프레임에 붙일 개수. `glb-city.ts` 의 `ATTACH_BATCH` 와 같은 근거다(한 프레임에 다
- * 붙이면 그 프레임이 통째로 멈춘다) — 값이 같은 것은 우연이고, 서로를 참조하지 않는다.
- */
-const ATTACH_BATCH = 4;
-
-/** 예열 프레임. `glb-city.ts` 의 `WARMUP_FRAMES` 와 같은 축이다(첫 렌더에 GPU 자원이 오른다). */
-const WARMUP_FRAMES = 2;
+// ⚠ `ATTACH_BATCH`·`WARMUP_FRAMES` 는 **`world-shared/attach-loop.ts` 가 소유한다**
+// (2026-08-16, W8-2). 그전에는 여기와 `glb-city.ts` 에 각각 있었고 주석이
+// *"값이 같은 것은 우연이고, 서로를 참조하지 않는다"* 라고 적고 있었다 — 백로그 #38 이
+// 「공유 상수 승격 검토」로 그 자리를 이미 지목했다. `world-shared/` 가 생겼으니 옮긴다.
+// (glb-city 쪽 이관은 아직이다 — 그 파일은 세 세계가 함께 쓰므로 별도 회차.)
 
 interface Diag {
-  state: 'idle' | 'loading' | 'ready' | 'failed';
+  /**
+   * ⚠ `'idle'` 이 **없다**(2026-08-16, W8-2). 그전에는 초기값이 `'idle'` 이었는데
+   * **밖에서 한 번도 관측될 수 없었다** — `create()` 가 리턴하기 전에 아래 IIFE 의 첫 줄이
+   * 동기로 `'loading'` 을 쓴다. 죽은 값을 남겨 두면 대기 조건을 쓰는 쪽이 그것을 유효
+   * 상태로 읽고 `state !== 'idle'` 같은 **영원히 참인 조건**을 짜게 된다.
+   */
+  state: 'loading' | 'ready' | 'failed';
+  /**
+   * 놓으려는 개수. `placed` 하나만으로는 **「다 놓았다」와 「절반만 놓였다」가 구별되지
+   * 않는다** — 둘 다 `state='ready'` 에 양수 `placed` 다.
+   *
+   * `glb-city` 가 이미 같은 짝(`placed`/`want`)을 내고 `world2-ready.mjs` 가
+   * *"`ready` 인데 `placed` 가 요청보다 적으면 세운 척만 한 것이다"* 로 판정한다.
+   * 오버레이에는 그 짝이 없어서 **완주 판정이 원리적으로 불가능**했다.
+   */
+  want: number;
   placed: number;
-  /** 로드에 실패한 `src`. **못 세우고 통과시키지 않으려고 남긴다** */
+  /**
+   * 로드에 실패한 `src`. **못 세우고 통과시키지 않으려고 남긴다.**
+   * 앞에서 `FAILED_KEEP` 개까지만 담는다 — 전체 횟수는 `failedTotal`.
+   */
   failed: string[];
+  /** 실패한 총 횟수. `failed` 는 잘리므로 이 값이 없으면 규모를 알 수 없다 */
+  failedTotal: number;
   edit: boolean;
   error?: string;
 }
+
+/**
+ * `diag.failed` 에 담아 두는 개수. 진단에 필요한 것은 **어떤 것이 왜 실패했나**의
+ * 표본이지 전량이 아니다 — 규모는 `failedTotal` 이 답한다.
+ *
+ * ⚠ 이 값을 `diagnostics()` 의 `slice()` 에도 **다시 적지 않는다.** 그전에는 저기에
+ * `4` 가 리터럴로 박혀 있었고, 상한을 넣으면서 그것을 두 곳에 적으면 한쪽만 고쳐도
+ * 아무도 모르는 그 형태가 된다.
+ */
+const FAILED_KEEP = 4;
 
 type Vec3Like = { set(x: number, y: number, z: number): void };
 type ThreeGroupNS = {
@@ -88,15 +118,9 @@ function nextFrame(): Promise<void> {
   });
 }
 
-/** 컬링을 잠시 끄고 몇 프레임 돌려 GPU 자원을 미리 올린다(`glb-city.ts` 와 같은 처방). */
+/** 컬링을 잠시 끄고 몇 프레임 돌려 GPU 자원을 미리 올린다. 구현은 공유 모듈이 소유한다. */
 async function warmUp(root: Object3D): Promise<void> {
-  const touched: Object3D[] = [];
-  try {
-    root.traverse((o: Object3D) => { if (o.frustumCulled) { o.frustumCulled = false; touched.push(o); } });
-    for (let i = 0; i < WARMUP_FRAMES; i++) await nextFrame();
-  } finally {
-    for (const o of touched) o.frustumCulled = true;
-  }
+  await warmUpNode(root as unknown as CullableNode, nextFrame);
 }
 
 export const overlayFeature: Feature = {
@@ -108,7 +132,9 @@ export const overlayFeature: Feature = {
     const wantOverlay = readNum('overlay', 1, 0, 1) >= 1;
     if (!wantEdit && !wantOverlay) return null;
 
-    const diag: Diag = { state: 'idle', placed: 0, failed: [], edit: wantEdit };
+    const diag: Diag = {
+      state: 'loading', want: 0, placed: 0, failed: [], failedTotal: 0, edit: wantEdit,
+    };
     const entries: OverlayEntry[] = [];
     /**
      * 로드한 원본 모델. 같은 `src` 를 여러 번 놓아도 지오·재질을 공유한다.
@@ -196,7 +222,14 @@ export const overlayFeature: Feature = {
         })
         .catch((e: unknown) => {
           lastFail = `${key}: ${e instanceof Error ? e.message : String(e)}`;
-          diag.failed.push(lastFail);
+          // ⚠ **상한이 있다**(2026-08-16, W8-2). 그전에는 무제한 `push` 였다 — 편집 세션에서
+          // 같은 실패를 반복하면(네트워크가 나가면 놓을 때마다 난다) 이 배열만 계속 자란다.
+          // 화면에 안 나오는 누수라 `info.memory` 축이 **원리적으로 못 잡는다.**
+          //
+          // 자르되 **몇 번이었는지는 센다** — 상한만 두면 「4번 실패」와 「400번 실패」가
+          // 같은 값이 되고, 그것이야말로 진단이 필요한 순간에 진단을 잃는 것이다.
+          diag.failedTotal++;
+          if (diag.failed.length < FAILED_KEEP) diag.failed.push(lastFail);
           // **실패는 캐시하지 않는다.** 남겨 두면 그 `src` 는 세션 내내 되살아나지
           // 못한다(일시적 네트워크 실패가 영구 실패가 된다).
           models.delete(key);
@@ -225,6 +258,18 @@ export const overlayFeature: Feature = {
       at: { x: number; y: number; z: number; ry?: number; s?: number },
       blobUrl?: string,
       onProgress?: LoadProgress,
+      /**
+       * 붙인 직후 **이 항목만** 예열할 것인가. 기본은 예열한다(= 편집 경로).
+       *
+       * ⚠ **부팅 루프는 `false` 를 넘긴다.** 그쪽은 배치마다 프레임을 넘기고 **끝에서
+       * 한 번** `warmUp(root)` 하므로, 항목마다 또 하면 프레임이 **3배**가 된다
+       * (`3.25N` vs `0.25N` — 근거·수치는 `world-shared/attach-loop.ts` 헤더 한 곳).
+       *
+       * 이 인자가 없던 동안 **부팅이 편집용 비용을 그대로 물고 있었다.** 아래 예열
+       * 주석은 그 사실을 모른 채 *"편집 중 한 개씩 놓는 경로는 그 루프를 안 탄다"* 만
+       * 적고 있었다 — 참이지만 **역은 아니었다**(부팅은 이 함수를 탄다).
+       */
+      warm = true,
     ): Promise<OverlayEntry | null> {
       await ensureLoader();
       if (disposed || !THREE || !root) return null;
@@ -269,9 +314,11 @@ export const overlayFeature: Feature = {
       // 이미 놓인 것까지 다시 열면 그것들의 컬링이 매번 흔들린다. `npc.ts` 의
       // *"VRM 은 비동기라 예열 창을 이미 지났을 수 있다 — 합류하는 체만 다시 연다"* 와
       // 같은 처방이다.
-      await nextFrame();
-      if (disposed) return entry;
-      await warmUp(entry.holder);
+      if (warm) {
+        await nextFrame();
+        if (disposed) return entry;
+        await warmUp(entry.holder);
+      }
       return entry;
     }
 
@@ -368,7 +415,8 @@ export const overlayFeature: Feature = {
 
     void (async () => {
       try {
-        diag.state = 'loading';
+        // `diag.state` 는 이미 `'loading'` 이다(초기값). 여기서 다시 쓰지 않는다 —
+        // 같은 값을 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다.
         // 배포된 배치 파일. 없으면(404) 빈 것으로 본다 — 배치가 아직 0개인 것이 정상이다.
         let raw: unknown = null;
         try {
@@ -378,6 +426,11 @@ export const overlayFeature: Feature = {
         if (disposed) return;
 
         const overlay = loadOverlay(raw);
+        // **놓기 전에 몇 개를 놓을지부터 적는다.** 뒤에 적으면 `state='ready'` 와 `want`
+        // 사이에 창이 생겨, 그 창에서 관측한 스모크가 `placed >= want` 를 거짓 통과시킨다.
+        // (편집 세션에서 더 놓으면 `placed > want` 가 되는데 그것은 정상이다 — 이 값이
+        //  뜻하는 것은 **부팅이 놓으려던 개수**이고, 판정은 `placed < want` 한 방향뿐이다.)
+        diag.want = overlay.items.length;
         // ── 동결 파셀을 먼저 앉힌다 ──────────────────────────────────────────
         // GLB 배치(`items`)보다 **앞**인 이유: 이쪽은 프레임을 넘기지 않고 끝나는 반면
         // `place` 루프는 자산을 받느라 오래 걸린다. 뒤로 미루면 그동안 감독은 옛 마을을
@@ -389,12 +442,21 @@ export const overlayFeature: Feature = {
         // 둘 다 프레임을 안 넘기고 끝나므로, GLB 를 받는 동안 감독이 옛 재질의 마을을
         // 보는 일이 없다. 집행은 `features/surface-paint.ts` 가 다음 프레임에 한다.
         env.setSurfaces(overlay.surfaces);
-        for (let i = 0; i < overlay.items.length; i++) {
-          const it = overlay.items[i];
-          await place(it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s });
-          if (disposed) return;
-          if ((i + 1) % ATTACH_BATCH === 0) await nextFrame();
-        }
+        // ⚠ **부팅은 항목마다 예열하지 않는다**(`warm = false`) — 배치마다 프레임을
+        // 넘기고 **끝에서 한 번** `warmUp(root)` 한다. 그전에는 `place()` 안의 3프레임을
+        // 부팅도 물어 `frames(N) = 3.25N + 2` 였다(N=100 → 327프레임). 지금은 `0.25N + 2`.
+        // 루프 자체는 `world-shared/attach-loop.ts` 가 소유한다 — **순수 함수라 테스트가
+        // 프레임 넘김 횟수를 직접 센다**(그전에는 이 축을 재는 것이 0개였다).
+        await attachAll({
+          items: overlay.items,
+          place: (it: OverlayItem) => place(
+            it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s }, undefined, undefined, false,
+          ),
+          nextFrame,
+          aborted: () => disposed,
+          batch: ATTACH_BATCH,
+        });
+        if (disposed) return;
         if (root) await warmUp(root);
         if (disposed) return;
         diag.state = 'ready';
@@ -437,7 +499,10 @@ export const overlayFeature: Feature = {
       // `frozen` 은 `diag` 에 넣지 않고 여기서 읽는다 — 저장소가 소유하는 값이라
       // 복사해 두면 갈라진다(편집이 저장소를 직접 고치므로 복사본은 즉시 낡는다).
       diagnostics: () => ({
-        ...diag, failed: diag.failed.slice(0, 4), frozen: env.village.size(),
+        // `failed` 는 이미 `FAILED_KEEP` 상한이 걸려 있다 — 여기서 다시 자르지 않는다.
+        // 그전에는 여기서만 `slice(0, 4)` 로 잘랐고, **배열 자체는 무제한으로 자랐다**
+        // (화면에 보이는 것만 4개였을 뿐 누수는 그대로였다).
+        ...diag, frozen: env.village.size(),
       }),
       // 배치 수가 곧 상태다. 0개도 유효한 그룹이라 `'0'` 을 낸다 — `null` 을 내면 이
       // 기능이 기본 켜짐인 탓에 드로우콜 축이 **영원히 판정 불가**가 된다(`glb-city`·
