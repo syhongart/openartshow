@@ -111,3 +111,41 @@ describe('★ 경로는 저장소가 소유한다', () => {
     }
   });
 });
+
+describe('★ 벽에 건 작품이 부팅에 꽂혔다 (W8-4)', () => {
+  it('★ 씬을 만든다 — 안 부르면 액자도 라이트 풀도 없다', () => {
+    expect(CODE, '★ 액자 씬을 안 만든다').toContain('mountArtworks(');
+    expect(CODE, '★ 계획의 작품을 안 넘긴다').toMatch(/artScene\.place\(plan\.arts\)/);
+  });
+
+  it('★ **작품이 0개여도 씬을 만든다** — 라이트 풀이 부팅에 서야 개수 불변식이 성립한다', () => {
+    // 조건 1 의 집행 지점이다. `plan.arts.length > 0` 로 **씬 생성 자체**를 감싸면
+    // 작품이 생기는 순간 라이트가 늘어 `[7]` 이 증식으로 읽는다.
+    // ⚠ 첫 판본은 `if (plan.arts.length > 0)` 라는 **문자열을 찾아** 그 줄만 봤고,
+    // `if (THREE && plan.arts.length > 0)` 로 감싸는 뮤테이션(C8)을 **놓쳤다**
+    // — 원본의 `ensureLoader` 줄이 먼저 잡혀 검사가 거기서 끝났기 때문이다.
+    // 축을 바꾼다: **씬 생성을 감싸는 조건문에 작품 개수가 나오면 안 된다.**
+    const make = CODE.indexOf('mountArtworks(');
+    expect(make).toBeGreaterThan(-1);
+    const head = CODE.lastIndexOf('if (', make);
+    expect(head, '★ 씬 생성이 조건문 밖에 있다 — 이 검사가 헛돈다').toBeGreaterThan(-1);
+    const cond = CODE.slice(head, make);
+    expect(cond, '★ 작품 유무가 씬 생성을 가른다 — 라이트 풀이 나중에 서서 개수가 변한다')
+      .not.toMatch(/arts[.\s]*\.?length/);
+  });
+
+  it('★ 경로 결합기를 넘긴다 — `assetUrl` 이 base 결합의 유일한 자리다', () => {
+    // 로더 자체의 배선은 `systems/artwork-scene.ts` 가 소유하고, 그것이 실제로 붙는지는
+    // `world2-artwork-scene.test.ts` 가 **실행으로** 잰다(텍스트보다 강한 축이다).
+    // 여기서는 부팅이 결합기를 넘기는지만 본다.
+    expect(CODE, '★ base 결합기를 안 넘긴다').toMatch(/mountArtworks\([^)]*assetUrl/);
+  });
+
+  it('★ 진단이 작품·조명을 말한다 — 스모크가 판정할 수 있어야 한다', () => {
+    expect(CODE).toMatch(/art: artScene\?\.stats\(\)/);
+  });
+
+  it('★ 떠날 때 정리한다', () => {
+    expect(CODE).toContain('artScene?.dispose()');
+  });
+});

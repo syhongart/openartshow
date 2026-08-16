@@ -30,6 +30,7 @@
 // 병합 조건으로 걸었고, 이 파일이 순수한 이유가 그것이다 — 브라우저 없이 실증된다.
 
 import { loadOverlay, type OverlayItem, type FrozenParcel } from './overlay.js';
+import type { ArtworkItem } from './artwork.js';
 import { isPlotOf, type Ledger } from './village-ledger.js';
 
 /**
@@ -76,6 +77,17 @@ export interface MergePlan {
   groups: OverlayGroup[];
   /** 합친 동결 파셀. **대장 배정을 통과한 것만** */
   parcels: FrozenParcel[];
+  /**
+   * 합친 **벽에 건 작품**(W8-4).
+   *
+   * ⚠ `parcels` 와 달리 **대장으로 거르지 않는다** — `items` 와 같은 이유다(자유 좌표라
+   * 어느 칸인지 애매하고, 팀장 판정 (다)에서 소유자는 「어느 문서에서 왔는가」로 확정된다).
+   *
+   * ⚠⚠ `items` 와 달리 **그룹으로 안 쪼갠다.** 조명 배정(`decide/art-light.ts` 의
+   * `assignArtLights`)이 **파셀 단위 예산**이라 마을 전체를 한 번에 봐야 한다 — 작가별로
+   * 나눠 배정하면 같은 파셀에 두 작가 작품이 있을 때 예산이 두 배가 된다.
+   */
+  arts: ArtworkItem[];
   issues: MergeIssue[];
 }
 
@@ -88,6 +100,7 @@ export interface MergePlan {
 export function planMerge(ledger: Ledger, docs: readonly OverlayDoc[]): MergePlan {
   const groups: OverlayGroup[] = [];
   const parcels: FrozenParcel[] = [];
+  const arts: ArtworkItem[] = [];
   const issues: MergeIssue[] = [];
 
   for (const doc of docs) {
@@ -137,6 +150,8 @@ export function planMerge(ledger: Ledger, docs: readonly OverlayDoc[]): MergePla
     // 판정이 *"소유자는 좌표 유도가 아니라 「어느 문서에서 왔는가」로 확정된다"* 로 그
     // 애매함을 **피하는 쪽**을 골랐다. 그룹 분리가 곧 소유 표시다.
     groups.push({ owner, items: parsed.items });
+    // 작품은 **모아서 한 번** 처리한다(위 `MergePlan.arts` 주석의 조명 예산 근거).
+    arts.push(...parsed.arts);
 
     // 문서는 읽혔는데 대장에 배정이 없다 — 건물은 서지만 파셀 동결은 안 먹는다.
     // 그 사실을 말해야 «왜 내 땅이 안 바뀌지» 를 작가가 안다.
@@ -145,7 +160,7 @@ export function planMerge(ledger: Ledger, docs: readonly OverlayDoc[]): MergePla
     }
   }
 
-  return { groups, parcels, issues };
+  return { groups, parcels, arts, issues };
 }
 
 /** 계획 안의 총 배치 수. `diag.want` 가 이 값을 쓴다 */

@@ -46,6 +46,7 @@ import {
 import { createStaticStore, loadLegacyOverlay } from '../store/static-store.js';
 import { resolveEntry } from '../decide/tenant-entry.js';
 import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
+import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-scene.js';
 import { disableMatExtensions } from '../../world-shared/glb-material.js';
 import {
   ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
@@ -135,6 +136,8 @@ export const overlayFeature: Feature = {
     let edit: EditSession | null = null;
     /** 진입 바(W8-3 S6). DOM 이 없거나 마크업이 없으면 `null` — 그래도 세계는 뜬다 */
     let tenantBar: TenantBar | null = null;
+    /** 액자·조명(W8-4). 작품이 0개여도 만든다 — 라이트 풀이 **부팅에** 서야 하기 때문이다 */
+    let artScene: ArtworkScene | null = null;
     let nextId = 1;
     let disposed = false;
 
@@ -425,7 +428,10 @@ export const overlayFeature: Feature = {
           const legacy = await loadLegacyOverlay();
           if (disposed) return;
           const one = loadOverlay(legacy.raw);
-          plan = { groups: [{ owner: '', items: one.items }], parcels: one.parcels, issues: [] };
+          plan = {
+            groups: [{ owner: '', items: one.items }],
+            parcels: one.parcels, arts: one.arts, issues: [],
+          };
           // ⚠ 옛 경로에서는 **`surfaces` 를 그대로 쓴다** — 그것이 지금 라이브 동작이고,
           // 마을 운영자(감독)의 단일 문서이기 때문이다. 여러 작가일 때만 무시한다.
           env.setSurfaces(one.surfaces);
@@ -480,6 +486,18 @@ export const overlayFeature: Feature = {
           });
           if (disposed) return;
         }
+        // ── 벽에 건 작품 (W8-4) — ⚠ **작품이 0개여도 씬을 만든다** ────────────
+        // 라이트 풀이 부팅에 서야 팀장 조건 1(개수 불변 절대)이 성립한다. 작품이 생길 때
+        // 만들면 그 순간 개수가 변하고 `[7]` 이 증식으로 읽는다. GLB 부착 뒤인 이유는
+        // `ensureLoader()` 가 three 네임스페이스를 채우기 때문이다.
+        if (plan.arts.length > 0) await ensureLoader();
+        if (disposed) return;
+        if (THREE) {
+          artScene = mountArtworks(THREE, env.scene as unknown as ArtNode, DEFAULT_LAYOUT, assetUrl);
+          await artScene.place(plan.arts);
+          if (disposed) return;
+        }
+
         if (root) await warmUp(root);
         if (disposed) return;
         diag.state = 'ready';
@@ -525,7 +543,7 @@ export const overlayFeature: Feature = {
         // `failed` 는 이미 `FAILED_KEEP` 상한이 걸려 있다 — 여기서 다시 자르지 않는다.
         // 그전에는 여기서만 `slice(0, 4)` 로 잘랐고, **배열 자체는 무제한으로 자랐다**
         // (화면에 보이는 것만 4개였을 뿐 누수는 그대로였다).
-        ...diag, frozen: env.village.size(),
+        ...diag, frozen: env.village.size(), art: artScene?.stats() ?? null,
       }),
       // 배치 수가 곧 상태다. 0개도 유효한 그룹이라 `'0'` 을 낸다 — `null` 을 내면 이
       // 기능이 기본 켜짐인 탓에 드로우콜 축이 **영원히 판정 불가**가 된다(`glb-city`·
@@ -535,6 +553,7 @@ export const overlayFeature: Feature = {
         disposed = true;
         edit?.dispose();
         tenantBar?.dispose();
+        artScene?.dispose();
         for (const u of blobUrls) { try { URL.revokeObjectURL(u); } catch { /* 이미 회수됨 */ } }
         blobUrls.clear();
         if (root) {
