@@ -47,6 +47,16 @@ export const GATES = [
   // tests/gate.test.ts 가 첫 실행에서 잡았다). 로컬에서 통과한 것이 CI 에서 깨지는
   // 상태였고, 이 검사가 보는 것은 런타임 ReferenceError 라 가장 늦게 알면 안 된다.
   { name: 'check:refs', cmd: 'check:refs' },
+  // check:cycles — `docs/ARCHITECTURE.md` §2 강제 불변식 2(「순환 의존 0」)를 **검사로**
+  // 만든다. 그전까지 그 조항은 *"위반 = 교차리뷰 반려"* 라고 **선언만** 돼 있었고
+  // 검사가 0건이었다(2026-08-16 실측). 순환은 사람 눈이 특히 못 잡는다 — A→B→C→A 는
+  // 파일 셋을 동시에 봐야 보이는데 리뷰는 diff 단위라 그 셋이 한 화면에 오지 않는다.
+  { name: 'check:cycles', cmd: 'check:cycles' },
+  // check:filesize — 감독 지시 2026-08-16 *"파일사이즈 폭주 안되고 모듈 관리 잘되게"*.
+  // **절대 상한이 아니라 「나빠지지 않음」을 집행한다**(기존 부채는 동결, 새 부채는 차단).
+  // ⚠ ESLint `max-lines` 로는 안 된다 — `eslint.config.js` 의 `files` 가 `.js|.mjs` 뿐이라
+  // **`.ts` 를 아예 안 본다**(가장 큰 파일들이 전부 `.ts` 다). 근거는 그 파일 헤더 한 곳.
+  { name: 'check:filesize', cmd: 'check:filesize' },
   { name: 'check:gitadd', cmd: 'check:gitadd' },
   { name: 'check:devlog-times', cmd: 'check:devlog-times' },
   { name: 'test', cmd: 'test' },
