@@ -269,3 +269,38 @@ describe('★ 부팅 진입점 — 로더가 실제로 붙는다', () => {
     expect(textureLoaderFor(THREE, (s2) => s2)).toBeUndefined();
   });
 });
+
+describe('★ 텍스처는 재질을 만들기 **전에** 받는다 (브라우저 실측이 잡은 결함)', () => {
+  it('★ 재질 생성 인자에 `map` 이 들어간다 — 나중에 꽂으면 화면에 안 뜬다', async () => {
+    // 🔴 첫 판본은 재질을 만든 뒤 `mat.map = tex` 를 했고, 실측에서 `texFailed: 0` 인데
+    // 액자가 회색이었다. three 는 재질이 처음 렌더될 때 셰이더를 굽고, 그 뒤 `map` 을
+    // 꽂으면 `needsUpdate` 없이는 반영되지 않는다. 순서로 해소했다(셰이더 재컴파일 0).
+    const { THREE, scene } = makeThree();
+    const seen: Record<string, unknown>[] = [];
+    const Base = (THREE as unknown as { MeshStandardMaterial: new (o: Record<string, unknown>) => unknown })
+      .MeshStandardMaterial;
+    (THREE as unknown as Record<string, unknown>).MeshStandardMaterial =
+      class { constructor(o: Record<string, unknown>) { seen.push(o); return new Base(o) as object; } };
+
+    const s = createArtworkScene({
+      THREE, scene, cellX: CELL, cellZ: CELL,
+      loadTexture: async () => ({ fake: 'tex' }),
+    });
+    await s.place([art()]);
+    const withMap = seen.filter((o) => o.map !== undefined);
+    expect(withMap, '★ 재질이 텍스처 없이 만들어진다 — 그림이 안 뜬다').toHaveLength(1);
+  });
+
+  it('★ 텍스처가 없으면 `map` 키 자체를 안 넣는다 — `undefined` 를 넣으면 경고가 난다', async () => {
+    const { THREE, scene } = makeThree();
+    const seen: Record<string, unknown>[] = [];
+    const Base = (THREE as unknown as { MeshStandardMaterial: new (o: Record<string, unknown>) => unknown })
+      .MeshStandardMaterial;
+    (THREE as unknown as Record<string, unknown>).MeshStandardMaterial =
+      class { constructor(o: Record<string, unknown>) { seen.push(o); return new Base(o) as object; } };
+
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place([art()]);
+    expect(seen.some((o) => 'map' in o), '★ 빈 map 키가 들어갔다').toBe(false);
+  });
+});

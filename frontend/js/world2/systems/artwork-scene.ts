@@ -170,7 +170,26 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       g.add(border);
 
       // 작품 평면 — 텍스처는 개별이라 재질도 개별이다.
-      const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+      //
+      // ⚠ **텍스처를 먼저 받고 재질을 만든다.** 첫 판본은 재질을 만든 뒤 `mat.map = tex`
+      // 를 했고 **브라우저 실측에서 그림이 안 떴다**(`texFailed: 0` 인데 액자가 회색).
+      // three 는 재질이 처음 렌더될 때 셰이더를 굽는데, 그 뒤 `map` 을 꽂으면
+      // `needsUpdate = true` 없이는 반영되지 않는다.
+      //
+      // `needsUpdate` 로 고칠 수도 있었지만 그 길은 **셰이더를 다시 굽는다** — 파이프라인
+      // 수가 오르내리고 `[7]` 이 그것을 본다. 순서를 바꾸면 처음부터 맞는 셰이더가 한 번만
+      // 구워진다. **잰 것이 아니라 구조로 해소한 것**이 요점이다.
+      let tex: unknown = null;
+      if (deps.loadTexture) {
+        try {
+          tex = await deps.loadTexture(a.src);
+          if (disposed) return;
+          if (!tex) texFailed++;
+        } catch { texFailed++; }
+      }
+      const mat = new THREE.MeshStandardMaterial({
+        ...(tex ? { map: tex } : {}), roughness: 0.85, metalness: 0,
+      });
       artMats.push(mat);
       const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
       // 테두리 판 **앞면**에 얹는다. 뒤에 두면 판에 가려 아무것도 안 보인다.
@@ -192,13 +211,6 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
         lit++;
       }
 
-      if (deps.loadTexture) {
-        try {
-          const tex = await deps.loadTexture(a.src);
-          if (disposed) return;
-          if (tex) mat.map = tex; else texFailed++;
-        } catch { texFailed++; }
-      }
     }
   }
 
