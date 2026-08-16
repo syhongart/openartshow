@@ -355,8 +355,15 @@ describe('배선 — 오버레이가 파일과 저장소를 잇는가 (정적·�
   const src = readFileSync('frontend/js/world2/features/overlay.ts', 'utf8');
 
   it('읽은 parcels 를 저장소에 앉힌다', () => {
+    // ⚠ **인자 이름이 아니라 「앉히는가」를 본다**(2026-08-16 정정). 첫 판본은
+    // `setAll(overlay.parcels)` 를 글자 그대로 요구했고, W8-3 이 여러 작가 문서를
+    // 합치면서 인자가 `plan.parcels` 가 되자 **빨간불이 났다** — 목적(배포된 동결이
+    // 화면에 온다)은 그대로인데 변수명에 묶여 있었던 것이다.
+    //
+    // 「한 번만 부르는가」·「합쳐진 것을 넣는가」는 `world2-multi-wiring.test.ts` 가
+    // 더 정확히 본다. 여기는 **호출 자체가 사라지지 않는 것**까지만 지킨다.
     expect(src, 'setAll 이 없다 — 배포된 동결이 화면에 안 온다')
-      .toMatch(/env\.village\.setAll\(overlay\.parcels\)/);
+      .toMatch(/env\.village\.setAll\(/);
   });
 
   it('내보내기에 parcels 를 담는다', () => {

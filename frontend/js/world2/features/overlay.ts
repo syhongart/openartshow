@@ -39,6 +39,11 @@ import { loadOverlay, type OverlayItem } from '../decide/overlay.js';
 import {
   newDiag, recordFailure, beginAttach, type OverlayDiag,
 } from '../decide/overlay-diag.js';
+import { loadLedger, owners } from '../decide/village-ledger.js';
+import {
+  planMerge, totalItems, type MergePlan, type OverlayDoc,
+} from '../decide/multi-overlay.js';
+import { createStaticStore, loadLegacyOverlay } from '../store/static-store.js';
 import { disableMatExtensions } from '../../world-shared/glb-material.js';
 import {
   ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
@@ -50,8 +55,10 @@ import { DEFAULT_LAYOUT } from '../parts/types.js';
 // base 결합은 `asset-url.ts` **한 곳**이다. W7 에서 소비자가 둘이 되면서 모듈로 올렸다.
 import { assetUrl } from '../asset-url.js';
 
-/** 배포된 배치 파일. 없거나 비어 있으면 아무것도 안 얹는다. */
-const OVERLAY_JSON = 'assets/world2-overlay.json';
+// ⚠ 배치 파일 경로는 **`store/static-store.ts` 가 소유한다**(2026-08-16, W8-3 S5).
+// 그전에는 여기 `OVERLAY_JSON` 상수가 있었고 이 파일이 직접 `fetch` 했다 — 저장 자리를
+// 어댑터로 가두는 것이 감독 카드(「구조만 먼저」)의 요구라 옮겼다. 여기 남겨 두면
+// **경로가 두 곳에 생기고**, 서버가 붙는 날 한쪽만 바뀐다.
 
 /** 팔레트에 뜰 모델 목록. `frontend/assets/models/index.json` 과 짝이다. */
 const MODELS_JSON = 'assets/models/index.json';
@@ -103,6 +110,9 @@ export const overlayFeature: Feature = {
     if (!wantEdit && !wantOverlay) return null;
 
     const diag: OverlayDiag = newDiag(wantEdit);
+    // ⚠ 지금은 배포 저장소 고정이다. 주입 자리는 S6(진입)에서 연다 — 여기서 미리 넓히면
+    // 쓰는 사람이 없는 노브가 생기고, 그것은 「지금 안 쓰는 것을 미리 공유」다.
+    const store = createStaticStore();
     const entries: OverlayEntry[] = [];
     /**
      * 로드한 원본 모델. 같은 `src` 를 여러 번 놓아도 지오·재질을 공유한다.
@@ -384,46 +394,77 @@ export const overlayFeature: Feature = {
       try {
         // `diag.state` 는 이미 `'loading'` 이다(초기값). 여기서 다시 쓰지 않는다 —
         // 같은 값을 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다.
-        // 배포된 배치 파일. 없으면(404) 빈 것으로 본다 — 배치가 아직 0개인 것이 정상이다.
-        let raw: unknown = null;
-        try {
-          const res = await fetch(assetUrl(OVERLAY_JSON), { cache: 'no-cache' });
-          if (res.ok) raw = await res.json();
-        } catch { /* 파일이 없다 = 배치 0개 */ }
+        //
+        // ── 대장이 있으면 여러 작가, 없으면 옛 단일 문서 (2026-08-16, W8-3 S5) ──
+        // **하위호환이 이 분기의 전부다.** 대장·작가 문서가 하나도 배포되지 않은 상태에서
+        // 세계가 **지금과 똑같이 떠야 한다** — 그 보장이 없으면 이 회차는 라이브 회귀다.
+        const ledgerRaw = await store.loadLedger();
         if (disposed) return;
+        const { ledger, issues: ledgerIssues } = loadLedger(ledgerRaw.raw);
+        diag.ledgerIssues = ledgerIssues.length;
 
-        const overlay = loadOverlay(raw);
+        const who = owners(ledger);
+        let plan: MergePlan;
+        if (who.length === 0) {
+          // 대장이 없다(또는 배정 0). **옛 경로 그대로** — 단일 문서를 마을 전체로 본다.
+          const legacy = await loadLegacyOverlay();
+          if (disposed) return;
+          const one = loadOverlay(legacy.raw);
+          plan = { groups: [{ owner: '', items: one.items }], parcels: one.parcels, issues: [] };
+          // ⚠ 옛 경로에서는 **`surfaces` 를 그대로 쓴다** — 그것이 지금 라이브 동작이고,
+          // 마을 운영자(감독)의 단일 문서이기 때문이다. 여러 작가일 때만 무시한다.
+          env.setSurfaces(one.surfaces);
+        } else {
+          // ⚠ **문서를 하나씩 받는다.** `Promise.all` 로 묶으면 한 요청의 예외가 전부를
+          // reject 하고, 그것이 팀장이 병합 조건으로 건 **실패 격리**를 깬다.
+          const docs: OverlayDoc[] = [];
+          for (const owner of who) {
+            const got = await store.loadOverlay(owner);
+            if (disposed) return;
+            docs.push({ owner, raw: got.raw, failure: got.failure });
+          }
+          plan = planMerge(ledger, docs);
+          // 여러 작가일 때 표면 재질은 **마을 것**이다(감독 카드) — 작가 문서의 것은
+          // `planMerge` 가 무시하고 사유를 냈다. 마을 기본값을 그대로 둔다.
+        }
+        diag.owners = plan.groups.length;
+        diag.mergeIssues = plan.issues.length;
+
         // **놓기 전에 몇 개를 놓을지부터 적는다.** 뒤에 적으면 `state='ready'` 와 `want`
         // 사이에 창이 생겨, 그 창에서 관측한 스모크가 `placed >= want` 를 거짓 통과시킨다.
         // (편집 세션에서 더 놓으면 `placed > want` 가 되는데 그것은 정상이다 — 이 값이
         //  뜻하는 것은 **부팅이 놓으려던 개수**이고, 판정은 `placed < want` 한 방향뿐이다.)
-        beginAttach(diag, overlay.items.length);
+        beginAttach(diag, totalItems(plan));
         // ── 동결 파셀을 먼저 앉힌다 ──────────────────────────────────────────
         // GLB 배치(`items`)보다 **앞**인 이유: 이쪽은 프레임을 넘기지 않고 끝나는 반면
         // `place` 루프는 자산을 받느라 오래 걸린다. 뒤로 미루면 그동안 감독은 옛 마을을
         // 보게 되고, 다 받은 뒤에야 파셀이 통째로 다시 만들어진다.
         //
-        // 비어 있으면 아무 일도 없다 — `setAll([])` 은 이전 동결이 없을 때 알림도 안 낸다.
-        env.village.setAll(overlay.parcels);
-        // 표면 재질(W7)도 여기서 흘려보낸다. **동결 파셀과 같은 자리인 것이 중요하다** —
-        // 둘 다 프레임을 안 넘기고 끝나므로, GLB 를 받는 동안 감독이 옛 재질의 마을을
-        // 보는 일이 없다. 집행은 `features/surface-paint.ts` 가 다음 프레임에 한다.
-        env.setSurfaces(overlay.surfaces);
+        // ⚠ **한 번만 부른다.** `setAll` 이 `index.clear()` 로 시작하므로(실측
+        // `village-parcels.ts:169-181`) 작가마다 부르면 **마지막 것만 남고**, 증상은
+        // «다른 작가 파셀이 안 보인다» 로만 난다. `planMerge` 가 이미 합쳐 뒀다.
+        env.village.setAll(plan.parcels);
         // ⚠ **부팅은 항목마다 예열하지 않는다**(`warm = false`) — 배치마다 프레임을
         // 넘기고 **끝에서 한 번** `warmUp(root)` 한다. 그전에는 `place()` 안의 3프레임을
         // 부팅도 물어 `frames(N) = 3.25N + 2` 였다(N=100 → 327프레임). 지금은 `0.25N + 2`.
         // 루프 자체는 `world-shared/attach-loop.ts` 가 소유한다 — **순수 함수라 테스트가
         // 프레임 넘김 횟수를 직접 센다**(그전에는 이 축을 재는 것이 0개였다).
-        await attachAll({
-          items: overlay.items,
-          place: (it: OverlayItem) => place(
-            it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s }, undefined, undefined, false,
-          ),
-          nextFrame,
-          aborted: () => disposed,
-          batch: ATTACH_BATCH,
-        });
-        if (disposed) return;
+        //
+        // 그룹을 **이어서** 돈다(하나의 `attachAll` 이 아니라 작가마다) — 그래야 한 작가의
+        // 배치가 실패해도 다음 작가가 계속된다. 배치 예산은 그룹마다 새로 세지만, 프레임
+        // 넘김 총량은 `⌊N/4⌋` 근처로 같다(그룹 경계에서만 몇 프레임 더 든다).
+        for (const group of plan.groups) {
+          await attachAll({
+            items: group.items,
+            place: (it: OverlayItem) => place(
+              it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s }, undefined, undefined, false,
+            ),
+            nextFrame,
+            aborted: () => disposed,
+            batch: ATTACH_BATCH,
+          });
+          if (disposed) return;
+        }
         if (root) await warmUp(root);
         if (disposed) return;
         diag.state = 'ready';
