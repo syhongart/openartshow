@@ -36,6 +36,9 @@ import type { Object3D } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import type { EditSession, LoadProgress, OverlayEntry, OverlayHost } from '../edit/types.js';
 import { loadOverlay, type OverlayItem } from '../decide/overlay.js';
+import {
+  newDiag, recordFailure, beginAttach, type OverlayDiag,
+} from '../decide/overlay-diag.js';
 import { disableMatExtensions } from '../../world-shared/glb-material.js';
 import {
   ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
@@ -63,47 +66,14 @@ const TEXTURES_JSON = 'assets/textures/index.json';
 // ⚠ `ATTACH_BATCH`·`WARMUP_FRAMES` 는 **`world-shared/attach-loop.ts` 가 소유한다**
 // (2026-08-16, W8-2). 그전에는 여기와 `glb-city.ts` 에 각각 있었고 주석이
 // *"값이 같은 것은 우연이고, 서로를 참조하지 않는다"* 라고 적고 있었다 — 백로그 #38 이
-// 「공유 상수 승격 검토」로 그 자리를 이미 지목했다. `world-shared/` 가 생겼으니 옮긴다.
-// (glb-city 쪽 이관은 아직이다 — 그 파일은 세 세계가 함께 쓰므로 별도 회차.)
-
-interface Diag {
-  /**
-   * ⚠ `'idle'` 이 **없다**(2026-08-16, W8-2). 그전에는 초기값이 `'idle'` 이었는데
-   * **밖에서 한 번도 관측될 수 없었다** — `create()` 가 리턴하기 전에 아래 IIFE 의 첫 줄이
-   * 동기로 `'loading'` 을 쓴다. 죽은 값을 남겨 두면 대기 조건을 쓰는 쪽이 그것을 유효
-   * 상태로 읽고 `state !== 'idle'` 같은 **영원히 참인 조건**을 짜게 된다.
-   */
-  state: 'loading' | 'ready' | 'failed';
-  /**
-   * 놓으려는 개수. `placed` 하나만으로는 **「다 놓았다」와 「절반만 놓였다」가 구별되지
-   * 않는다** — 둘 다 `state='ready'` 에 양수 `placed` 다.
-   *
-   * `glb-city` 가 이미 같은 짝(`placed`/`want`)을 내고 `world2-ready.mjs` 가
-   * *"`ready` 인데 `placed` 가 요청보다 적으면 세운 척만 한 것이다"* 로 판정한다.
-   * 오버레이에는 그 짝이 없어서 **완주 판정이 원리적으로 불가능**했다.
-   */
-  want: number;
-  placed: number;
-  /**
-   * 로드에 실패한 `src`. **못 세우고 통과시키지 않으려고 남긴다.**
-   * 앞에서 `FAILED_KEEP` 개까지만 담는다 — 전체 횟수는 `failedTotal`.
-   */
-  failed: string[];
-  /** 실패한 총 횟수. `failed` 는 잘리므로 이 값이 없으면 규모를 알 수 없다 */
-  failedTotal: number;
-  edit: boolean;
-  error?: string;
-}
-
-/**
- * `diag.failed` 에 담아 두는 개수. 진단에 필요한 것은 **어떤 것이 왜 실패했나**의
- * 표본이지 전량이 아니다 — 규모는 `failedTotal` 이 답한다.
- *
- * ⚠ 이 값을 `diagnostics()` 의 `slice()` 에도 **다시 적지 않는다.** 그전에는 저기에
- * `4` 가 리터럴로 박혀 있었고, 상한을 넣으면서 그것을 두 곳에 적으면 한쪽만 고쳐도
- * 아무도 모르는 그 형태가 된다.
- */
-const FAILED_KEEP = 4;
+// 「공유 상수 승격 검토」로 그 자리를 이미 지목했다. **glb-city 도 같은 커밋에서 이관했다.**
+//
+// ⚠⚠ 이 괄호는 원래 *"glb-city 쪽 이관은 아직이다 — 별도 회차"* 라고 적혀 있었고
+// **거짓이었다**(같은 커밋에서 그 이관을 했다). 나는 이관을 계획하며 이 문장을 먼저 썼고,
+// 실제로 옮긴 뒤 문장을 안 고쳤다. 다음 사람이 이것을 읽으면 **이미 된 일을 또 하려 든다.**
+//
+// 진단(`Diag`·`FAILED_KEEP`·실패 기록)은 `../decide/overlay-diag.ts` 가 소유한다 —
+// 왜 순수 모듈로 뗐는지는 **그 파일 헤더 한 곳**이다(뮤테이션이 시켰다).
 
 type Vec3Like = { set(x: number, y: number, z: number): void };
 type ThreeGroupNS = {
@@ -132,9 +102,7 @@ export const overlayFeature: Feature = {
     const wantOverlay = readNum('overlay', 1, 0, 1) >= 1;
     if (!wantEdit && !wantOverlay) return null;
 
-    const diag: Diag = {
-      state: 'loading', want: 0, placed: 0, failed: [], failedTotal: 0, edit: wantEdit,
-    };
+    const diag: OverlayDiag = newDiag(wantEdit);
     const entries: OverlayEntry[] = [];
     /**
      * 로드한 원본 모델. 같은 `src` 를 여러 번 놓아도 지오·재질을 공유한다.
@@ -228,8 +196,7 @@ export const overlayFeature: Feature = {
           //
           // 자르되 **몇 번이었는지는 센다** — 상한만 두면 「4번 실패」와 「400번 실패」가
           // 같은 값이 되고, 그것이야말로 진단이 필요한 순간에 진단을 잃는 것이다.
-          diag.failedTotal++;
-          if (diag.failed.length < FAILED_KEEP) diag.failed.push(lastFail);
+          recordFailure(diag, lastFail);
           // **실패는 캐시하지 않는다.** 남겨 두면 그 `src` 는 세션 내내 되살아나지
           // 못한다(일시적 네트워크 실패가 영구 실패가 된다).
           models.delete(key);
@@ -430,7 +397,7 @@ export const overlayFeature: Feature = {
         // 사이에 창이 생겨, 그 창에서 관측한 스모크가 `placed >= want` 를 거짓 통과시킨다.
         // (편집 세션에서 더 놓으면 `placed > want` 가 되는데 그것은 정상이다 — 이 값이
         //  뜻하는 것은 **부팅이 놓으려던 개수**이고, 판정은 `placed < want` 한 방향뿐이다.)
-        diag.want = overlay.items.length;
+        beginAttach(diag, overlay.items.length);
         // ── 동결 파셀을 먼저 앉힌다 ──────────────────────────────────────────
         // GLB 배치(`items`)보다 **앞**인 이유: 이쪽은 프레임을 넘기지 않고 끝나는 반면
         // `place` 루프는 자산을 받느라 오래 걸린다. 뒤로 미루면 그동안 감독은 옛 마을을
