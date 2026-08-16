@@ -19,8 +19,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { EXT_OFF } from '../frontend/js/world2/systems/glb-material.js';
-import { glbCityFeature, gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS } from '../frontend/js/world2/features/glb-city.js';
+import { EXT_OFF } from '../frontend/js/world-shared/glb-material.js';
+// ⚠ **본체는 `world-shared/` 로 옮겼다**(2026-08-16 통합) — world2·3·5 가 한 파일을 쓴다.
+// 세계별 래퍼(`world2/features/glb-city.ts`)에는 `glbCityFeature` 만 남는다.
+import { glbCityFeature } from '../frontend/js/world2/features/glb-city.js';
+import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS } from '../frontend/js/world-shared/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 import { PLAZA_WEST, isCentralPlaza } from '../frontend/js/world2/decide/grid.js';
@@ -100,8 +103,12 @@ describe('GLB 미술관은 기본으로 서고 `?glb=0` 으로 꺼진다', () =>
     // 아래 뮤테이션이 그 검출력을 확인한다(다른 파일에서 import 를 심으면 깨진다).
     const dir = new URL('../frontend/js/world2/', import.meta.url);
     const importers = filesImporting(dir, 'glb-city');
-    // 자기 자신은 import 하지 않으므로 선언 목록만 남는다.
-    expect(importers.sort()).toEqual(['features/index.ts']);
+    // ⚠ **둘이 정상이다**(2026-08-16 통합 이후):
+    //   · `features/glb-city.ts` — 얇은 래퍼. `world-shared/glb-city.js` 를 부른다
+    //   · `features/index.ts`    — 기능 목록. 그 래퍼를 부른다
+    // 이 둘 말고 **세 번째가 나타나면 그때가 결합**이고 이 검사가 깨진다 — 통합으로
+    // 항목이 하나 늘었을 뿐 **재는 축은 그대로**다(느슨해진 것이 아니다).
+    expect(importers.sort()).toEqual(['features/glb-city.ts', 'features/index.ts']);
   });
 });
 
@@ -151,7 +158,7 @@ describe('GLB 배치는 스폰 자리를 비운다', () => {
 
   for (const n of [1, 10, 50, 100, 200]) {
     it(`${n}채 — 원점에 아무것도 세우지 않는다`, () => {
-      const cells = placementCells(n, CELL);
+      const cells = placementCells(n, CELL, PLAZA_WEST);
       expect(cells).toHaveLength(n); // 비운 칸의 몫은 바깥으로 밀릴 뿐 줄지 않는다
       const nearest = Math.min(...cells.map((c) => Math.hypot(c.x, c.z)));
       expect(nearest, `최근접 ${nearest.toFixed(1)}m, 모델 반경 ${MODEL_RADIUS.toFixed(1)}m`)
@@ -161,7 +168,7 @@ describe('GLB 배치는 스폰 자리를 비운다', () => {
 
   it('같은 자리를 두 번 쓰지 않는다 — 겹쳐 서면 측정과 눈이 어긋난다', () => {
     for (const n of [2, 10, 50]) {
-      const keys = placementCells(n, CELL).map((c) => `${c.x},${c.z}`);
+      const keys = placementCells(n, CELL, PLAZA_WEST).map((c) => `${c.x},${c.z}`);
       expect(new Set(keys).size, `${n}채에서 중복 자리`).toBe(n);
     }
   });
@@ -174,13 +181,13 @@ describe('GLB 배치는 스폰 자리를 비운다', () => {
   });
 
   it('첫 채는 언제나 랜드마크다 — 채수를 올렸다고 사라지면 축이 둘 흔들린다', () => {
-    const lm = placementCells(1, CELL)[0];
+    const lm = placementCells(1, CELL, PLAZA_WEST)[0];
     for (const n of [1, 2, 10, 50]) {
-      expect(placementCells(n, CELL)[0], `${n}채의 첫 자리`).toEqual(lm);
+      expect(placementCells(n, CELL, PLAZA_WEST)[0], `${n}채의 첫 자리`).toEqual(lm);
     }
     // 랜드마크만 정면을 갖는다. 실험 격자는 방향이 의미 없다.
     expect(lm.ry).not.toBe(0);
-    for (const c of placementCells(10, CELL).slice(1)) expect(c.ry).toBe(0);
+    for (const c of placementCells(10, CELL, PLAZA_WEST).slice(1)) expect(c.ry).toBe(0);
   });
 });
 
@@ -192,7 +199,7 @@ describe('미술관이 서는 칸은 실제로 비워진다', () => {
   const CELL = 32;
 
   it('랜드마크 좌표와 소품 배제 판정이 같은 칸을 가리킨다', () => {
-    const lm = placementCells(1, CELL)[0];
+    const lm = placementCells(1, CELL, PLAZA_WEST)[0];
     // 좌표를 다시 적지 않는다 — 배치가 쓰는 값에서 **유도**한다. 하드코딩하면 미술관을
     // 옮겨도 이 검사가 옛 칸을 보며 계속 초록이다.
     const px = Math.round(lm.x / CELL);
@@ -349,11 +356,14 @@ describe('재질 축 — 네 모드가 서로 다른 가설을 검증한다', ()
     // `noext` 는 재질 클래스·텍스처·노멀맵·AO·emissive 를 전부 살리고 확장 값만 끈다.
     // **가장 적게 버리는 선택지가 곧 답이었다.** 소스에서 직접 확인한다 — 기본값이
     // 조용히 바뀌면 감독이 보던 화면이 달라지고, 그 사실이 아무 데도 안 적힌다.
+    // ⚠ **본체가 `world-shared/` 로 옮겨졌다**(2026-08-16 통합) — world2·3·5 가 이 파일
+    // 하나를 쓰므로, 이 단언은 이제 **세 세계의 기본값을 동시에** 지킨다.
     const src = readFileSync(
-      fileURLToPath(new URL('../frontend/js/world2/features/glb-city.ts', import.meta.url)),
+      fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
       'utf8',
     );
-    expect(src).toMatch(/readEnum\('glbmat',\s*'noext',\s*MAT_MODES\)/);
+    // `deps.` 는 주입 경로다(공유 모듈은 `url-knob` 을 직접 import 하지 않는다 — R2).
+    expect(src).toMatch(/deps\.readEnum\('glbmat',\s*'noext',\s*MAT_MODES\)/);
   });
 
   it('CARRY_MAPS 에 확장 전용 속성이 없다 — 그게 std 모드의 정의다', () => {

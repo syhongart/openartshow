@@ -136,9 +136,12 @@ describe('리포트 draw 줄', () => {
  * 그래서 힌트 안의 노브 이름이 **같은 파일에서 실제로 읽히는지**를 본다.
  */
 describe('힌트가 가리키는 노브가 그 파일에 있다', () => {
-  const src = (p: string) => readFileSync(join(import.meta.dirname, '..', 'frontend/js/world2', p), 'utf8');
+  // ⚠ 기준이 `world2/` 에서 `frontend/js/` 로 넓어졌다(2026-08-16) — `glb-city` 본체가
+  // `world-shared/` 로 옮겨졌기 때문이다. **힌트와 노브가 같은 파일에 있는지**를 보는
+  // 축은 그대로이고, 그 「파일」이 어디 있는지만 바뀌었다.
+  const src = (p: string) => readFileSync(join(import.meta.dirname, '..', 'frontend/js', p), 'utf8');
 
-  for (const path of ['features/npc.ts', 'features/glb-city.ts']) {
+  for (const path of ['world2/features/npc.ts', 'world-shared/glb-city.ts']) {
     it(`${path} — drawBlockHint 의 노브를 그 파일이 읽는다`, () => {
       const text = src(path);
       const m = text.match(/drawBlockHint:\s*'([^']+)'/);
@@ -156,7 +159,7 @@ describe('힌트가 가리키는 노브가 그 파일에 있다', () => {
   it('npc 는 **두 노브를 다** 안내한다 — 하나만 끄면 안 꺼진다', () => {
     // `create` 가 `count<=0 && vrmCount<=0` 일 때만 null 을 낸다. 힌트가 `npc=0` 뿐이면
     // 감독이 그대로 재고 VRM 이 남아 또 "측정 안 됨" 이 나온다 — 실제로 그렇게 적었었다.
-    const text = src('features/npc.ts');
+    const text = src('world2/features/npc.ts');
     const hint = text.match(/drawBlockHint:\s*'([^']+)'/)![1];
     expect(hint).toContain('npc=0');
     expect(hint).toContain('vrm=0');

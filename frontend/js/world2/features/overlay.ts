@@ -36,7 +36,7 @@ import type { Object3D } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import type { EditSession, LoadProgress, OverlayEntry, OverlayHost } from '../edit/types.js';
 import { loadOverlay, type OverlayItem } from '../decide/overlay.js';
-import { disableMatExtensions } from '../systems/glb-material.js';
+import { disableMatExtensions } from '../../world-shared/glb-material.js';
 import { readNum } from '../url-knob.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { surfaceY } from '../parts/surface.js';

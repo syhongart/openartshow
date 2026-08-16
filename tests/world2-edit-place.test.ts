@@ -318,7 +318,7 @@ describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
   // 아니라 «놓는 경로가 그 함수를 지나는가» 를 잰다. 약한 축인 것을 알고 쓴다 —
   // 실기기 판정은 감독 확인이 유일하다.
   it('로드한 모델이 확장 끄기를 거친다 — 안 거치면 실기기에서 렌더가 죽는다', () => {
-    expect(src).toContain("import { disableMatExtensions } from '../systems/glb-material.js'");
+    expect(src).toContain("import { disableMatExtensions } from '../../world-shared/glb-material.js'");
     expect(src).toContain('disableMatExtensions(m);');
   });
 
@@ -330,7 +330,7 @@ describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
 
 describe('확장 끄기 자체가 값을 실제로 끄는가', () => {
   it('EXT_OFF 의 키를 가진 재질만 골라 값을 바꾼다', async () => {
-    const { disableMatExtensions, EXT_OFF } = await import('../frontend/js/world2/systems/glb-material.js');
+    const { disableMatExtensions, EXT_OFF } = await import('../frontend/js/world-shared/glb-material.js');
 
     // 감독 실기기 로그에 나온 그 재질을 흉내낸다 — 확장 넷을 다 켠 상태
     const hot = { sheen: 1, clearcoat: 0.8, anisotropy: 0.5, ior: 2.4, color: 0xffffff };
@@ -356,7 +356,7 @@ describe('확장 끄기 자체가 값을 실제로 끄는가', () => {
   });
 
   it('같은 재질을 두 번 세지 않는다 — clone 이 참조를 공유한다', async () => {
-    const { disableMatExtensions } = await import('../frontend/js/world2/systems/glb-material.js');
+    const { disableMatExtensions } = await import('../frontend/js/world-shared/glb-material.js');
     const shared = { sheen: 1 };
     const model = {
       traverse(fn: (o: unknown) => void) {

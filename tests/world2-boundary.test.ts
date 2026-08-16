@@ -39,7 +39,7 @@ const ADAPTERS: Record<string, string> = {
 };
 
 /** 어느 월드의 소유도 아닌 것들. world1 을 지워도 남는다 */
-const SHARED_PREFIXES = ['vendor/', 'utils/'];
+const SHARED_PREFIXES = ['vendor/', 'utils/', 'js/world-shared/'];
 
 /**
  * **빌드 혼합 허용목록** — bare `'three'`(WebGL 빌드)나 `three/addons`·`three/examples`
@@ -73,7 +73,15 @@ const BUILD_MIX: Record<string, string> = {
   // 헤드리스에서는 효과가 있었는데 WebGL 에서는 애초에 문제가 없었다"* 는 이력이 남아
   // 있다. **혼합이 그 증상의 원인인지는 아직 확인하지 않았다**(태스크 #120).
   // 여기 적어 두는 것은 허가가 아니라 **혼합 지점을 세는 것**이다.
-  'features/glb-city.ts': 'GLTFLoader(addons) — 혼합 확인됨·원인 미판정(#120)',
+  // ⚠ **`features/glb-city.ts` 항목을 2026-08-16 에 뺐다** — 본체가 `world-shared/` 로
+  // 옮겨져 그 파일은 이제 25줄짜리 얇은 래퍼이고 addons 를 안 쓴다. 남겨 두면 이 검사가
+  // *"죽은 허가는 구멍이다"* 로 스스로 잡는다(실제로 잡았다).
+  //
+  // ⚠⚠ **그 혼합이 사라진 것이 아니라 이 검사의 사정권 밖으로 나갔다**(#120 은 그대로다).
+  // `world-shared/glb-city.ts` 가 여전히 `GLTFLoader`(addons)를 쓰는데, 이 파일은 `world2/`
+  // 아래만 훑으므로 안 본다. 공유 쪽 경계는 `tests/world-shared-boundary.test.ts` 의 R3 이
+  // 보지만 **R3 은 `three/` 접두를 통째로 허용해 addons 혼합을 안 가른다.**
+  // → 태스크로 남겼다. 「검사가 옮겨간 코드를 따라가지 않으면 커버리지가 조용히 준다」.
   // ⚠ 같은 성격. `vrm.ts:44` 가 `await import('three/examples/jsm/utils/SkeletonUtils.js')`
   // 를 쓰고, 그 파일은 `SkeletonUtils.js:10` 에서 bare `'three'` 를 import 한다.
   //

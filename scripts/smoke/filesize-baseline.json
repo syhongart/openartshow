@@ -1,7 +1,7 @@
 {
   "_": "파일 줄 수 동결 목록. scripts/smoke/check-filesize.mjs 가 읽는다. 기존 부채는 동결하고 새 부채를 막는다 — 값이 줄어드는 것이 진척이고, --write 로 다시 굽는다.",
-  "limit": 549,
-  "limitFrom": "90퍼센타일 (파일 436개 분포에서 유도)",
+  "limit": 546,
+  "limitFrom": "90퍼센타일 (파일 437개 분포에서 유도)",
   "over": {
     "frontend/js/world.js": 2371,
     "frontend/js/world2/features/ocean.ts": 1725,
@@ -15,13 +15,11 @@
     "frontend/js/world2/main.ts": 1359,
     "frontend/js/space-parts.ts": 1203,
     "scripts/smoke/run.mjs": 1049,
+    "frontend/js/world-shared/glb-city.ts": 913,
     "frontend/js/ui-avatar-editor.ts": 889,
     "frontend/js/main.js": 874,
-    "frontend/js/world3/features/glb-city.ts": 865,
-    "frontend/js/world5/features/glb-city.ts": 865,
     "frontend/js/world3/main.ts": 853,
     "frontend/js/world5/main.ts": 843,
-    "frontend/js/world2/features/glb-city.ts": 842,
     "frontend/js/artworks.js": 784,
     "frontend/js/world2/systems/sky.ts": 782,
     "frontend/js/world5/decide/water.ts": 778,
@@ -45,6 +43,8 @@
     "frontend/js/world5/parts/bridge.ts": 586,
     "frontend/js/world2/decide/telemetry.ts": 565,
     "frontend/js/chibi-builder-v2.ts": 560,
-    "frontend/js/world2/parts/shadow.ts": 556
+    "frontend/js/world2/parts/shadow.ts": 556,
+    "frontend/js/hitfx.js": 549,
+    "frontend/js/world2/decide/water.ts": 548
   }
 }

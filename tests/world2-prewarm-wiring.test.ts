@@ -97,7 +97,7 @@ describe('부팅 예열 배선', () => {
 // `scripts/smoke/measure-invariants.mjs` 가 잡는다(예열을 빼면 다시 FAIL 한다 —
 // 뮤테이션으로 확인했다). 여기가 보는 것은 **배선**뿐이다.
 describe('⑤ 미술관 GLB 예열 배선', () => {
-  const src = read('world2/features/glb-city.ts');
+  const src = read('world-shared/glb-city.ts');
 
   it('`ready` 를 세우기 **전에** 예열한다 — 뒤면 기준선이 GPU 업로드 전에 잡힌다', () => {
     const warm = src.indexOf('await warmUp(');
