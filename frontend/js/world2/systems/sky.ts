@@ -41,6 +41,20 @@
 // (`class Mesh extends` 정의 0건 확인). vite도 `vendor-three-core`를 별도 청크로 분리해
 // 한 번만 로드한다. 즉 `instanceof`·씬그래프 혼선이 없다.
 
+// ── 포크 통합 상태: 합치지 않음 (2026-08-16 팀장 조건 C7) ──────────────────────
+// **합치지 않기로 확정**됐다. 중복이 아니라 **구조가 다른 두 계보**다:
+//   · world2 모듈식: `systems/sky.ts` + `features/sky.ts` 두 파일
+//   · world3·5 통합식: `sky.js` 한 파일(1,422줄·1,381줄)
+//
+// world2 에만 있는 기능: `SKY_BLUE`·`CLOUD_CURVE`·`CLOUD_H`·`shadowTexel` 추종·
+// `probeLighting()` 등 8개. 합치는 일은 리팩터링이 아니라 **기능 이식**이고,
+// 룩 판정 수단이 감독 실기기뿐인 환경에서 fail-closed 는 «안 합친다» 쪽이다.
+//
+// **재론 조건** (이하 셋 중 하나라도 성립하면 다시 판단):
+//   T1. 감독이 world3·5 에 world2 판 기능 이식을 지시할 때
+//   T2. 두 계보에 같은 수정을 실제로 하게 되는 회차가 발생할 때 (비용이 추측→실측)
+//   T3. 룩 회귀를 실기기 없이 판정할 수단이 생길 때 (이 판단의 전제 소멸)
+
 import * as THREE from 'three/webgpu';
 import { createSkySystem, lightOf } from '../../sky.js';
 import {
