@@ -53,14 +53,24 @@ export interface EntryResolution extends EntryState {
 export function resolveEntry(search: string, all: readonly string[]): EntryResolution {
   const wanted = tenantIdFromSearch(search);
   const focus = wanted?.id ?? null;
-  const who = focus === null ? all.slice() : all.filter((o) => o === focus);
+  const narrowed = focus === null ? all.slice() : all.filter((o) => o === focus);
+  // 형식은 맞는데 대장에 배정이 없다 — 오타(`charset`)와 **다른 사유**다.
+  const missing = focus !== null && narrowed.length === 0;
   return {
     tenant: focus,
     tenantError: wanted?.error ?? null,
-    // 형식은 맞는데 대장에 배정이 없다 — 오타(`charset`)와 **다른 사유**다.
-    tenantMissing: focus !== null && who.length === 0,
+    tenantMissing: missing,
     owners: all,
-    who,
+    // ⚠ **없는 작가면 전원으로 되돌린다** (2026-08-16 브라우저 실측이 잡았다).
+    //
+    // 그전에는 빈 목록을 그대로 냈고, 소비자(`features/overlay.ts`)의 `who.length === 0`
+    // 분기가 그것을 **「대장이 없다」와 같게** 취급해 **옛 단일 문서**로 떨어졌다. 즉 화면은
+    // 「마을을 둘러보세요」라고 말하는데 정작 **다른 작가들이 안 떴다.** 제목도 이미
+    // 「마을 전체」로 되돌아가 있었으니 문구·제목·화면 셋 중 화면만 어긋난 상태였다.
+    //
+    // jsdom 테스트가 못 잡은 이유는 내가 `who: []` 를 **기대값으로 박아 뒀기** 때문이다 —
+    // 계산 결과를 다시 적은 검사는 그 계산이 옳은지 묻지 않는다.
+    who: missing ? all.slice() : narrowed,
   };
 }
 

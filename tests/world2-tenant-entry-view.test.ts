@@ -273,3 +273,16 @@ describe('★ 부팅 진입점 — 찾기·판정·이동이 한 줄로 묶여 �
     expect(parts.notice.textContent).not.toBe('');
   });
 });
+
+describe('★ 없는 작가로 들어와도 마을이 뜬다 (브라우저 실측이 잡은 결함)', () => {
+  it('★ 목록에 다른 작가가 그대로 있다 — 「둘러보세요」의 대상이 실재해야 한다', () => {
+    const doc = mount();
+    doc.defaultView!.history.replaceState({}, '', '/world2.html?u=nobody');
+    const res = resolveEntry(doc.defaultView!.location.search, ['arthong', 'mara']);
+    mountTenantEntry(doc, res, () => {});
+    const parts = findTenantBar(doc)!;
+    expect(res.who, '★ 소비자가 옛 단일 문서로 떨어진다').toEqual(['arthong', 'mara']);
+    expect([...parts.list.options].map((o) => o.value)).toEqual(['', 'arthong', 'mara']);
+    expect(parts.notice.textContent).toContain('nobody');
+  });
+});
