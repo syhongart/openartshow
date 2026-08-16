@@ -61,12 +61,20 @@ import { loadPalette } from './panel/palette.js';
 import { createActions } from './actions.js';
 import { createInput } from './input.js';
 import { safeBack } from '../decide/shading.js';
+// ⚠ **요금제는 어댑터를 거친다** — `adapters/plan.ts` 헤더가 그 이유를 갖는다(경계 게이트가
+// 직접 import 를 막았고 그것이 옳다). 여기서 층위 값을 다시 적지 않는다(값 미러링).
+import { canUploadGlb, tierLabel } from '../adapters/plan.js';
 
 export interface EditOptions {
   /** 팔레트 목록(`assets/models/index.json`) 의 실제 주소 */
   readonly modelsUrl: string;
   /** 미리보기로 만든 임시 주소를 소비자에게 넘겨 회수하게 한다 */
   onBlobUrl(url: string): void;
+  /**
+   * 자기 GLB 를 올릴 수 있는가. **생략하면 실제 등급을 본다** — 이 저장소의 확장 규약
+   * (「생략 = 기존 동작」)이고, 테스트는 값을 넣어 두 분기를 다 돌린다.
+   */
+  readonly canUploadGlb?: boolean;
 }
 
 export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession {
@@ -123,6 +131,8 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     host, st, panel, picker, actions, gizmo,
     toggleEditing: () => { setEditing(!st.editing); },
     onBlobUrl: opts.onBlobUrl,
+    canUploadGlb: opts.canUploadGlb ?? canUploadGlb(),
+    tierLabel: tierLabel(),
   });
 
   // ── 모드 전환 ───────────────────────────────────────────────────────────

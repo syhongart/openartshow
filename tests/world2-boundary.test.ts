@@ -36,6 +36,9 @@ const W2 = join(ROOT, 'frontend/js/world2');
 const ADAPTERS: Record<string, string> = {
   'avatars/chibi.ts': '아야모(치비) — buildChibi/randomChibiLook',
   'systems/sky.ts': '하늘 엔진 — createSkySystem',
+  // 요금제 층위(W8-3 S7). **좁게 연다** — `canUploadGlb`·`tierLabel` 둘뿐이고,
+  // 한도·코드 발급·배지는 안 들여온다(그 파일 헤더가 이유를 갖는다).
+  'adapters/plan.ts': '요금제 층위 — canUploadGlb/tierLabel',
 };
 
 /** 어느 월드의 소유도 아닌 것들. world1 을 지워도 남는다 */

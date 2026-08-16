@@ -139,6 +139,14 @@ export interface Overlay {
    *
    * 구버전 코드가 이 필드를 만나면 **조용히 무시하지 않는다** — `KNOWN_ROOT_KEYS` 검사가
    * `unknown-field` 로 보고한다(팀장이 내 브리프의 과장을 정정한 지점이다).
+   *
+   * ── ⚠ 여러 작가가 살아도 이것은 **마을 것**이다 (감독 카드 2026-08-16, W8-3) ──
+   * 작가 문서에 담겨 와도 `decide/multi-overlay.ts` 가 무시하고 `surfaces-ignored` 사유를
+   * 낸다(조용히 삼키지 않는다). 근거는 취향이 아니라 **구조**다 — 조회 키가 `kind` 하나로
+   * 굳어 `pools.create({key: kind})` → **`pools.seal()`** 로 이어지므로(`main.ts:780-795`),
+   * owner 를 키에 넣으면 `seal()` 뒤 생성 불가 · 부팅에 사용자 수 선지식 필요 · 드로우콜
+   * kind×owner 증식이 **연쇄한다.** 값이 아니라 구조가 바뀌어 `[7]` 의 델타 판정이 방패가
+   * 못 된다. **재론 트리거**: 작가별 바닥·재질 커스텀 요구가 실제로 나오는 날.
    */
   surfaces: SurfaceSetting[];
 }
