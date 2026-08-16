@@ -44,6 +44,8 @@ import {
   planMerge, totalItems, type MergePlan, type OverlayDoc,
 } from '../decide/multi-overlay.js';
 import { createStaticStore, loadLegacyOverlay } from '../store/static-store.js';
+import { resolveEntry } from '../decide/tenant-entry.js';
+import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
 import { disableMatExtensions } from '../../world-shared/glb-material.js';
 import {
   ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
@@ -131,6 +133,8 @@ export const overlayFeature: Feature = {
     let THREE: ThreeGroupNS | null = null;
     let loadGLB: ((url: string, onProgress?: (ev: ProgressEvent) => void) => Promise<Object3D>) | null = null;
     let edit: EditSession | null = null;
+    /** 진입 바(W8-3 S6). DOM 이 없거나 마크업이 없으면 `null` — 그래도 세계는 뜬다 */
+    let tenantBar: TenantBar | null = null;
     let nextId = 1;
     let disposed = false;
 
@@ -403,7 +407,18 @@ export const overlayFeature: Feature = {
         const { ledger, issues: ledgerIssues } = loadLedger(ledgerRaw.raw);
         diag.ledgerIssues = ledgerIssues.length;
 
-        const who = owners(ledger);
+        // ── 누구의 땅을 보는가 + 진입 바 (2026-08-16, W8-3 S6) ──────────────
+        // 감독 카드: 진입은 **둘 다** — 주소(`?u=`)에 있으면 그것, 없으면 마을 전체이고
+        // 입력 창으로 옮겨 간다. 판정·문구·주소 조립은 `decide/tenant-entry.ts` 와
+        // `ui/tenant-bar.ts` 가 소유한다 — 여기 두면 **노드가 못 도는 자리**에 분기가 생기고
+        // 안 도는 코드는 검사되지 않는다. 진입 바가 부착 루프 **앞**인 이유는 그 파일들 헤더.
+        const ent = resolveEntry(env.doc?.defaultView?.location?.search ?? '', owners(ledger));
+        diag.tenant = ent.tenant;
+        if (ent.tenantError) diag.tenantError = ent.tenantError;
+        if (ent.tenantMissing) diag.tenantMissing = true;
+        if (env.doc) tenantBar = mountTenantEntry(env.doc, ent);
+        const who = ent.who;
+
         let plan: MergePlan;
         if (who.length === 0) {
           // 대장이 없다(또는 배정 0). **옛 경로 그대로** — 단일 문서를 마을 전체로 본다.
@@ -519,6 +534,7 @@ export const overlayFeature: Feature = {
       dispose() {
         disposed = true;
         edit?.dispose();
+        tenantBar?.dispose();
         for (const u of blobUrls) { try { URL.revokeObjectURL(u); } catch { /* 이미 회수됨 */ } }
         blobUrls.clear();
         if (root) {

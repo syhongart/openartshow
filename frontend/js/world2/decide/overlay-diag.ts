@@ -56,6 +56,16 @@ export interface OverlayDiag {
   ledgerIssues?: number;
   /** 합치는 중 생긴 사유 수(못 읽은 문서·남의 땅·무시된 재질 등) */
   mergeIssues?: number;
+
+  // ── 진입 (S6) — **세 갈래를 구별해 말한다** ──────────────────────────────
+  // 「지정 안 됨」·「형식이 틀림」·「대장에 없음」은 사용자가 할 일이 서로 다르다.
+  // 하나로 뭉개면 오타가 「그런 작가 없음」과 구별되지 않는다.
+  /** `?u=` 로 지정된 작가. 없으면 `null`(마을 전체) */
+  tenant?: string | null;
+  /** 아이디 형식이 틀렸다. 값은 `TenantIdError` — 화면이 그대로 옮긴다 */
+  tenantError?: string;
+  /** 형식은 맞는데 대장에 배정이 없다. **마을은 뜬다** */
+  tenantMissing?: boolean;
 }
 
 /**
