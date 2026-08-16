@@ -26,6 +26,26 @@ export function computeLimits(premium) {
   };
 }
 
+// 플랜 한도 안내 주입 — 「작품 목록」 블록 제목 옆.
+//
+// ── 왜 이 파일인가 (2026-08-16) ─────────────────────────────────────────────
+// `studio.html` 에 *"최대 14점 · 대표작 2점"* 이 **정적으로** 박혀 있었고 그것은
+// **무료 사용자(6점·1점)에게 거짓**이었다. `guide.html:692` 가 글자 그대로 같은 결함이었고
+// 같은 날 고쳤는데 **이 자리를 안 셌다** — 랜딩까지 세면 같은 형태가 세 번째다.
+//
+// 문구를 고치면 미러링이 하나 더 늘 뿐이다. 그래서 **HTML 자리를 비우고 값을 여기서
+// 채운다** — 이 파일이 한도의 SSOT(`computeLimits`)를 소유하므로 값이 갈라질 자리가 없다.
+// 배지 주입(`injectPlanBadge`)과 같은 성격이라 같은 파일에 둔다.
+//
+// (처음에는 `studio-form.ts` 에 넣었는데 `check:filesize` 가 막았다 — 그 파일은 이미
+//  608줄이고 게이트가 *"쪼개거나 근거를 대라"* 고 했다. **게이트가 더 나은 자리로 밀었다.**)
+export function injectPlanLimits(limits) {
+  var el = document.getElementById('planLimitHint');
+  if (!el) return;   // 이 모듈을 쓰는 다른 페이지에서는 조용히 넘어간다
+  el.textContent = '작품 ' + limits.MAX_ARTWORKS + '점 · 대표작 ' + limits.MAX_FEATURED + '점'
+    + (limits.PREMIUM ? '' : ' (무료 플랜)');
+}
+
 // 플랜 배지 주입 — 헤더 h1 옆(FREE면 업그레이드 링크 동반).
 //
 // ── 색은 리터럴이 아니라 토큰이다 (2026-08-09 그린 전환 미수리분) ──────────

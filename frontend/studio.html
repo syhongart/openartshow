@@ -874,7 +874,12 @@
     <div class="block-title">
       <span class="num">02</span>
       <h2>작품 목록</h2>
-      <span class="hint">최대 14점 · 대표작(featured)은 최대 2점</span>
+      <!-- ⚠ 숫자를 여기 적지 않는다. 값은 `studio-plan.ts` 가 소유하고 `studio-form.ts` 가
+           이 자리에 채운다 — 그전에는 "최대 14점 · 대표작 2점" 이 **정적으로** 박혀 있었고
+           그것은 **무료 사용자(6점·1점)에게 거짓**이었다. `guide.html:692` 가 글자 그대로
+           같은 결함이었고 2026-08-16 에 고쳤는데, 그때 이 자리를 안 셌다. 문구를 고치는
+           대신 **동적으로 만들어** 미러링 자체를 없앤다. -->
+      <span class="hint" id="planLimitHint"></span>
     </div>
 
     <div id="artworkList"></div>
