@@ -26,6 +26,50 @@ const gltfLoader = new GLTFLoader();
 const MODEL_BASE_PATH = '/app/assets/models';
 
 /**
+ * 헤어·의상 GLB 모듈 매니페스트 — **스타일 ID → `MODEL_BASE_PATH` 하위 상대경로**.
+ *
+ * ⚠ 지금 비어 있는 것이 정상이다. 실측(2026-08-16): `frontend/assets/models/` 에 있는
+ * 것은 `body-base.gltf`·`lab-space.glb` 둘뿐이고 `hair/`·`clothes/` 디렉터리는 **아예
+ * 없다**. 그리고 `params.hairStyle`·`params.outfit` 은 `chibi-schema.ts` 의
+ * `CHIBI_HAIR_STYLES`·`CHIBI_OUTFITS`(`bald`·`bob`·`twintail`·`hanbok`…)에서 오는
+ * **절차적 지오메트리 스타일 ID** 이지 파일명이 아니다 — `chibi-builder.ts` 가 그 ID 로
+ * 지오메트리를 직접 만든다.
+ *
+ * 그래서 `attachModules` 를 "스타일 ID = 파일명" 으로 곧장 배선하면 아바타를 만들 때마다
+ * `/app/assets/models/hair/twintail.glb` 같은 **없는 파일**을 요청한다. 기본 룩부터
+ * `hairStyle: 'twintail'` 이라 404 가 상시로 난다 — `verify-live` 의 「자산 실패 0」 축에
+ * 걸리는 형태이고, 그 전에 이미 방문자 대역을 버린다.
+ *
+ * 매니페스트를 한 겹 두는 이유가 그것이다: **등록되지 않은 스타일은 요청 자체를 하지
+ * 않는다**(fail-closed — 검증 등급 판정기와 같은 원리). 실물 GLB 가 생기면 파일을 넣고
+ * 여기 한 줄을 등록하면 그때부터 부착된다. 부수 효과로 경로 조작이 구조적으로 0 이다 —
+ * 스타일 ID 는 `#c=` 코드에서 오는 사용자 입력인데, URL 에 들어가는 것은 우리가 적어 둔
+ * 화이트리스트 값뿐이다.
+ *
+ * **경계**: 「GLB 모듈 파이프라인을 만든다」는 이 TODO 의 범위가 아니다. 여기서 멈춘다 —
+ * 에셋·리깅·본 매핑은 별개 결정이고, 그것 없이 배선만 켜면 위의 404 가 된다.
+ */
+export const CHIBI_MODULE_GLB: Record<string, Record<string, string>> = {
+  hair: {},
+  outfit: {},
+};
+
+/**
+ * 스타일 ID 를 실제 GLB 주소로 해석한다. 등록되지 않았으면 `null` — 호출자는 요청을
+ * 만들지 않는다.
+ */
+export function resolveChibiModuleGlb(
+  kind: string,
+  styleId: unknown,
+  manifest: Record<string, Record<string, string>> = CHIBI_MODULE_GLB
+): string | null {
+  if (typeof styleId !== 'string' || !styleId || styleId === 'none') return null;
+  const file = manifest?.[kind]?.[styleId];
+  if (typeof file !== 'string' || !file) return null;
+  return `${MODEL_BASE_PATH}/${file}`;
+}
+
+/**
  * 프로토타입 저폴리 메시 생성 (GLB 없을 때)
  * 기본 형태: 머리(구) + 몸통(캡슐) + 팔×2 + 다리×2
  */
@@ -269,8 +313,21 @@ export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
     // MeshPhongMaterial에 직접 적용
     material.map = faceTexture;
 
-    // 5. 모듈 부착 (헤어, 의상) — TODO: 비동기 로드
-    // attachModules(bodyMesh, params);
+    // 5. 모듈 부착 (헤어, 의상) — 비동기. 본체는 기다리지 않는다.
+    //
+    // `buildChibiV2` 는 동기 계약이다(`avatar.js` 가 반환값을 그 자리에서 씬에 넣는다).
+    // 그래서 부착은 fire-and-forget 이고, 도착이 `dispose()` 보다 늦을 수 있다 —
+    // `modulesDisposed` 가 그 경주를 받는다. 이것을 안 두면 떼어낸 아바타의 머리카락이
+    // 씬에 남고, 그 메시는 아무도 참조하지 않으므로 누구도 반납하지 못한다.
+    const attachedModules: THREE.Object3D[] = [];
+    let modulesDisposed = false;
+    attachModules(bodyMesh, params).then((parts) => {
+      if (modulesDisposed) {
+        parts.forEach(disposeModule);
+        return;
+      }
+      attachedModules.push(...parts);
+    });
 
     // 6. 스켈레톤 기반 애니메이션 컨트롤러 생성
     const animController = new ChibiAnimationV2(bodyMesh.skeleton, bodyMesh.position);
@@ -316,6 +373,9 @@ export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
     };
 
     const dispose = () => {
+      modulesDisposed = true;
+      attachedModules.forEach(disposeModule);
+      attachedModules.length = 0;
       bodyMesh.geometry.dispose();
       (material as any).dispose();
     };
@@ -341,47 +401,79 @@ export function buildChibiV2(params: ChibiParams): ChibiV2Instance {
 }
 
 /**
- * 모듈 부착 (헤어, 의상 등)
+ * 부착된 모듈 하나를 떼고 GPU 자원을 반납한다.
+ *
+ * 본체(`bodyMesh`)와 달리 모듈은 **늦게 도착**하므로, 이미 `dispose()` 된 인스턴스에
+ * 도착하는 경우가 있다. 그때도 여기로 들어온다 — 부모에서 떼는 것부터 하는 이유다.
  */
-async function attachModules(bodyMesh: THREE.SkinnedMesh, params: ChibiParams) {
-  try {
-    // 헤어 부착 (예: hairstyle-1.glb)
-    if (params.hairStyle && params.hairStyle !== 'none') {
-      const hairGroup = await loadGLB(
-        `${MODEL_BASE_PATH}/hair/${params.hairStyle}.glb`
-      );
+function disposeModule(part: any) {
+  part.removeFromParent?.();
+  part.geometry?.dispose?.();
+  const mat = part.material;
+  if (Array.isArray(mat)) mat.forEach((m: any) => m?.dispose?.());
+  else mat?.dispose?.();
+}
+
+/**
+ * 모듈 부착 (헤어, 의상 등) — 비동기.
+ *
+ * 등록된 모듈이 하나도 없으면 **네트워크 요청을 만들지 않고** 즉시 빈 배열이다
+ * (`CHIBI_MODULE_GLB` 머리말 참조). 헤어 실패가 의상 부착을 막지 않도록 두 갈래를
+ * 따로 감싼다 — 하나의 `try` 로 묶으면 먼저 던진 쪽이 나머지를 통째로 건너뛴다.
+ *
+ * @returns 실제로 씬에 붙은 오브젝트들. 호출자가 `dispose` 때 정리한다.
+ */
+export async function attachModules(
+  bodyMesh: THREE.SkinnedMesh,
+  params: ChibiParams,
+  opts: { load?: (path: string) => Promise<THREE.Group>; manifest?: any } = {}
+): Promise<THREE.Object3D[]> {
+  const load = opts.load || loadGLB;
+  const manifest = opts.manifest || CHIBI_MODULE_GLB;
+  const attached: THREE.Object3D[] = [];
+
+  // 헤어 부착 — Head 본을 못 찾으면 붙이지 않는다(허공에 뜬 머리카락보다 없는 편이 낫다).
+  const hairPath = resolveChibiModuleGlb('hair', params.hairStyle, manifest);
+  if (hairPath) {
+    try {
+      const hairGroup = await load(hairPath);
       const hairMesh = hairGroup.children.find(
         (c) => c instanceof THREE.SkinnedMesh || c instanceof THREE.Mesh
       ) as THREE.Mesh | undefined;
 
       if (hairMesh) {
-        // Head 본에 부착
         const headBone = findBone(bodyMesh.skeleton, 'Head');
         if (headBone) {
           hairMesh.position.copy(headBone.position);
           hairMesh.quaternion.copy(headBone.quaternion);
           bodyMesh.add(hairMesh);
+          attached.push(hairMesh);
         }
       }
+    } catch (error) {
+      console.warn('Failed to attach hair module:', error);
     }
+  }
 
-    // 의상 부착 (선택사항)
-    if (params.outfit && params.outfit !== 'none') {
-      const outfitGroup = await loadGLB(
-        `${MODEL_BASE_PATH}/clothes/${params.outfit}.glb`
-      );
+  // 의상 부착 (선택사항)
+  const outfitPath = resolveChibiModuleGlb('outfit', params.outfit, manifest);
+  if (outfitPath) {
+    try {
+      const outfitGroup = await load(outfitPath);
       const outfitMesh = outfitGroup.children.find(
         (c) => c instanceof THREE.Mesh
       ) as THREE.Mesh | undefined;
 
       if (outfitMesh) {
         bodyMesh.add(outfitMesh);
+        attached.push(outfitMesh);
       }
+    } catch (error) {
+      console.warn('Failed to attach outfit module:', error);
     }
-  } catch (error) {
-    console.warn('Failed to attach modules:', error);
-    // 모듈 로드 실패는 무시하고 진행
   }
+
+  return attached;
 }
 
 /**
