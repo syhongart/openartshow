@@ -39,7 +39,12 @@ const ADAPTERS: Record<string, string> = {
 };
 
 /** 어느 월드의 소유도 아닌 것들. world1 을 지워도 남는다 */
-const SHARED_PREFIXES = ['vendor/', 'utils/', 'js/world-shared/'];
+// ⚠ `js/shared/` 는 `js/world-shared/` 와 **다르다**(2026-08-16 추가):
+//   · `world-shared/` — 세계 3종(world2·3·5)이 공유. R1~R4 가 그 경계를 지킨다
+//   · `shared/`       — 라이브·세계를 가리지 않는 **의존 0 leaf**(예: 예약어 목록)
+// 후자는 마이페이지(라이브)와 world2 가 함께 쓰는 것을 담는다 — `world-shared/` 에 두면
+// 이름이 거짓이 되고 R4 가 지키려는 경계가 흐려진다.
+const SHARED_PREFIXES = ['vendor/', 'utils/', 'js/world-shared/', 'js/shared/'];
 
 /**
  * **빌드 혼합 허용목록** — bare `'three'`(WebGL 빌드)나 `three/addons`·`three/examples`

@@ -15,6 +15,7 @@
 // 판정: mock 유지 · 중복검사는 서버 게이트 뒤로).
 
 import { LIMITS } from './schema.js';
+import { isReservedName } from '../shared/reserved-names.js';
 
 export type NicknameErrorCode =
   | 'empty'
@@ -58,33 +59,11 @@ const BANNED = [
   '섹스', 'sex', 'porn', '야동',
 ] as const;
 
-/**
- * 예약어 — 운영자·공식 계정 사칭 방지(감독 안). 부분 문자열이 아니라 **정규화 후
- * 완전 일치**로 본다.
- *
- * 왜 부분 일치가 아닌가: `admin` 을 부분 일치로 막으면 `admiral`·`관리자님의친구` 까지
- * 걸린다. 사칭의 위험은 "이름이 그것과 같아 보이는 것" 이지 "그 글자를 포함하는 것" 이
- * 아니다. 대신 정규화에서 밑줄·숫자 치환(`4dmin`·`a_d_m_i_n`)을 걷어내 우회를 좁힌다.
- */
-const RESERVED = [
-  'admin', 'administrator', 'root', 'system', 'staff', 'support', 'help',
-  'official', 'openartshow', 'oas', 'ayamo', 'moderator', 'mod', 'owner',
-  'null', 'undefined', 'anonymous', 'guest', 'me', 'you',
-  '관리자', '운영자', '운영팀', '공식', '고객센터', '오픈아트쇼', '아야모',
-] as const;
-
-/** 사칭 판정용 정규화 — 대소문자·밑줄·흔한 숫자 치환(leet)을 걷어낸다. */
-function foldForReserved(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/_/g, '')
-    .replace(/0/g, 'o')
-    .replace(/1/g, 'i')
-    .replace(/3/g, 'e')
-    .replace(/4/g, 'a')
-    .replace(/5/g, 's')
-    .replace(/7/g, 't');
-}
+// ⚠ 예약어 목록과 그 정규화는 **`../reserved-names.js` 가 소유한다**(2026-08-16).
+// 그전에는 여기 `const` 로 있었고, 세계 쪽에서 작가 아이디를 판정할 자리가 생기면서
+// 둘이 같은 목록을 봐야 하게 됐다. 복사하면 값 미러링이고, 이 파일을 세계가 import 하면
+// `./schema.js` 까지 딸려가 청크가 는다(`profile-storage.ts:1-20` 의 실측 사고).
+// 그래서 **의존 0 인 leaf 로 내렸다** — 왜 그 형태인지는 그 파일 헤더 한 곳이다.
 
 /** 코드포인트 기준 길이. 한글·이모지가 섞여도 사용자가 세는 것과 같게 센다. */
 export function nicknameLength(value: string): number {
@@ -149,8 +128,7 @@ export function checkNickname(input: string, options: CheckOptions = {}): Nickna
     if (lower.includes(word)) return make('banned', '사용할 수 없는 단어가 들어 있습니다.');
   }
 
-  const folded = foldForReserved(value);
-  if ((RESERVED as readonly string[]).includes(folded)) {
+  if (isReservedName(value)) {
     return make('reserved', '운영자·공식 계정과 혼동될 수 있는 별명입니다.');
   }
 
