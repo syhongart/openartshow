@@ -112,6 +112,30 @@ describe('★ 경로는 저장소가 소유한다', () => {
   });
 });
 
+describe('★ 내보내기가 작품을 들고 나간다 (W8-4 D1.5)', () => {
+  // 🔴 **이 축이 0이라서 작품이 조용히 사라지고 있었다.** `toRaw()` 반환에 `arts` 가
+  // 없었고, 계약이 `undefined` 를 issue 없이 `[]` 로 채워 **`clean === true`·화면은
+  // 「무손실」**이었다. 같은 함수의 주석이 *"읽은 것이 그대로 나가야 한다"* 를 두 번
+  // 적고 있었으니 **문장이 거짓**이던 것이다.
+  //
+  // ⚠ **이 검사는 텍스트다 — 약한 축인 것을 알고 쓴다.** `toRaw()` 를 실제로 돌리려면
+  // `overlayFeature.create(env)` 가 필요하고 `FeatureEnv` 는 `scene`·`adapter`·`player`·
+  // `pools`·`village` 를 요구해 스텁 비용이 이 회차 범위를 넘는다. 그래서 **0을 1로**
+  // 만들되, 실물 왕복(브라우저에서 실제로 내보내기를 눌러 `arts` 가 나오는지)은 **D4 가**
+  // 잰다. 그때까지 이 축은 「지워지면 안다」까지만 보증한다.
+  // 더 강한 처방(=`toRaw` 를 순수 함수로 분리해 실행으로 재기)은 태스크로 남겼다.
+  it('★ `toRaw` 가 `arts` 를 낸다 — 빠지면 작품이 사라지는데 화면은 「무손실」이라 한다', () => {
+    const from = CODE.indexOf('function toRaw(');
+    expect(from, '★ toRaw 를 못 찾았다 — 이 검사가 헛돈다').toBeGreaterThan(-1);
+    const body = CODE.slice(from, CODE.indexOf('\n    }', from));
+    expect(body, '★ 내보내기에서 작품이 빠졌다').toMatch(/arts:/);
+  });
+
+  it('★ 로드한 작품을 보관한다 — 통로가 끊기면 언제나 빈 배열이 나간다', () => {
+    expect(CODE, '★ plan.arts 를 안 붙잡는다').toMatch(/loadedArts\s*=\s*plan\.arts/);
+  });
+});
+
 describe('★ 벽에 건 작품이 부팅에 꽂혔다 (W8-4)', () => {
   it('★ 씬을 만든다 — 안 부르면 액자도 라이트 풀도 없다', () => {
     expect(CODE, '★ 액자 씬을 안 만든다').toContain('mountArtworks(');

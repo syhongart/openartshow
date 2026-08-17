@@ -138,6 +138,9 @@ export const overlayFeature: Feature = {
     let tenantBar: TenantBar | null = null;
     /** 액자·조명(W8-4). 작품이 0개여도 만든다 — 라이트 풀이 **부팅에** 서야 하기 때문이다 */
     let artScene: ArtworkScene | null = null;
+    // 로드한 작품. **`toRaw` 가 손대지 않고 그대로 낸다** — 왕복 무손실의 유일한 근거이고,
+    // 그래서 타입을 좁히지 않는다(정규화는 계약이 이미 했다. 여기는 통로다).
+    let loadedArts: readonly unknown[] = [];
     let nextId = 1;
     let disposed = false;
 
@@ -318,20 +321,16 @@ export const overlayFeature: Feature = {
       const items: OverlayItem[] = entries.map((e) => ({
         src: e.src, x: e.x, y: e.y, z: e.z, ry: e.ry, s: e.s,
       }));
-      // `version` 을 상수로 적지 않고 계약이 만든 형태를 그대로 쓴다 — `emptyOverlay()`
-      // 가 버전을 소유한다.
-      //
-      // ⚠ **동결 파셀은 이 기능이 들고 있지 않다** — 소유는 조립부(`env.village`)다.
-      // 그래도 내보내기는 여기서 낸다: 계약 파일 하나에 `items` 와 `parcels` 가 함께
-      // 담기므로, 저장소가 자기 몫만 따로 내면 두 조각을 합칠 자리가 또 생긴다.
-      // 편집을 한 번도 안 했어도 **읽은 것이 그대로 나가야 한다**(왕복 무손실).
+      // ⚠ 동결 파셀·표면·작품은 이 기능이 **안 들고 있다**(소유는 조립부와 `plan`). 그래도
+      // 전부 여기서 낸다 — 계약 파일 **하나**에 담기므로 각자 내면 합칠 자리가 또 생긴다.
+      // 🔴 `arts` 가 **빠져 있었다**(D1.5). 편집·내보내기로 사라졌는데 `validateOverlay` 가
+      // `undefined` 를 issue 없이 `[]` 로 채워 **`clean===true`·「무손실」**이었다.
       return {
         version: loadOverlay(null).version,
         items,
         parcels: env.village.list(),
-        // 표면 재질도 소유는 조립부(`FeatureEnv.surfaces`)다 — 동결 파셀과 같은 이유로
-        // 내보내기만 여기서 낸다. 편집을 한 번도 안 했어도 **읽은 것이 그대로 나가야 한다.**
         surfaces: env.surfaces(),
+        arts: loadedArts,
       };
     }
 
@@ -490,6 +489,7 @@ export const overlayFeature: Feature = {
         // ⚠ *"작품이 0개여도 씬을 만든다"* 라고 적혀 있었고 **거짓**(검수관 B3-2): `arts` 0
         // 이고 GLB 도 0이면 `ensureLoader()` 미호출 → `THREE` null → 씬이 안 선다(라이브가
         // 그 상태다). 조건 1 은 안 깨지고, 깨지는 것은 작품이 나중에 추가될 때 — W8-4 D(#86).
+        loadedArts = plan.arts;
         if (plan.arts.length > 0) await ensureLoader();
         if (disposed) return;
         if (THREE) {
