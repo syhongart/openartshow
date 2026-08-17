@@ -196,6 +196,54 @@ describe('★ 조준 화면 — 보고 거는 흐름', () => {
     expect(h.mode.active(), '★ 실패했는데 조준이 닫혔다').toBe(true);
   });
 
+  it('★ 🔴 비히트 확정은 **쏘지도 않는다** — 두 가드가 서로를 가리지 않게', async () => {
+    // ── 왜 이 검사가 따로 필요한가 (뮤테이션 N5) ────────────────────────────
+    // 확정 경로에는 가드가 **둘**이다: 앞의 `!hit` 과 뒤의 `wallPose() === null`.
+    // 앞의 것을 지워도 뒤의 것이 같은 일을 해서 **결과가 같다** — 그래서 「비히트면
+    // 안 걸린다」 검사만으로는 앞 가드가 죽은 것을 못 잡는다. 두 가드가 서로를
+    // 상쇄하는 형태이고, 이 저장소가 「두 버그가 서로를 상쇄한다」로 적어 둔 그 사촌이다.
+    //
+    // 앞 가드의 **고유한 일**은 「히트가 아니면 레이캐스트를 아낀다」이고, 그것은
+    // `casts` 로만 드러난다. `pickFace()` 가 풀 용량 전체를 훑으므로(`decide/aim.ts`
+    // 헤더) 「눌러도 안 되는」 조작에서 그것을 쏘는 것은 공짜가 아니다.
+    const h = harness({ hit: FLOOR });
+    h.mode.start(h.file());
+    h.advance(AIM_MIN_MS); h.frame();
+    const before = h.picks();
+    document.querySelector<HTMLButtonElement>('#w2-aim .bar button')!.click();
+    await Promise.resolve();
+    expect(h.picks(), '★ 히트가 아닌데 확정이 광선을 쐈다 — 앞 가드가 죽었다').toBe(before);
+    expect(h.committed.length).toBe(0);
+  });
+
+  it('★ 🔴 keydown 리스너가 **짝이 맞는다** — 세션을 여닫아도 안 쌓인다', () => {
+    // ── 왜 (뮤테이션 N12) ──────────────────────────────────────────────────
+    // `onKey` 는 `!file` 가드가 있어서 **안 떼도 동작이 같다.** 그래서 행동 검사로는
+    // 제거 누락이 안 잡힌다 — 유일한 실해가 「리스너가 쌓인다」는 위생 문제이기 때문이다.
+    // 그 축은 add/remove 를 **세는** 수밖에 없다.
+    const add: unknown[] = [];
+    const rm: unknown[] = [];
+    const origAdd = document.addEventListener.bind(document);
+    const origRm = document.removeEventListener.bind(document);
+    document.addEventListener = ((t: string, f: unknown, o?: unknown) => {
+      if (t === 'keydown') add.push(f);
+      return origAdd(t, f as EventListener, o as boolean);
+    }) as typeof document.addEventListener;
+    document.removeEventListener = ((t: string, f: unknown, o?: unknown) => {
+      if (t === 'keydown') rm.push(f);
+      return origRm(t, f as EventListener, o as boolean);
+    }) as typeof document.removeEventListener;
+    try {
+      const h = harness();
+      for (let i = 0; i < 3; i++) { h.mode.start(h.file()); h.mode.cancel(); }
+      expect(add.length, '★ 리스너를 안 붙였다 — Esc 가 안 먹는다').toBe(3);
+      expect(rm.length, '★ 붙인 만큼 안 뗐다 — 세션을 여닫을수록 쌓인다').toBe(3);
+    } finally {
+      document.addEventListener = origAdd as typeof document.addEventListener;
+      document.removeEventListener = origRm as typeof document.removeEventListener;
+    }
+  });
+
   it('★ 히트면 확정되고 조준이 닫힌다', async () => {
     const h = harness();
     h.mode.start(h.file('photo.png'));
