@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  judgeUpload, pendingAssets, pendingNotice, ASSET_PREFIX, NAME_LIMIT,
+  judgeUpload, pendingAssets, pendingNotice, ASSET_PREFIX, ART_PREFIX, NAME_LIMIT,
 } from '../frontend/js/world2/decide/upload-plan.js';
 import { isSafeSrc } from '../frontend/js/world2/decide/overlay.js';
 
@@ -114,5 +114,47 @@ describe('★ 「보낼 준비가 됐다」 — 아직 라이브가 아닌 것�
     expect(msg).toContain(`${many.length}개`);
     expect(msg).toContain(`외 ${many.length - NAME_LIMIT}개`);
     expect(msg, '★ 이름을 다 적었다').not.toContain(`m${NAME_LIMIT}.glb`);
+  });
+});
+
+describe('★ 작품 이미지도 센다 (W8-4 D3)', () => {
+  // 🔴 이 축이 0이던 동안 **편집으로 건 작품이 이 안내에 안 잡혔다.** 화면은
+  // «저장했습니다» 로 끝나고 그 이미지는 저장소에 없으니 라이브가 빈 액자가 된다 —
+  // GLB 가 W8-3 S7 에서 겪은 그 침묵의 재발이다. `items` 만 훑던 것이 원인이었다.
+  const both = (items: string[], arts: string[]) => JSON.stringify({
+    version: 2,
+    items: items.map((src) => ({ src, x: 0, y: 0, z: 0 })),
+    arts: arts.map((src) => ({ src, x: 0, y: 0, z: 0, ry: 0, w: 1, ar: 1 })),
+  });
+
+  it('★ 드롭한 이미지를 잡는다 — `items` 만 보면 여기가 통째로 안 잡힌다', () => {
+    const local = new Set([`${ART_PREFIX}mine.png`]);
+    expect(pendingAssets(both([], [`${ART_PREFIX}a.png`, `${ART_PREFIX}mine.png`]), local))
+      .toEqual([`${ART_PREFIX}mine.png`]);
+  });
+
+  it('★ GLB 와 작품을 **함께** 센다 — 한 종류만 세면 나머지가 조용히 빠진다', () => {
+    const local = new Set([`${ASSET_PREFIX}mine.glb`, `${ART_PREFIX}mine.png`]);
+    expect(pendingAssets(both([`${ASSET_PREFIX}mine.glb`], [`${ART_PREFIX}mine.png`]), local))
+      .toEqual([`${ART_PREFIX}mine.png`, `${ASSET_PREFIX}mine.glb`]);
+  });
+
+  it('★ `arts` 가 없는 구버전 문서에도 던지지 않는다', () => {
+    const local = new Set([`${ART_PREFIX}mine.png`]);
+    expect(pendingAssets('{"items":[]}', local)).toEqual([]);
+    expect(pendingAssets('{"arts":"nope"}', local)).toEqual([]);
+  });
+
+  it('★ 작품 이름이 **안 잘린다** — 접두 길이를 고정으로 자르면 글자가 날아간다', () => {
+    // `slice(ASSET_PREFIX.length)` 였을 때 `assets/art/a.png` 가 `png` 로 나왔다.
+    // 「무엇을 보내야 하는지」가 파일 이름이 아니면 안내가 아니다.
+    const msg = pendingNotice([`${ART_PREFIX}a.png`]);
+    expect(msg, '★ 이름이 잘렸다').toContain('a.png');
+    expect(msg, '★ 경로 접두가 그대로 나온다').not.toContain(ART_PREFIX);
+  });
+
+  it('★ 문구가 GLB 만 말하지 않는다 — 이제 이미지도 이 줄에 실린다', () => {
+    expect(pendingNotice([`${ART_PREFIX}a.png`]), '★ 이미지를 GLB 라고 부른다')
+      .not.toContain('GLB');
   });
 });

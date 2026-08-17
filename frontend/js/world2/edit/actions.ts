@@ -9,6 +9,7 @@ import { pendingAssets, pendingNotice } from '../decide/upload-plan.js';
 import { canPlacePart, newPart, PART_LABEL } from '../decide/asset-library.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { maxPartsPerParcel } from '../parts/index.js';
+import type { ArtsPort } from '../systems/art-port.js';
 import type { OverlayEntry, OverlayHost } from './types.js';
 import { select, type EditState } from './state.js';
 import { thawParcel } from './target.js';
@@ -37,7 +38,13 @@ function mb(bytes: number): string {
   return (bytes / 1048576).toFixed(1);
 }
 
-export function createActions(host: OverlayHost, st: EditState, panel: Panel): Actions {
+/**
+ * @param arts 벽에 걸린 작품(W8-4 D3). **생략 가능** — 없으면 「보낼 준비가 됐다」가
+ *             GLB 만 센다(구소비자의 기존 동작 그대로).
+ */
+export function createActions(
+  host: OverlayHost, st: EditState, panel: Panel, arts?: ArtsPort,
+): Actions {
   const doc = host.doc;
   const previewUrls = new Map<string, string>();
 
@@ -210,7 +217,13 @@ export function createActions(host: OverlayHost, st: EditState, panel: Panel): A
     // 판정한다** — 그런데 그 파일은 저장소에 없다. 이 줄이 없으면 «저장했습니다» 가
     // 거짓이 되고, 작가는 라이브의 빈 자리를 보고서야 안다. 근거는
     // `decide/upload-plan.ts` 헤더 한 곳이다.
-    const pending = pendingAssets(rev.json, new Set(previewUrls.keys()));
+    // ⚠ **두 미리보기 집합을 합친다**(D3). GLB 는 이 파일이 들고(`previewUrls`) 작품은
+    // 포트가 든다(`arts.localOnly()`) — 소유자가 다르므로 합치는 자리가 여기 하나다.
+    // 한쪽만 넘기면 «저장했습니다» 가 그 종류에 대해서만 거짓이 되고, 그 어긋남은
+    // 라이브의 빈 자리로만 드러난다.
+    const local = new Set(previewUrls.keys());
+    for (const s of arts?.localOnly() ?? []) local.add(s);
+    const pending = pendingAssets(rev.json, local);
     const notice = pendingNotice(pending);
     panel.say(`저장했습니다 · ${rev.summary}${notice ? ` — ${notice}` : ''}`, notice !== '');
   }

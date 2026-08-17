@@ -84,6 +84,12 @@ export interface ArtworkSceneDeps {
    * 실패하면 `null` 을 내고 액자는 그대로 선다(빈 액자가 «로드 실패» 의 표시다).
    */
   loadTexture?(src: string): Promise<unknown | null>;
+  /**
+   * 텍스처 캐시 키. **같은 `src` 라도 미리보기 URL 이 바뀌면 다시 로드해야 한다** —
+   * 편집에서 같은 파일명을 다시 떨어뜨리면 `blob:` 이 새로 생기는데, `src` 를 키로 쓰면
+   * 캐시가 **낡은 그림**을 준다(«바꿨는데 안 바뀐다»). 생략하면 `src` 를 그대로 쓴다.
+   */
+  texKey?(src: string): string;
 }
 
 export interface ArtworkStats {
@@ -169,6 +175,14 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   const artMats: ArtMaterial[] = [];
   /** dispose 대상 지오메트리. `[7]` 이 보는 축이라 재질만 지우면 절반만 정리된다 */
   const artGeos: { dispose?(): void }[] = [];
+  /**
+   * 세운 액자 그룹. **전체 대체가 이것을 지운다**(W8-4 D1.6).
+   *
+   * 왜 `root.children` 을 훑지 않는가 — 거기에는 **라이트와 그 타깃도 섞여 있다**
+   * (`root.add(L)`·`root.add(t)`). 통째로 비우면 풀이 씬에서 빠져 개수 불변식이 깨진다.
+   * 액자만 따로 들고 있는 것이 그 사고를 구조로 막는 유일한 방법이다.
+   */
+  const frameGroups: ArtNode[] = [];
   let frames = 0;
   let lit = 0;
   let skipped = 0;
@@ -184,14 +198,112 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
    * 잠복해 있었을 뿐이고, W8-4 D(편집에서 작품 걸기)가 열리면 그 즉시 상시 경로가 된다.
    */
   let next = 0;
+  /**
+   * `place` 세대. **올라가는 일만 있고 리셋되지 않는다** — 재진입한 옛 호출이 자기가
+   * 낡았다는 것을 아는 유일한 표식이다. 근거·재현은 `place` 헤더(검수관 블로커 B1).
+   */
+  let generation = 0;
 
+  /**
+   * 이전 `place` 의 흔적을 지운다. **라이트는 안 지운다 — 끈다.**
+   *
+   * 그 구별이 조건 1(개수 불변 절대)의 전부다: 풀은 부팅에 서고 세션 내내 그대로이며,
+   * 여기서 하는 것은 `intensity = 0` 뿐이다. **끄지 않으면 지운 작품 자리에 빛이 남는다**
+   * — 액자는 사라졌는데 벽이 밝은 상태이고, 화면에서 원인을 짚기 어려운 형태다.
+   */
+  function clearPlaced(): void {
+    for (const g of frameGroups) root.remove(g);
+    frameGroups.length = 0;
+    for (const m of artMats) m.dispose?.();
+    artMats.length = 0;
+    for (const geo of artGeos) geo.dispose?.();
+    artGeos.length = 0;
+    // ⚠ **텍스처는 여기서 안 지운다 — 캐시가 소유한다**(아래 `textureFor`).
+    // 재질과 지오는 `place` 마다 새로 만들지만 텍스처는 그림 자체라 재사용이 옳고,
+    // 그것이 이 회차에서 실측된 누수의 처방이다.
+    for (const L of pool) L.intensity = 0;
+    frames = 0; lit = 0; skipped = 0; unpowered = 0; texFailed = 0; next = 0;
+  }
+
+  /**
+   * 캐시 키 → 텍스처(실패는 `null`). **`place` 를 다시 불러도 재로드하지 않는다.**
+   *
+   * ── 🔴 왜 생겼나 — 팀장 조건 A 실측이 잡은 누수 (2026-08-17) ───────────────
+   * `place()` 가 **전체 대체**라 걸 때마다 전부 다시 세우는데, `material.dispose()` 는
+   * three 에서 **`map` 을 건드리지 않는다.** 그래서 `clearPlaced` 가 재질·지오는 지워도
+   * 텍스처만 남았다. 편집 세션에서 작품을 8회 걸며 잰 실측:
+   *
+   *   회차   1   2   3   4   5   6   7   8
+   *   Δtex   1   2   5   8  12  17  23  30   ← **증가폭이 커진다(N² 신호)**
+   *   Δgeo   2   2   4   4   4   4   4   4   ← 멈춘다(dispose 가 듣는다)
+   *
+   * ⚠ **라이브 영향은 0이다** — 라이브 경로에서 `place` 는 부팅 1회뿐이고, 반복 호출은
+   * `?edit=1` 세션에서만 일어난다. 그래도 고치는 이유는 편집이 실사용 경로이기 때문이다.
+   *
+   * **`null` 도 캐시한다** — 실패를 매 `place` 마다 재시도하면 걸 때마다 느려지고,
+   * 없는 파일은 다음에도 없다. 되살아나는 경로(파일이 나중에 생김)는 새로고침이다.
+   *
+   * ── 경계: 무엇이 남는가 (검수관 권고 P5) ─────────────────────────────────
+   * 지운 작품의 텍스처도 세션 끝까지 남는다. 그리고 **같은 파일명을 N회 다시 드롭하면
+   * 매번 새 `blob:` 이라 키가 N개 생기고 옛 텍스처는 도달 불가능한 채 남는다**(미리보기
+   * 맵이 덮어쓰므로). 선형이고 편집 세션 한정이라 받아들인다 — `dispose()` 가 한 번에
+   * 회수한다.
+   *
+   * ⚠ **그래서 churn 판정선은 「총량 불변」이 아니라 「증가폭 불증가」다.** 총량으로
+   * 잡으면 이 정당한 누적 때문에 거짓 FAIL 이 난다(D4 게이트 명세 G3 의 근거).
+   */
+  const texCache = new Map<string, unknown | null>();
+  const keyOf = deps.texKey ?? ((s: string) => s);
+
+  async function textureFor(src: string): Promise<unknown | null> {
+    if (!deps.loadTexture) return null;
+    const key = keyOf(src);
+    const hit = texCache.get(key);
+    if (hit !== undefined) return hit;
+    let tex: unknown | null = null;
+    try { tex = await deps.loadTexture(src); } catch { tex = null; }
+    texCache.set(key, tex);
+    return tex;
+  }
+
+  /**
+   * 작품을 놓는다. **전체 대체다** — 부를 때마다 이전 것을 지우고 처음부터 세운다
+   * (팀장 판정 2026-08-17 (가)). `village-parcels.ts` 의 `setAll` 과 같은 의미론이다.
+   *
+   * ── 왜 누적이 아니라 대체인가 ───────────────────────────────────────────
+   * 편집은 걸고 **지우는** 것이 짝인데 누적 계약에는 지울 수단이 없었다. 개별 제거 API
+   * (`remove(i)`)를 다는 길도 있었지만 팀장이 기각했다 — **슬롯 반환 큐라는 새 상태
+   * 기계가 조건 1 의 검사 축을 늘리고**, 아래 cap 버그는 그대로 남기 때문이다.
+   *
+   * ⚠ **부수 효과가 아니라 이 판정의 절반이다**: `assignArtLights` 의 `used` 맵은 함수
+   * 지역이라 **호출마다 파셀 cap 이 초기화**된다. 누적 계약에서는 같은 파셀에 1개씩 두 번
+   * 놓으면 `perParcel=1` 이어도 **둘 다 켜졌다.** 전체 대체에서는 매 호출이 전체를 다시
+   * 배정하므로 그 지역성이 **정답**이 된다. 팀장 조건 C 가 이것을 명시 테스트로 못 박게 했다
+   * — 부수 효과로만 두면 구조를 되돌릴 때 버그가 소리 없이 부활한다.
+   */
   async function place(arts: readonly ArtworkItem[]): Promise<void> {
     if (disposed) return;
+    // ⚠⚠ **세대 도장 — 재진입에서 옛 호출이 이탈하는 유일한 수단이다**(검수관 블로커 B1).
+    //
+    // 아래 루프는 `await textureFor` 에서 **제어를 놓는다.** 그 사이 두 번째 `place` 가
+    // 들어오면 그쪽이 `clearPlaced()` 로 공유 상태를 비우는데, **1차가 재개해 같은
+    // 배열에 계속 push 하고 `root.add` 하고 슬롯을 소비한다.** 검수관이 실제로 재현했다:
+    // 문서상 작품 **2개**에 씬에는 액자 **3개** — 그리고 `stats().frames` 는 3 이라고
+    // 말한다(팀장 조건 B 가 지목한 «`stats` 가 거짓말하는 형태» 의 두 번째 자리다).
+    //
+    // 도달 경로가 열려 있다: `edit/input.ts` 의 드롭 분기가 `void deps.art.drop(…)` 로
+    // **던지고 안 기다리고**, `edit/artwork-mode.ts` 의 `await measure(url)`(이미지 디코드)이
+    // 창을 연다. **작품 두 점을 연달아 거는 것은 전시를 꾸미는 사람의 기본 동작이다.**
+    //
+    // ⚠ 데이터 손실은 없었다 — `systems/art-port.ts` 의 `items = next` 가 첫 `await` 앞에
+    // 있어 lost update 가 성립하지 않는다. 어긋난 것은 **씬과 통계**뿐이다.
+    const gen = ++generation;
+    clearPlaced();
     const plan = assignArtLights(arts, perParcel, cellX, cellZ);
     skipped += plan.skipped;
 
     for (let i = 0; i < arts.length; i++) {
-      if (disposed) return;
+      if (disposed || gen !== generation) return;
       const a = arts[i];
       const { w, h } = frameSize(a);
 
@@ -218,14 +330,15 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       // `needsUpdate` 로 고칠 수도 있었지만 그 길은 **셰이더를 다시 굽는다** — 파이프라인
       // 수가 오르내리고 `[7]` 이 그것을 본다. 순서를 바꾸면 처음부터 맞는 셰이더가 한 번만
       // 구워진다. **잰 것이 아니라 구조로 해소한 것**이 요점이다.
-      let tex: unknown = null;
-      if (deps.loadTexture) {
-        try {
-          tex = await deps.loadTexture(a.src);
-          if (disposed) return;
-          if (!tex) texFailed++;
-        } catch { texFailed++; }
-      }
+      // ⚠ 캐시를 거친다(`textureFor`) — 그것이 없을 때 텍스처가 N² 로 샜다.
+      // `texFailed` 는 **캐시 히트에서도 센다** — 「이번 화면에 실패한 액자가 몇 개인가」이지
+      // 「이번에 몇 번 실패했는가」가 아니다. 리셋이 `clearPlaced` 에 있는 것과 짝이다.
+      const tex = await textureFor(a.src);
+      // ⚠ **재개 지점이다 — 세대를 다시 본다.** 여기를 빼면 B1 이 그대로 살아 있다:
+      // 이 줄 위에서 만든 `borderGeo` 는 2차의 `clearPlaced` 가 이미 dispose 했는데,
+      // 아래로 계속 가면 그 지오로 만든 액자를 `root.add` 해 **유령**이 선다.
+      if (disposed || gen !== generation) return;
+      if (deps.loadTexture && !tex) texFailed++;
       const mat = new THREE.MeshStandardMaterial({
         ...(tex ? { map: tex } : {}), roughness: 0.85, metalness: 0,
       });
@@ -237,6 +350,7 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       plane.position.set(0, 0, FRAME_DEPTH / 2 + 0.002);
       g.add(plane);
       root.add(g);
+      frameGroups.push(g);   // ⚠ 다음 `place` 가 이걸로 지운다(전체 대체)
       frames++;
 
       // 조명 — 배정받은 것만. **풀에서 꺼내 쓸 뿐 새로 만들지 않는다.**
@@ -277,6 +391,9 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       // 남았다**(검수관 P6) — three 의 `info.memory.geometries` 는 재질과 따로 센다.
       for (const geo of artGeos) geo.dispose?.();
       artGeos.length = 0;
+      // 텍스처는 캐시가 소유하므로 **떠날 때 여기서 한 번에** 지운다(`clearPlaced` 아님).
+      for (const t of texCache.values()) (t as { dispose?(): void } | null)?.dispose?.();
+      texCache.clear();
     },
   };
 }
@@ -329,5 +446,8 @@ export function mountArtworks(
     cellZ: layout.cellZ,
     perParcel,
     loadTexture: textureLoaderFor(THREE, resolve),
+    // 캐시 키를 **실제 URL**로 잡는다 — 같은 `src` 에 새 `blob:` 이 붙으면(같은 파일명을
+    // 다시 드롭) 키가 달라져 자동으로 다시 로드된다. `src` 를 키로 쓰면 낡은 그림이 남는다.
+    texKey: resolve,
   });
 }

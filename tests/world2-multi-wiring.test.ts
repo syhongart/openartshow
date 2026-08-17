@@ -112,10 +112,53 @@ describe('★ 경로는 저장소가 소유한다', () => {
   });
 });
 
+describe('★ 내보내기가 작품을 들고 나간다 (W8-4 D1.5)', () => {
+  // 🔴 **이 축이 0이라서 작품이 조용히 사라지고 있었다.** `toRaw()` 반환에 `arts` 가
+  // 없었고, 계약이 `undefined` 를 issue 없이 `[]` 로 채워 **`clean === true`·화면은
+  // 「무손실」**이었다. 같은 함수의 주석이 *"읽은 것이 그대로 나가야 한다"* 를 두 번
+  // 적고 있었으니 **문장이 거짓**이던 것이다.
+  //
+  // ⚠ **이 검사는 텍스트다 — 약한 축인 것을 알고 쓴다.** `toRaw()` 를 실제로 돌리려면
+  // `overlayFeature.create(env)` 가 필요하고 `FeatureEnv` 는 `scene`·`adapter`·`player`·
+  // `pools`·`village` 를 요구해 스텁 비용이 이 회차 범위를 넘는다. 그래서 **0을 1로**
+  // 만들되, 실물 왕복(브라우저에서 실제로 내보내기를 눌러 `arts` 가 나오는지)은 **D4 가**
+  // 잰다. 그때까지 이 축은 「지워지면 안다」까지만 보증한다.
+  // 더 강한 처방(=`toRaw` 를 순수 함수로 분리해 실행으로 재기)은 태스크로 남겼다.
+  it('★ `toRaw` 가 `arts` 를 낸다 — 빠지면 작품이 사라지는데 화면은 「무손실」이라 한다', () => {
+    const from = CODE.indexOf('function toRaw(');
+    expect(from, '★ toRaw 를 못 찾았다 — 이 검사가 헛돈다').toBeGreaterThan(-1);
+    const body = CODE.slice(from, CODE.indexOf('\n    }', from));
+    expect(body, '★ 내보내기에서 작품이 빠졌다').toMatch(/arts:/);
+  });
+
+  it('★ 로드한 작품을 포트에 넣는다 — 통로가 끊기면 언제나 빈 배열이 나간다', () => {
+    // ⚠ D2 에서 형태가 바뀌었다: 지역 변수(`loadedArts`)가 아니라
+    // `systems/art-port.ts` 가 목록을 **소유한다**. 편집이 같은 목록에 더해야 해서다.
+    // 재는 것은 여전히 하나 — 「읽은 것이 실제로 보관되는가」.
+    expect(CODE, '★ plan.arts 를 포트에 안 넣는다').toMatch(/arts\.set\(plan\.arts\)/);
+  });
+});
+
 describe('★ 벽에 건 작품이 부팅에 꽂혔다 (W8-4)', () => {
-  it('★ 씬을 만든다 — 안 부르면 액자도 라이트 풀도 없다', () => {
+  it('★ 씬을 만들고 **포트에 물린다** — 안 물리면 목록만 바뀌고 화면은 그대로다', () => {
     expect(CODE, '★ 액자 씬을 안 만든다').toContain('mountArtworks(');
-    expect(CODE, '★ 계획의 작품을 안 넘긴다').toMatch(/artScene\.place\(plan\.arts\)/);
+    expect(CODE, '★ 씬을 포트에 안 물린다 — 편집으로 건 작품이 화면에 안 뜬다')
+      .toMatch(/arts\.attach\(artScene\)/);
+  });
+
+  it('★ **편집 세션은 작품 0개여도 로더를 받는다** (W8-4 D2)', () => {
+    // 🔴 검수관 B3-2 가 실측한 구멍이 여기였다: `arts` 0 · GLB 0 이면 `ensureLoader()` 가
+    // 안 불려 `THREE` 가 null 이고 씬이 아예 안 선다. 라이브는 그래도 되지만 **편집은
+    // 그 순간 걸 곳이 없다** — 걸어도 목록만 늘고 화면에는 아무것도 안 뜬다.
+    expect(CODE, '★ 편집인데 three 를 안 받는다 — 걸어도 화면에 안 뜬다')
+      .toMatch(/plan\.arts\.length > 0 \|\| wantEdit/);
+  });
+
+  it('★ 편집에 작품 포트를 넘긴다 — 안 넘기면 이미지 드롭이 통째로 없다', () => {
+    const from = CODE.indexOf('startEditMode(host, {');
+    expect(from, '★ startEditMode 호출을 못 찾았다 — 이 검사가 헛돈다').toBeGreaterThan(-1);
+    expect(CODE.slice(from, CODE.indexOf('});', from)), '★ arts 를 안 넘긴다')
+      .toMatch(/\barts\b/);
   });
 
   it('★ **작품이 0개여도 씬을 만든다** — 라이트 풀이 부팅에 서야 개수 불변식이 성립한다', () => {
@@ -134,11 +177,15 @@ describe('★ 벽에 건 작품이 부팅에 꽂혔다 (W8-4)', () => {
       .not.toMatch(/arts[.\s]*\.?length/);
   });
 
-  it('★ 경로 결합기를 넘긴다 — `assetUrl` 이 base 결합의 유일한 자리다', () => {
+  it('★ 경로 결합기로 **포트의 `resolve`** 를 넘긴다 — 미리보기가 그 자리에서 갈린다', () => {
     // 로더 자체의 배선은 `systems/artwork-scene.ts` 가 소유하고, 그것이 실제로 붙는지는
     // `world2-artwork-scene.test.ts` 가 **실행으로** 잰다(텍스트보다 강한 축이다).
     // 여기서는 부팅이 결합기를 넘기는지만 본다.
-    expect(CODE, '★ base 결합기를 안 넘긴다').toMatch(/mountArtworks\([^)]*assetUrl/);
+    //
+    // ⚠ D2 에서 `assetUrl` → `arts.resolve` 로 바뀌었다. 편집으로 건 작품은 저장소에
+    // 아직 없는 경로를 갖고 세션 안에서는 `blob:` 로만 보인다 — `assetUrl` 을 그대로
+    // 넘기면 그 미리보기가 404 가 되고 **액자가 회색으로 뜬다**(W8-4 C 가 겪은 증상).
+    expect(CODE, '★ 결합기를 안 넘긴다').toMatch(/mountArtworks\([^)]*arts\.resolve/);
   });
 
   it('★ 진단이 작품·조명을 말한다 — 스모크가 판정할 수 있어야 한다', () => {

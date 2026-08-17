@@ -15,8 +15,28 @@ export type StubRay = {
   direction: { x: number; y: number; z: number };
 };
 
-/** 레이캐스트 한 건. `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다 */
-export type StubHit = { object: unknown; instanceId?: number };
+/**
+ * 레이캐스트 한 건. `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다.
+ *
+ * `point`·`face` 는 **벽 검출**(W8-4 D)이 쓴다. 실물 three 와 같은 성질을 갖게 둘 다
+ * 선택 필드다 — `face` 는 Line·Points 를 맞히면 실제로 안 온다. **대역이 실물의 핵심
+ * 성질을 안 가지면 그 축의 검출력은 0이다**(이 저장소가 뮤테이션으로 배운 것).
+ *
+ * ⚠ `face.normal` 은 실물에서 **로컬 좌표계**다. 그래서 `object.matrixWorld` 를 함께
+ * 주지 않으면 「월드 변환을 했는가」를 잴 수 없다 — 테스트가 그것을 확인한다.
+ */
+export type StubHit = {
+  object: unknown;
+  instanceId?: number;
+  /**
+   * 광선 원점에서의 거리. **벽 검출이 오버레이와 마을 중 어느 것을 고를지** 가른다.
+   * 실물과 같이 선택 필드다 — 생략하면 소비자가 `Infinity` 로 읽어 «거리를 모르는 것은
+   * 진다» 가 된다(가까운 쪽을 고르는 규약과 어긋나지 않는다).
+   */
+  distance?: number;
+  point?: { x: number; y: number; z: number };
+  face?: { normal: { x: number; y: number; z: number } } | null;
+};
 
 export interface ThreeStubOptions {
   /** 만들어진 광선이 여기 쌓인다 — 테스트가 방향을 바꿔 쓴다 */

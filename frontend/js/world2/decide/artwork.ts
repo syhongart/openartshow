@@ -25,12 +25,44 @@
 import { foldAngle } from './angle.js';
 
 /**
+ * 받는 이미지 확장자. **아래 두 정규식이 이 하나에서 나온다** — 경로 계약(`ART_RE`)과
+ * 분류(`IMAGE_NAME_RE`). 목록을 각자 적으면 한쪽만 넓혀도 아무도 모른다(값 미러링).
+ */
+const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp'] as const;
+const EXT_ALT = IMAGE_EXT.join('|');
+
+/**
+ * 작품 이미지 경로 접두. **아래 `ART_RE`·`artSrcFor` 와 `decide/upload-plan.ts` 가 이
+ * 하나를 본다** (검수관 권고 P2).
+ *
+ * ⚠ 세 곳에 각각 적혀 있었다. 바로 위 `IMAGE_EXT` 가 **같은 diff 안에서** 확장자 목록에
+ * 대해 정확히 이 처방을 하면서 *"목록을 각자 적으면 한쪽만 넓혀도 아무도 모른다"* 라고
+ * 적었는데, 접두에는 안 썼다 — 새로 만드는 것만이라도 안 늘린다.
+ */
+export const ART_PREFIX = 'assets/art/';
+
+/**
  * 작품 이미지 경로. **`assets/art/` 아래 상대경로만.**
  *
  * 검사를 정규식 하나로 끝내지 않는 것은 계약(`decide/overlay.ts:169-183`)이 `isSafeSrc`
  * 에서 실측으로 배운 그대로다 — `.` 을 허용하는 문자군은 `..` 도 통과시킨다.
  */
-const ART_RE = /^assets\/art\/[A-Za-z0-9_\-./]+\.(png|jpg|jpeg|webp)$/;
+const ART_RE = new RegExp(`^${ART_PREFIX}[A-Za-z0-9_\\-./]+\\.(${EXT_ALT})$`);
+
+/** 이름이 이미지처럼 보이는가. **대소문자를 안 가린다** — 아래 함수 주석이 그 이유다 */
+const IMAGE_NAME_RE = new RegExp(`\\.(${EXT_ALT})$`, 'i');
+
+/**
+ * 이 파일을 **작품으로 다룰 것인가** (W8-4 D2). 확장자만 본다.
+ *
+ * ⚠ **`isSafeArtSrc` 와 다른 질문이다.** 「무엇으로 다룰 것인가」(분류)와 「쓸 수 있는
+ * 이름인가」(계약)를 한 함수로 합치면 `내 그림.png` 를 떨어뜨렸을 때 분류가 실패해
+ * **GLB 경로로 흘러가고**, 화면이 *"확장자는 소문자 .glb"* 라는 **엉뚱한 사유**를 말한다.
+ * 그래서 여기는 넓게(대소문자 무시) 잡고, 거부 사유는 작품 쪽에서 낸다.
+ */
+export function looksLikeImage(fileName: string): boolean {
+  return IMAGE_NAME_RE.test(fileName);
+}
 
 // 회전 접기는 **계약과 같은 함수**를 쓴다. 첫 판본은 복제했고 규약이 갈렸다 —
 // 그 사고와 처방은 `decide/angle.ts` 헤더 한 곳이다.
@@ -41,10 +73,48 @@ export function isSafeArtSrc(src: unknown): src is string {
   return ART_RE.test(src);
 }
 
-/** 저장할 경로를 만든다. 통과 못 하면 `null` — 호출부가 사유를 말한다 */
+/** 저장할 경로를 만든다. 통과 못 하면 `null` — 사유는 `artNameHelp` 가 낸다 */
 export function artSrcFor(fileName: string): string | null {
-  const src = `assets/art/${fileName}`;
+  const src = `${ART_PREFIX}${fileName}`;
   return isSafeArtSrc(src) ? src : null;
+}
+
+/**
+ * 왜 못 쓰는 이름인지 **화면 문구로**. 통과하면 빈 문자열 (검수관 블로커 B2).
+ *
+ * ── 🔴 왜 생겼나 — 화면이 이미 만족한 조건을 고치라고 말했다 ────────────────
+ * `looksLikeImage` 는 대소문자를 안 가리고(`IMAGE_NAME_RE` 에 `i`) `ART_RE` 는 소문자만
+ * 받는다. 그 틈에 **`IMG_1234.JPG` 가 작품 경로로 들어와 거절**되는데, 사유가 한 줄뿐이라
+ * 화면이 *"영문·숫자·_ - . 만 씁니다"* 라고 말했다 — **`IMG_1234.JPG` 는 이미 그렇다.**
+ * 작가는 고칠 것이 없는 것을 고치라는 말을 듣고 진짜 원인(확장자 대문자)은 못 듣는다.
+ *
+ * 그리고 `looksLikeImage` 주석이 *"거부 사유는 작품 쪽에서 낸다"* 로 **이미 해결됐다고
+ * 적고 있었다.** 분류를 넓히는 절반만 했고 사유를 가르는 절반을 안 한 것이다 —
+ * 주석이 코드보다 앞서 있는 것이 이 저장소가 가장 비싸게 배운 형태다.
+ *
+ * ⚠ **문구를 소비자가 짓지 않는다**(`decide/upload-plan.ts` 의 명제 ④와 같은 이유).
+ * 두 곳에 적으면 계약이 넓어져도 한쪽이 안 따라온다.
+ *
+ * ⚠⚠ **대문자 확장자를 아예 받을 것인가는 여기서 정하지 않는다.** 그것은 계약(`ART_RE`)을
+ * 넓히는 일이고, `IMG_####.JPG`·`DSC_####.JPG` 가 아이폰·캐논·니콘의 기본 출력이라
+ * **주 경로 판단**이다 — 감독 사안으로 남겼다(태스크 #94).
+ *
+ * ⚠⚠⚠ **세 번째 사유는 일부러 접었다**(검수관 권고 P7 — B2 의 잔재가 아니다).
+ * `../../etc/passwd.png` 는 `..` 때문에 떨어지는데 문구는 «영문·숫자·_ - . 만 씁니다» 를
+ * 말한다 — 그 이름은 그 문자군을 **이미 만족한다**(`/` 와 `.` 이 허용 문자군에 있다).
+ * 형태는 B2 와 같지만 **처리가 다른 이유가 둘**이다: ① 브라우저의 `File.name` 은
+ * basename 이라 실제 드롭으로는 도달할 수 없다(테스트에서만 닿는다) ② 경로 탈출 시도에
+ * **모호하게 답하는 것은 방어로서 의도**다. 다음 사람이 이것을 오간으로 읽고 «사유를
+ * 하나 더 가르자» 로 고치지 않도록 적어 둔다.
+ */
+export function artNameHelp(fileName: string): string {
+  if (artSrcFor(fileName) !== null) return '';
+  // 확장자만 소문자로 바꿔서 통과하면 **그것이 유일한 위반**이다. 둘 다 어긋난 이름
+  // (`내 그림.JPG`)은 확장자를 고쳐도 안 되므로 문자군 쪽 사유가 맞다.
+  const lowered = fileName.replace(/\.([^.]*)$/, (_m, e: string) => `.${e.toLowerCase()}`);
+  return artSrcFor(lowered) !== null
+    ? '확장자를 소문자로 바꿔 주세요 (예: .JPG → .jpg)'
+    : '영문·숫자·_ - . 만 씁니다';
 }
 
 /** 벽에 걸린 작품 하나. **계약(`Overlay.arts`)의 원소다** */
@@ -201,6 +271,79 @@ export interface WallHit {
   readonly point: { x: number; y: number; z: number };
   /** 그 면의 법선(월드, 정규화돼 있다고 가정하지 않는다) */
   readonly normal: { x: number; y: number; z: number };
+}
+
+/**
+ * 열 우선 4×4 두 개의 곱(`a · b`). 회전·스케일(3×3)만 쓴다 — 법선에 이동은 무의미하다.
+ *
+ * ⚠ **왜 필요한가**: 마을 건물·나무는 `InstancedMesh` 라 면 법선이 **두 변환**을 거친다
+ * — 인스턴스 행렬(`getMatrixAt`)과 그 메시의 `matrixWorld`. 하나만 곱하면 파셀이
+ * 원점에서 멀수록 액자가 엉뚱한 방향을 본다. 오버레이 GLB 는 변환이 하나뿐이라 이
+ * 함수가 필요 없었고, 그래서 W8-4 D1 에는 없었다.
+ */
+export function mul3x3(a: ArrayLike<number>, b: ArrayLike<number>): number[] | null {
+  if (a.length < 11 || b.length < 11) return null;
+  const out = new Array<number>(16).fill(0);
+  out[15] = 1;
+  for (let c = 0; c < 3; c++) {
+    for (let r = 0; r < 3; r++) {
+      // 열 우선: M[행 r][열 c] = m[c * 4 + r]
+      out[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2];
+    }
+  }
+  return out;
+}
+
+/**
+ * 레이캐스트가 준 **로컬** 법선을 월드로 옮긴다 (W8-4 D).
+ *
+ * ⚠ **이 변환을 빠뜨리면 증상이 「안 걸린다」가 아니라 「엉뚱한 데를 본다」다.**
+ * three 의 `Intersection.face.normal` 은 맞힌 지오메트리의 **로컬 좌표계** 값이다.
+ * 건물이 `ry` 로 돌아가 있으면(오버레이 GLB 는 대부분 그렇다) 로컬 법선을 그대로
+ * `wallPose` 에 넣는 순간 액자가 **회전 전 방향**을 향한다 — 화면에는 «벽을 뚫고 선
+ * 액자» 로 보이고, 벽 판정(`WALL_MAX_TILT`)도 엉뚱한 면에서 통과한다.
+ *
+ * ── 🔴 균등 스케일 전제를 버렸다 (2026-08-17, 감독 판정으로 재론 트리거 발동) ──
+ * 첫 판본은 회전 성분(3×3)을 그대로 곱했고(three 의 `Vector3.transformDirection`),
+ * 주석이 *"균등 스케일 전제이고 이 저장소에서 그것이 성립한다 … 비균등이 열리면 이
+ * 함수는 inverse-transpose 가 필요해진다 — **재론 트리거**"* 라고 적어 두었다.
+ *
+ * **실측으로 그 트리거가 발동했다**: `parts/building.ts:184` 이 `sx: w, sy: h, sz: d` 로
+ * 축마다 다른 배율을 쓴다(`road`·`garden`·`ground`·`tower` 도 같다). 마을 건물 벽에
+ * 걸겠다는 감독 판정(2026-08-17)이 그 파츠들을 대상으로 만들었으므로 전제가 깨졌다.
+ *
+ * 그래서 **정규행렬 `(M⁻¹)ᵀ`** 을 쓴다(three 의 `Matrix3.getNormalMatrix` 와 같다).
+ * 균등 스케일에서는 두 방법이 **같은 방향**을 낸다 — `(R·sI)⁻ᵀ = R·(1/s)I` 이고 정규화가
+ * 배율을 지우기 때문이다. 그래서 기존 오버레이 GLB 동작은 안 바뀐다(테스트가 지킨다).
+ * 갈리는 곳은 **로컬 법선이 축과 정렬되지 않은 면**이다: 축정렬 박스 벽면은 어느 쪽으로
+ * 계산해도 같지만, 지붕 경사면·원통은 다르다 — 그리고 벽 판정(`WALL_MAX_TILT`)이
+ * 통과/거절을 가르는 자리가 정확히 거기다.
+ *
+ * @param local 로컬 법선
+ * @param m 열 우선 4×4(three `Object3D.matrixWorld.elements`, 또는 `mul3x3` 의 결과)
+ */
+export function toWorldNormal(
+  local: { x: number; y: number; z: number },
+  m: ArrayLike<number>,
+): { x: number; y: number; z: number } | null {
+  const { x, y, z } = local;
+  if (m.length < 11) return null;
+  // 열 우선 4×4 의 좌상단 3×3. 수학 표기 M[행][열] = m[열*4 + 행].
+  const a = m[0], b = m[4], c = m[8];
+  const d = m[1], e = m[5], f = m[9];
+  const g = m[2], h = m[6], i = m[10];
+  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  // 퇴화 행렬(스케일 0 인 축 등)은 «법선이 없다» 와 같다.
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+  // `(M⁻¹)ᵀ = cofactor(M) / det`. det 로 나누는 것은 정규화가 지우지만 **부호는 남는다** —
+  // 거울 변환(det < 0)에서 법선이 뒤집히는 것이 물리적으로 옳은 결과다.
+  const nx = ((e * i - f * h) * x - (d * i - f * g) * y + (d * h - e * g) * z) / det;
+  const ny = (-(b * i - c * h) * x + (a * i - c * g) * y - (a * h - b * g) * z) / det;
+  const nz = ((b * f - c * e) * x - (a * f - c * d) * y + (a * e - b * d) * z) / det;
+  const len = Math.hypot(nx, ny, nz);
+  // 길이 0 은 «법선이 없다» 와 같다. `wallPose` 도 같은 문턱으로 거른다.
+  if (!Number.isFinite(len) || len < 1e-6) return null;
+  return { x: nx / len, y: ny / len, z: nz / len };
 }
 
 /**
