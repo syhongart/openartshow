@@ -192,8 +192,9 @@ export function createPanel(
   );
   rowOut.append(button('JSON 내보내기', () => { handlers.exportNow(); }));
   // ── 사진 걸기 (W8-5 · 감독 카드 「폰에서 넣기 먼저」 2026-08-17) ────────────
-  // 드롭과 **같은 일**을 하는 두 번째 문이다. 좌표가 없으므로 화면 한가운데를 쏜다
-  // (`artwork-mode.pickFile` → `picker.castCenter`). 문이 없으면 이 행 자체가 안 생긴다.
+  // 드롭과 **같은 일**을 하는 두 번째 문이다. ⚠ W8-6 부터 이 버튼은 바로 걸지 않고
+  // **조준 화면**(`edit/aim-mode.ts`)을 연다 — 폰에서 화면 한가운데가 이 패널에 덮여
+  // 조준이 성립하지 않았기 때문이다. 문이 없으면 이 행 자체가 안 생긴다.
   const rowPhoto = el('div', 'row photo');
   if (handlers.hangPhoto) {
     const hang = handlers.hangPhoto;
