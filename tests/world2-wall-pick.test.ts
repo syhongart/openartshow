@@ -249,6 +249,27 @@ describe('★ 비균등 스케일 — 정규행렬이 아니면 **반대로 답�
   it('축이 0 으로 눌린 행렬은 null — 못 읽은 것을 0 으로 뭉개지 않는다', () => {
     expect(toWorldNormal({ x: 0, y: 0, z: 1 }, scale(1, 1, 0))).toBeNull();
   });
+
+  it('★ **거의** 눌린 행렬도 null — 유한하다고 통과시키면 방향이 수치 잡음이다', () => {
+    // 🔴 뮤테이션 N10(`Math.abs(det) < 1e-12` 가드 삭제)이 **0 failed** 였다(2026-08-17).
+    // 위 `scale(1,1,0)` 케이스는 det 이 정확히 0 이라 `0/0 = NaN`·`x/0 = Infinity` 가 되고
+    // **뒤의 `Number.isFinite(len)` 가드가 같은 일을 대신 한다** — 그래서 그 축에서는
+    // 두 판본이 등가다. 갈리는 곳은 **0 이 아니지만 문턱 아래**인 구간이다:
+    // det = 1e-13 이면 뮤테이션 판본은 `1/1e-13 = 1e13` 이라는 **유한한 쓰레기 값**을
+    // 정규화해 통과시킨다. 「못 잰 것을 통과로 적지 않는다」가 산술에서 성립하는 자리다.
+    expect(toWorldNormal({ x: 0, y: 0, z: 1 }, scale(1, 1, 1e-13))).toBeNull();
+  });
+
+  it('★ 거울 변환(det < 0)에서는 법선이 **뒤집힌다** — 절댓값으로 나누면 안 된다', () => {
+    // 🔴 뮤테이션 N9(`/ det` → `/ Math.abs(det)`)가 **0 failed** 였다 — 거울 픽스처가
+    // 아예 없었으므로 **축이 비어 있었다**(검사가 약한 것과 다른 원인이다).
+    //
+    // x 를 뒤집으면 +X 를 보던 면은 −X 를 본다. GLB 모델러가 미러링한 파츠에서 실제로
+    // 나오는 형태이고, 부호를 잃으면 액자가 **벽 안쪽을 향해** 걸린다.
+    const n = toWorldNormal({ x: 1, y: 0, z: 0 }, scale(-1, 1, 1));
+    expect(n, '★ 거울 변환에서 법선을 못 냈다').not.toBeNull();
+    expect(n!.x, '★ det 부호를 버렸다 — 액자가 벽 안쪽을 본다').toBeCloseTo(-1, 6);
+  });
 });
 
 describe('★ mul3x3 — 두 변환을 잇는다', () => {
@@ -295,18 +316,29 @@ describe('★ 마을 건물 벽에도 걸린다', () => {
     expect(hit!.point).toEqual({ x: 1, y: 2, z: 3 });
   });
 
-  it('★ **인스턴스 행렬과 matrixWorld 를 둘 다** 곱한다 — 하나만 곱하면 각이 틀린다', () => {
-    // 인스턴스가 +90도, 풀 메시가 다시 +90도 → 로컬 +Z 는 월드 −Z 를 봐야 한다.
-    // 하나만 곱하면 +X 가 나오고, 화면에서는 «액자가 옆을 본다» 로만 보인다.
+  it('★ **인스턴스 행렬과 matrixWorld 를 둘 다 · 그 순서로** 곱한다', () => {
+    // 🔴 **첫 판본은 뮤테이션 N2(곱 순서 뒤바꾸기)를 못 잡았다**(0 failed, 2026-08-17).
+    // 원인은 검사가 약한 것이 아니라 **픽스처가 두 값을 구별 못 한 것**이었다 — 인스턴스와
+    // 메시월드에 **같은 회전**(rotY 90°)을 줬으니 순서를 바꿔도 같은 답이 나온다. 이
+    // 저장소가 뮤테이션 `0 failed` 의 네 원인 중 세 번째로 이미 두 번 데인 형태다.
+    //
+    // 축이 서게 픽스처를 바꿨다: **y축 회전과 x축 스케일은 교환되지 않는다.**
+    //   inst = rotY(90°) · world = scale(2,1,1) · 로컬 법선 (0, 1, 1)/√2
+    //   올바른 순서 `mul3x3(world, inst)` → S⁻¹·R·n = (0.354, 0.707, 0) → (0.447, 0.894, 0)
+    //   뒤바뀐 순서                        → R·S⁻¹·n = (0.707, 0.707, 0) → (0.707, 0.707, 0)
+    //   변환 하나만(N3)                    → R·n     = 같은 (0.707, 0.707, 0)
+    // 한 픽스처가 N2·N3 를 **둘 다** 잡는다.
+    const D = Math.SQRT1_2;
     const picker = makePicker([], {
       hits: [{
-        object: instMesh(rotY(Math.PI / 2), rotY(Math.PI / 2)), instanceId: 0,
-        point: { x: 0, y: 1, z: 0 }, face: { normal: { x: 0, y: 0, z: 1 } },
+        object: instMesh(rotY(Math.PI / 2), scale(2, 1, 1)), instanceId: 0,
+        point: { x: 0, y: 1, z: 0 }, face: { normal: { x: 0, y: D, z: D } },
       }],
     });
     const hit = picker.pickFace();
-    expect(hit!.normal.z, '★ 변환 하나를 빠뜨렸다').toBeCloseTo(-1, 6);
-    expect(hit!.normal.x).toBeCloseTo(0, 6);
+    expect(hit!.normal.x, '★ 곱 순서가 틀렸거나 변환 하나를 빠뜨렸다').toBeCloseTo(0.4472, 3);
+    expect(hit!.normal.y).toBeCloseTo(0.8944, 3);
+    expect(hit!.normal.z).toBeCloseTo(0, 6);
   });
 
   it('★ 빈 슬롯(주인 없음)은 건너뛴다 — 지워진 자리에 액자가 걸리면 안 된다', () => {
