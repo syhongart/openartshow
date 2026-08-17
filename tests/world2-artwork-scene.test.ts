@@ -327,6 +327,65 @@ describe('★ GS-D — 어두운 작품은 **전부** 어느 한 숫자에 잡�
     expect(rootKids(scene) - base).toBe(0);
   });
 
+  it('★ 🔴 **텍스처는 재대체마다 다시 로드하지 않는다** — 그것이 N² 누수였다', async () => {
+    // 🔴 팀장 조건 A 실측(2026-08-17)이 잡은 결함이다. `material.dispose()` 는 three 에서
+    // **`map` 을 건드리지 않으므로** `clearPlaced` 가 재질·지오를 지워도 텍스처만 남았다.
+    // 편집 세션에서 작품을 8회 걸며 잰 실측:
+    //
+    //   회차   1   2   3   4   5   6   7   8
+    //   Δtex   1   2   5   8  12  17  23  30   ← **증가폭이 커진다(N² 신호)**
+    //   Δgeo   2   2   4   4   4   4   4   4   ← 멈춘다(dispose 가 듣는다)
+    //
+    // 재는 축은 **로드 횟수**다 — 「텍스처 객체가 몇 개 살아 있나」는 스텁이 못 세지만,
+    // 「같은 그림을 몇 번 받아 왔나」는 셀 수 있고 그것이 누수의 원인이다.
+    const { THREE, scene } = makeThree();
+    let loads = 0;
+    const s = createArtworkScene({
+      THREE, scene, cellX: CELL, cellZ: CELL,
+      loadTexture: async (src) => { loads++; return { fake: src }; },
+    });
+    await s.place([art()]);
+    expect(loads, '★ 첫 회차가 안 받았다 — 이 검사가 헛돈다').toBe(1);
+    // 같은 작품을 든 채로 4번 더 대체한다(편집에서 옆 작품을 걸 때마다 일어나는 일).
+    for (let i = 0; i < 4; i++) await s.place([art()]);
+    expect(loads, '★ 재대체마다 텍스처를 다시 받는다 — 이전 것이 GPU 에 남는다').toBe(1);
+    // 새 그림은 당연히 새로 받는다 — 캐시가 «아무것도 안 받는다» 가 되면 그림이 안 바뀐다.
+    await s.place([art(), art({ src: 'assets/art/b.png' })]);
+    expect(loads, '★ 새 작품을 안 받았다 — 캐시가 너무 넓다').toBe(2);
+  });
+
+  it('★ 미리보기 URL 이 바뀌면 **다시 받는다** — 안 그러면 「바꿨는데 안 바뀐다」', async () => {
+    // 편집에서 같은 파일명을 다시 떨어뜨리면 `blob:` 이 새로 생긴다. `src` 를 캐시 키로
+    // 쓰면 낡은 그림이 그대로 남는다 — 그래서 키가 **실제 URL**(`texKey`)이다.
+    const { THREE, scene } = makeThree();
+    let loads = 0;
+    let url = 'blob:one';
+    const s = createArtworkScene({
+      THREE, scene, cellX: CELL, cellZ: CELL,
+      loadTexture: async () => { loads++; return { fake: url }; },
+      texKey: () => url,
+    });
+    await s.place([art()]);
+    await s.place([art()]);
+    expect(loads, '★ 같은 URL 인데 다시 받았다').toBe(1);
+    url = 'blob:two';                       // 같은 파일명을 다시 드롭한 상황
+    await s.place([art()]);
+    expect(loads, '★ 새 미리보기를 안 받았다 — 화면이 옛 그림을 계속 보여 준다').toBe(2);
+  });
+
+  it('★ 떠날 때 텍스처를 지운다 — 캐시가 소유하므로 여기서 안 지우면 아무도 안 지운다', async () => {
+    const { THREE, scene } = makeThree();
+    let disposed = 0;
+    const s = createArtworkScene({
+      THREE, scene, cellX: CELL, cellZ: CELL,
+      loadTexture: async () => ({ dispose() { disposed++; } }),
+    });
+    await s.place([art(), art({ src: 'assets/art/b.png' })]);
+    expect(disposed, '★ 살아 있는데 지웠다').toBe(0);
+    s.dispose();
+    expect(disposed, '★ 떠났는데 텍스처가 GPU 에 남는다').toBe(2);
+  });
+
   it('★ 재대체가 옛 재질·지오를 dispose 한다 — 안 하면 `[7]` 이 증식으로 읽는다', async () => {
     const { THREE, scene, counts } = makeThree();
     const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });

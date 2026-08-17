@@ -84,6 +84,12 @@ export interface ArtworkSceneDeps {
    * 실패하면 `null` 을 내고 액자는 그대로 선다(빈 액자가 «로드 실패» 의 표시다).
    */
   loadTexture?(src: string): Promise<unknown | null>;
+  /**
+   * 텍스처 캐시 키. **같은 `src` 라도 미리보기 URL 이 바뀌면 다시 로드해야 한다** —
+   * 편집에서 같은 파일명을 다시 떨어뜨리면 `blob:` 이 새로 생기는데, `src` 를 키로 쓰면
+   * 캐시가 **낡은 그림**을 준다(«바꿨는데 안 바뀐다»). 생략하면 `src` 를 그대로 쓴다.
+   */
+  texKey?(src: string): string;
 }
 
 export interface ArtworkStats {
@@ -207,8 +213,43 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
     artMats.length = 0;
     for (const geo of artGeos) geo.dispose?.();
     artGeos.length = 0;
+    // ⚠ **텍스처는 여기서 안 지운다 — 캐시가 소유한다**(아래 `textureFor`).
+    // 재질과 지오는 `place` 마다 새로 만들지만 텍스처는 그림 자체라 재사용이 옳고,
+    // 그것이 이 회차에서 실측된 누수의 처방이다.
     for (const L of pool) L.intensity = 0;
     frames = 0; lit = 0; skipped = 0; unpowered = 0; texFailed = 0; next = 0;
+  }
+
+  /**
+   * 캐시 키 → 텍스처(실패는 `null`). **`place` 를 다시 불러도 재로드하지 않는다.**
+   *
+   * ── 🔴 왜 생겼나 — 팀장 조건 A 실측이 잡은 누수 (2026-08-17) ───────────────
+   * `place()` 가 **전체 대체**라 걸 때마다 전부 다시 세우는데, `material.dispose()` 는
+   * three 에서 **`map` 을 건드리지 않는다.** 그래서 `clearPlaced` 가 재질·지오는 지워도
+   * 텍스처만 남았다. 편집 세션에서 작품을 8회 걸며 잰 실측:
+   *
+   *   회차   1   2   3   4   5   6   7   8
+   *   Δtex   1   2   5   8  12  17  23  30   ← **증가폭이 커진다(N² 신호)**
+   *   Δgeo   2   2   4   4   4   4   4   4   ← 멈춘다(dispose 가 듣는다)
+   *
+   * ⚠ **라이브 영향은 0이다** — 라이브 경로에서 `place` 는 부팅 1회뿐이고, 반복 호출은
+   * `?edit=1` 세션에서만 일어난다. 그래도 고치는 이유는 편집이 실사용 경로이기 때문이다.
+   *
+   * **`null` 도 캐시한다** — 실패를 매 `place` 마다 재시도하면 걸 때마다 느려지고,
+   * 없는 파일은 다음에도 없다. 되살아나는 경로(파일이 나중에 생김)는 새로고침이다.
+   */
+  const texCache = new Map<string, unknown | null>();
+  const keyOf = deps.texKey ?? ((s: string) => s);
+
+  async function textureFor(src: string): Promise<unknown | null> {
+    if (!deps.loadTexture) return null;
+    const key = keyOf(src);
+    const hit = texCache.get(key);
+    if (hit !== undefined) return hit;
+    let tex: unknown | null = null;
+    try { tex = await deps.loadTexture(src); } catch { tex = null; }
+    texCache.set(key, tex);
+    return tex;
   }
 
   /**
@@ -260,14 +301,12 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       // `needsUpdate` 로 고칠 수도 있었지만 그 길은 **셰이더를 다시 굽는다** — 파이프라인
       // 수가 오르내리고 `[7]` 이 그것을 본다. 순서를 바꾸면 처음부터 맞는 셰이더가 한 번만
       // 구워진다. **잰 것이 아니라 구조로 해소한 것**이 요점이다.
-      let tex: unknown = null;
-      if (deps.loadTexture) {
-        try {
-          tex = await deps.loadTexture(a.src);
-          if (disposed) return;
-          if (!tex) texFailed++;
-        } catch { texFailed++; }
-      }
+      // ⚠ 캐시를 거친다(`textureFor`) — 그것이 없을 때 텍스처가 N² 로 샜다.
+      // `texFailed` 는 **캐시 히트에서도 센다** — 「이번 화면에 실패한 액자가 몇 개인가」이지
+      // 「이번에 몇 번 실패했는가」가 아니다. 리셋이 `clearPlaced` 에 있는 것과 짝이다.
+      const tex = await textureFor(a.src);
+      if (disposed) return;
+      if (deps.loadTexture && !tex) texFailed++;
       const mat = new THREE.MeshStandardMaterial({
         ...(tex ? { map: tex } : {}), roughness: 0.85, metalness: 0,
       });
@@ -320,6 +359,9 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       // 남았다**(검수관 P6) — three 의 `info.memory.geometries` 는 재질과 따로 센다.
       for (const geo of artGeos) geo.dispose?.();
       artGeos.length = 0;
+      // 텍스처는 캐시가 소유하므로 **떠날 때 여기서 한 번에** 지운다(`clearPlaced` 아님).
+      for (const t of texCache.values()) (t as { dispose?(): void } | null)?.dispose?.();
+      texCache.clear();
     },
   };
 }
@@ -372,5 +414,8 @@ export function mountArtworks(
     cellZ: layout.cellZ,
     perParcel,
     loadTexture: textureLoaderFor(THREE, resolve),
+    // 캐시 키를 **실제 URL**로 잡는다 — 같은 `src` 에 새 `blob:` 이 붙으면(같은 파일명을
+    // 다시 드롭) 키가 달라져 자동으로 다시 로드된다. `src` 를 키로 쓰면 낡은 그림이 남는다.
+    texKey: resolve,
   });
 }
