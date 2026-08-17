@@ -29,7 +29,7 @@ import {
 } from '../frontend/js/world2/decide/artwork.js';
 import { createInput } from '../frontend/js/world2/edit/input.js';
 import { createEditState } from '../frontend/js/world2/edit/state.js';
-import type { Picker } from '../frontend/js/world2/edit/pick.js';
+import { createPicker, type Picker } from '../frontend/js/world2/edit/pick.js';
 import type { Panel } from '../frontend/js/world2/edit/panel/dom.js';
 import type { Actions } from '../frontend/js/world2/edit/actions.js';
 import type { Gizmo } from '../frontend/js/world2/edit/gizmo.js';
@@ -282,6 +282,81 @@ describe('★ 거절 — 조용히 안 걸리는 것이 이 저장소에서 가�
 //
 // ⚠ 여기서 재는 것은 「기능이 있는가」가 아니라 **「두 문이 갈라지지 않는가」**다.
 // 갈라지면 «PC 에서는 되는데 폰에서만 다르다» 가 되고 그것은 감독 실기기에서만 드러난다.
+
+// ⚠ **위 describe 들은 `Picker` 를 대역으로 갈아 끼운다** — 그래서 `castCenter` 의 **실제
+// 구현**은 거기서 한 줄도 안 돈다. 대역이 «중앙으로 쐈다» 를 기록해도 그것은 «`castCenter`
+// 를 불렀다» 이지 «그 함수가 정말 중앙을 쏜다» 가 아니다. 이 저장소가 「판정/집행 경계는
+// 아무도 안 본다」로 부르는 자리이고, 여기가 그 경계다 — 아래가 실제 구현을 돌린다.
+//
+// three 는 스텁으로 대체한다(`tests/world2-sky-system.test.ts` 가 세운 본보기) — 레이캐스터가
+// **받은 NDC 를 그대로 붙잡아** 두면 「중앙인가」가 산술로 판정된다.
+
+function stubPicker(rect: { left: number; top: number; width: number; height: number }) {
+  const ndcs: { x: number; y: number }[] = [];
+  class Raycaster {
+    ray = { origin: { x: 0, y: 0, z: 0 }, direction: { x: 0, y: 0, z: 1 } };
+    setFromCamera(ndc: { x: number; y: number }) { ndcs.push({ ...ndc }); }
+    intersectObjects() { return []; }
+    intersectObject() { return []; }
+  }
+  const noop = class { dispose() {} };
+  const THREE = {
+    Raycaster,
+    MeshBasicMaterial: noop,
+    RingGeometry: noop,
+    DoubleSide: 2,
+    // 인스턴스 픽 경로가 부팅에 하나씩 만들어 둔다(`pick.ts` — 클릭당 재사용).
+    // 이 축에서는 안 쓰지만 **생성자가 없으면 `createPicker` 자체가 못 선다.**
+    Matrix4: class { elements = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+    Vector3: class { x = 0; y = 0; z = 0; set() { return this } },
+    Mesh: class {
+      rotation = { x: 0 }; visible = false; renderOrder = 0;
+      position = { set() {} }; scale = { set() {} };
+    },
+  };
+  const host = {
+    THREE,
+    canvas: { getBoundingClientRect: () => rect },
+    camera: {},
+    root: { add() {}, children: [] },
+    entries: () => [],
+    surfaceAt: () => 0,
+  } as unknown as OverlayHost;
+  return { picker: createPicker(host, createEditState()), ndcs };
+}
+
+describe('★ 🔴 `castCenter` 의 **실제 구현** — 대역이 아니라 산술을 잰다 (W8-5)', () => {
+  const RECT = { left: 100, top: 50, width: 800, height: 600 };
+
+  it('★ 화면 한가운데는 NDC (0, 0) 이다', () => {
+    const { picker, ndcs } = stubPicker(RECT);
+    expect(picker.castCenter(), '★ 중앙을 못 쐈다').toBe(true);
+    const c = ndcs.at(-1)!;
+    // ⚠ `toEqual({x:0,y:0})` 은 **못 쓴다** — `ndcOf` 가 y 를 부호 반전해 `-0` 이 나오고
+    // `Object.is(-0, 0)` 은 거짓이다. 재려는 것은 부호 있는 0 이 아니라 **중앙인가**다.
+    expect(c.x, '★ 가로가 중앙이 아니다 — 좌상단(-1)이면 `castFrom(0,0)` 구현이다').toBeCloseTo(0, 10);
+    expect(c.y, '★ 세로가 중앙이 아니다 — 좌상단(1)이면 `castFrom(0,0)` 구현이다').toBeCloseTo(0, 10);
+  });
+
+  it('★ `castFrom` 은 **다른 곳**을 쏜다 — 둘이 실제로 갈린다', () => {
+    const { picker, ndcs } = stubPicker(RECT);
+    // 캔버스 좌상단. `castCenter` 를 `castFrom({clientX:0,clientY:0})` 로 구현하면
+    // (rect 가 원점일 때) 정확히 이 값이 나오고, 그것이 이 회차의 뮤테이션 축이다.
+    picker.castFrom({ clientX: RECT.left, clientY: RECT.top });
+    expect(ndcs.at(-1)).toEqual({ x: -1, y: 1 });
+    picker.castCenter();
+    expect(ndcs.at(-1), '★ 두 함수가 같은 곳을 쏜다 — 하나가 다른 하나의 별명이 됐다')
+      .not.toEqual({ x: -1, y: 1 });
+  });
+
+  it('★ 캔버스가 0 크기면 `false` — 가드를 우회하지 않았다', () => {
+    // NDC (0,0) 을 손으로 넣으면 이 가드를 건너뛴다(폭 0 이면 나눗셈이 `Infinity` 를
+    // 내고 조용히 아무것도 안 맞는다 — `ndcOf` 헤더). 계산 경로가 하나여야 한다.
+    const { picker } = stubPicker({ left: 0, top: 0, width: 0, height: 0 });
+    expect(picker.castCenter(), '★ 0 크기 캔버스에서 참을 냈다 — `ndcOf` 가드를 우회했다')
+      .toBe(false);
+  });
+});
 
 describe('★ 「사진 걸기」 버튼 — 좌표 없는 문 (W8-5 · 폰 경로)', () => {
   it('★ 🔴 화면 **한가운데**를 쏜다 — 이벤트 좌표가 아니다', async () => {
