@@ -25,12 +25,34 @@
 import { foldAngle } from './angle.js';
 
 /**
+ * 받는 이미지 확장자. **아래 두 정규식이 이 하나에서 나온다** — 경로 계약(`ART_RE`)과
+ * 분류(`IMAGE_NAME_RE`). 목록을 각자 적으면 한쪽만 넓혀도 아무도 모른다(값 미러링).
+ */
+const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp'] as const;
+const EXT_ALT = IMAGE_EXT.join('|');
+
+/**
  * 작품 이미지 경로. **`assets/art/` 아래 상대경로만.**
  *
  * 검사를 정규식 하나로 끝내지 않는 것은 계약(`decide/overlay.ts:169-183`)이 `isSafeSrc`
  * 에서 실측으로 배운 그대로다 — `.` 을 허용하는 문자군은 `..` 도 통과시킨다.
  */
-const ART_RE = /^assets\/art\/[A-Za-z0-9_\-./]+\.(png|jpg|jpeg|webp)$/;
+const ART_RE = new RegExp(`^assets/art/[A-Za-z0-9_\\-./]+\\.(${EXT_ALT})$`);
+
+/** 이름이 이미지처럼 보이는가. **대소문자를 안 가린다** — 아래 함수 주석이 그 이유다 */
+const IMAGE_NAME_RE = new RegExp(`\\.(${EXT_ALT})$`, 'i');
+
+/**
+ * 이 파일을 **작품으로 다룰 것인가** (W8-4 D2). 확장자만 본다.
+ *
+ * ⚠ **`isSafeArtSrc` 와 다른 질문이다.** 「무엇으로 다룰 것인가」(분류)와 「쓸 수 있는
+ * 이름인가」(계약)를 한 함수로 합치면 `내 그림.png` 를 떨어뜨렸을 때 분류가 실패해
+ * **GLB 경로로 흘러가고**, 화면이 *"확장자는 소문자 .glb"* 라는 **엉뚱한 사유**를 말한다.
+ * 그래서 여기는 넓게(대소문자 무시) 잡고, 거부 사유는 작품 쪽에서 낸다.
+ */
+export function looksLikeImage(fileName: string): boolean {
+  return IMAGE_NAME_RE.test(fileName);
+}
 
 // 회전 접기는 **계약과 같은 함수**를 쓴다. 첫 판본은 복제했고 규약이 갈렸다 —
 // 그 사고와 처방은 `decide/angle.ts` 헤더 한 곳이다.

@@ -47,6 +47,7 @@ import { createStaticStore, loadLegacyOverlay } from '../store/static-store.js';
 import { resolveEntry } from '../decide/tenant-entry.js';
 import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
 import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-scene.js';
+import { createArtsPort } from '../systems/art-port.js';
 import { disableMatExtensions } from '../../world-shared/glb-material.js';
 import {
   ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
@@ -138,9 +139,8 @@ export const overlayFeature: Feature = {
     let tenantBar: TenantBar | null = null;
     /** 액자·조명(W8-4). 작품이 0개여도 만든다 — 라이트 풀이 **부팅에** 서야 하기 때문이다 */
     let artScene: ArtworkScene | null = null;
-    // 로드한 작품. **`toRaw` 가 손대지 않고 그대로 낸다** — 왕복 무손실의 유일한 근거이고,
-    // 그래서 타입을 좁히지 않는다(정규화는 계약이 이미 했다. 여기는 통로다).
-    let loadedArts: readonly unknown[] = [];
+    // 걸린 작품. **소유는 포트가 갖는다** — `toRaw` 도 편집도 같은 목록을 본다(D2).
+    const arts = createArtsPort(assetUrl);
     let nextId = 1;
     let disposed = false;
 
@@ -330,7 +330,7 @@ export const overlayFeature: Feature = {
         items,
         parcels: env.village.list(),
         surfaces: env.surfaces(),
-        arts: loadedArts,
+        arts: arts.list(),
       };
     }
 
@@ -486,17 +486,16 @@ export const overlayFeature: Feature = {
           if (disposed) return;
         }
         // ── 벽에 건 작품 (W8-4) — 라이트 풀은 한 번에 서고 안 변한다(조건 1) ──
-        // ⚠ *"작품이 0개여도 씬을 만든다"* 라고 적혀 있었고 **거짓**(검수관 B3-2): `arts` 0
-        // 이고 GLB 도 0이면 `ensureLoader()` 미호출 → `THREE` null → 씬이 안 선다(라이브가
-        // 그 상태다). 조건 1 은 안 깨지고, 깨지는 것은 작품이 나중에 추가될 때 — W8-4 D(#86).
-        loadedArts = plan.arts;
-        if (plan.arts.length > 0) await ensureLoader();
+        // ⚠ **편집 세션은 작품 0개여도 씬을 세운다**(D2). 검수관 B3-2 가 실측한 구멍이 여기다:
+        // `arts` 0 · GLB 0 이면 `ensureLoader()` 미호출 → `THREE` null → 씬이 없고, 그러면
+        // **편집에서 건 작품이 화면에 안 뜬다.** 라이브(비편집)의 개수는 그대로다.
+        if (plan.arts.length > 0 || wantEdit) await ensureLoader();
         if (disposed) return;
         if (THREE) {
-          artScene = mountArtworks(THREE, env.scene as unknown as ArtNode, DEFAULT_LAYOUT, assetUrl);
-          await artScene.place(plan.arts);
-          if (disposed) return;
+          artScene = mountArtworks(THREE, env.scene as unknown as ArtNode, DEFAULT_LAYOUT, arts.resolve);
+          arts.attach(artScene);
         }
+        await arts.set(plan.arts);
 
         if (root) await warmUp(root);
         if (disposed) return;
@@ -514,6 +513,7 @@ export const overlayFeature: Feature = {
           edit = mod.startEditMode(host, {
             modelsUrl: assetUrl(MODELS_JSON),
             onBlobUrl: (u: string) => blobUrls.add(u),
+            arts,
           });
         }
       } catch (e) {

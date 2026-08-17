@@ -59,7 +59,9 @@ import { createGizmo } from './gizmo.js';
 import { createPanel } from './panel/dom.js';
 import { loadPalette } from './panel/palette.js';
 import { createActions } from './actions.js';
+import { createArtworkMode } from './artwork-mode.js';
 import { createInput } from './input.js';
+import type { ArtsPort } from '../systems/art-port.js';
 import { safeBack } from '../decide/shading.js';
 // ⚠ **요금제는 어댑터를 거친다** — `adapters/plan.ts` 헤더가 그 이유를 갖는다(경계 게이트가
 // 직접 import 를 막았고 그것이 옳다). 여기서 층위 값을 다시 적지 않는다(값 미러링).
@@ -75,6 +77,11 @@ export interface EditOptions {
    * (「생략 = 기존 동작」)이고, 테스트는 값을 넣어 두 분기를 다 돌린다.
    */
   readonly canUploadGlb?: boolean;
+  /**
+   * 벽에 걸린 작품 목록(W8-4 D2). **생략하면 이미지 드롭이 통째로 없다** — 「생략 =
+   * 기존 동작」 규약이고, 그래야 이 기능이 `OverlayHost` 계약을 안 건드린다(팀장 판정 (나)).
+   */
+  readonly arts?: ArtsPort;
 }
 
 export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession {
@@ -131,6 +138,10 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     host, st, panel, picker, actions, gizmo,
     toggleEditing: () => { setEditing(!st.editing); },
     onBlobUrl: opts.onBlobUrl,
+    // 작품 목록을 안 받았으면 이미지 드롭 자체가 없다 — 그때는 GLB 판정이 이름으로 거절한다.
+    art: opts.arts && createArtworkMode({
+      panel, picker, arts: opts.arts, onBlobUrl: opts.onBlobUrl,
+    }),
     canUploadGlb: opts.canUploadGlb ?? canUploadGlb(),
     tierLabel: tierLabel(),
   });

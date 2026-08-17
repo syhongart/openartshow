@@ -23,6 +23,7 @@ import { SHADING_LABEL, toggleWire, type ShadingMode } from '../decide/shading.j
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
+import type { ArtworkMode } from './artwork-mode.js';
 import type { Gizmo } from './gizmo.js';
 
 export interface InputDeps {
@@ -36,6 +37,8 @@ export interface InputDeps {
   toggleEditing(): void;
   /** 드래그드롭으로 만든 임시 주소를 소비자에게 넘겨 회수하게 한다 */
   onBlobUrl(url: string): void;
+  /** 이미지 드롭 → 벽에 걸기(W8-4 D2). 없으면 이미지도 GLB 판정으로 떨어져 거부된다 */
+  art?: ArtworkMode;
   /**
    * 자기 GLB 를 올릴 수 있는 등급인가(감독 지시 2026-08-16 「특별 프리미엄」). **주입받는다** —
    * 여기서 `studio-plan.js` 를 직접 부르면 등급을 바꿔 가며 이 경로를 돌릴 수 없다.
@@ -556,6 +559,7 @@ export function createInput(deps: InputDeps): Input {
     ev.preventDefault();
     const file = ev.dataTransfer?.files?.[0];
     if (!file) return;
+    if (deps.art?.handles(file.name)) { void deps.art.drop(file, ev); return; }
     // 등급과 이름을 **한 판정**이 본다(근거·문구는 `decide/upload-plan.ts` 한 곳).
     const verdict = judgeUpload(
       file.name,
@@ -570,14 +574,10 @@ export function createInput(deps: InputDeps): Input {
     const url = URL.createObjectURL(file);
     deps.onBlobUrl(url);
     actions.previewUrls.set(src, url);
-    // ⚠ **드롭은 `pendingSrc` 를 안 본다** — 파일명에서 `src` 를 직접 만든다. 그래서
-    // 팔레트에서 뭔가 골라 둔 채 드롭해도 그 «고른 것» 이 아니라 **드롭한 파일**이 놓인다.
-    //
-    // 다만 부수효과가 하나 있다: `placeAt` 이 성공하면 고르기를 푸는데(감독 신고
-    // 「흩어뿌리기」 처방), 그 해제가 **드롭으로 놓았을 때도** 일어난다. 즉 골라 둔 것이
-    // 함께 풀린다. 해로운 동작은 아니고 «놓았으면 다루기로 넘어간다» 와 일관되지만,
-    // 적어 두지 않으면 다음 사람이 «왜 드롭했더니 팔레트 고르기가 풀리지» 를 재조사한다
-    // (검수관 권고 P2, 2026-08-13).
+    // ⚠ **드롭은 `pendingSrc` 를 안 본다** — 파일명에서 `src` 를 직접 만든다. 팔레트에서
+    // 골라 둔 채 드롭해도 **드롭한 파일**이 놓인다. 부수효과: `placeAt` 이 성공하면 고르기를
+    // 푸는데(감독 신고 「흩어뿌리기」 처방) 그 해제가 드롭에서도 일어난다 — 해롭진 않지만
+    // 적어 두지 않으면 다음 사람이 «왜 드롭했더니 고르기가 풀리지» 를 재조사한다(검수관 P2).
     void actions.placeAt(src, at, url);
   };
 
