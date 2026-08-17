@@ -196,6 +196,12 @@ export function createPanel(
     // HEIC 사진을 **찾지도 못한 채** 원인을 모르게 된다.
     fileIn.accept = 'image/*';
     fileIn.className = 'photo-in';
+    // ⚠ **포커스 순서에서 뺀다**(검수관 권고, W8-5). 이 입력은 눈에 안 보이지만
+    // `opacity:0` 이라 렌더 트리에는 남아 있고 — 그것이 `.click()` 을 살리려는 의도다
+    // (`css.ts` 의 `.photo-in` 참조) — 그대로 두면 **보이지 않는 요소에 포커스가 멈춘다.**
+    // 진짜 조작 지점은 바로 옆 버튼이므로 그쪽만 순서에 남긴다.
+    fileIn.tabIndex = -1;
+    fileIn.setAttribute('aria-hidden', 'true');
     fileIn.addEventListener('change', () => {
       const f = fileIn.files?.[0];
       // ⚠ **값을 반드시 비운다.** 안 비우면 같은 사진을 다시 고를 때 `change` 가 아예
