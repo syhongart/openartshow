@@ -203,6 +203,36 @@
   /* 왼쪽 고정 (감독 지시). 예전엔 `right:56px` 이라 닫힌 상태에서 오른쪽에 있다가,
      열면 패널이 왼쪽으로 펼쳐지며 **버튼까지 따라 움직이는** 것처럼 보였다.
      처음부터 왼쪽에 두면 열고 닫아도 버튼이 제자리에 있다. */
+  /* ── 진입 바 (W8-3 S6) ────────────────────────────────────────────────────
+     **상단 중앙**이다 — 좌상단은 하늘 패널(`#w2-god`), 왼쪽은 지도, 우측은 HUD 가
+     이미 쓴다. 룩은 `#w2-god-body` 의 것을 그대로 따랐다(새 룩 판단을 안 연다).
+     `hidden` 과 `data-show` 를 둘 다 쓰는 이유: 전자는 접근성 트리에서 빼고,
+     후자는 CSS 가 본다 — 하나만 쓰면 스크린리더가 빈 칸을 읽거나 화면에 남는다. */
+  #w2-tenant{
+    position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    z-index:9;max-width:min(360px,88vw);
+    background:rgba(11,13,18,.88);border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px;display:flex;flex-direction:column;gap:7px;
+  }
+  #w2-tenant[data-show="0"],#w2-tenant[hidden]{display:none}
+  #w2-tenant .row{display:flex;align-items:center;gap:6px}
+  #w2-tenant-title{font-size:12px;color:var(--ink);font-weight:600;flex:1 1 auto;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #w2-tenant-notice{margin:0;font-size:11px;line-height:1.45;color:var(--dim)}
+  #w2-tenant-notice[hidden]{display:none}
+  #w2-tenant-list,#w2-tenant-input{
+    font-family:inherit;font-size:11.5px;padding:6px 8px;border-radius:8px;min-width:0;
+    background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--ink);
+  }
+  #w2-tenant-list{flex:0 1 40%}
+  #w2-tenant-input{flex:1 1 auto;width:100%}
+  #w2-tenant-go,#w2-tenant-reset{
+    font-family:inherit;font-size:11.5px;padding:6px 9px;border-radius:8px;cursor:pointer;flex:none;
+    background:rgba(139,114,255,.24);border:1px solid rgba(139,114,255,.6);color:var(--ink);
+  }
+  #w2-tenant-reset{background:rgba(255,255,255,.06);border-color:var(--line);color:var(--dim)}
+  #w2-tenant-reset[hidden]{display:none}
+
   #w2-god{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:9;
     max-width:min(300px,72vw)}
   #w2-god-toggle{
@@ -347,7 +377,7 @@
     #w2-sliders-toggle .caret,#w2-sliders-toggle,.w2-slide-pin,.w2-slide-reset{transition:none}
   }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/world2-CNa9nci8.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/world2-vjun4vnN.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-webgpu-CqcJrGb3.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-BVCe5QSU.js">
@@ -356,6 +386,8 @@
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/GLTFLoader-D7IH8cP1.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/chibi-builder-v2-BD6Fr-YX.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/preload-helper-DASV_Wa7.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/glb-city-CIT1Msc0.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/reserved-names-BrKduD37.js">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
 </head>
 <body>
@@ -395,6 +427,24 @@
            근거·형식은 world2/decide/telemetry.ts 의 「이벤트 로그」 절 한 곳이다. -->
       <button id="w2-hud-mark" type="button" aria-label="지금 증상을 봤다고 표시">📍</button>
       <button id="w2-hud-copy" type="button">복사</button>
+    </div>
+  </div>
+
+  <!-- 진입 — 누구의 땅을 보고 있는가 + 다른 작가로 가는 문 (W8-3 S6).
+       감독 카드 2026-08-16 「진입은 **둘 다**」: 주소(`?u=`)에 있으면 그것, 없으면 여기서 고른다.
+       **기본은 감춤이다** — 대장에 작가가 0명이고 사유도 없으면 안 뜬다(지금 라이브가 그 상태).
+       판정은 world2/decide/tenant-entry.ts, 배선은 world2/ui/tenant-bar.ts(인라인 금지). -->
+  <div id="w2-tenant" data-show="0" hidden>
+    <div class="row">
+      <span id="w2-tenant-title">마을 전체</span>
+      <button id="w2-tenant-reset" type="button" hidden>마을 전체로</button>
+    </div>
+    <p id="w2-tenant-notice" hidden></p>
+    <div class="row">
+      <select id="w2-tenant-list" aria-label="작가 고르기"></select>
+      <input id="w2-tenant-input" type="text" inputmode="latin" autocomplete="off"
+             spellcheck="false" placeholder="작가 아이디" aria-label="작가 아이디로 이동">
+      <button id="w2-tenant-go" type="button">이동</button>
     </div>
   </div>
 

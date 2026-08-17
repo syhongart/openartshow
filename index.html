@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- CSP(방어심층, 보안감사 B-3) — 인라인 <script> 4블록은 sha256 핀, 외부호스트 0 정합(fetch·img 모두 self) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-BBEw0WyK3Yzo788vQbsUfa5nJderby1eMrfPLxYUY5s=' 'sha256-UKLSI0nod/r8o/bRxKQyAaqdc8v8pv2sFqWW25BGL8A='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-BBEw0WyK3Yzo788vQbsUfa5nJderby1eMrfPLxYUY5s='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'">
 <title>OpenArtShow — 링크 하나로 열리는 나만의 미술관</title>
 <meta name="description" content="링크 하나로 열리는 나만의 3D 미술관. 설치도 가입도 없이, 브라우저에서 바로 입장해 지하 미디어관부터 옥상 테라스까지 네 개 층을 거닐어 보세요. 작가라면 오늘 첫 전시를 열 수 있습니다.">
 <meta property="og:type" content="website">
@@ -1720,7 +1720,8 @@
     }
   }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/landing-CgC_hu9i.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/landing-Ct8V1pP3.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/studio-plan-DBa5gczy.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/feed-Cm56rHm1.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-DRdNhjgv.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/auth-modal-CEl5Dvro.js">
@@ -2203,46 +2204,10 @@
 
 })();
 </script>
-<script>
-  (function () {
-    var PLAN_KEY = 'artshow-plan-v1';
-    var input = document.getElementById('planCodeInput');
-    var btn = document.getElementById('planCodeBtn');
-    var msg = document.getElementById('planCodeMsg');
-    if (!input || !btn || !msg) return;
-
-    function isPremium() {
-      try { return localStorage.getItem(PLAN_KEY) === 'premium'; } catch (e) { return false; }
-    }
-    function codeValid(code) {
-      code = String(code || '').trim().toUpperCase();
-      if (!/^ART-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) return false;
-      var h = 5381;
-      for (var i = 0; i < code.length; i++) h = ((h << 5) + h + code.charCodeAt(i)) >>> 0;
-      return h % 9973 === 777;
-    }
-    function renderState() {
-      if (isPremium()) {
-        msg.textContent = '✓ 이 브라우저에서 프리미엄이 활성화되어 있습니다. 스튜디오에서 모든 기능을 사용할 수 있어요.';
-        msg.style.color = '#0f6360'; /* 활성 상태 — 시안(§3-2 라이브/상태 역할). 라이트 전환으로 딥변형: 종이 위 6.82:1 */
-        btn.textContent = '활성화됨';
-        btn.disabled = true;
-        input.disabled = true;
-      }
-    }
-    btn.addEventListener('click', function () {
-      if (codeValid(input.value)) {
-        try { localStorage.setItem(PLAN_KEY, 'premium'); } catch (e) { /* 무시 */ }
-        renderState();
-      } else {
-        msg.textContent = '코드를 다시 확인해 주세요. ART-XXXX-XXXX 형식이어야 합니다.';
-        msg.style.color = '#CC1700'; /* 오류 상태 — 라이트 전환으로 딥변형(`--oas-coral-ink`): 종이 위 5.50:1 */
-      }
-    });
-    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') btn.click(); });
-    renderState();
-  })();
-</script>
+<!-- ⚠ 판정을 **인라인으로 복제하지 않는다**(2026-08-16, W8-3 S1). 그전에는 이 블록이
+     `=== 'premium'` 과 해시 검증을 자기 안에 갖고 있었고, `studio-plan.ts` 와는 **키 문자열만**
+     공유했다. 요금제가 층위(무료·프리미엄·특별 프리미엄)로 넓어지는 순간 **랜딩만 조용히
+     낡아** 「코드를 넣었는데 아무 일도 안 일어난다」로 나타난다. 그래서 모듈에서 받는다. -->
 <!-- 히어로 wash 강도 노브(`?fog=0..1`) — 감독 판정용 비교 자료(지시 2026-08-15
      *"이미지에 안개가 너무 많아"*). 기본값과 그 판정 근거는 `:root` 의
      `--hero-wash-peak` 선언 옆 한 곳이다 — 여기에 값을 다시 적지 않는다.
