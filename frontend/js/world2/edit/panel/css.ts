@@ -50,6 +50,13 @@ export const CSS = `
 /* 폰에서 감독이 가장 자주 누를 버튼이다. 위 .toggle 과 **같은 이유**로 키운다 —
    나머지 버튼의 4px 패딩은 손가락 타깃으로 작다. */
 #w2-edit .photo button{padding:8px 10px;font-size:12px}
+/* ── 조준 중에는 패널을 접는다 (W8-6) ──────────────────────────────────────
+   편집 모드는 그대로 두고 본문만 감춘다. setMode 로 접으면 data-mode 까지 바뀌어
+   배지·아웃라이너가 사라지고 토글이 「✏️ 편집」으로 돌아가 화면이 거짓말을 한다.
+   ⚠ 조준 화면의 진짜 이유가 「패널이 화면 한가운데를 덮는다」 였으므로, 접히지 않으면
+   이 회차가 통째로 무의미하다 — 이 두 줄이 그 요구를 집행한다. */
+#w2-edit[data-aim="1"] .body{display:none}
+#w2-edit[data-aim="1"]{width:auto;padding:0;background:none;border:0;backdrop-filter:none}
 #w2-edit .note{color:#9A9EB1;margin:4px 0 0}
 #w2-edit .warn{color:#FFC46B}
 #w2-edit .lead{color:#F5F5F2;margin:6px 0 0;font-size:12px}
@@ -100,6 +107,41 @@ export const CSS = `
   text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   /* 밝은 하늘 위에서도 읽히게 — 배경만으로는 부족하다 */
   text-shadow:0 1px 3px rgba(0,0,0,.7)}
+
+/* ── 조준 화면 (W8-6) ──────────────────────────────────────────────────────
+   *"조준 화면 그것도 해줘"*(감독 2026-08-17). W8-5 가 두 번에 한 번만 걸린 이유가
+   **조준 대상을 볼 수 없다** 였고, 이 화면이 그것을 보여준다.
+
+   ⚠ 뿌리(#w2-aim)는 화면 전체를 덮되 **클릭을 안 먹는다**(pointer-events:none).
+   화면 한가운데 뜨는 것이 클릭을 먹으면 그 자리 건물을 영영 못 고른다 — badge.ts 가
+   같은 경고를 갖는다. 클릭을 받는 것은 .bar 하나뿐이다.
+
+   z-index 46 = 배지(45) 바로 위. 조준 중에는 이것이 가장 위여야 한다. */
+#w2-aim{position:fixed;inset:0;z-index:46;pointer-events:none;display:none}
+#w2-aim[data-on="1"]{display:block}
+/* 조준선 — 화면 **정중앙**. castCenter() 가 실제로 쏘는 그 지점이다.
+   ⚠ 이 위치가 광선과 어긋나면 화면이 거짓말을 한다 — 둘 다 「한가운데」로 정의돼야 한다. */
+#w2-aim .cross{position:absolute;left:50%;top:50%;width:42px;height:42px;
+  margin:-21px 0 0 -21px;border:2px solid rgba(245,245,242,.75);border-radius:50%;
+  box-shadow:0 0 0 1px rgba(0,0,0,.55),inset 0 0 0 1px rgba(0,0,0,.55);
+  transition:width .12s,height .12s,margin .12s,border-color .12s}
+/* 맞았을 때 — **색만 바꾸지 않고 크기도 바꾼다.** 색 하나로만 가르면 밝은 벽 위나
+   색각 이상에서 구별이 약해진다. 형태 변화는 그 둘과 무관하게 읽힌다. */
+#w2-aim[data-hit="1"] .cross{border-color:#72E6E1;width:54px;height:54px;margin:-27px 0 0 -27px;
+  box-shadow:0 0 0 1px rgba(0,0,0,.55),inset 0 0 0 1px rgba(0,0,0,.55),0 0 12px rgba(114,230,225,.5)}
+/* 하단 막대 — 여기만 클릭을 받는다. 하단인 이유는 조준선을 가리지 않기 위해서다. */
+#w2-aim .bar{position:absolute;left:50%;transform:translateX(-50%);
+  bottom:calc(16px + env(safe-area-inset-bottom,0px));pointer-events:auto;
+  display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:center;
+  max-width:min(92vw,520px);padding:9px 11px;background:rgba(11,13,18,.86);
+  border:1px solid #3A3D4B;border-radius:11px;backdrop-filter:blur(6px)}
+#w2-aim .msg{flex:1 1 100%;text-align:center;color:#9A9EB1;
+  font:11px/1.4 system-ui,sans-serif;text-shadow:0 1px 3px rgba(0,0,0,.7)}
+#w2-aim[data-hit="1"] .msg{color:#72E6E1}
+/* 손가락 타깃 — 패널 버튼(4px)보다 크다. 폰에서 누르는 것이 이 둘뿐이다. */
+#w2-aim .bar button{padding:9px 15px;font:12px/1 system-ui,sans-serif;color:#F5F5F2;
+  background:#1A1D26;border:1px solid #3A3D4B;border-radius:8px;cursor:pointer}
+#w2-aim .bar button[data-on="1"]{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
 
 /* ── 표면 재질 패널 (W7 · 「월드스튜디오」) ─────────────────────────────────
    강조색 #8B72FF 는 이 파일이 이미 여러 곳에서 쓰고 있다(태스크 #55 가 그 흩어짐을

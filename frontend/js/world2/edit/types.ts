@@ -285,4 +285,14 @@ export interface OverlayHost {
 /** 편집 모드를 켠다. 반환값이 정리 핸들이다. */
 export interface EditSession {
   dispose(): void;
+  /**
+   * 조준 화면의 진단 스냅샷 (W8-6). 조준 기능이 없는 세션이면 `null`.
+   *
+   * ⚠ **캐시된 값이다** — 호출 시점에 다시 레이캐스트하지 않는다. 그러면 리포트를 읽는
+   * 것만으로 비용이 발생하고, `casts` 를 보는 게이트가 **자기 자신을 세게** 된다.
+   *
+   * 이 문이 존재하는 이유: 조준 루프의 재캐스트 **횟수**가 이 회차의 유일한 이산 축이다.
+   * CPU 시간은 이 저장소가 원리적으로 못 재므로(`decide/aim.ts` 헤더) 횟수라도 잡는다.
+   */
+  aim(): { readonly hit: boolean; readonly on: boolean; readonly casts: number } | null;
 }

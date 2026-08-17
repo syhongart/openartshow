@@ -60,6 +60,7 @@ import { createPanel } from './panel/dom.js';
 import { loadPalette } from './panel/palette.js';
 import { createActions } from './actions.js';
 import { createArtworkMode } from './artwork-mode.js';
+import { createAimMode } from './aim-mode.js';
 import { createInput } from './input.js';
 import type { ArtsPort } from '../systems/art-port.js';
 import { safeBack } from '../decide/shading.js';
@@ -123,11 +124,11 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     setSurfaces: host.setSurfaces,
     registerPreview: host.registerPreview,
     listTextures: host.listTextures,
-    // ── 사진 걸기 (W8-5 · 폰 경로) ────────────────────────────────────────
-    // 드롭과 **같은 몸통**(`artwork-mode.hang`)을 탄다 — 여기서 갈라지면 «PC 에서는
-    // 되는데 폰에서만 다르다» 가 나고, 그 어긋남은 감독 실기기에서만 드러난다.
-    // 작품 포트를 안 받았으면 문 자체를 안 준다(패널이 그 행을 통째로 안 만든다).
-    hangPhoto: opts.arts && ((file: File) => { void art?.pickFile(file); }),
+    // ── 사진 걸기 → **조준 화면**(W8-6) ──────────────────────────────────
+    // W8-5 에서는 여기서 바로 걸었고(`art.pickFile`) 화면 한가운데가 패널에 가려
+    // **두 번에 한 번만** 걸렸다. 이제 조준 화면이 뜨고, 벽에 맞았는지를 **보면서**
+    // 확정한다. 걸기 자체는 여전히 `artwork-mode` 의 같은 몸통(`commit`)을 탄다.
+    hangPhoto: opts.arts && ((file: File) => { aim?.start(file); }),
     exportNow: () => { actions.exportNow(); },
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
@@ -144,6 +145,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   const art = opts.arts
     ? createArtworkMode({ panel, picker, arts: opts.arts, onBlobUrl: opts.onBlobUrl })
     : null;
+
+  // 조준 화면(W8-6). 작품 문이 없으면 이것도 없다 — 걸 것이 없는데 조준할 이유가 없다.
+  const aim = art ? createAimMode({ host, panel, picker, art }) : null;
 
   // 작품 포트를 함께 넘긴다 — 내보내기가 「보낼 준비가 됐다」에 이미지도 세야 한다(D3).
   const actions = createActions(host, st, panel, opts.arts);
@@ -180,6 +184,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       host.endOrbit?.();
       gizmo.attach(null);
       select(st, host, null);
+      // 조준 중에 편집을 끄면 조준 화면이 화면에 남는다 — 주행하는데 「여기 걸기」가
+      // 떠 있는 형태다. pending 을 푸는 것과 같은 이유이고 같은 자리다.
+      aim?.cancel();
       st.pendingSrc = null;
       // 파츠 고르기도 함께 푼다(W6 E) — 하나만 풀면 주행에서 돌아왔을 때 «지면을
       // 클릭했더니 나무가 생긴다» 가 된다.
@@ -200,6 +207,8 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   panel.refresh();
 
   return {
+    // 조준 진단 — **캐시된 값**이다(`types.ts` 의 규약). 게이트가 `casts` 를 본다.
+    aim: () => aim?.stats() ?? null,
     dispose() {
       // 로드 중에 떠나면 `busy` 가 `true` 로 남는다. 지금은 리스너를 다 떼므로 재진입
       // 경로가 없어 실해는 없지만, 세션을 되살리는 경로가 생기면 그때 조용히 잠긴다.
@@ -209,6 +218,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       if (st.editing) host.endOrbit?.();
       input.unbind();
       input.unbindAlways();
+      aim?.dispose();
       panel.dispose();
       picker.dispose();
       gizmo.dispose();

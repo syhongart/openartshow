@@ -543,7 +543,7 @@ export const overlayFeature: Feature = {
         // `failed` 는 이미 `FAILED_KEEP` 상한이 걸려 있다 — 여기서 다시 자르지 않는다.
         // 그전에는 여기서만 `slice(0, 4)` 로 잘랐고, **배열 자체는 무제한으로 자랐다**
         // (화면에 보이는 것만 4개였을 뿐 누수는 그대로였다).
-        ...diag, frozen: env.village.size(), art: artScene?.stats() ?? null,
+        ...diag, frozen: env.village.size(), art: artScene?.stats() ?? null, aim: edit?.aim() ?? null,
       }),
       // 배치 수가 곧 상태다. 0개도 유효한 그룹이라 `'0'` 을 낸다 — `null` 을 내면 이
       // 기능이 기본 켜짐인 탓에 드로우콜 축이 **영원히 판정 불가**가 된다(`glb-city`·

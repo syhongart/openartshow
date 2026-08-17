@@ -83,7 +83,26 @@ export interface ArtworkMode {
    * 하나뿐**이고 나머지(이름 판정·blob 수명·종횡비·목록 갱신·문구)는 같은 몸을 탄다.
    */
   pickFile(file: File): Promise<void>;
+  /**
+   * **이름만** 판정한다 (W8-6). 조준 화면이 **시작하기 전에** 쓴다.
+   *
+   * ⚠ 왜 이것이 따로 필요한가 — 조준 화면을 띄운 **뒤에** 이름으로 거절하면 «벽은 맞았는데
+   * 왜 안 걸리지» 가 된다. `hang()` 이 이름을 가장 먼저 보는 것과 **같은 이유**이고,
+   * 그 순서 규약을 조준 경로에서도 지키려면 판정을 이 시점에 부를 수 있어야 한다.
+   */
+  judge(file: File): { readonly ok: true; readonly src: string }
+    | { readonly ok: false; readonly msg: string };
+  /**
+   * 자세가 **정해진 뒤** 실제로 건다 (W8-6). 조준 화면의 「여기 걸기」가 부른다.
+   *
+   * ⚠ `judge` 를 통과한 `src` 와 `wallPose()` 가 낸 `pose` 를 받는다 — 여기서 다시
+   * 판정하지 않는다. 두 번 판정하면 «조준선은 초록인데 안 걸린다» 가 성립할 자리가 생긴다.
+   */
+  commit(file: File, src: string, pose: WallPose): Promise<void>;
 }
+
+/** `wallPose()` 가 내는 것. 액자 중심 + 벽 바깥을 향하는 yaw */
+type WallPose = NonNullable<ReturnType<typeof wallPose>>;
 
 /**
  * 벽을 못 찾았을 때의 문구. **진입점마다 다르다** — 사용자가 할 일이 다르기 때문이다.
@@ -132,18 +151,50 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
    * @param cast 광선을 어디로 쏘는가. 드롭은 `castFrom(ev)`, 버튼은 `castCenter()`
    * @param miss 벽을 못 찾았을 때 화면이 할 말 — 진입점마다 사용자가 할 일이 다르다
    */
+  /**
+   * 이름 판정 — **세 진입점이 전부 이것을 통과해야 한다**(드롭·버튼·조준).
+   *
+   * ⚠ **사유를 소비자가 짓지 않는다** — `artNameHelp` 가 원인별로 낸다(검수관 블로커 B2).
+   * 한 줄로 뭉갰을 때 `IMG_1234.JPG` 가 «영문·숫자·_ - . 만 씁니다» 라는 **이미 만족한
+   * 조건**을 들었다. 문구를 소비자가 지으면 계약이 넓어져도 안 따라온다.
+   */
+  function judge(file: File): { ok: true; src: string } | { ok: false; msg: string } {
+    const src = artSrcFor(file.name);
+    return src
+      ? { ok: true, src }
+      : { ok: false, msg: `«${file.name}» 은 쓸 수 없는 이름입니다 — ${artNameHelp(file.name)}` };
+  }
+
+  /**
+   * 자세가 정해진 뒤 실제로 거는 부분. **여기부터 되돌릴 것이 생긴다.**
+   *
+   * ⚠ 이 몸통을 진입점마다 복제하지 않는 것이 요점이다 — 순서 규약 셋이 여기 들어 있다
+   * (거절이 다 끝난 뒤 blob · `ar` 을 실제로 읽는다 · 「걸었다」가 아니라 「보낼 준비가 됐다」).
+   */
+  async function commit(file: File, src: string, pose: WallPose): Promise<void> {
+    // **거절이 다 끝난 뒤에** 임시 주소를 만든다 — 앞에서 만들면 거절할 때마다 회수
+    // 대상이 하나씩 쌓인다.
+    const url = URL.createObjectURL(file);
+    deps.onBlobUrl(url);
+    const ar = await measure(url);
+    // ⚠ **`ar` 을 실제로 읽는 것이 요점 하나다.** 안 읽고 `ART_AR_DEF` 로 두면 세로 사진이
+    // 가로로 늘어나고, 그 증상은 «액자가 이상하다» 로만 보여 원인을 짚기 어렵다.
+    // 감독 판정 *"비율 제한은 없어"*(2026-08-17)가 이 자리에 걸린다.
+    await arts.set(
+      [...arts.list(), { src, ...pose, w: ART_W_DEF, ar: ar ?? ART_AR_DEF }],
+      { src, url },
+    );
+    // 「걸었다」가 아니라 **「보낼 준비가 됐다」**다 — 그 파일은 아직 저장소에 없다.
+    // 근거는 `decide/upload-plan.ts` 헤더 한 곳이다(GLB 가 같은 형태로 겪었다).
+    panel.say(`걸었습니다 — 내보내기 하면 «${file.name}» 을 JSON 과 함께 보내 주세요.`);
+  }
+
   async function hang(file: File, cast: () => boolean, miss: string): Promise<void> {
     // ⚠ **이름 판정이 먼저다.** 벽을 찾은 뒤에 이름으로 거절하면 «벽은 맞았는데 왜
     // 안 걸리지» 가 되고, 사용자가 할 일이 없는 사유를 나중에 듣는다
     // (`judgeUpload` 가 등급을 이름보다 먼저 보는 것과 같은 순서).
-    const src = artSrcFor(file.name);
-    if (!src) {
-      // ⚠ **사유를 여기서 짓지 않는다** — `artNameHelp` 가 원인별로 낸다(검수관 블로커 B2).
-      // 한 줄로 뭉갰을 때 `IMG_1234.JPG` 가 «영문·숫자·_ - . 만 씁니다» 라는 **이미
-      // 만족한 조건**을 들었다. 문구를 소비자가 지으면 계약이 넓어져도 안 따라온다.
-      panel.say(`«${file.name}» 은 쓸 수 없는 이름입니다 — ${artNameHelp(file.name)}`, true);
-      return;
-    }
+    const v = judge(file);
+    if (!v.ok) { panel.say(v.msg, true); return; }
     if (!cast()) return;
     const hit = picker.pickFace();
     const pose = hit && wallPose(hit);
@@ -157,24 +208,12 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
       panel.say(miss, true);
       return;
     }
-    // 여기서부터 되돌릴 것이 생긴다. **거절이 다 끝난 뒤에** 임시 주소를 만든다 —
-    // 앞에서 만들면 거절할 때마다 회수 대상이 하나씩 쌓인다.
-    const url = URL.createObjectURL(file);
-    deps.onBlobUrl(url);
-    const ar = await measure(url);
-    // ⚠ **`ar` 을 실제로 읽는 것이 이 함수의 요점 하나다.** 안 읽고 `ART_AR_DEF` 로
-    // 두면 세로 사진이 가로로 늘어나고, 그 증상은 «액자가 이상하다» 로만 보여 원인을
-    // 짚기 어렵다. 감독 판정 *"비율 제한은 없어"*(2026-08-17)가 이 자리에 걸린다.
-    await arts.set(
-      [...arts.list(), { src, ...pose, w: ART_W_DEF, ar: ar ?? ART_AR_DEF }],
-      { src, url },
-    );
-    // 「걸었다」가 아니라 **「보낼 준비가 됐다」**다 — 그 파일은 아직 저장소에 없다.
-    // 근거는 `decide/upload-plan.ts` 헤더 한 곳이다(GLB 가 같은 형태로 겪었다).
-    panel.say(`걸었습니다 — 내보내기 하면 «${file.name}» 을 JSON 과 함께 보내 주세요.`);
+    await commit(file, v.src, pose);
   }
 
   return {
+    judge,
+    commit,
     handles: looksLikeImage,
     drop: (file, ev) => hang(file, () => picker.castFrom(ev), MISS_DROP),
     pickFile: (file) => hang(file, () => picker.castCenter(), MISS_CENTER),
