@@ -25,11 +25,17 @@
 import { foldAngle } from './angle.js';
 
 /**
- * 받는 이미지 확장자. **아래 두 정규식이 이 하나에서 나온다** — 경로 계약(`ART_RE`)과
- * 분류(`IMAGE_NAME_RE`). 목록을 각자 적으면 한쪽만 넓혀도 아무도 모른다(값 미러링).
+ * **받는** 이미지 확장자 — 이 계약의 SSOT.
+ *
+ * 아래 셋이 전부 이 하나에서 나온다: 경로 계약(`isSafeArtSrc` 의 소문자 대조) · 분류
+ * (`IMAGE_LIKE_EXT` 가 스프레드) · 화면 문구(`artNameHelp` 가 `join`). 목록을 각자 적으면
+ * 한쪽만 넓혀도 아무도 모른다(값 미러링).
+ *
+ * ⚠ **`decide/surface-material.ts` 의 `TEX_RE` 가 같은 4종을 따로 적는 것은 의도다** —
+ * 그 파일 주석이 근거를 갖는다(*"합치면 한쪽 요구로 넓히는 순간 다른 쪽 방어가 조용히
+ * 약해진다"*). 벽 텍스처는 마을(감독) 것이고 작품은 작가 것이라 관리 주체가 다르다.
  */
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp'] as const;
-const EXT_ALT = IMAGE_EXT.join('|');
 
 /**
  * 작품 이미지 경로 접두. **아래 `ART_RE`·`artSrcFor` 와 `decide/upload-plan.ts` 가 이
@@ -42,15 +48,58 @@ const EXT_ALT = IMAGE_EXT.join('|');
 export const ART_PREFIX = 'assets/art/';
 
 /**
- * 작품 이미지 경로. **`assets/art/` 아래 상대경로만.**
+ * 작품 이미지 경로의 **줄기**. `assets/art/` 아래 상대경로 + 확장자 한 덩어리.
  *
  * 검사를 정규식 하나로 끝내지 않는 것은 계약(`decide/overlay.ts:169-183`)이 `isSafeSrc`
  * 에서 실측으로 배운 그대로다 — `.` 을 허용하는 문자군은 `..` 도 통과시킨다.
+ *
+ * ── 🔴 왜 확장자를 정규식에서 **빼냈나** (W8-5, 태스크 #94) ─────────────────
+ * 예전에는 `\\.(${EXT_ALT})$` 로 확장자까지 한 정규식이 잡았고, 그래서 **소문자만**
+ * 통과했다. 아이폰·캐논·니콘 기본 출력이 `IMG_1234.JPG`·`DSC_1234.JPG` 라 감독이 폰
+ * 사진을 하나도 못 걸었다 — 「폰에서 넣기 먼저」(감독 카드 2026-08-17)를 이행하면서
+ * 그것을 안 열면 **기능이 형식만 열린다.** 팀장 판정으로 열었다(#94, 2026-08-17).
+ *
+ * ⚠⚠ **`ART_RE` 전체에 `i` 플래그를 붙이는 길은 금지다.** 그러면 접두까지 무구분이 되어
+ * `ASSETS/ART/a.png` 가 통과하고, 그것은 `decide/overlay.ts:197-199` 가 세운 «같은 파일의
+ * 철자를 하나로 묶는다» 규약을 깬다. gh-pages 는 리눅스 정적 서빙이라 **경로 대소문자를
+ * 구분한다** — 접두 철자가 갈리면 라이브에서만 404 가 난다.
+ *
+ * JS 정규식에는 인라인 플래그(`(?i:…)`)가 없으므로 **줄기와 확장자를 갈라** 확장자만
+ * `toLowerCase()` 로 대조한다(`isSafeArtSrc`). 접두·줄기의 대소문자 구분은 그대로 산다.
  */
-const ART_RE = new RegExp(`^${ART_PREFIX}[A-Za-z0-9_\\-./]+\\.(${EXT_ALT})$`);
+const ART_STEM_RE = new RegExp(`^${ART_PREFIX}[A-Za-z0-9_\\-./]+\\.([A-Za-z0-9]+)$`);
 
-/** 이름이 이미지처럼 보이는가. **대소문자를 안 가린다** — 아래 함수 주석이 그 이유다 */
-const IMAGE_NAME_RE = new RegExp(`\\.(${EXT_ALT})$`, 'i');
+/**
+ * **분류**용 확장자 — 계약(`IMAGE_EXT`)보다 **일부러 넓다.**
+ *
+ * ── 🔴 왜 넓히는가 — 좁은 분류는 엉뚱한 사유를 말한다 (W8-5) ────────────────
+ * `looksLikeImage` 주석이 *"여기는 넓게 잡고, 거부 사유는 작품 쪽에서 낸다"* 라고 이미
+ * 선언하고 있었는데 **코드는 계약과 같은 4종만 잡고 있었다** — 주석이 코드보다 앞서 있던
+ * 형태다(이 파일이 `artNameHelp` 헤더에서 «가장 비싸게 배운 형태» 로 부르는 바로 그것).
+ *
+ * 실물 경로: 아이폰 사진 앱이 「원본 유지」면 **HEIC** 를 낸다. 좁은 분류에서 `photo.heic`
+ * 는 이미지로 안 잡혀 **GLB 드롭 경로로 흘러가고**, 화면이 *"확장자는 소문자 .glb"* 라는
+ * 엉뚱한 사유를 말한다. 감독은 사진을 떨어뜨렸는데 GLB 이야기를 듣는다.
+ *
+ * ⚠ **계약을 넓히는 것이 아니다.** `IMAGE_EXT` 는 그대로 4종이고 `heic` 는 **여전히
+ * 거절된다** — 바뀌는 것은 **거절 사유가 정확해지는 것**뿐이다.
+ *
+ * ── 🔴 두 목록의 경계 — 팀장 판정 (2026-08-17) ─────────────────────────────
+ * 이 구분이 #94 판정의 문언(*"확장자 목록 자체(`EXT_ALT`)를 넓히는 것은 범위 밖"*)
+ * 안인지 밖인지는 검수관도 부팀장도 못 가른다고 보고 팀장에 올렸다. **판정: 범위 안.**
+ * 근거는 *"지목 대상은 이름이 아니라 그중 「여는」 역할이다 — 역할을 가르고 계약 쪽을
+ * 고정한 구조는 조건의 목적을 위반이 아니라 **집행**한 것"*.
+ *
+ * **그래서 다음 사람이 쓸 규칙은 이렇다**:
+ *   `IMAGE_LIKE_EXT` 에 더하기 = **자유**  (거절 사유를 정확하게 하는 일)
+ *   `IMAGE_EXT`      에 더하기 = **팀장 게이트**  (새 포맷을 여는 일 — #94 와 같은 형태)
+ *
+ * ⚠⚠ 이 경계를 지키는 것은 `tests/world2-artwork-mode.test.ts` 의 «계약 밖 확장자가
+ * 작품 경로로 온다» 다(뮤테이션 M4 가 실측). **그 검사를 지우거나 완화하는 diff 는 이
+ * 판정의 재론 트리거다** — 팀장 조건이다.
+ */
+const IMAGE_LIKE_EXT = [...IMAGE_EXT, 'heic', 'heif', 'gif', 'bmp', 'avif', 'tif', 'tiff'] as const;
+const IMAGE_NAME_RE = new RegExp(`\\.(${IMAGE_LIKE_EXT.join('|')})$`, 'i');
 
 /**
  * 이 파일을 **작품으로 다룰 것인가** (W8-4 D2). 확장자만 본다.
@@ -58,7 +107,9 @@ const IMAGE_NAME_RE = new RegExp(`\\.(${EXT_ALT})$`, 'i');
  * ⚠ **`isSafeArtSrc` 와 다른 질문이다.** 「무엇으로 다룰 것인가」(분류)와 「쓸 수 있는
  * 이름인가」(계약)를 한 함수로 합치면 `내 그림.png` 를 떨어뜨렸을 때 분류가 실패해
  * **GLB 경로로 흘러가고**, 화면이 *"확장자는 소문자 .glb"* 라는 **엉뚱한 사유**를 말한다.
- * 그래서 여기는 넓게(대소문자 무시) 잡고, 거부 사유는 작품 쪽에서 낸다.
+ * 그래서 여기는 넓게 잡고(**대소문자 + 확장자 종류 둘 다** — `IMAGE_LIKE_EXT`), 거부 사유는
+ * 작품 쪽(`artNameHelp`)에서 낸다. ⚠ 「넓게」의 두 축 중 확장자 종류는 W8-5 에서야 실제로
+ * 넓어졌다 — 그전까지 이 문장은 대소문자 축에서만 참이었다(`IMAGE_LIKE_EXT` 헤더).
  */
 export function looksLikeImage(fileName: string): boolean {
   return IMAGE_NAME_RE.test(fileName);
@@ -70,7 +121,10 @@ export function looksLikeImage(fileName: string): boolean {
 export function isSafeArtSrc(src: unknown): src is string {
   if (typeof src !== 'string') return false;
   if (src.includes('..')) return false;
-  return ART_RE.test(src);
+  const m = ART_STEM_RE.exec(src);
+  // 확장자 **하나만** 대소문자를 무시한다(W8-5). `ART_STEM_RE` 헤더가 왜 정규식 플래그가
+  // 아니라 여기서 가르는지를 갖는다 — `i` 를 붙이면 접두까지 새고 라이브에서만 404 가 난다.
+  return m !== null && (IMAGE_EXT as readonly string[]).includes(m[1]!.toLowerCase());
 }
 
 /** 저장할 경로를 만든다. 통과 못 하면 `null` — 사유는 `artNameHelp` 가 낸다 */
@@ -95,9 +149,18 @@ export function artSrcFor(fileName: string): string | null {
  * ⚠ **문구를 소비자가 짓지 않는다**(`decide/upload-plan.ts` 의 명제 ④와 같은 이유).
  * 두 곳에 적으면 계약이 넓어져도 한쪽이 안 따라온다.
  *
- * ⚠⚠ **대문자 확장자를 아예 받을 것인가는 여기서 정하지 않는다.** 그것은 계약(`ART_RE`)을
- * 넓히는 일이고, `IMG_####.JPG`·`DSC_####.JPG` 가 아이폰·캐논·니콘의 기본 출력이라
- * **주 경로 판단**이다 — 감독 사안으로 남겼다(태스크 #94).
+ * ── ⚠⚠ 계약이 넓어졌는데 **이 함수가 살아 있는 이유** (W8-5) ────────────────
+ * 대문자 확장자를 열었으므로(#94, 팀장 판정) `IMG_1234.JPG` 는 이제 **그냥 통과한다** —
+ * B2 를 낳은 그 증상은 소멸했다. 그래서 처음 계획은 이 함수의 분기를 **지우는 것**이었다.
+ *
+ * **틀렸다.** 대문자를 여는 순간 `photo.heic`·`a.gif` 가 **정확히 같은 자리**로 들어온다 —
+ * 그 이름들은 «영문·숫자·_ - . 만 씁니다» 를 **이미 만족**하는데 확장자 목록 밖이라 떨어진다.
+ * 아이폰이 「원본 유지」 설정이면 HEIC 를 내므로 이것은 가정이 아니라 **감독이 바로
+ * 부딪히는 경로**다. B2 는 사라진 것이 아니라 **한 칸 옆으로 옮겨간 것**이고, 그래서 분기도
+ * 함께 옮겼다: 「소문자로 바꾸면 되는가」 → **「아는 확장자로 바꾸면 되는가」**.
+ *
+ * 축이 옮겨졌으므로 `tests/world2-artwork-mode.test.ts` 의 G2 도 케이스를 옮긴다
+ * (`IMG_1234.JPG` → `photo.heic`). **테스트를 지우는 것이 아니라 재는 대상을 따라가는 것**이다.
  *
  * ⚠⚠⚠ **세 번째 사유는 일부러 접었다**(검수관 권고 P7 — B2 의 잔재가 아니다).
  * `../../etc/passwd.png` 는 `..` 때문에 떨어지는데 문구는 «영문·숫자·_ - . 만 씁니다» 를
@@ -109,11 +172,16 @@ export function artSrcFor(fileName: string): string | null {
  */
 export function artNameHelp(fileName: string): string {
   if (artSrcFor(fileName) !== null) return '';
-  // 확장자만 소문자로 바꿔서 통과하면 **그것이 유일한 위반**이다. 둘 다 어긋난 이름
-  // (`내 그림.JPG`)은 확장자를 고쳐도 안 되므로 문자군 쪽 사유가 맞다.
-  const lowered = fileName.replace(/\.([^.]*)$/, (_m, e: string) => `.${e.toLowerCase()}`);
-  return artSrcFor(lowered) !== null
-    ? '확장자를 소문자로 바꿔 주세요 (예: .JPG → .jpg)'
+  // 확장자를 **아는 것으로 바꿔서** 통과하면 그것이 유일한 위반이다. 둘 다 어긋난 이름
+  // (`내 그림.heic`)은 확장자를 고쳐도 안 되므로 문자군 쪽 사유가 맞다.
+  // 확장자가 아예 없는 이름(`photo`)도 같은 축이라 붙여서 물어본다.
+  const swapped = /\.[^.]+$/.test(fileName)
+    ? fileName.replace(/\.[^.]+$/, `.${IMAGE_EXT[0]}`)
+    : `${fileName}.${IMAGE_EXT[0]}`;
+  // ⚠ **받는 목록을 문구에 직접 적지 않는다** — `IMAGE_EXT` 에서 짓는다. 손으로 적으면
+  // 목록이 넓어져도 화면이 안 따라오고, 그것이 이 함수가 존재하는 이유(B2)와 같은 형태다.
+  return artSrcFor(swapped) !== null
+    ? `확장자를 ${IMAGE_EXT.join(' · ')} 중 하나로 해 주세요`
     : '영문·숫자·_ - . 만 씁니다';
 }
 

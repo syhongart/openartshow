@@ -75,7 +75,23 @@ export interface ArtworkMode {
   handles(fileName: string): boolean;
   /** 떨어뜨린 이미지를 그 자리 벽에 건다. **던지지 않는다** — 사유는 화면이 말한다 */
   drop(file: File, ev: { clientX: number; clientY: number }): Promise<void>;
+  /**
+   * 고른 이미지를 **화면 한가운데** 벽에 건다 (W8-5 · 폰 경로). 위와 같은 규약이다.
+   *
+   * 좌표가 없는 진입점이다 — `<input type="file">` 의 `change` 에는 좌표가 없고, 모바일
+   * 브라우저는 파일 드래그드롭을 지원하지 않는다. **둘의 차이는 광선을 어디로 쏘는가
+   * 하나뿐**이고 나머지(이름 판정·blob 수명·종횡비·목록 갱신·문구)는 같은 몸을 탄다.
+   */
+  pickFile(file: File): Promise<void>;
 }
+
+/**
+ * 벽을 못 찾았을 때의 문구. **진입점마다 다르다** — 사용자가 할 일이 다르기 때문이다.
+ * 드롭은 «다른 데 놓아라», 버튼은 «몸을 돌려 벽을 가운데 두어라» 다. 한 문구로 뭉치면
+ * 폰 사용자가 «어디에 놓으라는 거지» 를 듣는다(놓을 것이 없다 — 버튼을 눌렀을 뿐이다).
+ */
+const MISS_DROP = '벽에 놓아 주세요 — 바닥·지붕·하늘에는 걸 수 없습니다.';
+const MISS_CENTER = '벽을 화면 한가운데 두고 다시 눌러 주세요 — 바닥·지붕·하늘에는 걸 수 없습니다.';
 
 /**
  * 이미지의 종횡비(가로/세로). 못 재면 `null` 이고 호출부가 기본값으로 간다.
@@ -105,7 +121,18 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
   const { panel, picker, arts } = deps;
   const measure = deps.measure ?? measureAspect;
 
-  async function drop(file: File, ev: { clientX: number; clientY: number }): Promise<void> {
+  /**
+   * 두 진입점의 **공통 몸통** (W8-5). 좌표에 묶인 것은 `cast` 인자 하나뿐이다.
+   *
+   * ⚠ **둘을 각자 쓰지 않는 것이 요점이다.** 이 함수 안에는 순서 규약이 넷 들어 있다
+   * (이름 먼저 · 거절 뒤에 blob · `ar` 을 실제로 읽는다 · 「걸었다」가 아니라 「보낼
+   * 준비가 됐다」). 진입점마다 복제하면 **한쪽만 고쳐지고**, 그 어긋남은 «폰에서만
+   * 이상하다» 로 드러나 원인을 짚기 가장 어려운 형태가 된다.
+   *
+   * @param cast 광선을 어디로 쏘는가. 드롭은 `castFrom(ev)`, 버튼은 `castCenter()`
+   * @param miss 벽을 못 찾았을 때 화면이 할 말 — 진입점마다 사용자가 할 일이 다르다
+   */
+  async function hang(file: File, cast: () => boolean, miss: string): Promise<void> {
     // ⚠ **이름 판정이 먼저다.** 벽을 찾은 뒤에 이름으로 거절하면 «벽은 맞았는데 왜
     // 안 걸리지» 가 되고, 사용자가 할 일이 없는 사유를 나중에 듣는다
     // (`judgeUpload` 가 등급을 이름보다 먼저 보는 것과 같은 순서).
@@ -117,7 +144,7 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
       panel.say(`«${file.name}» 은 쓸 수 없는 이름입니다 — ${artNameHelp(file.name)}`, true);
       return;
     }
-    if (!picker.castFrom(ev)) return;
+    if (!cast()) return;
     const hit = picker.pickFace();
     const pose = hit && wallPose(hit);
     if (!pose) {
@@ -127,7 +154,7 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
       // (2026-08-17 *"마을 건물에도 걸려야 한다"*)으로 인스턴스 경로가 열리면서 그
       // 안내가 사실과 어긋났고, **화면이 거짓을 말하는 것이 이 저장소가 가장 비싸게
       // 배운 형태**라 함께 고쳤다. 지금 남는 거절 사유는 기하뿐이다.
-      panel.say('벽에 놓아 주세요 — 바닥·지붕·하늘에는 걸 수 없습니다.', true);
+      panel.say(miss, true);
       return;
     }
     // 여기서부터 되돌릴 것이 생긴다. **거절이 다 끝난 뒤에** 임시 주소를 만든다 —
@@ -147,5 +174,9 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
     panel.say(`걸었습니다 — 내보내기 하면 «${file.name}» 을 JSON 과 함께 보내 주세요.`);
   }
 
-  return { handles: looksLikeImage, drop };
+  return {
+    handles: looksLikeImage,
+    drop: (file, ev) => hang(file, () => picker.castFrom(ev), MISS_DROP),
+    pickFile: (file) => hang(file, () => picker.castCenter(), MISS_CENTER),
+  };
 }

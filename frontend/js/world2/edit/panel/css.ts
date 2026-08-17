@@ -39,6 +39,17 @@ export const CSS = `
 #w2-edit .toggle{flex:0 0 auto;padding:8px 12px;font-size:12px;
   background:rgba(11,13,18,.86);border-color:#3A3D4B;backdrop-filter:blur(6px)}
 #w2-edit[data-mode="edit"] .toggle{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
+/* ── 사진 걸기 (W8-5 · 폰 경로) ────────────────────────────────────────────
+   파일 입력은 **우리 버튼이 대신 누른다**(input.click()). 브라우저 기본 파일 입력은
+   폭·라벨이 제멋대로라 212px 패널을 넘치고 언어마다 글자가 다르다.
+   ⚠ display:none 을 쓰지 않는다 — 렌더 트리에서 빠진 요소의 .click() 을 무시하는
+   브라우저가 있었고(사파리 계열), 그러면 **폰에서만 아무 일도 안 일어난다.** 이 기능이
+   존재하는 이유가 정확히 폰이므로 그 위험을 지지 않는다. 눈에서만 지운다.
+   ⚠⚠ 이 파일은 템플릿 리터럴 하나다 — 주석에 백틱을 쓰면 문자열이 거기서 끊긴다. */
+#w2-edit .photo-in{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+/* 폰에서 감독이 가장 자주 누를 버튼이다. 위 .toggle 과 **같은 이유**로 키운다 —
+   나머지 버튼의 4px 패딩은 손가락 타깃으로 작다. */
+#w2-edit .photo button{padding:8px 10px;font-size:12px}
 #w2-edit .note{color:#9A9EB1;margin:4px 0 0}
 #w2-edit .warn{color:#FFC46B}
 #w2-edit .lead{color:#F5F5F2;margin:6px 0 0;font-size:12px}

@@ -25,6 +25,25 @@ import { SNAP, type EditState, type ThreeNS } from './state.js';
 export interface Picker {
   /** 이 이벤트 좌표로 광선을 갱신한다. 캔버스 밖이면 `false` */
   castFrom(ev: { clientX: number; clientY: number }): boolean;
+  /**
+   * **화면 한가운데**로 광선을 갱신한다 (W8-5). 캔버스 크기를 못 재면 `false`.
+   *
+   * ── 왜 형제 함수인가 — 좌표의 **출처**가 다르다 ──────────────────────────
+   * `castFrom` 은 좌표가 **이벤트에서** 온다(마우스·드래그드롭). 그런데 모바일에는 그
+   * 이벤트가 없다 — 파일 선택(`<input type="file">`)의 `change` 에는 좌표가 없고,
+   * 모바일 브라우저는 파일 드래그드롭을 지원하지 않는다. 그래서 좌표를 **카메라에서**
+   * 받는다: 「벽을 화면 가운데 두고 버튼을 누른다」가 조작 모형이다.
+   *
+   * ⚠ **`castFrom({clientX:0, clientY:0})` 과 다르다.** 그것은 캔버스 **좌상단**을 쏜다.
+   * 이 구분이 조용히 틀리면 «버튼을 눌러도 엉뚱한 데가 잡힌다» 가 되고, 화면에서는
+   * «가끔 된다» 로만 보인다 — 뮤테이션 축으로 잡아 둔 자리다.
+   *
+   * ⚠⚠ **이 형태를 고른 것은 팀장 판정 (가)다**(2026-08-17). 「고르기 → 벽 탭」 2단계는
+   * 상호배타 불변식 5곳 + `input.ts` 동결(여유 0줄) + 터치 이중 입력을 함께 열어야 한다.
+   * 「(나)로 전환할 때 **좌표 공급부만** 교체되면 된다」가 팀장 조건이고, 그래서 이 함수는
+   * `castFrom` 과 같은 층에 같은 반환 규약으로 선다.
+   */
+  castCenter(): boolean;
   /** 광선이 **지면**과 만나는 자리(표면 높이 반영 + 스냅) */
   groundAt(): { x: number; z: number } | null;
   /** 광선이 주어진 높이의 수평면과 만나는 자리(스냅) */
@@ -92,9 +111,24 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
   marker.renderOrder = 999;
   (host.root as unknown as { add(o: never): void }).add(marker as never);
 
+  function rectOf(): DOMRect {
+    return (canvas as unknown as { getBoundingClientRect(): DOMRect }).getBoundingClientRect();
+  }
+
   function castFrom(ev: { clientX: number; clientY: number }): boolean {
-    const rect = (canvas as unknown as { getBoundingClientRect(): DOMRect }).getBoundingClientRect();
-    const ndc = ndcOf(ev.clientX, ev.clientY, rect);
+    const ndc = ndcOf(ev.clientX, ev.clientY, rectOf());
+    if (!ndc) return false;
+    raycaster.setFromCamera(ndc, host.camera);
+    return true;
+  }
+
+  function castCenter(): boolean {
+    // 중앙 **클라이언트 좌표**를 지어 `ndcOf` 에 태운다 — NDC `(0,0)` 을 직접 넣지 않는
+    // 것이 요점이다. 폭·높이 0 을 거르는 가드가 `ndcOf` 안에 있고(그것이 없으면 나눗셈이
+    // `Infinity` 를 내 조용히 아무것도 안 맞는다), 여기서 (0,0)을 손으로 넣으면 그 가드를
+    // **우회**한다. 계산 경로가 하나여야 두 함수가 같이 낡거나 같이 고쳐진다.
+    const rect = rectOf();
+    const ndc = ndcOf(rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
     if (!ndc) return false;
     raycaster.setFromCamera(ndc, host.camera);
     return true;
@@ -324,6 +358,7 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
 
   return {
     castFrom,
+    castCenter,
     groundAt,
     planeAt,
     pick,

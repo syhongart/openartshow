@@ -54,6 +54,16 @@ export interface PanelHandlers {
   registerPreview?(src: string, file: File): void;
   listTextures?(): Promise<readonly string[]>;
 
+  /**
+   * 고른 사진을 **화면 한가운데** 벽에 건다 (W8-5 · 폰 경로). **선택 사양** — 위
+   * 표면 재질 넷이 세운 「문을 안 주면 그 칸을 통째로 안 만든다」 규약 그대로다.
+   *
+   * ⚠ **왜 패널에 있고 캔버스에 없나.** 폰에서는 이것이 유일한 투입구다 — 드래그드롭이
+   * 없고, 캔버스를 탭하는 길은 주행용 터치 조이스틱(`ui/touch-controls.ts`)과 겹친다
+   * (편집이 그것을 떼지 않는다 — 백로그). 패널 버튼은 그 충돌 밖에 있다.
+   */
+  hangPhoto?(file: File): void;
+
   exportNow(): void;
 }
 
@@ -172,6 +182,37 @@ export function createPanel(
     thawBtn,
   );
   rowOut.append(button('JSON 내보내기', () => { handlers.exportNow(); }));
+  // ── 사진 걸기 (W8-5 · 감독 카드 「폰에서 넣기 먼저」 2026-08-17) ────────────
+  // 드롭과 **같은 일**을 하는 두 번째 문이다. 좌표가 없으므로 화면 한가운데를 쏜다
+  // (`artwork-mode.pickFile` → `picker.castCenter`). 문이 없으면 이 행 자체가 안 생긴다.
+  const rowPhoto = el('div', 'row photo');
+  if (handlers.hangPhoto) {
+    const hang = handlers.hangPhoto;
+    const fileIn = doc.createElement('input');
+    fileIn.type = 'file';
+    // `image/*` 로 열어 둔다 — 폰 사진첩이 바로 뜬다. 받는 형식은 여기서 좁히지 않는다:
+    // 계약(`decide/artwork.ts`)이 판정하고 **거절 사유를 화면이 말한다.** 여기서 좁히면
+    // 「고를 수는 있는데 왜 안 되는지 모르는」 것과 「아예 안 보이는」 것이 갈려, 감독이
+    // HEIC 사진을 **찾지도 못한 채** 원인을 모르게 된다.
+    fileIn.accept = 'image/*';
+    fileIn.className = 'photo-in';
+    // ⚠ **포커스 순서에서 뺀다**(검수관 권고, W8-5). 이 입력은 눈에 안 보이지만
+    // `opacity:0` 이라 렌더 트리에는 남아 있고 — 그것이 `.click()` 을 살리려는 의도다
+    // (`css.ts` 의 `.photo-in` 참조) — 그대로 두면 **보이지 않는 요소에 포커스가 멈춘다.**
+    // 진짜 조작 지점은 바로 옆 버튼이므로 그쪽만 순서에 남긴다.
+    fileIn.tabIndex = -1;
+    fileIn.setAttribute('aria-hidden', 'true');
+    fileIn.addEventListener('change', () => {
+      const f = fileIn.files?.[0];
+      // ⚠ **값을 반드시 비운다.** 안 비우면 같은 사진을 다시 고를 때 `change` 가 아예
+      // 안 나고(값이 그대로라 브라우저가 변경으로 안 본다), 화면은 아무 말도 안 한다 —
+      // «두 번째부터 버튼이 죽는다» 로 보인다. 벽을 못 찾아 거절당한 뒤 몸을 돌려 같은
+      // 사진을 다시 거는 것이 **가장 흔한 흐름**이라 이 줄이 없으면 기능이 반쯤 죽는다.
+      fileIn.value = '';
+      if (f) hang(f);
+    });
+    rowPhoto.append(button('🖼 사진 걸기', () => { fileIn.click(); }), fileIn);
+  }
   // ── 정해진 시점 (W6, 감독 지시 2026-08-13) ────────────────────────────────
   // *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등."*
   // 버튼과 키가 **같은 함수**로 간다(`handlers.setView` → `input.setView`) — 각자
@@ -198,7 +239,12 @@ export function createPanel(
   const head = el('div', 'head');
   head.append(title, toggle);
   const body = el('div', 'body');
-  body.append(palette, el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
+  body.append(palette);
+  // 팔레트 **바로 뒤**다 — 「놓기」 계열이라 자리가 여기고, 폰에서 접힌 패널을 펼치면
+  // 위에서부터 읽으므로 감독이 가장 자주 쓸 것을 위에 둔다. 문이 없으면 붙이지 않는다
+  // (빈 행도 `.row` 여백을 먹어 «뭔가 빠진 자리» 처럼 보인다).
+  if (handlers.hangPhoto) body.append(rowPhoto);
+  body.append(el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
     el('hr'), rowView, rowShade);
   // 표면 재질은 **없을 수도 있다** — 소비자가 문(`surfaces`/`setSurfaces`)을 안 주면 그
   // 칸만 빠지고 나머지 편집은 그대로 산다(`setShading` 이 세운 규약과 같다).

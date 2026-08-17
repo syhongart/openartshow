@@ -123,6 +123,11 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     setSurfaces: host.setSurfaces,
     registerPreview: host.registerPreview,
     listTextures: host.listTextures,
+    // ── 사진 걸기 (W8-5 · 폰 경로) ────────────────────────────────────────
+    // 드롭과 **같은 몸통**(`artwork-mode.hang`)을 탄다 — 여기서 갈라지면 «PC 에서는
+    // 되는데 폰에서만 다르다» 가 나고, 그 어긋남은 감독 실기기에서만 드러난다.
+    // 작품 포트를 안 받았으면 문 자체를 안 준다(패널이 그 행을 통째로 안 만든다).
+    hangPhoto: opts.arts && ((file: File) => { void art?.pickFile(file); }),
     exportNow: () => { actions.exportNow(); },
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
@@ -132,6 +137,14 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     gizmo.attach(st.target);
   });
 
+  // 작품 모드를 **밖으로 뺐다**(W8-5). 예전에는 `createInput` 인자 안에서 인라인으로
+  // 만들었는데, 이제 소비자가 둘이다 — 드롭은 `input` 이, 「사진 걸기」 버튼은 `panel` 이
+  // 부른다. 두 곳이 각자 만들면 **인스턴스가 둘**이 되고, 그러면 같은 코드인데도
+  // 상태(`measure` 주입 등)가 갈릴 자리가 생긴다.
+  const art = opts.arts
+    ? createArtworkMode({ panel, picker, arts: opts.arts, onBlobUrl: opts.onBlobUrl })
+    : null;
+
   // 작품 포트를 함께 넘긴다 — 내보내기가 「보낼 준비가 됐다」에 이미지도 세야 한다(D3).
   const actions = createActions(host, st, panel, opts.arts);
 
@@ -140,9 +153,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     toggleEditing: () => { setEditing(!st.editing); },
     onBlobUrl: opts.onBlobUrl,
     // 작품 목록을 안 받았으면 이미지 드롭 자체가 없다 — 그때는 GLB 판정이 이름으로 거절한다.
-    art: opts.arts && createArtworkMode({
-      panel, picker, arts: opts.arts, onBlobUrl: opts.onBlobUrl,
-    }),
+    art: art ?? undefined,
     canUploadGlb: opts.canUploadGlb ?? canUploadGlb(),
     tierLabel: tierLabel(),
   });
