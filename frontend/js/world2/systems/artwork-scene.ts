@@ -93,8 +93,24 @@ export interface ArtworkStats {
   readonly frames: number;
   /** 실제로 켠 라이트 수 */
   readonly lit: number;
-  /** 조명을 못 받은 작품 수(팀장 조건 4 — 걸리되 라이트 없이) */
+  /**
+   * **파셀 cap 초과**로 조명을 못 받은 작품 수(팀장 조건 4 — 걸리되 라이트 없이).
+   *
+   * ⚠ 이것은 «어두운 작품의 총수» 가 **아니다.** 풀이 고갈돼 못 켠 것은 `unpowered` 다 —
+   * 검수관 블로커 B3-1 이 그 혼동을 실측으로 잡았다: 20파셀 × 4작품에서
+   * `frames 80 · lit 28 · skipped 0` 이었는데 **실제로 어두운 것은 52개**였다.
+   * 이름이 「못 받은 수」라고 말하면서 절반만 세는 것이 이 저장소가 GS-3 을 만든 그 형태다.
+   */
   readonly skipped: number;
+  /**
+   * **풀 고갈**로 조명을 못 받은 작품 수. 배정은 받았는데 슬롯이 없었다.
+   *
+   * 왜 이 축이 따로 필요한가 — `skipped` 와 원인이 다르고 처방도 다르다. cap 초과는
+   * `perParcel` 을 올리면 되지만 풀 고갈은 **풀이 「동시에 보이는 방」(near 7파셀)에서
+   * 유도되는데 배정은 문서 전체의 작품에 도는** 분모 불일치다. 둘을 한 숫자로 뭉개면
+   * 어느 쪽을 만져야 하는지 화면에서 구별이 안 된다.
+   */
+  readonly unpowered: number;
   /** 텍스처 로드 실패 수 */
   readonly texFailed: number;
 }
@@ -119,8 +135,19 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   // ── 라이트 풀 — 여기서 전부 만든다(조건 1) ──────────────────────────────
   // ⚠ `place` 안이나 루프 안에서 만들지 마라. 풀 크기는 **작품 수와 무관**하게
   // `artLightPoolSize()` 가 정한다(조건 2).
+  //
+  // ⚠⚠ **`perParcel` 을 여기 넘기지 마라 — 그것이 조건 3 을 깨는 정확한 형태다.**
+  // 첫 판본이 `artLightPoolSize(perParcel)` 였고, `art-light.ts:50-53` 이 *"풀 크기는 이
+  // 값으로 줄이지 않는다"* 라고 적어 둔 바로 그 줄과 **정면으로 모순**이었다(검수관 블로커
+  // B1). soft(1)를 넘기면 풀이 28 → **7** 로 줄어 세션마다 개수가 달라진다.
+  //
+  // 그때 이것을 «잰다» 던 단언은 `artLightPoolSize(4) === artLightPoolSize(4)` 라
+  // **동어반복**이었고, 검수관이 코드를 조건 문언대로 고치는 뮤테이션을 넣자 **0 failed**
+  // 였다(대조로 조건 1·2·4·5 는 각각 4·1·6·1 failed). 다섯 중 하나만 장식이었고
+  // 나는 다섯 다 있다고 보고했다 — 축을 `tests/world2-artwork-scene.test.ts` 의
+  // 「★ GS-C」로 옮겨 **두 세션의 라이트 수를 한 테스트에서 비교**하게 했다.
   const pool: ArtLight[] = [];
-  const poolSize = artLightPoolSize(perParcel);
+  const poolSize = artLightPoolSize(ART_LIGHT_PER_PARCEL);
   for (let i = 0; i < poolSize; i++) {
     const L = new THREE.SpotLight(LIGHT_COLOR, 0);
     L.castShadow = false;      // ⚠ 조건 5 — 파일 헤더 참조
@@ -140,17 +167,28 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
     color: 0x1a1a1a, roughness: 0.45, metalness: 0.1,
   });
   const artMats: ArtMaterial[] = [];
+  /** dispose 대상 지오메트리. `[7]` 이 보는 축이라 재질만 지우면 절반만 정리된다 */
+  const artGeos: { dispose?(): void }[] = [];
   let frames = 0;
   let lit = 0;
   let skipped = 0;
+  let unpowered = 0;
   let texFailed = 0;
   let disposed = false;
+  /**
+   * 다음에 쓸 풀 슬롯. **인스턴스 상태다 — `place` 안의 지역 변수가 아니다.**
+   *
+   * 지역 변수였을 때 `place` 를 두 번 부르면 슬롯이 0부터 다시 배정돼 **같은 라이트를
+   * 두 작품이 나눠 갖고**(뒤엣것이 이긴다) `lit` 는 둘 다 셌다 — 검수관 P5 실측:
+   * 2회 호출 → `frames 4, lit 4` 인데 실제로 켜진 라이트는 **2개**. 지금 호출부가 1회라
+   * 잠복해 있었을 뿐이고, W8-4 D(편집에서 작품 걸기)가 열리면 그 즉시 상시 경로가 된다.
+   */
+  let next = 0;
 
   async function place(arts: readonly ArtworkItem[]): Promise<void> {
     if (disposed) return;
     const plan = assignArtLights(arts, perParcel, cellX, cellZ);
-    skipped = plan.skipped;
-    let next = 0;   // 다음에 쓸 풀 슬롯
+    skipped += plan.skipped;
 
     for (let i = 0; i < arts.length; i++) {
       if (disposed) return;
@@ -163,10 +201,11 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
 
       // 테두리: 작품보다 조금 큰 얇은 판. 4변을 따로 만들지 않는 이유는 드로우콜이
       // 같으면서 지오메트리 수가 1/4 이기 때문이다(`[7]` 이 그 수를 본다).
-      const border = new THREE.Mesh(
-        new THREE.BoxGeometry(w + FRAME_BORDER * 2, h + FRAME_BORDER * 2, FRAME_DEPTH),
-        frameMat,
+      const borderGeo = new THREE.BoxGeometry(
+        w + FRAME_BORDER * 2, h + FRAME_BORDER * 2, FRAME_DEPTH,
       );
+      artGeos.push(borderGeo as { dispose?(): void });
+      const border = new THREE.Mesh(borderGeo, frameMat);
       g.add(border);
 
       // 작품 평면 — 텍스처는 개별이라 재질도 개별이다.
@@ -191,7 +230,9 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
         ...(tex ? { map: tex } : {}), roughness: 0.85, metalness: 0,
       });
       artMats.push(mat);
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+      const planeGeo = new THREE.PlaneGeometry(w, h);
+      artGeos.push(planeGeo as { dispose?(): void });
+      const plane = new THREE.Mesh(planeGeo, mat);
       // 테두리 판 **앞면**에 얹는다. 뒤에 두면 판에 가려 아무것도 안 보인다.
       plane.position.set(0, 0, FRAME_DEPTH / 2 + 0.002);
       g.add(plane);
@@ -199,7 +240,14 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       frames++;
 
       // 조명 — 배정받은 것만. **풀에서 꺼내 쓸 뿐 새로 만들지 않는다.**
-      if (plan.lit[i] && next < pool.length) {
+      //
+      // ⚠ 배정을 받았는데 슬롯이 없으면 `unpowered` 다. **조용히 넘어가지 않는다** —
+      // 그것이 검수관 블로커 B3-1 의 형태였다(어두운 작품 52개가 아무 숫자에도 안 잡혔다).
+      if (!plan.lit[i]) {
+        // cap 초과 — `skipped` 가 이미 셌다(`plan.skipped`)
+      } else if (next >= pool.length) {
+        unpowered++;
+      } else {
         const L = pool[next++];
         const s = spotFor(a);
         L.position.set(s.pos.x, s.pos.y, s.pos.z);
@@ -216,7 +264,7 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
 
   return {
     place,
-    stats: () => ({ lights: pool.length, frames, lit, skipped, texFailed }),
+    stats: () => ({ lights: pool.length, frames, lit, skipped, unpowered, texFailed }),
     dispose() {
       disposed = true;
       // ⚠ 라이트는 **끄지 않고 그냥 떠난다** — 씬에서 root 를 빼면 함께 사라진다.
@@ -225,6 +273,10 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       frameMat.dispose?.();
       for (const m of artMats) m.dispose?.();
       artMats.length = 0;
+      // ⚠ 지오메트리도 지운다. 첫 판본은 재질만 지웠고 **`[7]` 이 보는 축의 절반이
+      // 남았다**(검수관 P6) — three 의 `info.memory.geometries` 는 재질과 따로 센다.
+      for (const geo of artGeos) geo.dispose?.();
+      artGeos.length = 0;
     },
   };
 }

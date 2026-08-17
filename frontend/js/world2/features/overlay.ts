@@ -486,10 +486,10 @@ export const overlayFeature: Feature = {
           });
           if (disposed) return;
         }
-        // ── 벽에 건 작품 (W8-4) — ⚠ **작품이 0개여도 씬을 만든다** ────────────
-        // 라이트 풀이 부팅에 서야 팀장 조건 1(개수 불변 절대)이 성립한다. 작품이 생길 때
-        // 만들면 그 순간 개수가 변하고 `[7]` 이 증식으로 읽는다. GLB 부착 뒤인 이유는
-        // `ensureLoader()` 가 three 네임스페이스를 채우기 때문이다.
+        // ── 벽에 건 작품 (W8-4) — 라이트 풀은 한 번에 서고 안 변한다(조건 1) ──
+        // ⚠ *"작품이 0개여도 씬을 만든다"* 라고 적혀 있었고 **거짓**(검수관 B3-2): `arts` 0
+        // 이고 GLB 도 0이면 `ensureLoader()` 미호출 → `THREE` null → 씬이 안 선다(라이브가
+        // 그 상태다). 조건 1 은 안 깨지고, 깨지는 것은 작품이 나중에 추가될 때 — W8-4 D(#86).
         if (plan.arts.length > 0) await ensureLoader();
         if (disposed) return;
         if (THREE) {

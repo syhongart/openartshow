@@ -20,9 +20,24 @@
 // 파이프·pipefail 문제가 구조적으로 존재하지 않는다.
 //
 // ── 무엇을 안 하는가 ────────────────────────────────────────────────────────
-// 스모크(`smoke:vite`)는 넣지 않는다 — 브라우저를 띄워 수십 초가 걸리고, 배포 전
-// **독립 executor** 가 돌리는 것이 규율이다(§10-3, 구현자 본인 금지). 여기 넣으면
-// 구현자가 스모크를 돌리는 습관이 생긴다.
+// 스모크(`smoke:vite`)는 넣지 않는다 — 브라우저를 띄워 **10분 이상** 걸리고, CI 의
+// `smoke` job 이 그것을 돌린다(그쪽이 **배포 판정 주체**다, §10-3 (a)).
+//
+// ⚠ 이 문단은 오래 *"배포 전 **독립 executor** 가 돌리는 것이 규율이다(§10-3, 구현자
+// 본인 금지)"* 라고 적고 있었고 그것은 **2026-08-10 팀장 판정으로 폐기된 절차**다
+// (검수관 권고 P3, 2026-08-17). 폐기 이유가 실측이다 — `smoke:vite` 소요가 Bash 도구
+// 상한을 넘어 **위임이 원리상 완주 불가**였고, 그래서 3회차 위임이 *"완주했다"* 고
+// 적었지만 실제로는 코드만 읽었다. **완주할 수 없는 일을 맡기면 완주했다고 적는 압력이
+// 생긴다.** 도구가 폐기된 형태를 계속 지시하면 다음 사람이 같은 위임을 시도한다.
+// 현행: 로컬 `smoke:vite` 는 **조기 스크리닝**이고 구현자 본인이 돌려도 되지만 그 PASS 를
+// **배포 판정 근거로 기재하지 않는다.**
+//
+// ── ⚠ 여기에 게이트를 추가하면 `ci.yml` 에도 넣어라 ─────────────────────────
+// 이 목록과 `.github/workflows/ci.yml` 의 `verify` job 은 **두 곳에 적힌 같은 것**이고,
+// 실제로 어긋난 채 배포된 적이 있다 — `check:cycles`·`check:filesize` 가 신설 당시
+// 여기에만 들어와 **배포 경로에서 아무것도 안 막았다**(검수관 블로커 B2, 2026-08-17).
+// `tests/gate.test.ts` 의 GS-A 가 이제 그 정합을 검사한다. CI 에 일부러 안 넣는 게이트는
+// `ciExempt` 에 **사유를 적는다** — 빈 문자열이면 검사가 FAIL 한다.
 
 import { spawnSync } from 'node:child_process';
 import { writeFileSync, existsSync, unlinkSync } from 'node:fs';
@@ -58,7 +73,15 @@ export const GATES = [
   // **`.ts` 를 아예 안 본다**(가장 큰 파일들이 전부 `.ts` 다). 근거는 그 파일 헤더 한 곳.
   { name: 'check:filesize', cmd: 'check:filesize' },
   { name: 'check:gitadd', cmd: 'check:gitadd' },
-  { name: 'check:devlog-times', cmd: 'check:devlog-times' },
+  // ⚠ **CI 에 넣을 수 없다.** `extract-devlog-times.mjs:46` 이 shallow 저장소를 명시적으로
+  // 거부하는데(`git rev-parse --is-shallow-repository`), `actions/checkout` 의 기본은
+  // `fetch-depth: 1` = shallow 다. 넣으면 **항상 FAIL** 이라 게이트가 아니라 소음이 된다.
+  // `fetch-depth: 0` 으로 전체 이력을 받아 오면 가능은 하지만 그것은 별건 판단이다
+  // (verify job 의 checkout 비용이 커진다). 태스크 #54 와 같은 자리.
+  {
+    name: 'check:devlog-times', cmd: 'check:devlog-times',
+    ciExempt: 'shallow clone 거부(extract-devlog-times.mjs:46) — CI 기본 checkout 은 fetch-depth:1 이라 항상 FAIL. 태스크 #54',
+  },
   { name: 'test', cmd: 'test' },
 ];
 

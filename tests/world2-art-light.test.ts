@@ -91,13 +91,30 @@ describe('★ 조건 4 — cap 초과는 **걸리되 라이트 없이**', () => 
 });
 
 describe('★ 조건 3 — soft 완화는 **켜는 수**만 줄인다', () => {
-  it('★ 풀은 그대로다 — 줄이면 세션 중 개수가 변해 조건 1 이 깨진다', () => {
-    // 풀은 언제나 최대치로 잡는다. soft 는 `assignArtLights` 의 인자로만 들어간다.
-    const full = artLightPoolSize(ART_LIGHT_PER_PARCEL);
+  // ⚠ **풀이 안 줄어드는가는 여기서 못 잰다** — 이 파일은 순수 판정이고, 「누가 무엇을
+  // 넘기는가」는 집행부의 성질이다. 첫 판본이 그것을 여기서 재려다
+  // `artLightPoolSize(4) === artLightPoolSize(4)` 라는 **동어반복**을 적었고, 검수관
+  // 뮤테이션에서 **0 failed** 로 드러났다(블로커 B1). 축은
+  // `world2-artwork-scene.test.ts` 의 「★ GS-C」로 옮겼다 — 거기서는 두 세션의 라이트
+  // 수를 **한 테스트에서** 비교하므로 동어반복이 성립하지 않는다.
+  it('★ soft 는 켜는 수를 실제로 줄인다 — 안 줄면 완화 축이 아니다', () => {
     const arts = Array.from({ length: 6 }, () => art());
     const soft = assignArtLights(arts, ART_LIGHT_PER_PARCEL_SOFT, CELL, CELL);
+    const full = assignArtLights(arts, ART_LIGHT_PER_PARCEL, CELL, CELL);
     expect(soft.lit.filter(Boolean)).toHaveLength(ART_LIGHT_PER_PARCEL_SOFT);
-    expect(artLightPoolSize(ART_LIGHT_PER_PARCEL), '★ soft 가 풀을 줄였다').toBe(full);
+    expect(full.lit.filter(Boolean)).toHaveLength(ART_LIGHT_PER_PARCEL);
+    expect(soft.lit.filter(Boolean).length, '★ soft 가 안 줄인다')
+      .toBeLessThan(full.lit.filter(Boolean).length);
+  });
+
+  it('★ 이 함수에 soft 를 넘기면 풀이 **실제로 줄어든다** — 그래서 집행부가 넘기면 안 된다', () => {
+    // 이 단언이 이 파일에 있는 이유는 «금지의 근거» 를 눈에 보이게 두기 위해서다.
+    // 줄어들지 않는다면 GS-C 가 지키는 규칙 자체가 무의미해지고, 그때는 GS-C 도
+    // 아무것도 안 잡는 검사가 된다(두 값이 같으면 비교가 통과하니까).
+    expect(artLightPoolSize(ART_LIGHT_PER_PARCEL_SOFT), '★ soft 를 넘겨도 풀이 그대로다 — GS-C 가 무의미해진다')
+      .toBeLessThan(artLightPoolSize(ART_LIGHT_PER_PARCEL));
+    // 기본 호출은 `ART_LIGHT_PER_PARCEL` 기준이다(기본값이 soft 로 바뀌면 깨진다).
+    expect(artLightPoolSize()).toBe(artLightPoolSize(ART_LIGHT_PER_PARCEL));
   });
 
   it('soft 가 기본보다 작다 — 같으면 완화 축이 아니다', () => {

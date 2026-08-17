@@ -3,9 +3,8 @@
 // 배포 전 헤드리스 스모크의 "실행 보조" 하네스. deploy.yml 의 _site 조립을
 // 재현하고, smoke-check 스킬 6항 + 가드A/B 를 헤드리스 크로미움으로 자동 실행한다.
 //
-// ⚠️ 이 스크립트는 smoke-check 스킬을 대체하지 않는다. 최종 판정·보고의 책임은
-//    여전히 구현자와 분리된 독립 executor(haiku) 에게 있고, executor 는 skill 절차에
-//    따라 이 하네스를 "실행 보조"로 사용한다. (§10-3 구현자 ≠ 검증자)
+// ⚠️ **배포 판정 주체는 CI 의 `smoke` job**(§10-3 (a)). 로컬은 조기 스크리닝이고 그 PASS 를
+//    판정 근거로 안 적는다. ⚠ 오래 *"판정은 독립 executor"* 였고 **폐기된 절차**다(P3).
 //
 // 종료코드: 전부 PASS → 0, 하나라도 FAIL → 1 (CI 게이트가 이 코드로 판정).
 // 가드A(인라인 script)는 INFO 로만 리포트하며 종료코드에 영향을 주지 않는다.
@@ -537,7 +536,8 @@ function printReport() {
   if (fails.length) {
     console.log(`판정: FAIL (${fails.length}개 항목 실패) — 배포 중단. 실패 항목: ${fails.map((f) => f.id).join(', ')}`);
   } else {
-    console.log(`스모크: 통과 (PASS ${passN}, FAIL 0). 최종 판정·보고는 독립 executor 가 skill 절차로 확정할 것.`);
+    // ⚠ 폐기 절차를 여기 적지 마라 — 통과할 때마다 찍혀 가장 자주 읽힌다(P3)
+    console.log(`스모크: 통과 (PASS ${passN}, FAIL 0). ⚠ 로컬 실행은 조기 스크리닝이다 — 배포 판정은 CI 의 verify·smoke 가 한다(§10-3).`);
   }
   return fails.length === 0;
 }
