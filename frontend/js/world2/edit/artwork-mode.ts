@@ -88,7 +88,14 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
     const hit = picker.pickFace();
     const pose = hit && wallPose(hit);
     if (!pose) {
-      panel.say('벽에 놓아 주세요 — 바닥·지붕·하늘에는 걸 수 없습니다.', true);
+      // ⚠ **다음에 할 일을 말한다.** 실측(2026-08-17): 라이브 `world2-overlay.json` 은
+      // `items: []` 이고 `pickFace()` 는 오버레이 GLB 만 본다 — 즉 **아무것도 안 놓인
+      // 세계에서는 이 거절이 100% 뜬다.** 이유를 안 적으면 «걸리는 벽이 하나도 없다» 가
+      // «기능이 안 먹는다» 로 읽히고, 그것이 이 저장소에서 가장 비쌌던 형태다(감독 신고
+      // 2026-08-12 *"아무것도 안 먹는다"*). 마을 건물(인스턴스) 벽 지원은 D1 이 범위 밖으로
+      // 둔 것이고 재론 트리거는 `edit/pick.ts` 의 `pickFace` 주석 한 곳이다.
+      panel.say('벽에 놓아 주세요 — 바닥·지붕에는 못 겁니다.'
+        + ' 마을 건물 벽은 아직 안 됩니다: 팔레트에서 GLB 건물을 놓고 그 벽에 놓으세요.', true);
       return;
     }
     // 여기서부터 되돌릴 것이 생긴다. **거절이 다 끝난 뒤에** 임시 주소를 만든다 —
