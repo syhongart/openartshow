@@ -198,6 +198,11 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
    * 잠복해 있었을 뿐이고, W8-4 D(편집에서 작품 걸기)가 열리면 그 즉시 상시 경로가 된다.
    */
   let next = 0;
+  /**
+   * `place` 세대. **올라가는 일만 있고 리셋되지 않는다** — 재진입한 옛 호출이 자기가
+   * 낡았다는 것을 아는 유일한 표식이다. 근거·재현은 `place` 헤더(검수관 블로커 B1).
+   */
+  let generation = 0;
 
   /**
    * 이전 `place` 의 흔적을 지운다. **라이트는 안 지운다 — 끈다.**
@@ -237,6 +242,15 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
    *
    * **`null` 도 캐시한다** — 실패를 매 `place` 마다 재시도하면 걸 때마다 느려지고,
    * 없는 파일은 다음에도 없다. 되살아나는 경로(파일이 나중에 생김)는 새로고침이다.
+   *
+   * ── 경계: 무엇이 남는가 (검수관 권고 P5) ─────────────────────────────────
+   * 지운 작품의 텍스처도 세션 끝까지 남는다. 그리고 **같은 파일명을 N회 다시 드롭하면
+   * 매번 새 `blob:` 이라 키가 N개 생기고 옛 텍스처는 도달 불가능한 채 남는다**(미리보기
+   * 맵이 덮어쓰므로). 선형이고 편집 세션 한정이라 받아들인다 — `dispose()` 가 한 번에
+   * 회수한다.
+   *
+   * ⚠ **그래서 churn 판정선은 「총량 불변」이 아니라 「증가폭 불증가」다.** 총량으로
+   * 잡으면 이 정당한 누적 때문에 거짓 FAIL 이 난다(D4 게이트 명세 G3 의 근거).
    */
   const texCache = new Map<string, unknown | null>();
   const keyOf = deps.texKey ?? ((s: string) => s);
@@ -269,12 +283,27 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
    */
   async function place(arts: readonly ArtworkItem[]): Promise<void> {
     if (disposed) return;
+    // ⚠⚠ **세대 도장 — 재진입에서 옛 호출이 이탈하는 유일한 수단이다**(검수관 블로커 B1).
+    //
+    // 아래 루프는 `await textureFor` 에서 **제어를 놓는다.** 그 사이 두 번째 `place` 가
+    // 들어오면 그쪽이 `clearPlaced()` 로 공유 상태를 비우는데, **1차가 재개해 같은
+    // 배열에 계속 push 하고 `root.add` 하고 슬롯을 소비한다.** 검수관이 실제로 재현했다:
+    // 문서상 작품 **2개**에 씬에는 액자 **3개** — 그리고 `stats().frames` 는 3 이라고
+    // 말한다(팀장 조건 B 가 지목한 «`stats` 가 거짓말하는 형태» 의 두 번째 자리다).
+    //
+    // 도달 경로가 열려 있다: `edit/input.ts` 의 드롭 분기가 `void deps.art.drop(…)` 로
+    // **던지고 안 기다리고**, `edit/artwork-mode.ts` 의 `await measure(url)`(이미지 디코드)이
+    // 창을 연다. **작품 두 점을 연달아 거는 것은 전시를 꾸미는 사람의 기본 동작이다.**
+    //
+    // ⚠ 데이터 손실은 없었다 — `systems/art-port.ts` 의 `items = next` 가 첫 `await` 앞에
+    // 있어 lost update 가 성립하지 않는다. 어긋난 것은 **씬과 통계**뿐이다.
+    const gen = ++generation;
     clearPlaced();
     const plan = assignArtLights(arts, perParcel, cellX, cellZ);
     skipped += plan.skipped;
 
     for (let i = 0; i < arts.length; i++) {
-      if (disposed) return;
+      if (disposed || gen !== generation) return;
       const a = arts[i];
       const { w, h } = frameSize(a);
 
@@ -305,7 +334,10 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       // `texFailed` 는 **캐시 히트에서도 센다** — 「이번 화면에 실패한 액자가 몇 개인가」이지
       // 「이번에 몇 번 실패했는가」가 아니다. 리셋이 `clearPlaced` 에 있는 것과 짝이다.
       const tex = await textureFor(a.src);
-      if (disposed) return;
+      // ⚠ **재개 지점이다 — 세대를 다시 본다.** 여기를 빼면 B1 이 그대로 살아 있다:
+      // 이 줄 위에서 만든 `borderGeo` 는 2차의 `clearPlaced` 가 이미 dispose 했는데,
+      // 아래로 계속 가면 그 지오로 만든 액자를 `root.add` 해 **유령**이 선다.
+      if (disposed || gen !== generation) return;
       if (deps.loadTexture && !tex) texFailed++;
       const mat = new THREE.MeshStandardMaterial({
         ...(tex ? { map: tex } : {}), roughness: 0.85, metalness: 0,

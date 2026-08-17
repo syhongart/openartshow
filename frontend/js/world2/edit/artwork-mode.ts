@@ -51,7 +51,7 @@
 // 상태**가 성립한다는 것이 이 기록의 요점이다.
 
 import {
-  artSrcFor, wallPose, ART_AR_DEF, ART_W_DEF, looksLikeImage,
+  artNameHelp, artSrcFor, wallPose, ART_AR_DEF, ART_W_DEF, looksLikeImage,
 } from '../decide/artwork.js';
 import type { ArtsPort } from '../systems/art-port.js';
 import type { Panel } from './panel/dom.js';
@@ -111,7 +111,10 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
     // (`judgeUpload` 가 등급을 이름보다 먼저 보는 것과 같은 순서).
     const src = artSrcFor(file.name);
     if (!src) {
-      panel.say(`«${file.name}» 은 쓸 수 없는 이름입니다 — 영문·숫자·_ - . 만 씁니다.`, true);
+      // ⚠ **사유를 여기서 짓지 않는다** — `artNameHelp` 가 원인별로 낸다(검수관 블로커 B2).
+      // 한 줄로 뭉갰을 때 `IMG_1234.JPG` 가 «영문·숫자·_ - . 만 씁니다» 라는 **이미
+      // 만족한 조건**을 들었다. 문구를 소비자가 지으면 계약이 넓어져도 안 따라온다.
+      panel.say(`«${file.name}» 은 쓸 수 없는 이름입니다 — ${artNameHelp(file.name)}`, true);
       return;
     }
     if (!picker.castFrom(ev)) return;

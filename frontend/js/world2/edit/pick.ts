@@ -214,9 +214,26 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
     return { point: { x: hit.point.x, y: hit.point.y, z: hit.point.z }, normal: n };
   }
 
-  /** 오버레이 GLB 의 첫 유효 면 + 그 거리 */
+  /**
+   * 오버레이 GLB 의 첫 유효 면 + 그 거리.
+   *
+   * ⚠⚠ **`intersect()` 를 안 쓴다 — 허용목록으로 쏜다**(검수관 권고 P1). 선택 링(`marker`)과
+   * 기즈모 그룹이 **`host.root` 의 자식**이라 `intersect()` 에 그대로 잡히는데, `faceOf` 는
+   * 「벽인가」를 판정하지 않고 **법선을 계산할 수 있는 첫 면**을 그대로 낸다. 그래서 광선
+   * 앞에 UI 가 있으면 그 면이 이기고 `wallPose` 가 거절해 **뒤에 진짜 벽이 있는데도**
+   * «벽에 놓아 주세요» 가 뜬다.
+   *
+   * 숨은 링도 해당한다 — **three r171 은 레이캐스트에서 `visible` 을 안 본다**(`layers` 만
+   * 본다). `marker.visible = false` 는 보호가 아니다.
+   *
+   * 허용목록으로 잡은 것이 요점이다: `pick()` 이 `entryOf()` 로 **등록된 항목만** 통과시키는
+   * 것과 같은 원리이고, 검수관이 짚은 «두 규약이 갈린 축» 을 여기서 닫는다. UI 는
+   * 배제 목록에 이름을 올려서가 아니라 **구조적으로** 못 들어온다.
+   */
   function faceInOverlay(): { hit: WallHit; d: number } | null {
-    for (const h of intersect()) {
+    const holders = new Set(host.entries().map((e) => e.holder as unknown));
+    if (holders.size === 0) return null;
+    for (const h of raycaster.intersectObjects([...holders], true)) {
       const hit = h as FaceHit;
       const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
         ?.matrixWorld?.elements ?? null;

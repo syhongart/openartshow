@@ -327,6 +327,49 @@ describe('★ GS-D — 어두운 작품은 **전부** 어느 한 숫자에 잡�
     expect(rootKids(scene) - base).toBe(0);
   });
 
+  it('★ 🔴 G1 — **겹친 `place` 가 유령 액자를 세우지 않는다** (검수관 블로커 B1)', async () => {
+    // 🔴 검수관이 재현한 결함이다. `place()` 는 `await textureFor` 에서 **제어를 놓는데**,
+    // 그 사이 두 번째 `place` 가 들어와 `clearPlaced()` 로 공유 상태를 비워도 **1차가
+    // 재개해 같은 배열에 계속 push 하고 `root.add` 하고 슬롯을 소비했다.**
+    // 실측: 문서상 작품 **2개**에 씬에는 액자 **3개**, 그리고 `stats().frames` 는 3.
+    //
+    // 도달 경로: `edit/input.ts` 의 드롭 분기가 `void deps.art.drop(…)` 로 던지고 안
+    // 기다리고, `edit/artwork-mode.ts` 의 `await measure(url)`(이미지 디코드)이 창을 연다.
+    // **작품 두 점을 연달아 거는 것은 전시를 꾸미는 사람의 기본 동작이다.**
+    //
+    // ⚠ **`stats()` 와 씬 트리를 둘 다 본다.** 카운터만 보면 「액자를 안 지웠다」가 통과한다
+    // — 팀장 조건 B 가 `rootKids` 를 만들게 한 그 형태이고, 여기가 두 번째 자리다.
+    const { THREE, scene } = makeThree();
+    /** 1차를 텍스처 대기에 **세워 두는** 문. 열어야 진행한다 */
+    let release: (() => void) | null = null;
+    let gateUsed = false;
+    const s = createArtworkScene({
+      THREE, scene, cellX: CELL, cellZ: CELL,
+      loadTexture: async (src) => {
+        if (!gateUsed) {
+          gateUsed = true;
+          await new Promise<void>((r) => { release = r; });
+        }
+        return { fake: src };
+      },
+    });
+    const base = rootKids(scene);
+    // 1차: 작품 3개. 첫 텍스처에서 멈춘다.
+    const first = s.place([art(), art({ src: 'assets/art/b.png' }), art({ src: 'assets/art/c.png' })]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(release, '★ 게이트가 안 걸렸다 — 이 검사가 겹침을 못 만든다').not.toBeNull();
+    // 2차: 작품 2개. 1차가 멈춰 있는 동안 통째로 완주한다.
+    const second = s.place([art(), art({ src: 'assets/art/b.png' })]);
+    await second;
+    release!();                       // 1차를 풀어 준다 — 여기서 유령이 섰었다
+    await first;
+
+    expect(s.stats().frames, '★ 겹친 옛 호출이 계속 세었다').toBe(2);
+    expect(rootKids(scene) - base, '★ 씬에 유령 액자가 남았다 — `stats` 는 맞다고 말한다')
+      .toBe(2);
+    expect(s.stats().lit, '★ 옛 호출이 라이트 슬롯을 더 먹었다').toBeLessThanOrEqual(2);
+  });
+
   it('★ 🔴 **텍스처는 재대체마다 다시 로드하지 않는다** — 그것이 N² 누수였다', async () => {
     // 🔴 팀장 조건 A 실측(2026-08-17)이 잡은 결함이다. `material.dispose()` 는 three 에서
     // **`map` 을 건드리지 않으므로** `clearPlaced` 가 재질·지오를 지워도 텍스처만 남았다.

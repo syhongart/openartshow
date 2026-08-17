@@ -66,7 +66,7 @@ interface VillageFix {
   owner?: { key: string; index: number } | null;
 }
 
-function makePicker(hits: StubHit[], vil?: VillageFix) {
+function makePicker(hits: StubHit[], vil?: VillageFix, uiHits: StubHit[] = []) {
   const canvas = document.createElement('canvas');
   document.body.append(canvas);
   canvas.getBoundingClientRect = () => ({
@@ -77,12 +77,28 @@ function makePicker(hits: StubHit[], vil?: VillageFix) {
   // 마을 레이캐스트 대상. **오버레이와 구별되는 값**이어야 스텁이 두 경로를 가른다.
   const VILLAGE_TARGETS: unknown[] = vil ? [{ tag: 'village-pool' }] : [];
 
-  const entries: OverlayEntry[] = [];
+  // ⚠ **오버레이 히트는 「등록된 항목」이어야 한다**(검수관 권고 P1 처방). `pickFace` 가
+  // `host.root.children` 전체가 아니라 **`entries()` 의 holder 허용목록**에 쏘도록 바뀌었다
+  // — 선택 링·기즈모가 광선을 가로채는 것을 구조적으로 막기 위해서다. 픽스처가 그 구조를
+  // 안 가지면 이 파일 전체가 「아무것도 안 맞는 세계」를 재게 된다(실제로 6건이 빨간불이
+  // 되어 드러났다). `uiHits` 는 **등록 안 된 채** 광선에만 걸리는 것 — UI 대역이다.
+  const entries = hits.map((h) => ({ holder: h.object })) as unknown as OverlayEntry[];
   const host = {
     THREE: makeThreeStub({
       // 편집은 광선을 두 곳에 쏜다. 목록으로 갈라야 «마을을 맞혔다» 가 오버레이 쪽에서
       // 먼저 걸리지 않는다(`three-stub.ts` 의 `hits` 주석이 같은 것을 적고 있다).
-      hits: (objs) => (objs[0] === VILLAGE_TARGETS[0] ? (vil?.hits ?? []) : hits),
+      // UI 히트를 **앞에** 붙인다 — 광선이 먼저 맞는 자리다. 허용목록이 제대로 걸러내면
+      // 이것들은 `pickFace` 에 안 들어오고, 안 걸러내면 `wallPose` 가 거절해 «벽에 놓아
+      // 주세요» 가 뜬다(뒤에 진짜 벽이 있는데도).
+      //
+      // ⚠ **준 목록으로 거른다 — 그것이 실물 `intersectObjects` 의 성질이다.** 첫 판본은
+      // `objs` 를 무시하고 전부 반환해서, 허용목록 처방이 들어간 뒤에도 UI 가 잡혔다.
+      // **대역이 실물 성질을 안 가지면 그 축의 검출력은 0이다.**
+      hits: (objs) => {
+        if (objs[0] === VILLAGE_TARGETS[0]) return vil?.hits ?? [];
+        const allowed = new Set(objs);
+        return [...uiHits, ...hits].filter((h) => allowed.has(h.object));
+      },
     }),
     camera: {} as never,
     canvas,
@@ -176,6 +192,31 @@ describe('★ pickFace — 배선이 월드 변환을 실제로 하는가', () =
   it('아무것도 안 맞으면 null', () => {
     expect(makePicker([]).pickFace()).toBeNull();
   });
+
+  it('★ 🔴 P1 — **선택 링·기즈모가 벽을 가로채지 않는다** (검수관 권고)', () => {
+    // 🔴 선택 링(`edit/pick.ts` 의 `marker`)과 기즈모 그룹이 **`host.root` 의 자식**이라
+    // `host.root.children` 에 쏘면 그대로 잡힌다. `faceOf` 는 「벽인가」를 판정하지 않고
+    // **법선을 계산할 수 있는 첫 면**을 그대로 내므로, 광선 앞에 UI 가 있으면 그 면이
+    // 이기고 `wallPose` 가 거절해 **뒤에 진짜 벽이 있는데도** «벽에 놓아 주세요» 가 뜬다.
+    //
+    // ⚠ **숨은 링도 해당한다** — three r171 은 레이캐스트에서 `visible` 을 안 본다
+    // (`layers` 만 본다). `marker.visible = false` 는 보호가 아니다.
+    //
+    // UI 대역은 **바닥 법선**(눕힌 링)이라 `wallPose` 가 거절하는 값이다. 그것이 이기면
+    // 아래 단언이 `null` 을 받는다.
+    const ring: StubHit = {
+      object: objWith(IDENTITY), distance: 1,
+      point: { x: 0, y: 0, z: 0 }, face: { normal: { x: 0, y: 1, z: 0 } },
+    };
+    const wall: StubHit = {
+      object: objWith(IDENTITY), distance: 9,
+      point: { x: 4, y: 1, z: 0 }, face: { normal: { x: 1, y: 0, z: 0 } },
+    };
+    const hit = makePicker([wall], undefined, [ring]).pickFace();
+    expect(hit, '★ UI 가 광선을 가로챘다 — 뒤의 벽을 못 본다').not.toBeNull();
+    expect(hit!.point.x, '★ 등록 안 된 객체가 벽으로 잡혔다').toBe(4);
+    expect(wallPose(hit!), '★ 잡힌 면이 벽이 아니다').not.toBeNull();
+  });
 });
 
 describe('★ 경계를 건넌다 — pickFace 결과가 wallPose 에 그대로 들어간다', () => {
@@ -239,6 +280,13 @@ describe('★ 비균등 스케일 — 정규행렬이 아니면 **반대로 답�
   it('★ **균등 스케일에서는 결과가 안 바뀐다** — 기존 오버레이 GLB 동작 보존', () => {
     // `(R·sI)⁻ᵀ = R·(1/s)I` 이고 정규화가 배율을 지운다. 이 단언이 없으면 「D1 동작을
     // 바꿨는가」가 검사 밖에 남는다.
+    //
+    // ⚠ **진술되지 않은 전제가 하나 있다**(검수관 권고 P3). 이 단언은 문자 그대로는
+    // **새 판본의 스케일 불변성**만 잰다. 「옛 동작(raw 3×3 곱) 보존」이 따라 나오는 것은
+    // `a` 의 행렬이 **순수 회전**이고 **직교행렬에서 `(R⁻¹)ᵀ = R`** 라 그 지점에서 신·구가
+    // 같아지기 때문이다. 실측으로도 그렇다 — 옛 판본을 되살린 뮤테이션에서 **이 테스트는
+    // 통과했다**(깨진 것은 비균등 3건). 누가 나중에 `a` 에 전단을 섞으면 이 축은 소리
+    // 없이 사라진다. 다른 테스트가 커버하므로 단언은 그대로 두고 전제만 적어 둔다.
     const a = toWorldNormal({ x: 0, y: 0, z: 1 }, rotY(0.7));
     const b = toWorldNormal({ x: 0, y: 0, z: 1 }, mul3x3(rotY(0.7), scale(3, 3, 3))!);
     expect(b!.x).toBeCloseTo(a!.x, 9);

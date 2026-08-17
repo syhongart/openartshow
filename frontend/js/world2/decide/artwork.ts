@@ -32,12 +32,22 @@ const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp'] as const;
 const EXT_ALT = IMAGE_EXT.join('|');
 
 /**
+ * 작품 이미지 경로 접두. **아래 `ART_RE`·`artSrcFor` 와 `decide/upload-plan.ts` 가 이
+ * 하나를 본다** (검수관 권고 P2).
+ *
+ * ⚠ 세 곳에 각각 적혀 있었다. 바로 위 `IMAGE_EXT` 가 **같은 diff 안에서** 확장자 목록에
+ * 대해 정확히 이 처방을 하면서 *"목록을 각자 적으면 한쪽만 넓혀도 아무도 모른다"* 라고
+ * 적었는데, 접두에는 안 썼다 — 새로 만드는 것만이라도 안 늘린다.
+ */
+export const ART_PREFIX = 'assets/art/';
+
+/**
  * 작품 이미지 경로. **`assets/art/` 아래 상대경로만.**
  *
  * 검사를 정규식 하나로 끝내지 않는 것은 계약(`decide/overlay.ts:169-183`)이 `isSafeSrc`
  * 에서 실측으로 배운 그대로다 — `.` 을 허용하는 문자군은 `..` 도 통과시킨다.
  */
-const ART_RE = new RegExp(`^assets/art/[A-Za-z0-9_\\-./]+\\.(${EXT_ALT})$`);
+const ART_RE = new RegExp(`^${ART_PREFIX}[A-Za-z0-9_\\-./]+\\.(${EXT_ALT})$`);
 
 /** 이름이 이미지처럼 보이는가. **대소문자를 안 가린다** — 아래 함수 주석이 그 이유다 */
 const IMAGE_NAME_RE = new RegExp(`\\.(${EXT_ALT})$`, 'i');
@@ -63,10 +73,40 @@ export function isSafeArtSrc(src: unknown): src is string {
   return ART_RE.test(src);
 }
 
-/** 저장할 경로를 만든다. 통과 못 하면 `null` — 호출부가 사유를 말한다 */
+/** 저장할 경로를 만든다. 통과 못 하면 `null` — 사유는 `artNameHelp` 가 낸다 */
 export function artSrcFor(fileName: string): string | null {
-  const src = `assets/art/${fileName}`;
+  const src = `${ART_PREFIX}${fileName}`;
   return isSafeArtSrc(src) ? src : null;
+}
+
+/**
+ * 왜 못 쓰는 이름인지 **화면 문구로**. 통과하면 빈 문자열 (검수관 블로커 B2).
+ *
+ * ── 🔴 왜 생겼나 — 화면이 이미 만족한 조건을 고치라고 말했다 ────────────────
+ * `looksLikeImage` 는 대소문자를 안 가리고(`IMAGE_NAME_RE` 에 `i`) `ART_RE` 는 소문자만
+ * 받는다. 그 틈에 **`IMG_1234.JPG` 가 작품 경로로 들어와 거절**되는데, 사유가 한 줄뿐이라
+ * 화면이 *"영문·숫자·_ - . 만 씁니다"* 라고 말했다 — **`IMG_1234.JPG` 는 이미 그렇다.**
+ * 작가는 고칠 것이 없는 것을 고치라는 말을 듣고 진짜 원인(확장자 대문자)은 못 듣는다.
+ *
+ * 그리고 `looksLikeImage` 주석이 *"거부 사유는 작품 쪽에서 낸다"* 로 **이미 해결됐다고
+ * 적고 있었다.** 분류를 넓히는 절반만 했고 사유를 가르는 절반을 안 한 것이다 —
+ * 주석이 코드보다 앞서 있는 것이 이 저장소가 가장 비싸게 배운 형태다.
+ *
+ * ⚠ **문구를 소비자가 짓지 않는다**(`decide/upload-plan.ts` 의 명제 ④와 같은 이유).
+ * 두 곳에 적으면 계약이 넓어져도 한쪽이 안 따라온다.
+ *
+ * ⚠⚠ **대문자 확장자를 아예 받을 것인가는 여기서 정하지 않는다.** 그것은 계약(`ART_RE`)을
+ * 넓히는 일이고, `IMG_####.JPG`·`DSC_####.JPG` 가 아이폰·캐논·니콘의 기본 출력이라
+ * **주 경로 판단**이다 — 감독 사안으로 남겼다(태스크 #94).
+ */
+export function artNameHelp(fileName: string): string {
+  if (artSrcFor(fileName) !== null) return '';
+  // 확장자만 소문자로 바꿔서 통과하면 **그것이 유일한 위반**이다. 둘 다 어긋난 이름
+  // (`내 그림.JPG`)은 확장자를 고쳐도 안 되므로 문자군 쪽 사유가 맞다.
+  const lowered = fileName.replace(/\.([^.]*)$/, (_m, e: string) => `.${e.toLowerCase()}`);
+  return artSrcFor(lowered) !== null
+    ? '확장자를 소문자로 바꿔 주세요 (예: .JPG → .jpg)'
+    : '영문·숫자·_ - . 만 씁니다';
 }
 
 /** 벽에 걸린 작품 하나. **계약(`Overlay.arts`)의 원소다** */

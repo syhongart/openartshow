@@ -212,6 +212,29 @@ describe('★ 거절 — 조용히 안 걸리는 것이 이 저장소에서 가�
     expect((await hang({ name: '../../etc/passwd.png' })).list.length).toBe(0);
   });
 
+  it('★ 🔴 G2 — 사유가 **실제 원인**을 말한다 (검수관 블로커 B2)', async () => {
+    // 🔴 `looksLikeImage` 는 대소문자를 안 가리고 `ART_RE` 는 소문자만 받는다. 그 틈에
+    // **`IMG_1234.JPG` 가 작품 경로로 들어와** 거절되는데, 사유가 한 줄뿐이라 화면이
+    // *"영문·숫자·_ - . 만 씁니다"* 라고 말했다 — **`IMG_1234.JPG` 는 이미 그렇다.**
+    // 작가는 고칠 것이 없는 것을 고치라는 말을 듣는다. `IMG_####.JPG`·`DSC_####.JPG` 는
+    // 아이폰·캐논·니콘의 기본 출력이라 **주 경로의 막다른 길**이었다.
+    //
+    // ⚠ **두 사유가 실제로 갈리는지**를 잰다. 한 문구가 둘 다 덮으면 그 축은 검출력 0이다
+    // — 「축을 태웠는가」가 아니라 「두 값이 실제로 갈리는가」다.
+    const caseOnly = await hang({ name: 'IMG_1234.JPG' });   // 확장자만 위반
+    const charsOnly = await hang({ name: '내그림.png' });      // 문자군만 위반
+
+    expect(caseOnly.list.length, '★ 대문자 확장자가 그냥 걸렸다 — 계약이 바뀌었나').toBe(0);
+    expect(charsOnly.list.length).toBe(0);
+
+    const a = caseOnly.said.at(-1)?.msg ?? '';
+    const b = charsOnly.said.at(-1)?.msg ?? '';
+    expect(a, '★ 확장자 대소문자가 원인인데 안 말한다').toContain('소문자');
+    expect(a, '★ 이미 만족한 조건을 고치라고 한다 — 그것이 B2 였다').not.toContain('영문·숫자');
+    expect(b, '★ 문자군이 원인인데 안 말한다').toContain('영문·숫자');
+    expect(a === b, '★ 두 사유가 같은 문구다 — 이 축은 검출력이 0이다').toBe(false);
+  });
+
   it('★ 캔버스 밖 드롭은 조용히 아무 일도 안 한다', async () => {
     const r = await hang({ castOk: false });
     expect(r.list.length).toBe(0);
