@@ -44,11 +44,13 @@ const CELL = 32;
 interface Counts {
   geo: number; mat: number; light: number; mesh: number;
   geoDisposed: number; matDisposed: number;
+  /** `mat` 의 **내역**(W8-7). 합만 보면 그림과 테두리가 뒤바뀌어도 통과한다 */
+  matStd: number; matBasic: number;
 }
 
 function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; sceneKids: ArtNode[] } {
   const counts: Counts = {
-    geo: 0, mat: 0, light: 0, mesh: 0, geoDisposed: 0, matDisposed: 0,
+    geo: 0, mat: 0, matStd: 0, matBasic: 0, light: 0, mesh: 0, geoDisposed: 0, matDisposed: 0,
   };
   const node = (): ArtNode => {
     const kids: ArtNode[] = [];
@@ -66,7 +68,25 @@ function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; scene
     Mesh: class { constructor() { counts.mesh++; return node(); } },
     BoxGeometry: class { constructor() { counts.geo++; } dispose() { counts.geoDisposed++; } },
     PlaneGeometry: class { constructor() { counts.geo++; } dispose() { counts.geoDisposed++; } },
-    MeshStandardMaterial: class { constructor() { counts.mat++; } dispose() { counts.matDisposed++; } },
+    // ⚠ **재질 종류를 갈라 센다**(W8-7). `counts.mat` 은 합이라 기존 검사가 그대로
+    // 성립하고, `matStd`/`matBasic` 이 「그림은 Basic · 테두리는 Standard」를 잰다 —
+    // 합만 보면 둘이 뒤바뀌어도 통과한다(픽스처가 두 값을 구별 못 하는 그 형태다).
+    MeshStandardMaterial: class {
+      toneMapped = true;
+      constructor(o?: Record<string, unknown>) {
+        counts.mat++; counts.matStd++;
+        if (o && 'toneMapped' in o) this.toneMapped = o.toneMapped as boolean;
+      }
+      dispose() { counts.matDisposed++; }
+    },
+    MeshBasicMaterial: class {
+      toneMapped = true;
+      constructor(o?: Record<string, unknown>) {
+        counts.mat++; counts.matBasic++;
+        if (o && 'toneMapped' in o) this.toneMapped = o.toneMapped as boolean;
+      }
+      dispose() { counts.matDisposed++; }
+    },
     SpotLight: class {
       intensity = 0; angle = 0; penumbra = 0; distance = 0; castShadow = false;
       target = node();
@@ -75,6 +95,22 @@ function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; scene
   } as unknown as ArtThreeNS;
   const scene = node();
   return { THREE, scene, counts, sceneKids: scene.children! };
+}
+
+/**
+ * 재질 생성 인자를 엿본다. ⚠ **두 재질을 다 가로챈다**(W8-7) — 그림은 `MeshBasicMaterial`,
+ * 테두리는 `MeshStandardMaterial` 이라 한쪽만 감싸면 **재질 종류가 바뀌는 순간 축이
+ * 조용히 빈다.** 여기서 재는 것은 「어느 재질인가」가 아니라 「생성 **인자**에 텍스처가
+ * 들어가는가」이므로 종류와 무관해야 한다.
+ */
+function spyMaterials(THREE: ArtThreeNS, seen: Record<string, unknown>[]): void {
+  const box = THREE as unknown as Record<string, unknown>;
+  for (const key of ['MeshStandardMaterial', 'MeshBasicMaterial']) {
+    const Base = box[key] as new (o: Record<string, unknown>) => unknown;
+    box[key] = class {
+      constructor(o: Record<string, unknown>) { seen.push(o); return new Base(o) as object; }
+    };
+  }
 }
 
 const art = (over: Partial<ArtworkItem> = {}): ArtworkItem => ({
@@ -620,10 +656,7 @@ describe('★ 텍스처는 재질을 만들기 **전에** 받는다 (브라우�
     // 꽂으면 `needsUpdate` 없이는 반영되지 않는다. 순서로 해소했다(셰이더 재컴파일 0).
     const { THREE, scene } = makeThree();
     const seen: Record<string, unknown>[] = [];
-    const Base = (THREE as unknown as { MeshStandardMaterial: new (o: Record<string, unknown>) => unknown })
-      .MeshStandardMaterial;
-    (THREE as unknown as Record<string, unknown>).MeshStandardMaterial =
-      class { constructor(o: Record<string, unknown>) { seen.push(o); return new Base(o) as object; } };
+    spyMaterials(THREE, seen);
 
     const s = createArtworkScene({
       THREE, scene, cellX: CELL, cellZ: CELL,
@@ -637,10 +670,7 @@ describe('★ 텍스처는 재질을 만들기 **전에** 받는다 (브라우�
   it('★ 텍스처가 없으면 `map` 키 자체를 안 넣는다 — `undefined` 를 넣으면 경고가 난다', async () => {
     const { THREE, scene } = makeThree();
     const seen: Record<string, unknown>[] = [];
-    const Base = (THREE as unknown as { MeshStandardMaterial: new (o: Record<string, unknown>) => unknown })
-      .MeshStandardMaterial;
-    (THREE as unknown as Record<string, unknown>).MeshStandardMaterial =
-      class { constructor(o: Record<string, unknown>) { seen.push(o); return new Base(o) as object; } };
+    spyMaterials(THREE, seen);
 
     const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
     await s.place([art()]);

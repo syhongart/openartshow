@@ -30,6 +30,7 @@ import {
 import {
   artLightPoolSize, assignArtLights, spotFor, ART_LIGHT_PER_PARCEL,
 } from '../decide/art-light.js';
+import { artMatSpec, readArtEnv } from '../decide/art-material.js';
 
 /** 이 파일이 쓰는 three 표면. **필요한 것만** — 넓히면 스텁이 실물과 멀어진다 */
 export interface ArtThreeNS {
@@ -38,6 +39,9 @@ export interface ArtThreeNS {
   BoxGeometry: new (w: number, h: number, d: number) => unknown;
   PlaneGeometry: new (w: number, h: number) => unknown;
   MeshStandardMaterial: new (o: Record<string, unknown>) => ArtMaterial;
+  // ⚠ **그림 평면 전용이다**(W8-7). 테두리는 계속 Standard 를 쓴다 — 근거는
+  // `decide/art-material.ts` 헤더 한 곳이다.
+  MeshBasicMaterial: new (o: Record<string, unknown>) => ArtMaterial;
   SpotLight: new (color?: number, intensity?: number) => ArtLight;
   Object3D: new () => ArtNode;
 }
@@ -51,7 +55,7 @@ export interface ArtNode {
   children?: ArtNode[];
 }
 
-export interface ArtMaterial { map?: unknown; dispose?(): void }
+export interface ArtMaterial { map?: unknown; toneMapped?: boolean; dispose?(): void }
 
 export interface ArtLight extends ArtNode {
   intensity: number;
@@ -73,6 +77,11 @@ export const LIGHT_COLOR = 0xfff2e0;
 
 export interface ArtworkSceneDeps {
   readonly THREE: ArtThreeNS;
+  /**
+   * 그림이 환경 영향을 얼마나 받는가(W8-7). **생략하면 URL 노브를 읽는다** — 이
+   * 저장소의 확장 규약(「생략 = 기존 동작」)이고, 테스트는 값을 넣어 세 분기를 다 돈다.
+   */
+  readonly artEnv?: number;
   readonly scene: ArtNode;
   /** 파셀 격자. 조명 배정이 파셀 단위라 필요하다 */
   readonly cellX: number;
@@ -169,6 +178,10 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   }
 
   /** 액자 테두리 재질 — **전 작품이 공유한다**(재질 수를 상수로) */
+  // 노브는 **세션당 한 번만** 읽는다 — `place()` 는 작품마다 도는 자리라 여기서
+  // URL 을 파싱하면 걸 때마다 반복된다. 세션 중에 값이 바뀔 일도 없다(새로고침해야 한다).
+  const artSpec = artMatSpec(deps.artEnv ?? readArtEnv());
+
   const frameMat = new THREE.MeshStandardMaterial({
     color: 0x1a1a1a, roughness: 0.45, metalness: 0.1,
   });
@@ -339,8 +352,28 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       // 아래로 계속 가면 그 지오로 만든 액자를 `root.add` 해 **유령**이 선다.
       if (disposed || gen !== generation) return;
       if (deps.loadTexture && !tex) texFailed++;
-      const mat = new THREE.MeshStandardMaterial({
-        ...(tex ? { map: tex } : {}), roughness: 0.85, metalness: 0,
+      // ── 🔴 그림은 **주변 환경을 안 받는다** (W8-7, 감독 지시 2026-08-18) ──
+      // *"그늘에 있으면 사진이 어두워. 사진은 주변환경에 영향을 안받았으면"*
+      //
+      // 예전에는 여기가 `MeshStandardMaterial` 이었고, 그래서 그늘진 벽에 건 사진이
+      // 실제로 어두워졌다. 팀장 판정으로 **조명도 톤매핑도 안 받게** 바꿨다 —
+      // 「주변환경」에 시간대 노출이 포함된다는 것이 그 판정의 요점이다.
+      //
+      // ⚠ **판정은 여기 없다.** 어느 재질인지는 `decide/art-material.ts` 가 정하고
+      // (노브로 세 상태를 연다 — 감독이 밤 화면을 보고 고른다), 여기는 집행뿐이다.
+      // (나) `emissiveMap` 을 왜 안 썼는지도 그 파일 헤더 한 곳이다.
+      //
+      // ⚠⚠ **테두리(`frameMat`)는 Standard 그대로다** — 감독이 "사진은" 이라고
+      // 특정했고, 테두리까지 발광시키면 액자가 공간에서 붕 뜬다.
+      const MatCtor = artSpec.kind === 'basic'
+        ? THREE.MeshBasicMaterial
+        : THREE.MeshStandardMaterial;
+      const mat = new MatCtor({
+        ...(tex ? { map: tex } : {}),
+        // `roughness`/`metalness` 는 Basic 이 무시한다 — 넘겨도 무해하고, 분기를 하나
+        // 줄이는 편이 «어느 쪽에 무엇이 붙는지» 를 읽기 쉽게 한다.
+        roughness: 0.85, metalness: 0,
+        toneMapped: artSpec.toneMapped,
       });
       artMats.push(mat);
       const planeGeo = new THREE.PlaneGeometry(w, h);
