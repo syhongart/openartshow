@@ -4,28 +4,40 @@
 //
 // ── 감독 지시 (2026-08-18) ────────────────────────────────────────────────
 // *"그늘에 있으면 사진이 어두워. **사진은 주변환경에 영향을 안받았으면**"*
+// 같은 날 두 번째: *"작품에는 **재질감 전혀없이.** 그냥 **뷰어처럼** 밝기가 보였으면해.
+// 그림자 영역에서도 작품은 그대로. 밝은 곳에서도 그대로."*
 //
-// ── ⚠ 이 파일이 **못 재는 것** — 가장 중요한 것이 여기 있다 ────────────────
+// ── ⚠ 이 파일이 **못 재는 것** ────────────────────────────────────────────
 // **화면이 실제로 어떻게 보이는지는 여기서 못 잰다.** 여기서 재는 것은 「어떤 재질이
 // 어떤 인자로 만들어지는가」이고, 그것이 실기기에서 원하는 그림으로 이어지는지는
-// **감독 화면이 유일한 판정**이다(팀장 조건 1·2).
+// **감독 화면이 유일한 판정**이다.
 //
-// 특히 `toneMapped: false` 가 **WebGPU 경로에서 먹는지**는 이 저장소가 원리적으로 못
-// 잰다 — 헤드리스는 swiftshader(WebGL)다. 이 파일이 초록인 것을 「감독 요구가 충족됐다」로
-// 적지 않는다.
+// ⚠⚠ 이 자리에 원래 *"`toneMapped:false` 가 WebGPU 에서 먹는지는 **이 저장소가
+// 원리적으로 못 잰다**"* 라고 적혀 있었고 **거짓이었다** — 검수관이 `grep -c` 두 번으로
+// 쟀다(`three.webgpu.js` 의 `toneMapped` 참조 **0건** / WebGL 빌드 4건). 실행 확인과
+// **지원 여부**는 다른 일이고, 뒤쪽은 빌드를 열면 알 수 있었다. 결론과 함의는
+// `decide/art-material.ts` 헤더의 「백엔드」 절 한 곳이다.
+//
+// **「원리적으로 못 잰다」는 확인을 생략하는 가장 편한 문장이다** — 쓰기 전에 정말 못
+// 재는지를 먼저 재야 한다. 이 파일이 초록인 것도 「감독 요구가 충족됐다」가 아니다.
 
 import { describe, it, expect } from 'vitest';
 import {
   artMatSpec, readArtEnv, ART_ENV_DEFAULT, ART_ENV_MAX, ART_ENV_KNOB,
 } from '../frontend/js/world2/decide/art-material.js';
-import { createArtworkScene, type ArtThreeNS, type ArtNode } from '../frontend/js/world2/systems/artwork-scene.js';
+import {
+  createArtworkScene, textureLoaderFor, type ArtThreeNS, type ArtNode,
+} from '../frontend/js/world2/systems/artwork-scene.js';
 import type { ArtworkItem } from '../frontend/js/world2/decide/artwork.js';
 
 describe('★ 노브 → 재질 명세 (순수 판정)', () => {
-  it('★ 🔴 기본값은 **조명도 톤매핑도 안 받는다** — 감독 지시의 직접 이행', () => {
+  it('★ 🔴 기본값은 **조명·톤매핑·안개 셋 다 안 받는다** — 감독 지시의 직접 이행', () => {
     const s = artMatSpec(ART_ENV_DEFAULT);
     expect(s.kind, '★ 기본값이 조명을 받는다 — 그늘에서 어두워진다').toBe('basic');
     expect(s.toneMapped, '★ 톤매핑을 받는다 — 밤에 같은 불만이 재발한다').toBe(false);
+    // ⚠ 안개가 셋째 축이다(팀장 판정 (B)). `MeshBasicMaterial.fog` 는 **기본이 켜짐**이라
+    // 조명·톤매핑을 다 떼어내고도 안개는 그대로 받고 있었다 — 밤 안개색은 거의 검정이다.
+    expect(s.fog, '★ 안개를 받는다 — 먼 작품이 안개색으로 물든다').toBe(false);
   });
 
   it('★ 세 값이 **실제로 갈린다** — 노브가 장식이 아니다', () => {
@@ -35,9 +47,9 @@ describe('★ 노브 → 재질 명세 (순수 판정)', () => {
     expect(new Set(seen).size, '★ 두 값이 같은 명세를 낸다 — 비교가 성립하지 않는다').toBe(3);
   });
 
-  it('★ 1 은 조명만 무시(톤매핑은 받음), 2 는 예전 동작(대조군)', () => {
-    expect(artMatSpec(1)).toEqual({ kind: 'basic', toneMapped: true });
-    expect(artMatSpec(2)).toEqual({ kind: 'standard', toneMapped: true });
+  it('★ 1 은 조명만 무시(톤매핑·안개는 받음), 2 는 예전 동작(대조군)', () => {
+    expect(artMatSpec(1)).toEqual({ kind: 'basic', toneMapped: true, fog: true });
+    expect(artMatSpec(2)).toEqual({ kind: 'standard', toneMapped: true, fog: true });
   });
 
   it('★ 🔴 범위 밖은 **기본값**으로 떨어진다 — 오타가 예전 동작을 되살리지 않게', () => {
@@ -104,7 +116,7 @@ const artMatOf = (made: { kind: string; o: Record<string, unknown> }[]) =>
   made.find((m) => 'map' in m.o);
 
 describe('★ 집행 — 판정이 실제로 재질에 닿는가', () => {
-  it('★ 🔴 기본 세션의 **그림**은 Basic + toneMapped:false', async () => {
+  it('★ 🔴 기본 세션의 **그림**은 Basic + toneMapped:false + fog:false', async () => {
     const { THREE, scene, made } = makeThree();
     const s = createArtworkScene({
       THREE, scene, cellX: CELL, cellZ: CELL, loadTexture: async () => ({ t: 1 }),
@@ -114,6 +126,36 @@ describe('★ 집행 — 판정이 실제로 재질에 닿는가', () => {
     expect(m, '★ 텍스처가 든 재질이 없다 — 그림이 안 만들어졌다').toBeDefined();
     expect(m!.kind, '★ 그림이 조명을 받는 재질이다').toBe('basic');
     expect(m!.o.toneMapped, '★ 그림이 톤매핑을 받는다').toBe(false);
+    expect(m!.o.fog, '★ 그림이 안개를 받는다 — 먼 작품이 안개색으로 물든다').toBe(false);
+  });
+
+  it('★ 🔴 Basic 에는 **PBR 인자를 안 넘긴다** — three 가 작품마다 경고 2줄을 낸다', async () => {
+    // 검수관 블로커 B1(2026-08-18). 첫 판본은 두 재질 모두에 넘기며 *"Basic 이 무시한다 —
+    // 넘겨도 무해하다"* 라고 적었고 **뒷 절이 거짓이었다**:
+    //     THREE.Material: 'roughness' is not a property of THREE.MeshBasicMaterial.
+    // 작품 N개면 2N 건인데 스모크 `[4]` 는 `console.error` 만 보므로 **아무 게이트도
+    // 이것을 안 잡는다.** 감독 문언(*"재질감 전혀없이"*)과도 맞는 쪽이 안 넘기는 것이다.
+    const { THREE, scene, made } = makeThree();
+    const s = createArtworkScene({
+      THREE, scene, cellX: CELL, cellZ: CELL, loadTexture: async () => ({ t: 1 }),
+    });
+    await s.place([art()]);
+    const m = artMatOf(made);
+    expect(m!.o, '★ Basic 에 roughness 를 넘긴다 — three 경고').not.toHaveProperty('roughness');
+    expect(m!.o, '★ Basic 에 metalness 를 넘긴다 — three 경고').not.toHaveProperty('metalness');
+  });
+
+  it('★ 대조군(2)에는 PBR 인자가 **그대로 간다** — 예전 룩이 보존된다', async () => {
+    // 위 검사만 있으면 «두 값을 통째로 지운다» 는 뮤테이션이 안 잡힌다. 대조군이
+    // 예전 동작과 같아야 비교가 성립하므로 그쪽은 넘어가는 것을 함께 못 박는다.
+    const { THREE, scene, made } = makeThree();
+    const s = createArtworkScene({
+      THREE, scene, cellX: CELL, cellZ: CELL, artEnv: 2, loadTexture: async () => ({ t: 1 }),
+    });
+    await s.place([art()]);
+    const m = artMatOf(made);
+    expect(m!.o.roughness, '★ 대조군의 룩이 바뀌었다').toBe(0.85);
+    expect(m!.o.metalness, '★ 대조군의 룩이 바뀌었다').toBe(0);
   });
 
   it('★ 🔴 **테두리는 Standard 그대로다** — 감독이 "사진은" 이라고 특정했다', async () => {
@@ -141,7 +183,7 @@ describe('★ 집행 — 판정이 실제로 재질에 닿는가', () => {
     expect(m!.o.toneMapped).toBe(true);
   });
 
-  it('★ 노브 1 은 Basic 이되 톤매핑을 받는다 — (가)와 (다)가 갈린다', async () => {
+  it('★ 노브 1 은 Basic 이되 톤매핑·안개를 받는다 — (가)와 (다)가 갈린다', async () => {
     const { THREE, scene, made } = makeThree();
     const s = createArtworkScene({
       THREE, scene, cellX: CELL, cellZ: CELL, artEnv: 1, loadTexture: async () => ({ t: 1 }),
@@ -150,6 +192,7 @@ describe('★ 집행 — 판정이 실제로 재질에 닿는가', () => {
     const m = artMatOf(made);
     expect(m!.kind).toBe('basic');
     expect(m!.o.toneMapped, '★ (가)와 (다)가 구별되지 않는다').toBe(true);
+    expect(m!.o.fog, '★ (가)가 안개까지 껐다 — 대조군이 아니게 된다').toBe(true);
   });
 
   it('★ 텍스처를 못 받아도 재질은 선다 — 그림 하나 때문에 액자가 사라지지 않게', async () => {
@@ -159,5 +202,61 @@ describe('★ 집행 — 판정이 실제로 재질에 닿는가', () => {
     // `loadTexture` 가 없으면 `map` 키 자체를 안 넣는다(빈 map 은 three 경고를 낸다).
     expect(made.some((m) => m.kind === 'basic'), '★ 그림 재질이 아예 안 만들어졌다').toBe(true);
     expect(made.every((m) => !('map' in m.o)), '★ 빈 map 키가 들어갔다').toBe(true);
+  });
+});
+
+// ── 텍스처 색공간 ───────────────────────────────────────────────────────────
+//
+// 감독 지시 2026-08-18 두 번째: *"그냥 **뷰어처럼** 밝기가 보였으면해"*.
+//
+// 재질을 아무리 환경에서 떼어내도 **텍스처를 잘못 해석하면 원본이 아니다.** three r152+
+// 의 `TextureLoader` 는 `colorSpace` 를 설정하지 않는데(기본 = 선형 취급) 사진 파일은
+// sRGB 인코딩이라, 표시를 안 하면 셰이더가 값을 선형으로 잘못 읽고 출력에서 변환이 한 번
+// 더 걸려 **원본보다 밝고 색이 바랜다.** 이 저장소의 다른 색 텍스처는 전부 표시를 주는데
+// (`horizon`·`garden`·`tree`·`road`·`shadow`·`surface-paint`) **작품만 빠져 있었다.**
+describe('★ 작품 텍스처의 색공간', () => {
+  /** three 대역. `colorSpace` 를 **안 건드린 상태**로 시작한다(three 기본값 재현) */
+  function fakeThree(loaded: Record<string, unknown>) {
+    return {
+      SRGBColorSpace: 'srgb',
+      TextureLoader: class {
+        async loadAsync(_u: string) { return loaded; }
+      },
+    };
+  }
+
+  it('★ 🔴 받은 텍스처에 **sRGB 를 표시한다** — 안 하면 원본보다 밝게 나온다', async () => {
+    const tex: Record<string, unknown> = {};
+    const load = textureLoaderFor(fakeThree(tex), (s) => s);
+    expect(load, '★ 로더가 안 만들어졌다').toBeTypeOf('function');
+    const got = await load!('assets/art/a.png');
+    expect(got, '★ 텍스처를 안 돌려줬다').toBe(tex);
+    expect(tex.colorSpace, '★ 색공간을 안 표시한다 — 「뷰어처럼」이 성립하지 않는다')
+      .toBe('srgb');
+  });
+
+  it('★ 값을 **직접 적지 않고** three 가 가진 상수를 얹는다 — 값 미러링 회피', async () => {
+    // three 가 상수를 바꾸면 저절로 따라와야 한다. 문자열 `'srgb'` 를 우리가 적어 두면
+    // 그날 조용히 어긋난다 — 이 저장소가 색·수치 미러링으로 세 번 데인 형태다.
+    const tex: Record<string, unknown> = {};
+    const ns = fakeThree(tex);
+    (ns as { SRGBColorSpace: unknown }).SRGBColorSpace = 'SENTINEL-없는값';
+    const load = textureLoaderFor(ns, (s) => s);
+    await load!('a.png');
+    expect(tex.colorSpace, '★ three 상수가 아니라 우리가 적은 값을 쓴다')
+      .toBe('SENTINEL-없는값');
+  });
+
+  it('로드가 실패하면 null 이고, 그때 색공간을 만지지 않는다', async () => {
+    const ns = {
+      SRGBColorSpace: 'srgb',
+      TextureLoader: class { async loadAsync() { throw new Error('404'); } },
+    };
+    const load = textureLoaderFor(ns, (s) => s);
+    await expect(load!('none.png')).resolves.toBeNull();
+  });
+
+  it('`TextureLoader` 가 없는 대역이면 로더 자체를 안 만든다(undefined)', () => {
+    expect(textureLoaderFor({ SRGBColorSpace: 'srgb' }, (s) => s)).toBeUndefined();
   });
 });

@@ -69,8 +69,11 @@ function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; scene
     BoxGeometry: class { constructor() { counts.geo++; } dispose() { counts.geoDisposed++; } },
     PlaneGeometry: class { constructor() { counts.geo++; } dispose() { counts.geoDisposed++; } },
     // ⚠ **재질 종류를 갈라 센다**(W8-7). `counts.mat` 은 합이라 기존 검사가 그대로
-    // 성립하고, `matStd`/`matBasic` 이 「그림은 Basic · 테두리는 Standard」를 잰다 —
-    // 합만 보면 둘이 뒤바뀌어도 통과한다(픽스처가 두 값을 구별 못 하는 그 형태다).
+    // 성립하고, `matStd`/`matBasic` 을 읽는 단언은 **아래 「내역이 갈린다」 검사**에
+    // 있다 — 합만 보면 그림과 테두리가 뒤바뀌어도 통과한다.
+    //
+    // ⚠⚠ 첫 판본은 여기에 *"…를 잰다"* 라고 적어 놓고 **읽는 `expect` 를 안 붙였다**
+    // (검수관 B2). 세는 것과 재는 것은 다른 일이다.
     MeshStandardMaterial: class {
       toneMapped = true;
       constructor(o?: Record<string, unknown>) {
@@ -531,6 +534,23 @@ describe('★ 재질·지오는 작품 수에 비례하되 **테두리는 공유
     await s.place([art(), art(), art()]);
     // 작품 평면 재질만 는다(텍스처가 개별이라 불가피).
     expect(counts.mat - base, '★ 테두리 재질이 작품마다 생긴다').toBe(3);
+  });
+
+  it('★ 🔴 **내역이 갈린다** — 테두리 1(Standard) · 그림 3(Basic)', async () => {
+    // ⚠ 이 검사가 없는 동안 `matStd`/`matBasic` 은 **검출력 0** 이었다(검수관 블로커 B2,
+    // 2026-08-18). 필드를 만들며 주석에 *"「그림은 Basic · 테두리는 Standard」를 잰다"*
+    // 라고 적었는데 **그 둘을 읽는 `expect` 가 0건**이었다 — 실측으로 확인됐다:
+    // `counts.matBasic++` 를 지워도, `counts.matStd++` 를 지워도 **0 failed**.
+    //
+    // 「축을 만들려던 자리에서 축이 비는」 형태다. 합(`counts.mat`)만 보는 위 검사는
+    // **그림과 테두리가 통째로 뒤바뀌어도 통과한다** — 그것을 막으려고 만든 필드였다.
+    const { THREE, scene, counts } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place([art(), art(), art()]);
+    expect(counts.matStd, '★ Standard 가 테두리 1개가 아니다 — 그림까지 Standard 다')
+      .toBe(1);
+    expect(counts.matBasic, '★ Basic 이 작품 수만큼이 아니다 — 그림이 Basic 이 아니다')
+      .toBe(3);
   });
 
   it('액자 하나당 메시 둘 — 테두리 + 작품 평면', async () => {
