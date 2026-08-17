@@ -75,6 +75,15 @@ export interface Panel {
   refresh(): void;
   /** 모드가 바뀌었을 때 겉모습(펼침·토글 라벨·강조)을 맞춘다 */
   setMode(editing: boolean): void;
+  /**
+   * 조준 중에는 패널을 **접는다** (W8-6). 편집 모드는 그대로다.
+   *
+   * ⚠ **`setMode(false)` 로 접으면 안 된다.** 그것은 `dataset.open` 과 `dataset.mode` 를
+   * **함께** 바꾸므로 배지와 아웃라이너까지 사라지고, 토글 라벨이 「✏️ 편집」으로 돌아가
+   * 화면이 «주행 모드로 나갔다» 고 거짓말한다. 그래서 세 번째 축(`data-aim`)을 쓴다 —
+   * 접는 판정은 CSS 한 곳이 갖는다(`css.ts` 의 규약).
+   */
+  setAiming(on: boolean): void;
   /** 모드 전환 안내는 평범한 note 보다 크게 말한다 */
   sayLead(msg: string): void;
   el(tag: string, cls?: string, text?: string): HTMLElement;
@@ -183,8 +192,9 @@ export function createPanel(
   );
   rowOut.append(button('JSON 내보내기', () => { handlers.exportNow(); }));
   // ── 사진 걸기 (W8-5 · 감독 카드 「폰에서 넣기 먼저」 2026-08-17) ────────────
-  // 드롭과 **같은 일**을 하는 두 번째 문이다. 좌표가 없으므로 화면 한가운데를 쏜다
-  // (`artwork-mode.pickFile` → `picker.castCenter`). 문이 없으면 이 행 자체가 안 생긴다.
+  // 드롭과 **같은 일**을 하는 두 번째 문이다. ⚠ W8-6 부터 이 버튼은 바로 걸지 않고
+  // **조준 화면**(`edit/aim-mode.ts`)을 연다 — 폰에서 화면 한가운데가 이 패널에 덮여
+  // 조준이 성립하지 않았기 때문이다. 문이 없으면 이 행 자체가 안 생긴다.
   const rowPhoto = el('div', 'row photo');
   if (handlers.hangPhoto) {
     const hang = handlers.hangPhoto;
@@ -334,6 +344,10 @@ export function createPanel(
       outliner.root.dataset.mode = editing ? 'edit' : 'drive';
       badge.setMode(editing);
       toggle.textContent = editing ? '✕ 편집 끝' : '✏️ 편집';
+    },
+    setAiming(on: boolean): void {
+      // dataset 하나만 건드린다 — 무엇을 감출지는 CSS 가 정한다.
+      panel.dataset.aim = on ? '1' : '0';
     },
     sayLead(msg: string): void {
       status.textContent = msg;

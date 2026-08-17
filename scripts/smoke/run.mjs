@@ -799,6 +799,24 @@ async function runPerfGates(origin, browser) {
     record(11.5, '표면 재질 편집 세션', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
   }
 
+  // ── [11.6] 조준 화면 (W8-6 · 태스크 #100) ─────────────────────────────────
+  // 성능 게이트가 아니다(재캐스트 **횟수**라 이산 — `[11.5]` 와 같은 부류). 근거·한계·
+  // 거짓 FAIL 위험은 `measure-aim.mjs` 헤더 한 곳이다.
+  try {
+    const { runAim } = await import('./measure-aim.mjs');
+    const r = await runAim({ browser, origin, basePath: BASE_PATH, log: quiet });
+    record(
+      11.6, '조준 화면(편집 세션)', r.pass ? 'PASS' : 'FAIL',
+      r.pass
+        ? `정지 ${r.idle.before}→${r.idle.after} 재캐스트 0 · 벽 도달 ✓ · 비히트 확정 차단 ✓`
+          + ` (패널 접힘 ${r.ui.folded} · 중앙이 패널 안 ${r.ui.centerInPanel})`
+        : `${r.reason} → \`npm run measure:aim\` 로 단독 실행해 본다`,
+    );
+  } catch (e) {
+    // 못 잰 것은 통과가 아니다 — `[7][8][11][11.5]` 와 같은 규약.
+    record(11.6, '조준 화면(편집 세션)', 'FAIL', `측정 실패: ${(e.message || String(e)).slice(0, 140)}`);
+  }
+
   // ── [12] 수면 구현 (감독 지시 2026-08-01 · 팀장 조건 3) ─────────────────────
   //
   // `[11]` 과 같은 성격이다 — **성능 게이트가 아니라 이산 판정**이라 `perfStatus` 를
@@ -1017,6 +1035,7 @@ async function main() {
       record(11, '물빠짐 상호작용', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       // `[11.5]` 도 같은 이유다 — 성능 게이트가 아닌데 `runPerfGates()` 안에 배선돼 있다.
       record(11.5, '표면 재질 편집 세션', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
+      record(11.6, '조준 화면(편집 세션)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(12, '수면 구현(?water=tsl)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       record(13, '플레이어 충돌(라이브)', 'INFO', '실행 안 함 — SMOKE_PERF_GATES=off');
       // `[14]` 도 같은 이유로 적는다(검수관 권고 2026-08-10). ⚠ **바로 위 주석이

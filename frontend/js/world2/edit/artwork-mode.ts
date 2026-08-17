@@ -78,12 +78,40 @@ export interface ArtworkMode {
   /**
    * 고른 이미지를 **화면 한가운데** 벽에 건다 (W8-5 · 폰 경로). 위와 같은 규약이다.
    *
+   * ⚠⚠ **지금 프로덕션 소비자가 0이다**(W8-6, 검수관 권고 1). 「사진 걸기」 버튼은 이제
+   * 조준 화면(`edit/aim-mode.ts`)을 열고, 그쪽이 `judge` → 조준 → `commit` 을 직접 탄다.
+   * 이 함수는 **테스트에서만** 불린다 — 「좌표 없이 화면 중앙에 건다」는 축을 그대로
+   * 유지해 두면 조준 화면이 그 위에 얹힌 것임을 다음 사람이 코드로 확인할 수 있다.
+   *
+   * ⚠ **다시 배선하려거든 문구부터 보라.** 이 경로의 거절 문구(`MISS_CENTER`)는 조준
+   * 화면이 있다는 전제로 고쳐졌다. 조준 없이 되살리면 그 안내가 다시 거짓이 된다 —
+   * 팀장 조건 2 가 정확히 그것을 막으려고 있었다. 제거 여부는 태스크로 남겼다.
+   *
    * 좌표가 없는 진입점이다 — `<input type="file">` 의 `change` 에는 좌표가 없고, 모바일
    * 브라우저는 파일 드래그드롭을 지원하지 않는다. **둘의 차이는 광선을 어디로 쏘는가
    * 하나뿐**이고 나머지(이름 판정·blob 수명·종횡비·목록 갱신·문구)는 같은 몸을 탄다.
    */
   pickFile(file: File): Promise<void>;
+  /**
+   * **이름만** 판정한다 (W8-6). 조준 화면이 **시작하기 전에** 쓴다.
+   *
+   * ⚠ 왜 이것이 따로 필요한가 — 조준 화면을 띄운 **뒤에** 이름으로 거절하면 «벽은 맞았는데
+   * 왜 안 걸리지» 가 된다. `hang()` 이 이름을 가장 먼저 보는 것과 **같은 이유**이고,
+   * 그 순서 규약을 조준 경로에서도 지키려면 판정을 이 시점에 부를 수 있어야 한다.
+   */
+  judge(file: File): { readonly ok: true; readonly src: string }
+    | { readonly ok: false; readonly msg: string };
+  /**
+   * 자세가 **정해진 뒤** 실제로 건다 (W8-6). 조준 화면의 「여기 걸기」가 부른다.
+   *
+   * ⚠ `judge` 를 통과한 `src` 와 `wallPose()` 가 낸 `pose` 를 받는다 — 여기서 다시
+   * 판정하지 않는다. 두 번 판정하면 «조준선은 초록인데 안 걸린다» 가 성립할 자리가 생긴다.
+   */
+  commit(file: File, src: string, pose: WallPose): Promise<void>;
 }
+
+/** `wallPose()` 가 내는 것. 액자 중심 + 벽 바깥을 향하는 yaw */
+type WallPose = NonNullable<ReturnType<typeof wallPose>>;
 
 /**
  * 벽을 못 찾았을 때의 문구. **진입점마다 다르다** — 사용자가 할 일이 다르기 때문이다.
@@ -91,7 +119,11 @@ export interface ArtworkMode {
  * 폰 사용자가 «어디에 놓으라는 거지» 를 듣는다(놓을 것이 없다 — 버튼을 눌렀을 뿐이다).
  */
 const MISS_DROP = '벽에 놓아 주세요 — 바닥·지붕·하늘에는 걸 수 없습니다.';
-const MISS_CENTER = '벽을 화면 한가운데 두고 다시 눌러 주세요 — 바닥·지붕·하늘에는 걸 수 없습니다.';
+// ⚠ **이 문구는 W8-6 에서 고쳤다**(검수관 권고 1 · 팀장 조건 2). 예전에는 *"벽을 화면
+// 한가운데 두고 다시 눌러 주세요"* 였는데, 폰에서는 **화면 한가운데가 편집 패널에 덮여
+// 있어서 사용자가 그 지시를 따를 수가 없었다** — 팀장이 «거짓 안내» 라고 부른 것이다.
+// 지금은 조준 화면이 그 자리를 대신하므로(`edit/aim-mode.ts`) 문구도 그리로 안내한다.
+const MISS_CENTER = '조준 화면에서 벽을 겨눠 확정해 주세요 — 바닥·지붕·하늘에는 걸 수 없습니다.';
 
 /**
  * 이미지의 종횡비(가로/세로). 못 재면 `null` 이고 호출부가 기본값으로 간다.
@@ -122,12 +154,46 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
   const measure = deps.measure ?? measureAspect;
 
   /**
-   * 두 진입점의 **공통 몸통** (W8-5). 좌표에 묶인 것은 `cast` 인자 하나뿐이다.
+   * 이름 판정 — **세 진입점이 전부 이것을 통과해야 한다**(드롭·버튼·조준).
    *
-   * ⚠ **둘을 각자 쓰지 않는 것이 요점이다.** 이 함수 안에는 순서 규약이 넷 들어 있다
-   * (이름 먼저 · 거절 뒤에 blob · `ar` 을 실제로 읽는다 · 「걸었다」가 아니라 「보낼
-   * 준비가 됐다」). 진입점마다 복제하면 **한쪽만 고쳐지고**, 그 어긋남은 «폰에서만
-   * 이상하다» 로 드러나 원인을 짚기 가장 어려운 형태가 된다.
+   * ⚠ **사유를 소비자가 짓지 않는다** — `artNameHelp` 가 원인별로 낸다(검수관 블로커 B2).
+   * 한 줄로 뭉갰을 때 `IMG_1234.JPG` 가 «영문·숫자·_ - . 만 씁니다» 라는 **이미 만족한
+   * 조건**을 들었다. 문구를 소비자가 지으면 계약이 넓어져도 안 따라온다.
+   */
+  function judge(file: File): { ok: true; src: string } | { ok: false; msg: string } {
+    const src = artSrcFor(file.name);
+    return src
+      ? { ok: true, src }
+      : { ok: false, msg: `«${file.name}» 은 쓸 수 없는 이름입니다 — ${artNameHelp(file.name)}` };
+  }
+
+  /**
+   * 자세가 정해진 뒤 실제로 거는 부분. **여기부터 되돌릴 것이 생긴다.**
+   *
+   * ⚠ 이 몸통을 진입점마다 복제하지 않는 것이 요점이다 — 순서 규약 셋이 여기 들어 있다
+   * (거절이 다 끝난 뒤 blob · `ar` 을 실제로 읽는다 · 「걸었다」가 아니라 「보낼 준비가 됐다」).
+   */
+  async function commit(file: File, src: string, pose: WallPose): Promise<void> {
+    // **거절이 다 끝난 뒤에** 임시 주소를 만든다 — 앞에서 만들면 거절할 때마다 회수
+    // 대상이 하나씩 쌓인다.
+    const url = URL.createObjectURL(file);
+    deps.onBlobUrl(url);
+    const ar = await measure(url);
+    // ⚠ **`ar` 을 실제로 읽는 것이 요점 하나다.** 안 읽고 `ART_AR_DEF` 로 두면 세로 사진이
+    // 가로로 늘어나고, 그 증상은 «액자가 이상하다» 로만 보여 원인을 짚기 어렵다.
+    // 감독 판정 *"비율 제한은 없어"*(2026-08-17)가 이 자리에 걸린다.
+    await arts.set(
+      [...arts.list(), { src, ...pose, w: ART_W_DEF, ar: ar ?? ART_AR_DEF }],
+      { src, url },
+    );
+    // 「걸었다」가 아니라 **「보낼 준비가 됐다」**다 — 그 파일은 아직 저장소에 없다.
+    // 근거는 `decide/upload-plan.ts` 헤더 한 곳이다(GLB 가 같은 형태로 겪었다).
+    panel.say(`걸었습니다 — 내보내기 하면 «${file.name}» 을 JSON 과 함께 보내 주세요.`);
+  }
+
+  /**
+   * 드롭·버튼 두 진입점의 **공통 몸통** (W8-5). 좌표에 묶인 것은 `cast` 인자 하나뿐이고,
+   * 순서 규약은 `judge`/`commit` 이 나눠 갖는다 — 진입점마다 복제하면 한쪽만 고쳐진다.
    *
    * @param cast 광선을 어디로 쏘는가. 드롭은 `castFrom(ev)`, 버튼은 `castCenter()`
    * @param miss 벽을 못 찾았을 때 화면이 할 말 — 진입점마다 사용자가 할 일이 다르다
@@ -136,14 +202,8 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
     // ⚠ **이름 판정이 먼저다.** 벽을 찾은 뒤에 이름으로 거절하면 «벽은 맞았는데 왜
     // 안 걸리지» 가 되고, 사용자가 할 일이 없는 사유를 나중에 듣는다
     // (`judgeUpload` 가 등급을 이름보다 먼저 보는 것과 같은 순서).
-    const src = artSrcFor(file.name);
-    if (!src) {
-      // ⚠ **사유를 여기서 짓지 않는다** — `artNameHelp` 가 원인별로 낸다(검수관 블로커 B2).
-      // 한 줄로 뭉갰을 때 `IMG_1234.JPG` 가 «영문·숫자·_ - . 만 씁니다» 라는 **이미
-      // 만족한 조건**을 들었다. 문구를 소비자가 지으면 계약이 넓어져도 안 따라온다.
-      panel.say(`«${file.name}» 은 쓸 수 없는 이름입니다 — ${artNameHelp(file.name)}`, true);
-      return;
-    }
+    const v = judge(file);
+    if (!v.ok) { panel.say(v.msg, true); return; }
     if (!cast()) return;
     const hit = picker.pickFace();
     const pose = hit && wallPose(hit);
@@ -157,24 +217,12 @@ export function createArtworkMode(deps: ArtworkModeDeps): ArtworkMode {
       panel.say(miss, true);
       return;
     }
-    // 여기서부터 되돌릴 것이 생긴다. **거절이 다 끝난 뒤에** 임시 주소를 만든다 —
-    // 앞에서 만들면 거절할 때마다 회수 대상이 하나씩 쌓인다.
-    const url = URL.createObjectURL(file);
-    deps.onBlobUrl(url);
-    const ar = await measure(url);
-    // ⚠ **`ar` 을 실제로 읽는 것이 이 함수의 요점 하나다.** 안 읽고 `ART_AR_DEF` 로
-    // 두면 세로 사진이 가로로 늘어나고, 그 증상은 «액자가 이상하다» 로만 보여 원인을
-    // 짚기 어렵다. 감독 판정 *"비율 제한은 없어"*(2026-08-17)가 이 자리에 걸린다.
-    await arts.set(
-      [...arts.list(), { src, ...pose, w: ART_W_DEF, ar: ar ?? ART_AR_DEF }],
-      { src, url },
-    );
-    // 「걸었다」가 아니라 **「보낼 준비가 됐다」**다 — 그 파일은 아직 저장소에 없다.
-    // 근거는 `decide/upload-plan.ts` 헤더 한 곳이다(GLB 가 같은 형태로 겪었다).
-    panel.say(`걸었습니다 — 내보내기 하면 «${file.name}» 을 JSON 과 함께 보내 주세요.`);
+    await commit(file, v.src, pose);
   }
 
   return {
+    judge,
+    commit,
     handles: looksLikeImage,
     drop: (file, ev) => hang(file, () => picker.castFrom(ev), MISS_DROP),
     pickFile: (file) => hang(file, () => picker.castCenter(), MISS_CENTER),
