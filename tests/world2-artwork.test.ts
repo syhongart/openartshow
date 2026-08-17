@@ -28,11 +28,33 @@ describe('★ 작품 경로는 전용 계약이다', () => {
     }
   });
 
+  it('★ 확장자는 **대소문자를 안 가린다** — 폰 사진이 주 경로다 (W8-5 · #94)', () => {
+    // 아이폰·캐논·니콘 기본 출력이 `IMG_1234.JPG`·`DSC_1234.JPG` 다. 팀장 판정으로 열었다.
+    // ⚠ 혼합 대소문자(`.Jpg`)도 함께 잰다 — 「소문자로 바꿔서 대조」가 아니라 「양쪽 철자를
+    // 나열」로 구현하면 이 케이스만 조용히 빠진다(실제로 갈리는 두 구현이다).
+    for (const s of ['assets/art/IMG_1234.JPG', 'assets/art/a.Jpg', 'assets/art/b.WEBP']) {
+      expect(isSafeArtSrc(s), s).toBe(true);
+    }
+  });
+
+  it('★ 🔴 접두·줄기는 **여전히 대소문자를 가린다** — `i` 플래그 금지의 실증 (W8-5)', () => {
+    // 계약 전체에 `i` 를 붙이는 것이 가장 짧은 구현이고 **틀린 구현이다.** 그러면 접두까지
+    // 무구분이 되는데, gh-pages 는 리눅스 정적 서빙이라 경로 대소문자를 **구분한다** —
+    // `ASSETS/ART/a.png` 는 저장소에 없는 파일이고 라이브에서만 404 가 난다.
+    // 이 단언이 그 구현을 배제하는 유일한 축이다.
+    for (const s of ['ASSETS/ART/a.png', 'Assets/art/a.png', 'assets/Art/a.png']) {
+      expect(isSafeArtSrc(s), `★ 접두가 샜다 — 확장자만 무시해야 한다: ${s}`).toBe(false);
+    }
+  });
+
   it('★ 커밋할 수 없는 것은 전부 거부한다', () => {
     for (const s of [
       'blob:abc', 'http://x/a.png', 'data:image/png;base64,x', '//host/a.png',
-      '/assets/art/a.png', 'assets/art/../../secret.png', 'assets/art/a.PNG',
-      'assets/art/a.glb', 'assets/models/a.png', 'assets/art/', 42, null, undefined,
+      '/assets/art/a.png', 'assets/art/../../secret.png',
+      // ⚠ `a.PNG` 는 **이 목록에서 빠졌다**(W8-5) — 대문자 확장자를 열었기 때문이다.
+      // 대신 위 두 it 이 「확장자는 열고 접두는 안 연다」를 양쪽에서 못 박는다.
+      'assets/art/a.glb', 'assets/art/a.heic', 'assets/models/a.png', 'assets/art/',
+      42, null, undefined,
     ]) {
       expect(isSafeArtSrc(s), String(s)).toBe(false);
     }

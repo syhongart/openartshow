@@ -53,14 +53,19 @@ function fakePanel(): { panel: Panel; said: { msg: string; warn: boolean }[] } {
   return { panel, said };
 }
 
-function fakePicker(hit: WallHit | null, castOk = true): { picker: Picker } {
+function fakePicker(hit: WallHit | null, castOk = true): { picker: Picker; casts: string[] } {
+  // ⚠ **어느 쪽으로 쐈는지 기록한다**(W8-5). 두 진입점의 차이는 그것 **하나뿐**이라,
+  // 결과만 보면 «버튼이 이벤트 좌표를 쓴다» 같은 뒤바뀜이 통째로 안 잡힌다 — 대역이
+  // 두 값을 구별할 수 있어야 그 축이 검출력을 갖는다.
+  const casts: string[] = [];
   const picker = {
-    castFrom: () => castOk,
+    castFrom: () => { casts.push('from'); return castOk; },
+    castCenter: () => { casts.push('center'); return castOk; },
     pickFace: () => hit,
     // 바닥 좌표는 **GLB 경로의 것**이다. 작품이 이걸 쓰면 액자가 원점 근처에 눕는다.
     groundAt: () => ({ x: 0, z: 0 }),
   } as unknown as Picker;
-  return { picker };
+  return { picker, casts };
 }
 
 const FILE = (name: string) => ({ name }) as unknown as File;
@@ -84,9 +89,11 @@ async function hang(opts: {
   castOk?: boolean;
   ar?: number | null;
   before?: readonly ArtworkItem[];
+  /** 어느 문으로 들어왔나. 생략하면 드롭(PC) — 기존 검사가 전부 그 경로다 */
+  via?: 'drop' | 'button';
 }) {
   const { panel, said } = fakePanel();
-  const { picker } = fakePicker(opts.hit === undefined ? WALL : opts.hit, opts.castOk ?? true);
+  const { picker, casts } = fakePicker(opts.hit === undefined ? WALL : opts.hit, opts.castOk ?? true);
   const arts = createArtsPort((src) => `/base/${src}`);
   if (opts.before) await arts.set(opts.before);
   const blobs: string[] = [];
@@ -95,8 +102,10 @@ async function hang(opts: {
     onBlobUrl: (u) => blobs.push(u),
     measure: async () => (opts.ar === undefined ? AR_REAL : opts.ar),
   });
-  await mode.drop(FILE(opts.name ?? 'a.png'), { clientX: 100, clientY: 200 });
-  return { arts, said, blobs, list: arts.list() };
+  const file = FILE(opts.name ?? 'a.png');
+  if (opts.via === 'button') await mode.pickFile(file);
+  else await mode.drop(file, { clientX: 100, clientY: 200 });
+  return { arts, said, blobs, casts, list: arts.list() };
 }
 
 // ── 분류 ────────────────────────────────────────────────────────────────────
@@ -213,32 +222,108 @@ describe('★ 거절 — 조용히 안 걸리는 것이 이 저장소에서 가�
   });
 
   it('★ 🔴 G2 — 사유가 **실제 원인**을 말한다 (검수관 블로커 B2)', async () => {
-    // 🔴 `looksLikeImage` 는 대소문자를 안 가리고 `ART_RE` 는 소문자만 받는다. 그 틈에
-    // **`IMG_1234.JPG` 가 작품 경로로 들어와** 거절되는데, 사유가 한 줄뿐이라 화면이
-    // *"영문·숫자·_ - . 만 씁니다"* 라고 말했다 — **`IMG_1234.JPG` 는 이미 그렇다.**
-    // 작가는 고칠 것이 없는 것을 고치라는 말을 듣는다. `IMG_####.JPG`·`DSC_####.JPG` 는
-    // 아이폰·캐논·니콘의 기본 출력이라 **주 경로의 막다른 길**이었다.
+    // 🔴 원래 이 검사의 케이스는 `IMG_1234.JPG` 였다. 분류(`looksLikeImage`)는 대소문자를
+    // 안 가리는데 계약은 소문자만 받아서, 그 틈에 들어온 대문자 확장자가 «영문·숫자·_ - .
+    // 만 씁니다» 라는 **이미 만족한 조건**을 사유로 들었다. 그것이 B2 다.
     //
-    // ⚠ **두 사유가 실제로 갈리는지**를 잰다. 한 문구가 둘 다 덮으면 그 축은 검출력 0이다
+    // ⚠ **W8-5 에서 케이스를 옮겼다 — 검사를 지운 것이 아니다.** 대문자 확장자를 열었으므로
+    // (#94, 팀장 판정) `IMG_1234.JPG` 는 이제 **그냥 걸린다.** 그런데 **B2 는 소멸한 것이
+    // 아니라 한 칸 옆으로 갔다**: `photo.heic`·`a.gif` 가 정확히 같은 자리로 들어온다 —
+    // 그 이름들도 문자군을 **이미 만족**하는데 확장자 목록 밖이라 떨어진다. 아이폰이
+    // 「원본 유지」면 HEIC 를 내므로 이것은 가정이 아니라 감독이 바로 부딪히는 경로다.
+    //
+    // ⚠⚠ **두 사유가 실제로 갈리는지**를 잰다. 한 문구가 둘 다 덮으면 그 축은 검출력 0이다
     // — 「축을 태웠는가」가 아니라 「두 값이 실제로 갈리는가」다.
-    const caseOnly = await hang({ name: 'IMG_1234.JPG' });   // 확장자만 위반
+    const extOnly = await hang({ name: 'photo.heic' });      // 확장자만 위반
     const charsOnly = await hang({ name: '내그림.png' });      // 문자군만 위반
 
-    expect(caseOnly.list.length, '★ 대문자 확장자가 그냥 걸렸다 — 계약이 바뀌었나').toBe(0);
+    expect(extOnly.list.length, '★ 계약 밖 확장자가 그냥 걸렸다 — 계약이 바뀌었나').toBe(0);
     expect(charsOnly.list.length).toBe(0);
 
-    const a = caseOnly.said.at(-1)?.msg ?? '';
+    const a = extOnly.said.at(-1)?.msg ?? '';
     const b = charsOnly.said.at(-1)?.msg ?? '';
-    expect(a, '★ 확장자 대소문자가 원인인데 안 말한다').toContain('소문자');
+    expect(a, '★ 확장자가 원인인데 안 말한다').toContain('확장자');
     expect(a, '★ 이미 만족한 조건을 고치라고 한다 — 그것이 B2 였다').not.toContain('영문·숫자');
     expect(b, '★ 문자군이 원인인데 안 말한다').toContain('영문·숫자');
     expect(a === b, '★ 두 사유가 같은 문구다 — 이 축은 검출력이 0이다').toBe(false);
+  });
+
+  it('★ 🔴 계약 밖 확장자가 **작품 경로로 온다** — GLB 사유를 듣지 않게 (W8-5)', () => {
+    // 위 G2 는 `drop` 을 직접 부르므로 **분류를 안 탄다.** 실물 경로에서는 `input.ts` 가
+    // `handles()` 로 먼저 가르고, 거기서 떨어지면 GLB 경로로 흘러가 «확장자는 소문자 .glb»
+    // 라는 **엉뚱한 사유**를 듣는다 — 사진을 떨어뜨렸는데 GLB 이야기를 듣는 형태다.
+    // 그래서 분류는 계약보다 **넓어야** 하고, 이 단언이 그 폭을 못 박는다.
+    for (const n of ['photo.heic', 'IMG_1.HEIC', 'a.gif', 'b.bmp', 'c.avif', 'd.tiff']) {
+      expect(looksLikeImage(n), `★ ${n} 이 분류에서 떨어져 GLB 경로로 샌다`).toBe(true);
+    }
+    // 그래도 **거절은 된다** — 넓힌 것은 분류이지 계약이 아니다.
+    expect(looksLikeImage('m.glb'), '★ GLB 를 작품으로 가로챈다').toBe(false);
+  });
+
+  it('★ 대문자 확장자는 이제 **걸린다** — 폰 사진이 주 경로다 (W8-5 · #94)', async () => {
+    const r = await hang({ name: 'IMG_1234.JPG' });
+    expect(r.list.length, '★ 폰 사진이 여전히 거절된다').toBe(1);
+    expect(r.list[0]!.src, '★ 이름을 몰래 소문자로 바꿨다 — 커밋할 파일명과 어긋난다')
+      .toBe('assets/art/IMG_1234.JPG');
+    expect(r.said.at(-1)?.warn, '★ 걸렸는데 경고로 말한다').toBe(false);
   });
 
   it('★ 캔버스 밖 드롭은 조용히 아무 일도 안 한다', async () => {
     const r = await hang({ castOk: false });
     expect(r.list.length).toBe(0);
     expect(r.blobs.length).toBe(0);
+  });
+});
+
+// ── 「사진 걸기」 버튼 — 좌표 없는 문 (W8-5) ─────────────────────────────────
+//
+// 감독 카드 2026-08-17: *"폰에서 넣기 먼저"*. 드래그드롭은 모바일 브라우저에 없고
+// `<input type="file">` 의 `change` 에는 좌표가 없다. 그래서 좌표를 **카메라에서** 받는다.
+//
+// ⚠ 여기서 재는 것은 「기능이 있는가」가 아니라 **「두 문이 갈라지지 않는가」**다.
+// 갈라지면 «PC 에서는 되는데 폰에서만 다르다» 가 되고 그것은 감독 실기기에서만 드러난다.
+
+describe('★ 「사진 걸기」 버튼 — 좌표 없는 문 (W8-5 · 폰 경로)', () => {
+  it('★ 🔴 화면 **한가운데**를 쏜다 — 이벤트 좌표가 아니다', async () => {
+    const btn = await hang({ via: 'button' });
+    const drop = await hang({ via: 'drop' });
+    // `castFrom({clientX:0,clientY:0})` 로 구현하면 캔버스 **좌상단**을 쏜다. 결과만 보면
+    // 둘 다 «걸렸다» 라서 구별이 안 되고, 화면에서는 «가끔 엉뚱한 데가 잡힌다» 로만 보인다.
+    expect(btn.casts, '★ 버튼이 이벤트 좌표를 쓴다 — 폰에는 그 좌표가 없다').toEqual(['center']);
+    expect(drop.casts, '★ 드롭이 화면 중앙을 쓴다 — 놓은 자리를 무시한다').toEqual(['from']);
+  });
+
+  it('★ 두 문이 **같은 몸통**을 탄다 — 걸린 결과가 같다', async () => {
+    const btn = await hang({ via: 'button' });
+    const drop = await hang({ via: 'drop' });
+    expect(btn.list, '★ 문에 따라 걸리는 것이 다르다 — 배선이 갈렸다').toEqual(drop.list);
+    expect(btn.blobs.length, '★ blob 수명 처리가 한쪽만 됐다').toBe(drop.blobs.length);
+  });
+
+  it('★ 종횡비·이름 판정도 버튼 경로에서 산다', async () => {
+    const ok = await hang({ via: 'button' });
+    expect(ok.list[0]!.ar, '★ 버튼 경로가 종횡비를 안 읽는다').toBe(AR_REAL);
+    const bad = await hang({ via: 'button', name: '내그림.png' });
+    expect(bad.list.length, '★ 버튼 경로가 이름 판정을 건너뛴다').toBe(0);
+    expect(bad.blobs.length, '★ 이름으로 거절했는데 임시 주소가 만들어졌다').toBe(0);
+  });
+
+  it('★ 거절 문구가 **버튼에 맞는 할 일**을 말한다', async () => {
+    const btn = await hang({ via: 'button', hit: FLOOR });
+    const drop = await hang({ via: 'drop', hit: FLOOR });
+    const a = btn.said.at(-1)?.msg ?? '';
+    const b = drop.said.at(-1)?.msg ?? '';
+    // 폰 사용자는 아무것도 «놓지» 않았다 — 버튼을 눌렀을 뿐이다. 한 문구로 뭉치면
+    // «어디에 놓으라는 거지» 를 듣고, 할 일(몸을 돌린다)을 못 듣는다.
+    expect(a, '★ 버튼인데 «놓아 주세요» 라고 한다 — 놓을 것이 없다').toContain('한가운데');
+    expect(b, '★ 드롭인데 «가운데 두라» 고 한다 — 놓은 자리가 이미 있다').toContain('놓아');
+    expect(a === b, '★ 두 문구가 같다 — 이 축은 검출력이 0이다').toBe(false);
+  });
+
+  it('★ 벽을 못 찾으면 **blob 을 안 만든다** — 거절마다 회수 대상이 쌓이지 않게', async () => {
+    const r = await hang({ via: 'button', hit: FLOOR });
+    expect(r.list.length).toBe(0);
+    expect(r.blobs.length, '★ 거절했는데 임시 주소가 만들어졌다').toBe(0);
   });
 });
 
