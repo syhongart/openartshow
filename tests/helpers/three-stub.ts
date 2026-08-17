@@ -28,6 +28,12 @@ export type StubRay = {
 export type StubHit = {
   object: unknown;
   instanceId?: number;
+  /**
+   * 광선 원점에서의 거리. **벽 검출이 오버레이와 마을 중 어느 것을 고를지** 가른다.
+   * 실물과 같이 선택 필드다 — 생략하면 소비자가 `Infinity` 로 읽어 «거리를 모르는 것은
+   * 진다» 가 된다(가까운 쪽을 고르는 규약과 어긋나지 않는다).
+   */
+  distance?: number;
   point?: { x: number; y: number; z: number };
   face?: { normal: { x: number; y: number; z: number } } | null;
 };

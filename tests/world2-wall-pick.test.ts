@@ -26,7 +26,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { createPicker } from '../frontend/js/world2/edit/pick.js';
-import { toWorldNormal, wallPose, WALL_GAP } from '../frontend/js/world2/decide/artwork.js';
+import {
+  mul3x3, toWorldNormal, wallPose, WALL_GAP, WALL_MAX_TILT,
+} from '../frontend/js/world2/decide/artwork.js';
 import type { OverlayEntry, OverlayHost } from '../frontend/js/world2/edit/types.js';
 import { makeThreeStub, type StubHit } from './helpers/three-stub.js';
 import { createEditState } from '../frontend/js/world2/edit/state.js';
@@ -37,13 +39,34 @@ function rotY(ry: number): number[] {
   return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1];
 }
 
+/** 열 우선 4×4 — 축별 배율. 마을 파츠가 실제로 쓰는 형태다(`parts/building.ts`) */
+function scale(sx: number, sy: number, sz: number): number[] {
+  return [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, 0, 0, 0, 1];
+}
+
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 function objWith(m: number[]): unknown {
   return { matrixWorld: { elements: m } };
 }
 
-function makePicker(hits: StubHit[]) {
+/** 마을 인스턴스 메시 대역. `getMatrixAt` 이 지정한 인스턴스 행렬을 채운다 */
+function instMesh(instM: number[], worldM?: number[]): unknown {
+  return {
+    getMatrixAt(_i: number, t: { elements: number[] }) {
+      for (let k = 0; k < 16; k++) t.elements[k] = instM[k];
+    },
+    ...(worldM ? { matrixWorld: { elements: worldM } } : {}),
+  };
+}
+
+interface VillageFix {
+  hits: StubHit[];
+  /** 맞힌 인스턴스의 주인. `null` 이면 «빈 슬롯» */
+  owner?: { key: string; index: number } | null;
+}
+
+function makePicker(hits: StubHit[], vil?: VillageFix) {
   const canvas = document.createElement('canvas');
   document.body.append(canvas);
   canvas.getBoundingClientRect = () => ({
@@ -51,9 +74,16 @@ function makePicker(hits: StubHit[]) {
     toJSON() { return {}; },
   }) as DOMRect;
 
+  // 마을 레이캐스트 대상. **오버레이와 구별되는 값**이어야 스텁이 두 경로를 가른다.
+  const VILLAGE_TARGETS: unknown[] = vil ? [{ tag: 'village-pool' }] : [];
+
   const entries: OverlayEntry[] = [];
   const host = {
-    THREE: makeThreeStub({ hits: () => hits }),
+    THREE: makeThreeStub({
+      // 편집은 광선을 두 곳에 쏜다. 목록으로 갈라야 «마을을 맞혔다» 가 오버레이 쪽에서
+      // 먼저 걸리지 않는다(`three-stub.ts` 의 `hits` 주석이 같은 것을 적고 있다).
+      hits: (objs) => (objs[0] === VILLAGE_TARGETS[0] ? (vil?.hits ?? []) : hits),
+    }),
     camera: {} as never,
     canvas,
     doc: document,
@@ -67,7 +97,11 @@ function makePicker(hits: StubHit[]) {
     apply: () => { },
     toRaw: () => ({ version: 1, items: [] }),
     look: () => { },
-    instances: null,
+    instances: vil ? {
+      refreshBounds() { },
+      raycastTargets: () => VILLAGE_TARGETS,
+      ownerAt: () => (vil.owner === undefined ? { key: 'building', index: 0 } : vil.owner),
+    } : null,
     village: null,
     surfaceAt: () => 0,
   } as unknown as OverlayHost;
@@ -169,5 +203,185 @@ describe('★ 경계를 건넌다 — pickFace 결과가 wallPose 에 그대로 
     const hit = picker.pickFace();
     expect(hit, '★ 배선이 벽 판정을 대신했다 — 사유가 두 곳으로 갈린다').not.toBeNull();
     expect(wallPose(hit!), '★ 바닥이 벽으로 통과했다').toBeNull();
+  });
+});
+
+// ── 비균등 스케일 (감독 판정 2026-08-17 로 재론 트리거 발동) ────────────────
+
+describe('★ 비균등 스케일 — 정규행렬이 아니면 **반대로 답한다**', () => {
+  // 🔴 D1 의 `toWorldNormal` 은 *"균등 스케일 전제이고 이 저장소에서 그것이 성립한다"* 로
+  // 3×3 을 그대로 곱했고, 주석에 **재론 트리거**를 적어 두었다. 실측으로 발동했다 —
+  // `parts/building.ts:184` 가 `sx: w, sy: h, sz: d` 를 쓴다. 마을 건물 벽에 걸겠다는
+  // 감독 판정이 그 파츠를 대상으로 만들었으므로 전제가 깨졌다.
+  //
+  // 아래 픽스처가 **두 방식이 서로 다른 판정을 내는** 자리다. 45도 로컬 법선에
+  // `diag(1, 4, 1)` 을 걸면:
+  //   3×3 그대로   (1, 4, 0) → 정규화 (0.243, 0.970, 0) · |uy| 0.970 → **거절**
+  //   정규행렬     (1, 0.25, 0) → 정규화 (0.970, 0.243, 0) · |uy| 0.243 → **통과**
+  // 물리적으로 옳은 것은 후자다: y 를 4배 늘리면 그 경사면은 **더 가팔라져** 벽이 된다.
+  const DIAG = Math.SQRT1_2;   // 45도 로컬 법선 (1,1,0)/√2
+
+  it('★ y 를 4배 늘린 면은 **벽이 된다** — 3×3 그대로면 바닥 취급된다', () => {
+    const n = toWorldNormal({ x: DIAG, y: DIAG, z: 0 }, scale(1, 4, 1));
+    expect(n, '★ 법선을 못 냈다').not.toBeNull();
+    expect(n!.y, '★ 3×3 을 그대로 곱했다 — 가팔라진 면이 바닥으로 읽힌다')
+      .toBeCloseTo(0.2425, 3);
+    expect(Math.abs(n!.y) < WALL_MAX_TILT, '★ 벽 판정이 뒤집혔다').toBe(true);
+  });
+
+  it('★ x 를 4배 늘린 면은 **벽이 아니게 된다** — 반대 방향도 성립해야 축이 참이다', () => {
+    // 한 방향만 재면 「상수를 하나 맞춘 것」과 구별되지 않는다.
+    const n = toWorldNormal({ x: DIAG, y: DIAG, z: 0 }, scale(4, 1, 1));
+    expect(n!.y).toBeCloseTo(0.9701, 3);
+    expect(Math.abs(n!.y) < WALL_MAX_TILT, '★ 완만해진 면이 벽으로 통과했다').toBe(false);
+  });
+
+  it('★ **균등 스케일에서는 결과가 안 바뀐다** — 기존 오버레이 GLB 동작 보존', () => {
+    // `(R·sI)⁻ᵀ = R·(1/s)I` 이고 정규화가 배율을 지운다. 이 단언이 없으면 「D1 동작을
+    // 바꿨는가」가 검사 밖에 남는다.
+    const a = toWorldNormal({ x: 0, y: 0, z: 1 }, rotY(0.7));
+    const b = toWorldNormal({ x: 0, y: 0, z: 1 }, mul3x3(rotY(0.7), scale(3, 3, 3))!);
+    expect(b!.x).toBeCloseTo(a!.x, 9);
+    expect(b!.y).toBeCloseTo(a!.y, 9);
+    expect(b!.z).toBeCloseTo(a!.z, 9);
+  });
+
+  it('축이 0 으로 눌린 행렬은 null — 못 읽은 것을 0 으로 뭉개지 않는다', () => {
+    expect(toWorldNormal({ x: 0, y: 0, z: 1 }, scale(1, 1, 0))).toBeNull();
+  });
+});
+
+describe('★ mul3x3 — 두 변환을 잇는다', () => {
+  it('단위행렬과 곱하면 그대로', () => {
+    const m = mul3x3(IDENTITY, rotY(0.9))!;
+    for (const i of [0, 1, 2, 4, 5, 6, 8, 9, 10]) {
+      expect(m[i]).toBeCloseTo(rotY(0.9)[i], 9);
+    }
+  });
+
+  it('★ 회전 두 번은 각이 더해진다 — 순서를 바꾸면 이 단언이 깨진다', () => {
+    const m = mul3x3(rotY(0.3), rotY(0.4))!;
+    expect(m[0]).toBeCloseTo(Math.cos(0.7), 9);
+    expect(m[8]).toBeCloseTo(Math.sin(0.7), 9);
+  });
+
+  it('★ 회전 × 스케일은 **교환되지 않는다** — 인자 순서가 이 함수의 계약이다', () => {
+    const rs = mul3x3(rotY(Math.PI / 2), scale(2, 1, 1))!;
+    const sr = mul3x3(scale(2, 1, 1), rotY(Math.PI / 2))!;
+    expect(rs[2], '★ 두 순서가 같은 값을 낸다 — 곱셈이 틀렸다').not.toBeCloseTo(sr[2], 6);
+  });
+
+  it('짧은 행렬은 null', () => {
+    expect(mul3x3([1, 0, 0], IDENTITY)).toBeNull();
+    expect(mul3x3(IDENTITY, [1, 0, 0])).toBeNull();
+  });
+});
+
+// ── 마을 파츠 벽 (감독 판정 2026-08-17) ──────────────────────────────────────
+
+describe('★ 마을 건물 벽에도 걸린다', () => {
+  const WALL_N = { normal: { x: 0, y: 0, z: 1 } };
+
+  it('★ 인스턴스 면이 벽으로 나온다 — 이 경로가 없으면 마을에는 못 건다', () => {
+    const picker = makePicker([], {
+      hits: [{
+        object: instMesh(IDENTITY), instanceId: 3,
+        point: { x: 1, y: 2, z: 3 }, face: WALL_N.normal ? WALL_N : null,
+      }],
+    });
+    const hit = picker.pickFace();
+    expect(hit, '★ 마을 파츠에서 면을 못 냈다').not.toBeNull();
+    expect(hit!.normal.z).toBeCloseTo(1, 6);
+    expect(hit!.point).toEqual({ x: 1, y: 2, z: 3 });
+  });
+
+  it('★ **인스턴스 행렬과 matrixWorld 를 둘 다** 곱한다 — 하나만 곱하면 각이 틀린다', () => {
+    // 인스턴스가 +90도, 풀 메시가 다시 +90도 → 로컬 +Z 는 월드 −Z 를 봐야 한다.
+    // 하나만 곱하면 +X 가 나오고, 화면에서는 «액자가 옆을 본다» 로만 보인다.
+    const picker = makePicker([], {
+      hits: [{
+        object: instMesh(rotY(Math.PI / 2), rotY(Math.PI / 2)), instanceId: 0,
+        point: { x: 0, y: 1, z: 0 }, face: { normal: { x: 0, y: 0, z: 1 } },
+      }],
+    });
+    const hit = picker.pickFace();
+    expect(hit!.normal.z, '★ 변환 하나를 빠뜨렸다').toBeCloseTo(-1, 6);
+    expect(hit!.normal.x).toBeCloseTo(0, 6);
+  });
+
+  it('★ 빈 슬롯(주인 없음)은 건너뛴다 — 지워진 자리에 액자가 걸리면 안 된다', () => {
+    const picker = makePicker([], {
+      owner: null,
+      hits: [{
+        object: instMesh(IDENTITY), instanceId: 0,
+        point: { x: 0, y: 1, z: 0 }, face: { normal: { x: 0, y: 0, z: 1 } },
+      }],
+    });
+    expect(picker.pickFace()).toBeNull();
+  });
+
+  it('★ 그림자 데칼은 벽이 아니다 — 지면 근처 드롭이 거기서 끝나면 안 된다', () => {
+    const picker = makePicker([], {
+      // ⚠ 접두가 `shadow:` 다(`systems/shadow-decal.ts` 의 `isShadowKey`). 첫 판본은
+      // `'shadow'` 로 적어 빨간불이 났고 — **픽스처가 실물 형태를 안 가지면 그 축은
+      // 아무것도 안 잰다.** 검사가 잡아서 드러났다.
+      owner: { key: 'shadow:building', index: 0 },
+      hits: [{
+        object: instMesh(IDENTITY), instanceId: 0,
+        point: { x: 0, y: 0, z: 0 }, face: { normal: { x: 0, y: 0, z: 1 } },
+      }],
+    });
+    expect(picker.pickFace(), '★ 그림자 데칼이 벽으로 잡혔다').toBeNull();
+  });
+
+  it('`instanceId` 가 없는 히트는 건너뛴다 — 인스턴스가 아니면 행렬을 못 읽는다', () => {
+    const picker = makePicker([], {
+      hits: [{
+        object: instMesh(IDENTITY),
+        point: { x: 0, y: 1, z: 0 }, face: { normal: { x: 0, y: 0, z: 1 } },
+      }],
+    });
+    expect(picker.pickFace()).toBeNull();
+  });
+
+  it('마을 문이 안 열린 소비자에서는 예전대로 오버레이만 본다', () => {
+    const picker = makePicker([{
+      object: objWith(IDENTITY), point: { x: 7, y: 1, z: 0 },
+      face: { normal: { x: 1, y: 0, z: 0 } },
+    }]);
+    expect(picker.pickFace()!.point.x).toBe(7);
+  });
+});
+
+describe('★ 오버레이와 마을 중 **가까운 것**을 고른다', () => {
+  // ⚠ `pick()`/`pickVillage()` 는 «오버레이 먼저» 인데 그것은 **고르기**의 규약이다.
+  // 벽은 다르다 — 광선이 실제로 먼저 맞은 면에 걸려야 한다. 우선순위로 하면 마을 건물
+  // 앞에 서서 드롭했는데 뒤편 오버레이 GLB 에 액자가 걸리고, 화면에서는 «걸었다는데
+  // 안 보인다» 로만 보인다.
+  const OV = (d: number): StubHit => ({
+    object: objWith(IDENTITY), distance: d,
+    point: { x: 100, y: 1, z: 0 }, face: { normal: { x: 1, y: 0, z: 0 } },
+  });
+  const VI = (d: number): StubHit => ({
+    object: instMesh(IDENTITY), instanceId: 0, distance: d,
+    point: { x: 200, y: 1, z: 0 }, face: { normal: { x: 1, y: 0, z: 0 } },
+  });
+
+  it('★ 마을이 더 가까우면 **마을**이 이긴다', () => {
+    expect(makePicker([OV(50)], { hits: [VI(10)] }).pickFace()!.point.x)
+      .toBe(200);
+  });
+
+  it('★ 오버레이가 더 가까우면 **오버레이**가 이긴다', () => {
+    expect(makePicker([OV(10)], { hits: [VI(50)] }).pickFace()!.point.x)
+      .toBe(100);
+  });
+
+  it('거리를 모르면(스텁 생략) 진다 — 「못 잰 것」이 이기면 안 된다', () => {
+    const noDist: StubHit = {
+      object: objWith(IDENTITY),
+      point: { x: 100, y: 1, z: 0 }, face: { normal: { x: 1, y: 0, z: 0 } },
+    };
+    expect(makePicker([noDist], { hits: [VI(999)] }).pickFace()!.point.x).toBe(200);
   });
 });

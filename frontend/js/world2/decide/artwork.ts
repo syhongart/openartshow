@@ -226,6 +226,27 @@ export interface WallHit {
 }
 
 /**
+ * 열 우선 4×4 두 개의 곱(`a · b`). 회전·스케일(3×3)만 쓴다 — 법선에 이동은 무의미하다.
+ *
+ * ⚠ **왜 필요한가**: 마을 건물·나무는 `InstancedMesh` 라 면 법선이 **두 변환**을 거친다
+ * — 인스턴스 행렬(`getMatrixAt`)과 그 메시의 `matrixWorld`. 하나만 곱하면 파셀이
+ * 원점에서 멀수록 액자가 엉뚱한 방향을 본다. 오버레이 GLB 는 변환이 하나뿐이라 이
+ * 함수가 필요 없었고, 그래서 W8-4 D1 에는 없었다.
+ */
+export function mul3x3(a: ArrayLike<number>, b: ArrayLike<number>): number[] | null {
+  if (a.length < 11 || b.length < 11) return null;
+  const out = new Array<number>(16).fill(0);
+  out[15] = 1;
+  for (let c = 0; c < 3; c++) {
+    for (let r = 0; r < 3; r++) {
+      // 열 우선: M[행 r][열 c] = m[c * 4 + r]
+      out[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2];
+    }
+  }
+  return out;
+}
+
+/**
  * 레이캐스트가 준 **로컬** 법선을 월드로 옮긴다 (W8-4 D).
  *
  * ⚠ **이 변환을 빠뜨리면 증상이 「안 걸린다」가 아니라 「엉뚱한 데를 본다」다.**
@@ -234,13 +255,24 @@ export interface WallHit {
  * `wallPose` 에 넣는 순간 액자가 **회전 전 방향**을 향한다 — 화면에는 «벽을 뚫고 선
  * 액자» 로 보이고, 벽 판정(`WALL_MAX_TILT`)도 엉뚱한 면에서 통과한다.
  *
- * 회전 성분(3×3)만 곱하고 정규화한다 — three 의 `Vector3.transformDirection` 과 같다.
- * **균등 스케일 전제**이고 이 저장소에서 그것이 성립한다: 계약의 `OverlayItem.s` 는
- * **스칼라 하나**라 축별로 다른 배율이 나올 수 없다. 비균등이 열리면 이 함수는
- * inverse-transpose 가 필요해진다 — **재론 트리거**를 여기 적어 둔다.
+ * ── 🔴 균등 스케일 전제를 버렸다 (2026-08-17, 감독 판정으로 재론 트리거 발동) ──
+ * 첫 판본은 회전 성분(3×3)을 그대로 곱했고(three 의 `Vector3.transformDirection`),
+ * 주석이 *"균등 스케일 전제이고 이 저장소에서 그것이 성립한다 … 비균등이 열리면 이
+ * 함수는 inverse-transpose 가 필요해진다 — **재론 트리거**"* 라고 적어 두었다.
+ *
+ * **실측으로 그 트리거가 발동했다**: `parts/building.ts:184` 이 `sx: w, sy: h, sz: d` 로
+ * 축마다 다른 배율을 쓴다(`road`·`garden`·`ground`·`tower` 도 같다). 마을 건물 벽에
+ * 걸겠다는 감독 판정(2026-08-17)이 그 파츠들을 대상으로 만들었으므로 전제가 깨졌다.
+ *
+ * 그래서 **정규행렬 `(M⁻¹)ᵀ`** 을 쓴다(three 의 `Matrix3.getNormalMatrix` 와 같다).
+ * 균등 스케일에서는 두 방법이 **같은 방향**을 낸다 — `(R·sI)⁻ᵀ = R·(1/s)I` 이고 정규화가
+ * 배율을 지우기 때문이다. 그래서 기존 오버레이 GLB 동작은 안 바뀐다(테스트가 지킨다).
+ * 갈리는 곳은 **로컬 법선이 축과 정렬되지 않은 면**이다: 축정렬 박스 벽면은 어느 쪽으로
+ * 계산해도 같지만, 지붕 경사면·원통은 다르다 — 그리고 벽 판정(`WALL_MAX_TILT`)이
+ * 통과/거절을 가르는 자리가 정확히 거기다.
  *
  * @param local 로컬 법선
- * @param m 열 우선 4×4(three `Object3D.matrixWorld.elements`)
+ * @param m 열 우선 4×4(three `Object3D.matrixWorld.elements`, 또는 `mul3x3` 의 결과)
  */
 export function toWorldNormal(
   local: { x: number; y: number; z: number },
@@ -248,9 +280,18 @@ export function toWorldNormal(
 ): { x: number; y: number; z: number } | null {
   const { x, y, z } = local;
   if (m.length < 11) return null;
-  const nx = m[0] * x + m[4] * y + m[8] * z;
-  const ny = m[1] * x + m[5] * y + m[9] * z;
-  const nz = m[2] * x + m[6] * y + m[10] * z;
+  // 열 우선 4×4 의 좌상단 3×3. 수학 표기 M[행][열] = m[열*4 + 행].
+  const a = m[0], b = m[4], c = m[8];
+  const d = m[1], e = m[5], f = m[9];
+  const g = m[2], h = m[6], i = m[10];
+  const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  // 퇴화 행렬(스케일 0 인 축 등)은 «법선이 없다» 와 같다.
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+  // `(M⁻¹)ᵀ = cofactor(M) / det`. det 로 나누는 것은 정규화가 지우지만 **부호는 남는다** —
+  // 거울 변환(det < 0)에서 법선이 뒤집히는 것이 물리적으로 옳은 결과다.
+  const nx = ((e * i - f * h) * x - (d * i - f * g) * y + (d * h - e * g) * z) / det;
+  const ny = (-(b * i - c * h) * x + (a * i - c * g) * y - (a * h - b * g) * z) / det;
+  const nz = ((b * f - c * e) * x - (a * f - c * d) * y + (a * e - b * d) * z) / det;
   const len = Math.hypot(nx, ny, nz);
   // 길이 0 은 «법선이 없다» 와 같다. `wallPose` 도 같은 문턱으로 거른다.
   if (!Number.isFinite(len) || len < 1e-6) return null;

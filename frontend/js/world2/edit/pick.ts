@@ -16,7 +16,7 @@
 import { ndcOf, rayPlaneY, snapTo } from '../decide/edit-pick.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { matchPart } from '../decide/village-pick.js';
-import { toWorldNormal, type WallHit } from '../decide/artwork.js';
+import { mul3x3, toWorldNormal, type WallHit } from '../decide/artwork.js';
 import { isShadowKey } from '../systems/shadow-decal.js';
 import type { Ray3 } from '../decide/gizmo-math.js';
 import type { OverlayEntry, OverlayHost, RaycastMesh, VillagePick } from './types.js';
@@ -197,32 +197,86 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
     return null;
   }
 
-  /**
-   * 맞힌 면을 그대로 낸다 (W8-4 D). **오버레이 GLB 만 본다** — `intersect()` 가
-   * `host.root` 아래를 쏘기 때문이다.
-   *
-   * ⚠ **마을 파츠(인스턴스 건물) 벽은 여기서 멈춘다.** 감독 카드(2026-08-16)에
-   * *"마을 건물 벽에도"* 가 있지만, 인스턴스는 면 법선에 **인스턴스 행렬을 한 번 더**
-   * 곱해야 하고(`pickVillage` 가 `getMatrixAt` 을 쓰는 그 자리) 그 경로는 이 회차의
-   * 범위 밖이다. **재론 트리거**: 감독이 마을 건물 벽에 걸려다 «안 걸린다» 를 말하는 순간.
-   */
-  function pickFace(): WallHit | null {
+  /** 레이캐스트 히트에서 벽 검출이 쓰는 필드만. 전부 선택 — 실물이 안 줄 수 있다 */
+  type FaceHit = {
+    object?: unknown;
+    instanceId?: number;
+    distance?: number;
+    point?: { x: number; y: number; z: number };
+    face?: { normal: { x: number; y: number; z: number } } | null;
+  };
+
+  /** 히트 하나를 벽으로 환원한다. 못 하면 `null` — 부르는 쪽이 다음 히트를 본다 */
+  function faceOf(hit: FaceHit, m: ArrayLike<number> | null): WallHit | null {
+    if (!hit.face || !hit.point || !m) return null;
+    const n = toWorldNormal(hit.face.normal, m);
+    if (!n) return null;
+    return { point: { x: hit.point.x, y: hit.point.y, z: hit.point.z }, normal: n };
+  }
+
+  /** 오버레이 GLB 의 첫 유효 면 + 그 거리 */
+  function faceInOverlay(): { hit: WallHit; d: number } | null {
     for (const h of intersect()) {
-      const hit = h as {
-        object?: unknown;
-        point?: { x: number; y: number; z: number };
-        face?: { normal: { x: number; y: number; z: number } } | null;
-      };
-      // 면이 없는 히트(Line·Points)는 벽이 될 수 없다 — 다음 히트를 본다.
-      if (!hit.face || !hit.point) continue;
+      const hit = h as FaceHit;
       const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
-        ?.matrixWorld?.elements;
-      if (!mw) continue;
-      const n = toWorldNormal(hit.face.normal, mw);
-      if (!n) continue;
-      return { point: { x: hit.point.x, y: hit.point.y, z: hit.point.z }, normal: n };
+        ?.matrixWorld?.elements ?? null;
+      const w = faceOf(hit, mw);
+      if (w) return { hit: w, d: hit.distance ?? Infinity };
     }
     return null;
+  }
+
+  /** 맞힌 인스턴스의 행렬. `pickVillage` 의 `mat` 과 **다른 변수**여야 한다(같은 광선에서 둘 다 쓴다) */
+  const faceMat = new THREE.Matrix4();
+
+  /**
+   * 마을 파츠(인스턴스 건물·나무)의 첫 유효 면 + 거리 (감독 판정 2026-08-17).
+   *
+   * ⚠ **법선이 두 변환을 거친다** — 인스턴스 행렬(`getMatrixAt`)과 그 메시의
+   * `matrixWorld`. 하나만 곱하면 파셀이 원점에서 멀수록 액자가 엉뚱한 데를 본다.
+   * 그리고 마을 파츠는 **비균등 스케일**(`parts/building.ts` 의 `sx: w, sy: h, sz: d`)이라
+   * `toWorldNormal` 이 정규행렬을 쓰게 바뀌었다 — 근거는 그 함수 주석 한 곳이다.
+   */
+  function faceInVillage(): { hit: WallHit; d: number } | null {
+    const inst = host.instances;
+    if (!inst) return null;
+    // ⚠⚠ **레이캐스트 전에 반드시** — 근거는 `pickVillage` 의 같은 줄에 있다.
+    inst.refreshBounds();
+    const targets = inst.raycastTargets();
+    if (targets.length === 0) return null;
+    for (const h of raycaster.intersectObjects(targets as unknown[], false)) {
+      const hit = h as FaceHit;
+      if (typeof hit.instanceId !== 'number') continue;
+      const owner = inst.ownerAt(hit.object, hit.instanceId);
+      if (!owner) continue;
+      // 그림자 데칼은 **벽이 아니다.** 안 거르면 지면 근처 드롭이 여기서 끝나고,
+      // 데칼은 눕힌 판이라 `wallPose` 가 어차피 거절해 «왜 안 걸리지» 만 남는다.
+      if (isShadowKey(owner.key)) continue;
+      (hit.object as RaycastMesh).getMatrixAt(hit.instanceId, faceMat);
+      const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
+        ?.matrixWorld?.elements;
+      // 메시가 원점에 있으면 `matrixWorld` 없이도 맞지만 **가정하지 않는다.**
+      const m = mw ? mul3x3(mw, faceMat.elements) : faceMat.elements;
+      const w = faceOf(hit, m);
+      if (w) return { hit: w, d: hit.distance ?? Infinity };
+    }
+    return null;
+  }
+
+  /**
+   * 맞힌 면을 그대로 낸다 (W8-4 D). **오버레이 GLB 와 마을 파츠를 둘 다 본다.**
+   *
+   * ⚠ **우선순위가 아니라 거리로 고른다.** `pick()`/`pickVillage()` 는 «오버레이 먼저,
+   * 없으면 마을» 인데 그것은 **고르기**의 규약이고 벽은 다르다 — 광선이 실제로 먼저
+   * 맞은 면에 걸려야 한다. 우선순위로 하면 마을 건물 앞에 서서 드롭했는데 뒤편 오버레이
+   * GLB 벽에 액자가 걸리고, 화면에서는 «걸었다는데 안 보인다» 로만 보인다.
+   */
+  function pickFace(): WallHit | null {
+    const a = faceInOverlay();
+    const b = faceInVillage();
+    if (!a) return b?.hit ?? null;
+    if (!b) return a.hit;
+    return a.d <= b.d ? a.hit : b.hit;
   }
 
   /** 링을 그 자리에 놓는다. `null` 이면 숨긴다 — 표시의 유일한 자리 */

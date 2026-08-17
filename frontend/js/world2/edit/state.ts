@@ -47,9 +47,13 @@ export type ThreeNS = {
     // **Line·Points 를 맞히면 안 온다.** 그래서 소비자가 둘 다 확인하고 넘어간다.
     // ⚠ `face.normal` 은 **로컬**이다 — 월드 변환은 `decide/artwork.ts` 의 `toWorldNormal`
     // 이 소유하고, 그것을 빠뜨렸을 때의 증상은 그 함수 주석에 있다.
+    // `distance` 는 **벽 검출이 오버레이와 마을 중 어느 것을 고를지** 가른다(W8-4 D).
+    // 선택 필드인 이유는 위 둘과 같다 — 스텁이 생략할 수 있고, 없으면 `Infinity` 로 읽어
+    // 「거리를 모르는 것은 진다」가 된다(가까운 쪽을 고르는 규약과 어긋나지 않는다).
     intersectObjects(objs: unknown[], recursive: boolean): {
       object: unknown;
       instanceId?: number;
+      distance?: number;
       point?: { x: number; y: number; z: number };
       face?: { normal: { x: number; y: number; z: number } } | null;
     }[];
