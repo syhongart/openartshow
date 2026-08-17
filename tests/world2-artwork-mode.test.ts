@@ -343,3 +343,68 @@ describe('★ 배선 — 드롭이 실제로 이 경로로 온다', () => {
     expect(placed).toEqual([]);
   });
 });
+
+// ── 내보내기 (D3) ───────────────────────────────────────────────────────────
+
+describe('★ 내보내기가 **작품도** 「보낼 준비가 됐다」에 센다 (W8-4 D3)', () => {
+  // 🔴 순수 판정(`pendingAssets`)이 `arts` 를 보게 됐어도, **집행이 두 미리보기 집합을
+  // 합치지 않으면** 아무 일도 안 일어난다. GLB 는 `actions.previewUrls` 가 들고 작품은
+  // 포트가 든다 — 소유자가 달라서 합치는 자리가 코드에 딱 하나 있고, 여기가 그 자리를
+  // 실제로 돌려 보는 유일한 축이다(「경계를 건너는 지점은 아무도 안 본다」).
+
+  const REVOKE = URL.revokeObjectURL;
+  beforeEach(() => { (URL as { revokeObjectURL: unknown }).revokeObjectURL = () => {}; });
+  afterEach(() => { (URL as { revokeObjectURL: unknown }).revokeObjectURL = REVOKE; });
+
+  async function exportWith(opts: { arts?: boolean; glb?: boolean }) {
+    const { createActions } = await import('../frontend/js/world2/edit/actions.js');
+    const { panel, said } = fakePanel();
+    const art: ArtworkItem = {
+      src: 'assets/art/mine.png', x: 0, y: 1, z: 0, ry: 0, w: 2.4, ar: 1.5,
+    };
+    const port = createArtsPort((s) => s);
+    await port.set([art], opts.arts ? { src: art.src, url: 'blob:x' } : undefined);
+    const doc = {
+      createElement: () => ({ href: '', download: '', click() {}, remove() {} }),
+      body: { appendChild() {} },
+    } as unknown as Document;
+    // ⚠ GLB 를 **문서에도 싣는다.** 안 실으면 「내보낼 문서를 잰다」 규약 때문에 셀 것이
+    // 애초에 없어 「합치는가」가 구별되지 않는다 — 첫 판본이 그랬고 축이 비어 있었다.
+    const glbItem = { src: 'assets/models/mine.glb', x: 0, y: 0, z: 0, ry: 0, s: 1 };
+    const host = {
+      doc,
+      toRaw: () => ({
+        version: 2, items: opts.glb ? [glbItem] : [], parcels: [], surfaces: [], arts: [art],
+      }),
+      entries: () => [],
+    } as unknown as OverlayHost;
+    const actions = createActions(host, createEditState(), panel, port);
+    // GLB 미리보기도 하나 심어 «둘을 합치는가» 를 잰다(한쪽만 세면 나머지가 빠진다).
+    if (opts.glb) actions.previewUrls.set('assets/models/mine.glb', 'blob:g');
+    actions.exportNow();
+    return said.at(-1)?.msg ?? '';
+  }
+
+  it('★ 걸린 작품이 미리보기면 **파일을 보내라고 말한다**', async () => {
+    const msg = await exportWith({ arts: true });
+    expect(msg, '★ 저장했다고만 하고 끝난다 — 라이브는 빈 액자가 된다').toContain('아직 라이브가 아닙니다');
+    expect(msg, '★ 어느 파일인지 안 말한다').toContain('mine.png');
+  });
+
+  it('★ 저장소에 이미 있는 작품은 **말하지 않는다** — 할 일이 없으면 침묵이다', async () => {
+    expect(await exportWith({ arts: false })).not.toContain('아직 라이브가 아닙니다');
+  });
+
+  it('★ GLB 만 미리보기여도 여전히 잡는다 — 작품 축을 더하며 기존 축을 깨지 않았다', async () => {
+    const msg = await exportWith({ glb: true });
+    expect(msg, '★ GLB 축이 죽었다 — W8-3 S7 의 회귀다').toContain('mine.glb');
+    expect(msg, '★ 저장소에 있는 작품까지 세었다').not.toContain('mine.png');
+  });
+
+  it('★ **둘 다** 미리보기면 둘 다 센다 — 한쪽만 세면 나머지가 조용히 빠진다', async () => {
+    const msg = await exportWith({ arts: true, glb: true });
+    expect(msg, '★ 작품이 빠졌다').toContain('mine.png');
+    expect(msg, '★ GLB 가 빠졌다').toContain('mine.glb');
+    expect(msg, '★ 개수가 둘이 아니다 — 합치는 자리가 하나를 삼켰다').toContain('2개');
+  });
+});

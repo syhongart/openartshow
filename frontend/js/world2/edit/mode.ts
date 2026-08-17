@@ -132,7 +132,8 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     gizmo.attach(st.target);
   });
 
-  const actions = createActions(host, st, panel);
+  // 작품 포트를 함께 넘긴다 — 내보내기가 「보낼 준비가 됐다」에 이미지도 세야 한다(D3).
+  const actions = createActions(host, st, panel, opts.arts);
 
   const input = createInput({
     host, st, panel, picker, actions, gizmo,

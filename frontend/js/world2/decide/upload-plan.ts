@@ -39,6 +39,18 @@ export type UploadVerdict =
 
 /** 계약이 받는 자산 경로 접두. `decide/overlay.ts` 의 `isSafeSrc` 와 짝이다 */
 export const ASSET_PREFIX = 'assets/models/';
+/** 작품 이미지 접두. `decide/artwork.ts` 의 `ART_RE` 와 짝이다 (W8-4 D3) */
+export const ART_PREFIX = 'assets/art/';
+/**
+ * 「보낼 준비가 됐다」가 훑는 배열들과 그 접두.
+ *
+ * ⚠ **둘을 여기 한 곳에 모은 것이 요점이다.** 배열 이름과 접두를 각 함수에 따로 적으면
+ * 셋째 종류가 열릴 때 한쪽만 늘고, 그 어긋남은 «보냈는데 빈 자리» 로만 드러난다.
+ */
+const BUCKETS = [
+  { key: 'items', prefix: ASSET_PREFIX },
+  { key: 'arts', prefix: ART_PREFIX },
+] as const;
 
 /**
  * 끌어다 놓은 파일을 받을 것인가.
@@ -91,12 +103,17 @@ export function pendingAssets(json: string, localOnly: ReadonlySet<string>): str
   if (localOnly.size === 0) return [];
   let doc: unknown;
   try { doc = JSON.parse(json); } catch { return []; }
-  const items = (doc as { items?: unknown })?.items;
-  if (!Array.isArray(items)) return [];
   const hit = new Set<string>();
-  for (const it of items) {
-    const src = (it as { src?: unknown })?.src;
-    if (typeof src === 'string' && localOnly.has(src)) hit.add(src);
+  // ⚠ **배열 둘을 다 본다**(W8-4 D3). `items` 만 보던 동안 편집으로 건 **작품이 이 안내에
+  // 안 잡혔다** — GLB 가 겪은 그 침묵(«저장했습니다» 인데 라이브는 빈 자리)이 작품에서
+  // 그대로 재발하는 형태다. 종류가 늘면 `BUCKETS` 에만 더한다.
+  for (const { key } of BUCKETS) {
+    const list = (doc as Record<string, unknown> | null)?.[key];
+    if (!Array.isArray(list)) continue;
+    for (const it of list) {
+      const src = (it as { src?: unknown })?.src;
+      if (typeof src === 'string' && localOnly.has(src)) hit.add(src);
+    }
   }
   return [...hit].sort();
 }
@@ -113,8 +130,15 @@ export const NAME_LIMIT = 3;
  */
 export function pendingNotice(pending: readonly string[]): string {
   if (pending.length === 0) return '';
-  const names = pending.map((p) => p.slice(ASSET_PREFIX.length));
+  // 접두를 잘라 **파일 이름만** 보여 준다. 작가가 다룰 것이 그것이다.
+  // ⚠ `slice(ASSET_PREFIX.length)` 로 고정 길이를 자르던 코드였고, 작품(`assets/art/`)이
+  // 오는 순간 **글자가 잘려 나갔다**(`a.png` → `png`). 접두 목록을 보고 자른다.
+  const names = pending.map((p) => {
+    for (const { prefix } of BUCKETS) if (p.startsWith(prefix)) return p.slice(prefix.length);
+    return p;
+  });
   const shown = names.slice(0, NAME_LIMIT).join(', ');
   const more = names.length > NAME_LIMIT ? ` 외 ${names.length - NAME_LIMIT}개` : '';
-  return `아직 라이브가 아닙니다 — 이 GLB ${pending.length}개를 JSON 과 함께 보내 주세요: ${shown}${more}`;
+  // 「GLB」가 아니라 「파일」이다 — 이제 작품 이미지도 이 줄에 실린다.
+  return `아직 라이브가 아닙니다 — 이 파일 ${pending.length}개를 JSON 과 함께 보내 주세요: ${shown}${more}`;
 }
