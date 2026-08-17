@@ -169,6 +169,14 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   const artMats: ArtMaterial[] = [];
   /** dispose 대상 지오메트리. `[7]` 이 보는 축이라 재질만 지우면 절반만 정리된다 */
   const artGeos: { dispose?(): void }[] = [];
+  /**
+   * 세운 액자 그룹. **전체 대체가 이것을 지운다**(W8-4 D1.6).
+   *
+   * 왜 `root.children` 을 훑지 않는가 — 거기에는 **라이트와 그 타깃도 섞여 있다**
+   * (`root.add(L)`·`root.add(t)`). 통째로 비우면 풀이 씬에서 빠져 개수 불변식이 깨진다.
+   * 액자만 따로 들고 있는 것이 그 사고를 구조로 막는 유일한 방법이다.
+   */
+  const frameGroups: ArtNode[] = [];
   let frames = 0;
   let lit = 0;
   let skipped = 0;
@@ -185,8 +193,42 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
    */
   let next = 0;
 
+  /**
+   * 이전 `place` 의 흔적을 지운다. **라이트는 안 지운다 — 끈다.**
+   *
+   * 그 구별이 조건 1(개수 불변 절대)의 전부다: 풀은 부팅에 서고 세션 내내 그대로이며,
+   * 여기서 하는 것은 `intensity = 0` 뿐이다. **끄지 않으면 지운 작품 자리에 빛이 남는다**
+   * — 액자는 사라졌는데 벽이 밝은 상태이고, 화면에서 원인을 짚기 어려운 형태다.
+   */
+  function clearPlaced(): void {
+    for (const g of frameGroups) root.remove(g);
+    frameGroups.length = 0;
+    for (const m of artMats) m.dispose?.();
+    artMats.length = 0;
+    for (const geo of artGeos) geo.dispose?.();
+    artGeos.length = 0;
+    for (const L of pool) L.intensity = 0;
+    frames = 0; lit = 0; skipped = 0; unpowered = 0; texFailed = 0; next = 0;
+  }
+
+  /**
+   * 작품을 놓는다. **전체 대체다** — 부를 때마다 이전 것을 지우고 처음부터 세운다
+   * (팀장 판정 2026-08-17 (가)). `village-parcels.ts` 의 `setAll` 과 같은 의미론이다.
+   *
+   * ── 왜 누적이 아니라 대체인가 ───────────────────────────────────────────
+   * 편집은 걸고 **지우는** 것이 짝인데 누적 계약에는 지울 수단이 없었다. 개별 제거 API
+   * (`remove(i)`)를 다는 길도 있었지만 팀장이 기각했다 — **슬롯 반환 큐라는 새 상태
+   * 기계가 조건 1 의 검사 축을 늘리고**, 아래 cap 버그는 그대로 남기 때문이다.
+   *
+   * ⚠ **부수 효과가 아니라 이 판정의 절반이다**: `assignArtLights` 의 `used` 맵은 함수
+   * 지역이라 **호출마다 파셀 cap 이 초기화**된다. 누적 계약에서는 같은 파셀에 1개씩 두 번
+   * 놓으면 `perParcel=1` 이어도 **둘 다 켜졌다.** 전체 대체에서는 매 호출이 전체를 다시
+   * 배정하므로 그 지역성이 **정답**이 된다. 팀장 조건 C 가 이것을 명시 테스트로 못 박게 했다
+   * — 부수 효과로만 두면 구조를 되돌릴 때 버그가 소리 없이 부활한다.
+   */
   async function place(arts: readonly ArtworkItem[]): Promise<void> {
     if (disposed) return;
+    clearPlaced();
     const plan = assignArtLights(arts, perParcel, cellX, cellZ);
     skipped += plan.skipped;
 
@@ -237,6 +279,7 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       plane.position.set(0, 0, FRAME_DEPTH / 2 + 0.002);
       g.add(plane);
       root.add(g);
+      frameGroups.push(g);   // ⚠ 다음 `place` 가 이걸로 지운다(전체 대체)
       frames++;
 
       // 조명 — 배정받은 것만. **풀에서 꺼내 쓸 뿐 새로 만들지 않는다.**
