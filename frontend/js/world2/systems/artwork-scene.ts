@@ -365,6 +365,15 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       //
       // ⚠⚠ **테두리(`frameMat`)는 Standard 그대로다** — 감독이 "사진은" 이라고
       // 특정했고, 테두리까지 발광시키면 액자가 공간에서 붕 뜬다.
+      //
+      // 📊 **첫 작품 걸기 계단**(팀장 조건 4, 2026-08-18 헤드리스 실측). 작품 0→1:
+      //   artenv=0  geo +2 · tex +1 · pipe **+2** · draw +2
+      //   artenv=1  geo +2 · tex +1 · pipe +1 · draw +2
+      //   artenv=2  geo +2 · tex +1 · pipe +1 · draw +2
+      // `[8]` 하늘 예열이 잡았던 것과 **같은 부류**(`info.memory` 는 첫 렌더에 오른다)이고
+      // 크기가 다르다 — 하늘은 세 축이 동시에 뛰었고 여기는 액자 한 개분이다. 예열을
+      // 넣지 않은 것은 **팀장 판정 3**(*"계단을 재기 전의 예열은 추측 구현이다"*)이고,
+      // 재고 나서도 이 크기면 별건을 열 근거가 안 된다. 라이브 작품은 아직 0개다.
       const MatCtor = artSpec.kind === 'basic'
         ? THREE.MeshBasicMaterial
         : THREE.MeshStandardMaterial;
