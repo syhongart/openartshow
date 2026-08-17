@@ -44,11 +44,13 @@ const CELL = 32;
 interface Counts {
   geo: number; mat: number; light: number; mesh: number;
   geoDisposed: number; matDisposed: number;
+  /** `mat` 의 **내역**(W8-7). 합만 보면 그림과 테두리가 뒤바뀌어도 통과한다 */
+  matStd: number; matBasic: number;
 }
 
 function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; sceneKids: ArtNode[] } {
   const counts: Counts = {
-    geo: 0, mat: 0, light: 0, mesh: 0, geoDisposed: 0, matDisposed: 0,
+    geo: 0, mat: 0, matStd: 0, matBasic: 0, light: 0, mesh: 0, geoDisposed: 0, matDisposed: 0,
   };
   const node = (): ArtNode => {
     const kids: ArtNode[] = [];
@@ -66,7 +68,28 @@ function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; scene
     Mesh: class { constructor() { counts.mesh++; return node(); } },
     BoxGeometry: class { constructor() { counts.geo++; } dispose() { counts.geoDisposed++; } },
     PlaneGeometry: class { constructor() { counts.geo++; } dispose() { counts.geoDisposed++; } },
-    MeshStandardMaterial: class { constructor() { counts.mat++; } dispose() { counts.matDisposed++; } },
+    // ⚠ **재질 종류를 갈라 센다**(W8-7). `counts.mat` 은 합이라 기존 검사가 그대로
+    // 성립하고, `matStd`/`matBasic` 을 읽는 단언은 **아래 「내역이 갈린다」 검사**에
+    // 있다 — 합만 보면 그림과 테두리가 뒤바뀌어도 통과한다.
+    //
+    // ⚠⚠ 첫 판본은 여기에 *"…를 잰다"* 라고 적어 놓고 **읽는 `expect` 를 안 붙였다**
+    // (검수관 B2). 세는 것과 재는 것은 다른 일이다.
+    MeshStandardMaterial: class {
+      toneMapped = true;
+      constructor(o?: Record<string, unknown>) {
+        counts.mat++; counts.matStd++;
+        if (o && 'toneMapped' in o) this.toneMapped = o.toneMapped as boolean;
+      }
+      dispose() { counts.matDisposed++; }
+    },
+    MeshBasicMaterial: class {
+      toneMapped = true;
+      constructor(o?: Record<string, unknown>) {
+        counts.mat++; counts.matBasic++;
+        if (o && 'toneMapped' in o) this.toneMapped = o.toneMapped as boolean;
+      }
+      dispose() { counts.matDisposed++; }
+    },
     SpotLight: class {
       intensity = 0; angle = 0; penumbra = 0; distance = 0; castShadow = false;
       target = node();
@@ -75,6 +98,22 @@ function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; scene
   } as unknown as ArtThreeNS;
   const scene = node();
   return { THREE, scene, counts, sceneKids: scene.children! };
+}
+
+/**
+ * 재질 생성 인자를 엿본다. ⚠ **두 재질을 다 가로챈다**(W8-7) — 그림은 `MeshBasicMaterial`,
+ * 테두리는 `MeshStandardMaterial` 이라 한쪽만 감싸면 **재질 종류가 바뀌는 순간 축이
+ * 조용히 빈다.** 여기서 재는 것은 「어느 재질인가」가 아니라 「생성 **인자**에 텍스처가
+ * 들어가는가」이므로 종류와 무관해야 한다.
+ */
+function spyMaterials(THREE: ArtThreeNS, seen: Record<string, unknown>[]): void {
+  const box = THREE as unknown as Record<string, unknown>;
+  for (const key of ['MeshStandardMaterial', 'MeshBasicMaterial']) {
+    const Base = box[key] as new (o: Record<string, unknown>) => unknown;
+    box[key] = class {
+      constructor(o: Record<string, unknown>) { seen.push(o); return new Base(o) as object; }
+    };
+  }
 }
 
 const art = (over: Partial<ArtworkItem> = {}): ArtworkItem => ({
@@ -497,6 +536,23 @@ describe('★ 재질·지오는 작품 수에 비례하되 **테두리는 공유
     expect(counts.mat - base, '★ 테두리 재질이 작품마다 생긴다').toBe(3);
   });
 
+  it('★ 🔴 **내역이 갈린다** — 테두리 1(Standard) · 그림 3(Basic)', async () => {
+    // ⚠ 이 검사가 없는 동안 `matStd`/`matBasic` 은 **검출력 0** 이었다(검수관 블로커 B2,
+    // 2026-08-18). 필드를 만들며 주석에 *"「그림은 Basic · 테두리는 Standard」를 잰다"*
+    // 라고 적었는데 **그 둘을 읽는 `expect` 가 0건**이었다 — 실측으로 확인됐다:
+    // `counts.matBasic++` 를 지워도, `counts.matStd++` 를 지워도 **0 failed**.
+    //
+    // 「축을 만들려던 자리에서 축이 비는」 형태다. 합(`counts.mat`)만 보는 위 검사는
+    // **그림과 테두리가 통째로 뒤바뀌어도 통과한다** — 그것을 막으려고 만든 필드였다.
+    const { THREE, scene, counts } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place([art(), art(), art()]);
+    expect(counts.matStd, '★ Standard 가 테두리 1개가 아니다 — 그림까지 Standard 다')
+      .toBe(1);
+    expect(counts.matBasic, '★ Basic 이 작품 수만큼이 아니다 — 그림이 Basic 이 아니다')
+      .toBe(3);
+  });
+
   it('액자 하나당 메시 둘 — 테두리 + 작품 평면', async () => {
     const { THREE, scene, counts } = makeThree();
     const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
@@ -620,10 +676,7 @@ describe('★ 텍스처는 재질을 만들기 **전에** 받는다 (브라우�
     // 꽂으면 `needsUpdate` 없이는 반영되지 않는다. 순서로 해소했다(셰이더 재컴파일 0).
     const { THREE, scene } = makeThree();
     const seen: Record<string, unknown>[] = [];
-    const Base = (THREE as unknown as { MeshStandardMaterial: new (o: Record<string, unknown>) => unknown })
-      .MeshStandardMaterial;
-    (THREE as unknown as Record<string, unknown>).MeshStandardMaterial =
-      class { constructor(o: Record<string, unknown>) { seen.push(o); return new Base(o) as object; } };
+    spyMaterials(THREE, seen);
 
     const s = createArtworkScene({
       THREE, scene, cellX: CELL, cellZ: CELL,
@@ -637,10 +690,7 @@ describe('★ 텍스처는 재질을 만들기 **전에** 받는다 (브라우�
   it('★ 텍스처가 없으면 `map` 키 자체를 안 넣는다 — `undefined` 를 넣으면 경고가 난다', async () => {
     const { THREE, scene } = makeThree();
     const seen: Record<string, unknown>[] = [];
-    const Base = (THREE as unknown as { MeshStandardMaterial: new (o: Record<string, unknown>) => unknown })
-      .MeshStandardMaterial;
-    (THREE as unknown as Record<string, unknown>).MeshStandardMaterial =
-      class { constructor(o: Record<string, unknown>) { seen.push(o); return new Base(o) as object; } };
+    spyMaterials(THREE, seen);
 
     const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
     await s.place([art()]);

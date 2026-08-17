@@ -30,6 +30,7 @@ import {
 import {
   artLightPoolSize, assignArtLights, spotFor, ART_LIGHT_PER_PARCEL,
 } from '../decide/art-light.js';
+import { artMatSpec, readArtEnv } from '../decide/art-material.js';
 
 /** 이 파일이 쓰는 three 표면. **필요한 것만** — 넓히면 스텁이 실물과 멀어진다 */
 export interface ArtThreeNS {
@@ -38,6 +39,9 @@ export interface ArtThreeNS {
   BoxGeometry: new (w: number, h: number, d: number) => unknown;
   PlaneGeometry: new (w: number, h: number) => unknown;
   MeshStandardMaterial: new (o: Record<string, unknown>) => ArtMaterial;
+  // ⚠ **그림 평면 전용이다**(W8-7). 테두리는 계속 Standard 를 쓴다 — 근거는
+  // `decide/art-material.ts` 헤더 한 곳이다.
+  MeshBasicMaterial: new (o: Record<string, unknown>) => ArtMaterial;
   SpotLight: new (color?: number, intensity?: number) => ArtLight;
   Object3D: new () => ArtNode;
 }
@@ -51,7 +55,9 @@ export interface ArtNode {
   children?: ArtNode[];
 }
 
-export interface ArtMaterial { map?: unknown; dispose?(): void }
+export interface ArtMaterial {
+  map?: unknown; toneMapped?: boolean; fog?: boolean; dispose?(): void;
+}
 
 export interface ArtLight extends ArtNode {
   intensity: number;
@@ -73,6 +79,11 @@ export const LIGHT_COLOR = 0xfff2e0;
 
 export interface ArtworkSceneDeps {
   readonly THREE: ArtThreeNS;
+  /**
+   * 그림이 환경 영향을 얼마나 받는가(W8-7). **생략하면 URL 노브를 읽는다** — 이
+   * 저장소의 확장 규약(「생략 = 기존 동작」)이고, 테스트는 값을 넣어 세 분기를 다 돈다.
+   */
+  readonly artEnv?: number;
   readonly scene: ArtNode;
   /** 파셀 격자. 조명 배정이 파셀 단위라 필요하다 */
   readonly cellX: number;
@@ -167,6 +178,13 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
     root.add(t);
     pool.push(L);
   }
+
+  /**
+   * 그림 재질 명세. 노브는 **세션당 한 번만** 읽는다 — `place()` 는 작품마다 도는
+   * 자리라 거기서 URL 을 파싱하면 걸 때마다 반복된다. 세션 중에 값이 바뀔 일도 없다
+   * (새로고침해야 한다).
+   */
+  const artSpec = artMatSpec(deps.artEnv ?? readArtEnv());
 
   /** 액자 테두리 재질 — **전 작품이 공유한다**(재질 수를 상수로) */
   const frameMat = new THREE.MeshStandardMaterial({
@@ -339,8 +357,41 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       // 아래로 계속 가면 그 지오로 만든 액자를 `root.add` 해 **유령**이 선다.
       if (disposed || gen !== generation) return;
       if (deps.loadTexture && !tex) texFailed++;
-      const mat = new THREE.MeshStandardMaterial({
-        ...(tex ? { map: tex } : {}), roughness: 0.85, metalness: 0,
+      // ── 🔴 그림은 **주변 환경을 안 받는다** (W8-7, 감독 지시 2026-08-18) ──
+      // *"그늘에 있으면 사진이 어두워. 사진은 주변환경에 영향을 안받았으면"*
+      // 같은 날 두 번째: *"작품에는 **재질감 전혀없이.** 그냥 **뷰어처럼** 밝기가
+      // 보였으면해. 그림자 영역에서도 작품은 그대로. 밝은 곳에서도 그대로."*
+      //
+      // 예전에는 여기가 `MeshStandardMaterial` 이었고, 그래서 그늘진 벽에 건 사진이
+      // 실제로 어두워졌다. 팀장 판정으로 **조명도 톤매핑도 안 받게** 바꿨다 —
+      // 「주변환경」에 시간대 노출이 포함된다는 것이 그 판정의 요점이다.
+      //
+      // ⚠ **판정은 여기 없다.** 어느 재질인지는 `decide/art-material.ts` 가 정하고
+      // 여기는 집행뿐이다. (나) `emissiveMap` 을 왜 안 썼는지도 그 파일 헤더 한 곳이다.
+      //
+      // ⚠⚠ **테두리(`frameMat`)는 Standard 그대로다** — 감독이 "사진은" 이라고
+      // 특정했고, 테두리까지 발광시키면 액자가 공간에서 붕 뜬다.
+      //
+      // 📊 **첫 작품 걸기 계단**(팀장 조건 4)은 `decide/art-material.ts` 의 실측 절에 있다.
+      //
+      // ⚠ **PBR 인자는 `standard` 에만 넘긴다**(검수관 블로커 B1, 2026-08-18).
+      // 첫 판본은 둘 다에 `roughness`/`metalness` 를 넘기며 *"Basic 이 무시한다 —
+      // 넘겨도 무해하다"* 라고 적었다. 앞 절은 참이고 **뒷 절은 거짓이었다** — three 는
+      // 작품마다 경고 두 줄을 낸다(r171 두 빌드 모두 실측):
+      //     THREE.Material: 'roughness' is not a property of THREE.MeshBasicMaterial.
+      // 작품 N개면 2N 건이고, 스모크 `[4]` 는 `console.error`·pageerror 만 보므로
+      // **어느 게이트도 이것을 안 잡는다.** 그리고 감독 문언이 *"재질감 전혀없이"* 라
+      // 넘기지 않는 것이 코드가 말하는 바와도 맞는다.
+      const isBasic = artSpec.kind === 'basic';
+      const MatCtor = isBasic ? THREE.MeshBasicMaterial : THREE.MeshStandardMaterial;
+      const mat = new MatCtor({
+        ...(tex ? { map: tex } : {}),
+        // 대조군(`?artenv=2`)의 룩을 예전 그대로 두려면 이 두 값이 있어야 한다.
+        ...(isBasic ? {} : { roughness: 0.85, metalness: 0 }),
+        toneMapped: artSpec.toneMapped,
+        // ⚠ 안개는 **기본값이 켜짐**이라 안 넘기면 그림이 계속 안개색으로 물든다
+        // (팀장 판정 (B)). 근거·실측·재론 트리거는 `ArtMatSpec.fog` 주석 한 곳이다.
+        fog: artSpec.fog,
       });
       artMats.push(mat);
       const planeGeo = new THREE.PlaneGeometry(w, h);
@@ -408,18 +459,45 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
  * 실패는 **값으로** 돌려준다(`null`). 던지면 뒤 작품이 통째로 안 걸린다 — 액자는 서고
  * 그림만 비는 것이 「로드 실패」의 정직한 표시다.
  *
+ * ── 🔴 `colorSpace` 를 반드시 준다 (감독 지시 2026-08-18 두 번째) ────────────
+ * *"그냥 **뷰어처럼** 밝기가 보였으면해"* — 뷰어는 원본을 원본대로 낸다.
+ *
+ * three r152+ 의 `TextureLoader` 는 `colorSpace` 를 **설정하지 않는다**(기본
+ * `NoColorSpace` = 선형 취급). 그런데 사진 파일은 **sRGB 인코딩**이다. 표시를 안 하면
+ * 셰이더가 sRGB 값을 선형으로 잘못 읽고, 출력에서 선형→sRGB 변환이 한 번 더 걸려
+ * **원본보다 밝고 색이 바래** 나온다. 「뷰어처럼」의 반대다.
+ *
+ * ⚠ 이 저장소의 **다른 색 텍스처는 전부 이것을 준다** — `horizon.ts:89` ·
+ * `garden.ts:210` · `tree.ts:250` · `road.ts:283` · `shadow.ts:200` ·
+ * `surface-paint.ts:246`. **작품 텍스처만 빠져 있었다**(W8-4 부터 W8-7 B1 까지).
+ * 화면을 픽셀로 안 보고 액자 **개수**만 확인해 온 것이 이것을 놓친 직접 원인이다.
+ *
+ * ⚠⚠ **순색으로는 이 결함을 못 잡는다.** sRGB 변환은 극값(0·255)을 그대로 두므로,
+ * 마젠타 `rgb(255,0,255)` 같은 순색 픽스처는 고쳐도 안 고쳐도 같은 값을 낸다 —
+ * 대역이 실물의 성질을 안 가지는 그 형태다. **중간 회색으로 재야 갈린다.**
+ *
  * @param resolve 계약의 `src` → 실제 URL. base 결합은 `asset-url.ts` 한 곳이 소유한다
  */
 export function textureLoaderFor(
   THREE: unknown,
   resolve: (src: string) => string,
 ): ((src: string) => Promise<unknown | null>) | undefined {
-  const TL = (THREE as { TextureLoader?: new () => { loadAsync(u: string): Promise<unknown> } })
-    .TextureLoader;
+  const NS = THREE as {
+    TextureLoader?: new () => { loadAsync(u: string): Promise<unknown> };
+    SRGBColorSpace?: unknown;
+  };
+  const TL = NS.TextureLoader;
   if (!TL) return undefined;
   const loader = new TL();
   return async (src: string) => {
-    try { return await loader.loadAsync(resolve(src)); } catch { return null; }
+    try {
+      const tex = await loader.loadAsync(resolve(src));
+      // 값을 여기에 적지 않는다 — three 가 소유한 상수를 그대로 얹는다(값 미러링 회피).
+      if (tex && NS.SRGBColorSpace !== undefined) {
+        (tex as { colorSpace?: unknown }).colorSpace = NS.SRGBColorSpace;
+      }
+      return tex;
+    } catch { return null; }
   };
 }
 
