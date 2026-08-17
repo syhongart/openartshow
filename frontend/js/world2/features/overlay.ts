@@ -36,7 +36,21 @@ import type { Object3D } from 'three/webgpu';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import type { EditSession, LoadProgress, OverlayEntry, OverlayHost } from '../edit/types.js';
 import { loadOverlay, type OverlayItem } from '../decide/overlay.js';
-import { disableMatExtensions } from '../systems/glb-material.js';
+import {
+  newDiag, recordFailure, beginAttach, type OverlayDiag,
+} from '../decide/overlay-diag.js';
+import { loadLedger, owners } from '../decide/village-ledger.js';
+import {
+  planMerge, totalItems, type MergePlan, type OverlayDoc,
+} from '../decide/multi-overlay.js';
+import { createStaticStore, loadLegacyOverlay } from '../store/static-store.js';
+import { resolveEntry } from '../decide/tenant-entry.js';
+import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
+import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-scene.js';
+import { disableMatExtensions } from '../../world-shared/glb-material.js';
+import {
+  ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
+} from '../../world-shared/attach-loop.js';
 import { readNum } from '../url-knob.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { surfaceY } from '../parts/surface.js';
@@ -44,8 +58,10 @@ import { DEFAULT_LAYOUT } from '../parts/types.js';
 // base 결합은 `asset-url.ts` **한 곳**이다. W7 에서 소비자가 둘이 되면서 모듈로 올렸다.
 import { assetUrl } from '../asset-url.js';
 
-/** 배포된 배치 파일. 없거나 비어 있으면 아무것도 안 얹는다. */
-const OVERLAY_JSON = 'assets/world2-overlay.json';
+// ⚠ 배치 파일 경로는 **`store/static-store.ts` 가 소유한다**(2026-08-16, W8-3 S5).
+// 그전에는 여기 `OVERLAY_JSON` 상수가 있었고 이 파일이 직접 `fetch` 했다 — 저장 자리를
+// 어댑터로 가두는 것이 감독 카드(「구조만 먼저」)의 요구라 옮겼다. 여기 남겨 두면
+// **경로가 두 곳에 생기고**, 서버가 붙는 날 한쪽만 바뀐다.
 
 /** 팔레트에 뜰 모델 목록. `frontend/assets/models/index.json` 과 짝이다. */
 const MODELS_JSON = 'assets/models/index.json';
@@ -57,23 +73,17 @@ const MODELS_JSON = 'assets/models/index.json';
  */
 const TEXTURES_JSON = 'assets/textures/index.json';
 
-/**
- * 한 프레임에 붙일 개수. `glb-city.ts` 의 `ATTACH_BATCH` 와 같은 근거다(한 프레임에 다
- * 붙이면 그 프레임이 통째로 멈춘다) — 값이 같은 것은 우연이고, 서로를 참조하지 않는다.
- */
-const ATTACH_BATCH = 4;
-
-/** 예열 프레임. `glb-city.ts` 의 `WARMUP_FRAMES` 와 같은 축이다(첫 렌더에 GPU 자원이 오른다). */
-const WARMUP_FRAMES = 2;
-
-interface Diag {
-  state: 'idle' | 'loading' | 'ready' | 'failed';
-  placed: number;
-  /** 로드에 실패한 `src`. **못 세우고 통과시키지 않으려고 남긴다** */
-  failed: string[];
-  edit: boolean;
-  error?: string;
-}
+// ⚠ `ATTACH_BATCH`·`WARMUP_FRAMES` 는 **`world-shared/attach-loop.ts` 가 소유한다**
+// (2026-08-16, W8-2). 그전에는 여기와 `glb-city.ts` 에 각각 있었고 주석이
+// *"값이 같은 것은 우연이고, 서로를 참조하지 않는다"* 라고 적고 있었다 — 백로그 #38 이
+// 「공유 상수 승격 검토」로 그 자리를 이미 지목했다. **glb-city 도 같은 커밋에서 이관했다.**
+//
+// ⚠⚠ 이 괄호는 원래 *"glb-city 쪽 이관은 아직이다 — 별도 회차"* 라고 적혀 있었고
+// **거짓이었다**(같은 커밋에서 그 이관을 했다). 나는 이관을 계획하며 이 문장을 먼저 썼고,
+// 실제로 옮긴 뒤 문장을 안 고쳤다. 다음 사람이 이것을 읽으면 **이미 된 일을 또 하려 든다.**
+//
+// 진단(`Diag`·`FAILED_KEEP`·실패 기록)은 `../decide/overlay-diag.ts` 가 소유한다 —
+// 왜 순수 모듈로 뗐는지는 **그 파일 헤더 한 곳**이다(뮤테이션이 시켰다).
 
 type Vec3Like = { set(x: number, y: number, z: number): void };
 type ThreeGroupNS = {
@@ -88,15 +98,9 @@ function nextFrame(): Promise<void> {
   });
 }
 
-/** 컬링을 잠시 끄고 몇 프레임 돌려 GPU 자원을 미리 올린다(`glb-city.ts` 와 같은 처방). */
+/** 컬링을 잠시 끄고 몇 프레임 돌려 GPU 자원을 미리 올린다. 구현은 공유 모듈이 소유한다. */
 async function warmUp(root: Object3D): Promise<void> {
-  const touched: Object3D[] = [];
-  try {
-    root.traverse((o: Object3D) => { if (o.frustumCulled) { o.frustumCulled = false; touched.push(o); } });
-    for (let i = 0; i < WARMUP_FRAMES; i++) await nextFrame();
-  } finally {
-    for (const o of touched) o.frustumCulled = true;
-  }
+  await warmUpNode(root as unknown as CullableNode, nextFrame);
 }
 
 export const overlayFeature: Feature = {
@@ -108,7 +112,10 @@ export const overlayFeature: Feature = {
     const wantOverlay = readNum('overlay', 1, 0, 1) >= 1;
     if (!wantEdit && !wantOverlay) return null;
 
-    const diag: Diag = { state: 'idle', placed: 0, failed: [], edit: wantEdit };
+    const diag: OverlayDiag = newDiag(wantEdit);
+    // ⚠ 지금은 배포 저장소 고정이다. 주입 자리는 S6(진입)에서 연다 — 여기서 미리 넓히면
+    // 쓰는 사람이 없는 노브가 생기고, 그것은 「지금 안 쓰는 것을 미리 공유」다.
+    const store = createStaticStore();
     const entries: OverlayEntry[] = [];
     /**
      * 로드한 원본 모델. 같은 `src` 를 여러 번 놓아도 지오·재질을 공유한다.
@@ -127,6 +134,10 @@ export const overlayFeature: Feature = {
     let THREE: ThreeGroupNS | null = null;
     let loadGLB: ((url: string, onProgress?: (ev: ProgressEvent) => void) => Promise<Object3D>) | null = null;
     let edit: EditSession | null = null;
+    /** 진입 바(W8-3 S6). DOM 이 없거나 마크업이 없으면 `null` — 그래도 세계는 뜬다 */
+    let tenantBar: TenantBar | null = null;
+    /** 액자·조명(W8-4). 작품이 0개여도 만든다 — 라이트 풀이 **부팅에** 서야 하기 때문이다 */
+    let artScene: ArtworkScene | null = null;
     let nextId = 1;
     let disposed = false;
 
@@ -196,7 +207,13 @@ export const overlayFeature: Feature = {
         })
         .catch((e: unknown) => {
           lastFail = `${key}: ${e instanceof Error ? e.message : String(e)}`;
-          diag.failed.push(lastFail);
+          // ⚠ **상한이 있다**(2026-08-16, W8-2). 그전에는 무제한 `push` 였다 — 편집 세션에서
+          // 같은 실패를 반복하면(네트워크가 나가면 놓을 때마다 난다) 이 배열만 계속 자란다.
+          // 화면에 안 나오는 누수라 `info.memory` 축이 **원리적으로 못 잡는다.**
+          //
+          // 자르되 **몇 번이었는지는 센다** — 상한만 두면 「4번 실패」와 「400번 실패」가
+          // 같은 값이 되고, 그것이야말로 진단이 필요한 순간에 진단을 잃는 것이다.
+          recordFailure(diag, lastFail);
           // **실패는 캐시하지 않는다.** 남겨 두면 그 `src` 는 세션 내내 되살아나지
           // 못한다(일시적 네트워크 실패가 영구 실패가 된다).
           models.delete(key);
@@ -225,6 +242,18 @@ export const overlayFeature: Feature = {
       at: { x: number; y: number; z: number; ry?: number; s?: number },
       blobUrl?: string,
       onProgress?: LoadProgress,
+      /**
+       * 붙인 직후 **이 항목만** 예열할 것인가. 기본은 예열한다(= 편집 경로).
+       *
+       * ⚠ **부팅 루프는 `false` 를 넘긴다.** 그쪽은 배치마다 프레임을 넘기고 **끝에서
+       * 한 번** `warmUp(root)` 하므로, 항목마다 또 하면 프레임이 **3배**가 된다
+       * (`3.25N` vs `0.25N` — 근거·수치는 `world-shared/attach-loop.ts` 헤더 한 곳).
+       *
+       * 이 인자가 없던 동안 **부팅이 편집용 비용을 그대로 물고 있었다.** 아래 예열
+       * 주석은 그 사실을 모른 채 *"편집 중 한 개씩 놓는 경로는 그 루프를 안 탄다"* 만
+       * 적고 있었다 — 참이지만 **역은 아니었다**(부팅은 이 함수를 탄다).
+       */
+      warm = true,
     ): Promise<OverlayEntry | null> {
       await ensureLoader();
       if (disposed || !THREE || !root) return null;
@@ -269,9 +298,11 @@ export const overlayFeature: Feature = {
       // 이미 놓인 것까지 다시 열면 그것들의 컬링이 매번 흔들린다. `npc.ts` 의
       // *"VRM 은 비동기라 예열 창을 이미 지났을 수 있다 — 합류하는 체만 다시 연다"* 와
       // 같은 처방이다.
-      await nextFrame();
-      if (disposed) return entry;
-      await warmUp(entry.holder);
+      if (warm) {
+        await nextFrame();
+        if (disposed) return entry;
+        await warmUp(entry.holder);
+      }
       return entry;
     }
 
@@ -368,33 +399,105 @@ export const overlayFeature: Feature = {
 
     void (async () => {
       try {
-        diag.state = 'loading';
-        // 배포된 배치 파일. 없으면(404) 빈 것으로 본다 — 배치가 아직 0개인 것이 정상이다.
-        let raw: unknown = null;
-        try {
-          const res = await fetch(assetUrl(OVERLAY_JSON), { cache: 'no-cache' });
-          if (res.ok) raw = await res.json();
-        } catch { /* 파일이 없다 = 배치 0개 */ }
+        // `diag.state` 는 이미 `'loading'` 이다(초기값). 여기서 다시 쓰지 않는다 —
+        // 같은 값을 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다.
+        //
+        // ── 대장이 있으면 여러 작가, 없으면 옛 단일 문서 (2026-08-16, W8-3 S5) ──
+        // **하위호환이 이 분기의 전부다.** 대장·작가 문서가 하나도 배포되지 않은 상태에서
+        // 세계가 **지금과 똑같이 떠야 한다** — 그 보장이 없으면 이 회차는 라이브 회귀다.
+        const ledgerRaw = await store.loadLedger();
         if (disposed) return;
+        const { ledger, issues: ledgerIssues } = loadLedger(ledgerRaw.raw);
+        diag.ledgerIssues = ledgerIssues.length;
 
-        const overlay = loadOverlay(raw);
+        // ── 누구의 땅을 보는가 + 진입 바 (2026-08-16, W8-3 S6) ──────────────
+        // 감독 카드: 진입은 **둘 다** — 주소(`?u=`)에 있으면 그것, 없으면 마을 전체이고
+        // 입력 창으로 옮겨 간다. 판정·문구·주소 조립은 `decide/tenant-entry.ts` 와
+        // `ui/tenant-bar.ts` 가 소유한다 — 여기 두면 **노드가 못 도는 자리**에 분기가 생기고
+        // 안 도는 코드는 검사되지 않는다. 진입 바가 부착 루프 **앞**인 이유는 그 파일들 헤더.
+        const ent = resolveEntry(env.doc?.defaultView?.location?.search ?? '', owners(ledger));
+        diag.tenant = ent.tenant;
+        if (ent.tenantError) diag.tenantError = ent.tenantError;
+        if (ent.tenantMissing) diag.tenantMissing = true;
+        if (env.doc) tenantBar = mountTenantEntry(env.doc, ent);
+        const who = ent.who;
+
+        let plan: MergePlan;
+        if (who.length === 0) {
+          // 대장이 없다(또는 배정 0). **옛 경로 그대로** — 단일 문서를 마을 전체로 본다.
+          const legacy = await loadLegacyOverlay();
+          if (disposed) return;
+          const one = loadOverlay(legacy.raw);
+          plan = {
+            groups: [{ owner: '', items: one.items }],
+            parcels: one.parcels, arts: one.arts, issues: [],
+          };
+          // ⚠ 옛 경로에서는 **`surfaces` 를 그대로 쓴다** — 그것이 지금 라이브 동작이고,
+          // 마을 운영자(감독)의 단일 문서이기 때문이다. 여러 작가일 때만 무시한다.
+          env.setSurfaces(one.surfaces);
+        } else {
+          // ⚠ **문서를 하나씩 받는다.** `Promise.all` 로 묶으면 한 요청의 예외가 전부를
+          // reject 하고, 그것이 팀장이 병합 조건으로 건 **실패 격리**를 깬다.
+          const docs: OverlayDoc[] = [];
+          for (const owner of who) {
+            const got = await store.loadOverlay(owner);
+            if (disposed) return;
+            docs.push({ owner, raw: got.raw, failure: got.failure });
+          }
+          plan = planMerge(ledger, docs);
+          // 여러 작가일 때 표면 재질은 **마을 것**이다(감독 카드) — 작가 문서의 것은
+          // `planMerge` 가 무시하고 사유를 냈다. 마을 기본값을 그대로 둔다.
+        }
+        diag.owners = plan.groups.length;
+        diag.mergeIssues = plan.issues.length;
+
+        // **놓기 전에 몇 개를 놓을지부터 적는다.** 뒤에 적으면 `state='ready'` 와 `want`
+        // 사이에 창이 생겨, 그 창에서 관측한 스모크가 `placed >= want` 를 거짓 통과시킨다.
+        // (편집 세션에서 더 놓으면 `placed > want` 가 되는데 그것은 정상이다 — 이 값이
+        //  뜻하는 것은 **부팅이 놓으려던 개수**이고, 판정은 `placed < want` 한 방향뿐이다.)
+        beginAttach(diag, totalItems(plan));
         // ── 동결 파셀을 먼저 앉힌다 ──────────────────────────────────────────
         // GLB 배치(`items`)보다 **앞**인 이유: 이쪽은 프레임을 넘기지 않고 끝나는 반면
         // `place` 루프는 자산을 받느라 오래 걸린다. 뒤로 미루면 그동안 감독은 옛 마을을
         // 보게 되고, 다 받은 뒤에야 파셀이 통째로 다시 만들어진다.
         //
-        // 비어 있으면 아무 일도 없다 — `setAll([])` 은 이전 동결이 없을 때 알림도 안 낸다.
-        env.village.setAll(overlay.parcels);
-        // 표면 재질(W7)도 여기서 흘려보낸다. **동결 파셀과 같은 자리인 것이 중요하다** —
-        // 둘 다 프레임을 안 넘기고 끝나므로, GLB 를 받는 동안 감독이 옛 재질의 마을을
-        // 보는 일이 없다. 집행은 `features/surface-paint.ts` 가 다음 프레임에 한다.
-        env.setSurfaces(overlay.surfaces);
-        for (let i = 0; i < overlay.items.length; i++) {
-          const it = overlay.items[i];
-          await place(it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s });
+        // ⚠ **한 번만 부른다.** `setAll` 이 `index.clear()` 로 시작하므로(실측
+        // `village-parcels.ts:169-181`) 작가마다 부르면 **마지막 것만 남고**, 증상은
+        // «다른 작가 파셀이 안 보인다» 로만 난다. `planMerge` 가 이미 합쳐 뒀다.
+        env.village.setAll(plan.parcels);
+        // ⚠ **부팅은 항목마다 예열하지 않는다**(`warm = false`) — 배치마다 프레임을
+        // 넘기고 **끝에서 한 번** `warmUp(root)` 한다. 그전에는 `place()` 안의 3프레임을
+        // 부팅도 물어 `frames(N) = 3.25N + 2` 였다(N=100 → 327프레임). 지금은 `0.25N + 2`.
+        // 루프 자체는 `world-shared/attach-loop.ts` 가 소유한다 — **순수 함수라 테스트가
+        // 프레임 넘김 횟수를 직접 센다**(그전에는 이 축을 재는 것이 0개였다).
+        //
+        // 그룹을 **이어서** 돈다(하나의 `attachAll` 이 아니라 작가마다) — 그래야 한 작가의
+        // 배치가 실패해도 다음 작가가 계속된다. 배치 예산은 그룹마다 새로 세지만, 프레임
+        // 넘김 총량은 `⌊N/4⌋` 근처로 같다(그룹 경계에서만 몇 프레임 더 든다).
+        for (const group of plan.groups) {
+          await attachAll({
+            items: group.items,
+            place: (it: OverlayItem) => place(
+              it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s }, undefined, undefined, false,
+            ),
+            nextFrame,
+            aborted: () => disposed,
+            batch: ATTACH_BATCH,
+          });
           if (disposed) return;
-          if ((i + 1) % ATTACH_BATCH === 0) await nextFrame();
         }
+        // ── 벽에 건 작품 (W8-4) — 라이트 풀은 한 번에 서고 안 변한다(조건 1) ──
+        // ⚠ *"작품이 0개여도 씬을 만든다"* 라고 적혀 있었고 **거짓**(검수관 B3-2): `arts` 0
+        // 이고 GLB 도 0이면 `ensureLoader()` 미호출 → `THREE` null → 씬이 안 선다(라이브가
+        // 그 상태다). 조건 1 은 안 깨지고, 깨지는 것은 작품이 나중에 추가될 때 — W8-4 D(#86).
+        if (plan.arts.length > 0) await ensureLoader();
+        if (disposed) return;
+        if (THREE) {
+          artScene = mountArtworks(THREE, env.scene as unknown as ArtNode, DEFAULT_LAYOUT, assetUrl);
+          await artScene.place(plan.arts);
+          if (disposed) return;
+        }
+
         if (root) await warmUp(root);
         if (disposed) return;
         diag.state = 'ready';
@@ -437,7 +540,10 @@ export const overlayFeature: Feature = {
       // `frozen` 은 `diag` 에 넣지 않고 여기서 읽는다 — 저장소가 소유하는 값이라
       // 복사해 두면 갈라진다(편집이 저장소를 직접 고치므로 복사본은 즉시 낡는다).
       diagnostics: () => ({
-        ...diag, failed: diag.failed.slice(0, 4), frozen: env.village.size(),
+        // `failed` 는 이미 `FAILED_KEEP` 상한이 걸려 있다 — 여기서 다시 자르지 않는다.
+        // 그전에는 여기서만 `slice(0, 4)` 로 잘랐고, **배열 자체는 무제한으로 자랐다**
+        // (화면에 보이는 것만 4개였을 뿐 누수는 그대로였다).
+        ...diag, frozen: env.village.size(), art: artScene?.stats() ?? null,
       }),
       // 배치 수가 곧 상태다. 0개도 유효한 그룹이라 `'0'` 을 낸다 — `null` 을 내면 이
       // 기능이 기본 켜짐인 탓에 드로우콜 축이 **영원히 판정 불가**가 된다(`glb-city`·
@@ -446,6 +552,8 @@ export const overlayFeature: Feature = {
       dispose() {
         disposed = true;
         edit?.dispose();
+        tenantBar?.dispose();
+        artScene?.dispose();
         for (const u of blobUrls) { try { URL.revokeObjectURL(u); } catch { /* 이미 회수됨 */ } }
         blobUrls.clear();
         if (root) {

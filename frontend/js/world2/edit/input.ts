@@ -9,6 +9,7 @@
 // 예외는 `Tab` 하나다. 편집이 꺼져 있어도 켤 수 있어야 하므로 상시 붙는다.
 
 import { isSafeSrc } from '../decide/overlay.js';
+import { judgeUpload } from '../decide/upload-plan.js';
 import type { OverlayHost } from './types.js';
 import { RY_STEP, Y_STEP, select, type EditState } from './state.js';
 import {
@@ -35,6 +36,13 @@ export interface InputDeps {
   toggleEditing(): void;
   /** 드래그드롭으로 만든 임시 주소를 소비자에게 넘겨 회수하게 한다 */
   onBlobUrl(url: string): void;
+  /**
+   * 자기 GLB 를 올릴 수 있는 등급인가(감독 지시 2026-08-16 「특별 프리미엄」). **주입받는다** —
+   * 여기서 `studio-plan.js` 를 직접 부르면 등급을 바꿔 가며 이 경로를 돌릴 수 없다.
+   */
+  canUploadGlb: boolean;
+  /** 지금 등급의 표시명. 거부 문구가 «지금 무엇인지» 를 말할 수 있어야 한다 */
+  tierLabel?: string;
 }
 
 export interface Input {
@@ -548,13 +556,14 @@ export function createInput(deps: InputDeps): Input {
     ev.preventDefault();
     const file = ev.dataTransfer?.files?.[0];
     if (!file) return;
-    const src = `assets/models/${file.name}`;
-    if (!isSafeSrc(src)) {
-      // 계약(`decide/overlay.ts`)이 허용 문자를 정한다. 여기서 넓히지 않고 **왜 안 되는지**
-      // 를 말한다 — 계약 주석이 *"거부 사유가 한 종류라 원인을 알 수 없다"* 고 남긴 자리다.
-      panel.say(`«${file.name}» 은 쓸 수 없는 이름입니다 — 영문·숫자·_ - . 만, 확장자는 소문자 .glb`, true);
-      return;
-    }
+    // 등급과 이름을 **한 판정**이 본다(근거·문구는 `decide/upload-plan.ts` 한 곳).
+    const verdict = judgeUpload(
+      file.name,
+      { canUpload: deps.canUploadGlb, tierLabel: deps.tierLabel },
+      isSafeSrc(`assets/models/${file.name}`),
+    );
+    if (!verdict.ok) { panel.say(verdict.message, true); return; }
+    const src = verdict.src;
     if (!picker.castFrom(ev)) return;
     const at = picker.groundAt();
     if (!at) { panel.say('지면이 보이는 쪽에 놓아 주세요.', true); return; }

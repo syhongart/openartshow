@@ -12,6 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "check:refs": "node scripts/smoke/check-refs.mjs",
+    "check:cycles": "node scripts/smoke/check-cycles.mjs",
+    "check:filesize": "node scripts/smoke/check-filesize.mjs",
     "check:gitadd": "node scripts/smoke/check-workflow-gitadd.mjs",
     "check:devlog-times": "node scripts/extract-devlog-times.mjs --check",
     "lint": "eslint .",

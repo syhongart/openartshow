@@ -53,6 +53,8 @@
 // 최종이고, 그때는 `src` 검증 규칙(아래)이 가장 먼저 바뀌는 자리다.
 
 import type { PlacedPart } from '../parts/types.js';
+import { foldAngle } from './angle.js';
+import { normalizeArts, type ArtIssueReason, type ArtworkItem } from './artwork.js';
 import {
   SURFACE_KINDS, defaultSetting, isSurfaceKind, normalizeSetting,
   type SurfaceKind, type SurfaceSetting,
@@ -139,8 +141,22 @@ export interface Overlay {
    *
    * 구버전 코드가 이 필드를 만나면 **조용히 무시하지 않는다** — `KNOWN_ROOT_KEYS` 검사가
    * `unknown-field` 로 보고한다(팀장이 내 브리프의 과장을 정정한 지점이다).
+   *
+   * ── ⚠ 여러 작가가 살아도 이것은 **마을 것**이다 (감독 카드 2026-08-16, W8-3) ──
+   * 작가 문서에 담겨 와도 `decide/multi-overlay.ts` 가 무시하고 `surfaces-ignored` 사유를
+   * 낸다(조용히 삼키지 않는다). 근거는 취향이 아니라 **구조**다 — 조회 키가 `kind` 하나로
+   * 굳어 `pools.create({key: kind})` → **`pools.seal()`** 로 이어지므로(`main.ts:780-795`),
+   * owner 를 키에 넣으면 `seal()` 뒤 생성 불가 · 부팅에 사용자 수 선지식 필요 · 드로우콜
+   * kind×owner 증식이 **연쇄한다.** 값이 아니라 구조가 바뀌어 `[7]` 의 델타 판정이 방패가
+   * 못 된다. **재론 트리거**: 작가별 바닥·재질 커스텀 요구가 실제로 나오는 날.
    */
   surfaces: SurfaceSetting[];
+  /**
+   * **벽에 건 작품**(W8-4, 감독 요구 *"glb 건물 벽에 작품을 걸고"*). 판정·범위·유도는
+   * 전부 `decide/artwork.ts` 가 소유하고 이 계약은 **부르기만** 한다(`surfaces` 와 같은
+   * 형태). 버전을 안 올리는 근거도 위 `surfaces` 주석 그대로다.
+   */
+  arts: ArtworkItem[];
 }
 
 export const OVERLAY_VERSION = 2;
@@ -155,7 +171,7 @@ export function emptyOverlay(): Overlay {
   //   (`:258` 이 `Object.keys(emptyOverlay())` 로 유도한다). 팀장 조건 c-2 가 경계한
   //   «정상 JSON 이 unknown-field 로 오보되는 역방향 함정» 이 이 유도 덕에 구조적으로
   //   안 생긴다 — 그래도 그 케이스를 테스트에 넣는다(조건 c-2 는 축을 요구한다).
-  return { version: OVERLAY_VERSION, items: [], parcels: [], surfaces: [] };
+  return { version: OVERLAY_VERSION, items: [], parcels: [], surfaces: [], arts: [] };
 }
 
 // ── 자산 경로 검증 (팀장 조건 c) ─────────────────────────────────────────────
@@ -216,7 +232,9 @@ export const POS_LIMIT = 100_000;
  * (검수관 P17). `|ry| ≥ 2π` 면 값이 실제로 바뀌므로 보고는 되어야 한다 — 다만 그것은
  * 잘린 것이 아니라 접힌 것이라 `validateOverlay` 가 `folded` 로 사유를 나눈다.
  */
-const foldRy = (v: unknown): number => num(v, 0) % (Math.PI * 2);
+// ⚠ **정의가 `decide/angle.ts` 로 옮겨갔다**(W8-4). 작품이 같은 접기를 복제했다가 규약이
+// 갈린 사고가 그 이유이고, 전문은 그 파일 헤더 한 곳이다. 여기서는 이름만 잇는다.
+const foldRy = foldAngle;
 
 /** 항목 하나의 수치 정규화. `normalizeOverlay` 와 `validateOverlay` 가 **함께** 쓴다. */
 function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem {
@@ -356,7 +374,8 @@ export function normalizeOverlay(raw: unknown): Overlay {
   // 가 안 생긴다(`git diff` 가 그것을 실변경으로 읽는다).
   const surfaces = SURFACE_KINDS.filter((k) => byKind.has(k)).map((k) => byKind.get(k)!);
 
-  return { version: OVERLAY_VERSION, items, parcels, surfaces };
+  const arts = normalizeArts(o.arts).items;   // 판정은 `decide/artwork.ts` 소유
+  return { version: OVERLAY_VERSION, items, parcels, surfaces, arts };
 }
 
 /**
@@ -483,6 +502,8 @@ export interface OverlayIssue {
   index?: number;
   /** 동결 파셀 인덱스. 파셀 쪽 사유에만 붙는다(`index` 는 `items` 쪽이다) */
   parcel?: number;
+  /** 작품 인덱스. 작품 쪽 사유에만 붙는다(W8-4) */
+  art?: number;
   reason:
     | 'not-object' | 'unsafe-src' | 'bad-number' | 'clamped' | 'folded'
     | 'items-not-array' | 'version-too-new' | 'version-invalid' | 'unknown-field'
@@ -498,6 +519,8 @@ export interface OverlayIssue {
     // ── W7 이 더한 사유 ──────────────────────────────────────────────────────
     /** 루트의 `surfaces` 가 있는데 배열이 아니다 — 표면 설정이 통째로 사라진다 */
     | 'surfaces-not-array'
+    /** 루트의 `arts` 가 배열이 아니다(작품이 통째로 사라진다) · 세부는 `ArtIssueReason` */
+    | 'arts-not-array' | ArtIssueReason
     /** 표면 종류를 모른다 — 칠할 자리가 없다 */
     | 'surface-unknown-kind'
     /** 표면 텍스처 경로가 안전하지 않다 — 그 맵만 버려진다 */
@@ -724,8 +747,18 @@ export function validateOverlay(
     for (const k of SURFACE_KINDS) { const v = seen.get(k); if (v) surfaces.push(v); }
   }
 
+  // ── 벽에 건 작품 (W8-4) — 사유를 **그대로 옮긴다**(다시 판정하면 두 함수가 갈린다) ──
+  let arts: ArtworkItem[] = [];
+  if (o.arts !== undefined && !Array.isArray(o.arts)) {
+    issues.push({ reason: 'arts-not-array' });
+  } else {
+    const got = normalizeArts(o.arts);
+    arts = got.items;
+    for (const a of got.issues) issues.push({ art: a.index, reason: a.reason });
+  }
+
   return {
-    overlay: { version: OVERLAY_VERSION, items, parcels, surfaces },
+    overlay: { version: OVERLAY_VERSION, items, parcels, surfaces, arts },
     issues,
     migrated: prepared.migrated,
   };

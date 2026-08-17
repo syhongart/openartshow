@@ -72,9 +72,11 @@ const GLB_TIMEOUT = 90000;
  * @param {import('playwright-core').Page} page
  * @param {{timeout?: number, bootTimeout?: number}} [opt]
  * @returns {Promise<{booted: boolean, glb: {state: string, placed: number,
- *                    want: number, error?: string}|null, reason: string}>}
- *   `glb` 가 `null` 이면 기능이 안 켜진 것이다(`?glb=0`). 그것 자체는 정상일 수 있으므로
- *   판정하지 않고 사실만 돌려준다.
+ *                    want: number, error?: string}|null,
+ *                    overlay?: {state: string, want: number, placed: number,
+ *                    failed?: string[], error?: string}|null, reason: string}>}
+ *   `glb`·`overlay` 가 `null` 이면 그 기능이 안 켜진 것이다(`?glb=0`·`?overlay=0`).
+ *   그것 자체는 정상일 수 있으므로 판정하지 않고 사실만 돌려준다.
  */
 export async function waitForWorld2Ready(page, opt = {}) {
   const bootTimeout = opt.bootTimeout ?? 60000;
@@ -159,5 +161,63 @@ export async function waitForWorld2Ready(page, opt = {}) {
     }
   }
 
-  return { booted: true, glb, reason: '' };
+  // ── 오버레이도 기다린다 (2026-08-16, W8-2 — **같은 함정을 네 번째로** ) ─────
+  // GLB → VRM 에 대해서는 이미 *"시간이 아니라 상태로 기다린다"* 를 했는데 **오버레이만
+  // 그 처방 밖에 있었다** — 이 파일 전문에 `overlay` 가 **0건**이었다.
+  //
+  // 그것이 왜 문제인가: `features/overlay.ts` 는 배치 GLB 를 비동기로 받아 **프레임에
+  // 걸쳐** 붙인다(`attachAll` 이 `ATTACH_BATCH` 마다 프레임을 넘긴다). 게이트가 그 도중에
+  // 기준선을 찍으면 **정상적인 부착 상승이 「증식」으로 찍힌다** — `[7]` 개수 불변식이
+  // 러너 속도에 달린 주사위가 된다. `?glb=0` 배제를 걷어낼 때 겪은 것과 글자 그대로 같다.
+  //
+  // ⚠ **지금은 이 대기가 사실상 즉시 풀린다** — 라이브 `world2-overlay.json` 이 items 0개라
+  // 붙일 것이 없다. 즉 **이 축은 아직 실물로 검증되지 않았다**(백로그 #45 가 같은 사실을
+  // 적어 두었다). 그래도 지금 넣는 이유는, 작품·배치가 늘어나는 그 회차에 이 대기가
+  // 없으면 **증상이 「가끔 FAIL 하는 게이트」로만 나타나** 원인을 짚는 데 회차를 쓰기
+  // 때문이다. 순서는 뒤집을 수 없다 — 데이터가 먼저 늘면 그때는 이미 늦다.
+  const ov = await page.evaluate(() => {
+    const o = window.__world2?.stats?.()?.overlay;
+    return o && typeof o === 'object' ? { state: o.state } : null;
+  });
+  // 키 자체가 없으면 기능이 안 켜진 것이다(`?overlay=0`). 기다릴 것이 없다.
+  if (ov) {
+    try {
+      await page.waitForFunction(
+        () => {
+          const o = window.__world2?.stats?.()?.overlay;
+          return !o || o.state !== 'loading';
+        },
+        null,
+        { timeout },
+      );
+    } catch {
+      return {
+        booted: true, glb, overlay: ov,
+        reason: `오버레이가 ${timeout}ms 안에 로딩을 못 끝냈다 — state 가 계속 loading 이다`,
+      };
+    }
+    const after = await page.evaluate(() => {
+      const o = window.__world2?.stats?.()?.overlay;
+      return o ? { state: o.state, want: o.want, placed: o.placed, failed: o.failed, error: o.error } : null;
+    });
+    // GLB 와 같은 규약. 실패를 조용히 통과시키면 **배치 없는 세계를 재고 초록불을 켠다.**
+    if (after && after.state !== 'ready') {
+      return {
+        booted: true, glb, overlay: after,
+        reason: `오버레이 state=${after.state}${after.error ? ` (${after.error})` : ''}`,
+      };
+    }
+    // `ready` 인데 덜 놓였으면 세운 척만 한 것이다. `want` 는 W8-2 에서 이 판정을 가능하게
+    // 하려고 열었다 — 그전에는 `placed` 뿐이라 「다 놓았다」와 「절반만」이 같은 값이었다.
+    if (after && after.placed < after.want) {
+      const why = after.failed?.length ? ` — 실패: ${after.failed.join(', ')}` : '';
+      return {
+        booted: true, glb, overlay: after,
+        reason: `오버레이가 ${after.want}개 중 ${after.placed}개만 섰다${why}`,
+      };
+    }
+    return { booted: true, glb, overlay: after, reason: '' };
+  }
+
+  return { booted: true, glb, overlay: null, reason: '' };
 }

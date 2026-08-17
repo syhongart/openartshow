@@ -60,8 +60,12 @@ describe('gate.mjs — 게이트 목록', () => {
     }
   });
 
-  it('스모크는 포함하지 않는다 — §10-3 독립 executor 소관', () => {
-    // 구현자가 자기 코드를 스모크하는 습관이 생기면 안 된다(구현자 본인 금지).
+  it('스모크는 포함하지 않는다 — CI 의 smoke job 이 판정 주체다', () => {
+    // ⚠ 이 단언의 제목은 오래 *"§10-3 독립 executor 소관"* 이었고 **2026-08-10 팀장 판정으로
+    // 폐기된 절차**다(검수관 권고 P3). 단언 자체는 그대로 유효하다 — 이유가 바뀌었을 뿐이다:
+    // `smoke:vite` 는 10분 이상 걸려 로컬 게이트에 넣으면 매 커밋이 그만큼 느려지고,
+    // **배포 판정은 어차피 CI 의 `smoke` job 이 한다**(§10-3 (a) — 로컬 PASS 는 판정
+    // 근거로 기재 금지). 로컬에서 돌리는 것 자체는 조기 스크리닝으로 허용된다.
     const wired = GATES.map((g) => g.cmd);
     expect(wired.filter((c) => c.startsWith('smoke'))).toEqual([]);
   });
@@ -73,6 +77,129 @@ describe('gate.mjs — 게이트 목록', () => {
 
   it('gate script 가 package.json 에 등록돼 있다', () => {
     expect(pkg.scripts?.gate).toBe('node scripts/gate.mjs');
+  });
+});
+
+// ── GS-A · `GATES` ↔ `ci.yml` 정합 ─────────────────────────────────────────
+//
+// **왜 이 describe 가 생겼나 (검수관 블로커 B2, 2026-08-17).**
+// `check:cycles`·`check:filesize` 를 신설하면서 `GATES` 에만 넣고 `ci.yml` 에 안 넣었다.
+// 위의 「package.json 의 check:* 가 전부 게이트에 배선돼 있다」는 초록이었지만, 그것은
+// **로컬 게이트까지만** 보는 축이다. 필수 상태검사는 `verify`·`smoke` 둘이므로 두 게이트는
+// **PR·병합·배포 어느 단계도 막지 못했다** — 유일한 집행이 pre-commit 훅이었고 그것은
+// `--no-verify`·훅 미설치 세션·GitHub 웹 편집을 전부 통과한다.
+//
+// 즉 게이트 목록이 **두 곳에 따로 적힌 값 미러링**이었고, 한쪽만 고쳐도 아무도 몰랐다.
+//
+// ⚠ **이 검사가 못 잡는 것**(정직하게 적는다):
+//   · `smoke` job 쪽 검사 — 여기서는 `verify` job 만 본다
+//   · GitHub 의 required status check **목록 자체** — 저장소 파일이 아니라 설정이라 못 읽는다
+//   · 훅이 설치 안 된 세션 — 그건 `gate.mjs` 의 `ensureHooksWired` 소관
+//   · `ciExempt` 사유의 **타당성** — 문자열이 있는지만 본다
+describe('GS-A — GATES ↔ ci.yml verify job 정합', () => {
+  const ciPath = join(ROOT, '.github', 'workflows', 'ci.yml');
+  const ci = readFileSync(ciPath, 'utf8');
+
+  /** `verify` job 본문만 잘라낸다 — `smoke` job 의 스텝을 커버로 세면 안 된다 */
+  function verifyJobBody(text: string): string {
+    const start = text.indexOf('\n  verify:');
+    expect(start, 'ci.yml 에 verify job 이 없다').toBeGreaterThan(-1);
+    // 다음 최상위 job(들여쓰기 2칸 + 이름 + `:`)까지
+    const rest = text.slice(start + 1);
+    const m = rest.slice(1).match(/\n {2}[a-z][\w-]*:\n/);
+    return m ? rest.slice(0, (m.index ?? 0) + 1) : rest;
+  }
+
+  /**
+   * YAML 주석을 걷어낸다. **이것이 없으면 검사가 통째로 죽는다.**
+   *
+   * ⚠ 첫 판본은 주석을 안 걷었고, 그 결과 `ci.yml` 의 설명 주석에 있던
+   * *"로컬 `npm run gate` 와 …"* 라는 **산문 한 줄**이 실행 스텝으로 세어져
+   * `inCi.has('gate')` 가 참이 됐다 → 아래 「모든 게이트가 CI 에서도 돈다」가
+   * **항상 조기 return** 했다. 뮤테이션 M6(`Import cycles` 스텝 제거)에서 **0 failed**
+   * 로 드러났다 — 거짓 FAIL 을 막으려고 넣은 우회로가 **거짓 PASS** 를 만든 것이다.
+   *
+   * 검출력이 «구조적으로 0» 인 이 형태는 hookify 첫 판본(`action: warn` 이라 종료코드를
+   * 안 바꿈)과 같고, 이 저장소가 검수관 반려로 이미 한 번 겪었다.
+   */
+  function stripYamlComments(text: string): string {
+    return text.split('\n').map((line) => {
+      const i = line.indexOf('#');
+      if (i < 0) return line;
+      // 줄 시작이거나 앞이 공백일 때만 주석이다(값 안의 `#` 은 건드리지 않는다).
+      if (i === 0 || /\s/.test(line[i - 1])) return line.slice(0, i);
+      return line;
+    }).join('\n');
+  }
+
+  /** 그 job 이 **실제로 돌리는** npm script 이름들 — 주석의 산문은 세지 않는다 */
+  function npmScriptsIn(body: string): Set<string> {
+    const out = new Set<string>();
+    const code = stripYamlComments(body);
+    // `npm run <x>` 와 `npm test`(= run test 의 별칭) 둘 다 본다.
+    for (const m of code.matchAll(/\bnpm\s+run\s+([A-Za-z][\w:.-]*)/g)) out.add(m[1]);
+    if (/\bnpm\s+test\b/.test(code)) out.add('test');
+    return out;
+  }
+
+  const body = verifyJobBody(ci);
+  const inCi = npmScriptsIn(body);
+
+  it('★ 파서가 **주석의 산문**을 실행 스텝으로 세지 않는다', () => {
+    // 이 단언이 뮤테이션 M6 의 산물이다. 주석을 안 걷으면 `npm run gate` 라는 **설명 문장**
+    // 하나가 아래 「모든 게이트가 CI 에서도 돈다」를 통째로 무력화한다(조기 return).
+    const fake = 'jobs:\n  verify:\n    steps:\n      # 로컬 `npm run gate` 로 돌린다\n      - run: npm run lint\n';
+    const got = npmScriptsIn(fake);
+    expect([...got], '★ 주석 안의 npm run 을 실행 스텝으로 셌다').toEqual(['lint']);
+  });
+
+  it('★ 지금 ci.yml 에서도 `gate` 우회가 발동하지 않는다 — 발동하면 아래가 전부 공허하다', () => {
+    // 우회 자체는 정당하다(ci.yml 을 `npm run gate` 한 줄로 바꾸면 전부 커버된다).
+    // 위험한 것은 **그것이 의도치 않게 켜지는 것**이라 지금 상태를 못 박아 둔다.
+    expect(inCi.has('gate'), '★ gate 우회가 켜져 GS-A 가 스킵되고 있다').toBe(false);
+  });
+
+  it('파서가 실제로 무언가를 찾았다 — 0건이면 아래 단언들이 전부 공허하다', () => {
+    // ⚠ 이것이 없으면 파서가 깨져 빈 집합을 내도 **차집합이 전체가 되어** FAIL 하거나,
+    // 반대로 정규식이 모든 것을 매치해 **전부 통과**한다. 어느 쪽이든 축이 죽는다.
+    expect(inCi.size, 'ci.yml verify job 파싱이 0건이다 — 정규식이나 job 경계가 깨졌다')
+      .toBeGreaterThan(3);
+    expect(inCi.has('lint'), '파서가 lint 를 못 찾았다').toBe(true);
+    expect(inCi.has('typecheck'), '파서가 typecheck 를 못 찾았다').toBe(true);
+  });
+
+  it('verify job 이 smoke job 을 침범하지 않는다 — job 경계가 맞다', () => {
+    expect(body.includes('smoke:vite'), 'verify 본문에 smoke job 스텝이 섞였다').toBe(false);
+  });
+
+  it('★ 모든 게이트가 CI 에서도 돈다 — 안 도는 것은 `ciExempt` 로 사유를 적는다', () => {
+    // ci.yml 이 `npm run gate` 한 줄로 바뀌면 그것이 전부를 커버한다(거짓 FAIL 방지).
+    if (inCi.has('gate')) return;
+    const missing = GATES
+      .filter((g) => !inCi.has(g.cmd))
+      .filter((g) => !g.ciExempt);
+    expect(
+      missing.map((g) => g.cmd),
+      `GATES 에 있는데 ci.yml 의 verify job 에 없다 — **배포를 못 막는다**:\n`
+      + `  ${missing.map((g) => g.cmd).join('\n  ')}\n`
+      + `  ci.yml 에 스텝을 넣거나, gate.mjs 의 그 항목에 ciExempt: '<사유>' 를 적어라.`,
+    ).toEqual([]);
+  });
+
+  it('★ `ciExempt` 는 사유가 있어야 한다 — 빈 문자열은 면제가 아니라 누락이다', () => {
+    const empty = GATES.filter((g) => 'ciExempt' in g && !String(g.ciExempt ?? '').trim());
+    expect(
+      empty.map((g) => g.cmd),
+      'ciExempt 가 비어 있다 — 왜 CI 에서 안 도는지 적지 않으면 다음 사람이 판단할 수 없다',
+    ).toEqual([]);
+  });
+
+  it('★ 면제는 **정말 못 도는 것**만이다 — 지금 면제는 하나뿐이고 근거가 실측이다', () => {
+    // 면제가 늘어나면 이 검사가 통과하면서 CI 커버리지는 줄어든다. 개수를 못 박아
+    // **늘리려면 이 줄을 고치게** 만든다(그때 근거를 쓰게 된다).
+    const exempt = GATES.filter((g) => g.ciExempt);
+    expect(exempt.map((g) => g.cmd), '면제 목록이 바뀌었다 — 근거를 확인하고 이 단언을 갱신하라')
+      .toEqual(['check:devlog-times']);
   });
 });
 

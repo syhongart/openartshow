@@ -5,6 +5,7 @@
 // 화면에 없으면 전부 «또 안 먹네» 로 읽힌다 — 감독 신고 2026-08-12 가 그 형태였다.
 
 import { reviewOverlay } from './export.js';
+import { pendingAssets, pendingNotice } from '../decide/upload-plan.js';
 import { canPlacePart, newPart, PART_LABEL } from '../decide/asset-library.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { maxPartsPerParcel } from '../parts/index.js';
@@ -204,7 +205,14 @@ export function createActions(host: OverlayHost, st: EditState, panel: Panel): A
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    panel.say(`저장했습니다 · ${rev.summary}`);
+    // ── 「올렸다」가 아니라 「보낼 준비가 됐다」 (W8-3 S7) ───────────────────
+    // 드롭한 GLB 는 `src` 형식이 계약에 맞으므로 관문(`reviewOverlay`)이 **깨끗하다고
+    // 판정한다** — 그런데 그 파일은 저장소에 없다. 이 줄이 없으면 «저장했습니다» 가
+    // 거짓이 되고, 작가는 라이브의 빈 자리를 보고서야 안다. 근거는
+    // `decide/upload-plan.ts` 헤더 한 곳이다.
+    const pending = pendingAssets(rev.json, new Set(previewUrls.keys()));
+    const notice = pendingNotice(pending);
+    panel.say(`저장했습니다 · ${rev.summary}${notice ? ` — ${notice}` : ''}`, notice !== '');
   }
 
   return { placeAt, placePartAt, duplicate, removeSelected, thawSelected, exportNow, previewUrls };

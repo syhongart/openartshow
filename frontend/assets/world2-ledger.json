@@ -1,0 +1,5 @@
+{
+  "_": "마을 대장 — 어느 파셀 칸이 누구 땅인가. 계약은 frontend/js/world2/decide/village-ledger.ts. plots 가 비면 world2 는 옛 단일 문서(world2-overlay.json)를 마을 전체로 읽는다 — 지금이 그 상태다.",
+  "version": 1,
+  "plots": []
+}
