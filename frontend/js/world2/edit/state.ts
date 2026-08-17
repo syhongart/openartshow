@@ -41,7 +41,18 @@ export type ThreeNS = {
     setFromCamera(coords: { x: number; y: number }, cam: unknown): void;
     // `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다 — 그래서 선택 필드다.
     // 이것이 없으면 마을 파츠를 «몇 번째 인스턴스인가» 로 환원할 방법이 없다.
-    intersectObjects(objs: unknown[], recursive: boolean): { object: unknown; instanceId?: number }[];
+    //
+    // `point`·`face` 는 **벽 검출**(W8-4 D)이 쓴다. 둘 다 선택 필드인 이유가 다르다:
+    // `point` 는 메시 히트면 언제나 오지만 스텁이 생략할 수 있고, `face` 는 실물에서도
+    // **Line·Points 를 맞히면 안 온다.** 그래서 소비자가 둘 다 확인하고 넘어간다.
+    // ⚠ `face.normal` 은 **로컬**이다 — 월드 변환은 `decide/artwork.ts` 의 `toWorldNormal`
+    // 이 소유하고, 그것을 빠뜨렸을 때의 증상은 그 함수 주석에 있다.
+    intersectObjects(objs: unknown[], recursive: boolean): {
+      object: unknown;
+      instanceId?: number;
+      point?: { x: number; y: number; z: number };
+      face?: { normal: { x: number; y: number; z: number } } | null;
+    }[];
   };
   /** 맞힌 인스턴스의 자세를 읽는다. 편집은 **이동 성분만** 본다(`elements[12..14]`) */
   Matrix4: new () => { elements: ArrayLike<number> };

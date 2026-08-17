@@ -16,6 +16,7 @@
 import { ndcOf, rayPlaneY, snapTo } from '../decide/edit-pick.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { matchPart } from '../decide/village-pick.js';
+import { toWorldNormal, type WallHit } from '../decide/artwork.js';
 import { isShadowKey } from '../systems/shadow-decal.js';
 import type { Ray3 } from '../decide/gizmo-math.js';
 import type { OverlayEntry, OverlayHost, RaycastMesh, VillagePick } from './types.js';
@@ -42,6 +43,15 @@ export interface Picker {
    * `decide/village-pick.ts` 헤더에 있다.
    */
   pickVillage(): VillagePick | null;
+  /**
+   * 광선이 맞힌 **면**(점 + 월드 법선). 없으면 `null` (W8-4 D).
+   *
+   * ⚠ **「벽인가」를 여기서 판정하지 않는다.** 이 함수는 맞힌 면을 **그대로** 준다.
+   * 벽 여부는 `decide/artwork.ts` 의 `wallPose()` 가 `null` 로 답한다 — 판정은 순수
+   * 계층이 소유하고 여기는 배선이라는 이 저장소의 경계 그대로다. 여기서 걸러 버리면
+   * 「왜 안 걸리는가」의 사유가 두 곳으로 갈린다.
+   */
+  pickFace(): WallHit | null;
   /** 지금 광선. 기즈모 산술이 쓴다(three 타입을 순수 계층에 넘기지 않으려고 평평하게 준다) */
   ray(): Ray3;
   /**
@@ -187,6 +197,34 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
     return null;
   }
 
+  /**
+   * 맞힌 면을 그대로 낸다 (W8-4 D). **오버레이 GLB 만 본다** — `intersect()` 가
+   * `host.root` 아래를 쏘기 때문이다.
+   *
+   * ⚠ **마을 파츠(인스턴스 건물) 벽은 여기서 멈춘다.** 감독 카드(2026-08-16)에
+   * *"마을 건물 벽에도"* 가 있지만, 인스턴스는 면 법선에 **인스턴스 행렬을 한 번 더**
+   * 곱해야 하고(`pickVillage` 가 `getMatrixAt` 을 쓰는 그 자리) 그 경로는 이 회차의
+   * 범위 밖이다. **재론 트리거**: 감독이 마을 건물 벽에 걸려다 «안 걸린다» 를 말하는 순간.
+   */
+  function pickFace(): WallHit | null {
+    for (const h of intersect()) {
+      const hit = h as {
+        object?: unknown;
+        point?: { x: number; y: number; z: number };
+        face?: { normal: { x: number; y: number; z: number } } | null;
+      };
+      // 면이 없는 히트(Line·Points)는 벽이 될 수 없다 — 다음 히트를 본다.
+      if (!hit.face || !hit.point) continue;
+      const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
+        ?.matrixWorld?.elements;
+      if (!mw) continue;
+      const n = toWorldNormal(hit.face.normal, mw);
+      if (!n) continue;
+      return { point: { x: hit.point.x, y: hit.point.y, z: hit.point.z }, normal: n };
+    }
+    return null;
+  }
+
   /** 링을 그 자리에 놓는다. `null` 이면 숨긴다 — 표시의 유일한 자리 */
   function showMarker(at: { x: number; y: number; z: number; r: number } | null): void {
     marker.visible = at !== null;
@@ -219,6 +257,7 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
     planeAt,
     pick,
     pickVillage,
+    pickFace,
     intersect,
     ray(): Ray3 {
       const o = raycaster.ray.origin, d = raycaster.ray.direction;

@@ -204,6 +204,38 @@ export interface WallHit {
 }
 
 /**
+ * 레이캐스트가 준 **로컬** 법선을 월드로 옮긴다 (W8-4 D).
+ *
+ * ⚠ **이 변환을 빠뜨리면 증상이 「안 걸린다」가 아니라 「엉뚱한 데를 본다」다.**
+ * three 의 `Intersection.face.normal` 은 맞힌 지오메트리의 **로컬 좌표계** 값이다.
+ * 건물이 `ry` 로 돌아가 있으면(오버레이 GLB 는 대부분 그렇다) 로컬 법선을 그대로
+ * `wallPose` 에 넣는 순간 액자가 **회전 전 방향**을 향한다 — 화면에는 «벽을 뚫고 선
+ * 액자» 로 보이고, 벽 판정(`WALL_MAX_TILT`)도 엉뚱한 면에서 통과한다.
+ *
+ * 회전 성분(3×3)만 곱하고 정규화한다 — three 의 `Vector3.transformDirection` 과 같다.
+ * **균등 스케일 전제**이고 이 저장소에서 그것이 성립한다: 계약의 `OverlayItem.s` 는
+ * **스칼라 하나**라 축별로 다른 배율이 나올 수 없다. 비균등이 열리면 이 함수는
+ * inverse-transpose 가 필요해진다 — **재론 트리거**를 여기 적어 둔다.
+ *
+ * @param local 로컬 법선
+ * @param m 열 우선 4×4(three `Object3D.matrixWorld.elements`)
+ */
+export function toWorldNormal(
+  local: { x: number; y: number; z: number },
+  m: ArrayLike<number>,
+): { x: number; y: number; z: number } | null {
+  const { x, y, z } = local;
+  if (m.length < 11) return null;
+  const nx = m[0] * x + m[4] * y + m[8] * z;
+  const ny = m[1] * x + m[5] * y + m[9] * z;
+  const nz = m[2] * x + m[6] * y + m[10] * z;
+  const len = Math.hypot(nx, ny, nz);
+  // 길이 0 은 «법선이 없다» 와 같다. `wallPose` 도 같은 문턱으로 거른다.
+  if (!Number.isFinite(len) || len < 1e-6) return null;
+  return { x: nx / len, y: ny / len, z: nz / len };
+}
+
+/**
  * 벽 히트 → 액자 자세. **벽이 아니면 `null`** 이고 호출부가 «벽을 눌러 주세요» 를 말한다.
  *
  * yaw 는 `atan2(nx, nz)` 다 — three 의 기본 평면은 +Z 를 향하므로, 법선 방향을 보게
