@@ -24,7 +24,9 @@
 
 import type { System, FrameCtx } from '../kernel.js';
 import type { InstancePools, SlotHandle } from './instancing.js';
-import { fadeMix, START_SCALE, SHRINK_SECONDS, type FadeEase } from '../decide/lod-fade.js';
+import {
+  fadeMix, START_SCALE, SHRINK_SECONDS, GROW_EASE, type FadeEase,
+} from '../decide/lod-fade.js';
 
 /** 부품 하나의 완성 자세. `createSlotPool.setTransform` 이 넘긴 그대로다 */
 export interface SlotTransform {
@@ -71,7 +73,7 @@ export interface ParcelGrowOptions {
   /** 수축 시간(초). 안 주면 SHRINK_SECONDS — `?shrink=` 노브가 여기로 들어온다 */
   shrinkSecs?: number;
   /**
-   * 수축 전용 이징. 안 주면 등장과 같은 ease(종전 동작 = 'out').
+   * 수축 전용 이징. 안 주면 등장과 같은 ease(종전 동작 = `GROW_EASE`).
    *
    * ── 왜 분리하나 (팀장 조건 1, 2026-08-10) ────────────────────────────────
    * 'out' 은 **등장**을 위해 고른 것이다("초반이 빨라야 없다가 있는 프레임이 짧다").
@@ -122,7 +124,7 @@ export class ParcelGrowSystem implements System {
     this.pools = opts.pools;
     this.duration = opts.duration;
     this.shrinkSecs = opts.shrinkSecs ?? SHRINK_SECONDS;
-    this.ease = opts.ease ?? 'out'; // 등장은 초반이 빨라야 "없다가 있는" 프레임이 짧다
+    this.ease = opts.ease ?? GROW_EASE;  // 근거는 `decide/lod-fade.ts` 의 그 상수 한 곳
     this.shrinkEase = opts.shrinkEase ?? this.ease;
     this.gate = opts.gate;
   }

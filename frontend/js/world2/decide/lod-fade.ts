@@ -206,6 +206,15 @@ export const START_SCALE = 0.02;
  */
 export const SHRINK_SECONDS = 0.25;
 
+/**
+ * 성장 기본 커브. **`'out'` 인 이유**: 등장은 초반이 빨라야 「없다가 있는」 프레임이 짧다.
+ *
+ * ⚠ 이 값이 `systems/parcel-grow.ts` 의 `opts.ease ?? 'out'` 과 **두 곳에 적혀 있었다**
+ * (검수관 권고, 2026-08-18). 지금은 `?growease=` 노브가 없어 갈릴 일이 드물지만 이
+ * 저장소는 값 미러링으로 이미 세 번 사고를 냈다 — 노브가 생긴 뒤에 모으면 늦는다.
+ */
+export const GROW_EASE: FadeEase = 'out';
+
 /** 부품 등장·소멸 연출의 실효 설정. **건물과 액자가 같은 것을 본다** */
 export interface ParcelAnim {
   /** 성장 시간(초). 0 이면 즉시 완성 = 종전 동작(팝) */
@@ -235,8 +244,8 @@ export function readParcelAnim(): ParcelAnim {
     grow: readNum('grow', GROW_SECONDS, 0, 3),
     // ⚠ 기본값이 **0** 이다(상수 `SHRINK_SECONDS` 가 아니다). 위 상수 주석 참조.
     shrink: readNum('shrink', 0, 0, 3),
-    ease: 'out',
-    shrinkEase: readEnum('shrinkease', 'out', FADE_EASES),
+    ease: GROW_EASE,
+    shrinkEase: readEnum('shrinkease', GROW_EASE, FADE_EASES),
   };
 }
 
