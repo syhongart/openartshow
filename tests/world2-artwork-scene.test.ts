@@ -83,10 +83,14 @@ function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; scene
   };
   const node = (): ArtNode => {
     const kids: ArtNode[] = [];
+    // W8-10 — 스케일 축. `set()` 이 값을 **기록**해야 단언할 수 있다(같은 이유로
+    // `visible` 도 아래에 있다 — 스텁이 필드를 안 가지면 검사가 구조적으로 0 이다).
+    const sc = { x: 1, y: 1, z: 1, set(x: number, y: number, z: number) { sc.x = x; sc.y = y; sc.z = z; } };
     return {
       position: { set() { } },
       rotation: { y: 0 },
       children: kids,
+      scale: sc,
       // W8-9 — 액자 가시성 축. 스텁이 이 필드를 안 가지면 `update()` 의 대입이
       // 아무 데도 안 남아 검사가 **구조적으로 0** 이 된다.
       visible: true,
@@ -223,8 +227,8 @@ describe('★ 조건 1 — 라이트 개수는 세션 중 절대 안 변한다',
     // 부팅만이 아니라 **걸고 재우고 깨우는 전 구간**을 돈다 — W8-9 로 라이트를 만지는
     // 자리가 하나 늘었고(`update`), 부팅만 보면 그 자리가 축 밖에 남는다.
     await s.place([art({ x: 0, z: 0 }), art({ x: 2 * CELL, z: 0 })]);
-    s.update(() => false);
-    s.update(() => true);
+    s.update(() => false, 9);
+    s.update(() => true, 9);
     for (const L of lightsOf(scene)) {
       expect((L as unknown as { visSets: number }).visSets, '★ 라이트의 visible 을 대입했다')
         .toBe(0);
@@ -892,7 +896,7 @@ describe('W8-9 — 작품이 건물과 함께 사라진다', () => {
     expect(fr.map((f) => f.visible), '★ 걸린 직후에는 보여야 한다').toEqual([true, true]);
 
     // 파셀 (0,0) 만 로드된 상태
-    s.update((px, pz) => px === 0 && pz === 0);
+    s.update((px, pz) => px === 0 && pz === 0, 9);
     expect(fr.map((f) => f.visible), '★ 언로드된 파셀의 액자가 안 숨었다').toEqual([true, false]);
   });
 
@@ -903,10 +907,10 @@ describe('W8-9 — 작품이 건물과 함께 사라진다', () => {
     const on = () => lightsOf(scene).filter((L) => L.intensity > 0).length;
     expect(on(), '★ 두 파셀이니 둘 다 켜져 있어야 한다').toBe(2);
 
-    s.update((px) => px === 0);
+    s.update((px) => px === 0, 9);
     expect(on(), '★ 숨겼는데 조명이 남았다').toBe(1);
 
-    s.update(() => true);
+    s.update(() => true, 9);
     expect(on(), '★ 되돌아왔는데 조명이 안 켜졌다').toBe(2);
   });
 
@@ -919,14 +923,14 @@ describe('W8-9 — 작품이 건물과 함께 사라진다', () => {
     await s.place(twoParcels());
     expect(s.stats()).toMatchObject({ frames: 2, shown: 2 });
 
-    s.update((px) => px === 0);
+    s.update((px) => px === 0, 9);
     expect(s.stats().frames, '★ frames 가 가시성을 따라갔다 — [7] 예산이 0 이 된다').toBe(2);
     expect(s.stats().shown).toBe(1);
 
-    s.update(() => false);
+    s.update(() => false, 9);
     expect(s.stats()).toMatchObject({ frames: 2, shown: 0 });
 
-    s.update(() => true);
+    s.update(() => true, 9);
     expect(s.stats(), '★ 왕복이 안 닫힌다 — 카운터가 새고 있다').toMatchObject({ frames: 2, shown: 2 });
   });
 
@@ -937,7 +941,7 @@ describe('W8-9 — 작품이 건물과 함께 사라진다', () => {
     const before = { geo: counts.geo, mat: counts.mat, geoD: counts.geoDisposed, matD: counts.matDisposed };
 
     // 멀어졌다 → 돌아왔다 를 여러 번
-    for (let i = 0; i < 5; i++) { s.update(() => false); s.update(() => true); }
+    for (let i = 0; i < 5; i++) { s.update(() => false, 9); s.update(() => true, 9); }
 
     expect({
       geo: counts.geo, mat: counts.mat, geoD: counts.geoDisposed, matD: counts.matDisposed,
@@ -948,7 +952,7 @@ describe('W8-9 — 작품이 건물과 함께 사라진다', () => {
     const { THREE, scene } = makeThree();
     const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
     await s.place(twoParcels());
-    s.update(() => false);
+    s.update(() => false, 9);
     expect(s.stats().shown).toBe(0);
 
     await s.place(twoParcels());
@@ -960,7 +964,7 @@ describe('W8-9 — 작품이 건물과 함께 사라진다', () => {
     const { THREE, scene } = makeThree();
     const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
     await s.place([]);
-    expect(() => s.update(() => false)).not.toThrow();
+    expect(() => s.update(() => false, 9)).not.toThrow();
     expect(s.stats().shown).toBe(0);
   });
 
@@ -970,7 +974,144 @@ describe('W8-9 — 작품이 건물과 함께 사라진다', () => {
     await s.place(twoParcels());
     const fr = framesOf(scene);
     s.dispose();
-    s.update(() => false);
+    s.update(() => false, 9);
     expect(fr.map((f) => f.visible), '★ 떠난 씬을 계속 만진다').toEqual([true, true]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W8-10 — 자라며 나타나고 줄어들며 사라진다
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('W8-10 — 액자가 건물처럼 자란다', () => {
+  /** 이징을 선형으로 고정해 중간값을 산술로 단언할 수 있게 한다 */
+  const ANIM = { grow: 0.4, shrink: 0.25, ease: 'lin' as const, shrinkEase: 'lin' as const };
+  const mk = () => {
+    const { THREE, scene, counts } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL, anim: ANIM });
+    return { s, scene, counts };
+  };
+  const framesOf2 = (scene: ArtNode): { visible: boolean; scale: { x: number; z: number } }[] =>
+    ((scene.children?.[0]?.children ?? []).filter(
+      (n) => typeof (n as { castShadow?: boolean }).castShadow !== 'boolean'
+        && (n.children?.length ?? 0) > 0,
+    ) as unknown as { visible: boolean; scale: { x: number; z: number } }[]);
+  const two = (): ArtworkItem[] => [art({ x: 0, z: 0 }), art({ x: 2 * CELL, z: 0 })];
+
+  it('🔴 `place` 직후는 **완성 크기**다 — 부팅에 「떠올랐다 쪼그라드는」 연출이 안 생긴다', async () => {
+    const { s, scene } = mk();
+    await s.place(two());
+    s.update(() => true, 0.016);
+    expect(framesOf2(scene).map((f) => f.scale.x), '★ 걸자마자 자라기 시작했다').toEqual([1, 1]);
+  });
+
+  it('🔴 걸린 순간 이미 **멀면 즉시 0** 이다 — 「떠올랐다 쪼그라드는」 연출이 안 생긴다', async () => {
+    // ⚠ `fresh` 플래그의 **고유한 값**이 여기다. `place` 가 `k:1` 로 시작하므로
+    // 「가까운 경우」는 플래그가 없어도 같은 결과가 나온다 — 갈리는 것은 이 경우뿐이고,
+    // 이것이 부팅에서 `[7]` 의 「복귀 구간 계단」을 여는 그 자리다.
+    const { s, scene } = mk();
+    await s.place(two());
+    s.update(() => false, 0.016);   // 첫 update 인데 이미 언로드 상태
+    const fr = framesOf2(scene);
+    expect(fr.map((f) => f.visible), '★ 멀리 있는 액자가 잠깐 떠올랐다 사라진다').toEqual([false, false]);
+    expect(s.stats().shown).toBe(0);
+  });
+
+  it('🔴 두 번째 `place` 가 기존 액자를 **되감지 않는다** — 이 회차의 핵심 축', async () => {
+    const { s, scene } = mk();
+    await s.place([art({ x: 0, z: 0 })]);
+    s.update(() => true, 0.016);
+    // 작가가 두 번째 작품을 건다 → 전체 대체가 일어난다
+    await s.place(two());
+    s.update(() => true, 0.016);
+    expect(framesOf2(scene).map((f) => f.scale.x),
+      '★ 작품을 하나 걸었는데 이미 걸린 것이 0 에서 다시 자란다 — 그림자 데칼 사고의 재현')
+      .toEqual([1, 1]);
+  });
+
+  it('★ 멀어지면 **줄어든다** — 한 번에 사라지지 않는다', async () => {
+    const { s, scene } = mk();
+    await s.place(two());
+    s.update(() => true, 0.016);
+
+    s.update(() => false, 0.125);   // 수축 0.25초의 절반
+    const fr = framesOf2(scene);
+    expect(fr[0].scale.x, '★ 절반에서 0.5 가 아니다').toBeCloseTo(0.5, 6);
+    expect(fr[0].visible, '★ 아직 줄어드는 중인데 벌써 껐다 — 수축이 안 보인다').toBe(true);
+
+    s.update(() => false, 0.125);   // 끝
+    expect(fr[0].visible, '★ 다 줄었는데 아직 그린다').toBe(false);
+  });
+
+  it('★ 다시 가까워지면 **자란다** — 그리고 먼저 켠 뒤 자란다', async () => {
+    const { s, scene } = mk();
+    await s.place(two());
+    s.update(() => true, 0.016);
+    s.update(() => false, 9);       // 완전히 사라짐
+    expect(framesOf2(scene)[0].visible).toBe(false);
+
+    s.update(() => true, 0.2);      // 성장 0.4초의 절반
+    const fr = framesOf2(scene);
+    expect(fr[0].visible, '★ 자라는 중인데 안 그린다').toBe(true);
+    expect(fr[0].scale.x).toBeCloseTo(0.5, 6);
+
+    s.update(() => true, 0.2);
+    expect(fr[0].scale.x, '★ 끝값이 정확히 1 이 아니다').toBe(1);
+  });
+
+  it('🔴 `z` 는 1 로 고정한다 — 균등이면 그림/테두리 간격이 줄어 명멸한다', async () => {
+    const { s, scene } = mk();
+    await s.place(two());
+    s.update(() => true, 0.016);
+    s.update(() => false, 0.125);
+    expect(framesOf2(scene)[0].scale.z, '★ 깊이까지 줄였다').toBe(1);
+  });
+
+  it('🔴 조명이 **같은 배수로** 어두워진다 — 라이트는 그룹 자식이 아니라 scale 이 안 먹는다', async () => {
+    const { s, scene } = mk();
+    await s.place(two());
+    s.update(() => true, 0.016);
+    const lit = () => lightsOf(scene).filter((L) => L.intensity > 0);
+    expect(lit().length, '★ 두 파셀이니 둘 다 켜져 있어야 한다').toBe(2);
+    const full = lit()[0].intensity;
+
+    s.update(() => false, 0.125);
+    expect(lightsOf(scene).filter((L) => L.intensity > 0)[0].intensity,
+      '★ 액자만 작아지고 벽의 빛 동그라미가 원래 크기로 남는다').toBeCloseTo(full * 0.5, 6);
+
+    s.update(() => false, 0.125);
+    expect(lightsOf(scene).filter((L) => L.intensity > 0).length, '★ 다 줄었는데 빛이 남았다').toBe(0);
+  });
+
+  it('★ 목표에 닿으면 **아무것도 대입하지 않는다** — 「변할 때만」 규약 유지', async () => {
+    const { s, scene } = mk();
+    await s.place(two());
+    s.update(() => true, 0.016);
+    const fr = framesOf2(scene) as unknown as { scale: { x: number; set(a: number, b: number, c: number): void } }[];
+    let writes = 0;
+    for (const f of fr) { const o = f.scale.set.bind(f.scale); f.scale.set = (a, b, c) => { writes++; o(a, b, c); }; }
+    for (let i = 0; i < 10; i++) s.update(() => true, 0.016);
+    expect(writes, '★ 정지 상태인데 매 프레임 대입한다').toBe(0);
+  });
+
+  it('★ `?grow=0`·`?shrink=0` 이면 즉시 — 종전 동작(팝)이 그대로 열려 있다', async () => {
+    const { THREE, scene } = makeThree();
+    const off = { grow: 0, shrink: 0, ease: 'lin' as const, shrinkEase: 'lin' as const };
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL, anim: off });
+    await s.place(two());
+    s.update(() => true, 0.016);
+    s.update(() => false, 0.016);
+    expect(framesOf2(scene)[0].visible, '★ 즉시 꺼져야 한다').toBe(false);
+  });
+
+  it('★ `stats().shown` 은 **그리고 있는** 수다 — 수축 중도 센다', async () => {
+    const { s } = mk();
+    await s.place(two());
+    s.update(() => true, 0.016);
+    expect(s.stats()).toMatchObject({ frames: 2, shown: 2 });
+    s.update(() => false, 0.125);
+    expect(s.stats().shown, '★ 아직 그리는 중인데 안 센다').toBe(2);
+    s.update(() => false, 0.125);
+    expect(s.stats()).toMatchObject({ frames: 2, shown: 0 });
   });
 });

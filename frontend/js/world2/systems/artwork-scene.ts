@@ -31,6 +31,9 @@ import {
   artLightPoolSize, assignArtLights, spotFor, ART_LIGHT_PER_PARCEL, artParcelCount, artParcelXZ,
 } from '../decide/art-light.js';
 import { artMatSpec, readArtEnv } from '../decide/art-material.js';
+import {
+  readParcelAnim, scaleAdvance, START_SCALE, type ScaleState,
+} from '../decide/lod-fade.js';
 /**
  * 계약은 `artwork-types.ts` 가 소유한다 — **여기는 배럴이다**(W8-9 분리).
  * 소비자 경로가 안 바뀌게 전부 재수출한다. 근거는 그 파일 헤더 한 곳이다.
@@ -91,6 +94,9 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
    */
   const artSpec = artMatSpec(deps.artEnv ?? readArtEnv());
 
+  /** 등장·소멸 연출. **건물과 같은 것을 본다** — 근거는 `ArtworkSceneDeps.anim` 한 곳 */
+  const anim = deps.anim ?? readParcelAnim();
+
   /** 액자 테두리 재질 — **전 작품이 공유한다**(재질 수를 상수로) */
   const frameMat = new THREE.MeshStandardMaterial({
     color: 0x1a1a1a, roughness: 0.45, metalness: 0.1,
@@ -118,7 +124,10 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
     readonly px: number;
     readonly pz: number;
     readonly light: ArtLight | null;
+    /** 화면에 내놓고 있는가. `anim.k > 0` 과 짝이지만 **전이에서만** 갱신한다 */
     shown: boolean;
+    /** 등장·소멸 진행. 산술은 `decide/lod-fade.ts` 의 `scaleAdvance` 소유다 */
+    anim: ScaleState;
   }[] = [];
   let frames = 0;
   let lit = 0;
@@ -354,7 +363,12 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       // 안 보이면 편집에서 «걸었다는데 안 뜬다» 가 되고, 부팅에서는 첫 렌더가 기준선
       // 밖으로 밀려 개수 불변식 `[7]` 의 「복귀 구간 계단」 위험이 열린다. 멀리 있는
       // 것은 다음 `update()` 가 곧바로 끈다.
-      placed.push({ g, ...artParcelXZ(a, cellX, cellZ), light: assigned, shown: true });
+      // ⚠ `fresh: true` — **걸린 것은 애니메이션 없이 목표로 간다.** 근거(사고 둘)는
+      // `decide/lod-fade.ts` 의 `scaleAdvance` 헤더 한 곳이다.
+      placed.push({
+        g, ...artParcelXZ(a, cellX, cellZ), light: assigned, shown: true,
+        anim: { k: 1, up: true, elapsed: 0, from: 1, fresh: true },
+      });
       shown++;
     }
   }
@@ -381,18 +395,22 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
    * ⚠ 첫 판본의 「`frames += 0` 을 넣어 본다」는 **등가 뮤테이션**이었고 0 failed 였다 —
    * 그것을 검출력 부족으로 읽을 뻔했다. 뮤테이션은 **동작을 실제로 바꿔야** 축이 된다.
    */
-  function update(loaded: (px: number, pz: number) => boolean): void {
+  function update(loaded: (px: number, pz: number) => boolean, dt: number): void {
     if (disposed) return;
     for (const p of placed) {
-      const on = loaded(p.px, p.pz);
-      // **변할 때만 대입한다** — 선례는 `features/npc.ts` 의 거리 표시/숨김이다.
-      if (on === p.shown) continue;
-      p.shown = on;
-      p.g.visible = on;
-      // 라이트는 끄되 **지우지도 숨기지도 않는다**(조건 1 + 재컴파일 회피).
-      // 안 끄면 벽이 사라진 자리에 스포트가 지면을 비춰 «허공에 뜬 빛» 이 남는다.
-      if (p.light) p.light.intensity = on ? LIGHT_ON : 0;
-      shown += on ? 1 : -1;
+      const next = scaleAdvance(p.anim, loaded(p.px, p.pz), dt, anim);
+      if (!next) continue;   // 바뀐 것이 없다 — 대입 0
+      p.anim = next;
+      // **`visible` 은 완전히 줄어든 뒤에만 내린다** — 수축이 보여야 하니까.
+      const on = next.k > 0;
+      if (on !== p.shown) { p.shown = on; p.g.visible = on; shown += on ? 1 : -1; }
+      // z 를 1 로 두는 이유는 `ArtNode.scale` 주석 한 곳이다(그림/테두리 간격 2mm).
+      const k = Math.max(START_SCALE, next.k);
+      p.g.scale.set(k, k, 1);
+      // 라이트는 그룹의 **자식이 아니라서**(월드 좌표에 따로 선다) `scale` 이 안 먹는다.
+      // 밝기를 같은 배수로 따로 재운다 — 안 하면 액자만 작아지고 벽의 빛 동그라미가
+      // 원래 크기로 남는다.
+      if (p.light) p.light.intensity = LIGHT_ON * next.k;
     }
   }
 

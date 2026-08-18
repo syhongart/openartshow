@@ -27,6 +27,7 @@
 
 import { DEFAULT_BANDS, type TierBands } from './lod.js';
 import { FOG_NEAR_CELLS, FOG_FAR_CELLS, type FogBand } from './fog.js';
+import { readNum, readEnum } from '../url-knob.js';
 
 /** 페이드 커브 이름. URL 노브 `?lodease=` 가 이 중 하나를 고른다 */
 export type FadeEase = 'lin' | 'in' | 'out' | 'smooth';
@@ -174,4 +175,164 @@ export function fadeMix(elapsed: number, duration: number, ease: FadeEase = FADE
   if (!(duration > 0)) return 1;
   const t = Math.min(1, Math.max(0, elapsed / duration));
   return EASINGS[ease](t);
+}
+
+
+// ── 부품이 자라고 줄어드는 축 (W8-10 에서 액자와 공유) ──────────────────────
+// 이 아래 셋은 원래 `systems/parcel-grow.ts` 의 **모듈 로컬**이었다. 액자(W8-10)가
+// 같은 연출을 타면서 «건물은 0.4초인데 액자는 0.5초» 가 조용히 성립할 자리가 생겼고,
+// 그것이 이 저장소가 값 미러링으로 반복해서 당한 형태라 판정 계층으로 올렸다.
+// 집행은 여전히 둘이다 — 건물은 인스턴스 행렬, 액자는 `Group.scale`.
+
+/**
+ * 시작 스케일 배수. 0 으로 두지 않는 이유: three 는 스케일 0 행렬도 그리지만(면적 0),
+ * 역행렬이 필요한 경로(노멀 행렬)에서 특이행렬이 된다. 시각적으로 0 과 구별 불가한
+ * 최솟값으로 둔다.
+ */
+export const START_SCALE = 0.02;
+
+/**
+ * 기본 수축 시간(초) — 반납되기 전에 줄어드는 시간.
+ *
+ * ⚠⚠ **라이브 실효값은 이 값이 아니라 0 이다.** `main.ts` 의 `?shrink=` 가
+ * `readNum('shrink', 0, 0, 3)` 으로 **기본 0** 을 넘긴다 — 즉 지금 화면에서 건물은
+ * 수축 없이 즉시 사라진다. 이 상수는 그 노브를 안 주는 소비자의 기본값이고,
+ * 감독 판정이 오면 `main.ts` 의 기본값이 이쪽으로 승격된다(팀장 조건 2, 2026-08-10).
+ *
+ * 왜 0.25 인가: 캐스터의 그림자는 안개 앞(화면 안)까지 드리워져 있고 0.25s 만에
+ * 걷힌다 — ease 가 'out' 이라 첫 다섯 프레임에 절반이 사라지고, 후진 중 파셀이
+ * 연달아 반납되면 이것이 "사각 그림자 부분이 빠르게 어둡고 밝게 반복" 으로 보였다
+ * (?shint=0 대조로 그림자 축 확정). 그래서 `?shrink=` 노브로 감독 판정을 받는다.
+ */
+export const SHRINK_SECONDS = 0.25;
+
+/**
+ * 성장 기본 커브. **`'out'` 인 이유**: 등장은 초반이 빨라야 「없다가 있는」 프레임이 짧다.
+ *
+ * ⚠ 이 값이 `systems/parcel-grow.ts` 의 `opts.ease ?? 'out'` 과 **두 곳에 적혀 있었다**
+ * (검수관 권고, 2026-08-18). 지금은 `?growease=` 노브가 없어 갈릴 일이 드물지만 이
+ * 저장소는 값 미러링으로 이미 세 번 사고를 냈다 — 노브가 생긴 뒤에 모으면 늦는다.
+ */
+export const GROW_EASE: FadeEase = 'out';
+
+/** 부품 등장·소멸 연출의 실효 설정. **건물과 액자가 같은 것을 본다** */
+export interface ParcelAnim {
+  /** 성장 시간(초). 0 이면 즉시 완성 = 종전 동작(팝) */
+  readonly grow: number;
+  /** 수축 시간(초). 0 이면 즉시 사라짐 — **지금 라이브가 이 상태다** */
+  readonly shrink: number;
+  /** 성장 커브 */
+  readonly ease: FadeEase;
+  /** 수축 커브. 시간 축과 분리해 판정하려고 따로 둔다(팀장 조건 1) */
+  readonly shrinkEase: FadeEase;
+}
+
+/**
+ * URL 노브에서 읽는다 — **`?grow=` · `?shrink=` · `?shrinkease=` 파싱의 SSOT.**
+ *
+ * ── 왜 파싱까지 여기로 올렸나 (W8-10) ──────────────────────────────────────
+ * 그전에는 `main.ts` 가 읽어 **`ParcelGrowSystem` 에만** 넘겼다. 액자는
+ * `features/overlay.ts` 안에서 조립되므로 그 값을 볼 수 없었고, 그러면 감독이
+ * `?shrink=1` 로 룩을 판정하는 순간 **건물 1초 / 액자 0.25초의 어긋난 화면을 보고
+ * 판정**하게 된다 — `readNum` 의 조용한 클램프가 `?nfog=0` 판정을 한 번 훔친 그 형태다.
+ *
+ * 선례를 따른다: `decide/art-material.ts` 의 `readArtEnv()` + `ArtworkSceneDeps.artEnv`
+ * 의 «생략하면 URL 노브를 읽는다» 규약. 새 패턴이 아니다.
+ */
+export function readParcelAnim(): ParcelAnim {
+  return {
+    grow: readNum('grow', GROW_SECONDS, 0, 3),
+    // ⚠ 기본값이 **0** 이다(상수 `SHRINK_SECONDS` 가 아니다). 위 상수 주석 참조.
+    shrink: readNum('shrink', 0, 0, 3),
+    ease: GROW_EASE,
+    shrinkEase: readEnum('shrinkease', GROW_EASE, FADE_EASES),
+  };
+}
+
+/**
+ * 배수 한 걸음 — **건물과 액자가 같은 식을 쓴다**(W8-10).
+ *
+ * `parcel-grow.ts` 의 `update()` 가 인스턴스에 하던 산술 그대로다. 목표(`up`)가
+ * 뒤집히면 부르는 쪽이 `from = 지금 배수`·`elapsed = 0` 으로 다시 시작한다 —
+ * **되감지 않는다**(`retarget` 이 `curScale` 을 유지하는 것과 같은 규약).
+ *
+ * ⚠ **끝값을 정확히 박는 것이 이 함수의 계약이다.** `Math.max(START_SCALE, …)` 가
+ * 있는 한 마지막 프레임의 보간값만으로는 1 이나 0 이 보장되지 않는다.
+ *
+ * @returns `{k, done}` — `k` 는 배수, `done` 은 이번에 목표에 닿았는가
+ */
+export function scaleStep(
+  up: boolean, from: number, elapsed: number, anim: ParcelAnim,
+): { k: number; done: boolean } {
+  const mix = up
+    ? fadeMix(elapsed, anim.grow, anim.ease)
+    : fadeMix(elapsed, anim.shrink, anim.shrinkEase);
+  if (mix >= 1) return { k: up ? 1 : 0, done: true };
+  const k = up ? from + (1 - from) * mix : from * (1 - mix);
+  return { k: Math.max(START_SCALE, k), done: false };
+}
+
+/** 액자 하나의 등장·소멸 진행 상태. 소비자가 들고 이 모듈이 굴린다 */
+export interface ScaleState {
+  /** 지금 배수(0~1). 화면 표시 여부는 이 값이 0 인가로 갈린다 */
+  k: number;
+  /** 지금 향하는 곳 — `true` 면 1, `false` 면 0 */
+  up: boolean;
+  /** 이번 전이의 경과(초) */
+  elapsed: number;
+  /** 이번 전이가 시작한 배수. **되감지 않으려고** 든다 */
+  from: number;
+  /** 아직 한 번도 굴리지 않았다 — 첫 걸음은 목표로 **순간 이동**한다 */
+  fresh: boolean;
+}
+
+/**
+ * 한 걸음 굴린다. **바뀐 것이 없으면 `null`** — 부르는 쪽은 그때 아무것도 대입하지 않는다
+ * (「변할 때만 대입」 규약을 산술 쪽에서 보증한다).
+ *
+ * ── 🔴 `fresh` 는 왜 있나 — 실패 사례가 둘이다 ────────────────────────────
+ * 소비자(`systems/artwork-scene.ts`)의 `place()` 는 **전체 대체**다. 새 엔트리가 0 에서
+ * 자라기 시작하면:
+ *
+ * ① 작가가 다섯 번째 작품을 거는 순간 **이미 걸어 둔 넷이 전부 0 에서 다시 자란다.**
+ *    그림자 데칼 재베이킹이 `place` 를 타면서 «농도를 조절하는 내내 화면의 모든 그림자가
+ *    쪼그라들었다 자라기를 반복» 한 사고와 **같은 형태**다(그래서 `parcel-assets.ts` 에
+ *    `retarget` 이 별도 문으로 있다).
+ * ② 부팅에서 `START_SCALE` 로 시작하면 바운딩 스피어가 **50배** 작아져 회전 구간에
+ *    프러스텀 컬링될 수 있고, 그러면 `info.memory` 계단이 복귀 구간으로 밀려 `[7]` 의
+ *    `settledOk` 가 FAIL 한다 — `invariant-judge.mjs` 가 적어 둔 재론 조건을 **우리가
+ *    스스로 트리거하는** 셈이다.
+ *
+ * 그래서 「처음 놓인 것은 애니메이션 없이 목표로 간다」가 계약이다.
+ *
+ * ⚠ `fresh` 는 **엔트리별**이어야 한다. `place` 는 텍스처 로드에서 제어를 놓으므로
+ * 엔트리가 여러 프레임에 걸쳐 담긴다 — 씬 단위 플래그면 먼저 담긴 것만 스냅된다.
+ *
+ * ⚠⚠ **`fresh` 가 실제로 갈리는 경우는 하나뿐이다** — 「걸린 순간 이미 멀리 있는」 액자다.
+ * 소비자가 `k: 1` 로 시작하므로 가까운 경우는 이 플래그가 없어도 같은 결과가 나온다.
+ * 첫 판본의 뮤테이션이 **1 failed** 밖에 안 나서 그 사실이 드러났고(집행 축이 사실상
+ * 비어 있었다), 그 경우를 시험하는 검사를 넣어 **2 failed** 로 만들었다.
+ *
+ * ── 뮤테이션 실측 (2026-08-18, `lod-fade` + `artwork-scene` + `overlay-wiring`) ──
+ *
+ *   `fresh` 무시 (= place 가 애니메이션을 시작)          2 failed
+ *   `dt` 무시 (= 즉시 완료)                             4 failed
+ *   `visible` 을 수축 즉시 false 로                      2 failed
+ *   조명 비례를 토글로 되돌림                            1 failed
+ *   `z` 를 균등 스케일로                                 1 failed
+ *   되감기 금지를 깨기(`from` 을 끝값으로)               2 failed
+ *   **등가 대조군 — 주석만 추가**                       **0 failed**
+ */
+export function scaleAdvance(
+  st: ScaleState, up: boolean, dt: number, anim: ParcelAnim,
+): ScaleState | null {
+  if (st.fresh) {
+    const k = up ? 1 : 0;
+    return { k, up, elapsed: 0, from: k, fresh: false };
+  }
+  if (up === st.up && st.k === (up ? 1 : 0)) return null;   // 목표에 이미 닿았다
+  // 방향이 뒤집혔으면 **지금 배수에서** 다시 시작한다(되감기 금지).
+  const from = up === st.up ? st.from : st.k;
+  const elapsed = (up === st.up ? st.elapsed : 0) + dt;
+  return { k: scaleStep(up, from, elapsed, anim).k, up, elapsed, from, fresh: false };
 }

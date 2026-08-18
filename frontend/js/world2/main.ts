@@ -16,7 +16,7 @@ import { createVillageParcels } from './systems/village-parcels.js';
 import { ParcelFadeSystem } from './systems/parcel-fade.js';
 import { ParcelGrowSystem } from './systems/parcel-grow.js';
 import {
-  FADE_SECONDS, FADE_EASE, FADE_EASES, GROW_SECONDS, fogFactorAt,
+  FADE_SECONDS, FADE_EASE, FADE_EASES, fogFactorAt, readParcelAnim,
 } from './decide/lod-fade.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
@@ -450,19 +450,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 기본값은 **감독 판정 대기 중인 잠정치**이고, 판정은 이 두 노브로 받는다.
   const lodFade = readNum('lodfade', FADE_SECONDS, 0, 5);
   const lodEase = readEnum('lodease', FADE_EASE, FADE_EASES);
-  // 새 부품이 땅에서 자라는 시간. `?grow=0` 이 종전 동작(즉시 완성 크기 = 팝).
-  // 색 페이드가 왜 이걸 대신 못 하는지는 `systems/parcel-grow.ts` 머리 한 곳이다.
-  const growSecs = readNum('grow', GROW_SECONDS, 0, 3);
-  // `?shrink=` — 반납 수축 시간(초). 후진 그림자 명멸(#218, ?shint=0 으로 축 확정)의
-  // 처방 후보다: 키 큰 캐스터의 그림자가 0.25s 에 걷히는 것이 명멸의 핵이라, 시간을
-  // 늘려 연속 변화로 만든다. 근거·경계는 `systems/parcel-grow.ts` 의 SHRINK_SECONDS
-  // 주석 한 곳. 감독 판정이 나면 그 값을 기본으로 승격한다(팀장 조건 2, 2026-08-10).
-  const shrinkSecs = readNum('shrink', 0, 0, 3);
-  // `?shrinkease=` — 수축 전용 이징(lin·in·out·smooth). 시간 축과 분리해 판정하기
-  // 위한 것(팀장 조건 1: 'out' 앞쏠림이 시간 후보 판정을 오염시킨다). 왜 분리인지는
-  // `systems/parcel-grow.ts` 의 shrinkEase 주석 한 곳. 기본 'out' = 종전 동작
-  // (등장 ease 와 동일값이라 "미지정"과 구별할 필요가 없다).
-  const shrinkEase = readEnum('shrinkease', 'out', FADE_EASES);
+  // 등장·소멸 연출. **파싱은 `decide/lod-fade.ts` 의 `readParcelAnim()` 한 곳이다**
+  // (W8-10) — 액자가 같은 값을 봐야 하는데 그것은 `features/overlay.ts` 안에서
+  // 조립되므로 여기서 읽어 넘기는 방식으로는 닿지 않는다. 갈리면 감독이 `?shrink=1` 로
+  // 룩을 판정할 때 건물과 액자가 다른 속도로 움직이는 화면을 보고 판정하게 된다.
+  const parcelAnim = readParcelAnim();
+  const growSecs = parcelAnim.grow;
+  const shrinkSecs = parcelAnim.shrink;
+  const shrinkEase = parcelAnim.shrinkEase;
 
   // 적응 품질(해상도 강등·프레임 캡·tier 압력)을 통째로 끈다. **비교 실험 전용** —
   // 감독 실기기 "이동 중 밝기가 살짝 변함"(2026-08-10)에서 안개·헤드밥이 실측으로
