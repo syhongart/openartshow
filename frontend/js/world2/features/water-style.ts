@@ -13,9 +13,10 @@ import { readNum, readNumOpt } from '../url-knob.js';
 import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
   STYLED_WATER_NAMES, HIDE_ONLY_NAMES, pickWaterStyle, SHALLOW, MID, DEEP, FOAM, SKY_TINT,
-  FOAM_DEPTH, MID_DEPTH, DEEP_DEPTH, FRESNEL_POW, STYLE_OPACITY,
+  SHORE_ATTR, FOAM_EDGE, MID_EDGE, FRESNEL_POW, STYLE_OPACITY,
   type WaterStyleMode,
 } from '../decide/water-style.js';
+import { riverCenterZ, RIVER_HALF } from '../decide/water.js';
 
 /**
  * 게임풍 수면 재질.
@@ -31,8 +32,7 @@ import {
  */
 function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number): THREE.Material {
   const {
-    linearDepth, viewportLinearDepth, positionViewDirection, normalView,
-    cameraNear, cameraFar,
+    positionViewDirection, normalView, attribute,
     uniform, mix, smoothstep, float, vec3, time, mx_noise_float, positionWorld,
   } = TSL as any;
 
@@ -40,7 +40,7 @@ function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number):
     transparent: true,
     opacity: STYLE_OPACITY,
     // 물끼리 겹쳐 그려질 때 뒤엣것이 앞엣것을 지우지 않게 한다 — 기존 물이 같은 이유로
-    // `depthWrite: false` 다(강 판과 바다 판이 겹치는 구간이 있다).
+    // `depthWrite: false` 다.
     depthWrite: false,
     roughness: 0.18,
     metalness: 0.0,
@@ -52,31 +52,27 @@ function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number):
   const foamC = uniform(new THREE.Color(FOAM));
   const skyC = uniform(new THREE.Color(SKY_TINT));
 
-  // 이 화소의 물 두께(m).
-  //
-  // ⚠ **환산이 반드시 있어야 한다**(검수관 반려 B1). `viewportLinearDepth`·`linearDepth()`
-  // 는 [0,1] 정규화 깊이라 그 차는 `Δ미터 / (far - near)` 다. world2 의 far 가 7500 이라
-  // 환산 없이 쓰면 2.4m 가 3.2e-4 로 들어와 **깊이 그라데이션이 죽고 전 수면이 포말색**이
-  // 된다. 근거와 실패 형태는 `decide/water-style.ts` 의 깊이 램프 절에 적었다.
-  const thickness = viewportLinearDepth.sub(linearDepth())
-    .mul(cameraFar.sub(cameraNear))
-    .mul(deepMul);
+  // 물가까지의 정규화 거리. **부팅에 정점으로 구워 온다**(`bakeShoreDistance`) —
+  // 화면 깊이 텍스처를 쓰던 첫 판본이 WebGPU 에서 왜 죽었는지는
+  // `decide/water-style.ts` 의 `SHORE_ATTR` 주석에 있다.
+  const shore = attribute(SHORE_ATTR, 'float');
+  // 0 = 강 중심(깊다) · 1 = 물가(얕다). `deepMul` 은 대비 노브다.
+  const depthT = shore.oneMinus().mul(deepMul).clamp(0, 1);
 
-  // ── 깊이 색: 얕은 청록 → 중간 → 깊은 남청 ───────────────────────────────
-  // 두 단계로 섞는 것은 감독 명세가 색을 **셋** 지정했기 때문이다. 두 색만 쓰면
-  // 중간 구간이 산술 평균으로 흐려져 «청록이 강하게» 라는 요구가 죽는다.
-  const tMid = smoothstep(float(0), float(MID_DEPTH), thickness);
-  const tDeep = smoothstep(float(MID_DEPTH), float(DEEP_DEPTH), thickness);
+  // ── 물빛: 얕은 청록 → 중간 → 깊은 남청 ──────────────────────────────────
+  // 두 단계로 섞는 것은 감독 명세가 색을 **셋** 지정했기 때문이다. 두 색만 쓰면 중간
+  // 구간이 산술 평균으로 흐려져 «청록이 강하게» 라는 요구가 죽는다.
+  const tMid = smoothstep(float(0), float(1 - MID_EDGE), depthT);
+  const tDeep = smoothstep(float(1 - MID_EDGE), float(1), depthT);
   const body = mix(mix(shallow, midC, tMid), deepC, tDeep);
 
   // ── 물가 포말 ───────────────────────────────────────────────────────────
-  // 깊이가 얕은 띠에만 흰 거품. 경계를 노이즈로 흔드는 것이 요점이다 — 깊이만 쓰면
-  // 물가 선이 수학적으로 매끈해 오히려 CG 티가 난다(감독 코멘트가 지적한 그 자리).
+  // 물가 띠에만 흰 거품. 경계를 노이즈로 흔드는 것이 요점이다 — 거리만 쓰면 물가 선이
+  // 수학적으로 매끈해 오히려 CG 티가 난다(감독 코멘트가 지적한 자리).
   const n = mx_noise_float(vec3(
     positionWorld.x.mul(0.6), positionWorld.z.mul(0.6), time.mul(0.35),
   ));
-  const foamEdge = FOAM_DEPTH * foamMul;
-  const foamMask = smoothstep(float(foamEdge), float(0), thickness)
+  const foamMask = smoothstep(float(1 - FOAM_EDGE * foamMul), float(1), shore)
     .mul(n.mul(0.4).add(0.75))
     .clamp(0, 1);
   const withFoam = mix(body, foamC, foamMask);
@@ -85,16 +81,45 @@ function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number):
   // 감독 명세 `pow(1 - dot(viewDir, normal), 3)` 그대로. 정면으로 내려다보면 물빛,
   // 비스듬히 보면 하늘빛 — 이것이 들어가야 «게임 물» 로 읽힌다.
   //
-  // ⚠ **두 벡터가 같은 공간이어야 한다**(검수관 반려 B2). 첫 판본은 `normalWorld` 와
-  // 짝지었는데 `positionViewDirection` 은 **뷰 공간**(`positionView.negate().normalize()`)
-  // 이다. 수면 법선이 월드에서 ≈(0,1,0) 이므로 그 dot 은 사실상 뷰 공간 y 성분이 되고,
-  // 결과는 시야각 프레넬이 아니라 **화면에 못 박힌 세로 그라데이션**이 된다(화면 중앙은
-  // dot≈0 → 프레넬 1 → 통째로 하늘색). `normalView` 가 올바른 짝이다.
+  // ⚠ **두 벡터가 같은 공간이어야 한다**(검수관 반려 B2). `positionViewDirection` 은
+  // 뷰 공간이므로 짝은 `normalView` 다. `normalWorld` 와 dot 하면 시야각 프레넬이 아니라
+  // 화면에 못 박힌 세로 그라데이션이 된다.
   const fres = positionViewDirection.dot(normalView).clamp(0, 1)
     .oneMinus().pow(FRESNEL_POW).mul(fresMul).clamp(0, 1);
 
   mat.colorNode = mix(withFoam, skyC, fres);
   return mat;
+}
+
+/**
+ * 물가까지의 정규화 거리를 정점에 굽는다. `0` = 강 중심, `1` = 물가.
+ *
+ * **기존 지오메트리에 어트리뷰트를 하나 더 붙인다.** 기존 어트리뷰트는 한 글자도 안
+ * 건드리므로 `features/ocean.ts` 의 정점 파동·UV 스크롤에 영향이 없다. 지오메트리 **개수**도
+ * 안 변한다(개수 불변식은 지오를 세지 어트리뷰트를 세지 않는다).
+ *
+ * 이미 붙어 있으면 다시 굽지 않는다 — 바다·강이 지오메트리를 공유할 수 있고, 두 번 구우면
+ * 같은 값을 두 번 쓰는 낭비다.
+ *
+ * ⚠ `riverCenterZ` 를 **호출해서** 쓴다(계수를 TSL 로 옮겨 적지 않는다). `decide/water.ts`
+ * 의 `RIVER_WAVES` 는 export 가 아니고 그 파일은 `check:filesize` 동결이라 열 수도 없다 —
+ * 그런데 그것이 오히려 옳다: 계수를 셰이더에 다시 적으면 강 경로를 바꿨을 때 물빛만 옛
+ * 자리에 남고, 그 어긋남은 화면에만 나타난다.
+ */
+function bakeShoreDistance(geo: THREE.BufferGeometry, cell: number, isSea: boolean): void {
+  if (geo.getAttribute(SHORE_ATTR)) return;
+  const pos = geo.getAttribute('position');
+  const out = new Float32Array(pos.count);
+  if (!isSea) {
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      // 중심선에서 떨어진 거리를 반폭으로 정규화 — 물가에서 1, 중심에서 0
+      out[i] = Math.min(1, Math.abs(z - riverCenterZ(x, cell)) / RIVER_HALF);
+    }
+  }
+  // 바다는 전부 0(깊은 물). `Float32Array` 는 0 으로 초기화되므로 그대로 둔다.
+  geo.setAttribute(SHORE_ATTR, new THREE.BufferAttribute(out, 1));
 }
 
 export const waterStyleFeature: Feature = {
@@ -140,6 +165,8 @@ export const waterStyleFeature: Feature = {
       if (!src || !(src as any).isMesh) continue;
       // **지오메트리를 공유한다.** 복사하지 않는 이유가 셋이다: 지오메트리 개수가 안 늘고,
       // ocean 이 매 프레임 갱신하는 정점 파동이 그대로 오며, 두 수면이 갈라질 수가 없다.
+      // 물가 거리를 굽는다. 지오메트리는 ocean 소유라 **어트리뷰트만 더한다**.
+      bakeShoreDistance(src.geometry as THREE.BufferGeometry, env.cell, name === 'ocean');
       const m = new THREE.Mesh(src.geometry, material);
       m.name = `${name}-styled`;
       m.position.copy(src.position);

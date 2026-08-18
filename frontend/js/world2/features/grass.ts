@@ -19,7 +19,7 @@ import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
   GRASS_RADIUS, GRASS_RADIUS_MIN, GRASS_RADIUS_MAX, GRASS_DENSITY, MAX_BLADES,
   WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z, WIND_GUST_K, WIND_GUST_T,
-  bladeCount, pickGrassWind, type GrassWindMode,
+  BLADE_TIP, bladeCount, pickGrassWind, type GrassWindMode,
 } from '../decide/grass.js';
 import { GrassField } from '../systems/grass-field.js';
 
@@ -37,9 +37,11 @@ import { GrassField } from '../systems/grass-field.js';
  * 옆을 보는 면이 어두워져 필드가 얼룩덜룩해진다 — 지면과 같은 빛을 받게 해야 한 장으로
  * 읽힌다. 게임풍에서는 이쪽이 정답이다.
  */
-function bladeGeometry(): THREE.BufferGeometry {
+function bladeGeometry(tip: number): THREE.BufferGeometry {
   const ys = [0, 0.40, 0.72, 1.0];
-  const hw = [0.5, 0.40, 0.25, 0.06];   // 반폭. 끝을 완전히 0 으로 두면 뾰족한 끝이 깜빡인다
+  // 반폭. 밑동 0.5 에서 끝 `0.5 × tip` 까지 좁아진다 — `tip` 이 클수록 뭉툭하다.
+  // 감독 판정 *"뾰족가시같아"* 로 테이퍼를 완만하게 바꿨다(`decide/grass.ts` 의 실루엣 절).
+  const hw = [0.5, 0.5 - (0.5 - 0.5 * tip) * 0.28, 0.5 - (0.5 - 0.5 * tip) * 0.66, 0.5 * tip]
   const pos: number[] = [];
   const uv: number[] = [];
   const nor: number[] = [];
@@ -104,6 +106,9 @@ export const grassFeature: Feature = {
     const radius = readNum('grad', GRASS_RADIUS, GRASS_RADIUS_MIN, GRASS_RADIUS_MAX);
     const density = GRASS_DENSITY * readNum('gden', 1, 0, 2);
     const heightMul = readNum('gh', 1, 0.3, 2);
+    // 폭·끝 모양은 화면으로만 판정된다 — 감독이 실기기에서 돌려 기본값을 정한다.
+    const widthMul = readNum('gw', 1, 0.3, 3);
+    const tip = readNum('gtip', BLADE_TIP, 0, 1);
     const windMul = readNum('gwind', 1, 0, 2);
     const speedMul = readNum('gwspd', 1, 0, 3);
 
@@ -121,7 +126,7 @@ export const grassFeature: Feature = {
     }
 
     const count = bladeCount(radius, density);
-    const geometry = bladeGeometry();
+    const geometry = bladeGeometry(tip);
     const material = wind === 'tsl'
       ? windMaterial(windMul, speedMul)
       : new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
@@ -155,7 +160,7 @@ export const grassFeature: Feature = {
       mesh: mesh as any,
       matrix: new THREE.Matrix4(),
       color: new THREE.Color(),
-      radius, density, heightMul,
+      radius, density, heightMul, widthMul,
       cell: env.cell,
       playerAt: () => {
         const p = env.player.position;
@@ -169,7 +174,7 @@ export const grassFeature: Feature = {
       diagnostics: () => ({
         blades: field.count,
         buffer: mesh.count,
-        radius, density, heightMul,
+        radius, density, heightMul, widthMul, tip,
         wind,
         // 감독이 «바람이 이 모양이냐» 로 판정하기 전에 이것을 먼저 본다.
         windActive: wind === 'tsl',
