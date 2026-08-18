@@ -11,8 +11,8 @@
 // (`systems/ground-lift.ts` 의 `MutableColor`·`LiftableMaterial` 과 같은 배치다.)
 
 import {
-  GRASS_TONES, BLADE_H, BLADE_W, WRAP_MOVE_EPS, WRAP_BUDGET,
-  bladeBase, bladeCount, wrapTo, edgeScale, plantScale,
+  GRASS_TONES, GRASS_RINGS, BLADE_H, BLADE_W, WRAP_MOVE_EPS, WRAP_BUDGET,
+  bladeBase, ringCounts, ringOf, ringStart, wrapTo, edgeScale, plantScale,
 } from '../decide/grass.js';
 import { GARDEN_SURFACE_Y } from '../parts/garden.js';
 
@@ -38,8 +38,10 @@ export interface GrassFieldOpts {
   readonly matrix: MatrixLike;
   /** 재사용할 색 하나 */
   readonly color: ColorLike;
-  readonly radius: number;
-  readonly density: number;
+  /** 반경 배수 노브(`?grad`) — 링 표에 곱한다 */
+  readonly radiusMul: number;
+  /** 밀도 배수 노브(`?gden`) */
+  readonly densityMul: number;
   /** 높이 배수 노브(`?gh`) */
   readonly heightMul: number;
   /** 폭 배수 노브(`?gw`) — 감독 판정 *"뾰족가시같아"* 로 열었다 */
@@ -61,6 +63,8 @@ export interface GrassFieldOpts {
 export class GrassField {
   private readonly o: GrassFieldOpts;
   private readonly active: number;
+  /** 링별 인스턴스 수 — 인덱스를 링으로 가르는 유일한 근거 */
+  private readonly counts: number[];
   /** 각 포기가 마지막으로 접힌 타일 인덱스. `NaN` 이면 아직 한 번도 안 놓았다 */
   private readonly tileX: Float64Array;
   private readonly tileZ: Float64Array;
@@ -73,7 +77,8 @@ export class GrassField {
 
   constructor(opts: GrassFieldOpts) {
     this.o = opts;
-    this.active = bladeCount(opts.radius, opts.density);
+    this.counts = ringCounts(opts.radiusMul, opts.densityMul);
+    this.active = this.counts.reduce((a, b) => a + b, 0);
     this.tileX = new Float64Array(this.active).fill(Number.NaN);
     this.tileZ = new Float64Array(this.active).fill(Number.NaN);
     this.paintTones();
@@ -123,7 +128,8 @@ export class GrassField {
   private paintTones(): void {
     const { mesh, color } = this.o;
     for (let i = 0; i < this.active; i++) {
-      const hex = GRASS_TONES[bladeBase(i, this.o.radius).tone];
+      const r = ringOf(i, this.counts);
+      const hex = GRASS_TONES[bladeBase(i, GRASS_RINGS[r].radius * this.o.radiusMul).tone];
       color.r = ((hex >> 16) & 0xff) / 255;
       color.g = ((hex >> 8) & 0xff) / 255;
       color.b = (hex & 0xff) / 255;
@@ -139,9 +145,16 @@ export class GrassField {
    * 지우면 개수가 변한다.
    */
   private place(i: number, cx: number, cz: number): void {
-    const { radius, cell, heightMul, widthMul, matrix, mesh } = this.o;
+    const { cell, heightMul, widthMul, matrix, mesh } = this.o;
+    // 이 포기가 속한 링이 반경·잎 크기를 정한다. 링마다 따로 랩을 돌므로 거리 LOD 가
+    // 저절로 생긴다 — 안쪽 링은 좁고 빽빽하게, 바깥 링은 넓고 성기게.
+    const ri = ringOf(i, this.counts);
+    const ring = GRASS_RINGS[ri];
+    const radius = ring.radius * this.o.radiusMul;
     const span = radius * 2;
-    const b = bladeBase(i, radius);
+    // 링 안에서의 상대 인덱스를 쓴다 — 전역 `i` 를 쓰면 링이 바뀔 때 같은 난수를 다시
+    // 밟아 링끼리 겹쳐 선다.
+    const b = bladeBase(i - ringStart(ri, this.counts) + ri * 7919, radius);
     const wx = wrapTo(b.bx, cx, span);
     const wz = wrapTo(b.bz, cz, span);
     const fade = edgeScale(wx - cx, wz - cz, radius);
@@ -150,8 +163,8 @@ export class GrassField {
     const ps = fade > 0 ? plantScale(wx, wz, cell) : 0;
     const ok = ps > 0;
 
-    const sw = ok ? b.sw * BLADE_W * widthMul : 0;
-    const sy = ok ? b.sh * BLADE_H * heightMul * fade * ps : 0;
+    const sw = ok ? b.sw * BLADE_W * widthMul * ring.scale : 0;
+    const sy = ok ? b.sh * BLADE_H * heightMul * fade * ps * ring.scale : 0;
     const c = Math.cos(b.rot);
     const s = Math.sin(b.rot);
     const e = matrix.elements;

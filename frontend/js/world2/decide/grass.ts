@@ -62,18 +62,49 @@ export function pickGrassWind(requested: GrassWindMode, backend: string): GrassW
 
 // ── 필드 치수 ───────────────────────────────────────────────────────────────
 
+// ── 3중 링 — 육지 전체를 덮되 멀수록 성기게 (감독 판정 2026-08-18) ──────────
+//
+// 감독: *"내가 이동하면 잔디가 앞에 생성되는게 어색해. lod생성 육지. 건물 있는곳은 다
+// 생성되어야지."*
+//
+// 첫 판본은 **플레이어 중심 반경 24m 원 하나**였다. 그 경계가 시야 안(24m)에 들어오므로
+// 걸으면 경계선이 함께 따라오고, 그것이 «앞에서 생겨난다» 로 보인다. 균일 분포라
+// 「가까이는 빽빽, 멀리는 성기게」도 표현할 수 없었다 — 밀도를 올리면 먼 곳까지 같이
+// 올라가 개수만 폭발한다.
+//
+// 그래서 인스턴스를 **세 링으로 쪼갠다.** 각 링이 자기 타일에서 따로 토러스 랩을 돌고,
+// 반경이 커질수록 밀도를 낮추고 잎을 키운다. 효과 셋:
+//   ⓐ **거리 LOD 가 공짜로 나온다** — 근거리는 빽빽하고 원거리는 성기다.
+//   ⓑ **경계가 안 보인다** — 가장 먼 링(70m)이 안개 시작(`FOG_NEAR_CELLS × cell` = 51.2m)
+//      **바깥**이라 그 경계는 안개에 묻힌다. 안쪽 두 링의 경계는 바깥 링이 메운다.
+//   ⓒ 같은 개수로 **훨씬 넓은 땅**을 덮는다. 24m 원 → 70m 원은 면적이 8.5배다.
+//
+// ⚠ 반경을 하나로 키우는 안을 버린 이유: 밀도를 유지한 채 70m 로 키우면
+// `(140)² × 16 = 313,600` 이다. 링으로 나누면 6.5만으로 같은 범위를 덮는다.
+
+/** 링 하나. `scale` 은 잎 크기 배수 — 멀수록 키워야 성겨진 것이 덜 티 난다 */
+export interface GrassRing {
+  readonly radius: number;
+  readonly density: number;
+  readonly scale: number;
+}
+
 /**
- * 실제 풀이 서는 반경(m). 기본 24.
+ * 링 셋. **안쪽부터 바깥으로.** 밀도 합이 아니라 «그 반경 안의 밀도» 다 — 링이 겹치므로
+ * 근거리의 실효 밀도는 세 링의 합(28+5+1 = 34/m²)이다.
  *
- * 상한 52 는 임의의 넉넉한 값이 아니라 **안개 시작에서 유도**한다 —
- * `decide/fog.ts` 의 `FOG_NEAR_CELLS(1.6) × cell(32) = 51.2m`. 그보다 멀리 심으면
- * 안개가 이미 먹은 자리에 풀을 그리는 것이라 드로우 비용만 나가고 화면은 안 변한다.
- * 그 바깥은 현행 잔디 텍스처(`parts/garden.ts` 의 평면)가 계속 담당하고, 전환은
- * `edgeScale` 이 가장자리에서 0 으로 눕혀 감춘다.
+ * 70m 의 근거: 안개가 51.2m 에서 시작해 `FOG_FAR` 까지 걸린다. 그 안쪽에서 링이 끝나면
+ * 경계가 맨눈에 보이므로, **안개가 이미 먹은 자리**에서 끝나야 한다.
  */
-export const GRASS_RADIUS = 24;
-export const GRASS_RADIUS_MIN = 8;
-export const GRASS_RADIUS_MAX = 52;
+export const GRASS_RINGS: readonly GrassRing[] = [
+  { radius: 14, density: 28, scale: 1.00 },
+  { radius: 34, density: 5, scale: 1.35 },
+  { radius: 70, density: 1.0, scale: 1.90 },
+];
+
+/** 반경 배수 노브(`?grad`)의 범위. 1 이 위 표 그대로다 */
+export const GRASS_RADIUS_MUL_MIN = 0.4;
+export const GRASS_RADIUS_MUL_MAX = 1.6;
 
 /**
  * 기본 밀도(포기/m²). 게임풍은 밀도가 인상을 만든다 — 성기면 즉시 «잔디 몇 개» 로 보인다.
@@ -98,7 +129,7 @@ export const GRASS_DENSITY = 16;
  * ⚠ 밀도를 8 → 16 으로 올리며 40,000 → 60,000 으로 함께 키웠다(감독 *"더 빽빽히"*).
  * 둘은 짝이다 — 밀도만 올리면 상한에 눌려 실제로는 안 빽빽해진다.
  */
-export const MAX_BLADES = 60000;
+export const MAX_BLADES = 72000;
 
 // ── 풀잎 실루엣 (감독 실기기 판정 2026-08-18 *"지금 뾰족가시같아"*) ──────────
 //
@@ -119,10 +150,17 @@ export const BLADE_W = 0.13;
 /**
  * 잎 끝의 뭉툭함. `0` = 바늘처럼 뾰족 · `1` = 끝까지 밑동 폭(직사각형).
  *
- * 0.6 은 «끝이 살짝 좁아지는 잎» 이다. 완전히 0 으로 두면 첫 판본의 가시가 되고, 1 이면
- * 풀이 아니라 판자로 보인다.
+ * ⚠ **0.6 → 0.14 (감독 판정 2026-08-18 *"잎같지 않아. 끝이 뾰족하지 않고"*).**
+ *
+ * 1차의 «가시» 를 고치려고 0.6 으로 뭉툭하게 했는데 그것은 과잉이었다 — 잎은 **끝이
+ * 뾰족한 것이 맞다.** 1차가 가시로 보인 진짜 원인은 끝이 아니라 **폭**이었다(5.5cm,
+ * 6:1). 폭을 13cm 로 넓힌 지금은 끝을 뾰족하게 해도 가시가 아니라 잎이다.
+ *
+ * 그리고 **테이퍼를 곡선으로** 바꾼다(`features/grass.ts` 의 지오메트리). 각진 3단
+ * 테이퍼가 «인공적으로 보인다» 의 한 축이었다 — 실제 잎은 밑동에서 천천히, 끝으로 갈수록
+ * 급하게 좁아진다.
  */
-export const BLADE_TIP = 0.6;
+export const BLADE_TIP = 0.14;
 
 /**
  * 잔디 색 3종. 감독 코멘트의 *"단순히 한 색을 쓰지 말고 2~3개 초록색을 섞어야 한다"* 를
@@ -176,7 +214,29 @@ export const WIND_GUST_T = 0.35;   // 돌풍이 흘러가는 속도
  */
 export const WIND_JITTER_KX = 9.7;
 export const WIND_JITTER_KZ = 7.3;
-export const WIND_JITTER_AMP = 1.2;
+/**
+ * ⚠ **1.2 → 0.28 (감독 판정 2026-08-18 *"바람에 흔들리는 느낌이 아니고 혼자 살아있는
+ * 스스로 움직이는것같은 느낌이야"*).**
+ *
+ * 1.2rad(69°)은 이웃 잎이 **거의 반대 위상**으로 기울 만큼 크다. 그러면 «바람이 지나간다»
+ * 가 아니라 «잎마다 제 뜻대로 움직인다» 로 보인다 — 정확히 감독이 지적한 것이다.
+ *
+ * 지터의 목적은 «같은 각도로 굳는 것»을 깨는 것이지 **위상을 흩는 것이 아니다.** 0.28rad
+ * (16°)이면 잎들이 여전히 **한 덩어리로 물결치되** 판박이처럼 보이지 않는다. 물결(공간
+ * 파동)이 주인공이고 지터는 그 위의 잔결이다 — 그 서열이 뒤집히면 바람이 사라진다.
+ */
+export const WIND_JITTER_AMP = 0.28;
+
+/**
+ * 돌풍이 굽힘에 실리는 비율. **바람 «세기» 자체를 물결치게 만드는 축이다.**
+ *
+ * 감독이 원한 «바람에 흔들린다» 는 방향이 아니라 **세기가 오르내리는 것**이다 — 실제
+ * 바람은 한 줄기가 지나가며 그 구역만 세게 눕혔다가 놓는다. 그래서 돌풍 노이즈의 진폭을
+ * 키우고(0.35 → 0.75) 하한을 낮춘다(0.75 → 0.35): 어떤 구역은 거의 멈춰 있고 어떤 구역은
+ * 크게 눕는다.
+ */
+export const WIND_GUST_MIX = 0.75;
+export const WIND_GUST_BASE = 0.35;
 
 // ── 갱신 예산 ───────────────────────────────────────────────────────────────
 
@@ -222,7 +282,38 @@ export function bladeHash(i: number, salt: number): number {
  */
 export function bladeCount(radius: number, density: number): number {
   const span = radius * 2;
-  return Math.max(0, Math.min(MAX_BLADES, Math.round(span * span * density)));
+  return Math.max(0, Math.round(span * span * density));
+}
+
+/**
+ * 링별 인스턴스 수. 합이 `MAX_BLADES` 를 넘으면 **비율을 유지한 채** 눌러 담는다.
+ *
+ * 비율 유지가 요점이다 — 앞 링부터 채우고 자르면 밀도 노브를 올렸을 때 **바깥 링만**
+ * 사라져 「멀리 잔디가 없어지는」 것으로 보인다.
+ */
+export function ringCounts(radiusMul: number, densityMul: number): number[] {
+  const raw = GRASS_RINGS.map((r) => bladeCount(r.radius * radiusMul, r.density * densityMul));
+  const total = raw.reduce((a, b) => a + b, 0);
+  if (total <= MAX_BLADES) return raw;
+  const k = MAX_BLADES / total;
+  return raw.map((n) => Math.floor(n * k));
+}
+
+/** `i` 가 몇 번째 링인가. 누적 경계로 가른다 */
+export function ringOf(i: number, counts: readonly number[]): number {
+  let acc = 0;
+  for (let r = 0; r < counts.length; r++) {
+    acc += counts[r];
+    if (i < acc) return r;
+  }
+  return counts.length - 1;
+}
+
+/** 그 링이 시작하는 인덱스 — 링 안에서의 상대 위치를 구할 때 쓴다 */
+export function ringStart(ring: number, counts: readonly number[]): number {
+  let acc = 0;
+  for (let r = 0; r < ring; r++) acc += counts[r];
+  return acc;
 }
 
 /**

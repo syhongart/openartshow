@@ -17,10 +17,10 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import { readNum, readNumOpt } from '../url-knob.js';
 import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
-  GRASS_RADIUS, GRASS_RADIUS_MIN, GRASS_RADIUS_MAX, GRASS_DENSITY, MAX_BLADES,
+  GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX, MAX_BLADES, ringCounts,
   WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z, WIND_GUST_K, WIND_GUST_T,
-  WIND_JITTER_KX, WIND_JITTER_KZ, WIND_JITTER_AMP,
-  BLADE_TIP, bladeCount, pickGrassWind, type GrassWindMode,
+  WIND_JITTER_KX, WIND_JITTER_KZ, WIND_JITTER_AMP, WIND_GUST_MIX, WIND_GUST_BASE,
+  BLADE_TIP, pickGrassWind, type GrassWindMode,
 } from '../decide/grass.js';
 import { GrassField } from '../systems/grass-field.js';
 
@@ -39,10 +39,12 @@ import { GrassField } from '../systems/grass-field.js';
  * 읽힌다. 게임풍에서는 이쪽이 정답이다.
  */
 function bladeGeometry(tip: number): THREE.BufferGeometry {
-  const ys = [0, 0.40, 0.72, 1.0];
-  // 반폭. 밑동 0.5 에서 끝 `0.5 × tip` 까지 좁아진다 — `tip` 이 클수록 뭉툭하다.
-  // 감독 판정 *"뾰족가시같아"* 로 테이퍼를 완만하게 바꿨다(`decide/grass.ts` 의 실루엣 절).
-  const hw = [0.5, 0.5 - (0.5 - 0.5 * tip) * 0.28, 0.5 - (0.5 - 0.5 * tip) * 0.66, 0.5 * tip]
+  // 5단 — 4단은 굽힘이 각져 보였다(감독 *"인공적으로 보여"* 의 한 축).
+  // 위로 갈수록 촘촘한 것은 그대로다: 많이 휘는 구간의 해상도가 높아야 곡선이 산다.
+  const ys = [0, 0.30, 0.56, 0.80, 1.0];
+  // 반폭 — **곡선 테이퍼**다. `(1-t)^1.6` 이라 밑동에서 천천히, 끝으로 갈수록 급하게
+  // 좁아진다. 선형(첫 판본)은 옆면이 곧은 삼각형이라 «칼» 처럼 보였다.
+  const hw = ys.map((t) => 0.5 * (tip + (1 - tip) * Math.pow(1 - t, 1.6)));
   const pos: number[] = [];
   const uv: number[] = [];
   const nor: number[] = [];
@@ -98,8 +100,10 @@ function windMaterial(ampMul: number, speedMul: number): THREE.Material {
     .add(time.mul(spd)).add(jitter);
   // 돌풍 — 저주파 노이즈로 «지금 이 구역이 세게 불린다» 를 만든다. 이것이 없으면
   // 필드 전체가 한 박자로 흔들려 기계적으로 보인다.
+  // 돌풍이 **세기를 물결치게** 한다 — 감독이 원한 «바람에 흔들린다» 는 방향이 아니라
+  // 세기가 오르내리는 것이다. 어떤 구역은 거의 멈춰 있고(0.35) 어떤 구역은 크게 눕는다(1.1).
   const gust = mx_noise_float(vec3(p.x.mul(WIND_GUST_K), p.z.mul(WIND_GUST_K), time.mul(WIND_GUST_T)));
-  const bend = sin(phase).mul(amp).mul(sway).mul(gust.mul(0.35).add(0.8));
+  const bend = sin(phase).mul(amp).mul(sway).mul(gust.mul(WIND_GUST_MIX).add(WIND_GUST_BASE));
   mat.positionNode = p.add(vec3(bend.mul(WIND_DIR_X), 0, bend.mul(WIND_DIR_Z)));
   return mat;
 }
@@ -110,8 +114,8 @@ export const grassFeature: Feature = {
     const master = readNum(STYLIZED_KNOB, 0, 0, 1);
     if (!stylizedOn(master, readNumOpt('grass', 0, 1))) return null;
 
-    const radius = readNum('grad', GRASS_RADIUS, GRASS_RADIUS_MIN, GRASS_RADIUS_MAX);
-    const density = GRASS_DENSITY * readNum('gden', 1, 0, 2);
+    const radiusMul = readNum('grad', 1, GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX);
+    const densityMul = readNum('gden', 1, 0, 2);
     const heightMul = readNum('gh', 1, 0.3, 2);
     // 폭·끝 모양은 화면으로만 판정된다 — 감독이 실기기에서 돌려 기본값을 정한다.
     const widthMul = readNum('gw', 1, 0.3, 3);
@@ -132,7 +136,8 @@ export const grassFeature: Feature = {
       );
     }
 
-    const count = bladeCount(radius, density);
+    const counts = ringCounts(radiusMul, densityMul);
+    const count = counts.reduce((a, b) => a + b, 0);
     const geometry = bladeGeometry(tip);
     const material = wind === 'tsl'
       ? windMaterial(windMul, speedMul)
@@ -167,7 +172,7 @@ export const grassFeature: Feature = {
       mesh: mesh as any,
       matrix: new THREE.Matrix4(),
       color: new THREE.Color(),
-      radius, density, heightMul, widthMul,
+      radiusMul, densityMul, heightMul, widthMul,
       cell: env.cell,
       playerAt: () => {
         const p = env.player.position;
@@ -181,7 +186,8 @@ export const grassFeature: Feature = {
       diagnostics: () => ({
         blades: field.count,
         buffer: mesh.count,
-        radius, density, heightMul, widthMul, tip,
+        rings: counts,
+        radiusMul, densityMul, heightMul, widthMul, tip,
         wind,
         // 감독이 «바람이 이 모양이냐» 로 판정하기 전에 이것을 먼저 본다.
         windActive: wind === 'tsl',
