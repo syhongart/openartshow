@@ -30,6 +30,13 @@ for (const [k, v] of Object.entries(DEFAULTS)) {
 }
 // `startWorld2` **전에** 갱신해야 한다 — `url-knob.ts` 는 호출 시점의 `location.search` 를
 // 읽으므로, 조립이 시작된 뒤에 고치면 이미 읽어 간 노브에는 반영되지 않는다.
+//
+// ⚠ **그것만으로는 충분하지 않다**(검수관 권고 P5, 2026-08-18). ES 모듈은 `import` 평가가
+// 본문보다 **먼저** 돌므로, 위 `import` 시점에 world2 모듈 그래프의 **모듈 스코프**
+// `readNum` 이 이미 실행된다. 실물이 있다 — `features/ocean.ts` 의
+// `const SEA_PATCH_ON = readNum('wpatch', ...)`. 지금 이 부트가 동작하는 것은 **세
+// 스타일라이즈드 기능이 전부 `create()` **안에서만** 노브를 읽기 때문**이고, 누군가
+// 모듈 스코프에서 `STYLIZED_KNOB` 을 읽는 순간 이 프리셋이 조용히 멈춘다.
 // `pushState` 가 아니라 `replaceState` 인 것은 뒤로가기를 한 번에 벗어나게 하려는 것이다.
 if (touched) history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
 

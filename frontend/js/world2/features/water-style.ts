@@ -12,7 +12,7 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import { readNum, readNumOpt } from '../url-knob.js';
 import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
-  STYLED_WATER_NAMES, pickWaterStyle, SHALLOW, MID, DEEP, FOAM, SKY_TINT,
+  STYLED_WATER_NAMES, HIDE_ONLY_NAMES, pickWaterStyle, SHALLOW, MID, DEEP, FOAM, SKY_TINT,
   FOAM_DEPTH, MID_DEPTH, DEEP_DEPTH, FRESNEL_POW, STYLE_OPACITY,
   type WaterStyleMode,
 } from '../decide/water-style.js';
@@ -31,7 +31,8 @@ import {
  */
 function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number): THREE.Material {
   const {
-    linearDepth, viewportLinearDepth, positionViewDirection, normalWorld,
+    linearDepth, viewportLinearDepth, positionViewDirection, normalView,
+    cameraNear, cameraFar,
     uniform, mix, smoothstep, float, vec3, time, mx_noise_float, positionWorld,
   } = TSL as any;
 
@@ -52,7 +53,14 @@ function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number):
   const skyC = uniform(new THREE.Color(SKY_TINT));
 
   // 이 화소의 물 두께(m).
-  const thickness = viewportLinearDepth.sub(linearDepth()).mul(deepMul);
+  //
+  // ⚠ **환산이 반드시 있어야 한다**(검수관 반려 B1). `viewportLinearDepth`·`linearDepth()`
+  // 는 [0,1] 정규화 깊이라 그 차는 `Δ미터 / (far - near)` 다. world2 의 far 가 7500 이라
+  // 환산 없이 쓰면 2.4m 가 3.2e-4 로 들어와 **깊이 그라데이션이 죽고 전 수면이 포말색**이
+  // 된다. 근거와 실패 형태는 `decide/water-style.ts` 의 깊이 램프 절에 적었다.
+  const thickness = viewportLinearDepth.sub(linearDepth())
+    .mul(cameraFar.sub(cameraNear))
+    .mul(deepMul);
 
   // ── 깊이 색: 얕은 청록 → 중간 → 깊은 남청 ───────────────────────────────
   // 두 단계로 섞는 것은 감독 명세가 색을 **셋** 지정했기 때문이다. 두 색만 쓰면
@@ -76,7 +84,13 @@ function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number):
   // ── 프레넬 ──────────────────────────────────────────────────────────────
   // 감독 명세 `pow(1 - dot(viewDir, normal), 3)` 그대로. 정면으로 내려다보면 물빛,
   // 비스듬히 보면 하늘빛 — 이것이 들어가야 «게임 물» 로 읽힌다.
-  const fres = positionViewDirection.dot(normalWorld).clamp(0, 1)
+  //
+  // ⚠ **두 벡터가 같은 공간이어야 한다**(검수관 반려 B2). 첫 판본은 `normalWorld` 와
+  // 짝지었는데 `positionViewDirection` 은 **뷰 공간**(`positionView.negate().normalize()`)
+  // 이다. 수면 법선이 월드에서 ≈(0,1,0) 이므로 그 dot 은 사실상 뷰 공간 y 성분이 되고,
+  // 결과는 시야각 프레넬이 아니라 **화면에 못 박힌 세로 그라데이션**이 된다(화면 중앙은
+  // dot≈0 → 프레넬 1 → 통째로 하늘색). `normalView` 가 올바른 짝이다.
+  const fres = positionViewDirection.dot(normalView).clamp(0, 1)
     .oneMinus().pow(FRESNEL_POW).mul(fresMul).clamp(0, 1);
 
   mat.colorNode = mix(withFoam, skyC, fres);
@@ -108,6 +122,16 @@ export const waterStyleFeature: Feature = {
     const material = styledWaterMaterial(foamMul, fresMul, deepMul);
     const added: THREE.Mesh[] = [];
     const hidden: THREE.Object3D[] = [];
+
+
+    // 층2는 **숨기기만** 한다 — 대역을 얹지 않는 이유는 `decide/water-style.ts` 의
+    // `HIDE_ONLY_NAMES` 주석에 있다(트랜스폼 비공유 + 반투명 이중 곱).
+    for (const name of HIDE_ONLY_NAMES) {
+      const src = env.scene.getObjectByName(name);
+      if (!src) continue;
+      src.visible = false;
+      hidden.push(src);
+    }
 
     for (const name of STYLED_WATER_NAMES) {
       const src = env.scene.getObjectByName(name) as THREE.Mesh | undefined;
@@ -142,6 +166,7 @@ export const waterStyleFeature: Feature = {
         mode,
         styled: added.length,
         expected: STYLED_WATER_NAMES.length,
+        hiddenOnly: HIDE_ONLY_NAMES.length,
         foamMul, fresMul, deepMul,
         backend: env.adapter.backendDetail,
       }),

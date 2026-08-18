@@ -153,14 +153,24 @@ export class GrassField {
       this.lastX = p.x;
       this.lastZ = p.z;
       this.pending = true;
-      this.cursor = 0;
+      // ⚠ **커서를 되감지 않는다**(검수관 권고 P4, 2026-08-18 — 첫 판본은 여기서 `0` 으로
+      // 되감았다). 전수 1회에 필요한 프레임은 `ceil(active / WRAP_BUDGET)` 이고, 기본값
+      // (active 18,432)은 9프레임이라 보행 중 재예약 주기 안에 완주한다. 그러나 `?gden=2`
+      // (18프레임)나 `?grad=52`(20프레임)에서는 **완주 전에 매번 되감기므로 인덱스 뒤쪽
+      // 20~25% 가 걷는 내내 갱신되지 않는다.** 낡은 포기는 옛 중심 기준으로 접혀 있어
+      // `edgeScale` 가드를 못 받고 **뒤쪽에 풀이 뭉쳐 남는 것**으로 보인다.
+      //
+      // 순회는 인덱스 순서이고 «어느 포기가 갱신을 필요로 하는가» 와 무관하므로, 부분
+      // 통과가 덮는 집합은 사실상 무작위 부분집합이다 — 이어받아야 모든 포기가 순환한다.
     }
     if (!this.pending) return;
 
     const end = Math.min(this.active, this.cursor + WRAP_BUDGET);
     for (let i = this.cursor; i < end; i++) this.place(i, this.lastX, this.lastZ);
-    this.cursor = end;
     mesh.instanceMatrix.needsUpdate = true;
-    if (this.cursor >= this.active) this.pending = false;
+    // 한 바퀴를 다 돌면 처음으로 접고 예약을 내린다. 그 사이 또 움직였으면 `moved` 가
+    // 예약을 다시 세우므로, 결과적으로 **모든 인덱스가 순환하며 최신 중심으로 갱신된다.**
+    this.cursor = end >= this.active ? 0 : end;
+    if (this.cursor === 0) this.pending = false;
   }
 }
