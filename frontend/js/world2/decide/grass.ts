@@ -27,6 +27,8 @@
 
 import { surfaceY } from '../parts/surface.js';
 import { GARDEN_SURFACE_Y } from '../parts/garden.js';
+import { ROAD_SURFACE_Y } from '../parts/road.js';
+import { roadDirs, onRoad, ROAD_HALF } from '../parts/road-topology.js';
 import { parcelWater } from './water.js';
 
 // ── 바람: 백엔드 화이트리스트 ───────────────────────────────────────────────
@@ -233,21 +235,64 @@ export function edgeScale(dx: number, dz: number, radius: number): number {
   return t * t * (3 - 2 * t);
 }
 
+// ── 갓돌 띠 (감독 화면 판정 대비, 2026-08-18) ───────────────────────────────
+//
+// 첫 판본은 «잔디면 심고 아니면 안 심는다» 였다. 그런데 검수관이 링크가 열리는 자리를
+// 실측하니 **정면 0~5m 에 한 포기도 없었다** — 강가 스폰의 발밑이 도로이기 때문이다.
+// 블레이드 모양과 바람은 근거리에서 판정되는데 근거리가 통째로 비면, 감독은 열자마자
+// «잔디가 성기다» 또는 «안 켜졌나» 로 읽는다. 그것이 이 노브를 연 목적을 무효화한다.
+//
+// 그래서 도로 **갓돌 근처 띠**에만 짧은 풀이 삐져나오게 한다. 감독이 준 참조 화면도
+// 길가까지 풀이 차 있고, 실제로 포장 경계는 풀이 가장 잘 비집고 나오는 자리다.
+// **도로 한복판에는 안 난다** — 띠 폭이 갓돌에서 재어지므로 폭을 키워도 중앙은 안 채워진다.
+// **실측 (2026-08-18, 저장소 판정 함수를 그대로 실행 · 시야 ±37° 기준)**
+//
+//   스폰       0–5m   5–10m   시야내   전체(360°)
+//   ─────────────────────────────────────────────
+//   river   0 →  6  110→148  127→171  7,169→7,722    ← 새 페이지 링크의 기본값
+//   default 0 → 14    0→ 26    0→194      0→  604    ← 기본 스폰(전에는 통째로 0이었다)
+//
+// `default` 가 **0 → 604** 인 것이 이 띠의 값어치다 — 광장·도로 구역에서는 잔디 필드가
+// 아예 안 보였다.
+//
+// ⚠ **여기서 멈춘다.** `river` 의 0–5m 가 6 에 그치는 것은 띠가 좁아서가 아니라 **그 자리
+// 정면이 강이기 때문**이다. 띠를 넓히면 도로 한복판이 풀로 덮여 «관리 안 된 길» 이 되고,
+// 그 이상은 **스폰 좌표를 새로 만드는 일**(`decide/spawn-spot.ts` 에 스팟 추가)이라 이
+// 기능의 범위 밖이다. 감독이 화면을 보고 «근거리가 비었다» 라고 판정하면 그때 연다 —
+// 지금 미리 넣으면 감독이 판정할 대상이 내 추측이 된다.
+export const ROAD_EDGE_BAND = 0.55;
+/** 갓돌 풀의 높이 배수. 잔디밭 풀보다 낮아야 «비집고 나온 것» 으로 읽힌다 */
+export const ROAD_EDGE_SCALE = 0.45;
+
 /**
- * 이 월드 좌표에 풀을 심을 수 있는가.
+ * 이 월드 좌표에 풀이 **얼마나** 서는가. `0` 이면 안 심는다.
  *
  * 판정은 **전부 기존 SSOT 에 위임한다** — 도로·광장·잔디의 갈림은 `parts/surface.ts` 의
- * `surfaceY` 가, 물은 `decide/water.ts` 의 `parcelWater` 가 이미 답을 갖고 있다. 여기서
- * 조건을 다시 쓰면 강 경로나 광장 배치를 바꿨을 때 잔디만 안 따라오고, 그 증상은
- * **강 위에 풀이 자라는** 것으로 나타난다(이 저장소가 값 미러링으로 세 번 겪은 형태).
+ * `surfaceY` 가, 물은 `decide/water.ts` 의 `parcelWater` 가, 도로 기하는
+ * `parts/road-topology.ts` 가 이미 답을 갖고 있다. 여기서 조건을 다시 쓰면 강 경로나 도로
+ * 폭을 바꿨을 때 잔디만 안 따라오고, 그 증상은 **강 위에 풀이 자라는** 것으로 나타난다.
  *
- * 잔디 판정을 `=== GARDEN_SURFACE_Y` 로 하는 것이 요점이다: 도로(0.14)와 광장(0)은
- * 자동으로 빠진다. 새 표면이 생겨도 그 표면이 잔디 높이를 쓰지 않는 한 여기 안 들어온다.
+ * 잔디 판정을 `=== GARDEN_SURFACE_Y` 로 하는 것이 요점이다: 새 표면이 생겨도 그 표면이
+ * 잔디 높이를 쓰지 않는 한 여기 안 들어온다.
+ *
+ * **광장은 0 이다.** 감독이 포장으로 만든 자리이고 분수·시계탑이 서는 곳이라, 풀이 비집고
+ * 나오면 «관리 안 된 광장» 이 된다 — 도로 갓돌과 성격이 다르다.
  */
-export function plantable(wx: number, wz: number, cell: number): boolean {
+export function plantScale(wx: number, wz: number, cell: number): number {
   const px = Math.round(wx / cell);
   const pz = Math.round(wz / cell);
-  if (parcelWater(px, pz, cell, cell) === 'water') return false;
+  if (parcelWater(px, pz, cell, cell) === 'water') return 0;
   // 파셀 로컬 좌표 — `surfaceY` 는 파셀 중심 기준으로 받는다
-  return surfaceY(px, pz, wx - px * cell, wz - pz * cell) === GARDEN_SURFACE_Y;
+  const lx = wx - px * cell;
+  const lz = wz - pz * cell;
+  const y = surfaceY(px, pz, lx, lz);
+  if (y === GARDEN_SURFACE_Y) return 1;
+  if (y !== ROAD_SURFACE_Y) return 0;   // 광장 — 포장은 비워 둔다
+
+  // 갓돌까지 거리. 도로는 파셀 중심에서 뻗은 **십자**라, 세로 길 위에서는 `ROAD_HALF-|x|`,
+  // 가로 길 위에서는 `ROAD_HALF-|z|` 가 경계까지 거리다. 교차부는 사방이 길이라 `min` 이
+  // 작아지고 따라서 거리가 커진다 — 저절로 «가장자리 아님» 이 된다.
+  if (!onRoad(lx, lz, roadDirs(px, pz))) return 0;
+  const toEdge = ROAD_HALF - Math.min(Math.abs(lx), Math.abs(lz));
+  return toEdge < ROAD_EDGE_BAND ? ROAD_EDGE_SCALE : 0;
 }
