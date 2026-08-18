@@ -19,6 +19,23 @@
 // 검사표에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다 — 이 저장소가 GS-3 을
 // 만든 그 형태다. GS-C 로 축을 만들어 문장을 참으로 되돌렸다.
 //
+// ── 2026-08-18 — 상수가 바뀌자 세 테스트가 깨졌고, **전제를 명시 주입으로 고쳤다** ──
+// `ART_LIGHT_PER_PARCEL` 이 4 → 1 로 내려가 GS-C 1건·GS-D 2건이 FAIL 했다. 셋 다
+// **목적이 아니라 전제**가 깨진 것이었다 — 「3개가 켜진다」·「2개가 켜진다」는 목적이
+// 아니라 기본 상수에 기댄 값이었다(값 미러링). `perParcel` 을 명시 주입해 상수 의존만
+// 끊었고 단언은 그대로 뒀다.
+//
+// ⚠ **테스트를 고쳐 통과시킨 것이 아님을 재서 확인했다** — 이 저장소는 위임 프롬프트에
+// *"테스트를 느슨하게 만들지 말 것"* 을 빠뜨려 산술 단언이 전부 null 기대로 바뀐 채 CI 를
+// 통과한 전례가 있다. 뮤테이션(`npx vitest run tests/world2-artwork-scene.test.ts`):
+//
+//   심은 것                                          failed
+//   `ART_LIGHT_PER_PARCEL_SOFT` 1 → 2 (기본보다 크게)    1   ← 새 실물 상수 테스트
+//   `assignArtLights` 의 cap 무시                        4   ← GS-C 포함
+//   `clearPlaced` 가 라이트를 안 끔                       1   ← GS-D
+//   `next` 리셋 제거                                    1   ← GS-D
+//   **주석 한 줄만 변경(등가 대조군)**                     0
+//
 // ⚠ **스텁이 실물의 핵심 성질을 갖는가**가 이 검사의 전제다. 그래서 스텁은 «만들어진
 // 개수를 센다» — 실물 three 의 관찰 가능한 성질 중 `[7]` 이 보는 바로 그것이다.
 
@@ -223,18 +240,26 @@ describe('★ GS-C · 조건 3 — soft 완화는 켜는 수만 줄인다 (풀�
   //
   // 핵심은 **두 세션을 한 테스트에서 비교하는 것**이다. 한 세션만 보면 그 안의 어떤 수도
   // 「원래 그런 값」으로 읽히고, 어떤 단언도 자기 자신을 확인하는 형태로 무너진다.
+  // ⚠ **축을 상수에서 뗐다** (2026-08-18). 첫 판본은 `ART_LIGHT_PER_PARCEL_SOFT` 와
+  // `ART_LIGHT_PER_PARCEL` 두 **상수**를 주입해 비교했다. 그런데 같은 날 기본값이
+  // 4 → 1 로 내려가 **두 상수가 같아지자** 마지막 단언(`lit` 이 더 적다)이 깨졌다.
+  //
+  // 이 축이 지키려는 것은 «풀은 같고 켜는 수만 다르다» 이고 **그것은 상수와 무관하다.**
+  // 그래서 임의의 두 값(1·4)으로 잰다 — 상수가 어떻게 바뀌어도 축은 산다. 실물 상수
+  // 관계는 **아래 별도 테스트**가 본다(안 나누면 「축이 죽은 것」과 「상수가 같아진 것」이
+  // 한 실패로 뭉개져 원인이 안 갈린다).
   it('★ soft 세션과 기본 세션의 **라이트 수가 같다** — 켜진 수만 다르다', async () => {
+    const SOFT_LIKE = 1;
+    const FULL_LIKE = 4;
     const a = makeThree();
     const soft = createArtworkScene({
-      THREE: a.THREE, scene: a.scene, cellX: CELL, cellZ: CELL,
-      perParcel: ART_LIGHT_PER_PARCEL_SOFT,
+      THREE: a.THREE, scene: a.scene, cellX: CELL, cellZ: CELL, perParcel: SOFT_LIKE,
     });
     await soft.place(Array.from({ length: 4 }, () => art()));
 
     const b = makeThree();
     const full = createArtworkScene({
-      THREE: b.THREE, scene: b.scene, cellX: CELL, cellZ: CELL,
-      perParcel: ART_LIGHT_PER_PARCEL,
+      THREE: b.THREE, scene: b.scene, cellX: CELL, cellZ: CELL, perParcel: FULL_LIKE,
     });
     await full.place(Array.from({ length: 4 }, () => art()));
 
@@ -244,9 +269,12 @@ describe('★ GS-C · 조건 3 — soft 완화는 켜는 수만 줄인다 (풀�
       .toBe(full.stats().lights);
     // 그리고 **켜는 수는 실제로 달라야** 한다 — 같으면 완화 축이 배선 안 된 것이고,
     // 그때 위 단언은 「둘 다 아무것도 안 한다」로도 통과한다.
-    expect(soft.stats().lit, '★ soft 가 켜는 수를 안 줄였다')
+    expect(soft.stats().lit, '★ 완화값이 켜는 수를 안 줄였다')
       .toBeLessThan(full.stats().lit);
   });
+
+  // 실물 상수 관계(`SOFT <= 기본`)는 **`tests/world2-art-light.test.ts` 한 곳**이 본다.
+  // 상수의 집이 거기다 — 같은 단언을 두 파일에 두면 한쪽만 고쳐도 아무도 모른다.
 
   it('★ 세션 안에서도 개수는 상수다 — 두 번째 place 가 라이트를 늘리지 않는다', async () => {
     const { THREE, scene, counts } = makeThree();
@@ -329,7 +357,11 @@ describe('★ GS-D — 어두운 작품은 **전부** 어느 한 숫자에 잡�
 
   it('★ 지운 자리에 **빛이 안 남는다** — 액자만 지우고 라이트를 안 끄면 벽이 밝다', async () => {
     const { THREE, scene } = makeThree();
-    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    // ⚠ `perParcel` 을 **명시 주입한다** (2026-08-18). 첫 판본은 기본값에 기대어 「3개가
+    // 켜진다」를 단언했는데, 기본값이 4 → 1 로 내려가자 같은 파셀의 세 작품 중 **1개만**
+    // 켜져 깨졌다. 이 테스트의 목적은 「지우면 빛이 0 이 된다」이고 **3 은 목적이 아니라
+    // 전제**다. 전제를 상수에 기대는 것이 값 미러링이다.
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL, perParcel: 3 });
     await s.place([art(), art(), art()]);
     expect(lightsOf(scene).filter((L) => L.intensity > 0).length).toBe(3);
     await s.place([]);   // 전부 지운다
@@ -493,7 +525,10 @@ describe('★ GS-D — 어두운 작품은 **전부** 어느 한 숫자에 잡�
     // `next` 리셋이 빠지면 **두 번째 회차가 슬롯을 이어서 쓴다.** 풀이 넉넉하면 결과가
     // 같아 등가로 통과하므로, **1회차에 풀을 고갈시켜** 두 값이 갈리게 만든다.
     const { THREE, scene } = makeThree();
-    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    // ⚠ `perParcel: 2` 를 **명시 주입한다** (2026-08-18) — 아래 `lit` 2 단언의 전제다.
+    // 기본값에 기대면 상수가 바뀔 때마다 깨진다(실제로 4 → 1 에서 깨졌다). 목적은
+    // 「`next` 가 회차를 넘어 안 남는가」이고 2 는 그 목적을 재기 위한 전제다.
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL, perParcel: 2 });
     const many = Array.from({ length: 60 }, (_, i) =>
       art({ x: (i % 30) * CELL * 3, z: Math.floor(i / 30) * CELL * 3 }));
     await s.place(many);
