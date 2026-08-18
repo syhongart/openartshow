@@ -58,6 +58,7 @@ import { shadingFeature } from './shading.js';
 import { surfacePaintFeature } from './surface-paint.js';
 import { grassFeature } from './grass.js';
 import { waterStyleFeature } from './water-style.js';
+import { terrainStyleFeature } from './terrain-style.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -97,6 +98,12 @@ export const FEATURES: readonly Feature[] = [
   // 셰이딩보다 **앞**인 것도 같은 이유다. 셰이딩은 `overrideMaterial` 로 씬 전체를 덮으므로
   // 그 프레임에 재질이 무엇이든 결과가 같지만, 순서가 «재질을 정하고 → 덮는다» 여야
   // 다음 사람이 읽을 때 뒤집히지 않는다.
+  // ── 스타일라이즈드 지형 (`?styl=1` 또는 `?gtex=1`) ────────────────────────
+  // **`surfacePaintFeature` 보다 앞이어야 한다.** 이 기능은 표면 «설정» 을 얹고 집행은
+  // 저쪽이 한다 — 뒤에 두면 부팅 첫 프레임에 설정이 없는 상태로 한 번 반영되고 다음
+  // 프레임에 또 반영된다(화면에는 안 보이지만 재질을 두 번 만진다). 오버레이가
+  // 표면보다 앞인 것과 같은 논리다.
+  terrainStyleFeature,
   surfacePaintFeature,
   // ── 셰이딩 뷰 (`?shading=solid|wire`) ─────────────────────────────────────
   // 감독 지시 *"와이어 프레임 뷰. 솔리드 뷰도 구현해줘."* — `scene.overrideMaterial` 을
