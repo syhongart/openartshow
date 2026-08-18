@@ -185,6 +185,22 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 - **G-STYL8 — 원거리 수면 깊이 정밀도(검수관 권고 R3).** near 0.1 · far 7500 · 24비트 깊이면
   z≈1,000m 에서 양자화 간격이 `FOAM_DEPTH`(0.35m)를 넘어 **먼 수면에서 포말 띠가 깜빡일 수
   있다.** 헤드리스에서 원리적으로 안 잡힌다 — 감독 실기기 A/B 때 «먼 물» 을 함께 본다.
+- **G-STYL11 — 지형 텍스처를 켜면 감독 실기기에서 화면이 검게 죽는다. 원인 미상.**
+  감독 실기기 2026-08-18: *"지형을 키니깐 까맣게 되네."* 잔디·물은 정상이다. 그래서
+  `features/terrain-style.ts` 를 **마스터(`?styl`)에서 떼어 냈다** — `?gtex=1` 을 명시해야
+  켜진다. 원인을 찾으면 그 가드를 걷고 `stylizedOn(master, ...)` 으로 되돌린다.
+  **재현이 안 된다**: 헤드리스는 WebGL 이고 진단이 `applied:["garden","ground"]` 로 초록,
+  콘솔 에러 0 이다. 캔버스 픽셀 판정도 못 했다(`preserveDrawingBuffer:false`).
+  **확인한 것**: PNG 는 git 추적됨 · `index.json` 짝 맞음 · `assetUrl` 결합이
+  `vite.config.js` 의 `assets → dist/app/assets` 복사와 어긋나지 않아 보임 ·
+  `surface-paint` 가 `map` 슬롯에 `SRGBColorSpace`·`RepeatWrapping` 을 준다.
+  **확인 못 한 것**: 라이브에서 그 PNG 가 실제로 200 인가(이 환경은 라이브 403),
+  WebGPU 에서 `ground` 재질에 **없던 `map` 슬롯을 새로 다는 것**이 파이프라인을 어떻게
+  바꾸는가(`garden` 은 원래 map 이 있어 슬롯 교체지만 `ground` 는 신규다 — 둘의 차이가
+  가장 유력한 다음 조사 지점이다).
+  ⚠ **`assets/world2-overlay.json` 의 `surfaces` 가 빈 배열이다** — 즉 표면 텍스처 경로는
+  라이브에서 한 번도 실행된 적이 없고 감독 기기가 처음 밟았다. 이 기능의 검증 공백은
+  스타일라이즈드 작업이 만든 것이 아니라 **원래 있던 것**이다.
 - **G-STYL10 — TSL 바람과 스타일라이즈드 물은 «어느 환경에서도 실행된 적이 없다».**
   헤드리스는 WebGL 이라 `waterStyleFeature.create` 가 `null` 로 빠지고 바람은 폴백된다
   (`pickGrassWind`·`pickWaterStyle` 화이트리스트). 즉 그 두 재질의 노드 그래프는 **감독
