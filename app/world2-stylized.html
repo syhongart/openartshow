@@ -5,7 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <!--
-  world5 — 오픈월드 재작성(커널 아키텍처) 검증 페이지.
+  world2-stylized — world2 와 **같은 코드**를 스타일라이즈드 룩 기본값으로 여는 페이지.
+
+  코드 포크가 아니다. `world2-stylized-boot.ts` 가 URL 에 `?styl=1` 을 채운 뒤
+  같은 `startWorld2` 를 부르는 것이 전부이므로, world2 를 고치면 여기도 같이 고쳐진다
+  (world3·world5 가 지는 no-sync 부채가 없다). `?styl=0` 으로 열면 원본과 같은 화면이다.
+
+  아래는 world2.html 의 사본이고 실질 차이는 이 주석·`<title>`·`<script src>` 셋뿐이다.
+  ⚠ **그 동일성을 강제하는 검사는 없다.** world2.html 의 HUD·CSS 를 고치면 이 파일은
+  손으로 따라가야 한다. (첫 판본이 여기에 `tests/world2-stylized-entry.test.ts` 가
+  강제한다고 적었는데 **그 파일은 존재하지 않았다** — 검수관 반려 B4, 2026-08-18.
+  게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다.)
 
   behind-flag: 어디에도 링크하지 않는다. 라이브 미술관(world.html)과 완전히 분리돼 있고,
   이 페이지의 존재가 채택을 뜻하지 않는다. 라이브 노출은 감독·팀장 게이트를 거친다.
@@ -15,7 +25,7 @@
      'self' 만으로는 이 blob: fetch 가 막혀 텍스처 전체가 로드 실패한다
      (lab-glb.html 이 헤드리스 검증으로 발견한 것을 그대로 계승). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
-<title>갤러리 스트리트 (실험) · OpenArtShow</title>
+<title>오픈월드 v2 스타일라이즈드 (실험) · OpenArtShow</title>
 <style>
   :root{
     --bg:#0B0D12; --ink:#F5F5F2; --dim:#9A9EB1; --line:#3A3D4B;
@@ -24,7 +34,7 @@
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden}
   body{font-family:'Pretendard','NanumGothic',system-ui,sans-serif}
-  #w5-canvas{display:block;width:100vw;height:100vh;touch-action:none}
+  #w2-canvas{display:block;width:100vw;height:100vh;touch-action:none}
 
   /* ── 물속 (감독 지시 2026-07-31 "강에 사람이 빠지게해줘") ──────────────────
      카메라를 수면 아래로 내리는 것만으로는 **물속으로 안 읽힌다.** 물 판이
@@ -47,7 +57,7 @@
 
      transition 을 걸지 않는다 — 잠김 보간은 `stepSubmersion` 이 시간으로 이미
      하고 있다. 여기에 또 걸면 두 보간이 겹쳐 물 밖에 나온 뒤에도 색이 남는다. */
-  #w5-underwater{
+  #w2-underwater{
     position:fixed;inset:0;z-index:5;pointer-events:none;opacity:0;
     background:radial-gradient(120% 100% at 50% 45%, #0d4256 0%, #05202e 100%);
   }
@@ -59,38 +69,38 @@
   /* 바를 화면 정중앙에 **고정**하고 나머지는 그 위아래에 절대 배치한다.
      3초 뒤 라벨·문구가 나타날 때 바가 밀려나면, 조용히 지나가다 풍성해지는 게 아니라
      화면이 튀는 걸로 읽힌다. 자리를 옮기지 않고 겹쳐 띄우는 이유다. */
-  #w5-loading{
+  #w2-loading{
     position:fixed;inset:0;z-index:10;
     display:grid;place-items:center;
     background:radial-gradient(120% 90% at 50% 40%, #151926 0%, var(--bg) 70%);
     transition:opacity .45s ease;
   }
-  #w5-loading[data-state="done"]{opacity:0;pointer-events:none}
-  #w5-loading-center{position:relative;display:grid;place-items:center;gap:10px}
+  #w2-loading[data-state="done"]{opacity:0;pointer-events:none}
+  #w2-loading-center{position:relative;display:grid;place-items:center;gap:10px}
 
   /* 부가 요소는 3초를 넘겨야(data-detail="rich") 나타난다 — 감독 지시.
      레이아웃에서 빠지지 않고 자리만 유지한 채 투명해진다(절대 배치라 바를 안 민다). */
-  #w5-loading-label,#w5-loading-copy,#w5-loading-pct{
+  #w2-loading-label,#w2-loading-copy,#w2-loading-pct{
     position:absolute;left:50%;transform:translateX(-50%);
     margin:0;white-space:nowrap;
     opacity:0;transition:opacity .5s ease;
   }
-  #w5-loading-label{bottom:calc(100% + 20px);font-size:15px;letter-spacing:.02em;color:var(--ink)}
-  #w5-loading-pct{top:calc(100% + 14px);font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
-  #w5-loading-copy{top:calc(100% + 40px);font-size:13.5px;line-height:1.5;color:var(--dim)}
+  #w2-loading-label{bottom:calc(100% + 20px);font-size:15px;letter-spacing:.02em;color:var(--ink)}
+  #w2-loading-pct{top:calc(100% + 14px);font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+  #w2-loading-copy{top:calc(100% + 40px);font-size:13.5px;line-height:1.5;color:var(--dim)}
 
   /* 퍼센트는 바의 수치 표현이므로 minimal에서도 보인다. "프로그레스 바만"의 일부다. */
-  #w5-loading-pct{opacity:1}
-  #w5-loading[data-detail="rich"] #w5-loading-label{opacity:1}
+  #w2-loading-pct{opacity:1}
+  #w2-loading[data-detail="rich"] #w2-loading-label{opacity:1}
   /* 실패는 밀도와 무관하게 보여야 한다. 3초 전에 부팅이 깨지면 minimal이라 라벨이
      숨겨진 채 남고, 사용자는 멈춘 진행바만 보게 된다 — 오류를 감추는 최악의 상태다. */
-  #w5-loading[data-state="error"] #w5-loading-label{opacity:1}
+  #w2-loading[data-state="error"] #w2-loading-label{opacity:1}
 
-  #w5-loading-track{
+  #w2-loading-track{
     width:min(320px,62vw);height:2px;border-radius:2px;
     background:rgba(255,255,255,.12);overflow:hidden;
   }
-  #w5-loading-bar{
+  #w2-loading-bar{
     width:0%;height:100%;border-radius:2px;
     background:linear-gradient(90deg,var(--violet),var(--cyan));
     transition:width .35s cubic-bezier(.22,.61,.36,1);
@@ -98,64 +108,68 @@
   /* 문구 교체는 JS가 텍스트만 갈고 페이드는 여기서 한다 — 로딩 중에는 메인 스레드가
      가장 바쁘므로 JS 애니메이션을 돌리면 그 애니메이션부터 끊긴다.
      rich 진입 + data-show 둘 다여야 보인다(3초 게이트와 교체 페이드가 각자 산다). */
-  #w5-loading[data-detail="rich"] #w5-loading-copy[data-show="1"]{opacity:1}
-  #w5-loading-note{
+  #w2-loading[data-detail="rich"] #w2-loading-copy[data-show="1"]{opacity:1}
+  #w2-loading-note{
     position:absolute;top:calc(100% + 68px);left:50%;transform:translateX(-50%);
     margin:0;width:max-content;max-width:min(420px,80vw);white-space:normal;
     text-align:center;font-size:12.5px;line-height:1.6;color:var(--dim);
   }
-  #w5-loading[data-state="error"] #w5-loading-bar{background:#FF705E}
-  #w5-loading[data-state="error"] #w5-loading-note{color:#FFB4A8}
+  #w2-loading[data-state="error"] #w2-loading-bar{background:#FF705E}
+  #w2-loading[data-state="error"] #w2-loading-note{color:#FFB4A8}
 
   /* 모션을 줄이고 싶다는 뜻은 존중한다 — 전환을 없애도 정보 전달은 그대로다. */
   @media (prefers-reduced-motion: reduce){
-    #w5-loading,#w5-loading-bar,#w5-loading-copy{transition:none}
-    #w5-loading-copy{transform:none}
+    #w2-loading,#w2-loading-bar,#w2-loading-copy{transition:none}
+    #w2-loading-copy{transform:none}
   }
 
 
   /* ── 가상 조이스틱 ─────────────────────────────────────────────────────
      pointer-events:none 이 핵심 — 터치는 캔버스가 받고 여기는 그림만 그린다.
      조이스틱이 이벤트를 가로채면 손가락이 조이스틱 밖으로 나가는 순간 추적이 끊긴다. */
-  #w5-stick{
+  #w2-stick{
     position:fixed;z-index:6;width:112px;height:112px;margin:-56px 0 0 -56px;
     border-radius:50%;pointer-events:none;
     border:1px solid rgba(255,255,255,.16);
     background:radial-gradient(circle, rgba(255,255,255,.07) 0%, rgba(255,255,255,.02) 70%);
     opacity:0;transition:opacity .18s ease;
   }
-  #w5-stick[data-on="1"]{opacity:1}
-  #w5-stick-knob{
+  #w2-stick[data-on="1"]{opacity:1}
+  #w2-stick-knob{
     position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;
     transform:translate(-50%,-50%);
     background:linear-gradient(145deg, rgba(139,114,255,.85), rgba(114,230,225,.75));
     box-shadow:0 2px 12px rgba(0,0,0,.35);
   }
-  @media (prefers-reduced-motion: reduce){ #w5-stick{transition:none} }
+  @media (prefers-reduced-motion: reduce){ #w2-stick{transition:none} }
 
   /* ── 성능 HUD ──────────────────────────────────────────────────────────
      기본은 아이콘 하나만. 펼쳐야 수치가 나온다 — 평소에 화면을 가리면
      "걸을 때 끊기는가"를 보는 데 방해가 된다. */
-  #w5-hud{position:fixed;top:calc(10px + env(safe-area-inset-top));right:10px;z-index:8;
+  #w2-hud{position:fixed;top:calc(10px + env(safe-area-inset-top));right:10px;z-index:8;
     display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-  #w5-hud-toggle{
+  #w2-hud-toggle{
     width:38px;height:38px;border-radius:10px;cursor:pointer;
     background:rgba(11,13,18,.62);border:1px solid var(--line);color:var(--ink);
     font-size:16px;line-height:1;padding:0;
   }
-  #w5-hud-panel{display:none;background:rgba(11,13,18,.86);border:1px solid var(--line);
+  #w2-hud-panel{display:none;background:rgba(11,13,18,.86);border:1px solid var(--line);
     border-radius:10px;padding:9px 10px;min-width:min(230px,64vw)}
-  #w5-hud[data-open="1"] #w5-hud-panel{display:block}
-  #w5-hud-body{
+  #w2-hud[data-open="1"] #w2-hud-panel{display:block}
+  #w2-hud-body{
     margin:0 0 8px;white-space:pre-wrap;word-break:break-all;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     font-size:11px;line-height:1.55;color:var(--ink);
   }
-  #w5-hud-copy{
-    width:100%;padding:7px 10px;border-radius:8px;cursor:pointer;
+  /* 두 버튼이 한 줄에 선다. 마크는 자주·급히 눌러야 하므로 폭을 고정해 손가락이
+     같은 자리를 찾게 하고, 복사는 남는 폭을 다 쓴다. */
+  #w2-hud-copy,#w2-hud-mark{
+    padding:7px 10px;border-radius:8px;cursor:pointer;
     background:rgba(139,114,255,.18);border:1px solid rgba(139,114,255,.5);
     color:var(--ink);font-size:12px;font-family:inherit;
   }
+  #w2-hud-copy{width:calc(100% - 62px)}
+  #w2-hud-mark{width:56px;margin-right:6px}
 
   /* ── 神 모드 하늘 패널 ──────────────────────────────────────────────────
      HUD 아래에 붙인다. 하늘을 바꾸면서 바로 위 수치를 보는 것이 이 패널의
@@ -166,23 +180,23 @@
      접을 때 `display:none` 을 쓰지 않는다 — 캔버스가 레이아웃에서 빠지면 크기가 0이
      되고, 다시 펼칠 때 한 프레임 동안 빈 지도가 보인다. `transform` 은 레이아웃을
      안 건드리고 화면 밖으로 밀어내기만 한다. */
-  #w5-mapwrap{
+  #w2-mapwrap{
     position:fixed;left:0;bottom:calc(120px + env(safe-area-inset-bottom));z-index:8;
     display:flex;align-items:flex-end;
     transition:transform .24s cubic-bezier(.4,0,.2,1);
     pointer-events:none;
   }
-  #w5-mapwrap[data-open="0"]{
+  #w2-mapwrap[data-open="0"]{
     /* 지도 폭만큼 왼쪽으로 밀되 **탭은 남긴다** */
     transform:translateX(calc(-100% + 26px));
   }
-  #w5-mapwrap .sheet{
+  #w2-mapwrap .sheet{
     padding:5px;border-radius:0 10px 10px 0;background:rgba(11,13,18,.78);
     border:1px solid var(--line);border-left:none;line-height:0;
   }
-  #w5-map{display:block;width:104px;height:104px;border-radius:6px}
+  #w2-map{display:block;width:104px;height:104px;border-radius:6px}
   /* 책갈피 — 지도 오른쪽에 붙어 함께 미끄러진다 */
-  #w5-map-tab{
+  #w2-map-tab{
     pointer-events:auto;cursor:pointer;
     width:22px;height:52px;margin-bottom:6px;
     display:flex;align-items:center;justify-content:center;
@@ -190,52 +204,82 @@
     border-radius:0 8px 8px 0;color:var(--dim);
     font-size:15px;font-family:inherit;line-height:1;padding:0;
   }
-  #w5-map-tab:hover{color:var(--ink)}
+  #w2-map-tab:hover{color:var(--ink)}
   @media (min-width:760px){
-    #w5-mapwrap{bottom:16px}
-    #w5-map{width:132px;height:132px}
+    #w2-mapwrap{bottom:16px}
+    #w2-map{width:132px;height:132px}
   }
 
   /* 왼쪽 고정 (감독 지시). 예전엔 `right:56px` 이라 닫힌 상태에서 오른쪽에 있다가,
      열면 패널이 왼쪽으로 펼쳐지며 **버튼까지 따라 움직이는** 것처럼 보였다.
      처음부터 왼쪽에 두면 열고 닫아도 버튼이 제자리에 있다. */
-  #w5-god{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:9;
+  /* ── 진입 바 (W8-3 S6) ────────────────────────────────────────────────────
+     **상단 중앙**이다 — 좌상단은 하늘 패널(`#w2-god`), 왼쪽은 지도, 우측은 HUD 가
+     이미 쓴다. 룩은 `#w2-god-body` 의 것을 그대로 따랐다(새 룩 판단을 안 연다).
+     `hidden` 과 `data-show` 를 둘 다 쓰는 이유: 전자는 접근성 트리에서 빼고,
+     후자는 CSS 가 본다 — 하나만 쓰면 스크린리더가 빈 칸을 읽거나 화면에 남는다. */
+  #w2-tenant{
+    position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    z-index:9;max-width:min(360px,88vw);
+    background:rgba(11,13,18,.88);border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px;display:flex;flex-direction:column;gap:7px;
+  }
+  #w2-tenant[data-show="0"],#w2-tenant[hidden]{display:none}
+  #w2-tenant .row{display:flex;align-items:center;gap:6px}
+  #w2-tenant-title{font-size:12px;color:var(--ink);font-weight:600;flex:1 1 auto;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #w2-tenant-notice{margin:0;font-size:11px;line-height:1.45;color:var(--dim)}
+  #w2-tenant-notice[hidden]{display:none}
+  #w2-tenant-list,#w2-tenant-input{
+    font-family:inherit;font-size:11.5px;padding:6px 8px;border-radius:8px;min-width:0;
+    background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--ink);
+  }
+  #w2-tenant-list{flex:0 1 40%}
+  #w2-tenant-input{flex:1 1 auto;width:100%}
+  #w2-tenant-go,#w2-tenant-reset{
+    font-family:inherit;font-size:11.5px;padding:6px 9px;border-radius:8px;cursor:pointer;flex:none;
+    background:rgba(139,114,255,.24);border:1px solid rgba(139,114,255,.6);color:var(--ink);
+  }
+  #w2-tenant-reset{background:rgba(255,255,255,.06);border-color:var(--line);color:var(--dim)}
+  #w2-tenant-reset[hidden]{display:none}
+
+  #w2-god{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:9;
     max-width:min(300px,72vw)}
-  #w5-god-toggle{
+  #w2-god-toggle{
     display:flex;align-items:center;gap:7px;padding:9px 12px;border-radius:10px;cursor:pointer;
     background:rgba(11,13,18,.62);border:1px solid var(--line);color:var(--ink);
     font-size:12px;font-family:inherit;line-height:1;
   }
-  #w5-god-toggle .cap{opacity:.85}
-  #w5-god-toggle .caret{margin-left:2px;font-size:9px;color:var(--dim);transition:transform .2s}
-  #w5-god[data-open="1"] #w5-god-toggle .caret{transform:rotate(180deg)}
-  #w5-god-body{
+  #w2-god-toggle .cap{opacity:.85}
+  #w2-god-toggle .caret{margin-left:2px;font-size:9px;color:var(--dim);transition:transform .2s}
+  #w2-god[data-open="1"] #w2-god-toggle .caret{transform:rotate(180deg)}
+  #w2-god-body{
     margin-top:6px;background:rgba(11,13,18,.88);border:1px solid var(--line);
     border-radius:10px;padding:10px 11px;display:flex;flex-direction:column;gap:8px;
   }
-  #w5-god-body[hidden]{display:none}
-  .w5-god-row{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
-  .w5-god-cap{font-size:10.5px;color:var(--dim);width:38px;flex:none}
-  .w5-god-row button{
+  #w2-god-body[hidden]{display:none}
+  .w2-god-row{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+  .w2-god-cap{font-size:10.5px;color:var(--dim);width:38px;flex:none}
+  .w2-god-row button{
     font-family:inherit;font-size:11.5px;padding:6px 9px;border-radius:8px;cursor:pointer;
     background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--dim);
   }
-  .w5-god-row button.on{
+  .w2-god-row button.on{
     background:rgba(139,114,255,.28);border-color:rgba(139,114,255,.7);
     color:var(--ink);font-weight:600;
   }
-  .w5-god-row[data-group="fx"] button.on{
+  .w2-god-row[data-group="fx"] button.on{
     background:rgba(114,230,225,.24);border-color:rgba(114,230,225,.6);
   }
   /* 번개는 토글이 아니라 1회 발동이다. 비가 아니면 엔진이 무시하므로,
      반려됐을 때 잠깐 흐려져 "눌렀는데 왜 안 되지"를 남기지 않는다. */
-  .w5-god-row button[data-bolt]{background:rgba(255,233,196,.14);border-color:rgba(255,233,196,.4)}
-  .w5-god-row button[data-bolt].off{opacity:.35}
-  @media (prefers-reduced-motion: reduce){ #w5-god-toggle .caret{transition:none} }
+  .w2-god-row button[data-bolt]{background:rgba(255,233,196,.14);border-color:rgba(255,233,196,.4)}
+  .w2-god-row button[data-bolt].off{opacity:.35}
+  @media (prefers-reduced-motion: reduce){ #w2-god-toggle .caret{transition:none} }
 
-  /* ── 수면 파라미터 슬라이더 바 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ────
-     위치: 화면 우하단. #w5-god(좌상)·#w5-hud(우상)·#w5-mapwrap(좌하)이 이미 세 모서리를
-     차지해 남은 자리가 여기뿐이다. #w5-god과 대각선이라 항상 분리되고, 캔버스 중앙
+  /* ── 개발자 옵션 바 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ──────────
+     위치: 화면 우하단. #w2-god(좌상)·#w2-hud(우상)·#w2-mapwrap(좌하)이 이미 세 모서리를
+     차지해 남은 자리가 여기뿐이다. #w2-god과 대각선이라 항상 분리되고, 캔버스 중앙
      (수면이 실제로 보이는 영역)을 가리지 않는다 — **미는 동안 물을 봐야 한다**가
      이 도구의 전부라서 모서리 배치가 요건이다.
 
@@ -244,196 +288,228 @@
 
      열면 위로 펼쳐진다(column-reverse). 아래엔 화면 끝/홈 인디케이터뿐이라 내려갈
      자리가 없다. 토글이 하단에 고정되고 그 위로 행이 쌓인다. */
-  #w5-sliders{
+  #w2-sliders{
     position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:8;
     display:flex;flex-direction:column-reverse;align-items:flex-end;gap:6px;
   }
-  #w5-sliders-toggle{
+  #w2-sliders-toggle{
     display:flex;align-items:center;gap:7px;padding:9px 12px;border-radius:10px;cursor:pointer;
     background:rgba(11,13,18,.62);border:1px solid var(--line);color:var(--ink);
     font-size:12px;font-family:inherit;line-height:1;
     transition:border-color .15s ease;
   }
-  #w5-sliders-toggle .cap{opacity:.85}
-  #w5-sliders-toggle .caret{margin-left:2px;font-size:9px;color:var(--dim);transition:transform .2s}
-  #w5-sliders[data-open="1"] #w5-sliders-toggle .caret{transform:rotate(180deg)}
+  #w2-sliders-toggle .cap{opacity:.85}
+  #w2-sliders-toggle .caret{margin-left:2px;font-size:9px;color:var(--dim);transition:transform .2s}
+  #w2-sliders[data-open="1"] #w2-sliders-toggle .caret{transform:rotate(180deg)}
 
   /* 하나라도 지정값이면 토글에도 신호를 남긴다 — 접힌 채로는 행 안의 점이 안 보이므로,
      패널을 안 열어도 "지금 기본값이 아니다"를 알아야 지정값인 채로 세션을 끝내지 않는다. */
-  #w5-sliders-toggle .dirty-dot{
+  #w2-sliders-toggle .dirty-dot{
     display:none;width:6px;height:6px;border-radius:50%;
     background:var(--cyan);box-shadow:0 0 4px var(--cyan);
   }
-  #w5-sliders[data-dirty="1"] #w5-sliders-toggle .dirty-dot{display:inline-block}
-  #w5-sliders[data-dirty="1"] #w5-sliders-toggle{border-color:rgba(139,114,255,.55)}
+  #w2-sliders[data-dirty="1"] #w2-sliders-toggle .dirty-dot{display:inline-block}
+  #w2-sliders[data-dirty="1"] #w2-sliders-toggle{border-color:rgba(139,114,255,.55)}
 
-  #w5-sliders-body{
+  #w2-sliders-body{
     width:min(260px,80vw);
     background:rgba(11,13,18,.88);border:1px solid var(--line);border-radius:10px;
     padding:10px 11px;display:flex;flex-direction:column;gap:10px;
   }
-  #w5-sliders-body[hidden]{display:none}
+  #w2-sliders-body[hidden]{display:none}
 
-  .w5-slide-row{display:flex;align-items:center;gap:6px}
-  /* .w5-god-cap 폭 38px 을 그대로 재사용 — 좌측 패널과 라벨 정렬 리듬을 맞춘다 */
-  .w5-slide-cap{
+  .w2-slide-row{display:flex;align-items:center;gap:6px}
+  /* .w2-god-cap 폭 38px 을 그대로 재사용 — 좌측 패널과 라벨 정렬 리듬을 맞춘다 */
+  .w2-slide-cap{
     font-size:10.5px;color:var(--dim);width:38px;flex:none;
     display:flex;align-items:center;gap:4px;line-height:1.3;
   }
   /* 지정값 점 — 색이 아니라 "있다/없다"를 1차 신호로 쓴다(색만으로 구분하지 않는다) */
-  .w5-slide-pin{
+  .w2-slide-pin{
     display:block;width:5px;height:5px;border-radius:50%;flex:none;
     background:var(--violet);opacity:0;transition:opacity .15s ease;
   }
-  .w5-slide-row[data-overridden="1"] .w5-slide-pin{opacity:1}
+  .w2-slide-row[data-overridden="1"] .w2-slide-pin{opacity:1}
 
   /* 트랙은 얇게(4px), 히트박스는 요소 높이(32px) 전체로 — 시각과 판정 영역을 분리한다.
-     touch-action:none 은 #w5-canvas 와 같은 이유: 드래그 중 브라우저 제스처가 끼어들지
+     touch-action:none 은 #w2-canvas 와 같은 이유: 드래그 중 브라우저 제스처가 끼어들지
      않게 한다. */
-  .w5-slide-input{
+  .w2-slide-input{
     -webkit-appearance:none;appearance:none;flex:1 1 auto;min-width:70px;
     height:32px;margin:0;background:transparent;touch-action:none;cursor:pointer;
   }
-  .w5-slide-input::-webkit-slider-runnable-track{
+  .w2-slide-input::-webkit-slider-runnable-track{
     height:4px;border-radius:2px;background:rgba(255,255,255,.14);
   }
-  .w5-slide-input::-webkit-slider-thumb{
+  .w2-slide-input::-webkit-slider-thumb{
     -webkit-appearance:none;width:20px;height:20px;border-radius:50%;margin-top:-8px;
     background:linear-gradient(145deg, rgba(139,114,255,.9), rgba(114,230,225,.8));
     border:1px solid rgba(255,255,255,.35);box-shadow:0 1px 5px rgba(0,0,0,.4);
   }
-  .w5-slide-input::-moz-range-track{
+  .w2-slide-input::-moz-range-track{
     height:4px;border-radius:2px;background:rgba(255,255,255,.14);
   }
-  .w5-slide-input::-moz-range-thumb{
+  .w2-slide-input::-moz-range-thumb{
     width:20px;height:20px;border-radius:50%;border:1px solid rgba(255,255,255,.35);
     background:linear-gradient(145deg, rgba(139,114,255,.9), rgba(114,230,225,.8));
     box-shadow:0 1px 5px rgba(0,0,0,.4);
   }
-  .w5-slide-row[data-overridden="1"] .w5-slide-input::-webkit-slider-runnable-track{
+  .w2-slide-row[data-overridden="1"] .w2-slide-input::-webkit-slider-runnable-track{
     background:rgba(139,114,255,.28);
   }
-  .w5-slide-row[data-overridden="1"] .w5-slide-input::-moz-range-track{
+  .w2-slide-row[data-overridden="1"] .w2-slide-input::-moz-range-track{
     background:rgba(139,114,255,.28);
   }
 
-  .w5-slide-val{
+  .w2-slide-val{
     font-size:11px;color:var(--dim);width:36px;flex:none;text-align:right;
     font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   }
-  .w5-slide-row[data-overridden="1"] .w5-slide-val{color:var(--ink);font-weight:600}
+  .w2-slide-row[data-overridden="1"] .w2-slide-val{color:var(--ink);font-weight:600}
 
-  .w5-slide-reset{
+  .w2-slide-reset{
     width:26px;height:26px;flex:none;border-radius:8px;cursor:pointer;padding:0;
     background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--dim);
     font-size:13px;line-height:1;font-family:inherit;opacity:.4;
     transition:opacity .15s ease,color .15s ease,border-color .15s ease,background .15s ease;
   }
-  .w5-slide-row[data-overridden="1"] .w5-slide-reset{
+  .w2-slide-row[data-overridden="1"] .w2-slide-reset{
     opacity:1;color:var(--ink);border-color:rgba(139,114,255,.6);
     background:rgba(139,114,255,.16);
   }
 
-  /* #w5-mapwrap 과 같은 브레이크포인트(760px)를 재사용해 넓은 화면에서 트랙에 여유를 준다 */
+  /* #w2-mapwrap 과 같은 브레이크포인트(760px)를 재사용해 넓은 화면에서 트랙에 여유를 준다 */
   @media (min-width:760px){
-    #w5-sliders-body{width:280px}
-    .w5-slide-input{min-width:120px}
+    #w2-sliders-body{width:280px}
+    .w2-slide-input{min-width:120px}
   }
   @media (prefers-reduced-motion: reduce){
-    #w5-sliders-toggle .caret,#w5-sliders-toggle,.w5-slide-pin,.w5-slide-reset{transition:none}
+    #w2-sliders-toggle .caret,#w2-sliders-toggle,.w2-slide-pin,.w2-slide-reset{transition:none}
   }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/world5-o8c4FPj1.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/world2-stylized-BP90Kq7j.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-webgpu-BEsVEenQ.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-BVCe5QSU.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/sky-DDTCAYU1.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/BufferGeometryUtils-C6v7s0Vg.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/GLTFLoader-D7IH8cP1.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/chibi-builder-v2-BD6Fr-YX.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/preload-helper-DASV_Wa7.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/glb-city-CQZNdVmE.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/reserved-names-BrKduD37.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/main-BAb_vXeu.js">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
 </head>
 <body>
-  <canvas id="w5-canvas"></canvas>
+  <canvas id="w2-canvas"></canvas>
 
   <!-- 물속 틴트. `aria-hidden` — 화면에만 있는 연출이라 읽어 줄 내용이 없다 -->
-  <div id="w5-underwater" aria-hidden="true"></div>
+  <div id="w2-underwater" aria-hidden="true"></div>
 
-  <div id="w5-loading" data-detail="minimal">
-    <div id="w5-loading-center">
-      <p id="w5-loading-label">준비 중</p>
-      <div id="w5-loading-track"><div id="w5-loading-bar"></div></div>
-      <span id="w5-loading-pct">0%</span>
-      <p id="w5-loading-copy" data-show="0"></p>
-      <p id="w5-loading-note" hidden></p>
+  <div id="w2-loading" data-detail="minimal">
+    <div id="w2-loading-center">
+      <p id="w2-loading-label">준비 중</p>
+      <div id="w2-loading-track"><div id="w2-loading-bar"></div></div>
+      <span id="w2-loading-pct">0%</span>
+      <p id="w2-loading-copy" data-show="0"></p>
+      <p id="w2-loading-note" hidden></p>
     </div>
   </div>
 
   <!-- 가상 조이스틱. 누른 자리에 나타난다(고정 위치가 아니다) — 기기·손 크기마다
        엄지가 닿는 자리가 달라서, 고정하면 누군가는 늘 불편하다. -->
-  <div id="w5-stick" data-on="0"><div id="w5-stick-knob"></div></div>
+  <div id="w2-stick" data-on="0"><div id="w2-stick-knob"></div></div>
 
   <!-- 성능 HUD. 모바일에는 콘솔이 없어 화면 표시 + 복사가 실기기 수치를 받는 유일한 경로다. -->
   <!-- 기본 접힘(감독 지시 2026-07-30 "캡쳐하면 지도, HUD때문에 안보일테니깐"). `attachMapDrawer`
        의 startOpen=false 와 **같은 값이어야 한다** — 어긋나면 첫 페인트에 지도가 번쩍인다. -->
-  <div id="w5-mapwrap" data-open="0">
-    <div class="sheet"><canvas id="w5-map" width="192" height="192" aria-hidden="true"></canvas></div>
-    <button id="w5-map-tab" type="button" aria-expanded="false" aria-controls="w5-map" aria-label="지도 펼치기">›</button>
+  <div id="w2-mapwrap" data-open="0">
+    <div class="sheet"><canvas id="w2-map" width="192" height="192" aria-hidden="true"></canvas></div>
+    <button id="w2-map-tab" type="button" aria-expanded="false" aria-controls="w2-map" aria-label="지도 펼치기">›</button>
   </div>
 
-  <div id="w5-hud" data-open="0">
-    <button id="w5-hud-toggle" type="button" aria-label="성능 정보 열기/닫기">📊</button>
-    <div id="w5-hud-panel">
-      <pre id="w5-hud-body">측정 중…</pre>
-      <button id="w5-hud-copy" type="button">복사</button>
+  <div id="w2-hud" data-open="0">
+    <button id="w2-hud-toggle" type="button" aria-label="성능 정보 열기/닫기">📊</button>
+    <div id="w2-hud-panel">
+      <pre id="w2-hud-body">측정 중…</pre>
+      <!-- 📍 는 **증상을 본 순간**을 시간축에 못 박는다. 리포트가 그 앞뒤 ±2.5초의
+           이벤트만 뽑아 주므로, 감독의 지각과 내부 전이가 같은 축에 올라온다.
+           근거·형식은 world2/decide/telemetry.ts 의 「이벤트 로그」 절 한 곳이다. -->
+      <button id="w2-hud-mark" type="button" aria-label="지금 증상을 봤다고 표시">📍</button>
+      <button id="w2-hud-copy" type="button">복사</button>
     </div>
   </div>
 
-  <!-- 神 모드 하늘 패널 — 시간대·날씨·이벤트. 로직은 world5/ui/sky-panel.ts(인라인 금지). -->
-  <div id="w5-god" data-open="0">
-    <button id="w5-god-toggle" type="button" aria-expanded="false" aria-controls="w5-god-body">
+  <!-- 진입 — 누구의 땅을 보고 있는가 + 다른 작가로 가는 문 (W8-3 S6).
+       감독 카드 2026-08-16 「진입은 **둘 다**」: 주소(`?u=`)에 있으면 그것, 없으면 여기서 고른다.
+       **기본은 감춤이다** — 대장에 작가가 0명이고 사유도 없으면 안 뜬다(지금 라이브가 그 상태).
+       판정은 world2/decide/tenant-entry.ts, 배선은 world2/ui/tenant-bar.ts(인라인 금지). -->
+  <div id="w2-tenant" data-show="0" hidden>
+    <div class="row">
+      <span id="w2-tenant-title">마을 전체</span>
+      <button id="w2-tenant-reset" type="button" hidden>마을 전체로</button>
+    </div>
+    <p id="w2-tenant-notice" hidden></p>
+    <div class="row">
+      <select id="w2-tenant-list" aria-label="작가 고르기"></select>
+      <input id="w2-tenant-input" type="text" inputmode="latin" autocomplete="off"
+             spellcheck="false" placeholder="작가 아이디" aria-label="작가 아이디로 이동">
+      <button id="w2-tenant-go" type="button">이동</button>
+    </div>
+  </div>
+
+  <!-- 神 모드 하늘 패널 — 시간대·날씨·이벤트. 로직은 world2/ui/sky-panel.ts(인라인 금지). -->
+  <div id="w2-god" data-open="0">
+    <button id="w2-god-toggle" type="button" aria-expanded="false" aria-controls="w2-god-body">
       <span aria-hidden="true">☀</span><span class="cap">하늘</span><span class="caret" aria-hidden="true">▾</span>
     </button>
-    <div id="w5-god-body" hidden>
-      <div class="w5-god-row" data-group="time">
-        <span class="w5-god-cap">시간</span>
+    <div id="w2-god-body" hidden>
+      <div class="w2-god-row" data-group="time">
+        <span class="w2-god-cap">시간</span>
         <button type="button" data-time="day">주간</button>
         <button type="button" data-time="sunset">일몰</button>
         <button type="button" data-time="night">야간</button>
         <button type="button" data-auto="1">자동</button>
       </div>
-      <div class="w5-god-row" data-group="weather">
-        <span class="w5-god-cap">날씨</span>
+      <div class="w2-god-row" data-group="weather">
+        <span class="w2-god-cap">날씨</span>
         <button type="button" data-weather="clear">맑음</button>
         <button type="button" data-weather="overcast">먹구름</button>
         <button type="button" data-weather="rain">비</button>
         <button type="button" data-weather="snow">눈</button>
       </div>
-      <div class="w5-god-row" data-group="fx">
-        <span class="w5-god-cap">이벤트</span>
+      <div class="w2-god-row" data-group="fx">
+        <span class="w2-god-cap">이벤트</span>
         <button type="button" data-fx="rainbow">무지개</button>
         <button type="button" data-fx="aurora">오로라</button>
         <button type="button" data-bolt="1">번개⚡</button>
       </div>
-      <div class="w5-god-row" data-group="safe">
-        <span class="w5-god-cap">접근성</span>
+      <div class="w2-god-row" data-group="safe">
+        <span class="w2-god-cap">접근성</span>
         <button type="button" data-flash="1">광과민성 보호</button>
       </div>
     </div>
   </div>
 
-  <!-- 수면 파라미터 바 — 감독이 값을 직접 고르는 도구. 로직은 world5/ui/knob-bar.ts.
-       행(슬라이더)은 **JS 가 만든다** — 노브 정의(키·범위·라벨)를 여기에 적으면 그것이
-       곧 값 미러링이고, 이 저장소가 색·수치·임계값에서 세 번 데인 형태다. 정의는
-       `features/ocean.ts` 한 곳에 있고 이 컨테이너는 그것이 담길 자리만 잡는다. -->
-  <div id="w5-sliders" data-open="0" data-dirty="0" hidden>
-    <button id="w5-sliders-toggle" type="button" aria-expanded="false" aria-controls="w5-sliders-body">
-      <span aria-hidden="true">🌊</span><span class="cap">수면</span>
+  <!-- 개발자 옵션 바 — 감독이 값을 직접 고르는 도구. 로직은 world2/ui/knob-bar.ts.
+       행(슬라이더·버튼)은 **JS 가 만든다** — 노브 정의(키·범위·라벨)를 여기에 적으면 그것이
+       곧 값 미러링이고, 이 저장소가 색·수치·임계값에서 세 번 데인 형태다. 정의는 소비처
+       한 곳(`features/ocean.ts`·`main.ts` 의 그림자 절)에 있고 이 컨테이너는 자리만 잡는다.
+
+       ⚠ 라벨이 오래 `🌊 수면` 이었다 — 소비자가 수면 하나뿐이던 때의 이름이다. 2026-08-11
+       에 그림자 노브 5개와 [그림자 굽기] 버튼이 **같은 바에 누적**되면서 거짓이 됐고,
+       감독께 링크를 드릴 때 *"수면 버튼을 누르면 그림자 옵션이 있다"* 를 말로 덧붙여야
+       했다. 바는 소비자가 늘어나는 구조인데(`attachKnobBar` 는 여러 번 불린다) 라벨만
+       첫 소비자에 묶여 있던 것이다 — 그래서 **중립 라벨**로 바꾼다. 다음 소비자가 붙을 때
+       또 어긋나지 않는다. -->
+  <div id="w2-sliders" data-open="0" data-dirty="0" hidden>
+    <button id="w2-sliders-toggle" type="button" aria-expanded="false" aria-controls="w2-sliders-body">
+      <span aria-hidden="true">⚙</span><span class="cap">개발자 옵션</span>
       <span class="dirty-dot" aria-hidden="true"></span>
       <span class="caret" aria-hidden="true">▾</span>
     </button>
-    <div id="w5-sliders-body" hidden></div>
+    <div id="w2-sliders-body" hidden></div>
   </div>
 
 
