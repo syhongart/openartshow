@@ -73,6 +73,29 @@ export class GrassField {
     this.tileX = new Float64Array(this.active).fill(Number.NaN);
     this.tileZ = new Float64Array(this.active).fill(Number.NaN);
     this.paintTones();
+
+    // ── 부팅 상태를 여기서 확정한다. **`update()` 를 기다리면 늦는다.** ──────
+    //
+    // 커널은 예열(prewarm) **뒤에** 생긴다(`main.ts` 의 mount → prewarm 3프레임 →
+    // `new Kernel` → `start`). 그러니 생성자가 안 잡아 두면 그 3프레임이 다음 두 결함을
+    // 그대로 렌더한다 — 둘 다 검수관이 잡았다(N1·R2, 2026-08-18).
+    //
+    // ① **숨김이 안 걸린다.** `?shading=wire|solid` 로 열면 `shadingFeature` 가 mount
+    //    시점에 이미 `scene.overrideMaterial` 을 세우는데, 잔디는 `visible` 기본값이
+    //    `true` 라 예열 프레임이 `Renderer.js` 의 `overridePositionNode` 스왑 경로를
+    //    **정확히 탄다.** `features/shading.ts` 헤더가 «구조적으로 없앴다» 고 적은 그
+    //    경로다 — 초기값을 안 맞추면 그 문장이 예열 창에서 거짓이 된다.
+    // ② **모든 블레이드가 항등행렬로 원점에 겹쳐 선다.** `InstancedMesh` 의
+    //    `instanceMatrix` 기본값이 항등이라, 첫 전수 배치가 끝날 때까지(예산제라 기본
+    //    9프레임) 18,432개가 스케일 1 로 한 자리에 뭉쳐 있다.
+    this.hidden = opts.shading() !== 'material';
+    opts.mesh.visible = !this.hidden;
+
+    const p = opts.playerAt();
+    this.lastX = p.x;
+    this.lastZ = p.z;
+    for (let i = 0; i < this.active; i++) this.place(i, this.lastX, this.lastZ);
+    opts.mesh.instanceMatrix.needsUpdate = true;
   }
 
   /** 활성 포기 수. 진단이 읽는다 */
@@ -169,7 +192,12 @@ export class GrassField {
     for (let i = this.cursor; i < end; i++) this.place(i, this.lastX, this.lastZ);
     mesh.instanceMatrix.needsUpdate = true;
     // 한 바퀴를 다 돌면 처음으로 접고 예약을 내린다. 그 사이 또 움직였으면 `moved` 가
-    // 예약을 다시 세우므로, 결과적으로 **모든 인덱스가 순환하며 최신 중심으로 갱신된다.**
+    // 예약을 다시 세우므로, 결과적으로 **모든 인덱스가 «한 사이클 이내의» 중심으로
+    // 순환 갱신된다.** «최신 중심» 이 아닌 것이 요점이다(검수관 권고 R1) — 멈춘 시점에
+    // 진행 중이던 사이클은 `[cursor, active)` 만 마치므로 `[0, cursor)` 는 걷는 도중
+    // 프레임의 중심으로 남는다. 오차 상한은 «한 사이클 소요 × 보행속도»(기본 9프레임
+    // ≈ 0.15초)이고, 이것을 감수하고 고른 이유는 되감기 판본이 `?gden=2` 에서 **뒤쪽
+    // 20~25% 를 주행 내내 갱신하지 못했기** 때문이다.
     this.cursor = end >= this.active ? 0 : end;
     if (this.cursor === 0) this.pending = false;
   }

@@ -25,7 +25,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { encodePng, clamp255 } from './lib/png-encode.mjs';
+import { encodePng } from './lib/png-encode.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'frontend', 'assets', 'textures');

@@ -126,11 +126,13 @@ export const waterStyleFeature: Feature = {
 
     // 층2는 **숨기기만** 한다 — 대역을 얹지 않는 이유는 `decide/water-style.ts` 의
     // `HIDE_ONLY_NAMES` 주석에 있다(트랜스폼 비공유 + 반투명 이중 곱).
+    let hidOnly = 0;
     for (const name of HIDE_ONLY_NAMES) {
       const src = env.scene.getObjectByName(name);
       if (!src) continue;
       src.visible = false;
       hidden.push(src);
+      hidOnly++;
     }
 
     for (const name of STYLED_WATER_NAMES) {
@@ -151,12 +153,15 @@ export const waterStyleFeature: Feature = {
       hidden.push(src);
     }
 
-    if (added.length !== STYLED_WATER_NAMES.length) {
+    // ⚠ 층2 숨김 실패도 함께 센다(검수관 권고 R5). 이름이 드리프트하면 대역은 0개인데
+    // 층2만 사라져 **고치기 전보다 나쁜 화면**이 되는데, `added` 만 세면 그 경우가 안 잡힌다.
+    if (added.length !== STYLED_WATER_NAMES.length || hidOnly !== HIDE_ONLY_NAMES.length) {
       // ⚠ **조용한 no-op 금지.** 이름은 `features/ocean.ts` 와의 결합이고, 저쪽이 이름을
       // 바꾸면 여기는 아무것도 안 물린 채 «켜졌다» 고 보고하게 된다. 그 실패는 화면에서
       // «게임풍 물이 왜 기존 물과 똑같지» 로만 드러나 원인을 찾기 어렵다.
       console.warn(
-        `[water-style] 수면 메시를 ${added.length}/${STYLED_WATER_NAMES.length} 개만 찾았다.`
+        `[water-style] 수면 메시를 대역 ${added.length}/${STYLED_WATER_NAMES.length}`
+        + ` · 숨김 ${hidOnly}/${HIDE_ONLY_NAMES.length} 개만 찾았다.`
         + ' features/ocean.ts 의 mesh.name 과 decide/water-style.ts 의 목록이 어긋났을 수 있다.',
       );
     }
@@ -166,11 +171,15 @@ export const waterStyleFeature: Feature = {
         mode,
         styled: added.length,
         expected: STYLED_WATER_NAMES.length,
-        hiddenOnly: HIDE_ONLY_NAMES.length,
+        hiddenOnly: hidOnly,
+        hiddenOnlyExpected: HIDE_ONLY_NAMES.length,
         foamMul, fresMul, deepMul,
         backend: env.adapter.backendDetail,
       }),
-      // 켜지면 기존 수면을 그만큼 숨기고 같은 수만큼 얹으므로 드로우콜 총합이 안 변한다.
+      // ⚠ 첫 판본은 *"그만큼 숨기고 같은 수만큼 얹으므로 총합이 안 변한다"* 라고 적었고
+      // 층2 대역을 걷은 뒤로 **거짓이 됐다**(검수관 조건 C1) — 지금은 4개를 숨기고 2개를
+      // 얹어 **순 −2** 다. `[7.6]` 판정이 유효한 이유는 총합 불변이 아니라 이 키가
+      // **세션 내 상수**이기 때문이다(부팅에 정해지고 그 뒤 안 변한다).
       drawGroupKey: () => `water-style:${added.length}`,
       dispose: () => {
         for (const m of added) { env.scene.remove(m); }
