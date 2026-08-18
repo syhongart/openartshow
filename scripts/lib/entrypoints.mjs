@@ -75,6 +75,14 @@ export const ENTRYPOINTS = [
   { key: 'lab-glb', src: 'lab-glb.html', out: 'app/lab-glb.html', exposure: 'flagged' },
   // [실험] 오픈월드 커널 재작성 — 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서다.
   { key: 'world2', src: 'world2.html', out: 'app/world2.html', exposure: 'flagged' },
+  // [실험] 스타일라이즈드 룩 — world2 의 **포크가 아니다.** 실행 코드는 `world2/main.ts`
+  // 그대로이고, `world2-stylized-boot.ts` 가 URL 에 `?styl=1` 을 채운 뒤 같은 진입 함수를
+  // 부르는 것이 전부다. 그래서 world2 를 고치면 여기도 같이 고쳐진다 — world3·world5 가
+  // 지는 no-sync 부채가 없다. 감독 지시 2026-08-18(모바일 게임 광고 화면 참조).
+  //
+  // ⚠ 키에 **숫자 접미를 안 쓴다**: `world6` 류면 GS-4 의 `/^world\d+$/` 에 자동 편입돼
+  // 「world 커널 포크」로 분류되고, 포크에 걸리는 독립성 검사를 포크가 아닌 것이 받는다.
+  { key: 'world2-stylized', src: 'world2-stylized.html', out: 'app/world2-stylized.html', exposure: 'flagged' },
   // [실험] 포근마을 — world2 의 **포크**다(분기 근거·no-sync 정책은
   // `frontend/js/world3/README.md`). 감독 지시 2026-08-08 *"월드3으로 하고 … 독립적으로
   // 해"* 로 착수했다. world2 파일을 한 줄도 import 하지 않으며 그 사실은

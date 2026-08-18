@@ -41,7 +41,7 @@ describe('진입점 SSOT', () => {
     expect(LIVE_ENTRIES.length + FLAGGED_ENTRIES.length).toBe(ENTRYPOINTS.length);
   });
 
-  it('behind-flag 여섯 페이지가 flagged 다', () => {
+  it('behind-flag 일곱 페이지가 flagged 다', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
     //
     // 목록을 여기 **적어 두는 것**이 이 검사의 요점이다. `FLAGGED_ENTRIES.length` 만
@@ -69,8 +69,12 @@ describe('진입점 SSOT', () => {
     // 개발용으로만 쓸거니"*)로 **방문자에게 제공할 계획이 없는 도구**다. 즉 `flagged`
     // 가 종착지일 수 있고, 여기서 빠지는 것이 목표가 아니다.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
+    // 2026-08-18 `world2-stylized.html` 추가 — world2 와 **같은 코드**를 스타일라이즈드
+    // 룩 기본값으로 여는 페이지다(포크가 아니다 — `entrypoints.mjs` 의 그 줄). 감독이
+    // 링크 하나로 A/B 하기 위한 것이고, 라이브 노출은 다른 여섯과 같이 감독·팀장 게이트다.
     expect(flagged).toEqual([
-      'editor.html', 'lab-glb.html', 'visit.html', 'world2.html', 'world3.html', 'world5.html',
+      'editor.html', 'lab-glb.html', 'visit.html',
+      'world2-stylized.html', 'world2.html', 'world3.html', 'world5.html',
     ]);
   });
 
