@@ -134,3 +134,72 @@ export function bladeShade(t: number, ao: number): number {
   const g = AO_ROOT + (AO_TIP - AO_ROOT) * Math.pow(t, 0.8);
   return 1 + (g - 1) * ao;
 }
+
+// ── 색 (감독 판정 2026-08-18 5차 *"색뿐 아니라. 형태도 이상해"*) ────────────
+//
+// **이것은 이 저장소가 「가장 비쌌던 실수」로 적어 둔 그 형태의 재발이다.**
+// CLAUDE.md 는 *"'잔디가 형광으로 뜬다' 를 내가 수치만 보고 문제로 규정했고, 감독은 그
+// 화면을 좋다고 판단했다 — 수치가 이상한 것과 화면이 잘못된 것은 다른 일이다"* 라고
+// 적고 있다. 그런데 `GRASS_TONES` 를 정할 때 나는 감독이 **직접 준 팔레트**
+// (#78D833·#54B92C·#328C2A)를 *"채도가 너무 높아 형광으로 뜬다"* 는 **내 추측**으로
+// 눌러 놓았다. 감독은 그 화면을 본 적이 없다. 규정한 사람이 화면을 안 보고 판정한 것이다.
+//
+// **실측** — 무엇을 눌렀는지는 수치로 갈린다:
+// ```
+//              채도(HSV S) 평균   휘도 범위(명암 대비)   휘도 평균
+//   현재         0.482            42.3                 153.4
+//   감독 원안     0.742            69.9                 150.3
+//   비           ×1.54            ×1.65                ×0.98
+// ```
+// **평균 밝기는 2% 차이로 사실상 같다.** 내가 누른 것은 밝기가 아니라 **채도와 대비**
+// 였고, 감독 명세가 정확히 *"색은 강하게, 명암은 크게"* 였다. 두 축을 다 반대로 밀었다.
+//
+// 그래서 **감독 원안을 기본값으로 되돌리고**, 되돌아갈 길만 노브로 남긴다.
+// `?gpal=0` 이 눌린 팔레트다.
+//
+// ⚠ **밤에 형광으로 뜨는지는 아직 아무도 안 봤다.** 그 위험이 내가 채도를 누른 원래
+// 이유이고, 위험 자체는 실재한다 — 다만 판정은 감독 화면에서 난다. `decide/ground-albedo.ts`
+// 는 파츠 상수만 읽으므로 이 값이 밤 배수를 **바꾸지는 않는다**(실측). 밤이 이상하면
+// `?gpal` 로 즉시 되돌릴 수 있고, 그때 시간대별 보정을 넣는다(백로그 `G-STYL4`).
+
+/** 감독이 직접 준 팔레트(2026-08-18 코멘트). `?gpal=1` 의 끝점이자 **기본값**이다. */
+export const DIRECTOR_TONES = [0x78d833, 0x54b92c, 0x328c2a] as const;
+
+/** 팔레트 혼합. `0` = 내가 눌러 놓은 회녹 · `1` = 감독 원안. */
+export const BLADE_PALETTE = 1;
+
+/** 채도 배수. `1` 이 항등원 — 팔레트를 그대로 쓴다. */
+export const BLADE_SAT = 1;
+
+/**
+ * 색 인덱스 `idx` 의 잎 색 — 팔레트 혼합과 채도 배수를 적용한 `0xRRGGBB`.
+ *
+ * 혼합도 채도도 **sRGB 값 위에서** 한다. 물리적으로 옳은 것은 선형 공간이지만, 여기서
+ * 원하는 것은 «감독이 슬라이더를 밀면 화면이 그만큼 변한다» 는 **예측 가능성**이고 그건
+ * 인지량에 가까운 sRGB 쪽이다. 그리고 끝점(`gpal=0`·`1`)은 어느 공간에서 섞든 정확히
+ * 두 팔레트 그대로다.
+ *
+ * 채도는 **휘도를 보존한다**(Rec.709 계수) — 채도만 미는데 화면이 같이 밝아지면 감독이
+ * 두 축을 한 화면에서 못 가른다. 실루엣·굽힘 축을 가른 것과 같은 이유다.
+ *
+ * 결과를 다시 `0xRRGGBB` 정수로 내는 것은 소비처(`systems/grass-field.ts`)가 지금
+ * `setColorAt` 앞에서 hex 를 푸는 코드를 그대로 쓰게 하려는 것이다 — 색공간 변환 규약이
+ * 한 곳(three 의 `Color`)에만 남는다.
+ */
+export function bladeToneHex(
+  idx: number, tones: readonly number[], palette: number, sat: number,
+): number {
+  const a = tones[idx] ?? tones[0] ?? 0;
+  const b = DIRECTOR_TONES[idx] ?? DIRECTOR_TONES[0];
+  const ch = (shift: number): number => {
+    const ca = (a >> shift) & 0xff;
+    const cb = (b >> shift) & 0xff;
+    return ca + (cb - ca) * palette;
+  };
+  const r = ch(16);
+  const g = ch(8);
+  const bl = ch(0);
+  const y = 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  const push = (c: number): number => Math.max(0, Math.min(255, Math.round(y + (c - y) * sat)));
+  return (push(r) << 16) | (push(g) << 8) | push(bl);
+}

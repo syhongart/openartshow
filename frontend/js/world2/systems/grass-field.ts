@@ -51,6 +51,14 @@ export interface GrassFieldOpts {
   readonly playerAt: () => { x: number; z: number };
   /** 지금 셰이딩 모드 — `'material'` 이 아니면 잔디를 숨긴다(아래 ⚠) */
   readonly shading: () => string;
+  /**
+   * 색 인덱스 → 잎 색 `0xRRGGBB`. 팔레트·채도 노브가 여기서 갈린다.
+   *
+   * 상수 배열이 아니라 **함수**인 것이 요점이다 — 감독이 색 슬라이더를 밀면 값이 바뀌고,
+   * 그때 `recolor()` 가 같은 통로로 다시 읽는다. 배열을 받아 두면 그 시점의 스냅샷이
+   * 박혀 슬라이더가 무력해진다(`ui/knob-bar.ts` 가 `value()` 를 함수로 받는 것과 같은 이유).
+   */
+  readonly toneHex: (idx: number) => number;
 }
 
 /**
@@ -122,6 +130,16 @@ export class GrassField {
   get count(): number { return this.active; }
 
   /**
+   * 색 노브가 움직였다 — 전수를 다시 칠한다.
+   *
+   * 전수인 것은 색이 포기마다 고정이라서다(아래 `paintTones` 주석). 15만 회 `setColorAt`
+   * 은 감독이 슬라이더를 놓을 때마다 한 번이고, 매 프레임 도는 경로가 아니다.
+   * **버퍼도 인스턴스도 새로 안 만든다** — 이미 있는 `instanceColor` 를 덮어쓸 뿐이라
+   * 개수 불변식과 무관하다.
+   */
+  recolor(): void { this.paintTones(); }
+
+  /**
    * 색은 포기마다 고정이라 **부팅에 한 번만** 쓴다. 랩으로 자리가 바뀌어도 색은 안 따라
    * 바꾼다 — 바꾸면 걸을 때 눈앞의 풀이 색을 바꾸는 것이 보인다.
    */
@@ -129,7 +147,7 @@ export class GrassField {
     const { mesh, color } = this.o;
     for (let i = 0; i < this.active; i++) {
       const r = ringOf(i, this.counts);
-      const hex = GRASS_TONES[bladeBase(i, GRASS_RINGS[r].radius * this.o.radiusMul).tone];
+      const hex = this.o.toneHex(bladeBase(i, GRASS_RINGS[r].radius * this.o.radiusMul).tone);
       color.r = ((hex >> 16) & 0xff) / 255;
       color.g = ((hex >> 8) & 0xff) / 255;
       color.b = (hex & 0xff) / 255;

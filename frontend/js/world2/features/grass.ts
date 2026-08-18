@@ -21,11 +21,11 @@ import {
   GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX, MAX_BLADES, ringCounts,
   WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z, WIND_GUST_K, WIND_GUST_T,
   WIND_JITTER_KX, WIND_JITTER_KZ, WIND_JITTER_AMP, WIND_GUST_MIX, WIND_GUST_BASE,
-  BLADE_TIP, pickGrassWind, type GrassWindMode,
+  BLADE_TIP, GRASS_TONES, pickGrassWind, type GrassWindMode,
 } from '../decide/grass.js';
 import {
   BLADE_NODES, BLADE_BELLY, BLADE_CURVE, BLADE_AO, BLADE_NORMAL_SPREAD,
-  halfWidthProfile, bladeArc, bladeShade,
+  BLADE_PALETTE, BLADE_SAT, halfWidthProfile, bladeArc, bladeShade, bladeToneHex,
 } from '../decide/blade-shape.js';
 import { GrassField } from '../systems/grass-field.js';
 
@@ -179,6 +179,12 @@ export const grassFeature: Feature = {
       shapeAxis('gnor', '볼륨', BLADE_NORMAL_SPREAD, 0, 1.2, 0.05),
     ] as const;
     const [belly, curve, ao, spread] = axes;
+    // ── 색 2축 (감독 판정 5차 *"색뿐 아니라"*) ────────────────────────────
+    // 모양 축과 **갈라 둔다.** 둘을 한 다발로 묶으면 감독이 «색이 나아진 것인지 모양이
+    // 나아진 것인지» 를 한 화면에서 못 가른다 — 이번 회차 내내 걸린 문제가 그것이다.
+    const palette = shapeAxis('gpal', '팔레트', BLADE_PALETTE, 0, 1, 0.05);
+    const sat = shapeAxis('gsat', '채도', BLADE_SAT, 0, 2, 0.05);
+    const colorAxes = [palette, sat] as const;
     const windMul = readNum('gwind', 1, 0, 2);
     const speedMul = readNum('gwspd', 1, 0, 3);
 
@@ -238,6 +244,7 @@ export const grassFeature: Feature = {
         return { x: p.x, z: p.z };
       },
       shading: () => env.shading(),
+      toneHex: (idx) => bladeToneHex(idx, GRASS_TONES, palette.get(), sat.get()),
     });
 
     // 슬라이더가 움직이면 잎을 **다시 굽는다.** 모양 4축은 정점에 구워져 있어 uniform
@@ -254,13 +261,17 @@ export const grassFeature: Feature = {
     };
     const barParts = env.doc ? findKnobBar(env.doc) : null;
     if (barParts) {
-      attachKnobBar(barParts, axes.map((a) => ({
+      const row = (a: ShapeAxis, apply: () => void) => ({
         key: a.key, label: a.label, min: a.min, max: a.max, step: a.step,
         value: () => a.get(),
         overridden: () => a.overridden(),
-        set(v: number) { a.set(v); writeNumOpt(a.key, v); rebuild(); },
-        reset() { a.set(null); writeNumOpt(a.key, null); rebuild(); },
-      })));
+        set(v: number) { a.set(v); writeNumOpt(a.key, v); apply(); },
+        reset() { a.set(null); writeNumOpt(a.key, null); apply(); },
+      });
+      attachKnobBar(barParts, [
+        ...axes.map((a) => row(a, rebuild)),
+        ...colorAxes.map((a) => row(a, () => field.recolor())),
+      ]);
     }
 
     return {
@@ -271,6 +282,7 @@ export const grassFeature: Feature = {
         rings: counts,
         radiusMul, densityMul, heightMul, widthMul, tip,
         belly: belly.get(), curve: curve.get(), ao: ao.get(), spread: spread.get(),
+        palette: palette.get(), sat: sat.get(),
         wind,
         // 감독이 «바람이 이 모양이냐» 로 판정하기 전에 이것을 먼저 본다.
         windActive: wind === 'tsl',
