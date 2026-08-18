@@ -537,6 +537,17 @@ export const overlayFeature: Feature = {
     })();
 
     return {
+      // ── 액자를 건물과 함께 재운다 (W8-9) ──────────────────────────────────
+      // 감독 지시 2026-08-18 *"멀리떨어졌을때 건물이 사라질때 같이 사라지고 나왔으면해"*.
+      //
+      // ⚠ **이 기능에 `system` 이 생긴 것이 이번 변경의 핵심 배선이다** — 그전까지
+      // 오버레이는 커널 `update` 를 아예 안 받았고, 그래서 «프레임마다 무엇을 본다» 는
+      // 자리가 존재하지 않았다. 거리 판정은 여기 없다: `env.parcelLoaded` 가 스트리밍의
+      // 답을 그대로 나른다(근거는 `features/types.ts` 의 그 필드 한 곳).
+      system: {
+        name: 'overlayArt',
+        update: () => artScene?.update(env.parcelLoaded),
+      },
       // `frozen` 은 `diag` 에 넣지 않고 여기서 읽는다 — 저장소가 소유하는 값이라
       // 복사해 두면 갈라진다(편집이 저장소를 직접 고치므로 복사본은 즉시 낡는다).
       diagnostics: () => ({

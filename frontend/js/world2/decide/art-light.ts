@@ -212,8 +212,50 @@ export function artParcelCount(
 }
 
 /** 어느 파셀인가. `parcelOf` 와 같은 식이지만 **좌표 둘만** 본다(three 를 안 들인다) */
+function parcelXZ(x: number, z: number, cellX: number, cellZ: number): { px: number; pz: number } {
+  return { px: Math.round(x / cellX), pz: Math.round(z / cellZ) };
+}
+
+/**
+ * 같은 판정의 **문자열 키 판**. 파셀을 Set/Map 에 담을 때 쓴다.
+ *
+ * ⚠ 좌표 산술을 여기 다시 적지 않는다 — `parcelXZ` 를 부른다. 두 판이 갈리면
+ * 「조명은 같은 파셀로 세는데 가시성은 다른 파셀로 본다」가 되고, 그 어긋남은 화면에서만
+ * 드러난다(어떤 작품이 건물과 따로 사라진다).
+ */
 function cellOf(x: number, z: number, cellX: number, cellZ: number): string {
-  return `${Math.round(x / cellX)},${Math.round(z / cellZ)}`;
+  const p = parcelXZ(x, z, cellX, cellZ);
+  return `${p.px},${p.pz}`;
+}
+
+/**
+ * 작품 하나가 **어느 파셀에 있는가** (W8-9). 감독 지시 2026-08-18:
+ * *"멀리떨어졌을때 건물이 사라질때 같이 사라지고 나왔으면해"*.
+ *
+ * ── 왜 이것이 「보일 것인가」의 전부인가 ──────────────────────────────────
+ * 「건물이 사라지는 거리」는 이미 다른 곳이 정하고 있다 — 파셀 언로드이고, 판정은
+ * `decide/lod.ts` 의 `tierFor`(히스테리시스 ENTER/EXIT)이며 집행은 `systems/streaming.ts`
+ * 다. 액자가 같은 식을 **다시 계산하면** 밴드 값이 두 곳에 살고, 한쪽만 바뀌면
+ * «건물은 사라졌는데 액자는 남는다» 가 조용히 돌아온다 — 이 저장소가 값 미러링으로
+ * 반복해서 당한 그 형태다.
+ *
+ * 그래서 액자는 거리를 **안 재고 묻는다.** 이 함수는 그 질문에 필요한 **좌표 변환
+ * 하나**만 낸다 — 판정 자체(`loaded(px, pz)`)는 스트리밍이 이미 갖고 있다.
+ *
+ * ⚠ **`assignArtLights` 와 같은 함수를 쓴다.** 갈리면 조명은 켜졌는데 액자는 숨는
+ * (또는 그 반대) 상태가 만들어지고, 그 어긋남은 화면에서만 드러난다.
+ *
+ * ⚠⚠ 「작품별 `boolean[]` 을 내는 판정 함수」로 만들지 않았다. 그러면 소비자가 **매
+ * 프레임 배열을 할당**하게 되고, 정작 그 함수가 하는 일은 `loaded` 를 그대로 부르는 것
+ * 뿐이라 순수 계층이 얻는 것이 없다. 집행부는 `place` 시점에 이 좌표를 한 번 계산해
+ * 들고 있다가 프레임마다 그것으로 묻는다(할당 0).
+ */
+export function artParcelXZ(
+  a: Pick<ArtworkItem, 'x' | 'z'>,
+  cellX: number,
+  cellZ: number,
+): { px: number; pz: number } {
+  return parcelXZ(a.x, a.z, cellX, cellZ);
 }
 
 /**

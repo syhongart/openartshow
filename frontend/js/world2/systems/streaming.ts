@@ -334,6 +334,22 @@ export class StreamingSystem implements System {
   get tierMap(): ReadonlyMap<ParcelKey, Tier> { return this.tiers; }
 
   /**
+   * 그 파셀을 **지금 들고 있는가** (W8-9). 마을 파츠가 화면에 있는 것과 같은 뜻이다 —
+   * 여기 없으면 슬롯이 반납된 상태이고(`release` → `ZERO` 행렬) 건물은 사라져 있다.
+   *
+   * ── 왜 `tierMap` 을 그대로 안 쓰게 하는가 ─────────────────────────────────
+   * 그 맵의 키는 `"px,pz"` 문자열이다. 소비자가 그것을 알면 **키 형식이 두 곳에 살고**,
+   * `parcelKey` 를 바꾸는 순간 조용히 어긋난다(조회가 언제나 `false` 를 내고, 증상은
+   * «작품이 영영 안 보인다» 로만 나타난다). 형식을 이 클래스 안에 가둔다.
+   *
+   * 첫 소비자는 액자다 — 감독 지시 *"건물이 사라질때 같이 사라지고 나왔으면"*.
+   * 액자가 거리를 다시 재지 않는 이유는 `decide/art-light.ts` 의 `artParcelXZ` 헤더에 있다.
+   */
+  isLoaded(px: number, pz: number): boolean {
+    return this.tiers.has(parcelKey(px, pz));
+  }
+
+  /**
    * 그 파셀을 **버린다.** 다음 `update` 가 `want` 에 다시 넣어 새로 만든다.
    *
    * ── 왜 «다시 만든다» 가 아니라 «버린다» 인가 ───────────────────────────────
