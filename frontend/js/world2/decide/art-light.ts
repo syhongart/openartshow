@@ -160,13 +160,55 @@ export const ART_LIGHT_PER_PARCEL_SOFT = 1;
  *
  * **작품 총수에서 유도하지 않는 것이 핵심이다**(팀장 조건 2의 괄호). 그래야 감독 카드
  * 「작품 수는 요금제가 정한다」와 충돌하지 않는다 — 작품이 몇이든 라이트 개수는 상수다.
+ *
+ * ── 🔴 조건 2 개정 (2026-08-18, 팀장 판정) ────────────────────────────────
+ * > 풀 크기는 `perParcel × min(작품이 걸린 파셀 수, maxLatticePoints(tierReach('near')))`
+ * > 로 유도한다. 「동시에 보이는 방의 수」(=7)는 유도의 전부에서 **상한**으로 물러난다 —
+ * > 시야 내 수요를 절대 초과하지 않는다는 원 목적은 min 이 보존한다. min 왼쪽 항은 부팅
+ * > 시점 확정되는 정적 값이다(오버레이 작품은 문서 고정) — 조건 3(세션 불변) 유지.
+ * > **원 문언이 왜 틀렸나:** "같은 함수로 유도" 는 작품이 격자를 다 채운다는 암묵 전제
+ * > 위에 있었고, 실측(2026-08-18: 작품 1·2·3장 전부 풀 7·전진 23~24 평평, CI FAIL)이
+ * > 그 전제가 거짓임을 확인했다. 편집 모드에서 작품 추가로 풀이 모자라는 경우는 조건 4
+ * > (perParcel 초과분은 라이트 없이 걸림)와 같은 성질로 수용한다.
+ *
+ * **바로 위 「작품 총수에서 유도하지 않는다」는 그대로 참이다** — 이 개정이 쓰는 것은
+ * 총수가 아니라 **파셀 수**이고 상한이 걸려 있다. 작품 100장이 한 파셀에 있으면 풀은
+ * `perParcel × 1` 이다. 감독 카드(「작품 수는 요금제가 정한다」)와 충돌하지 않는다.
+ *
+ * ⚠ **이 개정으로도 원래 사양은 복원되지 않는다**(팀장 조건 ③). 조명 4·작품 3파셀이면
+ * 풀 = 4 × 3 = **12** 로, 이미 CI 가 떨어뜨린 풀 7 보다 크다. 복원은 하네스를 거리
+ * 기반으로 고쳐야(태스크 #111) 열린다 — 그것이 #111 을 최우선으로 두는 실질 근거다.
  */
 export function artLightPoolSize(
   perParcel: number = ART_LIGHT_PER_PARCEL,
   bands: TierBands = DEFAULT_BANDS,
+  /**
+   * 작품이 실제로 걸린 파셀 수. **생략하면 상한(격자 유도값)을 그대로 쓴다** — 이 저장소의
+   * 확장 규약(「생략 = 기존 동작」)이고, 작품 목록을 모르는 호출자(편집 세션·테스트)가
+   * 안전한 쪽으로 떨어지게 한다.
+   */
+  artParcels?: number,
 ): number {
-  const parcels = maxLatticePoints(tierReach('near', bands));
+  const cap = maxLatticePoints(tierReach('near', bands));
+  const parcels = artParcels == null ? cap : Math.min(Math.max(0, Math.floor(artParcels)), cap);
   return Math.max(0, Math.floor(perParcel)) * parcels;
+}
+
+/**
+ * 작품 목록이 **몇 개 파셀에 걸쳐 있는가**. `artLightPoolSize` 의 `artParcels` 인자다.
+ *
+ * 파셀 판정은 `cellOf` 한 곳이다 — `assignArtLights` 가 쓰는 것과 **같은 함수**여야 한다.
+ * 둘이 갈리면 「풀은 2인데 배정은 3파셀에 하려 든다」가 되고, 그 어긋남은 화면에서만
+ * 드러난다(어떤 작품이 조용히 불을 못 받는다).
+ */
+export function artParcelCount(
+  arts: readonly Pick<ArtworkItem, 'x' | 'z'>[],
+  cellX: number,
+  cellZ: number,
+): number {
+  const seen = new Set<string>();
+  for (const a of arts) seen.add(cellOf(a.x, a.z, cellX, cellZ));
+  return seen.size;
 }
 
 /** 어느 파셀인가. `parcelOf` 와 같은 식이지만 **좌표 둘만** 본다(three 를 안 들인다) */

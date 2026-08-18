@@ -241,6 +241,76 @@ describe('★ 조건 4 — 초과 작품은 **걸리되 라이트 없이**', () 
   });
 });
 
+// ── 🔴 GS-E — 씬이 작품 목록을 **실제로 소비하는가** (배선 축, 2026-08-18) ──────
+//
+// 조건 2 개정(풀 = `perParcel × min(작품 파셀 수, 상한)`)을 넣고 뮤테이션을 돌렸더니
+// **배선을 끊어도 0 failed** 였다 — `artwork-scene.ts` 가 `deps.arts` 를 무시하도록
+// 고쳐도 어떤 테스트도 안 깨졌다.
+//
+// 순수 함수(`artLightPoolSize`·`artParcelCount`)는 `world2-art-light.test.ts` 가 보고,
+// 유도식도 거기서 본다. **그런데 「씬이 그 값을 실제로 쓰는가」는 아무도 안 봤다.**
+// 이 저장소가 *"판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다"* 로 이미
+// 이름 붙인 형태이고, `covOkOf`·계단 예산 판정식이 각각 같은 처방을 받았다.
+//
+// **이 축을 넣고 다시 쟀다** (`npx vitest run tests/world2-art-light.test.ts
+// tests/world2-artwork-scene.test.ts`):
+//
+//   심은 것                                              전  후
+//   `artwork-scene` 이 `deps.arts` 를 무시 (배선 끊기)      0 → **2**
+//   파셀 수 대신 **작품 수**를 넘김 (미묘한 배선 오류)        —    **1**
+//
+// 순수 함수 쪽 뮤테이션(같은 회차, `art-light.ts`): min 무시 1 · 상한 제거 1 ·
+// `artParcelCount` 가 작품 수를 셈 2 · **주석 한 줄만(등가 대조군) 0**.
+describe('★ GS-E · 조건 2 개정 — 씬이 작품 목록을 소비한다 (배선)', () => {
+  it('★ 작품이 한 파셀뿐이면 풀이 상한보다 작다 — 배선이 끊기면 같아진다', async () => {
+    const a = makeThree();
+    const few = createArtworkScene({
+      THREE: a.THREE, scene: a.scene, cellX: CELL, cellZ: CELL, perParcel: 1,
+      arts: [art({ x: 0, z: 0 }), art({ x: 1, z: 1 })],   // 같은 파셀 2장 → 1파셀
+    });
+    await few.place([art({ x: 0, z: 0 })]);
+
+    const b = makeThree();
+    const capped = createArtworkScene({
+      THREE: b.THREE, scene: b.scene, cellX: CELL, cellZ: CELL, perParcel: 1,
+      // `arts` 생략 = 상한(격자 유도값). 편집 세션이 이 경로다.
+    });
+    await capped.place([art({ x: 0, z: 0 })]);
+
+    expect(few.stats().lights, '★ 작품 목록이 풀에 반영되지 않았다 — 배선이 끊겼다')
+      .toBeLessThan(capped.stats().lights);
+    expect(a.counts.light, '★ 실제로 만든 라이트 수도 갈려야 한다')
+      .toBeLessThan(b.counts.light);
+  });
+
+  it('★ 파셀이 흩어지면 풀이 그만큼 는다 — 「작품 수」가 아니라 「파셀 수」다', async () => {
+    const mk = async (arts: { x: number; z: number }[]) => {
+      const t = makeThree();
+      const s = createArtworkScene({
+        THREE: t.THREE, scene: t.scene, cellX: CELL, cellZ: CELL, perParcel: 1, arts,
+      });
+      await s.place([art({ x: 0, z: 0 })]);
+      return s.stats().lights;
+    };
+    // 같은 파셀 3장 vs 다른 파셀 3장 — 작품 수는 같고 파셀 수만 다르다
+    const same = await mk([{ x: 0, z: 0 }, { x: 1, z: 1 }, { x: 2, z: 2 }]);
+    const spread = await mk([{ x: 0, z: 0 }, { x: CELL * 3, z: 0 }, { x: CELL * 6, z: 0 }]);
+    expect(same, '★ 작품 수로 유도하고 있다 — 파셀 수여야 한다').toBeLessThan(spread);
+  });
+
+  it('★ 풀은 여전히 세션 안에서 상수다 — 개정이 조건 1·3 을 깨지 않았다', async () => {
+    const { THREE, scene, counts } = makeThree();
+    const s = createArtworkScene({
+      THREE, scene, cellX: CELL, cellZ: CELL, perParcel: 1, arts: [art({ x: 0, z: 0 })],
+    });
+    const before = counts.light;
+    // 부팅 때 안 알려준 파셀에 작품을 걸어도 풀은 안 변한다(초과분은 라이트 없이 — 조건 4)
+    await s.place([art({ x: 0, z: 0 }), art({ x: CELL * 9, z: CELL * 9 })]);
+    expect(counts.light, '★ place 가 풀을 늘렸다 — 조건 1 위반').toBe(before);
+    expect(s.stats().lights).toBe(before);
+  });
+});
+
 describe('★ GS-C · 조건 3 — soft 완화는 켜는 수만 줄인다 (풀은 안 줄인다)', () => {
   // ⚠⚠ **이 describe 는 검수관 블로커 B1 이 만들었다**(2026-08-17).
   //

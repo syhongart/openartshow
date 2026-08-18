@@ -492,7 +492,7 @@ export const overlayFeature: Feature = {
         if (plan.arts.length > 0 || wantEdit) await ensureLoader();
         if (disposed) return;
         if (THREE) {
-          artScene = mountArtworks(THREE, env.scene as unknown as ArtNode, DEFAULT_LAYOUT, arts.resolve);
+          artScene = mountArtworks(THREE, env.scene as unknown as ArtNode, DEFAULT_LAYOUT, arts.resolve, undefined, wantEdit ? undefined : plan.arts);
           arts.attach(artScene);
         }
         await arts.set(plan.arts);
