@@ -58,6 +58,7 @@ import {
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
 import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
+import { stepJudge, stepReport } from './invariant-judge.mjs';
 import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -180,6 +181,7 @@ const STOP_SETTLE_MS = 1500;
 // INFO 로 내려가지 않는다(`run.mjs` 의 `perfStatus` 가 `hard` 로 받는다). observe 의
 // 정당화는 *"러너 성능 편차의 거짓 FAIL"* 인데, **세션이 안 움직인 것은 편차가 아니다.**
 //
+
 /** 고유 파셀 목표. 3 이면 "출발 칸 + 새 칸 둘" 이다 — 경계를 최소 두 번 넘는다 */
 const COVER_UNIQUE = 3;
 /** 재방문 목표. 슬롯 반납 실패는 **다시 들어갈 때**만 드러난다 */
@@ -232,6 +234,9 @@ async function counts(page) {
       draw: s.frame?.draw ?? null,
       parcels: s.stream?.loaded ?? null,
       built: s.stream?.built ?? null,
+      // 걸린 작품 수. **판정 예산을 여기서 유도한다**(아래 `artBudget`) — 실측값에
+      // 여유를 얹지 않는다. 작품이 4장이 되면 예산도 저절로 따라온다.
+      arts: s.overlay?.art?.frames ?? null,
       // 커버리지 판정용. `null` 이면 훅이 안 열린 것이므로 **측정 실패로 다룬다**.
       px: s.parcel?.px ?? null,
       pz: s.parcel?.pz ?? null,
@@ -561,34 +566,23 @@ export async function runInvariants({
       log('      배치(#149)나 스폰(`decide/grid.ts`)을 본다. 상한을 안 쓰고 끝났으면 이쪽이다.');
     }
 
+    // 계단 예산·계단 소진 판정. **판정식은 `invariant-judge.mjs` 한 곳이다** — 근거·뮤테이션
+    // 실측표·재론 조건이 전부 거기 있다. 여기서 값을 다시 계산하지 않는다(검수관 조건 1 의
+    // `covOkOf` 와 같은 처방 — 인라인 임계식은 아무 테스트도 안 닿는다).
+    const judged = stepJudge({ base, rows, maxGeo, maxTex });
+
     // 통과·실패는 백엔드 무관 카운터로만 가른다.
     // `draw` 는 **대조군에서만** 판정에 넣는다 — 기본 세션에서는 NPC 절두체 컬링 때문에
     // 정의상 상수가 아니고, 거기서 판정하면 게이트가 아니라 오탐 발생기가 된다.
     //
     // `covOk` 를 곱하는 이유는 위 G-COL1 문단 그대로다 — **못 잰 것은 통과가 아니다.**
-    const pass = maxGeo <= 0 && maxTex <= 0 && (!judgeDraw || maxDraw <= 0)
+    const pass = judged.budgetOk && judged.settledOk && (!judgeDraw || maxDraw <= 0)
       && errors.length === 0 && covOk;
-    if (pass) {
-      log(`\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다 (파셀 ${cov.unique}개·재방문 ${cov.revisits}).`);
-    } else if (judgeDraw && maxDraw > 0 && maxGeo <= 0 && maxTex <= 0) {
-      log('\n  ✗ FAIL — 대조군에서 **드로우콜만** 늘었다.');
-      log('    지오·텍스처는 그대로인데 draw 가 늘었다는 것은 **같은 자원을 더 많은 호출로**');
-      log('    그린다는 뜻이다 — 배칭이 깨졌거나(인스턴싱 해제·재질 분화), 숨어 있던 것이');
-      log('    보이게 됐다. 대조군에는 사람도 GLB 도 없으므로 컬링 변동으로 설명되지 않는다.');
-    } else if (maxGeo > 0 || maxTex > 0) {
-      log('\n  ✗ FAIL — 세션 중 개수가 늘었다. **world1 이 겪은 증식이 돌아왔다.**');
-      log('    위 표에서 어느 구간에 + 가 붙었는지가 원인 지점이다:');
-      log('      회전 구간   → 시야에 따라 새 조합이 생긴다(재질 변종·LOD tier 등)');
-      log('      전진 구간   → 스트리밍이 객체를 새로 만든다(슬롯 방식이 깨짐)');
-      log('      복귀 구간   → 슬롯 반납이 안 되어 재방문마다 쌓인다');
-    }
-    if (maxPipe > 0 && maxGeo <= 0 && maxTex <= 0) {
-      // 이 조합은 "지오·텍스처는 그대로인데 파이프라인만 늘었다" — 재질 **구조**가
-      // 바뀌는 경로가 생겼다는 뜻이다. WebGL 에서도 잡히면 실기기(WebGPU)에서는 더 크다.
-      log('\n  ⚠ 경고 — geometry·texture 는 상수인데 pipeline 이 늘었다.');
-      log('    재질 구조 신호(맵 유무·transparent·조명 수)가 런타임에 바뀌는 경로가 있다.');
-      log('    world1 을 무너뜨린 것이 정확히 이 축이다. FAIL 은 아니지만 반드시 본다.');
-    }
+    // 진단문도 `invariant-judge.mjs` 소관이다 — 판정식과 같은 축을 읽어야 하는데 두 파일에
+    // 흩어지면 한쪽만 고쳐도 아무도 모른다(그 형태가 실제로 이 회차에 한 번 났다).
+    for (const line of stepReport({
+      judgement: judged, maxGeo, maxTex, maxPipe, maxDraw, judgeDraw, cov, pass,
+    })) log(line);
 
     log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
     await context.close();
