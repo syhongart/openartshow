@@ -42,6 +42,8 @@ export interface GrassFieldOpts {
   readonly density: number;
   /** 높이 배수 노브(`?gh`) */
   readonly heightMul: number;
+  /** 폭 배수 노브(`?gw`) — 감독 판정 *"뾰족가시같아"* 로 열었다 */
+  readonly widthMul: number;
   readonly cell: number;
   /** 지금 플레이어가 선 자리 */
   readonly playerAt: () => { x: number; z: number };
@@ -137,7 +139,7 @@ export class GrassField {
    * 지우면 개수가 변한다.
    */
   private place(i: number, cx: number, cz: number): void {
-    const { radius, cell, heightMul, matrix, mesh } = this.o;
+    const { radius, cell, heightMul, widthMul, matrix, mesh } = this.o;
     const span = radius * 2;
     const b = bladeBase(i, radius);
     const wx = wrapTo(b.bx, cx, span);
@@ -148,7 +150,7 @@ export class GrassField {
     const ps = fade > 0 ? plantScale(wx, wz, cell) : 0;
     const ok = ps > 0;
 
-    const sw = ok ? b.sw * BLADE_W : 0;
+    const sw = ok ? b.sw * BLADE_W * widthMul : 0;
     const sy = ok ? b.sh * BLADE_H * heightMul * fade * ps : 0;
     const c = Math.cos(b.rot);
     const s = Math.sin(b.rot);
