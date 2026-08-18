@@ -186,6 +186,17 @@ export const LIVE_PAGES = [
   // vite 번들 전용(`three/webgpu`·`three/addons/*` import)이라 baseline 모드에서는
   // raw 직서빙으로 부팅되지 않는다 — 그래서 vite 모드에서만 검사한다.
   { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // ── world2 스타일라이즈드 — **여기서 도는 것은 WebGL 폴백 경로다** ──────────────
+  //
+  // 감독 지시 2026-08-18(모바일 게임 광고 화면 참조)로 생긴 페이지. `?styl=1` 이 기본이라
+  // 잔디 필드가 실제로 부팅되고 랩 갱신이 돌아간다 — 배치 판정(도로·광장·물 회피)과
+  // 인스턴스 버퍼 생성이 실제 브라우저에서 검사되는 유일한 자리다.
+  //
+  // ⚠ **바람과 스타일라이즈드 물은 여기서 안 돈다.** 헤드리스는 swiftshader = WebGL 이고
+  // 그 경로는 노드 재질(TSL)을 아예 안 탄다(`decide/grass.ts` 의 `pickGrassWind`).
+  // 그러니 이 항목이 초록인 것은 «룩이 맞다» 가 아니라 «폴백 경로가 안 죽는다» 이다 —
+  // 룩 판정은 감독 실기기(WebGPU)가 유일한 축이다.
+  { name: 'app/world2-stylized', url: '/app/world2-stylized.html', webgl: true, viteOnly: true },
   // ── world2 편집 모드 — **게이트가 처음으로 `?edit=1` 을 본다** (팀장 판정 2026-08-13) ──
   //
   // 왜 생겼나: W4 의 블로커 B1(마을 파츠를 옮기면 그림자가 안 따라감)이 게이트 6종·테스트
