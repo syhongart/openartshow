@@ -273,6 +273,43 @@ describe('편집 좌표 산술', () => {
   });
 });
 
+describe('W8-9 — 액자가 스트리밍에 물려 있다 (배선 축)', () => {
+  // ⚠ **정적 텍스트 검사다.** `features/overlay.ts` 는 three 를 실제로 물고 도는 파일이라
+  // 노드에서 배선을 실행해 볼 수 없다. 약한 축인 것을 알고 쓴다 — 그러나 **0 보다는
+  // 낫다**: 이 배선이 통째로 빠지면 액자가 영영 안 사라지고, 그 증상은 감독 화면에서만
+  // 드러난다(이번 회차가 정확히 그렇게 신고됐다).
+  //
+  // 실행으로 보는 축은 `tests/world2-artwork-scene.test.ts` 의 W8-9 블록이다 —
+  // `update()` 자체는 거기서 스텁 씬으로 **실제로 돌린다**(뮤테이션 실측 표도 거기 있다).
+
+  it('★ overlay 기능이 per-frame system 을 내고 그 안에서 artScene 을 갱신한다', () => {
+    const src = read('frontend/js/world2/features/overlay.ts');
+    expect(src, '★ system 이 없으면 커널 update 를 아예 안 받는다').toContain('system: {');
+    expect(src.replace(/\s+/g, ' '), '★ 액자 갱신 배선이 사라졌다')
+      .toContain('artScene?.update(env.parcelLoaded)');
+  });
+
+  it('★ 조립부가 parcelLoaded 를 스트리밍에 물린다 — 거리를 다시 계산하지 않는다', () => {
+    const src = read('frontend/js/world2/main.ts').replace(/\s+/g, ' ');
+    expect(src, '★ 계약 통로가 안 채워졌다 — 언제나 false 가 되어 액자가 영영 안 보인다')
+      .toContain('parcelLoaded: (px, pz) => streaming?.isLoaded(px, pz)');
+  });
+
+  it('★ 액자 집행부가 밴드 상수를 직접 읽지 않는다 — 읽으면 거리식이 두 곳에 산다', () => {
+    // ⚠ **`decide/art-light.ts` 는 대상이 아니다.** 그 파일은 `tierReach`/`DEFAULT_BANDS`
+    // 를 이미 읽는데, 용도가 **라이트 풀 크기 유도**(「동시에 보이는 방의 수」)이지
+    // 가시성이 아니다. 그것까지 막으면 이 검사가 거짓 주장이 된다 — 첫 판본이 실제로
+    // 그렇게 적혀 있었고 즉시 빨간불이 났다.
+    for (const rel of [
+      'frontend/js/world2/systems/artwork-scene.ts',
+      'frontend/js/world2/systems/artwork-types.ts',
+    ]) {
+      expect(read(rel), `★ ${rel} 이 밴드를 직접 읽는다`).not.toContain('DEFAULT_BANDS');
+      expect(read(rel), `★ ${rel} 이 거리를 직접 잰다`).not.toContain('Math.hypot');
+    }
+  });
+});
+
 describe('기능 등록', () => {
   it('features/index.ts 가 overlay 를 켠다', () => {
     const src = read('frontend/js/world2/features/index.ts');

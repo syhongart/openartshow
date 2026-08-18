@@ -57,7 +57,7 @@ import {
   type ArtThreeNS, type ArtNode,
 } from '../frontend/js/world2/systems/artwork-scene.js';
 import {
-  artLightPoolSize, ART_LIGHT_PER_PARCEL, ART_LIGHT_PER_PARCEL_SOFT,
+  artLightPoolSize, ART_LIGHT_PER_PARCEL, ART_LIGHT_PER_PARCEL_SOFT, artParcelXZ, assignArtLights,
 } from '../frontend/js/world2/decide/art-light.js';
 import type { ArtworkItem } from '../frontend/js/world2/decide/artwork.js';
 
@@ -87,6 +87,9 @@ function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; scene
       position: { set() { } },
       rotation: { y: 0 },
       children: kids,
+      // W8-9 — 액자 가시성 축. 스텁이 이 필드를 안 가지면 `update()` 의 대입이
+      // 아무 데도 안 남아 검사가 **구조적으로 0** 이 된다.
+      visible: true,
       add(o: ArtNode) { kids.push(o); },
       remove(o: ArtNode) { const i = kids.indexOf(o); if (i >= 0) kids.splice(i, 1); },
     };
@@ -119,10 +122,24 @@ function makeThree(): { THREE: ArtThreeNS; scene: ArtNode; counts: Counts; scene
       }
       dispose() { counts.matDisposed++; }
     },
+    // ⚠ **`visible` 을 접근자로 둔다**(W8-9). 그전에는 스텁이 이 필드를 아예 안 만들어
+    // «`undefined` 인가» 로 「안 만졌다」를 판정했는데, 액자 가시성 축이 열리면서
+    // `ArtNode` 가 `visible` 을 **필수**로 갖게 됐다 — 기본값이 생기면 그 판정 수단이
+    // 통째로 무효가 된다(값이 있는 것과 대입한 것을 구별 못 한다).
+    // 그래서 **대입 횟수**를 센다. 이쪽이 원래 재려던 것에 더 가깝다.
     SpotLight: class {
       intensity = 0; angle = 0; penumbra = 0; distance = 0; castShadow = false;
       target = node();
-      constructor(_c?: number, i?: number) { counts.light++; this.intensity = i ?? 0; Object.assign(this, node()); }
+      visSets = 0;
+      private vis = true;
+      get visible(): boolean { return this.vis; }
+      set visible(v: boolean) { this.vis = v; this.visSets++; }
+      constructor(_c?: number, i?: number) {
+        counts.light++; this.intensity = i ?? 0; Object.assign(this, node());
+        // `Object.assign` 이 `node()` 의 `visible: true` 를 setter 로 흘려보낸다 —
+        // 그것은 스텁 조립이지 제품 코드의 대입이 아니므로 여기서 0 으로 되돌린다.
+        this.visSets = 0;
+      }
     },
   } as unknown as ArtThreeNS;
   const scene = node();
@@ -200,11 +217,17 @@ describe('★ 조건 1 — 라이트 개수는 세션 중 절대 안 변한다',
     expect(await mk(4)).toBe(await mk(40));
   });
 
-  it('★ `visible` 을 안 건드린다 — 렌더 목록에서 빼면 셰이더 캐시가 흔들린다', () => {
+  it('★ `visible` 을 안 건드린다 — 렌더 목록에서 빼면 셰이더 캐시가 흔들린다', async () => {
     const { THREE, scene } = makeThree();
-    createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    // 부팅만이 아니라 **걸고 재우고 깨우는 전 구간**을 돈다 — W8-9 로 라이트를 만지는
+    // 자리가 하나 늘었고(`update`), 부팅만 보면 그 자리가 축 밖에 남는다.
+    await s.place([art({ x: 0, z: 0 }), art({ x: 2 * CELL, z: 0 })]);
+    s.update(() => false);
+    s.update(() => true);
     for (const L of lightsOf(scene)) {
-      expect((L as { visible?: unknown }).visible, '★ visible 을 만졌다').toBeUndefined();
+      expect((L as unknown as { visSets: number }).visSets, '★ 라이트의 visible 을 대입했다')
+        .toBe(0);
     }
   });
 });
@@ -812,5 +835,142 @@ describe('★ 텍스처는 재질을 만들기 **전에** 받는다 (브라우�
     const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
     await s.place([art()]);
     expect(seen.some((o) => 'map' in o), '★ 빈 map 키가 들어갔다').toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W8-9 — 건물과 생사를 맞춘다
+//
+// 감독 지시 2026-08-18: *"멀리떨어졌을때 건물이 사라질때 같이 사라지고 나왔으면해"*.
+//
+// ⚠ **이 축은 그전까지 검사가 0개였다.** 위 조건 1 의 «`visible` 을 안 건드린다» 는
+// `lightsOf()` 를 쓰는데 그 헬퍼가 `castShadow` 가 boolean 인 노드만 고른다 — 즉
+// **라이트만** 본다. 액자 그룹의 `visible` 은 어느 단언도 안 읽고 있었다.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('W8-9 — 작품이 건물과 함께 사라진다', () => {
+  /** 액자 그룹만 골라낸다. 라이트·타깃은 `castShadow`/`intensity` 로 구별된다 */
+  function framesOf(scene: ArtNode): ArtNode[] {
+    const root = scene.children?.[0];
+    return (root?.children ?? []).filter(
+      (n) => typeof (n as { castShadow?: boolean }).castShadow !== 'boolean'
+        && (n.children?.length ?? 0) > 0,
+    );
+  }
+
+  /** 두 작품을 **서로 다른 파셀**에 놓는다 — 파셀 (0,0) 과 (2,0) */
+  const twoParcels = (): ArtworkItem[] => [art({ x: 0, z: 0 }), art({ x: 2 * CELL, z: 0 })];
+
+  it('★ 파셀 판정이 조명 배정과 **같은 함수**다 — 갈리면 불만 켜진 유령 액자가 생긴다', () => {
+    // 같은 파셀 두 장 + 다른 파셀 한 장. `assignArtLights` 는 파셀당 1개까지 켠다.
+    const arts = [art({ x: 0, z: 0 }), art({ x: 4, z: 4 }), art({ x: 2 * CELL, z: 0 })];
+    const keys = arts.map((a) => {
+      const p = artParcelXZ(a, CELL, CELL);
+      return `${p.px},${p.pz}`;
+    });
+    expect(keys, '★ 파셀 환산이 어긋났다').toEqual(['0,0', '0,0', '2,0']);
+    // 교차 확인 — 같은 파셀로 본 둘 중 하나만 켜진다(cap 1)
+    const { lit } = assignArtLights(arts, 1, CELL, CELL);
+    expect(lit, '★ 두 판정이 다른 파셀을 보고 있다').toEqual([true, false, true]);
+  });
+
+  it('★ 파셀 환산은 **중심 기준 반올림**이다 — 경계와 음수', () => {
+    expect(artParcelXZ({ x: 0, z: 0 }, CELL, CELL)).toEqual({ px: 0, pz: 0 });
+    expect(artParcelXZ({ x: CELL / 2, z: 0 }, CELL, CELL)).toEqual({ px: 1, pz: 0 });
+    expect(artParcelXZ({ x: CELL / 2 - 0.01, z: 0 }, CELL, CELL)).toEqual({ px: 0, pz: 0 });
+    expect(artParcelXZ({ x: -CELL, z: -2 * CELL }, CELL, CELL)).toEqual({ px: -1, pz: -2 });
+    // 라이브 좌표(건물 남쪽 벽) — 파셀 (1,2) 여야 한다
+    expect(artParcelXZ({ x: 20.71, z: 50.13 }, CELL, CELL)).toEqual({ px: 1, pz: 2 });
+  });
+
+  it('★ 언로드된 파셀의 액자만 숨는다 — 로드된 것은 그대로 보인다', async () => {
+    const { THREE, scene } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place(twoParcels());
+    const fr = framesOf(scene);
+    expect(fr.length, '★ 액자 두 개를 못 찾았다 — 헬퍼가 낡았다').toBe(2);
+    expect(fr.map((f) => f.visible), '★ 걸린 직후에는 보여야 한다').toEqual([true, true]);
+
+    // 파셀 (0,0) 만 로드된 상태
+    s.update((px, pz) => px === 0 && pz === 0);
+    expect(fr.map((f) => f.visible), '★ 언로드된 파셀의 액자가 안 숨었다').toEqual([true, false]);
+  });
+
+  it('★ 숨은 액자의 조명이 꺼진다 — 안 끄면 허공에 빛 동그라미가 남는다', async () => {
+    const { THREE, scene } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place(twoParcels());
+    const on = () => lightsOf(scene).filter((L) => L.intensity > 0).length;
+    expect(on(), '★ 두 파셀이니 둘 다 켜져 있어야 한다').toBe(2);
+
+    s.update((px) => px === 0);
+    expect(on(), '★ 숨겼는데 조명이 남았다').toBe(1);
+
+    s.update(() => true);
+    expect(on(), '★ 되돌아왔는데 조명이 안 켜졌다').toBe(2);
+  });
+
+  // ⚠ 「조명에 `visible` 을 안 쓴다」는 위 **조건 1** 의 검사가 본다(대입 횟수 0).
+  // 여기 같은 단언을 또 쓰지 않는다 — 두 곳에 있으면 한쪽만 고쳐도 아무도 모른다.
+
+  it('★ `frames` 는 안 변하고 `shown` 만 변한다 — `frames` 는 [7] 의 예산 분모다', async () => {
+    const { THREE, scene } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place(twoParcels());
+    expect(s.stats()).toMatchObject({ frames: 2, shown: 2 });
+
+    s.update((px) => px === 0);
+    expect(s.stats().frames, '★ frames 가 가시성을 따라갔다 — [7] 예산이 0 이 된다').toBe(2);
+    expect(s.stats().shown).toBe(1);
+
+    s.update(() => false);
+    expect(s.stats()).toMatchObject({ frames: 2, shown: 0 });
+
+    s.update(() => true);
+    expect(s.stats(), '★ 왕복이 안 닫힌다 — 카운터가 새고 있다').toMatchObject({ frames: 2, shown: 2 });
+  });
+
+  it('🔴 `update` 는 지오·재질을 **다시 만들지도 지우지도 않는다** — [7] settledOk 의 전부', async () => {
+    const { THREE, scene, counts } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place(twoParcels());
+    const before = { geo: counts.geo, mat: counts.mat, geoD: counts.geoDisposed, matD: counts.matDisposed };
+
+    // 멀어졌다 → 돌아왔다 를 여러 번
+    for (let i = 0; i < 5; i++) { s.update(() => false); s.update(() => true); }
+
+    expect({
+      geo: counts.geo, mat: counts.mat, geoD: counts.geoDisposed, matD: counts.matDisposed,
+    }, '★ `update` 가 `place` 를 탔다 — 재방문마다 info.memory 가 다시 오른다').toEqual(before);
+  });
+
+  it('★ `place` 를 다시 부르면 가시성 상태도 함께 리셋된다', async () => {
+    const { THREE, scene } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place(twoParcels());
+    s.update(() => false);
+    expect(s.stats().shown).toBe(0);
+
+    await s.place(twoParcels());
+    expect(s.stats().shown, '★ 새로 건 액자가 숨은 채로 시작했다').toBe(2);
+    expect(framesOf(scene).map((f) => f.visible)).toEqual([true, true]);
+  });
+
+  it('★ 작품 0개에서도 `update` 가 던지지 않는다', async () => {
+    const { THREE, scene } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place([]);
+    expect(() => s.update(() => false)).not.toThrow();
+    expect(s.stats().shown).toBe(0);
+  });
+
+  it('★ `dispose` 뒤 `update` 는 아무 일도 안 한다', async () => {
+    const { THREE, scene } = makeThree();
+    const s = createArtworkScene({ THREE, scene, cellX: CELL, cellZ: CELL });
+    await s.place(twoParcels());
+    const fr = framesOf(scene);
+    s.dispose();
+    s.update(() => false);
+    expect(fr.map((f) => f.visible), '★ 떠난 씬을 계속 만진다').toEqual([true, true]);
   });
 });

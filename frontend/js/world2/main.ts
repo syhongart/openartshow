@@ -815,6 +815,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
               slotPool?.retarget?.(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
             },
             sun: sun!, hemi: hemi!, cell: CELL_X,
+            // ⚠ **값이 아니라 클로저다** — 위 `retargetSlot` 과 **같은 이유**다: 이
+            // 조립(`pools` 단계)이 `streaming` 을 만드는 `stream` 단계보다 먼저 돈다.
+            // 아직 없을 때는 `false` — 「아직 아무 파셀도 안 올라왔다」가 사실이다.
+            parcelLoaded: (px, pz) => streaming?.isLoaded(px, pz) ?? false,
             // 프러스텀과 **같은 유도**에서 나온 값이라야 짝이 맞는다. 하늘이 태양을
             // 이보다 가깝게 놓으면 타워 꼭대기가 그림자 카메라 뒤로 밀린다.
             shadowDist: SHADOW.dist,
