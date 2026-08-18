@@ -286,7 +286,7 @@ describe('W8-9 — 액자가 스트리밍에 물려 있다 (배선 축)', () => 
     const src = read('frontend/js/world2/features/overlay.ts');
     expect(src, '★ system 이 없으면 커널 update 를 아예 안 받는다').toContain('system: {');
     expect(src.replace(/\s+/g, ' '), '★ 액자 갱신 배선이 사라졌다')
-      .toContain('artScene?.update(env.parcelLoaded)');
+      .toContain('artScene?.update(env.parcelLoaded, ctx.dt)');
   });
 
   it('★ 조립부가 parcelLoaded 를 스트리밍에 물린다 — 거리를 다시 계산하지 않는다', () => {
