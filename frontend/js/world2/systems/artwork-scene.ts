@@ -28,7 +28,7 @@ import {
   frameSize, type ArtworkItem,
 } from '../decide/artwork.js';
 import {
-  artLightPoolSize, assignArtLights, spotFor, ART_LIGHT_PER_PARCEL,
+  artLightPoolSize, assignArtLights, spotFor, ART_LIGHT_PER_PARCEL, artParcelCount,
 } from '../decide/art-light.js';
 import { artMatSpec, readArtEnv } from '../decide/art-material.js';
 
@@ -90,6 +90,8 @@ export interface ArtworkSceneDeps {
   readonly cellZ: number;
   /** 파셀당 켜는 조명 수. soft 완화가 이 값을 낮춘다(풀 크기는 안 바뀐다) */
   readonly perParcel?: number;
+  /** 부팅 시점 작품 목록 — **풀 크기 유도에만.** 생략 = 격자 상한(편집). 근거: `art-light.ts` */
+  readonly arts?: readonly { readonly x: number; readonly z: number }[];
   /**
    * 작품 이미지를 텍스처로. **주입받는다** — 로더를 여기서 만들면 노드가 못 돌린다.
    * 실패하면 `null` 을 내고 액자는 그대로 선다(빈 액자가 «로드 실패» 의 표시다).
@@ -150,21 +152,17 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   scene.add(root);
 
   // ── 라이트 풀 — 여기서 전부 만든다(조건 1) ──────────────────────────────
-  // ⚠ `place` 안이나 루프 안에서 만들지 마라. 풀 크기는 **작품 수와 무관**하게
-  // `artLightPoolSize()` 가 정한다(조건 2).
+  // ⚠ `place` 안이나 루프 안에서 만들지 마라. 풀 크기 유도는 `art-light.ts` 의
+  // `artLightPoolSize` 한 곳이다. 🔴 이 줄은 오래 *"풀 크기는 **작품 수와 무관**"* 이라고
+  // 적고 있었고 **조건 2 개정(2026-08-18)으로 부정확해졌다** — 이제 「작품이 걸린 파셀
+  // 수」를 상한 안에서 반영한다. **총수와는 여전히 무관하다**(100장이 한 파셀이면 1파셀분).
   //
-  // ⚠⚠ **`perParcel` 을 여기 넘기지 마라 — 그것이 조건 3 을 깨는 정확한 형태다.**
-  // 첫 판본이 `artLightPoolSize(perParcel)` 였고, `art-light.ts:50-53` 이 *"풀 크기는 이
-  // 값으로 줄이지 않는다"* 라고 적어 둔 바로 그 줄과 **정면으로 모순**이었다(검수관 블로커
-  // B1). soft(1)를 넘기면 풀이 28 → **7** 로 줄어 세션마다 개수가 달라진다.
-  //
-  // 그때 이것을 «잰다» 던 단언은 `artLightPoolSize(4) === artLightPoolSize(4)` 라
-  // **동어반복**이었고, 검수관이 코드를 조건 문언대로 고치는 뮤테이션을 넣자 **0 failed**
-  // 였다(대조로 조건 1·2·4·5 는 각각 4·1·6·1 failed). 다섯 중 하나만 장식이었고
-  // 나는 다섯 다 있다고 보고했다 — 축을 `tests/world2-artwork-scene.test.ts` 의
-  // 「★ GS-C」로 옮겨 **두 세션의 라이트 수를 한 테스트에서 비교**하게 했다.
+  // ⚠⚠ **`perParcel` 을 넘기지 마라 — 조건 3 을 깨는 정확한 형태다**(검수관 블로커 B1).
+  // 그 사고의 전문·뮤테이션 실측은 `art-light.ts` 의 soft 상수 주석 한 곳이다.
   const pool: ArtLight[] = [];
-  const poolSize = artLightPoolSize(ART_LIGHT_PER_PARCEL);
+  // ⚠ `perParcel` 은 안 넘긴다(조건 3 — 넘기면 세션마다 풀이 달라진다, 검수관 B1).
+  const poolSize = artLightPoolSize(ART_LIGHT_PER_PARCEL, undefined,
+    deps.arts == null ? undefined : artParcelCount(deps.arts, cellX, cellZ));
   for (let i = 0; i < poolSize; i++) {
     const L = new THREE.SpotLight(LIGHT_COLOR, 0);
     L.castShadow = false;      // ⚠ 조건 5 — 파일 헤더 참조
@@ -516,6 +514,8 @@ export function mountArtworks(
   layout: { cellX: number; cellZ: number },
   resolve: (src: string) => string,
   perParcel?: number,
+  /** 부팅 시점 작품 목록 — 풀 크기 유도용. 생략하면 격자 상한을 쓴다(편집 세션) */
+  arts?: readonly { readonly x: number; readonly z: number }[],
 ): ArtworkScene {
   return createArtworkScene({
     THREE: THREE as ArtThreeNS,
@@ -523,6 +523,7 @@ export function mountArtworks(
     cellX: layout.cellX,
     cellZ: layout.cellZ,
     perParcel,
+    arts,
     loadTexture: textureLoaderFor(THREE, resolve),
     // 캐시 키를 **실제 URL**로 잡는다 — 같은 `src` 에 새 `blob:` 이 붙으면(같은 파일명을
     // 다시 드롭) 키가 달라져 자동으로 다시 로드된다. `src` 를 키로 쓰면 낡은 그림이 남는다.

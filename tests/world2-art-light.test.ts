@@ -15,7 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   artLightPoolSize, assignArtLights, spotFor,
-  ART_LIGHT_PER_PARCEL, ART_LIGHT_PER_PARCEL_SOFT,
+  ART_LIGHT_PER_PARCEL, ART_LIGHT_PER_PARCEL_SOFT, artParcelCount,
   LIGHT_DIST, LIGHT_LIFT, CONE_MARGIN,
 } from '../frontend/js/world2/decide/art-light.js';
 import { maxLatticePoints, tierReach, DEFAULT_BANDS } from '../frontend/js/world2/decide/lod.js';
@@ -99,11 +99,18 @@ describe('★ 조건 3 — soft 완화는 **켜는 수**만 줄인다', () => {
   // 수를 **한 테스트에서** 비교하므로 동어반복이 성립하지 않는다.
   it('★ soft 는 켜는 수를 실제로 줄인다 — 안 줄면 완화 축이 아니다', () => {
     const arts = Array.from({ length: 6 }, () => art());
-    const soft = assignArtLights(arts, ART_LIGHT_PER_PARCEL_SOFT, CELL, CELL);
-    const full = assignArtLights(arts, ART_LIGHT_PER_PARCEL, CELL, CELL);
-    expect(soft.lit.filter(Boolean)).toHaveLength(ART_LIGHT_PER_PARCEL_SOFT);
-    expect(full.lit.filter(Boolean)).toHaveLength(ART_LIGHT_PER_PARCEL);
-    expect(soft.lit.filter(Boolean).length, '★ soft 가 안 줄인다')
+    // ⚠ **상수가 아니라 임의 값을 쓴다** (2026-08-18). 아래 「배선 0」 문단 참조 —
+    // 기본값이 4 → 1 로 내려가 soft 와 같아지자 이 단언이 깨졌다. 이 축이 지키는 것은
+    // «cap 이 켜는 수를 줄이는가» 이고 그것은 상수와 무관하다.
+    const SOFT_LIKE = 1;
+    const FULL_LIKE = 4;
+    const soft = assignArtLights(arts, SOFT_LIKE, CELL, CELL);
+    const full = assignArtLights(arts, FULL_LIKE, CELL, CELL);
+    // 켜는 수가 **cap 그대로**인지 먼저 본다 — 이것이 없으면 아래 비교가 「둘 다
+    // 아무것도 안 한다」로도 통과한다(작품 6개는 같은 파셀이라 cap 이 곧 상한이다).
+    expect(soft.lit.filter(Boolean)).toHaveLength(SOFT_LIKE);
+    expect(full.lit.filter(Boolean)).toHaveLength(FULL_LIKE);
+    expect(soft.lit.filter(Boolean).length, '★ 더 작은 cap 이 켜는 수를 안 줄인다')
       .toBeLessThan(full.lit.filter(Boolean).length);
   });
 
@@ -111,15 +118,81 @@ describe('★ 조건 3 — soft 완화는 **켜는 수**만 줄인다', () => {
     // 이 단언이 이 파일에 있는 이유는 «금지의 근거» 를 눈에 보이게 두기 위해서다.
     // 줄어들지 않는다면 GS-C 가 지키는 규칙 자체가 무의미해지고, 그때는 GS-C 도
     // 아무것도 안 잡는 검사가 된다(두 값이 같으면 비교가 통과하니까).
-    expect(artLightPoolSize(ART_LIGHT_PER_PARCEL_SOFT), '★ soft 를 넘겨도 풀이 그대로다 — GS-C 가 무의미해진다')
-      .toBeLessThan(artLightPoolSize(ART_LIGHT_PER_PARCEL));
+    // ⚠ 여기도 상수가 아니라 임의 값이다 — 근거는 위와 같다.
+    expect(artLightPoolSize(1), '★ 더 작은 cap 을 넘겨도 풀이 그대로다 — GS-C 가 무의미해진다')
+      .toBeLessThan(artLightPoolSize(4));
     // 기본 호출은 `ART_LIGHT_PER_PARCEL` 기준이다(기본값이 soft 로 바뀌면 깨진다).
     expect(artLightPoolSize()).toBe(artLightPoolSize(ART_LIGHT_PER_PARCEL));
   });
 
-  it('soft 가 기본보다 작다 — 같으면 완화 축이 아니다', () => {
-    expect(ART_LIGHT_PER_PARCEL_SOFT).toBeLessThan(ART_LIGHT_PER_PARCEL);
+  // ── 🔴 실물 상수 — 「완화」가 지금 아무것도 안 한다 (2026-08-18) ─────────────
+  //
+  // 이 단언은 `toBeLessThan` 이었다. `ART_LIGHT_PER_PARCEL` 이 4 → 1 로 내려가
+  // (CI 스모크가 W8-8 배포를 막아 팀장이 판정) **soft 와 같아지면서 깨졌다.**
+  //
+  // ⚠⚠ **그러다 더 큰 것이 드러났다 — `ART_LIGHT_PER_PARCEL_SOFT` 는 제품 코드에서
+  // 아무도 안 읽는다.** 실측: `grep -rn ART_LIGHT_PER_PARCEL_SOFT frontend/ scripts/`
+  // 의 결과가 **선언 한 줄과 테스트뿐**이다. 즉 「약한 기기 완화」는 값만 있고 **배선이
+  // 0** 이며, 위 두 테스트가 지키던 것은 **아무 데도 안 쓰이는 상수의 성질**이었다.
+  // 이 저장소가 *"승격 없이 남으면 그때부터 장식이다"* 라고 부르던 형태다.
+  //
+  // 그래서 단언을 `toBeLessThanOrEqual` 로 **느슨하게 했다** — 그것이 지금 참이기
+  // 때문이다. **잃은 검출력을 숨기지 않고 적는다**: 「완화가 실제로 줄인다」는 이제
+  // 실물 상수로는 안 잰다(위 두 테스트가 임의 값 1·4 로 축 자체는 지킨다).
+  // 뒤집히는 것(soft > 기본)은 여전히 FAIL 이다 — 「약한 기기에서 더 밝다」는 결함이다.
+  //
+  // 배선하거나 지우는 판단은 이 회차 스코프 밖이다 → 태스크 #109.
+  it('soft 는 기본을 넘지 않는다 — 같으면 완화 축은 검출력 0 (지금이 그 상태다)', () => {
+    expect(ART_LIGHT_PER_PARCEL_SOFT, '★ soft 가 기본보다 크다 — 약한 기기가 더 밝아진다')
+      .toBeLessThanOrEqual(ART_LIGHT_PER_PARCEL);
     expect(ART_LIGHT_PER_PARCEL_SOFT).toBeGreaterThan(0);
+  });
+});
+
+// ── 🔴 조건 2 개정 (2026-08-18, 팀장 판정) ─────────────────────────────────
+// 풀 = `perParcel × min(작품이 걸린 파셀 수, 격자 상한)`. 개정 문언·근거는
+// `art-light.ts` 의 `artLightPoolSize` 한 곳이다 — 여기에 다시 적지 않는다.
+//
+// **왜 이 축이 필요했나**: 작품 1·2·3장이 전부 풀 7 로 같아 CI 스모크가 세 번 연속
+// 떨어졌다. 풀 유도식에 작품이 안 들어가서, **작품 수를 줄여도 아무 효과가 없었다.**
+describe('★ 조건 2 개정 — 풀은 「작품이 걸린 파셀 수」를 상한 안에서 반영한다', () => {
+  it('★ 작품이 적으면 풀도 작다 — 이것이 개정의 전부다', () => {
+    const cap = artLightPoolSize(1);              // 상한(격자 유도값)
+    expect(artLightPoolSize(1, undefined, 1), '★ 1파셀인데 풀이 안 줄었다').toBeLessThan(cap);
+    expect(artLightPoolSize(1, undefined, 2)).toBeLessThan(cap);
+    expect(artLightPoolSize(1, undefined, 1)).toBeLessThan(artLightPoolSize(1, undefined, 2));
+  });
+
+  it('★ 상한을 넘지 않는다 — 시야 밖 수요는 안 잡는다(원 조건 2의 목적)', () => {
+    const cap = artLightPoolSize(1);
+    for (const n of [7, 8, 50, 999]) {
+      expect(artLightPoolSize(1, undefined, n), `★ ${n}파셀에서 상한을 넘었다`).toBe(cap);
+    }
+  });
+
+  it('★ 생략하면 상한 그대로 — 「생략 = 기존 동작」 (편집 세션이 이 경로다)', () => {
+    expect(artLightPoolSize(1, undefined, undefined)).toBe(artLightPoolSize(1));
+  });
+
+  it('★ `perParcel` 은 여전히 곱해진다 — 개정이 그 축을 죽이지 않았다', () => {
+    expect(artLightPoolSize(2, undefined, 3)).toBe(artLightPoolSize(1, undefined, 3) * 2);
+  });
+
+  it('★ artParcelCount 는 **파셀**을 센다 — 작품 수가 아니다', () => {
+    const same = [art({ x: 0, z: 0 }), art({ x: 1, z: 1 }), art({ x: 2, z: 2 })];
+    expect(artParcelCount(same, CELL, CELL), '★ 같은 파셀 3장을 3으로 셌다').toBe(1);
+    const spread = [art({ x: 0, z: 0 }), art({ x: CELL * 3, z: 0 }), art({ x: CELL * 6, z: 0 })];
+    expect(artParcelCount(spread, CELL, CELL)).toBe(3);
+    expect(artParcelCount([], CELL, CELL)).toBe(0);
+  });
+
+  it('🔴 작품 100장이 한 파셀이면 풀은 `perParcel × 1` — 감독 카드와 충돌하지 않는다', () => {
+    // 「작품 수는 요금제가 정한다」와 이 개정이 충돌하지 않는다는 것이 채택 근거의
+    // 하나였다. **총수가 아니라 파셀 수**를 쓰기 때문이다 — 그것을 여기서 못 박는다.
+    const many = Array.from({ length: 100 }, (_, i) => art({ x: i * 0.01, z: 0 }));
+    expect(artParcelCount(many, CELL, CELL)).toBe(1);
+    expect(artLightPoolSize(1, undefined, artParcelCount(many, CELL, CELL)))
+      .toBe(artLightPoolSize(1, undefined, 1));
   });
 });
 
