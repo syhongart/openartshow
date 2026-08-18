@@ -67,6 +67,12 @@ export const ART_TEX_EACH = 1;
  * 그래서 M1 하나로는 두 축이 동시에 깨져 **어느 축이 일했는지 안 갈린다** — 한쪽이
  * 죽어 있어도 같은 화면이 나온다. 양방향으로 갈라서야 둘 다 살아 있음이 실측된다.
  *
+ * ⚠⚠⚠ **이 네 회차가 못 시험한 형태가 있었다** — 검수관이 찾았다(조건부 승인, 같은 날).
+ * M1~M3 는 전부 「leg 마다 계속 늚」이거나 「전 구간 균일 증가」라, **전진→복귀 경계에
+ * 국소적으로 걸친** 증식을 통과시켰다. 그 구멍은 아래 `backBase` 문단에서 막았고
+ * `tests/invariant-judge.test.ts` 가 회귀를 본다. **실물 실측이 있어도 안 재본 형태는
+ * 안 재본 것이다** — 표가 거짓은 아니었지만 표가 덮는 범위를 표가 말해주지 않는다.
+ *
  * ⚠⚠ **여유가 0 이라는 것은 성질이지 사고가 아니다.** 액자 구조가 조금이라도 바뀌면
  * (그림자용 메시 추가 등) 즉시 빨간불이다. 그게 이 게이트가 하라는 일이다 — 예산은
  * 실측에 여유를 얹은 값이 아니라 **구조에서 유도한 값**이라, 어긋나면 구조가 바뀐 것이다.
@@ -80,11 +86,45 @@ export function stepJudge({ base, rows, maxGeo, maxTex }) {
   const geoBudget = artCount * ART_GEO_EACH;
   const texBudget = artCount * ART_TEX_EACH;
 
-  // 복귀 구간 — 라벨로 가른다. 첫 복귀 스냅을 기준으로 그 뒤 증가를 본다.
-  const backRows = rows.filter((r) => r.label.startsWith('복귀') || r.label === '정지');
-  const backBase = backRows[0] ?? null;
+  // 복귀 구간 — 라벨로 가른다.
+  //
+  // 🔴 **기준선은 복귀 첫 스냅이 아니라 그 직전 행이다** (검수관 블로커, 2026-08-18).
+  // 첫 판본은 `backRows[0]` 을 기준선으로 썼고 **그것이 이 개정이 새로 연 구멍이었다.**
+  //
+  // `measure-invariants.mjs` 의 복귀 루프는 `move → waitForTimeout(WALK_MS) → snap('복귀 N')`
+  // 순서다. 즉 **`복귀 1` 스냅은 첫 복귀 leg 이동을 이미 마친 뒤에 찍힌다.** 자기 자신을
+  // 기준선으로 삼으면 「전진 마지막 leg 종료」와 「복귀 1 leg 종료」 사이에 일어난 증가가
+  // 기준선 안으로 흡수되어 **영구히 안 보인다.** 검수관 재현:
+  //
+  //   전진 24  geo 104 (기준선 100 대비 +4 — 예산 6 이내)
+  //   복귀 1   geo 106 (경계에서 +2 샜다)           ← 이것이 backBase 가 됐다
+  //   복귀 24  geo 106
+  //   → backGeo 0 · settledOk true · budgetOk true  ← **두 축 다 통과**
+  //
+  // ⚠ **옛 판정식(`maxGeo <= 0`)이었다면 이 표는 무조건 FAIL 이었다**(maxGeo 6 > 0).
+  // 예산 관용도를 준 것이 이 타이밍의 증식을 **새로** 통과시킨 것이다 — 판정식을 넓히는
+  // 개정의 위험이 정확히 이 형태로 나타났다. 브라우저 뮤테이션 M1~M3 는 전부 「leg 마다
+  // 계속 늚」이라 이 경계-국소 형태를 시험하지 못했다.
+  //
+  // 🔴 **이 수정이 여는 반대쪽 위험 — 거짓 FAIL**: 위 ② 문단의 전제는 *"복귀는 재방문이라
+  // 처음 보는 것이 없다"* 인데, **되돌아갈 때는 반대 방향 시야**라 벽 반대면의 작품이 그때
+  // 처음 그려질 수 있다. 그러면 정당한 계단인데 이 축이 FAIL 을 낸다. 지금 배치에서는
+  // 실측상 복귀 구간 증가가 0 이라(작품 3장이 전부 회전 210° 에 밟혔다) 위험이 0 이지만,
+  // **작품이 늘거나 배치가 바뀌면 열린다.** 검출력을 먼저 확보하는 쪽(fail-closed)을 골랐다
+  // — 거짓 FAIL 은 표를 보면 즉시 드러나지만 안 잡히는 증식은 아무도 모른다.
+  // **재론 조건**: 복귀 구간에서 **정당한 첫 등장**이 실제로 관측되면, 이 축을 「복귀 구간
+  // 증가가 **예산 잔여** 이내」로 완화할지 팀장 판정을 받는다.
+  const backStart = rows.findIndex((r) => r.label.startsWith('복귀') || r.label === '정지');
+  const backRows = backStart < 0 ? [] : rows.slice(backStart);
+  const backBase = backStart > 0 ? rows[backStart - 1] : (backRows[0] ?? null);
   let backGeo = 0;
   let backTex = 0;
+  // ⚠ **한계 (검수관 R1)**: `backBase.geo` 가 `null` 이면 그 축 비교가 **통째로 스킵되고**
+  // `backGeo` 는 0 으로 남는다 — 즉 **못 잰 것이 「증가 0」으로 통과한다.** 이 저장소가
+  // 「못 잰 것은 통과가 아니다」라고 적어둔 바로 그 형태다. `base`(부팅 기준선)는 `!base`
+  // 면 예외를 던지지만(`measure-invariants.mjs`) 여기 `backBase` 에는 그 보호가 없다.
+  // 지금은 `__world2.stats()` 가 두 값을 항상 내므로 실현 위험이 0 이라 막지 않았다 —
+  // 훅이 부분 실패할 경로가 생기면 이 자리부터 본다.
   for (const r of backRows) {
     if (backBase?.geo != null && r.geo != null) backGeo = Math.max(backGeo, r.geo - backBase.geo);
     if (backBase?.tex != null && r.tex != null) backTex = Math.max(backTex, r.tex - backBase.tex);

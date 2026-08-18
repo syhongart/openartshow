@@ -21,8 +21,9 @@
 // 실제로 깨지는지 쟀다(`npx vitest run tests/invariant-judge.test.ts`):
 //
 //   심은 것                                          failed
+//   `backBase` 를 옛 기준(`backRows[0]`)으로 되돌림       2   ← 검수관 블로커의 회귀 축
 //   `budgetOk` 를 `true` 로 고정                        4
-//   `settledOk` 를 `true` 로 고정                       5
+//   `settledOk` 를 `true` 로 고정                       7
 //   진단 분기를 옛 기준(`maxGeo > 0`)으로 되돌림          1   ← 이번 회차에 실제로 났던 결함
 //   `ART_GEO_EACH` 2 → 3                               2
 //   **주석 한 줄만 변경(등가 대조군)**                    0   ← 아무 변경이나 잡지는 않는다
@@ -48,6 +49,8 @@ function session(opts: {
   arts?: number | null;
   spinGeo?: number; spinTex?: number;
   outGeo?: number; outTex?: number;
+  /** **전진 마지막 leg 와 복귀 1 leg 사이**에 낀 증가. `복귀 1` 스냅부터 반영된다 */
+  edgeGeo?: number; edgeTex?: number;
   backGeo?: number; backTex?: number;
 }) {
   const a = opts.arts === undefined ? 3 : opts.arts;
@@ -57,19 +60,24 @@ function session(opts: {
   const spinT = opts.spinTex ?? 0;
   const outG = opts.outGeo ?? 0;
   const outT = opts.outTex ?? 0;
+  const edgeG = opts.edgeGeo ?? 0;
+  const edgeT = opts.edgeTex ?? 0;
   const backG = opts.backGeo ?? 0;
   const backT = opts.backTex ?? 0;
+  // ⚠ `복귀 1` 스냅은 **첫 복귀 leg 이동을 이미 마친 뒤**에 찍힌다(하네스의
+  // `move → wait → snap` 순서). 그래서 `edgeG` 는 여기부터 반영된다 — 이 타이밍이
+  // 검수관 블로커가 가리킨 그 자리다.
   const rows = [
     snap('회전 180°', g0 + spinG, t0 + spinT, a),
     snap('회전 360°', g0 + spinG, t0 + spinT, a),
     snap('전진 12', g0 + spinG + outG, t0 + spinT + outT, a),
     snap('전진 24', g0 + spinG + outG, t0 + spinT + outT, a),
-    snap('복귀 1', g0 + spinG + outG, t0 + spinT + outT, a),
-    snap('복귀 24', g0 + spinG + outG + backG, t0 + spinT + outT + backT, a),
-    snap('정지', g0 + spinG + outG + backG, t0 + spinT + outT + backT, a),
+    snap('복귀 1', g0 + spinG + outG + edgeG, t0 + spinT + outT + edgeT, a),
+    snap('복귀 24', g0 + spinG + outG + edgeG + backG, t0 + spinT + outT + edgeT + backT, a),
+    snap('정지', g0 + spinG + outG + edgeG + backG, t0 + spinT + outT + edgeT + backT, a),
   ];
-  const maxGeo = spinG + outG + backG;
-  const maxTex = spinT + outT + backT;
+  const maxGeo = spinG + outG + edgeG + backG;
+  const maxTex = spinT + outT + edgeT + backT;
   return { base: snap('기준선', g0, t0, a), rows, maxGeo, maxTex };
 }
 
@@ -134,6 +142,28 @@ describe('뮤테이션 등가 — 두 축이 각각 살아 있는가', () => {
 
   it('복귀 축은 텍스처에도 걸린다 — 지오만 보는 축이 아니다', () => {
     const j = stepJudge(session({ arts: 5, spinTex: 1, backTex: 1 }));
+    expect(j.budgetOk).toBe(true);
+    expect(j.settledOk).toBe(false);
+  });
+
+  it('🔴 전진→복귀 **경계**에 낀 증식을 잡는다 (검수관 블로커, 2026-08-18)', () => {
+    // 첫 판본은 `backRows[0]`(= `복귀 1` 스냅)을 복귀 구간의 기준선으로 썼다. 그런데
+    // 그 스냅은 **첫 복귀 leg 이동을 이미 마친 뒤**에 찍히므로, 경계에서 샌 증가가
+    // 자기 기준선 안으로 흡수되어 **영구히 안 보였다.**
+    //
+    // ⚠ 이 케이스가 위험한 이유: **옛 판정식(`maxGeo <= 0`)이었다면 무조건 FAIL 이었다.**
+    // 예산 관용도를 준 이번 개정이 이 타이밍의 증식을 **새로** 통과시킨 것이다 —
+    // 판정식을 넓히는 개정의 위험이 정확히 이 형태로 나타났다.
+    //
+    // 브라우저 뮤테이션 M1~M3 는 전부 「leg 마다 계속 늚」이라 이 경계-국소 형태를
+    // 시험하지 못했다. 실물 실측이 있어도 안 재본 형태는 안 재본 것이다.
+    const j = stepJudge(session({ arts: 3, spinGeo: 4, edgeGeo: 2 }));
+    expect(j.budgetOk).toBe(true);        // 총 +6 은 예산(6) 이내라 예산 축은 통과한다
+    expect(j.settledOk).toBe(false);      // 복귀 축이 단독으로 잡아야 한다
+  });
+
+  it('경계 증식은 텍스처에서도 잡힌다', () => {
+    const j = stepJudge(session({ arts: 3, spinTex: 2, edgeTex: 1 }));
     expect(j.budgetOk).toBe(true);
     expect(j.settledOk).toBe(false);
   });
