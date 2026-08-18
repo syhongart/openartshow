@@ -344,6 +344,23 @@ export class StreamingSystem implements System {
    *
    * 첫 소비자는 액자다 — 감독 지시 *"건물이 사라질때 같이 사라지고 나왔으면"*.
    * 액자가 거리를 다시 재지 않는 이유는 `decide/art-light.ts` 의 `artParcelXZ` 헤더에 있다.
+   *
+   * ── 🔴 이 함수는 신설 직후 **아무 검사도 안 받고 있었다** (검수관 실측 2026-08-18) ──
+   * 여기를 **항상 `true`** 로 바꿔도 관련 4개 스위트가 **0 failed** 였다 — 액자 쪽 검사는
+   * `loaded` 콜백을 스텁으로 주입해 **소비 측만** 보고, 배선 검사는 문자열만 본다.
+   * 판정과 집행을 잇는 경계가 비어 있었다(이 저장소가 이름 붙인 「판정/집행 분리의 구멍」).
+   * `tests/world2-streaming-system.test.ts` 의 W8-9 블록이 그 자리를 메웠다:
+   *
+   *   항상 `true` 로                 5 failed
+   *   항상 `false` 로                4 failed
+   *   키 조립 좌표 순서 뒤집기       3 failed
+   *   **등가 대조군 — 주석만**      **0 failed**
+   *
+   * ── ⚠ 액자 반영은 스트리밍보다 **1프레임 늦다** (검수관 P2, 같은 날) ──────────
+   * `kernel.update` 는 `add` 순서대로 돌고(`kernel.ts`), `main.ts` 가 features 를
+   * `kernel.add(streaming)` **앞**에 넣는다. 즉 파셀이 언로드된 그 프레임에 액자는 이미
+   * 지나간 뒤다. 16ms 라 육안 영향이 없다고 판단해 **순서를 안 바꿨다** — features 의
+   * add 순서는 하늘·물·NPC 가 함께 타는 자리라 되돌리기가 싸지 않다. 태스크 #115.
    */
   isLoaded(px: number, pz: number): boolean {
     return this.tiers.has(parcelKey(px, pz));

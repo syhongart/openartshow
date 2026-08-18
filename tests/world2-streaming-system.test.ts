@@ -261,6 +261,75 @@ describe('StreamingSystem — 교체 방향(승격·강등)', () => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// W8-9 — `isLoaded(px,pz)` : 「그 파셀을 지금 들고 있는가」
+//
+// 🔴 **검수관 실측(2026-08-18)이 이 블록을 만들었다.** 신설 직후 `isLoaded` 를
+// **항상 `true`** 로 바꿔도 관련 4개 스위트가 **0 failed** 였다 — 액자 쪽 테스트는
+// `loaded` 콜백을 스텁으로 주입해 **소비 측만** 보고, 배선 테스트는 문자열만 본다.
+// 즉 판정(여기)과 집행(액자)을 잇는 경계가 아무 검사도 안 받고 있었다.
+// 이 저장소가 「판정/집행 분리의 구멍」이라고 이름 붙인 바로 그 형태다.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('StreamingSystem — isLoaded (W8-9)', () => {
+  it('★ 첫 프레임 전에는 아무것도 안 들고 있다', () => {
+    const { sys } = make();
+    expect(sys.isLoaded(0, 0), '★ 로드 전인데 true 다 — 액자가 헛것을 보고 뜬다').toBe(false);
+  });
+
+  it('★ 충전이 끝나면 발밑 파셀을 들고 있다', () => {
+    const { sys } = make();
+    settle(sys);
+    expect(sys.isLoaded(0, 0)).toBe(true);
+  });
+
+  it('🔴 멀어지면 false, 돌아오면 다시 true — 액자의 생사가 이 한 줄에 달려 있다', () => {
+    const { sys, pos } = make();
+    settle(sys);
+    expect(sys.isLoaded(0, 0)).toBe(true);
+
+    pos.x = 32 * 6;              // 6셀 이동 — 겹치는 파셀이 없다
+    settle(sys);
+    expect(sys.isLoaded(0, 0), '★ 언로드됐는데 true 다 — 액자가 공중에 남는다').toBe(false);
+    expect(sys.isLoaded(6, 0), '★ 새로 온 파셀을 못 본다').toBe(true);
+
+    pos.x = 0;
+    settle(sys);
+    expect(sys.isLoaded(0, 0), '★ 돌아왔는데 false 다 — 액자가 영영 안 돌아온다').toBe(true);
+  });
+
+  it('★ `tierMap` 과 **같은 것**을 본다 — 두 조회가 갈리면 아무도 모른다', () => {
+    const { sys, pos } = make();
+    pos.x = 32 * 3;
+    settle(sys);
+    for (const [key, tier] of sys.tierMap) {
+      const [px, pz] = key.split(',').map(Number);
+      expect(sys.isLoaded(px, pz), `★ tierMap 에 ${key}(${tier}) 가 있는데 isLoaded 는 false`)
+        .toBe(true);
+    }
+    // 반대 방향 — 맵에 없는 먼 파셀
+    expect(sys.isLoaded(99, 99)).toBe(false);
+  });
+
+  it('★ 부호를 뒤집으면 다른 파셀이다 — 키 조립이 좌표 순서를 지킨다', () => {
+    const { sys, pos } = make();
+    pos.x = 32 * 4; pos.z = 0;
+    settle(sys);
+    // (4,0) 은 발밑이라 로드돼 있고, (0,4) 는 멀어서 없다. 두 값이 같으면 키가
+    // `px`·`pz` 를 뒤섞고 있다는 뜻이다.
+    expect(sys.isLoaded(4, 0)).toBe(true);
+    expect(sys.isLoaded(0, 4)).toBe(false);
+    expect(sys.isLoaded(-4, 0)).toBe(false);
+  });
+
+  it('★ dispose 뒤에는 아무것도 안 들고 있다', () => {
+    const { sys } = make();
+    settle(sys);
+    sys.dispose();
+    expect(sys.isLoaded(0, 0), '★ 떠난 뒤에도 로드됐다고 답한다').toBe(false);
+  });
+});
+
 describe('StreamingSystem — 커널 협조', () => {
   it('탭이 숨으면 아무것도 하지 않는다', () => {
     const { sys, fb } = make();
