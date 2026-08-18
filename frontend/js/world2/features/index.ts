@@ -57,6 +57,7 @@ import { overlayFeature } from './overlay.js';
 import { shadingFeature } from './shading.js';
 import { surfacePaintFeature } from './surface-paint.js';
 import { grassFeature } from './grass.js';
+import { waterStyleFeature } from './water-style.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -78,6 +79,10 @@ export const FEATURES: readonly Feature[] = [
   // 늦으면 걸을 때 앞쪽 풀이 뒤늦게 따라온다. 셰이딩보다 **앞**이어야 하는 것도 짝이다 —
   // 오버라이드가 걸리기 전에 잔디가 자기 `visible` 을 정해야 한다.
   grassFeature,
+  // ── 스타일라이즈드 수면 (`?styl=1` 또는 `?wstyle=1`) ──────────────────────
+  // **`ocean` 보다 뒤여야 한다** — 기존 수면 메시를 이름으로 찾아 숨기고 같은 지오메트리를
+  // 공유하는 메시를 얹으므로, 저쪽이 먼저 씬에 들어와 있어야 한다.
+  waterStyleFeature,
   // ── 사용자 배치 (`assets/world2-overlay.json`) ────────────────────────────
   // 감독이 `?edit=1` 화면에서 놓고 내보낸 JSON 을 읽어 얹는다. **가산 레이어**라 마을
   // 기본 배치 계산에는 손대지 않는다. 파일이 비어 있으면(지금이 그렇다) 아무것도 안 붙고,
