@@ -16,6 +16,7 @@ import * as THREE from 'three/webgpu';
 import {
   EASINGS, FADE_EASES, fadeMix, residualAtSpawn,
   crossingCells, crossingSeconds, FADE_SECONDS, fogFactorAt,
+  scaleStep, scaleAdvance, START_SCALE,
 } from '../frontend/js/world2/decide/lod-fade.js';
 import { DEFAULT_BANDS } from '../frontend/js/world2/decide/lod.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
@@ -365,5 +366,76 @@ describe('§4-2 집행 — 안개 0% 자리는 페이드가 아무 일도 안 �
     expect(ca.r).toBeCloseTo(target.r, 5);                 // 안개 0 — 이미 제 색
     expect(cb.r).toBeCloseTo(target.r * 0.1, 5);           // 안개 1 — 10% 만 왔다
     expect(cb.r).toBeLessThan(ca.r);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W8-10 — 등장·소멸 배수. **건물과 액자가 같은 식을 쓴다**
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('W8-10 — scaleStep / scaleAdvance', () => {
+  const anim = { grow: 0.4, shrink: 0.25, ease: 'lin' as const, shrinkEase: 'lin' as const };
+  const fresh = (up: boolean) => ({ k: up ? 1 : 0, up, elapsed: 0, from: up ? 1 : 0, fresh: true });
+
+  it('★ 성장은 from 에서 1 로, 끝값이 **정확히** 1 이다', () => {
+    expect(scaleStep(true, START_SCALE, 0, anim).k).toBeCloseTo(START_SCALE, 6);
+    expect(scaleStep(true, 0, 0.2, anim).k).toBeCloseTo(0.5, 6);
+    const end = scaleStep(true, 0, 0.4, anim);
+    expect(end, '★ 끝값이 정확히 1 이 아니다 — Math.max 가 있는 한 이 줄만이 보증이다')
+      .toEqual({ k: 1, done: true });
+  });
+
+  it('★ 수축은 from 에서 0 으로, 끝값이 **정확히** 0 이다', () => {
+    expect(scaleStep(false, 1, 0.125, anim).k).toBeCloseTo(0.5, 6);
+    expect(scaleStep(false, 1, 0.25, anim)).toEqual({ k: 0, done: true });
+  });
+
+  it('★ 배수는 START_SCALE 아래로 안 내려간다 — 노멀 행렬 특이행렬 회피', () => {
+    expect(scaleStep(true, 0, 0.0001, anim).k).toBe(START_SCALE);
+  });
+
+  it('★ 시간이 0 이면 즉시 완료 — `?grow=0` 이 종전 동작(팝)이다', () => {
+    const off = { ...anim, grow: 0, shrink: 0 };
+    expect(scaleStep(true, 0, 0, off)).toEqual({ k: 1, done: true });
+    expect(scaleStep(false, 1, 0, off)).toEqual({ k: 0, done: true });
+  });
+
+  it('🔴 첫 걸음은 **목표로 순간 이동**한다 — place 가 애니메이션을 시작하지 않는 자리', () => {
+    expect(scaleAdvance(fresh(true), true, 0.016, anim))
+      .toEqual({ k: 1, up: true, elapsed: 0, from: 1, fresh: false });
+    // 멀리 있는 채로 걸렸으면 0 으로 스냅 — 「떠올랐다 쪼그라드는」 연출이 안 생긴다
+    expect(scaleAdvance(fresh(true), false, 0.016, anim))
+      .toEqual({ k: 0, up: false, elapsed: 0, from: 0, fresh: false });
+  });
+
+  it('★ 목표에 닿았으면 `null` — 「변할 때만 대입」을 산술이 보증한다', () => {
+    expect(scaleAdvance({ k: 1, up: true, elapsed: 9, from: 0, fresh: false }, true, 0.016, anim))
+      .toBeNull();
+    expect(scaleAdvance({ k: 0, up: false, elapsed: 9, from: 1, fresh: false }, false, 0.016, anim))
+      .toBeNull();
+  });
+
+  it('🔴 방향이 뒤집히면 **지금 배수에서** 다시 시작한다 — 되감지 않는다', () => {
+    // 성장 중간(0.5)에 멀어졌다
+    const mid = { k: 0.5, up: true, elapsed: 0.2, from: 0, fresh: false };
+    const back = scaleAdvance(mid, false, 0.125, anim)!;
+    expect(back.from, '★ from 이 1 로 튀었다 — 액자가 커졌다가 줄어든다').toBe(0.5);
+    expect(back.elapsed).toBeCloseTo(0.125, 6);
+    expect(back.k, '★ 0.5 에서 절반이면 0.25').toBeCloseTo(0.25, 6);
+  });
+
+  it('★ 다시 뒤집혀도 같은 규약 — 왕복이 튀지 않는다', () => {
+    let st = { k: 0.25, up: false, elapsed: 0.125, from: 0.5, fresh: false };
+    st = scaleAdvance(st, true, 0.1, anim)!;
+    expect(st.from).toBe(0.25);
+    expect(st.k, '★ 0.25 + (1−0.25)×0.25').toBeCloseTo(0.4375, 6);
+  });
+
+  it('★ 이어서 진행하면 elapsed 가 누적된다', () => {
+    let st = { k: 0, up: true, elapsed: 0, from: 0, fresh: false };
+    st = scaleAdvance(st, true, 0.1, anim)!;
+    st = scaleAdvance(st, true, 0.1, anim)!;
+    expect(st.elapsed).toBeCloseTo(0.2, 6);
+    expect(st.k).toBeCloseTo(0.5, 6);
   });
 });

@@ -84,6 +84,7 @@ function makeThree() {
     const kids: ArtNode[] = [];
     return {
       position: { set() {} }, rotation: { y: 0 }, children: kids, visible: true,
+      scale: { set() {} },
       add(o: ArtNode) { kids.push(o); },
       remove(o: ArtNode) { const i = kids.indexOf(o); if (i >= 0) kids.splice(i, 1); },
     };

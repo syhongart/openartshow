@@ -12,6 +12,7 @@
 // `decide/art-material.ts` 소유다. 여기 있는 상수 넷은 **룩**이지 판정이 아니다.
 
 import type { ArtworkItem } from '../decide/artwork.js';
+import type { ParcelAnim } from '../decide/lod-fade.js';
 
 /** 이 파일이 쓰는 three 표면. **필요한 것만** — 넓히면 스텁이 실물과 멀어진다 */
 export interface ArtThreeNS {
@@ -42,6 +43,17 @@ export interface ArtNode {
    * 이고 그것은 `clearPlaced` 가 이미 쓰는 길이다.
    */
   visible: boolean;
+  /**
+   * 등장·소멸 배수 (W8-10). **여기도 액자 그룹 전용이다 — 라이트를 스케일하지 마라**
+   * (아무 의미가 없고 다음 사람이 시도할 수 있다).
+   *
+   * ⚠ **`z` 는 1 로 둔다.** 그림 평면이 테두리 앞면에서 **2mm** 떨어져 있는데
+   * (`artwork-scene.ts` 의 `plane.position.set`), 균등 스케일이면 그 간격도 배수만큼
+   * 줄어 수축 끝에서 0.04mm 가 된다. 수축이 일어나는 거리(76.8m)의 깊이 분해능을
+   * 밑돌아 **테두리가 그림을 뚫는 명멸**이 난다. 화면상 크기 변화는 x·y 가 전부
+   * 담당하므로 z 를 고정해도 보이는 것은 같다.
+   */
+  scale: { set(x: number, y: number, z: number): void };
 }
 
 export interface ArtMaterial {
@@ -79,6 +91,14 @@ export interface ArtworkSceneDeps {
   readonly cellZ: number;
   /** 파셀당 켜는 조명 수. soft 완화가 이 값을 낮춘다(풀 크기는 안 바뀐다) */
   readonly perParcel?: number;
+  /**
+   * 등장·소멸 연출 설정 (W8-10). **생략하면 URL 노브를 읽는다** — `artEnv` 와 같은 규약.
+   *
+   * ⚠ 건물(`ParcelGrowSystem`)과 **같은 값을 봐야 한다.** 그래서 파싱이
+   * `decide/lod-fade.ts` 의 `readParcelAnim()` 한 곳이다 — 갈리면 감독이 `?shrink=1` 로
+   * 룩을 판정할 때 건물과 액자가 다른 속도로 움직이는 화면을 보게 된다.
+   */
+  readonly anim?: ParcelAnim;
   /** 부팅 시점 작품 목록 — **풀 크기 유도에만.** 생략 = 격자 상한(편집). 근거: `art-light.ts` */
   readonly arts?: readonly { readonly x: number; readonly z: number }[];
   /**
@@ -122,7 +142,7 @@ export interface ArtworkStats {
   /** 텍스처 로드 실패 수 */
   readonly texFailed: number;
   /**
-   * **지금 화면에 내놓은** 액자 수 (W8-9). `frames` 중 파셀이 로드된 것들이다.
+   * **지금 그리고 있는** 액자 수 (W8-9). 수축 중인 것도 아직 그리므로 포함된다(W8-10).
    *
    * ⚠⚠ **`frames` 와 갈라 둔 것이 요점이다.** `frames` 는 개수 불변식 `[7]` 의 **예산
    * 분모**다(`invariant-judge.mjs` 의 `artCount × ART_GEO_EACH`). 그 의미를 「보이는
@@ -142,8 +162,14 @@ export interface ArtworkScene {
    * **안 잰다.** 왜 그런지는 `decide/art-light.ts` 의 `artParcelXZ` 헤더 한 곳이다.
    *
    * 프레임마다 불린다. 할당 0 이고 상태가 **변할 때만** 대입한다.
+   *
+   * ⚠⚠ **`dt`(초)는 선택 인자가 아니다**(W8-10). 이 저장소의 확장 규약(「생략 = 기존
+   * 동작」)을 따르면 `dt?` 가 자연스럽고 기존 테스트가 한 줄도 안 바뀌지만, 그러면
+   * 배선(`features/overlay.ts`)이 `ctx.dt` 를 안 넘기는 순간 **연출이 조용히 통째로
+   * 사라진다** — 「조용한 no-op」이고 태스크 #115·검수관 P2 가 같은 자리에서 났다.
+   * 필수로 두면 배선 누락이 **타입 에러**가 된다. 검사가 아니라 구조로 막는다.
    */
-  update(loaded: (px: number, pz: number) => boolean): void;
+  update(loaded: (px: number, pz: number) => boolean, dt: number): void;
   stats(): ArtworkStats;
   dispose(): void;
 }

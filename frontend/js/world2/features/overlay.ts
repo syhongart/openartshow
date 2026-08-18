@@ -546,7 +546,7 @@ export const overlayFeature: Feature = {
       // 답을 그대로 나른다(근거는 `features/types.ts` 의 그 필드 한 곳).
       system: {
         name: 'overlayArt',
-        update: () => artScene?.update(env.parcelLoaded),
+        update: (ctx) => artScene?.update(env.parcelLoaded, ctx.dt),
       },
       // `frozen` 은 `diag` 에 넣지 않고 여기서 읽는다 — 저장소가 소유하는 값이라
       // 복사해 두면 갈라진다(편집이 저장소를 직접 고치므로 복사본은 즉시 낡는다).

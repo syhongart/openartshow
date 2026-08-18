@@ -24,7 +24,7 @@
 
 import type { System, FrameCtx } from '../kernel.js';
 import type { InstancePools, SlotHandle } from './instancing.js';
-import { fadeMix, type FadeEase } from '../decide/lod-fade.js';
+import { fadeMix, START_SCALE, SHRINK_SECONDS, type FadeEase } from '../decide/lod-fade.js';
 
 /** 부품 하나의 완성 자세. `createSlotPool.setTransform` 이 넘긴 그대로다 */
 export interface SlotTransform {
@@ -32,12 +32,7 @@ export interface SlotTransform {
   sx: number; sy: number; sz: number;
 }
 
-/**
- * 시작 스케일 배수. 0 으로 두지 않는 이유: three 는 스케일 0 행렬도 그리지만(면적 0),
- * 역행렬이 필요한 경로(노멀 행렬)에서 특이행렬이 된다. 시각적으로 0 과 구별 불가한
- * 최솟값으로 둔다.
- */
-const START_SCALE = 0.02;
+// `START_SCALE` 은 `decide/lod-fade.ts` 소유다 — 액자와 공유한다(W8-10).
 
 export interface GrowSink {
   /** 슬롯이 자리를 잡았다. 지금부터 자라기 시작한다 */
@@ -99,19 +94,7 @@ interface Entry {
   from?: number;
 }
 
-/**
- * 수축 시간(초) 기본값. 등장(GROW_SECONDS)보다 짧다 — 죽는 동안 슬롯을 점유하므로
- * (위 `retire` 주석) 짧을수록 예산 압박이 작고, 소멸은 등장보다 시선을 덜 끈다.
- *
- * ⚠ **"시선을 덜 끈다"는 그림자를 안 세어 본 문장이었다**(감독 실기기 2026-08-10).
- * 반납 지점(farExit 76.8m)의 건물 몸체는 안개 100% 뒤라 정말 안 보이는데, 키 큰
- * 캐스터의 **그림자는 안개 앞(화면 안)까지 드리워져 있고** 0.25s 만에 걷힌다 —
- * ease 가 'out'(등장용 재사용)이라 첫 다섯 프레임에 절반이 사라진다. 후진 중 파셀이
- * 연달아 반납되면 이것이 "사각 그림자 부분이 빠르게 어둡고 밝게 반복"으로 보였다
- * (?shint=0 대조로 그림자 축 확정). 그래서 `?shrink=` 노브(main.ts)로 열어 감독
- * 판정을 받는다 — 확정값이 나오면 여기 근거와 함께 적는다.
- */
-const SHRINK_SECONDS = 0.25;
+// `SHRINK_SECONDS` 도 `decide/lod-fade.ts` 소유다 — 근거 주석이 그쪽으로 옮겨 갔다.
 
 /**
  * 진행 중인 성장 애니메이션. 핸들 객체를 키로 쓰는 이유는 `parcel-fade.ts` 와 같다 —
