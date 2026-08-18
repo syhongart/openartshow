@@ -22,10 +22,10 @@
 // 산출물(`devlog/*.html` 등)이고, 이것은 **자산**이다 — `devlog/img/` 를 추적하는 것과 같은
 // 이유다(생성 디렉터리라고 통째로 무시하면 자산이 날아간다. 실제로 한 번 날렸다).
 
-import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { encodePng, clamp255 } from './lib/png-encode.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'frontend', 'assets', 'textures');
@@ -36,63 +36,15 @@ const OUT = join(ROOT, 'frontend', 'assets', 'textures');
  */
 const SIZE = 256;
 
-// ── PNG 인코딩 (의존성 0) ──────────────────────────────────────────────────
-// `sharp`·`pngjs` 를 받지 않는다. PNG 의 최소 형태는 시그니처 + IHDR + IDAT + IEND 이고,
-// 압축은 Node 내장 zlib 이면 된다. 의존성 하나를 아끼려는 것이 아니라 **이 스크립트가
-// 무엇을 하는지 다음 사람이 통째로 읽을 수 있게** 하려는 것이다.
+// ── PNG 인코딩 ─────────────────────────────────────────────────────────────
+// ⚠ **인코더는 여기 없다** — `scripts/lib/png-encode.mjs` 가 SSOT 다(W8-8). 원래는 이
+// 파일 안에 있었는데 작품 이미지 생성기가 같은 것을 필요로 하면서 **두 벌이 될 뻔했다.**
+// 옮긴 뒤 텍스처 3종을 재생성해 md5 바이트 동일을 확인했다.
+//
+// `png(rgb)` 는 이 파일의 정사각 규약(`SIZE`)을 그대로 유지하는 얇은 감싸개다 — 폭·높이를
+// 아는 것은 이 생성기이고, 인코더는 그것을 인자로 받는다.
 
-const CRC_TABLE = (() => {
-  const t = new Int32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c;
-  }
-  return t;
-})();
-
-function crc32(buf) {
-  let c = -1;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ -1) >>> 0;
-}
-
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body));
-  return Buffer.concat([len, body, crc]);
-}
-
-/** `rgb(x, y) -> [r,g,b]` 로 SIZE×SIZE RGB PNG 를 만든다 */
-function png(rgb) {
-  const raw = Buffer.alloc((SIZE * 3 + 1) * SIZE);
-  let p = 0;
-  for (let y = 0; y < SIZE; y++) {
-    raw[p++] = 0; // 필터 타입 None — 압축률보다 읽기 쉬움을 고른다
-    for (let x = 0; x < SIZE; x++) {
-      const [r, g, b] = rgb(x, y);
-      raw[p++] = clamp255(r);
-      raw[p++] = clamp255(g);
-      raw[p++] = clamp255(b);
-    }
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(SIZE, 0);
-  ihdr.writeUInt32BE(SIZE, 4);
-  ihdr[8] = 8;  // bit depth
-  ihdr[9] = 2;  // color type: truecolor
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+const png = (rgb) => encodePng(SIZE, SIZE, rgb);
 
 /**
  * 값 잡음. **격자 주기로 순환한다** — `sin` 합이라 경계에서 저절로 이어진다.

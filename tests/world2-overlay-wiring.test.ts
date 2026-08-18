@@ -92,6 +92,41 @@ describe('팔레트 매니페스트는 실제 파일과 짝이다', () => {
   });
 });
 
+describe('작품 이미지 목록은 실제 파일과 짝이다', () => {
+  // ⚠ **이 검사가 없던 동안 실패의 모습은 「회색 빈 액자」였다.** 로더가 실패하면 `null` 을
+  // 내고 액자는 그대로 서므로(`systems/artwork-scene.ts` 의 「빈 액자가 로드 실패의 표시」),
+  // 콘솔 에러도 안 나고 스모크 `[4]` 도 못 본다 — **배포 후 라이브에 가서야** 안다.
+  //
+  // 위 「팔레트 매니페스트」 검사와 **같은 형태**다(GLB 는 이미 이렇게 지키고 있었는데
+  // 작품 이미지만 빠져 있었다, W8-4~W8-7 내내).
+  //
+  // ⚠⚠ **파일명을 하드코딩하지 않는다**(팀장 조건, W8-8). 지금 걸린 것은 임시 이미지고
+  // 감독 실물 작품이 오면 교체된다 — 배치 문서에서 읽어 대조하므로 그때도 그대로 돈다.
+  it('world2-overlay.json 의 arts[].src 가 전부 실재한다', () => {
+    const raw = JSON.parse(read('frontend/assets/world2-overlay.json')) as {
+      arts?: { src?: unknown }[];
+    };
+    const srcs = (raw.arts ?? []).map((a) => a.src).filter((s): s is string => typeof s === 'string');
+    const missing = srcs.filter((src) => {
+      // `src` 는 `assets/...` 상대경로다(`decide/artwork.ts` 의 `ART_PREFIX`).
+      // 배포에서는 `frontend/assets/` 가 `dist/app/assets` 로 통째 복사된다.
+      const rel = src.replace(/^assets\//, '');
+      return !fs.existsSync(path.join(ROOT, 'frontend/assets', rel));
+    });
+    expect(missing, '★ 배치 문서가 가리키는 작품 이미지가 저장소에 없다 — 라이브에서 빈 액자가 된다')
+      .toEqual([]);
+  });
+
+  it('★ 걸린 작품이 **0개가 아니다** — 이 축이 비면 위 검사가 통과해도 의미가 없다', () => {
+    // ⚠ 빈 배열은 `missing` 도 빈 배열이라 위 검사를 **공짜로 통과한다.** 그리고 그것이
+    // W8-7 까지의 실제 상태였다(`items: []`) — 그동안 CI 는 그림 재질 경로를 한 줄도
+    // 실행하지 않았고, 아무 검사도 그 사실을 말해 주지 않았다.
+    const raw = JSON.parse(read('frontend/assets/world2-overlay.json')) as { arts?: unknown[] };
+    expect((raw.arts ?? []).length, '★ 라이브 작품이 0개다 — 스모크가 place() 를 안 탄다')
+      .toBeGreaterThan(0);
+  });
+});
+
 describe('배포되는 배치 파일이 계약을 통과한다', () => {
   // 감독이 내보낸 JSON 을 내가 커밋하는 흐름이라, 깨진 파일이 들어오면 라이브에서
   // **조용히** 빈 오버레이가 된다(`loadOverlay` 는 던지지 않는다). 커밋 시점에 잡는다.
