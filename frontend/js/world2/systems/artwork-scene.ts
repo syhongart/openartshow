@@ -28,117 +28,24 @@ import {
   frameSize, type ArtworkItem,
 } from '../decide/artwork.js';
 import {
-  artLightPoolSize, assignArtLights, spotFor, ART_LIGHT_PER_PARCEL, artParcelCount,
+  artLightPoolSize, assignArtLights, spotFor, ART_LIGHT_PER_PARCEL, artParcelCount, artParcelXZ,
 } from '../decide/art-light.js';
 import { artMatSpec, readArtEnv } from '../decide/art-material.js';
+/**
+ * 계약은 `artwork-types.ts` 가 소유한다 — **여기는 배럴이다**(W8-9 분리).
+ * 소비자 경로가 안 바뀌게 전부 재수출한다. 근거는 그 파일 헤더 한 곳이다.
+ */
+export type {
+  ArtThreeNS, ArtNode, ArtMaterial, ArtLight, ArtworkSceneDeps, ArtworkStats, ArtworkScene,
+} from './artwork-types.js';
+export { FRAME_BORDER, FRAME_DEPTH, LIGHT_ON, LIGHT_COLOR } from './artwork-types.js';
 
-/** 이 파일이 쓰는 three 표면. **필요한 것만** — 넓히면 스텁이 실물과 멀어진다 */
-export interface ArtThreeNS {
-  Group: new () => ArtNode;
-  Mesh: new (geo: unknown, mat: unknown) => ArtNode;
-  BoxGeometry: new (w: number, h: number, d: number) => unknown;
-  PlaneGeometry: new (w: number, h: number) => unknown;
-  MeshStandardMaterial: new (o: Record<string, unknown>) => ArtMaterial;
-  // ⚠ **그림 평면 전용이다**(W8-7). 테두리는 계속 Standard 를 쓴다 — 근거는
-  // `decide/art-material.ts` 헤더 한 곳이다.
-  MeshBasicMaterial: new (o: Record<string, unknown>) => ArtMaterial;
-  SpotLight: new (color?: number, intensity?: number) => ArtLight;
-  Object3D: new () => ArtNode;
-}
-
-export interface ArtNode {
-  name?: string;
-  position: { set(x: number, y: number, z: number): void };
-  rotation: { y: number };
-  add(o: ArtNode): void;
-  remove(o: ArtNode): void;
-  children?: ArtNode[];
-}
-
-export interface ArtMaterial {
-  map?: unknown; toneMapped?: boolean; fog?: boolean; dispose?(): void;
-}
-
-export interface ArtLight extends ArtNode {
-  intensity: number;
-  angle: number;
-  penumbra: number;
-  distance: number;
-  castShadow: boolean;
-  target: ArtNode;
-}
-
-/** 액자 테두리 두께·깊이(m). 작품 크기와 무관한 고정값 — 액자는 굵기로 알아본다 */
-export const FRAME_BORDER = 0.06;
-export const FRAME_DEPTH = 0.05;
-
-/** 켤 때의 밝기. 끌 때는 정확히 `0` 이다(`visible` 을 안 건드리는 것이 조건 1) */
-export const LIGHT_ON = 2.4;
-/** 조명 색 — 약간 따뜻한 백색. 순백은 작품 색을 차갑게 보이게 한다 */
-export const LIGHT_COLOR = 0xfff2e0;
-
-export interface ArtworkSceneDeps {
-  readonly THREE: ArtThreeNS;
-  /**
-   * 그림이 환경 영향을 얼마나 받는가(W8-7). **생략하면 URL 노브를 읽는다** — 이
-   * 저장소의 확장 규약(「생략 = 기존 동작」)이고, 테스트는 값을 넣어 세 분기를 다 돈다.
-   */
-  readonly artEnv?: number;
-  readonly scene: ArtNode;
-  /** 파셀 격자. 조명 배정이 파셀 단위라 필요하다 */
-  readonly cellX: number;
-  readonly cellZ: number;
-  /** 파셀당 켜는 조명 수. soft 완화가 이 값을 낮춘다(풀 크기는 안 바뀐다) */
-  readonly perParcel?: number;
-  /** 부팅 시점 작품 목록 — **풀 크기 유도에만.** 생략 = 격자 상한(편집). 근거: `art-light.ts` */
-  readonly arts?: readonly { readonly x: number; readonly z: number }[];
-  /**
-   * 작품 이미지를 텍스처로. **주입받는다** — 로더를 여기서 만들면 노드가 못 돌린다.
-   * 실패하면 `null` 을 내고 액자는 그대로 선다(빈 액자가 «로드 실패» 의 표시다).
-   */
-  loadTexture?(src: string): Promise<unknown | null>;
-  /**
-   * 텍스처 캐시 키. **같은 `src` 라도 미리보기 URL 이 바뀌면 다시 로드해야 한다** —
-   * 편집에서 같은 파일명을 다시 떨어뜨리면 `blob:` 이 새로 생기는데, `src` 를 키로 쓰면
-   * 캐시가 **낡은 그림**을 준다(«바꿨는데 안 바뀐다»). 생략하면 `src` 를 그대로 쓴다.
-   */
-  texKey?(src: string): string;
-}
-
-export interface ArtworkStats {
-  /** 풀에 만들어 둔 라이트 수. **세션 중 절대 안 변한다** */
-  readonly lights: number;
-  /** 세운 액자 수 */
-  readonly frames: number;
-  /** 실제로 켠 라이트 수 */
-  readonly lit: number;
-  /**
-   * **파셀 cap 초과**로 조명을 못 받은 작품 수(팀장 조건 4 — 걸리되 라이트 없이).
-   *
-   * ⚠ 이것은 «어두운 작품의 총수» 가 **아니다.** 풀이 고갈돼 못 켠 것은 `unpowered` 다 —
-   * 검수관 블로커 B3-1 이 그 혼동을 실측으로 잡았다: 20파셀 × 4작품에서
-   * `frames 80 · lit 28 · skipped 0` 이었는데 **실제로 어두운 것은 52개**였다.
-   * 이름이 「못 받은 수」라고 말하면서 절반만 세는 것이 이 저장소가 GS-3 을 만든 그 형태다.
-   */
-  readonly skipped: number;
-  /**
-   * **풀 고갈**로 조명을 못 받은 작품 수. 배정은 받았는데 슬롯이 없었다.
-   *
-   * 왜 이 축이 따로 필요한가 — `skipped` 와 원인이 다르고 처방도 다르다. cap 초과는
-   * `perParcel` 을 올리면 되지만 풀 고갈은 **풀이 「동시에 보이는 방」(near 7파셀)에서
-   * 유도되는데 배정은 문서 전체의 작품에 도는** 분모 불일치다. 둘을 한 숫자로 뭉개면
-   * 어느 쪽을 만져야 하는지 화면에서 구별이 안 된다.
-   */
-  readonly unpowered: number;
-  /** 텍스처 로드 실패 수 */
-  readonly texFailed: number;
-}
-
-export interface ArtworkScene {
-  place(arts: readonly ArtworkItem[]): Promise<void>;
-  stats(): ArtworkStats;
-  dispose(): void;
-}
+import type {
+  ArtThreeNS, ArtNode, ArtLight, ArtMaterial, ArtworkSceneDeps, ArtworkStats, ArtworkScene,
+} from './artwork-types.js';
+import {
+  FRAME_BORDER, FRAME_DEPTH, LIGHT_ON, LIGHT_COLOR,
+} from './artwork-types.js';
 
 /**
  * 액자·조명 씬. **`mount` 시점에 라이트 풀이 완성된다** — `place` 는 개수를 안 바꾼다.
@@ -192,18 +99,34 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   /** dispose 대상 지오메트리. `[7]` 이 보는 축이라 재질만 지우면 절반만 정리된다 */
   const artGeos: { dispose?(): void }[] = [];
   /**
-   * 세운 액자 그룹. **전체 대체가 이것을 지운다**(W8-4 D1.6).
+   * 세운 액자. **전체 대체가 이것을 지운다**(W8-4 D1.6).
    *
    * 왜 `root.children` 을 훑지 않는가 — 거기에는 **라이트와 그 타깃도 섞여 있다**
    * (`root.add(L)`·`root.add(t)`). 통째로 비우면 풀이 씬에서 빠져 개수 불변식이 깨진다.
    * 액자만 따로 들고 있는 것이 그 사고를 구조로 막는 유일한 방법이다.
+   *
+   * ── 왜 그룹만이 아니라 «파셀·라이트·표시상태» 까지 드는가 (W8-9) ───────────
+   * `update()` 가 프레임마다 돈다. 그때 ① 어느 파셀인지 다시 계산하거나 ② 어느 라이트를
+   * 받았는지 되찾으려 하면 **매 프레임 할당·탐색**이 생긴다. 걸 때 한 번 계산해 여기
+   * 두면 프레임 비용이 «`loaded()` 한 번 + 비교 한 번» 이 된다.
+   *
+   * `light` 가 `null` 인 것은 조명을 못 받은 액자다(cap 초과 또는 풀 고갈) — 그 구별은
+   * `stats()` 의 `skipped`·`unpowered` 가 이미 세고 있고 여기서는 «끌 것이 있나» 만 본다.
    */
-  const frameGroups: ArtNode[] = [];
+  const placed: {
+    readonly g: ArtNode;
+    readonly px: number;
+    readonly pz: number;
+    readonly light: ArtLight | null;
+    shown: boolean;
+  }[] = [];
   let frames = 0;
   let lit = 0;
   let skipped = 0;
   let unpowered = 0;
   let texFailed = 0;
+  /** 지금 화면에 내놓은 액자 수. `frames` 와 **다른 값이다** — `ArtworkStats` 헤더 참조 */
+  let shown = 0;
   let disposed = false;
   /**
    * 다음에 쓸 풀 슬롯. **인스턴스 상태다 — `place` 안의 지역 변수가 아니다.**
@@ -228,8 +151,8 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
    * — 액자는 사라졌는데 벽이 밝은 상태이고, 화면에서 원인을 짚기 어려운 형태다.
    */
   function clearPlaced(): void {
-    for (const g of frameGroups) root.remove(g);
-    frameGroups.length = 0;
+    for (const p of placed) root.remove(p.g);
+    placed.length = 0;
     for (const m of artMats) m.dispose?.();
     artMats.length = 0;
     for (const geo of artGeos) geo.dispose?.();
@@ -239,6 +162,7 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
     // 그것이 이 회차에서 실측된 누수의 처방이다.
     for (const L of pool) L.intensity = 0;
     frames = 0; lit = 0; skipped = 0; unpowered = 0; texFailed = 0; next = 0;
+    shown = 0;
   }
 
   /**
@@ -399,13 +323,13 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       plane.position.set(0, 0, FRAME_DEPTH / 2 + 0.002);
       g.add(plane);
       root.add(g);
-      frameGroups.push(g);   // ⚠ 다음 `place` 가 이걸로 지운다(전체 대체)
       frames++;
 
       // 조명 — 배정받은 것만. **풀에서 꺼내 쓸 뿐 새로 만들지 않는다.**
       //
       // ⚠ 배정을 받았는데 슬롯이 없으면 `unpowered` 다. **조용히 넘어가지 않는다** —
       // 그것이 검수관 블로커 B3-1 의 형태였다(어두운 작품 52개가 아무 숫자에도 안 잡혔다).
+      let assigned: ArtLight | null = null;
       if (!plan.lit[i]) {
         // cap 초과 — `skipped` 가 이미 셌다(`plan.skipped`)
       } else if (next >= pool.length) {
@@ -420,14 +344,62 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
         L.distance = s.distance;
         L.intensity = LIGHT_ON;   // ← 켜는 유일한 수단(조건 1)
         lit++;
+        assigned = L;
       }
 
+      // ⚠ **다음 `place` 가 이걸로 지운다**(전체 대체). 라이트 배정 **뒤에** 담는 것은
+      // `light` 를 함께 들기 위해서다 — 나중에 되찾으려면 프레임마다 탐색이 된다.
+      //
+      // `shown: true` 로 시작한다. 즉 **걸린 순간에는 보인다** — 걸었는데 한 프레임도
+      // 안 보이면 편집에서 «걸었다는데 안 뜬다» 가 되고, 부팅에서는 첫 렌더가 기준선
+      // 밖으로 밀려 개수 불변식 `[7]` 의 「복귀 구간 계단」 위험이 열린다. 멀리 있는
+      // 것은 다음 `update()` 가 곧바로 끈다.
+      placed.push({ g, ...artParcelXZ(a, cellX, cellZ), light: assigned, shown: true });
+      shown++;
+    }
+  }
+
+  /**
+   * 건물과 생사를 맞춘다 (W8-9). 계약·근거는 `ArtworkScene.update` 헤더 한 곳이다.
+   *
+   * ⚠ **`place()` 를 부르지 않는다.** `clearPlaced()` 가 지오·재질을 `dispose()` 하므로
+   * 재방문마다 `info.memory` 가 다시 오르고, 그것이 개수 불변식 `[7]` 의 `settledOk` 를
+   * 정확히 깨는 형태다. 여기서 하는 것은 `visible` 과 `intensity` 대입뿐이다 — 둘 다
+   * GPU 자원을 만들지도 지우지도 않는다.
+   *
+   * ── 뮤테이션 실측 (2026-08-18, `world2-artwork-scene` + `art-light` + `art-material`) ──
+   * 「테스트 통과는 검출력의 증거가 아니다」 — 결함을 일부러 되살려 깨지는지 봤다.
+   *
+   *   이 함수를 no-op 으로                                    4 failed
+   *   걸린 직후를 `shown: false` 로                            4 failed
+   *   라이트 `intensity` 토글 제거                             1 failed
+   *   `stats().frames` 를 `shown` 으로 (의미 뒤집기)           1 failed
+   *   `artParcelXZ` 만 `floor` 로 갈라놓기(배정은 그대로)      1 failed
+   *   **등가 대조군 — 주석만 추가**                           **0 failed**
+   *
+   * 마지막 줄이 있어야 위 다섯이 「무엇이든 건드리면 빨간불」이 아님을 말한다.
+   * ⚠ 첫 판본의 「`frames += 0` 을 넣어 본다」는 **등가 뮤테이션**이었고 0 failed 였다 —
+   * 그것을 검출력 부족으로 읽을 뻔했다. 뮤테이션은 **동작을 실제로 바꿔야** 축이 된다.
+   */
+  function update(loaded: (px: number, pz: number) => boolean): void {
+    if (disposed) return;
+    for (const p of placed) {
+      const on = loaded(p.px, p.pz);
+      // **변할 때만 대입한다** — 선례는 `features/npc.ts` 의 거리 표시/숨김이다.
+      if (on === p.shown) continue;
+      p.shown = on;
+      p.g.visible = on;
+      // 라이트는 끄되 **지우지도 숨기지도 않는다**(조건 1 + 재컴파일 회피).
+      // 안 끄면 벽이 사라진 자리에 스포트가 지면을 비춰 «허공에 뜬 빛» 이 남는다.
+      if (p.light) p.light.intensity = on ? LIGHT_ON : 0;
+      shown += on ? 1 : -1;
     }
   }
 
   return {
     place,
-    stats: () => ({ lights: pool.length, frames, lit, skipped, unpowered, texFailed }),
+    update,
+    stats: () => ({ lights: pool.length, frames, lit, skipped, unpowered, texFailed, shown }),
     dispose() {
       disposed = true;
       // ⚠ 라이트는 **끄지 않고 그냥 떠난다** — 씬에서 root 를 빼면 함께 사라진다.
