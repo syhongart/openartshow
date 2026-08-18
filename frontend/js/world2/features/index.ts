@@ -56,6 +56,7 @@ import { glbCityFeature } from './glb-city.js';
 import { overlayFeature } from './overlay.js';
 import { shadingFeature } from './shading.js';
 import { surfacePaintFeature } from './surface-paint.js';
+import { grassFeature } from './grass.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -69,6 +70,14 @@ export const FEATURES: readonly Feature[] = [
   // 기능이라 평상시에는 꺼져 있다 — `?glb=` 가 없으면 `create` 가 `null` 이라 로더
   // 코드조차 내려받지 않는다. 실험이 끝나면 이 줄과 파일을 함께 지운다.
   glbCityFeature,
+  // ── 스타일라이즈드 잔디 (`?styl=1` 또는 `?grass=1`) ───────────────────────
+  // 감독 지시 2026-08-18(모바일 게임 광고 화면 참조). **기본은 꺼져 있다** — `create` 가
+  // `null` 을 돌려주므로 노브 없이는 씬을 한 번도 안 만진다.
+  //
+  // 사람(`npc`) 뒤인 것은 같은 이유다: 플레이어 위치를 읽어 필드를 접으므로 한 프레임
+  // 늦으면 걸을 때 앞쪽 풀이 뒤늦게 따라온다. 셰이딩보다 **앞**이어야 하는 것도 짝이다 —
+  // 오버라이드가 걸리기 전에 잔디가 자기 `visible` 을 정해야 한다.
+  grassFeature,
   // ── 사용자 배치 (`assets/world2-overlay.json`) ────────────────────────────
   // 감독이 `?edit=1` 화면에서 놓고 내보낸 JSON 을 읽어 얹는다. **가산 레이어**라 마을
   // 기본 배치 계산에는 손대지 않는다. 파일이 비어 있으면(지금이 그렇다) 아무것도 안 붙고,
