@@ -19,6 +19,7 @@ import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
   GRASS_RADIUS, GRASS_RADIUS_MIN, GRASS_RADIUS_MAX, GRASS_DENSITY, MAX_BLADES,
   WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z, WIND_GUST_K, WIND_GUST_T,
+  WIND_JITTER_KX, WIND_JITTER_KZ, WIND_JITTER_AMP,
   BLADE_TIP, bladeCount, pickGrassWind, type GrassWindMode,
 } from '../decide/grass.js';
 import { GrassField } from '../systems/grass-field.js';
@@ -88,7 +89,13 @@ function windMaterial(ampMul: number, speedMul: number): THREE.Material {
   // 밑동 고정 · 끝만 흔들림. 감독 명세는 `uv.y` 였고 여기서는 **제곱**이다 —
   // 선형이면 밑동도 눈에 띄게 밀려 포기 전체가 기우는 것처럼 보인다.
   const sway = uv().y.mul(uv().y);
-  const phase = p.x.mul(WIND_WAVE_K).add(p.z.mul(WIND_WAVE_K * 0.7)).add(time.mul(spd));
+  // ── 위상 = 물결 + **개별 잎 지터** ────────────────────────────────────────
+  // 지터가 «흔들리는 잔디» 의 핵심이다(감독 판정 2026-08-18). 위상이 위치만의 함수이면
+  // 수 cm 떨어진 이웃 잎이 **같은 각도로** 기울어, 필드가 잔디밭이 아니라 천 한 장처럼
+  // 움직인다. 고주파 항을 더해 잎마다 위상을 갈라 놓는다.
+  const jitter = sin(p.x.mul(WIND_JITTER_KX).add(p.z.mul(WIND_JITTER_KZ))).mul(WIND_JITTER_AMP);
+  const phase = p.x.mul(WIND_WAVE_K).add(p.z.mul(WIND_WAVE_K * 0.7))
+    .add(time.mul(spd)).add(jitter);
   // 돌풍 — 저주파 노이즈로 «지금 이 구역이 세게 불린다» 를 만든다. 이것이 없으면
   // 필드 전체가 한 박자로 흔들려 기계적으로 보인다.
   const gust = mx_noise_float(vec3(p.x.mul(WIND_GUST_K), p.z.mul(WIND_GUST_K), time.mul(WIND_GUST_T)));
