@@ -20,8 +20,27 @@ import { STYLIZED_KNOB } from './world2/decide/stylized.js';
 /**
  * 이 페이지가 켜 두는 기본값. **URL 에 이미 있는 키는 건드리지 않는다** —
  * 감독이 `?styl=0` 으로 열어 «원본과 같은 화면» 을 보는 것이 A/B 의 한쪽이기 때문이다.
+ *
+ * ── `at=river` 가 왜 기본값인가 (검수관 블로커 C6, 2026-08-18) ──────────────
+ * 첫 판본은 `styl=1` 하나뿐이었고 **그러면 감독이 잔디 0포기 화면을 먼저 본다.**
+ * 실측(저장소 판정 함수를 그대로 실행):
+ *
+ *     ?at=default → (-3.5, 10.0)   심을 수 있는 자리     0 / 18,432
+ *     ?at=river   → ( 0.0,-71.0)                     7,169 / 18,432
+ *     ?at=sea     → ( 0.0, 463.0)                    5,012 / 18,432
+ *
+ * 기본 스폰 주변 3×3 파셀이 전부 광장·도로라 `surfaceY` 가 잔디 높이를 한 번도 안 낸다.
+ * 그 화면은 **WebGL 폴백(바람 없음)과 구별되지 않는다** — 감독이 «안 켜졌나» 로 읽는다.
+ *
+ * `river` 를 고른 이유는 개수만이 아니다: 물가 스폰이라 **잔디·물·지형 셋이 한 화면에
+ * 온다**(이 페이지가 보여주려는 것 전부). 그리고 `decide/spawn-spot.ts` 가 물가 스폰에는
+ * `yaw` 까지 물 쪽으로 잡아 주므로 열자마자 손으로 돌릴 일이 없다 — 그 노브가 생긴 이유가
+ * *"확인 자체가 일이 되면 확인이 덜 일어난다"* 였고 여기 그대로 적용된다.
+ *
+ * ⚠ 이것은 **링크의 기본값이지 룩의 판정이 아니다.** 감독이 `?at=default` 로 열면
+ * 기본 스폰 그대로 보인다.
  */
-const DEFAULTS: Readonly<Record<string, string>> = { [STYLIZED_KNOB]: '1' };
+const DEFAULTS: Readonly<Record<string, string>> = { [STYLIZED_KNOB]: '1', at: 'river' };
 
 const url = new URL(location.href);
 let touched = false;

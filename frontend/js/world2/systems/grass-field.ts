@@ -24,6 +24,8 @@ export interface ColorLike { r: number; g: number; b: number }
 /** 인스턴스 메시에서 이 시스템이 쓰는 부분만. 나머지는 몰라도 된다 */
 export interface BladeMeshLike {
   visible: boolean;
+  /** 버퍼 크기. 활성 수보다 클 수 있다(`?gden` 이 활성만 줄인다) */
+  readonly count: number;
   setMatrixAt(i: number, m: MatrixLike): void;
   setColorAt(i: number, c: ColorLike): void;
   readonly instanceMatrix: { needsUpdate: boolean };
@@ -95,6 +97,17 @@ export class GrassField {
     this.lastX = p.x;
     this.lastZ = p.z;
     for (let i = 0; i < this.active; i++) this.place(i, this.lastX, this.lastZ);
+
+    // ③ **잉여 슬롯을 영행렬로 눕힌다**(검수관 블로커 C5, 2026-08-18).
+    // three 는 `InstancedMesh` 생성자에서 `instanceMatrix` 를 **항등행렬로 채운다**
+    // (`three.core.js` 의 `setMatrixAt` 초기화 루프 — 실측). 버퍼가 활성 수보다 크면
+    // (`?gden=0` 이면 활성 0 · 버퍼 1) 그 슬롯은 `place()` 를 한 번도 안 거쳐 **항등인
+    // 채로 남고**, `frustumCulled=false` 라 **월드 원점에 기본 크기 블레이드가 실제로
+    // 그려진다.** 스폰에서 13.6m 떨어진 광장 한복판이라 눈에 띈다.
+    const e0 = opts.matrix.elements;
+    for (let k = 0; k < 16; k++) e0[k] = 0;
+    for (let i = this.active; i < opts.mesh.count; i++) opts.mesh.setMatrixAt(i, opts.matrix);
+
     opts.mesh.instanceMatrix.needsUpdate = true;
   }
 

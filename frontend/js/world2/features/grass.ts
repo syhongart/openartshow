@@ -128,10 +128,16 @@ export const grassFeature: Feature = {
 
     // 버퍼는 **상한으로 잡는다.** 활성 수만 노브가 바꾸고 나머지는 0 스케일로 눕는다 —
     // 버퍼 크기가 노브에 따라 변하면 개수 불변식의 baseline 이 노브마다 달라진다.
-    // ⚠ `?gden=0` 이면 `count = 0` 인데 버퍼는 1 로 잡힌다 — three 가 0 짜리 인스턴스
-    // 버퍼를 받지 않기 때문이다. 그 1개는 `GrassField.active = 0` 이라 한 번도 안 쓰여
-    // **영행렬로 남는다**(퇴화 삼각형 1개, 화면에 아무것도 안 그린다). 「0 스케일로 눕힌다」
-    // 는 설명과 다른 경로라 적어 둔다 — 검수관 권고 P9, 2026-08-18.
+    // ⚠ `?gden=0` 이면 활성 수가 0 인데 버퍼는 1 로 잡힌다 — three 가 0 짜리 인스턴스
+    // 버퍼를 받지 않기 때문이다.
+    //
+    // ⚠⚠ 첫 판본은 그 1개가 *"영행렬로 남는다 — 화면에 아무것도 안 그린다"* 라고 적었고
+    // **거짓이었다**(검수관 블로커 C5). three 는 생성자에서 `instanceMatrix` 를 **항등**
+    // 으로 채우므로, 그냥 두면 `frustumCulled=false` 인 기본 크기 블레이드가 월드 원점에
+    // 실제로 그려진다(WebGPU 면 바람에 흔들리기까지 한다). 그래서 `GrassField` 생성자가
+    // **잉여 슬롯 `[active, count)` 를 명시적으로 영행렬로 눕힌다.**
+    // 같은 사실을 `systems/grass-field.ts` 는 「항등」이라 옳게 적고 있었다 — 두 파일이
+    // 같은 사실을 반대로 진술하고 있었고, 그것이 이 저장소가 세 번 겪은 값 미러링이다.
     const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, Math.min(MAX_BLADES, count)));
     mesh.name = 'grass-field';
     // 컬링을 끄는 이유는 슬롯 풀과 같다(`systems/instancing.ts`) — 인스턴스가 플레이어를
