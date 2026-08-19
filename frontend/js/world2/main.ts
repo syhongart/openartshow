@@ -33,8 +33,12 @@ import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
 import { findKnobBar, attachKnobBar, attachKnobActions } from './ui/knob-bar.js';
 import {
   FEATURES, mountFeatures, combineDrawGroupKey, drawGroupKeyOf, collectDiagnostics, prewarmFeatures,
+  glbCityFeature,
   type MountedFeature,
 } from './features/index.js';
+// 타입만 받는다 — 런타임 import 는 없다(`three/webgpu` 는 부팅이 동적으로 받는다).
+// `features/types.ts` 가 같은 이유로 개별 named type import 를 쓴다.
+import type { Object3D } from 'three/webgpu';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import { createCollider } from './systems/collision.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
@@ -814,6 +818,23 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             // 조립(`pools` 단계)이 `streaming` 을 만드는 `stream` 단계보다 먼저 돈다.
             // 아직 없을 때는 `false` — 「아직 아무 파셀도 안 올라왔다」가 사실이다.
             parcelLoaded: (px, pz) => streaming?.isLoaded(px, pz) ?? false,
+            // 🔴 **미술관 루트** — 편집이 그 벽을 벽 검출 대상에 넣는다 (태스크 #112).
+            // 위 둘과 **같은 클로저 이유**이고 하나가 더 있다: 이 자산은 13.5MB 라
+            // 로드가 비동기여서, mount 시점에는 기능은 있어도 루트가 아직 `null` 이다.
+            //
+            // ⚠ **이름 문자열을 여기 적지 않는다** — `glbCityFeature.name` 을 읽으므로
+            // 원산지가 `features/glb-city.ts` 한 곳이다. 문자열을 적으면 그 기능의 이름을
+            // 바꾸는 순간 이 조회가 조용히 `undefined` 가 되고, 증상은 «미술관 벽에만
+            // 안 걸린다» 라 원인에서 가장 먼 자리에서 드러난다.
+            //
+            // ⚠⚠ 좁은 구조적 타입으로 읽는 것은 `FeatureInstance` 계약에 `wallRoot` 가
+            // 없기 때문이다 — 거기 넣으면 **모든** 기능이 그 개념을 지게 된다. 이 결합은
+            // 미술관 하나가 요구하는 것이고, 그 범위를 넓히지 않는다.
+            glbCityRoot: () => {
+              const m = features.find((f) => f.name === glbCityFeature.name);
+              const inst = m?.instance as { wallRoot?(): Object3D | null } | undefined;
+              return inst?.wallRoot?.() ?? null;
+            },
             // 프러스텀과 **같은 유도**에서 나온 값이라야 짝이 맞는다. 하늘이 태양을
             // 이보다 가깝게 놓으면 타워 꼭대기가 그림자 카메라 뒤로 밀린다.
             shadowDist: SHADOW.dist,

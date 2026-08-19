@@ -25,7 +25,7 @@
 
 // 개별 named type import를 쓴다 — `import type * as THREE from 'three/webgpu'`로 하면
 // 내부 네임스페이스 재수출에 걸려 타입이 안 잡힌다(TS2694).
-import type { Scene, DirectionalLight, HemisphereLight, Camera } from 'three/webgpu';
+import type { Scene, DirectionalLight, HemisphereLight, Camera, Object3D } from 'three/webgpu';
 import type { SkyTime } from '../decide/night.js';
 import type { ShadingMode } from '../decide/shading.js';
 import type { SurfaceSetting } from '../decide/surface-material.js';
@@ -116,6 +116,23 @@ export interface FeatureEnv {
    * 동결됐는가» 이고 가시성과 독립이다(동결된 파셀도 멀어지면 언로드된다).
    */
   readonly parcelLoaded: (px: number, pz: number) => boolean;
+
+  /**
+   * 미술관 GLB 의 레이캐스트 루트. 아직 안 세워졌거나 그 기능이 꺼져 있으면 `null`
+   * (태스크 #112).
+   *
+   * ⚠ **값이 아니라 클로저인 것은 위 `parcelLoaded`·`retargetSlot` 과 같은 이유다** —
+   * 이 조립이 미술관을 세우는 단계보다 먼저 돌고, 그 자산은 13.5MB 라 로드가 비동기다.
+   * 편집이 실제로 부르는 시점(감독이 벽을 겨눌 때)에는 채워져 있다.
+   *
+   * ⚠⚠ **레이캐스트 대상으로만 쓴다.** 편집이 이 루트의 자식을 옮기거나 지우면
+   * `glbCity` 기능의 `dispose()` 전제가 깨진다. 계약 원문은
+   * `world-shared/glb-city.ts` 의 `GlbCityInstance.wallRoot` 한 곳이다.
+   *
+   * ⚠⚠⚠ **선택적이다** — 이 기능이 목록에서 빠진 세계에서도 조립이 성립해야 한다.
+   * 없으면 미술관 벽은 그냥 벽 검출 대상이 아니고, 그것은 결함이 아니라 사실이다.
+   */
+  readonly glbCityRoot?: () => Object3D | null;
 
   /**
    * 지금 몇 시인가. **조립부가 소유하는 월드 상태다.**

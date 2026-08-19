@@ -315,28 +315,78 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
   }
 
   /**
-   * 맞힌 면을 그대로 낸다 (W8-4 D). **오버레이 GLB 와 마을 파츠를 둘 다 본다.**
+   * 🔴 **미술관 GLB 의 첫 유효 면 + 거리** (태스크 #112, 2026-08-19).
+   *
+   * 위 둘과 형태가 같고 대상만 다르다 — 미술관은 인스턴스가 아니라 **일반 메시 트리**라
+   * `getMatrixAt` 없이 `matrixWorld` 만 곱한다(`faceInOverlay` 와 같은 경로).
+   *
+   * ⚠ **허용목록이다.** 여기 오는 것은 `host.glbCity` 하나이고, 그 값의 출처는
+   * `glbCity` 기능의 `wallRoot()` 한 곳이다 — 씬을 통째로 쏘면 하늘·지면·풀·사람·
+   * 기즈모가 전부 걸리고, `faceOf` 는 「벽인가」를 판정하지 않으므로 **앞에 있는 아무
+   * 면이나 이긴다**(검수관 P1 이 `faceInOverlay` 에서 이미 닫은 사고 형태다).
+   *
+   * ⚠⚠ **이 함수는 이 파일에서 가장 비쌀 수 있다.** 미술관 자산은 메시가 수십 개이고
+   * 삼각형이 십만 단위다. three 는 메시별 경계구로 먼저 거르므로 **안 겨누면 구 검사
+   * 몇십 번**이지만, 겨누는 동안에는 그 메시의 삼각형을 전수 훑는다. 그리고 조준 모드는
+   * `pickFace()` 를 주기적으로 재판정한다(`decide/aim.ts` 의 `AIM_MIN_MS`).
+   *
+   * 🔴 **그 비용을 이 저장소는 로컬에서 못 잰다** — 헤드리스는 swiftshader 라 프레임
+   * 시간을 일부러 안 잰다. **감독 실기기가 유일한 판정이다.**
+   *
+   * ⚠ **수치·근본 처방(BVH)·재론 조건은 백로그 `G-ART1` 한 곳이다 — 여기에 값을 다시
+   * 적지 않는다.** 첫 판본이 그렇게 선언해 놓고 **바로 위 문단에서 41·162,902·47,400·
+   * 12.5Hz 를 적고 있었다**(검수관 권고 P6). 자산을 교체하면 한쪽만 낡는다.
+   */
+  function faceInGlbCity(): { hit: WallHit; d: number } | null {
+    const g = host.glbCity;
+    if (!g) return null;
+    // 하나짜리 배열로 쏜다 — 이 저장소의 좁힌 `Raycaster` 타입에 `intersectObject`(단수)가
+    // 없다. 있는 것만 쓰는 것이 그 좁힘의 목적이다.
+    for (const h of raycaster.intersectObjects([g as unknown], true)) {
+      const hit = h as FaceHit;
+      const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
+        ?.matrixWorld?.elements ?? null;
+      const w = faceOf(hit, mw);
+      if (w) return { hit: w, d: hit.distance ?? Infinity };
+    }
+    return null;
+  }
+
+  /**
+   * 맞힌 면을 그대로 낸다 (W8-4 D). **오버레이 GLB · 마을 파츠 · 미술관 GLB 셋을 본다.**
    *
    * ⚠ **우선순위가 아니라 거리로 고른다.** `pick()`/`pickVillage()` 는 «오버레이 먼저,
    * 없으면 마을» 인데 그것은 **고르기**의 규약이고 벽은 다르다 — 광선이 실제로 먼저
    * 맞은 면에 걸려야 한다. 우선순위로 하면 마을 건물 앞에 서서 드롭했는데 뒤편 오버레이
    * GLB 벽에 액자가 걸리고, 화면에서는 «걸었다는데 안 보인다» 로만 보인다.
+   * 후보가 셋이 되어 **더 세졌다** — 미술관 안에 서면 광선이 「미술관 벽 → 마을 건물」
+   * 순으로 만나는데, 우선순위가 마을을 이기면 액자가 벽을 뚫고 바깥 건물에 걸린다.
    *
-   * ⚠⚠ **미술관 GLB 는 이 둘 중 어느 쪽도 아니다 — 벽에 걸 수 없다**(2026-08-18 실측).
+   * ── 🔴 미술관은 셋째 경로다 (태스크 #112, 2026-08-19) ─────────────────────
    * `features/glb-city.ts` 가 로드하는 건물은 `world-shared/glb-city.ts` 의
-   * `env.scene.add(g)` 로 **씬에 직결**된다. 오버레이 항목(`host.entries()`)도 아니고
-   * 인스턴스 슬롯(`host.instances`)도 아니므로 위 두 함수의 대상 목록에 애초에 안 든다.
-   * 증상은 «벽을 겨눴는데 엉뚱한 데 걸린다» 다 — 광선이 미술관을 **통과해** 뒤편 마을
-   * 건물을 맞히고 그쪽이 유효한 벽이라 그대로 걸린다(실측: 광장 서쪽 미술관을 겨눴는데
-   * `x = -72.77` 에 걸렸다 — 미술관 범위 `x -44~-20` 밖이다).
-   * 여는 방법은 있다(로드된 루트를 허용목록에 더한다) — 여는가는 별건이다(태스크 #112).
+   * `env.scene.add(g)` 로 **씬에 직결**된다 — 오버레이 항목(`host.entries()`)도 아니고
+   * 인스턴스 슬롯(`host.instances`)도 아니라 앞 두 함수의 대상 목록에 안 든다. 그래서
+   * `wallRoot()` 로 받은 루트를 **허용목록에 더하는** 셋째 함수(`faceInGlbCity`)를 뒀다.
+   *
+   * ⚠ **이 헤더는 한 회차 동안 정반대를 말하고 있었다**(검수관 반려 B1). 열기 전 판본이
+   * *"미술관 GLB 는 이 둘 중 어느 쪽도 아니다 — **벽에 걸 수 없다**"* · *"여는가는
+   * 별건이다(태스크 #112)"* 라고 적혀 있었고, 나는 **함수 본문에만** 인라인 주석을 달고
+   * 이 1차 계약 문서를 안 고쳤다. 다음 사람은 이것을 읽고 `faceInGlbCity` 를 죽은 코드로
+   * 오인하거나 «미술관은 원래 안 걸리는 게 맞다» 로 읽는다 — 이 저장소가 behind-flag
+   * 산문·«외부 호스트 0»·`main` unprotected(7일 손실)로 이미 세 번 치른 형태다.
+   * **본문을 고치는 회차에는 그 함수의 헤더를 함께 읽는다.**
+   *
+   * 열기 전 증상은 «안 걸린다» 가 아니라 «엉뚱한 데 걸린다» 였다 — 광선이 미술관을
+   * **통과해** 뒤편 마을 건물을 맞히고 그쪽이 유효한 벽이라 그대로 걸렸다(실측
+   * 2026-08-18: 광장 서쪽 미술관을 겨눴는데 `x = -72.77`. 미술관 범위 `x -44~-20` 밖).
    */
   function pickFace(): WallHit | null {
-    const a = faceInOverlay();
-    const b = faceInVillage();
-    if (!a) return b?.hit ?? null;
-    if (!b) return a.hit;
-    return a.d <= b.d ? a.hit : b.hit;
+    const cands = [faceInOverlay(), faceInVillage(), faceInGlbCity()]
+      .filter((c): c is { hit: WallHit; d: number } => c !== null);
+    if (cands.length === 0) return null;
+    let best = cands[0]!;
+    for (const c of cands) if (c.d < best.d) best = c;
+    return best.hit;
   }
 
   /** 링을 그 자리에 놓는다. `null` 이면 숨긴다 — 표시의 유일한 자리 */

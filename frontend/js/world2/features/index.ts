@@ -119,6 +119,18 @@ export const FEATURES: readonly Feature[] = [
   postfxFeature,
 ];
 
+/**
+ * 🔴 **이 하나만 개별 재수출한다** (태스크 #112). 조립부(`main.ts`)가 마운트된 기능 중
+ * 미술관을 **이름으로** 찾아야 하는데, 이름 문자열을 조립부에 다시 적으면 그 순간
+ * 값 미러링이다(한쪽만 고쳐도 아무도 모른다). 선언을 import 해서 `.name` 을 읽으면
+ * 원산지가 `features/glb-city.ts` 한 곳으로 남는다.
+ *
+ * ⚠ **이것을 「배럴을 늘려도 된다」로 읽지 마라.** 나머지 기능은 `FEATURES` 목록에
+ * 이름을 올리는 것이 켜는 것의 전부이고, 조립부가 개별 기능을 아는 것은 이 결합이
+ * 요구하는 예외다. 다음에 같은 것이 필요해지면 **왜 이름으로 찾아야 하는지**부터 묻는다.
+ */
+export { glbCityFeature } from './glb-city.js';
+
 export type { Feature, FeatureEnv, FeatureInstance, MountedFeature } from './types.js';
 export {
   mountFeatures, combineDrawGroupKey, drawGroupKeyOf, collectDiagnostics, prewarmFeatures,

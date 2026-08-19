@@ -44,11 +44,21 @@ export interface ThreeStubOptions {
   /**
    * 레이캐스트가 돌려줄 것. 매번 불린다(테스트가 도중에 바꿀 수 있게).
    *
-   * **인자로 대상 목록을 받는다** — 편집은 광선을 두 곳에 쏜다(오버레이 루트의 자식들,
-   * 그리고 마을 인스턴스 메시들). 목록을 안 보면 두 경로가 같은 히트를 받아서,
-   * «마을을 집었다» 를 재려는 테스트가 오버레이 쪽에서 먼저 걸린다.
+   * **인자로 대상 목록을 받는다** — 편집은 광선을 **세 곳**에 쏜다(오버레이 루트의
+   * 자식들, 마을 인스턴스 메시들, 그리고 미술관 GLB 루트 — 태스크 #112). 목록을 안 보면
+   * 세 경로가 같은 히트를 받아서, «마을을 집었다» 를 재려는 테스트가 오버레이 쪽에서
+   * 먼저 걸린다.
+   *
+   * 🔴 **재귀 플래그도 함께 받는다**(검수관 권고 P1, 2026-08-19). 편집의 세 경로가
+   * 이것을 **다르게** 쓴다 — `faceInOverlay`/`faceInGlbCity` 는 `true`(트리를 내려간다),
+   * `faceInVillage` 는 `false`(인스턴스 메시 자체가 대상). 스텁이 이 인자를 안 받으면
+   * `true → false` 뮤테이션이 **0 failed** 로 통과하는데, 실물에서는 미술관이 `Group`
+   * 이라 벽 검출이 **통째로 죽는다**(실측 2026-08-19).
+   *
+   * ⚠ 이 파일이 이미 두 번 적은 것의 세 번째다 — **대역이 실물 성질을 안 가지면 그 축의
+   * 검출력은 0이다.** 쓰지 않는 테스트는 인자를 무시하면 되므로 기존 호출부는 무영향이다.
    */
-  hits?: (objs: readonly unknown[]) => readonly StubHit[];
+  hits?: (objs: readonly unknown[], recursive: boolean) => readonly StubHit[];
 }
 
 /**
@@ -68,8 +78,8 @@ export function makeThreeStub(opts: ThreeStubOptions = {}) {
       ray: StubRay = { origin: { x: 0, y: 10, z: 0 }, direction: { x: 0, y: -1, z: 0 } };
       constructor() { rays?.push(this.ray); }
       setFromCamera(): void { /* NDC 는 이 축에서 안 본다 */ }
-      intersectObjects(objs: readonly unknown[]): readonly StubHit[] {
-        return hits ? hits(objs) : [];
+      intersectObjects(objs: readonly unknown[], recursive = false): readonly StubHit[] {
+        return hits ? hits(objs, recursive) : [];
       }
     },
     Mesh: class {
