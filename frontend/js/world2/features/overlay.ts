@@ -58,6 +58,7 @@ import { surfaceY } from '../parts/surface.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 // base 결합은 `asset-url.ts` **한 곳**이다. W7 에서 소비자가 둘이 되면서 모듈로 올렸다.
 import { assetUrl } from '../asset-url.js';
+import { FLY_UP_CELLS, flyLiftMeters } from '../decide/fly.js';
 
 // ⚠ 배치 파일 경로는 **`store/static-store.ts` 가 소유한다**(2026-08-16, W8-3 S5).
 // 그전에는 여기 `OVERLAY_JSON` 상수가 있었고 이 파일이 직접 `fetch` 했다 — 저장 자리를
@@ -364,6 +365,13 @@ export const overlayFeature: Feature = {
       },
       orbitTo: (cx, cy, cz, preset) => { env.player.orbitTo(cx, cy, cz, preset); },
       endOrbit: () => { env.player.endOrbit(); },
+      // 비행(2026-08-19). 궤도와 **같은 통로**이고, 상한만 여기서 미터로 바꿔 넘긴다 —
+      // `PlayerSystem` 은 셀 크기를 모르고(`RESTORE_STEP` 주석의 규율), `decide/fly.ts` 는
+      // 셀로만 말한다. **그 경계가 여기다.** `flyLiftMeters` 를 쓰는 이유는 그 함수
+      // 주석 한 곳에 있다(셀을 미터 자리에 넣으면 2.4m 천장이 되고 아무 검사도 안 깨진다).
+      fly: (input, dt) => {
+        env.player.flyBy(input, dt, flyLiftMeters(FLY_UP_CELLS, DEFAULT_LAYOUT.cellX));
+      },
       // 셰이딩(W6). 여기도 **위임만** 한다 — 상태는 조립부가 소유하고(`FeatureEnv.shading`)
       // 집행은 `features/shading.ts` 다. 이 기능은 편집이 그 문에 닿는 통로일 뿐이라,
       // 오버레이를 빼도 URL 노브는 그대로 산다.

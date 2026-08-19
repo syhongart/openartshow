@@ -13,8 +13,9 @@ import { orbitAt, orbitStep, pitchTo, type ViewPreset } from '../decide/orbit.js
 import type { PlayerOptions } from './player-options.js';
 import {
   moveDelta, moveFromAxes, facing, stepBobPhase, bobHeight, clampPitch,
-  NO_INPUT, BOB_AMPLITUDE, WALK_SPEED, LIFT_MAX, RESTORE_STEP, type MoveInput,
+  NO_INPUT, BOB_AMPLITUDE, WALK_SPEED, RUN_MULT, LIFT_MAX, RESTORE_STEP, type MoveInput,
 } from '../decide/move.js';
+import { flyDelta, clampFlyLift, FLY_SPEED_MULT, type FlyInput } from '../decide/fly.js';
 
 // ── 재수출 — **소비자를 한 곳도 안 고치기 위해서다** ────────────────────────
 // 제품 2곳과 테스트 9개가 이 경로로 `moveDelta`·`WALK_SPEED`·`facing` 등을 가져간다.
@@ -70,6 +71,19 @@ export class PlayerSystem implements System {
    * 드래그는 안 막힌다» 같은 형태가 난다.
    */
   private lift = 0;
+  /**
+   * **비행의 가산 눈높이(m).** 궤도의 `lift` 와 **칸이 다르다.**
+   *
+   * 🔴 한 칸을 쓰면 «비행으로 100m 올라간 뒤 궤도를 돌리면 40m 로 툭 떨어진다» 가 된다 —
+   * `orbit()` 이 `LIFT_MAX`(40) 로 클램프하기 때문이고, 그 40 은 **궤도의 목적**에서 나온
+   * 값이다(`decide/move.ts` 의 `LIFT_MAX` 주석). 비행의 목적은 정확히 그 반대라 상한이
+   * 다르고(`decide/fly.ts`), 상한이 다른 둘이 한 칸을 공유할 수는 없다.
+   *
+   * ⚠ **그래도 팀장 조건 ②의 「`lift` 소비 지점」은 지켜진다** — 칸이 둘이어도 눈높이에
+   * 더해지는 자리는 `eyeLift` 하나다(아래). 그 조건이 막으려던 것은 «어디서 눈높이가
+   * 더해지는지 모르게 되는 것» 이지 칸 개수가 아니다.
+   */
+  private flyLift = 0;
   /**
    * 궤도를 **시작한 자리**. 없으면 궤도 중이 아니다.
    *
@@ -161,6 +175,38 @@ export class PlayerSystem implements System {
    * @param dHeight   눈높이 증분(m). 위로 올라가면 내려다보게 된다
    * @param kRadius   반경 배수(1 = 그대로)
    */
+  /**
+   * **편집 비행 한 프레임**(감독 지시 2026-08-19 *"내가 하늘을 날아서 보고 편집하게"*).
+   *
+   * 궤도와 **같은 규율 3종**(팀장 조건 ②)을 그대로 받는다:
+   *   ① **편집에서만 불린다** — 주행 경로에는 호출부가 없다(`edit/` 만 부른다)
+   *   ② **`orbitFrom` 을 공유한다** — 그래서 `endOrbit()` 의 걸어서 복원이 비행에도 그대로
+   *      걸린다. 따로 두면 «날아간 뒤 편집을 끄면 벽 안에 선다» 를 각자 또 풀어야 한다
+   *   ③ **눈높이 소비 지점을 공유한다** — `eyeLift` 하나(위)
+   *
+   * ⚠ **충돌을 안 태운다** — 궤도와 같다(팀장 판정 3). 나는 중에 벽에 막히면 그것은
+   * 비행이 아니다. 지면 아래로 못 가게 막는 것은 `clampFlyLift` 의 하한 0 이다.
+   *
+   * @param maxLiftMeters 고도 상한(**미터**). 셀→미터 변환은 `flyLiftMeters()` 가 하고,
+   *   그것을 부르는 것은 세계 크기를 아는 배선 쪽이다 — 이 클래스는 레이아웃을 모른다.
+   */
+  flyBy(input: FlyInput, dt: number, maxLiftMeters: number): void {
+    if (this.orbitFrom === null) this.orbitFrom = { x: this.x, z: this.z };
+    const d = flyDelta(input, this.yaw, this.pitch, this.speed * FLY_SPEED_MULT, dt, RUN_MULT);
+    this.x += d.dx;
+    this.z += d.dz;
+    this.flyLift = clampFlyLift(this.flyLift + d.dy, maxLiftMeters);
+  }
+
+  /**
+   * 편집이 더한 눈높이(m) — **궤도와 비행의 합.** 주행에서는 언제나 0 이다.
+   *
+   * 두 칸을 더하는 자리를 여기 하나로 좁힌다. 소비처가 셋(`update` 의 눈높이,
+   * `orbit`·`orbitTo` 의 pitch 계산)이라 각자 더하면 **한 곳만 고쳐도 아무도 모르는**
+   * 그 형태가 된다 — 이 저장소가 값 미러링이라 부르는 것.
+   */
+  private get eyeLift(): number { return this.lift + this.flyLift; }
+
   orbit(cx: number, cy: number, cz: number, dYaw: number, dHeight: number, kRadius: number): void {
     // 처음 도는 순간의 자리를 기억한다 — **주행으로 도달한 곳이라 반드시 유효**하고,
     // 그것이 `endOrbit()` 의 복원 출발점이 된다(팀장 조건 3).
@@ -178,7 +224,7 @@ export class PlayerSystem implements System {
     // 눈의 월드 y — **헤드밥은 뺀다.** 그것은 프레임마다 흔들리는 값이라 넣으면 시선이
     // 떨린다(궤도 중에는 안 걷고 있으므로 실제로도 거의 0 이다).
     const r = Math.hypot(p.x - cx, p.z - cz);
-    this.pitch = clampPitch(pitchTo(this.eye + this.lift, cy, r));
+    this.pitch = clampPitch(pitchTo(this.eye + this.eyeLift, cy, r));
   }
 
   /**
@@ -206,7 +252,7 @@ export class PlayerSystem implements System {
     this.lift = Math.min(LIFT_MAX, Math.max(0, preset.lift));
 
     const r = Math.hypot(p.x - cx, p.z - cz);
-    this.pitch = clampPitch(pitchTo(this.eye + this.lift, cy, r));
+    this.pitch = clampPitch(pitchTo(this.eye + this.eyeLift, cy, r));
   }
 
   /**
@@ -223,6 +269,9 @@ export class PlayerSystem implements System {
    */
   endOrbit(): void {
     this.lift = 0;
+    // 비행 고도도 여기서 걷는다 — **편집을 끄면 주행 모델로 완전히 돌아간다**가
+    // 이 메서드의 계약이고, 한쪽만 걷으면 «편집을 껐는데 공중에 떠 있다» 가 된다.
+    this.flyLift = 0;
     const from = this.orbitFrom;
     this.orbitFrom = null;
     if (from === null || !this.resolveMove) return;
@@ -342,7 +391,7 @@ export class PlayerSystem implements System {
     // 물속에서 눈이 어디에 잠기는가를 정하는 값이고, 편집 궤도는 물 위 40m 를 다루므로
     // 잠김이 0 이라 관측 가능한 차이가 없다. 두 곳에 더하면 «떠 있는데 물속 틴트가
     // 걸린다» 같은 형태가 열린다.
-    const groundEye = this.eye + this.lift
+    const groundEye = this.eye + this.eyeLift
       + bobHeight(this.bobPhase, this.bobIntensity, this.bobAmp);
     const eyeY = eyeYAt(this.submersion, groundEye, this.seabed, this.eye);
 

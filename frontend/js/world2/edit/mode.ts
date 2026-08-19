@@ -63,6 +63,7 @@ import { createActions } from './actions.js';
 import { createArtworkMode } from './artwork-mode.js';
 import { createAimMode } from './aim-mode.js';
 import { createInput } from './input.js';
+import { createFlyInput } from './fly-input.js';
 import type { ArtsPort } from '../systems/art-port.js';
 import { safeBack } from '../decide/shading.js';
 // ⚠ **요금제는 어댑터를 거친다** — `adapters/plan.ts` 헤더가 그 이유를 갖는다(경계 게이트가
@@ -194,6 +195,21 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     tierLabel: tierLabel(),
   });
 
+  // ── 비행 (2026-08-19, 감독 지시 *"하늘을 날아서 보고 편집하게"*) ──────────
+  //
+  // `input` 과 **나란히 두되 따로 묶는다.** 키 성격이 달라서다(누르는 동안 매 프레임 vs
+  // 한 번 누르면 한 번) — 근거는 `edit/fly-input.ts` 헤더 한 곳이다.
+  //
+  // `host.fly` 가 없는 소비자(빌더 미리보기·테스트 하네스)에서는 이 모듈이 리스너만 달고
+  // 아무 일도 안 한다 — 궤도가 `host.orbit?.()` 로 세운 규약과 같다.
+  const fly = createFlyInput({
+    doc,
+    fly: host.fly ? (input2, dt) => { host.fly!(input2, dt); } : undefined,
+    // ⚠ **편집 중인지를 여기서 묻는다.** `bind`/`unbind` 로도 갈리지만, 루프가 한 프레임
+    // 늦게 멈추는 창이 있어 그 사이 주행에서 날아갈 수 있다. 두 겹으로 막는다.
+    editing: () => st.editing,
+  });
+
   // ── 모드 전환 ───────────────────────────────────────────────────────────
   function setEditing(on: boolean): void {
     if (on === st.editing) return;
@@ -201,6 +217,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     panel.setMode(on);
     if (on) {
       input.bind();
+      fly.bind();
       // 편집에 들어오면 주행 모드의 포인터락을 푼다. 안 그러면 커서가 없어 못 집는다.
       try { doc.exitPointerLock?.(); } catch { /* 애초에 안 걸려 있었다 */ }
       // ⚠ **이 한 줄이 2026-08-12 사고의 절반이다.** 시점 조작이 우드래그로 바뀌는데 그
@@ -209,6 +226,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       panel.sayLead('편집 모드 — 시점은 마우스 오른쪽 버튼 드래그. 이동은 WASD 그대로.');
     } else {
       input.unbind();
+      fly.unbind();
       // ⚠ **궤도를 먼저 걷는다** (W5 E3, 팀장 조건 2·3). 편집 중에는 눈높이가 떠 있고
       // 충돌을 무시했으므로 벽 안에 서 있을 수 있다 — 주행으로 돌아가기 전에
       // `PlayerSystem` 이 둘 다 원복한다. 이 한 줄이 빠지면 감독이 편집을 끈 뒤
@@ -249,6 +267,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       // 을 안 거치므로 여기서도 걷어야 «떠 있는 채 갇힘» 이 안 남는다.
       if (st.editing) host.endOrbit?.();
       input.unbind();
+      fly.unbind();
       input.unbindAlways();
       aim?.dispose();
       panel.dispose();

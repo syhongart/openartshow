@@ -8,6 +8,7 @@
 
 import type { Object3D, Camera } from 'three/webgpu';
 import type { PlacedPart } from '../parts/types.js';
+import type { FlyInput } from '../decide/fly.js';
 import type { ViewPreset } from '../decide/orbit.js';
 import type { ShadingMode } from '../decide/shading.js';
 import type { SurfaceSetting } from '../decide/surface-material.js';
@@ -226,6 +227,18 @@ export interface OverlayHost {
    * 임의 자세를 못 주고 정해진 값(`ViewPreset`) 중 하나만 고른다.
    */
   orbitTo?(cx: number, cy: number, cz: number, preset: ViewPreset): void;
+  /**
+   * **한 프레임 난다**(감독 지시 2026-08-19 *"하늘을 날아서 보고 편집하게"*).
+   *
+   * `orbit` 과 **같은 규약**이다 — 선택 사양이고(`?`), 없으면 편집이 비행 키를 조용히
+   * 무시한다. 그리고 팀장 조건 ①과도 같다: 편집은 **어디로 갈지 못 말하고** 「지금 누른
+   * 키로 이만큼」만 말한다. `moveTo(x,z)` 류를 열지 않는 이유는 위 `orbit` 주석 한 곳이다.
+   *
+   * ⚠ **`orbit` 과 다른 점 하나** — 이것은 사람이 키를 누르는 동안 **매 프레임** 불린다.
+   * 그래서 `dt` 를 받는다(궤도는 포인터 델타라 필요 없었다). 산술·클램프·복원은 여전히
+   * `systems/player.ts` 가 소유한다.
+   */
+  fly?(input: FlyInput, dt: number): void;
   /**
    * 지금 어떤 셰이딩인가 / 셰이딩을 바꾼다 (W6). 감독 지시 *"와이어 프레임 뷰. 솔리드
    * 뷰도 구현해줘."*
