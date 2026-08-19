@@ -1,7 +1,10 @@
 // world2/systems/artwork-mount.ts — **부팅 배선**. 씬을 만드는 일과 갈라 둔다.
 //
 // ── 왜 갈랐나 (W8-11) ────────────────────────────────────────────────────────
-// `artwork-scene.ts` 가 `check:filesize` 상한(532줄)을 넘었다. 자를 자리를 고를 때
+// `artwork-scene.ts` 가 **W8-11 의 `retarget`+`sizeMul` 을 얹자** `check:filesize`
+// 상한(532줄)을 넘었다. ⚠ 조건을 빼면 거짓으로 읽힌다(검수관 재검수 ⑤-d) —
+// `git show origin/main:…artwork-scene.ts | wc -l` 은 **522** 로 상한 아래이고,
+// 다음 사람이 `main` 을 확인하면 이 문장이 틀렸다고 결론낸다. 자를 자리를 고를 때
 // **줄 수가 아니라 의존 방향**으로 골랐다 — 이 파일의 두 함수는 `createArtworkScene`
 // 을 *부르지만* 그 반대는 없다. 즉 씬은 배선을 모른 채 성립하고, 배선만 three 의
 // `TextureLoader`·`SRGBColorSpace` 같은 **부팅 시점 지식**을 안다. 그 비대칭이 경계다.

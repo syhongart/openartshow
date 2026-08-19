@@ -38,8 +38,8 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  flyDelta, clampFlyLift, NO_FLY, FLY_CEIL_CELLS, FLY_UP_CELLS, FLY_SPEED_MULT,
-  type FlyInput,
+  flyDelta, clampFlyLift, flyLiftMeters, NO_FLY,
+  FLY_CEIL_CELLS, FLY_UP_CELLS, FLY_SPEED_MULT, type FlyInput,
 } from '../frontend/js/world2/decide/fly.js';
 import { moveDelta, facing, RUN_MULT, NO_INPUT } from '../frontend/js/world2/systems/player.js';
 import { DEFAULT_BANDS } from '../frontend/js/world2/decide/lod.js';
@@ -173,6 +173,17 @@ describe('★ 고도 클램프', () => {
 
   it('★ 상한이 음수면 0 으로 — 「위로도 아래로도 못 간다」가 정직한 답이다', () => {
     expect(clampFlyLift(10, -3)).toBe(0);
+  });
+
+  it('🔴 셀↔미터 경계를 **함수가** 넘긴다 — 셀 값을 상한에 그대로 넣으면 2.4m 천장이 된다', () => {
+    // 검수관 재검수 B-3 부수: 변환을 배선에 맡기면 단위가 다른 두 수가 같은 자리에
+    // 들어가도 아무 검사가 안 깨진다.
+    expect(flyLiftMeters(FLY_UP_CELLS, 32)).toBeCloseTo(FLY_UP_CELLS * 32, 6);
+    expect(flyLiftMeters(FLY_CEIL_CELLS, 32)).toBeCloseTo(FLY_CEIL_CELLS * 32, 6);
+    // 셀을 그대로 넘긴 것과 변환한 것이 **확연히 다르다** — 그 차이가 이 함수의 존재 이유다.
+    expect(clampFlyLift(30, FLY_UP_CELLS)).toBeLessThan(clampFlyLift(30, flyLiftMeters(FLY_UP_CELLS, 32)));
+    expect(flyLiftMeters(NaN, 32)).toBe(0);
+    expect(flyLiftMeters(2, -5)).toBe(0);
   });
 
   it('★ 유한하지 않은 고도는 **0** — NaN 이 자세로 새면 화면이 통째로 사라진다', () => {

@@ -41,8 +41,12 @@ export const CSS = `
 
    ⚠ 넷을 flex:1 1 0 으로 나눈다 — 1 1 auto 면 글자 길이대로 폭이 갈려 자리가
    흔들리고, 손이 «표면은 세 번째» 를 못 외운다. 자리 기억이 탭의 값어치 절반이다. */
-#w2-edit .tabbar{display:flex;gap:3px;position:sticky;top:0;z-index:1;
-  padding:4px 0 5px;margin:2px 0 0;background:rgba(11,13,18,.96)}
+#w2-edit .tabbar{display:flex;gap:3px;padding:4px 0 5px;margin:2px 0 0}
+/* 🔴 상시 툴바(시점·셰이딩)와 탭 바를 **함께** 고정한다.
+   ⚠ 첫 판본은 .tabbar 만 sticky 였고, 그러면 그 **위**에 있는 시점·셰이딩이 스크롤에
+   밀려 사라진다 — decide/edit-tabs.ts 가 "무엇을 골랐든 늘 필요하다" 로 그 둘을 탭 밖에
+   둔 근거와 화면이 어긋난다(검수관 권고 P-h). 셋을 한 상자에 묶어 함께 붙인다. */
+#w2-edit .toolbar{position:sticky;top:0;z-index:1;background:rgba(11,13,18,.96)}
 #w2-edit .tabbar button{flex:1 1 0;min-width:0;padding:5px 2px;font-size:10px;
   white-space:nowrap;overflow:hidden}
 /* 안 고른 탭은 테두리를 지운다 — 넷이 다 상자면 어느 것이 켜졌는지가 색 하나에만
@@ -52,15 +56,29 @@ export const CSS = `
 /* 「지금 볼 게 없다」 — 흐리게만 한다. 못 누르게 막지 않는 근거는 tabHasContent 주석. */
 #w2-edit .tabbar button[data-empty="1"][data-on="0"]{opacity:.45}
 #w2-edit .pane[data-on="0"]{display:none}
-/* 🔴 hidden 이 실제로 감추게 한다. #w2-edit .row{display:flex} 와 구체성이 (1,1,0) 으로
-   **같아서** 뒤에 오는 쪽이 이긴다 — 그래서 이 줄이 여기(파일 뒤쪽)에 있어야 한다.
+/* 🔴 hidden 이 실제로 감추게 한다.
 
    ⚠ 이 결함은 **화면에서만 드러났다.** JS 는 el.hidden = true 를 제대로 대입하고 있었고
    jsdom 검사도 그 프로퍼티만 보므로 **통과했다**. 그런데 브라우저에서는 속성 탭에
-   아무것도 안 골랐는데 수치칸과 버튼이 그대로 보였다. jsdom 은 CSS 를 계산하지 않는다
-   — 「hidden 을 세웠다」와 「화면에서 사라졌다」는 다른 일이고, 앞의 것만 재면 이 형태를
-   구조적으로 못 잡는다(그 한계를 world2-edit-panel-wiring.test.ts 헤더에 적어 두었다). */
-#w2-edit [hidden]{display:none}
+   아무것도 안 골랐는데 수치칸과 버튼이 그대로 보였다.
+
+   ⚠⚠ **첫 처방이 절반만 맞았다**(검수관 재검수 B-2, 2026-08-19). 그때 여기에
+   *"#w2-edit .row 와 구체성이 (1,1,0) 으로 같으니 뒤에 오는 쪽이 이긴다 — 그래서 이 줄이
+   파일 뒤쪽에 있어야 한다"* 라고 적었다. 구체성 계산은 맞았지만 **이 줄 뒤에 같은
+   (1,1,0) 이면서 display 를 세우는 규칙이 여덟 개 더 있다**(.cat · .sw · .fld · .surf ·
+   .surf-pick · .surf-row · .surf-slots · .surf-slot). 지금 hidden 을 세우는 요소가
+   전부 .row/.note/.sel/button 이라 살아난 결함은 없었지만, inspector 의 크기 슬라이더
+   줄이 바로 surf-row 다 — 누군가 인라인 style.display 를 hidden 으로 통일하는 순간
+   되돌아온다.
+
+   그래서 **순서 의존을 없앤다.** !important 는 최후 수단이지만 hidden 의 의미(「이 요소는
+   화면에 없다」)는 레이아웃 클래스가 이길 성질이 아니고, 브라우저 UA 스타일시트도 같은
+   이유로 [hidden]{display:none} 을 둔다. 순서를 지키라는 규율보다 순서가 무의미한
+   구조가 낫다 — 이 저장소가 「손으로 조립하면 매번 다르게 틀린다」로 반복해 배운 형태다.
+
+   ⚠⚠⚠ 검출력: 이 줄을 지우면 tests/world2-edit-panel-css.test.ts 가 빨간불이다.
+   CSS 는 문자열이므로 문자열로 잰다 — jsdom 한계가 아니라 「안 잰 것」이었다. */
+#w2-edit [hidden]{display:none!important}
 /* 탭 안 첫 요소의 위 여백을 지운다 — 바 아래 간격이 두 겹이 된다 */
 #w2-edit .pane > :first-child{margin-top:0}
 #w2-edit button{flex:1 1 auto;min-width:30px;padding:4px 5px;font:11px/1 system-ui,sans-serif;

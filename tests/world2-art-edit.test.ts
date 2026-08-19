@@ -279,6 +279,81 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
     expect(port.list().map((x) => x.src)).toEqual(['b']);
   });
 
+  // ── 🔴 검수관 재검수 반려 B-1 (2026-08-19) — **확정을 두 번** 하는 축 ────────
+  //
+  // 위 네 검사(B1 조치)가 전부 «확정을 **한 번** 한다» 였고, 그 사이로 새 결함이 지나갔다:
+  // `commit()` 이 앵커 객체를 목록에서 밀어내는데 재앵커를 안 해서 **2차 확정부터 조용히
+  // 죽었다.** 슬라이더 6 → 9 가 6 에 멈추고, 그런데 `apply()` 는 계속 돌아 **화면은 맞고
+  // 내보내기 JSON 만 옛 값**이었다 — 원래 결함보다 조용하다.
+  //
+  // **상태를 바꾸는 함수를 고쳤으면 그 함수를 두 번 부르는 검사를 넣는다.** 아래가 그 축이다.
+
+  it('🔴 확정을 **두 번** 해도 둘 다 실린다 — 슬라이더를 두 번 미는 것이 가장 흔한 조작이다', async () => {
+    const port = bareePort([art({ w: 2.4 })]);
+    const t = artTarget(port, 0)!;
+
+    t.width!.set(6); t.commit(); await Promise.resolve();
+    expect(port.list()[0].w, '★ 1차 확정부터 안 실렸다').toBe(6);
+
+    t.width!.set(9); t.commit(); await Promise.resolve();
+    expect(port.list()[0].w, '🔴 2차 확정이 조용히 죽었다').toBe(9);
+
+    t.x = -4; t.commit(); await Promise.resolve();
+    expect(port.list()[0].x, '🔴 3차도 죽었다').toBe(-4);
+  });
+
+  it('🔴 확정 뒤에도 **크기 배수 기준이 안 바뀐다** — ×2 가 확정할 때마다 ×1 로 튀면 안 된다', async () => {
+    const port = bareePort([art({ w: 2 })]);
+    const t = artTarget(port, 0)!;
+    t.s = 2;
+    expect(t.s).toBe(2);
+    t.commit(); await Promise.resolve();
+    expect(t.s, '🔴 확정했더니 배수 기준이 새 값으로 옮겨갔다').toBe(2);
+    expect(t.width!.get()).toBe(4);
+  });
+
+  it('🔴 확정 뒤 **삭제**가 된다 — 재앵커를 안 하면 「지울 수 없습니다」가 뜬다', async () => {
+    const port = bareePort([art({ src: 'a' }), art({ src: 'b' })]);
+    const t = artTarget(port, 0)!;
+    t.width!.set(5); t.commit(); await Promise.resolve();
+    expect(t.remove(), '🔴 확정한 뒤에는 못 지운다').toBe(true);
+    await Promise.resolve();
+    expect(port.list().map((x) => x.src)).toEqual(['b']);
+  });
+
+  it('🔴 확정 뒤에도 `apply` 가 **같은 액자**를 민다 — 두 앵커가 갈리면 안 된다', async () => {
+    const seen: number[] = [];
+    const port = createArtsPort((x) => x);
+    port.attach({ place: async () => {}, retarget: (i) => { seen.push(i); } });
+    await port.set([art({ src: 'a' }), art({ src: 'b', w: 2.4 })]);
+
+    const t = artTarget(port, 1)!;
+    t.apply();
+    t.width!.set(5); t.commit(); await Promise.resolve();
+    t.apply();
+    // 앞 항목이 사라져 목록 자리가 밀린 뒤에도 둘이 같이 움직여야 한다.
+    await port.set(port.list().slice(1));
+    t.width!.set(7); t.commit(); await Promise.resolve();
+    t.apply();
+    expect(seen, '🔴 확정 뒤 `apply` 가 다른 슬롯을 밀었다').toEqual([1, 1, 0]);
+    expect(port.list()[0].w).toBe(7);
+  });
+
+  it('🔴 사라진 작품을 만지면 **소비자에게 알린다** — 조용한 no-op 을 남기지 않는다', async () => {
+    const port = bareePort([art({ src: 'a' }), art({ src: 'b' })]);
+    let told = 0;
+    const t = artTarget(port, 0, () => { told++; })!;
+    await port.set(port.list().slice(1));   // a 가 사라진다
+
+    t.width!.set(9);
+    t.commit(); await Promise.resolve();
+    expect(told, '🔴 사라졌는데 아무 말도 안 했다').toBe(1);
+    // 두 번째부터는 같은 말을 반복하지 않는다.
+    t.commit();
+    expect(told, '★ 조작할 때마다 같은 말을 한다').toBe(1);
+    expect(port.list().map((x) => x.src)).toEqual(['b']);
+  });
+
   it('★ 씬을 안 물린 포트에서도 어댑터가 산다 — 부팅 순서에 걸려 편집이 죽으면 안 된다', () => {
     const port = bareePort([art()]);
     const t = artTarget(port, 0)!;

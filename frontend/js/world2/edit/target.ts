@@ -309,12 +309,51 @@ export function copyPart(p: PlacedPart): PlacedPart {
 export function artTarget(
   port: ArtsPort,
   index: number,
+  /**
+   * **고른 작품이 목록에서 사라졌다** — 다른 경로가 지웠다는 뜻이다. 한 번만 부른다.
+   *
+   * 마을 어댑터의 `onDetach` 와 **같은 이유이고 같은 형태**다 — 어댑터는 화면을 모르고
+   * 소비자는 여럿이다. **판정은 여기 한 곳, 문구는 화면 한 곳.**
+   *
+   * ⚠ 이것이 없으면 조작이 **조용히** 아무 일도 안 한다 — 팀장이 못 박은 *"조용히
+   * no-op 만 남기면 «가끔 안 움직인다» 가 된다"* 가 그 형태이고, 검수관 반려 B-1 이
+   * 정확히 그 자리에서 났다.
+   */
+  onLost?: () => void,
 ): EditTarget | null {
   const items0 = port.list();
   if (index < 0 || index >= items0.length) return null;
-  const base = items0[index];
+  /**
+   * 🔴 **목록에서 「그때 그 작품」을 짚는 앵커. 확정할 때마다 갱신한다.**
+   *
+   * ── 검수관 반려 B-1 (2026-08-19) — 처방이 자기 자신을 무효화했다 ──────────
+   * 직전 판본은 이것이 `const` 였고 `commit()` 이 `next[at] = { ...cur }` 로 **그 객체를
+   * 목록에서 밀어냈다.** 확정 뒤 선택을 다시 만드는 코드가 없으므로 **2차 확정부터
+   * `indexOf(anchor)` 가 영구히 −1** 이었고 그대로 조용히 반환했다.
+   *
+   * 검수관 실측(실제 패널 DOM 경유): 슬라이더 6 → 9 가 **6 에 멈춤** · 회전 버튼 2차
+   * 무시 · 수치칸 `12.5` 를 쳤는데 목록엔 `1` · 크기를 바꾼 뒤 삭제하면 *"지울 수 없습니다."*
+   *
+   * ⚠⚠ **원래 결함보다 나빴다.** B1 은 「걸어 둔 작품이 사라진다」로 **눈에 보였고**,
+   * 이것은 `apply()` 가 계속 도는 탓에 **화면은 맞고 목록(=내보내기 JSON)만 옛 값**이다.
+   * 교훈: 처방을 검사로 못 박을 때 **「고친 형태」만 재면 「처방이 만든 형태」를 못 잡는다**
+   * — 신설 회귀 4건이 전부 «확정을 **한 번** 한다» 였다. **상태를 바꾸는 함수를 고쳤으면
+   * 그 함수를 두 번 부르는 검사를 넣는다.**
+   */
+  let anchor = items0[index];
+  /** 씬의 액자 순서. `commit` 이 목록 자리와 **함께** 갱신한다 — 앵커가 둘이면 어긋난다 */
+  let slot = index;
+  /**
+   * 크기 배수(`s`)의 **기준**. 앵커와 달리 어댑터 생애 동안 **안 바뀐다.**
+   *
+   * ⚠ 재앵커할 때 이것까지 갱신하면 확정할 때마다 `s` 가 1 로 리셋된다 — 「원래 크기의
+   * 몇 배인가」가 「직전 확정의 몇 배인가」로 바뀌어, ×2 로 맞추고 손을 뗄 때마다 표시가
+   * ×1 로 튄다. **앵커(어느 항목인가)와 기준(무엇에 대한 배수인가)은 다른 물음이다.**
+   */
+  const baseW = anchor.w;
+  const label = artName(anchor.src);
   // 사본 — 원본은 `commit` 이 `set()` 으로만 바꾼다.
-  const cur = { ...base };
+  const cur = { ...anchor };
 
   /**
    * 🔴 **확정할 때 목록을 다시 읽는다** (검수관 반려 B1, 2026-08-19).
@@ -342,10 +381,24 @@ export function artTarget(
    * 없지만(지우면 `actions.ts` 가 선택을 푼다), 조용히 되살아나는 것보다 안 하는 쪽이
    * 옳고 그 판정을 여기 한 곳에 둔다.
    */
+  /** 이미 알렸는가 — `onLost` 는 한 번만 부른다(매 조작마다 같은 말을 하지 않는다) */
+  let lost = false;
+
+  /**
+   * 지금 목록에서 앵커가 **몇 번째인가**. 없으면 `-1` 이고 소비자에게 **알린다**.
+   *
+   * 인덱스가 아니라 **항목 동일성**으로 찾는 이유: 앞 항목이 지워지면 인덱스가 밀린다.
+   * `port.list()` 는 항목 객체 참조를 유지하므로(`set` 이 배열만 갈아 끼운다) `indexOf`
+   * 가 「그때 그 작품」을 정확히 짚는다.
+   *
+   * ⚠ **그 전제를 지키는 것이 계약 주석뿐이다**(검수관 권고). 되돌리기·문서 재로드가
+   * 생겨 `normalizeArts` 를 한 번 더 태우면 참조가 갈리고, 증상은 예외가 아니라
+   * **「아무 일도 안 일어남」**이다 — 그래서 `onLost` 로 화면이 말하게 했다.
+   */
   function findAt(): number {
-    const now = port.list();
-    const i = now.indexOf(base);
-    return i >= 0 ? i : -1;
+    const i = port.list().indexOf(anchor);
+    if (i < 0 && !lost) { lost = true; onLost?.(); }
+    return i;
   }
 
   return {
@@ -354,22 +407,29 @@ export function artTarget(
     get y() { return cur.y; }, set y(v) { cur.y = v; },
     get z() { return cur.z; }, set z(v) { cur.z = v; },
     get ry() { return cur.ry; }, set ry(v) { cur.ry = v; },
-    get s() { return base.w > 0 ? cur.w / base.w : 1; },
+    get s() { return baseW > 0 ? cur.w / baseW : 1; },
     set s(m) {
       if (!(m > 0) || !Number.isFinite(m)) return;
-      const w = base.w * m;
+      const w = baseW * m;
       if (w < ART_W_MIN || w > ART_W_MAX) return;   // 범위 밖은 무시(다른 세터와 같은 규약)
       cur.w = w;
     },
-    // ⚠ `apply` 는 **생성 시점 인덱스**를 쓴다 — 씬의 액자 순서는 마지막 `place()` 가
-    // 정하고, 그것은 목록이 바뀌면 `place()` 가 다시 돌며 함께 맞춰진다. 여기서
+    // ⚠ `apply` 는 **씬 슬롯**(`slot`)을 쓴다. 씬의 액자 순서는 마지막 `place()` 가
+    // 정하므로 목록 순서와 갈리는 창이 있고(`set()` 과 `place()` 완료 사이), 그 창에서
     // `findAt()` 을 쓰면 「목록은 새 순서인데 씬은 옛 순서」인 한 프레임을 잘못 민다.
-    apply() { port.retarget(index, cur); },
+    // `slot` 은 `commit` 이 목록 자리와 **함께** 갱신하므로 두 앵커가 안 어긋난다.
+    apply() { port.retarget(slot, cur); },
     commit() {
       const at = findAt();
       if (at < 0) return;
       const next = port.list().slice();
-      next[at] = { ...cur };
+      // 🔴 **새 객체로 재앵커한다.** 이 세 줄이 없으면 2차 확정부터 조용히 죽는다 —
+      // 근거·실측은 위 `anchor` 주석 한 곳이다. `slot` 도 함께 옮겨야 `apply` 와
+      // 앵커가 안 갈린다(검수관 권고 P6 — 「짝 불일치」의 실체가 이것이었다).
+      const fresh = { ...cur };
+      next[at] = fresh;
+      anchor = fresh;
+      slot = at;
       void port.set(next);
     },
     remove() {
@@ -387,7 +447,7 @@ export function artTarget(
     // 만 남기면 «가끔 안 움직인다» 가 된다"*. **값은 그대로 두되 화면이 말하게 한다**:
     // 「바닥에」 버튼은 액자를 고른 동안 숨는다(`panel/dom.ts` 의 `refresh`).
     ground() { return cur.y; },
-    name: artName(base.src),
+    name: label,
     width: {
       // 범위는 계약이 소유한다 — 여기서 수를 다시 적지 않는다.
       min: ART_W_MIN,

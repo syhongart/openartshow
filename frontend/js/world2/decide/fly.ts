@@ -50,6 +50,19 @@
 // 목적은 정확히 그 반대(감독: 「하늘을 날아서」)라, 한 값을 공유하면 **의도가 다른 둘이
 // 한 값을 쓰는** 형태가 된다(`bobIntensity`/`moveFactor` 를 가른 그 근거).
 //
+// ── 🔴 이 파일은 **아직 배선이 0 이다** (검수관 재검수 B-3, 태스크 #119) ────────
+// 제품 코드에서 `flyDelta`·`clampFlyLift`·`FLY_*` 를 부르는 곳이 **없다.** 판정을 먼저
+// 두면 다음 PR 의 diff 가 「집행만」이 되어 읽힌다는 것이 그 이유이고, 팀장이 분해·비행을
+// 별도 PR 로 나누라고 한 것과 같은 취지다.
+//
+// ⚠ **그러나 이것은 이 저장소가 「방치의 본보기」라고 이름 붙인 형태와 같다**(태스크
+// #109 — `ART_LIGHT_PER_PARCEL_SOFT` 이 배선 0 으로 남아 있다). 그 선례를 인용하면서
+// 같은 것을 하나 더 만드는 셈이므로, **태스크 #119 로 등록해 두었다** — 다음 회차에
+// `PlayerSystem` 에 붙이지 못하면 그 태스크가 남아 이 파일을 가리킨다.
+//
+// `FLY_UP_CELLS` 는 **감독 판정 대기 중인 값**이기도 하다(아래). 노브(`?flyup=`)도 아직
+// 없다 — 배선 회차에서 함께 연다.
+//
 // ── 이 범위에서 **안 고치는 것** (팀장 조건, 경계도 판정이다) ────────────────
 // 비행 고도에서 **로드 반경 밖 파셀이 빈 채로 보이는 것**은 이번 범위 밖이다. 스트리밍은
 // x·z 기준이라 시점을 따로 날리는 (나) 안을 택했어도 같은 문제였다. 감독이 화면에서
@@ -178,7 +191,23 @@ export function flyDelta(
  * ⚠ 지면 아래를 막는 것은 충돌이 아니라 이 클램프다 — 비행은 충돌을 안 태우므로
  * (궤도와 같은 규율) 막을 것이 여기밖에 없다. 물속 편집은 별개 축이고 열려 있지 않다.
  */
-export function clampFlyLift(lift: number, maxM: number): number {
+export function clampFlyLift(lift: number, maxLiftMeters: number): number {
   if (!Number.isFinite(lift)) return 0;
-  return Math.min(Math.max(0, maxM), Math.max(0, lift));
+  return Math.min(Math.max(0, maxLiftMeters), Math.max(0, lift));
+}
+
+/**
+ * 셀 배수 → 미터. **경계를 이름으로 못 박는다**(검수관 재검수 B-3 부수).
+ *
+ * `FLY_UP_CELLS`·`FLY_CEIL_CELLS` 는 **셀**이고 `clampFlyLift` 는 **미터**를 받는다.
+ * 변환을 배선 계층에 맡겨 두면 셀 값을 그대로 상한에 넘겨 **2.4m 짜리 천장**이 되고,
+ * 아무 검사도 안 깨진다 — 「단위가 다른 두 수가 같은 자리에 들어가는」 형태이고 이
+ * 저장소가 값 미러링과 나란히 겪어 온 실수다.
+ *
+ * 여기 함수를 하나 두면 배선이 이것을 부를 수밖에 없고, 인자 이름(`maxLiftMeters`)이
+ * 받는 쪽에서 다시 한 번 말한다.
+ */
+export function flyLiftMeters(cells: number, cellSize: number): number {
+  if (!Number.isFinite(cells) || !Number.isFinite(cellSize)) return 0;
+  return Math.max(0, cells) * Math.max(0, cellSize);
 }

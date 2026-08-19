@@ -288,7 +288,11 @@ export function createPanel(
   // 시점과 셰이딩은 «무엇을 골랐든» 늘 필요하다. 탭 안에 넣으면 「표면을 만지다가 위에서
   // 보려면 탭을 옮겨야」 하고, 그것이 블렌더 뷰포트 헤더·유니티 씬뷰 툴바가 피한 형태다.
   // 감독 문언의 *"공용기능"* 이 이것이다(근거는 `decide/edit-tabs.ts` 헤더 한 곳).
-  body.append(rowView, rowShade, tabs.bar);
+  // 셋을 한 상자에 묶는다 — 그래야 스크롤에서 **함께** 고정된다(검수관 권고 P-h).
+  // 시점·셰이딩만 위에 두고 탭 바만 sticky 로 하면 「늘 필요하다」던 둘이 먼저 사라진다.
+  const toolbar = el('div', 'toolbar');
+  toolbar.append(rowView, rowShade, tabs.bar);
+  body.append(toolbar);
 
   // ── 탭 내용 ─────────────────────────────────────────────────────────────
   // 「놓기」 — 아직 없는 것을 만든다.
@@ -303,7 +307,9 @@ export function createPanel(
   // 아무것도 안 골랐을 때 **빈 칸으로 두지 않는다** — 「고장났나」와 「고를 게 없다」는
   // 화면에서 구별되어야 한다(`decide/edit-tabs.ts` 의 `tabHasContent` 주석과 짝이다).
   const propsEmpty = el('div', 'note', '물건을 클릭해 고르면 여기에서 옮기고 크기를 바꿉니다.');
-  tabs.panes.props.append(propsEmpty, selLine, inspector.root, inspector.sizeRow,
+  /** 이 문서에 무엇이 있나 — `배치 N개` 가 갈 자리(검수관 권고 P-d) */
+  const propsCount = el('div', 'note');
+  tabs.panes.props.append(propsEmpty, propsCount, selLine, inspector.root, inspector.sizeRow,
     rowRot, rowScale, rowY, rowOps);
 
   // 「표면」 — 세계 전체의 재질. **없을 수도 있다**(소비자가 문을 안 주면 그 칸만 빠진다).
@@ -332,7 +338,12 @@ export function createPanel(
     tabs.sync(has);
     // 안내와 조작칸은 **서로를 대신한다** — 둘이 함께 보이면 «고르라» 는 문장 아래에
     // 조작 가능한 칸이 있어 화면이 두 가지를 말한다.
+    // ⚠ **`rowOps`(격자·복제·삭제·구역되돌리기)는 예외로 남는다**(검수관 권고 P-e).
+    // 「격자 0.5m」가 선택과 무관한 전역 토글이라 그 줄을 통째로 숨길 수 없다 — 즉 위
+    // 문장은 **수치칸·조작 버튼에 대해서만** 참이다. 개별 버튼 숨김은 아래 `isArt` 절.
     propsEmpty.hidden = has;
+    propsCount.hidden = has;
+    if (!has) propsCount.textContent = `이 문서에 배치 ${host.entries().length}개`;
     selLine.hidden = !has;
     inspector.root.hidden = !has;
     rowRot.hidden = !has;
@@ -372,7 +383,11 @@ export function createPanel(
     const frozenNow = v ? (host.village?.isFrozen(v.px, v.pz) ?? v.frozen) : false;
     selLine.textContent = st.target
       ? describeTarget(st.target, st.selected, v) + (frozenNow ? ' · 손본 구역' : '')
-      : `선택: 없음 · 배치 ${host.entries().length}개`;
+      // ⚠ **여기 `배치 N개` 를 적지 않는다**(검수관 권고 P-d). `selLine` 은 선택이 없으면
+      // 숨으므로(`:336`) 그 문자열은 **화면에 절대 안 뜬다** — 그런데 검사는
+      // `textContent` 로 통과했다(jsdom 은 감춘 요소의 글자도 센다). 배치 개수는 아래
+      // 속성 탭 안내가 대신 말한다.
+      : '선택: 없음';
     const previews = host.entries().filter((e) => e.preview).length;
     if (st.detached) {
       // ⚠ **끊긴 것은 미리보기뿐이다** — 값은 계속 바뀌고 확정도 정상이다(`state.ts`).

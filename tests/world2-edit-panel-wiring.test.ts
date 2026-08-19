@@ -147,10 +147,17 @@ describe('★ 카테고리 탭 — 「막 나열하니 정신없잖아」', () =
     mount();
     const body = document.querySelector('#w2-edit .body')!;
     // 탭 바보다 **앞**에 있어야 한다(어느 탭에서도 보인다).
+    const bar = body.querySelector('.tabbar');
+    expect(bar, '★ 탭 바가 없다').not.toBeNull();
+    // 🔴 시점·셰이딩과 탭 바가 **같은 상자**에 있어야 함께 고정된다(검수관 권고 P-h).
+    const toolbar = body.querySelector('.toolbar');
+    expect(toolbar, '★ 상시 툴바 상자가 없다').not.toBeNull();
+    expect(toolbar!.contains(bar!), '🔴 탭 바가 툴바 밖이다').toBe(true);
+    const viewBtn = Array.from(toolbar!.querySelectorAll('button')).some((b) => b.textContent === '탑');
+    expect(viewBtn, '🔴 시점 버튼이 상시 툴바에 없다 — 스크롤하면 사라진다').toBe(true);
     const kids = Array.from(body.children);
-    const barAt = kids.findIndex((e) => e.classList.contains('tabbar'));
+    const barAt = kids.findIndex((e) => e.classList.contains('toolbar'));
     const paneAt = kids.findIndex((e) => e.classList.contains('pane'));
-    expect(barAt, '★ 탭 바가 없다').toBeGreaterThanOrEqual(0);
     // 시점 버튼(탑)이 어느 pane 안에도 있으면 안 된다.
     for (const id of ['place', 'props', 'surface', 'file']) {
       const inside = Array.from(pane(id)!.querySelectorAll('button'))
@@ -176,6 +183,23 @@ describe('★ 카테고리 탭 — 「막 나열하니 정신없잖아」', () =
     expect(paneOn('surface'), '★ 선택 해제가 탭을 끌고 갔다').toBe(true);
   });
 
+  it('🔴 MB·MC — 「지금 볼 게 없다」를 탭 라벨이 **미리** 알린다', () => {
+    // 검수관이 `tabHasContent` 를 항상 true 로 · `tabs.sync(has)` 를 제거하는 뮤테이션을
+    // 각각 심었고 **둘 다 0 failed** 였다. 판정(`decide/edit-tabs.ts`)과 배선(`refresh`)이
+    // 둘 다 무검사였다는 뜻이다 — 신설한 판정에 검출력이 안 붙는 그 형태의 재발이다.
+    const { panel, st, host, port } = mount();
+    panel.refresh();
+    const propsTab = tabBtn('속성')!;
+    expect(propsTab.dataset.empty, '🔴 아무것도 안 골랐는데 「볼 게 있다」고 한다').toBe('1');
+    // 다른 탭은 선택과 무관하게 늘 내용이 있다.
+    expect(tabBtn('놓기')!.dataset.empty).toBe('0');
+    expect(tabBtn('표면')!.dataset.empty).toBe('0');
+
+    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    panel.refresh();
+    expect(propsTab.dataset.empty, '🔴 골랐는데 여전히 「볼 게 없다」고 한다').toBe('0');
+  });
+
   it('★ 아무것도 안 골랐으면 속성 탭이 **이유를 말한다** — 빈 칸으로 두지 않는다', () => {
     const { panel } = mount();
     panel.refresh();
@@ -183,6 +207,51 @@ describe('★ 카테고리 탭 — 「막 나열하니 정신없잖아」', () =
       .filter((e) => !(e as HTMLElement).hidden);
     expect(notes.length, '★ 빈 속성 탭에 안내가 없다').toBeGreaterThan(0);
     expect(notes[0].textContent).toContain('클릭해 고르면');
+  });
+});
+
+// ── 🔴 컨트롤↔탭 대응 (검수관 재검수 명세 G5 / 뮤테이션 MD) ────────────────
+//
+// 검수관이 「내보내기」를 `file` → `place` 탭으로 옮기는 뮤테이션을 심었더니 **0 failed**
+// 였다. 즉 **감독 지시(*"막 나열하니 정신없잖아"*)의 산출물 전체 — 무엇이 어느 탭에
+// 있는가 — 가 통째로 무검사**였다. `decide/edit-tabs.ts` 는 「탭을 넷으로 가른 기준」을
+// 길게 소유하는데 조립이 그 표를 따르는지는 아무도 안 봤다.
+//
+// ⚠ **라벨이 아니라 「그 칸에 무엇이 들어 있나」로 짚는다.** 라벨은 사람이 읽는 것이고
+// 언제든 바뀐다(이 저장소의 팔레트 강조가 같은 이유로 `data-*` 를 쓴다). 다만 버튼은
+// 지금 식별자가 없어 글자로 찾을 수밖에 없다 — 그 한계를 적어 둔다.
+
+describe('★ 무엇이 어느 탭에 있는가 — 개편의 산출물 그 자체', () => {
+  const inPane = (id: string, label: string): boolean =>
+    Array.from(pane(id)!.querySelectorAll('button')).some((b) => b.textContent === label);
+
+  it('🔴 MD — 「JSON 내보내기」는 **파일** 탭이다', () => {
+    mount();
+    expect(inPane('file', 'JSON 내보내기'), '🔴 내보내기가 파일 탭에 없다').toBe(true);
+    for (const id of ['place', 'props', 'surface']) {
+      expect(inPane(id, 'JSON 내보내기'), `🔴 내보내기가 ${id} 탭에도 있다`).toBe(false);
+    }
+  });
+
+  it('🔴 조작 버튼(회전·크기·높이·삭제)은 **속성** 탭이다', () => {
+    mount();
+    for (const label of ['↺ 회전', '− 크기', '− 높이', '삭제']) {
+      expect(inPane('props', label), `🔴 「${label}」 가 속성 탭에 없다`).toBe(true);
+      expect(inPane('place', label), `🔴 「${label}」 가 놓기 탭에도 있다`).toBe(false);
+    }
+  });
+
+  it('🔴 팔레트는 **놓기** 탭이다 — 「아직 없는 것을 만든다」', () => {
+    mount();
+    expect(pane('place')!.querySelector('.pal'), '🔴 팔레트가 놓기 탭에 없다').not.toBeNull();
+    for (const id of ['props', 'surface', 'file']) {
+      expect(pane(id)!.querySelector('.pal'), `🔴 팔레트가 ${id} 탭에도 있다`).toBeNull();
+    }
+  });
+
+  it('🔴 크기 슬라이더는 **속성** 탭이다 — 고른 것 하나를 만지는 값이다', () => {
+    mount();
+    expect(pane('props')!.querySelector('.size-row'), '🔴 크기 슬라이더가 속성 탭에 없다').not.toBeNull();
   });
 });
 

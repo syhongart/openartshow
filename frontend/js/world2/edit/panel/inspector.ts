@@ -136,16 +136,33 @@ export function createInspector(
       if (!Number.isFinite(v)) return;
       f.set(st.target, v);
       st.target.apply();
-      // ⚠ **수치칸은 타이핑 한 글자마다 확정한다.** 드래그와 달리 «손을 떼는 순간» 이
-      // 없기 때문이다 — `blur` 를 기다리면 값을 치고 다른 데를 클릭할 때까지 마을
-      // 파셀이 안 바뀌고, 그 사이 화면과 수치가 다른 것을 말한다.
-      // 마을에서는 이것이 곧 파셀 재빌드라 타이핑 중 건물이 깜빡인다 — 그 대가를
-      // 아는 채로 고른 것이고, 거슬리면 `blur` 확정으로 옮긴다(그때는 위 문제가 돌아온다).
-      st.target.commit();
+      // ⚠ **수치칸은 타이핑 한 글자마다 확정한다 — 단 액자는 예외다.**
+      //
+      // 원래 규약: 드래그와 달리 «손을 떼는 순간» 이 없으므로 `blur` 를 기다리면 값을
+      // 치고 다른 데를 클릭할 때까지 마을 파셀이 안 바뀌고, 그 사이 화면과 수치가 다른
+      // 것을 말한다. 마을에서는 이것이 곧 파셀 재빌드라 타이핑 중 건물이 깜빡이는데,
+      // 그 대가를 아는 채로 고른 것이다.
+      //
+      // 🔴 **액자에서는 그 거래가 성립하지 않는다**(검수관 재검수 B-1 조건 ③, 2026-08-19).
+      // 액자의 `commit()` 은 `port.set()` → `place()` 를 태우고, 그것이 `clearPlaced()` 로
+      // **모든 액자의 지오·재질을 dispose 하고 다시 만든다.** 「12.5」를 치면 네 글자에
+      // 전량 재생성이 네 번이다 — 마을의 「한 파셀 재빌드」와 규모가 다르다.
+      //
+      // 그리고 **미룰 수 있다**: 액자는 `apply()` 가 씬을 즉시 맞추므로(`retarget`)
+      // **화면은 이미 맞다.** 원래 규약이 막으려던 「화면과 수치가 다른 것을 말한다」가
+      // 액자에서는 애초에 안 생긴다. 그래서 확정만 `change`(=blur) 로 미룬다.
+      if (st.target.kind !== 'art') st.target.commit();
       onChanged();
     };
     inp.addEventListener('input', commit);
+    // 액자의 확정 지점 — 위 근거대로 손을 뗄 때 한 번이다.
+    inp.addEventListener('change', () => {
+      if (st.target?.kind !== 'art') return;
+      st.target.commit();
+      onChanged();
+    });
     // Enter 는 «다 쳤다» 는 신호다 — 포커스를 놓아 `sync` 가 정규화된 값을 되쓰게 한다.
+    // (액자에서는 `blur` 가 `change` 를 내므로 이것이 곧 확정이기도 하다.)
     inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); });
 
     inputs.set(f.key, inp);
