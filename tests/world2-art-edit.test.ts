@@ -13,7 +13,15 @@
 // | 씬 `retarget` 이 실제로 자세를 옮기는가 | ★ 잰다 (three 스텁 주입) |
 // | 등장 배수(W8-10)와 **곱해지는가** | ★ 잰다 |
 // | 슬라이더 DOM 의 손맛(범위·스텝이 손에 맞는가) | ✗ 감독 체감 |
+// | **패널 DOM·배선**(칸이 서는가·클릭이 이어지는가·손 떼면 확정되는가) | → `world2-edit-panel-wiring.test.ts` |
 // | WebGPU 실기기 | ✗ 원리적으로 못 잰다 |
+//
+// ⚠ **이 표의 셋째 줄은 원래 없었고, 그 빠짐이 검수관 반려 B4 였다**(2026-08-19).
+// 그때 「못 재는 것」에 *「슬라이더 손맛」* 만 적혀 있어서 **DOM·배선 계층 전부가 안
+// 재지고 있다는 사실이 「원리적 한계」처럼 읽혔다.** 검수관이 다섯 뮤테이션을 심어
+// 전부 0 failed 임을 실측했고, 이 저장소에는 jsdom 패널 검사 관행이 **이미 셋** 있었다
+// — 즉 **「못 잼」이 아니라 「안 잼」**이었다. 그 구분을 지우는 것이 이 저장소가 이름
+// 붙인 「못 잰 것이 통과로 적히는 경향」이고, 표는 그것을 **가장 잘 숨기는 자리**다.
 //
 // ⚠ **위치 축은 스텁이 `position` 을 기록해야 성립한다.** `tests/world2-artwork-scene.
 // test.ts` 의 스텁은 `position: { set() { } }` 라 대입이 아무 데도 안 남는다 — 그 파일이
@@ -211,6 +219,64 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
     expect(artTarget(port, 1)!.remove()).toBe(true);
     await Promise.resolve();
     expect(port.list().map((a) => a.src)).toEqual(['a', 'c']);
+  });
+
+  // ── 🔴 검수관 반려 B1 (2026-08-19) — 확정이 그 사이 걸린 작품을 지웠다 ──────
+  //
+  // 어댑터가 생성 시점 목록의 **스냅샷**을 되쓰고 있었다. 「A 를 고른 채 B 를 건다」가
+  // 전시를 꾸미는 기본 동작이고 미리보기는 `blob:` 이라, 사라지면 되돌릴 수단이 없었다.
+  // 아래 셋이 그 형태를 못 박는다 — 처방(`findAt`)의 근거는 `target.ts` 헤더 한 곳이다.
+
+  it('🔴 확정이 **그 사이 걸린 작품**을 안 지운다 — 고른 채 한 장 더 거는 것이 기본 동작이다', async () => {
+    const port = bareePort([art({ src: 'a', w: 2.4 })]);
+    const t = artTarget(port, 0)!;
+    // 고른 채로 한 장 더 건다(드롭·조준·기즈모 어느 경로든 이 형태다).
+    await port.set([...port.list(), art({ src: 'b' })]);
+
+    t.width!.set(5);
+    t.commit();
+    await Promise.resolve();
+
+    expect(port.list().map((a) => a.src), '🔴 그 사이 걸린 작품이 사라졌다').toEqual(['a', 'b']);
+    expect(port.list()[0].w, '★ 확정한 값이 안 실렸다').toBe(5);
+  });
+
+  it('🔴 삭제가 **목록을 통째로 비우지 않는다** — 스냅샷을 되쓰면 그렇게 된다', async () => {
+    const port = bareePort([art({ src: 'a' })]);
+    const t = artTarget(port, 0)!;
+    await port.set([...port.list(), art({ src: 'b' })]);
+
+    expect(t.remove()).toBe(true);
+    await Promise.resolve();
+    expect(port.list().map((a) => a.src), '🔴 나중에 건 것까지 지웠다').toEqual(['b']);
+  });
+
+  it('🔴 **앞 항목이 지워져 인덱스가 밀려도** 그때 그 작품을 짚는다', async () => {
+    const port = bareePort([art({ src: 'a' }), art({ src: 'b', w: 2.4 })]);
+    const t = artTarget(port, 1)!;   // b 를 고른다
+    // 앞의 a 가 사라진다 — b 는 이제 0번이다.
+    await port.set(port.list().slice(1));
+
+    t.width!.set(7);
+    t.commit();
+    await Promise.resolve();
+    const after = port.list();
+    expect(after.map((x) => x.src)).toEqual(['b']);
+    expect(after[0].w, '🔴 인덱스만 보면 밀려서 엉뚱한 것을 고치거나 아무것도 안 된다').toBe(7);
+  });
+
+  it('★ 고른 작품이 이미 지워졌으면 **아무것도 안 한다** — 조용히 되살리지 않는다', async () => {
+    const port = bareePort([art({ src: 'a' }), art({ src: 'b' })]);
+    const t = artTarget(port, 0)!;
+    await port.set(port.list().slice(1));   // a 가 사라진다
+
+    t.width!.set(9);
+    t.commit();
+    await Promise.resolve();
+    expect(port.list().map((x) => x.src), '★ 지워진 작품이 되살아났다').toEqual(['b']);
+    expect(t.remove(), '★ 없는 것을 지웠다고 말한다').toBe(false);
+    await Promise.resolve();
+    expect(port.list().map((x) => x.src)).toEqual(['b']);
   });
 
   it('★ 씬을 안 물린 포트에서도 어댑터가 산다 — 부팅 순서에 걸려 편집이 죽으면 안 된다', () => {

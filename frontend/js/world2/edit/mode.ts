@@ -116,7 +116,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     thawSelected: () => { actions.thawSelected(); },
     // 아웃라이너 목록 클릭 → **3D 클릭과 같은 함수.** 여기서 갈라지면 «목록으로 고른
     // 것은 기즈모가 안 붙는다» 가 나고, 그 어긋남은 화면에서만 드러난다.
-    pickVillage: (v) => { select(st, host, { village: v }); panel.refresh(); },
+    pickVillage: (v) => { select(st, host, { village: v }); panel.onPicked(); },
     // ── 걸린 작품 (W8-11 · 감독 지시 *"그림과 액자 크기 위치를 조절"*) ────────
     // 목록도 선택도 **포트 하나**에서 온다. 어댑터를 여기서 만드는 이유는 `select()`
     // 주석 한 곳에 있다 — 요약하면 «`edit/state.ts` 가 작품 시스템을 알게 되지 않도록».
@@ -127,7 +127,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     artList: port && (() => port.list()),
     pickArt: port && ((i: number) => {
       select(st, host, { art: { index: i, target: artTarget(port, i) } });
-      panel.refresh();
+      panel.onPicked();
     }),
     // 시점 버튼과 시점 키는 **같은 함수**다 — `input` 이 소유하고 패널은 부르기만 한다.
     setView: (side) => { input.setView(side); },

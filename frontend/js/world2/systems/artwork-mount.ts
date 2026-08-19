@@ -6,9 +6,20 @@
 // 을 *부르지만* 그 반대는 없다. 즉 씬은 배선을 모른 채 성립하고, 배선만 three 의
 // `TextureLoader`·`SRGBColorSpace` 같은 **부팅 시점 지식**을 안다. 그 비대칭이 경계다.
 //
-// 같은 처방을 W8-9 에서 계약(`artwork-types.ts`)에 이미 썼다. 소비자 경로가 안 바뀌게
-// `artwork-scene.ts` 가 여기를 **재수출**한다 — import 를 고치는 diff 가 섞이면
-// 「무엇이 바뀌었나」가 안 보인다.
+// 같은 처방을 W8-9 에서 계약(`artwork-types.ts`)에 이미 썼다.
+//
+// ⚠ **여기 원래 *"소비자 경로가 안 바뀌게 `artwork-scene.ts` 가 재수출한다"* 라고
+// 적혀 있었고 두 절이 다 거짓이었다**(검수관 반려 B2, 2026-08-19). 재수출은 **없고**,
+// 소비자 경로는 **실제로 바뀌었다** — `features/overlay.ts` 와 테스트 둘이 이 커밋에서
+// 고쳐졌다. 처음엔 정말 재수출로 썼는데 `check:cycles` 가 **순환**으로 잡았다
+// (mount → scene, scene → mount). 그래서 소비자를 고치는 쪽으로 바꿨고 **문장을 안
+// 따라 고쳤다.**
+//
+// 그 사정이 이 파일의 실제 규약이다: **재수출은 순환이라 못 한다.** 여기서 무언가를
+// 옮길 때 「배럴로 감싸면 경로가 유지된다」를 시도하지 마라 — 게이트가 막는다.
+// 대신 소비자를 고치고, 그 diff 가 섞이는 대가는 받아들인다.
+//
+// 타입만은 예외다(아래 `export type`) — mount 가 scene 을 부르는 단방향이라 순환이 없다.
 
 import { createArtworkScene } from './artwork-scene.js';
 import type { ArtThreeNS, ArtNode, ArtworkScene } from './artwork-types.js';

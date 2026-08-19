@@ -83,7 +83,9 @@ export interface EditTarget {
    * 감독 지시는 *"그림과 액자 **크기**"* 였고 사람이 쓰는 단위는 «몇 미터짜리 그림» 이지
    * «원래의 1.5배» 가 아니다. 그리고 슬라이더에는 **범위**가 필요한데, `s` 의 범위는
    * 계약상 `S_MIN 0.01` ~ `S_MAX 100` 이라 손잡이 한 칸이 화면 밖으로 나간다.
-   * 액자는 `ART_W_MIN`~`ART_W_MAX`(0.2~12m)라는 **의미 있는 범위**를 이미 갖고 있다.
+   * 액자는 `ART_W_MIN`~`ART_W_MAX` 라는 **의미 있는 범위**를 이미 갖고 있다(그 수를
+   * 여기 적지 않는다 — 이 파일 아래가 *"범위는 계약이 소유한다"* 라고 선언하는데 위에서
+   * 수를 적으면 계약을 바꿔도 이 줄만 낡는다. 검수관 권고 P5).
    *
    * 오버레이·마을이 이것을 안 내는 것은 의도다 — GLB 는 원본 치수를 모르고(배수만
    * 뜻이 있다), 마을 파츠는 비균등이라 «폭 하나» 로 환원되지 않는다. 낼 것이 없는
@@ -287,8 +289,10 @@ export function copyPart(p: PlacedPart): PlacedPart {
  * ── `s` 는 `w` 에 대한 **배수**다 ───────────────────────────────────────────
  * 마을 파츠가 *"붙는 순간의 `sx·sy·sz` 를 기준으로 기억하고 `s` 는 그 기준에 대한
  * 배수"* 로 푼 것과 **같은 패턴**이다. 액자는 폭 하나뿐이라 더 단순하다.
- * 계약 범위(`ART_W_MIN`~`ART_W_MAX`)는 여기서 클램프한다 — 범위 밖은 **무시**이고,
- * 그것이 `EditTarget` 의 다른 세터와 같은 규약이다(*"범위 밖이면 아무것도 안 한다"*).
+ * 계약 범위(`ART_W_MIN`~`ART_W_MAX`)를 벗어난 입력은 **무시한다 — 자르지 않는다.**
+ * (이 문장은 원래 *"여기서 **클램프**한다 — 범위 밖은 **무시**이고"* 라고 두 동작을
+ * 함께 적고 있었다. 검수관 권고 P4 — 둘은 다른 동작이고, 그 차이가 «감독이 민 값과
+ * 화면이 갈리는가» 를 정한다. 코드는 무시이고 그것이 다른 세터와 같은 규약이다.)
  *
  * ── `apply` / `commit` 이 갈리는 이유 ───────────────────────────────────────
  * `apply` 는 슬라이더를 미는 내내 프레임마다 불린다. 거기서 `port.set()` 을 부르면
@@ -306,11 +310,43 @@ export function artTarget(
   port: ArtsPort,
   index: number,
 ): EditTarget | null {
-  const items = port.list();
-  if (index < 0 || index >= items.length) return null;
-  const base = items[index];
+  const items0 = port.list();
+  if (index < 0 || index >= items0.length) return null;
+  const base = items0[index];
   // 사본 — 원본은 `commit` 이 `set()` 으로만 바꾼다.
   const cur = { ...base };
+
+  /**
+   * 🔴 **확정할 때 목록을 다시 읽는다** (검수관 반려 B1, 2026-08-19).
+   *
+   * 첫 판본은 어댑터를 만들 때 잡은 `items0` **스냅샷**을 `commit()`/`remove()` 가
+   * 그대로 되썼다. 그 사이 목록이 늘면 **늘어난 것이 통째로 사라진다** — 검수관 재현:
+   *
+   *   A 를 고른다 → 사진 B 를 건다 → A 의 크기를 바꾸고 손을 뗀다 → **B 가 없다**
+   *   (A 를 지우면 목록이 통째로 빈다)
+   *
+   * 도달 경로가 셋이고 **전부 선택을 안 푼다**: 이미지 드롭 · 조준 걸기 · 기즈모 드래그
+   * 종료. 「고른 채로 한 장 더 건다」는 전시를 꾸미는 기본 동작이고, 미리보기는 `blob:`
+   * 이라 사라지면 파일을 다시 떨어뜨려야 한다 — **되돌릴 수단이 없는 손실**이었다.
+   *
+   * 원인은 산술이 아니라 **셈**이었다. `edit/state.ts` 가 *"목록을 바꾸는 경로는 둘"*
+   * (`commit`·`remove`)이라고 적었는데 **셋**이다 — 「새로 걸기」가 빠졌다. 그 문장이
+   * 이 어댑터의 전제였다.
+   *
+   * ── 왜 인덱스가 아니라 **항목 동일성**으로 찾는가 ─────────────────────────
+   * 목록을 다시 읽는 것만으로는 **앞 항목이 지워진 경우**를 못 막는다(인덱스가 밀린다).
+   * `port.list()` 는 항목 **객체 참조**를 유지하므로(`set` 이 배열만 갈아 끼운다)
+   * `indexOf` 가 「그때 그 작품」을 정확히 짚는다.
+   *
+   * 못 찾으면 **아무것도 안 한다** — 이미 지워진 작품을 되살리지 않는다. 지금 그 경로는
+   * 없지만(지우면 `actions.ts` 가 선택을 푼다), 조용히 되살아나는 것보다 안 하는 쪽이
+   * 옳고 그 판정을 여기 한 곳에 둔다.
+   */
+  function findAt(): number {
+    const now = port.list();
+    const i = now.indexOf(base);
+    return i >= 0 ? i : -1;
+  }
 
   return {
     kind: 'art',
@@ -325,20 +361,31 @@ export function artTarget(
       if (w < ART_W_MIN || w > ART_W_MAX) return;   // 범위 밖은 무시(다른 세터와 같은 규약)
       cur.w = w;
     },
+    // ⚠ `apply` 는 **생성 시점 인덱스**를 쓴다 — 씬의 액자 순서는 마지막 `place()` 가
+    // 정하고, 그것은 목록이 바뀌면 `place()` 가 다시 돌며 함께 맞춰진다. 여기서
+    // `findAt()` 을 쓰면 「목록은 새 순서인데 씬은 옛 순서」인 한 프레임을 잘못 민다.
     apply() { port.retarget(index, cur); },
     commit() {
-      const next = items.slice();
-      next[index] = { ...cur };
+      const at = findAt();
+      if (at < 0) return;
+      const next = port.list().slice();
+      next[at] = { ...cur };
       void port.set(next);
     },
     remove() {
-      const next = items.slice();
-      next.splice(index, 1);
+      const at = findAt();
+      if (at < 0) return false;
+      const next = port.list().slice();
+      next.splice(at, 1);
       void port.set(next);
       return true;
     },
-    // 액자는 **벽에** 걸린다 — 「바닥에」 는 의미가 없다. 지금 높이를 그대로 낸다
-    // (버튼이 눌려도 아무 일이 안 일어나는 것이 옳다).
+    // 액자는 **벽에** 걸린다 — 「바닥에」 는 의미가 없다. 지금 높이를 그대로 낸다.
+    //
+    // ⚠ 여기 원래 *"버튼이 눌려도 아무 일이 안 일어나는 것이 옳다"* 라고 적혀 있었고,
+    // 그것은 팀장이 못 박은 규약과 정면으로 어긋난다(검수관 권고 P2) — *"조용히 no-op
+    // 만 남기면 «가끔 안 움직인다» 가 된다"*. **값은 그대로 두되 화면이 말하게 한다**:
+    // 「바닥에」 버튼은 액자를 고른 동안 숨는다(`panel/dom.ts` 의 `refresh`).
     ground() { return cur.y; },
     name: artName(base.src),
     width: {

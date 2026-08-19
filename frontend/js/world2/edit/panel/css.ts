@@ -31,6 +31,29 @@ export const CSS = `
 #w2-edit h4{margin:0;font-size:11px;letter-spacing:.04em;color:#8B72FF;flex:1 1 auto}
 #w2-edit[data-open="0"] h4{display:none}
 #w2-edit .row{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0}
+/* ── 카테고리 탭 (감독 지시 2026-08-19 "막 나열하니 정신없잖아") ─────────────
+   무엇을 어느 탭에 넣는지·왜 넷인지는 decide/edit-tabs.ts 한 곳이다.
+   여기는 그것을 «넷이 한 줄에 들어가고, 고른 것이 눈에 띈다» 로만 옮긴다.
+
+   sticky 인 이유: 패널 전체가 overflow:auto 라 아래 탭 내용이 길면 바가 위로 밀려
+   나간다. 그러면 «다른 탭으로 가려면 먼저 위로 스크롤» 이 되고, 그것이 정확히 이
+   개편이 없애려던 «찾아 헤매기» 다. 블렌더 Properties 탭도 늘 제자리에 있다.
+
+   ⚠ 넷을 flex:1 1 0 으로 나눈다 — 1 1 auto 면 글자 길이대로 폭이 갈려 자리가
+   흔들리고, 손이 «표면은 세 번째» 를 못 외운다. 자리 기억이 탭의 값어치 절반이다. */
+#w2-edit .tabbar{display:flex;gap:3px;position:sticky;top:0;z-index:1;
+  padding:4px 0 5px;margin:2px 0 0;background:rgba(11,13,18,.96)}
+#w2-edit .tabbar button{flex:1 1 0;min-width:0;padding:5px 2px;font-size:10px;
+  white-space:nowrap;overflow:hidden}
+/* 안 고른 탭은 테두리를 지운다 — 넷이 다 상자면 어느 것이 켜졌는지가 색 하나에만
+   걸리고, 그 대비는 야외 화면에서 가장 먼저 사라지는 신호다. */
+#w2-edit .tabbar button[data-on="0"]{background:none;border-color:transparent;color:#9A9EB1}
+#w2-edit .tabbar button[data-on="0"]:hover{border-color:#3A3D4B}
+/* 「지금 볼 게 없다」 — 흐리게만 한다. 못 누르게 막지 않는 근거는 tabHasContent 주석. */
+#w2-edit .tabbar button[data-empty="1"][data-on="0"]{opacity:.45}
+#w2-edit .pane[data-on="0"]{display:none}
+/* 탭 안 첫 요소의 위 여백을 지운다 — 바 아래 간격이 두 겹이 된다 */
+#w2-edit .pane > :first-child{margin-top:0}
 #w2-edit button{flex:1 1 auto;min-width:30px;padding:4px 5px;font:11px/1 system-ui,sans-serif;
   color:#F5F5F2;background:#1A1D26;border:1px solid #3A3D4B;border-radius:6px;cursor:pointer}
 #w2-edit button:hover{border-color:#8B72FF}
