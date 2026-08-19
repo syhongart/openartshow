@@ -29,7 +29,7 @@
     "frontend/js/world5/features/npc.ts": 721,
     "frontend/js/world2/decide/shadow-decal.ts": 692,
     "frontend/js/multiplayer.js": 661,
-    "frontend/js/world2/edit/input.ts": 645,
+    "frontend/js/world2/edit/input.ts": 652,
     "frontend/js/world3/systems/sky.ts": 644,
     "frontend/js/world5/systems/sky.ts": 644,
     "frontend/js/world5/parts/tower.ts": 632,
@@ -46,8 +46,8 @@
     "frontend/js/world2/decide/water.ts": 558,
     "frontend/js/world2/parts/shadow.ts": 556,
     "frontend/js/world3/decide/water.ts": 556,
+    "frontend/js/world2/systems/player.ts": 552,
     "frontend/js/hitfx.js": 549,
-    "frontend/js/world2/systems/player.ts": 542,
     "frontend/js/chibi-animation-v2.ts": 538,
     "frontend/js/mypage/app.ts": 532,
     "frontend/js/player.js": 525

@@ -236,24 +236,22 @@ describe('★ 키 → 입력 — `createFlyInput`', () => {
     return ev;
   };
 
-  it('★ WASD·Space·Shift 가 상태로 들어온다', () => {
+  it('★ WASD 가 상태로 들어온다 (수직 둘은 아래에서 **각각** 잰다)', () => {
     key('keydown', 'KeyW');
-    key('keydown', 'Space');
-    key('keydown', 'ShiftLeft');
+    key('keydown', 'KeyA');
     expect(handle.current().forward).toBe(true);
-    expect(handle.current().up).toBe(true);
-    expect(handle.current().down, '★ Shift 가 하강이 아니다').toBe(true);
+    expect(handle.current().left).toBe(true);
     key('keyup', 'KeyW');
     expect(handle.current().forward).toBe(false);
   });
 
-  it('🔴 `Ctrl` 은 **어떤 비행 동작도 안 한다** — `Ctrl+W` 가 탭을 닫는다', () => {
-    // 검수관 반려 B2. 하강이 `Ctrl` 이던 판본에서는 «하강하면서 전진» 이 `Ctrl+W` 였고,
-    // 그것은 Chrome 계열에서 페이지가 못 막는 탭 닫기다. 편집은 자동 저장이 없다.
-    key('keydown', 'ControlLeft');
-    key('keydown', 'ControlRight');
-    expect(handle.current(), '🔴 Ctrl 이 아직 비행 키다 — 감독이 작업을 잃을 수 있다')
-      .toEqual(NO_FLY);
+  it('🔴 `Ctrl`·`Shift` 는 **어떤 비행 동작도 안 한다** — 둘 다 하강이었다가 물러났다', () => {
+    // 검수관 반려 B2·B4. `Ctrl` 은 `Ctrl+W`(탭 닫기), `Shift` 는 편집의 팬·와이어·달리기와
+    // 삼중 충돌이었다. 지금은 둘 다 비행 키가 아니다.
+    for (const c of ['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight']) {
+      key('keydown', c);
+    }
+    expect(handle.current(), '🔴 수식키가 아직 비행 키다').toEqual(NO_FLY);
   });
 
   it('🔴 편집이 꺼져 있으면 키를 안 받는다 — 주행에서 날면 안 된다', () => {
@@ -421,7 +419,10 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
   // 배치가 바뀌는 순간 빨간불을 낸다. 미러링 0이고, 트립와이어라 거짓 FAIL 이 곧 목적이다.
   //
   // ⚠ **이 검사가 못 보는 것**: 문구가 **무엇을 말하는지**. 키를 안 바꾸고 문구만 틀리게
-  // 고치는 것 · 상시 범례(`panel/dom.ts`) · 모바일 부재 · 화면 배치.
+  // 고치는 것 · 상시 범례(`panel/dom.ts`) · 모바일 부재 · 화면 배치 ·
+  // 🔴 **다른 파일이 `FLY_KEYS` 를 인용한 문장이 낡는 것**(검수관 권고 P11 — 실제로
+  // `systems/player.ts` 의 주석이 «`Shift` 는 비행 키이면서 달리기 키다» 를 적고 있다가
+  // 키 교체로 거짓이 됐다, 반려 B5).
 
   it('🔴 `FLY_KEYS` 의 키 집합이 동결과 다르면 — **`edit/mode.ts` 의 안내 문구를 함께 고쳐라**', async () => {
     const src = await (async () => {
@@ -435,14 +436,71 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
     // 그리고 한 줄에 여러 키가 있으므로 **줄 시작만 보면 안 된다**(첫 판본이 `^` 를 써서
     // 7개 중 2개만 뽑았고, 그래서 이 검사가 처음에 거짓 빨간불이었다).
     const body = m![1].replace(/\/\/[^\n]*/g, '');
-    const codes = [...body.matchAll(/(\w+)\s*:/g)].map((x) => x[1]).sort();
-    expect(codes, [
+    // 🔴 **코드만 뽑으면 매핑 스왑을 못 잡는다**(검수관 반려 B6 — 실측: `Space:'down'`·
+    // `KeyC:'up'` 으로 위아래를 뒤집었는데 **25/25 통과**했다). 「Space 위 · C 아래」를
+    // 보증하는 단언이 한 건도 없었는데 「못 보는 것」 목록에도 그 항목이 없었다.
+    // **코드:값 쌍**을 동결한다.
+    const pairs = [...body.matchAll(/(\w+)\s*:\s*'(\w+)'/g)]
+      .map((x) => `${x[1]}=${x[2]}`).sort();
+    expect(pairs, [
       '🔴 비행 키 배치가 바뀌었다.',
       '   → `edit/mode.ts` 의 `sayLead` 안내 문구를 **함께** 고치고,',
       '     `panel/dom.ts` 의 상시 키 범례도 본 뒤 이 목록을 갱신하라.',
       '   (단언을 지우지 마라 — 이 검사는 그 두 곳을 보게 하려고 일부러 깨진다.)',
-    ].join('\n')).toEqual(
-      ['KeyA', 'KeyD', 'KeyS', 'KeyW', 'ShiftLeft', 'ShiftRight', 'Space'],
-    );
+    ].join('\n')).toEqual([
+      'KeyA=left', 'KeyC=down', 'KeyD=right', 'KeyS=back', 'KeyW=forward', 'Space=up',
+    ]);
+  });
+
+  it('🔴 **수식키를 비행 키로 쓰지 않는다** — 검수관 명세 GS-F3', async () => {
+    // 하강 키가 **두 번** 틀렸고 두 번 다 수식키였다(`Ctrl` → 브라우저 예약,
+    // `Shift` → 편집의 팬·와이어·달리기와 삼중 충돌). 코드표 grep 으로는 안 나오는
+    // 형태라 — `ev.shiftKey` 는 키 이름이 아니라 **이벤트 속성**이다 — 검사로 못 박는다.
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('frontend/js/world2/edit/fly-input.ts', 'utf8');
+    const m = src.match(/const FLY_KEYS[^=]*=\s*\{([\s\S]*?)\n\};/);
+    const body = m![1].replace(/\/\/[^\n]*/g, '');
+    const codes = [...body.matchAll(/(\w+)\s*:\s*'/g)].map((x) => x[1]);
+    const mods = codes.filter((c) => /^(Shift|Control|Alt|Meta)/.test(c));
+    expect(mods, [
+      '🔴 수식키를 비행 키로 넣었다.',
+      '   `edit/input.ts` 가 `ev.shiftKey`(팬 · 와이어)·`ev.altKey`(궤도)를 쓰고,',
+      '   `Ctrl`/`Meta` 는 브라우저 예약 조합을 만든다(`Ctrl+W` = 탭 닫기).',
+      '   → 수식키가 아닌 단독 코드를 쓰거나, 겹치는 쪽을 먼저 정리하라.',
+    ].join('\n')).toEqual([]);
+  });
+
+  it('🔴 위/아래가 **각각** 맞다 — 두 키를 함께 누르면 구별이 안 된다', () => {
+    // 검수관 반려 B6 의 두 번째 축: 기존 검사가 `Space` 와 하강 키를 **둘 다 누른 뒤**
+    // `up`·`down` 을 봐서, 어느 키가 어느 쪽인지 구조적으로 구별할 수 없었다.
+    const h = createFlyInput({ doc: document, fly: () => {}, editing: () => true });
+    h.bind();
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+      expect(h.current().up, '🔴 Space 가 상승이 아니다').toBe(true);
+      expect(h.current().down, '🔴 Space 가 하강까지 켰다').toBe(false);
+      document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', bubbles: true }));
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyC', bubbles: true }));
+      expect(h.current().down, '🔴 C 가 하강이 아니다').toBe(true);
+      expect(h.current().up, '🔴 C 가 상승까지 켰다').toBe(false);
+    } finally {
+      h.unbind();
+    }
+  });
+
+  it('🔴 수식키를 누른 채로는 비행 키가 안 먹는다 — `Ctrl+C` 가 하강이 되면 안 된다', () => {
+    const h = createFlyInput({ doc: document, fly: () => {}, editing: () => true });
+    h.bind();
+    try {
+      for (const mod of ['ctrlKey', 'metaKey', 'altKey', 'shiftKey'] as const) {
+        document.dispatchEvent(new KeyboardEvent('keydown', {
+          code: 'KeyC', bubbles: true, [mod]: true,
+        }));
+        expect(h.current(), `🔴 ${mod} 를 누른 채인데 비행 키가 먹었다`).toEqual(NO_FLY);
+      }
+    } finally {
+      h.unbind();
+    }
   });
 });

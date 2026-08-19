@@ -28,25 +28,29 @@ import { NO_FLY, type FlyInput } from '../decide/fly.js';
 /** 비행 키 배치. WASD 는 주행과 같고 수직 둘만 더한다 */
 const FLY_KEYS: Readonly<Record<string, keyof FlyInput>> = {
   KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right',
-  // 위/아래는 **Space/Shift** 다.
+  // 위/아래는 **Space/C** 다.
   //
-  // 🔴 **하강은 원래 `Ctrl` 이었고 그것을 바꿨다**(검수관 반려 B2, 2026-08-19).
-  // `Ctrl`(하강) + `W`(전진)는 **비행에서 가장 흔한 조합**인데, Chrome 계열에서 `Ctrl+W` 는
-  // 페이지가 `preventDefault` 로 **막을 수 없는** 탭 닫기다. 그리고 world2 편집은 자동
-  // 저장이 없다(`store/local-store.ts` 는 *"편집 결과를 잃지 않으려고 있다"* 라고 적지만
-  // **제품 소비자가 0건**이다 — `G-FLY9`). 즉 **한 번의 조합키로 편집하던 것을 통째로 잃는다.**
+  // 🔴 **하강 키가 두 번 틀렸다. 두 번 다 「무엇을 봐야 하는가」를 몰라서였다.**
   //
-  // ⚠ **탭이 실제로 닫히는지는 이 환경에서 못 쟀다**(대화형 브라우저가 없다). 그래서
-  // 「안전하다」고도 「위험하다」고도 실측으로는 못 적는다 — **비용이 비대칭이라 fail-closed
-  // 로 갔다**: 틀렸으면 잃는 것이 0이고, 맞으면 감독이 작업을 통째로 잃는다.
+  //   1차 `Ctrl` — `Ctrl+W`(하강+전진)는 Chrome 계열에서 페이지가 **막을 수 없는** 탭
+  //     닫기다. 편집은 자동 저장이 0이라(`G-FLY9`) 한 번에 작업을 잃는다.
+  //   2차 `Shift` — 「브라우저 예약이 아니다」만 보고 골랐는데, **편집에서 `Shift` 는 이미
+  //     세 가지 뜻**이었다: `Shift`+드래그 = 위아래 팬(`input.ts` 의 `orbitDrag`) ·
+  //     `Shift+Z` = 와이어 토글 · 주행 달리기(`main.ts`). 누르는 순간 하강이 시작되므로
+  //     **팬을 시작하기 전에 지면까지 가라앉고, 와이어를 토글할 때마다 고도가 떨어졌다.**
   //
-  // ⚠⚠ 그리고 이것을 **내가 만든 안내 문구가 시키고 있었다** — *"Ctrl 아래"*. 위험한 조작을
-  // 화면이 권하는 형태였다.
+  // ⚠⚠ **교훈(검수관)**: *"키를 옮길 때 봐야 하는 것은 «그 코드가 다른 키표에 있는가»가
+  // 아니라 «그 키가 **수식키로** 쓰이는가» 다"* — 후자는 코드표 grep 으로 안 나온다.
+  // 2차 때 나는 `EDIT_KEYS` 코드표만 보고, **그 문장이 가리키는 바로 그 파일의
+  // `ev.shiftKey` 두 곳**을 안 봤다.
   //
-  // `Shift` 를 고른 이유: 어떤 조합도 브라우저 예약이 아니고, 주행의 달리기 키라 **손이
-  // 이미 아는 자리**다. `KeyZ`·`KeyX` 는 편집에서 «선택한 것의 높이», `KeyQ`·`KeyE` 는
-  // «회전» 이라 겹친다(`input.ts` 의 `EDIT_KEYS`).
-  Space: 'up', ShiftLeft: 'down', ShiftRight: 'down',
+  // 그래서 이번엔 **수식키를 아예 안 쓴다.** `KeyC` 는 실측으로 이 저장소 어디에도 안
+  // 쓰이고(`EDIT_KEYS`·`VIEW_KEYS`·`modalOpener`·주행 키맵 전수 확인), 게임에서 웅크리기·
+  // 하강의 관례 자리다. 그리고 아래 `onDown` 이 **수식키가 눌려 있으면 통째로 무시**하므로
+  // `Ctrl+C`(복사) 같은 조합도 하강을 일으키지 않는다.
+  //
+  // ⚠ 이 배치는 `GS-F3` 검사가 지킨다 — 수식키를 비행 키로 다시 넣으면 빨간불이 된다.
+  Space: 'up', KeyC: 'down',
 };
 
 export interface FlyInputHost {
@@ -85,13 +89,15 @@ export function createFlyInput(host: FlyInputHost): FlyInputHandle {
     // `input.ts` 가 같은 판정을 갖고 있고 같은 이유다.
     const t = ev.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    // 🔴 **수식키가 눌려 있으면 통째로 무시한다**(검수관 반려 B4). `input.ts` 가 같은
+    // 판정을 갖고 있고 같은 이유다 — `Ctrl+C`·`Ctrl+S` 같은 조합이 하강을 일으키면 안 되고,
+    // `Shift`+드래그(팬)·`Alt`+드래그(궤도)가 비행과 겹치면 안 된다.
+    //
+    // ⚠ 이 가드는 **지금 아무 비행 키도 안 죽인다** — `FLY_KEYS` 에 수식키가 없기 때문이다.
+    // 앞으로 누가 수식키를 넣으면 조용히 안 먹게 되는데, 그때 `GS-F3` 이 먼저 빨간불을 낸다.
+    if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) return;
     const k = FLY_KEYS[ev.code];
     if (!k || !host.editing()) return;
-    // ⚠ **조합키를 안 거른다.** 수식키가 비행 키에서 빠졌으므로(위 `FLY_KEYS`) `Ctrl+R`·
-    // `Ctrl+S` 같은 조합은 이제 **아무 비행 동작도 일으키지 않는다** — 거를 이유 자체가
-    // 없어졌다. 첫 판본은 `Ctrl` 을 하강으로 쓰면서 이 통과를 「의도」라고 적었고, 그때의
-    // 진짜 대가는 반대 방향(**하강하려는데 브라우저 단축키가 발동한다**)이었는데 그것을
-    // 안 적었다(검수관 반려 B2). 대가를 적을 때는 **더 비싼 쪽부터** 본다.
     held.add(k);
     wake();
     // `Space` 는 기본 동작이 스크롤이라 막는다. 안 막으면 날면서 화면이 함께 튄다.
