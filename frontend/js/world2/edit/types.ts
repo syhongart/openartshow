@@ -176,6 +176,18 @@ export interface OverlayHost {
   readonly instances: VillageRaycast | null;
   /** 마을 배치 조회. 없으면 마을 파츠를 집지 않는다 */
   readonly village: VillageRead | null;
+  /**
+   * 미술관 GLB 의 레이캐스트 루트. 없으면 미술관 벽은 **벽 검출 대상이 아니다**
+   * (태스크 #112).
+   *
+   * ⚠ **이것은 「고르기」 대상이 아니다** — `pick()`·`pickVillage()` 는 여기를 안 본다.
+   * 미술관은 편집으로 옮기거나 지우는 물건이 아니고, 이 문이 여는 것은 **벽면 하나**다.
+   * 고르기까지 열면 `EditTarget` 이 「옮길 수 없는 것」을 들게 되고 그 예외가 번진다.
+   *
+   * ⚠⚠ **읽기 전용으로 다뤄라** — 자식을 옮기거나 지우면 `glbCity` 기능의 `dispose()`
+   * 전제가 깨진다. 계약 원문은 `world-shared/glb-city.ts` 의 `GlbCityInstance.wallRoot`.
+   */
+  readonly glbCity: Object3D | null;
 
   entries(): readonly OverlayEntry[];
   /**

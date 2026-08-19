@@ -317,6 +317,8 @@ function makeHarness(vf?: VillageFixture): Harness {
     cellX: 40,
     cellZ: 40,
     root: root as never,
+    // 미술관 벽(태스크 #112). 이 하네스에는 미술관이 없다 — `null` 이 사실이다.
+    glbCity: null,
     entries: () => entries,
     place: async () => null,
     lastFailure: () => null,

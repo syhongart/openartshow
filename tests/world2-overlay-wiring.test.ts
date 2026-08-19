@@ -273,6 +273,71 @@ describe('편집 좌표 산술', () => {
   });
 });
 
+describe('🔴 태스크 #112 — 미술관 벽이 편집에 물려 있다 (배선 축, 검수관 명세 GS-A1)', () => {
+  // ── 왜 이 축이 필요한가 (검수관 반려 B2, 2026-08-19) ─────────────────────────
+  // `edit/pick.ts` 의 단위 테스트는 `host.glbCity` 가 **채워져 있다고 가정**하고, 그
+  // 가정을 채우는 3단(조립부 → `FeatureEnv` → `OverlayHost`)은 **아무도 안 봤다.**
+  // 실측: 세 지점을 각각 절단하는 뮤테이션이 **전부 0 검출**이었다(전체 4081 기준).
+  //
+  //   `overlay.ts` 의 `get glbCity()` → `return null`      검출 0
+  //   `main.ts` 의 `glbCityRoot` → `() => null`            검출 0
+  //   getter → 1회 평가(캐시화)                            검출 0
+  //
+  // CLAUDE.md 가 이 형태를 이미 규율로 적어 뒀다 — *"판정/집행 분리의 구멍: 계산된 값이
+  // 실제로 소비되는가는 양쪽 테스트 어디에도 안 걸린다"*, 처방은 *"집행 쪽 통합 테스트를
+  // 함께 붙인다"*. 바로 아래 W8-9 블록이 **같은 파일·같은 위험**으로 그 처방을 이미
+  // 쓰고 있었는데 이번 것만 없었다.
+  //
+  // ⚠ **정적 텍스트 검사인 것을 알고 쓴다** — 아래 W8-9 블록과 같은 이유(three 를 무는
+  // 파일이라 노드에서 배선을 못 돌린다)이고 같은 한계를 진다. 공백을 눌러 부분문자열로
+  // 보는 것도 그 판례 그대로다 — 표현식 형태를 정규식으로 못 박으면 **의미가 같은
+  // 재작성에도 빨간불**이 된다.
+  //
+  // ⚠⚠ **못 잡는 것** — 실측으로 확인한 것만 적는다:
+  //   ⓐ **죽은 코드에 같은 문자열이 남아 있는 형태.** 이 축은 「그 문자열이 파일 어딘가에
+  //      있는가」만 본다. 실측(2026-08-19): `glbCityRoot: () => null` 로 바꾸면서 원래
+  //      본문을 `_dead:` 프로퍼티로 **남겨 두면 0 failed** 다. 반면 현실적인 회귀 형태
+  //      셋은 전부 잡힌다 — 본문 교체(**1 failed**) · 프로퍼티 삭제(**1**) ·
+  //      `wallRoot?.()` 를 씬 전체로 바꿔치기(**1**).
+  //   ⓑ `wallRoot()` 가 **틀린 루트**를 내주는 것 — 위 ⓐ의 세 번째가 「씬 전체」 한 형태만
+  //      잡는다. 다른 오답(예: 자식 하나)은 못 본다.
+  //   ⓒ 실제 3D 광선이 미술관 메시에 닿는지 — jsdom 은 원리적으로 못 본다.
+  //   ⓓ WebGPU 실기기.
+
+  it('★ 조립부가 미술관 루트를 계약에 채운다 — 안 채우면 언제나 null 이라 벽이 안 걸린다', () => {
+    const src = read('frontend/js/world2/main.ts').replace(/\s+/g, ' ');
+    expect(src, '🔴 `glbCityRoot` 통로가 안 채워졌다 — 미술관 벽 검출이 통째로 죽는다')
+      .toContain('glbCityRoot:');
+    expect(src, '🔴 마운트된 기능에서 `wallRoot()` 를 거쳐 받아야 한다')
+      .toContain('wallRoot?.()');
+    // 이름 문자열을 조립부에 다시 적으면 그 순간 값 미러링이다 — 기능 선언의 `.name` 을 읽는다.
+    expect(src, '🔴 기능 이름을 문자열로 적었다 — 이름을 바꾸면 조회가 조용히 undefined 가 된다')
+      .toContain('glbCityFeature.name');
+  });
+
+  it('🔴 `overlay.ts` 가 **getter** 로 넘긴다 — 한 번 읽어 캐시하면 켠 순서에 따라 죽는다', () => {
+    // 미술관 자산은 13.5MB 라 로드가 **비동기**다. 편집을 켠 시점과 미술관이 선 시점의
+    // 선후가 정해져 있지 않으므로, 값으로 한 번 읽으면 «먼저 켠 세션에서만 안 걸린다» 가
+    // 되고 재현 조건이 타이밍이라 화면에서 «가끔 안 된다» 로만 보인다.
+    //
+    // ⚠ 그 근거는 `overlay.ts` 주석에 이미 있었다 — **근거만 있고 검사가 없으면 장식이다.**
+    const src = read('frontend/js/world2/features/overlay.ts').replace(/\s+/g, ' ');
+    expect(src, '🔴 미술관 루트를 host 에 안 넘긴다')
+      .toContain('get glbCity()');
+    expect(src, '🔴 `env.glbCityRoot` 를 안 읽는다 — 통로가 끊겼다')
+      .toContain('env.glbCityRoot?.()');
+  });
+
+  it('★ `glbCity` 기능이 `wallRoot` 를 계약에 노출한다 — 그 문이 3단의 출발점이다', () => {
+    const src = read('frontend/js/world-shared/glb-city.ts').replace(/\s+/g, ' ');
+    expect(src, '🔴 계약에서 `wallRoot` 가 사라졌다').toContain('wallRoot?(): Object3D | null');
+    expect(src, '🔴 구현이 루트를 안 내준다').toContain('wallRoot: () => root');
+    // `dispose()` 가 `root = null` 로 되돌리므로 정리 후에는 `null` 이 나온다 — 그 성질이
+    // 없으면 편집이 **떼어낸 그룹**에 계속 광선을 쏜다.
+    expect(src, '🔴 dispose 가 루트를 안 비운다').toContain('root = null');
+  });
+});
+
 describe('W8-9 — 액자가 스트리밍에 물려 있다 (배선 축)', () => {
   // ⚠ **정적 텍스트 검사다.** `features/overlay.ts` 는 three 를 실제로 물고 도는 파일이라
   // 노드에서 배선을 실행해 볼 수 없다. 약한 축인 것을 알고 쓴다 — 그러나 **0 보다는
