@@ -67,6 +67,9 @@ export function createFlyInput(host: FlyInputHost): FlyInputHandle {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
     const k = FLY_KEYS[ev.code];
     if (!k || !host.editing()) return;
+    // ⚠ **조합키를 안 거른다 — 의도다**(검수관 P5). `input.ts` 는 `ctrlKey||metaKey||altKey`
+    // 를 통과시키는데 여기서 그러면 `ControlLeft`(= 하강)가 통째로 죽는다. 대가는
+    // `Ctrl+R`·`Ctrl+S` 가 편집 중에 **하강을 시작**시키는 것이고, 키를 떼면 멈춘다.
     held.add(k);
     wake();
     // `Space` 는 기본 동작이 스크롤이라 막는다. 안 막으면 날면서 화면이 함께 튄다.
@@ -111,6 +114,9 @@ export function createFlyInput(host: FlyInputHost): FlyInputHandle {
 
   return {
     bind(): void {
+      // ⚠ `host.fly` 가 없어도 리스너는 단다(검수관 P4). 키가 눌리면 루프도 돈다 — 다만
+      // `host.fly?.()` 가 no-op 이라 아무 일도 안 일어난다. *"리스너만 달고 아무 일도 안
+      // 한다"* 는 **절반만 참**이고, 그 절반은 rAF 한 개다.
       host.doc.addEventListener('keydown', onDown);
       host.doc.addEventListener('keyup', onUp);
       host.doc.defaultView?.addEventListener?.('blur', onBlur);

@@ -85,6 +85,25 @@ export class PlayerSystem implements System {
    */
   private flyLift = 0;
   /**
+   * 🔴 **이번 프레임에 실제로 날았는가.** `update()` 가 읽고 바로 지운다.
+   *
+   * ── 왜 필요한가 (검수관 반려 B2) ────────────────────────────────────────
+   * 주행 키 리스너는 `main.ts` 가 소유하고 **부팅부터 dispose 까지 산다** — 편집이 켜져도
+   * 안 뗀다(`edit/input.ts` 가 *"조작 중에도 WASD 로 걸어다닐 수 있어야 한다"* 로 그것을
+   * 의도한다). 비행이 같은 WASD 를 쓰므로 **한 번의 `keydown` 이 걷기와 비행을 동시에**
+   * 켰다. 검수관 실측: 수평 속력이 `5 + 15 = 20 m/s` 로 **걷기의 4배**, 상승각이 57.3° →
+   * **43.8°** 로 납작해지고, 주행 성분이 `resolveMove` 를 타서 **나는 중에 벽에 막혔다.**
+   * 그리고 공중에서 헤드밥이 최대 강도로 돌았다.
+   *
+   * 그 셋이 각각 문서화된 계약을 거짓으로 만든다 — *"충돌을 안 태운다"*,
+   * *"위를 보고 앞으로 가면 올라간다"*, `FLY_SPEED_MULT = 3` 의 유도.
+   *
+   * ⚠ **해소를 여기서 한다 — 주행 경로에 편집 분기를 심지 않는다.** 팀장 조건 ②의
+   * *"편집에서만"* 은 «편집 전용 코드가 주행 경로에 있으면 안 된다» 이고, 이 칸은
+   * **비행이 스스로 세우고 주행이 읽어 넘어가는** 형태라 그 경계를 안 넘는다.
+   */
+  private flew = false;
+  /**
    * 궤도를 **시작한 자리**. 없으면 궤도 중이 아니다.
    *
    * 이 자리는 주행으로 도달한 곳이라 **반드시 유효**하고, 그래서 `endOrbit()` 의 충돌
@@ -187,15 +206,32 @@ export class PlayerSystem implements System {
    * ⚠ **충돌을 안 태운다** — 궤도와 같다(팀장 판정 3). 나는 중에 벽에 막히면 그것은
    * 비행이 아니다. 지면 아래로 못 가게 막는 것은 `clampFlyLift` 의 하한 0 이다.
    *
+   * ⚠⚠ **이 문장은 한동안 거짓이었다**(검수관 반려 B2). 주행이 같은 프레임에 겹쳐 돌았고
+   * 그 성분은 `resolveMove` 를 탔다 — 수평의 4분의 1이 벽에 막혔다. 지금은 `flew` 가
+   * 주행 적분을 건너뛰게 해서 참이다. **계약을 적는 것과 계약이 성립하는 것은 다른 일이고,
+   * 이 회차가 그 차이로 반려를 받았다.**
+   *
    * @param maxLiftMeters 고도 상한(**미터**). 셀→미터 변환은 `flyLiftMeters()` 가 하고,
    *   그것을 부르는 것은 세계 크기를 아는 배선 쪽이다 — 이 클래스는 레이아웃을 모른다.
    */
   flyBy(input: FlyInput, dt: number, maxLiftMeters: number): void {
-    if (this.orbitFrom === null) this.orbitFrom = { x: this.x, z: this.z };
     const d = flyDelta(input, this.yaw, this.pitch, this.speed * FLY_SPEED_MULT, dt, RUN_MULT);
+    // 🔴 **변위가 0 이면 아무것도 안 한다 — 특히 `orbitFrom` 을 안 세운다**(검수관 반려 B1).
+    //
+    // 첫 판본은 이 검사 없이 무조건 세웠다. 그런데 `Shift` 는 **비행 키이면서 주행의
+    // 달리기 키**다(`edit/fly-input.ts` 의 `FLY_KEYS`) — 편집 중에 그냥 달리기만 해도
+    // 루프가 깨어나 여기 들어오고, `flyDelta` 가 `NO_DELTA` 를 내는데도 복원 출발점이 섰다.
+    //
+    // 검수관 실측: 벽을 우회해 40m 걸은 뒤 편집을 끄면 **32m 뒤 벽 앞으로 튄다**(비행 키를
+    // 한 번도 안 누른 대조 세션은 0m). `endOrbit()` 의 복원은 **직선으로** 걸어가므로 벽에
+    // 막히는데, 그 메서드 주석이 *"«편집을 껐더니 딴 데 서 있다» 가 되기 때문"* 이라며
+    // 막으려던 바로 그 현상이다. **그 주석을 인용해 만든 배선이 그것을 되살렸다.**
+    if (d.dx === 0 && d.dy === 0 && d.dz === 0) return;
+    if (this.orbitFrom === null) this.orbitFrom = { x: this.x, z: this.z };
     this.x += d.dx;
     this.z += d.dz;
     this.flyLift = clampFlyLift(this.flyLift + d.dy, maxLiftMeters);
+    this.flew = true;
   }
 
   /**
@@ -316,9 +352,17 @@ export class PlayerSystem implements System {
     // 물속에서는 무겁다. **직전 프레임의 잠김**을 쓴다 — 이번 프레임 잠김은 이동한
     // 뒤에야 정해지고(새 위치에서 판정한다), 한 프레임 지연은 화면에 안 보인다.
     const speed = this.speed * swimSpeedMult(this.submersion);
-    const d = stick > 0
-      ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, speed, ctx.dt, this.input.fast)
-      : moveDelta(this.input, this.yaw, speed, ctx.dt);
+    // 🔴 **날았으면 걷지 않는다**(검수관 반려 B2 — 근거는 `flew` 주석 한 곳).
+    // 플래그는 **읽는 즉시 지운다** — 안 지우면 키를 뗀 뒤에도 한 프레임이 아니라 영원히
+    // 주행이 죽는다. 그리고 이 자리에서 `d` 를 0 으로 만들면 아래가 전부 따라온다:
+    // 이동 0 · `moveDir` 유지 · `moved = 0` → **헤드밥도 0**(공중에서 흔들리지 않는다).
+    const flew = this.flew;
+    this.flew = false;
+    const d = flew
+      ? { dx: 0, dz: 0 }
+      : stick > 0
+        ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, speed, ctx.dt, this.input.fast)
+        : moveDelta(this.input, this.yaw, speed, ctx.dt);
     // **실제로 간 거리**를 따로 잡는다. 충돌이 붙은 뒤로 `d`(가려던 양)와 실제가 갈린다.
     let mx = 0;
     let mz = 0;

@@ -196,6 +196,8 @@ type Harness = {
   retargeted: RetargetCall[];
   /** `orbitTo` 로 나간 시점 요청. 「키·버튼이 실제로 문에 닿았는가」를 잰다 */
   views: { cx: number; cy: number; cz: number; lift: number; radius: number; yaw: number | null }[];
+  /** 비행 문 호출 기록(검수관 명세 G1) — 「불렸는가」와 「`dt` 가 유효한가」만 본다 */
+  flies: { dt: number }[];
   /** `setShading` 으로 나간 요청(순서대로). 같은 이유로 «문에 닿았는가» 를 잰다 */
   shadings: ShadingMode[];
   /** 지금 월드가 들고 있는 셰이딩. 토글 왕복을 재려면 마지막 요청이 아니라 이것을 본다 */
@@ -280,6 +282,16 @@ function makeHarness(vf?: VillageFixture): Harness {
   // 값을 안 바꾸면 토글이 언제나 같은 자리에서 출발해 왕복 축이 통째로 빈 검사가 된다.
   let shadingNow: ShadingMode = vf?.shadingStart ?? 'material';
   const shadings: ShadingMode[] = [];
+  /**
+   * 🔴 **비행 문이 실제로 불렸는가**(검수관 명세 G1, 2026-08-19).
+   *
+   * `world2-fly-wiring.test.ts` 는 부품(`createFlyInput`·`PlayerSystem`)을 **직접** 부르고
+   * 조립은 소스 문자열로만 본다. 그래서 「배선 문자열은 그대로 두고 조용히 죽이는」 형태를
+   * 통째로 놓쳤다 — 검수관 실측 M8(`editing: () => false`)·M9(`flyBy(input, **0**, …)`)이
+   * 전체 4059건 중 **0 failed** 였다. 여기가 그 축이다: 편집을 실제로 켜고 키를 눌러
+   * **문까지 닿는지**를 본다.
+   */
+  const flies: Array<{ dt: number }> = [];
   // ⚠ `add`/`remove` 가 **실제로 담는다.** 빈 함수였을 때 선택 링(`pick.ts` 의 marker)이
   // 어디에도 안 남아서 «링이 떴는가» 를 재는 축이 통째로 불가능했다 — N11 뮤테이션이
   // 0 failed 로 그 구멍을 드러냈다(2026-08-13).
@@ -341,6 +353,9 @@ function makeHarness(vf?: VillageFixture): Harness {
     surfaceAt: () => 0,
     // 시점 문(W6). **실제로 불렸는가**만 기록한다 — 카메라가 어디로 갔는지는
     // `PlayerSystem` 의 일이고 `tests/world2-player-orbit.test.ts` 가 본다.
+    // 비행 문(2026-08-19). `orbitTo` 와 같은 형태로 **불렸는가만** 기록한다 — 좌표 산술은
+    // `PlayerSystem` 의 일이고 `world2-fly-wiring.test.ts` 가 본다.
+    fly: (_input, dt) => { flies.push({ dt }); },
     orbitTo: (cx, cy, cz, preset) => {
       views.push({ cx, cy, cz, lift: preset.lift, radius: preset.radius, yaw: preset.yaw });
     },
@@ -360,6 +375,7 @@ function makeHarness(vf?: VillageFixture): Harness {
     frozen: frozenStore,
     retargeted,
     views,
+    flies,
     shadings,
     shadingNow: () => shadingNow,
     shadeButtons: () => [...doc.querySelectorAll('#w2-edit button')]
@@ -1892,5 +1908,42 @@ describe('에셋 라이브러리 — 마을 파츠를 놓는다 (행위)', () =>
     b!.click();
     expect(() => clickAt(h)).not.toThrow();
     expect(h.doc.body.textContent, '★ 못 놓는 이유를 안 말한다').toContain('마을을 만질 수 없');
+  });
+});
+
+describe('🔴 비행 문이 **조립을 지나 실제로 불린다** — 검수관 명세 G1', () => {
+  // ── 이 축이 없어서 반려를 받았다 ──────────────────────────────────────────
+  // `world2-fly-wiring.test.ts` 는 부품을 **직접** 부르고 조립은 소스 문자열로만 본다.
+  // 그래서 배선 문자열을 그대로 둔 채 조용히 죽이는 두 형태를 놓쳤다(검수관 실측):
+  //   M8  `edit/mode.ts` 의 `editing: () => st.editing` → `() => false`   0 failed
+  //   M9  `features/overlay.ts` 의 `flyBy(input, dt, …)` → `flyBy(input, 0, …)`  0 failed
+  // 둘 다 **기능이 완전히 죽는데** 문자열은 그대로다. 여기는 `startEditMode` 를 실제로
+  // 태우므로 그 형태가 잡힌다.
+  //
+  // ⚠ **이 검사가 못 보는 것**: `features/overlay.ts` 의 위임 **본문**(제품 `OverlayHost`
+  // 가 아니라 이 하네스의 것을 쓴다) · 화면 · WebGPU.
+
+  it('🔴 편집을 켜고 `KeyW` 를 누르면 문이 불린다 — `dt` 도 유효해야 한다', async () => {
+    const h = makeHarness();
+    pressTab();                                   // 편집 on — 이 저장소가 모드를 켜는 유일한 키
+    h.doc.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
+    // rAF 는 jsdom 에서 타이머로 돈다 — 한 바퀴 이상 기다린다.
+    await new Promise((r) => setTimeout(r, 60));
+    expect(h.flies.length, '🔴 편집에서 키를 눌렀는데 비행 문이 한 번도 안 불렸다')
+      .toBeGreaterThan(0);
+    // 🔴 `dt = 0` 이면 `flyDelta` 가 `NO_DELTA` 를 내 **아무 데도 안 간다.** 문자열 검사는
+    // 이것을 못 본다(M9) — 호출은 살아 있고 인자만 틀렸기 때문이다.
+    expect(h.flies.every((f) => f.dt > 0), '🔴 dt 가 0 이하다 — 불려도 움직이지 않는다')
+      .toBe(true);
+    h.doc.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
+    pressTab();                                   // 편집 off — 다음 검사에 상태가 새지 않게
+  });
+
+  it('★ 편집이 꺼져 있으면 같은 키가 문을 안 부른다 — 주행에서 날지 않는다', async () => {
+    const h = makeHarness();
+    h.doc.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 60));
+    expect(h.flies.length, '★ 주행 중에 비행 문이 불렸다').toBe(0);
+    h.doc.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
   });
 });

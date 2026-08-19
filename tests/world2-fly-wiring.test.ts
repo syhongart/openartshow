@@ -130,6 +130,85 @@ describe('🔴 궤도와 **칸이 다르다** — 이것이 이 배선의 핵심
   });
 });
 
+describe('🔴 기존 배선과 **겹치지 않는다** — 검수관 반려 B1·B2', () => {
+  // ── 이 축이 왜 따로 있나 ──────────────────────────────────────────────────
+  // 이 파일의 다른 검사는 전부 **「배선이 있는가」**를 잰다. 검수관이 반려한 두 결함은
+  // **「배선이 기존 배선과 겹치는가」**에서 났고, 그 축은 여기 하나도 없었다
+  // (전체 스위트 4059건 중 0 failed). 방어의 종류가 하나뿐이면 그 종류 밖은 전부 사각이다.
+
+  it('🔴 **변위 0 인 비행 프레임은 `orbitFrom` 을 안 세운다** (B1)', () => {
+    // `Shift` 는 비행 키이면서 주행의 달리기 키다. 편집 중 달리기만 해도 루프가 깨어나
+    // `flyBy` 에 들어오는데, 그때 복원 출발점이 서면 **편집을 끌 때 걸어온 길을 되짚는다**.
+    // 검수관 실측: 벽을 우회해 40m 걸은 뒤 편집을 끄면 32m 뒤로 튀었다.
+    let resolveCalls = 0;
+    const { p } = makePlayer({
+      resolveMove: (x: number, z: number, dx: number, dz: number) => {
+        resolveCalls++;
+        return { x: x + dx, z: z + dz };
+      },
+    });
+    // `fast` 만 — `flyDelta` 가 `NO_DELTA` 를 낸다(방향 입력이 하나도 없다).
+    p.flyBy(held({ fast: true }), 0.016, 100);
+    resolveCalls = 0;
+    p.endOrbit();
+    expect(resolveCalls, '🔴 안 날았는데 복원 걸음이 켜졌다 — Shift 만 눌러도 자리가 튄다')
+      .toBe(0);
+  });
+
+  it('★ 실제로 난 프레임은 여전히 `orbitFrom` 을 세운다 — 등가 대조군', () => {
+    // 위 수정이 「아무것도 안 세운다」로 과하게 가지 않았는지 본다.
+    let resolveCalls = 0;
+    const { p } = makePlayer({
+      resolveMove: (x: number, z: number, dx: number, dz: number) => {
+        resolveCalls++;
+        return { x: x + dx, z: z + dz };
+      },
+    });
+    p.flyBy(held({ forward: true }), 0.016, 100);
+    resolveCalls = 0;
+    p.endOrbit();
+    expect(resolveCalls, '★ 실제로 날았는데 복원이 안 걸린다').toBeGreaterThan(0);
+  });
+
+  it('🔴 **같은 프레임에 걷기와 비행이 겹치지 않는다** (B2)', () => {
+    // 주행 키 리스너는 `main.ts` 가 부팅부터 들고 있고 편집이 켜져도 안 뗀다. 비행이 같은
+    // WASD 를 쓰므로 keydown 하나가 둘을 함께 켠다 — 검수관 실측 수평 **4배**(20 m/s).
+    const a = makePlayer();
+    a.p.update({ dt: 0.016, t: 0 } as never);
+    const a0 = a.pos();
+    a.p.flyBy(held({ forward: true }), 0.1, 100);
+    a.p.update({ dt: 0.1, t: 0.1 } as never);
+    const flyOnly = Math.hypot(a.pos().x - a0.x, a.pos().z - a0.z);
+
+    const b = makePlayer();
+    b.p.update({ dt: 0.016, t: 0 } as never);
+    const b0 = b.pos();
+    b.p.setInput({ forward: true });        // ← 주행도 함께 눌린 상태
+    b.p.flyBy(held({ forward: true }), 0.1, 100);
+    b.p.update({ dt: 0.1, t: 0.1 } as never);
+    const both = Math.hypot(b.pos().x - b0.x, b.pos().z - b0.z);
+
+    expect(both, '🔴 주행이 겹쳐 더 멀리 갔다 — 비행 속도 유도가 무너지고 벽에도 막힌다')
+      .toBeCloseTo(flyOnly, 5);
+  });
+
+  it('🔴 **공중에서 헤드밥이 돌지 않는다** — 걷는 신호는 걸을 때만', () => {
+    // 겹침의 부수 효과. 주행 입력이 살아 있으면 `ratio ≈ 1` 이 되어 최대 강도로 흔들린다 —
+    // 이 저장소가 *"헤드밥이 없으면 활강하는 느낌"* 이라 판정한 축의 정반대 인공물이다.
+    const { p, eyeY } = makePlayer();
+    p.setInput({ forward: true });
+    const ys: number[] = [];
+    for (let i = 0; i < 30; i++) {
+      p.flyBy(held({ up: true }), 0.05, 100);
+      p.update({ dt: 0.05, t: i * 0.05 } as never);
+      ys.push(eyeY());
+    }
+    // 헤드밥이 돌면 상승 곡선에 **진동**이 얹힌다. 순증만 있으면 단조증가다.
+    const dips = ys.filter((y, i) => i > 0 && y < ys[i - 1]!).length;
+    expect(dips, '🔴 올라가는 중에 눈높이가 내려간 프레임이 있다 — 헤드밥이 돈다').toBe(0);
+  });
+});
+
 describe('★ 키 → 입력 — `createFlyInput`', () => {
   let editing = true;
   let calls: Array<{ input: FlyInput; dt: number }> = [];
@@ -246,6 +325,15 @@ describe('🔴 조립이 부품을 무는가 — 소스를 문자열로 잰다',
   // 그래서 차선을 쓴다. **이 검사의 한계를 먼저 적는다:**
   // · 소스에 그 문자열이 있는지만 본다 — **불리는지는 못 본다**(주석 처리하면 잡지만,
   //   조건문 안에 넣어 죽여 두면 통과한다)
+  // · 🔴 **그리고 「살아 있는 호출에 틀린 인자」도 못 본다**(검수관 반려, 명세 G4). 첫 판본의
+  //   한계 목록은 「죽은 코드」까지만 적었는데, 검수관이 실측한 두 형태는 죽은 코드가 아니다:
+  //     M8  `mode.ts` 의 `editing: () => st.editing` → `() => false`
+  //     M9  `overlay.ts` 의 `flyBy(input, dt, …)`   → `flyBy(input, 0, …)`
+  //   둘 다 **기능이 완전히 죽는데** 문자열은 그대로다. M8 은 이제
+  //   `world2-edit-listeners.test.ts` 의 **행위 축**(편집을 실제로 켜고 키를 누른다)이 잡는다.
+  //   M9 은 아래에서 **인자 이름까지** 보는 것으로 잡되, 그것은 **그 특정 형태만** 잡는다 —
+  //   `dt` 를 다른 이름의 0 짜리 변수로 바꾸면 다시 통과한다. **완전한 방어는 제품
+  //   `OverlayHost` 를 태우는 검사**이고 그것은 아직 없다(`G-FLY5`).
   // · 이름을 바꾸는 정상적인 리팩터에서 **거짓 FAIL** 이 난다. 그때 할 일은 **단언을
   //   지우는 것이 아니라** 새 이름으로 고치는 것이다
   const read = async (rel: string): Promise<string> => {
@@ -273,6 +361,10 @@ describe('🔴 조립이 부품을 무는가 — 소스를 문자열로 잰다',
     // 그 실수는 아무 검사도 안 깨뜨리므로 여기서 이름으로 못 박는다.
     expect(src, '🔴 셀을 미터 자리에 그대로 넘기고 있다 — 2.4m 천장이 된다')
       .toContain('flyLiftMeters(');
+    // 🔴 **`dt` 를 그대로 넘기는가**(검수관 실측 M9 — `flyBy(input, 0, …)` 는 기능을 완전히
+    // 죽이는데 위 세 단언을 전부 통과했다). 위 한계 주석대로 **이 형태만** 잡는다.
+    expect(src, '🔴 flyBy 에 dt 를 안 넘긴다 — 불려도 한 발짝도 안 간다')
+      .toMatch(/flyBy\(\s*\w+\s*,\s*dt\s*,/);
   });
 
   it('★ `edit/types.ts` 의 `fly` 문이 **선택 사양**이다 — 궤도와 같은 규약', async () => {
