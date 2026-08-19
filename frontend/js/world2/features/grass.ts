@@ -246,7 +246,7 @@ export const grassFeature: Feature = {
     // ⚠ `?gcurve` 는 **지오메트리에서 셰이더로 옮겼다**(감독 판정 3차 «가위»). 라벨과
     // 키는 그대로 두되 이제 정적 굽힘 uniform 을 민다 — 잎을 다시 굽지 않으므로 아래
     // `rebuild` 통로가 아니라 uniform 통로로 간다.
-    const curve = shapeAxis('gcurve', '굽힘', STATIC_LEAN, 0, 1.2, 0.05);
+    const curve = shapeAxis('gcurve', '굽힘', STATIC_LEAN, 0, 3, 0.05);
     // ── 색 2축 (감독 판정 5차 *"색뿐 아니라"*) ────────────────────────────
     // 모양 축과 **갈라 둔다.** 둘을 한 다발로 묶으면 감독이 «색이 나아진 것인지 모양이
     // 나아진 것인지» 를 한 화면에서 못 가른다 — 이번 회차 내내 걸린 문제가 그것이다.
