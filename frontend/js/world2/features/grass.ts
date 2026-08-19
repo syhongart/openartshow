@@ -260,9 +260,9 @@ export const grassFeature: Feature = {
     // ⚠ `?gcurve` 는 **지오메트리에서 셰이더로 옮겼다**(감독 판정 3차 «가위»). 라벨과
     // 키는 그대로 두되 이제 정적 굽힘 uniform 을 민다 — 잎을 다시 굽지 않으므로 아래
     // `rebuild` 통로가 아니라 uniform 통로로 간다.
-    // ⚠ 7회차에 **다시 지오메트리 통로**로 돌아왔다 — 셰이더 굽힘은 WebGPU 전용이라
-    // 헤드리스에서 안 보였고, 그래서 여섯 회차를 화면 확인 없이 돌았다.
-    const curve = shapeAxis('gcurve', '굽힘', BLADE_CURVE, 0, 3, 0.05);
+    // ⚠ 8회차에 **다시 셰이더 통로**다 — 7회차에 지오메트리로 옮겨 40° 로 휘게 했고
+    // 화면 확인까지 했는데 감독이 곧은 쪽을 골랐다(`decide/blade-shape.ts` 의 `BLADE_CURVE`).
+    const curve = shapeAxis('gcurve', '굽힘', STATIC_LEAN, 0, 3, 0.05);
     // ── 색 2축 (감독 판정 5차 *"색뿐 아니라"*) ────────────────────────────
     // 모양 축과 **갈라 둔다.** 둘을 한 다발로 묶으면 감독이 «색이 나아진 것인지 모양이
     // 나아진 것인지» 를 한 화면에서 못 가른다 — 이번 회차 내내 걸린 문제가 그것이다.
@@ -296,9 +296,9 @@ export const grassFeature: Feature = {
 
     const counts = ringCounts(radiusMul, densityMul);
     const count = counts.reduce((a, b) => a + b, 0);
-    const geometry = bladeGeometry(tip, belly.get(), curve.get(), spread.get(), ao.get());
+    const geometry = bladeGeometry(tip, belly.get(), BLADE_CURVE, spread.get(), ao.get());
     const built = wind === 'tsl'
-      ? windMaterial(windMul, speedMul, gustMul.get(), gustPer.get(), STATIC_LEAN, patch.get())
+      ? windMaterial(windMul, speedMul, gustMul.get(), gustPer.get(), curve.get(), patch.get())
       : null;
     const material = built
       ? built.material
@@ -352,7 +352,7 @@ export const grassFeature: Feature = {
     // 형태다(`[7]`). 버리고 꽂으면 델타가 0 이라 규율을 어기지 않는다 — 재질은 그대로라
     // WebGPU 파이프라인도 안 는다(attribute 구성이 동일하다).
     const rebuild = () => {
-      const next = bladeGeometry(tip, belly.get(), curve.get(), spread.get(), ao.get());
+      const next = bladeGeometry(tip, belly.get(), BLADE_CURVE, spread.get(), ao.get());
       mesh.geometry.dispose();
       mesh.geometry = next;
     };
@@ -370,9 +370,10 @@ export const grassFeature: Feature = {
       // 15만 포기 지오메트리를 매번 다시 만든다.
       const applyGust = () => built?.setGust(gustMul.get(), gustPer.get());
       const applyPatch = () => built?.setPatch(patch.get());
+      const applyLean = () => built?.setLean(curve.get());
       attachKnobBar(barParts, [
         ...axes.map((a) => row(a, rebuild)),
-        row(curve, rebuild),
+        row(curve, applyLean),
         ...[gustMul, gustPer].map((a) => row(a, applyGust)),
         row(patch, applyPatch),
         // ⚠ **정렬만 통로가 다르다.** 잎 각도는 인스턴스 행렬이라 uniform 으로 못 바꾸고,
