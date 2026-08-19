@@ -1,7 +1,7 @@
 {
   "_": "파일 줄 수 동결 목록. scripts/smoke/check-filesize.mjs 가 읽는다. 기존 부채는 동결하고 새 부채를 막는다 — 값이 줄어드는 것이 진척이고, --write 로 다시 굽는다.",
-  "limit": 532,
-  "limitFrom": "90퍼센타일 (파일 465개 분포에서 유도)",
+  "limit": 512,
+  "limitFrom": "90퍼센타일 (파일 481개 분포에서 유도)",
   "over": {
     "frontend/js/world.js": 2371,
     "frontend/js/world2/features/ocean.ts": 1736,
@@ -12,7 +12,7 @@
     "frontend/js/chibi-builder.ts": 1525,
     "frontend/js/world3/sky.js": 1436,
     "frontend/js/world5/sky.js": 1396,
-    "frontend/js/world2/main.ts": 1363,
+    "frontend/js/world2/main.ts": 1358,
     "frontend/js/space-parts.ts": 1203,
     "scripts/smoke/run.mjs": 1068,
     "frontend/js/world-shared/glb-city.ts": 912,
@@ -31,7 +31,6 @@
     "frontend/js/multiplayer.js": 661,
     "frontend/js/world3/systems/sky.ts": 644,
     "frontend/js/world5/systems/sky.ts": 644,
-    "frontend/js/world2/systems/player.ts": 633,
     "frontend/js/world5/parts/tower.ts": 632,
     "scripts/smoke/measure-invariants.mjs": 626,
     "frontend/js/world2/edit/input.ts": 625,
@@ -48,6 +47,9 @@
     "frontend/js/world2/parts/shadow.ts": 556,
     "frontend/js/world3/decide/water.ts": 556,
     "frontend/js/hitfx.js": 549,
-    "frontend/js/chibi-animation-v2.ts": 538
+    "frontend/js/chibi-animation-v2.ts": 538,
+    "frontend/js/mypage/app.ts": 532,
+    "frontend/js/player.js": 525,
+    "frontend/js/npc.js": 522
   }
 }
