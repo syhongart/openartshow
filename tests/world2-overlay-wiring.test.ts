@@ -331,7 +331,12 @@ describe('🔴 태스크 #112 — 미술관 벽이 편집에 물려 있다 (배�
   it('★ `glbCity` 기능이 `wallRoot` 를 계약에 노출한다 — 그 문이 3단의 출발점이다', () => {
     const src = read('frontend/js/world-shared/glb-city.ts').replace(/\s+/g, ' ');
     expect(src, '🔴 계약에서 `wallRoot` 가 사라졌다').toContain('wallRoot?(): Object3D | null');
-    expect(src, '🔴 구현이 루트를 안 내준다').toContain('wallRoot: () => root');
+    // ⚠ **본문 형태를 못 박지 않는다.** 처음엔 `wallRoot: () => root` 를 통째로 봤는데,
+    // 파셀 생사 회차(2026-08-19)에서 본문이 «보이는 채가 없으면 null» 로 커지며 이 검사가
+    // 빨간불이 됐다 — **게이트가 제 역할을 한 것**이고, 그때 약화가 아니라 **축을 나누는**
+    // 것이 맞다: 여기는 「그 문이 있는가」(배선), 본문이 무엇을 판정하는지는
+    // `tests/world2-glb-city.test.ts` 의 가시성 블록이 **행위로** 잰다.
+    expect(src, '🔴 구현이 그 문을 안 연다').toContain('wallRoot: () =>');
     // `dispose()` 가 `root = null` 로 되돌리므로 정리 후에는 `null` 이 나온다 — 그 성질이
     // 없으면 편집이 **떼어낸 그룹**에 계속 광선을 쏜다.
     expect(src, '🔴 dispose 가 루트를 안 비운다').toContain('root = null');

@@ -23,7 +23,7 @@ import { EXT_OFF } from '../frontend/js/world-shared/glb-material.js';
 // ⚠ **본체는 `world-shared/` 로 옮겼다**(2026-08-16 통합) — world2·3·5 가 한 파일을 쓴다.
 // 세계별 래퍼(`world2/features/glb-city.ts`)에는 `glbCityFeature` 만 남는다.
 import { glbCityFeature } from '../frontend/js/world2/features/glb-city.js';
-import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS } from '../frontend/js/world-shared/glb-city.js';
+import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, syncVisibility } from '../frontend/js/world-shared/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 import { PLAZA_WEST, isCentralPlaza } from '../frontend/js/world2/decide/grid.js';
@@ -385,5 +385,74 @@ describe('재질 축 — 네 모드가 서로 다른 가설을 검증한다', ()
     expect(EXT_OFF.ior).toBe(1.5); // glTF 기본값
     expect(EXT_OFF.sheen).toBe(0);
     expect(EXT_OFF.clearcoat).toBe(0);
+  });
+});
+
+describe('🔴 GLB 건물이 파셀과 생사를 같이한다 — 감독 지시 2026-08-19', () => {
+  // ── 감독 지시 ──────────────────────────────────────────────────────────────
+  // *"glb건물도 사라지게해서. 가볍게 만들자. 건물이 많아질수있으니"*
+  //
+  // 그전에는 이 기능이 `env.scene.add(g)` 로 **씬에 직결**돼 스트리밍과 무관하게 늘 서
+  // 있었다. 그래서 두 가지가 동시에 걸렸다:
+  //   ① **가볍지 않다** — 멀어져도 드로우콜과 삼각형이 그대로 나간다. 채수가 늘면 비례해
+  //      커진다(감독이 «건물이 많아질수있으니» 라고 짚은 축).
+  //   ② 그 벽에 건 **작품만** 파셀과 함께 사라져 «미술관은 있는데 그림만 없다» 가 된다
+  //      (`G-ART2`). 건물이 함께 사라지면 이 결함은 **저절로 없어진다** — 작품과 건물이
+  //      같은 파셀 규칙을 따르기 때문이다.
+  //
+  // ⚠ **`dispose` 가 아니라 `visible` 토글이다.** 액자가 W8-9 에서 같은 판단을 했고 근거도
+  // 같다 — 지오·재질을 버리고 다시 만들면 재방문마다 `info.memory` 가 올라 개수 불변식
+  // `[7]` 의 `settledOk` 를 깬다.
+  //
+  // ⚠⚠ **여기서 못 잡는 것**: 실제 GLB 를 로드해 채를 세우는 경로. 자산이 13.5MB 라
+  // 노드에서 불가능하고, 그래서 토글 로직을 `syncVisibility` 로 **밖에 내어** 가짜 노드로
+  // 잰다. 「그 함수를 `system.update` 가 실제로 부르는가」는 배선 축(아래 마지막 검사)이다.
+
+  const copy = (px: number, pz: number, visible = true) => ({ node: { visible }, px, pz });
+
+  it('★ 로드된 파셀의 채는 켜지고, 안 된 파셀의 채는 꺼진다', () => {
+    const cs = [copy(-1, 0), copy(3, 3)];
+    syncVisibility(cs, (px, pz) => px === -1 && pz === 0);
+    expect(cs[0]!.node.visible, '🔴 로드된 파셀인데 꺼졌다').toBe(true);
+    expect(cs[1]!.node.visible, '🔴 안 로드된 파셀인데 켜져 있다 — 안 가벼워진다').toBe(false);
+  });
+
+  it('★ 다시 로드되면 돌아온다 — 영구 손실이 아니다', () => {
+    const cs = [copy(-1, 0, false)];
+    syncVisibility(cs, () => true);
+    expect(cs[0]!.node.visible).toBe(true);
+  });
+
+  it('🔴 **변할 때만** 대입한다 — 매 프레임 쓰면 언제 바뀌었는지 못 읽는다', () => {
+    const cs = [copy(-1, 0, true), copy(3, 3, true)];
+    // 첫 호출: 두 번째 채만 바뀐다
+    expect(syncVisibility(cs, (px) => px === -1)).toBe(1);
+    // 두 번째 호출: 이미 맞춰져 있으므로 **0**
+    expect(syncVisibility(cs, (px) => px === -1), '🔴 안 바뀌었는데 다시 썼다').toBe(0);
+  });
+
+  it('🔴 `parcelLoaded` 가 없으면 **아무것도 안 한다** — world3·world5 가 그 경우다', () => {
+    // 그 세계들의 `FeatureEnv` 에는 이 항목이 없다(실측). 늘 보이는 것이 그쪽의 사실이고,
+    // 여기서 뭔가 하면 **편집이 없는 세계의 룩을 이 회차가 조용히 바꾼다.**
+    const cs = [copy(-1, 0, true), copy(3, 3, true)];
+    expect(syncVisibility(cs, undefined)).toBe(0);
+    expect(cs.every((c) => c.node.visible), '🔴 판정 수단이 없는데 껐다').toBe(true);
+  });
+
+  it('★ 채가 하나도 없으면 0 — 로드 실패·`?glb=0` 세션에서 던지지 않는다', () => {
+    expect(syncVisibility([], () => false)).toBe(0);
+  });
+
+  it('🔴 배선 — `system.update` 가 그 함수를 부르고, `wallRoot` 가 가시성을 본다', () => {
+    // 정적 텍스트 축이다(같은 이유: 실제 채를 세우는 경로를 노드에서 못 돈다). 약한 것을
+    // 알고 쓰지만 **0 보다는 낫다** — 이 배선이 빠지면 「가볍게」가 통째로 사라지고,
+    // 그 증상은 감독 화면에서만(그것도 프레임으로만) 드러난다.
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    expect(src, '🔴 프레임 훅이 토글을 안 부른다').toContain('update() { syncVisibility(copies, env.parcelLoaded); }');
+    expect(src, '🔴 안 보이는 미술관 벽이 여전히 벽 검출 대상이다')
+      .toContain('copies.some((c) => c.node.visible)');
   });
 });
