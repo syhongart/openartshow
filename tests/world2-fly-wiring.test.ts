@@ -236,13 +236,24 @@ describe('★ 키 → 입력 — `createFlyInput`', () => {
     return ev;
   };
 
-  it('★ WASD·Space·Ctrl 가 상태로 들어온다', () => {
+  it('★ WASD·Space·Shift 가 상태로 들어온다', () => {
     key('keydown', 'KeyW');
     key('keydown', 'Space');
+    key('keydown', 'ShiftLeft');
     expect(handle.current().forward).toBe(true);
     expect(handle.current().up).toBe(true);
+    expect(handle.current().down, '★ Shift 가 하강이 아니다').toBe(true);
     key('keyup', 'KeyW');
     expect(handle.current().forward).toBe(false);
+  });
+
+  it('🔴 `Ctrl` 은 **어떤 비행 동작도 안 한다** — `Ctrl+W` 가 탭을 닫는다', () => {
+    // 검수관 반려 B2. 하강이 `Ctrl` 이던 판본에서는 «하강하면서 전진» 이 `Ctrl+W` 였고,
+    // 그것은 Chrome 계열에서 페이지가 못 막는 탭 닫기다. 편집은 자동 저장이 없다.
+    key('keydown', 'ControlLeft');
+    key('keydown', 'ControlRight');
+    expect(handle.current(), '🔴 Ctrl 이 아직 비행 키다 — 감독이 작업을 잃을 수 있다')
+      .toEqual(NO_FLY);
   });
 
   it('🔴 편집이 꺼져 있으면 키를 안 받는다 — 주행에서 날면 안 된다', () => {
@@ -377,9 +388,61 @@ describe('🔴 조립이 부품을 무는가 — 소스를 문자열로 잰다',
       .toMatch(/flyBy\(\s*\w+\s*,\s*dt\s*,/);
   });
 
+  it('🔴 `edit/mode.ts` 가 **모달 중에는 안 날게** 한다', async () => {
+    // 검수관 반려 B1-②. `input.ts` 의 `stopPropagation()` 은 `window`(주행 리스너)만 막고
+    // **같은 `doc` 노드의 `fly-input` 은 못 막는다**(그건 `stopImmediatePropagation` 이다).
+    // 그래서 크기·회전 모달이 열린 채로 WASD 가 그대로 날았다 — 조작하던 대상이 화면에서
+    // 달아난다.
+    //
+    // ⚠ **정적 검사다.** 행위로 재려면 편집 세션에서 무언가를 «골라» 모달을 열어야 하는데,
+    // 그 픽 경로는 3D 히트 픽스처를 요구해 하네스가 커진다. 시도했다가 픽이 성립하지 않아
+    // 되돌렸고 — **그 사실을 적어 둔다**(못 잰 것을 통과로 적지 않는다). 이 검사가 잡는 것은
+    // 「조건이 소스에 있는가」뿐이고, 조건이 **동작하는가**는 안 본다. `G-FLY11`.
+    const src = await read('frontend/js/world2/edit/mode.ts');
+    expect(src, '🔴 모달 중에도 난다 — 조작 대상이 화면에서 달아난다')
+      .toMatch(/editing:\s*\(\)\s*=>\s*st\.editing\s*&&\s*st\.modal\s*===\s*null/);
+  });
+
   it('★ `edit/types.ts` 의 `fly` 문이 **선택 사양**이다 — 궤도와 같은 규약', async () => {
     const src = await read('frontend/js/world2/edit/types.ts');
     expect(src, '★ fly 문이 필수가 되면 빌더 미리보기 같은 소비자가 깨진다')
       .toMatch(/fly\?\(/);
+  });
+});
+
+describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다** — 트립와이어 (검수관 명세 GS-F2)', () => {
+  // ── 왜 스냅샷 동결인가 ────────────────────────────────────────────────────
+  // 안내 문구와 키 배치가 어긋나는 사고가 **두 번** 났다(2026-08-12 시점 조작 · 2026-08-19
+  // 비행). 두 번 다 「키가 바뀐 회차」였고 두 번 다 문구는 안 따라왔다 — 즉 「다음에
+  // 바뀌면 함께 본다」는 **사람의 기억에 걸린 조건**이고, 기억 못 해서 난 사고를 그 자리에
+  // 다시 놓는 것이다(검수관 지적).
+  //
+  // 문자열과 상수를 **대조하지 않는다** — 그러면 값 미러링이 된다. 대신 **키 집합만 동결**해
+  // 배치가 바뀌는 순간 빨간불을 낸다. 미러링 0이고, 트립와이어라 거짓 FAIL 이 곧 목적이다.
+  //
+  // ⚠ **이 검사가 못 보는 것**: 문구가 **무엇을 말하는지**. 키를 안 바꾸고 문구만 틀리게
+  // 고치는 것 · 상시 범례(`panel/dom.ts`) · 모바일 부재 · 화면 배치.
+
+  it('🔴 `FLY_KEYS` 의 키 집합이 동결과 다르면 — **`edit/mode.ts` 의 안내 문구를 함께 고쳐라**', async () => {
+    const src = await (async () => {
+      const { readFileSync } = await import('node:fs');
+      return readFileSync('frontend/js/world2/edit/fly-input.ts', 'utf8');
+    })();
+    const m = src.match(/const FLY_KEYS[^=]*=\s*\{([\s\S]*?)\n\};/);
+    expect(m, '★ FLY_KEYS 선언을 못 찾았다').not.toBeNull();
+    // ⚠ **주석을 먼저 걷어낸다.** 이 블록은 왜 이 키인지를 길게 적고 있고, 그 산문에도
+    // `Ctrl`·`KeyZ` 같은 말이 나온다 — 안 걷으면 설명을 배치로 읽는다.
+    // 그리고 한 줄에 여러 키가 있으므로 **줄 시작만 보면 안 된다**(첫 판본이 `^` 를 써서
+    // 7개 중 2개만 뽑았고, 그래서 이 검사가 처음에 거짓 빨간불이었다).
+    const body = m![1].replace(/\/\/[^\n]*/g, '');
+    const codes = [...body.matchAll(/(\w+)\s*:/g)].map((x) => x[1]).sort();
+    expect(codes, [
+      '🔴 비행 키 배치가 바뀌었다.',
+      '   → `edit/mode.ts` 의 `sayLead` 안내 문구를 **함께** 고치고,',
+      '     `panel/dom.ts` 의 상시 키 범례도 본 뒤 이 목록을 갱신하라.',
+      '   (단언을 지우지 마라 — 이 검사는 그 두 곳을 보게 하려고 일부러 깨진다.)',
+    ].join('\n')).toEqual(
+      ['KeyA', 'KeyD', 'KeyS', 'KeyW', 'ShiftLeft', 'ShiftRight', 'Space'],
+    );
   });
 });

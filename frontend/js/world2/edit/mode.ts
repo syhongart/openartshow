@@ -207,7 +207,10 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     fly: host.fly ? (input2, dt) => { host.fly!(input2, dt); } : undefined,
     // ⚠ **편집 중인지를 여기서 묻는다.** `bind`/`unbind` 로도 갈리지만, 루프가 한 프레임
     // 늦게 멈추는 창이 있어 그 사이 주행에서 날아갈 수 있다. 두 겹으로 막는다.
-    editing: () => st.editing,
+    // 🔴 **모달 중에는 안 난다**(검수관 반려 B1-②). `stopPropagation` 은 같은 `doc` 노드의
+    // `fly-input` 리스너를 못 막으므로, 크기·회전 모달이 열린 채로 WASD 가 그대로 날았다.
+    // 모달은 「이 하나를 조작하는 중」이라 시점이 움직이면 대상이 화면에서 달아난다.
+    editing: () => st.editing && st.modal === null,
   });
 
   // ── 모드 전환 ───────────────────────────────────────────────────────────
@@ -232,8 +235,8 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       // 안 따라간 그 사고다. **그것을 기록한 자리에서 같은 형태를 반복했고**, 이번에는
       // 안내가 «없는» 것이 아니라 «틀린 것을 말하는» 쪽이라 더 나빴다.
       // **코드가 조작을 바꿀 때 문구는 저절로 따라오지 않는다.**
-      panel.sayLead('편집 모드 — WASD 로 날아서 이동 (Space 위 · Ctrl 아래 · Shift 빠르게).'
-        + ' 시점은 마우스 오른쪽 버튼 드래그.');
+      panel.sayLead('편집 모드 — WASD 로 날아서 이동 (Space 위 · Shift 아래).'
+        + ' 시점은 마우스 오른쪽 버튼 드래그. 편집을 끄면 출발 자리로 돌아갑니다.');
     } else {
       input.unbind();
       fly.unbind();

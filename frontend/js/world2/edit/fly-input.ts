@@ -28,10 +28,25 @@ import { NO_FLY, type FlyInput } from '../decide/fly.js';
 /** 비행 키 배치. WASD 는 주행과 같고 수직 둘만 더한다 */
 const FLY_KEYS: Readonly<Record<string, keyof FlyInput>> = {
   KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right',
-  // 위/아래는 **Space/Ctrl** 이다 — 블렌더 플라이·언리얼 에디터가 그렇게 한다.
-  // `KeyZ`·`KeyX` 는 이미 편집에서 «선택한 것의 높이» 라 겹친다(`input.ts` 의 `EDIT_KEYS`).
-  Space: 'up', ControlLeft: 'down', ControlRight: 'down',
-  ShiftLeft: 'fast', ShiftRight: 'fast',
+  // 위/아래는 **Space/Shift** 다.
+  //
+  // 🔴 **하강은 원래 `Ctrl` 이었고 그것을 바꿨다**(검수관 반려 B2, 2026-08-19).
+  // `Ctrl`(하강) + `W`(전진)는 **비행에서 가장 흔한 조합**인데, Chrome 계열에서 `Ctrl+W` 는
+  // 페이지가 `preventDefault` 로 **막을 수 없는** 탭 닫기다. 그리고 world2 편집은 자동
+  // 저장이 없다(`store/local-store.ts` 는 *"편집 결과를 잃지 않으려고 있다"* 라고 적지만
+  // **제품 소비자가 0건**이다 — `G-FLY9`). 즉 **한 번의 조합키로 편집하던 것을 통째로 잃는다.**
+  //
+  // ⚠ **탭이 실제로 닫히는지는 이 환경에서 못 쟀다**(대화형 브라우저가 없다). 그래서
+  // 「안전하다」고도 「위험하다」고도 실측으로는 못 적는다 — **비용이 비대칭이라 fail-closed
+  // 로 갔다**: 틀렸으면 잃는 것이 0이고, 맞으면 감독이 작업을 통째로 잃는다.
+  //
+  // ⚠⚠ 그리고 이것을 **내가 만든 안내 문구가 시키고 있었다** — *"Ctrl 아래"*. 위험한 조작을
+  // 화면이 권하는 형태였다.
+  //
+  // `Shift` 를 고른 이유: 어떤 조합도 브라우저 예약이 아니고, 주행의 달리기 키라 **손이
+  // 이미 아는 자리**다. `KeyZ`·`KeyX` 는 편집에서 «선택한 것의 높이», `KeyQ`·`KeyE` 는
+  // «회전» 이라 겹친다(`input.ts` 의 `EDIT_KEYS`).
+  Space: 'up', ShiftLeft: 'down', ShiftRight: 'down',
 };
 
 export interface FlyInputHost {
@@ -57,7 +72,12 @@ export function createFlyInput(host: FlyInputHost): FlyInputHandle {
   const snapshot = (): FlyInput => ({
     forward: held.has('forward'), back: held.has('back'),
     left: held.has('left'), right: held.has('right'),
-    up: held.has('up'), down: held.has('down'), fast: held.has('fast'),
+    up: held.has('up'), down: held.has('down'),
+    // ⚠ **`fast` 는 지금 어떤 키에도 안 걸려 있다** — `Shift` 를 하강으로 옮기면서 비었다.
+    // `FlyInput`·`flyDelta` 의 계약은 그대로 두었다(검사 19건이 그 축을 재고, 계약을 줄이면
+    // 그 회차의 diff 가 「키 교체」가 아니라 「계약 변경」이 된다). **가속을 다시 열 것인가는
+    // `G-FLY10`** — `FLY_SPEED_MULT = 3` 이 이미 걷기의 3배라 급하지 않다.
+    fast: held.has('fast'),
   });
 
   const onDown = (ev: KeyboardEvent) => {
@@ -67,9 +87,11 @@ export function createFlyInput(host: FlyInputHost): FlyInputHandle {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
     const k = FLY_KEYS[ev.code];
     if (!k || !host.editing()) return;
-    // ⚠ **조합키를 안 거른다 — 의도다**(검수관 P5). `input.ts` 는 `ctrlKey||metaKey||altKey`
-    // 를 통과시키는데 여기서 그러면 `ControlLeft`(= 하강)가 통째로 죽는다. 대가는
-    // `Ctrl+R`·`Ctrl+S` 가 편집 중에 **하강을 시작**시키는 것이고, 키를 떼면 멈춘다.
+    // ⚠ **조합키를 안 거른다.** 수식키가 비행 키에서 빠졌으므로(위 `FLY_KEYS`) `Ctrl+R`·
+    // `Ctrl+S` 같은 조합은 이제 **아무 비행 동작도 일으키지 않는다** — 거를 이유 자체가
+    // 없어졌다. 첫 판본은 `Ctrl` 을 하강으로 쓰면서 이 통과를 「의도」라고 적었고, 그때의
+    // 진짜 대가는 반대 방향(**하강하려는데 브라우저 단축키가 발동한다**)이었는데 그것을
+    // 안 적었다(검수관 반려 B2). 대가를 적을 때는 **더 비싼 쪽부터** 본다.
     held.add(k);
     wake();
     // `Space` 는 기본 동작이 스크롤이라 막는다. 안 막으면 날면서 화면이 함께 튄다.
