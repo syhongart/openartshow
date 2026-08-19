@@ -55,6 +55,12 @@ export type GrassWindMode = (typeof GRASS_WIND_MODES)[number];
  * 남긴다(`features/grass.ts`). 감독이 바람 없는 화면을 보고 *"이게 최선이냐"* 로 룩을
  * 판정하는 것이 이 노브를 연 목적을 통째로 무효화한다.
  */
+// ⚠ **`off` 가 되면 잃는 것이 바람만이 아니다**(2026-08-19). 잎의 정적 굽힘도
+// `positionNode` 항이라(`decide/gust.ts` 의 `STATIC_LEAN` — 지오메트리에서 옮긴 이유가
+// 거기 있다) 이 경로에서는 **잎이 완전히 곧게 선다.** 감독 실기기는 WebGPU 라 화면에는
+// 영향이 없지만, WebGL 쪽은 이제 «바람 없음» 이 아니라 «바람 없음 + 뻣뻣함» 이다.
+// 되살리려면 `?gcurve` 를 지오메트리로 되돌려야 하는데 그러면 가위가 함께 돌아온다 —
+// 두 백엔드가 같은 룩을 갖게 하려면 잎 방향을 인스턴스 어트리뷰트로 넘겨야 한다(미착수).
 export function pickGrassWind(requested: GrassWindMode, backend: string): GrassWindMode {
   if (requested !== 'tsl') return 'off';
   return backend === 'WebGPU' ? 'tsl' : 'off';

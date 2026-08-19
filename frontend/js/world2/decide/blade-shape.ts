@@ -54,7 +54,7 @@ export const BLADE_BELLY = 1;
  * 돌리면 밀도까지 달라 보이고, 그러면 감독이 두 축을 한 화면에서 못 가른다. 원호로 두면
  * 굽힘은 자세만 바꾼다.
  */
-export const BLADE_CURVE = 0.8;
+export const BLADE_CURVE = 0;
 
 /** 밑동 AO 세기. `0` 이 항등원(= 4차 이전의 균일 명암). */
 export const BLADE_AO = 1;
