@@ -27,7 +27,7 @@ import {
 } from '../decide/wind.js';
 import {
   GUST_PERIOD, GUST_SHARP, GUST_VARY, GUST_VARY_KX, GUST_VARY_KZ,
-  BREEZE, GUST_OSC, GUST_LEAN, STATIC_LEAN, GUST_PATCH_K, GUST_PATCH_BASE, gustWave,
+  BREEZE, GUST_OSC, GUST_LEAN, STATIC_LEAN, LEAN_SWAY_POW, GUST_PATCH_K, GUST_PATCH_BASE, gustWave,
 } from '../decide/gust.js';
 import {
   BLADE_NODES, BLADE_BELLY, BLADE_CURVE, BLADE_AO, BLADE_NORMAL_SPREAD,
@@ -155,7 +155,12 @@ function windMaterial(
   const p = positionLocal;
   // 밑동 고정 · 끝만 흔들림. 감독 명세는 `uv.y` 였고 여기서는 **제곱**이다 —
   // 선형이면 밑동도 눈에 띄게 밀려 포기 전체가 기우는 것처럼 보인다.
+  // 바람용 — 밑동 고정·끝만. 감독 명세는 `uv.y` 였고 제곱인 이유는 선형이면 밑동도
+  // 눈에 띄게 밀려 포기 전체가 기우는 것처럼 보이기 때문이다.
   const sway = uv().y.mul(uv().y);
+  // 정적 굽힘용 — **다른 곡선을 탄다.** 풀은 자기 무게로 전체가 활처럼 휘지 끝만
+  // 꺾이지 않는다. 근거·실측은 `decide/gust.ts` 의 `LEAN_SWAY_POW` 한 곳이다.
+  const swayLean = uv().y.pow(LEAN_SWAY_POW);
   // ── 위상 = 물결 + **개별 잎 지터** ────────────────────────────────────────
   // 지터가 «흔들리는 잔디» 의 핵심이다(감독 판정 2026-08-18). 위상이 위치만의 함수이면
   // 수 cm 떨어진 이웃 잎이 **같은 각도로** 기울어, 필드가 잔디밭이 아니라 천 한 장처럼
@@ -201,8 +206,10 @@ function windMaterial(
   // 세 항: **정적**(항상 바람 쪽) + 편향(돌풍이 눕힘) + 진동(살랑임).
   // 앞 둘의 합이 진동 진폭보다 크면 부호가 갈릴 수 없다 — `bendFloor` 가 그 조건이다.
   const bend = sin(phase).mul(gust.mul(GUST_OSC).add(BREEZE))
-    .add(gust.mul(GUST_LEAN)).add(gLean)
-    .mul(amp).mul(sway);
+    .add(gust.mul(GUST_LEAN))
+    .mul(sway)
+    .add(gLean.mul(swayLean))
+    .mul(amp);
   mat.positionNode = p.add(vec3(bend.mul(WIND_DIR_X), 0, bend.mul(WIND_DIR_Z)));
   return {
     material: mat,
