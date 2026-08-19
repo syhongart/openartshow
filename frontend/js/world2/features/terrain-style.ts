@@ -28,7 +28,6 @@
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import type { SurfaceSetting } from '../decide/surface-material.js';
 import { readNum, readNumOpt } from '../url-knob.js';
-import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 
 /**
  * 얹을 프리셋. `repeat` 은 노브가 곱한다.
@@ -56,8 +55,32 @@ const PRESET: readonly SurfaceSetting[] = [
 export const terrainStyleFeature: Feature = {
   name: 'terrain-style',
   create(env: FeatureEnv): FeatureInstance | null {
-    const master = readNum(STYLIZED_KNOB, 0, 0, 1);
-    if (!stylizedOn(master, readNumOpt('gtex', 0, 1))) return null;
+    // ⚠ **마스터(`?styl=1`)를 따르지 않는다 — `?gtex=1` 을 명시해야 켜진다.**
+    //
+    // 감독 실기기 2026-08-18: *"지형을 키니깐 까맣게 되네."* 잔디·물은 정상인데 이 기능만
+    // 켜면 화면이 죽는다. 원인을 아직 못 찾았다 — 헤드리스에서는 진단의 `applied` 가 두
+    // 종류를 다 싣고 콘솔 에러도 0이라(WebGL) **재현이 안 된다.**
+    //
+    // 실마리 하나: `assets/world2-overlay.json` 의 `surfaces` 가 **빈 배열**이다. 즉 표면
+    // 텍스처 경로는 **라이브에서 한 번도 실행된 적이 없고**, 감독 기기가 그 경로를 처음
+    // 밟았다. `asset-url.ts` 헤더가 *"로컬에서는 되고 base 가 붙은 배포에서만 깨진다"* 고
+    // 경고한 자리이기도 하다(다만 `vite.config.js` 의 복사 규칙과 대조해 보면 경로 자체는
+    // 맞아 보인다 — 그래서 아직 «확인 못 함» 이다).
+    //
+    // 그래서 **마스터에서 떼어 낸다.** 감독의 링크(`?styl=1`)가 잔디·물을 보여 주는 것이
+    // 먼저이고, 지형은 원인이 확정될 때까지 명시적으로 켜는 실험 노브로 둔다.
+    // ⚠ **원인은 찾았고 고쳤다(2026-08-18). 그래도 이 가드는 남긴다.**
+    // 원인: `features/surface-paint.ts` 의 `load()` 가 **빈 `Image`**(0×0)로 텍스처를 만들어
+    // 그대로 재질에 꽂았다. 슬롯 유무가 노드 그래프 구조라 `null → Texture` 는 재컴파일을
+    // 부르는데, **WebGPU 는 크기 0 텍스처로 파이프라인을 만들 수 없다.** 원래 맵이 없던
+    // 재질에서만, WebGPU 에서만 터진다 — 감독 화면이 정확히 그 조합이었다.
+    // 처방: 1×1 자리지킴이를 먼저 물리고 로드 완료 시 갈아 끼운다.
+    //
+    // **그런데 그 처방이 맞는지는 감독 실기기에서만 확인된다**(헤드리스는 WebGL 이라
+    // 재현도 검증도 못 한다). 확인 전에 마스터로 되돌리면 감독이 검은 화면을 또 본다 —
+    // 그 대가가 이 가드를 남기는 대가보다 크다. 감독이 `?gtex=1` 로 정상을 확인하면 그때
+    // `stylizedOn(master, ...)` 으로 되돌린다. 백로그 `G-STYL11`.
+    if ((readNumOpt('gtex', 0, 1) ?? 0) < 0.5) return null;
 
     const tile = readNum('gtile', 1, 0.25, 4);
     const current = env.surfaces();

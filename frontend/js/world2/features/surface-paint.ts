@@ -239,12 +239,39 @@ export const surfacePaintFeature: Feature = {
      * 원인을 짚기 어렵다(`parts/garden.ts:210` 이 색 텍스처에만 sRGB 를 세우는 것과 같은 규약).
      */
     function load(src: string, slot: MapSlot): TexLike {
+      // ── ⚠ 1×1 자리지킴이로 시작한다 (감독 실기기 2026-08-18 *"지형을 키니깐 까맣게"*) ──
+      //
+      // 첫 판본은 **빈 `Image`** 로 `Texture` 를 만들어 그대로 재질에 꽂았다. 그 순간
+      // 텍스처의 `image` 는 0×0 이다. 그런데 위 헤더 ⓐ 가 적은 대로 **슬롯 유무가 노드
+      // 그래프 구조**라 `null → Texture` 는 그 자리에서 재컴파일을 부르고, WebGPU 는
+      // **크기 0 텍스처로 파이프라인을 만들 수 없다.** WebGL 은 관대해서 그냥 검게 넘긴다.
+      //
+      // 그래서 이 결함은 `ground` 처럼 **원래 맵이 없던** 재질에서만, **WebGPU 에서만**
+      // 터진다(`garden` 은 맵이 있어 슬롯 교체이고 재컴파일이 없다). 감독 화면이 검게 죽은
+      // 것이 정확히 그 조합이고, 헤드리스(WebGL)는 원리적으로 재현하지 못한다.
+      //
+      // 1×1 을 먼저 물리면 텍스처가 **언제나 유효한 크기**를 갖는다. 이것은 헤더의
+      // *"1×1 흰 프리셋을 안 꽂는다"* 와 **모순되지 않는다** — 저쪽이 기각한 것은 «쓰지도
+      // 않는 슬롯 넷을 부팅에 예약해 전원이 상시 페치 비용을 내는 것» 이고, 여기는 **이미
+      // 쓰기로 정해진 슬롯**이 로드되는 동안만 자리를 지킨다. 상시 비용이 0 이다.
+      const ph = env.doc?.createElement('canvas');
+      let seed: unknown = null;
+      if (ph) {
+        ph.width = 1; ph.height = 1;
+        const c2d = ph.getContext('2d');
+        if (c2d) { c2d.fillStyle = '#fff'; c2d.fillRect(0, 0, 1, 1); }
+        seed = ph;
+      }
       const img = new Image();
-      const tex = new THREE.Texture(img) as unknown as TexLike;
+      const tex = new THREE.Texture(seed ?? img) as unknown as TexLike;
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
       if (slot === 'map') tex.colorSpace = THREE.SRGBColorSpace;
-      img.onload = () => { tex.needsUpdate = true; };
+      img.onload = () => {
+        // 진짜 그림으로 갈아 끼운다. `needsUpdate` 가 재업로드를 부르므로 여기서만 세운다.
+        (tex as unknown as { image: unknown }).image = img;
+        tex.needsUpdate = true;
+      };
       img.src = env.textureUrl(src);
       return tex;
     }

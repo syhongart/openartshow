@@ -11,8 +11,8 @@
 // (`systems/ground-lift.ts` 의 `MutableColor`·`LiftableMaterial` 과 같은 배치다.)
 
 import {
-  GRASS_TONES, BLADE_H, BLADE_W, WRAP_MOVE_EPS, WRAP_BUDGET,
-  bladeBase, bladeCount, wrapTo, edgeScale, plantable,
+  GRASS_TONES, GRASS_RINGS, BLADE_H, BLADE_W, WRAP_MOVE_EPS, WRAP_BUDGET,
+  bladeBase, ringCounts, ringOf, ringStart, wrapTo, edgeScale, plantScale,
 } from '../decide/grass.js';
 import { GARDEN_SURFACE_Y } from '../parts/garden.js';
 
@@ -38,15 +38,27 @@ export interface GrassFieldOpts {
   readonly matrix: MatrixLike;
   /** 재사용할 색 하나 */
   readonly color: ColorLike;
-  readonly radius: number;
-  readonly density: number;
+  /** 반경 배수 노브(`?grad`) — 링 표에 곱한다 */
+  readonly radiusMul: number;
+  /** 밀도 배수 노브(`?gden`) */
+  readonly densityMul: number;
   /** 높이 배수 노브(`?gh`) */
   readonly heightMul: number;
+  /** 폭 배수 노브(`?gw`) — 감독 판정 *"뾰족가시같아"* 로 열었다 */
+  readonly widthMul: number;
   readonly cell: number;
   /** 지금 플레이어가 선 자리 */
   readonly playerAt: () => { x: number; z: number };
   /** 지금 셰이딩 모드 — `'material'` 이 아니면 잔디를 숨긴다(아래 ⚠) */
   readonly shading: () => string;
+  /**
+   * 색 인덱스 → 잎 색 `0xRRGGBB`. 팔레트·채도 노브가 여기서 갈린다.
+   *
+   * 상수 배열이 아니라 **함수**인 것이 요점이다 — 감독이 색 슬라이더를 밀면 값이 바뀌고,
+   * 그때 `recolor()` 가 같은 통로로 다시 읽는다. 배열을 받아 두면 그 시점의 스냅샷이
+   * 박혀 슬라이더가 무력해진다(`ui/knob-bar.ts` 가 `value()` 를 함수로 받는 것과 같은 이유).
+   */
+  readonly toneHex: (idx: number) => number;
 }
 
 /**
@@ -59,6 +71,8 @@ export interface GrassFieldOpts {
 export class GrassField {
   private readonly o: GrassFieldOpts;
   private readonly active: number;
+  /** 링별 인스턴스 수 — 인덱스를 링으로 가르는 유일한 근거 */
+  private readonly counts: number[];
   /** 각 포기가 마지막으로 접힌 타일 인덱스. `NaN` 이면 아직 한 번도 안 놓았다 */
   private readonly tileX: Float64Array;
   private readonly tileZ: Float64Array;
@@ -71,7 +85,8 @@ export class GrassField {
 
   constructor(opts: GrassFieldOpts) {
     this.o = opts;
-    this.active = bladeCount(opts.radius, opts.density);
+    this.counts = ringCounts(opts.radiusMul, opts.densityMul);
+    this.active = this.counts.reduce((a, b) => a + b, 0);
     this.tileX = new Float64Array(this.active).fill(Number.NaN);
     this.tileZ = new Float64Array(this.active).fill(Number.NaN);
     this.paintTones();
@@ -115,13 +130,24 @@ export class GrassField {
   get count(): number { return this.active; }
 
   /**
+   * 색 노브가 움직였다 — 전수를 다시 칠한다.
+   *
+   * 전수인 것은 색이 포기마다 고정이라서다(아래 `paintTones` 주석). 15만 회 `setColorAt`
+   * 은 감독이 슬라이더를 놓을 때마다 한 번이고, 매 프레임 도는 경로가 아니다.
+   * **버퍼도 인스턴스도 새로 안 만든다** — 이미 있는 `instanceColor` 를 덮어쓸 뿐이라
+   * 개수 불변식과 무관하다.
+   */
+  recolor(): void { this.paintTones(); }
+
+  /**
    * 색은 포기마다 고정이라 **부팅에 한 번만** 쓴다. 랩으로 자리가 바뀌어도 색은 안 따라
    * 바꾼다 — 바꾸면 걸을 때 눈앞의 풀이 색을 바꾸는 것이 보인다.
    */
   private paintTones(): void {
     const { mesh, color } = this.o;
     for (let i = 0; i < this.active; i++) {
-      const hex = GRASS_TONES[bladeBase(i, this.o.radius).tone];
+      const r = ringOf(i, this.counts);
+      const hex = this.o.toneHex(bladeBase(i, GRASS_RINGS[r].radius * this.o.radiusMul).tone);
       color.r = ((hex >> 16) & 0xff) / 255;
       color.g = ((hex >> 8) & 0xff) / 255;
       color.b = (hex & 0xff) / 255;
@@ -137,16 +163,26 @@ export class GrassField {
    * 지우면 개수가 변한다.
    */
   private place(i: number, cx: number, cz: number): void {
-    const { radius, cell, heightMul, matrix, mesh } = this.o;
+    const { cell, heightMul, widthMul, matrix, mesh } = this.o;
+    // 이 포기가 속한 링이 반경·잎 크기를 정한다. 링마다 따로 랩을 돌므로 거리 LOD 가
+    // 저절로 생긴다 — 안쪽 링은 좁고 빽빽하게, 바깥 링은 넓고 성기게.
+    const ri = ringOf(i, this.counts);
+    const ring = GRASS_RINGS[ri];
+    const radius = ring.radius * this.o.radiusMul;
     const span = radius * 2;
-    const b = bladeBase(i, radius);
+    // 링 안에서의 상대 인덱스를 쓴다 — 전역 `i` 를 쓰면 링이 바뀔 때 같은 난수를 다시
+    // 밟아 링끼리 겹쳐 선다.
+    const b = bladeBase(i - ringStart(ri, this.counts) + ri * 7919, radius);
     const wx = wrapTo(b.bx, cx, span);
     const wz = wrapTo(b.bz, cz, span);
     const fade = edgeScale(wx - cx, wz - cz, radius);
-    const ok = fade > 0 && plantable(wx, wz, cell);
+    // `plantScale` 은 boolean 이 아니라 **높이 배수**다 — 도로 갓돌 띠에 짧은 풀이
+    // 삐져나오게 하려는 것이고, 그 근거는 `decide/grass.ts` 의 갓돌 띠 절에 있다.
+    const ps = fade > 0 ? plantScale(wx, wz, cell) : 0;
+    const ok = ps > 0;
 
-    const sw = ok ? b.sw * BLADE_W : 0;
-    const sy = ok ? b.sh * BLADE_H * heightMul * fade : 0;
+    const sw = ok ? b.sw * BLADE_W * widthMul * ring.scale : 0;
+    const sy = ok ? b.sh * BLADE_H * heightMul * fade * ps * ring.scale : 0;
     const c = Math.cos(b.rot);
     const s = Math.sin(b.rot);
     const e = matrix.elements;

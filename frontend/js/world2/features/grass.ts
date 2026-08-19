@@ -14,42 +14,89 @@
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
-import { readNum, readNumOpt } from '../url-knob.js';
+import { readNum, readNumOpt, writeNumOpt } from '../url-knob.js';
+import { findKnobBar, attachKnobBar } from '../ui/knob-bar.js';
 import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
-  GRASS_RADIUS, GRASS_RADIUS_MIN, GRASS_RADIUS_MAX, GRASS_DENSITY, MAX_BLADES,
+  GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX, MAX_BLADES, ringCounts,
   WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z, WIND_GUST_K, WIND_GUST_T,
-  bladeCount, pickGrassWind, type GrassWindMode,
+  WIND_JITTER_KX, WIND_JITTER_KZ, WIND_JITTER_AMP, WIND_GUST_MIX, WIND_GUST_BASE,
+  BLADE_TIP, GRASS_TONES, pickGrassWind, type GrassWindMode,
 } from '../decide/grass.js';
+import {
+  BLADE_NODES, BLADE_BELLY, BLADE_CURVE, BLADE_AO, BLADE_NORMAL_SPREAD,
+  BLADE_PALETTE, BLADE_SAT, halfWidthProfile, bladeArc, bladeShade, bladeToneHex,
+} from '../decide/blade-shape.js';
 import { GrassField } from '../systems/grass-field.js';
 
 /**
- * 풀 한 포기의 지오메트리 — **3단 테이퍼 쿼드**(정점 8 · 삼각형 6).
+ * 모양 축 하나 — URL 노브와 슬라이더가 **같은 상태를 공유**하게 묶는다.
  *
- * 감독 명세는 *"풀 한 포기당 2~6 triangles 정도면 충분"* 이다. 6 을 고른 이유는 굽힘
- * 때문이다: 바람이 `uv.y` 가중으로 미는데 마디가 적으면 굽은 선이 각져 보인다. 마디
- * 하나를 더 두면 곡선이 읽히고, 그 비용은 포기당 삼각형 2개다.
- *
- * 단 간격이 균등하지 않다(0 · 0.40 · 0.72 · 1.0) — 위로 갈수록 촘촘해야 **많이 휘는
- * 구간의 해상도**가 높다. 균등하면 끝만 각지고 밑동은 남아돈다.
- *
- * 법선을 전부 위(0,1,0)로 세우는 것은 잔디 렌더링의 표준 기법이다. 실제 면 법선을 쓰면
- * 옆을 보는 면이 어두워져 필드가 얼룩덜룩해진다 — 지면과 같은 빛을 받게 해야 한 장으로
- * 읽힌다. 게임풍에서는 이쪽이 정답이다.
+ * `readNum` 을 그대로 쓰지 않는 이유는 «지정됐는가» 를 잃기 때문이다. 슬라이더 UI 는
+ * 값과 지정 여부를 따로 묻고(`KnobSpec.overridden`), 되돌리기는 지정을 **해제**해야
+ * 한다 — 기본값을 다시 써 넣으면 주소에 기본값이 박혀서 나중에 기본값을 바꿔도 그
+ * 링크는 옛 화면을 연다.
  */
-function bladeGeometry(): THREE.BufferGeometry {
-  const ys = [0, 0.40, 0.72, 1.0];
-  const hw = [0.5, 0.40, 0.25, 0.06];   // 반폭. 끝을 완전히 0 으로 두면 뾰족한 끝이 깜빡인다
+interface ShapeAxis {
+  readonly key: string;
+  readonly label: string;
+  readonly min: number;
+  readonly max: number;
+  readonly step: number;
+  get(): number;
+  overridden(): boolean;
+  set(v: number | null): void;
+}
+
+function shapeAxis(
+  key: string, label: string, def: number, min: number, max: number, step: number,
+): ShapeAxis {
+  let ov = readNumOpt(key, min, max);
+  return {
+    key, label, min, max, step,
+    get: () => ov ?? def,
+    overridden: () => ov !== null,
+    set: (v) => { ov = v; },
+  };
+}
+
+/**
+ * 풀 한 포기의 지오메트리 — **굽은 란셋형 스트립**(정점 10 · 삼각형 8).
+ *
+ * 모양을 정하는 값은 전부 `decide/blade-shape.ts` 에 있고 여기는 그것을 정점으로 **굽는
+ * 일**만 한다. 넷 다 노브라 감독이 축을 하나씩 되돌려 볼 수 있다 —
+ * `?gbelly=0&gcurve=0&gao=0&gnor=0` 이 4차 이전 화면을 **정확히** 재현한다
+ * (`bladeArc` 의 `curve→0` 극한이 `{t, 0}`, `bladeShade` 의 `ao=0` 이 정확히 1).
+ *
+ * ⚠ **`uv.y` 는 이제 높이가 아니라 아크 길이다.** 잎이 휘면 둘이 갈리는데, 바람 가중
+ * (`sway = uv.y²`)이 재는 것은 «잎을 따라 얼마나 올라왔나» 이므로 아크 길이가 맞다.
+ * 높이로 쓰면 휜 잎의 끝이 덜 흔들린다.
+ *
+ * ⚠⚠ 정점 컬러를 **AO 로만** 쓴다. 잎 색조는 `instanceColor` 가 따로 싣고, three 는 둘을
+ * **곱한다**(r171 `NodeMaterial.setupDiffuseColor` 실측 — `vertexColors` 는
+ * `materialColor` 에 곱해지고 그 결과에 `vInstanceColor` 가 또 곱해진다). 두 축이 서로
+ * 안 섞이므로 색 팔레트를 바꿔도 AO 가 따라 변하지 않는다.
+ */
+function bladeGeometry(tip: number, belly: number, curve: number, spread: number, ao: number): THREE.BufferGeometry {
   const pos: number[] = [];
   const uv: number[] = [];
   const nor: number[] = [];
-  for (let k = 0; k < ys.length; k++) {
-    pos.push(-hw[k], ys[k], 0, hw[k], ys[k], 0);
-    uv.push(0, ys[k], 1, ys[k]);
-    nor.push(0, 1, 0, 0, 1, 0);
+  const col: number[] = [];
+  // 법선을 좌우로 벌려 평면을 원통처럼 읽히게 한다. 굽힘과 달리 **위치는 안 건드린다** —
+  // 실루엣이 그대로여야 감독이 «모양» 과 «음영» 을 따로 판정할 수 있다.
+  const nx = Math.sin(spread);
+  const ny = Math.cos(spread);
+  for (const t of BLADE_NODES) {
+    const hw = halfWidthProfile(t, tip, belly);
+    const a = bladeArc(t, curve);
+    const g = bladeShade(t, ao);
+    pos.push(-hw, a.y, a.z, hw, a.y, a.z);
+    uv.push(0, t, 1, t);
+    nor.push(-nx, ny, 0, nx, ny, 0);
+    col.push(g, g, g, g, g, g);
   }
   const idx: number[] = [];
-  for (let k = 0; k < ys.length - 1; k++) {
+  for (let k = 0; k < BLADE_NODES.length - 1; k++) {
     const a = k * 2;
     idx.push(a, a + 1, a + 3, a, a + 3, a + 2);
   }
@@ -57,6 +104,7 @@ function bladeGeometry(): THREE.BufferGeometry {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   return g;
 }
@@ -79,18 +127,27 @@ function bladeGeometry(): THREE.BufferGeometry {
  */
 function windMaterial(ampMul: number, speedMul: number): THREE.Material {
   const { positionLocal, uv, time, uniform, vec3, sin, mx_noise_float } = TSL as any;
-  const mat = new (THREE as any).MeshLambertNodeMaterial({ side: THREE.DoubleSide });
+  // `vertexColors` 는 AO 를 싣는 통로다 — 잎 색조(`instanceColor`)와 곱해진다.
+  const mat = new (THREE as any).MeshLambertNodeMaterial({ side: THREE.DoubleSide, vertexColors: true });
   const amp = uniform(WIND_AMP * ampMul);
   const spd = uniform(WIND_SPEED * speedMul);
   const p = positionLocal;
   // 밑동 고정 · 끝만 흔들림. 감독 명세는 `uv.y` 였고 여기서는 **제곱**이다 —
   // 선형이면 밑동도 눈에 띄게 밀려 포기 전체가 기우는 것처럼 보인다.
   const sway = uv().y.mul(uv().y);
-  const phase = p.x.mul(WIND_WAVE_K).add(p.z.mul(WIND_WAVE_K * 0.7)).add(time.mul(spd));
+  // ── 위상 = 물결 + **개별 잎 지터** ────────────────────────────────────────
+  // 지터가 «흔들리는 잔디» 의 핵심이다(감독 판정 2026-08-18). 위상이 위치만의 함수이면
+  // 수 cm 떨어진 이웃 잎이 **같은 각도로** 기울어, 필드가 잔디밭이 아니라 천 한 장처럼
+  // 움직인다. 고주파 항을 더해 잎마다 위상을 갈라 놓는다.
+  const jitter = sin(p.x.mul(WIND_JITTER_KX).add(p.z.mul(WIND_JITTER_KZ))).mul(WIND_JITTER_AMP);
+  const phase = p.x.mul(WIND_WAVE_K).add(p.z.mul(WIND_WAVE_K * 0.7))
+    .add(time.mul(spd)).add(jitter);
   // 돌풍 — 저주파 노이즈로 «지금 이 구역이 세게 불린다» 를 만든다. 이것이 없으면
   // 필드 전체가 한 박자로 흔들려 기계적으로 보인다.
+  // 돌풍이 **세기를 물결치게** 한다 — 감독이 원한 «바람에 흔들린다» 는 방향이 아니라
+  // 세기가 오르내리는 것이다. 어떤 구역은 거의 멈춰 있고(0.35) 어떤 구역은 크게 눕는다(1.1).
   const gust = mx_noise_float(vec3(p.x.mul(WIND_GUST_K), p.z.mul(WIND_GUST_K), time.mul(WIND_GUST_T)));
-  const bend = sin(phase).mul(amp).mul(sway).mul(gust.mul(0.35).add(0.8));
+  const bend = sin(phase).mul(amp).mul(sway).mul(gust.mul(WIND_GUST_MIX).add(WIND_GUST_BASE));
   mat.positionNode = p.add(vec3(bend.mul(WIND_DIR_X), 0, bend.mul(WIND_DIR_Z)));
   return mat;
 }
@@ -101,9 +158,33 @@ export const grassFeature: Feature = {
     const master = readNum(STYLIZED_KNOB, 0, 0, 1);
     if (!stylizedOn(master, readNumOpt('grass', 0, 1))) return null;
 
-    const radius = readNum('grad', GRASS_RADIUS, GRASS_RADIUS_MIN, GRASS_RADIUS_MAX);
-    const density = GRASS_DENSITY * readNum('gden', 1, 0, 2);
+    const radiusMul = readNum('grad', 1, GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX);
+    const densityMul = readNum('gden', 1, 0, 2);
     const heightMul = readNum('gh', 1, 0.3, 2);
+    // 폭·끝 모양은 화면으로만 판정된다 — 감독이 실기기에서 돌려 기본값을 정한다.
+    const widthMul = readNum('gw', 1, 0.3, 3);
+    const tip = readNum('gtip', BLADE_TIP, 0, 1);
+    // ── 잎 모양 4축 (감독 판정 2026-08-18 4차 *"나뭇잎처럼 안보여"*) ────────
+    // 넷을 따로 연 것은 어느 축이 원인인지 화면으로만 갈리기 때문이다. 넷 다 0 이
+    // 반려된 화면이고, 근거는 `decide/blade-shape.ts` 헤더에 축별로 적혀 있다.
+    //
+    // 이 넷만 **슬라이더로도** 연다(`ui/knob-bar.ts`). 지금까지 잔디 노브는 URL 뿐이었고,
+    // 그래서 감독이 값을 하나 보려면 주소를 손으로 조립해야 했다 — 그러면 확인 자체가
+    // 일이 되고, 실제로 3차 회차에서 감독이 비교한 두 링크가 **상한에 눌려 같은 화면**
+    // 이었는데 아무도 그것을 몰랐다. 화면에서 밀면 그 사고가 구조적으로 안 난다.
+    const axes = [
+      shapeAxis('gbelly', '배', BLADE_BELLY, 0, 1, 0.05),
+      shapeAxis('gcurve', '굽힘', BLADE_CURVE, 0, 1.6, 0.05),
+      shapeAxis('gao', '음영', BLADE_AO, 0, 1, 0.05),
+      shapeAxis('gnor', '볼륨', BLADE_NORMAL_SPREAD, 0, 1.2, 0.05),
+    ] as const;
+    const [belly, curve, ao, spread] = axes;
+    // ── 색 2축 (감독 판정 5차 *"색뿐 아니라"*) ────────────────────────────
+    // 모양 축과 **갈라 둔다.** 둘을 한 다발로 묶으면 감독이 «색이 나아진 것인지 모양이
+    // 나아진 것인지» 를 한 화면에서 못 가른다 — 이번 회차 내내 걸린 문제가 그것이다.
+    const palette = shapeAxis('gpal', '팔레트', BLADE_PALETTE, 0, 1, 0.05);
+    const sat = shapeAxis('gsat', '채도', BLADE_SAT, 0, 2, 0.05);
+    const colorAxes = [palette, sat] as const;
     const windMul = readNum('gwind', 1, 0, 2);
     const speedMul = readNum('gwspd', 1, 0, 3);
 
@@ -120,11 +201,12 @@ export const grassFeature: Feature = {
       );
     }
 
-    const count = bladeCount(radius, density);
-    const geometry = bladeGeometry();
+    const counts = ringCounts(radiusMul, densityMul);
+    const count = counts.reduce((a, b) => a + b, 0);
+    const geometry = bladeGeometry(tip, belly.get(), curve.get(), spread.get(), ao.get());
     const material = wind === 'tsl'
       ? windMaterial(windMul, speedMul)
-      : new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
+      : new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, vertexColors: true });
 
     // 버퍼는 **상한으로 잡는다.** 활성 수만 노브가 바꾸고 나머지는 0 스케일로 눕는다 —
     // 버퍼 크기가 노브에 따라 변하면 개수 불변식의 baseline 이 노브마다 달라진다.
@@ -155,21 +237,52 @@ export const grassFeature: Feature = {
       mesh: mesh as any,
       matrix: new THREE.Matrix4(),
       color: new THREE.Color(),
-      radius, density, heightMul,
+      radiusMul, densityMul, heightMul, widthMul,
       cell: env.cell,
       playerAt: () => {
         const p = env.player.position;
         return { x: p.x, z: p.z };
       },
       shading: () => env.shading(),
+      toneHex: (idx) => bladeToneHex(idx, GRASS_TONES, palette.get(), sat.get()),
     });
+
+    // 슬라이더가 움직이면 잎을 **다시 굽는다.** 모양 4축은 정점에 구워져 있어 uniform
+    // 으로는 못 바꾼다(바람과 다른 점이다).
+    //
+    // ⚠ 옛 지오메트리를 **반드시 버린다.** 안 버리면 감독이 슬라이더를 한 번 밀 때마다
+    // three 의 `info.memory.geometries` 가 하나씩 오르고, 그것이 곧 개수 불변식이 잡는
+    // 형태다(`[7]`). 버리고 꽂으면 델타가 0 이라 규율을 어기지 않는다 — 재질은 그대로라
+    // WebGPU 파이프라인도 안 는다(attribute 구성이 동일하다).
+    const rebuild = () => {
+      const next = bladeGeometry(tip, belly.get(), curve.get(), spread.get(), ao.get());
+      mesh.geometry.dispose();
+      mesh.geometry = next;
+    };
+    const barParts = env.doc ? findKnobBar(env.doc) : null;
+    if (barParts) {
+      const row = (a: ShapeAxis, apply: () => void) => ({
+        key: a.key, label: a.label, min: a.min, max: a.max, step: a.step,
+        value: () => a.get(),
+        overridden: () => a.overridden(),
+        set(v: number) { a.set(v); writeNumOpt(a.key, v); apply(); },
+        reset() { a.set(null); writeNumOpt(a.key, null); apply(); },
+      });
+      attachKnobBar(barParts, [
+        ...axes.map((a) => row(a, rebuild)),
+        ...colorAxes.map((a) => row(a, () => field.recolor())),
+      ]);
+    }
 
     return {
       system: { name: 'grass', update: () => field.update() },
       diagnostics: () => ({
         blades: field.count,
         buffer: mesh.count,
-        radius, density, heightMul,
+        rings: counts,
+        radiusMul, densityMul, heightMul, widthMul, tip,
+        belly: belly.get(), curve: curve.get(), ao: ao.get(), spread: spread.get(),
+        palette: palette.get(), sat: sat.get(),
         wind,
         // 감독이 «바람이 이 모양이냐» 로 판정하기 전에 이것을 먼저 본다.
         windActive: wind === 'tsl',
@@ -185,7 +298,9 @@ export const grassFeature: Feature = {
       dispose: () => {
         env.scene.remove(mesh);
         mesh.dispose();
-        geometry.dispose();
+        // `geometry` 가 아니라 `mesh.geometry` 다 — 슬라이더가 교체했으면 지역 변수는
+        // 이미 버려진 옛 것을 가리킨다(그쪽은 교체 시점에 `dispose` 됐다).
+        mesh.geometry.dispose();
         material.dispose();
       },
     };
