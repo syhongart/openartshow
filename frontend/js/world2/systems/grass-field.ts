@@ -49,6 +49,13 @@ export interface GrassFieldOpts {
   readonly cell: number;
   /** 지금 플레이어가 선 자리 */
   readonly playerAt: () => { x: number; z: number };
+  /**
+   * 잎 평면을 바람 쪽으로 모으는 정도(`?galign`) — 근거는 `decide/grass.ts` 의 `GRASS_ALIGN`.
+   *
+   * 다른 노브와 달리 **함수가 아니라 초기값**이다. 슬라이더는 `setAlign` 으로 바꾸고,
+   * 그때 전수 재배치가 돌아야 하므로 «값이 언제 바뀌었나» 를 필드가 알아야 한다.
+   */
+  readonly align: number;
   /** 지금 셰이딩 모드 — `'material'` 이 아니면 잔디를 숨긴다(아래 ⚠) */
   readonly shading: () => string;
   /**
@@ -73,6 +80,8 @@ export class GrassField {
   private readonly active: number;
   /** 링별 인스턴스 수 — 인덱스를 링으로 가르는 유일한 근거 */
   private readonly counts: number[];
+  /** 지금 걸린 잎 정렬. `setAlign` 이 바꾼다 — `o.align` 은 초기값일 뿐이다 */
+  private align: number;
   /** 각 포기가 마지막으로 접힌 타일 인덱스. `NaN` 이면 아직 한 번도 안 놓았다 */
   private readonly tileX: Float64Array;
   private readonly tileZ: Float64Array;
@@ -85,6 +94,7 @@ export class GrassField {
 
   constructor(opts: GrassFieldOpts) {
     this.o = opts;
+    this.align = opts.align;
     this.counts = ringCounts(opts.radiusMul, opts.densityMul);
     this.active = this.counts.reduce((a, b) => a + b, 0);
     this.tileX = new Float64Array(this.active).fill(Number.NaN);
@@ -140,6 +150,24 @@ export class GrassField {
   recolor(): void { this.paintTones(); }
 
   /**
+   * 잎 평면 정렬이 바뀌었다 — 전수를 다시 앉힌다.
+   *
+   * 각도는 인스턴스 행렬에 구워져 있어 uniform 으로 못 바꾼다(바람과 다른 점이다).
+   * 15만 회 `setMatrixAt` 이지만 슬라이더를 놓을 때 한 번이고 매 프레임 경로가 아니다.
+   * **버퍼도 인스턴스도 새로 안 만든다** — 이미 있는 `instanceMatrix` 를 덮어쓸 뿐이라
+   * 개수 불변식과 무관하다(`recolor` 와 같은 어휘).
+   *
+   * 색도 함께 다시 칠한다 — `bladeBase` 가 `align` 을 받으므로 색 인덱스도 따라 바뀐다.
+   * 안 칠하면 잎은 돌았는데 색만 옛 배치로 남아, 슬라이더를 밀 때마다 팔레트가 어긋난다.
+   */
+  setAlign(align: number): void {
+    this.align = align;
+    for (let i = 0; i < this.active; i++) this.place(i, this.lastX, this.lastZ);
+    this.o.mesh.instanceMatrix.needsUpdate = true;
+    this.paintTones();
+  }
+
+  /**
    * 색은 포기마다 고정이라 **부팅에 한 번만** 쓴다. 랩으로 자리가 바뀌어도 색은 안 따라
    * 바꾼다 — 바꾸면 걸을 때 눈앞의 풀이 색을 바꾸는 것이 보인다.
    */
@@ -147,7 +175,7 @@ export class GrassField {
     const { mesh, color } = this.o;
     for (let i = 0; i < this.active; i++) {
       const r = ringOf(i, this.counts);
-      const hex = this.o.toneHex(bladeBase(i, GRASS_RINGS[r].radius * this.o.radiusMul).tone);
+      const hex = this.o.toneHex(bladeBase(i, GRASS_RINGS[r].radius * this.o.radiusMul, this.align).tone);
       color.r = ((hex >> 16) & 0xff) / 255;
       color.g = ((hex >> 8) & 0xff) / 255;
       color.b = (hex & 0xff) / 255;
@@ -172,7 +200,7 @@ export class GrassField {
     const span = radius * 2;
     // 링 안에서의 상대 인덱스를 쓴다 — 전역 `i` 를 쓰면 링이 바뀔 때 같은 난수를 다시
     // 밟아 링끼리 겹쳐 선다.
-    const b = bladeBase(i - ringStart(ri, this.counts) + ri * 7919, radius);
+    const b = bladeBase(i - ringStart(ri, this.counts) + ri * 7919, radius, this.align);
     const wx = wrapTo(b.bx, cx, span);
     const wz = wrapTo(b.bz, cz, span);
     const fade = edgeScale(wx - cx, wz - cz, radius);
