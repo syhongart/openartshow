@@ -23,7 +23,7 @@ import { EXT_OFF } from '../frontend/js/world-shared/glb-material.js';
 // ⚠ **본체는 `world-shared/` 로 옮겼다**(2026-08-16 통합) — world2·3·5 가 한 파일을 쓴다.
 // 세계별 래퍼(`world2/features/glb-city.ts`)에는 `glbCityFeature` 만 남는다.
 import { glbCityFeature } from '../frontend/js/world2/features/glb-city.js';
-import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, syncVisibility } from '../frontend/js/world-shared/glb-city.js';
+import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, syncVisibility, placeGrid } from '../frontend/js/world-shared/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 import { PLAZA_WEST, isCentralPlaza } from '../frontend/js/world2/decide/grid.js';
@@ -404,9 +404,12 @@ describe('🔴 GLB 건물이 파셀과 생사를 같이한다 — 감독 지시 
   // 같다 — 지오·재질을 버리고 다시 만들면 재방문마다 `info.memory` 가 올라 개수 불변식
   // `[7]` 의 `settledOk` 를 깬다.
   //
-  // ⚠⚠ **여기서 못 잡는 것**: 실제 GLB 를 로드해 채를 세우는 경로. 자산이 13.5MB 라
-  // 노드에서 불가능하고, 그래서 토글 로직을 `syncVisibility` 로 **밖에 내어** 가짜 노드로
-  // 잰다. 「그 함수를 `system.update` 가 실제로 부르는가」는 배선 축(아래 마지막 검사)이다.
+  // ⚠ **첫 판본은 여기에 «자산이 13.5MB 라 노드에서 불가능» 이라고 적었고 거짓이었다**
+  // (검수관 블로커 B1). `placeGrid` 는 three 를 **주입받으므로**(`ThreeGroupNS` 는
+  // `Group`·`Box3` 둘뿐) 스텁으로 돈다 — 아래 GS-V1 블록이 그것을 실제로 한다.
+  // 막고 있던 것은 자산도 브라우저도 아니라 `export` 키워드 하나였다.
+  //
+  // ⚠⚠ **여전히 못 잡는 것**: 실제 GLB 의 피벗·스케일, 화면상 소멸/복귀, WebGPU 실기기.
 
   const copy = (px: number, pz: number, visible = true) => ({ node: { visible }, px, pz });
 
@@ -451,8 +454,88 @@ describe('🔴 GLB 건물이 파셀과 생사를 같이한다 — 감독 지시 
       fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
       'utf8',
     ).replace(/\s+/g, ' ');
-    expect(src, '🔴 프레임 훅이 토글을 안 부른다').toContain('update() { syncVisibility(copies, env.parcelLoaded); }');
+    // ⚠ **본문을 통째로 못 박지 않는다** — 예열 보류(B2)가 들어오며 이 단언이 한 번
+    // 깨졌고, 그것이 정상이다. **축을 둘로 나눈다**: 「토글을 부르는가」와 「예열 전에
+    // 보류하는가」. 각각이 다른 결함을 잡는다.
+    expect(src, '🔴 프레임 훅이 토글을 안 부른다').toContain('syncVisibility(copies, env.parcelLoaded)');
+    expect(src, '🔴 예열 전 보류가 사라졌다 — 꺼진 채는 예열이 아무것도 못 굽는다(B2)')
+      .toContain('if (!warmed) return;');
     expect(src, '🔴 안 보이는 미술관 벽이 여전히 벽 검출 대상이다')
       .toContain('copies.some((c) => c.node.visible)');
+  });
+});
+
+describe('🔴 GS-V1 — 배치가 토글에 넘기는 경계 (검수관 명세, 블로커 B1)', () => {
+  // ── 왜 이 블록이 생겼나 ────────────────────────────────────────────────────
+  // `syncVisibility` 는 뮤테이션 6종으로 촘촘한데, **그 함수를 화면에 도달시키는 경로가
+  // 통째로 무검사**였다. 검수관이 전체 스위트(4,090 tests)로 실측한 결과:
+  //
+  //   `px` ↔ `pz` 뒤바꾸기            0 failed / 4090
+  //   `out.push({…})` **통째 제거**   0 failed / 4090   ← 감독 지시가 통째로 미구현
+  //   `cellSize = 1` 로               0 failed / 4090
+  //
+  // 두 번째가 핵이다 — `copies` 가 영구히 빈 배열이 되어 *"glb건물도 사라지게해서"* 가
+  // 하나도 구현되지 않은 상태로 전부 초록이다. 이 저장소가 이름 붙인
+  // **「판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다」** 그대로다.
+  //
+  // ⚠ 그리고 그 구멍을 «노드에서 불가능» 이라는 **거짓 근거**로 정당화하고 있었다.
+  // 실제로는 `placeGrid` 가 three 를 주입받아 아래 스텁 하나로 돈다.
+
+  /** `ThreeGroupNS` 를 만족하는 최소 스텁. 필요한 것은 `Group` 과 `Box3` 둘뿐이다 */
+  function stubThree() {
+    class G {
+      visible = true;
+      children: unknown[] = [];
+      position = { x: 0, y: 0, z: 0, set(x: number, y: number, z: number) { this.x = x; this.y = y; this.z = z; } };
+      rotation = { y: 0 };
+      add(o: unknown): void { this.children.push(o); }
+      updateMatrixWorld(): void { /* 스텁 — 행렬은 이 축에서 안 본다 */ }
+    }
+    class Box3 {
+      min = { x: 0, y: 0, z: 0 };
+      max = { x: 0, y: 0, z: 0 };
+      setFromObject(): this { return this; }
+    }
+    return { Group: G, Box3 } as never;
+  }
+
+  /** `model.clone(true)` 만 하면 된다 — 붙는 쪽은 자리만 잡는다 */
+  const stubModel = () => ({
+    clone: () => ({ position: { set() { /* 보정 오프셋 — 이 축에서 안 본다 */ } } }),
+  }) as never;
+
+  it('★ 세운 채가 `out` 에 쌓이고, 파셀 좌표가 배치 자리와 맞는다', async () => {
+    const root = { add() { /* 스텁 */ } } as never;
+    const out: Parameters<typeof syncVisibility>[0][number][] = [];
+    await placeGrid(stubThree(), stubModel(), root, 1, 32, PLAZA_WEST, () => { }, out as never);
+
+    expect(out.length, '🔴 채를 세웠는데 `copies` 가 비었다 — 토글이 영영 안 돈다').toBe(1);
+    // 기본 1채는 랜드마크이고 `plazaWest` 칸에 선다. 그 값이 곧 파셀 좌표여야 한다.
+    expect(out[0]!.px, '🔴 파셀 x 가 배치 자리와 다르다').toBe(PLAZA_WEST.px);
+    expect(out[0]!.pz, '🔴 파셀 z 가 배치 자리와 다르다').toBe(PLAZA_WEST.pz);
+  });
+
+  it('🔴 **그 좌표로 실제로 꺼진다** — 배치와 토글이 같은 파셀을 말하는가', async () => {
+    // 이것이 경계를 건너는 지점이다. 위 검사는 「값이 맞다」이고, 이것은 「그 값이 실제로
+    // 소비된다」다. 둘 중 하나만 있으면 CLAUDE.md 가 적어 둔 그 구멍이 그대로 남는다.
+    const root = { add() { /* 스텁 */ } } as never;
+    const out: Parameters<typeof syncVisibility>[0][number][] = [];
+    await placeGrid(stubThree(), stubModel(), root, 1, 32, PLAZA_WEST, () => { }, out as never);
+
+    // 그 파셀만 로드 안 됐다고 하면 그 채가 꺼져야 한다.
+    syncVisibility(out, (px, pz) => !(px === PLAZA_WEST.px && pz === PLAZA_WEST.pz));
+    expect(out[0]!.node.visible, '🔴 파셀이 내려갔는데 건물이 그대로 서 있다').toBe(false);
+
+    // 돌아오면 켜진다 — 영구 손실이 아니다.
+    syncVisibility(out, () => true);
+    expect(out[0]!.node.visible).toBe(true);
+  });
+
+  it('★ 셀 크기가 파셀 좌표에 실제로 쓰인다 — 상수로 굳으면 엉뚱한 파셀을 본다', async () => {
+    const root = { add() { /* 스텁 */ } } as never;
+    const out: Parameters<typeof syncVisibility>[0][number][] = [];
+    // 셀을 64 로 주면 `x = px × 64` 이므로 되짚은 `px` 는 그대로여야 한다.
+    await placeGrid(stubThree(), stubModel(), root, 1, 64, PLAZA_WEST, () => { }, out as never);
+    expect(out[0]!.px, '🔴 셀 크기를 안 쓰거나 상수로 굳었다').toBe(PLAZA_WEST.px);
   });
 });

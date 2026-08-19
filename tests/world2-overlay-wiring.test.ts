@@ -328,6 +328,20 @@ describe('🔴 태스크 #112 — 미술관 벽이 편집에 물려 있다 (배�
       .toContain('env.glbCityRoot?.()');
   });
 
+  it('🔴 조립부가 **기능의 프레임 훅을 커널에 등록**한다 — 이 한 줄이 모든 기능을 산다', () => {
+    // 실측(검수관 블로커 B1, 2026-08-19): `main.ts` 의 등록 루프를 지워도 **0 failed /
+    // 4090** 이었다. 그 줄 하나가 죽으면 `system` 을 내는 **모든 기능**의 프레임 훅이
+    // 통째로 멈춘다 — GLB 파셀 토글(감독 지시 2026-08-19)이 그중 하나이고, 증상은
+    // 「가볍게가 통째로 안 먹는다」인데 화면에서는 프레임으로만 드러난다.
+    //
+    // ⚠ 정적 텍스트 축이다. 이 파일의 다른 배선 검사와 같은 한계를 진다 — 그러나
+    // **행위로 잴 방법이 없다**: 커널 조립은 부팅 경로 전체를 태워야 하고 그것은
+    // 브라우저 소관이다. 0 보다 낫다는 판단이 이 파일 전체의 전제와 같다.
+    const src = read('frontend/js/world2/main.ts').replace(/\s+/g, ' ');
+    expect(src, '🔴 기능의 `system` 이 커널에 안 붙는다 — 모든 per-frame 기능이 죽는다')
+      .toContain('if (m.instance.system) kernel.add(m.instance.system)');
+  });
+
   it('★ `glbCity` 기능이 `wallRoot` 를 계약에 노출한다 — 그 문이 3단의 출발점이다', () => {
     const src = read('frontend/js/world-shared/glb-city.ts').replace(/\s+/g, ' ');
     expect(src, '🔴 계약에서 `wallRoot` 가 사라졌다').toContain('wallRoot?(): Object3D | null');
