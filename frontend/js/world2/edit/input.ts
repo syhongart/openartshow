@@ -447,8 +447,13 @@ export function createInput(deps: InputDeps): Input {
         // «모달 중 조작 키는 주행으로 안 샌다» 한 문장으로 설명된다. 전자는 G 모달에서는
         // `S` 가 살고 S 모달에서는 죽어, 같은 키가 상황따라 다르게 동작한다.
         if (modalOpener(ev.code)) { ev.preventDefault(); ev.stopPropagation(); }
-        // 그 외 모르는 키는 **통과시킨다** — 조작 중에도 WASD 로 걸어다닐 수 있어야 한다
+        // 그 외 모르는 키는 **통과시킨다** — 조작 중에도 WASD 가 살아 있어야 한다
         // (델타는 월드 기준이라 카메라가 움직여도 값은 안 흔들린다).
+        //
+        // ⚠ **«걸어다닌다» 가 아니다**(검수관 조건 C1, 2026-08-19). 편집에서 WASD 는
+        // 2026-08-19 부터 **비행**이다(`edit/fly-input.ts` 의 `FLY_KEYS`) — 주행 리스너는
+        // 여전히 살아 있지만 `PlayerSystem` 이 날았던 프레임의 주행 적분을 건너뛴다
+        // (`flew` 주석). 이 통과 규약 자체는 그대로 유효하고, **문장만 실물과 어긋나 있었다.**
         return;
       }
       ev.preventDefault();
