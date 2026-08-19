@@ -51,8 +51,21 @@ function makePlayer(opts: Record<string, unknown> = {}) {
  * 이 저장소의 기본값과 같다 — 검증 등급 판정기가 「판정 불가」를 가장 무거운 등급으로
  * 떨어뜨리고, IP 판정이 애매하면 무거운 쪽을 고른다.
  *
- * ⚠ **여전히 못 잡는 것**: **다른 파일에서 `FLY_KEYS` 에 병합하는 형태.** 한 파일만 읽으므로
- * 원리적으로 못 본다. 계산된 키·스프레드는 이제 **잔여로 잡힌다**(통과시키지 않는다).
+ * ── 이 함수가 **못 잡는 것** (실측 2026-08-19, 검수관 반려 B-2 이후 전면 정정) ─────
+ * 계산된 키(`` [`Key${x}`] ``)·스프레드는 이제 **잔여로 잡힌다**(통과시키지 않는다).
+ * 남는 것은 전부 **리터럴 밖**이고, 각각을 **다른 검사**가 맡는다:
+ *
+ *   선언 밖 병합·대입(같은 파일)   → **GS-F5** 가 잡는다(정적)
+ *   `Readonly` 제거 · `export`     → **GS-F5 의 전제 검사** 가 잡는다(정적)
+ *   `onDown` 에 키 코드 하드코딩    → **GS-F6** 이 잡는다(행위, **표본 범위 안에서만**)
+ *   표본 밖 키코드 · 동적 이름 접근  → 🔴 **아무도 안 본다**
+ *
+ * ⚠ **첫 판본은 이 목록을 「다른 파일에서 병합 — 한 파일만 읽으므로 원리적으로 못 본다」로
+ * 적었고 그것이 틀렸다.** ① 원리적 한계가 아니었다 — `readFileSync` 로 파일 전체를 이미
+ * 읽고 있었고 리터럴 밖을 안 보기로 한 것은 **구현 선택**이었다(그래서 GS-F5 로 닫았다).
+ * ② 「다른 파일」은 애초에 성립하지 않는다 — `FLY_KEYS` 는 **export 되지 않고** 저장소
+ * 어느 파일도 이 식별자를 참조하지 않는다(실측). **닫을 수 있는 것을 「원리」로 적으면
+ * 다음 사람이 확인을 생략한다** — 이 저장소가 `main` unprotected 오기로 7일을 잃은 형태다.
  */
 function parseKeyLiteral(body: string): { pairs: string[]; residue: string } {
   // 주석을 먼저 걷는다 — 산문에도 `Ctrl`·`KeyZ` 가 나오고, 안 걷으면 설명을 배치로 읽는다.
@@ -346,6 +359,46 @@ describe('★ 키 → 입력 — `createFlyInput`', () => {
     const ev = key('keydown', 'Space');
     expect(ev.defaultPrevented, '★ Space 스크롤을 안 막았다').toBe(true);
   });
+
+  // ── 🔴 GS-F6 — **정적 검사의 밖을 행위로 막는다** (검수관 명세, 권고 P-1)
+  //
+  // GS-F2/F3/F5 는 전부 **소스를 문자열로** 읽는다. 그 밖에 두 경로가 남는다:
+  // ① `onDown` 안에 키 코드를 **직접 하드코딩**하는 것(실측: 0 failed 로 통과했다)
+  // ② 정적으로 못 읽는 동적 이름 접근.
+  // 둘 다 「리터럴이 무엇을 담았나」가 아니라 **「눌렀을 때 무슨 일이 나나」**로만 잡힌다.
+  //
+  // ⚠ **전수가 아니라 표본이다.** 아래 43개(문자·숫자·화살표·`Enter`/`Tab`/`Escape`) 밖의
+  // 코드(`F1`·`Numpad*`·`Semicolon` 등)는 **안 본다** — 표본을 전수로 읽지 마라.
+  //
+  // ⚠ 동결 목록을 여기 다시 적지 않는다 — **리터럴에서 읽는다**(값 미러링 0). 리터럴에
+  // 키가 늘면 그 키는 표본에서 자동으로 빠지고, 그 늘어난 사실 자체는 GS-F2 가 잡는다.
+  it('🔴 **리터럴에 없는 키는 비행을 안 일으킨다** — 검수관 명세 GS-F6', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('frontend/js/world2/edit/fly-input.ts', 'utf8');
+    const m = src.match(/const FLY_KEYS[^=]*=\s*\{([\s\S]*?)\n\};/);
+    expect(m, '★ FLY_KEYS 선언을 못 찾았다').not.toBeNull();
+    const { pairs, residue } = parseKeyLiteral(m![1]);
+    expect(residue, '🔴 해석 못 한 것이 남았다 — GS-F2 메시지 참조').toBe('');
+    const fly = new Set(pairs.map((x) => x.split('=')[0]!));
+    const sample = [
+      ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((c) => `Key${c}`),
+      ...Array.from({ length: 10 }, (_, i) => `Digit${i}`),
+      'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab', 'Escape',
+    ].filter((c) => !fly.has(c));
+    const guilty: string[] = [];
+    for (const code of sample) {
+      key('keydown', code);
+      if (JSON.stringify(handle.current()) !== JSON.stringify(NO_FLY)) guilty.push(code);
+      key('keyup', code);
+      handle.unbind(); handle.bind();   // 고착된 키가 다음 표본을 오염시키지 않게
+    }
+    expect(guilty, [
+      '🔴 `FLY_KEYS` 에 **없는** 키가 비행을 일으켰다:',
+      `   ${guilty.join(', ')}`,
+      '   `onDown` 안에 키 코드를 직접 적었거나, 리터럴을 선언 밖에서 변형했다.',
+      '   → 키는 `FLY_KEYS` 리터럴 **한 곳**에서만 늘린다(GS-F5 도 함께 볼 것).',
+    ].join('\n')).toEqual([]);
+  });
 });
 
 describe('🔴 조립이 부품을 무는가 — 소스를 문자열로 잰다', () => {
@@ -468,7 +521,16 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
       '   **그것을 통과시키는 대신** 이 검사를 그 형태까지 읽게 고치거나 배치를 단순하게 하라.',
       '   (허용적 정규식이 못 읽은 것을 조용히 버리는 것이 이 검사가 세 번 뚫린 원인이다.)',
     ].join('\n')).toBe('');
-    expect(pairs, [    ].join('\n')).toEqual([
+    // 🔴 **이 메시지가 이 검사의 산출물이다.** 배열 불일치를 알리는 것이 목적이 아니라
+    // **그 두 파일을 보게 하는 것**이 목적이다. 실제로 한 번 통째로 지워졌고(검수관 반려
+    // B-3), 그때 출력은 `expected [ … ] to deeply equal [ … ]` 뿐이라 `mode.ts` 도
+    // `panel/dom.ts` 도 화면에 없었다 — **검출은 남고 유도가 사라진** 상태였다.
+    expect(pairs, [
+      '🔴 비행 키 배치가 바뀌었다.',
+      '   → `edit/mode.ts` 의 `sayLead` 안내 문구를 **함께** 고치고,',
+      '     `panel/dom.ts` 의 상시 키 범례도 본 뒤 이 목록을 갱신하라.',
+      '   (단언을 지우지 마라 — 이 검사는 그 두 곳을 보게 하려고 일부러 깨진다.)',
+    ].join('\n')).toEqual([
       'KeyA=left', 'KeyC=down', 'KeyD=right', 'KeyS=back', 'KeyW=forward', 'Space=up',
     ]);
   });
@@ -493,6 +555,66 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
       '   `Ctrl`/`Meta` 는 브라우저 예약 조합을 만든다(`Ctrl+W` = 탭 닫기).',
       '   → 수식키가 아닌 단독 코드를 쓰거나, 겹치는 쪽을 먼저 정리하라.',
     ].join('\n')).toEqual([]);
+  });
+
+  // ── 🔴 GS-F5 — **리터럴 안만 보는 검사는 리터럴 밖 한 줄에 조용하다** (검수관 반려 B-2)
+  //
+  // 위 두 검사는 `FLY_KEYS` **선언 블록 안**을 fail-closed 로 읽는다. 그런데 검수관이
+  // 선언 **직후**에 아래 한 줄을 두자 **둘 다 0 failed** 였고, jsdom 으로 확인하니
+  // `KeyQ` 가 실제로 `up` 을 켰다 — **작동하는 비행 키가 늘었는데 게이트가 조용했다.**
+  //
+  //     Object.assign(FLY_KEYS as Record<string, keyof FlyInput>, { KeyQ: 'up' });
+  //     (FLY_KEYS as Record<string, keyof FlyInput>)['KeyQ'] = 'up';
+  //
+  // `Readonly<Record<…>>` 타입이 이 경로를 막을 것 같지만 **`as` 캐스팅 한 번에 뚫린다.**
+  //
+  // ⚠ 더 아팠던 것은 그때 검사 주석이 이것을 *"다른 파일에서 병합하는 형태 — 한 파일만
+  // 읽으므로 **원리적으로** 못 본다"* 라고 적고 있었다는 점이다. **원리적 한계가 아니었다** —
+  // `readFileSync` 로 파일 전체를 이미 읽고 있었고, 리터럴 밖을 안 보기로 한 것은 구현
+  // 선택이었다. **닫을 수 있는 것을 「원리」로 적으면 다음 사람이 확인을 생략한다.**
+  it('🔴 **`FLY_KEYS` 는 선언 이후 변형되지 않는다** — 검수관 명세 GS-F5', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('frontend/js/world2/edit/fly-input.ts', 'utf8');
+    // 주석 먼저 — 이 파일의 산문이 `FLY_KEYS` 를 여러 번 언급한다(실측: 헤더·`onDown` 가드).
+    const clean = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const decl = clean.match(/const FLY_KEYS[^=]*=\s*\{[\s\S]*?\n\};/);
+    expect(decl, '★ FLY_KEYS 선언을 못 찾았다').not.toBeNull();
+    // 선언 블록을 통째로 들어낸 **잔여**만 본다.
+    const rest = clean.replace(decl![0], '');
+    // 🔴 **화이트리스트다** — 정당한 읽기 **한 형태**만 지우고 남은 것은 전부 FAIL.
+    // 허용 목록을 넓히는 것은 게이트 완화이므로, 넓힐 때는 **왜 그 형태가 읽기인지**를
+    // 여기 적어라. (`\b` 는 `_` 를 단어 문자로 보므로 `FLY_KEYS_DOC` 같은 별개 이름은
+    // 애초에 안 걸린다 — 접두 오탐 없음.)
+    const bad = [...rest.replace(/\bFLY_KEYS\[ev\.code\](?!\s*=[^=])/g, '')
+      .matchAll(/^.*\bFLY_KEYS\b.*$/gm)].map((x) => x[0].trim());
+    expect(bad, [
+      '🔴 `FLY_KEYS` 를 **선언 밖에서** 만지는 줄이 있다:',
+      ...bad.map((x) => `   ${x}`),
+      '   허용은 읽기 한 형태(`FLY_KEYS[ev.code]`)뿐이다. 병합·대입으로 키를 늘리면',
+      '   위 두 검사(GS-F2·GS-F3)가 **전부 조용해진다** — 그 형태로 실제 뚫렸다(반려 B-2).',
+      '   → 키를 늘리려면 **리터럴 안에서** 늘려라.',
+    ].join('\n')).toEqual([]);
+  });
+
+  it('🔴 GS-F5 의 **전제 둘** — `Readonly` 를 유지하고 `export` 하지 않는다', async () => {
+    // 이 두 가지가 깨지면 GS-F5 는 「같은 파일」만 보므로 밖으로 새는 경로가 열린다.
+    // ⚠ **실측(2026-08-19)**: `FLY_KEYS` 는 지금 export 되지 않고, 저장소 어느 파일도
+    // 이 식별자를 참조하지 않는다(주석 한 곳 제외). 그래서 「다른 파일에서 병합」은
+    // **지금은 성립조차 안 한다** — 검사가 아니라 export 부재가 막고 있다. 그 사실이
+    // 바뀌는 순간을 이 검사가 잡는다.
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('frontend/js/world2/edit/fly-input.ts', 'utf8');
+    const clean = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(/const FLY_KEYS\s*:\s*Readonly</.test(clean), [
+      '🔴 `FLY_KEYS` 의 타입에서 `Readonly<` 가 사라졌다.',
+      '   그 타입이 없으면 `as` 캐스팅 없이도 병합이 되고, tsc 가 1차 방어를 안 한다.',
+    ].join('\n')).toBe(true);
+    expect(/export\s+(?:const\s+FLY_KEYS\b|\{[^}]*\bFLY_KEYS\b)/.test(clean), [
+      '🔴 `FLY_KEYS` 를 export 했다.',
+      '   GS-F5 는 **이 파일 하나**를 읽는다 — 밖으로 내보내면 다른 파일에서 변형하는',
+      '   경로가 열리고 그것은 이 검사의 원리적 사각이다.',
+      '   → 정말 내보내야 한다면 GS-F5 를 저장소 전체 스캔으로 넓히는 것이 선결이다.',
+    ].join('\n')).toBe(false);
   });
 
   it('🔴 위/아래가 **각각** 맞다 — 두 키를 함께 누르면 구별이 안 된다', () => {
