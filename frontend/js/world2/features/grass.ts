@@ -19,10 +19,14 @@ import { findKnobBar, attachKnobBar } from '../ui/knob-bar.js';
 import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
   GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX, MAX_BLADES, ringCounts,
-  WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z, WIND_GUST_K, WIND_GUST_T,
-  WIND_JITTER_KX, WIND_JITTER_KZ, WIND_JITTER_AMP, WIND_GUST_MIX, WIND_GUST_BASE,
+  WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z,
+  WIND_JITTER_KX, WIND_JITTER_KZ, WIND_JITTER_AMP,
   BLADE_TIP, GRASS_TONES, pickGrassWind, type GrassWindMode,
 } from '../decide/grass.js';
+import {
+  GUST_PERIOD, GUST_SHARP, GUST_VARY, GUST_VARY_KX, GUST_VARY_KZ,
+  BREEZE, GUST_OSC, GUST_LEAN, gustWave,
+} from '../decide/gust.js';
 import {
   BLADE_NODES, BLADE_BELLY, BLADE_CURVE, BLADE_AO, BLADE_NORMAL_SPREAD,
   BLADE_PALETTE, BLADE_SAT, halfWidthProfile, bladeArc, bladeShade, bladeToneHex,
@@ -125,8 +129,17 @@ function bladeGeometry(tip: number, belly: number, curve: number, spread: number
  * `PerspectiveCamera` 가 아니라 `Camera` 인 것과 같은 자리다. 여기서 필요한 것은
  * `positionNode` 대입 하나뿐이라 좁혀 받아도 잃는 것이 없다.
  */
-function windMaterial(ampMul: number, speedMul: number): THREE.Material {
-  const { positionLocal, uv, time, uniform, vec3, sin, mx_noise_float } = TSL as any;
+/**
+ * 바람 재질과 **돌풍 setter**.
+ *
+ * 돌풍 두 축을 `uniform` 으로 빼는 것이 요점이다 — 상수로 그래프에 구우면 슬라이더가
+ * 재질을 새로 만들어야 하고, 그 순간 WebGPU 파이프라인이 하나 는다(`[8]` 이 잡는 형태).
+ * 이 저장소가 바람 세기·속도에 이미 세운 규약이고 여기도 같다.
+ */
+function windMaterial(
+  ampMul: number, speedMul: number, gustMul: number, gustPeriod: number,
+): { material: THREE.Material; setGust: (mul: number, period: number) => void } {
+  const { positionLocal, uv, time, uniform, vec3, sin, floor, fract, mx_noise_float } = TSL as any;
   // `vertexColors` 는 AO 를 싣는 통로다 — 잎 색조(`instanceColor`)와 곱해진다.
   const mat = new (THREE as any).MeshLambertNodeMaterial({ side: THREE.DoubleSide, vertexColors: true });
   const amp = uniform(WIND_AMP * ampMul);
@@ -142,14 +155,43 @@ function windMaterial(ampMul: number, speedMul: number): THREE.Material {
   const jitter = sin(p.x.mul(WIND_JITTER_KX).add(p.z.mul(WIND_JITTER_KZ))).mul(WIND_JITTER_AMP);
   const phase = p.x.mul(WIND_WAVE_K).add(p.z.mul(WIND_WAVE_K * 0.7))
     .add(time.mul(spd)).add(jitter);
-  // 돌풍 — 저주파 노이즈로 «지금 이 구역이 세게 불린다» 를 만든다. 이것이 없으면
-  // 필드 전체가 한 박자로 흔들려 기계적으로 보인다.
-  // 돌풍이 **세기를 물결치게** 한다 — 감독이 원한 «바람에 흔들린다» 는 방향이 아니라
-  // 세기가 오르내리는 것이다. 어떤 구역은 거의 멈춰 있고(0.35) 어떤 구역은 크게 눕는다(1.1).
-  const gust = mx_noise_float(vec3(p.x.mul(WIND_GUST_K), p.z.mul(WIND_GUST_K), time.mul(WIND_GUST_T)));
-  const bend = sin(phase).mul(amp).mul(sway).mul(gust.mul(WIND_GUST_MIX).add(WIND_GUST_BASE));
+
+  // ── 돌풍: 땅을 훑고 **지나가는** 파면 (감독 지시 2026-08-19) ──────────────
+  // 판정·근거·실측은 `decide/gust.ts` 한 곳이다. 여기는 그것을 노드로 옮길 뿐이다.
+  //
+  // `u` 는 파면 좌표다 — 정수 하나가 파면 하나이고, 시간이 흐르면 `u` 가 커지면서
+  // 파면이 바람 방향으로 흘러간다. `fract(u)` 의 톱니는 경계에서 불연속이지만
+  // `sin(π·s)` 가 s=0 과 s=1 에서 **둘 다 0** 이라 값은 연속이다. 파면 세기 노이즈도
+  // `floor(u)` 라 경계에서 계단인데, 그 지점의 봉우리가 정확히 0 이라 안 보인다.
+  const gw0 = gustWave(gustPeriod);
+  const gWave = uniform(gw0.waveK);
+  const gTime = uniform(gw0.timeK);
+  const gMul = uniform(gustMul);
+  const u = p.x.mul(WIND_DIR_X).add(p.z.mul(WIND_DIR_Z)).mul(gWave)
+    .sub(time.mul(gTime));
+  const band = floor(u);
+  const pulse = sin(fract(u).mul(Math.PI)).pow(GUST_SHARP);
+  // 파면마다 세기를 가른다 — 규칙적인 파면만 있으면 시계처럼 보인다. 노이즈를 **여기에만**
+  // 쓰는 것이 요점이다: 분포를 몰라도 «몇 초에 한 번» 은 위 산술이 정한다.
+  const vary = mx_noise_float(vec3(band.mul(GUST_VARY_KX), band.mul(GUST_VARY_KZ), 0.5))
+    .mul(0.5).add(0.5);
+  const gust = pulse.mul(vary.mul(GUST_VARY).add(1 - GUST_VARY)).mul(gMul);
+
+  // 두 항으로 나뉜다. **진동**은 살랑임의 진폭이고, **편향**은 잎을 한쪽으로 눕힌다 —
+  // 편향이 없으면 돌풍이 «더 빨리 살랑임» 으로만 보인다(`decide/gust.ts` 의 `GUST_LEAN`).
+  const bend = sin(phase).mul(gust.mul(GUST_OSC).add(BREEZE))
+    .add(gust.mul(GUST_LEAN))
+    .mul(amp).mul(sway);
   mat.positionNode = p.add(vec3(bend.mul(WIND_DIR_X), 0, bend.mul(WIND_DIR_Z)));
-  return mat;
+  return {
+    material: mat,
+    setGust(mul, period) {
+      const gw = gustWave(period);
+      gMul.value = mul;
+      gWave.value = gw.waveK;
+      gTime.value = gw.timeK;
+    },
+  };
 }
 
 export const grassFeature: Feature = {
@@ -182,6 +224,11 @@ export const grassFeature: Feature = {
     // ── 색 2축 (감독 판정 5차 *"색뿐 아니라"*) ────────────────────────────
     // 모양 축과 **갈라 둔다.** 둘을 한 다발로 묶으면 감독이 «색이 나아진 것인지 모양이
     // 나아진 것인지» 를 한 화면에서 못 가른다 — 이번 회차 내내 걸린 문제가 그것이다.
+    // 돌풍 2축 — 감독 지시 *"간간히 강한바람"*. 세기와 간격은 다른 축이고, 둘 다
+    // 화면으로만 판정된다. `?ggust=0` 이 돌풍 없는 산들바람(이 커밋 이전에 가장 가까운
+    // 상태)이다 — 다만 평시 세기를 0.35 → 0.28 로 낮췄으므로 완전한 항등원은 아니다.
+    const gustMul = shapeAxis('ggust', '돌풍', 1, 0, 2, 0.05);
+    const gustPer = shapeAxis('ggper', '간격', GUST_PERIOD, 3, 20, 0.5);
     const palette = shapeAxis('gpal', '팔레트', BLADE_PALETTE, 0, 1, 0.05);
     const sat = shapeAxis('gsat', '채도', BLADE_SAT, 0, 2, 0.05);
     const colorAxes = [palette, sat] as const;
@@ -204,8 +251,11 @@ export const grassFeature: Feature = {
     const counts = ringCounts(radiusMul, densityMul);
     const count = counts.reduce((a, b) => a + b, 0);
     const geometry = bladeGeometry(tip, belly.get(), curve.get(), spread.get(), ao.get());
-    const material = wind === 'tsl'
-      ? windMaterial(windMul, speedMul)
+    const built = wind === 'tsl'
+      ? windMaterial(windMul, speedMul, gustMul.get(), gustPer.get())
+      : null;
+    const material = built
+      ? built.material
       : new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, vertexColors: true });
 
     // 버퍼는 **상한으로 잡는다.** 활성 수만 노브가 바꾸고 나머지는 0 스케일로 눕는다 —
@@ -268,8 +318,13 @@ export const grassFeature: Feature = {
         set(v: number) { a.set(v); writeNumOpt(a.key, v); apply(); },
         reset() { a.set(null); writeNumOpt(a.key, null); apply(); },
       });
+      // 축마다 **반영 비용이 다르다.** 모양은 잎을 다시 굽고, 색은 인스턴스 색만 덮고,
+      // 돌풍은 uniform 두 개만 쓴다. 한 통로로 묶어 전부 rebuild 하면 돌풍 슬라이더가
+      // 15만 포기 지오메트리를 매번 다시 만든다.
+      const applyGust = () => built?.setGust(gustMul.get(), gustPer.get());
       attachKnobBar(barParts, [
         ...axes.map((a) => row(a, rebuild)),
+        ...[gustMul, gustPer].map((a) => row(a, applyGust)),
         ...colorAxes.map((a) => row(a, () => field.recolor())),
       ]);
     }
@@ -283,6 +338,7 @@ export const grassFeature: Feature = {
         radiusMul, densityMul, heightMul, widthMul, tip,
         belly: belly.get(), curve: curve.get(), ao: ao.get(), spread: spread.get(),
         palette: palette.get(), sat: sat.get(),
+        gust: gustMul.get(), gustPeriod: gustPer.get(),
         wind,
         // 감독이 «바람이 이 모양이냐» 로 판정하기 전에 이것을 먼저 본다.
         windActive: wind === 'tsl',
