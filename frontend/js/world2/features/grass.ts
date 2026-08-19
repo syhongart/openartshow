@@ -19,7 +19,7 @@ import { findKnobBar, attachKnobBar } from '../ui/knob-bar.js';
 import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
   GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX, MAX_BLADES, ringCounts,
-  BLADE_TIP, GRASS_TONES, GRASS_ALIGN, pickGrassWind, type GrassWindMode,
+  BLADE_TIP, BLADE_H, BLADE_W, GRASS_TONES, GRASS_ALIGN, pickGrassWind, type GrassWindMode,
 } from '../decide/grass.js';
 import {
   WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z,
@@ -84,6 +84,12 @@ function shapeAxis(
  * 안 섞이므로 색 팔레트를 바꿔도 AO 가 따라 변하지 않는다.
  */
 function bladeGeometry(tip: number, belly: number, curve: number, spread: number, ao: number): THREE.BufferGeometry {
+  // ⚠ **비등방 스케일 보정.** 인스턴스 행렬은 `T·R_y·S(sw, sy, sw)` 라 굽힘축(z)에
+  // **폭**(`BLADE_W`)이 곱해지는데 높이에는 `BLADE_H` 가 곱해진다. 보정 없이 굽으면
+  // 실제 굽힘이 `W/H`(=0.19)배로 납작해진다 — 3회차에 랜덤 굽힘을 10.6cm 로 오산한
+  // 자리가 정확히 여기다(실제는 4.9cm 였다). `H/W` 를 곱해 두면 스케일 후
+  // `z × W × (H/W) = z × H` 로 높이와 같은 단위가 되어 원호가 제대로 선다.
+  const bendAspect = BLADE_H / BLADE_W;
   const pos: number[] = [];
   const uv: number[] = [];
   const nor: number[] = [];
@@ -96,7 +102,8 @@ function bladeGeometry(tip: number, belly: number, curve: number, spread: number
     const hw = halfWidthProfile(t, tip, belly);
     const a = bladeArc(t, curve);
     const g = bladeShade(t, ao);
-    pos.push(-hw, a.y, a.z, hw, a.y, a.z);
+    const az = a.z * bendAspect;
+    pos.push(-hw, a.y, az, hw, a.y, az);
     uv.push(0, t, 1, t);
     nor.push(-nx, ny, 0, nx, ny, 0);
     col.push(g, g, g, g, g, g);
@@ -253,7 +260,9 @@ export const grassFeature: Feature = {
     // ⚠ `?gcurve` 는 **지오메트리에서 셰이더로 옮겼다**(감독 판정 3차 «가위»). 라벨과
     // 키는 그대로 두되 이제 정적 굽힘 uniform 을 민다 — 잎을 다시 굽지 않으므로 아래
     // `rebuild` 통로가 아니라 uniform 통로로 간다.
-    const curve = shapeAxis('gcurve', '굽힘', STATIC_LEAN, 0, 3, 0.05);
+    // ⚠ 7회차에 **다시 지오메트리 통로**로 돌아왔다 — 셰이더 굽힘은 WebGPU 전용이라
+    // 헤드리스에서 안 보였고, 그래서 여섯 회차를 화면 확인 없이 돌았다.
+    const curve = shapeAxis('gcurve', '굽힘', BLADE_CURVE, 0, 3, 0.05);
     // ── 색 2축 (감독 판정 5차 *"색뿐 아니라"*) ────────────────────────────
     // 모양 축과 **갈라 둔다.** 둘을 한 다발로 묶으면 감독이 «색이 나아진 것인지 모양이
     // 나아진 것인지» 를 한 화면에서 못 가른다 — 이번 회차 내내 걸린 문제가 그것이다.
@@ -287,9 +296,9 @@ export const grassFeature: Feature = {
 
     const counts = ringCounts(radiusMul, densityMul);
     const count = counts.reduce((a, b) => a + b, 0);
-    const geometry = bladeGeometry(tip, belly.get(), BLADE_CURVE, spread.get(), ao.get());
+    const geometry = bladeGeometry(tip, belly.get(), curve.get(), spread.get(), ao.get());
     const built = wind === 'tsl'
-      ? windMaterial(windMul, speedMul, gustMul.get(), gustPer.get(), curve.get(), patch.get())
+      ? windMaterial(windMul, speedMul, gustMul.get(), gustPer.get(), STATIC_LEAN, patch.get())
       : null;
     const material = built
       ? built.material
@@ -343,7 +352,7 @@ export const grassFeature: Feature = {
     // 형태다(`[7]`). 버리고 꽂으면 델타가 0 이라 규율을 어기지 않는다 — 재질은 그대로라
     // WebGPU 파이프라인도 안 는다(attribute 구성이 동일하다).
     const rebuild = () => {
-      const next = bladeGeometry(tip, belly.get(), BLADE_CURVE, spread.get(), ao.get());
+      const next = bladeGeometry(tip, belly.get(), curve.get(), spread.get(), ao.get());
       mesh.geometry.dispose();
       mesh.geometry = next;
     };
@@ -360,12 +369,11 @@ export const grassFeature: Feature = {
       // 돌풍은 uniform 두 개만 쓴다. 한 통로로 묶어 전부 rebuild 하면 돌풍 슬라이더가
       // 15만 포기 지오메트리를 매번 다시 만든다.
       const applyGust = () => built?.setGust(gustMul.get(), gustPer.get());
-      const applyLean = () => built?.setLean(curve.get());
       const applyPatch = () => built?.setPatch(patch.get());
       attachKnobBar(barParts, [
         ...axes.map((a) => row(a, rebuild)),
+        row(curve, rebuild),
         ...[gustMul, gustPer].map((a) => row(a, applyGust)),
-        row(curve, applyLean),
         row(patch, applyPatch),
         // ⚠ **정렬만 통로가 다르다.** 잎 각도는 인스턴스 행렬이라 uniform 으로 못 바꾸고,
         // 전수 재배치(`field.replace()`)를 돌려야 한다. 15만 회 `setMatrixAt` 이지만
