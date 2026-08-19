@@ -101,16 +101,26 @@ function makePicker(
       // ⚠ **준 목록으로 거른다 — 그것이 실물 `intersectObjects` 의 성질이다.** 첫 판본은
       // `objs` 를 무시하고 전부 반환해서, 허용목록 처방이 들어간 뒤에도 UI 가 잡혔다.
       // **대역이 실물 성질을 안 가지면 그 축의 검출력은 0이다.**
-      hits: (objs) => {
-        // 🔴 **실물 성질을 대역에 준다** — three 의 `intersectObjects` 는 대상이
-        // `null`/`undefined` 면 던진다(`obj.updateWorldMatrix` 접근). 이 줄이 없으면
-        // 「미술관이 아직 안 섰을 때 건너뛴다」는 축의 **검출력이 0**이다:
-        // 실측(2026-08-19) — `faceInGlbCity` 의 null 가드를 지워도 **0 failed** 였다.
-        // 이 파일이 이미 같은 함정을 한 번 적어 두었다(`allowed` 필터 주석) — 두 번째다.
+      hits: (objs, recursive) => {
+        // 🔴 **실물 성질 ①: `null` 대상이면 던진다** — three 는 `obj.updateWorldMatrix`
+        // 를 부른다. 이 줄이 없으면 「미술관이 아직 안 섰을 때 건너뛴다」 축의 **검출력이
+        // 0**이다: 실측(2026-08-19) — `faceInGlbCity` 의 null 가드를 지워도 **0 failed**.
         if (objs.some((o) => o == null)) throw new TypeError('intersectObjects: null 대상');
-        if (objs[0] === VILLAGE_TARGETS[0]) return vil?.hits ?? [];
-        // 미술관은 **루트 하나를 재귀로** 쏜다 — 그 루트가 곧 대상 목록이다.
-        if (objs[0] === MUSEUM_ROOT) return museum?.hits ?? [];
+        // 🔴 **실물 성질 ②: 재귀 플래그를 소비한다**(검수관 권고 P1). 세 경로가 이것을
+        // 다르게 쓰므로 **대역도 함수별로 분기**해야 한다 — 안 그러면 한쪽이 거짓 FAIL 한다.
+        if (objs[0] === VILLAGE_TARGETS[0]) {
+          // 마을은 **인스턴스 메시 자체**가 대상이다. `faceInVillage` 는 `false` 로 쏜다.
+          return recursive ? [] : (vil?.hits ?? []);
+        }
+        if (objs[0] === MUSEUM_ROOT) {
+          // 미술관은 **`Group` 루트 하나**다. 재귀가 아니면 그 자식 면에 닿지 못하고,
+          // 실물에서는 벽 검출이 **통째로 죽는다** — 실측: 이 분기가 없으면
+          // `intersectObjects([g], true → false)` 뮤테이션이 **0 failed** 로 통과했다.
+          return recursive ? (museum?.hits ?? []) : [];
+        }
+        // ⚠ **오버레이 경로는 재귀를 안 본다** — `faceInOverlay` 말고도 `pick()`·
+        // `intersect()` 가 같은 목록으로 쏘고 그쪽 규약이 이 파일 밖이다. 그래서 이 축의
+        // 오버레이 쪽 검출력은 **0이다**(못 잡는 것에 올린다, 백로그 `G-ART3`).
         const allowed = new Set(objs);
         return [...uiHits, ...hits].filter((h) => allowed.has(h.object));
       },
@@ -137,6 +147,12 @@ function makePicker(
     // 태스크 #112. `null` 이면 미술관 벽은 벽 검출 대상이 아니다 — 그 상태도 재야 한다.
     glbCity: museum ? MUSEUM_ROOT : null,
     surfaceAt: () => 0,
+  // ⚠ **여기는 `as unknown as` 라 필수 필드가 타입으로 강제되지 않는다**(검수관 권고 P3).
+  // 다른 네 하네스(`edit-place`·`gizmo`·`upload-gate`·`edit-listeners`)는 `const host:
+  // OverlayHost = {` 로 **타입 주석**을 붙여 강제되는데, 이 파일은 스텁 three 를 물어
+  // 구조가 안 맞아서 캐스팅한다. 실측: 여기서 `glbCity` 줄을 지워도 **typecheck exit 0**
+  // 이고, 잡는 것은 아래 행위 검사 6건뿐이다. **「필수로 뒀으니 빠뜨릴 수 없다」는 5곳 중
+  // 4곳에서만 참이다** — 그 사실을 적어 두고, 이 파일에서는 **행위 축이 그 자리를 대신한다.**
   } as unknown as OverlayHost;
 
   const picker = createPicker(host, createEditState());
