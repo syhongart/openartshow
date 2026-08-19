@@ -52,6 +52,15 @@ export const CSS = `
 /* 「지금 볼 게 없다」 — 흐리게만 한다. 못 누르게 막지 않는 근거는 tabHasContent 주석. */
 #w2-edit .tabbar button[data-empty="1"][data-on="0"]{opacity:.45}
 #w2-edit .pane[data-on="0"]{display:none}
+/* 🔴 hidden 이 실제로 감추게 한다. #w2-edit .row{display:flex} 와 구체성이 (1,1,0) 으로
+   **같아서** 뒤에 오는 쪽이 이긴다 — 그래서 이 줄이 여기(파일 뒤쪽)에 있어야 한다.
+
+   ⚠ 이 결함은 **화면에서만 드러났다.** JS 는 el.hidden = true 를 제대로 대입하고 있었고
+   jsdom 검사도 그 프로퍼티만 보므로 **통과했다**. 그런데 브라우저에서는 속성 탭에
+   아무것도 안 골랐는데 수치칸과 버튼이 그대로 보였다. jsdom 은 CSS 를 계산하지 않는다
+   — 「hidden 을 세웠다」와 「화면에서 사라졌다」는 다른 일이고, 앞의 것만 재면 이 형태를
+   구조적으로 못 잡는다(그 한계를 world2-edit-panel-wiring.test.ts 헤더에 적어 두었다). */
+#w2-edit [hidden]{display:none}
 /* 탭 안 첫 요소의 위 여백을 지운다 — 바 아래 간격이 두 겹이 된다 */
 #w2-edit .pane > :first-child{margin-top:0}
 #w2-edit button{flex:1 1 auto;min-width:30px;padding:4px 5px;font:11px/1 system-ui,sans-serif;
