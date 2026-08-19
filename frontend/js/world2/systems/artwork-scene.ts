@@ -25,7 +25,7 @@
 // 비례해 늘고 `[7]` 이 그것을 증식으로 읽는다. 작품 평면만 텍스처가 달라 개별이다.
 
 import {
-  frameSize, type ArtworkItem,
+  frameSize, type ArtPose, type ArtworkItem,
 } from '../decide/artwork.js';
 import {
   artLightPoolSize, assignArtLights, spotFor, ART_LIGHT_PER_PARCEL, artParcelCount, artParcelXZ,
@@ -128,6 +128,12 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
     shown: boolean;
     /** 등장·소멸 진행. 산술은 `decide/lod-fade.ts` 의 `scaleAdvance` 소유다 */
     anim: ScaleState;
+    /**
+     * 편집이 미는 **크기 배수** (W8-11). 걸 때의 `w` 대비 비율이고 기본 1 이다.
+     *
+     * ⚠ 등장 배수(`anim.k`)와 **곱한다** — 각각 대입하면 나중 것이 앞것을 지운다.
+     */
+    sizeMul: number;
   }[] = [];
   let frames = 0;
   let lit = 0;
@@ -136,6 +142,8 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   let texFailed = 0;
   /** 지금 화면에 내놓은 액자 수. `frames` 와 **다른 값이다** — `ArtworkStats` 헤더 참조 */
   let shown = 0;
+  /** 마지막 `place` 가 받은 목록. `retarget` 이 「걸 때의 `w`」를 여기서 읽는다(W8-11) */
+  let placedArts: readonly ArtworkItem[] = [];
   let disposed = false;
   /**
    * 다음에 쓸 풀 슬롯. **인스턴스 상태다 — `place` 안의 지역 변수가 아니다.**
@@ -248,6 +256,7 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
     // 있어 lost update 가 성립하지 않는다. 어긋난 것은 **씬과 통계**뿐이다.
     const gen = ++generation;
     clearPlaced();
+    placedArts = arts;
     const plan = assignArtLights(arts, perParcel, cellX, cellZ);
     skipped += plan.skipped;
 
@@ -368,9 +377,29 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       placed.push({
         g, ...artParcelXZ(a, cellX, cellZ), light: assigned, shown: true,
         anim: { k: 1, up: true, elapsed: 0, from: 1, fresh: true },
+        sizeMul: 1,
       });
       shown++;
     }
+  }
+
+  /**
+   * 액자 하나의 자세만 다시 쓴다 (W8-11). 계약·근거는 `ArtworkScene.retarget` 한 곳이다.
+   *
+   * ⚠ **`arts` 배열의 원본을 안 고친다** — 그것은 `art-port` 소유이고 확정은 `commit()`
+   * 이 `set()` 으로 한다. 여기서 고치면 「미리보기를 취소했는데 값이 남는다」가 된다.
+   */
+  function retarget(index: number, t: ArtPose): void {
+    if (disposed || index < 0 || index >= placed.length) return;
+    const p = placed[index];
+    const base = placedArts[index];
+    if (!base) return;
+    p.g.position.set(t.x, t.y, t.z);
+    p.g.rotation.y = t.ry;
+    // 걸 때의 `w` 대비 비율. 0 이하는 무시한다(계약이 막지만 여기서도 안전하게).
+    p.sizeMul = base.w > 0 && t.w > 0 ? t.w / base.w : 1;
+    const k = Math.max(START_SCALE, p.anim.k) * p.sizeMul;
+    p.g.scale.set(k, k, 1);
   }
 
   /**
@@ -405,7 +434,9 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       const on = next.k > 0;
       if (on !== p.shown) { p.shown = on; p.g.visible = on; shown += on ? 1 : -1; }
       // z 를 1 로 두는 이유는 `ArtNode.scale` 주석 한 곳이다(그림/테두리 간격 2mm).
-      const k = Math.max(START_SCALE, next.k);
+      // ⚠ 편집 배수와 **곱한다**(W8-11) — 두 축이 같은 `scale` 을 쓰므로 한쪽만
+      // 대입하면 다른 쪽이 지워진다.
+      const k = Math.max(START_SCALE, next.k) * p.sizeMul;
       p.g.scale.set(k, k, 1);
       // 라이트는 그룹의 **자식이 아니라서**(월드 좌표에 따로 선다) `scale` 이 안 먹는다.
       // 밝기를 같은 배수로 따로 재운다 — 안 하면 액자만 작아지고 벽의 빛 동그라미가
@@ -417,6 +448,7 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   return {
     place,
     update,
+    retarget,
     stats: () => ({ lights: pool.length, frames, lit, skipped, unpowered, texFailed, shown }),
     dispose() {
       disposed = true;
@@ -435,88 +467,4 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
       texCache.clear();
     },
   };
-}
-
-/**
- * 작품 이미지를 받는 로더. `createArtworkScene` 의 `loadTexture` 에 그대로 넣는다.
- *
- * ⚠ **로더를 한 번만 만든다.** 첫 배선은 작품마다 `new TextureLoader()` 를 했고, three 의
- * 로더는 매니저·캐시를 들고 있어 벌마다 캐시가 갈린다 — 같은 이미지를 두 번 거는 문서에서
- * 같은 파일을 두 번 받는다.
- *
- * 실패는 **값으로** 돌려준다(`null`). 던지면 뒤 작품이 통째로 안 걸린다 — 액자는 서고
- * 그림만 비는 것이 「로드 실패」의 정직한 표시다.
- *
- * ── 🔴 `colorSpace` 를 반드시 준다 (감독 지시 2026-08-18 두 번째) ────────────
- * *"그냥 **뷰어처럼** 밝기가 보였으면해"* — 뷰어는 원본을 원본대로 낸다.
- *
- * three r152+ 의 `TextureLoader` 는 `colorSpace` 를 **설정하지 않는다**(기본
- * `NoColorSpace` = 선형 취급). 그런데 사진 파일은 **sRGB 인코딩**이다. 표시를 안 하면
- * 셰이더가 sRGB 값을 선형으로 잘못 읽고, 출력에서 선형→sRGB 변환이 한 번 더 걸려
- * **원본보다 밝고 색이 바래** 나온다. 「뷰어처럼」의 반대다.
- *
- * ⚠ 이 저장소의 **다른 색 텍스처는 전부 이것을 준다** — `horizon.ts:89` ·
- * `garden.ts:210` · `tree.ts:250` · `road.ts:283` · `shadow.ts:200` ·
- * `surface-paint.ts:246`. **작품 텍스처만 빠져 있었다**(W8-4 부터 W8-7 B1 까지).
- * 화면을 픽셀로 안 보고 액자 **개수**만 확인해 온 것이 이것을 놓친 직접 원인이다.
- *
- * ⚠⚠ **순색으로는 이 결함을 못 잡는다.** sRGB 변환은 극값(0·255)을 그대로 두므로,
- * 마젠타 `rgb(255,0,255)` 같은 순색 픽스처는 고쳐도 안 고쳐도 같은 값을 낸다 —
- * 대역이 실물의 성질을 안 가지는 그 형태다. **중간 회색으로 재야 갈린다.**
- *
- * @param resolve 계약의 `src` → 실제 URL. base 결합은 `asset-url.ts` 한 곳이 소유한다
- */
-export function textureLoaderFor(
-  THREE: unknown,
-  resolve: (src: string) => string,
-): ((src: string) => Promise<unknown | null>) | undefined {
-  const NS = THREE as {
-    TextureLoader?: new () => { loadAsync(u: string): Promise<unknown> };
-    SRGBColorSpace?: unknown;
-  };
-  const TL = NS.TextureLoader;
-  if (!TL) return undefined;
-  const loader = new TL();
-  return async (src: string) => {
-    try {
-      const tex = await loader.loadAsync(resolve(src));
-      // 값을 여기에 적지 않는다 — three 가 소유한 상수를 그대로 얹는다(값 미러링 회피).
-      if (tex && NS.SRGBColorSpace !== undefined) {
-        (tex as { colorSpace?: unknown }).colorSpace = NS.SRGBColorSpace;
-      }
-      return tex;
-    } catch { return null; }
-  };
-}
-
-/**
- * 부팅용 진입점 — 씬 생성과 로더 배선을 **한 줄로** 묶는다.
- *
- * ⚠ 이 함수가 있는 이유는 편의가 아니라 **`features/overlay.ts` 의 크기**다. 그 파일은
- * `check:filesize` 상한에 붙어 있고(감독 지시 *"파일사이즈 폭주 안되고 모듈 관리 잘되게"*),
- * 배선을 인라인으로 넣자 게이트가 커밋을 막았다 — W8-3 의 `mountTenantEntry` 와 같은 형태다.
- *
- * @param resolve 계약의 `src` → 실제 URL(`asset-url.ts` 의 `assetUrl`)
- */
-export function mountArtworks(
-  THREE: unknown,
-  scene: ArtNode,
-  layout: { cellX: number; cellZ: number },
-  resolve: (src: string) => string,
-  perParcel?: number,
-  /** 부팅 시점 작품 목록 — 풀 크기 유도용. 생략하면 격자 상한을 쓴다(편집 세션) */
-  arts?: readonly { readonly x: number; readonly z: number }[],
-): ArtworkScene {
-  return createArtworkScene({
-    THREE: THREE as ArtThreeNS,
-    scene,
-    cellX: layout.cellX,
-    cellZ: layout.cellZ,
-    perParcel,
-    arts,
-    loadTexture: textureLoaderFor(THREE, resolve),
-    // 캐시 키를 **실제 URL**로 잡는다 — 같은 `src` 에 새 `blob:` 이 붙으면(같은 파일명을
-    // 다시 드롭) 키가 달라져 자동으로 다시 로드된다. `src` 를 키로 쓰면 낡은 그림이 남는다.
-    texKey: resolve,
-  });
 }

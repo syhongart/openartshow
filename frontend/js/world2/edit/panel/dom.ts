@@ -20,9 +20,12 @@ import { createInspector } from './inspector.js';
 import { createOutliner } from './outliner.js';
 import { createSurfacePanel, type SurfacePanel } from './surface.js';
 import { createBadge } from './badge.js';
+import { createTabs } from './tabs.js';
+import { TAB_ON_PICK } from '../../decide/edit-tabs.js';
 import type { ViewSide } from '../../decide/orbit.js';
 import { SHADING_LABEL, SHADING_MODES, type ShadingMode } from '../../decide/shading.js';
 import type { SurfaceSetting } from '../../decide/surface-material.js';
+import type { ArtworkItem } from '../../decide/artwork.js';
 
 /** 패널이 «자기가 못 하는 일» 을 넘기는 곳. 조립자(`mode.ts`)가 채운다. */
 export interface PanelHandlers {
@@ -64,6 +67,13 @@ export interface PanelHandlers {
    */
   hangPhoto?(file: File): void;
 
+  /**
+   * 걸린 작품 목록과 그 선택 (W8-11). **선택 사양이고 둘이 짝이다** — 근거는
+   * `panel/outliner.ts` 의 같은 이름 인자 한 곳이다(여기에 다시 적지 않는다).
+   */
+  artList?(): readonly ArtworkItem[];
+  pickArt?(index: number): void;
+
   exportNow(): void;
 }
 
@@ -84,6 +94,14 @@ export interface Panel {
    * 접는 판정은 CSS 한 곳이 갖는다(`css.ts` 의 규약).
    */
   setAiming(on: boolean): void;
+  /**
+   * **무언가를 골랐다** — 그 탭으로 옮기고 화면을 갱신한다(감독 지시 2026-08-19 개편).
+   *
+   * ⚠ `refresh()` 안에서 할 수 없다. 그 함수는 거의 모든 동작 끝에 불리므로 「골랐다」와
+   * 「값을 하나 밀었다」가 구별되지 않고, 그러면 **수치칸을 칠 때마다 탭이 튄다.**
+   * 어느 탭으로 가는지와 그 근거는 `decide/edit-tabs.ts` 의 `TAB_ON_PICK` 한 곳이다.
+   */
+  onPicked(): void;
   /** 모드 전환 안내는 평범한 note 보다 크게 말한다 */
   sayLead(msg: string): void;
   el(tag: string, cls?: string, text?: string): HTMLElement;
@@ -134,7 +152,15 @@ export function createPanel(
   const inspector = createInspector(host, st, () => { refresh(); });
   // 아웃라이너는 **패널 밖**에 산다(왼쪽 별도 컨테이너). 넓은 화면에서만 보이는 것은
   // CSS 가 정하고 여기서는 폭을 모른다 — `css.ts` 의 미디어 쿼리 한 곳이 판정한다.
-  const outliner = createOutliner(host, st, (v) => { handlers.pickVillage(v); });
+  // 카테고리 탭 (감독 지시 2026-08-19 *"막 나열하니 정신없잖아"*). 무엇을 어느 탭에
+  // 넣는지는 `decide/edit-tabs.ts` 한 곳이 소유한다 — 아래 조립은 그 표를 따를 뿐이다.
+  const tabs = createTabs(host);
+  const outliner = createOutliner(host, st, (v) => { handlers.pickVillage(v); },
+    // 문 **둘 다** 있을 때만 넘긴다 — 한쪽만 있으면 눌러도 아무 일이 안 나는 목록이
+    // 되고, 그것이 「조용한 no-op」이다(`PanelHandlers` 의 표면 재질 넷과 같은 규약).
+    handlers.artList && handlers.pickArt
+      ? { list: handlers.artList, pick: handlers.pickArt }
+      : undefined);
   /**
    * 표면 재질(W7 · 「월드스튜디오」). **선택과 무관한 전역 패널**이라 인스펙터와 자리가
    * 다르다 — 재질은 종류당 하나를 온 세계가 공유하므로 «무엇을 골랐는가» 와 상관없이 먹는다.
@@ -175,18 +201,27 @@ export function createPanel(
     button('− 크기', nudge((t) => { nudgeScale(t, 1 / S_STEP); })),
     button('크기 +', nudge((t) => { nudgeScale(t, S_STEP); })),
   );
+  // 「바닥에」는 **벽에 걸린 액자에서 숨는다**(검수관 권고 P2). 액자의 `ground()` 는 지금
+  // 높이를 그대로 내므로 눌러도 아무 일이 없고, 팀장 규약이 그 형태를 금한다 —
+  // *"조용히 no-op 만 남기면 «가끔 안 움직인다» 가 된다"*. 근거는 `target.ts` 한 곳이다.
+  const groundBtn = button('바닥에', nudge((t) => { t.y = t.ground(); }));
   rowY.append(
     button('− 높이', nudge((e) => { e.y -= Y_STEP; })),
     button('높이 +', nudge((e) => { e.y += Y_STEP; })),
-    button('바닥에', nudge((t) => { t.y = t.ground(); })),
+    groundBtn,
   );
   const snapBtn = button('격자 0.5m', () => { st.snapOn = !st.snapOn; refresh(); });
   // 「구역 되돌리기」는 **마을을 골랐을 때만** 뜬다. 늘 보이면 «무엇이 되돌아가는가» 가
   // 모호하고(오버레이 배치는 파셀 개념이 없다), 안 보이면 되돌릴 방법이 없는 줄 안다.
   const thawBtn = button('구역 되돌리기', () => { handlers.thawSelected(); });
+  // 「복제」도 액자에서 숨긴다(검수관 권고 P3) — `actions.duplicate` 가 `st.selected`
+  // (오버레이)만 보므로 액자를 고른 채 누르면 *"먼저 물건을 클릭해 고르세요"* 가 뜬다.
+  // **방금 골랐는데** 그렇게 말하는 것이 위 「바닥에」와 같은 형태의 거짓 안내다.
+  // 액자 복제 자체는 열 수 있지만(같은 그림 한 장 더) 이번 범위 밖이다.
+  const dupBtn = button('복제', () => { handlers.duplicate(); });
   rowOps.append(
     snapBtn,
-    button('복제', () => { handlers.duplicate(); }),
+    dupBtn,
     button('삭제', () => { handlers.removeSelected(); }),
     thawBtn,
   );
@@ -249,17 +284,44 @@ export function createPanel(
   const head = el('div', 'head');
   head.append(title, toggle);
   const body = el('div', 'body');
-  body.append(palette);
-  // 팔레트 **바로 뒤**다 — 「놓기」 계열이라 자리가 여기고, 폰에서 접힌 패널을 펼치면
-  // 위에서부터 읽으므로 감독이 가장 자주 쓸 것을 위에 둔다. 문이 없으면 붙이지 않는다
-  // (빈 행도 `.row` 여백을 먹어 «뭔가 빠진 자리» 처럼 보인다).
-  if (handlers.hangPhoto) body.append(rowPhoto);
-  body.append(el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
-    el('hr'), rowView, rowShade);
-  // 표면 재질은 **없을 수도 있다** — 소비자가 문(`surfaces`/`setSurfaces`)을 안 주면 그
-  // 칸만 빠지고 나머지 편집은 그대로 산다(`setShading` 이 세운 규약과 같다).
-  if (surface) body.append(el('hr'), surface.root);
-  body.append(rowOut, status, hint);
+  // ── 공용(상시) — 탭 **밖**이다 ──────────────────────────────────────────
+  // 시점과 셰이딩은 «무엇을 골랐든» 늘 필요하다. 탭 안에 넣으면 「표면을 만지다가 위에서
+  // 보려면 탭을 옮겨야」 하고, 그것이 블렌더 뷰포트 헤더·유니티 씬뷰 툴바가 피한 형태다.
+  // 감독 문언의 *"공용기능"* 이 이것이다(근거는 `decide/edit-tabs.ts` 헤더 한 곳).
+  // 셋을 한 상자에 묶는다 — 그래야 스크롤에서 **함께** 고정된다(검수관 권고 P-h).
+  // 시점·셰이딩만 위에 두고 탭 바만 sticky 로 하면 「늘 필요하다」던 둘이 먼저 사라진다.
+  const toolbar = el('div', 'toolbar');
+  toolbar.append(rowView, rowShade, tabs.bar);
+  body.append(toolbar);
+
+  // ── 탭 내용 ─────────────────────────────────────────────────────────────
+  // 「놓기」 — 아직 없는 것을 만든다.
+  tabs.panes.place.append(palette);
+  // 문이 없으면 붙이지 않는다 — 빈 행도 `.row` 여백을 먹어 «뭔가 빠진 자리» 처럼 보인다.
+  if (handlers.hangPhoto) tabs.panes.place.append(rowPhoto);
+
+  // 「속성」 — 고른 것 하나를 만진다.
+  // 크기 슬라이더는 **수치칸 바로 뒤**다(W8-11) — 같은 것을 두 방식으로 미는 짝이라
+  // 떨어뜨리면 감독이 둘을 다른 기능으로 읽는다. 대상이 실치수를 안 내면 `sync` 가
+  // 이 줄을 숨긴다(빈 자리가 안 남는다).
+  // 아무것도 안 골랐을 때 **빈 칸으로 두지 않는다** — 「고장났나」와 「고를 게 없다」는
+  // 화면에서 구별되어야 한다(`decide/edit-tabs.ts` 의 `tabHasContent` 주석과 짝이다).
+  const propsEmpty = el('div', 'note', '물건을 클릭해 고르면 여기에서 옮기고 크기를 바꿉니다.');
+  /** 이 문서에 무엇이 있나 — `배치 N개` 가 갈 자리(검수관 권고 P-d) */
+  const propsCount = el('div', 'note');
+  tabs.panes.props.append(propsEmpty, propsCount, selLine, inspector.root, inspector.sizeRow,
+    rowRot, rowScale, rowY, rowOps);
+
+  // 「표면」 — 세계 전체의 재질. **없을 수도 있다**(소비자가 문을 안 주면 그 칸만 빠진다).
+  if (surface) tabs.panes.surface.append(surface.root);
+  else tabs.panes.surface.append(el('div', 'note', '이 화면에서는 표면 재질을 쓸 수 없습니다.'));
+
+  // 「파일」 — 이 문서를 다룬다.
+  tabs.panes.file.append(rowOut);
+
+  body.append(tabs.panes.place, tabs.panes.props, tabs.panes.surface, tabs.panes.file);
+  // 상태 줄은 탭 **밖 맨 아래**다 — 어느 탭에서 한 일이든 결과를 여기 한 곳에서 읽는다.
+  body.append(status, hint);
   panel.append(head, body);
   panel.dataset.open = '0';
   panel.dataset.mode = 'drive';
@@ -271,6 +333,26 @@ export function createPanel(
   }
 
   function refresh(): void {
+    // 탭 라벨의 「지금 볼 게 있나」 표시. 판정은 `decide/edit-tabs.ts` 가 소유한다.
+    const has = st.target !== null;
+    tabs.sync(has);
+    // 안내와 조작칸은 **서로를 대신한다** — 둘이 함께 보이면 «고르라» 는 문장 아래에
+    // 조작 가능한 칸이 있어 화면이 두 가지를 말한다.
+    // ⚠ **`rowOps`(격자·복제·삭제·구역되돌리기)는 예외로 남는다**(검수관 권고 P-e).
+    // 「격자 0.5m」가 선택과 무관한 전역 토글이라 그 줄을 통째로 숨길 수 없다 — 즉 위
+    // 문장은 **수치칸·조작 버튼에 대해서만** 참이다. 개별 버튼 숨김은 아래 `isArt` 절.
+    propsEmpty.hidden = has;
+    propsCount.hidden = has;
+    if (!has) propsCount.textContent = `이 문서에 배치 ${host.entries().length}개`;
+    selLine.hidden = !has;
+    inspector.root.hidden = !has;
+    rowRot.hidden = !has;
+    rowScale.hidden = !has;
+    rowY.hidden = !has;
+    // 액자에서 숨기는 둘 — 근거는 각 버튼을 만드는 자리에 있다.
+    const isArt = st.target?.kind === 'art';
+    groundBtn.hidden = isArt;
+    dupBtn.hidden = isArt;
     snapBtn.dataset.on = st.snapOn ? '1' : '0';
     // ── 셰이딩 버튼 ────────────────────────────────────────────────────────
     // **지금 모드를 강조한다.** 없으면 눌러도 화면이 그대로인 모드(재질)에서 «안 먹었나» 가
@@ -301,9 +383,23 @@ export function createPanel(
     const frozenNow = v ? (host.village?.isFrozen(v.px, v.pz) ?? v.frozen) : false;
     selLine.textContent = st.target
       ? describeTarget(st.target, st.selected, v) + (frozenNow ? ' · 손본 구역' : '')
-      : `선택: 없음 · 배치 ${host.entries().length}개`;
+      // ⚠ **여기 `배치 N개` 를 적지 않는다**(검수관 권고 P-d). `selLine` 은 선택이 없으면
+      // 숨으므로(`:336`) 그 문자열은 **화면에 절대 안 뜬다** — 그런데 검사는
+      // `textContent` 로 통과했다(jsdom 은 감춘 요소의 글자도 센다). 배치 개수는 아래
+      // 속성 탭 안내가 대신 말한다.
+      : '선택: 없음';
     const previews = host.entries().filter((e) => e.preview).length;
-    if (st.detached) {
+    if (st.artLost) {
+      // ⚠ **위 `detached` 와 정반대라 문구가 달라야 한다**(W8-11). 저쪽은 «조작과 저장은
+      // 그대로 됩니다» 이고 여기는 «지금 조작이 반영되지 않습니다» 다 — 한 문구를 돌려쓰면
+      // 액자가 사라졌는데 저장된다고 안내하게 되고, 그러면 감독이 계속 밀다 값을 잃는다.
+      //
+      // 두 칸이 동시에 참일 수는 없다(선택은 하나이고 `artLost` 는 작품 선택 중에만,
+      // `detached` 는 마을 선택 중에만 세워진다) — 그래서 순서는 판정이 아니라 서술이다.
+      hint.className = 'note warn';
+      hint.textContent = '⚠ 그 작품이 목록에서 사라졌습니다 —'
+        + ' 지금 조작은 반영되지 않습니다. 목록에서 다시 골라 주세요.';
+    } else if (st.detached) {
       // ⚠ **끊긴 것은 미리보기뿐이다** — 값은 계속 바뀌고 확정도 정상이다(`state.ts`).
       // 그 둘을 갈라 말하지 않으면 감독이 «편집이 죽었다» 로 읽고 조작을 멈춘다.
       hint.className = 'note warn';
@@ -348,6 +444,12 @@ export function createPanel(
     setAiming(on: boolean): void {
       // dataset 하나만 건드린다 — 무엇을 감출지는 CSS 가 정한다.
       panel.dataset.aim = on ? '1' : '0';
+    },
+    onPicked(): void {
+      // 아무것도 안 골라졌으면 탭을 옮기지 않는다 — 선택을 **푸는** 것도 이 문을 지난다
+      // (`select(…, null)`), 그때 빈 속성 탭으로 끌려가면 하던 일을 잃는다.
+      if (st.target) tabs.show(TAB_ON_PICK);
+      refresh();
     },
     sayLead(msg: string): void {
       status.textContent = msg;

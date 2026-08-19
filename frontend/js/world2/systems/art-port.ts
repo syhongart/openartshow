@@ -18,11 +18,23 @@
 // **결합의 자리는 여기 하나다** — `mountArtworks` 에 넘기는 `resolve` 가 이 함수라서,
 // 부팅 경로와 편집 경로가 같은 문을 쓴다.
 
-import type { ArtworkItem } from '../decide/artwork.js';
+import type { ArtPose, ArtworkItem } from '../decide/artwork.js';
 
-/** 이 포트가 쓰는 씬 표면. **`place` 하나** — 넓히면 편집이 씬 수명주기에 닿는다 */
+/**
+ * 이 포트가 쓰는 씬 표면. 원래 **`place` 하나**였고 이유는 *"넓히면 편집이 씬 수명주기에
+ * 닿는다"* 였다.
+ *
+ * ⚠ **W8-11 에서 `retarget` 이 붙었다 — 그 이유를 어기지 않는다.** 막으려던 것은
+ * 편집이 «만들고 없애는» 데 닿는 것이고(`place`·`dispose`), `retarget` 은 **이미 서 있는**
+ * 액자의 행렬만 다시 쓴다. 개수·수명은 손대지 않는다. 마을 파츠에 열어 준
+ * `OverlayHost.retargetSlot` 과 같은 성질이고 그때도 같은 근거로 좁게 열었다.
+ *
+ * 확정은 여전히 `place` 다 — `retarget` 은 `w` 를 **스케일 배수**로만 반영하므로 미는
+ * 동안 테두리가 함께 커진다. 손을 떼면 `set()` → `place()` 가 정확한 치수로 다시 만든다.
+ */
 export interface ArtPlacer {
   place(arts: readonly ArtworkItem[]): Promise<void>;
+  retarget(index: number, t: ArtPose): void;
 }
 
 export interface ArtsPort {
@@ -38,6 +50,14 @@ export interface ArtsPort {
   resolve(src: string): string;
   /** 이 세션이 미리보기로만 갖고 있는 `src` 들. 「보낼 준비가 됐다」가 이것을 센다 */
   localOnly(): ReadonlySet<string>;
+  /**
+   * 걸린 액자 **하나의 자세만** 씬에 민다 (W8-11). 목록은 **안 바꾼다** — 조작 중
+   * 미리보기이고, 확정은 `set()` 이다(`EditTarget` 의 `apply`/`commit` 규약 그대로).
+   *
+   * 씬이 안 물렸으면 아무 일도 안 한다. 그것이 조용한 no-op 인 것은 맞지만, 여기서는
+   * 「목록은 그대로이므로 확정하면 반영된다」가 성립한다 — 편집이 죽지 않는다.
+   */
+  retarget(index: number, t: ArtPose): void;
   /** 씬을 물린다. `mountArtworks` 직후 한 번 — 안 물리면 `set` 은 목록만 바꾼다 */
   attach(scene: ArtPlacer): void;
 }
@@ -60,6 +80,7 @@ export function createArtsPort(assetUrl: (src: string) => string): ArtsPort {
       items = next;
       await scene?.place(next);
     },
+    retarget(index, t) { scene?.retarget(index, t); },
     resolve: (src) => previews.get(src) ?? assetUrl(src),
     localOnly: () => new Set(previews.keys()),
     attach(s) { scene = s; },

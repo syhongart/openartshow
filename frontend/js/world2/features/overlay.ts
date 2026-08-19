@@ -46,7 +46,7 @@ import {
 import { createStaticStore, loadLegacyOverlay } from '../store/static-store.js';
 import { resolveEntry } from '../decide/tenant-entry.js';
 import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
-import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-scene.js';
+import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-mount.js';
 import { createArtsPort } from '../systems/art-port.js';
 import { disableMatExtensions } from '../../world-shared/glb-material.js';
 import {

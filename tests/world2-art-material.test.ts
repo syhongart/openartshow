@@ -26,8 +26,9 @@ import {
   artMatSpec, readArtEnv, ART_ENV_DEFAULT, ART_ENV_MAX, ART_ENV_KNOB,
 } from '../frontend/js/world2/decide/art-material.js';
 import {
-  createArtworkScene, textureLoaderFor, type ArtThreeNS, type ArtNode,
+  createArtworkScene, type ArtThreeNS, type ArtNode,
 } from '../frontend/js/world2/systems/artwork-scene.js';
+import { textureLoaderFor } from '../frontend/js/world2/systems/artwork-mount.js';
 import type { ArtworkItem } from '../frontend/js/world2/decide/artwork.js';
 
 describe('★ 노브 → 재질 명세 (순수 판정)', () => {

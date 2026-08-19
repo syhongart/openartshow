@@ -261,7 +261,7 @@ export function createInput(deps: InputDeps): Input {
       select(st, host, { entry: hit });
       st.dragging = hit;
       st.dragPlaneY = hit.y;
-      panel.refresh();
+      panel.onPicked();  // 속성 탭으로. `refresh()` 가 아닌 이유는 `Panel.onPicked` 한 곳
       return;
     }
     if (st.pendingSrc) {
@@ -297,7 +297,7 @@ export function createInput(deps: InputDeps): Input {
       // 지면 평면 교차로 x·z 를 매 프레임 밀어 넣는데, 마을에서는 그것이 곧 파셀
       // 재빌드라 건물이 드래그 내내 깜빡인다. 옮기기는 **기즈모 축**으로 한다 —
       // 판단과 그 대가는 `target.ts` 헤더 한 곳이다.
-      panel.refresh();
+      panel.onPicked();
       return;
     }
 

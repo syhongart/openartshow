@@ -54,6 +54,7 @@
 
 import type { EditSession, OverlayHost } from './types.js';
 import { createEditState, select } from './state.js';
+import { artTarget } from './target.js';
 import { createPicker } from './pick.js';
 import { createGizmo } from './gizmo.js';
 import { createPanel } from './panel/dom.js';
@@ -98,6 +99,12 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
 
   const picker = createPicker(host, st);
   const gizmo = createGizmo(host);
+  /**
+   * 작품 포트를 지역으로 잡는다 (W8-11). `opts.arts` 를 클로저 안에서 바로 쓰면 TS 가
+   * **좁힘을 못 유지한다**(선택 프로퍼티라 매 호출 시점에 다시 `undefined` 일 수 있다).
+   * 한 번 잡아 두면 아래 두 핸들러가 같은 객체를 본다 — 인스턴스가 갈릴 자리도 없다.
+   */
+  const port = opts.arts;
 
   // `panel` 은 조작 핸들러를 필요로 하고 그 핸들러는 `panel` 을 필요로 한다. 함수 선언은
   // 호이스팅되므로 **이름으로 먼저 묶고 실행 시점에 채워진 값을 본다** — 조립자가 이
@@ -109,7 +116,32 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     thawSelected: () => { actions.thawSelected(); },
     // 아웃라이너 목록 클릭 → **3D 클릭과 같은 함수.** 여기서 갈라지면 «목록으로 고른
     // 것은 기즈모가 안 붙는다» 가 나고, 그 어긋남은 화면에서만 드러난다.
-    pickVillage: (v) => { select(st, host, { village: v }); panel.refresh(); },
+    pickVillage: (v) => { select(st, host, { village: v }); panel.onPicked(); },
+    // ── 걸린 작품 (W8-11 · 감독 지시 *"그림과 액자 크기 위치를 조절"*) ────────
+    // 목록도 선택도 **포트 하나**에서 온다. 어댑터를 여기서 만드는 이유는 `select()`
+    // 주석 한 곳에 있다 — 요약하면 «`edit/state.ts` 가 작품 시스템을 알게 되지 않도록».
+    //
+    // 위 `pickVillage` 와 **같은 규약**이다: 목록 클릭이 3D 클릭과 같은 `select()` 로
+    // 이어진다. 지금은 3D 로 액자를 집는 경로가 없지만(감독 카드 「슬라이더 먼저」),
+    // 생길 때 이 줄이 그대로 그 자리가 된다.
+    artList: port && (() => port.list()),
+    pickArt: port && ((i: number) => {
+      // ⚠ **세 번째 인자를 반드시 넘긴다** — 어댑터는 화면을 모르므로, 고른 작품이
+      // 목록에서 사라진 것을 여기서 상태로 옮겨야 `refresh` 가 말할 수 있다.
+      // 마을은 이 배선이 `edit/state.ts` 에 있는데(`villageTarget` 의 `onDetach`),
+      // 작품은 어댑터를 **밖에서** 만들기 때문에 그 자리가 여기다.
+      //
+      // 🔴 직전 판본이 이 인자를 안 넘겼고 어댑터 검사는 초록이었다 — 검사가 콜백을
+      // 직접 넘기며 부르기 때문이다(검수관 3차 블로커 B-A). 지금은 `onLost` 가
+      // **선택 인자가 아니라서** 안 넘기면 `tsc` 가 막는다. 근거는 `target.ts` 한 곳.
+      //
+      // `select()` 가 `st.artLost = false` 로 먼저 리셋하므로 순서는 안전하다 —
+      // 이 콜백은 `apply`/`commit`/`remove` 안에서만, 그것도 한 번만 불린다.
+      select(st, host, {
+        art: { index: i, target: artTarget(port, i, () => { st.artLost = true; }) },
+      });
+      panel.onPicked();
+    }),
     // 시점 버튼과 시점 키는 **같은 함수**다 — `input` 이 소유하고 패널은 부르기만 한다.
     setView: (side) => { input.setView(side); },
     // 셰이딩도 마찬가지 — 버튼과 `Shift+Z` 가 한 구현을 본다(W6).
