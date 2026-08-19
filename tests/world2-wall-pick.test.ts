@@ -29,6 +29,7 @@ import { createPicker } from '../frontend/js/world2/edit/pick.js';
 import {
   mul3x3, toWorldNormal, wallPose, WALL_GAP, WALL_MAX_TILT,
 } from '../frontend/js/world2/decide/artwork.js';
+import type { Object3D } from 'three/webgpu';
 import type { OverlayEntry, OverlayHost } from '../frontend/js/world2/edit/types.js';
 import { makeThreeStub, type StubHit } from './helpers/three-stub.js';
 import { createEditState } from '../frontend/js/world2/edit/state.js';
@@ -82,7 +83,10 @@ function makePicker(
   // 마을 레이캐스트 대상. **오버레이와 구별되는 값**이어야 스텁이 두 경로를 가른다.
   const VILLAGE_TARGETS: unknown[] = vil ? [{ tag: 'village-pool' }] : [];
   // 미술관 루트. 마을·오버레이와 **구별되는 값**이라야 스텁이 세 경로를 가른다.
-  const MUSEUM_ROOT: unknown = { tag: 'museum-root' };
+  // ⚠ **타입을 준다** — `unknown` 으로 두면 `host` 에 `satisfies OverlayHost` 를 못 붙인다
+  // (`glbCity: Object3D | null` 에 `unknown` 이 안 들어간다). 실측: 이 한 줄이 유일한
+  // 걸림돌이었다(검수관 조건 C1-b).
+  const MUSEUM_ROOT = { tag: 'museum-root' } as unknown as Object3D;
 
   // ⚠ **오버레이 히트는 「등록된 항목」이어야 한다**(검수관 권고 P1 처방). `pickFace` 가
   // `host.root.children` 전체가 아니라 **`entries()` 의 holder 허용목록**에 쏘도록 바뀌었다
@@ -118,9 +122,20 @@ function makePicker(
           // `intersectObjects([g], true → false)` 뮤테이션이 **0 failed** 로 통과했다.
           return recursive ? (museum?.hits ?? []) : [];
         }
-        // ⚠ **오버레이 경로는 재귀를 안 본다** — `faceInOverlay` 말고도 `pick()`·
-        // `intersect()` 가 같은 목록으로 쏘고 그쪽 규약이 이 파일 밖이다. 그래서 이 축의
-        // 오버레이 쪽 검출력은 **0이다**(못 잡는 것에 올린다, 백로그 `G-ART3`).
+        // 🔴 **오버레이 계열도 재귀를 소비한다.** 첫 판본은 이 분기를 안 넣고
+        // *"`pick()`·`intersect()` 가 같은 목록으로 쏘니 함부로 좁히면 거짓 FAIL 이 난다"*
+        // 라고 적었는데 **실측으로 거짓이었다**(검수관 조건 C1-a): 넣어 보니 거짓 FAIL
+        // **0 / 61 passed** 이고 `faceInOverlay` 의 `true → false` 뮤테이션이 **0 → 7
+        // failed** 로 뒤집혔다. **위험 0 · 이득 7.**
+        //
+        // 이유는 코드가 답한다 — `pick.ts` 의 `intersectObjects` 5곳 중 오버레이 계열
+        // 셋(`intersect()`·`faceInOverlay`·`pick()`은 `intersect()` 경유)이 **전부 `true`**
+        // 이고, `false` 로 쏘는 둘(`pickVillage`·`faceInVillage`)은 위 `VILLAGE_TARGETS`
+        // 분기에서 이미 갈린다. **좁혀도 충돌할 상대가 없었다.**
+        //
+        // ⚠ **여전히 못 잡는 것**: `intersect()` 의 `true → false` 는 **0 failed** 다
+        // — 이 하네스가 그 함수를 직접 부르는 케이스를 안 갖고 있어서다(`G-ART3`).
+        if (!recursive) return [];
         const allowed = new Set(objs);
         return [...uiHits, ...hits].filter((h) => allowed.has(h.object));
       },
@@ -147,13 +162,17 @@ function makePicker(
     // 태스크 #112. `null` 이면 미술관 벽은 벽 검출 대상이 아니다 — 그 상태도 재야 한다.
     glbCity: museum ? MUSEUM_ROOT : null,
     surfaceAt: () => 0,
-  // ⚠ **여기는 `as unknown as` 라 필수 필드가 타입으로 강제되지 않는다**(검수관 권고 P3).
-  // 다른 네 하네스(`edit-place`·`gizmo`·`upload-gate`·`edit-listeners`)는 `const host:
-  // OverlayHost = {` 로 **타입 주석**을 붙여 강제되는데, 이 파일은 스텁 three 를 물어
-  // 구조가 안 맞아서 캐스팅한다. 실측: 여기서 `glbCity` 줄을 지워도 **typecheck exit 0**
-  // 이고, 잡는 것은 아래 행위 검사 6건뿐이다. **「필수로 뒀으니 빠뜨릴 수 없다」는 5곳 중
-  // 4곳에서만 참이다** — 그 사실을 적어 두고, 이 파일에서는 **행위 축이 그 자리를 대신한다.**
-  } as unknown as OverlayHost;
+  // 🔴 **`satisfies` 로 필수 필드를 강제한다**(검수관 권고 P3 → 조건 C1-b).
+  //
+  // 첫 판본은 `as unknown as OverlayHost` 하나였고 «`glbCity` 줄을 지워도 typecheck
+  // exit 0» 이었다. 그때 나는 *"스텁 three 를 물어 구조가 안 맞아서 캐스팅한다"* 라고
+  // 적었는데 **실측으로 거짓이었다** — 걸림돌은 three 구조가 아니라 위 `MUSEUM_ROOT` 의
+  // `unknown` 선언 **한 줄**이었고, 거기 타입을 주니 에러가 0이 됐다.
+  //
+  // `satisfies` 가 필수 필드를 검사하고, 그 뒤 `as unknown as` 가 스텁과 실물의 나머지
+  // 구조 차이를 흡수한다. 이제 **「필수로 뒀으니 새 하네스가 빠뜨릴 수 없다」가 5곳
+  // 전부에서 참**이다(다른 넷은 `const host: OverlayHost = {` 타입 주석).
+  } satisfies OverlayHost as unknown as OverlayHost;
 
   const picker = createPicker(host, createEditState());
   picker.castFrom({ clientX: 400, clientY: 300 });
