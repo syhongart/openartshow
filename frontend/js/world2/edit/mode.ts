@@ -63,6 +63,7 @@ import { createActions } from './actions.js';
 import { createArtworkMode } from './artwork-mode.js';
 import { createAimMode } from './aim-mode.js';
 import { createInput } from './input.js';
+import { createFlyInput } from './fly-input.js';
 import type { ArtsPort } from '../systems/art-port.js';
 import { safeBack } from '../decide/shading.js';
 // ⚠ **요금제는 어댑터를 거친다** — `adapters/plan.ts` 헤더가 그 이유를 갖는다(경계 게이트가
@@ -194,6 +195,24 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     tierLabel: tierLabel(),
   });
 
+  // ── 비행 (2026-08-19, 감독 지시 *"하늘을 날아서 보고 편집하게"*) ──────────
+  //
+  // `input` 과 **나란히 두되 따로 묶는다.** 키 성격이 달라서다(누르는 동안 매 프레임 vs
+  // 한 번 누르면 한 번) — 근거는 `edit/fly-input.ts` 헤더 한 곳이다.
+  //
+  // `host.fly` 가 없는 소비자(빌더 미리보기·테스트 하네스)에서는 이 모듈이 리스너만 달고
+  // 아무 일도 안 한다 — 궤도가 `host.orbit?.()` 로 세운 규약과 같다.
+  const fly = createFlyInput({
+    doc,
+    fly: host.fly ? (input2, dt) => { host.fly!(input2, dt); } : undefined,
+    // ⚠ **편집 중인지를 여기서 묻는다.** `bind`/`unbind` 로도 갈리지만, 루프가 한 프레임
+    // 늦게 멈추는 창이 있어 그 사이 주행에서 날아갈 수 있다. 두 겹으로 막는다.
+    // 🔴 **모달 중에는 안 난다**(검수관 반려 B1-②). `stopPropagation` 은 같은 `doc` 노드의
+    // `fly-input` 리스너를 못 막으므로, 크기·회전 모달이 열린 채로 WASD 가 그대로 날았다.
+    // 모달은 「이 하나를 조작하는 중」이라 시점이 움직이면 대상이 화면에서 달아난다.
+    editing: () => st.editing && st.modal === null,
+  });
+
   // ── 모드 전환 ───────────────────────────────────────────────────────────
   function setEditing(on: boolean): void {
     if (on === st.editing) return;
@@ -201,14 +220,28 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     panel.setMode(on);
     if (on) {
       input.bind();
+      fly.bind();
       // 편집에 들어오면 주행 모드의 포인터락을 푼다. 안 그러면 커서가 없어 못 집는다.
       try { doc.exitPointerLock?.(); } catch { /* 애초에 안 걸려 있었다 */ }
       // ⚠ **이 한 줄이 2026-08-12 사고의 절반이다.** 시점 조작이 우드래그로 바뀌는데 그
       // 안내가 패널 맨 아래 작은 글씨에만 있었다. 감독은 마우스를 움직여도 화면이 안 도니
       // *"아무것도 안 먹는다"* 로 읽었다. 모드가 바뀌는 순간 크게 말한다.
-      panel.sayLead('편집 모드 — 시점은 마우스 오른쪽 버튼 드래그. 이동은 WASD 그대로.');
+      // 🔴 **이 문구가 한 번 거짓이 됐다**(검수관 조건 C1, 2026-08-19). 예전에는
+      // *"이동은 WASD 그대로"* 였는데, 비행이 **WASD 를 가져가면서** 속도(3배)·충돌(없음)·
+      // 수직축(시선을 탄다)·복원(편집을 끄면 출발점으로)이 전부 달라졌다. 그런데도 문구는
+      // 그대로였고, `Space`·`Ctrl`·`Shift` 는 **화면 어디에도 없었다.**
+      //
+      // ⚠⚠ **바로 위 네 줄이 2026-08-12 사고를 적고 있다** — 조작이 바뀌었는데 안내가
+      // 안 따라간 그 사고다. **그것을 기록한 자리에서 같은 형태를 반복했고**, 이번에는
+      // 안내가 «없는» 것이 아니라 «틀린 것을 말하는» 쪽이라 더 나빴다.
+      // **코드가 조작을 바꿀 때 문구는 저절로 따라오지 않는다.**
+      // ⚠ **「출발 자리로」는 비행·궤도가 옮긴 것만이다** — 화살표로 걸어간 거리는 대상이
+      // 아니다(그 판정과 근거는 `edit/input.ts` 의 `orbitFrom` 문단 한 곳이다, 검수관 P-C).
+      panel.sayLead('편집 모드 — WASD 로 날아서 이동 (Space 위 · C 아래).'
+        + ' 시점은 마우스 오른쪽 버튼 드래그. 편집을 끄면 출발 자리로 돌아갑니다.');
     } else {
       input.unbind();
+      fly.unbind();
       // ⚠ **궤도를 먼저 걷는다** (W5 E3, 팀장 조건 2·3). 편집 중에는 눈높이가 떠 있고
       // 충돌을 무시했으므로 벽 안에 서 있을 수 있다 — 주행으로 돌아가기 전에
       // `PlayerSystem` 이 둘 다 원복한다. 이 한 줄이 빠지면 감독이 편집을 끈 뒤
@@ -249,6 +282,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       // 을 안 거치므로 여기서도 걷어야 «떠 있는 채 갇힘» 이 안 남는다.
       if (st.editing) host.endOrbit?.();
       input.unbind();
+      fly.unbind();
       input.unbindAlways();
       aim?.dispose();
       panel.dispose();

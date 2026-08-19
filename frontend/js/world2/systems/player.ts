@@ -1,215 +1,32 @@
 // world2/systems/player.ts — 이동 입력 → 위치.
 //
-// 이동 계산은 순수 함수로 떼어 둔다(`moveDelta`). 현행에서 이동·카메라·충돌이 한 함수에
-// 엉켜 "대각선이 빠른" 정규화 버그를 오래 못 잡았는데, 그건 계산만 따로 볼 수 없어서였다.
+// 이동 계산은 순수 함수로 떼어 둔다. 현행에서 이동·카메라·충돌이 한 함수에 엉켜
+// "대각선이 빠른" 정규화 버그를 오래 못 잡았는데, 그건 계산만 따로 볼 수 없어서였다.
+//
+// ⚠ 그 순수 함수들은 이제 **`decide/move.ts` 에 있다**(2026-08-19 분해). 이 파일에
+// 남은 것은 **상태를 가진 것**뿐이다 — 위치·시선·궤도·물·충돌을 프레임마다 굴리는 일.
+// 왜 떼어냈고 왜 더 잘게 안 갈랐는지는 그 파일 헤더 한 곳이다.
 
 import type { FrameCtx, System } from '../kernel.js';
 import { stepSubmersion, eyeYAt, underwaterAlpha, swimSpeedMult } from '../decide/swim.js';
 import { orbitAt, orbitStep, pitchTo, type ViewPreset } from '../decide/orbit.js';
+import type { PlayerOptions } from './player-options.js';
+import {
+  moveDelta, moveFromAxes, facing, stepBobPhase, bobHeight, clampPitch,
+  NO_INPUT, BOB_AMPLITUDE, WALK_SPEED, RUN_MULT, LIFT_MAX, RESTORE_STEP, type MoveInput,
+} from '../decide/move.js';
+import { flyDelta, clampFlyLift, FLY_SPEED_MULT, type FlyInput } from '../decide/fly.js';
 
-export interface MoveInput {
-  forward: boolean;
-  back: boolean;
-  left: boolean;
-  right: boolean;
-  /** 달리기 */
-  fast: boolean;
-}
-
-export const NO_INPUT: MoveInput = { forward: false, back: false, left: false, right: false, fast: false };
-
-/**
- * 이번 프레임의 이동량. yaw는 라디안(+Z가 정면 0).
- *
- * **대각선을 정규화한다.** 안 하면 W+D가 W보다 √2배 빨라진다 — 플레이어는 이걸 버그로
- * 인지하지 못하고 그냥 대각선으로만 다니게 되고, 그러면 스트리밍 look-ahead 판정도 함께
- * 왜곡된다.
- */
-export function moveDelta(
-  input: MoveInput, yaw: number, speed: number, dt: number,
-): { dx: number; dz: number } {
-  let ax = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  let az = (input.back ? 1 : 0) - (input.forward ? 1 : 0);
-  const len = Math.hypot(ax, az);
-  if (!(len > 0)) return { dx: 0, dz: 0 };
-  // 키보드는 켜짐/꺼짐뿐이라 대각선을 길이 1로 **정규화**한다.
-  ax /= len; az /= len;
-  return moveFromAxes(ax, az, yaw, speed, dt, input.fast);
-}
-
-/**
- * 축 값(-1~1) → 이동량. 조이스틱처럼 **크기가 의미 있는** 입력이 쓴다.
- *
- * 여기서는 정규화하지 않고 **클램프**한다. 정규화하면 살짝 민 조이스틱도 전속력이 되어
- * 아날로그 조작이 무의미해진다. 반대로 클램프를 빼면 대각선이 √2배 빨라진다 —
- * 두 가지를 동시에 피하는 지점이 "길이가 1을 넘을 때만 자른다"이다.
- */
-export function moveFromAxes(
-  ax: number, az: number, yaw: number, speed: number, dt: number, fast = false,
-): { dx: number; dz: number } {
-  if (!Number.isFinite(ax) || !Number.isFinite(az)) return { dx: 0, dz: 0 };
-  const len = Math.hypot(ax, az);
-  if (!(len > 0)) return { dx: 0, dz: 0 };
-  const k = len > 1 ? 1 / len : 1; // 1 초과만 자른다(작은 기울임은 그대로 느리게)
-  const s = speed * (fast ? RUN_MULT : 1) * dt;
-  const cos = Math.cos(yaw), sin = Math.sin(yaw);
-  const x = ax * k, z = az * k;
-  // 로컬 축(x=우, z=앞이 음수)을 월드로 옮긴다. 기저는 카메라 자세에서 나온다:
-  //   forward = (-sin, -cos)  ← facing()과 같은 식
-  //   right   = ( cos, -sin)  ← forward를 y축으로 90° 돌린 것
-  // 이동 = x·right + (-z)·forward 를 전개한 것이 아래 두 줄이다.
-  //
-  // 부호를 한 번 틀린 적이 있다. yaw=0에서는 두 식이 우연히 같아서 통과했고, 시선을
-  // 돌린 뒤에야 좌우가 뒤집혔다(90°에서 정확히 반대편). 그래서 이 함수의 테스트는
-  // 반드시 **여러 yaw에서 facing과 일치하는지**로 해야 한다 — 속력만 비교하면 못 잡는다.
-  return {
-    dx: (x * cos + z * sin) * s,
-    dz: (-x * sin + z * cos) * s,
-  };
-}
-
-/** 시야 방향 단위벡터(XZ). 스트리밍 look-ahead가 쓴다. */
-export function facing(yaw: number): { x: number; z: number } {
-  return { x: -Math.sin(yaw), z: -Math.cos(yaw) };
-}
-
-// ── 걷는 감각 ────────────────────────────────────────────────────────────────
-//
-// 감독 판정: **"땅에 붙어가는 느낌이야."**
-//
-// 눈높이를 의심할 자리가 아니었다. 실측하면 셋이 전부 같은 1.7m 이다 —
-// 라이브 미술관(`config.ts` EYE_HEIGHT) · world1 오픈월드 · world2. 다른 것은 둘이었다:
-//
-//   | | 걷기 속도 | 헤드밥 |
-//   |---|---|---|
-//   | 라이브 미술관 | 2.5 m/s (달리기 4.5) | 있음 |
-//   | world1        | 3.0 m/s              | — |
-//   | **world2(전)**| **9.0 m/s (달리기 19.8)** | **없음** |
-//
-// 9m/s 는 사람 걷기(1.4m/s)의 6.4배이고 Shift 를 누르면 19.8m/s — 시속 71km 다.
-// **스케일 감각은 절대 높이가 아니라 높이 대비 속도로 들어온다.** 같은 1.7m 라도 그
-// 높이에서 그렇게 미끄러지면 시점이 낮게 읽힌다. 그리고 헤드밥이 없으면 발이 땅을 딛는
-// 신호가 하나도 없어 걷는 게 아니라 활강하는 느낌이 된다 — "붙어**간다**" 가 이것이다.
-//
-// 원인이 둘인데 하나만 고치면 안 된다. 속도만 내리면 여전히 미끄러지고, 헤드밥만 넣으면
-// 19.8m/s 로 흔들리며 날아간다. 이 프로젝트가 이미 두 번 겪은 **상쇄** 형태다.
-
-/** 헤드밥 진폭(m). 라이브(`player.js` BOB_AMPLITUDE=0.03)보다 크다 — 오픈월드는 걸음이 빠르다 */
-export const BOB_AMPLITUDE = 0.045;
-/** 헤드밥 각속도(rad/s). 걷기 속도에서의 값이고, 실제로는 속력 비율이 곱해진다 */
-export const BOB_FREQ = 7.5;
-/**
- * 기본 걷기 속도(m/s). 9 에서 내렸다.
- *
- * 9 는 실수가 아니라 **세계 크기와 묶인 값**이었다 — 섬 지름 480m 를 53초에 건너도록
- * 잡았다. 그래서 라이브와 같은 2.5 로 내릴 수는 없다(3분 넘게 걸려 세계가 지루해진다).
- * 5.0 이면 걸어서 96초·달려서 44초 — 넓다는 감각은 남기고 자동차 속도만 없앤다.
- */
-export const WALK_SPEED = 5;
-/** 달리기 배수. 5 × 2.2 = 11m/s — 전력질주 상한 근처다(예전 19.8은 시속 71km였다) */
-export const RUN_MULT = 2.2;
-
-/**
- * 헤드밥 위상을 진행시킨다. **속력 비율에 비례**해야 빨리 걸을 때 빨리 흔들린다.
- *
- * 고정 각속도로 돌리면 살금살금 걸어도 뛰는 리듬으로 흔들려 발과 화면이 어긋난다.
- */
-export function stepBobPhase(phase: number, ratio: number, dt: number): number {
-  return phase + dt * BOB_FREQ * Math.max(0, ratio);
-}
-
-/**
- * 위상·강도 → 카메라 y 오프셋(m).
- *
- * `amp` 를 인자로 받는 이유는 **끌 수 있어야 하기 때문**이다(`?bob=0`). 상수를 직접
- * 읽으면 감독이 실기기에서 끄고 비교할 수단이 없다.
- */
-export function bobHeight(phase: number, intensity: number, amp = BOB_AMPLITUDE): number {
-  return Math.sin(phase) * amp * Math.max(0, Math.min(1, intensity));
-}
-
-/**
- * 편집 궤도로 올라갈 수 있는 최대 눈높이 가산(m).
- *
- * 40m 인 근거: 마을에서 가장 높은 파츠가 시계탑이고 건물이 12m 언저리다. 그 두 배를
- * 넘게 올라가면 파셀 하나가 화면에 다 들어와 «어느 구역을 보고 있나» 가 오히려 흐려진다.
- *
- * ⚠ **화면에서만 판정된다.** 이 값은 근거가 아니라 출발점이고, 감독이 «더 올라가고
- * 싶다» 고 하면 노브로 열어 판정을 받는다.
- */
-export const LIFT_MAX = 40;
-
-/**
- * 편집 종료 복원을 나누는 **걸음 길이(m)**. 근거는 충돌 캐시의 커버 범위다.
- *
- * `systems/collision.ts` 의 `Collider.resolve` 는 넘겨받은 자리 기준 3×3 파셀만 캐시하고,
- * 그 파일이 실측해 적어 둔 여유가 **«플레이어 앞뒤로 최소 `cellX`»** 다(지금 32m).
- * 걸음이 그 안에 있으면 목표가 언제나 캐시 안에 든다.
- *
- * 8m 는 그 여유의 **4분의 1** — `Math.round` 를 쓰는 이유와 같은 논리다(결함을 막아서가
- * 아니라 마진을 벌어서). 최악(반경 80m 반대편, 160m)에도 20걸음이고, 편집을 끌 때
- * 한 번뿐이라 비용이 화면에 안 나타난다.
- *
- * ⚠ **셀 크기를 여기서 읽지 않는다** — `PlayerSystem` 은 충돌 구현도 레이아웃도 모르고
- * (`resolveMove` 를 주입받을 뿐이다), 그것을 알게 하면 이 클래스가 세계 지형에 묶인다.
- * 대신 **그 전제를 테스트가 실제 `Collider` 로 지킨다**(`tests/world2-player-orbit.test.ts`).
- * 셀이 8m 이하로 줄면 그 축이 빨간불이 되고, 그때 이 값을 재론한다.
- */
-export const RESTORE_STEP = 8;
-
-/** 피치를 수직 한계 안으로 가둔다 — 넘어가면 화면이 뒤집힌다. */
-export function clampPitch(pitch: number): number {
-  const lim = Math.PI / 2 - 0.05;
-  return Math.min(lim, Math.max(-lim, pitch));
-}
-
-export interface PlayerOptions {
-  speed?: number;
-  eyeHeight?: number;
-  /** 헤드밥 진폭(m). **0이면 끈다** — 감독 실기기 비교용(`?bob=0`) */
-  bobAmplitude?: number;
-  /**
-   * 시작 위치. `yaw` 는 **있을 때만** 적용한다(rad) — 없으면 지금까지처럼 0 이다.
-   *
-   * 물가 스폰(`?at=river|sea`)이 물 쪽을 보게 하려고 열었다. 좌표만 옮기면 바다에
-   * 세워 놓고 **도시를 보게 하는** 일이 생기고(실측 2026-08-07), 그러면 "링크 하나로
-   * 확인" 이라는 노브의 목적이 절반만 달성된다.
-   */
-  start?: { x: number; z: number; yaw?: number };
-  /** 카메라에 위치·회전을 반영한다 */
-  applyCamera?: (x: number, y: number, z: number, yaw: number, pitch: number) => void;
-
-  // ── 물에 빠진다 (감독 지시 2026-07-31 *"강에 사람이 빠지게해줘"*) ────────────
-  //
-  // **주입으로 받는다.** 이 파일은 `decide/water.ts` 를 import 하지 않는다 — 물의 모양을
-  // 알면 플레이어가 세계 지형에 묶이고, 테스트가 강을 만들어야 이 클래스를 돌릴 수 있게
-  // 된다. 지금은 "물이면 이 높이" 라는 함수 하나만 알면 되고, 그 함수가 강에서 오든
-  // 수영장에서 오든 여기는 모른다.
-  //
-  // 세 개를 **다 주지 않으면 물에 안 빠진다**(예전과 똑같이 동작한다). 빌더 미리보기처럼
-  // 지형이 없는 화면에서 물 판정을 붙일 이유가 없기 때문이다.
-
-  /** 이 좌표의 수면 높이(m). 물이 아니면 `null`. 안 주면 물 판정을 하지 않는다 */
-  waterSurfaceY?: (x: number, z: number) => number | null;
-
-  // ── 벽에 막힌다 (감독 지시 2026-08-08 태스크 #182) ───────────────────────
-  //
-  // **물과 같은 주입 형태다.** 이 파일은 `decide/collide.ts` 도 세계의 건물 배치도
-  // 모른다 — "여기서 이만큼 움직이면 실제로는 어디까지 가는가" 라는 함수 하나만 안다.
-  // 그래서 빌더 미리보기처럼 세계가 없는 화면에서는 안 주면 그만이고(예전과 똑같이
-  // 통과한다), 테스트는 도시를 세우지 않고도 벽을 흉내낼 수 있다.
-  /** 이동 해석. 안 주면 충돌 없이 그대로 간다(예전 동작) */
-  resolveMove?: (x: number, z: number, dx: number, dz: number) => { x: number; z: number };
-  /** 해저 높이(m). 완전히 잠기면 여기에 발이 닿는다 */
-  seabedY?: number;
-  /**
-   * 물속 화면 틴트의 알파(0~1)를 매 프레임 알린다.
-   *
-   * **여기서 DOM 을 만지지 않는다.** 그리는 일은 화면 소유자(`main.ts`)의 몫이고, 이
-   * 클래스는 수치만 낸다 — 그래야 헤드리스 테스트가 알파를 직접 읽어 검사할 수 있다.
-   */
-  onSubmerge?: (alpha: number) => void;
-}
+// ── 재수출 — **소비자를 한 곳도 안 고치기 위해서다** ────────────────────────
+// 제품 2곳과 테스트 9개가 이 경로로 `moveDelta`·`WALK_SPEED`·`facing` 등을 가져간다.
+// 분해가 「행위 불변」이려면 그들이 보는 표면이 그대로여야 하고, 재수출이 그것을
+// 컴파일 단계에서 보증한다(빠뜨리면 `tsc` 가 소비자 쪽에서 빨간불을 낸다).
+export type { PlayerOptions } from './player-options.js';
+export {
+  moveDelta, moveFromAxes, facing, stepBobPhase, bobHeight, clampPitch,
+  NO_INPUT, BOB_AMPLITUDE, BOB_FREQ, WALK_SPEED, RUN_MULT, LIFT_MAX, RESTORE_STEP,
+} from '../decide/move.js';
+export type { MoveInput } from '../decide/move.js';
 
 export class PlayerSystem implements System {
   readonly name = 'player';
@@ -254,6 +71,38 @@ export class PlayerSystem implements System {
    * 드래그는 안 막힌다» 같은 형태가 난다.
    */
   private lift = 0;
+  /**
+   * **비행의 가산 눈높이(m).** 궤도의 `lift` 와 **칸이 다르다.**
+   *
+   * 🔴 한 칸을 쓰면 «비행으로 100m 올라간 뒤 궤도를 돌리면 40m 로 툭 떨어진다» 가 된다 —
+   * `orbit()` 이 `LIFT_MAX`(40) 로 클램프하기 때문이고, 그 40 은 **궤도의 목적**에서 나온
+   * 값이다(`decide/move.ts` 의 `LIFT_MAX` 주석). 비행의 목적은 정확히 그 반대라 상한이
+   * 다르고(`decide/fly.ts`), 상한이 다른 둘이 한 칸을 공유할 수는 없다.
+   *
+   * ⚠ **그래도 팀장 조건 ②의 「`lift` 소비 지점」은 지켜진다** — 칸이 둘이어도 눈높이에
+   * 더해지는 자리는 `eyeLift` 하나다(아래). 그 조건이 막으려던 것은 «어디서 눈높이가
+   * 더해지는지 모르게 되는 것» 이지 칸 개수가 아니다.
+   */
+  private flyLift = 0;
+  /**
+   * 🔴 **이번 프레임에 실제로 날았는가.** `update()` 가 읽고 바로 지운다.
+   *
+   * ── 왜 필요한가 (검수관 반려 B2) ────────────────────────────────────────
+   * 주행 키 리스너는 `main.ts` 가 소유하고 **부팅부터 dispose 까지 산다** — 편집이 켜져도
+   * 안 뗀다(`edit/input.ts` 가 *"조작 중에도 WASD 로 걸어다닐 수 있어야 한다"* 로 그것을
+   * 의도한다). 비행이 같은 WASD 를 쓰므로 **한 번의 `keydown` 이 걷기와 비행을 동시에**
+   * 켰다. 검수관 실측: 수평 속력이 `5 + 15 = 20 m/s` 로 **걷기의 4배**, 상승각이 57.3° →
+   * **43.8°** 로 납작해지고, 주행 성분이 `resolveMove` 를 타서 **나는 중에 벽에 막혔다.**
+   * 그리고 공중에서 헤드밥이 최대 강도로 돌았다.
+   *
+   * 그 셋이 각각 문서화된 계약을 거짓으로 만든다 — *"충돌을 안 태운다"*,
+   * *"위를 보고 앞으로 가면 올라간다"*, `FLY_SPEED_MULT = 3` 의 유도.
+   *
+   * ⚠ **해소를 여기서 한다 — 주행 경로에 편집 분기를 심지 않는다.** 팀장 조건 ②의
+   * *"편집에서만"* 은 «편집 전용 코드가 주행 경로에 있으면 안 된다» 이고, 이 칸은
+   * **비행이 스스로 세우고 주행이 읽어 넘어가는** 형태라 그 경계를 안 넘는다.
+   */
+  private flew = false;
   /**
    * 궤도를 **시작한 자리**. 없으면 궤도 중이 아니다.
    *
@@ -345,6 +194,65 @@ export class PlayerSystem implements System {
    * @param dHeight   눈높이 증분(m). 위로 올라가면 내려다보게 된다
    * @param kRadius   반경 배수(1 = 그대로)
    */
+  /**
+   * **편집 비행 한 프레임**(감독 지시 2026-08-19 *"내가 하늘을 날아서 보고 편집하게"*).
+   *
+   * 궤도와 **같은 규율 3종**(팀장 조건 ②)을 그대로 받는다:
+   *   ① **편집에서만 불린다** — 주행 경로에는 호출부가 없다(`edit/` 만 부른다)
+   *   ② **`orbitFrom` 을 공유한다** — 그래서 `endOrbit()` 의 걸어서 복원이 비행에도 그대로
+   *      걸린다. 따로 두면 «날아간 뒤 편집을 끄면 벽 안에 선다» 를 각자 또 풀어야 한다
+   *   ③ **눈높이 소비 지점을 공유한다** — `eyeLift` 하나(위)
+   *
+   * ⚠ **충돌을 안 태운다** — 궤도와 같다(팀장 판정 3). 나는 중에 벽에 막히면 그것은
+   * 비행이 아니다. 지면 아래로 못 가게 막는 것은 `clampFlyLift` 의 하한 0 이다.
+   *
+   * ⚠⚠ **이 문장은 한동안 거짓이었다**(검수관 반려 B2). 주행이 같은 프레임에 겹쳐 돌았고
+   * 그 성분은 `resolveMove` 를 탔다 — 수평의 4분의 1이 벽에 막혔다. 지금은 `flew` 가
+   * 주행 적분을 건너뛰게 해서 참이다. **계약을 적는 것과 계약이 성립하는 것은 다른 일이고,
+   * 이 회차가 그 차이로 반려를 받았다.**
+   *
+   * @param maxLiftMeters 고도 상한(**미터**). 셀→미터 변환은 `flyLiftMeters()` 가 하고,
+   *   그것을 부르는 것은 세계 크기를 아는 배선 쪽이다 — 이 클래스는 레이아웃을 모른다.
+   */
+  flyBy(input: FlyInput, dt: number, maxLiftMeters: number): void {
+    const d = flyDelta(input, this.yaw, this.pitch, this.speed * FLY_SPEED_MULT, dt, RUN_MULT);
+    // 🔴 **변위가 0 이면 아무것도 안 한다 — 특히 `orbitFrom` 을 안 세운다**(검수관 반려 B1).
+    //
+    // 첫 판본은 이 검사 없이 무조건 세웠다. 그때 하강이 `Shift` 였고 그것은 **주행의
+    // 달리기 키이기도** 해서, 편집 중에 그냥 달리기만 해도 루프가 깨어나 여기 들어왔다 —
+    // `flyDelta` 가 `NO_DELTA` 를 내는데도 복원 출발점이 섰다.
+    //
+    // ⚠ **그 「Shift」 부분은 지금 옛말이다**(검수관 반려 B5, 2026-08-19). 하강이 `KeyC` 로
+    // 옮겨졌고 `fly-input` 이 수식키를 통째로 거르므로 **그 경로 자체가 없다.** 그런데
+    // 이 문장이 그대로 남아 있던 판본에서는 더 나빴다 — 검수관 지적대로 `Shift` 가
+    // `down` 이던 회차에는 `dy ≠ 0` 이라 **이 가드를 그냥 통과했고**, 와이어 토글
+    // (`Shift+Z`) 한 번이 「편집을 끄면 출발 자리로」 복원을 조용히 무장시켰다.
+    //
+    // **가드 자체는 유지한다** — 그 경로가 사라졌다고 가드를 빼면, 다음에 비슷한 키가
+    // 들어올 때 방어가 없다. 지금 이것이 막는 것은 「입력은 있는데 변위가 0인 프레임」
+    // 일반이고, 아래 검사가 그 축을 잰다.
+    //
+    // 검수관 실측: 벽을 우회해 40m 걸은 뒤 편집을 끄면 **32m 뒤 벽 앞으로 튄다**(비행 키를
+    // 한 번도 안 누른 대조 세션은 0m). `endOrbit()` 의 복원은 **직선으로** 걸어가므로 벽에
+    // 막히는데, 그 메서드 주석이 *"«편집을 껐더니 딴 데 서 있다» 가 되기 때문"* 이라며
+    // 막으려던 바로 그 현상이다. **그 주석을 인용해 만든 배선이 그것을 되살렸다.**
+    if (d.dx === 0 && d.dy === 0 && d.dz === 0) return;
+    if (this.orbitFrom === null) this.orbitFrom = { x: this.x, z: this.z };
+    this.x += d.dx;
+    this.z += d.dz;
+    this.flyLift = clampFlyLift(this.flyLift + d.dy, maxLiftMeters);
+    this.flew = true;
+  }
+
+  /**
+   * 편집이 더한 눈높이(m) — **궤도와 비행의 합.** 주행에서는 언제나 0 이다.
+   *
+   * 두 칸을 더하는 자리를 여기 하나로 좁힌다. 소비처가 셋(`update` 의 눈높이,
+   * `orbit`·`orbitTo` 의 pitch 계산)이라 각자 더하면 **한 곳만 고쳐도 아무도 모르는**
+   * 그 형태가 된다 — 이 저장소가 값 미러링이라 부르는 것.
+   */
+  private get eyeLift(): number { return this.lift + this.flyLift; }
+
   orbit(cx: number, cy: number, cz: number, dYaw: number, dHeight: number, kRadius: number): void {
     // 처음 도는 순간의 자리를 기억한다 — **주행으로 도달한 곳이라 반드시 유효**하고,
     // 그것이 `endOrbit()` 의 복원 출발점이 된다(팀장 조건 3).
@@ -362,7 +270,7 @@ export class PlayerSystem implements System {
     // 눈의 월드 y — **헤드밥은 뺀다.** 그것은 프레임마다 흔들리는 값이라 넣으면 시선이
     // 떨린다(궤도 중에는 안 걷고 있으므로 실제로도 거의 0 이다).
     const r = Math.hypot(p.x - cx, p.z - cz);
-    this.pitch = clampPitch(pitchTo(this.eye + this.lift, cy, r));
+    this.pitch = clampPitch(pitchTo(this.eye + this.eyeLift, cy, r));
   }
 
   /**
@@ -390,7 +298,7 @@ export class PlayerSystem implements System {
     this.lift = Math.min(LIFT_MAX, Math.max(0, preset.lift));
 
     const r = Math.hypot(p.x - cx, p.z - cz);
-    this.pitch = clampPitch(pitchTo(this.eye + this.lift, cy, r));
+    this.pitch = clampPitch(pitchTo(this.eye + this.eyeLift, cy, r));
   }
 
   /**
@@ -407,6 +315,9 @@ export class PlayerSystem implements System {
    */
   endOrbit(): void {
     this.lift = 0;
+    // 비행 고도도 여기서 걷는다 — **편집을 끄면 주행 모델로 완전히 돌아간다**가
+    // 이 메서드의 계약이고, 한쪽만 걷으면 «편집을 껐는데 공중에 떠 있다» 가 된다.
+    this.flyLift = 0;
     const from = this.orbitFrom;
     this.orbitFrom = null;
     if (from === null || !this.resolveMove) return;
@@ -451,9 +362,17 @@ export class PlayerSystem implements System {
     // 물속에서는 무겁다. **직전 프레임의 잠김**을 쓴다 — 이번 프레임 잠김은 이동한
     // 뒤에야 정해지고(새 위치에서 판정한다), 한 프레임 지연은 화면에 안 보인다.
     const speed = this.speed * swimSpeedMult(this.submersion);
-    const d = stick > 0
-      ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, speed, ctx.dt, this.input.fast)
-      : moveDelta(this.input, this.yaw, speed, ctx.dt);
+    // 🔴 **날았으면 걷지 않는다**(검수관 반려 B2 — 근거는 `flew` 주석 한 곳).
+    // 플래그는 **읽는 즉시 지운다** — 안 지우면 키를 뗀 뒤에도 한 프레임이 아니라 영원히
+    // 주행이 죽는다. 그리고 이 자리에서 `d` 를 0 으로 만들면 아래가 전부 따라온다:
+    // 이동 0 · `moveDir` 유지 · `moved = 0` → **헤드밥도 0**(공중에서 흔들리지 않는다).
+    const flew = this.flew;
+    this.flew = false;
+    const d = flew
+      ? { dx: 0, dz: 0 }
+      : stick > 0
+        ? moveFromAxes(this.axes.x, this.axes.z, this.yaw, speed, ctx.dt, this.input.fast)
+        : moveDelta(this.input, this.yaw, speed, ctx.dt);
     // **실제로 간 거리**를 따로 잡는다. 충돌이 붙은 뒤로 `d`(가려던 양)와 실제가 갈린다.
     let mx = 0;
     let mz = 0;
@@ -526,7 +445,7 @@ export class PlayerSystem implements System {
     // 물속에서 눈이 어디에 잠기는가를 정하는 값이고, 편집 궤도는 물 위 40m 를 다루므로
     // 잠김이 0 이라 관측 가능한 차이가 없다. 두 곳에 더하면 «떠 있는데 물속 틴트가
     // 걸린다» 같은 형태가 열린다.
-    const groundEye = this.eye + this.lift
+    const groundEye = this.eye + this.eyeLift
       + bobHeight(this.bobPhase, this.bobIntensity, this.bobAmp);
     const eyeY = eyeYAt(this.submersion, groundEye, this.seabed, this.eye);
 
