@@ -348,6 +348,11 @@ export const overlayFeature: Feature = {
       // 만질 수 없다는 것이지 여기서 변환하는 데 있지 않다.
       instances: env.pools,
       village: env.village,
+      // 🔴 미술관 벽 (태스크 #112). **매번 다시 묻는다** — 자산이 13.5MB 라 로드가
+      // 비동기여서 편집을 켠 시점과 미술관이 선 시점의 선후가 정해져 있지 않다.
+      // 한 번 읽어 캐시하면 «먼저 켠 세션에서만 안 걸린다» 가 되고, 그것은 재현 조건이
+      // 타이밍이라 화면에서 «가끔 안 된다» 로만 보인다.
+      get glbCity() { return env.glbCityRoot?.() ?? null; },
       // 조작 중 실시간 반영(W5 E2.5). **개수는 안 변한다** — 이미 점유한 슬롯의 행렬만
       // 다시 쓰는 함수 하나이고, `acquire`·`release` 는 안 넘어간다(팀장 판정 2026-08-13).
       retargetSlot: env.retargetSlot,

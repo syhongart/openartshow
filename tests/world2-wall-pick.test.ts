@@ -66,7 +66,12 @@ interface VillageFix {
   owner?: { key: string; index: number } | null;
 }
 
-function makePicker(hits: StubHit[], vil?: VillageFix, uiHits: StubHit[] = []) {
+/** 미술관 GLB 대역 (태스크 #112). 인스턴스가 아니라 **일반 메시 트리**다 */
+interface MuseumFix { hits: StubHit[] }
+
+function makePicker(
+  hits: StubHit[], vil?: VillageFix, uiHits: StubHit[] = [], museum?: MuseumFix,
+) {
   const canvas = document.createElement('canvas');
   document.body.append(canvas);
   canvas.getBoundingClientRect = () => ({
@@ -76,6 +81,8 @@ function makePicker(hits: StubHit[], vil?: VillageFix, uiHits: StubHit[] = []) {
 
   // 마을 레이캐스트 대상. **오버레이와 구별되는 값**이어야 스텁이 두 경로를 가른다.
   const VILLAGE_TARGETS: unknown[] = vil ? [{ tag: 'village-pool' }] : [];
+  // 미술관 루트. 마을·오버레이와 **구별되는 값**이라야 스텁이 세 경로를 가른다.
+  const MUSEUM_ROOT: unknown = { tag: 'museum-root' };
 
   // ⚠ **오버레이 히트는 「등록된 항목」이어야 한다**(검수관 권고 P1 처방). `pickFace` 가
   // `host.root.children` 전체가 아니라 **`entries()` 의 holder 허용목록**에 쏘도록 바뀌었다
@@ -95,7 +102,15 @@ function makePicker(hits: StubHit[], vil?: VillageFix, uiHits: StubHit[] = []) {
       // `objs` 를 무시하고 전부 반환해서, 허용목록 처방이 들어간 뒤에도 UI 가 잡혔다.
       // **대역이 실물 성질을 안 가지면 그 축의 검출력은 0이다.**
       hits: (objs) => {
+        // 🔴 **실물 성질을 대역에 준다** — three 의 `intersectObjects` 는 대상이
+        // `null`/`undefined` 면 던진다(`obj.updateWorldMatrix` 접근). 이 줄이 없으면
+        // 「미술관이 아직 안 섰을 때 건너뛴다」는 축의 **검출력이 0**이다:
+        // 실측(2026-08-19) — `faceInGlbCity` 의 null 가드를 지워도 **0 failed** 였다.
+        // 이 파일이 이미 같은 함정을 한 번 적어 두었다(`allowed` 필터 주석) — 두 번째다.
+        if (objs.some((o) => o == null)) throw new TypeError('intersectObjects: null 대상');
         if (objs[0] === VILLAGE_TARGETS[0]) return vil?.hits ?? [];
+        // 미술관은 **루트 하나를 재귀로** 쏜다 — 그 루트가 곧 대상 목록이다.
+        if (objs[0] === MUSEUM_ROOT) return museum?.hits ?? [];
         const allowed = new Set(objs);
         return [...uiHits, ...hits].filter((h) => allowed.has(h.object));
       },
@@ -119,6 +134,8 @@ function makePicker(hits: StubHit[], vil?: VillageFix, uiHits: StubHit[] = []) {
       ownerAt: () => (vil.owner === undefined ? { key: 'building', index: 0 } : vil.owner),
     } : null,
     village: null,
+    // 태스크 #112. `null` 이면 미술관 벽은 벽 검출 대상이 아니다 — 그 상태도 재야 한다.
+    glbCity: museum ? MUSEUM_ROOT : null,
     surfaceAt: () => 0,
   } as unknown as OverlayHost;
 
@@ -463,5 +480,69 @@ describe('★ 오버레이와 마을 중 **가까운 것**을 고른다', () => 
       point: { x: 100, y: 1, z: 0 }, face: { normal: { x: 1, y: 0, z: 0 } },
     };
     expect(makePicker([noDist], { hits: [VI(999)] }).pickFace()!.point.x).toBe(200);
+  });
+});
+
+describe('🔴 미술관 GLB 벽에도 걸린다 — 태스크 #112', () => {
+  // ── 무엇이 결함이었나 ──────────────────────────────────────────────────────
+  // 미술관은 `world-shared/glb-city.ts` 가 `env.scene.add(g)` 로 **씬에 직결**한다.
+  // 오버레이 항목도 아니고 인스턴스 슬롯도 아니라 `pickFace` 가 보는 두 목록 어디에도
+  // 안 들었다. 증상은 «안 걸린다» 가 아니라 **«엉뚱한 데 걸린다»** 였다 — 광선이
+  // 미술관을 **통과해** 뒤편 마을 건물을 맞히고 그쪽이 유효한 벽이라 그대로 걸렸다
+  // (실측 2026-08-18: 광장 서쪽 미술관을 겨눴는데 `x = -72.77`. 미술관 범위 `-44~-20` 밖).
+  //
+  // ⚠ 그래서 이 축은 **「미술관을 맞히면 값이 나온다」로는 부족하다.** 뒤에 마을 건물을
+  // 세워 두고 **미술관이 이기는지**를 봐야 한 회차 전의 증상을 실제로 잡는다.
+  const MU = (d: number, x: number): StubHit => ({
+    object: objWith(IDENTITY), distance: d,
+    point: { x, y: 1, z: 0 }, face: { normal: { x: 1, y: 0, z: 0 } },
+  });
+  const VI = (d: number, x: number): StubHit => ({
+    object: instMesh(IDENTITY), instanceId: 0, distance: d,
+    point: { x, y: 1, z: 0 }, face: { normal: { x: 1, y: 0, z: 0 } },
+  });
+
+  it('★ 미술관 벽을 맞히면 그 면이 나온다', () => {
+    const p = makePicker([], undefined, [], { hits: [MU(10, -32)] });
+    expect(p.pickFace(), '🔴 미술관이 벽 검출 대상에 안 들었다').not.toBeNull();
+    expect(p.pickFace()!.point.x).toBe(-32);
+  });
+
+  it('🔴 미술관이 더 가까우면 **미술관**이 이긴다 — 한 회차 전의 증상 그대로', () => {
+    // 미술관(-32) 이 앞, 마을 건물(-72.77) 이 뒤. 실측 사고의 배치다.
+    const p = makePicker([], { hits: [VI(50, -72.77)] }, [], { hits: [MU(10, -32)] });
+    expect(p.pickFace()!.point.x, '🔴 광선이 미술관을 통과해 뒤 건물에 걸렸다').toBe(-32);
+  });
+
+  it('★ 마을이 더 가까우면 마을이 이긴다 — 미술관을 더해도 규약은 그대로', () => {
+    const p = makePicker([], { hits: [VI(10, -72.77)] }, [], { hits: [MU(50, -32)] });
+    expect(p.pickFace()!.point.x).toBe(-72.77);
+  });
+
+  it('★ 오버레이·마을·미술관 **셋 중** 최근접을 고른다', () => {
+    const OV: StubHit = {
+      object: objWith(IDENTITY), distance: 30,
+      point: { x: 100, y: 1, z: 0 }, face: { normal: { x: 1, y: 0, z: 0 } },
+    };
+    const p = makePicker([OV], { hits: [VI(20, -72.77)] }, [], { hits: [MU(5, -32)] });
+    expect(p.pickFace()!.point.x).toBe(-32);
+  });
+
+  it('★ 미술관이 아직 안 섰으면(`glbCity: null`) 조용히 건너뛴다 — 결함이 아니다', () => {
+    // 자산이 13.5MB 라 로드가 비동기다. 편집을 먼저 켠 세션에서 여기가 던지면
+    // «편집을 켜는 순서에 따라 벽 검출이 죽는다» 가 된다.
+    const p = makePicker([], { hits: [VI(10, -72.77)] });
+    expect(p.pickFace()!.point.x).toBe(-72.77);
+  });
+
+  it('🔴 미술관 면도 `wallPose` 를 그대로 탄다 — 바닥이면 거절된다', () => {
+    // 경계를 건너는 지점. `pickFace` 는 「벽인가」를 판정하지 않는다(이 파일 헤더).
+    const floor: StubHit = {
+      object: objWith(IDENTITY), distance: 5,
+      point: { x: -32, y: 0, z: 0 }, face: { normal: { x: 0, y: 1, z: 0 } },
+    };
+    const hit = makePicker([], undefined, [], { hits: [floor] }).pickFace();
+    expect(hit, '면 자체는 나온다').not.toBeNull();
+    expect(wallPose(hit!), '🔴 미술관 바닥에 액자가 섰다').toBeNull();
   });
 });

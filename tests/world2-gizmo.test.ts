@@ -170,6 +170,8 @@ function makeHarness(): Harness {
     // `null` 을 내고 오버레이만 집던 예전 경로가 그대로 돈다.
     instances: null,
     village: null,
+    // 미술관 벽(태스크 #112). 이 하네스에는 미술관이 없다 — `null` 이 사실이다.
+    glbCity: null,
     surfaceAt: () => 0,
   };
 

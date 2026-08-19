@@ -315,6 +315,42 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
   }
 
   /**
+   * 🔴 **미술관 GLB 의 첫 유효 면 + 거리** (태스크 #112, 2026-08-19).
+   *
+   * 위 둘과 형태가 같고 대상만 다르다 — 미술관은 인스턴스가 아니라 **일반 메시 트리**라
+   * `getMatrixAt` 없이 `matrixWorld` 만 곱한다(`faceInOverlay` 와 같은 경로).
+   *
+   * ⚠ **허용목록이다.** 여기 오는 것은 `host.glbCity` 하나이고, 그 값의 출처는
+   * `glbCity` 기능의 `wallRoot()` 한 곳이다 — 씬을 통째로 쏘면 하늘·지면·풀·사람·
+   * 기즈모가 전부 걸리고, `faceOf` 는 「벽인가」를 판정하지 않으므로 **앞에 있는 아무
+   * 면이나 이긴다**(검수관 P1 이 `faceInOverlay` 에서 이미 닫은 사고 형태다).
+   *
+   * ⚠⚠ **비용을 적어 둔다 — 이 함수는 이 파일에서 가장 비쌀 수 있다.** 자산 실측
+   * (`lab-space.glb`, 2026-08-19): 메시 **41** · 삼각형 **162,902** · 최대 단일 메시
+   * **47,400**. three 는 메시별 경계구로 먼저 거르므로 **안 겨누면 구 검사 41번**이지만,
+   * 겨누는 동안에는 그 메시의 삼각형을 전수 훑는다. 그리고 조준 모드는 `pickFace()` 를
+   * **12.5Hz** 로 재판정한다(`decide/aim.ts`).
+   *
+   * 🔴 **그 비용을 이 저장소는 로컬에서 못 잰다** — 헤드리스는 swiftshader 라 프레임
+   * 시간을 일부러 안 잰다. **감독 실기기가 유일한 판정이다.** 근본 처방(BVH)과 재론
+   * 조건은 백로그 `G-ART1` 한 곳이다 — 여기에 값을 다시 적지 않는다.
+   */
+  function faceInGlbCity(): { hit: WallHit; d: number } | null {
+    const g = host.glbCity;
+    if (!g) return null;
+    // 하나짜리 배열로 쏜다 — 이 저장소의 좁힌 `Raycaster` 타입에 `intersectObject`(단수)가
+    // 없다. 있는 것만 쓰는 것이 그 좁힘의 목적이다.
+    for (const h of raycaster.intersectObjects([g as unknown], true)) {
+      const hit = h as FaceHit;
+      const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
+        ?.matrixWorld?.elements ?? null;
+      const w = faceOf(hit, mw);
+      if (w) return { hit: w, d: hit.distance ?? Infinity };
+    }
+    return null;
+  }
+
+  /**
    * 맞힌 면을 그대로 낸다 (W8-4 D). **오버레이 GLB 와 마을 파츠를 둘 다 본다.**
    *
    * ⚠ **우선순위가 아니라 거리로 고른다.** `pick()`/`pickVillage()` 는 «오버레이 먼저,
@@ -332,11 +368,16 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
    * 여는 방법은 있다(로드된 루트를 허용목록에 더한다) — 여는가는 별건이다(태스크 #112).
    */
   function pickFace(): WallHit | null {
-    const a = faceInOverlay();
-    const b = faceInVillage();
-    if (!a) return b?.hit ?? null;
-    if (!b) return a.hit;
-    return a.d <= b.d ? a.hit : b.hit;
+    // 🔴 **셋 다 보고 거리로 고른다** (태스크 #112 로 미술관이 더해졌다). 우선순위로
+    // 하면 안 되는 이유는 아래 헤더에 이미 적혀 있고, 후보가 셋이 되어도 그대로다 —
+    // 오히려 더 세다. 미술관 안에 서면 광선이 **미술관 벽 → 마을 건물** 순으로 만나는데,
+    // 우선순위가 마을을 이기면 액자가 벽을 뚫고 바깥 건물에 걸린다.
+    const cands = [faceInOverlay(), faceInVillage(), faceInGlbCity()]
+      .filter((c): c is { hit: WallHit; d: number } => c !== null);
+    if (cands.length === 0) return null;
+    let best = cands[0]!;
+    for (const c of cands) if (c.d < best.d) best = c;
+    return best.hit;
   }
 
   /** 링을 그 자리에 놓는다. `null` 이면 숨긴다 — 표시의 유일한 자리 */
