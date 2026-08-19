@@ -184,6 +184,21 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
   비용이 5분이었다. ⚠ 이 축에는 **자동 게이트가 없다** — 자연어 진술의 사실성은 정규식으로
   못 잡고, 검수관이 실측해 대조하는 것 말고 수단이 없다(검수관 GS-C1).
 
+- **G-ART5 — `wallRoot` 생애주기 축을 정적 텍스트에서 행위로 올릴 수 있다**(검수관 권고
+  R1·R2, **지금 넣지 않기로 판정됨**). `tests/world2-glb-city.test.ts` 가 이미
+  `glbCityFeature.create(ENV)` 를 **실제로 돌리므로**, 거기서 `wallRoot()` 의 앞뒤 두 상태
+  (create 직후 `null` · `dispose()` 후 `null`)를 직접 잴 수 있다. 그러면 지금
+  `world2-overlay-wiring.test.ts` 가 쓰는 `toContain('root = null')` 이 짧아서 생기는
+  위험(같은 문자열이 하나 더 생기면 검출력이 조용히 0)이 사라진다.
+  **⚠ 안 넣은 근거도 실측이다**(검수관): 이 축이 닫는 것은 「죽은 코드에 문자열이 남는
+  형태」인데 그것은 **비현실적 뮤테이션**으로 함께 판정한 형태이고, 현실 회귀 형태
+  (`dispose()` 의 `root = null` 제거)는 지금 축이 **1 failed 로 이미 잡는다.** 게다가
+  R1 의 이득은 더 좁다 — `glb-city.ts` 쪽 문자열만 대체하고 `main.ts`·`overlay.ts` 의
+  같은 형태는 **R1 으로도 안 잡힌다.** 검사를 과소평가해 필요 없는 게이트를 더 만드는
+  것이 이 회차가 배운 것의 정반대다.
+  → 재론 조건(실측 가능하게): **`glb-city.ts` 안에 `root = null` 이 하나 더 생기거나,
+  `wallRoot` 의 생애주기를 손대는 회차.** 그때 검출력이 실제로 0 이 된다.
+
 - **G-ART4 — 조립부가 기능을 「이름으로」 찾는 결합을 없앨 수 있다**(검수관 권고 P5).
   지금은 `features/index.ts` 가 `glbCityFeature` 를 개별 재수출하고 `main.ts` 가
   `glbCityFeature.name` 으로 조회한다. 대신 마운트된 인스턴스 중 **`wallRoot` 를 가진 것**을
