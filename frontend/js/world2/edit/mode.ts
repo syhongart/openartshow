@@ -54,6 +54,7 @@
 
 import type { EditSession, OverlayHost } from './types.js';
 import { createEditState, select } from './state.js';
+import { artTarget } from './target.js';
 import { createPicker } from './pick.js';
 import { createGizmo } from './gizmo.js';
 import { createPanel } from './panel/dom.js';
@@ -98,6 +99,12 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
 
   const picker = createPicker(host, st);
   const gizmo = createGizmo(host);
+  /**
+   * 작품 포트를 지역으로 잡는다 (W8-11). `opts.arts` 를 클로저 안에서 바로 쓰면 TS 가
+   * **좁힘을 못 유지한다**(선택 프로퍼티라 매 호출 시점에 다시 `undefined` 일 수 있다).
+   * 한 번 잡아 두면 아래 두 핸들러가 같은 객체를 본다 — 인스턴스가 갈릴 자리도 없다.
+   */
+  const port = opts.arts;
 
   // `panel` 은 조작 핸들러를 필요로 하고 그 핸들러는 `panel` 을 필요로 한다. 함수 선언은
   // 호이스팅되므로 **이름으로 먼저 묶고 실행 시점에 채워진 값을 본다** — 조립자가 이
@@ -110,6 +117,18 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     // 아웃라이너 목록 클릭 → **3D 클릭과 같은 함수.** 여기서 갈라지면 «목록으로 고른
     // 것은 기즈모가 안 붙는다» 가 나고, 그 어긋남은 화면에서만 드러난다.
     pickVillage: (v) => { select(st, host, { village: v }); panel.refresh(); },
+    // ── 걸린 작품 (W8-11 · 감독 지시 *"그림과 액자 크기 위치를 조절"*) ────────
+    // 목록도 선택도 **포트 하나**에서 온다. 어댑터를 여기서 만드는 이유는 `select()`
+    // 주석 한 곳에 있다 — 요약하면 «`edit/state.ts` 가 작품 시스템을 알게 되지 않도록».
+    //
+    // 위 `pickVillage` 와 **같은 규약**이다: 목록 클릭이 3D 클릭과 같은 `select()` 로
+    // 이어진다. 지금은 3D 로 액자를 집는 경로가 없지만(감독 카드 「슬라이더 먼저」),
+    // 생길 때 이 줄이 그대로 그 자리가 된다.
+    artList: port && (() => port.list()),
+    pickArt: port && ((i: number) => {
+      select(st, host, { art: { index: i, target: artTarget(port, i) } });
+      panel.refresh();
+    }),
     // 시점 버튼과 시점 키는 **같은 함수**다 — `input` 이 소유하고 패널은 부르기만 한다.
     setView: (side) => { input.setView(side); },
     // 셰이딩도 마찬가지 — 버튼과 `Shift+Z` 가 한 구현을 본다(W6).

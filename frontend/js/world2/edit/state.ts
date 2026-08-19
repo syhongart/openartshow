@@ -122,6 +122,22 @@ export interface EditState {
    * 민다» 가 된다. 그래서 셋을 바꾸는 자리를 `select()` **하나로 좁혔다**(아래).
    * 다른 곳에서 `st.selected = …` 를 직접 쓰면 그 순간 불변식이 깨진다.
    */
+  /**
+   * 고른 **걸린 작품**의 인덱스(W8-11). `null` 이면 안 골랐다.
+   *
+   * 위 두 칸(`selected`·`villageSel`)과 **상호배타**다 — 같은 이유이고 같은 규약이다:
+   * 하나만 고른 상태여야 `target` 이 무엇을 미는지가 한 가지로 정해진다.
+   *
+   * ⚠ **인덱스는 목록이 바뀌면 밀린다.** 지금 목록을 바꾸는 경로는 둘이고 성질이 다르다 —
+   * `commit()` 은 같은 자리를 **교체**하므로 인덱스가 유지되고, `remove()` 는 뒤를 당기므로
+   * **선택을 풀어야 한다**(안 풀면 지운 뒤 옆 작품이 조용히 선택된 것이 된다). 푸는 자리는
+   * 소비자(`panel/outliner.ts`)이고, 여기서 인덱스를 들고 있는 것 자체는 «지금 무엇을
+   * 고르고 있나» 를 화면이 그리기 위해서다.
+   *
+   * 왜 `ArtworkItem` 참조가 아니라 인덱스인가: 계약이 **값 타입**이라 `commit()` 이 사본을
+   * 쓴다. 참조로 들면 확정 직후 «내가 든 것» 과 «목록에 있는 것» 이 다른 객체가 된다.
+   */
+  artSel: number | null;
   target: EditTarget | null;
   /**
    * 진행 중인 **블렌더식 모달 조작**(G/R/S). `null` 이면 조작 중이 아니다.
@@ -218,6 +234,7 @@ export function createEditState(): EditState {
   return {
     selected: null,
     villageSel: null,
+    artSel: null,
     target: null,
     modal: null,
     modalFrom: null,
@@ -238,7 +255,7 @@ export function createEditState(): EditState {
 }
 
 /**
- * 선택을 바꾸는 **유일한 자리.** 세 칸(`selected`·`villageSel`·`target`)이 함께 움직인다.
+ * 선택을 바꾸는 **유일한 자리.** 네 칸(`selected`·`villageSel`·`artSel`·`target`)이 함께 움직인다.
  *
  * ── 왜 함수로 좁히나 ────────────────────────────────────────────────────────
  * 칸이 셋인데 대입이 여섯 파일에 흩어져 있으면, 새 경로가 하나 생길 때마다 «세 개 다
@@ -250,11 +267,25 @@ export function createEditState(): EditState {
  * ⚠ 마을 어댑터는 `null` 을 낼 수 있다(문이 닫혔다·인덱스가 배열 밖·종류 불일치).
  * 그때는 **아무것도 안 고른 것**으로 떨어진다 — 표시만 남기고 조작이 안 되는 상태를
  * 만들지 않는다. 그 상태가 정확히 «골랐는데 아무것도 안 먹는다» 이기 때문이다.
+ *
+ * ── 작품(W8-11)만 어댑터를 **밖에서** 만들어 넘긴다 ─────────────────────────
+ * 위 둘은 `host`(=`OverlayHost`) 하나로 어댑터를 만들 수 있는데, 작품은 `ArtsPort` 와
+ * 액자 씬이 필요하다. 그 둘을 이 함수의 인자로 끌어오면 **`edit/state.ts` 가 작품
+ * 시스템을 알게 된다** — `OverlayHost` 계약을 안 건드리려고 `ArtsPort` 를 따로 둔 판정
+ * (W8-3 팀장 (나))을 여기서 되돌리는 셈이다. 그래서 호출자가 `artTarget()` 을 불러
+ * 결과를 넘긴다.
+ *
+ * 그 대신 **`null` 규약은 마을과 같게** 유지한다 — 넘어온 `target` 이 `null` 이면
+ * 아무것도 안 고른 것으로 떨어진다. 어댑터를 밖에서 만든다고 「골랐는데 안 먹는」
+ * 상태까지 밖으로 새게 두지는 않는다.
  */
 export function select(
   st: EditState,
   host: OverlayHost,
-  what: { entry: OverlayEntry } | { village: VillagePick } | null,
+  what: { entry: OverlayEntry }
+    | { village: VillagePick }
+    | { art: { index: number; target: EditTarget | null } }
+    | null,
 ): void {
   // ⚠ **선택이 바뀌면 진행 중 모달은 끝난다.** 안 끝내면 옛 대상의 스냅샷을 든 채
   // 새 대상을 밀게 되고, 취소하면 **새 대상이 옛 대상의 자리로 튄다.**
@@ -266,6 +297,7 @@ export function select(
   if (what && 'entry' in what) {
     st.selected = what.entry;
     st.villageSel = null;
+    st.artSel = null;
     st.target = overlayTarget(host, what.entry);
     return;
   }
@@ -275,10 +307,20 @@ export function select(
     const t = villageTarget(host, what.village, () => { st.detached = true; });
     st.selected = null;
     st.villageSel = t ? what.village : null;
+    st.artSel = null;
+    st.target = t;
+    return;
+  }
+  if (what && 'art' in what) {
+    const t = what.art.target;
+    st.selected = null;
+    st.villageSel = null;
+    st.artSel = t ? what.art.index : null;
     st.target = t;
     return;
   }
   st.selected = null;
   st.villageSel = null;
+  st.artSel = null;
   st.target = null;
 }

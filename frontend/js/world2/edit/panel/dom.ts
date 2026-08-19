@@ -23,6 +23,7 @@ import { createBadge } from './badge.js';
 import type { ViewSide } from '../../decide/orbit.js';
 import { SHADING_LABEL, SHADING_MODES, type ShadingMode } from '../../decide/shading.js';
 import type { SurfaceSetting } from '../../decide/surface-material.js';
+import type { ArtworkItem } from '../../decide/artwork.js';
 
 /** 패널이 «자기가 못 하는 일» 을 넘기는 곳. 조립자(`mode.ts`)가 채운다. */
 export interface PanelHandlers {
@@ -63,6 +64,13 @@ export interface PanelHandlers {
    * (편집이 그것을 떼지 않는다 — 백로그). 패널 버튼은 그 충돌 밖에 있다.
    */
   hangPhoto?(file: File): void;
+
+  /**
+   * 걸린 작품 목록과 그 선택 (W8-11). **선택 사양이고 둘이 짝이다** — 근거는
+   * `panel/outliner.ts` 의 같은 이름 인자 한 곳이다(여기에 다시 적지 않는다).
+   */
+  artList?(): readonly ArtworkItem[];
+  pickArt?(index: number): void;
 
   exportNow(): void;
 }
@@ -134,7 +142,12 @@ export function createPanel(
   const inspector = createInspector(host, st, () => { refresh(); });
   // 아웃라이너는 **패널 밖**에 산다(왼쪽 별도 컨테이너). 넓은 화면에서만 보이는 것은
   // CSS 가 정하고 여기서는 폭을 모른다 — `css.ts` 의 미디어 쿼리 한 곳이 판정한다.
-  const outliner = createOutliner(host, st, (v) => { handlers.pickVillage(v); });
+  const outliner = createOutliner(host, st, (v) => { handlers.pickVillage(v); },
+    // 문 **둘 다** 있을 때만 넘긴다 — 한쪽만 있으면 눌러도 아무 일이 안 나는 목록이
+    // 되고, 그것이 「조용한 no-op」이다(`PanelHandlers` 의 표면 재질 넷과 같은 규약).
+    handlers.artList && handlers.pickArt
+      ? { list: handlers.artList, pick: handlers.pickArt }
+      : undefined);
   /**
    * 표면 재질(W7 · 「월드스튜디오」). **선택과 무관한 전역 패널**이라 인스펙터와 자리가
    * 다르다 — 재질은 종류당 하나를 온 세계가 공유하므로 «무엇을 골랐는가» 와 상관없이 먹는다.
@@ -254,7 +267,11 @@ export function createPanel(
   // 위에서부터 읽으므로 감독이 가장 자주 쓸 것을 위에 둔다. 문이 없으면 붙이지 않는다
   // (빈 행도 `.row` 여백을 먹어 «뭔가 빠진 자리» 처럼 보인다).
   if (handlers.hangPhoto) body.append(rowPhoto);
-  body.append(el('hr'), selLine, inspector.root, rowRot, rowScale, rowY, rowOps,
+  // 크기 슬라이더는 **수치칸 바로 뒤**다(W8-11) — 같은 것을 두 방식으로 미는 짝이라
+  // 떨어뜨리면 감독이 둘을 다른 기능으로 읽는다. 대상이 실치수를 안 내면 `sync` 가
+  // 이 줄을 숨긴다(빈 자리가 안 남는다).
+  body.append(el('hr'), selLine, inspector.root, inspector.sizeRow,
+    rowRot, rowScale, rowY, rowOps,
     el('hr'), rowView, rowShade);
   // 표면 재질은 **없을 수도 있다** — 소비자가 문(`surfaces`/`setSurfaces`)을 안 주면 그
   // 칸만 빠지고 나머지 편집은 그대로 산다(`setShading` 이 세운 규약과 같다).

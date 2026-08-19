@@ -153,6 +153,14 @@ export const CSS = `
 #w2-edit .surf-pick{display:flex;flex-wrap:wrap;gap:3px}
 #w2-edit .surf-pick button[data-on="1"]{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
 #w2-edit .surf-row{display:flex;align-items:center;gap:5px}
+/* 크기 슬라이더(W8-11)는 .surf 밖에 산다 — 재질 패널의 자식이 아니라 인스펙터 옆줄이다.
+   그래서 .surf .lbl / .surf .num 이 안 먹고, 같은 모양을 여기서 한 번 더 준다.
+   ⚠ 이 파일은 통째로 템플릿 리터럴이라 **주석에도 백틱을 못 쓴다** — 쓰면 리터럴이
+   그 자리에서 끊기고 타입 에러로만 드러난다(실제로 이 주석의 첫 판본이 그랬다).
+   ⚠ **값을 두 곳에 적는 것이 맞다** — 두 줄이 같아 보여야 할 이유가 없다(하나는 재질,
+   하나는 배치). 공유 클래스로 묶으면 한쪽 여백을 고칠 때 다른 쪽이 따라 움직인다. */
+#w2-edit .size-row .lbl{color:#9A9EB1;font-size:10px;min-width:28px}
+#w2-edit .size-row .num{color:#F5F5F2;font-size:10px;min-width:44px;text-align:right}
 #w2-edit .surf-row input[type="range"]{flex:1;min-width:0;accent-color:#8B72FF}
 #w2-edit .surf-row button[data-on="1"]{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
 #w2-edit .surf-slots{display:flex;flex-direction:column;gap:3px}
@@ -179,6 +187,9 @@ export const CSS = `
   #w2-edit[data-mode="drive"] ~ #w2-outliner,
   #w2-outliner[data-mode="drive"]{display:none}
   #w2-outliner h4{margin:0;font:600 12px/1.2 system-ui,sans-serif;color:#8B72FF}
+  /* 작품 칸은 구역 목록 **아래**에 이어 붙는다(W8-11). 두 번째 제목부터 위 여백을 줘
+     두 목록이 한 덩어리로 읽히지 않게 한다 — 같은 상자 안이라 구분선 대신 여백이다. */
+  #w2-outliner h4 ~ h4{margin-top:6px}
   #w2-outliner .items{display:flex;flex-direction:column;gap:2px}
   #w2-outliner .items button{text-align:left;padding:3px 6px;
     font:11px/1.3 system-ui,sans-serif;color:#F5F5F2;background:#1A1D26;

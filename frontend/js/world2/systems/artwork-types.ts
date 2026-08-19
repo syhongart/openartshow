@@ -11,7 +11,7 @@
 // ⚠ **여기에 산술을 적지 마라.** 판정은 `decide/artwork.ts`·`decide/art-light.ts`·
 // `decide/art-material.ts` 소유다. 여기 있는 상수 넷은 **룩**이지 판정이 아니다.
 
-import type { ArtworkItem } from '../decide/artwork.js';
+import type { ArtPose, ArtworkItem } from '../decide/artwork.js';
 import type { ParcelAnim } from '../decide/lod-fade.js';
 
 /** 이 파일이 쓰는 three 표면. **필요한 것만** — 넓히면 스텁이 실물과 멀어진다 */
@@ -170,6 +170,28 @@ export interface ArtworkScene {
    * 필수로 두면 배선 누락이 **타입 에러**가 된다. 검사가 아니라 구조로 막는다.
    */
   update(loaded: (px: number, pz: number) => boolean, dt: number): void;
+  /**
+   * **걸린 액자 하나의 자세만 다시 쓴다** (W8-11). 편집이 슬라이더를 미는 동안 부른다.
+   *
+   * ── 왜 `place()` 를 안 쓰는가 ─────────────────────────────────────────────
+   * `place` 는 **전체 대체**라 지오·재질을 `dispose()` 하고 다시 만든다. 슬라이더를 미는
+   * 내내 그것을 부르면 프레임마다 GPU 자원이 죽고 태어난다 — 개수 불변식 `[7]` 이 보는
+   * 바로 그 증상이고, 마을 파츠가 같은 문제를 `OverlayHost.retargetSlot` 으로 푼 것과
+   * **같은 자리**다(«핸들+자세만 받는 함수 하나», `edit/types.ts`).
+   *
+   * 그래서 여기서는 **위치·회전·크기 배수만** 민다. 지오는 손 뗄 때 `commit()` 이
+   * `place()` 를 한 번 태워 정확한 치수로 다시 만든다.
+   *
+   * ⚠ `w` 는 지오를 안 바꾸고 **스케일 배수**로 반영된다 — 걸 때의 `w` 대비 비율이다.
+   * 그래서 미는 동안의 테두리 두께는 함께 커진다(액자가 통째로 확대). 확정 뒤에는
+   * `place()` 가 새 `w` 로 지오를 만들므로 테두리가 원래 두께로 돌아온다.
+   *
+   * ⚠⚠ 등장 연출(W8-10)의 배수와 **곱해진다.** 둘을 각각 대입하면 나중 것이 앞것을
+   * 지운다 — 실제로 그것이 이 함수의 첫 판본이 틀린 자리였다.
+   *
+   * @param index `list()` 순서. 범위 밖이면 아무 일도 안 한다
+   */
+  retarget(index: number, t: ArtPose): void;
   stats(): ArtworkStats;
   dispose(): void;
 }

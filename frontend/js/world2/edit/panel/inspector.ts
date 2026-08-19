@@ -54,6 +54,16 @@ export interface Inspector {
   readonly root: HTMLElement;
   /** 선택·값이 바뀌었을 때. **포커스가 있는 칸은 안 건드린다** */
   sync(e: EditTarget | null): void;
+  /**
+   * 크기 슬라이더 줄 (W8-11). 인스펙터 본체와 **다른 요소**라 조립이 따로 붙인다 —
+   * 수치칸은 한 줄에 다섯이 나란한 격자이고 슬라이더는 가로로 긴 한 줄이라,
+   * 같은 컨테이너에 넣으면 격자가 무너진다.
+   *
+   * `width` 를 안 내는 대상(GLB·마을 파츠)에서는 **줄이 통째로 숨는다** — 비활성
+   * 슬라이더를 남기면 «왜 안 움직이지» 가 되고, 그것이 이 저장소가 「거짓 UI」라고
+   * 부르는 형태다(`surface.ts` 의 읽기 전용 슬라이더 근거와 같다).
+   */
+  readonly sizeRow: HTMLElement;
 }
 
 export function createInspector(
@@ -66,6 +76,41 @@ export function createInspector(
   root.className = 'row insp';
 
   const inputs = new Map<string, HTMLInputElement>();
+
+  // ── 크기 슬라이더 (W8-11) ──────────────────────────────────────────────────
+  // 감독 카드 판정(2026-08-18): **슬라이더·숫자**(끌기는 나중). 위 `×` 수치칸이 「정확히
+  // 얼마」를 맡고 이 줄이 「훑어서 찾는다」를 맡는다 — `surface.ts` 의 배율 슬라이더가
+  // 같은 근거로 range 를 골랐다(*"«촘촘히» 를 찾는 동작은 값을 아는 것이 아니라 훑는 것"*).
+  const sizeRow = doc.createElement('div');
+  sizeRow.className = 'surf-row size-row';
+  const sizeLbl = doc.createElement('span');
+  sizeLbl.className = 'lbl';
+  sizeLbl.textContent = '크기';
+  const sizeIn = doc.createElement('input');
+  sizeIn.type = 'range';
+  // ⚠ **`step` 은 범위에서 유도하지 않는다.** 0.01m = 1cm 가 감독이 손으로 맞추는
+  // 최소 단위이고, 범위가 바뀌어도 그 감각은 안 바뀐다. 범위로 나누면 상한을 늘리는
+  // 순간 손잡이가 거칠어진다.
+  sizeIn.step = '0.01';
+  const sizeVal = doc.createElement('span');
+  sizeVal.className = 'num';
+  sizeRow.append(sizeLbl, sizeIn, sizeVal);
+  sizeIn.addEventListener('input', () => {
+    const w = st.target?.width;
+    if (!st.target || !w) return;
+    w.set(Number(sizeIn.value));
+    // 드래그하는 내내 `apply` 만 — 확정은 손을 뗄 때 한 번이다. 여기서 `commit` 을
+    // 부르면 `place()` 전체 대체가 프레임마다 돌아 지오·재질이 죽고 태어난다
+    // (`target.ts` 의 `artTarget` 헤더가 그 근거를 소유한다).
+    st.target.apply();
+    sizeVal.textContent = `${w.get().toFixed(2)}m`;
+  });
+  // `change` 는 손을 뗐을 때 온다 — 그것이 이 슬라이더의 「확정」이다.
+  sizeIn.addEventListener('change', () => {
+    if (!st.target?.width) return;
+    st.target.commit();
+    onChanged();
+  });
 
   for (const f of FIELDS) {
     const wrap = doc.createElement('label');
@@ -110,7 +155,19 @@ export function createInspector(
 
   return {
     root,
+    sizeRow,
     sync(e: EditTarget | null): void {
+      const w = e?.width;
+      // 줄을 통째로 숨긴다 — 근거는 `Inspector.sizeRow` 주석 한 곳이다.
+      sizeRow.style.display = w ? '' : 'none';
+      if (w) {
+        sizeIn.min = String(w.min);
+        sizeIn.max = String(w.max);
+        // ⚠ 수치칸과 **같은 이유로** 잡는 중에는 안 되쓴다. 되쓰면 드래그 중 `refresh`
+        // 가 손잡이를 옛 값으로 되돌려 슬라이더가 손에서 튄다.
+        if (doc.activeElement !== sizeIn) sizeIn.value = String(w.get());
+        sizeVal.textContent = `${w.get().toFixed(2)}m`;
+      }
       const on = e !== null;
       for (const f of FIELDS) {
         const inp = inputs.get(f.key);

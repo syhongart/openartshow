@@ -53,9 +53,10 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  createArtworkScene, mountArtworks, textureLoaderFor, LIGHT_ON,
+  createArtworkScene, LIGHT_ON,
   type ArtThreeNS, type ArtNode,
 } from '../frontend/js/world2/systems/artwork-scene.js';
+import { mountArtworks, textureLoaderFor } from '../frontend/js/world2/systems/artwork-mount.js';
 import {
   artLightPoolSize, ART_LIGHT_PER_PARCEL, ART_LIGHT_PER_PARCEL_SOFT, artParcelXZ, assignArtLights,
 } from '../frontend/js/world2/decide/art-light.js';

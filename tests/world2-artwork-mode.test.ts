@@ -444,7 +444,7 @@ describe('★ 작품 목록 포트 — 씬과 목록이 같이 움직인다', ()
   it('★ `set` 이 씬에 **전체 대체**로 넘긴다', async () => {
     const calls: (readonly ArtworkItem[])[] = [];
     const port = createArtsPort((s) => s);
-    port.attach({ place: async (a) => { calls.push(a); } });
+    port.attach({ place: async (a) => { calls.push(a); }, retarget: () => {} });
     const one: ArtworkItem = { src: 'assets/art/a.png', x: 0, y: 0, z: 0, ry: 0, w: 1, ar: 1 };
     await port.set([one]);
     await port.set([one, { ...one, src: 'assets/art/b.png' }]);
