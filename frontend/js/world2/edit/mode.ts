@@ -126,7 +126,20 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     // 생길 때 이 줄이 그대로 그 자리가 된다.
     artList: port && (() => port.list()),
     pickArt: port && ((i: number) => {
-      select(st, host, { art: { index: i, target: artTarget(port, i) } });
+      // ⚠ **세 번째 인자를 반드시 넘긴다** — 어댑터는 화면을 모르므로, 고른 작품이
+      // 목록에서 사라진 것을 여기서 상태로 옮겨야 `refresh` 가 말할 수 있다.
+      // 마을은 이 배선이 `edit/state.ts` 에 있는데(`villageTarget` 의 `onDetach`),
+      // 작품은 어댑터를 **밖에서** 만들기 때문에 그 자리가 여기다.
+      //
+      // 🔴 직전 판본이 이 인자를 안 넘겼고 어댑터 검사는 초록이었다 — 검사가 콜백을
+      // 직접 넘기며 부르기 때문이다(검수관 3차 블로커 B-A). 지금은 `onLost` 가
+      // **선택 인자가 아니라서** 안 넘기면 `tsc` 가 막는다. 근거는 `target.ts` 한 곳.
+      //
+      // `select()` 가 `st.artLost = false` 로 먼저 리셋하므로 순서는 안전하다 —
+      // 이 콜백은 `apply`/`commit`/`remove` 안에서만, 그것도 한 번만 불린다.
+      select(st, host, {
+        art: { index: i, target: artTarget(port, i, () => { st.artLost = true; }) },
+      });
       panel.onPicked();
     }),
     // 시점 버튼과 시점 키는 **같은 함수**다 — `input` 이 소유하고 패널은 부르기만 한다.

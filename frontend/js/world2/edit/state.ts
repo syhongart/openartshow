@@ -175,6 +175,18 @@ export interface EditState {
    * 세우는 자리는 마을 어댑터의 `onDetach` 하나이고, 푸는 자리는 `select()` 다.
    */
   detached: boolean;
+  /**
+   * **고른 작품이 목록에서 사라졌다** — 다른 경로가 지웠다는 뜻이다(W8-11).
+   *
+   * ⚠ **위 `detached` 와 의미가 정반대라 칸을 나눴다.** `detached` 는 *"조작과 저장은
+   * 그대로 되고 미리보기만 끊겼다"* 이고, 이것은 *"조작이 아예 안 먹는다"* 다. 한 칸을
+   * 돌려쓰면 화면이 **틀린 말을 한다** — 액자가 사라졌는데 «저장은 그대로 됩니다» 라고
+   * 안내하는 형태이고, 그러면 감독이 조작을 계속하다 값을 잃는다.
+   *
+   * 세우는 자리는 작품 어댑터의 `onLost` 하나(`edit/mode.ts` 의 `pickArt` 가 배선한다),
+   * 푸는 자리는 `select()` 다 — `detached` 와 같은 규약.
+   */
+  artLost: boolean;
   pendingSrc: string | null;
   /**
    * 팔레트에서 고른 **마을 파츠** 종류(W6 E). `null` 이면 안 골랐다.
@@ -250,6 +262,7 @@ export function createEditState(): EditState {
     modal: null,
     modalFrom: null,
     detached: false,
+    artLost: false,
     pendingSrc: null,
     pendingPart: null,
     dragging: null,
@@ -305,6 +318,7 @@ export function select(
   // 새로 고른 것의 슬롯은 살아 있다 — 옛 선택의 «끊김» 을 물려주면 멀쩡한 조작에
   // 경고가 붙는다.
   st.detached = false;
+  st.artLost = false;
   if (what && 'entry' in what) {
     st.selected = what.entry;
     st.villageSel = null;

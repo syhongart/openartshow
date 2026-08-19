@@ -62,6 +62,12 @@ const art = (over: Partial<ArtworkItem> = {}): ArtworkItem => ({
   src: 'assets/art/a.png', x: 1, y: 3, z: 2, ry: 0, w: 2.4, ar: 1.5, ...over,
 });
 
+/**
+ * 「사라짐」축을 안 보는 케이스의 `onLost`. 그 축을 보는 것은 아래 「사라지면 화면이
+ * 말한다」 한 곳이고, 거기서는 하네스의 `pickArt`(=제품과 같은 형태)를 태운다.
+ */
+const noLost = (): void => {};
+
 function fakeHost(): OverlayHost {
   return {
     doc: document,
@@ -92,8 +98,16 @@ function mount(opts: { arts?: readonly ArtworkItem[]; withArtDoor?: boolean } = 
     exportNow: noop,
     // **문을 줄지 말지가 이 하네스의 축 하나다** — 안 주면 칸 자체가 없어야 한다.
     artList: opts.withArtDoor === false ? undefined : () => port.list(),
+    // 🔴 **제품(`edit/mode.ts` 의 `pickArt`)과 같은 형태로 적는다** — 세 번째 인자까지.
+    // 검수관 3차 블로커 B-A 가 정확히 이 어긋남이었다: 제품은 콜백을 **안 넘겼는데**
+    // 하네스는 넘기고 있어서, 「조립이 그 부품을 물리는가」가 어디서도 안 보였다.
+    // 지금은 `onLost` 가 필수 인자라 **양쪽 다 안 넘길 수 없다** — 그래도 *무엇을*
+    // 넘기는지는 타입이 못 보므로, 하네스가 제품과 같은 것을 넘겨야 아래
+    // 「사라지면 화면이 말한다」 검사가 제품 경로를 대변한다.
     pickArt: opts.withArtDoor === false ? undefined : (i: number) => {
-      select(st, host, { art: { index: i, target: artTarget(port, i) } });
+      select(st, host, {
+        art: { index: i, target: artTarget(port, i, () => { st.artLost = true; }) },
+      });
       panel.onPicked();
     },
   } as unknown as PanelHandlers;
@@ -170,7 +184,7 @@ describe('★ 카테고리 탭 — 「막 나열하니 정신없잖아」', () =
   it('🔴 골랐으면 **속성 탭으로** 옮긴다 — 안 옮기면 「골랐는데 아무것도 안 뜬다」', () => {
     const { panel, st, host, port } = mount();
     expect(paneOn('place')).toBe(true);
-    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, host, { art: { index: 0, target: artTarget(port, 0, noLost) } });
     panel.onPicked();
     expect(paneOn('props'), '🔴 골랐는데 놓기 탭에 남았다').toBe(true);
   });
@@ -195,7 +209,7 @@ describe('★ 카테고리 탭 — 「막 나열하니 정신없잖아」', () =
     expect(tabBtn('놓기')!.dataset.empty).toBe('0');
     expect(tabBtn('표면')!.dataset.empty).toBe('0');
 
-    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, host, { art: { index: 0, target: artTarget(port, 0, noLost) } });
     panel.refresh();
     expect(propsTab.dataset.empty, '🔴 골랐는데 여전히 「볼 게 없다」고 한다').toBe('0');
   });
@@ -349,10 +363,28 @@ describe('★ 조립자가 작품 문을 패널에 넘긴다 (정적)', () => {
   it('🔴 선택이 `select()` 한 곳을 지난다 — 3D 클릭과 갈라지면 안 된다', () => {
     const at = CODE.indexOf('pickArt:');
     expect(at, '★ pickArt 배선이 없다').toBeGreaterThan(0);
-    const body = CODE.slice(at, at + 400);
+    const body = CODE.slice(at, at + 1400);
     expect(body, '🔴 어댑터를 안 만든다').toContain('artTarget(port,');
     expect(body, '🔴 선택 경로를 안 탄다').toContain('select(st, host,');
     expect(body, '🔴 화면 갱신·탭 전환을 안 부른다').toContain('panel.onPicked()');
+  });
+
+  /**
+   * 🔴 **검수관 3차 블로커 B-A.** 위 검사는 이 결함을 **통과시켰다** — `artTarget(port,`
+   * 가 있는지만 봤고, 제품은 `artTarget(port, i)` 로 **두 인자**만 넘기고 있었다.
+   * 그래서 「고른 작품이 사라졌다」를 화면에 알리는 콜백이 **아무 데도 안 연결된 채**
+   * 어댑터 검사만 초록이었고, 화면은 없는 작품의 크기가 커졌다고 **거짓을 말했다.**
+   *
+   * ⚠ **이 검사가 그 축의 주 방어선이 아니다.** 주 방어선은 `tsc` 다 — `onLost` 를
+   * 필수 인자로 만들었으므로 안 넘기면 **컴파일이 실패한다**(그것을 되돌리는 뮤테이션은
+   * 타입체크에서 잡히지 이 파일에서 잡히지 않는다). 여기서 보는 것은 타입이 못 보는
+   * 나머지 절반, **무엇을 넘기는가**다: `() => {}` 를 넘겨도 `tsc` 는 통과한다.
+   */
+  it('🔴 B-A — `onLost` 를 **상태에 배선**한다 (타입은 무엇을 넘기는지 못 본다)', () => {
+    const at = CODE.indexOf('pickArt:');
+    const body = CODE.slice(at, at + 1400);
+    expect(body, '🔴 사라짐을 상태로 옮기지 않는다 — 화면이 말할 근거가 없다')
+      .toMatch(/artLost\s*=\s*true/);
   });
 });
 
@@ -372,7 +404,7 @@ describe('★ 크기 슬라이더 — 거짓 UI 와 확정', () => {
 
   it('🔴 액자를 고르면 줄이 뜨고 **계약 범위**를 쓴다', () => {
     const { panel, st, host, port } = mount({ arts: [art({ w: 2.4 })] });
-    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, host, { art: { index: 0, target: artTarget(port, 0, noLost) } });
     panel.onPicked();
     expect(sizeRow()!.style.display).not.toBe('none');
     const inp = sizeInput()!;
@@ -383,7 +415,7 @@ describe('★ 크기 슬라이더 — 거짓 UI 와 확정', () => {
 
   it('🔴 V5 — **손을 떼면(`change`) 목록에 실린다.** 이것이 안 되면 편집이 저장에 안 남는다', async () => {
     const { panel, st, host, port } = mount({ arts: [art({ w: 2.4 })] });
-    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, host, { art: { index: 0, target: artTarget(port, 0, noLost) } });
     panel.onPicked();
     const inp = sizeInput()!;
 
@@ -400,7 +432,7 @@ describe('★ 크기 슬라이더 — 거짓 UI 와 확정', () => {
 
   it('★ 슬라이더 표시가 실치수를 말한다', () => {
     const { panel, st, host, port } = mount({ arts: [art({ w: 2.4 })] });
-    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, host, { art: { index: 0, target: artTarget(port, 0, noLost) } });
     panel.onPicked();
     const num = document.querySelector('#w2-edit .size-row .num')!;
     expect(num.textContent).toBe('2.40m');
@@ -420,7 +452,7 @@ describe('★ 액자에서 쓸 수 없는 버튼은 **숨는다** — 조용한 
 
   it('🔴 「바닥에」·「복제」가 액자를 고른 동안 숨는다', () => {
     const { panel, st, host, port } = mount();
-    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, host, { art: { index: 0, target: artTarget(port, 0, noLost) } });
     panel.onPicked();
     expect(findBtn('바닥에')!.hidden, '🔴 「바닥에」가 액자에서 보인다 — 눌러도 아무 일이 없다').toBe(true);
     expect(findBtn('복제')!.hidden, '🔴 「복제」가 액자에서 보인다 — 「먼저 고르세요」라고 거짓말한다').toBe(true);
@@ -433,5 +465,68 @@ describe('★ 액자에서 쓸 수 없는 버튼은 **숨는다** — 조용한 
     panel.onPicked();
     expect(findBtn('바닥에')!.hidden).toBe(false);
     expect(findBtn('복제')!.hidden).toBe(false);
+  });
+});
+
+// ── 「사라졌다」가 화면에 도달하는가 (검수관 3차 블로커 B-A) ─────────────────
+
+/**
+ * 🔴 **부품이 동작한다 ≠ 조립이 그 부품을 물린다.** 이 파일 헤더가 그 문장을 적어 놓고
+ * **그 파일을 만든 회차에 같은 형태를 하나 더 만들었다**(검수관 3차 지적).
+ * `world2-art-edit.test.ts` 의 `onLost` 검사는 어댑터를 직접 부르며 콜백을 넘겼고,
+ * 제품(`edit/mode.ts`)은 안 넘겼다. 뮤테이션이 1 failed 를 내면서도 미배선을 못 잡았다.
+ *
+ * 그래서 여기서는 **하네스의 `pickArt`**(제품과 같은 형태로 적은 것)를 태우고, 끝의
+ * 화면 문자열까지 간다 — 어댑터도, 상태 칸도, 문구도 중간에서 끊기면 빨간불이다.
+ *
+ * ⚠ **이 검사가 제품의 `mode.ts` 를 실행하지는 않는다**(three 의존이 커서 jsdom 에서
+ * 못 태운다). 하네스가 제품과 같은지는 위 정적 검사 둘과 **`tsc`** 가 본다 — 세 축이
+ * 함께여야 이 경로가 덮인다. 못 재는 것을 잰 것처럼 적지 않는다.
+ */
+describe('★ 고른 작품이 목록에서 사라지면 **화면이 말한다**', () => {
+  const notes = (): string =>
+    Array.from(document.querySelectorAll('#w2-edit .note'))
+      .map((n) => n.textContent ?? '').join(' | ');
+
+  it('🔴 사라진 뒤 조작하면 경고가 뜬다 — 조용히 no-op 이 되지 않는다', () => {
+    const { panel, st, port, handlers } = mount({ arts: [art(), art({ src: 'assets/art/b.png' })] });
+    handlers.pickArt!(0);
+    expect(st.artLost, '★ 고른 직후에는 멀쩡하다').toBe(false);
+
+    // 다른 경로가 그 작품을 걷어간다(되돌리기·문서 재로드가 이 형태다).
+    void port.set(port.list().slice(1));
+    st.target!.width!.set(9);
+    st.target!.commit();
+    panel.refresh();
+
+    expect(st.artLost, '🔴 어댑터의 `onLost` 가 상태로 안 옮겨졌다 — 배선이 끊겼다').toBe(true);
+    expect(notes(), '🔴 화면이 아무 말도 안 한다 — 감독은 계속 밀다 값을 잃는다')
+      .toContain('목록에서 사라졌습니다');
+  });
+
+  it('🔴 문구가 마을의 「미리보기만 끊김」과 **달라야** 한다 — 정반대 의미다', () => {
+    const { panel, st, port, handlers } = mount();
+    handlers.pickArt!(0);
+    void port.set([]);
+    st.target!.commit();
+    panel.refresh();
+    // 마을 문구는 «조작과 저장은 그대로 됩니다» 다. 액자에 그 말을 하면 거짓이다.
+    expect(notes(), '🔴 액자에 마을 문구가 떴다 — 사라진 작품을 저장된다고 안내한다')
+      .not.toContain('조작과 저장은 그대로');
+    expect(notes()).toContain('반영되지 않습니다');
+  });
+
+  it('★ 다시 고르면 경고가 걷힌다 — `select()` 가 푸는 유일한 자리다', () => {
+    const { panel, st, port, handlers } = mount({ arts: [art(), art({ src: 'assets/art/b.png' })] });
+    handlers.pickArt!(0);
+    void port.set(port.list().slice(1));
+    st.target!.commit();
+    panel.refresh();
+    expect(st.artLost).toBe(true);
+
+    handlers.pickArt!(0);          // 남아 있는 작품을 고른다
+    panel.refresh();
+    expect(st.artLost, '🔴 옛 선택의 「끊김」이 새 선택에 물려졌다').toBe(false);
+    expect(notes()).not.toContain('목록에서 사라졌습니다');
   });
 });

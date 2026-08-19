@@ -389,7 +389,17 @@ export function createPanel(
       // 속성 탭 안내가 대신 말한다.
       : '선택: 없음';
     const previews = host.entries().filter((e) => e.preview).length;
-    if (st.detached) {
+    if (st.artLost) {
+      // ⚠ **위 `detached` 와 정반대라 문구가 달라야 한다**(W8-11). 저쪽은 «조작과 저장은
+      // 그대로 됩니다» 이고 여기는 «지금 조작이 반영되지 않습니다» 다 — 한 문구를 돌려쓰면
+      // 액자가 사라졌는데 저장된다고 안내하게 되고, 그러면 감독이 계속 밀다 값을 잃는다.
+      //
+      // 두 칸이 동시에 참일 수는 없다(선택은 하나이고 `artLost` 는 작품 선택 중에만,
+      // `detached` 는 마을 선택 중에만 세워진다) — 그래서 순서는 판정이 아니라 서술이다.
+      hint.className = 'note warn';
+      hint.textContent = '⚠ 그 작품이 목록에서 사라졌습니다 —'
+        + ' 지금 조작은 반영되지 않습니다. 목록에서 다시 골라 주세요.';
+    } else if (st.detached) {
       // ⚠ **끊긴 것은 미리보기뿐이다** — 값은 계속 바뀌고 확정도 정상이다(`state.ts`).
       // 그 둘을 갈라 말하지 않으면 감독이 «편집이 죽었다» 로 읽고 조작을 멈춘다.
       hint.className = 'note warn';

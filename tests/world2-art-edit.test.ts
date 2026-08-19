@@ -62,6 +62,20 @@ import type { OverlayHost, OverlayEntry } from '../frontend/js/world2/edit/types
 
 const CELL = 32;
 
+/**
+ * 「사라짐」을 안 보는 케이스의 `onLost`.
+ *
+ * ⚠ **`artTarget` 의 세 번째 인자는 선택이 아니다** — 검수관 3차 블로커 B-A 의 처방이다.
+ * 직전 판본은 `onLost?:` 였고 **제품 호출부가 안 넘겼는데도 이 파일은 초록이었다**:
+ * 콜백을 보는 검사는 자기가 직접 넘기며 부르고, 나머지는 인자를 생략했기 때문이다.
+ * 즉 이 파일 어디에도 「조립이 그 콜백을 물리는가」를 보는 축이 없었다.
+ *
+ * 필수 인자로 만들면 **`tsc` 가 그 구멍을 막는다** — 제품이 안 넘기면 컴파일이 실패한다.
+ * 그래서 여기 이름을 `noop` 이 아니라 `noLost` 로 둔다: 무시하는 것이 아니라 **이 검사가
+ * 그 축을 안 본다**는 뜻이고, 보는 검사는 아래 「사라졌다고 화면에 알린다」 한 곳이다.
+ */
+const noLost = (): void => {};
+
 const art = (over: Partial<ArtworkItem> = {}): ArtworkItem => ({
   src: 'assets/art/a.png', x: 1, y: 3, z: 2, ry: 0, w: 2.4, ar: 1.2, ...over,
 });
@@ -92,20 +106,20 @@ function spyPlacer(): ArtPlacer & { places: number; targets: (readonly [number, 
 describe('★ 액자 어댑터 — 걸린 작품을 `EditTarget` 으로', () => {
   it('★ 범위 밖 인덱스는 `null` — 「골랐는데 아무것도 안 먹는」 상태를 안 만든다', () => {
     const port = bareePort([art()]);
-    expect(artTarget(port, -1)).toBeNull();
-    expect(artTarget(port, 1)).toBeNull();
-    expect(artTarget(port, 0)).not.toBeNull();
+    expect(artTarget(port, -1, noLost)).toBeNull();
+    expect(artTarget(port, 1, noLost)).toBeNull();
+    expect(artTarget(port, 0, noLost)).not.toBeNull();
   });
 
   it('★ `x·y·z·ry` 가 왕복한다', () => {
-    const t = artTarget(bareePort([art()]), 0)!;
+    const t = artTarget(bareePort([art()]), 0, noLost)!;
     expect([t.x, t.y, t.z, t.ry]).toEqual([1, 3, 2, 0]);
     t.x = 5; t.y = 1.5; t.z = -4; t.ry = 1;
     expect([t.x, t.y, t.z, t.ry]).toEqual([5, 1.5, -4, 1]);
   });
 
   it('★ `s` 는 **`w` 에 대한 배수**다 — 절대값이 아니다', () => {
-    const t = artTarget(bareePort([art({ w: 2.4 })]), 0)!;
+    const t = artTarget(bareePort([art({ w: 2.4 })]), 0, noLost)!;
     expect(t.s, '★ 처음은 원래 크기 = ×1').toBe(1);
     t.s = 2;
     expect(t.s, '★ 배수가 왕복 안 된다').toBe(2);
@@ -113,7 +127,7 @@ describe('★ 액자 어댑터 — 걸린 작품을 `EditTarget` 으로', () => 
   });
 
   it('★ `s` 가 계약 범위를 벗어나면 **무시**한다 — 조용히 자르지 않는다', () => {
-    const t = artTarget(bareePort([art({ w: 2.4 })]), 0)!;
+    const t = artTarget(bareePort([art({ w: 2.4 })]), 0, noLost)!;
     // 2.4 × 0.01 = 0.024m < ART_W_MIN(0.2)
     t.s = 0.01;
     expect(t.s, '★ 하한 밖 입력이 먹었다').toBe(1);
@@ -126,7 +140,7 @@ describe('★ 액자 어댑터 — 걸린 작품을 `EditTarget` 으로', () => 
   });
 
   it('★ `width` 는 **실치수**를 내고 범위는 계약이 소유한다', () => {
-    const t = artTarget(bareePort([art({ w: 2.4 })]), 0)!;
+    const t = artTarget(bareePort([art({ w: 2.4 })]), 0, noLost)!;
     expect(t.width!.min).toBe(ART_W_MIN);
     expect(t.width!.max).toBe(ART_W_MAX);
     t.width!.set(6);
@@ -141,13 +155,13 @@ describe('★ 액자 어댑터 — 걸린 작품을 `EditTarget` 으로', () => 
   });
 
   it('★ 실치수 문을 **액자만** 낸다 — 낼 것이 없는 대상이 숫자를 내면 거짓말이다', () => {
-    const t = artTarget(bareePort([art()]), 0)!;
+    const t = artTarget(bareePort([art()]), 0, noLost)!;
     expect(t.width, '★ 액자가 실치수를 안 낸다').toBeDefined();
     expect(t.kind).toBe('art');
   });
 
   it('★ 이름을 낸다 — 화면 세 곳이 **같게** 부르려면 어댑터가 소유해야 한다', () => {
-    const t = artTarget(bareePort([art({ src: 'assets/art/노을.jpg' })]), 0)!;
+    const t = artTarget(bareePort([art({ src: 'assets/art/노을.jpg' })]), 0, noLost)!;
     expect(t.name).toBe('노을.jpg');
     expect(t.name).toBe(artName('assets/art/노을.jpg'));
     expect(describeTarget(t, null, null)).toContain('노을.jpg');
@@ -165,7 +179,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
     void port.set([art()]);
     const places0 = spy.places;   // `set` 한 번은 정당하다(전체 대체)
 
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     for (let i = 0; i < 20; i++) { t.width!.set(1 + i * 0.1); t.apply(); }
 
     expect(spy.places - places0, '🔴 미는 동안 `place()` 가 돌았다 — `[7]` 이 보는 그 증상이다').toBe(0);
@@ -176,7 +190,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('★ `apply` 는 **목록을 안 바꾼다** — 취소할 자리가 남아야 한다', () => {
     const port = bareePort([art({ w: 2.4 })]);
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     t.x = 99; t.width!.set(7);
     t.apply();
     expect(port.list()[0].x, '★ 확정 전에 목록이 바뀌었다').toBe(1);
@@ -185,7 +199,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('★ `commit` 이 그 자리**만** 갈아 끼운다', async () => {
     const port = bareePort([art({ src: 'a' }), art({ src: 'b', x: 10 })]);
-    const t = artTarget(port, 1)!;
+    const t = artTarget(port, 1, noLost)!;
     t.x = -3; t.width!.set(5);
     t.commit();
     await Promise.resolve();
@@ -206,7 +220,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
     await Promise.resolve();
     const places0 = spy.places;
 
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     t.width!.set(5);
     t.apply();
     t.commit();
@@ -216,7 +230,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('★ `remove` 가 그 자리를 뺀다', async () => {
     const port = bareePort([art({ src: 'a' }), art({ src: 'b' }), art({ src: 'c' })]);
-    expect(artTarget(port, 1)!.remove()).toBe(true);
+    expect(artTarget(port, 1, noLost)!.remove()).toBe(true);
     await Promise.resolve();
     expect(port.list().map((a) => a.src)).toEqual(['a', 'c']);
   });
@@ -229,7 +243,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('🔴 확정이 **그 사이 걸린 작품**을 안 지운다 — 고른 채 한 장 더 거는 것이 기본 동작이다', async () => {
     const port = bareePort([art({ src: 'a', w: 2.4 })]);
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     // 고른 채로 한 장 더 건다(드롭·조준·기즈모 어느 경로든 이 형태다).
     await port.set([...port.list(), art({ src: 'b' })]);
 
@@ -243,7 +257,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('🔴 삭제가 **목록을 통째로 비우지 않는다** — 스냅샷을 되쓰면 그렇게 된다', async () => {
     const port = bareePort([art({ src: 'a' })]);
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     await port.set([...port.list(), art({ src: 'b' })]);
 
     expect(t.remove()).toBe(true);
@@ -253,7 +267,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('🔴 **앞 항목이 지워져 인덱스가 밀려도** 그때 그 작품을 짚는다', async () => {
     const port = bareePort([art({ src: 'a' }), art({ src: 'b', w: 2.4 })]);
-    const t = artTarget(port, 1)!;   // b 를 고른다
+    const t = artTarget(port, 1, noLost)!;   // b 를 고른다
     // 앞의 a 가 사라진다 — b 는 이제 0번이다.
     await port.set(port.list().slice(1));
 
@@ -267,7 +281,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('★ 고른 작품이 이미 지워졌으면 **아무것도 안 한다** — 조용히 되살리지 않는다', async () => {
     const port = bareePort([art({ src: 'a' }), art({ src: 'b' })]);
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     await port.set(port.list().slice(1));   // a 가 사라진다
 
     t.width!.set(9);
@@ -290,7 +304,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('🔴 확정을 **두 번** 해도 둘 다 실린다 — 슬라이더를 두 번 미는 것이 가장 흔한 조작이다', async () => {
     const port = bareePort([art({ w: 2.4 })]);
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
 
     t.width!.set(6); t.commit(); await Promise.resolve();
     expect(port.list()[0].w, '★ 1차 확정부터 안 실렸다').toBe(6);
@@ -304,7 +318,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('🔴 확정 뒤에도 **크기 배수 기준이 안 바뀐다** — ×2 가 확정할 때마다 ×1 로 튀면 안 된다', async () => {
     const port = bareePort([art({ w: 2 })]);
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     t.s = 2;
     expect(t.s).toBe(2);
     t.commit(); await Promise.resolve();
@@ -314,7 +328,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('🔴 확정 뒤 **삭제**가 된다 — 재앵커를 안 하면 「지울 수 없습니다」가 뜬다', async () => {
     const port = bareePort([art({ src: 'a' }), art({ src: 'b' })]);
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     t.width!.set(5); t.commit(); await Promise.resolve();
     expect(t.remove(), '🔴 확정한 뒤에는 못 지운다').toBe(true);
     await Promise.resolve();
@@ -327,7 +341,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
     port.attach({ place: async () => {}, retarget: (i) => { seen.push(i); } });
     await port.set([art({ src: 'a' }), art({ src: 'b', w: 2.4 })]);
 
-    const t = artTarget(port, 1)!;
+    const t = artTarget(port, 1, noLost)!;
     t.apply();
     t.width!.set(5); t.commit(); await Promise.resolve();
     t.apply();
@@ -356,7 +370,7 @@ describe('★ `apply` 는 씬만, `commit` 이 목록을 확정한다', () => {
 
   it('★ 씬을 안 물린 포트에서도 어댑터가 산다 — 부팅 순서에 걸려 편집이 죽으면 안 된다', () => {
     const port = bareePort([art()]);
-    const t = artTarget(port, 0)!;
+    const t = artTarget(port, 0, noLost)!;
     expect(() => { t.x = 4; t.apply(); }).not.toThrow();
     t.commit();
     expect(port.list()[0].x).toBe(4);
@@ -383,7 +397,7 @@ describe('★ 선택은 하나다 — 네 칸이 함께 움직인다', () => {
     expect(st.selected).not.toBeNull();
 
     const port = bareePort([art()]);
-    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, host, { art: { index: 0, target: artTarget(port, 0, noLost) } });
     expect(st.artSel, '★ 작품 선택이 안 들어갔다').toBe(0);
     expect(st.selected, '★ 오버레이 선택이 안 풀렸다').toBeNull();
     expect(st.villageSel).toBeNull();
@@ -394,7 +408,7 @@ describe('★ 선택은 하나다 — 네 칸이 함께 움직인다', () => {
     const st = createEditState();
     const host = fakeHost();
     const port = bareePort([art()]);
-    select(st, host, { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, host, { art: { index: 0, target: artTarget(port, 0, noLost) } });
     expect(st.artSel).toBe(0);
 
     select(st, host, { entry });
@@ -405,7 +419,7 @@ describe('★ 선택은 하나다 — 네 칸이 함께 움직인다', () => {
   it('★ 어댑터가 `null` 이면 **아무것도 안 고른 것**으로 떨어진다 — 마을과 같은 규약', () => {
     const st = createEditState();
     const port = bareePort([art()]);
-    select(st, fakeHost(), { art: { index: 9, target: artTarget(port, 9) } });
+    select(st, fakeHost(), { art: { index: 9, target: artTarget(port, 9, noLost) } });
     expect(st.artSel, '★ 표시만 남고 조작이 안 되는 상태가 됐다').toBeNull();
     expect(st.target).toBeNull();
   });
@@ -413,7 +427,7 @@ describe('★ 선택은 하나다 — 네 칸이 함께 움직인다', () => {
   it('★ `null` 로 부르면 네 칸이 다 빈다', () => {
     const st = createEditState();
     const port = bareePort([art()]);
-    select(st, fakeHost(), { art: { index: 0, target: artTarget(port, 0) } });
+    select(st, fakeHost(), { art: { index: 0, target: artTarget(port, 0, noLost) } });
     select(st, fakeHost(), null);
     expect([st.selected, st.villageSel, st.artSel, st.target]).toEqual([null, null, null, null]);
   });
@@ -570,5 +584,74 @@ describe('★ 씬이 자세를 실제로 옮긴다 — 판정/집행 경계', ()
     expect([xyz(g.position).x, xyz(g.position).y, xyz(g.position).z]).toEqual([4, 2, -1]);
     expect(g.rotation!.y).toBe(0.5);
     expect(xyz(g.scale).x).toBeCloseTo(2, 6);
+  });
+});
+
+// ── 확정 전 값의 수명 (검수관 3차 권고 P-1) ─────────────────────────────────
+
+/**
+ * **`apply` 로 민 값은 확정 전까지 씬에만 있다.** 그래서 그 사이 다른 경로가 `set()` 을
+ * 부르면 `place()` 가 목록 기준으로 씬을 다시 세우고 **화면에서도** 옛 값으로 돌아간다.
+ *
+ * 검수관이 실제 패널로 실측해 낸 형태다:
+ *
+ *   a 를 6m 로 밀고(확정 없이) → b 를 확정  ⇒  목록·화면 모두 a: 2.4m, b: 5m
+ *
+ * ⚠ **이것은 결함이 아니라 `apply`/`commit` 을 가른 대가다** — 안 가르면 슬라이더를 미는
+ * 내내 전 액자가 dispose/재생성된다(`[7]` 개수 불변식이 보는 그 증상). 검사로 못 박는
+ * 이유는 **다음 사람이 이것을 버그로 보고 다시 조사하지 않게** 하기 위해서다.
+ * 이 검사가 깨졌다면 규약이 바뀐 것이고, 그러면 위 두 파일의 주석도 함께 봐야 한다.
+ *
+ * 🔴 **안 잰 경로: 드롭으로 사진 한 장 더 걸기.** 드롭은 포커스를 안 옮기므로 `change`
+ * 가 안 나는데 `artwork-mode.ts` 가 `set()` 을 부른다. 브라우저 없이는 못 재고, 검수관도
+ * 못 쟀다(vite 빌드 필요 · `smoke:vite` 는 Bash 도구 상한 밖). 통과로 적지 않는다.
+ */
+describe('★ 확정 전 값은 목록에 없다 — `apply`/`commit` 을 가른 대가', () => {
+  const two = () => bareePort([
+    art({ src: 'assets/art/a.png', w: 2.4 }),
+    art({ src: 'assets/art/b.png', w: 2.4 }),
+  ]);
+
+  it('🔴 a 를 밀고 **b 를 확정하면** a 는 옛 값으로 돌아간다 (검수관 실측)', () => {
+    const port = two();
+    const a = artTarget(port, 0, noLost)!;
+    const b = artTarget(port, 1, noLost)!;
+
+    a.width!.set(6);
+    a.apply();                       // 씬만 민다 — 목록은 그대로
+    b.width!.set(5);
+    b.commit();                      // 목록 확정 → place() 가 씬을 목록 기준으로 다시 세운다
+
+    expect(port.list()[0]!.w, '🔴 확정 안 한 값이 목록에 새어 들어갔다').toBe(2.4);
+    expect(port.list()[1]!.w, '★ 확정한 값은 남는다').toBe(5);
+  });
+
+  it('★ 등가 대조군 — a 를 **확정하면** 남는다 (위가 「그냥 안 되는 것」이 아님)', () => {
+    const port = two();
+    const a = artTarget(port, 0, noLost)!;
+    const b = artTarget(port, 1, noLost)!;
+
+    a.width!.set(6);
+    a.commit();
+    b.width!.set(5);
+    b.commit();
+
+    expect(port.list()[0]!.w, '🔴 확정했는데도 사라졌다 — 이건 진짜 결함이다').toBe(6);
+    expect(port.list()[1]!.w).toBe(5);
+  });
+
+  it('★ 확정 전이라도 **씬은** 새 값을 받았다 — 「화면은 맞다」가 참인 구간', () => {
+    const spy = spyPlacer();
+    const port = createArtsPort((s) => s);
+    port.attach(spy);
+    void port.set([art({ w: 2.4 })]);
+    const t = artTarget(port, 0, noLost)!;
+    const places0 = spy.places;   // `set` 한 번은 정당하다(전체 대체)
+
+    t.width!.set(6);
+    t.apply();
+
+    expect(spy.places - places0, '🔴 미는 동안 place() 가 돌았다 — 전량 재생성이다').toBe(0);
+    expect(spy.targets.at(-1)?.[1].w, '★ 씬은 새 값을 받는다').toBe(6);
   });
 });
