@@ -235,6 +235,8 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       // 안 따라간 그 사고다. **그것을 기록한 자리에서 같은 형태를 반복했고**, 이번에는
       // 안내가 «없는» 것이 아니라 «틀린 것을 말하는» 쪽이라 더 나빴다.
       // **코드가 조작을 바꿀 때 문구는 저절로 따라오지 않는다.**
+      // ⚠ **「출발 자리로」는 비행·궤도가 옮긴 것만이다** — 화살표로 걸어간 거리는 대상이
+      // 아니다(그 판정과 근거는 `edit/input.ts` 의 `orbitFrom` 문단 한 곳이다, 검수관 P-C).
       panel.sayLead('편집 모드 — WASD 로 날아서 이동 (Space 위 · C 아래).'
         + ' 시점은 마우스 오른쪽 버튼 드래그. 편집을 끄면 출발 자리로 돌아갑니다.');
     } else {

@@ -36,6 +36,34 @@ function makePlayer(opts: Record<string, unknown> = {}) {
   return { p, eyeY: () => eyeY, pos: () => ({ x: px, z: pz }) };
 }
 
+/**
+ * 🔴 **`FLY_KEYS` 리터럴을 fail-closed 로 읽는다** (검수관 명세 GS-F2/F3 개정, 2026-08-19).
+ *
+ * ── 왜 이 함수가 생겼나 — 같은 구조로 **세 번** 뚫렸다 ──────────────────────
+ *   1차 값을 안 봤다        → `Space:'down'`·`KeyC:'up'` 스왑이 25/25 통과
+ *   2차 키 표기형을 안 봤다  → `'AltLeft': 'down'` **추가**가 통과
+ *   3차 값 표기형을 안 봤다  → `KeyQ: "up"` **추가**가 통과(실제로 작동하는 비행 키가 는다)
+ *
+ * 셋 다 원인이 하나다 — **허용적 정규식이 「파싱 못 한 것」을 조용히 버렸다.** 매번
+ * 정규식을 넓히는 것은 다음 표기형을 기다리는 일이라, 표기형이 아니라 **구조**를 바꾼다:
+ * **읽은 것을 빼고 남은 것이 있으면 FAIL** 한다.
+ *
+ * 이 저장소의 기본값과 같다 — 검증 등급 판정기가 「판정 불가」를 가장 무거운 등급으로
+ * 떨어뜨리고, IP 판정이 애매하면 무거운 쪽을 고른다.
+ *
+ * ⚠ **여전히 못 잡는 것**: **다른 파일에서 `FLY_KEYS` 에 병합하는 형태.** 한 파일만 읽으므로
+ * 원리적으로 못 본다. 계산된 키·스프레드는 이제 **잔여로 잡힌다**(통과시키지 않는다).
+ */
+function parseKeyLiteral(body: string): { pairs: string[]; residue: string } {
+  // 주석을 먼저 걷는다 — 산문에도 `Ctrl`·`KeyZ` 가 나오고, 안 걷으면 설명을 배치로 읽는다.
+  const clean = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const PAIR = /['"`]?(\w+)['"`]?\s*:\s*['"`](\w+)['"`]/g;
+  const pairs = [...clean.matchAll(PAIR)].map((x) => `${x[1]}=${x[2]}`).sort();
+  // 읽은 것을 빼고 공백·쉼표를 걷어낸 나머지. 비어야 「전부 읽었다」가 참이다.
+  const residue = clean.replace(PAIR, '').replace(/[\s,]/g, '');
+  return { pairs, residue };
+}
+
 describe('★ flyBy 가 실제로 민다 — 좌표와 고도', () => {
   it('🔴 앞으로 누르면 **시선 방향으로** 간다 (yaw=0 → -z)', () => {
     const { p, pos } = makePlayer();
@@ -431,27 +459,16 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
     })();
     const m = src.match(/const FLY_KEYS[^=]*=\s*\{([\s\S]*?)\n\};/);
     expect(m, '★ FLY_KEYS 선언을 못 찾았다').not.toBeNull();
-    // ⚠ **주석을 먼저 걷어낸다.** 이 블록은 왜 이 키인지를 길게 적고 있고, 그 산문에도
-    // `Ctrl`·`KeyZ` 같은 말이 나온다 — 안 걷으면 설명을 배치로 읽는다.
-    // 그리고 한 줄에 여러 키가 있으므로 **줄 시작만 보면 안 된다**(첫 판본이 `^` 를 써서
-    // 7개 중 2개만 뽑았고, 그래서 이 검사가 처음에 거짓 빨간불이었다).
-    const body = m![1].replace(/\/\/[^\n]*/g, '');
-    // 🔴 **코드만 뽑으면 매핑 스왑을 못 잡는다**(검수관 반려 B6 — 실측: `Space:'down'`·
-    // `KeyC:'up'` 으로 위아래를 뒤집었는데 **25/25 통과**했다). 「Space 위 · C 아래」를
-    // 보증하는 단언이 한 건도 없었는데 「못 보는 것」 목록에도 그 항목이 없었다.
-    // **코드:값 쌍**을 동결한다.
-    // 🔴 **따옴표를 붙여도 뽑는다**(검수관 조건 1 — 실측으로 뚫렸다). 첫 판본은
-    // `(\w+)\s*:` 라 `'AltLeft': 'down'` 을 **추가**하면 쌍이 안 뽑혀 배열이 안 변하고,
-    // GS-F2·GS-F3 이 **동시에 통과**했다(MX-1: 0 failed). 지난 회차 B6 과 같은 형태다 —
-    // 그때는 값을 안 봤고 이번엔 **표기형**을 안 봤다.
-    const pairs = [...body.matchAll(/['"]?(\w+)['"]?\s*:\s*'(\w+)'/g)]
-      .map((x) => `${x[1]}=${x[2]}`).sort();
-    expect(pairs, [
-      '🔴 비행 키 배치가 바뀌었다.',
-      '   → `edit/mode.ts` 의 `sayLead` 안내 문구를 **함께** 고치고,',
-      '     `panel/dom.ts` 의 상시 키 범례도 본 뒤 이 목록을 갱신하라.',
-      '   (단언을 지우지 마라 — 이 검사는 그 두 곳을 보게 하려고 일부러 깨진다.)',
-    ].join('\n')).toEqual([
+    const { pairs, residue } = parseKeyLiteral(m![1]);
+    // 🔴 **파싱 못 한 것은 통과가 아니다**(검수관 명세 GS-F2/F3 개정 — fail-closed).
+    expect(residue, [
+      '🔴 `FLY_KEYS` 안에 이 검사가 **해석하지 못한 것**이 남아 있다:',
+      `   ${residue}`,
+      '   계산된 키(`[`Key${x}`]`)·스프레드·중첩처럼 정적으로 못 읽는 형태를 넣었다면,',
+      '   **그것을 통과시키는 대신** 이 검사를 그 형태까지 읽게 고치거나 배치를 단순하게 하라.',
+      '   (허용적 정규식이 못 읽은 것을 조용히 버리는 것이 이 검사가 세 번 뚫린 원인이다.)',
+    ].join('\n')).toBe('');
+    expect(pairs, [    ].join('\n')).toEqual([
       'KeyA=left', 'KeyC=down', 'KeyD=right', 'KeyS=back', 'KeyW=forward', 'Space=up',
     ]);
   });
@@ -464,8 +481,11 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
     const src = readFileSync('frontend/js/world2/edit/fly-input.ts', 'utf8');
     const m = src.match(/const FLY_KEYS[^=]*=\s*\{([\s\S]*?)\n\};/);
     const body = m![1].replace(/\/\/[^\n]*/g, '');
-    // 따옴표 유무와 무관하게 뽑는다 — 근거는 위 트립와이어 주석 한 곳이다.
-    const codes = [...body.matchAll(/['"]?(\w+)['"]?\s*:\s*'/g)].map((x) => x[1]);
+    // 같은 파서를 쓴다 — **표기형을 두 곳에서 각자 해석하면 한쪽만 고쳐도 아무도 모른다**
+    // (실제로 그렇게 뚫렸다: 키 쪽만 고치고 값 쪽을 안 고쳐 GS-F2·GS-F3 이 함께 새로 열렸다).
+    const { pairs: p3, residue: r3 } = parseKeyLiteral(m![1]);
+    expect(r3, '🔴 해석 못 한 것이 남았다 — 위 트립와이어 메시지 참조').toBe('');
+    const codes = p3.map((x) => x.split('=')[0]!);
     const mods = codes.filter((c) => /^(Shift|Control|Alt|Meta|OS)/.test(c));
     expect(mods, [
       '🔴 수식키를 비행 키로 넣었다.',
@@ -507,14 +527,25 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
     const h = createFlyInput({ doc: document, fly: () => {}, editing: () => true });
     h.bind();
     try {
+      // ⚠ **네 수식키를 각각 잰다**(검수관 권고 P-A). 첫 판본은 `shiftKey` 한 축만 봐서
+      // 「ctrl/meta/alt 만 거르는」 뮤테이션을 놓쳤다 — 대칭화는 대개 네 개를 통째로 복사한다.
+      for (const mod of ['shiftKey', 'ctrlKey', 'metaKey', 'altKey'] as const) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
+        expect(h.current().forward, '전제: 눌렀으면 켜져야 한다').toBe(true);
+        document.dispatchEvent(new KeyboardEvent('keyup', {
+          code: 'KeyW', bubbles: true, [mod]: true,
+        }));
+        expect(h.current().forward, `🔴 ${mod} 를 누른 채 뗐더니 키가 고착했다 — 계속 날아간다`)
+          .toBe(false);
+      }
+      // 🔴 **같은 고착 경로 하나 더**(P-A): 키를 누른 채 패널 입력칸으로 포커스가 가면
+      // keyup 의 `target` 이 `INPUT` 이다. `onDown` 은 입력칸을 거르지만 `onUp` 은 거르면 안 된다.
+      const inp = document.createElement('input');
+      document.body.appendChild(inp);
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
-      expect(h.current().forward, '전제: 눌렀으면 켜져야 한다').toBe(true);
-      // 수식키를 누른 채로 뗀다 — 팬을 시작한 손이 정확히 이 모양이다.
-      document.dispatchEvent(new KeyboardEvent('keyup', {
-        code: 'KeyW', bubbles: true, shiftKey: true,
-      }));
-      expect(h.current().forward, '🔴 수식키를 누른 채 뗐더니 키가 고착했다 — 계속 날아간다')
-        .toBe(false);
+      inp.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
+      expect(h.current().forward, '🔴 입력칸에서 뗐더니 키가 고착했다').toBe(false);
+      inp.remove();
     } finally {
       h.unbind();
     }
