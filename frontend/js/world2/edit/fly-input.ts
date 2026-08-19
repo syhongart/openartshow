@@ -18,6 +18,15 @@
 // 그래서 **편집이 켜져 있는 동안에만 도는 루프**를 여기 둔다. `unbind()` 하면 루프가
 // 멈추고 주행에는 이 파일의 코드가 한 줄도 안 돈다.
 //
+// ── 이 모듈이 **못 잡는 것** (통과로 적지 않는다) ──────────────────────────
+// · **모달을 닫아도 키를 누른 채면 비행이 재개되지 않는다**(검수관 P10, jsdom 재현).
+//   `wake()` 는 `onDown` 에서만 불리고 `tick` 은 `editing()` 이 false 면 죽는데, 다시
+//   true 가 되는 사건에는 깨우는 자가 없다. **키를 다시 누르면 복구**되고 데이터 손실도
+//   없어 병합 조건이 아니다(검수관 판정) — `G-FLY12`.
+// · **macOS 에서 `Meta` 를 누른 동안 다른 키의 keyup 이 안 온다**(브라우저 동작, 검수관
+//   P-a). `C` 로 하강 중 `Cmd` 를 누르고 `C` 를 놓으면 고착할 수 있다. `Cmd+Tab` 은 아래
+//   `blur` 가 덮는다. **이 환경에서 못 쟀다** — 대화형 브라우저가 없다.
+//
 // ⚠ **키 상태를 여기가 들고 있는다**(`keydown`/`keyup` 토글). `input.ts` 처럼 이벤트마다
 // 처리하지 않는 이유는 위 ②다 — 「지금 눌려 있는가」를 알아야 프레임마다 움직인다.
 // 창을 벗어나면(`blur`) 전부 놓은 것으로 친다. 안 그러면 **키가 눌린 채로 남아 계속
@@ -50,6 +59,9 @@ const FLY_KEYS: Readonly<Record<string, keyof FlyInput>> = {
   // `Ctrl+C`(복사) 같은 조합도 하강을 일으키지 않는다.
   //
   // ⚠ 이 배치는 `GS-F3` 검사가 지킨다 — 수식키를 비행 키로 다시 넣으면 빨간불이 된다.
+  // **단 이 리터럴 안의 키에 한해서다.** 계산된 키(`` [`Key${x}`] ``)·스프레드·다른 파일에서
+  // 병합하는 형태는 정적 파싱 밖이라 못 본다. ⚠ 첫 판본은 그 범위조차 못 지켰다 —
+  // 정규식이 따옴표를 안 봐서 `'AltLeft': 'down'` 을 **추가**하면 통과했다(검수관 조건 1).
   Space: 'up', KeyC: 'down',
 };
 
@@ -89,12 +101,19 @@ export function createFlyInput(host: FlyInputHost): FlyInputHandle {
     // `input.ts` 가 같은 판정을 갖고 있고 같은 이유다.
     const t = ev.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
-    // 🔴 **수식키가 눌려 있으면 통째로 무시한다**(검수관 반려 B4). `input.ts` 가 같은
-    // 판정을 갖고 있고 같은 이유다 — `Ctrl+C`·`Ctrl+S` 같은 조합이 하강을 일으키면 안 되고,
-    // `Shift`+드래그(팬)·`Alt`+드래그(궤도)가 비행과 겹치면 안 된다.
+    // 🔴 **수식키가 눌려 있으면 통째로 무시한다**(검수관 반려 B4). `Ctrl+C`·`Ctrl+S` 같은
+    // 조합이 하강을 일으키면 안 되고, `Shift`+드래그(팬)·`Alt`+드래그(궤도)가 비행과
+    // 겹치면 안 된다.
+    //
+    // ⚠ **`input.ts` 도 조합키를 거르지만 판정이 다르다 — `Shift` 를 뺀다**(검수관 조건 3).
+    // 그쪽은 `Shift+Z`(와이어 토글)가 그 가드를 **통과해야** 하기 때문이다. 첫 판본은
+    // *"`input.ts` 가 같은 판정을 갖고 있다"* 라고 적었고 **거짓이었다** — 다른 파일을
+    // 인용한 문장이 실물과 어긋나는 형태이고, 내가 바로 그 항목을 「못 보는 것」에 올린
+    // 커밋 안에 하나 더 있었다.
     //
     // ⚠ 이 가드는 **지금 아무 비행 키도 안 죽인다** — `FLY_KEYS` 에 수식키가 없기 때문이다.
-    // 앞으로 누가 수식키를 넣으면 조용히 안 먹게 되는데, 그때 `GS-F3` 이 먼저 빨간불을 낸다.
+    // 앞으로 누가 수식키를 **이 리터럴에** 넣으면 조용히 안 먹게 되는데, 그때 `GS-F3` 이
+    // 먼저 빨간불을 낸다(범위·사각은 `FLY_KEYS` 주석 한 곳).
     if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.shiftKey) return;
     const k = FLY_KEYS[ev.code];
     if (!k || !host.editing()) return;
@@ -103,6 +122,16 @@ export function createFlyInput(host: FlyInputHost): FlyInputHandle {
     // `Space` 는 기본 동작이 스크롤이라 막는다. 안 막으면 날면서 화면이 함께 튄다.
     if (ev.code === 'Space') ev.preventDefault();
   };
+  /**
+   * 🔴 **여기에는 수식키 가드를 넣지 않는다 — 의도다**(검수관 명세 GS-F4).
+   *
+   * 편집 중 `W` 로 날다가 `Shift`+드래그(위아래 팬)를 시작하고 `W` 를 놓으면 **keyup 의
+   * `shiftKey` 가 `true`** 다. 거기서 걸러 버리면 `forward` 가 `held` 에 박혀 **손을 뗐는데
+   * 계속 날아간다.** `clampFlyLift` 는 고도만 막고 x·z 는 안 막으므로 세계 밖으로 나간다.
+   *
+   * ⚠ `onDown` 만 가드가 붙은 것이 비대칭으로 보여 **대칭화하고 싶어지는 자리**다.
+   * `world2-fly-wiring.test.ts` 의 GS-F4 검사가 그것을 막는다.
+   */
   const onUp = (ev: KeyboardEvent) => {
     const k = FLY_KEYS[ev.code];
     if (k) held.delete(k);

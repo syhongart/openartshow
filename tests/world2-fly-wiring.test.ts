@@ -440,7 +440,11 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
     // `KeyC:'up'` 으로 위아래를 뒤집었는데 **25/25 통과**했다). 「Space 위 · C 아래」를
     // 보증하는 단언이 한 건도 없었는데 「못 보는 것」 목록에도 그 항목이 없었다.
     // **코드:값 쌍**을 동결한다.
-    const pairs = [...body.matchAll(/(\w+)\s*:\s*'(\w+)'/g)]
+    // 🔴 **따옴표를 붙여도 뽑는다**(검수관 조건 1 — 실측으로 뚫렸다). 첫 판본은
+    // `(\w+)\s*:` 라 `'AltLeft': 'down'` 을 **추가**하면 쌍이 안 뽑혀 배열이 안 변하고,
+    // GS-F2·GS-F3 이 **동시에 통과**했다(MX-1: 0 failed). 지난 회차 B6 과 같은 형태다 —
+    // 그때는 값을 안 봤고 이번엔 **표기형**을 안 봤다.
+    const pairs = [...body.matchAll(/['"]?(\w+)['"]?\s*:\s*'(\w+)'/g)]
       .map((x) => `${x[1]}=${x[2]}`).sort();
     expect(pairs, [
       '🔴 비행 키 배치가 바뀌었다.',
@@ -460,8 +464,9 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
     const src = readFileSync('frontend/js/world2/edit/fly-input.ts', 'utf8');
     const m = src.match(/const FLY_KEYS[^=]*=\s*\{([\s\S]*?)\n\};/);
     const body = m![1].replace(/\/\/[^\n]*/g, '');
-    const codes = [...body.matchAll(/(\w+)\s*:\s*'/g)].map((x) => x[1]);
-    const mods = codes.filter((c) => /^(Shift|Control|Alt|Meta)/.test(c));
+    // 따옴표 유무와 무관하게 뽑는다 — 근거는 위 트립와이어 주석 한 곳이다.
+    const codes = [...body.matchAll(/['"]?(\w+)['"]?\s*:\s*'/g)].map((x) => x[1]);
+    const mods = codes.filter((c) => /^(Shift|Control|Alt|Meta|OS)/.test(c));
     expect(mods, [
       '🔴 수식키를 비행 키로 넣었다.',
       '   `edit/input.ts` 가 `ev.shiftKey`(팬 · 와이어)·`ev.altKey`(궤도)를 쓰고,',
@@ -484,6 +489,32 @@ describe('🔴 키 배치가 바뀌면 **안내 문구를 함께 보게 한다**
       document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyC', bubbles: true }));
       expect(h.current().down, '🔴 C 가 하강이 아니다').toBe(true);
       expect(h.current().up, '🔴 C 가 상승까지 켰다').toBe(false);
+    } finally {
+      h.unbind();
+    }
+  });
+
+  it('🔴 **`keyup` 은 수식키를 거르지 않는다** — 거르면 키가 고착한다 (검수관 명세 GS-F4)', () => {
+    // 🔴 `onDown` 에만 가드가 있는 것이 **의도**인데, 그것을 지키는 검사가 0 이었다
+    // (검수관 실측 MX-4: `onUp` 에 같은 가드를 넣어도 **0 failed**).
+    //
+    // 왜 `onUp` 에는 없어야 하나: 편집 중 `W` 로 날다가 `Shift`+드래그(위아래 팬)를
+    // 시작하고 `W` 를 놓으면 **keyup 의 `shiftKey` 가 true** 다. 거기서 걸러 버리면
+    // `forward` 가 `held` 에 박혀 **손을 뗐는데 계속 날아간다.** `clampFlyLift` 는 고도만
+    // 막고 x·z 는 안 막으므로 세계 밖으로 나간다.
+    //
+    // 누가 «왜 한쪽만?» 하고 대칭화하는 것은 지극히 자연스러운 리팩터다 — 그래서 검사로 막는다.
+    const h = createFlyInput({ doc: document, fly: () => {}, editing: () => true });
+    h.bind();
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
+      expect(h.current().forward, '전제: 눌렀으면 켜져야 한다').toBe(true);
+      // 수식키를 누른 채로 뗀다 — 팬을 시작한 손이 정확히 이 모양이다.
+      document.dispatchEvent(new KeyboardEvent('keyup', {
+        code: 'KeyW', bubbles: true, shiftKey: true,
+      }));
+      expect(h.current().forward, '🔴 수식키를 누른 채 뗐더니 키가 고착했다 — 계속 날아간다')
+        .toBe(false);
     } finally {
       h.unbind();
     }
