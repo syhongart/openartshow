@@ -65,6 +65,17 @@ import {
 import type { SkyTime } from '../decide/night.js';
 import { fogBand } from '../decide/fog.js';
 import { GRID_W, GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
+import { PHI } from '../decide/golden.js';
+// 정점 파동의 **판정**은 `decide/wave.ts` 한 곳이다 — 이 파일은 그 값을 버퍼에 꽂는
+// 집행만 한다. 소비자(테스트·스모크)가 예전 경로를 그대로 쓰도록 배럴로 재수출한다.
+import {
+  LIFT_LAMBDA_M, surfaceLift, patchVertexY, PATCH_SEP,
+  WAVE_AMP_DEFAULT, WAVE_STANDING_DEFAULT,
+} from '../decide/wave.js';
+
+export {
+  LIFT_LAMBDA, LIFT_LAMBDA_M, surfaceLift, patchVertexY, PATCH_SEP,
+} from '../decide/wave.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import { readNum, readNumOpt, writeNumOpt, readEnum } from '../url-knob.js';
 import { createTslWater, type TslWaterHandle, type TslNamespace } from './ocean-tsl.js';
@@ -195,7 +206,7 @@ const FLOW_B = { x: -0.019, z: 0.030 };
 // 그래서 **황금비**를 쓴다. 연분수 전개가 `[1;1,1,1,…]` 라 유리수로 가장 느리게 근사되는
 // 수이고 — 즉 **정수비에서 가장 먼 수**다. "적당히 안 맞는 값" 을 손으로 고르는 대신
 // 성질에서 유도한다.
-const PHI = (1 + Math.sqrt(5)) / 2;
+
 /** 두 번째 층의 무늬 크기 배수. 1보다 크면 더 큰 너울이 된다 */
 const LAYER2_SCALE = PHI;
 /**
@@ -357,18 +368,6 @@ const WAVE_GAIN = 1.6;
 //   *"강가에 서서 보면, 무늬가 흐르는 것과 별개로 물 표면이 제자리에서 오르내리고
 //     물가 경계선이 출렁인다."*
 
-/**
- * 변위가 담당할 **최단 파장**(m). 이보다 잔 물결은 노말맵이 계속 담당한다 —
- * 두 축의 분담 정의이고, 세분 수는 여기서 **유도된다**(손으로 정하지 않는다).
- *
- * 팀장이 확정한 값은 8m 였는데 유도해 보니 예산을 넘었다:
- *   λ=8m  → 세분 16×16 → 쿼드당 512 삼각형 → 최악 60칸 × 512 = 30,720 (씬 대비 **+30%**)
- *   λ=16m → 세분  8×8  → 쿼드당 128 삼각형 → 최악 60칸 × 128 =  7,680 (씬 대비 **+7.5%**)
- * 감독이 무게를 물었고("에이는 무겁지 않아?") 그 답의 전제가 +7% 였으므로 예산 초과로
- * 판정해 16m 로 올렸다 — 팀장 조건 1 이 그 경우를 명시적으로 허용한다.
- * 강 폭이 48m(`RIVER_HALF × 2`)라 파장 16m 면 강을 가로질러 파형이 3개 들어간다.
- */
-const LIFT_LAMBDA_M = 16;
 
 /**
  * 물 쿼드 하나(32m)를 몇 조각으로 나눌 것인가. **파장에서 유도한다.**
@@ -383,7 +382,6 @@ const LIFT_LAMBDA_M = 16;
  *   → 이론 최악 = `GRID_W × 2 = 60` 칸 → 정점 60 × 9² = **4,860** · 삼각형 **7,680**.
  */
 export const RIVER_SEG = Math.max(1, Math.round(DEFAULT_LAYOUT.cellX / (LIFT_LAMBDA_M / 4)));
-export const LIFT_LAMBDA = LIFT_LAMBDA_M;
 
 // ── 바다 정점 파동 패치 (감독 실기기 2026-08-05, 팀장 판정 A) ──────────────────
 //
@@ -530,56 +528,11 @@ export const SEA_PATCH_METRICS = {
  * 이제 `decide/water.ts` 가 파고에서 깊이를 유도하므로 여기서는 그 파고를 그대로 받는다.
  * 깊이를 옮기면 상한이 따라오고, 둘이 어긋날 자리가 없어진다.
  */
-const LIFT_AMP = readNum('wamp', 0.2, 0, WAVE_PEAK_MAX);
+const LIFT_AMP = readNum('wamp', WAVE_AMP_DEFAULT, 0, WAVE_PEAK_MAX);
 
-/**
- * 진행파 : 정재파 배분. `0` 이면 전부 흘러가고 `1` 이면 전부 제자리에서 오르내린다.
- * **노브로 뺀 이유**(팀장 조건 3): 어느 배분이 "일렁임" 으로 읽히는지는 감독 실기기
- * 육안 판정이고, 헤드리스로는 못 정한다. 기본값은 정재 쪽에 무게를 둔다 —
- * 감독이 지적한 것이 *"한 방향으로 흐르는데"* 였으므로 병진이 이미 과했다.
- */
-const LIFT_STANDING = readNum('wstd', 0.65, 0, 1);
+/** 진행파 : 정재파 배분. 근거·기본값은 `decide/wave.ts` 의 `WAVE_STANDING_DEFAULT` */
+const LIFT_STANDING = readNum('wstd', WAVE_STANDING_DEFAULT, 0, 1);
 
-/**
- * 겹치는 파들. 감독 요청이 *"물은 복합적인 사인파들로 구성되어있잖아"* 였다.
- * 방향과 주파수 비를 정수비에서 멀리 둔다 — 정수비면 짧은 주기로 패턴이 되풀이된다.
- * `dir` 은 단위벡터, `rel` 은 기본 파수 대비 배율, `amp` 는 상대 진폭(합이 1).
- */
-const LIFT_WAVES = [
-  { dx: 1, dz: 0, rel: 1, amp: 0.5 },
-  { dx: 0.5, dz: 0.866, rel: PHI, amp: 0.3 },              // 60°
-  { dx: -0.309, dz: 0.951, rel: PHI * PHI, amp: 0.2 },     // 108°
-];
-
-/**
- * 수면 높이(m). **월드 좌표만의 함수다** — 이 성질이 파셀 경계의 이음새를 막는다.
- * 강 판은 파셀마다 독립된 정점을 쓰므로(같은 좌표에 정점이 둘) 위치 기반이 아니면
- * 두 값이 갈려 틈이 벌어진다.
- *
- * 진행파 `sin(k·x − ωt)` 와 정재파 `sin(k·x)·cos(ωt)` 를 섞는다. 정재파가 곧
- * "제자리 오르내림" 이다 — 공간 패턴이 고정된 채 진폭만 시간에 따라 오간다.
- *
- * ω 는 **깊은 물 분산관계 `ω = √(gk)`** 에서 유도한다(실측에 여유를 얹지 않는다).
- * λ=16m 면 주기 3.2초로, 사람이 물가에서 보는 잔잔한 강의 리듬과 맞는다.
- */
-export function surfaceLift(
-  x: number, z: number, t: number,
-  amp: number = LIFT_AMP, standing: number = LIFT_STANDING,
-): number {
-  if (amp <= 0) return 0;
-  const k0 = (2 * Math.PI) / LIFT_LAMBDA_M;
-  let h = 0;
-  for (const w of LIFT_WAVES) {
-    const k = k0 * w.rel;
-    const phase = k * (w.dx * x + w.dz * z);
-    const omega = Math.sqrt(9.81 * k);
-    h += w.amp * (
-      (1 - standing) * Math.sin(phase - omega * t)
-      + standing * Math.sin(phase) * Math.cos(omega * t)
-    );
-  }
-  return h * amp;
-}
 
 /**
  * 노이즈 옥타브의 격자 해상도. **전부 정수**여야 타일이 감긴다 — 이 배열이 심리스의
@@ -1310,6 +1263,7 @@ export const oceanFeature: Feature = {
     // (강과 바다는 같은 물이다 — 높이만 다르고 `waterSurfaceY` 가 그것을 판정한다).
     const surfaceMat = tslWater ? tslWater.material : seaMat;
     const sea = new THREE.Mesh(geo, surfaceMat);
+    // y 는 패치 유무가 정해지는 아래에서 세운다 — 패치가 있으면 그 골 밑으로 내린다.
     sea.position.y = SEA_Y;
     // 해저보다 늦게 그려야 그 위에 비친다.
     sea.renderOrder = 1;
@@ -1376,7 +1330,7 @@ export const oceanFeature: Feature = {
       // (그 몫의 목적은 "물속에서 올려다볼 때 두 면이 겹쳐 보이지 않게") 생성 시점에
       // 세운다. 진폭이 있으면 첫 `update` 가 이 위에 파동을 얹는다.
       const p0 = attr.array as Float32Array;
-      for (let i = 0; i < p0.length; i += 3) p0[i + 1] = 0.01;
+      for (let i = 0; i < p0.length; i += 3) p0[i + 1] = PATCH_SEP;
       attr.needsUpdate = true;
     }
     const sea2 = layer2Mat ? new THREE.Mesh(patchGeo ?? geo, layer2Mat) : null;
@@ -1386,11 +1340,13 @@ export const oceanFeature: Feature = {
       // 그러면 z-fighting 이 성립하지 않는다. 순서를 정하는 것은 `renderOrder` 다.
       // 1cm 는 물속에서 올려다볼 때 두 면이 정확히 겹쳐 보이지 않게 하는 몫으로만 둔다.
       //
-      // **패치일 때는 그 1cm 를 정점 y 가 들고 있다**(아래 매 프레임 갱신). 메시 원점을
-      // `SEA_Y` 에 두고 정점이 `0.01 + LIFT_AMP + lift` 를 담으므로, 파동이 골일 때도
-      // 값이 `0.01` 아래로 안 내려간다 — 즉 **아래 층(평평한 `sea`)을 뚫지 않는다.**
+      // **패치일 때는 그 1cm 를 정점 y 가 들고 있다**(`patchVertexY` 의 `PATCH_SEP`).
       // 여기서 `+0.01` 을 또 더하면 그 몫이 두 번 들어간다(값 미러링).
-      sea2.position.y = patchGeo ? SEA_Y : SEA_Y + 0.01;
+      //
+      // ⚠ 여기 오래 *"정점이 `0.01 + LIFT_AMP + lift` 를 담아 아래 층을 안 뚫는다"* 고
+      // 적혀 있었다. 참이었지만 **대가가 안 적혀 있었다** — 그 리프트가 평균 수면을
+      // 진폭만큼 밀어 올렸다(2026-08-20 제거, `patchVertexY` 헤더 참고).
+      sea2.position.y = patchGeo ? SEA_Y : SEA_Y + PATCH_SEP;
       // ── 렌더 순서는 **물리적 높이 순서**여야 한다 (검수관 BR-1) ──────────────
       // 처음엔 `sea 1 · river 2 · sea2 3 · river2 4` 로 줬다. 그러면 −0.99m 의 sea2 가
       // −0.50m 의 river **위에** 덧칠된다 — 깊이를 안 쓰므로 그리는 순서가 곧 겹치는
@@ -1398,6 +1354,22 @@ export const oceanFeature: Feature = {
       // 가장 자주 드는 물이다.
       sea2.renderOrder = 2;
     }
+
+    // ── 아래 층을 층2의 **골 밑**으로 내린다 (2026-08-20) ─────────────────────
+    // 두 판이 교차하면 그 교차선이 수면 위에 선으로 드러난다 — 반투명이라 깊이 버퍼와
+    // 무관하고, `tests/world2-ocean.test.ts` 가 «골이 아래 층을 뚫지 않는다» 로 이미
+    // 못 박아 둔 성질이다(그 단언이 내 오판을 잡았다).
+    //
+    // 예전에는 그 몫을 **층2를 들어올려** 해결했고, 그래서 진폭이 평균 수면을 함께 밀어
+    // 올렸다(`decide/wave.ts` 의 `patchVertexY` 헤더). 방향을 뒤집는다 — 층2 평균은
+    // `SEA_Y + PATCH_SEP` 에 고정(= `waterSurfaceY` 판정과 일치)하고, **아래 층이 내려간다.**
+    //
+    // 아래 층은 패치 밖(= 안개 너머)에서만 보이는 판이므로 이 낙하는 근거리 화면에
+    // 나타나지 않는다 — 패치가 안개 far 를 덮는다는 것을 `SEA_PATCH_METRICS` 단언
+    // (검수관 BL-2)이 지키고 있고, 그 단언이 이 논증의 전제다.
+    // ⚠ 못 본 것: 안개 너머 수평선에서 이 낙하가 읽히는지는 확인 못 했다(바닷가가
+    // 스폰에서 470m 이고 헤드리스는 4fps 다).
+    if (patchGeo) sea.position.y = SEA_Y - LIFT_AMP;
 
     // ── 강 판 (감독 지시 2026-07-30) ────────────────────────────────────────
     // *"강은 땅보다 50 cm 밑, 바다는 땅보다 1미터 밑에 있게해."*
@@ -1574,7 +1546,9 @@ export const oceanFeature: Feature = {
           // 여기서도 성립하게 통째로 건너뛴다(불필요한 버퍼 업로드도 안 난다).
           if (RIVER_SEG > 1 && LIFT_AMP > 0) {
             const p = riverPosAttr.array as Float32Array;
-            for (let i = 0; i < p.length; i += 3) p[i + 1] = surfaceLift(p[i], p[i + 2], t);
+            for (let i = 0; i < p.length; i += 3) {
+              p[i + 1] = surfaceLift(p[i], p[i + 2], t, LIFT_AMP, LIFT_STANDING);
+            }
             riverPosAttr.needsUpdate = true;
           }
 
@@ -1604,15 +1578,13 @@ export const oceanFeature: Feature = {
             sea2!.position.z = oz;
 
             // 정점 파동만 진폭에 걸린다. `LIFT_AMP === 0` 이면 생성 시점에 채운
-            // 평탄 baseline(`0.01`)이 그대로 남는다 — 1cm 분리가 유지된다.
+            // 평탄 baseline(`PATCH_SEP`)이 그대로 남는다 — 1cm 분리가 유지된다.
             if (LIFT_AMP > 0) {
               const attr = patchGeo.getAttribute('position');
               const p = attr.array as Float32Array;
-              // `+ LIFT_AMP` 로 골을 baseline 위로 들어올린다. 아래 층(`sea`, 평평)을
-              // 뚫지 않게 하는 몫이고, `0.01` 은 두 면이 정확히 겹쳐 보이지 않게 하는
-              // 옛 몫 그대로다.
+              // 정점 y 는 `patchVertexY` 한 곳이 정한다(근거·실측표도 거기다).
               for (let i = 0; i < p.length; i += 3) {
-                p[i + 1] = 0.01 + LIFT_AMP + surfaceLift(p[i] + ox, p[i + 2] + oz, t);
+                p[i + 1] = patchVertexY(p[i] + ox, p[i + 2] + oz, t, LIFT_AMP, LIFT_STANDING);
               }
               attr.needsUpdate = true;
             }

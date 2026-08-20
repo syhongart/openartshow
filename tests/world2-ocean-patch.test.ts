@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   SEA_PATCH_METRICS, peakOf, surfaceLift, LIFT_LAMBDA, RIVER_SEG,
+  patchVertexY, PATCH_SEP,
 } from '../frontend/js/world2/features/ocean.js';
 import { fogBand } from '../frontend/js/world2/decide/fog.js';
 import { GRID_W } from '../frontend/js/world2/decide/grid.js';
@@ -117,4 +118,64 @@ describe('surfaceLift — 패치를 옮겨도 파형이 제자리인가', () => 
     const at1 = surfaceLift(13, 27, 1.1);
     expect(Math.abs(at1 - at0)).toBeGreaterThan(1e-6);
   });
+});
+
+describe('patchVertexY — 평균 수면이 진폭에 딸려 오르지 않는다', () => {
+  // ── 왜 이 검사가 없었나, 그리고 왜 그것이 비쌌나 ──────────────────────────
+  // 패치 정점 y 는 오래 갱신 루프 안에 인라인으로 `0.01 + LIFT_AMP + surfaceLift(...)`
+  // 라고 적혀 있었다. `+ LIFT_AMP` 는 골을 아래 층 위로 들어올리려던 것인데, 그것이
+  // **평균 수면도 함께 밀어 올렸다** — `?wamp` 가 파도 세기 노브이면서 수면 높이
+  // 노브를 겸했다는 뜻이다.
+  //
+  // 이 저장소가 이름 붙인 **판정/집행 분리의 구멍**이 정확히 그 형태다: `surfaceLift`
+  // 는 순수 함수라 단위 테스트가 촘촘히 보고 있었지만, **그 값을 정점에 꽂는 한 줄**은
+  // 어느 테스트도 안 봤다. 그래서 함수(`patchVertexY`)로 올리고 여기서 본다.
+  //
+  // 판정 축은 «평균» 이다. 마루~골(`peakOf`)은 리프트가 있어도 그대로라 이 결함을
+  // 구별하지 못한다 — 실제로 `seaPatch.peak` 진단은 내내 정상값을 내고 있었다.
+
+  /** 넓은 격자의 평균. 파장이 무리수비라 완전한 주기 정수배가 없으므로 표본으로 낸다. */
+  const meanY = (amp: number, t: number): number => {
+    let sum = 0;
+    let n = 0;
+    for (let x = 0; x < 96; x += 1.5) {
+      for (let z = 0; z < 96; z += 1.5) { sum += patchVertexY(x, z, t, amp); n += 1; }
+    }
+    return sum / n;
+  };
+
+  // 표본 오차 실측: 96m×96m·1.5m 간격에서 최대 **0.102mm**(진폭 0.2·0.45·0.75 ×
+  // t 4점). 임계 1mm 는 그 10배 여유이고, 리프트가 되살아나면 편차가 진폭 그대로
+  // (200~750mm) 나므로 **200배 이상 떨어져 있다** — 뮤테이션이 확실히 걸린다.
+  const TOL_M = 0.001;
+
+  it('★ 진폭을 바꿔도 평균 수면이 안 움직인다 — 리프트를 되살리면 깨진다', () => {
+    for (const amp of [0, 0.2, 0.45, 0.75]) {
+      for (const t of [0, 0.7, 1.9, 3.3]) {
+        expect(Math.abs(meanY(amp, t) - PATCH_SEP)).toBeLessThan(TOL_M);
+      }
+    }
+  });
+
+  // ⚠ 소스를 정규식으로 훑어 `PATCH_SEP + LIFT_AMP` 복원을 막는 검사를 만들었다가
+  // **지웠다.** 자기 자신의 정정 주석(`원래 이 자리는 … 였다`)에 걸려 빨간불이 났다 —
+  // 즉 그 축은 코드와 주석을 못 가른다. 아래 평균 검사가 뮤테이션 대비 200배 여유로
+  // 같은 것을 잡으므로, 남겼으면 **오탐만 내는 장식**이었다.
+
+  it('진폭 0 이면 정확히 baseline 이다 — `?wamp=0` 이 1cm 분리를 잃지 않는다', () => {
+    expect(patchVertexY(12, -7, 2.5, 0)).toBe(PATCH_SEP);
+  });
+
+  it('파동은 그대로 실린다 — 평균만 고정된 것이지 평평해진 것이 아니다', () => {
+    // 평균 단언만 있으면 «파동을 통째로 0 으로 만든» 구현도 통과한다. 그 구멍을 막는다.
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let x = 0; x < 64; x += 1) {
+      const y = patchVertexY(x, 0, 0, 0.2);
+      if (y < lo) lo = y;
+      if (y > hi) hi = y;
+    }
+    expect(hi - lo).toBeGreaterThan(0.2);
+  });
+
 });
