@@ -578,6 +578,7 @@ describe('수면 조립 — 개수 불변식', () => {
     expect(added.find((m) => m.name === 'ocean')!.position.y).toBe(SEA_Y - WAVE_AMP_DEFAULT);
   });
 
+
   it('강이 바다보다 높다 — 강물이 바다로 흘러나가는 방향', () => {
     // 감독 지시가 강 −0.5 / 바다 −1.0 이므로 이 관계가 뒤집히면 지시 위반이다.
     // 값을 여기 다시 적지 않는다 — 관계만 본다.

@@ -18,7 +18,7 @@ import {
   RIPPLE_WARP_M, RIPPLE_WARP_K, RIPPLE_L2_WAVE, RIPPLE_L2_SPEED, RIPPLE_MIX,
   type WaterStyleMode,
 } from '../decide/water-style.js';
-import { riverCenterZ, RIVER_HALF } from '../decide/water.js';
+import { riverCenterZ, RIVER_HALF, SEA_Y } from '../decide/water.js';
 
 /**
  * 게임풍 수면 재질.
@@ -200,6 +200,18 @@ export const waterStyleFeature: Feature = {
       const m = new THREE.Mesh(src.geometry, material);
       m.name = `${name}-styled`;
       m.position.copy(src.position);
+      // ⚠ **바다 층1은 원래 높이로 되돌린다** (2026-08-20).
+      // 기존 물에서 `ocean` 은 층2 패치의 **골 밑**에 내려가 있다 — 반투명 두 판이
+      // 교차하면 그 선이 수면 위에 드러나기 때문이고, 그 깊이가 `?wamp` 에 비례한다.
+      // 그런데 여기서는 그 층2(`ocean-wave2`)를 **숨긴다** — 교차할 상대가 없으므로
+      // 내릴 이유도 없다. 내린 채로 두면 스타일 물에서만 바다가 `?wamp` 만큼 낮아지고,
+      // 진폭 노브가 **여기서는 수면 높이 노브가 된다**(기존 물에서 방금 걷어낸 결함이
+      // 스타일 경로로 옮겨 앉는 형태다).
+      //
+      // `SEA_Y` 를 `decide/water.ts` 에서 **직접 받는다.** 값을 여기 적는 것이 아니라
+      // 저쪽과 같은 SSOT 를 각자 import 하는 것이라 미러링이 아니다 —
+      // `features/ocean.ts` 도 같은 곳에서 받는다.
+      if (name === 'ocean') m.position.y = SEA_Y;
       m.rotation.copy(src.rotation);
       m.scale.copy(src.scale);
       m.renderOrder = src.renderOrder;
