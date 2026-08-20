@@ -238,6 +238,9 @@ const { RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, worldHalfExtent, waterGloss } = a
 // 공식(`splitOpacity`)을 여기 다시 적으면 그 순간 미러링이고, 값을 바꿔도 검사가 옛
 // 값을 지키게 된다.
 const { OPACITY, layerOpacity, RIVER_SEG } = await import('../frontend/js/world2/features/ocean.js');
+// 층2 패치의 높이 단언이 쓴다. **값을 여기 적지 않는다** — `PATCH_SEP` 을 옮기거나
+// `?wamp` 기본값을 바꾸면 검사가 따라와야 한다.
+const { PATCH_SEP, WAVE_AMP_DEFAULT } = await import('../frontend/js/world2/decide/wave.js');
 const { DEFAULT_LAYOUT } = await import('../frontend/js/world2/parts/types.js');
 /** 세계 절반 크기. `ocean.ts` 와 **같은 유도**를 쓴다 — 값을 적어두면 그것이 미러링이다 */
 const EDGE = worldHalfExtent(DEFAULT_LAYOUT.cellX);
@@ -553,7 +556,10 @@ describe('수면 조립 — 개수 불변식', () => {
     const sea = added.find((m) => m.name === 'ocean')!;
     const bed = added.find((m) => m.name === 'seabed')!;
     expect(bed.position.y).toBe(SEABED_Y);
-    expect(sea.position.y).toBe(SEA_Y);
+    // ⚠ 층1은 더 이상 `SEA_Y` 가 아니다 — 층2(패치)의 **골 밑**으로 내려가 있다.
+    // 근거는 `decide/wave.ts` 의 `patchVertexY` 헤더. 여기서 재는 것은 «해저보다
+    // 위인가» 이므로 그 목적은 그대로 성립한다.
+    expect(sea.position.y).toBe(SEA_Y - WAVE_AMP_DEFAULT);
     expect(bed.position.y).toBeLessThan(sea.position.y);
     // 수면이 나중에 그려져야 해저 위에 겹친다
     expect(sea.renderOrder).toBeGreaterThan(bed.renderOrder);
@@ -566,7 +572,10 @@ describe('수면 조립 — 개수 불변식', () => {
   it('강 판이 RIVER_Y · 바다 판이 SEA_Y 다 — 두 상수를 맞바꿔 꽂는 것을 잡는다', () => {
     const { added } = mount();
     expect(added.find((m) => m.name === 'river')!.position.y).toBe(RIVER_Y);
-    expect(added.find((m) => m.name === 'ocean')!.position.y).toBe(SEA_Y);
+    // 바다 «수면» 을 들고 있는 것은 이제 층2다 — 층1은 그 골을 받치는 판이라
+    // `LIFT_AMP` 만큼 아래다. 상수를 맞바꿔 꽂는 것은 두 단언이 함께 잡는다.
+    expect(added.find((m) => m.name === 'ocean-wave2')!.position.y).toBe(SEA_Y);
+    expect(added.find((m) => m.name === 'ocean')!.position.y).toBe(SEA_Y - WAVE_AMP_DEFAULT);
   });
 
   it('강이 바다보다 높다 — 강물이 바다로 흘러나가는 방향', () => {
@@ -1556,16 +1565,43 @@ describe('바다 패치 — 정점이 실제로 울렁이는가 (집행)', () =>
     expect(moved, '두 프레임의 정점이 완전히 같다 — 파동이 시간을 안 쓴다').toBe(true);
   });
 
-  it('★ 골이 아래 층을 뚫지 않는다 — 정점 y 가 0.01 아래로 안 내려간다', () => {
-    // 층2가 평평한 `sea` 를 뚫고 내려가면 물이 두 겹으로 갈라져 보인다. 그 몫을
-    // `+ LIFT_AMP` 오프셋이 맡는다 — 없애면 여기가 깨진다.
+  it('★ 골이 아래 층을 뚫지 않는다 — 두 판이 교차하면 물이 갈라져 보인다', () => {
+    // 목적은 그대로다. **재는 축만 바뀌었다**(2026-08-20).
+    //
+    // 예전에는 층2 정점의 로컬 y 가 `0.01` 아래로 안 내려가는지를 봤다. 그 형태는 층2를
+    // `+ LIFT_AMP` 만큼 들어올린 구현에서만 성립하고, 그 리프트가 **평균 수면을 진폭에
+    // 묶는** 결함이었다(`decide/wave.ts` 의 `patchVertexY` 헤더). 이제 층2 평균은
+    // `SEA_Y + PATCH_SEP` 에 고정이고 **아래 층이 골 밑으로 내려간다.**
+    //
+    // 그래서 로컬 y 로는 판정할 수 없다 — 두 판의 **월드 y** 를 비교해야 한다. 축을
+    // 옮기면서 단언을 느슨하게 만들지 않는다: 예전 검사가 막던 것(두 판의 교차)을
+    // 그대로 막고, 오히려 아래 판의 위치까지 함께 본다.
     const { inst, added } = mount();
     const pos = patchOf(added);
+    const under = added.find((x) => x.name === 'ocean')!;
+    const over = added.find((x) => x.name === 'ocean-wave2')!;
     for (const dt of [0.1, 0.7, 1.3, 2.9, 5.2]) {
       inst.system!.update({ dt } as never);
       const ys = (pos.array as number[]).filter((_, i) => i % 3 === 1);
-      expect(Math.min(...ys)).toBeGreaterThanOrEqual(0.01 - 1e-9);
+      const troughWorld = over.position.y + Math.min(...ys);
+      expect(troughWorld).toBeGreaterThanOrEqual(under.position.y);
     }
+  });
+
+  it('★ 층2의 평균 높이가 진폭에 딸려 오르지 않는다 — 집행 쪽 단언', () => {
+    // `decide` 쪽 단언(`world2-ocean-patch.test.ts`)은 순수 함수만 본다. **그 값이
+    // 실제로 버퍼에 그렇게 꽂히는가**는 여기서만 걸린다 — 판정/집행 분리의 구멍이
+    // 이 결함을 낳은 자리이므로 양쪽에 단언을 둔다.
+    const { inst, added } = mount();
+    const pos = patchOf(added);
+    const over = added.find((x) => x.name === 'ocean-wave2')!;
+    inst.system!.update({ dt: 1.1 } as never);
+    const ys = (pos.array as number[]).filter((_, i) => i % 3 === 1);
+    const mean = ys.reduce((a, b) => a + b, 0) / ys.length;
+    // 패치는 181m 각형이라 파장(16m·9.9m·6.1m)을 여러 번 덮는다 — 평균은 `PATCH_SEP`
+    // 로 수렴한다. 리프트가 되살아나면 진폭(0.2m)만큼 어긋나 200배 떨어진다.
+    expect(Math.abs(mean - PATCH_SEP)).toBeLessThan(0.001);
+    expect(over.position.y).toBe(SEA_Y);
   });
 
   it('★ 플레이어를 따라오되 **스냅 단위로만** 움직인다 — 아니면 무늬가 따라다닌다', () => {
@@ -1754,11 +1790,19 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
       const d = inst.diagnostics!() as { seaPatch: unknown };
       const sea = added.find((x) => x.name === 'ocean')!.geometry;
       const w2 = added.find((x) => x.name === 'ocean-wave2')!.geometry;
-      return { seaPatch: d.seaPatch, sharesGeo: sea === w2, seg: mod.SEA_PATCH_METRICS.seg };
+      return {
+        seaPatch: d.seaPatch, sharesGeo: sea === w2, seg: mod.SEA_PATCH_METRICS.seg,
+        // 되돌린 경로에서 층1이 내려가면 안 된다 — 내릴 이유(층2의 골)가 없다.
+        underY: added.find((x) => x.name === 'ocean')!.position.y,
+      };
     });
     expect(r.seg, '스위치를 껐는데 세그먼트가 남아 있다').toBe(0);
     expect(r.seaPatch, '스위치를 껐는데 진단이 패치를 보고한다').toBeNull();
     expect(r.sharesGeo, '되돌렸으면 층2가 옛 큰 평면(같은 지오)으로 돌아가야 한다').toBe(true);
+    // 검수관 권고 3 (2026-08-20): 패치가 없는 경로에서 층1이 `SEA_Y` 로 남는지는
+    // 코드 읽기로만 확인돼 있었다. 그 확인이 «판정/집행 분리의 구멍» 이 되지 않게
+    // 단언으로 박는다 — `if (patchGeo)` 가드를 지우면 여기가 깨진다.
+    expect(r.underY, '패치가 없는데 층1을 내렸다 — 내릴 골이 없다').toBe(SEA_Y);
   });
 });
 
