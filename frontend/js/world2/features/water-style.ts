@@ -17,9 +17,17 @@ import {
   RIPPLE_WAVE_M, RIPPLE_SPEED_MPS, RIPPLE_CREST_LO, RIPPLE_CREST_HI,
   RIPPLE_WARP_M, RIPPLE_WARP_K, RIPPLE_L2_WAVE, RIPPLE_L2_SPEED, RIPPLE_MIX,
   type WaterStyleMode,
-  NORMAL_MUL, shallowAlpha,
+  NORMAL_MUL, shallowAlpha, LAYER2_NAMES,
 } from '../decide/water-style.js';
 import { riverCenterZ, RIVER_HALF, SEA_Y, waterGloss } from '../decide/water.js';
+// ⚠ **알파 배분을 새로 만들지 않는다.** 반투명 두 겹이 곱해지는 문제를 기존 물이 이미
+// 풀어 뒀고(`sea`/`sea2`), 그 함수를 그대로 쓴다. 여기 공식을 다시 적으면 그 순간
+// 미러링이고, 한쪽만 고쳐도 아무도 모른다.
+// ⚠ 검수관 권고(2026-08-20): 이 함수는 상태 없는 **순수 판정**이라 `decide/` 가 더 맞는
+// 자리다(이 파일이 `SEA_Y` 를 `decide/water.ts` 에서 직접 받는 것과 같은 모양이 된다).
+// 이번 회차에 안 옮긴 이유는 `features/ocean.ts` 가 `check:filesize` 동결이라 옮기는
+// 것이 그 파일과 `decide/` 양쪽을 건드리는 별개 작업이기 때문이다 — 백로그 `G-STYL22`.
+import { layerOpacity } from './ocean.js';
 
 /**
  * 게임풍 수면 재질.
@@ -35,15 +43,19 @@ import { riverCenterZ, RIVER_HALF, SEA_Y, waterGloss } from '../decide/water.js'
  */
 function styledWaterMaterial(
   foamMul: number, fresMul: number, deepMul: number, ripMul: number, clearMul: number,
+  layers: number,
 ): THREE.Material {
   const {
     positionViewDirection, normalView, attribute,
     uniform, mix, smoothstep, float, vec3, time, sin, mx_noise_float, positionWorld,
   } = TSL as any;
 
+  // 겹 수만큼 알파를 나눈다 — 두 겹을 곱해 총 `STYLE_OPACITY` 가 되게. 한 겹이면
+  // `layerOpacity` 가 그대로 돌려주므로 분기가 필요 없다.
+  const deepA = layerOpacity(STYLE_OPACITY, layers);
   const mat = new (THREE as any).MeshStandardNodeMaterial({
     transparent: true,
-    opacity: STYLE_OPACITY,
+    opacity: deepA,
     // 물끼리 겹쳐 그려질 때 뒤엣것이 앞엣것을 지우지 않게 한다 — 기존 물이 같은 이유로
     // `depthWrite: false` 다.
     depthWrite: false,
@@ -130,8 +142,24 @@ function styledWaterMaterial(
   //
   // ⚠ 바다는 `shore` 가 전부 0 이라 `depthT` 가 1 로 포화한다 → 균일하게
   // `STYLE_OPACITY`. 근거는 `decide/water-style.ts` 의 `CLEAR_SHALLOW` 주석 한 곳이다.
-  const shallowA = float(shallowAlpha(clearMul));
-  mat.opacityNode = mix(shallowA, float(STYLE_OPACITY), depthT);
+  // ⚠ **양 끝을 각각 배분한다.** 재질 상수만 나누면 물가(얕은 쪽)는 안 나뉘어 그
+  // 구간에서만 색이 탁해진다 — 겹이 둘일 때 그 어긋남은 물가 띠에서 가장 잘 보인다.
+  //
+  // ⚠⚠ **끝점은 정확하고 중간은 선형이 아니다** (검수관 실측, 2026-08-20).
+  // `mix` 를 «층별 알파» 공간에서 하고 화면에서 `1-(1-a)²` 로 합성하는데, 그 합성이
+  // 오목(concave)이라 옌센 부등식에 의해 중간 `depthT` 에서 **두 목표값의 선형 블렌드보다
+  // 항상 더 불투명한 쪽으로** 치우친다. `clearMul=1` 최악 실측:
+  //
+  //   depthT   0      0.25    0.5     0.75    1
+  //   합성     0.300  0.462   0.603   0.722   0.820   ← 0 과 1 은 목표와 정확히 같다
+  //   선형      —     0.430   0.560   0.690    —      (최대 +4.3%p, depthT 0.5)
+  //
+  // 즉 물가→깊은 곳 전환이 «중간에서 더 빨리 불투명해지는» 곡선이다. 이 코드가 약속한
+  // 것은 **끝점 보존**이고 그것은 지킨다 — 다만 이 문단이 없으면 다음 사람이 선형
+  // 그라데이션으로 읽는다. 화면에서 문제인지는 판정 불가(WebGPU 전용)이고, 문제로
+  // 드러나면 합성 공간에서 보간하도록(`layerOpacity(mix(...))`) 뒤집으면 된다.
+  const shallowA = float(layerOpacity(shallowAlpha(clearMul), layers));
+  mat.opacityNode = mix(shallowA, float(deepA), depthT);
 
   return mat;
 }
@@ -194,16 +222,24 @@ export const waterStyleFeature: Feature = {
     const clearMul = readNum('wclear', 1, 0, 1);
     // 잔파도(노멀맵) 세기 배율. `0` 이면 매끈한 면 = 이전 상태.
     const normMul = readNum('wnorm', NORMAL_MUL, 0, 3);
+    // 층2를 대역할 것인가. `0` 이면 예전처럼 숨기기만 한다(되돌릴 자리 하나).
+    // 근거는 `decide/water-style.ts` 의 `LAYER2_NAMES` 주석 한 곳이다.
+    const layer2On = readNum('wlayer2', 1, 0, 1) >= 0.5;
 
-    const material = styledWaterMaterial(foamMul, fresMul, deepMul, ripMul, clearMul);
+    const proxyNames: readonly string[] = layer2On
+      ? [...STYLED_WATER_NAMES, ...LAYER2_NAMES]
+      : STYLED_WATER_NAMES;
+    const hideNames: readonly string[] = layer2On ? [] : HIDE_ONLY_NAMES;
+    const layers = layer2On ? 2 : 1;
+
+    const material = styledWaterMaterial(foamMul, fresMul, deepMul, ripMul, clearMul, layers);
     const added: THREE.Mesh[] = [];
     const hidden: THREE.Object3D[] = [];
+    /** 매 프레임 자세를 따라갈 (대역, 원본) 쌍. 층2 바다는 플레이어를 스냅 추종한다 */
+    const follow: Array<{ proxy: THREE.Mesh; src: THREE.Object3D }> = [];
 
-
-    // 층2는 **숨기기만** 한다 — 대역을 얹지 않는 이유는 `decide/water-style.ts` 의
-    // `HIDE_ONLY_NAMES` 주석에 있다(트랜스폼 비공유 + 반투명 이중 곱).
     let hidOnly = 0;
-    for (const name of HIDE_ONLY_NAMES) {
+    for (const name of hideNames) {
       const src = env.scene.getObjectByName(name);
       if (!src) continue;
       src.visible = false;
@@ -211,13 +247,16 @@ export const waterStyleFeature: Feature = {
       hidOnly++;
     }
 
-    for (const name of STYLED_WATER_NAMES) {
+    for (const name of proxyNames) {
       const src = env.scene.getObjectByName(name) as THREE.Mesh | undefined;
       if (!src || !(src as any).isMesh) continue;
       // **지오메트리를 공유한다.** 복사하지 않는 이유가 셋이다: 지오메트리 개수가 안 늘고,
       // ocean 이 매 프레임 갱신하는 정점 파동이 그대로 오며, 두 수면이 갈라질 수가 없다.
       // 물가 거리를 굽는다. 지오메트리는 ocean 소유라 **어트리뷰트만 더한다**.
-      bakeShoreDistance(src.geometry as THREE.BufferGeometry, env.cell, name === 'ocean');
+      // ⚠ 바다 계열은 **둘 다** 물가 개념이 없다(전부 깊은 물). 이름으로 가르면 층2가
+      // 추가될 때마다 여기를 손봐야 하므로 접두로 판정한다.
+      const isSea = name.startsWith('ocean');
+      bakeShoreDistance(src.geometry as THREE.BufferGeometry, env.cell, isSea);
       const m = new THREE.Mesh(src.geometry, material);
       m.name = `${name}-styled`;
       m.position.copy(src.position);
@@ -232,13 +271,21 @@ export const waterStyleFeature: Feature = {
       // `SEA_Y` 를 `decide/water.ts` 에서 **직접 받는다.** 값을 여기 적는 것이 아니라
       // 저쪽과 같은 SSOT 를 각자 import 하는 것이라 미러링이 아니다 —
       // `features/ocean.ts` 도 같은 곳에서 받는다.
-      if (name === 'ocean') m.position.y = SEA_Y;
+      // ⚠ **층2를 대역하면 이 되돌림을 하면 안 된다.** 층1이 골 밑에 내려가 있는 것은
+      // 층2와 교차하지 않게 하려는 몫이고, 층2가 살아 있으면 그 몫이 필요하다.
+      // 되돌리는 것은 층2를 **숨겼을 때**뿐이다 — 그때는 교차할 상대가 없다.
+      if (name === 'ocean' && !layer2On) m.position.y = SEA_Y;
       m.rotation.copy(src.rotation);
       m.scale.copy(src.scale);
       m.renderOrder = src.renderOrder;
       m.frustumCulled = src.frustumCulled;
       env.scene.add(m);
       added.push(m);
+      // ⚠ **자세를 매 프레임 따라간다** — `features/ocean.ts` 가 층2 바다(`sea2`)의
+      // `position` 을 플레이어에게 스냅 추종시키므로, 한 번만 복사하면 대역이 스폰
+      // 자리에 남고 파형이 월드와 어긋난다(검수관 반려 B3 의 이유 ①). 정점 버퍼를
+      // 공유해도 이 축은 안 따라온다 — 공유되는 것은 정점이지 트랜스폼이 아니다.
+      follow.push({ proxy: m, src });
       src.visible = false;
       hidden.push(src);
     }
@@ -278,24 +325,40 @@ export const waterStyleFeature: Feature = {
 
     // ⚠ 층2 숨김 실패도 함께 센다(검수관 권고 R5). 이름이 드리프트하면 대역은 0개인데
     // 층2만 사라져 **고치기 전보다 나쁜 화면**이 되는데, `added` 만 세면 그 경우가 안 잡힌다.
-    if (added.length !== STYLED_WATER_NAMES.length || hidOnly !== HIDE_ONLY_NAMES.length) {
+    if (added.length !== proxyNames.length || hidOnly !== hideNames.length) {
       // ⚠ **조용한 no-op 금지.** 이름은 `features/ocean.ts` 와의 결합이고, 저쪽이 이름을
       // 바꾸면 여기는 아무것도 안 물린 채 «켜졌다» 고 보고하게 된다. 그 실패는 화면에서
       // «게임풍 물이 왜 기존 물과 똑같지» 로만 드러나 원인을 찾기 어렵다.
       console.warn(
-        `[water-style] 수면 메시를 대역 ${added.length}/${STYLED_WATER_NAMES.length}`
-        + ` · 숨김 ${hidOnly}/${HIDE_ONLY_NAMES.length} 개만 찾았다.`
+        `[water-style] 수면 메시를 대역 ${added.length}/${proxyNames.length}`
+        + ` · 숨김 ${hidOnly}/${hideNames.length} 개만 찾았다.`
         + ' features/ocean.ts 의 mesh.name 과 decide/water-style.ts 의 목록이 어긋났을 수 있다.',
       );
     }
 
     return {
+      // ⚠ **이 기능에 `system` 이 생긴 것은 이번이 처음이다.** 층2 바다 대역이 원본의
+      // 스냅 추종을 따라가야 하기 때문이고(`LAYER2_NAMES` 주석의 이유 ①), 그것 말고는
+      // 매 프레임 할 일이 없다. 회전·스케일은 물 판이 만들어진 뒤 안 바뀌므로 안 본다.
+      system: {
+        name: 'water-style',
+        update() {
+          for (const f of follow) f.proxy.position.copy(f.src.position);
+          // 층1 바다만 예외 — 층2를 숨겼을 때는 원래 높이로 되돌린 상태를 유지한다.
+          if (!layer2On) {
+            const o = added.find((m) => m.name === 'ocean-styled');
+            if (o) o.position.y = SEA_Y;
+          }
+        },
+      },
       diagnostics: () => ({
         mode,
+        layer2: layer2On,
+        layers,
         styled: added.length,
-        expected: STYLED_WATER_NAMES.length,
+        expected: proxyNames.length,
         hiddenOnly: hidOnly,
-        hiddenOnlyExpected: HIDE_ONLY_NAMES.length,
+        hiddenOnlyExpected: hideNames.length,
         foamMul, fresMul, deepMul, clearMul, normMul,
         normalMapShared: !!baseMap,
         backend: env.adapter.backendDetail,

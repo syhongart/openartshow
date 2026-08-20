@@ -36,8 +36,9 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three/webgpu';
 import { SEA_Y, RIVER_Y } from '../frontend/js/world2/decide/water.js';
 import {
-  SHORE_ATTR, STYLE_OPACITY, CLEAR_SHALLOW, shallowAlpha,
+  SHORE_ATTR, STYLE_OPACITY, CLEAR_SHALLOW, shallowAlpha, LAYER2_NAMES, STYLED_WATER_NAMES,
 } from '../frontend/js/world2/decide/water-style.js';
+import { layerOpacity } from '../frontend/js/world2/features/ocean.js';
 
 /** `ocean.ts` 가 층2 패치를 쓸 때 층1을 내리는 깊이. 값을 여기 적지 않는다 */
 const { WAVE_AMP_DEFAULT } = await import('../frontend/js/world2/decide/wave.js');
@@ -113,13 +114,53 @@ describe('게임풍 수면 — 실제 마운트 (WebGPU 경로)', () => {
     expect(byName('river-styled'), '강 대역이 씬에 없다').toBeTruthy();
   });
 
-  it('★ 바다 대역이 «내려가지 않은» 높이로 뜬다 — 진폭이 수면 높이를 밀지 않는다', async () => {
-    // 회귀의 정체: `ocean`(층1)은 층2 패치의 골 밑에 내려가 있는데, 여기서는 그 층2를
-    // **숨기므로** 교차할 상대가 없다. 내린 채로 복사하면 스타일 물에서만 바다가
-    // `?wamp` 만큼 낮아지고, 진폭 노브가 수면 높이 노브가 된다.
-    const { src, byName } = await mountStyled();
-    expect(src.ocean.position.y, '전제: 원본 층1은 내려가 있다').toBe(SEA_Y - WAVE_AMP_DEFAULT);
-    expect(byName('ocean-styled')!.position.y).toBe(SEA_Y);
+  it('★ 층1 높이는 층2 유무가 정한다 — 되돌림은 층2를 숨겼을 때만이다', async () => {
+    // `ocean`(층1)이 층2 패치의 **골 밑**에 내려가 있는 것은 두 반투명 판이 교차하지
+    // 않게 하는 몫이다. 그러니 되돌리는 것은 층2를 **숨겼을 때**뿐이고, 층2를 대역하면
+    // 그 몫이 여전히 필요하다.
+    //
+    // ⚠ 이 단언은 원래 «항상 `SEA_Y` 로 되돌린다» 였다. 층2를 대역하게 되면서 **계약이
+    // 바뀌었고** 그래서 깨졌다 — 느슨하게 고치지 않고 조건을 갈라 둘 다 못 박는다.
+    const on = await mountStyled('?styl=1&wlayer2=1');
+    expect(on.src.ocean.position.y, '전제: 원본 층1은 내려가 있다').toBe(SEA_Y - WAVE_AMP_DEFAULT);
+    expect(on.byName('ocean-styled')!.position.y, '층2가 있는데 되돌렸다 — 두 판이 교차한다')
+      .toBe(SEA_Y - WAVE_AMP_DEFAULT);
+
+    const off = await mountStyled('?styl=1&wlayer2=0');
+    expect(off.byName('ocean-styled')!.position.y, '층2를 숨겼으면 원래 높이로 되돌려야 한다')
+      .toBe(SEA_Y);
+  });
+
+  it('★ 층2를 대역한다 — 바다에 정점 파동이 오는 유일한 경로', async () => {
+    // 감독 판정 *"아래것은 그래로있어서 어색해"* 의 원인이 층2 부재였다. 층1 바다는
+    // 정점이 네 귀퉁이뿐이라 실루엣이 변할 수 없다.
+    const { byName, src } = await mountStyled();
+    for (const n of LAYER2_NAMES) {
+      expect(byName(`${n}-styled`), `${n} 대역이 없다 — 파동이 오는 경로가 끊긴다`).toBeTruthy();
+    }
+    // 지오는 **공유**여야 한다 — 복사하면 `ocean.ts` 가 매 프레임 갱신하는 정점 파동이
+    // 안 온다(층1 지오 공유 단언과 같은 축).
+    expect(byName('ocean-wave2-styled')!.geometry).toBe(src.oceanWave2.geometry);
+  });
+
+  it('★ 층2 바다 대역이 원본 자세를 **매 프레임** 따라간다 (검수관 반려 B3 의 이유 ①)', () => {
+    // `ocean.ts` 가 `sea2` 를 플레이어에게 스냅 추종시킨다. 한 번만 복사하면 대역이
+    // 스폰 자리에 남고 파형이 월드와 어긋난다 — 정점 버퍼를 공유해도 이 축은 안 온다.
+    return mountStyled().then(({ inst, src, byName }) => {
+      const proxy = byName('ocean-wave2-styled')!;
+      src.oceanWave2.position.set(181, SEA_Y, -362);
+      inst!.system!.update({} as never);
+      expect(proxy.position.x, '대역이 원본 스냅을 안 따라왔다').toBe(181);
+      expect(proxy.position.z).toBe(-362);
+    });
+  });
+
+  it('`?wlayer2=0` 이면 예전처럼 숨기기만 한다 — 되돌릴 자리가 노브 하나다', async () => {
+    const { src, byName } = await mountStyled('?styl=1&wlayer2=0');
+    for (const n of LAYER2_NAMES) {
+      expect(byName(`${n}-styled`), '껐는데 대역이 생겼다').toBeUndefined();
+    }
+    expect(src.oceanWave2.visible, '껐으면 원본 층2는 숨어야 한다').toBe(false);
   });
 
   it('강 대역은 `RIVER_Y` 그대로다 — 되돌림이 바다에만 걸린다', async () => {
@@ -127,13 +168,14 @@ describe('게임풍 수면 — 실제 마운트 (WebGPU 경로)', () => {
     expect(byName('river-styled')!.position.y).toBe(RIVER_Y);
   });
 
-  it('층2 둘은 숨고 층1 둘은 대역된다 — 어느 한쪽만 되면 화면이 더 나빠진다', async () => {
+  it('원본 넷이 모두 숨고 대역 넷이 선다 — 어느 한쪽만 되면 화면이 더 나빠진다', async () => {
     const { src, byName } = await mountStyled();
-    expect(src.oceanWave2.visible, '바다 층2가 안 숨었다').toBe(false);
-    expect(src.riverWave2.visible, '강 층2가 안 숨었다').toBe(false);
-    expect(src.ocean.visible, '대역했으면 원본은 숨어야 한다').toBe(false);
-    expect(src.river.visible).toBe(false);
-    expect(byName('ocean-styled')!.visible).toBe(true);
+    for (const o of [src.ocean, src.river, src.oceanWave2, src.riverWave2]) {
+      expect(o.visible, `${o.name} 원본이 안 숨었다`).toBe(false);
+    }
+    for (const n of [...STYLED_WATER_NAMES, ...LAYER2_NAMES]) {
+      expect(byName(`${n}-styled`)?.visible, `${n} 대역이 없거나 숨어 있다`).toBe(true);
+    }
   });
 
   it('대역이 원본 지오를 **공유**한다 — 복사하면 정점 파동이 안 온다', async () => {
@@ -198,8 +240,12 @@ describe('게임풍 수면 — 실제 마운트 (WebGPU 경로)', () => {
     const on = (byName('ocean-styled')!.material as unknown as {
       opacityNode?: { aNode?: { value?: number }; bNode?: { value?: number } };
     }).opacityNode;
-    expect(on?.aNode?.value, '얕은 쪽 알파가 노브를 안 탄다').toBeCloseTo(shallowAlpha(0.5), 10);
-    expect(on?.bNode?.value, '깊은 쪽이 STYLE_OPACITY 가 아니다').toBe(STYLE_OPACITY);
+    // ⚠ 겹이 둘이므로 **양 끝이 각각 배분**돼 있어야 한다. 재질 상수만 나누고 얕은 쪽을
+    // 안 나누면 물가 띠에서만 색이 탁해진다 — 그 어긋남이 가장 잘 보이는 자리다.
+    expect(on?.aNode?.value, '얕은 쪽 알파가 노브·겹 수를 안 탄다')
+      .toBeCloseTo(layerOpacity(shallowAlpha(0.5), 2), 10);
+    expect(on?.bNode?.value, '깊은 쪽이 겹 수만큼 안 나뉘었다')
+      .toBeCloseTo(layerOpacity(STYLE_OPACITY, 2), 10);
   });
 
   it('`?styl=0` 이면 아무것도 안 건드린다 — 되돌리기가 실제로 되는가', async () => {
