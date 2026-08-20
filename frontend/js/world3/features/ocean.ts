@@ -1591,11 +1591,11 @@ export const oceanFeature: Feature = {
             if (LIFT_AMP > 0) {
               const attr = patchGeo.getAttribute('position');
               const p = attr.array as Float32Array;
-              // `+ LIFT_AMP` 로 골을 baseline 위로 들어올린다. 아래 층(`sea`, 평평)을
-              // 뚫지 않게 하는 몫이고, `0.01` 은 두 면이 정확히 겹쳐 보이지 않게 하는
-              // 옛 몫 그대로다.
+              // ⚠ `+ LIFT_AMP` 는 이제 없다 — 그 리프트가 평균 수면을 진폭만큼 밀고
+              // 있었다(근거는 `world2/decide/wave.ts` 의 `patchVertexY` 한 곳). 골이 아래
+              // 층을 안 뚫는 몫은 `sea.position.y = SEA_Y - LIFT_AMP` 가 대신 맡는다.
+              // `0.01` 은 두 면이 겹쳐 보이지 않게 하는 옛 몫 그대로다.
               for (let i = 0; i < p.length; i += 3) {
-                // ⚠ `+ LIFT_AMP` 제거 — 근거는 `world2/decide/wave.ts` `patchVertexY`.
                 p[i + 1] = 0.01 + surfaceLift(p[i] + ox, p[i + 2] + oz, t);
               }
               attr.needsUpdate = true;
