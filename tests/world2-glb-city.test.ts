@@ -23,7 +23,7 @@ import { EXT_OFF } from '../frontend/js/world-shared/glb-material.js';
 // ⚠ **본체는 `world-shared/` 로 옮겼다**(2026-08-16 통합) — world2·3·5 가 한 파일을 쓴다.
 // 세계별 래퍼(`world2/features/glb-city.ts`)에는 `glbCityFeature` 만 남는다.
 import { glbCityFeature } from '../frontend/js/world2/features/glb-city.js';
-import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, syncVisibility, placeGrid } from '../frontend/js/world-shared/glb-city.js';
+import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, syncVisibility, advanceGrow, placeGrid } from '../frontend/js/world-shared/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 import { PLAZA_WEST, isCentralPlaza } from '../frontend/js/world2/decide/grid.js';
@@ -411,18 +411,41 @@ describe('🔴 GLB 건물이 파셀과 생사를 같이한다 — 감독 지시 
   //
   // ⚠⚠ **여전히 못 잡는 것**: 실제 GLB 의 피벗·스케일, 화면상 소멸/복귀, WebGPU 실기기.
 
-  const copy = (px: number, pz: number, visible = true) => ({ node: { visible }, px, pz });
+  const copy = (px: number, pz: number, visible = true) => {
+    const scale = { k: 1, setScalar(v: number) { scale.k = v; } };
+    return { node: { visible, scale }, px, pz, want: visible };
+  };
+
+  /**
+   * 판정 → 집행 **한 프레임**. `system.update` 가 하는 것과 같은 순서다.
+   *
+   * ⚠ **이 헬퍼가 이번 회차에 생겼다**(감독 판정 2026-08-20 — *"자라나는 느낌이
+   * 아닌데?"*). 그전에는 `syncVisibility` 하나가 `node.visible` 을 직접 뒤집어서
+   * 아래 검사들이 그 함수만 불러도 됐다. 지금은 **목표(`want`)와 화면이 갈렸고**,
+   * 그 사이를 시간이 채우는 것이 등장 연출이다.
+   *
+   * **단언을 약화시킨 것이 아니라 경로가 길어진 것이다** — 검사가 보는 것(「로드된
+   * 파셀의 채가 화면에 보이는가」)은 그대로다. `copyScale` 을 `undefined` 로 주므로
+   * 연출 없는 세계(world3·world5)의 경로를 타고, 그 결과는 회차 전과 **같아야 한다**.
+   */
+  const frame = (
+    cs: ReturnType<typeof copy>[],
+    loaded: ((px: number, pz: number) => boolean) | undefined,
+  ) => {
+    syncVisibility(cs, loaded);
+    advanceGrow(cs, 1 / 60, undefined);
+  };
 
   it('★ 로드된 파셀의 채는 켜지고, 안 된 파셀의 채는 꺼진다', () => {
     const cs = [copy(-1, 0), copy(3, 3)];
-    syncVisibility(cs, (px, pz) => px === -1 && pz === 0);
+    frame(cs, (px, pz) => px === -1 && pz === 0);
     expect(cs[0]!.node.visible, '🔴 로드된 파셀인데 꺼졌다').toBe(true);
     expect(cs[1]!.node.visible, '🔴 안 로드된 파셀인데 켜져 있다 — 안 가벼워진다').toBe(false);
   });
 
   it('★ 다시 로드되면 돌아온다 — 영구 손실이 아니다', () => {
     const cs = [copy(-1, 0, false)];
-    syncVisibility(cs, () => true);
+    frame(cs, () => true);
     expect(cs[0]!.node.visible).toBe(true);
   });
 
@@ -439,6 +462,8 @@ describe('🔴 GLB 건물이 파셀과 생사를 같이한다 — 감독 지시 
     // 여기서 뭔가 하면 **편집이 없는 세계의 룩을 이 회차가 조용히 바꾼다.**
     const cs = [copy(-1, 0, true), copy(3, 3, true)];
     expect(syncVisibility(cs, undefined)).toBe(0);
+    // 집행까지 돌려도 화면이 그대로여야 한다 — `want` 가 `true` 로 남기 때문이다.
+    advanceGrow(cs, 1 / 60, undefined);
     expect(cs.every((c) => c.node.visible), '🔴 판정 수단이 없는데 껐다').toBe(true);
   });
 
@@ -536,6 +561,104 @@ describe('🔴 GLB 건물이 파셀과 생사를 같이한다 — 감독 지시 
   });
 });
 
+describe('🔴 미술관이 땅에서 자라나며 나타난다 — 감독 판정 2026-08-20', () => {
+  // ── 감독 판정 ──────────────────────────────────────────────────────────────
+  // *"자라나는 느낌이 아닌데?"*
+  //
+  // 파셀 생사(2026-08-19)는 `visible` 토글 **하나**였다. 그래서 미술관은 한 프레임에
+  // 통째로 나타났는데, 마을 파츠(`parcel-grow.ts`)와 액자(W8-10)는 0 에서 자란다 —
+  // **셋 중 하나만 어긋나 있었다.**
+  //
+  // ⚠ **산술은 여기 없다.** `world2/decide/lod-fade.ts` 의 `scaleAdvance` 가 SSOT 이고
+  // (마을 파츠·액자가 이미 그것을 쓴다) 이 공유 모듈은 그것을 **주입받는다** — world3·
+  // world5 도 이 파일을 쓰므로 `world2/` 를 import 할 수 없기 때문이다(팀장 규칙 R2).
+  // 그래서 여기서 재는 것은 **식이 아니라 통로**다: 주입된 값이 화면에 닿는가.
+  //
+  // ⚠⚠ **못 잡는 것**: 실제로 자라 보이는지(사람 눈), 프레임 시간, WebGPU 실기기,
+  // `scaleAdvance` 자체의 산술(그쪽은 `tests/world2-lod-fade.test.ts` 소관이다).
+
+  const copy = (px: number, pz: number, visible = true) => {
+    const scale = { k: 1, setScalar(v: number) { scale.k = v; } };
+    return { node: { visible, scale }, px, pz, want: visible };
+  };
+
+  it('🔴 주입된 배수가 **스케일에 닿는다** — 이 통로가 끊기면 연출이 통째로 죽는다', () => {
+    const cs = [copy(0, 0, false)];
+    cs[0]!.want = true;
+    advanceGrow(cs, 1 / 60, () => 0.25);
+    expect(cs[0]!.node.scale.k, '🔴 배수가 스케일에 안 실렸다').toBeCloseTo(0.25, 6);
+    expect(cs[0]!.node.visible, '🔴 배수가 0 보다 큰데 안 보인다').toBe(true);
+  });
+
+  it('🔴 **배수가 화면 표시를 정한다** — 0 이면 사라지고, 0 보다 크면 보인다', () => {
+    const cs = [copy(0, 0, true)];
+    advanceGrow(cs, 1 / 60, () => 0);
+    expect(cs[0]!.node.visible, '🔴 배수 0 인데 그려진다 — 안 가벼워진다').toBe(false);
+    // ⚠ 스케일에는 **0 이 아니라 최솟값**이 들어간다. 스케일 0 행렬은 역행렬이 없고
+    // 이 트리 안에서 `updateMatrixWorld` 가 돈다. 안 보이므로 눈에는 차이가 없다.
+    expect(cs[0]!.node.scale.k, '🔴 스케일 0 을 그대로 넣었다').toBeGreaterThan(0);
+    expect(cs[0]!.node.scale.k, '🔴 최솟값이 눈에 띄게 크다').toBeLessThan(0.01);
+  });
+
+  it('🔴 `null` 이면 **아무것도 안 만진다** — 「변할 때만 대입」을 산술 쪽이 보증한다', () => {
+    const cs = [copy(0, 0, true)];
+    cs[0]!.node.scale.setScalar(0.7);
+    expect(advanceGrow(cs, 1 / 60, () => null), '🔴 안 바뀌었는데 바꿨다고 셌다').toBe(0);
+    expect(cs[0]!.node.scale.k, '🔴 null 인데 스케일을 덮어썼다').toBeCloseTo(0.7, 6);
+    expect(cs[0]!.node.visible).toBe(true);
+  });
+
+  it('🔴 채 **인덱스**와 **목표**가 그대로 전달된다 — 상태를 채별로 들 수 있어야 한다', () => {
+    const seen: Array<{ id: number; up: boolean; dt: number }> = [];
+    const cs = [copy(0, 0), copy(1, 1), copy(2, 2)];
+    cs[0]!.want = true; cs[1]!.want = false; cs[2]!.want = true;
+    advanceGrow(cs, 0.25, (id, up, dt) => { seen.push({ id, up, dt }); return null; });
+    // 인덱스가 섞이면 **한 채의 성장 상태가 다른 채에 실린다** — 화면에서는 「엉뚱한
+    // 건물이 자란다」로 나오고, 그 원인을 여기 말고는 볼 자리가 없다.
+    expect(seen.map((x) => x.id), '🔴 채 인덱스가 어긋났다').toEqual([0, 1, 2]);
+    expect(seen.map((x) => x.up), '🔴 목표가 안 넘어갔다').toEqual([true, false, true]);
+    expect(seen.map((x) => x.dt), '🔴 dt 가 안 넘어갔다').toEqual([0.25, 0.25, 0.25]);
+  });
+
+  it('🔴 연출이 **없는 세계**는 회차 전과 같다 — world3·world5 의 룩을 안 건드린다', () => {
+    // 그 세계들은 `copyScale` 을 안 넘긴다. 그때 목표가 곧 화면이어야 하고, 스케일은
+    // **손대지 않아야** 한다(1 그대로).
+    const cs = [copy(0, 0, true), copy(1, 1, true)];
+    cs[1]!.want = false;
+    advanceGrow(cs, 1 / 60, undefined);
+    expect(cs[0]!.node.visible).toBe(true);
+    expect(cs[1]!.node.visible, '🔴 목표가 꺼짐인데 안 껐다').toBe(false);
+    expect(cs.map((c) => c.node.scale.k), '🔴 연출이 없는데 스케일을 건드렸다').toEqual([1, 1]);
+  });
+
+  it('🔴 배선 — world2 가 `scaleAdvance` 를 주입한다 (산술을 복제하지 않았는가)', () => {
+    // 정적 텍스트 축이다. 이 배선이 빠지면 **연출이 조용히 사라지고** 증상은 감독
+    // 화면에서만 드러난다 — 이번 회차가 정확히 그렇게 신고됐다.
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world2/features/glb-city.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    expect(src, '🔴 `copyScale` 주입이 사라졌다 — 미술관이 다시 툭 나타난다')
+      .toContain('copyScale: (id, up, dt) =>');
+    expect(src, '🔴 산술 SSOT(`scaleAdvance`)를 안 쓴다')
+      .toContain('scaleAdvance(st, up, dt, anim)');
+    // ⚠ **노브도 같은 곳에서 읽어야 한다.** 감독이 `?grow=` 로 판정할 때 건물·액자·
+    // 미술관이 함께 변하지 않으면 **어긋난 화면으로 판정**하게 된다(W8-10 이 액자를
+    // 이 SSOT 로 끌어온 이유가 그것이다).
+    expect(src, '🔴 `?grow=` 를 미술관이 안 읽는다 — 감독 판정이 어긋난 화면 위에서 난다')
+      .toContain('readParcelAnim()');
+  });
+
+  it('🔴 프레임 훅이 **판정과 집행을 둘 다** 부른다 — 한쪽만 있으면 화면이 안 움직인다', () => {
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    expect(src, '🔴 집행이 프레임 훅에서 빠졌다 — 목표만 바뀌고 화면은 그대로다')
+      .toContain('advanceGrow(copies, ctx.dt, deps.copyScale)');
+  });
+});
+
 describe('🔴 GS-V1 — 배치가 토글에 넘기는 경계 (검수관 명세, 블로커 B1)', () => {
   // ── 왜 이 블록이 생겼나 ────────────────────────────────────────────────────
   // `syncVisibility` 는 뮤테이션 6종으로 촘촘한데, **그 함수를 화면에 도달시키는 경로가
@@ -593,12 +716,21 @@ describe('🔴 GS-V1 — 배치가 토글에 넘기는 경계 (검수관 명세,
     const out: Parameters<typeof syncVisibility>[0][number][] = [];
     await placeGrid(stubThree(), stubModel(), root, 1, 32, PLAZA_WEST, () => { }, out as never);
 
+    // ⚠ **경로가 한 걸음 길어졌다**(감독 판정 2026-08-20 — 등장 연출). `syncVisibility` 는
+    // 이제 목표(`want`)만 정하고 화면은 `advanceGrow` 가 옮긴다. **약화가 아니다** — 이
+    // 검사가 보는 것(「배치가 넘긴 좌표로 그 채가 실제로 꺼지는가」)은 그대로이고,
+    // `copyScale` 을 `undefined` 로 주므로 연출 없는 세계의 즉시 반영 경로를 탄다.
+    const step = (loaded: (px: number, pz: number) => boolean) => {
+      syncVisibility(out, loaded);
+      advanceGrow(out, 1 / 60, undefined);
+    };
+
     // 그 파셀만 로드 안 됐다고 하면 그 채가 꺼져야 한다.
-    syncVisibility(out, (px, pz) => !(px === PLAZA_WEST.px && pz === PLAZA_WEST.pz));
+    step((px, pz) => !(px === PLAZA_WEST.px && pz === PLAZA_WEST.pz));
     expect(out[0]!.node.visible, '🔴 파셀이 내려갔는데 건물이 그대로 서 있다').toBe(false);
 
     // 돌아오면 켜진다 — 영구 손실이 아니다.
-    syncVisibility(out, () => true);
+    step(() => true);
     expect(out[0]!.node.visible).toBe(true);
   });
 

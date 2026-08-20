@@ -15,17 +15,44 @@
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import { readNum, readEnum } from '../url-knob.js';
 import { PLAZA_WEST } from '../decide/grid.js';
+import { readParcelAnim, scaleAdvance, type ScaleState } from '../decide/lod-fade.js';
 import { glbCity } from '../../world-shared/glb-city.js';
 
 export const glbCityFeature: Feature = {
   name: 'glbCity',
 
   create(env: FeatureEnv): FeatureInstance | null {
+    // ── 🔴 등장 연출을 **여기서 주입한다** (감독 판정 2026-08-20 — *"자라나는 느낌이
+    // 아닌데?"*) ────────────────────────────────────────────────────────────
+    // 산술(`scaleAdvance`)과 상수(`?grow=`·`?shrink=`·이징)는 `decide/lod-fade.ts` 소유다.
+    // 마을 파츠(`parcel-grow.ts`)와 액자(`artwork-scene.ts`)가 이미 **같은 함수**를 쓰므로
+    // 셋이 한 호흡으로 움직이고, 감독이 `?grow=` 로 판정하면 **세 가지가 함께** 변한다
+    // (W8-10 이 액자를 이 SSOT 로 끌어온 것과 같은 이유 — 어긋난 화면으로 판정하면
+    // 판정 자체가 틀린다).
+    //
+    // ⚠ **이 파일은 로직을 쓰지 않는다는 규칙이 있다.** 여기 있는 것은 로직이 아니라
+    // **배선**이다 — 세계별로 다른 것(연출을 쓰는가)을 공유 본체에 넘기는 자리이고,
+    // 그 자리를 만들려고 이 래퍼가 남아 있다(파일 헤더가 예고한 바로 그 용도다).
+    // 산술을 여기 옮겨 적으면 그때는 규칙 위반이다.
+    const anim = readParcelAnim();
+    const states = new Map<number, ScaleState>();
+
     return glbCity.create(env, {
       worldName: 'world2',
       plazaWest: PLAZA_WEST,
       readNum,
       readEnum,
+      copyScale: (id, up, dt) => {
+        // 첫 걸음은 `fresh` 라 **목표로 순간 이동**한다 — 부팅에서 0.02배로 시작하면
+        // 바운딩 스피어가 작아져 컬링되고, 그러면 `info.memory` 계단이 복귀 구간으로
+        // 밀려 개수 불변식 `[7]` 이 FAIL 한다. 그 계약은 `scaleAdvance` 소유다.
+        const st = states.get(id)
+          ?? { k: up ? 1 : 0, up, elapsed: 0, from: up ? 1 : 0, fresh: true };
+        const next = scaleAdvance(st, up, dt, anim);
+        if (!next) return null;
+        states.set(id, next);
+        return next.k;
+      },
     });
   },
 };
