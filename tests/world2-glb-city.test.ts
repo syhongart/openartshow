@@ -463,6 +463,61 @@ describe('🔴 GLB 건물이 파셀과 생사를 같이한다 — 감독 지시 
     expect(src, '🔴 안 보이는 미술관 벽이 여전히 벽 검출 대상이다')
       .toContain('copies.some((c) => c.node.visible)');
   });
+
+  it('🔴 **GS-V3** — 예열이 끝난 **뒤에만** 토글이 열린다 (검수관 명세, 블로커 B4)', () => {
+    // ── 왜 이 검사가 따로 필요한가 ────────────────────────────────────────────
+    // 바로 위 배선 검사가 `if (!warmed) return;` **가드의 존재**를 본다. 그런데 그것은
+    // B2 조치의 **절반**이다 — 나머지 절반은 `warmed` 가 **언제 켜지는가**이고, 그쪽은
+    // 아무도 안 보고 있었다.
+    //
+    // 실측(검수관 블로커 B4, 2026-08-20): `warmed = true` 를 `await warmUp(root)` **앞으로
+    // 한 줄 옮기면** 예열 전 보류가 통째로 무효인데 **0 failed / 4094**. 가드를 *지우는*
+    // 형태만 시험했고 *되살리는* 형태는 안 시험한 결과다.
+    //
+    // **배운 것**: *"결함을 고쳤으면 그 결함을 일부러 되살려 테스트가 깨지는지 본다"* 는
+    // 규율에서, **되살리는 형태가 하나뿐이라고 가정하면 안 된다.** 여기서는 「지운다」와
+    // 「옮긴다」 둘이었고, 잡히는 쪽만 시험했다.
+    //
+    // ⚠ **왜 정적 축이어도 값이 있는가**: 이 회귀는 `[7]` 개수 불변식으로만 드러나는데
+    // 그것은 CI 에서 `observe` 라 **종료코드에 안 나타난다.** 0 보다 낫다는 판단이 이
+    // 파일 전체의 전제와 같다.
+    //
+    // ⚠ **못 잡는 것**(통과로 적지 않는다): ⓐ **런타임의 실제 순서** — `warmed` 를 다른
+    // 경로에서 켜거나 `await` 체인을 재배치하면 소스 순서는 그대로인 채 의미가 바뀐다
+    // ⓑ 예열이 실제로 GPU 에 구웠는지(헤드리스는 WebGL swiftshader, 배포본은 WebGPU —
+    // 원리적 사각) ⓒ **계단의 크기**(이 저장소는 프레임 시간을 안 잰다).
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    const count = (t: string) => src.split(t).length - 1;
+
+    // ⚠ **등장 횟수를 먼저 못 박는다** — 토큰이 둘 이상이 되면 `indexOf` 비교가 «어느
+    // 쪽인지» 를 잃고 조용히 무의미해진다. 늘어난 순간 빨간불이 되는 것이 **의도**이고,
+    // 그때는 이 검사를 갱신하라는 신호다(예: `warmUp` 호출부를 헬퍼로 감쌌다면).
+    expect(count('warmed = true'), '🔴 `warmed = true` 가 1곳이 아니다 — 순서 판정이 무의미해진다').toBe(1);
+    expect(count('await warmUp(root)'), '🔴 `await warmUp(root)` 가 1곳이 아니다 — 순서 판정이 무의미해진다').toBe(1);
+    expect(
+      src.indexOf('warmed = true') > src.indexOf('await warmUp(root)'),
+      '🔴 예열보다 **먼저** 토글을 열었다 — 꺼진 채는 예열이 아무것도 못 굽고, 나중에 파셀이 올라올 때 계단이 난다(B2)',
+    ).toBe(true);
+  });
+
+  it('★ `dispose` 가 토글 상태를 되돌린다 — 재진입이 예열 전에 토글하지 않게 (검수관 P3·P4)', () => {
+    // 검수관이 P3 로 요청해서 넣었는데 **확인은 안 한 상태**였다(P4, 실측 0 failed / 4094).
+    // 지금은 재진입 경로가 없어 무해하지만, 「요청받아 넣은 것」과 「지켜지는 것」은 다르다.
+    //
+    // ⚠ **등장 횟수로 잰다** — 두 토큰 다 조립부에도 있어(`copies.length = 0` 은 재진입
+    // 대비, `warmed = false` 는 선언) `toContain` 은 dispose 쪽이 통째로 사라져도 통과한다.
+    // 실측: 정규화 후 각각 **2회**.
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    const count = (t: string) => src.split(t).length - 1;
+    expect(count('copies.length = 0'), '🔴 `copies` 를 비우는 자리가 둘이 아니다 — 조립부/dispose 중 하나가 빠졌다').toBe(2);
+    expect(count('warmed = false'), '🔴 `warmed = false` 가 둘이 아니다 — 선언과 dispose 중 하나가 빠졌다').toBe(2);
+  });
 });
 
 describe('🔴 GS-V1 — 배치가 토글에 넘기는 경계 (검수관 명세, 블로커 B1)', () => {
