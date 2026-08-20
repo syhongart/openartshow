@@ -200,6 +200,23 @@ export const waterStyleFeature: Feature = {
       const m = new THREE.Mesh(src.geometry, material);
       m.name = `${name}-styled`;
       m.position.copy(src.position);
+      // ⚠ **바다 층1은 원래 높이로 되돌린다** (2026-08-20).
+      // 기존 물에서 `ocean` 은 층2 패치의 **골 밑**에 내려가 있다 — 반투명 두 판이
+      // 교차하면 그 선이 수면 위에 드러나기 때문이고, 그 깊이가 `?wamp` 에 비례한다.
+      // 그런데 여기서는 그 층2(`ocean-wave2`)를 **숨긴다** — 교차할 상대가 없으므로
+      // 내릴 이유도 없다. 내린 채로 두면 스타일 물에서만 바다가 `?wamp` 만큼 낮아지고,
+      // 진폭 노브가 **여기서는 수면 높이 노브가 된다**(기존 물에서 방금 걷어낸 결함이
+      // 스타일 경로로 옮겨 앉는 형태다).
+      //
+      // 값은 메시가 들고 온다(`ocean.ts` 가 `userData.baseY` 에 심는다) — `SEA_Y` 를
+      // 여기 적으면 그 순간 두 곳이 되고, 한쪽만 고쳐도 아무도 모른다.
+      const baseY = (src.userData as { baseY?: unknown } | undefined)?.baseY;
+      if (name === 'ocean') {
+        if (typeof baseY === 'number') m.position.y = baseY;
+        // 조용한 no-op 금지 — 저쪽이 `userData` 를 안 심으면 바다가 잘못된 높이로 뜨는데,
+        // 그 화면은 «물이 좀 낮네» 로만 드러나 원인을 찾기 어렵다.
+        else console.warn('[water-style] ocean.userData.baseY 가 없다 — 바다 층1 높이를 되돌리지 못했다');
+      }
       m.rotation.copy(src.rotation);
       m.scale.copy(src.scale);
       m.renderOrder = src.renderOrder;
