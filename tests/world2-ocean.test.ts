@@ -199,6 +199,12 @@ vi.mock('../frontend/js/world2/features/ocean-tsl.js', () => ({
  * 가 그 자리에서 덮어쓰고 `needsUpdate` 만 올리는 것이 개수 불변식의 전부라, 배열을
  * 밖에서 볼 수 없으면 «실제로 구워졌는가» 를 아무 테스트도 못 본다.
  */
+// ⚠ **이 mock 이 못 보는 층이 있다** (검수관 권고 P4, 2026-08-20). three 는 equirect
+// 환경맵을 PMREM 큐브맵으로 변환해 캐시하는데, 이 mock 에는 `pmremVersion` 도
+// `PMREMNode` 도 **개념 자체가 없다.** 그래서 여기의 초록불을 «반사가 실제로 갱신된다»
+// 로 읽으면 안 된다 — 실제로 한 번 그렇게 읽었고, 「시간대 재굽기」 커밋이 렌더에 도달
+// 하지 않은 채 모든 검사를 통과했다. 그 층의 판정은 `features/water-env.ts` 헤더의
+// three 소스 실측이고, 이 테스트가 보는 것은 **재질에 무엇이 걸리는가** 까지다.
 class FakeDataTexture {
   mapping = 0; colorSpace = ''; minFilter = 0; magFilter = 0;
   generateMipmaps = true; needsUpdate = false; name = '';
@@ -802,32 +808,36 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     }
   });
 
-  it('★ 시간대가 바뀌면 **같은 텍스처를 다시 굽는다** — 개수는 상수, 내용만 바뀐다', () => {
-    // 이것이 PMREM(`adapter.makeEnvMap`)을 안 쓴 이유의 절반이다. 매번 새 텍스처가
-    // 나오면 개수 불변식 [7] 이 깨지고, dispose 를 한 군데만 빠뜨려도 누수가 된다.
+  it('★★ 시간대는 **세기로만** 따라간다 — 텍스처는 부팅 시각에 고정된다', () => {
+    // ── 이 검사가 뒤집힌 이유 (검수관 반려 B, 2026-08-20) ────────────────────
+    // 여기 있던 검사는 「시간대가 바뀌면 같은 텍스처를 다시 굽는다」였고, 픽셀이 실제로
+    // 바뀌는 것까지 봤다. **그런데도 화면에는 아무 일이 안 일어난다** — three 는 equirect
+    // 환경맵을 PMREM 큐브맵으로 변환해 캐시하고, 그 캐시는 `version`(= `needsUpdate`)이
+    // 아니라 `pmremVersion` 을 본다(`nodes/pmrem/PMREMNode.js:136`). WebGL 은 한술 더
+    // 떠서 `pmremVersion` 을 올려도 안 된다(`WebGLCubeUVMaps.js:27` 이 렌더타깃만 재변환).
+    //
+    // 즉 **판정/집행 경계가 한 겹 더 있었다.** 「픽셀이 재질에 걸리는가」는 닫았는데
+    // 「걸린 텍스처가 렌더러 안에서 다시 처리되는가」가 열려 있었고, `three/webgpu` 를
+    // mock 한 이 테스트는 그 층을 원리상 볼 수 없다. 그래서 재굽기를 걷고, 시간대 추종을
+    // **검사 가능한 축**(`envMapIntensity`)으로 옮겼다. 근거의 SSOT 는
+    // `features/water-env.ts` 헤더와 `waterGloss` 의 `envIntensity` 주석이다.
     const { inst, added, setTime, setLight } = mount('day');
     const sea = added.find((m) => m.name === 'ocean')!;
-    const tex = sea.material.opts.envMap as { image: Uint8Array; needsUpdate: boolean };
-    const lum = () => {
-      let n = 0;
-      for (let i = 0; i < 4096; i += 4) n += tex.image[i] + tex.image[i + 1] + tex.image[i + 2];
-      return n;
-    };
-    const day = lum();
-    expect(day, '전제: 낮 환경맵이 비어 있지 않다').toBeGreaterThan(0);
+    const tex = sea.material.opts.envMap as object;
+    const dayI = sea.material.envMapIntensity as number;
+    expect(dayI, '전제: 낮에 환경맵 세기가 0 이 아니다').toBeGreaterThan(0);
 
-    // ⚠ **`needsUpdate` 를 보지 않는다.** 첫 판본이 그것을 봤고 **뮤테이션이 통과했다** —
-    // `createWaterEnv` 가 생성 시 한 번 굽기 때문에 그 깃발은 이미 true 라, 재굽기를
-    // 통째로 지워도 단언이 안 깨졌다. 「테스트 통과는 검출력의 증거가 아니다」의 교과서
-    // 사례다. 그래서 **픽셀을 직접 본다** — 밤 조명으로 바꾼 뒤 다시 굽지 않으면 낮
-    // 밝기가 그대로 남는다.
     setTime('night');
     setLight(0.15, 0.08);
     inst.system!.update({ dt: 1 } as never);
     expect(sea.material.opts.envMap, '시간대 전환에 텍스처가 새로 났다 — 누수 경로다')
       .toBe(tex);
-    expect(lum(), '밤이 됐는데 환경맵이 낮 그대로다 — 다시 굽는 호출이 없다')
-      .toBeLessThan(day * 0.6);
+    // 값을 여기 다시 적지 않는다 — `waterGloss` 에서 유도한다(이 회차에 값 미러링을
+    // 네 번 잡았다). 판정이 집행에 **실제로 도달하는가**가 이 단언의 표적이다.
+    const g = waterGloss('night');
+    expect(sea.material.envMapIntensity as number, '밤이 됐는데 환경맵 세기가 그대로다')
+      .toBeCloseTo(g.envIntensity, 6);
+    expect(g.envIntensity, '전제: 밤 세기가 낮보다 낮다').toBeLessThan(waterGloss('day').envIntensity);
   });
 
   it('시간이 지나면 노멀맵 offset 이 움직인다 — 안 움직이면 물이 멈춰 있다', () => {

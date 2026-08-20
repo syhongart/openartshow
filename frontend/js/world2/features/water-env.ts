@@ -24,8 +24,6 @@ export type EnvSource = Pick<FeatureEnv, 'scene' | 'sun' | 'hemi'>;
 export interface WaterEnv {
   /** 재질의 `envMap` 에 걸 텍스처. 세션 내내 **같은 객체**다(개수 불변식 `[7]`) */
   readonly texture: THREE.Texture;
-  /** 씬의 현재 조명으로 픽셀을 다시 채운다. 시간대가 바뀔 때만 부른다 */
-  bake(): void;
   dispose(): void;
 }
 
@@ -34,25 +32,38 @@ function rgb(c: { r: number; g: number; b: number }): Rgb {
 }
 
 /**
- * `null` 을 돌려주면 «환경맵 없음»(= 2026-08-20 이전 상태)이다. 노브 `?wenv=0` 이 그 자리다.
- *
  * ⚠ 세기(`envMapIntensity`)는 **여기서 안 건다** — 재질을 아는 것은 호출부이고, 이 모듈이
  * 재질을 받으면 «누가 이 텍스처를 쓰는가» 가 두 곳으로 갈린다(게임풍 물은 자기 재질에
  * 따로 건다). 텍스처만 만들어 주고 배선은 쓰는 쪽이 한다.
+ *
+ * ── ⚠ **한 번만 굽는다** (검수관 반려 B, 2026-08-20) ────────────────────────
+ * 첫 판본은 시간대가 바뀔 때마다 같은 버퍼를 다시 채우고 `needsUpdate` 를 올렸다.
+ * **화면에는 아무 일도 일어나지 않는다.** three 는 equirect 환경맵을 PMREM 큐브맵으로
+ * 변환해 캐시하고, 그 캐시는 `version`(= `needsUpdate`)이 아니라 `pmremVersion` 을 본다
+ * (`nodes/pmrem/PMREMNode.js:136`). 그러니 픽셀만 갈아 봐야 반영되지 않는다 —
+ * **커밋 제목이 「시간대 재굽기」였는데 그 재굽기가 렌더에 도달하지 않았다.**
+ *
+ * `needsPMREMUpdate` 를 올리면 WebGPU 는 재변환되지만 **WebGL 은 그것으로도 안 된다** —
+ * 재변환 분기가 `texture.isRenderTargetTexture` 를 요구하는데(`WebGLCubeUVMaps.js:27`)
+ * `DataTexture` 는 false 라 캐시된 것을 영원히 돌려준다(이 줄은 검수관도 못 본 축이다).
+ *
+ * 그래서 **재굽기를 아예 걷었다.** 색조·태양 위치는 부팅 시각에 고정되고, 시간대는
+ * `waterGloss(time).envIntensity` 가 **세기로만** 따라간다 — 그쪽 주석이 그 한계와
+ * 「그럼에도 밤이 지켜지는 이유」의 SSOT 다. 백로그 `G-STYL28`.
  */
 export function createWaterEnv(src: EnvSource): WaterEnv {
   const pixels = new Uint8Array(ENV_W * ENV_H * 4);
   const texture = new THREE.DataTexture(pixels, ENV_W, ENV_H, THREE.RGBAFormat);
   texture.mapping = THREE.EquirectangularReflectionMapping;
   texture.colorSpace = THREE.SRGBColorSpace;
-  // 밉맵을 안 만든다 — 등장방형 밉은 극점에서 뭉개지고, 무엇보다 **매 `bake` 마다 다시
-  // 만들어야** 해서 시간대 전환 비용이 픽셀 루프 하나로 끝나지 않게 된다.
+  // 밉맵을 안 만든다 — 등장방형 밉은 극점에서 뭉개지고, three 가 어차피 이 텍스처를
+  // PMREM 큐브맵으로 변환하면서 자기 밉 체인을 따로 만든다(위 헤더).
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
   texture.name = 'water-env';
 
-  const bake = (): void => {
+  {
     // 안개색이 곧 «먼 지평선» 이다. 없으면(하늘 기능이 아직 안 붙은 순간) 반구광
     // 하늘색으로 대신한다 — 조용한 no-op 대신 **덜 정확한 값이라도 그리는** 쪽을 고른다.
     const fog = src.scene.fog;
@@ -68,8 +79,7 @@ export function createWaterEnv(src: EnvSource): WaterEnv {
     };
     bakeEnvPixels(pixels, p);
     texture.needsUpdate = true;
-  };
-  bake();
+  }
 
-  return { texture, bake, dispose: () => texture.dispose() };
+  return { texture, dispose: () => texture.dispose() };
 }

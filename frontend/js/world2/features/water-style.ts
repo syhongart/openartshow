@@ -334,10 +334,18 @@ export const waterStyleFeature: Feature = {
     // 물의 «반짝임» 은 프레넬 하늘빛 한 겹뿐이라 물결이 흔들려도 **아무것도 명멸하지
     // 않았다.** 환경맵을 걸면 태양 거울상이 법선을 따라 부서진다(`decide/water-env.ts`).
     //
-    // ⚠ **이것만은 시간대 전환에 따라온다.** 이 재질은 부팅에 한 번 만들어지고 갱신
-    // 경로가 없다는 것이 위 `normalScale` 의 한계인데, 환경맵은 **텍스처 객체가 같고
-    // 픽셀만 다시 채워지므로**(`ocean.ts` 의 `applyGloss` → `bake()`) 갱신이 저절로
-    // 온다. 값을 복사하지 않고 **객체를 공유한** 대가가 여기서 돌아온다.
+    // ⚠ **이 자리에 거짓이 적혀 있었다** (검수관 반려 B, 2026-08-20). 원문은
+    // *"이것만은 시간대 전환에 따라온다 — 텍스처 객체가 같고 픽셀만 다시 채워지므로
+    // 갱신이 저절로 온다"* 였다. 전제부터 틀렸다: three 는 equirect 환경맵을 PMREM
+    // 큐브맵으로 **변환해 캐시**하고 그 캐시는 픽셀도 `needsUpdate` 도 안 본다
+    // (`features/water-env.ts` 헤더에 두 백엔드 소스 실측이 있다).
+    //
+    // 그래서 지금은 **환경맵도 시간대를 안 따라간다** — 위 `normalScale` 과 같은 한계다.
+    // 게임풍 물은 `envMapIntensity` 갱신 경로조차 없으므로 부팅 시각 세기로 고정된다
+    // (기존 물은 `applyGloss` 가 세기만 따라간다). 백로그 `G-STYL28`.
+    //
+    // 거짓 주석을 남기면 다음 사람이 그것을 믿고 확인을 생략한다 — `main` unprotected
+    // 오기가 7일을 잃은 그 형태다. 그래서 「고쳤다」가 아니라 **무엇이 틀렸는지**를 남긴다.
     const baseEnv = baseSrc?.envMap ?? null;
     if (baseEnv) {
       (material as NormalMapped).envMap = baseEnv;

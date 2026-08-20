@@ -1960,6 +1960,27 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
   ⚠ 안 쓰는 코드를 지우는 선택지도 있다 — 다만 `world.js` 와 같은 어댑터 계약이라
   world2 만 보고 지우면 그 대칭이 깨진다. 판단은 팀장 몫(설계 분기).
 
+- **G-STYL28 — 수면 환경맵이 부팅 시각의 하늘에 고정된다.**
+  시간대가 바뀌어도 반사되는 색조·태양 위치가 안 따라온다. 세기(`envMapIntensity`)만
+  `waterGloss().envIntensity` 로 따라가고, 그것이 밤을 지키는 유일한 축이다.
+  **원인은 우리 코드가 아니라 three 의 캐시 구조다**(2026-08-20 소스 실측):
+  equirect 환경맵은 PMREM 큐브맵으로 변환돼 캐시되는데, 그 캐시는 `needsUpdate`
+  (= `version`)가 아니라 `pmremVersion` 을 본다(`nodes/pmrem/PMREMNode.js:136`).
+  게다가 **WebGL 은 `needsPMREMUpdate` 를 올려도 안 된다** — 재변환 분기가
+  `texture.isRenderTargetTexture` 를 요구하는데(`renderers/webgl/WebGLCubeUVMaps.js:27`)
+  `DataTexture` 는 false 라 캐시된 것을 영원히 돌려준다.
+  **남은 길 둘**: ⓐ 시간대마다 새 `DataTexture` 를 만들고 옛 것을 dispose(WebGL 은
+  dispose 리스너가 캐시를 지우므로 재변환된다) ⓑ 세 시간대를 부팅 때 다 구워 두고
+  `envMap` 을 갈아끼운다(재변환 총 3회, 세션 내내 0회).
+  **지금 안 고른 이유**: 둘 다 텍스처 개수를 건드리는데 개수 불변식 `[7]` 이 이 저장소가
+  가장 비싸게 지켜온 축이고(파이프라인 증식이 프리즈의 직접 원인이었다), dispose→재변환이
+  실제로 도는지를 **실렌더러 없이 확인할 방법이 없다.** 못 재는 갱신 경로를 넣는 것은
+  「못 잰 것을 통과로 적지 않는다」에 정면으로 걸린다.
+  **재론 트리거**: 감독이 «밤인데 물에 낮 하늘이 비친다» 고 판정하면. 그 판정이 나오기
+  전에는 세기 억제로 충분하다고 본다 — 밤 세기가 낮의 0.21배다.
+  ⚠ ⓑ 를 고를 때 필요한 것은 **시간대별 태양 방향**인데 `FeatureEnv` 는 현재 시간대 것만
+  준다. 그 배선이 선결이다.
+
 - **G-STYL27 — world3·world5 의 물이 world2 와 갈라졌다.**
   `features/ocean.ts` 헤더가 *"사실상 쌍둥이(diff hunk 1개)"* 라고 적고 있었는데
   2026-08-20 현재 세 가지가 world2 에만 있다: 흐름 방향 통일(`FLOW_DIR_DEG`) · 잔물결

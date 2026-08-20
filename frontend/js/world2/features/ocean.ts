@@ -1076,7 +1076,7 @@ export const oceanFeature: Feature = {
       // 물결 기울기가 이 상을 흩는 것이 곧 윤슬이다 — `emissive` 스티커와 달리 시점·
       // 광원·물결에 **전부** 반응한다(그래서 «움직인다»).
       envMap: waterEnv?.texture ?? null,
-      envMapIntensity: WATER_ENV,
+      envMapIntensity: WATER_ENV,   // applyGloss 가 시간대 몫을 곱해 즉시 덮는다
       map: tex?.tint ?? undefined,
       normalMap: tex?.normA ?? undefined,
       // ── 층이 둘인 것은 그대로다. 다만 **거칠기가 아니라 밝기로** 겹친다 ──────
@@ -1190,9 +1190,6 @@ export const oceanFeature: Feature = {
       // 손잡이가 0 에 머문다(검수관 권고 4). 동작이 아니라 서술이 틀렸던 자리다.
       // 청산(팀장 조건 5) 때 이긴 쪽에 맞춰 정리한다.
       if (tslWater) { tslWater.setTime(time); return; }
-      // 씬 조명이 시간대를 이미 반영한 뒤이므로 **여기서 다시 구우면 밤이 저절로 밤이
-      // 된다**(색·세기를 씬에서 받는다 — `features/water-env.ts`). 텍스처는 같은 객체다.
-      waterEnv?.bake();
       const g = waterGloss(time);
       // 노브가 지정됐으면 그것이, 아니면 시간대 값이 간다. `??` 라서 `0` 도 유효한
       // 지정으로 통과한다(`||` 였으면 `?wns=0` 이 조용히 무시된다 — 평평한 수면을
@@ -1204,6 +1201,8 @@ export const oceanFeature: Feature = {
       seaMat.roughness = rough;
       // 흰 윤슬의 세기. `emissiveMap` 이 검은 바탕에 흰 점이므로 이 값은 **점만** 밝힌다.
       seaMat.emissiveIntensity = spark;
+      // ⚠ 환경맵이 시간대를 따라가는 **유일한** 축이다(근거는 `envIntensity` 주석).
+      seaMat.envMapIntensity = g.envIntensity * WATER_ENV;
       // 불투명도는 시간대와 무관하다 — 물의 탁도는 하루 중 시각이 아니라 물 자체의
       // 성질이다. 그래서 노브가 없으면 상수(`OPACITY`)가 간다.
       const opa = opaKnob ?? OPACITY;
@@ -1221,6 +1220,7 @@ export const oceanFeature: Feature = {
       if (layer2Mat) {
         layer2Mat.normalScale.set(ns, ns);
         layer2Mat.roughness = rough;
+        layer2Mat.envMapIntensity = g.envIntensity * WATER_ENV;
         // 위 층은 **고정**이고 아래 층이 총량을 맞춘다(`splitOpacity`). 예전에는 여기서
         // `opa` 에 비례시켰는데, 그러면 두 값이 함께 움직여 곱이 총량과 어긋난다.
         layer2Mat.opacity = layerOpacity(opa, WATER_LAYERS);

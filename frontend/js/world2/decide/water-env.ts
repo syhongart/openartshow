@@ -27,11 +27,22 @@
 //   ③ 하늘 메시에 **태양 원반이 있는지** 확인할 수 없다(WebGPU 화면을 못 본다). 없으면
 //      구워 봐야 윤슬의 원천이 안 들어온다 — 가장 비싼 방법으로 목적을 못 이루는 형태.
 //
-// 그래서 픽셀을 **직접 계산한다.** 텍스처는 세션에 **하나**뿐이고 시간대가 바뀌면 같은
-// 버퍼를 다시 채운다(`needsUpdate`) — 개수는 상수, 비용은 32,768 픽셀 루프 1회다.
+// 그래서 픽셀을 **직접 계산한다.** 텍스처는 세션에 **하나**뿐이고 **한 번만 굽는다.**
 // DOM(캔버스)도 안 쓰므로 두 백엔드에서 같고, **테스트가 픽셀을 직접 읽어 판정할 수
 // 있다**(캔버스였다면 jsdom 에서 `getContext('2d')` 가 없어 검사가 no-op 이 된다).
 // ⚠ `makeEnvMap` 소비자 0 은 그대로 남는다 — 백로그 `G-STYL26`.
+//
+// ── ⚠ 위 ①이 «PMREM 을 피했다» 는 뜻이 아니다 (검수관 반려 B, 2026-08-20) ──────
+// 첫 판본은 이 자리에서 *"비용은 32,768 픽셀 루프 1회"* 라고 적었고, **그것이 전부라는
+// 인상을 줬다.** 실제로는 three 가 이 텍스처를 `PMREMGenerator.fromEquirectangular` 로
+// **어차피 변환한다** — `EquirectangularReflectionMapping` 을 걸었기 때문이고, 두 백엔드
+// 모두 그렇다(`renderers/webgl/WebGLCubeUVMaps.js:16,31` · `nodes/pmrem/PMREMNode.js`).
+//
+// 그러므로 ①이 실제로 피한 것은 «PMREM» 이 아니라 **«씬 6면 렌더»** 다. 그 구분은
+// 여전히 크다 — `fromEquirectangular` 는 256×128 텍스처를 소스로 큐브 6면 + 밉 체인을
+// 블릿하는 것이고, 파셀·나무·13.5MB GLB 를 여섯 번 그리는 것과는 자릿수가 다르다.
+// 그리고 그 변환은 **캐시돼 세션에 1회**다(다시 안 도는 것이 곧 `G-STYL28` 의 한계다).
+// 안 적었으면 다음 사람이 «환경맵은 픽셀 루프뿐이다» 로 예산을 세운다.
 //
 // ── 색을 여기서 정하지 않는다 ───────────────────────────────────────────────
 // 팔레트를 이 파일에 적으면 하늘 팔레트의 **복사본**이 생기고, 한쪽만 고치면 물만
@@ -86,14 +97,29 @@ export interface EnvPalette {
 
 /**
  * 방향 → 등장방형 UV. **three 의 `equirectUv` 규약을 그대로 따른다** — 여기서 축을
- * 다르게 잡으면 태양이 화면의 태양과 다른 쪽에 뜬다(그리고 그 어긋남은 헤드리스에서
- * 안 보인다). three r171 `EquirectangularReflectionMapping` 이 쓰는 식이다.
+ * 다르게 잡으면 태양이 화면의 태양과 다른 쪽에 뜬다.
+ *
+ * ── ⚠ 첫 판본은 `atan2(z, -x)` 였고 **틀렸다** (검수관 반려 A, 2026-08-20) ──
+ * three 실물은 `-` 가 없다. 세 곳에서 같다:
+ *   `renderers/shaders/ShaderChunk/common.glsl.js:98`  `atan( dir.z, dir.x )`
+ *   `nodes/utils/EquirectUVNode.js:25`                 `dir.z.atan2( dir.x )`
+ *   `extras/PMREMGenerator.js:803`                     위 GLSL 을 그대로 쓴다
+ * 부호 하나가 **경도를 통째로 미러링**한다(`d={0.4,0.7,0.2}` 에서 실측 u 0.5738 vs
+ * 0.9262). 태양이 반대편에서 반짝이고, 그 어긋남은 헤드리스에서 절대 안 보인다.
+ *
+ * ⚠⚠ **왜 라운드트립 테스트가 못 잡았나 — 이 자리를 검사로 만드는 법이 여기 있다.**
+ * 첫 판본의 검사는 이 함수와 아래 `bakeEnvPixels` 의 역변환이 **서로** 맞는지만 봤다.
+ * 둘 다 같은(틀린) 부호를 쓰니 자기 자신과는 언제나 일치한다 — 그래서 **올바른 공식으로
+ * 고치는 뮤테이션이 오히려 빨간불**이 됐다(검출력이 거꾸로 걸린 상태). 이 저장소가 이미
+ * 이름 붙인 «뮤테이션 자기참조» 이고, 이 회차에서 두 번째다.
+ * 지금은 `tests/world2-water-env.test.ts` 가 **three 소스 파일을 직접 읽어** 대조한다 —
+ * 외부 라이브러리 규약을 재현하는 순수 함수는 그 라이브러리와 맞대야 의미가 있다.
  */
 export function equirectUv(d: { x: number; y: number; z: number }): { u: number; v: number } {
   const len = Math.hypot(d.x, d.y, d.z) || 1;
   const x = d.x / len, y = d.y / len, z = d.z / len;
   return {
-    u: Math.atan2(z, -x) / (2 * Math.PI) + 0.5,
+    u: Math.atan2(z, x) / (2 * Math.PI) + 0.5,
     v: Math.asin(Math.min(1, Math.max(-1, y))) / Math.PI + 0.5,
   };
 }
@@ -130,7 +156,7 @@ export function bakeEnvPixels(out: Uint8Array, p: EnvPalette): void {
       const u = (i + 0.5) / ENV_W;
       // `equirectUv` 의 역이다 — 같은 규약에서 유도하므로 둘이 갈릴 수 없다
       const lon = (u - 0.5) * 2 * Math.PI;
-      const dx = -Math.cos(lon) * cosLat;
+      const dx = Math.cos(lon) * cosLat;
       const dz = Math.sin(lon) * cosLat;
 
       const far = up ? p.zenith : p.ground;
