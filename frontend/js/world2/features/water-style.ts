@@ -14,6 +14,8 @@ import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
 import {
   STYLED_WATER_NAMES, HIDE_ONLY_NAMES, pickWaterStyle, SHALLOW, MID, DEEP, FOAM, SKY_TINT,
   SHORE_ATTR, FOAM_EDGE, MID_EDGE, FRESNEL_POW, STYLE_OPACITY,
+  RIPPLE_WAVE_M, RIPPLE_SPEED_MPS, RIPPLE_CREST_LO, RIPPLE_CREST_HI,
+  RIPPLE_WARP_M, RIPPLE_WARP_K, RIPPLE_L2_WAVE, RIPPLE_L2_SPEED, RIPPLE_MIX,
   type WaterStyleMode,
 } from '../decide/water-style.js';
 import { riverCenterZ, RIVER_HALF } from '../decide/water.js';
@@ -30,10 +32,12 @@ import { riverCenterZ, RIVER_HALF } from '../decide/water.js';
  * ⚠ 반환 타입이 `Material` 인 것은 `three/webgpu` 타입 선언이 노드 재질을 재수출하지
  * 않아서다(TS2694 — 런타임에는 있다). `features/grass.ts` 의 같은 자리와 같은 이유.
  */
-function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number): THREE.Material {
+function styledWaterMaterial(
+  foamMul: number, fresMul: number, deepMul: number, ripMul: number,
+): THREE.Material {
   const {
     positionViewDirection, normalView, attribute,
-    uniform, mix, smoothstep, float, vec3, time, mx_noise_float, positionWorld,
+    uniform, mix, smoothstep, float, vec3, time, sin, mx_noise_float, positionWorld,
   } = TSL as any;
 
   const mat = new (THREE as any).MeshStandardNodeMaterial({
@@ -66,6 +70,30 @@ function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number):
   const tDeep = smoothstep(float(1 - MID_EDGE), float(1), depthT);
   const body = mix(mix(shallow, midC, tMid), deepC, tDeep);
 
+  // ── 셀 물결 무늬 ────────────────────────────────────────────────────────
+  // 근거·유도는 `decide/water-style.ts` 의 `RIPPLE_*` 한 곳이다.
+  //
+  // 줄을 **결정적 `sin`** 으로 만들고 노이즈는 구불림에만 쓴다 — 노이즈로 임계를 만들면
+  // 굵기가 노이즈 분포에 묶여 추측이 된다(돌풍에서 배운 그것).
+  //
+  // ⚠ **포말보다 먼저 섞는다.** 포말이 무늬 위에 얹혀야 물가가 또렷하게 남는다 —
+  // 순서를 바꾸면 물가 띠에 줄무늬가 겹쳐 경계가 흐려진다.
+  const warp = mx_noise_float(vec3(
+    positionWorld.x.mul(RIPPLE_WARP_K), positionWorld.z.mul(RIPPLE_WARP_K), 0.5,
+  )).mul(RIPPLE_WARP_M);
+  // 층 하나 — `dx·x + dz·z` 가 흐름 축이고 `t·speed` 가 그 축을 따라 흐른다.
+  const layer = (waveM: number, speedMps: number, dx: number, dz: number, seed: number) => {
+    const u = positionWorld.x.mul(dx).add(positionWorld.z.mul(dz)).add(warp).add(seed);
+    const phase = u.sub(time.mul(speedMps)).mul((Math.PI * 2) / waveM);
+    const band = sin(phase).mul(0.5).add(0.5);
+    return smoothstep(float(RIPPLE_CREST_LO), float(RIPPLE_CREST_HI), band);
+  };
+  // 두 층을 다른 파장·속도·방향으로 겹친다. 한 층이면 줄이 시계처럼 규칙적이다.
+  const crest = layer(RIPPLE_WAVE_M, RIPPLE_SPEED_MPS, 0.94, 0.34, 0)
+    .add(layer(RIPPLE_WAVE_M * RIPPLE_L2_WAVE, RIPPLE_SPEED_MPS * RIPPLE_L2_SPEED, -0.42, 0.91, 37))
+    .clamp(0, 1);
+  const withRipple = mix(body, foamC, crest.mul(RIPPLE_MIX * ripMul));
+
   // ── 물가 포말 ───────────────────────────────────────────────────────────
   // 물가 띠에만 흰 거품. 경계를 노이즈로 흔드는 것이 요점이다 — 거리만 쓰면 물가 선이
   // 수학적으로 매끈해 오히려 CG 티가 난다(감독 코멘트가 지적한 자리).
@@ -75,7 +103,7 @@ function styledWaterMaterial(foamMul: number, fresMul: number, deepMul: number):
   const foamMask = smoothstep(float(1 - FOAM_EDGE * foamMul), float(1), shore)
     .mul(n.mul(0.4).add(0.75))
     .clamp(0, 1);
-  const withFoam = mix(body, foamC, foamMask);
+  const withFoam = mix(withRipple, foamC, foamMask);
 
   // ── 프레넬 ──────────────────────────────────────────────────────────────
   // 감독 명세 `pow(1 - dot(viewDir, normal), 3)` 그대로. 정면으로 내려다보면 물빛,
@@ -143,8 +171,10 @@ export const waterStyleFeature: Feature = {
     const foamMul = readNum('wfoam', 1, 0, 2);
     const fresMul = readNum('wfres', 1, 0, 2);
     const deepMul = readNum('wdeep', 1, 0, 2);
+    // 물결 무늬 세기(감독 선택 2026-08-20). **0 이 정확히 무늬 이전 상태**다.
+    const ripMul = readNum('wrip', 1, 0, 2);
 
-    const material = styledWaterMaterial(foamMul, fresMul, deepMul);
+    const material = styledWaterMaterial(foamMul, fresMul, deepMul, ripMul);
     const added: THREE.Mesh[] = [];
     const hidden: THREE.Object3D[] = [];
 
