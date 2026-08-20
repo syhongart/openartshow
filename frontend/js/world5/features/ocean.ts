@@ -1299,7 +1299,6 @@ export const oceanFeature: Feature = {
     // (강과 바다는 같은 물이다 — 높이만 다르고 `waterSurfaceY` 가 그것을 판정한다).
     const surfaceMat = tslWater ? tslWater.material : seaMat;
     const sea = new THREE.Mesh(geo, surfaceMat);
-    sea.position.y = SEA_Y;
     // 해저보다 늦게 그려야 그 위에 비친다.
     sea.renderOrder = 1;
 
@@ -1375,10 +1374,7 @@ export const oceanFeature: Feature = {
       // 그러면 z-fighting 이 성립하지 않는다. 순서를 정하는 것은 `renderOrder` 다.
       // 1cm 는 물속에서 올려다볼 때 두 면이 정확히 겹쳐 보이지 않게 하는 몫으로만 둔다.
       //
-      // **패치일 때는 그 1cm 를 정점 y 가 들고 있다**(아래 매 프레임 갱신). 메시 원점을
-      // `SEA_Y` 에 두고 정점이 `0.01 + LIFT_AMP + lift` 를 담으므로, 파동이 골일 때도
-      // 값이 `0.01` 아래로 안 내려간다 — 즉 **아래 층(평평한 `sea`)을 뚫지 않는다.**
-      // 여기서 `+0.01` 을 또 더하면 그 몫이 두 번 들어간다(값 미러링).
+      // **패치일 때는 그 1cm 를 정점 y 가 들고 있다** — 또 더하면 두 번 들어간다.
       sea2.position.y = patchGeo ? SEA_Y : SEA_Y + 0.01;
       // ── 렌더 순서는 **물리적 높이 순서**여야 한다 (검수관 BR-1) ──────────────
       // 처음엔 `sea 1 · river 2 · sea2 3 · river2 4` 로 줬다. 그러면 −0.99m 의 sea2 가
@@ -1427,6 +1423,9 @@ export const oceanFeature: Feature = {
     // 강에도 같은 두 번째 층을 얹는다 — **재질과 지오를 그대로 공유**하므로 개수는
     // 드로우콜 하나만 는다. 강이 감독 눈에 가장 자주 드는 물이라(스폰 앞) 여기가 빠지면
     // 처방이 반쪽이 된다.
+    // 층1을 층2의 **골 밑**으로 내린다(world2 동기) — 반투명 두 판이 교차하면 그 선이 뜬다.
+    sea.position.y = patchGeo ? SEA_Y - LIFT_AMP : SEA_Y;
+
     const river2 = layer2Mat ? new THREE.Mesh(riverGeo, layer2Mat) : null;
     if (river2) {
       river2.position.y = RIVER_Y + 0.01;
@@ -1601,7 +1600,8 @@ export const oceanFeature: Feature = {
               // 뚫지 않게 하는 몫이고, `0.01` 은 두 면이 정확히 겹쳐 보이지 않게 하는
               // 옛 몫 그대로다.
               for (let i = 0; i < p.length; i += 3) {
-                p[i + 1] = 0.01 + LIFT_AMP + surfaceLift(p[i] + ox, p[i + 2] + oz, t);
+                // ⚠ `+ LIFT_AMP` 제거 — 근거는 `world2/decide/wave.ts` `patchVertexY`.
+                p[i + 1] = 0.01 + surfaceLift(p[i] + ox, p[i + 2] + oz, t);
               }
               attr.needsUpdate = true;
             }

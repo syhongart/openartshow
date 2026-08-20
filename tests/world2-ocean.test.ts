@@ -1790,11 +1790,19 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
       const d = inst.diagnostics!() as { seaPatch: unknown };
       const sea = added.find((x) => x.name === 'ocean')!.geometry;
       const w2 = added.find((x) => x.name === 'ocean-wave2')!.geometry;
-      return { seaPatch: d.seaPatch, sharesGeo: sea === w2, seg: mod.SEA_PATCH_METRICS.seg };
+      return {
+        seaPatch: d.seaPatch, sharesGeo: sea === w2, seg: mod.SEA_PATCH_METRICS.seg,
+        // 되돌린 경로에서 층1이 내려가면 안 된다 — 내릴 이유(층2의 골)가 없다.
+        underY: added.find((x) => x.name === 'ocean')!.position.y,
+      };
     });
     expect(r.seg, '스위치를 껐는데 세그먼트가 남아 있다').toBe(0);
     expect(r.seaPatch, '스위치를 껐는데 진단이 패치를 보고한다').toBeNull();
     expect(r.sharesGeo, '되돌렸으면 층2가 옛 큰 평면(같은 지오)으로 돌아가야 한다').toBe(true);
+    // 검수관 권고 3 (2026-08-20): 패치가 없는 경로에서 층1이 `SEA_Y` 로 남는지는
+    // 코드 읽기로만 확인돼 있었다. 그 확인이 «판정/집행 분리의 구멍» 이 되지 않게
+    // 단언으로 박는다 — `if (patchGeo)` 가드를 지우면 여기가 깨진다.
+    expect(r.underY, '패치가 없는데 층1을 내렸다 — 내릴 골이 없다').toBe(SEA_Y);
   });
 });
 
