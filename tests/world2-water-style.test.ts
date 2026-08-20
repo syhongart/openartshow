@@ -58,10 +58,15 @@ function makeScene() {
   // 공유하는지가 이 파일의 검사 대상이므로, 픽스처도 실물과 같은 모양이어야 한다.
   const normA = new THREE.Texture();
   normA.name = 'fixture-normA';
+  // ⚠ 환경맵도 원본이 갖고 있다(2026-08-20) — `ocean.ts` 가 `envMap` 을 걸고 `applyGloss`
+  // 가 그 픽셀을 시간대마다 다시 채운다. 게임풍 물이 **그 객체를 공유**하는지가 이 파일의
+  // 검사 대상이므로 픽스처도 실물과 같은 모양이어야 한다.
+  const envTex = new THREE.Texture();
+  envTex.name = 'fixture-env';
   const mk = (name: string, y: number, seg: number) => {
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(64, 64, seg, seg).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ normalMap: normA }),
+      new THREE.MeshStandardMaterial({ normalMap: normA, envMap: envTex, envMapIntensity: 0.75 }),
     );
     m.name = name;
     m.position.y = y;
@@ -71,6 +76,7 @@ function makeScene() {
   return {
     scene,
     normA,
+    envTex,
     // 층2가 있으므로 층1은 그 골 밑에 있다 (`SEA_Y - LIFT_AMP`)
     ocean: mk('ocean', SEA_Y - WAVE_AMP_DEFAULT, 1),
     river: mk('river', RIVER_Y, 8),
@@ -199,6 +205,26 @@ describe('게임풍 수면 — 실제 마운트 (WebGPU 경로)', () => {
     };
     expect(mat.normalMap, '노멀맵이 아예 안 걸렸다 — 매끈한 면으로 되돌아갔다').toBe(src.normA);
     expect(mat.normalScale!.x, '세기가 0 이면 걸어도 안 보인다').toBeGreaterThan(0);
+  });
+
+  it('★ 윤슬 — 원본 **환경맵을 공유**한다 (감독 *"밑 반사가 안 움직인다"* 2026-08-20)', async () => {
+    // 이 재질에는 `emissive` 윤슬 스티커조차 없었다(기존 물에만 있다). 반사할 환경도
+    // 없었으니 «반짝임» 은 프레넬 하늘빛 한 겹뿐이었고, 물결이 흔들려도 **아무것도
+    // 명멸하지 않았다** — 감독이 물은 것이 정확히 그 성질이다.
+    //
+    // **공유**여야 하는 이유가 노멀맵보다 하나 더 있다: 이 재질은 부팅에 한 번 만들어지고
+    // 갱신 경로가 없는데, 환경맵은 텍스처 객체가 같으면 `ocean.ts` 의 재굽기가 **저절로
+    // 온다.** 복사하면 게임풍 물만 부팅 시각의 하늘에 영원히 묶인다.
+    const { src, byName } = await mountStyled();
+    const mat = byName('ocean-styled')!.material as unknown as {
+      envMap?: THREE.Texture | null; envMapIntensity?: number;
+    };
+    expect(mat.envMap, '환경맵이 안 걸렸다 — 반사할 것이 없으면 윤슬도 없다').toBe(src.envTex);
+    // 세기도 **원본이 정한 것**을 그대로 받아야 한다. 여기서 `?wenv` 를 다시 읽으면 같은
+    // 노브가 두 값이 되고, 감독이 링크로 비교하는 두 화면이 서로 다른 축이 된다.
+    const srcMat = src.ocean.material as unknown as { envMapIntensity?: number };
+    expect(mat.envMapIntensity, '세기가 원본과 다르다 — 노브가 두 곳에서 읽히고 있다')
+      .toBe(srcMat.envMapIntensity);
   });
 
   it('`?wnorm=0` 이면 잔파도가 꺼진다 — 되돌릴 자리가 노브 하나다', async () => {

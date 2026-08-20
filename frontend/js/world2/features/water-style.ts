@@ -310,9 +310,13 @@ export const waterStyleFeature: Feature = {
     // ⚠ 타입을 **구조로** 받는다 — `three/webgpu` 선언이 `MeshStandardMaterial` 을
     // 재수출하지 않는다(런타임에는 있다). 이 파일 위쪽 `styledWaterMaterial` 의 반환
     // 타입이 `Material` 인 것과 같은 이유다.
-    type NormalMapped = { normalMap?: THREE.Texture | null; normalScale?: THREE.Vector2 };
+    type NormalMapped = {
+      normalMap?: THREE.Texture | null; normalScale?: THREE.Vector2;
+      envMap?: THREE.Texture | null; envMapIntensity?: number;
+    };
     const oceanSrc = hidden.find((o) => o.name === 'ocean') as THREE.Mesh | undefined;
-    const baseMap = (oceanSrc?.material as NormalMapped | undefined)?.normalMap ?? null;
+    const baseSrc = oceanSrc?.material as NormalMapped | undefined;
+    const baseMap = baseSrc?.normalMap ?? null;
     if (baseMap) {
       const ns = waterGloss(env.time()).normalScale * normMul;
       (material as NormalMapped).normalMap = baseMap;
@@ -321,6 +325,25 @@ export const waterStyleFeature: Feature = {
       // 조용한 no-op 금지 — `?water=tsl` 처럼 원본이 노드 재질이면 노멀맵이 없다.
       // 그 경우 «잔파도만 없는» 화면이 되는데, 원인이 화면에 안 나타난다.
       console.warn('[water-style] 원본 수면에 normalMap 이 없다 — 잔파도 요철 없이 뜬다');
+    }
+
+    // ── 윤슬: 환경맵도 **같은 텍스처를 공유한다** (감독 *"밑 반사가 안 움직인다"*) ──
+    //
+    // 여기가 잔파도(위 `normalMap`)보다 중요한 자리다. 이 재질에는 `emissive` 윤슬
+    // 스티커가 **아예 없었고**(기존 물에만 있다), 반사할 환경도 없었다 — 그래서 게임풍
+    // 물의 «반짝임» 은 프레넬 하늘빛 한 겹뿐이라 물결이 흔들려도 **아무것도 명멸하지
+    // 않았다.** 환경맵을 걸면 태양 거울상이 법선을 따라 부서진다(`decide/water-env.ts`).
+    //
+    // ⚠ **이것만은 시간대 전환에 따라온다.** 이 재질은 부팅에 한 번 만들어지고 갱신
+    // 경로가 없다는 것이 위 `normalScale` 의 한계인데, 환경맵은 **텍스처 객체가 같고
+    // 픽셀만 다시 채워지므로**(`ocean.ts` 의 `applyGloss` → `bake()`) 갱신이 저절로
+    // 온다. 값을 복사하지 않고 **객체를 공유한** 대가가 여기서 돌아온다.
+    const baseEnv = baseSrc?.envMap ?? null;
+    if (baseEnv) {
+      (material as NormalMapped).envMap = baseEnv;
+      // 세기도 기존 물이 정한 것을 그대로 받는다 — `?wenv` 를 두 곳에서 읽으면 같은
+      // 노브가 두 값이 되고, 감독이 링크로 비교하는 두 화면이 서로 다른 축이 된다.
+      (material as NormalMapped).envMapIntensity = baseSrc?.envMapIntensity ?? 1;
     }
 
     // ⚠ 층2 숨김 실패도 함께 센다(검수관 권고 R5). 이름이 드리프트하면 대역은 0개인데
