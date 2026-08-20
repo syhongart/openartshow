@@ -1949,3 +1949,61 @@ describe('🔴 비행 문이 **조립을 지나 실제로 불린다** — 검수
     h.doc.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
   });
 });
+
+describe('🔴 GS-E1 — `Esc` 취소를 **전 경로 행위로** 잰다 (검수관 명세, 블로커 H1)', () => {
+  // ── 🔴 왜 이 블록이 여기 다시 왔나 (2026-08-20) ──────────────────────────
+  // 처음에 이 파일에 붙였다가 4건 전부 실패했다 — `Cannot set properties of undefined`.
+  // 하네스의 `Harness` 가 `st` 를 노출하지 않기 때문이고, 그것은 **참**이다.
+  // 그래서 나는 *"행위로 못 잰다"* 고 적고 배선을 정적 문자열로 갈랐다.
+  //
+  // **틀렸다.** `st` **직접 대입**이 막힌 것이지 **제품 경로**가 막힌 게 아니었다 —
+  // `palette.ts:90-92` 의 `pick()` 이 팔레트 버튼 클릭으로 `pendingSrc`/`pendingPart` 를
+  // 세우고, 그 버튼은 `#w2-edit button[data-asset]`(`palette.ts:75`)로 DOM 에 있다.
+  // 이 파일의 `shadeButtons()`(`:383`)가 이미 같은 방식으로 버튼을 집고 있었다.
+  //
+  // 🔴 **정적 축은 이 결함을 못 잡는다 — 실물로 확인됐다.** 검수관 뮤테이션 G2:
+  // 배선 한 줄을 **주석 처리**하면 문자열이 소스에 남아 정적 검사는 **통과**하고
+  // `Esc` 취소만 죽는다. `GS-A1` 이 「못 잡는 것 ⓐ」로 이름 붙인 그 사각이다.
+  //
+  // ⚠⚠ **처방 갱신** — 「행위로 못 잰다」를 적기 전에 **두 방향**을 태워 본다:
+  //   ① 상태를 직접 세운다  ② **제품이 그 상태를 만드는 경로를 밟는다.**
+  // ①이 막힌 것이 ②가 막힌 것을 뜻하지 않는다. **네 회차 연속 같은 자리**였다
+  // (B1 «GLB 가 커서» → B4 «되살리는 형태는 하나» → C1 «정적 텍스트 축» → 여기).
+  //
+  // ⚠ **못 잡는 것**(통과로 적지 않는다): 실제 브라우저의 캡처 순서 — jsdom 에는 조준
+  // 세션이 없어 `aim-mode` 경로가 안 탄다(셋의 우선순위는 코드로만 확인했다) · 팔레트
+  // 버튼 **강조**가 풀리는지 · 모바일 터치 · CSS 로 실제로 읽히는지.
+
+  /** 팔레트에서 첫 파츠를 실제로 눌러 「고른 상태」를 만든다 */
+  const pickFirstPart = (): HTMLButtonElement => {
+    const b = document.querySelector<HTMLButtonElement>('#w2-edit button[data-asset]');
+    if (!b) throw new Error('팔레트 버튼이 없다 — 하네스가 패널을 안 세웠다');
+    b.click();
+    return b;
+  };
+
+  const noteText = (): string => [...document.querySelectorAll('#w2-edit .note')]
+    .map((n) => n.textContent ?? '').join(' | ');
+
+  it('🔴 고르고 → `Esc` → 취소된다 (전 경로)', () => {
+    makeHarness();
+    pressTab();
+    pickFirstPart();
+    expect(noteText(), '🔴 팔레트 클릭이 「고른 상태」를 안 만들었다').toContain('지면을 클릭하면 놓입니다');
+    expect(pressKey('Escape', 'Escape'), '🔴 편집이 Esc 를 안 삼켰다').toBe(true);
+    expect(noteText(), '🔴 Esc 가 고른 것을 안 풀었다 — 지면을 클릭하면 물건이 생긴다')
+      .toContain('고른 것을 취소했습니다');
+  });
+
+  it('🔴 아무것도 안 골랐으면 `Esc` 를 **안 삼킨다** — 다른 소비자가 살아 있어야 한다', () => {
+    makeHarness();
+    pressTab();
+    expect(pressKey('Escape', 'Escape'), '🔴 풀 것이 없는데 이벤트를 삼켰다').toBe(false);
+  });
+
+  it('★ 편집을 켜자마자 키 안내가 보인다 — 첫 `refresh` 가 도는가(#66)', () => {
+    makeHarness();
+    pressTab();
+    expect(noteText(), '🔴 편집을 켰는데 키 안내가 없다').toContain('WASD');
+  });
+});
