@@ -15,15 +15,27 @@
 // `main` unprotected 오기로 7일을 잃은 그 형태다. 내가 그것을 «원리상 불가능» 이라는
 // 형태로 한 번 더 할 뻔했다.
 //
-// ── 그래도 **못 보는 것** ──────────────────────────────────────────────────
+// ── 그래도 **못 보는 것** (검수관 권고 2, 2026-08-20 로 범위를 좁혔다) ────────
+// 이 파일이 보는 것은 **이번 회귀가 건드린 축뿐**이다: 위치 복원 · 층2 숨김과 층1 대역의
+// 짝 · 지오 공유 · `?styl` 토글. *"스타일 물이 검증됐다"* 로 읽으면 안 된다.
+//
+// 같은 기능 안에서 **여기서 안 걸리는 것**:
 // · **화면** — 노드 그래프가 구성된다는 것과 그것이 물처럼 보인다는 것은 다른 일이다.
 //   무늬가 타일 장판이 된 사고(감독 *"이게 뭐여"*)는 여기서 **안 잡힌다.**
-// · **실제 GPU 컴파일** — 셰이더가 실기기에서 링크되는지는 이 축 밖이다.
-// 여기서 잡는 것은 «코드가 안 죽고 옳은 값을 만드는가» 하나다.
+// · **실제 GPU 셰이더 링크** — 실기기에서 컴파일되는지는 이 축 밖이다.
+// · `bakeShoreDistance` 가 굽는 `SHORE_ATTR` 정점값(포말·프레넬 대비의 입력).
+//   순수 JS 계산이라 GPU 없이도 잴 수 있는데 **안 재고 있다.**
+// · `?wfoam`·`?wfres`·`?wdeep`·`?wrip` 노브가 재질 유니폼까지 실제로 닿는지.
+// · `dispose()` 경로 — 숨김 원복·재질 해제. 이 파일은 한 번도 안 부른다.
+//
+// 첫 판본의 헤더는 *"여기서 잡는 것은 «코드가 안 죽고 옳은 값을 만드는가» 하나다"* 라고만
+// 적었다. 참이지만 **파일 전체에 대한 주장으로 읽힌다** — 그러면 다음 사람이 위 다섯 개를
+// 검증된 것으로 오해한다. 이 저장소가 가장 비싸게 겪은 형태가 정확히 그것이다.
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three/webgpu';
 import { SEA_Y, RIVER_Y } from '../frontend/js/world2/decide/water.js';
+import { SHORE_ATTR } from '../frontend/js/world2/decide/water-style.js';
 
 /** `ocean.ts` 가 층2 패치를 쓸 때 층1을 내리는 깊이. 값을 여기 적지 않는다 */
 const { WAVE_AMP_DEFAULT } = await import('../frontend/js/world2/decide/wave.js');
@@ -128,5 +140,13 @@ describe('게임풍 수면 — 실제 마운트 (WebGPU 경로)', () => {
     expect(byName('ocean-styled')).toBeUndefined();
     expect(src.ocean.visible, '끈 상태에서 원본을 숨기면 물이 사라진다').toBe(true);
     expect(src.oceanWave2.visible).toBe(true);
+    // ⚠ 지오메트리도 **무손상**이어야 한다 (검수관 권고 3). `bakeShoreDistance` 는 지금
+    // 대역 루프 **안**에서만 불리므로 이 경로에서는 안 붙는 것이 맞다 — 그런데 그것을
+    // 지키는 단언이 없었다. 나중에 베이크를 가드 앞으로 옮기면 끈 상태에서도 지오가
+    // 조용히 오염되는데, `visible` 만 보는 검사로는 못 잡는다.
+    expect(
+      src.ocean.geometry.getAttribute(SHORE_ATTR),
+      '꺼진 경로에서 지오메트리에 어트리뷰트가 붙었다',
+    ).toBeUndefined();
   });
 });
