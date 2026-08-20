@@ -17,6 +17,7 @@ import {
   EASINGS, FADE_EASES, fadeMix, residualAtSpawn,
   crossingCells, crossingSeconds, FADE_SECONDS, fogFactorAt,
   scaleStep, scaleAdvance, START_SCALE,
+  readParcelAnim, GROW_SECONDS, SHRINK_SECONDS, GROW_EASE,
 } from '../frontend/js/world2/decide/lod-fade.js';
 import { DEFAULT_BANDS } from '../frontend/js/world2/decide/lod.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
@@ -437,5 +438,42 @@ describe('W8-10 — scaleStep / scaleAdvance', () => {
     st = scaleAdvance(st, true, 0.1, anim)!;
     expect(st.elapsed).toBeCloseTo(0.2, 6);
     expect(st.k).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('🔴 등장·퇴장 연출의 **라이브 기본값** — 감독 지시가 코드에 살아 있는가', () => {
+  // ── 왜 이 블록이 생겼나 (2026-08-20) ──────────────────────────────────────
+  // 감독 지시 *"퇴장할때 수축켜줘. 잘 동작한다"* 로 `shrink` 기본값이 **0 → `SHRINK_SECONDS`**
+  // 로 승격됐다. 그런데 승격 직전에 실측해 보니 **`readParcelAnim()` 의 기본값을 단언하는
+  // 검사가 0개**였다 — 누가 0 으로 되돌려도 전 스위트가 초록이고, 증상은 **감독 화면에서만**
+  // 드러난다(그것도 「사라질 때 툭」이라 알아채기 어렵다).
+  //
+  // ⚠ **이 값은 셋이 공유한다** — 마을 파츠(`parcel-grow.ts`)·액자(`artwork-scene.ts`)·
+  // 미술관(`features/glb-city.ts`)이 전부 `readParcelAnim()` 을 본다. 그래서 이 한 줄이
+  // 세 시스템의 룩을 동시에 정한다.
+  //
+  // ⚠⚠ **못 잡는 것**: 실제 화면의 룩(감독 판정) · 후진 중 그림자 깜빡임(알려진 부작용,
+  // `SHRINK_SECONDS` 주석 참조) · 프레임 시간 · WebGPU.
+
+  it('🔴 노브가 없으면 **퇴장 수축이 켜져 있다** — 감독 지시 2026-08-20', () => {
+    // 테스트 환경에는 `location` 이 없으므로 `readNum` 이 fallback 을 돌려준다 —
+    // 이것이 곧 「URL 노브 없이 부팅한 세션」과 같은 조건이다.
+    const anim = readParcelAnim();
+    expect(anim.shrink, '🔴 퇴장 수축이 꺼졌다 — 건물·액자·미술관이 툭 사라진다').toBe(SHRINK_SECONDS);
+    expect(anim.shrink, '🔴 수축 시간이 0 이다 — 승격 전으로 되돌아갔다').toBeGreaterThan(0);
+  });
+
+  it('★ 등장 성장도 켜져 있다 — 같은 자리에서 함께 회귀할 수 있다', () => {
+    expect(readParcelAnim().grow).toBe(GROW_SECONDS);
+    expect(readParcelAnim().grow).toBeGreaterThan(0);
+  });
+
+  it('★ 커브 기본값은 등장·퇴장이 같다 — 갈리면 그 사실이 여기서 드러난다', () => {
+    const anim = readParcelAnim();
+    expect(anim.ease).toBe(GROW_EASE);
+    // ⚠ 퇴장 커브를 따로 두는 문(`?shrinkease=`)은 열려 있다. 알려진 부작용(후진 중
+    // 그림자 깜빡임)이 다시 보이면 `in` 으로 비교하라 — 그때 이 단언이 빨간불이 되면
+    // **약화가 아니라 갱신**이고, 왜 갈랐는지를 이 자리에 적는다.
+    expect(anim.shrinkEase).toBe(GROW_EASE);
   });
 });
