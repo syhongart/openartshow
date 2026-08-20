@@ -12,6 +12,8 @@
 // 얹혀 증폭되므로, 페이드와 같은 diff 에서 고치고 여기서 못 박는다.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as THREE from 'three/webgpu';
 import {
   EASINGS, FADE_EASES, fadeMix, residualAtSpawn,
@@ -449,8 +451,15 @@ describe('🔴 등장·퇴장 연출의 **라이브 기본값** — 감독 지�
   // 드러난다(그것도 「사라질 때 툭」이라 알아채기 어렵다).
   //
   // ⚠ **이 값은 셋이 공유한다** — 마을 파츠(`parcel-grow.ts`)·액자(`artwork-scene.ts`)·
-  // 미술관(`features/glb-city.ts`)이 전부 `readParcelAnim()` 을 본다. 그래서 이 한 줄이
-  // 세 시스템의 룩을 동시에 정한다.
+  // 미술관(`features/glb-city.ts`)이 전부 `readParcelAnim()` 을 본다.
+  //
+  // ⚠⚠ **다만 「셋」이 참이 된 것은 검수관 블로커 D2 를 고친 뒤부터다**(2026-08-20).
+  // 그전에는 `main.ts` 가 `shrinkSecs > 0 ? … : undefined` 로 **0 을 흡수**했고
+  // `parcel-grow.ts` 가 `?? SHRINK_SECONDS` 로 받아서, **마을 파츠는 승격 전에도 이미
+  // 0.25 로 수축하고 있었다.** 즉 이번 승격으로 화면이 실제로 바뀐 것은 **액자와 미술관
+  // 둘**이다. 나는 그것을 「셋」이라고 적고 감독께도 그렇게 보고했다 — **결론(수축이
+  // 켜졌다)은 참인데 범위 진술이 거짓**이었고, 검수관이 코드로 잡았다(직전 회차 C3 와
+  // 같은 형태다). D2 를 고쳐 흡수를 없앤 지금은 값이 셋 다에 그대로 도달한다.
   //
   // ⚠⚠ **못 잡는 것**: 실제 화면의 룩(감독 판정) · 후진 중 그림자 깜빡임(알려진 부작용,
   // `SHRINK_SECONDS` 주석 참조) · 프레임 시간 · WebGPU.
@@ -459,8 +468,42 @@ describe('🔴 등장·퇴장 연출의 **라이브 기본값** — 감독 지�
     // 테스트 환경에는 `location` 이 없으므로 `readNum` 이 fallback 을 돌려준다 —
     // 이것이 곧 「URL 노브 없이 부팅한 세션」과 같은 조건이다.
     const anim = readParcelAnim();
-    expect(anim.shrink, '🔴 퇴장 수축이 꺼졌다 — 건물·액자·미술관이 툭 사라진다').toBe(SHRINK_SECONDS);
+    expect(anim.shrink, '🔴 퇴장 수축이 꺼졌다 — 액자·미술관이 툭 사라진다').toBe(SHRINK_SECONDS);
     expect(anim.shrink, '🔴 수축 시간이 0 이다 — 승격 전으로 되돌아갔다').toBeGreaterThan(0);
+  });
+
+  it('🔴 **GS-S2ⓑ** — 조립부가 `0` 을 흡수하지 않는다 (검수관 블로커 D2)', () => {
+    // 정적 텍스트 축이다 — `main.ts` 는 부팅 경로 전체를 태워야 해서 노드에서 못 돈다.
+    // 행위 축은 `tests/world2-parcel-grow.test.ts` 의 **GS-S2ⓐ** 가 진다(그쪽은 실제로
+    // 수축을 돌린다). **둘이 다른 결함을 잡는다**: 여기는 「0 이 전달되는가」, 저기는
+    // 「전달된 0 이 즉시를 뜻하는가」.
+    //
+    // ⚠ **거짓 FAIL 이 나는 경우 둘**:
+    // ① 흡수를 일부러 되살릴 이유가 생기면(예: `0` 을 다시 「미지정」으로 쓰고 싶어지면)
+    //    빨간불. 그때는 **약화가 아니라 갱신**이고 왜 되살렸는지를 그 자리에 적는다.
+    // ② 🔴 **주석에 옛 코드를 그대로 인용해도 걸린다** — 정적 축은 코드와 주석을 구별하지
+    //    않는다. 실제로 D2 를 고치면서 «그전에는 이랬다» 를 코드 그대로 적었다가 이 검사가
+    //    **내 주석을 잡았다.** 그래서 `main.ts` 쪽은 그 패턴을 서술로 바꿨고, 그 사실을
+    //    거기에도 적어 뒀다. 다음에 이 파일을 만지는 사람은 **인용 대신 서술**로 쓰라.
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world2/main.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    // ── 축이 **둘**이다 ────────────────────────────────────────────────────
+    // ⚠ **첫 판본은 부정형 하나뿐이었고, 검수관 수용 기준을 못 채웠다.** 명세는
+    // *"`shrinkSecs: undefined`(T3)가 1 이상 failed 로 뒤집힐 것"* 이었는데, 「흡수
+    // 패턴이 없는가」만 보면 **전달 자체를 끊는 형태**는 그 패턴이 아니라 통과한다.
+    // 실측으로 알았다 — T3 = **0 failed / 4115**. 「없어야 할 것이 없다」와
+    // 「있어야 할 것이 있다」는 **다른 축**이고, 앞만 걸면 뒤가 빈다.
+    //
+    // ① 없어야 할 것 — 0 을 걸러내는 삼항
+    expect(src, '🔴 `?shrink=0` 이 흡수돼 마을 파츠에 안 닿는다 — 되돌리는 문이 반쪽이다')
+      .not.toContain('shrinkSecs > 0 ?');
+    // ② 있어야 할 것 — 바깥 변수가 **그대로** 전달된다(축약이든 명시든)
+    expect(
+      /shrinkSecs\s*(,|:\s*shrinkSecs\b)/.test(src),
+      '🔴 노브 값이 마을 파츠에 전달되지 않는다 — `?shrink=` 가 통째로 죽는다',
+    ).toBe(true);
   });
 
   it('★ 등장 성장도 켜져 있다 — 같은 자리에서 함께 회귀할 수 있다', () => {
