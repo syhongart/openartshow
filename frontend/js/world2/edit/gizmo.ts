@@ -72,8 +72,46 @@ const SHAFT_LEN = 1;
 const SHAFT_R = 0.035;
 const HEAD_R = 0.11;
 const HEAD_LEN = 0.26;
-/** 회전 링의 반지름. 축 막대보다 조금 밖이라 서로 안 가린다 */
-const RING_R = 1.25;
+/**
+ * 🔴 **집기 판정만 넓히는 보이지 않는 프록시** (감독 신고 2026-08-20 *"왜 기즈모가 잘
+ * 안 집히지?"*).
+ *
+ * ── 왜 필요한가 (실측) ──────────────────────────────────────────────────────
+ * 판정 영역이 **그려진 것과 똑같았다.** 축 막대는 길이 1 에 반지름 `0.035` — 길이의
+ * 3.5% 굵기다. `gizmoScale` 이 거리에 비례해 키우므로 화면상 굵기는 일정한데, 그
+ * 일정한 굵기가 애초에 몇 픽셀이다. 3D 툴이 보이는 것보다 두꺼운 히트박스를 쓰는
+ * 이유가 이것이고, 여기엔 그것이 없었다.
+ *
+ * ── 왜 «보이지 않는» 메시로 되는가 ──────────────────────────────────────────
+ * **레이캐스트는 `visible` 을 안 본다**(위 `hitTest` 주석의 근거와 같은 성질). 그래서
+ * `visible = false` 로 두면 **드로우콜은 0 인데 판정에는 걸린다.** 개수 불변식 `[7]` 이
+ * 보는 것은 렌더 목록이므로 이 메시들은 거기 안 올라간다 — 지오 1·재질 1 이 부팅 때
+ * 한 번 늘고 그 뒤로 상수다(기즈모 자체가 이미 그런 구조다).
+ *
+ * ── 값의 근거 — 겹치면 엉뚱한 축이 잡힌다 ────────────────────────────────────
+ * `PICK_FROM` 이 원점을 비운다: 반경 `0.13` 인 세 실린더가 원점에서 만나면 x·y·z 가
+ * 서로 겹쳐 **어느 축을 잡았는지 광선 거리로 정해진다**(= 운). `0.30 > 0.13` 이라 안 겹친다.
+ * `PICK_TO` 는 회전 링(`RING_R ± 0.05` = 1.20~1.30)과 크기 상자(x 1.15~1.35) **앞에서**
+ * 끝난다 — 겹치면 이동을 잡으려다 회전이 잡힌다.
+ * 화살표 머리(1.00~1.26, 반경 `HEAD_R`)는 프록시를 안 씌운다: 이미 막대의 3배 굵고,
+ * 씌우면 링·상자와 겹치는 구간에 들어간다.
+ *
+ * ⚠ **회전 링과 크기 상자는 이번에 안 넓혔다.** 링은 `RingGeometry` 라 **평면**이고
+ * (옆에서 보면 두께 0), 넓히려면 토러스 프록시가 필요한데 그것이 같은 자리에 있는 크기
+ * 상자와 겹친다 — 둘의 우선순위를 새로 판정해야 하고 감독이 그 둘을 지목하지는 않았다.
+ * 백로그 `G-EDIT9`.
+ */
+export const PICK_R = 0.13;
+export const PICK_FROM = 0.30;
+export const PICK_TO = 1.10;
+
+/**
+ * 회전 링의 반지름. 축 막대보다 조금 밖이라 서로 안 가린다.
+ * ⚠ 링의 **두께 절반**이다 — `RingGeometry(RING_R - RING_HALF, RING_R + RING_HALF)`.
+ * 집기 프록시가 이 안쪽에서 끝나야 한다는 판정이 `tests/world2-gizmo.test.ts` 에 있다.
+ */
+export const RING_R = 1.25;
+export const RING_HALF = 0.05;
 /** 크기 상자를 놓는 자리(링 위 +X 방향) */
 const SCALE_AT = RING_R;
 
@@ -123,6 +161,9 @@ export function createGizmo(host: OverlayHost): Gizmo {
   // ── 이동 축 셋 ──────────────────────────────────────────────────────────
   const shaftGeo = geo(new THREE.CylinderGeometry(SHAFT_R, SHAFT_R, SHAFT_LEN, 10));
   const headGeo = geo(new THREE.ConeGeometry(HEAD_R, HEAD_LEN, 12));
+  // 집기 프록시는 **세 축이 지오·재질을 함께 쓴다** — 색이 필요 없다(안 그린다).
+  const pickGeo = geo(new THREE.CylinderGeometry(PICK_R, PICK_R, PICK_TO - PICK_FROM, 8));
+  const pickMat = mat(0xffffff);
   for (const axis of ['x', 'y', 'z'] as const) {
     const m = mat(AXIS_COLOR[axis]);
     // 원기둥·원뿔은 기본이 **Y축 방향**이다. X·Z 축은 눕힌다.
@@ -141,10 +182,20 @@ export function createGizmo(host: OverlayHost): Gizmo {
     }
     addPart(shaft, { kind: 'move', axis });
     addPart(head, { kind: 'move', axis });
+
+    // 🔴 **집기 프록시** — 그리지 않고 판정만 넓힌다. 근거는 `PICK_R` 주석 한 곳이다.
+    const proxy = new THREE.Mesh(pickGeo, pickMat);
+    // `visible = false` 가 이 줄의 전부다 — 렌더 목록에서 빠지고 광선에는 걸린다.
+    proxy.visible = false;
+    const mid = PICK_FROM + (PICK_TO - PICK_FROM) / 2;
+    if (axis === 'x') { proxy.rotation.z = -Math.PI / 2; proxy.position.set(mid, 0, 0); }
+    else if (axis === 'y') { proxy.position.set(0, mid, 0); }
+    else { proxy.rotation.x = Math.PI / 2; proxy.position.set(0, 0, mid); }
+    addPart(proxy, { kind: 'move', axis });
   }
 
   // ── 회전 링 ─────────────────────────────────────────────────────────────
-  const ring = new THREE.Mesh(geo(new THREE.RingGeometry(RING_R - 0.05, RING_R + 0.05, 48)), mat(ROTATE_COLOR));
+  const ring = new THREE.Mesh(geo(new THREE.RingGeometry(RING_R - RING_HALF, RING_R + RING_HALF, 48)), mat(ROTATE_COLOR));
   ring.rotation.x = -Math.PI / 2;
   addPart(ring, { kind: 'rotate' });
 
@@ -203,6 +254,19 @@ export function createGizmo(host: OverlayHost): Gizmo {
     },
 
     hitTest(hits: readonly { object: unknown }[]): Handle | null {
+      // 🔴 **안 붙어 있으면 아무것도 안 집는다** (감독 신고 2026-08-20 *"왜 기즈모가 잘
+      // 안 집히지?"* 조사 중 발견).
+      //
+      // ⚠ **레이캐스트는 `visible` 을 안 본다** — `layers` 만 본다(three r160
+      // `three.module.js` 의 `intersectObject`, WebGPU 0.171 `three.core.js` 도 같다).
+      // 그래서 `attach(null)` 로 **숨긴 기즈모의 메시가 그대로 광선에 걸린다.** 게다가
+      // `place()` 는 `if (!target) return` 이라 **마지막 자리에 그대로 남아 있다.**
+      //
+      // 증상이 고약하다: `edit/input.ts` 가 *"기즈모가 항목보다 먼저다"* 로 이것을 **먼저**
+      // 보므로, 아무것도 안 고른 상태에서 그 잔상 자리를 클릭하면 **물건 선택이 안 먹는다.**
+      // 감독이 «안 집힌다» 로 읽을 수 있는 형태이고, 아래 집기 프록시가 판정을 넓히면
+      // **그 잔상도 함께 넓어진다** — 그래서 프록시보다 이 줄이 먼저다.
+      if (!group.visible) return null;
       for (const h of hits) {
         const found = handleOf.get(h.object);
         if (found) return found;

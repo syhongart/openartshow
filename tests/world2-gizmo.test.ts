@@ -447,3 +447,76 @@ describe('내보내기 (행위)', () => {
     }
   });
 });
+
+// ── 🔴 GS-G1 집기 판정 — 감독 신고 «왜 기즈모가 잘 안 집히지?» (2026-08-20) ──
+//
+// 이 파일 헤더가 *"기즈모가 화면에서 집기 좋은 크기인가"* 를 **「여기서 못 재는 것」**
+// 으로 적어 뒀고, 감독이 정확히 그 자리를 신고했다. **화면 크기는 여전히 못 잰다** —
+// 잴 수 있는 것은 ⓐ 겹침 방지 **산술** ⓑ 숨김 안전장치의 **행위** 둘이다.
+import {
+  createGizmo, PICK_R, PICK_FROM, PICK_TO, RING_R, RING_HALF,
+} from '../frontend/js/world2/edit/gizmo.js';
+
+describe('🔴 GS-G1 — 집기 프록시가 엉뚱한 것을 잡지 않는다 (산술)', () => {
+  it('🔴 세 축 프록시가 **원점에서 안 겹친다**', () => {
+    // 겹치면 x·y·z 중 어느 축을 잡았는지가 **광선 거리로** 정해진다(= 운).
+    expect(PICK_FROM, `🔴 프록시가 원점을 침범한다 — 반경 ${PICK_R} 인데 ${PICK_FROM} 부터다`)
+      .toBeGreaterThan(PICK_R);
+  });
+
+  it('🔴 프록시가 **회전 링 앞에서 끝난다**', () => {
+    // 겹치면 이동을 잡으려던 클릭이 회전으로 먹힌다.
+    expect(PICK_TO, '🔴 이동 프록시가 회전 링을 파고든다').toBeLessThan(RING_R - RING_HALF);
+  });
+
+  it('★ 프록시 길이가 양수다 — 값을 뒤집어 놓고 지나가지 않게', () => {
+    expect(PICK_TO).toBeGreaterThan(PICK_FROM);
+  });
+});
+
+describe('🔴 GS-G2 — 안 붙어 있으면 아무것도 안 집는다 (행위)', () => {
+  /** 기즈모만 돌리는 최소 host — 광선은 우리가 직접 만든 히트 목록으로 대신한다 */
+  const mini = () => {
+    const root = { children: [] as unknown[], add(o: unknown) { this.children.push(o); } };
+    const host = {
+      THREE: makeThreeStub({}),
+      root,
+      camera: { position: { x: 0, y: 5, z: 10 } },
+    } as unknown as OverlayHost;
+    const gizmo = createGizmo(host);
+    const group = root.children[0] as { children: unknown[] };
+    return { gizmo, group };
+  };
+  const target = () => ({
+    kind: 'overlay', x: 0, y: 0, z: 0, ry: 0, s: 1,
+    apply() {}, commit() {}, remove: () => true, ground: () => 0,
+  } as unknown as Parameters<ReturnType<typeof createGizmo>['attach']>[0]);
+
+  it('🔴 `attach(null)` 상태에서는 **잔상 메시가 걸려도** `null` 이다', () => {
+    const { gizmo, group } = mini();
+    const mesh = group.children[0];
+    expect(mesh, '🔴 기즈모가 부품을 하나도 안 만들었다 — 검사가 헛돈다').toBeTruthy();
+    // ⚠ 이 목록은 **레이캐스터가 실제로 내주는 형태**다. three 는 `visible` 을 안 보므로
+    // 숨긴 기즈모의 메시가 이렇게 그대로 온다 — 그것이 이 검사의 전제다.
+    expect(gizmo.hitTest([{ object: mesh }]), '🔴 안 붙었는데 축이 잡힌다 — 물건 선택이 먹히지 않는다')
+      .toBeNull();
+  });
+
+  it('★ **등가 대조군** — 붙어 있으면 같은 메시가 잡힌다', () => {
+    const { gizmo, group } = mini();
+    gizmo.attach(target());
+    const mesh = group.children[0];
+    expect(gizmo.hitTest([{ object: mesh }]), '🔴 붙였는데도 안 잡힌다 — 안전장치가 과했다')
+      .not.toBeNull();
+  });
+
+  it('🔴 축 하나가 **메시 셋**을 등록한다 — 막대·머리·프록시', () => {
+    const { gizmo, group } = mini();
+    gizmo.attach(target());
+    const kinds = group.children
+      .map((m) => gizmo.hitTest([{ object: m }]))
+      .filter((h): h is NonNullable<typeof h> => h !== null);
+    const xs = kinds.filter((h) => h.kind === 'move' && h.axis === 'x');
+    expect(xs.length, '🔴 X 축 부품이 셋이 아니다 — 프록시가 등록에서 빠졌다').toBe(3);
+  });
+});
