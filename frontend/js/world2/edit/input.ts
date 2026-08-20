@@ -516,6 +516,9 @@ export function createInput(deps: InputDeps): Input {
       return;
     }
 
+    // 🔴 `Esc` = 고른 것 취소(#97). 모달은 위에서 `return`, 조준은 `aim-mode` 가 캡처
+    // 단계로 먼저 삼킨다 — 여기 오는 것은 둘 다 아닌 것뿐이다. 근거는 `cancelPending`.
+    if (ev.code === 'Escape' && actions.cancelPending()) { ev.preventDefault(); ev.stopPropagation(); return; }
     // ── 모달 진입 ─────────────────────────────────────────────────────────
     const opener = modalOpener(ev.code);
     if (opener) {
