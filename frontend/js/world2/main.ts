@@ -947,8 +947,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         parcelGrow = new ParcelGrowSystem({
           pools: pools!,
           duration: growSecs,
-          // 0(노브 미지정)이면 undefined → 시스템 기본(SHRINK_SECONDS)을 쓴다.
-          shrinkSecs: shrinkSecs > 0 ? shrinkSecs : undefined,
+          // 🔴 걸러내지 않고 그대로 넘긴다 — 근거는 `parcel-grow.ts` 의 `shrinkSecs` 주석(D2).
+          shrinkSecs,
           shrinkEase,
           gate: () => streaming?.ready ?? false,
         });
