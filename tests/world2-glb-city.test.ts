@@ -23,7 +23,7 @@ import { EXT_OFF } from '../frontend/js/world-shared/glb-material.js';
 // ⚠ **본체는 `world-shared/` 로 옮겼다**(2026-08-16 통합) — world2·3·5 가 한 파일을 쓴다.
 // 세계별 래퍼(`world2/features/glb-city.ts`)에는 `glbCityFeature` 만 남는다.
 import { glbCityFeature } from '../frontend/js/world2/features/glb-city.js';
-import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS } from '../frontend/js/world-shared/glb-city.js';
+import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, syncVisibility, placeGrid } from '../frontend/js/world-shared/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 import { PLAZA_WEST, isCentralPlaza } from '../frontend/js/world2/decide/grid.js';
@@ -385,5 +385,228 @@ describe('재질 축 — 네 모드가 서로 다른 가설을 검증한다', ()
     expect(EXT_OFF.ior).toBe(1.5); // glTF 기본값
     expect(EXT_OFF.sheen).toBe(0);
     expect(EXT_OFF.clearcoat).toBe(0);
+  });
+});
+
+describe('🔴 GLB 건물이 파셀과 생사를 같이한다 — 감독 지시 2026-08-19', () => {
+  // ── 감독 지시 ──────────────────────────────────────────────────────────────
+  // *"glb건물도 사라지게해서. 가볍게 만들자. 건물이 많아질수있으니"*
+  //
+  // 그전에는 이 기능이 `env.scene.add(g)` 로 **씬에 직결**돼 스트리밍과 무관하게 늘 서
+  // 있었다. 그래서 두 가지가 동시에 걸렸다:
+  //   ① **가볍지 않다** — 멀어져도 드로우콜과 삼각형이 그대로 나간다. 채수가 늘면 비례해
+  //      커진다(감독이 «건물이 많아질수있으니» 라고 짚은 축).
+  //   ② 그 벽에 건 **작품만** 파셀과 함께 사라져 «미술관은 있는데 그림만 없다» 가 된다
+  //      (`G-ART2`). 건물이 함께 사라지면 이 결함은 **저절로 없어진다** — 작품과 건물이
+  //      같은 파셀 규칙을 따르기 때문이다.
+  //
+  // ⚠ **`dispose` 가 아니라 `visible` 토글이다.** 액자가 W8-9 에서 같은 판단을 했고 근거도
+  // 같다 — 지오·재질을 버리고 다시 만들면 재방문마다 `info.memory` 가 올라 개수 불변식
+  // `[7]` 의 `settledOk` 를 깬다.
+  //
+  // ⚠ **첫 판본은 여기에 «자산이 13.5MB 라 노드에서 불가능» 이라고 적었고 거짓이었다**
+  // (검수관 블로커 B1). `placeGrid` 는 three 를 **주입받으므로**(`ThreeGroupNS` 는
+  // `Group`·`Box3` 둘뿐) 스텁으로 돈다 — 아래 GS-V1 블록이 그것을 실제로 한다.
+  // 막고 있던 것은 자산도 브라우저도 아니라 `export` 키워드 하나였다.
+  //
+  // ⚠⚠ **여전히 못 잡는 것**: 실제 GLB 의 피벗·스케일, 화면상 소멸/복귀, WebGPU 실기기.
+
+  const copy = (px: number, pz: number, visible = true) => ({ node: { visible }, px, pz });
+
+  it('★ 로드된 파셀의 채는 켜지고, 안 된 파셀의 채는 꺼진다', () => {
+    const cs = [copy(-1, 0), copy(3, 3)];
+    syncVisibility(cs, (px, pz) => px === -1 && pz === 0);
+    expect(cs[0]!.node.visible, '🔴 로드된 파셀인데 꺼졌다').toBe(true);
+    expect(cs[1]!.node.visible, '🔴 안 로드된 파셀인데 켜져 있다 — 안 가벼워진다').toBe(false);
+  });
+
+  it('★ 다시 로드되면 돌아온다 — 영구 손실이 아니다', () => {
+    const cs = [copy(-1, 0, false)];
+    syncVisibility(cs, () => true);
+    expect(cs[0]!.node.visible).toBe(true);
+  });
+
+  it('🔴 **변할 때만** 대입한다 — 매 프레임 쓰면 언제 바뀌었는지 못 읽는다', () => {
+    const cs = [copy(-1, 0, true), copy(3, 3, true)];
+    // 첫 호출: 두 번째 채만 바뀐다
+    expect(syncVisibility(cs, (px) => px === -1)).toBe(1);
+    // 두 번째 호출: 이미 맞춰져 있으므로 **0**
+    expect(syncVisibility(cs, (px) => px === -1), '🔴 안 바뀌었는데 다시 썼다').toBe(0);
+  });
+
+  it('🔴 `parcelLoaded` 가 없으면 **아무것도 안 한다** — world3·world5 가 그 경우다', () => {
+    // 그 세계들의 `FeatureEnv` 에는 이 항목이 없다(실측). 늘 보이는 것이 그쪽의 사실이고,
+    // 여기서 뭔가 하면 **편집이 없는 세계의 룩을 이 회차가 조용히 바꾼다.**
+    const cs = [copy(-1, 0, true), copy(3, 3, true)];
+    expect(syncVisibility(cs, undefined)).toBe(0);
+    expect(cs.every((c) => c.node.visible), '🔴 판정 수단이 없는데 껐다').toBe(true);
+  });
+
+  it('★ 채가 하나도 없으면 0 — 로드 실패·`?glb=0` 세션에서 던지지 않는다', () => {
+    expect(syncVisibility([], () => false)).toBe(0);
+  });
+
+  it('🔴 배선 — `system.update` 가 그 함수를 부르고, `wallRoot` 가 가시성을 본다', () => {
+    // 정적 텍스트 축이다(같은 이유: 실제 채를 세우는 경로를 노드에서 못 돈다). 약한 것을
+    // 알고 쓰지만 **0 보다는 낫다** — 이 배선이 빠지면 「가볍게」가 통째로 사라지고,
+    // 그 증상은 감독 화면에서만(그것도 프레임으로만) 드러난다.
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    // ⚠ **본문을 통째로 못 박지 않는다** — 예열 보류(B2)가 들어오며 이 단언이 한 번
+    // 깨졌고, 그것이 정상이다. **축을 둘로 나눈다**: 「토글을 부르는가」와 「예열 전에
+    // 보류하는가」. 각각이 다른 결함을 잡는다.
+    expect(src, '🔴 프레임 훅이 토글을 안 부른다').toContain('syncVisibility(copies, env.parcelLoaded)');
+    expect(src, '🔴 예열 전 보류가 사라졌다 — 꺼진 채는 예열이 아무것도 못 굽는다(B2)')
+      .toContain('if (!warmed) return;');
+    expect(src, '🔴 안 보이는 미술관 벽이 여전히 벽 검출 대상이다')
+      .toContain('copies.some((c) => c.node.visible)');
+  });
+
+  it('🔴 **GS-V3** — 예열이 끝난 **뒤에만** 토글이 열린다 (검수관 명세, 블로커 B4)', () => {
+    // ── 왜 이 검사가 따로 필요한가 ────────────────────────────────────────────
+    // 바로 위 배선 검사가 `if (!warmed) return;` **가드의 존재**를 본다. 그런데 그것은
+    // B2 조치의 **절반**이다 — 나머지 절반은 `warmed` 가 **언제 켜지는가**이고, 그쪽은
+    // 아무도 안 보고 있었다.
+    //
+    // 실측(검수관 블로커 B4, 2026-08-20): `warmed = true` 를 `await warmUp(root)` **앞으로
+    // 한 줄 옮기면** 예열 전 보류가 통째로 무효인데 **0 failed / 4094**. 가드를 *지우는*
+    // 형태만 시험했고 *되살리는* 형태는 안 시험한 결과다.
+    //
+    // **배운 것**: *"결함을 고쳤으면 그 결함을 일부러 되살려 테스트가 깨지는지 본다"* 는
+    // 규율에서, **되살리는 형태가 하나뿐이라고 가정하면 안 된다.** 여기서는 「지운다」와
+    // 「옮긴다」 둘이었고, 잡히는 쪽만 시험했다.
+    //
+    // ⚠ **왜 정적 축이어도 값이 있는가**: 이 회귀는 `[7]` 개수 불변식으로만 드러나는데
+    // 그것은 CI 에서 `observe` 라 **종료코드에 안 나타난다.** 0 보다 낫다는 판단이 이
+    // 파일 전체의 전제와 같다.
+    //
+    // ⚠ **못 잡는 것**(통과로 적지 않는다): ⓐ **런타임의 실제 순서** — `warmed` 를 다른
+    // 경로에서 켜거나 `await` 체인을 재배치하면 소스 순서는 그대로인 채 의미가 바뀐다
+    // ⓑ 예열이 실제로 GPU 에 구웠는지(헤드리스는 WebGL swiftshader, 배포본은 WebGPU —
+    // 원리적 사각) ⓒ **계단의 크기**(이 저장소는 프레임 시간을 안 잰다).
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    const count = (t: string) => src.split(t).length - 1;
+
+    // ⚠ **등장 횟수를 먼저 못 박는다** — 토큰이 둘 이상이 되면 `indexOf` 비교가 «어느
+    // 쪽인지» 를 잃고 조용히 무의미해진다. 늘어난 순간 빨간불이 되는 것이 **의도**이고,
+    // 그때는 이 검사를 갱신하라는 신호다(예: `warmUp` 호출부를 헬퍼로 감쌌다면).
+    expect(count('warmed = true'), '🔴 `warmed = true` 가 1곳이 아니다 — 순서 판정이 무의미해진다').toBe(1);
+    expect(count('await warmUp(root)'), '🔴 `await warmUp(root)` 가 1곳이 아니다 — 순서 판정이 무의미해진다').toBe(1);
+    expect(
+      src.indexOf('warmed = true') > src.indexOf('await warmUp(root)'),
+      '🔴 예열보다 **먼저** 토글을 열었다 — 꺼진 채는 예열이 아무것도 못 굽고, 나중에 파셀이 올라올 때 계단이 난다(B2)',
+    ).toBe(true);
+  });
+
+  it('★ `dispose` 가 토글 상태를 되돌린다 — 재진입이 예열 전에 토글하지 않게 (검수관 P3·P4)', () => {
+    // 검수관이 P3 로 요청해서 넣었는데 **확인은 안 한 상태**였다(P4, 실측 0 failed / 4094).
+    // 지금은 재진입 경로가 없어 무해하지만, 「요청받아 넣은 것」과 「지켜지는 것」은 다르다.
+    //
+    // ⚠ **등장 횟수로 잰다** — 두 토큰 다 조립부에도 있어(`copies.length = 0` 은 재진입
+    // 대비, `warmed = false` 는 선언) `toContain` 은 dispose 쪽이 통째로 사라져도 통과한다.
+    // 실측: 정규화 후 각각 **2회**.
+    //
+    // ⚠ **검수관 권고가 여기서 실측으로 뒤집혔다** — 권고 P4 는 *"문자열 단언 한 줄이면
+    // 닫힌다"* 였는데, 그것은 **토큰 등장 횟수를 세어 보지 않고 쓴 문장**이었다. 검수관이
+    // 재확인에서 스스로 그 사실을 확인했다. **지시하는 쪽이 안 해 보고 적으면 구현자가
+    // 그대로 집행하고, 그때 사각은 아무도 안 본다.**
+    //
+    // ⚠ **못 잡는 것 — 위치를 안 본다**(검수관 권고 R2). 등장 «횟수» 만 보므로, dispose
+    // 정리를 지우고 조립부에 같은 줄을 복제해 2회를 유지하면 **통과한다**(검수관 실측
+    // M15 = **0 failed / 65**). 위치까지 보려면 `dispose()` 본문을 잘라내 그 안에서 세야
+    // 하고, 그것은 이 파일이 지금 쓰는 정적 축보다 한 단계 무겁다.
+    //
+    // ⚠ **거짓 FAIL 이 나는 경우와 그때 할 일**(검수관 권고 R3). 선언 형태가 바뀌면
+    // (`let warmed=false;` 처럼 공백만 달라져도) 횟수가 1 로 떨어져 오탐이 난다. 그때는
+    // **단언을 지우지 말고** 새 형태에 맞춰 토큰을 옮기고 **왜 옮겼는지를 이 자리에
+    // 적는다.** 처방을 안 적어 두면 다음 사람이 단언을 지운다 — **이번 회차에 `wallRoot`
+    // 축이 사라진 경로가 정확히 그것이다**(블로커 B3).
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world-shared/glb-city.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    const count = (t: string) => src.split(t).length - 1;
+    expect(count('copies.length = 0'), '🔴 `copies` 를 비우는 자리가 둘이 아니다 — 조립부/dispose 중 하나가 빠졌다').toBe(2);
+    expect(count('warmed = false'), '🔴 `warmed = false` 가 둘이 아니다 — 선언과 dispose 중 하나가 빠졌다').toBe(2);
+  });
+});
+
+describe('🔴 GS-V1 — 배치가 토글에 넘기는 경계 (검수관 명세, 블로커 B1)', () => {
+  // ── 왜 이 블록이 생겼나 ────────────────────────────────────────────────────
+  // `syncVisibility` 는 뮤테이션 6종으로 촘촘한데, **그 함수를 화면에 도달시키는 경로가
+  // 통째로 무검사**였다. 검수관이 전체 스위트(4,090 tests)로 실측한 결과:
+  //
+  //   `px` ↔ `pz` 뒤바꾸기            0 failed / 4090
+  //   `out.push({…})` **통째 제거**   0 failed / 4090   ← 감독 지시가 통째로 미구현
+  //   `cellSize = 1` 로               0 failed / 4090
+  //
+  // 두 번째가 핵이다 — `copies` 가 영구히 빈 배열이 되어 *"glb건물도 사라지게해서"* 가
+  // 하나도 구현되지 않은 상태로 전부 초록이다. 이 저장소가 이름 붙인
+  // **「판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다」** 그대로다.
+  //
+  // ⚠ 그리고 그 구멍을 «노드에서 불가능» 이라는 **거짓 근거**로 정당화하고 있었다.
+  // 실제로는 `placeGrid` 가 three 를 주입받아 아래 스텁 하나로 돈다.
+
+  /** `ThreeGroupNS` 를 만족하는 최소 스텁. 필요한 것은 `Group` 과 `Box3` 둘뿐이다 */
+  function stubThree() {
+    class G {
+      visible = true;
+      children: unknown[] = [];
+      position = { x: 0, y: 0, z: 0, set(x: number, y: number, z: number) { this.x = x; this.y = y; this.z = z; } };
+      rotation = { y: 0 };
+      add(o: unknown): void { this.children.push(o); }
+      updateMatrixWorld(): void { /* 스텁 — 행렬은 이 축에서 안 본다 */ }
+    }
+    class Box3 {
+      min = { x: 0, y: 0, z: 0 };
+      max = { x: 0, y: 0, z: 0 };
+      setFromObject(): this { return this; }
+    }
+    return { Group: G, Box3 } as never;
+  }
+
+  /** `model.clone(true)` 만 하면 된다 — 붙는 쪽은 자리만 잡는다 */
+  const stubModel = () => ({
+    clone: () => ({ position: { set() { /* 보정 오프셋 — 이 축에서 안 본다 */ } } }),
+  }) as never;
+
+  it('★ 세운 채가 `out` 에 쌓이고, 파셀 좌표가 배치 자리와 맞는다', async () => {
+    const root = { add() { /* 스텁 */ } } as never;
+    const out: Parameters<typeof syncVisibility>[0][number][] = [];
+    await placeGrid(stubThree(), stubModel(), root, 1, 32, PLAZA_WEST, () => { }, out as never);
+
+    expect(out.length, '🔴 채를 세웠는데 `copies` 가 비었다 — 토글이 영영 안 돈다').toBe(1);
+    // 기본 1채는 랜드마크이고 `plazaWest` 칸에 선다. 그 값이 곧 파셀 좌표여야 한다.
+    expect(out[0]!.px, '🔴 파셀 x 가 배치 자리와 다르다').toBe(PLAZA_WEST.px);
+    expect(out[0]!.pz, '🔴 파셀 z 가 배치 자리와 다르다').toBe(PLAZA_WEST.pz);
+  });
+
+  it('🔴 **그 좌표로 실제로 꺼진다** — 배치와 토글이 같은 파셀을 말하는가', async () => {
+    // 이것이 경계를 건너는 지점이다. 위 검사는 「값이 맞다」이고, 이것은 「그 값이 실제로
+    // 소비된다」다. 둘 중 하나만 있으면 CLAUDE.md 가 적어 둔 그 구멍이 그대로 남는다.
+    const root = { add() { /* 스텁 */ } } as never;
+    const out: Parameters<typeof syncVisibility>[0][number][] = [];
+    await placeGrid(stubThree(), stubModel(), root, 1, 32, PLAZA_WEST, () => { }, out as never);
+
+    // 그 파셀만 로드 안 됐다고 하면 그 채가 꺼져야 한다.
+    syncVisibility(out, (px, pz) => !(px === PLAZA_WEST.px && pz === PLAZA_WEST.pz));
+    expect(out[0]!.node.visible, '🔴 파셀이 내려갔는데 건물이 그대로 서 있다').toBe(false);
+
+    // 돌아오면 켜진다 — 영구 손실이 아니다.
+    syncVisibility(out, () => true);
+    expect(out[0]!.node.visible).toBe(true);
+  });
+
+  it('★ 셀 크기가 파셀 좌표에 실제로 쓰인다 — 상수로 굳으면 엉뚱한 파셀을 본다', async () => {
+    const root = { add() { /* 스텁 */ } } as never;
+    const out: Parameters<typeof syncVisibility>[0][number][] = [];
+    // 셀을 64 로 주면 `x = px × 64` 이므로 되짚은 `px` 는 그대로여야 한다.
+    await placeGrid(stubThree(), stubModel(), root, 1, 64, PLAZA_WEST, () => { }, out as never);
+    expect(out[0]!.px, '🔴 셀 크기를 안 쓰거나 상수로 굳었다').toBe(PLAZA_WEST.px);
   });
 });

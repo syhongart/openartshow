@@ -111,6 +111,20 @@ export interface GlbCityEnv {
   readonly doc: Document | null;
   /** 파셀 한 칸의 월드 크기(m) */
   readonly cell: number;
+  /**
+   * 🔴 **그 파셀을 스트리밍이 지금 들고 있는가** (감독 지시 2026-08-19 —
+   * *"glb건물도 사라지게해서. 가볍게 만들자. 건물이 많아질수있으니"*).
+   *
+   * 있으면 이 기능이 세운 채들을 파셀과 **생사를 맞춘다**(`visible` 토글). 없으면 늘
+   * 보인다 — 그것이 이 인자가 생기기 전의 동작이고, **선택적인 이유**다:
+   * world3·world5 의 `FeatureEnv` 에는 이 항목이 **없다**(실측). 필수로 만들면 세 세계가
+   * 함께 움직여야 하고, 그 결합은 이 기능이 요구하는 것보다 넓다.
+   *
+   * ⚠ **거리를 여기서 다시 계산하지 않는다.** 스트리밍이 이미 판정한 것을 그대로 읽는다 —
+   * 액자가 `W8-9` 에서 같은 이유로 같은 문을 쓴다(`artwork-scene.ts` 의 `update`).
+   * 거리식이 두 곳에 살면 한쪽만 고쳐도 아무도 모른다.
+   */
+  readonly parcelLoaded?: (px: number, pz: number) => boolean;
 }
 
 /**
@@ -144,8 +158,21 @@ export interface GlbCityInstance {
   /**
    * 이 기능이 씬에 세운 루트. **레이캐스트 대상으로만** 쓴다(편집의 벽 검출 — 태스크 #112).
    * 아직 안 세워졌거나 `dispose()` 된 뒤면 `null`. 근거는 구현부 주석 한 곳이다.
+   *
+   * ⚠ **지금 보이는 채가 하나도 없어도 `null`** 이다(2026-08-19). 파셀과 생사를 맞추게
+   * 되면서 미술관이 통째로 안 보이는 순간이 생겼는데, three 는 레이캐스트에서 `visible`
+   * 을 **안 본다**(`layers` 만 본다 — 이 저장소 실측). 그대로 두면 **안 보이는 벽에
+   * 액자가 걸린다.**
    */
   wallRoot?(): Object3D | null;
+  /**
+   * 프레임마다 도는 훅. **파셀과 생사를 맞추는 데만 쓴다**(감독 지시 2026-08-19).
+   *
+   * ⚠ 타입을 `System`(각 세계의 `kernel.ts`)으로 적지 않는다 — 공유 모듈이 특정 세계의
+   * 커널을 import 하면 R2(빌드 혼합)를 어긴다. 구조적으로 좁게 선언하면 세 세계의
+   * `System` 을 **전부** 만족한다(더 적게 요구하는 쪽이 할당 가능하다).
+   */
+  readonly system?: { readonly name: string; update(ctx: { readonly dt: number }): void };
   dispose?(): void;
 }
 
@@ -231,6 +258,17 @@ export const glbCity = {
 
     const counts: Counts = { placed: 0, meshesPer: 0, trisPer: 0, state: 'loading' };
     let root: Object3D | null = null;
+    /**
+     * 세운 채들 (감독 지시 2026-08-19 — *"glb건물도 사라지게해서. 가볍게 만들자."*).
+     * 아래 `system.update` 가 매 프레임 이 배열만 훑어 파셀과 생사를 맞춘다.
+     */
+    const copies: PlacedCopy[] = [];
+    /**
+     * 예열이 끝났는가 (검수관 블로커 B2). `system.update` 가 이것을 보고 토글을 보류한다 —
+     * 근거는 그 자리 주석 한 곳이다. **`false` 로 시작하는 것이 fail-closed** 다:
+     * 예열을 못 마친 세션(로드 실패·`dispose`)에서는 아무것도 끄지 않는다.
+     */
+    let warmed = false;
     let disposed = false;
 
     // ── 상태를 화면에 띄운다 (감독 판정) ──────────────────────────────────
@@ -330,6 +368,8 @@ export const glbCity = {
         // 실험 물건을 한 그룹에 모은다 — 정리할 때 하나만 지우면 된다.
         const g = new THREE.Group();
         g.name = `${deps.worldName}:glbCity`;
+        // 이전 시도의 잔재를 남기지 않는다 — 재진입이 없다고 가정하지 않는다.
+        copies.length = 0;
         env.scene.add(g);
         root = g as unknown as Object3D;
 
@@ -338,13 +378,15 @@ export const glbCity = {
         await placeGrid(THREE as unknown as ThreeGroupNS, unit, root, want, env.cell, deps.plazaWest, (done) => {
           counts.placed = done;
           if (!disposed) badge?.set(`미술관 ${done}/${want} 세우는 중…`);
-        });
+        }, copies);
         if (disposed) return;
 
         // 예열이 **끝난 뒤에** ready 를 세운다(팀장 조건 1). 순서를 뒤집으면 게이트가
         // 예열 전에 기준선을 잡아 FAIL 이 그대로 재현되고, `ready` 가 뜻하는 것도
         // "다 섰다" 에서 "다 섰지만 아직 GPU 에 안 올라갔다" 로 흐려진다.
         await warmUp(root);
+        // 여기부터 토글을 연다 — 예열이 굽지 못한 채가 생기는 창을 아예 안 만든다(B2).
+        warmed = true;
         if (disposed) return;
 
         counts.state = 'ready';
@@ -406,6 +448,9 @@ export const glbCity = {
         // 곱해서 함께 보여준다 — 판정에 필요한 것은 1채가 아니라 총량이다.
         meshesTotal: counts.meshesPer * counts.placed,
         trisTotal: counts.trisPer * counts.placed,
+        // 🔴 지금 **꺼져 있는** 채. 파셀과 생사를 맞춘 결과다(2026-08-19). `parcelLoaded`
+        // 를 안 주는 세계(world3·world5)에서는 늘 0 이고, 그것이 사실이다.
+        hidden: copies.length - copies.reduce((n, c) => n + (c.node.visible ? 1 : 0), 0),
       }),
 
       // 드로우콜 판정에서 **이 표본을 통째로 뺀다.** 이 기능이 켜진 세션은 개수 불변식이
@@ -433,13 +478,80 @@ export const glbCity = {
        * 편집이 없다. 필수로 만들면 세 세계가 함께 움직여야 하고, 그 결합은 이 기능이
        * 요구하는 것보다 넓다.
        */
-      wallRoot: () => root,
+      wallRoot: () => {
+        if (!root) return null;
+        // 🔴 **보이는 채가 하나도 없으면 벽도 없다** (2026-08-19). three 는 레이캐스트에서
+        // `visible` 을 **안 본다**(`layers` 만 본다 — 이 저장소 실측). 그래서 파셀이
+        // 내려가 안 보이는 미술관도 광선에는 그대로 걸리고, 그대로 두면 **안 보이는 벽에
+        // 액자가 걸린다.**
+        //
+        // ⚠ **부분적으로 보이는 경우는 못 가른다** — 한 채라도 보이면 루트 전체를 내주므로
+        // 그때는 안 보이는 채의 벽도 대상이 된다. 지금 기본 채수가 1(`DEFAULT_COPIES`)이라
+        // 실질 위험이 없고, 여러 채가 서로 다른 파셀에 서는 회차에 다시 본다(백로그 `G-ART6`).
+        return copies.length === 0 || copies.some((c) => c.node.visible) ? root : null;
+      },
+
+      /**
+       * 🔴 **파셀과 생사를 맞춘다** (감독 지시 2026-08-19 — *"glb건물도 사라지게해서.
+       * 가볍게 만들자. 건물이 많아질수있으니"*).
+       *
+       * ── 왜 `visible` 토글인가 — `dispose` 가 아니라 ──────────────────────────
+       * 액자가 W8-9 에서 **정확히 같은 판단**을 했고 근거도 같다(`artwork-scene.ts` 의
+       * `update`): 지오·재질을 버리고 다시 만들면 재방문마다 `info.memory` 가 오르고,
+       * 그것이 개수 불변식 `[7]` 의 `settledOk` 를 깨는 형태다. 여기서 하는 것은 **대입
+       * 하나**이고 GPU 자원을 만들지도 지우지도 않는다.
+       *
+       * 얻는 것은 **렌더 비용**이다 — 안 보이는 채는 드로우콜도 삼각형도 내지 않는다.
+       * 감독 지시의 «가볍게» 가 그것이고, «건물이 많아질수있으니» 가 이 축이 채수에
+       * 비례해 커지는 이유다.
+       *
+       * ⚠ **`parcelLoaded` 가 없으면 아무 일도 안 한다** — world3·world5 의 `FeatureEnv`
+       * 에는 그 항목이 없다(실측). 그때는 이 기능이 예전처럼 늘 보이고, 그것이 **결함이
+       * 아니라 그 세계의 사실**이다.
+       *
+       * ⚠⚠ **상태가 변할 때만 대입한다.** three 의 `visible` 은 단순 필드라 대입 자체는
+       * 싸지만, 매 프레임 무조건 쓰면 «이 값이 언제 바뀌었나» 를 프로파일러에서 못 읽는다.
+       */
+      system: {
+        name: 'glbCityVisibility',
+        // 🔴 **예열이 끝나기 전에는 토글하지 않는다** (검수관 블로커 B2, 2026-08-19).
+        //
+        // `warmUpNode` 는 `frustumCulled` 만 되돌리는데, 렌더러의 `visible === false`
+        // 단락은 **컬링 판정보다 앞**에 있다(WebGL·WebGPU 양쪽 확인). 즉 **꺼진 채는
+        // 예열 프레임에서도 안 그려지고**, 예열이 아무것도 못 굽는다.
+        //
+        // 순서가 실제로 겹친다: 커널이 이 시스템을 **부팅에 등록**하고, `placeGrid` 는
+        // `attachAll` 로 **프레임을 넘기며** 채를 붙인다(같은 rAF). 그래서 `await
+        // warmUp(root)` 이 끝나기 전에 이 함수가 이미 여러 번 돈다.
+        //
+        // 그때 꺼진 채는 나중에 파셀이 올라올 때 지오·텍스처·파이프라인이 **세션 중에
+        // 계단으로** 생긴다 — `warmUp` 주석이 막으려고 존재하는 바로 그 사고이고,
+        // CLAUDE.md 가 *"만들어 둔 것과 GPU 에 올라간 것은 다른 일"* 로 못 박은 함정이다.
+        //
+        // ⚠ **계단의 크기는 못 쟀다** — 이 저장소는 프레임 시간을 안 재고 `[7]` 은 CI 에서
+        // observe 라 종료코드에서 빠진다. **못 잰 것을 통과로 적지 않는다.** 여기서 하는
+        // 것은 「그 창을 아예 안 열기」이고, 그것은 재지 않아도 참이다.
+        // ⚠ **판정이 한 프레임 늦다**(검수관 권고 P2). 조립부가 기능 시스템을 스트리밍보다
+        // **먼저** 커널에 넣으므로, 건물은 «이전 프레임의 파셀 상태» 로 켜지고 꺼진다.
+        // 액자가 같은 사실을 `decide/stream.ts` 헤더에 적어 두었고(검수관 P2 · 태스크 #115)
+        // 건물 쪽에는 없었다. 1프레임이라 화면에서는 안 보이지만, **원인을 찾을 때 이
+        // 줄이 없으면 엉뚱한 데를 판다.**
+        update() {
+          if (!warmed) return;
+          syncVisibility(copies, env.parcelLoaded);
+        },
+      },
 
       dispose() {
         disposed = true;
         badge?.remove();
         root?.removeFromParent();
         root = null;
+        // ⚠ `copies` 도 비운다 (검수관 권고 P3). 위 조립부가 «재진입이 없다고 가정하지
+        // 않는다» 며 비우는데 여기만 안 비우면 **비대칭**이고, 남은 참조가 떼어낸 노드를
+        // 붙들어 둔다. `warmed` 도 되돌린다 — 안 그러면 재진입 세션이 예열 전에 토글한다.
+        copies.length = 0;
+        warmed = false;
       },
     };
   },
@@ -738,7 +850,71 @@ interface GeoLike {
  * 실험 설계의 결함이지 성능 문제가 아니었다. 원점 한 칸만 비우면 그 자리에 서서
  * 둘러보게 되고, 부하는 그대로 유지된다 — 비운 칸의 몫은 바깥으로 한 칸 밀린다.
  */
-async function placeGrid(
+/**
+ * 세운 채 하나 — 노드와 **그 채가 선 파셀**. 파셀과 생사를 맞추려면 둘 다 필요하다
+ * (감독 지시 2026-08-19).
+ *
+ * ⚠ **파셀을 여기서 계산해 들고 있는다.** `holder.position` 에서 매 프레임 나눗셈으로
+ * 되짚을 수도 있지만, 그러면 프레임마다 산술이 생기고 배치 규칙(`placementCells`)이
+ * 아는 것을 소비 쪽이 다시 유도하게 된다 — 액자가 `placed` 에 `px·pz` 를 들고 있는 것과
+ * **같은 처방**이다(`artwork-scene.ts` 의 «걸 때 한 번 계산해 여기 둔다»).
+ */
+export interface PlacedCopy {
+  readonly node: { visible: boolean };
+  readonly px: number;
+  readonly pz: number;
+}
+
+/**
+ * 🔴 **세운 채들을 파셀과 맞춘다.** `system.update` 가 프레임마다 이것만 부른다.
+ *
+ * ── 왜 함수로 뽑았나 ────────────────────────────────────────────────────────
+ * `create()` 안의 클로저에 두면 시험할 수 없다 — `create` 는 GLB 로더를 실제로 부르고
+ * 그 경로는 노드에서 안 돈다. 밖으로 내면 가짜 노드(`{visible}` 하나)로 실제 동작을 잰다.
+ * 이 저장소가 「경계를 건너는 지점은 아무도 안 본다」를 반복 사고로 적어 둔 자리다.
+ *
+ * ⚠ **첫 판본은 이 이유를 «13.5MB GLB 가 필요해 노드에서 불가능» 이라고 적었고 그것이
+ * 이 함수 하나에만 참이었다** — 바로 아래 `placeGrid` 는 three 를 주입받아 **스텁으로
+ * 돈다**(검수관 블로커 B1). 근거를 넓게 적어 놓고 그 옆 경계를 무검사로 뒀다.
+ *
+ * ⚠ **상태가 변할 때만 대입한다** — 매 프레임 무조건 쓰면 «이 값이 언제 바뀌었나» 를
+ * 프로파일러에서 못 읽는다. 바뀐 개수를 돌려주는 것도 그래서다(진단·검사가 그것을 센다).
+ *
+ * @returns 이번 호출에서 **실제로 바뀐** 채의 수
+ */
+export function syncVisibility(
+  copies: readonly PlacedCopy[],
+  loaded: ((px: number, pz: number) => boolean) | undefined,
+): number {
+  // 판정 수단이 없으면 **아무것도 안 한다.** world3·world5 가 그 경우이고, 그때 이
+  // 기능은 예전처럼 늘 보인다 — 결함이 아니라 그 세계의 사실이다.
+  if (!loaded) return 0;
+  let changed = 0;
+  for (const c of copies) {
+    const on = loaded(c.px, c.pz);
+    if (c.node.visible !== on) { c.node.visible = on; changed++; }
+  }
+  return changed;
+}
+
+/**
+ * 🔴 **export 인 것은 시험을 위해서다** (검수관 블로커 B1, 2026-08-19).
+ *
+ * 이 함수는 three 를 **주입받는다**(`THREE: ThreeGroupNS` — `Group`·`Box3` 둘뿐이고,
+ * `nextFrame()` 은 노드에서 `setTimeout` 으로 떨어진다). 즉 **25줄짜리 스텁이면 브라우저도
+ * GLB 도 없이 돈다.**
+ *
+ * ⚠ 나는 이 자리에 *"13.5MB GLB 를 실제로 로드해야 하고 **노드에서는 불가능하다**"* 라고
+ * 적었고 **거짓이었다.** 막고 있던 것은 자산도 브라우저도 아니라 `export` 키워드 하나였다.
+ * 검수관이 PoC 로 증명했고(4ms · 2 tests), 그 구멍의 대가가 실측으로 드러났다 —
+ * `out.push({…})` 를 **통째로 지워도 4,090 테스트가 전부 초록**이었다. 감독 지시
+ * (*"glb건물도 사라지게해서"*)가 통째로 미구현인 상태가 아무 데도 안 나타난다는 뜻이다.
+ *
+ * **직전 회차에 같은 형태로 두 번 지적받고 처방까지 적었다** — *"「안 한다」를 적을 때는
+ * 안 되는 것을 한 번 해 보고 적는다"*(`G-ART3`). 그 다음 회차에 또 했다. 처방을 하나
+ * 더한다: **「시험할 방법이 없다」를 적기 전에 그 함수의 시그니처가 이미 주입식인지 본다.**
+ */
+export async function placeGrid(
   THREE: ThreeGroupNS,
   model: Object3D,
   root: Object3D,
@@ -746,7 +922,13 @@ async function placeGrid(
   cell: number,
   plazaWest: { readonly px: number; readonly pz: number },
   onStep: (done: number) => void,
+  /** 세운 채가 여기 쌓인다. 호출부가 파셀 토글에 쓴다 */
+  out: PlacedCopy[],
 ): Promise<void> {
+  // ⚠ **이름을 하나 더 둔다** — 아래 `place: async (cell, i)` 의 `cell` 이 `Placement`
+  // 라서 바깥의 `cell`(파셀 한 변, m)을 **가린다.** 콜백 안에서 파셀 좌표를 유도하려면
+  // 가려지지 않는 이름이 필요하다.
+  const cellSize = cell;
   const cells = placementCells(n, cell, plazaWest);
   // ── 피벗 보정 — **주석의 치수가 아니라 실물을 잰다** ──────────────────────
   // 이 자산은 로컬 XZ 중심이 노드 원점에서 벗어나 있고 바닥도 y=0 이 아니다. 파셀
@@ -807,6 +989,29 @@ async function placeGrid(
       // 갱신은 **씬에 붙은 쪽**(그룹)에서 건다 — 복제본에서 걸면 그룹의 회전·위치가
       // 아직 안 반영된 행렬로 자식만 갱신된다.
       (holder as unknown as Object3D).updateMatrixWorld(true);
+      // ── 파셀 좌표 — **역산이고, 그 한계를 실측했다** (검수관 권고 P1) ──────────
+      // 정방향은 `placementCells` 가 안다(`x = px × cell`). 여기서 되짚는 것은 역함수라
+      // 값 미러링의 사촌이다. 검수관이 «`placementCells` 가 `px·pz` 를 함께 반환하면
+      // 역산이 사라진다» 고 권고했고, **해 보니 그것으로 안 끝난다:**
+      //
+      //   `gridCells` 는 `x = (i − half) × cell`, `half = (side − 1) / 2` 로 자리를 잡는데
+      //   **`side` 가 짝수면 `half` 가 반정수**다(`side = ceil(√(n+1)) + 1`). 실측:
+      //   **n=4·8 → 1.5 · n=20 → 2.5** / n=1·2·3 → 1 · **n=50 → 4**(정수). 중심에 안 선다.
+      //
+      // 그러면 `px` 라는 정수 좌표 자체가 성립하지 않고, 아래 `Math.round` 는 그 채를
+      // **이웃 파셀로 뭉갠다.** 정방향에 `px` 를 심어도 같은 문제가 그쪽으로 옮겨갈 뿐이다.
+      //
+      // **기본값(n=1)에서는 정확하다** — 랜드마크 한 채가 `plazaWest`(정수 파셀)에 선다.
+      // 어긋나는 것은 `?glb=4` 이상의 실험 세션뿐이다. 격자를 파셀 정렬로 바꾸는 것은
+      // 배치 규칙의 설계 변경이라 이번 범위 밖이고, 재론 조건은 백로그 `G-ART7` 이다.
+      // ⚠ `visible` 로 좁혀 담는다 — `PlacedCopy` 가 그 필드 **하나만** 요구하는 것이
+      // 요점이다. 노드 전체를 들면 토글 함수가 씬 그래프를 만질 수 있게 되고, 그러면
+      // 가짜 노드로 시험하는 길도 함께 막힌다.
+      out.push({
+        node: holder as unknown as { visible: boolean },
+        px: Math.round(cell.x / cellSize),
+        pz: Math.round(cell.z / cellSize),
+      });
       // 한 프레임에 다 붙이면 그 프레임이 통째로 멈춘다 — 감독 실기기에서 **1,072ms**
       // 히칭 1회가 그것이었다. 배치마다 프레임을 넘기면 같은 총량이 여러 프레임에 흩어져
       // 화면이 계속 돈다. 총 시간은 오히려 조금 늘지만 **멈추지 않는다.**
