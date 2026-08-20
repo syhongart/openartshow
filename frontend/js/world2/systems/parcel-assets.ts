@@ -124,6 +124,8 @@ export function createSlotPool(
   pools: InstancePools, sink?: ToneSink, grow?: PlaceSink, warp?: PoseWarp,
 ): SlotPool {
   const c = new THREE.Color();
+  /** 지금 「연출 없이」 구간인가. 켜고 끄는 것은 빌더다 — 근거는 `setInstant` 주석. */
+  let instant = false;
   // 마지막으로 놓인 자리. `setTone` 이 sink 에 넘겨줄 좌표다.
   //
   // **핸들별로 기억한다** — 한 프레임에 부품 수십 개가 놓이므로 단일 변수로는 섞인다.
@@ -146,7 +148,9 @@ export function createSlotPool(
       pools.setTransform(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
       // 완성 자세를 쓴 **뒤에** 알린다 — grow 가 곧바로 시작 스케일로 줄여 쓴다.
       // 순서를 뒤집으면 grow 가 줄인 것을 위 줄이 도로 완성 크기로 덮는다.
-      grow?.place(h, t);
+      // ⚠ **즉시 모드면 아예 안 알린다** — 그러면 위 줄이 쓴 완성 자세가 그대로 남는다.
+      // 근거는 `setInstant` 주석 한 곳이다.
+      if (!instant) grow?.place(h, t);
     },
     retarget: (h, x, y, z, ry, sx, sy, sz) => {
       // `setTransform` 과 **같은 워프**를 탄다 — 태양이 바뀐 만큼 자세가 다시 유도돼야 한다.
@@ -157,6 +161,35 @@ export function createSlotPool(
       // `place` 는 "새 배치" 를 뜻해 성장을 START_SCALE 로 되감는다(검수관 반려 2026-08-11).
       grow?.retarget?.(h, t);
     },
+    /**
+     * **다음 `setTransform`·`release` 를 연출 없이 처리한다** (팀장 판정 (가), 2026-08-20).
+     *
+     * ── 무엇을 고치나 ──────────────────────────────────────────────────────
+     * 편집에서 마을 파츠를 확정하면 `village.freeze` → `streaming.invalidate` 로 그
+     * 파셀이 **통째로 버려졌다가 다시 만들어진다.** 그 반납·재생성이 등장/퇴장 연출을
+     * 그대로 타서 **0.25s 수축 → 사라짐 → 0.4s 재성장** 이 됐다. 감독 판정
+     * 2026-08-20: *"튄다 — 거슬린다."*
+     *
+     * ── 왜 연출을 끄는 것이 지시 위반이 아닌가 ──────────────────────────────
+     * 그 0.25s 는 감독 지시(*"퇴장할때 수축켜줘"*)로 켠 것이다. 그러나 그 지시가 가리킨
+     * 것은 **파셀이 멀어져 사라질 때**이고, 편집 확정은 **같은 것을 다시 세우는 갱신**이다.
+     * 두 사건에 같은 연출이 걸려 있던 것이고, 가르는 것이 지시를 정확히 집행하는 것이다.
+     * 같은 형태의 선례가 이 파일에 이미 있다 — `retarget` 을 `place` 에서 뗀 것
+     * (*"`place` 는 «새 배치» 를 뜻해 성장을 되감는다"*, 검수관 반려 2026-08-11).
+     *
+     * ── 왜 파셀 단위인가 — 전역 「즉시 창」을 기각한 이유 ─────────────────────
+     * 팀장이 (나) *"확정 직후 N 프레임 동안 성장·수축을 전부 끔"* 을 기각했다: **새 튜닝
+     * 상수**(창 길이)가 생기고 그 값은 화면으로만 판정돼 감독 왕복이 한 번 더 붙는데,
+     * 결함 없는 파셀의 정상 등장까지 즉시화한다. 이 스위치는 **빌더가 파셀 하나를
+     * 만들거나 반납하는 구간에서만** 켜지므로 그 비용이 없다.
+     *
+     * ── 경계 (이 결정이 안 고치는 것) ───────────────────────────────────────
+     * **재빌드 자체의 비용(ms)은 범위 밖이고 관측이 미해결로 남는다**(게시판 P5).
+     * 여기서 없애는 것은 **연출 0.65초**이지 재빌드가 아니다. 그리고 수치칸이 타이핑
+     * 한 글자마다 확정하는 축(`edit/panel/inspector.ts:160`)도 그대로다 — 팀장이 (다)로
+     * 보류했고, 발화 조건은 **감독이 「즉시 재빌드 반복이 거슬린다」고 말하는 것**이다.
+     */
+    setInstant: (on: boolean) => { instant = on; },
     setTone: (h, tone) => {
       const palette = tonesFor(h.key);
       const hex = palette[tone % palette.length] ?? palette[0];
@@ -173,8 +206,11 @@ export function createSlotPool(
       warp?.release?.(h);
       // 수축 훅이 있으면 반납을 **그쪽에 맡긴다** — 줄어드는 애니메이션이 끝난 프레임에
       // `pools.release` 가 불린다. 없으면 종전대로 즉시.
-      if (grow?.retire) grow.retire(h, () => pools.release(h));
-      else pools.release(h);
+      // ⚠ **즉시 모드면 수축을 건너뛴다.** 그때 `grow.release` 를 부르는 것이 중요하다 —
+      // 진행 중인 애니메이션이 남아 있으면 이미 반납한 슬롯(= 재사용된 남의 자리)을
+      // 계속 줄인다. `retire` 는 그 정리를 자기가 하지만 이 갈래는 안 탄다.
+      if (!instant && grow?.retire) grow.retire(h, () => pools.release(h));
+      else { grow?.release?.(h); pools.release(h); }
     },
   };
 }

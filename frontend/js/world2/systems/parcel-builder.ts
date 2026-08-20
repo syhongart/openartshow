@@ -45,6 +45,16 @@ export interface SlotPool {
   retarget?(h: SlotHandle, x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number): void;
   setTone(h: SlotHandle, tone: number): void;
   release(h: SlotHandle): void;
+  /**
+   * **연출 없이** 처리하는 구간을 연다/닫는다 (팀장 판정 (가), 2026-08-20).
+   *
+   * 빌더가 파셀 하나를 만들거나 반납하는 **그 구간에서만** 켠다. 왜 그 구간뿐인지와
+   * 왜 전역 창을 기각했는지는 구현부(`systems/parcel-assets.ts` 의 `setInstant`)
+   * 주석 **한 곳**이다 — 여기에 다시 적지 않는다.
+   *
+   * 선택 문이다: 안 구현한 풀(테스트 스텁 등)에서는 종전대로 연출이 돈다.
+   */
+  setInstant?(on: boolean): void;
 }
 
 interface PooledHandle extends ParcelHandle {
@@ -161,21 +171,39 @@ export class PooledParcelBuilder implements ParcelBuilder {
     return out;
   }
 
-  build(px: number, pz: number, tier: Exclude<Tier, 'none'>): ParcelHandle {
+  /**
+   * @param instant 등장 연출을 건너뛴다 — 편집 확정으로 버려졌던 파셀을 **다시 세우는**
+   *   경우다. 판정은 `systems/streaming.ts` 의 `pendingInstant` 가 하고 여기서는 집행만
+   *   한다. 근거 전문은 `systems/parcel-assets.ts` 의 `setInstant` 주석 한 곳이다.
+   */
+  build(px: number, pz: number, tier: Exclude<Tier, 'none'>, instant = false): ParcelHandle {
     const h: PooledHandle = {
       // 키 형식은 `decide/stream.ts` 가 소유한다. 여기 리터럴로 적혀 있었고 그것은 값
       // 미러링이었다 — 스트리밍이 자기 맵 키를 따로 만들므로 두 형식이 갈라져도 지금은
       // 아무 증상이 없다. **증상 없는 미러링이 가장 오래 산다.**
       key: parcelKey(px, pz), tier, px, pz, byKind: new Map(),
     };
-    for (const kind of kindsFor(tier)) this.fill(h, kind, tier);
+    // `finally` 로 닫는다 — `fill` 이 던지면 스위치가 켜진 채 남고, 그때부터 **모든**
+    // 파셀이 연출 없이 등장한다(증상이 «가끔 안 자란다» 라 원인을 못 찾는다).
+    if (instant) this.pool.setInstant?.(true);
+    try {
+      for (const kind of kindsFor(tier)) this.fill(h, kind, tier);
+    } finally {
+      if (instant) this.pool.setInstant?.(false);
+    }
     return h;
   }
 
-  release(handle: ParcelHandle): void {
+  /** @param instant 퇴장 연출(수축)을 건너뛴다 — `build` 의 같은 인자와 같은 이유다. */
+  release(handle: ParcelHandle, instant = false): void {
     const h = handle as PooledHandle;
-    for (const slots of h.byKind.values()) {
-      for (const s of slots) this.pool.release(s);
+    if (instant) this.pool.setInstant?.(true);
+    try {
+      for (const slots of h.byKind.values()) {
+        for (const s of slots) this.pool.release(s);
+      }
+    } finally {
+      if (instant) this.pool.setInstant?.(false);
     }
     h.byKind.clear();
   }

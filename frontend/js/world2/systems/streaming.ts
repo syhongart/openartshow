@@ -29,10 +29,16 @@ export interface ParcelHandle {
 }
 
 export interface ParcelBuilder {
-  /** 파셀을 만든다. 동기 — 예산 집행이 호출 횟수로 이뤄지므로 여기서 await하지 않는다. */
-  build(px: number, pz: number, tier: Exclude<Tier, 'none'>): ParcelHandle;
-  /** 파셀을 반납한다. 풀 슬롯 반납이 여기서 일어난다. */
-  release(handle: ParcelHandle): void;
+  /**
+   * 파셀을 만든다. 동기 — 예산 집행이 호출 횟수로 이뤄지므로 여기서 await하지 않는다.
+   * @param instant 등장 연출을 건너뛴다(아래 `pendingInstant` 참조).
+   */
+  build(px: number, pz: number, tier: Exclude<Tier, 'none'>, instant?: boolean): ParcelHandle;
+  /**
+   * 파셀을 반납한다. 풀 슬롯 반납이 여기서 일어난다.
+   * @param instant 퇴장 연출(수축)을 건너뛴다(아래 `pendingInstant` 참조).
+   */
+  release(handle: ParcelHandle, instant?: boolean): void;
   /**
    * tier만 바꿔본다. 재생성 없이 됐으면 새 핸들, 안 되면 null(그러면 release→build).
    * 슬롯 풀 설계에서는 대개 여기서 끝난다 — 그게 스파이크를 없애는 지점이다.
@@ -166,6 +172,34 @@ export class StreamingSystem implements System {
   private readonly handles = new Map<ParcelKey, ParcelHandle>();
   /** decide 계층에 넘길 tier 맵. handles와 항상 같이 갱신한다 */
   private readonly tiers = new Map<ParcelKey, Tier>();
+  /**
+   * **편집 확정으로 버린 파셀** — 다시 세울 때 등장 연출을 건너뛴다 (팀장 판정 (가),
+   * 2026-08-20). 감독 판정: *"튄다 — 거슬린다."*
+   *
+   * ── 무엇이 문제였나 (실측) ──────────────────────────────────────────────
+   * 마을 파츠를 확정하면 `village.freeze` → `notify` → `invalidate` 로 그 파셀이 통째로
+   * 버려졌다가 다시 만들어지는데, 그 반납·재생성이 등장/퇴장 연출을 **그대로 탔다** —
+   * **0.25s 수축 → 사라짐 → 0.4s 재성장.** 액자 쪽 튐(한 프레임 재생성)과 기전도 크기도
+   * 다르다. 백로그 `G-EDIT2` 는 오래 액자 기전만 적고 있었고 마을에 대해서는 거짓이었다.
+   *
+   * ── 왜 여기서 판정하나 ──────────────────────────────────────────────────
+   * 이 집합에 들어가는 유일한 문이 `invalidate()` 이고, 그 호출부는 `world2/main.ts` 의
+   * 마을 알림 **한 곳**이다. 즉 *"편집 확정으로 버려졌다"* 가 **구조로** 성립한다 —
+   * 거리·시간 같은 것을 다시 재지 않는다. 소비는 아래 ④ 로드에서 `delete` 로 하므로
+   * **한 번 쓰면 사라진다**(다음 등장은 정상 연출).
+   *
+   * ── 전역 「즉시 창」을 기각한 이유 ───────────────────────────────────────
+   * 팀장이 (나) *"확정 직후 N 프레임 동안 전부 끔"* 을 기각했다: 새 튜닝 상수가 생기고
+   * 그 값은 화면으로만 판정돼 감독 왕복이 붙는데, 결함 없는 파셀의 정상 등장까지
+   * 즉시화한다. 이 집합은 **버려진 그 파셀만** 가리키므로 그 비용이 없다.
+   *
+   * ── 경계 ────────────────────────────────────────────────────────────────
+   * **재빌드 자체의 비용(ms)은 이 결정의 범위 밖이고 관측이 미해결로 남는다**(게시판 P5).
+   * 여기서 없애는 것은 **연출 0.65초**다. 수치칸이 타이핑 한 글자마다 확정하는 축
+   * (`world2/edit/panel/inspector.ts`)도 그대로다 — 팀장이 보류했고 발화 조건은
+   * **감독이 「즉시 재빌드 반복이 거슬린다」고 말하는 것**이다.
+   */
+  private readonly pendingInstant = new Set<ParcelKey>();
   private last: StreamStats = {
     loaded: 0, wanted: 0, built: 0, released: 0, retiered: 0,
     promoted: 0, demoted: 0, pending: 0, byTier: {},
@@ -281,7 +315,8 @@ export class StreamingSystem implements System {
     // ④ 로드 — 남은 예산으로. prio 순서를 지킨다(takeBudget이 순서를 보장한다).
     const ld = takeBudget(diff.load, Math.max(0, budget), (w: WantEntry) => o.builder.costOf(w.tier));
     for (const w of ld.run) {
-      const h = o.builder.build(w.px, w.pz, w.tier);
+      // `delete` 가 곧 소비다 — 한 번 쓰면 사라지고 다음 등장은 정상 연출이다.
+      const h = o.builder.build(w.px, w.pz, w.tier, this.pendingInstant.delete(w.key));
       this.handles.set(w.key, h);
       this.tiers.set(w.key, w.tier);
       built++;
@@ -380,19 +415,28 @@ export class StreamingSystem implements System {
    *
    * ⚠ **한 프레임(또는 예산에 밀리면 여러 프레임) 동안 그 파셀이 비어 보인다.** 편집
    * 중에는 그것이 «지웠다가 다시 놓는» 피드백으로 읽히지만, 드래그처럼 연속으로 부르면
-   * 건물이 계속 되감긴다(성장 애니메이션이 처음부터 돈다 — `parcel-grow.ts`). 연속
-   * 조작은 놓는 순간에만 이것을 불러야 한다 — 그 판단은 편집 UI 몫이고 여기서 못 막는다.
+   * 건물이 계속 되감긴다 — 연속 조작은 놓는 순간에만 이것을 불러야 한다. 그 판단은
+   * 편집 UI 몫이고 여기서 못 막는다.
+   * ⚠ **「성장 애니메이션이 처음부터 돈다」는 2026-08-20 부로 이 경로에서 안 돈다** —
+   * `pendingInstant` 가 그것을 껐다(위 주석). 위 문장이 남아 있는 이유는 **연속으로
+   * 부르면 파셀이 계속 버려지는 것 자체**는 그대로이기 때문이다. 사라진 것은 연출이고
+   * 재빌드가 아니다.
    *
-   * @returns 실제로 버렸으면 `true`. 안 떠 있던 파셀이면 `false`(할 일이 없다 —
-   *          아직 안 만들어졌으므로 다음 build 가 새 동결을 저절로 읽는다)
+   * @returns 실제로 버렸으면 `true`. 안 떠 있던 파셀이면 `false`.
+   *          ⚠ **`false` 라도 할 일이 없는 것은 아니다** — 「연출 없이 세운다」 표식은
+   *          그때도 남긴다(멀리서 확정하고 다가가는 경로가 그것이다).
    */
   invalidate(px: number, pz: number): boolean {
     // 키 형식은 `decide/stream.ts` 가 소유한다. 여기서 `${px},${pz}` 를 다시 적으면
     // 형식이 바뀔 때 이 문만 조용히 어긋나고, 그 증상은 «편집이 어떤 파셀에는 안 먹는다» 다.
     const key = parcelKey(px, pz);
     const h = this.handles.get(key);
+    // ⚠ 안 떠 있어도 표식은 남긴다 — 편집으로 바꾼 파셀이 **아직 안 만들어졌다가** 곧
+    // 만들어지는 경로가 있고(멀리서 확정), 그때도 「갱신」이지 「등장」이 아니다.
+    this.pendingInstant.add(key);
     if (!h) return false;
-    this.opts.builder.release(h);
+    // 수축 없이 즉시 반납한다 — 이유는 `pendingInstant` 주석 한 곳이다.
+    this.opts.builder.release(h, true);
     this.handles.delete(key);
     this.tiers.delete(key);
     // `settled` 는 건드리지 않는다 — 되돌리면 편집할 때마다 로딩 화면이 다시 뜬다.
@@ -404,5 +448,9 @@ export class StreamingSystem implements System {
     for (const h of this.handles.values()) this.opts.builder.release(h);
     this.handles.clear();
     this.tiers.clear();
+    // 표식도 비운다 — 안 떠 있는 파셀에도 add 하므로(위) 여기서 안 지우면 세션이 끝나도
+    // 남는다. 개수는 편집 확정 횟수만큼이라 작지만, **안 지울 이유가 없는 것을 남기면
+    // 다음 사람이 «왜 남기지» 를 조사한다.**
+    this.pendingInstant.clear();
   }
 }
