@@ -23,6 +23,10 @@ import { riverCenterZ, RIVER_HALF, SEA_Y, waterGloss } from '../decide/water.js'
 // ⚠ **알파 배분을 새로 만들지 않는다.** 반투명 두 겹이 곱해지는 문제를 기존 물이 이미
 // 풀어 뒀고(`sea`/`sea2`), 그 함수를 그대로 쓴다. 여기 공식을 다시 적으면 그 순간
 // 미러링이고, 한쪽만 고쳐도 아무도 모른다.
+// ⚠ 검수관 권고(2026-08-20): 이 함수는 상태 없는 **순수 판정**이라 `decide/` 가 더 맞는
+// 자리다(이 파일이 `SEA_Y` 를 `decide/water.ts` 에서 직접 받는 것과 같은 모양이 된다).
+// 이번 회차에 안 옮긴 이유는 `features/ocean.ts` 가 `check:filesize` 동결이라 옮기는
+// 것이 그 파일과 `decide/` 양쪽을 건드리는 별개 작업이기 때문이다 — 백로그 `G-STYL22`.
 import { layerOpacity } from './ocean.js';
 
 /**
@@ -140,6 +144,20 @@ function styledWaterMaterial(
   // `STYLE_OPACITY`. 근거는 `decide/water-style.ts` 의 `CLEAR_SHALLOW` 주석 한 곳이다.
   // ⚠ **양 끝을 각각 배분한다.** 재질 상수만 나누면 물가(얕은 쪽)는 안 나뉘어 그
   // 구간에서만 색이 탁해진다 — 겹이 둘일 때 그 어긋남은 물가 띠에서 가장 잘 보인다.
+  //
+  // ⚠⚠ **끝점은 정확하고 중간은 선형이 아니다** (검수관 실측, 2026-08-20).
+  // `mix` 를 «층별 알파» 공간에서 하고 화면에서 `1-(1-a)²` 로 합성하는데, 그 합성이
+  // 오목(concave)이라 옌센 부등식에 의해 중간 `depthT` 에서 **두 목표값의 선형 블렌드보다
+  // 항상 더 불투명한 쪽으로** 치우친다. `clearMul=1` 최악 실측:
+  //
+  //   depthT   0      0.25    0.5     0.75    1
+  //   합성     0.300  0.462   0.603   0.722   0.820   ← 0 과 1 은 목표와 정확히 같다
+  //   선형      —     0.430   0.560   0.690    —      (최대 +4.3%p, depthT 0.5)
+  //
+  // 즉 물가→깊은 곳 전환이 «중간에서 더 빨리 불투명해지는» 곡선이다. 이 코드가 약속한
+  // 것은 **끝점 보존**이고 그것은 지킨다 — 다만 이 문단이 없으면 다음 사람이 선형
+  // 그라데이션으로 읽는다. 화면에서 문제인지는 판정 불가(WebGPU 전용)이고, 문제로
+  // 드러나면 합성 공간에서 보간하도록(`layerOpacity(mix(...))`) 뒤집으면 된다.
   const shallowA = float(layerOpacity(shallowAlpha(clearMul), layers));
   mat.opacityNode = mix(shallowA, float(deepA), depthT);
 
