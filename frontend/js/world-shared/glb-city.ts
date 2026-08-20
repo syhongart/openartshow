@@ -868,7 +868,7 @@ interface GeoLike {
  * 둘러보게 되고, 부하는 그대로 유지된다 — 비운 칸의 몫은 바깥으로 한 칸 밀린다.
  */
 // 파셀 생사·등장 연출은 **`glb-city-visibility.ts` 소유**(2026-08-20 분리, 근거는 그 파일 헤더).
-// 재수출은 소비자 경로용, `import` 는 이 파일에서 쓰기용 — 둘 다 필요하다.
+// **재수출은 로컬 바인딩을 안 만든다** — 그래서 소비자용 `export` 와 이 파일용 `import` 둘 다.
 export { syncVisibility, advanceGrow, type PlacedCopy } from './glb-city-visibility.js';
 import { syncVisibility, advanceGrow, type PlacedCopy } from './glb-city-visibility.js';
 

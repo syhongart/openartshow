@@ -93,7 +93,7 @@ export function syncVisibility(
  * 그래서 감독이 `?grow=` 로 판정하면 **셋이 함께 변한다.**
  *
  * ⚠ **`scaleAdvance` 를 실제로 호출하는 것은 액자와 미술관뿐이다**(검수관 블로커 C3
- * 실측 — `parcel-grow.ts:27-29` 는 `fadeMix`·`START_SCALE`·`GROW_EASE` 만 import 하고
+ * 실측 — `parcel-grow.ts:27-29` 는 `lod-fade` 에서 **상수·헬퍼만** 가져다 쓰고
  * 자체 루프를 돈다). 첫 판본은 *"마을 파츠와 액자가 이미 그 함수를 쓴다"* 고 적었고
  * **거짓이었다** — `lod-fade.ts` 원문의 *"같은 **식**을 쓴다"* 를 옮겨 적으면서
  * **「같은 함수 호출」로 바뀌었다.** 결론은 우연히 참이었지만 근거가 틀렸고, 그 차이가
