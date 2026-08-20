@@ -52,6 +52,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createPanel, type PanelHandlers } from '../frontend/js/world2/edit/panel/dom.js';
 import { createOutliner } from '../frontend/js/world2/edit/panel/outliner.js';
+import { createActions } from '../frontend/js/world2/edit/actions.js';
 import { createEditState, select } from '../frontend/js/world2/edit/state.js';
 import { artTarget } from '../frontend/js/world2/edit/target.js';
 import { createArtsPort } from '../frontend/js/world2/systems/art-port.js';
@@ -540,5 +541,120 @@ describe('★ 고른 작품이 목록에서 사라지면 **화면이 말한다**
     panel.refresh();
     expect(st.artLost, '🔴 옛 선택의 「끊김」이 새 선택에 물려졌다').toBe(false);
     expect(notes()).not.toContain('목록에서 사라졌습니다');
+  });
+});
+
+describe('🔴 키 안내는 상황 메시지에 밀려나지 않는다 — 태스크 #66', () => {
+  // ── 왜 이 블록이 생겼나 (2026-08-20) ──────────────────────────────────────
+  // 힌트가 **한 요소·한 분기**였다. 그래서 마을 파츠를 고르거나 경고가 뜨면 키 목록이
+  // **통째로 사라졌다** — 하필 **무언가를 고른 직후**, 즉 조작이 필요한 바로 그 순간에.
+  // `sayLead` 는 모드가 바뀔 때 한 번 말하고 다른 `say()` 가 덮으면 사라지므로, 화면에
+  // 계속 남는 줄은 이쪽뿐이다(검수관 권고 P1 이 그 줄을 만든 이유).
+  //
+  // ⚠ **못 잡는 것**: 실제로 읽히는 크기·줄바꿈(CSS·화면 폭) · 문구가 실제 키와 맞는지
+  // (그 값 미러링은 태스크 #44 소관) · 모바일 레이아웃.
+
+  /** 패널 안에서 키 안내를 담은 줄 */
+  const keysLine = (): string => Array
+    .from(document.querySelectorAll('#w2-edit .note'))
+    .map((n) => n.textContent ?? '')
+    .find((t) => t.includes('WASD')) ?? '';
+
+  it('🔴 마을 파츠를 골라도 키 안내가 남는다', () => {
+    const { panel, st } = mount();
+    // 마을 파츠 선택 상태를 만든다 — 그때 상황 메시지가 뜨는 분기다.
+    st.villageSel = { px: 0, pz: 0, idx: 0, kind: 'tree', frozen: false } as never;
+    panel.refresh();
+    expect(keysLine(), '🔴 파츠를 고르자 키 안내가 사라졌다 — 조작이 필요한 순간에').toContain('WASD');
+    // 상황 메시지도 함께 있어야 한다 — 하나가 다른 하나를 밀어내지 않는다.
+    const all = Array.from(document.querySelectorAll('#w2-edit .note')).map((n) => n.textContent ?? '');
+    expect(all.some((t) => t.includes('손본 구역')), '🔴 상황 메시지가 사라졌다').toBe(true);
+  });
+
+  it('★ 아무것도 안 골라도 키 안내가 있다 — 기본 상태', () => {
+    const { panel } = mount();
+    panel.refresh();
+    expect(keysLine()).toContain('WASD');
+  });
+
+  it("★ 안내에 `Esc` 취소가 적혀 있다 — 태스크 #97 로 연 문을 화면이 말한다", () => {
+    const { panel } = mount();
+    panel.refresh();
+    expect(keysLine(), '🔴 취소 키를 열어 놓고 화면에 안 적었다').toContain('Esc');
+  });
+});
+
+describe('🔴 `Esc` 로 고른 것을 취소한다 — 태스크 #97', () => {
+  // ── 왜 이 문이 필요했나 (2026-08-20) ──────────────────────────────────────
+  // 팔레트에서 고른 뒤 취소하는 문이 **그 버튼을 다시 누르는 것 하나**였다. 「고른 상태」는
+  // 화면에 크게 안 드러나는데(커서가 안 바뀐다) **지면을 클릭하면 물건이 생기므로**,
+  // 취소를 모르면 의도치 않게 놓고 다시 지워야 한다.
+  //
+  // ── ⚠ 여기 있는 것은 **함수의 행위**다 (전 경로는 다른 파일) ──────────────
+  // 처음에는 `world2-edit-listeners.test.ts` 에 붙였다가 4건 전부 실패했다 —
+  // `Cannot set properties of undefined`. 그 파일의 `Harness` 는 `st` 를 노출하지 않고
+  // `EditSession` 계약(`edit/types.ts:311`)도 `dispose()`+조준 진단뿐이다. **거기까지는
+  // 참이다.**
+  //
+  // 🔴 **그런데 «행위로 못 잰다» 는 거짓이었다**(검수관 블로커 H1). `st` **직접 대입**이
+  // 막힌 것이지 **제품 경로**가 막힌 게 아니었다 — 팔레트 버튼을 클릭하면 `palette.ts` 의
+  // `pick()` 이 pending 을 세운다. 전 경로 행위 검사는 **`world2-edit-listeners.test.ts`
+  // 의 GS-E1** 에 있고, 그것이 이 회차의 주 축이다.
+  //
+  // 여기 남은 것은 **함수 단위 행위**(경계·반환값)이고 그 축은 여전히 값이 있다 —
+  // GS-E1 은 「사용자가 `Esc` 로 취소한다」를 재고, 여기는 「그 함수가 무엇을 건드리고
+  // 무엇을 안 건드리는가」를 잰다.
+  //
+  // ⚠ **못 잡는 것**: 실제 브라우저에서 `Esc` 가 이 경로까지 오는지(모달·조준이 먼저
+  // 삼키는 순서는 각 파일 소관) · 팔레트 버튼의 강조가 풀리는지 · 모바일 터치 경로.
+
+  const mkActions = (): ReturnType<typeof createActions> & { st: ReturnType<typeof createEditState> } => {
+    const h = mount();
+    const actions = createActions(h.host, h.st, h.panel);
+    return Object.assign(actions, { st: h.st });
+  };
+
+  it('🔴 고른 파츠가 풀린다 — 그리고 `true` 를 낸다(이벤트를 삼켜도 된다는 신호)', () => {
+    const a = mkActions();
+    a.st.pendingPart = 'tree';
+    expect(a.cancelPending(), '🔴 풀 것이 있는데 false 를 냈다').toBe(true);
+    expect(a.st.pendingPart, '🔴 고른 것이 안 풀렸다 — 지면을 클릭하면 나무가 생긴다').toBeNull();
+  });
+
+  it('🔴 고른 GLB 도 같은 문으로 풀린다 — 둘을 갈라 두면 하나만 기억한다', () => {
+    const a = mkActions();
+    a.st.pendingSrc = 'assets/models/x.glb';
+    expect(a.cancelPending()).toBe(true);
+    expect(a.st.pendingSrc).toBeNull();
+  });
+
+  it('🔴 **고를 것이 없으면 `false`** — 다른 `Esc` 소비자가 살아 있어야 한다', () => {
+    // 계약의 절반이 여기다. 조용히 `true` 를 내면 부르는 쪽이 이벤트를 삼켜
+    // «아무것도 안 골랐는데 Esc 가 먹통» 이 되고, 증상은 모달·조준 쪽에서 엉뚱하게 뜬다.
+    const a = mkActions();
+    expect(a.cancelPending(), '🔴 풀 것이 없는데 삼키라고 했다').toBe(false);
+  });
+
+  it('★ 선택(놓은 뒤)은 안 건드린다 — 크기 조절 중 Esc 로 대상이 사라지면 안 된다', () => {
+    const a = mkActions();
+    a.st.pendingPart = 'tree';
+    a.st.villageSel = { px: 0, pz: 0, idx: 0, kind: 'tree', frozen: false } as never;
+    a.cancelPending();
+    expect(a.st.villageSel, '🔴 고른 것을 풀면서 선택까지 풀었다').not.toBeNull();
+  });
+
+  it('★ 배선 — `Esc` 가 그 문을 부른다 (정적 축 — **보조**다)', () => {
+    // ⚠ **이 축만으로는 부족하다** — 검수관 실측(G2): 이 줄을 **주석 처리**하면 문자열이
+    // 소스에 남아 여기는 **통과**하고 `Esc` 취소만 죽는다(`GS-A1` 이 「못 잡는 것 ⓐ」로
+    // 이름 붙인 사각). 그 형태를 잡는 것은 `world2-edit-listeners.test.ts` 의 **GS-E1**
+    // 이고, 실측으로 확인했다 — G2 에서 GS-E1 만 **1 failed**.
+    // 여기 남기는 이유는 **줄을 통째로 지우는 형태**에서 둘 다 빨간불이 되어 원인을 빨리
+    // 좁혀 주기 때문이다(E3 실측: **2 failed**).
+    // ⚠ **cwd 상대 경로다** — 이 파일은 jsdom 환경이라 `import.meta.url` 이 `file:` 스킴이
+    // 아니고 `fileURLToPath` 가 던진다(이 파일 위쪽 선례에 실측이 적혀 있다). 처음에
+    // `fileURLToPath` 로 썼다가 `ReferenceError` 를 보고 알았다.
+    const src = readFileSync('frontend/js/world2/edit/input.ts', 'utf8').replace(/\s+/g, ' ');
+    expect(src, '🔴 Esc 가 취소를 안 부른다 — 문을 만들고 열쇠를 안 줬다')
+      .toContain("ev.code === 'Escape' && actions.cancelPending()");
   });
 });

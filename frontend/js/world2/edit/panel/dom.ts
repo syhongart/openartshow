@@ -180,6 +180,15 @@ export function createPanel(
   const badge = createBadge(host, st);
   const status = el('div', 'note', 'GLB 를 이 화면에 끌어다 놓거나, 위에서 골라 지면을 클릭.');
   const hint = el('div', 'note', '');
+  /**
+   * 🔴 **키 안내 — 상황 메시지에 밀려나지 않는다** (태스크 #66, 2026-08-20).
+   *
+   * 그전에는 `hint` **하나**에 상황과 키를 함께 담고 분기로 갈랐다. 그래서 마을 파츠를
+   * 고르거나 경고가 뜨면 **키 목록이 통째로 사라졌다** — 감독이 조작을 잊었을 때
+   * 돌아올 자리가 없어지는 형태이고, 하필 **무언가를 고른 직후**(= 조작이 필요한
+   * 바로 그 순간)에 사라졌다.
+   */
+  const keys = el('div', 'note', '');
   /** 접힘/펼침 + 편집/주행을 함께 쥔 버튼. 접혔을 때 화면에 남는 유일한 것이다 */
   const toggle = button('✏️ 편집', () => { handlers.toggleEditing(); });
   toggle.className = 'toggle';
@@ -321,7 +330,7 @@ export function createPanel(
 
   body.append(tabs.panes.place, tabs.panes.props, tabs.panes.surface, tabs.panes.file);
   // 상태 줄은 탭 **밖 맨 아래**다 — 어느 탭에서 한 일이든 결과를 여기 한 곳에서 읽는다.
-  body.append(status, hint);
+  body.append(status, hint, keys);
   panel.append(head, body);
   panel.dataset.open = '0';
   panel.dataset.mode = 'drive';
@@ -413,20 +422,25 @@ export function createPanel(
       hint.textContent = '마을 파츠 — 옮기면 그 구역이 「손본 구역」이 되어 밀도 슬라이더에서 빠집니다.'
         + ' 「구역 되돌리기」로 계산 배치로 돌아갑니다.';
     } else {
+      // 상황 메시지가 없을 때는 그 줄을 **비운다** — 빈 요소는 자리를 안 차지한다.
       hint.className = 'note';
-      // ⚠ 이 줄은 **키 목록의 두 번째 사본이다**(첫 번째는 `input.ts` 의 `EDIT_KEYS`
-      // 와 `modalOpener`). 값 미러링이고, 한쪽만 고치면 «화면이 광고하는 키가 안 먹는다»
-      // 가 난다 — 실제로 R/F 를 뺄 때 이 줄을 함께 고쳐야 했다. 태스크 #44 가 그것이다.
-      // ⚠ **비행 키를 여기 넣었다**(검수관 권고 P1). `sayLead` 는 모드가 바뀔 때 **한 번**
-      // 말하고 다른 `say()` 가 덮으면 사라진다 — 화면에 계속 남는 줄은 이쪽이다. 감독이
-      // 조작을 잊었을 때 돌아올 자리가 없으면 배운 것이 사라진다.
-      // ⚠ 「출발 자리로」의 대상은 비행·궤도가 옮긴 것뿐이다 — 판정은 `edit/input.ts` (P-C).
-      hint.textContent = 'WASD 날기 · Space 위 · C 아래 (편집 끄면 출발 자리로) · '
-        + 'R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · 숫자 입력)'
-        + ' · 중클릭(또는 Alt+좌)드래그 = 대상 중심으로 돌기 · Shift+드래그 = 위아래 · 휠 = 줌'
-        + ' · 시점 1 정면 / 3 우 / 7 탑 / 9 좌 · F 확대 · Shift+Z 와이어 토글'
-        + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
+      hint.textContent = '';
+      // ⚠ **비행 키는 아래 `keys` 로 옮겼다**(태스크 #66). `sayLead` 는 모드가 바뀔 때
+      // **한 번** 말하고 다른 `say()` 가 덮으면 사라진다 — 화면에 계속 남는 줄이 필요하고,
+      // 그 줄이 상황 메시지에 밀려나면 애초의 목적(검수관 권고 P1)이 무너진다.
     }
+    // 🔴 **키 안내는 분기 밖이다** — 어떤 상황이든 화면에 남는다(태스크 #66).
+    // ⚠ 이 줄은 **키 목록의 두 번째 사본이다**(첫 번째는 `input.ts` 의 `EDIT_KEYS`
+    // 와 `modalOpener`). 값 미러링이고, 한쪽만 고치면 «화면이 광고하는 키가 안 먹는다»
+    // 가 난다 — 실제로 R/F 를 뺄 때 이 줄을 함께 고쳐야 했다. 태스크 #44 가 그것이다.
+    // ⚠ 「출발 자리로」의 대상은 비행·궤도가 옮긴 것뿐이다 — 판정은 `edit/input.ts` (P-C).
+    keys.className = 'note';
+    keys.textContent = 'WASD 날기 · Space 위 · C 아래 (편집 끄면 출발 자리로) · '
+      + 'R 회전 · S 크기 (마우스로 밀고 클릭 확정 · Esc 취소 · 숫자 입력)'
+      + ' · Esc = 고른 것 취소'
+      + ' · 중클릭(또는 Alt+좌)드래그 = 대상 중심으로 돌기 · Shift+드래그 = 위아래 · 휠 = 줌'
+      + ' · 시점 1 정면 / 3 우 / 7 탑 / 9 좌 · F 확대 · Shift+Z 와이어 토글'
+      + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
     inspector.sync(st.target);
     outliner.sync();
     badge.sync();

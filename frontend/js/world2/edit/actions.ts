@@ -16,6 +16,8 @@ import { thawParcel } from './target.js';
 import type { Panel } from './panel/dom.js';
 
 export interface Actions {
+  /** 고른 것(`pendingSrc`·`pendingPart`)을 푼다. 풀 것이 있었으면 `true` — 근거는 구현부 */
+  cancelPending(): boolean;
   placeAt(src: string, at: { x: number; z: number }, blobUrl?: string): Promise<void>;
   /**
    * **마을 파츠**를 그 자리에 놓는다(W6 E). GLB 와 달리 로드가 없어 동기다.
@@ -228,5 +230,36 @@ export function createActions(
     panel.say(`저장했습니다 · ${rev.summary}${notice ? ` — ${notice}` : ''}`, notice !== '');
   }
 
-  return { placeAt, placePartAt, duplicate, removeSelected, thawSelected, exportNow, previewUrls };
+  /**
+   * 🔴 **고른 것을 취소한다** (태스크 #97, 2026-08-20). 취소했으면 `true`.
+   *
+   * ── 왜 필요했나 ────────────────────────────────────────────────────────
+   * 그전에는 취소하는 문이 **그 팔레트 버튼을 다시 누르는 것 하나**였다. 「고른 상태」는
+   * 화면에 크게 안 드러나는데(커서가 안 바뀐다) **지면을 클릭하면 물건이 생긴다** —
+   * 그래서 취소를 모르면 의도치 않게 놓게 되고, 놓은 것을 다시 지워야 한다.
+   *
+   * ⚠ **선택(놓은 뒤)은 안 건드린다.** 고른 것(`pendingSrc`·`pendingPart`)과 선택한 것
+   * (`selected`·`villageSel`)은 다른 축이고, 후자를 함께 풀면 «크기를 조절하다 `Esc` 를
+   * 눌렀더니 대상이 사라진다» 가 된다.
+   *
+   * ⚠ **`false` 를 내는 것이 계약의 절반이다** — 부르는 쪽이 그때 이벤트를 삼키지 않아야
+   * 다른 `Esc` 소비자가 살아 있다. 고를 것이 없을 때 조용히 `true` 를 내면 «아무것도 안
+   * 골랐는데 `Esc` 가 먹통» 이 된다.
+   *
+   * 편집을 끄는 경로(`mode.ts`)도 같은 둘을 비운다 — 거기서는 조준·드래그까지 함께
+   * 정리하므로 이 함수를 부르지 않는다(그쪽이 더 넓다).
+   */
+  function cancelPending(): boolean {
+    if (!st.pendingSrc && !st.pendingPart) return false;
+    st.pendingSrc = null;
+    st.pendingPart = null;
+    panel.say('고른 것을 취소했습니다 — 지면을 클릭해도 놓이지 않습니다.');
+    panel.refresh();
+    return true;
+  }
+
+  return {
+    placeAt, placePartAt, duplicate, removeSelected, thawSelected, exportNow,
+    cancelPending, previewUrls,
+  };
 }
