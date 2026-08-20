@@ -803,6 +803,10 @@ interface ThreeGroupNS {
     add(o: never): void;
     position: { set(x: number, y: number, z: number): void };
     rotation: { y: number };
+    // 🔴 파셀 생사·등장 연출의 통로 (검수관 블로커 C4). 그전엔 요구·공급 **양쪽이**
+    // 캐스팅으로 빠져나가 대조가 0 이었다 — 실측: 스텁에서 `scale` 을 지우면 `tsc` 가 막는다.
+    visible: boolean;
+    scale: { setScalar(v: number): void };
   };
   Box3: new () => Box3Like;
 }
@@ -863,12 +867,9 @@ interface GeoLike {
  * 실험 설계의 결함이지 성능 문제가 아니었다. 원점 한 칸만 비우면 그 자리에 서서
  * 둘러보게 되고, 부하는 그대로 유지된다 — 비운 칸의 몫은 바깥으로 한 칸 밀린다.
  */
-/**
- * 파셀 생사·등장 연출은 **`glb-city-visibility.ts` 소유**다(2026-08-20 분리 — 그 파일
- * 헤더에 근거). 여기서 재수출하는 것은 소비자의 import 경로를 지키기 위해서다.
- */
+// 파셀 생사·등장 연출은 **`glb-city-visibility.ts` 소유**(2026-08-20 분리, 근거는 그 파일 헤더).
+// 재수출은 소비자 경로용, `import` 는 이 파일에서 쓰기용 — 둘 다 필요하다.
 export { syncVisibility, advanceGrow, type PlacedCopy } from './glb-city-visibility.js';
-// 재수출은 로컬 바인딩을 만들지 않는다 — 이 파일 안에서도 쓰므로 import 를 함께 둔다.
 import { syncVisibility, advanceGrow, type PlacedCopy } from './glb-city-visibility.js';
 
 
@@ -983,10 +984,9 @@ export async function placeGrid(
       // 요점이다. 노드 전체를 들면 토글 함수가 씬 그래프를 만질 수 있게 되고, 그러면
       // 가짜 노드로 시험하는 길도 함께 막힌다.
       out.push({
-        // ⚠ **`want: true` 로 시작한다.** 판정 수단이 없는 세계(world3·world5)에서는
-        // 아무도 이 값을 바꾸지 않고, 그때 「늘 보인다」가 그 세계의 사실이다.
+        // ⚠ `want: true` — world3·world5 는 이 값을 안 바꾸고 「늘 보임」이 사실이다(C2·GS-G2ⓐ).
         want: true,
-        node: holder as unknown as { visible: boolean; scale: { setScalar(v: number): void } },
+        node: holder,
         px: Math.round(cell.x / cellSize),
         pz: Math.round(cell.z / cellSize),
       });

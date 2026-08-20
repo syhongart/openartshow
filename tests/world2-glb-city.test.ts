@@ -16,14 +16,14 @@
 // 이 기능은 world2 의 제1원리(개수 불변식)를 **일부러 깬다.** 기본 노출이 된 지금은 그
 // 비용이 상시 발생하므로, 끄는 경로가 실제로 도는지가 전보다 더 중요해졌다.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { EXT_OFF } from '../frontend/js/world-shared/glb-material.js';
 // ⚠ **본체는 `world-shared/` 로 옮겼다**(2026-08-16 통합) — world2·3·5 가 한 파일을 쓴다.
 // 세계별 래퍼(`world2/features/glb-city.ts`)에는 `glbCityFeature` 만 남는다.
 import { glbCityFeature } from '../frontend/js/world2/features/glb-city.js';
-import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, syncVisibility, advanceGrow, placeGrid } from '../frontend/js/world-shared/glb-city.js';
+import { gridCells, placementCells, tameMetals, makeBadge, MAT_MODES, CARRY_MAPS, syncVisibility, advanceGrow, placeGrid, glbCity } from '../frontend/js/world-shared/glb-city.js';
 import { FEATURES } from '../frontend/js/world2/features/index.js';
 import { mountFeatures, type FeatureEnv } from '../frontend/js/world2/features/types.js';
 import { PLAZA_WEST, isCentralPlaza } from '../frontend/js/world2/decide/grid.js';
@@ -569,8 +569,11 @@ describe('🔴 미술관이 땅에서 자라나며 나타난다 — 감독 판�
   // 통째로 나타났는데, 마을 파츠(`parcel-grow.ts`)와 액자(W8-10)는 0 에서 자란다 —
   // **셋 중 하나만 어긋나 있었다.**
   //
-  // ⚠ **산술은 여기 없다.** `world2/decide/lod-fade.ts` 의 `scaleAdvance` 가 SSOT 이고
-  // (마을 파츠·액자가 이미 그것을 쓴다) 이 공유 모듈은 그것을 **주입받는다** — world3·
+  // ⚠ **산술은 여기 없다.** `world2/decide/lod-fade.ts` 가 SSOT 이고 이 공유 모듈은
+  // 그것을 **주입받는다**. (⚠ `scaleAdvance` 를 실제로 호출하는 것은 **액자와 미술관
+  // 뿐**이다 — 마을 파츠는 같은 노브·같은 이징을 쓰되 자기 루프를 돈다. 첫 판본은
+  // *"마을 파츠·액자가 이미 그것을 쓴다"* 고 적었고 거짓이었다 — 검수관 블로커 C3.)
+  // 주입인 이유는 world3·
   // world5 도 이 파일을 쓰므로 `world2/` 를 import 할 수 없기 때문이다(팀장 규칙 R2).
   // 그래서 여기서 재는 것은 **식이 아니라 통로**다: 주입된 값이 화면에 닿는가.
   //
@@ -659,6 +662,83 @@ describe('🔴 미술관이 땅에서 자라나며 나타난다 — 감독 판�
   });
 });
 
+describe('🔴 GS-G1 — 주입된 `copyScale` 을 **행위로** 잰다 (검수관 명세, 블로커 C1)', () => {
+  // ── 왜 이 블록이 생겼나 ────────────────────────────────────────────────────
+  // 래퍼(`world2/features/glb-city.ts`)의 검사가 **정적 문자열 3개**뿐이었고, 나는 그것을
+  // *"정적 텍스트 축이다"* 라고 적었다. **그 전제가 틀렸다**(검수관 블로커 C1).
+  // 이 파일이 이미 `glbCityFeature.create(ENV)` 를 노드에서 부르고 있으므로,
+  // `vi.spyOn(glbCity, 'create')` 로 `deps.copyScale` 을 잡으면 **그대로 실행할 수 있다.**
+  //
+  // 검수관 실측 — 그때 통과하던 뮤테이션 둘:
+  //   `fresh: true` → `false`      0 failed / 4103   ← 파셀 없는 채가 안 꺼진다
+  //   `states.set(id, next)` 제거   0 failed / 4103   ← **연출이 통째로 죽는다**
+  // 두 번째는 감독이 신고한 *"자라나는 느낌이 아닌데?"* 그 화면으로 **정확히 되돌아가는**
+  // 회귀인데 전 스위트가 초록이었다.
+  //
+  // 🔴 **직전 세 회차의 블로커가 전부 같은 형태다**(B1 «13.5MB 라 노드에서 불가능» ·
+  // B4 «되살리는 형태는 하나» · 이번 «정적 텍스트 축이다»). `G-ART3` 의 처방
+  // *"「안 한다」를 적을 때는 안 되는 것을 한 번 해 보고 적는다"* 가 **세 번 연속 안
+  // 걸린 자리**다. 다음에 「행위로 못 잰다」를 적으려거든 먼저 spy 를 한 번 걸어 보라.
+  //
+  // ⚠ **못 잡는 것**: 실제로 자라 보이는지(사람 눈 — 이 회차의 목적 자체이고 감독 화면이
+  // 유일한 판정이다) · 프레임 시간 · WebGPU · `scaleAdvance` 자체의 산술(그쪽은
+  // `tests/world2-lod-fade.test.ts` 소관).
+
+  type Deps = Parameters<typeof glbCity.create>[1];
+
+  /** 래퍼가 본체에 넘기는 `deps` 를 그대로 잡는다 */
+  function grab(): Deps {
+    let got: Deps | null = null;
+    const spy = vi.spyOn(glbCity, 'create').mockImplementation((_env, d) => { got = d; return null; });
+    try { glbCityFeature.create(ENV); } finally { spy.mockRestore(); }
+    if (!got) throw new Error('래퍼가 본체를 부르지 않았다');
+    return got;
+  }
+
+  const step = (d: Deps, id: number, up: boolean, dt = 1 / 60) => d.copyScale?.(id, up, dt) ?? null;
+
+  it('🔴 **첫 걸음은 목표로 순간 이동**한다 — `fresh` 계약이 `[7]` 을 지키는 근거다', () => {
+    // 부팅에서 `START_SCALE`(0.02)로 시작하면 바운딩 스피어가 50배 작아져 회전 구간에
+    // 프러스텀 컬링되고, 그러면 `info.memory` 계단이 복귀 구간으로 밀려 개수 불변식
+    // `[7]` 의 `settledOk` 가 FAIL 한다. **그 계약이 여기서 처음으로 검사가 된다** —
+    // 그전에는 `lod-fade.ts` 주석의 논거를 인용하고 있었을 뿐이다.
+    const d = grab();
+    expect(step(d, 0, true), '🔴 부팅에서 제 크기가 아니다 — [7] 이 흔들린다').toBe(1);
+  });
+
+  it('🔴 처음부터 파셀이 없는 채는 **꺼진 채로 시작**한다 — 「가볍게」가 그 채에서 무효가 된다', () => {
+    const d = grab();
+    expect(step(d, 0, false), '🔴 파셀이 없는데 제 크기로 서 있다').toBe(0);
+  });
+
+  it('🔴 목표에 닿아 있으면 `null` — 「변할 때만 대입」을 산술 쪽이 보증한다', () => {
+    const d = grab();
+    expect(step(d, 0, true)).toBe(1);
+    expect(step(d, 0, true), '🔴 안 바뀌었는데 값을 냈다').toBeNull();
+  });
+
+  it('🔴 **재등장은 한 프레임에 1 이 되지 않는다** — 이것이 「자라나는」의 본체다', () => {
+    // ⚠ 이 단언이 재는 것은 *"한 프레임에 1 이 되지 않는다"* 까지다. **「자라 보인다」와
+    // 같지 않다**(검수관 명시) — 그것은 감독 화면만 가른다. 그래도 0 보다 낫다: 이 값이
+    // 1 로 튀면 연출이 **통째로 죽은 것**이고, 그 증상은 화면에서만 드러난다.
+    const d = grab();
+    step(d, 0, true);          // 부팅 — 순간 이동
+    step(d, 0, false);         // 파셀이 내려간다
+    const k = step(d, 0, true); // 돌아온다 — 여기서부터 자라야 한다
+    expect(k, '🔴 재등장에서 값이 안 나왔다').not.toBeNull();
+    expect(k!, '🔴 한 프레임에 제 크기가 됐다 — 자라지 않는다').toBeLessThan(1);
+    expect(k!, '🔴 배수가 0 이하다 — 안 보인다').toBeGreaterThan(0);
+  });
+
+  it('🔴 상태를 **채별로** 든다 — 한 채의 진행이 다른 채에 실리면 엉뚱한 건물이 자란다', () => {
+    const d = grab();
+    step(d, 0, true);
+    // 다른 채는 아직 첫 걸음이므로 **자기 `fresh`** 로 순간 이동해야 한다.
+    expect(step(d, 1, false), '🔴 채 1 이 채 0 의 상태를 받았다').toBe(0);
+    expect(step(d, 0, true), '🔴 채 0 의 상태가 채 1 에 덮어써졌다').toBeNull();
+  });
+});
+
 describe('🔴 GS-V1 — 배치가 토글에 넘기는 경계 (검수관 명세, 블로커 B1)', () => {
   // ── 왜 이 블록이 생겼나 ────────────────────────────────────────────────────
   // `syncVisibility` 는 뮤테이션 6종으로 촘촘한데, **그 함수를 화면에 도달시키는 경로가
@@ -684,13 +764,20 @@ describe('🔴 GS-V1 — 배치가 토글에 넘기는 경계 (검수관 명세,
       rotation = { y: 0 };
       add(o: unknown): void { this.children.push(o); }
       updateMatrixWorld(): void { /* 스텁 — 행렬은 이 축에서 안 본다 */ }
+      // 🔴 **연출이 쓰는 통로** (검수관 블로커 C4). 배수가 여기 실린다.
+      scale = { k: 1, setScalar(v: number) { this.k = v; } };
     }
     class Box3 {
       min = { x: 0, y: 0, z: 0 };
       max = { x: 0, y: 0, z: 0 };
       setFromObject(): this { return this; }
     }
-    return { Group: G, Box3 } as never;
+    // 🔴 **`as never` 를 걷어냈다** (검수관 블로커 C4, 2026-08-20). 그전에는 이 캐스팅이
+    // 타입 검사를 **통째로 우회**해서, 스텁이 `visible`·`scale` 을 빠뜨려도 아무도 몰랐다
+    // — `placeGrid` 쪽도 `holder as unknown as {…}` 로 캐스팅하고 있어서 **요구와 공급이
+    // 어디서도 대조되지 않았다.** `satisfies` 로 바꾸면 계약이 늘 때마다 여기가 빨간불이
+    // 되고, 그것이 「스텁을 갱신하라」는 신호다.
+    return { Group: G, Box3 } satisfies Parameters<typeof placeGrid>[0] as never;
   }
 
   /** `model.clone(true)` 만 하면 된다 — 붙는 쪽은 자리만 잡는다 */
@@ -732,6 +819,40 @@ describe('🔴 GS-V1 — 배치가 토글에 넘기는 경계 (검수관 명세,
     // 돌아오면 켜진다 — 영구 손실이 아니다.
     step(() => true);
     expect(out[0]!.node.visible).toBe(true);
+  });
+
+  it('🔴 **GS-G2ⓐ** — 세운 채는 「보임」으로 시작한다 (검수관 블로커 C2)', async () => {
+    // 실측(검수관): `want: true` → `false` 로 바꿔도 **0 failed / 4103** 이었다.
+    // 그런데 그 세상에서는 **world3·world5 의 미술관이 영구히 안 보인다** — 그 세계들은
+    // `parcelLoaded` 가 없어 `syncVisibility` 가 즉시 return 하므로 `want` 가 영영
+    // `false` 로 남는다. 소스 주석이 *"늘 보인다가 그 세계의 사실"* 이라고 **선언**하는데
+    // 그것을 지키는 검사가 0 이었다.
+    const root = { add() { /* 스텁 */ } } as never;
+    const out: Parameters<typeof syncVisibility>[0][number][] = [];
+    await placeGrid(stubThree(), stubModel(), root, 1, 32, PLAZA_WEST, () => { }, out as never);
+
+    expect(out[0]!.want, '🔴 세우자마자 「원하지 않음」이다').toBe(true);
+    // 판정 수단이 없는 세계의 한 프레임 — 화면에 남아야 한다.
+    syncVisibility(out, undefined);
+    advanceGrow(out, 1 / 60, undefined);
+    expect(out[0]!.node.visible, '🔴 world3·world5 에서 미술관이 사라진다').toBe(true);
+  });
+
+  it('🔴 **GS-G2ⓑ** — 배수가 **그 노드**에 실린다 (검수관 블로커 C4)', async () => {
+    // 실측(검수관): `node: holder` → `node: copy` 로 바꿔도 **0 failed / 4103**.
+    // 그 세상에서는 스케일이 홀더가 아니라 **자식**에 걸려 **보정 오프셋까지 함께**
+    // 커진다 — 이 파일이 회전에 대해 이미 명시한 그 함정이고(«안쪽에서 보정하고 바깥에서
+    // 돌린다»), 스케일도 같은 이유로 바깥이어야 한다.
+    //
+    // ⚠ **런타임은 실제 three `Group` 이라 안전했다.** 위험한 것은 그 요구를 **타입도
+    // 테스트도 안 보고 있었다**는 것이다 — 양쪽이 캐스팅으로 빠져나갔다(C4).
+    const root = { add() { /* 스텁 */ } } as never;
+    const out: Parameters<typeof syncVisibility>[0][number][] = [];
+    await placeGrid(stubThree(), stubModel(), root, 1, 32, PLAZA_WEST, () => { }, out as never);
+
+    advanceGrow(out, 1 / 60, () => 0.5);
+    const node = out[0]!.node as unknown as { scale: { k: number } };
+    expect(node.scale.k, '🔴 배수가 세운 채의 스케일에 안 실렸다').toBeCloseTo(0.5, 6);
   });
 
   it('★ 셀 크기가 파셀 좌표에 실제로 쓰인다 — 상수로 굳으면 엉뚱한 파셀을 본다', async () => {

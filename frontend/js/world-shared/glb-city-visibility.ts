@@ -87,8 +87,21 @@ export function syncVisibility(
  * *"자라나는 느낌이 아닌데?"*).
  *
  * ── 왜 산술을 여기서 하지 않고 주입받는가 ──────────────────────────────────
- * 등장 배수의 식은 **`world2/decide/lod-fade.ts` 의 `scaleAdvance` 하나**다 — 마을
- * 파츠(`parcel-grow.ts`)와 액자(`artwork-scene.ts`)가 이미 그것을 쓴다. 이 파일은
+ * 등장 배수의 식은 **`world2/decide/lod-fade.ts`** 소유다. 마을 파츠(`parcel-grow.ts`)와 액자(`artwork-scene.ts`)가 **같은 모듈의 같은
+ * 노브·같은 이징**을 쓴다 — `?grow=` 는 `readParcelAnim()` 한 곳에서만 읽히고 세 갈래로
+ * 흘러간다(`main.ts` → 마을 파츠 / `artwork-scene.ts:98` → 액자 / 이 파일 → 미술관).
+ * 그래서 감독이 `?grow=` 로 판정하면 **셋이 함께 변한다.**
+ *
+ * ⚠ **`scaleAdvance` 를 실제로 호출하는 것은 액자와 미술관뿐이다**(검수관 블로커 C3
+ * 실측 — `parcel-grow.ts:27-29` 는 `fadeMix`·`START_SCALE`·`GROW_EASE` 만 import 하고
+ * 자체 루프를 돈다). 첫 판본은 *"마을 파츠와 액자가 이미 그 함수를 쓴다"* 고 적었고
+ * **거짓이었다** — `lod-fade.ts` 원문의 *"같은 **식**을 쓴다"* 를 옮겨 적으면서
+ * **「같은 함수 호출」로 바뀌었다.** 결론은 우연히 참이었지만 근거가 틀렸고, 그 차이가
+ * 중요하다: `scaleAdvance` 의 `fresh`(순간 이동)와 되감기 금지(`from`)는 **마을 파츠에
+ * 아예 없는 개념**이라, 다음 사람이 그 문장을 믿고 `scaleAdvance` 를 고치면 마을 파츠는
+ * 안 따라온다.
+ *
+ * 이 파일은
  * world3·world5 도 함께 쓰므로 `world2/` 를 import 할 수 없고(팀장 규칙 R2 —
  * *"공유 모듈이 특정 세계를 알면 공유가 아니다"*), 식을 여기 옮겨 적으면 **값 미러링**이
  * 된다. 그래서 **세계가 함수를 주입**한다. `parcelLoaded` 와 같은 선택적 계약이다.
