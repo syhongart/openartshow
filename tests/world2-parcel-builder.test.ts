@@ -26,6 +26,14 @@ function fakePool(capacity: number | Record<string, number> = 10_000) {
   const next = new Map<string, number>();
   const log = { acquire: 0, release: 0, transform: 0, tone: 0 };
   const transformed: SlotHandle[] = [];
+  /**
+   * 「연출 없이」 스위치가 **슬롯을 만지는 그 순간에** 켜져 있었는가 (팀장 조건 2).
+   * 켰다 껐다만 세면 «켠 뒤 아무것도 안 하고 껐다» 가 통과한다 — 그래서 각 슬롯 작업
+   * 시점의 값을 기록한다.
+   */
+  let instant = false;
+  const instantAt: boolean[] = [];
+  const switches: boolean[] = [];
 
   const pool: SlotPool = {
     acquire(key) {
@@ -44,17 +52,19 @@ function fakePool(capacity: number | Record<string, number> = 10_000) {
       log.acquire++;
       return { key, index };
     },
-    setTransform(h) { log.transform++; transformed.push(h); },
+    setTransform(h) { log.transform++; transformed.push(h); instantAt.push(instant); },
     setTone() { log.tone++; },
     release(h) {
       live.get(h.key)?.delete(h.index);
       (free.get(h.key) ?? free.set(h.key, []).get(h.key)!).push(h.index);
       log.release++;
+      instantAt.push(instant);
     },
+    setInstant(on) { instant = on; switches.push(on); },
   };
   const liveCount = () => [...live.values()].reduce((s, x) => s + x.size, 0);
   const liveOf = (k: string) => live.get(k)?.size ?? 0;
-  return { pool, log, liveCount, liveOf, transformed };
+  return { pool, log, liveCount, liveOf, transformed, instantAt, switches, isOn: () => instant };
 }
 
 const mk = (capacity?: number) => {
@@ -332,5 +342,55 @@ describe('costOf — 상대 비중', () => {
     const { builder } = mk();
     const ratio = builder.costOf('near') / builder.costOf('far');
     expect(ratio).toBeCloseTo(kindsFor('near').length / kindsFor('far').length);
+  });
+});
+
+// ── 🔴 GS-I2 「연출 없이」 스위치가 슬롯 작업 **시점에** 켜져 있는가 ──────────
+//
+// 팀장 판정 (가) (2026-08-20) 의 조건 2 중 아래 절반이다 — 위 절반(스트리밍이 빌더에게
+// 넘기는가)은 `tests/world2-streaming-system.test.ts` 의 `GS-I1` 이 본다.
+//
+// ⚠ **켰다 껐다만 세면 안 된다** — 「켠 뒤 아무것도 안 하고 껐다」가 통과한다. 그래서
+// 스텁이 **각 슬롯 작업 시점의 값**을 기록하고 여기서 그것을 단언한다.
+//
+// ⚠ **못 잡는 것**: 스위치를 받은 실제 풀(`systems/parcel-assets.ts` 의 `createSlotPool`)이
+// `grow.place`/`grow.retire` 를 정말 건너뛰는지는 **여기서 안 본다** — 그 파일은 `three`
+// 의존이라 이 하네스에 안 들어온다. 그 축은 지금 **검사가 없다**(통과로 적지 않는다).
+describe('🔴 GS-I2 — 즉시 빌드/반납이 스위치를 슬롯 작업 시점까지 나른다', () => {
+  it('🔴 `build(instant)` — 슬롯을 놓는 **그 순간** 스위치가 켜져 있다', () => {
+    const { builder, instantAt, switches } = mk();
+    builder.build(0, 0, 'near', true);
+    expect(instantAt.length, '🔴 슬롯을 하나도 안 놓았다 — 검사가 헛돈다').toBeGreaterThan(0);
+    expect(instantAt.every((v) => v === true), '🔴 켜고 껐지만 슬롯 작업은 꺼진 채로 돌았다').toBe(true);
+    expect(switches, '🔴 열고 닫는 짝이 안 맞는다').toEqual([true, false]);
+  });
+
+  it('★ **등가 대조군** — 기본값은 종전대로다(스위치를 아예 안 건드린다)', () => {
+    const { builder, instantAt, switches } = mk();
+    builder.build(0, 0, 'near');
+    expect(instantAt.length, '🔴 슬롯을 하나도 안 놓았다').toBeGreaterThan(0);
+    expect(instantAt.every((v) => v === false), '🔴 안 시켰는데 연출이 꺼졌다').toBe(true);
+    expect(switches, '🔴 기본 경로가 스위치를 건드렸다 — 없어도 되는 호출이다').toEqual([]);
+  });
+
+  it('🔴 `release(instant)` — 슬롯을 반납하는 **그 순간**에도 켜져 있다', () => {
+    const { builder, instantAt, switches } = mk();
+    const h = builder.build(0, 0, 'near');
+    instantAt.length = 0;
+    switches.length = 0;
+    builder.release(h, true);
+    expect(instantAt.length, '🔴 슬롯을 하나도 안 반납했다').toBeGreaterThan(0);
+    expect(instantAt.every((v) => v === true), '🔴 반납이 꺼진 채로 돌았다 — 0.25초 수축한다').toBe(true);
+    expect(switches).toEqual([true, false]);
+  });
+
+  it('🔴 `fill` 이 던져도 스위치는 **닫힌다** — 켠 채로 남으면 이후 전부 연출이 꺼진다', () => {
+    const f = fakePool();
+    // `acquire` 가 던지게 만든다 — 실물에서는 풀 고갈·논리 오류가 이 자리다.
+    const boom = { ...f.pool, acquire: () => { throw new Error('boom'); } };
+    const builder = new PooledParcelBuilder({ pool: boom, cellX: 32, cellZ: 32 });
+    expect(() => builder.build(0, 0, 'near', true)).toThrow('boom');
+    expect(f.isOn(), '🔴 스위치가 켜진 채 남았다 — 이후 모든 파셀이 연출 없이 등장한다').toBe(false);
+    expect(f.switches, '🔴 닫는 호출이 없다').toEqual([true, false]);
   });
 });

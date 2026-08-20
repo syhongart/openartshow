@@ -223,10 +223,15 @@ export function createPanel(
   // 「구역 되돌리기」는 **마을을 골랐을 때만** 뜬다. 늘 보이면 «무엇이 되돌아가는가» 가
   // 모호하고(오버레이 배치는 파셀 개념이 없다), 안 보이면 되돌릴 방법이 없는 줄 안다.
   const thawBtn = button('구역 되돌리기', () => { handlers.thawSelected(); });
-  // 「복제」도 액자에서 숨긴다(검수관 권고 P3) — `actions.duplicate` 가 `st.selected`
-  // (오버레이)만 보므로 액자를 고른 채 누르면 *"먼저 물건을 클릭해 고르세요"* 가 뜬다.
-  // **방금 골랐는데** 그렇게 말하는 것이 위 「바닥에」와 같은 형태의 거짓 안내다.
-  // 액자 복제 자체는 열 수 있지만(같은 그림 한 장 더) 이번 범위 밖이다.
+  // 「복제」는 **오버레이(GLB)를 골랐을 때만** 뜬다 — `actions.duplicate` 가 `st.selected`
+  // 하나만 보므로(`actions.ts:150`) 다른 종류를 고른 채 누르면 *"먼저 물건을 클릭해
+  // 고르세요"* 가 뜬다. **방금 골랐는데** 그렇게 말하는 것이 위 「바닥에」와 같은 형태의
+  // 거짓 안내다.
+  // ⚠ **처음에는 액자만 숨겼고(검수관 권고 P3) 마을이 그대로 남아 있었다** — 마을을 고르면
+  // `select()` 가 `st.selected` 를 `null` 로 만들므로(`state.ts:333`) 같은 거짓말이 났다.
+  // 결함을 한 종류에서 고치고 **같은 형태가 남은 다른 종류를 안 본** 자리다(2026-08-20).
+  // 마을 복제 자체는 열 수 있고 `copyPart()`(`target.ts:276`)가 그 목적으로 이미 있으나
+  // 소비자가 0이다 — 파셀당 상한(`canPlacePart`)을 태워야 해서 별건이다(백로그 `G-EDIT6`).
   const dupBtn = button('복제', () => { handlers.duplicate(); });
   rowOps.append(
     snapBtn,
@@ -349,7 +354,8 @@ export function createPanel(
     // 조작 가능한 칸이 있어 화면이 두 가지를 말한다.
     // ⚠ **`rowOps`(격자·복제·삭제·구역되돌리기)는 예외로 남는다**(검수관 권고 P-e).
     // 「격자 0.5m」가 선택과 무관한 전역 토글이라 그 줄을 통째로 숨길 수 없다 — 즉 위
-    // 문장은 **수치칸·조작 버튼에 대해서만** 참이다. 개별 버튼 숨김은 아래 `isArt` 절.
+    // 문장은 **수치칸·조작 버튼에 대해서만** 참이다. 개별 버튼 숨김은 아래 `groundBtn`·
+    // `dupBtn` 두 줄이다(조건이 서로 다르다).
     propsEmpty.hidden = has;
     propsCount.hidden = has;
     if (!has) propsCount.textContent = `이 문서에 배치 ${host.entries().length}개`;
@@ -358,10 +364,10 @@ export function createPanel(
     rowRot.hidden = !has;
     rowScale.hidden = !has;
     rowY.hidden = !has;
-    // 액자에서 숨기는 둘 — 근거는 각 버튼을 만드는 자리에 있다.
-    const isArt = st.target?.kind === 'art';
-    groundBtn.hidden = isArt;
-    dupBtn.hidden = isArt;
+    // 근거는 각 버튼을 만드는 자리에 있다. **둘의 조건이 다르다** — 「바닥에」는 액자만
+    // 빼고, 「복제」는 오버레이만 남긴다(마을도 못 한다).
+    groundBtn.hidden = st.target?.kind === 'art';
+    dupBtn.hidden = st.target?.kind !== 'overlay';
     snapBtn.dataset.on = st.snapOn ? '1' : '0';
     // ── 셰이딩 버튼 ────────────────────────────────────────────────────────
     // **지금 모드를 강조한다.** 없으면 눌러도 화면이 그대로인 모드(재질)에서 «안 먹었나» 가

@@ -14,22 +14,25 @@ import type { Tier } from '../frontend/js/world2/decide/lod.js';
 /** 호출을 세는 가짜 빌더. retierable=false면 재생성 경로를 강제한다. */
 function fakeBuilder(retierable = true) {
   const log = { build: 0, release: 0, retier: 0 };
+  /** 「연출 없이」 플래그가 **실제로 도착했는가** — 판정(streaming)과 집행(builder)의 경계 */
+  const instants = { build: [] as Array<[string, boolean]>, release: [] as boolean[] };
   const live = new Set<string>();
   const builder: ParcelBuilder = {
-    build(px, pz, tier) {
+    build(px, pz, tier, instant) {
       log.build++;
       const k = `${px},${pz}`;
+      instants.build.push([k, instant === true]);
       live.add(k);
       return { key: k, tier };
     },
-    release(h) { log.release++; live.delete(h.key); },
+    release(h, instant) { log.release++; instants.release.push(instant === true); live.delete(h.key); },
     retier(h, tier) {
       log.retier++;
       return retierable ? { key: h.key, tier } : null;
     },
     costOf(tier) { return tier === 'near' ? 3 : tier === 'mid' ? 2 : 1; },
   };
-  return { builder, log, live };
+  return { builder, log, live, instants };
 }
 
 const ctx = (o: Partial<FrameCtx> = {}): FrameCtx => ({
@@ -490,5 +493,81 @@ describe('배선 — main.ts 가 speedFactor 를 스트리밍에 넘긴다 (정�
 
   it('player.speedFactor 를 getSpeedFactor 로 넘긴다', () => {
     expect(src, 'getSpeedFactor 배선이 없다').toMatch(/getSpeedFactor\s*:\s*\(\)\s*=>\s*player\.speedFactor/);
+  });
+});
+
+// ── 🔴 GS-I1 「연출 없이 세운다」가 판정에서 집행까지 도달하는가 ──────────────
+//
+// 팀장 판정 (가) (2026-08-20) 의 조건 2: *"새 판정 값이므로 **집행 경계 통합 테스트**를
+// 함께 붙인다 — `invalidate → build → grow.place/retire` 까지 플래그가 실제로 소비되는지."*
+//
+// 이 저장소가 이름 붙인 사각이 정확히 여기다: **판정(`decide`)과 집행을 나누면 각 쪽은
+// 테스트하기 쉬워지지만 «계산된 값이 실제로 소비되는가» 는 양쪽 어디에도 안 걸린다.**
+// 그래서 스트리밍이 빌더에게 **무엇을 넘겼는지**를 하네스가 기록하고 여기서 단언한다.
+//
+// ⚠ **못 잡는 것**(통과로 적지 않는다): 빌더 아래층 — `pool.setInstant` 가 실제로
+// `grow.place`/`grow.retire` 를 건너뛰는지는 `tests/world2-parcel-builder.test.ts`
+// 소관이고, 화면에서 실제로 안 튀는지는 **감독 실기기가 유일한 축**이다(헤드리스는
+// swiftshader ~4fps 라 0.65초 연출을 판정할 수단이 없다).
+describe('🔴 GS-I1 — 편집 확정으로 버린 파셀은 **연출 없이** 다시 선다', () => {
+  it('🔴 `invalidate` 는 **즉시** 반납한다 — 수축을 안 태운다', () => {
+    const { sys, fb, pos } = make();
+    settle(sys);
+    fb.instants.release.length = 0;
+    expect(sys.invalidate(pos.x | 0, pos.z | 0), '🔴 발밑 파셀이 안 떠 있다 — 하네스가 안 익었다').toBe(true);
+    expect(fb.instants.release, '🔴 `invalidate` 가 수축을 태웠다 — 0.25초 사라졌다 나타난다').toEqual([true]);
+  });
+
+  it('🔴 버린 파셀이 다시 설 때 **연출을 건너뛴다**', () => {
+    const { sys, fb, pos } = make();
+    settle(sys);
+    const key = `${pos.x | 0},${pos.z | 0}`;
+    sys.invalidate(pos.x | 0, pos.z | 0);
+    fb.instants.build.length = 0;
+    settle(sys);
+    const again = fb.instants.build.filter(([k]) => k === key);
+    expect(again.length, '🔴 버린 파셀이 다시 안 섰다 — 검사가 헛돈다').toBeGreaterThan(0);
+    expect(again[0]![1], '🔴 재빌드가 성장 애니메이션을 태웠다 — 0.4초 자라난다').toBe(true);
+  });
+
+  it('★ 표식은 **한 번만** 쓴다 — 그 다음 등장은 정상 연출이다', () => {
+    const { sys, fb, pos } = make();
+    settle(sys);
+    const key = `${pos.x | 0},${pos.z | 0}`;
+    sys.invalidate(pos.x | 0, pos.z | 0);
+    settle(sys);
+    // 두 번째로 버린다 — 이번엔 표식 없이(= 정상 퇴장처럼) 다시 서야 하는지를 보려면
+    // 표식을 안 남기는 경로가 필요하므로, `dispose` 로 전부 걷고 다시 세운다.
+    sys.dispose();
+    fb.instants.build.length = 0;
+    settle(sys);
+    const fresh = fb.instants.build.filter(([k]) => k === key);
+    expect(fresh.length, '🔴 다시 안 섰다').toBeGreaterThan(0);
+    expect(fresh.every(([, i]) => i === false), '🔴 표식이 소비되지 않고 남았다 — 이후 등장이 전부 연출 없이 뜬다').toBe(true);
+  });
+
+  it('★ **등가 대조군** — 편집과 무관한 등장은 연출을 그대로 탄다', () => {
+    const { sys, fb } = make();
+    settle(sys);
+    expect(fb.instants.build.length, '🔴 아무것도 안 섰다 — 대조군이 비었다').toBeGreaterThan(0);
+    expect(
+      fb.instants.build.every(([, i]) => i === false),
+      '🔴 `invalidate` 를 한 번도 안 불렀는데 연출이 꺼졌다 — 판정이 전역으로 샜다',
+    ).toBe(true);
+  });
+
+  it('🔴 **안 떠 있는** 파셀을 확정해도 표식은 남는다 — 멀리서 고치고 다가가는 경로', () => {
+    const { sys, fb } = make();
+    settle(sys);
+    // 스트리밍 반경 밖의 파셀. `invalidate` 는 «버릴 것이 없다» 로 false 를 낸다.
+    expect(sys.invalidate(99, 99), '🔴 반경 밖인데 떠 있다 — 표본을 다시 골라야 한다').toBe(false);
+    fb.instants.build.length = 0;
+    // 그 자리로 걸어간다 — 이제 처음 만들어지는데, 그것은 「등장」이 아니라 「갱신」이다.
+    const { sys: sys2, fb: fb2, pos: pos2 } = make({ pos: { x: 99 * 32, z: 99 * 32 } });
+    sys2.invalidate(99, 99);
+    settle(sys2);
+    const first = fb2.instants.build.filter(([k]) => k === `${pos2.x / 32 | 0},${pos2.z / 32 | 0}`);
+    expect(first.length, '🔴 그 파셀이 안 섰다').toBeGreaterThan(0);
+    expect(first[0]![1], '🔴 안 떠 있을 때의 확정이 표식을 안 남겼다').toBe(true);
   });
 });

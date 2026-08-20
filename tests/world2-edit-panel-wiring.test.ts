@@ -69,7 +69,16 @@ const art = (over: Partial<ArtworkItem> = {}): ArtworkItem => ({
  */
 const noLost = (): void => {};
 
-function fakeHost(): OverlayHost {
+/**
+ * 마을 파츠 하나 — `villageTarget` 이 실제로 서려면 **문이 열려 있어야** 한다.
+ * 안 열면 `host.village` 가 없어 어댑터가 `null` 을 내고(`edit/target.ts:142-143`),
+ * 그러면 `select()` 가 `st.villageSel` 까지 `null` 로 되돌려 **마을을 고른 상태가 아예
+ * 안 만들어진다.** 그 상태로 「복제가 숨는가」를 재면 검사가 **헛돈다** — 그래서 아래
+ * 검사가 `st.target?.kind` 를 먼저 단언한다.
+ */
+const villagePart = () => ({ kind: 'tree', x: 1, z: 2, y: 0, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 });
+
+function fakeHost(parts?: readonly unknown[]): OverlayHost {
   return {
     doc: document,
     cellX: 32,
@@ -78,11 +87,20 @@ function fakeHost(): OverlayHost {
     apply() {},
     remove() {},
     surfaceAt: () => 0,
+    // 문을 **줄지 말지가 축**이다 — 안 주면 마을 어댑터가 안 선다(위 주석).
+    // `isFrozen` 까지 필요하다 — 선택 줄이 「손본 구역」인지를 화면에 적는다(`dom.ts:399`).
+    village: parts
+      ? { partsAt: () => parts, freeze: () => {}, isFrozen: () => false }
+      : null,
   } as unknown as OverlayHost;
 }
 
-function mount(opts: { arts?: readonly ArtworkItem[]; withArtDoor?: boolean } = {}) {
-  const host = fakeHost();
+function mount(opts: {
+  arts?: readonly ArtworkItem[];
+  withArtDoor?: boolean;
+  village?: readonly unknown[];
+} = {}) {
+  const host = fakeHost(opts.village);
   const st = createEditState();
   const port = createArtsPort((s) => s);
   void port.set(opts.arts ?? [art()]);
@@ -471,6 +489,25 @@ describe('★ 액자에서 쓸 수 없는 버튼은 **숨는다** — 조용한 
     expect(findBtn('복제')!.hidden, '🔴 「복제」가 액자에서 보인다 — 「먼저 고르세요」라고 거짓말한다').toBe(true);
   });
 
+  it('🔴 「복제」는 **마을 파츠를 고른 동안에도** 숨는다', () => {
+    // ⚠ 이 검사가 늦게 생겼다. 액자에서 같은 결함(«방금 골랐는데 먼저 고르라고 한다»)을
+    // 판정해 고쳤는데(검수관 권고 P3) **마을이 그대로 남아 있었다** — `duplicate()` 는
+    // `st.selected` 하나만 보고(`edit/actions.ts:150`), 마을을 고르면 `select()` 가
+    // 그것을 `null` 로 만든다(`edit/state.ts:333`). 결함을 한 종류에서 고치고 **같은
+    // 형태가 남은 다른 종류를 안 본** 자리다(2026-08-20).
+    const { panel, st, host } = mount({ village: [villagePart()] });
+    select(st, host, {
+      village: { px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false, slot: null },
+    });
+    panel.onPicked();
+    // 🔴 **먼저 이것을 단언한다** — 어댑터가 안 서면 아래 단언은 「대상이 없어서」 통과하고
+    // 검사가 헛돈다. 이번 회차에 검출력 0 인 검사를 하나 지웠고, 그 형태를 미리 막는다.
+    expect(st.target?.kind, '🔴 하네스가 마을 어댑터를 못 세웠다 — 아래 단언이 헛돈다').toBe('village');
+    expect(findBtn('복제')!.hidden, '🔴 「복제」가 마을에서 보인다 — 눌러도 「먼저 고르세요」만 뜬다').toBe(true);
+    // 「바닥에」는 마을에서 **쓸 수 있다** — 둘의 조건이 다르다는 것이 이 줄의 요점이다.
+    expect(findBtn('바닥에')!.hidden, '🔴 「바닥에」까지 숨었다 — 마을에서 쓸 수 있는 버튼이다').toBe(false);
+  });
+
   it('★ 오버레이에서는 그대로 보인다 — 액자에서만 숨는 것이 의도다', () => {
     const { panel, st, host } = mount();
     const entry = { src: 'x.glb', x: 0, y: 0, z: 0, ry: 0, s: 1 } as unknown as OverlayEntry;
@@ -563,7 +600,10 @@ describe('🔴 키 안내는 상황 메시지에 밀려나지 않는다 — 태�
   it('🔴 마을 파츠를 골라도 키 안내가 남는다', () => {
     const { panel, st } = mount();
     // 마을 파츠 선택 상태를 만든다 — 그때 상황 메시지가 뜨는 분기다.
-    st.villageSel = { px: 0, pz: 0, idx: 0, kind: 'tree', frozen: false } as never;
+    // ⚠ 이 리터럴은 `as never` 라 **타입 검사를 안 받는다** — 예전에 `index` 를 `idx` 로
+    // 적고 있었고 아무도 못 봤다(2026-08-20 정정). 이 블록은 `villageTarget` 을 안 타고
+    // 「키 안내가 남는가」만 보므로 증상이 없었으나, 다음 사람이 이 줄을 복사한다.
+    st.villageSel = { px: 0, pz: 0, index: 0, kind: 'tree', frozen: false } as never;
     panel.refresh();
     expect(keysLine(), '🔴 파츠를 고르자 키 안내가 사라졌다 — 조작이 필요한 순간에').toContain('WASD');
     // 상황 메시지도 함께 있어야 한다 — 하나가 다른 하나를 밀어내지 않는다.
