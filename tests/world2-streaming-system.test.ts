@@ -530,20 +530,28 @@ describe('🔴 GS-I1 — 편집 확정으로 버린 파셀은 **연출 없이** 
     expect(again[0]![1], '🔴 재빌드가 성장 애니메이션을 태웠다 — 0.4초 자라난다').toBe(true);
   });
 
-  it('★ 표식은 **한 번만** 쓴다 — 그 다음 등장은 정상 연출이다', () => {
+  it('🔴 표식은 **한 번만** 쓴다 — 걸어서 다시 와도 정상 연출이다', () => {
+    // ⚠ **첫 판본은 검출력이 0 이었다**(뮤테이션 P3, 2026-08-20). 그때는 표식을 소비했는지
+    // 보려고 `dispose()` 를 불렀는데, `dispose` 가 `pendingInstant.clear()` 를 하므로
+    // **소비하든 안 하든 비어 있었다** — `delete` 를 `has` 로 바꿔도 0 failed 였다.
+    // 지금은 **제품 경로**로 잰다: 멀리 걸어가 그 파셀이 정상 퇴장하고, 돌아와서 다시 선다.
     const { sys, fb, pos } = make();
     settle(sys);
-    const key = `${pos.x | 0},${pos.z | 0}`;
-    sys.invalidate(pos.x | 0, pos.z | 0);
+    const key = '0,0';
+    sys.invalidate(0, 0);
+    settle(sys);                       // ← 여기서 표식이 소비된다(연출 없이 재빌드)
+    pos.x = 32 * 20;                   // 멀리 간다 — 그 파셀은 **정상 퇴장**한다
     settle(sys);
-    // 두 번째로 버린다 — 이번엔 표식 없이(= 정상 퇴장처럼) 다시 서야 하는지를 보려면
-    // 표식을 안 남기는 경로가 필요하므로, `dispose` 로 전부 걷고 다시 세운다.
-    sys.dispose();
+    expect(fb.live.has(key), '🔴 멀리 갔는데 안 걷혔다 — 표본이 안 익었다').toBe(false);
+    pos.x = 0;                         // 돌아온다 — 이것은 「등장」이지 「갱신」이 아니다
     fb.instants.build.length = 0;
     settle(sys);
     const fresh = fb.instants.build.filter(([k]) => k === key);
-    expect(fresh.length, '🔴 다시 안 섰다').toBeGreaterThan(0);
-    expect(fresh.every(([, i]) => i === false), '🔴 표식이 소비되지 않고 남았다 — 이후 등장이 전부 연출 없이 뜬다').toBe(true);
+    expect(fresh.length, '🔴 돌아왔는데 안 섰다').toBeGreaterThan(0);
+    expect(
+      fresh.every(([, i]) => i === false),
+      '🔴 표식이 소비되지 않고 남았다 — 그 파셀은 이후 **영원히** 연출 없이 뜬다',
+    ).toBe(true);
   });
 
   it('★ **등가 대조군** — 편집과 무관한 등장은 연출을 그대로 탄다', () => {
