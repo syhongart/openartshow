@@ -131,10 +131,6 @@ class FakeMesh {
   frustumCulled = true;
   renderOrder = 0;
   name = '';
-  // 실물 `THREE.Object3D` 는 **항상** 이 객체를 갖는다. 없으면 프로덕션에서 도는
-  // `mesh.userData.x = …` 가 스텁에서만 TypeError 로 죽는다 — 스텁이 실물보다 좁으면
-  // 그 차이가 곧 거짓 빨간불이다(실제로 99건이 그렇게 터졌다).
-  userData: Record<string, unknown> = {};
   constructor(public geometry: unknown, public material: unknown) {}
 }
 
@@ -260,8 +256,6 @@ interface Added {
   castShadow: boolean;
   /** 강 판이 바다와 지오를 공유하지 않는지, 어디까지 뻗었는지를 여기서 본다 */
   geometry: unknown;
-  /** 층2를 숨기는 소비자(`water-style`)가 읽는 «원래 높이» 가 여기 실린다 */
-  userData: Record<string, unknown>;
 }
 
 type Tod = 'day' | 'sunset' | 'night';
@@ -584,21 +578,6 @@ describe('수면 조립 — 개수 불변식', () => {
     expect(added.find((m) => m.name === 'ocean')!.position.y).toBe(SEA_Y - WAVE_AMP_DEFAULT);
   });
 
-  it('★ 바다 층1이 자기 «원래 높이» 를 들고 다닌다 — 층2를 숨기는 소비자가 쓴다', () => {
-    // `features/water-style.ts` 는 층2(`ocean-wave2`)를 숨기고 층1만 대역한다. 그 경로
-    // 에서는 교차할 층2가 없으니 내릴 이유도 없는데, 내린 채로 두면 **스타일 물에서만
-    // 바다가 `?wamp` 만큼 낮아진다** — 방금 기존 물에서 걷어낸 결함이 그쪽으로 옮겨
-    // 앉는 형태다. 저쪽이 `SEA_Y` 를 직접 적으면 값이 두 곳이 되므로 메시가 들고 간다.
-    //
-    // ⚠ **이 단언이 보는 것은 «심었는가» 뿐이다.** 스타일 물이 그것을 실제로 쓰는지는
-    // 여기서 안 걸린다 — 그쪽은 WebGPU 전용이라 이 환경에서 실행 자체가 불가능하고
-    // (`navigator.gpu === undefined`), 테스트도 0개다. 못 잰 것을 통과로 적지 않는다.
-    const { added } = mount();
-    const sea = added.find((m) => m.name === 'ocean')!;
-    expect(sea.userData.baseY).toBe(SEA_Y);
-    // 내려간 실제 위치와 «원래 높이» 가 서로 다르다는 것이 이 장치의 존재 이유다.
-    expect(sea.position.y).not.toBe(SEA_Y);
-  });
 
   it('강이 바다보다 높다 — 강물이 바다로 흘러나가는 방향', () => {
     // 감독 지시가 강 −0.5 / 바다 −1.0 이므로 이 관계가 뒤집히면 지시 위반이다.

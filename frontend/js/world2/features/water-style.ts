@@ -18,7 +18,7 @@ import {
   RIPPLE_WARP_M, RIPPLE_WARP_K, RIPPLE_L2_WAVE, RIPPLE_L2_SPEED, RIPPLE_MIX,
   type WaterStyleMode,
 } from '../decide/water-style.js';
-import { riverCenterZ, RIVER_HALF } from '../decide/water.js';
+import { riverCenterZ, RIVER_HALF, SEA_Y } from '../decide/water.js';
 
 /**
  * 게임풍 수면 재질.
@@ -208,15 +208,10 @@ export const waterStyleFeature: Feature = {
       // 진폭 노브가 **여기서는 수면 높이 노브가 된다**(기존 물에서 방금 걷어낸 결함이
       // 스타일 경로로 옮겨 앉는 형태다).
       //
-      // 값은 메시가 들고 온다(`ocean.ts` 가 `userData.baseY` 에 심는다) — `SEA_Y` 를
-      // 여기 적으면 그 순간 두 곳이 되고, 한쪽만 고쳐도 아무도 모른다.
-      const baseY = (src.userData as { baseY?: unknown } | undefined)?.baseY;
-      if (name === 'ocean') {
-        if (typeof baseY === 'number') m.position.y = baseY;
-        // 조용한 no-op 금지 — 저쪽이 `userData` 를 안 심으면 바다가 잘못된 높이로 뜨는데,
-        // 그 화면은 «물이 좀 낮네» 로만 드러나 원인을 찾기 어렵다.
-        else console.warn('[water-style] ocean.userData.baseY 가 없다 — 바다 층1 높이를 되돌리지 못했다');
-      }
+      // `SEA_Y` 를 `decide/water.ts` 에서 **직접 받는다.** 값을 여기 적는 것이 아니라
+      // 저쪽과 같은 SSOT 를 각자 import 하는 것이라 미러링이 아니다 —
+      // `features/ocean.ts` 도 같은 곳에서 받는다.
+      if (name === 'ocean') m.position.y = SEA_Y;
       m.rotation.copy(src.rotation);
       m.scale.copy(src.scale);
       m.renderOrder = src.renderOrder;
