@@ -144,6 +144,16 @@ export interface GlbCityDeps {
   readonly plazaWest: { readonly px: number; readonly pz: number };
   readonly readNum: (key: string, fallback: number, min: number, max: number) => number;
   readonly readEnum: <T extends string>(key: string, fallback: T, allowed: readonly T[]) => T;
+  /**
+   * 🔴 **채 하나의 등장 배수를 한 걸음 굴린다** (감독 판정 2026-08-20).
+   *
+   * `id` 는 채 인덱스, `up` 은 파셀이 그것을 원하는가, 반환은 새 배수(0~1) 또는
+   * **바뀐 것이 없으면 `null`**. 상태는 **넘기는 쪽이 든다** — 그래야 산술과 상수가
+   * `world2/decide/lod-fade.ts` 한 곳에 남는다(위 `advanceGrow` 주석 참조).
+   *
+   * 없으면 즉시 on/off — world3·world5 가 그 경우다.
+   */
+  readonly copyScale?: (id: number, up: boolean, dt: number) => number | null;
 }
 
 /**
@@ -536,9 +546,12 @@ export const glbCity = {
         // 액자가 같은 사실을 `decide/stream.ts` 헤더에 적어 두었고(검수관 P2 · 태스크 #115)
         // 건물 쪽에는 없었다. 1프레임이라 화면에서는 안 보이지만, **원인을 찾을 때 이
         // 줄이 없으면 엉뚱한 데를 판다.**
-        update() {
+        update(ctx) {
           if (!warmed) return;
+          // **판정 → 집행 두 걸음이다.** 앞이 목표(`want`)를 정하고 뒤가 화면을 옮긴다.
+          // 한 함수로 합치면 등장 연출이 살 자리가 없어진다(2026-08-20 이전이 그랬다).
           syncVisibility(copies, env.parcelLoaded);
+          advanceGrow(copies, ctx.dt, deps.copyScale);
         },
       },
 
@@ -790,6 +803,10 @@ interface ThreeGroupNS {
     add(o: never): void;
     position: { set(x: number, y: number, z: number): void };
     rotation: { y: number };
+    // 🔴 파셀 생사·등장 연출의 통로 (검수관 블로커 C4). 그전엔 요구·공급 **양쪽이**
+    // 캐스팅으로 빠져나가 대조가 0 이었다 — 실측: 스텁에서 `scale` 을 지우면 `tsc` 가 막는다.
+    visible: boolean;
+    scale: { setScalar(v: number): void };
   };
   Box3: new () => Box3Like;
 }
@@ -850,52 +867,11 @@ interface GeoLike {
  * 실험 설계의 결함이지 성능 문제가 아니었다. 원점 한 칸만 비우면 그 자리에 서서
  * 둘러보게 되고, 부하는 그대로 유지된다 — 비운 칸의 몫은 바깥으로 한 칸 밀린다.
  */
-/**
- * 세운 채 하나 — 노드와 **그 채가 선 파셀**. 파셀과 생사를 맞추려면 둘 다 필요하다
- * (감독 지시 2026-08-19).
- *
- * ⚠ **파셀을 여기서 계산해 들고 있는다.** `holder.position` 에서 매 프레임 나눗셈으로
- * 되짚을 수도 있지만, 그러면 프레임마다 산술이 생기고 배치 규칙(`placementCells`)이
- * 아는 것을 소비 쪽이 다시 유도하게 된다 — 액자가 `placed` 에 `px·pz` 를 들고 있는 것과
- * **같은 처방**이다(`artwork-scene.ts` 의 «걸 때 한 번 계산해 여기 둔다»).
- */
-export interface PlacedCopy {
-  readonly node: { visible: boolean };
-  readonly px: number;
-  readonly pz: number;
-}
+// 파셀 생사·등장 연출은 **`glb-city-visibility.ts` 소유**(2026-08-20 분리, 근거는 그 파일 헤더).
+// **재수출은 로컬 바인딩을 안 만든다** — 그래서 소비자용 `export` 와 이 파일용 `import` 둘 다.
+export { syncVisibility, advanceGrow, type PlacedCopy } from './glb-city-visibility.js';
+import { syncVisibility, advanceGrow, type PlacedCopy } from './glb-city-visibility.js';
 
-/**
- * 🔴 **세운 채들을 파셀과 맞춘다.** `system.update` 가 프레임마다 이것만 부른다.
- *
- * ── 왜 함수로 뽑았나 ────────────────────────────────────────────────────────
- * `create()` 안의 클로저에 두면 시험할 수 없다 — `create` 는 GLB 로더를 실제로 부르고
- * 그 경로는 노드에서 안 돈다. 밖으로 내면 가짜 노드(`{visible}` 하나)로 실제 동작을 잰다.
- * 이 저장소가 「경계를 건너는 지점은 아무도 안 본다」를 반복 사고로 적어 둔 자리다.
- *
- * ⚠ **첫 판본은 이 이유를 «13.5MB GLB 가 필요해 노드에서 불가능» 이라고 적었고 그것이
- * 이 함수 하나에만 참이었다** — 바로 아래 `placeGrid` 는 three 를 주입받아 **스텁으로
- * 돈다**(검수관 블로커 B1). 근거를 넓게 적어 놓고 그 옆 경계를 무검사로 뒀다.
- *
- * ⚠ **상태가 변할 때만 대입한다** — 매 프레임 무조건 쓰면 «이 값이 언제 바뀌었나» 를
- * 프로파일러에서 못 읽는다. 바뀐 개수를 돌려주는 것도 그래서다(진단·검사가 그것을 센다).
- *
- * @returns 이번 호출에서 **실제로 바뀐** 채의 수
- */
-export function syncVisibility(
-  copies: readonly PlacedCopy[],
-  loaded: ((px: number, pz: number) => boolean) | undefined,
-): number {
-  // 판정 수단이 없으면 **아무것도 안 한다.** world3·world5 가 그 경우이고, 그때 이
-  // 기능은 예전처럼 늘 보인다 — 결함이 아니라 그 세계의 사실이다.
-  if (!loaded) return 0;
-  let changed = 0;
-  for (const c of copies) {
-    const on = loaded(c.px, c.pz);
-    if (c.node.visible !== on) { c.node.visible = on; changed++; }
-  }
-  return changed;
-}
 
 /**
  * 🔴 **export 인 것은 시험을 위해서다** (검수관 블로커 B1, 2026-08-19).
@@ -1008,7 +984,9 @@ export async function placeGrid(
       // 요점이다. 노드 전체를 들면 토글 함수가 씬 그래프를 만질 수 있게 되고, 그러면
       // 가짜 노드로 시험하는 길도 함께 막힌다.
       out.push({
-        node: holder as unknown as { visible: boolean },
+        // ⚠ `want: true` — world3·world5 는 이 값을 안 바꾸고 「늘 보임」이 사실이다(C2·GS-G2ⓐ).
+        want: true,
+        node: holder,
         px: Math.round(cell.x / cellSize),
         pz: Math.round(cell.z / cellSize),
       });
