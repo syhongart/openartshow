@@ -17,8 +17,9 @@ import {
   RIPPLE_WAVE_M, RIPPLE_SPEED_MPS, RIPPLE_CREST_LO, RIPPLE_CREST_HI,
   RIPPLE_WARP_M, RIPPLE_WARP_K, RIPPLE_L2_WAVE, RIPPLE_L2_SPEED, RIPPLE_MIX,
   type WaterStyleMode,
+  NORMAL_MUL, shallowAlpha,
 } from '../decide/water-style.js';
-import { riverCenterZ, RIVER_HALF, SEA_Y } from '../decide/water.js';
+import { riverCenterZ, RIVER_HALF, SEA_Y, waterGloss } from '../decide/water.js';
 
 /**
  * 게임풍 수면 재질.
@@ -33,7 +34,7 @@ import { riverCenterZ, RIVER_HALF, SEA_Y } from '../decide/water.js';
  * 않아서다(TS2694 — 런타임에는 있다). `features/grass.ts` 의 같은 자리와 같은 이유.
  */
 function styledWaterMaterial(
-  foamMul: number, fresMul: number, deepMul: number, ripMul: number,
+  foamMul: number, fresMul: number, deepMul: number, ripMul: number, clearMul: number,
 ): THREE.Material {
   const {
     positionViewDirection, normalView, attribute,
@@ -116,6 +117,22 @@ function styledWaterMaterial(
     .oneMinus().pow(FRESNEL_POW).mul(fresMul).clamp(0, 1);
 
   mat.colorNode = mix(withFoam, skyC, fres);
+
+  // ── 맑음: 알파를 **깊이에 건다** (감독 *"물의 투명함"* 2026-08-20) ─────────
+  // 지금까지 알파는 재질 상수 하나였다 — 얕든 깊든 82%. 실물 물은 얕은 곳에서 바닥이
+  // 비치고 깊은 곳에서만 물빛이 서고, **그 차이**가 맑음으로 읽힌다.
+  //
+  // `depthT` 를 그대로 재사용한다(0 = 물가, 1 = 깊은 곳). 새 입력을 만들지 않는다 —
+  // 색이 이미 이 값으로 갈라지므로 알파도 같은 축을 타야 둘이 어긋나지 않는다.
+  //
+  // `clearMul` 은 **노브다**(`?wclear`). `0` 이면 `STYLE_OPACITY` 상수로 정확히
+  // 되돌아간다(항등원) — 화면 판정이 뒤집혔을 때 되돌릴 자리가 이 곱 하나다.
+  //
+  // ⚠ 바다는 `shore` 가 전부 0 이라 `depthT` 가 1 로 포화한다 → 균일하게
+  // `STYLE_OPACITY`. 근거는 `decide/water-style.ts` 의 `CLEAR_SHALLOW` 주석 한 곳이다.
+  const shallowA = float(shallowAlpha(clearMul));
+  mat.opacityNode = mix(shallowA, float(STYLE_OPACITY), depthT);
+
   return mat;
 }
 
@@ -173,8 +190,12 @@ export const waterStyleFeature: Feature = {
     const deepMul = readNum('wdeep', 1, 0, 2);
     // 물결 무늬 세기(감독 선택 2026-08-20). **0 이 정확히 무늬 이전 상태**다.
     const ripMul = readNum('wrip', 1, 0, 2);
+    // 맑음(깊이 알파). `0` 이 정확히 이전 상태(균일 `STYLE_OPACITY`)다 — 되돌릴 자리다.
+    const clearMul = readNum('wclear', 1, 0, 1);
+    // 잔파도(노멀맵) 세기 배율. `0` 이면 매끈한 면 = 이전 상태.
+    const normMul = readNum('wnorm', NORMAL_MUL, 0, 3);
 
-    const material = styledWaterMaterial(foamMul, fresMul, deepMul, ripMul);
+    const material = styledWaterMaterial(foamMul, fresMul, deepMul, ripMul, clearMul);
     const added: THREE.Mesh[] = [];
     const hidden: THREE.Object3D[] = [];
 
@@ -222,6 +243,39 @@ export const waterStyleFeature: Feature = {
       hidden.push(src);
     }
 
+    // ── 잔파도: 기존 물의 노멀맵을 **공유한다** (감독 *"잔파도의 일렁임"* 2026-08-20) ──
+    //
+    // 지금까지 이 재질에는 `normalNode`·`normalMap` 이 **둘 다 없었다** — 완전히 매끈한
+    // 면이라 빛이 한 방향으로만 반사되고, 그래서 «플라스틱» 으로 읽힌다. 그 사실은
+    // `decide/water-style.ts` 의 `RIPPLE_*` 주석이 이미 적고 있었다(*"기존 물의 UV 스크롤
+    // 노멀맵도 재질을 대체하면서 함께 사라졌다"*). 거기서 고른 처방이 **색 무늬**였고
+    // 감독이 *"이게 뭐여"* 로 반려했다 — 요철을 색으로 대신하려던 것이 틀렸다.
+    //
+    // **새로 만들지 않는다.** 위에서 지오메트리를 공유한 것과 같은 이유로 텍스처도
+    // 공유한다: 텍스처 개수가 안 늘고(개수 불변식 `[7]`), `ocean.ts` 의 `update()` 가
+    // 미는 `normA.offset` 스크롤이 **그대로 따라온다**(메시가 숨겨져도 그 갱신은 돈다).
+    // 복사하면 그 스크롤이 안 와서 화면에서는 «잔물결이 굳었다» 로만 드러난다.
+    //
+    // 세기도 값을 여기 적지 않는다 — `waterGloss(time)` 이 시간대별 `normalScale` 의
+    // SSOT 이고 같은 텍스처를 쓰므로 같은 곳에서 받아야 한다.
+    // ⚠ **시간대 전환에는 안 따라온다** — 이 재질은 부팅에 한 번 만들어지고 갱신 경로가
+    // 없다(색·프레넬도 마찬가지다. 새 부채가 아니라 스타일 물 전체의 성질이다).
+    // ⚠ 타입을 **구조로** 받는다 — `three/webgpu` 선언이 `MeshStandardMaterial` 을
+    // 재수출하지 않는다(런타임에는 있다). 이 파일 위쪽 `styledWaterMaterial` 의 반환
+    // 타입이 `Material` 인 것과 같은 이유다.
+    type NormalMapped = { normalMap?: THREE.Texture | null; normalScale?: THREE.Vector2 };
+    const oceanSrc = hidden.find((o) => o.name === 'ocean') as THREE.Mesh | undefined;
+    const baseMap = (oceanSrc?.material as NormalMapped | undefined)?.normalMap ?? null;
+    if (baseMap) {
+      const ns = waterGloss(env.time()).normalScale * normMul;
+      (material as NormalMapped).normalMap = baseMap;
+      (material as NormalMapped).normalScale = new THREE.Vector2(ns, ns);
+    } else {
+      // 조용한 no-op 금지 — `?water=tsl` 처럼 원본이 노드 재질이면 노멀맵이 없다.
+      // 그 경우 «잔파도만 없는» 화면이 되는데, 원인이 화면에 안 나타난다.
+      console.warn('[water-style] 원본 수면에 normalMap 이 없다 — 잔파도 요철 없이 뜬다');
+    }
+
     // ⚠ 층2 숨김 실패도 함께 센다(검수관 권고 R5). 이름이 드리프트하면 대역은 0개인데
     // 층2만 사라져 **고치기 전보다 나쁜 화면**이 되는데, `added` 만 세면 그 경우가 안 잡힌다.
     if (added.length !== STYLED_WATER_NAMES.length || hidOnly !== HIDE_ONLY_NAMES.length) {
@@ -242,7 +296,8 @@ export const waterStyleFeature: Feature = {
         expected: STYLED_WATER_NAMES.length,
         hiddenOnly: hidOnly,
         hiddenOnlyExpected: HIDE_ONLY_NAMES.length,
-        foamMul, fresMul, deepMul,
+        foamMul, fresMul, deepMul, clearMul, normMul,
+        normalMapShared: !!baseMap,
         backend: env.adapter.backendDetail,
       }),
       // ⚠ 첫 판본은 *"그만큼 숨기고 같은 수만큼 얹으므로 총합이 안 변한다"* 라고 적었고
