@@ -551,6 +551,34 @@ describe('수면 조립 — 개수 불변식', () => {
     });
   });
 
+  it('★ 세 텍스처가 **같은 방향**으로 흐른다 — 판정/집행 경계 (감독 2026-08-20)', () => {
+    // 감독: *"아래 물도 같은 방향으로 가야지. 속도만 다를뿐"*
+    //
+    // `decide/wave.ts` 의 `flowVec` 단언은 **판정**만 본다. 그 방향이 실제로 텍스처
+    // `offset` 에 꽂히는가는 여기서만 걸린다 — 이 저장소가 «판정/집행 분리의 구멍» 이라
+    // 부르는 자리이고, 이 회차에서만 두 번 그 구멍으로 뮤테이션이 빠져나갔다.
+    //
+    // 진단은 **텍스처에서 직접 읽는다**(상수 되돌려주기 금지가 이미 적용된 자리) —
+    // 그래서 이 단언이 「계산은 했는데 안 꽂혔다」 까지 잡는다.
+    const { inst } = mount();
+    inst.system!.update({ dt: 3.7 } as never);
+    const d = inst.diagnostics!() as {
+      flowA: [number, number] | null; flowB: [number, number] | null;
+      flowSparkle: [number, number] | null;
+    };
+    const deg = (v: [number, number]) => (Math.atan2(v[1], v[0]) * 180) / Math.PI;
+    const speed = (v: [number, number]) => Math.hypot(v[0], v[1]);
+    const [a, b, sp] = [d.flowA!, d.flowB!, d.flowSparkle!];
+    expect(deg(b), '색조 층이 다른 방향으로 흐른다').toBeCloseTo(deg(a), 6);
+    expect(deg(sp), '윤슬이 다른 방향으로 흐른다').toBeCloseTo(deg(a), 6);
+    // **속력은 서로 달라야 한다** — 같으면 세 층이 한 덩어리로 미끄러져 «흐르는 벽지» 다.
+    // 감독 처방의 나머지 절반이 이것이고, 방향만 맞추고 속력까지 같게 하면 옛 주석이
+    // 걱정한 바로 그 화면이 된다.
+    expect(speed(b)).not.toBeCloseTo(speed(a), 6);
+    expect(speed(sp)).not.toBeCloseTo(speed(a), 6);
+    expect(speed(sp)).not.toBeCloseTo(speed(b), 6);
+  });
+
   it('해저가 수면보다 아래다 — 뒤집히면 물이 안 비친다', () => {
     const { added } = mount();
     const sea = added.find((m) => m.name === 'ocean')!;
@@ -645,14 +673,25 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     expect(norm.offset.x !== before.x || norm.offset.y !== before.y).toBe(true);
   });
 
-  it('두 층이 서로 다른 방향으로 흐른다 — 같으면 흐르는 벽지가 된다', () => {
-    // 층 둘의 정체가 바뀌었다(노멀맵 + 거칠기맵 → 노멀맵 + 밝기맵). **단언은 그대로다** —
-    // 지키려는 것은 "두 무늬가 어긋나 간섭한다" 이지 어느 슬롯을 쓰느냐가 아니다.
+  it('두 층이 서로 다른 **속력**으로 흐른다 — 같으면 흐르는 벽지가 된다', () => {
+    // ── 이 단언은 축이 바뀌었다 (감독 판정 2026-08-20) ────────────────────────
+    // 예전에는 «방향이 평행하지 않다»(외적 ≠ 0)를 봤다. 감독이 화면에서 그것을 반려했다:
+    // *"윗물은 자연스러워. 아래 물도 **같은 방향으로 가야지. 속도만 다를뿐**"*.
+    //
+    // **지키려는 목적은 그대로다** — 두 무늬가 한 덩어리로 미끄러지지 않는 것. 그 목적을
+    // 만족시키는 것이 「방향 차이」에서 「속력 차이」로 바뀌었을 뿐이다. 같은 방향에
+    // 속도가 다르면 두 층은 서로 미끄러지며 간섭한다(실제 파도가 그렇다).
+    //
+    // 단언을 느슨하게 만든 것이 아니다 — **오히려 좁아졌다.** 옛 단언은 「평행만 아니면
+    // 통과」라 직각 교차(감독이 반려한 그 화면)도 통과시켰다. 새 단언은 방향이 같을 것을
+    // 요구하고(위 «세 텍스처가 같은 방향» 검사) 그 위에서 속력 차이까지 본다.
     const { inst, norm, map } = flow();
     inst.system!.update({ dt: 4 } as never);
-    // 방향 벡터가 평행하지 않아야 한다(외적 ≠ 0)
-    const cross = norm.offset.x * map.offset.y - norm.offset.y * map.offset.x;
-    expect(Math.abs(cross)).toBeGreaterThan(1e-9);
+    const sn = Math.hypot(norm.offset.x, norm.offset.y);
+    const sm = Math.hypot(map.offset.x, map.offset.y);
+    expect(sn).toBeGreaterThan(0);
+    expect(sm).toBeGreaterThan(0);
+    expect(Math.abs(sn - sm), '두 층 속력이 같다 — 한 덩어리로 미끄러진다').toBeGreaterThan(1e-9);
   });
 
   it('★ 밝기 무늬가 노멀맵과 **따로** 흐른다 — 붙여 두면 두 층이 한 덩어리가 된다', () => {
@@ -1462,7 +1501,7 @@ describe('두 번째 물결 층 — 동적 축', () => {
     expect(s2().roughness, '밤 거칠기가 안 걸렸다').toBeCloseTo(waterGloss('night').roughness, 6);
   });
 
-  it('★ G-4 두 층이 **둘 다** 흐르고, 방향이 평행하지 않다 — 이것이 처방의 본체다', () => {
+  it('★ G-4 두 층이 **둘 다** 흐르고, 같은 방향에 다른 속력이다 — 이것이 처방의 본체다', () => {
     // 두 번째 층이 정지하면 간섭이 아예 안 일어난다. 그 상태가 게이트를 통과했다
     // (검수관 뮤테이션 M8: `normB.offset` 갱신을 지워도 78건 전부 통과).
     const { added, inst } = mount();
@@ -1478,10 +1517,22 @@ describe('두 번째 물결 층 — 동적 축', () => {
     expect(Math.hypot(da.x, da.y), '첫 층이 안 흐른다').toBeGreaterThan(1e-6);
     expect(Math.hypot(db.x, db.y), '두 번째 층이 안 흐른다 — 간섭이 일어나지 않는다')
       .toBeGreaterThan(1e-6);
-    // 외적이 0 이면 평행 — 같은 방향으로 나란히 흐르면 겹치는 자리가 안 바뀐다.
+    // ── 축이 바뀌었다 (감독 판정 2026-08-20) ──────────────────────────────────
+    // 예전에는 «외적 ≠ 0»(평행하지 않다)를 봤다. 감독이 반려했다 — *"같은 방향으로
+    // 가야지. **속도만 다를뿐**"*. 간섭을 만드는 것이 「방향 차이」에서 「속력 차이」로
+    // 바뀌었고, 지키려는 것(겹치는 자리가 계속 바뀐다)은 그대로다.
+    //
+    // ⚠ 옛 단언은 **직각 교차도 통과시켰다** — 감독이 반려한 바로 그 화면이다.
+    // 이제 방향은 같을 것을 요구하고(외적 ≈ 0) 속력 차이로 간섭을 만든다. 검사가
+    // 느슨해진 것이 아니라 **양쪽을 다 못 박아 좁아졌다.**
     const cross = Math.abs(da.x * db.y - da.y * db.x);
-    expect(cross, `두 흐름이 평행하다(외적 ${cross.toExponential(2)}) — 간섭이 생기지 않는다`)
-      .toBeGreaterThan(1e-9);
+    const scale = Math.hypot(da.x, da.y) * Math.hypot(db.x, db.y);
+    expect(cross / scale, `두 흐름의 방향이 다르다(sin ${(cross / scale).toExponential(2)})`)
+      .toBeLessThan(1e-6);
+    const sa = Math.hypot(da.x, da.y);
+    const sb = Math.hypot(db.x, db.y);
+    expect(Math.abs(sa - sb) / Math.max(sa, sb), '두 층 속력이 같다 — 한 덩어리로 미끄러진다')
+      .toBeGreaterThan(0.05);
   });
 
   it('★ G-5 두 층의 월드 무늬 속도비가 정수비가 아니다 — 정렬되면 간섭이 끊긴다', () => {

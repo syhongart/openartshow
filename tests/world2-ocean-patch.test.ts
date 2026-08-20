@@ -15,6 +15,7 @@ import {
   SEA_PATCH_METRICS, peakOf, surfaceLift, LIFT_LAMBDA, RIVER_SEG,
   patchVertexY, PATCH_SEP,
 } from '../frontend/js/world2/features/ocean.js';
+import { waveDirs, liftWaves, flowVec, FLOW_DIR_DEG, WAVE_SPREAD_DEG } from '../frontend/js/world2/decide/wave.js';
 import { fogBand } from '../frontend/js/world2/decide/fog.js';
 import { GRID_W } from '../frontend/js/world2/decide/grid.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
@@ -184,4 +185,97 @@ describe('patchVertexY — 평균 수면이 진폭에 딸려 오르지 않는다
     expect(hi - lo).toBeGreaterThan(0.2);
   });
 
+});
+
+describe('흐름 방향 — 「같은 방향으로, 속도만 다르게」 (감독 판정 2026-08-20)', () => {
+  // 감독: *"윗물은 자연스러워. 아래 물도 같은 방향으로 가야지. 속도만 다를뿐"*
+  //
+  // 이 축은 드물게 **화면 없이 정확히 잴 수 있다** — 판정 대상이 방향각이라 산술이다.
+  // (다만 «방향이 같다» 와 «자연스럽다» 는 다른 일이고, 후자는 감독 화면이 유일한 축이다.)
+
+  const deg = (v: { x: number; z: number }) => (Math.atan2(v.z, v.x) * 180) / Math.PI;
+
+  it('★ 속력이 달라도 방향은 하나다 — 이것이 감독 처방 그대로다', () => {
+    // 예전에는 31° / 122° / 168.5° 로 흩어져 있었다. 속력을 바꿔도 각도는 안 변해야 한다.
+    for (const speed of [0.01, 0.0408, 0.12]) {
+      expect(deg(flowVec(speed))).toBeCloseTo(FLOW_DIR_DEG, 10);
+    }
+  });
+
+  it('방향 노브가 실제로 각도를 돌린다 — `?wdir=31` 이 옛 상태로 되돌아가는 자리다', () => {
+    expect(deg(flowVec(0.04, 31))).toBeCloseTo(31, 10);
+    // 속력은 방향과 **독립**이어야 한다 — 돌려도 크기가 안 변한다.
+    const v = flowVec(0.04, 31);
+    expect(Math.hypot(v.x, v.z)).toBeCloseTo(0.04, 12);
+  });
+
+  it('★ 정점 파동이 부채꼴 안에 모인다 — 셋째 성분이 주 방향과 직각이던 것을 고쳤다', () => {
+    // 예전 배치는 0° / 60° / **108°** 라 셋째가 거의 직각이었고, 그래서 방향감이 상쇄됐다.
+    for (const d of waveDirs()) {
+      expect(Math.abs(deg({ x: d.dx, z: d.dz }) - FLOW_DIR_DEG))
+        .toBeLessThanOrEqual(WAVE_SPREAD_DEG + 1e-9);
+    }
+  });
+
+  it('★ 그래도 셋이 서로 다르다 — 완전 정렬은 「일자형」이라 이미 기각된 화면이다', () => {
+    // 감독 2026-07-31: *"ㅈ런. 일자형 말고"*. 부채꼴을 좁히다 0 이 되면 마루가 직선이 된다.
+    const angles = waveDirs().map((d) => deg({ x: d.dx, z: d.dz }));
+    expect(new Set(angles.map((a) => a.toFixed(6))).size).toBe(3);
+  });
+
+  it('부채꼴 노브가 먹는다 — `?wspread=108` 이 옛 배치 폭으로 되돌아간다', () => {
+    const wide = waveDirs(108).map((d) => Math.abs(deg({ x: d.dx, z: d.dz }) - FLOW_DIR_DEG));
+    expect(Math.max(...wide)).toBeCloseTo(108, 6);
+    const flat = waveDirs(0).map((d) => deg({ x: d.dx, z: d.dz }));
+    expect(new Set(flat.map((a) => a.toFixed(6))).size, '0 이면 일자형이 된다').toBe(1);
+  });
+
+  it('⚠ 최고 파 성분이 나이퀴스트 미만이다 — **더 나빠지지 않는 것**만 지킨다', () => {
+    // ── 이것은 통과 검사가 아니라 **알려진 한계의 기록**이다 ──────────────────
+    // 세그먼트 간격이 `λ/4`(=4m)인데 최고 성분의 파장은 `λ/φ²` = 6.11m 다 —
+    // **1.53 점/파장**으로 나이퀴스트(2점)에 미달한다. 즉 그 성분은 정점 격자에서
+    // 온전히 표현되지 않는다.
+    //
+    // **여태 안 보인 이유**: 방향이 108° 로 벌어져 있어 x 축 투영 파장이 길었다.
+    // 흐름 방향을 부채꼴로 모으자(감독 판정 2026-08-20) 축이 정렬되며 드러났다 —
+    // 내 변경이 만든 결함이 아니라 **원래 있던 것을 드러낸 것**이다.
+    //
+    // **왜 지금 안 고치나**: 고치려면 ⓐ 세분을 늘리거나(정점 6배 — 성능 예산) ⓑ 파수비
+    // `[1, φ, φ²]` 를 낮춰야 하는데(정수비 회피와 충돌), 둘 다 감독이 지목한 축(방향)
+    // 밖의 설계 분기다. 백로그 `G-STYL25` 에 재론 트리거와 함께 적었다.
+    //
+    // 그래서 여기서는 **현재 값을 못 박아 악화만 막는다.** 이 단언이 깨지면 누군가
+    // 파수비를 더 올렸거나 세분을 줄인 것이고, 그때는 위 ⓐⓑ 판단이 강제된다.
+    const spacing = LIFT_LAMBDA / 4;
+    const worst = Math.min(...liftWaves().map((w) => LIFT_LAMBDA / w.rel / spacing));
+    expect(worst, `최고 성분 ${worst.toFixed(2)} 점/파장 — 표본이 더 성겨졌다`)
+      .toBeGreaterThanOrEqual(1.5);
+  });
+
+  it('★ 기본 부채꼴이 「같은 방향」이라 부를 수 있는 범위 안이다 — 상한을 유도한다', () => {
+    // ⚠ **바로 위 부채꼴 단언은 `WAVE_SPREAD_DEG` 를 기준으로 쓰므로 그 상수 자체가
+    // 커지는 것을 못 잡는다**(자기참조). 뮤테이션 실측: 상수를 108 로 바꿔도 128건 전부
+    // 통과했다. 그래서 기본값에 **독립적인 상한**을 둔다.
+    //
+    // 유도: 성분이 주 방향과 θ 를 이루면 주 방향 기여가 `cos θ` 다. 감독 처방이
+    // *"같은 방향으로 가야지"* 이므로 모든 성분이 주 방향에 **과반 이상 기여**해야 한다.
+    // `cos 45° ≈ 0.707` 을 하한으로 잡는다 — 그보다 벌어지면 「부채꼴」이 아니라
+    // 「교차」이고, 옛 배치(셋째 성분 108° · 기여 −0.31)가 정확히 그 경우였다.
+    //
+    // ⚠ 노브(`?wspread`)로 더 벌리는 것은 **막지 않는다** — 되돌림·비교가 그 노브의
+    // 목적이다. 여기서 막는 것은 **기본값이 조용히 옛 배치로 돌아가는 것**이다.
+    expect(WAVE_SPREAD_DEG).toBeLessThanOrEqual(45);
+    for (const d of waveDirs()) {
+      const cos = Math.cos((Math.atan2(d.dz, d.dx)) - (FLOW_DIR_DEG * Math.PI) / 180);
+      expect(cos, '어떤 성분이 주 방향에 과반도 기여하지 않는다').toBeGreaterThan(0.7);
+    }
+  });
+
+  it('파장·진폭은 방향과 무관하다 — 부채꼴을 돌려도 그 둘은 안 움직인다', () => {
+    // 방향만 바꾸는 축인데 파장까지 딸려 움직이면 «같은 물결이 방향만 다른 것» 이 아니다.
+    const a = liftWaves(10);
+    const b = liftWaves(80);
+    expect(a.map((w) => w.rel)).toEqual(b.map((w) => w.rel));
+    expect(a.map((w) => w.amp)).toEqual(b.map((w) => w.amp));
+  });
 });
