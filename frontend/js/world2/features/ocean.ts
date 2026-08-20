@@ -70,7 +70,8 @@ import { PHI } from '../decide/golden.js';
 // 집행만 한다. 소비자(테스트·스모크)가 예전 경로를 그대로 쓰도록 배럴로 재수출한다.
 import {
   LIFT_LAMBDA_M, surfaceLift, patchVertexY, PATCH_SEP,
-  WAVE_AMP_DEFAULT, WAVE_STANDING_DEFAULT,
+  WAVE_AMP_DEFAULT, WAVE_STANDING_DEFAULT, flowVec, liftWaves,
+  FLOW_DIR_DEG, WAVE_SPREAD_DEG,
 } from '../decide/wave.js';
 
 export {
@@ -170,17 +171,20 @@ const BED = 0x9aa89b;
 export const OPACITY = 0.7;
 
 /**
- * 두 물결층이 흐르는 속도(m/s). **서로 다르고 방향도 어긋나야** 한다.
+ * 두 물결층이 흐르는 **속력**(m/s). 방향은 `decide/wave.ts` 의 `FLOW_DIR_DEG` 하나다.
  *
- * 같은 속도로 같은 방향이면 두 층이 한 덩어리로 미끄러져 "무늬가 흐르는 벽지"가 된다.
- * 어긋나면 겹치는 자리가 계속 바뀌어 물이 살아 있는 것처럼 보인다 — 강이 사인파 둘을
- * 겹쳐 되풀이를 숨긴 것과 같은 원리다.
+ * ⚠ 원래 이 자리는 `{x, z}` 리터럴이었고 방향이 어긋나 있었다(31° / 122°). 주석도
+ * *"서로 다르고 **방향도 어긋나야** 한다 … 같은 속도로 같은 방향이면 «흐르는 벽지»가
+ * 된다"* 고 그 설계를 명시했다. **감독이 화면에서 반려했다**(2026-08-20):
+ * *"윗물은 자연스러워. 아래 물도 같은 방향으로 가야지. **속도만 다를뿐**"*.
  *
- * 0.05 m/s 언저리는 잔잔한 호수, 0.2 를 넘으면 강물처럼 흐른다. 도시 안 물이라 잔잔한
- * 쪽으로 잡았다.
+ * 옛 근거가 틀린 것은 아니다 — 그 걱정은 **「같은 속도 + 같은 방향」에만** 해당하고
+ * 감독 처방은 정확히 그 조건을 피한다. 같은 방향에 속도가 다르면 두 층이 서로
+ * 미끄러지며 간섭하고, 실제 파도도 바람 방향으로 정렬된 채 속도만 다르다.
+ * **정수비 회피는 남긴다**(황금 속도비) — 두 장치 중 **각도만 걷었다.**
  */
-const FLOW_A = { x: 0.035, z: 0.021 };
-const FLOW_B = { x: -0.019, z: 0.030 };
+const FLOW_SPEED_A = 0.0408;
+const FLOW_SPEED_B = FLOW_SPEED_A / PHI;
 
 // ── 두 번째 물결 층 (감독 지시 2026-08-03, 팀장 판정 A) ─────────────────────
 //
@@ -221,17 +225,8 @@ const LAYER2_SCALE = PHI;
  * 직접 적고, UV 환산은 계산이 맡는다. 값이 φ 인 것은 위와 같은 이유다(정수비 회피).
  */
 const LAYER2_WORLD_SPEED = PHI;
-/**
- * 두 번째 층의 흐름 방향. `FLOW_A` 를 **황금각(≈137.5°)만큼 돌린 것**이다.
- *
- * 각도도 손으로 고르지 않는다 — 황금각은 어떤 정수배로도 한 바퀴에 맞아떨어지지 않아서
- * (해바라기 씨가 그 각으로 배열되는 이유다) 두 방향이 평행해지는 순간이 없다.
- */
-const GOLDEN_ANGLE = 2 * Math.PI * (1 - 1 / PHI);
-const FLOW_C = {
-  x: FLOW_A.x * Math.cos(GOLDEN_ANGLE) - FLOW_A.z * Math.sin(GOLDEN_ANGLE),
-  z: FLOW_A.x * Math.sin(GOLDEN_ANGLE) + FLOW_A.z * Math.cos(GOLDEN_ANGLE),
-};
+// 층2 무늬 속력. 방향은 층1과 **같고** 속력만 황금비 배다(감독 처방)
+const FLOW_SPEED_C = FLOW_SPEED_A * PHI;
 /**
  * 층 하나에 줄 불투명도 — **겹친 실효 불투명도가 `total` 이 되도록** 나눈다.
  *
@@ -532,6 +527,16 @@ const LIFT_AMP = readNum('wamp', WAVE_AMP_DEFAULT, 0, WAVE_PEAK_MAX);
 
 /** 진행파 : 정재파 배분. 근거·기본값은 `decide/wave.ts` 의 `WAVE_STANDING_DEFAULT` */
 const LIFT_STANDING = readNum('wstd', WAVE_STANDING_DEFAULT, 0, 1);
+
+// 노브 둘 — `?wdir` 흐름 방향(도, `31`=예전) · `?wspread` 부채꼴 반각(도, `108`=예전
+// 배치 · `0`=일자형이라 2026-07-31 에 기각된 화면). 되돌림 자리가 이 둘이다.
+const FLOW_DIR = readNum('wdir', FLOW_DIR_DEG, -180, 180);
+const WAVE_SPREAD = readNum('wspread', WAVE_SPREAD_DEG, 0, 180);
+// 파동 성분과 세 층의 흐름 벡터. **방향은 하나, 속력만 다르다**(감독 처방)
+const LIFT_DIRS = liftWaves(WAVE_SPREAD);
+const FA = flowVec(FLOW_SPEED_A, FLOW_DIR);
+const FB = flowVec(FLOW_SPEED_B, FLOW_DIR);
+const FC = flowVec(FLOW_SPEED_C, FLOW_DIR);
 
 
 /**
@@ -1475,24 +1480,19 @@ export const oceanFeature: Feature = {
           // 층1 에는 없는 비대칭이 그 흔적이다.
           const a = (t * flowMps()) / RIPPLE_M;
           if (tex) {
-            tex.normA.offset.set(FLOW_A.x * a, FLOW_A.z * a);
-            // ── 층 둘이 서로 어긋나게 흐른다 ──────────────────────────────────
-            // 예전에는 `tint` 를 노멀맵에 **붙여** 같이 흘리고(`copy`), 두 번째 층을
-            // `roughnessMap` 에 태웠다. 그 슬롯이 검은 줄기의 원인이라 비웠으므로
-            // (위 슬롯 주석) 두 번째 파동 노릇을 `tint` 가 이어받는다.
-            //
-            // **서로 다른 방향·속도라야 한다.** 같이 흐르면 두 무늬가 한 덩어리로
-            // 미끄러져 "흐르는 벽지" 가 되고, 어긋나면 겹치는 자리가 계속 바뀌어 물이
-            // 살아 있는 것처럼 보인다.
-            tex.tint.offset.set(FLOW_B.x * a, FLOW_B.z * a);
-            // 윤슬은 또 다른 속도로 흘린다 — 물결과 어긋나야 점이 **명멸**한다.
-            // 물결에 붙여 두면 점이 무늬에 박혀 같이 미끄러질 뿐 반짝이지 않는다.
-            tex.sparkle.offset.set(FLOW_A.x * a * 0.6, FLOW_A.z * a * 0.6);
+            tex.normA.offset.set(FA.x * a, FA.z * a);
+            // ── 세 층이 **같은 방향**으로, **다른 속력**으로 흐른다 ────────────
+            // ⚠ 여기 오래 *"서로 다른 방향·속도라야 한다"* 고 적혀 있었고 감독이 화면에서
+            // 반려했다(2026-08-20). 근거·해소는 `FLOW_SPEED_A` 헤더 한 곳이다.
+            // 두 번째 파동 노릇은 `tint` 가 맡는다(`roughnessMap` 슬롯은 검은 줄기의
+            // 원인이라 비워 뒀다 — 위 슬롯 주석).
+            tex.tint.offset.set(FB.x * a, FB.z * a);
+            // 윤슬은 또 다른 **속력**으로 흘린다 — 물결과 어긋나야 점이 **명멸**한다.
+            tex.sparkle.offset.set(FA.x * a * 0.6, FA.z * a * 0.6);
           }
-          // ── 두 번째 물결 층 (감독 지시 2026-08-03) ────────────────────────
-          // 방향은 황금각만큼 돌아가 있고 속도는 황금비의 역수다. **어느 것도 첫 층과
-          // 정수비가 아니라서** 두 층이 정렬되는 순간이 없다 — 간섭이 끊기지 않는다.
-          // 스케일이 다르므로 UV 환산도 그만큼 나눠야 화면 속도가 맞다.
+          // ── 두 번째 물결 층 (감독 지시 2026-08-03 · 방향 통일 2026-08-20) ──
+          // 방향은 첫 층과 **같고** 속력만 황금비 배다 — 정수비가 아니라서 두 층이
+          // 정렬되는 순간이 없다. 스케일이 다르므로 UV 환산은 그만큼 나눈다.
           if (normB) {
             // 월드 속도를 UV 로 환산한다 — 무늬 한 장이 `RIPPLE_M × LAYER2_SCALE`
             // 미터를 덮으므로 그것으로 나눈다. 이러면 상수가 뜻하는 것과 화면에서
@@ -1502,7 +1502,7 @@ export const oceanFeature: Feature = {
             // (황금비)이 유지된 채로 전체 속도만 변한다. 한쪽만 노브를 받으면 노브를
             // 움직일 때마다 간섭 무늬의 성격이 바뀌어 버린다.
             const b = (t * flowMps() * LAYER2_WORLD_SPEED) / (RIPPLE_M * LAYER2_SCALE);
-            normB.offset.set(FLOW_C.x * b, FLOW_C.z * b);
+            normB.offset.set(FC.x * b, FC.z * b);
           }
 
           // ── 강만 제 방향으로 흐른다 (감독 지시 "물살로 보이고") ──────────────
@@ -1553,7 +1553,7 @@ export const oceanFeature: Feature = {
           if (RIVER_SEG > 1 && LIFT_AMP > 0) {
             const p = riverPosAttr.array as Float32Array;
             for (let i = 0; i < p.length; i += 3) {
-              p[i + 1] = surfaceLift(p[i], p[i + 2], t, LIFT_AMP, LIFT_STANDING);
+              p[i + 1] = surfaceLift(p[i], p[i + 2], t, LIFT_AMP, LIFT_STANDING, LIFT_DIRS);
             }
             riverPosAttr.needsUpdate = true;
           }
@@ -1590,7 +1590,7 @@ export const oceanFeature: Feature = {
               const p = attr.array as Float32Array;
               // 정점 y 는 `patchVertexY` 한 곳이 정한다(근거·실측표도 거기다).
               for (let i = 0; i < p.length; i += 3) {
-                p[i + 1] = patchVertexY(p[i] + ox, p[i + 2] + oz, t, LIFT_AMP, LIFT_STANDING);
+                p[i + 1] = patchVertexY(p[i] + ox, p[i + 2] + oz, t, LIFT_AMP, LIFT_STANDING, LIFT_DIRS);
               }
               attr.needsUpdate = true;
             }

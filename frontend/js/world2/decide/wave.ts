@@ -67,11 +67,83 @@ export const LIFT_LAMBDA = LIFT_LAMBDA_M;
  * 방향과 주파수 비를 정수비에서 멀리 둔다 — 정수비면 짧은 주기로 패턴이 되풀이된다.
  * `dir` 은 단위벡터, `rel` 은 기본 파수 대비 배율, `amp` 는 상대 진폭(합이 1).
  */
-const LIFT_WAVES = [
-  { dx: 1, dz: 0, rel: 1, amp: 0.5 },
-  { dx: 0.5, dz: 0.866, rel: PHI, amp: 0.3 },              // 60°
-  { dx: -0.309, dz: 0.951, rel: PHI * PHI, amp: 0.2 },     // 108°
-];
+// ── 방향 — 감독 판정 2026-08-20 *"같은 방향으로 가야지. 속도만 다를뿐"* ──────
+//
+// 감독: *"윗물은 자연스러워. 아래 물도 같은 방향으로 가야지. 속도만 다를뿐"*
+// 윗물(강)은 `riverFlowAt(x)` 로 **강줄기를 따라** 흐르고 그것이 통과했다. 아래 물은
+// 방향이 흩어져 있었다 — 실측(2026-08-20):
+//
+//   강 UV        ≈0°    (강줄기)          ← 감독이 «자연스럽다» 고 한 것
+//   바다 노멀맵   31.0°  `FLOW_A`
+//   색조 층      122.3°  `FLOW_B`
+//   층2 무늬     168.5°  `FLOW_A` + 황금각
+//   정점 파동      0° / 60° / 108°
+//
+// `features/ocean.ts` 주석이 *"서로 다르고 **방향도 어긋나야** 한다"* 고 그렇게 설계했고
+// 근거는 *"같은 속도로 같은 방향이면 한 덩어리로 미끄러져 «흐르는 벽지»가 된다"* 였다.
+// **그 걱정은 「같은 속도 + 같은 방향」에만 해당한다** — 감독 처방은 정확히 그 조건을
+// 피한다. 같은 방향에 속도가 다르면 두 층이 서로 미끄러지며 간섭하고, 실제 파도도
+// 바람 방향으로 정렬된 채 속도만 다르다. 직각 교차가 오히려 부자연스럽다.
+//
+// ⚠ **이 저장소가 방향을 어긋내다 반려당한 것이 두 번째다.** 물결 무늬가 「타일 장판」이
+// 됐을 때(감독 *"이게 뭐여"*) PR 에 적힌 원인이 *"2층 방향 다름 → 격자"* 였다. 같은
+// 실수가 축을 바꿔 재발했다.
+
+/**
+ * 물결이 흐르는 기준 방향(도). `0` = +x = 강이 흐르는 축.
+ *
+ * 노브 `?wdir`. `31` 을 주면 예전 `FLOW_A` 방향으로 정확히 되돌아간다.
+ */
+export const FLOW_DIR_DEG = 0;
+
+/**
+ * 정점 파동 방향의 **부채꼴 반각**(도). 주 방향(`FLOW_DIR_DEG`) 좌우로 이만큼 퍼진다.
+ *
+ * ⚠ **0 으로 두면 안 된다.** 세 파가 완전히 같은 방향이면 1차원 파형이 되어 마루가
+ * 직선이 되고, 그것은 감독이 2026-07-31 에 *"ㅈ런. 일자형 말고"* 로 **이미 기각한**
+ * 화면이다. 그러니 이 축은 «정렬» 이 아니라 **«수렴»** 이다.
+ *
+ * 28°: 실제 풍파 스펙트럼이 주 방향 주위 좁은 부채꼴에 몰리는 것을 따른다. 예전 값
+ * (0/60/108°)은 셋째 성분이 주 방향과 거의 **직각**이라 방향감이 상쇄됐다.
+ * 노브 `?wspread`. `108` 을 주면 예전 배치로 되돌아간다.
+ */
+export const WAVE_SPREAD_DEG = 28;
+
+/**
+ * 흐름 벡터. 속력과 방향을 **따로** 받는다 — 그것이 감독 처방(«방향 하나, 속도만
+ * 다르게»)을 코드 형태로 못 박는 방법이다. 예전에는 `{x, z}` 리터럴이라 방향과 속력이
+ * 한 덩어리로 섞여 있었고, 그래서 «속력만 다르게» 를 표현할 자리가 없었다.
+ */
+export function flowVec(speed: number, dirDeg: number = FLOW_DIR_DEG): { x: number; z: number } {
+  const r = (dirDeg * Math.PI) / 180;
+  return { x: Math.cos(r) * speed, z: Math.sin(r) * speed };
+}
+
+/**
+ * 정점 파동 성분들의 방향. 주 방향을 중심으로 **부채꼴로 벌린다.**
+ *
+ * 셋을 `-spread · 0 · +spread` 로 두지 않고 `0 · +s · −s·0.75` 로 비대칭을 준다 —
+ * 대칭이면 좌우 성분이 서로 상쇄해 다시 1차원처럼 읽힌다(주 파가 가장 크므로 그쪽으로
+ * 무게가 실려야 한다).
+ */
+export function waveDirs(spreadDeg: number = WAVE_SPREAD_DEG): Array<{ dx: number; dz: number }> {
+  return [0, spreadDeg, -spreadDeg * 0.75].map((d) => {
+    const r = ((FLOW_DIR_DEG + d) * Math.PI) / 180;
+    return { dx: Math.cos(r), dz: Math.sin(r) };
+  });
+}
+
+/** 기본 파수 대비 배율. 정수비에서 멀어야 되풀이가 안 보인다 — 그래서 황금비 거듭제곱 */
+const WAVE_REL = [1, PHI, PHI * PHI];
+/** 상대 진폭. 합이 1 이라 `amp` 인자가 곧 마루~골의 절반이 된다 */
+const WAVE_AMP = [0.5, 0.3, 0.2];
+
+/** 겹치는 파들. 부채꼴 반각을 받아 **방향만** 다시 만든다 — 파장·진폭은 그대로다 */
+export function liftWaves(spreadDeg: number = WAVE_SPREAD_DEG) {
+  return waveDirs(spreadDeg).map((d, i) => ({ ...d, rel: WAVE_REL[i], amp: WAVE_AMP[i] }));
+}
+
+const LIFT_WAVES = liftWaves();
 
 /**
  * 수면 높이(m). **월드 좌표만의 함수다** — 이 성질이 파셀 경계의 이음새를 막는다.
@@ -87,11 +159,12 @@ const LIFT_WAVES = [
 export function surfaceLift(
   x: number, z: number, t: number,
   amp: number = WAVE_AMP_DEFAULT, standing: number = WAVE_STANDING_DEFAULT,
+  waves: ReturnType<typeof liftWaves> = LIFT_WAVES,
 ): number {
   if (amp <= 0) return 0;
   const k0 = (2 * Math.PI) / LIFT_LAMBDA_M;
   let h = 0;
-  for (const w of LIFT_WAVES) {
+  for (const w of waves) {
     const k = k0 * w.rel;
     const phase = k * (w.dx * x + w.dz * z);
     const omega = Math.sqrt(9.81 * k);
@@ -145,6 +218,7 @@ export const PATCH_SEP = 0.01;
 export function patchVertexY(
   x: number, z: number, t: number,
   amp: number = WAVE_AMP_DEFAULT, standing: number = WAVE_STANDING_DEFAULT,
+  waves: ReturnType<typeof liftWaves> = LIFT_WAVES,
 ): number {
-  return PATCH_SEP + surfaceLift(x, z, t, amp, standing);
+  return PATCH_SEP + surfaceLift(x, z, t, amp, standing, waves);
 }
