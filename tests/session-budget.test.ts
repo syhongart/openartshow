@@ -10,16 +10,36 @@
 // 관측을 담고도 남을 것. ②가 깨지면 **예산을 올리기 전에 「무엇이 느려졌는가」를 먼저
 // 묻는다** — 그것이 `MAX_WALK_MS` 주석의 마지막 문단이다.
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   WALK_LEGS, WALK_MS, MAX_WALK_MS, MAX_LEGS,
   COVER_UNIQUE, COVER_REVISITS, STUCK_M, OBSERVED_MAX_LEGS,
 } from '../scripts/smoke/session-budget.mjs';
 
 describe('스모크 세션 예산', () => {
-  it('★★ MAX_LEGS 는 시간에서 유도된다 — 개수를 손으로 적으면 깨진다', () => {
-    // 이 단언이 이 파일의 요점이다. 누군가 `MAX_LEGS = 40` 으로 굳히면 `WALK_MS` 를
-    // 바꿨을 때 구간 예산이 조용히 달라지고, 그 사실은 아무 데도 안 나타난다.
-    expect(MAX_LEGS, 'MAX_LEGS 가 MAX_WALK_MS / WALK_MS 에서 유도되지 않는다')
+  it('★★ MAX_LEGS 는 시간에서 유도된다 — **값 비교로는 못 잡아서 소스를 읽는다**', () => {
+    // ── 값 비교만으로는 검출력이 0 이다 (검수관 실측, 2026-08-20) ─────────────
+    // 아래 산술 단언이 이 검사의 전부였고, 검수관이 뮤테이션으로 그 구멍을 실증했다:
+    // `MAX_LEGS` 를 `40` 으로 **하드코딩만** 하면 그 순간 값이 우연히 같아 **통과한다.**
+    // (내가 «유도 제거 뮤테이션» 이라고 보고한 것은 실제로 하드코딩 + `WALK_MS` 변경의
+    //  **조합**이었다 — 두 변경이 있어야 값이 갈라지고, 그제야 잡혔다.)
+    //
+    // 하드코딩은 **그 시점에는 무해하다**(동작이 같다). 위험은 나중에 온다 — 다음 사람이
+    // `WALK_MS` 를 바꾸는 순간 구간 예산이 조용히 달라지고, 그 사실은 아무 데도 안 나타
+    // 난다. 즉 이 검사가 지켜야 하는 것은 **값이 아니라 유도라는 형태**다.
+    //
+    // 형태는 값으로 못 본다. 그래서 **소스를 읽는다** — 이 회차에서 `equirectUv` 를
+    // three 소스와 맞댄 것과 같은 처방이다(자기 자신과만 대조하면 틀린 채로 초록이 된다).
+    const src = fs.readFileSync(
+      path.join(process.cwd(), 'scripts/smoke/session-budget.mjs'), 'utf8',
+    ).replace(/\s+/g, '');
+    expect(src, 'MAX_LEGS 가 MAX_WALK_MS 에서 유도되지 않는다 — 값을 손으로 적었다')
+      .toContain('MAX_LEGS=Math.floor(MAX_WALK_MS/WALK_MS)');
+
+    // 산술도 함께 본다. 위 검사는 표기를, 이것은 결과를 본다 — 둘 다 있어야 한다
+    // (소스 표기가 맞아도 import 가 엉뚱한 것을 가리킬 수 있다).
+    expect(MAX_LEGS, 'MAX_LEGS 값이 유도 결과와 다르다')
       .toBe(Math.floor(MAX_WALK_MS / WALK_MS));
     expect(MAX_WALK_MS, '구간 예산이 한 leg 도 못 담는다').toBeGreaterThan(WALK_MS);
   });
