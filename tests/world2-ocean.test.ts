@@ -306,6 +306,9 @@ function mount(initial: Tod = 'day', backend = 'WebGL') {
     // 방향이다.
     sun: { color: { r: 1, g: 0.96, b: 0.9 }, intensity: 2.2, position: { x: 0.4, y: 0.8, z: 0.2 } },
     hemi: { color: { r: 0.55, g: 0.72, b: 0.95 }, groundColor: { r: 0.4, g: 0.38, b: 0.32 }, intensity: 1 },
+    // ⚠ **객체를 그대로 둔 채 세기만 바꾼다**(`setLight`). 실물에서 시간대 전환이 하는
+    // 일이 그것이고, 새 객체로 갈아끼우면 «참조를 들고 있어서 저절로 따라온 것» 과
+    // «다시 읽어서 따라온 것» 이 구별되지 않는다.
     // 수면 구현 분기가 이것을 읽는다(`pickWaterMode`). 기본을 `WebGL` 로 두는 것은
     // **라이브의 최악 조건**을 기본 대조군으로 삼으려는 것이다 — `navigator.gpu` 가
     // 없는 기기가 실제 방문자의 다수이고, 그 경로가 깨지면 월드가 통째로 안 뜬다.
@@ -325,6 +328,10 @@ function mount(initial: Tod = 'day', backend = 'WebGL') {
   return {
     inst, added, removed, sea, registered,
     setTime: (t: Tod) => { tod = t; },
+    /** 시간대 전환에 딸려오는 조명 변화. 환경맵이 씬을 **다시 읽는지**를 재는 축이다 */
+    setLight: (sunI: number, hemiI: number) => {
+      env.sun.intensity = sunI; env.hemi.intensity = hemiI;
+    },
     // 바다 패치가 플레이어를 따라 움직이는지 보려면 플레이어가 **실제로 움직여야** 한다
     // (팀장 판정 A). 고정 좌표만 쓰면 그 가지가 통째로 미검증으로 남는다 — TSL 분기가
     // 정확히 그렇게 새어나갔다(위 스텁 주석).
@@ -798,20 +805,29 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
   it('★ 시간대가 바뀌면 **같은 텍스처를 다시 굽는다** — 개수는 상수, 내용만 바뀐다', () => {
     // 이것이 PMREM(`adapter.makeEnvMap`)을 안 쓴 이유의 절반이다. 매번 새 텍스처가
     // 나오면 개수 불변식 [7] 이 깨지고, dispose 를 한 군데만 빠뜨려도 누수가 된다.
-    const { inst, added, setTime } = mount('day');
+    const { inst, added, setTime, setLight } = mount('day');
     const sea = added.find((m) => m.name === 'ocean')!;
     const tex = sea.material.opts.envMap as { image: Uint8Array; needsUpdate: boolean };
-    const before = Array.from(tex.image.slice(0, 4096));
+    const lum = () => {
+      let n = 0;
+      for (let i = 0; i < 4096; i += 4) n += tex.image[i] + tex.image[i + 1] + tex.image[i + 2];
+      return n;
+    };
+    const day = lum();
+    expect(day, '전제: 낮 환경맵이 비어 있지 않다').toBeGreaterThan(0);
+
+    // ⚠ **`needsUpdate` 를 보지 않는다.** 첫 판본이 그것을 봤고 **뮤테이션이 통과했다** —
+    // `createWaterEnv` 가 생성 시 한 번 굽기 때문에 그 깃발은 이미 true 라, 재굽기를
+    // 통째로 지워도 단언이 안 깨졌다. 「테스트 통과는 검출력의 증거가 아니다」의 교과서
+    // 사례다. 그래서 **픽셀을 직접 본다** — 밤 조명으로 바꾼 뒤 다시 굽지 않으면 낮
+    // 밝기가 그대로 남는다.
     setTime('night');
+    setLight(0.15, 0.08);
     inst.system!.update({ dt: 1 } as never);
     expect(sea.material.opts.envMap, '시간대 전환에 텍스처가 새로 났다 — 누수 경로다')
       .toBe(tex);
-    // ⚠ 픽셀이 **실제로 달라져야** 한다. 이 스텁 씬은 시간대와 무관하게 같은 조명을
-    // 돌려주므로(mount 의 `sun`/`hemi` 는 고정) 여기서 재는 것은 «색이 밤이 됐는가» 가
-    // 아니라 «다시 굽는 호출이 도는가» 다 — 그래서 `needsUpdate` 를 본다. 색이 씬을
-    // 따라가는가는 `world2-water-env.test.ts` 가 조명을 직접 흔들어 본다.
-    expect(tex.needsUpdate, '다시 굽지 않았다 — 밤이 와도 낮 하늘이 반사된다').toBe(true);
-    expect(before.length, '전제: 픽셀 버퍼가 비어 있지 않다').toBeGreaterThan(0);
+    expect(lum(), '밤이 됐는데 환경맵이 낮 그대로다 — 다시 굽는 호출이 없다')
+      .toBeLessThan(day * 0.6);
   });
 
   it('시간이 지나면 노멀맵 offset 이 움직인다 — 안 움직이면 물이 멈춰 있다', () => {
