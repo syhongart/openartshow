@@ -35,7 +35,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three/webgpu';
 import { SEA_Y, RIVER_Y } from '../frontend/js/world2/decide/water.js';
-import { SHORE_ATTR } from '../frontend/js/world2/decide/water-style.js';
+import {
+  SHORE_ATTR, STYLE_OPACITY, CLEAR_SHALLOW, shallowAlpha,
+} from '../frontend/js/world2/decide/water-style.js';
 
 /** `ocean.ts` 가 층2 패치를 쓸 때 층1을 내리는 깊이. 값을 여기 적지 않는다 */
 const { WAVE_AMP_DEFAULT } = await import('../frontend/js/world2/decide/wave.js');
@@ -50,10 +52,15 @@ type Env = Parameters<
  */
 function makeScene() {
   const scene = new THREE.Scene();
+  // ⚠ 원본 수면 재질은 **노멀맵을 갖는다** — `ocean.ts:1055` 가 `normalMap: tex.normA`
+  // 를 걸고 `update()` 가 그 `offset` 을 밀어 일렁이게 한다. 스타일 물이 그 텍스처를
+  // 공유하는지가 이 파일의 검사 대상이므로, 픽스처도 실물과 같은 모양이어야 한다.
+  const normA = new THREE.Texture();
+  normA.name = 'fixture-normA';
   const mk = (name: string, y: number, seg: number) => {
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(64, 64, seg, seg).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial(),
+      new THREE.MeshStandardMaterial({ normalMap: normA }),
     );
     m.name = name;
     m.position.y = y;
@@ -62,6 +69,7 @@ function makeScene() {
   };
   return {
     scene,
+    normA,
     // 층2가 있으므로 층1은 그 골 밑에 있다 (`SEA_Y - LIFT_AMP`)
     ocean: mk('ocean', SEA_Y - WAVE_AMP_DEFAULT, 1),
     river: mk('river', RIVER_Y, 8),
@@ -81,6 +89,9 @@ async function mountStyled(search = '?styl=1') {
     const env = {
       scene: s.scene,
       cell: 32,
+      // ⚠ 계약 필수다 — 잔파도 세기를 `waterGloss(time)` 에서 받으므로 없으면 죽는다.
+      // 옵셔널로 두면 «없어도 조용히 넘어간다» 가 되어 그 결합이 검사에서 사라진다.
+      time: () => 'day' as const,
       // ⚠ **문자열 하나가 이 파일 전체를 가능하게 한다.** 실제 GPU 는 없다.
       adapter: { backend: 'WebGPU', backendDetail: 'WebGPU (테스트 강제)' },
     };
@@ -132,6 +143,63 @@ describe('게임풍 수면 — 실제 마운트 (WebGPU 경로)', () => {
     const { src, byName } = await mountStyled();
     expect(byName('river-styled')!.geometry).toBe(src.river.geometry);
     expect(byName('ocean-styled')!.geometry).toBe(src.ocean.geometry);
+  });
+
+  it('★ 잔파도 — 원본 노멀맵을 **공유**한다 (감독 *"잔파도의 일렁임"* 2026-08-20)', async () => {
+    // 이 재질에는 `normalNode`·`normalMap` 이 **둘 다 없었다** — 완전히 매끈한 면이라
+    // 빛이 한 방향으로만 반사되고, 그것이 감독이 «리얼함이 전혀 없다» 고 한 화면이다.
+    //
+    // **공유**여야 한다. 복사하면 `ocean.ts` 가 미는 `offset` 스크롤이 안 와서 화면에서는
+    // «잔물결이 굳었다» 로만 드러난다 — 지오 공유 단언과 정확히 같은 축이다.
+    const { src, byName } = await mountStyled();
+    const mat = byName('ocean-styled')!.material as unknown as {
+      normalMap?: THREE.Texture | null; normalScale?: THREE.Vector2;
+    };
+    expect(mat.normalMap, '노멀맵이 아예 안 걸렸다 — 매끈한 면으로 되돌아갔다').toBe(src.normA);
+    expect(mat.normalScale!.x, '세기가 0 이면 걸어도 안 보인다').toBeGreaterThan(0);
+  });
+
+  it('`?wnorm=0` 이면 잔파도가 꺼진다 — 되돌릴 자리가 노브 하나다', async () => {
+    const { byName } = await mountStyled('?styl=1&wnorm=0');
+    const mat = byName('ocean-styled')!.material as unknown as { normalScale?: THREE.Vector2 };
+    expect(mat.normalScale!.x).toBe(0);
+  });
+
+  it('★ 맑음 — 알파가 **깊이에 걸린다** (감독 *"물의 투명함"* 2026-08-20)', async () => {
+    // 알파가 재질 상수 하나뿐이면 얕든 깊든 같은 불투명도라 «색칠한 판» 이 된다.
+    // `opacityNode` 가 걸렸는지를 본다 — 없으면 상수로 되돌아간 것이다.
+    const { byName } = await mountStyled();
+    const mat = byName('ocean-styled')!.material as unknown as { opacityNode?: unknown };
+    expect(mat.opacityNode, '깊이 알파가 없다 — 균일 불투명으로 되돌아갔다').toBeTruthy();
+  });
+
+  it('`?wclear=0` 이면 균일 불투명으로 정확히 되돌아간다 (항등원)', () => {
+    // ⚠ **첫 판본은 이 자리에서 재질 상수(`opacity`)를 봤고 장식이었다.** `clearMul` 을
+    // 통째로 무시하는 뮤테이션에서 **안 깨졌다** — 그 상수는 노브와 무관하게 늘 같기
+    // 때문이다. 노드 그래프 내부는 밖에서 읽을 수 없으므로, 판정을 읽을 수 있는 자리
+    // (`shallowAlpha`)로 옮기고 여기서 그것을 본다.
+    expect(shallowAlpha(0)).toBe(STYLE_OPACITY);
+    expect(shallowAlpha(1)).toBe(CLEAR_SHALLOW);
+    // 중간값이 선형인지도 본다 — 한쪽 끝만 맞고 가운데가 튀는 구현을 배제한다.
+    expect(shallowAlpha(0.5)).toBeCloseTo((STYLE_OPACITY + CLEAR_SHALLOW) / 2, 10);
+  });
+
+  it('★ 그 알파를 셰이더가 **실제로 쓴다** — 판정/집행 경계를 건너는 지점', async () => {
+    // ⚠ **이 검사가 없을 때 뮤테이션이 통과했다.** `shallowAlpha` 단언(위)은 판정만 보고,
+    // 집행부에서 `shallowAlpha(clearMul)` → `shallowAlpha(1)` 로 바꿔도 **안 깨졌다.**
+    // 이 저장소가 «판정/집행 분리의 구멍» 이라 부르는 자리이고, 새 판정 값을 만들면
+    // 집행 쪽 통합 테스트를 함께 붙이라는 규율이 정확히 이 경우를 말한다.
+    //
+    // TSL 노드 내부를 읽는다 — `mix(a, b, t)` 는 `MathNode` 이고 `aNode`·`bNode` 가
+    // `ConstNode` 면 `.value` 를 그대로 갖는다(실측).
+    // ⚠ **three 내부 구조에 의존한다.** 버전이 올라 이름이 바뀌면 여기가 깨진다 —
+    // 그때는 조용히 통과하는 게 아니라 빨간불이 뜨므로, 그 시점에 다시 짜면 된다.
+    const { byName } = await mountStyled('?styl=1&wclear=0.5');
+    const on = (byName('ocean-styled')!.material as unknown as {
+      opacityNode?: { aNode?: { value?: number }; bNode?: { value?: number } };
+    }).opacityNode;
+    expect(on?.aNode?.value, '얕은 쪽 알파가 노브를 안 탄다').toBeCloseTo(shallowAlpha(0.5), 10);
+    expect(on?.bNode?.value, '깊은 쪽이 STYLE_OPACITY 가 아니다').toBe(STYLE_OPACITY);
   });
 
   it('`?styl=0` 이면 아무것도 안 건드린다 — 되돌리기가 실제로 되는가', async () => {
