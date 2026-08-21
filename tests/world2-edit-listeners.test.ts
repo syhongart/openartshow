@@ -168,6 +168,8 @@ type RetargetCall = {
 
 type Harness = {
   session: EditSession;
+  /** 🔴 편집 토글이 터치 조작에 알린 이력 (`G-EDIT14`). 켜면 `true`, 끄면 `false` */
+  touchEdits: boolean[];
   live: Map<string, number>;
   doc: Document;
   canvas: HTMLCanvasElement;
@@ -291,6 +293,8 @@ function makeHarness(vf?: VillageFixture): Harness {
    * 전체 4059건 중 **0 failed** 였다. 여기가 그 축이다: 편집을 실제로 켜고 키를 눌러
    * **문까지 닿는지**를 본다.
    */
+  /** 🔴 편집 토글이 터치 조작에 알린 이력 (`G-EDIT14`) — 켜고 끌 때마다 한 번씩 */
+  const touchEdits: boolean[] = [];
   const flies: Array<{ dt: number }> = [];
   // ⚠ `add`/`remove` 가 **실제로 담는다.** 빈 함수였을 때 선택 링(`pick.ts` 의 marker)이
   // 어디에도 안 남아서 «링이 떴는가» 를 재는 축이 통째로 불가능했다 — N11 뮤테이션이
@@ -367,6 +371,9 @@ function makeHarness(vf?: VillageFixture): Harness {
       shading: () => shadingNow,
       setShading: (m: ShadingMode) => { shadingNow = m; shadings.push(m); },
     }),
+    // 🔴 폰 터치 문 (`G-EDIT14`). **문을 주는 것이 축이다** — 이것이 없으면 편집을 켜도
+    // 캔버스 드래그가 시선 회전과 기즈모 끌기에 둘 다 들어간다.
+    setTouchEditing: (on: boolean) => { touchEdits.push(on); },
   };
 
   // 팔레트 요청은 이 축과 무관하다 — 목록이 없으면 끌어다 놓기만 쓰는 정상 경로로 간다.
@@ -374,6 +381,7 @@ function makeHarness(vf?: VillageFixture): Harness {
   current = session;
   return {
     session, live, doc, canvas, entries, removed, hits, root, villageHits, villageMesh, order,
+    touchEdits,
     frozen: frozenStore,
     retargeted,
     views,
@@ -2029,4 +2037,37 @@ describe('🔴 GS-E1 — `Esc` 취소를 **전 경로 행위로** 잰다 (검수
   // 정확히 적고 있었고, 내가 그것을 «아무 검사도 없다» 로 **잘못 일반화**했다.
   // 참인 것은 좁다: **「키 안내가 뜨는가」축**에서만 `loadPalette` 가 가려 검출이 0 이다 —
   // 그래서 이 케이스가 장식이었다. 남는 사각은 백로그 `G-EDIT5`.
+});
+
+// ── 🔴 GS-J2 — 편집 토글이 터치 조작에 **닿는가** (`G-EDIT14`) ────────────────
+//
+// 판정/집행 경계의 그 사각이다: `touch-controls.ts` 가 `setEditing` 을 옳게 구현해도
+// **편집이 그것을 안 부르면** 폰에서 캔버스 드래그가 여전히 두 겹으로 먹는다. 양쪽
+// 단위 테스트 어디에도 안 걸리는 자리라 통합으로 본다.
+//
+// ⚠ **이 검사가 「폰에서 실제로 안 겹친다」를 증명하지는 않는다.** 그것은 실기기 축이고
+// 헤드리스로 못 잰다(백로그 `G-EDIT14` 와 게시판에 그 한계를 적었다). 여기서 재는 것은
+// **문이 실제로 불리는가** 하나다.
+describe('🔴 GS-J2 — 편집 토글이 터치 조작에 알린다', () => {
+  it('편집을 켜면 `true` 로 한 번 알린다', () => {
+    const h = makeHarness();
+    expect(h.touchEdits, '전제 — 아직 안 켰다').toEqual([]);
+    pressTab();
+    expect(h.touchEdits, '🔴 편집을 켰는데 터치 조작이 모른다 — 캔버스 드래그가 두 겹으로 먹는다')
+      .toEqual([true]);
+  });
+
+  it('🔴 끌 때도 알린다 — 한쪽만 부르면 시선이 영영 안 돌아온다', () => {
+    const h = makeHarness();
+    pressTab();
+    pressTab();
+    expect(h.touchEdits, '🔴 편집을 껐는데 시선이 안 살아난다').toEqual([true, false]);
+  });
+
+  it('같은 상태로 다시 토글해도 이력이 어긋나지 않는다', () => {
+    // `setEditing` 이 `on === st.editing` 이면 조기 반환하므로 중복 호출이 안 쌓인다.
+    const h = makeHarness();
+    pressTab(); pressTab(); pressTab();
+    expect(h.touchEdits).toEqual([true, false, true]);
+  });
 });

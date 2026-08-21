@@ -305,6 +305,17 @@ export interface OverlayHost {
     slot: SlotRef,
     t: { x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number },
   ): void;
+  /**
+   * **편집을 켜고 끌 때 터치 조작에 알린다** (`G-EDIT14`).
+   *
+   * 없으면(`undefined`) 종전 동작이다 — 폰에서 캔버스 드래그가 시선 회전과 기즈모 끌기에
+   * **둘 다** 들어간다. 선택 사양으로 두는 것은 이 문을 안 여는 소비자(테스트 하네스 등)가
+   * 그대로 돌게 하기 위해서다.
+   *
+   * ⚠ **이동은 안 끊는다** — 그 판정은 전용 원 안에 있어 편집과 겹치지 않는다.
+   * 무엇이 왜 끊기는지는 `ui/touch-controls.ts` 헤더 한 곳이다.
+   */
+  setTouchEditing?(on: boolean): void;
 }
 
 /** 편집 모드를 켠다. 반환값이 정리 핸들이다. */

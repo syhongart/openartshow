@@ -82,6 +82,23 @@ export interface FeatureEnv {
     h: { readonly key: string; readonly index: number },
     t: { x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number },
   ) => void;
+  /**
+   * **편집을 켜고 끌 때 터치 조작에 알린다** (`G-EDIT14`, 팀장 판정 (나) 2026-08-21).
+   *
+   * ⚠ 위 `village`·`retargetSlot` 과 **같은 논리 구조**다 — 소유는 조립부(`main.ts` 의
+   * `attachTouchControls` 반환값)에 두고 여기서는 **통로만** 연다. 편집을 켜고 끄는
+   * 자리(`edit/mode.ts` 의 `setEditing`)와 터치를 붙드는 자리는 서로를 모르는 계층이라
+   * 문 없이는 이을 수 없다.
+   *
+   * **끊기는 것은 시선 드래그 하나다** — 이동 조이스틱은 전용 원 안에서만 판정하므로
+   * 편집 판정 영역과 겹치지 않고, 폰에는 궤도·줌·비행이 없어 이동까지 끊으면 «다른
+   * 자리로 옮겨 편집» 이 불가능해진다. 근거는 `ui/touch-controls.ts` 헤더 한 곳이다.
+   *
+   * 선택 사양이 아니라 **필수**인 것이 의도다: 이 문을 안 주는 소비자가 생기면 그
+   * 화면에서만 조용히 충돌이 되살아나고, 증상이 «폰에서 가끔 화면이 돌아간다» 라
+   * 원인에서 가장 먼 자리에서 드러난다. 터치가 없는 기기에서는 조립부가 no-op 을 준다.
+   */
+  readonly setTouchEditing: (on: boolean) => void;
   /** 씬 조명. 개수가 고정이라 커널이 소유하고, 기능은 색·강도만 빌려 쓴다 */
   readonly sun: DirectionalLight;
   readonly hemi: HemisphereLight;
