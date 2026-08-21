@@ -37,7 +37,7 @@ import { pass } from 'three/tsl';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { nightness, LAMP_LUMINANCE, LAMP_MAX_GLOW, type SkyTime } from '../decide/night.js';
 import { BLOOM_THRESHOLD } from './postfx-params.js';
-import { readNum } from '../url-knob.js';
+import { readNum, readLit } from '../url-knob.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 /**
@@ -187,10 +187,22 @@ export const postfxFeature: Feature = {
 
     // 밤에만 번진다. 낮에 켜 두면 하늘이 부옇게 떠서 대낮의 대비가 죽는다.
     // **파이프라인은 그대로 두고 세기만** 흔든다 — 노드를 갈아 끼우면 재컴파일이다.
+    //
+    // 🔴 **복합씬(`daylit`)에서는 낮인데도 번진다 — 그것이 의도다** (검수관 B4′ 정정,
+    // 2026-08-21). 감독 요구가 *"주간인데. 불이 켜져있고"* 인데, 가로등이 **켜진 것처럼
+    // 보이려면** 등불 휘도가 블룸 문턱을 넘어야 한다 — 그 인과는 `decide/night.ts` 의
+    // `LAMP_MAX_GLOW` 주석 한 곳이 소유한다(문턱을 못 넘어 *"가로등 똑같은데"* 를 받은
+    // 이력이 그 자리에 있다). 그래서 블룸은 **접지 않는 축**이고 `?lit=` 를 함께 탄다.
+    // 노브를 한쪽만 태우면 감독이 값을 밀어도 절반만 움직인다(검수관 P7).
+    //
+    // ⚠ 위 첫 줄(*"낮에 켜 두면 대낮의 대비가 죽는다"*)과의 긴장은 **해소된 것이 아니라
+    // 감독 판정 대기**다. 복합씬은 그 대가를 감수하는 씬이고, 얼마나 감수할지가 `?lit=`
+    // 다 — 헤드리스로는 못 잰다(톤매핑 뒤에서만 판정된다).
+    const lit = readLit();
     let lastLevel = -1;
     function applyLevel(time: SkyTime): void {
       if (!bloomNode) return;
-      const level = num('bloomstr', STRENGTH) * nightness(time);
+      const level = num('bloomstr', STRENGTH) * nightness(time, lit);
       if (level === lastLevel) return;
       lastLevel = level;
       bloomNode.strength.value = level;

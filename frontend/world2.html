@@ -518,6 +518,14 @@
         <button type="button" data-time="day">주간</button>
         <button type="button" data-time="sunset">일몰</button>
         <button type="button" data-time="night">야간</button>
+        <!-- 복합씬 — 감독 2026-08-21 *"주간 + 야간 섞고 싶어"*. 낮 밝기 · 켜진 등 ·
+             진한 하늘 · 별.
+             ⚠ 이 자리에 *"`?time=daylit` 과 같은 문"* 이라고 적었다가 **반증됐다**
+             (검수관 B1′): 하늘 농도가 `SkySystem` 생성 옵션이라 세션당 1회만 평가돼
+             버튼 경로에서는 낮 농도로 남아 있었다. 그 옵션을 함수로 바꿔 매 페인트마다
+             묻게 한 뒤에야 두 문이 같아졌고, 그것을 `tests/world2-daylit.test.ts` 의
+             GS-D6 이 돔 페인트 결과로 검사한다. -->
+        <button type="button" data-time="daylit">복합</button>
         <button type="button" data-auto="1">자동</button>
       </div>
       <div class="w2-god-row" data-group="weather">

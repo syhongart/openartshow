@@ -10,15 +10,15 @@
 // 지금 `sky.js`는 라이브 `world.js`도 쓰는 공유 파일이라 건드리면 라이브가 위험하다.
 // 이 계약이 먼저 서 있으면, 쪼갠 조각들을 여기에 얹기만 하면 된다.
 
-import { SkySystem, SKY_BLUE, SKY_BLUE_MAX, CLOUD_CURVE, CLOUD_H, CLOUD_H_MAX } from '../systems/sky.js';
+import { SkySystem, SKY_BLUE, SKY_BLUE_DAYLIT, SKY_BLUE_MAX, CLOUD_CURVE, CLOUD_H, CLOUD_H_MAX } from '../systems/sky.js';
 import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js';
 import {
-  nightness, lampGlow, TIMES, type SkyTime,
-  NIGHT_HEMI_I, NIGHT_SUN_I, NIGHT_EXPOSURE, NIGHT_FOG_SCALE, NIGHT_GROUND_SCALE,
-} from '../decide/night.js';
-import { readNum, readEnum } from '../url-knob.js';
+  paletteTime, TIMES, type SkyTime,
+  NIGHT_HEMI_I, NIGHT_SUN_I, NIGHT_EXPOSURE, NIGHT_FOG_SCALE, NIGHT_GROUND_SCALE } from '../decide/night.js';
+import { readNum, readEnum, readLit } from '../url-knob.js';
 import { DAY_SUN_I, DAY_HEMI_I } from '../decide/daylight.js';
 import { GroundLift } from '../systems/ground-lift.js';
+import { LampGlow } from '../systems/lamp-glow.js';
 import { NIGHT_GROUND_LIFT, MAX_LIFT } from '../decide/ground-albedo.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
@@ -59,6 +59,11 @@ export const skyFeature: Feature = {
   name: 'sky',
 
   create(env: FeatureEnv): FeatureInstance {
+    // 하늘 농도 두 후보를 **여기서 한 번만** 읽는다 — 아래 `skyBlue` 클로저가 매 페인트
+    // 마다 도는 자리라, 그 안에서 읽으면 전환마다 URL 을 파싱한다. `?skyblue=` 를 주면
+    // 둘 다 그 값이 되어 감독이 시간대와 무관하게 농도를 비교할 수 있다.
+    const blueDay = readNum('skyblue', SKY_BLUE, 0, SKY_BLUE_MAX);
+    const blueDaylit = readNum('skyblue', SKY_BLUE_DAYLIT, 0, SKY_BLUE_MAX);
     // 풀 봉인 직후·예열 직전에 만들어진다(features 단계). 여기서 만들어야 예열이 하늘
     // 파이프라인까지 함께 굽는다 — 세션 중 첫 등장으로 미루면 그게 곧 스파이크다.
     const sky = new SkySystem(
@@ -149,7 +154,16 @@ export const skyFeature: Feature = {
         // 헤드리스는 WebGL 이고 감독 기기는 WebGPU 라 여기서 본 것이 저기서 같지 않다.
         //
         // 값의 뜻·수식은 각각 `sky.js` 의 `dayStops`·`cloudElev` 머리말 한 곳이다.
-        skyBlue: readNum('skyblue', SKY_BLUE, 0, SKY_BLUE_MAX),
+        // 복합씬은 **낮보다 진한** 하늘이 정체다(`SKY_BLUE_DAYLIT` 주석). 노브를 주면
+        // 그것이 이기므로 감독이 후보를 링크로 비교할 수 있다.
+        //
+        // 🔴 **함수로 넘긴다 — 숫자로 주면 부팅 시각에 굳는다**(검수관 반려 B1′). 이
+        // 옵션은 `SkySystem` 생성 인자라 세션당 한 번만 평가되고, `sky.js` 의 `skyBlue`
+        // 는 대입이 0 건이라 부팅 뒤 바꿀 수단이 없었다. 그래서 패널 「복합」 버튼으로
+        // 들어오면 별과 점등은 켜지는데 **하늘만 낮 농도로 남았다** — 감독 요구 넷 중
+        // 하나가 그 경로에서 죽어 있었고, HTML 주석은 «같은 문» 이라고 적고 있었다.
+        // 두 값을 미리 읽어 두는 것은 매 페인트마다 URL 을 파싱하지 않으려는 것이다.
+        skyBlue: () => (env.time() === 'daylit' ? blueDaylit : blueDay),
         cloudCurve: readNum('cloudcurve', CLOUD_CURVE, 0, 1),
         // 구름이 세로로 늘어지면 이 값을 **키운다**(감독 실기기 2026-08-12).
         // 실제 물리값은 하한(0.0003)이고 기본은 감독 확정값이다 — 근거는 `CLOUD_H`.
@@ -202,23 +216,16 @@ export const skyFeature: Feature = {
     // **만지는 것은 `emissiveIntensity` 하나뿐이다.** uniform 이라 파이프라인 캐시키에
     // 들어가지 않는다 — 매 프레임 바꿔도 재컴파일이 없다. `emissive` 색이나 `map` 유무
     // 같은 구조 신호를 건드리면 그 순간 전량 재컴파일이 된다.
-    const lampMat = env.pools.materialOf('lamp') as { emissiveIntensity?: number } | null;
-    let lampLit = -1; // 마지막으로 쓴 값. 같은 값을 다시 쓰지 않으려는 것
-
-    function applyLampGlow(): void {
-      if (!lampMat) return;
-      // 시간대는 **조립부에 묻는다.** 예전에는 `sky.get().time`(엔진 반영값)을 읽었다 —
-      // 가로등은 그것으로도 맞게 돌았지만, 같은 밤을 재는 두 소비자(등·블룸)가 서로 다른
-      // 원천을 보면 언젠가 갈린다. 원천을 하나로 모은다(팀장 판정 A-2).
-      const g = lampGlow(nightness(env.time()));
-      // 값이 안 바뀌었으면 건드리지 않는다. 매 프레임 같은 수를 대입해도 three 는
-      // 조용히 넘어가지만, 만지지 않는 것이 만지는 것보다 언제나 싸다.
-      if (g === lampLit) return;
-      lampLit = g;
-      lampMat.emissiveIntensity = g;
-    }
-
-    applyLampGlow(); // 부팅 프레임부터 맞춰 둔다 — 밤에 들어왔는데 첫 프레임만 꺼져 있으면 깜빡인다
+    // 🔴 **배선을 `systems/lamp-glow.ts` 로 뺐다** (검수관 반려 B3′, 2026-08-21).
+    // 예전에는 이 자리에 `applyLampGlow` 클로저가 있었고, 그래서 테스트가 같은 식을 옆에
+    // 다시 쓰고 있었다 — 복합씬 점등을 끄는 뮤테이션에 **추가 실패 0** 이었다. 바로 아래
+    // 지면 알베도가 같은 이유로 이미 클래스로 나가 있었고, 그 파일 머리말이 *"실제로
+    // 가로등 배선이 그 상태다"* 라고 이 자리를 지목하고 있었다.
+    //
+    // 시간대는 **조립부에 묻는다**(팀장 판정 A-2) — 같은 밤을 재는 소비자들이 서로 다른
+    // 원천을 보면 언젠가 갈린다. 점등은 **접기 전 원값**을 받는다(접기 경계는 아래 표).
+    const lampGlowSys = new LampGlow(env.pools, readLit());
+    lampGlowSys.apply(env.time()); // 부팅 프레임부터 맞춰 둔다 — 첫 프레임만 꺼져 있으면 깜빡인다
 
     // ── 지면 알베도 (`?glift=`) ────────────────────────────────────────────
     // 감독: *"정상적으로 밝은 느낌 나게 해."* (2026-08-05)
@@ -240,7 +247,12 @@ export const skyFeature: Feature = {
     // 부르게 하려는 것이다 — 위 `applyLampGlow` 는 클로저 안이라 테스트가 같은 식을 옆에
     // 다시 쓰고 있고, 배선이 사라져도 그 테스트는 초록이다.
     const groundLift = new GroundLift(env.pools, readNum('glift', NIGHT_GROUND_LIFT, 1, MAX_LIFT));
-    groundLift.apply(env.time()); // 가로등과 같은 이유로 부팅 프레임부터 맞춘다
+    // 🔴 **접어서 넘긴다 — 지면 알베도는 밝기 축이다** (검수관 반려 B4′, 2026-08-21).
+    // 이 배수는 「빛이 부족해 검게 죽는 것」을 보정하는 축인데, 복합씬은 낮 조명이라 그
+    // 전제가 없다. 접지 않으면 `groundLift(0.75, 2.4)` = **×2.05** 가 낮 조명 위에 얹혀
+    // 잔디가 형광으로 뜬다 — 이 저장소가 이미 한 바퀴 돈 축이다
+    // (`decide/ground-albedo.ts` 의 `NIGHT_GROUND_LIFT` 주석).
+    groundLift.apply(paletteTime(env.time())); // 가로등과 같은 이유로 부팅 프레임부터 맞춘다
 
     return {
       system: {
@@ -249,8 +261,8 @@ export const skyFeature: Feature = {
           sky.update(ctx);
           // 하늘이 시간대를 옮긴 **뒤에** 읽는다. 순서가 뒤집히면 한 프레임 늦은 값으로
           // 켜져서, 시간대를 바꿀 때 가로등만 뒤늦게 따라온다.
-          applyLampGlow();
-          groundLift.apply(env.time());
+          lampGlowSys.apply(env.time());
+          groundLift.apply(paletteTime(env.time()));
         },
         dispose: () => sky.dispose?.(),
       },
@@ -270,10 +282,15 @@ export const skyFeature: Feature = {
         return {
           ...(sky.get() as object),
           // ── 사본이 어긋나면 보이게 한다 (팀장 조건 5) ────────────────────
-          // 위 스프레드의 `time` 은 **엔진 반영값**이고, 아래는 **조립부가 소유한 진실**
-          // 이다. `sky.js` 는 조합 보정을 적용한 결과를 돌려주므로 요청값과 반영값이
-          // 어긋나는 경로가 이론상 있다 — 어긋나면 진단에서 보여야 하고, 침묵하면 이번
+          // 축이 **셋**이다: 위 스프레드의 `time`(= `SkySystem` 이 받은 요청 원값) ·
+          // `engineTime`(= `sky.js` 에 실제로 반영된 값, 복합씬은 낮으로 접힌다) ·
+          // `ownedTime`(= 조립부가 소유한 진실). 어긋나면 진단에서 보여야 하고, 침묵하면
           // 블룸 사고의 재판이다(그 사고도 두 값이 갈렸는데 아무 신호가 없었다).
+          //
+          // ⚠ 한때 `time` 을 요청값으로 덮으면서 `ownedTime` 과 **구조적으로 항상 같아졌고**,
+          // 그때 이 주석은 여전히 «어긋나면 보인다» 고 적고 있었다(검수관 반려 B5′).
+          // `engineTime` 이 그 탐지력을 되돌린다 — 반려된 판본이라면 여기가
+          // `time:'daylit' / engineTime:'night'` 로 그 자리에서 드러났을 것이다.
           ownedTime: env.time(),
           sunI: env.sun.intensity,
           hemiI: env.hemi.intensity,
@@ -288,7 +305,8 @@ export const skyFeature: Feature = {
           exposure: typeof r?.toneMappingExposure === 'number' ? r.toneMappingExposure : null,
           fogC: fog?.color ? fog.color.getHex() : null,
           // 가로등이 켜졌는가. 화면으로는 "좀 밝네" 로만 보이는 것을 숫자로 남긴다.
-          lampGlow: lampLit,
+          lampGlow: lampGlowSys.glow,
+          lampMissing: lampGlowSys.missing,
           // 지면 알베도 배수. `groundMissing` 이 비어 있지 않으면 그 파츠에는 **아무것도
           // 안 걸린 것**이다 — 조용히 넘어가면 기능이 죽은 줄 모른다.
           groundLift: groundLift.scale,

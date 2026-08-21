@@ -71,9 +71,30 @@ export type PaletteTime = 'day' | 'sunset' | 'night';
  * *"밝기는 낮인데 물 반사만 밤"* 같은 형태로 새어 나온다.
  *
  * ⚠⚠ **이름은 `palette` 지만 쓰이는 곳은 팔레트만이 아니다.** 「낮에서 빌리는 룩 값」이
- * 전부 이것을 경유한다 — 물 광택(`water-gloss.ts`)·접촉그림자 농도(`shadow-decal.ts`)가
- * 그렇다. 셋의 공통점은 **밝기를 따라간다**는 것이고, `daylit` 의 밝기는 낮이다.
- * 반대로 이 함수를 **안** 거치는 것이 이 씬의 정체다: 점등 세기 · 하늘 농도 · 별.
+ * 전부 이것을 경유한다. 셋의 공통점은 **밝기를 따라간다**는 것이고, `daylit` 의 밝기는
+ * 낮이다. 반대로 이 함수를 **안** 거치는 것이 이 씬의 정체다.
+ *
+ * ── 접기 경계 — `nightness()` 소비자 전수 (검수관 반려 B4′, 2026-08-21) ──────
+ * 이 자리에는 한때 *"밝기 축에는 접힌 시간이 오므로 `daylit` 이 도달하지 않는다"* 고
+ * 적혀 있었고 **거짓이었다.** 세었더니 둘이 아니라 **다섯**이었고, 그중 둘이 접히지 않은
+ * `daylit` 을 받아 밝기를 바꾸고 있었다. 그래서 값까지 적는다 — 목록만 적으면 다음 사람이
+ * 다시 세야 하고, 세는 일은 이미 한 번 틀렸다.
+ *
+ *   소비자                                     받는 시간   `daylit` 결과
+ *   ─────────────────────────────────────────┼──────────┼──────────────────
+ *   `systems/night-lights.ts`  조명·노출 하한   접힘       0 → 아무것도 안 함
+ *   `systems/sky.ts`           낮 대비          접힘       0 → 낮 하드라이트
+ *   `systems/ground-lift.ts`   지면 알베도      접힘       ×1.0 (낮과 동일)
+ *   `systems/lamp-glow.ts`     가로등 발광      **원값**   0.75 → 켜짐
+ *   `features/postfx.ts`       블룸 세기        **원값**   1.15 × 0.75 = 0.8625
+ *
+ * 갈리는 기준은 **「빛이 부족한 것을 메우는가」 대 「불이 켜진 것을 보이게 하는가」** 다.
+ * 앞 셋은 어두워서 생기는 결손을 메우는 축이라 낮에서는 할 일이 없고, 뒤 둘은 등이 켜진
+ * 사실 자체를 화면에 만드는 축이라 낮에도 필요하다(블룸이 없으면 등불 휘도가 문턱을 못
+ * 넘어 *"가로등 똑같은데"* 가 된다 — `LAMP_MAX_GLOW` 주석).
+ *
+ * ⚠ 지면 알베도가 앞줄에 있는 것은 **이번에 옮긴 것**이다. 접기 전에는 ×2.05 가 낮 조명
+ * 위에 얹혀 잔디가 형광으로 떴다. 그 축은 감독이 이미 한 번 닫았다(`ground-albedo.ts`).
  */
 export function paletteTime(time: SkyTime): PaletteTime {
   return time === 'daylit' ? 'day' : time;
@@ -91,6 +112,10 @@ export const TIMES = ['day', 'sunset', 'night', 'daylit'] as const;
 /**
  * 밤 정도 0~1. 모르는 값은 낮으로 본다 — 밝은 쪽이 안전한 기본값이다(어두워서 아무것도
  * 안 보이는 것보다 밝아서 밋밋한 편이 낫다).
+ *
+ * @param lit 복합씬(`daylit`)에서 돌려줄 값. **이 인자를 보는 소비자는 점등 축뿐이다** —
+ *   밝기 축(`nightFloor`)에는 접힌 시간이 오므로 `daylit` 이 도달하지 않는다
+ *   (`systems/night-lights.ts` 의 그 줄 주석이 이유를 소유한다).
  */
 export function nightness(time: string, lit = DAYLIT_LIGHTS): number {
   if (time === 'night') return 1;
@@ -152,6 +177,10 @@ export interface NightTune {
   /** 지면색(`hemiG`) 목표의 밝기 배수 */
   groundScale?: number;
 }
+// ⚠ 여기에 `lit?: number`(복합씬 점등 세기)를 한 번 넣었다가 **뺐다.** `NightTune` 의
+// 유일한 소비자는 `applyNightFloor` 인데 그 함수가 받는 시간은 이미 `paletteTime()` 으로
+// 접힌 값이라 `daylit` 이 도달하지 않는다 — 넣어 두면 영영 안 읽히는 죽은 인자다.
+// 점등 세기는 `lampGlow` 를 부르는 자리(`features/sky.ts`)가 직접 읽는다.
 
 /**
  * 한밤의 목표 지면색 — `0x3a4250`.

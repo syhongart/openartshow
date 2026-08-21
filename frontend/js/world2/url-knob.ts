@@ -1,4 +1,4 @@
-// world2/url-knob.ts — URL 파라미터로 값을 여는 유일한 지점. **외부 의존 0.**
+// world2/url-knob.ts — URL 파라미터로 값을 여는 유일한 지점.
 //
 // ── 왜 따로 두는가 ──────────────────────────────────────────────────────────
 // 같은 대여섯 줄이 `main.ts`(`readNum`)와 `features/postfx.ts`(`num`)에 각각 있었고,
@@ -13,6 +13,13 @@
 //
 // 노브는 **디버그 전용이 아니다.** 기본값이 곧 배포값이고, 노브는 그 기본값을 무엇으로
 // 정할지 감독·헤드리스 스윕이 함께 찾는 수단이다. 값이 확정되면 기본값으로 옮긴다.
+//
+// ⚠ 이 머리말은 오래 *"**외부 의존 0.**"* 이라고 적고 있었고 `readLit` 이 그것을 깼다
+// (`decide/night.ts` 의 기본 상수 하나를 읽는다). 판정 계층은 아무것도 import 하지
+// 않으므로 순환은 없고 `check:cycles` 가 그것을 지킨다 — 다만 **의존이 0 이 아니라는
+// 사실**은 적어 둔다(참인 문장 옆에 낡은 단언을 남기지 않는다).
+
+import { DAYLIT_LIGHTS } from './decide/night.js';
 
 /**
  * URL 수치 파라미터를 범위 안에서 읽는다. 없거나 숫자가 아니면 `fallback`.
@@ -63,6 +70,23 @@ export function readEnum<T extends string>(key: string, fallback: T, allowed: re
  * @param max 상한 (클램프)
  * @returns 지정된 유한수를 [min,max] 로 클램프한 값, 없거나 숫자가 아니면 `null`
  */
+/**
+ * 복합씬 점등 세기(`?lit=`). **소비자가 둘이라 여기에 둔다.**
+ *
+ * 「불이 켜져있다」(감독 2026-08-21)를 화면에서 만드는 것은 **두 축의 합**이다 —
+ * 가로등 `emissiveIntensity`(`systems/lamp-glow.ts`)와 그 등이 블룸 문턱을 넘는가
+ * (`features/postfx.ts`). 한쪽만 노브를 타면 감독이 `?lit=` 를 밀어도 절반만 움직인다.
+ *
+ * 그런데 두 배선이 각자 `readNum('lit', DAYLIT_LIGHTS, 0, 1)` 을 적으면 **키 문자열과
+ * 범위가 미러링**이다. 상수(`DAYLIT_LIGHTS`)는 한 곳이어도 `'lit'`·`0`·`1` 이 두 벌이
+ * 되고, 범위를 넓히는 날 한쪽만 넓어진다. 그래서 읽기 자체를 여기 한 곳으로 모은다.
+ *
+ * 상한이 1 인 것은 `nightness` 의 정의역이 0~1 이기 때문이다(밤이 1).
+ */
+export function readLit(): number {
+  return readNum('lit', DAYLIT_LIGHTS, 0, 1);
+}
+
 export function readNumOpt(key: string, min: number, max: number): number | null {
   if (typeof location === 'undefined') return null;
   const raw = new URLSearchParams(location.search).get(key);
