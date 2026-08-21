@@ -31,11 +31,24 @@ describe('스모크 세션 예산', () => {
     //
     // 형태는 값으로 못 본다. 그래서 **소스를 읽는다** — 이 회차에서 `equirectUv` 를
     // three 소스와 맞댄 것과 같은 처방이다(자기 자신과만 대조하면 틀린 채로 초록이 된다).
-    const src = fs.readFileSync(
+    //
+    // ⚠ **주석을 먼저 걷어낸다** (검수관 비블로커, 2026-08-20). 첫 판본은 파일 전문에서
+    // 문자열을 찾았고, 검수관이 그것을 우회했다 — `MAX_LEGS = 40` 으로 하드코딩한 옆에
+    // 그 산식을 담은 **위조 주석** 한 줄만 심으면 3건이 전부 통과한다(재현 확인). 파일에
+    // 그 글자가 «있는가» 를 물으면 주석도 답이 되기 때문이다. 물어야 하는 것은
+    // **선언이 그렇게 생겼는가** 다.
+    const raw = fs.readFileSync(
       path.join(process.cwd(), 'scripts/smoke/session-budget.mjs'), 'utf8',
-    ).replace(/\s+/g, '');
+    );
+    const src = raw
+      .replace(/\/\*[\s\S]*?\*\//g, '')   // 블록 주석
+      .replace(/\/\/[^\n]*/g, '')          // 줄 주석
+      .replace(/\s+/g, '');
     expect(src, 'MAX_LEGS 가 MAX_WALK_MS 에서 유도되지 않는다 — 값을 손으로 적었다')
-      .toContain('MAX_LEGS=Math.floor(MAX_WALK_MS/WALK_MS)');
+      .toContain('exportconstMAX_LEGS=Math.floor(MAX_WALK_MS/WALK_MS);');
+    // 선언이 **하나뿐**인지도 본다. 둘이면 뒤엣것이 이기는데 앞엣것만 보고 통과할 수 있다.
+    expect(src.match(/exportconstMAX_LEGS=/g)?.length, 'MAX_LEGS 선언이 하나가 아니다')
+      .toBe(1);
 
     // 산술도 함께 본다. 위 검사는 표기를, 이것은 결과를 본다 — 둘 다 있어야 한다
     // (소스 표기가 맞아도 import 가 엉뚱한 것을 가리킬 수 있다).
