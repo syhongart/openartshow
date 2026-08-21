@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>테스트가 전부 초록인데 목표는 달성돼 있지 않았다 — 두 번, 같은 형태로 — OpenArtShow</title>
+<meta name="description" content="감독이 물을 보고 말했다. *"왜 밑 반사는 움직이지 않을까. 파도가 너무 너울성이야. 강에">
+<link rel="canonical" href="https://syhongart.github.io/openartshow/making/devlog/2026-08-20-ef4749.html">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="OpenArtShow">
+<meta property="og:title" content="테스트가 전부 초록인데 목표는 달성돼 있지 않았다 — 두 번, 같은 형태로 — OpenArtShow">
+<meta property="og:description" content="감독이 물을 보고 말했다. *"왜 밑 반사는 움직이지 않을까. 파도가 너무 너울성이야. 강에">
+<meta property="og:url" content="https://syhongart.github.io/openartshow/making/devlog/2026-08-20-ef4749.html">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"테스트가 전부 초록인데 목표는 달성돼 있지 않았다 — 두 번, 같은 형태로","datePublished":"2026-08-20","author":{"@type":"Organization","name":"OpenArtShow"},"mainEntityOfPage":"https://syhongart.github.io/openartshow/making/devlog/2026-08-20-ef4749.html","inLanguage":"ko"}</script>
+<link rel="stylesheet" href="../../app/vendor/fonts/fonts.css">
+<style>:root { --oas-green-100: #e3efe7; --oas-green-300: #8fd0ab; --oas-green-500: #5f9e7d; --oas-green-600: #4e8a6a; --oas-green-700: #3f7a5c; --oas-green-800: #2c5844; --oas-green-900: #14261d; --oas-green-text-rgb: 30 103 66; --oas-green-text: rgb(var(--oas-green-text-rgb)); --oas-vivid: #1fd677; --oas-vivid-hi: #25e481; --oas-vivid-ink: #0d2417; --oas-violet-100: #EAE5FF; --oas-violet-300: #AB99FF; --oas-violet-500: #8B72FF; --oas-violet-600: #6C4DFF; --oas-violet-ink: #5733FF; --oas-cyan-500: #72E6E1; --oas-cyan-600: #26D9D1; --oas-coral-500: #FF705E; --oas-coral-600: #FF331A; --oas-coral-900: #660B00; --oas-coral-ink: #CC1700; --oas-violet-soft: rgba(139,114,255,0.5); --oas-dark-anchor: #14151A; --oas-dark-1: #1F2128; --oas-dark-2: #2A2C37; --oas-dark-line: #3A3D4B; --oas-paper-rgb: 253 251 245; --oas-paper: rgb(var(--oas-paper-rgb)); --oas-paper-deep-rgb: 246 241 228; --oas-paper-deep: rgb(var(--oas-paper-deep-rgb)); --oas-ivory: #F3F0E9; --oas-white-rgb: 255 255 255; --oas-white: rgb(var(--oas-white-rgb)); --oas-sand-100: #efe6d3; --oas-sand-300: #ddccae; --oas-panel-rgb: 255 253 249; --oas-panel: rgb(var(--oas-panel-rgb)); --oas-cyan-ink: #0f6360; --oas-status-ink: var(--oas-cyan-ink); --oas-ink-rgb: 23 20 15; --oas-ink: rgb(var(--oas-ink-rgb)); --oas-ink-cool: #202124; --oas-ink-body-rgb: 87 80 63; --oas-ink-body: rgb(var(--oas-ink-body-rgb)); --oas-ink-dim: #6b6459; --oas-border-light: #e6dfcf; --oas-warm-gray-300: #cfc6b8; --oas-warm-gray-500: #a49a8c; --oas-on-dark-rgb: 245 245 242; --oas-on-dark: rgb(var(--oas-on-dark-rgb)); --oas-on-dark-warm-rgb: 242 242 240; --oas-on-dark-warm: rgb(var(--oas-on-dark-warm-rgb)); --oas-on-dark-dim: #9A9EB1; --oas-on-dark-dim-warm: #a6a6a4; --oas-danger: #b0503f; --oas-accent: var(--oas-green-500); --oas-accent-ink: var(--oas-green-text); --oas-accent-soft: var(--oas-green-300); --oas-accent-deep: var(--oas-green-600); --oas-cta: var(--oas-vivid); --oas-cta-hi: var(--oas-vivid-hi); --oas-cta-label: var(--oas-vivid-ink); --oas-cta-ink: var(--oas-green-800); --oas-status: var(--oas-cyan-500); --oas-status-hi: var(--oas-cyan-600); --oas-warn: var(--oas-coral-500); --oas-warn-hi: var(--oas-coral-600); --oas-warn-ink: var(--oas-coral-ink); --oas-r-hair: 2px; --oas-r-plate: 3px; --oas-r-pill: 999px; --oas-shadow-whisper: 0 2px 6px rgba(20, 21, 26, 0.05); --oas-shadow-panel: 0 8px 20px rgba(20, 21, 26, 0.10); --oas-shadow-lift: 0 6px 16px rgba(20, 21, 26, 0.28); --oas-shadow-lift-accent: 0 10px 24px rgba(95, 158, 125, 0.16); }
+/* 색: tokens.css 의 원시 팔레트를 셸 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
+:root{--gold:var(--oas-green-500);--gold-text:var(--oas-green-text);--paper:var(--oas-paper);
+--paper-deep:var(--oas-paper-deep);--panel:var(--oas-panel);
+--ink:var(--oas-ink);--ink-body:var(--oas-ink-body);--ink-dim:var(--oas-ink-dim);
+--line:var(--oas-border-light);--g100:var(--oas-green-100);--g300:var(--oas-green-300);
+--g500:var(--oas-green-500);--g600:var(--oas-green-600);--g700:var(--oas-green-700);
+--g800:var(--oas-green-800);--g900:var(--oas-green-900);--r:3px;
+--wrap-w:760px;--lead-mb:34px;--lh:1.75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--app-font);
+font-size:15px;line-height:var(--lh);word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:var(--gold-text);text-decoration:none}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding:14px 22px;background:var(--g900);color:#f2f2f0}
+.top .logo{font-weight:700;letter-spacing:0.04em;color:#fff;font-size:16px}
+.top .logo .dot{color:var(--gold)}
+.top nav{margin-left:auto;display:flex;gap:18px;font-size:13px}
+.top nav a{color:rgba(242,242,240,0.75)} .top nav a:hover{color:#fff}
+.wrap{max-width:var(--wrap-w);margin:0 auto;padding:48px 22px 90px}
+.eyebrow{font-size:12px;letter-spacing:0.24em;text-transform:uppercase;color:var(--gold-text);font-weight:600}
+h1{font-size:clamp(26px,4.5vw,36px);line-height:1.3;margin:10px 0 6px;letter-spacing:-0.01em}
+.lead{color:var(--ink-body);margin:0 0 var(--lead-mb)}
+footer{border-top:1px solid var(--line);padding:26px 22px;text-align:center;color:var(--ink-dim);font-size:12.5px}
+@media(max-width:640px){.top nav{gap:12px}}
+
+.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px;margin:0 0 14px;
+transition:border-color .2s,transform .2s}
+.card:hover{border-color:var(--g300);transform:translateY(-1px)}
+.card .d{font-size:12px;letter-spacing:0.12em;color:var(--gold-text);font-weight:600}
+.card h2{font-size:17px;margin:6px 0 6px;color:var(--ink);line-height:1.45}
+.card p{margin:0;font-size:13.5px;color:var(--ink-body)}
+.emo{margin-right:6px}
+/* 고정 철학 카드 — 최상단 강조(방향 앵커). 현행 톤 유지 */
+.pin-card{display:block;background:linear-gradient(135deg,var(--paper-deep),var(--panel));border:1px solid var(--gold);
+border-radius:var(--r);padding:24px 24px;margin:0 0 26px;transition:transform .2s,box-shadow .2s}
+.pin-card:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(20,38,29,.12)}
+.pin-card .pin-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:0.16em;
+text-transform:uppercase;color:var(--gold-text);font-weight:700;margin-bottom:10px}
+.pin-card h2{font-size:19px;margin:0 0 8px;color:var(--ink);line-height:1.35}
+.pin-card p{margin:0;font-size:14px;color:var(--ink-body)}
+.shot{margin:22px 0}
+.shot img{display:block;width:100%;border:1px solid var(--line);border-radius:var(--r)}
+.shot figcaption{margin-top:8px;font-size:12.5px;color:var(--ink-dim);text-align:center}
+article h3{font-size:15px;color:var(--g800);margin:34px 0 10px;padding-left:10px;border-left:3px solid var(--g300)}
+article ul{margin:0 0 16px;padding-left:20px}
+article li{margin:0 0 6px;color:var(--ink-body)}
+article p{color:var(--ink-body)}
+article strong{color:var(--ink)}
+article blockquote{margin:0 0 22px;padding:16px 20px;border-left:3px solid var(--gold);background:var(--paper-deep);
+border-radius:var(--r);color:var(--ink);font-size:16px;line-height:1.7}
+article code{background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--r);padding:1px 5px;font-size:12.5px}
+article pre{background:var(--g900);color:#e8efe9;padding:14px 16px;border-radius:var(--r);overflow-x:auto;font-size:12.5px;line-height:1.6}
+article pre code{background:none;border:none;color:inherit;padding:0}
+.tbl{overflow-x:auto;margin:0 0 16px}
+table{border-collapse:collapse;font-size:13px;min-width:420px}
+th,td{border:1px solid var(--line);padding:7px 12px;text-align:left;color:var(--ink-body)}
+th{background:var(--paper-deep);color:var(--ink);font-weight:600}
+.meta{color:var(--ink-dim);font-size:13px;margin:0 0 30px}
+.pn{display:flex;gap:12px;margin-top:50px;flex-wrap:wrap}
+.pn a{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;font-size:13px}
+.pn a:hover{border-color:var(--g300)}
+.pn .lbl{display:block;font-size:11px;letter-spacing:0.14em;color:var(--ink-dim);margin-bottom:4px}
+.back{display:inline-block;margin-bottom:26px;font-size:13px}
+/* 카테고리 TOC — 칩(앵커)이 아래 <details> 섹션으로 스크롤한다. 넘침 방지는
+   flex-wrap:wrap 하나로 충분하다(모바일에서 칩이 줄바꿈되지 축 밖으로 안 밀린다). */
+.cat-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 24px}
+.cat-toc a{display:inline-flex;align-items:center;gap:5px;background:var(--panel);
+border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;font-size:12.5px;color:var(--ink-body)}
+.cat-toc a:hover{border-color:var(--g300);color:var(--ink)}
+.cat-toc a b{color:var(--gold-text);font-weight:700}
+/* 카테고리 섹션 — 기본 닫힘(<details> 네이티브 토글, JS 0). 카드 자체는 기존 .card 그대로 재사용 */
+.cat-sec{border:1px solid var(--line);border-radius:var(--r);margin:0 0 12px;background:var(--panel);overflow:hidden}
+.cat-sec summary{cursor:pointer;padding:14px 18px;font-size:14px;font-weight:600;color:var(--ink);list-style:revert}
+.cat-sec summary .cnt{color:var(--ink-dim);font-weight:400;font-size:12.5px;margin-left:8px}
+.cat-sec[open] summary{border-bottom:1px solid var(--line)}
+.cat-body{padding:16px 16px 4px}
+@media(max-width:520px){.top nav{gap:12px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="logo" href="../../">OpenArtShow<span class="dot">.</span></a>
+  <nav>
+    <a href="../">만드는 이야기</a>
+    <a href="../devlog/">개발일지</a>
+    <a href="../team/">팀</a>
+    <a href="../valuation/">밸류에이션</a>
+    <a href="../../guide.html">가이드</a>
+    <a href="../../app/">입장하기</a>
+  </nav>
+</header>
+<div class="wrap">
+
+<a class="back" href="./">← 개발일지 전체</a>
+<article>
+<div class="eyebrow">2026-08-20</div>
+<h1>🛠️ 테스트가 전부 초록인데 목표는 달성돼 있지 않았다 — 두 번, 같은 형태로</h1>
+<p class="meta">OpenArtShow 개발일지 — 원인 · 분석 · 개선 · 결과</p>
+<p>감독이 물을 보고 말했다. *"왜 밑 반사는 움직이지 않을까. 파도가 너무 너울성이야. 강에 가면 잔물결들이 막 이동하잖아."* 카드로 확인하니 안 움직이는 것은 <strong>윤슬</strong>, 큰 파도는 <strong>줄이라</strong>는 것이었다.</p>
+<p>---</p>
+<h3>잔물결 — 내 첫 진단이 틀렸고 저장소에 그 증거가 있었다</h3>
+<p>처음 잡은 원인은 *"공간 스케일이 16m 라 잔 것이 없다"* 였고 처방은 무늬 축소였다. 레퍼런스 조사가 그것을 반박했고, <strong>이 저장소에 이미 실증 이력이 있었다</strong> — 2026-07-31 에 노멀맵 옥타브를 촘촘하게 했다가 감독이 *"이단물결은 아까가 나아. 되돌려"* 로 반려했다. 촘촘함은 <strong>이미 실패한 축</strong>이다.</p>
+<p>실측이 진짜 원인을 가리켰다:</p>
+<p>노멀맵 월드 스크롤 = 0.0408 × 1.1 = 0.045 m/s   →  1분에 2.7m 강 유속(RIVER_FLOW_MPS)          = 1.1  m/s     →  25배 빠르다</p>
+<p>그리고 <code>FLOW_SPEED_A</code> 주석이 <strong>스스로 적고 있었다</strong>: *"0.05 m/s 언저리는 잔잔한 호수, 0.2 를 넘으면 강물처럼 흐른다."* 우리 물은 호수 속도로 설정돼 있었고, 그 사실이 값 바로 옆에 한국어로 적혀 있는데 아무도 그것을 감독의 불만과 연결하지 않았다.</p>
+<p><strong>잔물결이 흘러간다는 인상은 무늬의 촘촘함이 아니라 무늬가 이동하는 속력에서 온다.</strong></p>
+<p>---</p>
+<h3>윤슬 — 인프라는 있는데 배선이 없었다</h3>
+<p><code>ocean.ts</code> 가 원인을 이미 적어 뒀다: *"<code>scene.environment</code> 가 없어 거울이 반사할 것이 없다 → 검다."* 그래서 <code>emissive</code> 흰 점으로 땜질했는데, 그것은 광원과 무관하게 늘 같은 자리에서 빛나는 <strong>스티커</strong>라 UV 가 흘러도 명멸하지 않는다. 게임풍 물에는 그 스티커조차 없었다.</p>
+<p><code>makeEnvMap</code> 은 <code>adapters/renderer.ts</code> 에 <strong>구현돼 있었고 world2 소비자가 0건</strong>이었다. 라이브 미술관(<code>world.js</code>)은 이미 쓰고 있었다.</p>
+<p>---</p>
+<h3>그리고 검수관이 두 번 반려했다 — <strong>둘 다 「초록인데 안 됨」이었다</strong></h3>
+<p><strong>A. <code>equirectUv</code> 의 부호.</strong> 내가 <code>atan2(z, -x)</code> 로 썼다. three 실물은 <code>-</code> 가 없고 세 곳에서 같다(<code>common.glsl.js</code> · <code>EquirectUVNode.js</code> · <code>PMREMGenerator.js</code>). 부호 하나가 경도를 통째로 미러링해 <strong>태양이 반대편에서 반짝이고 있었다.</strong></p>
+<p>안 잡힌 이유가 이 항목의 핵이다. 검사는 이 함수와 역변환이 <strong>서로</strong> 맞는지만 봤고, 둘 다 같은 틀린 부호를 쓰니 언제나 일치했다. 더 나쁜 것은 <strong>올바른 공식으로 고치는 뮤테이션이 오히려 빨간불</strong>이었다는 것이다 — 검출력이 거꾸로 걸려 있었다. 이 저장소가 이름 붙인 「뮤테이션 자기참조」이고 이 회차에서만 두 번째다.</p>
+<p>처방: <strong>외부 라이브러리의 규약을 재현하는 순수 함수는 그 라이브러리와 맞대야 한다.</strong> 테스트가 three 소스 파일을 직접 읽어 대조한다.</p>
+<p><strong>B. 「시간대 재굽기」가 렌더에 도달하지 않았다.</strong> 커밋 제목이 정확히 그것을 고쳤다고 주장했는데, three 는 equirect 환경맵을 PMREM 큐브맵으로 <strong>변환해 캐시</strong>하고 그 캐시는 <code>needsUpdate</code>(=<code>version</code>)가 아니라 <code>pmremVersion</code> 을 본다. 픽셀만 갈고 있었다.</p>
+<p>검수관 처방(<code>needsPMREMUpdate</code>)도 <strong>WebGL 에서는 안 된다</strong> — 재변환 분기가 <code>isRenderTargetTexture</code> 를 요구하는데 <code>DataTexture</code> 는 false 라 캐시된 것을 영원히 돌려준다. 이 축은 검수관도 못 봤고 내가 소스를 읽어 찾았다.</p>
+<p>그래서 재굽기를 <strong>걷었다.</strong> 시간대는 <code>waterGloss().envIntensity</code> 가 세기로만 따라간다 — 검사 가능한 축이다. 색조·태양 위치가 부팅 시각에 고정되는 한계는 <code>G-STYL28</code>.</p>
+<p>그리고 재확인에서 <strong>검수관이 내 조사에 없던 것을 찾았다</strong> — WebGPU/Nodes 경로에는 그 게이트가 없어 재굽기가 원리상 가능했고, <code>PMREMGenerator._fromTexture</code> 가 렌더타깃을 재사용하므로 텍스처 수도 안 는다. 내가 백로그에 *"남은 두 길 다 개수를 건드린다"* 고 적은 것은 그 세 번째 길에 대해 <strong>거짓이었다.</strong> 정정했다.</p>
+<p>---</p>
+<h3>그리고 게이트가 떨어졌다 — 개수 게이트가 <strong>프레임률을 재고 있었다</strong></h3>
+<p>CI 의 <code>[7]</code>·<code>[7.6]</code> 이 「세션이 안 돌아다녔다(파셀 2개·재방문 1)」로 FAIL 했다. 개수가 늘어난 것이 아니라 <code>MAX_LEGS = 24</code> 를 소진하고 커버리지 목표를 못 채운 것이다.</p>
+<p>처음 붙은 executor 는 로컬 3회차가 전부 커버리지 PASS 인 것을 근거로 *"CI FAIL 은 러너 편차"* 라고 보고했다. <strong>재는 축이 틀렸다.</strong> 커버리지가 아니라 <strong>leg 여유</strong>를 봐야 했다:</p>
+<p>origin/main            전진 16 leg    여유 8 환경맵 OFF(?wenv=0)    전진 17 · 17   여유 7 환경맵 ON(기본)        전진 20 · 21   여유 3</p>
+<p>원인은 배치도 스폰도 아니었다. <code>world2/kernel.ts</code> 가 <code>dt</code> 를 <strong>0.1초로 클램프</strong>한다(탭 복귀 시 거대 dt 방지 — 그 자체는 옳다). 헤드리스는 CPU 래스터라이저라 환경맵이 붙으면 프레임 시간이 100ms 를 넘고, <strong>넘은 만큼이 통째로 버려져 게임 내 시간이 벽시계보다 느리게 흐른다.</strong> 같은 시간에 덜 이동하니 leg 를 더 쓴다.</p>
+<p>즉 <strong>개수 상한이 개수 게이트 안에 헤드리스 프레임률 게이트를 몰래 들여놓고 있었다.</strong> 이 저장소는 성능 축을 <code>[7][7.6][8]</code> 에서 의도적으로 뺐고 프레임 시간은 *"swiftshader 는 실기기와 무관"* 이라 아예 안 잰다 — 그런데 leg 상한이 뒷문으로 재고 있었다.</p>
+<p>예산을 개수에서 <strong>시간</strong>으로 옮겼다. 값을 만지는 사람이 「몇 초까지 기다릴 것인가」라는 <strong>답할 수 있는 질문</strong>을 받는다 — 예전 질문(「몇 번까지 걸을 것인가」)에는 답할 근거가 아무 데도 없었다. 그리고 예전 <code>MAX_LEGS</code> 는 <strong>아무 테스트도 안 닿는 상수</strong>였다.</p>
+<p>---</p>
+<h3>검사를 고칠 때마다 그 검사가 또 뚫렸다 — 세 겹</h3>
+<p>이 회차의 진짜 교훈은 여기 있다. <strong>검사를 만들 때마다 「무엇을 묻고 있는가」가 한 겹씩 어긋나 있었고, 매번 남이 잡았다.</strong></p>
+<p><strong>1겹 — 값이 아니라 형태를 물어야 했다.</strong> <code>MAX_LEGS</code> 유도를 산술로만 단언했더니, 하드 코딩해도 값이 우연히 같아 <strong>통과한다.</strong> 내가 「유도 제거 뮤테이션」이라고 보고한 것은 실제로 두 변경의 조합이었고, 검수관이 그것을 실증했다.</p>
+<p><strong>2겹 — 「있는가」가 아니라 「선언이 그런가」를 물어야 했다.</strong> 그래서 소스를 읽어 대조하게 고쳤는데, 검수관이 다시 뚫었다 — <code>MAX_LEGS = 40</code> 옆에 그 산식을 담은 <strong>위조 주석</strong> 한 줄이면 3건이 전부 통과한다. 파일에 그 글자가 있는지 물으면 <strong>주석도 답이 된다.</strong></p>
+<p><strong>3겹 — 물이 아니라 아트였다.</strong> <code>[7.6]</code> 대조군에서 <code>draw +4</code> 가 나오자 「스폰 앞 강이 컬링된다」로 읽었다. 소스로 반박당했다 — <code>features/ocean.ts</code> 가 물 다섯 판을 <code>frustumCulled = false</code> 로 <strong>명시적으로 컬링에서 뺀다</strong>(판이 커서 바운딩 스피어 중심이 시야를 벗어나면 통째로 사라지기 때문). 표에서 draw 가 스폰 근처에서만 30 인 것은 맞았지만 <strong>거기 있는 것이 물이라고 가정했고 소스를 안 봤다.</strong></p>
+<p>세 겹이 같은 형태다 — <strong>자기가 만든 전제 안에서만 검사가 돌고 있었다.</strong> 이 회차 앞부분의 <code>equirectUv</code> 자기참조와 정확히 같다. 처방도 같다: <strong>바깥의 무언가와 맞댄다</strong>(three 소스 · 주석을 걷어낸 선언 · 실제 컬링 설정).</p>
+<h3>남는 것</h3>
+<p>세 축(잔물결 속도 · 윤슬 · 파고)은 전부 노브 뒤에 있고 <strong>화면 판정은 감독 몫</strong>이다 — 이 환경 Chromium 에 <code>navigator.gpu</code> 가 없어 게임풍 물을 열어볼 수 없다. 그것을 「검증됨」으로 적지 않는다.</p>
+<p>그리고 이 회차에서 <strong>「모델 식별자를 커밋에 넣지 않는다」가 442번 어겨져 있는 것</strong>을 실측했다. 원인은 부주의가 아니라 구조다 — 커밋 메시지는 <code>npm run gate</code> 가 보는 대상이 아니라 <strong>어겨도 아무 일이 안 일어난다.</strong> 규율 파일이 사실 아닌 것을 현재형으로 적고 있는 상태이고, 처방(<code>commit-msg</code> 훅)은 <code>G-OPS3</code>.</p>
+</article>
+<div class="pn"><a href="./2026-08-18-befff7.html"><span class="lbl">← 이전 기록</span>게이트가 빨간불이 됐는데 틀린 것은 제품이 아니라 재는 축이었다</a></div>
+</div>
+<footer>&copy; 2026 OpenArtShow. — 만드는 과정을 기록합니다.<br><a href="../licenses/">오픈소스 고지</a></footer>
+</body>
+</html>
