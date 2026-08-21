@@ -62,7 +62,7 @@ import {
 } from './night-lights.js';
 import { createHorizonBand, bandStrength, type HorizonBand } from './horizon.js';
 import type { NightTune, SkyTime } from '../decide/night.js';
-import { nightness } from '../decide/night.js';
+import { nightness, paletteTime } from '../decide/night.js';
 import { dayLightMix, type DayLightMix } from '../decide/daylight.js';
 import { snapToShadowTexel } from '../decide/shadow.js';
 import { readNum } from '../url-knob.js';
@@ -224,6 +224,16 @@ const STAR_SCALE = readNum('star', 0.25, 0.1, 2);
 /** `sky.js`가 `get()`으로 돌려주는 **반영된** 상태(요청이 아니다 — 조합 보정이 적용된 결과). */
 export interface SkyState {
   time: string;
+  /**
+   * **`sky.js` 에 실제로 반영된 시간대.** `time` 과 다를 수 있다 — `daylit` 은 팔레트로
+   * 갈 때 낮으로 접히기 때문이다(`SkySystem` 의 `reqTime` 주석).
+   *
+   * 왜 둘 다 내는가: 진단이 **어긋남을 보게** 하려는 것이다. `features/sky.ts` 의
+   * `diagnostics()` 가 「조립부가 소유한 진실」과 나란히 싣고, 그 축이 없으면 요청과
+   * 반영이 갈려도 신호가 0 이다 — 반려된 판본(B1)이 정확히 그 상태였고, 이 값이 있었으면
+   * `time:'daylit' / engineTime:'night'` 로 그 자리에서 드러났을 것이다(검수관 B5′).
+   */
+  engineTime?: string;
   weather: string;
   fx: Record<string, boolean>;
   flashSafe?: boolean;
@@ -254,6 +264,8 @@ export const SKY_BLUE = 2;
 // 보고 *"이것으로 결정하자"* 로 판정했다. 1 은 그 판정 직전의 후보였다.
 /** `?skyblue` 상한. 1 초과는 외삽이라 더 진해진다 — 감독이 화면에서 고를 여지를 남긴다. */
 export const SKY_BLUE_MAX = 4;
+/** 복합씬 하늘 농도. ⚠ **화면 판정 전이라 근거 없는 수** — `?skyblue=` 로 확정한 뒤 여기 적는다 */
+export const SKY_BLUE_DAYLIT = 3.2;
 // ⚠ 1.5 였던 것을 올렸다 — 감독 실기기 2026-08-12: *"더 진한 파랑보다 더 파란것을 보고
 // 싶어."* 상한이 판정을 가로막고 있었다. 외삽이라 빨강이 0 에 닿으면 더는 안 파래진다.
 
@@ -301,8 +313,13 @@ export type FogTint = number | Readonly<Partial<Record<SkyTime, number>>>;
 export interface SkyOptions {
   /** 소프트웨어 렌더 여부 — 크로스페이드 스냅·저해상 돔·강수 축소 분기 */
   soft?: boolean;
-  /** 낮 하늘 파랑(`?skyblue`). 생략하면 `SKY_BLUE` */
-  skyBlue?: number;
+  /**
+   * 낮 하늘 파랑(`?skyblue`). 생략하면 `SKY_BLUE`.
+   *
+   * **함수를 주면 매 페인트마다 묻는다** — 복합씬처럼 시간대에 따라 농도가 달라지는
+   * 경로가 그것을 쓴다. 숫자로 주면 부팅 시각에 굳는다(`sky.js` 의 그 인자 주석).
+   */
+  skyBlue?: number | (() => number);
   /** 구름 곡률 원근(`?cloudcurve`). 생략하면 `CLOUD_CURVE` */
   cloudCurve?: number;
   /** 구름 고도비(`?cloudh`). 생략하면 `CLOUD_H` */
@@ -403,6 +420,17 @@ export class SkySystem implements System {
   /** 밤 노출을 얹을 대상. `toneMappingExposure` 만 만진다 */
   private readonly renderer: ExposureLike | null;
   private readonly nightTune?: NightTune;
+  /**
+   * **감독이 요청한 시간대 원값.** `sky.js` 로 가는 값과 **다를 수 있다** — 이 어긋남의
+   * 근거를 이 주석이 소유한다(아래 셋은 여기를 참조만 한다).
+   *
+   * `sky.js` 의 `SKY_TIMES` 는 셋뿐이고 그 목록은 `LIGHT` 의 키와 짝이라 늘릴 수 없다.
+   * 넷째 시간대(`daylit`)를 그대로 넘기면 `normalize()` 가 **조용히 버리고** 이전 값을
+   * 되돌린다 — 그렇게 만들었다가 조건식이 영영 거짓인 죽은 코드가 됐고 검수관이 반려
+   * 했다(2026-08-21 B1). 그래서 엔진에는 `paletteTime()` 으로 **접어서** 넘기고 접기 전
+   * 값은 여기 남긴다. 이것을 보는 것은 **접지 않는 축**뿐이다(지금은 별 하나).
+   */
+  private reqTime: SkyTime;
   /** 플레이어 위치 — 그림자 카메라를 따라오게 하는 데 쓴다 */
   private readonly getPos: () => { x: number; z: number };
   private readonly sunDist: number;
@@ -476,6 +504,9 @@ export class SkySystem implements System {
     const r = renderer as { toneMappingExposure?: unknown } | null;
     this.renderer = r && typeof r.toneMappingExposure === 'number' ? (r as ExposureLike) : null;
     this.nightTune = opts.nightTune;
+    // ⚠ `createSkySystem` **앞**이어야 한다 — 별 조건 클로저가 이 필드를 읽는데 엔진
+    // 생성자가 첫 `apply()` 를 그 자리에서 돌린다.
+    this.reqTime = (opts.time ?? 'night') as SkyTime;
     this.getPos = getPos;
     this.sunDist = opts.sunDist ?? SUN_DIST_FALLBACK;
     this.shadowTexel = opts.shadowTexel ?? 0;
@@ -498,6 +529,10 @@ export class SkySystem implements System {
       skyBlue: opts.skyBlue ?? SKY_BLUE,
       cloudCurve: opts.cloudCurve ?? CLOUD_CURVE,
       cloudH: opts.cloudH ?? CLOUD_H,
+      // 🔴 **복합씬의 별** (감독 2026-08-21 *"주간인데 … 별도 있어"*). 시간대 문자열로
+      // 못 켜는 이유는 `reqTime` 주석 한 곳이고, 값이 아니라 함수인 이유는 `sky.js` 의
+      // 그 인자 주석 한 곳이다. world1 은 이 옵션을 안 줘서 동작이 예전과 같다.
+      wantStars: () => this.reqTime === 'daylit',
     });
     // 수평선 밴드 — 바다와 하늘의 경계(태스크 #202). 왜 이 축인지·왜 안개 far 를 밀지
     // 않는지는 `decide/horizon.ts` 머리말 한 곳이 소유한다.
@@ -512,11 +547,13 @@ export class SkySystem implements System {
       this.horizonTint.set(lightOf(st.time, st.weather, this.fogTint).fog);
     }
     // 오픈월드 기본 하늘 = 야간 맑음. fade 0으로 즉시 적용(부팅 중 크로스페이드 낭비 방지).
-    this.engine.set(
-      { time: opts.time ?? 'night', weather: opts.weather ?? 'clear' },
-      { fade: 0 },
-    );
-    this.applySun();
+    //
+    // ⚠ **엔진이 아니라 `this.set` 을 부른다.** 접기(`reqTime` 주석)를 여기서 한 번 더
+    // 하면 그 자체가 값 미러링이고 — 실제로 그렇게 썼다가 **뮤테이션 검출력 0** 을
+    // 실측했다(2026-08-21): 부팅 쪽 접기를 통째로 지워도 테스트가 안 깨졌다. `sky.js` 의
+    // 초기 시간대가 마침 낮이라 «접은 결과» 와 «버려져서 낮에 남은 결과» 가 같았기
+    // 때문이다. 검사를 늘려 그 자리를 지키는 것보다 **자리를 없애는 편이** 낫다.
+    this.set({ time: this.reqTime, weather: opts.weather ?? 'clear' }, { fade: 0 });
   }
 
   /** 하늘 그림의 해·달 방위와 그림자 방향을 맞춘다. */
@@ -755,12 +792,32 @@ export class SkySystem implements System {
    * 방향에 남아 있으면 그림자가 하늘과 어긋난다.
    */
   set(state: Record<string, unknown>, opt?: { fade?: number }): void {
-    this.engine.set(state, opt);
+    // 원값을 기억하고 **접어서** 넘긴다(`reqTime` 주석). 여기를 빠뜨리면 패널로 복합씬을
+    // 골랐을 때만 별이 안 켜진다 — 부팅 경로만 맞고 전환 경로가 죽는 「거짓 노브」다.
+    if (typeof state.time === 'string') this.reqTime = state.time as SkyTime;
+    this.engine.set(
+      typeof state.time === 'string'
+        ? { ...state, time: paletteTime(this.reqTime) }
+        : state,
+      opt,
+    );
     this.applySun();
   }
 
+  /**
+   * 지금 하늘 상태. **`time` 은 엔진 값이 아니라 요청 원값이다**(`reqTime`).
+   *
+   * 소비자 둘이 **둘 다 원값을 원한다**: ① 패널 버튼 강조(`b.dataset.time === s.time`)
+   * ② 드로우콜 판정 그룹 키. ②는 접은 값을 내면 `daylit` 과 `day` 가 **같은 키**로
+   * 묶이는데 복합씬은 별 레이어를 켜므로 드로우콜이 정당하게 다르다 — `[7.6]` 이 거짓
+   * 위반으로 찍힌다.
+   *
+   * ⚠ **`lightOf()` 에 이 값을 넣지 마라** — 팔레트는 셋만 알아 `undefined` 에서 죽는다.
+   * 이 클래스가 팔레트를 묻는 자리는 전부 `this.engine.get()` 을 **직접** 쓴다.
+   */
   get(): SkyState {
-    return this.engine.get();
+    const st = this.engine.get();
+    return { ...st, time: this.reqTime, engineTime: st.time };
   }
 
   /**
