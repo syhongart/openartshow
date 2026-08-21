@@ -10,7 +10,7 @@ import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import { readNum, readNumOpt } from '../url-knob.js';
-import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
+import { STYLIZED_KNOB, STYLIZED_DEFAULT, stylizedOn } from '../decide/stylized.js';
 import {
   STYLED_WATER_NAMES, HIDE_ONLY_NAMES, pickWaterStyle, SHALLOW, MID, DEEP, FOAM, SKY_TINT,
   SHORE_ATTR, FOAM_EDGE, MID_EDGE, FRESNEL_POW, STYLE_OPACITY,
@@ -198,7 +198,7 @@ function bakeShoreDistance(geo: THREE.BufferGeometry, cell: number, isSea: boole
 export const waterStyleFeature: Feature = {
   name: 'water-style',
   create(env: FeatureEnv): FeatureInstance | null {
-    const master = readNum(STYLIZED_KNOB, 0, 0, 1);
+    const master = readNum(STYLIZED_KNOB, STYLIZED_DEFAULT, 0, 1);
     if (!stylizedOn(master, readNumOpt('wstyle', 0, 1))) return null;
 
     const requested: WaterStyleMode = 'on';
