@@ -58,6 +58,10 @@ import {
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
 import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
+// 세션 예산·커버리지 목표는 `session-budget.mjs` 한 곳이다 — 여기에 다시 적지 않는다.
+import {
+  WALK_LEGS, WALK_MS, COVER_UNIQUE, COVER_REVISITS, STUCK_M, MAX_LEGS,
+} from './session-budget.mjs';
 import { stepJudge, stepReport } from './invariant-judge.mjs';
 import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -152,9 +156,6 @@ async function trackBaseline(base, page, log) {
 const SPIN_STEPS = 12;
 /** 한 스텝 뒤 렌더가 실제로 일어나게 기다리는 시간(ms). 헤드리스는 ~4fps다 */
 const STEP_MS = 700;
-/** 직진 구간 수. 파셀 경계를 여러 번 넘어야 스트리밍 증식이 드러난다 */
-const WALK_LEGS = 6;
-const WALK_MS = 1500;
 
 // ── 정착 대기 둘 (W8-2 에서 이름을 줬다 — 본문에 익명으로 박혀 있었다) ────────
 // ⚠ **근거를 못 찾았다.** 관례로 굳은 값이고 커밋 이력에도 실측이 없다. 그리고 이 시간
@@ -166,30 +167,7 @@ const SETTLE_MS = 8000;
 /** 멈춘 뒤 마지막 스냅 전 정착(ms). 이동 중 시작된 스트리밍이 끝나야 한다 */
 const STOP_SETTLE_MS = 1500;
 
-// ── 커버리지 목표 — **G-COL1** (검수관 반려 B1, 2026-08-08) ──────────────────
-//
-// 왜 목표가 필요한가: 이 세션은 오래 *"-z 로 6번 전진"* 이었고, 그것을 **주행이라고
-// 불렀을 뿐 주행인지 확인한 적이 없다.** 플레이어 충돌(#182)이 붙자 스폰 앞 분수대에서
-// 6.9m 만 걷고 멈췄고 — 파셀을 한 칸도 새로 안 밟았는데 — 게이트는 **PASS 로 보고했다.**
-// 개수가 늘지 않은 것은 사실이었다. 아무 데도 안 갔으니까.
-//
-// 그래서 "몇 미터 걸었나" 가 아니라 **"파셀을 몇 개 밟았나"** 를 판정으로 만든다.
-// 미터는 배치·속도·프레임률에 흔들리지만 파셀은 스트리밍의 단위 그 자체다 — `[7]` 이
-// 잡으려는 증식(슬롯 재사용 실패·재방문 누적)이 정확히 그 경계에서 일어난다.
-//
-// ⚠ **이 판정은 성능 축이 아니라 하드 실패다.** `SMOKE_PERF_GATES=observe` 에서도
-// INFO 로 내려가지 않는다(`run.mjs` 의 `perfStatus` 가 `hard` 로 받는다). observe 의
-// 정당화는 *"러너 성능 편차의 거짓 FAIL"* 인데, **세션이 안 움직인 것은 편차가 아니다.**
-//
 
-/** 고유 파셀 목표. 3 이면 "출발 칸 + 새 칸 둘" 이다 — 경계를 최소 두 번 넘는다 */
-const COVER_UNIQUE = 3;
-/** 재방문 목표. 슬롯 반납 실패는 **다시 들어갈 때**만 드러난다 */
-const COVER_REVISITS = 1;
-/** 이 leg 에서 실제로 움직인 거리(m)가 이보다 작으면 막힌 것으로 본다 */
-const STUCK_M = 1.0;
-/** 목표를 채우려고 늘릴 수 있는 최대 leg 수. 도달하면 그대로 판정한다(무한 대기 금지) */
-const MAX_LEGS = 24;
 
 /**
  * 막혔을 때 어떻게 우회하는가. **사람이 하는 것을 흉내낸다 — 옆으로 비켜서 지나간다.**
