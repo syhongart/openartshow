@@ -113,9 +113,12 @@ export const TIMES = ['day', 'sunset', 'night', 'daylit'] as const;
  * 밤 정도 0~1. 모르는 값은 낮으로 본다 — 밝은 쪽이 안전한 기본값이다(어두워서 아무것도
  * 안 보이는 것보다 밝아서 밋밋한 편이 낫다).
  *
- * @param lit 복합씬(`daylit`)에서 돌려줄 값. **이 인자를 보는 소비자는 점등 축뿐이다** —
- *   밝기 축(`nightFloor`)에는 접힌 시간이 오므로 `daylit` 이 도달하지 않는다
- *   (`systems/night-lights.ts` 의 그 줄 주석이 이유를 소유한다).
+ * @param lit 복합씬(`daylit`)에서 돌려줄 값. **이것을 명시적으로 넘기는 소비자는 둘**이다
+ *   — 가로등(`systems/lamp-glow.ts`)과 블룸(`features/postfx.ts`). 나머지 셋은 접힌 시간을
+ *   받으므로 `daylit` 이 도달하지 않고, 따라서 이 인자를 볼 일이 없다. 전수와 값은 위
+ *   `paletteTime` 주석의 표 한 곳이다.
+ *   ⚠ 이 자리에는 *"이 인자를 보는 소비자는 **점등 축뿐**"* 이라고 적혀 있었고 **거짓이었다**
+ *   — 그 표는 블룸을 가로등과 **따로** 분류하는데 문장은 하나로 뭉갰다(검수관 C3).
  */
 export function nightness(time: string, lit = DAYLIT_LIGHTS): number {
   if (time === 'night') return 1;
@@ -180,7 +183,10 @@ export interface NightTune {
 // ⚠ 여기에 `lit?: number`(복합씬 점등 세기)를 한 번 넣었다가 **뺐다.** `NightTune` 의
 // 유일한 소비자는 `applyNightFloor` 인데 그 함수가 받는 시간은 이미 `paletteTime()` 으로
 // 접힌 값이라 `daylit` 이 도달하지 않는다 — 넣어 두면 영영 안 읽히는 죽은 인자다.
-// 점등 세기는 `lampGlow` 를 부르는 자리(`features/sky.ts`)가 직접 읽는다.
+// 점등 세기(`?lit=`)는 `url-knob.ts` 의 `readLit()` 한 곳이 읽고, 그것을 소비하는 배선은
+// `systems/lamp-glow.ts` 와 `features/postfx.ts` 다.
+// ⚠ 이 줄은 *"`lampGlow` 를 부르는 자리(`features/sky.ts`)가 직접 읽는다"* 라고 적고 있었고
+// **두 군데 다 틀렸다** — 부르는 곳도 읽는 곳도 그 파일이 아니다(검수관 C3).
 
 /**
  * 한밤의 목표 지면색 — `0x3a4250`.

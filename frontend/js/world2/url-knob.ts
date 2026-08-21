@@ -18,6 +18,10 @@
 // (`decide/night.ts` 의 기본 상수 하나를 읽는다). 판정 계층은 아무것도 import 하지
 // 않으므로 순환은 없고 `check:cycles` 가 그것을 지킨다 — 다만 **의존이 0 이 아니라는
 // 사실**은 적어 둔다(참인 문장 옆에 낡은 단언을 남기지 않는다).
+//
+// ⚠ 그리고 그 의존은 **양방향이 됐다** — `decide/art-material.ts`·`decide/lod-fade.ts` 는
+// 반대로 이 파일을 import 한다. 순환은 아니고(`check:cycles` 실측 0) 파일 단위로 갈려
+// 있지만, 판정 계층과 노브 계층이 서로를 부르는 상태라는 것은 적어 둔다(검수관 P12).
 
 import { DAYLIT_LIGHTS } from './decide/night.js';
 

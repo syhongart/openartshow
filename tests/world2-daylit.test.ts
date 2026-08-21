@@ -43,11 +43,11 @@
 // **세기 자체가 계산되지 않는다.** jsdom 도 헤드리스 스모크도 WebGL 이라 이 축은 감독
 // 실기기(WebGPU)가 유일한 판정 수단이다 — 뮤테이션 N8(블룸에서 `?lit=` 를 떼기)이
 // **0 failed** 인 것은 검사가 없어서가 아니라 **잴 수 있는 자리가 없어서**다.
-// 텍스트로 조건식을 읽어 때우지 않는다 — 그것이 검수관 반려 B1 의 형태다. 백로그 `G-DL1`.
+// 텍스트로 조건식을 읽어 때우지 않는다 — 그것이 검수관 반려 B1 의 형태다. 백로그 `G-DAYLIT1`.
 //
 // 지면 알베도(×2.05 대 ×1.0)는 배수는 재지만 **화면에서 형광으로 보이는지**는 못 잰다.
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as THREE from 'three';
@@ -105,6 +105,13 @@ const STAR_RENDER_ORDER = -0.92;
 
 /** 돔이 구워질 때마다 쌓이는 체크섬. 검사가 구간을 잘라 비교한다 */
 const paints: number[] = [];
+
+/**
+ * jsdom 주소를 바꾼다. `url-knob.ts` 는 **호출 시점에** `location.search` 를 읽으므로
+ * 이것으로 노브를 실제로 흔들 수 있다 — 관용구는 `tests/world2-url-knob.test.ts:21-23`.
+ */
+const setSearch = (s: string) => window.history.replaceState({}, '', s || location.pathname);
+afterEach(() => setSearch(''));
 
 /**
  * `world2.html` 의 神 모드 패널 블록. **실물을 잘라 온다** — 손으로 최소 DOM 을 지으면
@@ -432,14 +439,43 @@ describe('🔴 GS-D6 — 조립 실물: 감독 요구 넷이 배선까지 도달
       .toBeGreaterThan(0);
   });
 
+  it('🔴 프레임이 돌아도 꺼지지 않는다 — 부팅만 맞는 「거짓 노브」를 막는다', () => {
+    // 🔴 위 검사는 **부팅값만** 본다. `update` 가 매 프레임 다시 거는 자리라, 거기서
+    // 시간대를 접으면 가로등이 첫 프레임에 꺼진다 — 실측으로 그 뮤테이션은 **0 failed**
+    // 였다(검수관 C2). 같은 형태를 이 파일의 GS-D5 가 「부팅만 맞고 전환 경로가 죽는
+    // 거짓 노브」라고 이미 이름 붙여 두었는데, 프레임 축에 그대로 남아 있었다.
+    const d = assemble('daylit');
+    d.tick(); d.tick();
+    expect(d.lamp.emissiveIntensity, '🔴 프레임이 돌자 복합씬 가로등이 꺼졌다')
+      .toBeGreaterThan(0);
+    const n = assemble('day');
+    n.tick();
+    expect(n.lamp.emissiveIntensity, '전제 — 낮은 프레임이 돌아도 꺼진 채다').toBe(0);
+  });
+
+  it('복합씬은 한밤보다 약하게 켜진다 — 「주간처럼 밝지」와 함께 서야 한다', () => {
+    expect(assemble('daylit').lamp.emissiveIntensity!)
+      .toBeLessThan(assemble('night').lamp.emissiveIntensity!);
+  });
+
   it('🔴 점등 노브(`?lit=`)가 배선까지 닿는다', () => {
-    // 노브를 직접 못 흔드니(전역 `location`) **기본값이 실제로 소비됐는지**를 본다:
-    // 복합씬 발광이 밤 발광보다 작아야 한다. 배선이 `nightness(time)`(노브 무시)로
-    // 돌아가면 복합씬이 낮과 같은 0 이 되어 위 검사가 먼저 깨진다.
-    const daylit = assemble('daylit').lamp.emissiveIntensity!;
-    const night = assemble('night').lamp.emissiveIntensity!;
-    expect(daylit, '🔴 복합씬이 한밤과 같은 세기로 켜졌다 — 점등 세기가 안 먹었다')
-      .toBeLessThan(night);
+    // 🔴 이 자리에는 *"노브를 직접 못 흔드니(전역 `location`) 기본값이 소비됐는지를 본다"*
+    // 라고 적혀 있었고 **전제가 거짓이었다** — `tests/world2-url-knob.test.ts:21-23` 에
+    // 주석까지 달린 관용구가 있고, 그 파일이 대상으로 삼는 모듈이 바로 `url-knob.ts` 다
+    // (같은 관용구를 쓰는 선례가 7개 파일). **못 재는 것과 안 잰 것은 다른 일이다.**
+    //
+    // 게다가 그때 옆에 적은 *"배선이 `nightness(time)`(노브 무시)로 돌아가면 복합씬이
+    // 낮과 같은 0 이 되어 위 검사가 먼저 깨진다"* 는 **거짓 단언**이었다. `nightness` 의
+    // `lit` **기본값이 `DAYLIT_LIGHTS`** 라 두 식이 같은 값을 낸다 — 실측으로 그 뮤테이션은
+    // **0 failed** 였다(검수관 C1). 게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을
+    // 생략하게 만든다.
+    setSearch('?lit=0.2');
+    const weak = assemble('daylit').lamp.emissiveIntensity!;
+    setSearch('?lit=0.9');
+    const strong = assemble('daylit').lamp.emissiveIntensity!;
+    expect(weak, '전제 — 두 값 다 켜져 있어야 비교가 성립한다').toBeGreaterThan(0);
+    expect(strong, '🔴 `?lit=` 이 가로등 배선에 안 닿는다 — 노브가 절반만 먹는다')
+      .toBeGreaterThan(weak);
   });
 
   it('🔴 «하늘은 더 진한데» — 패널 버튼으로도 하늘 농도가 실제로 바뀐다', () => {

@@ -244,8 +244,9 @@ export const skyFeature: Feature = {
     // 없으므로(조명 하한도 노출도 `SkySystem` 이 건다) 지면도 낮 알베도로 남는 것이 맞다.
     //
     // 배선이 `systems/ground-lift.ts` 에 있는 이유는 테스트가 **실제로 돌아가는 코드**를
-    // 부르게 하려는 것이다 — 위 `applyLampGlow` 는 클로저 안이라 테스트가 같은 식을 옆에
-    // 다시 쓰고 있고, 배선이 사라져도 그 테스트는 초록이다.
+    // 부르게 하려는 것이다. 가로등도 같은 이유로 `systems/lamp-glow.ts` 로 나갔다
+    // (2026-08-21) — 이 자리에는 *"위 `applyLampGlow` 는 클로저 안이라…"* 라고 적혀
+    // 있었는데 그 함수는 **이 파일에서 삭제됐다**(검수관 C3).
     const groundLift = new GroundLift(env.pools, readNum('glift', NIGHT_GROUND_LIFT, 1, MAX_LIFT));
     // 🔴 **접어서 넘긴다 — 지면 알베도는 밝기 축이다** (검수관 반려 B4′, 2026-08-21).
     // 이 배수는 「빛이 부족해 검게 죽는 것」을 보정하는 축인데, 복합씬은 낮 조명이라 그
