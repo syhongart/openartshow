@@ -7,7 +7,7 @@
 // ⚠ 소비자는 여전히 `decide/water.js` 를 통해 받는다(그 파일이 재수출한다) — import
 // 경로를 한꺼번에 갈면 이 회차의 diff 가 광택과 무관한 파일까지 번진다.
 
-import type { SkyTime } from './night.js';
+import { paletteTime, type SkyTime } from './night.js';
 
 // ── 수면 광택 — 시간대별 (감독 지시 2026-07-31 "반짝임부터 살려봐") ────────────
 //
@@ -84,7 +84,9 @@ export interface WaterGloss {
  * @param time 지금 시간대. `FeatureEnv.time()` 이 준다 — 추측하지 않는다.
  */
 export function waterGloss(time: SkyTime): WaterGloss {
-  switch (time) {
+  // 물 광택은 **밝기를 따라간다** — 복합씬(`daylit`)은 밝기가 낮이므로 낮 값을 빌린다.
+  // 접는 자리는 `decide/night.ts` 의 `paletteTime` **한 곳**이다(팀장 조건 c1).
+  switch (paletteTime(time)) {
     // 태양 하나가 강하게 내리쬔다. 물결이 서면 그 각도마다 점이 박힌다 —
     // **좁고(roughness↓) 강하게(normalScale↑)** 가 한낮 물의 문법이다.
     case 'day': return { normalScale: 0.9, roughness: 0.18, sparkle: 0.85, envIntensity: 1 };
