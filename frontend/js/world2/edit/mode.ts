@@ -54,7 +54,7 @@
 
 import type { EditSession, OverlayHost } from './types.js';
 import { createEditState, select } from './state.js';
-import { artTarget } from './target.js';
+import { artTarget } from './target-art.js';
 import { createPicker } from './pick.js';
 import { createGizmo } from './gizmo.js';
 import { createPanel } from './panel/dom.js';

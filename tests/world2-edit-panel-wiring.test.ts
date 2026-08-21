@@ -54,7 +54,8 @@ import { createPanel, type PanelHandlers } from '../frontend/js/world2/edit/pane
 import { createOutliner } from '../frontend/js/world2/edit/panel/outliner.js';
 import { createActions } from '../frontend/js/world2/edit/actions.js';
 import { createEditState, select } from '../frontend/js/world2/edit/state.js';
-import { artTarget } from '../frontend/js/world2/edit/target.js';
+import { artTarget } from '../frontend/js/world2/edit/target-art.js';
+import { tonesFor } from '../frontend/js/world2/parts/index.js';
 import { createArtsPort } from '../frontend/js/world2/systems/art-port.js';
 import { ART_W_MIN, ART_W_MAX, type ArtworkItem } from '../frontend/js/world2/decide/artwork.js';
 import type { OverlayHost, OverlayEntry } from '../frontend/js/world2/edit/types.js';
@@ -78,6 +79,9 @@ const noLost = (): void => {};
  */
 const villagePart = () => ({ kind: 'tree', x: 1, z: 2, y: 0, ry: 0, sx: 1, sy: 1, sz: 1, tone: 0 });
 
+/** `village.freeze` 호출 수 — 「확정이 몇 번 났는가」가 이 회차의 판정 값이다 */
+const freezes = { n: 0 };
+
 function fakeHost(parts?: readonly unknown[]): OverlayHost {
   return {
     doc: document,
@@ -90,8 +94,11 @@ function fakeHost(parts?: readonly unknown[]): OverlayHost {
     // 문을 **줄지 말지가 축**이다 — 안 주면 마을 어댑터가 안 선다(위 주석).
     // `isFrozen` 까지 필요하다 — 선택 줄이 「손본 구역」인지를 화면에 적는다(`dom.ts:399`).
     village: parts
-      ? { partsAt: () => parts, freeze: () => {}, isFrozen: () => false }
+      ? { partsAt: () => parts, freeze: () => { freezes.n++; }, isFrozen: () => false }
       : null,
+    // **실시간 반영의 문.** 없으면 `apply()` 가 조기 반환하고 `live` 가 `false` 다 —
+    // 「3D 클릭으로 골랐다」를 재현하려면 이 문과 `slot` 이 **둘 다** 있어야 한다.
+    retargetSlot: () => { /* 씬을 미는 흉내 */ },
   } as unknown as OverlayHost;
 }
 
@@ -696,5 +703,170 @@ describe('🔴 `Esc` 로 고른 것을 취소한다 — 태스크 #97', () => {
     const src = readFileSync('frontend/js/world2/edit/input.ts', 'utf8').replace(/\s+/g, ' ');
     expect(src, '🔴 Esc 가 취소를 안 부른다 — 문을 만들고 열쇠를 안 줬다')
       .toContain("ev.code === 'Escape' && actions.cancelPending()");
+  });
+});
+
+// ── 🔴 GS-L1 확정 시점 — 감독 «수치칸 타이핑이 거슬린다» (팀장 판정 (C)) ─────
+//
+// 마을 수치칸은 **타이핑 한 글자마다** 확정했고, 마을의 확정은 곧 파셀 재빌드다 —
+// 「12.5」를 치면 **네 번**이다. 감독이 카드에서 「거슬린다」로 답했다.
+//
+// 미룰 수 있는 조건은 **화면이 이미 맞을 것** 하나다. 그것을 `kind` 로 갈랐던 것이
+// 틀렸다 — 마을도 3D 클릭으로 고르면 `apply()` 가 슬롯을 즉시 밀어 화면이 맞고,
+// 아웃라이너에서 고르면 슬롯을 몰라 안 맞는다. **같은 종류 안에서 갈린다.**
+// 그래서 대상이 `live` 로 스스로 선언하고 수치칸은 그것만 본다.
+//
+// ⚠ **팀장 조건 3 이 2방향을 지정했다** — 「미룬다」만 재면 아웃라이너 경로가 깨져도
+// 안 보인다(그 경로에서 미루면 「화면과 수치가 다른 것을 말한다」가 생긴다).
+describe('🔴 GS-L1 — 확정은 «화면이 맞는가» 로 갈린다 (종류가 아니라)', () => {
+  const numInput = (): HTMLInputElement => {
+    const el = document.querySelector<HTMLInputElement>('#w2-edit input[type="number"]');
+    if (!el) throw new Error('수치칸이 없다 — 하네스가 인스펙터를 안 세웠다');
+    return el;
+  };
+  const type = (inp: HTMLInputElement, v: string): void => {
+    inp.value = v;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const blur = (inp: HTMLInputElement): void => {
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  /** 마을 파츠를 고른 상태. `slot` 을 주면 3D 클릭 경로, 안 주면 아웃라이너 경로다 */
+  const pickVillage = (withSlot: boolean) => {
+    const h = mount({ village: [villagePart()] });
+    freezes.n = 0;
+    select(h.st, h.host, {
+      village: {
+        px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false,
+        slot: withSlot ? { key: 'tree', index: 0 } : null,
+      },
+    });
+    h.panel.onPicked();
+    return h;
+  };
+
+  it('🔴 3D 클릭으로 고르면 — 타이핑 중 확정 **0회**, 손을 떼면 **1회**', () => {
+    const h = pickVillage(true);
+    expect(h.st.target?.live, '🔴 슬롯이 있는데 실시간이 아니라고 한다 — 검사가 헛돈다').toBe(true);
+    const inp = numInput();
+    type(inp, '1'); type(inp, '12'); type(inp, '12.'); type(inp, '12.5');
+    expect(freezes.n, '🔴 타이핑 한 글자마다 파셀을 다시 세운다 — 감독이 거슬린다고 한 그것이다')
+      .toBe(0);
+    blur(inp);
+    expect(freezes.n, '🔴 손을 뗐는데 확정이 안 났다 — 값이 아무 데도 안 남는다').toBe(1);
+  });
+
+  it('🔴 아웃라이너로 고르면 — **종전대로** 타이핑마다 확정한다', () => {
+    // 그 경로는 `apply()` 가 화면을 못 미므로(슬롯을 모른다) 미루면 **화면과 수치가
+    // 다른 것을 말한다.** 팀장이 이 경로를 안 바꾸는 것을 조건으로 달았다.
+    const h = pickVillage(false);
+    expect(h.st.target?.live, '🔴 슬롯이 없는데 실시간이라고 한다').toBe(false);
+    const inp = numInput();
+    type(inp, '1'); type(inp, '12');
+    expect(freezes.n, '🔴 화면이 안 따라오는 경로인데 확정을 미뤘다').toBe(2);
+  });
+
+  it('🔴 슬롯이 **죽었으면** 실시간이 아니다 — 스트리밍이 파셀을 걷어간 경우', () => {
+    // ⚠ **이 검사는 뮤테이션이 사각을 실측한 뒤에 생겼다** — `canApply()` 에서
+    // `slot.index >= 0` 를 빼도 **0 failed** 였다(위 두 검사가 살아 있는 슬롯만 썼다).
+    // 그 조건은 내가 팀장 조건 1(`apply()` 와 같은 식)을 지키려고 **추가한** 것이라
+    // 재는 것도 내 몫이다.
+    //
+    // 실물에서 이 상태가 나는 경로: 수치칸에 값을 치는 동안 카메라가 멀어져 스트리밍이
+    // 그 파셀을 걷어간다. 슬롯은 반납되며 `index` 에 `-1` 이 박힌다(`instancing.ts`).
+    // 그때 화면은 이미 그 파츠를 안 그리므로 「미룬다」의 전제가 깨져 있다.
+    const h = mount({ village: [villagePart()] });
+    freezes.n = 0;
+    select(h.st, h.host, {
+      village: {
+        px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false,
+        slot: { key: 'tree', index: -1 },
+      },
+    });
+    h.panel.onPicked();
+    expect(h.st.target?.live, '🔴 죽은 슬롯인데 실시간이라고 한다 — 미루면 값이 화면에 안 보인다')
+      .toBe(false);
+    const inp = numInput();
+    type(inp, '9');
+    expect(freezes.n, '🔴 죽은 슬롯인데 확정을 미뤘다').toBe(1);
+  });
+
+  it('★ 손을 **두 번** 떼도 그만큼만 확정한다 — 상태를 바꾸는 함수는 두 번 부른다', () => {
+    const h = pickVillage(true);
+    const inp = numInput();
+    type(inp, '3');
+    blur(inp);
+    blur(inp);
+    expect(freezes.n, '🔴 blur 두 번에 확정 수가 안 맞는다').toBe(2);
+  });
+});
+
+// ── 🔴 GS-T3 색 견본 배선 — 계약의 문이 화면까지 닿는가 (`G-EDIT7`) ──────────
+//
+// 판정/집행 경계의 그 사각이다: `EditTarget.tone` 이 옳게 접어도 **패널이 그것을 안
+// 부르면** 아무 일도 안 난다. 어댑터 산술은 `tests/world2-village-tone.test.ts` 가 보고,
+// 여기서는 **눌렀을 때 값이 실제로 바뀌는가**만 본다.
+
+const toneRow = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>('#w2-edit .tone-row');
+const toneBtns = (): HTMLButtonElement[] =>
+  [...document.querySelectorAll<HTMLButtonElement>('#w2-edit .tone-sw')];
+
+describe('🔴 GS-T3 — 색 견본이 실제로 색을 바꾼다', () => {
+  it('★ 마을 파츠를 고르면 팔레트 수만큼 견본이 뜨고 지금 색이 표시된다', () => {
+    const p = villagePart();
+    p.tone = 1;
+    const { panel, st, host } = mount({ village: [p] });
+    select(st, host, {
+      village: { px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false, slot: null },
+    });
+    panel.onPicked();
+    expect(st.target?.kind, '🔴 마을 어댑터가 안 섰다 — 아래 단언이 헛돈다').toBe('village');
+    expect(toneRow()?.style.display, '🔴 색이 여럿인 파츠인데 견본 줄이 숨었다').not.toBe('none');
+    expect(toneBtns().length).toBe(tonesFor('tree').length);
+    // 「지금 이 색이다」가 화면에 없으면 감독이 무엇을 바꾸는지 모른다.
+    expect(toneBtns().map((b) => b.dataset.on)).toEqual(['0', '1', '0']);
+    // 견본은 색 자체가 내용이다 — 배경이 비면 빈 칸 세 개가 뜬다.
+    expect(toneBtns()[0].style.background, '🔴 견본에 색이 안 칠해졌다').toBeTruthy();
+  });
+
+  it('🔴 견본을 누르면 파츠의 색이 바뀌고 **확정이 한 번** 난다', () => {
+    const p = villagePart();
+    const { panel, st, host } = mount({ village: [p] });
+    select(st, host, {
+      village: { px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false, slot: null },
+    });
+    panel.onPicked();
+    freezes.n = 0;
+    toneBtns()[2].click();
+    expect(p.tone, '🔴 눌렀는데 파츠 색이 안 바뀌었다 — 배선이 끊겼다').toBe(2);
+    // 색은 이산값이라 «드래그 중」이 없다. 한 번 누르면 한 번 확정이 옳다.
+    expect(freezes.n, '🔴 클릭 한 번에 확정 수가 1이 아니다').toBe(1);
+    // 표시도 따라와야 한다 — 값만 바뀌고 화면이 그대로면 두 번 누르게 된다.
+    expect(toneBtns().map((b) => b.dataset.on)).toEqual(['0', '0', '1']);
+  });
+
+  it('🔴 목록에서 고른 것(슬롯 없음)도 **똑같이** 바뀐다 — 색은 `live` 와 무관하다', () => {
+    // `live` 는 «`apply()` 가 화면을 맞추는가» 인데 색은 `apply()` 를 안 탄다.
+    // 확정이 파셀을 즉시 다시 만들며 새 색으로 칠하므로 두 경로가 갈릴 자리가 없다.
+    // ⚠ 이 검사가 없으면 누군가 색 배선을 `live` 뒤에 넣어도 아무도 모른다.
+    const p = villagePart();
+    const { panel, st, host } = mount({ village: [p] });
+    select(st, host, {
+      village: { px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false, slot: null },
+    });
+    panel.onPicked();
+    expect(st.target?.live, '전제 — 슬롯이 없으므로 실시간 반영이 아닌 경로다').toBe(false);
+    freezes.n = 0;
+    toneBtns()[1].click();
+    expect(p.tone, '🔴 목록에서 고르면 색이 안 바뀐다').toBe(1);
+    expect(freezes.n).toBe(1);
+  });
+
+  it('🔴 액자에서는 견본 줄이 통째로 숨는다 — 낼 것이 없는 대상이 내면 거짓말이다', () => {
+    const { panel, st } = mount();
+    st.target = artTarget(createArtsPort((s) => s), 0, noLost);
+    panel.refresh();
+    expect(toneRow()?.style.display, '🔴 액자에 색 견본이 떴다').toBe('none');
   });
 });

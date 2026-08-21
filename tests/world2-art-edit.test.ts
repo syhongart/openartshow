@@ -50,8 +50,9 @@
 import { describe, it, expect } from 'vitest';
 import { createArtsPort, type ArtPlacer } from '../frontend/js/world2/systems/art-port.js';
 import { createArtworkScene, type ArtThreeNS, type ArtNode } from '../frontend/js/world2/systems/artwork-scene.js';
+import { artTarget } from '../frontend/js/world2/edit/target-art.js';
 import {
-  artTarget, describe as describeTarget, describeShort,
+  describe as describeTarget, describeShort,
 } from '../frontend/js/world2/edit/target.js';
 import { createEditState, select } from '../frontend/js/world2/edit/state.js';
 import {

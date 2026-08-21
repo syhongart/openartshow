@@ -324,7 +324,7 @@ export function createPanel(
   /** 이 문서에 무엇이 있나 — `배치 N개` 가 갈 자리(검수관 권고 P-d) */
   const propsCount = el('div', 'note');
   tabs.panes.props.append(propsEmpty, propsCount, selLine, inspector.root, inspector.sizeRow,
-    rowRot, rowScale, rowY, rowOps);
+    inspector.toneRow, rowRot, rowScale, rowY, rowOps);
 
   // 「표면」 — 세계 전체의 재질. **없을 수도 있다**(소비자가 문을 안 주면 그 칸만 빠진다).
   if (surface) tabs.panes.surface.append(surface.root);

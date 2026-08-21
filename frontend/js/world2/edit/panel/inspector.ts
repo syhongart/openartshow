@@ -64,6 +64,12 @@ export interface Inspector {
    * 부르는 형태다(`surface.ts` 의 읽기 전용 슬라이더 근거와 같다).
    */
   readonly sizeRow: HTMLElement;
+  /**
+   * 색 견본 줄 (`G-EDIT7`). `sizeRow` 와 **같은 이유로** 본체와 다른 요소다 —
+   * 수치칸은 한 줄에 다섯이 나란한 격자이고 견본은 개수가 대상마다 달라서 줄바꿈이
+   * 필요하다. 색을 안 내는 대상(GLB·액자)에서는 **줄이 통째로 숨는다.**
+   */
+  readonly toneRow: HTMLElement;
 }
 
 export function createInspector(
@@ -111,6 +117,34 @@ export function createInspector(
     st.target.commit();
     onChanged();
   });
+
+  // ── 색 견본 (`G-EDIT7`) ────────────────────────────────────────────────────
+  // 팀장 판정 2026-08-21 로 축별 크기보다 먼저 열렸다. 계약은 `tone` 을 이미 담는데
+  // (`decide/overlay.ts` 의 `normalizePart`) 그것을 만질 문이 0건이었다.
+  //
+  // ⚠ **슬라이더가 아니라 견본 버튼인 것이 계약 때문이다.** `tone` 은 팔레트 **인덱스**
+  // 이고 연속값이 아니다. 범위 슬라이더로 만들면 「3.5번 색」이라는 없는 상태를 손잡이가
+  // 표현하게 되고, 무엇보다 **어떤 색인지 안 보인다** — 숫자 「3」을 보여주면 못 고른다.
+  const toneRow = doc.createElement('div');
+  toneRow.className = 'surf-row tone-row';
+  const toneLbl = doc.createElement('span');
+  toneLbl.className = 'lbl';
+  toneLbl.textContent = '색';
+  const toneBox = doc.createElement('div');
+  toneBox.className = 'tone-box';
+  toneRow.append(toneLbl, toneBox);
+
+  /**
+   * 견본 하나를 눌렀다. **`apply()` 를 안 탄다** — 근거는 `EditTarget.tone` 주석 한 곳이다
+   * (색은 이산값이고, 확정 한 번이 파셀을 즉시 다시 만들며 새 색으로 칠한다).
+   */
+  const pickTone = (i: number): void => {
+    const t = st.target;
+    if (!t?.tone || !Number.isInteger(i)) return;
+    t.tone.set(i);
+    t.commit();
+    onChanged();
+  };
 
   for (const f of FIELDS) {
     const wrap = doc.createElement('label');
@@ -169,13 +203,32 @@ export function createInspector(
       // 포커스를 안 옮기므로 `change` 가 안 나는데 `artwork-mode.ts` 가 `set()` 을 부른다.
       // 검수관도 브라우저에서 못 쟀다(드롭까지 재려면 vite 빌드가 필요하고 `smoke:vite`
       // 는 Bash 도구 상한 밖이다). **못 잰 것을 통과로 적지 않는다** — 이 줄이 그 기록이다.
-      if (st.target.kind !== 'art') st.target.commit();
+      // 🔴 **대상이 스스로 말한다** (감독 신고 2026-08-20 *"수치칸 타이핑이 거슬린다"* ·
+      // 팀장 판정 (C)). 그전에는 이 줄이 `kind !== 'art'` 였다 — **종류로 갈랐다.**
+      //
+      // 그런데 갈리는 것은 종류가 아니라 **「지금 화면이 맞는가」** 다. 마을 파츠도 3D
+      // 클릭으로 고르면 `apply()` 가 슬롯을 즉시 밀어 화면이 맞고(→ 미룰 수 있다),
+      // 아웃라이너 목록에서 고르면 슬롯을 몰라 안 맞는다(→ 즉시 확정이 옳다).
+      // **같은 종류 안에서 갈렸고, `kind` 분기는 그것을 못 봤다.**
+      //
+      // ⚠ 그래서 「12.5」를 치면 마을은 파셀 재빌드가 **네 번**이었다 — 감독이 거슬린다고
+      // 한 그것이다. 3D 클릭으로 고른 경우 이제 **한 번**(blur)이다.
+      //
+      // ⚠⚠ **아웃라이너로 고른 경우는 종전 그대로다** — 팀장이 그 경로를 안 바꾸는 것을
+      // 조건으로 달았다(바꾸면 「화면과 수치가 다른 것을 말한다」가 생긴다). 그 경로까지
+      // 실시간으로 만들려면 「파츠 → 슬롯」 역인덱스가 필요하고 그것은 백로그다.
+      if (!st.target.live) st.target.commit();
       onChanged();
     };
     inp.addEventListener('input', commit);
-    // 액자의 확정 지점 — 위 근거대로 손을 뗄 때 한 번이다.
+    // 미룬 확정이 실제로 나는 자리 — 손을 뗄 때 한 번이다.
+    //
+    // 🔴 **위 `input` 분기와 짝이다.** 한쪽만 `live` 로 옮기면 `live === true` 인 대상이
+    // **어느 쪽에서도 확정을 안 한다** — 타이핑해도 값이 안 남는 형태다(2026-08-20 에
+    // `input` 만 고치고 이 줄을 `kind !== 'art'` 로 두었다가 그 사이에서 잡았다).
+    // 두 줄은 **같은 판정을 반대로** 읽는다: 즉시 확정이 아니면(`!live` → 위) 여기서 한다.
     inp.addEventListener('change', () => {
-      if (st.target?.kind !== 'art') return;
+      if (!st.target?.live) return;
       st.target.commit();
       onChanged();
     });
@@ -188,10 +241,41 @@ export function createInspector(
     root.append(wrap);
   }
 
+  /**
+   * 견본 버튼을 대상에 맞춘다. **개수가 같으면 DOM 을 다시 만들지 않는다** — `sync` 는
+   * 조작 중 프레임마다 불리고(수치칸 주석의 그 이유), 매번 지웠다 만들면 그 사이 눌린
+   * 클릭이 사라진 요소로 가서 조용히 안 먹는다.
+   */
+  const syncTone = (e: EditTarget | null): void => {
+    const tn = e?.tone;
+    toneRow.style.display = tn ? '' : 'none';
+    if (!tn) return;
+    while (toneBox.childElementCount > tn.count) toneBox.lastElementChild?.remove();
+    while (toneBox.childElementCount < tn.count) {
+      const b = doc.createElement('button');
+      b.type = 'button';
+      b.className = 'tone-sw';
+      // 인덱스는 **요소가 들고** 클릭 시점에 읽는다. 클로저로 굳히면 대상이 바뀌어
+      // 개수가 줄었을 때 남은 버튼이 옛 인덱스를 민다.
+      b.addEventListener('click', () => { pickTone(Number(b.dataset.i)); });
+      toneBox.append(b);
+    }
+    const cur = tn.get();
+    for (let i = 0; i < tn.count; i++) {
+      const b = toneBox.children[i] as HTMLButtonElement;
+      b.dataset.i = String(i);
+      b.style.background = `#${tn.swatch(i).toString(16).padStart(6, '0')}`;
+      b.dataset.on = i === cur ? '1' : '0';
+      b.title = `색 ${i + 1}`;
+    }
+  };
+
   return {
     root,
     sizeRow,
+    toneRow,
     sync(e: EditTarget | null): void {
+      syncTone(e);
       const w = e?.width;
       // 줄을 통째로 숨긴다 — 근거는 `Inspector.sizeRow` 주석 한 곳이다.
       sizeRow.style.display = w ? '' : 'none';
