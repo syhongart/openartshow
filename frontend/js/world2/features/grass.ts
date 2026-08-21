@@ -364,7 +364,11 @@ export const grassFeature: Feature = {
       // ⚠ `drawBlockHint` 는 **일부러 안 낸다.** 그 힌트는 `drawGroupKey()` 가 `null` 을
       // 낼 때 «무엇을 꺼야 다시 잴 수 있는가» 를 알려주는 것이고, 잔디는 null 을 안 낸다.
       // 힌트를 선언하면 `tests/draw-blockers.test.ts` 가 대조군 쿼리에 그 노브를 요구하는데,
-      // 잔디는 기본이 꺼짐이라 대조군에 적을 것이 없다 — 적으면 «켜 둔 채 끈 척» 이 된다.
+      // 대조군에 적을 것이 없다 — 적으면 «켜 둔 채 끈 척» 이 된다.
+      // ⚠ 근거가 바뀌었다(2026-08-21, 검수관 권고 P1): 예전에는 *"잔디는 기본이 꺼짐이라"*
+      // 였는데 `STYLIZED_DEFAULT` 가 1 이 되어 **그 근거는 낡았다.** 지금 대조군에 잔디가
+      // 없는 이유는 `WORLD2_QUERY` 가 `grass=0` 을 **명시적으로** 걸기 때문이다. 결과는
+      // 같지만 근거가 다르고, 낡은 근거를 두면 다음 사람이 그것을 믿고 판단한다.
       drawGroupKey: () => (env.shading() === 'material' ? 'grass:on' : 'grass:hidden'),
       dispose: () => {
         env.scene.remove(mesh);
