@@ -241,4 +241,19 @@ describe('🔴 GS-J6 — 조이스틱 구역이 조준 막대와 안 겹친다',
     expect(rule, '🔴 조준 중 회피 규칙이 사라졌다').toBeDefined();
     expect(rule!, '🔴 규칙은 있는데 구역을 안 띄운다').toMatch(/bottom:\s*[1-9]\d*px/);
   });
+
+  it('🔴 회피 높이가 막대 실측 높이보다 크다 — 「있기만 하면 된다」로는 안 잡혔다', async () => {
+    const html = await readWorld2Html();
+    const rule = html.split('\n').find((l) => l.includes('#w2-stick-zone') && l.includes('#w2-aim'));
+    const px = Number(/bottom:\s*(\d+)px/.exec(rule ?? '')?.[1] ?? 0);
+    // 🔴 하한의 근거는 **헤드리스 4기기 실측**이다(검수관, 2026-08-21):
+    //   막대 상단이 화면 바닥에서 90.4px(iPhone SE 는 129px) 위 — 안내 문구 줄이 항상
+    //   있어서 실제 높이가 74.4~113.4px 이기 때문이다. 첫 조치는 `72px` 이었고 **네 기기
+    //   전부에서 겹쳤다**(세로 18.4~57.4px).
+    // ⚠ 이 검사도 여전히 **텍스트**를 본다 — 막대가 3단이 되면 이 하한도 낡는다.
+    //   그때는 「값이 낡았다」가 아니라 「추정으로 값을 정했다」가 다시 문제가 된다.
+    //   **줄이려면 렌더해서 재라.**
+    expect(px, `🔴 회피가 ${px}px 라 조준 막대(실측 상단 최대 129px)를 못 피한다`)
+      .toBeGreaterThanOrEqual(130);
+  });
 });
