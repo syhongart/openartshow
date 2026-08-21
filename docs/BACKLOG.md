@@ -490,6 +490,29 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
   함께 갱신한다. 지금은 **참이고**, 축별을 여는 순간 낡는다.
   판정 전문은 `edit/target.ts` 의 `base` 주석 한 곳이다 — 여기에 다시 적지 않는다.
 
+- **G-EDIT14 — 편집이 터치 조이스틱을 떼지 않는다 — 폰에서 탭이 두 겹으로 먹는다**
+  (2026-08-21 실측 등재). 같은 캔버스 터치에 **두 리스너 계통**이 산다: 조이스틱은
+  `frontend/js/world2/ui/touch-controls.ts:137-140` 이 **canvas** 에 `touchstart`,
+  편집은 `frontend/js/world2/edit/input.ts:651-654` 가 **document** 에 `pointerdown`.
+  `touch-controls.ts`·`decide/touch.ts` 어느 쪽도 `editing` 을 **안 보고**(grep 0건)
+  `edit/mode.ts` 의 `setEditing()` 도 터치 컨트롤을 언급조차 안 한다. `player.ts` 에도
+  `editing` 가드가 없어 **편집 중에 아바타가 걷는다**(주행을 건너뛰는 유일한 조건인
+  `flew` 는 키보드 비행 경로에서만 선다).
+  ⇒ 폰에서 편집 중 캔버스를 끌면 **① 물건이 선택·드래그되고 ② 동시에 아바타가 걷는다.**
+  🔴 **이 항목은 「없던 것을 새로 발견한 것」이 아니라 「있다고 적혀 있었는데 없던 것」이다.**
+  `edit/panel/dom.ts:64-66` 이 오래 *"(편집이 그것을 떼지 않는다 — **백로그**)"* 라고 적고
+  있었는데 **그 백로그 항목이 이 파일에 없었다**(`grep -n "터치\|조이스틱\|touch"` → 0건).
+  가리키는 대상 없는 참조는 다음 사람에게 «누가 보고 있겠지» 로 읽힌다 — 이 저장소가
+  `main` unprotected 오기로 7일을 잃은 그 형태이고, 바로 앞 회차에 검수관이 부팀장에게
+  짚은 것(*"확인 못 했다를 적고 거기서 멈췄다"*)과 같은 형태다. **문장을 고치는 대신
+  항목을 만들어 주장을 참으로 만든다.**
+  **선례가 같은 저장소 안에 있다** — `frontend/builder.html:217-222`·`:917-935` 가 조이스틱을
+  **전용 DOM 요소 + `setPointerCapture`** 로 만들어 판정을 112px 원 안에 가둔다. world2 의
+  `decide/touch.ts:74-80` `assignSlot`(«화면 왼쪽 절반») 과 정면으로 다른 설계다.
+  **착수 조건**: 설계 분기이므로 팀장 판정을 받는다(2026-08-21 상신).
+  ⚠ **world3·world5 가 `decide/touch.ts` 를 복사본으로 갖는다**(각 `:99`) — world2 만 바꾸면
+  미러링이 벌어진다.
+
 - **G-EDIT13 — `setTone` 이 `instant` 를 안 봐서 색 편집이 안개 페이드를 재시작시킨다**
   (검수관 조건 1, 2026-08-21). `systems/parcel-assets.ts` 의 `setTone` 은 sink 가 있으면
   **무조건** `sink.apply()` 로 보낸다 — 바로 위 `setTransform` 이 `if (!instant) grow?.place(…)`
