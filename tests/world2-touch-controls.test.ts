@@ -203,3 +203,42 @@ describe('🔴 GS-J5 — 원이 누른 자리로 간다', () => {
     expect(h.axes.at(-1)!.x, '그래도 이동은 난다').toBeGreaterThan(0);
   });
 });
+
+// ── 🔴 GS-J6 — 구역이 화면 중앙을 넘지 않는다 (검수관 블로커, 2026-08-21) ────
+//
+// 첫 구역 판본이 `52vw` 였고 **어떤 뷰포트에서도 중앙(50vw)을 넘었다.** 하단 중앙에는
+// 조준 막대(`#w2-aim .bar` — `left:50%` 정중앙 대칭, `z-index:46` > 구역의 `6`)가 있어서
+// 겹치는 자리의 터치를 그쪽이 가져간다. 조준 중에 다가가려고 미는 손이 거기서 씹힌다.
+//
+// ⚠ **이것은 「구역으로 넓히기」가 새로 만든 회귀였다** — 그전 판본(112px 고정,
+// `left:18px`)은 왼쪽 130px 안에 갇혀 중앙까지 닿지 못했다. 검수관이 CSS 값 계산만으로
+// 잡았고, 나는 그 자리를 *"확인 못 했다"* 로 넘겼다.
+//
+// ⚠⚠ **이 검사는 CSS 텍스트를 읽는다.** 실제 렌더 폭이 아니라 선언값을 보는 것이라
+// 「브라우저가 그 값을 어떻게 해석하는가」는 못 잡는다. 그래도 **넓히려는 편집을 그
+// 자리에서 멈추게** 하는 것이 목적이고, 그것은 텍스트만으로 성립한다.
+/** jsdom 환경이라 `import.meta.url` 이 `file:` 이 아니다 — cwd 기준으로 읽는다 */
+async function readWorld2Html(): Promise<string> {
+  const fs = await import('node:fs/promises');
+  return fs.readFile('frontend/world2.html', 'utf8');
+}
+
+describe('🔴 GS-J6 — 조이스틱 구역이 조준 막대와 안 겹친다', () => {
+  it('구역 폭이 50vw 미만이다 — 화면 중앙을 넘으면 하단 중앙 막대와 겹친다', async () => {
+    const html = await readWorld2Html();
+    const m = /#w2-stick-zone\{[\s\S]*?width:min\((\d+)vw/.exec(html);
+    expect(m, '🔴 `#w2-stick-zone` 의 width 선언을 못 찾았다 — 검사가 헛돈다').not.toBeNull();
+    const vw = Number(m![1]);
+    expect(vw, `🔴 구역이 ${vw}vw 라 화면 중앙(50vw)을 넘는다 — 조준 막대가 터치를 가져간다`)
+      .toBeLessThan(50);
+  });
+
+  it('조준 중에는 구역이 막대 위로 올라간다', async () => {
+    const html = await readWorld2Html();
+    // 막대가 커지는 경우까지 피하려고 아예 띄운다. 그 규칙이 사라지면 안 된다.
+    // 셀렉터 형태를 못 박지 않는다 — `:has()` 든 다른 방식이든 **구역을 띄우기만** 하면 된다.
+    const rule = html.split('\n').find((l) => l.includes('#w2-stick-zone') && l.includes('#w2-aim'));
+    expect(rule, '🔴 조준 중 회피 규칙이 사라졌다').toBeDefined();
+    expect(rule!, '🔴 규칙은 있는데 구역을 안 띄운다').toMatch(/bottom:\s*[1-9]\d*px/);
+  });
+});
