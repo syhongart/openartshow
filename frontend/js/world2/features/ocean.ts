@@ -55,7 +55,7 @@ import {
   RIVER_Y, SEA_Y, SEABED_Y, WATER_DEPTH, WAVE_PEAK_MAX, worldHalfExtent, parcelWater, waterGloss, riverFlowAt,
   WATER_MODES, pickWaterMode, type WaterMode,
 } from '../decide/water.js';
-import type { SkyTime } from '../decide/night.js';
+import { paletteTime, type SkyTime } from '../decide/night.js';
 import { fogBand } from '../decide/fog.js';
 import { GRID_W, GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
 import { PHI } from '../decide/golden.js';
@@ -1189,7 +1189,7 @@ export const oceanFeature: Feature = {
       // 고 적었는데 사실이 아니다 — 바는 그대로 붙고, 다만 `glossNow` 가 갱신되지 않아
       // 손잡이가 0 에 머문다(검수관 권고 4). 동작이 아니라 서술이 틀렸던 자리다.
       // 청산(팀장 조건 5) 때 이긴 쪽에 맞춰 정리한다.
-      if (tslWater) { tslWater.setTime(time); return; }
+      if (tslWater) { tslWater.setTime(paletteTime(time)); return; }
       const g = waterGloss(time);
       // 노브가 지정됐으면 그것이, 아니면 시간대 값이 간다. `??` 라서 `0` 도 유효한
       // 지정으로 통과한다(`||` 였으면 `?wns=0` 이 조용히 무시된다 — 평평한 수면을

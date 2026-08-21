@@ -1191,10 +1191,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const input = bindInput(canvas, player);
 
   // 터치 조작. 터치 기기가 아니면 스스로 아무것도 하지 않는다(데스크톱에 조이스틱 안 뜸).
-  const stickBase = document.getElementById('w2-stick');
-  const stickKnob = document.getElementById('w2-stick-knob');
+  const stickBase = document.getElementById('w2-stick'), stickKnob = document.getElementById('w2-stick-knob');
   touch = (stickBase && stickKnob)
-    ? attachTouchControls(canvas, { base: stickBase, knob: stickKnob }, {
+    // `zone`(터치를 받는 구역)을 인라인한 것은 파일 크기 게이트 탓이다 — 근거는 `ui/touch-controls.ts` 헤더 한 곳.
+    ? attachTouchControls(canvas, { zone: document.getElementById('w2-stick-zone') ?? undefined, base: stickBase, knob: stickKnob }, {
       setAxes: (x, z) => player.setAxes(x, z),
       look: (yaw, pitch) => player.lookBy(yaw, pitch),
     })
