@@ -194,8 +194,34 @@ vi.mock('../frontend/js/world2/features/ocean-tsl.js', () => ({
   },
 }));
 
+/**
+ * 환경맵용 스텁(2026-08-20). **픽셀 배열을 그대로 들고 있는다** — `features/water-env.ts`
+ * 가 그 자리에서 덮어쓰고 `needsUpdate` 만 올리는 것이 개수 불변식의 전부라, 배열을
+ * 밖에서 볼 수 없으면 «실제로 구워졌는가» 를 아무 테스트도 못 본다.
+ */
+// ⚠ **이 mock 이 못 보는 층이 있다** (검수관 권고 P4, 2026-08-20). three 는 equirect
+// 환경맵을 PMREM 큐브맵으로 변환해 캐시하는데, 이 mock 에는 `pmremVersion` 도
+// `PMREMNode` 도 **개념 자체가 없다.** 그래서 여기의 초록불을 «반사가 실제로 갱신된다»
+// 로 읽으면 안 된다 — 실제로 한 번 그렇게 읽었고, 「시간대 재굽기」 커밋이 렌더에 도달
+// 하지 않은 채 모든 검사를 통과했다. 그 층의 판정은 `features/water-env.ts` 헤더의
+// three 소스 실측이고, 이 테스트가 보는 것은 **재질에 무엇이 걸리는가** 까지다.
+class FakeDataTexture {
+  mapping = 0; colorSpace = ''; minFilter = 0; magFilter = 0;
+  generateMipmaps = true; needsUpdate = false; name = '';
+  disposed = false;
+  constructor(public image: Uint8Array, public width: number, public height: number) {}
+  dispose() { this.disposed = true; }
+}
+
 vi.mock('three/webgpu', () => ({
   PlaneGeometry: FakeGeometry,
+  DataTexture: FakeDataTexture,
+  // three 의 실제 값과 같게 둔다 — 스텁이 다른 값을 주면 "테스트에서만 다른 상수" 가
+  // 생기고 그것이 곧 값 미러링이다(아래 `DynamicDrawUsage` 와 같은 근거).
+  EquirectangularReflectionMapping: 303,
+  SRGBColorSpace: 'srgb',
+  LinearFilter: 1006,
+  RGBAFormat: 1023,
   MeshStandardMaterial: FakeMaterial,
   Mesh: FakeMesh,
   CanvasTexture: FakeTexture,
@@ -279,6 +305,16 @@ function mount(initial: Tod = 'day', backend = 'WebGL') {
     doc: document,
     cell: 32,
     time: () => tod,
+    // ⚠ **계약 필수다**(2026-08-20). 환경맵이 색을 씬 조명에서 받으므로 없으면 죽는다 —
+    // 옵셔널로 두면 «없어도 조용히 넘어간다» 가 되어 그 결합이 검사에서 사라진다
+    // (`world2-water-style.test.ts` 의 `time` 과 같은 근거). 값은 실물 규약대로 0~1 색이고,
+    // 태양은 +y 쪽에 둔다 — three 의 `DirectionalLight` 는 `position` 이 곧 빛이 오는
+    // 방향이다.
+    sun: { color: { r: 1, g: 0.96, b: 0.9 }, intensity: 2.2, position: { x: 0.4, y: 0.8, z: 0.2 } },
+    hemi: { color: { r: 0.55, g: 0.72, b: 0.95 }, groundColor: { r: 0.4, g: 0.38, b: 0.32 }, intensity: 1 },
+    // ⚠ **객체를 그대로 둔 채 세기만 바꾼다**(`setLight`). 실물에서 시간대 전환이 하는
+    // 일이 그것이고, 새 객체로 갈아끼우면 «참조를 들고 있어서 저절로 따라온 것» 과
+    // «다시 읽어서 따라온 것» 이 구별되지 않는다.
     // 수면 구현 분기가 이것을 읽는다(`pickWaterMode`). 기본을 `WebGL` 로 두는 것은
     // **라이브의 최악 조건**을 기본 대조군으로 삼으려는 것이다 — `navigator.gpu` 가
     // 없는 기기가 실제 방문자의 다수이고, 그 경로가 깨지면 월드가 통째로 안 뜬다.
@@ -298,6 +334,10 @@ function mount(initial: Tod = 'day', backend = 'WebGL') {
   return {
     inst, added, removed, sea, registered,
     setTime: (t: Tod) => { tod = t; },
+    /** 시간대 전환에 딸려오는 조명 변화. 환경맵이 씬을 **다시 읽는지**를 재는 축이다 */
+    setLight: (sunI: number, hemiI: number) => {
+      env.sun.intensity = sunI; env.hemi.intensity = hemiI;
+    },
     // 바다 패치가 플레이어를 따라 움직이는지 보려면 플레이어가 **실제로 움직여야** 한다
     // (팀장 판정 A). 고정 좌표만 쓰면 그 가지가 통째로 미검증으로 남는다 — TSL 분기가
     // 정확히 그렇게 새어나갔다(위 스텁 주석).
@@ -663,8 +703,142 @@ describe('살랑임 — update 가 실제로 물결을 흘린다', () => {
     // 예전 구조는 노멀맵을 거칠기맵 자리에 태워 검은 줄기를 만들었다(감독 실기기 실증).
     const map = sea.material.opts.map as FakeTexture;
     const spark = sea.material.opts.emissiveMap as FakeTexture;
-    return { inst, norm, map, spark };
+    // 층2 노멀맵. `repeat` 가 층1 에서 파생되므로 **월드 타일 크기를 여기서 되읽을 수 있다**
+    // — 아래 속도 단언이 `RIPPLE_M`·`LAYER2_SCALE` 을 다시 적지 않는 근거다.
+    const wave2 = added.find((m) => m.name === 'ocean-wave2');
+    const normB = (wave2?.material.opts.normalMap ?? null) as FakeTexture | null;
+    return { inst, norm, map, spark, normB };
   };
+
+  it('★ 무늬가 **강 유속과 같은 속도로** 흐른다 (감독 *"잔물결들이 막 이동하잖아"*)', () => {
+    // ── 이 단언이 여는 축 (감독 판정 2026-08-20) ──────────────────────────────
+    // 그때까지 노멀맵 무늬의 월드 속도는 **0.045 m/s**(1분에 2.7m)였고, 같은 화면의 강
+    // 정점 UV 는 유속 그대로 1.1 m/s 로 흘렀다 — **25배 차이**. 감독이 *"윗물은 자연
+    // 스러워"* 라고 판정한 것이 그 강이므로, 기준을 지어내지 않고 **거기에 맞춘다.**
+    //
+    // ⚠ **값을 여기 다시 적지 않는다.** 타일 크기는 `PLANE / repeat` 로 되읽고(층2
+    // `repeat` 가 층1 에서 파생된다), 유속은 진단이 내보내는 것을 쓴다. 이 회차에 테스트
+    // 임계를 진폭에 하드코딩했다가 세 번 잡혔다 — 상수가 아니라 **관계**를 단언한다.
+    const { inst, normB } = flow();
+    expect(normB, '층2 노멀맵이 없다 — 아래 단언이 공회전한다').not.toBeNull();
+    const T = 4;
+    inst.system!.update({ dt: T } as never);
+    const rep = normB!.repeat.x;
+    expect(rep, 'repeat 가 0 이면 나눗셈이 무한이 된다').toBeGreaterThan(0);
+    // 층2 무늬 한 장이 덮는 월드 거리. 지오는 `PLANE` 한 변이고 UV 는 0..1 이다.
+    const tileM = (worldHalfExtent(32) * 4) / rep;
+    const worldMps = (Math.hypot(normB!.offset.x, normB!.offset.y) / T) * tileM;
+    const flowMps = (inst.diagnostics!() as { flowMps: number }).flowMps;
+    expect(worldMps, `무늬가 ${worldMps.toFixed(3)} m/s 로 흐른다 — 강 유속 ${flowMps} 과 다르다`)
+      .toBeCloseTo(flowMps, 6);
+  });
+
+  it('★ `?wripv=1` 이 옛 「호수」 속도로 되돌린다 — 되돌림 자리가 실제로 있는가', async () => {
+    // 노브가 **배율**이라는 것을 못 박는다. `1` 을 주면 예전 상수 그대로가 되어야 하고,
+    // 기본값은 그보다 한 자릿수 이상 빨라야 한다(그것이 이 회차의 변경 자체다).
+    const fast = flow();
+    fast.inst.system!.update({ dt: 4 } as never);
+    const fastLen = Math.hypot(fast.normB!.offset.x, fast.normB!.offset.y);
+
+    window.history.replaceState({}, '', '?wripv=1');
+    vi.resetModules();
+    try {
+      const mod = await import('../frontend/js/world2/features/ocean.js');
+      const added: Added[] = [];
+      const env = {
+        scene: { add: (m: Added) => added.push(m), remove: () => {} },
+        player: { position: { x: 0, z: 0 } },
+        doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+        sun: { color: { r: 1, g: 1, b: 1 }, intensity: 2, position: { x: 0, y: 1, z: 0 } },
+        hemi: { color: { r: 0.5, g: 0.7, b: 1 }, groundColor: { r: 0.4, g: 0.4, b: 0.3 }, intensity: 1 },
+        registerSurfaceMaterial: () => {},
+      };
+      const inst = mod.oceanFeature.create(env as never)!;
+      const nb = added.find((m) => m.name === 'ocean-wave2')!.material.opts.normalMap as FakeTexture;
+      inst.system!.update({ dt: 4 } as never);
+      const slowLen = Math.hypot(nb.offset.x, nb.offset.y);
+      expect(slowLen, '`?wripv=1` 인데 무늬가 안 흐른다').toBeGreaterThan(0);
+      expect(fastLen / slowLen, '기본값이 옛 속도와 거의 같다 — 이 회차의 변경이 무효다')
+        .toBeGreaterThan(5);
+    } finally {
+      window.history.replaceState({}, '', location.pathname);
+      vi.resetModules();
+    }
+  });
+
+  it('★ 환경맵이 **재질에 실제로 걸린다** — 판정/집행 경계', () => {
+    // `decide/water-env.ts` 가 픽셀을 아무리 잘 구워도 재질에 안 걸리면 화면은 그대로다.
+    // 이 저장소가 «판정/집행 분리의 구멍» 이라 부르는 자리이고, 구름 `alpha` 미소비가
+    // 정확히 그 형태였다 — 순수 함수 테스트만으로는 안 걸린다.
+    const { added } = mount();
+    const sea = added.find((m) => m.name === 'ocean')!;
+    const env = sea.material.opts.envMap as { image?: Uint8Array } | null;
+    expect(env, '바다 재질에 envMap 이 없다 — 반사할 것이 없으면 윤슬도 없다').toBeTruthy();
+    expect(sea.material.opts.envMapIntensity, '세기가 0 이면 걸어도 안 보인다')
+      .toBeGreaterThan(0);
+
+    // 층2도 **같은 객체**를 써야 한다. 따로 만들면 텍스처가 하나 늘고(개수 불변식 [7])
+    // 두 층이 다른 하늘을 반사하게 된다.
+    const wave2 = added.find((m) => m.name === 'ocean-wave2');
+    expect(wave2!.material.opts.envMap, '층2가 다른 환경맵을 쓴다 — 텍스처가 는다')
+      .toBe(sea.material.opts.envMap);
+  });
+
+  it('★ `?wenv=0` 이 예전 상태다 — 되돌림 자리가 실제로 있는가', async () => {
+    window.history.replaceState({}, '', '?wenv=0');
+    vi.resetModules();
+    try {
+      const mod = await import('../frontend/js/world2/features/ocean.js');
+      const added: Added[] = [];
+      const env = {
+        scene: { add: (m: Added) => added.push(m), remove: () => {} },
+        player: { position: { x: 0, z: 0 } },
+        doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+        sun: { color: { r: 1, g: 1, b: 1 }, intensity: 2, position: { x: 0, y: 1, z: 0 } },
+        hemi: { color: { r: 0.5, g: 0.7, b: 1 }, groundColor: { r: 0.4, g: 0.4, b: 0.3 }, intensity: 1 },
+        registerSurfaceMaterial: () => {},
+      };
+      mod.oceanFeature.create(env as never)!;
+      const sea = added.find((m) => m.name === 'ocean')!;
+      expect(sea.material.opts.envMap, '`?wenv=0` 인데 환경맵이 걸렸다 — 대조군이 없다')
+        .toBeNull();
+    } finally {
+      window.history.replaceState({}, '', location.pathname);
+      vi.resetModules();
+    }
+  });
+
+  it('★★ 시간대는 **세기로만** 따라간다 — 텍스처는 부팅 시각에 고정된다', () => {
+    // ── 이 검사가 뒤집힌 이유 (검수관 반려 B, 2026-08-20) ────────────────────
+    // 여기 있던 검사는 「시간대가 바뀌면 같은 텍스처를 다시 굽는다」였고, 픽셀이 실제로
+    // 바뀌는 것까지 봤다. **그런데도 화면에는 아무 일이 안 일어난다** — three 는 equirect
+    // 환경맵을 PMREM 큐브맵으로 변환해 캐시하고, 그 캐시는 `version`(= `needsUpdate`)이
+    // 아니라 `pmremVersion` 을 본다(`nodes/pmrem/PMREMNode.js:136`). WebGL 은 한술 더
+    // 떠서 `pmremVersion` 을 올려도 안 된다(`WebGLCubeUVMaps.js:27` 이 렌더타깃만 재변환).
+    //
+    // 즉 **판정/집행 경계가 한 겹 더 있었다.** 「픽셀이 재질에 걸리는가」는 닫았는데
+    // 「걸린 텍스처가 렌더러 안에서 다시 처리되는가」가 열려 있었고, `three/webgpu` 를
+    // mock 한 이 테스트는 그 층을 원리상 볼 수 없다. 그래서 재굽기를 걷고, 시간대 추종을
+    // **검사 가능한 축**(`envMapIntensity`)으로 옮겼다. 근거의 SSOT 는
+    // `features/water-env.ts` 헤더와 `waterGloss` 의 `envIntensity` 주석이다.
+    const { inst, added, setTime, setLight } = mount('day');
+    const sea = added.find((m) => m.name === 'ocean')!;
+    const tex = sea.material.opts.envMap as object;
+    const dayI = sea.material.envMapIntensity as number;
+    expect(dayI, '전제: 낮에 환경맵 세기가 0 이 아니다').toBeGreaterThan(0);
+
+    setTime('night');
+    setLight(0.15, 0.08);
+    inst.system!.update({ dt: 1 } as never);
+    expect(sea.material.opts.envMap, '시간대 전환에 텍스처가 새로 났다 — 누수 경로다')
+      .toBe(tex);
+    // 값을 여기 다시 적지 않는다 — `waterGloss` 에서 유도한다(이 회차에 값 미러링을
+    // 네 번 잡았다). 판정이 집행에 **실제로 도달하는가**가 이 단언의 표적이다.
+    const g = waterGloss('night');
+    expect(sea.material.envMapIntensity as number, '밤이 됐는데 환경맵 세기가 그대로다')
+      .toBeCloseTo(g.envIntensity, 6);
+    expect(g.envIntensity, '전제: 밤 세기가 낮보다 낮다').toBeLessThan(waterGloss('day').envIntensity);
+  });
 
   it('시간이 지나면 노멀맵 offset 이 움직인다 — 안 움직이면 물이 멈춰 있다', () => {
     const { inst, norm } = flow();
@@ -1796,6 +1970,9 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
       const env = {
         scene: { add: (m: Added) => added.push(m), remove: () => {} },
         player, doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+        // 환경맵 계약(위 `mount` 의 같은 자리 주석) — 없으면 `create` 가 죽는다
+        sun: { color: { r: 1, g: 1, b: 1 }, intensity: 2, position: { x: 0, y: 1, z: 0 } },
+        hemi: { color: { r: 0.5, g: 0.7, b: 1 }, groundColor: { r: 0.4, g: 0.4, b: 0.3 }, intensity: 1 },
         // 표면 재질 레지스트리는 **계약 필수**다(W7). 옵셔널로 두면 «없어도 조용히
         // 넘어간다» 가 되어 등록 강제(팀장 조건 1)가 약해진다 — 그래서 여기서도 준다.
         registerSurfaceMaterial: () => {},
@@ -1820,6 +1997,9 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
         scene: { add: (m: Added) => added.push(m), remove: () => {} },
         player: { position: { x: 0, z: 0 } },
         doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+        // 환경맵 계약(위 `mount` 의 같은 자리 주석) — 없으면 `create` 가 죽는다
+        sun: { color: { r: 1, g: 1, b: 1 }, intensity: 2, position: { x: 0, y: 1, z: 0 } },
+        hemi: { color: { r: 0.5, g: 0.7, b: 1 }, groundColor: { r: 0.4, g: 0.4, b: 0.3 }, intensity: 1 },
         // 레지스트리는 계약 필수다 — 근거는 위 하네스 주석 한 곳.
         registerSurfaceMaterial: () => {},
       };
@@ -1843,6 +2023,9 @@ describe('바다 패치 — 노브 극값에서도 구조가 유지된다 (G1)',
         scene: { add: (m: Added) => added.push(m), remove: () => {} },
         player: { position: { x: 0, z: 0 } },
         doc: document, cell: 32, time: () => 'day', adapter: { backend: 'WebGL' },
+        // 환경맵 계약(위 `mount` 의 같은 자리 주석) — 없으면 `create` 가 죽는다
+        sun: { color: { r: 1, g: 1, b: 1 }, intensity: 2, position: { x: 0, y: 1, z: 0 } },
+        hemi: { color: { r: 0.5, g: 0.7, b: 1 }, groundColor: { r: 0.4, g: 0.4, b: 0.3 }, intensity: 1 },
         // 레지스트리는 계약 필수다 — 근거는 위 하네스 주석 한 곳.
         registerSurfaceMaterial: () => {},
       };
