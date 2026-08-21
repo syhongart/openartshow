@@ -211,6 +211,13 @@ export const CSS = `
    하나는 배치). 공유 클래스로 묶으면 한쪽 여백을 고칠 때 다른 쪽이 따라 움직인다. */
 #w2-edit .size-row .lbl{color:#9A9EB1;font-size:10px;min-width:28px}
 #w2-edit .size-row .num{color:#F5F5F2;font-size:10px;min-width:44px;text-align:right}
+#w2-edit .tone-box{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
+/* 견본은 색 자체가 내용이라 글자가 없다 — 크기를 주지 않으면 0x0 이 된다.
+   .sw(9px)보다 큰 것은 그쪽이 목록의 **표시**이고 이쪽은 **누르는 표적**이라서다.
+   ⚠ 이 파일은 템플릿 리터럴 하나다 — 주석에도 백틱을 쓰면 문자열이 거기서 끊긴다. */
+#w2-edit .tone-sw{width:18px;height:18px;padding:0;border-radius:3px;
+  border:1px solid #2A2F3E;cursor:pointer}
+#w2-edit .tone-sw[data-on="1"]{border-color:#8B72FF;box-shadow:0 0 0 1px #8B72FF}
 #w2-edit .surf-row input[type="range"]{flex:1;min-width:0;accent-color:#8B72FF}
 #w2-edit .surf-row button[data-on="1"]{background:#8B72FF;border-color:#8B72FF;color:#0B0D12}
 #w2-edit .surf-slots{display:flex;flex-direction:column;gap:3px}

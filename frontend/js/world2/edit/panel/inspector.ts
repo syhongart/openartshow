@@ -64,6 +64,12 @@ export interface Inspector {
    * 부르는 형태다(`surface.ts` 의 읽기 전용 슬라이더 근거와 같다).
    */
   readonly sizeRow: HTMLElement;
+  /**
+   * 색 견본 줄 (`G-EDIT7`). `sizeRow` 와 **같은 이유로** 본체와 다른 요소다 —
+   * 수치칸은 한 줄에 다섯이 나란한 격자이고 견본은 개수가 대상마다 달라서 줄바꿈이
+   * 필요하다. 색을 안 내는 대상(GLB·액자)에서는 **줄이 통째로 숨는다.**
+   */
+  readonly toneRow: HTMLElement;
 }
 
 export function createInspector(
@@ -111,6 +117,34 @@ export function createInspector(
     st.target.commit();
     onChanged();
   });
+
+  // ── 색 견본 (`G-EDIT7`) ────────────────────────────────────────────────────
+  // 팀장 판정 2026-08-21 로 축별 크기보다 먼저 열렸다. 계약은 `tone` 을 이미 담는데
+  // (`decide/overlay.ts` 의 `normalizePart`) 그것을 만질 문이 0건이었다.
+  //
+  // ⚠ **슬라이더가 아니라 견본 버튼인 것이 계약 때문이다.** `tone` 은 팔레트 **인덱스**
+  // 이고 연속값이 아니다. 범위 슬라이더로 만들면 「3.5번 색」이라는 없는 상태를 손잡이가
+  // 표현하게 되고, 무엇보다 **어떤 색인지 안 보인다** — 숫자 「3」을 보여주면 못 고른다.
+  const toneRow = doc.createElement('div');
+  toneRow.className = 'surf-row tone-row';
+  const toneLbl = doc.createElement('span');
+  toneLbl.className = 'lbl';
+  toneLbl.textContent = '색';
+  const toneBox = doc.createElement('div');
+  toneBox.className = 'tone-box';
+  toneRow.append(toneLbl, toneBox);
+
+  /**
+   * 견본 하나를 눌렀다. **`apply()` 를 안 탄다** — 근거는 `EditTarget.tone` 주석 한 곳이다
+   * (색은 이산값이고, 확정 한 번이 파셀을 즉시 다시 만들며 새 색으로 칠한다).
+   */
+  const pickTone = (i: number): void => {
+    const t = st.target;
+    if (!t?.tone || !Number.isInteger(i)) return;
+    t.tone.set(i);
+    t.commit();
+    onChanged();
+  };
 
   for (const f of FIELDS) {
     const wrap = doc.createElement('label');
@@ -207,10 +241,41 @@ export function createInspector(
     root.append(wrap);
   }
 
+  /**
+   * 견본 버튼을 대상에 맞춘다. **개수가 같으면 DOM 을 다시 만들지 않는다** — `sync` 는
+   * 조작 중 프레임마다 불리고(수치칸 주석의 그 이유), 매번 지웠다 만들면 그 사이 눌린
+   * 클릭이 사라진 요소로 가서 조용히 안 먹는다.
+   */
+  const syncTone = (e: EditTarget | null): void => {
+    const tn = e?.tone;
+    toneRow.style.display = tn ? '' : 'none';
+    if (!tn) return;
+    while (toneBox.childElementCount > tn.count) toneBox.lastElementChild?.remove();
+    while (toneBox.childElementCount < tn.count) {
+      const b = doc.createElement('button');
+      b.type = 'button';
+      b.className = 'tone-sw';
+      // 인덱스는 **요소가 들고** 클릭 시점에 읽는다. 클로저로 굳히면 대상이 바뀌어
+      // 개수가 줄었을 때 남은 버튼이 옛 인덱스를 민다.
+      b.addEventListener('click', () => { pickTone(Number(b.dataset.i)); });
+      toneBox.append(b);
+    }
+    const cur = tn.get();
+    for (let i = 0; i < tn.count; i++) {
+      const b = toneBox.children[i] as HTMLButtonElement;
+      b.dataset.i = String(i);
+      b.style.background = `#${tn.swatch(i).toString(16).padStart(6, '0')}`;
+      b.dataset.on = i === cur ? '1' : '0';
+      b.title = `색 ${i + 1}`;
+    }
+  };
+
   return {
     root,
     sizeRow,
+    toneRow,
     sync(e: EditTarget | null): void {
+      syncTone(e);
       const w = e?.width;
       // 줄을 통째로 숨긴다 — 근거는 `Inspector.sizeRow` 주석 한 곳이다.
       sizeRow.style.display = w ? '' : 'none';
