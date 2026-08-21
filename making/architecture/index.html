@@ -249,7 +249,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
 여기는 <b>지금 이렇게 생겼고 이런 값을 치르고 있다</b>를 적습니다.</p>
 
 <div class="arch-stats">
-  <div class="stat"><span class="n">249,795</span><span class="k">자체 코드 줄</span></div>
+  <div class="stat"><span class="n">249,810</span><span class="k">자체 코드 줄</span></div>
   <div class="stat"><span class="n">886</span><span class="k">자체 파일</span></div>
   <div class="stat"><span class="n">59,583</span><span class="k">벤더 줄</span></div>
   <div class="stat"><span class="n">30.2%</span><span class="k">테스트 / 구현</span></div>
@@ -281,9 +281,9 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr>
       <td>오픈월드 world2</td>
-      <td class="num">39,761</td>
+      <td class="num">39,776</td>
       <td class="num">160</td>
-      <td class="pct"><span class="bar" style="--w:52.3%"></span><span class="pv">15.9%</span></td>
+      <td class="pct"><span class="bar" style="--w:52.4%"></span><span class="pv">15.9%</span></td>
     </tr>
     <tr>
       <td>frontend 기타</td>
@@ -348,7 +348,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     </tr>
     <tr class="d2">
       <td><code>world2/<wbr></code></td>
-      <td class="num">39,761</td>
+      <td class="num">39,776</td>
       <td class="num">160</td>
       <td class="desc">오픈월드 재작성(커널 + 시스템)</td>
     </tr>
@@ -415,7 +415,7 @@ font-size:11px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
     <h3>치르는 값</h3>
     <ul>
       <li><b>같은 로직을 .ts 와 .js 두 벌로 들고 있다</b> GitHub Pages 정적 직서빙과 vite 빌드를 <strong>동시에</strong> 만족시키려는 대가다. <code>.ts</code> 가 진실이고 <code>.js</code> 는 산출인데, <strong>재생성을 빠뜨리면 라이브가 옛 로직을 계속 서빙한다.</strong> 지금은 사람이 지키는 규율이고 게이트가 아니다.</li>
-      <li><b>오픈월드가 두 벌이다 — world1 2,372줄 + world2 39,761줄</b> 현행(<code>world.js</code>)과 재작성(<code>world2/</code>)이 병존한다. 교체 전까지 고칠 것이 생기면 <strong>두 곳을 보거나, 한쪽을 포기</strong>해야 한다. 실제로 오늘도 하늘 코드를 양쪽이 공유하는 구조 때문에 라이브 무영향 확인이 따로 필요했다.</li>
+      <li><b>오픈월드가 두 벌이다 — world1 2,372줄 + world2 39,776줄</b> 현행(<code>world.js</code>)과 재작성(<code>world2/</code>)이 병존한다. 교체 전까지 고칠 것이 생기면 <strong>두 곳을 보거나, 한쪽을 포기</strong>해야 한다. 실제로 오늘도 하늘 코드를 양쪽이 공유하는 구조 때문에 라이브 무영향 확인이 따로 필요했다.</li>
       <li><b>헤드리스 검증이 감독 실기기를 재현하지 못한다</b> 자동 검증은 WebGL(swiftshader)로 돌고 감독 기기는 <strong>WebGPU</strong>다 — 렌더 경로가 다르다. 2026-08-06 별 크기 건이 정확히 여기 막혔다: 세 값을 렌더했는데 화면이 구별되지 않았고, 원인은 <strong>헤드리스에 그 별이 아예 안 뜨는 것</strong>이었다. <strong>이 사각은 열려 있다.</strong> 시각 판정은 감독 눈이 유일한 수단이다.</li>
       <li><b>성능 게이트가 아직 아무것도 막지 않는다</b> 개수 불변식과 하늘 예열은 CI 에서 <strong>관측만</strong> 한다(종료 코드에서 빠진다) — 러너 성능 편차의 거짓 실패 위험을 아직 안 재봤기 때문이다. <strong>관측은 면제가 아니라 데이터 수집이고, 승격 없이 남으면 그때부터 장식이다.</strong></li>
       <li><b>큰 파일이 남아 있다</b> 아래 상위 목록이 그것이다. 다만 <strong>줄 수는 분해 기준이 아니다</strong> — 진입점은 "조립" 이 책임이라 큰 것이 자연스럽다. 기준은 <strong>책임의 혼재</strong>이고, 그 판정 기준을 세우는 일은 아직 열려 있다.</li>
