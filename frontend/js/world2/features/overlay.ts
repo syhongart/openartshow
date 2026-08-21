@@ -356,6 +356,7 @@ export const overlayFeature: Feature = {
       // 조작 중 실시간 반영(W5 E2.5). **개수는 안 변한다** — 이미 점유한 슬롯의 행렬만
       // 다시 쓰는 함수 하나이고, `acquire`·`release` 는 안 넘어간다(팀장 판정 2026-08-13).
       retargetSlot: env.retargetSlot,
+      setTouchEditing: env.setTouchEditing,
       entries: () => entries,
       place,
       lastFailure: () => lastFail,

@@ -218,6 +218,12 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     if (on === st.editing) return;
     st.editing = on;
     panel.setMode(on);
+    // 🔴 **폰: 캔버스 드래그가 두 겹으로 먹지 않게** (`G-EDIT14`, 팀장 판정 (나)).
+    // **켜고 끄는 양쪽에서 부른다** — 한쪽만 부르면 편집을 끈 뒤 시선이 안 돌아온다.
+    // 끊기는 것은 **시선 하나**이고 이동 조이스틱은 그대로다(그 판정 영역은 전용 원
+    // 안이라 편집과 겹치지 않는다). 무엇이 왜 끊기는지는 `ui/touch-controls.ts` 헤더
+    // 한 곳이고, 여기에 다시 적지 않는다.
+    host.setTouchEditing?.(on);
     if (on) {
       input.bind();
       fly.bind();

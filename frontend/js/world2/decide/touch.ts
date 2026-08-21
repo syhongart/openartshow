@@ -43,15 +43,20 @@ export function knobOffset(dx: number, dy: number, radius = STICK_RADIUS): Vec2 
   return { x: dx * k, y: dy * k };
 }
 
-/** 터치 슬롯 — 어느 손가락이 무엇을 조작 중인가 */
+/**
+ * 터치 슬롯 — 어느 손가락이 무엇을 조작 중인가.
+ *
+ * ⚠ **이동(`move`) 슬롯이 여기서 빠졌다** (2026-08-21, 팀장 판정 (나)). 이동 조이스틱은
+ * 이제 **전용 DOM 원**이 `setPointerCapture` 로 직접 붙들므로 이 계층이 id 를 셀 필요가
+ * 없다. 남은 것은 시선 하나다 — 그것만 여전히 캔버스 위 아무 데서나 시작하기 때문이다.
+ * 왜 그렇게 바꿨는지는 `assignSlot` 이 있던 자리의 주석 한 곳에 있다.
+ */
 export interface TouchSlots {
-  /** 이동 조이스틱을 쥔 touch id. 없으면 null */
-  move: number | null;
   /** 시선 드래그를 쥔 touch id */
   look: number | null;
 }
 
-export const NO_SLOTS: TouchSlots = { move: null, look: null };
+export const NO_SLOTS: TouchSlots = { look: null };
 
 /**
  * **현재 화면에 닿아 있는 id 집합**으로 슬롯을 청소한다.
@@ -62,22 +67,35 @@ export const NO_SLOTS: TouchSlots = { move: null, look: null };
 export function reconcile(slots: TouchSlots, liveIds: readonly number[]): TouchSlots {
   const live = new Set(liveIds);
   return {
-    move: slots.move !== null && live.has(slots.move) ? slots.move : null,
     look: slots.look !== null && live.has(slots.look) ? slots.look : null,
   };
 }
 
-/**
- * 새 터치를 어느 슬롯에 배정할까. 화면 좌/우 절반으로 가른다.
- * 이미 찬 슬롯이면 null — 한 손가락이 두 역할을 겸하지 않는다.
- */
-export function assignSlot(
-  slots: TouchSlots, x: number, viewportWidth: number,
-): 'move' | 'look' | null {
-  const wantMove = x < viewportWidth / 2;
-  if (wantMove) return slots.move === null ? 'move' : null;
-  return slots.look === null ? 'look' : null;
-}
+// ── ⚠ `assignSlot` 이 여기 있었다 — 지웠다 (팀장 판정 (나), 2026-08-21) ─────
+//
+// 그 함수는 새 터치를 **화면 좌/우 절반**으로 갈랐다(`x < viewportWidth / 2` → 이동).
+// 주행만 있을 때는 맞는 설계였다. 그런데 편집(`?edit=1`)이 생기면서 **그 판정이 충돌의
+// 근원**이 됐다: 캔버스 왼쪽 절반 어디를 눌러도 이동 슬롯이 잡히는데, 같은 터치가
+// `edit/input.ts` 의 `pointerdown` 에도 들어가서 **물건이 선택되면서 동시에 아바타가
+// 걸었다**(백로그 `G-EDIT14` — 그 항목이 오래 「있다고 적혀 있었는데 없던」 참조였다).
+//
+// **선택지 셋 중 (나) 를 골랐다**(팀장):
+//   (가) 편집 중 조이스틱을 뗀다 → 폰에서 편집 중 이동 수단이 **0**이 된다(궤도·줌·비행이
+//        폰에 없다). 기각.
+//   (다) 편집 중에만 축소·이동 → 같은 기능이 두 형태로 살아 **코드가 두 벌**이 된다. 기각.
+//   **(나) 전용 DOM 원 + `setPointerCapture`** → 판정이 원 안으로 좁아져 **캔버스 나머지가
+//        편집에 자유로워진다.** 원인 제거이고, 선례가 같은 저장소에 있다
+//        (`frontend/builder.html` 의 `.joy` — 112px 원 + 포인터 캡처).
+//
+// 그래서 이 자리에 대응 함수를 **다시 만들지 않았다** — 「원 안인가」는 브라우저가
+// `pointerdown` 의 타깃으로 이미 알려주므로 순수 함수로 다시 계산할 것이 없다.
+// **쓸 소비자가 없는 문을 미리 내지 않는다**(`decide/modal-edit.ts`).
+//
+// ⚠ 대가를 정직하게 적는다: **조이스틱이 「누른 자리에 생기는」 것을 잃었다.** 그 설계의
+// 근거는 *"엄지가 닿는 위치가 기기·손 크기마다 다르므로 고정하면 누군가는 늘 불편하다"*
+// 였고 지금도 참이다. 그러나 「누른 자리에 생긴다」와 「전용 요소 안에서만 판정한다」는
+// **양립 불가**다 — 자리가 정해져야 판정 영역이 정해진다. 편집 충돌 쪽이 더 비싸서 이쪽을
+// 내줬다. 되돌릴 조건: 감독이 실기기에서 **「조이스틱 자리가 손에 안 맞는다」** 고 말할 때.
 
 /** 시선 회전량(라디안). 픽셀 이동을 감도로 환산한다. */
 export const LOOK_SENSITIVITY = 0.0032;

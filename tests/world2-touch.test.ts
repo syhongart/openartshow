@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  stickAxes, knobOffset, reconcile, assignSlot, lookDelta, isTouchDevice,
+  stickAxes, knobOffset, reconcile, lookDelta, isTouchDevice,
   STICK_RADIUS, DEADZONE, NO_SLOTS, type TouchSlots,
 } from '../frontend/js/world2/decide/touch.js';
 import { moveFromAxes } from '../frontend/js/world2/systems/player.js';
@@ -66,20 +66,20 @@ describe('reconcile — stale 터치 방어 (실기기 사고의 회귀)', () =>
   const slots = (o: Partial<TouchSlots> = {}): TouchSlots => ({ ...NO_SLOTS, ...o });
 
   it('살아 있는 터치는 유지한다', () => {
-    expect(reconcile(slots({ move: 7 }), [7])).toEqual({ move: 7, look: null });
+    expect(reconcile(slots({ look: 7 }), [7])).toEqual({ look: 7 });
   });
 
   it('사라진 터치를 청소한다 — touchend가 유실돼도 다음 이벤트에서 풀린다', () => {
-    // 이게 안 되면 아바타가 저절로 걷는다.
-    expect(reconcile(slots({ move: 7 }), [])).toEqual({ move: null, look: null });
+    // 이게 안 되면 손을 뗀 뒤에도 시선이 계속 끌려간다.
+    expect(reconcile(slots({ look: 7 }), [])).toEqual({ look: null });
   });
 
   it('다른 손가락만 남았으면 죽은 슬롯이 풀린다', () => {
-    expect(reconcile(slots({ move: 7, look: 9 }), [9])).toEqual({ move: null, look: 9 });
+    expect(reconcile(slots({ look: 7 }), [9])).toEqual({ look: null });
   });
 
-  it('둘 다 살아 있으면 둘 다 유지', () => {
-    expect(reconcile(slots({ move: 1, look: 2 }), [1, 2])).toEqual({ move: 1, look: 2 });
+  it('여러 손가락 중 제 것이 살아 있으면 유지', () => {
+    expect(reconcile(slots({ look: 2 }), [1, 2])).toEqual({ look: 2 });
   });
 
   it('빈 슬롯은 그대로 빈다', () => {
@@ -87,26 +87,29 @@ describe('reconcile — stale 터치 방어 (실기기 사고의 회귀)', () =>
   });
 
   it('id 0도 유효한 값이다 — falsy 판정으로 지우면 안 된다', () => {
-    expect(reconcile(slots({ move: 0 }), [0])).toEqual({ move: 0, look: null });
+    expect(reconcile(slots({ look: 0 }), [0])).toEqual({ look: 0 });
   });
 });
 
-describe('assignSlot — 왼쪽은 이동, 오른쪽은 시선', () => {
-  it('왼쪽 절반은 이동', () => {
-    expect(assignSlot(NO_SLOTS, 100, 800)).toBe('move');
+// ── 🔴 GS-J1 — `assignSlot` 이 사라진 것을 **계약으로** 못 박는다 (`G-EDIT14`) ──
+//
+// 팀장 판정 (나) 로 「화면 왼쪽 절반 = 이동」 판정을 지웠다(2026-08-21). 이동은 이제
+// 전용 DOM 원이 `setPointerCapture` 로 붙든다. **누군가 편의로 그 함수를 되살리면
+// 충돌이 조용히 돌아오므로**, 그 부재 자체를 검사로 만든다 — 이 저장소가 「없앤 것이
+// 다시 생기는」 형태를 여러 번 겪었다.
+//
+// ⚠ **이 검사는 「지웠다」만 본다.** 지우고 나서 실제로 충돌이 없어졌는가는 실기기
+// 축이고 헤드리스로 못 잰다 — 그 사실은 게시판과 `G-EDIT14` 에 적혀 있다.
+describe('🔴 GS-J1 — 「왼쪽 절반」 판정이 되살아나지 않는다', () => {
+  it('`decide/touch.ts` 가 `assignSlot` 을 내보내지 않는다', async () => {
+    const mod = await import('../frontend/js/world2/decide/touch.js');
+    expect(Object.keys(mod), '🔴 지운 함수가 되살아났다 — 충돌이 함께 돌아온다')
+      .not.toContain('assignSlot');
   });
 
-  it('오른쪽 절반은 시선', () => {
-    expect(assignSlot(NO_SLOTS, 700, 800)).toBe('look');
-  });
-
-  it('이미 찬 슬롯이면 거부 — 한 손가락이 두 역할을 겸하지 않는다', () => {
-    expect(assignSlot({ move: 3, look: null }, 100, 800)).toBeNull();
-    expect(assignSlot({ move: null, look: 3 }, 700, 800)).toBeNull();
-  });
-
-  it('반대쪽이 비어 있으면 배정된다', () => {
-    expect(assignSlot({ move: 3, look: null }, 700, 800)).toBe('look');
+  it('슬롯 계약에 이동 칸이 없다 — 이동은 이 계층이 세지 않는다', () => {
+    // `NO_SLOTS` 가 진실의 원산지다. 여기 `move` 가 생기면 두 계통이 다시 갈린다.
+    expect(Object.keys(NO_SLOTS)).toEqual(['look']);
   });
 });
 
