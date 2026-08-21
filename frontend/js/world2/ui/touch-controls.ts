@@ -1,13 +1,25 @@
 // world2/ui/touch-controls.ts — 모바일 터치 조작(가상 조이스틱 + 시선 드래그).
 //
-// ── 설계 (2026-08-21 개정, 팀장 판정 (나)) ───────────────────────────────────
-//   · **이동** — 좌하단 **전용 원**(`#w2-stick`) 안에서만. `setPointerCapture` 로 붙든다.
+// ── 설계 (2026-08-21 재개정, 감독 판정 «조이스틱 고정이 불편해») ────────────
+//   · **이동** — 좌하단 **구역**(`#w2-stick-zone`)이 터치를 받고, 원은 **누른 자리에**
+//     그려진다. `setPointerCapture` 로 붙든다.
 //   · **시선** — 캔버스 위 아무 데나 드래그. **편집 중에는 끈다**(아래).
 //
-// ⚠ **예전에는 「화면 왼쪽 절반 = 이동」이었다.** 그 판정(`decide/touch.ts` 의
-// `assignSlot`)이 편집과 충돌하는 근원이었다 — 같은 터치가 조이스틱과 `edit/input.ts` 의
-// `pointerdown` 에 **둘 다** 들어가 물건이 선택되면서 동시에 아바타가 걸었다.
-// 왜 이 형태를 골랐는지(선택지 셋과 기각 사유)는 그 함수가 있던 자리 한 곳에 있다.
+// ⚠ **하루에 두 번 바뀐 자리다. 두 판본의 이유를 둘 다 남긴다.**
+//   ① 원래: 「화면 왼쪽 **절반 전체** = 이동」 — 누른 자리에 원이 생겼다. 편집과 충돌했다
+//      (같은 터치가 `edit/input.ts` 의 `pointerdown` 에도 들어가 **물건이 선택되면서
+//      동시에 아바타가 걸었다**).
+//   ② 첫 개정(팀장 판정 (나)): 좌하단 **112px 고정 원**. 충돌은 없앴지만 **자리가 굳었고**,
+//      감독이 실기기에서 *"조이스틱 고정이 불편해"* 라고 판정했다 — 그때 코드에 적어 둔
+//      되돌릴 조건이 그대로 발동한 것이다.
+//   ③ 지금: **구역이 받고 원이 따라간다.** ①의 「엄지가 닿는 자리」와 ②의 「구역 밖은
+//      편집 전용」을 **둘 다** 만족한다. 갈랐던 지점은 «판정 영역이 화면 절반인가, 왼쪽
+//      아래 일부인가» 였다 — 「누른 자리에 생긴다」와 양립 불가였던 것은 **고정된 원**이지
+//      **정해진 구역**이 아니었다.
+//
+// ⚠⚠ **①의 실패를 ③이 되풀이하지 않는 이유를 정확히 적는다**: 구역은 `pointerdown` 을
+// **자기 요소에서** 받고 캡처하므로, 구역 밖 캔버스에는 그 이벤트가 애초에 안 간다.
+// ①은 캔버스 전체가 받아서 갈랐기 때문에 갈라도 남이 이미 본 뒤였다.
 //
 // ── 편집 중에 무엇이 죽고 무엇이 사는가 ─────────────────────────────────────
 //   **이동은 산다.** 원 안은 편집 판정 영역이 아니므로 충돌이 없고, 폰에는 궤도·줌·비행이
@@ -38,7 +50,12 @@ export interface TouchTargets {
 }
 
 export interface TouchParts {
-  /** 조이스틱 바깥 원. **이제 이것이 판정 영역이다** — 그림만 그리던 요소가 아니다 */
+  /**
+   * **판정 영역**. 좌하단 구역이고 고정이다 — 터치를 받는 것은 이것 하나다.
+   * 없으면(`undefined`) `base` 가 그 역할을 겸한다(고정 원 판본과의 호환).
+   */
+  zone?: HTMLElement;
+  /** 조이스틱 바깥 원. **누른 자리로 움직인다** — 그림만 그린다 */
   base: HTMLElement;
   /** 손잡이 */
   knob: HTMLElement;
@@ -94,12 +111,25 @@ export function attachTouchControls(
     targets.setAxes(0, 0);
   };
 
+  /** 터치를 받는 요소. 구역이 있으면 구역, 없으면 원 자신(옛 판본 호환) */
+  const hit = parts.zone ?? parts.base;
+
   const onStickDown = (e: PointerEvent) => {
     if (stickId !== null) return;
     stickId = e.pointerId;
-    try { parts.base.setPointerCapture(stickId); } catch { /* 캡처 실패해도 아래가 돈다 */ }
-    const r = parts.base.getBoundingClientRect();
-    cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+    try { hit.setPointerCapture(stickId); } catch { /* 캡처 실패해도 아래가 돈다 */ }
+    // **누른 자리가 중심이 된다** (감독 판정 «고정이 불편해»). 구역이 없으면 옛 판본대로
+    // 원의 기하 중심을 쓴다 — 그때는 원 자체가 판정 영역이라 그것이 곧 누른 자리다.
+    if (parts.zone) {
+      cx = e.clientX; cy = e.clientY;
+      const z = parts.zone.getBoundingClientRect();
+      // 구역 로컬 좌표로 옮긴다 — 원이 `position:absolute` 라 구역 기준이다.
+      parts.base.style.left = `${e.clientX - z.left}px`;
+      parts.base.style.top = `${e.clientY - z.top}px`;
+    } else {
+      const r = parts.base.getBoundingClientRect();
+      cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+    }
     parts.base.dataset.on = '1';
     e.preventDefault();
   };
@@ -158,7 +188,7 @@ export function attachTouchControls(
   const releaseAll = () => {
     slots = { ...NO_SLOTS };
     if (stickId !== null) {
-      try { parts.base.releasePointerCapture(stickId); } catch { /* 이미 풀렸으면 그만 */ }
+      try { hit.releasePointerCapture(stickId); } catch { /* 이미 풀렸으면 그만 */ }
       stickId = null;
     }
     parts.base.dataset.on = '0';
@@ -166,10 +196,10 @@ export function attachTouchControls(
   };
   const onVisibility = () => { if (document.hidden) releaseAll(); };
 
-  parts.base.addEventListener('pointerdown', onStickDown);
-  parts.base.addEventListener('pointermove', onStickMove);
-  parts.base.addEventListener('pointerup', onStickUp);
-  parts.base.addEventListener('pointercancel', onStickUp);
+  hit.addEventListener('pointerdown', onStickDown);
+  hit.addEventListener('pointermove', onStickMove);
+  hit.addEventListener('pointerup', onStickUp);
+  hit.addEventListener('pointercancel', onStickUp);
   surface.addEventListener('touchstart', onStart, { passive: false });
   surface.addEventListener('touchmove', onMove, { passive: false });
   surface.addEventListener('touchend', onEnd, { passive: false });
@@ -185,10 +215,10 @@ export function attachTouchControls(
       if (on) slots = { ...NO_SLOTS };
     },
     dispose() {
-      parts.base.removeEventListener('pointerdown', onStickDown);
-      parts.base.removeEventListener('pointermove', onStickMove);
-      parts.base.removeEventListener('pointerup', onStickUp);
-      parts.base.removeEventListener('pointercancel', onStickUp);
+      hit.removeEventListener('pointerdown', onStickDown);
+      hit.removeEventListener('pointermove', onStickMove);
+      hit.removeEventListener('pointerup', onStickUp);
+      hit.removeEventListener('pointercancel', onStickUp);
       surface.removeEventListener('touchstart', onStart);
       surface.removeEventListener('touchmove', onMove);
       surface.removeEventListener('touchend', onEnd);
