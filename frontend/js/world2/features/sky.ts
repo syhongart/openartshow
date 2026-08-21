@@ -62,6 +62,15 @@ export const skyFeature: Feature = {
     // 하늘 농도 두 후보를 **여기서 한 번만** 읽는다 — 아래 `skyBlue` 클로저가 매 페인트
     // 마다 도는 자리라, 그 안에서 읽으면 전환마다 URL 을 파싱한다. `?skyblue=` 를 주면
     // 둘 다 그 값이 되어 감독이 시간대와 무관하게 농도를 비교할 수 있다.
+    //
+    // ⚠ **그 대가**: `?skyblue=` 를 준 링크에서는 두 시간대의 농도가 **같아지므로**
+    // 神 모드 패널의 「복합」↔「주간」 왕복 비교가 **무효**가 된다(차이 0). 두 버튼이
+    // 나란히 있어 감독이 실제로 겪는 화면이라, 그 링크를 드릴 때는 문안에 적는다
+    // (검수관 P15). 복합씬 농도만 따로 스윕하는 노브는 **일부러 안 연다** — 대조군
+    // 링크 두 개(`?time=day` 노브 없이 · `?time=daylit&skyblue=N`)로 판정이 성립하고,
+    // 노브를 늘리면 `SKY_BLUE`·`SKY_BLUE_DAYLIT`·두 노브의 상호작용이 새 미러링 면이
+    // 된다(검수관 판정). **재론 트리거**: 감독이 «한 화면에서 버튼으로 오가며 비교하고
+    // 싶다» 고 하면 그때 연다.
     const blueDay = readNum('skyblue', SKY_BLUE, 0, SKY_BLUE_MAX);
     const blueDaylit = readNum('skyblue', SKY_BLUE_DAYLIT, 0, SKY_BLUE_MAX);
     // 풀 봉인 직후·예열 직전에 만들어진다(features 단계). 여기서 만들어야 예열이 하늘

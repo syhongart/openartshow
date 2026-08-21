@@ -500,6 +500,19 @@ describe('🔴 GS-D6 — 조립 실물: 감독 요구 넷이 배선까지 도달
       .not.toEqual(back);
   });
 
+  it('🔴 시간대를 바꾼 **뒤** 프레임이 돌아도 가로등이 따라온다', () => {
+    // 위 「프레임이 돌아도 꺼지지 않는다」와 **다른 축**이다: 저기는 부팅 시간대로 계속
+    // 도는 경우이고, 여기는 **전환 뒤** update 가 새 시간대를 반영하는가다. 실측으로
+    // update 의 `lampGlowSys.apply(...)` 호출을 통째로 지워도 **0 failed** 였다 —
+    // 부팅에서 걸린 값이 남아 아무도 눈치채지 못했다(검수관 P13).
+    const a = assemble('day');
+    expect(a.lamp.emissiveIntensity, '전제 — 낮에는 꺼져 있다').toBe(0);
+    a.press('daylit');
+    a.tick();
+    expect(a.lamp.emissiveIntensity, '🔴 버튼으로 복합씬에 왔는데 가로등이 안 켜진다')
+      .toBeGreaterThan(0);
+  });
+
   it('🔴 지면 알베도는 **접힌다** — 낮 조명 위에 밤 배수가 얹히면 형광이 된다', () => {
     const day = assemble('day').diag().groundLift;
     expect(assemble('daylit').diag().groundLift, '🔴 복합씬 지면이 낮과 다른 배수를 받았다')
