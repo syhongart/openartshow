@@ -54,7 +54,8 @@ import { createPanel, type PanelHandlers } from '../frontend/js/world2/edit/pane
 import { createOutliner } from '../frontend/js/world2/edit/panel/outliner.js';
 import { createActions } from '../frontend/js/world2/edit/actions.js';
 import { createEditState, select } from '../frontend/js/world2/edit/state.js';
-import { artTarget } from '../frontend/js/world2/edit/target.js';
+import { artTarget } from '../frontend/js/world2/edit/target-art.js';
+import { tonesFor } from '../frontend/js/world2/parts/index.js';
 import { createArtsPort } from '../frontend/js/world2/systems/art-port.js';
 import { ART_W_MIN, ART_W_MAX, type ArtworkItem } from '../frontend/js/world2/decide/artwork.js';
 import type { OverlayHost, OverlayEntry } from '../frontend/js/world2/edit/types.js';
@@ -797,5 +798,75 @@ describe('🔴 GS-L1 — 확정은 «화면이 맞는가» 로 갈린다 (종류
     blur(inp);
     blur(inp);
     expect(freezes.n, '🔴 blur 두 번에 확정 수가 안 맞는다').toBe(2);
+  });
+});
+
+// ── 🔴 GS-T3 색 견본 배선 — 계약의 문이 화면까지 닿는가 (`G-EDIT7`) ──────────
+//
+// 판정/집행 경계의 그 사각이다: `EditTarget.tone` 이 옳게 접어도 **패널이 그것을 안
+// 부르면** 아무 일도 안 난다. 어댑터 산술은 `tests/world2-village-tone.test.ts` 가 보고,
+// 여기서는 **눌렀을 때 값이 실제로 바뀌는가**만 본다.
+
+const toneRow = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>('#w2-edit .tone-row');
+const toneBtns = (): HTMLButtonElement[] =>
+  [...document.querySelectorAll<HTMLButtonElement>('#w2-edit .tone-sw')];
+
+describe('🔴 GS-T3 — 색 견본이 실제로 색을 바꾼다', () => {
+  it('★ 마을 파츠를 고르면 팔레트 수만큼 견본이 뜨고 지금 색이 표시된다', () => {
+    const p = villagePart();
+    p.tone = 1;
+    const { panel, st, host } = mount({ village: [p] });
+    select(st, host, {
+      village: { px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false, slot: null },
+    });
+    panel.onPicked();
+    expect(st.target?.kind, '🔴 마을 어댑터가 안 섰다 — 아래 단언이 헛돈다').toBe('village');
+    expect(toneRow()?.style.display, '🔴 색이 여럿인 파츠인데 견본 줄이 숨었다').not.toBe('none');
+    expect(toneBtns().length).toBe(tonesFor('tree').length);
+    // 「지금 이 색이다」가 화면에 없으면 감독이 무엇을 바꾸는지 모른다.
+    expect(toneBtns().map((b) => b.dataset.on)).toEqual(['0', '1', '0']);
+    // 견본은 색 자체가 내용이다 — 배경이 비면 빈 칸 세 개가 뜬다.
+    expect(toneBtns()[0].style.background, '🔴 견본에 색이 안 칠해졌다').toBeTruthy();
+  });
+
+  it('🔴 견본을 누르면 파츠의 색이 바뀌고 **확정이 한 번** 난다', () => {
+    const p = villagePart();
+    const { panel, st, host } = mount({ village: [p] });
+    select(st, host, {
+      village: { px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false, slot: null },
+    });
+    panel.onPicked();
+    freezes.n = 0;
+    toneBtns()[2].click();
+    expect(p.tone, '🔴 눌렀는데 파츠 색이 안 바뀌었다 — 배선이 끊겼다').toBe(2);
+    // 색은 이산값이라 «드래그 중」이 없다. 한 번 누르면 한 번 확정이 옳다.
+    expect(freezes.n, '🔴 클릭 한 번에 확정 수가 1이 아니다').toBe(1);
+    // 표시도 따라와야 한다 — 값만 바뀌고 화면이 그대로면 두 번 누르게 된다.
+    expect(toneBtns().map((b) => b.dataset.on)).toEqual(['0', '0', '1']);
+  });
+
+  it('🔴 목록에서 고른 것(슬롯 없음)도 **똑같이** 바뀐다 — 색은 `live` 와 무관하다', () => {
+    // `live` 는 «`apply()` 가 화면을 맞추는가» 인데 색은 `apply()` 를 안 탄다.
+    // 확정이 파셀을 즉시 다시 만들며 새 색으로 칠하므로 두 경로가 갈릴 자리가 없다.
+    // ⚠ 이 검사가 없으면 누군가 색 배선을 `live` 뒤에 넣어도 아무도 모른다.
+    const p = villagePart();
+    const { panel, st, host } = mount({ village: [p] });
+    select(st, host, {
+      village: { px: 0, pz: 0, index: 0, kind: 'tree', x: 1, y: 0, z: 2, frozen: false, slot: null },
+    });
+    panel.onPicked();
+    expect(st.target?.live, '전제 — 슬롯이 없으므로 실시간 반영이 아닌 경로다').toBe(false);
+    freezes.n = 0;
+    toneBtns()[1].click();
+    expect(p.tone, '🔴 목록에서 고르면 색이 안 바뀐다').toBe(1);
+    expect(freezes.n).toBe(1);
+  });
+
+  it('🔴 액자에서는 견본 줄이 통째로 숨는다 — 낼 것이 없는 대상이 내면 거짓말이다', () => {
+    const { panel, st } = mount();
+    st.target = artTarget(createArtsPort((s) => s), 0, noLost);
+    panel.refresh();
+    expect(toneRow()?.style.display, '🔴 액자에 색 견본이 떴다').toBe('none');
   });
 });
