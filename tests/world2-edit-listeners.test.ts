@@ -917,7 +917,14 @@ describe('조작 경로마다 동결이 저장된다 (행위)', () => {
     fx.value = '50';
     fx.dispatchEvent(new Event('input', { bubbles: true }));
 
-    expect(h.frozen.size, '★ 수치를 쳤는데 저장되지 않았다').toBe(1);
+    // 🔴 **확정 시점이 바뀌었다** (감독 *"수치칸 타이핑이 거슬린다"* · 팀장 판정 (C),
+    // 2026-08-20). 3D 클릭으로 고르면 슬롯을 알아 `apply()` 가 화면을 즉시 맞추므로
+    // **타이핑 중에는 확정하지 않는다** — 마을의 확정은 곧 파셀 재빌드이고, 「12.5」를
+    // 치면 네 번이었다. 이 검사는 그 규약을 **양쪽으로** 못 박는다: 아직 0, 손을 떼면 1.
+    expect(h.frozen.size, '🔴 타이핑 중에 파셀을 다시 세운다 — 감독이 거슬린다고 한 그것이다').toBe(0);
+    fx.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(h.frozen.size, '★ 손을 뗐는데 저장되지 않았다').toBe(1);
     expect(
       frozenPart(h, 'building', '1,0')?.x,
       '★ 월드 좌표가 그대로 저장됐다 — 파셀 원점을 안 뺐다(건물이 파셀 하나만큼 날아간다)',
@@ -1359,6 +1366,8 @@ describe('조작 중 슬롯이 손을 따라온다 (행위)', () => {
     const [fx] = h.fields();
     fx.value = '95';
     fx.dispatchEvent(new Event('input', { bubbles: true }));
+    // 확정은 손을 뗄 때다 — 근거는 위 「수치칸이 확정하고」 검사의 주석 한 곳이다.
+    fx.dispatchEvent(new Event('change', { bubbles: true }));
     const saved = frozenPart(h, 'building', '2,-1');
     expect(saved?.x, '★ 저장된 x 가 파셀 로컬이 아니다').toBeCloseTo(15, 6);
     expect(saved?.z, '★ 저장된 z 가 바뀌었다').toBeCloseTo(3, 6);

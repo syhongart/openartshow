@@ -59,6 +59,17 @@ export interface EditTarget {
   ry: number;
   /** 균등 스케일. 마을 파츠에서는 **붙는 순간의 비율에 대한 배수**다 */
   s: number;
+  /**
+   * **지금 `apply()` 가 화면을 즉시 맞추는가** (감독 *"수치칸 타이핑이 거슬린다"* ·
+   * 팀장 판정 (C), 2026-08-20). 수치칸이 **글자마다 확정할지 손을 뗄 때 확정할지**를
+   * 이 값 하나가 정한다 — 미루려면 **화면이 이미 맞아야** 하고, 안 맞는데 미루면
+   * 「화면과 수치가 다른 것을 말한다」가 된다(그것이 즉시 확정을 고른 원래 이유다).
+   *
+   * **`kind` 로 가르면 틀린다** — 마을도 3D 클릭이면 맞고 아웃라이너면 안 맞는다.
+   * **같은 종류 안에서 갈리므로** 대상이 스스로 선언하고, `apply()` 의 조기 반환 조건과
+   * **같은 식**이어야 한다(팀장 조건 1 — 갈리면 그 불일치가 필드를 통해 되살아난다).
+   */
+  readonly live: boolean;
   /** 드래그 중 매 프레임 불린다. 싼 것만 한다 */
   apply(): void;
   /** 조작이 끝났다. 비싼 확정(파셀 동결·재빌드)이 여기서 난다 */
@@ -103,6 +114,8 @@ export interface EditTarget {
 export function overlayTarget(host: OverlayHost, e: OverlayEntry): EditTarget {
   return {
     kind: 'overlay',
+    // 항상 즉시 맞는다 — 항목이 값을 직접 들고 중간 단계가 없다.
+    live: true,
     get x() { return e.x; }, set x(v) { e.x = v; },
     get y() { return e.y; }, set y(v) { e.y = v; },
     get z() { return e.z; }, set z(v) { e.z = v; },
@@ -160,6 +173,14 @@ export function villageTarget(
   /** 슬롯이 죽은 것을 **한 번만** 알린다 — 매 프레임 같은 말을 하면 화면이 도배된다 */
   let told = false;
 
+  /**
+   * **`live` 와 `apply()` 가 함께 쓰는 하나의 판정**(팀장 조건 1 — 갈리면 불일치가
+   * 되살아난다). ⓐ 슬롯을 아는가(목록에서 고르면 모른다) ⓑ 소비자가 문을 열었는가
+   * ⓒ 슬롯이 살아 있는가(스트리밍이 걷으면 `-1`).
+   */
+  const canApply = (): boolean =>
+    !!v.slot && !!host.retargetSlot && v.slot.index >= 0;
+
   return {
     kind: 'village',
     // 파츠는 **파셀 로컬 좌표**를 들고 화면은 월드 좌표를 쓴다. 변환은 여기 한 곳이다 —
@@ -176,23 +197,21 @@ export function villageTarget(
       p.sy = base.sy * m;
       p.sz = base.sz * m;
     },
+    get live() { return canApply(); },
     /**
      * **그 파츠가 올라간 슬롯 하나만** 다시 쓴다. 동결(= 파셀 재빌드)은 여기서 안 한다 —
      * 프레임마다 부르면 건물이 사라졌다 자라기를 반복한다(이 파일 헤더).
-     *
-     * ⚠ 슬롯을 모르거나(목록에서 골랐다) 문이 안 열린 소비자면 **W4 동작 그대로**
-     * 아무 일도 안 한다. 그 둘은 정상 상태라 알리지 않는다 — 알릴 것은 «있었는데
-     * 죽었다» 하나뿐이고, 그것이 아래 `told` 분기다.
+     * 못 미는 경우(목록에서 골랐다·문이 없다·슬롯이 죽었다)는 `canApply()` 한 곳이 정한다.
      */
     apply() {
-      const slot = v.slot;
-      if (!slot || !host.retargetSlot) return;
-      if (slot.index < 0) {
-        if (!told) { told = true; onDetach?.(); }
+      if (!canApply()) {
+        // 「문이 없다」(정상)와 「있었는데 죽었다」를 가른다 — 후자만 화면에 말한다.
+        if (v.slot && host.retargetSlot && !told) { told = true; onDetach?.(); }
         return;
       }
+      const slot = v.slot!;
       const w = world(p.x, p.z);
-      host.retargetSlot(slot, {
+      host.retargetSlot!(slot, {
         x: w.x, y: p.y, z: w.z, ry: p.ry, sx: p.sx, sy: p.sy, sz: p.sz,
       });
     },
@@ -417,6 +436,9 @@ export function artTarget(
 
   return {
     kind: 'art',
+    // 항상 즉시 맞는다(`apply()` 가 `retarget`). 2026-08-19 에 액자만 `blur` 확정으로
+    // 옮긴 근거이고(검수관 조건 ③), 이제 `kind` 분기가 아니라 이 필드가 그것을 말한다.
+    live: true,
     get x() { return cur.x; }, set x(v) { cur.x = v; },
     get y() { return cur.y; }, set y(v) { cur.y = v; },
     get z() { return cur.z; }, set z(v) { cur.z = v; },
