@@ -265,6 +265,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    */
   let slotPool: SlotPool | null = null;
 
+  /** 터치 핸들 (`G-EDIT14`). 위 `slotPool` 과 같은 이유 — 부팅 끝에 채워지는 늦은 클로저다 */
+  let touch: { setEditing(on: boolean): void; dispose(): void } | null = null;
+
   const density = readDensity();
   // 밀도는 배치 판정에만 곱한다. 풀 예산은 이 레이아웃에서 자동으로 파생되므로
   // 두 곳에 따로 적지 않는다(값 미러링 금지).
@@ -813,6 +816,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             retargetSlot: (h, t) => {
               slotPool?.retarget?.(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
             },
+            setTouchEditing: (on) => { touch?.setEditing(on); },
             sun: sun!, hemi: hemi!, cell: CELL_X,
             // ⚠ **값이 아니라 클로저다** — 위 `retargetSlot` 과 **같은 이유**다: 이
             // 조립(`pools` 단계)이 `streaming` 을 만드는 `stream` 단계보다 먼저 돈다.
@@ -1189,12 +1193,12 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 터치 조작. 터치 기기가 아니면 스스로 아무것도 하지 않는다(데스크톱에 조이스틱 안 뜸).
   const stickBase = document.getElementById('w2-stick');
   const stickKnob = document.getElementById('w2-stick-knob');
-  const touch = (stickBase && stickKnob)
+  touch = (stickBase && stickKnob)
     ? attachTouchControls(canvas, { base: stickBase, knob: stickKnob }, {
       setAxes: (x, z) => player.setAxes(x, z),
       look: (yaw, pitch) => player.lookBy(yaw, pitch),
     })
-    : { active: false, dispose() {} };
+    : { setEditing() {}, dispose() {} };
   // 조작 안내는 **감독 지시로 없앴다**(*"도움말없애줘"*). 화면 하단을 상시 차지하는데,
   // 조작이 밀고 쓸기뿐이라 한 번 해보면 알게 되는 것이었다. 문구를 채우던 코드도 함께
   // 지운다 — 요소만 지우고 코드를 남기면 다음 사람이 "왜 안 보이지" 를 여기서 찾는다.
