@@ -600,10 +600,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    * 그 추측의 근거를 무너뜨려 블룸이 밤에 통째로 꺼졌다(`features/types.ts` 의 `time`
    * 주석에 전말이 있다).
    *
-   * 초기값은 URL 이다. `readEnum` 이 목록 밖 값을 걸러 주므로 팔레트 조회가 `undefined`
-   * 가 되는 일이 없다.
+   * 초기값은 URL 이고 `readEnum` 이 목록 밖 값을 거른다. ⚠ 기본이 `night` → `day` 다
+   * (감독 *"밤 말고 햇빛아래서"* 2026-08-21) — `time=` 없는 링크가 밤 물을 보였다.
    */
-  let timeOfDay: SkyTime = readEnum('time', 'night', TIMES);
+  let timeOfDay: SkyTime = readEnum('time', 'day', TIMES);
   /**
    * 어떤 셰이딩으로 보는가 — **월드를 보는 방식이고 조립부가 소유한다**(바로 위
    * `timeOfDay` 와 같은 이유·같은 모양).

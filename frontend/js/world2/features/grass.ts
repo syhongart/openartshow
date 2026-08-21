@@ -16,7 +16,7 @@ import * as TSL from 'three/tsl';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import { readNum, readNumOpt, writeNumOpt } from '../url-knob.js';
 import { findKnobBar, attachKnobBar } from '../ui/knob-bar.js';
-import { STYLIZED_KNOB, stylizedOn } from '../decide/stylized.js';
+import { STYLIZED_KNOB, STYLIZED_DEFAULT, stylizedOn } from '../decide/stylized.js';
 import {
   GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX, MAX_BLADES, ringCounts,
   WIND_AMP, WIND_SPEED, WIND_WAVE_K, WIND_DIR_X, WIND_DIR_Z,
@@ -207,7 +207,7 @@ function windMaterial(
 export const grassFeature: Feature = {
   name: 'grass',
   create(env: FeatureEnv): FeatureInstance | null {
-    const master = readNum(STYLIZED_KNOB, 0, 0, 1);
+    const master = readNum(STYLIZED_KNOB, STYLIZED_DEFAULT, 0, 1);
     if (!stylizedOn(master, readNumOpt('grass', 0, 1))) return null;
 
     const radiusMul = readNum('grad', 1, GRASS_RADIUS_MUL_MIN, GRASS_RADIUS_MUL_MAX);
