@@ -45,16 +45,32 @@ vi.mock('three/webgpu', () => ({
   PostProcessing: FakePostProcessing,
 }));
 
+/**
+ * `pass()` 노드가 받은 것 — **발광 채널 분리를 관측하는 지점이다**(감독 2026-08-21
+ * *"딱 가로등만 살짝 번짐으로 안되나"*). 이 스텁이 실제 `PassNode` 의 계약을 재현한다:
+ * `setMRT(mrt({...}))` 로 채널을 선언하고 `getTextureNode(name)` 으로 꺼내 쓴다.
+ */
+const passState: { mrtChannels: string[] | null; taken: string[] } = { mrtChannels: null, taken: [] };
+/** `bloom()` 이 실제로 받은 소스 노드. 화면 전체인지 발광 채널인지가 여기서 갈린다 */
+let bloomSrc: { __ch?: string } | null = null;
+
 vi.mock('three/tsl', () => ({
-  // `pass()` 는 `.add()` 가 있는 노드처럼 행동하면 된다
-  pass: () => ({ add: (x: unknown) => x }),
+  pass: () => ({
+    add: (x: unknown) => x,
+    setMRT(v: { __mrt?: string[] }) { passState.mrtChannels = v?.__mrt ?? null; },
+    getTextureNode(name: string) { passState.taken.push(name); return { add: (x: unknown) => x, __ch: name }; },
+  }),
+  mrt: (o: Record<string, unknown>) => ({ __mrt: Object.keys(o) }),
+  output: { __node: 'output' },
+  emissive: { __node: 'emissive' },
 }));
 
 vi.mock('three/examples/jsm/tsl/display/BloomNode.js', () => ({
   // 실제 `bloom()` 처럼 세기를 들고 있는 노드를 돌려준다. **인자를 보관해** 세기 기본값이
   // 실제로 전달됐는지도 볼 수 있게 한다.
-  bloom: (_scene: unknown, strength: number) => {
+  bloom: (src: unknown, strength: number) => {
     bloomNode.strength.value = strength;
+    bloomSrc = src as { __ch?: string };
     return bloomNode;
   },
 }));
@@ -75,6 +91,7 @@ const { nightness } = await import('../frontend/js/world2/decide/night.js');
  */
 function levelAt(time: SkyTime): { level: number; diagTime: unknown; failure: unknown } {
   bloomNode.strength.value = -1;
+  passState.mrtChannels = null; passState.taken = []; bloomSrc = null;
   let current = time;
   const env = {
     scene: {}, camera: {},
@@ -138,5 +155,66 @@ describe('진단이 판정된 시간대를 말한다', () => {
     expect(levelAt('day').diagTime).toBe('day');
     expect(levelAt('night').diagTime).toBe('night');
     expect(levelAt('sunset').diagTime).toBe('sunset');
+  });
+});
+
+/**
+ * 🔴 **번짐 대상 — 화면 전체가 아니라 발광 채널** (감독 2026-08-21).
+ *
+ * 감독 신고: *"지엘비 건물에 조명을 단거야? 엄청쎄"* — 미술관 벽에 걸린 작품 셋이 흰
+ * 덩어리로 뭉개졌다. 원인은 문턱이 아니라 **대상**이었다. 작품은 `MeshBasicMaterial` +
+ * `toneMapped:false`(감독 지시 *"사진이 주변 환경에 영향받지 않게"*)라 원본 밝기가 그대로
+ * 나가고, 흰 그림이면 **1.0** 이다. 그런데 감독이 확정한 `?lit=0.4` 에서 가로등 휘도는
+ * **0.8835** 라 **작품이 가로등보다 밝다** — 문턱을 올리면 가로등이 **먼저** 빠진다.
+ *
+ * 그래서 밝기가 아니라 **채널**로 가른다. 가로등은 `emissiveIntensity` 로 빛나고 작품은
+ * 발광 속성이 아예 없으므로, 발광 채널만 블룸에 넣으면 **구조적으로** 갈린다.
+ *
+ * ⚠ **이 파일이 못 보는 것**: 실제 화면. 블룸의 모습·프레임 비용은 WebGPU 전용이라
+ * 감독 실기기가 유일한 판정이다. 여기서 잠그는 것은 **무엇이 블룸에 들어가는가**까지다.
+ */
+describe('🔴 번짐은 발광 채널만 본다', () => {
+  it('🔴 블룸이 화면 전체가 아니라 `emissive` 채널을 받는다', () => {
+    levelAt('night');
+    expect(bloomSrc?.__ch, '🔴 블룸이 발광 채널이 아닌 것을 받았다 — 작품이 다시 번진다')
+      .toBe('emissive');
+  });
+
+  it('🔴 MRT 로 두 채널을 선언한다 — 원본과 발광이 함께 있어야 합성이 된다', () => {
+    levelAt('night');
+    expect(passState.mrtChannels, '🔴 MRT 선언이 없다').toContain('emissive');
+    expect(passState.mrtChannels).toContain('output');
+  });
+
+  it('🔴 최종 합성은 원본 채널 위에 얹는다 — 발광만 남으면 화면이 검어진다', () => {
+    levelAt('night');
+    expect(passState.taken, '🔴 원본 채널을 꺼내 쓰지 않았다').toContain('output');
+  });
+});
+
+describe('🔴 복합씬(daylit)도 시간대 축을 탄다', () => {
+  it('낮보다 세고 밤보다 약하다', () => {
+    const day = levelAt('day').level;
+    const daylit = levelAt('daylit').level;
+    const night = levelAt('night').level;
+    expect(day).toBe(0);
+    expect(daylit, '🔴 복합씬에 번짐이 0 — 가로등이 켜진 줄 모르게 된다').toBeGreaterThan(0);
+    expect(daylit, '🔴 복합씬이 한밤만큼 번진다').toBeLessThan(night);
+  });
+
+  it('🔴 `?lit=` 가 번짐 세기에도 닿는다 — 가로등만 움직이면 노브가 절반만 먹는다', () => {
+    // ⚠ **기본값 비교로는 못 잡는다.** `nightness` 의 `lit` 기본값이 `DAYLIT_LIGHTS` 라
+    // `nightness(time, lit)` 를 `nightness(time)` 으로 바꿔도 값이 같다 — 같은 함정을
+    // 가로등 쪽에서 이미 한 번 밟았다(검수관 C1). 그래서 **노브를 실제로 흔든다.**
+    // 관용구는 `tests/world2-url-knob.test.ts:21-23`.
+    const set = (q: string) => window.history.replaceState({}, '', q || location.pathname);
+    set('?lit=0.2');
+    const weak = levelAt('daylit').level;
+    set('?lit=0.9');
+    const strong = levelAt('daylit').level;
+    set('');
+    expect(weak, '전제 — 둘 다 번져야 비교가 성립한다').toBeGreaterThan(0);
+    expect(strong, '🔴 `?lit=` 이 번짐에 안 닿는다 — 감독이 값을 밀어도 절반만 움직인다')
+      .toBeGreaterThan(weak);
   });
 });

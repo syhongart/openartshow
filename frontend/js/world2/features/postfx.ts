@@ -33,7 +33,7 @@
 import * as THREE from 'three/webgpu';
 // TSL 함수는 `three/tsl` 에 있다. `three/webgpu` 에는 `PassNode` **클래스**만 있고
 // `pass()` **함수**가 없어서, 거기서 찾다가 조용히 null 로 빠졌다(첫 시도의 실패 원인).
-import { pass } from 'three/tsl';
+import { pass, mrt, output, emissive } from 'three/tsl';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { nightness, LAMP_LUMINANCE, LAMP_MAX_GLOW, type SkyTime } from '../decide/night.js';
 import { BLOOM_THRESHOLD } from './postfx-params.js';
@@ -148,9 +148,51 @@ export const postfxFeature: Feature = {
     } else {
       try {
         pp = new PP(env.adapter.renderer);
-        const scenePass = pass(env.scene, env.camera) as unknown as { add(x: unknown): unknown };
+        // ── 🔴 번짐은 **발광 채널만** 본다 (감독 2026-08-21) ────────────────────
+        // 감독 신고: *"지엘비 건물에 조명을 단거야? 엄청쎄"* — 미술관 벽에 걸린 작품
+        // 셋이 흰 덩어리로 뭉개져 조명처럼 보였다. 이어서 *"딱 가로등만 살짝 번짐으로
+        // 안되나"*.
+        //
+        // **원인은 문턱이 아니라 대상이었다.** 화면 전체를 블룸에 넣으면 휘도가 문턱을
+        // 넘는 것이 전부 걸리는데, 작품은 `MeshBasicMaterial` + `toneMapped:false` 라
+        // (감독 지시 *"사진이 주변 환경에 영향받지 않게"*, `decide/art-material.ts`)
+        // 원본 밝기가 그대로 나간다 — 흰 그림이면 **1.0** 이다. 그리고 실측:
+        //
+        //   가로등 휘도 = LAMP_LUMINANCE(0.80469) × lampGlow(nightness('daylit'))
+        //     `?lit=0.4`(감독 확정) → 1.0980 × 0.80469 = **0.8835**
+        //     `?lit=1`(상한)        → 1.8000 × 0.80469 = 1.4484
+        //
+        // 즉 감독이 고른 값에서는 **작품(1.0)이 가로등(0.88)보다 밝다.** 문턱을 올리면
+        // 가로등이 **먼저** 빠진다 — 나는 이것을 반대로 계산해 «문턱 1.05~1.35 로 가른다»
+        // 는 후보를 감독께 드렸고, 그 셋은 전부 번짐을 통째로 끄는 화면이었다. 상한값
+        // (1.45)을 실제값으로 착각한 것이 원인이다.
+        //
+        // ── 그래서 밝기가 아니라 **채널**로 가른다 ─────────────────────────────
+        // 가로등은 `emissiveIntensity` 로 빛난다(`systems/lamp-glow.ts`). 작품은
+        // `MeshBasicMaterial` 이라 **발광 속성이 아예 없다.** MRT 로 발광 채널을 따로
+        // 받아 그것만 블룸에 넣으면 둘이 **구조적으로** 갈린다 — 값이 아니라 성질로
+        // 갈리므로 나중에 `?lit=` 를 어디로 옮겨도 작품이 다시 걸리지 않는다.
+        //
+        // ⚠ 함께 빠지는 것들: 별(`sky.js` 의 twk, Basic+가산합성) · 물 하이라이트 ·
+        // 하늘 돔. 셋 다 발광 채널이 없다. **그것이 의도다** — `LAMP_MAX_GLOW` 주석이
+        // *"문턱을 낮추면 밤하늘 별과 물 하이라이트까지 함께 걸려 화면이 뿌예진다"* 로
+        // 이미 그 방향을 적어 두었고, 여기서는 문턱이 아니라 대상으로 그것을 이룬다.
+        //
+        // ⚠ **헤드리스로 검증할 수 없다** — 이 블록은 WebGPU 에서만 돈다(위 분기).
+        // 조립이 실패하면 아래 `catch` 가 받아 블룸이 아예 안 켜지는데, 그 화면은 감독이
+        // *"번짐 끈거로 하자"* 로 판정한 상태와 같다 — 실패해도 감독 판정 위로 떨어진다.
+        const scenePass = pass(env.scene, env.camera) as unknown as {
+          setMRT?(v: unknown): void;
+          getTextureNode?(name: string): { add(x: unknown): unknown };
+        };
+        if (typeof scenePass.setMRT !== 'function' || typeof scenePass.getTextureNode !== 'function') {
+          // 구형 three 는 MRT 를 안 준다. 옛 경로(화면 전체 블룸)로 되돌리지 않는다 —
+          // 그 화면이 이번 신고의 원인이고 감독이 물렀다.
+          throw new Error('PassNode 에 setMRT/getTextureNode 가 없다 — 발광 채널 분리 불가');
+        }
+        scenePass.setMRT(mrt({ output, emissive }));
         const b = bloom(
-          scenePass,
+          scenePass.getTextureNode('emissive'),
           num('bloomstr', STRENGTH),
           num('bloomrad', RADIUS),
           num('bloomthr', THRESHOLD),
@@ -158,7 +200,7 @@ export const postfxFeature: Feature = {
         bloomNode = b;
         // 원본 + 번짐. `add` 로 더하는 것이 블룸의 정의다 — 곱하거나 섞으면 어두운
         // 부분까지 영향을 받아 대비가 죽는다.
-        pp.outputNode = scenePass.add(b);
+        pp.outputNode = scenePass.getTextureNode('output').add(b);
         // ── 렌더 중 실패해도 화면은 살린다 ─────────────────────────────────
         // 조립이 성공해도 **첫 렌더에서** 터질 수 있다(WebGL 백엔드에서 실제로 그랬다).
         // 훅 안에서 터지면 매 프레임 예외가 나고 화면이 통째로 멎는다 — 블룸 하나 때문에
