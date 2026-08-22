@@ -33,7 +33,7 @@
 
 import {
   AXIS_DIR, OPACITY_IDLE, angleDelta, closestOnAxis, emphasize, gizmoScale, handleLabel,
-  isActivePart, partOpacity, ringAngle, scaleFactorFromDrag,
+  partOf, partOpacity, ringAngle, scaleFactorFromDrag, shouldEmphasize,
   type Axis, type GizmoPart, type Handle, type Ray3,
 } from '../decide/gizmo-math.js';
 import { scaleBy } from '../decide/edit-pick.js';
@@ -130,6 +130,13 @@ export interface Gizmo {
   begin(h: Handle, ray: Ray3): void;
   /** 드래그 중. 항목 값을 바꿨으면 `true`(부르는 쪽이 `apply`·`refresh` 한다) */
   update(ray: Ray3): boolean;
+  /**
+   * 커서가 얹힌 핸들(감독 지시 *"마우스를 대면 그 축이 변화가 바로 생겼으면해"*).
+   *
+   * 드래그 중이 아닐 때만 의미가 있다 — 잡고 있는 동안은 `active` 가 이긴다.
+   * 같은 값이면 아무 일도 안 한다(매 `pointermove` 마다 재질을 건드리지 않는다).
+   */
+  hover(h: Handle | null): void;
   end(): void;
   /** 지금 드래그 중인가 — 편집 입력이 이걸 보고 물건 끌기와 갈라진다 */
   readonly dragging: boolean;
@@ -266,8 +273,22 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
 
   // ── 드래그 ──────────────────────────────────────────────────────────────
   let active: Handle | null = null;
+  /** 커서가 얹힌 핸들. 잡고 있는 동안은 `active` 가 이긴다 */
+  let hovered: Handle | null = null;
   /** 잡은 순간의 축 파라미터(이동·크기) 또는 각도(회전) */
   let anchor = 0;
+  /**
+   * 🔴 **드래그가 시작될 때 떠 두는 축 원점** (감독 신고 2026-08-22 *"딱 한단계만 움직여"*).
+   *
+   * 예전에는 매 프레임 `axisOrigin()`(= 물체의 **현재** 위치)을 기준으로 축 파라미터를
+   * 쟀다. 그런데 이동 드래그는 그 물체를 옮기므로 **기준점이 손을 따라 같이 움직였고**,
+   * 그러면 상대 거리가 0 으로 상쇄돼 한 프레임 뒤 정확히 멈춘다. 유도는
+   * `decide/gizmo-math.ts` 의 `closestOnAxis` 주석에 있다 — **여기에 다시 적지 않는다.**
+   *
+   * 회전·크기는 물체의 위치를 안 바꿔 이 상쇄가 없었다. 같은 코드가 축마다 다르게 보인
+   * 이유가 그것이고, 그래서 「이동만 안 된다」로 신고됐다.
+   */
+  let dragOrigin: readonly [number, number, number] = [0, 0, 0];
 
   /**
    * **잡은 파트를 밝게, 나머지를 흐리게** (2026-08-22, 감독 지시).
@@ -277,9 +298,8 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
    */
   function syncEmphasis(): void {
     for (const [part, p] of parts) {
-      const on = isActivePart(active, part);
-      p.mat.color.setHex(emphasize(p.base, on));
-      p.mat.opacity = partOpacity(active, part);
+      p.mat.color.setHex(emphasize(p.base, shouldEmphasize(active, hovered, part)));
+      p.mat.opacity = partOpacity(active, part, hovered);
     }
   }
 
@@ -295,12 +315,27 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
 
   return {
     attach(e: EditTarget | null): void {
+      // 🔴🔴 **대상이 실제로 바뀌었을 때만 강조를 걷는다** (감독 신고 2026-08-22
+      // *"마우스로 조정하면 딱 한단계만 움직여"*).
+      //
+      // ⚠ **이 줄이 내가 직전 배포(#252)에서 만든 회귀였다.** 검수관 권고 P4 로
+      // *"잡은 것을 함께 놓는다"* 를 넣었는데 **조건 없이** 비웠고, 이 함수는
+      // `panel.refresh()` 끝마다 불린다(`mode.ts` 의 그 콜백). 드래그 한 프레임이
+      // `update → apply → refresh` 이므로 **자기가 방금 잡은 축을 스스로 놓았다.**
+      // 그래서 첫 프레임만 먹고 멈춘다 — 감독 문언 그대로다.
+      //
+      // P4 의 목적은 *"대상이 사라졌는데 강조가 남는 것"* 이었고 그것은 **바뀔 때**만
+      // 필요하다. 같은 대상으로 다시 불리는 것은 「선택이 그대로다」이므로 아무 일도
+      // 없어야 한다. 목적은 그대로 두고 조건만 붙인다.
+      //
+      // ⚠ 교훈: 권고를 반영할 때 **그 함수가 언제 불리는지**를 안 봤다. `attach` 라는
+      // 이름이 「붙일 때 한 번」처럼 읽혔지만 실제로는 매 프레임 경로였다.
+      const changed = e !== target;
       target = e;
       group.visible = e !== null;
-      // 🔴 **잡은 것을 함께 놓는다**(검수관 권고 P4, 2026-08-22). 안 비우면 드래그 중
-      // 대상이 사라졌을 때 강조가 남고, **다시 붙이는 순간 엉뚱한 축이 밝게 보인다.**
-      // `active` 가 남는 것 자체는 기존 동작이지만 강조가 그 위에 새 증상을 얹었다.
-      if (active !== null) { active = null; syncEmphasis(); }
+      if (changed && (active !== null || hovered !== null)) {
+        active = null; hovered = null; syncEmphasis();
+      }
       if (e) { place(); startLoop(); } else stopLoop();
     },
 
@@ -331,19 +366,21 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
       syncEmphasis();
       // 색만으로는 「빨강이 X 였나」를 기억해야 한다 — 글자는 기억을 요구하지 않는다.
       say?.(`${handleLabel(h)} 중 — 놓으면 확정됩니다.`);
+      // ⚠ **여기서 원점을 뜬다.** 드래그 내내 이 값을 쓴다(위 `dragOrigin` 주석).
+      dragOrigin = axisOrigin();
       if (h.kind === 'move') {
-        anchor = closestOnAxis(ray, axisOrigin(), AXIS_DIR[h.axis]) ?? 0;
+        anchor = closestOnAxis(ray, dragOrigin, AXIS_DIR[h.axis]) ?? 0;
       } else if (h.kind === 'rotate') {
         anchor = ringAngle(ray, target.x, target.z, target.y) ?? 0;
       } else {
-        anchor = closestOnAxis(ray, axisOrigin(), scaleAxis()) ?? 0;
+        anchor = closestOnAxis(ray, dragOrigin, scaleAxis()) ?? 0;
       }
     },
 
     update(ray: Ray3): boolean {
       if (!active || !target) return false;
       if (active.kind === 'move') {
-        const u = closestOnAxis(ray, axisOrigin(), AXIS_DIR[active.axis]);
+        const u = closestOnAxis(ray, dragOrigin, AXIS_DIR[active.axis]);
         if (u === null) return false; // 광선이 축과 나란하다 — 이 프레임은 건너뛴다
         const d = u - anchor;
         anchor = u;
@@ -359,7 +396,9 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
         anchor = a;
         return true;
       }
-      const u = closestOnAxis(ray, axisOrigin(), scaleAxis());
+      // 크기는 물체 위치를 안 바꾸므로 상쇄가 없었지만, **기준을 하나로 둔다** —
+      // 두 벌이 있으면 다음 사람이 어느 쪽이 옳은지 다시 판정해야 한다.
+      const u = closestOnAxis(ray, dragOrigin, scaleAxis());
       if (u === null) return false;
       const f = scaleFactorFromDrag(u - anchor, size);
       anchor = u;
@@ -372,6 +411,16 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
 
     // 놓으면 강조를 걷는다. **`active = null` 만 두면 밝아진 채로 남는다** — 다음
     // 드래그에서 그 위에 또 밝아져 회를 거듭할수록 흰색이 된다(`parts` 의 `base` 주석).
+    hover(h: Handle | null): void {
+      // 같은 값이면 재질을 안 건드린다 — `pointermove` 는 초당 수십 번 온다.
+      const same = h === null ? hovered === null
+        : hovered !== null && partOf(h) === partOf(hovered);
+      if (same) return;
+      hovered = h;
+      // 잡고 있는 동안은 강조가 `active` 의 것이므로 다시 칠할 필요가 없다.
+      if (active === null) syncEmphasis();
+    },
+
     end(): void { active = null; syncEmphasis(); },
 
     get dragging(): boolean { return active !== null; },

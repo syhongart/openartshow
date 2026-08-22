@@ -62,6 +62,7 @@ import { loadPalette } from './panel/palette.js';
 import { createActions } from './actions.js';
 import { createEditHistory } from './history-ops.js';
 import { createHistoryInput } from './history-input.js';
+import { createGizmoHover } from './gizmo-hover.js';
 import { createArtworkMode } from './artwork-mode.js';
 import { createAimMode } from './aim-mode.js';
 import { createInput } from './input.js';
@@ -235,6 +236,13 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     editing: () => st.editing,
   });
 
+  // 얹기 강조. 근거·경계는 `gizmo-hover.ts` 헤더 한 곳이다.
+  const gizmoHover = createGizmoHover({
+    doc, canvas: host.canvas, gizmo,
+    shouldProbe: () => !st.dragging && !gizmo.dragging && st.target !== null,
+    probe: (ev) => (picker.castFrom(ev) ? picker.intersect() : null),
+  });
+
   const fly = createFlyInput({
     doc,
     fly: host.fly ? (input2, dt) => { host.fly!(input2, dt); } : undefined,
@@ -261,6 +269,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       input.bind();
       fly.bind();
       historyInput.bind();
+      gizmoHover.bind();
       // 편집에 들어오면 주행 모드의 포인터락을 푼다. 안 그러면 커서가 없어 못 집는다.
       try { doc.exitPointerLock?.(); } catch { /* 애초에 안 걸려 있었다 */ }
       // ⚠ **이 한 줄이 2026-08-12 사고의 절반이다.** 시점 조작이 우드래그로 바뀌는데 그
@@ -283,6 +292,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       input.unbind();
       fly.unbind();
       historyInput.unbind();
+      gizmoHover.unbind();
       // ⚠ **궤도를 먼저 걷는다** (W5 E3, 팀장 조건 2·3). 편집 중에는 눈높이가 떠 있고
       // 충돌을 무시했으므로 벽 안에 서 있을 수 있다 — 주행으로 돌아가기 전에
       // `PlayerSystem` 이 둘 다 원복한다. 이 한 줄이 빠지면 감독이 편집을 끈 뒤
@@ -325,6 +335,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       input.unbind();
       fly.unbind();
       historyInput.unbind();
+      gizmoHover.unbind();
       input.unbindAlways();
       aim?.dispose();
       panel.dispose();
