@@ -101,7 +101,10 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   st.shadingBack = safeBack(host.shading?.() ?? 'material');
 
   const picker = createPicker(host, st);
-  const gizmo = createGizmo(host);
+  // 기즈모가 「무엇을 잡았나」를 화면에 말한다(2026-08-22, 감독 지시). 3D 강조는 기즈모가
+  // 스스로 하고, 글자는 패널이 소유하므로 문을 주입한다 — `panel` 은 아래에서 만들어지지만
+  // 이 콜백은 **드래그 시작 시점**에 불리므로 그때는 채워져 있다(이 파일의 되먹임 패턴).
+  const gizmo = createGizmo(host, (msg) => { panel.say(msg); });
   /**
    * 작품 포트를 지역으로 잡는다 (W8-11). `opts.arts` 를 클로저 안에서 바로 쓰면 TS 가
    * **좁힘을 못 유지한다**(선택 프로퍼티라 매 호출 시점에 다시 `undefined` 일 수 있다).

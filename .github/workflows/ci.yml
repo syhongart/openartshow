@@ -32,6 +32,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        # ⚠ **`fetch-depth: 0` 이 필요하다** — `tests/commit-msg-hook.test.ts` 의 오탐
+        # 축이 `git log -n 400` 으로 **실제 커밋 이력**에 훅을 걸어 본다(개별 케이스는
+        # 내가 고른 것이라 정규식의 구멍을 피해 가는 표본이 만들어진다 — 첫 판본이
+        # 그래서 오탐 96% 였다). 기본값은 **얕은 checkout(1커밋)** 이라 그 축이 0건을
+        # 재고, fail-closed 로 FAIL 한다.
+        #
+        # 실측(2026-08-22, PR #252): 로컬 `npm run gate` 는 통과하는데 CI `verify` 만
+        # 떨어졌다 — *"expected 0 to be greater than 0"*. **검사가 환경 가정을 하고
+        # 있었다**(전체 이력이 있는 로컬만 상정). 이력을 안 주면 그 축은 CI 에서
+        # 영원히 못 돌고, 그러면 게이트가 아니라 로컬 장식이 된다.
+        #
+        # `review-record.yml` 이 같은 이유로 이미 `fetch-depth: 0` 을 쓴다(그쪽은
+        # `해당없음` 판정의 근거를 base..HEAD 로 검증한다). 저장소가 1,600커밋·61MB
+        # 규모라 전체 fetch 비용이 작고, 깊이를 숫자로 박으면 검사의 `400` 과 **값
+        # 미러링**이 된다 — 한쪽만 고치면 조용히 어긋난다.
+        with: { fetch-depth: 0 }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
