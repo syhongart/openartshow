@@ -333,14 +333,30 @@ describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
   // ⚠ **헤드리스는 WebGL 이라 이 축을 원리적으로 못 잰다.** 그래서 «화면이 멀쩡한가» 가
   // 아니라 «놓는 경로가 그 함수를 지나는가» 를 잰다. 약한 축인 것을 알고 쓴다 —
   // 실기기 판정은 감독 확인이 유일하다.
+  // ⚠ 아래 둘은 원래 `import { disableMatExtensions } from …` 과 `disableMatExtensions(m);`
+  // 를 **문자열 그대로** 봤다. 2026-08-22 에 발광 상한(`?glbemis=`)이 붙으면서 import 에
+  // `readEmissiveCap` 이 늘고 호출에 인자가 붙자 둘 다 깨졌다 — **처방은 그대로인데
+  // 검사만 깨진 것**이다. 이 검사가 지키려는 것은 «어느 함수를 어디서 부르는가» 이지
+  // 인자 개수가 아니므로, 이름·경로·호출 위치는 그대로 두고 **인자 목록에만** 둔감하게
+  // 바꾼다. 느슨해진 것이 아니라 형식 결합을 뺀 것이다(대신 상한 배선 검사를 아래 더한다).
   it('로드한 모델이 확장 끄기를 거친다 — 안 거치면 실기기에서 렌더가 죽는다', () => {
-    expect(src).toContain("import { disableMatExtensions } from '../../world-shared/glb-material.js'");
-    expect(src).toContain('disableMatExtensions(m);');
+    expect(src).toMatch(
+      /import \{[^}]*\bdisableMatExtensions\b[^}]*\} from '\.\.\/\.\.\/world-shared\/glb-material\.js'/,
+    );
+    expect(src).toMatch(/disableMatExtensions\(m[,)]/);
   });
 
   it('확장 끄기가 modelOf 안에 있다 — 캐시된 뒤에 걸면 이미 늦다', () => {
     const modelOf = src.slice(src.indexOf('function modelOf('), src.indexOf('function applyEntry('));
-    expect(modelOf).toContain('disableMatExtensions(m);');
+    expect(modelOf).toMatch(/disableMatExtensions\(m[,)]/);
+  });
+
+  // 🔴 발광 상한(감독 신고 2026-08-22 *"glb건물 현관의 조명이 너무쎄다"*)이 **이 경로에도**
+  // 걸리는지. 오버레이는 `glb-city` 와 별개 경로라 한쪽만 배선하면 감독 배치 GLB 만 계속
+  // 탄다 — 실제로 확장 끄기가 그렇게 한쪽에만 있다가 실기기 렌더를 죽인 이력이 있다.
+  it('발광 상한을 노브에서 읽어 넘긴다 — 상한이 이 경로에도 걸린다', () => {
+    const modelOf = src.slice(src.indexOf('function modelOf('), src.indexOf('function applyEntry('));
+    expect(modelOf).toMatch(/disableMatExtensions\(m,\s*readEmissiveCap\(readNum\)\)/);
   });
 });
 

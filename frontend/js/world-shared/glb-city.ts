@@ -79,7 +79,7 @@
 // 묻혀 프레임 문제를 못 본다 — 축을 하나만 흔들어야 무엇이 병목인지 갈린다.
 
 import type { Object3D, Scene } from 'three/webgpu';
-import { EXT_OFF, disableMatExtensions } from './glb-material.js';
+import { EXT_OFF, disableMatExtensions, readEmissiveCap } from './glb-material.js';
 import {
   attachAll, warmUpNode, ATTACH_BATCH, WARMUP_FRAMES, type CullableNode,
 } from './attach-loop.js';
@@ -370,7 +370,7 @@ export const glbCity = {
           ? 'raw' // 하위호환 — 이미 드린 링크가 살아 있어야 한다
           : deps.readEnum('glbmat', 'noext', MAT_MODES);
         counts.swapped = applyMatMode(
-          model, THREE as unknown as ThreeNS, matMode, mode === 'flat',
+          model, THREE as unknown as ThreeNS, matMode, mode === 'flat', readEmissiveCap(deps.readNum),
         );
         counts.mode = mode;
         counts.mat = matMode;
@@ -771,13 +771,13 @@ export type MatMode = (typeof MAT_MODES)[number];
 /**
  * 재질 축을 적용한다. **네 모드가 서로 다른 가설을 검증한다** — 위 `?glbmat=` 주석 참고.
  *
- * @returns 손댄 재질 수(진단용). `raw` 는 0 이다.
+ * @returns 손댄 재질 수(진단용). `raw` 는 0 이다. 발광 상한(`EMISSIVE_CAP`)은 `noext` 에만 걸린다 — `raw` 는 «원본 그대로»가 목적이고 `swap`/`std` 는 재질을 갈아 끼워 원본 발광이 안 넘어온다.
  */
-function applyMatMode(model: Object3D, THREE: ThreeNS, mat: MatMode, flat: boolean): number {
+function applyMatMode(m: Object3D, THREE: ThreeNS, mat: MatMode, flat: boolean, cap?: number): number {
   if (mat === 'raw') return 0;
-  if (mat === 'swap') return swapMaterials(model, THREE, flat, false);
-  if (mat === 'std') return swapMaterials(model, THREE, flat, true);
-  return disableMatExtensions(model);
+  if (mat === 'swap') return swapMaterials(m, THREE, flat, false);
+  if (mat === 'std') return swapMaterials(m, THREE, flat, true);
+  return disableMatExtensions(m, cap);
 }
 
 interface SrcMat { map?: unknown; color?: unknown; roughness?: number }
