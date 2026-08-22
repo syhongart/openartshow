@@ -221,10 +221,14 @@ describe('나뭇잎 밝기 축', () => {
     // 상수는 오늘의 결과와 같으므로 통과하고, 잔디가 바뀌는 날 조용히 틀린다. 이 회차에
     // 문자열 검사가 다섯 번 뚫려 값 축으로 옮겼는데, **값 축도 뚫린다**는 것이 이번 실측
     // 이다. 어느 한쪽이 다른 쪽을 대체하지 않는다.
-    expect(c, '숫자 갈래의 밝기 배율이 노브에서 오지 않는다')
-      .toMatch(/constLEAF_LIFT_NOW=[^;]*readNum\(LEAF_LIFT_KNOB,1,0,LEAF_LIFT_MAX\)/);
-    expect(c, 'auto 갈래가 leafLiftAuto() 를 부르지 않는다 — 유도가 화면에 못 간다')
-      .toMatch(/constLEAF_LIFT_NOW=[^;]*leafLiftAuto\(\)/);
+    expect(c, '밝기 배율이 노브에서 오지 않는다')
+      .toMatch(/constLEAF_LIFT_NOW=readNumOpt\(LEAF_LIFT_KNOB,0,LEAF_LIFT_MAX\)/);
+    // 노브를 안 쓰면 **유도**가 온다 — 계산된 상수가 박히면 잔디가 바뀌어도 안 따라온다.
+    expect(c, '기본값이 leafLiftAuto() 가 아니다 — 감독 판정이 상수로 굳었다')
+      .toMatch(/constLEAF_LIFT_NOW=[^;]*\?\?leafLiftAuto\(\)/);
+    // ⚠ `||` 면 `?leaflift=0`(무채색 잎)이 falsy 라 유도값으로 새고 노브 하단이 죽는다.
+    expect(c, '`??` 가 아니라 `||` 다 — 0 지정이 유도값으로 샌다')
+      .not.toMatch(/constLEAF_LIFT_NOW=[^;]*\|\|leafLiftAuto/);
   });
 
   it('★★ leafLift 가 잔디에서 유도된다 — 상수로 굳는 것을 막는다', () => {
@@ -234,6 +238,14 @@ describe('나뭇잎 밝기 축', () => {
     // ⚠ **기준은 `GRASS_TONES` 가 아니다**(검수관, 2026-08-22). 그 배열은 `?gpal=0` 의
     // 끝점이고 기본 화면에는 안 보인다 — `decide/grass.ts` 주석이 스스로 「반려됐다」고
     // 적고 있다. 실제 화면 색은 `bladeToneHex` 가 계산한다.
+    // ⚠ **이 소스 검사가 무엇을 못 잡는지 실측했다**(2026-08-22, 검수관 재현이 내 것과
+    // 갈려서 두 형태를 나란히 재봤다):
+    //   · `return grass / leaf;` **한 줄만** 리터럴로 → 여기는 **통과**한다. 위쪽 유도
+    //     산술이 소스에 그대로 남아 있기 때문이다(= 죽은 코드가 답으로 받아들여진다).
+    //     아래 값-흐름 검사 2건이 대신 잡는다.
+    //   · `leafLift` **본문 전체**를 리터럴 return 으로 → 여기서도 잡힌다(3 failed).
+    // 즉 이 검사의 사각은 「유도 산술이 남아 있되 쓰이지 않는 것」이고, 그 자리는 값 축이
+    // 덮는다. **뮤테이션을 보고할 때 형태를 안 적으면 재현이 갈린다** — 이번이 그 사례다.
     expect(lc, 'leafLift 가 실제 화면 잔디 색(bladeToneHex)을 안 쓴다')
       .toMatch(/bladeToneHex\(1,GRASS_TONES,BLADE_PALETTE,1\)/);
     expect(lc, 'leafLift 가 두 톤의 **평균**을 쓰지 않는다 — 각각 맞추면 수관 명암이 죽는다')
@@ -300,29 +312,30 @@ describe('밝기 노브가 화면 값에 도달한다', () => {
   };
   beforeEach(() => { vi.resetModules(); window.history.replaceState({}, '', '/world2.html'); });
 
-  it('기본값은 1 — 감독 판정 전까지 밝기를 확정하지 않는다(팀장 조건 c2)', async () => {
+  it('★★★ 기본 화면이 **감독 판정 ③** 이다 — 잎 평균 휘도가 잔디 중간 톤과 같다', async () => {
+    // ── 이 단언은 「기본값은 1」을 **교체한 것**이다 (2026-08-22) ──────────────
+    // 그 단언은 팀장 조건 c2(감독이 고르기 전까지 확정 금지)를 지키던 축이고, 감독이
+    // 카드로 ③을 고르면서 역할이 끝났다. `decide/leaf-color.ts` 의 재론 조건이
+    // *"지우기만 하는 것은 안 된다 — 기본값을 지키는 축이 0 이 된다"* 라고 적어 둔 대로
+    // **판정으로 바꿔 단** 것이다.
+    //
+    // `leafLiftAuto()` 와 비교하지 않는다 — 그러면 「구현이 그 함수를 불렀는가」를 그
+    // 함수로 확인하는 자기참조다. 대신 감독이 고른 **관계**(잎 평균 휘도 = 잔디 중간 톤)를
+    // 잔디 쪽에서 독립 산술로 계산해 대조한다.
     const [a, b] = await boot('');
-    // 노브 없이 뜨면 채도 축만 적용된 상태여야 한다 — 두 축이 동시에 걸리면 감독이
-    // 어느 것이 무엇인지 못 가른다.
-    expect(a, '기본 화면에 밝기 축이 이미 걸려 있다').toEqual(leafTone(LEAF_BASE_A, LEAF_SAT));
-    expect(b, '기본 화면에 밝기 축이 이미 걸려 있다').toEqual(leafTone(LEAF_BASE_B, LEAF_SAT));
-  });
-
-  it('★★★ `?leaflift=auto` 가 유도 배율을 화면에 태운다 — **`leafLift()` 를 안 부르고 잰다**', async () => {
-    // ── 왜 `leafLift()` 와 비교하지 않는가 ──────────────────────────────────
-    // 그러면 「구현이 그 함수를 불렀는가」를 그 함수로 확인하는 자기참조가 된다. 대신
-    // **목적이 달성됐는지**를 독립 산술로 본다 — auto 의 목적은 *"잎 두 톤의 평균 휘도를
-    // 잔디 중간 톤에 맞춘다"* 이므로, 잔디 휘도를 여기서 따로 계산해 대조한다.
-    // 상수를 반환하는 구현·죽은 코드·조기 return 은 이 등식을 못 맞춘다.
-    const [a, b] = await boot('?leaflift=auto');
     const g = bladeToneHex(1, GRASS_TONES, BLADE_PALETTE, 1);
     const grass = luma([((g >> 16) & 0xff) / 255, ((g >> 8) & 0xff) / 255, (g & 0xff) / 255]);
-    // 채도 축이 걸려 있어도 성립한다 — `leafTone` 이 휘도를 보존하기 때문이다(위 검사들).
-    expect((luma(a) + luma(b)) / 2, 'auto 인데 화면 잎 휘도가 잔디와 안 맞는다')
+    expect((luma(a) + luma(b)) / 2, '기본 화면의 잎 휘도가 잔디와 어긋난다 — 판정이 깨졌다')
       .toBeCloseTo(grass, 10);
-    // 실측 2026-08-22: 배율 1.4338 · 채널 최대 0.792 — 상한(2)과 포화(1) 둘 다 안 걸린다.
-    // 걸리기 시작하면 위 등식이 먼저 깨지므로 이 검사가 그 경계도 지킨다.
+    // 수관 명암과 포화는 그 판정의 전제다 — 평균만 맞고 이것이 깨지면 화면이 달라진다.
+    expect(luma(a), 'A 가 B 보다 밝지 않다 — 수관 명암이 사라졌다').toBeGreaterThan(luma(b));
     for (const c of [a, b]) for (const v of c) expect(v, '채널이 포화했다').toBeLessThan(1);
+  });
+
+  it('★★ `?leaflift=1` 이 밝기 축 이전 화면으로 되돌린다 — 되돌릴 문이 살아 있는가', async () => {
+    const [a, b] = await boot('?leaflift=1');
+    expect(a, '되돌린 화면에 밝기 축이 남아 있다').toEqual(leafTone(LEAF_BASE_A, LEAF_SAT));
+    expect(b, '되돌린 화면에 밝기 축이 남아 있다').toEqual(leafTone(LEAF_BASE_B, LEAF_SAT));
   });
 
   it('★★ 유도값이 상한을 넘으면 클램프된다 — 지금 값으로는 못 재는 축이다', () => {
@@ -337,11 +350,23 @@ describe('밝기 노브가 화면 값에 도달한다', () => {
     expect(leafLiftAuto(), '상한 아래인데 클램프가 값을 바꿨다').toBe(leafLift());
   });
 
-  it('★★ auto 는 기본값과 **다른 화면**이다 — 노브가 조용히 무시되지 않는가', async () => {
+  it('★★ `?leaflift=1` 은 기본 화면과 **다르다** — 노브가 조용히 무시되지 않는가', async () => {
     const [base] = await boot('');
-    const [auto] = await boot('?leaflift=auto');
-    expect(auto[1], 'auto 를 줬는데 기본 화면과 같다 — 분기가 죽었다')
-      .toBeGreaterThan(base[1]);
+    const [off] = await boot('?leaflift=1');
+    expect(base[1], '노브를 줬는데 기본 화면과 같다 — 노브가 안 읽힌다')
+      .toBeGreaterThan(off[1]);
+  });
+
+  it('★★★ `?leaflift=0` 이 화면에서 **0 으로 걸린다** — `??` 를 `||` 로 쓰면 깨진다', async () => {
+    // ⚠ 이 검사가 없으면 `||` 로 바꾸는 뮤테이션이 안 잡힌다. `Number('0')` 은 falsy 라
+    // `||` 면 유도값으로 새고, **노브의 하단이 통째로 사라진다** — `readNumOpt` 의 머리말이
+    // 정확히 그 사고(`?wns=0`)를 적고 있다.
+    //
+    // 노브 함수만 재면 부족하다(그 함수는 이미 옳다). **화면 값**에서 재야 배선이 걸린다.
+    const [a, b] = await boot('?leaflift=0');
+    for (const c of [a, b]) for (const v of c) {
+      expect(v, '배율 0 인데 잎에 색이 남았다 — 유도값으로 샜다').toBe(0);
+    }
   });
 
   it('숫자 노브도 화면까지 간다 — 감독이 후보를 비교할 수 있어야 한다', async () => {
@@ -349,9 +374,9 @@ describe('밝기 노브가 화면 값에 도달한다', () => {
     expect(a).toEqual(liftTone(leafTone(LEAF_BASE_A, LEAF_SAT), 1.2));
   });
 
-  it('허용목록 밖·범위 밖은 기본 경로를 안 망가뜨린다', async () => {
+  it('숫자가 아닌 값·범위 밖은 기본 경로를 안 망가뜨린다', async () => {
     const [base] = await boot('');
-    // 오타(`atuo`)는 enum 에서 걸러지고 `Number('atuo')` 가 NaN 이라 fallback 1 로 간다.
+    // `Number('atuo')` 가 NaN 이라 `readNumOpt` 가 null 을 내고 유도값으로 간다.
     expect(await boot('?leaflift=atuo').then((t) => t[0]), '오타가 화면을 바꿨다').toEqual(base);
     // 상한 밖은 클램프된다 — `LEAF_LIFT_MAX` 를 값으로 다시 적지 않고 상수를 쓴다.
     expect(await boot('?leaflift=99').then((t) => t[0]), '상한이 안 걸린다')
