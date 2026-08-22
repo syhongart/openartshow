@@ -33,6 +33,8 @@ import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 import { plazaOccupied } from './plaza.js';
+// 잎 밝기를 여기서 유도한다 — 값을 다시 적지 않는다(아래 `LEAF_A` 주석).
+import { GRASS_TONES } from '../decide/grass.js';
 
 export const tree: PartSpec = {
   kind: 'tree',
@@ -253,9 +255,55 @@ function treeTexture(T: ThreeNS) {
 
 /** 줄기 색(정점색). 인스턴스 `tones` 가 이 위에 곱해진다 */
 const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
-/** 잎 색. 두 톤을 섞어 수관이 단색 덩어리로 안 보이게 한다 */
-const LEAF_A: readonly [number, number, number] = [0.34, 0.52, 0.30];
-const LEAF_B: readonly [number, number, number] = [0.26, 0.42, 0.24];
+/**
+ * 잎 색. 두 톤을 섞어 수관이 단색 덩어리로 안 보이게 한다.
+ *
+ * ── 밝기를 잔디에서 유도한다 (감독 지시 2026-08-21) ─────────────────────────
+ * 감독: **"나뭇잎 밝기가 어두운데. 초록이 어두운 초록이야."**
+ *
+ * 실측하니 그대로였다 — 잎 두 톤의 평균 휘도가 **0.419** 인데 같은 화면의 잔디 중간
+ * 톤(`GRASS_TONES[1]`)은 **0.611** 이다. 한 화면에 있는 두 초록이 다른 밝기대에 있었다.
+ *
+ * ⚠ **원래 값에는 밝기 근거가 없었다.** 이 주석은 *"두 톤을 섞어 단색 덩어리로 안 보이게"*
+ * 만 적고 있었고 왜 그 어둡기인지는 어디에도 없다. 그래서 뒤집을 판정이 없다 — 지어낸
+ * 값을 감독 판정으로 교체하는 것이 아니라, **근거 없던 자리에 근거를 넣는 것**이다.
+ *
+ * 그러므로 값을 손으로 밝히지 않고 **잔디에서 유도한다**: 두 톤의 평균 휘도가 잔디 중간
+ * 톤과 같아지는 배율(`LEAF_LIFT`)을 곱한다. 잔디를 밝히면 나무가 저절로 따라오고,
+ * `GRASS_TONES` 를 여기 다시 적을 일도 없다(이 회차에 값 미러링을 네 번 잡았다).
+ *
+ * **평균에 맞추는 것이 요점이다** — A 는 잔디보다 밝아지고 B 는 어두워져 수관 안의 명암이
+ * 남는다. 두 톤을 각각 잔디에 맞추면 그 대비가 사라져 위 문장(단색 덩어리 방지)이 깨진다.
+ *
+ * ⚠⚠ **여기서 멈춘다.** 「더 밝게」는 감독 화면 판정 없이 올리지 않는다 — 잔디보다 밝은
+ * 나뭇잎은 실물에서 드물고(잎은 겹쳐서 그늘진다), 그 선을 넘으면 나무가 배경에서 뜬다.
+ */
+const LEAF_LIFT = leafLift();
+const LEAF_A: readonly [number, number, number] = lift([0.34, 0.52, 0.30]);
+const LEAF_B: readonly [number, number, number] = lift([0.26, 0.42, 0.24]);
+
+/** 잎 두 톤 — `tests/world2-tree-leaf.test.ts` 가 유도 결과를 확인한다 */
+export const LEAF_TONES_FOR_TEST = [LEAF_A, LEAF_B] as const;
+
+/** Rec.709 상대 휘도. 초록이 지배적인 색끼리 비교하므로 채널 평균으로는 못 가른다 */
+function lum(c: readonly [number, number, number]): number {
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+
+/** 잎 두 톤의 평균 휘도를 잔디 중간 톤에 맞추는 배율 */
+function leafLift(): number {
+  const g = GRASS_TONES[1];
+  const grass = lum([((g >> 16) & 0xff) / 255, ((g >> 8) & 0xff) / 255, (g & 0xff) / 255]);
+  const leaf = (lum([0.34, 0.52, 0.30]) + lum([0.26, 0.42, 0.24])) / 2;
+  return grass / leaf;
+}
+
+/** 배율을 곱하고 1 로 자른다 — 넘으면 그 채널만 포화해 색이 틀어진다 */
+function lift(c: readonly [number, number, number]): readonly [number, number, number] {
+  return [
+    Math.min(1, c[0] * LEAF_LIFT), Math.min(1, c[1] * LEAF_LIFT), Math.min(1, c[2] * LEAF_LIFT),
+  ] as const;
+}
 
 /**
  * 스케일 1일 때의 수관 반경(미터). `footprint` 가 여기에 인스턴스 스케일을 곱한다.
