@@ -406,6 +406,33 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
   return { space: normalizeSpace(doc), placed, dropped, footprint: fpKey, layout, tiers: tiers ? 2 : 1 };
 }
 
+/**
+ * 주소의 `?u=` 와 갤러리 목록으로 **열어도 되는 갤러리 id** 를 고른다.
+ *
+ * 화이트리스트다 — `galleries/index.json` 목록에 있는 값만 통과하고 나머지는 전부 null.
+ * 형식 검사(정규식)를 쓰지 않는 이유는 책임의 위치다: 정규식은 「무엇을 막을지」를 이쪽이
+ * 계속 맞혀야 하지만(`../`, `%2e%2e`, 유니코드 변형…), 목록 대조는 **맞힐 것이 없다.**
+ * 경로 조작이 성립할 여지가 원천적으로 사라진다.
+ *
+ * ⚠ 이 함수가 HTML 안에 있으면 어떤 게이트도 못 본다 — 그래서 여기로 뺐다. 보안 경계는
+ * 검사받을 수 있는 자리에 두어야 하고, 이 저장소는 「못 잰 것이 통과로 적히는」 사고를
+ * 이미 여러 번 냈다.
+ *
+ * `index` 는 fetch 결과를 그대로 받는다(신뢰하지 않는 입력으로 다룬다).
+ */
+export function pickGalleryId(index: unknown, u: unknown): string | null {
+  if (typeof u !== 'string' || u === '') return null;
+  if (!Array.isArray(index)) return null;
+  for (const g of index) {
+    // Object.prototype 상속분을 타지 않게 자기 속성만 본다(`?u=__proto__` 류 차단).
+    if (!g || typeof g !== 'object') continue;
+    if (!Object.prototype.hasOwnProperty.call(g, 'id')) continue;
+    const id = (g as { id?: unknown }).id;
+    if (typeof id === 'string' && id === u) return id;
+  }
+  return null;
+}
+
 /** 넘침 여부를 호출자가 놓치지 않게 하는 헬퍼 — overflow 는 dropped 로만 판정한다. */
 export function genSummary(r: GenResult): string {
   const base = `${r.layout}${r.layout === 'salon' ? `(${r.tiers}단)` : ''} · ${r.footprint} · 작품 ${r.placed}점`;

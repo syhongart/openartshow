@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { generateSpace, GEN_LAYOUTS, GEN_DEFAULT_LAYOUT, genSummary, type GenArtwork } from '../frontend/js/space-generate.js';
+import { generateSpace, GEN_LAYOUTS, GEN_DEFAULT_LAYOUT, genSummary, pickGalleryId, type GenArtwork } from '../frontend/js/space-generate.js';
 import { FOOTPRINT, FRAME_RULES, PART_TYPES, STORY_H, artworkSize, normalizeSpace } from '../frontend/js/space.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -342,5 +342,70 @@ describe('generateSpace — 벽면 겹침 (2차원)', () => {
     );
     expect(flat.tiers).toBe(2);
     expect(flat.space.parts.some((p) => p.t === 'artwork' && p.y !== undefined)).toBe(true);
+  });
+});
+
+describe('pickGalleryId — 어느 갤러리를 열어도 되는가 (보안 경계)', () => {
+  // 이 함수는 주소에서 온 값으로 파일 경로를 만드는 자리다. 화이트리스트가 뚫리면
+  // `./galleries/<u>.json` 의 <u> 로 무엇이든 들어간다. 그래서 검사받는 자리에 뒀다.
+  const INDEX = [
+    { id: 'syhongart', name: 'syhongart 개인전', artist: 'syhongart', count: 14 },
+    { id: 'other-artist', name: '다른 전시', artist: 'x', count: 3 },
+  ];
+
+  it('목록에 있는 id 만 통과한다', () => {
+    expect(pickGalleryId(INDEX, 'syhongart')).toBe('syhongart');
+    expect(pickGalleryId(INDEX, 'other-artist')).toBe('other-artist');
+  });
+
+  it('목록에 없는 값은 전부 거절한다', () => {
+    for (const bad of ['nobody', 'SYHONGART', 'syhongart ', ' syhongart', 'syhongart.json']) {
+      expect(pickGalleryId(INDEX, bad)).toBeNull();
+    }
+  });
+
+  it('경로 조작 시도를 거절한다', () => {
+    for (const evil of [
+      '../../etc/passwd', '../galleries/index', './syhongart', 'syhongart/../../secret',
+      '%2e%2e%2fetc', '..%2F..%2Fetc', 'a\u0000b', '/etc/passwd', 'https://evil.example/x',
+    ]) {
+      expect(pickGalleryId(INDEX, evil)).toBeNull();
+    }
+  });
+
+  it('프로토타입 상속 속성을 id 로 인정하지 않는다', () => {
+    for (const key of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      expect(pickGalleryId(INDEX, key)).toBeNull();
+    }
+    // id 를 상속으로만 가진 객체도 통과하면 안 된다.
+    const inherited = Object.create({ id: 'syhongart' });
+    expect(pickGalleryId([inherited], 'syhongart')).toBeNull();
+  });
+
+  it('타입이 다른 id 를 느슨한 비교로 통과시키지 않는다', () => {
+    // ⚠ 뮤테이션이 잡아낸 사각(M29). `id === u` 를 `id == u` 로 바꿔도 32개가 전부
+    // 통과했다 — 숫자 id 와 문자열 u 를 짝지은 표본이 없었기 때문이다. 통과하면
+    // **숫자가 반환되어** `./galleries/7.json` 을 열고, 문자열을 준다는 계약도 깨진다.
+    expect(pickGalleryId([{ id: 7 }], '7')).toBeNull();
+    expect(pickGalleryId([{ id: 0 }], '')).toBeNull();
+    expect(pickGalleryId([{ id: true }], 'true')).toBeNull();
+    expect(pickGalleryId([{ id: ['syhongart'] }], 'syhongart')).toBeNull();
+    expect(pickGalleryId([{ id: null }], '')).toBeNull();
+  });
+
+  it('빈 id 는 목록에 있어도 열지 않는다', () => {
+    // ⚠ 뮤테이션이 잡아낸 사각(M30). `u === ''` 검사를 빼도 전부 통과했다 — 목록에
+    // 빈 id 가 있는 표본이 없어서다. 통과하면 `./galleries/.json` 을 연다.
+    expect(pickGalleryId([{ id: '' }], '')).toBeNull();
+    expect(pickGalleryId([{ id: 'syhongart' }, { id: '' }], '')).toBeNull();
+  });
+
+  it('망가진 입력에도 null 을 돌려준다 (throw 하지 않는다)', () => {
+    for (const idx of [null, undefined, {}, 'not-array', 42, [null, undefined, 1, 'x'], [{}], [{ id: 7 }]]) {
+      expect(pickGalleryId(idx as any, 'syhongart')).toBeNull();
+    }
+    for (const u of [null, undefined, '', 0, {}, [], true]) {
+      expect(pickGalleryId(INDEX, u as any)).toBeNull();
+    }
   });
 });
