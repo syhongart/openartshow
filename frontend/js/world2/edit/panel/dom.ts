@@ -22,6 +22,7 @@ import { createSurfacePanel, type SurfacePanel } from './surface.js';
 import { createBadge } from './badge.js';
 import { createTabs } from './tabs.js';
 import { createToolbar } from './toolbar.js';
+import { createBrushRow } from './brush-row.js';
 import { TAB_ON_PICK } from '../../decide/edit-tabs.js';
 import type { ViewSide } from '../../decide/orbit.js';
 import type { ShadingMode } from '../../decide/shading.js';
@@ -316,7 +317,9 @@ export function createPanel(
 
   // ── 탭 내용 ─────────────────────────────────────────────────────────────
   // 「놓기」 — 아직 없는 것을 만든다.
-  tabs.panes.place.append(palette);
+  // 붓(2026-08-22). **팔레트 바로 아래**다 — 「무엇을 놓을까」 다음이 「어떻게 놓을까」다.
+  const brush = createBrushRow(doc, st, () => { refresh(); });
+  tabs.panes.place.append(palette, brush.root);
   // 문이 없으면 붙이지 않는다 — 빈 행도 `.row` 여백을 먹어 «뭔가 빠진 자리» 처럼 보인다.
   if (handlers.hangPhoto) tabs.panes.place.append(rowPhoto);
 
@@ -377,6 +380,7 @@ export function createPanel(
     snapBtn.dataset.on = st.snapOn ? '1' : '0';
     // 상시 툴바(되돌리기 흐리기·셰이딩 강조). 판정은 그 파일이 소유한다.
     toolbar.sync(host.shading?.() ?? null);
+    brush.sync();
     thawBtn.hidden = st.villageSel === null;
     // 팔레트 강조 — **두 칸을 함께 본다**(W6 E). 파츠 버튼은 `src` 가 없으므로 `src` 만
     // 보면 «파츠를 골랐는데 아무것도 강조 안 된다» 가 된다. 대조는 라벨이 아니라

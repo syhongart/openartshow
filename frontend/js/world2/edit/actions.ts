@@ -14,7 +14,12 @@ import type { OverlayEntry, OverlayHost } from './types.js';
 import { select, type EditState } from './state.js';
 import { thawParcel } from './target.js';
 import type { Panel } from './panel/dom.js';
-import { parcelSnap, type EditHistory } from './history-ops.js';
+import { parcelSnap, type EditHistory, type ParcelSnap } from './history-ops.js';
+import { brushDots, strokeSeed } from '../decide/brush.js';
+import { radiusOf } from '../decide/parcel-layout.js';
+import { inGrid } from '../decide/grid.js';
+import { combine, type Undoable } from '../decide/history.js';
+import type { PlacedPart } from '../parts/types.js';
 
 export interface Actions {
   /** 고른 것(`pendingSrc`·`pendingPart`)을 푼다. 풀 것이 있었으면 `true` — 근거는 구현부 */
@@ -29,6 +34,13 @@ export interface Actions {
   placePartAt(kind: string, at: { x: number; z: number }): void;
   duplicate(): Promise<void>;
   removeSelected(): void;
+  /**
+   * **붓으로 그 자리에 여러 개 뿌린다** (2026-08-22, 감독 카드).
+   *
+   * `placePartAt` 이 `st.brushOn` 일 때 이리로 넘긴다 — 클릭 경로를 가르지 않으므로
+   * `edit/input.ts` 는 **한 줄도 안 바뀐다**(그 파일은 683줄 동결이다).
+   */
+  paintAt(kind: string, at: { x: number; z: number }): void;
   /** 고른 마을 파츠가 속한 파셀의 동결을 푼다 */
   thawSelected(): void;
   exportNow(): void;
@@ -132,6 +144,9 @@ export function createActions(
    * 저장소에서 가장 비쌌던 형태다(감독 신고 2026-08-12 이 그랬다).
    */
   function placePartAt(kind: string, at: { x: number; z: number }): void {
+    // 붓 모드면 여러 개를 뿌린다. **여기서 가르는 것이 요점** — 클릭을 받는 쪽
+    // (`edit/input.ts`)은 「파츠를 놓는다」만 알면 되고, 「어떻게 놓는가」는 여기 하나다.
+    if (st.brushOn) { paintAt(kind, at); return; }
     const village = host.village;
     if (!village) { panel.say('이 화면에서는 마을을 만질 수 없습니다.', true); return; }
     const p = parcelOf(at.x, at.z, host.cellX, host.cellZ);
@@ -155,6 +170,91 @@ export function createActions(
     st.pendingPart = null;
     panel.say(`${PART_LABEL[kind] ?? kind} 을(를) 놓았습니다 —`
       + ` 이 구역은 「손본 구역」이 됐습니다. 클릭해 고르면 옮길 수 있습니다.`);
+    panel.refresh();
+  }
+
+  /**
+   * 붓질 한 번 (2026-08-22, 감독 카드 「브러시로 여러 개 뿌리기」).
+   *
+   * ── 이 함수가 하는 일은 **거르기**다 ────────────────────────────────────────
+   * 「어디에 찍을까」는 `decide/brush.ts` 가 순수 함수로 답하고, 여기는 그 점들을
+   * 세계의 규칙에 통과시킨다. 거르는 축이 셋이고 **각 판정의 소유자가 이미 있다**:
+   *
+   *   격자 밖   `inGrid`                     — 없으면 안 그려지는 파셀을 동결시킨다
+   *   파셀 상한 `canPlacePart`               — 넘기면 «구역이 조용히 덜 그려진다»
+   *   점 간격   `radiusOf`(→ `brushDots`)    — 없으면 나무가 서로 파고든다
+   *
+   * ⚠ **물 위 판정은 안 한다.** 하나씩 놓기(`placePartAt`)도 안 하므로 여기서만 하면
+   * 두 경로의 규칙이 갈린다. 붓이 반경 때문에 물에 걸칠 확률이 더 높은 것은 사실이라
+   * **알고 남기는 구멍**이다 — 재론 조건은 감독이 「물 위에 나무가 섰다」고 말하는 것이다.
+   *
+   * ── 되돌리기는 **한 항목**이다 ──────────────────────────────────────────────
+   * 한 붓질이 파셀 넷까지 바꾸는데(반경 상한이 셀 절반), 파셀마다 쌓으면 무르는 데
+   * Ctrl+Z 를 넷 눌러야 하고 그 사이 화면은 반쯤 지워진 숲이 된다. 근거는
+   * `decide/history.ts` 의 `combine` 한 곳이다.
+   */
+  function paintAt(kind: string, at: { x: number; z: number }): void {
+    const village = host.village;
+    if (!village) { panel.say('이 화면에서는 마을을 만질 수 없습니다.', true); return; }
+    const cap = maxPartsPerParcel(kind);
+    const name = PART_LABEL[kind] ?? kind;
+    st.strokeNo += 1;
+    const dots = brushDots({
+      cx: at.x, cz: at.z,
+      radius: st.brushRadius,
+      count: st.brushCount,
+      seed: strokeSeed(at.x, at.z, st.strokeNo),
+      // 간격은 **파츠가 신고한 점유 반경의 두 배**다 — 두 그루가 서로의 반경 밖에 서려면
+      // 중심 거리가 반경 합이어야 하고, 같은 종류이므로 그것이 곧 지름이다.
+      minGap: radiusOf(newPart(kind, 0, 0, 0)) * 2,
+    });
+
+    /** 파셀별로 모은다 — 동결은 파셀 단위이고 한 파셀에 여럿을 넣어도 `freeze` 는 한 번이다 */
+    const touched = new Map<string, {
+      px: number; pz: number; parts: PlacedPart[]; before: ParcelSnap;
+    }>();
+    let placed = 0;
+    for (const d of dots) {
+      const p = parcelOf(d.x, d.z, host.cellX, host.cellZ);
+      if (!inGrid(p.px, p.pz)) continue;
+      const key = `${p.px},${p.pz}`;
+      let slot = touched.get(key);
+      if (!slot) {
+        // ⚠ **스냅샷은 이 파셀을 처음 만질 때 뜬다** — 두 번째 점에서 다시 뜨면
+        // 「첫 점을 넣은 뒤」가 기준이 되어 되돌리기가 그 하나를 남긴다.
+        slot = { px: p.px, pz: p.pz, parts: village.partsAt(p.px, p.pz), before: parcelSnap(village, p.px, p.pz) };
+        touched.set(key, slot);
+      }
+      if (!canPlacePart(kind, slot.parts, cap).ok) continue;
+      const part = newPart(kind, p.lx, p.lz, host.surfaceAt(d.x, d.z));
+      // 붓의 성질(무작위 회전·크기 변주)을 여기서 얹는다 — `newPart` 는 「하나씩 놓기」의
+      // 기본값(정면·×1)을 소유하고, 그것을 바꾸면 두 경로가 함께 바뀐다.
+      slot.parts.push({ ...part, ry: d.ry, sx: part.sx * d.s, sy: part.sy * d.s, sz: part.sz * d.s });
+      placed += 1;
+    }
+
+    if (placed === 0) {
+      // ⚠ **조용히 끝내지 않는다.** 아무것도 안 놓였는데 화면이 침묵하면 «가끔 안 먹는다»
+      // 가 되고, 그것이 이 저장소에서 가장 비쌌던 형태다(감독 신고 2026-08-12).
+      panel.say(dots.length === 0
+        ? `${name} 을(를) 놓을 자리가 없습니다 — 붓 크기를 키워 보세요.`
+        : `${name} 을(를) 놓지 못했습니다 — 세계 밖이거나 이 구역이 가득 찼습니다.`, true);
+      return;
+    }
+
+    const undos: Undoable[] = [];
+    for (const t of touched.values()) {
+      village.freeze(t.px, t.pz, t.parts);
+      const u = history.ops.parcel(t.before, `${name} 붓질`);
+      if (u) undos.push(u);
+    }
+    history.add(combine(`${name} 붓질`, undos));
+    // 요청과 실제를 **함께** 말한다 — 「12개」만 적으면 감독이 슬라이더를 20으로 두고도
+    // 12개가 나온 이유를 알 수 없다.
+    const short = st.brushCount - placed;
+    panel.say(`${name} ${placed}개를 뿌렸습니다`
+      + (short > 0 ? ` (요청 ${st.brushCount}개 중 ${short}개는 자리가 없어 건너뛰었습니다)` : '')
+      + ` · 구역 ${touched.size}칸이 「손본 구역」이 됐습니다. 이어서 문지를 수 있습니다.`);
     panel.refresh();
   }
 
@@ -293,7 +393,7 @@ export function createActions(
   }
 
   return {
-    placeAt, placePartAt, duplicate, removeSelected, thawSelected, exportNow,
+    placeAt, placePartAt, paintAt, duplicate, removeSelected, thawSelected, exportNow,
     cancelPending, previewUrls,
   };
 }

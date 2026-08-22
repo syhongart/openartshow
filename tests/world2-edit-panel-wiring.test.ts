@@ -885,3 +885,56 @@ describe('🔴 GS-T3 — 색 견본이 실제로 색을 바꾼다', () => {
     expect(toneRow()?.style.display, '🔴 액자에 색 견본이 떴다').toBe('none');
   });
 });
+
+// ── 붓 조작칸 (2026-08-22, 감독 카드 「브러시로 여러 개 뿌리기」) ──────────────
+// 판정은 `decide/brush.ts`, 집행은 `edit/actions.ts` 의 `paintAt`, 그 둘을 검사하는
+// 파일은 `world2-brush.test.ts` 다. **여기서는 「화면에 붙어 있고 상태를 만지는가」만**
+// 본다 — 그 배선이 빠지면 판정·집행이 아무리 옳아도 감독은 붓을 켤 수가 없다.
+describe('🔴 붓 조작칸이 「놓기」 탭에 붙어 있다', () => {
+  const brushBtn = (): HTMLButtonElement | null =>
+    Array.from(pane('place')?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+      .find((b) => b.textContent?.includes('붓')) ?? null;
+  const brushRanges = (): HTMLInputElement[] =>
+    Array.from(pane('place')?.querySelectorAll<HTMLInputElement>('input[type="range"]') ?? []);
+
+  it('🔴 붓 토글이 **놓기** 탭에 있다 — 「아직 없는 것을 만든다」', () => {
+    mount();
+    expect(brushBtn(), '🔴 붓 토글이 놓기 탭에 없다').not.toBeNull();
+  });
+
+  it('🔴 누르면 붓이 켜지고 슬라이더가 나타난다', () => {
+    const { st, panel } = mount();
+    panel.refresh();
+    expect(st.brushOn).toBe(false);
+    // 꺼져 있으면 슬라이더는 **숨는다** — 눌러도 아무 일이 없는 칸을 안 보여준다.
+    expect(brushRanges().every((r) => (r.closest('.surf-row') as HTMLElement | null)?.hidden !== false),
+      '🔴 붓이 꺼졌는데 슬라이더가 보인다').toBe(true);
+    brushBtn()!.click();
+    expect(st.brushOn, '🔴 토글이 상태를 안 바꿨다').toBe(true);
+    expect(brushRanges().length, '🔴 붓 슬라이더(크기·개수)가 둘이 아니다')
+      .toBeGreaterThanOrEqual(2);
+  });
+
+  it('🔴 슬라이더가 상태를 민다 — 움직이는데 아무 일도 안 나면 거짓 UI 다', () => {
+    const { st, panel } = mount();
+    st.brushOn = true;
+    panel.refresh();
+    const [r, n] = brushRanges();
+    r!.value = String(Number(r!.max));
+    r!.dispatchEvent(new Event('input'));
+    expect(st.brushRadius, '🔴 붓 크기 슬라이더가 상태를 안 밀었다').toBe(Number(r!.max));
+    n!.value = String(Number(n!.max));
+    n!.dispatchEvent(new Event('input'));
+    expect(st.brushCount, '🔴 개수 슬라이더가 상태를 안 밀었다').toBe(Number(n!.max));
+  });
+
+  it('🔴 GLB 를 고른 채 붓을 켜면 **안 먹는다고 말한다** — 조용한 no-op 을 안 만든다', () => {
+    const { st, panel } = mount();
+    st.brushOn = true;
+    st.pendingSrc = 'assets/models/a.glb';
+    panel.refresh();
+    const note = Array.from(pane('place')?.querySelectorAll('.note') ?? [])
+      .map((e) => e.textContent ?? '').join(' ');
+    expect(note, '🔴 GLB 는 붓이 안 먹는다는 안내가 없다').toMatch(/GLB/);
+  });
+});
