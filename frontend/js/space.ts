@@ -192,6 +192,29 @@ export const FRAME_RULES = {
   thickness: 0.1,               // 3스타일 공통 두께(벽 돌출·조명 오프셋 일정)
 };
 
+// ── 작품 종횡비 → 액자 실치수 (FRAME_RULES 소비) ────────────────────────────
+// ⚠ 이 함수는 원래 space-parts.ts 에 있었다. 2026-08-22 에 여기(순수 leaf)로 내렸다 —
+// space-parts 는 `import * as THREE` 를 하므로, 자동생성기(space-generate.ts)가 거기서
+// 이 함수를 가져오면 **순수 스키마 계산에 three 런타임이 딸려온다**. 재구현은 값 미러링
+// 금지에 걸리고(같은 공식이 두 곳 → 한쪽만 고쳐도 아무도 모른다), 그래서 이동이 답이다.
+// 이 함수가 소비하는 것은 PART_TYPES.artwork.size 와 FRAME_RULES 뿐이라 여기가 제자리다.
+// space-parts.ts 는 재수출만 하므로 기존 소비자(space-assembler)는 무수정이다.
+// p.ar → 액자 W/H. 디자이너 실측 공식. ar 없으면 레거시 고정 1.2×1.6 폴백.
+export function artworkSize(ar?: unknown): { W: number; H: number } {
+  const [dw, dh] = PART_TYPES.artwork.size; // 폴백(빈 액자·구버전 저장분)
+  if (!(typeof ar === 'number' && isFinite(ar) && ar > 0)) return { W: dw, H: dh };
+  const BASE = 1.6, minSize = FRAME_RULES.minSize, clampW = FRAME_RULES.landscape.clampW, clampH = FRAME_RULES.portrait.clampH;
+  const cl = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+  const r = ar;
+  let W: number, H: number;
+  if (r >= 1) { W = BASE; H = BASE / r; } else { H = BASE; W = BASE * r; }
+  const W0 = W, H0 = H;
+  W = cl(W, minSize, clampW); H = cl(H, minSize, clampH);
+  if (W !== W0) H = cl(W / r, minSize, clampH); // 폭이 clamp로 잘리면 높이를 비율 재산출
+  if (H !== H0) W = cl(H * r, minSize, clampW); // 높이가 clamp로 잘리면 폭을 비율 재산출
+  return { W, H };
+}
+
 // ── 층고·풋프린트 프리셋 ──────────────────────────────────────────────────
 export const STORY_H: Record<string, number> = { studio: 2.8, gallery: 3.6, grand: 4.2 };
 export const FOOTPRINT: Record<string, number[]> = { small: [6, 6], medium: [9, 7], large: [14, 10], hall: [20, 14], grand: [28, 18] };

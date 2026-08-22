@@ -110,17 +110,53 @@
 <script type="module">
 import { decodeSpace, newSpace } from './js/space.js';
 import { createVisit } from './js/visit.js';
+import { generateSpace, GEN_LAYOUTS, pickGalleryId } from './js/space-generate.js';
 
-// 로드 소스: ?src=local(또는 미지정) → localStorage 빌더 저장 키 → decodeSpace, 실패 시 DEFAULT.
-// URL에 space 데이터 인코딩 금지(space.js 계약) — 로컬 저장/기본 공간만.
-function loadSpace() {
-  const src = new URLSearchParams(location.search).get('src');
+// 로드 소스 (앞의 것이 이긴다):
+//   ?u=<작가>  → 그 작가의 갤러리 데이터로 **전시장을 자동생성**한다(space-generate).
+//   ?src=local(또는 미지정) → localStorage 빌더 저장 키 → decodeSpace
+//   그 외/실패 → DEFAULT
+// URL에 space 데이터 인코딩 금지(space.js 계약) — 담기는 것은 **작가 아이디뿐**이고
+// 공간은 그 자리에서 계산된다. 무저장 원칙이 그대로 유지된다.
+//
+// ⚠ 아이디 검증은 화이트리스트다 — `galleries/index.json` **목록에 있는 id 만** 연다.
+// 형식 검사(정규식)로는 `../` 류를 막는 책임이 이쪽에 생기는데, 목록 대조는 그 책임
+// 자체를 없앤다. world2 의 `decide/tenant-id.ts` 를 쓰지 않는 이유는 **세계 간 결합**이다
+// (visit 이 world2 내부를 import 하면 공유가 아니게 된다 — 팀장 규칙 R2 와 같은 형태).
+async function fetchJson(url) {
+  try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+
+async function loadSpace() {
+  const q = new URLSearchParams(location.search);
+  const u = q.get('u');
+  if (u) {
+    const index = await fetchJson('./galleries/index.json');
+    const id = pickGalleryId(index, u); // 목록에 없으면 null — 판정은 space-generate 가 소유한다
+    if (id) {
+      const doc = await fetchJson(`./galleries/${id}.json`);
+      if (doc && Array.isArray(doc.artworks)) {
+        const layout = GEN_LAYOUTS.includes(q.get('gen')) ? q.get('gen') : undefined;
+        const roomUp = Math.max(0, Math.min(4, parseInt(q.get('room'), 10) || 0));
+        const r = generateSpace(
+          doc.artworks.map((a) => ({
+            id: a.id, title: a.title, imageUrl: a.imageUrl, videoUrl: a.videoUrl, featured: a.featured,
+          })),
+          { layout, roomUp, name: doc.name, author: doc.artist || id },
+        );
+        // 미배치가 있으면 조용히 넘기지 않는다 — 작가는 자기 작품이 빠진 걸 알아야 한다.
+        if (r.dropped.length) console.warn(`[visit] 자리를 못 찾은 작품 ${r.dropped.length}점:`, r.dropped.join(', '));
+        return r.space;
+      }
+    }
+  }
+  const src = q.get('src');
   if (src === null || src === 'local') {
     try { const raw = localStorage.getItem('openartshow.space.v1'); const dec = raw && decodeSpace(raw); if (dec) return dec; } catch (e) {}
   }
   return newSpace();
 }
-const space = loadSpace();
+const space = await loadSpace();
 
 const canvas = document.getElementById('c');
 const V = createVisit({ canvas, space, opts: { preserveDrawingBuffer: true } });
