@@ -48,7 +48,7 @@ import { resolveEntry } from '../decide/tenant-entry.js';
 import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
 import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-mount.js';
 import { createArtsPort } from '../systems/art-port.js';
-import { disableMatExtensions } from '../../world-shared/glb-material.js';
+import { disableMatExtensions, readEmissiveCap } from '../../world-shared/glb-material.js';
 import {
   ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
 } from '../../world-shared/attach-loop.js';
@@ -203,7 +203,7 @@ export const overlayFeature: Feature = {
           //
           // 헤드리스는 WebGL 이라 이 축을 **원리적으로 못 본다.** 그래서 게이트가 아니라
           // *"GLB 를 놓는 경로는 반드시 이 함수를 지난다"* 는 구조가 유일한 방어다.
-          disableMatExtensions(m);
+          disableMatExtensions(m, readEmissiveCap(readNum));
           // GLB 의 `castShadow`/`receiveShadow` 기본값은 false 다 — 켜지 않으면 감독이 놓은
           // 물건만 그림자 없이 서 있게 된다(`glb-city.ts` 가 같은 자리에서 한 번 데였다).
           m.traverse((o: Object3D) => { o.castShadow = true; o.receiveShadow = true; });
