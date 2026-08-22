@@ -169,16 +169,142 @@ export function changeSummary(base = 'origin/main', cwd = ROOT) {
   return { files, buckets, other, stale, base };
 }
 
+// ── 겹침 검사 — 두 세션이 같은 파일을 각자 고치는 것을 막는다 (`G-OPS1`) ──────
+//
+// **왜 생겼나 (팀장 처방 p1, 감독 호출 *"왜 자꾸 문제 생기는거야?"* 2026-08-22).**
+// 그날 하루에 세 번 겹쳤다:
+//   ① `#246`(잎 밝기) ↔ `#249`(잎 채도) — 같은 나뭇잎을 정반대 축으로 재설계
+//   ② PR #253 ↔ `#251`(잎 알파) — `parts/tree.ts` 의 **같은 4줄**
+//   ③ 그 앞 회차에 `docs/BOARD.md` 충돌 2회
+//
+// ⚠ **셋 다 「충돌로 잡힌 것」은 요행이다.** 양쪽이 우연히 같은 줄을 만졌기 때문이지
+// 구조가 막은 것이 아니다 — ①에서 `#246` 이 `tree.ts` 의 **다른 줄**을 만졌다면 둘 다
+// 조용히 병합돼 **두 배율이 동시 적용된 화면이 배포**됐을 것이다(팀장 지적).
+//
+// **왜 `ci.yml` 이 아니라 여기인가.** CI 는 PR 을 열어야 돌고, 겹침은 **착수 시점**에
+// 알아야 값이 있다. 다 만든 뒤에 아는 것은 그 세 번이 겪은 그대로다. 그리고 CI 의
+// `verify` job 은 개별 게이트를 직접 부르므로 이 검사를 **안 본다** — 로컬 전용이고,
+// 그것이 의도다(GS-A 정합 대상도 아니다).
+//
+// **왜 `merge-base` 실패를 차단으로 두는가.** `origin/main` 을 못 찾는다는 것은 곧
+// 정렬이 안 됐다는 뜻이고, 그 상태에서 「겹침 0」은 **못 잰 것을 통과로 적는 것**이다.
+// 「착수 전 fetch」는 이미 규율인데 형용사였다 — 여기서 구조가 된다.
+//
+// ⚠ **이 검사가 못 잡는 것**: `origin/main` 이 낡으면 상대 쪽이 비어 겹침이 안 보인다.
+// 그래서 base 의 나이를 함께 찍는다. 검수관이 격리 클론에서 `origin/main` 이 9일 낡은
+// 것을 못 보고 판정을 부풀린 사고(2026-08-22)와 같은 축이다.
+export const OVERLAP_EXEMPT = [
+  // 게시판은 **여러 세션이 덧붙이라고 있는 파일**이다 — 겹치는 것이 정상이고, 충돌이
+  // 나면 양쪽을 다 살리면 된다(한쪽을 고르면 그 판정이 사라진다). 팀장 명시 예외.
+  { re: /^docs\/BOARD\.md$/, why: '여러 세션이 덧붙이는 파일 — 겹침이 정상' },
+];
+
+/** 겹침 실측. `measured:false` 면 **못 잰 것**이다(통과가 아니다). */
+export function overlapCheck(base = 'origin/main', cwd = ROOT) {
+  const mb = spawnSync('git', ['merge-base', base, 'HEAD'], { cwd, encoding: 'utf8' });
+  if (mb.status !== 0) return { measured: false, why: `\`${base}\` 을 찾지 못했다`, base };
+  const from = mb.stdout.trim();
+  const names = (args) => {
+    const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    return r.status === 0 ? (r.stdout ?? '').split('\n').map((x) => x.trim()).filter(Boolean) : null;
+  };
+  // 내 쪽은 **index** 를 본다 — `changeSummary` 와 같은 기준이어야 스탬프와도 맞는다.
+  const mine = names(['diff', '--cached', '--name-only', from]);
+  // 상대 쪽은 갈라진 뒤 base 가 만진 것. 커밋된 것만 있으므로 `--cached` 가 아니다.
+  const theirs = names(['diff', '--name-only', `${from}..${base}`]);
+  if (mine === null || theirs === null) return { measured: false, why: 'git diff 실패', base };
+
+  const exempt = (f) => OVERLAP_EXEMPT.some((e) => e.re.test(f));
+  const t = new Set(theirs);
+  const both = mine.filter((f) => t.has(f) && !exempt(f));
+  return { measured: true, both, mine, theirs, from, base };
+}
+
+/**
+ * base 커밋의 짧은 해시와 시각.
+ *
+ * **낡은 base 는 겹침을 못 보게 만든다** — 상대 쪽 diff 가 비어 「겹침 0」이 나오고,
+ * 그것은 안전이 아니라 **못 잰 것**이다. `fetch` 여부를 코드가 강제할 수는 없으니
+ * 눈으로 볼 수 있게 한다. 검수관이 격리 클론에서 9일 낡은 `origin/main` 으로 판정을
+ * 부풀린 사고(2026-08-22)가 같은 축이다.
+ *
+ * 소비자가 둘(`printOverlap`·`printChangeSummary`)이라 함수로 둔다 — 포맷을 두 곳에
+ * 적으면 한쪽만 고쳐도 아무도 모른다.
+ */
+export function baseInfo(base = 'origin/main', cwd = ROOT) {
+  const r = spawnSync('git', ['log', '-1', '--format=%h %ad', '--date=format:%m-%d %H:%M', base],
+    { cwd, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : '?';
+}
+
+/** 겹친 파일을 **어느 커밋이** 만졌는지 — 이름만으로는 다음 행동이 안 정해진다 */
+function blamers(from, base, file) {
+  const r = spawnSync('git', ['log', '--oneline', '--no-decorate', `${from}..${base}`, '--', file],
+    { cwd: ROOT, encoding: 'utf8' });
+  return r.status === 0 ? (r.stdout ?? '').split('\n').filter(Boolean) : [];
+}
+
+/** 게이트 **맨 앞**에서 돈다. 막으면 0 이 아닌 값. */
+function printOverlap() {
+  // 탈출로는 **사유를 요구한다** — `ciExempt` 가 빈 문자열을 면제로 안 치는 것과 같다.
+  // 오탐이 작업을 세우면 안 되지만, 이유 없이 끄면 이 검사가 장식이 된다.
+  const skip = (process.env.GATE_ALLOW_OVERLAP ?? '').trim();
+  const o = overlapCheck();
+
+  if (!o.measured) {
+    console.log('');
+    console.log(`🔴 겹침 검사를 **못 했다** — ${o.why}.`);
+    console.log('');
+    console.log('   못 잰 것은 통과가 아니다. 먼저 정렬하고 다시 돌려라:');
+    console.log('     git fetch origin main && git merge origin/main');
+    console.log('');
+    console.log('   (오프라인 등 정말 불가능하면 사유를 적어 넘긴다:');
+    console.log('     GATE_ALLOW_OVERLAP="<왜 못 재는지>" npm run gate)');
+    if (!skip || skip === '1') return 1;
+    console.log(`   → 넘긴다: ${skip}`);
+    return 0;
+  }
+
+  // ⚠ **겹침 0 일 때도 찍는다.** 「겹침 0」과 「낡은 base 라 못 봤다」는 화면에서
+  // 구별되지 않는데, 이 검사의 가장 큰 사각이 바로 그것이다(백로그 한계 ①).
+  //
+  // ⚠⚠ 첫 판본은 이 줄을 `printChangeSummary()` 에만 두고 커밋 메시지에 *"base 나이를
+  // 함께 찍어 눈에 보이게 했다"* 라고 적었는데 **겹침이 잡히는 경로에서는 거짓**이었다
+  // (검수관 권고, 2026-08-22) — 그 경로는 조기 `return 1` 이라 요약을 안 부른다.
+  // **게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다.** 문구를
+  // 고치는 대신 실제로 찍어서 문장을 참으로 되돌렸다.
+  console.log(`  겹침 검사 기준: ${o.base} = ${baseInfo(o.base)} (낡았으면 겹침을 못 본다)`);
+  if (o.both.length === 0) return 0;
+
+  console.log('');
+  console.log(`🔴 **다른 세션과 같은 파일을 만지고 있다** (${o.both.length}개).`);
+  console.log('');
+  for (const f of o.both) {
+    console.log(`    ${f}`);
+    for (const c of blamers(o.from, o.base, f)) console.log(`        ↳ ${c}`);
+  }
+  console.log('');
+  console.log('   이 회차에 세 번 났고 세 번 다 「충돌로 잡힌 것」은 요행이었다 —');
+  console.log('   같은 파일의 **다른 줄**이었으면 둘 다 조용히 병합됐다.');
+  console.log('');
+  console.log('   먼저 정렬해서 상대가 무엇을 했는지 **읽어라**:');
+  console.log(`     git fetch origin main && git merge ${o.base}`);
+  console.log('   충돌이 안 나도 설계가 겹칠 수 있다. 그때가 팀장 상신이다.');
+  console.log('');
+  console.log('   확인했고 겹쳐도 되는 것이면 사유를 적어 넘긴다(PR 본문에도 적어라):');
+  console.log('     GATE_ALLOW_OVERLAP="<확인한 내용>" npm run gate');
+  if (!skip || skip === '1') return 1;
+  console.log('');
+  console.log(`   → 넘긴다: ${skip}`);
+  return 0;
+}
+
 function printChangeSummary() {
   const s = changeSummary();
   if (!s) return;
-  // base 의 신선도를 함께 찍는다(검수관 권고) — `origin/main` 이 낡았으면 범위가
-  // 오판된다. fetch 여부를 코드가 강제할 수는 없으니 눈으로 볼 수 있게 한다.
-  const bi = spawnSync('git', ['log', '-1', '--format=%h %ad', '--date=format:%m-%d %H:%M', s.base],
-    { cwd: ROOT, encoding: 'utf8' });
-  const baseInfo = bi.status === 0 ? bi.stdout.trim() : '?';
+  // base 의 신선도를 함께 찍는다(검수관 권고) — 근거는 `baseInfo` 한 곳이다.
   console.log('');
-  console.log(`── 이 브랜치가 만진 것 (${s.base} = ${baseInfo} 대비) ${'─'.repeat(10)}`);
+  console.log(`── 이 브랜치가 만진 것 (${s.base} = ${baseInfo(s.base)} 대비) ${'─'.repeat(10)}`);
   for (const b of s.buckets) {
     const mark = b.hits.length ? '⚠' : ' ';
     console.log(`  ${mark} ${b.label.padEnd(24)} ${String(b.hits.length).padStart(3)} 파일${b.hits.length ? `   → ${b.why}` : ''}`);
@@ -244,6 +370,16 @@ function ensureHooksWired() {
 
 function main() {
   ensureHooksWired();
+
+  // 겹침을 **가장 먼저** 본다. 겹쳐 있으면 10분짜리 테스트를 돌릴 이유가 없고,
+  // 그 시점에 알아야 상대가 무엇을 했는지 읽고 설계를 맞출 수 있다(`G-OPS1`).
+  if (printOverlap() !== 0) {
+    clearStamp();
+    console.log('');
+    console.log('스탬프를 지웠다 — pre-commit 훅이 커밋을 막는다.');
+    return 1;
+  }
+
   let failed = null;
   for (const gate of GATES) {
     const res = run(gate);
