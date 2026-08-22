@@ -30,7 +30,7 @@
 // 규정했고 세 번 다 [틀렸다]"*. 그러므로 여기서도 **내가 값을 정하지 않는다.**
 // 노브(`?leafsat=`)로 열고 감독이 화면에서 고른다.
 
-import { saturateAroundLuma, luma } from './blade-shape.js';
+import { saturateAroundLuma, luma, bladeToneHex, BLADE_PALETTE } from './blade-shape.js';
 // 밝기 축이 잔디에서 유도된다 — 값을 여기 다시 적지 않는다(아래 `leafLift`).
 import { GRASS_TONES } from './grass.js';
 
@@ -106,7 +106,18 @@ export function leafTone(
  * 「단색 덩어리 방지」가 보존된다(검수관 재현 확인). 두 톤을 각각 잔디에 맞추면 그 대비가
  * 사라진다.
  */
-export function leafLift(grassHex: number = GRASS_TONES[1]): number {
+/**
+ * 기본 화면의 잔디 중간 톤. **`GRASS_TONES` 를 직접 읽지 않는다** — 그 배열은 `?gpal=0`
+ * 의 끝점이고 기본 화면에는 안 보인다(위 문단).
+ *
+ * `sat` 에 `1` 을 넣는 이유: `saturateAroundLuma` 가 휘도를 보존하므로 채도는 이 값의
+ * 휘도를 바꾸지 않는다. 여기서 필요한 것은 휘도뿐이다.
+ */
+function grassMidTone(): number {
+  return bladeToneHex(1, GRASS_TONES, BLADE_PALETTE, 1);
+}
+
+export function leafLift(grassHex: number = grassMidTone()): number {
   const g = grassHex;
   const grass = luma([((g >> 16) & 0xff) / 255, ((g >> 8) & 0xff) / 255, (g & 0xff) / 255]);
   const leaf = (luma(LEAF_BASE_A) + luma(LEAF_BASE_B)) / 2;

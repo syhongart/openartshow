@@ -18,7 +18,7 @@ import {
   leafLift, liftTone,
 } from '../frontend/js/world2/decide/leaf-color.js';
 import { GRASS_TONES } from '../frontend/js/world2/decide/grass.js';
-import { saturateAroundLuma, bladeToneHex, DIRECTOR_TONES } from '../frontend/js/world2/decide/blade-shape.js';
+import { saturateAroundLuma, bladeToneHex, DIRECTOR_TONES, BLADE_PALETTE } from '../frontend/js/world2/decide/blade-shape.js';
 
 const luma = ([r, g, b]: readonly [number, number, number]): number =>
   0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -205,8 +205,11 @@ describe('나뭇잎 밝기 축', () => {
     const lc = readFileSync(
       join(process.cwd(), 'frontend/js/world2/decide/leaf-color.ts'), 'utf8',
     ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
-    expect(lc, 'leafLift 가 GRASS_TONES 를 안 읽는다 — 잔디를 밝혀도 나무가 안 따라온다')
-      .toContain('GRASS_TONES[1]');
+    // ⚠ **기준은 `GRASS_TONES` 가 아니다**(검수관, 2026-08-22). 그 배열은 `?gpal=0` 의
+    // 끝점이고 기본 화면에는 안 보인다 — `decide/grass.ts` 주석이 스스로 「반려됐다」고
+    // 적고 있다. 실제 화면 색은 `bladeToneHex` 가 계산한다.
+    expect(lc, 'leafLift 가 실제 화면 잔디 색(bladeToneHex)을 안 쓴다')
+      .toMatch(/bladeToneHex\(1,GRASS_TONES,BLADE_PALETTE,1\)/);
     expect(lc, 'leafLift 가 두 톤의 **평균**을 쓰지 않는다 — 각각 맞추면 수관 명암이 죽는다')
       .toMatch(/luma\(LEAF_BASE_A\)\+luma\(LEAF_BASE_B\)\)\/2/);
   });
@@ -233,7 +236,9 @@ describe('나뭇잎 밝기 축', () => {
 
   it('유도된 배율이 실제로 잔디 밝기를 맞춘다', () => {
     const lift = leafLift();
-    const g = GRASS_TONES[1];
+    // 기준은 **기본 화면의** 잔디 중간 톤이다 — `GRASS_TONES` 원본이 아니라 팔레트
+    // 혼합을 거친 값(`BLADE_PALETTE = 1` 이면 감독 원안).
+    const g = bladeToneHex(1, GRASS_TONES, BLADE_PALETTE, 1);
     const grass = luma([((g >> 16) & 0xff) / 255, ((g >> 8) & 0xff) / 255, (g & 0xff) / 255]);
     const a = liftTone(LEAF_BASE_A, lift);
     const b = liftTone(LEAF_BASE_B, lift);
