@@ -167,3 +167,67 @@ describe('generateSpace — 규모 적응', () => {
     if (r.dropped.length) expect(genSummary(r)).toContain('미배치');
   });
 });
+
+describe('generateSpace — 방 크기 노브', () => {
+  const keys = Object.keys(FOOTPRINT);
+  const idxOf = (k: string) => keys.indexOf(k);
+
+  it('[감독 판정] 기본은 전부 들어가는 최소 크기다', () => {
+    // 감독 판정 2026-08-22: "기본은 제일 작은 사이즈로 보여주고".
+    // 이 단언이 있는 이유는 회귀 방지가 아니라 **판정 보존**이다 — "좁아 보인다"는
+    // 이유로 다음 사람이 기본값을 키우면 이 테스트가 막는다.
+    for (const layout of GEN_LAYOUTS) {
+      for (const n of [4, 14, 30]) {
+        const r = generateSpace(mixed(n), { layout });
+        if (r.dropped.length) continue;                       // 넘치는 규모는 최소 개념이 없다
+        const smaller = keys[idxOf(r.footprint) - 1];
+        if (!smaller) continue;                               // 이미 가장 작은 방
+        const tighter = generateSpace(mixed(n), { layout, footprint: smaller });
+        expect(tighter.dropped.length).toBeGreaterThan(0);    // 한 단계 작으면 반드시 넘쳐야 한다
+      }
+    }
+  });
+
+  it('roomUp 이 방을 단계만큼 키운다', () => {
+    const base = generateSpace(REAL, { layout: 'perimeter' });
+    const up1 = generateSpace(REAL, { layout: 'perimeter', roomUp: 1 });
+    const up2 = generateSpace(REAL, { layout: 'perimeter', roomUp: 2 });
+    expect(idxOf(up1.footprint)).toBe(idxOf(base.footprint) + 1);
+    expect(idxOf(up2.footprint)).toBe(idxOf(base.footprint) + 2);
+    expect(up1.dropped).toEqual([]);                          // 키웠는데 작품이 빠지면 안 된다
+  });
+
+  it('roomUp 은 가장 큰 방에서 멈춘다 (범위 밖으로 나가지 않는다)', () => {
+    const r = generateSpace(REAL, { roomUp: 99 });
+    expect(r.footprint).toBe(keys[keys.length - 1]);
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('footprint 명시가 자동 선택을 이긴다', () => {
+    for (const key of keys) {
+      const r = generateSpace(mixed(5), { footprint: key });
+      expect(r.footprint).toBe(key);
+    }
+  });
+
+  it('명시한 방이 작아 작품이 넘치면 조용히 키우지 않고 보고한다', () => {
+    // 요청한 크기를 말없이 무시하는 쪽이 더 나빠 보일 수 있으나, 그러면 작가가
+    // "내가 고른 크기"와 다른 방을 보게 된다. 넘침은 dropped 로 드러낸다.
+    const r = generateSpace(mixed(40), { footprint: 'small' });
+    expect(r.footprint).toBe('small');
+    expect(r.dropped.length).toBeGreaterThan(0);
+    expect(genSummary(r)).toContain('미배치');
+  });
+
+  it('footprint 와 roomUp 을 함께 주면 footprint 가 이긴다', () => {
+    const r = generateSpace(REAL, { footprint: 'hall', roomUp: 3 });
+    expect(r.footprint).toBe('hall');
+  });
+
+  it('알 수 없는 footprint 키는 무시하고 자동 선택으로 돌아간다', () => {
+    const auto = generateSpace(REAL, { layout: 'perimeter' });
+    for (const bad of ['거대함', '', 'SMALL', null as any, 7 as any]) {
+      expect(generateSpace(REAL, { layout: 'perimeter', footprint: bad }).footprint).toBe(auto.footprint);
+    }
+  });
+});

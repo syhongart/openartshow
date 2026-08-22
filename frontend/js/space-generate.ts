@@ -49,6 +49,13 @@ export interface GenOptions {
   author?: string;
   /** shell.finish 부분 덮어쓰기(마감 취향). 생략 시 화이트 갤러리 기본. */
   finish?: Partial<SpaceFinish>;
+  /**
+   * 방 크기 명시 지정(FOOTPRINT 키). 지정하면 자동 선택을 건너뛴다 — 작품이 넘치면
+   * 조용히 키우지 않고 dropped 로 보고한다(요청한 크기를 말없이 무시하지 않는다).
+   */
+  footprint?: string;
+  /** 자동 선택된 최소 크기에서 N단계 키운다. footprint 를 함께 주면 그쪽이 이긴다. */
+  roomUp?: number;
 }
 
 // ── 배치 상수 — 왜 이 값인지 값 옆에 적는다 ──────────────────────────────────
@@ -238,18 +245,35 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
   // 영상은 screen 파츠로 간다(액자가 아니다) — 벽 배치는 같이 하되 파츠 타입이 다르다.
   const widths = list.map((a) => (a.videoUrl && !a.imageUrl ? PART_TYPES.screen.size[0] : artworkSize(a.ar).W));
 
-  // footprint 후보를 작은 것부터 훑어 **전부 들어가는 최소 크기**를 고른다. 판정은 실배치다.
-  // fail-closed: 가장 큰 것에도 안 들어가면 가장 큰 것을 쓰고 넘친 작품을 dropped 로 보고한다
-  // (조용히 버리면 화면상 "잘 나온 전시"가 되고 작가는 작품이 빠진 걸 모른다).
+  // ── 방 크기 ────────────────────────────────────────────────────────────────
+  // 기본은 **전부 들어가는 최소 크기**다. 판정은 실배치다(용량 총합이 아니다).
+  //
+  // [감독 판정 2026-08-22] *"방이 좁으면 방을 키우면 되지. 기본은 제일 작은 사이즈로
+  // 보여주고."* — 나는 "14점이 6×6m 면 관람 공간 없이 벽만 빽빽할 수 있다"를 문제로
+  // 규정해 올렸고, **그 규정이 기각됐다.** 좁은 것은 고장이 아니라 조절하면 되는 것이고,
+  // 처음 보이는 화면은 작은 쪽이 낫다는 판정이다. 그래서 기본은 그대로 두고 **키우는
+  // 수단**(footprint·roomUp)을 옆에 둔다. 이 주석을 남기는 이유는, 다음 사람이 같은
+  // 우려로 기본값을 크게 바꾸려 할 때 그것이 이미 판정된 사안임을 알게 하기 위해서다.
+  //
+  // fail-closed: 가장 큰 것에도 안 들어가면 가장 큰 것을 쓰고 넘친 작품을 dropped 로
+  // 보고한다(조용히 버리면 화면상 "잘 나온 전시"가 되고 작가는 작품이 빠진 걸 모른다).
   const wallT = 0.2;
   const fpKeys = Object.keys(FOOTPRINT);
-  let fpKey = fpKeys[fpKeys.length - 1];
-  let packed = packInto(list, widths, ...(FOOTPRINT[fpKey] as [number, number]), wallT, layout);
-  for (const key of fpKeys) {
-    const [cw, cd] = FOOTPRINT[key];
-    const attempt = packInto(list, widths, cw, cd, wallT, layout);
-    if (attempt.dropped.length === 0) { fpKey = key; packed = attempt; break; }
+  const pack = (key: string) => packInto(list, widths, ...(FOOTPRINT[key] as [number, number]), wallT, layout);
+
+  let fpIdx = fpKeys.length - 1;
+  for (let i = 0; i < fpKeys.length; i++) {
+    if (pack(fpKeys[i]).dropped.length === 0) { fpIdx = i; break; }
   }
+  // 키우기 — 명시 지정이 최우선, 없으면 roomUp 단계만큼. 상한은 가장 큰 방이다.
+  if (typeof opts.footprint === 'string' && FOOTPRINT[opts.footprint]) {
+    fpIdx = fpKeys.indexOf(opts.footprint);
+  } else if (typeof opts.roomUp === 'number' && isFinite(opts.roomUp) && opts.roomUp > 0) {
+    fpIdx = Math.min(fpKeys.length - 1, fpIdx + Math.floor(opts.roomUp));
+  }
+
+  const fpKey = fpKeys[fpIdx];
+  const packed = pack(fpKey);
   const [fw, fd] = FOOTPRINT[fpKey];
   const { slots, dropped } = packed;
 
