@@ -21,9 +21,11 @@ import { createOutliner } from './outliner.js';
 import { createSurfacePanel, type SurfacePanel } from './surface.js';
 import { createBadge } from './badge.js';
 import { createTabs } from './tabs.js';
+import { createToolbar } from './toolbar.js';
+import { createBrushRow } from './brush-row.js';
 import { TAB_ON_PICK } from '../../decide/edit-tabs.js';
 import type { ViewSide } from '../../decide/orbit.js';
-import { SHADING_LABEL, SHADING_MODES, type ShadingMode } from '../../decide/shading.js';
+import type { ShadingMode } from '../../decide/shading.js';
 import type { SurfaceSetting } from '../../decide/surface-material.js';
 import type { ArtworkItem } from '../../decide/artwork.js';
 
@@ -41,6 +43,24 @@ export interface PanelHandlers {
   pickVillage(v: VillagePick): void;
   /** 정해진 시점으로 간다(W6). **키와 같은 함수로 이어져야 한다** */
   setView(side: ViewSide | 'focus'): void;
+
+  // ── 실행취소 (2026-08-22, 감독 지시 *"워크래프트3 편집기 … 개선해봐"*) ───────
+  // 버튼과 `Ctrl+Z`/`Ctrl+Shift+Z` 가 **같은 함수**여야 한다 — `setView`·`setShading` 이
+  // 키와 한 구현을 보는 것과 같은 이유이고, 갈라지면 «버튼으로는 되는데 키로는 안 된다»
+  // 가 난다. 스택 자체는 `edit/history-ops.ts` 가 소유하고 패널은 부르기만 한다.
+  undo(): void;
+  redo(): void;
+  /** 버튼을 흐리게 할지. **말로만 거절하면 «눌러도 아무 일이 없다» 로 읽힌다** */
+  canUndo(): boolean;
+  canRedo(): boolean;
+  /**
+   * 여러 확정을 **한 항목으로 묶는다.** 되돌리기 자체는 `commit()` 을 감싸서 저절로
+   * 쌓이므로(`edit/history-ops.ts` 의 「세션 배선」 절) 조작 버튼은 아무것도 안 해도
+   * 된다 — **수치칸만** 이 문이 필요하다. 타이핑 중 `input` 이벤트마다 확정이 나서,
+   * 안 묶으면 「12.5」를 치고 되돌리기를 네 번 눌러야 원래대로 온다.
+   */
+  holdEdit(): void;
+  releaseEdit(): void;
   /** 셰이딩을 그 모드로(W6). 위와 같은 이유로 키와 한 함수다 */
   setShading(m: ShadingMode): void;
 
@@ -160,9 +180,11 @@ export function createPanel(
   const rowY = el('div', 'row');
   const rowOps = el('div', 'row');
   const rowOut = el('div', 'row');
-  const rowView = el('div', 'row');
-  const rowShade = el('div', 'row');
-  const inspector = createInspector(host, st, () => { refresh(); });
+  // 수치칸이 타이핑을 한 항목으로 묶는 문. 이유는 위 `holdEdit` 계약 한 곳이다.
+  const inspector = createInspector(host, st, () => { refresh(); }, {
+    hold: () => { handlers.holdEdit(); },
+    release: () => { handlers.releaseEdit(); },
+  });
   // 아웃라이너는 **패널 밖**에 산다(왼쪽 별도 컨테이너). 넓은 화면에서만 보이는 것은
   // CSS 가 정하고 여기서는 폭을 모른다 — `css.ts` 의 미디어 쿼리 한 곳이 판정한다.
   // 카테고리 탭 (감독 지시 2026-08-19 *"막 나열하니 정신없잖아"*). 무엇을 어느 탭에
@@ -211,6 +233,7 @@ export function createPanel(
     fn(st.target);
     st.target.apply();
     // 버튼 한 번은 «조작이 끝났다» 이다 — 드래그와 달리 이어질 프레임이 없다.
+    // (되돌리기는 이 `commit` 을 감싼 쪽이 알아서 쌓는다 — 여기는 아무것도 안 한다.)
     st.target.commit();
     refresh();
   };
@@ -285,45 +308,18 @@ export function createPanel(
     });
     rowPhoto.append(button('🖼 사진 걸기', () => { fileIn.click(); }), fileIn);
   }
-  // ── 정해진 시점 (W6, 감독 지시 2026-08-13) ────────────────────────────────
-  // *"보는 시점도 탑. 왼쪽오른쪽. f누르면 확대 등."*
-  // 버튼과 키가 **같은 함수**로 간다(`handlers.setView` → `input.setView`) — 각자
-  // 구현하면 한쪽만 고쳐져 어긋난다.
-  rowView.append(
-    button('탑', () => { handlers.setView('top'); }),
-    button('정면', () => { handlers.setView('front'); }),
-    button('좌', () => { handlers.setView('left'); }),
-    button('우', () => { handlers.setView('right'); }),
-    button('확대', () => { handlers.setView('focus'); }),
-  );
-  // ── 셰이딩 뷰 (W6, 감독 지시 2026-08-13) ──────────────────────────────────
-  // *"그리고 와이어 프레임 뷰. 솔리드 뷰도 구현해줘."*
-  //
-  // 라벨은 `SHADING_LABEL` 한 곳에서 온다 — 여기에 «와이어» 라고 직접 적으면 키 안내
-  // (`input.ts`)와 값 미러링이 되고, 한쪽만 고쳐도 아무도 모른다.
-  //
-  // 버튼은 **절대 지정**이고 `Shift+Z` 는 토글이다. 다른 함수인 이유는 `Input.setShading`
-  // 주석 한 곳에 있다.
-  const shadeBtns = SHADING_MODES.map((m) =>
-    button(SHADING_LABEL[m], () => { handlers.setShading(m); }));
-  rowShade.append(...shadeBtns);
-
   const head = el('div', 'head');
   head.append(title, toggle);
   const body = el('div', 'body');
-  // ── 공용(상시) — 탭 **밖**이다 ──────────────────────────────────────────
-  // 시점과 셰이딩은 «무엇을 골랐든» 늘 필요하다. 탭 안에 넣으면 「표면을 만지다가 위에서
-  // 보려면 탭을 옮겨야」 하고, 그것이 블렌더 뷰포트 헤더·유니티 씬뷰 툴바가 피한 형태다.
-  // 감독 문언의 *"공용기능"* 이 이것이다(근거는 `decide/edit-tabs.ts` 헤더 한 곳).
-  // 셋을 한 상자에 묶는다 — 그래야 스크롤에서 **함께** 고정된다(검수관 권고 P-h).
-  // 시점·셰이딩만 위에 두고 탭 바만 sticky 로 하면 「늘 필요하다」던 둘이 먼저 사라진다.
-  const toolbar = el('div', 'toolbar');
-  toolbar.append(rowView, rowShade, tabs.bar);
-  body.append(toolbar);
+  // 공용(상시) — 탭 **밖**이다. 무엇이 왜 여기 있는지는 `panel/toolbar.ts` 한 곳이다.
+  const toolbar = createToolbar(doc, handlers, el, button, tabs.bar);
+  body.append(toolbar.root);
 
   // ── 탭 내용 ─────────────────────────────────────────────────────────────
   // 「놓기」 — 아직 없는 것을 만든다.
-  tabs.panes.place.append(palette);
+  // 붓(2026-08-22). **팔레트 바로 아래**다 — 「무엇을 놓을까」 다음이 「어떻게 놓을까」다.
+  const brush = createBrushRow(doc, st, () => { refresh(); });
+  tabs.panes.place.append(palette, brush.root);
   // 문이 없으면 붙이지 않는다 — 빈 행도 `.row` 여백을 먹어 «뭔가 빠진 자리» 처럼 보인다.
   if (handlers.hangPhoto) tabs.panes.place.append(rowPhoto);
 
@@ -382,17 +378,9 @@ export function createPanel(
     groundBtn.hidden = st.target?.kind === 'art';
     dupBtn.hidden = st.target?.kind !== 'overlay';
     snapBtn.dataset.on = st.snapOn ? '1' : '0';
-    // ── 셰이딩 버튼 ────────────────────────────────────────────────────────
-    // **지금 모드를 강조한다.** 없으면 눌러도 화면이 그대로인 모드(재질)에서 «안 먹었나» 가
-    // 된다 — 이 저장소가 «조작이 안 먹는 것과 대상이 없는 것은 다른 일» 로 여러 번 적은 축이다.
-    //
-    // 문이 없는 소비자(빌더 미리보기·테스트 하네스)에서는 **행 자체를 감춘다.** 누를 수
-    // 없는 버튼을 보여주는 것은 안내가 아니라 막다른 길이다.
-    const curShade = host.shading?.() ?? null;
-    rowShade.hidden = curShade === null;
-    for (let i = 0; i < shadeBtns.length; i++) {
-      shadeBtns[i]!.dataset.on = SHADING_MODES[i] === curShade ? '1' : '0';
-    }
+    // 상시 툴바(되돌리기 흐리기·셰이딩 강조). 판정은 그 파일이 소유한다.
+    toolbar.sync(host.shading?.() ?? null);
+    brush.sync();
     thawBtn.hidden = st.villageSel === null;
     // 팔레트 강조 — **두 칸을 함께 본다**(W6 E). 파츠 버튼은 `src` 가 없으므로 `src` 만
     // 보면 «파츠를 골랐는데 아무것도 강조 안 된다» 가 된다. 대조는 라벨이 아니라
@@ -459,7 +447,10 @@ export function createPanel(
       + ' · Esc = 고른 것 취소'
       + ' · 중클릭(또는 Alt+좌)드래그 = 대상 중심으로 돌기 · Shift+드래그 = 위아래 · 휠 = 줌'
       + ' · 시점 1 정면 / 3 우 / 7 탑 / 9 좌 · F 확대 · Shift+Z 와이어 토글'
-      + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제';
+      + ' · 좌드래그 이동 · 우드래그 시점 · Q/E 회전 · Z/X 높이 · Del·⌫ 삭제'
+      // 되돌리기(2026-08-22). ⚠ 위 「값 미러링」 경고가 여기에도 걸린다 — 실제 키는
+      // `edit/input.ts` 의 `ctrlKey || metaKey` 분기가 소유한다. 그쪽을 고치면 이 줄도 본다.
+      + ' · Ctrl+Z 되돌리기 · Ctrl+Shift+Z(또는 Ctrl+Y) 다시하기';
     inspector.sync(st.target);
     outliner.sync();
     badge.sync();

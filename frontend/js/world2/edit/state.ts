@@ -200,6 +200,28 @@ export interface EditState {
    * 그 분기가 문자열 파싱이 되고, 파싱은 형식을 두 곳에 적는 일이다.
    */
   pendingPart: string | null;
+  /**
+   * **붓 모드인가** (2026-08-22, 감독 카드 「브러시로 여러 개 뿌리기」).
+   *
+   * `pendingPart` 와 **직교한다** — 붓은 «어떻게 놓는가» 이고 `pendingPart` 는 «무엇을
+   * 놓는가» 다. 그래서 상호배타 불변식에 새 항이 안 생긴다(그 불변식은 여덟 곳에 퍼져
+   * 있고 일곱 검사가 지킨다 — `edit/artwork-mode.ts` 가 세 번째 pending 슬롯을 피한
+   * 것과 같은 판단이다).
+   *
+   * ⚠ **붓 모드에서는 놓은 뒤 고르기를 안 푼다.** 하나씩 놓기는 «한 번의 동작» 이라
+   * 풀지만(감독 신고 2026-08-13 *"흩어뿌리기 식"*), 붓은 문지르는 것이 본질이라 풀면
+   * 매번 다시 골라야 한다. 푸는 문은 `Esc`(`cancelPending`)로 이미 있다.
+   */
+  brushOn: boolean;
+  /** 붓 반경(m). 범위는 `decide/brush.ts` 가 소유한다 */
+  brushRadius: number;
+  /** 한 붓질에 뿌릴 개수. 실제로 놓이는 수는 상한·간격에 잘릴 수 있다 */
+  brushCount: number;
+  /**
+   * 지금까지 몇 번 문질렀나. **시드에 섞인다** — 좌표만으로 시드를 만들면 같은 자리를
+   * 두 번 문질러도 같은 점이 나와 간격 검사에 전부 걸린다(`decide/brush.ts` 의 `strokeSeed`).
+   */
+  strokeNo: number;
   dragging: OverlayEntry | null;
   dragPlaneY: number;
   orbiting: boolean;
@@ -265,6 +287,12 @@ export function createEditState(): EditState {
     artLost: false,
     pendingSrc: null,
     pendingPart: null,
+    brushOn: false,
+    // 기본값은 범위 중간이 아니라 **하한 쪽**이다 — 처음 켠 사람이 실수로 넓게 뿌리고
+    // 되돌리는 것보다, 좁게 시작해 넓히는 쪽이 배우기 쉽다.
+    brushRadius: 6,
+    brushCount: 8,
+    strokeNo: 0,
     dragging: null,
     dragPlaneY: 0,
     orbiting: false,

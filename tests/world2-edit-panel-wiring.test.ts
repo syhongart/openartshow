@@ -53,6 +53,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createPanel, type PanelHandlers } from '../frontend/js/world2/edit/panel/dom.js';
 import { createOutliner } from '../frontend/js/world2/edit/panel/outliner.js';
 import { createActions } from '../frontend/js/world2/edit/actions.js';
+import { createEditHistory } from '../frontend/js/world2/edit/history-ops.js';
 import { createEditState, select } from '../frontend/js/world2/edit/state.js';
 import { artTarget } from '../frontend/js/world2/edit/target-art.js';
 import { tonesFor } from '../frontend/js/world2/parts/index.js';
@@ -122,6 +123,16 @@ function mount(opts: {
     setView: noop,
     setShading: noop,
     exportNow: noop,
+    // ── 되돌리기 (2026-08-22) ────────────────────────────────────────────────
+    // 🔴 **`noop` 을 안 쓴다.** 위 `pickArt` 주석이 적은 그 사고(검수관 3차 B-A)와 같은
+    // 형태다 — 하네스가 제품과 다른 것을 물리면 「조립이 그 부품을 물리는가」가 어디서도
+    // 안 보인다. 제품(`edit/mode.ts`)이 실물 `EditHistory` 를 물리므로 여기도 물린다.
+    undo: () => { history.undo(); },
+    redo: () => { history.redo(); },
+    canUndo: () => history.canUndo(),
+    canRedo: () => history.canRedo(),
+    holdEdit: () => { history.hold(); },
+    releaseEdit: () => { history.release(); },
     // **문을 줄지 말지가 이 하네스의 축 하나다** — 안 주면 칸 자체가 없어야 한다.
     artList: opts.withArtDoor === false ? undefined : () => port.list(),
     // 🔴 **제품(`edit/mode.ts` 의 `pickArt`)과 같은 형태로 적는다** — 세 번째 인자까지.
@@ -139,7 +150,10 @@ function mount(opts: {
   } as unknown as PanelHandlers;
 
   const panel = createPanel(host, st, handlers, noop);
-  return { panel, st, host, port, handlers };
+  // 제품과 **같은 순서**다 — 되돌린 뒤 무엇을 되돌렸는지 화면이 말해야 하므로 패널 뒤에
+  // 만들고, 위 핸들러들이 이 상수를 호출 시점에 본다(`edit/mode.ts` 의 그 배치 그대로).
+  const history = createEditHistory(host, st, panel, port);
+  return { panel, st, host, port, handlers, history };
 }
 
 /** 패널 안의 탭 버튼 하나 */
@@ -657,7 +671,8 @@ describe('🔴 `Esc` 로 고른 것을 취소한다 — 태스크 #97', () => {
 
   const mkActions = (): ReturnType<typeof createActions> & { st: ReturnType<typeof createEditState> } => {
     const h = mount();
-    const actions = createActions(h.host, h.st, h.panel);
+    const actions = createActions(
+      h.host, h.st, h.panel, createEditHistory(h.host, h.st, h.panel));
     return Object.assign(actions, { st: h.st });
   };
 
@@ -868,5 +883,139 @@ describe('🔴 GS-T3 — 색 견본이 실제로 색을 바꾼다', () => {
     st.target = artTarget(createArtsPort((s) => s), 0, noLost);
     panel.refresh();
     expect(toneRow()?.style.display, '🔴 액자에 색 견본이 떴다').toBe('none');
+  });
+});
+
+// ── 붓 조작칸 (2026-08-22, 감독 카드 「브러시로 여러 개 뿌리기」) ──────────────
+// 판정은 `decide/brush.ts`, 집행은 `edit/actions.ts` 의 `paintAt`, 그 둘을 검사하는
+// 파일은 `world2-brush.test.ts` 다. **여기서는 「화면에 붙어 있고 상태를 만지는가」만**
+// 본다 — 그 배선이 빠지면 판정·집행이 아무리 옳아도 감독은 붓을 켤 수가 없다.
+describe('🔴 붓 조작칸이 「놓기」 탭에 붙어 있다', () => {
+  const brushBtn = (): HTMLButtonElement | null =>
+    Array.from(pane('place')?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+      .find((b) => b.textContent?.includes('붓')) ?? null;
+  const brushRanges = (): HTMLInputElement[] =>
+    Array.from(pane('place')?.querySelectorAll<HTMLInputElement>('input[type="range"]') ?? []);
+
+  it('🔴 붓 토글이 **놓기** 탭에 있다 — 「아직 없는 것을 만든다」', () => {
+    mount();
+    expect(brushBtn(), '🔴 붓 토글이 놓기 탭에 없다').not.toBeNull();
+  });
+
+  it('🔴 누르면 붓이 켜지고 슬라이더가 나타난다', () => {
+    const { st, panel } = mount();
+    panel.refresh();
+    expect(st.brushOn).toBe(false);
+    // 꺼져 있으면 슬라이더는 **숨는다** — 눌러도 아무 일이 없는 칸을 안 보여준다.
+    expect(brushRanges().every((r) => (r.closest('.surf-row') as HTMLElement | null)?.hidden !== false),
+      '🔴 붓이 꺼졌는데 슬라이더가 보인다').toBe(true);
+    brushBtn()!.click();
+    expect(st.brushOn, '🔴 토글이 상태를 안 바꿨다').toBe(true);
+    expect(brushRanges().length, '🔴 붓 슬라이더(크기·개수)가 둘이 아니다')
+      .toBeGreaterThanOrEqual(2);
+  });
+
+  it('🔴 슬라이더가 상태를 민다 — 움직이는데 아무 일도 안 나면 거짓 UI 다', () => {
+    const { st, panel } = mount();
+    st.brushOn = true;
+    panel.refresh();
+    const [r, n] = brushRanges();
+    r!.value = String(Number(r!.max));
+    r!.dispatchEvent(new Event('input'));
+    expect(st.brushRadius, '🔴 붓 크기 슬라이더가 상태를 안 밀었다').toBe(Number(r!.max));
+    n!.value = String(Number(n!.max));
+    n!.dispatchEvent(new Event('input'));
+    expect(st.brushCount, '🔴 개수 슬라이더가 상태를 안 밀었다').toBe(Number(n!.max));
+  });
+
+  it('🔴 GLB 를 고른 채 붓을 켜면 **안 먹는다고 말한다** — 조용한 no-op 을 안 만든다', () => {
+    const { st, panel } = mount();
+    st.brushOn = true;
+    st.pendingSrc = 'assets/models/a.glb';
+    panel.refresh();
+    const note = Array.from(pane('place')?.querySelectorAll('.note') ?? [])
+      .map((e) => e.textContent ?? '').join(' ');
+    expect(note, '🔴 GLB 는 붓이 안 먹는다는 안내가 없다').toMatch(/GLB/);
+  });
+});
+
+// ── 되돌리기 묶기가 열린 채 남지 않는다 (검수관 반려 B1, 2026-08-22) ──────────
+//
+// 반려 사유: `panel/inspector.ts` 가 수치칸·슬라이더의 `focus`/`pointerdown` 에서 묶기를
+// 열고 **`change` 에서만** 닫았다. HTML `change` 는 **값이 바뀌어야** 나므로, 포커스만
+// 주고 값을 안 바꾸면 묶기가 열린 채 남고 `history-ops.ts` 의 `if (!held) flush()` 가
+// **그 뒤의 모든 확정을 삼킨다.** 그러면 Ctrl+Z 가 「그 앞의 조작」을 되돌리고, 화면이
+// 바뀌므로 감독은 그것을 성공으로 읽는다 — 같은 파일 `barrier` 주석이 *"「안 먹는 것」
+// 보다 나쁘다"* 라고 지목한 형태다.
+//
+// ⚠ **이 축이 없어서 반려까지 갔다.** 기존 검사는 «다른 것을 고르면 묶기가 풀린다» 만
+// 보고 **같은 대상을 유지한 경로**를 안 봤다. 여기가 그 자리다.
+//
+// ⚠⚠ **처방이 두 겹이라 하나만 되돌리면 이 검사가 안 깨진다**(뮤테이션 실측 2026-08-22):
+//   ① 여는 자리를 `focus` → **첫 `input`** 으로 옮겼다(값이 바뀔 때만 열린다)
+//   ② 닫는 자리를 `change` 하나에서 **`change`·`blur` 둘**로 늘렸다
+// ①만 되돌려도, ②만 되돌려도 나머지 하나가 막는다 — 둘 다 되돌려야 빨간불이 된다.
+// **그것이 이 검사의 한계이자 두 겹으로 둔 이유다.** 「한 줄을 지웠는데 초록이니 안전
+// 하다」로 읽지 마라 — 그때 남은 것은 방어 한 겹뿐이다.
+describe('🔴 B1 · 값을 안 바꾸고 나가도 이후 조작이 되돌리기에 쌓인다', () => {
+  /** 오버레이 하나를 고른 채 패널을 세운다 */
+  function picked() {
+    const m = mount();
+    const e = {
+      id: 1, src: 'assets/models/a.glb', preview: false,
+      holder: {} as never, x: 0, y: 0, z: 0, ry: 0, s: 1,
+    };
+    select(m.st, m.host, { entry: e });
+    m.history.watch(m.st.target);
+    m.panel.refresh();
+    return { ...m, e };
+  }
+  const numInput = (key: string): HTMLInputElement | null =>
+    document.querySelector<HTMLInputElement>(`#w2-edit .insp input[data-f="${key}"]`)
+      ?? Array.from(document.querySelectorAll<HTMLInputElement>('#w2-edit .insp input'))[0] ?? null;
+  const opBtn = (label: string): HTMLButtonElement | null =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#w2-edit button'))
+      .find((b) => b.textContent?.includes(label)) ?? null;
+
+  it('🔴 수치칸에 **포커스만** 주고 나간 뒤 회전 버튼을 누르면 쌓인다', () => {
+    const m = picked();
+    const inp = numInput('x');
+    expect(inp, '★ 수치칸을 못 찾았다 — 이 검사가 빈 검사다').not.toBeNull();
+    // 포커스만 준다 — 값은 안 바꾼다. 실제 브라우저에서 `change` 는 안 난다.
+    inp!.dispatchEvent(new Event('focus'));
+    inp!.dispatchEvent(new Event('blur'));
+    const before = m.history.depth();
+    opBtn('회전')!.click();
+    expect(m.history.depth(), '★ 묶기가 열린 채 남아 확정이 삼켜졌다').toBe(before + 1);
+    m.history.undo();
+    expect(m.e.ry, '★ 되돌렸는데 방금 그 회전이 안 풀렸다').toBe(0);
+  });
+
+  it('🔴 크기 슬라이더를 **잡았다 그 자리에서 놓아도** 이후 조작이 쌓인다', () => {
+    const m = picked();
+    const sl = sizeInput();
+    // 액자가 아니면 크기 슬라이더가 없을 수 있다 — 그때는 이 경로가 성립하지 않는다.
+    if (sl) {
+      sl.dispatchEvent(new Event('pointerdown'));
+      sl.dispatchEvent(new Event('focus'));
+      sl.dispatchEvent(new Event('blur'));
+    }
+    const before = m.history.depth();
+    opBtn('회전')!.click();
+    expect(m.history.depth(), '★ 슬라이더가 묶기를 열어 둔 채 남았다').toBe(before + 1);
+  });
+
+  it('값을 실제로 치면 타이핑 전체가 **한 항목**이다 — 묶기 자체는 살아 있다', () => {
+    const m = picked();
+    const inp = numInput('x');
+    for (const v of ['1', '12', '12.5']) {
+      inp!.value = v;
+      inp!.dispatchEvent(new Event('input'));
+    }
+    expect(m.history.depth(), '★ 타이핑 중에 쌓였다 — 글자마다 항목이 생긴다').toBe(0);
+    inp!.dispatchEvent(new Event('change'));
+    expect(m.history.depth()).toBe(1);
+    m.history.undo();
+    expect(m.e.x, '★ 타이핑 전체가 한 번에 안 되돌아갔다').toBe(0);
   });
 });

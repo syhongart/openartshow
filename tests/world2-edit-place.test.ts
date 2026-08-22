@@ -293,6 +293,10 @@ describe('편집 모드 · 놓기 행위', () => {
 describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
   const src = readFileSync('frontend/js/world2/features/overlay.ts', 'utf8');
   const place = src.slice(src.indexOf('async function place('), src.indexOf('function remove('));
+  // ⚠ **모델 캐시가 2026-08-22 에 별도 파일로 나갔다**(파일 크기 게이트 — 그 파일 헤더).
+  // 검사 대상은 「어느 파일에 적혀 있나」가 아니라 「그 처방이 살아 있나」이므로 경로만
+  // 따라간다. 여기가 안 따라가면 **옮기는 것만으로 처방이 조용히 사라질 수 있다.**
+  const models = readFileSync('frontend/js/world2/features/overlay-models.ts', 'utf8');
 
   it('place() 가 붙인 뒤 프레임을 넘기고 새 holder 만 예열한다', () => {
     expect(place).toContain('await nextFrame();');
@@ -314,11 +318,11 @@ describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
   });
 
   it('모델 캐시가 진행 중인 약속을 담는다 — 완료본만 담으면 중복 로드가 난다', () => {
-    expect(src).toContain('const models = new Map<string, Promise<Object3D | null>>()');
+    expect(models).toContain('const models = new Map<string, Promise<Object3D | null>>()');
   });
 
   it('실패는 캐시하지 않는다 — 남기면 그 src 가 세션 내내 못 살아난다', () => {
-    expect(src).toContain('models.delete(key);');
+    expect(models).toContain('models.delete(key);');
   });
 
   it('진행 콜백을 loadAsync 에 실제로 넘긴다', () => {
@@ -340,23 +344,23 @@ describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
   // 인자 개수가 아니므로, 이름·경로·호출 위치는 그대로 두고 **인자 목록에만** 둔감하게
   // 바꾼다. 느슨해진 것이 아니라 형식 결합을 뺀 것이다(대신 상한 배선 검사를 아래 더한다).
   it('로드한 모델이 확장 끄기를 거친다 — 안 거치면 실기기에서 렌더가 죽는다', () => {
-    expect(src).toMatch(
+    expect(models).toMatch(
       /import \{[^}]*\bdisableMatExtensions\b[^}]*\} from '\.\.\/\.\.\/world-shared\/glb-material\.js'/,
     );
-    expect(src).toMatch(/disableMatExtensions\(m[,)]/);
+    expect(models).toMatch(/disableMatExtensions\(m[,)]/);
   });
 
-  it('확장 끄기가 modelOf 안에 있다 — 캐시된 뒤에 걸면 이미 늦다', () => {
-    const modelOf = src.slice(src.indexOf('function modelOf('), src.indexOf('function applyEntry('));
-    expect(modelOf).toMatch(/disableMatExtensions\(m[,)]/);
+  it('확장 끄기가 캐시 적재 안에 있다 — 캐시된 뒤에 걸면 이미 늦다', () => {
+    const get = models.slice(models.indexOf('function get('), models.indexOf('return {'));
+    expect(get).toMatch(/disableMatExtensions\(m[,)]/);
   });
 
   // 🔴 발광 상한(감독 신고 2026-08-22 *"glb건물 현관의 조명이 너무쎄다"*)이 **이 경로에도**
   // 걸리는지. 오버레이는 `glb-city` 와 별개 경로라 한쪽만 배선하면 감독 배치 GLB 만 계속
   // 탄다 — 실제로 확장 끄기가 그렇게 한쪽에만 있다가 실기기 렌더를 죽인 이력이 있다.
   it('발광 상한을 노브에서 읽어 넘긴다 — 상한이 이 경로에도 걸린다', () => {
-    const modelOf = src.slice(src.indexOf('function modelOf('), src.indexOf('function applyEntry('));
-    expect(modelOf).toMatch(/disableMatExtensions\(m,\s*readEmissiveCap\(readNum\)\)/);
+    const get = models.slice(models.indexOf('function get('), models.indexOf('return {'));
+    expect(get).toMatch(/disableMatExtensions\(m,\s*readEmissiveCap\(readNum\)\)/);
   });
 });
 
