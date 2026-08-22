@@ -559,3 +559,63 @@ describe('🔴 GS-D6 — 조립 실물: 감독 요구 넷이 배선까지 도달
     expect(n.renderer.toneMappingExposure, '전제 — 밤에는 노출이 오른다').toBeGreaterThan(1);
   });
 });
+
+// ── 🔴 GS-D8 — 기본 시간대가 감독 판정을 지키는가 (2026-08-22) ────────────────
+// 감독이 *"가로등 블룸은 안 들어오고 있는데"* 를 신고했고 실측은 「낮에는 등이 꺼져
+// 있다」였다(`lampGlow(0)` = 0). 낮 화면과 복합씬 화면의 라이브 링크를 나란히 드렸고
+// **복합씬이 기본으로 뽑혔다.**
+//
+// ⚠ **이 판정을 보는 검사가 0개였다.** 기본값을 `daylit` 으로 바꾼 뒤 전체 4293건이
+// 그대로 통과했다 — 즉 누가 `day` 로 되돌려도, 다른 유효 시간대로 바뀌어도 아무도
+// 모른다. 기본 시간대는 `time=` 없이 들어온 사람이 보는 화면이고, 이 저장소는 그
+// 자리에서 이미 한 번 사고를 냈다(기본이 `night` 이라 밤 물이 첫인상이 됐다).
+//
+// ⚠⚠ **여기 «방문자 전원이 보는 화면» 이라고 적혀 있었고 거짓이었다**(검수관 P1,
+// 2026-08-22). `world2.html` 은 **behind-flag 라 라이브 미노출**이고 `main.ts` 는
+// 검증 등급 **3등급**이다 — 이 브랜치가 1등급이 된 것은 **이 테스트 파일**이
+// `ALWAYS_TIER1` 경로라서였다(`scripts/lib/verification-tier.mjs`). 지금 이 화면을
+// 보는 사람은 링크를 받은 사람뿐이다. 과장을 남겨 두면 라이브 승격 때 §10-3 의
+// 누적 diff 일괄 검수를 «이미 방문자가 보던 것» 으로 착각해 건너뛰게 된다.
+//
+// 소스에서 **기본값을 뽑아** 그 값으로 순수 함수를 태운다 — 값을 여기 다시 적지
+// 않으므로 한쪽만 고치면 다른 쪽이 빨간불이 된다.
+//
+// ⚠ **정규식 파싱의 구조적 사각**(검수관 P4): `exec` 는 **첫 매치**를 뽑는다. 지금은
+// `readEnum('time', …)` 가 소스에 한 번뿐이라 안전하지만, 이 저장소는 주석에 옛 코드를
+// 형태 그대로 인용하는 관행이 있다 — 그런 인용이 실제 코드 줄보다 **앞에** 오면 주석을
+// 뽑아 조용히 통과시킨다. 지금 조치는 불필요하되 알고 쓴다.
+describe('🔴 GS-D8 — 기본 시간대 (감독 판정 2026-08-22)', () => {
+  const mainSrc = readFileSync(
+    join(process.cwd(), 'frontend/js/world2/main.ts'), 'utf8',
+  );
+  const defaultTime = /readEnum\('time',\s*'([a-z]+)',\s*TIMES\)/.exec(mainSrc)?.[1];
+
+  it('기본값을 소스에서 읽어낼 수 있다 — 못 읽으면 아래 검사가 전부 헛돈다', () => {
+    expect(defaultTime, '🔴 `readEnum(\'time\', …)` 형태가 바뀌었다').toBeTruthy();
+    expect(TIMES as readonly string[]).toContain(defaultTime!);
+  });
+
+  it('🔴 기본 시간대가 복합씬이다 — 감독이 라이브 링크 둘을 보고 골랐다', () => {
+    expect(defaultTime, '🔴 기본 시간대가 바뀌었다 — 감독 판정 2026-08-22').toBe('daylit');
+  });
+
+  it('🔴 기본 화면에서 가로등이 켜진다 — 신고의 본체가 이것이었다', () => {
+    // 값이 아니라 **성질**을 본다: 기본 시간대의 점등 세기가 0 이 아니어야 한다.
+    // `day` 로 되돌리면 `nightness('day')=0` → `lampGlow(0)=0` 이라 여기서 잡힌다.
+    const glow = lampGlow(nightness(defaultTime as SkyTime));
+    expect(glow, '🔴 기본 화면에서 가로등 발광이 0 — 감독 신고가 되살아난다')
+      .toBeGreaterThan(0);
+  });
+
+  it('🔴 그 등불이 번짐 문턱을 넘는다 — 켜져 있어도 안 보이면 신고가 반복된다', () => {
+    // 「켜졌다」는 문턱을 넘어야 화면에 만들어진다(`LAMP_MAX_GLOW` 주석의 그 인과).
+    const lum = LAMP_LUMINANCE * lampGlow(nightness(defaultTime as SkyTime));
+    expect(lum, '🔴 기본 화면 등불이 블룸 문턱 아래다 — "가로등 똑같은데" 가 된다')
+      .toBeGreaterThan(BLOOM_THRESHOLD);
+  });
+
+  it('전제 — 옛 기본값(day)은 등을 안 켠다. 그래서 판정이 뒤집힌 것이다', () => {
+    expect(lampGlow(nightness('day')), '전제가 깨졌다 — 낮에 등이 켜진다면 이 회차의 근거가 사라진다')
+      .toBe(0);
+  });
+});

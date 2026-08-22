@@ -603,10 +603,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    * 그 추측의 근거를 무너뜨려 블룸이 밤에 통째로 꺼졌다(`features/types.ts` 의 `time`
    * 주석에 전말이 있다).
    *
-   * 초기값은 URL 이고 `readEnum` 이 목록 밖 값을 거른다. ⚠ 기본이 `night` → `day` 다
-   * (감독 *"밤 말고 햇빛아래서"* 2026-08-21) — `time=` 없는 링크가 밤 물을 보였다.
+   * 초기값은 URL 이고 `readEnum` 이 목록 밖 값을 거른다. ⚠ 기본값 이력은 `night` → `day`(감독 *"밤 말고 햇빛아래서"* 2026-08-21 — `time=` 없는 링크가 밤 물을 보였다) → **`daylit`**(감독 판정 2026-08-22)이다. 마지막 판정은 감독 신고 *"가로등 블룸은 안 들어오고 있는데"* 에서 왔고, 실측은 「낮에는 등이 **꺼져** 있다」였다 — `lampGlow(nightness('day')=0)` 이 `decide/night.ts` 에서 정확히 0 을 낸다. 낮·복합씬 두 화면의 라이브 링크를 나란히 드렸고 복합씬이 뽑혔다. **앞 지시와 충돌하지 않는다** — `daylit` 은 팔레트를 낮에서 빌리므로(`paletteTime()`) 「햇빛 아래」는 유지되고, 달라지는 것은 그 위쪽 축뿐이다(등이 켜지고 하늘이 진해지고 별이 보인다).
+   * ⚠⚠ **이 한 줄이 `features/postfx.ts` 의 `BLOOM_FLOOR` 를 기본 경로에서 밀어낸다** — 관계·근거는 그 상수 주석 한 곳이 소유한다(여기에 다시 적지 않는다). 이 판정을 지키는 검사는 `tests/world2-daylit.test.ts` 의 **GS-D8** 이고, 그전까지 기본 시간대를 보는 축은 **0개**였다.
    */
-  let timeOfDay: SkyTime = readEnum('time', 'day', TIMES);
+  let timeOfDay: SkyTime = readEnum('time', 'daylit', TIMES);
   /**
    * 어떤 셰이딩으로 보는가 — **월드를 보는 방식이고 조립부가 소유한다**(바로 위
    * `timeOfDay` 와 같은 이유·같은 모양).
