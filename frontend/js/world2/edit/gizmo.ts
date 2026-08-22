@@ -32,8 +32,9 @@
 // 가 루프를 켜고 끈다(붙을 것이 없으면 프레임을 안 잡는다).
 
 import {
-  AXIS_DIR, angleDelta, closestOnAxis, gizmoScale, ringAngle, scaleFactorFromDrag,
-  type Axis, type Ray3,
+  AXIS_DIR, OPACITY_IDLE, angleDelta, closestOnAxis, emphasize, gizmoScale, handleLabel,
+  isActivePart, partOpacity, ringAngle, scaleFactorFromDrag,
+  type Axis, type GizmoPart, type Handle, type Ray3,
 } from '../decide/gizmo-math.js';
 import { scaleBy } from '../decide/edit-pick.js';
 import { readNum } from '../url-knob.js';
@@ -41,11 +42,16 @@ import type { OverlayHost } from './types.js';
 import type { EditTarget } from './target.js';
 import type { StubMesh, ThreeNS } from './state.js';
 
-/** 잡을 수 있는 것 */
-export type Handle =
-  | { kind: 'move'; axis: Axis }
-  | { kind: 'rotate' }
-  | { kind: 'scale' };
+// 잡을 수 있는 것. **정의는 `decide/gizmo-math.ts` 로 옮겼다**(2026-08-22) — 강조 판정이
+// 그 타입을 받아야 하는데 여기 두면 판정 파일이 집행 파일을 가리켜 순환이 된다.
+//
+// ⚠ **지금 이 재수출의 소비자는 0건이다**(검수관 실측 P7: 지우고 `tsc --noEmit` rc=0,
+// 기즈모 검사 전부 통과). 그래도 남기는 것은 **공개 API 를 좁히지 않기 위해서**다 —
+// 옮기는 김에 없애면 「타입 이동」이 「API 축소」를 겸하게 된다.
+// 첫 판본은 이 자리에 *"소비자 경로는 그대로다"* 라고 적었고, **유지할 경로가 없었다**는
+// 점에서 부정확했다(검수관 P7·N4). 「소비자와 함께 열어라」는 G2 조건은 **새로 여는 것**에
+// 걸리고 이것은 있던 것을 유지한 경우라 대상이 아니다 — 검수관 판정.
+export type { Handle } from '../decide/gizmo-math.js';
 
 /**
  * 기즈모가 화면에서 차지하는 크기 노브.
@@ -130,14 +136,27 @@ export interface Gizmo {
   dispose(): void;
 }
 
-export function createGizmo(host: OverlayHost): Gizmo {
+/**
+ * 기즈모가 화면에 말을 거는 문 (2026-08-22, 감독 지시 *"축별 어떤 것이 선택되었는지"*).
+ *
+ * **선택 사양이다** — 안 주는 소비자(테스트 하네스)에서는 3D 강조만 남고 글자가 없다.
+ * 그래도 「무엇을 잡았나」의 절반은 보이므로 조용한 no-op 이 아니다.
+ */
+export interface GizmoSay {
+  (msg: string): void;
+}
+
+export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
   const THREE = host.THREE as ThreeNS;
   const disposables: { dispose?(): void }[] = [];
 
   const mat = (color: number) => {
     // `depthTest:false` — 기즈모는 물건에 파묻혀도 보여야 한다. 선택 링과 같은 판단이다.
     const m = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.95, depthTest: false, side: THREE.DoubleSide,
+      // ⚠ **불투명도 기본값을 여기 적지 않는다**(검수관 권고 P1, 2026-08-22). 강조가
+      // 걷힐 때 돌아갈 자리가 `OPACITY_IDLE` 이므로, 두 곳에 적으면 한쪽만 고쳐도
+      // 「붙이기만 해도 흐려진」 상태가 된다. 둘 다 화면에 도달하는 값이었다.
+      color, transparent: true, opacity: OPACITY_IDLE, depthTest: false, side: THREE.DoubleSide,
     });
     disposables.push(m);
     return m;
@@ -150,6 +169,15 @@ export function createGizmo(host: OverlayHost): Gizmo {
 
   /** 레이캐스트가 맞힌 메시 → 핸들 */
   const handleOf = new Map<unknown, Handle>();
+
+  /**
+   * 파트별 재질과 **기본 색**. 강조는 이 둘만 있으면 된다 — 축 하나가 막대와 화살촉에
+   * 재질을 **공유**하므로(아래 조립부) 재질 하나를 만지면 그 축 전체가 함께 밝아진다.
+   *
+   * ⚠ 기본 색을 함께 기억하는 것이 요점이다. 강조가 색을 덮어쓰므로, 원본을 안 들고
+   * 있으면 두 번째 드래그부터 **밝아진 색 위에 또 밝아진다**(회를 거듭할수록 흰색으로 간다).
+   */
+  const parts = new Map<GizmoPart, { mat: { color: { setHex(v: number): void }; opacity: number }; base: number }>();
 
   function addPart(m: StubMesh, h: Handle): void {
     m.renderOrder = 1000;
@@ -166,6 +194,7 @@ export function createGizmo(host: OverlayHost): Gizmo {
   const pickMat = mat(0xffffff);
   for (const axis of ['x', 'y', 'z'] as const) {
     const m = mat(AXIS_COLOR[axis]);
+    parts.set(axis, { mat: m as never, base: AXIS_COLOR[axis] });
     // 원기둥·원뿔은 기본이 **Y축 방향**이다. X·Z 축은 눕힌다.
     const shaft = new THREE.Mesh(shaftGeo, m);
     const head = new THREE.Mesh(headGeo, m);
@@ -195,12 +224,16 @@ export function createGizmo(host: OverlayHost): Gizmo {
   }
 
   // ── 회전 링 ─────────────────────────────────────────────────────────────
-  const ring = new THREE.Mesh(geo(new THREE.RingGeometry(RING_R - RING_HALF, RING_R + RING_HALF, 48)), mat(ROTATE_COLOR));
+  const ringMat = mat(ROTATE_COLOR);
+  parts.set('rotate', { mat: ringMat as never, base: ROTATE_COLOR });
+  const ring = new THREE.Mesh(geo(new THREE.RingGeometry(RING_R - RING_HALF, RING_R + RING_HALF, 48)), ringMat);
   ring.rotation.x = -Math.PI / 2;
   addPart(ring, { kind: 'rotate' });
 
   // ── 크기 상자 ───────────────────────────────────────────────────────────
-  const cube = new THREE.Mesh(geo(new THREE.BoxGeometry(0.2, 0.2, 0.2)), mat(SCALE_COLOR));
+  const cubeMat = mat(SCALE_COLOR);
+  parts.set('scale', { mat: cubeMat as never, base: SCALE_COLOR });
+  const cube = new THREE.Mesh(geo(new THREE.BoxGeometry(0.2, 0.2, 0.2)), cubeMat);
   cube.position.set(SCALE_AT, 0, 0);
   addPart(cube, { kind: 'scale' });
 
@@ -236,6 +269,20 @@ export function createGizmo(host: OverlayHost): Gizmo {
   /** 잡은 순간의 축 파라미터(이동·크기) 또는 각도(회전) */
   let anchor = 0;
 
+  /**
+   * **잡은 파트를 밝게, 나머지를 흐리게** (2026-08-22, 감독 지시).
+   *
+   * 판정은 전부 `decide/gizmo-math.ts` 가 갖는다 — 여기는 그 답을 재질에 꽂기만 한다.
+   * 아무것도 안 잡았으면(`active === null`) 모든 파트가 기본값으로 돌아간다.
+   */
+  function syncEmphasis(): void {
+    for (const [part, p] of parts) {
+      const on = isActivePart(active, part);
+      p.mat.color.setHex(emphasize(p.base, on));
+      p.mat.opacity = partOpacity(active, part);
+    }
+  }
+
   function axisOrigin(): readonly [number, number, number] {
     return target ? [target.x, target.y, target.z] : [0, 0, 0];
   }
@@ -250,6 +297,10 @@ export function createGizmo(host: OverlayHost): Gizmo {
     attach(e: EditTarget | null): void {
       target = e;
       group.visible = e !== null;
+      // 🔴 **잡은 것을 함께 놓는다**(검수관 권고 P4, 2026-08-22). 안 비우면 드래그 중
+      // 대상이 사라졌을 때 강조가 남고, **다시 붙이는 순간 엉뚱한 축이 밝게 보인다.**
+      // `active` 가 남는 것 자체는 기존 동작이지만 강조가 그 위에 새 증상을 얹었다.
+      if (active !== null) { active = null; syncEmphasis(); }
       if (e) { place(); startLoop(); } else stopLoop();
     },
 
@@ -277,6 +328,9 @@ export function createGizmo(host: OverlayHost): Gizmo {
     begin(h: Handle, ray: Ray3): void {
       if (!target) return;
       active = h;
+      syncEmphasis();
+      // 색만으로는 「빨강이 X 였나」를 기억해야 한다 — 글자는 기억을 요구하지 않는다.
+      say?.(`${handleLabel(h)} 중 — 놓으면 확정됩니다.`);
       if (h.kind === 'move') {
         anchor = closestOnAxis(ray, axisOrigin(), AXIS_DIR[h.axis]) ?? 0;
       } else if (h.kind === 'rotate') {
@@ -316,7 +370,9 @@ export function createGizmo(host: OverlayHost): Gizmo {
       return true;
     },
 
-    end(): void { active = null; },
+    // 놓으면 강조를 걷는다. **`active = null` 만 두면 밝아진 채로 남는다** — 다음
+    // 드래그에서 그 위에 또 밝아져 회를 거듭할수록 흰색이 된다(`parts` 의 `base` 주석).
+    end(): void { active = null; syncEmphasis(); },
 
     get dragging(): boolean { return active !== null; },
 
@@ -325,6 +381,7 @@ export function createGizmo(host: OverlayHost): Gizmo {
       (host.root as unknown as { remove(o: never): void }).remove(group as never);
       for (const d of disposables) d.dispose?.();
       handleOf.clear();
+      parts.clear();
     },
   };
 }
