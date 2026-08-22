@@ -19,7 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GATES, RISK_PATHS, changeSummary, overlapCheck, OVERLAP_EXEMPT } from '../scripts/gate.mjs';
+import { GATES, RISK_PATHS, changeSummary, overlapCheck, OVERLAP_EXEMPT, baseInfo } from '../scripts/gate.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -525,6 +525,39 @@ describe('GS-OV — 겹침 검사가 실제 저장소에서 동작한다', () =>
     const j = src.indexOf('for(constgateofGATES)');
     expect(i, '겹침 검사가 게이트 루프보다 뒤에 있다').toBeGreaterThan(0);
     expect(i, '겹침 검사가 게이트 루프보다 뒤에 있다').toBeLessThan(j);
+  });
+
+  it('★★ base 신선도가 **겹침 경로에서도** 찍힌다 — 문구가 거짓이 되지 않게', () => {
+    // ── 왜 이 검사가 생겼나 (검수관 권고, 2026-08-22) ──────────────────────
+    // 첫 판본은 base 나이를 `printChangeSummary()` 에만 두고 커밋 메시지에 *"눈에
+    // 보이게 했다"* 라고 적었는데, **겹침이 잡히는 경로는 조기 `return 1` 이라 그
+    // 함수를 안 부른다** — 즉 그 문장이 정작 필요한 순간에 거짓이었다.
+    //
+    // 이것이 왜 중요한가: 「겹침 0」과 「낡은 base 라 못 봤다」는 화면에서 구별되지
+    // 않는다. 그것이 이 게이트의 가장 큰 사각이고(백로그 한계 ①), base 를 찍는 것이
+    // 유일한 방어다. **게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게
+    // 만든다** — 이 저장소가 `main` unprotected 오기로 7일을 잃은 그 형태다.
+    const src = readFileSync(join(ROOT, 'scripts/gate.mjs'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
+    // `printOverlap` 안에서, **`both.length===0` 조기 return 보다 먼저** 찍어야 한다
+    // — 뒤에 두면 겹침 0 인 경우(= 낡은 base 가 숨는 바로 그 경우)에 안 보인다.
+    const fn = src.slice(src.indexOf('functionprintOverlap()'));
+    const printed = fn.indexOf('baseInfo(o.base)');
+    const early = fn.indexOf('o.both.length===0)return0');
+    expect(printed, 'printOverlap 이 base 를 안 찍는다').toBeGreaterThan(0);
+    expect(early, '전제가 깨졌다 — 조기 return 을 못 찾았다').toBeGreaterThan(0);
+    expect(printed, 'base 를 조기 return 뒤에 찍는다 — 겹침 0 일 때 안 보인다')
+      .toBeLessThan(early);
+    // 포맷을 두 곳에 적지 않는다 — 소비자가 둘이라 함수로 뺐다.
+    expect((src.match(/--date=format:/g) ?? []).length, 'base 포맷이 두 곳에 있다').toBe(1);
+  });
+
+  it('`baseInfo` 가 실제 커밋을 읽는다 — 못 읽으면 `?` 로 **표시**한다(조용히 넘기지 않는다)', () => {
+    const dir = makeRepo({}, {});
+    try {
+      expect(baseInfo('origin/main', dir), '실재하는 base 를 못 읽었다').toMatch(/^[0-9a-f]{7,} /);
+      expect(baseInfo('origin/nosuchbranch', dir), '없는 base 를 조용히 통과시켰다').toBe('?');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   it('여러 파일이 겹치면 전부 보고한다', () => {

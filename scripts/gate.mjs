@@ -220,6 +220,23 @@ export function overlapCheck(base = 'origin/main', cwd = ROOT) {
   return { measured: true, both, mine, theirs, from, base };
 }
 
+/**
+ * base 커밋의 짧은 해시와 시각.
+ *
+ * **낡은 base 는 겹침을 못 보게 만든다** — 상대 쪽 diff 가 비어 「겹침 0」이 나오고,
+ * 그것은 안전이 아니라 **못 잰 것**이다. `fetch` 여부를 코드가 강제할 수는 없으니
+ * 눈으로 볼 수 있게 한다. 검수관이 격리 클론에서 9일 낡은 `origin/main` 으로 판정을
+ * 부풀린 사고(2026-08-22)가 같은 축이다.
+ *
+ * 소비자가 둘(`printOverlap`·`printChangeSummary`)이라 함수로 둔다 — 포맷을 두 곳에
+ * 적으면 한쪽만 고쳐도 아무도 모른다.
+ */
+export function baseInfo(base = 'origin/main', cwd = ROOT) {
+  const r = spawnSync('git', ['log', '-1', '--format=%h %ad', '--date=format:%m-%d %H:%M', base],
+    { cwd, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : '?';
+}
+
 /** 겹친 파일을 **어느 커밋이** 만졌는지 — 이름만으로는 다음 행동이 안 정해진다 */
 function blamers(from, base, file) {
   const r = spawnSync('git', ['log', '--oneline', '--no-decorate', `${from}..${base}`, '--', file],
@@ -248,6 +265,15 @@ function printOverlap() {
     return 0;
   }
 
+  // ⚠ **겹침 0 일 때도 찍는다.** 「겹침 0」과 「낡은 base 라 못 봤다」는 화면에서
+  // 구별되지 않는데, 이 검사의 가장 큰 사각이 바로 그것이다(백로그 한계 ①).
+  //
+  // ⚠⚠ 첫 판본은 이 줄을 `printChangeSummary()` 에만 두고 커밋 메시지에 *"base 나이를
+  // 함께 찍어 눈에 보이게 했다"* 라고 적었는데 **겹침이 잡히는 경로에서는 거짓**이었다
+  // (검수관 권고, 2026-08-22) — 그 경로는 조기 `return 1` 이라 요약을 안 부른다.
+  // **게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다.** 문구를
+  // 고치는 대신 실제로 찍어서 문장을 참으로 되돌렸다.
+  console.log(`  겹침 검사 기준: ${o.base} = ${baseInfo(o.base)} (낡았으면 겹침을 못 본다)`);
   if (o.both.length === 0) return 0;
 
   console.log('');
@@ -276,13 +302,9 @@ function printOverlap() {
 function printChangeSummary() {
   const s = changeSummary();
   if (!s) return;
-  // base 의 신선도를 함께 찍는다(검수관 권고) — `origin/main` 이 낡았으면 범위가
-  // 오판된다. fetch 여부를 코드가 강제할 수는 없으니 눈으로 볼 수 있게 한다.
-  const bi = spawnSync('git', ['log', '-1', '--format=%h %ad', '--date=format:%m-%d %H:%M', s.base],
-    { cwd: ROOT, encoding: 'utf8' });
-  const baseInfo = bi.status === 0 ? bi.stdout.trim() : '?';
+  // base 의 신선도를 함께 찍는다(검수관 권고) — 근거는 `baseInfo` 한 곳이다.
   console.log('');
-  console.log(`── 이 브랜치가 만진 것 (${s.base} = ${baseInfo} 대비) ${'─'.repeat(10)}`);
+  console.log(`── 이 브랜치가 만진 것 (${s.base} = ${baseInfo(s.base)} 대비) ${'─'.repeat(10)}`);
   for (const b of s.buckets) {
     const mark = b.hits.length ? '⚠' : ' ';
     console.log(`  ${mark} ${b.label.padEnd(24)} ${String(b.hits.length).padStart(3)} 파일${b.hits.length ? `   → ${b.why}` : ''}`);
