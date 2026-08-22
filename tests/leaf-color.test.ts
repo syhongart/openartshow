@@ -15,7 +15,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   LEAF_BASE_A, LEAF_BASE_B, LEAF_SAT, LEAF_SAT_KNOB, LEAF_SAT_MAX, leafTone,
+  leafLift, liftTone,
 } from '../frontend/js/world2/decide/leaf-color.js';
+import { GRASS_TONES } from '../frontend/js/world2/decide/grass.js';
 import { saturateAroundLuma, bladeToneHex, DIRECTOR_TONES } from '../frontend/js/world2/decide/blade-shape.js';
 
 const luma = ([r, g, b]: readonly [number, number, number]): number =>
@@ -79,7 +81,11 @@ describe('🔴 채도 계수가 한 곳에만 있다 (값 미러링)', () => {
     );
     expect(src, '🔴 Rec.709 계수가 leaf-color 에 다시 나타났다 — 미러링이다')
       .not.toMatch(/0\.7152|0\.2126|0\.0722/);
-    expect(src).toContain("import { saturateAroundLuma } from './blade-shape.js'");
+    // ⚠ import 목록이 늘 수 있으므로 **문자열이 아니라 형태**로 본다(2026-08-22).
+    // 밝기 축이 같은 파일의 `luma` 를 함께 가져오면서 정확 일치가 깨졌다 — 그때 이
+    // 단언의 **목적**(계수를 복사하지 않고 그 파일 것을 실제로 쓴다)은 그대로다.
+    expect(src, 'blade-shape 의 saturateAroundLuma 를 import 하지 않는다')
+      .toMatch(/import\s*\{[^}]*saturateAroundLuma[^}]*\}\s*from\s*'\.\/blade-shape\.js'/);
   });
 
   it('공유 함수가 두 척도에서 같은 식을 낸다 — 잔디(0~255)와 잎(0~1)', () => {
@@ -104,8 +110,14 @@ describe('🔴 나무가 이 판정을 실제로 소비한다', () => {
   );
 
   it('정점색을 `leafTone` 으로 만든다 — 상수를 직접 박아 두지 않았다', () => {
-    expect(treeSrc).toMatch(/LEAF_A\s*=\s*leafTone\(LEAF_BASE_A/);
-    expect(treeSrc).toMatch(/LEAF_B\s*=\s*leafTone\(LEAF_BASE_B/);
+    // ⚠ **합성을 허용한다**(2026-08-22). 밝기 축이 들어오며 `liftTone(leafTone(...))` 이
+    // 됐다 — 이 단언의 목적은 «상수를 직접 박아 두지 않았다» 이고 합성도 그것을 만족한다.
+    // **느슨해진 것이 아니다**: 합성 순서(채도 → 밝기)는 아래 「나뭇잎 밝기 축」 절의
+    // 선언 정규식이 **더 강하게** 못 박는다. 목적은 그대로 두고 자리를 옮긴 것이다.
+    expect(treeSrc, 'LEAF_A 가 leafTone 을 안 거친다 — 상수를 직접 박았다')
+      .toMatch(/LEAF_A\s*=[^;]*leafTone\(LEAF_BASE_A/);
+    expect(treeSrc, 'LEAF_B 가 leafTone 을 안 거친다 — 상수를 직접 박았다')
+      .toMatch(/LEAF_B\s*=[^;]*leafTone\(LEAF_BASE_B/);
     // 옛 하드코딩이 남아 있으면 노브가 절반만 먹는다.
     expect(treeSrc, '🔴 옛 잎 색 리터럴이 남아 있다').not.toMatch(/\[0\.34,\s*0\.52,\s*0\.30\]/);
   });
@@ -160,5 +172,82 @@ describe('🔴 기반색이 초록 계열이다 (검수관 P1)', () => {
 
   it('두 톤이 서로 다르다 — 수관이 단색 덩어리로 보이지 않게 하는 전제', () => {
     expect(LEAF_BASE_A).not.toEqual(LEAF_BASE_B);
+  });
+});
+
+// ── 밝기 축 (PR #246 에서 이식, 팀장 조건 c1·c4) ────────────────────────────
+//
+// 감독이 같은 나뭇잎을 보고 두 세션에 각각 말했다 — 이쪽은 「채도가 낮다」, 저쪽은
+// 「어둡다」. 두 세션이 서로 모른 채 각자 설계했고 팀장 판정 ⓐ 로 이 파일에 합쳐졌다.
+//
+// ⚠ **이 검사들은 PR #246 에서 검수관이 실제로 뚫은 사각을 막는다.** 그 우회는
+// `leafLift()` 를 **죽은 코드**로 남기고 배율을 계산된 상수로 하드코딩하는 것이었고,
+// 값도 문자열도 그대로라 3건이 전부 통과했다. 그래서 **선언 자체**를 본다.
+describe('나뭇잎 밝기 축', () => {
+  const src = (): string => readFileSync(
+    join(process.cwd(), 'frontend/js/world2/parts/tree.ts'), 'utf8',
+  ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
+
+  it('★★ 두 축이 순서대로 합성된다 — 선언을 본다(값·문자열로는 못 본다)', () => {
+    const c = src();
+    // 채도가 **먼저**, 밝기가 **나중**. 순서가 바뀌면 `leafTone` 의 휘도 보존이 밝아진
+    // 휘도를 기준으로 돌아 두 축이 서로를 먹는다.
+    expect(c, 'LEAF_A 가 leafTone → liftTone 순서로 합성되지 않는다')
+      .toMatch(/constLEAF_A=liftTone\(leafTone\(LEAF_BASE_A,/);
+    expect(c, 'LEAF_B 도 같은 순서여야 한다')
+      .toMatch(/constLEAF_B=liftTone\(leafTone\(LEAF_BASE_B,/);
+    // 배율이 노브에서 온다 — 상수로 굳으면 감독이 화면에서 못 고른다.
+    expect(c, '밝기 배율이 노브에서 오지 않는다')
+      .toMatch(/constLEAF_LIFT_NOW=readNum\(LEAF_LIFT_KNOB,/);
+  });
+
+  it('★★ leafLift 가 잔디에서 유도된다 — 상수로 굳는 것을 막는다', () => {
+    const lc = readFileSync(
+      join(process.cwd(), 'frontend/js/world2/decide/leaf-color.ts'), 'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
+    expect(lc, 'leafLift 가 GRASS_TONES 를 안 읽는다 — 잔디를 밝혀도 나무가 안 따라온다')
+      .toContain('GRASS_TONES[1]');
+    expect(lc, 'leafLift 가 두 톤의 **평균**을 쓰지 않는다 — 각각 맞추면 수관 명암이 죽는다')
+      .toMatch(/luma\(LEAF_BASE_A\)\+luma\(LEAF_BASE_B\)\)\/2/);
+  });
+
+  it('★★★ 잔디 톤을 바꾸면 배율이 따라온다 — **소스가 아니라 값의 흐름을 잰다**', () => {
+    // ── 이 검사가 앞의 소스 정규식보다 강하다 ────────────────────────────────
+    // 이 회차에 「유도가 상수로 굳는 것」을 문자열로 막으려다 **네 번 뚫렸다**(마지막은
+    // `leafLift()` 안에서 조기 return 으로 상수를 반환하는 것 — 문자열도 값도 그대로라
+    // 3건이 전부 통과했다). 소스 검사는 죽은 코드·주석을 답으로 받는다.
+    //
+    // 그래서 **다른 잔디 톤을 넣어 본다.** 유도가 살아 있으면 결과가 따라오고, 상수를
+    // 반환하는 구현은 여기서 즉시 들통난다. 형태를 지키려면 형태를 묻지 말고 **값이
+    // 흐르는지**를 물어야 한다.
+    const dark = leafLift(0x203018);   // 어두운 잔디 → 배율이 작아져야 한다
+    const bright = leafLift(0xd8f0b0); // 밝은 잔디  → 배율이 커져야 한다
+    expect(dark, '어두운 잔디를 줘도 배율이 그대로다 — 유도가 상수로 굳었다')
+      .toBeLessThan(leafLift());
+    expect(bright, '밝은 잔디를 줘도 배율이 그대로다 — 유도가 상수로 굳었다')
+      .toBeGreaterThan(leafLift());
+    // 산술도 확인한다 — 방향만 맞고 값이 틀릴 수 있다.
+    const leaf = (luma(LEAF_BASE_A) + luma(LEAF_BASE_B)) / 2;
+    expect(bright).toBeCloseTo(luma([0xd8 / 255, 0xf0 / 255, 0xb0 / 255]) / leaf, 10);
+  });
+
+  it('유도된 배율이 실제로 잔디 밝기를 맞춘다', () => {
+    const lift = leafLift();
+    const g = GRASS_TONES[1];
+    const grass = luma([((g >> 16) & 0xff) / 255, ((g >> 8) & 0xff) / 255, (g & 0xff) / 255]);
+    const a = liftTone(LEAF_BASE_A, lift);
+    const b = liftTone(LEAF_BASE_B, lift);
+    expect((luma(a) + luma(b)) / 2, '평균 휘도가 잔디와 어긋난다').toBeCloseTo(grass, 5);
+    expect(luma(a), 'A 가 B 보다 밝지 않다 — 수관 명암이 사라졌다').toBeGreaterThan(luma(b));
+    for (const c of [a, b]) for (const v of c) expect(v, '채널이 포화했다').toBeLessThan(1);
+  });
+
+  it('기본값은 1 — 감독 판정 전까지 밝기를 확정하지 않는다(팀장 조건 c2)', async () => {
+    const { LEAF_TONES_FOR_TEST } = await import('../frontend/js/world2/parts/tree.js');
+    const [a, b] = LEAF_TONES_FOR_TEST;
+    // 노브 없이 뜨면 채도 축만 적용된 상태여야 한다 — 두 축이 동시에 걸리면 감독이
+    // 어느 것이 무엇인지 못 가른다.
+    expect(a, '기본 화면에 밝기 축이 이미 걸려 있다').toEqual(leafTone(LEAF_BASE_A, LEAF_SAT));
+    expect(b, '기본 화면에 밝기 축이 이미 걸려 있다').toEqual(leafTone(LEAF_BASE_B, LEAF_SAT));
   });
 });

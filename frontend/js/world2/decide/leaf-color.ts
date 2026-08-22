@@ -30,7 +30,9 @@
 // 규정했고 세 번 다 [틀렸다]"*. 그러므로 여기서도 **내가 값을 정하지 않는다.**
 // 노브(`?leafsat=`)로 열고 감독이 화면에서 고른다.
 
-import { saturateAroundLuma } from './blade-shape.js';
+import { saturateAroundLuma, luma } from './blade-shape.js';
+// 밝기 축이 잔디에서 유도된다 — 값을 여기 다시 적지 않는다(아래 `leafLift`).
+import { GRASS_TONES } from './grass.js';
 
 /** 채도를 만지기 전의 잎 색. `parts/tree.ts` 가 정점색으로 넣던 값 그대로다. */
 export const LEAF_BASE_A: readonly [number, number, number] = [0.34, 0.52, 0.30];
@@ -75,4 +77,59 @@ export function leafTone(
   base: readonly [number, number, number], sat: number,
 ): [number, number, number] {
   return saturateAroundLuma(base, sat, 1);
+}
+
+// ── 밝기 축 — 감독 *"나뭇잎 밝기가 어두운데. 초록이 어두운 초록이야."* (2026-08-21) ──
+//
+// 위 채도 축과 **다른 세션에서 따로 나왔다.** 감독이 같은 나뭇잎을 보고 두 세션에 각각
+// 말했고(이쪽은 「어둡다」, 저쪽은 「채도가 낮다」), 서로 모른 채 각자 설계해 정면으로
+// 겹쳤다. 팀장 판정 ⓐ 로 **채도 축(위)이 살아남고 밝기 축이 이 파일로 이식**됐다 —
+// `decide/` 분리와 노브 구조가 판정/집행 분리 규율에 맞기 때문이다(PR #246 은 판정
+// 로직을 집행 파일 `parts/tree.ts` 안에 두고 있었다).
+//
+// ⚠ **두 축은 모순이 아니다**(팀장 근거). 위 `leafTone` 의 「휘도 보존」은 **채도 연산의
+// 명세**이지 *"현 휘도가 옳다"* 는 판정이 아니다. 옛 값의 어둡기에는 근거가 아예 없었다 —
+// 주석이 *"두 톤을 섞어 단색 덩어리로 안 보이게"* 만 적고 있었고 왜 그 어둡기인지는
+// 어디에도 없다. 그래서 밝히는 데 뒤집을 판정이 없다.
+
+/**
+ * 잎 두 톤의 **평균 휘도**를 잔디 중간 톤에 맞추는 배율.
+ *
+ * ── 왜 잔디에서 유도하나 ────────────────────────────────────────────────────
+ * 실측: 잎 두 톤의 평균 휘도 **0.419** vs 같은 화면의 잔디 중간 톤 **0.611**. 한 화면에
+ * 있는 두 초록이 다른 밝기대에 있었다. 값을 손으로 밝히면 그 순간 근거가 사라지므로
+ * **잔디에서 유도한다** — 잔디를 밝히면 나무가 저절로 따라오고 `GRASS_TONES` 를 두 곳에
+ * 적을 일도 없다.
+ *
+ * **평균에 맞추는 것이 요점이다.** A 는 잔디보다 밝아지고 B 는 어두워져 수관 안의 명암이
+ * 남는다 — 곱셈은 선형이라 상대 비율(B/A ≈ 0.80)이 **불변**이고, 위 `leafTone` 이 지키는
+ * 「단색 덩어리 방지」가 보존된다(검수관 재현 확인). 두 톤을 각각 잔디에 맞추면 그 대비가
+ * 사라진다.
+ */
+export function leafLift(grassHex: number = GRASS_TONES[1]): number {
+  const g = grassHex;
+  const grass = luma([((g >> 16) & 0xff) / 255, ((g >> 8) & 0xff) / 255, (g & 0xff) / 255]);
+  const leaf = (luma(LEAF_BASE_A) + luma(LEAF_BASE_B)) / 2;
+  return grass / leaf;
+}
+
+/**
+ * 밝기 배율 노브. **기본 1 = 안 밝힘**(= 이 축이 없던 상태).
+ *
+ * ⚠ **기본값을 확정하지 않는 것이 팀장 조건 c2 다.** 채도 축이 이미 기본값을 갖고 있어
+ * 두 축을 동시에 켜면 감독이 **어느 것이 무엇인지 못 가른다.** 그래서 후보를 노브 조합으로
+ * 배포해 화면에서 고르게 하고, 고른 뒤에 기본값을 굽는다.
+ * 「값·룩은 화면으로만 판정된다」 — 이 저장소의 결정 사이클 1번.
+ */
+export const LEAF_LIFT_KNOB = 'leaflift';
+/** 유도된 배율의 **상한**. 그보다 더 밝히는 것은 잔디보다 밝은 잎이라 별도 판정이다 */
+export const LEAF_LIFT_MAX = 2;
+
+/** 밝기 배율을 곱하고 1 로 자른다 — 넘으면 그 채널만 포화해 색이 틀어진다 */
+export function liftTone(
+  c: readonly [number, number, number], lift: number,
+): [number, number, number] {
+  return [
+    Math.min(1, c[0] * lift), Math.min(1, c[1] * lift), Math.min(1, c[2] * lift),
+  ];
 }

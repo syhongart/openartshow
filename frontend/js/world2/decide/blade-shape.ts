@@ -238,11 +238,21 @@ export function bladeToneHex(
  * 휘도를 보존하는 이유: 채도만 미는데 화면이 같이 밝아지면 감독이 두 축을 한 화면에서
  * 못 가른다. 실루엣·굽힘 축을 가른 것과 같은 이유다.
  */
+/**
+ * Rec.709 상대 휘도. **계수의 유일한 자리다.**
+ *
+ * `saturateAroundLuma` 안에 있던 것을 끌어냈다(2026-08-22) — 잎 밝기 축이 같은 계수를
+ * 필요로 했고, 복사하면 그 순간 값 미러링이다. 이 파일의 테스트가 정확히 그것을 금지한다.
+ */
+export function luma(rgb: readonly [number, number, number]): number {
+  return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+}
+
 export function saturateAroundLuma(
   rgb: readonly [number, number, number], sat: number, max: number,
 ): [number, number, number] {
   const [r, g, b] = rgb;
-  const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const y = luma([r, g, b]);
   const push = (c: number): number => Math.max(0, Math.min(max, y + (c - y) * sat));
   return [push(r), push(g), push(b)];
 }

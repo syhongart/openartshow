@@ -35,6 +35,7 @@ import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/pa
 import { plazaOccupied } from './plaza.js';
 import {
   LEAF_BASE_A, LEAF_BASE_B, LEAF_SAT, LEAF_SAT_KNOB, LEAF_SAT_MAX, leafTone,
+  LEAF_LIFT_KNOB, LEAF_LIFT_MAX, liftTone,
 } from '../decide/leaf-color.js';
 import { readNum } from '../url-knob.js';
 
@@ -263,8 +264,14 @@ const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
 // 부팅 시 한 번 계산한다 — 정점색은 지오메트리에 구워지므로 프레임마다 바뀔 수 없다.
 // `?leafsat=` 을 바꾸면 새로고침이 필요하고, 그것이 이 축의 성질이다.
 const LEAF_SAT_NOW = readNum(LEAF_SAT_KNOB, LEAF_SAT, 0, LEAF_SAT_MAX);
-const LEAF_A = leafTone(LEAF_BASE_A, LEAF_SAT_NOW);
-const LEAF_B = leafTone(LEAF_BASE_B, LEAF_SAT_NOW);
+// 밝기 축은 채도 **뒤에** 온다 — `leafTone` 이 휘도를 보존하므로 순서를 바꾸면 채도가
+// 밝아진 휘도 기준으로 돌아 두 축이 서로를 먹는다. 근거는 `decide/leaf-color.ts` 한 곳이다.
+const LEAF_LIFT_NOW = readNum(LEAF_LIFT_KNOB, 1, 0, LEAF_LIFT_MAX);
+const LEAF_A = liftTone(leafTone(LEAF_BASE_A, LEAF_SAT_NOW), LEAF_LIFT_NOW);
+const LEAF_B = liftTone(leafTone(LEAF_BASE_B, LEAF_SAT_NOW), LEAF_LIFT_NOW);
+
+/** 잎 두 톤 — `tests/leaf-color.test.ts` 가 두 축의 합성 결과를 확인한다 */
+export const LEAF_TONES_FOR_TEST = [LEAF_A, LEAF_B] as const;
 
 /**
  * 스케일 1일 때의 수관 반경(미터). `footprint` 가 여기에 인스턴스 스케일을 곱한다.
