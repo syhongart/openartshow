@@ -37,6 +37,9 @@ import {
   LEAF_BASE_A, LEAF_BASE_B, LEAF_SAT, LEAF_SAT_KNOB, LEAF_SAT_MAX, leafTone,
 } from '../decide/leaf-color.js';
 import { readNum } from '../url-knob.js';
+import {
+  LEAF_U0, ATLAS_INSET, ATLAS_INSET_KNOB, ATLAS_INSET_MAX, remapU, treeTexture, rng,
+} from './tree-atlas.js';
 
 export const tree: PartSpec = {
   kind: 'tree',
@@ -168,93 +171,6 @@ export const tree: PartSpec = {
 
 // ── 지오메트리 조립 ──────────────────────────────────────────────────────────
 
-/**
- * 텍스처에서 줄기 영역과 잎 영역을 가르는 U 좌표.
- *
- * 왼쪽 `[0, LEAF_U0]` 은 **완전 불투명**한 수피, 오른쪽 `[LEAF_U0, 1]` 은 알파가 뚫린
- * 잎이다. 한 장에 담는 이유는 재질을 하나로 유지하기 위해서다 — 텍스처를 둘로 나누면
- * 재질이 둘이 되고 드로우콜이 갈린다.
- *
- * 0.25 는 잎에 넓은 쪽을 준 것이다. 수피는 세로 줄무늬라 가로 해상도가 덜 필요하고,
- * 잎은 실루엣이 전부라 촘촘할수록 좋다.
- */
-export const LEAF_U0 = 0.25;
-
-/** 지오메트리의 U 좌표를 `[u0,u1]` 구간으로 눌러 넣는다 */
-function remapU(geo: InstanceType<ThreeNS['BufferGeometry']>, u0: number, u1: number): void {
-  const uv = geo.attributes.uv.array as Float32Array;
-  for (let i = 0; i < uv.length; i += 2) uv[i] = u0 + uv[i] * (u1 - u0);
-}
-
-/**
- * 줄기 + 잎 한 장. **world1 `createLeafClusterTexture` 의 알고리즘 그대로다.**
- *
- * 투명 배경 위에 타원을 150개 흩뿌리되 중앙에 밀집시킨다(`pow(rand, 0.6)` — 지수가 1보다
- * 작으면 분포가 안쪽으로 쏠린다). 그래야 가장자리가 성겨서 **실루엣이 뚫려 보인다.**
- * 잎맥 하이라이트도 같은 확률로 긋는다.
- *
- * 감독 판정 *"나뭇잎 퀄리티 너무 떨어진다"* 의 처방이 이것이다. 앞서 잎을 정팔면체
- * 덩어리로 만들었는데, 잎은 얇고 성긴 것이라 각진 입체로는 절대 안 보인다. **잎의
- * 정체는 형태가 아니라 뚫린 실루엣이다.**
- */
-function treeTexture(T: ThreeNS) {
-  const S = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = S * 2;   // 왼쪽 절반의 절반이 수피, 나머지가 잎
-  canvas.height = S;
-  const ctx = canvas.getContext('2d')!;
-  const rnd = rng(0x1eaf);
-
-  // ── 왼쪽: 수피 ──────────────────────────────────────────────────────────
-  const barkW = S * 2 * LEAF_U0;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, barkW, S);
-  // 세로 줄무늬. 색이 아니라 **밝기 변주**다 — 실제 색은 정점색이 정한다.
-  for (let i = 0; i < 90; i++) {
-    const x = rnd() * barkW;
-    const w = 1 + rnd() * 3;
-    const a = 0.06 + rnd() * 0.12;
-    ctx.fillStyle = `rgba(0,0,0,${a})`;
-    ctx.fillRect(x, 0, w, S);
-  }
-
-  // ── 오른쪽: 잎 클러스터 ─────────────────────────────────────────────────
-  const leafX = barkW;
-  const leafW = S * 2 - barkW;
-  for (let i = 0; i < 150; i++) {
-    const ang = rnd() * Math.PI * 2;
-    // 지수 0.6 — 중앙 밀집, 가장자리 성김. 이 한 값이 실루엣을 만든다.
-    const dist = Math.pow(rnd(), 0.6) * Math.min(leafW, S) * 0.45;
-    const x = leafX + leafW / 2 + Math.cos(ang) * dist;
-    const y = S / 2 + Math.sin(ang) * dist;
-    const len = 7 + rnd() * 13;
-    const wid = len * (0.4 + rnd() * 0.25);
-    // 밝기만 흔든다. 색조는 정점색이 준다 — 여기서 초록을 칠하면 정점색과 곱해져
-    // 두 번 어두워진다(값 미러링과 같은 형태의 함정이다).
-    const l = 62 + rnd() * 34;
-    ctx.fillStyle = `hsla(0, 0%, ${l}%, ${0.78 + rnd() * 0.22})`;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rnd() * Math.PI);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, len, wid, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (rnd() > 0.6) {   // 잎맥
-      ctx.strokeStyle = `hsla(0, 0%, ${Math.min(100, l + 18)}%, 0.5)`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(-len * 0.8, 0);
-      ctx.lineTo(len * 0.8, 0);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  const tex = new T.CanvasTexture(canvas);
-  tex.colorSpace = T.SRGBColorSpace;
-  return tex;
-}
-
 /** 줄기 색(정점색). 인스턴스 `tones` 가 이 위에 곱해진다 */
 const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
 // 🔴 잎 색 — **판정은 `decide/leaf-color.ts` 가 소유한다**(감독 신고 2026-08-22
@@ -263,6 +179,8 @@ const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
 // 부팅 시 한 번 계산한다 — 정점색은 지오메트리에 구워지므로 프레임마다 바뀔 수 없다.
 // `?leafsat=` 을 바꾸면 새로고침이 필요하고, 그것이 이 축의 성질이다.
 const LEAF_SAT_NOW = readNum(LEAF_SAT_KNOB, LEAF_SAT, 0, LEAF_SAT_MAX);
+/** 아틀라스 경계 물림(위 `ATLAS_INSET`). 지오메트리에 구워지므로 부팅 시 한 번 읽는다. */
+const INSET_NOW = readNum(ATLAS_INSET_KNOB, ATLAS_INSET, 0, ATLAS_INSET_MAX);
 const LEAF_A = leafTone(LEAF_BASE_A, LEAF_SAT_NOW);
 const LEAF_B = leafTone(LEAF_BASE_B, LEAF_SAT_NOW);
 
@@ -282,20 +200,6 @@ export const TREE_RADIUS_UNIT = 1.3;
 const TRUNK_LEN = 2.6;
 const TRUNK_RAD = 0.22;
 const MAX_LEVEL = 2;
-
-/**
- * 결정론 난수. **씨앗이 고정이다** — 지오가 하나뿐이므로 나무 모양도 하나이고, 그것이
- * 빌드마다 달라지면 골든 스냅샷이 흔들린다.
- */
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 interface Piece { geo: InstanceType<ThreeNS['BufferGeometry']>; color: readonly [number, number, number] }
 
@@ -354,7 +258,8 @@ function buildTreeGeometry(T: ThreeNS) {
       const w = (2.1 + rnd() * 0.5) * s;
       const h = w * (0.72 + rnd() * 0.16);
       const geo = new T.PlaneGeometry(w, h);
-      remapU(geo, LEAF_U0, 1);   // 텍스처의 잎 영역으로
+      // 경계 텍셀을 밟지 않게 안쪽으로 물린다(위 `ATLAS_INSET`).
+      remapU(geo, LEAF_U0 + INSET_NOW, 1 - INSET_NOW);
       const off = new T.Matrix4()
         .makeTranslation(
           (rnd() - 0.5) * 0.7 * s,
@@ -372,7 +277,8 @@ function buildTreeGeometry(T: ThreeNS) {
     // 5세그먼트 — world1 은 7이었다. 가지가 열셋이라 둘씩 줄이면 체감 없이 삼각형이
     // 50개쯤 준다. 가지는 대부분 잎에 가려 실루엣에 거의 기여하지 않는다.
     const geo = new T.CylinderGeometry(rad * 0.62, rad, len, 5).translate(0, len / 2, 0);
-    remapU(geo, 0, LEAF_U0);   // 텍스처의 불투명(줄기) 영역으로
+    // 수피도 오른쪽 끝이 같은 경계다 — 함께 물린다(위 `ATLAS_INSET`).
+    remapU(geo, INSET_NOW, LEAF_U0 - INSET_NOW);
     geo.applyMatrix4(m);
     pieces.push({ geo, color: BARK });
 
