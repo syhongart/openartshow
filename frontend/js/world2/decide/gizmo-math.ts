@@ -153,3 +153,104 @@ export function scaleFactorFromDrag(deltaU: number, gizmoSize: number, sensitivi
   // 소유하지만, 여기서 음수·0 을 먼저 막아 그 함수에 이상한 값이 들어가지 않게 한다.
   return Math.max(0.01, f);
 }
+
+// ── 잡은 축 표시 (2026-08-22, 감독 지시) ──────────────────────────────────────
+//
+// 감독: *"기즈모? 선택되었을때 축별 어떤 것이 선택되었는지 표시가 필요해."*
+//
+// ⚠ **`edit/input.ts` 가 오래 *"기즈모는 잡은 축이 색으로 보이지만 모달은 아무것도 안
+// 보인다"* 라고 적고 있었고, 그 문장이 이 회차 전까지 오해를 불렀다.** 실측(2026-08-22,
+// 착수 직전): 축마다 색이 다른 것은 맞지만(X 빨강·Y 초록·Z 파랑) **잡았을 때 달라지는
+// 것이 하나도 없었다** — `gizmo.ts` 전체에 `hover`·`highlight` 가 0건이었다.
+// 「축마다 색이 다르다」와 「잡은 축이 표시된다」는 다른 일인데 한 문장이 둘 다인 것처럼
+// 읽혔다. **이 회차가 그 문장을 참으로 만들었다**(검수관 권고 P6) — 이제 실제로 구별된다.
+//
+// ── 왜 판정을 여기 두는가 ────────────────────────────────────────────────────
+// 「어느 파트가 활성인가」와 「그때 얼마나 밝은가」는 three 없이 답할 수 있고, 그러면
+// 검사가 실제 코드를 돌린다. 집행(`gizmo.ts`)은 이 답을 재질에 꽂기만 한다.
+
+/** 잡을 수 있는 것. **`edit/gizmo.ts` 가 이 타입을 재수출한다**(소비자 경로 유지) */
+export type Handle =
+  | { kind: 'move'; axis: Axis }
+  | { kind: 'rotate' }
+  | { kind: 'scale' };
+
+/** 기즈모를 이루는 파트. 축 셋은 재질을 축마다 하나씩 공유한다 */
+export type GizmoPart = Axis | 'rotate' | 'scale';
+
+/**
+ * 불투명도 셋.
+ *
+ * ⚠ **`IDLE` 은 기존 값이다**(`gizmo.ts` 의 `mat()` 이 0.95 로 만들어 왔다). 아무것도
+ * 안 잡았을 때의 화면을 바꾸지 않는 것이 이 회차의 경계다 — 감독이 지목한 것은
+ * 「잡았을 때」이고, 평상시 룩을 함께 건드리면 무엇이 달라졌는지가 흐려진다.
+ *
+ * `DIMMED` 는 **0 이 아니다.** 안 잡은 축을 완전히 지우면 「어느 방향으로 가고 있나」의
+ * 기준이 사라져 오히려 방향 감각이 나빠진다 — 흐릿하게 남겨 축 셋의 배치를 유지한다.
+ */
+export const OPACITY_IDLE = 0.95;
+export const OPACITY_ACTIVE = 1;
+export const OPACITY_DIMMED = 0.22;
+
+/** 활성 파트를 흰색 쪽으로 섞는 비율. 색상(빨강·초록·파랑)은 남기고 밝기만 올린다 */
+export const EMPHASIS_MIX = 0.45;
+
+/** 그 핸들이 건드리는 파트 */
+export function partOf(h: Handle): GizmoPart {
+  return h.kind === 'move' ? h.axis : h.kind;
+}
+
+/** 지금 잡은 것이 이 파트인가. 아무것도 안 잡았으면 전부 `false` */
+export function isActivePart(active: Handle | null, part: GizmoPart): boolean {
+  return active !== null && partOf(active) === part;
+}
+
+/**
+ * 이 파트의 불투명도.
+ *
+ * **아무것도 안 잡았으면 전부 `IDLE`** — 그것이 「평상시 룩을 안 바꾼다」의 집행이다.
+ */
+export function partOpacity(active: Handle | null, part: GizmoPart): number {
+  if (active === null) return OPACITY_IDLE;
+  return isActivePart(active, part) ? OPACITY_ACTIVE : OPACITY_DIMMED;
+}
+
+/**
+ * 활성이면 흰색 쪽으로 섞은 색, 아니면 원래 색.
+ *
+ * 채널마다 `c + (255 - c) · MIX` 다 — 곱셈이 아니라 **흰색까지 남은 거리의 비율**이라,
+ * 이미 밝은 채널은 조금 오르고 어두운 채널이 많이 올라 **색상이 유지된 채 밝아진다**.
+ *
+ * ⚠ **첫 판본은 배수 방식의 실패를 *"빨강 축이 주황으로 보인다"* 라고 적었고 실측과
+ * 달랐다**(검수관 권고 P2, 2026-08-22). 실제 축 색으로 재면 그 일은 **어느 색에서도
+ * 안 일어난다.** 배수(×1.45)가 실제로 깨지는 곳은 셋이다:
+ *
+ *   `#dddddd`(크기 상자) → **`#ffffff` 순백으로 날아간다**(세 채널이 함께 상한에 붙는다)
+ *   `#ffcc55`(회전 링)   → `#ffff7b` — 주황빛 노랑이 **순노랑으로 색상 이동**
+ *   `#ff0000`(순수 원색) → **변화 0** — 이미 상한이라 강조가 아예 안 보인다
+ *
+ * 채택한 lerp 은 같은 색에서 `#ececec`·`#ffe3a2`·`#ff7373` 이다. **결론은 그대로이고
+ * 근거만 실측으로 바뀌었다** — 「추측한 실패 형태」와 「실제 실패 형태」가 달랐다.
+ */
+export function emphasize(color: number, on: boolean): number {
+  if (!on) return color;
+  const ch = (shift: number): number => {
+    const c = (color >> shift) & 0xff;
+    return Math.round(c + (0xff - c) * EMPHASIS_MIX) & 0xff;
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+/** 축 이름. 화면이 「무엇을 잡았나」를 말할 때 쓴다 */
+const AXIS_NAME: Record<Axis, string> = { x: 'X', y: 'Y', z: 'Z' };
+
+/**
+ * 무엇을 잡았는지 한 줄로.
+ *
+ * ⚠ **축 이름을 반드시 넣는다** — 감독 문언이 *"축별 어떤 것이 선택되었는지"* 이고,
+ * 색만으로는 「빨강이 X 였나」를 기억해야 한다. 글자는 기억을 요구하지 않는다.
+ */
+export function handleLabel(h: Handle): string {
+  if (h.kind === 'move') return `${AXIS_NAME[h.axis]}축 이동`;
+  return h.kind === 'rotate' ? '회전' : '크기';
+}
