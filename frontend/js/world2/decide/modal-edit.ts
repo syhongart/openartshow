@@ -181,6 +181,10 @@ export function modalLabel(st: ModalState, d: ModalDelta): string {
   return `크기: ×${d.ks.toFixed(3)}`;
 }
 
-function nameOf(kind: ModalKind): string {
+/**
+ * 조작 이름. **되돌리기 목록도 이것을 쓴다**(2026-08-22) — 화면 표시와 되돌리기 라벨이
+ * 갈리면 「회전을 되돌렸는데 목록엔 「조작」이라고 뜬다」가 된다(값 미러링).
+ */
+export function nameOf(kind: ModalKind): string {
   return kind === 'rotate' ? '회전' : '크기';
 }

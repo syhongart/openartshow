@@ -555,9 +555,8 @@ export function createInput(deps: InputDeps): Input {
     }
 
     // ── 셰이딩 토글 ───────────────────────────────────────────────────────
-    // 블렌더의 `Z`(셰이딩 파이 메뉴)는 **안 쓴다**: 우리 `Z`/`X` 가 이미 높이이고, 같은
-    // 키가 상황에 따라 다르게 동작하는 것은 `G` 를 걷어내면서 방금 없앤 그 문제다.
-    //
+    // 블렌더의 `Z`(셰이딩 파이 메뉴)는 **안 쓴다**: 우리 `Z`/`X` 가 이미 높이이고, 같은 키가
+    // 상황에 따라 다르게 동작하는 것은 `G` 를 걷어내면서 방금 없앤 그 문제다.
     // ── 이 분기가 **무엇보다** 앞이어야 하는가 (뮤테이션 실측 2026-08-14) ───
     // 처음엔 *"`EDIT_KEYS` 보다 반드시 앞이다"* 라고 적었고 **과장이었다.** 뮤테이션
     // M5(이 블록을 `EDIT_KEYS` 검사 **뒤**로 이동)가 `0 failed` 였고, 원인은 등가였다 —
@@ -572,7 +571,8 @@ export function createInput(deps: InputDeps): Input {
     //
     // ②를 지키는 축이 테스트에 있다(안 고른 상태로 `Shift+Z` 를 눌러 본다). 과장된
     // 주석을 약하게 고치는 대신 **못 박는 축을 만들어** 남은 문장을 참으로 만들었다.
-    if (ev.shiftKey && ev.code === 'KeyZ') {
+    // ⚠ `Ctrl`/`Cmd` 는 뺀다 — 그 조합은 다시하기다(`edit/history-input.ts`).
+    if (ev.shiftKey && !ev.ctrlKey && !ev.metaKey && ev.code === 'KeyZ') {
       if (!toggleShading()) return;
       ev.preventDefault();
       ev.stopPropagation();

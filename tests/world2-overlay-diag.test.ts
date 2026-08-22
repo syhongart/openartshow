@@ -125,6 +125,17 @@ describe('집행 배선 — 계산된 값이 실제로 소비되는가', () => {
       'utf8',
     );
   })();
+  // ⚠ **실패 기록이 2026-08-22 에 `features/overlay-models.ts` 로 나갔다**(파일 크기
+  // 게이트 — 그 파일 헤더). 검사 대상은 「어느 파일에 적혀 있나」가 아니라 「그 처방이
+  // 살아 있나」이므로 경로를 따라간다. 안 따라가면 **옮기는 것만으로 상한이 조용히 사라진다.**
+  const models = (() => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const { fileURLToPath } = require('node:url') as typeof import('node:url');
+    return readFileSync(
+      fileURLToPath(new URL('../frontend/js/world2/features/overlay-models.ts', import.meta.url)),
+      'utf8',
+    );
+  })();
 
   it('★ 진단을 손으로 만들지 않는다 — 인라인 리터럴로 되돌아가면 상한이 사라진다', () => {
     expect(src, '★ `newDiag` 를 안 쓴다').toContain('newDiag(');
@@ -133,9 +144,11 @@ describe('집행 배선 — 계산된 값이 실제로 소비되는가', () => {
   });
 
   it('★ 실패 기록이 `recordFailure` 를 지난다 — 직접 push 하면 상한이 안 걸린다', () => {
-    expect(src, '★ `recordFailure` 를 안 쓴다').toContain('recordFailure(diag,');
-    expect(src, '★ `diag.failed.push` 가 되살아났다 — 무제한 성장 경로다')
-      .not.toMatch(/diag\.failed\.push\(/);
+    expect(models, '★ `recordFailure` 를 안 쓴다').toContain('recordFailure(diag,');
+    for (const [name, t] of [['overlay.ts', src], ['overlay-models.ts', models]] as const) {
+      expect(t, `★ \`diag.failed.push\` 가 되살아났다(${name}) — 무제한 성장 경로다`)
+        .not.toMatch(/diag\.failed\.push\(/);
+    }
   });
 
   it('★ `want` 를 붙이기 **전에** 적는다 — 뒤면 거짓 통과 창이 열린다', () => {

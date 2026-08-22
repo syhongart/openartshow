@@ -37,7 +37,7 @@ import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 import type { EditSession, LoadProgress, OverlayEntry, OverlayHost } from '../edit/types.js';
 import { loadOverlay, type OverlayItem } from '../decide/overlay.js';
 import {
-  newDiag, recordFailure, beginAttach, type OverlayDiag,
+  newDiag, beginAttach, type OverlayDiag,
 } from '../decide/overlay-diag.js';
 import { loadLedger, owners } from '../decide/village-ledger.js';
 import {
@@ -48,7 +48,7 @@ import { resolveEntry } from '../decide/tenant-entry.js';
 import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
 import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-mount.js';
 import { createArtsPort } from '../systems/art-port.js';
-import { disableMatExtensions, readEmissiveCap } from '../../world-shared/glb-material.js';
+import { createModelCache, type ModelCache } from './overlay-models.js';
 import {
   ATTACH_BATCH, attachAll, warmUpNode, type CullableNode,
 } from '../../world-shared/attach-loop.js';
@@ -119,17 +119,8 @@ export const overlayFeature: Feature = {
     // 쓰는 사람이 없는 노브가 생기고, 그것은 「지금 안 쓰는 것을 미리 공유」다.
     const store = createStaticStore();
     const entries: OverlayEntry[] = [];
-    /**
-     * 로드한 원본 모델. 같은 `src` 를 여러 번 놓아도 지오·재질을 공유한다.
-     *
-     * ⚠ **완료본이 아니라 «진행 중인 약속»을 담는다.** 완료본만 담으면 로드가 끝나기
-     * 전에 같은 것을 또 부를 때 캐시가 비어 있어 **같은 파일을 처음부터 다시 받는다.**
-     * 팔레트의 자산이 12.9MB 라 그것이 N벌 동시에 파싱되면 탭이 죽는다 — 감독 신고
-     * (2026-08-12 *"지엘비 씬에 놓으려고 하면 멈춘다"*)의 직접 경로가 이것이었다.
-     */
-    const models = new Map<string, Promise<Object3D | null>>();
-    /** `place` 가 마지막으로 `null` 을 낸 이유. 화면이 그것을 말한다 */
-    let lastFail: string | null = null;
+    /** GLB 원본 캐시. 로더가 준비된 뒤 `ensureLoader` 가 만든다 */
+    let cache: ModelCache | null = null;
     /** 미리보기로 만든 임시 주소. 떠날 때 회수한다 */
     const blobUrls = new Set<string>();
     let root: Object3D | null = null;
@@ -158,74 +149,14 @@ export const overlayFeature: Feature = {
       // `load()` 의 진행 콜백으로 넘긴다(r171 `src/loaders/Loader.js:19-25` 실측).
       loadGLB = async (url: string, onProgress?: (ev: ProgressEvent) => void) =>
         (await loader.loadAsync(url, onProgress)).scene as unknown as Object3D;
+      // 캐시는 로더가 서고 나서야 뜻이 있다 — 그전에 만들면 「받을 수 없는 캐시」다.
+      cache = createModelCache(diag, loadGLB);
       if (!root) {
         const g = new (ns as unknown as ThreeGroupNS).Group();
         g.name = 'world2:overlay';
         env.scene.add(g as never);
         root = g as unknown as Object3D;
       }
-    }
-
-    function modelOf(key: string, url: string, onProgress?: LoadProgress): Promise<Object3D | null> {
-      // **진행 중인 것도 돌려준다** — 이 한 줄이 중복 로드를 막는다(위 `models` 주석).
-      const hit = models.get(key);
-      if (hit) return hit;
-
-      // ⚠ 아래에서 `.catch` 가 `models.delete(key)` 를 하는데 `models.set(key, p)` 는 그
-      // **뒤에** 온다. 순서가 뒤집혀 «실패한 약속이 캐시에 영구히 남는» 것처럼 읽히지만
-      // 그렇지 않다 — `loadGLB` 가 `async` 함수라 **동기적으로 reject 할 수 없고**,
-      // `then`/`catch` 콜백은 언제나 마이크로태스크로 미뤄진다. 그래서 동기 실행인
-      // `set` 이 항상 먼저다. (검수관이 이 지점을 블로커 후보로 짚었고 실측으로 기우로
-      // 판정됐다 — 다음 사람이 같은 우려를 다시 하지 않게 적어 둔다.)
-
-      const relay = onProgress
-        ? (ev: ProgressEvent) => {
-          // 총 용량을 서버가 안 주면(`lengthComputable === false`) **퍼센트를 지어내지
-          // 않는다** — `null` 을 넘겨 받은 양만 말하게 한다.
-          const total = ev.lengthComputable && ev.total > 0 ? ev.total : 0;
-          onProgress(total > 0 ? (ev.loaded / total) * 100 : null, ev.loaded);
-        }
-        : undefined;
-
-      const p = loadGLB!(url, relay)
-        .then((m) => {
-          // ⚠ **이 한 줄이 없으면 감독 실기기에서 화면이 멈춘다.**
-          //
-          // `three/webgpu` 는 `sheen`·`clearcoat`·`anisotropy`·`ior` 를 처리하다 렌더
-          // 파이프라인 생성에 실패하고, 그러면 **그 뒤 모든 프레임이 통째로 무효**가 된다
-          // (2026-08-12 감독 콘솔: `TSL.NormalNode: Vertex attribute "normal" not found` →
-          // `[Invalid RenderPipeline "renderPipeline_m.DarkShine_*"]` 가 매 프레임).
-          //
-          // 이것은 새 발견이 아니다 — **감독이 2026-07-29 에 이미 판정한 것**이고
-          // (`raw` 안 보임 / `noext` 보임), `glb-city` 는 그때 기본을 `noext` 로 옮겼다.
-          // **오버레이만 그 처방을 안 받고 있었다.** 같은 자산(`lab-space.glb`)이 그 확장을
-          // 전부 쓰는데도.
-          //
-          // 헤드리스는 WebGL 이라 이 축을 **원리적으로 못 본다.** 그래서 게이트가 아니라
-          // *"GLB 를 놓는 경로는 반드시 이 함수를 지난다"* 는 구조가 유일한 방어다.
-          disableMatExtensions(m, readEmissiveCap(readNum));
-          // GLB 의 `castShadow`/`receiveShadow` 기본값은 false 다 — 켜지 않으면 감독이 놓은
-          // 물건만 그림자 없이 서 있게 된다(`glb-city.ts` 가 같은 자리에서 한 번 데였다).
-          m.traverse((o: Object3D) => { o.castShadow = true; o.receiveShadow = true; });
-          return m;
-        })
-        .catch((e: unknown) => {
-          lastFail = `${key}: ${e instanceof Error ? e.message : String(e)}`;
-          // ⚠ **상한이 있다**(2026-08-16, W8-2). 그전에는 무제한 `push` 였다 — 편집 세션에서
-          // 같은 실패를 반복하면(네트워크가 나가면 놓을 때마다 난다) 이 배열만 계속 자란다.
-          // 화면에 안 나오는 누수라 `info.memory` 축이 **원리적으로 못 잡는다.**
-          //
-          // 자르되 **몇 번이었는지는 센다** — 상한만 두면 「4번 실패」와 「400번 실패」가
-          // 같은 값이 되고, 그것이야말로 진단이 필요한 순간에 진단을 잃는 것이다.
-          recordFailure(diag, lastFail);
-          // **실패는 캐시하지 않는다.** 남겨 두면 그 `src` 는 세션 내내 되살아나지
-          // 못한다(일시적 네트워크 실패가 영구 실패가 된다).
-          models.delete(key);
-          return null;
-        });
-
-      models.set(key, p);
-      return p;
     }
 
     function applyEntry(e: OverlayEntry): void {
@@ -262,8 +193,8 @@ export const overlayFeature: Feature = {
       await ensureLoader();
       if (disposed || !THREE || !root) return null;
       const key = blobUrl ?? src;
-      lastFail = null;
-      const model = await modelOf(key, blobUrl ?? assetUrl(src), onProgress);
+      cache?.clearFailure();
+      const model = await cache?.get(key, blobUrl ?? assetUrl(src), onProgress);
       if (!model || disposed) return null;
 
       // 피벗 보정 — 자산마다 로컬 원점이 제각각이라 상수로 적으면 자산 교체에 낡는다.
@@ -318,6 +249,17 @@ export const overlayFeature: Feature = {
       diag.placed = entries.length;
     }
 
+    /** 지운 것을 되살린다(2026-08-22). 계약·근거는 `edit/types.ts` 의 `restore` 한 곳이다 */
+    function restore(e: OverlayEntry, at?: number): boolean {
+      if (disposed || !root || entries.indexOf(e) >= 0) return false;
+      entries.splice(at ?? entries.length, 0, e);
+      (root as unknown as { add(o: never): void }).add(e.holder as never);
+      // 자세까지 되돌린 뒤 되살릴 수 있다 — 안 부르면 씬 행렬이 지우기 전 것이다.
+      applyEntry(e);
+      diag.placed = entries.length;
+      return true;
+    }
+
     function toRaw(): unknown {
       const items: OverlayItem[] = entries.map((e) => ({
         src: e.src, x: e.x, y: e.y, z: e.z, ry: e.ry, s: e.s,
@@ -359,8 +301,9 @@ export const overlayFeature: Feature = {
       setTouchEditing: env.setTouchEditing,
       entries: () => entries,
       place,
-      lastFailure: () => lastFail,
+      lastFailure: () => cache?.lastFailure() ?? null,
       remove,
+      restore,
       apply: applyEntry,
       toRaw,
       look: (dx, dy) => env.player.look(dx, dy),
@@ -586,7 +529,7 @@ export const overlayFeature: Feature = {
           root = null;
         }
         entries.length = 0;
-        models.clear();
+        cache?.clear();
       },
     };
   },

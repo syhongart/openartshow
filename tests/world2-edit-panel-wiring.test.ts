@@ -53,6 +53,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createPanel, type PanelHandlers } from '../frontend/js/world2/edit/panel/dom.js';
 import { createOutliner } from '../frontend/js/world2/edit/panel/outliner.js';
 import { createActions } from '../frontend/js/world2/edit/actions.js';
+import { createEditHistory } from '../frontend/js/world2/edit/history-ops.js';
 import { createEditState, select } from '../frontend/js/world2/edit/state.js';
 import { artTarget } from '../frontend/js/world2/edit/target-art.js';
 import { tonesFor } from '../frontend/js/world2/parts/index.js';
@@ -122,6 +123,16 @@ function mount(opts: {
     setView: noop,
     setShading: noop,
     exportNow: noop,
+    // ── 되돌리기 (2026-08-22) ────────────────────────────────────────────────
+    // 🔴 **`noop` 을 안 쓴다.** 위 `pickArt` 주석이 적은 그 사고(검수관 3차 B-A)와 같은
+    // 형태다 — 하네스가 제품과 다른 것을 물리면 「조립이 그 부품을 물리는가」가 어디서도
+    // 안 보인다. 제품(`edit/mode.ts`)이 실물 `EditHistory` 를 물리므로 여기도 물린다.
+    undo: () => { history.undo(); },
+    redo: () => { history.redo(); },
+    canUndo: () => history.canUndo(),
+    canRedo: () => history.canRedo(),
+    holdEdit: () => { history.hold(); },
+    releaseEdit: () => { history.release(); },
     // **문을 줄지 말지가 이 하네스의 축 하나다** — 안 주면 칸 자체가 없어야 한다.
     artList: opts.withArtDoor === false ? undefined : () => port.list(),
     // 🔴 **제품(`edit/mode.ts` 의 `pickArt`)과 같은 형태로 적는다** — 세 번째 인자까지.
@@ -139,7 +150,10 @@ function mount(opts: {
   } as unknown as PanelHandlers;
 
   const panel = createPanel(host, st, handlers, noop);
-  return { panel, st, host, port, handlers };
+  // 제품과 **같은 순서**다 — 되돌린 뒤 무엇을 되돌렸는지 화면이 말해야 하므로 패널 뒤에
+  // 만들고, 위 핸들러들이 이 상수를 호출 시점에 본다(`edit/mode.ts` 의 그 배치 그대로).
+  const history = createEditHistory(host, st, panel, port);
+  return { panel, st, host, port, handlers, history };
 }
 
 /** 패널 안의 탭 버튼 하나 */
@@ -657,7 +671,8 @@ describe('🔴 `Esc` 로 고른 것을 취소한다 — 태스크 #97', () => {
 
   const mkActions = (): ReturnType<typeof createActions> & { st: ReturnType<typeof createEditState> } => {
     const h = mount();
-    const actions = createActions(h.host, h.st, h.panel);
+    const actions = createActions(
+      h.host, h.st, h.panel, createEditHistory(h.host, h.st, h.panel));
     return Object.assign(actions, { st: h.st });
   };
 

@@ -14,6 +14,7 @@ import type { OverlayEntry, OverlayHost } from './types.js';
 import { select, type EditState } from './state.js';
 import { thawParcel } from './target.js';
 import type { Panel } from './panel/dom.js';
+import { parcelSnap, type EditHistory } from './history-ops.js';
 
 export interface Actions {
   /** 고른 것(`pendingSrc`·`pendingPart`)을 푼다. 풀 것이 있었으면 `true` — 근거는 구현부 */
@@ -41,11 +42,15 @@ function mb(bytes: number): string {
 }
 
 /**
+ * @param history 되돌리기 스택(2026-08-22). **선택 사양이 아니다** — 안 넘기면 놓기·
+ *                삭제가 조용히 안 쌓이고, 그러면 Ctrl+Z 가 **그 앞의 조작**을 되돌린다.
+ *                「배선을 빠뜨리면 검사가 아니라 `tsc` 가 막는다」는 이 저장소의 처방
+ *                (`edit/target-art.ts` 의 `onLost` 절)을 그대로 따른다.
  * @param arts 벽에 걸린 작품(W8-4 D3). **생략 가능** — 없으면 「보낼 준비가 됐다」가
  *             GLB 만 센다(구소비자의 기존 동작 그대로).
  */
 export function createActions(
-  host: OverlayHost, st: EditState, panel: Panel, arts?: ArtsPort,
+  host: OverlayHost, st: EditState, panel: Panel, history: EditHistory, arts?: ArtsPort,
 ): Actions {
   const doc = host.doc;
   const previewUrls = new Map<string, string>();
@@ -73,6 +78,9 @@ export function createActions(
         return;
       }
       st.selected = e;
+      // 놓은 것을 되돌릴 수 있게 쌓는다. **`select` 보다 먼저 쌓을 이유가 없다** —
+      // 되돌리기는 선택을 안 건드린다(`history-ops.ts` 헤더).
+      history.add(history.ops.placed(e, '놓기'));
       // ⚠ **놓았으면 고르기를 푼다** (감독 신고 2026-08-13: *"지금은 클릭하면 다시
       // 선택되었으면 하는데.. 지금은 흩어뿌리기 식으로 되어 있어"*).
       //
@@ -132,6 +140,9 @@ export function createActions(
     const parts = village.partsAt(p.px, p.pz);
     const v = canPlacePart(kind, parts, maxPartsPerParcel(kind));
     if (!v.ok) { panel.say(v.reason ?? '놓을 수 없습니다.', true); return; }
+    // ⚠ **`parts.push` 보다 먼저 뜬다.** `partsAt` 은 매 호출 새 배열이지만 **항목은
+    // 공유**이므로(`parcelSnap` 주석), 스냅샷을 나중에 뜨면 방금 민 것까지 들어간다.
+    const before = parcelSnap(village, p.px, p.pz);
     // 높이는 **바닥 판이 정한다**(잔디 0.07 · 도로 0.14 · 광장 0). `surfaceAt` 이 계산
     // 배치와 같은 `surfaceY` 를 타므로 새로 놓은 것도 같은 높이에 앉는다.
     //
@@ -139,6 +150,7 @@ export function createActions(
     //   연 것이고 편집으로 놓은 것까지 따라가게 하면 저장된 값이 노브에 따라 달라진다.
     parts.push(newPart(kind, p.lx, p.lz, host.surfaceAt(at.x, at.z)));
     village.freeze(p.px, p.pz, parts);
+    history.add(history.ops.parcel(before, `${PART_LABEL[kind] ?? kind} 놓기`));
     // 놓았으면 고르기를 푼다 — GLB 와 같은 이유다(감독 신고 2026-08-13 *"흩어뿌리기 식"*).
     st.pendingPart = null;
     panel.say(`${PART_LABEL[kind] ?? kind} 을(를) 놓았습니다 —`
@@ -158,7 +170,10 @@ export function createActions(
         s.src, { x: s.x + 2, y: s.y, z: s.z + 2, ry: s.ry, s: s.s },
         s.preview ? previewUrls.get(s.src) : undefined,
       );
-      if (e) st.selected = e;
+      if (e) {
+        st.selected = e;
+        history.add(history.ops.placed(e, '복제'));
+      }
     } finally {
       st.busy = false;
       panel.refresh();
@@ -170,7 +185,22 @@ export function createActions(
     // 무엇을 지웠는지 말한다 — 마을 파츠는 지우면 **그 구역이 「손본 구역」이 된다.**
     // 되돌릴 방법이 있다는 것을 그 자리에서 알려야 «지웠는데 되살릴 수가 없다» 가 안 된다.
     const wasVillage = st.target.kind === 'village';
+    // ── 되돌리기 스냅샷은 **지우기 전에** 뜬다 (2026-08-22) ────────────────────
+    // 지운 뒤에는 «무엇이 있었나» 를 물을 데가 없다. 세 저장소의 단위가 각각 다른 이유는
+    // `edit/history-ops.ts` 헤더 한 곳이다 — 여기서는 그 셋을 각각 뜨기만 한다.
+    //
+    // ⚠ **`kind` 로 갈라 하나만 뜨지 않는다.** 셋 다 뜨고 «채워진 것» 을 쓴다 — `kind` 와
+    // 실제로 채워진 칸이 어긋나면(어댑터가 `null` 로 떨어지는 경로가 있다) 조용히 아무것도
+    // 안 쌓이고, 그것이 이 회차가 막으려는 «가끔 안 먹는다» 그 자체다.
+    const goneEntry = st.selected;
+    const goneAt = goneEntry ? host.entries().indexOf(goneEntry) : -1;
+    const v = st.villageSel;
+    const beforeParcel = v && host.village ? parcelSnap(host.village, v.px, v.pz) : null;
+    const beforeArts = st.artSel !== null && arts ? arts.list() : null;
     if (!st.target.remove()) { panel.say('지울 수 없습니다.', true); return; }
+    if (goneEntry && goneAt >= 0) history.add(history.ops.removed(goneEntry, goneAt, '삭제'));
+    else if (beforeParcel) history.add(history.ops.parcel(beforeParcel, '삭제'));
+    else if (beforeArts) history.add(history.ops.arts(beforeArts, '삭제'));
     select(st, host, null);
     if (wasVillage) panel.say('지웠습니다 — 이 구역은 「손본 구역」이 됐습니다. 「구역 되돌리기」로 되살립니다.');
     panel.refresh();
@@ -186,7 +216,11 @@ export function createActions(
     const v = st.villageSel;
     if (!v) { panel.say('마을 건물이나 나무를 먼저 고르세요.'); return; }
     if (!v.frozen) { panel.say('이 구역은 아직 손대지 않았습니다 — 되돌릴 것이 없습니다.'); return; }
+    const before = host.village ? parcelSnap(host.village, v.px, v.pz) : null;
     if (!thawParcel(host, v)) { panel.say('되돌릴 수 없습니다.', true); return; }
+    // 「구역 되돌리기」 자체도 되돌린다 — 손본 배치를 통째로 버리는 조작이라 오히려
+    // 여기가 되돌리기가 가장 필요한 자리다.
+    if (before) history.add(history.ops.parcel(before, '구역 되돌리기'));
     select(st, host, null);
     panel.say(`파셀 (${v.px}, ${v.pz}) 를 되돌렸습니다 — 계산 배치로 돌아갑니다.`);
     panel.refresh();

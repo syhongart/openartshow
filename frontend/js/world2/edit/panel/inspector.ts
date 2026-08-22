@@ -72,10 +72,23 @@ export interface Inspector {
   readonly toneRow: HTMLElement;
 }
 
+/**
+ * 여러 확정을 되돌리기 **한 항목으로 묶는** 문 (2026-08-22).
+ *
+ * 왜 인스펙터만 이것이 필요한가: 여기의 입력 셋 중 **수치칸과 슬라이더는 확정이 여러
+ * 번 난다** — 타이핑 중 `input` 이벤트마다, 끌기 중 매 프레임. 다른 조작(버튼·키·
+ * 드래그)은 확정이 한 번이라 감싼 `commit()` 이 알아서 한 항목으로 쌓는다.
+ */
+export interface EditBoundary {
+  hold(): void;
+  release(): void;
+}
+
 export function createInspector(
   host: OverlayHost,
   st: EditState,
   onChanged: () => void,
+  hist: EditBoundary,
 ): Inspector {
   const doc = host.doc;
   const root = doc.createElement('div');
@@ -111,10 +124,16 @@ export function createInspector(
     st.target.apply();
     sizeVal.textContent = `${w.get().toFixed(2)}m`;
   });
+  // 되돌리기 경계를 **끌기 시작에** 연다. `input` 은 매 프레임 오므로 거기서 열면
+  // 스냅샷이 계속 덮여 「직전 한 프레임」만 되돌아간다.
+  sizeIn.addEventListener('pointerdown', () => { hist.hold(); });
+  // 키보드로도 민다(←→). 그때는 `pointerdown` 이 없으므로 포커스가 경계다.
+  sizeIn.addEventListener('focus', () => { hist.hold(); });
   // `change` 는 손을 뗐을 때 온다 — 그것이 이 슬라이더의 「확정」이다.
   sizeIn.addEventListener('change', () => {
     if (!st.target?.width) return;
     st.target.commit();
+    hist.release();
     onChanged();
   });
 
@@ -141,6 +160,7 @@ export function createInspector(
   const pickTone = (i: number): void => {
     const t = st.target;
     if (!t?.tone || !Number.isInteger(i)) return;
+    // 견본은 확정이 한 번이라 묶을 것이 없다 — 감싼 `commit()` 이 알아서 쌓는다.
     t.tone.set(i);
     t.commit();
     onChanged();
@@ -220,6 +240,9 @@ export function createInspector(
       if (!st.target.live) st.target.commit();
       onChanged();
     };
+    // 타이핑을 되돌리기 **한 항목으로** 묶는다 — 포커스에서 열고 `change`(blur·Enter)
+    // 에서 닫는다. 근거는 `EditBoundary` 한 곳이다.
+    inp.addEventListener('focus', () => { hist.hold(); });
     inp.addEventListener('input', commit);
     // 미룬 확정이 실제로 나는 자리 — 손을 뗄 때 한 번이다.
     //
@@ -228,9 +251,13 @@ export function createInspector(
     // `input` 만 고치고 이 줄을 `kind !== 'art'` 로 두었다가 그 사이에서 잡았다).
     // 두 줄은 **같은 판정을 반대로** 읽는다: 즉시 확정이 아니면(`!live` → 위) 여기서 한다.
     inp.addEventListener('change', () => {
-      if (!st.target?.live) return;
-      st.target.commit();
-      onChanged();
+      // ⚠ **묶기를 푸는 것은 `commit` 여부와 무관하다.** 위 `input` 경로(`!live`)는 이미
+      // 확정을 마쳤고, 여기서 안 풀면 그 조작이 영영 안 쌓인다.
+      if (st.target?.live) {
+        st.target.commit();
+        onChanged();
+      }
+      hist.release();
     });
     // Enter 는 «다 쳤다» 는 신호다 — 포커스를 놓아 `sync` 가 정규화된 값을 되쓰게 한다.
     // (액자에서는 `blur` 가 `change` 를 내므로 이것이 곧 확정이기도 하다.)

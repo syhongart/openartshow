@@ -60,6 +60,8 @@ import { createGizmo } from './gizmo.js';
 import { createPanel } from './panel/dom.js';
 import { loadPalette } from './panel/palette.js';
 import { createActions } from './actions.js';
+import { createEditHistory } from './history-ops.js';
+import { createHistoryInput } from './history-input.js';
 import { createArtworkMode } from './artwork-mode.js';
 import { createAimMode } from './aim-mode.js';
 import { createInput } from './input.js';
@@ -163,12 +165,26 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     // 확정한다. 걸기 자체는 여전히 `artwork-mode` 의 같은 몸통(`commit`)을 탄다.
     hangPhoto: opts.arts && ((file: File) => { aim?.start(file); }),
     exportNow: () => { actions.exportNow(); },
+    // ── 실행취소 (2026-08-22, 감독 지시 *"워크래프트3 편집기 … 개선해봐"*) ────
+    // 버튼과 `Ctrl+Z`/`Ctrl+Shift+Z` 는 **같은 함수**다 — 시점·셰이딩이 그랬듯 갈라지면
+    // «버튼으로는 되는데 키로는 안 된다» 가 난다. 스택 소유는 `history` 하나다.
+    undo: () => { history.undo(); },
+    redo: () => { history.redo(); },
+    // 수치칸 타이핑을 한 항목으로 묶는 문. 다른 조작은 감싼 `commit()` 이 알아서 쌓는다.
+    holdEdit: () => { history.hold(); },
+    releaseEdit: () => { history.release(); },
+    canUndo: () => history.canUndo(),
+    canRedo: () => history.canRedo(),
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
     // 둘 다 마을 파츠에 붙는다(W4 ②-d). 기즈모가 무엇을 미는지는 `st.target` 이 알고,
     // 링은 «어느 자리인가» 라서 원본 선택을 본다 — 그래서 인자가 서로 다르다.
     picker.syncMarker();
     gizmo.attach(st.target);
+    // 🔴 **새로 고른 것의 `commit()` 을 감싼다** — 되돌리기가 조작 지점을 안 고치고도
+    // 전부 잡는 유일한 자리다(`edit/history-ops.ts` 의 「세션 배선」 절). 이 콜백은
+    // `refresh()` 끝마다 불리는데, `watch` 가 **대상이 바뀌었을 때만** 기준을 다시 뜬다.
+    history.watch(st.target);
   });
 
   // 작품 모드를 **밖으로 뺐다**(W8-5). 예전에는 `createInput` 인자 안에서 인라인으로
@@ -182,8 +198,14 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   // 조준 화면(W8-6). 작품 문이 없으면 이것도 없다 — 걸 것이 없는데 조준할 이유가 없다.
   const aim = art ? createAimMode({ host, panel, picker, art }) : null;
 
+  // ── 되돌리기 스택 (2026-08-22) ───────────────────────────────────────────
+  // `panel` 뒤에 만든다 — 되돌린 뒤 무엇을 되돌렸는지 **화면이 말해야** 하기 때문이고,
+  // 위 `undo`/`redo` 핸들러가 이 상수를 **호출 시점에** 본다(조립자가 되먹임을 흡수하는
+  // 이 파일의 기존 패턴 그대로 — `actions` 가 같은 형태다).
+  const history = createEditHistory(host, st, panel, opts.arts);
+
   // 작품 포트를 함께 넘긴다 — 내보내기가 「보낼 준비가 됐다」에 이미지도 세야 한다(D3).
-  const actions = createActions(host, st, panel, opts.arts);
+  const actions = createActions(host, st, panel, history, opts.arts);
 
   const input = createInput({
     host, st, panel, picker, actions, gizmo,
@@ -202,6 +224,14 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   //
   // `host.fly` 가 없는 소비자(빌더 미리보기·테스트 하네스)에서는 이 모듈이 리스너만 달고
   // 아무 일도 안 한다 — 궤도가 `host.orbit?.()` 로 세운 규약과 같다.
+  // 되돌리기 키. `fly` 와 **같은 배치**다 — 성격이 다른 키라 따로 묶는다(그 파일 헤더).
+  const historyInput = createHistoryInput({
+    doc,
+    undo: () => { history.undo(); },
+    redo: () => { history.redo(); },
+    editing: () => st.editing,
+  });
+
   const fly = createFlyInput({
     doc,
     fly: host.fly ? (input2, dt) => { host.fly!(input2, dt); } : undefined,
@@ -227,6 +257,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     if (on) {
       input.bind();
       fly.bind();
+      historyInput.bind();
       // 편집에 들어오면 주행 모드의 포인터락을 푼다. 안 그러면 커서가 없어 못 집는다.
       try { doc.exitPointerLock?.(); } catch { /* 애초에 안 걸려 있었다 */ }
       // ⚠ **이 한 줄이 2026-08-12 사고의 절반이다.** 시점 조작이 우드래그로 바뀌는데 그
@@ -248,6 +279,7 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     } else {
       input.unbind();
       fly.unbind();
+      historyInput.unbind();
       // ⚠ **궤도를 먼저 걷는다** (W5 E3, 팀장 조건 2·3). 편집 중에는 눈높이가 떠 있고
       // 충돌을 무시했으므로 벽 안에 서 있을 수 있다 — 주행으로 돌아가기 전에
       // `PlayerSystem` 이 둘 다 원복한다. 이 한 줄이 빠지면 감독이 편집을 끈 뒤
@@ -289,11 +321,15 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       if (st.editing) host.endOrbit?.();
       input.unbind();
       fly.unbind();
+      historyInput.unbind();
       input.unbindAlways();
       aim?.dispose();
       panel.dispose();
       picker.dispose();
       gizmo.dispose();
+      // 스택을 비운다 — 지운 항목의 `holder` 를 붙들고 있고, 그것이 이 기능이 연 유일한
+      // 누수 경로다(근거·상한은 `decide/history.ts` 의 `HISTORY_LIMIT` 한 곳).
+      history.clear();
     },
   };
 }

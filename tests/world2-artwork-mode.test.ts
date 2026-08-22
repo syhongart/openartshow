@@ -29,6 +29,7 @@ import {
 } from '../frontend/js/world2/decide/artwork.js';
 import { createInput } from '../frontend/js/world2/edit/input.js';
 import { createEditState } from '../frontend/js/world2/edit/state.js';
+import { createEditHistory } from '../frontend/js/world2/edit/history-ops.js';
 import { createPicker, type Picker } from '../frontend/js/world2/edit/pick.js';
 import type { Panel } from '../frontend/js/world2/edit/panel/dom.js';
 import type { Actions } from '../frontend/js/world2/edit/actions.js';
@@ -568,7 +569,9 @@ describe('★ 내보내기가 **작품도** 「보낼 준비가 됐다」에 센
       }),
       entries: () => [],
     } as unknown as OverlayHost;
-    const actions = createActions(host, createEditState(), panel, port);
+    const actions = createActions(
+      host, createEditState(), panel,
+      createEditHistory(host, createEditState(), panel, port), port);
     // GLB 미리보기도 하나 심어 «둘을 합치는가» 를 잰다(한쪽만 세면 나머지가 빠진다).
     if (opts.glb) actions.previewUrls.set('assets/models/mine.glb', 'blob:g');
     actions.exportNow();
