@@ -29,8 +29,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  LEAF_U0, ATLAS_INSET, ATLAS_INSET_KNOB, ATLAS_INSET_MAX, remapU,
-} from '../frontend/js/world2/parts/tree.js';
+  LEAF_U0, ATLAS_INSET, ATLAS_INSET_KNOB, ATLAS_INSET_MAX, LEAF_MARGIN_U, remapU,
+} from '../frontend/js/world2/parts/tree-atlas.js';
 
 /** `remapU` 가 받는 최소 모양 — 정점 4개짜리 평면의 UV */
 const fakeGeo = (): { attributes: { uv: { array: Float32Array } } } => ({
@@ -62,19 +62,73 @@ describe('🔴 아틀라스 경계를 밟지 않는다', () => {
   });
 });
 
-describe('물림이 잎을 자르지 않는다 (실측 여백 안)', () => {
-  // `treeTexture` 실측: 텍스처 폭 512, 잎 영역 [128, 512], 타원이 실제로 그려지는
-  // 범위는 중심 320 ± 115.2 = **[204.8, 435.2]** 이다. 즉 양쪽에 약 77px(0.15) 여백.
-  // 물림이 그 여백을 넘으면 잎 실루엣이 잘린다 — 고치려다 더 나빠진다.
-  const LEAF_MARGIN_U = 76.8 / 512;
+describe('물림이 잎을 자르지 않는다 (유도 여백 안)', () => {
+  // ⚠ **여기 있던 `const LEAF_MARGIN_U = 76.8 / 512` 를 지웠다**(검수관 권고 1,
+  // 2026-08-22). 그 리터럴은 두 가지로 틀렸다:
+  //
+  //   ① **값이 20px 낙관이었다** — 타원 중심이 도달하는 거리만 셌고 타원 자체가
+  //      중심에서 `len` 만큼 더 퍼진다는 것을 안 더했다. 검수관이 시드 `0x1eaf` 를
+  //      시뮬레이션해 실제 잉크 여백 64.06px(좌)·81.83px(우) 를 냈고, 배치 상수에서
+  //      유도한 최악치는 **56.8px** 이다. 76.8 은 둘 다와 안 맞았다.
+  //   ② **코드가 아니라 테스트에 있었다** — `treeTexture` 의 `S`·분포 계수를 만지면
+  //      이 안전 마진이 조용히 낡는다. 이 저장소가 세 번 겪은 값 미러링 형태다.
+  //
+  // 지금은 `tree.ts` 가 배치 상수에서 **유도**하고 여기서 그것을 import 한다.
+  // 전제(캔버스 크기·분포 계수·타원 크기)를 바꾸면 이 검사가 저절로 따라온다.
 
   it('🔴 물림이 잎 여백보다 작다', () => {
     expect(ATLAS_INSET, `🔴 물림이 잎 여백(${LEAF_MARGIN_U.toFixed(4)})을 넘는다 — 잎이 잘린다`)
       .toBeLessThan(LEAF_MARGIN_U);
   });
 
-  it('🔴 노브 상한도 여백 안이다 — 감독이 밀어도 잎이 안 잘려야 한다', () => {
-    expect(ATLAS_INSET_MAX).toBeLessThan(LEAF_MARGIN_U);
+  it('🔴 노브 상한이 여백을 넘지 않는다 — 감독이 밀어도 잎이 안 잘려야 한다', () => {
+    // ⚠ 첫 판본은 `ATLAS_INSET_MAX = 0.12` 하드코딩이었고 유도 여백(0.1109) **밖**
+    // 이었다 — 노브를 상한까지 밀면 잎이 잘렸다. 틀린 기준값(76.8/512 = 0.15)이
+    // 틀린 상한을 통과시킨 것이다. 지금은 상한이 여백 그 자체라 `<=` 로 본다.
+    expect(ATLAS_INSET_MAX).toBeLessThanOrEqual(LEAF_MARGIN_U);
+  });
+
+  const treeCode = readFileSync(
+    join(process.cwd(), 'frontend/js/world2/parts/tree-atlas.ts'), 'utf8',
+  ).split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
+
+  it('🔴 여백이 리터럴이 아니라 유도다 — 값 미러링이 되돌아오지 않게', () => {
+    // 배치 상수들로 계산하는 형태여야 한다. 숫자를 도로 박으면 여기서 걸린다.
+    expect(treeCode, '🔴 LEAF_MARGIN_U 가 리터럴로 돌아갔다')
+      .toMatch(/LEAF_MARGIN_U\s*=\s*\(\(\)\s*=>/);
+    expect(treeCode).toMatch(/LEAF_LEN_MIN\s*\+\s*LEAF_LEN_RAND/);
+    // 상한도 유도여야 한다 — 손으로 고른 숫자면 또 여백 밖으로 나간다.
+    expect(treeCode, '🔴 ATLAS_INSET_MAX 가 하드코딩으로 돌아갔다')
+      .toMatch(/ATLAS_INSET_MAX\s*=\s*LEAF_MARGIN_U/);
+  });
+
+  // ── 🔴 판정만 보고 집행을 안 보면 둘이 갈라진다 ─────────────────────────────
+  // ⚠ **위 검사만 있을 때 뮤테이션 U-D 가 0 failed 로 통과했다**(실측 2026-08-22):
+  // `treeTexture` 안의 `LEAF_LEN_MIN + rnd() * LEAF_LEN_RAND` 를 `7 + rnd() * 13`
+  // 리터럴로 되돌려도 아무도 안 깨졌다. 위 정규식이 **유도 식 안의**
+  // `const lenMax = LEAF_LEN_MIN + LEAF_LEN_RAND` 에 걸려 통과했기 때문이다.
+  //
+  // 그러면 유도는 상수를 읽는데 실제 그리기는 리터럴을 쓰는 상태가 되고 — 그것이
+  // 바로 없애려던 값 미러링이다. CLAUDE.md 가 이 형태를 못 박고 있다: *"판정/집행
+  // 분리의 구멍 — 계산된 값이 실제로 소비되는가는 양쪽 테스트 어디에도 안 걸린다."*
+  it('🔴 treeTexture 가 그 상수들을 실제로 쓴다 (집행 쪽)', () => {
+    const from = treeCode.indexOf('function treeTexture');
+    expect(from, 'treeTexture 를 못 찾았다').toBeGreaterThan(-1);
+    const fn = treeCode.slice(from, treeCode.indexOf('\n}', from));
+    expect(fn, '🔴 캔버스 크기가 유도와 갈라졌다').toMatch(/const S = TEX_S/);
+    expect(fn, '🔴 분포 계수가 리터럴로 돌아갔다').toMatch(/\* LEAF_DIST_K/);
+    expect(fn, '🔴 타원 크기가 리터럴로 돌아갔다')
+      .toMatch(/LEAF_LEN_MIN \+ rnd\(\) \* LEAF_LEN_RAND/);
+  });
+
+  it('유도가 시드 실측보다 보수적이다 — 순서가 뒤집히면 유도가 틀린 것이다', () => {
+    // 유도는 **도달 가능한 최악**, 실측은 **밟아본 값**이다. 그러므로 유도 <= 실측이
+    // 성립해야 한다. 검수관 독립 실측(시드 0x1eaf): 좌 64.06px = 0.1251 U.
+    // ⚠ 이 64.06 은 시드에 묶인 값이라 **유도 방향 확인용**으로만 쓴다 — 시드가
+    // 바뀌면 실측은 변하지만 유도는 안 변한다.
+    const SEED_MEASURED_U = 64.06 / 512;
+    expect(LEAF_MARGIN_U, '🔴 유도가 시드 실측보다 크다 — 유도 식에 빠진 항이 있다')
+      .toBeLessThanOrEqual(SEED_MEASURED_U);
   });
 
   it('수피 영역이 물림 둘을 감당한다 — 양쪽에서 물려도 폭이 남는다', () => {
@@ -166,7 +220,7 @@ describe('🔴 three 의 컷아웃 연산자 — 주석의 인용을 실측으�
   it('주석이 이 두 파일을 실제로 인용하고 있다 — 검사와 주석이 같은 것을 본다', () => {
     // 주석에서 파일명을 지우면 이 검사가 무엇을 지키는지가 끊긴다. 양방향 대조다.
     const src = readFileSync(
-      join(process.cwd(), 'frontend/js/world2/parts/tree.ts'), 'utf8',
+      join(process.cwd(), 'frontend/js/world2/parts/tree-atlas.ts'), 'utf8',
     );
     expect(src).toContain('alphatest_fragment.glsl.js');
     expect(src).toContain('NodeMaterial.js');
