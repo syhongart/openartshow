@@ -115,3 +115,50 @@ describe('🔴 나무가 이 판정을 실제로 소비한다', () => {
     expect(LEAF_SAT_KNOB).toBe('leafsat');
   });
 });
+
+// ── 🔴 검수관 P1 — 기반색 자체의 회귀를 이 스위트가 못 잡았다 ────────────────
+// 검수관 실측: `LEAF_BASE_A` 를 `[0.40, 0.45, 0.42]`(거의 무채색) 로 바꿔도,
+// `[0.30, 0.35, 0.32]`(색조가 다른 값) 로 바꿔도 **11/11 전부 통과**했다. 위 검사들이
+// 전부 `sat` **배수의 성질**만 보기 때문이다 — 배수는 어떤 기반색에도 똑같이 작동한다.
+//
+// 즉 이 축은 「노브가 잘 도는가」는 지키지만 「무엇을 돌리는가」는 안 봤다. 다음에 이
+// 값을 만지는 사람의 실수를 잡을 안전망이 0이었다.
+//
+// ⚠ 그래도 **특정 값을 고정하지는 않는다.** 이 축은 감독이 화면에서 정하는 자리이고,
+// 테스트가 값을 박으면 감독 판정마다 테스트를 고쳐야 한다. 대신 **잎이 초록이라는
+// 것**만 못 박는다 — 그건 판정이 아니라 전제다.
+describe('🔴 기반색이 초록 계열이다 (검수관 P1)', () => {
+  const hue = ([r, g, b]: readonly [number, number, number]): number => {
+    const mx = Math.max(r, g, b); const mn = Math.min(r, g, b);
+    if (mx === mn) return NaN; // 무채색 — hue 가 정의되지 않는다
+    const d = mx - mn;
+    const h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return ((h * 60) % 360 + 360) % 360;
+  };
+
+  it.each([['LEAF_BASE_A', LEAF_BASE_A], ['LEAF_BASE_B', LEAF_BASE_B]] as const)(
+    '%s 의 색상이 초록 범위(80°~150°)다', (name, base) => {
+      const h = hue(base);
+      expect(Number.isNaN(h), `🔴 ${name} 이 무채색이 됐다 — 잎이 회색으로 나온다`).toBe(false);
+      expect(h, `🔴 ${name} 의 색상이 초록을 벗어났다 (${h.toFixed(1)}°)`)
+        .toBeGreaterThanOrEqual(80);
+      expect(h).toBeLessThanOrEqual(150);
+    },
+  );
+
+  it('🔴 기반색이 무채색에 가깝지 않다 — 채도를 곱해도 색이 안 살아난다', () => {
+    // 배수는 0 에 무엇을 곱해도 0 이다. 기반이 회색이면 `?leafsat=3` 을 줘도 회색이고,
+    // 그러면 감독이 노브를 밀어도 화면이 안 변한다 — 신고가 그대로 되살아난다.
+    const s = ([r, g, b]: readonly [number, number, number]): number => {
+      const mx = Math.max(r, g, b);
+      return mx === 0 ? 0 : (mx - Math.min(r, g, b)) / mx;
+    };
+    expect(s(LEAF_BASE_A), '🔴 기반 채도가 너무 낮다 — 노브가 먹지 않는다')
+      .toBeGreaterThan(0.15);
+    expect(s(LEAF_BASE_B)).toBeGreaterThan(0.15);
+  });
+
+  it('두 톤이 서로 다르다 — 수관이 단색 덩어리로 보이지 않게 하는 전제', () => {
+    expect(LEAF_BASE_A).not.toEqual(LEAF_BASE_B);
+  });
+});
