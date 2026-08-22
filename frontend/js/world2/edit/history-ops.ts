@@ -167,6 +167,14 @@ export function createHistoryOps(host: OverlayHost, arts?: ArtsPort): HistoryOps
       return { label, undo: () => put(before), redo: () => put(after) };
     },
     placed(e, label) {
+      // ⚠ **`removed()` 와 같은 조건으로 가른다**(검수관 권고 P3, 2026-08-22). `restore`
+      // 가 없으면 「되돌리기」는 되는데 **「다시하기」가 조용히 아무 일도 안 한다** —
+      // 화면은 「다시 했습니다: 놓기」라고 말한다. 아래 `removed()` 는 같은 상황을 이미
+      // 경계로 막고 있었고, 그 비대칭이 남아 있었다.
+      if (!host.restore) {
+        return barrier(label, '이 화면은 되돌린 배치를 다시 놓는 문이 없습니다');
+      }
+      const restore = host.restore;
       let at = host.entries().indexOf(e);
       return {
         label,
@@ -174,7 +182,7 @@ export function createHistoryOps(host: OverlayHost, arts?: ArtsPort): HistoryOps
           at = host.entries().indexOf(e);
           host.remove(e);
         },
-        redo() { host.restore?.(e, at); },
+        redo() { restore(e, at); },
       };
     },
     removed(e, at, label) {
@@ -253,6 +261,10 @@ type Snap =
 
 /**
  * 자세 다섯 값 중 **무엇이 바뀌었나**. 화면에 「되돌렸습니다: 회전」으로 뜬다.
+ *
+ * ⚠ `decide/modal-edit.ts` 의 `nameOf` 와 문자열이 겹치지만 **미러링이 아니다** — 그쪽은
+ * «지금 무엇을 하고 있나» 를 실시간으로 말하고 이쪽은 «무엇을 되돌렸나» 를 목록에 적는다.
+ * 한쪽을 바꿔도 다른 쪽이 안 깨진다. 근거 전문은 그 함수 주석 한 곳이다(검수관 반려 B2).
  *
  * 여럿이 함께 바뀌면 「조작」이다 — 「위치·회전」처럼 나열하면 폭 212px 패널에서 줄이
  * 넘치고, 무엇보다 되돌리기 목록은 **구별**이 목적이지 명세가 아니다.

@@ -75,9 +75,18 @@ export interface Inspector {
 /**
  * 여러 확정을 되돌리기 **한 항목으로 묶는** 문 (2026-08-22).
  *
- * 왜 인스펙터만 이것이 필요한가: 여기의 입력 셋 중 **수치칸과 슬라이더는 확정이 여러
- * 번 난다** — 타이핑 중 `input` 이벤트마다, 끌기 중 매 프레임. 다른 조작(버튼·키·
- * 드래그)은 확정이 한 번이라 감싼 `commit()` 이 알아서 한 항목으로 쌓는다.
+ * 🔴 **이 자리에 «수치칸과 슬라이더는 확정이 여러 번 난다» 라고 적었고 절반이 거짓이었다**
+ * (검수관 반려 B1). 슬라이더는 `input` 에서 `apply()` 만 하고 확정은 `change` **한 번**이라
+ * 묶을 것이 애초에 없다. 그런데 그 거짓 전제로 `pointerdown`/`focus` 에서 묶기를 열어
+ * 두었고, **값을 안 바꾸면 `change` 가 안 나므로**(HTML 표준) 묶기가 열린 채 남아
+ * **그 뒤의 모든 확정을 삼켰다.** 되돌리기가 이 회차에서 스스로 없애려던 «가끔 안
+ * 먹는다» 를 재현한 것이고, 같은 파일의 `barrier` 주석이 *"「안 먹는 것」보다 나쁘다"*
+ * 라고 지목한 형태다.
+ *
+ * **지금 이 문이 필요한 것은 수치칸 하나뿐이다** — 타이핑 중 `input` 이벤트마다 확정이
+ * 나므로(`!live` 경로), 안 묶으면 「12.5」를 치고 되돌리기를 네 번 눌러야 한다.
+ * 그리고 **값이 실제로 바뀔 때만 연다**(`input`) — 열어 놓고 안 닫는 경로를 없애는 것이
+ * 「닫는 자리를 늘리는 것」보다 근본이다. 닫는 자리는 그래도 둘이다(`change`·`blur`).
  */
 export interface EditBoundary {
   hold(): void;
@@ -124,16 +133,12 @@ export function createInspector(
     st.target.apply();
     sizeVal.textContent = `${w.get().toFixed(2)}m`;
   });
-  // 되돌리기 경계를 **끌기 시작에** 연다. `input` 은 매 프레임 오므로 거기서 열면
-  // 스냅샷이 계속 덮여 「직전 한 프레임」만 되돌아간다.
-  sizeIn.addEventListener('pointerdown', () => { hist.hold(); });
-  // 키보드로도 민다(←→). 그때는 `pointerdown` 이 없으므로 포커스가 경계다.
-  sizeIn.addEventListener('focus', () => { hist.hold(); });
-  // `change` 는 손을 뗐을 때 온다 — 그것이 이 슬라이더의 「확정」이다.
+  // `change` 는 손을 뗐을 때 온다 — 그것이 이 슬라이더의 「확정」이고 **유일한 확정**이다.
+  // 🔴 그래서 묶기를 안 쓴다(검수관 반려 B1) — 확정이 한 번이면 감싼 `commit()` 이 알아서
+  // 한 항목으로 쌓는다. 여기서 `pointerdown` 에 묶기를 열었던 것이 그 반려의 직접 원인이다.
   sizeIn.addEventListener('change', () => {
     if (!st.target?.width) return;
     st.target.commit();
-    hist.release();
     onChanged();
   });
 
@@ -180,6 +185,10 @@ export function createInspector(
 
     const commit = () => {
       if (!st.target) return;
+      // 🔴 **값이 실제로 바뀌는 이 자리에서 묶기를 연다**(검수관 반려 B1). `focus` 에서
+      // 열면 값을 안 바꾸고 나가는 경로에서 열린 채 남아 이후 확정을 전부 삼킨다.
+      // 위 `st.target` 가드보다 뒤인 것이 의도다 — 아무것도 안 골랐으면 열지 않는다.
+      hist.hold();
       // ⚠ **빈 칸을 먼저 막는다 — `Number('')` 는 `0` 이고 그것은 finite 다.**
       // `type=number` 는 중간 입력을 담지 못한다: 사용자가 `-` 나 `7.` 를 치는 순간
       // 브라우저가 value 를 **빈 문자열로 바꾼다**(유효한 부동소수점이 아니라서).
@@ -240,9 +249,6 @@ export function createInspector(
       if (!st.target.live) st.target.commit();
       onChanged();
     };
-    // 타이핑을 되돌리기 **한 항목으로** 묶는다 — 포커스에서 열고 `change`(blur·Enter)
-    // 에서 닫는다. 근거는 `EditBoundary` 한 곳이다.
-    inp.addEventListener('focus', () => { hist.hold(); });
     inp.addEventListener('input', commit);
     // 미룬 확정이 실제로 나는 자리 — 손을 뗄 때 한 번이다.
     //
@@ -259,6 +265,10 @@ export function createInspector(
       }
       hist.release();
     });
+    // 🔴 **닫는 자리가 둘이다**(검수관 반려 B1). `change` 는 값이 바뀌어야 나므로
+    // 그것 하나만 두면 묶기가 열린 채 남는 경로가 생긴다. `blur` 는 포커스를 잃으면
+    // 반드시 오고, 두 번 불려도 `release()` 가 흡수한다(`held` 가 아니면 즉시 반환).
+    inp.addEventListener('blur', () => { hist.release(); });
     // Enter 는 «다 쳤다» 는 신호다 — 포커스를 놓아 `sync` 가 정규화된 값을 되쓰게 한다.
     // (액자에서는 `blur` 가 `change` 를 내므로 이것이 곧 확정이기도 하다.)
     inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); });

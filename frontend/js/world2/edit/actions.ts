@@ -15,7 +15,7 @@ import { select, type EditState } from './state.js';
 import { thawParcel } from './target.js';
 import type { Panel } from './panel/dom.js';
 import { parcelSnap, type EditHistory, type ParcelSnap } from './history-ops.js';
-import { brushDots, strokeSeed } from '../decide/brush.js';
+import { brushDots, strokeSeed, S_JITTER } from '../decide/brush.js';
 import { radiusOf } from '../decide/parcel-layout.js';
 import { inGrid } from '../decide/grid.js';
 import { combine, type Undoable } from '../decide/history.js';
@@ -206,7 +206,12 @@ export function createActions(
       seed: strokeSeed(at.x, at.z, st.strokeNo),
       // 간격은 **파츠가 신고한 점유 반경의 두 배**다 — 두 그루가 서로의 반경 밖에 서려면
       // 중심 거리가 반경 합이어야 하고, 같은 종류이므로 그것이 곧 지름이다.
-      minGap: radiusOf(newPart(kind, 0, 0, 0)) * 2,
+      //
+      // ⚠ **크기 변주를 함께 반영한다**(검수관 권고 P4, 2026-08-22). `radiusOf` 는 `s=1`
+      // 기준인데 붓은 `S_JITTER` 만큼 키우므로, 안 곱하면 **큰 쪽 둘이 만났을 때 그만큼
+      // 파고든다.** 최악(둘 다 최대)을 기준으로 잡는다 — 간격은 넉넉한 쪽 오차가 싸다
+      // (조금 성기게 뿌려질 뿐, 파고들면 화면이 깨진다).
+      minGap: radiusOf(newPart(kind, 0, 0, 0)) * 2 * (1 + S_JITTER),
     });
 
     /** 파셀별로 모은다 — 동결은 파셀 단위이고 한 파셀에 여럿을 넣어도 `freeze` 는 한 번이다 */

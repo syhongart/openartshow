@@ -27,6 +27,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { createHistory, HISTORY_LIMIT, type Undoable } from '../frontend/js/world2/decide/history.js';
 import {
   createHistoryOps, createEditHistory, parcelSnap, poseOf, samePose, sameData,
@@ -510,6 +511,34 @@ describe('★ 세션 배선 — 감싼 `commit()` 이 조작을 저절로 쌓는
     expect(items, '★ 목록이 조작 전으로 안 돌아갔다').toEqual([{ src: 'a.png', w: 1 }]);
   });
 
+  it('🔴 G1 · `hold()` 가 열린 채 남으면 이후 확정이 삼켜진다 — 계약을 못 박는다', () => {
+    // 이것은 「고쳐야 할 결함」이 아니라 **`hold` 의 계약 그 자체**다. 검수관 반려 B1 이
+    // 문제 삼은 것은 이 계약이 아니라 **UI 가 그 상태를 만들 수 있었다**는 것이었다
+    // (`panel/inspector.ts` 가 `focus` 에서 열고 `change` 에서만 닫았다).
+    // 계약을 여기 못 박아 두어야, 닫는 자리를 지우는 변경이 「왜 위험한지」를 다음 사람이 안다.
+    const m = picked();
+    m.hist.hold();
+    m.st.target!.x = 7;
+    m.st.target!.commit();
+    expect(m.hist.depth(), '★ 묶는 중인데 쌓였다 — 타이핑 한 글자마다 항목이 생긴다').toBe(0);
+    m.hist.release();
+    expect(m.hist.depth()).toBe(1);
+  });
+
+  it('🔴 G1 · `release()` 는 두 번 불려도 안전하다 — 닫는 자리가 둘이기 때문이다', () => {
+    // `panel/inspector.ts` 가 `change` 와 `blur` **둘 다**에서 닫는다(B1 처방). 값이 바뀌면
+    // 둘 다 오므로, 두 번째 호출이 빈 항목을 쌓거나 기준을 흔들면 안 된다.
+    const m = picked();
+    m.hist.hold();
+    m.st.target!.x = 7;
+    m.st.target!.commit();
+    m.hist.release();
+    m.hist.release();
+    expect(m.hist.depth(), '★ 두 번째 `release()` 가 항목을 더 쌓았다').toBe(1);
+    m.hist.undo();
+    expect(m.e.x).toBe(0);
+  });
+
   it('아무것도 안 고른 채 `watch(null)` 은 조용히 통과한다', () => {
     const { host } = makeHost();
     const { panel } = fakePanel();
@@ -740,5 +769,39 @@ describe('조립 · `edit/mode.ts` 가 되돌리기를 실제로 물린다', () 
     const input = readFileSync('frontend/js/world2/edit/input.ts', 'utf8');
     expect(input, '★ 셰이딩 조건이 `Ctrl`/`Cmd` 를 안 배제한다')
       .toContain("ev.shiftKey && !ev.ctrlKey && !ev.metaKey && ev.code === 'KeyZ'");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// G2 · 소비자 없는 export (검수관 반려 B2, 2026-08-22)
+//
+// `decide/modal-edit.ts` 의 `nameOf` 를 export 로 올리며 *"되돌리기 목록도 이것을 쓴다"*
+// 라고 적었는데 **그 파일 밖 소비자가 0건**이었다. 진술이 거짓이었고, 막겠다던 미러링은
+// 그대로 남아 있었다. 철회했지만 **다시 열릴 수 있으므로** 조건을 검사로 만든다.
+//
+// ⚠ 이 검사는 「export 하지 마라」가 아니다 — **열려면 소비자와 함께 열어라**다.
+// 그래서 export 가 없으면 조용히 통과하고, 있으면 소비자를 요구한다.
+describe('🔴 G2 · `nameOf` 를 export 하면 소비자가 있어야 한다', () => {
+  const MODAL = 'frontend/js/world2/decide/modal-edit.ts';
+
+  it('소비자 없는 export 가 아니다', () => {
+    const src = readFileSync(MODAL, 'utf8');
+    if (!/export\s+function\s+nameOf\b/.test(src)) return; // 안 열었으면 볼 것이 없다
+    // ⚠ **`import` 형태로만 센다.** `telemetry.ts` 셋이 같은 이름의 **지역 변수**를 쓰고
+    // 있어서(실측 2026-08-22) 단순 grep 은 소비자 9건을 거짓으로 만든다.
+    const users = execSync(
+      "grep -rln \"nameOf\" --include=*.ts frontend/js/ tests/ || true", { encoding: 'utf8' },
+    ).split('\n').filter((f) => f && f !== MODAL)
+      .filter((f) => /from\s+'[^']*modal-edit\.js'/.test(readFileSync(f, 'utf8')));
+    expect(users.length,
+      '★ `nameOf` 가 export 인데 그것을 import 하는 파일이 0건이다 — 진술과 코드가 갈렸다')
+      .toBeGreaterThan(0);
+  });
+
+  it('되돌리기 라벨이 이 모듈에 의존한다고 **적혀 있지 않다** — 실제로 의존하지 않는다', () => {
+    const src = readFileSync(MODAL, 'utf8');
+    const fn = src.slice(src.indexOf('function nameOf('));
+    // 함수 본문에는 그런 주장이 없어야 한다(주석의 정정 서술은 헤더 쪽에 있다).
+    expect(fn).not.toMatch(/되돌리기 목록도 이것을 쓴다/);
   });
 });

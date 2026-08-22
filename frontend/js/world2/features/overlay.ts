@@ -150,7 +150,14 @@ export const overlayFeature: Feature = {
       loadGLB = async (url: string, onProgress?: (ev: ProgressEvent) => void) =>
         (await loader.loadAsync(url, onProgress)).scene as unknown as Object3D;
       // 캐시는 로더가 서고 나서야 뜻이 있다 — 그전에 만들면 「받을 수 없는 캐시」다.
-      cache = createModelCache(diag, loadGLB);
+      //
+      // 🔴 **`if (!cache)` 가 필수다**(검수관 권고 P1, 2026-08-22). 위 `if (THREE && loadGLB)`
+      // 가드는 **첫 `import()` 를 동시에 기다리는 두 호출을 못 막는다** — 둘 다 통과해
+      // 여기 오면 나중 것이 캐시를 **새 빈 것으로 덮고**, 그 순간 「진행 중인 약속을
+      // 담는다」는 중복 로드 방지가 무효가 된다(12.9MB 자산이 N벌 파싱되는 그 경로 —
+      // 감독 신고 2026-08-12). 분리 전에는 `models` 가 클로저 최상단의 단일 Map 이라
+      // 이 창이 아예 없었다. **분리가 연 창이므로 분리한 자리에서 닫는다.**
+      if (!cache) cache = createModelCache(diag, loadGLB);
       if (!root) {
         const g = new (ns as unknown as ThreeGroupNS).Group();
         g.name = 'world2:overlay';

@@ -938,3 +938,84 @@ describe('🔴 붓 조작칸이 「놓기」 탭에 붙어 있다', () => {
     expect(note, '🔴 GLB 는 붓이 안 먹는다는 안내가 없다').toMatch(/GLB/);
   });
 });
+
+// ── 되돌리기 묶기가 열린 채 남지 않는다 (검수관 반려 B1, 2026-08-22) ──────────
+//
+// 반려 사유: `panel/inspector.ts` 가 수치칸·슬라이더의 `focus`/`pointerdown` 에서 묶기를
+// 열고 **`change` 에서만** 닫았다. HTML `change` 는 **값이 바뀌어야** 나므로, 포커스만
+// 주고 값을 안 바꾸면 묶기가 열린 채 남고 `history-ops.ts` 의 `if (!held) flush()` 가
+// **그 뒤의 모든 확정을 삼킨다.** 그러면 Ctrl+Z 가 「그 앞의 조작」을 되돌리고, 화면이
+// 바뀌므로 감독은 그것을 성공으로 읽는다 — 같은 파일 `barrier` 주석이 *"「안 먹는 것」
+// 보다 나쁘다"* 라고 지목한 형태다.
+//
+// ⚠ **이 축이 없어서 반려까지 갔다.** 기존 검사는 «다른 것을 고르면 묶기가 풀린다» 만
+// 보고 **같은 대상을 유지한 경로**를 안 봤다. 여기가 그 자리다.
+//
+// ⚠⚠ **처방이 두 겹이라 하나만 되돌리면 이 검사가 안 깨진다**(뮤테이션 실측 2026-08-22):
+//   ① 여는 자리를 `focus` → **첫 `input`** 으로 옮겼다(값이 바뀔 때만 열린다)
+//   ② 닫는 자리를 `change` 하나에서 **`change`·`blur` 둘**로 늘렸다
+// ①만 되돌려도, ②만 되돌려도 나머지 하나가 막는다 — 둘 다 되돌려야 빨간불이 된다.
+// **그것이 이 검사의 한계이자 두 겹으로 둔 이유다.** 「한 줄을 지웠는데 초록이니 안전
+// 하다」로 읽지 마라 — 그때 남은 것은 방어 한 겹뿐이다.
+describe('🔴 B1 · 값을 안 바꾸고 나가도 이후 조작이 되돌리기에 쌓인다', () => {
+  /** 오버레이 하나를 고른 채 패널을 세운다 */
+  function picked() {
+    const m = mount();
+    const e = {
+      id: 1, src: 'assets/models/a.glb', preview: false,
+      holder: {} as never, x: 0, y: 0, z: 0, ry: 0, s: 1,
+    };
+    select(m.st, m.host, { entry: e });
+    m.history.watch(m.st.target);
+    m.panel.refresh();
+    return { ...m, e };
+  }
+  const numInput = (key: string): HTMLInputElement | null =>
+    document.querySelector<HTMLInputElement>(`#w2-edit .insp input[data-f="${key}"]`)
+      ?? Array.from(document.querySelectorAll<HTMLInputElement>('#w2-edit .insp input'))[0] ?? null;
+  const opBtn = (label: string): HTMLButtonElement | null =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('#w2-edit button'))
+      .find((b) => b.textContent?.includes(label)) ?? null;
+
+  it('🔴 수치칸에 **포커스만** 주고 나간 뒤 회전 버튼을 누르면 쌓인다', () => {
+    const m = picked();
+    const inp = numInput('x');
+    expect(inp, '★ 수치칸을 못 찾았다 — 이 검사가 빈 검사다').not.toBeNull();
+    // 포커스만 준다 — 값은 안 바꾼다. 실제 브라우저에서 `change` 는 안 난다.
+    inp!.dispatchEvent(new Event('focus'));
+    inp!.dispatchEvent(new Event('blur'));
+    const before = m.history.depth();
+    opBtn('회전')!.click();
+    expect(m.history.depth(), '★ 묶기가 열린 채 남아 확정이 삼켜졌다').toBe(before + 1);
+    m.history.undo();
+    expect(m.e.ry, '★ 되돌렸는데 방금 그 회전이 안 풀렸다').toBe(0);
+  });
+
+  it('🔴 크기 슬라이더를 **잡았다 그 자리에서 놓아도** 이후 조작이 쌓인다', () => {
+    const m = picked();
+    const sl = sizeInput();
+    // 액자가 아니면 크기 슬라이더가 없을 수 있다 — 그때는 이 경로가 성립하지 않는다.
+    if (sl) {
+      sl.dispatchEvent(new Event('pointerdown'));
+      sl.dispatchEvent(new Event('focus'));
+      sl.dispatchEvent(new Event('blur'));
+    }
+    const before = m.history.depth();
+    opBtn('회전')!.click();
+    expect(m.history.depth(), '★ 슬라이더가 묶기를 열어 둔 채 남았다').toBe(before + 1);
+  });
+
+  it('값을 실제로 치면 타이핑 전체가 **한 항목**이다 — 묶기 자체는 살아 있다', () => {
+    const m = picked();
+    const inp = numInput('x');
+    for (const v of ['1', '12', '12.5']) {
+      inp!.value = v;
+      inp!.dispatchEvent(new Event('input'));
+    }
+    expect(m.history.depth(), '★ 타이핑 중에 쌓였다 — 글자마다 항목이 생긴다').toBe(0);
+    inp!.dispatchEvent(new Event('change'));
+    expect(m.history.depth()).toBe(1);
+    m.history.undo();
+    expect(m.e.x, '★ 타이핑 전체가 한 번에 안 되돌아갔다').toBe(0);
+  });
+});
