@@ -16,7 +16,7 @@
 // 계산하지 않는다. 그 공식이 바뀌면 배치 폭도 저절로 따라와야 하기 때문이다.
 // -----------------------------------------------------------------------------
 import {
-  FOOTPRINT, FRAME_RULES, PART_TYPES, SPACE_VERSION,
+  FOOTPRINT, FRAME_RULES, PART_TYPES, SPACE_VERSION, STORY_H,
   artworkSize, normalizeSpace,
   type Space, type SpacePart, type SpaceFinish,
 } from './space.js';
@@ -79,11 +79,31 @@ const CORNER_MARGIN = (wallT: number): number => wallT + FRAME_RULES.minGap;
 // 작품 위 트랙 조명의 방 안쪽 오프셋. DEFAULT_SPACE 실측: 작품 z=-3.4 · 조명 z=-3.0 → 0.4.
 const LIGHT_INSET = 0.4;
 
-// 살롱 2단의 걸이 높이. 아래단은 눈높이 근처, 위단은 그 위. 상한은 층고(gallery 3.6m)에서
-// 액자 최대 높이(FRAME_RULES.portrait.clampH = 2.6)가 천장을 뚫지 않도록 잡았다.
-// ⚠ 여기서 멈춘다 — 실기기 육안 판정 전까지 이 두 값은 "그럴듯한 출발점"이지 확정이 아니다.
-const SALON_Y_LOW = 1.15;
-const SALON_Y_HIGH = 2.45;
+// ── 살롱 2단 — 단 높이는 **층고와 액자 높이에서 유도한다** ──────────────────
+// ⚠ 첫 판본은 고정값(1.15 / 2.45)이었고 **틀렸다.** 헤드리스 렌더로 실물 14점을 살롱으로
+// 걸어 보니 위·아래 액자가 겹쳐 있었다. 산술로 확인한 결과 우연이 아니라 **항상** 겹친다:
+//   단 간격 1.30m  vs  액자 높이 1.60m(기본 폴백) · 2.13m · 2.60m(clampH)
+//   → 아래단 상단 1.95 > 위단 하단 1.65  (모든 경우에 겹침)
+// 겹치지 않으려면 액자 높이가 단 간격보다 작아야 하는데, 고정값은 그 조건을 아예 안 봤다.
+// "그럴듯한 출발점" 이라고 적어 둔 것이 **검사 없이 통과하는 값**이었다 — 육안 판정을
+// 기다리는 사이 산술로 5초면 반증되는 값이 코드에 남아 있었다.
+//
+// 그래서 두 값을 지우고 층고 예산에서 유도한다. 액자가 가장 높은 것을 기준으로 잡으므로
+// 겹침이 **구조적으로 불가능**하다. 예산이 모자라면 2단을 포기하고 단일 단으로 간다 —
+// 억지로 2단을 만드는 것보다 정직하다(높이 1.6m 작품을 3.6m 층고에 2단으로 거는 것은
+// 물리적으로 안 되는 일이고, 실제 살롱 행잉도 작은 작품에만 쓴다).
+const SALON_FLOOR_CLEAR = 0.25; // 액자 하단이 바닥에서 뜨는 최소 거리
+const SALON_CEIL_CLEAR = 0.15;  // 액자 상단과 천장 사이 최소 거리
+const SALON_TIER_GAP = 0.20;    // 두 단 사이 여백(겹침 방지 + 시각 분리)
+
+/** 층고와 최대 액자 높이로 2단 y 를 정한다. 예산이 모자라면 null(= 단일 단으로 폴백). */
+function salonTiers(storyHeight: number, maxArtH: number): { low: number; high: number } | null {
+  if (!(maxArtH > 0)) return null;
+  const need = SALON_FLOOR_CLEAR + maxArtH + SALON_TIER_GAP + maxArtH + SALON_CEIL_CLEAR;
+  if (need > storyHeight) return null;
+  const low = SALON_FLOOR_CLEAR + maxArtH / 2;
+  return { low, high: low + maxArtH / 2 + SALON_TIER_GAP + maxArtH / 2 };
+}
 
 // 파티션 세그먼트 폭(SSOT 소비 — 여기서 1.2 를 다시 적지 않는다).
 const PARTITION_W = PART_TYPES.partition.size[0];
@@ -139,6 +159,8 @@ interface Slot {
   wall: WallDef;
   /** 살롱 2단에서의 걸이 높이. undefined = 기본 높이(space-render 가 정한다). */
   y?: number;
+  /** 아래단에만 조명을 단다(위단은 같은 조명이 함께 비춘다) — y 값 비교 대신 이 표시로 판정한다. */
+  lowTier?: boolean;
   items: { art: GenArtwork; w: number }[];
 }
 
@@ -155,16 +177,18 @@ interface Slot {
  */
 function packInto(
   list: GenArtwork[], widths: number[], fw: number, fd: number, wallT: number, layout: GenLayout,
+  tiers: { low: number; high: number } | null,
 ): { slots: Slot[]; dropped: string[] } {
   const W = walls(fw, fd, wallT);
   // 슬롯 순서 = 관람 동선. 북(피처월)부터 — 들어서면 정면이고, featured 작품이 여기 걸린다.
   const order: WallDef[] = [W.north, W.east, W.west, W.south];
   const slots: Slot[] = [];
   for (const wall of order) {
-    if (layout === 'salon') {
-      slots.push({ wall, y: SALON_Y_LOW, items: [] });
-      slots.push({ wall, y: SALON_Y_HIGH, items: [] });
+    if (layout === 'salon' && tiers) {
+      slots.push({ wall, y: tiers.low, lowTier: true, items: [] });
+      slots.push({ wall, y: tiers.high, items: [] });
     } else {
+      // 살롱인데 층고 예산이 모자라면 여기로 온다 — 단일 단(둘레 걸기와 같은 배치).
       slots.push({ wall, y: undefined, items: [] });
     }
   }
@@ -233,6 +257,11 @@ export interface GenResult {
   dropped: string[];
   footprint: string;
   layout: GenLayout;
+  /**
+   * 실제로 몇 단으로 걸렸는가. salon 을 골라도 층고 예산이 모자라면 1 이다 —
+   * 「살롱을 골랐는데 왜 한 단인가」를 호출자가 알 수 있어야 한다(조용히 다르게 하지 않는다).
+   */
+  tiers: 1 | 2;
 }
 
 /**
@@ -250,7 +279,12 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
   const list = Array.isArray(artworks) ? artworks.filter((a) => a && typeof a === 'object') : [];
 
   // 영상은 screen 파츠로 간다(액자가 아니다) — 벽 배치는 같이 하되 파츠 타입이 다르다.
-  const widths = list.map((a) => (a.videoUrl && !a.imageUrl ? PART_TYPES.screen.size[0] : artworkSize(a.ar).W));
+  const isVideoAt = (a: GenArtwork) => !!(a.videoUrl && !a.imageUrl);
+  const widths = list.map((a) => (isVideoAt(a) ? PART_TYPES.screen.size[0] : artworkSize(a.ar).W));
+  // 살롱 2단 판정에 필요한 높이 — **가장 높은 액자**를 기준으로 예산을 잡아야 겹침이 없다.
+  const maxArtH = list.reduce((m, a) => Math.max(m, isVideoAt(a) ? PART_TYPES.screen.size[1] : artworkSize(a.ar).H), 0);
+  const STORY = 'gallery';
+  const tiers = layout === 'salon' ? salonTiers(STORY_H[STORY], maxArtH) : null;
 
   // ── 방 크기 ────────────────────────────────────────────────────────────────
   // 기본은 **전부 들어가는 최소 크기**다. 판정은 실배치다(용량 총합이 아니다).
@@ -266,7 +300,7 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
   // 보고한다(조용히 버리면 화면상 "잘 나온 전시"가 되고 작가는 작품이 빠진 걸 모른다).
   const wallT = 0.2;
   const fpKeys = Object.keys(FOOTPRINT);
-  const pack = (key: string) => packInto(list, widths, ...(FOOTPRINT[key] as [number, number]), wallT, layout);
+  const pack = (key: string) => packInto(list, widths, ...(FOOTPRINT[key] as [number, number]), wallT, layout, tiers);
 
   let fpIdx = fpKeys.length - 1;
   for (let i = 0; i < fpKeys.length; i++) {
@@ -307,7 +341,7 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
       parts.push(part);
       placed++;
       // 작품마다 조명 1 (불변식 4). 살롱 위단은 아래단 조명이 함께 비추므로 아래단에만 단다.
-      if (slot.y === undefined || slot.y === SALON_Y_LOW) {
+      if (slot.y === undefined || slot.lowTier) {
         const lp = slot.wall.lightAt(u);
         parts.push({ t: 'trackLight', x: lp.x, z: lp.z, ry: slot.wall.ry });
       }
@@ -357,7 +391,7 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
     meta: { name: opts.name || '자동 생성 전시', author: opts.author || '' },
     shell: {
       footprint: fpKey,
-      storyH: 'gallery',
+      storyH: STORY,
       wallT,
       finish: {
         wall: 'white', floor: 'parquet', ceiling: 'whiteflat', trim: 'brass',
@@ -369,11 +403,11 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
     parts,
   };
 
-  return { space: normalizeSpace(doc), placed, dropped, footprint: fpKey, layout };
+  return { space: normalizeSpace(doc), placed, dropped, footprint: fpKey, layout, tiers: tiers ? 2 : 1 };
 }
 
 /** 넘침 여부를 호출자가 놓치지 않게 하는 헬퍼 — overflow 는 dropped 로만 판정한다. */
 export function genSummary(r: GenResult): string {
-  const base = `${r.layout} · ${r.footprint} · 작품 ${r.placed}점`;
+  const base = `${r.layout}${r.layout === 'salon' ? `(${r.tiers}단)` : ''} · ${r.footprint} · 작품 ${r.placed}점`;
   return r.dropped.length ? `${base} · ⚠ 미배치 ${r.dropped.length}점(${r.dropped.join(', ')})` : base;
 }

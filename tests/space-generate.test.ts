@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { generateSpace, GEN_LAYOUTS, GEN_DEFAULT_LAYOUT, genSummary, type GenArtwork } from '../frontend/js/space-generate.js';
-import { FOOTPRINT, FRAME_RULES, PART_TYPES, artworkSize, normalizeSpace } from '../frontend/js/space.js';
+import { FOOTPRINT, FRAME_RULES, PART_TYPES, STORY_H, artworkSize, normalizeSpace } from '../frontend/js/space.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const gallery = JSON.parse(readFileSync(join(HERE, '../frontend/galleries/syhongart.json'), 'utf-8'));
@@ -274,5 +274,73 @@ describe('generateSpace — 기본 배치와 시작 위치', () => {
     // 방을 키우면 자리가 생기므로 벤치가 돌아온다.
     const roomy = generateSpace(REAL, { layout: 'partition', roomUp: 2 });
     expect(roomy.space.parts.some((p) => p.t === 'bench')).toBe(true);
+  });
+});
+
+describe('generateSpace — 벽면 겹침 (2차원)', () => {
+  // ⚠ 이 describe 가 생긴 경위: 헤드리스 렌더로 실물 14점을 살롱으로 걸어 화면을 보니
+  // 위·아래 액자가 붙어 있었다. **그때까지 24개 테스트가 전부 통과하고 있었다** — 겹침
+  // 검사가 가로(u)만 봤고 세로(y)를 안 봤기 때문이다. 축이 비어 있으면 통과는 아무것도
+  // 보증하지 않는다. 그 사고를 다시 못 내게 두 축을 함께 본다.
+  const rectsOnWall = (space: any) => {
+    const rows = new Map<string, { u: number; w: number; y: number | null; h: number }[]>();
+    for (const p of space.parts) {
+      if (p.t !== 'artwork' && p.t !== 'screen') continue;
+      const vertical = Math.abs(Math.sin(p.ry)) > 0.5;
+      const key = `${p.ry.toFixed(3)}|${(vertical ? p.x : p.z).toFixed(3)}`;
+      const size = p.t === 'screen' ? { W: PART_TYPES.screen.size[0], H: PART_TYPES.screen.size[1] } : artworkSize(p.ar);
+      const r = { u: vertical ? p.z : p.x, w: size.W, y: p.y ?? null, h: size.H };
+      (rows.get(key) ?? rows.set(key, []).get(key)!).push(r);
+    }
+    return rows;
+  };
+
+  it('같은 벽면의 어떤 두 작품도 겹치지 않는다 (가로 × 세로 동시)', () => {
+    for (const layout of GEN_LAYOUTS) {
+      for (const input of [REAL, mixed(8), mixed(24), mixed(50)]) {
+        const r = generateSpace(input, { layout });
+        for (const row of rectsOnWall(r.space).values()) {
+          for (let i = 0; i < row.length; i++) {
+            for (let j = i + 1; j < row.length; j++) {
+              const a = row[i], b = row[j];
+              const uOverlap = Math.abs(a.u - b.u) < (a.w + b.w) / 2 - 1e-9;
+              // y 가 둘 다 없으면 같은 높이 줄이다 → 세로는 겹치는 것으로 본다(가로가 갈라야 한다).
+              const vOverlap = (a.y === null || b.y === null)
+                ? (a.y === b.y)
+                : Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 1e-9;
+              expect(uOverlap && vOverlap).toBe(false);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('살롱 2단은 층고 안에 들어간다 (바닥·천장을 뚫지 않는다)', () => {
+    for (const input of [REAL, mixed(8), mixed(24)]) {
+      const r = generateSpace(input, { layout: 'salon' });
+      const H = STORY_H[r.space.shell.storyH];
+      for (const p of r.space.parts) {
+        if (p.t !== 'artwork' || p.y === undefined) continue;
+        const h = artworkSize(p.ar).H;
+        expect(p.y - h / 2).toBeGreaterThan(0);
+        expect(p.y + h / 2).toBeLessThan(H);
+      }
+    }
+  });
+
+  it('층고 예산이 모자라면 2단을 포기하고 1단으로 간다 (억지로 겹치지 않는다)', () => {
+    // 실물 14점은 ar 이 없어 액자 높이가 폴백 1.6m 다 → 3.6m 층고에 2단이 안 들어간다.
+    const tall = generateSpace(REAL, { layout: 'salon' });
+    expect(tall.tiers).toBe(1);
+    expect(tall.space.parts.every((p) => p.y === undefined)).toBe(true);
+    expect(genSummary(tall)).toContain('1단');
+    // 낮은 가로장(ar 2.2 → 높이 0.73m)만 주면 2단이 성립한다.
+    const flat = generateSpace(
+      Array.from({ length: 10 }, (_, i) => ({ id: `f${i}`, imageUrl: 'x.jpg', ar: 2.2 })),
+      { layout: 'salon' },
+    );
+    expect(flat.tiers).toBe(2);
+    expect(flat.space.parts.some((p) => p.t === 'artwork' && p.y !== undefined)).toBe(true);
   });
 });
