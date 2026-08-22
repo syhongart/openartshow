@@ -180,8 +180,43 @@ export const tree: PartSpec = {
  */
 export const LEAF_U0 = 0.25;
 
+/**
+ * 🔴 **아틀라스 경계에서 안쪽으로 물리는 폭**(감독 신고 2026-08-22 스크린샷
+ * *"나뭇잎 알파가 정확히 가려지지 않네"*).
+ *
+ * ── 유도 — 이 값은 취향이 아니라 **텍셀 산술**이다 ──────────────────────────
+ * 잎 카드는 `remapU(geo, LEAF_U0, 1)` 로 UV 를 잎 영역에 눌러 넣는데, 그러면
+ * `u = LEAF_U0` 가 **수피(완전 불투명)와 잎(투명)의 경계에 정확히 놓인다.**
+ *
+ *   픽셀 127 = 수피, 알파 **1**   ·   픽셀 128 = 잎 영역 시작, 알파 **0**
+ *   선형 필터가 경계에서 반반을 섞으면  →  알파 **정확히 0.5**
+ *   three 의 컷아웃은 `if (a < alphaTest) discard` 라 **0.5 는 통과한다**
+ *
+ * 그래서 카드마다 가장자리에 **수피 색 한 줄**이 남고, 잎 카드가 3장씩 서로 다른
+ * 각도로 서 있으므로 화면에서는 **여러 방향으로 뻗는 가는 선**으로 보인다. 색이
+ * 어두운 갈녹색인 것도 설명된다 — 수피 텍스처에 잎 정점색이 곱해진 것이다.
+ * **밉맵이 이것을 키운다**: 밉 레벨이 오를수록 수피와 잎이 더 넓게 섞인다.
+ *
+ * 물릴 폭은 밟지 말아야 할 밉 텍셀 수에서 나온다. 텍스처 폭이 `S*2 = 512` 이고
+ * 밉 5레벨의 텍셀이 원본 32px 이므로 **32px = 32/512 = 0.0625** 를 쓴다.
+ *
+ * ── 잎이 잘리지 않는가 (실측) ──────────────────────────────────────────────
+ * `treeTexture` 의 타원은 중심 320px 에서 최대 `min(leafW, S) * 0.45 = 115.2px`
+ * 까지만 퍼진다 → 실제 그려지는 범위는 **[204.8, 435.2]** 이고, 잎 영역 경계(128,
+ * 512)까지 양쪽에 **약 77px 여백**이 있다. 32px 를 물려도 잎에 닿지 않는다.
+ *
+ * ⚠ **수피 쪽도 같은 결함이었다.** `remapU(geo, 0, LEAF_U0)` 의 오른쪽 끝이 같은
+ * 경계라 수피 가장자리가 반투명해진다. 눈에 덜 띌 뿐 원인이 같으므로 함께 물린다.
+ *
+ * 되돌릴 문은 `?leafinset=0` 이다(신고 이전 화면).
+ */
+export const ATLAS_INSET = 0.0625;
+/** `?leafinset=` — 0 이면 신고 이전 화면. 상한은 잎 여백(≈0.15)보다 낮게 잡는다. */
+export const ATLAS_INSET_KNOB = 'leafinset';
+export const ATLAS_INSET_MAX = 0.12;
+
 /** 지오메트리의 U 좌표를 `[u0,u1]` 구간으로 눌러 넣는다 */
-function remapU(geo: InstanceType<ThreeNS['BufferGeometry']>, u0: number, u1: number): void {
+export function remapU(geo: InstanceType<ThreeNS['BufferGeometry']>, u0: number, u1: number): void {
   const uv = geo.attributes.uv.array as Float32Array;
   for (let i = 0; i < uv.length; i += 2) uv[i] = u0 + uv[i] * (u1 - u0);
 }
@@ -263,6 +298,8 @@ const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
 // 부팅 시 한 번 계산한다 — 정점색은 지오메트리에 구워지므로 프레임마다 바뀔 수 없다.
 // `?leafsat=` 을 바꾸면 새로고침이 필요하고, 그것이 이 축의 성질이다.
 const LEAF_SAT_NOW = readNum(LEAF_SAT_KNOB, LEAF_SAT, 0, LEAF_SAT_MAX);
+/** 아틀라스 경계 물림(위 `ATLAS_INSET`). 지오메트리에 구워지므로 부팅 시 한 번 읽는다. */
+const INSET_NOW = readNum(ATLAS_INSET_KNOB, ATLAS_INSET, 0, ATLAS_INSET_MAX);
 const LEAF_A = leafTone(LEAF_BASE_A, LEAF_SAT_NOW);
 const LEAF_B = leafTone(LEAF_BASE_B, LEAF_SAT_NOW);
 
@@ -354,7 +391,8 @@ function buildTreeGeometry(T: ThreeNS) {
       const w = (2.1 + rnd() * 0.5) * s;
       const h = w * (0.72 + rnd() * 0.16);
       const geo = new T.PlaneGeometry(w, h);
-      remapU(geo, LEAF_U0, 1);   // 텍스처의 잎 영역으로
+      // 경계 텍셀을 밟지 않게 안쪽으로 물린다(위 `ATLAS_INSET`).
+      remapU(geo, LEAF_U0 + INSET_NOW, 1 - INSET_NOW);
       const off = new T.Matrix4()
         .makeTranslation(
           (rnd() - 0.5) * 0.7 * s,
@@ -372,7 +410,8 @@ function buildTreeGeometry(T: ThreeNS) {
     // 5세그먼트 — world1 은 7이었다. 가지가 열셋이라 둘씩 줄이면 체감 없이 삼각형이
     // 50개쯤 준다. 가지는 대부분 잎에 가려 실루엣에 거의 기여하지 않는다.
     const geo = new T.CylinderGeometry(rad * 0.62, rad, len, 5).translate(0, len / 2, 0);
-    remapU(geo, 0, LEAF_U0);   // 텍스처의 불투명(줄기) 영역으로
+    // 수피도 오른쪽 끝이 같은 경계다 — 함께 물린다(위 `ATLAS_INSET`).
+  remapU(geo, INSET_NOW, LEAF_U0 - INSET_NOW);
     geo.applyMatrix4(m);
     pieces.push({ geo, color: BARK });
 
