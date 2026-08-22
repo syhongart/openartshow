@@ -43,6 +43,13 @@ export interface GenArtwork {
 export type GenLayout = 'perimeter' | 'partition' | 'salon';
 export const GEN_LAYOUTS: GenLayout[] = ['perimeter', 'partition', 'salon'];
 
+/**
+ * 아무것도 안 고르면 여는 배치 — **감독 판정 2026-08-22**.
+ * 후보 넷(둘레 걸기 / 작품 수로 자동 선택 / 파티션 / 살롱)을 평면도로 비교해 파티션이 뽑혔다.
+ * 상수로 둔 이유는 기본값이 코드 두 곳(폴백 표현식·테스트)에 흩어지지 않게 하기 위해서다.
+ */
+export const GEN_DEFAULT_LAYOUT: GenLayout = 'partition';
+
 export interface GenOptions {
   layout?: GenLayout;
   name?: string;
@@ -239,7 +246,7 @@ export interface GenResult {
  *   5. normalizeSpace 를 통과해도 파츠가 줄지 않는다(정규화가 버리지 않는다).
  */
 export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): GenResult {
-  const layout: GenLayout = GEN_LAYOUTS.includes(opts.layout as GenLayout) ? (opts.layout as GenLayout) : 'perimeter';
+  const layout: GenLayout = GEN_LAYOUTS.includes(opts.layout as GenLayout) ? (opts.layout as GenLayout) : GEN_DEFAULT_LAYOUT;
   const list = Array.isArray(artworks) ? artworks.filter((a) => a && typeof a === 'object') : [];
 
   // 영상은 screen 파츠로 간다(액자가 아니다) — 벽 배치는 같이 하되 파츠 타입이 다르다.
@@ -321,13 +328,29 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
     }
   }
 
-  // 앰비언스 — 관람 벤치와 러그. 방 중앙(파티션이 있으면 남쪽으로 물린다).
-  const benchZ = layout === 'partition' ? fd / 4 : 0.8;
-  parts.push({ t: 'bench', x: 0, z: benchZ, ry: 0, size: 1.8 });
-  parts.push({ t: 'rug', x: 0, z: benchZ - 0.8, ry: 0, variant: 'rect', color: '#c9bfae' });
-
   // spawn — 남벽 앞에서 북벽(피처월)을 정면으로 본다. DEFAULT_SPACE 의 시선 규칙 계승.
+  // **앰비언스보다 먼저 정한다** — 관람객이 설 자리가 기준이고 가구가 그것을 피한다.
   const spawnZ = fd / 2 - CORNER_MARGIN(wallT) - 1.0;
+
+  // 앰비언스 — 관람 벤치와 러그. 방 중앙(파티션이 있으면 남쪽으로 물린다).
+  // ⚠ 벤치는 solid 라 시작 위치와 겹치면 **관람객이 벤치 안에서 시작한다.** 첫 판본은
+  // 벤치를 먼저 놓고 spawn 을 나중에 계산했고, partition 의 fd/4 가 작은 방에서 정확히
+  // 겹쳤다(small: 벤치 z 1.25~1.75 vs spawn 1.4 · medium: 1.50~2.00 vs 1.9).
+  // 실물 14점이 partition·small 을 고르므로 **기본 화면이 그 경우였다** — 기본 배치가
+  // partition 으로 판정되면서 드러났다.
+  // 자리가 없으면 놓지 않는다: 6×6m 에 작품 14점이면 벤치 놓을 자리가 없는 게 맞고,
+  // 억지로 밀어 넣는 것보다 비우는 편이 정직하다.
+  const benchZ = layout === 'partition' ? fd / 4 : 0.8;
+  // 필요 간격 = 벤치 반두께 + 사람 반경.
+  // ⚠ 사람 반경은 이 저장소에 **두 값이 따로 있다** — visit.js `RADIUS = 0.3`(실내 워크스루)
+  // 과 lab-glb.js `PLAYER_RADIUS = 0.32`. 실내 씬은 visit 계열이지만 여기서는 **큰 쪽**을
+  // 쓴다: 작은 쪽에 맞추면 반경이 더 큰 컨트롤러에서 끼고, 0.02 를 아껴서 얻는 것이 없다.
+  // 순수 leaf 라 import 하지 않고 옮겨 적었으므로, 두 값 중 하나가 커지면 여기도 본다.
+  const BENCH_CLEAR = PART_TYPES.bench.size[2] / 2 + 0.32;
+  if (Math.abs(benchZ - spawnZ) > BENCH_CLEAR) {
+    parts.push({ t: 'bench', x: 0, z: benchZ, ry: 0, size: 1.8 });
+    parts.push({ t: 'rug', x: 0, z: benchZ - 0.8, ry: 0, variant: 'rect', color: '#c9bfae' });
+  }
 
   const doc = {
     version: SPACE_VERSION,

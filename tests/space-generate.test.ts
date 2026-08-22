@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { generateSpace, GEN_LAYOUTS, genSummary, type GenArtwork } from '../frontend/js/space-generate.js';
+import { generateSpace, GEN_LAYOUTS, GEN_DEFAULT_LAYOUT, genSummary, type GenArtwork } from '../frontend/js/space-generate.js';
 import { FOOTPRINT, FRAME_RULES, PART_TYPES, artworkSize, normalizeSpace } from '../frontend/js/space.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -229,5 +229,50 @@ describe('generateSpace — 방 크기 노브', () => {
     for (const bad of ['거대함', '', 'SMALL', null as any, 7 as any]) {
       expect(generateSpace(REAL, { layout: 'perimeter', footprint: bad }).footprint).toBe(auto.footprint);
     }
+  });
+});
+
+describe('generateSpace — 기본 배치와 시작 위치', () => {
+  it('[감독 판정] 아무것도 안 고르면 파티션으로 연다', () => {
+    // 감독 판정 2026-08-22 — 후보 넷을 평면도로 비교해 뽑힌 값이다.
+    expect(GEN_DEFAULT_LAYOUT).toBe('partition');
+    expect(generateSpace(REAL).layout).toBe(GEN_DEFAULT_LAYOUT);
+    // 알 수 없는 값을 줘도 기본으로 떨어진다(문자열 오타가 조용히 다른 배치를 열지 않게).
+    for (const bad of ['둘레', '', 'PERIMETER', null as any, 3 as any]) {
+      expect(generateSpace(REAL, { layout: bad }).layout).toBe(GEN_DEFAULT_LAYOUT);
+    }
+  });
+
+  it('관람객 시작 위치가 solid 파츠와 겹치지 않는다', () => {
+    // 겹치면 벤치·좌대 안에서 시작한다. 렌더는 멀쩡해 보이므로 눈으로는 안 잡힌다.
+    // 사람 반경은 큰 쪽(lab-glb 0.32)을 기준으로 본다 — 생성기와 같은 기준.
+    const R = 0.32;
+    for (const layout of GEN_LAYOUTS) {
+      for (const n of [1, 6, 14, 30, 60]) {
+        const r = generateSpace(mixed(n), { layout });
+        const sp = r.space.spawn;
+        for (const p of r.space.parts) {
+          const spec = PART_TYPES[p.t];
+          if (!spec.solid) continue;                       // 러그·조명은 밟아도 된다
+          const [sx, , sz] = spec.size;
+          const w = (p.t === 'bench' && p.size ? p.size : sx) / 2;
+          const d = sz / 2;
+          const gapX = Math.abs(sp.x - p.x) - (w + R);
+          const gapZ = Math.abs(sp.z - p.z) - (d + R);
+          // 한 축이라도 떨어져 있으면 안 겹친다(AABB).
+          expect(Math.max(gapX, gapZ)).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  it('벤치를 놓을 자리가 없으면 놓지 않는다 (억지로 밀어넣지 않는다)', () => {
+    // 실물 14점 · partition 은 small(6×6)을 고르고, 거기서는 벤치 자리가 spawn 과 겹친다.
+    const tight = generateSpace(REAL, { layout: 'partition' });
+    expect(tight.footprint).toBe('small');
+    expect(tight.space.parts.some((p) => p.t === 'bench')).toBe(false);
+    // 방을 키우면 자리가 생기므로 벤치가 돌아온다.
+    const roomy = generateSpace(REAL, { layout: 'partition', roomUp: 2 });
+    expect(roomy.space.parts.some((p) => p.t === 'bench')).toBe(true);
   });
 });
