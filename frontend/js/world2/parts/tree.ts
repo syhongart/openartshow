@@ -171,7 +171,6 @@ export const tree: PartSpec = {
 
 // ── 지오메트리 조립 ──────────────────────────────────────────────────────────
 
-
 /** 줄기 색(정점색). 인스턴스 `tones` 가 이 위에 곱해진다 */
 const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
 // 🔴 잎 색 — **판정은 `decide/leaf-color.ts` 가 소유한다**(감독 신고 2026-08-22
@@ -201,7 +200,6 @@ export const TREE_RADIUS_UNIT = 1.3;
 const TRUNK_LEN = 2.6;
 const TRUNK_RAD = 0.22;
 const MAX_LEVEL = 2;
-
 
 interface Piece { geo: InstanceType<ThreeNS['BufferGeometry']>; color: readonly [number, number, number] }
 
