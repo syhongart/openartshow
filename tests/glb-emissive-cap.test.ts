@@ -113,3 +113,32 @@ describe('🔴 `?glbemis=` 노브', () => {
     expect(EMISSIVE_CAP).toBeGreaterThan(BLOOM_THRESHOLD);
   });
 });
+
+// ── ⚠ 상한이 **안** 걸리는 경로 — 사실을 못 박아 둔다 ────────────────────────
+// 이 회차에 나는 `applyMatMode` 의 JSDoc 에 *"`swap`/`std` 는 재질을 갈아 끼워 원본
+// 발광이 안 넘어온다"* 라고 적었고 **`std` 에 대해서는 거짓이었다** — `CARRY_MAPS` 가
+// `emissiveIntensity` 를 그대로 옮긴다. 화면 영향은 없다(기본이 `noext` 다). 그러나
+// 게이트·처방 범위에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다 —
+// `main` unprotected 오기가 7일을 잃은 그 형태다.
+//
+// 그래서 **주석을 사실로 되돌리고, 그 사실을 검사로 만든다.** `CARRY_MAPS` 에서
+// `emissiveIntensity` 를 빼거나 `std` 에 상한을 거는 날, 이 검사가 그 주석으로
+// 데려간다. 「상한을 `std` 에도 걸 것인가」 자체는 별건 판정이다.
+describe('상한이 걸리지 않는 경로를 사실대로 적었는가', () => {
+  it('std 는 원본 emissiveIntensity 를 그대로 옮긴다 — 상한 밖이다', async () => {
+    const { CARRY_MAPS } = await import('../frontend/js/world-shared/glb-city.js');
+    expect(
+      CARRY_MAPS as readonly string[],
+      '🔴 CARRY_MAPS 가 바뀌었다 — applyMatMode 의 JSDoc 이 그 사실을 서술한다',
+    ).toContain('emissiveIntensity');
+  });
+
+  it('그 사실이 JSDoc 에 적혀 있다 — 코드만 맞고 서술이 거짓이면 다음 사람이 속는다', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('frontend/js/world-shared/glb-city.ts', 'utf8');
+    const doc = src.slice(0, src.indexOf('function applyMatMode('));
+    const tail = doc.slice(doc.lastIndexOf('@returns 손댄 재질 수'));
+    expect(tail, '🔴 std 가 예외라는 사실이 JSDoc 에서 사라졌다').toContain('`std` 는 예외다');
+    expect(tail).toContain('CARRY_MAPS');
+  });
+});

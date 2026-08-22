@@ -771,7 +771,7 @@ export type MatMode = (typeof MAT_MODES)[number];
 /**
  * 재질 축을 적용한다. **네 모드가 서로 다른 가설을 검증한다** — 위 `?glbmat=` 주석 참고.
  *
- * @returns 손댄 재질 수(진단용). `raw` 는 0 이다. 발광 상한(`EMISSIVE_CAP`)은 `noext` 에만 걸린다 — `raw` 는 «원본 그대로»가 목적이고 `swap`/`std` 는 재질을 갈아 끼워 원본 발광이 안 넘어온다.
+ * @returns 손댄 재질 수(진단용). `raw` 는 0 이다. 발광 상한(`EMISSIVE_CAP`)은 `noext` 에만 걸린다 — `raw` 는 «원본 그대로»가 목적이고 `swap` 은 새 재질이라 원본 발광이 안 넘어온다. ⚠ **`std` 는 예외다**: `CARRY_MAPS` 가 `emissiveIntensity` 를 그대로 옮기므로 `?glbmat=std` 에서는 원본 300 이 살아 있다(기본은 `noext` 라 감독 화면은 안 탄다 — 상한을 여기에도 걸지는 별건 판정이다).
  */
 function applyMatMode(m: Object3D, THREE: ThreeNS, mat: MatMode, flat: boolean, cap?: number): number {
   if (mat === 'raw') return 0;
