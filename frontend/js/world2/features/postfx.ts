@@ -200,7 +200,15 @@ export const postfxFeature: Feature = {
         // `?lit=` 를 낮추면 가로등이 먼저 빠진다.
         //
         // ⚠ **헤드리스로 실제 렌더를 검증할 수 없다** — 이 블록은 WebGPU 에서만 돈다.
-        // 조립 계약 자체는 `tests/world2-postfx-time.test.ts` 가 실물 three 로 태운다.
+        // 검사가 **둘로 갈려 있고 축이 다르다**:
+        //   `tests/world2-postfx-contract.test.ts` — **mock 0.** 실물 three 로 조립 전
+        //     구간(`pass → setMRT(mrt) → getTextureNode → bloom → add`)을 태운다. 판올림으로
+        //     MRT API 가 바뀌면 여기가 먼저 빨간불이 된다.
+        //   `tests/world2-postfx-time.test.ts` — `vi.mock` **셋**(`three/webgpu`·`three/tsl`·
+        //     `BloomNode`). 세기 계산과 시간대 소비를 잰다. 조립 계약은 **여기서 안 잠긴다.**
+        // ⚠ 이 자리에 *"조립 계약 자체는 `postfx-time.test.ts` 가 **실물 three 로** 태운다"*
+        // 라고 적었고 **거짓이었다**(검수관 조건 1). 다음 사람이 그 파일을 고칠 때 계약이
+        // 안 잠긴다는 것을 모르고, 정작 계약을 잠그는 파일은 아무도 안 가리키게 된다.
         //
         // ⚠ **폴백의 범위**: 아래 `catch` 가 받는 것은 **조립 예외**이고, 그때는 블룸이
         // 안 켜져 감독 판정(*"번짐 끈거로 하자"*) 위로 떨어진다. **셰이더 컴파일·첫 렌더
