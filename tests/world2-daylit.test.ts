@@ -52,8 +52,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as THREE from 'three';
 import {
-  paletteTime, nightness, TIMES, DAYLIT_LIGHTS, type SkyTime,
+  paletteTime, nightness, TIMES, DAYLIT_LIGHTS, lampGlow, LAMP_LUMINANCE, type SkyTime,
 } from '../frontend/js/world2/decide/night.js';
+import { BLOOM_THRESHOLD } from '../frontend/js/world2/features/postfx-params.js';
 import { waterGloss } from '../frontend/js/world2/decide/water-gloss.js';
 import { createSkySystem } from '../frontend/js/sky.js';
 import { SkySystem } from '../frontend/js/world2/systems/sky.js';
@@ -190,6 +191,27 @@ describe('🔴 GS-D2 — 안 접는 축: 이것이 씬의 정체다', () => {
     for (const t of ['day', 'sunset', 'night'] as const) {
       expect(nightness(t, 0.33), `🔴 ${t} 가 점등 노브에 흔들렸다`).toBe(nightness(t));
     }
+  });
+
+  it('🔴 GD-7 — 복합씬 등불이 블룸 문턱을 넘는다 (값이 아니라 **관계**)', () => {
+    // 🔴 화면에서 「켜졌다」가 만들어지려면 등불 휘도가 블룸 문턱을 넘어야 한다 —
+    // 못 넘으면 감독이 실제로 *"가로등 똑같은데"* 로 잡았던 상태가 된다
+    // (`decide/night.ts` 의 `LAMP_MAX_GLOW` 주석이 그 인과를 소유한다).
+    //
+    // **값이 아니라 관계를 못 박는다**(검수관 조건 2). 값을 박으면 테스트가 감독 판정을
+    // 막는 장치가 되고, 이 저장소엔 옛 임계값을 박아 **빈 평균 0이 단언을 통과**한 사고가
+    // 있다. 관계로 두면 네 상수(`LAMP_LUMINANCE`·`LAMP_MAX_GLOW`·`lampGlow` 곡선·
+    // `BLOOM_THRESHOLD`) 중 무엇이 바뀌어도 저절로 따라온다.
+    //
+    // 실측 하한: `?lit ≈ 0.2582` 에서 경계. 확정값 0.4 의 여유는 0.1335 다.
+    //
+    // ⚠ **이 검사는 산술이지 화면이 아니다.** 「문턱을 넘는다」와 「눈에 띈다」는 다른
+    // 일이고 후자는 감독 실기기(WebGPU)가 유일한 축이다(백로그 `G-DAYLIT1`).
+    const lumen = LAMP_LUMINANCE * lampGlow(nightness('daylit'));
+    expect(lumen, '🔴 복합씬 등불이 블룸 문턱을 못 넘는다 — 등은 켜졌는데 화면에서 모른다')
+      .toBeGreaterThan(BLOOM_THRESHOLD);
+    // 밤은 당연히 넘는다 — 전제가 깨지면 이 축 자체가 무의미하다.
+    expect(LAMP_LUMINANCE * lampGlow(nightness('night'))).toBeGreaterThan(BLOOM_THRESHOLD);
   });
 
   it('기본 점등 세기가 0~1 안에 있다', () => {
