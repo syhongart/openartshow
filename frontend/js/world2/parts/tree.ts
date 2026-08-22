@@ -35,9 +35,9 @@ import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/pa
 import { plazaOccupied } from './plaza.js';
 import {
   LEAF_BASE_A, LEAF_BASE_B, LEAF_SAT, LEAF_SAT_KNOB, LEAF_SAT_MAX, leafTone,
-  LEAF_LIFT_KNOB, LEAF_LIFT_MAX, LEAF_LIFT_AUTO, leafLiftAuto, liftTone,
+  LEAF_LIFT_KNOB, LEAF_LIFT_MAX, leafLiftAuto, liftTone,
 } from '../decide/leaf-color.js';
-import { readNum, readEnum } from '../url-knob.js';
+import { readNum, readNumOpt } from '../url-knob.js';
 import {
   LEAF_U0, ATLAS_INSET, ATLAS_INSET_KNOB, ATLAS_INSET_MAX, remapU, treeTexture, rng,
 } from './tree-atlas.js';
@@ -183,18 +183,17 @@ const LEAF_SAT_NOW = readNum(LEAF_SAT_KNOB, LEAF_SAT, 0, LEAF_SAT_MAX);
 /** 아틀라스 경계 물림(위 `ATLAS_INSET`). 지오메트리에 구워지므로 부팅 시 한 번 읽는다. */
 const INSET_NOW = readNum(ATLAS_INSET_KNOB, ATLAS_INSET, 0, ATLAS_INSET_MAX);
 
-// ── 밝기 배율 — 숫자 노브와 `auto`(유도값) 두 갈래 ───────────────────────────
-// `auto` 를 따로 두는 이유는 `decide/leaf-color.ts` 의 `LEAF_LIFT_AUTO` 한 곳이다
-// (요약하면: 유도값을 URL 에 숫자로 적으면 그 순간 값 미러링이고, 그 갈래가 없으면
-// `leafLift()` 의 소비자가 테스트뿐이 된다).
+// ── 밝기 배율 — 기본값이 **유도값**이다 (감독 판정 ③, 2026-08-22) ─────────────
+// `readNum` 이 아니라 `readNumOpt` 인 이유는 `url-knob.ts` 의 그 함수 머리말 한 곳이다
+// (요약하면: 기본값이 **고정 숫자가 아닌** 노브는 「지정 안 됨」을 `null` 로 받아야 한다).
+// 수면 광택이 시간대별 기본값 때문에 같은 이유로 이미 이 함수를 쓴다.
 //
-// 노브 계층에 새 함수를 만들지 않고 기존 둘을 조합한다 — `readEnum` 이 허용목록 밖을
-// 걸러내므로 `?leaflift=1.2` 는 여기서 `''` 가 되고 아래 `readNum` 이 받는다.
-const LEAF_LIFT_NOW = readEnum<string>(LEAF_LIFT_KNOB, '', [LEAF_LIFT_AUTO]) === LEAF_LIFT_AUTO
-  // 클램프는 `leafLiftAuto` 안에 있다 — 여기 인라인으로 두면 상한이 지금 안 걸리는 값이라
-  // 뮤테이션 검출력이 0 이 된다(실측 후 옮겼다, 그 파일 주석 참조).
-  ? leafLiftAuto()
-  : readNum(LEAF_LIFT_KNOB, 1, 0, LEAF_LIFT_MAX);
+// 클램프는 `leafLiftAuto` 안에 있다 — 여기 인라인으로 두면 상한이 지금 안 걸리는 값이라
+// 뮤테이션 검출력이 0 이 된다(실측 후 옮겼다, `decide/leaf-color.ts` 주석 참조).
+//
+// ⚠ `??` 이지 `||` 가 아니다. `?leaflift=0`(무채색 잎)은 **유효한 지정**인데 `||` 면
+// 0 이 falsy 라 유도값으로 새고, 그러면 노브의 하단이 통째로 사라진다.
+const LEAF_LIFT_NOW = readNumOpt(LEAF_LIFT_KNOB, 0, LEAF_LIFT_MAX) ?? leafLiftAuto();
 // 밝기 축은 채도 **뒤에** 온다 — `leafTone` 이 휘도를 보존하므로 순서를 바꾸면 채도가
 // 밝아진 휘도 기준으로 돌아 두 축이 서로를 먹는다. 근거는 `decide/leaf-color.ts` 한 곳이다.
 const LEAF_A = liftTone(leafTone(LEAF_BASE_A, LEAF_SAT_NOW), LEAF_LIFT_NOW);
