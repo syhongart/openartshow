@@ -184,7 +184,23 @@ describe('🔴 오탐률 — 저장소의 실제 커밋 이력에 걸어 본다'
         .toMatch(/테스트\s*[\d,]{4,}\s*건|[\d,]+\s*건\s*\/\s*\d+\s*파일/);
     }
     // 그리고 **실제로 뭔가는 걸려야** 한다 — 0건이면 이 검사가 아무것도 안 잰다.
-    expect(hits.length, '★ 사고 표기가 이력에서 사라졌다 — 검사가 헛돈다').toBeGreaterThan(0);
+    //
+    // ⚠ **0건의 원인이 둘이라 갈라서 말한다** (2026-08-22, PR #252 의 CI 실패).
+    // 이 검사는 처음에 *"사고 표기가 이력에서 사라졌다"* 하나만 말했는데, 실제로 CI 에서
+    // 떨어진 원인은 그게 아니라 **러너의 얕은 checkout** 이었다(기본 1커밋). 로컬은
+    // 전체 이력이라 통과했고 CI 만 빨간불이었다 — **검사가 환경 가정을 하고 있었다.**
+    // 원인을 안 가르면 다음 사람이 「사고 표기가 사라졌나?」를 먼저 찾는다. 오진을
+    // 유도하는 실패 메시지는 없느니만 못하다.
+    const depth = Number(
+      execFileSync('git', ['rev-list', '--count', 'HEAD'], { encoding: 'utf8' }).trim(),
+    );
+    expect(
+      hits.length,
+      depth < 400
+        ? `★ 이력이 ${depth}커밋뿐이다 — 이 축은 실제 이력을 요구한다. CI 라면 checkout 의 `
+          + '`fetch-depth` 를 보라(`.github/workflows/ci.yml` 의 verify job)'
+        : '★ 사고 표기가 이력에서 사라졌다 — 검사가 헛돈다',
+    ).toBeGreaterThan(0);
   });
 });
 
