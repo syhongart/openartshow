@@ -218,10 +218,31 @@ export function bladeToneHex(
     const cb = (b >> shift) & 0xff;
     return ca + (cb - ca) * palette;
   };
-  const r = ch(16);
-  const g = ch(8);
-  const bl = ch(0);
-  const y = 0.2126 * r + 0.7152 * g + 0.0722 * bl;
-  const push = (c: number): number => Math.max(0, Math.min(255, Math.round(y + (c - y) * sat)));
-  return (push(r) << 16) | (push(g) << 8) | push(bl);
+  const [r, g, bl] = saturateAroundLuma([ch(16), ch(8), ch(0)], sat, 255);
+  const q = (c: number): number => Math.round(c);
+  return (q(r) << 16) | (q(g) << 8) | q(bl);
+}
+
+/**
+ * 채도만 밀고 **휘도는 보존한다**(Rec.709). `sat` 이 `1` 이면 항등원이다.
+ *
+ * ── 왜 함수로 뽑았나 (2026-08-22) ──────────────────────────────────────────
+ * 이 식은 `bladeToneHex` 안에 인라인돼 있었고, 나무 잎에도 같은 축이 필요해지자
+ * (`decide/leaf-color.ts`, 감독 신고 *"나뭇잎 초록색 채도가 낮은 것 같아"*) **계수를
+ * 복사할 뻔했다.** Rec.709 계수 셋이 두 파일에 있으면 한쪽만 고쳐도 아무도 모른다 —
+ * 이 저장소가 캔버스 `rgba` 와 `HAZE` 상수에서 이미 겪은 그 형태다.
+ *
+ * `max` 를 인자로 받는 이유는 소비자의 척도가 다르기 때문이다 — 잔디는 0~255 정수
+ * 채널이고 잎은 0~1 정점색이다. **식은 스케일과 무관하므로** 클램프 상한만 갈린다.
+ *
+ * 휘도를 보존하는 이유: 채도만 미는데 화면이 같이 밝아지면 감독이 두 축을 한 화면에서
+ * 못 가른다. 실루엣·굽힘 축을 가른 것과 같은 이유다.
+ */
+export function saturateAroundLuma(
+  rgb: readonly [number, number, number], sat: number, max: number,
+): [number, number, number] {
+  const [r, g, b] = rgb;
+  const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const push = (c: number): number => Math.max(0, Math.min(max, y + (c - y) * sat));
+  return [push(r), push(g), push(b)];
 }

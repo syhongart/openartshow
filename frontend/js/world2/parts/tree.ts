@@ -33,6 +33,10 @@ import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
 import { roadDirs, LAMP_CLEARANCE } from './road-topology.js';
 import { parcelSlots, freeSlots, jitterIn, lampReservations } from '../decide/parcel-slots.js';
 import { plazaOccupied } from './plaza.js';
+import {
+  LEAF_BASE_A, LEAF_BASE_B, LEAF_SAT, LEAF_SAT_KNOB, LEAF_SAT_MAX, leafTone,
+} from '../decide/leaf-color.js';
+import { readNum } from '../url-knob.js';
 
 export const tree: PartSpec = {
   kind: 'tree',
@@ -253,9 +257,14 @@ function treeTexture(T: ThreeNS) {
 
 /** 줄기 색(정점색). 인스턴스 `tones` 가 이 위에 곱해진다 */
 const BARK: readonly [number, number, number] = [0.38, 0.29, 0.21];
-/** 잎 색. 두 톤을 섞어 수관이 단색 덩어리로 안 보이게 한다 */
-const LEAF_A: readonly [number, number, number] = [0.34, 0.52, 0.30];
-const LEAF_B: readonly [number, number, number] = [0.26, 0.42, 0.24];
+// 🔴 잎 색 — **판정은 `decide/leaf-color.ts` 가 소유한다**(감독 신고 2026-08-22
+// *"나무의 나뭇잎 초록색 채도가 낮은 것 같아"*). 실측 표와 근거는 그 파일 한 곳이다.
+//
+// 부팅 시 한 번 계산한다 — 정점색은 지오메트리에 구워지므로 프레임마다 바뀔 수 없다.
+// `?leafsat=` 을 바꾸면 새로고침이 필요하고, 그것이 이 축의 성질이다.
+const LEAF_SAT_NOW = readNum(LEAF_SAT_KNOB, LEAF_SAT, 0, LEAF_SAT_MAX);
+const LEAF_A = leafTone(LEAF_BASE_A, LEAF_SAT_NOW);
+const LEAF_B = leafTone(LEAF_BASE_B, LEAF_SAT_NOW);
 
 /**
  * 스케일 1일 때의 수관 반경(미터). `footprint` 가 여기에 인스턴스 스케일을 곱한다.
