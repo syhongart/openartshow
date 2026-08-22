@@ -19,7 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GATES, RISK_PATHS, changeSummary } from '../scripts/gate.mjs';
+import { GATES, RISK_PATHS, changeSummary, overlapCheck, OVERLAP_EXEMPT, baseInfo } from '../scripts/gate.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -393,5 +393,185 @@ describe('훅 배선 — 설정은 추적되지 않는다', () => {
       'core.hooksPath 가 scripts/githooks 가 아니다 — pre-commit 이 돌지 않는다.\n'
       + '  `npm run gate` 를 한 번 돌리면 ensureHooksWired() 가 복구한다.',
     ).toBe('scripts/githooks');
+  });
+});
+
+// ── GS-OV · 겹침 검사 (`G-OPS1`, 팀장 처방 p1) ─────────────────────────────
+//
+// **왜 이 describe 가 생겼나.** 2026-08-22 하루에 세 번, 두 세션이 같은 파일을 각자
+// 고쳤다. 셋 다 충돌로 드러났지만 **그것은 요행이다** — 양쪽이 우연히 같은 줄을 만졌기
+// 때문이지 구조가 막은 것이 아니다.
+//
+// ⚠ **그래서 이 검사들의 핵심은 「충돌이 안 나는 겹침」이다**(아래 ★★★). git merge 가
+// 조용히 통과시키는 그 경우를 못 잡으면 이 게이트는 충돌 검사의 열화판일 뿐이고,
+// 정작 막으려던 사고(두 배율이 동시 적용된 화면이 배포되는 것)를 못 막는다.
+//
+// 실제 git 저장소를 임시로 만들어 잰다 — `overlapCheck` 가 `git` 을 직접 부르므로
+// 스텁으로는 그 배선을 못 본다(이 저장소가 「판정/집행 경계는 아무도 안 본다」로
+// 이름 붙인 그 자리다).
+describe('GS-OV — 겹침 검사가 실제 저장소에서 동작한다', () => {
+  const g = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')} → ${r.status}\n${r.stderr}`);
+    return r.stdout;
+  };
+
+  /** 갈라진 두 브랜치를 만든다. `mainEdit`/`mineEdit` 는 파일명→내용. */
+  const makeRepo = (mainEdit: Record<string, string>, mineEdit: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'gate-ov-'));
+    g(dir, 'init', '-q', '-b', 'main');
+    g(dir, 'config', 'user.email', 't@t');
+    g(dir, 'config', 'user.name', 't');
+    mkdirSync(join(dir, 'docs'), { recursive: true });
+    // 공통 조상 — 각 파일에 줄을 넉넉히 둬서 「다른 줄」 편집이 가능하게 한다.
+    for (const f of ['a.ts', 'b.ts', 'docs/BOARD.md']) {
+      writeFileSync(join(dir, f), Array.from({ length: 9 }, (_, i) => `L${i}`).join('\n'), 'utf8');
+    }
+    g(dir, 'add', '-A'); g(dir, 'commit', '-qm', 'base');
+    // `origin/main` 을 흉내낸다 — 원격 없이 remote-tracking ref 를 직접 만든다.
+    const mb = g(dir, 'rev-parse', 'HEAD').trim();
+    for (const [f, body] of Object.entries(mainEdit)) writeFileSync(join(dir, f), body, 'utf8');
+    if (Object.keys(mainEdit).length) { g(dir, 'add', '-A'); g(dir, 'commit', '-qm', '상대 세션의 커밋'); }
+    g(dir, 'update-ref', 'refs/remotes/origin/main', g(dir, 'rev-parse', 'HEAD').trim());
+    // 내 브랜치는 merge-base 에서 갈라진다.
+    g(dir, 'checkout', '-q', '-b', 'mine', mb);
+    for (const [f, body] of Object.entries(mineEdit)) writeFileSync(join(dir, f), body, 'utf8');
+    if (Object.keys(mineEdit).length) g(dir, 'add', '-A');   // **index** 에만 올린다
+    return dir;
+  };
+  const lines = (...edits: [number, string][]) => {
+    const a = Array.from({ length: 9 }, (_, i) => `L${i}`);
+    for (const [i, v] of edits) a[i] = v;
+    return a.join('\n');
+  };
+
+  it('★★★ **충돌이 안 나는 겹침**을 잡는다 — 이 검사의 존재 이유다', () => {
+    // 상대는 첫 줄, 나는 마지막 줄. `git merge` 는 이것을 **조용히 통과시킨다** —
+    // 그리고 그것이 팀장이 지목한 사고 형태다(두 배율이 동시 적용된 화면).
+    const dir = makeRepo({ 'a.ts': lines([0, '상대']) }, { 'a.ts': lines([8, '나']) });
+    try {
+      const o = overlapCheck('origin/main', dir);
+      expect(o.measured, '못 쟀다').toBe(true);
+      expect(o.both, '충돌 안 나는 겹침을 놓쳤다 — 충돌 검사의 열화판이 됐다').toEqual(['a.ts']);
+      // 실제로 merge 가 통과하는지도 확인한다 — 안 그러면 위 전제가 거짓이다.
+      g(dir, 'commit', '-qm', '내 커밋');
+      const m = spawnSync('git', ['merge', '--no-edit', 'origin/main'], { cwd: dir, encoding: 'utf8' });
+      expect(m.status, '전제가 깨졌다 — 이 편집은 실제로 충돌한다').toBe(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('겹치지 않으면 통과한다 — 오탐이 작업을 세우면 안 된다', () => {
+    const dir = makeRepo({ 'a.ts': lines([0, '상대']) }, { 'b.ts': lines([0, '나']) });
+    try {
+      const o = overlapCheck('origin/main', dir);
+      expect(o.measured).toBe(true);
+      expect(o.both, '안 겹치는데 잡았다').toEqual([]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('`docs/BOARD.md` 는 면제다 — 여러 세션이 덧붙이라고 있는 파일이다', () => {
+    const dir = makeRepo(
+      { 'docs/BOARD.md': lines([0, '상대']) },
+      { 'docs/BOARD.md': lines([8, '나']) },
+    );
+    try {
+      expect(overlapCheck('origin/main', dir).both, '게시판이 막혔다').toEqual([]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('면제는 **게시판 하나뿐**이다 — 목록이 늘면 검사가 비어 간다', () => {
+    expect(OVERLAP_EXEMPT.map((e) => e.re.source)).toEqual(['^docs\\/BOARD\\.md$']);
+    for (const e of OVERLAP_EXEMPT) expect(e.why.length, '면제에 사유가 없다').toBeGreaterThan(10);
+  });
+
+  it('★★ 내 쪽은 **index** 를 본다 — staged 안 된 편집은 커밋에 안 들어간다', () => {
+    const dir = makeRepo({ 'a.ts': lines([0, '상대']) }, {});
+    try {
+      writeFileSync(join(dir, 'a.ts'), lines([8, '아직 add 안 함']), 'utf8');
+      expect(overlapCheck('origin/main', dir).both, 'unstaged 를 셌다').toEqual([]);
+      g(dir, 'add', 'a.ts');
+      expect(overlapCheck('origin/main', dir).both, 'add 했는데 안 셌다').toEqual(['a.ts']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('★★ base 를 못 찾으면 **`measured:false`** — 못 잰 것은 통과가 아니다', () => {
+    const dir = makeRepo({}, { 'a.ts': lines([0, '나']) });
+    try {
+      const o = overlapCheck('origin/nosuchbranch', dir);
+      expect(o.measured, '없는 base 를 조용히 통과시켰다').toBe(false);
+      expect(o.why, '왜 못 쟀는지가 없다').toBeTruthy();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  // ── 배선 — 판정이 **집행에 닿는가** ─────────────────────────────────────
+  // ⚠ 위 검사들은 전부 `overlapCheck()` 를 직접 부른다. 그것이 `main()` 에 **배선돼
+  // 있는지**는 아무것도 안 본다 — 이 저장소가 「판정/집행 경계는 아무도 안 본다」로
+  // 이름 붙인 그 자리이고, 같은 회차에 `leafLift()` 소비자 0 으로 실제로 겪었다.
+  //
+  // ⚠⚠ **소스 검사의 한계를 알고 쓴다**(2026-08-22 실측): 이 축은 「죽은 코드」를
+  // 답으로 받는다 — `printOverlap()` 안을 비워도 호출은 남으므로 통과한다. 그 사각은
+  // 아래 「막을 때 스탬프를 지운다」가 같은 파일에서 함께 보는 것으로 좁힌다.
+  it('★★ `main()` 이 겹침 검사를 부르고 **막는다** — 배선이 없으면 위가 전부 공허하다', () => {
+    const src = readFileSync(join(ROOT, 'scripts/gate.mjs'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
+    expect(src, 'main() 이 printOverlap 을 안 부른다').toMatch(/functionmain\(\)\{[^}]*printOverlap\(\)/);
+    // 부르기만 하고 결과를 안 보면 배선이 아니다 — 종료코드로 이어져야 한다.
+    expect(src, 'printOverlap 결과가 return 으로 이어지지 않는다')
+      .toMatch(/printOverlap\(\)!==0\)\{[^}]*return1/);
+    // 막을 때 스탬프를 지운다 — 안 지우면 옛 스탬프로 커밋이 통과한다.
+    expect(src, '막으면서 스탬프를 안 지운다').toMatch(/printOverlap\(\)!==0\)\{[^}]*clearStamp\(\)/);
+    // 그리고 **게이트들보다 먼저** 온다 — 겹쳤으면 10분짜리 테스트를 돌릴 이유가 없다.
+    const i = src.indexOf('printOverlap()!==0');
+    const j = src.indexOf('for(constgateofGATES)');
+    expect(i, '겹침 검사가 게이트 루프보다 뒤에 있다').toBeGreaterThan(0);
+    expect(i, '겹침 검사가 게이트 루프보다 뒤에 있다').toBeLessThan(j);
+  });
+
+  it('★★ base 신선도가 **겹침 경로에서도** 찍힌다 — 문구가 거짓이 되지 않게', () => {
+    // ── 왜 이 검사가 생겼나 (검수관 권고, 2026-08-22) ──────────────────────
+    // 첫 판본은 base 나이를 `printChangeSummary()` 에만 두고 커밋 메시지에 *"눈에
+    // 보이게 했다"* 라고 적었는데, **겹침이 잡히는 경로는 조기 `return 1` 이라 그
+    // 함수를 안 부른다** — 즉 그 문장이 정작 필요한 순간에 거짓이었다.
+    //
+    // 이것이 왜 중요한가: 「겹침 0」과 「낡은 base 라 못 봤다」는 화면에서 구별되지
+    // 않는다. 그것이 이 게이트의 가장 큰 사각이고(백로그 한계 ①), base 를 찍는 것이
+    // 유일한 방어다. **게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게
+    // 만든다** — 이 저장소가 `main` unprotected 오기로 7일을 잃은 그 형태다.
+    const src = readFileSync(join(ROOT, 'scripts/gate.mjs'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
+    // `printOverlap` 안에서, **`both.length===0` 조기 return 보다 먼저** 찍어야 한다
+    // — 뒤에 두면 겹침 0 인 경우(= 낡은 base 가 숨는 바로 그 경우)에 안 보인다.
+    const fn = src.slice(src.indexOf('functionprintOverlap()'));
+    const printed = fn.indexOf('baseInfo(o.base)');
+    const early = fn.indexOf('o.both.length===0)return0');
+    expect(printed, 'printOverlap 이 base 를 안 찍는다').toBeGreaterThan(0);
+    expect(early, '전제가 깨졌다 — 조기 return 을 못 찾았다').toBeGreaterThan(0);
+    expect(printed, 'base 를 조기 return 뒤에 찍는다 — 겹침 0 일 때 안 보인다')
+      .toBeLessThan(early);
+    // 포맷을 두 곳에 적지 않는다 — 소비자가 둘이라 함수로 뺐다.
+    expect((src.match(/--date=format:/g) ?? []).length, 'base 포맷이 두 곳에 있다').toBe(1);
+  });
+
+  it('`baseInfo` 가 실제 커밋을 읽는다 — 못 읽으면 `?` 로 **표시**한다(조용히 넘기지 않는다)', () => {
+    const dir = makeRepo({}, {});
+    try {
+      expect(baseInfo('origin/main', dir), '실재하는 base 를 못 읽었다').toMatch(/^[0-9a-f]{7,} /);
+      expect(baseInfo('origin/nosuchbranch', dir), '없는 base 를 조용히 통과시켰다').toBe('?');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('여러 파일이 겹치면 전부 보고한다', () => {
+    const dir = makeRepo(
+      { 'a.ts': lines([0, '상대']), 'b.ts': lines([0, '상대']) },
+      { 'a.ts': lines([8, '나']), 'b.ts': lines([8, '나']) },
+    );
+    try {
+      const o = overlapCheck('origin/main', dir);
+      // ⚠ `both` 를 옵셔널로 받는 것이 맞다 — `measured:false` 일 때 이 필드는 **없다**.
+      // 타입이 「못 쟀다」와 「겹침 0」을 구별하고 있고, 그 구별이 V5 뮤테이션이 노리는
+      // 자리다(못 잰 것을 빈 배열로 뭉개면 통과가 된다).
+      expect(o.measured, '못 쟀다').toBe(true);
+      expect(o.both?.slice().sort()).toEqual(['a.ts', 'b.ts']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
