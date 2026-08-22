@@ -28,6 +28,16 @@ describe('나뭇잎 밝기', () => {
     expect(c, '잎 색이 `lift(...)` 를 안 거친다 — 배율이 사라졌다')
       .toMatch(/constLEAF_A:[^=]*=lift\(/);
     expect(c, 'LEAF_B 도 같은 배율을 거쳐야 한다').toMatch(/constLEAF_B:[^=]*=lift\(/);
+    // ⚠ **배율 자신의 정의를 본다** (검수관 조건 1, 2026-08-22). 첫 판본은 파일 어딘가에
+    // `GRASS_TONES[1]` 이 있는지만 봤고, 검수관이 그 사각을 실측으로 뚫었다 —
+    // `leafLift()` 를 **죽은 코드**(`if (false) { leafLift(); }`)로 남기고 `LEAF_LIFT` 를
+    // 계산된 상수로 하드코딩하면 **3건 전부 통과한다**(재현 확인). 문자열은 그대로 있고
+    // 값도 그 순간엔 같기 때문이다. 즉 검사가 «유도가 데이터 흐름을 타는가» 를 못 봤다.
+    //
+    // 이 회차에서 같은 형태를 네 번째로 만난다(`MAX_LEGS` 하드코딩 · `equirectUv` 자기참조 ·
+    // 위조 주석 · 이번). **값도 문자열도 형태를 보증하지 못한다 — 선언을 봐야 한다.**
+    expect(c, 'LEAF_LIFT 가 leafLift() 호출이 아니다 — 유도가 상수로 굳었다')
+      .toMatch(/constLEAF_LIFT=leafLift\(\)/);
     expect(c, '배율이 GRASS_TONES 에서 유도되지 않는다 — 잔디를 밝혀도 나무가 안 따라온다')
       .toContain('GRASS_TONES[1]');
     // `GRASS_TONES` 의 값을 이 파일에 다시 적는 것을 막는다(값 미러링).
