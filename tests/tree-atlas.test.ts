@@ -8,11 +8,18 @@
 // **불투명(수피)과 투명(잎)의 경계에 정확히 놓인다**:
 //
 //   픽셀 127 = 수피 알파 1  ·  픽셀 128 = 잎 알파 0  →  선형 필터가 섞으면 **0.5**
-//   three 의 컷아웃은 `if (a < alphaTest) discard` 이고 `alphaTest = 0.5` 다
-//   → **0.5 는 «작다» 가 아니므로 통과한다** → 수피 색 한 줄이 카드 가장자리에 남는다
 //
-// 그 띠가 화면에서 가는 선으로 보였고, 잎 카드가 3장씩 다른 각도로 서 있어 여러
-// 방향으로 뻗었다. 밉맵이 이것을 키운다(레벨이 오를수록 더 넓게 섞인다).
+// ⚠ **첫 판본은 여기서 «three 는 `a < alphaTest` 라 0.5 가 통과한다» 로 원인을
+// 닫았고, 그것은 감독 화면에서 참이 아니었다**(소스 실측 2026-08-22). three 는
+// **백엔드마다 연산자가 다르다** — WebGL 은 `<`(0.5 통과), WebGPU 는
+// `lessThanEqual`(0.5 **잘림**). world2 는 `three/webgpu` 이므로 그 문장은
+// 헤드리스에서만 참이었다. 아래 마지막 describe 가 두 연산자를 three 소스에서
+// 직접 읽어 못 박는다 — 인용이 조용히 거짓이 되지 않게.
+//
+// 두 백엔드 어디서도 성립하는 축은 **밉맵**이다: 밉 레벨 k 의 텍셀은 원본 `2^k` px
+// 를 덮으므로 `u` 가 경계 안쪽이어도 샘플이 **경계 너머 수피를 먹고**, 알파가 0.5 를
+// **넘는** 표본이 카드 가장자리에 생긴다. 그 픽셀은 `<` 든 `<=` 든 살아남는다. 잎
+// 카드가 3장씩 다른 각도로 서 있어 여러 방향으로 뻗는 선이 됐다.
 //
 // ⚠ 이 검사들은 **화면을 보지 않는다.** 헤드리스는 swiftshader WebGL 이고 world2 는
 // WebGPU 라 컷아웃 결과를 원리적으로 못 본다. 여기서 잡는 것은 **경계를 밟는가**
@@ -108,5 +115,61 @@ describe('🔴 나무가 이 물림을 실제로 쓴다', () => {
     // 문턱을 올려 덮는 것도 가능했지만 그러면 잎 실루엣 가장자리까지 깎인다.
     // 원인은 문턱이 아니라 **경계를 밟는 것**이라 UV 쪽을 고쳤다.
     expect(code).toMatch(/alphaTest:\s*0\.5/);
+  });
+});
+
+// ── 🔴 주석이 인용한 three 소스가 실제로 그런가 ─────────────────────────────
+// `ATLAS_INSET` 주석은 **three 내부 소스 두 줄을 인용**해 「백엔드마다 컷아웃 비교
+// 연산자가 다르다」를 주장한다. 그 인용이 이 저장소에서 검사받지 않으면, three 를
+// 올려 연산자가 바뀌는 순간 주석이 **조용히 거짓**이 된다 — 이 저장소가 `main`
+// unprotected 오기로 7일을 잃은 그 형태다. 그래서 주장을 검사로 만든다.
+//
+// ⚠ 경로가 바뀌면 **스킵이 아니라 FAIL** 이다. 못 읽은 것은 통과가 아니고, 그때
+// 해야 할 일은 «연산자를 다시 확인하고 주석을 고치는 것» 이다.
+describe('🔴 three 의 컷아웃 연산자 — 주석의 인용을 실측으로 못 박는다', () => {
+  const readThree = (rel: string): string => {
+    const p = join(process.cwd(), 'node_modules/three/src', rel);
+    try {
+      return readFileSync(p, 'utf8');
+    } catch {
+      throw new Error(
+        `🔴 three 내부 경로가 바뀌었다: ${rel}\n` +
+        '   `tree.ts` 의 ATLAS_INSET 주석이 이 파일을 인용하고 있다 — 연산자를 다시 ' +
+        '확인하고 주석과 이 검사를 함께 고쳐라. (못 읽은 것은 통과가 아니다)',
+      );
+    }
+  };
+
+  it('WebGL 은 `<` 다 — 알파 0.5 가 **통과**한다', () => {
+    const glsl = readThree('renderers/shaders/ShaderChunk/alphatest_fragment.glsl.js');
+    expect(glsl, '🔴 WebGL 컷아웃이 `a < alphaTest` 가 아니다 — 주석이 거짓이 됐다')
+      .toMatch(/diffuseColor\.a\s*<\s*alphaTest/);
+  });
+
+  it('WebGPU 는 `<=` 다 — 알파 0.5 가 **잘린다**', () => {
+    const node = readThree('materials/nodes/NodeMaterial.js');
+    expect(node, '🔴 WebGPU 컷아웃이 `lessThanEqual` 이 아니다 — 주석이 거짓이 됐다')
+      .toMatch(/diffuseColor\.a\.lessThanEqual\(/);
+  });
+
+  it('🔴 두 연산자가 실제로 다르다 — 이것이 정정의 핵이다', () => {
+    // 이 검사가 지키는 것은 값이 아니라 **진단의 논리**다. 두 연산자가 같아지면
+    // 「헤드리스에서만 참인 문장을 실기기 진단으로 쓸 뻔했다」는 서술의 근거가
+    // 사라지고, 그러면 주석을 다시 써야 한다.
+    const glsl = readThree('renderers/shaders/ShaderChunk/alphatest_fragment.glsl.js');
+    const node = readThree('materials/nodes/NodeMaterial.js');
+    const glslHasEq = /diffuseColor\.a\s*<=\s*alphaTest/.test(glsl);
+    expect(glslHasEq, '🔴 WebGL 도 `<=` 가 됐다 — 백엔드 차이가 사라졌다').toBe(false);
+    expect(node).not.toMatch(/diffuseColor\.a\.lessThan\(\s*alphaTestNode/);
+  });
+
+  it('주석이 이 두 파일을 실제로 인용하고 있다 — 검사와 주석이 같은 것을 본다', () => {
+    // 주석에서 파일명을 지우면 이 검사가 무엇을 지키는지가 끊긴다. 양방향 대조다.
+    const src = readFileSync(
+      join(process.cwd(), 'frontend/js/world2/parts/tree.ts'), 'utf8',
+    );
+    expect(src).toContain('alphatest_fragment.glsl.js');
+    expect(src).toContain('NodeMaterial.js');
+    expect(src).toContain('lessThanEqual');
   });
 });
