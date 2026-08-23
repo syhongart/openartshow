@@ -15,8 +15,18 @@
 import { venueEntryView, type VenueEntryView } from '../decide/venue-entry.js';
 
 export interface VenuePromptDeps {
-  /** 주소의 `?u=` 로 정해진 작가. null 이면 안내가 뜨지 않는다(갈 곳이 없다). */
-  readonly tenant: string | null;
+  /**
+   * 들어갈 **전시장(갤러리) id**. 아직 못 정했으면 null.
+   *
+   * ⚠ 게터인 이유 — 갤러리 목록은 `galleries/index.json` 을 읽어 정하므로 마운트 시점에
+   * 아직 없다. 값으로 넘기면 「영영 안 뜬다」가 된다(위치·건물과 같은 이유).
+   *
+   * ⚠⚠ **world2 의 `?u=` 와 다른 개념이다.** 저쪽은 「마을 땅 주인」이고 대장에 등록돼야
+   * 하며, 이쪽은 「어느 전시를 여는가」다. 이름이 같아서 처음에 이 안내를 world2 테넌트에
+   * 묶었고, 그 결과 `?u=` 를 붙여야만 들어갈 수 있게 됐다 — 감독 지적 2026-08-23:
+   * *"이게 왜 있어? GLB문앞에서 들어가져야지."* 건물 앞이면 주소와 무관하게 들어간다.
+   */
+  readonly tenant: () => string | null;
   /** 관람객 현재 위치. 없으면 null */
   readonly player: () => { x: number; z: number } | null;
   /** 건물 진입 지점과 반경. 아직 안 떴으면 null */
@@ -65,7 +75,7 @@ export function mountVenuePrompt(doc: Document, deps: VenuePromptDeps): VenuePro
       player: deps.player(),
       entry: v ? { x: v.x, z: v.z } : null,
       radius: v ? v.radius : 0,
-      tenant: deps.tenant,
+      tenant: deps.tenant(),
     });
     current = view;
     btn.style.display = view.show ? 'block' : 'none';
