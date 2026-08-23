@@ -324,6 +324,38 @@ describe('기즈모 경계 — 계산이 실제로 항목에 먹는가', () => {
     expect(fine.entry.x).toBeCloseTo(6, 5);
   });
 
+  it('🔴 커서를 얹으면 그 축이 실제로 밝아진다 — 배선이 살아 있는가', () => {
+    const h = makeHarness();
+    const x = handleMesh(h, 'move', 'x') as { material: { opacity: number } };
+    const y = handleMesh(h, 'move', 'y') as { material: { opacity: number } };
+    const before = x.material.opacity;
+    h.hits.length = 0;
+    h.hits.push({ object: x });
+    // ⚠ **캔버스로** 보낸다 — `gizmo-hover.ts` 는 캔버스 밖이면 무조건 걷는다.
+    h.canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: 400, clientY: 400, bubbles: true }));
+    expect(x.material.opacity, '★ 얹었는데 안 밝아졌다 — 배선이 끊겼다')
+      .toBeGreaterThan(before);
+    expect(y.material.opacity, '★ 얹기만 했는데 나머지가 흐려졌다').toBe(before);
+  });
+
+  it('🔴 선택이 바뀌면 얹은 것도 함께 걷힌다 — `end()` 가 안 비우는 대신 여기가 맡는다', () => {
+    // `gizmo.ts` 의 `end()` 주석이 *"비우는 자리를 `attach` 하나로 모은다"* 라고 주장한다.
+    // 그 주장이 거짓이면 **스테일 강조**가 남는다 — 손을 뗀 자리의 축이 계속 밝다.
+    const h = makeHarness();
+    const x = handleMesh(h, 'move', 'x') as { material: { opacity: number } };
+    const idle = x.material.opacity;
+    h.hits.length = 0;
+    h.hits.push({ object: x });
+    h.canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: 400, clientY: 400, bubbles: true }));
+    expect(x.material.opacity, '얹기가 먼저 성립해야 이 검사가 의미가 있다').toBeGreaterThan(idle);
+    // 선택을 푼다(= 대상이 바뀐다).
+    h.hits.length = 0;
+    h.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 400, clientY: 500, bubbles: true }));
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    expect(x.material.opacity, '★ 대상이 바뀌었는데 얹은 강조가 남았다 — 스테일이다')
+      .toBe(idle);
+  });
+
   it('🔴 Z 축도 같다 — 한 축만 고치고 넘어가지 않았다', () => {
     const h = makeHarness();
     dragPath(h, handleMesh(h, 'move', 'z'), [[0, 0], [0, -1], [0, -2], [0, -3]]);

@@ -421,6 +421,18 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
       if (active === null) syncEmphasis();
     },
 
+    /**
+     * 손을 뗀다. **`hovered` 는 일부러 안 비운다** (검수관 권고 P1, 2026-08-23).
+     *
+     * 드래그가 끝난 시점에 커서는 **방금 잡고 있던 핸들 위**에 있다 — 기즈모가 물체를
+     * 따라 움직였고 손도 그것을 따라갔으니 둘이 같은 자리다. 여기서 비우면 강조가 한 번
+     * 꺼졌다가 다음 `pointermove` 에 다시 켜져 **깜빡인다.**
+     *
+     * ⚠ 그래서 남는 위험은 **스테일 강조**다: 손을 뗀 뒤 커서를 전혀 안 움직이는데 다른
+     * 경로로 기즈모가 옮겨가면(선택 변경 등) 옛 축이 밝은 채로 남는다. 그 경로는
+     * `attach()` 가 **대상이 바뀔 때 `hovered` 를 함께 비워** 막는다. 즉 이 판단은
+     * 「비우지 않는다」가 아니라 「비우는 자리를 `attach` 하나로 모은다」이다.
+     */
     end(): void { active = null; syncEmphasis(); },
 
     get dragging(): boolean { return active !== null; },
