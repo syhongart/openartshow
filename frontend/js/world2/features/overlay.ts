@@ -536,6 +536,8 @@ export const overlayFeature: Feature = {
         // 그전에는 여기서만 `slice(0, 4)` 로 잘랐고, **배열 자체는 무제한으로 자랐다**
         // (화면에 보이는 것만 4개였을 뿐 누수는 그대로였다).
         ...diag, frozen: env.village.size(), art: artScene?.stats() ?? null, aim: edit?.aim() ?? null,
+        // 진입 안내가 안 뜰 때 이유를 가른다 — 화면에서는 네 경우가 똑같이 「없다」로 보인다.
+        venue: venuePrompt?.view ?? null,
       }),
       // 배치 수가 곧 상태다. 0개도 유효한 그룹이라 `'0'` 을 낸다 — `null` 을 내면 이
       // 기능이 기본 켜짐인 탓에 드로우콜 축이 **영원히 판정 불가**가 된다(`glb-city`·

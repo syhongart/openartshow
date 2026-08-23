@@ -30,6 +30,12 @@ export interface VenuePromptDeps {
 export interface VenuePrompt {
   /** 지금 상태로 한 번 갱신한다. 테스트는 타이머 없이 이것만 부른다. */
   refresh(): VenueEntryView;
+  /**
+   * 마지막 판정. **진단용이다** — 「왜 안 뜨지」를 화면에서 가를 수 있어야 한다.
+   * 안 뜨는 이유가 넷이고(건물 미로드 / 위치 없음 / 갈 곳 없음 / 멀다) 화면에서는
+   * 넷 다 「없다」로 똑같이 보인다. `distance` 가 그것을 가른다.
+   */
+  readonly view: VenueEntryView | null;
   dispose(): void;
 }
 
@@ -73,6 +79,7 @@ export function mountVenuePrompt(doc: Document, deps: VenuePromptDeps): VenuePro
 
   return {
     refresh,
+    get view() { return current; },
     dispose() {
       if (timer !== null) clearInterval(timer);
       btn.remove();

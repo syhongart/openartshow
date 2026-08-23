@@ -73,6 +73,15 @@ describe('mountVenuePrompt — 붙고, 보이고, 눌린다', () => {
     p.dispose();
   });
 
+  it('마지막 판정을 진단으로 내놓는다 (왜 안 뜨는지 가릴 수 있어야 한다)', () => {
+    const p = mountVenuePrompt(doc, deps({ player: () => ({ x: 30, z: 0 }) }));
+    expect(p.view?.show).toBe(false);
+    expect(p.view?.distance).toBeCloseTo(30, 9);   // 「멀다」와 「건물이 없다」가 갈린다
+    const q = mountVenuePrompt(doc, deps({ venue: () => null }));
+    expect(q.view?.distance).toBeNull();           // 건물이 아직 안 떴다
+    p.dispose(); q.dispose();
+  });
+
   it('dispose 하면 버튼이 사라진다', () => {
     const p = mountVenuePrompt(doc, deps());
     p.dispose();
@@ -92,6 +101,7 @@ describe('overlay 배선 — 안내가 실제로 마운트·정리되는가', ()
     // 그래서 **조건까지** 본다: 마운트가 `env.doc` 이 있을 때 실제로 도는가.
     expect(src).toMatch(/if \(env\.doc\)\s*venuePrompt\s*=\s*mountVenuePrompt\(/);
     expect(src).toContain('venuePrompt?.dispose()');
+    expect(src).toMatch(/venue:\s*venuePrompt\?\.view/);  // 진단이 실제로 노출되는가
     // 위치·건물을 게터로 넘겨야 한다 — 값으로 넘기면 「마운트 시점에 없어서 영영 안 뜬다」.
     expect(src).toMatch(/player:\s*\(\)\s*=>/);
     expect(src).toMatch(/venue:\s*\(\)\s*=>/);
