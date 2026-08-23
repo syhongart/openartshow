@@ -843,6 +843,23 @@
     letter-spacing: -0.005em;
     color: var(--ink);
   }
+  /* 🔴 베타 표기 (2026-08-23 승격). 팀장 조건 3: **검수의 대체 수단이 아니다** —
+     검수는 승격 PR 전에 끝냈고, 이것은 롤백·기대치 축이다. 해제 트리거는 조건문으로
+     고정돼 있다(`OPERATING-PRINCIPLES.md §10-3`): 감독 실기기 확인을 카드로 1회 요청 →
+     「떼라」 응답이면 해제. 「한 회차 뒤」류 시간 형용사는 쓰지 않는다.
+     제목 옆에 붙되 제목을 밀어내지 않게 작고 가볍게 — 카드의 무게중심은 «오픈월드» 다. */
+  .ow-beta {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0;
+    vertical-align: 2px;
+    color: var(--ink-3, #6b6b6b);
+    background: rgba(139, 114, 255, 0.12);
+  }
   .ow-body p {
     margin: 0;
     font-size: var(--fs-body);
@@ -1866,10 +1883,15 @@
 
       </div>
 
-      <!-- 오픈월드 진입 — 정식 서비스, 의도된 라이브 노출(감독 결재). sitemap 등록됨(app/world.html). 링크는 배포 구조 기준(랜딩=루트, 앱=./app/). -->
-      <a class="ow-card reveal" href="./app/world.html" aria-label="오픈월드 입장">
+      <!-- 오픈월드 진입 — 정식 서비스, 의도된 라이브 노출(감독 결재). 링크는 배포 구조 기준(랜딩=루트, 앱=./app/).
+           🔴 2026-08-23 `app/world.html` → `app/world2.html` 로 교체(감독 지시 «월드 1로 승격»,
+           카드 판정 「새 월드만 — 기존 것은 내린다」). 노출 상태의 SSOT 는 `scripts/lib/entrypoints.mjs`
+           의 `exposure` 이고 승격 근거도 그 줄에 있다 — 여기에 다시 적지 않는다.
+           ⚠ 되돌리기는 이 href 한 줄이다. 그것이 감독이 고른 방식의 전제이므로
+           `app/world.html` 은 코드·보호를 유지한 채 남아 있다(팀장 조건 5). -->
+      <a class="ow-card reveal" href="./app/world2.html" aria-label="오픈월드 입장">
         <div class="ow-body">
-          <h3>오픈월드</h3>
+          <h3>오픈월드 <span class="ow-beta">베타</span></h3>
           <p>미술관 밖으로 —<br class="m-only"> 여러 전시가 늘어선 거리를 함께 걸어 보세요.</p>
         </div>
         <span class="ow-enter" aria-hidden="true">

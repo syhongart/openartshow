@@ -52,7 +52,22 @@ export const ENTRYPOINTS = [
   // ── 앱군(app/ 배포) ──────────────────────────────────────────────────────
   { key: 'index', src: 'index.html', out: 'app/index.html', exposure: 'live' },
   { key: 'studio', src: 'studio.html', out: 'app/studio.html', exposure: 'live' },
-  { key: 'world', src: 'world.html', out: 'app/world.html', exposure: 'live' },
+  // ── 🔴 2026-08-23 라이브에서 **강등**됐다 (감독 지시 «월드 1로 승격») ──────
+  // 감독이 카드로 고른 방식: 「새 월드만 — 기존 것은 내린다」. 랜딩의 «오픈월드 입장» 이
+  // `app/world2.html` 로 옮겨 갔고 이 페이지는 **어디에서도 링크되지 않는다.**
+  //
+  // ⚠ **코드도 보호도 그대로 둔다** (팀장 조건 5, 2026-08-23). 감독이 고른 방식의 전제가
+  // 「되돌리기 = 링크 한 줄」이고, 그 전제는 이 페이지가 **즉시 가동 가능한 상태로 남는
+  // 것**이다. 게다가 직링크·기존 공유 링크 방문자는 랜딩에서 링크가 빠져도 계속 온다.
+  // 그래서 `main.js`·`player.js`·`artworks.js`·`config.js` 는 **라이브 런타임 보호파일로
+  // 유지**한다(CLAUDE.md 의 그 조항은 안 건드린다).
+  //
+  // ⚠⚠ **승격의 역방향도 같은 게이트를 탄다** — 이 줄을 바꾸는 순간 GS-3 이 빨간불이 되고
+  // `CLAUDE.md` 의 behind-flag 산문도 함께 고쳐야 한다. 그것이 설계다.
+  //
+  // 재론 조건: 감독이 **world1 코드 폐기**를 명시적으로 지시하는 회차. 그때 보호 해제를
+  // 별도 상신한다(팀장 조건 5).
+  { key: 'world', src: 'world.html', out: 'app/world.html', exposure: 'flagged' },
   // 라이브다 — `studio.html` 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다.
   { key: 'builder', src: 'builder.html', out: 'app/builder.html', exposure: 'live' },
   // ── 마이페이지 — 2026-08-08 라이브 승격 ─────────────────────────────────
@@ -73,8 +88,25 @@ export const ENTRYPOINTS = [
   { key: 'visit', src: 'visit.html', out: 'app/visit.html', exposure: 'flagged' },
   // [실험] GLB 공간 워크스루 — 반입 판정 전이므로 존재가 채택을 뜻하지 않는다.
   { key: 'lab-glb', src: 'lab-glb.html', out: 'app/lab-glb.html', exposure: 'flagged' },
-  // [실험] 오픈월드 커널 재작성 — 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서다.
-  { key: 'world2', src: 'world2.html', out: 'app/world2.html', exposure: 'flagged' },
+  // ── 🔴 2026-08-23 **라이브 승격** (감독 지시 «월드 1로 승격») ────────────────
+  // 랜딩의 «오픈월드 입장» 이 이 페이지를 가리킨다. 오픈월드 커널 재작성이 정식 진입점이
+  // 됐고, 예전 `app/world.html` 은 위에서 flagged 로 강등됐다.
+  //
+  // ⚠ **승격 전 누적 검수를 거쳤다** — 조항·판정 형태는 `OPERATING-PRINCIPLES.md §10-3`
+  // 한 곳이다(전량이 검수관 1회 용량을 넘을 때의 팀장 판정 2026-08-23). **표면을 검수관이
+  // 확정**했고, 그 과정에서 내 제안 목록에 **없던 표면 하나를 검수관이 찾아냈다**(스모크
+  // 게이트 실행부 2파일이 §10-4 를 어긴 채 편입돼 있었다) — 선정자를 분리한 이유의 실증이다.
+  //
+  // ⚠⚠ **검수관이 안 본 표면이 남아 있다** — 171파일 중 정독은 약 15개였고, 나머지
+  // (`parts/*` 세부·`systems/*` 전량·셰이더 로직·`edit/panel/*` UI 세부)는 줄 단위로
+  // 안 봤다. 승격 PR 본문에 그 목록을 그대로 적었다. *"일괄 검수 완료"* 로 요약하면
+  // 그것이 곧 게이트 유효성 과대 진술이다(팀장 조건 4).
+  //
+  // ⚠⚠⚠ **남은 조건 하나**: WebGPU **미지원** 기기의 첫 화면 확인. behind-flag 였을 때는
+  // 「누가 보든 상관없다」였지만 랜딩 첫 링크가 되는 순간 그 전제가 사라진다. 헤드리스는
+  // `navigator.gpu` 가 없어 **항상 WebGL 폴백 경로를 타므로**(`adapters/renderer.ts`)
+  // 콘솔 0 통과가 그 경로가 돈다는 정황은 되지만, **200·0·0 은 빈 화면과 구별되지 않는다.**
+  { key: 'world2', src: 'world2.html', out: 'app/world2.html', exposure: 'live' },
   // [실험] 스타일라이즈드 룩 — world2 의 **포크가 아니다.** 실행 코드는 `world2/main.ts`
   // 그대로이고, `world2-stylized-boot.ts` 가 URL 에 `?styl=1` 을 채운 뒤 같은 진입 함수를
   // 부르는 것이 전부다. 그래서 world2 를 고치면 여기도 같이 고쳐진다 — world3·world5 가
