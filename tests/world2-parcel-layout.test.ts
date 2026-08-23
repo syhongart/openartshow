@@ -13,7 +13,7 @@ import {
 } from '../frontend/js/world2/decide/parcel-layout.js';
 import { isTowerParcel } from '../frontend/js/world2/parts/zoning.js';
 import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
-import { ALL_KINDS } from '../frontend/js/world2/parts/index.js';
+import { ALL_KINDS, PARTS } from '../frontend/js/world2/parts/index.js';
 
 const at = (px: number, pz: number, tier: 'near' | 'mid' | 'far' = 'near') => parcelLayout(px, pz, tier);
 const only = (ps: PlacedPart[], k: PartKind) => ps.filter((p) => p.kind === k);
@@ -166,7 +166,15 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   //
   // 하나의 상한으로 둘을 재면 실물 쪽이 헐거워진다(0.1 까지 떠도 통과). 갈라 놓으면
   // 실물은 정확히 0 을 요구할 수 있고, 판은 필요한 만큼 벌릴 수 있다.
-  const DECALS = new Set(['ground', 'garden', 'road']);
+  // ── 목록을 손으로 적지 않는다 (2026-08-06 게이트가 잡은 뒤 고쳤다) ──────────
+  // 예전엔 `new Set(['ground', 'garden', 'road'])` 였다. 나무 발치 pit(`treepit`)을
+  // 추가하자 그 목록에 없어서 **실물 부품 단언에 걸렸다** — 게이트가 제 일을 한 것이고,
+  // 그 순간 이것이 손으로 유지되는 두 번째 목록이라는 것도 드러났다.
+  //
+  // `PartSpec.groundBase` 가 이미 그 사실을 신고한다 — *"지면을 덮는 평면이면 그
+  // 텍스처 바탕색"*(`parts/types.ts`). 즉 "바닥 판인가" 의 SSOT 가 레지스트리에 있는데
+  // 여기가 그것을 베껴 적고 있었다. 유도로 바꾸면 새 바닥 판 파츠가 저절로 편입된다.
+  const DECALS = new Set(PARTS.filter((p) => p.groundBase !== undefined).map((p) => p.kind));
 
   it('실물 부품은 밑동이 정확히 땅에 있다', () => {
     // ── 한 파셀로는 모자란다 ─────────────────────────────────────────────

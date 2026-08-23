@@ -1,0 +1,226 @@
+// world2/parts/treepit.ts — 나무 발치의 흙 + 벽돌 링.
+//
+// ── 감독 지시 2026-08-06 ─────────────────────────────────────────────────────
+// *"기본 world 에서 나무 밑에 흙, 동그랗게 벽돌 그렇게 있거든. 월드 2의 나무도 그렇게
+//   해줘."*
+//
+// world1 은 `world.js` 의 `makeTreePitTex` + `CircleGeometry(1,20)` 데칼로 그것을 한다.
+// 같은 룩을 world2 의 파츠 규약으로 옮긴다.
+//
+// ── 왜 나무 지오메트리에 병합하지 않았나 ────────────────────────────────────
+// 파츠를 늘리면 드로우콜이 하나 는다. 그래서 먼저 "나무 지오에 원반을 붙여 재질 하나로
+// 끝낼 수 있나" 를 봤는데, **텍스처 아틀라스가 막는다.** 나무 재질은 `tree.ts` 의
+// 아틀라스(왼쪽 수피 · 오른쪽 잎)를 `LEAF_U0` 로 갈라 쓰고, 색은 정점색이 준다. 흙과
+// 벽돌을 거기 넣으려면 아틀라스를 3분할로 바꿔야 하고 그러면 **기존 잎·수피 UV 가 전부
+// 다시 계산된다** — 감독 판정이 여러 번 들어간 잎 실루엣을 건드리는 값이다.
+//
+// 얻는 것(드로우콜 1)보다 잃을 위험이 크다. world1 도 별도 메시로 한다.
+//
+// ── 반경을 상수로 적지 않는다 ────────────────────────────────────────────────
+// world1 은 `PIT_RADIUS = 1.3` 이 상수이고, world2 의 `TREE_RADIUS_UNIT` 도 1.3 이다.
+// **우연히 같지만 그래서 더 위험하다** — 여기에 1.3 을 다시 적으면 나무 반경을 바꾸는
+// 날 pit 만 옛 크기로 남는다. `TREE_RADIUS_UNIT` 에서 유도한다.
+//
+// 유도가 옳은 이유는 값이 같아서가 아니라 **뜻이 같아서**다: pit 은 "나무가 차지한
+// 바닥" 이고, 나무가 확보하는 자리가 정확히 그 반경이다(`tree.ts` 의 `footprint`).
+// 그래서 pit 은 나무가 이미 비워 둔 자리 안에 정확히 들어간다 — world1 이 건물 겹침
+// 클램프(`treePitRadius`)를 따로 둬야 했던 문제가 여기서는 구조적으로 없다.
+//
+// ── 도로와 겹치지 않는 근거 ──────────────────────────────────────────────────
+// 나무는 `parcelSlots` 가 도로를 빼고 준 슬롯에서만 자리를 잡고, `jitterIn` 이 반경 `r`
+// 안쪽으로 가둔다(`tree.ts`). pit 반경이 정확히 그 `r` 이므로 **도로에 닿을 수 없다.**
+// 그래서 높이를 도로보다 낮게 둬도 흙이 포장 위로 뜨는 일이 없다.
+
+import type { PartSpec, PlacedPart, ThreeNS } from './types.js';
+import { TREE_RADIUS_UNIT } from './tree.js';
+
+/**
+ * 흙 바탕색. `groundBase` 로 신고해 밤 알베도 배선에 편입된다
+ * (`decide/ground-albedo.ts` — 밤 처방은 전부 빛이고 빛은 알베도에 곱해지므로,
+ * 지면 파츠가 이 값을 신고하지 않으면 그 파츠만 밤에 튄다).
+ *
+ * world1 값 `#362c24` 그대로다. 감독이 한 번 확정한 톤이라 옮기면서 바꾸지 않는다 —
+ * 최초 버전(`#4a3a2c`)이 *"배경 대비 과하게 쨍하다"* 는 판정을 받고 내려온 값이다.
+ */
+export const DIRT_BASE = 0x362c24;
+
+/** 벽돌 2톤. 조각별로 번갈아 칠해 조적감을 낸다 — 실제 사진 텍스처가 아니다 */
+const BRICK_A = '#6e4736';
+const BRICK_B = '#7c5240';
+
+/**
+ * 판 높이(미터). 정원(0.07) 위 5cm, 도로(0.14) 아래 2cm.
+ *
+ * 정원과 벌려 둔 이유는 z-fighting 이다 — `road.ts` 가 *"3cm 차이라 먼 거리에서 깊이가
+ * 뭉갤 수 있었다"* 는 실측을 남겨 뒀다. 도로보다 낮아도 되는 이유는 위 "도로와 겹치지
+ * 않는 근거" 에 있다.
+ */
+const PIT_Y = 0.12;
+
+/**
+ * 원의 분할 수.
+ *
+ * ── world1 의 20 을 그대로 쓰면 각져 보인다 (실측으로 고쳤다) ───────────────
+ * world1 은 24→20 으로 낮추고 *"육안 무차이"* 를 확인했다. 그 판정은 **반경이 1.3m
+ * 고정**이라는 전제 위에 있었다. world2 나무는 스케일이 0.6~1.9 배로 흔들려 pit 반경이
+ * 최대 `1.3 × 1.9 = 2.47m` — 거의 두 배다. 같은 20 세그면 조각 하나의 길이가
+ * 0.41m → 0.78m 로 두 배 거칠어지고, 첫 스크린샷에서 실제로 큰 나무 발치가 다각형으로
+ * 보였다.
+ *
+ * **값이 아니라 전제가 옮겨온 것이 문제였다.** 32 면 조각 길이가 0.48m 로 world1 의
+ * 0.41m 에 근접한다. 비용은 그루당 삼각형 12개 — 2,540 그루 전체로 3만개이고 세계
+ * 총계(125만)의 2.4% 다.
+ */
+const SEGMENTS = 32;
+
+/**
+ * 흙 + 벽돌 링 텍스처. **world1 `makeTreePitTex` 와 같은 구성이다.**
+ *
+ *   0~80%    흙 베이스 + 클럼프 얼룩(뿌리 주변 멀칭)
+ *   80~82%   모르타르 경계선
+ *   82~100%  벽돌 링 11조각, 2톤 교대
+ *
+ * `CircleGeometry` 의 기본 UV 가 이미 중심 (0.5,0.5)·반경 0.5 원형이라 방사형 구성이
+ * 왜곡 없이 정합한다.
+ *
+ * ⚠ **값이 world1 과 두 곳에 있다.** 공유 모듈로 올리지 않은 이유는 두 가지다:
+ * ① `world.js` 는 라이브 오픈월드이고 이 함수는 그 파일의 클로저 안이라, 꺼내려면
+ *    라이브 렌더 경로를 수정해야 한다 — 감독 요청 범위 밖이다.
+ * ② world1 은 폐기 대상이다(`tests/world2-boundary.test.ts` 의 `ADAPTERS` 가 "world1
+ *    폐기 시 갈아 끼울 목록" 을 세고 있다). 폐기될 쪽에 의존을 새로 만들지 않는다.
+ *
+ * 대가는 분명하다: **감독이 world1 의 흙 톤을 다시 조정하면 여기는 안 따라온다.**
+ * 그때는 이 파일도 함께 고쳐야 한다.
+ */
+function pitTexture(T: ThreeNS) {
+  const S = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = S;
+  const ctx = canvas.getContext('2d')!;
+  const cx = S / 2, cy = S / 2, R = S / 2;
+
+  // 고정 시드. 나무마다 다른 무늬를 주려면 텍스처가 여러 장 필요한데, 그러면 재질이
+  // 갈려 개수 불변식이 깨진다. 한 장을 전부가 공유한다(world1 도 그렇다).
+  const rnd = rng(0xc0ffee);
+
+  // 흙 베이스. 원 밖은 투명 — 어차피 벽돌 링이 가장자리를 덮는다.
+  ctx.fillStyle = `#${DIRT_BASE.toString(16).padStart(6, '0')}`;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 클럼프 얼룩. 성글게 — 근접해서만 보이는 소품이라 지면 타일보다 덜 촘촘해도 된다.
+  for (let i = 0; i < 10; i++) {
+    const rr = rnd() * R * 0.72;
+    const ang = rnd() * Math.PI * 2;
+    ctx.fillStyle = rnd() < 0.5 ? 'rgba(46,38,32,0.35)' : 'rgba(64,54,44,0.3)';
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr, S * (0.05 + rnd() * 0.07), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 흙/벽돌 경계 모르타르
+  ctx.strokeStyle = 'rgba(24,20,17,0.65)';
+  ctx.lineWidth = S * 0.02;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 0.80, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 벽돌 링. 0.86 은 조각 사이 줄눈 — 1.0 이면 이음매가 사라져 통짜 링이 된다.
+  const N = 11;
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * Math.PI * 2;
+    const a1 = ((i + 0.86) / N) * Math.PI * 2;
+    ctx.strokeStyle = i % 2 === 0 ? BRICK_A : BRICK_B;
+    ctx.lineWidth = R * 0.18;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 0.91, a0, a1);
+    ctx.stroke();
+  }
+
+  const tex = new T.CanvasTexture(canvas);
+  tex.colorSpace = T.SRGBColorSpace;
+  return tex;
+}
+
+/** tree.ts 와 같은 mulberry32. 텍스처를 굽는 데만 쓴다 */
+function rng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export const treepit: PartSpec = {
+  kind: 'treepit',
+
+  /**
+   * `far` 를 뺀다. 발치 소품이라 51.2m 밖에서는 안개가 이미 덮고 있고, 그 거리에서
+   * 흙 원반 하나를 위해 슬롯을 잡아 둘 이유가 없다.
+   *
+   * ⚠ **나무보다 좁은 tier 인 것이 규약상 맞는 방향이다.** `PlaceContext.placed` 는
+   * *"자기보다 좁은 tier 의 파츠를 참조하면 안 된다"* 고 정한다(`parts/types.ts`) —
+   * 여기서는 그 반대라 안전하다: pit(near·mid)이 tree(near·mid·far)를 본다. 뒤집으면
+   * far 에서 참조 대상이 없어 위치가 달라지고, 멀어졌다 가까워질 때 순간이동한다.
+   */
+  tiers: ['near', 'mid'],
+
+  salt: 0x5b1c73a9,
+
+  /**
+   * 텍스처에 색을 구웠으므로 **흰색 하나**다.
+   *
+   * `tones` 는 색이 아니라 곱셈기다(`parts/types.ts`) — 여기에 갈색을 적으면 흙
+   * 텍스처와 곱해져 두 번 어두워진다. `road.ts` 가 정확히 그 함정에 빠져 아스팔트가
+   * 선형 0.0003 대까지 내려간 적이 있다.
+   */
+  tones: [0xffffff],
+
+  /** 지면을 덮는 평면이므로 밤 알베도 배선에 자기 바탕색을 신고한다 */
+  groundBase: DIRT_BASE,
+
+  /** 나무 한 그루에 하나 — 나무 상한과 같다 */
+  maxPerParcel: (o) => o.maxTrees,
+
+  /** 바닥에 깔리는 평면이라 겹침 경쟁에서 빠진다(`ground`·`road`·`garden` 과 같다) */
+  footprint: () => 0,
+
+  /**
+   * 나무를 따라간다. 자기 난수를 쓰지 않는 유일한 파츠다.
+   *
+   * 그래서 `salt` 가 실질적으로 놀지만 지우지 않는다 — `PartSpec` 계약이 요구하고,
+   * 언젠가 pit 에 회전 변주를 주고 싶어지면 그때 쓸 자리다.
+   *
+   * 회전은 나무 것을 그대로 쓴다. 0 으로 두면 온 도시의 벽돌 이음매가 같은 방향을
+   * 향해 격자무늬처럼 읽힌다.
+   */
+  place: ({ placed }) => {
+    const out: PlacedPart[] = [];
+    for (const t of placed) {
+      if (t.kind !== 'tree') continue;
+      const r = TREE_RADIUS_UNIT * t.sx;
+      out.push({
+        kind: 'treepit',
+        x: t.x, z: t.z, y: PIT_Y,
+        ry: t.ry,
+        // 원반은 XZ 평면이라 sy 는 쓰이지 않는다(1 로 둔다).
+        sx: r, sy: 1, sz: r,
+        tone: 0,
+      });
+    }
+    return out;
+  },
+
+  asset: (T) => ({
+    // 반경 1 로 만들고 인스턴스 스케일이 실제 반경을 준다 — 나무 크기가 0.6~1.9 배로
+    // 흔들리므로 pit 도 그만큼 따라 커져야 발치가 비지 않는다.
+    geometry: new T.CircleGeometry(1, SEGMENTS).rotateX(-Math.PI / 2),
+    material: new T.MeshStandardMaterial({ map: pitTexture(T), roughness: 1.0, metalness: 0 }),
+    castShadow: false,
+    // 그림자를 받는다 — 나무가 자기 발치에 그늘을 드리우는 것이 이 소품의 반쯤이다.
+    receiveShadow: true,
+  }),
+};
