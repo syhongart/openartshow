@@ -25,6 +25,41 @@ import { startEditMode } from '../frontend/js/world2/edit/mode.js';
 import type { EditSession, OverlayEntry, OverlayHost } from '../frontend/js/world2/edit/types.js';
 import { makeThreeStub, type StubRay } from './helpers/three-stub.js';
 
+// ── 🔴 얹기 강조 (감독 지시 2026-08-22 *"마우스를 대면 그 축이 변화가 바로 생겼으면해"*) ──
+describe('얹기 강조 판정 — 잡은 것과 얹은 것을 가른다', () => {
+  const X = { kind: 'move', axis: 'x' } as const;
+  const Y = { kind: 'move', axis: 'y' } as const;
+
+  it('아무것도 안 잡고 안 얹었으면 전부 평상시다 — 룩을 안 바꾼다', () => {
+    for (const part of ['x', 'y', 'z', 'rotate', 'scale'] as const) {
+      expect(partOpacity(null, part, null)).toBe(OPACITY_IDLE);
+      expect(shouldEmphasize(null, null, part), '★ 아무것도 없는데 밝아졌다').toBe(false);
+    }
+  });
+
+  it('★ 얹으면 그 축만 밝아지고 **나머지는 안 흐려진다**', () => {
+    expect(partOpacity(null, 'x', X), '★ 얹은 축이 안 밝다').toBe(OPACITY_ACTIVE);
+    expect(partOpacity(null, 'y', X), '★ 얹기만 했는데 나머지를 흐렸다 — 커서가 지나가면 깜빡인다')
+      .toBe(OPACITY_IDLE);
+    expect(partOpacity(null, 'rotate', X)).toBe(OPACITY_IDLE);
+    expect(shouldEmphasize(null, X, 'x')).toBe(true);
+    expect(shouldEmphasize(null, X, 'y')).toBe(false);
+  });
+
+  it('★ 잡으면 나머지가 흐려진다 — 얹기와 다른 단계다', () => {
+    expect(partOpacity(X, 'x', null)).toBe(OPACITY_ACTIVE);
+    expect(partOpacity(X, 'y', null), '★ 잡았는데 나머지가 안 흐려졌다').toBe(OPACITY_DIMMED);
+  });
+
+  it('★ 잡은 것이 얹은 것을 이긴다 — 끌면서 다른 축 위를 지나도 안 흔들린다', () => {
+    // 드래그 중 커서가 Y 막대 위를 지나가는 상황. 강조는 잡은 X 의 것이어야 한다.
+    expect(partOpacity(X, 'x', Y), '★ 잡은 축이 흐려졌다').toBe(OPACITY_ACTIVE);
+    expect(partOpacity(X, 'y', Y), '★ 얹힌 축이 잡은 축을 밀어냈다').toBe(OPACITY_DIMMED);
+    expect(shouldEmphasize(X, Y, 'y'), '★ 끌던 중 다른 축이 함께 밝아졌다').toBe(false);
+    expect(shouldEmphasize(X, Y, 'x')).toBe(true);
+  });
+});
+
 describe('기즈모 산술 — three 없이', () => {
   it('수직으로 내려꽂는 광선은 x축의 자기 x좌표를 가리킨다', () => {
     const u = closestOnAxis(
@@ -219,12 +254,29 @@ function aimAt(h: Harness, x: number, z: number): void {
 }
 
 function drag(h: Harness, mesh: unknown, from: [number, number], to: [number, number]): void {
+  dragPath(h, mesh, [from, to]);
+}
+
+/**
+ * 🔴 **여러 점을 거치는 드래그.** 실제 손은 `pointermove` 를 초당 수십 번 낸다.
+ *
+ * ⚠ **위 `drag` 가 두 점만 보내는 것이 이 파일의 사각이었다**(감독 신고 2026-08-22
+ * *"마우스로 조정하면 딱 한단계만 움직여"*). 시작점과 끝점 하나씩이면 `update` 가 **한
+ * 번만** 돌고, 「한 스텝 뒤에 멈춘다」는 두 번째 스텝부터 드러나는 결함이라 **구조적으로
+ * 볼 수 없었다.** 축 드래그 검사가 넷이나 있었는데 전부 초록이었던 이유가 그것이다.
+ *
+ * 값이 아니라 **재는 축**이 틀렸던 형태다 — 이 저장소가 이름 붙인 그것이다.
+ */
+function dragPath(h: Harness, mesh: unknown, path: readonly [number, number][]): void {
   h.hits.length = 0;
   h.hits.push({ object: mesh });
-  aimAt(h, from[0], from[1]);
+  const [first, ...rest] = path;
+  aimAt(h, first![0], first![1]);
   h.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 400, clientY: 400, bubbles: true }));
-  aimAt(h, to[0], to[1]);
-  document.dispatchEvent(new PointerEvent('pointermove', { clientX: 400, clientY: 400, bubbles: true }));
+  for (const [x, z] of rest) {
+    aimAt(h, x, z);
+    document.dispatchEvent(new PointerEvent('pointermove', { clientX: 400, clientY: 400, bubbles: true }));
+  }
   document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
 }
 
@@ -242,6 +294,72 @@ describe('기즈모 경계 — 계산이 실제로 항목에 먹는가', () => {
     expect(h.entry.x, '★ 축 드래그가 항목에 안 먹었다 — 산술과 집행이 이어지지 않았다').toBeCloseTo(4, 5);
     expect(h.entry.y, '★ X축을 끌었는데 y 가 움직였다').toBe(0);
     expect(h.entry.z, '★ X축을 끌었는데 z 가 움직였다').toBe(0);
+  });
+
+  // ── 🔴 감독 신고 «딱 한단계만 움직여» (2026-08-22) ────────────────────────
+  // 이동 축의 기준점이 **물체 자신**이었고, 드래그가 그 물체를 옮기니 기준점이 손을 따라
+  // 같이 움직여 상대 거리가 0 으로 상쇄됐다. 유도는 `decide/gizmo-math.ts` 의
+  // `closestOnAxis` 주석 한 곳이다 — 여기에 다시 적지 않는다.
+  //
+  // ⚠ **이 검사가 없어서 넉 달을 못 봤다.** 위 축 드래그 검사 넷은 전부 두 점짜리였고,
+  // 이 결함은 **두 번째 스텝부터** 드러난다. 그래서 「테스트 통과」와 「동작한다」가
+  // 갈렸다 — 값이 아니라 재는 축이 틀린 형태다.
+  it('🔴 여러 스텝을 끌면 **매 스텝** 따라온다 — 한 스텝 뒤 멈추지 않는다', () => {
+    const h = makeHarness();
+    // 손이 X 축을 따라 1m 씩 네 번 나아간다.
+    dragPath(h, handleMesh(h, 'move', 'x'), [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]);
+    expect(h.entry.x, '★ 손이 4m 갔는데 물건이 그만큼 안 왔다 — 기준점이 물체를 따라갔다')
+      .toBeCloseTo(4, 5);
+  });
+
+  it('🔴 스텝을 잘게 나눠도 총 이동은 같다 — 프레임 수에 결과가 안 걸린다', () => {
+    const coarse = makeHarness();
+    dragPath(coarse, handleMesh(coarse, 'move', 'x'), [[0, 0], [6, 0]]);
+    const fine = makeHarness();
+    // 같은 6m 를 여섯 번에 나눠 간다. 손이 지나간 경로가 같으므로 결과도 같아야 한다.
+    dragPath(fine, handleMesh(fine, 'move', 'x'),
+      [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0]]);
+    expect(fine.entry.x, '★ 프레임을 잘게 쪼개니 덜 움직였다 — 매 스텝 좌표계가 바뀐다')
+      .toBeCloseTo(coarse.entry.x, 5);
+    expect(fine.entry.x).toBeCloseTo(6, 5);
+  });
+
+  it('🔴 커서를 얹으면 그 축이 실제로 밝아진다 — 배선이 살아 있는가', () => {
+    const h = makeHarness();
+    const x = handleMesh(h, 'move', 'x') as { material: { opacity: number } };
+    const y = handleMesh(h, 'move', 'y') as { material: { opacity: number } };
+    const before = x.material.opacity;
+    h.hits.length = 0;
+    h.hits.push({ object: x });
+    // ⚠ **캔버스로** 보낸다 — `gizmo-hover.ts` 는 캔버스 밖이면 무조건 걷는다.
+    h.canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: 400, clientY: 400, bubbles: true }));
+    expect(x.material.opacity, '★ 얹었는데 안 밝아졌다 — 배선이 끊겼다')
+      .toBeGreaterThan(before);
+    expect(y.material.opacity, '★ 얹기만 했는데 나머지가 흐려졌다').toBe(before);
+  });
+
+  it('🔴 선택이 바뀌면 얹은 것도 함께 걷힌다 — `end()` 가 안 비우는 대신 여기가 맡는다', () => {
+    // `gizmo.ts` 의 `end()` 주석이 *"비우는 자리를 `attach` 하나로 모은다"* 라고 주장한다.
+    // 그 주장이 거짓이면 **스테일 강조**가 남는다 — 손을 뗀 자리의 축이 계속 밝다.
+    const h = makeHarness();
+    const x = handleMesh(h, 'move', 'x') as { material: { opacity: number } };
+    const idle = x.material.opacity;
+    h.hits.length = 0;
+    h.hits.push({ object: x });
+    h.canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: 400, clientY: 400, bubbles: true }));
+    expect(x.material.opacity, '얹기가 먼저 성립해야 이 검사가 의미가 있다').toBeGreaterThan(idle);
+    // 선택을 푼다(= 대상이 바뀐다).
+    h.hits.length = 0;
+    h.canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 400, clientY: 500, bubbles: true }));
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    expect(x.material.opacity, '★ 대상이 바뀌었는데 얹은 강조가 남았다 — 스테일이다')
+      .toBe(idle);
+  });
+
+  it('🔴 Z 축도 같다 — 한 축만 고치고 넘어가지 않았다', () => {
+    const h = makeHarness();
+    dragPath(h, handleMesh(h, 'move', 'z'), [[0, 0], [0, -1], [0, -2], [0, -3]]);
+    expect(h.entry.z, '★ Z 축이 한 스텝 뒤 멈췄다').toBeCloseTo(-3, 5);
   });
 
   it('Z축 핸들을 끌면 z 만 바뀐다', () => {
@@ -530,7 +648,7 @@ describe('🔴 GS-G2 — 안 붙어 있으면 아무것도 안 집는다 (행위
 // 있었는데, `gizmo.ts` 전체에서 `hover`·`highlight` 가 **0건**이었다. 축마다 색이 다른
 // 것과 잡은 축이 표시되는 것은 다른 일이다.
 import {
-  emphasize, handleLabel, isActivePart, partOf, partOpacity,
+  emphasize, handleLabel, isActivePart, partOf, partOpacity, shouldEmphasize,
   OPACITY_ACTIVE, OPACITY_DIMMED, OPACITY_IDLE, EMPHASIS_MIX,
 } from '../frontend/js/world2/decide/gizmo-math.js';
 import type { Handle } from '../frontend/js/world2/decide/gizmo-math.js';

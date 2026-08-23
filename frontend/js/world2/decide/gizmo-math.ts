@@ -59,6 +59,38 @@ const PARALLEL_EPS = 1e-6;
  * **차이**를 쓰면 (드래그 시작점을 붙잡은 채) 손가락과 물건이 어긋나지 않는다.
  *
  * 두 직선이 평행에 가까우면 `null` — 부르는 쪽이 그 프레임을 건너뛴다.
+ *
+ * ── ⚠ `a` 는 **드래그 내내 고정이어야 한다** (감독 신고 2026-08-22) ───────────
+ * 감독: *"마우스로 조정하면 딱 한단계만 움직여."*
+ *
+ * 위 문단이 *"프레임마다 그 수의 차이를 쓰면 어긋나지 않는다"* 라고 적고 있는데 **그것은
+ * `a` 가 고정일 때만 참이다.** 집행부는 `a` 로 **물체의 현재 위치**를 넘기고 있었고,
+ * 드래그가 물체를 옮기면 기준점이 함께 따라간다. 그러면 상쇄가 일어난다 — 유도:
+ *
+ *   마우스가 가리키는 축 위 절대 위치를 `P`, 기준점을 `O` 라 하면 `u = P − O`.
+ *   1프레임: `d₁ = u₁ − anchor = P₁ − P₀`  →  물체가 `d₁` 만큼 간다  →  `O₁ = O₀ + d₁`
+ *   2프레임: `u₂ = P₂ − O₁ = P₂ − O₀ − d₁`
+ *            `d₂ = u₂ − u₁ = (P₂ − P₁) − d₁`
+ *   손이 같은 속도로 움직이면 `P₂ − P₁ = d₁` 이므로 **`d₂ = 0`** — 그 프레임은 멈춘다.
+ *
+ * ⚠ **첫 판본은 여기서 *"정확히 멈춘다"* 라고 적었고 실측이 그것을 정정했다.** 0 이
+ * 되는 것은 **그 프레임뿐**이고 다음 프레임에는 기준점이 안 따라왔으므로 다시 전진한다.
+ * 손이 1m 씩 네 번 나아갈 때를 실제로 돌려 보면(순수 함수만, 원점을 물체에 묶어서):
+ *
+ *   손    1  2  3  4
+ *   물체  1  1  2  2      ← 멈추는 게 아니라 **한 프레임 걸러** 간다(절반 속도)
+ *
+ * 그러므로 이 결함 하나만으로는 「딱 한 단계만 움직인다」가 **설명되지 않는다.** 감독이
+ * 본 증상은 여기에 **다른 결함이 겹친** 것이었다 — `edit/gizmo.ts` 의 `attach()` 가
+ * 매 프레임 잡은 축을 놓고 있었다(그 함수 주석). 증상이 하나여도 원인이 하나라고
+ * 가정하지 않는다 — 이 저장소가 이름 붙인 그 형태다.
+ *
+ * 회전·크기가 멀쩡했던 것은 그 둘이 물체의 **위치**를 안 바꿔서 기준점이 가만히 있었기
+ * 때문이다 — 같은 코드가 축마다 다르게 보인 이유가 그것이다.
+ *
+ * 그래서 `edit/gizmo.ts` 는 `begin()` 에서 기준점을 떠서 드래그 내내 그것을 넘긴다.
+ * 이 함수는 순수하므로 그 성질을 **두 방식을 나란히 돌려** 검사로 못 박았다
+ * (`tests/world2-gizmo.test.ts` 의 드래그 시뮬레이션).
  */
 export function closestOnAxis(
   ray: Ray3,
@@ -200,7 +232,7 @@ export function partOf(h: Handle): GizmoPart {
   return h.kind === 'move' ? h.axis : h.kind;
 }
 
-/** 지금 잡은 것이 이 파트인가. 아무것도 안 잡았으면 전부 `false` */
+/** 그 핸들이 이 파트인가. `null` 이면 전부 `false`(잡은 것·얹은 것 양쪽이 쓴다) */
 export function isActivePart(active: Handle | null, part: GizmoPart): boolean {
   return active !== null && partOf(active) === part;
 }
@@ -208,11 +240,46 @@ export function isActivePart(active: Handle | null, part: GizmoPart): boolean {
 /**
  * 이 파트의 불투명도.
  *
- * **아무것도 안 잡았으면 전부 `IDLE`** — 그것이 「평상시 룩을 안 바꾼다」의 집행이다.
+ * **아무것도 안 잡지도 얹지도 않았으면 전부 `IDLE`** — 그것이 「평상시 룩을 안 바꾼다」의
+ * 집행이다.
+ *
+ * ── 잡은 것과 **얹은 것**을 구별한다 (감독 지시 2026-08-22) ──────────────────
+ * 감독: *"마우스를 대면 그 축이 변화가 바로 생겼으면해."*
+ *
+ * 그전에는 **잡아야만** 달라졌다. 그래서 「이 축이 잡히긴 하나」를 알려면 일단 눌러 봐야
+ * 했고, 눌렀는데 엉뚱한 축이면 되돌려야 한다 — 확인 비용이 조작 비용과 같았다.
+ *
+ * **둘의 강조 방식을 일부러 다르게 뒀다**:
+ *
+ *   잡음(`active`)  그 축 `ACTIVE` + **나머지 `DIMMED`**  ← 조작 중이니 집중시킨다
+ *   얹음(`hovered`) 그 축 `ACTIVE` + 나머지 `IDLE`        ← 아직 조작 전이니 안 흐린다
+ *
+ * 얹었을 때까지 나머지를 흐리면 커서가 지나가기만 해도 기즈모 전체가 깜빡인다 —
+ * 「바로 반응한다」가 「부산하다」가 되는 경계가 거기다.
  */
-export function partOpacity(active: Handle | null, part: GizmoPart): number {
-  if (active === null) return OPACITY_IDLE;
-  return isActivePart(active, part) ? OPACITY_ACTIVE : OPACITY_DIMMED;
+export function partOpacity(
+  active: Handle | null,
+  part: GizmoPart,
+  hovered: Handle | null = null,
+): number {
+  if (active !== null) return isActivePart(active, part) ? OPACITY_ACTIVE : OPACITY_DIMMED;
+  if (isActivePart(hovered, part)) return OPACITY_ACTIVE;
+  return OPACITY_IDLE;
+}
+
+/**
+ * 이 파트를 밝혀야 하는가 — 잡았든 얹었든.
+ *
+ * 색 강조는 둘을 **같게** 준다(불투명도만 위처럼 갈린다). 색까지 갈라 세 단계를 만들면
+ * 「지금 잡은 건가 얹은 건가」를 색으로 읽어야 하는데, 그건 이 회차가 없애려던 바로 그
+ * 기억 부담이다 — 상태줄 글자가 그 구별을 이미 말한다.
+ */
+export function shouldEmphasize(
+  active: Handle | null,
+  hovered: Handle | null,
+  part: GizmoPart,
+): boolean {
+  return isActivePart(active, part) || (active === null && isActivePart(hovered, part));
 }
 
 /**
