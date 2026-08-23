@@ -13,7 +13,7 @@ let doc: Document;
 beforeEach(() => { document.body.innerHTML = ''; doc = document; });
 
 const deps = (over: any = {}) => ({
-  tenant: 'syhongart',
+  tenant: () => 'syhongart',
   player: () => ({ x: 0, z: 0 }),
   venue: () => ({ x: 0, z: 0, radius: VENUE_NEAR_RADIUS }),
   intervalMs: 0, // 타이머 없이 refresh() 로만 돌린다
@@ -51,8 +51,8 @@ describe('mountVenuePrompt — 붙고, 보이고, 눌린다', () => {
     p.dispose();
   });
 
-  it('갈 곳이 없으면(?u= 없음) 뜨지 않는다', () => {
-    const p = mountVenuePrompt(doc, deps({ tenant: null }));
+  it('갈 곳이 아직 안 정해졌으면 뜨지 않는다 (목록 로드 전)', () => {
+    const p = mountVenuePrompt(doc, deps({ tenant: () => null }));
     expect(btn()!.style.display).toBe('none');
     p.dispose();
   });
@@ -102,6 +102,10 @@ describe('overlay 배선 — 안내가 실제로 마운트·정리되는가', ()
     expect(src).toMatch(/if \(env\.doc\)\s*venuePrompt\s*=\s*mountVenuePrompt\(/);
     expect(src).toContain('venuePrompt?.dispose()');
     expect(src).toMatch(/venue:\s*venuePrompt\?\.view/);  // 진단이 실제로 노출되는가
+    // ⚠ 감독 지적 2026-08-23 «GLB문앞에서 들어가져야지» — 주소(`?u=`)를 **요구하면 안 된다**.
+    // 갤러리 목록을 읽어 정하고, `?u=` 는 있으면 우선할 뿐이다.
+    expect(src).toContain("fetch('./galleries/index.json')");
+    expect(src).toMatch(/tenant:\s*\(\)\s*=>\s*venueGallery/);
     // 위치·건물을 게터로 넘겨야 한다 — 값으로 넘기면 「마운트 시점에 없어서 영영 안 뜬다」.
     expect(src).toMatch(/player:\s*\(\)\s*=>/);
     expect(src).toMatch(/venue:\s*\(\)\s*=>/);
@@ -113,3 +117,16 @@ describe('overlay 배선 — 안내가 실제로 마운트·정리되는가', ()
 // 실행되는지는 브라우저에서만 보인다. 조건을 문자열로 못 박은 것은 M38 형태(죽은 코드)를
 // 막을 뿐이고, 예컨대 `env.doc` 이 항상 null 인 경로가 생기면 이 검사는 여전히 초록이다.
 // 그 축은 헤드리스 스모크(world2 페이지 로드)나 감독 화면이 유일하다.
+
+describe('갈 곳을 게터로 늦게 정할 수 있다', () => {
+  it('마운트 뒤에 갤러리가 정해져도 뜬다 (목록 fetch 가 비동기다)', () => {
+    let gallery: string | null = null;
+    const p = mountVenuePrompt(doc, deps({ tenant: () => gallery }));
+    expect(doc.body.querySelector('button')!.style.display).toBe('none');
+    gallery = 'syhongart';                       // 목록 로드 완료
+    p.refresh();
+    expect(doc.body.querySelector('button')!.style.display).toBe('block');
+    expect(p.view?.href).toBe('visit.html?u=syhongart');
+    p.dispose();
+  });
+});
