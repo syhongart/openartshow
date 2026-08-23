@@ -58,6 +58,11 @@ import {
 } from './config.mjs';
 import { assembleSiteVite } from './assemble.mjs';
 import { WORLD2_QUERY, waitForWorld2Ready } from './world2-ready.mjs';
+// 세션 예산·커버리지 목표는 `session-budget.mjs` 한 곳이다 — 여기에 다시 적지 않는다.
+import {
+  WALK_LEGS, WALK_MS, COVER_UNIQUE, COVER_REVISITS, STUCK_M, MAX_LEGS,
+} from './session-budget.mjs';
+import { stepJudge, stepReport } from './invariant-judge.mjs';
 import { appendFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -151,9 +156,48 @@ async function trackBaseline(base, page, log) {
 const SPIN_STEPS = 12;
 /** 한 스텝 뒤 렌더가 실제로 일어나게 기다리는 시간(ms). 헤드리스는 ~4fps다 */
 const STEP_MS = 700;
-/** 직진 구간 수. 파셀 경계를 여러 번 넘어야 스트리밍 증식이 드러난다 */
-const WALK_LEGS = 6;
-const WALK_MS = 1500;
+
+// ── 정착 대기 둘 (W8-2 에서 이름을 줬다 — 본문에 익명으로 박혀 있었다) ────────
+// ⚠ **근거를 못 찾았다.** 관례로 굳은 값이고 커밋 이력에도 실측이 없다. 그리고 이 시간
+// 대기가 이 파일에 남은 마지막 주사위다 — GLB·VRM·오버레이는 `world2-ready.mjs` 가
+// **상태**로 기다리는데 파셀 스트리밍만 그 밖이다. `stream.pending === 0` 으로 바꾸면
+// 기준선 시점이 달라져 골든이 통째로 움직인다 — 실측 없이 건드릴 축이 아니다(태스크 #82).
+/** 부팅 뒤 초기 파셀 정착(ms). 부팅 중 상승은 정상이므로 **기준선을 그 뒤에** 잡는다 */
+const SETTLE_MS = 8000;
+/** 멈춘 뒤 마지막 스냅 전 정착(ms). 이동 중 시작된 스트리밍이 끝나야 한다 */
+const STOP_SETTLE_MS = 1500;
+
+
+
+/**
+ * 막혔을 때 어떻게 우회하는가. **사람이 하는 것을 흉내낸다 — 옆으로 비켜서 지나간다.**
+ *
+ * ── 첫 판본은 90° 회전이었고 제자리를 돌았다 (실측 2026-08-08) ────────────────
+ * *"막히면 `look(90°)`"* 로 짰더니 **21 leg·7회 전환에 고유 파셀이 1** 이었다. 당연하다 —
+ * 90° 를 네 번 돌면 출발 방향으로 돌아온다. 촘촘한 도시에서 그 사이클은 **사각형을 그리며
+ * 같은 칸을 맴도는** 궤적이 된다. "막히면 방향을 튼다" 는 발상은 맞았고 **각도 선택이
+ * 틀렸다.**
+ *
+ * 그래서 먼저 **스트레이프**를 시도한다: 시선을 유지한 채 좌·우 대각으로 전진하면
+ * `slide` 의 축분리가 옆 성분을 살려 장애물을 스쳐 지나간다. 방향(시선)이 보존되므로
+ * 사이클이 생기지 않는다. 좌우 둘 다 막힐 때만 시선을 튼다 — 그때는 골목 끝이다.
+ *
+ * `move(x, z)` 의 x 가 좌우 축이고 z 가 전후다(`player.setAxes`).
+ *
+ * ── 실측 (2026-08-08, 스폰 x=-3.5) ──────────────────────────────────────────
+ *   90° 회전판   21 leg · 시선 전환 7회 → 고유 파셀 **1** · 경로 `0,0`
+ *   스트레이프판 19 leg · 시선 전환 **0회** → 고유 파셀 **3** · 재방문 2
+ *                경로 `0,0 → 0,-1 → 0,-2 → 0,-1 → 0,0`
+ * 시선을 한 번도 안 틀고 목표를 채웠다 — 골목 끝(좌우 다 막힘)에 도달한 적이 없다는
+ * 뜻이고, 그래서 `TURN_RAD` 는 아직 **한 번도 실행되지 않은 경로**다. 남겨 두는 이유는
+ * 배치가 촘촘해지면 필요해지기 때문이지만, **검출력이 0 인 분기임을 알고 남긴다.**
+ */
+const DODGES = [
+  { ax: 1, az: -1, note: '우측 대각' },
+  { ax: -1, az: -1, note: '좌측 대각' },
+];
+/** 좌우 다 막혔을 때 틀 각도. 90° 가 아니라 **소수(素數)에 가까운 각**이라 사이클이 늦다 */
+const TURN_RAD = (Math.PI * 2) / 5;
 
 const show = (v) => (v === undefined || v === null ? '측정실패(값 없음)' : String(v));
 
@@ -168,8 +212,75 @@ async function counts(page) {
       draw: s.frame?.draw ?? null,
       parcels: s.stream?.loaded ?? null,
       built: s.stream?.built ?? null,
+      // 걸린 작품 수. **판정 예산을 여기서 유도한다**(아래 `artBudget`) — 실측값에
+      // 여유를 얹지 않는다. 작품이 4장이 되면 예산도 저절로 따라온다.
+      arts: s.overlay?.art?.frames ?? null,
+      // 커버리지 판정용. `null` 이면 훅이 안 열린 것이므로 **측정 실패로 다룬다**.
+      px: s.parcel?.px ?? null,
+      pz: s.parcel?.pz ?? null,
+      wx: s.player?.x ?? null,
+      wz: s.player?.z ?? null,
+      // 복귀 구간이 출발점으로 재조준할 때 쓴다(아래 `yawToward` 문단).
+      yaw: s.player?.yaw ?? null,
     };
   });
+}
+
+/**
+ * 방문 순서에서 커버리지를 센다.
+ *
+ * 연속 중복을 먼저 걷어낸다 — 한 파셀 안에서 여러 leg 를 걸은 것은 "재방문" 이 아니다.
+ * 압축하지 않으면 **제자리에서 멈춰 있어도 재방문 수가 올라가** 판정이 뒤집힌다(이 게이트가
+ * 잡으려는 바로 그 상황이 통과한다).
+ */
+export function coverageOf(seq) {
+  const compact = seq.filter((k, i) => i === 0 || k !== seq[i - 1]);
+  const unique = new Set(compact).size;
+  return { unique, revisits: compact.length - unique, path: compact };
+}
+
+/**
+ * 커버리지가 목표를 채웠는가. **`coverageOf` 와 따로 export 하는 이유가 있다.**
+ *
+ * ── 검수관 조건 1 (2026-08-08) — 뮤테이션이 이 구멍을 실증했다 ────────────────
+ * 이 비교식은 원래 `runInvariants` 안에 인라인돼 있었고, 검수관이 `/tmp` 별도 클론에서
+ * `const covOk = true` 로 고정하는 뮤테이션을 돌렸더니 **`tests/world2-collide.test.ts`
+ * 26건이 전부 그대로 통과했다.** `coverageOf` 자체는 §5 가 단위 검증하고 배선은 §6 이
+ * 보는데, **그 둘 사이에 있는 임계 비교식은 아무도 안 봤다.**
+ *
+ * 이 게이트가 잡으려던 사고가 *"아무 데도 안 갔는데 PASS"* 였는데, **판정식이 죽어도
+ * 똑같은 일이 벌어지고 CI 는 초록**이었다 — 이 저장소가 *"판정/집행 분리의 구멍 — 경계를
+ * 건너는 지점은 아무도 안 본다"* 로 이미 이름 붙인 형태의 재발이다.
+ *
+ * 그래서 함수로 뽑아 테스트가 닿게 한다. 임계 상수(`COVER_UNIQUE`·`COVER_REVISITS`)는
+ * 여기서만 읽는다 — 두 곳에서 비교하면 한쪽만 고쳐도 아무도 모른다.
+ */
+export function covOkOf(cov) {
+  return cov.unique >= COVER_UNIQUE && cov.revisits >= COVER_REVISITS;
+}
+
+/**
+ * `facing(yaw) = (-sin yaw, -cos yaw)`(`systems/player.ts`)의 역함수 — 이 월드 방향을
+ * 보려면 yaw 가 얼마여야 하는가.
+ *
+ * **복귀 구간이 이것을 필요로 한다.** 예전에는 `look(π)`(뒤돌기) 한 번으로 왕복을
+ * 만들었는데, 우회가 붙자 **갈 때 경로가 직선이 아니게 되어 그 대칭이 깨졌다.**
+ * 스모크 실측(2026-08-08): 경로 `0,0 → 0,-1 → 1,-1 → 2,-1` — 대각으로 흘러 +x 로 두 칸
+ * 이동했고, 거기서 뒤돌면 원래 경로가 아닌 새 칸으로 간다. 재방문 **0** 으로 FAIL 했다.
+ *
+ * 그래서 "뒤돌기" 를 **"출발점을 향해 재조준"** 으로 바꾼다. 매 leg 마다 다시 조준하므로
+ * 중간에 우회로 흘러도 목표를 잃지 않는다.
+ */
+export function yawToward(from, to) {
+  return Math.atan2(-(to.x - from.x), -(to.z - from.z));
+}
+
+/** 최단 회전량으로 정규화. 안 하면 350° 를 왼쪽으로 도는 대신 오른쪽으로 한 바퀴 돈다 */
+export function shortestTurn(fromYaw, toYaw) {
+  let d = toYaw - fromYaw;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }
 
 /** `__world2` 조작 훅. 없으면 **측정 실패**다 — 조작 못 한 것을 통과로 적지 않는다. */
@@ -187,15 +298,42 @@ async function drive(page, fn, ...args) {
 }
 
 /**
+ * 드로우콜 대조군 쿼리 — **사람과 GLB 를 끈 세계.**
+ *
+ * ── 왜 별도 세션인가 (태스크 #208) ──────────────────────────────────────────
+ * 기본 세션에서는 `draw` 를 **판정할 수 없다.** `npc`·`glb-city` 가 조건 없이
+ * `drawGroupKey: () => null` 을 내고, 그 근거가 맞기 때문이다 — NPC 가 있으면 카메라를
+ * 돌리는 것만으로 절두체 컬링이 달라져 드로우콜은 **정의상** 상수가 아니다.
+ *
+ * 그래서 감독 리포트에 `draw - 측정 안 됨(표본 0)` 이 두 번 찍혔고(#176), 그동안
+ * **draw 만 늘어나는 회귀는 아무도 못 잡았다.** 다른 세 축(geo·tex·pipe)이 상수라
+ * 위험이 낮아 보였을 뿐이다.
+ *
+ * ⚠ **이 쿼리로 기본 세션을 대체하지 않는다.** 이 파일의 형제인 `world2-ready.mjs` 가
+ * 정확히 그 실수를 기록하고 있다 — 게이트 넷이 `npc=0&vrm=0` 을 켜 둔 채
+ * *"개수가 상수다"* 를 선언했고, 그것은 **라이브에 없는 조건의 세계**였다. 대조군은
+ * draw 축 하나를 열려고 **추가**하는 것이고, 라이브 상태 판정은 기본 세션이 그대로 한다.
+ *
+ * `npc=0` 만으로는 안 꺼진다 — `npc.ts` 의 `create` 가 `count<=0 && vrmCount<=0` 일 때만
+ * `null` 을 낸다. 이 문자열의 근거는 각 기능의 `drawBlockHint` 다.
+ */
+export const DRAW_CONTROL_QUERY = `${WORLD2_QUERY}&npc=0&vrm=0&glb=0`;
+
+/**
  * 게이트 본체. **브라우저·서버를 주입받는다** — 스모크 하네스가 이미 세워 둔 것을 다시
  * 세우면 vite 빌드가 한 번 더 돌고, 그 시간이 곧 "게이트를 안 돌리는 이유"가 된다.
  *
  * @param {{browser: import('playwright-core').Browser, origin: string, basePath: string,
- *          log?: (s: string) => void}} env
+ *          log?: (s: string) => void, query?: string, judgeDraw?: boolean}} env
+ *   `query` 는 접속 URL 쿼리(기본 = 라이브 상태). `judgeDraw` 는 드로우콜을 **판정에
+ *   포함**할지 — 대조군에서만 true 다(기본 세션에서는 정의상 상수가 아니라 무의미하다).
  * @returns {Promise<{pass: boolean, maxGeo: number, maxTex: number, maxPipe: number,
- *                    rows: unknown[], errors: string[], base: unknown}>}
+ *                    maxDraw: number, rows: unknown[], errors: string[], base: unknown}>}
  */
-export async function runInvariants({ browser, origin, basePath, log = console.log }) {
+export async function runInvariants({
+  browser, origin, basePath, log = console.log,
+  query = WORLD2_QUERY, judgeDraw = false,
+}) {
   {
     const context = await browser.newContext({ viewport: { width: 1024, height: 640 } });
     const page = await context.newPage();
@@ -204,14 +342,13 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
     page.on('pageerror', (e) => errors.push(e.message));
 
     // GLB 가 기본 노출로 바뀐 뒤 게이트도 기본 상태를 재야 한다. 대기는 world2-ready.mjs 소유.
-    const url = `${origin}${basePath}app/world2.html${WORLD2_QUERY}`;
+    const url = `${origin}${basePath}app/world2.html${query}`;
     log(`접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
     const ready = await waitForWorld2Ready(page);
     if (ready.reason) throw new Error(ready.reason);
-    // 초기 파셀이 다 붙을 때까지. 부팅 중 개수가 오르는 것은 정상이므로 **기준선을
-    // 그 뒤에 잡는다** — 안 그러면 정상 상승이 위반으로 찍힌다.
-    await page.waitForTimeout(8000);
+    // 초기 파셀이 다 붙을 때까지. 근거는 `SETTLE_MS` 선언 자리 한 곳이다.
+    await page.waitForTimeout(SETTLE_MS);
 
     const base = await counts(page);
     if (!base) throw new Error('stats() 를 못 읽었다 — 측정이 성립하지 않는다');
@@ -248,43 +385,132 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
       await snap(`회전 ${Math.round(((i + 1) * 360) / SPIN_STEPS)}°`);
     }
 
-    // ── ② 직진 — 파셀 경계를 여러 번 넘는다 ─────────────────────────────────
-    log('[2] 직진 주행…');
-    for (let i = 0; i < WALK_LEGS; i++) {
-      await drive(page, 'move', 0, -1); // 전진
+    // ── ② 주행 — **파셀을 밟는다.** 미터를 세지 않는다 ───────────────────────
+    //
+    // 여기 원래 *"-z 로 6번 전진"* 이 박혀 있었다. 도시에 충돌이 없던 동안은 그것이
+    // 곧 주행이었지만, 충돌이 붙은 뒤로는 **앞에 무엇이 있느냐에 따라 0m 일 수도 있는
+    // 명령**이 됐다. 막히면 방향을 튼다 — 사람이 도시에서 하는 그것이다.
+    //
+    // 방향 전환은 **관측한 결과로만** 한다(움직인 거리 < `STUCK_M`). "여기쯤에서 틀어라"
+    // 를 미리 적으면 그것이 곧 배치의 값 미러링이고, 배치를 만지는 날 조용히 어긋난다.
+    const visits = [];
+    const keyOf = (c) => (c?.px == null || c?.pz == null ? null : `${c.px},${c.pz}`);
+    let prev = await counts(page);
+    if (!keyOf(prev)) throw new Error('stats().parcel 이 없다 — 커버리지를 잴 수 없다(측정 실패)');
+    visits.push(keyOf(prev));
+    /** 출발 좌표. 복귀 구간이 **이 지점을 향해 매 leg 재조준한다** */
+    const start = { wx: prev.wx, wz: prev.wz };
+
+    log('[2] 주행 — 고유 파셀 목표 ' + COVER_UNIQUE + '…');
+    let legs = 0;
+    let turns = 0;
+    let dodge = -1;        // -1 = 곧장 전진, 0·1 = 좌우 대각
+    for (; legs < MAX_LEGS; legs++) {
+      const d = dodge < 0 ? { ax: 0, az: -1 } : DODGES[dodge];
+      await drive(page, 'move', d.ax, d.az);
       await page.waitForTimeout(WALK_MS);
-      await snap(`전진 ${i + 1}`);
+      const c = await snap(`전진 ${legs + 1}`);
+      const moved = (prev.wx == null || c.wx == null)
+        ? null : Math.hypot(c.wx - prev.wx, c.wz - prev.wz);
+      visits.push(keyOf(c));
+      prev = c;
+      if (coverageOf(visits).unique >= COVER_UNIQUE && legs + 1 >= WALK_LEGS) break;
+      if (moved != null && moved < STUCK_M) {
+        // 막혔다. 좌 → 우 → (둘 다 막히면) 시선을 튼다. 회전은 **개수 축과 독립된
+        // 증식원**이므로(위 ①의 근거) 여기서 도는 것도 그대로 판정 대상이다 — 표에 남는다.
+        dodge += 1;
+        if (dodge >= DODGES.length) {
+          dodge = -1;
+          await drive(page, 'look', TURN_RAD, 0);
+          await page.waitForTimeout(STEP_MS);
+          turns++;
+        }
+      } else if (dodge >= 0) {
+        // 우회가 통했다 — 다시 곧장 전진으로 돌아간다(대각으로만 계속 가면 사선으로 흐른다).
+        dodge = -1;
+      }
     }
     await drive(page, 'move', 0, 0);
+    const outLegs = legs + 1;
 
     // ── ③ 되돌아오기 — 언로드된 파셀을 다시 로드한다 ────────────────────────
+    //
     // **재방문이 핵심이다.** 슬롯 반납이 제대로 안 되면 여기서 개수가 오른다.
-    log('[3] 되돌아오기(재방문)…');
-    await drive(page, 'look', Math.PI, 0);
-    await page.waitForTimeout(STEP_MS);
-    for (let i = 0; i < WALK_LEGS; i++) {
-      await drive(page, 'move', 0, -1);
+    //
+    // ── `look(π)` 뒤돌기를 버렸다 (스모크 실측 2026-08-08) ─────────────────────
+    // 예전에는 뒤돌아 같은 leg 수만큼 걸으면 왕복이 됐다. **우회가 붙자 그 대칭이
+    // 깨졌다** — 갈 때 대각으로 흘러 경로가 직선이 아니면 뒤돌기는 원래 길이 아니다.
+    // 스모크 실측: 경로 `0,0 → 0,-1 → 1,-1 → 2,-1`(+x 로 두 칸 흘렀다) → 거기서 뒤돌면
+    // 새 칸으로 가서 **재방문 0** 으로 FAIL 했다. 내 로컬 회차는 우연히 직선이라 통과했고,
+    // 그래서 **로컬 PASS 가 스모크 PASS 를 보증하지 못했다.**
+    //
+    // 그러므로 방향을 **매 leg 마다 출발점으로 재조준한다.** 중간에 우회로 흘러도 목표를
+    // 잃지 않는다 — "돌아간다" 를 회전량이 아니라 **목표 좌표**로 정의한 것이다.
+    // 종료 조건도 leg 수가 아니라 **재방문 달성**이다(상한은 무한 대기 방지선).
+    log('[3] 되돌아오기(재방문) — 출발점으로 재조준…');
+    let back = 0;
+    let backDodge = -1;
+    for (; back < MAX_LEGS; back++) {
+      // ── 왜 `back >= outLegs` 를 함께 요구하는가 (검수관 비블로커, 2026-08-08) ──
+      // 재방문 조건만 두면 **첫 leg 에 끝날 수 있다** — 출발점 바로 옆 칸에서 되돌아서면
+      // 한 걸음에 원래 칸을 다시 밟는다. 그러면 "갔다가 돌아왔다" 가 아니라 경계에서
+      // 한 번 흔든 것이고, 정작 재보려던 것(멀리 가서 **언로드된** 파셀을 다시 로드)이
+      // 일어나지 않는다. 갈 때 쓴 leg 만큼은 돌아오게 해서 **언로드가 실제로 걸린
+      // 거리**를 왕복하게 만든다.
+      if (coverageOf(visits).revisits >= COVER_REVISITS && back >= outLegs) break;
+      if (prev.yaw != null && prev.wx != null) {
+        const want = yawToward({ x: prev.wx, z: prev.wz }, { x: start.wx, z: start.wz });
+        const turn = shortestTurn(prev.yaw, want);
+        // 미세 오차로 매 leg 마다 흔드는 것을 막는다 — 3° 미만이면 조준 그대로 둔다.
+        if (Math.abs(turn) > 0.05) {
+          await drive(page, 'look', turn, 0);
+          await page.waitForTimeout(STEP_MS);
+          turns++;
+        }
+      }
+      const d = backDodge < 0 ? { ax: 0, az: -1 } : DODGES[backDodge];
+      await drive(page, 'move', d.ax, d.az);
       await page.waitForTimeout(WALK_MS);
-      await snap(`복귀 ${i + 1}`);
+      const c = await snap(`복귀 ${back + 1}`);
+      const moved = (prev.wx == null || c.wx == null)
+        ? null : Math.hypot(c.wx - prev.wx, c.wz - prev.wz);
+      visits.push(keyOf(c));
+      prev = c;
+      if (moved != null && moved < STUCK_M) {
+        backDodge += 1;
+        // 좌우 다 막혔으면 재조준에 맡긴다(다음 회차 첫 줄이 다시 출발점을 향한다).
+        if (backDodge >= DODGES.length) backDodge = -1;
+      } else if (backDodge >= 0) {
+        backDodge = -1;
+      }
     }
     await drive(page, 'move', 0, 0);
-    await page.waitForTimeout(1500);
-    await snap('정지');
+    await page.waitForTimeout(STOP_SETTLE_MS);
+    const last = await snap('정지');
+    visits.push(keyOf(last));
+
+    const cov = coverageOf(visits);
+    const covOk = covOkOf(cov);
 
     // ── 판정 ────────────────────────────────────────────────────────────────
     log('\n[결과] 기준선 대비 증가분 — 하나라도 + 면 증식이다\n');
-    log('  구간              geo   tex  pipe   draw  파셀');
-    let maxGeo = 0, maxTex = 0, maxPipe = 0;
+    // 좌표·파셀 칸을 함께 찍는다 — 개수만 보면 "세션이 어디에 있었나" 를 알 수 없고,
+    // 커버리지 FAIL 이 났을 때 어느 구간에서 멈췄는지 짚을 수단이 표 안에 없었다.
+    log('  구간              geo   tex  pipe   draw  파셀        위치        칸');
+    let maxGeo = 0, maxTex = 0, maxPipe = 0, maxDraw = 0;
     for (const r of rows) {
       const d = (b, v) => (b == null || v == null ? '  ?' : (v - b > 0 ? `+${v - b}` : '  '));
       if (base.geo != null && r.geo != null) maxGeo = Math.max(maxGeo, r.geo - base.geo);
       if (base.tex != null && r.tex != null) maxTex = Math.max(maxTex, r.tex - base.tex);
       if (base.pipe != null && r.pipe != null) maxPipe = Math.max(maxPipe, r.pipe - base.pipe);
+      if (base.draw != null && r.draw != null) maxDraw = Math.max(maxDraw, r.draw - base.draw);
       log(
         `  ${r.label.padEnd(16)} ${show(r.geo).padStart(4)}${d(base.geo, r.geo)} `
         + `${show(r.tex).padStart(4)}${d(base.tex, r.tex)} `
         + `${show(r.pipe).padStart(4)}${d(base.pipe, r.pipe)} `
-        + `${show(r.draw).padStart(6)} ${show(r.parcels).padStart(5)}`,
+        + `${show(r.draw).padStart(6)} ${show(r.parcels).padStart(5)}`
+        + `  ${r.wx == null ? '     ?,?    ' : `${r.wx.toFixed(1).padStart(6)},${r.wz.toFixed(1).padStart(6)}`}`
+        + `  ${r.px == null ? '?' : `${r.px},${r.pz}`}`,
       );
     }
 
@@ -292,29 +518,53 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
     log(`  geometry  최대 증가 ${maxGeo >= 0 ? '+' : ''}${maxGeo}`);
     log(`  texture   최대 증가 ${maxTex >= 0 ? '+' : ''}${maxTex}`);
     log(`  pipeline  최대 증가 ${maxPipe >= 0 ? '+' : ''}${maxPipe}  (참고 — 백엔드 의존)`);
+    log(
+      `  draw      최대 증가 ${maxDraw >= 0 ? '+' : ''}${maxDraw}`
+      + `  ${judgeDraw ? '← 대조군이므로 **판정에 포함**' : '(참고 — 기본 세션에서는 컬링으로 정당하게 변한다)'}`,
+    );
+
+    // ── G-COL1 — **세션이 실제로 돌아다녔는가** ──────────────────────────────
+    log('\n  커버리지  고유 파셀 ' + cov.unique + `/${COVER_UNIQUE}`
+      + `  재방문 ${cov.revisits}/${COVER_REVISITS}`
+      + `  (전진 ${outLegs} · 복귀 ${back} leg · 조준·전환 ${turns}회)`);
+    log(`            경로 ${cov.path.join(' → ')}`);
+    if (!covOk) {
+      log('\n  ✗ FAIL — 세션이 목표만큼 돌아다니지 못했다. **개수 판정은 무의미하다.**');
+      log('    아무 데도 안 갔으면 아무것도 안 늘어난다 — 그 PASS 는 게이트가 아니라 착시다.');
+      // **두 원인을 가른다** (검수관 비블로커, 2026-08-08). 첫 판본은 무조건 *"막힌 자리를
+      // 보라"* 고만 적었는데, leg 상한을 다 쓰고 끝난 것과 실제로 벽에 갇힌 것은 처방이
+      // 다르다 — 전자는 하네스 예산 문제(상한을 올리거나 목표를 낮춘다)이고 후자만 배치·
+      // 스폰 문제다. 안 가르면 다음 사람이 매번 배치부터 뒤진다.
+      const spent = outLegs >= MAX_LEGS || back >= MAX_LEGS;
+      if (spent) {
+        log(`    원인 후보 ①: **leg 상한(${MAX_LEGS})을 소진했다** — 전진 ${outLegs}·복귀 ${back}.`);
+        log('      느린 러너에서 leg 당 이동이 줄면 여기 걸린다. 하네스 예산(MAX_LEGS·WALK_MS)을 먼저 본다.');
+      }
+      log(`    원인 후보 ${spent ? '②' : '①'}: **실제로 막혔다** — 마지막 칸이 위 경로의 끝이다.`);
+      log('      배치(#149)나 스폰(`decide/grid.ts`)을 본다. 상한을 안 쓰고 끝났으면 이쪽이다.');
+    }
+
+    // 계단 예산·계단 소진 판정. **판정식은 `invariant-judge.mjs` 한 곳이다** — 근거·뮤테이션
+    // 실측표·재론 조건이 전부 거기 있다. 여기서 값을 다시 계산하지 않는다(검수관 조건 1 의
+    // `covOkOf` 와 같은 처방 — 인라인 임계식은 아무 테스트도 안 닿는다).
+    const judged = stepJudge({ base, rows, maxGeo, maxTex });
 
     // 통과·실패는 백엔드 무관 카운터로만 가른다.
-    const pass = maxGeo <= 0 && maxTex <= 0 && errors.length === 0;
-    if (pass) {
-      log('\n  ✓ PASS — 회전·주행·재방문 내내 개수가 상수다.');
-    } else if (maxGeo > 0 || maxTex > 0) {
-      log('\n  ✗ FAIL — 세션 중 개수가 늘었다. **world1 이 겪은 증식이 돌아왔다.**');
-      log('    위 표에서 어느 구간에 + 가 붙었는지가 원인 지점이다:');
-      log('      회전 구간   → 시야에 따라 새 조합이 생긴다(재질 변종·LOD tier 등)');
-      log('      전진 구간   → 스트리밍이 객체를 새로 만든다(슬롯 방식이 깨짐)');
-      log('      복귀 구간   → 슬롯 반납이 안 되어 재방문마다 쌓인다');
-    }
-    if (maxPipe > 0 && maxGeo <= 0 && maxTex <= 0) {
-      // 이 조합은 "지오·텍스처는 그대로인데 파이프라인만 늘었다" — 재질 **구조**가
-      // 바뀌는 경로가 생겼다는 뜻이다. WebGL 에서도 잡히면 실기기(WebGPU)에서는 더 크다.
-      log('\n  ⚠ 경고 — geometry·texture 는 상수인데 pipeline 이 늘었다.');
-      log('    재질 구조 신호(맵 유무·transparent·조명 수)가 런타임에 바뀌는 경로가 있다.');
-      log('    world1 을 무너뜨린 것이 정확히 이 축이다. FAIL 은 아니지만 반드시 본다.');
-    }
+    // `draw` 는 **대조군에서만** 판정에 넣는다 — 기본 세션에서는 NPC 절두체 컬링 때문에
+    // 정의상 상수가 아니고, 거기서 판정하면 게이트가 아니라 오탐 발생기가 된다.
+    //
+    // `covOk` 를 곱하는 이유는 위 G-COL1 문단 그대로다 — **못 잰 것은 통과가 아니다.**
+    const pass = judged.budgetOk && judged.settledOk && (!judgeDraw || maxDraw <= 0)
+      && errors.length === 0 && covOk;
+    // 진단문도 `invariant-judge.mjs` 소관이다 — 판정식과 같은 축을 읽어야 하는데 두 파일에
+    // 흩어지면 한쪽만 고쳐도 아무도 모른다(그 형태가 실제로 이 회차에 한 번 났다).
+    for (const line of stepReport({
+      judgement: judged, maxGeo, maxTex, maxPipe, maxDraw, judgeDraw, cov, pass,
+    })) log(line);
 
     log(`\n  콘솔 에러 ${errors.length}건${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
     await context.close();
-    return { pass, maxGeo, maxTex, maxPipe, rows, errors, base, baselineNote };
+    return { pass, maxGeo, maxTex, maxPipe, maxDraw, rows, errors, base, baselineNote, cov, covOk };
   }
 }
 
@@ -322,14 +572,21 @@ export async function runInvariants({ browser, origin, basePath, log = console.l
 // 단독 실행(`npm run measure:invariants`)일 때만 자기가 빌드·서버·브라우저를 세운다.
 // 스모크 하네스에서 부를 때는 위 `runInvariants` 를 직접 쓴다.
 async function cli() {
-  console.log('=== 성능 불변식 게이트 (개수 상수성) ===\n');
+  // `--control` 은 드로우콜 대조군 세션이다(사람·GLB 없음, draw 를 판정에 포함).
+  const control = process.argv.includes('--control');
+  console.log(`=== 성능 불변식 게이트 (개수 상수성)${control ? ' — 드로우콜 대조군' : ''} ===\n`);
   assembleSiteVite(SITE_DIR);
   const { origin, close: closeServer } = await startServer(SITE_DIR, BASE_PATH);
   const browser = await chromium.launch({
     executablePath: CHROMIUM_EXECUTABLE, args: CHROMIUM_ARGS, headless: true,
   });
   try {
-    const r = await runInvariants({ browser, origin, basePath: BASE_PATH });
+    const r = await runInvariants({
+      browser,
+      origin,
+      basePath: BASE_PATH,
+      ...(control ? { query: DRAW_CONTROL_QUERY, judgeDraw: true } : {}),
+    });
     process.exitCode = r.pass ? 0 : 1;
   } finally {
     await browser.close();
@@ -337,7 +594,11 @@ async function cli() {
   }
 }
 
-// `import.meta.main` 은 Node 20 에 없다. argv 로 판별한다.
+// argv 로 파일명을 보고 판별한다.
+// ⚠ 원래 적혀 있던 근거 *"`import.meta.main` 은 Node 20 에 없다"* 는 **낡았다** —
+// 실측 2026-08-08: Node 22·24 둘 다 `import.meta.main` 이 있다(저장소는 24 로 옮겼다).
+// 코드는 그대로 둔다(동작에 문제가 없다). 근거가 바뀌면 근거를 고쳐 적는다 —
+// 낡은 근거를 남겨두면 다음 사람이 그것을 읽고 틀린 판단을 한다. (검수관 P1)
 if (process.argv[1] && process.argv[1].endsWith('measure-invariants.mjs')) {
   cli().catch((e) => { console.error(`측정 실패(판정 아님): ${e.message}`); process.exit(2); });
 }

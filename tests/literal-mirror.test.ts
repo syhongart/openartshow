@@ -16,7 +16,9 @@
 // 주의:
 // - player.js는 보호파일(라이브 미술관 서비스 중)이므로 직접 import 하지 않음 — 텍스트로만 읽음
 // - builder.html·landing.html·visit.html은 HTML 인라인 스크립트(모듈 import 불가) — 텍스트로만 읽음
-// - 못 잡는 것: 문자열 조립(rgb()/hsl() 표기), design.html 제외(색 샘플 정당)
+// - 못 잡는 것: 문자열 조립(rgb()/hsl() 표기)
+//   (2026-08-09 이전에는 "design.html 제외(색 샘플 정당)"도 여기 있었다 — 그 페이지가
+//    폐지되면서 예외 자체가 사라졌다. 경위는 `docs/DESIGN.md §5-4`)
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
@@ -99,12 +101,25 @@ describe('literal-mirror — SSOT와 거울 값 정합성', () => {
       expect(PLAN_KEY.length).toBeGreaterThan(0);
     });
 
-    it('frontend/landing.html에 PLAN_KEY 미러가 있다', () => {
-      assertValueInFile(
-        'frontend/landing.html',
-        PLAN_KEY,
-        'PLAN_KEY (landing.html)'
-      );
+    // ⚠ **미러가 사라졌다 — 그것이 개선이다**(2026-08-16, W8-3 S1).
+    //
+    // 이 검사는 원래 *"landing.html 에 PLAN_KEY 미러가 **있다**"* 를 단언했다. 그 시절
+    // 랜딩은 키 문자열과 판정 로직(`=== 'premium'` · 해시 검증)을 **자기 안에 복제**하고
+    // 있었고, 이 검사는 «복제된 값이 SSOT 와 같은가» 를 지켰다.
+    //
+    // 요금제를 층위(무료·프리미엄·특별 프리미엄)로 넓히면서 랜딩이 `studio-plan.js` 를
+    // **직접 import** 하게 됐다 — 복제가 없어졌으므로 지킬 미러도 없다. 그래서 이 검사가
+    // 빨간불이 됐고, **그것은 회귀가 아니라 목적 달성이다.**
+    //
+    // 단언을 뒤집는다: 이제 **미러가 다시 생기는 것**이 회귀다.
+    it('★ landing.html 이 PLAN_KEY 를 복제하지 않는다 — 모듈에서 받는다', () => {
+      const html = fs.readFileSync(path.resolve(__dirname, '..', 'frontend/landing.html'), 'utf8');
+      // 주석은 걷어낸다 — 위 경위를 인용하는 것이 규율이고, 주석은 실행되지 않는다.
+      const code = html.replace(/<!--[\s\S]*?-->/g, '');
+      expect(code, `★ PLAN_KEY(${PLAN_KEY}) 가 랜딩에 다시 복제됐다 — 층위가 갈라진다`)
+        .not.toContain(PLAN_KEY);
+      expect(code, '★ 랜딩이 studio-plan 을 안 쓴다 — 판정이 또 따로 살게 된다')
+        .toContain('studio-plan.js');
     });
   });
 

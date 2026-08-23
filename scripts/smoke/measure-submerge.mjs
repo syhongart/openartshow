@@ -124,7 +124,21 @@ export async function runSubmerge({ browser, origin, basePath, log = console.log
 
   try {
     // GLB 가 기본 노출로 바뀐 뒤 게이트도 기본 상태를 재야 한다. 대기는 world2-ready.mjs 소유.
-    const url = `${origin}${basePath}app/world2.html${WORLD2_QUERY}`;
+    //
+    // ── `at=river` 를 붙인다 (플레이어 충돌 도입, 태스크 #182) ──────────────
+    // 예전에는 기본 스폰에서 **직진 82m** 로 강까지 갔다. 그런데 충돌이 붙자
+    // **z=3.5 에서 멈췄다** — 스폰(z=10) 정면 10m 에 광장 분수(반경 2.7)가 서 있고,
+    // 그것이 정확히 제 일을 한 것이다(대조군 실측: `collide=0` 이면 z<-72 로 강 도달).
+    //
+    // **충돌이 과한 것이 아니라 이 측정이 직진밖에 못 하는 것**이다. 사람은 분수를
+    // 돌아가지만 이 하네스는 앞으로만 걷는다. 그래서 **물가에서 시작**하게 바꾼다 —
+    // `?at=river` 는 이 측정을 위해 이미 열려 있던 노브다(`decide/spawn-spot.ts`).
+    //
+    // ⚠ **이 변경으로 잃는 것**: 예전 경로는 "82m 를 주행하다 물에 들어간다" 였고
+    // **긴 주행 중 물 진입**을 함께 봤다. 지금은 물가에서 몇 걸음이라 그 축이 얇아진다.
+    // 주행 자체는 `[7]` 개수 불변식이 별도로 보지만, **"멀리 걸어가 물을 만난다" 는
+    // 조합은 이제 아무도 안 본다.** 통과로 적지 않는다.
+    const url = `${origin}${basePath}app/world2.html${WORLD2_QUERY}&at=river`;
     log(`접속: ${url}`);
     await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
     const ready = await waitForWorld2Ready(page);
@@ -254,7 +268,11 @@ async function cli() {
   }
 }
 
-// `import.meta.main` 은 Node 20 에 없다. argv 로 판별한다.
+// argv 로 파일명을 보고 판별한다.
+// ⚠ 원래 적혀 있던 근거 *"`import.meta.main` 은 Node 20 에 없다"* 는 **낡았다** —
+// 실측 2026-08-08: Node 22·24 둘 다 `import.meta.main` 이 있다(저장소는 24 로 옮겼다).
+// 코드는 그대로 둔다(동작에 문제가 없다). 근거가 바뀌면 근거를 고쳐 적는다 —
+// 낡은 근거를 남겨두면 다음 사람이 그것을 읽고 틀린 판단을 한다. (검수관 P1)
 if (process.argv[1] && process.argv[1].endsWith('measure-submerge.mjs')) {
   cli().catch((e) => { console.error(`측정 실패(판정 아님): ${e.message}`); process.exit(2); });
 }

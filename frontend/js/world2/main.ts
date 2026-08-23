@@ -11,10 +11,17 @@ import { Kernel } from './kernel.js';
 import { createRendererAdapter, type RendererAdapter } from './adapters/renderer.js';
 import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
-import { PooledParcelBuilder } from './systems/parcel-builder.js';
+import { PooledParcelBuilder, type SlotPool } from './systems/parcel-builder.js';
+import { createVillageParcels } from './systems/village-parcels.js';
+import { ParcelFadeSystem } from './systems/parcel-fade.js';
+import { ParcelGrowSystem } from './systems/parcel-grow.js';
+import {
+  FADE_SECONDS, FADE_EASE, FADE_EASES, fogFactorAt, readParcelAnim,
+} from './decide/lod-fade.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
 import { SPAWN } from './decide/grid.js';
+import { villageLayout, MUL_MIN, MUL_MAX } from './decide/village-rules.js';
 import { spawnFor, SPAWN_SPOTS, type SpawnSpot } from './decide/spawn-spot.js';
 import { waterSurfaceY as surfaceYAt, SEABED_Y } from './decide/water.js';
 import { AdaptSystem } from './systems/adapt.js';
@@ -24,24 +31,40 @@ import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
 import { attachExportPanel } from './ui/export-panel.js';
+import { createGlbOverlayHost } from './export/host.js';
+import { findKnobBar, attachKnobBar, attachKnobActions } from './ui/knob-bar.js';
 import {
   FEATURES, mountFeatures, combineDrawGroupKey, drawGroupKeyOf, collectDiagnostics, prewarmFeatures,
+  glbCityFeature,
   type MountedFeature,
 } from './features/index.js';
+// 타입만 받는다 — 런타임 import 는 없다(`three/webgpu` 는 부팅이 동적으로 받는다).
+// `features/types.ts` 가 같은 이유로 개별 named type import 를 쓴다.
+import type { Object3D } from 'three/webgpu';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
-import { fogBand } from './decide/fog.js';
+import { createCollider } from './systems/collision.js';
+import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
-import { DEFAULT_BANDS } from './decide/lod.js';
+import { ShadowDecalSystem, defaultOpts as shadowDecalDefaults } from './systems/shadow-decal.js';
+import {
+  SHADOW_DENSITY, SHADOW_DENSITY_MAX, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_LIFT, SHADOW_LIFT_MAX,
+  SHADOW_BLEND, SHADOW_BLENDS, LEAF_DEPTH, LEAF_DEPTH_MAX,
+} from './decide/shadow-decal.js';
+import { SHADOW_DRAW_PX, SHADOW_DRAW_MIN, SHADOW_DRAW_MAX } from './parts/shadow.js';
+import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
 // 원인을 짐작하기 어렵다(검수관이 잡은 열 번째 지점).
-import { ALL_KINDS } from './parts/index.js';
+import { ALL_KINDS, PARTS } from './parts/index.js';
 // URL 노브는 `url-knob.ts` 가 유일한 구현이다 — 여기·`postfx.ts`·`features/sky.ts` 가
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
-import { readNum, readEnum } from './url-knob.js';
+import { readNum, readEnum, readNumOpt, writeNumOpt } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
+import { SHADING_MODES, type ShadingMode } from './decide/shading.js';
+import type { SurfaceSetting } from './decide/surface-material.js';
 // 카메라 far 를 여기서 유도한다 — 아래 `PerspectiveCamera` 주석 참고.
+import { assetUrl } from './asset-url.js';
 import { DOME_MAX } from './systems/sky.js';
 
 // 셀 크기는 **레이아웃이 소유한다.** 여기 `32` 를 다시 적으면 안 된다.
@@ -59,14 +82,79 @@ const CELL_X = DEFAULT_LAYOUT.cellX;
 const CELL_Z = DEFAULT_LAYOUT.cellZ;
 
 /**
- * 그림자 맵 한 변(px). 프러스텀 반폭과 함께 **텍셀 크기**를 정한다 —
- * `decide/shadow.ts` 가 둘에서 유도하고, 그 텍셀이 곧 그림자 경계의 선명도다.
+ * 그림자 카메라가 담을 범위(셀 배수). **`SHADOW_MAP` 과 짝이다** — 둘의 비가 텍셀 크기고,
+ * 그 텍셀이 곧 그림자 경계의 선명도다.
  *
- * 1024 는 원래 값 그대로다. 이번 변경은 "얼마나 촘촘히" 가 아니라 **"어디까지 담느냐"**
- * 를 고친 것이라, 해상도를 함께 올리면 무엇이 화면을 바꿨는지 갈리지 않는다.
- * 올릴 값어치가 있는지는 감독 판정 뒤에 본다(2048 이면 텍셀이 절반).
+ * ── 왜 `nearExit`(1.30) 에서 `farExit`(2.40) 로 넓혔나 (감독 실기기 2026-08-10) ──
+ * *"뒤로 움직이는 순간 건물 밝기가 바뀌어. 낮에도."*
+ *
+ * 원인은 **담는 범위와 보이는 범위가 달랐던 것**이다. 건물은 `farExit`(76.8m)까지
+ * 그려지는데 그림자는 `nearExit`(41.6m)까지만 담았다. 후진하면 눈앞 건물이 41.6m 를
+ * 넘어가는 순간 **그림자를 통째로 잃어 밝아진다.** 전진에도 같은 경계가 있지만 그때는
+ * 반대로 들어오는 것이라 화면 저 끝에서 일어나 안 보인다 — 후진은 **화면을 채운 큰
+ * 건물**이 그 경계를 넘으므로 눈에 띈다. 그것이 "후진할 때만" 의 정체다.
+ *
+ * 감독 실측으로 축을 갈랐다: `?dsun=0`(태양·그림자 끔)에서 **안정**, `?glb=0`(외부 GLB
+ * 건물 끔)에서 **여전히 깜빡임** — 즉 우리 인스턴싱 건물의 그림자가 맞다.
+ *
+ * ⚠ **`decide/shadow.ts` 의 주석이 이 사각을 이미 적어 두고 있었다** —
+ * *"far tier 는 76.8m 까지 그려지는데 반폭은 41.6m 다 … 알고 고른 거래다."*
+ * 알고 있었는데 화면에 나올 것을 예상하지 못했다. **적어 둔 사각은 사각이 아니게 되는
+ * 것이 아니라, 언제 화면에 나오는지를 아무도 안 재본 사각이다.**
+ *
+ * ── 거래를 안 하는 방법 ─────────────────────────────────────────────────────
+ * 그때 넓히지 않은 이유는 텍셀이 커져 경계가 뭉개지기 때문이었고(감독 지시 *"주간
+ * 하드라이트"* 와 정면 충돌), 그 판단 자체는 옳다. 그러나 **맵을 함께 키우면 그 대가가
+ * 사라진다** — 아래 표가 유도값이다(`texel = half*2 / mapSize`).
+ *
+ *     반폭 41.6m · 1024²  →  텍셀 0.0813m   (종전)
+ *     반폭 76.8m · 1024²  →  텍셀 0.1500m   ← 넓히기만 하면 1.85배 뭉개진다
+ *     반폭 76.8m · 2048²  →  텍셀 0.0750m   ← **종전보다 오히려 선명하다**
+ *
+ * 대가는 그림자 맵 메모리 4배(깊이 텍스처 한 장)와 그림자 패스가 담는 물체 수다.
+ * 감독 실기기(iPhone·WebGPU) 실측 여유: 프레임 16.7ms 중 render 평균 **2.6ms**.
+ *
+ * ── 경계는 없앨 수 없다 — **보이지 않는 자리로 옮긴 것**이다 ────────────────
+ * 정투영 그림자에는 언제나 끝이 있다. `farExit` 로 맞추면 그 경계가 **파셀이 사라지는
+ * 거리와 같아진다** — 건물이 안 보이게 되는 것과 그림자를 잃는 것이 같은 순간에
+ * 일어나므로 화면에서 분리되지 않는다. 여기서 멈춘다: 더 넓히면 텍셀만 커지고 얻는
+ * 것이 없다(그 밖에는 그릴 건물이 없다).
+ *
+ * 두 값 다 노브로 열어 둔다 — 감독이 종전 판본(`?shband=1.3&smap=1024`)과 나란히
+ * 비교할 수 있어야 판정이 선다.
  */
-const SHADOW_MAP = 1024;
+const SHADOW_BAND = readNum('shband', DEFAULT_BANDS.farExit, 0.5, 4);
+const SHADOW_MAP = Math.round(readNum('smap', 2048, 256, 4096));
+
+/**
+ * 그림자 진하기(0=없음 · 1=완전 검정). three r171 `LightShadow.intensity`.
+ *
+ * ── 왜 여는가 (팀장 원인 보고 2026-08-10, 감독 채택 A안) ────────────────────
+ * *"뒤로 움직이는 순간 건물 밝기가 바뀌어"* 의 직접 원인은 **캐스터의 이산 등장**이다:
+ * 파셀이 60~70m 지점에서 태어나는 순간 그 타워(60m)의 그림자(낮 고도 47.4° 에서 ~55m)가
+ * 시야 안 건물 위로 **한 프레임에** 떨어진다. 받는 쪽은 결백하다 — r171 WebGPU 는 그림자
+ * 맵 범위 밖을 강제 "밝음" 처리하므로(three.webgpu.js:21137) 어두워지는 방법은 새 캐스터
+ * 등장뿐이고, 그 자리는 스트리밍 경계뿐이다. 감독 실측 다섯 축(페이드 OFF·낮·GLB OFF·
+ * 범위 4배·태양 OFF)이 전부 이 하나로 설명된다.
+ *
+ * 이 값은 그 이산 사건을 없애지 않는다 — **켜지고 꺼질 때의 대비를 줄인다.** 1.0 이면
+ * 완전 검정이 통째로 떨어지고, 0.5 면 절반 농도라 튐이 절반이 된다. 근본 처방(키 큰
+ * 파츠의 로드 반경을 그림자 길이만큼 확장)은 별건 태스크다.
+ *
+ * ── 기본값 0 — **실시간 태양 그림자 폐지** (감독 판정 2026-08-11, 팀장 (A) 채택) ──
+ * 감독이 실기기에서 ?shint=0 화면을 직접 보고 *"그림자 없앤 버전 그게 제일 낫다.
+ * 그림자 베이킹해서 하는거 아냐?"* 로 판정했다. 이 판정 전에 소진한 축을 여기 남긴다 —
+ * **되살리려는 사람이 읽어야 할 목록이다**:
+ *   · 범위 확장(?shband=3.2&smap=4096) — "그대로" · 농도 절반(?shint=0.5) — "그대로"
+ *   · 반납 수축 시간 4배·이징 분리(?shrink=1·?shrinkease=in) — 3후보 전부 "다 그대로임"
+ *   · ?shint=0 (그림자만 0) — **"뒤로갈때 어두어지는 것 없어졌어"** ← 축 확정
+ * 즉 후진 그림자 명멸의 최종 원인은 미해명인 채(수축 프레임 가설까지 기각 — WebGPU
+ * 그림자 맵 갱신 타이밍 가설 잔존) **실시간 캐스터 축 자체를 폐지**해 문제를 소멸시켰다.
+ * 실시간 그림자를 기본으로 되살리면 이 명멸이 통째로 돌아온다. 그림자 룩은 파츠 그림자
+ * 데칼(베이킹, 캐스터와 슬롯 수명 동기)로 대체한다 — 팀장 조건·설계는 태스크 #218.
+ * 노브는 대조·진단용으로 남긴다(?shint=1 이 종전 화면).
+ */
+const SHADOW_INTENSITY = readNum('shint', 0, 0, 1);
 
 /**
  * 그림자 카메라 파라미터. **한 번 유도해 두 곳이 함께 쓴다** — 조명 설정(프러스텀)과
@@ -74,8 +162,57 @@ const SHADOW_MAP = 1024;
  * "그림자가 없다"로만 보여 원인을 짚기 어렵다.
  */
 const SHADOW = shadowFrustum(
-  DEFAULT_LAYOUT.cellX, DEFAULT_BANDS.nearExit, TOWER_MAX_H, SHADOW_MAP,
+  DEFAULT_LAYOUT.cellX, SHADOW_BAND, TOWER_MAX_H, SHADOW_MAP,
 );
+
+/**
+ * **접촉그림자(베이킹) 노브 다섯.** 감독 지시 2026-08-11 *"해상도 조정옵션도 만들고.
+ * 기타 세부옵션을 넣자."*
+ *
+ * 기본값을 여기 적지 않는다 — 전부 소비처 상수를 fallback 으로 읽는다. 같은 값을 두 곳에
+ * 적으면 한쪽만 고쳐도 아무도 모른다(이 저장소가 색·수치·임계값에서 세 번 데인 형태).
+ *
+ * ⚠ **여덟에서 셋이 빠졌다**(2026-08-11 2회차). 감독이 방향성 그림자를 폐기하고 빌더의
+ * 접촉그림자를 지목하면서 `?shlen`(길이 상한)·`?shtail`(꼬리 알파)·`?shstyle`(penumbra 룩
+ * 후보)이 **가리킬 대상을 잃었다** — 접촉그림자에는 길이도 꼬리도 등고선 스택도 없다.
+ * 값을 남겨 두면 노브를 밀어도 아무 일이 안 일어나고, 그것이 이 저장소가 *"관측은 면제가
+ * 아니라 데이터 수집"* 이라고 적어 둔 장식 상태다.
+ *
+ * 셋은 슬라이더로도 열려 있다(`ui/knob-bar.ts`). 나머지 둘(`shy`·`shdec`)은 URL 전용이다 —
+ * `shy` 는 z-fighting 이 기기마다 다를 때의 탈출구이고 `shdec` 는 룩 A/B 대조군이라,
+ * 슬라이더에 올리면 감독이 매번 지나치며 건드릴 축이 늘 뿐이다.
+ *
+ * ⚠ **`?shdec=0` 은 기능을 끄지 않는다** — 슬롯도 드로우콜도 그대로이고 알파만 0 이다.
+ * 룩 A/B 는 이것으로 하고(다른 축이 하나도 안 움직인다), **드로우콜 비용 A/B 를 하려면
+ * `parts/index.ts` 에서 `shadowParts` 한 줄을 지운다.** 그것이 이 저장소가 기능을 끄는
+ * 방식이고, 노브로 흉내 내면 "껐는데 왜 draw 가 그대로냐" 로 오독된다.
+ */
+const SHADOW_DECAL_OPTS = {
+  res: Math.round(readNum('shres', SHADOW_DRAW_PX, SHADOW_DRAW_MIN, SHADOW_DRAW_MAX)),
+  // 상한이 1 이 아니다 — 기본값이 이미 1(빌더 원본)이라 1 로 자르면 노브가 한쪽으로만
+  // 열린다. 근거는 `SHADOW_DENSITY_MAX` 주석.
+  density: readNum('shdark', SHADOW_DENSITY, 0, SHADOW_DENSITY_MAX),
+  // 상한을 `1` 로 적지 않는다 — 슬라이더(아래)와 스톱 위치 정규화의 분모까지 **세 곳**이
+  // 같은 값을 봐야 한다. 한 곳에만 적고 나머지가 읽는다.
+  soft: readNum('shsoft', SHADOW_SOFT, 0, SHADOW_SOFT_MAX),
+  // ⚠ **절대 높이가 아니라 캐스터 발밑에서 띄우는 값이다**(감독 실기기 2026-08-11:
+  // *"그림자가 바닥 위에 떠있어"*). 하한이 0.16 이었던 것은 절대 높이일 때 도로
+  // (0.14)를 넘겨야 했기 때문이고, 상대 띄움에는 그 제약이 없다 — 0 까지 연다.
+  y: readNum('shy', SHADOW_LIFT, 0, SHADOW_LIFT_MAX),
+  on: readNum('shdec', 1, 0, 1),
+  // 합성 모드. **감독 화면이 깨졌을 때 링크 하나로 되돌리는 수단이다** — `three/webgpu`
+  // 에서 `MultiplyBlending` 이 동작하는지 헤드리스로 검증할 방법이 이 저장소에 없다.
+  // 근거 전문은 `decide/shadow-decal.ts` 의 「합성 모드」 절 마지막 문단 한 곳이다.
+  blend: readEnum('shblend', SHADOW_BLEND, SHADOW_BLENDS),
+  // 잎 그림자 깊이. **기본이 0 이라 얼룩은 꺼져 있다** — 감독이 카드에서 고른 것은
+  // *"얼룩덩덩하게"* 였으나 배포본을 보고 *"산만하면 `?shleaf=0` 으로 확정"* 으로
+  // 뒤집었다(2026-08-11). 켜려면 `?shleaf=0.55`(= `LEAF_DEPTH_ON`) 로 민다.
+  // ⚠ 이 주석은 방향이 반대로 적혀 있었다(*"0 으로 밀면 원으로 돌아온다"*) — 값만
+  // 바꾸고 그 값을 설명하는 문장을 안 고친 것이고, 이번 회차에 같은 형태가 **여섯 번째**다.
+  // 값 미러링과 같은 실수가 코드 값이 아니라 **서술**에서 재현된다: 한 사실을 여러 파일이
+  // 서술하면 한 곳만 고쳐도 아무도 모른다(짝은 `parts/tree.ts` 의 `shadowProfile` 주석).
+  leaf: readNum('shleaf', LEAF_DEPTH, 0, LEAF_DEPTH_MAX),
+};
 
 /*
  * 동시 파셀 수 상수(`MAX_PARCELS = 20`)를 여기서 없앴다.
@@ -103,7 +240,9 @@ const SHADOW = shadowFrustum(
  * 하기 위해서다. 별도 빌드를 만들면 "무엇을 쟀는지"가 또 흐려진다.
  */
 function readDensity(): number {
-  return Math.round(readNum('density', 1, 1, 8));
+  // 범위는 `decide/village-rules.ts` 가 소유한다 — `?bld=`·`?tree=` 와 **같은 축**이라
+  // 여기에 8 을 다시 적으면 한쪽만 고쳐도 아무도 모른다.
+  return Math.round(readNum('density', MUL_MIN, MUL_MIN, MUL_MAX));
 }
 
 
@@ -119,15 +258,71 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   let adapter: RendererAdapter | null = null;
   let pools: InstancePools | null = null;
   let kernel: Kernel | null = null;
+  /**
+   * 빌더·그림자 재베이킹·편집이 **함께 쓰는** 슬롯 어댑터.
+   *
+   * 여기 위쪽에 있는 이유는 순서다: 기능 조립(`pools` 단계)이 이것을 만드는 `stream`
+   * 단계보다 **먼저** 돈다. 그래서 `FeatureEnv.retargetSlot` 은 값이 아니라 **늦게 읽는
+   * 클로저**로 넘어간다 — 편집이 실제로 부르는 시점(감독이 조작할 때)에는 이미 채워져 있다.
+   */
+  let slotPool: SlotPool | null = null;
+
+  /** 터치 핸들 (`G-EDIT14`). 위 `slotPool` 과 같은 이유 — 부팅 끝에 채워지는 늦은 클로저다 */
+  let touch: { setEditing(on: boolean): void; dispose(): void } | null = null;
 
   const density = readDensity();
   // 밀도는 배치 판정에만 곱한다. 풀 예산은 이 레이아웃에서 자동으로 파생되므로
   // 두 곳에 따로 적지 않는다(값 미러링 금지).
-  const LAYOUT = density === 1 ? DEFAULT_LAYOUT : {
-    ...DEFAULT_LAYOUT,
-    maxBuildings: DEFAULT_LAYOUT.maxBuildings * density,
-    maxTrees: DEFAULT_LAYOUT.maxTrees * density,
-  };
+  // 표면 가산 되돌림 노브. 기본 1(켬) — `?gsurf=0` 이면 실물이 전부 지면(y=0)에 놓여
+  // **2026-08-12 이전 화면**이 된다(잔디에 7cm 잠기고 그림자가 판 아래로 묻힌다).
+  // 감독이 새 화면과 옛 화면을 재배포 없이 나란히 보기 위한 축이다 — 근거 전문은
+  // `parts/types.ts` 의 `surface` 주석 한 곳.
+  const surface = readNum('gsurf', DEFAULT_LAYOUT.surface, 0, 1);
+  // ── 마을 규칙 노브 (감독 지시 *"너가 만든 규율을 내가 편집하고"*) ──────────
+  // `?density=` 는 건물·나무를 **함께** 올린다(부하 시험용, 이름 유지). `?bld=`·`?tree=`
+  // 는 한쪽만 올린다 — *"나무만 늘리기"* 가 안 되던 것을 연다.
+  //
+  // **곱셈은 `decide/village-rules.ts` 한 곳**이다. 여기와 슬라이더와 테스트가 같은
+  // 함수를 부르므로 규칙이 바뀌면 셋이 함께 바뀐다(값 미러링 금지).
+  const bldMul = Math.round(readNum('bld', MUL_MIN, MUL_MIN, MUL_MAX));
+  const treeMul = Math.round(readNum('tree', MUL_MIN, MUL_MIN, MUL_MAX));
+  const LAYOUT = villageLayout(
+    { density, building: bldMul, tree: treeMul },
+    surface === DEFAULT_LAYOUT.surface ? undefined : { surface },
+  );
+
+  // ── 동결 파셀 저장소 ──────────────────────────────────────────────────────
+  // 감독이 손본 구역은 계산이 아니라 저장된 배열을 쓴다(판정·근거는
+  // `decide/parcel-freeze.ts`·`systems/village-parcels.ts`). 여기서 만드는 이유는
+  // **소유가 조립부에 있어야 하기 때문**이다 — 오버레이 기능은 파일을 읽어 앉힐 뿐이고,
+  // 그 기능을 빼도 마을 배치가 사라지면 안 된다.
+  //
+  // 비어 있는 것이 라이브의 기본값이다. 비면 `lookup` 이 즉시 `null` 을 내므로 빌더는
+  // 예전과 똑같이 전부 계산한다.
+  //
+  // ⚠ `LAYOUT` 을 넘기는 것이 조건이다. 저장소의 `partsAt` 이 계산 경로를 쓰는데 그것이
+  // 조립부와 다른 레이아웃이면 «집으려고 스냅샷을 떴더니 화면과 다른 배치» 가 된다.
+  const village = createVillageParcels({ layout: LAYOUT });
+
+  // 충돌(태스크 #182). `?collide=0` 으로 끈다 — 예전처럼 통과한다.
+  // **끄는 노브를 두는 이유**: 스모크가 켬/끔을 대조군으로 비교할 수 있어야 "정말 막고
+  // 있는가" 를 잴 수 있고, 벽에 갇히는 사고가 나면 감독이 링크 하나로 빠져나올 수 있다.
+  //
+  // ⚠ **`collide=0` 은 대조군 전용이다 — 게이트의 본 세션에 붙이지 않는다**(검수관 P7).
+  // 이 저장소는 그 사고를 이미 한 번 냈다: 게이트 넷이 `npc=0&vrm=0` 을 켜 둔 채
+  // *"개수가 상수다"* 를 선언했고, 그것은 **라이브에 없는 조건의 세계**였다
+  // (`scripts/smoke/world2-ready.mjs` 가 그 경위를 적고 있다). 충돌을 끄면 주행이
+  // 길어져 세션이 편해지는데, 그 편함은 **라이브가 아닌 것을 잰 대가**다.
+  // 라이브 상태 판정은 언제나 이 노브가 1 인 세션이 한다.
+  const collide = readNum('collide', 1, 0, 1) === 1;
+  // 셀 크기를 따로 넘기지 않는다 — `LAYOUT` 안에 있고, 두 곳에서 읽으면 어긋난다(P4).
+  // ⚠ **빌더와 같은 조회를 넘긴다.** 한쪽에만 주입하면 렌더와 충돌이 다른 마을을 보고,
+  // 그 증상은 «건물은 저기 있는데 여기서 막힌다» 다 — `collide.ts` 가 선언한
+  // «보이는 자리 = 막히는 자리» 가 깨지는 자리가 정확히 여기다.
+  const collider = createCollider({
+    layout: LAYOUT,
+    frozenAt: (px, pz, tier) => village.lookup(px, pz, tier),
+  });
 
   const scene = new THREE.Scene();
   // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
@@ -159,8 +354,165 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 안개 거리는 `decide/fog.ts` 가 SSOT 다. 여기 배수를 다시 적으면 "안개 밖" 을
   // 판단해야 하는 다른 모듈이 그것을 알 방법이 없어진다 — 실제로 `npc.ts` 가 자기
   // 나름의 거리를 쓰다가 25.6m 를 헛그리고 있었다(본편 ①).
+  // ── `?fogd=` — 안개 거리 배수. **감독 지시 2026-08-07** ────────────────────
+  //
+  // 감독: *"lod 가리기 위한 연기 그 값이 문제인듯 그냥 띠로 보여"* →
+  //       *"안개 가리개가 아니라 **띠 가리개**야. 일단 가리개를 없애보자"*
+  //
+  // 위 문단이 *"안개가 딱 그 경계를 덮어야 세계의 끝이 안 보인다"* 고 적고 있는데,
+  // **바다에서는 그 덮개 자체가 보인다.** 76.8m 는 트인 수면에서 화면상 코앞이라
+  // 그 밖이 전부 균일한 안개색 — 즉 가리개가 가리는 대신 **띠가 될 수 있다.**
+  //
+  // ── ⚠ 이것은 가설이다. 단정하지 마라 (검수관 지적) ─────────────────────────
+  // 첫 판본은 여기에 *"낮의 띠(하늘 217 / 띠 229.3)가 색공간과 무관하게 남아 있던
+  // 것이 이것으로 설명된다"* 고 **단정**해서 적었다. 앞 절반은 참이다(`nightFloor`
+  // 는 낮에 전 채널 0 이라 밤 하한 버그가 낮에 작동하지 않는다 — 검수관 확인). 그러나
+  // **그렇다고 원인이 안개 거리라는 결론이 따라 나오지 않는다.** 유력한 반례를 하나도
+  // 배제하지 않은 채 쓴 문장이었다. 이 저장소가 반복해 데인 *"참인 문장에서 성립하지
+  // 않는 결론을 뽑는"* 형태 그대로다.
+  //
+  // ── ★ 배제되지 않은 반례: `HorizonBand` 는 이 노브로 안 사라진다 ────────────
+  // `systems/horizon.ts` 의 수평선 밴드(#202, **이 저장소에서 문자 그대로 "밴드"**)는
+  // `?hz=0` 이 아닌 한 항상 생성되고, 색을 **`scene.fog` 에서 가져오지 않는다** —
+  // `lightOf()` 팔레트를 직접 읽는다(`tests/world2-horizon.test.ts` 가 못박고 있다:
+  // *"밴드 색은 팔레트에서 온다 — scene.fog 를 경유하지 않는다"*).
+  //
+  // 그래서 **`?fogd=0` 을 켜도 밴드는 사라지지도 색이 바뀌지도 않는다.** 오히려
+  // 세기가 지금 0(감독 확정)이라 `dim=1` 이고, 밴드는 안개색을 **감쇠 없이 그대로**
+  // 칠한다 — 주변이 안개 없이 원 재질색으로 그려지는 화면에서 밴드만 안개색이면
+  // **전에 없던 불일치가 새로 생길 수 있다.** `decide/horizon.ts` 가 실측으로 확인한
+  // *"띠가 원근이 아니라 독립된 물체로 보인다"* 가 정확히 그 형태다.
+  //
+  // 감독이 *"띠 가리개"* 라고 부른 것이 **안개인지 이 밴드인지 아직 안 갈렸다.**
+  // 두 축을 따로 꺼봐야 갈린다:
+  //
+  //   ?fogd=0          안개만 끔 — 밴드와 아래 돔 채움은 남는다
+  //   ?hz=0            밴드만 끔 — 안개와 돔 채움은 남는다
+  //   ?fogd=0&hz=0     둘 다 끔 — **그래도 돔 채움은 남는다**(아래)
+  //   (노브 없음)       대조군
+  //
+  // ── ★ 세 번째 후보: 두 노브 어느 쪽에도 안 걸린다 (검수관 2차 지적) ────────
+  // `sky.js:286-296`(⑨ 규칙). **하늘 돔은 완전구**이고 지평선 아래 절반이 팔레트
+  // `L.fog` 색으로 **단색 채워져** 있다 — 이음새 방지용이다. `scene.fog` 도 아니고
+  // `HorizonBand` 도 아닌 **제3의 안개색 표면**이고, `?fogd=0&hz=0` 으로도 안 꺼진다.
+  // 끄는 노브가 없다.
+  //
+  // 그 채움이 평소 안 보이는 이유를 주석이 스스로 적고 있다 — **"지면에 가려"**.
+  // **그런데 이번 조사는 전부 `?at=sea` 다. 바다에는 지면이 없다.** 물 평면
+  // (`ocean.ts` 의 `PLANE` ≈1920m)이 우연히 근사 차폐를 하고 있을 수는 있으나 그것은
+  // 검증된 적이 없고 설계 전제도 아니다.
+  //
+  // **그러니 `?fogd=0&hz=0` 에서도 띠가 남으면 "미지의 것" 이 아니라 여기부터 본다.**
+  // 이름 있는 후보를 미지로 남겨 두는 것이 위에서 한 번 데인 그 형태다.
+  //
+  // ── ★ 네 번째 후보: 글린트 — 그리고 이것은 실측표를 흔든다 ─────────────────
+  // `sky.js:867-923`. 수면 빛반사 띠. 주석이 스스로 **"수평선(fog 원단)까지 닿는
+  // 빛기둥"** 이라고 적는다 — 정확히 지금 조사 중인 그 자리다. `waterY !== null` 이고
+  // `weather === 'clear'` 이면 **항상** 생성·표시되는 가산합성 평면이고, `?fogd` 도
+  // `?hz` 도 참조하지 않는다. 끄는 노브가 없다.
+  //
+  // **그리고 이것이 근거를 흔든다.** `decide/horizon.ts` 의 실측 조건은 **"밤 맑음"**
+  // 이었다 — 글린트가 켜지는 조건과 정확히 겹친다. 시선(`yaw π`)이 광원 방위와 겹치면
+  // 그 띠가 표본 열(화면 가운데 10%)에 들어와 밝기를 보탰을 것이고, 안 겹치면 안
+  // 보탰을 것이다. **어느 쪽인지 검증된 적이 없다.** 즉 우리가 근거로 삼아온 표
+  // (하늘 98 / 띠 143 / 물 85)에 글린트가 섞여 있었을 가능성을 배제할 수 없다.
+  //
+  // ── ⚠ 이 목록이 완결됐다고 믿지 마라 ───────────────────────────────────────
+  // 검수관 재확인마다 후보가 **하나씩** 나왔다 — 1차 `HorizonBand`, 2차 ⑨ 돔 하반부
+  // 채움, 3차 글린트. 매번 "이제 다 봤다" 고 생각한 다음에 나왔다. 부수 후보로
+  // `ocean.ts` 윤슬(광원 방위 반짝임, 수평선 한 줄이 아니라 표면 전반이라 형태가
+  // 다르다)과 블룸(WebGPU 전용 — 헤드리스 실측엔 무관하고 실기기에서는 배제 못 함)도
+  // 훑었으나 확실성이 낮아 이름만 남긴다.
+  //
+  // **끄는 노브가 없는 후보가 셋이다**(⑨ 채움 · 글린트 · 윤슬). 화면에서 가르려면
+  // 그것들도 열어야 한다 — 이 커밋은 거기까지 안 갔다.
+  //
+  //   ?fogd=1    지금(기본). near 51.2m · far 76.8m
+  //   ?fogd=3~10 멀리 밀기. 띠는 물러나고 세계 끝이 드러나기 시작한다
+  //
+  // **`scene.fog` 만 끈다.** `fogBand` 의 다른 소비자(NPC 은닉 임계·바다 타일 범위·
+  // 수평선 밴드 반경)는 **거리 판정**이라 그대로 둔다 — 시각 효과를 끄자고 판정
+  // 논리까지 0 으로 만들면 NPC 가 사라지거나 바다가 없어져 **무엇을 보는지 자체가
+  // 달라진다.** 실험은 한 축만 움직여야 한다.
+  //
+  // 안개 거리는 여전히 `decide/fog.ts` 가 SSOT 다. 여기서 곱하는 것은 **비교용
+  // 배수**이고 기본값 1 이 그 SSOT 를 그대로 쓴다 — 배수를 여기 상수로 박지 않는다.
+  const fogDist = readNum('fogd', 1, 0, 20);
   const fog = fogBand(CELL_X);
-  scene.fog = new THREE.Fog(0x0b0d12, fog.near, fog.far);
+  /** 안개색. LOD 페이드의 시작색이기도 해서 상수로 뽑는다 — 두 곳에 적지 않는다 */
+  const FOG_HEX = 0x0b0d12;
+  scene.fog = fogDist > 0
+    ? new THREE.Fog(FOG_HEX, fog.near * fogDist, fog.far * fogDist)
+    : null;
+  /** 안개가 꺼져 있을 때(`?fogd=0`) 페이드가 출발할 색 */
+  const fogFallback = new THREE.Color(FOG_HEX);
+
+  // ── LOD 페이드 — 새 파셀이 안개에서 배어 나오게 (감독 지시 2026-08-07) ────
+  //
+  // 감독: *"ldo로 건물들이 나타날때 디졸브 철럼 나오게 가능? 현재는 팍"*
+  //
+  //   ?lodfade=N      페이드 시간(초). **0 이면 끈다** = 종전 동작
+  //   ?lodease=NAME   커브. lin | in | out | smooth
+  //
+  // 왜 "팍" 이 나는지(등장 지점의 안개 진행률 62.5%)와 기본값의 근거는
+  // `decide/lod-fade.ts` 한 곳이다 — 여기에 숫자를 다시 적지 않는다.
+  // 기본값은 **감독 판정 대기 중인 잠정치**이고, 판정은 이 두 노브로 받는다.
+  const lodFade = readNum('lodfade', FADE_SECONDS, 0, 5);
+  const lodEase = readEnum('lodease', FADE_EASE, FADE_EASES);
+  // 등장·소멸 연출. **파싱은 `decide/lod-fade.ts` 의 `readParcelAnim()` 한 곳이다**
+  // (W8-10) — 액자가 같은 값을 봐야 하는데 그것은 `features/overlay.ts` 안에서
+  // 조립되므로 여기서 읽어 넘기는 방식으로는 닿지 않는다. 갈리면 감독이 `?shrink=1` 로
+  // 룩을 판정할 때 건물과 액자가 다른 속도로 움직이는 화면을 보고 판정하게 된다.
+  const parcelAnim = readParcelAnim();
+  const growSecs = parcelAnim.grow;
+  const shrinkSecs = parcelAnim.shrink;
+  const shrinkEase = parcelAnim.shrinkEase;
+
+  // 적응 품질(해상도 강등·프레임 캡·tier 압력)을 통째로 끈다. **비교 실험 전용** —
+  // 감독 실기기 "이동 중 밝기가 살짝 변함"(2026-08-10)에서 안개·헤드밥이 실측으로
+  // 기각된 뒤 남은 이동-반응 축이 적응 해상도 하나라, 켬/끔 두 링크로 가른다.
+  // 기본값 1 = 현행 그대로. 끄면 저사양 기기 보호가 사라지므로 상시 사용 금지.
+  const adaptOn = readNum('adapt', 1, 0, 1) > 0;
+
+  // tier 밴드 배율. **진단 전용** — `?band=2` 면 강등선(nearExit 41.6m)이 83.2m 로
+  // 밀려 후진 코스에서 tier 전환이 사실상 사라진다. 마크 리포트가 지목한 마지막
+  // 용의자(tier강등)를 분리하는 스위치다. 왜·한계는 `decide/lod.ts` 의 `scaleBands`
+  // 한 곳이다. 기본값 1 = 현행 그대로. builder 와 streaming 이 **같은** 밴드를 받아야
+  // 격자 생성과 tier 판정이 정합한다(한쪽만 주면 예산과 판정이 어긋난다).
+  //
+  // `?nearx=` 는 깜빡임 상시 처방 후보(팀장 판정 (a), 2026-08-10) — near 전환점만
+  // 안개 뒤로 민다. 후보 비교용이고 감독 판정이 나면 이긴 값을 기본으로 승격한다.
+  //   ?nearx=1.6   51.2m (안개 시작점 — 감춤 0%부터 시작)
+  //   ?nearx=1.75  56.0m (안개 19%)
+  //   ?nearx=2.0   64.0m (안개 50%)
+  // 왜 이 축인지·보정 규칙은 `decide/lod.ts` 의 `withNearExit` 한 곳이다.
+  const nearx = readNum('nearx', 0, 0, 2.2);
+  // `?calm=1` — 파셀 **생성**을 안개 100% 지점(fog far) 뒤로 민다(팀장 판정 (a′)).
+  // ⚠ **기본으로 승격하지 않는다 — 여기서 멈춘다**(감독 판정 2026-08-10 *"자라나는것
+  // 느낌 좋다"*). 파셀이 자라나며 등장하는 것을 나는 "깜빡임의 한 겹"으로 규정했지만
+  // 감독은 그 화면을 **연출로 긍정**했다 — 수치가 이상한 것과 화면이 잘못된 것은 다른
+  // 일이다. 노브는 진단 대조용으로만 남긴다(등장을 숨긴 화면과의 A/B). 감독이 남긴
+  // 문제는 "반짝임"이고 그것은 이 축이 아니다.
+  // 왜 farEnter 인지·farExit 가 따라오는 규칙은 `decide/lod.ts` 의 `withFarEnter` 한 곳.
+  const calm = readNum('calm', 0, 0, 1) > 0;
+  let TIER_BANDS = withNearExit(
+    scaleBands(DEFAULT_BANDS, readNum('band', 1, 0.5, 4)),
+    nearx > 0 ? nearx : Number.NaN,
+  );
+  if (calm) TIER_BANDS = withFarEnter(TIER_BANDS, FOG_FAR_CELLS);
+
+  // ── 어디서 출발할 것인가 (감독 실기기 2026-08-09) ─────────────────────────
+  //
+  // 감독: *"가까이 가면 뭔가 건물이 번쩍해"*
+  //
+  //   ?fademode=near  (기본) 그 자리의 **안개가 감춰주는 만큼만** 안개색을 섞는다
+  //   ?fademode=fog          종전 — 거리와 무관하게 **무조건 안개색**으로 덮는다
+  //
+  // 왜 `fog` 가 번쩍이 되는지(안개는 51.2m 부터인데 부품은 50.07m·20.22m 에서도
+  // 태어난다)는 `decide/lod-fade.ts` 의 `fogFactorAt` 한 곳이다 — 여기에 다시 적지 않는다.
+  // `fog` 를 남겨 둔 이유는 **감독이 두 판본을 화면에서 비교해야 하기 때문**이고,
+  // 판정이 끝나면 진 쪽을 걷어낸다(사이클 2항: 후보를 여럿 동시에).
+  const fadeMode = readEnum('fademode', 'near', ['near', 'fog'] as const);
 
   // 걷는 감각 — 감독 실기기에서 값을 확정하기 위해 URL 로 연다.
   //
@@ -212,6 +564,11 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     // 어떤 테스트도 안 걸렸겠지만, `water.ts:316` 주석이 경고하는 형태 그대로였다 —
     // *"`cellX` 를 넘기면 두 셀이 달라지는 날 강이 조용히 밀린다."*
     waterSurfaceY: (x, z) => surfaceYAt(x, z, CELL_Z),
+    // 벽에 막힌다(태스크 #182). 지형을 아는 것은 여기뿐이라는 규약이 물과 같다 —
+    // `PlayerSystem` 은 "이만큼 가려는데 실제로는 어디까지" 만 묻는다.
+    // **`LAYOUT` 을 넘긴다** — `?density=N` 으로 파츠가 늘면 충돌도 같이 늘어야
+    // "보이는데 안 막히는" 것이 안 생긴다.
+    resolveMove: collide ? collider.resolve : undefined,
     seabedY: SEABED_Y,
     onSubmerge: (alpha) => {
       if (!underwaterEl || alpha === lastAlpha) return;
@@ -221,8 +578,24 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   });
 
   let streaming: StreamingSystem | null = null;
+  /** 되읽은 GLB 도시를 담는다. 근거·규칙은 `export/host.ts` 한 곳이다 */
+  const glbHost = createGlbOverlayHost();
   let adapt: AdaptSystem | null = null;
   let builder: PooledParcelBuilder | null = null;
+  let shadowDecal: ShadowDecalSystem | null = null;
+  /**
+   * 그림자 데칼 노브의 **살아 있는 값**. 슬라이더가 이 객체를 직접 고치고 시스템이 매
+   * 프레임 되읽는다 — 새 객체로 갈아치우면 시스템이 든 참조가 옛 것이라 배선이 끊긴다.
+   */
+  const shadowOpts = { ...shadowDecalDefaults(), ...SHADOW_DECAL_OPTS };
+  /**
+   * 부팅 때 만든 파츠 자산. **그림자 데칼이 캐스터 지오의 bounding box 를 실측**하려면
+   * 필요하다 — 치수를 파츠 선언에 적지 않기로 한 대가로, 자산을 조립 시점 밖으로 들고
+   * 나온다(`pools()` 지역 변수였다).
+   */
+  let partAssets: ReturnType<typeof createPartAssets> | null = null;
+  let parcelFade: ParcelFadeSystem | null = null;
+  let parcelGrow: ParcelGrowSystem | null = null;
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
   let features: MountedFeature[] = [];
 
@@ -234,10 +607,52 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    * 그 추측의 근거를 무너뜨려 블룸이 밤에 통째로 꺼졌다(`features/types.ts` 의 `time`
    * 주석에 전말이 있다).
    *
-   * 초기값은 URL 이다. `readEnum` 이 목록 밖 값을 걸러 주므로 팔레트 조회가 `undefined`
-   * 가 되는 일이 없다.
+   * 초기값은 URL 이고 `readEnum` 이 목록 밖 값을 거른다. ⚠ 기본값 이력은 `night` → `day`(감독 *"밤 말고 햇빛아래서"* 2026-08-21 — `time=` 없는 링크가 밤 물을 보였다) → **`daylit`**(감독 판정 2026-08-22)이다. 마지막 판정은 감독 신고 *"가로등 블룸은 안 들어오고 있는데"* 에서 왔고, 실측은 「낮에는 등이 **꺼져** 있다」였다 — `lampGlow(nightness('day')=0)` 이 `decide/night.ts` 에서 정확히 0 을 낸다. 낮·복합씬 두 화면의 라이브 링크를 나란히 드렸고 복합씬이 뽑혔다. **앞 지시와 충돌하지 않는다** — `daylit` 은 팔레트를 낮에서 빌리므로(`paletteTime()`) 「햇빛 아래」는 유지되고, 달라지는 것은 그 위쪽 축뿐이다(등이 켜지고 하늘이 진해지고 별이 보인다).
+   * ⚠⚠ **이 한 줄이 `features/postfx.ts` 의 `BLOOM_FLOOR` 를 기본 경로에서 밀어낸다** — 관계·근거는 그 상수 주석 한 곳이 소유한다(여기에 다시 적지 않는다). 이 판정을 지키는 검사는 `tests/world2-daylit.test.ts` 의 **GS-D8** 이고, 그전까지 기본 시간대를 보는 축은 **0개**였다.
    */
-  let timeOfDay: SkyTime = readEnum('time', 'night', TIMES);
+  let timeOfDay: SkyTime = readEnum('time', 'daylit', TIMES);
+  /**
+   * 어떤 셰이딩으로 보는가 — **월드를 보는 방식이고 조립부가 소유한다**(바로 위
+   * `timeOfDay` 와 같은 이유·같은 모양).
+   *
+   * 감독 지시 *"와이어 프레임 뷰. 솔리드 뷰도 구현해줘."* 에서 왔다. 바꾸는 자리는
+   * 셋이고(URL·편집 패널 버튼·`Shift+Z`) 전부 `env.setShading` 하나로 모인다.
+   *
+   * 기본값이 `material` 인 것은 «노브를 안 켠 세션의 화면은 지금 그대로» 라는 뜻이다.
+   * `readEnum` 이 목록 밖 값을 걸러 주므로 `shadingSpec` 이 모르는 값을 받는 일이 없다.
+   */
+  let shadingMode: ShadingMode = readEnum('shading', 'material', SHADING_MODES);
+  /**
+   * 표면 재질 설정(W7). **월드 상태이고 조립부가 소유한다**(위 `shadingMode` 와 같은 이유).
+   *
+   * ⚠ **바뀔 때만 새 배열을 낸다.** 집행(`features/surface-paint.ts`)이 참조 동등성으로
+   * «안 바뀌었다» 를 판정하므로, 배열을 제자리에서 고치면 화면이 안 따라온다. 매 프레임
+   * 전 표면을 훑지 않기 위한 축이고, 대가가 이 규약이다.
+   *
+   * 초기값은 비어 있고 — 즉 **어느 표면도 안 건드린 지금 화면** — 오버레이 JSON 을 읽은
+   * 뒤 `setSurfaces` 로 채워진다.
+   */
+  let surfaces: readonly SurfaceSetting[] = [];
+
+  /**
+   * 파츠 풀 **밖에** 있는 표면 재질(W7). 지금은 물(해저)뿐이다.
+   *
+   * 팀장 판정 2026-08-15: *"물 재질은 조립부 소유 레지스트리로 모은다 — InstancePools 얹기는
+   * 슬롯 풀의 의미론을 오염시키고(물은 슬롯을 안 쓴다), ocean 자체 집행은 dispose 경로가 두
+   * 벌이 된다. 회수는 한 곳, 소유는 조립부, 기능은 등록·읽기 통로만."*
+   *
+   * `unknown` 인 것이 의도다 — 조립부는 이 재질로 **아무것도 안 한다**. 넘겨받아 들고 있다가
+   * 집행에 돌려줄 뿐이고, 그래서 three 타입을 알 필요가 없다.
+   */
+  const extraSurfaces = new Map<string, unknown>();
+
+  /**
+   * 드롭 미리보기(W7) — 계약의 `src` → 세션 안에서만 사는 `blob:` 주소.
+   *
+   * 감독이 방금 떨어뜨린 파일은 저장소에 아직 없으므로 그대로는 404 다. 이 표가 있는 동안만
+   * 그 자리를 대신하고, **내보낸 JSON 에는 언제나 상대 `src` 가 나간다.**
+   */
+  const texturePreviews = new Map<string, string>();
   // 하늘 엔진(sky.js)이 색·강도를 직접 제어하는 주입 대상 — 참조를 보관한다.
   let sun: THREE.DirectionalLight | null = null;
   let hemi: THREE.HemisphereLight | null = null;
@@ -255,6 +670,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       body: document.getElementById('w2-hud-body')!,
       copy: document.getElementById('w2-hud-copy')!,
       toggle: document.getElementById('w2-hud-toggle')!,
+      // 마크 버튼은 **없어도 된다** — 위 조건절에 넣지 않은 이유가 그것이다.
+      // 진단용 추가물이 HUD 전체를 인질로 잡으면, 버튼 하나 오타에 실기기 수치를
+      // 통째로 못 받는다.
+      mark: document.getElementById('w2-hud-mark'),
     }, {
       backend: () => adapter?.backend ?? '—',
       counts: () => {
@@ -328,7 +747,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 색·강도는 초기값일 뿐이다 — `sky.js`가 시간대·날씨에 따라 직접 제어한다(주입 대상).
         const dir = new THREE.DirectionalLight(0xffe9c4, 2.2);
         dir.position.set(60, 120, 40);
-        dir.castShadow = true;
+        // intensity 0 이면 캐스트 자체를 끈다 — 화면은 동일한데 그림자 패스 비용만
+        // 남기 때문이다. 부팅 시점 결정이라 셰이더 재컴파일 사고(adapt.ts 머리의
+        // pipeline 21→34)와 무관하다. 근거는 `SHADOW_INTENSITY` 주석 한 곳.
+        dir.castShadow = SHADOW_INTENSITY > 0;
         dir.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
         // ── 프러스텀은 유도한다 (감독 지시 2026-08-02 "하드라이트 느낌이 없어") ──
         // 여기가 비어 있어서 three 기본 **±5m** 가 쓰이고 있었다. 셀이 32m 인 세계에서
@@ -341,6 +763,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         dir.shadow.camera.near = SHADOW.near;
         dir.shadow.camera.far = SHADOW.far;
         dir.shadow.normalBias = SHADOW.normalBias;
+        // 진하기. `?shint=` — 근거는 위 `SHADOW_INTENSITY` 주석 한 곳이다.
+        (dir.shadow as unknown as { intensity: number }).intensity = SHADOW_INTENSITY;
         dir.shadow.camera.updateProjectionMatrix();
         // **타깃을 씬에 넣는다.** three 는 `target.matrixWorld` 로 광원 방향을 정하는데,
         // 씬 밖 객체는 갱신되지 않아 타깃을 옮겨도 반영이 안 된다. 기본 타깃은 월드
@@ -355,7 +779,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       pools: () => {
         pools = new InstancePools(scene);
         const assets = createPartAssets();
-        const budget = PooledParcelBuilder.poolBudget({ layout: LAYOUT });
+        partAssets = assets;
+        // `?band=` 를 여기에도 넘긴다 — 예산이 밴드를 안 따라오면 배율>1 에서 슬롯이
+        // 모자라(starved) "부품이 안 그려지는" 오염이 실험 결과를 덮는다.
+        const budget = PooledParcelBuilder.poolBudget({ layout: LAYOUT, bands: TIER_BANDS });
         for (const kind of ALL_KINDS) {
           const a = assets[kind];
           pools.create({
@@ -386,14 +813,57 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         features = mountFeatures(
           FEATURES,
           {
-            scene, camera, adapter: adapter!, player, pools: pools!,
+            scene, camera, adapter: adapter!, player, pools: pools!, village,
+            // ⚠ **값이 아니라 클로저다** — 이 조립(`pools` 단계)이 `slotPool` 을 만드는
+            // `stream` 단계보다 먼저 돈다. 편집이 실제로 부르는 시점에는 채워져 있다.
+            // 그전에 불리면 조용히 아무 일도 안 한다(그때는 마을 자체가 아직 없다).
+            retargetSlot: (h, t) => {
+              slotPool?.retarget?.(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
+            },
+            setTouchEditing: (on) => { touch?.setEditing(on); },
             sun: sun!, hemi: hemi!, cell: CELL_X,
+            // ⚠ **값이 아니라 클로저다** — 위 `retargetSlot` 과 **같은 이유**다: 이
+            // 조립(`pools` 단계)이 `streaming` 을 만드는 `stream` 단계보다 먼저 돈다.
+            // 아직 없을 때는 `false` — 「아직 아무 파셀도 안 올라왔다」가 사실이다.
+            parcelLoaded: (px, pz) => streaming?.isLoaded(px, pz) ?? false,
+            // 🔴 **미술관 루트** — 편집이 그 벽을 벽 검출 대상에 넣는다 (태스크 #112).
+            // 위 둘과 **같은 클로저 이유**이고 하나가 더 있다: 이 자산은 13.5MB 라
+            // 로드가 비동기여서, mount 시점에는 기능은 있어도 루트가 아직 `null` 이다.
+            //
+            // ⚠ **이름 문자열을 여기 적지 않는다** — `glbCityFeature.name` 을 읽으므로
+            // 원산지가 `features/glb-city.ts` 한 곳이다. 문자열을 적으면 그 기능의 이름을
+            // 바꾸는 순간 이 조회가 조용히 `undefined` 가 되고, 증상은 «미술관 벽에만
+            // 안 걸린다» 라 원인에서 가장 먼 자리에서 드러난다.
+            //
+            // ⚠⚠ 좁은 구조적 타입으로 읽는 것은 `FeatureInstance` 계약에 `wallRoot` 가
+            // 없기 때문이다 — 거기 넣으면 **모든** 기능이 그 개념을 지게 된다. 이 결합은
+            // 미술관 하나가 요구하는 것이고, 그 범위를 넓히지 않는다.
+            glbCityRoot: () => {
+              const m = features.find((f) => f.name === glbCityFeature.name);
+              const inst = m?.instance as { wallRoot?(): Object3D | null } | undefined;
+              return inst?.wallRoot?.() ?? null;
+            },
             // 프러스텀과 **같은 유도**에서 나온 값이라야 짝이 맞는다. 하늘이 태양을
             // 이보다 가깝게 놓으면 타워 꼭대기가 그림자 카메라 뒤로 밀린다.
             shadowDist: SHADOW.dist,
+            shadowTexel: SHADOW.texel,
             doc: typeof document !== 'undefined' ? document : null,
             time: () => timeOfDay,
             setTime: (t) => { timeOfDay = t; },
+            shading: () => shadingMode,
+            setShading: (m) => { shadingMode = m; },
+            surfaces: () => surfaces,
+            setSurfaces: (s) => { surfaces = s; },
+            // 파츠 풀이 먼저다 — 물 이름과 파츠 이름이 겹칠 일은 없지만, 겹치면 파츠가
+            // 이긴다(레지스트리는 «풀 밖에 있는 것» 을 위한 자리이고 덮어쓰기용이 아니다).
+            // 느낌표는 바로 위 `pools: pools!` 와 같은 근거다 — 이 리터럴은 풀을 만든 뒤에만
+            // 조립되고, 이 화살표는 그보다 더 뒤(기능이 부를 때)에 실행된다.
+            surfaceMaterial: (kind) => pools!.materialOf(kind) ?? extraSurfaces.get(kind) ?? null,
+            registerSurfaceMaterial: (kind, m) => { extraSurfaces.set(kind, m); },
+            // 미리보기가 있으면 그것이 이긴다 — 감독이 방금 떨어뜨린 것이 저장소 판본보다
+            // 새롭다(같은 이름으로 다시 떨어뜨려 고치는 흐름이 그것이다).
+            textureUrl: (src) => texturePreviews.get(src) ?? assetUrl(src),
+            setTexturePreview: (src, url) => { texturePreviews.set(src, url); },
           },
           (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
         );
@@ -450,15 +920,193 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       },
 
       stream: async (report, yieldFrame) => {
-        builder = new PooledParcelBuilder({
-          pool: createSlotPool(pools!), cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
+        // 페이드를 **빌더보다 먼저** 만든다 — 슬롯 어댑터 안쪽에 꽂아야 tone 이 확정한
+        // 색을 가로챌 수 있다. `gate` 가 `streaming` 을 늦게 읽는 것은 의도다:
+        // 초기 충전이 끝나기 전에는 페이드를 걸지 않는다(세계 전체가 서서히 뜨는 것은
+        // 감독이 말한 "건물들이 나타날때" 가 아니다).
+        parcelFade = new ParcelFadeSystem({
+          pools: pools!,
+          duration: lodFade,
+          ease: lodEase,
+          // `three/webgpu` 는 `Fog` 타입을 재수출하지 않아 구조로 읽는다.
+          fadeColor: () => (scene.fog as { color?: THREE.Color } | null)?.color ?? fogFallback,
+          gate: () => streaming?.ready ?? false,
+          // 그 자리가 안개에 얼마나 묻혔는가. `fog` 모드는 **항상 1** — 거리를 안 보고
+          // 무조건 덮던 종전 동작이고, 감독이 두 판본을 비교하기 위한 대조군이다.
+          //
+          // ⚠ **밴드는 `scene.fog` 에서 읽지 않고 `fogBand(CELL_X)` 로 유도한다.** 씬의
+          // 안개는 시간대·날씨가 흔들고(`night-lights.ts` 가 밤에 색을 들어올린다),
+          // 페이드 판정이 그 흔들림을 따라가면 같은 자리에서 회차마다 다르게 보인다.
+          // 여기서 재는 것은 *"이 거리에서 안개가 감춰줄 수 있는 최대"* 이고 그것은
+          // 밴드에서만 나온다 — `decide/fog.ts` 가 그 SSOT 다.
+          //
+          // ⚠ **`fogDist` 를 곱한다**(검수관 비블로커 P1, 2026-08-09). 안 곱하면
+          // `?fogd=` 를 켠 순간 **판정과 화면이 어긋난다** — 예: `?fogd=3` 이면 씬 안개는
+          // 153.6m 부터인데 판정은 51.2m 를 써서, 80m 앞 부품을 "완전히 안개에 묻혔다" 로
+          // 보고 검정으로 덮는다. **고치려던 번쩍이 그 조합에서 되살아난다.**
+          // 기본값(1)에서는 무해하지만 감독이 두 노브를 함께 여는 순간 판정이 오염된다.
+          fogAt: fadeMode === 'fog' ? undefined : (x, z) => {
+            const dx = x - player.position.x;
+            const dz = z - player.position.z;
+            const b = fogBand(CELL_X);
+            return fogFactorAt(Math.hypot(dx, dz), { near: b.near * fogDist, far: b.far * fogDist });
+          },
         });
+        parcelGrow = new ParcelGrowSystem({
+          pools: pools!,
+          duration: growSecs,
+          // 🔴 걸러내지 않고 그대로 넘긴다 — 근거는 `parcel-grow.ts` 의 `shrinkSecs` 주석(D2).
+          shrinkSecs,
+          shrinkEase,
+          gate: () => streaming?.ready ?? false,
+        });
+        // 접촉그림자 — **빌더보다 먼저** 만든다(페이드·성장과 같은 이유: 슬롯 어댑터
+        // 안쪽에 워프를 꽂아야 배치가 정한 자세를 가로챌 수 있다).
+        //
+        // ⚠ **`sunDir` 이 없어졌다**(2026-08-11 2회차). 예전에는 광원에서 태양 방향을
+        // 되읽어 넘겼고 — `SUN_AZ` 표를 복사하지 않기 위한 배선이었다 — 그림자가 그
+        // 반대쪽으로 누웠다. 감독이 방향성 그림자를 폐기하고 빌더의 접촉그림자를
+        // 지목하면서 이 시스템이 태양을 **아예 안 본다.** 시간대는 농도만 움직인다.
+        shadowDecal = new ShadowDecalSystem({
+          pools: pools!,
+          assets: partAssets!,
+          parts: PARTS,
+          time: () => timeOfDay,
+          opts: shadowOpts,
+        });
+        // 어댑터를 변수로 든다 — 빌더와 재적용이 **같은 것**을 써야 한다. 각자 만들면
+        // 워프·성장·색이 두 벌이 되고, 재베이킹이 빌더가 모르는 자세를 쓴다.
+        slotPool = createSlotPool(
+          pools!, parcelFade.sink(), parcelGrow.sink(), shadowDecal.warp(),
+        );
+        builder = new PooledParcelBuilder({
+          pool: slotPool,
+          cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
+          // 빌더는 저장소를 **모른다** — 조회 함수 하나만 받는다. 생성기 계층이 편집
+          // 데이터를 알게 되는 것을 막는 팀장 조건의 집행 축 ①(W4 ① 커밋).
+          // GLB 되읽기가 마을 원장보다 앞선다(감독 요청 2026-08-06). `??` 로 잇는 것이
+          // 맞다 — 두 출처 다 `null` = "내가 답할 것 없음", 빈 배열 = "비운 것" 이다.
+          frozenAt: (px, pz, tier) => glbHost.lookup(px, pz) ?? village.lookup(px, pz, tier),
+        });
+        shadowDecal.attach(slotPool);
+
+        // ── 개발자 옵션: 슬라이더 셋 + 굽기 버튼 ────────────────────────────
+        // 감독 지시 2026-08-11 *"베이킹 버튼을 누르면 구워지고 적용되게하자. 해상도
+        // 조정옵션도 만들고. 기타 세부옵션을 넣자."* — 카드 판정으로 **월드 화면 안**에
+        // 두기로 확정했다(홈 진입점은 이번 회차 제외, 팀장 판정 2026-08-11: 홈에서
+        // 링크하면 world2 가 사실상 라이브 승격이고 그것은 #119 에 묶인 별도 결정이다).
+        //
+        // 수면 노브와 **같은 바에 누적**된다 — 감독이 말한 것은 조절 막대 하나였다.
+        const bar = findKnobBar(document);
+        if (bar) {
+          const base = shadowDecalDefaults();
+          // `key` 는 **URL 노브 이름**이고 `field` 는 옵션 필드다. 둘을 나란히 받는 이유:
+          // 슬라이더에서 값을 고른 감독이 그대로 `?shdark=0.6` 을 쳐서 링크로 만들 수
+          // 있어야 한다(이 저장소의 판정 사이클이 링크로 돈다). 필드명을 그대로 쓰면
+          // 화면의 이름과 주소의 이름이 갈라진다.
+          // 슬라이더는 **수치 축만** 받는다. 지금은 옵션이 전부 숫자라 `keyof typeof base`
+          // 와 같지만 필터를 남긴다 — 열거형 노브(예전 `style`)가 다시 생기는 날 그것을
+          // 빠뜨리면, 슬라이더가 열거형에 숫자를 대입하는 코드가 타입검사를 통과한다.
+          type NumField = {
+            [K in keyof typeof base]: (typeof base)[K] extends number ? K : never
+          }[keyof typeof base];
+          const knob = (
+            key: string, field: NumField, label: string,
+            min: number, max: number, step: number,
+          ) => ({
+            key, label, min, max, step,
+            value: () => shadowOpts[field],
+            // 기본값과 다르면 "지정됨" 이다. `readNumOpt` 를 안 쓴 이유: 이 값들은
+            // 시간대별 기본값이 없어(농도의 시간대 배수는 판정이 따로 곱한다) 상황에
+            // 따라 흔들리지 않는다 — 상수와 비교하면 충분하다.
+            overridden: () => shadowOpts[field] !== base[field],
+            set: (v: number) => { shadowOpts[field] = v; },
+            reset: () => { shadowOpts[field] = base[field]; },
+          });
+          attachKnobBar(bar, [
+            knob('shdark', 'density', '그림자', 0, SHADOW_DENSITY_MAX, 0.05),
+            // 「번짐」 이 클수록 가장자리가 넓게 퍼진다 — 노브 값과 스톱 위치는 방향이
+            // 반대이고, 그 뒤집기는 판정(`midStopFor`)이 한다. 여기서 뒤집지 않는다.
+            knob('shsoft', 'soft', '번짐', 0, SHADOW_SOFT_MAX, 0.02),
+            knob('shres', 'res', '해상도', SHADOW_DRAW_MIN, SHADOW_DRAW_MAX, 8),
+          ]);
+          // ── 마을 규칙 슬라이더 (감독 지시 *"너가 만든 규율을 내가 편집하고"*) ──
+          // ⚠ **이 셋은 미는 즉시 반영되지 않는다.** 슬롯 풀이 부팅 1회에 봉인되므로
+          // (`pools.seal()` — 개수 불변식) 마을을 다시 지으려면 새로고침이 필요하다.
+          // 그래서 `set()` 은 **주소만** 쓰고 아래 「마을 적용」 버튼이 새로고침한다.
+          // 감독 카드 판정(2026-08-11): *"새로고침 괜찮다"*.
+          //
+          // 슬라이더가 움직이는데 화면이 안 변하면 **고장으로 읽힌다.** 버튼 라벨이
+          // 그 사실을 말하는 유일한 자리다.
+          const ruleKnob = (key: string, label: string) => ({
+            key, label, min: MUL_MIN, max: MUL_MAX, step: 1,
+            // 주소를 읽는다 — `set()` 이 주소에 쓰므로 슬라이더가 민 자리에 머문다.
+            value: () => readNum(key, MUL_MIN, MUL_MIN, MUL_MAX),
+            overridden: () => readNumOpt(key, MUL_MIN, MUL_MAX) !== null,
+            set: (v: number) => writeNumOpt(key, v),
+            reset: () => writeNumOpt(key, null),
+          });
+          attachKnobBar(bar, [
+            ruleKnob('bld', '건물'),
+            ruleKnob('tree', '나무'),
+            ruleKnob('density', '전체'),
+          ]);
+          attachKnobActions(bar, [{
+            key: 'w2rules',
+            label: '마을 적용 (새로고침)',
+            run: () => {
+              // 부팅 때 쓴 값과 같으면 새로고침이 낭비다 — 그리고 아무 일도 안 일어나면
+              // 감독은 버튼이 고장 났다고 읽는다. 그래서 말로 답한다.
+              const same = readNum('bld', MUL_MIN, MUL_MIN, MUL_MAX) === bldMul
+                && readNum('tree', MUL_MIN, MUL_MIN, MUL_MAX) === treeMul
+                && Math.round(readNum('density', MUL_MIN, MUL_MIN, MUL_MAX)) === density;
+              if (same) return '지금 값 그대로';
+              location.reload();
+              return '적용 중…';
+            },
+          }, {
+            key: 'shbake',
+            label: '그림자 굽기',
+            // 소요를 돌려주면 버튼 옆에 잠깐 뜬다. 같은 값으로 다시 구우면 화면이 안
+            // 바뀌는데, 그때 아무 반응이 없으면 **버튼이 고장 난 것으로 읽힌다.**
+            run: () => `${Math.round(shadowDecal?.bake() ?? 0)}ms`,
+          }]);
+        }
+        // 부팅 중에 한 번 굽는다. 첫 파셀이 놓이기 전에 아틀라스가 비어 있으면 그 프레임에
+        // 투명한 사각이 뜨고, 그것이 "처음에 그림자가 없다" 로 읽힌다.
+        shadowDecal.bake();
         streaming = new StreamingSystem({
           builder,
+          bands: TIER_BANDS,
           cellX: CELL_X, cellZ: CELL_Z,
           getPosition: () => player.position,
           getDirection: () => player.direction,
+          // 막히면 look-ahead 를 접는다 — 감독 실기기 "분수대에 끼일때 멀리있는 lod가
+          // 나왔다가 안나왔다가" 의 처방. 근거는 `streaming.ts` 의 `getSpeedFactor` 한 곳.
+          getSpeedFactor: () => player.speedFactor,
           markDirty: () => kernel?.markDirty(),
+        });
+
+        // ── 동결이 바뀌면 그 파셀을 다시 만든다 ──────────────────────────────
+        // 이미 떠 있는 파셀은 슬롯을 build 시점에 한 번 쓰고 그 뒤로 아무도 다시 읽지
+        // 않는다. 이 한 줄이 없으면 «편집했는데 화면이 그대로다 → 새로고침하면 반영돼
+        // 있다» 가 된다(화면에서만 드러나는 형태).
+        //
+        // ⚠ **등록이 늦어도 유실이 아니다.** 기능 조립(`pools()`)이 여기보다 먼저라
+        // 오버레이가 부르는 `setAll` 이 이 줄보다 앞설 수 있는데, 그 시점엔 스트리밍이
+        // 없으므로 **떠 있는 파셀도 0개**다 — 다시 만들 것이 애초에 없고, 이후 build 가
+        // 저장소를 저절로 읽는다. 순서를 뒤집어 고치려 하지 마라(스트리밍이 빌더를
+        // 요구하고 빌더가 풀을 요구한다).
+        village.onChange((px, pz) => {
+          streaming?.invalidate(px, pz);
+          // 충돌 캐시도 함께 버린다. 캐시는 «플레이어가 선 파셀» 로만 갱신되므로
+          // (`collision.ts` 의 `rebuild`), 감독이 **제자리에 선 채** 건물을 옮기면
+          // 그 파셀이 그대로라 캐시가 안 바뀐다 → 옛 자리에 계속 막힌다.
+          //
+          // 파셀을 안 가리고 통째로 버리는 이유: 캐시는 3×3 을 **한 배열로 뭉쳐** 들고
+          // 있어서 어느 파셀에서 온 원인지 구별할 수 없다. 편집 중에만 나는 일이고
+          // 다시 만드는 비용은 파셀 9개분이라 가릴 값이 없다.
+          collider.invalidate();
         });
 
         adapt = new AdaptSystem({
@@ -497,7 +1145,21 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         // 기능들 사이의 순서는 `features/index.ts`의 배열 순서다 — 거기서 정한다.
         kernel.add(player);
         for (const m of features) if (m.instance.system) kernel.add(m.instance.system);
-        kernel.add(streaming).add(adapt);
+        // `parcelFade` 가 `streaming` **뒤**인 이유: 이번 프레임에 태어난 슬롯은
+        // `sink.apply` 가 이미 안개색으로 덮었고, 여기서는 진행만 한다. 그래서 새 슬롯이
+        // 첫 프레임에 dt(≈16ms) 만큼 앞서 나가지만 기본 커브(`in`)에서 0.2% 미만이다
+        // (60fps·0.45초 기준 (16.67/450)² ≈ 0.14%) —
+        // 순서를 뒤집어 없앨 수도 있으나 그러면 "이번 프레임 것은 다음 프레임부터" 라는
+        // 예외를 시스템 순서로 표현하게 되어, 읽는 사람이 그 규칙을 알아야 한다.
+        // `parcelGrow` 도 `streaming` 뒤 — 이번 프레임에 태어난 슬롯이 이번 프레임에
+        // 시작 스케일로 줄어 있어야 완성 크기가 한 프레임도 안 비친다(fade 와 같은 이유).
+        // `?adapt=0` 이면 등록만 생략한다(생성은 유지 — snapshot 소비자가 null 분기
+        // 없이 초기값을 읽는다). 등록이 없으면 update 가 안 돌아 해상도·캡·압력 집행 0.
+        kernel.add(streaming).add(parcelFade).add(parcelGrow);
+        // 그림자 데칼은 **페이드·성장 뒤**다. 그것들이 이번 프레임에 놓은 슬롯을 보고
+        // 태양이 바뀌었는지 판정해야 하는데, 앞에 두면 한 프레임 늦은 자세로 굽는다.
+        if (shadowDecal) kernel.add(shadowDecal);
+        if (adaptOn) kernel.add(adapt);
         kernel.start();
 
         // 커널이 돌아야 파셀이 채워진다 — 여기서 블로킹 루프를 돌면 교착한다.
@@ -535,14 +1197,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const input = bindInput(canvas, player);
 
   // 터치 조작. 터치 기기가 아니면 스스로 아무것도 하지 않는다(데스크톱에 조이스틱 안 뜸).
-  const stickBase = document.getElementById('w2-stick');
-  const stickKnob = document.getElementById('w2-stick-knob');
-  const touch = (stickBase && stickKnob)
-    ? attachTouchControls(canvas, { base: stickBase, knob: stickKnob }, {
+  const stickBase = document.getElementById('w2-stick'), stickKnob = document.getElementById('w2-stick-knob');
+  touch = (stickBase && stickKnob)
+    // `zone`(터치를 받는 구역)을 인라인한 것은 파일 크기 게이트 탓이다 — 근거는 `ui/touch-controls.ts` 헤더 한 곳.
+    ? attachTouchControls(canvas, { zone: document.getElementById('w2-stick-zone') ?? undefined, base: stickBase, knob: stickKnob }, {
       setAxes: (x, z) => player.setAxes(x, z),
       look: (yaw, pitch) => player.lookBy(yaw, pitch),
     })
-    : { active: false, dispose() {} };
+    : { setEditing() {}, dispose() {} };
   // 조작 안내는 **감독 지시로 없앴다**(*"도움말없애줘"*). 화면 하단을 상시 차지하는데,
   // 조작이 밀고 쓸기뿐이라 한 번 해보면 알게 되는 것이었다. 문구를 채우던 코드도 함께
   // 지운다 — 요소만 지우고 코드를 남기면 다음 사람이 "왜 안 보이지" 를 여기서 찾는다.
@@ -551,21 +1213,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const drawerParts = findMapDrawer(document);
   const mapDrawer = drawerParts ? attachMapDrawer(drawerParts) : null;
 
-  // GLB 내보내기·되읽기 — 神 모드 패널 안. 세계를 다시 계산해 굽는 것이라 씬·렌더러를
-  // 받지 않는다(왜 화면을 굽지 않는지는 `export/collect.ts` 헤더에 있다).
-  //
-  // 되읽기는 **배치의 출처만 갈아 끼운다.** 슬롯 풀도 스트리밍도 LOD 도 그대로다 —
-  // 그래서 개수 불변식이 유지되고, 편집된 도시도 원래 도시와 같은 드로우콜로 돈다.
-  // `builder`·`streaming` 을 클로저로 읽는 것은 이 시점에 아직 null 일 수 있어서다
-  // (부팅 `stream` 단계에서 생성된다). 호출 시점에 평가되므로 그때는 차 있다.
+  // GLB 내보내기·되읽기 — 神 모드 패널 안. 근거는 `export/collect.ts`·`export/host.ts`.
+  // 재빌드가 필요한 이유는 이미 떠 있는 파셀이 옛 배치를 들고 있어서다.
   const exportPanel = attachExportPanel(document, {
-    applyOverlay: (overlay) => {
-      if (!builder || !streaming) return;
-      builder.setLayoutSource((px, pz) => overlay.layoutFor(px, pz));
-      // 이미 떠 있는 파셀은 옛 배치다. 반납해야 다음 프레임에 새 배치로 다시 선다.
-      streaming.rebuildAll();
-      kernel?.markDirty();
-    },
+    applyOverlay: (o) => { glbHost.set(o); streaming?.rebuildAll(); kernel?.markDirty(); },
   });
 
   // ── 진단 훅 ───────────────────────────────────────────────────────────────
@@ -618,6 +1269,16 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 미러링이 되고, 감독이 강을 옮기는 순간 소리 없이 못 미치는 값이 된다.
       // 이 값을 보면 스모크는 **"0 보다 커질 때까지"** 만 걸으면 된다.
       player: { ...player.position, ...player.angles, submersion: player.submerged },
+      // ── 지금 선 파셀 (2026-08-08) ─────────────────────────────────────────
+      // `submersion` 과 **같은 이유로** 연다 — 스모크가 셀 크기를 알아야 하면 그 숫자가
+      // 곧 값 미러링이고, 셀을 바꾸는 순간 소리 없이 어긋난다. 게이트 `[7]` 의 세션이
+      // *"파셀을 몇 개나 건넜는가"* 를 판정하려면(검수관 반려 B1) 이 값이 필요하다.
+      //
+      // ⚠ `Math.round(월드/셀)` 이라는 규약은 이 저장소에 **여덟 곳 넘게 반복**돼 있다
+      // (`collision.ts`·`water.ts`·`minimap.ts`·`npc.ts`·`spawn-spot.ts` …). 여기가
+      // 아홉 번째다. 순수 함수 하나로 모으는 것이 맞지만 그것은 소비자 전부를 건드리는
+      // 별건이라 태스크로 남긴다 — **이 줄이 SSOT 라고 적지 않는다.**
+      parcel: { px: Math.round(player.position.x / CELL_X), pz: Math.round(player.position.z / CELL_Z) },
       frame: adapter!.frameStats(),
       pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
       // ── 그림자 축 (감독 지시 2026-08-02) ─────────────────────────────────
@@ -644,6 +1305,20 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 화면에는 "건물이 몇 채 없는" 모습으로만 나타나 눈으로는 알아채기 어렵다.
       // 여유 배수를 1로 내린 뒤로는 이 값이 예산의 유일한 감시 수단이다.
       builder: builder!.stats(),
+      // ── LOD 페이드가 **실제로 걸리는가** (2026-08-07) ──────────────────
+      // 감독이 *"디졸브는 별차이가 없네"* 라고 했을 때, 나는 그 원인을 다른 데서
+      // 찾기 시작했다 — **페이드가 돌기는 하는지 한 번도 안 재보고.** 그 추측이
+      // 안개 정합이라는 틀린 진단으로 이어졌고 커밋했다가 되돌렸다.
+      //
+      // `pending` 이 이동 중에도 0 이면 페이드가 한 번도 안 걸린 것이고, 그러면
+      // 화면 차이가 없는 것이 당연하다. **"효과가 없다" 와 "안 돈다" 는 다른 일이다.**
+      fade: {
+        pending: parcelFade?.pending ?? null,
+        duration: lodFade,
+        ease: lodEase,
+        // 게이트가 닫혀 있으면 `sink` 가 즉시 확정한다 — 초기 충전 중 상태를 구별한다.
+        gated: !(streaming?.ready ?? false),
+      },
       /** 켜진 기능 목록 — 리포트만 보고 "무엇이 켜진 상태에서 잰 것인가"를 알 수 있어야 한다 */
       features: features.map((m) => m.name),
       // 기능별 진단. **여기에 기능별 분기가 없다** — 각 기능이 스스로 내놓는다.

@@ -1,9 +1,10 @@
 // scripts/smoke/config.mjs
 // 배포 전 헤드리스 스모크 하네스 — 고정 상수(SSOT).
 //
-// ⚠️ 이 자동화는 smoke-check 스킬을 "대체"하지 않는다. 판정·보고의 책임은
-//    여전히 구현자와 분리된 독립 executor(haiku)가 skill 절차로 수행한다.
-//    본 스크립트는 그 절차의 "실행 보조"(재현 가능한 하네스)일 뿐이다. (§10-3)
+// ⚠️ **배포 판정 주체는 CI 의 `smoke` job 이다**(§10-3 (a), 팀장 판정 2026-08-10).
+//    로컬 실행은 조기 스크리닝이고 그 PASS 를 배포 판정 근거로 기재하지 않는다.
+//    이 문단도 오래 *"독립 executor(haiku)가 skill 절차로 수행한다"* 라고 적고 있었다
+//    — 폐기된 절차이고 근거는 `run.mjs` 헤더 한 곳이다(검수관 권고 P3, 2026-08-17).
 //
 // 경로·뷰포트·페이지 목록·크로미움 인자는 전부 여기에 상수로 고정한다.
 //
@@ -111,7 +112,9 @@ export const DEPLOY_SHA_FILE = '_deploy-sha.txt';
 const REQUIRED_FILES_COMMON = [
   'index.html',            // 랜딩 (landing.html → 루트 index.html)
   'guide.html',            // 가이드 루트 (과거 404 사고 지점)
-  'design.html',           // 디자인 루트
+  // 'design.html' 은 2026-08-09 폐지 — 정본은 `docs/DESIGN.md`·`css/tokens.css` 다.
+  // 이 목록에서 빠지면 조립 결과에 그 파일이 없어야 통과한다(= 폐지가 실제로 배포에
+  // 반영됐는지를 이 줄의 **부재**가 검사한다). 경위는 `docs/DESIGN.md §5-4`.
   'about.html',            // 소개 루트 (공개 페이지 정본)
   'app/index.html',        // 미술관
   'app/studio.html',       // 스튜디오
@@ -139,7 +142,14 @@ export const REQUIRED_FILES_BY_MODE = {
 export const REQUIRED_FILES = REQUIRED_FILES_BASELINE;
 
 // ── 라이브 페이지 목록 (검사4/5/6 + 가드A/B 대상) ────────────────────
-// behind-flag 페이지(visit.html·lab-glb.html·world2.html)는 라이브 미노출이라 제외.
+// ⚠️ 이 이름(`LIVE_PAGES`)은 **"라이브 노출 목록" 이 아니라 "검증 대상 목록" 이다.**
+// behind-flag 페이지도 여기 들어온다 — 링크 노출 여부와 검증 여부는 다른 축이다.
+// 노출 상태의 SSOT 는 `scripts/lib/entrypoints.mjs` 의 `exposure` 다.
+//
+// ⚠️ 바로 아래 줄은 **2026-08-08 까지 거짓이었다**(검수관 권고 P6). *"behind-flag
+// 페이지는 제외"* 라고 적혀 있었는데 목록은 그것들을 이미 **포함**하고 있었다
+// (2026-08-05 검수관 반려 B1 로 visit·lab-glb 가 편입됐고 world2 는 그 전부터 있었다).
+// 산문만 낡은 채 남아 있었고, world3 를 추가하면서도 그대로 지나칠 뻔했다.
 // world.html 은 B-2b 에서 정식 노출(sitemap 등재)로 편입 → 검사 대상에 포함.
 // builder.html 도 라이브다 — studio.html 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다
 // (감독·팀장 게이트를 거친 정당한 해제). 이 주석이 오래 builder 를 behind-flag 로 적어
@@ -158,7 +168,7 @@ export const LIVE_PAGES = [
   { name: 'app/studio',        url: '/app/studio.html', webgl: true },
   { name: 'guide',             url: '/guide.html',      webgl: false },
   // about 정본 URL은 루트 /about.html (deploy.yml: about.html→_site/about.html, landing/
-  // guide/design 급 공개 페이지). about.html은 루트 기준 상대경로(브랜드·랜딩 ./index.html,
+  // guide 급 공개 페이지). about.html은 루트 기준 상대경로(브랜드·랜딩 ./index.html,
   // 전시장 ./app/)라 루트 배포에서 정합. _site/app/about.html은 app/landing.html과 같은
   // `cp -r frontend/. _site/app/` 부산물 사본(어떤 페이지도 링크 안 함)이라 검사하지 않는다.
   { name: 'about',             url: '/about.html',      webgl: false },
@@ -176,6 +186,82 @@ export const LIVE_PAGES = [
   // vite 번들 전용(`three/webgpu`·`three/addons/*` import)이라 baseline 모드에서는
   // raw 직서빙으로 부팅되지 않는다 — 그래서 vite 모드에서만 검사한다.
   { name: 'app/world2',        url: '/app/world2.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // ── world2 스타일라이즈드 — **여기서 도는 것은 WebGL 폴백 경로다** ──────────────
+  //
+  // 감독 지시 2026-08-18(모바일 게임 광고 화면 참조)로 생긴 페이지. `?styl=1` 이 기본이라
+  // 잔디 필드가 실제로 부팅되고 랩 갱신이 돌아간다 — 배치 판정(도로·광장·물 회피)과
+  // 인스턴스 버퍼 생성이 실제 브라우저에서 검사되는 유일한 자리다.
+  //
+  // ⚠ **바람과 스타일라이즈드 물은 여기서 안 돈다.** 헤드리스는 swiftshader = WebGL 이고
+  // 그 경로는 노드 재질(TSL)을 아예 안 탄다(`decide/grass.ts` 의 `pickGrassWind`).
+  // 그러니 이 항목이 초록인 것은 «룩이 맞다» 가 아니라 «폴백 경로가 안 죽는다» 이다 —
+  // 룩 판정은 감독 실기기(WebGPU)가 유일한 축이다.
+  { name: 'app/world2-stylized', url: '/app/world2-stylized.html', webgl: true, viteOnly: true },
+  // ── world2 편집 모드 — **게이트가 처음으로 `?edit=1` 을 본다** (팀장 판정 2026-08-13) ──
+  //
+  // 왜 생겼나: W4 의 블로커 B1(마을 파츠를 옮기면 그림자가 안 따라감)이 게이트 6종·테스트
+  // 45축·뮤테이션 5종을 **전부 통과**했다. 검수관이 원인을 이 사각으로 지목했고, 팀장이
+  // W5(편집 화면 개편) 착수의 **선행**으로 걸었다.
+  //
+  // ⚠ **이 축이 받는 것과 안 받는 것을 정확히 적는다**(팀장 조건 — 커버리지를 넓게 적으면
+  // 그것이 「게이트 유효성에 대한 거짓 진술」이 되고, 다음 사람이 확인을 생략한다).
+  //
+  //   받는 것 — 편집 청크(`edit/mode.js`) 동적 import 실패(네트워크·CSP) · **그리고
+  //             `startEditMode()` 실행 중 예외**(패널·기즈모·피커·액션·입력·팔레트
+  //             초기화 어디서 던지든) · `?edit=1` 부팅의 콘솔 에러·자산 실패 0.
+  //             2026-08-12 사고(편집이 주행을 통째로 죽임)가 이 축의 사정권이다.
+  //
+  //             ⚠ **두 번째 항목은 공짜가 아니었다.** `features/overlay.ts` 의 try/catch 가
+  //             그 예외를 `diag.error` 로만 삼키고 있었고, 스모크의 `collectPage` 는
+  //             `window.__world2.stats()` 를 **한 번도 안 읽는다** — 즉 «편집 화면이
+  //             통째로 안 뜨는데 게이트는 초록» 이 성립하고 있었다(검수관 블로커
+  //             2026-08-13). 그 catch 에 `console.error` 를 넣어 **사각을 닫은 뒤에야**
+  //             이 줄이 참이 됐다. 그 줄을 지우면 이 문장도 함께 거짓이 된다.
+  //
+  //   ⚠ 안 받는 것 — **B1 자신은 이 축으로 안 잡힌다.** B1 은 «집어서 옮긴 뒤» 나는
+  //             조작 결함이고 로드 스모크는 부팅만 본다. B1 재발을 잡는 것은
+  //             `tests/world2-village-parcels.test.ts` 의 그림자 유도 축 7종이며
+  //             뮤테이션 6종 중 5종 검출로 확인돼 있다(나머지 1종은 등가).
+  //             조작 중 결함을 브라우저에서 보려면 `[7]` 처럼 세션을 시뮬레이션하는
+  //             별도 스크립트가 필요하다 — 이 항목은 **그것이 아니다.**
+  //
+  //   ⚠ 그리고 WebGPU 룩·조작감은 여기서 원리적으로 안 잡힌다(헤드리스는 swiftshader).
+  //
+  // `?edit=1` 은 편집 **도구를 쓸 수 있게** 할 뿐이고 부팅 직후는 주행 모드다
+  // (`edit/state.ts` 의 `editing` — 2026-08-12 사고의 처방). 그래서 이 페이지는
+  // 편집 리스너가 하나도 안 붙은 상태로 뜬다 — 그 자체가 검사 대상이다.
+  { name: 'app/world2(편집)',  url: '/app/world2.html?edit=1', webgl: true, viteOnly: true },
+  // world3(포근마을): world2 의 포크라 **부팅 성질이 같다** — `three/webgpu` 를 쓰므로
+  // vite 전용이고, 날씨 코드도 그대로 승계한다. 그래서 world2 와 같은 플래그를 단다.
+  //
+  // 포크한 날 **처음부터** 넣는다. 바로 위 visit·lab-glb 가 "나중에 넣기로 하면 그 사이
+  // 검사 0 인 페이지가 배포된다" 를 실측으로 남겨 뒀고, 포크는 그 위험이 더 크다 —
+  // 파일이 1.9만 줄인데 그중 어느 것도 안 보게 된다.
+  //
+  // ── ⚠️ world3 가 **안 받는 것** (검수관 명세, 조건 5 이연) ──────────────
+  // 이 줄에 들어 있다고 "world3 도 스모크 대상" 으로 읽으면 틀린다. 받는 것은
+  //   `[4]`  로드 시점 — 콘솔 에러·pageerror·CSP·자기완결·404
+  //   `[4b]` 날씨 4종 전환 + 번개 (전환 후 프레임 갱신까지 실제로 밟는다)
+  // 두 축뿐이다. **안 받는 것**:
+  //   `[7]`   개수 불변식 — 회전·주행·재방문 세션 시뮬
+  //   `[7.6]` 드로우콜 대조군
+  //   `[8]`   하늘 예열(날씨 첫 등장)
+  // 이 셋은 `measure-invariants.mjs`·`measure-sky-warm.mjs` 가 `/app/world2.html` 을
+  // **URL 로 하드코딩**해서 돌기 때문이다. 즉 world3 는 **조작 중에만 나는 콘솔
+  // 에러를 보는 축이 `[4b]` 하나**이고, 회전·주행 세션은 아무도 안 본다.
+  //
+  // behind-flag 인 동안의 이연이다(팀장 조건 5 → 검수관 이연 판정). 라이브 승격의
+  // 선결 조건이고, 잊히지 않도록 `tests/verification-tier.test.ts` 의 **GS-4** 가
+  // 승격 자체를 막는다 — 산문으로만 남기지 않는다.
+  { name: 'app/world3',        url: '/app/world3.html', webgl: true, viteOnly: true, weatherProbe: true },
+  // world5(갤러리 스트리트): world2 의 포크라 부팅 성질이 world3 와 같다 —
+  // `three/webgpu` 를 쓰므로 vite 전용이고 날씨 코드도 그대로 승계한다.
+  //
+  // **안 받는 것은 world3 와 동일하다**(바로 위 world3 항목의 이연 명세 참고):
+  // `[7]`·`[7.6]`·`[8]` 은 `measure-invariants.mjs`·`measure-sky-warm.mjs` 가
+  // `/app/world2.html` 을 URL 하드코딩해 돌므로 여기도 안 온다. behind-flag 인
+  // 동안의 이연이고, 승격을 `tests/verification-tier.test.ts` 의 GS-4 가 막는다.
+  { name: 'app/world5',        url: '/app/world5.html', webgl: true, viteOnly: true, weatherProbe: true },
   // ── visit·lab-glb: behind-flag 인데 **검사가 0이었다** (검수관 반려 B1, 2026-08-05) ──
   //
   // 검증 등급(#195)을 도입하면서 *"3등급이어도 자기완결·CSP 는 CI 스모크가 등급과 무관하게
@@ -191,6 +277,29 @@ export const LIVE_PAGES = [
   // 필요 없다. **이 편입이 빠지면 `tests/verification-tier.test.ts` 의 G1 검사가 FAIL 한다.**
   { name: 'app/visit',         url: '/app/visit.html',  webgl: true },
   { name: 'app/lab-glb',       url: '/app/lab-glb.html', webgl: true },
+  // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
+  // 하면 그 사이 자기완결·CSP 검사가 0 인 페이지가 배포되고, 그것이 정확히 visit·
+  // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.
+  // three 를 참조하지 않는 폼 페이지라 webgl 대기가 필요 없다(유일하게 false 인 app/ 페이지).
+  { name: 'app/mypage',        url: '/app/mypage.html', webgl: false },
+  // ── editor: 배치 에디터(three.js editor 반입, 개발용 도구) ──────────────────
+  //
+  // behind-flag 지만 **처음부터** 넣는다 — 위 세 줄이 적어 둔 그 이유 그대로다.
+  // 특히 이 페이지는 **외부 코드를 통째로 들여온 것**이라 자기완결 검사가 가장 절실하다:
+  // 원본 three.js editor 는 CDN 세 곳(`@ffmpeg/ffmpeg`·`three-gpu-pathtracer`·
+  // `three-mesh-bvh`)을 부르고, 우리는 그것을 걷어냈다. **걷어낸 것이 정말 걷혔는지 재는
+  // 축이 `[C] 외부요청 0` 이고, 그 검사는 이 목록을 순회한다.**
+  //
+  // `viteOnly`: editor 는 bare specifier `three`·`three/addons/` 를 쓴다. baseline
+  // 직서빙(importmap 이 `vendor/three.module.js` = **r160**)에서는 버전이 어긋나므로
+  // vite 번들(npm r171)에서만 돈다 — world2 와 같은 이유다.
+  //
+  // `minViewport`: 320px 에서 335>320 이 난다(15px). editor 는 드래그·기즈모로 조작하는
+  // **데스크톱 전용 도구**라 초소형 폭이 설계 대상이 아니다 — 면제가 아니라 **대상 밖**이고,
+  // 제외된 칸 수는 `[5]` 판정 문구에 INFO 로 찍힌다(조용히 줄지 않는다).
+  // ⚠ 감독은 모바일로 링크를 여신다 — **모바일에서는 가로 스크롤이 생긴다는 뜻**이므로
+  // 그 사실을 보고에 적는다. 넓은 화면에서 쓰시는 것이 전제다.
+  { name: 'app/editor',        url: '/app/editor.html', webgl: true, viteOnly: true, minViewport: 375 },
 ];
 
 // ── 검사5: 가로 넘침 뷰포트 (px). 320 은 초소형(모달 wrap 회귀 감지용) 필수 ──

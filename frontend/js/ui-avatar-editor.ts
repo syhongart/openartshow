@@ -39,6 +39,9 @@ import {
   encodeChibi,
   normalizeChibi,
 } from './chibi.js';
+import { setSceneCover } from './render-gate.js';
+import { applyPreviewShadowCasters } from './chibi-shadow.js';
+import { pickForRandomize, pickDifferent, canRandomize } from './random-pick.js';
 import {
   LU_CLOSET_MAX,
   currentUserId,
@@ -304,24 +307,156 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   document.body.appendChild(overlay);
 
 
-  function setParam(key: string, value: any) {
-    if (!chibiParams) return;
+  // ── 프리뷰 재조립 지연 ────────────────────────────────────────────────────
+  //   칩·스와치를 누르면 원래 이 순서였다: rebuildPreview() → renderPanel().
+  //   즉 **캐릭터 45개 메시를 통째로 해체하고 다시 만든 뒤에야** "선택됨" 표시가 그려졌다.
+  //   실측 47.9ms — 탭 전환(최대 9.1ms)보다 5~10배 무겁고, 60fps 예산 16.6ms 의 세 배다.
+  //
+  //   순서를 뒤집고 재조립을 다음 프레임으로 미룬다. 누른 즉시 그려지는 것은 선택 표시
+  //   (사용자가 "눌렸다"를 확인하는 신호)이고, 캐릭터가 조금 뒤에 바뀌는 것은 눈에
+  //   띄지 않는다 — 반대 순서는 눈에 띄었다.
+  //
+  //   **정확히는 두 프레임 뒤다**(≈33ms, 검수관 지적). `previewFrame` 은 콜백 맨 앞에서
+  //   자기를 재등록하므로, 프레임 N 에서 예약하면 N+1 의 rAF 큐에는 `previewFrame` 이
+  //   재조립 콜백보다 **먼저** 들어간다 → N+1 은 옛 캐릭터를 그리고 새 캐릭터는 N+2 에
+  //   보인다. 47.9ms 를 즉시 반환하는 것과 맞바꾼 값이라 채택은 유효하지만, "한 프레임"
+  //   이라고 적으면 다음 사람이 재조립 지연을 실제보다 싸게 계산한다.
+  //
+  //   연타는 프레임당 1회로 합쳐진다(코얼레스). 색을 훑듯이 연달아 누를 때 예전에는
+  //   누른 횟수만큼 재조립했다.
+  let rebuildRAF: number | null = null;
+
+  /** 다음 프레임에 프리뷰를 재조립한다. 이미 예약돼 있으면 합친다. */
+  function scheduleRebuild() {
+    if (rebuildRAF !== null) return;
+    rebuildRAF = requestAnimationFrame(() => { rebuildRAF = null; rebuildPreview(); });
+  }
+
+  /**
+   * 예약된 재조립을 지금 당장 실행한다.
+   *
+   * 지연이 만드는 유일한 위험이 여기 있다 — **예약이 남은 채로 화면을 읽으면 옛 모습이
+   * 찍힌다.** 그래서 프리뷰 픽셀을 읽는 자리(snapshotThumb)에서 반드시 먼저 부른다.
+   * 저장 버튼을 누른 순간의 썸네일이 방금 고른 색과 다른 것은 사용자가 바로 알아챈다.
+   */
+  function flushRebuild() {
+    if (rebuildRAF === null) return;
+    cancelAnimationFrame(rebuildRAF);
+    rebuildRAF = null;
+    rebuildPreview();
+  }
+
+  /** 예약을 버린다(재조립하지 않는다). 편집기를 닫을 때 — 아래 close() 주석 참조. */
+  function cancelRebuild() {
+    if (rebuildRAF === null) return;
+    cancelAnimationFrame(rebuildRAF);
+    rebuildRAF = null;
+  }
+
+  // ── 탭 재클릭 랜덤 ─────────────────────────────────────────────────────────
+  //   감독 요청 2026-08-07: *"한번누르면 밑에서 사람이 선택할수있고. 반면에 또 누르면
+  //   그 카테고리안에서 랜덤으로 선택되는거였어."*
+  //
+  //   즉 하단 탭이 두 가지 일을 한다 — **처음 누르면 펴고, 이미 펴진 것을 또 누르면
+  //   굴린다.** 그 전까지 같은 탭 재클릭은 `return` 으로 버려지고 있었다(renderNav).
+  //
+  //   대상 목록을 따로 적지 않는다. `renderPanel` 이 줄을 그리면서 여기에 쌓으므로
+  //   **화면에 보이는 것이 곧 랜덤 대상**이다. 카테고리별 키 목록을 상수로 두면
+  //   `renderPanel` 의 분기(동물이면 성별·헤어 줄이 사라진다)와 값 미러링이 생기고,
+  //   한쪽만 고쳐도 아무도 모른다 — 이 저장소가 반복해 데인 형태다.
+  let randomTargets: Array<{ key: string; pick: () => any }> = [];
+
+  /**
+   * 파라미터 하나를 적용한다(렌더는 하지 않는다).
+   * `setParam`(한 개 즉시 반영)과 카테고리 랜덤(여러 개 모아서 한 번 렌더)이 **같은 규칙**을
+   * 쓰도록 분리했다 — 종족 팔레트 연동 같은 규칙이 한쪽에만 적용되면 랜덤 결과만 어색해진다.
+   */
+  function applyParam(key: string, value: any) {
     chibiParams[key] = value;
     // 종족을 동물로 바꾸면 그 종족 기본 팔레트(털색·포인트색)를 함께 적용 — 사람 피부색이
     // 동물에 남아 어색해지는 걸 방지.
     if (key === 'species' && value !== 'human' && (SPECIES_PRESET as any)[value]) {
       Object.assign(chibiParams, (SPECIES_PRESET as any)[value]);
     }
-    chibiParams = normalizeChibi(chibiParams);
-    rebuildPreview();
-    renderPanel();
   }
 
-  // 프리셋 적용 — 완성 룩을 통째로 로드해 시작점으로. 이후 세부 커스터마이즈 가능.
-  function applyPreset(look: any) {
-    chibiParams = normalizeChibi(Object.assign({}, look));
-    rebuildPreview();
+  function setParam(key: string, value: any) {
+    if (!chibiParams) return;
+    lastPresetIndex = -1; // 세부를 하나라도 건드리면 더는 그 프리셋이 아니다
+    applyParam(key, value);
+    chibiParams = normalizeChibi(chibiParams);
+    renderPanel();      // 선택 표시부터 — 이게 사용자가 기다리는 피드백이다
+    scheduleRebuild();  // 45메시 재조립은 다음 프레임
+  }
+
+  /**
+   * 지금 펼쳐진 카테고리를 통째로 굴린다.
+   *
+   * 대상이 하나도 없으면(옷장 탭 등) 아무 일도 하지 않는다 — 탭을 두 번 눌렀는데 화면이
+   * 바뀌지 않는 것은 그 탭에 굴릴 것이 없다는 뜻이고, 그게 맞는 동작이다.
+   */
+  function randomizeActiveCategory() {
+    if (!chibiParams) return;
+    // 종족 탭만 규칙이 다르다 — 칩을 굴리는 대신 **프리셋 전체 풀**에서 뽑는다.
+    // 근거는 `randomizePreset` 주석(감독 지시).
+    if (activeCat === 'species') { randomizePreset(); return; }
+    if (!randomTargets.length) return;
+    lastPresetIndex = -1; // 다른 탭을 굴리면 프리셋 원본에서 벗어난다
+    // pick 은 **적용 시점의** 현재값을 읽는다(pickForRandomize 가 그것을 후보에서 뺀다).
+    // 앞선 적용이 뒤 항목의 현재값을 바꿀 수 있는데(종족→팔레트), 그건 의도된 연쇄다.
+    //
+    // 알려진 예외 하나(검수관 확인, 영향 없음): 사람 상태로 그려진 화면에서 굴릴 때
+    // `gender` 가 대상에 들어가는데, 같은 굴림에서 종족이 동물로 뽑혀도 순서상 그 값이
+    // 그대로 적용된다. `normalizeChibi` 는 화이트리스트 방식이라 species 조건부 필드를
+    // 지우지 않으므로 상태에 남는다 — 동물에는 성별 UI 가 없어 화면에는 안 나타나고,
+    // 다시 사람으로 돌아오면 그 값이 보인다. **"화면 = 랜덤 대상" 원칙의 완전한 예외는
+    // 아니고**(그리는 시점엔 실제로 화면에 있었다) 굴림 도중 화면이 바뀌는 데서 온다.
+    for (const t of randomTargets) applyParam(t.key, t.pick());
+    chibiParams = normalizeChibi(chibiParams);
     renderPanel();
+    scheduleRebuild();
+  }
+
+  /**
+   * 마지막으로 적용한 프리셋의 인덱스. 종족 탭 랜덤이 **같은 프리셋을 연속으로 뽑지
+   * 않도록** 기억한다 — 같은 룩이 다시 나오면 눌러도 안 바뀐 것처럼 보인다.
+   * 프리셋이 아닌 경로(옷장 슬롯 로드)로 적용하면 -1 이라 다음 굴림에 제약이 없다.
+   */
+  let lastPresetIndex = -1;
+
+  // 프리셋 적용 — 완성 룩을 통째로 로드해 시작점으로. 이후 세부 커스터마이즈 가능.
+  function applyPreset(look: any, presetIndex = -1) {
+    lastPresetIndex = presetIndex;
+    chibiParams = normalizeChibi(Object.assign({}, look));
+    renderPanel();
+    scheduleRebuild();
+  }
+
+  /**
+   * 종족 탭 랜덤 — **프리셋 전체 풀**에서 하나를 뽑는다(감독 지시 2026-08-07:
+   * *"종족을 랜덤으로 할때는 밑의 프리셋만 되게 해줘. 밑의 프리셋 모두."*).
+   *
+   * 왜 종족·성별·피부색 칩을 굴리지 않는가: 그 셋만 흔들면 **어중간한 조합**이 나온다
+   * (동물 종족에 사람 옷, 머리색과 안 어울리는 피부색 등). 프리셋은 사람이 완성해 둔
+   * 룩이라 한 번에 그럴듯한 캐릭터가 되고, **적용 뒤에도 아래 칩·스와치로 세부를 계속
+   * 바꿀 수 있다**(감독: *"그다음에 변경가능하게"*) — `applyPreset` 이 `renderPanel` 을
+   * 부르므로 편집 UI 가 그대로 다시 그려진다.
+   *
+   * 그룹(신작·사람·동물…)을 가리지 않고 `CHIBI_PRESETS` 전체에서 뽑는다("밑의 프리셋 모두").
+   */
+  function randomizePreset() {
+    const n = CHIBI_PRESETS.length;
+    if (!n) return;
+    // 인덱스로 고른다 — look 은 객체라 `===` 비교가 성립하지 않는다.
+    //
+    // 범위 밖 인덱스가 나올 수 없는 이유(검수관 질의 확인): `pickDifferent` 가 `current`
+    // 를 그대로 돌려주는 것은 **후보가 빌 때뿐**인데, 후보는 `0..n-1` 이고 `current` 는
+    // 직전 인덱스이거나 -1 이다. -1 이면 모든 후보가 남고, 0..n-1 이면 그 하나만 빠진다
+    // — `n >= 1` 인 이상 후보가 비면 그건 `current` 가 유일한 인덱스일 때이고 그 값은
+    // 실재한다. 따라서 `CHIBI_PRESETS[idx]` 는 항상 존재한다(위 `if (!n) return` 이
+    // n=0 을 이미 걸렀다).
+    const idx = pickDifferent(CHIBI_PRESETS.map((_: any, i: number) => i), lastPresetIndex);
+    applyPreset((CHIBI_PRESETS as any)[idx].look, idx);
   }
 
   function presetRow() {
@@ -334,14 +469,24 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
       page.appendChild(el('div', { className: 'lu-am-section-title', text: `${grp.name} (${items.length})` }));
       const row = el('div', { className: 'lu-am-tabs lu-am-presets' });
       for (const pre of items) {
-        const btn = el('button', { type: 'button', className: 'lu-am-tab lu-am-preset' });
+        // 전체 풀 기준 인덱스 — 그룹 필터와 무관하게 `lastPresetIndex` 와 맞춘다.
+        const gi = CHIBI_PRESETS.indexOf(pre);
+        const btn = el('button', {
+          type: 'button',
+          // 지금 적용된 프리셋을 표시한다. 랜덤으로 굴릴 때 표시가 옮겨가므로
+          // "무엇이 뽑혔는지"가 화면에 보인다. 세부를 하나라도 바꾸면 더는 그 프리셋이
+          // 아니므로 표시가 사라진다(setParam·카테고리 랜덤에서 lastPresetIndex 해제).
+          className: 'lu-am-tab lu-am-preset' + (gi === lastPresetIndex ? ' lu-selected' : ''),
+        });
         const c1 = pre.look.skin || DEFAULT_CHIBI.skin;
         const c2 = pre.look.top || pre.look.hairColor || DEFAULT_CHIBI.top;
         const dot = el('span', { className: 'lu-am-preset-dot', 'aria-hidden': 'true' });
         dot.style.background = `conic-gradient(${c1} 0deg 180deg, ${c2} 180deg 360deg)`;
         btn.appendChild(dot);
         btn.appendChild(el('span', { className: 'lu-am-preset-label', text: pre.name }));
-        btn.addEventListener('click', () => applyPreset(pre.look));
+        // 인덱스를 함께 넘긴다 — 손으로 고른 뒤 종족 탭을 눌렀을 때 방금 그 프리셋이
+        // 다시 뽑히지 않게(전체 풀 기준 인덱스라 그룹 필터와 무관하다).
+        btn.addEventListener('click', () => applyPreset(pre.look, gi));
         row.appendChild(btn);
       }
       page.appendChild(row);
@@ -419,6 +564,10 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
 
   function chipRow(labelText: string, options: any[], key: string) {
     page.appendChild(el('div', { className: 'lu-am-section-title', text: labelText }));
+    // [탭 재클릭 랜덤] 지금 화면에 그려진 줄만 랜덤 대상이 된다 — 아래 randomTargets 주석.
+    if (canRandomize(options.length)) {
+      randomTargets.push({ key, pick: () => pickForRandomize(options.map((o) => o.id), chibiParams[key]) });
+    }
     const row = el('div', { className: 'lu-am-tabs' });
     options.forEach((opt) => {
       const btn = el('button', {
@@ -434,6 +583,9 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
 
   function swatchRow(labelText: string, palette: string[], key: string) {
     page.appendChild(el('div', { className: 'lu-am-section-title', text: labelText }));
+    if (canRandomize(palette.length)) {
+      randomTargets.push({ key, pick: () => pickForRandomize(palette, chibiParams[key]) });
+    }
     const row = el('div', { className: 'lu-swatches' });
     palette.forEach((hex) => {
       const swatch = el('button', {
@@ -475,12 +627,20 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
         'aria-selected': selected ? 'true' : 'false',
         'aria-controls': 'lu-am-tabpanel',
         tabindex: selected ? '0' : '-1',   // 로빙 탭인덱스 — 선택 탭만 Tab 포커스 대상
-        'aria-label': cat.label,
+        // 선택된 탭은 "다시 누르면 랜덤"이 된다. 눈에 보이는 표시가 없는 기능이라
+        // 최소한 접근성 이름과 툴팁에는 적어 둔다.
+        'aria-label': selected ? `${cat.label} — 다시 누르면 랜덤으로 바뀝니다` : cat.label,
+        title: selected ? '다시 누르면 랜덤으로 바뀌어요' : cat.label,
       });
       btn.innerHTML = cat.icon;
       btn.appendChild(el('span', { className: 'lu-am-navtab-label', text: cat.label }));
       btn.addEventListener('click', () => {
-        if (activeCat === cat.id) return;
+        // [탭 재클릭 랜덤] 이미 펴진 탭을 또 누르면 그 카테고리를 굴린다(감독 요청).
+        // 그 전까지 이 자리는 그냥 `return` 이라 두 번째 클릭이 버려지고 있었다.
+        if (activeCat === cat.id) {
+          randomizeActiveCategory();
+          return;
+        }
         activeCat = cat.id;
         renderPanel();
         page.scrollTop = 0;
@@ -493,6 +653,7 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function renderPanel() {
     renderNav();
     page.textContent = '';
+    randomTargets = []; // 이번에 그리는 줄들이 다시 채운다(화면 = 랜덤 대상)
     if (!chibiParams) return;
     const isAnimal = chibiParams.species && chibiParams.species !== 'human';
 
@@ -554,7 +715,9 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     // (감독 신고). 대신 실시간 그림자맵으로 바닥에 접지 그림자를 뿌린다(ensurePreviewRenderer).
     chibiPreviewInstance = createAvatarInstance(encodeChibi(chibiParams), GOLD, ' ', { blobShadow: false });
     // 캐릭터 메쉬가 그림자를 드리우게 한다(그림자맵에 렌더될 대상). 재조립마다 새 그룹이라 매번.
-    chibiPreviewInstance.group.traverse((o: any) => { if (o.isMesh) o.castShadow = true; });
+    // **전부** 켜지 않는다 — 아웃라인 셸은 원본을 감싼 복제본이라 그림자에 기여할 수
+    // 없다. 판정·수치·기각된 대안은 chibi-shadow.ts 한 곳이다(여기에 다시 적지 않는다).
+    applyPreviewShadowCasters(chibiPreviewInstance.group);
     previewRotator.add(chibiPreviewInstance.group);
   }
 
@@ -621,6 +784,7 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function snapshotThumb(w: number, h: number) {
     try {
       if (!previewRenderer) return '';
+      flushRebuild(); // 예약된 재조립이 남아 있으면 **한 수 전 모습**이 찍힌다
       previewRenderer.render(previewScene, previewCamera);
       return makeThumbDataUrl(canvas, w, h) || previewRenderer.domElement.toDataURL('image/png');
     } catch (_) { return ''; }
@@ -658,6 +822,11 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function open() {
     activeCat = 'species'; // 새로 열 때는 항상 첫 카테고리(종족)부터 — 이전 탭 유지 방지
     chibiParams = normalizeChibi(Object.assign({}, DEFAULT_CHIBI, readActiveChibi() || {}));
+    // 아래 줄이 없으면 **적용되지도 않은 프리셋에 선택 표시가 남는다**(검수관 반려).
+    // 프리셋을 고르고 → 저장 없이 닫고 → 다시 열면, 위에서 `chibiParams` 는 저장된
+    // 룩으로 통째로 재설정되는데 `lastPresetIndex` 는 모듈 클로저에 살아남아 옛 인덱스를
+    // 가리킨다. 표시는 **지금 적용된 것**만 가리켜야 한다 — 모르면 아무것도 안 가리킨다.
+    lastPresetIndex = -1;
     syncSaveGate(); // 로그인 여부에 따라 저장/회원가입 버튼 상태 갱신
     ensurePreviewRenderer();
     previewRotator.rotation.y = Math.PI; // 정면(카메라 쪽)부터 — 얼굴을 꾸미는 화면이므로
@@ -667,6 +836,14 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
     renderPanel();
     overlay.classList.add('lu-open');
     state.chibiOpen = true;
+    // [오버레이 렌더 스킵] 이 편집기는 전체화면(position:fixed; inset:0)이라 뒤의 3D
+    // 씬은 보이지 않는다 — 그동안 그리지 않는다. 근거·실측·경계는 render-gate.ts 머리말.
+    //
+    // 왜 main.js 의 onMakerToggle 이 아니라 여기인가: ① main.js 는 보호파일(라이브 미술관
+    // 서비스 중)이고 ② 그 콜백은 `if (!entered) return` 뒤에 있어 **로비에서 연 편집기에는
+    // 안 걸린다** — 캐릭터를 먼저 꾸미고 입장하는 순서가 오히려 흔하다. 편집기가 자기
+    // 상태를 직접 선언하면 두 문제가 같이 없어진다.
+    setSceneCover('chibi-maker', true);
     startLoop();
     // 입장 후 편집이면 모달이 화면을 덮는 동안 플레이어 이동·포인터락을 멈춘다
     // (라이트박스/투어와 동일한 확립된 패턴). 로비에서는 이미 비활성이라 main.js가 무시.
@@ -675,7 +852,32 @@ export function createChibiMaker(ctx: ChibiMakerCtx) {
   function close() {
     overlay.classList.remove('lu-open');
     state.chibiOpen = false;
+    // 닫힘 알림 — **경로가 늘면 여기로 모으라**는 아래 주석의 집행 지점이다.
+    // 딥링크 복귀(`?back=`)가 이것을 쓴다. 첫 판본은 저장(✓)·닫기(×) 버튼에 각각
+    // 리스너를 걸었고, 그래서 **ESC·배경클릭으로 닫으면 복귀가 안 됐다**(검수관 B2).
+    // 네 경로가 전부 여기를 지나므로 한 곳이면 충분하다.
+    if (typeof callbacks.onChibiMakerClosed === 'function') {
+      const cb = callbacks.onChibiMakerClosed;
+      // **1회성이다.** 남겨두면 세션 내내 살아 있어, 미술관에서 편집기를 다시 열고
+      // 저장할 때마다 페이지가 튕긴다(검수관 B1). 부르기 전에 지운다 — 콜백 안에서
+      // 예외가 나도 다음 close 에 또 돌지 않는다.
+      //
+      // ⚠ **부르고 나서 지우지 않는 이유**(검수관 확인). 그렇게 하면 복귀 실패 시
+      // 재시도 여지가 남는데, 그 트레이드오프를 일부러 반대로 골랐다: 복귀가
+      // 실패하는 상황은 대개 재시도해도 실패하고, 그때 훅이 남으면 정확히 B1 이
+      // 재발한다. **되돌리기 비싼 실패(미술관에서 튕김)와 싼 실패(사용자가
+      // 뒤로가기)** 중 싼 쪽을 골랐다.
+      callbacks.onChibiMakerClosed = null;
+      try { cb(); } catch (_) { /* 복귀 실패가 편집기 정리를 막지 않는다 */ }
+    }
+    // 반드시 걷는다 — 안 걷으면 미술관이 멈춘 채로 남는다. close()는 ✓(저장)·×(닫기)·
+    // ESC 가 모두 지나는 단일 지점이라 여기 한 곳이면 충분하다(경로가 늘면 여기로 모아라).
+    setSceneCover('chibi-maker', false);
     stopLoop();
+    // 예약된 재조립을 **버린다**(flush 가 아니다). 남겨두면 아래에서 dispose 한 직후에
+    // 콜백이 깨어나 새 인스턴스를 만들어 rotator 에 붙인다 — 닫힌 편집기에 캐릭터가
+    // 매달린 채 남는 누수다.
+    cancelRebuild();
     if (chibiPreviewInstance) {
       previewRotator.remove(chibiPreviewInstance.group);
       chibiPreviewInstance.dispose();

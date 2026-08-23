@@ -93,7 +93,13 @@ export class AdaptSystem implements System {
     const cur = this.o.targets.getPixelRatio();
     const r = decideResolution(this.st, input, cur, this.bands);
     this.st = r.next;
-    if (r.decision) this.o.targets.setPixelRatio(r.decision.ratio);
+    if (r.decision) {
+      this.o.targets.setPixelRatio(r.decision.ratio);
+      // ev: 이벤트 — 해상도 전환이 감독 지각("이동 중 밝기가 살짝 변함", 2026-08-10)과
+      // 같은 시간축에 실리게 한다. 강등/승격 판정이 마크 창에 찍히는지가 원인 확정의
+      // 축이다(안개·헤드밥은 감독 실측으로 기각 — 남은 이동-반응 축이 이것뿐이다).
+      ctx.probe?.('ev:해상도', r.decision.ratio);
+    }
 
     // ② 프레임 캡 — 비가역이므로 지속 조건을 넘겨야 진입한다.
     const c = decideFrameCap(this.st, input, this.capped, this.o.capFps);

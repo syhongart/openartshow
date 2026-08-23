@@ -147,6 +147,68 @@ export class Ring {
   clear(): void { this.buf.length = 0; this.i = 0; }
 }
 
+// ── 이벤트 로그 ─────────────────────────────────────────────────────────────
+// 시간축(5초 구간)은 **개수의 추세**를 보는 도구다. 감독이 보고하는 증상은 그보다 훨씬
+// 짧다 — *"뒤로 움직이는 **순간** 건물 밝기가 바뀐다"*(2026-08-10). 5초 요약으로는 그
+// 순간에 무엇이 있었는지 알 수 없다.
+//
+// ── 왜 「마크」인가 (감독 지시 2026-08-10 *"로그 더 추가해서 원인을 파악해보자"*) ──
+// 로그만 늘리면 어느 줄이 증상과 짝인지는 여전히 아무도 모른다. 그것을 아는 사람은
+// **화면을 보는 감독뿐**이다. 그래서 감독이 증상을 본 순간 버튼을 눌러 시간축에 못을
+// 박고, 리포트는 그 못 주변만 뽑아 준다. 지각과 내부 상태를 같은 축에 올리는 것이
+// 이 절의 전부다.
+//
+// **이것이 이 프로젝트에서 세 번째로 시도하는 진단 방식이다.** 앞의 둘은 실패했다:
+// ① 코드 정독으로 원인을 짚고 고쳐 배포(페이드·밤 발광 — 둘 다 틀렸다)
+// ② 노브로 축을 하나씩 끄기(그림자까지 좁혔으나 처방이 증상을 못 없앴다)
+// ②는 "무엇이 관여하는가" 까지는 갔지만 "그 순간 무슨 일이 일어나는가" 는 못 봤다.
+
+/** 한 건의 이벤트. 값의 뜻은 이름마다 다르다(이름 옆 주석이 SSOT) */
+export interface Ev {
+  /** 세션 시작부터의 초 */
+  t: number;
+  /** `ev:` 접두를 뗀 이름 */
+  name: string;
+  value: number;
+}
+
+/** 마크 앞뒤로 몇 초를 보여줄 것인가. 사람의 반응 지연(0.3~1초)을 덮을 만큼 넓게 */
+export const MARK_WINDOW_S = 2.5;
+
+/**
+ * 이벤트를 **마크 주변만** 뽑아 서식한다. 마크가 없으면 최근 것만 보여준다.
+ *
+ * ⚠ **창 밖을 버린 사실을 반드시 적는다.** 안 적으면 "이 목록이 전부" 로 읽히고, 그건
+ * 이 저장소가 *"못 잰 것이 통과로 적히는 경향"* 이라 부르는 형태다.
+ */
+export function formatEvents(
+  evs: readonly Ev[], marks: readonly number[], windowS = MARK_WINDOW_S, tailN = 25,
+): string {
+  const line = (e: Ev, mark?: number) => {
+    const rel = mark === undefined ? '' : `${e.t - mark >= 0 ? '+' : ''}${(e.t - mark).toFixed(2)}s`;
+    return `  ${f1(e.t).padStart(7)}s ${rel.padStart(7)}  ${e.name.padEnd(14)} ${f1(e.value).padStart(8)}`;
+  };
+  if (marks.length === 0) {
+    if (evs.length === 0) return '  (이벤트 없음)';
+    const tail = evs.slice(-tailN);
+    const head = evs.length > tail.length
+      ? [`  ※ 마크 없음 — 최근 ${tail.length}건만. 앞선 ${evs.length - tail.length}건은 생략했다`]
+      : ['  ※ 마크 없음 — 전체'];
+    return [...head, ...tail.map((e) => line(e))].join('\n');
+  }
+  const out: string[] = [];
+  for (const m of marks) {
+    const win = evs.filter((e) => Math.abs(e.t - m) <= windowS);
+    out.push(`  ── 마크 ${f1(m)}초 (±${windowS}초 · ${win.length}건) ──`);
+    if (win.length === 0) {
+      // **빈 창이 곧 결론이다.** 감독이 증상을 본 순간 아무 전이도 없었다면, 원인은
+      // 여기서 찍는 축(스트리밍·tier)이 아니라 연속적으로 변하는 것(그림자·안개)이다.
+      out.push('  (이 창에 이벤트 0건 — 전이가 아니라 연속 변화라는 뜻이다)');
+    } else out.push(...win.map((e) => line(e, m)));
+  }
+  return out.join('\n');
+}
+
 // ── 시간축 ──────────────────────────────────────────────────────────────────
 // 통계만으로는 **언제 무엇이 늘었는지**를 못 본다. 이 프로젝트의 결정적 진단이 정확히
 // 그것이었다 — 파이프라인 구조 키가 35→52→84→116으로 단조 증가하는 것을 보고서야
@@ -356,6 +418,10 @@ export interface ReportInput {
   triAvg: number;
   /** 시간축 구간 요약 — 언제 무엇이 늘었는지 */
   timeline?: readonly Bucket[];
+  /** 이벤트 로그 — 전이가 **언제** 일어났는지. 위 `formatEvents` 주석 참고 */
+  events?: readonly Ev[];
+  /** 감독이 증상을 본 순간(초). 이벤트를 이 주변만 뽑는다 */
+  marks?: readonly number[];
 }
 
 const f1 = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : '—');
@@ -480,6 +546,17 @@ export function formatReport(r: ReportInput): string {
     lines.push('');
     lines.push('[시간축 — 개수가 오른쪽으로 갈수록 늘면 증식이다]');
     lines.push(formatTimeline(r.timeline));
+  }
+
+  // 이벤트는 **마크가 있을 때 가장 쓸모 있다.** 마크가 없어도 최근 것을 보여주지만,
+  // 그때는 어느 줄이 증상과 짝인지 아무도 모른다는 사실을 제목에 적는다.
+  if (r.events && r.events.length > 0) {
+    const marks = r.marks ?? [];
+    lines.push('');
+    lines.push(marks.length > 0
+      ? `[이벤트 — 마크 ${marks.length}개 주변 ±${MARK_WINDOW_S}초]`
+      : '[이벤트 — ⚠ 마크가 없다. 📍 를 눌러야 증상 시점과 맞춰진다]');
+    lines.push(formatEvents(r.events, marks));
   }
 
   lines.push('');

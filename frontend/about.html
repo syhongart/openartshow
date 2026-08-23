@@ -20,10 +20,11 @@
 <meta name="twitter:description" content="작품이 공간에서 말하게 하라 — 대관료도, 액자값도, 창고비도 없이 브라우저 하나로 여는 3D 미술관 OpenArtShow 소개">
 <meta name="twitter:image" content="https://syhongart.github.io/openartshow/app/assets/og.png">
 <!-- 폰트 정책 SSOT — @font-face·--app-font는 vendor/fonts/fonts.css 한 곳에만 -->
-<!-- 경로 규칙: about.html은 deploy.yml에서 루트(_site/about.html)로 승격 배포된다(landing/guide/design 급 공개 페이지).
+<!-- 경로 규칙: about.html은 deploy.yml에서 루트(_site/about.html)로 승격 배포된다(landing/guide 급 공개 페이지).
      vendor 폰트는 소스 실경로 기준 ./vendor/fonts/fonts.css로 참조한다 — vite가 실존 파일만 번들·경로 rewrite하므로
      (→ /openartshow/_bundle/fonts-*.css) 배포 위치와 무관하게 동작한다. 과거 ./app/vendor/... 로 적혀 있었으나 그
-     경로엔 파일이 없어 rewrite가 일어나지 않고 그대로 emit돼 라이브 404를 냈다(landing·guide·about·design 4개 페이지).
+     경로엔 파일이 없어 rewrite가 일어나지 않고 그대로 emit돼 라이브 404를 냈다(당시 landing·guide·about·design
+     4개 페이지 — design.html 은 2026-08-09 폐지, `docs/DESIGN.md §5-4`).
      되돌리지 말 것. 나머지 상대경로(브랜드·
      랜딩 ./index.html, 전시장 ./app/, 가이드 ./guide.html)도 전부 루트 기준으로 정합. 이 승격은 A단계 스모크 하네스가
      app/ 배포 시 CTA 404를 발견해 근본 해결한 것(deploy.yml에 cp web/about.html _site/about.html 추가). -->
@@ -55,7 +56,11 @@
     /* 에세이 전용 타이포 토큰 */
     --fs-body-lg: clamp(16px, 1.55vw, 18px);
     --lh-body-loose: 1.85;
-    color-scheme: light dark;
+    /* ⚠ 2026-08-09: `light dark` 에서 **`light` 고정**으로 바꿨다(팀장 판정 (b) 전부 고정).
+       아래 `@media (prefers-color-scheme: dark)` 블록을 지우는 것만으로는 고정이 안 된다 —
+       이 한 줄이 남아 있으면 OS 다크에서 **스크롤바·폼 컨트롤 같은 UA 크롬만** 다크로
+       남아, 라이트 지면에 다크 크롬이 붙는 더 어색한 상태가 된다. 두 줄은 함께 움직인다. */
+    color-scheme: light;
   }
 
   * { box-sizing: border-box; }
@@ -110,10 +115,16 @@
 
   .topnav {
     display: flex;
+    align-items: center;
     gap: clamp(14px, 3vw, 34px);
     flex-wrap: wrap;
   }
-  .topnav a {
+  /* `button` 이 셀렉터에 함께 있는 이유 — 주 메뉴의 로그인·회원가입이 `<button>` 이다
+     (이동이 아니라 모달을 연다). 룩은 이 규칙 **하나**가 정한다: 배선 스크립트
+     (`js/subnav.js`)나 다른 규칙에 같은 값을 다시 적으면 그 순간 값 미러링이고,
+     한쪽만 고치는 날 로그인·회원가입만 색이 갈린다.
+     `:is(a, button)` 의 명시도는 `a` 단독과 같은 (0,1,1)이라 캐스케이드 순위도 그대로다. */
+  .topnav a, .topnav button {
     text-decoration: none;
     color: rgba(255,255,255,0.72);
     font-size: 12px;
@@ -124,8 +135,34 @@
     border-bottom: 1px solid transparent;
     padding-bottom: 2px;
   }
-  .topnav a:hover { color: #fff; border-color: var(--accent-dark); }
-  .topnav a.current { color: var(--accent-dark); }
+  .topnav :is(a, button):hover { color: #fff; border-color: var(--accent-dark); }
+  .topnav :is(a, button).current { color: var(--accent-dark); }
+  /* 브라우저 기본 버튼 껍데기만 벗긴다. 위 규칙이 `border-bottom` 만 덮으므로 나머지
+     세 면의 기본 테두리가 남는다 — 그것만 0 으로 접는다. 색·크기·자간은 위 규칙 소관. */
+  .topnav button {
+    background: none;
+    border-width: 0 0 1px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  /* 로그인 영역은 순수 그룹이다 — 레이아웃에 관여하지 않아야 `.topnav` 의 flex 가
+     버튼 하나하나를 직접 배치하고(줄바꿈 포함), 로그인 상태로 갈릴 때도 간격이 같다. */
+  .nav-auth-slot { display: contents; }
+  /* 관람 항목 | 로그인·회원가입 | 입장하기 를 가르는 구분자.
+     ⚠ 첫 판본은 `background: currentColor` + opacity 로 「값을 안 정하는」 쪽을 골랐고
+     **화면에서 안 보였다**(육안 실측 2026-08-09, 데스크톱·모바일 모두). `.topnav` 에도
+     `.topbar` 에도 `color` 선언이 없어 상속된 것이 본문 잉크였고, 다크 밴드 위에서는
+     사실상 검정이다 — 링크는 `color` 를 자기 규칙으로 따로 받으므로 「인접 링크와 같은
+     색」이라는 전제 자체가 틀렸다. **값을 안 적는 것이 값을 틀리게 적는 것보다 낫지
+     않았다.** 그래서 명시한다: 링크의 흰 계열 알파(0.72)보다 낮춰 구분자가 항목을
+     이기지 않게 한다. 0.25 는 홈 `.nav-auth-sep` 과 같은 역할·같은 알파다. */
+  .topnav .nav-sep {
+    flex: none;
+    align-self: center;
+    width: 1px;
+    height: 12px;
+    background: rgba(255,255,255,0.25);
+  }
 
   /* ------------------------------------------------------------------ hero */
   .hero {
@@ -231,7 +268,7 @@
     align-items: center;
     gap: 8px;
     padding: 13px 26px;
-    border-radius: 999px;
+    border-radius: var(--oas-r-pill);
     font-size: 13.5px;
     letter-spacing: 0.04em;
     text-decoration: none;
@@ -272,11 +309,24 @@
   footer .brand .w-lead { color: var(--accent); }
   footer .brand .dot { color: var(--text-dim); }
   footer p { color: var(--text-dim); font-size: 13px; margin: 12px 0 0; }
-  footer a.mail { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(61,107,80,0.4); }  /* green-text(ink) rgb */
+  /* 밑줄은 링크 글자(`--accent` = green-text)의 40% 알파다. 값을 여기 적지 않고 1층
+     채널 토큰을 참조한다 — 이 자리에 `rgba(61,107,80,0.4)` 이 박혀 있었고, 그것이
+     2026-07-31 감독 확정으로 **폐기된 구 채도 27 그린**이라 글자는 새 그린인데 밑줄만
+     옛 그린이었다. 경위·처방은 `css/tokens.css` 의 `--oas-green-text-rgb` 한 곳이다. */
+  footer a.mail { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgb(var(--oas-green-text-rgb) / 0.4); }
 
   /* --------------------------------------------------------------- mobile */
   @media (max-width: 640px) {
-    .topnav { display: none; }
+    /* ⚠ 여기에 `.topnav { display: none; }` 이 있었다. **지웠다** — 그 줄 때문에
+       ≤640px 에서 주 메뉴가 **통째로 없었다**(홈처럼 햄버거 시트로 옮긴 것이 아니라
+       그냥 사라졌다: 서브에는 시트가 없다). 메뉴를 홈 기준으로 통일해 놓고 폰에서만
+       안 보이면 통일이 반쪽이고, **감독은 모바일로 보신다** — 판정하신 화면(`?nav=b`)이
+       메뉴가 보이는 쪽이었다.
+       넘침이 안 나는 근거는 `.topnav` 의 `flex-wrap: wrap` 이다(폭이 모자라면 줄로
+       내려간다). 실측 320·390·640 에서 가로넘침 0.
+       **여기서 멈추는 경계**: 제대로 된 처방은 홈처럼 **시트**를 주는 것이고 그것은
+       룩 설계라 별건이다(백로그 `KNOB3`). 지금 것은 항목 수가 늘면 상단바가 세 줄까지
+       두꺼워지는 wrap 배치다 — 그 한계를 알고 쓴다. */
     .hero { padding: 64px clamp(16px, 5vw, 32px) 52px; }
     .essay-main { padding: 48px clamp(16px, 5vw, 24px) 24px; }
     .essay-section { margin-bottom: 52px; }
@@ -288,27 +338,70 @@
     .btn { justify-content: center; }
   }
 
-  /* -------------------------------------------------------- dark mode */
-  @media (prefers-color-scheme: dark) {
-    :root {
-      /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다.
-         --coral 3종은 다크 표면으로 돌아가므로 원래 설계(vivid 채움 + 어두운 라벨)로 복귀. */
-      --accent: var(--oas-accent);
-      --paper: var(--oas-dark-anchor);
-      --paper-2: var(--oas-dark-1);
-      --line: var(--oas-dark-line);
-      --text: var(--oas-on-dark);
-      --text-dim: var(--oas-on-dark-dim);
-      --coral: var(--oas-cta);
-      --coral-hover: var(--oas-cta-hi);
-      --coral-label: var(--oas-cta-label);
-    }
-    .btn-outline { color: var(--text); }
-    footer a.mail { border-bottom-color: rgba(95,158,125,0.4); }
-  }
+  /* ---------------------------------------------- 테마 — 라이트 고정 (2026-08-09)
+     여기에는 `@media (prefers-color-scheme: dark)` 블록이 있었다. **지웠다.**
+
+     왜 — 사이트 6페이지 중 `about`·`guide` **둘만** OS 설정에 반응했다. 나머지 넷은
+     **모드가 고정**돼 있었고, 그 넷이 한 모드였던 것은 아니다(⚠ 아래 정정 참조).
+     그래서 OS 다크 사용자가 소개·가이드에 들어서는 순간 그 두 화면만 §3-1 이 배정한
+     모드를 벗어났다 — **화면의 표면 모드를 OS 가 뒤집는 상태**다.
+
+     팀장 판정 **(b) 전부 고정** — 둘을 §3-1 배정(라이트 에디토리얼)에 다시 맞추는 쪽이다.
+     **다크 모드 전면 도입은 별도 설계 분기이고 감독 판정 사안**이다(백로그 G-DARK1).
+     이 두 페이지를 다크로 되돌리는 것으로는 그 분기를 대신할 수 없다 — OS 가 모드를
+     정하는 상태 자체는 그대로이기 때문이다.
+     **판정 자체는 유효하다**(감독 2026-08-09 「지금 배정 유지, 팔레트만 정돈」으로 재확인).
+     아래 정정은 판정의 실질이 아니라 **근거 서술**을 실측에 맞춘 것이다.
+
+     ⚠ **정정 2건 (2026-08-09 실측)** — 원문의 근거 서술 두 곳이 사실과 달랐다.
+     ① 원문: *"나머지 넷(`landing`·`studio`·`builder`·`mypage`)은 **라이트 고정**"* ·
+        *"홈 → 소개 → 스튜디오로 걸으면 **다크 → 다크 → 라이트**"*.
+        실측은 **다크 2 : 라이트 4** 다 — `landing`(`--bg-dark`)·`builder`(`--bg`)가
+        dark-anchor 이고, `studio`·`mypage`·`about`·`guide` 가 ivory 다. 홈은 원래
+        다크이므로 *"홈이 라이트인데 소개만 다크로 튄다"* 는 그림은 성립하지 않았다.
+     ② 원문이 §3-1 을 *"한 사이트가 걷는 도중에 표면 모드를 바꾸는 것을 금지한다"* 로
+        인용했다. **§3-1 은 그런 말을 하지 않는다.** 규율 대상은 **컴포넌트**이고
+        (*"개별 컴포넌트가 임의로 반대 모드의 배경색을 쓰지 않는다"*), §3-1 의 표는
+        오히려 화면별로 모드를 **섞어 배정**한다(로비·3D=다크 / 상세·카탈로그·프로필·
+        관리=라이트). 즉 화면 간 모드 전환은 §3-1 의 **전제**지 위반이 아니다.
+     정확한 위반은 이것이다 — §3-1 첫 문장 *"모든 화면은 둘 중 하나의 표면 모드에
+     **속한다**"* 는 화면의 모드가 그 화면의 성질로 **고정**임을 전제한다. `about`·
+     `guide` 는 그 표에서 라이트 에디토리얼로 배정된 문서 화면인데 OS 설정이 그 배정을
+     뒤집고 있었다. 고쳐진 것은 그것이고, 그 문제는 실재했다.
+
+     왜 이 정정을 적어 두는가 — 틀린 근거는 판정이 옳아도 다음 사람을 잘못 이끈다.
+     실제로 `docs/BACKLOG.md` 의 G-DARK1 이 이 문장을 *"6페이지 전부 라이트 고정으로
+     맞췄다"* 로 옮겨 적었고, 그대로 두면 다음에 다크를 열 사람이 **네 페이지에 다크
+     정의가 없다**고 읽는다(실제로는 둘은 원래 다크다).
+
+     ⚠ 아래 `[data-theme]` 두 블록은 **남겨 둔다. 그러나 지금 아무 효과가 없다** —
+     **`frontend/` 라이브 진입점 어디에도** 이 속성을 설정하는 코드가 **0건**이다
+     (2026-08-10 재실측). `studio.html` 의 `data-theme` 은 전시 조명 프리셋이라 다른
+     물건이다.
+
+     ⚠⚠ 이 줄은 *"저장소 **전체**에 0건"* 이라고 적고 있었고 **부정확했다**(검수관 P1,
+     2026-08-09). 실측하면 `docs/mockups/openartshow-screens.html:1304` 에
+     `root.setAttribute('data-theme', next)` 가 **1건 있다.** 결론(죽은 셀렉터)은
+     그대로다 — 그 파일은 `scripts/lib/entrypoints.mjs` 의 `ENTRYPOINTS` 에 없는
+     독립 시안이라 **빌드 대상이 아니고 배포물에도 들어가지 않는다**(조립본 실측:
+     `_site` 에 그 파일 0건). 즉 이 페이지의 토글을 켜 주는 코드는 아니다.
+     **그런데도 문장을 고치는 이유**: 결론이 같아도 **범위를 실측 없이 「전체」로 적으면
+     다음 사람이 그 말을 믿고 안 찾는다.** 이 저장소가 `main` unprotected 오기로 7일을
+     잃은 것이 정확히 그 형태다. 절대 표현은 실측한 범위로 좁혀 적는다.
+
+     죽은 셀렉터를 남기는 이유는 G-DARK1 이 열릴 때의 출발점이기 때문이고,
+     **「다크 토글이 이미 있다」로 읽지 말라**는 것이 이 문단의 목적이다. */
   :root[data-theme="dark"] {
     /* 색: css/tokens.css 의 원시 팔레트를 이 페이지 이름에 잇는다 — 값을 여기 다시 적지 않는다. */
     --accent: var(--oas-accent);
+    /* ⚠ `--ink` 재정의가 여기 **없어서** 히어로 밴드가 지면에 녹아 있었다(2026-08-09 실측).
+       `.hero` 배경이 `var(--ink)` = dark-anchor 인데 다크에서는 아래 `--paper` 도 같은
+       앵커라 대비가 **정확히 1.000** 이었다 — 밴드라는 면 구분이 통째로 사라진다.
+       라이트에서는 paper 가 ivory 라 안 드러났다: 다크 정의에만 있던 결함이다.
+       고치는 방향은 밴드 쪽이다. §3-1 이 *"`#14151A` 가 항상 다크 앵커"* 라고 못박으므로
+       지면을 옮길 수는 없다. dark-1 은 앵커 위 1.129 로 뜬다(G-SHD1 이 "사라진다" 고
+       판정한 1.012 보다 위다). */
+    --ink: var(--oas-dark-1);
     --paper: var(--oas-dark-anchor);
     --paper-2: var(--oas-dark-1);
     --line: var(--oas-dark-line);
@@ -331,7 +424,7 @@
     --coral-hover: var(--oas-green-900);
     --coral-label: var(--oas-on-dark);
   }
-  :root[data-theme="light"] footer a.mail { border-bottom-color: rgba(61,107,80,0.4); }  /* green-text(ink) rgb */
+  :root[data-theme="light"] footer a.mail { border-bottom-color: rgb(var(--oas-green-text-rgb) / 0.4); }
 
   /* ---------- P1-①: skip-link + focus-visible (기존 focus 스타일 0 — 최소 보강) ---------- */
   .skip-link {
@@ -357,7 +450,7 @@
   button:focus-visible {
     outline: 2px solid var(--accent-dark);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
   }
 </style>
 </head>
@@ -367,12 +460,30 @@
 
 <div class="topbar">
   <a class="brand" href="./index.html"><span class="w-lead">Open</span>ArtShow<span class="dot">.</span></a>
-  <nav class="topnav">
-    <a href="./index.html">랜딩</a>
+  <!-- 주 메뉴 — 홈(`landing.html`)과 **같은 구성·같은 명칭**이다. 감독 판정 2026-08-10:
+       후보 넷을 `?nav=` 노브로 라이브 비교하고 **B(홈 기준 통일)** 를 고르셨다.
+       바뀐 것 셋: ①「랜딩」 제거(왼쪽 브랜드 로고가 이미 홈 링크라 역할이 겹쳤다)
+       ②「이용 안내」→「가이드」·「전시장 입장」→「입장하기」(같은 목적지를 두 이름으로
+       부르던 것을 홈 쪽으로 통일) ③「작가 스튜디오」는 여기서 빠지고 홈의 auth 영역에만
+       선다 — 서브·홈 비대칭은 노브 B 가 그린 그대로이고, 감독이 그 화면을 보고 고르셨다.
+       앵커 셋은 `./index.html#…` 으로 **홈으로 건너뛴다**: 이 페이지에는 그 섹션이 없어
+       `#exhibitions` 만 쓰면 아무 데도 안 간다. -->
+  <nav class="topnav" aria-label="주 메뉴">
+    <a href="./index.html#exhibitions">전시</a>
+    <a href="./index.html#photowall">포토월</a>
+    <a href="./index.html#pricing">요금제</a>
     <a href="./about.html" class="current">소개</a>
-    <a href="./app/">전시장 입장</a>
-    <a href="./app/studio.html">작가 스튜디오</a>
-    <a href="./guide.html">이용 안내</a>
+    <a href="./guide.html">가이드</a>
+    <span class="nav-sep" aria-hidden="true"></span>
+    <!-- 로그인·회원가입은 `<a>` 가 아니라 `<button>` 이다(이동이 아니라 모달을 연다).
+         룩은 아래 `.topnav a, .topnav button` 규칙 하나가 정한다. 배선은
+         `js/subnav.js` — 로그인 상태에서는 이 자리가 이름 링크로 갈린다. -->
+    <span class="nav-auth-slot" id="navAuthSlot">
+      <button type="button" data-auth-mode="login">로그인</button>
+      <button type="button" data-auth-mode="signup">회원가입</button>
+    </span>
+    <span class="nav-sep" aria-hidden="true"></span>
+    <a href="./app/">입장하기</a>
   </nav>
 </div>
 
@@ -463,6 +574,9 @@
   }
 })();
 </script>
+
+<!-- 주 메뉴 로그인 영역 배선. 메뉴 마크업은 위 `.topnav` 에 있고 이 파일은 배선만 한다. -->
+<script type="module" src="./js/subnav.js"></script>
 
 </body>
 </html>

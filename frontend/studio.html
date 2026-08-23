@@ -43,8 +43,10 @@
     --coral-ink: var(--oas-cta-ink);
     --coral-900: var(--oas-green-900);
 
-    --shadow-whisper: 0 2px 6px rgba(20,21,26,.05);
-    --shadow-panel: 0 8px 20px rgba(20,21,26,.10);
+    /* 라이트 표면용 그림자 — 값은 1층 tokens.css 가 한 자리다(§5-3 표면별 표).
+       --shadow-whisper 는 mypage 의 --sh-1 과 **같은 값이었다** — 그 미러링이 여기서 끝난다. */
+    --shadow-whisper: var(--oas-shadow-whisper);
+    --shadow-panel: var(--oas-shadow-panel);
 
     --danger: var(--oas-danger);
   }
@@ -57,7 +59,7 @@
     font-family: var(--app-font);
     font-weight: 300;
     -webkit-font-smoothing: antialiased;
-    overflow-x: hidden; /* 기존 페이지 모바일 규율(landing.html·design.html과 동형) — 가로넘침 방어 */
+    overflow-x: hidden; /* 기존 페이지 모바일 규율(landing.html과 동형) — 가로넘침 방어 */
   }
   a { color: var(--violet-ink); }
 
@@ -70,6 +72,53 @@
     border-bottom: 1px solid var(--neutral-warm-gray-300);
     padding: 22px 28px 18px;
   }
+  /* ── 홈으로 돌아가는 길 ────────────────────────────────────────────────
+     이 페이지에는 **로고조차 없었다.** 브라우저 뒤로가기 말고는 사이트로 나갈 길이
+     0 이었다(2026-08-09 UX 감사). 작가가 스튜디오에 들어오면 갇힌다.
+
+     **최소형이다.** 로고가 곧 홈 링크이고 주 메뉴는 얹지 않는다 — 「주 메뉴 두 벌 중
+     어느 것이 정본인가」는 감독 축이라 공통 내비 통일은 별도 사이클이다(팀장 판정
+     2026-08-09). 여기서 내비를 새로 만들면 정본이 세 벌이 된다.
+
+     마크업·룩은 **`mypage.html` 의 같은 블록과 한 글자도 다르지 않다.** 두 페이지가
+     서로 같은 형태여야 한다는 것이 이 항목의 요구다. 색은 각자 2층 토큰 이름을
+     참조하므로(여기 `--violet-ink`, 저기 `--accent`) 선언 텍스트는 갈리지만 **최종
+     계산색은 같아야 하고**, 그것은 `tests/homelink-contract.test.ts` 가 본다 —
+     한쪽만 고치면 그 검사가 빨간불이 된다(값 미러링을 산문이 아니라 게이트로 묶는다).
+
+     로고 마크업(`.w-lead`/`.dot`)은 `guide.html`·`about.html` 의 `.brand`,
+     `landing.html` 의 `.nav-logo` 와 같은 것을 쓴다 — 워드마크는 이미 정본이 있다.
+     `.dot` 만 **새 색을 만들지 않으려고** 알파가 아니라 `opacity` 로 눕힌다. */
+  .homelink {
+    display: flex;
+    width: max-content;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    /* 12px 은 하한이다 — `DESIGN.md §4-5` 가 실사용 텍스트 **12px 미만 금지**다.
+       첫 판본을 11px 로 썼다가 그 조항에 걸려 올렸다(이 파일에 11px 짜리 라벨이
+       이미 있다는 것은 근거가 안 된다 — 있는 위반이 새 위반을 정당화하지 않는다).
+       자간은 워드마크 정본 중 **상단바 로고** 쪽(`landing.html .nav-logo`, 0.06em)을
+       따른다. `guide.html .brand` 의 0.22em 은 다크 히어로 밴드에서 크게 벌리는
+       값이라 여기 12px 에 그대로 쓰면 «Open ArtShow .» 로 갈라져 읽힌다(육안 실측:
+       0.18em 에서 실제로 그랬다). 이 자리의 역할이 브랜드 밴드가 아니라
+       **작은 워드마크 + 홈 이동**이라 상단바 쪽이 맞다. */
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    color: var(--ink-dim);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+  .homelink svg {
+    width: 13px; height: 13px;
+    fill: none; stroke: currentColor;
+    stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .homelink .w-lead { color: var(--violet-ink); }
+  .homelink .dot { opacity: 0.55; }
+  .homelink:hover { color: var(--violet-ink); }
+
   header h1 {
     margin: 0;
     font-size: 15px;
@@ -100,7 +149,7 @@
     border: 1px solid var(--violet-ink);
     background: var(--neutral-white);
     box-shadow: var(--shadow-whisper);
-    border-radius: 3px;
+    border-radius: var(--oas-r-plate);
     padding: 20px 24px;
     text-decoration: none;
     color: inherit;
@@ -114,7 +163,7 @@
     text-transform: uppercase;
     color: var(--violet-ink);
     border: 1px solid var(--violet-ink);
-    border-radius: 999px;
+    border-radius: var(--oas-r-pill);
     padding: 2px 8px;
     margin-bottom: 8px;
   }
@@ -138,7 +187,7 @@
     text-transform: uppercase;
     color: var(--text-light);
     background: var(--coral-ink);
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
     padding: 10px 18px;
     white-space: nowrap;
     transition: background 0.15s ease;
@@ -202,7 +251,7 @@
     font-family: inherit;
     font-weight: 300;
     font-size: 13px;
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
     outline: none;
     transition: border-color 0.15s ease;
   }
@@ -239,7 +288,7 @@
     gap: 10px;
     border: 1px solid var(--neutral-warm-gray-300);
     background: var(--neutral-sand-100);
-    border-radius: 3px;
+    border-radius: var(--oas-r-plate);
     padding: 14px;
     cursor: pointer;
     position: relative;
@@ -263,7 +312,7 @@
     display: block;
     width: 100%;
     height: 44px;
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
     border: 1px solid var(--neutral-sand-300);
   }
   .theme-swatch-daylight {
@@ -346,7 +395,7 @@
     border: 1px solid var(--neutral-warm-gray-300);
     background: var(--neutral-white);
     box-shadow: var(--shadow-whisper);
-    border-radius: 3px;
+    border-radius: var(--oas-r-plate);
     padding: 18px;
     position: relative;
   }
@@ -440,7 +489,7 @@
     font-weight: 300;
     letter-spacing: 0.06em;
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
   }
 
   .btn {
@@ -550,7 +599,7 @@
     background: var(--neutral-white);
     box-shadow: var(--shadow-whisper);
     padding: 22px;
-    border-radius: 3px;
+    border-radius: var(--oas-r-plate);
     font-size: 13px;
     line-height: 1.8;
     color: var(--ink-body);
@@ -559,7 +608,7 @@
     background: var(--neutral-sand-100);
     border: 1px solid var(--neutral-warm-gray-300);
     padding: 2px 7px;
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
     color: var(--violet-ink);
     font-family: "SF Mono", Menlo, Consolas, monospace;
     font-size: 12px;
@@ -581,7 +630,7 @@
     box-shadow: var(--shadow-panel);
     border: 1px solid var(--neutral-warm-gray-300);
     padding: 8px 14px;
-    border-radius: 3px;
+    border-radius: var(--oas-r-plate);
     opacity: 0;
     transition: opacity 0.4s ease;
     pointer-events: none;
@@ -615,7 +664,7 @@
     color: var(--violet-ink);
     background: var(--neutral-white);
     border: 1px solid var(--violet-ink);
-    border-radius: 3px;
+    border-radius: var(--oas-r-plate);
     cursor: pointer;
     white-space: nowrap;
   }
@@ -663,7 +712,7 @@
   .img-modal-actions button {
     padding: 8px 14px;
     font-size: 12px;
-    border-radius: 3px;
+    border-radius: var(--oas-r-plate);
     cursor: pointer;
   }
   .img-modal-actions .btn-up {
@@ -722,7 +771,7 @@
   button:focus-visible {
     outline: 2px solid var(--violet-ink);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--oas-r-hair);
   }
 </style>
 </head>
@@ -731,6 +780,10 @@
 <a class="skip-link" href="#main">본문 바로가기</a>
 
 <header>
+  <a class="homelink" href="../" aria-label="OpenArtShow 홈으로">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 5 8 12l7 7"/></svg>
+    <span class="w-lead">Open</span>ArtShow<span class="dot">.</span>
+  </a>
   <h1>OpenArtShow <span class="accent">STUDIO</span> — 나만의 전시장 만들기</h1>
   <p class="sub">작품을 등록하고, 나만의 3D 전시장을 여세요.</p>
 </header>
@@ -821,7 +874,18 @@
     <div class="block-title">
       <span class="num">02</span>
       <h2>작품 목록</h2>
-      <span class="hint">최대 14점 · 대표작(featured)은 최대 2점</span>
+      <!-- ⚠ 숫자를 여기 적지 않는다. 값은 `studio-plan.ts` 가 소유하고 같은 파일의
+           `injectPlanLimits()` 가 이 자리(`#planLimitHint`)를 채운다 — 호출은
+           `studio-main.ts:19`. 그전에는 "최대 14점 · 대표작 2점" 이 **정적으로** 박혀
+           있었고 그것은 **무료 사용자(6점·1점)에게 거짓**이었다. `guide.html:692` 가
+           글자 그대로 같은 결함이었고 2026-08-16 에 고쳤는데, 그때 이 자리를 안 셌다.
+           문구를 고치는 대신 **동적으로 만들어** 미러링 자체를 없앤다.
+
+           ⚠ 이 주석은 주입 주체를 `studio-form.ts` 라고 적고 있었고 **틀렸다**(검수관
+           권고 P4, 2026-08-17). 처음에는 거기 넣었다가 게이트에 막혀 `studio-plan.ts` 로
+           옮겼는데 **포인터만 안 따라왔다.** 거짓 포인터는 다음 사람을 없는 자리로
+           보낸다 — 이 저장소가 `ARCHITECTURE.md:144` 에서 이미 겪은 형태다. -->
+      <span class="hint" id="planLimitHint"></span>
     </div>
 
     <div id="artworkList"></div>

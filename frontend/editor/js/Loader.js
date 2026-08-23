@@ -1,0 +1,1010 @@
+import * as THREE from 'three';
+
+import { TGALoader } from 'three/addons/loaders/TGALoader.js';
+
+import { AddObjectCommand } from './commands/AddObjectCommand.js';
+
+import { LoaderUtils } from './LoaderUtils.js';
+
+import { unzipSync, strFromU8 } from 'three/addons/libs/fflate.module.js';
+
+function Loader( editor ) {
+
+	const scope = this;
+
+	this.texturePath = '';
+
+	this.loadItemList = function ( items ) {
+
+		LoaderUtils.getFilesFromItemList( items, function ( files, filesMap ) {
+
+			scope.loadFiles( files, filesMap );
+
+		} );
+
+	};
+
+	this.loadFiles = function ( files, filesMap ) {
+
+		if ( files.length > 0 ) {
+
+			filesMap = filesMap || LoaderUtils.createFilesMap( files );
+
+			const manager = new THREE.LoadingManager();
+			manager.setURLModifier( function ( url ) {
+
+				url = url.replace( /^(\.?\/)/, '' ); // remove './'
+
+				const file = filesMap[ url ];
+
+				if ( file ) {
+
+					console.log( 'Loading', url );
+
+					return URL.createObjectURL( file );
+
+				}
+
+				return url;
+
+			} );
+
+			manager.addHandler( /\.tga$/i, new TGALoader() );
+
+			for ( let i = 0; i < files.length; i ++ ) {
+
+				scope.loadFile( files[ i ], manager );
+
+			}
+
+		}
+
+	};
+
+	this.loadFile = function ( file, manager ) {
+
+		const filename = file.name;
+		const extension = filename.split( '.' ).pop().toLowerCase();
+
+		const reader = new FileReader();
+		reader.addEventListener( 'progress', function ( event ) {
+
+			const size = '(' + editor.utils.formatNumber( Math.floor( event.total / 1000 ) ) + ' KB)';
+			const progress = Math.floor( ( event.loaded / event.total ) * 100 ) + '%';
+
+			console.log( 'Loading', filename, size, progress );
+
+		} );
+
+		switch ( extension ) {
+
+			case '3dm':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { Rhino3dmLoader } = await import( 'three/addons/loaders/3DMLoader.js' );
+
+					const loader = new Rhino3dmLoader();
+					loader.setLibraryPath( '../examples/jsm/libs/rhino3dm/' );
+					loader.parse( contents, function ( object ) {
+
+						object.name = filename;
+
+						editor.execute( new AddObjectCommand( editor, object ) );
+
+					}, function ( error ) {
+
+						console.error( error );
+
+					} );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case '3ds':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const { TDSLoader } = await import( 'three/addons/loaders/TDSLoader.js' );
+
+					const loader = new TDSLoader();
+					const object = loader.parse( event.target.result );
+
+					editor.execute( new AddObjectCommand( editor, object ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case '3mf':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const { ThreeMFLoader } = await import( 'three/addons/loaders/3MFLoader.js' );
+
+					const loader = new ThreeMFLoader();
+					const object = loader.parse( event.target.result );
+
+					editor.execute( new AddObjectCommand( editor, object ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'amf':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const { AMFLoader } = await import( 'three/addons/loaders/AMFLoader.js' );
+
+					const loader = new AMFLoader();
+					const amfobject = loader.parse( event.target.result );
+
+					editor.execute( new AddObjectCommand( editor, amfobject ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'dae':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { ColladaLoader } = await import( 'three/addons/loaders/ColladaLoader.js' );
+
+					const loader = new ColladaLoader( manager );
+					const collada = loader.parse( contents );
+
+					collada.scene.name = filename;
+
+					editor.execute( new AddObjectCommand( editor, collada.scene ) );
+
+				}, false );
+				reader.readAsText( file );
+
+				break;
+
+			}
+
+			case 'drc':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
+
+					const loader = new DRACOLoader();
+					loader.setDecoderPath( '../examples/jsm/libs/draco/' );
+					loader.parse( contents, function ( geometry ) {
+
+						let object;
+
+						if ( geometry.index !== null ) {
+
+							const material = new THREE.MeshStandardMaterial();
+
+							object = new THREE.Mesh( geometry, material );
+							object.name = filename;
+
+						} else {
+
+							const material = new THREE.PointsMaterial( { size: 0.01 } );
+							material.vertexColors = geometry.hasAttribute( 'color' );
+
+							object = new THREE.Points( geometry, material );
+							object.name = filename;
+
+						}
+
+						loader.dispose();
+						editor.execute( new AddObjectCommand( editor, object ) );
+
+					} );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'fbx':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { FBXLoader } = await import( 'three/addons/loaders/FBXLoader.js' );
+
+					const loader = new FBXLoader( manager );
+					const object = loader.parse( contents );
+
+					editor.execute( new AddObjectCommand( editor, object ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'glb':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const loader = await createGLTFLoader();
+
+					loader.parse( contents, '', function ( result ) {
+
+						const scene = result.scene;
+						scene.name = filename;
+
+						scene.animations.push( ...result.animations );
+						editor.execute( new AddObjectCommand( editor, scene ) );
+
+						loader.dracoLoader.dispose();
+						loader.ktx2Loader?.dispose();  // [OpenArtShow] KTX2Loader 를 안 붙인다(위 주석)
+
+					} );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'gltf':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const loader = await createGLTFLoader( manager );
+
+					loader.parse( contents, '', function ( result ) {
+
+						const scene = result.scene;
+						scene.name = filename;
+
+						scene.animations.push( ...result.animations );
+						editor.execute( new AddObjectCommand( editor, scene ) );
+
+						loader.dracoLoader.dispose();
+						loader.ktx2Loader?.dispose();  // [OpenArtShow] KTX2Loader 를 안 붙인다(위 주석)
+
+					} );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'js':
+			case 'json':
+
+			{
+
+				reader.addEventListener( 'load', function ( event ) {
+
+					const contents = event.target.result;
+
+					// 2.0
+
+					if ( contents.indexOf( 'postMessage' ) !== - 1 ) {
+
+						const blob = new Blob( [ contents ], { type: 'text/javascript' } );
+						const url = URL.createObjectURL( blob );
+
+						const worker = new Worker( url );
+
+						worker.onmessage = function ( event ) {
+
+							event.data.metadata = { version: 2 };
+							handleJSON( event.data );
+
+						};
+
+						worker.postMessage( Date.now() );
+
+						return;
+
+					}
+
+					// >= 3.0
+
+					let data;
+
+					try {
+
+						data = JSON.parse( contents );
+
+					} catch ( error ) {
+
+						alert( error );
+						return;
+
+					}
+
+					handleJSON( data );
+
+				}, false );
+				reader.readAsText( file );
+
+				break;
+
+			}
+
+			case 'kmz':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const { KMZLoader } = await import( 'three/addons/loaders/KMZLoader.js' );
+
+					const loader = new KMZLoader();
+					const collada = loader.parse( event.target.result );
+
+					collada.scene.name = filename;
+
+					editor.execute( new AddObjectCommand( editor, collada.scene ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'ldr':
+			case 'mpd':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const { LDrawLoader } = await import( 'three/addons/loaders/LDrawLoader.js' );
+
+					const loader = new LDrawLoader();
+					loader.setPath( '../../examples/models/ldraw/officialLibrary/' );
+					loader.parse( event.target.result, function ( group ) {
+
+						group.name = filename;
+						// Convert from LDraw coordinates: rotate 180 degrees around OX
+						group.rotation.x = Math.PI;
+
+						editor.execute( new AddObjectCommand( editor, group ) );
+
+					} );
+
+				}, false );
+				reader.readAsText( file );
+
+				break;
+
+			}
+
+			case 'md2':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { MD2Loader } = await import( 'three/addons/loaders/MD2Loader.js' );
+
+					const geometry = new MD2Loader().parse( contents );
+					const material = new THREE.MeshStandardMaterial();
+
+					const mesh = new THREE.Mesh( geometry, material );
+					mesh.mixer = new THREE.AnimationMixer( mesh );
+					mesh.name = filename;
+
+					mesh.animations.push( ...geometry.animations );
+					editor.execute( new AddObjectCommand( editor, mesh ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'obj':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { OBJLoader } = await import( 'three/addons/loaders/OBJLoader.js' );
+
+					const object = new OBJLoader().parse( contents );
+					object.name = filename;
+
+					editor.execute( new AddObjectCommand( editor, object ) );
+
+				}, false );
+				reader.readAsText( file );
+
+				break;
+
+			}
+
+			case 'pcd':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { PCDLoader } = await import( 'three/addons/loaders/PCDLoader.js' );
+
+					const points = new PCDLoader().parse( contents );
+					points.name = filename;
+
+					editor.execute( new AddObjectCommand( editor, points ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'ply':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { PLYLoader } = await import( 'three/addons/loaders/PLYLoader.js' );
+
+					const geometry = new PLYLoader().parse( contents );
+					let object;
+
+					if ( geometry.index !== null ) {
+
+						const material = new THREE.MeshStandardMaterial();
+
+						object = new THREE.Mesh( geometry, material );
+						object.name = filename;
+
+					} else {
+
+						const material = new THREE.PointsMaterial( { size: 0.01 } );
+						material.vertexColors = geometry.hasAttribute( 'color' );
+
+						object = new THREE.Points( geometry, material );
+						object.name = filename;
+
+					}
+
+					editor.execute( new AddObjectCommand( editor, object ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'stl':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { STLLoader } = await import( 'three/addons/loaders/STLLoader.js' );
+
+					const geometry = new STLLoader().parse( contents );
+					const material = new THREE.MeshStandardMaterial();
+
+					const mesh = new THREE.Mesh( geometry, material );
+					mesh.name = filename;
+
+					editor.execute( new AddObjectCommand( editor, mesh ) );
+
+				}, false );
+
+				if ( reader.readAsBinaryString !== undefined ) {
+
+					reader.readAsBinaryString( file );
+
+				} else {
+
+					reader.readAsArrayBuffer( file );
+
+				}
+
+				break;
+
+			}
+
+			case 'svg':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { SVGLoader } = await import( 'three/addons/loaders/SVGLoader.js' );
+
+					const loader = new SVGLoader();
+					const paths = loader.parse( contents ).paths;
+
+					//
+
+					const group = new THREE.Group();
+					group.name = filename;
+					group.scale.multiplyScalar( 0.1 );
+					group.scale.y *= - 1;
+
+					for ( let i = 0; i < paths.length; i ++ ) {
+
+						const path = paths[ i ];
+
+						const material = new THREE.MeshBasicMaterial( {
+							color: path.color,
+							depthWrite: false
+						} );
+
+						const shapes = SVGLoader.createShapes( path );
+
+						for ( let j = 0; j < shapes.length; j ++ ) {
+
+							const shape = shapes[ j ];
+
+							const geometry = new THREE.ShapeGeometry( shape );
+							const mesh = new THREE.Mesh( geometry, material );
+
+							group.add( mesh );
+
+						}
+
+					}
+
+					editor.execute( new AddObjectCommand( editor, group ) );
+
+				}, false );
+				reader.readAsText( file );
+
+				break;
+
+			}
+
+			case 'usdz':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { USDZLoader } = await import( 'three/addons/loaders/USDZLoader.js' );
+
+					const group = new USDZLoader().parse( contents );
+					group.name = filename;
+
+					editor.execute( new AddObjectCommand( editor, group ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'vox':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { VOXLoader, VOXMesh } = await import( 'three/addons/loaders/VOXLoader.js' );
+
+					const chunks = new VOXLoader().parse( contents );
+
+					const group = new THREE.Group();
+					group.name = filename;
+
+					for ( let i = 0; i < chunks.length; i ++ ) {
+
+						const chunk = chunks[ i ];
+
+						const mesh = new VOXMesh( chunk );
+						group.add( mesh );
+
+					}
+
+					editor.execute( new AddObjectCommand( editor, group ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'vtk':
+			case 'vtp':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { VTKLoader } = await import( 'three/addons/loaders/VTKLoader.js' );
+
+					const geometry = new VTKLoader().parse( contents );
+					const material = new THREE.MeshStandardMaterial();
+
+					const mesh = new THREE.Mesh( geometry, material );
+					mesh.name = filename;
+
+					editor.execute( new AddObjectCommand( editor, mesh ) );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			case 'wrl':
+
+			{
+
+				// [OpenArtShow] VRML 로더 제거 — **chevrotain(파서 라이브러리)을 통째로 끌어온다.**
+				//
+				// `VRMLLoader` 가 `three/examples/jsm/libs/chevrotain.module.min.js` 를 import
+				// 하는데, 그 파일에는 `unpkg.com`·`chevrotain.io` 리터럴이 들어 있고 크기도
+				// 크다. 반입 당시 그것이 **라이브 공유 청크로 흡수돼 미술관 홈페이지가
+				// gzip +174KB 를 더 받고 있었다**(검수관 독립 빌드 실측).
+				//
+				// 청크 분리(`vite.config.js` 의 `vendor-three-editor`)로 라이브 영향은 없어졌지만,
+				// **VRML 은 배치 도구에 필요 없다** — 감독 요구는 GLB 다. 라이선스 미확인
+				// 의존을 배포에 남길 이유가 없어 여기서 뺀다.
+				console.warn( '[OpenArtShow] VRML(.wrl) 은 지원하지 않는다 — GLB 를 쓰라.' );
+				break;
+
+			}
+			case 'xyz':
+
+			{
+
+				reader.addEventListener( 'load', async function ( event ) {
+
+					const contents = event.target.result;
+
+					const { XYZLoader } = await import( 'three/addons/loaders/XYZLoader.js' );
+
+					const geometry = new XYZLoader().parse( contents );
+
+					const material = new THREE.PointsMaterial();
+					material.vertexColors = geometry.hasAttribute( 'color' );
+
+					const points = new THREE.Points( geometry, material );
+					points.name = filename;
+
+					editor.execute( new AddObjectCommand( editor, points ) );
+
+				}, false );
+				reader.readAsText( file );
+
+				break;
+
+			}
+
+			case 'zip':
+
+			{
+
+				reader.addEventListener( 'load', function ( event ) {
+
+					handleZIP( event.target.result );
+
+				}, false );
+				reader.readAsArrayBuffer( file );
+
+				break;
+
+			}
+
+			default:
+
+				console.error( 'Unsupported file format (' + extension + ').' );
+
+				break;
+
+		}
+
+	};
+
+	function handleJSON( data ) {
+
+		if ( data.metadata === undefined ) { // 2.0
+
+			data.metadata = { type: 'Geometry' };
+
+		}
+
+		if ( data.metadata.type === undefined ) { // 3.0
+
+			data.metadata.type = 'Geometry';
+
+		}
+
+		if ( data.metadata.formatVersion !== undefined ) {
+
+			data.metadata.version = data.metadata.formatVersion;
+
+		}
+
+		switch ( data.metadata.type.toLowerCase() ) {
+
+			case 'buffergeometry':
+
+			{
+
+				const loader = new THREE.BufferGeometryLoader();
+				const result = loader.parse( data );
+
+				const mesh = new THREE.Mesh( result );
+
+				editor.execute( new AddObjectCommand( editor, mesh ) );
+
+				break;
+
+			}
+
+			case 'geometry':
+
+				console.error( 'Loader: "Geometry" is no longer supported.' );
+
+				break;
+
+			case 'object':
+
+			{
+
+				const loader = new THREE.ObjectLoader();
+				loader.setResourcePath( scope.texturePath );
+
+				loader.parse( data, function ( result ) {
+
+					editor.execute( new AddObjectCommand( editor, result ) );
+
+				} );
+
+				break;
+
+			}
+
+			case 'app':
+
+				editor.fromJSON( data );
+
+				break;
+
+		}
+
+	}
+
+	async function handleZIP( contents ) {
+
+		const zip = unzipSync( new Uint8Array( contents ) );
+
+		const manager = new THREE.LoadingManager();
+		manager.setURLModifier( function ( url ) {
+
+			const file = zip[ url ];
+
+			if ( file ) {
+
+				console.log( 'Loading', url );
+
+				const blob = new Blob( [ file.buffer ], { type: 'application/octet-stream' } );
+				return URL.createObjectURL( blob );
+
+			}
+
+			return url;
+
+		} );
+
+		// Poly
+
+		if ( zip[ 'model.obj' ] && zip[ 'materials.mtl' ] ) {
+
+			const { MTLLoader } = await import( 'three/addons/loaders/MTLLoader.js' );
+			const { OBJLoader } = await import( 'three/addons/loaders/OBJLoader.js' );
+
+			const materials = new MTLLoader( manager ).parse( strFromU8( zip[ 'materials.mtl' ] ) );
+			const object = new OBJLoader().setMaterials( materials ).parse( strFromU8( zip[ 'model.obj' ] ) );
+
+			editor.execute( new AddObjectCommand( editor, object ) );
+			return;
+
+		}
+
+		//
+
+		for ( const path in zip ) {
+
+			const file = zip[ path ];
+
+			const extension = path.split( '.' ).pop().toLowerCase();
+
+			switch ( extension ) {
+
+				case 'fbx':
+
+				{
+
+					const { FBXLoader } = await import( 'three/addons/loaders/FBXLoader.js' );
+
+					const loader = new FBXLoader( manager );
+					const object = loader.parse( file.buffer );
+
+					editor.execute( new AddObjectCommand( editor, object ) );
+
+					break;
+
+				}
+
+				case 'glb':
+
+				{
+
+					const loader = await createGLTFLoader();
+
+					loader.parse( file.buffer, '', function ( result ) {
+
+						const scene = result.scene;
+
+						scene.animations.push( ...result.animations );
+						editor.execute( new AddObjectCommand( editor, scene ) );
+
+						loader.dracoLoader.dispose();
+						loader.ktx2Loader?.dispose();  // [OpenArtShow] KTX2Loader 를 안 붙인다(위 주석)
+
+					} );
+
+					break;
+
+				}
+
+				case 'gltf':
+
+				{
+
+					const loader = await createGLTFLoader( manager );
+
+					loader.parse( strFromU8( file ), '', function ( result ) {
+
+						const scene = result.scene;
+
+						scene.animations.push( ...result.animations );
+						editor.execute( new AddObjectCommand( editor, scene ) );
+
+						loader.dracoLoader.dispose();
+						loader.ktx2Loader?.dispose();  // [OpenArtShow] KTX2Loader 를 안 붙인다(위 주석)
+
+					} );
+
+					break;
+
+				}
+
+			}
+
+		}
+
+	}
+
+	async function createGLTFLoader( manager ) {
+
+		const { GLTFLoader } = await import( 'three/addons/loaders/GLTFLoader.js' );
+		const { DRACOLoader } = await import( 'three/addons/loaders/DRACOLoader.js' );
+
+		const dracoLoader = new DRACOLoader();
+		dracoLoader.setDecoderPath( '../examples/jsm/libs/draco/gltf/' );
+
+		const loader = new GLTFLoader( manager );
+		loader.setDRACOLoader( dracoLoader );
+
+		// [OpenArtShow] MeshoptDecoder 제거 — **세 번째이자 마지막 wasm 유입 경로였다.**
+		//
+		// `meshopt_decoder.module.js` 는 wasm 을 **base64 가 아닌 형태**로 들고 있다가
+		// 모듈 평가 시점에 `WebAssembly.validate()`/`instantiate()` 를 부른다.
+		// 우리 CSP(`script-src 'self'`, `'wasm-unsafe-eval'` 없음)가 거기서 막는다.
+		//
+		// ⚠️ **내가 만든 `[C2]` 가드가 이것을 못 잡았다.** 그 가드는 base64 매직(`AGFzbQ`)만
+		// 셌고, 앞의 둘(mikktspace·zstddec)은 base64 였지만 이것은 아니었다 —
+		// **가드가 PASS 인 채로 페이지가 계속 죽었다.** 검사 축을 `WebAssembly.` 호출로
+		// 바꿔서야 잡힌다(같은 커밋에서 고쳤다).
+		//
+		// 파급은 앞의 둘과 같다: three/addons 는 manualChunks 로 공유 청크에 묶이므로
+		// editor 를 열지도 않은 미술관·world·builder 가 함께 죽었다.
+		//
+		// 잃는 것: meshopt 로 압축된 GLB 를 못 읽는다. 일반 GLB 는 영향 없다.
+
+		// [OpenArtShow] KTX2Loader 제거 — **이것이 라이브 페이지를 깨뜨린 진짜 원인이었다.**
+		//
+		// `KTX2Loader` 가 `zstddec.module.js` 를 끌어오고, 그 모듈은 **wasm 을 base64 로
+		// 인라인**해 들고 있다가 `WebAssembly.instantiate()` 를 부른다. 우리 CSP 는
+		// `script-src 'self'` 이고 `'wasm-unsafe-eval'` 이 없어 그 지점에서 막힌다.
+		//
+		// ⚠️ **동적 import 인데도 공유 청크에 들어갔다.** vite 의 manualChunks 가
+		// `node_modules/three` 를 `vendor-three` 로 묶으므로 동적/정적과 무관하게 그쪽으로
+		// 간다 — 그래서 editor 를 열지 않은 **미술관·world·builder 까지** 같은 위반으로
+		// 죽었다(스모크 `[6]` 이 세 페이지를 지목).
+		//
+		// 앞선 회차에 같은 형태를 `mikktspace`(Modifiers)에서 한 번 걷었는데 **wasm 을
+		// 인라인한 모듈이 하나 더 있었다.** 문자열 `mikktspace` 로만 확인해서 놓쳤고,
+		// **wasm 매직(`AGFzbQ`)으로 다시 세어서야** 드러났다 — 검사 축이 틀렸던 것이다.
+		//
+		// 잃는 것: KTX2 로 압축된 텍스처를 가진 GLB 를 못 읽는다. 어차피 transcoder 경로가
+		// `../examples/jsm/libs/basis/`(우리 배포에 없는 경로)라 **원래도 못 읽었다.**
+		// 일반 GLB(PNG/JPEG 텍스처)는 영향 없다.
+
+		return loader;
+
+	}
+
+}
+
+export { Loader };

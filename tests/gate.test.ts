@@ -19,7 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GATES, RISK_PATHS, changeSummary } from '../scripts/gate.mjs';
+import { GATES, RISK_PATHS, changeSummary, overlapCheck, OVERLAP_EXEMPT, baseInfo } from '../scripts/gate.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -60,8 +60,12 @@ describe('gate.mjs — 게이트 목록', () => {
     }
   });
 
-  it('스모크는 포함하지 않는다 — §10-3 독립 executor 소관', () => {
-    // 구현자가 자기 코드를 스모크하는 습관이 생기면 안 된다(구현자 본인 금지).
+  it('스모크는 포함하지 않는다 — CI 의 smoke job 이 판정 주체다', () => {
+    // ⚠ 이 단언의 제목은 오래 *"§10-3 독립 executor 소관"* 이었고 **2026-08-10 팀장 판정으로
+    // 폐기된 절차**다(검수관 권고 P3). 단언 자체는 그대로 유효하다 — 이유가 바뀌었을 뿐이다:
+    // `smoke:vite` 는 10분 이상 걸려 로컬 게이트에 넣으면 매 커밋이 그만큼 느려지고,
+    // **배포 판정은 어차피 CI 의 `smoke` job 이 한다**(§10-3 (a) — 로컬 PASS 는 판정
+    // 근거로 기재 금지). 로컬에서 돌리는 것 자체는 조기 스크리닝으로 허용된다.
     const wired = GATES.map((g) => g.cmd);
     expect(wired.filter((c) => c.startsWith('smoke'))).toEqual([]);
   });
@@ -73,6 +77,129 @@ describe('gate.mjs — 게이트 목록', () => {
 
   it('gate script 가 package.json 에 등록돼 있다', () => {
     expect(pkg.scripts?.gate).toBe('node scripts/gate.mjs');
+  });
+});
+
+// ── GS-A · `GATES` ↔ `ci.yml` 정합 ─────────────────────────────────────────
+//
+// **왜 이 describe 가 생겼나 (검수관 블로커 B2, 2026-08-17).**
+// `check:cycles`·`check:filesize` 를 신설하면서 `GATES` 에만 넣고 `ci.yml` 에 안 넣었다.
+// 위의 「package.json 의 check:* 가 전부 게이트에 배선돼 있다」는 초록이었지만, 그것은
+// **로컬 게이트까지만** 보는 축이다. 필수 상태검사는 `verify`·`smoke` 둘이므로 두 게이트는
+// **PR·병합·배포 어느 단계도 막지 못했다** — 유일한 집행이 pre-commit 훅이었고 그것은
+// `--no-verify`·훅 미설치 세션·GitHub 웹 편집을 전부 통과한다.
+//
+// 즉 게이트 목록이 **두 곳에 따로 적힌 값 미러링**이었고, 한쪽만 고쳐도 아무도 몰랐다.
+//
+// ⚠ **이 검사가 못 잡는 것**(정직하게 적는다):
+//   · `smoke` job 쪽 검사 — 여기서는 `verify` job 만 본다
+//   · GitHub 의 required status check **목록 자체** — 저장소 파일이 아니라 설정이라 못 읽는다
+//   · 훅이 설치 안 된 세션 — 그건 `gate.mjs` 의 `ensureHooksWired` 소관
+//   · `ciExempt` 사유의 **타당성** — 문자열이 있는지만 본다
+describe('GS-A — GATES ↔ ci.yml verify job 정합', () => {
+  const ciPath = join(ROOT, '.github', 'workflows', 'ci.yml');
+  const ci = readFileSync(ciPath, 'utf8');
+
+  /** `verify` job 본문만 잘라낸다 — `smoke` job 의 스텝을 커버로 세면 안 된다 */
+  function verifyJobBody(text: string): string {
+    const start = text.indexOf('\n  verify:');
+    expect(start, 'ci.yml 에 verify job 이 없다').toBeGreaterThan(-1);
+    // 다음 최상위 job(들여쓰기 2칸 + 이름 + `:`)까지
+    const rest = text.slice(start + 1);
+    const m = rest.slice(1).match(/\n {2}[a-z][\w-]*:\n/);
+    return m ? rest.slice(0, (m.index ?? 0) + 1) : rest;
+  }
+
+  /**
+   * YAML 주석을 걷어낸다. **이것이 없으면 검사가 통째로 죽는다.**
+   *
+   * ⚠ 첫 판본은 주석을 안 걷었고, 그 결과 `ci.yml` 의 설명 주석에 있던
+   * *"로컬 `npm run gate` 와 …"* 라는 **산문 한 줄**이 실행 스텝으로 세어져
+   * `inCi.has('gate')` 가 참이 됐다 → 아래 「모든 게이트가 CI 에서도 돈다」가
+   * **항상 조기 return** 했다. 뮤테이션 M6(`Import cycles` 스텝 제거)에서 **0 failed**
+   * 로 드러났다 — 거짓 FAIL 을 막으려고 넣은 우회로가 **거짓 PASS** 를 만든 것이다.
+   *
+   * 검출력이 «구조적으로 0» 인 이 형태는 hookify 첫 판본(`action: warn` 이라 종료코드를
+   * 안 바꿈)과 같고, 이 저장소가 검수관 반려로 이미 한 번 겪었다.
+   */
+  function stripYamlComments(text: string): string {
+    return text.split('\n').map((line) => {
+      const i = line.indexOf('#');
+      if (i < 0) return line;
+      // 줄 시작이거나 앞이 공백일 때만 주석이다(값 안의 `#` 은 건드리지 않는다).
+      if (i === 0 || /\s/.test(line[i - 1])) return line.slice(0, i);
+      return line;
+    }).join('\n');
+  }
+
+  /** 그 job 이 **실제로 돌리는** npm script 이름들 — 주석의 산문은 세지 않는다 */
+  function npmScriptsIn(body: string): Set<string> {
+    const out = new Set<string>();
+    const code = stripYamlComments(body);
+    // `npm run <x>` 와 `npm test`(= run test 의 별칭) 둘 다 본다.
+    for (const m of code.matchAll(/\bnpm\s+run\s+([A-Za-z][\w:.-]*)/g)) out.add(m[1]);
+    if (/\bnpm\s+test\b/.test(code)) out.add('test');
+    return out;
+  }
+
+  const body = verifyJobBody(ci);
+  const inCi = npmScriptsIn(body);
+
+  it('★ 파서가 **주석의 산문**을 실행 스텝으로 세지 않는다', () => {
+    // 이 단언이 뮤테이션 M6 의 산물이다. 주석을 안 걷으면 `npm run gate` 라는 **설명 문장**
+    // 하나가 아래 「모든 게이트가 CI 에서도 돈다」를 통째로 무력화한다(조기 return).
+    const fake = 'jobs:\n  verify:\n    steps:\n      # 로컬 `npm run gate` 로 돌린다\n      - run: npm run lint\n';
+    const got = npmScriptsIn(fake);
+    expect([...got], '★ 주석 안의 npm run 을 실행 스텝으로 셌다').toEqual(['lint']);
+  });
+
+  it('★ 지금 ci.yml 에서도 `gate` 우회가 발동하지 않는다 — 발동하면 아래가 전부 공허하다', () => {
+    // 우회 자체는 정당하다(ci.yml 을 `npm run gate` 한 줄로 바꾸면 전부 커버된다).
+    // 위험한 것은 **그것이 의도치 않게 켜지는 것**이라 지금 상태를 못 박아 둔다.
+    expect(inCi.has('gate'), '★ gate 우회가 켜져 GS-A 가 스킵되고 있다').toBe(false);
+  });
+
+  it('파서가 실제로 무언가를 찾았다 — 0건이면 아래 단언들이 전부 공허하다', () => {
+    // ⚠ 이것이 없으면 파서가 깨져 빈 집합을 내도 **차집합이 전체가 되어** FAIL 하거나,
+    // 반대로 정규식이 모든 것을 매치해 **전부 통과**한다. 어느 쪽이든 축이 죽는다.
+    expect(inCi.size, 'ci.yml verify job 파싱이 0건이다 — 정규식이나 job 경계가 깨졌다')
+      .toBeGreaterThan(3);
+    expect(inCi.has('lint'), '파서가 lint 를 못 찾았다').toBe(true);
+    expect(inCi.has('typecheck'), '파서가 typecheck 를 못 찾았다').toBe(true);
+  });
+
+  it('verify job 이 smoke job 을 침범하지 않는다 — job 경계가 맞다', () => {
+    expect(body.includes('smoke:vite'), 'verify 본문에 smoke job 스텝이 섞였다').toBe(false);
+  });
+
+  it('★ 모든 게이트가 CI 에서도 돈다 — 안 도는 것은 `ciExempt` 로 사유를 적는다', () => {
+    // ci.yml 이 `npm run gate` 한 줄로 바뀌면 그것이 전부를 커버한다(거짓 FAIL 방지).
+    if (inCi.has('gate')) return;
+    const missing = GATES
+      .filter((g) => !inCi.has(g.cmd))
+      .filter((g) => !g.ciExempt);
+    expect(
+      missing.map((g) => g.cmd),
+      `GATES 에 있는데 ci.yml 의 verify job 에 없다 — **배포를 못 막는다**:\n`
+      + `  ${missing.map((g) => g.cmd).join('\n  ')}\n`
+      + `  ci.yml 에 스텝을 넣거나, gate.mjs 의 그 항목에 ciExempt: '<사유>' 를 적어라.`,
+    ).toEqual([]);
+  });
+
+  it('★ `ciExempt` 는 사유가 있어야 한다 — 빈 문자열은 면제가 아니라 누락이다', () => {
+    const empty = GATES.filter((g) => 'ciExempt' in g && !String(g.ciExempt ?? '').trim());
+    expect(
+      empty.map((g) => g.cmd),
+      'ciExempt 가 비어 있다 — 왜 CI 에서 안 도는지 적지 않으면 다음 사람이 판단할 수 없다',
+    ).toEqual([]);
+  });
+
+  it('★ 면제는 **정말 못 도는 것**만이다 — 지금 면제는 하나뿐이고 근거가 실측이다', () => {
+    // 면제가 늘어나면 이 검사가 통과하면서 CI 커버리지는 줄어든다. 개수를 못 박아
+    // **늘리려면 이 줄을 고치게** 만든다(그때 근거를 쓰게 된다).
+    const exempt = GATES.filter((g) => g.ciExempt);
+    expect(exempt.map((g) => g.cmd), '면제 목록이 바뀌었다 — 근거를 확인하고 이 단언을 갱신하라')
+      .toEqual(['check:devlog-times']);
   });
 });
 
@@ -182,7 +309,16 @@ describe('변경 범위 요약 — 패턴 A(확인 없이 단정) 방지 축', (
     // (커밋 직후)에는 아무것도 못 잡는 테스트가 된다.
     const tmp = mkdtempSync(join(tmpdir(), 'gate-index-'));
     const g = (...args: string[]) =>
-      spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: tmp, encoding: 'utf8' });
+      // `commit.gpgsign=false` 를 함께 끊는다 — 이 임시 저장소는 **개발자의 전역 git
+      // 설정을 상속하면 안 된다.** user.email·user.name 을 -c 로 준 것과 같은 이유이고,
+      // 서명만 빠져 있었다. 이 세션 환경은 `commit.gpgsign=true` +
+      // `gpg.ssh.program=/tmp/code-sign` 이 전역으로 걸려 있는데, 그 서명 프로그램이
+      // 저장소 밖의 임시 repo 를 거부해 `fatal: failed to write commit object` 로 죽는다.
+      // 그러면 `changeSummary` 가 null 을 받아 이 테스트가 실패하는데, **실패 사유가
+      // 검사 대상(index 를 보는가)과 아무 상관이 없다.** CI 에는 서명 설정이 없어
+      // 통과하므로 로컬에서만 깨졌고, 그 형태는 "환경 때문에 게이트를 못 도는" 것이라
+      // pre-commit 훅이 커밋을 막는다. 검출력은 그대로다 — 서명은 이 테스트의 축이 아니다.
+      spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', ...args], { cwd: tmp, encoding: 'utf8' });
     try {
       g('init', '-q');
       writeFileSync(join(tmp, 'seed.txt'), 'seed\n');
@@ -257,5 +393,185 @@ describe('훅 배선 — 설정은 추적되지 않는다', () => {
       'core.hooksPath 가 scripts/githooks 가 아니다 — pre-commit 이 돌지 않는다.\n'
       + '  `npm run gate` 를 한 번 돌리면 ensureHooksWired() 가 복구한다.',
     ).toBe('scripts/githooks');
+  });
+});
+
+// ── GS-OV · 겹침 검사 (`G-OPS1`, 팀장 처방 p1) ─────────────────────────────
+//
+// **왜 이 describe 가 생겼나.** 2026-08-22 하루에 세 번, 두 세션이 같은 파일을 각자
+// 고쳤다. 셋 다 충돌로 드러났지만 **그것은 요행이다** — 양쪽이 우연히 같은 줄을 만졌기
+// 때문이지 구조가 막은 것이 아니다.
+//
+// ⚠ **그래서 이 검사들의 핵심은 「충돌이 안 나는 겹침」이다**(아래 ★★★). git merge 가
+// 조용히 통과시키는 그 경우를 못 잡으면 이 게이트는 충돌 검사의 열화판일 뿐이고,
+// 정작 막으려던 사고(두 배율이 동시 적용된 화면이 배포되는 것)를 못 막는다.
+//
+// 실제 git 저장소를 임시로 만들어 잰다 — `overlapCheck` 가 `git` 을 직접 부르므로
+// 스텁으로는 그 배선을 못 본다(이 저장소가 「판정/집행 경계는 아무도 안 본다」로
+// 이름 붙인 그 자리다).
+describe('GS-OV — 겹침 검사가 실제 저장소에서 동작한다', () => {
+  const g = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')} → ${r.status}\n${r.stderr}`);
+    return r.stdout;
+  };
+
+  /** 갈라진 두 브랜치를 만든다. `mainEdit`/`mineEdit` 는 파일명→내용. */
+  const makeRepo = (mainEdit: Record<string, string>, mineEdit: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'gate-ov-'));
+    g(dir, 'init', '-q', '-b', 'main');
+    g(dir, 'config', 'user.email', 't@t');
+    g(dir, 'config', 'user.name', 't');
+    mkdirSync(join(dir, 'docs'), { recursive: true });
+    // 공통 조상 — 각 파일에 줄을 넉넉히 둬서 「다른 줄」 편집이 가능하게 한다.
+    for (const f of ['a.ts', 'b.ts', 'docs/BOARD.md']) {
+      writeFileSync(join(dir, f), Array.from({ length: 9 }, (_, i) => `L${i}`).join('\n'), 'utf8');
+    }
+    g(dir, 'add', '-A'); g(dir, 'commit', '-qm', 'base');
+    // `origin/main` 을 흉내낸다 — 원격 없이 remote-tracking ref 를 직접 만든다.
+    const mb = g(dir, 'rev-parse', 'HEAD').trim();
+    for (const [f, body] of Object.entries(mainEdit)) writeFileSync(join(dir, f), body, 'utf8');
+    if (Object.keys(mainEdit).length) { g(dir, 'add', '-A'); g(dir, 'commit', '-qm', '상대 세션의 커밋'); }
+    g(dir, 'update-ref', 'refs/remotes/origin/main', g(dir, 'rev-parse', 'HEAD').trim());
+    // 내 브랜치는 merge-base 에서 갈라진다.
+    g(dir, 'checkout', '-q', '-b', 'mine', mb);
+    for (const [f, body] of Object.entries(mineEdit)) writeFileSync(join(dir, f), body, 'utf8');
+    if (Object.keys(mineEdit).length) g(dir, 'add', '-A');   // **index** 에만 올린다
+    return dir;
+  };
+  const lines = (...edits: [number, string][]) => {
+    const a = Array.from({ length: 9 }, (_, i) => `L${i}`);
+    for (const [i, v] of edits) a[i] = v;
+    return a.join('\n');
+  };
+
+  it('★★★ **충돌이 안 나는 겹침**을 잡는다 — 이 검사의 존재 이유다', () => {
+    // 상대는 첫 줄, 나는 마지막 줄. `git merge` 는 이것을 **조용히 통과시킨다** —
+    // 그리고 그것이 팀장이 지목한 사고 형태다(두 배율이 동시 적용된 화면).
+    const dir = makeRepo({ 'a.ts': lines([0, '상대']) }, { 'a.ts': lines([8, '나']) });
+    try {
+      const o = overlapCheck('origin/main', dir);
+      expect(o.measured, '못 쟀다').toBe(true);
+      expect(o.both, '충돌 안 나는 겹침을 놓쳤다 — 충돌 검사의 열화판이 됐다').toEqual(['a.ts']);
+      // 실제로 merge 가 통과하는지도 확인한다 — 안 그러면 위 전제가 거짓이다.
+      g(dir, 'commit', '-qm', '내 커밋');
+      const m = spawnSync('git', ['merge', '--no-edit', 'origin/main'], { cwd: dir, encoding: 'utf8' });
+      expect(m.status, '전제가 깨졌다 — 이 편집은 실제로 충돌한다').toBe(0);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('겹치지 않으면 통과한다 — 오탐이 작업을 세우면 안 된다', () => {
+    const dir = makeRepo({ 'a.ts': lines([0, '상대']) }, { 'b.ts': lines([0, '나']) });
+    try {
+      const o = overlapCheck('origin/main', dir);
+      expect(o.measured).toBe(true);
+      expect(o.both, '안 겹치는데 잡았다').toEqual([]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('`docs/BOARD.md` 는 면제다 — 여러 세션이 덧붙이라고 있는 파일이다', () => {
+    const dir = makeRepo(
+      { 'docs/BOARD.md': lines([0, '상대']) },
+      { 'docs/BOARD.md': lines([8, '나']) },
+    );
+    try {
+      expect(overlapCheck('origin/main', dir).both, '게시판이 막혔다').toEqual([]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('면제는 **게시판 하나뿐**이다 — 목록이 늘면 검사가 비어 간다', () => {
+    expect(OVERLAP_EXEMPT.map((e) => e.re.source)).toEqual(['^docs\\/BOARD\\.md$']);
+    for (const e of OVERLAP_EXEMPT) expect(e.why.length, '면제에 사유가 없다').toBeGreaterThan(10);
+  });
+
+  it('★★ 내 쪽은 **index** 를 본다 — staged 안 된 편집은 커밋에 안 들어간다', () => {
+    const dir = makeRepo({ 'a.ts': lines([0, '상대']) }, {});
+    try {
+      writeFileSync(join(dir, 'a.ts'), lines([8, '아직 add 안 함']), 'utf8');
+      expect(overlapCheck('origin/main', dir).both, 'unstaged 를 셌다').toEqual([]);
+      g(dir, 'add', 'a.ts');
+      expect(overlapCheck('origin/main', dir).both, 'add 했는데 안 셌다').toEqual(['a.ts']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('★★ base 를 못 찾으면 **`measured:false`** — 못 잰 것은 통과가 아니다', () => {
+    const dir = makeRepo({}, { 'a.ts': lines([0, '나']) });
+    try {
+      const o = overlapCheck('origin/nosuchbranch', dir);
+      expect(o.measured, '없는 base 를 조용히 통과시켰다').toBe(false);
+      expect(o.why, '왜 못 쟀는지가 없다').toBeTruthy();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  // ── 배선 — 판정이 **집행에 닿는가** ─────────────────────────────────────
+  // ⚠ 위 검사들은 전부 `overlapCheck()` 를 직접 부른다. 그것이 `main()` 에 **배선돼
+  // 있는지**는 아무것도 안 본다 — 이 저장소가 「판정/집행 경계는 아무도 안 본다」로
+  // 이름 붙인 그 자리이고, 같은 회차에 `leafLift()` 소비자 0 으로 실제로 겪었다.
+  //
+  // ⚠⚠ **소스 검사의 한계를 알고 쓴다**(2026-08-22 실측): 이 축은 「죽은 코드」를
+  // 답으로 받는다 — `printOverlap()` 안을 비워도 호출은 남으므로 통과한다. 그 사각은
+  // 아래 「막을 때 스탬프를 지운다」가 같은 파일에서 함께 보는 것으로 좁힌다.
+  it('★★ `main()` 이 겹침 검사를 부르고 **막는다** — 배선이 없으면 위가 전부 공허하다', () => {
+    const src = readFileSync(join(ROOT, 'scripts/gate.mjs'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
+    expect(src, 'main() 이 printOverlap 을 안 부른다').toMatch(/functionmain\(\)\{[^}]*printOverlap\(\)/);
+    // 부르기만 하고 결과를 안 보면 배선이 아니다 — 종료코드로 이어져야 한다.
+    expect(src, 'printOverlap 결과가 return 으로 이어지지 않는다')
+      .toMatch(/printOverlap\(\)!==0\)\{[^}]*return1/);
+    // 막을 때 스탬프를 지운다 — 안 지우면 옛 스탬프로 커밋이 통과한다.
+    expect(src, '막으면서 스탬프를 안 지운다').toMatch(/printOverlap\(\)!==0\)\{[^}]*clearStamp\(\)/);
+    // 그리고 **게이트들보다 먼저** 온다 — 겹쳤으면 10분짜리 테스트를 돌릴 이유가 없다.
+    const i = src.indexOf('printOverlap()!==0');
+    const j = src.indexOf('for(constgateofGATES)');
+    expect(i, '겹침 검사가 게이트 루프보다 뒤에 있다').toBeGreaterThan(0);
+    expect(i, '겹침 검사가 게이트 루프보다 뒤에 있다').toBeLessThan(j);
+  });
+
+  it('★★ base 신선도가 **겹침 경로에서도** 찍힌다 — 문구가 거짓이 되지 않게', () => {
+    // ── 왜 이 검사가 생겼나 (검수관 권고, 2026-08-22) ──────────────────────
+    // 첫 판본은 base 나이를 `printChangeSummary()` 에만 두고 커밋 메시지에 *"눈에
+    // 보이게 했다"* 라고 적었는데, **겹침이 잡히는 경로는 조기 `return 1` 이라 그
+    // 함수를 안 부른다** — 즉 그 문장이 정작 필요한 순간에 거짓이었다.
+    //
+    // 이것이 왜 중요한가: 「겹침 0」과 「낡은 base 라 못 봤다」는 화면에서 구별되지
+    // 않는다. 그것이 이 게이트의 가장 큰 사각이고(백로그 한계 ①), base 를 찍는 것이
+    // 유일한 방어다. **게이트 유효성에 대한 거짓 진술은 다음 사람이 확인을 생략하게
+    // 만든다** — 이 저장소가 `main` unprotected 오기로 7일을 잃은 그 형태다.
+    const src = readFileSync(join(ROOT, 'scripts/gate.mjs'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').replace(/\s+/g, '');
+    // `printOverlap` 안에서, **`both.length===0` 조기 return 보다 먼저** 찍어야 한다
+    // — 뒤에 두면 겹침 0 인 경우(= 낡은 base 가 숨는 바로 그 경우)에 안 보인다.
+    const fn = src.slice(src.indexOf('functionprintOverlap()'));
+    const printed = fn.indexOf('baseInfo(o.base)');
+    const early = fn.indexOf('o.both.length===0)return0');
+    expect(printed, 'printOverlap 이 base 를 안 찍는다').toBeGreaterThan(0);
+    expect(early, '전제가 깨졌다 — 조기 return 을 못 찾았다').toBeGreaterThan(0);
+    expect(printed, 'base 를 조기 return 뒤에 찍는다 — 겹침 0 일 때 안 보인다')
+      .toBeLessThan(early);
+    // 포맷을 두 곳에 적지 않는다 — 소비자가 둘이라 함수로 뺐다.
+    expect((src.match(/--date=format:/g) ?? []).length, 'base 포맷이 두 곳에 있다').toBe(1);
+  });
+
+  it('`baseInfo` 가 실제 커밋을 읽는다 — 못 읽으면 `?` 로 **표시**한다(조용히 넘기지 않는다)', () => {
+    const dir = makeRepo({}, {});
+    try {
+      expect(baseInfo('origin/main', dir), '실재하는 base 를 못 읽었다').toMatch(/^[0-9a-f]{7,} /);
+      expect(baseInfo('origin/nosuchbranch', dir), '없는 base 를 조용히 통과시켰다').toBe('?');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('여러 파일이 겹치면 전부 보고한다', () => {
+    const dir = makeRepo(
+      { 'a.ts': lines([0, '상대']), 'b.ts': lines([0, '상대']) },
+      { 'a.ts': lines([8, '나']), 'b.ts': lines([8, '나']) },
+    );
+    try {
+      const o = overlapCheck('origin/main', dir);
+      // ⚠ `both` 를 옵셔널로 받는 것이 맞다 — `measured:false` 일 때 이 필드는 **없다**.
+      // 타입이 「못 쟀다」와 「겹침 0」을 구별하고 있고, 그 구별이 V5 뮤테이션이 노리는
+      // 자리다(못 잰 것을 빈 배열로 뭉개면 통과가 된다).
+      expect(o.measured, '못 쟀다').toBe(true);
+      expect(o.both?.slice().sort()).toEqual(['a.ts', 'b.ts']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

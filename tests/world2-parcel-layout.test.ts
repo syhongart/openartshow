@@ -13,6 +13,7 @@ import {
 } from '../frontend/js/world2/decide/parcel-layout.js';
 import { isTowerParcel } from '../frontend/js/world2/parts/zoning.js';
 import { isPlaza } from '../frontend/js/world2/parts/plaza.js';
+import { surfaceY } from '../frontend/js/world2/parts/surface.js';
 import { ALL_KINDS, PARTS } from '../frontend/js/world2/parts/index.js';
 
 const at = (px: number, pz: number, tier: 'near' | 'mid' | 'far' = 'near') => parcelLayout(px, pz, tier);
@@ -108,9 +109,12 @@ describe('불변식 ② tier 포함관계 — 건물이 순간이동하지 않�
 });
 
 describe('kindsFor — tier별 구성', () => {
-  it('near가 가장 많고 far가 가장 적다', () => {
-    expect(kindsFor('near').length).toBeGreaterThan(kindsFor('mid').length);
-    expect(kindsFor('mid').length).toBeGreaterThan(kindsFor('far').length);
+  it('세 tier 의 종류 집합이 같다 — 소멸 사건 제거 규약 (2026-08-10)', () => {
+    // ⚠ 이 단언은 원래 *"near 가 가장 많고 far 가 가장 적다"* 였고 그 규약이 **깜빡임의
+    // 원인이었다** — tier 강등이 종류를 걷어내는 순간이 화면에서 잡혔다(감독 실측,
+    // 근거는 `parts/planter.ts` 의 tiers 주석 한 곳). 지금 규약은 반대다: 전환이
+    // 어떤 종류도 안 바꿔야 한다. 처방 자체의 검사판은 `world2-band-scale.test.ts` 다.
+    expect([...kindsFor('near')].sort()).toEqual([...kindsFor('far')].sort());
   });
 
   it('모든 tier에 ground와 building이 있다 — 빈 파셀은 구멍으로 보인다', () => {
@@ -138,6 +142,15 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
       for (let pz = -3; pz <= 3; pz++) {
         for (const p of at(px, pz)) {
           if (p.kind === 'ground') continue; // 지면은 셀 전체를 덮는다
+          // 그림자 데칼은 **자기 자리를 뽑지 않는다** — 캐스터 자세를 그대로 복사하므로
+          // (`parts/shadow.ts` 의 `place`), 여기서 다시 재면 같은 좌표를 두 번 재는 것이고
+          // `shadow:lamp` 처럼 예외를 종류마다 또 열거해야 한다. 복사라는 사실 자체는
+          // `world2-parcel-layout-golden.test.ts` 의 「자세가 캐스터의 복사다」 가 단언한다.
+          //
+          // ⚠ 그림자가 **월드에서** 파셀 경계를 넘는 것은 사실이고 의도다(태양 저고도).
+          // 그 경계는 좌표가 아니라 길이 상한이 정한다 — `SHADOW_MAX_LEN` 과
+          // `world2-shadow-decal.test.ts` 의 상한 단언이 그 축이다.
+          if (p.kind.startsWith('shadow:')) continue;
           const lx = p.kind === 'lamp' ? DEFAULT_LAYOUT.cellX / 2 : halfX;
           const lz = p.kind === 'lamp' ? DEFAULT_LAYOUT.cellZ / 2 : halfZ;
           expect(Math.abs(p.x), `${p.kind} x`).toBeLessThanOrEqual(lx + 1e-9);
@@ -166,17 +179,41 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   //
   // 하나의 상한으로 둘을 재면 실물 쪽이 헐거워진다(0.1 까지 떠도 통과). 갈라 놓으면
   // 실물은 정확히 0 을 요구할 수 있고, 판은 필요한 만큼 벌릴 수 있다.
-  // ── 목록을 손으로 적지 않는다 (2026-08-06 게이트가 잡은 뒤 고쳤다) ──────────
-  // 예전엔 `new Set(['ground', 'garden', 'road'])` 였다. 나무 발치 pit(`treepit`)을
-  // 추가하자 그 목록에 없어서 **실물 부품 단언에 걸렸다** — 게이트가 제 일을 한 것이고,
-  // 그 순간 이것이 손으로 유지되는 두 번째 목록이라는 것도 드러났다.
+  // ⚠ **손으로 적지 않는다**(검수관 블로커, 팀장 조건 2). 예전에는 여기 리터럴이
+  // 하나뿐이라 견딜 만했으나, 2026-08-12 에 `PartSpec.absoluteY` 라는 **실제 신고**가
+  // 생겼으므로 그것에서 유도한다. 손으로 적으면 바닥 판을 늘릴 때 신고와 이 목록이
+  // 갈라지고, 그때 나는 실패는 원인을 안 가리킨다.
   //
-  // `PartSpec.groundBase` 가 이미 그 사실을 신고한다 — *"지면을 덮는 평면이면 그
-  // 텍스처 바탕색"*(`parts/types.ts`). 즉 "바닥 판인가" 의 SSOT 가 레지스트리에 있는데
-  // 여기가 그것을 베껴 적고 있었다. 유도로 바꾸면 새 바닥 판 파츠가 저절로 편입된다.
-  const DECALS = new Set(PARTS.filter((p) => p.groundBase !== undefined).map((p) => p.kind));
+  // 그림자도 `absoluteY` 라 함께 빠진다 — 그쪽은 캐스터 자세를 복사하므로 "밑동" 이라는
+  // 개념 자체가 없고, 캐스터와 같은 높이인지는 `world2-surface.test.ts` 가 전수로 본다.
+  const DECALS = new Set(PARTS.filter((p) => p.absoluteY).map((p) => p.kind));
 
-  it('실물 부품은 밑동이 정확히 땅에 있다', () => {
+  /**
+   * **지면을 덮는 평면**. 위 `DECALS` 와 다르다 — 그쪽은 "표면 가산에서 빠지는 것"
+   * (바닥 판 + 그림자)이고, 이쪽은 "판끼리 깊이를 다투는 것"(바닥 판만)이다.
+   *
+   * 두 축을 하나로 합치려다 실패했다: 그림자를 판으로 취급하니 잔디(0.07)와 그림자
+   * (캐스터 발밑 = 0.07)가 같은 높이라 **판 간격 검사가 깨졌다.** 그림자는 판이 아니고
+   * 깊이 다툼은 `depthWrite:false` 로 다룬다 — 같은 집합에 넣을 수 없다.
+   *
+   * 신고는 `PartSpec.groundBase` 다(*"지면을 덮는 평면이면 그 텍스처 바탕색"*). 여기서도
+   * 종류 이름을 손으로 적지 않는다.
+   */
+  const PLATES = new Set(PARTS.filter((p) => p.groundBase !== undefined).map((p) => p.kind));
+
+  // ⚠ **2026-08-12 에 재는 축을 고쳤다** (감독 발견 → 팀장 판정 B).
+  // 이 단언은 오래 `expect(p.y).toBe(0)` 이었고, 문장(*"밑동이 땅에 있다"*)은 내내 참인데
+  // **결론이 거짓**이었다 — `y=0` 은 **지면 판 상단**이지 화면에서 밟는 바닥이 아니다.
+  // 그 위를 잔디 판(0.07)이 파셀째 덮고 도로(0.14)가 또 얹히므로, `y=0` 으로 놓인 실물은
+  // 실제로는 잔디에 **7cm 잠겨** 있었다(그림자는 판 아래로 묻혀 아예 안 보였다).
+  // 참인 문장에서 성립하지 않는 결론을 뽑은 두 번째 사례다(첫 번째는 `info.memory` —
+  // *"객체를 부팅 때 다 만들어 둔다"* 가 참이면서 GPU 자원 계단을 못 막았던 그것).
+  //
+  // 이제 표면 높이는 `decide/parcel-layout.ts` 가 한 곳에서 더하고, 파츠가 내는 것은
+  // **로컬 높이**다. 그래서 여기서 보는 것도 로컬(= 최종 y − 그 자리 표면 높이)이다.
+  // 표면 정합 자체는 `tests/world2-surface.test.ts` 가 따로 본다 — 두 축을 한 단언에
+  // 섞으면 어느 쪽이 깨졌는지 구별되지 않는다.
+  it('실물 부품은 로컬 밑동이 정확히 0 이다 — 표면 위에 정확히 얹힌다', () => {
     // ── 한 파셀로는 모자란다 ─────────────────────────────────────────────
     // 처음엔 `at(4,-4)` 한 파셀만 봤다. 나무를 8cm 띄우는 뮤테이션이 **살아남았다** —
     // 그 파셀에 나무가 없었기 때문이다. `checked > 0` 을 넣어 뒀지만 그건 "무언가는
@@ -191,7 +228,7 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
         for (const p of at(px, pz)) {
           if (DECALS.has(p.kind)) continue;
           seen.add(p.kind);
-          expect(p.y).toBe(0);
+          expect(p.y - surfaceY(px, pz, p.x, p.z)).toBe(0);
         }
       }
     }
@@ -201,7 +238,7 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
   it('바닥 판은 지면 바로 위에 얹힌다 — 깊이 다툼을 피할 만큼만', () => {
     let checked = 0;
     for (const p of at(4, -4)) {
-      if (!DECALS.has(p.kind)) continue;
+      if (!PLATES.has(p.kind)) continue;
       checked++;
       expect(p.y).toBeGreaterThanOrEqual(0);
       // 20cm 를 넘으면 판이 실제로 떠 보이기 시작한다. 지금 최대는 도로의 14cm 다.
@@ -212,7 +249,7 @@ describe('배치 범위 — 이웃 파셀을 침범하지 않는다', () => {
 
   it('바닥 판끼리 높이가 겹치지 않는다 — 같은 높이면 지글거린다', () => {
     const ys = new Map<string, number>();
-    for (const p of at(4, -4)) if (DECALS.has(p.kind)) ys.set(p.kind, p.y);
+    for (const p of at(4, -4)) if (PLATES.has(p.kind)) ys.set(p.kind, p.y);
     const sorted = [...ys.values()].sort((a, b) => a - b);
     for (let i = 1; i < sorted.length; i++) {
       // 5cm 는 벌어져야 먼 거리에서도 순서가 유지된다

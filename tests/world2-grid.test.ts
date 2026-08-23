@@ -14,6 +14,9 @@ import {
   blockPattern, gridEdgeX, gridEdgeZ, BlockPattern,
 } from '../frontend/js/world2/decide/grid.js';
 import { FOUNTAIN_R } from '../frontend/js/world2/parts/fountain.js';
+import { blockersOf, blocked, slide } from '../frontend/js/world2/decide/collide.js';
+import { parcelLayout, DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
+import { DEFAULT_BODY_R as BODY_R } from '../frontend/js/world2/systems/collision.js';
 
 describe('세계의 크기 — 감독 확정 30×30', () => {
   it('가로세로 30칸이다', () => {
@@ -133,10 +136,80 @@ describe('중앙 광장', () => {
       expect(isPlaza(px, pz)).toBe(true);
     });
 
-    it('스폰에서 분수대가 정면이다 — yaw=0 은 -z 를 본다', () => {
+    it('스폰에서 분수대가 화각 안이다 — yaw=0 은 -z 를 본다', () => {
       // facing(0) = (0,-1). 분수대(원점)가 그 방향에 있으려면 스폰 z 가 양수여야 한다.
       expect(SPAWN.z).toBeGreaterThan(0);
-      expect(SPAWN.x).toBe(plazaCenter().x); // 좌우로 치우치면 정면이 아니다
+      // ⚠ 여기 원래 `expect(SPAWN.x).toBe(plazaCenter().x)` 였고 주석은 *"좌우로 치우치면
+      // 정면이 아니다"* 였다. **그 단언이 스폰을 분수대 정면에 못 박고 있었고**, 충돌
+      // (#182)이 붙자 그 자리가 6.9m 만 걷고 멈추는 자리가 됐다(검수관 반려 B1).
+      // 감독 판정 *"스폰을 옆으로 비킨다"* 로 x 를 옮겼으므로 요건을 **화각**으로 바꾼다 —
+      // 지켜야 할 것은 "정중앙" 이 아니라 "첫 화면에 분수대가 보인다" 였다.
+      const theta = (Math.atan2(Math.abs(SPAWN.x - plazaCenter().x), SPAWN.z) * 180) / Math.PI;
+      expect(theta).toBeLessThan(25); // 카메라 fov 60° → 수평 반각이 이보다 넓다
+    });
+
+    // ── 충돌이 붙은 뒤 생긴 요건 둘 (#182) ───────────────────────────────────
+    //
+    // 위 세 검사는 **좌표 거리**만 본다. 그것으로는 부족하다는 것이 충돌 도입으로
+    // 드러났다 — 분수대에서 10m 떨어져 있어도 `slide` 가 옆으로 빼줄 성분이 없으면
+    // 앞으로 6.9m 밖에 못 간다. `FOUNTAIN_R + 1` 은 통과하는데 화면에서는 벽 앞이다.
+    //
+    // 그래서 **실제 충돌 모듈을 돌려** 확인한다. `decide/collide.ts` 는 순수 함수라
+    // 브라우저 없이 그대로 부를 수 있다 — 판정/집행 경계를 넘는 검사를 여기서 만든다.
+    describe('충돌 이후 요건 — 좌표 거리로는 부족했다', () => {
+      // 셀 크기는 `DEFAULT_LAYOUT` 에서 읽는다 — 위 `CELL = 32` 는 이 파일이 예전부터
+      // 들고 있는 사본이고, 여기서 그것을 또 쓰면 값 미러링이 한 겹 늘어난다.
+      const CX = DEFAULT_LAYOUT.cellX;
+      const CZ = DEFAULT_LAYOUT.cellZ;
+
+      /** 스폰 3×3 파셀의 모든 원. `systems/collision.ts` 의 `rebuild` 와 같은 범위다 */
+      const blockersNear = (x: number, z: number) => {
+        const px = Math.round(x / CX);
+        const pz = Math.round(z / CZ);
+        const out = [];
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const qx = px + dx;
+            const qz = pz + dz;
+            out.push(...blockersOf(parcelLayout(qx, qz, 'near', DEFAULT_LAYOUT), qx * CX, qz * CZ));
+          }
+        }
+        return out;
+      };
+
+      it('스폰이 어느 원에도 안 걸린다 — 갇힘 가드에 의존하지 않는다', () => {
+        expect(blocked(SPAWN.x, SPAWN.z, blockersNear(SPAWN.x, SPAWN.z), BODY_R)).toBe(false);
+      });
+
+      it('스폰 둘레에 여유가 2m 넘게 남는다 — 코앞에 물체가 있으면 안 된다', () => {
+        let gap = Infinity;
+        for (const b of blockersNear(SPAWN.x, SPAWN.z)) {
+          gap = Math.min(gap, Math.hypot(SPAWN.x - b.x, SPAWN.z - b.z) - b.r - BODY_R);
+        }
+        // 실측 2.89m(x=-3.5). 2m 로 잡은 이유는 그 아래로 내려가면 스폰 화면에 물체가
+        // 코앞으로 들어오기 때문이고, 스캔에서 x 를 한 칸 더 비키면(-4.5) 1.96m 라
+        // **이 검사가 그 칸을 실제로 거른다**(임계가 장식이 아니라는 확인).
+        expect(gap).toBeGreaterThan(2);
+      });
+
+      it('스폰에서 정면으로 20m 는 걸을 수 있다 — 벽 앞에 세워두지 않는다', () => {
+        // **여기서 멈춘다.** 장거리(80m+)를 요구하지 않는다 — `grid.ts` 의 SPAWN 주석에
+        // 적은 대로 그 값은 폭 0.4m 짜리 틈에만 존재하는 우연이고, 배치를 만지면 사라진다.
+        // 세션이 파셀을 몇 개 건너는가는 주행 쪽(`measure-invariants.mjs`)이 책임진다.
+        const step = 0.05;
+        // `SPAWN` 이 `as const` 라 리터럴 타입(`-3.5`)이다 — 명시 없이 `let` 으로 받으면
+        // 재대입이 타입 에러가 된다.
+        let x: number = SPAWN.x;
+        let z: number = SPAWN.z;
+        let moved = 0;
+        for (let i = 0; i < 600; i++) {
+          const b = blockersNear(x, z);
+          const r = slide(x, z, 0, -step, b, BODY_R);
+          moved += Math.hypot(r.x - x, r.z - z);
+          x = r.x; z = r.z;
+        }
+        expect(moved).toBeGreaterThan(20);
+      });
     });
   });
 

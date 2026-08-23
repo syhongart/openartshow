@@ -33,11 +33,11 @@
 import * as THREE from 'three/webgpu';
 // TSL 함수는 `three/tsl` 에 있다. `three/webgpu` 에는 `PassNode` **클래스**만 있고
 // `pass()` **함수**가 없어서, 거기서 찾다가 조용히 null 로 빠졌다(첫 시도의 실패 원인).
-import { pass } from 'three/tsl';
+import { pass, mrt, output, emissive } from 'three/tsl';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { nightness, LAMP_LUMINANCE, LAMP_MAX_GLOW, type SkyTime } from '../decide/night.js';
 import { BLOOM_THRESHOLD } from './postfx-params.js';
-import { readNum } from '../url-knob.js';
+import { readNum, readLit } from '../url-knob.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 /**
@@ -91,6 +91,89 @@ const THRESHOLD = BLOOM_THRESHOLD;
  * 딸려 오는 것이 덤이다(`?bloomstr=99` 로 화면을 날려 먹지 않는다).
  */
 const num = (key: string, fallback: number) => readNum(key, fallback, 0, 8);
+
+/**
+ * 🔴 **낮 바닥값** — 낮에도 발광체가 **살짝** 번진다.
+ *
+ * 감독 지시 2026-08-22: *"지엘비 조명에 블룸효과가 없어. 별도로 약하게 해"*
+ *
+ * ── 실측: 「없어」의 정체는 GLB 가 아니라 **세기 0** 이었다 ─────────────────
+ * 아래 `applyLevel` 이 세기를 `STRENGTH × nightness(time, lit)` 로 계산하는데,
+ * world2 기본 시간대가 `day` 이고(`main.ts:609` — `readEnum('time', 'day', TIMES)`)
+ * `nightness('day')` 가 **0** 이다(`decide/night.ts:132`). 곱이 0 이므로 **낮 화면에는
+ * 블룸이 아예 없다** — GLB 조명만이 아니라 가로등도 물도 전부 안 번진다.
+ *
+ * 즉 감독이 보신 것은 「GLB 가 블룸에서 빠졌다」가 아니라 「그 화면에 블룸이 0」이다.
+ * ⚠ 이 구별이 중요하다 — 전자로 읽으면 MRT 배선을 뜯게 되는데 그쪽은 멀쩡하다.
+ *
+ * ── 왜 이제 낮에 켜도 되는가 (옛 근거가 만료됐다) ──────────────────────────
+ * `applyLevel` 위 주석이 오래 *"낮에 켜 두면 하늘이 부옇게 떠서 대낮의 대비가 죽는다"*
+ * 를 근거로 낮을 0 으로 눌러 왔다. 그것은 **화면 전체 블룸이던 시절**의 근거다.
+ * 발광 채널 분리(#244) 이후 하늘 돔은 `MeshBasicMaterial` 이라 emissive 채널에서
+ * **구조적으로 빠진다** — 하늘은 이제 아무리 번져도 안 뜬다. 같은 주석이 이 긴장을
+ * *"해소된 것이 아니라 감독 판정 대기"* 라고 적어 두었고, 이 지시가 그 판정이다.
+ *
+ * ── 낮에 무엇이 함께 번지나 (실측) ─────────────────────────────────────────
+ *
+ *   GLB 현관 조명   `emissiveFactor [1,1,1]` × 상한        1.0   → **번진다** ← 목적
+ *   물 윤슬         `waterGloss('day').sparkle`             0.85  → **번진다** ⚠ 딸려옴
+ *   가로등          `LAMP_LUMINANCE × lampGlow(0)`          0     → 안 번짐(낮엔 꺼짐)
+ *   작품·별·하늘돔  `MeshBasicMaterial` — 발광 채널 없음    —     → 구조적으로 빠짐
+ *
+ * ⚠ **물 윤슬은 의도가 아니라 딸려 오는 것이다.** 문턱(0.75)을 0.85 로 넘는다.
+ * `emissiveMap` 이 검은 바탕에 흰 점이라 **점만** 번지고, 바닥값이 작으면 미미하다.
+ * 감독이 거슬려 하시면 `?wspark=0` 으로 끄거나 이 값을 더 내린다.
+ *
+ * ── 값 — **감독 판정 0.3** (2026-08-22, 후보 0 · 0.15 · 0.3 · 0.6 중) ──────
+ * 내가 시작값으로 0.15 를 넣었고 **감독이 그 두 배인 0.3 을 고르셨다**("2배로 하자").
+ *
+ * | 후보 | 낮 세기(`×STRENGTH 1.15`) | 밤(1.15) 대비 |
+ * |---|---|---|
+ * | 0    | 0     | 없음 — 감독이 *"블룸효과가 없어"* 라고 하신 그 화면 |
+ * | 0.15 | 0.173 | 1/7 (내 시작값) |
+ * | **0.3** | **0.345** | **1/3.3 ← 감독 확정** |
+ * | 0.6  | 0.690 | 1/1.7 |
+ *
+ * ⚠ **내 시작값이 또 빗나갔고, 이번엔 반대 방향이다.** 직전 두 판정(복합씬 점등 0.4,
+ * GLB 상한 1)에서 감독은 내 시작값보다 **낮은** 쪽을 골랐고, 나는 그것을 *"내 시작값이
+ * 과했다"* 로 정리했다. 그 정리를 이 축에 옮겨 0.15 를 잡았는데 **두 배로 올라왔다.**
+ *
+ * 배운 것은 「낮게 잡아라」가 아니다 — **축마다 다르다.** 앞의 둘은 「빛이 세다」는
+ * 신고에서 나온 축이었고 이 축은 「없다」는 신고에서 나왔다. 신고의 방향을 보지 않고
+ * 직전 회차의 방향을 관성으로 옮긴 것이 빗나간 이유다.
+ *
+ * ⚠ 후보 넷의 **라이브 링크를 실제로 드렸고**, 넷이 서로 다른 화면인지 확인한 뒤
+ * 드렸다(직전 회차에는 넷 다 `time` 없이 드려 전부 번짐 0 이었다 — 태스크 #127).
+ *
+ * ── 🔴 이 값은 **기본 화면에서 안 쓰인다** (같은 날 뒤에 내려온 판정) ────────
+ * 감독이 곧이어 **복합씬(`daylit`)을 기본 시간대로** 정했다(`world2/main.ts` 의
+ * `timeOfDay` 주석). `daylit` 은 `nightness` 가 `?lit=`(0.4)를 내므로 0 이 아니고,
+ * 아래 `applyLevel` 이 `nl > 0` 이면 바닥을 안 쓴다 — 즉 **기본 경로는 0.46 으로
+ * 번지고 이 0.3 은 `?time=day` 에서만 산다.**
+ *
+ * **폐기가 아니다.** 감독은 낮 화면(`?bloomfloor=` 후보 넷)에서 0.3 을 골랐고 복합씬
+ * 화면에서 기본값을 골랐다 — **서로 다른 화면의 두 판정**이고 둘 다 유효하다. 이걸
+ * 「안 쓰이니 지우자」로 읽으면 `?time=day` 가 다시 번짐 0 으로 돌아간다.
+ *
+ * ── ⚠ `?lit=0` 경계에서 값이 **뛴다** (검수관 권고 1, 2026-08-22) ──────────
+ * 아래 `applyLevel` 이 `nl > 0` 으로 가르므로, 복합씬 점등을 연속으로 내리면
+ * `?lit=0.001` 에서 세기가 `1.15 × 0.001 ≈ 0.00115`(사실상 0)인데 `?lit=0` 에서
+ * **바닥값으로 도약**한다(`1.15 × BLOOM_FLOOR`). 수백 배 불연속이다 — 배수를 여기
+ * 적지 않는다(값이 감독 판정으로 움직이면 한쪽만 고쳐지는 그 형태가 된다).
+ *
+ * **결함이 아니라 경계다** — `lit=0` 은 「복합씬인데 등을 안 켠다」이고 그것은 낮과
+ * 같은 상태이므로 낮 바닥을 받는 것이 일관적이다. 실사용 영향도 제한적이다(URL
+ * 파라미터라 슬라이더처럼 연속으로 지나가지 않고, `daylit` 자체가 behind-flag 다).
+ * 그래도 적어 둔다 — 다음 사람이 `?lit=0` 근방을 만지다 **버그로 오인**하지 않게.
+ *
+ * ── 「별도로」는 노브 둘로 나뉜다 ───────────────────────────────────────────
+ * 블룸은 화면 하나에 한 번 도는 패스라 **대상별 세기**를 줄 수 없다(패스를 하나 더
+ * 두면 비용이 두 배다). 대신 축이 둘이라 실질적으로 나뉜다:
+ *   · `?bloomfloor=` — 낮에 **번짐 자체**가 얼마나 실릴지(발광체 공통)
+ *   · `?glbemis=`    — **GLB 조명만**의 발광 값(문턱 초과분이 곧 번짐량이다)
+ * GLB 만 약하게 하려면 후자를, 낮 전체를 약하게 하려면 전자를 내린다.
+ */
+const BLOOM_FLOOR = 0.3;
 
 /**
  * `?bloom=0` 이면 아예 켜지 않는다 — 대조군 측정용.
@@ -148,9 +231,85 @@ export const postfxFeature: Feature = {
     } else {
       try {
         pp = new PP(env.adapter.renderer);
-        const scenePass = pass(env.scene, env.camera) as unknown as { add(x: unknown): unknown };
+        // ── 🔴 번짐은 **발광 채널만** 본다 (감독 2026-08-21) ────────────────────
+        // 감독 신고: *"지엘비 건물에 조명을 단거야? 엄청쎄"* — 미술관 벽에 걸린 작품
+        // 셋이 흰 덩어리로 뭉개져 조명처럼 보였다. 이어서 *"딱 가로등만 살짝 번짐으로
+        // 안되나"*.
+        //
+        // **원인은 문턱이 아니라 대상이었다.** 화면 전체를 블룸에 넣으면 휘도가 문턱을
+        // 넘는 것이 전부 걸리는데, 작품은 **`MeshBasicMaterial`** 이라(감독 지시 *"사진이
+        // 주변 환경에 영향받지 않게"*, `decide/art-material.ts`) 조명을 안 읽고 텍스처
+        // 값이 그대로 나간다 — 흰 그림이면 **1.0** 이다.
+        //   ⚠ 이 자리에 *"`MeshBasicMaterial` + **`toneMapped:false`** 라"* 고 적었는데
+        //   `toneMapped` 는 **WebGPU 빌드에 참조가 0건**이다(`decide/art-material.ts:84-91`
+        //   이 이미 실측해 둔 것을 내가 안 읽고 인과에 넣었다 — 검수관 P18). 결론은
+        //   `MeshBasicMaterial` 만으로 성립하므로 처방은 그대로지만, 인과가 틀린 채 남으면
+        //   다음 사람이 `toneMapped` 로 조절하려 든다. 그리고 실측:
+        //
+        //   가로등 휘도 = LAMP_LUMINANCE(0.80469) × lampGlow(nightness('daylit'))
+        //     `?lit=0.4`(감독 확정) → 1.0980 × 0.80469 = **0.8835**
+        //     `?lit=1`(상한)        → 1.8000 × 0.80469 = 1.4484
+        //
+        // 즉 감독이 고른 값에서는 **작품(1.0)이 가로등(0.88)보다 밝다.** 문턱을 올리면
+        // 가로등이 **먼저** 빠진다 — 나는 이것을 반대로 계산해 «문턱 1.05~1.35 로 가른다»
+        // 는 후보를 감독께 드렸고, 그 셋은 전부 번짐을 통째로 끄는 화면이었다. 상한값
+        // (1.45)을 실제값으로 착각한 것이 원인이다.
+        //
+        // ── 그래서 밝기가 아니라 **채널**로 가른다 ─────────────────────────────
+        // 가로등은 `emissiveIntensity` 로 빛난다(`systems/lamp-glow.ts`). 작품은
+        // `MeshBasicMaterial` 이라 **발광 속성이 아예 없다.** MRT 로 발광 채널을 따로
+        // 받아 그것만 블룸에 넣으면 둘이 **구조적으로** 갈린다 — 값이 아니라 성질로
+        // 갈리므로 나중에 `?lit=` 를 어디로 옮겨도 작품이 다시 걸리지 않는다.
+        //
+        // ── 무엇이 빠지고 무엇이 남는가 (실측, 검수관 반려 B1″ 정정) ────────────
+        // 이 자리에 *"별·**물 하이라이트**·하늘 돔 — 셋 다 발광 채널이 없다"* 라고 적었고
+        // **물이 틀렸다.** 실물 three 0.171.0 으로 재면 이렇다:
+        //
+        //   작품·별(twk)·하늘 돔   `MeshBasicMaterial`      emissive 없음   → **빠진다** ✓
+        //   가로등                 Standard + emissive      0xffc86e×1.098  → 0.8835  걸림
+        //   🔴 **물 윤슬**          Standard + emissive      0xffffff×0.85   → 0.85    **걸림**
+        //
+        // 근거: `features/ocean.ts:1090`(`emissive: 0xffffff` + `emissiveMap: sparkle`) ·
+        // `:1203`(`emissiveIntensity = spark`) · `decide/water-gloss.ts:92`(낮 `sparkle`
+        // 0.85 — 복합씬은 `paletteTime` 으로 접혀 낮 값을 빌린다) · 기본 경로가 `seaMat`
+        // 이다(`:1035` `readEnum('water','std',…)`).
+        //
+        // **이것을 결함으로 단정하지 않는다.** 윤슬은 가로등과 **같은 성질**(발광)이고
+        // 원래 「빛나는 것」이며, `emissiveMap` 이 검은 바탕에 흰 점이라 **점만** 번진다 —
+        // 물 전체가 뜨는 것이 아니다. 감독 신고는 **그림이 뭉개진 것**이었고 그림은 이제
+        // 확실히 빠진다. 다만 «가로등만» 이라는 감독 표현과는 어긋나므로 **알고 묻는다** —
+        // 링크 문안에 그 사실을 넣어 판정을 받는다(*"«모르고 배포»가 아니라 «알고 묻는»"*).
+        // 문턱으로 가르는 길은 없다: 윤슬 0.85 와 가로등 0.8835 의 차이가 **0.033** 이고,
+        // `?lit=` 를 낮추면 가로등이 먼저 빠진다.
+        //
+        // ⚠ **헤드리스로 실제 렌더를 검증할 수 없다** — 이 블록은 WebGPU 에서만 돈다.
+        // 검사가 **둘로 갈려 있고 축이 다르다**:
+        //   `tests/world2-postfx-contract.test.ts` — **mock 0.** 실물 three 로 조립 전
+        //     구간(`pass → setMRT(mrt) → getTextureNode → bloom → add`)을 태운다. 판올림으로
+        //     MRT API 가 바뀌면 여기가 먼저 빨간불이 된다.
+        //   `tests/world2-postfx-time.test.ts` — `vi.mock` **셋**(`three/webgpu`·`three/tsl`·
+        //     `BloomNode`). 세기 계산과 시간대 소비를 잰다. 조립 계약은 **여기서 안 잠긴다.**
+        // ⚠ 이 자리에 *"조립 계약 자체는 `postfx-time.test.ts` 가 **실물 three 로** 태운다"*
+        // 라고 적었고 **거짓이었다**(검수관 조건 1). 다음 사람이 그 파일을 고칠 때 계약이
+        // 안 잠긴다는 것을 모르고, 정작 계약을 잠그는 파일은 아무도 안 가리키게 된다.
+        //
+        // ⚠ **폴백의 범위**: 아래 `catch` 가 받는 것은 **조립 예외**이고, 그때는 블룸이
+        // 안 켜져 감독 판정(*"번짐 끈거로 하자"*) 위로 떨어진다. **셰이더 컴파일·첫 렌더
+        // 실패가 같은 경로로 가는지는 확인 못 했다**(WebGPU 가 없다 — 검수관 P19). 그리고
+        // 실측으로 `getTextureNode('없는이름')` 은 **예외 없이 노드를 돌려준다** — 즉
+        // **조립 성공이 렌더 성공을 뜻하지 않는다.**
+        const scenePass = pass(env.scene, env.camera) as unknown as {
+          setMRT?(v: unknown): void;
+          getTextureNode?(name: string): { add(x: unknown): unknown };
+        };
+        if (typeof scenePass.setMRT !== 'function' || typeof scenePass.getTextureNode !== 'function') {
+          // 구형 three 는 MRT 를 안 준다. 옛 경로(화면 전체 블룸)로 되돌리지 않는다 —
+          // 그 화면이 이번 신고의 원인이고 감독이 물렀다.
+          throw new Error('PassNode 에 setMRT/getTextureNode 가 없다 — 발광 채널 분리 불가');
+        }
+        scenePass.setMRT(mrt({ output, emissive }));
         const b = bloom(
-          scenePass,
+          scenePass.getTextureNode('emissive'),
           num('bloomstr', STRENGTH),
           num('bloomrad', RADIUS),
           num('bloomthr', THRESHOLD),
@@ -158,7 +317,7 @@ export const postfxFeature: Feature = {
         bloomNode = b;
         // 원본 + 번짐. `add` 로 더하는 것이 블룸의 정의다 — 곱하거나 섞으면 어두운
         // 부분까지 영향을 받아 대비가 죽는다.
-        pp.outputNode = scenePass.add(b);
+        pp.outputNode = scenePass.getTextureNode('output').add(b);
         // ── 렌더 중 실패해도 화면은 살린다 ─────────────────────────────────
         // 조립이 성공해도 **첫 렌더에서** 터질 수 있다(WebGL 백엔드에서 실제로 그랬다).
         // 훅 안에서 터지면 매 프레임 예외가 나고 화면이 통째로 멎는다 — 블룸 하나 때문에
@@ -185,12 +344,34 @@ export const postfxFeature: Feature = {
       }
     }
 
-    // 밤에만 번진다. 낮에 켜 두면 하늘이 부옇게 떠서 대낮의 대비가 죽는다.
+    // ⚠ 이 자리에 오래 *"밤에만 번진다. 낮에 켜 두면 하늘이 부옇게 떠서 대낮의
+    // 대비가 죽는다"* 라고 적혀 있었다. **지금은 낮에도 번진다** — 근거와 판정
+    // 전문은 위 `BLOOM_FLOOR` 한 곳이다(하늘 돔은 MRT 로 이미 빠져 안 뜬다).
     // **파이프라인은 그대로 두고 세기만** 흔든다 — 노드를 갈아 끼우면 재컴파일이다.
+    //
+    // 🔴 **복합씬(`daylit`)에서는 낮인데도 번진다 — 그것이 의도다** (검수관 B4′ 정정,
+    // 2026-08-21). 감독 요구가 *"주간인데. 불이 켜져있고"* 인데, 가로등이 **켜진 것처럼
+    // 보이려면** 등불 휘도가 블룸 문턱을 넘어야 한다 — 그 인과는 `decide/night.ts` 의
+    // `LAMP_MAX_GLOW` 주석 한 곳이 소유한다(문턱을 못 넘어 *"가로등 똑같은데"* 를 받은
+    // 이력이 그 자리에 있다). 그래서 블룸은 **접지 않는 축**이고 `?lit=` 를 함께 탄다.
+    // 노브를 한쪽만 태우면 감독이 값을 밀어도 절반만 움직인다(검수관 P7).
+    //
+    // ⚠ 위 첫 줄(*"낮에 켜 두면 대낮의 대비가 죽는다"*)과의 긴장은 **해소된 것이 아니라
+    // 감독 판정 대기**다. 복합씬은 그 대가를 감수하는 씬이고, 얼마나 감수할지가 `?lit=`
+    // 다 — 헤드리스로는 못 잰다(톤매핑 뒤에서만 판정된다).
+    const lit = readLit();
     let lastLevel = -1;
     function applyLevel(time: SkyTime): void {
       if (!bloomNode) return;
-      const level = num('bloomstr', STRENGTH) * nightness(time);
+      // 낮에도 바닥값만큼은 번진다(위 `BLOOM_FLOOR`).
+      //
+      // ⚠ 첫 판본은 `Math.max(floor, nightness(...))` 였고 **결합을 갉아먹었다**:
+      // 복합씬 점등을 `?lit=` 로 바닥(0.15) 아래까지 내려도 번짐이 안 따라 내려간다.
+      // 감독이 `?lit=` 로 값을 밀어도 절반만 움직이는 그 형태이고, 검사가 잡았다.
+      // 그래서 **`nightness` 가 0 인 시간대에만** 바닥을 쓴다 — 그 0 이 고치려던 결함
+      // 전부이고, 0 이 아닌 구간은 노브가 끝까지 지배한다.
+      const nl = nightness(time, lit);
+      const level = num('bloomstr', STRENGTH) * (nl > 0 ? nl : num('bloomfloor', BLOOM_FLOOR));
       if (level === lastLevel) return;
       lastLevel = level;
       bloomNode.strength.value = level;

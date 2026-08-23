@@ -24,7 +24,7 @@
 //    `?vrm=` 둘 다 0 이라야 꺼진다. 그대로 따라 재면 사람이 남은 채 또 미측정이 나온다.
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { drawGroupKeyOf, combineDrawGroupKey } from '../frontend/js/world2/features/types.js';
 import { formatReport } from '../frontend/js/world2/decide/telemetry.js';
@@ -136,9 +136,12 @@ describe('리포트 draw 줄', () => {
  * 그래서 힌트 안의 노브 이름이 **같은 파일에서 실제로 읽히는지**를 본다.
  */
 describe('힌트가 가리키는 노브가 그 파일에 있다', () => {
-  const src = (p: string) => readFileSync(join(import.meta.dirname, '..', 'frontend/js/world2', p), 'utf8');
+  // ⚠ 기준이 `world2/` 에서 `frontend/js/` 로 넓어졌다(2026-08-16) — `glb-city` 본체가
+  // `world-shared/` 로 옮겨졌기 때문이다. **힌트와 노브가 같은 파일에 있는지**를 보는
+  // 축은 그대로이고, 그 「파일」이 어디 있는지만 바뀌었다.
+  const src = (p: string) => readFileSync(join(import.meta.dirname, '..', 'frontend/js', p), 'utf8');
 
-  for (const path of ['features/npc.ts', 'features/glb-city.ts']) {
+  for (const path of ['world2/features/npc.ts', 'world-shared/glb-city.ts']) {
     it(`${path} — drawBlockHint 의 노브를 그 파일이 읽는다`, () => {
       const text = src(path);
       const m = text.match(/drawBlockHint:\s*'([^']+)'/);
@@ -156,9 +159,71 @@ describe('힌트가 가리키는 노브가 그 파일에 있다', () => {
   it('npc 는 **두 노브를 다** 안내한다 — 하나만 끄면 안 꺼진다', () => {
     // `create` 가 `count<=0 && vrmCount<=0` 일 때만 null 을 낸다. 힌트가 `npc=0` 뿐이면
     // 감독이 그대로 재고 VRM 이 남아 또 "측정 안 됨" 이 나온다 — 실제로 그렇게 적었었다.
-    const text = src('features/npc.ts');
+    const text = src('world2/features/npc.ts');
     const hint = text.match(/drawBlockHint:\s*'([^']+)'/)![1];
     expect(hint).toContain('npc=0');
     expect(hint).toContain('vrm=0');
+  });
+});
+
+/**
+ * ── 스모크의 대조군 쿼리가 **모든 막는 기능을 끄는가** (검수관 블로커 B2) ──────
+ *
+ * `scripts/smoke/measure-invariants.mjs` 의 `DRAW_CONTROL_QUERY` 는 `drawBlockHint` 를
+ * **손으로 베낀 리터럴**이다. 어제 힌트를 기능 파일로 옮겨 값 미러링을 없애 놓고,
+ * 오늘 그 값을 스모크에 다시 베꼈다.
+ *
+ * 드리프트가 나면 **조용하다** — 새 기능이 `drawBlockHint` 를 들고 들어오거나 기존
+ * 노브 이름이 바뀌면, 대조군 세션에 그 기능이 살아남아 draw 가 흔들린다. 그때 게이트는
+ * FAIL 하지만 **원인이 "회귀" 로 읽힌다.** 실제로는 대조군 조건이 깨진 것이다.
+ * 반대로 기능이 사라졌는데 쿼리에 남아 있으면 아무 일도 안 나서 영영 모른다.
+ *
+ * 이 저장소가 세 번 데인 형태다(`SAVE_KEY`/`SAVE_KEY_MIRROR` 계열). 그래서 검사로 묶는다.
+ */
+describe('대조군 쿼리가 drawBlockHint 를 전부 덮는다', () => {
+  /** 모든 기능 파일에서 `drawBlockHint` 를 긁어 노브 이름 집합을 만든다. */
+  const hintKnobs = (): Set<string> => {
+    const dir = join(import.meta.dirname, '..', 'frontend/js/world2/features');
+    const out = new Set<string>();
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts'))) {
+      const text = readFileSync(join(dir, f), 'utf8');
+      for (const m of text.matchAll(/drawBlockHint:\s*'([^']+)'/g)) {
+        for (const kv of m[1].split('&')) out.add(kv.split('=')[0]);
+      }
+    }
+    return out;
+  };
+
+  it('★ 힌트가 가리키는 노브가 **하나도 빠짐없이** 대조군 쿼리에 있다', () => {
+    const smoke = readFileSync(
+      join(import.meta.dirname, '..', 'scripts/smoke/measure-invariants.mjs'), 'utf8',
+    );
+    const m = smoke.match(/DRAW_CONTROL_QUERY\s*=\s*`([^`]+)`/);
+    expect(m, '`DRAW_CONTROL_QUERY` 를 못 찾았다 — 대조군이 사라졌거나 이 검사가 딴것을 본다')
+      .not.toBeNull();
+    const query = m![1];
+
+    const knobs = [...hintKnobs()];
+    expect(knobs.length, 'drawBlockHint 가 하나도 없다 — 검사가 아무것도 안 보고 있다')
+      .toBeGreaterThan(0);
+
+    const missing = knobs.filter((k) => !new RegExp(`[?&]${k}=`).test(query));
+    expect(
+      missing,
+      `대조군 쿼리에 없는 노브: ${missing.join(', ')} — 그 기능이 대조군에 살아남아 `
+      + 'draw 가 흔들린다. 게이트는 FAIL 하지만 원인이 "회귀" 로 오독된다.',
+    ).toEqual([]);
+  });
+
+  it('대조군 쿼리의 노브가 전부 0 이다 — 켜 둔 채 끈 척하지 않는다', () => {
+    const smoke = readFileSync(
+      join(import.meta.dirname, '..', 'scripts/smoke/measure-invariants.mjs'), 'utf8',
+    );
+    const query = smoke.match(/DRAW_CONTROL_QUERY\s*=\s*`([^`]+)`/)![1];
+    for (const k of hintKnobs()) {
+      const v = query.match(new RegExp(`[?&]${k}=([^&]*)`))?.[1];
+      expect(v, `${k} 가 대조군 쿼리에 없다`).toBeDefined();
+      expect(v, `${k}=${v} — 대조군인데 0 이 아니다`).toBe('0');
+    }
   });
 });

@@ -73,6 +73,10 @@ export const GROUND_DEPTH = Math.abs(SEABED_Y) + SUBMERGE_MARGIN;
 
 export const ground: PartSpec = {
   kind: 'ground',
+  /** 감독이 심리스 텍스처를 얹는 표면 (W7) — 목록은 여기서 유도된다 */
+  paintable: true,
+  // 바닥 판이다 — `place` 의 y 가 이미 절대 높이다(표면 가산 대상 아님). `types.ts` 참조.
+  absoluteY: true,
   tiers: ['near', 'mid', 'far'], // 지면이 없으면 파셀이 구멍으로 보인다
   salt: 0x9e3779b9,
   // ── 낮 팔레트로 (감독 실기기 판정) ──────────────────────────────────────────

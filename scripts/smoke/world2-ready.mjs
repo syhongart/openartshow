@@ -29,8 +29,11 @@
 // 그중 셋의 리포트 형식이 깨진다.
 
 /**
- * world2 게이트 공통 URL 쿼리. **켜고 끄는 노브를 하나도 적지 않는다** — 기본값이 곧
- * 라이브 상태이고, 게이트는 라이브 상태를 재야 한다.
+ * world2 게이트 공통 URL 쿼리.
+ *
+ * ⚠ **이 첫 줄은 오래 *"켜고 끄는 노브를 하나도 적지 않는다"* 였고 2026-08-21 에 거짓이
+ * 됐다** — 지금 `grass=0` 이 하나 있다(아래). 문장을 그대로 두면 다음 사람이 노브가 없는
+ * 줄 알고 읽는다. 규칙은 이제 **「노브를 적으려면 무엇을 못 재게 되는지 함께 적는다」** 다.
  *
  * 여기 하나로 모은 이유는 값 미러링이다. 넷이 각자 적고 있었고, 그래서 `?glb=0` 을
  * 걷어내려면 네 곳을 고쳐야 했다 — 한 곳만 놓치면 그 게이트만 옛 세계를 잰다.
@@ -51,8 +54,34 @@
  * 시간대·날씨는 남긴다. 그 둘은 켜고 끄는 스위치가 아니라 **측정 조건**이고,
  * 고정하지 않으면 하늘 레이어가 회차마다 달라져 개수 비교 자체가 성립하지 않는다.
  * (`[8]` 하늘 예열 게이트는 12조합을 일부러 순회하므로 이 값을 쓰지 않는다.)
+ *
+ * ── `grass=0` 을 넣었다 (팀장 판정 2026-08-21) ───────────────────────────────
+ * 감독 지시로 스타일 룩이 **기본 ON** 이 되자(`decide/stylized.ts` 의 `STYLIZED_DEFAULT`)
+ * `[7]` 이 「세션이 안 돌아다녔다」로 FAIL 했다. 실측으로 원인을 갈랐다:
+ *
+ *     스타일 전부(잔디+물)   고유 파셀 1/3 · 경로 `0,0`   FAIL
+ *     잔디만 끔(물은 켜짐)   고유 파셀 3/3               PASS
+ *     스타일 전부 끔         고유 파셀 3/3               PASS
+ *
+ * **원리상 못 도는 조건이다.** `world2/kernel.ts` 가 `dt` 를 0.1초로 클램프하는데(탭 복귀
+ * 대비 — 그 자체는 옳다) 이 환경은 4코어·GPU 0 이라 잔디가 켜지면 프레임 시간이 그걸 넘고
+ * **넘은 만큼이 버려져 게임 내 시간이 거의 안 흐른다.** 걸어도 제자리다.
+ *
+ * ⚠ **무엇을 못 재게 됐나 — 잔디가 개수에 기여하는 축이다.** 이 줄이 이 주석의 값이다:
+ * 위 `npc=0&vrm=0` 사고의 핵은 «껐다» 가 아니라 **«모른 채 꺼두고 「라이브를 잰다」는
+ * 거짓 진술이 남은 것»** 이었다(팀장 판정). 그래서 끈 것·이유·못 재는 것을 값 옆에 적는다.
+ * 그 사각은 `tests/world2-grass-count.test.ts` 가 **이동 없이** 대신 본다(메시 1개·재생성 0).
+ *
+ * ⚠⚠ **재론 트리거**: 잔디가 `InstancedMesh` **하나**가 아니게 되면(파셀별 생성 등
+ * 스트리밍과 결합) 위 논증 — *"잔디는 `[7]` 이 재는 스트리밍 증식 축과 독립"* — 이 무효가
+ * 된다. 그때 `grass=0` 을 **반드시 재검토한다.**
+ *
+ * ── 「게이트가 막으니 게이트를 고친다」 의 성립 요건 (팀장 조건 4) ────────────
+ * 이 회차에만 세 번째다(leg 예산 · `[7.6]` 사각 · 여기). 정당화되는 것은 **둘 다** 갖췄을
+ * 때뿐이다: **① 원인을 실측으로 분리했다 ② 원리상 성립하지 않음을 논증했다.**
+ * 요건 없이 **전례로 인용하지 마라** — 그러면 이 조항이 게이트를 무르게 하는 문이 된다.
  */
-export const WORLD2_QUERY = '?time=day&weather=clear';
+export const WORLD2_QUERY = '?time=day&weather=clear&grass=0';
 
 /** GLB 로드 상한(ms). 로컬 서빙 실측이 1채 299ms 이므로 대부분 여기 근처도 안 간다 */
 const GLB_TIMEOUT = 90000;
@@ -72,9 +101,11 @@ const GLB_TIMEOUT = 90000;
  * @param {import('playwright-core').Page} page
  * @param {{timeout?: number, bootTimeout?: number}} [opt]
  * @returns {Promise<{booted: boolean, glb: {state: string, placed: number,
- *                    want: number, error?: string}|null, reason: string}>}
- *   `glb` 가 `null` 이면 기능이 안 켜진 것이다(`?glb=0`). 그것 자체는 정상일 수 있으므로
- *   판정하지 않고 사실만 돌려준다.
+ *                    want: number, error?: string}|null,
+ *                    overlay?: {state: string, want: number, placed: number,
+ *                    failed?: string[], error?: string}|null, reason: string}>}
+ *   `glb`·`overlay` 가 `null` 이면 그 기능이 안 켜진 것이다(`?glb=0`·`?overlay=0`).
+ *   그것 자체는 정상일 수 있으므로 판정하지 않고 사실만 돌려준다.
  */
 export async function waitForWorld2Ready(page, opt = {}) {
   const bootTimeout = opt.bootTimeout ?? 60000;
@@ -159,5 +190,63 @@ export async function waitForWorld2Ready(page, opt = {}) {
     }
   }
 
-  return { booted: true, glb, reason: '' };
+  // ── 오버레이도 기다린다 (2026-08-16, W8-2 — **같은 함정을 네 번째로** ) ─────
+  // GLB → VRM 에 대해서는 이미 *"시간이 아니라 상태로 기다린다"* 를 했는데 **오버레이만
+  // 그 처방 밖에 있었다** — 이 파일 전문에 `overlay` 가 **0건**이었다.
+  //
+  // 그것이 왜 문제인가: `features/overlay.ts` 는 배치 GLB 를 비동기로 받아 **프레임에
+  // 걸쳐** 붙인다(`attachAll` 이 `ATTACH_BATCH` 마다 프레임을 넘긴다). 게이트가 그 도중에
+  // 기준선을 찍으면 **정상적인 부착 상승이 「증식」으로 찍힌다** — `[7]` 개수 불변식이
+  // 러너 속도에 달린 주사위가 된다. `?glb=0` 배제를 걷어낼 때 겪은 것과 글자 그대로 같다.
+  //
+  // ⚠ **지금은 이 대기가 사실상 즉시 풀린다** — 라이브 `world2-overlay.json` 이 items 0개라
+  // 붙일 것이 없다. 즉 **이 축은 아직 실물로 검증되지 않았다**(백로그 #45 가 같은 사실을
+  // 적어 두었다). 그래도 지금 넣는 이유는, 작품·배치가 늘어나는 그 회차에 이 대기가
+  // 없으면 **증상이 「가끔 FAIL 하는 게이트」로만 나타나** 원인을 짚는 데 회차를 쓰기
+  // 때문이다. 순서는 뒤집을 수 없다 — 데이터가 먼저 늘면 그때는 이미 늦다.
+  const ov = await page.evaluate(() => {
+    const o = window.__world2?.stats?.()?.overlay;
+    return o && typeof o === 'object' ? { state: o.state } : null;
+  });
+  // 키 자체가 없으면 기능이 안 켜진 것이다(`?overlay=0`). 기다릴 것이 없다.
+  if (ov) {
+    try {
+      await page.waitForFunction(
+        () => {
+          const o = window.__world2?.stats?.()?.overlay;
+          return !o || o.state !== 'loading';
+        },
+        null,
+        { timeout },
+      );
+    } catch {
+      return {
+        booted: true, glb, overlay: ov,
+        reason: `오버레이가 ${timeout}ms 안에 로딩을 못 끝냈다 — state 가 계속 loading 이다`,
+      };
+    }
+    const after = await page.evaluate(() => {
+      const o = window.__world2?.stats?.()?.overlay;
+      return o ? { state: o.state, want: o.want, placed: o.placed, failed: o.failed, error: o.error } : null;
+    });
+    // GLB 와 같은 규약. 실패를 조용히 통과시키면 **배치 없는 세계를 재고 초록불을 켠다.**
+    if (after && after.state !== 'ready') {
+      return {
+        booted: true, glb, overlay: after,
+        reason: `오버레이 state=${after.state}${after.error ? ` (${after.error})` : ''}`,
+      };
+    }
+    // `ready` 인데 덜 놓였으면 세운 척만 한 것이다. `want` 는 W8-2 에서 이 판정을 가능하게
+    // 하려고 열었다 — 그전에는 `placed` 뿐이라 「다 놓았다」와 「절반만」이 같은 값이었다.
+    if (after && after.placed < after.want) {
+      const why = after.failed?.length ? ` — 실패: ${after.failed.join(', ')}` : '';
+      return {
+        booted: true, glb, overlay: after,
+        reason: `오버레이가 ${after.want}개 중 ${after.placed}개만 섰다${why}`,
+      };
+    }
+    return { booted: true, glb, overlay: after, reason: '' };
+  }
+
+  return { booted: true, glb, overlay: null, reason: '' };
 }

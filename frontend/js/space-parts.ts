@@ -366,21 +366,10 @@ function merged(list) {
 // 스포트라이트 오프셋이 이 두께에 의존하므로 스타일 무관 고정. frameless는 링 없음(fW=0).
 const FRAME_FW = { minimal: 0.045, classic: 0.11, frameless: 0 };
 export const FRAME_MAT_ID = { minimal: 'frameBlack', classic: 'frameWalnut', frameless: 'frameShadow' };
-// p.ar → 액자 W/H. 디자이너 실측 공식(FRAME_RULES 소비). ar 없으면 레거시 고정 1.2×1.6 폴백.
-export function artworkSize(ar) {
-  const [dw, dh] = PART_TYPES.artwork.size; // 폴백(빈 액자·구버전 저장분)
-  if (!(typeof ar === 'number' && isFinite(ar) && ar > 0)) return { W: dw, H: dh };
-  const BASE = 1.6, minSize = FRAME_RULES.minSize, clampW = FRAME_RULES.landscape.clampW, clampH = FRAME_RULES.portrait.clampH;
-  const cl = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const r = ar;
-  let W, H;
-  if (r >= 1) { W = BASE; H = BASE / r; } else { H = BASE; W = BASE * r; }
-  const W0 = W, H0 = H;
-  W = cl(W, minSize, clampW); H = cl(H, minSize, clampH);
-  if (W !== W0) H = cl(W / r, minSize, clampH); // 폭이 clamp로 잘리면 높이를 비율 재산출
-  if (H !== H0) W = cl(H * r, minSize, clampW); // 높이가 clamp로 잘리면 폭을 비율 재산출
-  return { W, H };
-}
+// artworkSize 는 2026-08-22 에 space.ts(순수 leaf)로 이동했다 — 이유는 그 함수 주석 한 곳에
+// 있다(여기에 다시 적지 않는다). 여기서는 **재수출만** 한다: 기존 소비자가 이 배럴 경로로
+// 가져오고 있어서(space-assembler), 경로를 바꾸면 이동이 동작 변경이 된다.
+export { artworkSize } from './space.js';
 // 액자 프레임 지오 — style별 분기. 캔버스(accent)는 partAccent가 안쪽에 앉음.
 // minimal/classic: 속 빈 사각 베벨 링(기존 단일 링 기법 재사용, fW·베벨만 스타일별).
 // frameless: 링 없이 얇은 백킹 박스만(매트보드 없음).

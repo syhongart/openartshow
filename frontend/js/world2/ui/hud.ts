@@ -11,7 +11,7 @@
 
 import {
   Ring, Timeline, formatReport, summarize, hitchCount, constancy, constancyByGroup,
-  type ReportInput,
+  type ReportInput, type Ev,
 } from '../decide/telemetry.js';
 
 /** 링버퍼 용량 — 60fps에서 약 30초 */
@@ -19,11 +19,28 @@ const CAP = 1800;
 /** 화면 갱신 주기(ms) */
 const REDRAW_MS = 250;
 
+/**
+ * 이벤트 보관 상한. 넘으면 **오래된 것을 버린다.**
+ *
+ * 마크는 대개 세션 후반에 찍히므로 최근 쪽이 살아남는 것이 맞다. 다만 마크가 이 창보다
+ * 앞이면 그 주변이 이미 없을 수 있고, 그 경우 리포트에 `이벤트 0건` 이 찍힌다 —
+ * `formatEvents` 가 그것을 *"전이가 없었다"* 로 읽으라고 적어 두었으므로 **여기서 버린
+ * 것이 거기서 결론으로 둔갑할 수 있다.** 그래서 넉넉히 잡는다(전이는 초당 몇 건이다).
+ */
+const EV_CAP = 600;
+/** 마크 상한. 감독이 여러 번 눌러도 리포트가 감당할 길이 */
+const MARK_CAP = 12;
+
 export interface HudParts {
   root: HTMLElement;
   body: HTMLElement;
   copy: HTMLElement;
   toggle: HTMLElement;
+  /**
+   * 증상을 본 순간 누르는 버튼. **없어도 HUD 는 그대로 돈다** — 이 파일이 마크 없이도
+   * 최근 이벤트를 보여주기 때문이다(진단용 추가물이 기본 기능을 인질로 잡지 않게).
+   */
+  mark?: HTMLElement | null;
 }
 
 /** HUD가 매 프레임 읽어갈 값들. main이 구현해 넘긴다. */
@@ -103,6 +120,16 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
   /** 마지막 프레임 시간 — 시간축 표본에 붙인다 */
   let lastFrameMs = 0;
 
+  /**
+   * 이벤트 로그와 마크. **커널을 안 바꾸고 `probe` 를 그대로 쓴다** — 시스템이
+   * `ctx.probe('ev:이름', 값)` 으로 부르면 아래 `sample` 이 접두를 보고 이리로 보낸다.
+   * 커널의 훅은 `(string, number)` 하나뿐이고, 그것을 바꾸면 world3·world5 까지 함께
+   * 움직인다(포크 셋이 같은 커널 모양을 쓴다).
+   */
+  const events: Ev[] = [];
+  const marks: number[] = [];
+  const nowS = () => (Date.now() - startedAt) / 1000;
+
   const snapshot = (): ReportInput => {
     const s = src.stream(); const a = src.adapt();
     return {
@@ -128,6 +155,8 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       built, released, starved: s.starved,
       pixelRatio: a.pixelRatio, frameCap: a.frameCap, triAvg: a.triAvg,
       timeline: timeline.snapshot(),
+      events: [...events],
+      marks: [...marks],
     };
   };
 
@@ -155,6 +184,12 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       `draw ${cd.min}${cd.min === cd.max ? '' : `~${cd.max}`}${gd && gd.groups.length > 1 ? `(하늘${gd.groups.length})` : ''}${warn(drawOk)}  pipe ${cp.min}${cp.constant ? '' : `~${cp.max}`}${warn(cp.constant)}`,
       `파셀 ${s.loaded}  build ${built}  starve ${s.starved}${warn(s.starved === 0)}`,
       `px ${a.pixelRatio.toFixed(2)}  cap ${a.frameCap || '—'}  tri ${Math.round(a.triAvg)}`,
+      // ── 이 줄이 없으면 이벤트 수집이 죽어도 아무도 모른다 ────────────────────
+      // 뮤테이션으로 확인했다: `sample` 의 `ev:` 분기를 통째로 지워도 값이 어느 링에도
+      // 안 들어가 **조용히 사라질 뿐**이라 다른 단언은 전부 초록이었다. 즉 그 축의
+      // 검출력이 0 이었다. 화면에 개수를 내면 테스트가 그것을 읽을 수 있고, 감독도
+      // 마크가 눌렸는지·이벤트가 쌓이는지를 그 자리에서 본다.
+      `이벤트 ${events.length}  마크 ${marks.length}`,
     ].join('\n');
   };
 
@@ -188,8 +223,26 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     if (open) redraw();
   };
 
+  /**
+   * 증상을 본 순간을 시간축에 못 박는다.
+   *
+   * **누른 것이 보여야 한다** — 아무 반응이 없으면 감독은 눌렸는지 모른 채 다시 누르고,
+   * 그러면 마크가 겹쳐 창이 둘로 갈린다. 그래서 번호를 즉시 라벨에 쓴다.
+   */
+  const onMark = () => {
+    if (marks.length >= MARK_CAP) marks.shift();
+    marks.push(nowS());
+    const el = parts.mark;
+    if (el) {
+      el.textContent = `📍${marks.length}`;
+      // 배경 깜빡임은 안 준다 — HUD 가 화면을 가리는 것보다 조용한 편이 낫고,
+      // 숫자가 늘어나는 것만으로 눌린 것이 확인된다.
+    }
+  };
+
   parts.copy.addEventListener('click', onCopy);
   parts.toggle.addEventListener('click', onToggle);
+  parts.mark?.addEventListener('click', onMark);
 
   return {
     sample(name, value) {
@@ -197,6 +250,13 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       // 자리를 비운 시간이고, `out_ms`도 같은 시간을 다시 세는 것이다. 한 프레임을 잃는
       // 대신 평균과 히칭이 사실을 말한다. 뺀 사실은 아래 `away`로 리포트에 남는다.
       if (name === 'away_ms') { awayCount++; awayMsTotal += value; return; }
+      // `ev:` 접두는 **시점이 중요한 것**이다. 통계 링이 아니라 이벤트 목록으로 간다 —
+      // 링에 넣으면 "몇 번" 은 알아도 "언제" 를 잃는다.
+      if (name.startsWith('ev:')) {
+        if (events.length >= EV_CAP) events.shift();
+        events.push({ t: nowS(), name: name.slice(3), value });
+        return;
+      }
       if (name === 'frame_ms') { frameMs.push(value); lastFrameMs = value; }
       else if (name === 'upd_ms') updMs.push(value);
       else if (name === 'render_ms') renderMs.push(value);
@@ -248,6 +308,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       clearInterval(timer);
       parts.copy.removeEventListener('click', onCopy);
       parts.toggle.removeEventListener('click', onToggle);
+      parts.mark?.removeEventListener('click', onMark);
     },
   };
 }

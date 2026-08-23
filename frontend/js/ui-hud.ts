@@ -21,7 +21,7 @@ import {
   onAuthChange,
 } from './auth.js';
 
-import { el, injectStyles } from './ui-dom.js';
+import { el } from './ui-dom.js';
 import {
   readStoredChibi,
   readStoredChibiThumb,
@@ -30,6 +30,9 @@ import {
 // 아바타(아야모) 편집기 클러스터는 별도 모듈로 분리됨(C-1 단계3). 편집기는 ui.js(HUD)를
 // import 하지 않는다(순환 0) — ui.js가 소유한 것을 createChibiMaker(ctx)로 주입한다.
 import { createChibiMaker } from './ui-avatar-editor.js';
+// 딥링크 프로토콜은 `avatar-deeplink.ts` 한 곳이다 — 생산자(mypage)와 소비자(여기)가
+// 같은 모듈을 쓴다. 값을 여기 다시 적으면 한쪽만 고쳐도 조용히 안 열린다(검수관 P2).
+import { readAvatarDeepLink, stripDeepLinkParams } from './avatar-deeplink.js';
 const MAX_CHAT_MESSAGES = 8;
 const MAX_NICKNAME_LEN = 12;
 
@@ -41,8 +44,11 @@ const MAX_NICKNAME_LEN = 12;
 let els: any = null;              // 생성된 DOM 요소 캐시
 // initUI 콜백 배선 — 함수 또는 null (typeof 가드로 호출)
 type UICallback = ((...args: any[]) => void) | null;
-let callbacks: { onEnter: UICallback; onChatSend: UICallback; onAvatarChange: UICallback; onMakerToggle: UICallback } =
-  { onEnter: null, onChatSend: null, onAvatarChange: null, onMakerToggle: null };
+// `onChibiMakerClosed` 는 편집기 `close()` 가 부르는 **1회성** 훅이다(딥링크 복귀).
+// `initUI` 인자가 아니라 런타임에 붙였다 뗀다 — 세션 내내 살아 있으면 미술관에서
+// 편집기를 다시 열고 저장할 때마다 페이지가 튕긴다(검수관 B1).
+let callbacks: { onEnter: UICallback; onChatSend: UICallback; onAvatarChange: UICallback; onMakerToggle: UICallback; onChibiMakerClosed: UICallback } =
+  { onEnter: null, onChatSend: null, onAvatarChange: null, onMakerToggle: null, onChibiMakerClosed: null };
 let selectedColor = AVATAR_COLORS[0];
 // chibi(아야모) 퍼시스턴스 스토어는 중립 leaf `ui-chibi-store.js`로 분리됨(C-1 단계2).
 // localStorage 키 생성·세션 룩·옷장·썸네일 — HUD 빌더/아바타 편집기 공용.
@@ -242,7 +248,8 @@ function buildLobby() {
     text: '작가 스튜디오에서 나만의 전시 만들기 →',
   });
 
-  // 입장 폼(닉네임·캐릭터·소셜) — 재방문자에겐 접어두고 '바꾸기'로 펼친다 (A: 재방문 스마트 입장)
+  // 입장 폼(닉네임·캐릭터·소셜) — 재방문자에겐 접어두고 '캐릭터 꾸미기'로 펼친다
+  // (A: 재방문 스마트 입장). 그 버튼은 펼치는 동시에 편집기를 연다 — `buildQuickEnter` 참조.
   const formWrap = el('div', { className: 'lu-lobby-form' }, [
     nickLabel, nickInput, nickHint,
     charLabel, designBtn,
@@ -264,11 +271,21 @@ function buildLobby() {
     ]);
     const goBtn = el('button', { className: 'lu-quick-btn', type: 'button', text: '바로 입장' });
     goBtn.addEventListener('click', submit);
-    const changeBtn = el('button', { className: 'lu-quick-change', type: 'button', text: '닉네임·캐릭터 바꾸기' });
+    // 감독 지시 2026-08-08: *"닉네임 캐릭터 바꾸기에서 캬릭터 꾸미기로 바꾸고. 바로
+    // 편집창으로 이동하게 해줘."* — 라벨이 가리키는 곳으로 한 번에 간다. 예전에는 이
+    // 버튼이 폼을 펼치기만 했고, 편집기까지는 그 안의 [캐릭터 디자인]을 한 번 더 눌러야
+    // 했다(재방문자 기준 2탭).
+    //
+    // **폼을 펼치는 동작은 남긴다.** 편집기를 닫으면 그 뒤에 닉네임·입장 폼이 이미 펼쳐져
+    // 있어 닉네임 변경 경로가 유지된다 — 라벨에서 '닉네임'이 빠졌다고 기능까지 빼면
+    // 재방문자는 닉네임을 바꿀 자리가 사라진다(라벨 변경 ≠ 기능 제거).
+    const changeBtn = el('button', { className: 'lu-quick-change', type: 'button', text: '캐릭터 꾸미기' });
     changeBtn.addEventListener('click', () => {
       formWrap.classList.remove('lu-collapsed');
       quickEnter.style.display = 'none';
-      try { nickInput.focus(); } catch (_) {}
+      // nickInput.focus() 를 부르지 않는다 — 편집기가 곧바로 그 위에 열리므로, 뒤쪽
+      // 입력에 포커스를 주면 모바일에서 키보드가 편집기를 덮고 올라온다.
+      openChibiMaker();
     });
     quickEnter.append(avatar, greet, goBtn, changeBtn);
   }
@@ -1160,8 +1177,6 @@ export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle }: {
   callbacks.onAvatarChange = onAvatarChange || null;
   callbacks.onMakerToggle = onMakerToggle || null;
 
-  injectStyles();
-
   els = {
     loading: buildLoading(),
     lobby: buildLobby(),
@@ -1194,6 +1209,74 @@ export function initUI({ onEnter, onChatSend, onAvatarChange, onMakerToggle }: {
   if (pendingPicker) applyGalleryPicker(pendingPicker.galleries, pendingPicker.currentId, pendingPicker.onPick);
   if (pendingArtworkList) renderArtworkList(pendingArtworkList);
   if (pendingGuestbookNotes) renderGuestbookNotes(pendingGuestbookNotes);
+
+  applyAvatarDeepLink();
+}
+
+// ---------------------------------------------------------------------------
+// 캐릭터 디자인 딥링크 (`?avatar=1`)
+// ---------------------------------------------------------------------------
+// 감독 지시 2026-08-08: *"캐릭터 꾸미기 누르면 캐릭터 디자인으로 바로 이동해야지."*
+//
+// 그전에는 마이페이지의 「캐릭터 꾸미기」가 미술관 로비로만 보냈고, 사용자가 거기서
+// 편집기를 **다시 찾아 눌러야** 했다. 버튼 이름이 약속한 것과 실제로 일어나는 일이
+// 달랐다.
+//
+// **입장 전 로비에서도 열린다** — `openChibiMaker` 의 가드 플래그(chibiOpen·lightbox·
+// share·guestbook·artworkList)가 로비에서는 전부 false 이기 때문이다. 그 함수 주석이
+// 이미 그렇게 적고 있었다.
+//
+// ── 첫 판본이 반려된 이유 (검수관 블로커 3, 2026-08-08) ────────────────────
+// **1회 명령을 세션 상태로 남겼다.** 파라미터를 URL 에 두고 복귀 리스너를 버튼 두 개에
+// 걸었더니 셋이 한꺼번에 터졌다:
+//   B1 미술관에 입장해 관람하다 `C` 키로 편집기를 다시 열고 저장하면 **튕겨 나갔다**
+//   B2 ESC·배경클릭으로 닫으면 복귀가 **안 됐다**(주석은 된다고 적고 있었다)
+//   B3 사진 공유 링크에 딥링크가 실려 나가 **제3자가 편집기 화면을 봤다**
+// 지금은 ① 파라미터를 **소비**하고(URL 에서 덜어낸다) ② 복귀를 `close()` **단일 지점**의
+// 1회성 콜백으로 받는다. 편집기 코드가 이미 *"경로가 늘면 여기로 모아라"* 라고
+// 적어 둔 그 자리다.
+function applyAvatarDeepLink() {
+  const intent = readAvatarDeepLink(window.location.search);
+  if (!intent.open) return;
+
+  // ── 파라미터를 먼저 소비한다 ────────────────────────────────────────────
+  // 편집기를 열기 **전에** 지운다. 여는 도중 예외가 나도 URL 은 이미 깨끗해서
+  // 다음 새로고침에 같은 일이 반복되지 않는다. `?g=`·`?debug=perf` 같은 다른
+  // 파라미터는 `stripDeepLinkParams` 가 보존한다.
+  consumeDeepLinkParams();
+
+  // ── 편집기가 못 열려도 미술관은 뜬다 ────────────────────────────────────
+  // `open()` 은 `ensurePreviewRenderer()` 로 **두 번째 WebGL 컨텍스트**를 만든다.
+  // 그 자리는 실패할 수 있다 — 구형 기기·GPU 차단·컨텍스트 수 상한. 그리고 이 함수는
+  // `initUI` 안에서 도므로, 여기서 예외가 새면 **미술관 부팅 전체가 죽는다.**
+  // 캐릭터를 꾸미러 온 사람이 미술관까지 못 보게 되는 것은 너무 큰 대가다.
+  try {
+    openChibiMaker();
+  } catch (_) {
+    // **삼키지 말고 알린다** (검수관 권고). 조용히 return 하면 사용자는 "버튼을
+    // 눌렀는데 아무 일도 안 일어난다" 를 겪고 원인을 알 방법이 없다 — 이 저장소가
+    // `verify-live` 에서 고른 것과 같은 선택이다(막지 않고 알린다).
+    setStatus('캐릭터 디자인을 열 수 없습니다. 화면을 새로고침해 주세요.');
+    return;
+  }
+
+  // 열리지 않았으면(가드에 걸렸거나 위에서 실패했으면) 복귀를 걸지 않는다 —
+  // 걸어두면 나중에 사용자가 스스로 편집기를 열고 닫을 때 엉뚱하게 이동한다.
+  if (!intent.backTarget || !uiState.chibiOpen) return;
+
+  const target = intent.backTarget;
+  callbacks.onChibiMakerClosed = () => {
+    window.location.href = target;
+  };
+}
+
+/** 딥링크 파라미터만 URL 에서 덜어낸다. 히스토리를 늘리지 않는다(`replaceState`). */
+function consumeDeepLinkParams() {
+  const next = stripDeepLinkParams(window.location.search);
+  if (next === window.location.search) return;
+  // `replaceState` 라 뒤로가기 스택이 깨끗하다 — 뒤로 가면 마이페이지이지 편집기가
+  // 다시 열리는 미술관이 아니다(첫 판본은 그 경로가 막혀 있었다).
+  window.history.replaceState(null, '', `${window.location.pathname}${next}${window.location.hash}`);
 }
 
 export function showLoading(show: boolean) {

@@ -45,11 +45,9 @@ describe('등록', () => {
     expect(ALL_KINDS).toContain('treepit');
   });
 
-  it('나무보다 좁은 tier 다 — 참조 방향이 뒤집히면 far 에서 순간이동한다', () => {
-    expect(treepit.tiers).toEqual(['near', 'mid']);
-    expect(kindsFor('near')).toContain('treepit');
-    expect(kindsFor('mid')).toContain('treepit');
-    expect(kindsFor('far')).not.toContain('treepit');
+  it('세 tier 전부에 있다 — tier 마다 종류가 다르면 전환에서 깜빡인다 (2026-08-10 규약)', () => {
+    expect(treepit.tiers).toEqual(['near', 'mid', 'far']);
+    for (const t of ['near', 'mid', 'far'] as const) expect(kindsFor(t)).toContain('treepit');
   });
 
   it('tones 가 흰색 하나다 — 텍스처에 색을 구웠으므로 곱하면 두 번 어두워진다', () => {
@@ -108,13 +106,18 @@ describe('나무를 정확히 따라간다', () => {
     expect(checked).toBeGreaterThan(1000);
   });
 
-  it('지면 위에 뜬다 — 정원(0.07) 위, 도로(0.14) 아래', () => {
+  it('나무가 선 바닥 위로 일정하게 뜬다 — 절대 높이가 아니라 캐스터 기준이다', () => {
+    // 처음엔 `0.07 < y < 0.14` 라는 절대 범위로 쟀다. 그것은 **나무가 언제나 잔디 위에
+    // 선다는 가정**이라, 광장에 선 나무에서 깨진다. 지금은 바닥 높이가 자리의 속성이므로
+    // (`parts/surface.ts`) 캐스터와의 **차이**가 상수인지를 본다.
     let checked = 0;
     for (const { parts } of landParcels()) {
-      for (const p of parts) {
-        if (p.kind !== 'treepit') continue;
-        expect(p.y).toBeGreaterThan(0.07);
-        expect(p.y).toBeLessThan(0.14);
+      const trees = parts.filter((p) => p.kind === 'tree');
+      const pits = parts.filter((p) => p.kind === 'treepit');
+      for (let i = 0; i < trees.length; i++) {
+        const lift = pits[i].y - trees[i].y;
+        expect(lift).toBeCloseTo(0.05, 9);
+        expect(lift).toBeGreaterThan(0); // 바닥 아래로 내려가면 흙이 안 보인다
         checked++;
       }
     }
@@ -148,13 +151,18 @@ describe('tier 불변식 — mid 에서도 같은 자리다', () => {
     expect(checked).toBeGreaterThan(100);
   });
 
-  it('far 에는 아예 없다', () => {
+  it('far 에서도 같은 자리다 — 세 tier 가 완전히 일치해야 깜빡이지 않는다', () => {
+    let checked = 0;
     for (let px = -8; px <= 8; px++) {
       for (let pz = -8; pz <= 8; pz++) {
         if (parcelWater(px, pz, cellX, cellZ) === 'water') continue;
-        expect(parcelLayout(px, pz, 'far').filter((p) => p.kind === 'treepit')).toHaveLength(0);
+        const near = parcelLayout(px, pz, 'near').filter((p) => p.kind === 'treepit');
+        const far = parcelLayout(px, pz, 'far').filter((p) => p.kind === 'treepit');
+        expect(far).toEqual(near);
+        checked += near.length;
       }
     }
+    expect(checked).toBeGreaterThan(100);
   });
 });
 

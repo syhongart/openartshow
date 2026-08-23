@@ -70,6 +70,11 @@
 
 ## 5단계 로드맵 (라이브 미술관 불훼손)
 
+> ⚠ **이 번호는 이 절 안에서만 유효하다** (2026-08-16 정리). 인프라 확장 단계의 SSOT 는
+> **`docs/SCALING.md` 의 「3단계 이전 경로」** 다. 같은 "3단계" 가 여기서는 「Supabase
+> 지속백엔드」, `SCALING.md` 에서는 「영속화 백엔드」, `REFERENCES.md` 에서는 「서버권위
+> 멀티플레이어」다. **번호로 말하지 말고 이름으로 말한다.**
+
 계열 A(main/config/scene/artworks + multiplayer)는 한 줄도 건드리지 않는다. 오픈월드는 계열 B 가산 + 신규 `world.js`/`world.html`, 전 과정 behind-flag.
 
 | 단계 | 내용 | 트리거 | 철학 완화 | 법무 |

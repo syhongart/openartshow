@@ -53,6 +53,12 @@ import { minimapFeature } from './minimap.js';
 import { npcFeature } from './npc.js';
 import { postfxFeature } from './postfx.js';
 import { glbCityFeature } from './glb-city.js';
+import { overlayFeature } from './overlay.js';
+import { shadingFeature } from './shading.js';
+import { surfacePaintFeature } from './surface-paint.js';
+import { grassFeature } from './grass.js';
+import { waterStyleFeature } from './water-style.js';
+import { terrainStyleFeature } from './terrain-style.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -66,11 +72,64 @@ export const FEATURES: readonly Feature[] = [
   // 기능이라 평상시에는 꺼져 있다 — `?glb=` 가 없으면 `create` 가 `null` 이라 로더
   // 코드조차 내려받지 않는다. 실험이 끝나면 이 줄과 파일을 함께 지운다.
   glbCityFeature,
+  // ── 스타일라이즈드 잔디 (`?styl=1` 또는 `?grass=1`) ───────────────────────
+  // 감독 지시 2026-08-18(모바일 게임 광고 화면 참조). **기본은 꺼져 있다** — `create` 가
+  // `null` 을 돌려주므로 노브 없이는 씬을 한 번도 안 만진다.
+  //
+  // 사람(`npc`) 뒤인 것은 같은 이유다: 플레이어 위치를 읽어 필드를 접으므로 한 프레임
+  // 늦으면 걸을 때 앞쪽 풀이 뒤늦게 따라온다. 셰이딩보다 **앞**이어야 하는 것도 짝이다 —
+  // 오버라이드가 걸리기 전에 잔디가 자기 `visible` 을 정해야 한다.
+  grassFeature,
+  // ── 스타일라이즈드 수면 (`?styl=1` 또는 `?wstyle=1`) ──────────────────────
+  // **`ocean` 보다 뒤여야 한다** — 기존 수면 메시를 이름으로 찾아 숨기고 같은 지오메트리를
+  // 공유하는 메시를 얹으므로, 저쪽이 먼저 씬에 들어와 있어야 한다.
+  waterStyleFeature,
+  // ── 사용자 배치 (`assets/world2-overlay.json`) ────────────────────────────
+  // 감독이 `?edit=1` 화면에서 놓고 내보낸 JSON 을 읽어 얹는다. **가산 레이어**라 마을
+  // 기본 배치 계산에는 손대지 않는다. 파일이 비어 있으면(지금이 그렇다) 아무것도 안 붙고,
+  // 그때도 GLTFLoader 를 내려받지 않는다 — 배치가 0개면 로더가 필요 없기 때문이다.
+  overlayFeature,
+  // ── 스타일라이즈드 지형 (`?styl=1` 또는 `?gtex=1`) ────────────────────────
+  // **`surfacePaintFeature` 보다 앞이어야 한다.** 이 기능은 표면 «설정» 을 얹고 집행은
+  // 저쪽이 한다 — 뒤에 두면 부팅 첫 프레임에 설정이 없는 상태로 한 번 반영되고 다음
+  // 프레임에 또 반영된다(화면에는 안 보이지만 재질을 두 번 만진다). 오버레이가 표면보다
+  // 앞인 것과 같은 논리다.
+  terrainStyleFeature,
+  // ── 표면 재질 (심리스 텍스처) ─────────────────────────────────────────────
+  // 감독 지시 *"땅의 텍스쳐 심리스를 주면 그대로 적용할수있게 … 타일링 배율 … 각도 조절"*
+  // — 파츠 재질의 맵 슬롯을 갈아 끼운다. **오버레이보다 뒤**여야 한다: 설정이 오버레이
+  // JSON 에서 오므로, 앞에 있으면 부팅 첫 프레임에 «아직 안 읽은 상태» 를 반영하고 다음
+  // 프레임에 한 번 더 반영한다(화면에는 안 보이지만 재질을 두 번 만진다).
+  //
+  // 셰이딩보다 **앞**인 것도 같은 이유다. 셰이딩은 `overrideMaterial` 로 씬 전체를 덮으므로
+  // 그 프레임에 재질이 무엇이든 결과가 같지만, 순서가 «재질을 정하고 → 덮는다» 여야
+  // 다음 사람이 읽을 때 뒤집히지 않는다.
+  surfacePaintFeature,
+  // ── 셰이딩 뷰 (`?shading=solid|wire`) ─────────────────────────────────────
+  // 감독 지시 *"와이어 프레임 뷰. 솔리드 뷰도 구현해줘."* — `scene.overrideMaterial` 을
+  // 꽂는다. **후보정보다 앞**이어야 한다: 후보정은 씬을 렌더타깃에 받아 가공하므로,
+  // 오버라이드가 이미 걸린 결과 위에서 돌아야 «와이어 화면에 블룸» 이 성립한다.
+  //
+  // 오버레이(편집)보다 뒤인 것도 의도다 — 편집이 그 프레임에 놓은 것도 함께 덮인다.
+  // 새로 놓은 물건만 원래 재질로 남으면 그것이 곧 «셰이딩이 안 먹는 것» 으로 보인다.
+  shadingFeature,
   // 후보정은 **맨 마지막**이다. 렌더 경로를 통째로 가로채므로, 앞선 기능이 씬에 무엇을
   // 넣든 그 결과 위에서 동작해야 한다. 여기서 한 줄을 지우면 후보정이 통째로 빠지고
   // 어댑터는 기본 렌더 경로로 남는다.
   postfxFeature,
 ];
+
+/**
+ * 🔴 **이 하나만 개별 재수출한다** (태스크 #112). 조립부(`main.ts`)가 마운트된 기능 중
+ * 미술관을 **이름으로** 찾아야 하는데, 이름 문자열을 조립부에 다시 적으면 그 순간
+ * 값 미러링이다(한쪽만 고쳐도 아무도 모른다). 선언을 import 해서 `.name` 을 읽으면
+ * 원산지가 `features/glb-city.ts` 한 곳으로 남는다.
+ *
+ * ⚠ **이것을 「배럴을 늘려도 된다」로 읽지 마라.** 나머지 기능은 `FEATURES` 목록에
+ * 이름을 올리는 것이 켜는 것의 전부이고, 조립부가 개별 기능을 아는 것은 이 결합이
+ * 요구하는 예외다. 다음에 같은 것이 필요해지면 **왜 이름으로 찾아야 하는지**부터 묻는다.
+ */
+export { glbCityFeature } from './glb-city.js';
 
 export type { Feature, FeatureEnv, FeatureInstance, MountedFeature } from './types.js';
 export {

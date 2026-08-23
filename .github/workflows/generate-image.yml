@@ -1,0 +1,611 @@
+name: generate-image
+
+# Gemini 로 이미지를 만들어 **브랜치와 PR 로** 올린다.
+#
+# ── 왜 수동(`workflow_dispatch`)인가 ──────────────────────────────────────
+# 이미지는 **감독이 원할 때 한 번** 만드는 것이다. push·schedule 로 돌리면 요금이
+# 자동으로 나가고, 그것을 막는 장치가 이 저장소에 없다.
+#
+# ⚠ **`main` 에 병합되기 전에는 감독 화면에 실행 버튼이 안 뜬다.** GitHub 은
+#    기본 브랜치에 있는 워크플로만 dispatch UI 에 노출한다(보안담당 P5).
+#
+# ── ⚠⚠ 이 PR 은 **필수 상태검사가 저절로 붙지 않는다** ────────────────────
+# 첫 판본은 여기에 *"PR 로 올리면 평소 게이트를 그대로 탄다"* 고 적었다. **거짓이었다**
+# — 검수관·보안담당이 각각 반려·조건부수용 사유로 잡았다(2026-08-13). 바로 윗줄이
+# 인용한 성질이 **PR 생성에도 똑같이 적용**되기 때문이다:
+#
+#   `GITHUB_TOKEN` 으로 만든 push·PR 은 **다른 워크플로를 발화하지 않는다**
+#   (무한 루프 방지 정책). 이 저장소는 태스크 #130 으로 이미 실증했고
+#   `valuation.yml:119-123` 이 그 함정을 적어 뒀다.
+#
+# 즉 이 워크플로가 연 PR 에는 `verify`·`smoke` 가 **아예 안 뜬다.** 결과는 둘 중 하나:
+#   (a) 영원히 pending → 병합 불가
+#   (b) 사람이 우회 병합 → **게이트 0으로 자산이 `main` 에 들어간다**
+#
+# **위험의 본체는 (b) 가 아니라 "게이트를 탄다"고 보증한 그 문장이었다.** 다음 사람이
+# 초록불 부재를 *"아직 안 돌았네"* 로 읽고 우회할 유인을 만든다 — `CLAUDE.md` 가
+# `main` unprotected 오기로 7일을 잃었다고 적은 그 형태를, **그 사고를 인용하는
+# 문단이 재현했다.**
+#
+# ── 그래서 운용 절차는 이렇다 (사람이 해야 한다) ─────────────────────────
+# 브랜치가 `claude/generated-image-*` 이고 `ci.yml` 의 push 트리거가 `claude/**` 이므로,
+# **사람이 그 브랜치에 커밋을 하나 얹으면 그때 CI 가 돈다.** 부팀장이 할 일:
+#   1. `git fetch origin claude/generated-image-<run_id>`
+#   2. 이미지를 **HTML 참조와 함께** 자기 작업 브랜치에 올린다 — 이미지 파일만으로는
+#      배포물에 안 실린다(아래 참조).
+#   3. 사람 push → `ci.yml` 발화 → 정상 게이트.
+# 근본 해소(PAT / ruleset 봇 우회)는 `valuation.yml:128-130` 이 이미 **감독 판정**으로
+# 남긴 항목이다 — **같은 결정을 두 곳에서 따로 하지 않는다.**
+#
+# ── 이미지 파일만으로는 라이브에 안 나온다 (실측 2026-08-13) ──────────────
+# `vite.config.js:96` 의 정적 복사 목록은 `galleries`·`world`·`assets`·`utils` 뿐이고
+# `img` 는 없다. 대신 **HTML 이 `./img/…` 로 참조하면** vite 가 번들 자산으로 굽는다.
+# 17KB 프로브로 실측: `frontend/img/_probe.png` + `<img src="./img/_probe.png">` →
+# `dist/_bundle/_probe-DsHxVMo3.png` · HTML 은 `/openartshow/_bundle/…` 로 재작성.
+# (4KB 미만이면 data URI 로 인라인된다 — 실제 이미지 크기에서는 해당 없다.)
+# **그러므로 이 워크플로의 산출물은 "재료" 이고, 참조를 붙이는 커밋이 있어야 배포된다.**
+#
+# ── 조달 경로: Gemini API 유지 (팀장 판정 2026-08-13, 분기 C) ────────────
+# Vertex AI Imagen 출력은 Google 의 **생성물 저작권 인덤니티 명시 대상**이고, 여기서 쓰는
+# Gemini API 가 그 대상인지는 **법무가 확인하지 못했다**(1차 출처 egress 차단). 그런데도
+# Gemini 를 유지한 근거는 비례성이다 — 홈 이미지 한 장에 결제 계정 + 인증 재작성(키 헤더
+# → 서비스 계정/OAuth)은 과하고, 법무 적신호도 없다. 전환은 나중에도 열려 있다(A 와
+# 반대로 이 분기는 가역적이다).
+#
+# **그래서 잔여 위험을 절차로 낮춘다. 아래 셋은 권고가 아니라 조건이다.**
+#  ① **역이미지 검색 1회는 채택 확정 조건이다.** 모델이 학습한 실존 미술관 건축을 그대로
+#     뱉을 수 있고, 프롬프트에서 이름을 빼도 확률이 0이 되지 않는다(유명 건축일수록
+#     학습셋 중복이 많아 재현 확률이 오른다 — 법무 축 ⑤).
+#     · **실행 주체**: 이 CI 환경은 egress 차단이라 **여기서 못 한다.** 감독 또는 부팀장이
+#       환경 밖 브라우저에서 Google Lens · TinEye 로 1회.
+#     · **결과 기록 위치**: 이미지를 반입하는 **PR 본문**. 안 적으면 안 한 것으로 친다.
+#     · 이 조건을 적는 이유: 팀장이 *"적지 않으면 「권고」는 첫 회부터 생략된다"* 고 못박았다.
+#     ⚠⚠ **현재 상태: 「채택 확정 조건」이 아니라 「이연된 검증」이다** (팀장 판정 2026-08-14).
+#       첫 반입(`hero.jpg`, run #8)에서 **실행 수단이 없었다** — 이 환경은 이미지 업로드
+#       검색이 불가능하고, 감독께 요청했으나 답을 받지 못했다(*"멀라."*).
+#       판정 근거: *"실행 수단이 없는 검증을 차단 조건으로 유지하면 §10-3 이 실측한 그
+#       구조를 재현한다 — **완주할 수 없는 일을 맡기면 완주했다고 적는 압력이 생긴다.**"*
+#       처방은 이 저장소가 이미 쓴 것이다 — **「면제가 아니라 이연」**(`OPERATING-PRINCIPLES.md`
+#       §10-3 팀장 조건 4). **트리거 없는 이연은 사실상 삭제이므로** 셋을 못 박는다:
+#         ⓐ 이미지 업로드 검색 **수단이 생기는 즉시 소급 실행**
+#         ⓑ **다음 이미지 반입 시 재시도** — 감독 답이 필요한 다른 카드 퀴즈에 얹어 1회
+#         ⓒ **유사성 지적·신고 접수 시 즉시 파일 교체 + 소급 검색**
+#       ⓒ 가 성립하려면 참조가 흩어지면 안 된다 → 반입은 **파일 1개 교체로 원복되는 형태**로
+#       한다(팀장 조건 3). 현재 로드되는 참조는 `landing.html` 의 `img.hero-art` **1곳**이다.
+#       ⚠ **감독의 "좋다, 이대로 간다" 는 룩 판정이지 법무 조건 해제가 아니다**(팀장 명시).
+#       안 적으면 다음 사람이 *"감독 승인 = 검색 불요"* 로 읽는다.
+#       ⚠ **법무 텍스트 실사(2026-08-14)는 이것의 등가 대체가 아니다** — 텍스트 축은 픽셀
+#       유사를 **원리상 못 본다**(대조군이 0개라 실질적 유사 판정 자체가 성립하지 않는다).
+#       그 실사가 못 본 10개 항목이 **이연된 검색이 실제로 봐야 할 목록**이고, 법무 보고와
+#       `THIRD-PARTY-NOTICES.md` 8항에 있다.
+#  ② **프롬프트 원문을 저장소에 남긴다**(반입 PR 본문). 출처 다툼이 나면 "실존 대상을
+#     배제했다" 를 입증할 유일한 기록이고, 저작물성 다툼에서 창작적 기여의 근거도 겸한다.
+#  ③ **재론 조건 — 둘 중 하나면 Vertex 재상신이다**(경계를 안 적으면 같은 고리를 또 돈다):
+#     · 이미지를 **상시 생성**하는 쪽으로 전환할 때
+#     · Gemini API 가 인덤니티 **비대상**임이 1차 출처로 확정될 때
+#
+# ── IP 분류: 「외부 에셋」이다 (팀장 판정 2026-08-13, 분기 B) ─────────────
+# `CLAUDE.md` 의 *"파츠 에셋은 자작 지오메트리만(외부 에셋은 §6 법무)"* 에서 AI 생성
+# 이미지는 **자작이 아니다.** 자작 지오메트리의 특권은 두 위험이 **구조적으로 0** 이라는
+# 전제에서 오는데 여기서는 둘 다 성립하지 않는다 — ⓐ 타 IP 유사성 확률이 0이 아니고
+# ⓑ 권리 계보가 Google 약관에 의존한다. 애매하면 무거운 쪽이 기본값이다(fail-closed).
+# §6 은 **이미지 장 단위가 아니라 조달 유형 단위**로 1회 태운다(이번 법무 검토가 그것).
+# 개별 이미지는 위 조건 준수 확인만 한다.
+#
+# ── secret 안전 조항 (보안담당 경계 2026-08-10 · 점검 2026-08-13) ─────────
+#  · **`pull_request_target` 을 쓰지 않는다.** 그것을 켜는 순간 **포크 PR 의 코드가
+#    secret 컨텍스트에서 실행**된다. 저장소 전체에 실사용 0건이고 앞으로도 0건이다.
+#  · **`ci.yml` 에 secret 스텝을 넣지 않는다.** 거기엔 `pull_request:` 트리거가 있어
+#    포크 PR 에서 secret 이 **빈 문자열**로 들어온다 → *"빈 키로 돌았는데 통과한 것처럼"*
+#    보이는 형태가 생긴다(이 저장소가 이름 붙인 "못 잰 것이 통과로 적히는 경향").
+#    그래서 **이 워크플로는 독립**이다.
+#  · **액션은 SHA 로 고정**한다(태그 핀은 mutable — 공급망 경로).
+#  · **로그 마스킹을 방어로 세지 않는다.** GitHub 은 `secrets.*` 를 `***` 로 가리지만
+#    **변형되면 못 가린다**(base64·URL 인코딩·부분 문자열). 그래서 스크립트가 응답
+#    본문을 통째로 찍지 않고, 키 형식을 추측하는 대신 **키 값 자체로 치환**한다
+#    (`scripts/generate-image.mjs` 의 `maskSecrets`).
+#  · ⚠ **아직 안 한 것 ①**: secret 이 repository 레벨이라 `.github/workflows/` 의 어떤
+#    워크플로든 참조할 수 있다. Environment + required reviewers 로 좁히는 것이
+#    보안담당 권고인데, **없는 environment 를 참조하면 GitHub 이 보호규칙 없이 자동
+#    생성**해 "방어가 있는 것처럼 보이는 0" 이 된다. 그래서 감독이 설정을 만든 뒤에
+#    넣는다 — 지금 넣으면 그것이야말로 이 저장소가 경계하는 장식이다.
+#  · ⚠ **아직 안 한 것 ②**: 생성(secret·read)과 PR(write)을 **별도 job 으로 안 갈랐다.**
+#    보안담당 권고였고 갈랐으면 경계가 하나 더 생긴다. 안 한 이유는 artifact 왕복이
+#    붙는데 이 개발 환경에서 내가 artifact 를 받을 수단이 없어 **검증할 수 없었기**
+#    때문이다. 검수관이 수용했다(2026-08-13, P-5): 외부 입력이 `prompt`/`out`/`aspect`
+#    뿐이고 셸 인젝션 0 이 실측됐으며 위험 감소가 왕복 비용보다 작다.
+#    **안 한 것을 안 했다고 적어 둔다** — 다음 사람이 다시 판단할 수 있게.
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        # ⚠ 이 문구는 **세 곳에 공개된다** — 이 run 의 Inputs, PR 본문, 그리고 공개
+        #   저장소이므로 로그인 없이 열린다(보안담당 실측). 개인정보를 적지 마라.
+        #
+        # ⚠⚠ **기본값을 넣은 이유**: run #1 에서 감독이 이 긴 문장을 **손으로 붙여넣어야
+        #   했다.** 감독은 모바일에서 보고 계시고, 재시도할 때마다 같은 일을 반복하는 것은
+        #   *"내가 이것을 계속 볼수는 없잖아"* 라는 지시와 정면으로 어긋난다. 기본값이
+        #   있으면 **버튼 한 번**이다.
+        #   ⚠⚠⚠ **2026-08-14 에 통째로 교체됐다.** 옛 값은 *"어두운 사진풍 빈 미술관 복도"*
+        #   였고 run #4 가 그것을 만들었는데, 감독이 **밝은 일러스트 자작 시안**을 주며
+        #   *"이런 느낌 너무 좋은데"* 라고 했고 옛 산출물에는 *"너무 어두운데"* 라고 했다.
+        #   홈 전체가 라이트 톤으로 전환됐으므로(PR #184) **어두운 사진은 배경과 톤에서
+        #   끊긴다.**
+        #   ⚠ 옛 프롬프트는 **git 이력에 남아 있다**(검수관 P2):
+        #     `git show 0273edc:.github/workflows/generate-image.yml | grep "empty museum corridor"`
+        #     첫 판본은 *"PR 본문과 run #4 로그"* 를 가리켰는데 **커밋 메시지와 주석이 서로 다른
+        #     PR 번호를 적어** 값 미러링이 됐고, 둘 다 이 환경에서 검증 불가다(`gh` 없음 ·
+        #     `api.github.com` 403). git 을 가리키면 대조 가능하고 어긋날 자리도 없다.
+        #
+        #   ⚠ **출처: 이 default 값 자체가 원본이다.** 디자이너 제안본은 위임 보고로만
+        #   왔고 **저장소에 없다** — 게시판(`docs/BOARD.md`)의 2026-08-14 디자이너 글에
+        #   요지를 옮겨 적었으나 프롬프트 전문은 여기가 유일본이다.
+        #   ⚠⚠ **이 문단은 지웠다가 되살린 것이다**(검수관 조건 C1). 옛 판본이 *"대조 불가
+        #   인용을 남기지 않기 위해 적어 둔다"* 로 검수관 P-6 을 해소하고 있었는데, 이번
+        #   교체에서 그 문단을 통째로 지우고 **저장소에 없는 「디자이너 제안본」** 을 가리켰다.
+        #   **해소 문단을 지우면 결함이 되살아난다.**
+        #
+        #   팀장 조건에 맞춰 디자이너 안에서 고친 것 —
+        #   ① *"simple faces"* → **얼굴 없음**. 팀장이 *"인물은 작게·얼굴 없이·실루엣 수준.
+        #      캐릭터로 읽히는 순간 별건 분리한 마스코트(아야모) 축을 침범한다"* 로 못 박았다.
+        #   ② 금지 목록의 `no people` → `no ... persons`(실존 인물). 사람을 넣으면서 사람을
+        #      금지하면 모델이 어느 쪽을 따를지 모른다 — **옛 프롬프트에서 그대로 옮겨온
+        #      모순**이었다(그때는 사람이 없는 그림이라 맞았다).
+        #
+        #   설계 의도 셋(디자이너):
+        #   · **상단 1/3 을 하늘로 비운다** — 히어로 wash 가 세로로만 덮으므로 그 자리가
+        #     가로 전폭에서 살아남는다(`landing.html` `.hero::after` 참조).
+        #   · **중앙 60% 안에 정보** — 좁은 화면에서 가로가 크게 잘린다.
+        #     ⚠ **첫 판본은 잘리는 방향을 반대로 적었다**(검수관 반려 B1): *"좌우 건물만 남고
+        #     원경·해가 통째로 잘린다"*. `cover` 는 기본 위치가 center 라 **중앙을 남기고
+        #     좌우를 자른다.** 일점 투시 구도에서 소실점·원경·해는 화면 중앙이므로 살아남고,
+        #     잘리는 것은 **좌우 건물**이다. 바로 위 줄(세로 크롭 없음)의 전제와도 충돌했다.
+        #     ⚠⚠ **결론(중앙 60%)은 유효해서 오류가 안 드러났다** — 좌우가 잘리므로 좌우로
+        #     밀린 정보가 죽는 것은 맞다. 이 저장소가 이미 세 번 대가를 치른 형태이고
+        #     (`landing.html` B4 fail-safe·B5 ③, 2026-08-13 자기신고) **이번이 네 번째다.**
+        #     결론이 우연히 맞으면 근거의 오류가 안 드러나고, 그것이 다음 사람의 확인을
+        #     생략시킨다.
+        #     ⚠⚠⚠ **수치는 전제를 함께 적는다**(검수관 P1). 390×844(`min-height:100dvh`)
+        #     기준 **산술**: **1.83:1 → 25.3%** · 16:9 → 26.0% · 1.6:1 → 28.9%.
+        #     (「실측」이 아니다 — 히어로에 이미지를 넣는 CSS 가 아직 없어 화면으로 잰 값이
+        #      아니다. 이 저장소에서 「실측」은 게이트나 화면으로 잰 것을 뜻한다. 검수관 R1)
+        #     첫 판본의 *"1.83:1 에서 28.9%"* 는 **어느 전제인지 적혀 있지 않아 판정할 수
+        #     없었다** — 비가 1.6:1 이거나 컨테이너 높이가 737px 이면 나온다.
+        #     ⚠ 처음엔 이것을 *"재현되지 않는다"* 로 적었는데 **그것은 조금 강했다**(검수관 R2):
+        #     `100dvh` 는 **동적**이라 737px 도 정상 값이고(모바일 브라우저 UI 표시 상태),
+        #     거기서 1.83:1 은 **28.92%** 로 첫 판본 수치가 정확히 나온다. 즉 두 값 모두
+        #     `100dvh` 다. 결론에는 영향이 없다 — 제약은 어느 전제에서도 보수적이다.
+        #   · **쇼윈도 그림은 추상 색면** — 생성 이미지가 "작품" 으로 읽히면 디자이너
+        #     2026-08-13 지적(*"생성 이미지가 작품 자리를 차지한다"*)이 히어로에서 재현된다.
+        #     `FOUNDING.md` 의 *"작가가 자기 전시를 여는 창(窓)"* 과도 어긋난다.
+        #
+        #   ⚠⚠⚠ **빛을 골든아워 → 블루아워로 바꿨다 (감독 지시 2026-08-14: *"노을로
+        #   하지말자"*).** 구도·인물·글자 금지·이름 없는 도시는 **전부 그대로**다 — 감독이
+        #   문제 삼은 것은 빛 하나이고, 감독이 문제라고 하지 않은 것을 내가 문제로 규정하지
+        #   않는다(CLAUDE.md 의 「가장 비쌌던 실수는 0번」).
+        #   **후보 둘을 화면으로 비교한 뒤의 판정이다** — run #6(옅은 톤)·#7(진한 테라코타)를
+        #   나란히 올렸고, 감독이 둘 다 아니라 **축 자체**를 바꿨다. 그 다음 카드에서
+        #   **「해 진 직후 · 푸른 시간」** 을 골랐다(다른 후보: 맑은 낮 · 흐린 날 · 이른 아침).
+        #
+        #   ⚠ **가드는 양쪽에 대칭으로 단다**(검수관 반려 B1). 첫 판본은 **밤 방향 가드만
+        #   7개**(`light and airy`·`not night`·`no black`·`no heavy shadow`·`no stars`·
+        #   `no moon` 등)를 달고 **노을 방향은 0개**였다. 그 상태로 긍정문에
+        #   `just after **sunset**` 과 `a faint warm blush just above the rooftops` 를
+        #   **남겨 두었다** — 감독이 거부한 바로 그 서명을 요구한 것이다. 게다가 같은
+        #   프롬프트가 `warm ... **only** from the shop windows` 라고 해 **문면이 충돌**했고,
+        #   `only` 가 무력화되면 하늘 전체가 따뜻해지는 경로가 열린다. 지난 회차의
+        #   *"사람을 넣으면서 사람을 금지"* 와 같은 유형이다.
+        #   → 지금은 노을 가드 5개(`no sunset colours at all`·`no orange`·`no pink`·
+        #   `no amber`·`no warm gradient along the horizon or above the rooftops`)를 달고
+        #   **하늘의 난색 요구를 통째로 지웠다.** 그래서 `only` 도 참이 된다.
+        #
+        #   ⚠⚠ **시각 수식은 `in the blue hour` **하나**다 — 두 개를 쓰지 마라**(검수관 조건
+        #   C-A·C-A′). 같은 자리에서 **방향만 바꿔 두 번 틀렸다**:
+        #     1차  `long after the sun has dropped below the horizon`
+        #          → 감독이 고른 **「해 진 직후」와 반대**이고, blue hour 보다 **뒤**(어두운 쪽).
+        #            게다가 바로 위 주석은 「직후」라고 적고 있어 **주석과 값이 갈라졌다.**
+        #     2차  `in the first minutes after the sun has gone below the horizon`
+        #          → 방향을 뒤집었더니 이번엔 blue hour 보다 **앞**(노을 쪽)이 됐다.
+        #            blue hour 는 태양 고도 −4°~−6°(일몰 후 20~40분)이고 `first minutes` 는
+        #            0°~−1° 라 **20~40분 어긋난다.** 그리고 그 구간이 **지평선 난색이 최대인
+        #            구간**이라 바로 위에서 세운 노을 가드 5개와 정면 충돌한다.
+        #   **처방은 문구 교체가 아니라 조립 제거다.** 이 저장소가 이미 쓴 문장이 그대로
+        #   적용된다 — *"매번 손으로 조립하니 매번 다르게 틀렸다. 조립을 없애면 틀릴 자리가
+        #   없다."* `in the blue hour` 하나로 **결과 색이 지정되고**, 감독 카드의 「해 진 직후 ·
+        #   푸른 시간」이 정확히 그 구간이다. 수식을 더 붙이면 그때부터 충돌 가능성이 생긴다.
+        #
+        #   ⚠ **이 축에는 이미 알려진 지뢰가 있다** — 위 `⚠⚠⚠` 문단이 적은 *"너무
+        #   어두운데."* 가 그것이다(대상은 그 문단에 적힌 옛 산출물 = run #4. 이 파일 안에서
+        #   같은 인용을 두 번 적지 않는다 — 검수관 조건 C2. `landing.html` 에도 같은 문장이
+        #   있으나 **그쪽은 랜딩 초안을 가리켜 대상이 다르다**). 블루아워는 그 방향으로
+        #   미끄러지기 쉬우므로 밝기 가드를 유지하고 `the street itself stays evenly and
+        #   clearly lit` · `still clearly bright` 로 **긍정 앵커를 보강**했다(검수관 P1·P2 —
+        #   `brightly lit windows` 는 어두운 주변을 전제하는 표현이라 `lit` 으로 낮췄다).
+        #   홈 배경이 크림(`--oas-paper-deep`)이라 어두운 그림은 톤에서 끊긴다 — 라이트
+        #   전환(PR #184)을 한 이유가 그것이다.
+        #
+        #   ⚠ **따뜻한 색이 「쇼윈도로 자리를 옮겼다」는 것은 아직 화면으로 확인되지 않았다**
+        #   (검수관 조건 C1 — 첫 판본은 이것을 단정했다). 히어로 wash 는 아래로 갈수록 크림을
+        #   덮으므로(스톱은 `landing.html` 의 `--hero-wash-*` 한 곳) **채도가 급격히 죽는다** —
+        #   검수관 재계산으로 pale periwinkle 은 원본 15.5% → **52% 지점**에서 **5.2%** →
+        #   **peak 지점**에서 **0.9%** 다(⚠ α 수치를 여기 적지 않는다 — 스톱은 `landing.html`
+        #   의 `--hero-wash-peak` 한 곳이고 그 자리 주석이 *"강도·색만 노브 축"* 이라고
+        #   **바뀔 값임을 명시**한다. 첫 판본은 그 두 α 를 숫자로 박아 값 미러링이 됐다 —
+        #   검수관 권고 P8). ⚠ **위 세 채도(15.5/5.2/0.9)는 「현행 peak 기준 계산」이다**
+        #   — α 를 안 적었어도 **그 α 에서 유도된 값**이라 `--hero-wash-peak` 를 바꾸면 셋 다
+        #   낡는다(검수관 권고 P11). 아래 재검토 트리거는 「배치 구현 회차」만 걸므로
+        #   **`peak` 를 만지는 회차도 이 문단을 본다.**
+        #   즉 화면에서 살아남는 것은 **상단 ~30%** 가 사실상 전부인데, 이
+        #   프롬프트는 따뜻한 요소를 mid/lower 에 둔다. **의도와 반대 방향일 수 있다.**
+        #   ⚠⚠ **이 경고는 배치 회차(2026-08-14)에 렌더로 재서 닫혔다 — 앞 문장은 참이고
+        #   결론은 성립하지 않았다.** 채도가 급감하는 것은 사실이다(70-80% 밴드 26.2 → 9.7,
+        #   63% 감소). 그런데 **wash 색이 크림 — 그 자체가 난색**이라 채도를 깎으면서 hue 는
+        #   난색 쪽으로 민다: 화랑 구간 R−B 가 −4.2 → **+8.3** 으로 뒤집히고 난색 픽셀 비율은
+        #   47.9% → **50.8%** 로 **늘어난다.** **wash 가 죽이는 것은 따뜻함이 아니라 한색이다.**
+        #   위 계산이 `pale periwinkle` — **청색 하나**를 재고 거기서 색 전체를 일반화했다.
+        #   **재는 축이 하나면 방향은 못 가린다.**
+        #   그래도 경고는 값을 했다 — 채도 급감 자체가 사실이고, 그 덕에 카피가 앉는 40~80%
+        #   구간이 무채색에 가까워져 **대비에는 유리하게** 작동한다. 실측표는 `landing.html`
+        #   의 wash 주석 한 곳이다(여기에 다시 적지 않는다).
+        #
+        #   ⚠ **못 잰 것**: 이 프롬프트로 실제 무엇이 나오는지는 안 돌려봤다. 그리고
+        #   CLAUDE.md 가 적은 대로 *"프롬프트에서 이름을 빼도 실존 대상 재현 확률이 0 이
+        #   되지 않는다"* — **산출물 육안 확인과 역이미지 검색이 남는다**(팀장 조건 4).
+        #   ⚠⚠ **골든아워 판본의 산출물 2장에서 팀장 조건 3개는 육안으로 전부 통과했다**
+        #   (얼굴 0 · 글자·간판·로고 0 · 실존 랜드마크 없음). 특히 글자는 검수관 조건 C2 가
+        #   *"상점가를 그리라면서 글자를 금지하면 모델이 거의 항상 넣는다"* 로 걱정한
+        #   축인데 **두 장 다 0이었다.** 다만 **빛만 바뀌어도 다시 확인해야 한다** — 조명이
+        #   바뀌면 모델이 창문에 글자를 넣을 수도 있다. 통과 이력을 면제로 쓰지 않는다.
+        description: '어떤 그림인가 (비우면 홈 히어로 기본 시안 · 공개 기록에 남는다)'
+        required: false
+        default: 'A wide illustrated street scene of an unnamed, invented city in the blue hour, viewed at pedestrian eye level. Cool low-saturation palette throughout: pale periwinkle, dusty slate blue, soft lavender grey. The sky is a calm even blue-grey across its whole width — no sunset colours at all, no orange, no pink, no amber, no warm gradient along the horizon or above the rooftops. Keep the whole scene light and airy — this is the bright half hour of blue dusk, not night: no black, no heavy shadow, no stars, no moon, and the street itself stays evenly and clearly lit. Soft hand-drawn linework with gentle painterly shading, flat storybook style, no photorealism. Composition: the upper third is open sky, a long soft gradient of pale blue-grey — this area must stay simple and uncluttered. Mid ground: rows of low stone and plaster townhouses receding in one-point perspective on both sides, with shuttered upper windows and cloth awnings, their facades in cool muted tones. Ground floor shopfronts on the right are small art galleries with lit windows; the soft lamplight inside them is the only warm colour anywhere in the picture. Framed pictures are visible inside as soft abstract colour blocks with no discernible imagery. A few figures walk the street and pause at the windows — drawn tiny, reduced to simple silhouettes, low in saturation, with no facial features at all, so they read as atmosphere rather than characters. The lower third is plain light blue-grey pavement, still clearly bright, with soft even light and no detail. Keep all important elements inside the central 60% of the width — the outer edges will be cropped on narrow screens. Absolutely no text, no letters, no signage, no logos, no watermarks. No recognisable real people. No recognisable real-world landmarks, buildings, or brands.'
+        type: string
+      out:
+        description: '저장 경로 (frontend/ 아래 · png/jpg/webp 만)'
+        required: false
+        default: 'frontend/img/hero.png'
+        type: string
+      aspect:
+        description: '비율 (Imagen 경로에서만 적용된다)'
+        required: false
+        default: '16:9'
+        type: choice
+        options: ['16:9', '4:3', '1:1', '3:4', '9:16']
+
+# 최상위는 최소로 두고, 필요한 job 에서만 올린다(`ci.yml` 과 같은 패턴).
+permissions:
+  contents: read
+
+# 연타·오작동으로 동시에 여러 건이 돌면 요금이 배로 나간다. 앞 회차를 취소하지는
+# 않는다 — 이미 요금이 나간 호출을 버리는 셈이라 이득이 없다.
+concurrency:
+  group: generate-image
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    # PR 을 만들려면 쓰기가 필요하다 — **이 job 에만** 준다.
+    permissions:
+      contents: write
+      pull-requests: write
+    # ⚠ `inputs.out` 을 **한 곳에서만** 푼다(검수관 P-b). 첫 판본은 네 스텝이 각각
+    #   `${{ inputs.out }}` 을 적었고, 그것이 이 저장소가 반복해서 대가를 치른 **값
+    #   미러링**이다 — 한쪽만 고치면 아무도 모른다.
+    env:
+      OUT: ${{ inputs.out }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with: { node-version: '24' }
+
+      - name: 앞 회차가 열어둔 PR 이 남아 있는지 본다
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # ⚠ **막지 않고 알린다** — `valuation.yml:72-88` 의 대응물은 `exit 1` 인데
+        #   여기서는 warning 이다. 차이가 실재해서다: valuation 은 **매일 자동으로** 돌아
+        #   미병합분이 누적되지만, 이것은 **감독이 손으로 1회** 누른다. 앞 PR 이 열려 있다고
+        #   새 이미지를 못 만들 이유가 없고, 검수관도 거짓 FAIL 을 함께 적었다
+        #   (*"감독이 리뷰 중이라 일부러 열어둔 PR 도 FAIL 로 잡힌다"*). 검수관 재검수에서
+        #   **warning 유지는 승인됐다**(2026-08-13).
+        #   ⚠ 첫 판본은 이 근거로 `valuation.yml:148` 을 들었는데 **대응물이 아니었다** —
+        #   그 줄은 *auto-merge 실패* 에 대한 warning 이다(검수관 P-4). 인용을 정정한다.
+        #
+        # 조회 방식은 **`valuation.yml:85-91` 의 형태를 그대로 가져온다.** 첫 판본은
+        # 미검증 `--search` 문법 + `2>/dev/null` 이었고, 검수관이 *"선례의 결론을 또 절반만
+        # 가져왔다"* 고 잡았다(같은 회차 두 번째다). `--search` 는 문법에 의존하지만
+        # `startswith` 는 안 하고, 실패 원인을 지우지 않아야 "못 봤다" 와 "없다" 가 갈린다.
+        run: |
+          set -euo pipefail
+          if ! OPEN=$(gh pr list --state open --limit 100 --json headRefName \
+                        --jq '[.[] | select(.headRefName | startswith("claude/generated-image-"))] | length' \
+                      2> /tmp/gh-list-err); then
+            echo "::warning::gh pr list 가 실패했다 — 앞 회차 PR 을 **못 봤다**(0건이라는 뜻이 아니다)."
+            cat /tmp/gh-list-err
+          elif [ "$OPEN" -gt 0 ]; then
+            echo "::warning::앞 회차가 만든 PR 이 ${OPEN}건 열려 있다. 봇 PR 은 CI 가 저절로 안 붙는다(위 헤더) — 먼저 처리하라."
+          fi
+
+      - name: 이미지 생성
+        env:
+          # **환경변수로만 넘긴다** — 명령줄 인자는 프로세스 목록에 남는다.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IMAGE_PROMPT: ${{ inputs.prompt }}
+          IMAGE_OUT: ${{ env.OUT }}
+          IMAGE_ASPECT: ${{ inputs.aspect }}
+        run: node scripts/generate-image.mjs
+
+      # ⚠ **이 스텝이 팀장 조건의 「실물」을 담당한다**(검수관 B-3). 아래 열거 스텝이
+      #   FAIL 하면 job 이 끝나고 runner 파일시스템이 사라진다 — 그러면 사람에게 남는 것이
+      #   **청크 이름과 바이트 수뿐**이고, 팀장 조건 *"사람이 실물을 보고 판정"* 이 성립하지
+      #   않는다. 게다가 판정 A 를 정한 근거가 **비가역성**(*"스트립→보존은 원본이 없어
+      #   불가능"*)이었는데 그 구현이 원본을 버리면 근거와 정면으로 어긋난다.
+      #   그래서 **열거보다 먼저**, 그리고 뒤 스텝의 성패와 무관하게 올린다.
+      #   artifact 는 저장소 blob 이 아니라 만료·삭제가 되므로 "영구 커밋" 축에 안 걸린다.
+      #   ⚠ 또 하나: `ACCEPTED` 규칙이 보는 것은 페이로드 **선두 45B**(규격 위치 고정)뿐이라,
+      #   그 뒤 수 KB 의 매니페스트 본문은 **회차마다 달라도 통과한다.** 매 회차 실물을 여기
+      #   올려야 *"확인한 대상과 커밋되는 대상이 다른"* 형태를 막는다.
+      #   ⚠⚠ 이 두 줄은 오래 *"`ACCEPTED` 는 **타입** 화이트리스트"* 라고 적혀 있었고 팀장
+      #   조건 3(내용 판별)으로 **거짓이 됐다**(검수관 B-4). 값이 아니라 상태를 재진술한
+      #   자리라 `G-MIRROR` 가 안 잡는다 — 스크립트를 고칠 때 이 파일도 열어야 한다.
+      - name: 생성물을 artifact 로 남긴다 (열거 실패해도)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: generated-image-${{ github.run_id }}
+          # ⚠ **`env.OUT` 은 gen 의 성패에 따라 다른 값이다**(검수관 B1 — 첫 판본 주석은
+          #   *"여기만 검증 전 원본 경로를 쓴다"* 였고 이 배선으로 **거짓이 됐다**):
+          #     · gen 성공 → 스크립트가 `GITHUB_ENV` 로 갱신한 **실제 저장 경로**(확장자가
+          #       바뀌었을 수 있다). `resolveOutPath` 를 통과한 값이다.
+          #     · gen 실패 → job 레벨 원본(`inputs.out`). **검증을 통과 못 한 값일 수 있다** —
+          #       `if: always()` 라 그래도 실행된다(검수관 P-g). dispatch 는 write 권한자만
+          #       누르므로 위협모델상 실질 증가는 0이고,
+          #   upload-artifact v4 는 hidden file 을 기본 제외하므로 `.git/` 은 안 올라간다.
+          #   ⚠ **다만 그 두 문장은 문서 기억 대조이고 실행으로 확인하지 못했다**(검수관 P-h —
+          #   `api.github.com` 403 이라 워크플로를 한 번도 돌리지 못했고, 이 저장소에
+          #   actionlint 가 없어 `env` context 유효성을 정적으로 재는 축도 0이다).
+          #   **"검수관이 확인했다" 로 적지 마라 — 검수관도 같은 이유로 못 쟀다.**
+          path: ${{ env.SAVED_PATH || env.OUT }}
+          # ⚠ `error` 가 아니라 `warn` 인 이유: 생성 스텝이 키 오류로 죽으면 파일이 아예
+          #   없는데, 그때 이 스텝까지 빨간불이면 **진짜 원인이 로그에서 묻힌다.**
+          #   실물이 없는 채로 진행되지는 않는다 — 다음 스텝의 `readFileSync` 가 죽는다.
+          #   즉 B-3 의 보증("매 회차 실물이 남는다")은 **파일이 만들어진 회차에 한해** 참이다.
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: 메타데이터를 열거하고, 확인 안 된 것이 있으면 커밋 전에 선다
+        # **스트립하지 않는다 — 팀장 판정 2026-08-13(분기 A) = 보존.**
+        # 근거는 "위생" 이 아니라 **비가역성**이다: 보존→스트립은 언제든 되지만
+        # 스트립→보존은 원본이 없어 불가능하다. 게다가 스트립해도 SynthID 는 픽셀에
+        # 남아 실익도 없다.
+        #
+        # ⚠ **`--fail-on-extra` 가 팀장 조건이다.** *"로그를 「찍기만」 하고 자동 커밋하면
+        #   확인 없는 영구 blob 이다."* 공개 저장소는 커밋되면 blob 이 안 지워지므로
+        #   **처음 보는 청크가 있으면 여기서 job 이 죽는다.** 사람이 로그를 읽고 판정한 뒤
+        #   `png-chunks.mjs` 의 `ACCEPTED` 에 근거와 함께 올려야 다음 회차가 통과한다.
+        #   ⚠ 이 자리는 오래 *"목록은 비어 있는 채로 시작하고, 첫 dispatch 는 여기서
+        #   **실패하는 것이 정상**"* 이라고 적혀 있었다. **그 시기는 지났다**(검수관 B-4):
+        #   run #4(`31717695950`)에서 APP11 이 관측돼 규칙 하나가 올라갔다. 이제는 **통과가
+        #   정상**이고, 이 문장이 남으면 다음 사람이 **통과를 이상 신호로 읽는다.**
+        #   FAIL 은 이제 *"규칙이 아직 모르는 것이 왔다"* 는 뜻이다 — 로그의 peek 을 읽어라.
+        # ⚠ `SAVED_PATH` 는 생성 스텝이 성공했을 때만 있다(확장자가 바뀌었을 수
+        #   있는 **실제 저장 경로**). 없으면 원본으로 떨어진다 — `:-` 라 미정의여도
+        #   안전하고, job 레벨 `OUT` 과 **이름이 달라** 우선순위에 의존하지 않는다.
+        run: node scripts/png-chunks.mjs "${SAVED_PATH:-$OUT}" --fail-on-extra
+
+      - name: 브랜치에 올리고 PR 을 연다
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMPT: ${{ inputs.prompt }}
+          ASPECT: ${{ inputs.aspect }}
+          # ⚠ **`run:` 본문에 `${{ }}` 를 보간하지 않는다**(검수관 B4). 첫 판본은
+          #   PR 본문 표에 `${{ inputs.out }}` 를 직접 적었고 **셸 인젝션이 성립했다** —
+          #   `frontend/img/a";whoami;#.png` 가 `resolveOutPath` 를 **통과하고**
+          #   (제어문자 없음·루트 하위·extname `.png`) 그 값으로 `echo` 를 돌리니
+          #   `whoami` 가 실행됐다(검수관 로컬 bash 실증). 이 스텝 env 에는
+          #   `GH_TOKEN`(contents·PR write)이 있다.
+          #   저장소 전체에서 `run:` 안에 표현식을 보간한 자리는 그 한 곳뿐이었다 —
+          #   **확립된 규율에서 벗어난 유일한 자리를 내가 만들었다.**
+          REQUESTED_OUT: ${{ inputs.out }}
+        run: |
+          set -euo pipefail
+          # 실제 저장 경로를 여기서 한 번만 푼다 — 아래는 전부 이 값을 쓴다.
+          OUT="${SAVED_PATH:-$OUT}"
+          # ⚠ 세 사건을 갈라 본다(검수관 P1). 첫 판본은 `git status` 빈 출력 하나로
+          #   뭉개서, **파일이 만들어졌고 요금도 나갔는데** "안 만들었다" 고 적었다.
+          if [ ! -e "$OUT" ]; then
+            echo "::error::생성물이 없다 — 앞 스텝이 파일을 만들지 않았다."
+            exit 1
+          fi
+          if [ -z "$(git status --porcelain -- "$OUT")" ]; then
+            echo "::error::파일은 있으나 git 이 안 잡는다 — .gitignore 대상이거나 내용이 기존과 같다: $OUT"
+            exit 1
+          fi
+          BRANCH="claude/generated-image-${GITHUB_RUN_ID}"
+          BASENAME="$(basename -- "$OUT")"   # `--` 가 없으면 `--version` 같은 입력이 옵션으로 해석된다
+          git config user.email noreply@anthropic.com
+          git config user.name Claude
+          git checkout -b "$BRANCH"
+          git add -- "$OUT"
+          # ⚠ 프롬프트를 **커밋 메시지에 넣지 않는다**(보안담당 ②). 커밋 메시지는
+          #   force-push 로도 안 지워진다 — GitHub 이 dangling commit 을 SHA URL 로
+          #   보관하므로 *"실수로 적었으니 지우면 된다"* 가 성립하지 않는다. PR 본문은
+          #   편집·삭제가 되므로 거기에만 둔다.
+          {
+            echo "이미지를 생성한다 — ${BASENAME}"
+            echo
+            echo "workflow_dispatch 로 감독이 실행했다. 프롬프트·모델·크기는 이 run 에 있다:"
+            echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > /tmp/commit-msg.txt
+          git commit -F /tmp/commit-msg.txt
+          git push -u origin "$BRANCH"
+          # ── PR 본문 ─────────────────────────────────────────────────────
+          # ⚠ **검수관 판정 줄을 미리 박아 넣지 않는다.** `valuation.yml:141` 은
+          #   `해당없음 (2등급)` 을 넣어 두는데, 그것을 복사하면 여기서는 FAIL 한다 —
+          #   실측: `judge(["frontend/img/hero.png"])` = **1등급**(라이브 자산 + §6 축).
+          #   `review-record.yml:45-48` 이 *"실제 등급이 1이면 해당없음은 FAIL"* 로
+          #   그 자리를 이미 막고 있다. 사람이 실제 판정을 받아 적어야 한다.
+          {
+            echo "Gemini 로 생성한 이미지다. \`workflow_dispatch\` 로 감독이 실행했다."
+            echo
+            echo "| 항목 | 값 |"
+            echo "| --- | --- |"
+            echo "| **요청** 경로 | \`${REQUESTED_OUT}\` |"
+            echo "| **요청** 비율 | ${ASPECT} — ⚠ Imagen(\`:predict\`) 경로에서만 적용된다. Gemini(\`generateContent\`) 로 갔으면 **무시됐다** |"
+            echo "| **실제 저장** 경로 | \`${OUT}\` (모델이 준 형식에 맞춰 확장자가 바뀌었을 수 있다) |"
+            echo "| run | ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} |"
+            echo
+            echo "**프롬프트**"
+            echo
+            echo '```'
+            printf '%s\n' "$PROMPT"
+            echo '```'
+            echo
+            echo "## ⚠ 이 PR 은 이대로 병합할 수 없다"
+            echo
+            echo "1. **필수 상태검사가 안 붙는다.** \`GITHUB_TOKEN\` 이 만든 push·PR 은"
+            echo "   다른 워크플로를 발화하지 않는다(태스크 #130 실증, \`valuation.yml:119-123\`)."
+            echo "   초록불이 없는 것은 *아직 안 돈 것* 이 아니라 **영영 안 도는 것**이다."
+            echo "   → 사람이 이 브랜치에 커밋을 하나 얹으면 \`ci.yml\` 이 그때 돈다."
+            echo "2. **이미지 파일만으로는 라이브에 안 나온다.** \`vite.config.js:96\` 의 정적"
+            echo "   복사 목록에 \`img\` 가 없다 — HTML 이 \`./img/…\` 로 **참조해야** vite 가"
+            echo "   \`_bundle/\` 로 굽는다(2026-08-13 실측). 참조 커밋이 함께 와야 한다."
+            echo "3. **검수관 판정이 필요하다.** 이 변경은 1등급이다(라이브 자산 · §6 법무 축)."
+            echo "   판정 줄은 사람이 받아 적는다 — 미리 박아 넣으면 \`review-record\` 가 FAIL 한다."
+            echo "4. **역이미지 검색 결과를 이 본문에 적어야 한다**(팀장 조건 2026-08-13, 분기 C)."
+            echo "   모델이 학습한 실존 건축을 그대로 뱉을 수 있고, 프롬프트에서 이름을 빼도 확률은 0이"
+            echo "   아니다. CI 는 egress 차단이라 여기서 못 한다 — 환경 밖 브라우저에서 Google Lens ·"
+            echo "   TinEye 로 1회 돌리고 결과를 적는다. **안 적으면 안 한 것으로 친다.**"
+            echo
+            echo "   - [ ] 역이미지 검색 1회 — 결과:"
+            echo "   - [ ] 이미지 실물을 artifact 로 내려받아 열어 봤다"
+            echo "   - [ ] **글자·간판·로고 0 을 육안 확인했다** — 프롬프트가 상점가를 그리라고 하면서"
+            echo "         글자를 전면 금지한다(검수관 조건 C2). 이미지 모델은 상점 파사드에 거의 항상"
+            echo "         왜곡된 글자를 넣고, 그것이 우연히 실존 상호로 읽히면 IP 축에 걸린다."
+            echo "         ⚠ 이 축은 블루아워 전환으로 **위험이 올라갔다**(검수관): 창이 시선 중심이"
+            echo "         됐고, 밝은 쇼윈도는 학습셋에서 간판·문자와 강하게 결합한다."
+            echo "   - [ ] **쇼윈도가 실제로 따뜻하게 보이는가** — 프롬프트는 하늘에 난색을 전면"
+            echo "         금지하면서(no orange/pink/amber) 램프광만 따뜻하게 남긴다. 모델이 그"
+            echo "         부정을 **전역으로** 읽으면 그림 전체가 차가워져 의도가 죽는다"
+            echo "         (검수관 권고 P7 — 문장 경계는 모델이 약하게 처리한다)."
+            echo
+            echo "## 메타데이터 — 무엇을 봤고 무엇을 못 봤나"
+            echo
+            echo "위 run 의 「메타데이터를 열거하고」 스텝이 초록이면 **렌더에 쓰이는 청크이거나,"
+            echo "사람이 근거를 적어 통과시킨 규칙에 규격 위치까지 맞는 것뿐**이라는 뜻이다."
+            echo "그 이상은 아니다 — 아래는 이 게이트가 **원리상 못 보는 것**이고, 초록이어도"
+            echo "그대로 남아 있다. \`scripts/png-chunks.mjs\` 헤더의 한계 목록에서 **PR 독자에게"
+            echo "해당하는 것**을 옮긴 것이고, 어느 항목이 이 표에 오는지는 그 헤더의 \`[표: …]\`"
+            echo "마커가 정한다 — 양쪽이 어긋나면 \`tests/generate-image.test.ts\` 의 \`G-MIRROR\`"
+            echo "가 빨간불이 된다(개수를 여기 적었더니 같은 자리에서 두 번 틀렸다 — 4/3, 4/5)."
+            echo
+            echo "| 못 본 것 | 왜 |"
+            echo "| --- | --- |"
+            echo "| **SynthID 워터마크** | 메타데이터가 아니라 **픽셀**에 박힌다. 청크를 다 지워도 남는다 |"
+            echo "| **트레일러에 붙은 것** | PNG는 \`IEND\`, JPEG는 첫 \`SOS\` 에서 열거를 멈춘다. 그 뒤는 시야 밖이다(실측) |"
+            echo "| **청크 내용** | 이름·바이트 수 + **선두 45B**(규격 위치 고정)로 판별한다. 그 뒤 수 KB 의 매니페스트 본문이 무엇을 주장하는지는 안 본다 |"
+            echo "| **손상·절단된 파일** | 길이 필드가 거짓이면 열거가 어긋나 **뒤쪽이 통째로 안 보인다** — 그때도 \"0개\"로 나온다 |"
+            echo
+            echo "그래서 **실물을 직접 여는 것이 위 체크박스에 있다.** 초록불을 실물 확인으로 갈음하지 마라 —"
+            echo "이 게이트를 만든 팀장 조건이 바로 *\"사람이 실물을 보고 판정\"* 이었다."
+            echo
+            echo "처음 보는 청크가 있었다면 job 이 커밋 전에 죽어 이 PR 자체가 없다. 그때도 이미지는"
+            echo "run 의 artifact 에 남는다."
+          } > "${GITHUB_WORKSPACE}/pr-body.md"
+          # ⚠ `/tmp` 가 아니라 **workspace** 다(검수관 조건 1). `upload-artifact` 가 workspace
+          #   **밖** 절대경로를 올리는지는 이 저장소에 증거가 0 이다 — 기존 이미지 artifact 가
+          #   5회 성공한 것은 `generate-image.mjs` 가 `SAVED_PATH` 에 **상대경로**를 넣기
+          #   때문이고, 그것은 절대경로에 대한 증거가 아니다. 여기 두면 **그 미측정 축 자체가
+          #   사라진다** — 아래 summary 의 *"artifact 에 들어 있다"* 가 조건 없이 참이 된다.
+          #   커밋·push 는 위에서 이미 끝났고 이 뒤로 `git add`/`commit` 이 없으므로 이
+          #   untracked 파일이 커밋에 섞일 경로도 없다.
+          # ── PR 생성 ─────────────────────────────────────────────────────
+          # ⚠ **이 저장소에서 `gh pr create` 는 항상 실패한다.** 실측: run #1~#5 **5회 전부**
+          #   같은 자리에서 죽었다(run 31757052567 로그):
+          #     pull request create failed: GraphQL: GitHub Actions is not permitted
+          #     to create or approve pull requests (createPullRequest)
+          #   Settings → Actions → General → Workflow permissions 의 체크박스이고
+          #   **워크플로가 스스로 켤 수 없다.**
+          #   그런데 **바로 위 `git push` 는 5회 다 성공했다** — 그림은 생성·열거·커밋·push 가
+          #   전부 끝나 브랜치에 올라가 있는데 job 만 빨간불이었다. 감독이 버튼을 누를 때마다
+          #   보이는 그 실패는 **거짓 신호**이고, 거짓 신호는 진짜 실패를 가린다.
+          #   → 이 실패 **하나만** 통과시킨다.
+          # ⚠⚠ **전부 무시하지 않는다.** 이 저장소가 데인 형태가 *"실패가 조용했다"* 다
+          #   (독립 스모크 10회가 즉시 죽었는데 위임 보고에는 "완료" 로 올라온 사고).
+          #   그래서 **권한 문구가 매치될 때만** 통과이고, 그 외 실패는 종료코드 1 로 죽는다.
+          #   설정이 나중에 켜지면 첫 분기로 들어가 PR 이 정상적으로 열린다 — 그때 이 분기는
+          #   저절로 안 쓰이고, 지울 필요도 없다.
+          if gh pr create --base main --head "$BRANCH" \
+               --title "이미지를 생성한다 — ${BASENAME}" \
+               --body-file "${GITHUB_WORKSPACE}/pr-body.md" 2> /tmp/pr-err.txt; then
+            echo "PR 을 열었다."
+          elif grep -q 'not permitted to create or approve pull requests' /tmp/pr-err.txt; then
+            cat /tmp/pr-err.txt >&2
+            # ⚠ **annotation 을 반드시 낸다**(검수관 조건 2). 첫 판본은 step summary 에만
+            #   적었는데, 그것은 run 페이지를 열어 스크롤해야 보인다. 규율이 *"감독은 세션을
+            #   지켜보고 있지 않다 · 모바일에서 보고 계신다"* 이므로 **job 이 초록인데 안내가
+            #   summary 에만 있으면 사실상 아무도 안 본다.** 이 파일에 이미 같은 형태의
+            #   `::warning::` 선례가 있다(「막지 않고 알린다」).
+            echo "::warning::PR 은 자동으로 안 열렸다(저장소 설정). 브랜치 ${BRANCH} 는 올라갔고 그림은 정상이다 — 사람이 PR 을 연다."
+            {
+              echo "## PR 은 자동으로 안 열렸다 — 브랜치는 올라갔다"
+              echo
+              echo '```'
+              echo "${BRANCH}"
+              echo '```'
+              echo
+              echo "**그림 자체는 정상이다.** 생성 · 메타데이터 열거 · 커밋 · push 가 모두 끝났다."
+              echo "막힌 것은 PR 을 여는 동작 하나뿐이고, 원인은 저장소 설정"
+              echo "(Settings → Actions → General → Workflow permissions)이다 —"
+              echo "**워크플로가 켤 수 없는 축이다.**"
+              echo
+              echo "### PR 은 이렇게 연다 — 본문을 손으로 쓰지 마라"
+              echo
+              echo "본문은 이 run 의 \`pr-body-${GITHUB_RUN_ID}\` artifact 에 \`pr-body.md\` 로 들어 있다."
+              echo "받아서 **그대로** 쓴다:"
+              echo
+              echo '```sh'
+              echo "gh pr create --base main --head ${BRANCH} \\"
+              echo "  --title '이미지를 생성한다 — ${BASENAME}' \\"
+              echo "  --body-file pr-body.md"
+              echo '```'
+              echo
+              echo "⚠ 웹 UI 로 열고 본문을 새로 쓰면 **체크리스트가 통째로 사라진다** —"
+              echo "역이미지 검색 1회 · 실물 다운로드 · 글자·간판·로고 0 육안 확인. 셋 다"
+              echo "팀장 조건이고, 적히지 않은 「권고」는 첫 회부터 생략된다."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            # ⚠ `::error::` 를 `cat` **앞**에 둔다(검수관 권고 P1). `set -e` 하에서
+            #   `/tmp/pr-err.txt` 가 없으면 `cat` 이 먼저 죽어 **진단 줄이 통째로 유실된다** —
+            #   검수관이 4번째 케이스로 실측했다(종료코드 1 은 유지되므로 fail-closed 이지만,
+            #   그때 로그에 남는 것이 아무것도 없다).
+            echo "::error::PR 생성이 **알려진 권한 사유가 아닌** 이유로 실패했다. 아래 stderr 를 봐라."
+            cat /tmp/pr-err.txt >&2 || true
+            exit 1
+          fi
+
+      # PR 본문을 artifact 로 남긴다 — 위 스텝이 권한 때문에 PR 을 못 열면 사람이 이것으로 연다.
+      # ⚠ **이게 없으면 `G-MIRROR` 가 지키는 「못 본 것」 표가 어느 PR 에도 안 실린다.** 테스트는
+      #   초록인데 산출물이 아무 데도 없는 상태가 되고, 그때부터 그 테스트는 장식이다. 실제로
+      #   지금까지 5회 전부 PR 이 안 열렸으므로 **그 표는 한 번도 사람 눈앞에 간 적이 없다.**
+      # ⚠ 첫 판본은 `path: /tmp/pr-body.md` 였고 *"절대경로를 올리는지 못 쟀다"* 를 주석에
+      #   달았다. **재는 대신 그 축을 없앴다**(검수관 조건 1) — 본문을 workspace 에 쓰므로
+      #   여기는 **상대경로**이고, 그 형태는 바로 위 이미지 artifact 가 5회 성공시킨 형태와
+      #   같다. *"정직한 유보"* 와 *"재지 않아도 되게 만드는 것"* 은 다르고, 후자가 가능하면
+      #   후자다 — 유보는 주석에 있고 그것을 못 읽는 사람이 summary 를 읽는다.
+      # ⚠⚠ `retention-days` 를 이미지 artifact 와 **같은 14** 로 맞춘다(검수관 권고 P6).
+      #   저장소 기본(통상 90)으로 두면 **본문이 가리키는 이미지가 본문보다 먼저 만료된다** —
+      #   PR 본문이 *"그때도 이미지는 run 의 artifact 에 남는다"* 라고 적고 있으므로 그 문장이
+      #   14일 뒤 거짓이 된다.
+      - name: PR 본문을 artifact 로 남긴다
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pr-body-${{ github.run_id }}
+          path: pr-body.md
+          retention-days: 14
+          # 앞 스텝이 죽어 본문이 아예 없을 수 있다(그때는 PR 도 없다). 그 경우 이 스텝까지
+          # 빨간불이면 진짜 원인이 로그에서 묻히므로 `warn` 이다 — 바로 위 이미지 artifact 와
+          # 같은 판단이고, job conclusion 은 앞 스텝의 failure 로 이미 빨간불이다.
+          if-no-files-found: warn

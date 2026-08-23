@@ -21,6 +21,7 @@
 //   섀도 초기 주기(resolvedTheme로 결정)는 setShadowInterval()로 결선한다.
 
 import { readSpec, writeSpec, PX_BUDGET, MOBILE_PX_CAP, LITE_ENTER_FPS, LITE_EXIT_FPS, LITE_VISIBLE_NPCS } from './main-spec.js';
+import { isSceneCovered } from './render-gate.js';
 
 // 모바일(터치) 판정 — 주 포인터가 coarse일 때만 true(진짜 폰/태블릿). 마우스가 주
 // 입력인 터치 노트북·데스크톱은 fine이라 false → 데스크톱 런타임 경로 무변화.
@@ -94,14 +95,47 @@ export function createPerfGovernor(ctx: PerfCtx) {
     const entered = isEntered();
 
     // #13 FPS 집계 (0.5초마다 갱신)
-    fpsFrames += 1;
-    fpsElapsed += delta;
+    //
+    // [오버레이 렌더 스킵] 씬을 **그리지 않은** 프레임은 렌더 성능의 표본이 아니다.
+    // `fpsFrames` 가 세는 것은 rAF 콜백 빈도인데 아래에서 그 값이 **렌더 성능**으로
+    // 해석돼 `writeSpec`(localStorage 영구 학습)과 `setPixelRatio` 를 움직인다.
+    // 렌더를 건너뛰면 두 축이 어긋난다 — 재는 축이 틀리는 것이다.
+    //
+    // 영향받는 집합이 정확히 최악이라 이 격리가 필요하다: 이미 60fps 인 기기는 변화가
+    // 없고(원래도 `fpsNow > 55`), **원래 40~55fps 이던 기기만** 게이트 중 측정값이
+    // 60으로 올라가 없던 승급이 붙는다. 승급하면 안 되는 집합에만 승급이 붙는다.
+    // `writeSpec('high')` 는 영구 학습이고 `fpsNow < 16` 이라야 덮이므로, 다음 접속부터
+    // 슈퍼샘플을 이고 시작한다 — 아래 `[처방 A]` 주석이 모바일에서 이미 차단한
+    // *"순간 고FPS 로 학습"* 과 같은 형태이고, 렌더 스킵은 그것을 구조적으로 만든다.
+    //
+    // 누산기를 **매 프레임 0으로 되돌린다**(멈추는 게 아니라 리셋). 그래야 게이트가
+    // 풀린 직후 표본이 0에서 시작해 경계 프레임이 섞이지 않는다. `fpsElapsed` 가 0이면
+    // 아래 `>= 0.5` 가 성립하지 않으므로 그 안의 부작용(setFPS·writeSpec·
+    // setPixelRatio·setStatus)이 전부 0회가 된다. `specFastTicks` 도 끊어 게이트를
+    // 사이에 둔 승급 누적이 이어붙지 않게 한다.
+    //
+    // **#14(NPC 컬링)·#15(섀도 재베이크)는 게이트 밖이다** — 이 함수 전체를 건너뛰면
+    // 그 둘이 함께 멈춘다. 막는 것은 fps 표본 하나뿐이다.
+    if (isSceneCovered()) {
+      fpsFrames = 0;
+      fpsElapsed = 0;
+      specFastTicks = 0;
+    } else {
+      fpsFrames += 1;
+      fpsElapsed += delta;
+    }
     if (fpsElapsed >= 0.5) {
       const fpsNow = fpsFrames / fpsElapsed;
       setFPS(Math.round(fpsNow));
       fpsFrames = 0;
       fpsElapsed = 0;
       // 저사양 자동 전환 (히스테리시스 + 10초 재전환 금지로 깜빡임 방지)
+      //
+      // 이 감소는 위 게이트(오버레이 렌더 스킵) 안에 있어 **편집기가 열린 동안 함께
+      // 얼어붙는다. 의도한 것이다.** 시간만 흘려보내면 편집기를 닫는 순간 쿨다운이
+      // 만료된 상태가 되어 **첫 표본 하나로 곧장 재전환**할 수 있고, 그건 쿨다운이
+      // 막으려는 깜빡임 그 자체다. 얼려두면 닫은 뒤 남은 시간만큼 더 기다린다 —
+      // 방향이 보수적(전환 억제)이라 안전한 쪽으로 틀린다.
       liteToggleCooldown = Math.max(0, liteToggleCooldown - 0.5);
       if (liteToggleCooldown === 0 && entered) {
         if (!liteMode && fpsNow < LITE_ENTER_FPS) {

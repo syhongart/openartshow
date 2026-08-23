@@ -15,7 +15,7 @@
      'self' 만으로는 이 blob: fetch 가 막혀 텍스처 전체가 로드 실패한다
      (lab-glb.html 이 헤드리스 검증으로 발견한 것을 그대로 계승). -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
-<title>오픈월드 v2 (실험) · OpenArtShow</title>
+<title>오픈월드 · OpenArtShow</title>
 <link rel="stylesheet" href="./vendor/fonts/fonts.css">
 <style>
   :root{
@@ -116,15 +116,84 @@
 
 
   /* ── 가상 조이스틱 ─────────────────────────────────────────────────────
-     pointer-events:none 이 핵심 — 터치는 캔버스가 받고 여기는 그림만 그린다.
-     조이스틱이 이벤트를 가로채면 손가락이 조이스틱 밖으로 나가는 순간 추적이 끊긴다. */
+     ⚠ **2026-08-21 개정 (팀장 판정 (나)).** 예전에는 `pointer-events:none` 으로 그림만
+     그리고 터치는 캔버스가 받았다 — 「누른 자리에 조이스틱이 생기는」 설계였다. 그런데
+     그 판정(화면 왼쪽 절반)이 편집(`?edit=1`)과 충돌하는 근원이었다: 같은 터치가
+     조이스틱과 편집에 **둘 다** 들어가 물건이 선택되면서 동시에 아바타가 걸었다.
+
+     그래서 **이 원 자체가 판정 영역**이 됐다(`pointer-events:auto` + 포인터 캡처).
+     자리가 정해져야 영역이 정해지므로 「누른 자리에 생긴다」는 함께 내줬다 — 그 대가와
+     되돌릴 조건은 `decide/touch.ts` 의 `assignSlot` 이 있던 자리 한 곳에 적었다.
+
+     `touch-action:none` 이 필요한 이유: 없으면 브라우저가 스크롤로 해석해 드래그 도중
+     `pointercancel` 을 던진다.
+
+     기본이 `display:none` 이고 **`pointer:coarse` 에서만** 뜬다 — 데스크톱에 원이 상시
+     보이면 안 된다. 폭이 아니라 포인터 종류로 보는 것은 저장소 관례다(`decide/touch.ts`
+     의 `isTouchDevice`: *"좁은 창의 데스크톱에 조이스틱이 뜨거나 큰 태블릿에서 안 뜨는
+     일을 막는다"*). */
+  /* ⚠⚠ **2026-08-21 재개정 — 감독 판정 «조이스틱 고정이 불편해».**
+     첫 개정(같은 날)이 원을 좌하단에 **고정**했고, 그 자리에 *"되돌릴 조건: 감독이
+     「자리가 손에 안 맞는다」고 말할 때"* 라고 적어 뒀다. **그 조건이 발동했다.**
+
+     그러나 옛 설계(화면 왼쪽 **절반 전체**가 판정)로 되돌리면 편집 충돌이 되살아난다.
+     그래서 **둘 다** 되는 형태로 간다 — 판정을 「구역」이 받고, 원은 **누른 자리에
+     그려진다**:
+
+       `#w2-stick-zone`  좌하단 **구역**. 터치를 받는 것은 이것 하나다(고정)
+       `#w2-stick`       원. 구역 안에서 **누른 자리로 움직인다**(`pointer-events:none`)
+
+     즉 「엄지가 닿는 자리에 생긴다」는 복원되고, 「구역 밖은 편집 전용」은 유지된다.
+     구역이 화면 절반이 아니라 **왼쪽 아래 일부**라는 것이 그 둘을 가르는 지점이다. */
+  #w2-stick-zone{
+    display:none;
+    position:fixed;z-index:6;left:0;bottom:0;
+    /* 엄지가 닿는 범위. 세로 폰에서 오른손 엄지는 화면 왼쪽 아래에서 움직인다.
+       넓힐수록 손에 맞지만 편집이 좁아진다 — 이 값이 그 거래다.
+
+       🔴 **`44vw` 인 것은 화면 중앙을 넘지 않기 위해서다**(검수관 블로커, 2026-08-21).
+       첫 판본은 `52vw` 였고 **어떤 뷰포트에서도 중앙(50vw)을 넘었다.** 하단 중앙에는
+       조준 막대(`#w2-aim .bar` — `left:50%` 정중앙 대칭, `z-index:46`)가 있어서,
+       겹치는 자리의 터치를 그쪽이 가져간다(375px 화면 기준 겹침이 구역의 **47%**였다).
+       조준 중에 다가가려고 미는 손이 거기서 씹힌다.
+       ⚠ 이것은 **첫 판본(112px 고정, `left:18px`)에는 없던 회귀**다 — 그때는 왼쪽
+       130px 안에 갇혀 있어 중앙까지 닿지 못했다. 구역으로 넓히면서 새로 들어갔고,
+       바로 그날 아침 검수관이 *"`.bar` 가 하단 중앙을 가로지른다"* 고 이미 짚은 자리다.
+       **넓히고 싶어지면 그 막대부터 본다.** */
+    width:min(44vw, 300px);height:min(38vh, 300px);
+    pointer-events:auto;touch-action:none;
+  }
+  /* 조준 중에는 구역을 막대 **위로** 올려 안 겹치게 한다.
+
+     🔴 **`140px` 은 실측에서 나온 값이다**(검수관 헤드리스 4기기, 2026-08-21). 첫 조치는
+     `72px` 이었고 *"막대 높이가 패딩 포함 ~40px"* 이라는 **내 추정**에서 나왔다 —
+     **틀렸다.** 막대는 안내 문구 줄(`aim-mode.ts` 의 `msg` 가 **항상** 채운다)과 버튼 줄의
+     2단이라 실제 높이가 **74.4px**, 좁은 화면에서는 문구가 줄바꿈해 **113.4px** 이다.
+     `bottom:16px + safe` 를 더하면 막대 상단이 화면 바닥에서 **90.4px**(iPhone SE 는
+     **129px**) 위에 온다. 72 는 그보다 작아 **네 기기 전부에서 겹쳤다**(세로 18.4~57.4px).
+
+     ⚠ **텍스트만 보는 검사(`GS-J6`)가 이것을 못 잡았다** — 그 검사는 스스로 그 한계를
+     적어 뒀고 정확히 거기서 새어 나갔다. 「문구 줄이 있다」는 CSS 선언에 안 보인다.
+     그래서 아래 하한을 **검사로** 못 박는다(같은 파일의 `GS-J6` 세 번째 케이스).
+
+     **줄이고 싶어지면 막대를 실제로 렌더해서 재라.** 추정하지 마라 — 내가 그래서 틀렸다.
+
+     ⚠ 남은 이론적 사각 하나(검수관 권고, 비블로커): 막대의 `bottom` 은 `16px + safe-area`
+     인데 이 회피값은 **safe-area 를 안 더한 고정값**이다. 계산상 「좁은 폭(320px, 문구가
+     줄바꿈해 막대 113.4px) + safe-area 34px」 조합만 모자라는데(-23.4px), **그 조합의
+     실존 iOS 기기가 없다** — 320~375px 기종은 홈버튼 세대라 safe-area 가 0 이고, 노치
+     세대는 375px 이상이라 줄바꿈이 안 난다. **이 값을 다시 만질 때 이 계산도 같이 본다.** */
+  body:has(#w2-aim[data-on="1"]) #w2-stick-zone{ bottom:140px;height:min(26vh, 200px) }
+  @media (pointer:coarse){ #w2-stick-zone{display:block} }
   #w2-stick{
-    position:fixed;z-index:6;width:112px;height:112px;margin:-56px 0 0 -56px;
+    position:absolute;width:112px;height:112px;margin:-56px 0 0 -56px;
     border-radius:50%;pointer-events:none;
     border:1px solid rgba(255,255,255,.16);
     background:radial-gradient(circle, rgba(255,255,255,.07) 0%, rgba(255,255,255,.02) 70%);
     opacity:0;transition:opacity .18s ease;
   }
+  /* 누르는 동안만 보인다 — 자리가 손을 따라오므로 «어디를 눌러야 하나» 가 없다.
+     (고정이던 판본에서는 상시 흐리게 띄워야 했다. 그 필요가 사라졌다.) */
   #w2-stick[data-on="1"]{opacity:1}
   #w2-stick-knob{
     position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;
@@ -152,11 +221,15 @@
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     font-size:11px;line-height:1.55;color:var(--ink);
   }
-  #w2-hud-copy{
-    width:100%;padding:7px 10px;border-radius:8px;cursor:pointer;
+  /* 두 버튼이 한 줄에 선다. 마크는 자주·급히 눌러야 하므로 폭을 고정해 손가락이
+     같은 자리를 찾게 하고, 복사는 남는 폭을 다 쓴다. */
+  #w2-hud-copy,#w2-hud-mark{
+    padding:7px 10px;border-radius:8px;cursor:pointer;
     background:rgba(139,114,255,.18);border:1px solid rgba(139,114,255,.5);
     color:var(--ink);font-size:12px;font-family:inherit;
   }
+  #w2-hud-copy{width:calc(100% - 62px)}
+  #w2-hud-mark{width:56px;margin-right:6px}
 
   /* ── 神 모드 하늘 패널 ──────────────────────────────────────────────────
      HUD 아래에 붙인다. 하늘을 바꾸면서 바로 위 수치를 보는 것이 이 패널의
@@ -200,6 +273,36 @@
   /* 왼쪽 고정 (감독 지시). 예전엔 `right:56px` 이라 닫힌 상태에서 오른쪽에 있다가,
      열면 패널이 왼쪽으로 펼쳐지며 **버튼까지 따라 움직이는** 것처럼 보였다.
      처음부터 왼쪽에 두면 열고 닫아도 버튼이 제자리에 있다. */
+  /* ── 진입 바 (W8-3 S6) ────────────────────────────────────────────────────
+     **상단 중앙**이다 — 좌상단은 하늘 패널(`#w2-god`), 왼쪽은 지도, 우측은 HUD 가
+     이미 쓴다. 룩은 `#w2-god-body` 의 것을 그대로 따랐다(새 룩 판단을 안 연다).
+     `hidden` 과 `data-show` 를 둘 다 쓰는 이유: 전자는 접근성 트리에서 빼고,
+     후자는 CSS 가 본다 — 하나만 쓰면 스크린리더가 빈 칸을 읽거나 화면에 남는다. */
+  #w2-tenant{
+    position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    z-index:9;max-width:min(360px,88vw);
+    background:rgba(11,13,18,.88);border:1px solid var(--line);border-radius:10px;
+    padding:9px 11px;display:flex;flex-direction:column;gap:7px;
+  }
+  #w2-tenant[data-show="0"],#w2-tenant[hidden]{display:none}
+  #w2-tenant .row{display:flex;align-items:center;gap:6px}
+  #w2-tenant-title{font-size:12px;color:var(--ink);font-weight:600;flex:1 1 auto;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #w2-tenant-notice{margin:0;font-size:11px;line-height:1.45;color:var(--dim)}
+  #w2-tenant-notice[hidden]{display:none}
+  #w2-tenant-list,#w2-tenant-input{
+    font-family:inherit;font-size:11.5px;padding:6px 8px;border-radius:8px;min-width:0;
+    background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--ink);
+  }
+  #w2-tenant-list{flex:0 1 40%}
+  #w2-tenant-input{flex:1 1 auto;width:100%}
+  #w2-tenant-go,#w2-tenant-reset{
+    font-family:inherit;font-size:11.5px;padding:6px 9px;border-radius:8px;cursor:pointer;flex:none;
+    background:rgba(139,114,255,.24);border:1px solid rgba(139,114,255,.6);color:var(--ink);
+  }
+  #w2-tenant-reset{background:rgba(255,255,255,.06);border-color:var(--line);color:var(--dim)}
+  #w2-tenant-reset[hidden]{display:none}
+
   #w2-god{position:fixed;top:calc(10px + env(safe-area-inset-top));left:10px;z-index:9;
     max-width:min(300px,72vw)}
   #w2-god-toggle{
@@ -234,7 +337,7 @@
   .w2-god-row button[data-bolt].off{opacity:.35}
   @media (prefers-reduced-motion: reduce){ #w2-god-toggle .caret{transition:none} }
 
-  /* ── 수면 파라미터 슬라이더 바 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ────
+  /* ── 개발자 옵션 바 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ──────────
      위치: 화면 우하단. #w2-god(좌상)·#w2-hud(우상)·#w2-mapwrap(좌하)이 이미 세 모서리를
      차지해 남은 자리가 여기뿐이다. #w2-god과 대각선이라 항상 분리되고, 캔버스 중앙
      (수면이 실제로 보이는 영역)을 가리지 않는다 — **미는 동안 물을 봐야 한다**가
@@ -363,7 +466,8 @@
 
   <!-- 가상 조이스틱. 누른 자리에 나타난다(고정 위치가 아니다) — 기기·손 크기마다
        엄지가 닿는 자리가 달라서, 고정하면 누군가는 늘 불편하다. -->
-  <div id="w2-stick" data-on="0"><div id="w2-stick-knob"></div></div>
+  <!-- 조이스틱: **구역**이 터치를 받고, 원은 누른 자리에 그려진다 (`G-EDIT14`) -->
+  <div id="w2-stick-zone" aria-hidden="true"><div id="w2-stick" data-on="0"><div id="w2-stick-knob"></div></div></div>
 
   <!-- 성능 HUD. 모바일에는 콘솔이 없어 화면 표시 + 복사가 실기기 수치를 받는 유일한 경로다. -->
   <!-- 기본 접힘(감독 지시 2026-07-30 "캡쳐하면 지도, HUD때문에 안보일테니깐"). `attachMapDrawer`
@@ -377,7 +481,29 @@
     <button id="w2-hud-toggle" type="button" aria-label="성능 정보 열기/닫기">📊</button>
     <div id="w2-hud-panel">
       <pre id="w2-hud-body">측정 중…</pre>
+      <!-- 📍 는 **증상을 본 순간**을 시간축에 못 박는다. 리포트가 그 앞뒤 ±2.5초의
+           이벤트만 뽑아 주므로, 감독의 지각과 내부 전이가 같은 축에 올라온다.
+           근거·형식은 world2/decide/telemetry.ts 의 「이벤트 로그」 절 한 곳이다. -->
+      <button id="w2-hud-mark" type="button" aria-label="지금 증상을 봤다고 표시">📍</button>
       <button id="w2-hud-copy" type="button">복사</button>
+    </div>
+  </div>
+
+  <!-- 진입 — 누구의 땅을 보고 있는가 + 다른 작가로 가는 문 (W8-3 S6).
+       감독 카드 2026-08-16 「진입은 **둘 다**」: 주소(`?u=`)에 있으면 그것, 없으면 여기서 고른다.
+       **기본은 감춤이다** — 대장에 작가가 0명이고 사유도 없으면 안 뜬다(지금 라이브가 그 상태).
+       판정은 world2/decide/tenant-entry.ts, 배선은 world2/ui/tenant-bar.ts(인라인 금지). -->
+  <div id="w2-tenant" data-show="0" hidden>
+    <div class="row">
+      <span id="w2-tenant-title">마을 전체</span>
+      <button id="w2-tenant-reset" type="button" hidden>마을 전체로</button>
+    </div>
+    <p id="w2-tenant-notice" hidden></p>
+    <div class="row">
+      <select id="w2-tenant-list" aria-label="작가 고르기"></select>
+      <input id="w2-tenant-input" type="text" inputmode="latin" autocomplete="off"
+             spellcheck="false" placeholder="작가 아이디" aria-label="작가 아이디로 이동">
+      <button id="w2-tenant-go" type="button">이동</button>
     </div>
   </div>
 
@@ -392,6 +518,14 @@
         <button type="button" data-time="day">주간</button>
         <button type="button" data-time="sunset">일몰</button>
         <button type="button" data-time="night">야간</button>
+        <!-- 복합씬 — 감독 2026-08-21 *"주간 + 야간 섞고 싶어"*. 낮 밝기 · 켜진 등 ·
+             진한 하늘 · 별.
+             ⚠ 이 자리에 *"`?time=daylit` 과 같은 문"* 이라고 적었다가 **반증됐다**
+             (검수관 B1′): 하늘 농도가 `SkySystem` 생성 옵션이라 세션당 1회만 평가돼
+             버튼 경로에서는 낮 농도로 남아 있었다. 그 옵션을 함수로 바꿔 매 페인트마다
+             묻게 한 뒤에야 두 문이 같아졌고, 그것을 `tests/world2-daylit.test.ts` 의
+             GS-D6 이 돔 페인트 결과로 검사한다. -->
+        <button type="button" data-time="daylit">복합</button>
         <button type="button" data-auto="1">자동</button>
       </div>
       <div class="w2-god-row" data-group="weather">
@@ -424,13 +558,20 @@
     </div>
   </div>
 
-  <!-- 수면 파라미터 바 — 감독이 값을 직접 고르는 도구. 로직은 world2/ui/knob-bar.ts.
-       행(슬라이더)은 **JS 가 만든다** — 노브 정의(키·범위·라벨)를 여기에 적으면 그것이
-       곧 값 미러링이고, 이 저장소가 색·수치·임계값에서 세 번 데인 형태다. 정의는
-       `features/ocean.ts` 한 곳에 있고 이 컨테이너는 그것이 담길 자리만 잡는다. -->
+  <!-- 개발자 옵션 바 — 감독이 값을 직접 고르는 도구. 로직은 world2/ui/knob-bar.ts.
+       행(슬라이더·버튼)은 **JS 가 만든다** — 노브 정의(키·범위·라벨)를 여기에 적으면 그것이
+       곧 값 미러링이고, 이 저장소가 색·수치·임계값에서 세 번 데인 형태다. 정의는 소비처
+       한 곳(`features/ocean.ts`·`main.ts` 의 그림자 절)에 있고 이 컨테이너는 자리만 잡는다.
+
+       ⚠ 라벨이 오래 `🌊 수면` 이었다 — 소비자가 수면 하나뿐이던 때의 이름이다. 2026-08-11
+       에 그림자 노브 5개와 [그림자 굽기] 버튼이 **같은 바에 누적**되면서 거짓이 됐고,
+       감독께 링크를 드릴 때 *"수면 버튼을 누르면 그림자 옵션이 있다"* 를 말로 덧붙여야
+       했다. 바는 소비자가 늘어나는 구조인데(`attachKnobBar` 는 여러 번 불린다) 라벨만
+       첫 소비자에 묶여 있던 것이다 — 그래서 **중립 라벨**로 바꾼다. 다음 소비자가 붙을 때
+       또 어긋나지 않는다. -->
   <div id="w2-sliders" data-open="0" data-dirty="0" hidden>
     <button id="w2-sliders-toggle" type="button" aria-expanded="false" aria-controls="w2-sliders-body">
-      <span aria-hidden="true">🌊</span><span class="cap">수면</span>
+      <span aria-hidden="true">⚙</span><span class="cap">개발자 옵션</span>
       <span class="dirty-dot" aria-hidden="true"></span>
       <span class="caret" aria-hidden="true">▾</span>
     </button>

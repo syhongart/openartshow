@@ -6,6 +6,7 @@
 // 새로 태어나던 것이 스파이크의 원인이었다.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { StreamingSystem, type ParcelBuilder, type ParcelHandle } from '../frontend/js/world2/systems/streaming.js';
 import type { FrameCtx } from '../frontend/js/world2/kernel.js';
 import type { Tier } from '../frontend/js/world2/decide/lod.js';
@@ -13,22 +14,25 @@ import type { Tier } from '../frontend/js/world2/decide/lod.js';
 /** 호출을 세는 가짜 빌더. retierable=false면 재생성 경로를 강제한다. */
 function fakeBuilder(retierable = true) {
   const log = { build: 0, release: 0, retier: 0 };
+  /** 「연출 없이」 플래그가 **실제로 도착했는가** — 판정(streaming)과 집행(builder)의 경계 */
+  const instants = { build: [] as Array<[string, boolean]>, release: [] as boolean[] };
   const live = new Set<string>();
   const builder: ParcelBuilder = {
-    build(px, pz, tier) {
+    build(px, pz, tier, instant) {
       log.build++;
       const k = `${px},${pz}`;
+      instants.build.push([k, instant === true]);
       live.add(k);
       return { key: k, tier };
     },
-    release(h) { log.release++; live.delete(h.key); },
+    release(h, instant) { log.release++; instants.release.push(instant === true); live.delete(h.key); },
     retier(h, tier) {
       log.retier++;
       return retierable ? { key: h.key, tier } : null;
     },
     costOf(tier) { return tier === 'near' ? 3 : tier === 'mid' ? 2 : 1; },
   };
-  return { builder, log, live };
+  return { builder, log, live, instants };
 }
 
 const ctx = (o: Partial<FrameCtx> = {}): FrameCtx => ({
@@ -45,6 +49,18 @@ function mkSys(o: {
   builder?: ParcelBuilder;
   pos?: { x: number; z: number };
   markDirty?: () => void;
+  /** look-ahead 방향. 안 주면 예전처럼 방향이 없다(중심 = 발밑) */
+  dir?: { x: number; z: number };
+  /** 진행 계수. 안 주면 옵션 자체를 넘기지 않는다 — 기본값 1 경로를 그대로 탄다 */
+  speedFactor?: number;
+  /**
+   * look-ahead 거리(셀). 안 주면 **라이브 기본값(0 = 꺼짐)** 을 탄다.
+   *
+   * 명시할 수 있게 연 이유: 기본값이 0 이 된 뒤로 `speedFactor` 배선을 검사하려면
+   * 곱할 대상이 필요하다. **그 배선은 여전히 살아 있고**(다시 켤 때 짝이 된다),
+   * 그것이 끊기는 것과 기본값이 0 인 것은 다른 일이다.
+   */
+  lookAhead?: number;
 } = {}) {
   const fb = fakeBuilder();
   const pos = o.pos ?? { x: 0, z: 0 };
@@ -53,6 +69,9 @@ function mkSys(o: {
     cellX: 32, cellZ: 32,
     getPosition: () => pos,
     markDirty: o.markDirty,
+    getDirection: o.dir ? () => o.dir! : undefined,
+    getSpeedFactor: o.speedFactor === undefined ? undefined : () => o.speedFactor!,
+    lookAhead: o.lookAhead,
     // 이 파일은 **스트리밍 기계**를 본다 — 로드·반납·누수·예산. 그 성질은 물이 있든
     // 없든 같아야 하므로 지형을 끈다. 실제 월드는 이 옵션을 주지 않아 물이 걸린다.
     // (끄지 않으면 원점 두 파셀 옆 강 때문에 13이 11이 되고, 밴드가 바뀐 것도 강이
@@ -174,6 +193,146 @@ describe('StreamingSystem — tier 변경이 재생성으로 새지 않는다(�
   });
 });
 
+// ── 교체의 방향 ─────────────────────────────────────────────────────────────
+// `retiered` 총계는 "몇 번 바뀌었나" 만 말한다. 한 방향으로 흘러간 것과 같은 경계를
+// 오간 것을 구별하지 못해서, 팀장이 건 판정 기준("42m 에 왕복 3건 이상이면 히스테리시스
+// 폭 확대 병행", 2026-08-07)을 그 수로는 잴 수 없었다. 방향을 나눠 센다.
+//
+// **부호는 `>0` 으로 못 지킨다** (검수관 권고 P5, 2026-08-08). 승격/강등을 뒤바꾸는
+// 뮤테이션이 22건 전부 초록이었다 — 이동 과도기에는 양쪽이 다 나오기 때문이다(실측:
+// 멀어짐 첫 8프레임에 promoted=3, demoted=6). 부호가 뒤집혀도 안 깨지면, 팀장 조건 3
+// (42m 왕복 3건 → 히스테리시스 확대)을 **반대로** 판정하게 된다. 그래서 대소를 본다.
+function sweep(sys: StreamingSystem, n = 8) {
+  let promoted = 0; let demoted = 0; let retiered = 0;
+  for (let i = 0; i < n; i++) {
+    sys.update(ctx());
+    const s = sys.stats();
+    promoted += s.promoted; demoted += s.demoted; retiered += s.retiered;
+  }
+  return { promoted, demoted, retiered };
+}
+
+describe('StreamingSystem — 교체 방향(승격·강등)', () => {
+  it('멀어지면 **강등이 승격보다 많다** — 부호가 뒤집히면 깨진다', () => {
+    const { sys, pos } = make();
+    settle(sys);
+    pos.x = 32; // 경계 밖으로 밀어 강등을 유도한다
+    const { promoted, demoted, retiered } = sweep(sys);
+    expect(retiered).toBeGreaterThan(0);
+    expect(demoted, '멀어지는데 강등이 승격보다 적다 — 부호가 뒤집혔다').toBeGreaterThan(promoted);
+    // 방향이 없는 교체(같은 tier 재적용)는 어느 쪽에도 안 세므로 합이 총계 이하다.
+    expect(promoted + demoted).toBeLessThanOrEqual(retiered);
+  });
+
+  // ── 여기서 멈춘다: 되돌아옴은 **대소로 못 잰다** (실측 2026-08-08) ──────────
+  // 검수관 권고 P5 는 되돌아옴에 `promoted > demoted` 를 제안했고, 나는 그대로 썼다가
+  // 실측에 반증당했다 — 되돌아와도 **promoted=3 vs demoted=6** 이다.
+  //
+  // 이유: 이동은 방향과 무관하게 강등이 우세하다. 새로 시야에 드는 파셀은 `build` 로
+  // 들어오지 `retier` 로 들어오지 않으므로 **승격에 안 세어지고**, 뒤에 남겨진 파셀은
+  // 전부 강등으로 세어진다. 즉 이 비대칭은 결함이 아니라 스트리밍의 성질이다.
+  //
+  // 그래서 부호 보증은 **위 「멀어지면」 하나가 전담**한다(뮤테이션으로 확인: 승격/강등을
+  // 뒤바꾸면 그 테스트가 깨진다). 여기서는 되돌아올 때 승격 경로가 **실행되는지**만 본다.
+  it('되돌아오면 승격이 잡힌다 — 왕복을 볼 수 있는 유일한 축이다', () => {
+    const { sys, pos } = make();
+    settle(sys);
+    pos.x = 32;
+    sweep(sys);
+    pos.x = 0; // 제자리로 — 같은 경계를 되돌아온다
+    expect(sweep(sys).promoted).toBeGreaterThan(0);
+  });
+
+  it('정지 상태에서는 어느 쪽도 세지 않는다 — 유휴 노이즈가 왕복으로 보이면 안 된다', () => {
+    const { sys } = make();
+    settle(sys);
+    const { promoted, demoted, retiered } = sweep(sys);
+    expect({ promoted, demoted, retiered }).toEqual({ promoted: 0, demoted: 0, retiered: 0 });
+  });
+
+  // 재생성 폴백(`retier`→null)에서도 방향이 세지는가. 카운팅이 `retier()` 호출 **이전**이라
+  // 두 경로가 같이 지나야 하는데, 그것을 지나는 테스트가 없었다(검수관 권고 P6).
+  it('retier 가 null 이라 재생성으로 떨어져도 방향은 세어진다', () => {
+    const hard = fakeBuilder(false);
+    const { sys, pos } = make({ builder: hard.builder });
+    settle(sys);
+    pos.x = 32;
+    const { promoted, demoted, retiered } = sweep(sys);
+    expect(retiered).toBeGreaterThan(0);
+    expect(promoted + demoted, '재생성 경로에서 방향이 안 세어진다').toBeGreaterThan(0);
+    expect(hard.log.build).toBeGreaterThan(0); // 정말 재생성 경로를 지났다
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W8-9 — `isLoaded(px,pz)` : 「그 파셀을 지금 들고 있는가」
+//
+// 🔴 **검수관 실측(2026-08-18)이 이 블록을 만들었다.** 신설 직후 `isLoaded` 를
+// **항상 `true`** 로 바꿔도 관련 4개 스위트가 **0 failed** 였다 — 액자 쪽 테스트는
+// `loaded` 콜백을 스텁으로 주입해 **소비 측만** 보고, 배선 테스트는 문자열만 본다.
+// 즉 판정(여기)과 집행(액자)을 잇는 경계가 아무 검사도 안 받고 있었다.
+// 이 저장소가 「판정/집행 분리의 구멍」이라고 이름 붙인 바로 그 형태다.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('StreamingSystem — isLoaded (W8-9)', () => {
+  it('★ 첫 프레임 전에는 아무것도 안 들고 있다', () => {
+    const { sys } = make();
+    expect(sys.isLoaded(0, 0), '★ 로드 전인데 true 다 — 액자가 헛것을 보고 뜬다').toBe(false);
+  });
+
+  it('★ 충전이 끝나면 발밑 파셀을 들고 있다', () => {
+    const { sys } = make();
+    settle(sys);
+    expect(sys.isLoaded(0, 0)).toBe(true);
+  });
+
+  it('🔴 멀어지면 false, 돌아오면 다시 true — 액자의 생사가 이 한 줄에 달려 있다', () => {
+    const { sys, pos } = make();
+    settle(sys);
+    expect(sys.isLoaded(0, 0)).toBe(true);
+
+    pos.x = 32 * 6;              // 6셀 이동 — 겹치는 파셀이 없다
+    settle(sys);
+    expect(sys.isLoaded(0, 0), '★ 언로드됐는데 true 다 — 액자가 공중에 남는다').toBe(false);
+    expect(sys.isLoaded(6, 0), '★ 새로 온 파셀을 못 본다').toBe(true);
+
+    pos.x = 0;
+    settle(sys);
+    expect(sys.isLoaded(0, 0), '★ 돌아왔는데 false 다 — 액자가 영영 안 돌아온다').toBe(true);
+  });
+
+  it('★ `tierMap` 과 **같은 것**을 본다 — 두 조회가 갈리면 아무도 모른다', () => {
+    const { sys, pos } = make();
+    pos.x = 32 * 3;
+    settle(sys);
+    for (const [key, tier] of sys.tierMap) {
+      const [px, pz] = key.split(',').map(Number);
+      expect(sys.isLoaded(px, pz), `★ tierMap 에 ${key}(${tier}) 가 있는데 isLoaded 는 false`)
+        .toBe(true);
+    }
+    // 반대 방향 — 맵에 없는 먼 파셀
+    expect(sys.isLoaded(99, 99)).toBe(false);
+  });
+
+  it('★ 부호를 뒤집으면 다른 파셀이다 — 키 조립이 좌표 순서를 지킨다', () => {
+    const { sys, pos } = make();
+    pos.x = 32 * 4; pos.z = 0;
+    settle(sys);
+    // (4,0) 은 발밑이라 로드돼 있고, (0,4) 는 멀어서 없다. 두 값이 같으면 키가
+    // `px`·`pz` 를 뒤섞고 있다는 뜻이다.
+    expect(sys.isLoaded(4, 0)).toBe(true);
+    expect(sys.isLoaded(0, 4)).toBe(false);
+    expect(sys.isLoaded(-4, 0)).toBe(false);
+  });
+
+  it('★ dispose 뒤에는 아무것도 안 들고 있다', () => {
+    const { sys } = make();
+    settle(sys);
+    sys.dispose();
+    expect(sys.isLoaded(0, 0), '★ 떠난 뒤에도 로드됐다고 답한다').toBe(false);
+  });
+});
+
 describe('StreamingSystem — 커널 협조', () => {
   it('탭이 숨으면 아무것도 하지 않는다', () => {
     const { sys, fb } = make();
@@ -233,5 +392,190 @@ describe('StreamingSystem — tier 맵 일관성', () => {
     pos.x = 32 * 4;
     settle(sys);
     expect([...sys.tierMap.values()].includes('none' as Tier)).toBe(false);
+  });
+});
+
+// ── 진행 계수가 look-ahead 에 실제로 곱해지는가 (판정→집행 경계) ──────────────
+//
+// **검수관 반려 B1 로 생긴 절이다.** `player.speedFactor`(계산) → `main.ts`(배선) →
+// 여기(소비) 로 이어지는 경계를 아무 테스트도 안 보고 있었다. `CLAUDE.md` 가 이름까지
+// 붙여 경고하는 형태다 — *"판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다"*.
+//
+// 관측은 **로드된 파셀의 tier 맵**으로 한다. 계수가 look-ahead 를 줄이면 판정 중심이
+// 발밑으로 당겨지고, 그러면 진행 방향 파셀의 tier 가 실제로 달라진다. 중간 변수를
+// 들여다보지 않고 **화면에 나가는 결과**로 재는 것이 요점이다.
+const tierSnapshot = (sys: StreamingSystem) =>
+  [...sys.tierMap.entries()].map(([k, t]) => `${k}=${t}`).sort().join(' ');
+
+// ⚠ **아래 두 절은 지금 라이브에서 아무것도 안 지킨다** — `lookAhead` 기본값이 0 이라
+// 계수를 곱할 대상이 없기 때문이다(2026-08-09, 감독 실기기 *"뒤에 조금만 가면 갑자기
+// 사라져"*). 그래서 각 케이스에 `lookAhead` 를 **명시적으로 준다.** 배선이 끊기는 것과
+// 기본값이 0 인 것은 다른 일이고, 다시 켤 때 이 검사가 필요하다.
+// 기본값이 0 이라는 사실 자체는 바로 아래 절이 따로 못 박는다.
+describe('StreamingSystem — getSpeedFactor 가 look-ahead 를 접는다 (lookAhead 를 켠 상태)', () => {
+  const dir = { x: 0, z: -1 };
+  const AHEAD = 0.5; // 기본값이 0 이 되기 전의 값. 여기서만 쓴다
+
+  it('계수 0 과 1 은 서로 다른 파셀 구성을 만든다', () => {
+    const a = make({ dir, speedFactor: 1, lookAhead: AHEAD });
+    const b = make({ dir, speedFactor: 0, lookAhead: AHEAD });
+    settle(a.sys); settle(b.sys);
+    expect(tierSnapshot(a.sys)).not.toBe(tierSnapshot(b.sys));
+  });
+
+  it('계수 0 은 방향을 안 준 것과 같다 — look-ahead 가 통째로 접힌다', () => {
+    const zero = make({ dir, speedFactor: 0, lookAhead: AHEAD });
+    const none = make({ lookAhead: AHEAD });
+    settle(zero.sys); settle(none.sys);
+    expect(tierSnapshot(zero.sys)).toBe(tierSnapshot(none.sys));
+  });
+
+  it('안 주면 1 과 같다 — 예전 동작이 기본값이다', () => {
+    const absent = make({ dir, lookAhead: AHEAD });
+    const one = make({ dir, speedFactor: 1, lookAhead: AHEAD });
+    settle(absent.sys); settle(one.sys);
+    expect(tierSnapshot(absent.sys)).toBe(tierSnapshot(one.sys));
+  });
+
+  it('1 을 넘는 값·음수·NaN 은 0~1 로 가둔다 — 커지면 고치려던 증상이 되살아난다', () => {
+    const one = make({ dir, speedFactor: 1, lookAhead: AHEAD });
+    const zero = make({ dir, speedFactor: 0, lookAhead: AHEAD });
+    settle(one.sys); settle(zero.sys);
+    for (const over of [3, 1e9]) {
+      const s = make({ dir, speedFactor: over, lookAhead: AHEAD });
+      settle(s.sys);
+      expect(tierSnapshot(s.sys), `${over} 가 1 로 안 잘렸다`).toBe(tierSnapshot(one.sys));
+    }
+    for (const bad of [-1, NaN]) {
+      const s = make({ dir, speedFactor: bad, lookAhead: AHEAD });
+      settle(s.sys);
+      // 음수는 0 으로(뒤로 당기지 않는다), NaN 은 1 로(옵션이 없는 셈) 떨어진다.
+      expect(tierSnapshot(s.sys)).toBe(tierSnapshot(bad < 0 ? zero.sys : one.sys));
+    }
+  });
+});
+
+// ── 기본값이 0 이라는 것 자체를 못 박는다 (감독 실기기 2026-08-09) ─────────────
+//
+// *"뒤에 조금만 가면 갑자기 사라져"* — 후진하니 64m 앞 건물이 통째로 언로드됐다.
+// `lookAheadCenter` 가 판정 중심을 옮기는 **제로섬**이라, 1인칭 후진에서는 화면 정면이
+// 반경 밖으로 밀려난다. 근거와 값 판단은 `systems/streaming.ts` 의 `lookAhead` 주석
+// 한 곳이다 — 여기에 다시 적지 않는다.
+//
+// **이 절이 없으면 기본값을 되돌려도 아무 검사도 안 깨진다.** 바로 위 절은 `lookAhead`
+// 를 명시적으로 주므로 기본값과 무관하고, `world2-stream.test.ts` 의 제로섬 표도
+// 순수 함수라 기본값을 안 본다. 그 사이가 정확히 이 결함이 통과하던 구멍이다.
+describe('StreamingSystem — lookAhead 기본값은 0 이다 (판정 중심을 안 옮긴다)', () => {
+  it('방향을 줘도 파셀 구성이 정지 상태와 같다', () => {
+    const still = make({});
+    const fwd = make({ dir: { x: 0, z: -1 } });
+    const back = make({ dir: { x: 0, z: +1 } });
+    settle(still.sys); settle(fwd.sys); settle(back.sys);
+    expect(tierSnapshot(fwd.sys), '전진이 중심을 옮겼다 — 반대쪽을 잃는다').toBe(tierSnapshot(still.sys));
+    expect(tierSnapshot(back.sys), '후진이 중심을 옮겼다 — 보는 쪽을 잃는다').toBe(tierSnapshot(still.sys));
+  });
+
+  it('후진해도 앞쪽 2셀(64m) 파셀이 살아 있다 — 감독이 본 그 파셀이다', () => {
+    const back = make({ dir: { x: 0, z: +1 } });
+    settle(back.sys);
+    // 앞 = −z. 정지 기준 far 밴드 안이므로 반드시 로드돼 있어야 한다.
+    expect(back.sys.tierMap.get('0,-2'), '후진 중 64m 앞이 사라졌다').toBeDefined();
+  });
+});
+
+// ── 배선 — main.ts 가 두 끝을 이었는가 (정적·약함) ────────────────────────────
+//
+// 위 절은 계수를 **직접 주입**하므로 조립부를 보지 않는다. `main.ts:getSpeedFactor` 한
+// 줄이 지워져도 위 검사는 전부 초록이다. 그 구멍을 좁힌다 — `world2-collide.test.ts` §4
+// 와 같은 성격이고 같은 한계를 갖는다(글자가 있는지만 본다).
+describe('배선 — main.ts 가 speedFactor 를 스트리밍에 넘긴다 (정적·약함)', () => {
+  const src = readFileSync('frontend/js/world2/main.ts', 'utf8');
+
+  it('player.speedFactor 를 getSpeedFactor 로 넘긴다', () => {
+    expect(src, 'getSpeedFactor 배선이 없다').toMatch(/getSpeedFactor\s*:\s*\(\)\s*=>\s*player\.speedFactor/);
+  });
+});
+
+// ── 🔴 GS-I1 「연출 없이 세운다」가 판정에서 집행까지 도달하는가 ──────────────
+//
+// 팀장 판정 (가) (2026-08-20) 의 조건 2: *"새 판정 값이므로 **집행 경계 통합 테스트**를
+// 함께 붙인다 — `invalidate → build → grow.place/retire` 까지 플래그가 실제로 소비되는지."*
+//
+// 이 저장소가 이름 붙인 사각이 정확히 여기다: **판정(`decide`)과 집행을 나누면 각 쪽은
+// 테스트하기 쉬워지지만 «계산된 값이 실제로 소비되는가» 는 양쪽 어디에도 안 걸린다.**
+// 그래서 스트리밍이 빌더에게 **무엇을 넘겼는지**를 하네스가 기록하고 여기서 단언한다.
+//
+// ⚠ **못 잡는 것**(통과로 적지 않는다): 빌더 아래층 — `pool.setInstant` 가 실제로
+// `grow.place`/`grow.retire` 를 건너뛰는지는 `tests/world2-parcel-builder.test.ts`
+// 소관이고, 화면에서 실제로 안 튀는지는 **감독 실기기가 유일한 축**이다(헤드리스는
+// swiftshader ~4fps 라 0.65초 연출을 판정할 수단이 없다).
+describe('🔴 GS-I1 — 편집 확정으로 버린 파셀은 **연출 없이** 다시 선다', () => {
+  it('🔴 `invalidate` 는 **즉시** 반납한다 — 수축을 안 태운다', () => {
+    const { sys, fb, pos } = make();
+    settle(sys);
+    fb.instants.release.length = 0;
+    expect(sys.invalidate(pos.x | 0, pos.z | 0), '🔴 발밑 파셀이 안 떠 있다 — 하네스가 안 익었다').toBe(true);
+    expect(fb.instants.release, '🔴 `invalidate` 가 수축을 태웠다 — 0.25초 사라졌다 나타난다').toEqual([true]);
+  });
+
+  it('🔴 버린 파셀이 다시 설 때 **연출을 건너뛴다**', () => {
+    const { sys, fb, pos } = make();
+    settle(sys);
+    const key = `${pos.x | 0},${pos.z | 0}`;
+    sys.invalidate(pos.x | 0, pos.z | 0);
+    fb.instants.build.length = 0;
+    settle(sys);
+    const again = fb.instants.build.filter(([k]) => k === key);
+    expect(again.length, '🔴 버린 파셀이 다시 안 섰다 — 검사가 헛돈다').toBeGreaterThan(0);
+    expect(again[0]![1], '🔴 재빌드가 성장 애니메이션을 태웠다 — 0.4초 자라난다').toBe(true);
+  });
+
+  it('🔴 표식은 **한 번만** 쓴다 — 걸어서 다시 와도 정상 연출이다', () => {
+    // ⚠ **첫 판본은 검출력이 0 이었다**(뮤테이션 P3, 2026-08-20). 그때는 표식을 소비했는지
+    // 보려고 `dispose()` 를 불렀는데, `dispose` 가 `pendingInstant.clear()` 를 하므로
+    // **소비하든 안 하든 비어 있었다** — `delete` 를 `has` 로 바꿔도 0 failed 였다.
+    // 지금은 **제품 경로**로 잰다: 멀리 걸어가 그 파셀이 정상 퇴장하고, 돌아와서 다시 선다.
+    const { sys, fb, pos } = make();
+    settle(sys);
+    const key = '0,0';
+    sys.invalidate(0, 0);
+    settle(sys);                       // ← 여기서 표식이 소비된다(연출 없이 재빌드)
+    pos.x = 32 * 20;                   // 멀리 간다 — 그 파셀은 **정상 퇴장**한다
+    settle(sys);
+    expect(fb.live.has(key), '🔴 멀리 갔는데 안 걷혔다 — 표본이 안 익었다').toBe(false);
+    pos.x = 0;                         // 돌아온다 — 이것은 「등장」이지 「갱신」이 아니다
+    fb.instants.build.length = 0;
+    settle(sys);
+    const fresh = fb.instants.build.filter(([k]) => k === key);
+    expect(fresh.length, '🔴 돌아왔는데 안 섰다').toBeGreaterThan(0);
+    expect(
+      fresh.every(([, i]) => i === false),
+      '🔴 표식이 소비되지 않고 남았다 — 그 파셀은 이후 **영원히** 연출 없이 뜬다',
+    ).toBe(true);
+  });
+
+  it('★ **등가 대조군** — 편집과 무관한 등장은 연출을 그대로 탄다', () => {
+    const { sys, fb } = make();
+    settle(sys);
+    expect(fb.instants.build.length, '🔴 아무것도 안 섰다 — 대조군이 비었다').toBeGreaterThan(0);
+    expect(
+      fb.instants.build.every(([, i]) => i === false),
+      '🔴 `invalidate` 를 한 번도 안 불렀는데 연출이 꺼졌다 — 판정이 전역으로 샜다',
+    ).toBe(true);
+  });
+
+  it('🔴 **안 떠 있는** 파셀을 확정해도 표식은 남는다 — 멀리서 고치고 다가가는 경로', () => {
+    const { sys, fb } = make();
+    settle(sys);
+    // 스트리밍 반경 밖의 파셀. `invalidate` 는 «버릴 것이 없다» 로 false 를 낸다.
+    expect(sys.invalidate(99, 99), '🔴 반경 밖인데 떠 있다 — 표본을 다시 골라야 한다').toBe(false);
+    fb.instants.build.length = 0;
+    // 그 자리로 걸어간다 — 이제 처음 만들어지는데, 그것은 「등장」이 아니라 「갱신」이다.
+    const { sys: sys2, fb: fb2, pos: pos2 } = make({ pos: { x: 99 * 32, z: 99 * 32 } });
+    sys2.invalidate(99, 99);
+    settle(sys2);
+    const first = fb2.instants.build.filter(([k]) => k === `${pos2.x / 32 | 0},${pos2.z / 32 | 0}`);
+    expect(first.length, '🔴 그 파셀이 안 섰다').toBeGreaterThan(0);
+    expect(first[0]![1], '🔴 안 떠 있을 때의 확정이 표식을 안 남겼다').toBe(true);
   });
 });

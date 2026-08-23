@@ -67,6 +67,21 @@ export function findUnresolvedRefs() {
   const rootNames = tsFiles.map((f) => path.join(SRC, f));
   const program = ts.createProgram(rootNames, COMPILER_OPTIONS, host);
 
+  // ── 실제 진단 대상 파일 목록 (검수관 GS-O4) ────────────────────────────────
+  // **rootNames 와 다르다.** `:52` 의 `readdirSync` 는 **비재귀**라 root 는 `frontend/js`
+  // 직속뿐이고, 하위 디렉터리 파일은 **import 그래프로 도달할 때만** 딸려 들어온다.
+  // 즉 아무도 import 하지 않는 모듈은 이 게이트가 **안 본다.**
+  //
+  // 왜 반환하는가: 그 사실이 산문으로만 있어서 두 번 틀렸다. 부팀장이 `overlay.ts` 를
+  // 두고 처음엔 *"이 축이 안 본다"*(맞음) → 헤더를 읽고 *"본다"*(틀림)로 정정했다가
+  // 반려됐다. 헤더는 **왜 이 게이트가 생겼는지**를 말할 뿐 **무엇을 대상으로 하는지**는
+  // 말하지 않는다 — 대상을 정하는 것은 `:52` 한 줄이다. 목록을 돌려주면 그 주장을
+  // 사람이 세는 대신 **테스트가 읽는다.**
+  const covered = [];
+  for (const sf of program.getSourceFiles()) {
+    if (sf.fileName.startsWith(SRC)) covered.push(path.relative(ROOT, sf.fileName));
+  }
+
   const hits = [];
   for (const sf of program.getSourceFiles()) {
     if (!sf.fileName.startsWith(SRC)) continue;
@@ -81,16 +96,17 @@ export function findUnresolvedRefs() {
       });
     }
   }
-  return { fileCount: tsFiles.length, hits };
+  return { fileCount: tsFiles.length, hits, covered };
 }
 
 // run.mjs 등에서 재사용할 수 있게 결과만 반환하는 래퍼.
 export function checkRefs() {
-  const { fileCount, hits } = findUnresolvedRefs();
+  const { fileCount, hits, covered } = findUnresolvedRefs();
   return {
     ok: hits.length === 0,
     fileCount,
     hits,
+    covered,
     evidence: hits.length === 0
       ? `${fileCount}개 .ts 모듈 미해결 참조 0(끊긴 cross-module 참조 없음)`
       : `미해결 참조 ${hits.length}건 — ${hits.slice(0, 4).map((h) => `${h.file}:${h.line} ${h.msg}`).join(' | ')}`,

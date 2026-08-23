@@ -26,6 +26,14 @@ function fakePool(capacity: number | Record<string, number> = 10_000) {
   const next = new Map<string, number>();
   const log = { acquire: 0, release: 0, transform: 0, tone: 0 };
   const transformed: SlotHandle[] = [];
+  /**
+   * 「연출 없이」 스위치가 **슬롯을 만지는 그 순간에** 켜져 있었는가 (팀장 조건 2).
+   * 켰다 껐다만 세면 «켠 뒤 아무것도 안 하고 껐다» 가 통과한다 — 그래서 각 슬롯 작업
+   * 시점의 값을 기록한다.
+   */
+  let instant = false;
+  const instantAt: boolean[] = [];
+  const switches: boolean[] = [];
 
   const pool: SlotPool = {
     acquire(key) {
@@ -44,17 +52,19 @@ function fakePool(capacity: number | Record<string, number> = 10_000) {
       log.acquire++;
       return { key, index };
     },
-    setTransform(h) { log.transform++; transformed.push(h); },
+    setTransform(h) { log.transform++; transformed.push(h); instantAt.push(instant); },
     setTone() { log.tone++; },
     release(h) {
       live.get(h.key)?.delete(h.index);
       (free.get(h.key) ?? free.set(h.key, []).get(h.key)!).push(h.index);
       log.release++;
+      instantAt.push(instant);
     },
+    setInstant(on) { instant = on; switches.push(on); },
   };
   const liveCount = () => [...live.values()].reduce((s, x) => s + x.size, 0);
   const liveOf = (k: string) => live.get(k)?.size ?? 0;
-  return { pool, log, liveCount, liveOf, transformed };
+  return { pool, log, liveCount, liveOf, transformed, instantAt, switches, isOn: () => instant };
 }
 
 const mk = (capacity?: number) => {
@@ -107,27 +117,21 @@ describe('build / release — 누수가 없다', () => {
 });
 
 describe('tier별 구성', () => {
-  it('near가 mid보다, mid가 far보다 슬롯을 많이 쓴다', () => {
+  it('세 tier 가 같은 슬롯 수를 쓴다 — 소멸 사건 제거 규약 (2026-08-10)', () => {
+    // ⚠ 원래 두 검사였다 — *"near>mid>far 로 슬롯을 많이 쓴다"* 와 *"far 에는
+    // 가까이서만 보이는 것들이 없다"*. 그 규약 아래서 lamp·tree 가 "안개보다 앞에서
+    // 툭 사라진다" 로 하나씩 far 로 올라갔고(감독: *"이동시 멀리있는게 사라졌다가
+    // 멈추면 나타나"*), 마지막 남은 planter·bench·fountain 까지 같은 이유로 올라간
+    // 것이 깜빡임 처방 (a′)다(근거는 `parts/planter.ts` 의 tiers 주석 한 곳).
+    // 같은 결함이 파츠를 바꿔가며 다섯 번 재발한 것 — 규약 자체를 뒤집는 게 맞다:
+    // 이제 tier 는 슬롯 구성을 바꾸지 않는다.
     const n = mk(), m = mk(), f = mk();
     n.builder.build(7, 7, 'near');
     m.builder.build(7, 7, 'mid');
     f.builder.build(7, 7, 'far');
-    expect(n.liveCount()).toBeGreaterThan(m.liveCount());
-    expect(m.liveCount()).toBeGreaterThan(f.liveCount());
-  });
-
-  it('far에는 가까이서만 보이는 것들이 없다', () => {
-    // 검사 대상이 두 번 바뀌었다. lamp·tree 가 각각 far 로 올라갔기 때문인데,
-    // **둘 다 같은 이유**다 — 사라지는 지점이 안개(51.2m)보다 앞이라 또렷한 거리에서
-    // 툭 사라졌다(감독: *"이동시 멀리있는게 사라졌다가 멈추면 나타나"*).
-    //
-    // 지금 far 에서 빠지는 것은 planter(near)·bench(mid)·fountain(mid) 이다. 작아서
-    // 멀리서는 픽셀 몇 개이고, 사라져도 안개가 가려 줄 만큼 뒤에서 빠진다.
-    const { builder, liveOf } = mk();
-    builder.build(2, 9, 'far');
-    expect(liveOf('planter')).toBe(0);
-    expect(liveOf('bench')).toBe(0);
-    expect(liveOf('building')).toBeGreaterThan(0);
+    expect(n.liveCount()).toBeGreaterThan(0);
+    expect(n.liveCount()).toBe(m.liveCount());
+    expect(m.liveCount()).toBe(f.liveCount());
   });
 
   it('모든 tier에 지면이 정확히 1개', () => {
@@ -187,22 +191,23 @@ describe('retier — 공통 부품을 건드리지 않는다(이 설계의 이�
     expect({ g: liveOf('ground'), b: liveOf('building'), t: liveOf('tree'), l: liveOf('lamp') }).toEqual(before);
   });
 
-  it('far→near 승격이 실제로 부품을 채운다 — 옛 tier로 배치를 계산하면 0개가 된다', () => {
-    // 이 테스트가 잡은 버그: retier가 h.tier를 나중에 갱신해서 fill이 옛 tier 배치를
-    // 봤고, 새 종류가 그 배치에 없어 아무것도 안 생겼다.
-    //
-    // **검사 대상이 두 번 옮겨졌다.** 처음에는 나무였고, 나무가 far 로 올라가며
-    // 가로등으로 바꿨는데, 가로등도 같은 이유로 far 로 올라갔다(둘 다 안개보다 앞에서
-    // 사라지고 있었다). **지금 tier 로 갈리는 것은 planter 하나뿐이다.**
-    //
-    // 이 테스트가 자꾸 옮겨 다니는 것 자체가 신호다 — near 전용이 하나만 남았으니,
-    // 그것마저 올리면 이 검사는 대상을 잃는다. 그때는 tier 별 구성을 직접 비교하는
-    // 방식으로 다시 써야 한다.
-    const { builder, liveOf } = mk();
+  it('far→near 승격이 슬롯을 하나도 안 만들고 안 지운다 — 전환은 화면상 no-op (2026-08-10)', () => {
+    // 이 검사는 원래 *"승격이 실제로 부품을 채운다"* 였고, 검사 대상이 나무→가로등→
+    // 화분으로 **세 번** 옮겨 다녔다 — 전부 "안개보다 앞에서 사라진다" 는 같은 이유로
+    // tier 가 올라갔기 때문이다. 마지막 화분까지 올라간 것이 깜빡임 처방 (a′)이고
+    // (근거는 `parts/planter.ts` 의 tiers 주석 한 곳), 옛 주석이 예언한 대로 방식을
+    // 바꾼다: 이제 규약은 반대다 — **어느 전환도 슬롯을 만들거나 지우면 안 된다.**
+    // 예전 버그(retier 가 h.tier 를 늦게 갱신해 fill 이 옛 배치를 봄)는 tier 별 종류가
+    // 다시 갈리는 날에만 표면이 생긴다 — 그날은 `kindsFor` 집합 동일 검사
+    // (`world2-band-scale.test.ts`)가 먼저 빨간불이 된다.
+    const { builder, liveCount } = mk();
     const h = builder.build(8, 8, 'far');
-    expect(liveOf('planter')).toBe(0);
+    const before = liveCount();
+    expect(before).toBeGreaterThan(0);
     builder.retier!(h, 'near');
-    expect(liveOf('planter')).toBeGreaterThan(0);
+    expect(liveCount()).toBe(before);
+    builder.retier!(h, 'mid');
+    expect(liveCount()).toBe(before);
   });
 
   it('retier 후 release가 여전히 전부 반납한다', () => {
@@ -259,19 +264,15 @@ describe('poolBudget — 예산이 밴드에서 유도된다', () => {
   // 예전 식(`파셀당 최대 × 20 × 1.25`)이 tier를 무시해 tree·lamp에 도달 불가능한 슬롯을
   // 잡아두고 있었다. 이 단언이 그 회귀를 막는다 — tier를 다시 뭉개면 세 값이 같아진다.
   it('tier가 좁을수록 파셀을 적게 잡는다 — 예산은 밴드에서 유도된다', () => {
-    const b = PooledParcelBuilder.poolBudget();
-    // planter(near) < bench(mid) < building(far). tree 에 이어 lamp 까지 far 로
-    // 올라가면서(둘 다 안개보다 앞에서 사라지고 있었다) building 과 같은 반경이 됐다 —
-    // **같아진 것이 맞다.** 값을 박아 두지 않고 관계로만 검사하는 이유가 이런 변경이다.
-    expect(parcelsFor('planter')).toBeLessThan(parcelsFor('bench'));
-    expect(parcelsFor('bench')).toBeLessThan(parcelsFor('building'));
+    // ⚠ 원래 *"planter(near) < bench(mid) < building(far)"* 계단 검사였고, 파츠들이
+    // "안개보다 앞에서 사라진다" 는 같은 이유로 하나씩 far 로 올라갈 때마다 검사
+    // 대상을 옮겨 왔다. 2026-08-10 깜빡임 처방 (a′)로 **전 종류가 far** 가 되면서
+    // 계단 자체가 사라졌다 — 이제 규약은 "모든 종류가 가장 넓은 반경(=building)과
+    // 같은 파셀 수를 잡는다" 다. 근거는 `parts/planter.ts` 의 tiers 주석 한 곳.
+    expect(parcelsFor('planter')).toBe(parcelsFor('building'));
+    expect(parcelsFor('bench')).toBe(parcelsFor('building'));
     expect(parcelsFor('tree')).toBe(parcelsFor('building'));
     expect(parcelsFor('lamp')).toBe(parcelsFor('building'));
-    // near 전용 파츠는 far 까지 사는 ground 와 같은 파셀 수를 잡으면 안 된다.
-    // 예전에는 lamp 로 검사했는데 lamp 가 far 로 올라가면서 ground 와 같아졌다 —
-    // 회귀가 아니라 의도된 변경이고, near 에 남은 planter 로 옮기는 것이 맞다.
-    expect(b.planter / maxPartsPerParcel('planter'))
-      .toBeLessThan(b.ground / maxPartsPerParcel('ground'));
   });
 
   it('이 예산이면 최악의 로드 상황에서도 굶지 않는다', () => {
@@ -311,13 +312,15 @@ describe('poolBudget — 예산이 밴드에서 유도된다', () => {
       bands: { ...DEFAULT_BANDS, farEnter: 3.4, farExit: 3.8 },
     });
     expect(wide.building).toBeGreaterThan(base.building);
-    // near 밴드는 그대로이므로 **near 전용 파츠**는 안 늘어야 한다. 예전에는 lamp 로
-    // 검사했는데 lamp 가 far 로 올라가면서 함께 늘게 됐다 — 그건 회귀가 아니라 의도된
-    // 변경이고, 검사 대상을 near 에 남은 planter 로 옮기는 것이 맞다.
-    expect(wide.planter).toBe(base.planter);
-    // lamp 는 이제 far 라 **늘어야** 한다. 위 한 줄만 고치면 "안 늘어야 한다" 는 검사가
-    // 사라진 자리에 아무것도 안 남으므로, 반대 방향도 함께 못 박는다.
-    expect(wide.lamp).toBeGreaterThan(base.lamp);
+    // ⚠ 여기 *"near 전용 파츠(planter)는 안 늘어야 한다"* 는 단언이 있었고, 2026-08-10
+    // 깜빡임 처방 (a′)로 **near 전용 종류 자체가 없어졌다**(전 계층 연장 — 근거는
+    // `parts/planter.ts` 의 tiers 주석 한 곳). 새 규약에서는 far 밴드 확장이 **모든**
+    // 종류의 예산을 늘려야 한다 — 하나라도 안 늘면 그 종류가 몰래 tier 를 도로
+    // 좁혔다는 신호다(그 순간 깜빡임이 되살아난다).
+    for (const k of Object.keys(base) as (keyof typeof base)[]) {
+      if (base[k] === 0) continue; // 어느 tier 에도 없는 종류는 0 유지
+      expect(wide[k]).toBeGreaterThan(base[k]);
+    }
   });
 
   it('headroom 배수가 실제로 곱해진다', () => {
@@ -328,14 +331,66 @@ describe('poolBudget — 예산이 밴드에서 유도된다', () => {
 });
 
 describe('costOf — 상대 비중', () => {
-  it('near가 far보다 비싸다', () => {
+  it('세 tier 의 비용이 같다 — 종류 집합이 같아졌으므로 (2026-08-10 처방 (a′))', () => {
+    // 원래 *"near 가 far 보다 비싸다"* 였다. 종류 집합이 tier 무관 동일이 된 지금은
+    // 같아야 맞다 — 달라지면 kindsFor 가 갈라졌다는 신호다.
     const { builder } = mk();
-    expect(builder.costOf('near')).toBeGreaterThan(builder.costOf('far'));
+    expect(builder.costOf('near')).toBe(builder.costOf('far'));
   });
 
   it('종류 수에 비례한다', () => {
     const { builder } = mk();
     const ratio = builder.costOf('near') / builder.costOf('far');
     expect(ratio).toBeCloseTo(kindsFor('near').length / kindsFor('far').length);
+  });
+});
+
+// ── 🔴 GS-I2 「연출 없이」 스위치가 슬롯 작업 **시점에** 켜져 있는가 ──────────
+//
+// 팀장 판정 (가) (2026-08-20) 의 조건 2 중 아래 절반이다 — 위 절반(스트리밍이 빌더에게
+// 넘기는가)은 `tests/world2-streaming-system.test.ts` 의 `GS-I1` 이 본다.
+//
+// ⚠ **켰다 껐다만 세면 안 된다** — 「켠 뒤 아무것도 안 하고 껐다」가 통과한다. 그래서
+// 스텁이 **각 슬롯 작업 시점의 값**을 기록하고 여기서 그것을 단언한다.
+//
+// ⚠ **못 잡는 것**: 스위치를 받은 실제 풀(`systems/parcel-assets.ts` 의 `createSlotPool`)이
+// `grow.place`/`grow.retire` 를 정말 건너뛰는지는 **여기서 안 본다** — 그 파일은 `three`
+// 의존이라 이 하네스에 안 들어온다. 그 축은 지금 **검사가 없다**(통과로 적지 않는다).
+describe('🔴 GS-I2 — 즉시 빌드/반납이 스위치를 슬롯 작업 시점까지 나른다', () => {
+  it('🔴 `build(instant)` — 슬롯을 놓는 **그 순간** 스위치가 켜져 있다', () => {
+    const { builder, instantAt, switches } = mk();
+    builder.build(0, 0, 'near', true);
+    expect(instantAt.length, '🔴 슬롯을 하나도 안 놓았다 — 검사가 헛돈다').toBeGreaterThan(0);
+    expect(instantAt.every((v) => v === true), '🔴 켜고 껐지만 슬롯 작업은 꺼진 채로 돌았다').toBe(true);
+    expect(switches, '🔴 열고 닫는 짝이 안 맞는다').toEqual([true, false]);
+  });
+
+  it('★ **등가 대조군** — 기본값은 종전대로다(스위치를 아예 안 건드린다)', () => {
+    const { builder, instantAt, switches } = mk();
+    builder.build(0, 0, 'near');
+    expect(instantAt.length, '🔴 슬롯을 하나도 안 놓았다').toBeGreaterThan(0);
+    expect(instantAt.every((v) => v === false), '🔴 안 시켰는데 연출이 꺼졌다').toBe(true);
+    expect(switches, '🔴 기본 경로가 스위치를 건드렸다 — 없어도 되는 호출이다').toEqual([]);
+  });
+
+  it('🔴 `release(instant)` — 슬롯을 반납하는 **그 순간**에도 켜져 있다', () => {
+    const { builder, instantAt, switches } = mk();
+    const h = builder.build(0, 0, 'near');
+    instantAt.length = 0;
+    switches.length = 0;
+    builder.release(h, true);
+    expect(instantAt.length, '🔴 슬롯을 하나도 안 반납했다').toBeGreaterThan(0);
+    expect(instantAt.every((v) => v === true), '🔴 반납이 꺼진 채로 돌았다 — 0.25초 수축한다').toBe(true);
+    expect(switches).toEqual([true, false]);
+  });
+
+  it('🔴 `fill` 이 던져도 스위치는 **닫힌다** — 켠 채로 남으면 이후 전부 연출이 꺼진다', () => {
+    const f = fakePool();
+    // `acquire` 가 던지게 만든다 — 실물에서는 풀 고갈·논리 오류가 이 자리다.
+    const boom = { ...f.pool, acquire: () => { throw new Error('boom'); } };
+    const builder = new PooledParcelBuilder({ pool: boom, cellX: 32, cellZ: 32 });
+    expect(() => builder.build(0, 0, 'near', true)).toThrow('boom');
+    expect(f.isOn(), '🔴 스위치가 켜진 채 남았다 — 이후 모든 파셀이 연출 없이 등장한다').toBe(false);
+    expect(f.switches, '🔴 닫는 호출이 없다').toEqual([true, false]);
   });
 });
