@@ -41,6 +41,7 @@ import {
   stickAxes, knobOffset, reconcile, lookDelta, isTouchDevice,
   STICK_RADIUS, NO_SLOTS, type TouchSlots,
 } from '../decide/touch.js';
+import { applyStickLook } from './stick-look.js';
 
 export interface TouchTargets {
   /** 이동 축 (x=우, z=앞. 음수 z가 전진) */
@@ -86,6 +87,10 @@ export function attachTouchControls(
   parts: TouchParts,
   targets: TouchTargets,
 ): TouchControls {
+  // 룩(`?stick=`)은 **터치 판정보다 먼저** 새긴다. 아래 조기 반환 뒤에 두면 데스크톱에서
+  // 속성이 안 붙고, 그러면 창을 좁혀 보는 확인·헤드리스 스윕이 늘 시작값 룩만 보게 된다
+  // — 「못 잰 것이 통과로 적히는」 그 형태다. 그림에만 걸리므로 조작과 무관하다.
+  applyStickLook(parts.base);
   const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   const touch = isTouchDevice(typeof navigator !== 'undefined' ? navigator : undefined, coarse);
   if (!touch) return { active: false, setEditing() {}, dispose() {} };
