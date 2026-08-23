@@ -132,6 +132,8 @@ export const overlayFeature: Feature = {
     /** 진입 바(W8-3 S6). DOM 이 없거나 마크업이 없으면 `null` — 그래도 세계는 뜬다 */
     let tenantBar: TenantBar | null = null;
     let venuePrompt: VenuePrompt | null = null;
+    // 들어갈 전시장 id. `galleries/index.json` 이 SSOT 라 런타임에 읽는다(값 미러링 0).
+    let venueGallery: string | null = null;
     /** 액자·조명(W8-4). 작품이 0개여도 만든다 — 라이트 풀이 **부팅에** 서야 하기 때문이다 */
     let artScene: ArtworkScene | null = null;
     // 걸린 작품. **소유는 포트가 갖는다** — `toRaw` 도 편집도 같은 목록을 본다(D2).
@@ -392,7 +394,7 @@ export const overlayFeature: Feature = {
         // 건물 위치는 `Object3D.position` 만 읽는다 — 여기에는 three import 가 없어
         // `Box3` 를 못 만들고, 좁은 구조적 타입으로 읽는 것이 `glbCityRoot` 와 같은 방식이다.
         if (env.doc) venuePrompt = mountVenuePrompt(env.doc, {
-          tenant: ent.tenant,
+          tenant: () => venueGallery,
           player: () => env.player?.position ?? null,
           venue: () => {
             const root = env.glbCityRoot?.() as { position?: { x: number; z: number } } | null;
@@ -400,6 +402,21 @@ export const overlayFeature: Feature = {
             return p ? { x: p.x, z: p.z, radius: VENUE_NEAR_RADIUS } : null;
           },
         });
+        // 갤러리 목록을 읽어 들어갈 전시장을 정한다. `?u=` 가 그 목록에 있으면 그것,
+        // 없으면 첫 전시. **`?u=` 를 요구하지 않는다** — 건물 앞이면 들어가진다(감독 지적).
+        // 실패해도 조용하다: 안내가 안 뜰 뿐이고 `diagnostics().venue` 로 이유가 갈린다.
+        void (async () => {
+          try {
+            const res = await fetch('./galleries/index.json');
+            if (!res.ok) return;
+            const list: unknown = await res.json();
+            if (!Array.isArray(list)) return;
+            const ids = list.map((g) => (g && typeof g === 'object' ? (g as { id?: unknown }).id : null))
+              .filter((v): v is string => typeof v === 'string' && v !== '');
+            if (!ids.length) return;
+            venueGallery = (ent.tenant && ids.includes(ent.tenant)) ? ent.tenant : ids[0];
+          } catch { /* 목록을 못 읽으면 안내를 띄우지 않는다 */ }
+        })();
         const who = ent.who;
 
         let plan: MergePlan;
