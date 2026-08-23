@@ -46,6 +46,8 @@ import {
 import { createStaticStore, loadLegacyOverlay } from '../store/static-store.js';
 import { resolveEntry } from '../decide/tenant-entry.js';
 import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
+import { mountVenuePrompt, type VenuePrompt } from '../ui/venue-prompt.js';
+import { VENUE_NEAR_RADIUS } from '../decide/venue-entry.js';
 import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-mount.js';
 import { createArtsPort } from '../systems/art-port.js';
 import { createModelCache, type ModelCache } from './overlay-models.js';
@@ -129,6 +131,7 @@ export const overlayFeature: Feature = {
     let edit: EditSession | null = null;
     /** 진입 바(W8-3 S6). DOM 이 없거나 마크업이 없으면 `null` — 그래도 세계는 뜬다 */
     let tenantBar: TenantBar | null = null;
+    let venuePrompt: VenuePrompt | null = null;
     /** 액자·조명(W8-4). 작품이 0개여도 만든다 — 라이트 풀이 **부팅에** 서야 하기 때문이다 */
     let artScene: ArtworkScene | null = null;
     // 걸린 작품. **소유는 포트가 갖는다** — `toRaw` 도 편집도 같은 목록을 본다(D2).
@@ -383,6 +386,20 @@ export const overlayFeature: Feature = {
         if (ent.tenantError) diag.tenantError = ent.tenantError;
         if (ent.tenantMissing) diag.tenantMissing = true;
         if (env.doc) tenantBar = mountTenantEntry(env.doc, ent);
+        // 🔴 전시장 진입 안내 (감독 판정 2026-08-22 「들어가면 씬 전환」).
+        // 위치·건물을 **게터로** 넘긴다 — 미술관은 13.5MB 비동기라 마운트 시점에 아직
+        // 없을 수 있고(`glbCity` 게터가 같은 이유를 적고 있다), 관람객은 계속 움직인다.
+        // 건물 위치는 `Object3D.position` 만 읽는다 — 여기에는 three import 가 없어
+        // `Box3` 를 못 만들고, 좁은 구조적 타입으로 읽는 것이 `glbCityRoot` 와 같은 방식이다.
+        if (env.doc) venuePrompt = mountVenuePrompt(env.doc, {
+          tenant: ent.tenant,
+          player: () => env.player?.position ?? null,
+          venue: () => {
+            const root = env.glbCityRoot?.() as { position?: { x: number; z: number } } | null;
+            const p = root?.position;
+            return p ? { x: p.x, z: p.z, radius: VENUE_NEAR_RADIUS } : null;
+          },
+        });
         const who = ent.who;
 
         let plan: MergePlan;
@@ -519,6 +536,8 @@ export const overlayFeature: Feature = {
         // 그전에는 여기서만 `slice(0, 4)` 로 잘랐고, **배열 자체는 무제한으로 자랐다**
         // (화면에 보이는 것만 4개였을 뿐 누수는 그대로였다).
         ...diag, frozen: env.village.size(), art: artScene?.stats() ?? null, aim: edit?.aim() ?? null,
+        // 진입 안내가 안 뜰 때 이유를 가른다 — 화면에서는 네 경우가 똑같이 「없다」로 보인다.
+        venue: venuePrompt?.view ?? null,
       }),
       // 배치 수가 곧 상태다. 0개도 유효한 그룹이라 `'0'` 을 낸다 — `null` 을 내면 이
       // 기능이 기본 켜짐인 탓에 드로우콜 축이 **영원히 판정 불가**가 된다(`glb-city`·
@@ -528,6 +547,7 @@ export const overlayFeature: Feature = {
         disposed = true;
         edit?.dispose();
         tenantBar?.dispose();
+        venuePrompt?.dispose();
         artScene?.dispose();
         for (const u of blobUrls) { try { URL.revokeObjectURL(u); } catch { /* 이미 회수됨 */ } }
         blobUrls.clear();
