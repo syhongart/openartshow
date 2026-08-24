@@ -184,74 +184,28 @@
      세대는 375px 이상이라 줄바꿈이 안 난다. **이 값을 다시 만질 때 이 계산도 같이 본다.** */
   body:has(#w2-aim[data-on="1"]) #w2-stick-zone{ bottom:140px;height:min(26vh, 200px) }
   @media (pointer:coarse){ #w2-stick-zone{display:block} }
-  /* ── 룩 — **오픈월드(world1)에서 그대로 가져왔다** ─────────────────────
-     감독 지시 2026-08-23: *"오픈월드에서 사용하는 조이스틱 방식과 동일하게 해.
-     터치해야 조이스틱 나오고. 형태 크기 똑같이. **새로 만들라는게 아니라. 가지고
-     와야지.**"*
+  /* ── 룩은 **여기 없다** — `js/shared/joystick-look.js` 가 SSOT 다 ────────────────
+     감독 지시 2026-08-24: *"작가갤러리룸의 조이스틱과 형식을 맞춰주고. **하드코딩하지
+     말고 가지고 오는 방향으로** 해."*
 
-     ⚠ **직전 회차에 내가 감독 문언을 잘못 읽었다.** 앞선 신고 *"조이스틱에 통일감이
-     없잖아. 다른것과.."* 의 「다른것」을 **world2 안의 다른 UI** 로 읽고 후보 넷
-     (`?stick=jelly|outline|tint|plate`)을 **새로 만들었다.** 감독이 가리킨 것은
-     **world1 의 조이스틱**이었다 — 「통일」의 상대가 같은 페이지가 아니라 **다른
-     페이지**였다. 그래서 후보 넷을 전부 걷어내고 원본을 이식한다.
+     ⚠ **직전 회차에 내가 여기에 값을 복사했다.** 갤러리(`js/player.js`)의 CSS 를 그대로
+     옮겨 적었고, 그러면 저장소에 같은 값이 **세 벌**이 된다(갤러리 · 오픈월드
+     `js/world-boot.js` · 여기). 감독 지시는 그 부채를 끊으라는 것이다.
 
-     원본: `frontend/js/player.js` 의 `lu-joy-style`(디자인 이름 «Gilded Frame»).
-     그 파일은 **라이브 런타임 보호파일**이라 여기서 값을 복사한다 —
-     ⚠ **그러므로 이것은 값 미러링이고, 아래 `GS-J8` 이 두 곳을 대조해 묶는다.**
-     보호파일에서 CSS 를 공유 모듈로 빼는 것이 근본 처방이지만 그것은 보호파일 수정이라
-     팀장 판정 사안이다(백로그 `G-UI3`).
+     지금은 `ui/touch-controls.ts` 가 `joystickCss({...})` 로 CSS 를 **받아서 주입**한다.
+     색·크기·상태 색은 전부 그 모듈 한 곳이고 **여기에 다시 적지 않는다.**
 
-     가져온 것: 링의 크림 테두리·어두운 radial·이중 그림자 · 십자 눈금(`::before`) ·
-     안쪽 점선 링(`::after`) · 진주빛 노브 · 등장 스프링(`scale .78 → 1`).
-     **못 가져온 것**: `.lu-run`(끝까지 밀면 달리기) — world2 에 달리기 개념이 없다
-     (`run|sprint` 매치 0). 없는 상태를 흉내 내면 거짓 피드백이 된다. */
-  #w2-stick{
-    position:absolute;width:112px;height:112px;margin:-56px 0 0 -56px;
-    border-radius:50%;pointer-events:none;
-    border:1.5px solid rgba(253,251,245,.38);
-    background:radial-gradient(circle, rgba(23,20,15,.10) 55%, rgba(23,20,15,.34) 100%);
-    box-shadow:0 2px 12px rgba(10,8,4,.30), inset 0 0 0 1px rgba(23,20,15,.20);
-    opacity:0;transform:scale(.78);
-    transition:opacity .12s ease, transform .16s cubic-bezier(.34,1.56,.64,1);
-  }
-  /* 누르는 동안만 보인다 — 자리가 손을 따라오므로 «어디를 눌러야 하나» 가 없다.
-     감독 판정(2026-08-21 «고정이 불편해»)의 결과가 이 두 줄이고, world1 도 같은 방식이다
-     (`player.js` 가 `lu-live` 클래스로 같은 일을 한다). `GS-J7` 이 이것을 못 박는다. */
-  #w2-stick[data-on="1"]{opacity:1;transform:scale(1)}
-  /* 십자 눈금 — 링 바깥 네 방향의 짧은 선. 원본의 `.lu-joy-base::before` 그대로다. */
-  #w2-stick::before{
-    content:'';position:absolute;inset:-1.5px;border-radius:50%;
-    background:
-      linear-gradient(rgba(253,251,245,.5), rgba(253,251,245,.5)) 50% 0 / 2px 8px no-repeat,
-      linear-gradient(rgba(253,251,245,.5), rgba(253,251,245,.5)) 50% 100% / 2px 8px no-repeat,
-      linear-gradient(rgba(253,251,245,.5), rgba(253,251,245,.5)) 0 50% / 8px 2px no-repeat,
-      linear-gradient(rgba(253,251,245,.5), rgba(253,251,245,.5)) 100% 50% / 8px 2px no-repeat;
-  }
-  /* 안쪽 점선 링. 원본에서는 달리기 임계에 닿으면 초록 실선으로 켜지는데(`.lu-run`),
-     world2 에는 달리기가 없어 **점선 상태로만** 온다. 그 사실을 여기 적어 둔다 —
-     다음 사람이 «왜 안 켜지지» 를 찾지 않도록.
+     ⚠⚠ **레이아웃(구역 크기·조준 회피)은 위에 그대로 남는다** — 그것은 룩이 아니고,
+     `44vw`·`140px` 는 검수관 블로커와 헤드리스 4기기 실측으로 정해진 값이다.
 
-     ⚠ **원본에는 여기 `transition: border-color/box-shadow` 가 한 줄 더 있고 일부러
-     안 가져왔다**(검수관이 완전성 대조에서 짚었다, 2026-08-23 비블로커). 그 transition 은
-     `.lu-run` 토글에만 반응하는데 world2 에 그 상태가 없으므로 **트리거될 일이 없는 죽은
-     선언**이다. 「똑같이」를 이유로 죽은 코드를 옮기면 다음 사람이 «이건 언제 도나» 를
-     찾게 된다 — 그래서 안 옮기고 이 문장을 남긴다. world2 에 달리기가 생기는 날 함께 온다. */
-  #w2-stick::after{
-    content:'';position:absolute;inset:5px;border-radius:50%;
-    border:1px dashed rgba(253,251,245,.22);
-  }
-  #w2-stick-knob{
-    position:absolute;left:50%;top:50%;
-    /* ⚠ **44px 이다** — 이 회차 전에는 46px 이었고 감독 문언이 «형태 크기 똑같이» 다.
-       원본 `.lu-joy-knob` 의 값이다. */
-    width:44px;height:44px;border-radius:50%;
-    transform:translate(-50%,-50%);
-    background:radial-gradient(circle at 32% 28%, #fffdf8, #e8e2d2);
-    border:1px solid rgba(23,20,15,.28);
-    box-shadow:0 3px 8px rgba(10,8,4,.40), inset 0 -2px 4px rgba(23,20,15,.14);
-  }
+     ⚠⚠⚠ 스크립트가 안 돌면 조이스틱 룩이 없다. 조이스틱은 어차피 스크립트가 움직이므로
+     룩만 남아도 의미가 없다 — 그래서 이 교환을 받아들인다. */
 
-  @media (prefers-reduced-motion: reduce){ #w2-stick{transition:none} }
+  /* 손잡이의 **중심 정렬만** 여기 남는다 — 이것은 룩이 아니라 자리다.
+     갤러리 원본은 `position:fixed` + `margin:-22px` 로 중심을 잡는데, world2 는 구역 안에
+     중첩된 `absolute` 라 부모 중앙 기준이어야 한다. `transform` 은 `drawKnob` 이 매
+     프레임 덮어쓰므로 여기 값은 **손을 떼었을 때의 제자리**다. */
+  #w2-stick-knob{ left:50%;top:50%;transform:translate(-50%,-50%) }
 
   /* ── 성능 HUD ──────────────────────────────────────────────────────────
      기본은 아이콘 하나만. 펼쳐야 수치가 나온다 — 평소에 화면을 가리면
@@ -497,7 +451,7 @@
     #w2-sliders-toggle .caret,#w2-sliders-toggle,.w2-slide-pin,.w2-slide-reset{transition:none}
   }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/world2-Cj3FriNZ.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/world2-B5tqKDa4.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-webgpu-B4e2tp6E.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-BVCe5QSU.js">
@@ -508,7 +462,7 @@
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/preload-helper-DASV_Wa7.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/glb-city-CFfp38Bg.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/reserved-names-BrKduD37.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/main-HJsN-eMx.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/main-CWm0EEcB.js">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
 </head>
 <body>
