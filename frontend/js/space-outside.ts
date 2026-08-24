@@ -14,6 +14,23 @@
 // 대신 **같은 결의 풍경을 절차적으로 세운다**: 하늘 → 먼 지면 → 원경 실루엣 세 겹이다.
 // 창밖은 시차(視差)가 크지 않은 원경이라 이 근사가 화면에서 성립한다.
 //
+// ── ⚠ 하늘은 **오픈월드 것을 그대로 쓴다** (감독 판정 2026-08-24) ────────────
+// 첫 판본은 하늘 그라디언트를 **여기서 따로 정의**하고 후보 셋(day/clear/dusk)을 노브로
+// 열었다. 감독 판정: *"이건 설정된 오픈월드 환경으로 맞춰서 해야지."*
+//
+// 그 지적이 맞다. 내가 연 축이 틀렸다 — 창밖은 「어떤 하늘이 예쁜가」의 문제가 아니라
+// **「지금 이 세계가 어떤 하늘인가」** 의 문제다. 창 너머가 오픈월드인데 그 하늘이 다르면
+// 같은 세계가 아니고, 그러면 창을 낸 이유 자체가 사라진다. 그리고 색을 여기 따로 적는
+// 순간 그것은 값 미러링이다 — 오픈월드 팔레트를 고쳐도 창밖은 안 따라온다.
+//
+// 그래서 `sky.js` 의 `paintSky`·`lightOf` 를 **소비한다.** 그 파일은 `world2/` 내부가
+// 아니라 공용이고(`world.js`·world2/3/5 가 함께 쓴다) 하늘 색·안개의 SSOT 다.
+// 세계 간 결합이 아니라 **공용 모듈 소비**다 — visit 이 world2 내부를 import 하는 것과는
+// 다르다(팀장 규칙 R2 는 후자를 금지한다).
+//
+// 기본값도 오픈world 기본과 맞춘다: `time='day'`(world2 의 `daylit` 이 팔레트로 접히는
+// 값) · `weather='clear'`(`world2/features/sky.ts` 의 `readEnum('weather','clear',…)`).
+//
 // ── 자기완결 ────────────────────────────────────────────────────────────────
 // 외부 이미지를 받지 않는다. 하늘은 **캔버스 텍스처**로 굽는다 — `ShaderMaterial`(GLSL)은
 // `three.webgpu` 빌드에 렌더 경로가 아예 없어서(CLAUDE.md 실측) 백엔드가 갈리면 조용히
@@ -22,16 +39,19 @@
 // ⚠ 개수 불변식 — 이 모듈이 만드는 것은 **부팅 때 한 번**이고 세션 중 생성·제거가 0 이다.
 // `dispose()` 는 페이지를 떠날 때만 부른다.
 import * as THREE from 'three';
+import { paintSky, lightOf, SKY_TIMES, SKY_WEATHERS } from './sky.js';
 
 /**
- * 하늘 무드 후보. **글로 설득할 수 없는 것은 후보를 여럿 만들어 화면으로 판정한다**
- * (CLAUDE.md 의사결정 사이클 2번). `visit.html?sky=<이름>` 으로 재배포 없이 비교된다.
- *   day   — 첫 판본. 지평선이 희어 「안개 낀 도시」로 읽힌다.
- *   clear — 지평선까지 푸름을 남긴 맑은 낮.
- *   dusk  — 해질녘.
+ * 시간대·날씨 — **어휘를 오픈월드와 공유한다.** 여기서 목록을 다시 적지 않는다
+ * (`sky.js` 의 `SKY_TIMES`·`SKY_WEATHERS` 가 SSOT 다). 이름이 같아야 world2 의
+ * `?time=`·`?weather=` 를 그대로 넘겨받을 수 있다.
  */
-export type OutsideMood = 'day' | 'clear' | 'dusk';
-export const OUTSIDE_MOODS: readonly OutsideMood[] = ['day', 'clear', 'dusk'];
+export const OUTSIDE_TIMES: readonly string[] = SKY_TIMES;
+export const OUTSIDE_WEATHERS: readonly string[] = SKY_WEATHERS;
+
+/** 오픈월드 기본과 같은 값. world2 는 `daylit`(팔레트로 `day` 에 접힌다) + `clear` 로 뜬다. */
+export const OUTSIDE_DEFAULT_TIME = 'day';
+export const OUTSIDE_DEFAULT_WEATHER = 'clear';
 
 /** 창밖 풍경 한 벌. `dispose()` 로 통째로 회수한다. */
 export interface OutsideView {
@@ -44,8 +64,10 @@ export interface OutsideView {
 export interface OutsideOptions {
   /** 방 반지름(m) 대략치 — 돔·지면을 이보다 훨씬 밖에 둔다. */
   readonly roomSpan?: number;
-  /** 하늘 무드. 기본 'day'. 후보를 노브로 열어 감독이 화면에서 비교한다(`visit.html?sky=`). */
-  readonly mood?: OutsideMood;
+  /** 시간대. `sky.js` 어휘(`day|sunset|night`). 기본은 오픈월드와 같은 `day`. */
+  readonly time?: string;
+  /** 날씨. `sky.js` 어휘(`clear|overcast|rain|snow`). 기본은 오픈월드와 같은 `clear`. */
+  readonly weather?: string;
   /**
    * **보는 카메라의 far**. 풍경 전체를 이 안에 세운다.
    *
@@ -92,39 +114,56 @@ export function scaleFor(cameraFar?: number): { dome: number; silNear: number; s
 const SIL_COUNT = 46;
 
 /**
- * 무드별 색. **한 곳에 모은다** — 하늘·나무·건물·먼 지면이 따로 놀면 저녁 하늘에 한낮
- * 지면이 깔린다(값을 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다).
+ * 창밖 하늘 텍스처 — **오픈월드 것을 그대로 굽는다.**
  *
- * ⚠ 창으로 실제 보이는 것은 **지평선 부근**이지 천정이 아니다 — 창은 눈높이보다 위에
- * 있지만(`partY('window')` = 층고의 0.58) 원경 돔은 반지름이 100m 단위라 시선이 거의
- * 수평이다. 실측(방 9×7·창까지 4.5m): 창 상단을 보는 앙각이 **19.5°**, 텍스처로는
- * v≈0.75 지점이다. 그래서 그라디언트의 **아래쪽 3/4 이 화면을 지배**한다 — 첫 판본이
- * 창백해 보인 것은 0.86 지점을 `#dbe7f2`(거의 흰색)로 둔 탓이다.
+ * `paintSky` 가 equirect 캔버스에 그리고, 소비자는 그것을 **완전 구 + BackSide** 에
+ * 입힌다(`sky.js` 의 돔이 그렇게 되어 있다 — 텍스처 세로 중앙이 지평선이다).
+ * 반구만 쓰면 지평선 아래가 비어 창턱 너머가 끊긴다.
+ *
+ * 해상도는 오픈월드의 절반이다(2048×1024 → 1024×512). 창밖은 창 크기만큼만 보이므로
+ * 그 이상은 페인트 비용만 는다. `lowRes` 를 켜는 것도 같은 이유다(별 개수·도트 방식).
  */
-const SKY: Record<OutsideMood, {
-  stops: readonly (readonly [number, string])[]; ground: number; tree: number; bldg: number;
-}> = {
-  day:   { stops: [[0, '#4b7fc4'], [0.52, '#9dc0e6'], [0.86, '#dbe7f2'], [1, '#eef2f4']],
-           ground: 0x6f8258, tree: 0x47603c, bldg: 0x8d93a0 },
-  clear: { stops: [[0, '#2f6bb8'], [0.5, '#6fa2da'], [0.82, '#a8c9e8'], [1, '#c9dcec']],
-           ground: 0x6b8452, tree: 0x3d5a34, bldg: 0x7f8898 },
-  dusk:  { stops: [[0, '#1e2a44'], [0.55, '#5b6a86'], [0.82, '#c98d63'], [1, '#e8b183']],
-           ground: 0x3c4436, tree: 0x2a3328, bldg: 0x2f3340 },
-};
-
-/** 하늘 그라디언트를 캔버스로 굽는다(외부 이미지 0 · 두 백엔드 공통 수단). */
-function skyTexture(mood: OutsideMood) {
+function skyTexture(time: string, weather: string) {
+  const W = 1024, H = 512;
   const c = document.createElement('canvas');
-  c.width = 4; c.height = 256;
-  const x = c.getContext('2d')!;
-  const g = x.createLinearGradient(0, 0, 0, 256);
-  for (const [at, col] of SKY[mood].stops) g.addColorStop(at, col);
-  x.fillStyle = g; x.fillRect(0, 0, 4, 256);
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  paintSky(ctx, W, H, time, weather, { lowRes: true });
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = THREE.ClampToEdgeWrapping;
-  t.wrapT = THREE.ClampToEdgeWrapping;
   return t;
+}
+
+/** 두 색을 k(0..1) 만큼 섞는다. 채널별 선형 보간 — 산술이라 SSOT 대상이 아니다. */
+function mix(a: number, b: number, k: number): number {
+  const ch = (sh: number) => {
+    const av = (a >> sh) & 255, bv = (b >> sh) & 255;
+    return Math.round(av + (bv - av) * k) & 255;
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+/**
+ * 지면·나무·건물 색을 **조명 팔레트에서 유도한다.** 여기에 색을 적지 않는다.
+ *
+ * `lightOf` 가 주는 것 중 셋을 쓴다:
+ *   `hemiG` — 반구광의 **지면색**. 「이 시간대에 땅이 무슨 색인가」가 바로 이 값이다.
+ *   `hemiS` — 반구광의 하늘색. 건물 면에 하늘이 반사되는 몫.
+ *   `fog`   — 대기색. 원경일수록 여기 잠긴다(거리감이 여기서 나온다).
+ *
+ * 그래서 시간대·날씨를 바꾸면 하늘만이 아니라 **풍경 전체가 함께** 따라온다. 첫 판본은
+ * 이 셋을 여기 하드코딩한 표로 갖고 있었고, 그것이 곧 값 미러링이었다.
+ */
+function paletteOf(time: string, weather: string) {
+  const L = lightOf(time, weather, 0) as { hemiG: number; hemiS: number; fog: number };
+  return {
+    // 먼 지면 — 지면색을 대기에 절반쯤 잠근다(멀수록 흐려진다).
+    ground: mix(L.hemiG, L.fog, 0.42),
+    // 나무 — 지면보다 어둡고 덜 잠긴다(가까운 띠에 선다).
+    tree: mix(mix(L.hemiG, 0x000000, 0.35), L.fog, 0.3),
+    // 건물 — 하늘 반사가 섞인 회색. 나무보다 밝아 실루엣이 갈린다.
+    bldg: mix(mix(L.hemiS, L.fog, 0.5), 0x000000, 0.12),
+  };
 }
 
 /** 결정론적 난수 — 방마다 풍경이 달라지되 새로고침에는 안 변한다. */
@@ -142,18 +181,24 @@ function rng(seed: number): () => number {
  *   ③ 원경 실루엣  — 나무·건물 덩어리. 재질별로 병합해 드로우콜 2벌로 고정한다.
  */
 export function buildOutsideView(opts: OutsideOptions = {}): OutsideView {
-  const mood: OutsideMood = OUTSIDE_MOODS.includes(opts.mood as OutsideMood) ? (opts.mood as OutsideMood) : 'day';
-  const pal = SKY[mood];
+  // 목록에 없는 값은 오픈월드 기본으로 접는다 — 노브 오타가 빈 하늘이 되면 안 된다.
+  const time = OUTSIDE_TIMES.includes(String(opts.time)) ? String(opts.time) : OUTSIDE_DEFAULT_TIME;
+  const weather = OUTSIDE_WEATHERS.includes(String(opts.weather)) ? String(opts.weather) : OUTSIDE_DEFAULT_WEATHER;
+  const pal = paletteOf(time, weather);
   const { dome: DOME_R, silNear: SIL_NEAR, silFar: SIL_FAR } = scaleFor(opts.cameraFar);
   const group = new THREE.Group();
   group.name = 'outside-view';
   const owned: { dispose(): void }[] = [];
   const keep = <T extends { dispose(): void }>(v: T): T => { owned.push(v); return v; };
 
-  // ① 하늘 — 위쪽 절반 구. BackSide 라 안에서 본다.
-  const skyGeo = keep(new THREE.SphereGeometry(DOME_R, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.52));
+  // ① 하늘 — **완전 구.** BackSide 라 안에서 본다.
+  // ⚠ 반구(`phiLength = π*0.52`)였다가 완전 구로 바꿨다. `paintSky` 텍스처는 세로 중앙이
+  // 지평선인 equirect 라 반구에 입히면 위쪽만 늘어나 붙고 **지평선이 화면에 안 온다** —
+  // 창밖에서 실제로 보이는 것이 그 부근이다. 세그먼트 48×32 도 `sky.js` 와 같다(저폴리
+  // 돔은 위도 링에서 UV 가 절곡돼 그라디언트에 마하 밴드 원호가 생긴다 — 그쪽 실측).
+  const skyGeo = keep(new THREE.SphereGeometry(DOME_R, 48, 32));
   const skyMat = keep(new THREE.MeshBasicMaterial({
-    map: keep(skyTexture(mood)), side: THREE.BackSide, depthWrite: false, fog: false,
+    map: keep(skyTexture(time, weather)), side: THREE.BackSide, depthWrite: false, fog: false,
   }));
   const sky = new THREE.Mesh(skyGeo, skyMat);
   sky.renderOrder = -10;           // 항상 가장 뒤

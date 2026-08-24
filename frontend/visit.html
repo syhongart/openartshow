@@ -150,7 +150,8 @@ async function loadSpace() {
       if (doc && Array.isArray(doc.artworks)) {
         const layout = GEN_LAYOUTS.includes(q.get('gen')) ? q.get('gen') : undefined;
         const roomUp = Math.max(0, Math.min(4, parseInt(q.get('room'), 10) || 0));
-        // 액자 배율 노브 — 감독이 화면에서 비교해 정한다(`?art=1.0` ~ `?art=2.0`).
+        // 방 기준 액자 배율 노브(`?art=`). ⚠ 작품별 크기는 이것과 **별개**로 리듬이
+        // 정한다(감독 판정 «일괄은 없어») — 이 노브는 방 전체의 톤만 움직인다.
         // 범위 검증은 space-generate 가 소유한다(ART_SCALE) — 여기서 다시 자르지 않는다.
         const artScale = parseFloat(q.get('art'));
         const r = generateSpace(
@@ -182,8 +183,15 @@ window.__visit = V;
 // `visit.js` 는 건드리지 않는다 — 방 조립과 바깥은 별개이고, 통째로 빼도 방은 그대로다.
 // ⚠ 카메라 far 를 **넘긴다**. 안 넘기면 풍경이 클리핑 평면 밖에 서서 통째로 안 보이고,
 // 그 화면은 「아직 안 만들었다」와 구별되지 않는다(근거·실측은 space-outside.ts 헤더).
+// ⚠ 하늘은 **오픈월드 것을 그대로 쓴다**(감독 판정 2026-08-24 «설정된 오픈월드 환경으로
+// 맞춰서 해야지»). 노브 이름도 world2 와 같은 `?time=`·`?weather=` 다 — 그래야 문으로
+// 들어올 때 그 값을 그대로 넘겨받을 수 있다. 검증은 space-outside 가 소유한다.
 const outside = (space.parts || []).some((p) => p && p.t === 'window')
-  ? buildOutsideView({ mood: new URLSearchParams(location.search).get('sky'), cameraFar: V.getCamera().far })
+  ? buildOutsideView({
+      time: new URLSearchParams(location.search).get('time'),
+      weather: new URLSearchParams(location.search).get('weather'),
+      cameraFar: V.getCamera().far,
+    })
   : null;
 if (outside) V.getScene().add(outside.group);
 window.__outside = outside;

@@ -17,7 +17,7 @@
 // -----------------------------------------------------------------------------
 import {
   FOOTPRINT, FRAME_RULES, PART_TYPES, SPACE_VERSION, STORY_H,
-  artworkSize, normalizeSpace, ART_SCALE,
+  partArtSize, normalizeSpace, ART_SCALE,
   type Space, type SpacePart, type SpaceFinish,
 } from './space.js';
 
@@ -57,29 +57,12 @@ export const GEN_LAYOUTS: GenLayout[] = ['perimeter', 'partition'];
  */
 export const GEN_DEFAULT_LAYOUT: GenLayout = 'partition';
 
-/**
- * 자동생성 전시장의 기본 액자 배율.
- *
- * 감독 지적 2026-08-24: *"작품을 크게 걸고."* — 층고를 4.2m 로 올린 직후에 나온 말이고,
- * 액자 긴 변이 1.6m 고정이라 높아진 벽 대비 작아 보였다. 여기서 키우는 것이 안전한
- * 이유는 자동생성이 **매번 배치를 다시 재기** 때문이다(빌더 저장분은 안 그래서 방 단위
- * 속성으로 뺐다 — `ART_SCALE` 주석).
- *
- * ⚠ **이 값은 아직 감독 판정을 받지 않았다.** 노브(`visit.html?art=`)로 후보를 열어
- * 화면에서 비교하시게 하고, 판정이 나오면 그 근거를 여기 적는다. 지금 1.4 인 것은
- * 「눈에 띄게 크되 clamp 에 안 닿는」 자리라서다(1.6×1.4 = 2.24m, 세로장 clamp 는 2.6).
- * 배율을 올리면 벽 용량이 줄어 footprint 가 올라간다 — 「기본은 작게」와 부딪히지만
- * 창문 때와 같은 논리다(요구가 늘어 최소치가 올라간 것이지 최소를 안 고르는 게 아니다).
- *
- * ⚠⚠ **영상 스크린은 이 배율을 안 받는다 — 알고 남긴 것이다.** 화면에서 액자만 커지고
- * 스크린(`screen` 파츠)만 원래 크기로 남아 어색하다(실측 스크린샷으로 확인했다).
- * 안 한 이유는 어렵거나 막혀서가 아니라 **범위를 스스로 넓히지 않기 위해서다** —
- * 감독 지시는 액자를 두고 나온 말이고, 스크린은 조립 경로가 다르다(액자와 달리
- * 인스턴싱을 타고 `ratio` 로 가로/세로가 갈린다). 배율이 방 단위라 인스턴싱 자체는
- * 유지할 수 있으니 **불가능한 일은 아니다.** 감독이 화면을 보고 신경 쓰인다고 하면
- * 그때 한다 — 이 문단을 지우고 무엇을 어떻게 했는지 적는 자리다.
- */
-export const GEN_ART_SCALE = 1.4;
+// 크기 리듬은 `space-art-rhythm.ts` 가 소유한다(배치와 다른 판정 — 그 파일 헤더).
+// 여기서는 **재수출만** 한다: 기존 소비자가 이 경로로 가져오고 있어서, 경로를 바꾸면
+// 이동이 동작 변경이 된다(`artworkSize` 를 space.ts 로 옮길 때와 같은 처방).
+export { GEN_ART_SCALE, GEN_SCALE_RHYTHM, GEN_FEATURED_SCALE, artScaleOf } from './space-art-rhythm.js';
+import { GEN_ART_SCALE, artScaleOf } from './space-art-rhythm.js';
+
 
 export interface GenOptions {
   layout?: GenLayout;
@@ -217,7 +200,8 @@ function centers(widths: number[]): number[] {
 // "벽 한 면 × 단(tier)" 이 하나의 슬롯이다. 작품을 슬롯에 나눠 담고, 슬롯마다 중앙정렬한다.
 interface Slot {
   wall: WallDef;
-  items: { art: GenArtwork; w: number }[];
+  /** `scale` 은 이 작품 하나의 크기 배율(`artScaleOf`) — 폭 계산과 파츠가 **같은 값**을 쓴다. */
+  items: { art: GenArtwork; w: number; scale: number }[];
 }
 
 /**
@@ -272,7 +256,7 @@ function packInto(
         if (fill <= slots[sIdx].wall.usable && fill < bestFill) { best = sIdx; bestFill = fill; }
       }
     }
-    if (best >= 0) slots[best].items.push({ art: list[i], w });
+    if (best >= 0) slots[best].items.push({ art: list[i], w, scale: artScaleOf(list[i], i) });
     else dropped.push(list[i].id || list[i].title || `#${i}`);
   }
   return { slots, dropped };
@@ -328,7 +312,11 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
 
   // 영상은 screen 파츠로 간다(액자가 아니다) — 벽 배치는 같이 하되 파츠 타입이 다르다.
   const isVideoAt = (a: GenArtwork) => !!(a.videoUrl && !a.imageUrl);
-  const widths = list.map((a) => (isVideoAt(a) ? PART_TYPES.screen.size[0] : artworkSize(a.ar, artScale).W));
+  // ⚠ 작품마다 배율이 다르다(감독 판정 «일괄은 없어») — 폭도 작품마다 달라진다.
+  // 배치와 렌더가 **같은 `artScaleOf`** 를 부르므로 값이 두 곳에 적히지 않는다.
+  const widths = list.map((a, i) => (isVideoAt(a)
+    ? PART_TYPES.screen.size[0]
+    : partArtSize({ src: a.imageUrl, ar: a.ar, scale: artScaleOf(a, i) }, { artScale }).W));
   // 층고. **감독 판정 2026-08-24: «작가갤러리 지금 골방같아. 천장 높게 안될까?»**
   // `STORY_H` 의 최대치(`grand` = 4.2m)를 쓴다 — 그 위는 스키마에 없다. 더 높여야 하면
   // `space.ts` 에 값을 추가하는 일이고, 그것은 빌더·world 를 포함한 모든 소비자가 함께
@@ -389,6 +377,8 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
         ? { t: 'screen', x: pos.x, z: pos.z, ry: slot.wall.ry, ratio: '16:9', src: a.videoUrl || '' }
         : { t: 'artwork', x: pos.x, z: pos.z, ry: slot.wall.ry, frame: 'minimal', src: a.imageUrl || '' };
       if (typeof a.ar === 'number' && isFinite(a.ar) && a.ar > 0 && !isVideo) part.ar = a.ar;
+      // 작품별 배율 — 방 기준(`shell.artScale`)에 곱해진다. 1 이면 안 적는다(직렬화 절약).
+      if (!isVideo && it.scale !== 1) part.scale = it.scale;
       // 피처 강조는 방 전체에 하나만 — 여러 개면 강조가 아니게 된다.
       if (isFirstArt && slot.wall.side === 'north') { part.featured = true; isFirstArt = false; }
       parts.push(part);
