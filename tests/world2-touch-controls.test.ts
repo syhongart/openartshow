@@ -258,144 +258,124 @@ describe('🔴 GS-J6 — 조이스틱 구역이 조준 막대와 안 겹친다',
   });
 });
 
-// ── 🔴 GS-J7 — 조이스틱 룩 노브 (감독 신고 2026-08-23 «통일감이 없잖아») ────────
+// ── 🔴 GS-J8 — 조이스틱 룩이 **오픈월드(world1) 원본과 같은가** ──────────────
 //
-// ── 이 검사가 막는 것 ────────────────────────────────────────────────────────
-// ① **허용 목록 ↔ CSS 셀렉터의 미러링.** 목록은 `ui/stick-look.ts` 의 TS 배열이고
-//    규칙은 `world2.html` 의 인라인 `<style>` 이다. 한쪽만 고치면 `?stick=plate` 가
-//    아무 규칙도 안 걸어 **시작값 룩이 나오면서 주소만 바뀐다** — 감독이 «둘이 똑같은데»
-//    로 판정하게 되고, 그 판정은 후보가 아니라 배선의 결함을 본 것이다. 양방향으로 센다.
-// ② **레이아웃 회귀.** 룩만 여는 노브가 크기·자리를 건드리면 그것은 룩이 아니다.
-//    112px · 46px · `-56px` 는 엄지 크기에서 나온 값이고 근거가 그 줄 옆에 있다.
-// ③ **`opacity:0` → `[data-on="1"]` 구조.** 감독 판정(2026-08-21 «고정이 불편해»)의
-//    결과가 그 두 줄이다. 후보를 넣다가 한 후보에서만 상시 노출로 되돌아가면
-//    실기기에서만 드러난다.
-// ④ **`prefers-reduced-motion` 분기.**
-// ⑤ **색 미러링.** 조이스틱 CSS 의 `rgba(139,114,255,…)`·`rgba(114,230,225,…)` 는
-//    `:root` 의 `--violet`·`--cyan` 채널값이다. 토큰을 바꾸고 여기를 안 바꾸면
-//    조이스틱만 옛 보라로 남는다 — 이 저장소가 색 미러링으로 세 번 데인 그 형태다.
+// 감독 지시 2026-08-23: *"오픈월드에서 사용하는 조이스틱 방식과 동일하게 해. 터치해야
+// 조이스틱 나오고. 형태 크기 똑같이. **새로 만들라는게 아니라. 가지고 와야지.**"*
 //
-// ── 못 재는 것 ──────────────────────────────────────────────────────────────
-// ⚠ **어느 후보가 더 통일돼 보이는가는 못 잰다.** 그것이 감독 판정이고 이 노브의 존재
-// 이유다. 여기서 재는 것은 「넷이 실제로 서로 다른 화면을 만드는가」까지다.
-// ⚠⚠ **CSS 텍스트를 읽는다**(`GS-J6` 과 같은 한계). 브라우저가 그 선언을 어떻게 그리는지,
-// WebGPU 실기기에서 색이 어떻게 보이는지는 여기서 안 나온다.
-describe('🔴 GS-J7 — 조이스틱 룩 후보가 실제로 열린다', () => {
-  it('허용 목록의 모든 후보에 CSS 규칙이 있다 — 기본값은 속성 없는 규칙이 맡는다', async () => {
-    const html = await readWorld2Html();
-    const { STICK_LOOKS, DEFAULT_STICK_LOOK } = await import('../frontend/js/world2/ui/stick-look.js');
-    expect(STICK_LOOKS).toContain(DEFAULT_STICK_LOOK);
-    for (const look of STICK_LOOKS) {
-      if (look === DEFAULT_STICK_LOOK) {
-        expect(
-          html.includes(`#w2-stick[data-look="${look}"]`),
-          `🔴 시작값 \`${look}\` 에 덮어쓰기 규칙이 있다 — 시작값은 **속성 없는** 규칙이어야 스크립트가 안 돌아도 보인다`,
-        ).toBe(false);
-        continue;
-      }
-      expect(
-        html.includes(`#w2-stick[data-look="${look}"]{`),
-        `🔴 후보 \`${look}\` 의 링 규칙이 없다 — \`?stick=${look}\` 이 시작값과 같은 화면을 낸다`,
-      ).toBe(true);
-      expect(
-        html.includes(`#w2-stick[data-look="${look}"] #w2-stick-knob{`),
-        `🔴 후보 \`${look}\` 의 노브 규칙이 없다 — 링만 바뀌고 노브는 시작값이 남는다`,
-      ).toBe(true);
-    }
+// ⚠ **이 검사는 GS-J7 을 대체한다.** GS-J7 은 `?stick=` 후보 넷의 배선을 봤는데, 그
+// 후보들은 **감독 문언을 잘못 읽고 새로 만든 것**이라 이번 회차에 전부 걷어냈다.
+// 「통일」의 상대가 같은 페이지의 다른 UI 가 아니라 **다른 페이지(world1)** 였다.
+//
+// ── 이 검사가 막는 것 — **값 미러링** ───────────────────────────────────────
+// 원본은 `frontend/js/player.js` 의 `lu-joy-style` 인데 그 파일은 **라이브 런타임
+// 보호파일**이라 CSS 를 공유 모듈로 뺄 수 없다(그 리팩터 자체가 보호파일 수정이고
+// 팀장 판정 사안 — 백로그 `G-UI3`). 그래서 값을 **복사**했고, 복사는 곧 미러링이다.
+//
+// 이 저장소는 색 미러링으로 **세 번** 데였다. 한쪽만 고치면 아무도 모른다 — 특히
+// world1 을 손보는 사람은 world2 를 볼 이유가 없다. 그러니 **두 파일을 실제로 읽어
+// 대조**한다. 텍스트 대조라 "브라우저가 어떻게 그리는가"는 못 보지만, **갈라지는 것**은
+// 이 축이 유일하게 잡는다.
+//
+// ⚠ 못 잡는 것: ① 두 곳을 **동시에 같은 값으로** 고치는 것(그건 의도된 변경이다)
+// ② 실제 렌더 결과 ③ world1 이 파일을 옮기거나 CSS 를 다른 방식으로 주입하게 바뀌면
+// 아래 정규식이 빗나가 **거짓 FAIL** 이 난다 — 그때는 검사를 지우지 말고 함께 고친다.
+
+describe('🔴 GS-J8 — 조이스틱이 오픈월드 원본과 같은 값이다', () => {
+  /** jsdom 이라 `import.meta.url` 이 `file:` 이 아니다 — 위 헬퍼와 같이 cwd 기준으로 읽는다 */
+  async function readPlayerJs(): Promise<string> {
+    const fs = await import('node:fs/promises');
+    return fs.readFile('frontend/js/player.js', 'utf8');
+  }
+
+  /** 원본에서 한 선언의 값을 뽑는다. 못 찾으면 `null` — 그 자체가 실패 신호다 */
+  function pick(src: string, re: RegExp): string | null {
+    const m = re.exec(src);
+    return m ? m[1]!.replace(/\s+/g, ' ').trim() : null;
+  }
+
+  it('★ 원본을 실제로 찾을 수 있다 — 못 찾으면 아래 대조가 전부 공허하다', async () => {
+    const player = await readPlayerJs();
+    expect(player, '★ `lu-joy-base` 가 없다 — world1 조이스틱이 옮겨졌나?')
+      .toContain('.lu-joy-base');
+    expect(player, '★ `lu-joy-knob` 이 없다').toContain('.lu-joy-knob');
   });
 
-  it('CSS 에 있는 후보가 전부 허용 목록에 있다 — 반대 방향도 샌다', async () => {
-    const html = await readWorld2Html();
-    const { STICK_LOOKS } = await import('../frontend/js/world2/ui/stick-look.js');
-    const inCss = new Set([...html.matchAll(/#w2-stick\[data-look="([a-z-]+)"\]/g)].map((m) => m[1]));
-    for (const look of inCss) {
-      expect(
-        (STICK_LOOKS as readonly string[]).includes(look),
-        `🔴 CSS 에 \`${look}\` 규칙이 있는데 허용 목록에 없다 — \`readEnum\` 이 시작값으로 되돌려 **영영 안 보이는 죽은 규칙**이다`,
-      ).toBe(true);
-    }
-    expect(inCss.size, '🔴 후보 규칙을 하나도 못 찾았다 — 검사가 헛돈다').toBeGreaterThan(0);
+  it('★ 링 크기가 같다 (112px)', async () => {
+    const [player, CSS] = await Promise.all([readPlayerJs(), readWorld2Html()]);
+    const orig = pick(player, /\.lu-joy-base\s*\{[^}]*?width:\s*(\d+px)/);
+    expect(orig, '★ 원본에서 링 폭을 못 뽑았다').toBe('112px');
+    expect(CSS, `★ 링이 원본(${orig})과 다르다`).toMatch(/#w2-stick\{[^}]*width:112px/);
   });
 
-  it('후보끼리 실제로 다른 화면이다 — 규칙 본문이 서로 달라야 한다', async () => {
-    const html = await readWorld2Html();
-    const bodies = [...html.matchAll(/#w2-stick\[data-look="[a-z-]+"\] #w2-stick-knob\{([^}]*)\}/g)]
-      .map((m) => m[1].replace(/\s+/g, ''));
-    expect(bodies.length, '🔴 노브 후보 규칙을 못 찾았다').toBeGreaterThan(0);
-    expect(new Set(bodies).size, '🔴 노브 후보 둘이 본문까지 같다 — 감독이 비교할 것이 없다')
-      .toBe(bodies.length);
+  it('🔴 노브 크기가 같다 (44px) — 감독 문언 「형태 크기 똑같이」', async () => {
+    const [player, CSS] = await Promise.all([readPlayerJs(), readWorld2Html()]);
+    const orig = pick(player, /\.lu-joy-knob\s*\{[^}]*?width:\s*(\d+px)/);
+    expect(orig, '★ 원본에서 노브 폭을 못 뽑았다').toBe('44px');
+    expect(CSS, `★ 노브가 원본(${orig})과 다르다 — 이 회차 전에는 46px 이었다`)
+      .toMatch(/#w2-stick-knob\{[^}]*width:44px/);
   });
 
-  it('레이아웃 값이 그대로다 — 룩 노브는 크기·자리를 안 건드린다', async () => {
-    const html = await readWorld2Html();
-    const ring = /#w2-stick\{([\s\S]*?)\}/.exec(html)?.[1] ?? '';
-    const knob = /#w2-stick-knob\{([\s\S]*?)\}/.exec(html)?.[1] ?? '';
-    expect(ring, '🔴 원 크기 112px 가 바뀌었다 — 엄지 조작 크기다').toMatch(/width:112px;height:112px/);
-    expect(ring, '🔴 원의 중심 보정 `-56px` 가 바뀌었다 — 누른 자리가 원 중심이 아니게 된다')
-      .toMatch(/margin:-56px 0 0 -56px/);
-    expect(knob, '🔴 노브 크기 46px 가 바뀌었다').toMatch(/width:46px;height:46px/);
-    // 룩 후보 안에 크기·자리 선언이 섞여 들어가지 않았는가
-    const looks = [...html.matchAll(/#w2-stick(?:-knob)?\[?[^{]*data-look="[a-z-]+"[^{]*\{([^}]*)\}/g)]
-      .map((m) => m[1]);
-    for (const body of looks) {
-      expect(body, `🔴 룩 후보에 레이아웃 선언이 들어갔다 — 색·질감·테두리만이다: ${body.trim()}`)
-        .not.toMatch(/(?:^|[;{\s])(width|height|margin|top|left|bottom|right|position|transform)\s*:/);
-    }
+  it('🔴 이동 반경이 같다 (60) — 링을 넘어가는 정도가 화면에 보인다', async () => {
+    const player = await readPlayerJs();
+    const m = /JOYSTICK_RADIUS\s*=\s*(\d+)/.exec(player);
+    expect(m, '★ 원본에서 `JOYSTICK_RADIUS` 를 못 뽑았다').not.toBeNull();
+    const { STICK_RADIUS } = await import('../frontend/js/world2/decide/touch.js');
+    expect(STICK_RADIUS, `★ 반경이 원본(${m![1]})과 다르다 — 52 일 때는 노브가 링(반경 56) `
+      + '안에 머물렀고 60 이면 넘어간다. 화면에 보이는 차이다')
+      .toBe(Number(m![1]));
   });
 
-  it('누르는 동안만 보이는 구조가 살아 있다 (감독 판정 2026-08-21 «고정이 불편해»)', async () => {
-    const html = await readWorld2Html();
-    const ring = /#w2-stick\{([\s\S]*?)\}/.exec(html)?.[1] ?? '';
-    expect(ring, '🔴 기본 `opacity:0` 이 사라졌다 — 조이스틱이 상시 노출로 돌아간다')
-      .toMatch(/opacity:0/);
-    expect(html, '🔴 `[data-on="1"]{opacity:1}` 규칙이 사라졌다 — 눌러도 안 보인다')
-      .toMatch(/#w2-stick\[data-on="1"\]\{opacity:1\}/);
-    // 후보가 opacity 를 덮으면 그 후보에서만 구조가 깨진다
-    const looks = [...html.matchAll(/#w2-stick(?:-knob)?\[?[^{]*data-look="[a-z-]+"[^{]*\{([^}]*)\}/g)]
-      .map((m) => m[1]);
-    for (const body of looks) {
-      expect(body, `🔴 룩 후보가 \`opacity\` 를 덮는다 — 그 후보에서만 노출 구조가 깨진다: ${body.trim()}`)
-        .not.toMatch(/opacity\s*:/);
-    }
+  it('★ 링의 크림 테두리 색이 같다', async () => {
+    const [player, CSS] = await Promise.all([readPlayerJs(), readWorld2Html()]);
+    const orig = pick(player, /\.lu-joy-base\s*\{[^}]*?border:\s*[^;]*?(rgba\([^)]+\))/);
+    expect(orig, '★ 원본에서 링 테두리 색을 못 뽑았다').not.toBeNull();
+    // 원본은 `0.38`, 여기는 `.38` 로 적힐 수 있어 앞 0 을 지우고 비교한다.
+    const norm = (v: string) => v.replace(/(\D)0\./g, '$1.').replace(/\s/g, '');
+    expect(norm(CSS), `★ 링 테두리가 원본(${orig})과 다르다`).toContain(norm(orig!));
   });
 
-  // 🔴 **경계를 건너는 지점.** 위 검사들은 CSS 텍스트와 TS 목록만 본다 — 둘 다 참인데
-  // 아무도 `data-look` 을 안 새기면 후보가 영영 안 열린다(판정/집행 분리의 구멍, CLAUDE.md).
-  it('배선 — `attachTouchControls` 가 원에 `data-look` 을 새긴다', async () => {
-    const { DEFAULT_STICK_LOOK } = await import('../frontend/js/world2/ui/stick-look.js');
-    const { base } = mount();
-    expect(base.dataset.look, '🔴 원에 `data-look` 이 안 붙었다 — `?stick=` 이 아무것도 안 한다')
-      .toBe(DEFAULT_STICK_LOOK);
+  it('★ 노브의 진주 그라디언트가 같다', async () => {
+    const [player, CSS] = await Promise.all([readPlayerJs(), readWorld2Html()]);
+    const orig = pick(player, /\.lu-joy-knob\s*\{[^}]*?background:\s*(radial-gradient\([^;]+\))/);
+    expect(orig, '★ 원본에서 노브 배경을 못 뽑았다').not.toBeNull();
+    const norm = (v: string) => v.replace(/\s/g, '');
+    expect(norm(CSS), `★ 노브 배경이 원본과 다르다`).toContain(norm(orig!));
   });
 
-  it('`prefers-reduced-motion` 분기가 남아 있다', async () => {
-    const html = await readWorld2Html();
-    const block = /@media \(prefers-reduced-motion: reduce\)\{ #w2-stick\{transition:none\} \}/.test(html);
-    expect(block, '🔴 조이스틱의 모션 감소 분기가 사라졌다').toBe(true);
+  it('★ 십자 눈금과 안쪽 점선 링을 가져왔다 — 원본의 형태 특징이다', async () => {
+    const CSS = await readWorld2Html();
+    expect(CSS, '★ `::before` 십자 눈금이 없다').toMatch(/#w2-stick::before/);
+    expect(CSS, '★ `::after` 안쪽 링이 없다').toMatch(/#w2-stick::after/);
+    expect(CSS, '★ 점선이 아니다 — 원본은 `1px dashed` 다').toMatch(/dashed rgba\(253,251,245/);
   });
 
-  it('조이스틱의 보라·청록 채널이 `:root` 토큰과 같다 — 색 미러링을 검사로 묶는다', async () => {
-    const html = await readWorld2Html();
-    const hexToRgb = (hex: string) =>
-      [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(',');
-    const violet = /--violet:\s*(#[0-9A-Fa-f]{6})/.exec(html)?.[1];
-    const cyan = /--cyan:\s*(#[0-9A-Fa-f]{6})/.exec(html)?.[1];
-    expect(violet, '🔴 `:root` 의 `--violet` 을 못 찾았다 — 검사가 헛돈다').toBeDefined();
-    expect(cyan, '🔴 `:root` 의 `--cyan` 을 못 찾았다 — 검사가 헛돈다').toBeDefined();
-    // 조이스틱 CSS 구간만 잘라 본다 — 다른 UI 의 rgba 까지 세면 이 검사의 대상이 흐려진다
-    const start = html.indexOf('#w2-stick{');
-    const end = html.indexOf('@media (prefers-reduced-motion: reduce){ #w2-stick{transition:none} }');
-    expect(start, '🔴 조이스틱 CSS 구간을 못 찾았다').toBeGreaterThan(-1);
-    expect(end, '🔴 조이스틱 CSS 구간의 끝을 못 찾았다').toBeGreaterThan(start);
-    const seg = html.slice(start, end);
-    const channels = new Set([...seg.matchAll(/rgba\((\d+,\s*\d+,\s*\d+)\s*,/g)]
-      .map((m) => m[1].replace(/\s+/g, '')));
-    const known = new Set([hexToRgb(violet!), hexToRgb(cyan!), '255,255,255', '11,13,18', '0,0,0']);
-    for (const ch of channels) {
-      expect(
-        known.has(ch),
-        `🔴 조이스틱에 정체 불명의 색 \`rgba(${ch},…)\` 이 있다 — 토큰(\`--violet\` ${hexToRgb(violet!)} · \`--cyan\` ${hexToRgb(cyan!)})과 어긋났거나 새 색을 만든 것이다`,
-      ).toBe(true);
-    }
+  it('🔴 「누르는 동안만」 구조가 살아 있다 — 감독 판정 «고정이 불편해»', async () => {
+    const CSS = await readWorld2Html();
+    expect(CSS).toMatch(/#w2-stick\{[^}]*opacity:0/);
+    expect(CSS).toMatch(/#w2-stick\[data-on="1"\]\{opacity:1/);
+  });
+
+  it('★ 등장 스프링을 가져왔다 — 원본과 같은 `scale(.78) → scale(1)`', async () => {
+    const CSS = await readWorld2Html();
+    expect(CSS, '★ 시작 배율이 없다').toMatch(/#w2-stick\{[^}]*transform:scale\(\.78\)/);
+    expect(CSS, '★ 켜질 때 배율이 1 로 안 간다')
+      .toMatch(/#w2-stick\[data-on="1"\]\{[^}]*transform:scale\(1\)/);
+  });
+
+  it('★ 후보 노브(`?stick=`)가 남아 있지 않다 — 감독 «새로 만들라는게 아니라»', async () => {
+    const CSS = await readWorld2Html();
+    expect(CSS, '★ `data-look` 규칙이 남았다').not.toMatch(/data-look/);
+  });
+
+  it('★ 레이아웃 값은 그대로다 — 룩 이식이 자리를 건드리면 회귀다', async () => {
+    const CSS = await readWorld2Html();
+    expect(CSS).toMatch(/#w2-stick-zone\{[^}]*width:min\(44vw/);
+    expect(CSS).toMatch(/#w2-stick\{[^}]*margin:-56px/);
+  });
+
+  it('★ `prefers-reduced-motion` 분기가 살아 있다', async () => {
+    const CSS = await readWorld2Html();
+    expect(CSS).toMatch(/prefers-reduced-motion/);
   });
 });
