@@ -257,125 +257,382 @@ describe('🔴 GS-J6 — 조이스틱 구역이 조준 막대와 안 겹친다',
       .toBeGreaterThanOrEqual(130);
   });
 });
+// ── 🔴 GS-J8 — 조이스틱 룩이 **갤러리 원본과 같은가** ──────────────────────
+//
+// 감독 지시 2026-08-24: *"작가갤러리룸의 조이스틱과 형식을 맞춰주고. **하드코딩하지말고
+// 가지고 오는 방향으로** 해. 기존 월드는 움직이면 초록색으로 변하는것 같더만. 달리면 더
+// 색깔이 진해지고.. 그렇게 해줘."*
+//
+// ⚠ **직전 판본은 `world2.html` 을 읽어 대조했다.** 그때는 값이 거기 있었기 때문이다.
+// 이번에 값이 `js/shared/joystick-look.js` 로 옮겨 갔으므로 **대조 대상도 옮긴다** — 이 검사는
+// 이제 **실제로 주입될 CSS**(`joystickCss()` 의 반환)를 원본과 맞댄다. 더 강하다:
+// 예전에는 「HTML 에 그 문자열이 있는가」였고 지금은 「소비자가 받는 값이 그러한가」다.
+//
+// ── 이 검사가 막는 것 ────────────────────────────────────────────────────────
+// ① **미러링이 갈라지는 것.** `player.js`(갤러리, 보호파일)는 여전히 자기 CSS 를 갖고
+//    있다. 그쪽을 고치는 사람은 world2 를 볼 이유가 없다 — 이 저장소가 색 미러링으로
+//    **세 번** 데인 그 형태다.
+// ② **하드코딩 재발.** 값이 다시 `world2.html` 로 새어 들어가면 잡는다.
+// ③ **감독 지시의 두 단계**가 실제로 열리는가.
+//
+// ⚠ 못 잡는 것: 렌더 결과 · WebGPU 실기기 색 · `player.js` 가 CSS 주입 방식을 바꾸면
+// 정규식이 빗나가 **거짓 FAIL**(메시지가 "원본에서 …을 못 뽑았다" 로 갈라져 원인 오인
+// 위험은 낮다). 그때는 검사를 지우지 말고 **함께 고친다.**
 
-// ── 🔴 GS-J8 — 조이스틱 룩이 **오픈월드(world1) 원본과 같은가** ──────────────
-//
-// 감독 지시 2026-08-23: *"오픈월드에서 사용하는 조이스틱 방식과 동일하게 해. 터치해야
-// 조이스틱 나오고. 형태 크기 똑같이. **새로 만들라는게 아니라. 가지고 와야지.**"*
-//
-// ⚠ **이 검사는 GS-J7 을 대체한다.** GS-J7 은 `?stick=` 후보 넷의 배선을 봤는데, 그
-// 후보들은 **감독 문언을 잘못 읽고 새로 만든 것**이라 이번 회차에 전부 걷어냈다.
-// 「통일」의 상대가 같은 페이지의 다른 UI 가 아니라 **다른 페이지(world1)** 였다.
-//
-// ── 이 검사가 막는 것 — **값 미러링** ───────────────────────────────────────
-// 원본은 `frontend/js/player.js` 의 `lu-joy-style` 인데 그 파일은 **라이브 런타임
-// 보호파일**이라 CSS 를 공유 모듈로 뺄 수 없다(그 리팩터 자체가 보호파일 수정이고
-// 팀장 판정 사안 — 백로그 `G-UI3`). 그래서 값을 **복사**했고, 복사는 곧 미러링이다.
-//
-// 이 저장소는 색 미러링으로 **세 번** 데였다. 한쪽만 고치면 아무도 모른다 — 특히
-// world1 을 손보는 사람은 world2 를 볼 이유가 없다. 그러니 **두 파일을 실제로 읽어
-// 대조**한다. 텍스트 대조라 "브라우저가 어떻게 그리는가"는 못 보지만, **갈라지는 것**은
-// 이 축이 유일하게 잡는다.
-//
-// ⚠ 못 잡는 것: ① 두 곳을 **동시에 같은 값으로** 고치는 것(그건 의도된 변경이다)
-// ② 실제 렌더 결과 ③ world1 이 파일을 옮기거나 CSS 를 다른 방식으로 주입하게 바뀌면
-// 아래 정규식이 빗나가 **거짓 FAIL** 이 난다 — 그때는 검사를 지우지 말고 함께 고친다.
-
-describe('🔴 GS-J8 — 조이스틱이 오픈월드 원본과 같은 값이다', () => {
-  /** jsdom 이라 `import.meta.url` 이 `file:` 이 아니다 — 위 헬퍼와 같이 cwd 기준으로 읽는다 */
+describe('🔴 GS-J8 — 조이스틱 룩이 갤러리 원본과 같은 값이다', () => {
   async function readPlayerJs(): Promise<string> {
     const fs = await import('node:fs/promises');
     return fs.readFile('frontend/js/player.js', 'utf8');
   }
-
-  /** 원본에서 한 선언의 값을 뽑는다. 못 찾으면 `null` — 그 자체가 실패 신호다 */
+  async function readWorld2(): Promise<string> {
+    const fs = await import('node:fs/promises');
+    return fs.readFile('frontend/world2.html', 'utf8');
+  }
+  /** world2 가 실제로 주입하는 CSS 를 그대로 만든다 — 소비자와 같은 인자를 쓴다 */
+  async function world2Css(): Promise<string> {
+    const m = await import('../frontend/js/shared/joystick-look.js');
+    return m.joystickCss({
+      base: '#w2-stick',
+      knob: '#w2-stick-knob',
+      on: '#w2-stick[data-on="1"]',
+      lean: (v: string) => `#w2-stick[data-lean="${v}"]`,
+      leanKnob: (v: string) => `#w2-stick[data-lean="${v}"] #w2-stick-knob`,
+    });
+  }
   function pick(src: string, re: RegExp): string | null {
     const m = re.exec(src);
     return m ? m[1]!.replace(/\s+/g, ' ').trim() : null;
   }
+  /** `0.38` 과 `.38`, 공백 유무를 같게 본다 */
+  const norm = (v: string) => v.replace(/(\D)0\./g, '$1.').replace(/\s/g, '');
 
   it('★ 원본을 실제로 찾을 수 있다 — 못 찾으면 아래 대조가 전부 공허하다', async () => {
     const player = await readPlayerJs();
-    expect(player, '★ `lu-joy-base` 가 없다 — world1 조이스틱이 옮겨졌나?')
-      .toContain('.lu-joy-base');
+    expect(player, '★ `lu-joy-base` 가 없다 — 갤러리 조이스틱이 옮겨졌나?').toContain('.lu-joy-base');
     expect(player, '★ `lu-joy-knob` 이 없다').toContain('.lu-joy-knob');
   });
 
   it('★ 링 크기가 같다 (112px)', async () => {
-    const [player, CSS] = await Promise.all([readPlayerJs(), readWorld2Html()]);
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
     const orig = pick(player, /\.lu-joy-base\s*\{[^}]*?width:\s*(\d+px)/);
     expect(orig, '★ 원본에서 링 폭을 못 뽑았다').toBe('112px');
-    expect(CSS, `★ 링이 원본(${orig})과 다르다`).toMatch(/#w2-stick\{[^}]*width:112px/);
+    expect(css, `★ 링이 원본(${orig})과 다르다`).toContain(`width:${orig}`);
   });
 
   it('🔴 노브 크기가 같다 (44px) — 감독 문언 「형태 크기 똑같이」', async () => {
-    const [player, CSS] = await Promise.all([readPlayerJs(), readWorld2Html()]);
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
     const orig = pick(player, /\.lu-joy-knob\s*\{[^}]*?width:\s*(\d+px)/);
     expect(orig, '★ 원본에서 노브 폭을 못 뽑았다').toBe('44px');
-    expect(CSS, `★ 노브가 원본(${orig})과 다르다 — 이 회차 전에는 46px 이었다`)
-      .toMatch(/#w2-stick-knob\{[^}]*width:44px/);
+    expect(css, `★ 노브가 원본(${orig})과 다르다`)
+      .toMatch(new RegExp(`#w2-stick-knob\\{[^}]*width:${orig}`));
   });
 
-  it('🔴 이동 반경이 같다 (60) — 링을 넘어가는 정도가 화면에 보인다', async () => {
+  it('🔴 이동 반경이 같다 — 링을 넘어가는 정도가 화면에 보인다', async () => {
     const player = await readPlayerJs();
     const m = /JOYSTICK_RADIUS\s*=\s*(\d+)/.exec(player);
     expect(m, '★ 원본에서 `JOYSTICK_RADIUS` 를 못 뽑았다').not.toBeNull();
     const { STICK_RADIUS } = await import('../frontend/js/world2/decide/touch.js');
-    expect(STICK_RADIUS, `★ 반경이 원본(${m![1]})과 다르다 — 52 일 때는 노브가 링(반경 56) `
-      + '안에 머물렀고 60 이면 넘어간다. 화면에 보이는 차이다')
-      .toBe(Number(m![1]));
+    const { JOY_RADIUS } = await import('../frontend/js/shared/joystick-look.js');
+    expect(JOY_RADIUS, `★ 모듈 반경이 원본(${m![1]})과 다르다`).toBe(Number(m![1]));
+    expect(STICK_RADIUS, '★ world2 가 쓰는 반경이 모듈 값과 다르다').toBe(JOY_RADIUS);
   });
 
   it('★ 링의 크림 테두리 색이 같다', async () => {
-    const [player, CSS] = await Promise.all([readPlayerJs(), readWorld2Html()]);
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
     const orig = pick(player, /\.lu-joy-base\s*\{[^}]*?border:\s*[^;]*?(rgba\([^)]+\))/);
     expect(orig, '★ 원본에서 링 테두리 색을 못 뽑았다').not.toBeNull();
-    // 원본은 `0.38`, 여기는 `.38` 로 적힐 수 있어 앞 0 을 지우고 비교한다.
-    const norm = (v: string) => v.replace(/(\D)0\./g, '$1.').replace(/\s/g, '');
-    expect(norm(CSS), `★ 링 테두리가 원본(${orig})과 다르다`).toContain(norm(orig!));
+    expect(norm(css), `★ 링 테두리가 원본(${orig})과 다르다`).toContain(norm(orig!));
   });
 
   it('★ 노브의 진주 그라디언트가 같다', async () => {
-    const [player, CSS] = await Promise.all([readPlayerJs(), readWorld2Html()]);
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
     const orig = pick(player, /\.lu-joy-knob\s*\{[^}]*?background:\s*(radial-gradient\([^;]+\))/);
     expect(orig, '★ 원본에서 노브 배경을 못 뽑았다').not.toBeNull();
-    const norm = (v: string) => v.replace(/\s/g, '');
-    expect(norm(CSS), `★ 노브 배경이 원본과 다르다`).toContain(norm(orig!));
+    expect(norm(css), '★ 노브 배경이 원본과 다르다').toContain(norm(orig!));
+  });
+
+  it('🔴 질주 색이 원본과 같다 — 감독 「달리면 더 색깔이 진해지고」의 끝 단계', async () => {
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
+    const orig = pick(player, /\.lu-joy-knob\.lu-run\s*\{[^}]*?background:\s*(radial-gradient\([^;]+\))/);
+    expect(orig, '★ 원본에서 질주 노브 색을 못 뽑았다').not.toBeNull();
+    expect(norm(css), `★ 질주 색이 원본(${orig})과 다르다`).toContain(norm(orig!));
   });
 
   it('★ 십자 눈금과 안쪽 점선 링을 가져왔다 — 원본의 형태 특징이다', async () => {
-    const CSS = await readWorld2Html();
-    expect(CSS, '★ `::before` 십자 눈금이 없다').toMatch(/#w2-stick::before/);
-    expect(CSS, '★ `::after` 안쪽 링이 없다').toMatch(/#w2-stick::after/);
-    expect(CSS, '★ 점선이 아니다 — 원본은 `1px dashed` 다').toMatch(/dashed rgba\(253,251,245/);
+    const css = await world2Css();
+    expect(css, '★ `::before` 십자 눈금이 없다').toContain('#w2-stick::before');
+    expect(css, '★ `::after` 안쪽 링이 없다').toContain('#w2-stick::after');
+    expect(css, '★ 점선이 아니다 — 원본은 `1px dashed` 다').toMatch(/dashed rgba\(253,251,245/);
   });
 
   it('🔴 「누르는 동안만」 구조가 살아 있다 — 감독 판정 «고정이 불편해»', async () => {
-    const CSS = await readWorld2Html();
-    expect(CSS).toMatch(/#w2-stick\{[^}]*opacity:0/);
-    expect(CSS).toMatch(/#w2-stick\[data-on="1"\]\{opacity:1/);
+    const css = await world2Css();
+    expect(css).toMatch(/#w2-stick\{[^}]*opacity:0/);
+    expect(css).toMatch(/#w2-stick\[data-on="1"\]\{opacity:1/);
   });
 
   it('★ 등장 스프링을 가져왔다 — 원본과 같은 `scale(.78) → scale(1)`', async () => {
-    const CSS = await readWorld2Html();
-    expect(CSS, '★ 시작 배율이 없다').toMatch(/#w2-stick\{[^}]*transform:scale\(\.78\)/);
-    expect(CSS, '★ 켜질 때 배율이 1 로 안 간다')
+    const css = await world2Css();
+    expect(css, '★ 시작 배율이 없다').toMatch(/#w2-stick\{[^}]*transform:scale\(\.78\)/);
+    expect(css, '★ 켜질 때 배율이 1 로 안 간다')
       .toMatch(/#w2-stick\[data-on="1"\]\{[^}]*transform:scale\(1\)/);
   });
 
-  it('★ 후보 노브(`?stick=`)가 남아 있지 않다 — 감독 «새로 만들라는게 아니라»', async () => {
-    const CSS = await readWorld2Html();
-    expect(CSS, '★ `data-look` 규칙이 남았다').not.toMatch(/data-look/);
+  it('🔴 두 단계가 실제로 열린다 — 감독 「움직이면 초록 / 달리면 더 진하게」', async () => {
+    const css = await world2Css();
+    expect(css, '★ 움직임 단계 규칙이 없다').toContain('#w2-stick[data-lean="1"]');
+    expect(css, '★ 질주 단계 규칙이 없다').toContain('#w2-stick[data-lean="2"]');
+    const move = /#w2-stick\[data-lean="1"\] #w2-stick-knob\{([^}]*)\}/.exec(css);
+    const run = /#w2-stick\[data-lean="2"\] #w2-stick-knob\{([^}]*)\}/.exec(css);
+    expect(move, '★ 움직임 노브 규칙을 못 찾았다').not.toBeNull();
+    expect(run, '★ 질주 노브 규칙을 못 찾았다').not.toBeNull();
+    expect(move![1], '★ 두 단계가 같은 값이다 — 「더 진해진다」가 안 보인다').not.toBe(run![1]);
   });
 
-  it('★ 레이아웃 값은 그대로다 — 룩 이식이 자리를 건드리면 회귀다', async () => {
-    const CSS = await readWorld2Html();
-    expect(CSS).toMatch(/#w2-stick-zone\{[^}]*width:min\(44vw/);
-    expect(CSS).toMatch(/#w2-stick\{[^}]*margin:-56px/);
+  it('🔴 하드코딩이 `world2.html` 로 새어 들어가지 않았다 — 감독 지시의 핵심', async () => {
+    const html = await readWorld2();
+    expect(html, '★ 크림 테두리 값이 HTML 에 있다 — 모듈에서 가져와야 한다')
+      .not.toMatch(/rgba\(253,\s*251,\s*245/);
+    expect(html, '★ 진주 그라디언트가 HTML 에 있다').not.toMatch(/#fffdf8/);
+    expect(html, '★ 초록 값이 HTML 에 있다').not.toMatch(/95,\s*158,\s*125/);
+  });
+
+  it('★ 레이아웃 값은 그대로다 — 룩을 옮기면서 자리를 건드리면 회귀다', async () => {
+    const html = await readWorld2();
+    expect(html).toMatch(/#w2-stick-zone\{[^}]*width:min\(44vw/);
+    expect(html).toMatch(/#w2-stick-knob\{[^}]*translate\(-50%,\s*-50%\)/);
   });
 
   it('★ `prefers-reduced-motion` 분기가 살아 있다', async () => {
-    const CSS = await readWorld2Html();
-    expect(CSS).toMatch(/prefers-reduced-motion/);
+    const css = await world2Css();
+    expect(css).toMatch(/prefers-reduced-motion/);
+  });
+
+  // ── 🔴 선언 **전량** 대조 (검수관 블로커 B1, 2026-08-24) ───────────────────
+  //
+  // ⚠ **위의 개별 대조들은 검출력이 부분적이었다.** 검수관이 뮤테이션으로 실측했다:
+  //
+  //     JOY_BASE_PX  112 → 100     → 1 failed  ✅
+  //     GREEN  '95,158,125' → '90,150,120'  → **0 failed** ❌
+  //     INK    '23,20,15'   → '20,17,12'    → **0 failed** ❌
+  //
+  // 원인은 값이 아니라 **구조**였다. 위 검사들은 「뽑아서 맞대는」 방식이라 **뽑는 것을
+  // 잊은 선언은 통과한다.** `GREEN` 은 질주 링의 `border-color`·`box-shadow` 와 노브
+  // `box-shadow` 에 쓰이는데 대조된 것은 노브 `background`(하드코딩 hex) 하나뿐이었고,
+  // `INK`(어두운 radial 배경)·`SHADOW`(그림자 색)는 아예 대조 대상 밖이었다.
+  //
+  // 그런데 이 파일과 `joystick-look.js` 헤더는 *"값이 갈라지는 것은 이 축이 유일하게
+  // 잡는다"* 라고 **일반화해서 주장**하고 있었다. 게이트 유효성에 대한 거짓 진술이고,
+  // 이 저장소가 `main` unprotected 오기로 7일을 잃은 그 형태다.
+  //
+  // ── 처방: assertion 을 늘리지 않는다 ─────────────────────────────────────
+  // 개별 대조를 몇 개 더 추가하면 **다음에 또 빠뜨린다** — 빠뜨릴 자리가 남아 있으니까.
+  // 그래서 블록을 통째로 쪼개 **선언 전량**을 맞댄다. 새 선언이 한쪽에 생기면 자동으로
+  // 걸리므로 「검사에 추가하는 것을 잊는다」가 성립하지 않는다.
+  //
+  // ⚠ 위의 개별 검사들은 **지우지 않는다.** 이 전량 대조는 어느 블록이 틀렸는지까지만
+  // 알려주고, 「링 폭이 원본과 다르다」 같은 진단은 개별 검사의 실패 메시지가 낸다.
+
+  /** 원본 ↔ 생성 CSS 의 블록 대응. 이 목록이 곧 「무엇을 가져왔는가」의 전량이다 */
+  const BLOCKS: readonly (readonly [string, string])[] = [
+    ['.lu-joy-base', '#w2-stick'],
+    ['.lu-joy-base::before', '#w2-stick::before'],
+    ['.lu-joy-base::after', '#w2-stick::after'],
+    ['.lu-joy-base.lu-run::after', '#w2-stick[data-lean="2"]::after'],
+    ['.lu-joy-knob', '#w2-stick-knob'],
+    ['.lu-joy-knob.lu-run', '#w2-stick[data-lean="2"] #w2-stick-knob'],
+  ];
+
+  /**
+   * 대조에서 **일부러 빼는** 속성과 그 이유. 룩이 아니라 **배치 구조**의 차이다.
+   *
+   * ⚠ 이 목록이 길어지는 것은 「원본과 다른 것이 늘었다」는 뜻이다. 늘리기 전에
+   * *"정말 구조 차이인가, 아니면 룩이 갈라진 것인가"* 를 먼저 묻는다.
+   */
+  const SKIP: Record<string, Record<string, string>> = {
+    // 갤러리는 화면에 직접 고정(`fixed`)하고 world2 는 `#w2-stick-zone` **안에 중첩**된다.
+    // 구역이 자리를 정하므로 여기는 `absolute` 여야 한다.
+    '#w2-stick': { position: '구역 안 중첩', 'z-index': '구역이 이미 층을 갖는다' },
+    '#w2-stick-knob': {
+      position: '구역 안 중첩',
+      'z-index': '구역이 이미 층을 갖는다',
+      // 갤러리는 `margin:-22px` 로 중심을 잡고, world2 는 `world2.html` 의
+      // `translate(-50%,-50%)` 로 잡는다(그 한 줄은 레이아웃이라 HTML 에 남겼다).
+      margin: '중심 정렬 수단이 다르다 — transform 으로 잡는다',
+      // CSS 상속 속성이다. `#w2-stick` 이 `none` 이므로 자식도 `none` 이라 동작이 같다.
+      'pointer-events': '부모에서 상속된다',
+      // 갤러리는 노브가 **혼자** 페이드인하고, world2 는 링이 통째로 등장한다
+      // (`[data-on="1"]` 이 `#w2-stick` 의 opacity 를 올린다). 그래서 노브에는
+      // 등장용 opacity/transition 이 필요 없고, 대신 **색 전이**가 들어간다.
+      opacity: '링이 통째로 등장한다',
+      transition: '등장은 링이 하고 노브는 색만 전이한다',
+    },
+  };
+
+  /**
+   * `sel{ … }` 한 블록을 뽑는다. 못 뽑으면 `null` — 그 자체가 실패 신호다.
+   *
+   * ⚠ **`[^}]*` 는 첫 `}` 에서 멈춘다 — 즉 「블록 안에 중첩 블록이 없다」를 전제한다**
+   * (검수관 권고 P3, 2026-08-24). 전제가 깨지면 **거짓 FAIL 이 아니라 거짓 PASS** 가
+   * 난다: 잘린 앞부분만 뽑히고 그것이 우연히 일치하면 통과한다. 조용한 실패라 더 나쁘다.
+   * 그래서 전제를 주석으로 두지 않고 **아래 `★ 중첩 블록이 없다` 가 검사한다.**
+   */
+  function blockOf(src: string, sel: string): string | null {
+    const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = new RegExp(`${esc}\\s*\\{([^}]*)\\}`).exec(src);
+    return m ? m[1]! : null;
+  }
+
+  /** 블록을 `{속성: 정규화된 값}` 으로 쪼갠다 */
+  function declsOf(block: string): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const d of block.split(';')) {
+      const i = d.indexOf(':');
+      if (i < 0) continue;
+      out.set(d.slice(0, i).trim(), norm(d.slice(i + 1)));
+    }
+    return out;
+  }
+
+  it('🔴 원본 블록의 **모든 선언**이 생성 CSS 와 같다 — 빠뜨릴 자리를 없앤다', async () => {
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
+    const diffs: string[] = [];
+    for (const [orig, made] of BLOCKS) {
+      const ob = blockOf(player, orig);
+      const wb = blockOf(css, made);
+      // ★ 못 뽑으면 그 블록의 대조가 통째로 공허해진다 — 조용히 건너뛰지 않는다.
+      if (ob === null) { diffs.push(`★ 원본에서 \`${orig}\` 블록을 못 뽑았다`); continue; }
+      if (wb === null) { diffs.push(`★ 생성 CSS 에서 \`${made}\` 블록을 못 뽑았다`); continue; }
+      const od = declsOf(ob);
+      const wd = declsOf(wb);
+      const skip = SKIP[made] ?? {};
+      for (const [prop, want] of od) {
+        if (prop in skip) continue;
+        const got = wd.get(prop);
+        if (got === undefined) diffs.push(`${made}: \`${prop}\` 이 없다 (원본: ${want})`);
+        else if (got !== want) diffs.push(`${made}: \`${prop}\` 이 다르다\n    원본: ${want}\n    생성: ${got}`);
+      }
+      for (const prop of wd.keys()) {
+        if (prop in skip || od.has(prop)) continue;
+        diffs.push(`${made}: 원본에 없는 \`${prop}\` 이 있다 (${wd.get(prop)})`);
+      }
+    }
+    expect(diffs, '🔴 갤러리 원본과 갈라졌다 — 한쪽만 고쳤나?').toEqual([]);
+  });
+
+  it('★ 중첩 블록이 없다 — `blockOf` 의 전제이고, 깨지면 **거짓 PASS** 다', async () => {
+    // 검수관 권고 P3. `[^}]*` 로 뽑은 내용에 `{` 가 남아 있으면 그 블록에 중첩이 있고,
+    // 그러면 **앞부분만 잘려 뽑힌 채** 대조가 돈다. 값이 우연히 일치하면 통과하므로
+    // 전량 대조가 조용히 반쪽이 된다 — 전제를 검사로 못 박는다.
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
+    const nested: string[] = [];
+    for (const [orig, made] of BLOCKS) {
+      if (blockOf(player, orig)?.includes('{')) nested.push(`원본 ${orig}`);
+      if (blockOf(css, made)?.includes('{')) nested.push(`생성 ${made}`);
+    }
+    expect(nested, '★ 중첩이 생겼다 — `blockOf` 를 중첩까지 보게 고쳐라(대조를 지우지 말 것)')
+      .toEqual([]);
+  });
+  // 뮤테이션 실측(2026-08-24) — **이 검사가 보는 것과 안 보는 것을 갈랐다**:
+  //   `&:hover{…}` 를 블록 **안**에 주입   → 2 failed ✅ (이 검사가 정확히 지목)
+  //   `@media all{…}` 로 블록 **밖**을 감쌈 → 0 failed — **이것이 정답이다.**
+  // 바깥 중첩은 `blockOf` 가 여전히 **올바른 블록**을 뽑으므로 대조가 정상적으로 돈다.
+  // 위험한 것은 안쪽 중첩뿐이고 이 검사는 정확히 그것만 본다 — 첫 뮤테이션은 내가
+  // 케이스를 잘못 골랐던 것이지 검출력이 없던 것이 아니다.
+
+
+  it('★ 표본이 비지 않았다 — 블록을 하나도 못 뽑으면 위 단언이 공허하다', async () => {
+    // 이 저장소는 **빈 표본이 단언을 통과시킨** 사고를 겪었다(옛 `minY` 임계값).
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
+    for (const [orig, made] of BLOCKS) {
+      expect(blockOf(player, orig), `★ 원본 \`${orig}\` 없음`).not.toBeNull();
+      expect(blockOf(css, made), `★ 생성 \`${made}\` 없음`).not.toBeNull();
+      expect(declsOf(blockOf(player, orig)!).size, `★ \`${orig}\` 선언 0개`).toBeGreaterThan(0);
+    }
+  });
+
+  it('★ 제외 목록이 죽지 않았다 — 죽은 제외는 구멍이다', async () => {
+    // 제외해 둔 속성이 실제로는 어느 쪽에도 없다면, 그 항목은 **아무것도 안 가리면서**
+    // "여기는 달라도 된다" 는 허가만 떠 있게 된다. `ADAPTERS` 목록이 같은 방어를 한다.
+    const [player, css] = await Promise.all([readPlayerJs(), world2Css()]);
+    const idle: string[] = [];
+    for (const [orig, made] of BLOCKS) {
+      const skip = SKIP[made];
+      if (!skip) continue;
+      const od = declsOf(blockOf(player, orig)!);
+      const wd = declsOf(blockOf(css, made)!);
+      for (const prop of Object.keys(skip)) {
+        const inBoth = od.has(prop) && wd.has(prop);
+        const differs = inBoth && od.get(prop) !== wd.get(prop);
+        // 제외가 값을 하려면 **실제로 어긋나 있거나 한쪽에만 있어야** 한다.
+        if (!differs && od.has(prop) === wd.has(prop)) idle.push(`${made}.${prop}`);
+      }
+    }
+    expect(idle, '★ 이 제외 항목들은 아무 차이도 안 가린다 — 목록에서 빼라').toEqual([]);
+  });
+
+  it('🔴 후보 노브 잔재가 없다 — 감독 문언을 잘못 읽고 만든 것들이다', async () => {
+    // ⚠ 이 검사는 직전 회차에 있다가 GS-J8 재작성에서 **사라졌다**(검수관 권고 P1).
+    // `?stick=jelly|outline|tint|plate` 는 *"조이스틱에 통일감이 없잖아"* 를 world2 내부
+    // UI 로 잘못 읽고 새로 만든 후보들이고, 감독이 가리킨 것은 **갤러리의 조이스틱**이었다.
+    // 되살리지 않으면 그것들이 다시 새어 들어와도 아무도 모른다.
+    const [html, css] = await Promise.all([readWorld2(), world2Css()]);
+    for (const look of ['jelly', 'outline', 'tint', 'plate']) {
+      expect(html, `★ 후보 \`${look}\` 잔재가 HTML 에 있다`).not.toContain(`data-look="${look}"`);
+      expect(css, `★ 후보 \`${look}\` 잔재가 생성 CSS 에 있다`).not.toContain(look);
+    }
+    expect(html, '★ `?stick=` 노브가 남아 있다').not.toMatch(/stick=/);
+  });
+});
+
+// ── 🔴 GS-J9 — 두 단계 판정 (감독 「움직이면 초록 / 달리면 더 진하게」) ────────
+//
+// `leanState` 는 순수 함수라 **직접 돌린다.** 위 GS-J8 은 「CSS 에 규칙이 있는가」를 보고
+// 이것은 「어느 기울기에서 어느 단계가 나오는가」를 본다 — 규칙이 있어도 판정이 늘 `0`
+// 이면 색은 영영 안 변한다. 「계산된 값이 실제로 소비되는가」의 판정 쪽 절반이고,
+// 집행 쪽은 맨 아래 배선 케이스가 본다.
+describe('🔴 GS-J9 — 미는 정도가 단계로 갈린다', () => {
+  it('★ 손을 얹기만 하면 중립이다 — 데드존 안은 색이 안 변한다', async () => {
+    const { leanState, LEAN_NONE } = await import('../frontend/js/shared/joystick-look.js');
+    expect(leanState(0)).toBe(LEAN_NONE);
+    expect(leanState(0.001)).toBe(LEAN_NONE);
+  });
+
+  it('🔴 조금만 밀어도 「움직임」이 된다 — 감독 문언의 1단계', async () => {
+    const { leanState, LEAN_MOVING } = await import('../frontend/js/shared/joystick-look.js');
+    expect(leanState(0.1)).toBe(LEAN_MOVING);
+    expect(leanState(0.5)).toBe(LEAN_MOVING);
+    expect(leanState(0.84)).toBe(LEAN_MOVING);
+  });
+
+  it('🔴 끝까지 밀면 「질주」다 — 임계는 원본과 같은 0.85', async () => {
+    const { leanState, LEAN_RUNNING, LEAN_RUN } = await import('../frontend/js/shared/joystick-look.js');
+    expect(LEAN_RUN, '★ 임계가 원본(0.85)과 다르다').toBe(0.85);
+    expect(leanState(0.85)).toBe(LEAN_RUNNING);
+    expect(leanState(1)).toBe(LEAN_RUNNING);
+  });
+
+  it('★ 이상한 값에도 안 터진다 — 중립으로 떨어진다', async () => {
+    const { leanState, LEAN_NONE } = await import('../frontend/js/shared/joystick-look.js');
+    expect(leanState(NaN)).toBe(LEAN_NONE);
+    expect(leanState(-1)).toBe(LEAN_NONE);
+  });
+
+  it('🔴 배선 — 스타일이 실제로 주입되고 미는 만큼 단계가 새겨진다', () => {
+    // 판정과 CSS 가 둘 다 참인데 아무도 주입·기록 안 하면 룩이 영영 안 나온다.
+    document.getElementById('w2-joy-style')?.remove();
+    const m = mount();
+    expect(document.getElementById('w2-joy-style'), '★ 스타일이 안 붙었다 — 룩이 안 나온다')
+      .not.toBeNull();
+    // 원 중심에서 조금 민다 → 「움직임」
+    m.hit.dispatchEvent(pointerEvent('pointerdown', 1, 150, 550));
+    m.hit.dispatchEvent(pointerEvent('pointermove', 1, 170, 550));
+    expect(m.base.getAttribute('data-lean'), '★ 조금 밀었는데 단계가 안 새겨졌다').toBe('1');
+    // 끝까지 민다 → 「질주」
+    m.hit.dispatchEvent(pointerEvent('pointermove', 1, 250, 550));
+    expect(m.base.getAttribute('data-lean'), '★ 끝까지 밀었는데 질주가 안 된다').toBe('2');
+    // 손을 뗀다 → 중립
+    m.hit.dispatchEvent(pointerEvent('pointerup', 1, 250, 550));
+    expect(m.base.getAttribute('data-lean'), '★ 손을 뗐는데 색이 남았다').toBe('0');
   });
 });
