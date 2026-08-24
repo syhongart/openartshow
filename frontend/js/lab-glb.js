@@ -16,6 +16,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/GLTFLoader.js';
 import { probeGpu } from './main-gpu.js';
+import {
+  joystickCss, injectJoystickStyle, leanState, JOY_RADIUS, LEAN_MOVING, LEAN_RUNNING,
+} from './shared/joystick-look.js';
 
 // ── 공간 상수(부팀장 실사 결과 기준) ──────────────────────────────────────
 const EYE_HEIGHT = 1.6;
@@ -25,7 +28,8 @@ const ACCEL = 10.0;       // 가감속 감쇠 계수(1/s) — player.js와 동�
 const MOUSE_SENS = 0.0022;
 const TOUCH_LOOK_SENS = 0.0058;
 const PITCH_LIMIT = THREE.MathUtils.degToRad(89);
-const JOYSTICK_RADIUS = 60;
+// 값은 `shared/joystick-look.js` 한 곳이다 — 반경은 룩이자 감도다.
+const JOYSTICK_RADIUS = JOY_RADIUS;
 const PLAYER_RADIUS = 0.32; // 레이캐스트 충돌 여유(벽면에 카메라가 파고들지 않도록)
 
 // 층 정의 — 계단 지오메트리가 없어(GLB 노드 덤프 확인) 물리 승강 대신 순간이동 버튼(요건 4).
@@ -360,34 +364,26 @@ document.addEventListener('keyup', (e) => setKey(e.code, false));
 // (stale 터치 방어 pruneStale 포함 — 메인스레드 프리즈로 touchend가 유실돼도 조이스틱이
 // 눌린 채로 영구히 남지 않게 매 터치 이벤트마다 e.touches 기준으로 청소한다.)
 if (isTouch) {
-  if (!document.getElementById('lgb-joy-style')) {
-    const st = document.createElement('style');
-    st.id = 'lgb-joy-style';
-    st.textContent = `
-.lgb-joy-base { position: fixed; width: 112px; height: 112px; margin: -56px 0 0 -56px;
-  border-radius: 50%; border: 1.5px solid rgba(253,251,245,0.38);
-  background: radial-gradient(circle, rgba(23,20,15,0.10) 55%, rgba(23,20,15,0.34) 100%);
-  box-shadow: 0 2px 12px rgba(10,8,4,0.30), inset 0 0 0 1px rgba(23,20,15,0.20);
-  pointer-events: none; z-index: 40; opacity: 0; transform: scale(0.78);
-  transition: opacity 0.12s ease, transform 0.16s cubic-bezier(0.34,1.56,0.64,1); }
-.lgb-joy-base.lgb-live { opacity: 1; transform: scale(1); }
-.lgb-joy-base::after { content: ''; position: absolute; inset: 5px; border-radius: 50%;
-  border: 1px dashed rgba(253,251,245,0.22);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease; }
-.lgb-joy-base.lgb-run::after { border-color: rgba(114,230,225,0.9); border-style: solid;
-  box-shadow: 0 0 10px rgba(114,230,225,0.5), inset 0 0 8px rgba(114,230,225,0.25); }
-.lgb-joy-knob { position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px;
-  border-radius: 50%; background: radial-gradient(circle at 32% 28%, #fffdf8, #e8e2d2);
-  border: 1px solid rgba(23,20,15,0.28);
-  box-shadow: 0 3px 8px rgba(10,8,4,0.40), inset 0 -2px 4px rgba(23,20,15,0.14);
-  pointer-events: none; z-index: 41; opacity: 0; transition: opacity 0.12s ease; }
-.lgb-joy-knob.lgb-live { opacity: 1; }
-.lgb-joy-knob.lgb-run { background: radial-gradient(circle at 32% 28%, #bdeeec, #72E6E1);
-  border-color: rgba(20,80,78,0.55);
-  box-shadow: 0 0 0 1px rgba(114,230,225,0.9), 0 0 14px rgba(114,230,225,0.55),
-    inset 0 -2px 4px rgba(20,80,78,0.30); }`;
-    document.head.appendChild(st);
-  }
+  // 🔴 **값은 여기 없다** (감독 지시 2026-08-24 *"전부 같게 해라"*).
+  //
+  // ⚠ **이 파일은 저장소의 다섯 번째 조이스틱이었다.** 앞 네 곳을 세면서 나는 이것을
+  // 놓쳤다 — 클래스 이름이 `lgb-joy-*` 라 `lu-joy` 로 세던 집계에도, `#joy` 로 세던
+  // 집계에도 안 걸렸다. **찾아낸 것은 사람이 아니라 검사다**
+  // (`tests/joystick-single-source.test.ts` 가 이름이 아니라 **값**을 훑는다).
+  //
+  // 여기 있던 복사본은 질주 색만 청록(`#72E6E1`)으로 바뀌어 있었고 십자 눈금(`::before`)
+  // 은 아예 빠져 있었다. 그 차이가 **어디에도 기록돼 있지 않다** — 의도한 구분인지
+  // 복사하다 흘린 것인지 알 수 없다. 감독 지시가 「전부 같게」이므로 통일한다.
+  injectJoystickStyle(document, 'lgb-joy-style', joystickCss({
+    base: '.lgb-joy-base',
+    knob: '.lgb-joy-knob',
+    on: '.lgb-joy-base.lgb-live',
+    knobOn: '.lgb-joy-knob.lgb-live',
+    lean: (v) => `.lgb-joy-base.lgb-lean${v}`,
+    leanKnob: (v) => `.lgb-joy-knob.lgb-lean${v}`,
+    knobCenter: 'margin',
+    fixed: true,
+  }));
   const joyBase = document.createElement('div'); joyBase.className = 'lgb-joy-base';
   const joyKnob = document.createElement('div'); joyKnob.className = 'lgb-joy-knob';
   document.body.appendChild(joyBase); document.body.appendChild(joyKnob);
@@ -395,8 +391,8 @@ if (isTouch) {
 
   function releaseMove() {
     moveTouch = null; wasRunning = false;
-    joyBase.classList.remove('lgb-live', 'lgb-run');
-    joyKnob.classList.remove('lgb-live', 'lgb-run');
+    joyBase.classList.remove('lgb-live', 'lgb-lean1', 'lgb-lean2');
+    joyKnob.classList.remove('lgb-live', 'lgb-lean1', 'lgb-lean2');
   }
   // [stale 터치 방어] 메인스레드가 길게 블록되면(로딩 스파이크 등) 그 사이 손을 뗀 touchend가
   // 유실돼 moveTouch/lookTouch가 영구히 남을 수 있다 — 매 터치 이벤트마다 지금 실제로 화면에
@@ -441,9 +437,13 @@ if (isTouch) {
         joyKnob.style.left = moveTouch.startX + dx * scale + 'px';
         joyKnob.style.top = moveTouch.startY + dy * scale + 'px';
         const mag = Math.hypot(moveTouch.ux, moveTouch.uz);
-        const running = mag > 0.85;
-        joyBase.classList.toggle('lgb-run', running);
-        joyKnob.classList.toggle('lgb-run', running);
+        // 🔴 두 단계 (감독 지시 2026-08-24). 임계는 모듈의 `leanState` 한 곳이다.
+        const lean = leanState(mag);
+        const running = lean === LEAN_RUNNING;
+        for (const el of [joyBase, joyKnob]) {
+          el.classList.toggle('lgb-lean1', lean === LEAN_MOVING);
+          el.classList.toggle('lgb-lean2', running);
+        }
         if (running && !wasRunning && navigator.vibrate) navigator.vibrate(10);
         wasRunning = running;
       } else if (lookTouch && t.identifier === lookTouch.id) {

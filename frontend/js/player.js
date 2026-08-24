@@ -5,6 +5,9 @@
 
 import * as THREE from 'three';
 import { ROOM, EYE_HEIGHT, BUILDING } from './config.js';
+// ⚠ 보호파일이 바깥을 참조하는 새 지점이다(감독 지시 2026-08-24 «전부 같게 해라»).
+// 대상은 **의존 0 leaf** 라 새 의존 사슬이 생기지 않는다(게이트가 확인한다).
+import { joystickCss, injectJoystickStyle, leanState, JOY_RADIUS, LEAN_MOVING, LEAN_RUNNING } from './shared/joystick-look.js';
 
 const WALK_SPEED = 2.5;   // m/s
 const RUN_SPEED = 4.5;    // m/s (Shift)
@@ -14,7 +17,10 @@ const TOUCH_LOOK_SENS = 0.0058; // rad / px — 실기기 피드백으로 상향
 const PITCH_LIMIT = THREE.MathUtils.degToRad(89);
 const BOB_AMPLITUDE = 0.03;     // 헤드밥 진폭 (m)
 const BOB_FREQ_WALK = 7.5;      // 걷기 헤드밥 각속도 (rad/s)
-const JOYSTICK_RADIUS = 60;     // 가상 조이스틱 최대 반경 (px)
+// ⚠ 값을 여기 적지 않는다 — `shared/joystick-look.js` 가 SSOT 다. 이 상수는 **화면에
+// 보이는 반경**(링을 넘어가는 정도)과 **감도**를 동시에 정하므로, 룩만 옮기고 이 값을
+// 남겨 두면 갤러리와 다른 세계가 같은 모양에 다른 감도가 된다.
+const JOYSTICK_RADIUS = JOY_RADIUS;
 
 // --- 수직 이동 해석 상수 ---
 const WALL_MARGIN = 0.45;   // 건물 풋프린트 벽 안쪽 여유(카메라가 벽면에 파고들지 않도록)
@@ -130,40 +136,21 @@ export class PlayerController {
     // 터치한 자리에 링(베이스)+노브가 나타나는 플로팅 방식. pointer-events:none이라
     // 입력 처리에는 전혀 관여하지 않는 순수 시각 피드백이다.
     // 디자인: Gilded Frame — 조준선 틱 링 + 달리기 임계 링 점등 + 골드 노브.
-    if (!document.getElementById('lu-joy-style')) {
-      const st = document.createElement('style');
-      st.id = 'lu-joy-style';
-      st.textContent = `
-.lu-joy-base { position: fixed; width: 112px; height: 112px; margin: -56px 0 0 -56px;
-  border-radius: 50%; border: 1.5px solid rgba(253,251,245,0.38);
-  background: radial-gradient(circle, rgba(23,20,15,0.10) 55%, rgba(23,20,15,0.34) 100%);
-  box-shadow: 0 2px 12px rgba(10,8,4,0.30), inset 0 0 0 1px rgba(23,20,15,0.20);
-  pointer-events: none; z-index: 40; opacity: 0; transform: scale(0.78);
-  transition: opacity 0.12s ease, transform 0.16s cubic-bezier(0.34,1.56,0.64,1); }
-.lu-joy-base.lu-live { opacity: 1; transform: scale(1); }
-.lu-joy-base::before { content: ''; position: absolute; inset: -1.5px; border-radius: 50%;
-  background:
-    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 50% 0 / 2px 8px no-repeat,
-    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 50% 100% / 2px 8px no-repeat,
-    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 0 50% / 8px 2px no-repeat,
-    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 100% 50% / 8px 2px no-repeat; }
-.lu-joy-base::after { content: ''; position: absolute; inset: 5px; border-radius: 50%;
-  border: 1px dashed rgba(253,251,245,0.22);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease; }
-.lu-joy-base.lu-run::after { border-color: rgba(95,158,125,0.9); border-style: solid;
-  box-shadow: 0 0 10px rgba(95,158,125,0.5), inset 0 0 8px rgba(95,158,125,0.25); }
-.lu-joy-knob { position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px;
-  border-radius: 50%; background: radial-gradient(circle at 32% 28%, #fffdf8, #e8e2d2);
-  border: 1px solid rgba(23,20,15,0.28);
-  box-shadow: 0 3px 8px rgba(10,8,4,0.40), inset 0 -2px 4px rgba(23,20,15,0.14);
-  pointer-events: none; z-index: 41; opacity: 0; transition: opacity 0.12s ease; }
-.lu-joy-knob.lu-live { opacity: 1; }
-.lu-joy-knob.lu-run { background: radial-gradient(circle at 32% 28%, #b8e4c9, #5f9e7d);
-  border-color: rgba(32,74,52,0.55);
-  box-shadow: 0 0 0 1px rgba(95,158,125,0.9), 0 0 14px rgba(95,158,125,0.55),
-    inset 0 -2px 4px rgba(32,74,52,0.30); }`;
-      document.head.appendChild(st);
-    }
+    // 🔴 **값은 여기 없다** (감독 지시 2026-08-24 «전부 같게 해라»). 이 자리에 있던 CSS
+    // 33줄이 저장소의 **원본**이었고 네 곳이 그것을 복사해 갔다 — 한쪽만 고쳐도 아무도
+    // 모르는 그 형태다. ⚠ **셀렉터와 DOM 은 그대로 둔다**: 라이브 미술관을 서비스하는
+    // 파일이라, 룩을 옮기는 회차에 구조까지 바꾸면 화면이 깨졌을 때 원인이 안 갈린다.
+    // 손잡이가 링의 **형제**라는 사실만 `knobCenter`·`knobOn` 두 옵션으로 알려 준다.
+    injectJoystickStyle(document, 'lu-joy-style', joystickCss({
+      base: '.lu-joy-base',
+      knob: '.lu-joy-knob',
+      on: '.lu-joy-base.lu-live',
+      knobOn: '.lu-joy-knob.lu-live',
+      lean: (v) => `.lu-joy-base.lu-lean${v}`,
+      leanKnob: (v) => `.lu-joy-knob.lu-lean${v}`,
+      knobCenter: 'margin',
+      fixed: true,
+    }));
     this._joyBase = document.createElement('div');
     this._joyBase.className = 'lu-joy-base';
     this._joyKnob = document.createElement('div');
@@ -252,10 +239,16 @@ export class PlayerController {
           this.moveTouch.dy = (dy * scale) / JOYSTICK_RADIUS;
           this._joyKnob.style.left = this.moveTouch.startX + dx * scale + 'px';
           this._joyKnob.style.top = this.moveTouch.startY + dy * scale + 'px';
-          // 끝까지 밀면 달리기 — 임계 링 점등 + 노브 골드화로 "선을 넘었다"를 보여준다
-          const running = Math.hypot(this.moveTouch.dx, this.moveTouch.dy) > 0.85;
-          this._joyBase.classList.toggle('lu-run', running);
-          this._joyKnob.classList.toggle('lu-run', running);
+          // 🔴 **두 단계다** (감독 2026-08-24 «움직이면 초록 / 달리면 더 진하게»). 이 파일은
+          // 오래 **한 단계**였다 — `> 0.85` 하나뿐이라 그 아래는 색이 안 변했다. 임계는
+          // 모듈의 `leanState` 한 곳이고 여기서는 결과를 DOM 에 새기기만 한다.
+          const lean = leanState(Math.hypot(this.moveTouch.dx, this.moveTouch.dy));
+          for (const el of [this._joyBase, this._joyKnob]) {
+            el.classList.toggle('lu-lean1', lean === LEAN_MOVING);
+            el.classList.toggle('lu-lean2', lean === LEAN_RUNNING);
+          }
+          // 진동은 **질주 진입에만** 준다 — 조금 미는 것마다 울리면 소음이 된다.
+          const running = lean === LEAN_RUNNING;
           if (running && !this._wasRunning && navigator.vibrate) navigator.vibrate(10);
           this._wasRunning = running;
         } else if (this.lookTouch && touch.identifier === this.lookTouch.id) {
@@ -279,8 +272,8 @@ export class PlayerController {
         if (this.moveTouch && touch.identifier === this.moveTouch.id) {
           this.moveTouch = null;
           this._wasRunning = false;
-          this._joyBase.classList.remove('lu-live', 'lu-run');
-          this._joyKnob.classList.remove('lu-live', 'lu-run');
+          this._joyBase.classList.remove('lu-live', 'lu-lean1', 'lu-lean2');
+          this._joyKnob.classList.remove('lu-live', 'lu-lean1', 'lu-lean2');
         } else if (this.lookTouch && touch.identifier === this.lookTouch.id) {
           this.lookTouch = null;
         }

@@ -7,6 +7,9 @@ import { createWorld } from './world.js';
 import { randomChibiChar } from './chibi.js';
 // [神 모드] 하늘 화이트리스트·자동 시간대 — URL 파라미터 살균(SKY_TIMES/SKY_WEATHERS 밖 값 무시)에 사용.
 import { SKY_TIMES, SKY_WEATHERS, autoTimeOfDay } from './sky.js';
+import {
+  joystickCss, injectJoystickStyle, leanState, JOY_RADIUS, LEAN_MOVING, LEAN_RUNNING,
+} from './shared/joystick-look.js';
 
 // ── 월드 매니페스트 로드 → 절차생성 100방 구성 (behind-flag 1단계) ──
 // 대지는 world-gen이 시드로 절차생성(결정론=모든 방문자 동일 세계) — 건물/강/오프셋. 입구는 남쪽 문.
@@ -217,46 +220,31 @@ V.on('chat', ({ name, text }) => {
 if (isTouch) {
   document.body.classList.add('is-touch');
 
-  if (!document.getElementById('lu-joy-style')) {
-    const st = document.createElement('style');
-    st.id = 'lu-joy-style';
-    st.textContent = `
-.lu-joy-base { position: fixed; width: 112px; height: 112px; margin: -56px 0 0 -56px;
-  border-radius: 50%; border: 1.5px solid rgba(253,251,245,0.38);
-  background: radial-gradient(circle, rgba(23,20,15,0.10) 55%, rgba(23,20,15,0.34) 100%);
-  box-shadow: 0 2px 12px rgba(10,8,4,0.30), inset 0 0 0 1px rgba(23,20,15,0.20);
-  pointer-events: none; z-index: 40; opacity: 0; transform: scale(0.78);
-  transition: opacity 0.12s ease, transform 0.16s cubic-bezier(0.34,1.56,0.64,1); }
-.lu-joy-base.lu-live { opacity: 1; transform: scale(1); }
-.lu-joy-base::before { content: ''; position: absolute; inset: -1.5px; border-radius: 50%;
-  background:
-    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 50% 0 / 2px 8px no-repeat,
-    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 50% 100% / 2px 8px no-repeat,
-    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 0 50% / 8px 2px no-repeat,
-    linear-gradient(rgba(253,251,245,0.5), rgba(253,251,245,0.5)) 100% 50% / 8px 2px no-repeat; }
-.lu-joy-base::after { content: ''; position: absolute; inset: 5px; border-radius: 50%;
-  border: 1px dashed rgba(253,251,245,0.22);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease; }
-.lu-joy-base.lu-run::after { border-color: rgba(95,158,125,0.9); border-style: solid;
-  box-shadow: 0 0 10px rgba(95,158,125,0.5), inset 0 0 8px rgba(95,158,125,0.25); }
-.lu-joy-knob { position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px;
-  border-radius: 50%; background: radial-gradient(circle at 32% 28%, #fffdf8, #e8e2d2);
-  border: 1px solid rgba(23,20,15,0.28);
-  box-shadow: 0 3px 8px rgba(10,8,4,0.40), inset 0 -2px 4px rgba(23,20,15,0.14);
-  pointer-events: none; z-index: 41; opacity: 0; transition: opacity 0.12s ease; }
-.lu-joy-knob.lu-live { opacity: 1; }
-.lu-joy-knob.lu-run { background: radial-gradient(circle at 32% 28%, #b8e4c9, #5f9e7d);
-  border-color: rgba(32,74,52,0.55);
-  box-shadow: 0 0 0 1px rgba(95,158,125,0.9), 0 0 14px rgba(95,158,125,0.55),
-    inset 0 -2px 4px rgba(32,74,52,0.30); }`;
-    document.head.appendChild(st);
-  }
+  // 🔴 **값은 여기 없다** (감독 지시 2026-08-24 *"전부 같게 해라"*).
+  //
+  // 이 자리에는 `player.js` 에서 **복사해 온** CSS 30줄이 있었다. 위 헤더가 스스로
+  // *"player.js는 수정하지 않는다 … 클래스명(lu-joy-*)은 player.js와 같은 이름을 재사용"*
+  // 이라 적고 있었는데, 그 전제가 바뀌었다 — 감독 지시로 `player.js` 도 같은 모듈을 쓴다.
+  // **셀렉터가 같으므로 두 페이지가 같은 CSS 를 받는다.**
+  injectJoystickStyle(document, 'lu-joy-style', joystickCss({
+    base: '.lu-joy-base',
+    knob: '.lu-joy-knob',
+    on: '.lu-joy-base.lu-live',
+    knobOn: '.lu-joy-knob.lu-live',
+    lean: (v) => `.lu-joy-base.lu-lean${v}`,
+    leanKnob: (v) => `.lu-joy-knob.lu-lean${v}`,
+    knobCenter: 'margin',
+    fixed: true,
+  }));
   const joyBase = document.createElement('div'); joyBase.className = 'lu-joy-base';
   const joyKnob = document.createElement('div'); joyKnob.className = 'lu-joy-knob';
   document.body.appendChild(joyBase);
   document.body.appendChild(joyKnob);
 
-  const JOYSTICK_RADIUS = 60; // 갤러리(player.js JOYSTICK_RADIUS)와 동일 반경(px)
+  // ⚠ 값을 여기 적지 않는다 — `shared/joystick-look.js` 가 SSOT 다. 이 줄은 오래
+  // *"갤러리와 동일 반경"* 이라는 **주석으로** 동일성을 보증했는데, 주석은 한쪽이 바뀌어도
+  // 조용하다. 이제 같은 값을 **가져다 쓰므로** 갈라질 자리가 없다.
+  const JOYSTICK_RADIUS = JOY_RADIUS;
   let moveTouch = null; // { id, startX, startY }
   let lookTouch = null; // { id, lastX, lastY }
   let wasRunning = false;
@@ -269,8 +257,8 @@ if (isTouch) {
   // 진실로 삼아, 매 터치 이벤트마다 죽은 id를 청소한다.
   function releaseMove() {
     moveTouch = null; wasRunning = false;
-    joyBase.classList.remove('lu-live', 'lu-run');
-    joyKnob.classList.remove('lu-live', 'lu-run');
+    joyBase.classList.remove('lu-live', 'lu-lean1', 'lu-lean2');
+    joyKnob.classList.remove('lu-live', 'lu-lean1', 'lu-lean2');
     V.setTouchMove(0, 0);
   }
   function pruneStale(e) {
@@ -311,9 +299,18 @@ if (isTouch) {
         joyKnob.style.left = moveTouch.startX + dx * scale + 'px';
         joyKnob.style.top = moveTouch.startY + dy * scale + 'px';
         const mag = Math.hypot(ux, uy);
-        const running = mag > 0.85; // 갤러리 동일 임계 — 시각/햅틱 전용(위 주석: world.js 달리기 입력 경로 없음)
-        joyBase.classList.toggle('lu-run', running);
-        joyKnob.classList.toggle('lu-run', running);
+        // 🔴 **두 단계다** (감독 지시 2026-08-24). 임계는 모듈의 `leanState` 한 곳이다.
+        // ⚠ 여기는 여전히 **시각/햅틱 전용**이다 — 위 헤더가 적은 대로 `world.js` 에는
+        // 아날로그 달리기 입력 경로가 없다(`walk()` 가 이동벡터를 단위벡터로 정규화한다).
+        // 즉 갤러리·world2 와 달리 이 페이지에서는 **더 밀어도 실제로 빨라지지 않는다.**
+        // 색이 없는 상태를 흉내 내는 셈이지만, 감독 지시가 「전부 같게」이므로 룩을 맞춘다.
+        // 이 어긋남을 없애려면 `world.js` 를 고쳐야 하고 그것은 별개 회차다.
+        const lean = leanState(mag);
+        const running = lean === LEAN_RUNNING;
+        for (const el of [joyBase, joyKnob]) {
+          el.classList.toggle('lu-lean1', lean === LEAN_MOVING);
+          el.classList.toggle('lu-lean2', running);
+        }
         if (running && !wasRunning && navigator.vibrate) navigator.vibrate(10);
         wasRunning = running;
         if (mag < 0.14) { ux = 0; uy = 0; } // 데드존(갤러리 동일 0.14) — 엄지 미세 떨림 무시
