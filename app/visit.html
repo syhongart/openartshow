@@ -74,8 +74,18 @@
     background:rgba(139,114,255,.25);border:1px solid rgba(139,114,255,.45);
     border-radius:6px;padding:5px 11px;font-size:11px;font-weight:600;
     color:#8B72FF;letter-spacing:.02em;pointer-events:none}
+
+  /* 들어올 때 어둠에서 밝아진다. 나가는 쪽(world2 진입 안내)이 어둠으로 덮고 넘기므로
+     이 페이드인이 그 뒤를 받아 한 번의 디졸브가 된다 — 감독 지적 2026-08-24
+     «팍 들어가는데.. 디졸브로 보여주면 어떨까?».
+     각자 자기 쪽만 맡는다: 페이지를 넘어 상태를 옮기지 않으므로 직접 열었을 때도
+     짧은 암전에서 시작하는데, 그것은 로딩을 덮어 주는 쪽이라 손해가 아니다. */
+  @keyframes venueIn { from { opacity: 1 } to { opacity: 0 } }
+  #venue-veil{ position:fixed; inset:0; z-index:9998; background:#000; pointer-events:none;
+    animation: venueIn .55s ease-out forwards; }
+  @media (prefers-reduced-motion: reduce){ #venue-veil{ display:none } }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/visit-uyEy-yzj.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/visit-BbdouIaz.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-BVCe5QSU.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/BufferGeometryUtils-C6v7s0Vg.js">
@@ -86,6 +96,7 @@
 </head>
 <body>
 <div id="stage"><canvas id="c"></canvas></div>
+<div id="venue-veil" aria-hidden="true"></div>
 
 <div class="v2-badge">✨ v2</div>
 
