@@ -185,88 +185,65 @@
      세대는 375px 이상이라 줄바꿈이 안 난다. **이 값을 다시 만질 때 이 계산도 같이 본다.** */
   body:has(#w2-aim[data-on="1"]) #w2-stick-zone{ bottom:140px;height:min(26vh, 200px) }
   @media (pointer:coarse){ #w2-stick-zone{display:block} }
-  /* ── 룩 ─────────────────────────────────────────────
-     크기·자리는 위에서 끝났고, 여기부터는 **색·질감·테두리만** 다룬다.
-     후보 넷을 `?stick=` 으로 열어 둔다 — 목록·축·시작값 근거는
-     `js/world2/ui/stick-look.ts` **한 곳**이다(여기에 다시 적지 않는다).
-     속성 없는 규칙이 시작값(`tint`) 이고 나머지 셋만 `[data-look=…]` 로 덮는다
-     — 스크립트가 안 돌아도 조이스틱은 시작값 룩으로 보인다.
+  /* ── 룩 — **오픈월드(world1)에서 그대로 가져왔다** ─────────────────────
+     감독 지시 2026-08-23: *"오픈월드에서 사용하는 조이스틱 방식과 동일하게 해.
+     터치해야 조이스틱 나오고. 형태 크기 똑같이. **새로 만들라는게 아니라. 가지고
+     와야지.**"*
 
-     하드코딩된 `139,114,255` 는 `--violet`, `114,230,225` 는 `--cyan` 의 채널값이다.
-     `rgba()` 에 알파를 주려면 채널이 필요해서 토큰을 그대로 못 쓴다 — 그래서
-     **검사로 묶어** 둔다(`GS-J7` 이 `:root` 의 두 토큰과 이 채널을 대조한다).
-     이 저장소가 색 미러링으로 이미 세 번 데였다. */
+     ⚠ **직전 회차에 내가 감독 문언을 잘못 읽었다.** 앞선 신고 *"조이스틱에 통일감이
+     없잖아. 다른것과.."* 의 「다른것」을 **world2 안의 다른 UI** 로 읽고 후보 넷
+     (`?stick=jelly|outline|tint|plate`)을 **새로 만들었다.** 감독이 가리킨 것은
+     **world1 의 조이스틱**이었다 — 「통일」의 상대가 같은 페이지가 아니라 **다른
+     페이지**였다. 그래서 후보 넷을 전부 걷어내고 원본을 이식한다.
+
+     원본: `frontend/js/player.js` 의 `lu-joy-style`(디자인 이름 «Gilded Frame»).
+     그 파일은 **라이브 런타임 보호파일**이라 여기서 값을 복사한다 —
+     ⚠ **그러므로 이것은 값 미러링이고, 아래 `GS-J8` 이 두 곳을 대조해 묶는다.**
+     보호파일에서 CSS 를 공유 모듈로 빼는 것이 근본 처방이지만 그것은 보호파일 수정이라
+     팀장 판정 사안이다(백로그 `G-UI3`).
+
+     가져온 것: 링의 크림 테두리·어두운 radial·이중 그림자 · 십자 눈금(`::before`) ·
+     안쪽 점선 링(`::after`) · 진주빛 노브 · 등장 스프링(`scale .78 → 1`).
+     **못 가져온 것**: `.lu-run`(끝까지 밀면 달리기) — world2 에 달리기 개념이 없다
+     (`run|sprint` 매치 0). 없는 상태를 흉내 내면 거짓 피드백이 된다. */
   #w2-stick{
     position:absolute;width:112px;height:112px;margin:-56px 0 0 -56px;
     border-radius:50%;pointer-events:none;
-    /* 시작값 `tint` — 링은 패널 토글(`#w2-hud-toggle` 등)과 같은 유리판이다 */
-    border:1px solid var(--line);
-    background:rgba(11,13,18,.62);
-    opacity:0;transition:opacity .18s ease;
+    border:1.5px solid rgba(253,251,245,.38);
+    background:radial-gradient(circle, rgba(23,20,15,.10) 55%, rgba(23,20,15,.34) 100%);
+    box-shadow:0 2px 12px rgba(10,8,4,.30), inset 0 0 0 1px rgba(23,20,15,.20);
+    opacity:0;transform:scale(.78);
+    transition:opacity .12s ease, transform .16s cubic-bezier(.34,1.56,.64,1);
   }
   /* 누르는 동안만 보인다 — 자리가 손을 따라오므로 «어디를 눌러야 하나» 가 없다.
-     (고정이던 판본에서는 상시 흐리게 띄워야 했다. 그 필요가 사라졌다.)
-     ⚠ 룩 후보는 이 구조를 건드리지 않는다 — 감독 판정(2026-08-21 «고정이 불편해»)의
-     결과가 바로 이 `opacity` 두 줄이다. `GS-J7` 이 그것을 못 박는다. */
-  #w2-stick[data-on="1"]{opacity:1}
+     감독 판정(2026-08-21 «고정이 불편해»)의 결과가 이 두 줄이고, world1 도 같은 방식이다
+     (`player.js` 가 `lu-live` 클래스로 같은 일을 한다). `GS-J7` 이 이것을 못 박는다. */
+  #w2-stick[data-on="1"]{opacity:1;transform:scale(1)}
+  /* 십자 눈금 — 링 바깥 네 방향의 짧은 선. 원본의 `.lu-joy-base::before` 그대로다. */
+  #w2-stick::before{
+    content:'';position:absolute;inset:-1.5px;border-radius:50%;
+    background:
+      linear-gradient(rgba(253,251,245,.5), rgba(253,251,245,.5)) 50% 0 / 2px 8px no-repeat,
+      linear-gradient(rgba(253,251,245,.5), rgba(253,251,245,.5)) 50% 100% / 2px 8px no-repeat,
+      linear-gradient(rgba(253,251,245,.5), rgba(253,251,245,.5)) 0 50% / 8px 2px no-repeat,
+      linear-gradient(rgba(253,251,245,.5), rgba(253,251,245,.5)) 100% 50% / 8px 2px no-repeat;
+  }
+  /* 안쪽 점선 링. 원본에서는 달리기 임계에 닿으면 초록 실선으로 켜지는데(`.lu-run`),
+     world2 에는 달리기가 없어 **점선 상태로만** 온다. 그 사실을 여기 적어 둔다 —
+     다음 사람이 «왜 안 켜지지» 를 찾지 않도록. */
+  #w2-stick::after{
+    content:'';position:absolute;inset:5px;border-radius:50%;
+    border:1px dashed rgba(253,251,245,.22);
+  }
   #w2-stick-knob{
-    position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;
+    position:absolute;left:50%;top:50%;
+    /* ⚠ **44px 이다** — 이 회차 전에는 46px 이었고 감독 문언이 «형태 크기 똑같이» 다.
+       원본 `.lu-joy-knob` 의 값이다. */
+    width:44px;height:44px;border-radius:50%;
     transform:translate(-50%,-50%);
-    /* 시작값 `tint` — `.w2-god-row button.on` 과 같은 보라 틴트 + 보라 테두리 */
-    background:rgba(139,114,255,.28);
-    border:1px solid rgba(139,114,255,.7);
-    box-shadow:0 2px 12px rgba(0,0,0,.35);
-  }
-
-  /* ─ `jelly` — **대조군**. 2026-08-23 이전의 현행 룩을 그대로 보존한다.
-       토큰을 하나도 안 쓰고(흰색 계열 테두리·흰 radial 링), 노브만 2색 그라디언트다.
-       감독이 «지금 것이 낫다» 로 판정할 수 있어야 하므로 후보에 반드시 남긴다 —
-       수치가 이상한 것과 화면이 잘못된 것은 다른 일이다(CLAUDE.md «가장 비쌌던 실수»).
-       ⚠ 노브의 그라디언트는 `.w2-slide-input::-webkit-slider-thumb` 의 것과 **같은 각도에
-       알파만 다르다**(.85/.75 vs .9/.8). 그 미러링은 이번 회차 밖이라 보고로만 올렸다. */
-  #w2-stick[data-look="jelly"]{
-    border:1px solid rgba(255,255,255,.16);
-    background:radial-gradient(circle, rgba(255,255,255,.07) 0%, rgba(255,255,255,.02) 70%);
-  }
-  #w2-stick[data-look="jelly"] #w2-stick-knob{
-    background:linear-gradient(145deg, rgba(139,114,255,.85), rgba(114,230,225,.75));
-    border:0;box-shadow:0 2px 12px rgba(0,0,0,.35);
-  }
-
-  /* ─ `outline` — **토큰만** 채택한다. 링은 비우고 테두리만 `--line`, 노브는 어둠 채움 +
-       보라 테두리. 넷 중 세계를 **가장 덜 가린다** — 조이스틱은 패널과 달리 3D 위에 뜨고
-       엄지 밑이 곧 진행 방향이라, 채움이 진할수록 «가려서 못 본다» 가 생길 수 있다.
-       노브만 어둠 채움인 것은 밝은 낮 하늘·물 위에서도 형태가 살아야 하기 때문이다. */
-  #w2-stick[data-look="outline"]{
-    border:1px solid var(--line);
-    background:none;
-    box-shadow:0 0 0 1px rgba(0,0,0,.45);
-  }
-  #w2-stick[data-look="outline"] #w2-stick-knob{
-    background:rgba(11,13,18,.86);
-    /* 1px 이다 — 이 페이지의 테두리는 전부 1px 이고, 헤드리스 실측에서 `1.5px` 는
-       computed 가 `1px` 로 스냅됐다(360px·dsf2). 안 그려질 값을 적어 두면 다음 사람이
-       «두껍게 했는데 왜 같지» 를 여기서 찾는다. */
-    border:1px solid var(--violet);
-    box-shadow:0 2px 12px rgba(0,0,0,.35);
-  }
-
-  /* ─ `plate` — 편집 패널·조준 막대의 어휘(`edit/panel/css.ts`). 가장 세게 통일된 쪽이다 —
-       링은 `#w2-aim .bar` 와 같은 유리판(+`blur(6px)`), 노브는 `button[data-on="1"]` 의 **단색** 보라다.
-       ⚠ `backdrop-filter` 는 이 페이지에서 여기가 처음이다 — world2.html 의 인라인 패널 8종은
-       전부 blur 가 없고 `edit/panel/css.ts` 만 쓴다. 그 갈라짐 자체가 이번 회차의 발견이고
-       보고에 올렸다. 이 후보는 «편집 쪽에 맞춘다» 의 샘플이므로 blur 를 포함한다.
-       ⚠⚠ 여기는 **가장 비싼 후보다** — 112px 원에 걸리는 매 프레임 백드롭 블러는 저사양 기기의 컴포지터에서 비싸다(`css/gallery.css:35` 가 같은 이유로 저사양 경로에서 전부 해제한다).
-       이 후보가 채택되면 **그 비용을 performance-analyst 가 보고 나서** 기본값으로 올린다. */
-  #w2-stick[data-look="plate"]{
-    border:1px solid var(--line);
-    background:rgba(11,13,18,.86);
-    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
-  }
-  #w2-stick[data-look="plate"] #w2-stick-knob{
-    background:var(--violet);
-    border:1px solid var(--violet);
-    box-shadow:0 2px 12px rgba(0,0,0,.45);
+    background:radial-gradient(circle at 32% 28%, #fffdf8, #e8e2d2);
+    border:1px solid rgba(23,20,15,.28);
+    box-shadow:0 3px 8px rgba(10,8,4,.40), inset 0 -2px 4px rgba(23,20,15,.14);
   }
 
   @media (prefers-reduced-motion: reduce){ #w2-stick{transition:none} }
