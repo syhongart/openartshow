@@ -17,7 +17,7 @@
 // -----------------------------------------------------------------------------
 import {
   FOOTPRINT, FRAME_RULES, PART_TYPES, SPACE_VERSION, STORY_H,
-  artworkSize, normalizeSpace,
+  artworkSize, normalizeSpace, ART_SCALE,
   type Space, type SpacePart, type SpaceFinish,
 } from './space.js';
 
@@ -57,6 +57,30 @@ export const GEN_LAYOUTS: GenLayout[] = ['perimeter', 'partition'];
  */
 export const GEN_DEFAULT_LAYOUT: GenLayout = 'partition';
 
+/**
+ * 자동생성 전시장의 기본 액자 배율.
+ *
+ * 감독 지적 2026-08-24: *"작품을 크게 걸고."* — 층고를 4.2m 로 올린 직후에 나온 말이고,
+ * 액자 긴 변이 1.6m 고정이라 높아진 벽 대비 작아 보였다. 여기서 키우는 것이 안전한
+ * 이유는 자동생성이 **매번 배치를 다시 재기** 때문이다(빌더 저장분은 안 그래서 방 단위
+ * 속성으로 뺐다 — `ART_SCALE` 주석).
+ *
+ * ⚠ **이 값은 아직 감독 판정을 받지 않았다.** 노브(`visit.html?art=`)로 후보를 열어
+ * 화면에서 비교하시게 하고, 판정이 나오면 그 근거를 여기 적는다. 지금 1.4 인 것은
+ * 「눈에 띄게 크되 clamp 에 안 닿는」 자리라서다(1.6×1.4 = 2.24m, 세로장 clamp 는 2.6).
+ * 배율을 올리면 벽 용량이 줄어 footprint 가 올라간다 — 「기본은 작게」와 부딪히지만
+ * 창문 때와 같은 논리다(요구가 늘어 최소치가 올라간 것이지 최소를 안 고르는 게 아니다).
+ *
+ * ⚠⚠ **영상 스크린은 이 배율을 안 받는다 — 알고 남긴 것이다.** 화면에서 액자만 커지고
+ * 스크린(`screen` 파츠)만 원래 크기로 남아 어색하다(실측 스크린샷으로 확인했다).
+ * 안 한 이유는 어렵거나 막혀서가 아니라 **범위를 스스로 넓히지 않기 위해서다** —
+ * 감독 지시는 액자를 두고 나온 말이고, 스크린은 조립 경로가 다르다(액자와 달리
+ * 인스턴싱을 타고 `ratio` 로 가로/세로가 갈린다). 배율이 방 단위라 인스턴싱 자체는
+ * 유지할 수 있으니 **불가능한 일은 아니다.** 감독이 화면을 보고 신경 쓰인다고 하면
+ * 그때 한다 — 이 문단을 지우고 무엇을 어떻게 했는지 적는 자리다.
+ */
+export const GEN_ART_SCALE = 1.4;
+
 export interface GenOptions {
   layout?: GenLayout;
   name?: string;
@@ -70,6 +94,11 @@ export interface GenOptions {
   footprint?: string;
   /** 자동 선택된 최소 크기에서 N단계 키운다. footprint 를 함께 주면 그쪽이 이긴다. */
   roomUp?: number;
+  /**
+   * 액자 크기 배율(`shell.artScale`). 생략하면 `GEN_ART_SCALE`.
+   * 범위·왜 방 단위인지는 `ART_SCALE`(space.ts) 주석 한 곳이다.
+   */
+  artScale?: number;
 }
 
 // ── 배치 상수 — 왜 이 값인지 값 옆에 적는다 ──────────────────────────────────
@@ -292,10 +321,14 @@ export interface GenResult {
 export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): GenResult {
   const layout: GenLayout = GEN_LAYOUTS.includes(opts.layout as GenLayout) ? (opts.layout as GenLayout) : GEN_DEFAULT_LAYOUT;
   const list = Array.isArray(artworks) ? artworks.filter((a) => a && typeof a === 'object') : [];
+  // ⚠ 배율은 **폭 계산과 셸 설정이 같은 값을 써야 한다** — 배치는 작게 잡고 렌더만 크게
+  // 하면 액자가 벽에서 서로 겹친다. 그래서 여기서 한 번 정해 둘 다에 넘긴다.
+  const artScale = (typeof opts.artScale === 'number' && isFinite(opts.artScale))
+    ? Math.min(ART_SCALE.max, Math.max(ART_SCALE.min, opts.artScale)) : GEN_ART_SCALE;
 
   // 영상은 screen 파츠로 간다(액자가 아니다) — 벽 배치는 같이 하되 파츠 타입이 다르다.
   const isVideoAt = (a: GenArtwork) => !!(a.videoUrl && !a.imageUrl);
-  const widths = list.map((a) => (isVideoAt(a) ? PART_TYPES.screen.size[0] : artworkSize(a.ar).W));
+  const widths = list.map((a) => (isVideoAt(a) ? PART_TYPES.screen.size[0] : artworkSize(a.ar, artScale).W));
   // 층고. **감독 판정 2026-08-24: «작가갤러리 지금 골방같아. 천장 높게 안될까?»**
   // `STORY_H` 의 최대치(`grand` = 4.2m)를 쓴다 — 그 위는 스키마에 없다. 더 높여야 하면
   // `space.ts` 에 값을 추가하는 일이고, 그것은 빌더·world 를 포함한 모든 소비자가 함께
@@ -426,6 +459,7 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
       footprint: fpKey,
       storyH: STORY,
       wallT,
+      artScale,
       finish: {
         wall: 'white', floor: 'parquet', ceiling: 'whiteflat', trim: 'brass',
         featureWall: FEATURE_SIDE, featureFinish: 'deepviolet', // 창문 배치와 같은 상수 — 미러링 금지

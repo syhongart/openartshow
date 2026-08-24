@@ -17,6 +17,10 @@ import {
 } from '../frontend/js/space-generate.js';
 import { FOOTPRINT, FRAME_RULES, PART_TYPES, STORY_H, artworkSize, normalizeSpace } from '../frontend/js/space.js';
 
+// ⚠ 겹침 검사는 액자 실치수를 **다시 계산해서** 비교한다. 그러니 `shell.artScale` 을
+// 반드시 함께 넘긴다 — 안 넘기면 실제보다 작은 폭으로 재게 되고 검사가 조용히 느슨해진다
+// (실측: 배율을 1.0→1.4 로 올려도 40건이 전부 통과했다. 통과가 아니라 안 본 것이다).
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const gallery = JSON.parse(readFileSync(join(HERE, '../frontend/galleries/syhongart.json'), 'utf-8'));
 
@@ -84,7 +88,7 @@ describe('generateSpace — 기하 불변식', () => {
         const vertical = Math.abs(Math.sin(p.ry)) > 0.5;           // 동/서벽은 z축으로 늘어선다
         const key = `${p.ry.toFixed(3)}|${(vertical ? p.x : p.z).toFixed(3)}|${p.y ?? 0}`;
         const u = vertical ? p.z : p.x;
-        const w = p.t === 'screen' ? PART_TYPES.screen.size[0] : artworkSize(p.ar).W;
+        const w = p.t === 'screen' ? PART_TYPES.screen.size[0] : artworkSize(p.ar, r.space.shell.artScale).W;
         (rows.get(key) ?? rows.set(key, []).get(key)!).push({ u, w });
       }
       for (const row of rows.values()) {
@@ -293,7 +297,7 @@ describe('generateSpace — 벽면 겹침 (2차원)', () => {
       if (p.t !== 'artwork' && p.t !== 'screen') continue;
       const vertical = Math.abs(Math.sin(p.ry)) > 0.5;
       const key = `${p.ry.toFixed(3)}|${(vertical ? p.x : p.z).toFixed(3)}`;
-      const size = p.t === 'screen' ? { W: PART_TYPES.screen.size[0], H: PART_TYPES.screen.size[1] } : artworkSize(p.ar);
+      const size = p.t === 'screen' ? { W: PART_TYPES.screen.size[0], H: PART_TYPES.screen.size[1] } : artworkSize(p.ar, space.shell.artScale);
       const r = { u: vertical ? p.z : p.x, w: size.W, y: p.y ?? null, h: size.H };
       (rows.get(key) ?? rows.set(key, []).get(key)!).push(r);
     }
@@ -468,7 +472,7 @@ describe('generateSpace — 창문', () => {
         const vert = Math.abs(Math.sin(p.ry)) > 0.5;
         const key = `${p.ry.toFixed(3)}|${(vert ? p.x : p.z).toFixed(3)}`;
         const w = p.t === 'window' ? PART_TYPES.window.size[0]
-          : p.t === 'screen' ? PART_TYPES.screen.size[0] : artworkSize(p.ar).W;
+          : p.t === 'screen' ? PART_TYPES.screen.size[0] : artworkSize(p.ar, r.space.shell.artScale).W;
         (rows.get(key) ?? rows.set(key, []).get(key)!).push({ u: vert ? p.z : p.x, w });
       }
       for (const row of rows.values()) {

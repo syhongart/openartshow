@@ -150,11 +150,14 @@ async function loadSpace() {
       if (doc && Array.isArray(doc.artworks)) {
         const layout = GEN_LAYOUTS.includes(q.get('gen')) ? q.get('gen') : undefined;
         const roomUp = Math.max(0, Math.min(4, parseInt(q.get('room'), 10) || 0));
+        // 액자 배율 노브 — 감독이 화면에서 비교해 정한다(`?art=1.0` ~ `?art=2.0`).
+        // 범위 검증은 space-generate 가 소유한다(ART_SCALE) — 여기서 다시 자르지 않는다.
+        const artScale = parseFloat(q.get('art'));
         const r = generateSpace(
           doc.artworks.map((a) => ({
             id: a.id, title: a.title, imageUrl: a.imageUrl, videoUrl: a.videoUrl, featured: a.featured,
           })),
-          { layout, roomUp, name: doc.name, author: doc.artist || id },
+          { layout, roomUp, artScale, name: doc.name, author: doc.artist || id },
         );
         // 미배치가 있으면 조용히 넘기지 않는다 — 작가는 자기 작품이 빠진 걸 알아야 한다.
         if (r.dropped.length) console.warn(`[visit] 자리를 못 찾은 작품 ${r.dropped.length}점:`, r.dropped.join(', '));
