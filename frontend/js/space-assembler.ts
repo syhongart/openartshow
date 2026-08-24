@@ -204,9 +204,13 @@ function* _spaceGroupGen(space, opts = {}) {
         const frameMat = (MATS[FRAME_MAT_ID[style]] || MATS.frameBlack)(); mats.push(frameMat);
         const withSrc = items.filter(({ p }) => p.src);
         const noSrc = items.filter(({ p }) => !p.src);
-        // 빈 액자(noSrc): 스타일별 공유 지오(고정 1.2×1.6) — draw-call 예산·회귀 없음.
+        // 빈 액자(noSrc): 스타일별 공유 지오 — draw-call 예산·회귀 없음.
+        // ⚠ 크기는 `artworkSize(undefined, …)` 로 받는다. 예전에는 `PART_TYPES.artwork.size`
+        // 를 그대로 썼고, `shell.artScale` 이 생기면서 **이 경로만 배율을 무시했다** —
+        // 배치 계산(`space-generate` 의 widths)은 배율을 쓰므로 빈 액자만 자리보다 작게
+        // 걸린다. 공유 지오는 그대로다(배율은 방 단위라 방 안에서 값이 하나다).
         if (noSrc.length) {
-          const [dw, dh] = PART_TYPES.artwork.size;
+          const { W: dw, H: dh } = artworkSize(undefined, space.shell.artScale);
           const frameGeo = partGeo('artwork', { style, w: dw, h: dh, d: D }); geos.push(frameGeo);
           const { cw, ch } = artworkCanvasDims(style, dw, dh);
           const canvasGeo = box(cw, ch, 0.015); geos.push(canvasGeo);
@@ -219,7 +223,7 @@ function* _spaceGroupGen(space, opts = {}) {
         }
         // 이미지 작품(withSrc): 파츠별 개별 지오(ar 크기·고유 텍스처) — geos 등록 필수(누수 방지).
         for (const { p, i } of withSrc) {
-          const { W, H } = artworkSize(p.ar);
+          const { W, H } = artworkSize(p.ar, space.shell.artScale);
           const frameGeo = partGeo('artwork', { style, w: W, h: H, d: D }); geos.push(frameGeo); // ★ 개별 프레임 지오 회수 등록
           addFrameMesh(frameGeo, frameMat, p, i);
           const { cw, ch } = artworkCanvasDims(style, W, H);

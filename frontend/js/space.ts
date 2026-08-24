@@ -91,6 +91,8 @@ export interface SpaceShell {
   footprint: string;
   storyH: string;
   wallT: number;
+  /** 액자 크기 배율. 생략된 저장분은 1 로 읽힌다(하위호환 — ART_SCALE 주석). */
+  artScale: number;
   entries: string[];
   floors: number;
   stairs: Stair[];
@@ -199,11 +201,30 @@ export const FRAME_RULES = {
 // 금지에 걸리고(같은 공식이 두 곳 → 한쪽만 고쳐도 아무도 모른다), 그래서 이동이 답이다.
 // 이 함수가 소비하는 것은 PART_TYPES.artwork.size 와 FRAME_RULES 뿐이라 여기가 제자리다.
 // space-parts.ts 는 재수출만 하므로 기존 소비자(space-assembler)는 무수정이다.
+/**
+ * 액자 크기 배율의 범위. **방 단위 속성**(`shell.artScale`)이고 기본은 1 이다.
+ *
+ * 감독 지적 2026-08-24: *"작품을 크게 걸고."* 천장을 4.2m 로 올린 뒤 나온 말이다 —
+ * 액자 긴 변이 `BASE = 1.6` 으로 고정이라 높아진 층고 대비 작아 보였다.
+ *
+ * ⚠ **왜 BASE 를 그냥 올리지 않았나.** `builder.html` 은 라이브이고 거기서 저장한
+ * 공간은 **배치를 다시 계산하지 않는다** — 액자만 커지면 벽에서 겹친다. 방 단위
+ * 속성으로 두면 기존 저장분에는 이 필드가 없어 1 로 읽히고 **회귀가 0** 이다.
+ * 자동생성(`space-generate`)은 매번 배치를 다시 재므로 큰 값을 안전하게 쓴다.
+ *
+ * 상한 2.0 은 임의가 아니다 — `BASE * 2.0 = 3.2` 가 `FRAME_RULES.landscape.clampW`
+ * 와 같다. 그보다 키우면 clamp 가 전부 먹어 배율이 화면에 안 나타난다(노브만 헛돈다).
+ */
+export const ART_SCALE = { min: 0.6, max: 2.0, def: 1 };
+
 // p.ar → 액자 W/H. 디자이너 실측 공식. ar 없으면 레거시 고정 1.2×1.6 폴백.
-export function artworkSize(ar?: unknown): { W: number; H: number } {
+// scale 은 `shell.artScale`(방 단위) — 소비자가 넘긴다. 여기서 기본값을 다시 적지 않는다.
+export function artworkSize(ar?: unknown, scale?: unknown): { W: number; H: number } {
+  const k = (typeof scale === 'number' && isFinite(scale) && scale > 0)
+    ? Math.min(ART_SCALE.max, Math.max(ART_SCALE.min, scale)) : ART_SCALE.def;
   const [dw, dh] = PART_TYPES.artwork.size; // 폴백(빈 액자·구버전 저장분)
-  if (!(typeof ar === 'number' && isFinite(ar) && ar > 0)) return { W: dw, H: dh };
-  const BASE = 1.6, minSize = FRAME_RULES.minSize, clampW = FRAME_RULES.landscape.clampW, clampH = FRAME_RULES.portrait.clampH;
+  if (!(typeof ar === 'number' && isFinite(ar) && ar > 0)) return { W: dw * k, H: dh * k };
+  const BASE = 1.6 * k, minSize = FRAME_RULES.minSize, clampW = FRAME_RULES.landscape.clampW, clampH = FRAME_RULES.portrait.clampH;
   const cl = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
   const r = ar;
   let W: number, H: number;
@@ -345,6 +366,7 @@ export function normalizeSpace(raw: any): Space {
       footprint: pick(sh.footprint, new Set(Object.keys(FOOTPRINT)), DEFAULT_SPACE.shell.footprint),
       storyH: pick(sh.storyH, new Set(Object.keys(STORY_H)), DEFAULT_SPACE.shell.storyH),
       wallT: clamp(sh.wallT, 0.1, 0.4, DEFAULT_SPACE.shell.wallT),
+      artScale: clamp(sh.artScale, ART_SCALE.min, ART_SCALE.max, ART_SCALE.def), // 생략=1(하위호환)
       entries: normEntries(sh.entries), // 오픈월드 파셀 개구부(생략=빈배열=폐쇄, 하위호환)
       floors: clampInt(sh.floors, 1, 4, 1), // 오픈월드 다층(생략=1=단층, 하위호환)
       stairs: normStairs(sh.stairs),        // 층간 경사 밴드(생략=빈배열)
