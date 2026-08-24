@@ -21,7 +21,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { wallPiecesWithWindows } from '../frontend/js/space-window-wall.js';
 import { scaleFor, OUTSIDE_MOODS } from '../frontend/js/space-outside.js';
-import { generateSpace } from '../frontend/js/space-generate.js';
+import { generateSpace, wallUsable } from '../frontend/js/space-generate.js';
 import { PART_TYPES } from '../frontend/js/space.js';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -112,6 +112,17 @@ describe('wallPiecesWithWindows — 벽 조각', () => {
     for (const p of ps) expect(p.w).toBeGreaterThan(0.02);
   });
 
+  it('거의 붙은 두 창 사이에 실 같은 조각을 만들지 않는다', () => {
+    // 겹치지는 않지만 틈이 0.01m 인 배치. 그 틈을 메시로 만들면 화면에서는 안 보이면서
+    // 드로우콜과 그림자 계산만 는다. ⚠ 이 표본이 없던 판본에서는 최소 조각 검사를
+    // 통째로 없애도 24건이 전부 통과했다(뮤테이션 M5 실측).
+    const gapAt = WIN_W / 2 + 0.005;
+    const ps = wallPiecesWithWindows(12, 4.2, [-gapAt, gapAt], WIN_W, WIN_H, 2.4);
+    for (const p of ps) expect(p.w).toBeGreaterThan(0.02);
+    // 틈만큼은 뚫린 채로 남는다 — 메우지도, 실 조각으로 채우지도 않는다.
+    expect(area(ps)).toBeCloseTo(12 * 4.2 - 2 * WIN_W * WIN_H - 0.01 * 4.2, 6);
+  });
+
   it('벽 끝을 넘는 창은 무시한다(벽이 끊기면 방이 뚫린다)', () => {
     const ps = wallPiecesWithWindows(3, 4.2, [1.4], WIN_W, WIN_H, 2.4);
     expect(ps).toHaveLength(1);
@@ -198,15 +209,24 @@ describe('generateSpace — 창문이 실제로 보이는 자리에 난다', () 
     expect(onFeature.length).toBe(0);
   });
 
-  it('강조면은 창문 몫을 안 빼므로 작품을 더 받는다', () => {
-    const r = generateSpace(artworks(16)).space;
+  it('강조면은 창문 몫을 안 빼므로 벽을 더 쓴다', () => {
+    // ⚠ 작품 **개수**로 보면 안 잡힌다 — 라운드로빈 배분이라 면마다 고르게 나뉘어
+    //   예외를 통째로 지워도 개수는 그대로일 수 있다(뮤테이션 M8 실측). 그래서 판정
+    //   그 자체(`wallUsable`)를 직접 잰다.
+    const t = 0.2, len = 9;
+    const feature = wallUsable(len, 'north', t);
+    const plain = wallUsable(len, 'south', t);
+    expect(feature).toBeGreaterThan(plain);
+    expect(feature - plain).toBeCloseTo((WIN_W + 0.4) * 2, 6); // 창 2개 + 간격
+  });
+
+  it('강조면 예외가 실제 배치에 반영된다(같은 작품이 더 작은 방에 들어간다)', () => {
+    const r = generateSpace(artworks(14)).space;
     const arts = r.parts.filter((p) => p.t === 'artwork');
-    expect(arts.length).toBeGreaterThan(0);
-    // 강조면(ry=0 · z 최소)의 작품 수가 마주보는 면(ry=π)보다 적지 않다.
+    expect(arts.length).toBe(14);                    // 한 점도 흘리지 않는다
     const zs = arts.map((a) => a.z);
     const north = arts.filter((a) => Math.abs(a.z - Math.min(...zs)) < 1e-6);
-    const south = arts.filter((a) => Math.abs(a.z - Math.max(...zs)) < 1e-6);
-    expect(north.length).toBeGreaterThanOrEqual(south.length);
+    expect(north.length).toBeGreaterThan(0);
   });
 
   it('창문은 작품과 겹치지 않는다(벽 용량에서 먼저 뺐다)', () => {

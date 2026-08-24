@@ -121,6 +121,28 @@ interface WallDef {
 }
 
 /**
+ * 벽 한 면이 **작품에 내주는 길이**. `walls()` 안의 클로저가 아니라 밖으로 낸 것은
+ * 이것이 이 회차의 판정이고 **직접 검사할 수 있어야** 하기 때문이다 — 클로저로 두었더니
+ * 강조면 예외를 통째로 지워도 검사가 전부 통과했다(뮤테이션 M8 실측).
+ *
+ * ⚠ 벽 용량에서 **창문 몫을 먼저 뺀다**(양끝 각 1개). 이것을 안 빼면 최소 크기 방에서
+ * 작품이 벽을 꽉 채워 창문이 0개가 된다 — 실측했다(실물 14점·partition·small → 창문 0).
+ * 감독 지적 2026-08-24 «창문이 없으니 답답해» 이후 창문은 **요구사항**이므로, 「전부
+ * 들어가는 최소 크기」의 「전부」에 창문이 포함되어야 한다. 여기서 빼면 footprint 선택이
+ * 그것을 반영해 저절로 한 단계 올라간다 — 「기본은 작게」 판정과 부딪히지 않는다.
+ * 요구가 늘어 최소치가 올라간 것이지 최소를 고르지 않게 된 게 아니다.
+ *
+ * 단 **강조면은 예외다** — 거기엔 창을 안 내므로(FEATURE_SIDE 주석) 그 몫을 뺄 이유가
+ * 없고, 그만큼 작품이 더 걸린다. 실측: 실물 14점이 footprint 한 단계 작은 방에 들어갔다
+ * (14×10 → 9×7).
+ */
+export function wallUsable(len: number, side: WallDef['side'] | string, wallT: number): number {
+  const m = CORNER_MARGIN(wallT);
+  const win = (WINDOW_W + FRAME_RULES.minGap) * 2;
+  return Math.max(0, len - m * 2 - (side === FEATURE_SIDE ? 0 : win));
+}
+
+/**
  * 방 4벽의 기하를 만든다. ry 부호는 DEFAULT_SPACE 실측을 따랐다 —
  * 서벽 screen 이 ry=+π/2, 동벽 vitrine 이 ry=-π/2 다(둘 다 방 안쪽을 본다).
  */
@@ -135,10 +157,7 @@ function walls(fw: number, fd: number, wallT: number): Record<string, WallDef> {
   // 들어가는 최소 크기」의 「전부」에 창문이 포함되어야 한다. 여기서 빼면 footprint 선택이
   // 그것을 반영해 저절로 한 단계 올라간다 — 「기본은 작게」 판정과 부딪히지 않는다.
   // 요구가 늘어 최소치가 올라간 것이지 최소를 고르지 않게 된 게 아니다.
-  const win = (WINDOW_W + FRAME_RULES.minGap) * 2;
-  // 강조면은 창을 안 내므로(FEATURE_SIDE 주석) 그 몫을 빼지 않는다 — 작품이 더 걸린다.
-  const artUsable = (len: number, side: WallDef['side']) =>
-    Math.max(0, len - m * 2 - (side === FEATURE_SIDE ? 0 : win));
+  const artUsable = (len: number, side: WallDef['side']) => wallUsable(len, side, wallT);
   return {
     north: { side: 'north', ry: 0, usable: artUsable(fw, 'north'),
       at: (u) => ({ x: u, z: nz }), lightAt: (u) => ({ x: u, z: nz + LIGHT_INSET }) },
