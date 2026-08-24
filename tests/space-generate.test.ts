@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import {
-  generateSpace, GEN_LAYOUTS, GEN_DEFAULT_LAYOUT, genSummary, pickGalleryId, salonTiers,
+  generateSpace, GEN_LAYOUTS, GEN_DEFAULT_LAYOUT, genSummary, pickGalleryId,
   type GenArtwork,
 } from '../frontend/js/space-generate.js';
 import { FOOTPRINT, FRAME_RULES, PART_TYPES, STORY_H, artworkSize, normalizeSpace } from '../frontend/js/space.js';
@@ -270,8 +270,11 @@ describe('generateSpace — 기본 배치와 시작 위치', () => {
   });
 
   it('벤치를 놓을 자리가 없으면 놓지 않는다 (억지로 밀어넣지 않는다)', () => {
-    // 실물 14점 · partition 은 small(6×6)을 고르고, 거기서는 벤치 자리가 spawn 과 겹친다.
-    const tight = generateSpace(REAL, { layout: 'partition' });
+    // ⚠ 표본을 크기 **이름**이 아니라 좁은 방 **지정**으로 잡는다. 처음엔 「실물 14점은
+    // small 을 고른다」에 기대고 있었는데, 창문이 요구사항이 되며(2026-08-24) 최소치가
+    // medium 으로 올라가 그 전제가 깨졌다. 검사하려던 것은 크기가 아니라 「자리가 없으면
+    // 안 놓는다」이므로, 좁은 방을 직접 지정해 그 축만 본다.
+    const tight = generateSpace(REAL, { layout: 'partition', footprint: 'small' });
     expect(tight.footprint).toBe('small');
     expect(tight.space.parts.some((p) => p.t === 'bench')).toBe(false);
     // 방을 키우면 자리가 생기므로 벤치가 돌아온다.
@@ -281,7 +284,6 @@ describe('generateSpace — 기본 배치와 시작 위치', () => {
 });
 
 describe('generateSpace — 벽면 겹침 (2차원)', () => {
-  // ⚠ 이 describe 가 생긴 경위: 헤드리스 렌더로 실물 14점을 살롱으로 걸어 화면을 보니
   // 위·아래 액자가 붙어 있었다. **그때까지 24개 테스트가 전부 통과하고 있었다** — 겹침
   // 검사가 가로(u)만 봤고 세로(y)를 안 봤기 때문이다. 축이 비어 있으면 통과는 아무것도
   // 보증하지 않는다. 그 사고를 다시 못 내게 두 축을 함께 본다.
@@ -319,39 +321,16 @@ describe('generateSpace — 벽면 겹침 (2차원)', () => {
     }
   });
 
-  it('살롱 2단은 층고 안에 들어간다 (바닥·천장을 뚫지 않는다)', () => {
-    for (const input of [REAL, mixed(8), mixed(24)]) {
-      const r = generateSpace(input, { layout: 'salon' });
-      const H = STORY_H[r.space.shell.storyH];
-      for (const p of r.space.parts) {
-        if (p.t !== 'artwork' || p.y === undefined) continue;
-        const h = artworkSize(p.ar).H;
-        expect(p.y - h / 2).toBeGreaterThan(0);
-        expect(p.y + h / 2).toBeLessThan(H);
-      }
+
+  it('층고를 올린 목적은 2단이 아니다 — 작품은 한 줄로만 걸린다', () => {
+    // 감독 판정 2026-08-24: «높이가 높다고. 사진을 그렇게 거는 건 싫다.»
+    // 천장을 높인 것은 작품을 크게 걸기 위함이지 위아래로 나누기 위함이 아니었다.
+    // 그래서 2단 배치(salon)를 걷어냈고, 이 단언이 그 판정을 지킨다.
+    for (const layout of GEN_LAYOUTS) {
+      const r = generateSpace(REAL, { layout });
+      expect(r.space.parts.every((p) => p.y === undefined)).toBe(true);
     }
-  });
-
-  it('층고 예산이 모자라면 2단을 포기한다 (순수 함수를 직접 태운다)', () => {
-    // ⚠ 이 축은 생성기 레벨에서 **도달 불가능**해졌다. 천장을 4.2m 로 올린 뒤
-    // (감독 판정 2026-08-24) 액자 높이가 항상 1.6 이하라(artworkSize 의 BASE) 늘 2단이
-    // 성립한다. 그래도 폴백 자체는 살아 있어야 하므로 `salonTiers` 를 직접 태운다 —
-    // 생성기로만 검사하면 이 축이 영영 안 도는 코드가 된다.
-    expect(salonTiers(4.2, 1.6)).not.toBeNull();      // 지금 기본 경로
-    expect(salonTiers(3.6, 1.6)).toBeNull();          // 옛 층고였으면 1단
-    expect(salonTiers(2.8, 1.6)).toBeNull();          // studio 층고
-    expect(salonTiers(4.2, 0)).toBeNull();            // 작품이 없다
-    // 두 단이 겹치지 않는 것은 산술로 보증된다.
-    const t = salonTiers(4.2, 1.6)!;
-    expect(t.high - t.low).toBeGreaterThanOrEqual(1.6);
-    expect(t.low - 1.6 / 2).toBeGreaterThan(0);       // 바닥을 안 뚫는다
-    expect(t.high + 1.6 / 2).toBeLessThan(4.2);       // 천장을 안 뚫는다
-  });
-
-  it('천장이 높아져 실물 14점이 2단으로 걸린다', () => {
-    const r = generateSpace(REAL, { layout: 'salon' });
-    expect(r.tiers).toBe(2);
-    expect(r.space.parts.some((p) => p.t === 'artwork' && p.y !== undefined)).toBe(true);
+    expect(GEN_LAYOUTS).not.toContain('salon');
   });
 });
 
@@ -430,8 +409,86 @@ describe('generateSpace — 천장 높이', () => {
     expect(h).toBeGreaterThan(STORY_H.gallery);   // 이전 값보다 확실히 높다
   });
 
-  it('천장이 높아져도 방 넓이 기본은 그대로다 (축을 하나만 흔든다)', () => {
+  it('천장이 높아져도 방 넓이는 여전히 「전부 들어가는 최소」다', () => {
     // 감독 판정 2026-08-22 「기본은 제일 작은 사이즈로」는 그대로 유효하다.
-    expect(generateSpace(REAL).footprint).toBe('small');
+    // ⚠ 다만 **크기 이름을 박지 않는다**. 창문이 요구사항이 되며(2026-08-24) 최소치가
+    // 한 단계 올라갔는데, 그것은 「최소를 고르지 않게 된 것」이 아니라 「전부」에 창문이
+    // 들어온 것이다. 이름을 박으면 요구가 늘 때마다 이 검사가 판정을 배신한다.
+    const keys = Object.keys(FOOTPRINT);
+    const r = generateSpace(REAL);
+    const smaller = keys[keys.indexOf(r.footprint) - 1];
+    if (smaller) {
+      // 한 단계 작으면 작품이든 창문이든 못 담아야 「최소」다.
+      const tighter = generateSpace(REAL, { footprint: smaller });
+      const winsNow = r.space.parts.filter((p) => p.t === 'window').length;
+      const winsTight = tighter.space.parts.filter((p) => p.t === 'window').length;
+      expect(tighter.dropped.length > 0 || winsTight < winsNow).toBe(true);
+    }
+  });
+});
+
+describe('generateSpace — 창문', () => {
+  // 감독 지적 2026-08-24: «창문이 없으니 답답해».
+  const wins = (sp: any) => sp.parts.filter((p: any) => p.t === 'window');
+
+  it('모든 배치에서 창문이 난다', () => {
+    for (const layout of GEN_LAYOUTS) {
+      for (const n of [3, 14, 30]) {
+        expect(wins(generateSpace(mixed(n), { layout }).space).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('창문이 방 경계 안에 있다', () => {
+    for (const layout of GEN_LAYOUTS) {
+      const r = generateSpace(REAL, { layout });
+      const [fw, fd] = FOOTPRINT[r.footprint];
+      for (const w of wins(r.space)) {
+        expect(Math.abs(w.x)).toBeLessThanOrEqual(fw / 2 + 1e-9);
+        expect(Math.abs(w.z)).toBeLessThanOrEqual(fd / 2 + 1e-9);
+      }
+    }
+  });
+
+  it('창문이 작품 자리를 뺏지 않는다 (용량에서 먼저 뗐다)', () => {
+    // 창문을 넣느라 작품이 밀려나면 안 된다 — 벽 용량에서 미리 뺐으므로 둘 다 들어간다.
+    for (const layout of GEN_LAYOUTS) {
+      const r = generateSpace(REAL, { layout });
+      expect(r.dropped).toEqual([]);
+      expect(r.placed).toBe(REAL.length);
+    }
+  });
+
+  it('창문과 작품이 같은 벽에서 겹치지 않는다', () => {
+    for (const layout of GEN_LAYOUTS) {
+      const r = generateSpace(REAL, { layout });
+      const rows = new Map<string, { u: number; w: number }[]>();
+      for (const p of r.space.parts) {
+        if (p.t !== 'artwork' && p.t !== 'screen' && p.t !== 'window') continue;
+        const vert = Math.abs(Math.sin(p.ry)) > 0.5;
+        const key = `${p.ry.toFixed(3)}|${(vert ? p.x : p.z).toFixed(3)}`;
+        const w = p.t === 'window' ? PART_TYPES.window.size[0]
+          : p.t === 'screen' ? PART_TYPES.screen.size[0] : artworkSize(p.ar).W;
+        (rows.get(key) ?? rows.set(key, []).get(key)!).push({ u: vert ? p.z : p.x, w });
+      }
+      for (const row of rows.values()) {
+        row.sort((a, b) => a.u - b.u);
+        for (let i = 1; i < row.length; i++) {
+          const gap = (row[i].u - row[i].w / 2) - (row[i - 1].u + row[i - 1].w / 2);
+          expect(gap).toBeGreaterThanOrEqual(-1e-9);
+        }
+      }
+    }
+  });
+
+  it('창밖 풍경은 별도 파일이고 창문이 있을 때만 붙는다 (감독 지시)', async () => {
+    const { readFileSync, existsSync } = await import('node:fs');
+    expect(existsSync('frontend/js/space-outside.ts')).toBe(true);
+    const html = readFileSync('frontend/visit.html', 'utf-8');
+    expect(html).toContain("from './js/space-outside.js'");
+    expect(html).toMatch(/some\(\(p\) => p && p\.t === 'window'\)/);   // 조건부 부착
+    // 방 조립(space-assembler)이 바깥을 모르는 것이 분리의 요점이다.
+    const asm = readFileSync('frontend/js/space-assembler.ts', 'utf-8');
+    expect(asm).not.toContain('space-outside');
   });
 });
