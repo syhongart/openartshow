@@ -105,6 +105,8 @@ describe('overlay 배선 — 안내가 실제로 마운트·정리되는가', ()
     // ⚠ 감독 지적 2026-08-23 «GLB문앞에서 들어가져야지» — 주소(`?u=`)를 **요구하면 안 된다**.
     // 갤러리 목록을 읽어 정하고, `?u=` 는 있으면 우선할 뿐이다.
     expect(src).toContain("fetch('./galleries/index.json')");
+    // 진입 지점 유도는 검사 가능한 자리(decide)에 있어야 한다 — overlay 는 노드가 못 돌린다.
+    expect(src).toContain('venueAnchorOf(');
     expect(src).toMatch(/tenant:\s*\(\)\s*=>\s*venueGallery/);
     // 위치·건물을 게터로 넘겨야 한다 — 값으로 넘기면 「마운트 시점에 없어서 영영 안 뜬다」.
     expect(src).toMatch(/player:\s*\(\)\s*=>/);
