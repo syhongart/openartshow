@@ -122,6 +122,7 @@
 import { decodeSpace, newSpace } from './js/space.js';
 import { createVisit } from './js/visit.js';
 import { generateSpace, GEN_LAYOUTS, pickGalleryId } from './js/space-generate.js';
+import { buildOutsideView } from './js/space-outside.js';
 
 // 로드 소스 (앞의 것이 이긴다):
 //   ?u=<작가>  → 그 작가의 갤러리 데이터로 **전시장을 자동생성**한다(space-generate).
@@ -172,6 +173,17 @@ const space = await loadSpace();
 const canvas = document.getElementById('c');
 const V = createVisit({ canvas, space, opts: { preserveDrawingBuffer: true } });
 window.__visit = V;
+
+// 창밖 풍경 — 창문이 있는 공간에만 붙인다(감독 지시 2026-08-24, 별도 파일 `space-outside`).
+// 창문이 없으면 벽이 다 막아 보이지 않으므로 세울 이유가 없다(드로우콜만 는다).
+// `visit.js` 는 건드리지 않는다 — 방 조립과 바깥은 별개이고, 통째로 빼도 방은 그대로다.
+// ⚠ 카메라 far 를 **넘긴다**. 안 넘기면 풍경이 클리핑 평면 밖에 서서 통째로 안 보이고,
+// 그 화면은 「아직 안 만들었다」와 구별되지 않는다(근거·실측은 space-outside.ts 헤더).
+const outside = (space.parts || []).some((p) => p && p.t === 'window')
+  ? buildOutsideView({ mood: new URLSearchParams(location.search).get('sky'), cameraFar: V.getCamera().far })
+  : null;
+if (outside) V.getScene().add(outside.group);
+window.__outside = outside;
 
 document.getElementById('spaceTitle').textContent = (space.meta && space.meta.name) || '나의 전시실';
 
