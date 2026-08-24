@@ -11,7 +11,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { generateSpace, GEN_LAYOUTS, GEN_DEFAULT_LAYOUT, genSummary, pickGalleryId, type GenArtwork } from '../frontend/js/space-generate.js';
+import {
+  generateSpace, GEN_LAYOUTS, GEN_DEFAULT_LAYOUT, genSummary, pickGalleryId, salonTiers,
+  type GenArtwork,
+} from '../frontend/js/space-generate.js';
 import { FOOTPRINT, FRAME_RULES, PART_TYPES, STORY_H, artworkSize, normalizeSpace } from '../frontend/js/space.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -329,19 +332,26 @@ describe('generateSpace — 벽면 겹침 (2차원)', () => {
     }
   });
 
-  it('층고 예산이 모자라면 2단을 포기하고 1단으로 간다 (억지로 겹치지 않는다)', () => {
-    // 실물 14점은 ar 이 없어 액자 높이가 폴백 1.6m 다 → 3.6m 층고에 2단이 안 들어간다.
-    const tall = generateSpace(REAL, { layout: 'salon' });
-    expect(tall.tiers).toBe(1);
-    expect(tall.space.parts.every((p) => p.y === undefined)).toBe(true);
-    expect(genSummary(tall)).toContain('1단');
-    // 낮은 가로장(ar 2.2 → 높이 0.73m)만 주면 2단이 성립한다.
-    const flat = generateSpace(
-      Array.from({ length: 10 }, (_, i) => ({ id: `f${i}`, imageUrl: 'x.jpg', ar: 2.2 })),
-      { layout: 'salon' },
-    );
-    expect(flat.tiers).toBe(2);
-    expect(flat.space.parts.some((p) => p.t === 'artwork' && p.y !== undefined)).toBe(true);
+  it('층고 예산이 모자라면 2단을 포기한다 (순수 함수를 직접 태운다)', () => {
+    // ⚠ 이 축은 생성기 레벨에서 **도달 불가능**해졌다. 천장을 4.2m 로 올린 뒤
+    // (감독 판정 2026-08-24) 액자 높이가 항상 1.6 이하라(artworkSize 의 BASE) 늘 2단이
+    // 성립한다. 그래도 폴백 자체는 살아 있어야 하므로 `salonTiers` 를 직접 태운다 —
+    // 생성기로만 검사하면 이 축이 영영 안 도는 코드가 된다.
+    expect(salonTiers(4.2, 1.6)).not.toBeNull();      // 지금 기본 경로
+    expect(salonTiers(3.6, 1.6)).toBeNull();          // 옛 층고였으면 1단
+    expect(salonTiers(2.8, 1.6)).toBeNull();          // studio 층고
+    expect(salonTiers(4.2, 0)).toBeNull();            // 작품이 없다
+    // 두 단이 겹치지 않는 것은 산술로 보증된다.
+    const t = salonTiers(4.2, 1.6)!;
+    expect(t.high - t.low).toBeGreaterThanOrEqual(1.6);
+    expect(t.low - 1.6 / 2).toBeGreaterThan(0);       // 바닥을 안 뚫는다
+    expect(t.high + 1.6 / 2).toBeLessThan(4.2);       // 천장을 안 뚫는다
+  });
+
+  it('천장이 높아져 실물 14점이 2단으로 걸린다', () => {
+    const r = generateSpace(REAL, { layout: 'salon' });
+    expect(r.tiers).toBe(2);
+    expect(r.space.parts.some((p) => p.t === 'artwork' && p.y !== undefined)).toBe(true);
   });
 });
 
@@ -407,5 +417,21 @@ describe('pickGalleryId — 어느 갤러리를 열어도 되는가 (보안 경�
     for (const u of [null, undefined, '', 0, {}, [], true]) {
       expect(pickGalleryId(INDEX, u as any)).toBeNull();
     }
+  });
+});
+
+describe('generateSpace — 천장 높이', () => {
+  it('[감독 판정] 층고는 스키마 최대치를 쓴다', () => {
+    // 감독 판정 2026-08-24: «작가갤러리 지금 골방같아. 천장 높게 안될까?»
+    // 이 단언이 있는 이유는 회귀 방지가 아니라 **판정 보존**이다 — 「기본은 작게」(방 넓이)와
+    // 「천장은 높게」가 다른 축이라, 앞엣것을 이유로 뒤엣것을 되돌리는 일이 없게 못 박는다.
+    const h = STORY_H[generateSpace(REAL).space.shell.storyH];
+    expect(h).toBe(Math.max(...Object.values(STORY_H)));
+    expect(h).toBeGreaterThan(STORY_H.gallery);   // 이전 값보다 확실히 높다
+  });
+
+  it('천장이 높아져도 방 넓이 기본은 그대로다 (축을 하나만 흔든다)', () => {
+    // 감독 판정 2026-08-22 「기본은 제일 작은 사이즈로」는 그대로 유효하다.
+    expect(generateSpace(REAL).footprint).toBe('small');
   });
 });

@@ -96,8 +96,15 @@ const SALON_FLOOR_CLEAR = 0.25; // 액자 하단이 바닥에서 뜨는 최소 �
 const SALON_CEIL_CLEAR = 0.15;  // 액자 상단과 천장 사이 최소 거리
 const SALON_TIER_GAP = 0.20;    // 두 단 사이 여백(겹침 방지 + 시각 분리)
 
-/** 층고와 최대 액자 높이로 2단 y 를 정한다. 예산이 모자라면 null(= 단일 단으로 폴백). */
-function salonTiers(storyHeight: number, maxArtH: number): { low: number; high: number } | null {
+/**
+ * 층고와 최대 액자 높이로 2단 y 를 정한다. 예산이 모자라면 null(= 단일 단으로 폴백).
+ *
+ * ⚠ **export 인 이유는 검사다.** 천장을 4.2m 로 올린 뒤(감독 판정 2026-08-24) 기본
+ * 경로에서는 폴백이 **도달 불가능**해졌다 — `artworkSize` 의 BASE 가 1.6 이라 액자 높이가
+ * 항상 1.6 이하이고, 0.25+1.6+0.2+1.6+0.15 = 3.8 ≤ 4.2 이므로 늘 2단이 성립한다.
+ * 생성기 레벨에서만 검사하면 그 축이 **영영 안 도는 코드**가 되므로 여기를 직접 태운다.
+ */
+export function salonTiers(storyHeight: number, maxArtH: number): { low: number; high: number } | null {
   if (!(maxArtH > 0)) return null;
   const need = SALON_FLOOR_CLEAR + maxArtH + SALON_TIER_GAP + maxArtH + SALON_CEIL_CLEAR;
   if (need > storyHeight) return null;
@@ -283,7 +290,17 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
   const widths = list.map((a) => (isVideoAt(a) ? PART_TYPES.screen.size[0] : artworkSize(a.ar).W));
   // 살롱 2단 판정에 필요한 높이 — **가장 높은 액자**를 기준으로 예산을 잡아야 겹침이 없다.
   const maxArtH = list.reduce((m, a) => Math.max(m, isVideoAt(a) ? PART_TYPES.screen.size[1] : artworkSize(a.ar).H), 0);
-  const STORY = 'gallery';
+  // 층고. **감독 판정 2026-08-24: «작가갤러리 지금 골방같아. 천장 높게 안될까?»**
+  // `STORY_H` 의 최대치(`grand` = 4.2m)를 쓴다 — 그 위는 스키마에 없다. 더 높여야 하면
+  // `space.ts` 에 값을 추가하는 일이고, 그것은 빌더·world 를 포함한 모든 소비자가 함께
+  // 지는 스키마 변경이라 감독·팀장 게이트다.
+  //
+  // ⚠ 방 넓이는 **안 건드린다** — 감독 판정 2026-08-22 「기본은 제일 작은 사이즈로」가
+  // 그대로 유효하고, 이번 지적은 천장을 명시했다. 넓이까지 같이 바꾸면 어느 쪽이 답답함을
+  // 풀었는지 갈리지 않는다(축을 하나만 흔든다).
+  //
+  // 곁들여 살롱 2단 예산이 층고에서 유도되므로(salonTiers) 2단 가능 범위도 함께 넓어진다.
+  const STORY = 'grand';
   const tiers = layout === 'salon' ? salonTiers(STORY_H[STORY], maxArtH) : null;
 
   // ── 방 크기 ────────────────────────────────────────────────────────────────
