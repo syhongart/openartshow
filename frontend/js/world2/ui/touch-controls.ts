@@ -99,6 +99,12 @@ export function attachTouchControls(
     on: '#w2-stick[data-on="1"]',
     lean: (v) => `#w2-stick[data-lean="${v}"]`,
     leanKnob: (v) => `#w2-stick[data-lean="${v}"] #w2-stick-knob`,
+    // 손잡이가 링의 **자식**이다 — 갤러리는 형제라 `margin` 으로 잡는다(모듈 주석 참조).
+    // `knobOn` 을 안 주는 것도 같은 이유다: 링이 통째로 등장하면 자식은 함께 온다.
+    knobCenter: 'transform',
+    // 층위가 필요 없다 — `#w2-stick-zone` 이 이미 층을 갖고 조이스틱은 그 **자식**이다.
+    // 「필요 없다」를 값으로 적는다(생략은 모듈이 던진다 — 조용한 소실을 막는 장치다).
+    z: null,
   }));
 
   const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
