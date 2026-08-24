@@ -364,16 +364,12 @@ document.addEventListener('keyup', (e) => setKey(e.code, false));
 // (stale 터치 방어 pruneStale 포함 — 메인스레드 프리즈로 touchend가 유실돼도 조이스틱이
 // 눌린 채로 영구히 남지 않게 매 터치 이벤트마다 e.touches 기준으로 청소한다.)
 if (isTouch) {
-  // 🔴 **값은 여기 없다** (감독 지시 2026-08-24 *"전부 같게 해라"*).
-  //
-  // ⚠ **이 파일은 저장소의 다섯 번째 조이스틱이었다.** 앞 네 곳을 세면서 나는 이것을
-  // 놓쳤다 — 클래스 이름이 `lgb-joy-*` 라 `lu-joy` 로 세던 집계에도, `#joy` 로 세던
-  // 집계에도 안 걸렸다. **찾아낸 것은 사람이 아니라 검사다**
-  // (`tests/joystick-single-source.test.ts` 가 이름이 아니라 **값**을 훑는다).
-  //
-  // 여기 있던 복사본은 질주 색만 청록(`#72E6E1`)으로 바뀌어 있었고 십자 눈금(`::before`)
-  // 은 아예 빠져 있었다. 그 차이가 **어디에도 기록돼 있지 않다** — 의도한 구분인지
-  // 복사하다 흘린 것인지 알 수 없다. 감독 지시가 「전부 같게」이므로 통일한다.
+  // 🔴 **값은 여기 없다** (감독 2026-08-24 «전부 같게 해라»). ⚠ 이 파일은 저장소의
+  // 다섯 번째 조이스틱이었고 내 집계는 이것을 놓쳤다 — 이름이 `lgb-joy-*` 라 `lu-joy`
+  // 로 세던 집계에도, `#joy` 로 세던 집계에도 안 걸렸다. **찾아낸 것은 사람이 아니라
+  // 검사다**(`tests/joystick-single-source.test.ts` 는 이름이 아니라 값을 훑는다).
+  // 여기 있던 복사본은 질주 색만 청록(`#72E6E1`)이고 십자 눈금이 빠져 있었는데, 그 차이가
+  // **어디에도 기록돼 있지 않다** — 의도인지 복사 중 흘린 것인지 알 수 없다.
   injectJoystickStyle(document, 'lgb-joy-style', joystickCss({
     base: '.lgb-joy-base',
     knob: '.lgb-joy-knob',
@@ -383,6 +379,7 @@ if (isTouch) {
     leanKnob: (v) => `.lgb-joy-knob.lgb-lean${v}`,
     knobCenter: 'margin',
     fixed: true,
+    z: 40, // 원본 값
   }));
   const joyBase = document.createElement('div'); joyBase.className = 'lgb-joy-base';
   const joyKnob = document.createElement('div'); joyKnob.className = 'lgb-joy-knob';

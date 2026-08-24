@@ -304,6 +304,7 @@ describe('🔴 GS-J8 — 조이스틱 룩이 모듈에서 온다', () => {
       lean: (v: string) => `#w2-stick[data-lean="${v}"]`,
       leanKnob: (v: string) => `#w2-stick[data-lean="${v}"] #w2-stick-knob`,
       knobCenter: 'transform',
+      z: null, // 소비자와 같은 인자 — world2 는 구역이 층을 갖는다
     });
   }
 
@@ -368,7 +369,7 @@ describe('🔴 GS-J8 — 조이스틱 룩이 모듈에서 온다', () => {
     // 으로 절반을 당긴다), world2 는 **자식**(`50%` + `translate`). 두 갈래를 **둘 다** 본다
     // — 한쪽만 보면 옵션이 무시돼도 그 한쪽은 통과한다.
     const m = await import('../frontend/js/shared/joystick-look.js');
-    const sel = { base: '#b', knob: '#k', on: '#b.on', lean: (v: string) => `#b.l${v}`,
+    const sel = { base: '#b', knob: '#k', on: '#b.on', z: null, lean: (v: string) => `#b.l${v}`,
       leanKnob: (v: string) => `#b.l${v} #k` };
     expect(m.joystickCss({ ...sel, knobCenter: 'transform' }), '★ 자식 갈래가 없다')
       .toMatch(/#k\{[^}]*left:50%;top:50%;transform:translate\(-50%,-50%\)/);
@@ -381,7 +382,7 @@ describe('🔴 GS-J8 — 조이스틱 룩이 모듈에서 온다', () => {
     // 갤러리는 링과 손잡이가 **형제**라 링이 숨어도 손잡이는 남는다. 이 옵션이 죽으면
     // 손잡이만 화면에 떠 있게 된다 — 룩이 아니라 **버그**다.
     const m = await import('../frontend/js/shared/joystick-look.js');
-    const sel = { base: '.b', knob: '.k', on: '.b.on', lean: (v: string) => `.b.l${v}`,
+    const sel = { base: '.b', knob: '.k', on: '.b.on', z: null, lean: (v: string) => `.b.l${v}`,
       leanKnob: (v: string) => `.b.l${v} .k` };
     const sibling = m.joystickCss({ ...sel, knobOn: '.k.on', knobCenter: 'margin' });
     expect(sibling, '★ 손잡이가 안 숨는다').toMatch(/\.k\{[^}]*opacity:0/);
@@ -402,6 +403,36 @@ describe('🔴 GS-J8 — 조이스틱 룩이 모듈에서 온다', () => {
     const css = (await world2Css()).replace(/\/\*[\s\S]*?\*\//g, '');
     expect(css, '★ 손잡이에 `pointer-events:none` 이 없다')
       .toMatch(/#w2-stick-knob\{[^}]*pointer-events:none/);
+  });
+
+  it('🔴 층위(`z-index`)를 생략할 수 없다 — 조용히 잃은 것이 블로커였다', async () => {
+    // 🔴 **검수관 블로커 (2026-08-24).** 첫 판본은 모듈이 `z-index` 를 아예 안 냈고,
+    // `player.js`·`world-boot.js`·`lab-glb.js` 가 갖고 있던 `40`/`41` 이 **조용히 사라졌다.**
+    // 어느 검사도 그것을 안 봤고, 나는 커밋에 *"CSS 주입 지점만 바꿨다"* 라고 적었다.
+    //
+    // 실질 영향: `z-index:auto` 는 DOM 순서와 무관하게 **양수 층위를 가진 모든 형제보다
+    // 아래**에 그려진다. `world.html:50` 의 `#enter`(z30)가 포인터락 해제마다 되돌아오므로
+    // 조이스틱이 그 밑으로 내려가 **덮인다** — 원본이 40 을 고른 이유가 정확히 그것이다.
+    //
+    // 처방은 기본값이 아니라 **강제**다. 기본값을 주면 그 값이 맞는지 아무도 안 보고,
+    // 「필요 없다」와 「잊었다」가 구별되지 않는다.
+    const m = await import('../frontend/js/shared/joystick-look.js');
+    const sel = { base: '.b', knob: '.k', on: '.b.on', lean: (v: string) => `.b.l${v}`,
+      leanKnob: (v: string) => `.b.l${v} .k` };
+    // ⚠ **타입도 이미 막는다** — `z` 는 선택 필드가 아니라 필수라 `tsc` 가 누락을
+    // 컴파일 타임에 잡는다(이 줄이 `@ts-expect-error` 없이는 빌드를 깬다). 그런데도
+    // 런타임 검사를 **함께** 두는 이유: 소비자 다섯 중 셋이 `.js` 이고 `visit.html` 은
+    // **인라인 스크립트**라 `tsc` 의 사정권 밖이다. 타입만 믿으면 정작 블로커가 났던
+    // 그 파일들(`player.js`·`world-boot.js`·`lab-glb.js`)이 무방비다.
+    // @ts-expect-error `z` 를 일부러 뺀다 — 런타임이 막는지 보는 것이 이 검사의 목적이다.
+    expect(() => m.joystickCss(sel), '★ 생략이 안 막힌다 — 조용한 소실이 다시 가능하다')
+      .toThrow(/z-index/);
+    // 손잡이는 링보다 **한 층 위**여야 한다 — 같으면 형제 구조에서 순서에 따라 가려진다.
+    const css = m.joystickCss({ ...sel, z: 40, knobCenter: 'margin', knobOn: '.k.on', fixed: true });
+    expect(css, '★ 링 층위가 없다').toMatch(/\.b\{[^}]*z-index:40/);
+    expect(css, '★ 손잡이가 링보다 위가 아니다').toMatch(/\.k\{[^}]*z-index:41/);
+    // `null` 은 「필요 없다」의 **명시**다 — 그때는 아무 층위도 내지 않는다.
+    expect(m.joystickCss({ ...sel, z: null }), '★ null 인데 층위가 나온다').not.toContain('z-index');
   });
 
   it('★ `prefers-reduced-motion` 분기가 살아 있다', async () => {

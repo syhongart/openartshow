@@ -5,8 +5,8 @@
 
 import * as THREE from 'three';
 import { ROOM, EYE_HEIGHT, BUILDING } from './config.js';
-// ⚠ 보호파일이 바깥을 참조하는 새 지점이다(감독 지시 2026-08-24 «전부 같게 해라»).
-// 대상은 **의존 0 leaf** 라 새 의존 사슬이 생기지 않는다(게이트가 확인한다).
+// ⚠ 보호파일이 바깥을 참조하는 새 지점이다(감독 2026-08-24 «전부 같게»). 대상은
+// **의존 0 leaf** 라 새 의존 사슬이 안 생긴다(게이트가 확인한다).
 import { joystickCss, injectJoystickStyle, leanState, JOY_RADIUS, LEAN_MOVING, LEAN_RUNNING } from './shared/joystick-look.js';
 
 const WALK_SPEED = 2.5;   // m/s
@@ -137,10 +137,10 @@ export class PlayerController {
     // 입력 처리에는 전혀 관여하지 않는 순수 시각 피드백이다.
     // 디자인: Gilded Frame — 조준선 틱 링 + 달리기 임계 링 점등 + 골드 노브.
     // 🔴 **값은 여기 없다** (감독 지시 2026-08-24 «전부 같게 해라»). 이 자리에 있던 CSS
-    // 33줄이 저장소의 **원본**이었고 네 곳이 그것을 복사해 갔다 — 한쪽만 고쳐도 아무도
-    // 모르는 그 형태다. ⚠ **셀렉터와 DOM 은 그대로 둔다**: 라이브 미술관을 서비스하는
-    // 파일이라, 룩을 옮기는 회차에 구조까지 바꾸면 화면이 깨졌을 때 원인이 안 갈린다.
-    // 손잡이가 링의 **형제**라는 사실만 `knobCenter`·`knobOn` 두 옵션으로 알려 준다.
+    // 33줄이 저장소의 **원본**이었고 네 곳이 그것을 복사해 갔다. ⚠ **셀렉터와 DOM 은
+    // 그대로 둔다**: 라이브 미술관을 서비스하는 파일이라, 룩을 옮기는 회차에 구조까지
+    // 바꾸면 화면이 깨졌을 때 원인이 안 갈린다. 손잡이가 링의 **형제**라는 사실만
+    // `knobCenter`·`knobOn` 으로 알려 준다.
     injectJoystickStyle(document, 'lu-joy-style', joystickCss({
       base: '.lu-joy-base',
       knob: '.lu-joy-knob',
@@ -150,6 +150,7 @@ export class PlayerController {
       leanKnob: (v) => `.lu-joy-knob.lu-lean${v}`,
       knobCenter: 'margin',
       fixed: true,
+      z: 40, // 원본 값 — `#enter`(z30) 위여야 포인터락 해제 상태에서도 조작된다
     }));
     this._joyBase = document.createElement('div');
     this._joyBase.className = 'lu-joy-base';
@@ -240,8 +241,7 @@ export class PlayerController {
           this._joyKnob.style.left = this.moveTouch.startX + dx * scale + 'px';
           this._joyKnob.style.top = this.moveTouch.startY + dy * scale + 'px';
           // 🔴 **두 단계다** (감독 2026-08-24 «움직이면 초록 / 달리면 더 진하게»). 이 파일은
-          // 오래 **한 단계**였다 — `> 0.85` 하나뿐이라 그 아래는 색이 안 변했다. 임계는
-          // 모듈의 `leanState` 한 곳이고 여기서는 결과를 DOM 에 새기기만 한다.
+          // 오래 **한 단계**였다(`> 0.85` 하나뿐). 임계는 모듈 `leanState` 한 곳이다.
           const lean = leanState(Math.hypot(this.moveTouch.dx, this.moveTouch.dy));
           for (const el of [this._joyBase, this._joyKnob]) {
             el.classList.toggle('lu-lean1', lean === LEAN_MOVING);

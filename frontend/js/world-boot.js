@@ -235,6 +235,8 @@ if (isTouch) {
     leanKnob: (v) => `.lu-joy-knob.lu-lean${v}`,
     knobCenter: 'margin',
     fixed: true,
+    // 원본 값이다. `world.html:50` 의 `#enter`(z30) 위 — 그 주석이 근거를 갖는다.
+    z: 40,
   }));
   const joyBase = document.createElement('div'); joyBase.className = 'lu-joy-base';
   const joyKnob = document.createElement('div'); joyKnob.className = 'lu-joy-knob';
