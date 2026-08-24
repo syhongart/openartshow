@@ -47,7 +47,7 @@ import { createStaticStore, loadLegacyOverlay } from '../store/static-store.js';
 import { resolveEntry } from '../decide/tenant-entry.js';
 import { mountTenantEntry, type TenantBar } from '../ui/tenant-bar.js';
 import { mountVenuePrompt, type VenuePrompt } from '../ui/venue-prompt.js';
-import { VENUE_NEAR_RADIUS } from '../decide/venue-entry.js';
+import { VENUE_NEAR_RADIUS, VENUE_FALLBACK_RADIUS, venueAnchorOf } from '../decide/venue-entry.js';
 import { mountArtworks, type ArtNode, type ArtworkScene } from '../systems/artwork-mount.js';
 import { createArtsPort } from '../systems/art-port.js';
 import { createModelCache, type ModelCache } from './overlay-models.js';
@@ -396,11 +396,10 @@ export const overlayFeature: Feature = {
         if (env.doc) venuePrompt = mountVenuePrompt(env.doc, {
           tenant: () => venueGallery,
           player: () => env.player?.position ?? null,
-          venue: () => {
-            const root = env.glbCityRoot?.() as { position?: { x: number; z: number } } | null;
-            const p = root?.position;
-            return p ? { x: p.x, z: p.z, radius: VENUE_NEAR_RADIUS } : null;
-          },
+          // 진입 지점 유도는 `decide/venue-anchor` 소관이다 — 여기(three import 있음)에
+          // 두면 노드가 못 돌려 영영 검사되지 않는다. 감독 판정(문 앞 3m)은 건물 중심에서
+          // 재면 성립하지 않으므로(중심 3m 는 건물 내부다) 문 노드를 기준으로 쓴다.
+          venue: () => venueAnchorOf(env.glbCityRoot?.(), VENUE_NEAR_RADIUS, VENUE_FALLBACK_RADIUS),
         });
         // 갤러리 목록을 읽어 들어갈 전시장을 정한다. `?u=` 가 그 목록에 있으면 그것,
         // 없으면 첫 전시. **`?u=` 를 요구하지 않는다** — 건물 앞이면 들어가진다(감독 지적).
