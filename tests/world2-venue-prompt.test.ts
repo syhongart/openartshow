@@ -17,6 +17,7 @@ const deps = (over: any = {}) => ({
   player: () => ({ x: 0, z: 0 }),
   venue: () => ({ x: 0, z: 0, radius: VENUE_NEAR_RADIUS }),
   intervalMs: 0, // 타이머 없이 refresh() 로만 돌린다
+  fadeMs: 0,     // 연출 없이 즉시 이동(전환 연출은 아래 describe 가 따로 본다)
   ...over,
 });
 
@@ -130,5 +131,39 @@ describe('갈 곳을 게터로 늦게 정할 수 있다', () => {
     expect(doc.body.querySelector('button')!.style.display).toBe('block');
     expect(p.view?.href).toBe('visit.html?u=syhongart');
     p.dispose();
+  });
+});
+
+describe('전환 연출 — 어둠으로 덮고 넘어간다', () => {
+  // 감독 지적 2026-08-24 «팍 들어가는데.. 디졸브로 보여주면 어떨까?».
+  // 나가는 쪽만 맡는다(들어가는 쪽은 visit.html 이 자기 CSS 로 밝아진다).
+  it('연출을 켜면 덮개를 씌우고, 다 덮은 뒤에 이동한다', async () => {
+    const gone: string[] = [];
+    const p = mountVenuePrompt(doc, deps({ fadeMs: 30, navigate: (h: string) => gone.push(h) }));
+    doc.body.querySelector('button')!.dispatchEvent(new MouseEvent('click'));
+    const veil = [...doc.body.children].find((e) => /z-index:9999/.test(e.getAttribute('style') || ''));
+    expect(veil).toBeTruthy();                       // 덮개가 생겼다
+    expect(gone).toEqual([]);                        // 아직 안 갔다
+    await new Promise((r) => setTimeout(r, 70));
+    expect(gone).toEqual(['visit.html?u=syhongart']); // 덮은 뒤에 갔다
+    p.dispose();
+  });
+
+  it('모션 감소 설정이면 연출을 건너뛴다', () => {
+    const gone: string[] = [];
+    (doc.defaultView as any).matchMedia = () => ({ matches: true });
+    const p = mountVenuePrompt(doc, deps({ fadeMs: 500, navigate: (h: string) => gone.push(h) }));
+    doc.body.querySelector('button')!.dispatchEvent(new MouseEvent('click'));
+    expect(gone).toEqual(['visit.html?u=syhongart']); // 기다리지 않고 바로
+    (doc.defaultView as any).matchMedia = undefined;
+    p.dispose();
+  });
+
+  it('들어가는 쪽도 밝아진다 (visit.html 이 자기 몫을 갖는다)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const html = readFileSync('frontend/visit.html', 'utf-8');
+    expect(html).toContain('id="venue-veil"');
+    expect(html).toMatch(/@keyframes\s+venueIn/);
+    expect(html).toMatch(/prefers-reduced-motion:\s*reduce/);
   });
 });
