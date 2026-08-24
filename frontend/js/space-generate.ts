@@ -96,6 +96,20 @@ const WINDOW_W = PART_TYPES.window.size[0];
 // 파티션 세그먼트 폭(SSOT 소비 — 여기서 1.2 를 다시 적지 않는다).
 const PARTITION_W = PART_TYPES.partition.size[0];
 
+/**
+ * 강조면(featureWall)을 두는 벽. **이 상수 하나가 셸 설정과 창문 배치 양쪽을 정한다.**
+ *
+ * ⚠ 왜 창문과 엮이는가 — 실측으로 알았다. 강조면은 `space-assembler` 가 벽 **안쪽에
+ * 덧대는 통짜 판**이고(폭 `fw-0.2` · 두께 0.02), 창문 구멍을 그대로 덮는다. 실제로
+ * 이 면의 창 두 개가 화면에서 통째로 사라져 있었다(씬 덤프: 북벽 `w=13.8 h=4 @ z=-4.88`
+ * 판 하나가 `x=±5.7` 구멍 앞을 가림).
+ *
+ * 강조면을 조각내지 않고 **창문을 이 면에서 뺀 것**은 그게 더 싸서가 아니라 그게 옳아서다:
+ * 강조면은 작품을 돋보이게 하는 배경이고, 거기에 창을 뚫으면 관람자가 역광으로 작품을
+ * 본다. 대신 이 면은 창문 몫을 용량에서 빼지 않으므로 **작품이 더 걸린다**(`walls()`).
+ */
+const FEATURE_SIDE = 'north' as const;
+
 // ── 벽 한 면의 기하 ──────────────────────────────────────────────────────────
 /** 길이축 좌표 u(중앙 0) → 월드 (x,z). 벽마다 축과 부호가 다르므로 함수로 감싼다. */
 interface WallDef {
@@ -122,15 +136,17 @@ function walls(fw: number, fd: number, wallT: number): Record<string, WallDef> {
   // 그것을 반영해 저절로 한 단계 올라간다 — 「기본은 작게」 판정과 부딪히지 않는다.
   // 요구가 늘어 최소치가 올라간 것이지 최소를 고르지 않게 된 게 아니다.
   const win = (WINDOW_W + FRAME_RULES.minGap) * 2;
-  const artUsable = (len: number) => Math.max(0, len - m * 2 - win);
+  // 강조면은 창을 안 내므로(FEATURE_SIDE 주석) 그 몫을 빼지 않는다 — 작품이 더 걸린다.
+  const artUsable = (len: number, side: WallDef['side']) =>
+    Math.max(0, len - m * 2 - (side === FEATURE_SIDE ? 0 : win));
   return {
-    north: { side: 'north', ry: 0, usable: artUsable(fw),
+    north: { side: 'north', ry: 0, usable: artUsable(fw, 'north'),
       at: (u) => ({ x: u, z: nz }), lightAt: (u) => ({ x: u, z: nz + LIGHT_INSET }) },
-    south: { side: 'south', ry: Math.PI, usable: artUsable(fw),
+    south: { side: 'south', ry: Math.PI, usable: artUsable(fw, 'south'),
       at: (u) => ({ x: u, z: sz }), lightAt: (u) => ({ x: u, z: sz - LIGHT_INSET }) },
-    west: { side: 'west', ry: Math.PI / 2, usable: artUsable(fd),
+    west: { side: 'west', ry: Math.PI / 2, usable: artUsable(fd, 'west'),
       at: (u) => ({ x: wx, z: u }), lightAt: (u) => ({ x: wx + LIGHT_INSET, z: u }) },
-    east: { side: 'east', ry: -Math.PI / 2, usable: artUsable(fd),
+    east: { side: 'east', ry: -Math.PI / 2, usable: artUsable(fd, 'east'),
       at: (u) => ({ x: ex, z: u }), lightAt: (u) => ({ x: ex - LIGHT_INSET, z: u }) },
   };
 }
@@ -336,6 +352,7 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
   // 받을 만하면 벽 끝쪽에 낸다. 파티션 면은 제외한다 — 방 안쪽 벽이라 바깥이 없다.
   for (const slot of slots) {
     if (Math.abs(slot.wall.at(0).x) < 1e-6 && Math.abs(slot.wall.at(0).z) < 0.2) continue; // 파티션 면
+    if (slot.wall.side === FEATURE_SIDE) continue; // 강조면 — 덧댄 판이 구멍을 덮는다(FEATURE_SIDE 주석)
     // 자리는 `walls()` 가 이미 떼어 두었다(용량에서 뺐다) — 여기서는 그 자리에 놓기만 한다.
     // 작품 줄 바깥쪽, 벽 끝에서 간격 하나 들어온 곳이다.
     const u = slot.wall.usable / 2 + FRAME_RULES.minGap + WINDOW_W / 2;
@@ -392,7 +409,7 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
       wallT,
       finish: {
         wall: 'white', floor: 'parquet', ceiling: 'whiteflat', trim: 'brass',
-        featureWall: 'north', featureFinish: 'deepviolet',
+        featureWall: FEATURE_SIDE, featureFinish: 'deepviolet', // 창문 배치와 같은 상수 — 미러링 금지
         ...(opts.finish || {}),
       },
     },
