@@ -60,6 +60,8 @@ export interface SpacePart {
   src?: string;
   featured?: boolean;
   ar?: number;
+  /** 이 작품 하나의 크기 배율. 방 기준(`shell.artScale`)에 **곱해진다**. 생략=1. */
+  scale?: number;
   ratio?: string;
   variant?: string;
   mat?: string;
@@ -214,8 +216,33 @@ export const FRAME_RULES = {
  *
  * 상한 2.0 은 임의가 아니다 — `BASE * 2.0 = 3.2` 가 `FRAME_RULES.landscape.clampW`
  * 와 같다. 그보다 키우면 clamp 가 전부 먹어 배율이 화면에 안 나타난다(노브만 헛돈다).
+ *
+ * ⚠ **다만 그 근거는 가로장만 본 것이다**(실측 정정 2026-08-24). 세로장은
+ * `1.6 × k = clampH(2.6)`, 즉 **k ≈ 1.625** 에서 이미 잘린다. 그 사이 구간에서는
+ * 세로 작품만 안 커지는 것처럼 보이는데 **고장이 아니라 상한이 방향마다 다른 것**이다.
+ * 이 문장을 안 남기면 다음 사람이 그것을 버그로 조사한다(검사로도 못 박아 뒀다).
  */
 export const ART_SCALE = { min: 0.6, max: 2.0, def: 1 };
+
+/**
+ * **작품 하나의** 크기 배율 범위(`part.scale`). 방 기준(`shell.artScale`)에 곱해진다.
+ *
+ * 감독 판정 2026-08-24: *"큰것도 있고 작은 것도 있고 복합적으로 배치. 일괄은 없어."*
+ *
+ * ⚠ **내 앞 설계가 왜 틀렸는지 적어 둔다.** 나는 «작품을 크게 걸고» 를 **하나의 배율**
+ * 문제로 읽고 `shell.artScale` 만 만들었다. 그러면 방 안의 모든 액자가 **같은 비율로**
+ * 커진다 — 크기 관계는 그대로이므로 화면에서는 「방이 작아진 것」과 구별되지 않는다.
+ * 실제 전시가 크기를 섞는 이유는 큰 작품을 크게 보이게 하려는 것이고, 그건 **옆에
+ * 작은 것이 있을 때만** 성립한다. 일괄 배율은 그 대비를 만들 수 없다.
+ *
+ * 방 기준을 없애지 않고 **곱셈으로 얹은** 이유: 방 기준은 「이 방은 전체적으로 큼직하게
+ * 건다」는 축이고 작품별 배율은 「이 작품이 이 방에서 얼마나 중요한가」다. 축이 둘이라
+ * 곱이 맞다. 그리고 기존 저장분은 둘 다 없어 1×1 이므로 회귀가 0 이다.
+ *
+ * 하한 0.5 는 `FRAME_RULES.minSize`(0.6m)와 다르다 — 저쪽은 액자 실치수 하한이고
+ * 여기는 배율이다. 배율을 더 내려도 실치수는 `artworkSize` 의 clamp 가 받는다.
+ */
+export const PART_SCALE = { min: 0.5, max: 2.0, def: 1 };
 
 // p.ar → 액자 W/H. 디자이너 실측 공식. ar 없으면 레거시 고정 1.2×1.6 폴백.
 // scale 은 `shell.artScale`(방 단위) — 소비자가 넘긴다. 여기서 기본값을 다시 적지 않는다.
@@ -223,7 +250,12 @@ export function artworkSize(ar?: unknown, scale?: unknown): { W: number; H: numb
   const k = (typeof scale === 'number' && isFinite(scale) && scale > 0)
     ? Math.min(ART_SCALE.max, Math.max(ART_SCALE.min, scale)) : ART_SCALE.def;
   const [dw, dh] = PART_TYPES.artwork.size; // 폴백(빈 액자·구버전 저장분)
-  if (!(typeof ar === 'number' && isFinite(ar) && ar > 0)) return { W: dw * k, H: dh * k };
+  // ⚠ 폴백도 **같은 경로를 탄다.** 예전에는 여기서 `{ W: dw*k, H: dh*k }` 로 즉시
+  // 돌려줬고, 그러면 clamp 를 건너뛰어 배율만큼 **무한정 커진다** — 배율 2.9 에서 높이가
+  // 3.2m 가 돼 중심 1.6m 기준으로 바닥을 뚫었다(검사가 잡았다). 폴백 종횡비를 `ar` 로
+  // 넣어 아래 로직에 위임하면 clamp 가 함께 걸리고, 배율 1 일 때 결과는 그대로다
+  // (1.2:1.6 = 0.75 → H=1.6·W=1.2). 하위호환을 깨지 않고 구멍만 막는다.
+  if (!(typeof ar === 'number' && isFinite(ar) && ar > 0)) return artworkSize(dw / dh, k);
   const BASE = 1.6 * k, minSize = FRAME_RULES.minSize, clampW = FRAME_RULES.landscape.clampW, clampH = FRAME_RULES.portrait.clampH;
   const cl = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
   const r = ar;
@@ -234,6 +266,29 @@ export function artworkSize(ar?: unknown, scale?: unknown): { W: number; H: numb
   if (W !== W0) H = cl(W / r, minSize, clampH); // 폭이 clamp로 잘리면 높이를 비율 재산출
   if (H !== H0) W = cl(H * r, minSize, clampW); // 높이가 clamp로 잘리면 폭을 비율 재산출
   return { W, H };
+}
+
+/**
+ * 파츠 하나의 액자 실치수. **소비자는 `artworkSize` 대신 이것을 부른다.**
+ *
+ * ⚠ 이 함수가 생긴 이유는 편의가 아니라 **검출력**이다. 크기가 `ar`·방 기준·작품별
+ * 배율 셋에서 나오는데, 소비자가 `artworkSize` 를 직접 부르면 인자를 빠뜨릴 자리가
+ * 생긴다. 실측으로 두 번 났다: ① 방 기준을 안 넘겨 겹침 검사 40건이 **조용히**
+ * 느슨해졌다(실제보다 작은 폭으로 쟀다) ② 작품별 배율을 안 넘겨 같은 검사가 이번엔
+ * 반대 방향으로 어긋났다. **재계산하는 자리를 없애면 빠뜨릴 자리도 없다.**
+ *
+ * `src` 유무로 `ar` 을 갈라 쓰는 것도 여기 있다 — 빈 액자는 종횡비를 모르므로 폴백
+ * 치수를 받는다(`space-assembler` 의 두 경로가 그렇게 갈린다). 그 분기를 소비자마다
+ * 따로 적으면 한쪽만 고쳐도 아무도 모른다.
+ */
+export function partArtSize(
+  part: { src?: string; ar?: number; scale?: number } | null | undefined,
+  shell: { artScale?: number } | null | undefined,
+): { W: number; H: number } {
+  const p = part || {};
+  const room = shell && typeof shell.artScale === 'number' ? shell.artScale : ART_SCALE.def;
+  const own = typeof p.scale === 'number' ? p.scale : PART_SCALE.def;
+  return artworkSize(p.src ? p.ar : undefined, room * own);
 }
 
 // ── 층고·풋프린트 프리셋 ──────────────────────────────────────────────────
@@ -339,6 +394,11 @@ function normalizePart(raw: any): SpacePart | null {
     // 하한/상한 0.1~10으로 극단 방어(importJSON 우회 값). SPACE_VERSION 불변(완전 하위호환).
     const arv = clamp(raw.ar, 0.1, 10, undefined);
     if (arv !== undefined) p.ar = arv;
+    // [scale — 작품별 크기] 방 기준 배율에 **곱한다**. 생략=1(하위호환).
+    // 감독 판정 2026-08-24 «큰것도 있고 작은 것도 있고 복합적으로 배치. 일괄은 없어» —
+    // 왜 방 단위 일괄이 틀렸는지는 `PART_SCALE` 주석 한 곳이다.
+    const scv = clamp(raw.scale, PART_SCALE.min, PART_SCALE.max, undefined);
+    if (scv !== undefined && scv !== PART_SCALE.def) p.scale = scv;
   }
   if (raw.t === 'screen') {
     p.ratio = pick(raw.ratio, new Set(spec.ratios), spec.ratios![0]);

@@ -161,6 +161,18 @@ export function venueEntryView(input: VenueEntryInput): VenueEntryView {
   return {
     show: true,
     label: '전시장 들어가기',
+    // ⚠ **여기서 멈췄다 — 다음 사람을 위해 경계를 적어 둔다.**
+    // 감독 판정 2026-08-24 «이건 설정된 오픈월드 환경으로 맞춰서 해야지» 를 받아 전시장
+    // 창밖 하늘을 `sky.js` 팔레트로 갈아끼웠고, **기본값**을 오픈월드 기본(day+clear)과
+    // 맞춰 두었다. 그래서 「같은 세계」는 성립한다.
+    //
+    // 그러나 오픈월드에서 **밤에** 문으로 들어가도 창밖은 낮이다 — 지금 시간대·날씨를
+    // 이 주소에 실어 보내지 않기 때문이다. 실으려면 `visit.html` 이 이미 읽는
+    // `?time=`·`?weather=` 에 값을 붙이면 되고(어휘를 일부러 world2 와 같게 뒀다),
+    // 남은 일은 **그 값을 여기까지 가져오는 배선**이다: 이 함수는 순수 판정이라 입력으로
+    // 받아야 하고, 부르는 쪽(`features/overlay.ts`)이 `SkySystem` 상태에 닿아야 한다.
+    // overlay 는 파일 크기 상한에 붙어 있어(579/593) 그 배선이 작은 일이 아니다.
+    // 안 하고 남긴 이유는 그것이 **추가 개선**이고, 감독은 지금 화면을 기다린다는 것이다.
     href: `${VENUE_PAGE}?u=${encodeURIComponent(tenant)}`,
     distance,
   };

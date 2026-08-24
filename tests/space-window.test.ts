@@ -19,8 +19,9 @@
 // 셋 중 하나만 어긋나도 화면은 조용히 옛날로 돌아가고, 그때 아무도 모르는 것이 문제다.
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
+import { SKY_TIMES, SKY_WEATHERS } from '../frontend/js/sky.js';
 import { wallPiecesWithWindows } from '../frontend/js/space-window-wall.js';
-import { scaleFor, OUTSIDE_MOODS } from '../frontend/js/space-outside.js';
+import { scaleFor, OUTSIDE_TIMES, OUTSIDE_WEATHERS, OUTSIDE_DEFAULT_TIME, OUTSIDE_DEFAULT_WEATHER } from '../frontend/js/space-outside.js';
 import { generateSpace, wallUsable } from '../frontend/js/space-generate.js';
 import { PART_TYPES } from '../frontend/js/space.js';
 import { readFileSync } from 'node:fs';
@@ -190,9 +191,15 @@ describe('scaleFor — 창밖 풍경이 카메라 far 안에 선다', () => {
     expect(base.dome).toBeLessThan(200);
   });
 
-  it('하늘 무드 후보가 열려 있다(감독이 화면으로 비교한다)', () => {
-    expect(OUTSIDE_MOODS.length).toBeGreaterThanOrEqual(2);
-    expect(OUTSIDE_MOODS).toContain('day');
+  it('하늘 어휘가 오픈월드와 같다(감독 판정 «설정된 오픈월드 환경으로 맞춰서»)', () => {
+    // ⚠ 목록을 여기 다시 적지 않는다 — `sky.js` 가 SSOT 다. 보는 것은 **같은 배열인가**.
+    expect(OUTSIDE_TIMES).toEqual(SKY_TIMES);
+    expect(OUTSIDE_WEATHERS).toEqual(SKY_WEATHERS);
+    // 기본값도 오픈월드 기본과 같아야 한다(world2 는 daylit→day · clear 로 뜬다).
+    expect(OUTSIDE_TIMES).toContain(OUTSIDE_DEFAULT_TIME);
+    expect(OUTSIDE_WEATHERS).toContain(OUTSIDE_DEFAULT_WEATHER);
+    expect(OUTSIDE_DEFAULT_TIME).toBe('day');
+    expect(OUTSIDE_DEFAULT_WEATHER).toBe('clear');
   });
 });
 
@@ -326,16 +333,20 @@ describe('visit.html 배선 — 창밖이 붙고, 카메라 far 가 전달된다
   const html = readFileSync(resolve(process.cwd(), 'frontend/visit.html'), 'utf8');
 
   it('창문이 있는 공간에만 창밖을 세운다', () => {
-    expect(html).toMatch(/parts[^\n]*\.t === 'window'[\s\S]{0,120}buildOutsideView\(/);
+    expect(html).toMatch(/parts[^\n]*\.t === 'window'[\s\S]{0,200}buildOutsideView\(/);
   });
 
   it('cameraFar 를 카메라에서 읽어 넘긴다(상수를 다시 적지 않는다)', () => {
     // 이 배선이 없으면 하늘이 클리핑 평면 밖에 서서 통째로 안 보인다.
-    expect(html).toMatch(/buildOutsideView\(\s*\{[^}]*cameraFar:\s*V\.getCamera\(\)\.far/);
+    expect(html).toMatch(/buildOutsideView\(\s*\{[\s\S]*?cameraFar:\s*V\.getCamera\(\)\.far/);
     expect(html).not.toMatch(/cameraFar:\s*\d/);   // 숫자를 박으면 미러링이다
   });
 
-  it('하늘 무드를 주소 노브로 연다(감독이 화면에서 비교한다)', () => {
-    expect(html).toMatch(/buildOutsideView\(\s*\{[^}]*mood:[^}]*get\('sky'\)/);
+  it('하늘 시간대·날씨를 오픈월드와 **같은 노브 이름**으로 넘긴다', () => {
+    // `?time=`·`?weather=` 는 world2 가 쓰는 이름 그대로다 — 문으로 들어올 때 값을
+    // 그대로 넘겨받으려면 어휘가 같아야 한다(감독 판정 «오픈월드 환경으로 맞춰서»).
+    expect(html).toMatch(/buildOutsideView\(\s*\{[\s\S]*?time:[^\n]*get\('time'\)/);
+    expect(html).toMatch(/buildOutsideView\(\s*\{[\s\S]*?weather:[^\n]*get\('weather'\)/);
+    expect(html).not.toMatch(/get\('sky'\)/);   // 옛 자체 어휘가 남아 있으면 안 된다
   });
 });

@@ -2,11 +2,11 @@
 // space-assembler.ts — 공간 문서 → THREE.Group 조립기·조명(B). space-render.js에서 순수 추출.
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
-import { FOOTPRINT, STORY_H, PART_TYPES, TINT_PALETTES } from './space.js';
+import { FOOTPRINT, STORY_H, PART_TYPES, TINT_PALETTES, partArtSize } from './space.js';
 import { wallPiecesWithWindows } from './space-window-wall.js';
 import {
   bakeUVRepeat, floorMatTex, finishMat, wallMat, featureMat, shellFlatMat, partY, MATS, FRAME_MAT_ID,
-  artworkCanvasDims, box, partGeo, artworkSize, artworkImageMaterial, matteMarginFor,
+  artworkCanvasDims, box, partGeo, artworkImageMaterial, matteMarginFor,
   partMat, UNIQUE_TEX_TYPES, partAccent,
 } from './space-parts.js';
 /** 공간 치수 (footprint·storyH 프리셋 해석) */
@@ -204,26 +204,39 @@ function* _spaceGroupGen(space, opts = {}) {
         const frameMat = (MATS[FRAME_MAT_ID[style]] || MATS.frameBlack)(); mats.push(frameMat);
         const withSrc = items.filter(({ p }) => p.src);
         const noSrc = items.filter(({ p }) => !p.src);
-        // 빈 액자(noSrc): 스타일별 공유 지오 — draw-call 예산·회귀 없음.
+        // 빈 액자(noSrc): 공유 지오 — draw-call 예산·회귀 없음.
         // ⚠ 크기는 `artworkSize(undefined, …)` 로 받는다. 예전에는 `PART_TYPES.artwork.size`
         // 를 그대로 썼고, `shell.artScale` 이 생기면서 **이 경로만 배율을 무시했다** —
         // 배치 계산(`space-generate` 의 widths)은 배율을 쓰므로 빈 액자만 자리보다 작게
-        // 걸린다. 공유 지오는 그대로다(배율은 방 단위라 방 안에서 값이 하나다).
+        // 걸린다.
+        // ⚠⚠ 그리고 이제 배율이 **작품마다 다르다**(감독 판정 «일괄은 없어»). 크기가
+        // 다르면 지오를 한 벌로 공유할 수 없으므로 **배율별로 나눠 굽는다.** 공유 자체는
+        // 유지된다 — 리듬이 8종이라 최악 8벌이고, 같은 배율끼리는 여전히 한 벌이다.
         if (noSrc.length) {
-          const { W: dw, H: dh } = artworkSize(undefined, space.shell.artScale);
-          const frameGeo = partGeo('artwork', { style, w: dw, h: dh, d: D }); geos.push(frameGeo);
-          const { cw, ch } = artworkCanvasDims(style, dw, dh);
-          const canvasGeo = box(cw, ch, 0.015); geos.push(canvasGeo);
-          const paperMat = MATS.paper(); mats.push(paperMat);
-          for (const { p, i } of noSrc) {
-            addFrameMesh(frameGeo, frameMat, p, i);
-            const cm = new THREE.Mesh(canvasGeo, paperMat); cm.position.copy(canvasPos(p, ART_OFF_Z)); cm.rotation.y = p.ry; cm.castShadow = true; g.add(cm);
-            if (++chunkAcc >= budget) { budget = (yield) ?? Infinity; chunkAcc = 0; } // [청크] 작품 1개마다 예산 체크 — artwork는 단일 그룹이라 아이템 단위 양보 필수(드레인=Infinity면 미발화)
+          const byScale = new Map();
+          for (const it of noSrc) {
+            const k = it.p.scale || 1;
+            const arr = byScale.get(k) || [];
+            if (!arr.length) byScale.set(k, arr);
+            arr.push(it);
+          }
+          for (const [scaleKey, group] of byScale) {
+            const { W: dw, H: dh } = partArtSize({ scale: scaleKey }, space.shell); // src 없음 → 폴백 치수
+            const frameGeo = partGeo('artwork', { style, w: dw, h: dh, d: D }); geos.push(frameGeo);
+            const { cw, ch } = artworkCanvasDims(style, dw, dh);
+            const canvasGeo = box(cw, ch, 0.015); geos.push(canvasGeo);
+            const paperMat = MATS.paper(); mats.push(paperMat);
+            for (const { p, i } of group) {
+              addFrameMesh(frameGeo, frameMat, p, i);
+              const cm = new THREE.Mesh(canvasGeo, paperMat); cm.position.copy(canvasPos(p, ART_OFF_Z)); cm.rotation.y = p.ry; cm.castShadow = true; g.add(cm);
+              if (++chunkAcc >= budget) { budget = (yield) ?? Infinity; chunkAcc = 0; } // [청크] 작품 1개마다 예산 체크 — artwork는 단일 그룹이라 아이템 단위 양보 필수(드레인=Infinity면 미발화)
+            }
           }
         }
         // 이미지 작품(withSrc): 파츠별 개별 지오(ar 크기·고유 텍스처) — geos 등록 필수(누수 방지).
         for (const { p, i } of withSrc) {
-          const { W, H } = artworkSize(p.ar, space.shell.artScale);
+          // 방 기준 × 작품별을 함께 받는다 — 인자를 빠뜨릴 자리가 없다(`partArtSize` 주석).
+          const { W, H } = partArtSize(p, space.shell);
           const frameGeo = partGeo('artwork', { style, w: W, h: H, d: D }); geos.push(frameGeo); // ★ 개별 프레임 지오 회수 등록
           addFrameMesh(frameGeo, frameMat, p, i);
           const { cw, ch } = artworkCanvasDims(style, W, H);
