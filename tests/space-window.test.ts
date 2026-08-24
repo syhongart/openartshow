@@ -76,6 +76,16 @@ function boxes(group: unknown): BoxRow[] {
 const WIN_W = PART_TYPES.window.size[0];
 const WIN_H = PART_TYPES.window.size[1];
 const area = (ps: readonly { w: number; h: number }[]) => ps.reduce((s, p) => s + p.w * p.h, 0);
+/** 조각끼리 겹치는 쌍이 있는가. 겹치면 넓이 합이 맞아도 벽이 두꺼워 보인다. */
+function anyOverlap(ps: readonly { u: number; y: number; w: number; h: number }[]): boolean {
+  for (let i = 0; i < ps.length; i++) {
+    for (let j = i + 1; j < ps.length; j++) {
+      const a = ps[i], b = ps[j];
+      if (Math.abs(a.u - b.u) < (a.w + b.w) / 2 - 1e-9 && Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 1e-9) return true;
+    }
+  }
+  return false;
+}
 
 describe('wallPiecesWithWindows — 벽 조각', () => {
   it('창문이 없으면 통짜 한 장이다(뚫기 전 동작과 합동)', () => {
@@ -95,21 +105,23 @@ describe('wallPiecesWithWindows — 벽 조각', () => {
   });
 
   it('조각끼리 겹치지 않는다(겹치면 넓이 합은 맞아도 벽이 두꺼워 보인다)', () => {
-    const ps = wallPiecesWithWindows(12, 4.2, [-3.5, 3.5], WIN_W, WIN_H, 2.4);
-    for (let i = 0; i < ps.length; i++) {
-      for (let j = i + 1; j < ps.length; j++) {
-        const a = ps[i], b = ps[j];
-        const ux = Math.abs(a.u - b.u) < (a.w + b.w) / 2 - 1e-9;
-        const uy = Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 1e-9;
-        expect(ux && uy).toBe(false);
-      }
-    }
+    expect(anyOverlap(wallPiecesWithWindows(12, 4.2, [-3.5, 3.5], WIN_W, WIN_H, 2.4))).toBe(false);
   });
 
-  it('붙어 있는 창 두 개는 한 구멍으로 합쳐진다(사이에 실 같은 조각을 만들지 않는다)', () => {
+  it('맞닿는 창 두 개는 사이에 실 같은 조각을 남기지 않는다', () => {
     const ps = wallPiecesWithWindows(12, 4.2, [-WIN_W / 2, WIN_W / 2], WIN_W, WIN_H, 2.4);
     expect(area(ps)).toBeCloseTo(12 * 4.2 - 2 * WIN_W * WIN_H, 6);
     for (const p of ps) expect(p.w).toBeGreaterThan(0.02);
+  });
+
+  it('**겹치는** 창 두 개는 한 구멍으로 합쳐진다', () => {
+    // ⚠ 맞닿는 표본만으로는 병합 코드를 죽여도 안 잡힌다 — 사이에 폭 0 짜리 조각이
+    //   생겼다가 최소 조각 검사에 걸러져 결과가 같아지기 때문이다(뮤테이션 M4 실측).
+    //   병합이 실제로 필요한 것은 **겹칠 때**이고, 없으면 조각끼리 서로 겹친다.
+    const u = 0.5, ps = wallPiecesWithWindows(12, 4.2, [-u, u], WIN_W, WIN_H, 2.4);
+    const holeW = (u + WIN_W / 2) * 2;                 // 두 창을 합친 구멍 폭
+    expect(area(ps)).toBeCloseTo(12 * 4.2 - holeW * WIN_H, 6);
+    expect(anyOverlap(ps)).toBe(false);
   });
 
   it('거의 붙은 두 창 사이에 실 같은 조각을 만들지 않는다', () => {
