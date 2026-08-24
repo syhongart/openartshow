@@ -37,6 +37,7 @@
 // ⚠ 이동 쪽은 이제 이 방어가 **필요 없다** — `setPointerCapture` 가 `pointercancel` 까지
 // 보장하므로 브라우저가 정리해 준다. 시선 쪽에만 남겼다.
 
+import { joystickCss, injectJoystickStyle, leanState, LEAN_NONE } from '../../shared/joystick-look.js';
 import {
   stickAxes, knobOffset, reconcile, lookDelta, isTouchDevice,
   STICK_RADIUS, NO_SLOTS, type TouchSlots,
@@ -86,9 +87,20 @@ export function attachTouchControls(
   parts: TouchParts,
   targets: TouchTargets,
 ): TouchControls {
-  // 룩(`?stick=`)은 **터치 판정보다 먼저** 새긴다. 아래 조기 반환 뒤에 두면 데스크톱에서
-  // 속성이 안 붙고, 그러면 창을 좁혀 보는 확인·헤드리스 스윕이 늘 시작값 룩만 보게 된다
+  // 룩은 **터치 판정보다 먼저** 주입한다. 아래 조기 반환 뒤에 두면 데스크톱에서 스타일이
+  // 안 붙고, 그러면 창을 좁혀 보는 확인·헤드리스 스윕이 늘 룩 없는 화면을 보게 된다
   // — 「못 잰 것이 통과로 적히는」 그 형태다. 그림에만 걸리므로 조작과 무관하다.
+  //
+  // 🔴 **값은 여기 없다** (감독 지시 2026-08-24 *"하드코딩하지말고 가지고 오는 방향으로"*).
+  // 색·크기·상태 색은 `js/shared/joystick-look.js` 한 곳이고 여기는 **셀렉터만** 준다.
+  injectJoystickStyle(parts.base.ownerDocument, 'w2-joy-style', joystickCss({
+    base: '#w2-stick',
+    knob: '#w2-stick-knob',
+    on: '#w2-stick[data-on="1"]',
+    lean: (v) => `#w2-stick[data-lean="${v}"]`,
+    leanKnob: (v) => `#w2-stick[data-lean="${v}"] #w2-stick-knob`,
+  }));
+
   const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   const touch = isTouchDevice(typeof navigator !== 'undefined' ? navigator : undefined, coarse);
   if (!touch) return { active: false, setEditing() {}, dispose() {} };
@@ -111,6 +123,7 @@ export function attachTouchControls(
   };
   const resetKnob = () => {
     parts.knob.style.transform = 'translate(-50%, -50%)';
+    parts.base.setAttribute('data-lean', LEAN_NONE);
     targets.setAxes(0, 0);
   };
 
@@ -141,6 +154,11 @@ export function attachTouchControls(
     const dx = e.clientX - cx, dy = e.clientY - cy;
     drawKnob(dx, dy);
     const a = stickAxes(dx, dy, STICK_RADIUS);
+    // 🔴 **미는 정도를 색으로 보여준다** (감독 지시 2026-08-24 *"움직이면 초록색으로
+    // 변하는것 같더만. 달리면 더 색깔이 진해지고.. 그렇게 해줘."*).
+    // 임계·색은 `joystick-look.js` 한 곳이고 여기는 **판정 결과를 DOM 에 새기기만** 한다.
+    // ⚠ `a` 는 데드존을 걷어낸 뒤의 값이라 「손을 얹기만 한 것」은 이미 0 이다.
+    parts.base.setAttribute('data-lean', leanState(Math.hypot(a.x, a.y)));
     // 화면 위로 밀면 전진 — 월드에서 전진은 -z 이므로 y를 그대로 z 로 넘긴다.
     targets.setAxes(a.x, a.y);
     e.preventDefault();
