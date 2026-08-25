@@ -27,25 +27,48 @@ import { buildOverlay } from '../frontend/js/world2/export/overlay.js';
 import { createGlbOverlayHost } from '../frontend/js/world2/export/host.js';
 import { parcelWater } from '../frontend/js/world2/decide/water.js';
 import { GRID_MAX_X } from '../frontend/js/world2/decide/grid.js';
+import { parcelLayout } from '../frontend/js/world2/decide/parcel-layout.js';
 import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MAIN = readFileSync(join(ROOT, 'frontend/js/world2/main.ts'), 'utf8');
 
-/** `frozenAt:` 에 넘긴 표현식을 전부 모은다. 한 줄짜리 값만 대상이다 */
-function frozenAtArgs(src: string): string[] {
-  return [...src.matchAll(/frozenAt:\s*([^,\n]+)/g)].map((m) => m[1].trim());
+/**
+ * 배치 체인을 받는 자리를 **전부** 모은다. 한 줄짜리 값만 대상이다.
+ *
+ * ── 왜 키가 둘인가 (검수관 블로커 2, 2026-08-25) ────────────────────────────
+ * 이 함수가 오래 `frozenAt:` **하나만** 걷고 있었고, 그래서 **내보내기 경로가 검사
+ * 밖이었다.** 검수관이 `attachExportPanel` 의 `layoutSource` 를 GLB 오버레이를
+ * 우회하도록 되돌리는 뮤테이션을 넣었더니 관련 테스트 **99개가 전부 통과했다.**
+ *
+ * 그 뮤테이션이 만드는 결함은 `collect.ts` 가 **이미 문장으로 경고한 그것**이다 —
+ * GLB 가 활성인 채 다시 내보내면 2차 왕복에서 편집이 유실된다. B1 을 반려한 근거가
+ * *"경고 주석이 두 곳에 있었는데도 났다"* 였는데, 같은 회차에 같은 형태가 옆 축에
+ * 남아 있었다. 축을 하나 만들고 그 옆을 안 본 것이다.
+ *
+ * `layoutSource` 는 축약 프로퍼티(`{ layoutSource }`)로도 넘어가므로 값이 없는 형태도
+ * 받는다 — 그때는 키 이름 자체가 곧 식별자다.
+ */
+function chainArgs(src: string): string[] {
+  // ⚠ **선언은 소비가 아니다.** `const layoutSource: NonNullable<…> = …` 의 타입
+  // 애너테이션이 객체 프로퍼티와 **같은 모양**이라, 안 걷어내면 그 타입 문자열까지
+  // «넘긴 값» 으로 세어 «전부 같은 식별자» 가 거짓이 된다(첫 판본이 그렇게 깨졌다).
+  const body = src.replace(/^\s*(?:const|let|var)\s+\w+\s*:[^=\n]*/gm, '');
+  return [...body.matchAll(/(frozenAt|layoutSource)\s*:\s*([^,\n]+)|(?<![\w.$])(layoutSource)\s*[,}]/g)]
+    .map((m) => (m[2] ?? m[3]).trim());
 }
 
 describe('GX-1 — 배치 출처가 하나다', () => {
-  it('`frozenAt` 을 받는 곳이 둘 이상이다 — 표본이 비면 아래 단언이 공회전한다', () => {
-    expect(frozenAtArgs(MAIN).length).toBeGreaterThanOrEqual(2);
+  it('체인을 받는 곳이 셋 이상이다 — 표본이 비면 아래 단언이 공회전한다', () => {
+    // 충돌기·빌더·내보내기. 셋 미만이면 어느 소비자가 검사 밖으로 빠진 것이다
+    // (실제로 내보내기가 그렇게 빠져 있었다 — 위 `chainArgs` 주석).
+    expect(chainArgs(MAIN).length).toBeGreaterThanOrEqual(3);
   });
 
   it('전부 **같은 식별자 하나**를 넘긴다 — 인라인으로 다시 적으면 잡힌다', () => {
     // 이 단언이 깨지는 형태가 곧 반려 사유였다: 한쪽은 `layoutSource`, 다른 쪽은
     // `(px, pz, tier) => village.lookup(...)` 처럼 **표현식을 새로 적은** 경우.
-    const args = frozenAtArgs(MAIN);
+    const args = chainArgs(MAIN);
     expect(new Set(args).size).toBe(1);
     // 식별자여야 한다. 화살표 함수를 그대로 넘기면 두 곳이 우연히 같은 문자열일 수는
     // 있어도 **같은 참조**는 아니다 — 한쪽만 고치는 사고가 그대로 살아난다.
@@ -53,7 +76,7 @@ describe('GX-1 — 배치 출처가 하나다', () => {
   });
 
   it('그 식별자가 GLB 오버레이와 마을 원장을 **둘 다** 탄다', () => {
-    const name = frozenAtArgs(MAIN)[0];
+    const name = chainArgs(MAIN)[0];
     const decl = new RegExp(`const\\s+${name}[^=]*=\\s*\\([^)]*\\)\\s*=>([\\s\\S]{0,200})`);
     const body = MAIN.match(decl)?.[1] ?? '';
     expect(body, '체인 선언을 못 찾았다').not.toBe('');
@@ -146,12 +169,13 @@ describe('왕복의 경계 — 무손실의 조건은 좌표가 아니라 「실
   // 바꿨다. 아래 첫 검사가 그 축이다 — 340 → 0.
 
   it('원본을 되읽으면 **하나도 안 잃는다** — 이것이 무손실의 축이다', () => {
-    // ⚠ 뮤테이션 실측 2회(2026-08-25). `hostParcel` 의 두 처방을 각각 되돌려 봤다:
-    //   ① 격자 클램프 제거 → 1건 FAIL(«아주 멀리 옮긴 것도 안 버린다»). 원본은 링
-    //      탐색이 대신 구제하므로 이 검사는 **안 깨진다** — 두 처방의 담당이 다르다.
-    //   ② 링 탐색 제거      → 3건 FAIL. 이 검사가 **28,704 → 28,560** 으로 깨진다
-    //      (물 파셀로 반올림되는 램프 72 + 그림자 72).
-    // 둘 다 안 깨졌으면 장식이다. 처방을 고칠 때 이 표를 다시 뜬다.
+    // ⚠ 뮤테이션 실측(2026-08-25). `roundHalfDown` 을 `Math.round` 로 되돌리면 이
+    // 검사는 **안 깨진다**(클램프·링이 대신 구제한다) — 대신 아래 「같은 칸」 검사와
+    // 예산 검사가 깨진다. 처방이 셋이고 담당이 갈리므로 표를 함께 읽는다:
+    //   `roundHalfDown` → `Math.round`  ·  같은 칸 FAIL · 예산 FAIL(peak 8)
+    //   격자 클램프 제거                ·  «아주 멀리 옮긴 것» FAIL
+    //   링 탐색 제거                    ·  «물 파셀 → 이웃 육지» FAIL
+    // 셋 다 안 깨졌으면 장식이다. 처방을 고칠 때 이 표를 다시 뜬다.
     const plain = collectWorld();
     const host = createGlbOverlayHost();
     host.set(buildOverlay(plain.nodes));
@@ -170,8 +194,60 @@ describe('왕복의 경계 — 무손실의 조건은 좌표가 아니라 「실
     expect(round.nodes.filter((n) => !before.has(key(n)))).toHaveLength(0);
   });
 
-  it('정상 파일에서는 손실 경고가 안 뜬다', () => {
-    expect(buildOverlay(collectWorld().nodes).stats.dropped).toBe(0);
+  it('정상 파일에서는 **아무 경고도** 안 뜬다', () => {
+    // 손실뿐 아니라 «세계 밖·물 위» 정보 경고도 0 이어야 한다. 편집하지 않은 파일을
+    // 되읽었는데 버튼에 ⚠ 가 뜨면 사용자는 **자기 편집을 의심한다** — 안 알리는 것과
+    // 방향만 다른 같은 실패다(검수관 권고 P5).
+    const s = buildOverlay(collectWorld().nodes).stats;
+    expect(s.dropped).toBe(0);
+    expect(s.outsideGrid).toBe(0);
+    expect(s.onWater).toBe(0);
+    expect(s.overBudget).toEqual([]);
+  });
+
+  it('배정이 **계산 배치와 같은 칸**이다 — 소속이 한 칸도 밀리지 않는다', () => {
+    // ⚠ 이것이 위 세 값을 0 으로 만드는 **원인** 축이다. 개수만 세면 «다 같은 수만큼
+    // 밀렸다» 를 통과시킨다 — 실제로 `Math.round` 판본이 전원을 한 칸씩 밀면서도
+    // 세계 안쪽에서는 서로 상쇄돼 `overBudget` 이 0 이었다(격자 끝에서만 터졌다).
+    const overlay = buildOverlay(collectWorld().nodes);
+    let checked = 0;
+    for (let px = -12; px <= 12; px++) {
+      for (let pz = -12; pz <= 12; pz++) {
+        if (parcelWater(px, pz, 32, 32) === 'water') continue;
+        const want = parcelLayout(px, pz, 'near').filter((p) => p.kind === 'lamp').length;
+        const got = overlay.layoutFor(px, pz).filter((p) => p.kind === 'lamp').length;
+        expect(got, `파셀 (${px},${pz}) 의 램프 수`).toBe(want);
+        checked += want;
+      }
+    }
+    expect(checked, '램프 표본이 비면 이 단언은 공회전한다').toBeGreaterThan(500);
+  });
+
+  it('반 칸 경계에 선 부품은 **한쪽 부호뿐이다** — `roundHalfDown` 의 전제', () => {
+    // `roundHalfDown` 은 동점을 아래 칸으로 보낸다. 그것이 옳으려면 경계 부품이
+    // `+16` 쪽에만 있어야 한다 — `-16` 이 생기면 그쪽이 반대로 밀리고, 그때는 어느
+    // 반올림 규칙도 양쪽을 동시에 만족시키지 못한다(좌표에 소속 정보가 없다).
+    //
+    // 실측(2026-08-25): 램프 계열만 경계에 서고 `+16` 9,546 · `-16` **0**.
+    // 이 전제를 산문으로 두지 않는 이유는, 도로 위상을 바꾸는 사람이 `overlay.ts` 를
+    // 읽을 이유가 없기 때문이다.
+    const HALF = 16;
+    let onEdge = 0;
+    for (const tier of ['near', 'mid', 'far'] as const) {
+      for (let px = -12; px <= 12; px++) {
+        for (let pz = -12; pz <= 12; pz++) {
+          if (parcelWater(px, pz, 32, 32) === 'water') continue;
+          for (const p of parcelLayout(px, pz, tier)) {
+            for (const v of [p.x, p.z]) {
+              if (Math.abs(Math.abs(v) - HALF) > 1e-9) continue;
+              expect(v, `${p.kind} 가 -${HALF} 경계에 섰다 — roundHalfDown 전제가 깨진다`).toBeGreaterThan(0);
+              onEdge++;
+            }
+          }
+        }
+      }
+    }
+    expect(onEdge, '경계 부품 표본이 비면 이 단언은 공회전한다').toBeGreaterThan(1000);
   });
 
   it('격자 밖 좌표를 **센다** — 사라지지는 않는다', () => {
