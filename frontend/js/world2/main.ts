@@ -31,6 +31,7 @@ import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
 import { attachExportPanel } from './ui/export-panel.js';
+import { createImportedScene } from './export/imported-scene.js';
 import { createGlbOverlayHost } from './export/host.js';
 import { findKnobBar, attachKnobBar, attachKnobActions } from './ui/knob-bar.js';
 import {
@@ -334,6 +335,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   });
 
   const scene = new THREE.Scene();
+  // 되읽은 GLB 의 「파츠가 아닌 메시」 레이어. 로더는 되읽을 때만 내려받는다(부팅 비용 0).
+  const imported = createImportedScene(scene);
   // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
   // 돔이 far 를 넘으면 잘리는데, 화면에는 *"하늘이 사라졌다"* 로 보여 원인을 찾기
   // 어렵다. 예전에는 `1200` 을 손으로 적고 `DOME_MAX` 를 1100 으로 맞춰 뒀다 —
@@ -1237,6 +1240,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       collider.invalidate();
       kernel?.markDirty();
     },
+    // 블렌더에서 추가한 물건을 올린다(감독 지시 2026-08-25). 한계·판정은 그 파일 한 곳.
+    applyImported: (buf) => imported.apply(buf),
   });
 
   // ── 진단 훅 ───────────────────────────────────────────────────────────────

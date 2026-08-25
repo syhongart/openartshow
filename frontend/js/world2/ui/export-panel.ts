@@ -33,6 +33,13 @@ export interface ExportPanelOptions {
    */
   applyOverlay?(overlay: WorldOverlay): void;
   /**
+   * **우리 파츠가 아닌 메시**를 씬에 올린다(`export/imported-scene.ts`). 얹은 수를 낸다.
+   *
+   * 없으면 그 갈래가 통째로 꺼진다 — 감독이 블렌더에서 추가한 물건이 조용히 사라지므로
+   * 배선을 빠뜨리면 안 된다. `tests/world2-export-wiring.test.ts` 가 그것을 검사한다.
+   */
+  applyImported?(buf: ArrayBuffer): Promise<number>;
+  /**
    * **화면이 쓰는 배치 체인.** 내보내기가 이것을 그대로 태운다 — 그래야 「내보낸 것이
    * 화면 그대로」가 성립한다(팀장 조건 1, 2026-08-25).
    *
@@ -95,22 +102,38 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       importBtn.textContent = '읽는 중…';
       const buf = await chosen.arrayBuffer();
       const { nodes, warnings } = parseWorldGlb(buf);
-      if (nodes.length === 0) {
-        // 빈 결과를 성공으로 적지 않는다. 파일은 멀쩡한데 우리 재질 이름 규약이 없는
-        // GLB(남이 만든 모델)를 골랐을 때가 이 경우다 — 적용하면 세상이 사라진다.
+
+      // ── 남의 메시를 먼저 올린다 (감독 지시 2026-08-25) ────────────────────
+      // *"블랜더의 glb로 내보낸 것은 그대로 올라와야지."* — 우리 파츠가 **하나도 없어도**
+      // 남의 메시는 올라와야 한다. 그래서 아래 «파츠 0» 판정보다 앞이다.
+      //
+      // ⚠ 여기 원래 `nodes.length === 0` 이면 **곧장 «우리 형식이 아니다» 로 되돌아가는**
+      // 갈래가 있었고, 감독이 블렌더에서 오브젝트를 추가해 되읽었을 때 밟은 것이 그것이다.
+      // 파츠 판정 하나로 파일 전체를 거절하고 있었다.
+      const foreign = opts.applyImported ? await opts.applyImported(buf) : 0;
+
+      if (nodes.length === 0 && foreign === 0) {
+        // 이제 «아무것도 못 읽었다» 는 **양쪽 다 0** 일 때만이다. 우리 재질 규약도 없고
+        // 올릴 메시도 없는 파일 — 빈 결과를 성공으로 적지 않는다.
         importBtn.textContent = '✗ 우리 형식이 아니다';
         setTimeout(() => { importBtn.textContent = idleImport; }, 6000);
         return;
       }
-      const overlay = buildOverlay(nodes);
-      opts.applyOverlay(overlay);
+      // 파츠가 0개여도 위에서 남의 메시가 올라왔을 수 있다 — 그때는 오버레이를 안 건다
+      // (빈 오버레이를 걸면 「전부 지운 세계」가 되어 마을이 통째로 사라진다).
+      const overlay = nodes.length > 0 ? buildOverlay(nodes) : null;
+      if (overlay) opts.applyOverlay(overlay);
 
-      // ── 대체된다는 사실을 알린다 (팀장 조건 5, 2026-08-25) ────────────────
-      // GLB 는 **세계 전체 대체** 모델이라 마을 편집이 화면에서 가려진다. 그것을 안
-      // 알리면 감독이 «편집이 사라졌다» 로 읽는다 — **원장 자체는 보존된다**(되읽기를
-      // 끄면 돌아온다)는 것을 같은 줄에 적어야 그 오해가 안 생긴다.
+      // ── 무엇이 대체되고 무엇이 남는지 (팀장 조건 3, 2026-08-25) ───────────
+      // ⚠ 이 문구가 «마을 편집을 대체합니다» 뿐이었고, 그대로 두면 **거짓 고지**가 된다 —
+      // 팀장 판정 (B)로 `?edit=1` 오버레이 배치는 **유지**되기 때문이다. 대체 범위를
+      // 정확히 적는다. 원장이 보존된다는 것도 같은 줄에 있어야 «편집이 사라졌다» 오해가
+      // 안 생긴다.
       if (note) {
-        note.textContent = '이 GLB 가 마을 편집을 대체합니다 (원장은 보존됩니다)';
+        note.textContent = foreign > 0
+          ? `이 GLB 의 부품 배치가 마을 편집을 대체하고, 추가된 물건 ${foreign.toLocaleString()}개가 함께 올라왔습니다`
+            + ' (마을 원장과 편집 화면 배치는 그대로입니다)'
+          : '이 GLB 가 마을 편집을 대체합니다 (원장과 편집 화면 배치는 그대로입니다)';
         note.hidden = false;
       }
 
@@ -125,20 +148,30 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       // 알리는 것과 방향만 다른 같은 실패다.
       // 순서가 곧 우선순위다 — `notes[0]` 만 버튼 라벨에 나간다(모바일에서 콘솔을 못
       // 본다). 그러므로 **화면에서 실제로 잘리는 것**을 맨 앞에 둔다.
-      if (overlay.stats.overBudget.length) {
+      if (overlay?.stats.overBudget.length) {
         const worst = overlay.stats.overBudget[0];
         notes.push(`⚠ ${worst.kind} 파셀당 ${worst.peak}개 > 예산 ${worst.budget}`);
       }
-      if (overlay.stats.dropped > 0) {
+      if (overlay && overlay.stats.dropped > 0) {
         notes.push(`⚠ ${overlay.stats.dropped.toLocaleString()}개가 실을 칸을 못 찾았다`);
       }
-      const outside = overlay.stats.outsideGrid + overlay.stats.onWater;
-      if (outside > 0) {
+      const outside = overlay ? overlay.stats.outsideGrid + overlay.stats.onWater : 0;
+      if (overlay && outside > 0) {
         notes.push(`세계 밖·물 위 ${outside.toLocaleString()}개는 이웃 칸에 실렸다`
           + ` (격자밖 ${overlay.stats.outsideGrid} · 물 ${overlay.stats.onWater})`);
       }
-      for (const w of warnings) notes.push(`⚠ ${w.detail}${w.count > 1 ? ` ×${w.count}` : ''}`);
-      importBtn.textContent = `✓ ${nodes.length.toLocaleString()}개 적용${notes.length ? ' · ' + notes[0] : ''}`;
+      // ── `unknown-kind` 는 이제 **경고가 아니다** (감독 지시 2026-08-25) ────
+      // 우리 재질 규약 밖인 메시는 `applyImported` 가 **실제로 씬에 올린다.** 그것을
+      // 계속 «⚠ 재질 이름 형식이 아니다» 로 띄우면 성공한 일을 실패로 알리는 것이고,
+      // 감독이 처음 밟은 것이 정확히 그 오해다. 못 올린 경우(`foreign === 0`)에만 남긴다.
+      for (const w of warnings) {
+        if (w.code === 'unknown-kind' && foreign > 0) continue;
+        notes.push(`⚠ ${w.detail}${w.count > 1 ? ` ×${w.count}` : ''}`);
+      }
+      const parts = [`✓ ${nodes.length.toLocaleString()}개 적용`];
+      if (foreign > 0) parts.push(`추가된 물건 ${foreign.toLocaleString()}개`);
+      if (notes.length) parts.push(notes[0]);
+      importBtn.textContent = parts.join(' · ');
       if (notes.length) console.warn('[world2] 되읽기 경고\n  ' + notes.join('\n  '));
       setTimeout(() => { importBtn.textContent = idleImport; }, 8000);
     } catch (err) {

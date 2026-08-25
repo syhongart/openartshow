@@ -12,6 +12,9 @@
 // 두 벌이 서고(인스턴스 + 로더 사본), 남의 메시를 빼면 감독이 추가한 것이 사라진다.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { extractForeignGlb } from '../frontend/js/world2/export/foreign-glb.js';
 import { readGlbJson, parseWorldGlb } from '../frontend/js/world2/export/import-glb.js';
 
@@ -155,5 +158,37 @@ describe('블렌더에서 추가한 것만 남긴다', () => {
     const doc = worldWithAddition();
     (doc.nodes[4] as Record<string, unknown>).children = [0];   // 4 → 0 → 4
     expect(() => extractForeignGlb(packGlb(doc))).not.toThrow();
+  });
+});
+
+describe('배선 — 잘라낸 것이 실제로 씬까지 간다', () => {
+  // ⚠ **이 회차에 같은 형태를 이미 한 번 겪었다.** GX-1 이 `frozenAt:` 만 걷고
+  // `layoutSource:` 를 안 봐서 내보내기 경로가 검사 밖이었고, 검수관이 뮤테이션으로
+  // 「99개 전부 통과」를 실증했다(블로커 2). 새 갈래를 만들었으면 그 갈래가 **배선까지
+  // 이어지는지**를 함께 못 박는다 — 안 그러면 `applyImported` 를 빠뜨려도 아무도 모르고,
+  // 감독이 추가한 물건이 조용히 사라진다.
+  const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const MAIN = readFileSync(join(ROOT, 'frontend/js/world2/main.ts'), 'utf8');
+  const PANEL = readFileSync(join(ROOT, 'frontend/js/world2/ui/export-panel.ts'), 'utf8');
+
+  it('`main.ts` 가 씬 레이어를 만들고 되읽기 패널에 넘긴다', () => {
+    expect(MAIN).toMatch(/createImportedScene\s*\(\s*scene\s*\)/);
+    expect(MAIN).toMatch(/applyImported:/);
+  });
+
+  it('패널이 그것을 **파츠 판정보다 먼저** 부른다 — 파츠 0 이어도 올라와야 한다', () => {
+    // 감독이 밟은 결함이 정확히 순서였다: `nodes.length === 0` 이면 곧장 되돌아가느라
+    // 남의 메시를 볼 기회가 없었다. 순서가 뒤집히면 그 결함이 그대로 살아난다.
+    const callAt = PANEL.indexOf('applyImported');
+    const guardAt = PANEL.indexOf('nodes.length === 0');
+    expect(callAt, '`applyImported` 호출을 못 찾았다').toBeGreaterThan(0);
+    expect(guardAt, '파츠 0 판정을 못 찾았다').toBeGreaterThan(0);
+    expect(callAt).toBeLessThan(guardAt);
+  });
+
+  it('파츠 0 판정이 **양쪽 다 0** 일 때만 거절한다', () => {
+    // `nodes.length === 0` 단독이면 남의 메시만 있는 파일을 거절한다 — 감독이 블렌더에서
+    // 새로 만든 세계를 통째로 넣는 경우가 그것이다.
+    expect(PANEL).toMatch(/nodes\.length === 0 && foreign === 0/);
   });
 });
