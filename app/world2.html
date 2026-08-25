@@ -324,6 +324,9 @@
   #w2-god-body[hidden]{display:none}
   .w2-god-row{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
   .w2-god-cap{font-size:10.5px;color:var(--dim);width:38px;flex:none}
+  /* 되읽기 고지(팀장 조건 5). 줄 전체를 차지해 버튼 아래로 떨어진다 — 버튼 옆에 붙이면
+     패널 폭이 밀리고, 이 문장은 한 번 읽히면 되는 것이라 자리를 다투지 않는다. */
+  .w2-god-note{flex-basis:100%;font-size:10.5px;line-height:1.5;color:var(--cyan);margin-top:2px}
   .w2-god-row button{
     font-family:inherit;font-size:11.5px;padding:6px 9px;border-radius:8px;cursor:pointer;
     background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--dim);
@@ -451,19 +454,19 @@
     #w2-sliders-toggle .caret,#w2-sliders-toggle,.w2-slide-pin,.w2-slide-reset{transition:none}
   }
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/world2-Bc79DP7N.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/world2-Bja8h3H_.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-webgpu-B4e2tp6E.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-BVCe5QSU.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/joystick-look-BDokgZh8.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/preload-helper-DASV_Wa7.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/sky-CDLuxSPC.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/BufferGeometryUtils-C6v7s0Vg.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/GLTFLoader-D7IH8cP1.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/chibi-builder-v2-BD6Fr-YX.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/preload-helper-DASV_Wa7.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/glb-city-CFfp38Bg.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/reserved-names-BrKduD37.js">
-  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/main-B9uH-n38.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/main-l_9nUSed.js">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
 </head>
 <body>
@@ -562,6 +565,19 @@
       <div class="w2-god-row" data-group="safe">
         <span class="w2-god-cap">접근성</span>
         <button type="button" data-flash="1">광과민성 보호</button>
+      </div>
+      <!-- 세계를 GLB 파일로 굽는다. 로직은 world2/ui/export-panel.ts(인라인 금지).
+           굽는 동안 화면이 멈추므로 버튼 글자가 곧 진행 표시다 — 그 이유는 그 파일에. -->
+      <div class="w2-god-row" data-group="export">
+        <span class="w2-god-cap">내보내기</span>
+        <button id="w2-export-glb" type="button">GLB 내보내기</button>
+        <button id="w2-import-glb" type="button">편집본 불러오기</button>
+        <!-- 파일 입력은 감춘다 — 기본 위젯이 패널 폭을 밀어내고, 눌러야 할 것이
+             버튼인지 입력칸인지 두 개가 되면 헷갈린다. 버튼이 이것을 대신 연다. -->
+        <input id="w2-import-glb-file" type="file" accept=".glb,model/gltf-binary" hidden>
+        <!-- 되읽기 성공 시에만 채워진다(팀장 조건 5). 「원장은 보존됩니다」를 함께 적는
+             것이 요점 — 안 적으면 감독이 마을 편집을 잃었다고 읽는다. -->
+        <span id="w2-import-note" class="w2-god-note" hidden></span>
       </div>
     </div>
   </div>
