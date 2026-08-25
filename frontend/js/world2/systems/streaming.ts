@@ -457,8 +457,12 @@ export class StreamingSystem implements System {
   /**
    * 떠 있는 파셀을 전부 반납한다. 다음 `update` 가 want 를 새로 내고 다시 짓는다.
    *
-   * 배치 출처가 바뀐 순간에 쓴다(`PooledParcelBuilder.setLayoutSource`) — 이미 지어진
+   * 배치 출처가 통째로 바뀐 순간에 쓴다(GLB 되읽기 — `export/host.ts`). 이미 지어진
    * 파셀은 옛 배치를 들고 있고, 스트리밍은 "이미 있는 파셀" 을 다시 짓지 않기 때문이다.
+   *
+   * ⚠ 이 줄은 한때 `PooledParcelBuilder.setLayoutSource` 를 가리켰는데 **그 API 는
+   * 존재하지 않는다** — 병합에서 `frozenAt` 으로 통합하며 지웠고 주석만 남았다(검수관
+   * 권고 R1). 없는 이름을 가리키는 주석은 다음 사람을 찾으러 보낸다.
    *
    * ── `dispose` 와 같은 일을 하는데 왜 따로 두나 ─────────────────────────────
    * 하는 일이 아니라 **뒤에 오는 것이 다르다.** `dispose` 뒤에는 아무것도 없고, 여기는

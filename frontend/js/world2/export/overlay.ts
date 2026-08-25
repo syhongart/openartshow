@@ -93,6 +93,16 @@ export function buildOverlay(nodes: readonly ExportNode[], opts: Partial<LayoutO
   }
 
   return {
+    // ── 없는 파셀에 `[]` 를 준다. `null` 이 아니다 (팀장 판정 2026-08-25, 조건 4) ──
+    // `frozenAt` 계약에서 `null` 은 "내가 답할 것 없음"(다음 출처로 넘겨라), `[]` 는
+    // "손대서 비웠다" 다. GLB 는 **세계 전체 대체** 모델이므로 파일에 없는 파셀은
+    // 사용자가 블렌더에서 **지운 것**이다 — 그러므로 `[]` 가 맞다.
+    //
+    // ⚠ **`null` 로 바꾸는 안(B)을 검토해 기각했다.** 그러면 마을 편집·계산이 살아남아
+    // 두 편집이 공존하지만, **지운 파셀이 되살아난다** — "지웠는데 남아 있다" 는 편집
+    // 도구로서 더 나쁜 실패다. 팀장이 같은 근거로 기각했다.
+    //
+    // 재론 조건: 감독이 「GLB 와 마을 편집 동시 적용」을 명시 요구하는 회차.
     layoutFor: (px, pz) => byParcel.get(`${px},${pz}`) ?? [],
     stats: { parcels: byParcel.size, nodes: nodes.length, peakPerParcel, overBudget },
   };

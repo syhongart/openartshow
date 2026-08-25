@@ -26,7 +26,6 @@ import {
   type LayoutOptions, type PartKind, type PlacedPart,
 } from '../parts/index.js';
 
-
 /**
  * 슬롯 풀에 필요한 것만 추린 인터페이스. `InstancePools`가 그대로 만족한다(tone 변환만
  * 어댑터가 얹는다). 이 좁은 문 덕분에 이 파일 전체를 three 없이 시험할 수 있다.

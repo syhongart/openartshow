@@ -24,7 +24,7 @@
 import * as THREE from 'three/webgpu';
 import { createPartAssets } from '../systems/parcel-assets.js';
 import { tonesFor } from '../parts/index.js';
-import { collectWorld, resultFromNodes, comboKey, type CollectOptions, type CollectResult } from './collect.js';
+import { collectWorld, comboKey, type CollectOptions, type CollectResult } from './collect.js';
 
 /**
  * 맵에서 꺼내되 없으면 만들어 넣는다.
@@ -54,13 +54,6 @@ export interface ExportOptions extends CollectOptions {
   /** 바다·강 판을 포함할까. 기본 포함 */
   water?: boolean;
   onProgress?(p: ExportProgress): void;
-  /**
-   * 이 목록을 그대로 굽는다. 주면 세계를 다시 계산하지 않는다.
-   *
-   * **되읽은 도시를 다시 내보낼 때 쓴다.** 이게 없으면 편집본을 불러온 뒤 내보내기가
-   * 원본 계산으로 돌아가 편집이 조용히 사라진다(왕복 검증이 잡은 실제 결함이다).
-   */
-  nodes?: readonly import('./collect.js').ExportNode[];
 }
 
 export interface ExportResult {
@@ -146,8 +139,12 @@ export async function exportWorldGlb(opts: ExportOptions = {}): Promise<ExportRe
   const t0 = performance.now();
   const report = opts.onProgress ?? (() => {});
 
-  report({ phase: 'collect', ratio: 0, message: opts.nodes ? '편집본을 굽는 중…' : '세계를 계산하는 중…' });
-  const collected: CollectResult = opts.nodes ? resultFromNodes(opts.nodes) : collectWorld(opts);
+  // ── 되읽은 도시를 다시 굽는 것도 이 한 줄이 한다 (팀장 조건 1) ──────────────
+  // 예전엔 `opts.nodes` 로 «되읽은 목록을 그대로 굽는» 두 번째 경로가 있었다. 지금은
+  // `layoutSource` 가 화면과 **같은 체인**을 태우므로 갈래가 하나다 — 갈래가 둘이면
+  // 언젠가 한쪽만 고쳐지고, 그것이 이 기능이 이미 한 번 당한 결함이다.
+  report({ phase: 'collect', ratio: 0, message: '세계를 읽는 중…' });
+  const collected: CollectResult = collectWorld(opts);
 
   report({ phase: 'build', ratio: 0.15, message: `부품 ${collected.nodes.length.toLocaleString()}개 조립 중…` });
   const assets = createPartAssets();
@@ -188,29 +185,32 @@ export async function exportWorldGlb(opts: ExportOptions = {}): Promise<ExportRe
   if (opts.water !== false) root.add(buildWater(collected.water.span, collected.water.y));
 
   report({ phase: 'encode', ratio: 0.4, message: 'GLB 로 인코딩하는 중…' });
-  // ── 동적 import 다. 다만 **초기 로드를 줄이지는 못한다** (실측했다) ─────────
-  // 처음엔 "정적 import 로 두면 world2 를 여는 모든 사람이 exporter 를 받으니 동적으로
-  // 미룬다" 고 적었다. **틀렸다.** `vite.config.js` 의 `manualChunks` 가
-  // `node_modules/three` 를 통째로 `vendor-three` 로 보내고, 그 청크는 world2 초기
-  // 로드에 들어간다 — 동적 import 여도 코드가 거기 합쳐진다.
+  // ── 동적 import 다. **초기 로드는 안 는다** (검수관 실측 2026-08-23) ─────────
+  // ⚠ 이 자리에 원래 *"`manualChunks` 가 three 를 통째로 `vendor-three` 로 보내므로
+  // **+34.4KB 가 초기 로드에 들어간다**"* 라고 **단정**해 뒀었다. **인과도 숫자도
+  // 틀렸다.** `vite.config.js` 가 2026-08-09(검수관 반려)부터 `examples/jsm/` 을 **먼저**
+  // 가로채 `vendor-three-editor` 로 보낸다 — 내 규칙 해석이 그 앞줄을 안 읽은 것이다.
   //
-  //   실측 2026-08-06 (`npx vite build`, vendor-three 청크):
-  //     exporter 참조 없음   374,843 B
-  //     동적 import          410,110 B   → **+34.4KB 가 초기 로드에 들어간다**
+  //   실측(base·HEAD 를 각각 `npx vite build`, 검수관 독립 재현):
+  //     vendor-three          380,441 B → 380,441 B   **바이트 동일**(해시도 동일)
+  //     vendor-three-editor   380,310 B → 380,310 B   **바이트 동일**
+  //     world2 modulepreload  11개 → 11개, **집합 동일**(editor 청크 미포함)
+  //   → **초기 로드 증가 0.**
   //
-  // 진짜로 가르려면 `manualChunks` 에 exporters 규칙을 앞세워야 한다. 안 한 이유는
-  // world2 가 이미 three 세 청크로 1.27MB 를 받고 있어 34KB 가 2.7% 이고, 배포 조립
-  // 규칙을 만지는 비용이 그보다 크기 때문이다. **여기서 멈춘다** — 필요해지면 위
-  // 숫자가 판단 근거다.
+  // 대신 진짜 비용은 따로 있다: **버튼을 누르는 순간** editor addon 청크
+  // **380,310 B(gzip 116.78 KB)** 를 통째로 받는다. 어쩌다 한 번 누르는 기능이므로
+  // 그 대가는 받아들이고, 초기 로드에 얹지 않는 지금 형태를 유지한다.
   //
-  // 그래도 동적으로 두는 이유는 남는다: **빌드 혼합 지점이 이 한 줄로 좁혀진다.**
-  // exporter 는 bare `'three'`(WebGL 빌드)를 끌고 오므로, 여기서 만든 WebGPU 빌드
-  // 객체를 남의 빌드 코드가 읽게 된다. 지점이 하나여야 나중에 셀 수 있다.
+  // **결론은 처음부터 옳았고 근거가 틀렸다** — 게시판이 2026-08-22 에 「결과는 맞고
+  // 인과가 틀린」 형태로 이름 붙인 그것이다. 그 처방대로 이제 실측/유도를 표기한다.
+  //
+  // 동적으로 두는 두 번째 이유: **빌드 혼합 지점이 이 한 줄로 좁혀진다.** exporter 는
+  // bare `'three'`(WebGL 빌드)를 끌고 오므로 여기서 만든 WebGPU 객체를 남의 빌드가
+  // 읽는다. 지점이 하나여야 나중에 셀 수 있다.
   //
   // ── 왜 이 혼합이 `glb-city.ts` 보다 덜 위험한가 ────────────────────────────
-  // 방향이 반대다. GLTFLoader 는 **WebGL 빌드 객체를 씬에 남긴다** — 그래서 그쪽 항목이
-  // "혼합 확인됨·원인 미판정(#120)" 으로 열려 있다. exporter 는 우리 객체를 **읽어서
-  // 바이트를 만들 뿐** 씬에 아무것도 넣지 않고, 끝나면 사라진다.
+  // 방향이 반대다. GLTFLoader 는 **WebGL 빌드 객체를 씬에 남긴다**(#120 이 열려 있다).
+  // exporter 는 우리 객체를 **읽어서 바이트를 만들 뿐** 씬에 아무것도 넣지 않고 사라진다.
   const { GLTFExporter } = await import('three/examples/jsm/exporters/GLTFExporter.js');
   const exporter = new GLTFExporter();
   const bin = await exporter.parseAsync(root, {

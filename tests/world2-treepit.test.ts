@@ -19,6 +19,7 @@ import { TREE_RADIUS_UNIT } from '../frontend/js/world2/parts/tree.js';
 import { DIRT_BASE, treepit } from '../frontend/js/world2/parts/treepit.js';
 import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../frontend/js/world2/decide/grid.js';
 import { parcelWater } from '../frontend/js/world2/decide/water.js';
+import { SHADOW_LIFT } from '../frontend/js/world2/decide/shadow-decal.js';
 
 const { cellX, cellZ } = DEFAULT_LAYOUT;
 
@@ -106,22 +107,51 @@ describe('나무를 정확히 따라간다', () => {
     expect(checked).toBeGreaterThan(1000);
   });
 
-  it('나무가 선 바닥 위로 일정하게 뜬다 — 절대 높이가 아니라 캐스터 기준이다', () => {
-    // 처음엔 `0.07 < y < 0.14` 라는 절대 범위로 쟀다. 그것은 **나무가 언제나 잔디 위에
-    // 선다는 가정**이라, 광장에 선 나무에서 깨진다. 지금은 바닥 높이가 자리의 속성이므로
-    // (`parts/surface.ts`) 캐스터와의 **차이**가 상수인지를 본다.
+  it('나무가 선 바닥 위로, 그리고 **접촉 그림자 아래로** 뜬다', () => {
+    // ── 두 축을 함께 잰다 ──────────────────────────────────────────────────
+    // ① 절대 높이가 아니라 캐스터 기준이다. 처음엔 `0.07 < y < 0.14` 라는 절대 범위로
+    //    쟀는데 그것은 **나무가 언제나 잔디 위에 선다는 가정**이라 광장에서 깨진다.
+    // ② **그림자 데칼보다 낮아야 한다.** pit 은 불투명이고 데칼은 `depthWrite:false`
+    //    라, pit 이 위면 나무가 자기 발치에 드리우는 그늘이 가려진다(검수관 반려 B4).
+    //    상수를 직접 적지 않고 `SHADOW_LIFT` 와 비교한다 — 그림자 높이를 만질 때 이
+    //    관계가 조용히 뒤집히면 «그늘이 없어졌다» 로만 보인다.
     let checked = 0;
     for (const { parts } of landParcels()) {
       const trees = parts.filter((p) => p.kind === 'tree');
       const pits = parts.filter((p) => p.kind === 'treepit');
       for (let i = 0; i < trees.length; i++) {
         const lift = pits[i].y - trees[i].y;
-        expect(lift).toBeCloseTo(0.05, 9);
-        expect(lift).toBeGreaterThan(0); // 바닥 아래로 내려가면 흙이 안 보인다
+        expect(lift).toBeGreaterThan(0);          // 바닥 아래로 내려가면 흙이 안 보인다
+        expect(lift).toBeLessThan(SHADOW_LIFT);   // 그림자보다 위면 그늘을 덮는다
         checked++;
       }
     }
     expect(checked).toBeGreaterThan(1000);
+  });
+
+  it('같은 나무에서 **화면에 서는 순서**가 pit 아래, 그림자 위다', () => {
+    // ⚠ **배치 y 를 그대로 비교하면 틀린다** — 실측으로 확인했다. `SHADOW_LIFT` 는
+    // 배치 단계가 아니라 **집행 단계**(`systems/shadow-decal.ts`)에서 더해지므로,
+    // `parcelLayout` 이 내는 `shadow:tree` 의 y 는 캐스터와 **같다**(0.070).
+    //
+    //     배치      tree 0.070 · shadow:tree 0.070 · treepit 0.080
+    //     화면      pit 0.080  <  그림자 0.070 + SHADOW_LIFT = 0.090   ← 이 순서가 목표
+    //
+    // 그래서 그림자 쪽에 `SHADOW_LIFT` 를 더해 비교한다. 이 한 줄을 빠뜨리면 «pit 이
+    // 그림자보다 위» 라는 거짓 결론이 나온다(첫 판본이 그랬다).
+    let compared = 0;
+    for (const { parts } of landParcels()) {
+      const pits = parts.filter((p) => p.kind === 'treepit');
+      const shadows = parts.filter((p) => p.kind === 'shadow:tree');
+      if (!pits.length || !shadows.length) continue;
+      for (const pit of pits) {
+        const sh = shadows.find((s) => Math.abs(s.x - pit.x) < 1e-9 && Math.abs(s.z - pit.z) < 1e-9);
+        if (!sh) continue;
+        expect(sh.y + SHADOW_LIFT).toBeGreaterThan(pit.y);
+        compared++;
+      }
+    }
+    expect(compared, '나무 그림자와 pit 을 한 쌍도 못 맞췄다').toBeGreaterThan(100);
   });
 
   it('나무가 없는 파셀에는 pit 도 없다', () => {

@@ -20,7 +20,7 @@
 import { exportWorldGlb, downloadBlob, glbFileName, type ExportProgress } from '../export/glb.js';
 import { parseWorldGlb } from '../export/import-glb.js';
 import { buildOverlay, type WorldOverlay } from '../export/overlay.js';
-import type { ExportNode } from '../export/collect.js';
+import type { CollectOptions } from '../export/collect.js';
 
 export interface ExportPanel {
   dispose(): void;
@@ -32,6 +32,14 @@ export interface ExportPanelOptions {
    * 부팅이 끝나기 전에는 갈아 끼울 대상(빌더·스트리밍)이 아직 없기 때문이다.
    */
   applyOverlay?(overlay: WorldOverlay): void;
+  /**
+   * **화면이 쓰는 배치 체인.** 내보내기가 이것을 그대로 태운다 — 그래야 「내보낸 것이
+   * 화면 그대로」가 성립한다(팀장 조건 1, 2026-08-25).
+   *
+   * 여기서 우선순위를 다시 조립하지 않고 **받은 함수를 그대로 넘긴다.** 조립하면 그
+   * 순간 화면과 파일이 갈릴 수 있는 두 번째 자리가 생긴다.
+   */
+  layoutSource?: CollectOptions['layoutSource'];
 }
 
 /** DOM 이 없으면 `null` — 조립부가 이 기능의 존재를 몰라도 되게 */
@@ -42,15 +50,6 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
   const idle = btn.textContent ?? 'GLB 내보내기';
   let busy = false;
 
-  /**
-   * 지금 화면에 서 있는 도시. 되읽은 것이 있으면 그 목록이고, 없으면 `null`(= 계산).
-   *
-   * **이 한 줄이 없어서 왕복이 끊겨 있었다.** 편집본을 불러온 뒤 내보내기를 누르면
-   * `exportWorldGlb` 가 세계를 다시 계산해 원본이 나갔다 — 화면은 편집된 도시인데
-   * 파일은 아니었다. 되읽기도 내보내기도 각각은 정상이라 양쪽만 봐서는 안 드러난다.
-   */
-  let loaded: readonly ExportNode[] | null = null;
-
   const setLabel = (text: string) => { btn.textContent = text; };
 
   const onClick = async () => {
@@ -59,8 +58,7 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
     btn.disabled = true;
     try {
       const result = await exportWorldGlb({
-        // 되읽은 도시가 있으면 그것을 굽는다. 없으면 세계를 계산한다.
-        ...(loaded ? { nodes: loaded } : {}),
+        layoutSource: opts.layoutSource,
         onProgress: (p: ExportProgress) => setLabel(p.message),
       });
       downloadBlob(result.blob, glbFileName());
@@ -85,6 +83,7 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
   // ── 되읽기 ─────────────────────────────────────────────────────────────────
   const file = doc.getElementById('w2-import-glb-file') as HTMLInputElement | null;
   const importBtn = doc.getElementById('w2-import-glb') as HTMLButtonElement | null;
+  const note = doc.getElementById('w2-import-note');
   const onPick = () => file?.click();
 
   const onFile = async () => {
@@ -105,8 +104,15 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       }
       const overlay = buildOverlay(nodes);
       opts.applyOverlay(overlay);
-      // 내보내기가 이 목록을 다시 굽도록 기억한다 — 화면과 파일이 갈리지 않게.
-      loaded = nodes;
+
+      // ── 대체된다는 사실을 알린다 (팀장 조건 5, 2026-08-25) ────────────────
+      // GLB 는 **세계 전체 대체** 모델이라 마을 편집이 화면에서 가려진다. 그것을 안
+      // 알리면 감독이 «편집이 사라졌다» 로 읽는다 — **원장 자체는 보존된다**(되읽기를
+      // 끄면 돌아온다)는 것을 같은 줄에 적어야 그 오해가 안 생긴다.
+      if (note) {
+        note.textContent = '이 GLB 가 마을 편집을 대체합니다 (원장은 보존됩니다)';
+        note.hidden = false;
+      }
 
       // 경고를 삼키지 않는다. 특히 `overBudget` 은 화면에 "건물 몇 채가 없다" 로만
       // 나타나서, 안 알려주면 편집을 의심하게 된다(실제로는 슬롯 예산이 원인이다).

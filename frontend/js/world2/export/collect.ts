@@ -30,7 +30,7 @@ import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.j
 import { parcelWater, SEA_Y, waterPlaneSpan } from '../decide/water.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../decide/parcel-layout.js';
 import { tonesFor } from '../parts/index.js';
-import type { LayoutOptions, ResolvedLayout } from '../parts/types.js';
+import type { LayoutOptions, PlacedPart, ResolvedLayout } from '../parts/types.js';
 import type { Tier } from '../decide/lod.js';
 
 /**
@@ -82,6 +82,21 @@ export interface CollectResult {
 export interface CollectOptions {
   layout?: LayoutOptions;
   /**
+   * **화면이 쓰는 배치 체인.** `null` 이면 그 파셀은 계산이다(`frozenAt` 과 같은 계약).
+   *
+   * ── 왜 주입인가 (팀장 판정 2026-08-25, 조건 1) ────────────────────────────
+   * 첫 판본은 `parcelLayout` 을 직접 불렀다. 그래서 **감독이 손본 파셀이 계산 배치로
+   * 파일에 들어갔다** — 편집분이 조용히 유실되는 형태다(검수관 블로커 B6).
+   *
+   * 고치면서 우선순위(`GLB → 마을 원장 → 계산`)를 여기 다시 적지 않는다. 두 곳에 적으면
+   * 한쪽만 고쳐도 아무도 모르고, **GLB 가 이미 활성인 상태에서 재-내보내기하는 2차
+   * 왕복에서 유실**이 난다. 조립부가 만든 **그 함수 자체**를 받는다.
+   *
+   * 주입이 순수성을 깨지 않는 것도 요점이다 — 이 파일은 여전히 `village`·three 를
+   * 모른다. 아는 것은 "누가 답을 준다" 뿐이다.
+   */
+  layoutSource?: (px: number, pz: number, tier: Exclude<Tier, 'none'>) => readonly PlacedPart[] | null;
+  /**
    * 어느 상세도로 구울 것인가. 기본 `near` — **파일로 내보내는 목적이 곧 최대 상세**다.
    * mid·far 를 여는 것은 용량을 줄이려는 경우를 위한 것이지 기본이 아니다.
    */
@@ -117,7 +132,9 @@ export function collectWorld(opts: CollectOptions = {}): CollectResult {
       // 파셀 원점 가산은 `parcel-builder.ts` 의 `fill()` 과 같은 식이어야 한다.
       const ox = px * cellX;
       const oz = pz * cellZ;
-      for (const p of parcelLayout(px, pz, tier, layout)) {
+      // 주입된 체인이 먼저다. 답이 없을 때만 계산한다 — `frozenAt` 과 같은 순서다.
+      const placed = opts.layoutSource?.(px, pz, tier) ?? parcelLayout(px, pz, tier, layout);
+      for (const p of placed) {
         const palette = tonesFor(p.kind);
         const tone = palette.length ? p.tone % palette.length : 0;
         nodes.push({
@@ -131,34 +148,6 @@ export function collectWorld(opts: CollectOptions = {}): CollectResult {
   }
 
   return { nodes, water: collectWater(cellX), landParcels, waterParcels, combos: [...combos].sort() };
-}
-
-/**
- * 이미 가진 노드 목록을 `CollectResult` 모양으로 감싼다.
- *
- * ── 왜 필요한가 (실측이 잡은 결함) ──────────────────────────────────────────
- * 되읽기를 붙인 첫 판에서 **편집본을 불러온 뒤 다시 내보내면 편집이 사라졌다.**
- * `exportWorldGlb` 가 언제나 `collectWorld()` 를 부르기 때문이다 — 화면은 편집된
- * 도시를 그리는데 파일은 원본 계산으로 나갔다. 왕복 검증(내보내기 → 편집 → 되읽기 →
- * 재출력)이 아니었으면 안 드러났다: 되읽기만 보면 16,232개가 정확히 적용됐고,
- * 재출력만 보면 유효한 GLB 가 나온다. **두 축이 각각 통과하고 사이가 끊겨 있었다.**
- *
- * 이 저장소가 이름 붙인 형태 그대로다 — *"판정/집행 분리의 구멍: 경계를 건너는
- * 지점은 아무도 안 본다."*
- */
-export function resultFromNodes(nodes: readonly ExportNode[], cell = DEFAULT_LAYOUT.cellX): CollectResult {
-  const combos = new Set<string>();
-  for (const n of nodes) combos.add(comboKey(n.kind, n.tone));
-  return {
-    nodes: [...nodes],
-    water: collectWater(cell),
-    // 파셀 수는 세지 않는다 — 편집된 목록에서 "육지 파셀" 은 원래 뜻을 잃는다
-    // (사용자가 부품을 어디로든 옮길 수 있다). 0 을 넣어 "재지 않았다" 를 표시하느니
-    // 실제로 부품이 있는 파셀을 세는 편이 정직하지만, 그 값을 쓰는 곳이 없다.
-    landParcels: -1,
-    waterParcels: -1,
-    combos: [...combos].sort(),
-  };
 }
 
 /**
