@@ -186,10 +186,20 @@ describe('배선 — 잘라낸 것이 실제로 씬까지 간다', () => {
     expect(callAt).toBeLessThan(guardAt);
   });
 
-  it('파츠 0 판정이 **양쪽 다 0** 일 때만 거절한다', () => {
-    // `nodes.length === 0` 단독이면 남의 메시만 있는 파일을 거절한다 — 감독이 블렌더에서
-    // 새로 만든 세계를 통째로 넣는 경우가 그것이다.
-    expect(PANEL).toMatch(/nodes\.length === 0 && foreign === 0/);
+  it('거절 판정을 **패널이 직접 하지 않는다** — 검사 닿는 곳으로 옮겼다', () => {
+    // ⚠ 이 검사가 원래 `PANEL` 에서 `nodes.length === 0 && foreign === 0` 을 찾았다.
+    // 검수관 조건 C1 로 그 판정이 `ui/import-notice.ts` 의 순수 함수로 옮겨졌다 —
+    // 인라인이던 시절 **어떤 검사도 닿지 않아** `failed` 를 죽여도 게이트가 통과했다.
+    //
+    // 그래서 여기서는 «패널이 그 함수를 쓰는가» 만 본다. 판정 자체(양쪽 다 0 일 때만
+    // 거절 · 실패를 파츠가 실려도 말한다)는 `tests/world2-import-notice.test.ts` 가
+    // **동작으로** 검사한다 — 텍스트 매칭보다 강한 축이다.
+    expect(PANEL).toMatch(/importNotice\(/);
+    // ⚠ **«쓰고 있는가» 만 보면 약하다.** `notice.reject` 는 패널에 여러 번 나오므로
+    // 판정 한 자리를 옛 인라인 식으로 되돌려도 「존재」 검사는 통과한다(실측: 0건 FAIL).
+    // 그래서 **인라인으로 다시 적는 것을 막는** 쪽으로 본다 — GX-1 과 같은 형태다.
+    expect(PANEL, '판정을 여기서 다시 적으면 두 곳이 갈린다')
+      .not.toMatch(/nodes\.length === 0 && foreign === 0/);
   });
 });
 

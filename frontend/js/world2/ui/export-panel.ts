@@ -22,6 +22,7 @@ import { parseWorldGlb } from '../export/import-glb.js';
 import { buildOverlay, type WorldOverlay } from '../export/overlay.js';
 import type { CollectOptions } from '../export/collect.js';
 import type { ImportedResult } from '../export/imported-scene.js';
+import { importNotice } from './import-notice.js';
 
 export interface ExportPanel {
   dispose(): void;
@@ -133,27 +134,18 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
         }
       }
       const foreign = imported.meshes;
-      // ── 실패인가 (검수관 블로커 B1) ────────────────────────────────────────
-      // ⚠ 이 판정이 없던 판본은 **파츠가 실린 경우 실패를 통째로 삼켰다.** 그리고 그것이
-      // 감독이 실제로 고르는 파일의 형태다(우리 파츠 28,704 + 남의 메시 1) — 즉 신고된
-      // 화면이 그대로 재발하고 있었다. `no-bin` 은 예외가 아니라 값이라 더 조용했다.
-      const failed = imported.reason === 'error' || imported.reason === 'no-bin';
-      const failWhy = imported.reason === 'no-bin'
-        ? '파일에 지오메트리 데이터(BIN)가 없다'
-        : imported.detail ?? '알 수 없는 오류';
-      if (failed) console.error(`[world2] 추가된 물건을 올리지 못했다 — ${failWhy}`);
+      // ── 문구는 **순수 함수가 짓는다** (검수관 조건 C1) ──────────────────────
+      // 이 조립이 여기 인라인이었을 때 **어떤 검사도 닿지 않았다** — `failed` 를 `false`
+      // 로 바꿔 세 자리가 동시에 실패를 안 말하게 만들어도 4,785건 중 0건이 깨졌다.
+      // 그 상태가 곧 감독이 신고한 화면이다. 검사가 닿는 자리로 옮겼다.
+      const notice = importNotice({
+        parts: nodes.length, foreign, reason: imported.reason, detail: imported.detail,
+      });
+      if (notice.failed) console.error(`[world2] 추가된 물건을 올리지 못했다 — ${notice.why}`);
 
-      if (nodes.length === 0 && foreign === 0) {
-        // 올릴 것이 있었는데 **실패해서** 0 인 경우를 «형식이 아니다» 로 뭉개지 않는다.
-        if (failed) {
-          importBtn.textContent = `✗ 물건을 못 읽었다 — ${failWhy}`;
-          setTimeout(() => { importBtn.textContent = idleImport; }, 8000);
-          return;
-        }
-        // 이제 «아무것도 못 읽었다» 는 **양쪽 다 0** 일 때만이다. 우리 재질 규약도 없고
-        // 올릴 메시도 없는 파일 — 빈 결과를 성공으로 적지 않는다.
-        importBtn.textContent = '✗ 우리 형식이 아니다';
-        setTimeout(() => { importBtn.textContent = idleImport; }, 6000);
+      if (notice.reject) {
+        importBtn.textContent = notice.rejectLabel;
+        setTimeout(() => { importBtn.textContent = idleImport; }, notice.failed ? 8000 : 6000);
         return;
       }
       // 파츠가 0개여도 위에서 남의 메시가 올라왔을 수 있다 — 그때는 오버레이를 안 건다
@@ -167,14 +159,7 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       // 정확히 적는다. 원장이 보존된다는 것도 같은 줄에 있어야 «편집이 사라졌다» 오해가
       // 안 생긴다.
       if (note) {
-        const tail = ' (마을 원장과 편집 화면 배치는 그대로입니다)';
-        note.textContent = failed
-          // 파츠가 실렸어도 **실패를 먼저 말한다** — 반쯤 적용된 상태를 «성공» 으로
-          // 적으면 사용자는 물건이 왜 없는지 영영 모른다(검수관 블로커 B1).
-          ? `⚠ 부품 배치는 적용했지만 추가된 물건은 못 올렸습니다 — ${failWhy}${tail}`
-          : foreign > 0
-            ? `이 GLB 의 부품 배치가 마을 편집을 대체하고, 추가된 물건 ${foreign.toLocaleString()}개가 함께 올라왔습니다${tail}`
-            : `이 GLB 가 마을 편집을 대체합니다${tail}`;
+        note.textContent = notice.note;
         note.hidden = false;
       }
 
@@ -182,7 +167,7 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       // 나타나서, 안 알려주면 편집을 의심하게 된다(실제로는 슬롯 예산이 원인이다).
       const notes: string[] = [];
       // 순서가 곧 우선순위다(`notes[0]` 만 버튼에 나간다). **실패가 맨 앞**이다.
-      if (failed) notes.push(`⚠ 추가된 물건 못 올림 — ${failWhy}`);
+      if (notice.leadWarning) notes.push(notice.leadWarning);
       // ⚠ 여기 오래 «세계 밖·물 위 = 안 그려진다» 라고 적혀 있었고 **지금은 거짓이다.**
       // 배정이 「그려지는 파셀 중 가장 가까운 것」으로 바뀌어서 그런 부품도 가장자리
       // 칸에 실린다(`overlay.ts` 의 `hostParcel`). 실제로 사라지는 것은 `dropped` 뿐이다.
