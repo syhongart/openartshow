@@ -23,9 +23,8 @@ import {
 import { parcelLayout, DEFAULT_LAYOUT } from '../decide/parcel-layout.js';
 import {
   ALL_KINDS, kindsFor, maxPartsPerParcel, outermostTierFor,
-  type LayoutOptions, type PartKind,
+  type LayoutOptions, type PartKind, type PlacedPart,
 } from '../parts/index.js';
-import type { PlacedPart } from '../parts/types.js';
 
 /**
  * 슬롯 풀에 필요한 것만 추린 인터페이스. `InstancePools`가 그대로 만족한다(tone 변환만

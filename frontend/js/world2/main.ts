@@ -11,7 +11,7 @@ import { Kernel } from './kernel.js';
 import { createRendererAdapter, type RendererAdapter } from './adapters/renderer.js';
 import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
-import { PooledParcelBuilder, type SlotPool } from './systems/parcel-builder.js';
+import { PooledParcelBuilder, type SlotPool, type ParcelBuilderOptions } from './systems/parcel-builder.js';
 import { createVillageParcels } from './systems/village-parcels.js';
 import { ParcelFadeSystem } from './systems/parcel-fade.js';
 import { ParcelGrowSystem } from './systems/parcel-grow.js';
@@ -30,6 +30,8 @@ import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
+import { attachExportPanel } from './ui/export-panel.js';
+import { createGlbOverlayHost } from './export/host.js';
 import { findKnobBar, attachKnobBar, attachKnobActions } from './ui/knob-bar.js';
 import {
   FEATURES, mountFeatures, combineDrawGroupKey, drawGroupKeyOf, collectDiagnostics, prewarmFeatures,
@@ -317,9 +319,18 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // ⚠ **빌더와 같은 조회를 넘긴다.** 한쪽에만 주입하면 렌더와 충돌이 다른 마을을 보고,
   // 그 증상은 «건물은 저기 있는데 여기서 막힌다» 다 — `collide.ts` 가 선언한
   // «보이는 자리 = 막히는 자리» 가 깨지는 자리가 정확히 여기다.
+  //
+  // ⚠⚠ **그 경고를 실제로 밟았다**(검수관 반려 B1, 2026-08-23) — 빌더에만 오버레이를
+  // 물리고 여기를 그대로 뒀다. 그래서 표현식을 두 벌 적지 않고 **함수 하나를 둘 다에
+  // 준다.** `tests/world2-export-wiring.test.ts` 가 「같은 참조인가」를 단언한다.
+  /** 되읽은 GLB 도시. 우선순위(GLB → 원장 → 계산)의 근거는 `export/host.ts` 한 곳이다 */
+  const glbHost = createGlbOverlayHost();
+  const layoutSource: NonNullable<ParcelBuilderOptions['frozenAt']> = (px, pz, tier) =>
+    glbHost.lookup(px, pz, tier) ?? village.lookup(px, pz, tier);
+
   const collider = createCollider({
     layout: LAYOUT,
-    frozenAt: (px, pz, tier) => village.lookup(px, pz, tier),
+    frozenAt: layoutSource,
   });
 
   const scene = new THREE.Scene();
@@ -980,7 +991,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
           // 빌더는 저장소를 **모른다** — 조회 함수 하나만 받는다. 생성기 계층이 편집
           // 데이터를 알게 되는 것을 막는 팀장 조건의 집행 축 ①(W4 ① 커밋).
-          frozenAt: (px, pz, tier) => village.lookup(px, pz, tier),
+          // **충돌기와 같은 참조다**(위 `layoutSource`). 두 곳이 각자 표현식을 들면
+          // 한쪽만 고치는 사고가 나고, 그것이 검수관 반려 B1 이었다.
+          frozenAt: layoutSource,
         });
         shadowDecal.attach(slotPool);
 
@@ -1207,6 +1220,25 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const drawerParts = findMapDrawer(document);
   const mapDrawer = drawerParts ? attachMapDrawer(drawerParts) : null;
 
+  // GLB 내보내기·되읽기 — 神 모드 패널 안. 근거는 `export/collect.ts`·`export/host.ts`.
+  // 재빌드가 필요한 이유는 이미 떠 있는 파셀이 옛 배치를 들고 있어서다.
+  //
+  // 내보내기에 **화면과 같은 체인**을 넘긴다(팀장 조건 1) — 그래야 감독이 손본 파셀이
+  // 파일에 그대로 들어간다. 첫 판본은 수집기가 `parcelLayout` 을 직접 불러 편집분을
+  // 조용히 떨어뜨렸다(검수관 블로커 B6).
+  const exportPanel = attachExportPanel(document, {
+    layoutSource,
+    // 무효화가 **둘 다**여야 한다. 스트리밍만 버리면 옛 벽이 살아남는다 — 충돌 캐시는
+    // 「플레이어가 선 파셀」로만 갱신되므로 제자리에 선 채 도시를 갈아 끼우면 그 파셀이
+    // 그대로다(`main.ts` 의 `village.onChange` 가 같은 이유로 둘을 함께 버린다).
+    applyOverlay: (o) => {
+      glbHost.set(o);
+      streaming?.rebuildAll();
+      collider.invalidate();
+      kernel?.markDirty();
+    },
+  });
+
   // ── 진단 훅 ───────────────────────────────────────────────────────────────
   // behind-flag 검증 페이지 전용이다. 라이브(world.html)에는 없다.
   //
@@ -1327,6 +1359,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       touch.dispose();
       hud?.dispose();
       mapDrawer?.dispose();
+      exportPanel?.dispose();
       // 기능 정리. System의 `dispose`는 커널이 부르므로, 여기서는 기능이 따로 붙인
       // UI·리스너만 거둔다. 여기에도 기능별 분기가 없다.
       for (const m of features) {

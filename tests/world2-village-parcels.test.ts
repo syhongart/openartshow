@@ -337,7 +337,7 @@ describe('배선 — main.ts 가 세 끝을 이었는가 (정적·약함)', () =
   it('저장소를 만들어 빌더에 조회를 주입한다', () => {
     expect(src, '저장소 생성이 없다').toMatch(/createVillageParcels\s*\(/);
     expect(src, 'frozenAt 주입이 없다 — 빌더는 영영 계산만 한다')
-      .toMatch(/frozenAt\s*:\s*\(px,\s*pz,\s*tier\)\s*=>\s*village\.lookup\(/);
+      .toMatch(/frozenAt\s*:\s*[A-Za-z_$][\w$]*\s*,/);
   });
 
   it('동결 변경을 스트리밍 재빌드에 잇는다', () => {
