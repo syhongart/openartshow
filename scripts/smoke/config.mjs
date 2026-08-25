@@ -277,6 +277,16 @@ export const LIVE_PAGES = [
   // 필요 없다. **이 편입이 빠지면 `tests/verification-tier.test.ts` 의 G1 검사가 FAIL 한다.**
   { name: 'app/visit',         url: '/app/visit.html',  webgl: true },
   { name: 'app/lab-glb',       url: '/app/lab-glb.html', webgl: true },
+  // ── world7 — **파일을 고르기 전에는 씬이 비어 있다** (2026-08-25) ────────────
+  // 감독 지시로 신설한 «내 GLB 걸어보기». 다른 world* 와 달리 부팅만으로는 아무것도
+  // 안 그린다 — 사용자가 파일을 고르면 그때 로더가 돈다. 그래서 `weatherProbe` 도
+  // 개수 불변식도 여기서는 성립하지 않는다.
+  //
+  // 그래도 목록에 **넣는 것**이 중요하다: 콘솔 에러 0 · CSP 유효 · 가로 넘침 0 ·
+  // 내부 링크는 파일 없이도 판정되고, 그 축들이 이 페이지의 회귀를 잡는 전부다.
+  // (behind-flag 인데 검사가 0이던 사고가 `visit`·`lab-glb` 에서 이미 났다 — 검수관
+  //  반려 B1, 2026-08-05.)
+  { name: 'app/world7',        url: '/app/world7.html', webgl: true, viteOnly: true },
   // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
   // 하면 그 사이 자기완결·CSP 검사가 0 인 페이지가 배포되고, 그것이 정확히 visit·
   // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.

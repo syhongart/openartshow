@@ -41,7 +41,7 @@ describe('진입점 SSOT', () => {
     expect(LIVE_ENTRIES.length + FLAGGED_ENTRIES.length).toBe(ENTRYPOINTS.length);
   });
 
-  it('behind-flag 일곱 페이지가 flagged 다', () => {
+  it('behind-flag 여덟 페이지가 flagged 다', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
     //
     // 목록을 여기 **적어 두는 것**이 이 검사의 요점이다. `FLAGGED_ENTRIES.length` 만
@@ -84,9 +84,13 @@ describe('진입점 SSOT', () => {
     //
     // ⚠⚠ 이 회차가 GS-3 의 양방향 대조가 **강등에도** 작동한 첫 사례다 — 승격만 잡는
     // 줄 알았는데 역방향도 6건 빨간불이 됐다.
+    // 2026-08-25 `world7.html` 추가 — 감독 지시 *"아까 그 파일을 올려서 월드7로 해봐.
+    // 테스트로 보게"*. 내보낸 GLB 를 블렌더에서 손본 뒤 **있는 그대로** 걸어보는
+    // 페이지다. `lab-glb.html` 과 성격이 겹쳐 보이지만 다르다 — 저쪽은 **고정 파일**
+    // (`lab-space.glb`)을 걷고, 이쪽은 **사용자가 고른 파일**이 세계가 된다.
     expect(flagged).toEqual([
       'editor.html', 'lab-glb.html', 'visit.html', 'world.html',
-      'world2-stylized.html', 'world3.html', 'world5.html',
+      'world2-stylized.html', 'world3.html', 'world5.html', 'world7.html',
     ]);
   });
 
