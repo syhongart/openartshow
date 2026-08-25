@@ -17,7 +17,7 @@
 // -----------------------------------------------------------------------------
 import {
   FOOTPRINT, FRAME_RULES, PART_TYPES, SPACE_VERSION, STORY_H,
-  artworkSize, normalizeSpace,
+  partArtSize, normalizeSpace, ART_SCALE,
   type Space, type SpacePart, type SpaceFinish,
 } from './space.js';
 
@@ -38,10 +38,17 @@ export interface GenArtwork {
  * 레이아웃 전략 — 감독 비교용 축(`?gen=`).
  * · perimeter : 둘레 벽면만. 전통 갤러리 동선(들어와서 시계방향).
  * · partition : 둘레 + 중앙 파티션 열. 작품이 많을 때 벽을 늘리고 동선을 접는다.
- * · salon     : 벽면 2단 걸기(살롱 행잉). 같은 방에 밀도를 올린다.
  */
-export type GenLayout = 'perimeter' | 'partition' | 'salon';
-export const GEN_LAYOUTS: GenLayout[] = ['perimeter', 'partition', 'salon'];
+export type GenLayout = 'perimeter' | 'partition';
+export const GEN_LAYOUTS: GenLayout[] = ['perimeter', 'partition'];
+
+// ⚠ **`salon`(벽면 2단 걸기)은 2026-08-24 에 걷어냈다.** 감독 판정: 천장을 높이자
+// 살롱이 2단으로 성립했고, 그 화면을 보고 *"높이가 높다고. 사진을 그렇게 거는 건 싫다"*.
+// 즉 높아진 천장은 **작품을 크게 거는 데** 쓰라는 것이고 위아래로 나누라는 게 아니었다.
+//
+// 남기지 않고 지운 이유는 「도달 불가능한 선택지」가 죽은 코드이기 때문이다 — 이 저장소가
+// «소비자 0» 으로 여러 번 데인 형태다. 되살릴 일이 생기면 이 커밋을 되짚으면 된다.
+// 그때 함께 사라진 것: SALON_* 상수 셋 · salonTiers() · Slot.y/lowTier · GenResult.tiers.
 
 /**
  * 아무것도 안 고르면 여는 배치 — **감독 판정 2026-08-22**.
@@ -49,6 +56,13 @@ export const GEN_LAYOUTS: GenLayout[] = ['perimeter', 'partition', 'salon'];
  * 상수로 둔 이유는 기본값이 코드 두 곳(폴백 표현식·테스트)에 흩어지지 않게 하기 위해서다.
  */
 export const GEN_DEFAULT_LAYOUT: GenLayout = 'partition';
+
+// 크기 리듬은 `space-art-rhythm.ts` 가 소유한다(배치와 다른 판정 — 그 파일 헤더).
+// 여기서는 **재수출만** 한다: 기존 소비자가 이 경로로 가져오고 있어서, 경로를 바꾸면
+// 이동이 동작 변경이 된다(`artworkSize` 를 space.ts 로 옮길 때와 같은 처방).
+export { GEN_ART_SCALE, GEN_SCALE_RHYTHM, GEN_FEATURED_SCALE, artScaleOf } from './space-art-rhythm.js';
+import { GEN_ART_SCALE, artScaleOf } from './space-art-rhythm.js';
+
 
 export interface GenOptions {
   layout?: GenLayout;
@@ -63,6 +77,11 @@ export interface GenOptions {
   footprint?: string;
   /** 자동 선택된 최소 크기에서 N단계 키운다. footprint 를 함께 주면 그쪽이 이긴다. */
   roomUp?: number;
+  /**
+   * 액자 크기 배율(`shell.artScale`). 생략하면 `GEN_ART_SCALE`.
+   * 범위·왜 방 단위인지는 `ART_SCALE`(space.ts) 주석 한 곳이다.
+   */
+  artScale?: number;
 }
 
 // ── 배치 상수 — 왜 이 값인지 값 옆에 적는다 ──────────────────────────────────
@@ -79,34 +98,29 @@ const CORNER_MARGIN = (wallT: number): number => wallT + FRAME_RULES.minGap;
 // 작품 위 트랙 조명의 방 안쪽 오프셋. DEFAULT_SPACE 실측: 작품 z=-3.4 · 조명 z=-3.0 → 0.4.
 const LIGHT_INSET = 0.4;
 
-// ── 살롱 2단 — 단 높이는 **층고와 액자 높이에서 유도한다** ──────────────────
-// ⚠ 첫 판본은 고정값(1.15 / 2.45)이었고 **틀렸다.** 헤드리스 렌더로 실물 14점을 살롱으로
-// 걸어 보니 위·아래 액자가 겹쳐 있었다. 산술로 확인한 결과 우연이 아니라 **항상** 겹친다:
-//   단 간격 1.30m  vs  액자 높이 1.60m(기본 폴백) · 2.13m · 2.60m(clampH)
-//   → 아래단 상단 1.95 > 위단 하단 1.65  (모든 경우에 겹침)
-// 겹치지 않으려면 액자 높이가 단 간격보다 작아야 하는데, 고정값은 그 조건을 아예 안 봤다.
-// "그럴듯한 출발점" 이라고 적어 둔 것이 **검사 없이 통과하는 값**이었다 — 육안 판정을
-// 기다리는 사이 산술로 5초면 반증되는 값이 코드에 남아 있었다.
-//
-// 그래서 두 값을 지우고 층고 예산에서 유도한다. 액자가 가장 높은 것을 기준으로 잡으므로
-// 겹침이 **구조적으로 불가능**하다. 예산이 모자라면 2단을 포기하고 단일 단으로 간다 —
-// 억지로 2단을 만드는 것보다 정직하다(높이 1.6m 작품을 3.6m 층고에 2단으로 거는 것은
-// 물리적으로 안 되는 일이고, 실제 살롱 행잉도 작은 작품에만 쓴다).
-const SALON_FLOOR_CLEAR = 0.25; // 액자 하단이 바닥에서 뜨는 최소 거리
-const SALON_CEIL_CLEAR = 0.15;  // 액자 상단과 천장 사이 최소 거리
-const SALON_TIER_GAP = 0.20;    // 두 단 사이 여백(겹침 방지 + 시각 분리)
-
-/** 층고와 최대 액자 높이로 2단 y 를 정한다. 예산이 모자라면 null(= 단일 단으로 폴백). */
-function salonTiers(storyHeight: number, maxArtH: number): { low: number; high: number } | null {
-  if (!(maxArtH > 0)) return null;
-  const need = SALON_FLOOR_CLEAR + maxArtH + SALON_TIER_GAP + maxArtH + SALON_CEIL_CLEAR;
-  if (need > storyHeight) return null;
-  const low = SALON_FLOOR_CLEAR + maxArtH / 2;
-  return { low, high: low + maxArtH / 2 + SALON_TIER_GAP + maxArtH / 2 };
-}
+// 창문 폭(SSOT 소비 — 여기서 값을 다시 적지 않는다).
+// 감독 지적 2026-08-24: *"창문이 없으니 답답해."* 작품은 벽 중앙에 모여 걸리므로 **양끝이
+// 비어 있고**, 그 여백이 창문 하나를 받을 만하면 낸다. 작품 자리를 뺏지 않는 배치다 —
+// 벽을 미리 창문에 떼어 주면 작품 용량이 줄고, 그러면 방이 커져 「기본은 작게」 판정과
+// 부딪힌다(감독 판정 2026-08-22). 여백에만 넣으면 두 판정이 함께 성립한다.
+const WINDOW_W = PART_TYPES.window.size[0];
 
 // 파티션 세그먼트 폭(SSOT 소비 — 여기서 1.2 를 다시 적지 않는다).
 const PARTITION_W = PART_TYPES.partition.size[0];
+
+/**
+ * 강조면(featureWall)을 두는 벽. **이 상수 하나가 셸 설정과 창문 배치 양쪽을 정한다.**
+ *
+ * ⚠ 왜 창문과 엮이는가 — 실측으로 알았다. 강조면은 `space-assembler` 가 벽 **안쪽에
+ * 덧대는 통짜 판**이고(폭 `fw-0.2` · 두께 0.02), 창문 구멍을 그대로 덮는다. 실제로
+ * 이 면의 창 두 개가 화면에서 통째로 사라져 있었다(씬 덤프: 북벽 `w=13.8 h=4 @ z=-4.88`
+ * 판 하나가 `x=±5.7` 구멍 앞을 가림).
+ *
+ * 강조면을 조각내지 않고 **창문을 이 면에서 뺀 것**은 그게 더 싸서가 아니라 그게 옳아서다:
+ * 강조면은 작품을 돋보이게 하는 배경이고, 거기에 창을 뚫으면 관람자가 역광으로 작품을
+ * 본다. 대신 이 면은 창문 몫을 용량에서 빼지 않으므로 **작품이 더 걸린다**(`walls()`).
+ */
+const FEATURE_SIDE = 'north' as const;
 
 // ── 벽 한 면의 기하 ──────────────────────────────────────────────────────────
 /** 길이축 좌표 u(중앙 0) → 월드 (x,z). 벽마다 축과 부호가 다르므로 함수로 감싼다. */
@@ -119,6 +133,28 @@ interface WallDef {
 }
 
 /**
+ * 벽 한 면이 **작품에 내주는 길이**. `walls()` 안의 클로저가 아니라 밖으로 낸 것은
+ * 이것이 이 회차의 판정이고 **직접 검사할 수 있어야** 하기 때문이다 — 클로저로 두었더니
+ * 강조면 예외를 통째로 지워도 검사가 전부 통과했다(뮤테이션 M8 실측).
+ *
+ * ⚠ 벽 용량에서 **창문 몫을 먼저 뺀다**(양끝 각 1개). 이것을 안 빼면 최소 크기 방에서
+ * 작품이 벽을 꽉 채워 창문이 0개가 된다 — 실측했다(실물 14점·partition·small → 창문 0).
+ * 감독 지적 2026-08-24 «창문이 없으니 답답해» 이후 창문은 **요구사항**이므로, 「전부
+ * 들어가는 최소 크기」의 「전부」에 창문이 포함되어야 한다. 여기서 빼면 footprint 선택이
+ * 그것을 반영해 저절로 한 단계 올라간다 — 「기본은 작게」 판정과 부딪히지 않는다.
+ * 요구가 늘어 최소치가 올라간 것이지 최소를 고르지 않게 된 게 아니다.
+ *
+ * 단 **강조면은 예외다** — 거기엔 창을 안 내므로(FEATURE_SIDE 주석) 그 몫을 뺄 이유가
+ * 없고, 그만큼 작품이 더 걸린다. 실측: 실물 14점이 footprint 한 단계 작은 방에 들어갔다
+ * (14×10 → 9×7).
+ */
+export function wallUsable(len: number, side: WallDef['side'] | string, wallT: number): number {
+  const m = CORNER_MARGIN(wallT);
+  const win = (WINDOW_W + FRAME_RULES.minGap) * 2;
+  return Math.max(0, len - m * 2 - (side === FEATURE_SIDE ? 0 : win));
+}
+
+/**
  * 방 4벽의 기하를 만든다. ry 부호는 DEFAULT_SPACE 실측을 따랐다 —
  * 서벽 screen 이 ry=+π/2, 동벽 vitrine 이 ry=-π/2 다(둘 다 방 안쪽을 본다).
  */
@@ -127,14 +163,21 @@ function walls(fw: number, fd: number, wallT: number): Record<string, WallDef> {
   const nz = -(fd / 2 - ins), sz = fd / 2 - ins;
   const wx = -(fw / 2 - ins), ex = fw / 2 - ins;
   const m = CORNER_MARGIN(wallT);
+  // ⚠ 벽 용량에서 **창문 몫을 먼저 뺀다**(양끝 각 1개). 이것을 안 빼면 최소 크기 방에서
+  // 작품이 벽을 꽉 채워 창문이 0개가 된다 — 실측했다(실물 14점·partition·small → 창문 0).
+  // 감독 지적 2026-08-24 «창문이 없으니 답답해» 이후 창문은 **요구사항**이므로, 「전부
+  // 들어가는 최소 크기」의 「전부」에 창문이 포함되어야 한다. 여기서 빼면 footprint 선택이
+  // 그것을 반영해 저절로 한 단계 올라간다 — 「기본은 작게」 판정과 부딪히지 않는다.
+  // 요구가 늘어 최소치가 올라간 것이지 최소를 고르지 않게 된 게 아니다.
+  const artUsable = (len: number, side: WallDef['side']) => wallUsable(len, side, wallT);
   return {
-    north: { side: 'north', ry: 0, usable: Math.max(0, fw - m * 2),
+    north: { side: 'north', ry: 0, usable: artUsable(fw, 'north'),
       at: (u) => ({ x: u, z: nz }), lightAt: (u) => ({ x: u, z: nz + LIGHT_INSET }) },
-    south: { side: 'south', ry: Math.PI, usable: Math.max(0, fw - m * 2),
+    south: { side: 'south', ry: Math.PI, usable: artUsable(fw, 'south'),
       at: (u) => ({ x: u, z: sz }), lightAt: (u) => ({ x: u, z: sz - LIGHT_INSET }) },
-    west: { side: 'west', ry: Math.PI / 2, usable: Math.max(0, fd - m * 2),
+    west: { side: 'west', ry: Math.PI / 2, usable: artUsable(fd, 'west'),
       at: (u) => ({ x: wx, z: u }), lightAt: (u) => ({ x: wx + LIGHT_INSET, z: u }) },
-    east: { side: 'east', ry: -Math.PI / 2, usable: Math.max(0, fd - m * 2),
+    east: { side: 'east', ry: -Math.PI / 2, usable: artUsable(fd, 'east'),
       at: (u) => ({ x: ex, z: u }), lightAt: (u) => ({ x: ex - LIGHT_INSET, z: u }) },
   };
 }
@@ -157,11 +200,8 @@ function centers(widths: number[]): number[] {
 // "벽 한 면 × 단(tier)" 이 하나의 슬롯이다. 작품을 슬롯에 나눠 담고, 슬롯마다 중앙정렬한다.
 interface Slot {
   wall: WallDef;
-  /** 살롱 2단에서의 걸이 높이. undefined = 기본 높이(space-render 가 정한다). */
-  y?: number;
-  /** 아래단에만 조명을 단다(위단은 같은 조명이 함께 비춘다) — y 값 비교 대신 이 표시로 판정한다. */
-  lowTier?: boolean;
-  items: { art: GenArtwork; w: number }[];
+  /** `scale` 은 이 작품 하나의 크기 배율(`artScaleOf`) — 폭 계산과 파츠가 **같은 값**을 쓴다. */
+  items: { art: GenArtwork; w: number; scale: number }[];
 }
 
 /**
@@ -177,23 +217,16 @@ interface Slot {
  */
 function packInto(
   list: GenArtwork[], widths: number[], fw: number, fd: number, wallT: number, layout: GenLayout,
-  tiers: { low: number; high: number } | null,
 ): { slots: Slot[]; dropped: string[] } {
   const W = walls(fw, fd, wallT);
   // 슬롯 순서 = 관람 동선. 북(피처월)부터 — 들어서면 정면이고, featured 작품이 여기 걸린다.
   const order: WallDef[] = [W.north, W.east, W.west, W.south];
   const slots: Slot[] = [];
   for (const wall of order) {
-    if (layout === 'salon' && tiers) {
-      slots.push({ wall, y: tiers.low, lowTier: true, items: [] });
-      slots.push({ wall, y: tiers.high, items: [] });
-    } else {
-      // 살롱인데 층고 예산이 모자라면 여기로 온다 — 단일 단(둘레 걸기와 같은 배치).
-      slots.push({ wall, y: undefined, items: [] });
-    }
+    slots.push({ wall, items: [] });
   }
   // 파티션 면 — partition 전략에서만. 중앙 파티션 열의 앞/뒤 두 면을 벽처럼 쓴다.
-  if (layout === 'partition') for (const pw of partitionWalls(fw, fd, wallT)) slots.push({ wall: pw, y: undefined, items: [] });
+  if (layout === 'partition') for (const pw of partitionWalls(fw, fd, wallT)) slots.push({ wall: pw, items: [] });
 
   // featured 를 앞으로 당긴다 — 북벽(첫 슬롯)이 피처월이기 때문이다. 나머지는 입력 순서 유지
   // (작가가 정한 순서가 곧 관람 순서라는 전제. 셔플하지 않는다).
@@ -223,7 +256,7 @@ function packInto(
         if (fill <= slots[sIdx].wall.usable && fill < bestFill) { best = sIdx; bestFill = fill; }
       }
     }
-    if (best >= 0) slots[best].items.push({ art: list[i], w });
+    if (best >= 0) slots[best].items.push({ art: list[i], w, scale: artScaleOf(list[i], i) });
     else dropped.push(list[i].id || list[i].title || `#${i}`);
   }
   return { slots, dropped };
@@ -257,11 +290,6 @@ export interface GenResult {
   dropped: string[];
   footprint: string;
   layout: GenLayout;
-  /**
-   * 실제로 몇 단으로 걸렸는가. salon 을 골라도 층고 예산이 모자라면 1 이다 —
-   * 「살롱을 골랐는데 왜 한 단인가」를 호출자가 알 수 있어야 한다(조용히 다르게 하지 않는다).
-   */
-  tiers: 1 | 2;
 }
 
 /**
@@ -277,14 +305,28 @@ export interface GenResult {
 export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): GenResult {
   const layout: GenLayout = GEN_LAYOUTS.includes(opts.layout as GenLayout) ? (opts.layout as GenLayout) : GEN_DEFAULT_LAYOUT;
   const list = Array.isArray(artworks) ? artworks.filter((a) => a && typeof a === 'object') : [];
+  // ⚠ 배율은 **폭 계산과 셸 설정이 같은 값을 써야 한다** — 배치는 작게 잡고 렌더만 크게
+  // 하면 액자가 벽에서 서로 겹친다. 그래서 여기서 한 번 정해 둘 다에 넘긴다.
+  const artScale = (typeof opts.artScale === 'number' && isFinite(opts.artScale))
+    ? Math.min(ART_SCALE.max, Math.max(ART_SCALE.min, opts.artScale)) : GEN_ART_SCALE;
 
   // 영상은 screen 파츠로 간다(액자가 아니다) — 벽 배치는 같이 하되 파츠 타입이 다르다.
   const isVideoAt = (a: GenArtwork) => !!(a.videoUrl && !a.imageUrl);
-  const widths = list.map((a) => (isVideoAt(a) ? PART_TYPES.screen.size[0] : artworkSize(a.ar).W));
-  // 살롱 2단 판정에 필요한 높이 — **가장 높은 액자**를 기준으로 예산을 잡아야 겹침이 없다.
-  const maxArtH = list.reduce((m, a) => Math.max(m, isVideoAt(a) ? PART_TYPES.screen.size[1] : artworkSize(a.ar).H), 0);
-  const STORY = 'gallery';
-  const tiers = layout === 'salon' ? salonTiers(STORY_H[STORY], maxArtH) : null;
+  // ⚠ 작품마다 배율이 다르다(감독 판정 «일괄은 없어») — 폭도 작품마다 달라진다.
+  // 배치와 렌더가 **같은 `artScaleOf`** 를 부르므로 값이 두 곳에 적히지 않는다.
+  const widths = list.map((a, i) => (isVideoAt(a)
+    ? PART_TYPES.screen.size[0]
+    : partArtSize({ src: a.imageUrl, ar: a.ar, scale: artScaleOf(a, i) }, { artScale }).W));
+  // 층고. **감독 판정 2026-08-24: «작가갤러리 지금 골방같아. 천장 높게 안될까?»**
+  // `STORY_H` 의 최대치(`grand` = 4.2m)를 쓴다 — 그 위는 스키마에 없다. 더 높여야 하면
+  // `space.ts` 에 값을 추가하는 일이고, 그것은 빌더·world 를 포함한 모든 소비자가 함께
+  // 지는 스키마 변경이라 감독·팀장 게이트다.
+  //
+  // ⚠ 방 넓이는 **안 건드린다** — 감독 판정 2026-08-22 「기본은 제일 작은 사이즈로」가
+  // 그대로 유효하고, 이번 지적은 천장을 명시했다. 넓이까지 같이 바꾸면 어느 쪽이 답답함을
+  // 풀었는지 갈리지 않는다(축을 하나만 흔든다).
+  //
+  const STORY = 'grand';
 
   // ── 방 크기 ────────────────────────────────────────────────────────────────
   // 기본은 **전부 들어가는 최소 크기**다. 판정은 실배치다(용량 총합이 아니다).
@@ -300,7 +342,7 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
   // 보고한다(조용히 버리면 화면상 "잘 나온 전시"가 되고 작가는 작품이 빠진 걸 모른다).
   const wallT = 0.2;
   const fpKeys = Object.keys(FOOTPRINT);
-  const pack = (key: string) => packInto(list, widths, ...(FOOTPRINT[key] as [number, number]), wallT, layout, tiers);
+  const pack = (key: string) => packInto(list, widths, ...(FOOTPRINT[key] as [number, number]), wallT, layout);
 
   let fpIdx = fpKeys.length - 1;
   for (let i = 0; i < fpKeys.length; i++) {
@@ -335,17 +377,31 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
         ? { t: 'screen', x: pos.x, z: pos.z, ry: slot.wall.ry, ratio: '16:9', src: a.videoUrl || '' }
         : { t: 'artwork', x: pos.x, z: pos.z, ry: slot.wall.ry, frame: 'minimal', src: a.imageUrl || '' };
       if (typeof a.ar === 'number' && isFinite(a.ar) && a.ar > 0 && !isVideo) part.ar = a.ar;
-      if (slot.y !== undefined) part.y = slot.y;
+      // 작품별 배율 — 방 기준(`shell.artScale`)에 곱해진다. 1 이면 안 적는다(직렬화 절약).
+      if (!isVideo && it.scale !== 1) part.scale = it.scale;
       // 피처 강조는 방 전체에 하나만 — 여러 개면 강조가 아니게 된다.
       if (isFirstArt && slot.wall.side === 'north') { part.featured = true; isFirstArt = false; }
       parts.push(part);
       placed++;
-      // 작품마다 조명 1 (불변식 4). 살롱 위단은 아래단 조명이 함께 비추므로 아래단에만 단다.
-      if (slot.y === undefined || slot.lowTier) {
-        const lp = slot.wall.lightAt(u);
-        parts.push({ t: 'trackLight', x: lp.x, z: lp.z, ry: slot.wall.ry });
-      }
+      // 작품마다 조명 1 (불변식 4).
+      const lp = slot.wall.lightAt(u);
+      parts.push({ t: 'trackLight', x: lp.x, z: lp.z, ry: slot.wall.ry });
     });
+  }
+
+  // ── 창문 — 벽 양끝 여백에 ────────────────────────────────────────────────
+  // 작품이 중앙정렬이라 남는 여백은 양끝에 절반씩이다. 그 절반이 창문 하나와 간격을
+  // 받을 만하면 벽 끝쪽에 낸다. 파티션 면은 제외한다 — 방 안쪽 벽이라 바깥이 없다.
+  for (const slot of slots) {
+    if (Math.abs(slot.wall.at(0).x) < 1e-6 && Math.abs(slot.wall.at(0).z) < 0.2) continue; // 파티션 면
+    if (slot.wall.side === FEATURE_SIDE) continue; // 강조면 — 덧댄 판이 구멍을 덮는다(FEATURE_SIDE 주석)
+    // 자리는 `walls()` 가 이미 떼어 두었다(용량에서 뺐다) — 여기서는 그 자리에 놓기만 한다.
+    // 작품 줄 바깥쪽, 벽 끝에서 간격 하나 들어온 곳이다.
+    const u = slot.wall.usable / 2 + FRAME_RULES.minGap + WINDOW_W / 2;
+    for (const side of [-1, 1]) {
+      const pos = slot.wall.at(side * u);
+      parts.push({ t: 'window', x: pos.x, z: pos.z, ry: slot.wall.ry });
+    }
   }
 
   // 중앙 파티션 — partition 전략에서만. 방 중앙에 x축 열을 세우고 **양면 모두** 작품을 건다
@@ -393,9 +449,10 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
       footprint: fpKey,
       storyH: STORY,
       wallT,
+      artScale,
       finish: {
         wall: 'white', floor: 'parquet', ceiling: 'whiteflat', trim: 'brass',
-        featureWall: 'north', featureFinish: 'deepviolet',
+        featureWall: FEATURE_SIDE, featureFinish: 'deepviolet', // 창문 배치와 같은 상수 — 미러링 금지
         ...(opts.finish || {}),
       },
     },
@@ -403,7 +460,7 @@ export function generateSpace(artworks: GenArtwork[], opts: GenOptions = {}): Ge
     parts,
   };
 
-  return { space: normalizeSpace(doc), placed, dropped, footprint: fpKey, layout, tiers: tiers ? 2 : 1 };
+  return { space: normalizeSpace(doc), placed, dropped, footprint: fpKey, layout };
 }
 
 /**
@@ -435,6 +492,6 @@ export function pickGalleryId(index: unknown, u: unknown): string | null {
 
 /** 넘침 여부를 호출자가 놓치지 않게 하는 헬퍼 — overflow 는 dropped 로만 판정한다. */
 export function genSummary(r: GenResult): string {
-  const base = `${r.layout}${r.layout === 'salon' ? `(${r.tiers}단)` : ''} · ${r.footprint} · 작품 ${r.placed}점`;
+  const base = `${r.layout} · ${r.footprint} · 작품 ${r.placed}점`;
   return r.dropped.length ? `${base} · ⚠ 미배치 ${r.dropped.length}점(${r.dropped.join(', ')})` : base;
 }

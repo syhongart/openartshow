@@ -201,14 +201,31 @@ export function scaleFactorFromDrag(deltaU: number, gizmoSize: number, sensitivi
 // 「어느 파트가 활성인가」와 「그때 얼마나 밝은가」는 three 없이 답할 수 있고, 그러면
 // 검사가 실제 코드를 돌린다. 집행(`gizmo.ts`)은 이 답을 재질에 꽂기만 한다.
 
-/** 잡을 수 있는 것. **`edit/gizmo.ts` 가 이 타입을 재수출한다**(소비자 경로 유지) */
+/**
+ * 잡을 수 있는 것. **`edit/gizmo.ts` 가 이 타입을 재수출한다**(소비자 경로 유지).
+ *
+ * 🔴 **크기에 `axis` 가 붙었다** (감독 카드 판정 2026-08-22 「축별로 늘리기 — 세 방향」).
+ * 발단 신고: *"크기 조정은 R 한축만되는것 같은데?"* — 상자가 X 하나뿐이었다.
+ *
+ * ⚠ **`axis` 는 선택 사양이고 그것이 설계다.** 없으면 **균등**(세 축을 함께 = 기존 동작),
+ * 있으면 그 축만. 균등을 없애지 않은 이유: 「전체를 키운다」가 가장 흔한 조작인데 축별만
+ * 남기면 그때마다 세 번 끌어야 하고, **비율이 어긋난 상태를 균등하게 키우는 것**이 아예
+ * 불가능해진다(`decide/overlay.ts` 의 `sx?` 주석이 같은 이유로 `s` 를 보존한다).
+ */
 export type Handle =
   | { kind: 'move'; axis: Axis }
   | { kind: 'rotate' }
-  | { kind: 'scale' };
+  | { kind: 'scale'; axis?: Axis };
 
-/** 기즈모를 이루는 파트. 축 셋은 재질을 축마다 하나씩 공유한다 */
-export type GizmoPart = Axis | 'rotate' | 'scale';
+/**
+ * 기즈모를 이루는 파트. 축 셋은 재질을 축마다 하나씩 공유한다.
+ *
+ * ⚠ **축별 크기가 `'scale'` 하나를 공유하면 안 된다** — 세 상자가 **함께** 밝아져
+ * 「어느 축을 잡았나」가 화면에서 사라진다. 감독이 얹기 강조를 요구한 이유가 정확히
+ * 그것이었다(*"마우스를 대면 그 축이 변화가 바로 생겼으면해"*). 그래서 파트를 가른다.
+ */
+export type ScalePart = `scale:${Axis}`;
+export type GizmoPart = Axis | 'rotate' | 'scale' | ScalePart;
 
 /**
  * 불투명도 셋.
@@ -229,7 +246,10 @@ export const EMPHASIS_MIX = 0.45;
 
 /** 그 핸들이 건드리는 파트 */
 export function partOf(h: Handle): GizmoPart {
-  return h.kind === 'move' ? h.axis : h.kind;
+  if (h.kind === 'move') return h.axis;
+  // 축별 크기는 축마다 다른 파트다(위 주석) — 균등(`axis` 없음)만 `'scale'` 을 쓴다.
+  if (h.kind === 'scale' && h.axis) return `scale:${h.axis}`;
+  return h.kind;
 }
 
 /** 그 핸들이 이 파트인가. `null` 이면 전부 `false`(잡은 것·얹은 것 양쪽이 쓴다) */
@@ -319,5 +339,8 @@ const AXIS_NAME: Record<Axis, string> = { x: 'X', y: 'Y', z: 'Z' };
  */
 export function handleLabel(h: Handle): string {
   if (h.kind === 'move') return `${AXIS_NAME[h.axis]}축 이동`;
-  return h.kind === 'rotate' ? '회전' : '크기';
+  if (h.kind === 'rotate') return '회전';
+  // 균등과 축별을 **글자로도** 가른다. 상자 넷이 비슷하게 생겼으므로 색·위치만으로는
+  // 「지금 잡은 것이 전체인가 한 축인가」가 안 갈린다 — 그 구별이 이 회차의 본체다.
+  return h.axis ? `${AXIS_NAME[h.axis]}축 크기` : '전체 크기';
 }

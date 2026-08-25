@@ -185,23 +185,28 @@
      세대는 375px 이상이라 줄바꿈이 안 난다. **이 값을 다시 만질 때 이 계산도 같이 본다.** */
   body:has(#w2-aim[data-on="1"]) #w2-stick-zone{ bottom:140px;height:min(26vh, 200px) }
   @media (pointer:coarse){ #w2-stick-zone{display:block} }
-  #w2-stick{
-    position:absolute;width:112px;height:112px;margin:-56px 0 0 -56px;
-    border-radius:50%;pointer-events:none;
-    border:1px solid rgba(255,255,255,.16);
-    background:radial-gradient(circle, rgba(255,255,255,.07) 0%, rgba(255,255,255,.02) 70%);
-    opacity:0;transition:opacity .18s ease;
-  }
-  /* 누르는 동안만 보인다 — 자리가 손을 따라오므로 «어디를 눌러야 하나» 가 없다.
-     (고정이던 판본에서는 상시 흐리게 띄워야 했다. 그 필요가 사라졌다.) */
-  #w2-stick[data-on="1"]{opacity:1}
-  #w2-stick-knob{
-    position:absolute;left:50%;top:50%;width:46px;height:46px;border-radius:50%;
-    transform:translate(-50%,-50%);
-    background:linear-gradient(145deg, rgba(139,114,255,.85), rgba(114,230,225,.75));
-    box-shadow:0 2px 12px rgba(0,0,0,.35);
-  }
-  @media (prefers-reduced-motion: reduce){ #w2-stick{transition:none} }
+  /* ── 룩은 **여기 없다** — `js/shared/joystick-look.js` 가 SSOT 다 ────────────────
+     감독 지시 2026-08-24: *"작가갤러리룸의 조이스틱과 형식을 맞춰주고. **하드코딩하지
+     말고 가지고 오는 방향으로** 해."*
+
+     ⚠ **직전 회차에 내가 여기에 값을 복사했다.** 갤러리(`js/player.js`)의 CSS 를 그대로
+     옮겨 적었고, 그러면 저장소에 같은 값이 **세 벌**이 된다(갤러리 · 오픈월드
+     `js/world-boot.js` · 여기). 감독 지시는 그 부채를 끊으라는 것이다.
+
+     지금은 `ui/touch-controls.ts` 가 `joystickCss({...})` 로 CSS 를 **받아서 주입**한다.
+     색·크기·상태 색은 전부 그 모듈 한 곳이고 **여기에 다시 적지 않는다.**
+
+     ⚠⚠ **레이아웃(구역 크기·조준 회피)은 위에 그대로 남는다** — 그것은 룩이 아니고,
+     `44vw`·`140px` 는 검수관 블로커와 헤드리스 4기기 실측으로 정해진 값이다.
+
+     ⚠⚠⚠ 스크립트가 안 돌면 조이스틱 룩이 없다. 조이스틱은 어차피 스크립트가 움직이므로
+     룩만 남아도 의미가 없다 — 그래서 이 교환을 받아들인다. */
+
+  /* ⚠ 손잡이의 중심 정렬도 **여기 없다**(2026-08-24). 모듈이 `knobCenter` 옵션으로 낸다 —
+     갤러리는 형제 구조라 `margin` 으로, world2 는 자식 구조라 `50%`+`translate` 로 잡는다.
+     그 두 갈래를 모듈이 알고 있으므로 여기 다시 적으면 값 미러링이 된다.
+     (`drawKnob` 이 매 프레임 인라인 `transform` 으로 덮어쓰므로 CSS 값은 손을 떼었을 때의
+     제자리이고, `left/top:50%` 는 그 인라인 `calc(-50% + …)` 의 기준점이라 필요하다.) */
 
   /* ── 성능 HUD ──────────────────────────────────────────────────────────
      기본은 아이콘 하나만. 펼쳐야 수치가 나온다 — 평소에 화면을 가리면

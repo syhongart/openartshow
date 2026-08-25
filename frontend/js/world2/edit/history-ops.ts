@@ -44,23 +44,70 @@ import type { PlacedPart } from '../parts/types.js';
 import type { ArtsPort } from '../systems/art-port.js';
 import type { EditTarget } from './target.js';
 
-/** 조작이 미는 다섯 값. `EditTarget` 과 같은 모양이지만 **값 사본**이다 */
+/**
+ * 조작이 미는 값. `EditTarget` 과 같은 모양이지만 **값 사본**이다.
+ *
+ * 🔴 **축별 배수 셋이 늘었다** (검수관 반려 B1, 2026-08-25). 이름은 `Pose5` 로 남긴다 —
+ * 소비자가 여럿이고 이름을 바꾸면 그 diff 가 이번 결함 수정을 덮는다.
+ *
+ * ⚠ **이 셋이 없어서 「Ctrl+Z 가 아무 일도 안 하는」 상태였다.** 축별만 바꾸면 `s` 는
+ * 그대로라 `samePose` 가 **변경 자체를 감지 못 했고**, 그래서 스택에 **쌓이지도 않았다**.
+ * 검수관 실측: `axes.set('x', 2)` → `commit()` → `depth()` 가 **0**, undo 는
+ * *"되돌릴 것이 없습니다"*. 이 파일 헤더가 *"하나라도 빠지면 «Ctrl+Z 가 가끔 안 먹는다»
+ * 가 되고, 그것이 이 저장소가 가장 비싸게 겪은 형태다"* 라고 적어 둔 바로 그 결함이다.
+ *
+ * ⚠⚠ **마을은 우연히 멀쩡했다** — 그쪽 경로가 파셀 전체를 `JSON.stringify` 로 비교해서
+ * 축별 변화가 **필드를 세지 않고** 걸렸다. 즉 「한쪽만 깨진 것」이라 증상이 더 고약했다:
+ * 마을에서 시험해 보고 «되돌리기 된다» 고 결론 내면 GLB 쪽 결함을 영영 못 본다.
+ */
 export interface Pose5 {
   x: number; y: number; z: number; ry: number; s: number;
+  /** 축별 배수. **생략은 생략으로** — 계약(`OverlayItem.sx?`)과 같은 규칙이다 */
+  sx?: number; sy?: number; sz?: number;
 }
 
-/** 다섯 값을 들고 밀 수 있는 것. `EditTarget` 과 `OverlayEntry` 가 둘 다 만족한다 */
+/** 값을 들고 밀 수 있는 것. `EditTarget` 과 `OverlayEntry` 가 둘 다 만족한다 */
 interface Posed {
   x: number; y: number; z: number; ry: number; s: number;
+  sx?: number; sy?: number; sz?: number;
 }
 
 export function poseOf(t: Readonly<Posed>): Pose5 {
-  return { x: t.x, y: t.y, z: t.z, ry: t.ry, s: t.s };
+  // 🔴 **두 경로를 다 읽는다** (2026-08-25). `EditTarget` 은 `sx` **필드가 없고**
+  // `axes.get()` 으로만 값을 낸다(어댑터가 마을의 본래 치수를 배수로 환산해야 하므로
+  // 필드를 그대로 노출할 수 없다). 그래서 필드만 읽으면 **기즈모가 실제로 쓰는 경로에서
+  // 축별 변경이 안 잡힌다** — 검수관 B1 을 고치면서 필드 쪽만 열었다가 여기서 다시
+  // 걸렸고, 그것을 잡은 것은 「어댑터 경로」 테스트다.
+  //
+  // ⚠ **재는 길이 실제 길과 같아야 한다.** 항목을 직접 만지는 검사만으로는 이 결함이
+  // 통과한다 — 이 저장소가 「판정/집행 경계는 아무도 안 본다」로 반복해서 데인 형태다.
+  const a = (t as { axes?: { get(k: 'x' | 'y' | 'z'): number } }).axes;
+  const axis = a
+    // 어댑터는 「없음」을 표현하지 못한다(항상 배수를 낸다) — `1` 은 안 담아 필드 경로와
+    // 같은 모양으로 맞춘다. 그래야 `samePose` 의 `?? 1` 접기와 어긋나지 않는다.
+    ? {
+      ...(a.get('x') === 1 ? {} : { sx: a.get('x') }),
+      ...(a.get('y') === 1 ? {} : { sy: a.get('y') }),
+      ...(a.get('z') === 1 ? {} : { sz: a.get('z') }),
+    }
+    // 생략은 생략으로 — 안 만진 항목에 키가 붙으면 `samePose` 가 `undefined !== 1` 로
+    // **안 바뀐 조작을 바뀐 것으로** 읽어 빈 되돌리기가 쌓인다.
+    : {
+      ...(t.sx === undefined ? {} : { sx: t.sx }),
+      ...(t.sy === undefined ? {} : { sy: t.sy }),
+      ...(t.sz === undefined ? {} : { sz: t.sz }),
+    };
+  return { x: t.x, y: t.y, z: t.z, ry: t.ry, s: t.s, ...axis };
 }
 
 /** 두 자세가 같은가. **정확 비교다** — 조작은 이산 스텝이라 근사 오차가 안 생긴다 */
 export function samePose(a: Pose5, b: Pose5): boolean {
-  return a.x === b.x && a.y === b.y && a.z === b.z && a.ry === b.ry && a.s === b.s;
+  return a.x === b.x && a.y === b.y && a.z === b.z && a.ry === b.ry && a.s === b.s
+    // ⚠ **`?? 1` 로 접어 비교한다.** 「없음」과 「1」은 화면에서 같은 것이므로 다르게
+    // 읽으면 축별을 1 로 되돌린 조작이 «바뀌었다» 로 쌓인다(빈 되돌리기).
+    && (a.sx ?? 1) === (b.sx ?? 1)
+    && (a.sy ?? 1) === (b.sy ?? 1)
+    && (a.sz ?? 1) === (b.sz ?? 1);
 }
 
 /**
@@ -160,9 +207,32 @@ export function createHistoryOps(host: OverlayHost, arts?: ArtsPort): HistoryOps
       if (samePose(before, after)) return null;
       const put = (p: Pose5) => {
         t.x = p.x; t.y = p.y; t.z = p.z; t.ry = p.ry; t.s = p.s;
-        // 오버레이는 씬 반영이 여기서 끝난다. 마을·작품은 자세를 **어댑터가** 들고 있고
-        // 그것을 되돌리기가 못 쓰므로(위 헤더) 이 경로로 오지 않는다.
+        // 🔴 **축별도 되돌린다** (검수관 반려 B1). 값을 스냅샷에 담기만 하고 여기서
+        // 안 쓰면 **되돌리기가 절반만 동작한다** — 스택에는 쌓이는데 축별은 그대로다.
+        // 「담기」와 「쓰기」는 다른 일이고, 이 저장소가 판정/집행 경계에서 반복해서
+        // 놓친 자리가 정확히 그것이다.
+        //
+        // ⚠ `axes` 문을 내는 대상은 그 문으로 민다 — 마을은 배수를 **본래 치수로 환산**
+        // 해야 하므로 필드에 직접 쓰면 안 된다(`target.ts` 의 어댑터가 그 환산을 소유한다).
+        const withAxes = t as Posed & { axes?: EditTarget['axes'] };
+        if (withAxes.axes) {
+          withAxes.axes.set('x', p.sx ?? 1);
+          withAxes.axes.set('y', p.sy ?? 1);
+          withAxes.axes.set('z', p.sz ?? 1);
+        } else {
+          // 문이 없는 것(`OverlayEntry` 직접 — `placed`/`removed` 경로)은 필드에 쓴다.
+          withAxes.sx = p.sx; withAxes.sy = p.sy; withAxes.sz = p.sz;
+        }
+        // 씬에 반영한다. **두 모양이 온다** — `flush()` 는 `EditTarget`(어댑터)을 넘기고
+        // (`snapOf` 의 `{kind:'overlay', t}`), `placed`/`removed` 경로는 `OverlayEntry` 를
+        // 직접 넘긴다.
+        //
+        // 🔴 **어댑터 쪽은 `isEntry` 가 `false` 다**(`holder` 가 없다). 그래서 이 줄이
+        // `isEntry` 하나였을 때 **되돌린 값이 화면에 안 실렸다** — 기존 검사가 항목을
+        // 직접 넘겨서 그 사각을 못 봤다(2026-08-25, 축별 되돌리기를 고치다 드러났다).
+        // 어댑터는 자기 `apply()` 로 반영한다(오버레이는 그것이 곧 `host.apply(e)` 다).
         if (isEntry(t)) host.apply(t);
+        else (t as { apply?: () => void }).apply?.();
       };
       return { label, undo: () => put(before), redo: () => put(after) };
     },
@@ -272,7 +342,14 @@ type Snap =
 export function poseLabel(a: Pose5, b: Pose5): string {
   const moved = a.x !== b.x || a.y !== b.y || a.z !== b.z;
   const turned = a.ry !== b.ry;
-  const scaled = a.s !== b.s;
+  // ⚠ **축별도 「크기」다** (검수관 비블로커, 2026-08-25). 균등 `s` 만 보면 축별만 바꾼
+  // 조작이 `'조작'` 이라는 일반 라벨로 떨어져, 되돌리기 목록에 «되돌렸습니다: 조작» 이
+  // 뜬다 — 감독이 **무엇을 되돌리는지 모르는** 문구다. 값·되돌리기 정확성에는 영향이
+  // 없었지만 화면에 나가는 글자라 함께 고친다.
+  const scaled = a.s !== b.s
+    || (a.sx ?? 1) !== (b.sx ?? 1)
+    || (a.sy ?? 1) !== (b.sy ?? 1)
+    || (a.sz ?? 1) !== (b.sz ?? 1);
   if (moved && !turned && !scaled) return '위치';
   if (turned && !moved && !scaled) return '회전';
   if (scaled && !moved && !turned) return '크기';

@@ -65,22 +65,75 @@ const HIDDEN: VenueEntryView = { show: false, label: '', href: null, distance: n
 export const VENUE_PAGE = 'visit.html';
 
 /**
- * 건물에 「다가왔다」고 볼 거리(m).
+ * **문 앞** 이 거리 안이면 들어갈 수 있다(m).
  *
- * 근거는 `lab-glb.js` 헤더의 실측 바운딩이다 — 월드 X[-7.8, 9.4] · Z[-17.1, 7.5],
- * 즉 대략 17×25m 이고 중심에서 가장 먼 모서리까지가 약 15m 다. 진입 지점으로 건물
- * **중심**을 쓰므로(문 노드에 의존하지 않는 이유는 `VenueEntryInput.entry` 주석) 반경이
- * 건물을 덮어야 하고, 거기에 「벽 앞에 서면 뜬다」를 위한 여유를 더해 18m 로 잡았다.
+ * ── 감독 판정 2026-08-23 ─────────────────────────────────────────────────
+ * *"18미터 말고. 3미터로"*.
  *
- * ⚠ **이 값은 화면 판정 전이다.** 너무 크면 광장 건너에서도 뜨고, 너무 작으면 벽에
- * 붙어야 뜬다 — 둘 다 수치가 아니라 걸어 보고 갈린다. 감독 확정 후 이 자리에 판정을
- * 적는다. 되돌릴 문은 `?venuer=` 가 아니라 이 상수 하나다(노브를 열 만큼 축이 넓지 않다).
+ * ⚠ 그 판정을 **숫자만 바꿔서는 실현되지 않았다.** 그때 18m 는 **건물 중심**에서 재는
+ * 거리였고, 건물이 17×25m 라 중심에서 벽까지가 이미 약 15m 다 — 즉 18m 는 사실상
+ * 「벽에서 3m」였다. 거기서 상수만 3 으로 내리면 판정 범위가 **건물 내부**가 되어
+ * 안내가 영영 안 뜬다. 감독 의도(가까이 가야 뜬다)를 살리려면 **재는 기준**을 옮겨야
+ * 했고, 그래서 진입 지점을 건물 중심에서 **문 노드(`door.002`)** 로 바꿨다.
  *
- * ⚠⚠ 실측 두 줄을 여기 옮겨 적었다 — `lab-glb.js` 는 실험 페이지라 import 대상이
- * 아니고(순수 leaf 가 실험 페이지를 끌면 결합이 거꾸로 선다), 그래서 값이 아니라
- * **유도 과정**을 적어 둔다. 모델이 바뀌면 여기 근거부터 다시 읽어야 한다.
+ * 값이 아니라 축이 문제였던 자리다 — 이 저장소가 «값이 아니라 재는 축이 틀린다» 로
+ * 적어 둔 형태이고, 이번에는 그것이 **감독 지시를 그대로 넣으면 동작하지 않는** 모습으로
+ * 나타났다. 지시를 거스른 것이 아니라 지시가 뜻한 바를 성립시킨 것이다.
  */
-export const VENUE_NEAR_RADIUS = 18;
+export const VENUE_NEAR_RADIUS = 3;
+
+/**
+ * 문 노드를 못 찾았을 때 쓰는 반경(m) — 그때는 **건물 중심**에서 잰다.
+ *
+ * 이름(`door.002`)에 의존하는 경로라 모델이 바뀌면 조용히 사라질 수 있다. 그 경우
+ * 안내가 아예 없어지는 것보다 「건물 근처면 뜬다」로 내려앉는 편이 낫다 — 근거는
+ * `lab-glb.js` 실측 바운딩(X[-7.8,9.4]·Z[-17.1,7.5], 중심에서 먼 모서리까지 약 15m)에
+ * 문 앞 여유 3m 을 더한 값이다. 어느 경로를 탔는지는 `diagnostics().venue` 로 갈린다.
+ *
+ * ⚠ 문 노드가 GLB 에 실재하는 것은 확인했다(2026-08-23, `lab-space.glb` 문자열 검사:
+ * `"name":"door.002"` · `"name":"garagedoor.001"`). 추정이 아니다.
+ */
+export const VENUE_FALLBACK_RADIUS = 18;
+
+/** GLB 루트에서 읽는 최소 계약 — three 를 import 하지 않고 구조로만 읽는다. */
+export interface VenueRootLike {
+  readonly position?: { readonly x: number; readonly z: number };
+  getObjectByName?(name: string): { readonly matrixWorld?: { readonly elements?: ArrayLike<number> } } | null | undefined;
+}
+
+/** 진입 지점과 반경. 어느 경로로 얻었는지(`from`)가 진단을 가른다. */
+export interface VenueAnchor {
+  readonly x: number;
+  readonly z: number;
+  readonly radius: number;
+  readonly from: 'door' | 'center';
+}
+
+/**
+ * GLB 루트 → 진입 지점.
+ *
+ * 문(`door.002`)을 찾으면 그 **월드 위치**를 쓴다 — `matrixWorld.elements` 의 [12]=x,
+ * [14]=z 다. `Vector3`·`getWorldPosition` 을 안 쓰는 것은 소비자(`features/overlay.ts`)에
+ * three import 가 없기 때문이고, 행렬 원소는 순수 숫자라 구조로 읽힌다. 행렬은 렌더
+ * 루프가 매 프레임 갱신하므로 최신이다.
+ *
+ * ⚠ **이 파일이 소유하는 이유**는 응집이 아니라 검사다. overlay 는 three 를 import 해
+ * 노드가 못 돌린다 — 거기 두면 이 유도가 영영 검사되지 않는다. 여기 있으면 순수 함수라
+ * 표본을 넣어 돌릴 수 있다(그리고 실제로 `overlay.ts` 가 크기 상한에 붙어 있었다 —
+ * `mountTenantEntry` 와 같은 처방이다).
+ */
+export function venueAnchorOf(root: VenueRootLike | null | undefined, doorRadius: number, fallbackRadius: number): VenueAnchor | null {
+  if (!root || typeof root !== 'object') return null;
+  const e = root.getObjectByName?.('door.002')?.matrixWorld?.elements;
+  if (e && typeof e[12] === 'number' && isFinite(e[12]) && typeof e[14] === 'number' && isFinite(e[14])) {
+    return { x: e[12], z: e[14], radius: doorRadius, from: 'door' };
+  }
+  const p = root.position;
+  if (p && typeof p.x === 'number' && isFinite(p.x) && typeof p.z === 'number' && isFinite(p.z)) {
+    return { x: p.x, z: p.z, radius: fallbackRadius, from: 'center' };
+  }
+  return null;
+}
 
 /**
  * 밖에서 잰 것 → 진입 안내가 무엇을 말할지.
@@ -108,6 +161,18 @@ export function venueEntryView(input: VenueEntryInput): VenueEntryView {
   return {
     show: true,
     label: '전시장 들어가기',
+    // ⚠ **여기서 멈췄다 — 다음 사람을 위해 경계를 적어 둔다.**
+    // 감독 판정 2026-08-24 «이건 설정된 오픈월드 환경으로 맞춰서 해야지» 를 받아 전시장
+    // 창밖 하늘을 `sky.js` 팔레트로 갈아끼웠고, **기본값**을 오픈월드 기본(day+clear)과
+    // 맞춰 두었다. 그래서 「같은 세계」는 성립한다.
+    //
+    // 그러나 오픈월드에서 **밤에** 문으로 들어가도 창밖은 낮이다 — 지금 시간대·날씨를
+    // 이 주소에 실어 보내지 않기 때문이다. 실으려면 `visit.html` 이 이미 읽는
+    // `?time=`·`?weather=` 에 값을 붙이면 되고(어휘를 일부러 world2 와 같게 뒀다),
+    // 남은 일은 **그 값을 여기까지 가져오는 배선**이다: 이 함수는 순수 판정이라 입력으로
+    // 받아야 하고, 부르는 쪽(`features/overlay.ts`)이 `SkySystem` 상태에 닿아야 한다.
+    // overlay 는 파일 크기 상한에 붙어 있어(579/593) 그 배선이 작은 일이 아니다.
+    // 안 하고 남긴 이유는 그것이 **추가 개선**이고, 감독은 지금 화면을 기다린다는 것이다.
     href: `${VENUE_PAGE}?u=${encodeURIComponent(tenant)}`,
     distance,
   };

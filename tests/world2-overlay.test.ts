@@ -453,8 +453,14 @@ describe('validateOverlay — 내보내기 관문', () => {
   });
 
   it('계약이 모르는 항목 필드가 사라지면 사유로 보고한다 — v2 파일을 v1 이 검증할 때', () => {
+    // ⚠ **예시에서 `sx` 를 뺐다** (2026-08-25, 축별 배율). 이 검사는 오래 `sx: 5` 를
+    // 「계약이 모르는 필드」의 예로 썼는데, 감독 카드 판정 「축별로 늘리기 — 세 방향」으로
+    // **`sx·sy·sz` 가 아는 필드가 됐다.** 예시를 그대로 두면 이 검사가 *"모르는 필드가
+    // 사라진다"* 를 확인하는 것이 아니라 **축별 배율이 살아나오는 것**을 확인하게 된다 —
+    // 이름은 그대로인데 재는 축이 바뀌는, 이 저장소가 반복해서 겪은 형태다.
+    // 축별이 실제로 살아나오는지는 `tests/world2-overlay-axis-scale.test.ts` 가 본다.
     const { overlay, issues } = validateOverlay({
-      items: [{ src: 'assets/models/a.glb', x: 1, y: 0, z: 0, ry: 0, s: 1, sx: 5, name: 'hall' }],
+      items: [{ src: 'assets/models/a.glb', x: 1, y: 0, z: 0, ry: 0, s: 1, name: 'hall' }],
     });
     expect(issues).toEqual([{ index: 0, reason: 'unknown-field' }]);
     expect(Object.keys(overlay.items[0]).sort()).toEqual(['ry', 's', 'src', 'x', 'y', 'z']);

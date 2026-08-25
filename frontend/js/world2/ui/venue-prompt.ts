@@ -35,6 +35,14 @@ export interface VenuePromptDeps {
   readonly navigate?: (href: string) => void;
   /** 폴링 간격(ms). 테스트가 0 을 주면 타이머를 걸지 않는다. */
   readonly intervalMs?: number;
+  /**
+   * 전환 암전 길이(ms). 0 이면 즉시 이동한다(테스트·모션 감소 설정).
+   *
+   * 감독 지적 2026-08-24: *"들어가기 하면 팍 들어가는데.. 디졸브로 보여주면 어떨까?"*
+   * 페이지가 통째로 바뀌는 이동이라(주소를 바꿔 다시 여는 것 — `decide/tenant-entry.ts`)
+   * 아무 연출이 없으면 화면이 한 번에 갈린다. 나가는 쪽을 어둠으로 덮고 넘긴다.
+   */
+  readonly fadeMs?: number;
 }
 
 export interface VenuePrompt {
@@ -66,7 +74,32 @@ export function mountVenuePrompt(doc: Document, deps: VenuePromptDeps): VenuePro
   btn.setAttribute('aria-live', 'polite');
   const go = deps.navigate ?? ((href: string) => { doc.defaultView?.location.assign(href); });
   let current: VenueEntryView | null = null;
-  btn.addEventListener('click', () => { if (current?.href) go(current.href); });
+  // ── 전환: 어둠으로 덮고 넘어간다 ─────────────────────────────────────────
+  // 들어가는 쪽(`visit.html`)은 자기 CSS 로 밝아지므로 여기서는 **나가는 쪽만** 맡는다.
+  // 양쪽을 한 스크립트가 잡으려면 페이지를 넘어 상태를 옮겨야 하는데, 이 저장소의 이동은
+  // 「주소를 바꿔 다시 여는 것」이라 그 상태가 남지 않는다(sessionStorage 를 쓰면 되지만
+  // 뒤로가기·직접입력에서 유령 암전이 생긴다 — 각자 자기 쪽만 맡는 편이 단순하고 안전하다).
+  const reduced = () => {
+    try { return !!doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches; }
+    catch { return false; }
+  };
+  btn.addEventListener('click', () => {
+    const href = current?.href;
+    if (!href) return;
+    const ms = deps.fadeMs ?? 420;
+    if (ms <= 0 || reduced()) { go(href); return; }   // 모션 감소 설정이면 연출을 건너뛴다
+    const veil = doc.createElement('div');
+    veil.setAttribute('style', [
+      'position:fixed', 'inset:0', 'z-index:9999', 'background:#000',
+      'opacity:0', `transition:opacity ${ms}ms ease-in`, 'pointer-events:none',
+    ].join(';'));
+    doc.body.appendChild(veil);
+    // 다음 프레임에 값을 바꿔야 transition 이 걸린다(같은 프레임에 바꾸면 즉시 적용된다).
+    const raf = doc.defaultView?.requestAnimationFrame;
+    const kick = () => { veil.style.opacity = '1'; };
+    if (raf) raf.call(doc.defaultView, kick); else kick();
+    doc.defaultView?.setTimeout(() => go(href), ms);
+  });
   doc.body.appendChild(btn);
 
   function refresh(): VenueEntryView {

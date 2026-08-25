@@ -257,3 +257,254 @@ describe('🔴 GS-J6 — 조이스틱 구역이 조준 막대와 안 겹친다',
       .toBeGreaterThanOrEqual(130);
   });
 });
+// ── 🔴 GS-J8 — 조이스틱 룩이 **모듈에서 온다** ─────────────────────────────
+//
+// 감독 지시 2026-08-24: *"전부 같게 해라"* (카드 판정 「크림+십자눈금 쪽」).
+//
+// ⚠⚠ **이 검사의 축이 이번 회차에 바뀌었다.** 직전 판본은 `player.js` 의 **인라인 CSS** 를
+// 원본으로 읽어 world2 의 생성 CSS 와 **맞대는** 검사였다. 이제 `player.js` 도 같은 모듈에서
+// CSS 를 받아 가므로 **맞댈 두 곳이 없다** — 값이 같은 것은 구조가 보증한다.
+//
+// 그래서 대조 계열 열 개를 걷어내고 두 축으로 나눴다:
+//
+//   ① **출처가 하나인가** → `tests/joystick-single-source.test.ts` (모든 파일을 훑는다.
+//      직전 회차가 이름으로 세다 놓친 다섯 번째 조이스틱을 **그 검사가 찾아냈다**)
+//   ② **모듈이 내는 값이 그대로인가** → 아래 「골든 값」. 원본이 사라졌으니 값의 근거는
+//      이제 모듈 자신이고, 바꾸려면 **이 검사를 함께 고쳐야** 하므로 의도가 diff 에 남는다.
+//
+// ⚠ 이것을 「검사를 줄였다」로 읽지 마라 — 훑는 범위는 오히려 넓어졌다. 다만 **잃은 것도
+// 있다**: 「갤러리 원본과 같은가」를 값 단위로 확인하던 축은 이제 없다. 원본이 모듈이 된
+// 이상 그 질문 자체가 성립하지 않지만, **모듈 값이 통째로 바뀌면 골든 검사 하나만 고치면
+// 통과한다**는 뜻이기도 하다. 그 경우 diff 에 골든 변경이 보이는 것이 유일한 방어다.
+
+// ── 뮤테이션 실측 (2026-08-24) — **이 describe 의 검출력** ──────────────────
+//
+//   JOY_BASE_PX 112→100 / JOY_RADIUS 60→52        → 각 1 failed ✅
+//   CREAM·INK·SHADOW·GREEN 각각 변조               → 각 1~2 failed ✅
+//   knobOn 옵션 무시(형제 갈래 숨김 죽이기)         → 1 failed ✅
+//   knob 의 pointer-events 선언 삭제               → 1 failed ✅
+//
+// ⚠ 마지막 것은 **처음에 0 failed 였다.** 모듈이 그 선언 옆에 적어 둔 설명 주석에 같은
+// 글자가 들어 있어 정규식이 그것을 물었기 때문이다. 이 회차에만 같은 형태의 실수
+// (**글자가 있는 것을 선언이 있는 것으로 읽음**)를 **세 번** 했다 — `-lean1` 문자열 유무,
+// `declsOf` 의 가짜 선언, 그리고 여기. 셋 다 뮤테이션이 아니었으면 통과로 적혔다.
+
+describe('🔴 GS-J8 — 조이스틱 룩이 모듈에서 온다', () => {
+  async function readWorld2(): Promise<string> {
+    const fs = await import('node:fs/promises');
+    return fs.readFile('frontend/world2.html', 'utf8');
+  }
+  /** world2 가 실제로 주입하는 CSS 를 그대로 만든다 — 소비자와 같은 인자를 쓴다 */
+  async function world2Css(): Promise<string> {
+    const m = await import('../frontend/js/shared/joystick-look.js');
+    return m.joystickCss({
+      base: '#w2-stick',
+      knob: '#w2-stick-knob',
+      on: '#w2-stick[data-on="1"]',
+      lean: (v: string) => `#w2-stick[data-lean="${v}"]`,
+      leanKnob: (v: string) => `#w2-stick[data-lean="${v}"] #w2-stick-knob`,
+      knobCenter: 'transform',
+      z: null, // 소비자와 같은 인자 — world2 는 구역이 층을 갖는다
+    });
+  }
+
+  it('🔴 골든 값 — 크기·반경이 그대로다', async () => {
+    // 이 셋은 **화면에 직접 드러나는** 값이라 바뀌면 룩이 갈린다. 반경은 룩이자 **감도**다
+    // (같은 손가락 거리에서 기울기가 달라진다) — 그래서 세 값을 한자리에서 못 박는다.
+    const m = await import('../frontend/js/shared/joystick-look.js');
+    expect(m.JOY_BASE_PX, '★ 링 지름이 바뀌었다').toBe(112);
+    expect(m.JOY_KNOB_PX, '★ 손잡이 지름이 바뀌었다').toBe(44);
+    expect(m.JOY_RADIUS, '★ 이동 반경이 바뀌었다 — 감도도 함께 바뀐다').toBe(60);
+    const { STICK_RADIUS } = await import('../frontend/js/world2/decide/touch.js');
+    expect(STICK_RADIUS, '★ world2 가 쓰는 반경이 모듈 값과 다르다').toBe(m.JOY_RADIUS);
+  });
+
+  it('🔴 골든 값 — 색이 그대로다', async () => {
+    // 색은 모듈 안의 `const` 라 밖에서 못 읽는다. **생성된 CSS 로** 확인한다 — 소비자가
+    // 실제로 받는 것이 그것이기 때문이다(상수를 직접 보면 「쓰이는가」를 못 본다).
+    const css = await world2Css();
+    expect(css, '★ 크림 테두리가 바뀌었다').toContain('rgba(253,251,245,.38)');
+    expect(css, '★ 진주 손잡이가 바뀌었다')
+      .toContain('radial-gradient(circle at 32% 28%, #fffdf8, #e8e2d2)');
+    expect(css, '★ 질주 손잡이가 바뀌었다')
+      .toContain('radial-gradient(circle at 32% 28%, #b8e4c9, #5f9e7d)');
+    expect(css, '★ 초록이 바뀌었다').toContain('rgba(95,158,125,.9)');
+    expect(css, '★ 어두운 radial 배경이 바뀌었다').toContain('rgba(23,20,15,.10)');
+    expect(css, '★ 그림자 색이 바뀌었다').toContain('rgba(10,8,4,.30)');
+  });
+
+  it('★ 형태 특징이 살아 있다 — 십자 눈금과 안쪽 점선 링', async () => {
+    const css = await world2Css();
+    expect(css, '★ `::before` 십자 눈금이 없다').toContain('#w2-stick::before');
+    expect(css, '★ `::after` 안쪽 링이 없다').toContain('#w2-stick::after');
+    expect(css, '★ 점선이 아니다').toMatch(/dashed rgba\(253,251,245/);
+  });
+
+  it('🔴 「누르는 동안만」 구조가 살아 있다 — 감독 판정 «고정이 불편해»', async () => {
+    const css = await world2Css();
+    expect(css).toMatch(/#w2-stick\{[^}]*opacity:0/);
+    expect(css).toMatch(/#w2-stick\[data-on="1"\]\{opacity:1/);
+  });
+
+  it('★ 등장 스프링이 살아 있다 — `scale(.78) → scale(1)`', async () => {
+    const css = await world2Css();
+    expect(css, '★ 시작 배율이 없다').toMatch(/#w2-stick\{[^}]*transform:scale\(\.78\)/);
+    expect(css, '★ 켜질 때 배율이 1 로 안 간다')
+      .toMatch(/#w2-stick\[data-on="1"\]\{[^}]*transform:scale\(1\)/);
+  });
+
+  it('🔴 두 단계가 실제로 열린다 — 감독 「움직이면 초록 / 달리면 더 진하게」', async () => {
+    const css = await world2Css();
+    expect(css, '★ 움직임 단계 규칙이 없다').toContain('#w2-stick[data-lean="1"]');
+    expect(css, '★ 질주 단계 규칙이 없다').toContain('#w2-stick[data-lean="2"]');
+    const move = /#w2-stick\[data-lean="1"\] #w2-stick-knob\{([^}]*)\}/.exec(css);
+    const run = /#w2-stick\[data-lean="2"\] #w2-stick-knob\{([^}]*)\}/.exec(css);
+    expect(move, '★ 움직임 노브 규칙을 못 찾았다').not.toBeNull();
+    expect(run, '★ 질주 노브 규칙을 못 찾았다').not.toBeNull();
+    expect(move![1], '★ 두 단계가 같은 값이다 — 「더 진해진다」가 안 보인다').not.toBe(run![1]);
+  });
+
+  it('🔴 손잡이 중심 정렬이 모듈에서 온다 — 두 DOM 구조를 모듈이 안다', async () => {
+    // 갤러리·오픈월드·방문자뷰·실험실은 손잡이가 링의 **형제**(좌표를 직접 옮기고 `margin`
+    // 으로 절반을 당긴다), world2 는 **자식**(`50%` + `translate`). 두 갈래를 **둘 다** 본다
+    // — 한쪽만 보면 옵션이 무시돼도 그 한쪽은 통과한다.
+    const m = await import('../frontend/js/shared/joystick-look.js');
+    const sel = { base: '#b', knob: '#k', on: '#b.on', z: null, lean: (v: string) => `#b.l${v}`,
+      leanKnob: (v: string) => `#b.l${v} #k` };
+    expect(m.joystickCss({ ...sel, knobCenter: 'transform' }), '★ 자식 갈래가 없다')
+      .toMatch(/#k\{[^}]*left:50%;top:50%;transform:translate\(-50%,-50%\)/);
+    expect(m.joystickCss({ ...sel, knobCenter: 'margin' }), '★ 형제 갈래가 없다')
+      .toMatch(new RegExp(`#k\\{[^}]*margin:-${m.JOY_KNOB_PX / 2}px 0 0 -${m.JOY_KNOB_PX / 2}px`));
+    expect(await world2Css(), '★ world2 가 자식 갈래를 안 쓴다').toContain('left:50%;top:50%');
+  });
+
+  it('🔴 형제 갈래에서 손잡이가 따로 숨는다 — `knobOn` 옵션', async () => {
+    // 갤러리는 링과 손잡이가 **형제**라 링이 숨어도 손잡이는 남는다. 이 옵션이 죽으면
+    // 손잡이만 화면에 떠 있게 된다 — 룩이 아니라 **버그**다.
+    const m = await import('../frontend/js/shared/joystick-look.js');
+    const sel = { base: '.b', knob: '.k', on: '.b.on', z: null, lean: (v: string) => `.b.l${v}`,
+      leanKnob: (v: string) => `.b.l${v} .k` };
+    const sibling = m.joystickCss({ ...sel, knobOn: '.k.on', knobCenter: 'margin' });
+    expect(sibling, '★ 손잡이가 안 숨는다').toMatch(/\.k\{[^}]*opacity:0/);
+    expect(sibling, '★ 손잡이가 안 나타난다').toContain('.k.on{opacity:1}');
+    // 자식 갈래에는 이 두 줄이 **없어야** 한다 — 있으면 링과 따로 놀아 깜빡인다.
+    expect(m.joystickCss(sel), '★ 자식 갈래에 불필요한 숨김이 있다').not.toMatch(/\.k\{[^}]*opacity:0/);
+  });
+
+  it('🔴 손잡이가 터치를 가로채지 않는다 — 형제 구조에서 동작을 좌우한다', async () => {
+    // 형제 구조에서는 링의 `pointer-events` 가 상속되지 않는다. 빠지면 손잡이 위에서
+    // 손가락을 움직일 때 이동이 끊긴다 — 값 대조로는 안 잡히는 **동작** 결함이다.
+    //
+    // ⚠ **주석을 먼저 걷는다** (2026-08-24 뮤테이션 실측). 첫 판본은 생성 CSS 를 그대로
+    // 정규식에 넣었는데, 선언을 통째로 지워도 **0 failed** 였다 — 모듈이 그 선언 옆에
+    // 적어 둔 **설명 주석**에 같은 글자가 들어 있어 정규식이 그것을 물었다.
+    // 「어딘가에 그 글자가 있다」는 「그 선언이 있다」가 아니다. 이 회차에만 같은 형태의
+    // 실수를 세 번 했다(`-lean1` 문자열 유무 · `declsOf` 의 가짜 선언 · 여기).
+    const css = (await world2Css()).replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css, '★ 손잡이에 `pointer-events:none` 이 없다')
+      .toMatch(/#w2-stick-knob\{[^}]*pointer-events:none/);
+  });
+
+  it('🔴 층위(`z-index`)를 생략할 수 없다 — 조용히 잃은 것이 블로커였다', async () => {
+    // 🔴 **검수관 블로커 (2026-08-24).** 첫 판본은 모듈이 `z-index` 를 아예 안 냈고,
+    // `player.js`·`world-boot.js`·`lab-glb.js` 가 갖고 있던 `40`/`41` 이 **조용히 사라졌다.**
+    // 어느 검사도 그것을 안 봤고, 나는 커밋에 *"CSS 주입 지점만 바꿨다"* 라고 적었다.
+    //
+    // 실질 영향: `z-index:auto` 는 DOM 순서와 무관하게 **양수 층위를 가진 모든 형제보다
+    // 아래**에 그려진다. `world.html:50` 의 `#enter`(z30)가 포인터락 해제마다 되돌아오므로
+    // 조이스틱이 그 밑으로 내려가 **덮인다** — 원본이 40 을 고른 이유가 정확히 그것이다.
+    //
+    // 처방은 기본값이 아니라 **강제**다. 기본값을 주면 그 값이 맞는지 아무도 안 보고,
+    // 「필요 없다」와 「잊었다」가 구별되지 않는다.
+    const m = await import('../frontend/js/shared/joystick-look.js');
+    const sel = { base: '.b', knob: '.k', on: '.b.on', lean: (v: string) => `.b.l${v}`,
+      leanKnob: (v: string) => `.b.l${v} .k` };
+    // ⚠ **타입도 이미 막는다** — `z` 는 선택 필드가 아니라 필수라 `tsc` 가 누락을
+    // 컴파일 타임에 잡는다(이 줄이 `@ts-expect-error` 없이는 빌드를 깬다). 그런데도
+    // 런타임 검사를 **함께** 두는 이유: 소비자 다섯 중 셋이 `.js` 이고 `visit.html` 은
+    // **인라인 스크립트**라 `tsc` 의 사정권 밖이다. 타입만 믿으면 정작 블로커가 났던
+    // 그 파일들(`player.js`·`world-boot.js`·`lab-glb.js`)이 무방비다.
+    // @ts-expect-error `z` 를 일부러 뺀다 — 런타임이 막는지 보는 것이 이 검사의 목적이다.
+    expect(() => m.joystickCss(sel), '★ 생략이 안 막힌다 — 조용한 소실이 다시 가능하다')
+      .toThrow(/z-index/);
+    // 손잡이는 링보다 **한 층 위**여야 한다 — 같으면 형제 구조에서 순서에 따라 가려진다.
+    const css = m.joystickCss({ ...sel, z: 40, knobCenter: 'margin', knobOn: '.k.on', fixed: true });
+    expect(css, '★ 링 층위가 없다').toMatch(/\.b\{[^}]*z-index:40/);
+    expect(css, '★ 손잡이가 링보다 위가 아니다').toMatch(/\.k\{[^}]*z-index:41/);
+    // `null` 은 「필요 없다」의 **명시**다 — 그때는 아무 층위도 내지 않는다.
+    expect(m.joystickCss({ ...sel, z: null }), '★ null 인데 층위가 나온다').not.toContain('z-index');
+  });
+
+  it('★ `prefers-reduced-motion` 분기가 살아 있다', async () => {
+    expect(await world2Css()).toMatch(/prefers-reduced-motion/);
+  });
+
+  it('★ 레이아웃 값은 그대로다 — 룩을 옮기면서 자리를 건드리면 회귀다', async () => {
+    // 구역 크기는 **레이아웃**이라 HTML 에 남는다 — 검수관 블로커와 헤드리스 4기기
+    // 실측으로 정해진 값이다.
+    expect(await readWorld2()).toMatch(/#w2-stick-zone\{[^}]*width:min\(44vw/);
+  });
+
+  it('🔴 후보 노브 잔재가 없다 — 감독 문언을 잘못 읽고 만든 것들이다', async () => {
+    // `?stick=jelly|outline|tint|plate` 는 *"조이스틱에 통일감이 없잖아"* 를 world2 내부
+    // UI 로 잘못 읽고 새로 만든 후보들이다. 되살아나도 아무도 모르면 안 된다.
+    const [html, css] = await Promise.all([readWorld2(), world2Css()]);
+    for (const look of ['jelly', 'outline', 'tint', 'plate']) {
+      expect(html, `★ 후보 \`${look}\` 잔재가 HTML 에 있다`).not.toContain(`data-look="${look}"`);
+      expect(css, `★ 후보 \`${look}\` 잔재가 생성 CSS 에 있다`).not.toContain(look);
+    }
+    expect(html, '★ `?stick=` 노브가 남아 있다').not.toMatch(/stick=/);
+  });
+});
+
+// ── 🔴 GS-J9 — 두 단계 판정 (감독 「움직이면 초록 / 달리면 더 진하게」) ────────
+//
+// `leanState` 는 순수 함수라 **직접 돌린다.** 위 GS-J8 은 「CSS 에 규칙이 있는가」를 보고
+// 이것은 「어느 기울기에서 어느 단계가 나오는가」를 본다 — 규칙이 있어도 판정이 늘 `0`
+// 이면 색은 영영 안 변한다. 「계산된 값이 실제로 소비되는가」의 판정 쪽 절반이고,
+// 집행 쪽은 맨 아래 배선 케이스가 본다.
+describe('🔴 GS-J9 — 미는 정도가 단계로 갈린다', () => {
+  it('★ 손을 얹기만 하면 중립이다 — 데드존 안은 색이 안 변한다', async () => {
+    const { leanState, LEAN_NONE } = await import('../frontend/js/shared/joystick-look.js');
+    expect(leanState(0)).toBe(LEAN_NONE);
+    expect(leanState(0.001)).toBe(LEAN_NONE);
+  });
+
+  it('🔴 조금만 밀어도 「움직임」이 된다 — 감독 문언의 1단계', async () => {
+    const { leanState, LEAN_MOVING } = await import('../frontend/js/shared/joystick-look.js');
+    expect(leanState(0.1)).toBe(LEAN_MOVING);
+    expect(leanState(0.5)).toBe(LEAN_MOVING);
+    expect(leanState(0.84)).toBe(LEAN_MOVING);
+  });
+
+  it('🔴 끝까지 밀면 「질주」다 — 임계는 원본과 같은 0.85', async () => {
+    const { leanState, LEAN_RUNNING, LEAN_RUN } = await import('../frontend/js/shared/joystick-look.js');
+    expect(LEAN_RUN, '★ 임계가 원본(0.85)과 다르다').toBe(0.85);
+    expect(leanState(0.85)).toBe(LEAN_RUNNING);
+    expect(leanState(1)).toBe(LEAN_RUNNING);
+  });
+
+  it('★ 이상한 값에도 안 터진다 — 중립으로 떨어진다', async () => {
+    const { leanState, LEAN_NONE } = await import('../frontend/js/shared/joystick-look.js');
+    expect(leanState(NaN)).toBe(LEAN_NONE);
+    expect(leanState(-1)).toBe(LEAN_NONE);
+  });
+
+  it('🔴 배선 — 스타일이 실제로 주입되고 미는 만큼 단계가 새겨진다', () => {
+    // 판정과 CSS 가 둘 다 참인데 아무도 주입·기록 안 하면 룩이 영영 안 나온다.
+    document.getElementById('w2-joy-style')?.remove();
+    const m = mount();
+    expect(document.getElementById('w2-joy-style'), '★ 스타일이 안 붙었다 — 룩이 안 나온다')
+      .not.toBeNull();
+    // 원 중심에서 조금 민다 → 「움직임」
+    m.hit.dispatchEvent(pointerEvent('pointerdown', 1, 150, 550));
+    m.hit.dispatchEvent(pointerEvent('pointermove', 1, 170, 550));
+    expect(m.base.getAttribute('data-lean'), '★ 조금 밀었는데 단계가 안 새겨졌다').toBe('1');
+    // 끝까지 민다 → 「질주」
+    m.hit.dispatchEvent(pointerEvent('pointermove', 1, 250, 550));
+    expect(m.base.getAttribute('data-lean'), '★ 끝까지 밀었는데 질주가 안 된다').toBe('2');
+    // 손을 뗀다 → 중립
+    m.hit.dispatchEvent(pointerEvent('pointerup', 1, 250, 550));
+    expect(m.base.getAttribute('data-lean'), '★ 손을 뗐는데 색이 남았다').toBe('0');
+  });
+});

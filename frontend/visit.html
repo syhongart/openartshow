@@ -58,16 +58,23 @@
 
   /* 모바일 조작 힌트 + 조이스틱 */
   .mobhint{display:none}
-  #joy{display:none;position:fixed;left:20px;bottom:26px;z-index:20;width:112px;height:112px;border-radius:999px;
-    background:rgba(20,21,27,.42);border:1px solid rgba(255,255,255,.12);touch-action:none}
-  #joy .nub{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:999px;
-    background:rgba(139,114,255,.55);border:1px solid rgba(255,255,255,.35);box-shadow:0 4px 12px -4px rgba(0,0,0,.6)}
+  /* ⚠ 조이스틱 룩은 **여기 없다** — `js/shared/joystick-look.js` 가 SSOT 다.
+     감독 지시 2026-08-24 «전부 같게 해라» (카드 판정 「크림+십자눈금 쪽」).
+
+     걷어낸 것: 보라 노브(`rgba(139,114,255,.55)`)·회색 원·46px·**왼쪽 아래 상시 표시**.
+     이 페이지는 저장소에서 **네 번째** 조이스틱이었고, 클래스 이름이 `#joy`/`.nub` 라
+     `lu-joy` 로 세던 집계에 안 잡혔다 — 그래서 직전 회차가 *"세 벌"* 이라고 적었고
+     그것이 틀렸다. **이름으로 세면 이름이 다른 것을 못 센다.** */
+  /* ⚠ 층위(`z-index`)도 여기 없다 — 모듈 인자로 준다(검수관 블로커, 2026-08-24).
+     한 페이지에서 링과 손잡이의 층이 갈라지면 손잡이만 다른 것 위에 뜬다. */
+  #joy{touch-action:none}
   #looktip{display:none;position:fixed;right:22px;bottom:40px;z-index:20;font-size:11px;color:var(--dim);
     background:rgba(20,21,27,.5);border:1px solid var(--line);border-radius:10px;padding:8px 12px;pointer-events:none}
   .is-touch #enter{display:none}
   .is-touch #hintDesk{display:none} /* 모바일=데스크톱 조작 안내 숨김(조이스틱 힌트만) */
-  .is-touch .mobhint,.is-touch #joy,.is-touch #looktip{display:block}
-  .is-touch #joy{display:block}
+  /* ⚠ `#joy` 를 뺐다 — 이제 **터치한 자리에 뜬다**(감독 지시 «터치해야 조이스틱 나오고»).
+     보임/숨김은 모듈의 `opacity` 가 하므로 `display` 로 켜면 등장 스프링이 죽는다. */
+  .is-touch .mobhint,.is-touch #looktip{display:block}
 
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 
@@ -76,10 +83,21 @@
     background:rgba(139,114,255,.25);border:1px solid rgba(139,114,255,.45);
     border-radius:6px;padding:5px 11px;font-size:11px;font-weight:600;
     color:#8B72FF;letter-spacing:.02em;pointer-events:none}
+
+  /* 들어올 때 어둠에서 밝아진다. 나가는 쪽(world2 진입 안내)이 어둠으로 덮고 넘기므로
+     이 페이드인이 그 뒤를 받아 한 번의 디졸브가 된다 — 감독 지적 2026-08-24
+     «팍 들어가는데.. 디졸브로 보여주면 어떨까?».
+     각자 자기 쪽만 맡는다: 페이지를 넘어 상태를 옮기지 않으므로 직접 열었을 때도
+     짧은 암전에서 시작하는데, 그것은 로딩을 덮어 주는 쪽이라 손해가 아니다. */
+  @keyframes venueIn { from { opacity: 1 } to { opacity: 0 } }
+  #venue-veil{ position:fixed; inset:0; z-index:9998; background:#000; pointer-events:none;
+    animation: venueIn .55s ease-out forwards; }
+  @media (prefers-reduced-motion: reduce){ #venue-veil{ display:none } }
 </style>
 </head>
 <body>
 <div id="stage"><canvas id="c"></canvas></div>
+<div id="venue-veil" aria-hidden="true"></div>
 
 <div class="v2-badge">✨ v2</div>
 
@@ -104,13 +122,20 @@
   <div class="sub">WASD 이동 · 마우스로 시선 · ESC로 커서 해제</div>
 </div>
 
-<div id="joy"><div class="nub" id="joyNub"></div></div>
+<!-- ⚠ 손잡이가 링의 **형제**다 — 갤러리(`js/player.js`)와 같은 구조여야 모듈이 내는
+     `knobCenter:'margin'` 갈래가 그대로 맞는다. 자식으로 두면 중심이 어긋난다. -->
+<div class="lu-joy-base" id="joy" aria-hidden="true"></div>
+<div class="lu-joy-knob" id="joyNub" aria-hidden="true"></div>
 <div id="looktip">오른쪽 드래그 = 시선</div>
 
 <script type="module">
 import { decodeSpace, newSpace } from './js/space.js';
+import {
+  joystickCss, injectJoystickStyle, leanState, JOY_RADIUS, LEAN_MOVING, LEAN_RUNNING,
+} from './js/shared/joystick-look.js';
 import { createVisit } from './js/visit.js';
 import { generateSpace, GEN_LAYOUTS, pickGalleryId } from './js/space-generate.js';
+import { buildOutsideView } from './js/space-outside.js';
 
 // 로드 소스 (앞의 것이 이긴다):
 //   ?u=<작가>  → 그 작가의 갤러리 데이터로 **전시장을 자동생성**한다(space-generate).
@@ -138,11 +163,15 @@ async function loadSpace() {
       if (doc && Array.isArray(doc.artworks)) {
         const layout = GEN_LAYOUTS.includes(q.get('gen')) ? q.get('gen') : undefined;
         const roomUp = Math.max(0, Math.min(4, parseInt(q.get('room'), 10) || 0));
+        // 방 기준 액자 배율 노브(`?art=`). ⚠ 작품별 크기는 이것과 **별개**로 리듬이
+        // 정한다(감독 판정 «일괄은 없어») — 이 노브는 방 전체의 톤만 움직인다.
+        // 범위 검증은 space-generate 가 소유한다(ART_SCALE) — 여기서 다시 자르지 않는다.
+        const artScale = parseFloat(q.get('art'));
         const r = generateSpace(
           doc.artworks.map((a) => ({
             id: a.id, title: a.title, imageUrl: a.imageUrl, videoUrl: a.videoUrl, featured: a.featured,
           })),
-          { layout, roomUp, name: doc.name, author: doc.artist || id },
+          { layout, roomUp, artScale, name: doc.name, author: doc.artist || id },
         );
         // 미배치가 있으면 조용히 넘기지 않는다 — 작가는 자기 작품이 빠진 걸 알아야 한다.
         if (r.dropped.length) console.warn(`[visit] 자리를 못 찾은 작품 ${r.dropped.length}점:`, r.dropped.join(', '));
@@ -161,6 +190,24 @@ const space = await loadSpace();
 const canvas = document.getElementById('c');
 const V = createVisit({ canvas, space, opts: { preserveDrawingBuffer: true } });
 window.__visit = V;
+
+// 창밖 풍경 — 창문이 있는 공간에만 붙인다(감독 지시 2026-08-24, 별도 파일 `space-outside`).
+// 창문이 없으면 벽이 다 막아 보이지 않으므로 세울 이유가 없다(드로우콜만 는다).
+// `visit.js` 는 건드리지 않는다 — 방 조립과 바깥은 별개이고, 통째로 빼도 방은 그대로다.
+// ⚠ 카메라 far 를 **넘긴다**. 안 넘기면 풍경이 클리핑 평면 밖에 서서 통째로 안 보이고,
+// 그 화면은 「아직 안 만들었다」와 구별되지 않는다(근거·실측은 space-outside.ts 헤더).
+// ⚠ 하늘은 **오픈월드 것을 그대로 쓴다**(감독 판정 2026-08-24 «설정된 오픈월드 환경으로
+// 맞춰서 해야지»). 노브 이름도 world2 와 같은 `?time=`·`?weather=` 다 — 그래야 문으로
+// 들어올 때 그 값을 그대로 넘겨받을 수 있다. 검증은 space-outside 가 소유한다.
+const outside = (space.parts || []).some((p) => p && p.t === 'window')
+  ? buildOutsideView({
+      time: new URLSearchParams(location.search).get('time'),
+      weather: new URLSearchParams(location.search).get('weather'),
+      cameraFar: V.getCamera().far,
+    })
+  : null;
+if (outside) V.getScene().add(outside.group);
+window.__outside = outside;
 
 document.getElementById('spaceTitle').textContent = (space.meta && space.meta.name) || '나의 전시실';
 
@@ -185,25 +232,77 @@ swBake.addEventListener('click', ()=>{ if(swBake.classList.contains('on')) retur
 const isTouch = (typeof window !== 'undefined') && ('ontouchstart' in window || (navigator.maxTouchPoints||0) > 0);
 if (isTouch) {
   document.body.classList.add('is-touch');
-  // 조이스틱
+  // ── 조이스틱 — **갤러리와 같은 방식**(감독 지시 2026-08-24 «전부 같게 해라») ────
+  //
+  // 바뀐 것이 룩만이 아니다. 이전에는 `#joy` 가 **왼쪽 아래 고정**이고 그 요소에 터치
+  // 리스너가 달려 있어 «어디를 눌러야 하나» 가 있었다. 지금은 갤러리·오픈월드·world2 와
+  // 같이 **왼쪽 절반 아무 데나 짚으면 그 자리에 뜬다.**
+  //
+  // ⚠ 반경이 `JR = 40` → `JOY_RADIUS`(60) 로 커진다. 같은 손가락 거리에서 기울기가
+  // 작아지므로 **감도도 함께 바뀐다** — 룩만 옮긴 것이 아니다.
+  //
+  // ⚠⚠ 좌/우 경계도 `0.4` → `0.5` 다. 임의값이 아니라 **나머지 네 곳의 값**이다
+  // (`player.js`·`world-boot.js`·`lab-glb.js` 가 전부 `window.innerWidth * 0.5`).
+  // 이 페이지만 0.4 여서 왼쪽 40~50% 구간이 **시선도 이동도 아닌 죽은 띠**였다.
   const joy = document.getElementById('joy'), nub = document.getElementById('joyNub');
-  let joyId = null, jcx = 0, jcy = 0;
-  const JR = 40; // 최대 반경(px)
-  function joyStart(e){ const t=e.changedTouches[0]; joyId=t.identifier; const r=joy.getBoundingClientRect(); jcx=r.left+r.width/2; jcy=r.top+r.height/2; joyMove(e); }
+  injectJoystickStyle(document, 'lu-joy-style', joystickCss({
+    base: '.lu-joy-base', knob: '.lu-joy-knob',
+    on: '.lu-joy-base.lu-live', knobOn: '.lu-joy-knob.lu-live',
+    lean: (v) => `.lu-joy-base.lu-lean${v}`,
+    leanKnob: (v) => `.lu-joy-knob.lu-lean${v}`,
+    knobCenter: 'margin', fixed: true,
+    z: 20, // 이 페이지의 층위 체계 — `#looktip`·`.mobhint` 와 같은 층이다
+  }));
+  let joyId = null, jsx = 0, jsy = 0;
+  function joyPlace(x, y){
+    for(const el of [joy, nub]){ el.style.left = x+'px'; el.style.top = y+'px'; }
+  }
+  function joyStart(t){
+    joyId = t.identifier; jsx = t.clientX; jsy = t.clientY;
+    joyPlace(jsx, jsy);
+    joy.classList.add('lu-live'); nub.classList.add('lu-live');
+  }
   function joyMove(e){
     for(const t of e.changedTouches){ if(t.identifier!==joyId) continue;
-      let dx=t.clientX-jcx, dy=t.clientY-jcy; const d=Math.hypot(dx,dy)||1; const cl=Math.min(1,d/JR);
-      const ux=dx/d*cl, uy=dy/d*cl; nub.style.transform=`translate(${ux*JR}px,${uy*JR}px)`;
-      V.setTouchMove(-uy, ux); // 위로 밀면 전진(-uy), 오른쪽=우측 스트레이프
+      const dx = t.clientX-jsx, dy = t.clientY-jsy, len = Math.hypot(dx,dy);
+      const scale = len > JOY_RADIUS ? JOY_RADIUS/len : 1;
+      nub.style.left = (jsx + dx*scale)+'px'; nub.style.top = (jsy + dy*scale)+'px';
+      const ux = (dx*scale)/JOY_RADIUS, uy = (dy*scale)/JOY_RADIUS;
+      const lean = leanState(Math.hypot(ux, uy));
+      for(const el of [joy, nub]){
+        el.classList.toggle('lu-lean1', lean === LEAN_MOVING);
+        el.classList.toggle('lu-lean2', lean === LEAN_RUNNING);
+      }
+      V.setTouchMove(-uy, ux); // 입력 계약 불변: 위로 밀면 전진(-uy), 오른쪽=우측 스트레이프
     }
   }
-  function joyEnd(e){ for(const t of e.changedTouches){ if(t.identifier!==joyId) continue; joyId=null; nub.style.transform='translate(0,0)'; V.setTouchMove(0,0); } }
-  joy.addEventListener('touchstart', (e)=>{ e.preventDefault(); joyStart(e); }, {passive:false});
-  joy.addEventListener('touchmove', (e)=>{ e.preventDefault(); joyMove(e); }, {passive:false});
-  joy.addEventListener('touchend', joyEnd); joy.addEventListener('touchcancel', joyEnd);
-  // 우측 드래그 = 시선(조이스틱 영역 밖의 터치)
+  function joyEnd(e){
+    for(const t of e.changedTouches){ if(t.identifier!==joyId) continue;
+      joyId = null;
+      joy.classList.remove('lu-live','lu-lean1','lu-lean2');
+      nub.classList.remove('lu-live','lu-lean1','lu-lean2');
+      V.setTouchMove(0, 0);
+    }
+  }
+  // ⚠ 리스너가 `#joy` 에서 **캔버스로** 옮겨 왔다 — 모듈 CSS 가 조이스틱에
+  // `pointer-events:none` 을 주므로 그 요소는 이제 터치를 못 받는다(순수 시각 피드백).
+  canvas.addEventListener('touchstart', (e)=>{
+    for(const t of e.changedTouches){
+      // ⚠ 왼쪽 절반이면 **이동 터치가 이미 있어도** 기본 동작을 막는다(검수관 권고 2).
+      // 첫 판본은 `joyId === null` 일 때만 막았고, 그러면 이동 중에 왼쪽에 닿은 **두 번째
+      // 손가락**에는 preventDefault 가 안 걸려 확대 제스처가 개입할 여지가 있었다.
+      // 원본은 리스너가 `#joy` 요소에 달려 있어 이 조건이 없었다 — 리스너를 캔버스로
+      // 옮기면서 생긴 틈이다.
+      if(t.clientX >= window.innerWidth*0.5) continue;
+      if(joyId === null) joyStart(t);
+      e.preventDefault();
+    }
+  }, {passive:false});
+  canvas.addEventListener('touchmove', (e)=>{ if(joyId!==null){ joyMove(e); e.preventDefault(); } }, {passive:false});
+  canvas.addEventListener('touchend', joyEnd); canvas.addEventListener('touchcancel', joyEnd);
+  // 우측 드래그 = 시선
   let lookId=null, lx=0, ly=0;
-  canvas.addEventListener('touchstart', (e)=>{ const t=e.changedTouches[0]; if(t.clientX < window.innerWidth*0.4) return; lookId=t.identifier; lx=t.clientX; ly=t.clientY; }, {passive:true});
+  canvas.addEventListener('touchstart', (e)=>{ const t=e.changedTouches[0]; if(t.clientX < window.innerWidth*0.5) return; lookId=t.identifier; lx=t.clientX; ly=t.clientY; }, {passive:true});
   canvas.addEventListener('touchmove', (e)=>{ for(const t of e.changedTouches){ if(t.identifier!==lookId) continue; V.lookDelta((t.clientX-lx)*0.004, (t.clientY-ly)*0.004); lx=t.clientX; ly=t.clientY; } }, {passive:true});
   canvas.addEventListener('touchend', (e)=>{ for(const t of e.changedTouches){ if(t.identifier===lookId) lookId=null; } });
 }
