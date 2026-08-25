@@ -243,3 +243,20 @@ describe('버퍼를 약속했는데 BIN 이 없는 파일 — 실측이 잡은 �
     expect(r.reason, 'GLB 내장 버퍼만 본다').toBe('ok');
   });
 });
+
+describe('잘린 GLB — 선언 길이가 파일 끝을 넘는다 (검수관 권고 P1)', () => {
+  // 안 보던 판본은 `new Uint8Array(src, offset, length)` 가
+  // `RangeError: Invalid typed array length` 로 **던졌다.** 던지면 되읽기 전체가
+  // 넘어가 파츠 배치까지 안 실린다 — 이 회차가 고친 바로 그 형태다.
+  it('던지지 않고 `no-bin` 으로 답한다', () => {
+    // **버퍼를 약속한** 파일이어야 한다 — 약속이 없으면 BIN 이 없어도 정상(`ok`)이고
+    // 그 갈래는 이 검사의 대상이 아니다.
+    const base = packGlb({ ...worldWithAddition(), buffers: [{ byteLength: 64 }] }, new Uint8Array(64));
+    const dv = new DataView(base);
+    const jsonLen = dv.getUint32(12, true);
+    // BIN 청크 헤더의 길이만 터무니없이 크게 바꾼다(파일은 그대로 자른 채 둔다).
+    dv.setUint32(20 + jsonLen, 999999, true);
+    expect(() => extractForeignGlb(base)).not.toThrow();
+    expect(extractForeignGlb(base).reason, '잘린 BIN 은 없는 것과 같다').toBe('no-bin');
+  });
+});

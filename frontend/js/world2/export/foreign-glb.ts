@@ -51,6 +51,11 @@ function findBinChunk(buf: ArrayBuffer): { offset: number; length: number } | nu
   while (at + 8 <= buf.byteLength) {
     const len = dv.getUint32(at, true);
     const type = dv.getUint32(at + 4, true);
+    // ⚠ **선언 길이가 파일 끝을 넘으면 그 청크는 없는 것으로 본다**(검수관 권고 P1).
+    // 안 보던 판본은 잘린 GLB 에서 `new Uint8Array(src, offset, length)` 가
+    // `RangeError: Invalid typed array length` 로 던졌다. 던지면 되읽기 전체가
+    // 넘어가고, 그러면 파츠 배치까지 안 실린다 — 이 회차가 고친 바로 그 형태다.
+    if (at + 8 + len > buf.byteLength) return null;
     if (type === 0x004e4942) return { offset: at + 8, length: len };   // 'BIN\0'
     at += 8 + len;
   }

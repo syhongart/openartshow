@@ -39,6 +39,14 @@
     background:#1d1a16;color:var(--ink);font:inherit;font-weight:600;cursor:pointer}
   #pickBtn:hover{background:#262119;border-color:#6a6151}
   #status{min-height:1.4em;color:var(--dim);font-size:13px}
+  #again{position:fixed;right:12px;top:calc(12px + env(safe-area-inset-top));z-index:6;
+    padding:7px 12px;border-radius:8px;border:1px solid #4b4438;background:#1d1a16cc;
+    color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer;backdrop-filter:blur(6px)}
+  #again:hover{background:#262119}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);
+    bottom:calc(24px + env(safe-area-inset-bottom));z-index:7;max-width:min(92vw,46ch);
+    padding:10px 14px;border-radius:10px;background:#3a1d1dee;border:1px solid #7a3b3b;
+    color:#ffd9d9;font-size:13px;line-height:1.5;text-align:center}
   #file{display:none}
 
   /* 안내·계기 — 캡처를 가리지 않게 작고 옅게 */
@@ -60,10 +68,18 @@
      파일은 이 브라우저 밖으로 나가지 않습니다.</p>
   <button id="pickBtn" type="button">GLB 파일 고르기</button>
   <div id="status">창에 파일을 끌어다 놓아도 됩니다</div>
-  <input id="file" type="file" accept=".glb,.gltf,model/gltf-binary">
+  <!-- ⚠ `.gltf` 를 안 받는다(검수관 권고 P9): 외부 `.bin`·텍스처를 blob URL 기준
+       상대경로로 찾아 `connect-src 'self'` 에서 실패한다. 자기완결인 `.glb` 만 받는다. -->
+  <input id="file" type="file" accept=".glb,model/gltf-binary">
 </div>
 
 <div id="hud" hidden></div>
+<!-- ⚠ 한 번 성공하면 `#pick` 이 `pointer-events:none` 이 되어 **다시 고를 수 없었다**
+     (검수관 권고 P8). 다른 파일을 열 문을 화면에 남긴다. -->
+<button id="again" type="button" hidden>다른 파일</button>
+<!-- 실패 문구는 `#pick` **밖**에 둔다 — 안에 두면 첫 성공 뒤 숨겨져, 드롭으로 연 두
+     번째 파일이 실패했을 때 화면에 아무것도 안 나온다(검수관 권고 P8). -->
+<div id="toast" hidden></div>
 <div id="keys">
   WASD · 화살표 — 이동<br>
   화면 클릭 → 마우스로 시점<br>

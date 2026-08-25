@@ -38,14 +38,36 @@
 import type { Object3D, Scene } from 'three/webgpu';
 import { extractForeignGlb } from './foreign-glb.js';
 
+/** `apply` 의 결과. **수와 사유를 함께** 낸다 — 사유가 없으면 실패가 화면에서 사라진다 */
+export interface ImportedResult {
+  /** 씬에 얹은 메시 노드 수 */
+  meshes: number;
+  /**
+   * 무슨 일이 있었나.
+   *   `ok`    — 얹었다
+   *   `none`  — 남의 메시가 없는 파일이다(정상. 우리 파츠만 든 GLB)
+   *   `no-bin`— 버퍼를 약속했는데 BIN 청크가 없다. **로더가 죽으므로 안 넘겼다**
+   *   `error` — 로더가 실패했다(`detail` 에 사유)
+   *   `stale` — 더 새 회차가 들어와 이 회차를 버렸다(화면은 새 회차가 책임진다)
+   */
+  reason: 'ok' | 'none' | 'no-bin' | 'error' | 'stale';
+  /** 사람에게 보일 사유. `error` 일 때만 채워진다 */
+  detail?: string;
+}
+
 export interface ImportedScene {
   /**
    * 되읽은 GLB 를 씬에 얹는다. **이전에 얹은 것은 걷어낸다** — 되읽기는 매번 «그 파일이
    * 곧 세계» 이므로 쌓이면 안 된다.
    *
-   * @returns 얹은 메시 노드 수. 남의 메시가 없으면 0.
+   * ⚠ **수만 돌려주지 않는다**(검수관 블로커 B1, 2026-08-25). `number` 만 내던 판본은
+   * 실패 사유가 UI 로 갈 통로가 없어서, 「올릴 것이 있었는데 못 올렸다」가 화면에
+   * **아무 흔적도 안 남겼다.** `foreign-glb.ts` 는 *"미리 걸러 사유를 말한다"* 고
+   * 적어 두고 그 사유를 아무도 못 받고 있었다 — 주석이 거짓이었다.
+   *
+   * 감독이 신고한 화면이 정확히 그것이다(«아무 일도 안 일어난다»). 사유를 함께 낸다.
    */
-  apply(buf: ArrayBuffer): Promise<number>;
+  apply(buf: ArrayBuffer): Promise<ImportedResult>;
   /** 얹은 것을 전부 걷어낸다 */
   clear(): void;
   /**
@@ -130,16 +152,24 @@ export function createImportedScene(scene: Scene): ImportedScene {
   }
 
   return {
-    async apply(buf: ArrayBuffer): Promise<number> {
+    async apply(buf: ArrayBuffer): Promise<ImportedResult> {
       const my = ++gen;
       // 잘라내기가 먼저다 — 원본을 통째로 로더에 넘기면 125만 삼각형을 GPU 로 올린 뒤
       // 버리게 되고, 우리 파츠는 이미 인스턴스로 서 있으므로 두 벌이 된다.
       const cut = extractForeignGlb(buf);
-      // 올릴 것이 없으면 **여기서 비운다** — 남의 메시가 없는 파일을 고른 것도 편집이다.
-      if (!cut.glb) { clear(); return 0; }
+      if (!cut.glb) {
+        // ── 성공(`none`)과 실패(`no-bin`)를 **가른다** (검수관 권고 P4) ──────────
+        // 둘 다 «올린 것이 0» 이지만 뜻이 정반대다. 같은 값으로 접으면 «올릴 것이
+        // 있었는데 못 올렸다» 가 화면에서 사라진다.
+        //
+        // 다만 **화면을 비우는 것은 둘 다** 같다 — 되읽기는 «그 파일이 곧 세계» 이므로
+        // 이전 파일의 물건이 남으면 안 된다.
+        clear();
+        return { meshes: 0, reason: cut.reason === 'no-bin' ? 'no-bin' : 'none' };
+      }
 
       await ensureLoader();
-      if (disposed || my !== gen || !THREE || !loadGLB) return 0;
+      if (disposed || my !== gen || !THREE || !loadGLB) return { meshes: 0, reason: 'stale' };
 
       // blob URL 로 넘긴다 — 로더가 URL 만 받기 때문이다. world2 의 CSP 가 `blob:` 을
       // 허용하고 있어 새로 열 것이 없다(`world2.html` 의 `connect-src`).
@@ -147,6 +177,11 @@ export function createImportedScene(scene: Scene): ImportedScene {
       let loaded: Object3D;
       try {
         loaded = await loadGLB(url);
+      } catch (err) {
+        // ⚠ **던지지 않는다.** 던지면 부르는 쪽이 `catch` 로 받아 파츠 배치까지 건너뛴다
+        // — 물건 하나가 안 올라오는 대신 도시 전체가 안 실린다(감독 신고와 같은 형태).
+        // 사유를 값으로 돌려주고, 화면에 무엇을 적을지는 부르는 쪽이 정한다.
+        return { meshes: 0, reason: 'error', detail: err instanceof Error ? err.message : String(err) };
       } finally {
         // 로더가 다 읽은 뒤 즉시 놓는다 — 안 놓으면 파일이 탭 수명 내내 메모리에 남는다.
         URL.revokeObjectURL(url);
@@ -154,7 +189,7 @@ export function createImportedScene(scene: Scene): ImportedScene {
 
       // ── 늦게 도착한 회차는 **자기가 만든 것만 버리고 화면을 안 건드린다** ────────
       // `disposed` 만 보던 판본은 여기서 `scene.add` 를 해 두 벌을 만들었다.
-      if (disposed || my !== gen) { disposeTree(loaded); return 0; }
+      if (disposed || my !== gen) { disposeTree(loaded); return { meshes: 0, reason: 'stale' }; }
 
       // ⚠ `clear()` 가 **`await` 뒤**인 것이 중요하다. 앞에 두면 ① 로드가 실패했을 때
       // 이전 GLB 가 이미 사라진 뒤이고(복원 수단이 없다) ② 로드 중 화면이 비어 깜빡인다.
@@ -164,7 +199,7 @@ export function createImportedScene(scene: Scene): ImportedScene {
       (g as unknown as { add(o: Object3D): void }).add(loaded);
       (scene as unknown as { add(o: Object3D): void }).add(g);
       root = g;
-      return cut.meshNodes;
+      return { meshes: cut.meshNodes, reason: 'ok' };
     },
     clear,
     describe() {

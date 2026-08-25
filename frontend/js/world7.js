@@ -42,6 +42,8 @@ const pickBtn = document.getElementById('pickBtn');
 const fileInput = document.getElementById('file');
 const statusEl = document.getElementById('status');
 const hud = document.getElementById('hud');
+const againBtn = document.getElementById('again');
+const toast = document.getElementById('toast');
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -122,26 +124,43 @@ function place(gltf) {
   });
   hud.textContent = `메시 ${meshes.toLocaleString()} · 삼각형 ${Math.round(tris).toLocaleString()}`;
   hud.hidden = false;
+  againBtn.hidden = false;      // 다른 파일을 열 문을 남긴다(검수관 권고 P8)
   ready = true;
   pick.classList.add('hide');
+}
+
+/**
+ * 실패를 화면에 띄운다. **`#pick` 밖**이라 첫 성공 뒤에도 보인다.
+ *
+ * ⚠ 사유를 `#status` 에만 적던 판본은 그 요소가 숨겨진 `#pick` 안에 있어서, 드롭으로
+ * 연 두 번째 파일이 실패하면 **화면에 아무것도 안 나왔다**(검수관 권고 P8).
+ */
+function say(msg) {
+  statusEl.textContent = msg;           // 첫 화면에서는 여기가 보인다
+  toast.textContent = msg;
+  toast.hidden = false;
+  clearTimeout(say._t);
+  say._t = setTimeout(() => { toast.hidden = true; }, 8000);
 }
 
 // ── 파일 고르기 ─────────────────────────────────────────────────────────────
 const loader = new GLTFLoader();
 pickBtn.addEventListener('click', () => fileInput.click());
+againBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async () => {
   const f = fileInput.files?.[0];
   if (!f) return;
-  statusEl.textContent = `${f.name} 읽는 중…`;
+  say(`${f.name} 읽는 중…`);
   // blob URL — 로더가 URL 만 받는다. CSP 가 `blob:` 을 허용한다(이 페이지 헤더).
   const url = URL.createObjectURL(f);
   try {
     const gltf = await loader.loadAsync(url);
     place(gltf);
+    toast.hidden = true;                // 성공했으면 «읽는 중» 을 지운다
   } catch (err) {
     // 조용히 삼키지 않는다 — 무엇이 잘못됐는지 화면에 적는다.
     console.error('[world7] GLB 로드 실패', err);
-    statusEl.textContent = `✗ 못 읽었다: ${err instanceof Error ? err.message : err}`;
+    say(`✗ 못 읽었다: ${err instanceof Error ? err.message : err}`);
   } finally {
     URL.revokeObjectURL(url);
     fileInput.value = '';        // 같은 파일을 다시 고를 수 있게
