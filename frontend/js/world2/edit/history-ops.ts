@@ -342,7 +342,14 @@ type Snap =
 export function poseLabel(a: Pose5, b: Pose5): string {
   const moved = a.x !== b.x || a.y !== b.y || a.z !== b.z;
   const turned = a.ry !== b.ry;
-  const scaled = a.s !== b.s;
+  // ⚠ **축별도 「크기」다** (검수관 비블로커, 2026-08-25). 균등 `s` 만 보면 축별만 바꾼
+  // 조작이 `'조작'` 이라는 일반 라벨로 떨어져, 되돌리기 목록에 «되돌렸습니다: 조작» 이
+  // 뜬다 — 감독이 **무엇을 되돌리는지 모르는** 문구다. 값·되돌리기 정확성에는 영향이
+  // 없었지만 화면에 나가는 글자라 함께 고친다.
+  const scaled = a.s !== b.s
+    || (a.sx ?? 1) !== (b.sx ?? 1)
+    || (a.sy ?? 1) !== (b.sy ?? 1)
+    || (a.sz ?? 1) !== (b.sz ?? 1);
   if (moved && !turned && !scaled) return '위치';
   if (turned && !moved && !scaled) return '회전';
   if (scaled && !moved && !turned) return '크기';
