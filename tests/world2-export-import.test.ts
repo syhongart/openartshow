@@ -177,7 +177,7 @@ describe('변환 분해', () => {
 });
 
 describe('왕복 — 내보낸 것을 되읽으면 같은 세계다', () => {
-  // 전 세계(17,502개)를 합성하면 테스트가 느려지므로 앞쪽 표본을 쓴다. 종류가 골고루
+  // 전 세계(28,704개)를 합성하면 테스트가 느려지므로 앞쪽 표본을 쓴다. 종류가 골고루
   // 섞이도록 종류별로 몇 개씩 뽑는다 — 앞에서 자르면 ground·road 만 담긴다.
   const all = collectWorld().nodes;
   const perKind = new Map<string, ExportNode[]>();
