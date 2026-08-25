@@ -110,9 +110,29 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       // ⚠ 여기 원래 `nodes.length === 0` 이면 **곧장 «우리 형식이 아니다» 로 되돌아가는**
       // 갈래가 있었고, 감독이 블렌더에서 오브젝트를 추가해 되읽었을 때 밟은 것이 그것이다.
       // 파츠 판정 하나로 파일 전체를 거절하고 있었다.
-      const foreign = opts.applyImported ? await opts.applyImported(buf) : 0;
+      //
+      // ⚠⚠ **실패를 격리한다.** 여기서 던지면 아래 파츠 배치가 통째로 안 돈다 — 즉
+      // 물건 하나가 안 올라오는 대신 **도시 전체가 안 실린다.** 실측으로 그 경로를
+      // 밟았다(BIN 없는 GLB → GLTFLoader 크래시 → 되읽기 전체 실패).
+      // `import-glb.ts` 의 warnings 규약과 같은 원리다: 한 건 때문에 전체가 죽으면 안 된다.
+      let foreign = 0;
+      let foreignError: string | null = null;
+      if (opts.applyImported) {
+        try {
+          foreign = await opts.applyImported(buf);
+        } catch (err) {
+          foreignError = err instanceof Error ? err.message : String(err);
+          console.error('[world2] 추가된 물건을 올리지 못했다 — 부품 배치는 계속한다', err);
+        }
+      }
 
       if (nodes.length === 0 && foreign === 0) {
+        // 올릴 것이 있었는데 **실패해서** 0 인 경우를 «형식이 아니다» 로 뭉개지 않는다.
+        if (foreignError) {
+          importBtn.textContent = '✗ 물건을 못 읽었다 — 콘솔 확인';
+          setTimeout(() => { importBtn.textContent = idleImport; }, 8000);
+          return;
+        }
         // 이제 «아무것도 못 읽었다» 는 **양쪽 다 0** 일 때만이다. 우리 재질 규약도 없고
         // 올릴 메시도 없는 파일 — 빈 결과를 성공으로 적지 않는다.
         importBtn.textContent = '✗ 우리 형식이 아니다';

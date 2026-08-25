@@ -48,6 +48,15 @@ export interface ImportedScene {
   apply(buf: ArrayBuffer): Promise<number>;
   /** 얹은 것을 전부 걷어낸다 */
   clear(): void;
+  /**
+   * 진단용 — **씬에 실제로 몇 개가 서 있는가.**
+   *
+   * ⚠ `root` 를 세지 않고 **씬을 훑어 이름으로 센다.** `root` 는 하나만 가리키므로
+   * 두 벌이 생겨도 1 이라고 답한다 — 그것이 정확히 이 층의 결함 형태였다(재진입).
+   * 라벨 문구는 «올렸다고 적었다» 까지만 말하고, 그 둘이 갈리는 것이 이 프로젝트의
+   * 상시 위험이다.
+   */
+  describe(): { groups: number; meshes: number; visible: number };
   dispose(): void;
 }
 
@@ -158,6 +167,22 @@ export function createImportedScene(scene: Scene): ImportedScene {
       return cut.meshNodes;
     },
     clear,
+    describe() {
+      let groups = 0, meshes = 0, visible = 0;
+      const kids = (scene as unknown as { children?: unknown[] }).children ?? [];
+      for (const c of kids) {
+        const node = c as { name?: string; traverse?(cb: (o: unknown) => void): void };
+        if (node.name !== 'world2:imported-glb') continue;
+        groups++;
+        node.traverse?.((o) => {
+          const m = o as { isMesh?: boolean; visible?: boolean };
+          if (!m.isMesh) return;
+          meshes++;
+          if (m.visible !== false) visible++;
+        });
+      }
+      return { groups, meshes, visible };
+    },
     dispose(): void {
       disposed = true;
       clear();

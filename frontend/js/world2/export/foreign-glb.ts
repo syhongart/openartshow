@@ -29,8 +29,13 @@
 import { readGlbJson, parseComboName, stripDupSuffix } from './import-glb.js';
 
 export interface ForeignResult {
-  /** 남의 메시만 남긴 GLB. 남은 것이 없으면 `null` */
+  /** 남의 메시만 남긴 GLB. 올릴 수 없으면 `null` — 사유는 `reason` */
   glb: ArrayBuffer | null;
+  /**
+   * `glb` 가 `null` 인 이유. `'none'` = 남의 메시가 없다(정상),
+   * `'no-bin'` = **버퍼를 약속했는데 BIN 청크가 없다**(그 파일은 아무도 못 읽는다).
+   */
+  reason: 'ok' | 'none' | 'no-bin';
   /** 남긴 메시 노드 수 */
   meshNodes: number;
   /** 우리 파츠라서 뺀 메시 노드 수 — 둘을 함께 보여야 «전부 빠졌다» 를 알아챈다 */
@@ -109,7 +114,22 @@ export function extractForeignGlb(buf: ArrayBuffer): ForeignResult {
 
   for (const scene of g.scenes ?? []) for (const n of scene.nodes ?? []) shouldKeep(n);
 
-  if (meshNodes === 0) return { glb: null, meshNodes: 0, ourNodes };
+  if (meshNodes === 0) return { glb: null, reason: 'none', meshNodes: 0, ourNodes };
+
+  // ── 버퍼를 약속했는데 BIN 이 없으면 **넘기지 않는다** (실측 2026-08-25) ────
+  // GLTFLoader 는 그런 파일에서 `GLTFBinaryExtension.body` 가 `null` 인 채 진행하다
+  // `null.slice` 로 죽는다. 실측: `buffers: [{byteLength: 426276}]` 인데 후속 청크가
+  // 없는 GLB 를 넣었더니 «Cannot read properties of null (reading 'slice')» 가 났다.
+  //
+  // 그 크래시가 되읽기 전체를 넘어뜨려 **파츠 배치까지 안 실렸다** — 감독이 신고한
+  // «아무 일도 안 일어난다» 와 같은 형태다. 미리 걸러 사유를 말한다.
+  //
+  // `uri` 가 있는 버퍼는 외부 파일이라 여기 해당 없다(자기완결 GLB 가 아니므로 어차피
+  // CSP 가 막는다). 판정 대상은 **GLB 내장 버퍼**뿐이다.
+  const bin = findBinChunk(buf);
+  const needsBin = ((g.buffers ?? []) as Record<string, unknown>[])
+    .some((b) => b.uri === undefined && ((b.byteLength as number) ?? 0) > 0);
+  if (needsBin && !bin) return { glb: null, reason: 'no-bin', meshNodes, ourNodes };
 
   // ── 남길 노드만 가리키도록 트리를 다시 엮는다 ────────────────────────────
   // 원본을 안 건드린다 — 같은 `ArrayBuffer` 로 되읽기(`parseWorldGlb`)도 돌기 때문이다.
@@ -127,7 +147,7 @@ export function extractForeignGlb(buf: ArrayBuffer): ForeignResult {
     nodes: (s.nodes ?? []).filter((n: number) => keep.get(n)),
   }));
 
-  return { glb: packGlb(out, findBinChunk(buf), buf), meshNodes, ourNodes };
+  return { glb: packGlb(out, bin, buf), reason: 'ok', meshNodes, ourNodes };
 }
 
 /** 새 JSON + **원본 BIN** 으로 GLB 를 조립한다 */

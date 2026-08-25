@@ -192,3 +192,54 @@ describe('배선 — 잘라낸 것이 실제로 씬까지 간다', () => {
     expect(PANEL).toMatch(/nodes\.length === 0 && foreign === 0/);
   });
 });
+
+describe('버퍼를 약속했는데 BIN 이 없는 파일 — 실측이 잡은 크래시', () => {
+  // ── 왜 이 검사가 생겼나 (실측 2026-08-25) ────────────────────────────────
+  // 브라우저 실측에서 되읽기가 통째로 실패했다:
+  //
+  //   TypeError: Cannot read properties of null (reading 'slice')  ← GLTFLoader 안
+  //
+  // 원인은 `buffers: [{byteLength: 426276}]` 로 **버퍼를 약속하면서 BIN 청크가 없는**
+  // GLB 였다. GLTFLoader 는 그런 파일에서 `GLTFBinaryExtension.body` 가 `null` 인 채
+  // 진행하다 죽는다.
+  //
+  // ⚠ 그 크래시가 **되읽기 전체를 넘어뜨려 파츠 배치까지 안 실렸다** — 감독이 신고한
+  // «아무 일도 안 일어난다» 와 같은 형태다. 한 갈래의 실패가 전체를 죽이는 것.
+  //
+  // ⚠⚠ 그 파일을 만든 것은 **내 측정 스크립트**였다(`packGlb` 가 BIN 을 안 붙였다).
+  // 검수관이 권고 P-b 로 정확히 그 한계를 지적해 뒀는데(«블렌더가 낸 파일의 충실도는
+  // 아니다») 되읽기가 GLTFLoader 를 쓰게 되면서 그 한계가 **실제 결함으로 물렸다.**
+  // 남이 만든 손상 파일에서도 같은 일이 난다.
+
+  /** 버퍼를 약속하지만 BIN 청크가 없는 GLB — 손상됐거나 잘못 조립된 파일 */
+  function withoutBin() {
+    return packGlb({ ...worldWithAddition(), buffers: [{ byteLength: 1024 }] });
+  }
+
+  it('올릴 메시가 있어도 **`null` 을 낸다** — 로더에 넘기면 죽는다', () => {
+    const r = extractForeignGlb(withoutBin());
+    expect(r.meshNodes, '남의 메시는 세되').toBe(1);
+    expect(r.glb, 'BIN 이 없으면 넘기지 않는다').toBeNull();
+    expect(r.reason).toBe('no-bin');
+  });
+
+  it('BIN 이 있으면 그대로 통과한다 — 위 판정이 정상 파일을 막지 않는다', () => {
+    const r = extractForeignGlb(packGlb(worldWithAddition(), new Uint8Array(64)));
+    expect(r.glb, '정상 파일까지 막으면 기능이 죽는다').not.toBeNull();
+    expect(r.reason).toBe('ok');
+  });
+
+  it('버퍼를 약속하지 않으면 BIN 이 없어도 통과한다 — 지오가 없는 GLB 도 유효하다', () => {
+    // `buffers` 가 비면 accessor 가 참조할 것이 없다 — 로더가 죽지 않는다.
+    const r = extractForeignGlb(packGlb({ ...worldWithAddition(), buffers: [] }));
+    expect(r.reason).toBe('ok');
+  });
+
+  it('외부 `uri` 버퍼는 BIN 판정 대상이 아니다', () => {
+    const r = extractForeignGlb(packGlb({
+      ...worldWithAddition(),
+      buffers: [{ uri: 'scene.bin', byteLength: 1024 }],
+    }));
+    expect(r.reason, 'GLB 내장 버퍼만 본다').toBe('ok');
+  });
+});
