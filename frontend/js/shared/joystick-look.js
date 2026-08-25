@@ -133,14 +133,61 @@ const GREEN = '95,158,125';
  * @param {(v: string) => string} sel.leanKnob 상태별 손잡이 셀렉터
  * @param {boolean} [sel.fixed] `position:fixed` 인가(갤러리·오픈월드) 아니면
  *   `absolute` 인가(world2 — 구역 안에 중첩된다). 기본 `false`.
+ * @param {'margin'|'transform'} [sel.knobCenter] 손잡이의 **중심을 잡는 수단**. 기본 `'transform'`.
+ *
+ *   ⚠ 이 옵션은 취향이 아니라 **DOM 구조의 차이**다. 갤러리·오픈월드는 손잡이가 링의
+ *   **형제**이고 좌표를 직접 옮긴다(`style.left/top = 터치 지점`) — 그래서 자기 크기의
+ *   절반만큼 `margin` 으로 당겨야 그 좌표가 중심이 된다. world2 는 손잡이가 링의
+ *   **자식**이라 `left:50%;top:50%` + `translate(-50%,-50%)` 로 잡는다.
+ *
+ *   DOM 을 통일하면 이 옵션이 없어도 되지만 그러려면 `player.js`(**라이브 런타임
+ *   보호파일**)의 DOM 을 바꿔야 한다 — 룩을 맞추는 회차에 구조 변경을 포개면 무엇이
+ *   화면을 깼는지 안 갈린다. **옵션 하나가 DOM 변경보다 싸다.**
+ *
+ * @param {string} [sel.knobOn] 손잡이가 「보인다」 상태 셀렉터. 생략하면 손잡이는 따로
+ *   숨지 않는다(world2 — 링이 통째로 등장하고 손잡이는 그 자식이라 함께 사라진다).
+ *   갤러리·오픈월드는 **형제**라 손잡이가 자기 몫으로 숨어야 한다.
+ * @param {number|null} sel.z 링의 `z-index`. 손잡이는 `z+1` 을 받는다.
+ *   `position:fixed` 인 소비자는 **반드시 줘야 하고**(아래 이유), 층위가 필요 없으면
+ *   `null` 을 **명시**한다 — 생략은 던진다.
+ *
+ *   🔴 **검수관 블로커 (2026-08-24). 첫 판본이 이 속성을 통째로 잃었다.**
+ *   원본들은 `z-index: 40`(링) · `41`(손잡이)를 갖고 있었는데 모듈이 그것을 안 냈고,
+ *   **어느 검사도 그것을 안 봤다.** 나는 커밋에 *"CSS 주입 지점만 바꾸고 나머지는
+ *   그대로"* 라고 적었지만 **속성 하나가 실제로 빠져 있었다.**
+ *
+ *   실질 영향이 있다: `z-index:auto` 인 요소는 DOM 순서와 무관하게 **양의 z-index 를 가진
+ *   모든 형제보다 아래**에 그려진다. `world.html:50` 의 `#enter`(클릭 유도 오버레이)가
+ *   `z-index:30` 이고 포인터락이 풀릴 때마다 되돌아오므로, 조이스틱이 그 아래로 내려가면
+ *   **덮인다.** 원본 주석이 정확히 그것을 막으려고 40 을 골랐다고 적고 있었다.
+ *
+ *   ⚠ **값은 소비자가 준다 — 값 미러링이 아니다.** 페이지마다 층위 체계가 다르기
+ *   때문이다(미술관·오픈월드 40 / 방문자뷰 20 / world3·5 는 6). 모듈이 하나로 정하면
+ *   그 페이지의 다른 UI 와 순서가 뒤집힌다. 대신 **생략을 막아** 조용한 소실을 없앴다.
  */
 export function joystickCss(sel) {
+  // 🔴 생략을 막는다 — 첫 판본이 z-index 를 조용히 잃은 것이 검수관 블로커였다.
+  // 「필요 없다」도 `z: null` 로 **적어야** 한다. 그래야 다음 사람이 그것을 결정으로 읽는다.
+  if (!('z' in sel)) {
+    throw new Error('joystickCss: `z`(z-index)를 명시하라 — 층위가 필요 없으면 `z: null`');
+  }
   const pos = sel.fixed ? 'fixed' : 'absolute';
+  const zBase = sel.z === null ? '' : `z-index:${sel.z};`;
+  const zKnob = sel.z === null ? '' : `z-index:${sel.z + 1};`;
   const half = JOY_BASE_PX / 2;
+  const knobHalf = JOY_KNOB_PX / 2;
+  // 중심 잡기 — 둘 다 「좌표가 곧 중심」을 만들지만 수단이 다르다(위 주석).
+  const knobCenter = sel.knobCenter === 'margin'
+    ? `margin:-${knobHalf}px 0 0 -${knobHalf}px;`
+    : `left:50%;top:50%;transform:translate(-50%,-50%);`;
+  // 형제 구조에서만 필요한 두 줄. 값은 링의 등장과 같게 둔다 — 따로 두면 링과 손잡이가
+  // 다른 속도로 나타나 「하나의 물건」으로 안 보인다.
+  const knobHide = sel.knobOn ? `opacity:0;transition:opacity .12s ease,` : 'transition:';
+  const knobShow = sel.knobOn ? `\n${sel.knobOn}{opacity:1}` : '';
   return `
 ${sel.base}{
   position:${pos};width:${JOY_BASE_PX}px;height:${JOY_BASE_PX}px;
-  margin:-${half}px 0 0 -${half}px;border-radius:50%;pointer-events:none;
+  margin:-${half}px 0 0 -${half}px;border-radius:50%;pointer-events:none;${zBase}
   border:1.5px solid rgba(${CREAM},.38);
   background:radial-gradient(circle, rgba(${INK},.10) 55%, rgba(${INK},.34) 100%);
   box-shadow:0 2px 12px rgba(${SHADOW},.30), inset 0 0 0 1px rgba(${INK},.20);
@@ -174,11 +221,20 @@ ${sel.lean(LEAN_RUNNING)}::after{
 }
 ${sel.knob}{
   position:${pos};width:${JOY_KNOB_PX}px;height:${JOY_KNOB_PX}px;border-radius:50%;
+  /* ⚠ 형제 구조에서는 이 줄이 동작을 좌우한다. 갤러리·오픈월드는 손잡이가 링의 자식이
+     아니라 body 직속 형제라 링의 pointer-events:none 이 상속되지 않는다 — 빠지면
+     손잡이가 터치를 가로채 그 위에서 손가락을 움직일 때 이동이 끊긴다. world2 에서는
+     부모가 이미 none 이라 중복이지만, 조건부로 내면 「어느 쪽이었더라」가 생긴다.
+     원본에도 있는 값이므로 항상 낸다.
+     ⚠⚠ 이 주석에 백틱을 쓰지 마라 — 여기는 템플릿 리터럴 안이고 백틱 하나로 끊긴다.
+     같은 실수를 두 번 했다(2026-08-24 오전 ReferenceError, 오후 파싱 에러). */
+  pointer-events:none;${zKnob}
+  ${knobCenter}
   background:radial-gradient(circle at 32% 28%, #fffdf8, #e8e2d2);
   border:1px solid rgba(${INK},.28);
   box-shadow:0 3px 8px rgba(${SHADOW},.40), inset 0 -2px 4px rgba(${INK},.14);
-  transition:background .15s ease, border-color .15s ease, box-shadow .15s ease;
-}
+  ${knobHide}background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}${knobShow}
 /* 움직임 — 진주에서 연초록으로. 화면 판정 전 값이다(위와 같은 이유). */
 ${sel.leanKnob(LEAN_MOVING)}{
   background:radial-gradient(circle at 32% 28%, #ddf0e4, #9ac4ac);
