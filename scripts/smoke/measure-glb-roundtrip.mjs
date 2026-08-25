@@ -42,6 +42,11 @@
 // · 좌표의 의미론적 정확성 — 도시가 통째로 밀려도 «동일» 이면 통과한다.
 // · WebGPU — 헤드리스는 WebGL(swiftshader)이고 감독 실기기는 WebGPU 다.
 // · 시각 회귀 · 성능.
+// · **로더 호환성.** 아래 `packGlb` 는 편집본을 만들 때 **BIN 청크를 안 쓴다** —
+//   `accessors`·`bufferViews` 는 남는데 버퍼가 없어 엄밀히는 유효하지 않은 glTF 다
+//   (검수관 권고 P-b). 우리 `import-glb.ts` 는 JSON 청크만 읽으므로 되읽기 경로를
+//   재는 데는 충분하지만, **«블렌더가 낸 파일»의 충실도는 아니다.** 이 스크립트가
+//   통과했다고 남의 로더가 그 파일을 연다는 뜻이 아니다.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -172,8 +177,10 @@ async function main() {
       if (A.json[v].length === P.json[v].length) ok(`${k} ${A.json[v].length} 불변`);
       else fail(`${k} ${A.json[v].length} → ${P.json[v].length} (무편집인데 바뀌었다)`);
     }
-    for (const kind of Object.keys(sumA.counts)) {
-      const a = sumA.counts[kind], b = sumP.counts[kind] ?? 0;
+    // **키 합집합**으로 돈다(검수관 권고 P-c) — `sumA` 키만 돌면 «재출력에만 생긴
+    // 종류» 를 못 본다. 무편집 왕복에서 종류가 새로 생기는 것도 결함이다.
+    for (const kind of new Set([...Object.keys(sumA.counts), ...Object.keys(sumP.counts)])) {
+      const a = sumA.counts[kind] ?? 0, b = sumP.counts[kind] ?? 0;
       if (a !== b) fail(`${kind} ${a} → ${b} (무편집인데 바뀌었다)`);
     }
 
@@ -202,13 +209,34 @@ async function main() {
       if (sumB.counts.tree === keep) ok(`tree ${sumA.counts.tree} → ${keep}`);
       else fail(`tree ${sumB.counts.tree} (기대 ${keep})`);
 
-      // 편집하지 않은 종류는 그대로여야 한다 — 편집이 옆으로 번지지 않았는가.
-      // ⚠ `treepit`·`shadow:tree` 는 나무에서 **유도**되므로 함께 줄어드는 것이 정상이다.
-      const derived = new Set(['tree', 'treepit', 'shadow:tree', 'building', 'shadow:building']);
-      for (const kind of Object.keys(sumA.counts)) {
-        if (derived.has(kind)) continue;
-        if (sumA.counts[kind] !== (sumB.counts[kind] ?? 0)) {
-          fail(`${kind} ${sumA.counts[kind]} → ${sumB.counts[kind] ?? 0} (편집이 번졌다)`);
+      // ── 나무를 지우면 무엇이 따라 주는가 (검수관 조건 3, 2026-08-25) ────────
+      // ⚠ 여기 *"`treepit`·`shadow:tree` 는 나무에서 **유도**되므로 함께 줄어드는 것이
+      // 정상이다"* 라고 적혀 있었고 **`treepit` 에 대해 거짓이었다.** 그리고 그 거짓
+      // 진술이 제외 목록의 근거로 쓰여 **검사가 그 종류를 아무것도 안 봤다** — 블로커
+      // 였던 판본과 정확히 같은 형태다(진술이 검사를 무력화한다).
+      //
+      // 실측: 나무를 절반으로 줄이면 `shadow:tree` 만 따라 줄고 `treepit` 은 **전량
+      // 그대로**다. 되읽기가 재유도하는 것은 `withShadows` 뿐이고(`host.ts`), pit 은
+      // GLB 노드로 실려 오기 때문이다.
+      //
+      // 그것이 설계와 일관된다 — GLB 는 **세계 전체 대체** 모델이라 파일에 있는 노드가
+      // 곧 세계다. 블렌더에서 나무만 지우고 pit 을 남긴 것은 사용자의 선택이고, pit 도
+      // 지우면 함께 사라진다. 그러므로 여기서는 「함께 준다」가 아니라 **「원본 전량
+      // 그대로」를 단언**할 수 있다 — 제외가 아니라 검사다.
+      if (sumB.counts.treepit === sumA.counts.treepit) ok(`treepit ${sumA.counts.treepit} 전량 유지(재유도 대상 아님)`);
+      else fail(`treepit ${sumA.counts.treepit} → ${sumB.counts.treepit ?? 0} (GLB 노드 그대로 실려야 한다)`);
+
+      if (sumB.counts['shadow:tree'] === keep) ok(`shadow:tree ${keep} (캐스터 따라 재유도)`);
+      else fail(`shadow:tree ${sumB.counts['shadow:tree'] ?? 0} (기대 ${keep} — withShadows 재유도)`);
+
+      // 남은 종류는 편집이 옆으로 번지지 않았는지만 본다. 위에서 개별 단언한 것만 뺀다.
+      // ⚠ **키 합집합**으로 돈다(검수관 권고 P-c) — 원본에 없고 재출력에만 생긴 종류도
+      // 결함이다. `sumA` 키만 돌면 그것을 못 본다.
+      const asserted = new Set(['tree', 'treepit', 'shadow:tree', 'building', 'shadow:building']);
+      for (const kind of new Set([...Object.keys(sumA.counts), ...Object.keys(sumB.counts)])) {
+        if (asserted.has(kind)) continue;
+        if ((sumA.counts[kind] ?? 0) !== (sumB.counts[kind] ?? 0)) {
+          fail(`${kind} ${sumA.counts[kind] ?? 0} → ${sumB.counts[kind] ?? 0} (편집이 번졌다)`);
         }
       }
     }
