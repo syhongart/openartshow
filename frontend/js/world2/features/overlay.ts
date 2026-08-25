@@ -173,12 +173,16 @@ export const overlayFeature: Feature = {
 
     function applyEntry(e: OverlayEntry): void {
       const h = e.holder as unknown as {
-        position: Vec3Like; rotation: { y: number }; scale: { setScalar(s: number): void };
+        position: Vec3Like; rotation: { y: number };
+        scale: { setScalar(s: number): void; set(x: number, y: number, z: number): void };
         updateMatrixWorld(f: boolean): void;
       };
       h.position.set(e.x, e.y, e.z);
       h.rotation.y = e.ry;
-      h.scale.setScalar(e.s);
+      // 🔴 **축별 배수를 곱한다**(감독 카드 판정 2026-08-22). ⚠ 이 한 줄이 **판정과 화면을
+      // 잇는 유일한 지점**이다 — 계약에 `sx?` 를 더하고 기즈모에 상자를 달아도 여기가
+      // `setScalar(e.s)` 면 **아무것도 안 움직인다**(구름 `alpha` 미소비와 같은 형태).
+      h.scale.set(e.s * (e.sx ?? 1), e.s * (e.sy ?? 1), e.s * (e.sz ?? 1));
       // 부착을 프레임에 걸쳐 나누므로 렌더 직전 일괄 갱신과 어긋날 수 있다. 낡은 행렬은
       // 프러스텀 컬링을 **원점 기준**으로 판정하게 만든다(`glb-city.ts` 의 실측 근거).
       h.updateMatrixWorld(true);
@@ -186,7 +190,9 @@ export const overlayFeature: Feature = {
 
     async function place(
       src: string,
-      at: { x: number; y: number; z: number; ry?: number; s?: number },
+      // ⚠ 축별도 받는다(생략 = 기존 동작). 안 열면 저장된 값이 씬에 안 실린다.
+      at: { x: number; y: number; z: number; ry?: number; s?: number;
+        sx?: number; sy?: number; sz?: number },
       blobUrl?: string,
       onProgress?: LoadProgress,
       /**
@@ -229,6 +235,10 @@ export const overlayFeature: Feature = {
         preview: blobUrl !== undefined,
         holder: holder as unknown as Object3D,
         x: at.x, y: at.y, z: at.z, ry: at.ry ?? 0, s: at.s ?? 1,
+        // 생략은 생략으로 — 계약과 같은 규칙이라 안 만진 항목에 키가 안 붙는다.
+        ...(at.sx === undefined ? {} : { sx: at.sx }),
+        ...(at.sy === undefined ? {} : { sy: at.sy }),
+        ...(at.sz === undefined ? {} : { sz: at.sz }),
       };
       applyEntry(entry);
       entries.push(entry);
@@ -275,6 +285,12 @@ export const overlayFeature: Feature = {
     function toRaw(): unknown {
       const items: OverlayItem[] = entries.map((e) => ({
         src: e.src, x: e.x, y: e.y, z: e.z, ry: e.ry, s: e.s,
+        // 🔴 **빠지면 조정한 축별 크기가 저장할 때 사라진다.** 이 함수가 그 사고를 이미
+        // 겪었다(아래 `arts` 누락 D1.5 — 그때 검증은 「무손실」이라 했다). 옵션 필드라
+        // 안 담아도 검증이 조용한 것까지 같은 형태다.
+        ...(e.sx === undefined ? {} : { sx: e.sx }),
+        ...(e.sy === undefined ? {} : { sy: e.sy }),
+        ...(e.sz === undefined ? {} : { sz: e.sz }),
       }));
       // ⚠ 동결 파셀·표면·작품은 이 기능이 **안 들고 있다**(소유는 조립부와 `plan`). 그래도
       // 전부 여기서 낸다 — 계약 파일 **하나**에 담기므로 각자 내면 합칠 자리가 또 생긴다.
@@ -474,7 +490,9 @@ export const overlayFeature: Feature = {
           await attachAll({
             items: group.items,
             place: (it: OverlayItem) => place(
-              it.src, { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s }, undefined, undefined, false,
+              it.src,
+              { x: it.x, y: it.y, z: it.z, ry: it.ry, s: it.s, sx: it.sx, sy: it.sy, sz: it.sz },
+              undefined, undefined, false,
             ),
             nextFrame,
             aborted: () => disposed,

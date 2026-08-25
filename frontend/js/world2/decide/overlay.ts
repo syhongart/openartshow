@@ -81,13 +81,27 @@ export interface OverlayItem {
   /** Y축 회전(라디안). */
   ry: number;
   /**
-   * 균등 스케일.
+   * 균등 스케일. **여전히 기본 배율이다.**
    *
-   * 비균등(sx·sy·sz)을 일부러 안 넣었다. 건물·조형물을 놓는 용도라 축별로 늘일 일이
-   * 없고, `space.ts` 가 옵션 필드를 나중에 **버전 불변으로** 더해 온 전례가 있다
-   * (`shell.entries`·`shell.floors` — 생략 = 기존 동작). 필요해지면 그 형태로 더한다.
+   * ⚠ 이 자리는 오래 *"비균등을 일부러 안 넣었다 … 필요해지면 그 형태로 더한다"* 였고
+   * **그 트리거가 발동했다**(감독 카드 판정 2026-08-22 「축별로 늘리기 — 세 방향」).
+   * 예고한 대로 `space.ts` 전례와 같은 형태 — 옵션 필드, **생략 = 기존 동작.**
    */
   s: number;
+  /**
+   * 축별 배율. **`s` 에 곱해진다** — 최종 = `s * (sx ?? 1)`.
+   *
+   * 대체가 아니라 곱인 이유: ① **버전 불변** — 없으면 `1` 이라 옛 JSON 이 그대로 돈다
+   * ② **균등 조작이 여전히 한 손잡이다** — 대체였다면 「비율이 어긋난 상태를 균등하게
+   * 키우기」가 불가능해진다 ③ 마을 파츠(`PlacedPart`)의 `sx` 는 **본래 치수**이고
+   * 여기 것은 **배수**다 — 그 차이는 `edit/target.ts` 어댑터가 흡수한다.
+   *
+   * ⚠ 곱을 클램프하지 않는다(최종이 `S_MAX²` 까지 갈 수 있다) — 클램프하면 «어느 쪽을
+   * 깎았는지»가 안 보인다. 소비자가 곱한 뒤 자기 한계로 막는 편이 진단이 쉽다.
+   */
+  sx?: number;
+  sy?: number;
+  sz?: number;
 }
 
 /**
@@ -245,7 +259,24 @@ function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem 
     z: clamp(item.z, -POS_LIMIT, POS_LIMIT, 0),
     ry: foldRy(item.ry),
     s: clamp(item.s, S_MIN, S_MAX, 1),
+    // 🔴 **생략은 생략으로 남긴다.** 항상 `1` 을 내면 안 만진 항목까지 키를 달고 나가고,
+    // 그러면 「이 항목은 축별을 만졌나」를 구별할 수 없다 — 버전 불변의 요점이 그것이다.
+    ...axisScale(item),
   };
+}
+
+/**
+ * 축별 배율 중 **있는 것만** 낸다. ⚠ `0` 은 `S_MIN` 으로 올린다 — 크기 0 은 편집 툴에서
+ * 흔한 입력이고, 그대로 두면 **화면에서 사라진 것**이 「커밋 가능」 판정을 받는다
+ * (이 계약이 `s` 에서 이미 겪은 형태다).
+ */
+function axisScale(item: Record<string, unknown>): Partial<Pick<OverlayItem, 'sx' | 'sy' | 'sz'>> {
+  const out: Partial<Pick<OverlayItem, 'sx' | 'sy' | 'sz'>> = {};
+  for (const k of ['sx', 'sy', 'sz'] as const) {
+    if (item[k] === undefined) continue;
+    out[k] = clamp(item[k], S_MIN, S_MAX, 1);
+  }
+  return out;
 }
 
 /** 정수로 접는다. 파셀 좌표는 격자 인덱스라 소수가 의미 없다 */
@@ -301,7 +332,12 @@ function makeParcel(px: number, pz: number, parts: PlacedPart[]): FrozenParcel {
 // ⚠️ **그 함수가 참조하는 `POS_LIMIT`·`S_MIN`·`S_MAX`·`foldRy` 는 `const` 라 TDZ 다.**
 // 그래서 이 두 줄은 **반드시 `normalizeItem` 과 그 상수들보다 아래**에 있어야 한다 —
 // 이 저장소는 `Sidebar.Scene.js` 에서 정확히 그 TDZ 로 부팅을 한 번 죽였다.
-const KNOWN_ITEM_KEYS = new Set(Object.keys(normalizeItem({}, '')));
+// ⚠ **옵션 필드가 생기면서 「빈 입력」으로는 부족해졌다**(2026-08-25). `normalizeItem({})`
+// 은 `sx·sy·sz` 를 일부러 안 내므로, 빈 입력으로 유도하면 그 셋이 화이트리스트에서 빠지고
+// `{sx:2}` 가 `unknown-field` 로 **거부된다** — 위 B4·B6 과 방향만 반대인 같은 어긋남이다.
+// 그래서 **「낼 수 있는 키 전부」를 얻는 입력**을 준다(`world2-overlay-axis-scale.test.ts`
+// 의 왕복 검사가 이 어긋남을 잡는다).
+const KNOWN_ITEM_KEYS = new Set(Object.keys(normalizeItem({ sx: 1, sy: 1, sz: 1 }, '')));
 const KNOWN_ROOT_KEYS = new Set(Object.keys(emptyOverlay()));
 const KNOWN_PART_KEYS = new Set(Object.keys(normalizePart({})));
 // 파셀 껍데기의 키도 같은 원리로 유도한다 — `parts` 는 배열이라 정규화 결과에서 못 뽑으므로

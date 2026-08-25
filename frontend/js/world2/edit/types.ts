@@ -41,6 +41,19 @@ export interface OverlayEntry {
   z: number;
   ry: number;
   s: number;
+  /**
+   * 축별 **추가** 배수 (감독 카드 판정 2026-08-22 「축별로 늘리기 — 세 방향」).
+   *
+   * 계약(`decide/overlay.ts` 의 `OverlayItem.sx?`)과 **같은 뜻·같은 선택 사양**이다 —
+   * 없으면 `1` 이고, 최종 배율은 `s * (sx ?? 1)`. 씬에 얹힌 항목이 계약과 필드가 어긋나면
+   * 내보낼 때 값이 조용히 사라지므로 **짝을 맞춘다.**
+   *
+   * ⚠ 마을 파츠(`PlacedPart`)의 같은 이름은 **본래 치수**라 뜻이 다르다. 그 차이를
+   * 흡수하는 곳은 `edit/target.ts` 의 어댑터 한 곳이다.
+   */
+  sx?: number;
+  sy?: number;
+  sz?: number;
 }
 
 /**
