@@ -118,8 +118,10 @@ export const PICK_TO = 1.10;
  */
 export const RING_R = 1.25;
 export const RING_HALF = 0.05;
-/** 크기 상자를 놓는 자리(링 위 +X 방향) */
+/** 크기 상자를 놓는 자리(링 반경) */
 const SCALE_AT = RING_R;
+// 축 방향은 `decide/gizmo-math.ts` 의 `AXIS_DIR` 을 쓴다 — 여기 다시 적으면 값 미러링이다.
+const AXES: readonly Axis[] = ['x', 'y', 'z'];
 
 export interface Gizmo {
   /** 선택이 바뀌면 부른다. `null` 이면 숨긴다 */
@@ -237,12 +239,37 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
   ring.rotation.x = -Math.PI / 2;
   addPart(ring, { kind: 'rotate' });
 
-  // ── 크기 상자 ───────────────────────────────────────────────────────────
-  const cubeMat = mat(SCALE_COLOR);
-  parts.set('scale', { mat: cubeMat as never, base: SCALE_COLOR });
-  const cube = new THREE.Mesh(geo(new THREE.BoxGeometry(0.2, 0.2, 0.2)), cubeMat);
-  cube.position.set(SCALE_AT, 0, 0);
-  addPart(cube, { kind: 'scale' });
+  // ── 크기 상자 — **넷이다** (감독 카드 판정 2026-08-22 「축별로 늘리기 — 세 방향」) ──
+  //
+  // 발단 신고: *"크기 조정은 R 한축만되는것 같은데?"* — 여기에 상자가 **하나**뿐이었고
+  // 그것이 균등 배율을 밀었다. 즉 「X 방향으로 끌면 전체가 커진다」였다.
+  //
+  // ⚠ **균등을 없애지 않았다.** 축별 셋만 남기면 「전체를 키운다」에 세 번 끌어야 하고
+  // 비율이 어긋난 것을 균등하게 키우는 것이 아예 불가능해진다. 그래서 표준 3D 툴 관례를
+  // 따른다 — **축 끝에 축별 상자 셋, 가운데에 균등 하나.**
+  //
+  // ⚠⚠ 색을 가른다: 축별은 **그 축의 색**(이동 화살표와 같은 빨강·초록·파랑)이라 «어느
+  // 축인가» 를 색으로 읽고, 균등만 회색이다. 넷을 같은 회색으로 두면 위치로만 구별해야
+  // 하는데, 기즈모가 화면에서 작아지면(멀리 있는 물건) 그 위치 차이가 사라진다.
+  {
+    const box = () => geo(new THREE.BoxGeometry(0.2, 0.2, 0.2));
+    // 균등 — 가운데. 이동 화살표는 축을 따라 뻗어 있고 중심은 비어 있다.
+    const evenMat = mat(SCALE_COLOR);
+    parts.set('scale', { mat: evenMat as never, base: SCALE_COLOR });
+    const even = new THREE.Mesh(box(), evenMat);
+    even.position.set(0, 0, 0);
+    addPart(even, { kind: 'scale' });
+    // 축별 셋 — 링 위 각 축 끝. `SCALE_AT` 은 링 반경이라 회전 링과 같은 원 위에 선다.
+    for (const axis of AXES) {
+      const key = `scale:${axis}` as const;
+      const m = mat(AXIS_COLOR[axis]);
+      parts.set(key, { mat: m as never, base: AXIS_COLOR[axis] });
+      const c = new THREE.Mesh(box(), m);
+      const at = AXIS_DIR[axis];
+      c.position.set(at[0] * SCALE_AT, at[1] * SCALE_AT, at[2] * SCALE_AT);
+      addPart(c, { kind: 'scale', axis });
+    }
+  }
 
   // ── 붙이기·따라가기 ─────────────────────────────────────────────────────
   let target: EditTarget | null = null;
@@ -307,10 +334,19 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
     return target ? [target.x, target.y, target.z] : [0, 0, 0];
   }
 
-  /** 크기 핸들이 실제로 놓인 방향 — 링과 함께 `ry` 만큼 돌아 있다 */
-  function scaleAxis(): readonly [number, number, number] {
+  /**
+   * 크기 핸들을 **끄는 방향**. 링과 함께 `ry` 만큼 돌아 있다.
+   *
+   * ⚠ 축별 상자는 각자 놓인 방향으로 끈다 — Y 상자를 좌우로 끌어도 안 움직이는 것이
+   * 맞다(그 상자는 높이를 뜻한다). 균등(`axis` 없음)은 **기존 그대로 X 방향**이다:
+   * 감독이 신고한 것은 「한 축만 된다」이지 「균등 조작이 이상하다」가 아니었고,
+   * 손에 익은 방향을 바꾸면 그것이 새 회귀가 된다.
+   */
+  function scaleAxis(axis?: Axis): readonly [number, number, number] {
     const a = target?.ry ?? 0;
-    return [Math.cos(a), 0, -Math.sin(a)];
+    if (axis === 'y') return [0, 1, 0]; // 높이는 `ry` 로 안 돈다
+    // X·Z 와 균등은 수평면 위에 있으므로 `ry` 를 얹는다.
+    return axis === 'z' ? [Math.sin(a), 0, Math.cos(a)] : [Math.cos(a), 0, -Math.sin(a)];
   }
 
   return {
@@ -373,7 +409,7 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
       } else if (h.kind === 'rotate') {
         anchor = ringAngle(ray, target.x, target.z, target.y) ?? 0;
       } else {
-        anchor = closestOnAxis(ray, dragOrigin, scaleAxis()) ?? 0;
+        anchor = closestOnAxis(ray, dragOrigin, scaleAxis(h.kind === 'scale' ? h.axis : undefined)) ?? 0;
       }
     },
 
@@ -398,11 +434,24 @@ export function createGizmo(host: OverlayHost, say?: GizmoSay): Gizmo {
       }
       // 크기는 물체 위치를 안 바꾸므로 상쇄가 없었지만, **기준을 하나로 둔다** —
       // 두 벌이 있으면 다음 사람이 어느 쪽이 옳은지 다시 판정해야 한다.
-      const u = closestOnAxis(ray, dragOrigin, scaleAxis());
+      const axis = active.kind === 'scale' ? active.axis : undefined;
+      const u = closestOnAxis(ray, dragOrigin, scaleAxis(axis));
       if (u === null) return false;
       const f = scaleFactorFromDrag(u - anchor, size);
       anchor = u;
       // 상·하한은 계약(`S_MIN`·`S_MAX`)이 소유한다 — 여기서 다시 적지 않는다.
+      //
+      // 🔴 **축별이면 그 축의 배수만 민다** (감독 카드 판정 「축별로 늘리기 — 세 방향」).
+      // ⚠ 대상이 축별 문을 안 내면(`axes` 없음 — 예: 액자) **균등으로 떨어진다.** 조용히
+      // 아무 일도 안 하는 것보다 낫다 — 이 저장소가 「조용한 no-op」을 반복해서 금지해 왔고,
+      // 상자가 보이는데 안 움직이면 «가끔 안 된다» 가 된다.
+      if (axis && target.axes) {
+        const cur = target.axes.get(axis);
+        const next = scaleBy(cur, f);
+        if (next === cur) return false;
+        target.axes.set(axis, next);
+        return true;
+      }
       const next = scaleBy(target.s, f);
       if (next === target.s) return false;
       target.s = next;

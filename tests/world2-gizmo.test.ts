@@ -750,10 +750,21 @@ describe('🔴 GS-G3 — 잡은 축 강조 (산술)', () => {
     expect(handleLabel({ kind: 'move', axis: 'y' })).toContain('Y');
     expect(handleLabel(MOVE_Z)).toContain('Z');
     expect(handleLabel(ROT)).toBe('회전');
-    expect(handleLabel(SCL)).toBe('크기');
-    // 셋이 서로 구별된다 — 같은 문자열이면 목록에서 못 고른다.
-    const all = [MOVE_X, { kind: 'move', axis: 'y' } as Handle, MOVE_Z, ROT, SCL].map(handleLabel);
-    expect(new Set(all).size).toBe(all.length);
+    // ⚠ **「크기」에서 「전체 크기」로 갈렸다**(감독 카드 판정 2026-08-22 「축별로 늘리기
+    // — 세 방향」). 크기 핸들이 넷이 됐으므로 균등과 축별을 글자로도 구별해야 한다 —
+    // 상자 넷이 비슷하게 생겨서 색·위치만으로는 「지금 잡은 것이 전체인가 한 축인가」가
+    // 안 갈린다.
+    expect(handleLabel(SCL)).toBe('전체 크기');
+    expect(handleLabel({ kind: 'scale', axis: 'y' })).toContain('Y');
+
+    // **여덟이 서로 구별된다** — 같은 문자열이면 목록에서 못 고른다.
+    const all = [
+      MOVE_X, { kind: 'move', axis: 'y' } as Handle, MOVE_Z, ROT, SCL,
+      { kind: 'scale', axis: 'x' } as Handle,
+      { kind: 'scale', axis: 'y' } as Handle,
+      { kind: 'scale', axis: 'z' } as Handle,
+    ].map(handleLabel);
+    expect(new Set(all).size, '★ 라벨이 겹친다').toBe(all.length);
   });
 });
 

@@ -101,6 +101,26 @@ export interface EditTarget {
    * 뜻이 있다), 마을 파츠는 비균등이라 «폭 하나» 로 환원되지 않는다. 낼 것이 없는
    * 대상이 억지로 숫자를 내면 그 슬라이더가 거짓말을 한다.
    */
+  /**
+   * **축별 배수**를 미는 문 (감독 카드 판정 2026-08-22 「축별로 늘리기 — 세 방향」).
+   *
+   * ⚠ **`s` 와 곱해진다.** `s` 는 균등 배율로 그대로 남고 이것은 축마다 더 곱하는 값이라,
+   * 「전체를 키운다」와 「한 축만 늘린다」가 서로를 망가뜨리지 않는다. `s` 를 세 값으로
+   * 확대하는 안은 팀장이 영구 기각했고(`villageTarget` 주석), 이번 형태는 그것과 **다른
+   * 안**이다.
+   *
+   * ⚠⚠ **두 어댑터가 같은 이름을 다른 재료로 만든다.** 오버레이는 계약이 옵션 필드
+   * (`OverlayItem.sx?`)를 갖고 있어 그대로 읽고 쓰지만, 마을 파츠의 `sx` 는 **본래
+   * 치수**라(생성기가 폭·깊이·높이를 각각 뽑는다) 붙는 순간의 값에 대한 **배수**로
+   * 환산한다. 그 환산이 이 문의 존재 이유다 — 소비자(기즈모)는 배수만 안다.
+   *
+   * **선택 사양인 것도 의도다.** 액자는 안 낸다 — 실치수(`width`)로 미는 대상이라
+   * 축별 배수가 그 위에 겹치면 두 손잡이가 같은 것을 다르게 말한다.
+   */
+  readonly axes?: {
+    get(a: 'x' | 'y' | 'z'): number;
+    set(a: 'x' | 'y' | 'z', v: number): void;
+  };
   readonly width?: {
     readonly min: number;
     readonly max: number;
@@ -156,6 +176,9 @@ export interface EditTarget {
 }
 
 /** 오버레이 항목 어댑터. 값은 항목이 직접 들고 있으므로 프록시만 한다 */
+/** 축 이름 → 계약 필드명. 세 곳이 같은 짝을 쓰므로 한 곳에 둔다 */
+const AXIS_KEY = { x: 'sx', y: 'sy', z: 'sz' } as const;
+
 export function overlayTarget(host: OverlayHost, e: OverlayEntry): EditTarget {
   return {
     kind: 'overlay',
@@ -166,6 +189,12 @@ export function overlayTarget(host: OverlayHost, e: OverlayEntry): EditTarget {
     get z() { return e.z; }, set z(v) { e.z = v; },
     get ry() { return e.ry; }, set ry(v) { e.ry = v; },
     get s() { return e.s; }, set s(v) { e.s = v; },
+    // 계약이 옵션 필드를 갖고 있어(`OverlayItem.sx?`) 그대로 읽고 쓴다.
+    // **없으면 `1`** — 「생략 = 기존 동작」이 그 계약의 확장 원칙이고 여기가 그 소비 지점이다.
+    axes: {
+      get(a) { return e[AXIS_KEY[a]] ?? 1; },
+      set(a, v) { if (v > 0 && Number.isFinite(v)) e[AXIS_KEY[a]] = v; },
+    },
     apply() { host.apply(e); },
     // 오버레이는 `apply` 가 곧 확정이다 — 씬에 이미 반영됐고 더 할 일이 없다.
     commit() { },
@@ -232,6 +261,19 @@ export function villageTarget(
   // 한 곳**이고, 계약 쪽(`decide/overlay.ts` 의 `sx?` 주석)이 같은 말을 짝으로 적고 있다.
   const base = { sx: p.sx, sy: p.sy, sz: p.sz };
   let mul = 1;
+  /**
+   * 축별 **추가** 배수. 최종 = `base[축] * mul * axisMul[축]`.
+   *
+   * ⚠ `mul`(균등)과 **곱해진다** — 둘 중 하나로 합치면 「전체를 키웠다가 한 축만 되돌린다」
+   * 같은 조작에서 어느 쪽이 얼마였는지 복원할 수 없다.
+   */
+  const axisMul = { x: 1, y: 1, z: 1 };
+  /** 세 축을 한 번에 다시 계산한다 — 균등이든 축별이든 최종식이 **한 곳**이어야 한다 */
+  const resize = (): void => {
+    p.sx = base.sx * mul * axisMul.x;
+    p.sy = base.sy * mul * axisMul.y;
+    p.sz = base.sz * mul * axisMul.z;
+  };
 
   /**
    * 이 종류가 준비한 색 목록. **원산지는 파츠 하나**이고 편집은 고르기만 한다
@@ -276,9 +318,17 @@ export function villageTarget(
     set s(m) {
       if (!(m > 0) || !Number.isFinite(m)) return;
       mul = m;
-      p.sx = base.sx * m;
-      p.sy = base.sy * m;
-      p.sz = base.sz * m;
+      resize();
+    },
+    // 마을 파츠의 `sx` 는 **본래 치수**라 그대로 노출하면 소비자가 배수와 치수를 섞는다.
+    // 붙는 순간의 값(`base`)에 대한 배수로 환산해 내보낸다 — 그 환산이 이 문의 존재 이유다.
+    axes: {
+      get(a) { return axisMul[a]; },
+      set(a, v) {
+        if (!(v > 0) || !Number.isFinite(v)) return;
+        axisMul[a] = v;
+        resize();
+      },
     },
     get live() { return canApply(); },
     /**

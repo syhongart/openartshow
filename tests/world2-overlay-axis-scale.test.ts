@@ -23,6 +23,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { normalizeOverlay, validateOverlay, S_MIN, S_MAX } from '../frontend/js/world2/decide/overlay.js';
+import { readFileSync } from 'node:fs';
+import { partOf, handleLabel } from '../frontend/js/world2/decide/gizmo-math.js';
 
 /** 계약이 허용하는 경로 형식(`SRC_RE`) — 아무 문자열이나 쓰면 항목째 버려진다 */
 const SRC = 'assets/models/a.glb';
@@ -82,5 +84,102 @@ describe('🔴 축별 배율 — 계약 왕복', () => {
     // `s` 만 있는 옛 데이터가 새 코드에서 **같은 값**으로 나와야 한다.
     const old = item({ x: 1, y: 2, z: 3, ry: 0.5, s: 2 });
     expect(old, '★ 옛 형태가 달라졌다').toEqual({ src: SRC, x: 1, y: 2, z: 3, ry: 0.5, s: 2 });
+  });
+});
+
+// ── 🔴 판정 ↔ 집행 경계 ──────────────────────────────────────────────────────
+//
+// 위 검사들은 **계약**만 본다. 그런데 이 저장소가 반복해서 놓친 것은 값이 아니라
+// **경계**다 — *"계산된 값이 실제로 소비되는가"* 는 판정 쪽 테스트에도 집행 쪽 테스트에도
+// 안 걸린다(구름 `alpha` 미소비가 순수 함수 안에서만 참이었던 형태).
+//
+// 축별 배율의 경로는 **넷**이고 하나만 끊겨도 감독 화면에서 아무 일이 안 일어난다:
+//
+//   ① 파일 → 씬     `features/overlay.ts` 의 `place()` 가 `at.sx` 를 받아 entry 에 싣는가
+//   ② entry → 화면  `applyEntry` 가 `scale.setScalar` 가 아니라 **세 축**을 미는가
+//   ③ 기즈모 → 값   `edit/gizmo.ts` 가 `target.axes.set` 을 부르는가
+//   ④ 씬 → 파일     `toRaw()` 가 `sx` 를 담는가 (안 담으면 **저장할 때 사라진다** —
+//                   이 파일이 `arts` 누락으로 이미 겪었고 그때 검증은 「무손실」이라 했다)
+//
+// ⚠ **소스를 텍스트로 읽어 확인한다.** 이 넷은 전부 three 에 의존해 헤드리스로 못 돌린다.
+// 텍스트 검사라 「브라우저가 실제로 그렇게 그리는가」는 못 보지만, **경로가 끊긴 것**은
+// 이 축이 유일하게 잡는다. 정규식이 빗나가면 거짓 FAIL 이 나므로 그때는 검사를 지우지
+// 말고 함께 고친다.
+// 뮤테이션 실측 (2026-08-25) — **이 describe 의 검출력, 8/8**:
+//   ② 화면 반영을 `setScalar(e.s)` 로 되돌림 → 1 failed ✅  ← 이 회차의 급소
+//   ④ 내보내기에서 축별 누락               → 1 failed ✅  (`arts` 사고와 같은 형태)
+//   ① 부팅 경로가 `sx` 를 안 넘김           → 1 failed ✅
+//   ③ 기즈모가 `axes.set` 을 안 부름        → 1 failed ✅
+//   ③ 균등 상자 제거                        → 1 failed ✅
+//   어댑터 둘 중 하나 제거 (각각)           → 각 1 failed ✅
+//   `partOf` 의 축별 구별 제거              → 1 failed ✅
+//
+// ⚠ 어댑터 케이스는 **처음에 0 failed 였다.** `/axes:\s*\{/g` 가 `xaxes:` 도 물어 개수가
+// 그대로였기 때문이다 — 이 회차에만 「글자가 있는 것을 그 선언이 있는 것으로 읽는」 실수가
+// 또 나왔다(조이스틱 회차에서 세 번, 여기서 한 번). 단어 경계를 박고 재실측했다.
+
+describe('🔴 축별 배율 — 판정이 화면까지 간다', () => {
+  const read = (p: string) => readFileSync(`frontend/js/world2/${p}`, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')   // 블록 주석
+    .replace(/^\s*\/\/.*$/gm, '');       // 줄 주석 — 설명에 든 같은 글자를 세지 않는다
+
+  it('🔴 ① 파일에서 읽은 축별이 씬 항목에 실린다', () => {
+    const src = read('features/overlay.ts');
+    expect(src, '★ `place()` 가 축별을 안 받는다').toMatch(/at:\s*\{[^}]*sx\?:/);
+    expect(src, '★ entry 에 축별을 안 싣는다').toMatch(/at\.sx === undefined/);
+    expect(src, '★ 부팅 경로가 축별을 안 넘긴다').toMatch(/sx:\s*it\.sx/);
+  });
+
+  it('🔴 ② 화면 반영이 균등이 아니라 세 축이다 — 여기가 이 회차의 급소다', () => {
+    const src = read('features/overlay.ts');
+    // `setScalar(e.s)` 가 남아 있으면 계약·기즈모를 다 고쳐도 **아무것도 안 움직인다.**
+    expect(src, '★ 아직 균등으로만 민다 — `setScalar(e.s)` 가 남아 있다')
+      .not.toMatch(/scale\.setScalar\(e\.s\)/);
+    expect(src, '★ 세 축을 각각 미는 코드가 없다')
+      .toMatch(/scale\.set\(\s*e\.s \* \(e\.sx \?\? 1\)/);
+  });
+
+  it('🔴 ③ 기즈모가 축별 문을 부른다 — 상자만 늘리고 값을 안 밀면 장식이다', () => {
+    const src = read('edit/gizmo.ts');
+    expect(src, '★ 축별 상자를 안 만든다').toMatch(/kind:\s*'scale',\s*axis/);
+    expect(src, '★ 축별 값을 안 민다').toMatch(/target\.axes\.set\(axis/);
+    // 균등이 사라지지 않았는가 — 「전체를 키운다」가 가장 흔한 조작이다.
+    expect(src, '★ 균등 상자가 사라졌다').toMatch(/addPart\(even,\s*\{\s*kind:\s*'scale'\s*\}\)/);
+  });
+
+  it('🔴 ④ 내보낼 때 축별이 담긴다 — 안 담으면 저장하면서 사라진다', () => {
+    const src = read('features/overlay.ts');
+    expect(src, '★ `toRaw()` 가 축별을 안 담는다').toMatch(/e\.sx === undefined/);
+  });
+
+  it('🔴 어댑터 둘이 축별 문을 낸다 — 대상에 따라 되고 안 되면 「조용한 no-op」이다', () => {
+    const src = read('edit/target.ts');
+    // 팀장 판정 2026-08-25 의 근거 ③ — village 만 열면 GLB 를 골랐을 때 상자가 보이는데
+    // 안 움직인다. 이 파일이 `onDetach` 주석에서 이미 금지한 형태다.
+    // ⚠ **단어 경계를 박는다** (2026-08-25 뮤테이션 실측). 첫 판본은 `/axes:\s*\{/g` 였고
+    // `axes` 를 `xaxes` 로 바꿔도 **0 failed** 였다 — 부분 문자열이라 개수가 그대로였다.
+    // 이 회차에만 「글자가 있는 것을 그 선언이 있는 것으로 읽는」 실수가 또 나왔다.
+    expect(src.match(/(?<![A-Za-z])axes:\s*\{/g) ?? [], '★ 어댑터 둘 다 안 낸다').toHaveLength(2);
+    // 마을은 **본래 치수**를 배수로 환산해야 한다 — 그대로 노출하면 소비자가 둘을 섞는다.
+    expect(src, '★ 마을이 배수 환산을 안 한다').toMatch(/axisMul\[a\]/);
+    expect(src, '★ 최종식이 한 곳이 아니다').toMatch(/base\.sx \* mul \* axisMul\.x/);
+  });
+
+  it('🔴 축별 상자 넷이 서로 다른 파트다 — 함께 밝아지면 「어느 축」이 안 보인다', () => {
+    // 감독이 얹기 강조를 요구한 이유가 *"마우스를 대면 그 축이 변화가 바로 생겼으면해"* 다.
+    // 넷이 같은 파트를 공유하면 하나에 얹어도 넷이 다 밝아진다.
+    expect(partOf({ kind: 'scale' })).toBe('scale');
+    expect(partOf({ kind: 'scale', axis: 'x' })).toBe('scale:x');
+    expect(partOf({ kind: 'scale', axis: 'y' })).toBe('scale:y');
+    expect(partOf({ kind: 'scale', axis: 'z' })).toBe('scale:z');
+    const all = new Set(['scale', 'scale:x', 'scale:y', 'scale:z']);
+    expect(all.size, '★ 파트가 겹친다').toBe(4);
+  });
+
+  it('★ 글자로도 갈린다 — 상자 넷이 비슷하게 생겼다', () => {
+    expect(handleLabel({ kind: 'scale' })).toBe('전체 크기');
+    expect(handleLabel({ kind: 'scale', axis: 'y' })).toContain('크기');
+    expect(handleLabel({ kind: 'scale', axis: 'y' }))
+      .not.toBe(handleLabel({ kind: 'scale' }));
   });
 });
