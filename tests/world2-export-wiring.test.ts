@@ -25,6 +25,8 @@ import { fileURLToPath } from 'node:url';
 import { collectWorld } from '../frontend/js/world2/export/collect.js';
 import { buildOverlay } from '../frontend/js/world2/export/overlay.js';
 import { createGlbOverlayHost } from '../frontend/js/world2/export/host.js';
+import { parcelWater } from '../frontend/js/world2/decide/water.js';
+import { GRID_MAX_X } from '../frontend/js/world2/decide/grid.js';
 import type { PlacedPart } from '../frontend/js/world2/parts/types.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -127,6 +129,109 @@ describe('팀장 조건 3 — 비운 파셀이 비운 채로 나간다', () => {
     const out = collectWorld({ layoutSource: (px, pz, tier) => host.lookup(px, pz, tier) });
     expect(out.nodes.length).toBeGreaterThan(1000);
   });
+});
+
+describe('왕복의 경계 — 무손실의 조건은 좌표가 아니라 「실린 칸이 그려지는가」다', () => {
+  // ── 이 절이 두 번 고쳐졌다. 두 번째가 진짜였다 (실측 2026-08-25) ─────────
+  // ① 처음엔 왕복에서 building 2,053 → 2,001, lamp 3,182 → 3,012 로 줄어 결함처럼
+  //    보였고, 격자밖 41+98 · 물파셀 11+72 로 «정확히 일치» 하기에 **정상으로 적었다.**
+  //    그 해석 위에서 "격자 안·육지에만 있으면 0" 이라는 검사를 썼다.
+  // ② 그 검사가 **원본에서 FAIL 했다** — outsideGrid 196. 램프가 셀 경계에 서기
+  //    때문이다(오프셋 z = ±16, 3,182개 전부). 즉 ①의 «정상» 은 틀린 판정이었고,
+  //    편집하지 않은 원본을 되읽어도 **340개를 잃고 있었다.**
+  //
+  // 값이 아니라 **재는 축이 틀렸다.** 「좌표가 세계 안인가」로 재면 경계에 선 부품은
+  // 답이 없다(양쪽 파셀이 동률이라 원래 소속이 좌표에 남아 있지 않다). 무손실의 조건은
+  // «실린 칸이 그려지는 칸인가» 이고, 그래서 배정을 「그려지는 칸 중 가장 가까운 것」으로
+  // 바꿨다. 아래 첫 검사가 그 축이다 — 340 → 0.
+
+  it('원본을 되읽으면 **하나도 안 잃는다** — 이것이 무손실의 축이다', () => {
+    // ⚠ 뮤테이션 실측 2회(2026-08-25). `hostParcel` 의 두 처방을 각각 되돌려 봤다:
+    //   ① 격자 클램프 제거 → 1건 FAIL(«아주 멀리 옮긴 것도 안 버린다»). 원본은 링
+    //      탐색이 대신 구제하므로 이 검사는 **안 깨진다** — 두 처방의 담당이 다르다.
+    //   ② 링 탐색 제거      → 3건 FAIL. 이 검사가 **28,704 → 28,560** 으로 깨진다
+    //      (물 파셀로 반올림되는 램프 72 + 그림자 72).
+    // 둘 다 안 깨졌으면 장식이다. 처방을 고칠 때 이 표를 다시 뜬다.
+    const plain = collectWorld();
+    const host = createGlbOverlayHost();
+    host.set(buildOverlay(plain.nodes));
+    const round = collectWorld({ layoutSource: (px, pz, tier) => host.lookup(px, pz, tier) });
+    expect(round.nodes).toHaveLength(plain.nodes.length);
+  });
+
+  it('월드 좌표까지 그대로다 — 칸이 바뀌어도 화면 위치는 안 변한다', () => {
+    // 개수만 보면 «다른 것이 같은 수만큼» 들어와도 통과한다. 좌표 집합으로 못 박는다.
+    const plain = collectWorld();
+    const host = createGlbOverlayHost();
+    host.set(buildOverlay(plain.nodes));
+    const round = collectWorld({ layoutSource: (px, pz, tier) => host.lookup(px, pz, tier) });
+    const key = (n: { kind: string; x: number; z: number }) => `${n.kind}|${n.x.toFixed(4)}|${n.z.toFixed(4)}`;
+    const before = new Set(plain.nodes.map(key));
+    expect(round.nodes.filter((n) => !before.has(key(n)))).toHaveLength(0);
+  });
+
+  it('정상 파일에서는 손실 경고가 안 뜬다', () => {
+    expect(buildOverlay(collectWorld().nodes).stats.dropped).toBe(0);
+  });
+
+  it('격자 밖 좌표를 **센다** — 사라지지는 않는다', () => {
+    const far = buildOverlay([
+      { kind: 'building', tone: 0, x: 40 * 32, y: 0, z: 0, ry: 0, sx: 4, sy: 8, sz: 4 },
+      { kind: 'building', tone: 0, x: 0, y: 0, z: 0, ry: 0, sx: 4, sy: 8, sz: 4 },
+    ]);
+    expect(far.stats.outsideGrid).toBe(1);
+    expect(far.stats.dropped).toBe(0);
+  });
+
+  it('물 파셀 좌표를 **센다** — 이웃 육지로 실린다', () => {
+    // 강 위 좌표를 배치 판정에서 직접 찾는다 — 좌표를 손으로 박으면 강을 옮길 때
+    // 이 검사만 안 따라온다.
+    let wet: { px: number; pz: number } | null = null;
+    for (let px = -14; px <= 14 && !wet; px++) {
+      for (let pz = -14; pz <= 14; pz++) {
+        if (parcelWater(px, pz, 32, 32) === 'water') { wet = { px, pz }; break; }
+      }
+    }
+    expect(wet, '물 파셀을 못 찾았다 — 표본이 비면 아래 단언이 공회전한다').not.toBeNull();
+    const on = buildOverlay([
+      { kind: 'building', tone: 0, x: wet!.px * 32, y: 0, z: wet!.pz * 32, ry: 0, sx: 4, sy: 8, sz: 4 },
+    ]);
+    expect(on.stats.onWater).toBe(1);
+    expect(on.stats.outsideGrid).toBe(0);
+    // 강은 한두 줄이라 이웃에 뭍이 있다 — 버려지지 않는다.
+    expect(on.stats.dropped).toBe(0);
+  });
+
+  it('센 것을 버리지는 않는다 — 이웃 칸에 실리되 **월드 좌표가 보존된다**', () => {
+    // 여기서 걸러내면 같은 판정이 두 곳에 살게 된다(`collectWorld` 도 격자·물을 본다).
+    const X = 40 * 32;
+    const far = buildOverlay([
+      { kind: 'building', tone: 0, x: X, y: 0, z: 0, ry: 0, sx: 4, sy: 8, sz: 4 },
+    ]);
+    expect(far.stats.dropped).toBe(0);
+    // 격자 동쪽 끝 칸에 실린다. 오프셋이 함께 조정돼 월드 x 는 그대로여야 한다 —
+    // 그것이 「칸이 바뀌어도 화면은 안 변한다」의 실체다.
+    const placed = far.layoutFor(GRID_MAX_X, 0);
+    expect(placed).toHaveLength(1);
+    expect(placed[0].x + GRID_MAX_X * 32).toBeCloseTo(X, 9);
+  });
+
+  it('아주 멀리 옮긴 것도 안 버린다 — 링 탐색만으로는 못 푸는 자리다', () => {
+    // ⚠ 이 검사가 설계 하나를 되돌렸다. 격자 클램프 없이 링 탐색만 돌던 판본은
+    // `x = 40·32` 를 **버렸다** — 세계에서 26칸 밖이라 어느 이웃도 격자 안이 아니다.
+    // 편집을 왕복 한 번으로 잃는 것이라 클램프를 ① 단계로 되살렸다(`hostParcel`).
+    const X = 400 * 32;
+    const far = buildOverlay([
+      { kind: 'building', tone: 0, x: X, y: 0, z: 0, ry: 0, sx: 4, sy: 8, sz: 4 },
+    ]);
+    expect(far.stats.dropped).toBe(0);
+    expect(far.layoutFor(GRID_MAX_X, 0)[0].x + GRID_MAX_X * 32).toBeCloseTo(X, 9);
+  });
+
+  // ⚠ **`dropped > 0` 은 현재 지형에서 도달 불가다** — 클램프가 격자 안을 보장하고,
+  // 격자 안에는 뭍이 있으며, 링 상한이 격자 한 변이라 반드시 찾는다. 그래도 `null`
+  // 갈래를 남긴 이유는 «찾았다고 치고» 물 칸에 실으면 그 부품이 **조용히** 사라지기
+  // 때문이다. 여기서는 최소한 세어서 신고한다. 강 폭을 격자만큼 키우면 살아나는 축이다.
 });
 
 describe('B5 — 되읽기가 그림자 유도 규약을 탄다', () => {

@@ -20,7 +20,9 @@
 // 그릴지를 바꾸지 않는다"* 이다(`decide/parcel-layout.ts`). tier 와 무관한 목록은 그
 // 불변식을 구조적으로 만족한다. tier 별로 다른 목록을 내면 그때 깨진다.
 
-import type { ExportNode } from './collect.js';
+import { parcelDrawn, type ExportNode } from './collect.js';
+import { GRID_W, GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid } from '../decide/grid.js';
+import { parcelWater } from '../decide/water.js';
 import { maxPartsPerParcel } from '../parts/index.js';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import type { LayoutOptions, PlacedPart, ResolvedLayout } from '../parts/types.js';
@@ -37,6 +39,43 @@ export interface OverlayStats {
    * 없다" 로만 보인다.
    */
   overBudget: { kind: string; peak: number; budget: number }[];
+  /**
+   * **좌표가 세계 밖인 부품 수.** 격자(30×30) 바깥으로 옮긴 것들이다.
+   *
+   * ⚠ **손실 신고가 아니다** — 격자로 클램프하므로 이런 부품도 가장자리 파셀에 실려
+   * 뜨고 진다(월드 좌표는 그대로다). 실제로 사라진 수는 `dropped` 다. 이 값은
+   * «사용자가 세계 밖에 뒀다» 를 알리는 정보다.
+   */
+  outsideGrid: number;
+  /**
+   * 좌표가 물 파셀인 부품 수. 역시 **정보이지 손실이 아니다** — 이웃 육지 파셀에
+   * 실린다(강 한복판이라 이웃이 다 물이면 그때 `dropped` 로 넘어간다).
+   */
+  onWater: number;
+  /**
+   * **실을 파셀을 못 찾아 사라지는 부품 수.** 이것만이 손실 신고다.
+   *
+   * ── 이 필드가 생긴 이유 (실측 2026-08-25) ─────────────────────────────────
+   * 처음에는 `Math.round` 로 파셀을 고르고 격자로 클램프했다. 그 판본은 **편집하지
+   * 않은 원본을 되읽어도 340개를 잃었다** — 격자밖 196 · 물 144.
+   *
+   * 원인은 램프가 **셀 경계**에 선다는 것이다(오프셋 z = ±16, 3,182개 전부). 경계에
+   * 선 부품은 양쪽 파셀이 동률이라 **좌표만으로 원래 파셀을 복원할 수 없다.** 반올림이
+   * 하필 격자 밖이나 강 쪽을 고르면 그 부품은 그려지지 않는 파셀에 실려 사라진다.
+   *
+   * 클램프는 격자 쪽 절반만 막았다. 물 쪽은 그대로 뚫려 있었고(`onWater` 144 =
+   * lamp 72 + 그림자 72, 손실과 정확히 일치), **그 사실이 「원본 무손실」 검사를 쓰다가
+   * 드러났다.** 값이 틀린 것이 아니라 **재는 축이 좌표였던 것**이 문제였다 —
+   * 무손실의 조건은 «좌표가 정상인가» 가 아니라 «실린 파셀이 그려지는가» 다.
+   *
+   * 그래서 물 쪽에 이웃 탐색을 더했고, 원본 왕복 손실이 **340 → 0** 이 됐다(실측).
+   *
+   * ⚠ **지금 이 값은 현재 지형에서 0 을 벗어날 수 없다** — 클램프가 격자 안을 보장하고,
+   * 격자 안에는 뭍이 있으며, 링 상한이 격자 한 변이라 반드시 찾는다. 그래도 `null`
+   * 갈래를 남긴 이유는 «찾았다고 치고» 물 칸에 실으면 그 부품이 **조용히** 사라지기
+   * 때문이다 — 이 저장소가 세 번 겪은 형태다. 강 폭을 격자만큼 키우면 살아난다.
+   */
+  dropped: number;
 }
 
 export interface WorldOverlay {
@@ -45,17 +84,76 @@ export interface WorldOverlay {
   stats: OverlayStats;
 }
 
+const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+
 /**
- * 되읽은 노드를 파셀별로 나눈다.
+ * 이웃을 몇 겹까지 뒤질 것인가(파셀). 클램프한 칸이 **물일 때만** 쓴다.
  *
- * ── 경계에 걸친 부품은 어느 파셀 것인가 ─────────────────────────────────────
- * `Math.round(x / cellX)` — 가장 가까운 파셀 중심에 붙인다. 사용자가 건물을 파셀 밖으로
- * 끌어내면 그 건물의 소속이 바뀌는데, **월드 위치는 그대로다**(px 와 오프셋이 함께
- * 조정되므로). 달라지는 것은 "어느 파셀과 함께 뜨고 지는가" 뿐이라 화면상 차이가 없다.
- *
- * 원본 배치는 부품을 셀 안에 가두지만(`margin`), 되읽기는 그 규칙을 강요하지 않는다 —
- * 편집의 목적이 배치를 바꾸는 것인데 여기서 도로 밀어 넣으면 편집이 무효가 된다.
+ * 격자 한 변만큼 열어 둔다 — 뭍이 하나라도 있으면 반드시 찾는다. 넓어 보이지만 이
+ * 탐색은 «클램프한 칸이 물인 부품» 에서만 돌고 그런 부품은 거의 `r = 1` 에서 끝난다
+ * (강은 한두 줄이라 이웃이 곧 뭍이다). 상한을 좁게 잡으면 강을 넓히는 날 조용히
+ * 손실이 살아나므로, 비용이 안 드는 쪽으로 넉넉히 연다.
  */
+const RING_MAX = GRID_W;
+
+/**
+ * 이 부품을 실을 파셀. **좌표를 반올림한 칸이 아니라 「그려지는 칸 중 가까운 것」**.
+ * 못 찾으면 `null` — 그 부품은 사라지고 `dropped` 가 센다.
+ *
+ * ── ① 격자 밖은 **클램프한다**(버리지 않는다) ──────────────────────────────
+ * 사용자가 블렌더에서 건물을 세계 밖으로 끌어냈다면 그것은 **편집이다.** 되읽기가
+ * 그것을 버리면 파일을 한 번 왕복시킨 대가로 편집이 사라진다 — 편집 도구로서 가장
+ * 나쁜 실패다. 가장자리 칸에 실어 두면 월드 좌표가 보존되므로 다시 내보낼 때 그대로
+ * 나간다.
+ *
+ * ⚠ 링 탐색으로는 이것을 못 푼다 — 세계에서 몇십 칸 밖이면 어느 이웃도 격자 안이
+ * 아니다. 실제로 링만 돌던 판본이 `x = 40·32` 를 버렸다(검사가 잡았다).
+ *
+ * ── ② 물은 **이웃으로 비킨다** ──────────────────────────────────────────────
+ * 램프는 셀 **경계**에 선다(오프셋 ±16, 3,182개 전부). 경계에 선 부품은 양쪽 파셀이
+ * 동률이라 **원래 소속이 좌표에 남아 있지 않다.** 반올림이 하필 강 쪽을 고르면 그 칸은
+ * 안 그려지고 부품이 조용히 사라진다 — 편집하지 않은 원본에서도 340개가 그렇게 빠졌다
+ * (실측 2026-08-25, `OverlayStats.dropped` 주석).
+ *
+ * 어느 칸에 실리든 **월드 좌표는 보존된다**(px 와 오프셋이 함께 조정된다). 달라지는 것은
+ * «어느 파셀과 함께 뜨고 지는가» 뿐이라 화면 위치가 안 변한다. 그러므로 그려지는 칸을
+ * 고르는 데 망설일 이유가 없다.
+ *
+ * ⚠ **최근접을 보장하지는 않는다.** 링을 안쪽부터 훑어 처음 찾은 링에서 최소를 고른다 —
+ * `r ≥ 2` 에서는 바깥 링에 더 가까운 칸이 있을 수 있다(링 r 의 대각선 `r·√2·cell` 이
+ * 링 r+1 의 최단 `(r+0.5)·cell` 보다 멀어진다). 화면 위치가 안 변하므로 실익이 없어
+ * 정확도를 사지 않았다. 원본 왕복은 `r ≤ 1` 에서 끝나 영향 자체가 없다.
+ */
+function hostParcel(
+  x: number, z: number, cellX: number, cellZ: number,
+): { px: number; pz: number } | null {
+  // ① 격자로 먼저 끌어온다. 여기서부터가 «세계 안» 이다.
+  const rx = clamp(Math.round(x / cellX), GRID_MIN_X, GRID_MAX_X);
+  const rz = clamp(Math.round(z / cellZ), GRID_MIN_Z, GRID_MAX_Z);
+  if (parcelDrawn(rx, rz, cellX, cellZ)) return { px: rx, pz: rz };
+
+  // ② 그 칸이 물이면 이웃으로 비킨다.
+  for (let r = 1; r <= RING_MAX; r++) {
+    let best: { px: number; pz: number } | null = null;
+    let bestD = Infinity;
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        // 링의 **테두리만** 본다 — 안쪽은 이전 회차에서 이미 봤다.
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const px = rx + dx;
+        const pz = rz + dz;
+        if (!parcelDrawn(px, pz, cellX, cellZ)) continue;
+        const ex = x - px * cellX;
+        const ez = z - pz * cellZ;
+        const d = ex * ex + ez * ez;
+        if (d < bestD) { bestD = d; best = { px, pz }; }
+      }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+
 export function buildOverlay(nodes: readonly ExportNode[], opts: Partial<LayoutOptions> = {}): WorldOverlay {
   const layout: ResolvedLayout = { ...DEFAULT_LAYOUT, ...opts };
   const { cellX, cellZ } = layout;
@@ -64,10 +162,21 @@ export function buildOverlay(nodes: readonly ExportNode[], opts: Partial<LayoutO
   const peakPerParcel: Record<string, number> = {};
   // 파셀×종류별 개수 — peak 을 내려면 둘을 함께 세야 한다.
   const perParcelKind = new Map<string, number>();
+  let outsideGrid = 0;
+  let onWater = 0;
+  let dropped = 0;
 
   for (const n of nodes) {
-    const px = Math.round(n.x / cellX);
-    const pz = Math.round(n.z / cellZ);
+    // 좌표가 세계 밖·물 위였는지는 **정보로만 센다** — 배정은 아래가 따로 한다.
+    const rawPx = Math.round(n.x / cellX);
+    const rawPz = Math.round(n.z / cellZ);
+    if (!inGrid(rawPx, rawPz)) outsideGrid++;
+    else if (parcelWater(rawPx, rawPz, cellX, cellZ) === 'water') onWater++;
+
+    // 실을 칸은 **그려지는 칸 중 가장 가까운 것**이다(`hostParcel` 주석).
+    const host = hostParcel(n.x, n.z, cellX, cellZ);
+    if (!host) { dropped++; continue; }
+    const { px, pz } = host;
     const key = `${px},${pz}`;
     let list = byParcel.get(key);
     if (list === undefined) { list = []; byParcel.set(key, list); }
@@ -104,6 +213,6 @@ export function buildOverlay(nodes: readonly ExportNode[], opts: Partial<LayoutO
     //
     // 재론 조건: 감독이 「GLB 와 마을 편집 동시 적용」을 명시 요구하는 회차.
     layoutFor: (px, pz) => byParcel.get(`${px},${pz}`) ?? [],
-    stats: { parcels: byParcel.size, nodes: nodes.length, peakPerParcel, overBudget },
+    stats: { parcels: byParcel.size, nodes: nodes.length, peakPerParcel, overBudget, outsideGrid, onWater, dropped },
   };
 }

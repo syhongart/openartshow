@@ -117,9 +117,25 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       // 경고를 삼키지 않는다. 특히 `overBudget` 은 화면에 "건물 몇 채가 없다" 로만
       // 나타나서, 안 알려주면 편집을 의심하게 된다(실제로는 슬롯 예산이 원인이다).
       const notes: string[] = [];
+      // ⚠ 여기 오래 «세계 밖·물 위 = 안 그려진다» 라고 적혀 있었고 **지금은 거짓이다.**
+      // 배정이 「그려지는 파셀 중 가장 가까운 것」으로 바뀌어서 그런 부품도 가장자리
+      // 칸에 실린다(`overlay.ts` 의 `hostParcel`). 실제로 사라지는 것은 `dropped` 뿐이다.
+      //
+      // 안 사라지는 것을 «사라졌다» 로 알리면 사용자가 멀쩡한 편집을 되돌린다 — 안
+      // 알리는 것과 방향만 다른 같은 실패다.
+      // 순서가 곧 우선순위다 — `notes[0]` 만 버튼 라벨에 나간다(모바일에서 콘솔을 못
+      // 본다). 그러므로 **화면에서 실제로 잘리는 것**을 맨 앞에 둔다.
       if (overlay.stats.overBudget.length) {
         const worst = overlay.stats.overBudget[0];
         notes.push(`⚠ ${worst.kind} 파셀당 ${worst.peak}개 > 예산 ${worst.budget}`);
+      }
+      if (overlay.stats.dropped > 0) {
+        notes.push(`⚠ ${overlay.stats.dropped.toLocaleString()}개가 실을 칸을 못 찾았다`);
+      }
+      const outside = overlay.stats.outsideGrid + overlay.stats.onWater;
+      if (outside > 0) {
+        notes.push(`세계 밖·물 위 ${outside.toLocaleString()}개는 이웃 칸에 실렸다`
+          + ` (격자밖 ${overlay.stats.outsideGrid} · 물 ${overlay.stats.onWater})`);
       }
       for (const w of warnings) notes.push(`⚠ ${w.detail}${w.count > 1 ? ` ×${w.count}` : ''}`);
       importBtn.textContent = `✓ ${nodes.length.toLocaleString()}개 적용${notes.length ? ' · ' + notes[0] : ''}`;

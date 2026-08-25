@@ -26,7 +26,7 @@
 // 나란히 놓고 보기 전에는 드러나지 않는다. `tests/world2-export-collect.test.ts` 가 실제
 // 빌더와 같은 변환인지를 대조한다.
 
-import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z } from '../decide/grid.js';
+import { GRID_MIN_X, GRID_MAX_X, GRID_MIN_Z, GRID_MAX_Z, inGrid } from '../decide/grid.js';
 import { parcelWater, SEA_Y, waterPlaneSpan } from '../decide/water.js';
 import { parcelLayout, DEFAULT_LAYOUT } from '../decide/parcel-layout.js';
 import { tonesFor } from '../parts/index.js';
@@ -109,6 +109,26 @@ export function comboKey(kind: string, tone: number): string {
 }
 
 /**
+ * 이 파셀이 **그려지는가.** 격자 안이고 물이 아니어야 한다.
+ *
+ * ── 왜 함수로 뺐나 (실측 2026-08-25) ────────────────────────────────────────
+ * 아래 순회가 쓰는 조건과 `export/overlay.ts` 의 파셀 배정이 **같은 판정이어야 한다.**
+ * 되읽기는 부품을 파셀에 싣는데, 그 파셀이 여기서 걸러지면 부품이 조용히 사라진다 —
+ * 두 곳에 따로 적으면 한쪽만 고치는 날 그 손실이 아무 데도 안 나타난다.
+ *
+ * 실제로 그 형태로 났다: overlay 가 `Math.round` 로만 파셀을 고르던 판본은 **편집하지
+ * 않은 원본을 되읽어도 340개를 잃었다**(격자밖 196 · 물 144). 램프가 셀 경계에 서기
+ * 때문인데(오프셋 z = ±16 — 3,182개 전부), 경계에 선 부품은 **좌표만으로 원래 파셀을
+ * 복원할 수 없다.** 양쪽 파셀이 동률이라 정보가 좌표에 없다.
+ *
+ * 그래서 overlay 는 「반올림한 파셀」이 아니라 「**그려지는 파셀 중 가장 가까운 것**」을
+ * 고른다. 그 판정이 이 함수다.
+ */
+export function parcelDrawn(px: number, pz: number, cellX: number, cellZ: number): boolean {
+  return inGrid(px, pz) && parcelWater(px, pz, cellX, cellZ) !== 'water';
+}
+
+/**
  * 세계 전체를 편다.
  *
  * 물 파셀은 **건너뛴다** — 스트리밍이 하는 것과 같다(`decide/stream.ts` 의 차단 판정).
@@ -127,7 +147,7 @@ export function collectWorld(opts: CollectOptions = {}): CollectResult {
 
   for (let px = GRID_MIN_X; px <= GRID_MAX_X; px++) {
     for (let pz = GRID_MIN_Z; pz <= GRID_MAX_Z; pz++) {
-      if (parcelWater(px, pz, cellX, cellZ) === 'water') { waterParcels++; continue; }
+      if (!parcelDrawn(px, pz, cellX, cellZ)) { waterParcels++; continue; }
       landParcels++;
       // 파셀 원점 가산은 `parcel-builder.ts` 의 `fill()` 과 같은 식이어야 한다.
       const ox = px * cellX;
