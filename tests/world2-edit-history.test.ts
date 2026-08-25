@@ -38,7 +38,7 @@ import { createActions } from '../frontend/js/world2/edit/actions.js';
 import { createEditState, select } from '../frontend/js/world2/edit/state.js';
 import type { OverlayEntry, OverlayHost, VillageRead } from '../frontend/js/world2/edit/types.js';
 import type { Panel } from '../frontend/js/world2/edit/panel/dom.js';
-import type { EditTarget } from '../frontend/js/world2/edit/target.js';
+import { overlayTarget, type EditTarget } from '../frontend/js/world2/edit/target.js';
 
 /** 화면에 한 말을 그대로 모으는 가짜 패널. `say` 가 이 기능의 유일한 사용자 신호다 */
 function fakePanel(): { panel: Panel; said: string[]; refreshed: () => number } {
@@ -185,6 +185,89 @@ describe('★ ② 세 저장소가 각각 되돌아간다', () => {
     u!.redo();
     expect(e.x).toBe(5);
     expect(e.s).toBe(2);
+  });
+
+  // ── 🔴 축별 크기 (검수관 반려 B1, 2026-08-25) ─────────────────────────────
+  //
+  // 감독 카드 판정 「축별로 늘리기 — 세 방향」으로 `EditTarget.axes?` 문이 열렸는데
+  // **되돌리기가 그 문을 몰랐다.** 검수관 실측:
+  //
+  //     t.axes.set('x', 2); t.commit();
+  //     hist.depth()  → **0**        ← 아무것도 안 쌓였다
+  //     hist.undo()   → "되돌릴 것이 없습니다"
+  //
+  // 원인은 `Pose5` 가 다섯 값뿐이라 **`samePose` 가 변경 자체를 감지 못 한 것**이다.
+  // 축별만 바꾸면 `s` 는 그대로다.
+  //
+  // ⚠ **마을은 우연히 멀쩡했다** — 그쪽은 파셀 전체를 `JSON.stringify` 로 비교해서
+  // 필드를 세지 않는다. 즉 **한쪽만 깨진 상태**였고 그래서 더 고약했다: 마을에서
+  // 시험하고 «되돌리기 된다» 고 결론 내면 GLB 쪽 결함을 영영 못 본다.
+  it('🔴 축별 크기만 바꿔도 스택에 쌓인다 — 안 쌓이면 Ctrl+Z 가 아무 일도 안 한다', () => {
+    const { host } = makeHost();
+    const ops = createHistoryOps(host);
+    const e = entry(1);
+    const before = poseOf(e);
+    e.sx = 2; // 축별만 — `s` 는 건드리지 않는다(이것이 결함의 조건이었다)
+    const u = ops.pose(e, before, '크기');
+    expect(u, '★ 축별 변경이 감지되지 않았다 — 스택에 안 쌓인다').not.toBeNull();
+  });
+
+  it('🔴 축별 크기가 되돌아가고 다시 온다 — 담기만 하고 안 쓰면 절반만 동작한다', () => {
+    const { host, applied } = makeHost();
+    const ops = createHistoryOps(host);
+    const e = entry(1);
+    const before = poseOf(e);
+    e.sx = 2; e.sz = 0.5;
+    const u = ops.pose(e, before, '크기')!;
+    u.undo();
+    // 「없음」으로 돌아가야 한다 — 조작 전에 키가 없었다.
+    expect(e.sx ?? 1, '★ 축별이 안 되돌아갔다').toBe(1);
+    expect(e.sz ?? 1).toBe(1);
+    expect(applied, '★ 값만 되돌리고 화면에 반영을 안 했다').toContain(e);
+    u.redo();
+    expect(e.sx, '★ 다시하기가 축별을 안 살렸다').toBe(2);
+    expect(e.sz).toBe(0.5);
+  });
+
+  it('🔴 **어댑터 경로**로도 되돌아간다 — 기즈모가 실제로 쓰는 길이다', () => {
+    // ⚠ **이 케이스가 없어서 뮤테이션 하나가 무검출이었다**(2026-08-25 실측).
+    // 위 검사들은 `OverlayEntry` 를 **직접** 만지는데, 기즈모는 `EditTarget` 어댑터를
+    // 통해 민다(`target.axes.set`). `put()` 은 두 경로를 분기하므로 어댑터 쪽만
+    // 지워도 직접 경로가 통과시킨다 — **재는 길이 실제 길과 달랐다.**
+    //
+    // 검수관이 실측한 재현도 어댑터 경로였다. 그 길을 그대로 태운다.
+    const { host, applied } = makeHost();
+    const ops = createHistoryOps(host);
+    const e = entry(1);
+    const t = overlayTarget(host, e);
+    expect(t.axes, '★ 어댑터가 축별 문을 안 낸다').toBeDefined();
+
+    const before = poseOf(t);
+    t.axes!.set('x', 2);
+    t.axes!.set('z', 0.5);
+    const u = ops.pose(t, before, '크기');
+    expect(u, '★ 어댑터 경로의 축별 변경이 감지되지 않았다').not.toBeNull();
+
+    u!.undo();
+    expect(t.axes!.get('x'), '★ 어댑터 경로로 안 되돌아갔다').toBe(1);
+    expect(t.axes!.get('z')).toBe(1);
+    expect(e.sx ?? 1, '★ 항목 값이 안 따라갔다').toBe(1);
+    expect(applied, '★ 화면 반영을 안 했다').toContain(e);
+
+    u!.redo();
+    expect(t.axes!.get('x'), '★ 다시하기가 어댑터 경로를 안 살렸다').toBe(2);
+    expect(e.sz).toBe(0.5);
+  });
+
+  it('★ 축별을 1 로 되돌린 것은 「안 바뀐 조작」이다 — 빈 되돌리기가 쌓이면 안 된다', () => {
+    // 「없음」과 「1」은 화면에서 같은 것이다. 다르게 읽으면 축별을 원래대로 돌린 조작이
+    // «바뀌었다» 로 쌓여, Ctrl+Z 를 눌러도 아무 변화가 없는 항목이 스택에 낀다.
+    const { host } = makeHost();
+    const ops = createHistoryOps(host);
+    const e = entry(1);
+    const before = poseOf(e); // sx 없음
+    e.sx = 1;                 // 명시적 1 — 화면상 차이 없음
+    expect(ops.pose(e, before, '크기'), '★ 빈 되돌리기가 쌓였다').toBeNull();
   });
 
   it('🔴 오버레이 삭제 — 되돌리면 **같은 객체가 원래 자리로** 돌아온다', () => {
