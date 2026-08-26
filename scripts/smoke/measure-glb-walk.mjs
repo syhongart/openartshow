@@ -6,8 +6,8 @@
 //
 // ⚠ **이 파일은 이제 world7 만 잰다**(2026-08-26 정정, 검수관 권고 P2). 헤더가 오래
 // *"두 페이지는 `js/glb-world.js` 한 벌을 쓴다"* 라고 적고 있었고 그것은 world8 이
-// **world2 전체 포크로 재구성되면서 거짓이 됐다** — world8 은 `js/world8/` 트리를 탄다
-// (경위는 `frontend/js/world8/README.md`). world8 의 걷기는 world2 의 `PlayerSystem` ·
+// **world2 전체 포크로 재구성되면서 거짓이 됐다** — world8 은 `js/world-glb/` 트리를 탄다
+// (경위는 `frontend/js/world-glb/README.md`). world8 의 걷기는 world2 의 `PlayerSystem` ·
 // `decide/move.ts` 를 그대로 쓰므로 world2 쪽 검사가 이미 덮는다.
 //
 // world7 편입(팀장 조건 4)이 끝나면 이 파일의 운명도 그때 정해진다 — `glb-world.js` 가

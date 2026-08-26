@@ -27,7 +27,7 @@
 // ⚠ **열 파일은 이 스크립트가 정하지 않는다** — `<body data-glb>` 가 가리킨다.
 // 그래야 「어느 GLB 가 세계인가」가 페이지의 사실로 남고, 스크립트는 그것을 모른다.
 
-import { startWorld8 } from './world8/main.js';
+import { startWorld8 } from './world-glb/main.js';
 
 const canvas = document.getElementById('w8-canvas');
 if (canvas instanceof HTMLCanvasElement) {
