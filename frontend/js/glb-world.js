@@ -66,6 +66,7 @@ import { JOY_RADIUS } from './shared/joystick-look.js';
 import { buildColliders, createWalker, groundBelow, RADIUS } from './glb-collide.js';
 // 터치 조이스틱 손잡이 — 룩 값은 `shared/joystick-look.js` 한 곳이다.
 import { createStick } from './glb-stick.js';
+import { instanceRepeats } from './glb-instance.js';
 import { installDiag } from './glb-diag.js';
 
 const EYE = 1.6;
@@ -179,7 +180,15 @@ function disposeRoot() {
  */
 function place(gltf) {
   disposeRoot();
-  root = gltf.scene;
+  // ── 반복 메시를 다시 묶는다 (감독 신고 «프레임이 느린것같아», 2026-08-26) ──
+  // 사유·실측·대가·못 하는 것은 `glb-instance.js` 헤더 한 곳이다.
+  {
+    const t0 = performance.now();
+    const r = instanceRepeats(gltf.scene);
+    console.info(`[${PAGE}] 인스턴싱 ${Math.round(performance.now() - t0)}ms`
+      + ` — ${r.instances.toLocaleString()}개 → ${r.made}벌 (규약 밖 ${r.skipped})`);
+    root = r.group;
+  }
   scene.add(root);
 
   const box = new THREE.Box3().setFromObject(root);
@@ -260,7 +269,7 @@ function place(gltf) {
     // 태양은 **사람을 따라다닌다** — 고정하면 960m 세계에서 곧 프러스텀 밖으로 나간다.
     sun.target.position.copy(mid);
     scene.add(sun.target);
-    root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    // castShadow 는 `instanceRepeats` 가 이미 켰다 — 여기서 다시 훑지 않는다.
   }
 
   ready = true;
@@ -268,6 +277,7 @@ function place(gltf) {
   // 「어디에 서 있는가」를 재는 축은 `glb-diag.js` 한 곳이다 — 왜 따로 뒀는지도 거기 있다.
   installDiag(() => ({
     pos, yaw, pitch, ready, fly, box, camera, root, walker,
+    renderer,
     setYaw: (v) => { yaw = v; return v; },
   }));
   pick?.classList.add('hide');

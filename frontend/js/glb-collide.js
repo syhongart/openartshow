@@ -72,6 +72,16 @@ export function buildColliders(root) {
   const s = new THREE.Vector3();
   root.traverse((o) => {
     if (!o.isMesh || !o.geometry) return;
+    // ⚠ `InstancedMesh` 는 **자기 바운딩**을 봐야 한다. `geometry.boundingSphere` 는
+    // 인스턴스 **하나**의 크기라, 7,229번 반복되는 종류를 그 작은 구로 재면 「근처」
+    // 판정이 조용히 틀린다(2026-08-26 인스턴싱 도입과 함께 열린 자리).
+    if (o.isInstancedMesh) {
+      if (!o.boundingSphere) o.computeBoundingSphere();
+      const ib = o.boundingSphere;
+      if (!ib) return;
+      out.push({ o, c: ib.center.clone(), r: ib.radius });
+      return;
+    }
     if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
     const bs = o.geometry.boundingSphere;
     if (!bs) return;

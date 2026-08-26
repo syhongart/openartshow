@@ -83,11 +83,14 @@ try {
   console.log('    pos :', JSON.stringify(p1.pos), `· 중심까지 ${r.toFixed(2)}m (시작 ${wallStart.toFixed(2)}m)`);
   ok(r > 10.5, `벽을 뚫지 않았다 — ${r.toFixed(2)}m (받침 10.4 + 사람 0.45 = 10.85)`);
 
+  // ⚠ **기준을 느슨하게 하지 않고 시간을 늘린다.** 인스턴싱 도입 후 삼각형이 51만 →
+  // 136만으로 늘어 헤드리스가 더 느려졌고(드로우콜은 10,856 → 39), 4초에 0.89m 라
+  // `< 59` 를 못 넘겼다. 임계를 낮추면 M1(부호 뒤집기) 뮤테이션과의 간격이 좁아진다.
   console.log('\n(나-2) 방향 — 벽이 없는 쪽으로는 실제로 **앞으로** 가는가');
   await page.evaluate(() => { window.__glbWorld.moveTo(0, 2.0, 60); window.__glbWorld.lookAt(0); });
   await page.waitForTimeout(400);
   await page.evaluate(() => dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' })));
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(9000);
   await page.evaluate(() => dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })));
   const p1b = await page.evaluate(() => window.__glbWorld.pose());
   console.log('    z: 60 →', p1b.pos.z.toFixed(2));

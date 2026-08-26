@@ -23,6 +23,11 @@ import * as THREE from 'three';
  *        `{ pos, yaw, pitch, ready, fly, box, camera, root, walker }`
  */
 export function installDiag(snap) {
+  // 진단용 렌더러 참조 — 그림자 on/off 대조처럼 **설정을 바꿔가며 재는** 측정에 쓴다.
+  // 조작 API 가 아니다. 이 값이 없으면 성능 대조를 아예 못 재고, 못 재면 추측으로
+  // 고치게 된다(감독 신고 «프레임이 느린것같아» 를 그렇게 다루면 안 된다).
+  try { globalThis.__glbDiagRenderer = snap().renderer ?? null; } catch { /* 아직 준비 전 */ }
+  try { globalThis.__glbDiagRoot = snap().root ?? null; } catch { /* 아직 준비 전 */ }
   const r2 = (v) => +v.toFixed(2);
   globalThis.__glbWorld = {
     pose: () => {
@@ -38,6 +43,15 @@ export function installDiag(snap) {
           max: { x: r2(b.max.x), y: r2(b.max.y), z: r2(b.max.z) },
         } : null,
         far: s.camera.far,
+        // ⚠ **프레임 시간은 안 잰다** — 이 환경은 swiftshader 라 실기기와 무관하다
+        // (`CLAUDE.md` 규율). 대신 **드로우콜·삼각형**을 본다. 그림자를 켜면 씬을 한 번
+        // 더 그리므로 `calls` 가 거의 2배가 된다 — 그것이 여기서 성능을 보는 축이다.
+        render: s.renderer ? {
+          calls: s.renderer.info.render.calls,
+          tris: s.renderer.info.render.triangles,
+          shadow: s.renderer.shadowMap.enabled,
+          autoUpdate: s.renderer.shadowMap.autoUpdate,
+        } : null,
       };
     },
     /**
