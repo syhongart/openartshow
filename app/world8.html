@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- [실험] **블렌더를 거친 GLB 가 곧 세계다** — behind-flag(라이브 미노출, 어디에도 링크 안 함).
+     감독 지시 2026-08-26: "월드8에 그 glb를 올려보자."
+
+     ⚠ 월드7과 갈리는 것은 **파일이 어디서 오는가** 하나다. 저쪽은 감독이 고르고,
+     여기는 `<body data-glb>` 가 가리키는 **고정 자산**이 부팅 즉시 열린다. 감독이
+     *"지금 그파일이 없어서 내가 못올려"* 라고 해서, 감독이 하던 왕복(우리 내보내기 →
+     블렌더에서 오브젝트 추가 → GLB 내보내기)을 **저장소에서 재현해** 구운 파일이다.
+     만든 절차는 `scripts/asset/extract-world2-glb.mjs` + `blender-edit.py` 두 곳이고
+     `bpy`(Blender as a Python Module) 5.0.1 이 실제로 읽고 썼다 — 흉내가 아니다.
+
+     스크립트는 `world7.html` 과 **같은 파일**을 쓴다(`js/glb-world.js`). 268줄을
+     복사하면 그것이 곧 값 미러링이라 한쪽만 고쳐지는 자리가 생긴다.
+
+     ⚠ importmap 을 두지 않는다 — 이유는 `world7.html` 헤더 한 곳에 있다(dead 핀).
+     이 페이지도 인라인 스크립트 0 · `script-src 'self'` 이고 vite 전용이다.
+
+     ⚠ CSP 의 `blob:` 두 자리는 **성격이 다르다 — 재보고 적는다**(검수관 권고 P1).
+     첫 판본은 `world2.html`·`lab-glb.html` 을 따라 적었고 «필수» 라고 단정했는데
+     실측하지 않았다. 검수관이 뮤테이션으로 갈랐다:
+
+       connect-src 에서 blob: 제거 → CSP violation 6건(= 임베드 이미지 6개) · 콘솔 18건
+       img-src     에서 blob: 제거 → violation 0 · 콘솔 0 · HUD 정상
+
+     GLTFLoader 가 이 경로에서 `ImageBitmapLoader`(fetch)만 타기 때문이다. 그래도
+     `img-src blob:` 을 **지우지 않는다**: `createImageBitmap` 미지원 브라우저에서
+     three 는 `ImageLoader`(<img>)로 폴백하므로 그때 필요해진다. 즉 connect-src 는
+     **지금 쓰이는 것**이고 img-src 는 **안전망**이다. -->
+
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
+<title>월드8 · 블렌더를 거친 세계 · OpenArtShow</title>
+<style>
+  :root{ --ink:#f3efe7; --dim:#a9a293; --bg:#12100e; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:15px/1.55 system-ui,-apple-system,"Noto Sans KR",sans-serif;overflow:hidden;
+    -webkit-user-select:none;user-select:none;touch-action:none}
+  #c{position:fixed;inset:0;display:block;width:100%;height:100%}
+
+  /* 불러오는 동안의 첫 화면. 5MB 를 받는 사이 빈 화면이면 「안 된다」와 구별되지 않는다. */
+  #pick{position:fixed;inset:0;display:grid;place-content:center;gap:14px;text-align:center;
+    padding:24px;background:radial-gradient(120% 90% at 50% 30%,#211d18 0%,#12100e 70%);
+    transition:opacity .35s ease}
+  #pick.hide{opacity:0;pointer-events:none}
+  #pick h1{margin:0;font-size:22px;letter-spacing:-.01em;font-weight:650}
+  #pick p{margin:0;color:var(--dim);font-size:14px;max-width:36ch}
+  #status{min-height:1.4em;color:var(--dim);font-size:13px;font-variant-numeric:tabular-nums}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);
+    bottom:calc(24px + env(safe-area-inset-bottom));z-index:7;max-width:min(92vw,46ch);
+    padding:10px 14px;border-radius:10px;background:#3a1d1dee;border:1px solid #7a3b3b;
+    color:#ffd9d9;font-size:13px;line-height:1.5;text-align:center}
+
+  #hud{position:fixed;left:12px;top:calc(12px + env(safe-area-inset-top));z-index:5;
+    padding:6px 10px;border-radius:8px;background:#00000066;color:var(--dim);font-size:12px;
+    backdrop-filter:blur(6px)}
+  #keys{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:5;
+    color:#ffffff66;font-size:11.5px;line-height:1.7;pointer-events:none}
+  @media (max-width:640px){ #keys{display:none} }
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+  <script type="module" crossorigin src="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/vendor-three-BVCe5QSU.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/BufferGeometryUtils-C6v7s0Vg.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/GLTFLoader-D7IH8cP1.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/joystick-look-BDokgZh8.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/glb-world-DKrXw841.js"></script>
+</head>
+<!-- 상대경로는 문서 기준으로 풀린다 — 배포에서 이 페이지는 `/app/` 아래이고 자산은 그 옆이다. -->
+<body data-page="world8" data-glb="./assets/worlds/world2-blender-edit.glb">
+<canvas id="c"></canvas>
+
+<div id="pick">
+  <h1>월드8 — 블렌더를 거친 세계</h1>
+  <p>오픈월드를 GLB 로 내보내 <b>블렌더에서 조형물을 하나 얹은</b> 파일입니다.
+     광장 한가운데 선 금색 링이 블렌더에서 들어온 것입니다.</p>
+  <div id="status">불러오는 중…</div>
+</div>
+
+<div id="hud" hidden></div>
+<div id="toast" hidden></div>
+<div id="keys">
+  WASD · 화살표 — 이동<br>
+  화면 클릭 → 마우스로 시점<br>
+  Shift — 빠르게 · Space / Q — 위 / 아래<br>
+  모바일: 왼쪽 절반 이동 · 오른쪽 절반 시점
+</div>
+
+</body>
+</html>
