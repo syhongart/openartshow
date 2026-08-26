@@ -35,19 +35,14 @@
 // ── 감독 지시 2026-08-26 — *"월드8에 월드 2의 기본 기능 다 들어가야지"* ──────
 // 카드 판정: **「할 수 있는 것은 전부」**. 그래서 아래 「안 하는 것」 목록이 줄었다.
 //
-// ⚠ **이 헤더는 한때 *"충돌 없음 · 그림자 없음"* 을 설계 결정으로 적고 있었고 지금은
-// 거짓이다.** 그 판단이 틀렸다기보다 **전제가 바뀌었다** — 그때는 「파일을 잠깐 열어
-// 본다」가 목적이었고 지금은 「world2 처럼 돌아다닌다」가 목적이다. 규정이 바뀌면
-// 규정을 고친다(주석을 남겨두면 다음 사람이 없는 것을 찾는다).
-//
-// 그리고 **world2 의 코드를 옮긴 것이 아니다.** 그쪽 충돌은 파츠별 footprint 와 평면
-// 지면을 전제해서(`world2/decide/collide.ts`) 임의 GLB 에 그대로 못 쓴다. 감독이
-// 요구한 것은 코드가 아니라 **결과**이므로 임의 씬에서 성립하는 방식으로 새로 짰다
-// (`glb-collide.js`).
+// ⚠ 이 헤더는 한때 *"충돌 없음 · 그림자 없음"* 을 설계 결정으로 적고 있었고 지금은
+// 거짓이다 — 판단이 틀렸다기보다 **전제가 바뀌었다**(그때는 「잠깐 열어 본다」, 지금은
+// 「world2 처럼 돌아다닌다」). 그리고 **world2 의 코드를 옮긴 것이 아니다** — 그쪽
+// 충돌은 파츠 목록을 전제한다. 사유는 `glb-collide.js` 헤더 한 곳이다.
 //
 // ── 지금 **안** 하는 것 (일부러 / 아직) ─────────────────────────────────────
-// · **후처리·잔디·TSL 물 — 아직**(렌더러가 plain three 다. 팀장 판정: 3차에 단독 교체).
-// · **하늘/시간대 — 아직**(엔진은 plain three 지만 배선을 새로 써야 한다. 2차).
+// · **후처리·잔디·TSL 물 · 하늘/시간대 — 아직.** 순서와 근거는 `docs/BOARD.md`
+//   「지금 유효한 지시」 2026-08-26 팀장 판정 한 곳이다.
 // · **미니맵·NPC·물 배치·편집·저장 — 원리상 안 된다.** 전부 「어디가 도로·물·파츠인가」
 //   를 절차적 판정 산출물에서 읽는다. 임의 GLB 에는 그 선언이 없다.
 // · 저장 없음 — 고른 파일은 브라우저 안에서만 산다(무저장 원칙).
@@ -135,7 +130,6 @@ const stick = createStick(document);   // 마크업이 없으면 null — 그러
  */
 const WALKABLE_SPAN = 60;
 
-
 /** 씬 전체를 놓아 준다 — 다른 파일을 고르면 이전 것이 그대로 남으면 안 된다 */
 function disposeRoot() {
   // 낱개 트리는 **참조만** 놓는다 — 지오·재질은 인스턴스와 공유하므로 아래에서 한 번만
@@ -191,7 +185,9 @@ function place(gltf) {
   // 낱개 트리로 바운딩을 구워 두면 충돌 비용이 인스턴싱 이전과 **완전히 같아지고**
   // 렌더 이득만 남는다. three 의 `intersectObjects` 는 대상이 씬 그래프에 붙어 있을
   // 것을 요구하지 않는다 — `matrixWorld` 만 맞으면 된다.
+  const tColl = performance.now();
   const colliders = buildColliders(gltf.scene);
+  const collMs = Math.round(performance.now() - tColl);
   // 원본 트리를 **참조로 붙잡아 둔다.** 놓으면 위 배열의 메시가 GC 되고 레이캐스트가
   // 조용히 빈다. 씬에는 안 넣는다(그리지 않는다).
   collisionRoot = gltf.scene;
@@ -233,7 +229,7 @@ function place(gltf) {
       // 시야를 막는다. 비껴서면 구조물과 그 너머 풍경이 함께 보인다.
       const back = Math.min(span * 0.07, 120);
       const bx = back * 0.62, bz = back * 0.78;
-      pos.set(mid.x + bx, groundBelow(root, mid.x + bx, mid.z + bz, box) + EYE, mid.z + bz);
+      pos.set(mid.x + bx, groundBelow(collisionRoot, mid.x + bx, mid.z + bz, box) + EYE, mid.z + bz);
       // `yaw = 0` 이 -z 를 보는 규약이므로 중심 방향은 atan2(bx, bz) 다.
       yaw = Math.atan2(bx, bz);
     } else {
@@ -250,7 +246,6 @@ function place(gltf) {
     camera.updateProjectionMatrix();
   }
 
-
   // DOM 은 **있으면 쓰고 없으면 넘어간다** — world8 에는 고르기 버튼이 없다.
   if (hud) {
     hud.textContent = `메시 ${meshes.toLocaleString()} · 삼각형 ${Math.round(tris).toLocaleString()}`;
@@ -264,9 +259,12 @@ function place(gltf) {
   // ── 걷기 판정기 — 씬이 바뀌면 다시 굽는다 ────────────────────────────────
   // 부팅 1회 비용이다. 실측 소요는 HUD 옆 `[걷기]` 표시가 뜨는 시점으로 확인한다.
   {
-    const t0 = performance.now();
+    // ⚠ 타이머는 위 `buildColliders` 를 감싼다(검수관 N2) — 한때 `createWalker` 만
+    // 재고 «0ms» 를 찍었고 그것은 클로저만 만들어 **구조적으로 항상 0** 이다.
+    // 비용이 사라진 게 아니라 **계측에서 사라진** 것이었는데 개선으로 보고됐다.
+    // 「너무 좋은 수치」는 개선이 아니라 계측 붕괴의 신호로 먼저 의심한다.
     walker = createWalker(colliders);
-    console.info(`[${PAGE}] 충돌 준비 ${Math.round(performance.now() - t0)}ms`);
+    console.info(`[${PAGE}] 충돌 준비 ${collMs}ms — 낱개 ${colliders.length.toLocaleString()}개`);
   }
 
   setupShadow(renderer, sun, scene, root, box);
