@@ -61,6 +61,16 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 print(f"[1] 불러오기 — {src}")
 bpy.ops.import_scene.gltf(filepath=src)
 
+# ── 앞 회차의 조형물이 있으면 지운다 — **이 스크립트는 다시 돌 수 있어야 한다** ──
+# 처음에는 「우리 내보내기 → 블렌더 → 저장」 한 방향만 생각했고, 그래서 조형물 위치를
+# 고치려면 world2 내보내기부터 다시 떠야 했다(브라우저 왕복 수 분). 자기 출력을 다시
+# 입력으로 받을 수 있게 하면 그 왕복이 사라진다.
+prev = [o for o in bpy.context.scene.objects if o.name.startswith('블렌더_')]
+if prev:
+    print(f"    앞 회차 조형물 {len(prev)}개를 지운다 — {', '.join(o.name for o in prev)}")
+    for o in prev:
+        bpy.data.objects.remove(o, do_unlink=True)
+
 imported = [o for o in bpy.context.scene.objects if o.type == 'MESH']
 print(f"    메시 오브젝트 {len(imported)}개")
 if not imported:
@@ -98,9 +108,31 @@ if bsdf:
     if "Roughness" in bsdf.inputs:
         bsdf.inputs["Roughness"].default_value = 0.28
 
+# ── 어디에 세우나 — **광장 한가운데는 안 된다** (실측 2026-08-26) ──────────
+# 첫 판본은 세계 중심(`mid`)에 세웠고, 그 자리가 **스폰 지점 코앞**이었다. 진단
+# 레이캐스트가 정확히 그것을 잡았다:
+#
+#   정면 0.3m — inst:블렌더_조형물×1   ← 화면 전체가 이것 하나였다
+#
+# 「로드는 성공했는데 화면이 검다」의 형태이고, 눈으로만 보면 «GLB 가 안 떴다» 로 읽힌다.
+# 실제로 나도 그렇게 읽고 하늘·그림자·재질을 차례로 의심했다 — 답은 **무엇이 몇 m 앞에
+# 있는가**를 재는 축 하나였다(`__world8.ahead()`).
+#
+# 그래서 광장 밖으로 물린다. 스폰(x=-3.5, z=10, yaw=0 → -z 를 본다)에서 **정면 멀리**에
+# 두어 ① 첫 화면을 안 막고 ② 그래도 눈에 띄게 한다. 블렌더 Y 축은 glTF 의 -Z 에 대응
+# 하므로(importer 가 Z-up↔Y-up 을 돌린다) 여기서 **+Y** 가 화면의 정면이다.
+#
+# ⚠ **정면 55m 도 여전히 가렸다**(2회차 실측): 받침이 높이 22.5m 기둥이라 그 거리에서도
+# 화면 위쪽을 가로지르고 시계탑을 덮었다. 「안 막는다」의 기준은 거리가 아니라 **화면
+# 중앙을 비우는가**다. 그래서 정면이 아니라 **비스듬히** 놓는다 — 걷다 보면 눈에 들어오되
+# 첫 화면의 중앙은 세계가 차지한다.
+OFFSET = Vector((60.0, 60.0, 0.0))
+spot = mid + OFFSET
+print(f"[3a] 조형물 자리 — 세계 중심에서 {OFFSET.length:.0f}m 비스듬히 물렸다 (광장 밖)")
+
 bpy.ops.mesh.primitive_cylinder_add(
     radius=base_r, depth=base_h,
-    location=(mid.x, mid.y, lo.z + base_h * 0.5), vertices=24,
+    location=(spot.x, spot.y, lo.z + base_h * 0.5), vertices=24,
 )
 base = bpy.context.active_object
 base.name = "블렌더_받침"
@@ -108,7 +140,7 @@ base.name = "블렌더_받침"
 bpy.ops.mesh.primitive_torus_add(
     major_radius=ring_r, minor_radius=tube_r,
     major_segments=48, minor_segments=12,
-    location=(mid.x, mid.y, lo.z + base_h + ring_r * 0.92),
+    location=(spot.x, spot.y, lo.z + base_h + ring_r * 0.92),
     rotation=(1.5707963, 0.0, 0.0),                 # 세워 놓는다 — 옆에서 링으로 보이게
 )
 ring = bpy.context.active_object
@@ -117,8 +149,12 @@ ring.name = "블렌더_링"
 for o in (base, ring):
     o.data.materials.append(mat)
 
+# ⚠ **`spot` 을 찍는다** — 여기가 `mid` 를 찍고 있었고, 조형물을 실제로 옮긴 회차에도
+# 로그는 «자리 (0.0, 0.0, -4.1)» 라고 **옮기기 전 값**을 말했다. 조형물이 화면에서
+# 물러난 것을 눈으로 보고서야 로그가 틀렸다는 것을 알았다 — 반대였다면(로그는 옮겼다는데
+# 화면은 그대로) 원인을 엉뚱한 데서 찾았을 것이다.
 print(f"[3] 조형물 — 링 반경 {ring_r:.1f}m · 받침 높이 {base_h:.1f}m"
-      f" · 자리 ({mid.x:.1f}, {mid.y:.1f}, {lo.z:.1f})")
+      f" · 자리 ({spot.x:.1f}, {spot.y:.1f}, {lo.z:.1f})")
 
 print(f"[4] 내보내기 — {dst}")
 bpy.ops.export_scene.gltf(

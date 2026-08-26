@@ -25,6 +25,7 @@
 // 「세계 소스」 축에 포함된다. 감독의 판정 축 「그림자 구현방식」은 방향성 그림자와
 // 프러스텀 유도이고 그쪽은 포크로 그대로 계승된다.
 
+import * as THREE from 'three/webgpu';
 import type { Object3D, Scene } from 'three/webgpu';
 import { instanceRepeats } from './glb-instance.js';
 
@@ -39,6 +40,12 @@ export interface GlbSourceResult {
   triangles: number;
   /** 만든 `InstancedMesh` 벌수 */
   made: number;
+  /**
+   * 세계의 크기(m). **「떴다」와 「보인다」를 가르는 축이다** — 로드는 성공했는데
+   * 화면이 비는 형태가 이 저장소에서 반복됐고, 그때마다 「어디에 얼마나 큰 것이
+   * 놓였는가」를 아무도 안 재고 있었다.
+   */
+  box: { min: [number, number, number]; max: [number, number, number] };
 }
 
 /**
@@ -100,5 +107,28 @@ export function mountGlbWorld(
   group.name = 'world8:glb-source';
   (scene as unknown as { add(o: Object3D): void }).add(group);
 
-  return { root: group, collisionRoot: gltfScene, meshes, triangles, made };
+  const b = new THREE.Box3().setFromObject(group as never);
+  const r1 = (v: number) => +v.toFixed(1);
+  return {
+    root: group, collisionRoot: gltfScene, meshes, triangles, made,
+    box: {
+      min: [r1(b.min.x), r1(b.min.y), r1(b.min.z)],
+      max: [r1(b.max.x), r1(b.max.y), r1(b.max.z)],
+    },
+  };
+}
+
+/**
+ * 리포트용 요약. **수는 되묶기 «전» 값이다.**
+ *
+ * ⚠ `InstancedMesh` 로 묶은 뒤 세면 28,707 메시가 457 로, 삼각형도 수천으로 보인다
+ * (357배 축소를 실측한 회차가 있다). 화면·리포트에 그것을 적으면 **거짓을 적는 것**이다
+ * (검수관 반려 B3). 그래서 `mountGlbWorld` 가 묶기 전에 세어 들고 있고 여기서는 그 값을
+ * 그대로 낸다 — 세는 자리와 적는 자리를 갈라 두면 한쪽만 고쳐지는 일이 생긴다.
+ */
+export function describeGlb(src: GlbSourceResult | null): {
+  meshes: number; triangles: number; instanced: number; box: GlbSourceResult['box'];
+} | null {
+  if (!src) return null;
+  return { meshes: src.meshes, triangles: src.triangles, instanced: src.made, box: src.box };
 }

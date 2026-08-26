@@ -45,7 +45,8 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import type { Collider } from './systems/collision.js';
 import { createGlbCollider } from './systems/glb-collider.js';
 import { DEFAULT_BODY_R } from './systems/collision.js';
-import { mountGlbWorld, type GlbSourceResult } from './systems/glb-source.js';
+import { mountGlbWorld, describeGlb, type GlbSourceResult } from './systems/glb-source.js';
+import { aheadOf } from './diag-ahead.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { ShadowDecalSystem } from './systems/shadow-decal.js';
@@ -1082,7 +1083,7 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 세션 내내 상수"인데, 잴 수단이 없으면 그 주장은 검증할 수 없는 문장일 뿐이다.
   // 실제로 첫 스모크에서 이 항목이 "측정 불가"로 남았고, 그건 검증기의 잘못이 아니라
   // 측정 지점을 안 만들어 둔 설계의 잘못이었다.
-  (window as unknown as Record<string, unknown>).__world2 = {
+  (window as unknown as Record<string, unknown>).__world8 = {
     /** 부팅 단계별 경과(ms) */
     timeline,
 
@@ -1104,6 +1105,8 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
     look: (dYaw: number, dPitch: number) => player.lookBy(dYaw, dPitch),
     /** 이동 축(-1..1). 프레임이 돌아야 실제로 움직인다 — 시간 기반이다 */
     move: (x: number, z: number) => player.setAxes(x, z),
+    /** 카메라 정면에 무엇이 몇 m 앞에 있는가. 경위·한계는 `diag-ahead.ts` 한 곳이다 */
+    ahead: (n = 6) => aheadOf(scene, camera, n),
     /**
      * 되읽은 GLB 가 **화면에 실제로 서 있는가.** 버튼 라벨은 «올렸다고 적었다» 까지만
      * 말한다 — 감독 신고(2026-08-25)가 정확히 그 틈에서 나왔다(라벨은 정상인데 물건이
@@ -1162,18 +1165,8 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
       } : null,
       pools: pools!.stats(),
       adapt: adapt!.snapshot(),
-      /**
-       * **얹힌 GLB 세계.** world2 의 `stream`·`builder` 통계가 있던 자리다.
-       *
-       * ⚠ 수는 **되묶기 «전»** 값이다 — `InstancedMesh` 로 묶은 뒤 세면 28,705 메시가
-       * 40 으로, 삼각형이 1,358,918 → 3,808 로 보인다(357배 축소). 화면·리포트에 그것을
-       * 적으면 거짓을 적는 것이다(검수관 반려 B3). 근거는 `glb-source.ts` 한 곳.
-       */
-      glb: glbSource ? {
-        meshes: glbSource.meshes,
-        triangles: glbSource.triangles,
-        instanced: glbSource.made,
-      } : null,
+      /** 얹힌 GLB 세계. world2 의 `stream`·`builder` 통계가 있던 자리다 */
+      glb: describeGlb(glbSource),
       // ── LOD 페이드가 **실제로 걸리는가** (2026-08-07) ──────────────────
       // 감독이 *"디졸브는 별차이가 없네"* 라고 했을 때, 나는 그 원인을 다른 데서
       // 찾기 시작했다 — **페이드가 돌기는 하는지 한 번도 안 재보고.** 그 추측이
