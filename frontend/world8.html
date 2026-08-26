@@ -69,6 +69,9 @@
     #keys .kb{display:none}
     #keys .touch{display:block}
   }
+  /* 조이스틱 구역 — 화면을 덮고 **층위를 갖는다**. 링은 이 안에서 absolute 로 움직인다
+     (world2 의 `#w2-stick-zone` 과 같은 구조). 터치는 window 리스너가 받으므로 통과시킨다. */
+  #gw-stick-zone{position:fixed;inset:0;z-index:6;pointer-events:none}
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
 </head>
@@ -85,10 +88,15 @@
 
 <div id="hud" hidden></div>
 <div id="toast" hidden></div>
+<!-- 터치 조이스틱 — **누른 자리에 나타난다**(world2 는 좌하단 고정 구역).
+     룩 값은 `js/shared/joystick-look.js` 한 곳이고 배선은 `js/glb-stick.js` 다.
+     마크업이 없으면 손잡이만 안 그려지고 조작은 그대로 된다. -->
+<div id="gw-stick-zone"><div id="gw-stick" data-on="0" data-lean="0"><div id="gw-stick-knob"></div></div></div>
+
 <div id="keys">
   <span class="kb">WASD · 화살표 — 이동<br>
   화면 클릭 → 마우스로 시점<br>
-  Shift — 빠르게 · Space / Q — 위 / 아래</span>
+  Shift — 빠르게 · F — 걷기/비행 · Space / Q — 위 / 아래(비행 중)</span>
   <span class="touch">👆 <b>왼쪽 절반</b>을 끌면 걷고 · <b>오른쪽 절반</b>을 끌면 둘러봅니다</span>
 </div>
 

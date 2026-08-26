@@ -32,10 +32,27 @@
 // 상수들이 파일 곳곳에 박혀 있다). 임의 GLB 에는 그 전제가 하나도 안 맞고, 저 파일은
 // 이미 509줄이라 파일 크기 상한에 닿아 있다. 여기서 필요한 것만 새로 쓴다.
 //
-// ── 무엇을 **안** 하는가 (일부러) ───────────────────────────────────────────
-// · **충돌 없음.** 임의 지오의 레이캐스트는 비용이 크고, 「보러 들어가는」 목적에는
-//   벽을 통과하는 편이 오히려 낫다(안이 막힌 모델도 들어가 볼 수 있다).
-// · 그림자·후처리 없음 — 파일이 든 재질을 그대로 보여주는 것이 목적이다.
+// ── 감독 지시 2026-08-26 — *"월드8에 월드 2의 기본 기능 다 들어가야지"* ──────
+// 카드 판정: **「할 수 있는 것은 전부」**. 그래서 아래 「안 하는 것」 목록이 줄었다.
+//
+// ⚠ **이 헤더는 한때 *"충돌 없음 · 그림자 없음"* 을 설계 결정으로 적고 있었고 지금은
+// 거짓이다.** 그 판단이 틀렸다기보다 **전제가 바뀌었다** — 그때는 「파일을 잠깐 열어
+// 본다」가 목적이었고 지금은 「world2 처럼 돌아다닌다」가 목적이다. 규정이 바뀌면
+// 규정을 고친다(주석을 남겨두면 다음 사람이 없는 것을 찾는다).
+//
+// 그리고 **world2 의 코드를 옮긴 것이 아니다.** 그쪽 충돌은 파츠별 footprint 와 평면
+// 지면을 전제해서(`world2/decide/collide.ts`) 임의 GLB 에 그대로 못 쓴다. 감독이
+// 요구한 것은 코드가 아니라 **결과**이므로 임의 씬에서 성립하는 방식으로 새로 짰다
+// (`glb-collide.js`).
+//
+// ── 지금 **안** 하는 것 (일부러 / 아직) ─────────────────────────────────────
+// · **후처리·잔디·TSL 물 — 아직.** 이 페이지는 plain `three`(WebGLRenderer)이고
+//   world2 는 `three/webgpu` 라 TSL 노드가 안 돈다. 렌더러 교체는 world7 까지 함께
+//   흔드는 설계 분기라 별건이다.
+// · **하늘/시간대 — 아직.** 엔진(`sky.js`, 1609줄)은 plain three 지만 어댑터가
+//   world2 계열 타입을 물고 있어 배선을 새로 써야 한다.
+// · **미니맵·NPC·물 배치·편집·저장 — 원리상 안 된다.** 전부 「어디가 도로·물·파츠인가」
+//   를 절차적 판정 산출물에서 읽는다. 임의 GLB 에는 그 선언이 없다.
 // · 저장 없음 — 고른 파일은 브라우저 안에서만 산다(무저장 원칙).
 
 import * as THREE from 'three';
@@ -44,6 +61,12 @@ import { GLTFLoader } from '../vendor/GLTFLoader.js';
 // 조이스틱 DOM 은 안 쓴다(아래 «반쪽 터치»): 왼쪽 절반이 이동, 오른쪽 절반이 시점이라
 // 그릴 손잡이가 없다.
 import { JOY_RADIUS } from './shared/joystick-look.js';
+// 걷기 판정 — 임의 GLB 에서 지면을 딛고 벽에 막힌다. world2 의 충돌은 파츠 목록을
+// 전제하므로 옮길 수 없고, 같은 «결과» 를 임의 씬에서 성립하는 방식으로 새로 짰다.
+import { buildColliders, createWalker, groundBelow, RADIUS } from './glb-collide.js';
+// 터치 조이스틱 손잡이 — 룩 값은 `shared/joystick-look.js` 한 곳이다.
+import { createStick } from './glb-stick.js';
+import { installDiag } from './glb-diag.js';
 
 const EYE = 1.6;
 const WALK = 3.2;         // m/s — 넓은 모델을 훑기에 lab(2.6)보다 조금 빠르게
@@ -70,6 +93,10 @@ const PAGE = document.body.dataset.page || 'glb-world';
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+// 그림자 — world2 도 실시간 그림자를 쓴다(감독 지시 「기본 기능 다」).
+// `PCFSoft` 는 world2 와 같은 종류다. 프러스텀은 씬 크기에서 유도한다(`place()`).
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fb4d8);
 const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 4000);
@@ -96,6 +123,9 @@ let vx = 0, vz = 0;
 const pos = new THREE.Vector3(0, EYE, 0);
 const keys = { f: 0, b: 0, l: 0, r: 0, up: 0, down: 0, run: 0 };
 let ready = false;
+let walker = null;      // 걷기 판정기 — `place()` 에서 씬마다 새로 만든다
+let fly = false;        // F 로 토글. 기본은 **걷기**(감독 지시: world2 의 기본 기능)
+const stick = createStick(document);   // 마크업이 없으면 null — 그러면 손잡이만 안 그린다
 
 /**
  * 「걸어다닐 세계」와 「물건」을 가르는 크기(m). 가장 긴 수평 축이 이보다 크면 **안에**
@@ -109,22 +139,6 @@ let ready = false;
  */
 const WALKABLE_SPAN = 60;
 
-/**
- * (x, z) 에서 **지면 높이**를 찾는다. 바운딩 최저점은 지면이 아니다 — world2 는
- * `box.min.y` 가 **물 바닥**이라 그것을 쓰면 땅속에 선다(감독 신고의 절반).
- *
- * 위에서 아래로 한 번 쏜다. 못 맞으면 바운딩 최저점으로 폴백한다(속이 빈 모델).
- * ⚠ 상시가 아니라 **스폰 1회**다. 28,705 메시에서도 three 가 메시별 경계구로 먼저
- * 거르므로 한 번은 싸다 — 실측 소요는 아래 `place()` 호출부 로그로 남긴다.
- */
-function groundY(x, z, box) {
-  if (!root) return box.min.y;
-  const rc = new THREE.Raycaster();
-  rc.set(new THREE.Vector3(x, box.max.y + 1, z), new THREE.Vector3(0, -1, 0));
-  rc.far = (box.max.y - box.min.y) + 2;
-  const hit = rc.intersectObject(root, true)[0];
-  return hit ? hit.point.y : box.min.y;
-}
 
 /** 씬 전체를 놓아 준다 — 다른 파일을 고르면 이전 것이 그대로 남으면 안 된다 */
 function disposeRoot() {
@@ -187,7 +201,7 @@ function place(gltf) {
       // 시야를 막는다. 비껴서면 구조물과 그 너머 풍경이 함께 보인다.
       const back = Math.min(span * 0.07, 120);
       const bx = back * 0.62, bz = back * 0.78;
-      pos.set(mid.x + bx, groundY(mid.x + bx, mid.z + bz, box) + EYE, mid.z + bz);
+      pos.set(mid.x + bx, groundBelow(root, mid.x + bx, mid.z + bz, box) + EYE, mid.z + bz);
       // `yaw = 0` 이 -z 를 보는 규약이므로 중심 방향은 atan2(bx, bz) 다.
       yaw = Math.atan2(bx, bz);
     } else {
@@ -222,35 +236,40 @@ function place(gltf) {
   // 안 보일 뿐 문구는 남아 있고, CSS 가 바뀌는 순간 거짓 표시가 된다 — 실측 스냅에
   // `{"hud":"메시 28,707…","status":"… 읽는 중…","pickHidden":true}` 로 찍혔다.
   if (statusEl) statusEl.textContent = '';
+  // ── 걷기 판정기 — 씬이 바뀌면 다시 굽는다 ────────────────────────────────
+  // 부팅 1회 비용이다. 실측 소요는 HUD 옆 `[걷기]` 표시가 뜨는 시점으로 확인한다.
+  {
+    const t0 = performance.now();
+    walker = createWalker(buildColliders(root));
+    console.info(`[${PAGE}] 충돌 준비 ${Math.round(performance.now() - t0)}ms`);
+  }
+
+  // ── 그림자 — world2 도 실시간 그림자를 쓴다(감독 지시 「기본 기능 다」) ────
+  // 프러스텀을 **씬 크기에서 유도한다**. world2 는 셀 크기로 잡는데 그 값은 파셀
+  // 격자에서 오므로 임의 GLB 에 없다 — 바운딩으로 대신한다.
+  if (!box.isEmpty()) {
+    const size = box.getSize(new THREE.Vector3());
+    const mid = box.getCenter(new THREE.Vector3());
+    const half = Math.min(Math.max(Math.max(size.x, size.z) * 0.09, 40), 260);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    const c = sun.shadow.camera;
+    c.left = -half; c.right = half; c.top = half; c.bottom = -half;
+    c.near = 1; c.far = Math.max(600, size.y * 4 + half * 4);
+    c.updateProjectionMatrix();
+    // 태양은 **사람을 따라다닌다** — 고정하면 960m 세계에서 곧 프러스텀 밖으로 나간다.
+    sun.target.position.copy(mid);
+    scene.add(sun.target);
+    root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  }
+
   ready = true;
 
-  // ── 진단 훅 — **「어디에 서 있는가」를 재는 축이 없었다** ────────────────────
-  // 감독 신고(2026-08-26) *"8을 클릭해보니 스폰 위치도 없고. 걸어다닐수가 없네"*.
-  // 그 회차의 내 실측은 «HUD 가 떴다 · 첫 화면이 물러났다» 만 봤고 **PASS 였다** —
-  // 모델이 실렸다는 것과 사람이 설 자리에 섰다는 것은 다른 일이다. 라벨이 아니라
-  // 씬을 세는 훅(`__world2.importedGlb`)을 앞 회차에 만들어 놓고도 여기서는
-  // 같은 형태를 반복했다. 이제 좌표로 잰다.
-  window.__glbWorld = {
-    pose: () => ({
-      pos: { x: +pos.x.toFixed(2), y: +pos.y.toFixed(2), z: +pos.z.toFixed(2) },
-      yaw: +yaw.toFixed(3), pitch: +pitch.toFixed(3), ready,
-      box: box.isEmpty() ? null : {
-        min: { x: +box.min.x.toFixed(2), y: +box.min.y.toFixed(2), z: +box.min.z.toFixed(2) },
-        max: { x: +box.max.x.toFixed(2), y: +box.max.y.toFixed(2), z: +box.max.z.toFixed(2) },
-      },
-      far: camera.far,
-    }),
-    /** 카메라 정면으로 쏴서 **무엇이 얼마나 떨어져 있는지** 본다. 빈 화면의 실측이다. */
-    ahead: () => {
-      if (!root) return null;
-      const rc = new THREE.Raycaster();
-      const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
-      rc.set(camera.position, dir);
-      rc.far = camera.far;
-      const hit = rc.intersectObject(root, true)[0];
-      return hit ? { dist: +hit.distance.toFixed(1), name: hit.object.name || '(무명)' } : null;
-    },
-  };
+  // 「어디에 서 있는가」를 재는 축은 `glb-diag.js` 한 곳이다 — 왜 따로 뒀는지도 거기 있다.
+  installDiag(() => ({
+    pos, yaw, pitch, ready, fly, box, camera, root, walker,
+    setYaw: (v) => { yaw = v; return v; },
+  }));
   pick?.classList.add('hide');
 }
 
@@ -348,6 +367,12 @@ const KEY = {
 };
 addEventListener('keydown', (e) => { const k = KEY[e.code]; if (k) { keys[k] = 1; e.preventDefault(); } });
 addEventListener('keyup', (e) => { const k = KEY[e.code]; if (k) keys[k] = 0; });
+// F — 걷기 ↔ 비행. 기본은 **걷기**다(감독 지시). 비행은 「위에서 내려다보기」용으로 남긴다.
+addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyF' || !ready) return;
+  fly = !fly;
+  say(fly ? '✈ 비행 — Space/Q 로 위아래 · F 로 되돌리기' : '🚶 걷기 — 지면을 딛고 벽에 막힙니다');
+});
 
 canvas.addEventListener('click', () => { if (ready) canvas.requestPointerLock?.(); });
 addEventListener('mousemove', (e) => {
@@ -363,13 +388,18 @@ addEventListener('mousemove', (e) => {
 let moveTouch = null, lookTouch = null;
 const stale = (list) => {
   const live = new Set([...list].map((t) => t.identifier));
-  if (moveTouch && !live.has(moveTouch.id)) moveTouch = null;
+  if (moveTouch && !live.has(moveTouch.id)) { moveTouch = null; stick?.hide(); }
   if (lookTouch && !live.has(lookTouch.id)) lookTouch = null;
 };
 addEventListener('touchstart', (e) => {
   stale(e.touches);
   for (const t of e.changedTouches) {
-    if (t.clientX < innerWidth / 2) { if (!moveTouch) moveTouch = { id: t.identifier, x0: t.clientX, y0: t.clientY, ux: 0, uz: 0 }; }
+    if (t.clientX < innerWidth / 2) {
+      if (!moveTouch) {
+        moveTouch = { id: t.identifier, x0: t.clientX, y0: t.clientY, ux: 0, uz: 0 };
+        stick?.show(t.clientX, t.clientY);   // 누른 자리에 손잡이가 뜬다
+      }
+    }
     else if (!lookTouch) lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
   }
 }, { passive: true });
@@ -382,6 +412,7 @@ addEventListener('touchmove', (e) => {
       const s = Math.min(1, len / JOY_RADIUS);
       moveTouch.ux = (dx / len) * s;
       moveTouch.uz = (dy / len) * s;
+      stick?.move(moveTouch.ux, moveTouch.uz, s);
     } else if (lookTouch && t.identifier === lookTouch.id) {
       yaw -= (t.clientX - lookTouch.x) * TOUCH_SENS;
       pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch - (t.clientY - lookTouch.y) * TOUCH_SENS));
@@ -400,8 +431,11 @@ function frame(now) {
   // 2초 눌러 **0.23m** 이동(기대 ~6m). 4fps 면 실제 dt 는 0.25s 인데 0.05 로 잘려
   // 시간의 20%만 흐른다 — 「입력이 안 먹는다」로 보인다. 모바일에서 5MB GLB 를 그리다
   // fps 가 떨어지면 같은 일이 난다.
-  // 0.1 로 넓힌다. 이 페이지는 **충돌이 없어** 한 프레임에 멀리 가도 통과할 벽이 없다
-  // (그것이 여기서 큰 dt 가 안전한 이유다 — 충돌이 있는 페이지에 이 값을 옮기지 마라).
+  // 0.1 로 넓힌다. ⚠ 이 주석은 한때 *"이 페이지는 충돌이 없어 한 프레임에 멀리 가도
+  // 통과할 벽이 없다"* 를 근거로 들었고 **그 전제는 2026-08-26 에 사라졌다**(충돌 신설).
+  // 지금 0.1 이 안전한 근거는 다르다: 최고 속도 RUN(9m/s) × 0.1s = **0.9m** 이고
+  // 벽 검사가 `RADIUS + 이동거리` 를 앞서 보므로 그 한 걸음도 검사 범위 안이다.
+  // 값을 더 키우면 그 관계가 깨진다 — 키울 거면 `blocked` 의 `dist` 를 같이 본다.
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
@@ -415,17 +449,47 @@ function frame(now) {
     const len = Math.hypot(ix, iz);
     if (len > 1) { ix /= len; iz /= len; }
     const speed = keys.run ? RUN : WALK;
-    // 시점 기준 이동. `yaw = 0` 이 -z 를 보는 규약(world2 와 같다).
+    // ── 시점 기준 이동 ──────────────────────────────────────────────────
+    // `yaw = 0` 이 **-z 를 보는** 규약이다(three 카메라 기본 시선). 그러면
+    //   시선  = (-sin, -cos)      오른쪽 = (cos, -sin)
+    // 이고, 전진(W)은 `iz = -1` 이므로 `iz` 를 시선에 **그대로** 곱해야 한다.
+    //
+    // ⚠ **첫 판본은 두 항의 부호가 뒤집혀 W 가 뒤로 갔다**(2026-08-26 실측: 벽으로
+    // 밀었는데 중심에서 14m → 17.45m 로 **멀어졌다**). 그전 회차 검사가 이것을
+    // 놓친 이유는 「걸어서 움직였다」만 보고 **방향을 안 봤기** 때문이다 — 거리는
+    // 늘었으니 초록이었다. 감독이 *"걸어다닐수가 없네"* 라고 한 것의 한 갈래다.
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
-    const tx = (ix * cos - iz * sin) * speed;
-    const tz = (-ix * sin - iz * cos) * speed;
+    const tx = (ix * cos + iz * sin) * speed;
+    const tz = (-ix * sin + iz * cos) * speed;
     // 지수 감쇠 — 즉시 최고속이 아니라 붙었다 떨어지는 손맛(`player.js` 와 같은 방식).
     const k = 1 - Math.exp(-ACCEL * dt);
     vx += (tx - vx) * k;
     vz += (tz - vz) * k;
-    pos.x += vx * dt;
-    pos.z += vz * dt;
-    pos.y += (keys.up - keys.down) * speed * dt;   // 날아서 위에서 내려다보기
+
+    const stepX = vx * dt, stepZ = vz * dt;
+    if (fly || !walker) {
+      // 자유 비행 — 예전 동작 그대로. 「위에서 내려다보기」가 이쪽 몫이 됐다.
+      pos.x += stepX;
+      pos.z += stepZ;
+      pos.y += (keys.up - keys.down) * speed * dt;
+    } else {
+      walker.refresh(pos, now);
+      // ── 벽 — **축을 따로 본다.** 함께 보면 벽에 스치기만 해도 완전히 멈추는데,
+      // 따로 보면 막힌 축만 죽고 나머지가 살아 **미끄러진다**(벽을 따라 걷는 느낌).
+      const knee = EYE - 0.5;   // 눈이 아니라 무릎에서 쏜다 — 난간·연석을 놓치지 않게
+      if (walker.blocked(pos.x, pos.y, pos.z, stepX, 0, Math.abs(stepX) + RADIUS, knee)) vx = 0;
+      else pos.x += stepX;
+      if (walker.blocked(pos.x, pos.y, pos.z, 0, stepZ, Math.abs(stepZ) + RADIUS, knee)) vz = 0;
+      else pos.z += stepZ;
+
+      // ── 지면 — 딛고 선다. 계단·경사는 보간으로 부드럽게 따라간다.
+      const g = walker.ground(pos.x, pos.y, pos.z);
+      if (g !== null) {
+        // ⚠ 못 찾으면 **그대로 둔다**(떨어뜨리지 않는다). 임의 GLB 에는 바닥이 없는
+        // 자리가 흔하고, 거기서 중력을 주면 무한 낙하가 된다 — 되돌릴 길이 없다.
+        pos.y += ((g + EYE) - pos.y) * Math.min(1, dt * 12);
+      }
+    }
 
     camera.position.copy(pos);
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
