@@ -93,7 +93,7 @@ export class InstancePools {
   private group = new THREE.Group();
 
   constructor(parent: THREE.Object3D) {
-    this.group.name = 'world8:instances';
+    this.group.name = 'glb-world:instances';
     parent.add(this.group);
   }
 
@@ -103,9 +103,9 @@ export class InstancePools {
    */
   create(spec: PoolSpec): void {
     if (this.sealedAt !== null) {
-      throw new Error(`[world8] 풀 생성은 부팅 중에만 허용된다(개수 불변식). key=${spec.key}`);
+      throw new Error(`[glb-world] 풀 생성은 부팅 중에만 허용된다(개수 불변식). key=${spec.key}`);
     }
-    if (this.pools.has(spec.key)) throw new Error(`[world8] 중복 풀 키: ${spec.key}`);
+    if (this.pools.has(spec.key)) throw new Error(`[glb-world] 중복 풀 키: ${spec.key}`);
     const mesh = new THREE.InstancedMesh(spec.geometry, spec.material, spec.max);
     // 매 프레임 행렬을 쓰므로 정적 힌트를 주지 않는다.
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

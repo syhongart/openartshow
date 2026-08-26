@@ -161,7 +161,7 @@ export function mountGlbWorld(
     });
   }
 
-  group.name = 'world8:glb-source';
+  group.name = 'glb-world:glb-source';
   (scene as unknown as { add(o: Object3D): void }).add(group);
 
   const b = new THREE.Box3().setFromObject(group as never);

@@ -195,7 +195,7 @@ export function createImportedScene(scene: Scene): ImportedScene {
       // 이전 GLB 가 이미 사라진 뒤이고(복원 수단이 없다) ② 로드 중 화면이 비어 깜빡인다.
       clear();
       const g = new THREE.Group();
-      g.name = 'world8:imported-glb';
+      g.name = 'glb-world:imported-glb';
       (g as unknown as { add(o: Object3D): void }).add(loaded);
       (scene as unknown as { add(o: Object3D): void }).add(g);
       root = g;
@@ -207,7 +207,7 @@ export function createImportedScene(scene: Scene): ImportedScene {
       const kids = (scene as unknown as { children?: unknown[] }).children ?? [];
       for (const c of kids) {
         const node = c as { name?: string; traverse?(cb: (o: unknown) => void): void };
-        if (node.name !== 'world8:imported-glb') continue;
+        if (node.name !== 'glb-world:imported-glb') continue;
         groups++;
         node.traverse?.((o) => {
           const m = o as { isMesh?: boolean; visible?: boolean };

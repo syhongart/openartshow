@@ -512,7 +512,7 @@ export class SkySystem implements System {
     this.shadowTexel = opts.shadowTexel ?? 0;
     this.dayLight = opts.dayLight;
     this.dome = makeDome();
-    this.dome.name = 'world8:sky';
+    this.dome.name = 'glb-world:sky';
     scene.add(this.dome);
 
     this.engine = createSkySystem({

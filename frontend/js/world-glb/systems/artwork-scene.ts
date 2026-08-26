@@ -58,7 +58,7 @@ export function createArtworkScene(deps: ArtworkSceneDeps): ArtworkScene {
   const perParcel = deps.perParcel ?? ART_LIGHT_PER_PARCEL;
 
   const root = new THREE.Group();
-  root.name = 'world8:artwork';
+  root.name = 'glb-world:artwork';
   scene.add(root);
 
   // ── 라이트 풀 — 여기서 전부 만든다(조건 1) ──────────────────────────────

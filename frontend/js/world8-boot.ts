@@ -27,12 +27,24 @@
 // ⚠ **열 파일은 이 스크립트가 정하지 않는다** — `<body data-glb>` 가 가리킨다.
 // 그래야 「어느 GLB 가 세계인가」가 페이지의 사실로 남고, 스크립트는 그것을 모른다.
 
-import { startWorld8 } from './world-glb/main.js';
+import { startGlbWorld } from './world-glb/main.js';
+import { assetUrl } from './world-glb/asset-url.js';
 
 const canvas = document.getElementById('w8-canvas');
 if (canvas instanceof HTMLCanvasElement) {
-  startWorld8(canvas).catch((err) => {
-    // startWorld8은 부팅 실패를 로딩 화면에 표시하고 null을 돌려준다. 여기 오는 건
+  startGlbWorld(canvas, {
+    tag: 'world8',
+    // 고정 자산 — `<body data-glb>` 가 가리킨다. **부팅의 `stream` 단계에서 불리므로**
+    // 5MB 를 받는 시간이 로딩 진행률에 포함된다.
+    source: async () => {
+      const rel = document.body?.dataset?.glb ?? '';
+      if (!rel) throw new Error('data-glb 가 비어 있다 — 열 세계가 없다');
+      const res = await fetch(assetUrl(rel));
+      if (!res.ok) throw new Error(`GLB 를 못 받았다: HTTP ${res.status}`);
+      return res.arrayBuffer();
+    },
+  }).catch((err: unknown) => {
+    // startGlbWorld 는 부팅 실패를 로딩 화면에 표시하고 null 을 돌려준다. 여기 오는 건
     // 그보다 바깥의 예외이므로 콘솔에 남긴다 — 조용히 삼키면 원인 추적이 불가능해진다.
     console.error('[world8] 진입 실패', err);
   });

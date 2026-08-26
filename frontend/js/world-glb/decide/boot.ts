@@ -38,7 +38,7 @@ const TOTAL_WEIGHT = BOOT_STAGES.reduce((s, x) => s + x.weight, 0);
 
 export function stageSpec(id: BootStage): StageSpec {
   const s = BOOT_STAGES.find((x) => x.id === id);
-  if (!s) throw new Error(`[world8] 알 수 없는 부팅 단계: ${id}`);
+  if (!s) throw new Error(`[glb-world] 알 수 없는 부팅 단계: ${id}`);
   return s;
 }
 

@@ -116,7 +116,7 @@ export class Kernel {
    * 부팅 중에만 부른다(세션 도중 System이 늘면 순서 계약이 흔들린다).
    */
   add(sys: System): this {
-    if (this.running) throw new Error(`[world8] System 등록은 부팅 중에만: ${sys.name}`);
+    if (this.running) throw new Error(`[glb-world] System 등록은 부팅 중에만: ${sys.name}`);
     this.systems.push(sys);
     return this;
   }

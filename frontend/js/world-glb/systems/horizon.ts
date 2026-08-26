@@ -124,7 +124,7 @@ export class HorizonBand {
       fog: false,
     });
     this.mesh = new THREE.Mesh(geo, this.mat);
-    this.mesh.name = 'world8:horizon';
+    this.mesh.name = 'glb-world:horizon';
     // 밴드는 늘 카메라를 감싸고 있어 컬링 판정이 의미가 없다(구면의 일부라 바운딩
     // 구가 카메라를 포함한다). 판정을 건너뛰는 편이 싸고, 돔도 같은 이유로 끈다.
     this.mesh.frustumCulled = false;

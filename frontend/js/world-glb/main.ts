@@ -47,6 +47,7 @@ import { createGlbCollider } from './systems/glb-collider.js';
 import { DEFAULT_BODY_R } from './systems/collision.js';
 import { mountGlbWorld, describeGlb, type GlbSourceResult } from './systems/glb-source.js';
 import { aheadOf } from './diag-ahead.js';
+import type { GlbWorldOptions } from './options.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
@@ -233,7 +234,10 @@ export interface WorldHandle {
   dispose(): void;
 }
 
-export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandle | null> {
+export async function startGlbWorld(
+  canvas: HTMLCanvasElement,
+  opts: GlbWorldOptions,
+): Promise<WorldHandle | null> {
   const loadingParts = findLoading(document);
   const loading = loadingParts ? new LoadingView(loadingParts) : null;
 
@@ -715,7 +719,7 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
     },
     onError: (stage, err) => {
       loading?.fail(stage, err);
-      console.error('[world8] 부팅 실패', stage, err);
+      console.error(`[${opts.tag}] 부팅 실패`, stage, err);
     },
     steps: {
       renderer: async () => {
@@ -846,7 +850,7 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
             textureUrl: (src) => texturePreviews.get(src) ?? assetUrl(src),
             setTexturePreview: (src, url) => { texturePreviews.set(src, url); },
           },
-          (name, err) => console.error(`[world8] 기능 조립 실패: ${name}`, err),
+          (name, err) => console.error(`[${opts.tag}] 기능 조립 실패: ${name}`, err),
         );
       },
 
@@ -919,13 +923,9 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 받게 한다(`glb-source.ts`). 접촉그림자 데칼은 파츠 전용 추가 레이어이고, 붙을
       // 대상이 없어 안 붙는 것이다 — 코드를 고쳐서 뺀 것이 아니다.
       stream: async (report, yieldFrame) => {
-        // ① 파일을 받는다. `<body data-glb>` 가 가리킨다 — 페이지가 자산을 정하고
-        //    스크립트는 그것을 모른다(world7 과 같은 스크립트를 쓸 수 있던 이유).
-        const rel = document.body?.dataset?.glb ?? '';
-        if (!rel) throw new Error('data-glb 가 비어 있다 — 열 세계가 없다');
-        const res = await fetch(assetUrl(rel));
-        if (!res.ok) throw new Error(`GLB 를 못 받았다: HTTP ${res.status}`);
-        const buf = await res.arrayBuffer();
+        // ① 파일을 받는다 — **여기가 두 페이지의 유일한 갈림이다.** world8 은 고정
+        //    자산을, world7 은 사람이 고른 파일을 낸다(경계는 `options.ts` 한 곳).
+        const buf = await opts.source();
         report(0.35);
         await yieldFrame();
 
@@ -1180,7 +1180,7 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 기능 정리. System의 `dispose`는 커널이 부르므로, 여기서는 기능이 따로 붙인
       // UI·리스너만 거둔다. 여기에도 기능별 분기가 없다.
       for (const m of features) {
-        try { m.instance.dispose?.(); } catch (err) { console.error(`[world8] ${m.name} 정리 실패`, err); }
+        try { m.instance.dispose?.(); } catch (err) { console.error(`[${opts.tag}] ${m.name} 정리 실패`, err); }
       }
       // non-null 단언을 쓰는 이유: 이 셋은 부팅 콜백 안에서 할당되는데, TS 제어흐름
       // 분석은 함수 내부 할당을 추적하지 않아 바깥에서는 여전히 null로 본다.

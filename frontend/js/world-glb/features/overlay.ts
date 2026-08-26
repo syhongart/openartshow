@@ -165,7 +165,7 @@ export const overlayFeature: Feature = {
       if (!cache) cache = createModelCache(diag, loadGLB);
       if (!root) {
         const g = new (ns as unknown as ThreeGroupNS).Group();
-        g.name = 'world8:overlay';
+        g.name = 'glb-world:overlay';
         env.scene.add(g as never);
         root = g as unknown as Object3D;
       }
