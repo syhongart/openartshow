@@ -55,7 +55,16 @@
     backdrop-filter:blur(6px)}
   #keys{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:5;
     color:#ffffff66;font-size:11.5px;line-height:1.7;pointer-events:none}
-  @media (max-width:640px){ #keys{display:none} }
+  /* ⚠ 여기가 `#keys{display:none}` 이었고 **모바일에서 조작 안내가 통째로 사라졌다**
+     (감독 신고 2026-08-26 "걸어다닐수가 없네"). 이 페이지는 조이스틱 손잡이를 안 그리는
+     「반쪽 터치」라 화면에 아무 표시가 없는데, 그 유일한 설명까지 숨긴 것이다.
+     좁은 화면에서는 **키보드 줄만 숨기고 터치 줄을 남긴다.** */
+  #keys .kb{display:block}
+  #keys .touch{display:none;font-size:12.5px;color:#ffffff88}
+  @media (max-width:860px), (pointer:coarse){
+    #keys .kb{display:none}
+    #keys .touch{display:block}
+  }
   @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
 </style>
   <script type="module" crossorigin src="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js"></script>
@@ -63,7 +72,7 @@
   <script type="module" crossorigin src="/openartshow/_bundle/BufferGeometryUtils-C6v7s0Vg.js"></script>
   <script type="module" crossorigin src="/openartshow/_bundle/GLTFLoader-D7IH8cP1.js"></script>
   <script type="module" crossorigin src="/openartshow/_bundle/joystick-look-BDokgZh8.js"></script>
-  <script type="module" crossorigin src="/openartshow/_bundle/glb-world-DKrXw841.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/glb-world-Dy8jn_Hx.js"></script>
 </head>
 <body data-page="world7">
 <canvas id="c"></canvas>
@@ -87,10 +96,10 @@
      번째 파일이 실패했을 때 화면에 아무것도 안 나온다(검수관 권고 P8). -->
 <div id="toast" hidden></div>
 <div id="keys">
-  WASD · 화살표 — 이동<br>
+  <span class="kb">WASD · 화살표 — 이동<br>
   화면 클릭 → 마우스로 시점<br>
-  Shift — 빠르게 · Space / Q — 위 / 아래<br>
-  모바일: 왼쪽 절반 이동 · 오른쪽 절반 시점
+  Shift — 빠르게 · Space / Q — 위 / 아래</span>
+  <span class="touch">👆 <b>왼쪽 절반</b>을 끌면 걷고 · <b>오른쪽 절반</b>을 끌면 둘러봅니다</span>
 </div>
 
 </body>
