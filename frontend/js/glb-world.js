@@ -257,7 +257,6 @@ function place(gltf) {
   // `{"hud":"메시 28,707…","status":"… 읽는 중…","pickHidden":true}` 로 찍혔다.
   if (statusEl) statusEl.textContent = '';
   // ── 걷기 판정기 — 씬이 바뀌면 다시 굽는다 ────────────────────────────────
-  // 부팅 1회 비용이다. 실측 소요는 HUD 옆 `[걷기]` 표시가 뜨는 시점으로 확인한다.
   {
     // ⚠ 타이머는 위 `buildColliders` 를 감싼다(검수관 N2) — 한때 `createWalker` 만
     // 재고 «0ms» 를 찍었고 그것은 클로저만 만들어 **구조적으로 항상 0** 이다.
