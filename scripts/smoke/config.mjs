@@ -287,6 +287,11 @@ export const LIVE_PAGES = [
   // (behind-flag 인데 검사가 0이던 사고가 `visit`·`lab-glb` 에서 이미 났다 — 검수관
   //  반려 B1, 2026-08-05.)
   { name: 'app/world7',        url: '/app/world7.html', webgl: true, viteOnly: true },
+  // ── world8 — world7 과 반대로 **부팅만으로 5MB 를 받아 세운다** (2026-08-26) ────
+  // 고정 자산을 여는 페이지라 위 world7 의 「고르기 전에는 비어 있다」가 여기서는
+  // 성립하지 않는다 — 열면 곧장 로더가 돈다. 그래서 이 항목은 **자산 요청까지 포함해**
+  // 콘솔 에러 0 을 본다(경로가 틀리면 여기서 잡힌다 — world7 은 그 축이 원리상 0이다).
+  { name: 'app/world8',        url: '/app/world8.html', webgl: true, viteOnly: true },
   // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
   // 하면 그 사이 자기완결·CSP 검사가 0 인 페이지가 배포되고, 그것이 정확히 visit·
   // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.

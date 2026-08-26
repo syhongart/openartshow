@@ -1,4 +1,15 @@
-// world7.js — [실험] **내 GLB 를 세계로 삼아 걸어다닌다.** behind-flag(라이브 미노출).
+// glb-world.js — [실험] **GLB 를 세계로 삼아 걸어다닌다.** behind-flag(라이브 미노출).
+//
+// ── 이 파일은 **두 페이지**를 섬긴다 ────────────────────────────────────────
+//   · `world7.html` — 사용자가 **고른** 파일이 세계가 된다(파일 고르기 + 드래그&드롭)
+//   · `world8.html` — `<body data-glb="…">` 로 지정된 **고정 파일**이 부팅 즉시 열린다
+//
+// 갈리는 것은 **파일이 어디서 오는가** 하나뿐이라 코드를 나누지 않았다 — 268줄을
+// 복사하면 그것이 곧 값 미러링이고, 한쪽만 고쳐도 아무도 모른다. 대신 DOM 을
+// **있으면 배선하고 없으면 넘어간다**(world8 에는 고르기 버튼이 없다).
+//
+// ⚠ 파일 이름이 `world7.js` 였다. 한 페이지 전용일 때는 맞는 이름이었지만 world8 이
+// 같은 코드를 쓰게 되면서 **이름이 거짓이 됐다.** 역할로 바꿨다(2026-08-26).
 //
 // ── 감독 지시 2026-08-25 ─────────────────────────────────────────────────────
 // *"아까 그 파일을 올려서 월드7로 해봐. 테스트로 보게"*
@@ -9,6 +20,12 @@
 // 것은 화면에 안 나타난다(위치·크기·회전만 따라온다).
 //
 // 여기는 반대다. **파일이 곧 세계다** — 우리 파츠 규약을 아예 안 본다.
+//
+// ── 감독 지시 2026-08-26 — world8 ───────────────────────────────────────────
+// *"월드8에 그 glb를 올려보자."* 「그 glb」는 감독 PC 의 블렌더 편집본인데 감독이
+// *"지금 그파일이 없어서 내가 못올려"* 라고 했다. 그래서 **같은 왕복을 저장소에서
+// 재현해** 자산으로 굽고(`scripts/asset/` 두 스크립트), world8 이 그것을 바로 연다.
+// 감독은 링크만 열면 된다 — 고를 파일이 없어도 화면이 뜬다.
 //
 // ── 왜 `lab-glb.js` 를 안 쓰나 ──────────────────────────────────────────────
 // 저쪽은 **고정 파일 + 고정 층 + 고정 바운딩**이 전제다(`lab-space.glb` 실사로 얻은
@@ -44,6 +61,11 @@ const statusEl = document.getElementById('status');
 const hud = document.getElementById('hud');
 const againBtn = document.getElementById('again');
 const toast = document.getElementById('toast');
+
+// 어느 페이지인가 — 로그 접두사와 «고정 파일» 여부가 여기서 갈린다.
+// `data-glb` 가 있으면 그 파일이 세계다(world8). 없으면 사용자가 고른다(world7).
+const FIXED_GLB = document.body.dataset.glb || '';
+const PAGE = document.body.dataset.page || 'glb-world';
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -122,11 +144,14 @@ function place(gltf) {
     if (g?.index) tris += g.index.count / 3;
     else if (g?.attributes?.position) tris += g.attributes.position.count / 3;
   });
-  hud.textContent = `메시 ${meshes.toLocaleString()} · 삼각형 ${Math.round(tris).toLocaleString()}`;
-  hud.hidden = false;
-  againBtn.hidden = false;      // 다른 파일을 열 문을 남긴다(검수관 권고 P8)
+  // DOM 은 **있으면 쓰고 없으면 넘어간다** — world8 에는 고르기 버튼이 없다.
+  if (hud) {
+    hud.textContent = `메시 ${meshes.toLocaleString()} · 삼각형 ${Math.round(tris).toLocaleString()}`;
+    hud.hidden = false;
+  }
+  if (againBtn) againBtn.hidden = false;   // 다른 파일을 열 문을 남긴다(검수관 권고 P8)
   ready = true;
-  pick.classList.add('hide');
+  pick?.classList.add('hide');
 }
 
 /**
@@ -136,48 +161,80 @@ function place(gltf) {
  * 연 두 번째 파일이 실패하면 **화면에 아무것도 안 나왔다**(검수관 권고 P8).
  */
 function say(msg) {
-  statusEl.textContent = msg;           // 첫 화면에서는 여기가 보인다
+  if (statusEl) statusEl.textContent = msg;    // 첫 화면에서는 여기가 보인다
+  if (!toast) return;
   toast.textContent = msg;
   toast.hidden = false;
   clearTimeout(say._t);
   say._t = setTimeout(() => { toast.hidden = true; }, 8000);
 }
 
-// ── 파일 고르기 ─────────────────────────────────────────────────────────────
+// ── 불러오기 ────────────────────────────────────────────────────────────────
 const loader = new GLTFLoader();
-pickBtn.addEventListener('click', () => fileInput.click());
-againBtn.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', async () => {
-  const f = fileInput.files?.[0];
-  if (!f) return;
-  say(`${f.name} 읽는 중…`);
-  // blob URL — 로더가 URL 만 받는다. CSP 가 `blob:` 을 허용한다(이 페이지 헤더).
-  const url = URL.createObjectURL(f);
+
+/**
+ * URL 하나를 열어 세계로 세운다. 고른 파일(blob URL)과 고정 파일(같은 오리진)이
+ * **같은 경로**를 탄다 — 갈라 놓으면 한쪽만 고쳐지는 자리가 생긴다.
+ *
+ * ⚠ 실패를 **던지지 않는다.** 화면에 적고 `false` 를 돌려준다 — 부팅 시 고정 파일이
+ * 실패했을 때 예외가 위로 올라가면 그 뒤의 조작 배선이 통째로 안 걸린다.
+ */
+async function loadFromUrl(url, label) {
+  say(`${label} 읽는 중…`);
   try {
-    const gltf = await loader.loadAsync(url);
+    const gltf = await loader.loadAsync(url, (ev) => {
+      // 큰 파일은 몇십 초가 걸린다 — 빈 화면은 「안 된다」와 구별되지 않는다.
+      if (!ev?.lengthComputable || !ev.total) return;
+      say(`${label} 읽는 중… ${Math.round((ev.loaded / ev.total) * 100)}%`);
+    });
     place(gltf);
-    toast.hidden = true;                // 성공했으면 «읽는 중» 을 지운다
+    if (toast) toast.hidden = true;            // 성공했으면 «읽는 중» 을 지운다
+    return true;
   } catch (err) {
     // 조용히 삼키지 않는다 — 무엇이 잘못됐는지 화면에 적는다.
-    console.error('[world7] GLB 로드 실패', err);
+    console.error(`[${PAGE}] GLB 로드 실패`, err);
     say(`✗ 못 읽었다: ${err instanceof Error ? err.message : err}`);
-  } finally {
-    URL.revokeObjectURL(url);
-    fileInput.value = '';        // 같은 파일을 다시 고를 수 있게
+    return false;
   }
-});
+}
 
-// 드래그&드롭도 받는다 — 블렌더에서 갓 내보낸 파일을 창에 던지는 것이 가장 빠르다.
-addEventListener('dragover', (e) => e.preventDefault());
-addEventListener('drop', (e) => {
-  e.preventDefault();
-  const f = e.dataTransfer?.files?.[0];
-  if (!f) return;
-  const dt = new DataTransfer();
-  dt.items.add(f);
-  fileInput.files = dt.files;
-  fileInput.dispatchEvent(new Event('change'));
-});
+// ── 파일 고르기 — **있는 페이지에서만** 배선한다 (world7) ───────────────────
+if (fileInput) {
+  pickBtn?.addEventListener('click', () => fileInput.click());
+  againBtn?.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files?.[0];
+    if (!f) return;
+    // blob URL — 로더가 URL 만 받는다. CSP 가 `blob:` 을 허용한다(이 페이지 헤더).
+    const url = URL.createObjectURL(f);
+    try {
+      await loadFromUrl(url, f.name);
+    } finally {
+      URL.revokeObjectURL(url);
+      fileInput.value = '';        // 같은 파일을 다시 고를 수 있게
+    }
+  });
+
+  // 드래그&드롭도 받는다 — 블렌더에서 갓 내보낸 파일을 창에 던지는 것이 가장 빠르다.
+  addEventListener('dragover', (e) => e.preventDefault());
+  addEventListener('drop', (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer?.files?.[0];
+    if (!f) return;
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    fileInput.files = dt.files;
+    fileInput.dispatchEvent(new Event('change'));
+  });
+}
+
+// ── 고정 파일 — 부팅 즉시 연다 (world8) ─────────────────────────────────────
+// 상대경로를 문서 기준으로 푼다: 배포에서 이 페이지는 `/openartshow/app/` 아래에
+// 있고 자산은 그 옆 `assets/` 다. `location.href` 기준이라 base 경로가 바뀌어도 따라온다.
+if (FIXED_GLB) {
+  const name = FIXED_GLB.split('/').pop() || FIXED_GLB;
+  loadFromUrl(new URL(FIXED_GLB, location.href).href, name);
+}
 
 // ── 조작 ────────────────────────────────────────────────────────────────────
 const KEY = {

@@ -88,9 +88,13 @@ describe('진입점 SSOT', () => {
     // 테스트로 보게"*. 내보낸 GLB 를 블렌더에서 손본 뒤 **있는 그대로** 걸어보는
     // 페이지다. `lab-glb.html` 과 성격이 겹쳐 보이지만 다르다 — 저쪽은 **고정 파일**
     // (`lab-space.glb`)을 걷고, 이쪽은 **사용자가 고른 파일**이 세계가 된다.
+    // 2026-08-26 `world8.html` 추가 — 감독 지시 *"월드8에 그 glb를 올려보자."*
+    // world7 과 **같은 스크립트**를 쓰고 갈리는 것은 파일이 어디서 오는가 하나다:
+    // 저쪽은 사용자가 고르고, 이쪽은 저장소에 구워 둔 고정 자산이 부팅 즉시 열린다.
     expect(flagged).toEqual([
       'editor.html', 'lab-glb.html', 'visit.html', 'world.html',
       'world2-stylized.html', 'world3.html', 'world5.html', 'world7.html',
+      'world8.html',
     ]);
   });
 
