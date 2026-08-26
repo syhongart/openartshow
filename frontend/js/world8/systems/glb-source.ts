@@ -16,14 +16,43 @@
 // ② **반복 메시를 `InstancedMesh` 로 되묶는다** — glTF 에 인스턴싱 표현이 없어
 //    내보내기가 world2 의 인스턴스를 개별 메시로 **펴서** 저장하기 때문이다.
 //    되묶는 것이 원래 상태로의 **복원**이다(근거·실측표는 `glb-instance.js` 헤더).
-// ③ 그림자 플래그를 켠다 — world2 의 방향성 그림자(프러스텀 유도, `decide/shadow.ts`)가
-//    GLB 메시에도 그대로 걸리게 하는 자리다. **그림자 구현을 새로 짜지 않는다.**
+// ③ 그림자 플래그를 켠다 — `?shint>0` 으로 실시간 캐스터를 켠 세션에서만 의미가 있다.
 //
-// ⚠ **접촉그림자 데칼(`ShadowDecalSystem`)은 이 세계에 안 붙는다.** 그것은 파츠 슬롯
-// (`slotPool`)에 자세를 워프해 굽는 물건이고, GLB 에는 우리 파츠 슬롯이 **없다.**
-// 코드를 고쳐서 뺀 것이 아니라 **붙을 대상이 없는 것**이다 — 파셀 전제 자리이므로
-// 「세계 소스」 축에 포함된다. 감독의 판정 축 「그림자 구현방식」은 방향성 그림자와
-// 프러스텀 유도이고 그쪽은 포크로 그대로 계승된다.
+// ── 🔴 그림자 — **내가 적었던 근거는 거짓이었다** (검수관 반려 B2, 2026-08-26) ──
+// 이 자리에 원래 *"감독의 판정 축 「그림자 구현방식」은 방향성 그림자와 프러스텀 유도이고
+// 그쪽은 포크로 그대로 계승된다"* 라고 적혀 있었다. **실측으로 성립하지 않는다:**
+//
+//   `world2/main.ts:158`  const SHADOW_INTENSITY = readNum('shint', 0, 0, 1);   ← 기본 0
+//   `world2/main.ts:763`  dir.castShadow = SHADOW_INTENSITY > 0                  ← 꺼져 있다
+//   `world2/main.ts:145`  감독 판정 2026-08-11 *"그림자 없앤 버전 그게 제일 낫다"*
+//                         → **실시간 캐스터 축 자체를 폐지**했다
+//
+// 즉 내가 「계승된다」고 적은 경로는 **애초에 켜져 있지 않다.** 결론(화면에 그림자가
+// 보인다)은 맞았고 근거가 틀렸다 — 이 저장소가 이름 붙인 *"참인 문장에서 성립하지 않는
+// 결론을 뽑는 것"* 의 형태다.
+//
+// **화면에 그림자가 보이는 진짜 이유**: GLB 안에 world2 의 **접촉그림자 데칼이 이미
+// 구워져 들어 있다** — 실측 8,625개(전체 28,707 메시의 30%; `shadow:lamp#0` 3,182 ·
+// `shadow:tree#0` 2,540 · `shadow:building#0` 2,053 …). 감독이 2026-08-11 에 고른 것이
+// 바로 이것이고(`world2/decide/shadow-decal.ts:3-11`), 그 화면이 그대로 온 것이다.
+//
+// ── ⚠ 그래서 **이 세계의 그림자는 시간대에 반응하지 않는다** ────────────────
+// world2 는 `decide/shadow-decal.ts:446` 의 `densityFor(time, base)` 로 시간대마다 농도를
+// 바꾸고 「그림자 굽기」 버튼으로 다시 굽는다. world8 에는 `ShadowDecalSystem` **인스턴스가
+// 없다** — 그것은 파츠 슬롯(`slotPool`)에 자세를 워프해 굽는 물건이고 GLB 에는 슬롯이
+// 없기 때문이다. 실측: 밤으로 돌리면 하늘은 반응하지만(`exposure 1→1.4`,
+// `groundLift 1→2.4`) 그림자는 **내보낸 시점 농도 그대로**다.
+//
+// **팀장 판정 2026-08-26 — (A) 감수. 조건 2 의 경계는 열지 않는다.** 근거 셋:
+//   ① world7·world8 의 존재 이유가 「GLB 를 **있는 그대로** 건다」이다. 데칼을 되살리려면
+//      「GLB 메시 → 가상 파츠 슬롯」 변환기가 필요한데, 그것은 world2 「편집본 불러오기」의
+//      *다시 세우기* 로 되돌아가는 것이라 **이 페이지를 만든 이유를 스스로 부정한다.**
+//   ② 감독이 고른 것은 데칼(정적 화면)이고 **시간대 반응 그림자는 감독 요구였던 적이 없다.**
+//      감독이 문제라고 하지 않은 것에 새 축을 열지 않는다.
+//   ③ 시간대별로 GLB 를 여러 벌 굽는 대안은 자산 4배(≈21MB 추정)와 전환 멈춤을 새로 만든다.
+//
+// **재론 조건: 감독이 world8 밤 화면의 그림자를 문제로 발화하는 회차.** 그때 (B)·(C)의
+// diff 실물·비용 추정은 백로그 `G-W8H` 에 보존해 두었다 — 같은 추정을 다시 하지 않는다.
 
 import * as THREE from 'three/webgpu';
 import type { Object3D, Scene } from 'three/webgpu';
@@ -40,6 +69,15 @@ export interface GlbSourceResult {
   triangles: number;
   /** 만든 `InstancedMesh` 벌수 */
   made: number;
+  /**
+   * GLB 에 **구워져 들어온 접촉그림자 데칼** 수(재질 이름이 `shadow:` 로 시작하는 메시).
+   *
+   * ⚠ **이 값이 「그림자가 있는가」의 유일한 검출력 있는 축이다**(검수관 반려 B3).
+   * `stats().shadow` 는 `sun.shadow.camera.*` **설정값**이라 두 트리가 같은 상수에서
+   * 유도하는 한 **다를 수가 없다** — 그림자 시스템을 통째로 들어내도 `76.8 / 2048` 이
+   * 그대로 나온다. 그 값을 동일성 근거로 쓴 것이 이 회차의 반려 사유였다.
+   */
+  shadowDecals: number;
   /**
    * 세계의 크기(m). **「떴다」와 「보인다」를 가르는 축이다** — 로드는 성공했는데
    * 화면이 비는 형태가 이 저장소에서 반복됐고, 그때마다 「어디에 얼마나 큰 것이
@@ -71,10 +109,18 @@ export function mountGlbWorld(
   // 1,358,918 → 3,808 로 보인다. 화면에 그것을 적으면 **거짓을 적는 것**이다.
   let meshes = 0;
   let triangles = 0;
+  let shadowDecals = 0;
   gltfScene.traverse((o: Object3D) => {
-    const m = o as { isMesh?: boolean; geometry?: { index?: { count: number } | null; attributes?: { position?: { count: number } } } };
+    const m = o as {
+      isMesh?: boolean; material?: { name?: string } | { name?: string }[];
+      geometry?: { index?: { count: number } | null; attributes?: { position?: { count: number } } };
+    };
     if (!m.isMesh || !m.geometry) return;
     meshes++;
+    // 재질 이름이 원산지다 — world2 의 `parts/shadow.ts` 가 `shadow:<kind>` 로 짓는다.
+    for (const one of Array.isArray(m.material) ? m.material : [m.material]) {
+      if (one?.name?.startsWith('shadow:')) { shadowDecals++; break; }
+    }
     const idx = m.geometry.index;
     const pos = m.geometry.attributes?.position;
     triangles += Math.floor((idx ? idx.count : (pos?.count ?? 0)) / 3);
@@ -110,7 +156,7 @@ export function mountGlbWorld(
   const b = new THREE.Box3().setFromObject(group as never);
   const r1 = (v: number) => +v.toFixed(1);
   return {
-    root: group, collisionRoot: gltfScene, meshes, triangles, made,
+    root: group, collisionRoot: gltfScene, meshes, triangles, made, shadowDecals,
     box: {
       min: [r1(b.min.x), r1(b.min.y), r1(b.min.z)],
       max: [r1(b.max.x), r1(b.max.y), r1(b.max.z)],
@@ -127,8 +173,12 @@ export function mountGlbWorld(
  * 그대로 낸다 — 세는 자리와 적는 자리를 갈라 두면 한쪽만 고쳐지는 일이 생긴다.
  */
 export function describeGlb(src: GlbSourceResult | null): {
-  meshes: number; triangles: number; instanced: number; box: GlbSourceResult['box'];
+  meshes: number; triangles: number; instanced: number;
+  shadowDecals: number; box: GlbSourceResult['box'];
 } | null {
   if (!src) return null;
-  return { meshes: src.meshes, triangles: src.triangles, instanced: src.made, box: src.box };
+  return {
+    meshes: src.meshes, triangles: src.triangles, instanced: src.made,
+    shadowDecals: src.shadowDecals, box: src.box,
+  };
 }
