@@ -48,3 +48,31 @@ export function setupShadow(renderer, sun, scene, root, box) {
   scene.add(sun.target);
   root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
 }
+
+/**
+ * **시간대**를 반영한다 — 조명 각도·색, 하늘색, 안개. 0~24시.
+ *
+ * ⚠ 이것은 world2 의 하늘 엔진(`sky.js`, 1,609줄)이 **아니다.** 구름·비·별이 없고
+ * 시간대만 움직인다. 화면 문구도 「날씨」가 아니라 「시간대」라고 적는다 — 없는 것을
+ * 있는 것처럼 부르지 않는다. 엔진 이식은 별건이다(팀장 판정: 2차).
+ */
+export function applyTimeOfDay(scene, sun, hour) {
+  const h = ((hour % 24) + 24) % 24;
+  // 태양 고도 — 6시에 뜨고 18시에 진다. 정오에 최고.
+  const t = (h - 6) / 12;                        // 0=일출 1=일몰
+  const el = Math.sin(Math.PI * Math.max(0, Math.min(1, t)));
+  const day = Math.max(0, el);                   // 0(밤) ~ 1(정오)
+  const az = Math.PI * (t - 0.5);
+  sun.position.set(Math.sin(az) * 300, Math.max(12, el * 320), Math.cos(az) * 300);
+  sun.intensity = 0.12 + day * 1.6;
+  // 낮은 해는 붉다 — 색온도를 고도로 민다.
+  sun.color.setRGB(1, 0.72 + day * 0.23, 0.5 + day * 0.44);
+  // 하늘·안개: 낮 하늘색 → 노을 → 밤. 한 줄로 섞는다.
+  const sky = new THREE.Color(0x0b1526).lerp(new THREE.Color(0x8fb4d8), day);
+  if (day > 0 && day < 0.35) sky.lerp(new THREE.Color(0xd98b52), (0.35 - day) / 0.35 * 0.55);
+  scene.background = sky;
+  if (!scene.fog) scene.fog = new THREE.Fog(sky.getHex(), 300, 2600);
+  else scene.fog.color.copy(sky);
+  const hemi = scene.children.find((o) => o.isHemisphereLight);
+  if (hemi) hemi.intensity = 0.35 + day * 1.9;
+}
