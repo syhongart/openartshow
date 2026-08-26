@@ -1,0 +1,379 @@
+// world8/edit/state.ts — 편집 세션의 **가변 상태와 조작 단위**. DOM·three 를 안 만진다.
+//
+// ── 왜 상태를 한 곳에 모으나 ────────────────────────────────────────────────
+// 분해 전에는 이 값들이 `startEditMode` 의 지역 변수였고, 그래서 **그 함수를 가르는
+// 순간 값이 따라갈 곳이 없었다.** 파일을 나누려면 «누가 이 값을 쥐는가» 를 먼저 정해야
+// 한다 — 그것이 이 파일이다.
+//
+// **가변 객체 하나를 공유한다.** 각 모듈에 값을 복사해 넘기지 않는다 — 복사하면
+// `selected` 를 바꾼 쪽과 읽는 쪽이 갈라지고, 그 어긋남은 «클릭했는데 패널이 옛 것을
+// 보여준다» 같은 형태로만 드러난다(화면에서만 보이는 결함이 이 저장소에서 가장 비쌌다).
+//
+// ⚠ **이 파일은 «동작 변경 0» 분해의 일부다.** 값도 의미도 분해 전과 같아야 한다 —
+// 여기서 상수를 손보고 싶어지면 그것은 별도 커밋이다.
+
+import type { OverlayEntry, OverlayHost, VillagePick } from './types.js';
+import { overlayTarget, villageTarget, type EditTarget } from './target.js';
+import type { ModalState, Pose } from '../decide/modal-edit.js';
+import type { ShadingMode } from '../decide/shading.js';
+
+/** 회전 한 번. 24등분이라 세 번이면 45°, 여섯 번이면 90° 다. */
+export const RY_STEP = Math.PI / 12;
+/** 크기 한 번(배수). 계약의 `S_MIN`·`S_MAX` 가 상·하한을 소유한다 */
+export const S_STEP = 1.15;
+/** 높이 한 번(m) */
+export const Y_STEP = 0.25;
+/** 지면 스냅 격자(m). 0 이면 자유 배치 */
+export const SNAP = 0.5;
+
+type XYZ = { x: number; y: number; z: number };
+
+/**
+ * 동적 import 로 받은 `three/webgpu` 중 **편집이 실제로 쓰는 것만** 적은 구조 타입.
+ *
+ * 왜 `typeof import('three/webgpu')` 가 아닌가: 그러면 이 모듈이 three 를 정적으로
+ * 가리키게 되고, 편집 코드가 기본 번들에 끌려 들어갈 여지가 생긴다. 편집은 소비자가
+ * 넘겨준 네임스페이스를 쓸 뿐 스스로 import 하지 않는다(`types.ts` 의 `THREE: unknown`).
+ */
+export type ThreeNS = {
+  Raycaster: new () => {
+    ray: { origin: XYZ; direction: XYZ };
+    setFromCamera(coords: { x: number; y: number }, cam: unknown): void;
+    // `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다 — 그래서 선택 필드다.
+    // 이것이 없으면 마을 파츠를 «몇 번째 인스턴스인가» 로 환원할 방법이 없다.
+    //
+    // `point`·`face` 는 **벽 검출**(W8-4 D)이 쓴다. 둘 다 선택 필드인 이유가 다르다:
+    // `point` 는 메시 히트면 언제나 오지만 스텁이 생략할 수 있고, `face` 는 실물에서도
+    // **Line·Points 를 맞히면 안 온다.** 그래서 소비자가 둘 다 확인하고 넘어간다.
+    // ⚠ `face.normal` 은 **로컬**이다 — 월드 변환은 `decide/artwork.ts` 의 `toWorldNormal`
+    // 이 소유하고, 그것을 빠뜨렸을 때의 증상은 그 함수 주석에 있다.
+    // `distance` 는 **벽 검출이 오버레이와 마을 중 어느 것을 고를지** 가른다(W8-4 D).
+    // 선택 필드인 이유는 위 둘과 같다 — 스텁이 생략할 수 있고, 없으면 `Infinity` 로 읽어
+    // 「거리를 모르는 것은 진다」가 된다(가까운 쪽을 고르는 규약과 어긋나지 않는다).
+    intersectObjects(objs: unknown[], recursive: boolean): {
+      object: unknown;
+      instanceId?: number;
+      distance?: number;
+      point?: { x: number; y: number; z: number };
+      face?: { normal: { x: number; y: number; z: number } } | null;
+    }[];
+  };
+  /** 맞힌 인스턴스의 자세를 읽는다. 편집은 **이동 성분만** 본다(`elements[12..14]`) */
+  Matrix4: new () => { elements: ArrayLike<number> };
+  Mesh: new (g: unknown, m: unknown) => StubMesh;
+  Group: new () => StubGroup;
+  RingGeometry: new (inner: number, outer: number, seg: number) => Disposable;
+  BoxGeometry: new (w: number, h: number, d: number) => Disposable;
+  CylinderGeometry: new (rt: number, rb: number, h: number, seg: number) => Disposable;
+  ConeGeometry: new (r: number, h: number, seg: number) => Disposable;
+  MeshBasicMaterial: new (p: Record<string, unknown>) => Disposable;
+  Box3: new () => { min: XYZ; max: XYZ; setFromObject(o: never): unknown };
+  DoubleSide: number;
+};
+
+export type Disposable = { dispose?(): void };
+
+/**
+ * three 의 `Mesh` 중 편집이 실제로 만지는 것만.
+ *
+ * ⚠ **필드를 늘리면 테스트 스텁도 늘려야 한다** — 구조 타입이라 빠진 필드가 곧 컴파일
+ * 에러다. 그것이 이 타입의 값이기도 하다: 편집이 three 의 무엇에 기대고 있는지가 한
+ * 곳에 적혀 있어서, 스텁으로 실제 코드를 돌리는 행위 테스트가 성립한다.
+ */
+export type StubMesh = {
+  position: { x: number; y: number; z: number; set(x: number, y: number, z: number): void };
+  rotation: { x: number; y: number; z: number };
+  scale: { setScalar(s: number): void; set(x: number, y: number, z: number): void };
+  visible: boolean;
+  renderOrder: number;
+  /** 어느 핸들인가를 여기 적는다 — 레이캐스트가 맞힌 메시에서 되찾는다 */
+  userData: Record<string, unknown>;
+};
+
+export type StubGroup = {
+  position: { set(x: number, y: number, z: number): void };
+  rotation: { x: number; y: number; z: number };
+  scale: { setScalar(s: number): void };
+  visible: boolean;
+  children: unknown[];
+  add(o: never): void;
+  remove(o: never): void;
+};
+
+/** 편집 세션이 들고 있는 전부. 모듈들이 **같은 객체**를 본다. */
+export interface EditState {
+  selected: OverlayEntry | null;
+  /**
+   * 고른 **마을 파츠**. `selected` 와 **동시에 채워지지 않는다** — 선택은 하나다.
+   *
+   * ⚠ 이 주석은 ②-c 에서 *"한 칸에 합치려면 공통 인터페이스를 먼저 정해야 한다"* 로
+   * 끝났다. ②-d 가 그 인터페이스를 만들었다(`target.ts` 의 `EditTarget`) — 다만 **이
+   * 칸은 남는다.** 어댑터는 «미는 다섯 값» 만 알고, «무엇을 골랐나»(파셀 좌표·인덱스·
+   * 손본 구역인가)는 화면이 말해야 하는 별개 정보이기 때문이다.
+   *
+   * **불변식: 둘 중 최대 하나만 채워진다.** 채우는 자리는 `select()` **하나**이고,
+   * 그것을 테스트가 본다(둘 다 채워지면 링과 패널이 서로 다른 것을 가리킨다).
+   */
+  villageSel: VillagePick | null;
+  /**
+   * 지금 고른 것의 **조작 어댑터**. 기즈모·수치칸·조작 버튼이 이것만 본다.
+   *
+   * 위 두 칸과 **함께 움직인다** — 어긋나면 «패널은 건물을 말하는데 기즈모는 GLB 를
+   * 민다» 가 된다. 그래서 셋을 바꾸는 자리를 `select()` **하나로 좁혔다**(아래).
+   * 다른 곳에서 `st.selected = …` 를 직접 쓰면 그 순간 불변식이 깨진다.
+   */
+  /**
+   * 고른 **걸린 작품**의 인덱스(W8-11). `null` 이면 안 골랐다.
+   *
+   * 위 두 칸(`selected`·`villageSel`)과 **상호배타**다 — 같은 이유이고 같은 규약이다:
+   * 하나만 고른 상태여야 `target` 이 무엇을 미는지가 한 가지로 정해진다.
+   *
+   * ⚠ **인덱스는 목록이 바뀌면 밀린다.** 목록을 바꾸는 경로는 **셋**이다:
+   *   `commit()`  같은 자리를 교체 — 인덱스 유지
+   *   `remove()`  뒤를 당김 — 선택을 풀어야 한다(`edit/actions.ts` 의 `removeSelected`
+   *                가 `select(st, host, null)` 로 푼다)
+   *   **새로 걸기** 이미지 드롭·조준 확정이 목록 뒤에 더한다 — 선택을 **안 푼다**
+   *
+   * ⚠⚠ **이 자리에 원래 «경로는 둘» 이라고 적혀 있었고 세 번째를 안 세었다**(검수관
+   * 반려 B1, 2026-08-19). 그 오산이 그대로 결함이 됐다 — `artTarget` 이 이 문장을
+   * 전제로 목록 스냅샷을 되썼고, 「고른 채 한 장 더 걸면 나중 것이 사라지는」 실물 데이터
+   * 손실이 났다. 처방과 재현은 `edit/target.ts` 의 `findAt` 헤더 한 곳이다.
+   *
+   * 그리고 *"푸는 자리는 소비자(`panel/outliner.ts`)"* 도 **틀렸다** — 그 파일은
+   * `artSel` 을 **읽기만** 한다(강조 표시). 실제로 푸는 곳은 위 `actions.ts` 다.
+   *
+   * 여기서 인덱스를 들고 있는 것 자체는 «지금 무엇을 고르고 있나» 를 화면이 그리기
+   * 위해서다.
+   *
+   * 왜 `ArtworkItem` 참조가 아니라 인덱스인가: 계약이 **값 타입**이라 `commit()` 이 사본을
+   * 쓴다. 참조로 들면 확정 직후 «내가 든 것» 과 «목록에 있는 것» 이 다른 객체가 된다.
+   */
+  artSel: number | null;
+  target: EditTarget | null;
+  /**
+   * 진행 중인 **블렌더식 모달 조작**(G/R/S). `null` 이면 조작 중이 아니다.
+   *
+   * 짝인 `modalFrom` 과 **함께 움직인다** — 상태만 있고 스냅샷이 없으면 취소가
+   * 불가능하고, 스냅샷만 있고 상태가 없으면 되돌릴 계기가 없다.
+   */
+  modal: ModalState | null;
+  /**
+   * 조작을 시작한 순간의 자세. **취소가 여기로 되돌린다.**
+   *
+   * 매 프레임 «직전 값에 더하기» 로 만들면 되돌릴 원본이 없다 — 언제나 이것에
+   * 델타를 더해 현재 값을 만든다(근거는 `decide/modal-edit.ts` 헤더).
+   */
+  modalFrom: Pose | null;
+  /**
+   * 조작 중 **슬롯이 죽었다** — 스트리밍이 그 파셀을 걷어갔다는 뜻이고, 그 시점부터
+   * 조작이 화면에 안 보인다.
+   *
+   * ⚠ **편집 자체는 살아 있다.** 값은 계속 바뀌고 확정(`commit`)은 저장소에 제대로
+   * 쓰이므로 그 구역에 다시 가면 반영돼 있다. 끊긴 것은 **미리보기**뿐이다 —
+   * 화면이 그 둘을 갈라 말해야 한다(`panel/dom.ts` 의 `refresh`).
+   *
+   * 세우는 자리는 마을 어댑터의 `onDetach` 하나이고, 푸는 자리는 `select()` 다.
+   */
+  detached: boolean;
+  /**
+   * **고른 작품이 목록에서 사라졌다** — 다른 경로가 지웠다는 뜻이다(W8-11).
+   *
+   * ⚠ **위 `detached` 와 의미가 정반대라 칸을 나눴다.** `detached` 는 *"조작과 저장은
+   * 그대로 되고 미리보기만 끊겼다"* 이고, 이것은 *"조작이 아예 안 먹는다"* 다. 한 칸을
+   * 돌려쓰면 화면이 **틀린 말을 한다** — 액자가 사라졌는데 «저장은 그대로 됩니다» 라고
+   * 안내하는 형태이고, 그러면 감독이 조작을 계속하다 값을 잃는다.
+   *
+   * 세우는 자리는 작품 어댑터의 `onLost` 하나(`edit/mode.ts` 의 `pickArt` 가 배선한다),
+   * 푸는 자리는 `select()` 다 — `detached` 와 같은 규약.
+   */
+  artLost: boolean;
+  pendingSrc: string | null;
+  /**
+   * 팔레트에서 고른 **마을 파츠** 종류(W6 E). `null` 이면 안 골랐다.
+   *
+   * ⚠ **`pendingSrc` 와 동시에 채워지지 않는다** — 위 `selected`/`villageSel` 과 같은
+   * 불변식이고 같은 이유다: 지면을 클릭했을 때 «GLB 를 놓을지 파츠를 놓을지» 가 둘로
+   * 갈리면 안 된다. 채우는 자리를 팔레트 한 곳으로 좁혔고 테스트가 그것을 본다.
+   *
+   * 왜 `pendingSrc` 에 접두사를 붙여 겸용하지 않았나: 놓는 경로가 **전혀 다르다**
+   * (GLB 는 비동기 로드 + 오버레이 항목, 파츠는 파셀 동결 배열 편집). 한 칸에 담으면
+   * 그 분기가 문자열 파싱이 되고, 파싱은 형식을 두 곳에 적는 일이다.
+   */
+  pendingPart: string | null;
+  /**
+   * **붓 모드인가** (2026-08-22, 감독 카드 「브러시로 여러 개 뿌리기」).
+   *
+   * `pendingPart` 와 **직교한다** — 붓은 «어떻게 놓는가» 이고 `pendingPart` 는 «무엇을
+   * 놓는가» 다. 그래서 상호배타 불변식에 새 항이 안 생긴다(그 불변식은 여덟 곳에 퍼져
+   * 있고 일곱 검사가 지킨다 — `edit/artwork-mode.ts` 가 세 번째 pending 슬롯을 피한
+   * 것과 같은 판단이다).
+   *
+   * ⚠ **붓 모드에서는 놓은 뒤 고르기를 안 푼다.** 하나씩 놓기는 «한 번의 동작» 이라
+   * 풀지만(감독 신고 2026-08-13 *"흩어뿌리기 식"*), 붓은 문지르는 것이 본질이라 풀면
+   * 매번 다시 골라야 한다. 푸는 문은 `Esc`(`cancelPending`)로 이미 있다.
+   */
+  brushOn: boolean;
+  /** 붓 반경(m). 범위는 `decide/brush.ts` 가 소유한다 */
+  brushRadius: number;
+  /** 한 붓질에 뿌릴 개수. 실제로 놓이는 수는 상한·간격에 잘릴 수 있다 */
+  brushCount: number;
+  /**
+   * 지금까지 몇 번 문질렀나. **시드에 섞인다** — 좌표만으로 시드를 만들면 같은 자리를
+   * 두 번 문질러도 같은 점이 나와 간격 검사에 전부 걸린다(`decide/brush.ts` 의 `strokeSeed`).
+   */
+  strokeNo: number;
+  dragging: OverlayEntry | null;
+  dragPlaneY: number;
+  orbiting: boolean;
+  snapOn: boolean;
+  /** 내보내기 2단 클릭 — 손실이 있으면 1차는 저장하지 않는다 */
+  armed: boolean;
+  /**
+   * GLB 를 받는 중인가. **받는 동안 새 배치를 받지 않는다.**
+   *
+   * 왜 잠그나 (감독 신고 2026-08-12 *"완전히 굳어 탭을 닫아야 했다"*): 진행 표시가 없던
+   * 시절엔 눌러도 화면이 그대로라 «안 먹었나» 하고 다시 누르게 된다. 그러면 12.9MB 자산이
+   * 여러 벌 동시에 파싱되고 각각이 붙는 순간 프레임이 멈춘다 — 한 번의 히칭이 아니라
+   * **누적**이 탭을 죽였다. 진행 표시(`actions.ts` 의 `placeAt`)와 이 잠금은 **짝이다**:
+   * 표시만 있고 잠금이 없으면 조급한 연타가 그대로 통과하고, 잠금만 있고 표시가 없으면
+   * 잠긴 것이 멈춘 것과 구별되지 않는다.
+   */
+  busy: boolean;
+  /**
+   * 편집 모드인가. **기본은 주행이다** (감독 신고 2026-08-12).
+   *
+   * 처음엔 `?edit=1` 이 곧 편집 모드 상시 켜짐이었고, 그것이 **주행을 통째로 죽였다.**
+   * 편집 리스너가 캔버스 클릭을 캡처 단계에서 끊으므로 `main.ts` 의 포인터락 요청이
+   * 영영 안 불리고, `main.ts` 의 `onMove` 는 `pointerLockElement === canvas` 일 때만
+   * `player.look()` 을 부른다 → **마우스를 움직여도 시점이 안 돈다.**
+   *
+   * 감독 신고: *"저 위에 링크 클릭하면 마우스 터치, 키보드 동작안해."*
+   *
+   * ⚠ **검증이 이것을 놓친 방식이 핵심이다.** 나는 *"포인터락 미발생 = PASS"* 로 쟀다.
+   * 감독에게 그것은 성공이 아니라 *"화면이 안 돌아간다"* 였다. 값이 아니라 **재는 축이
+   * 틀렸다** — 그래서 지금은 두 축을 함께 건다(주행 중엔 걸리고, 편집 중엔 안 걸린다).
+   *
+   * 그래서 뒤집는다: `?edit=1` 은 *"편집 도구를 쓸 수 있게 한다"* 만 뜻하고 부팅 직후는
+   * **주행 모드**다(리스너를 아예 안 붙인다 = 라이브와 동일). 편집은 버튼·`Tab` 으로 켠다.
+   */
+  editing: boolean;
+  /**
+   * `Shift+Z`(와이어 토글)가 **와이어에서 돌아갈 자리**. W6.
+   *
+   * 블렌더의 `Shift+Z` 는 «와이어 ↔ 직전» 이지 «와이어 ↔ 머티리얼» 이 아니다. 솔리드로
+   * 보다가 잠깐 속을 확인하고 돌아오면 솔리드여야 한다 — 머티리얼로 튕기면 도구가 아니라
+   * 장난감이 된다.
+   *
+   * ⚠ **월드가 아니라 편집이 소유한다.** 월드(`FeatureEnv.shading`)는 «지금 무엇으로
+   * 그리는가» 만 알면 되고, 「돌아갈 자리」는 편집 세션 안의 UI 히스토리다. 저기 두면
+   * 편집을 안 쓰는 세션까지 편집의 히스토리를 들고 있게 된다(`edit/types.ts` 의
+   * `shading`/`setShading` 주석과 짝이다).
+   *
+   * 절대 `'wire'` 가 되지 않는다 — 갱신하는 자리가 `decide/shading.ts` 의 `toggleWire`
+   * 하나이고 그 함수가 구조적으로 보장한다.
+   */
+  shadingBack: ShadingMode;
+}
+
+export function createEditState(): EditState {
+  return {
+    selected: null,
+    villageSel: null,
+    artSel: null,
+    target: null,
+    modal: null,
+    modalFrom: null,
+    detached: false,
+    artLost: false,
+    pendingSrc: null,
+    pendingPart: null,
+    brushOn: false,
+    // 기본값은 범위 중간이 아니라 **하한 쪽**이다 — 처음 켠 사람이 실수로 넓게 뿌리고
+    // 되돌리는 것보다, 좁게 시작해 넓히는 쪽이 배우기 쉽다.
+    brushRadius: 6,
+    brushCount: 8,
+    strokeNo: 0,
+    dragging: null,
+    dragPlaneY: 0,
+    orbiting: false,
+    snapOn: true,
+    armed: false,
+    busy: false,
+    editing: false,
+    // 세션이 `?shading=wire` 로 시작하면 돌아갈 곳이 없다 — 머티리얼로 둔다.
+    // 그 판정은 `initialBack` 하나가 소유한다(여기에 조건을 다시 적지 않는다).
+    shadingBack: 'material',
+  };
+}
+
+/**
+ * 선택을 바꾸는 **유일한 자리.** 네 칸(`selected`·`villageSel`·`artSel`·`target`)이 함께 움직인다.
+ *
+ * ── 왜 함수로 좁히나 ────────────────────────────────────────────────────────
+ * 칸이 셋인데 대입이 여섯 파일에 흩어져 있으면, 새 경로가 하나 생길 때마다 «세 개 다
+ * 썼는가» 를 사람이 기억해야 한다. 이 저장소는 그 형태로 이미 데였다 — 분해 회차의
+ * M5 뮤테이션(«state 두 벌»)이 정확히 «패널이 보는 것과 조작이 바꾸는 것이 갈린다» 였다.
+ *
+ * **선택은 하나다**: 오버레이를 고르면 마을 선택이 풀리고, 반대도 같다.
+ *
+ * ⚠ 마을 어댑터는 `null` 을 낼 수 있다(문이 닫혔다·인덱스가 배열 밖·종류 불일치).
+ * 그때는 **아무것도 안 고른 것**으로 떨어진다 — 표시만 남기고 조작이 안 되는 상태를
+ * 만들지 않는다. 그 상태가 정확히 «골랐는데 아무것도 안 먹는다» 이기 때문이다.
+ *
+ * ── 작품(W8-11)만 어댑터를 **밖에서** 만들어 넘긴다 ─────────────────────────
+ * 위 둘은 `host`(=`OverlayHost`) 하나로 어댑터를 만들 수 있는데, 작품은 `ArtsPort` 와
+ * 액자 씬이 필요하다. 그 둘을 이 함수의 인자로 끌어오면 **`edit/state.ts` 가 작품
+ * 시스템을 알게 된다** — `OverlayHost` 계약을 안 건드리려고 `ArtsPort` 를 따로 둔 판정
+ * (W8-3 팀장 (나))을 여기서 되돌리는 셈이다. 그래서 호출자가 `artTarget()` 을 불러
+ * 결과를 넘긴다.
+ *
+ * 그 대신 **`null` 규약은 마을과 같게** 유지한다 — 넘어온 `target` 이 `null` 이면
+ * 아무것도 안 고른 것으로 떨어진다. 어댑터를 밖에서 만든다고 「골랐는데 안 먹는」
+ * 상태까지 밖으로 새게 두지는 않는다.
+ */
+export function select(
+  st: EditState,
+  host: OverlayHost,
+  what: { entry: OverlayEntry }
+    | { village: VillagePick }
+    | { art: { index: number; target: EditTarget | null } }
+    | null,
+): void {
+  // ⚠ **선택이 바뀌면 진행 중 모달은 끝난다.** 안 끝내면 옛 대상의 스냅샷을 든 채
+  // 새 대상을 밀게 되고, 취소하면 **새 대상이 옛 대상의 자리로 튄다.**
+  st.modal = null;
+  st.modalFrom = null;
+  // 새로 고른 것의 슬롯은 살아 있다 — 옛 선택의 «끊김» 을 물려주면 멀쩡한 조작에
+  // 경고가 붙는다.
+  st.detached = false;
+  st.artLost = false;
+  if (what && 'entry' in what) {
+    st.selected = what.entry;
+    st.villageSel = null;
+    st.artSel = null;
+    st.target = overlayTarget(host, what.entry);
+    return;
+  }
+  if (what && 'village' in what) {
+    // 어댑터는 화면을 모르고 소비자는 다섯이다 — **판정은 어댑터 한 곳, 표시는 화면
+    // 한 곳**으로 가른다. 여기가 그 둘을 잇는 자리다(`target.ts` 의 `onDetach`).
+    const t = villageTarget(host, what.village, () => { st.detached = true; });
+    st.selected = null;
+    st.villageSel = t ? what.village : null;
+    st.artSel = null;
+    st.target = t;
+    return;
+  }
+  if (what && 'art' in what) {
+    const t = what.art.target;
+    st.selected = null;
+    st.villageSel = null;
+    st.artSel = t ? what.art.index : null;
+    st.target = t;
+    return;
+  }
+  st.selected = null;
+  st.villageSel = null;
+  st.artSel = null;
+  st.target = null;
+}

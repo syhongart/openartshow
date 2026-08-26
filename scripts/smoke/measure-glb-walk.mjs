@@ -3,11 +3,15 @@
 //
 // ── 왜 있나 (감독 지시 2026-08-26) ──────────────────────────────────────────
 // *"월드8에 월드 2의 기본 기능 다 들어가야지"* · *"월드 7도 동일하게 되어야해"*.
-// 두 페이지는 `js/glb-world.js` **한 벌**을 쓴다. 다만 *"world7 을 재면 world8 도 잰
-// 것"* 은 **거짓이다**(검수관 반려 B5) — world8 만 타는 갈래가 있다: `data-glb` 의 URL
-// 해석 · 고르기 UI 부재 · 실패 시 «새로고침» 분기. 그리고 **감독이 느리다고 신고한
-// 페이지가 world8 이다.** 검사 (라)의 `#again` 은 world7 전용 요소다.
-// 여기서 재는 것은 **공유 코드**(걷기·충돌·조이스틱)이고 world8 고유 갈래는 안 잰다.
+//
+// ⚠ **이 파일은 이제 world7 만 잰다**(2026-08-26 정정, 검수관 권고 P2). 헤더가 오래
+// *"두 페이지는 `js/glb-world.js` 한 벌을 쓴다"* 라고 적고 있었고 그것은 world8 이
+// **world2 전체 포크로 재구성되면서 거짓이 됐다** — world8 은 `js/world8/` 트리를 탄다
+// (경위는 `frontend/js/world8/README.md`). world8 의 걷기는 world2 의 `PlayerSystem` ·
+// `decide/move.ts` 를 그대로 쓰므로 world2 쪽 검사가 이미 덮는다.
+//
+// world7 편입(팀장 조건 4)이 끝나면 이 파일의 운명도 그때 정해진다 — `glb-world.js` 가
+// 사라지면 이 검사도 함께 사라진다. 검사 (라)의 `#again` 은 world7 전용 요소다.
 //
 // ⚠ **이것은 게이트가 아니다.** CI 에 안 물려 있고 배포를 막지 않는다. `measure-*` 와
 // 같은 지위의 진단 도구다. 다만 진단 도구도 **판정은 한다**.
@@ -20,25 +24,78 @@
 // 지금은 **벽 표면 코앞**(10.95m — 정지 거리 10.85m 바로 밖)에서 시작한다. 그래야
 // 정상과 뮤턴트가 갈린다. 실측:
 //
-// **어느 커밋에서 잰 것인가: `c411ae28` 이후 재실행 확인**(검수관 조건 N3).
+// **어느 커밋에서 잰 것인가: `6dffe704` 이후 재실행 확인**(검수관 조건 N3).
 // ⚠ 표에 커밋을 적는 이유: B4 로 낡은 수치를 고치자마자 다음 커밋이 충돌 경로를 바꿔
 // **표가 곧바로 다시 낡았다.** 값만 고치면 이 사고는 회차마다 재발한다.
 // ⚠⚠ 「검사 로직을 안 바꿨으니 재실행 불필요」는 성립하지 않는다 — 검사가 보는 **대상의
-// 행동**이 바뀌면(근처 목록 39 → 262) 검출력은 다시 재는 것이 기본값이다(검수관 기각).
+// 행동**이 바뀌면 검출력은 다시 재는 것이 기본값이다(검수관 기각). 이번 회차에 그 경고가
+// **세 번째로 실현됐다** — 자산의 조형물을 옮기자 (나)가 「아무것도 없는 자리를 밀며
+// 벽을 단언」하게 됐고 실측 `9.74m` 로 exit 1 이 났다(검수관 반려 B1).
 //
-//   베이스라인   10.95 → 10.95 (이동 0.00m) · z 60→58.15   PASS
-//   M1 부호      12.80m                    · z 60→61.88   FAIL ✓
-//   M2 벽 판정    9.10m (벽을 통과)          · z 60→58.12   FAIL ✓
+//                  (나) 받침까지  (나-2) z 60→  (나-3) Δx   (나-4) Δz   요약
+//   베이스라인        10.92m ✓       57.83 ✓      -2.49 ✓     -2.81 ✓    PASS
+//   M1 회전 부호      10.92m ✓       57.83 ✓      **+2.49** ✗  **+2.49** ✗  **FAIL (2)**
+//   M2 벽 판정 제거   **8.75m** ✗      —            —           —          **FAIL (1)**
 //
-// ⚠ **헤더에 낡은 수치(14.08 / 7.50)가 커밋된 적이 있다**(검수관 반려 B4) — 같은 실측이
-// 두 곳에 다른 값으로 있었다. 값 미러링이다. 고칠 때 **로그를 근거로** 맞춘다.
+// ⚠ **앞 판본의 표는 「M1 부호 12.80m FAIL」이라고 적고 있었고, 그것이 이 검사가
+// 부호 축을 본다는 인상을 만들었다 — 이번 실측으로 그것이 깨졌다.** 위 M1 행이
+// 보여주듯 (나)·(나-2)는 **회전 항 부호 뒤집기를 하나도 못 잡는다.** 이유는 구조적이다:
+// 둘 다 `lookAt(0)` 으로만 돌고 **yaw=0 에서는 `sin = 0` 이라 이동식의 sin 항이 통째로
+// 죽는다.** 옛 표의 12.80m 는 **다른 형태의 뮤테이션**(전체 부호)을 잰 것이었고, 그 값이
+// 남아 있는 동안 이 구멍은 덮여 있었다. 그래서 **(나-3)을 신설했다** — yaw=π/2 에서는
+// `sin=1, cos=0` 이라 sin 항만 남는다.
 //
-// ⚠⚠ **(나)는 「막혔다」와 「아예 안 움직인다」를 구별하지 못한다**(검수관 B4). 베이스라인
-// 이동량이 **0.00m** 라 정지 자체가 판정 근거가 되지 않는다 — 실제로 M1(부호 뒤집기)에서
-// (나)는 **초록**이었고 M1 을 잡은 것은 (나-2) 하나다. 즉 결함당 차단 케이스가 1개씩이고
-// 팀장 지시의 「2개 이상」을 아직 못 채웠다. 상대 비교(자유 이동량 대비)로 바꾸는 것이
-// 검수관 명세 G5 다 — **다음 회차 과제이고, 지금 이 검사가 그 축을 못 본다는 것을
-// 여기 적어 둔다.**
+// ⚠⚠ **「단언을 2개 썼다」는 「차단 케이스가 2건」이 아니다**(검수관 조건 1, 2026-08-26).
+// 첫 판본은 (나-3)에 단언 둘(`Δx < -0.9` · `|Δz| < |Δx|`)을 두고 헤더에 «M1→2건» 이라
+// 적었는데 **실행 요약은 `FAIL (1)`** 이었다. 두 단언이 **독립이 아니다** — M1 의
+// `tz = ix·sin + iz·cos` 는 yaw=π/2(`cos=0`)·전진(`ix=0`)에서 **0** 이라 정상판본과
+// 똑같고, 그래서 두 번째 단언이 퇴화한다(베이스라인 Δz −0.01 / M1 Δz −0.01).
+//
+// **B2 를 고친 바로 그 커밋에서 같은 유형(게이트 검출력에 대한 거짓 진술)을 하나
+// 만들었다.** 이 파일이 방금 *"앞 판본의 표가 「부호 축을 본다」는 인상을 만들었다"* 며
+// 정정한 것과 정확히 같은 실패다. 세는 방법은 **실행 요약의 `FAIL (n)`** 이다.
+//
+// 처방으로 **(나-4) 옆걸음**을 만들었다 — yaw=π/2 에서 D(`ix=1, iz=0`)를 누르면
+// 정상은 `tz = -ix·sin = -1`(**-z**), M1 은 `tz = +ix·sin = +1`(**+z**)로 갈린다.
+// (나-3)은 `tx` 로, (나-4)는 `tz` 로 잡으므로 **다른 항**이다. 위 표의 `FAIL (2)` 가 그 실측이다.
+//
+// **결함당 차단 케이스 — 지금 상태**: M1 → **2건**((나-3)·(나-4), 팀장 규율 충족) ·
+// M2 → **1건**((나) 하나. **미충족**).
+//
+// ── M2 이연 — **팀장 승인(2026-08-26). 만료 트리거가 있다** ──────────────────
+// 이연 근거: M2 의 두 번째 케이스와 검수관 명세 G5 는 **같은 일**이다. (나)의 베이스라인
+// 이동량이 `0.00m` 라 「막혔다」와 「아예 안 움직인다」가 구별되지 않고, 그것을 고치는
+// 것(자유 이동량 대비 **상대 비교**)이 곧 M2 의 두 번째 차단 케이스를 만드는 일이다.
+//
+// **⚠ 트리거가 없는 이연은 이연이 아니라 방치다**(팀장 문언). 만료는 둘 중 먼저 오는 것:
+//   ⓐ **G5 착수 회차** — M2 두 번째 케이스를 함께 채운다
+//   ⓑ **`world7.html`·`world8.html` 라이브 승격 회차** — 승격 시 미충족이면 그때 채운다.
+//
+// ⚠ **ⓑ 의 운반자는 §10-3 이 아니라 백로그 `G-W8I` 다**(검수관 권고, 2026-08-26).
+// 첫 판본은 *"§10-3 누적 검수에 이 항목이 포함된다"* 라고 적었는데 **그 낙관이 틀렸다**:
+// §10-3 의 누적 검수는 **이연된 diff** 를 대상으로 경로 교집합을 뜨는데, 이 회차는
+// 1등급(전체)로 판정돼 이연분이 없고 이 파일은 지금 검수를 마쳤다 — 그 사이 다시
+// 바뀌지 않으면 승격 회차의 교집합에 **안 걸린다.** 걸리지 않으면 아무도 이 헤더를
+// 열지 않고, 열지 않으면 트리거가 발화하지 않는다.
+//
+// ⚠⚠ **「승격 선결 조건」은 이 저장소에서 한 번 안 먹혔다** — `mypage.html` 은 감독
+// 지시로 승격됐고 mock OAuth 선결 조건은 **열린 채 남았다**(백로그 `G-MP1`). 감독 지시로
+// 오는 승격은 선결 조건을 기다려 주지 않는다. **그 선례에서 살아남은 것은 백로그였다.**
+// 그래서 진짜 운반자는 `G-W8I` 이고, §10-3 은 승격 회차 검수관이 그것을 읽고 **표면에
+// 넣을 때만** 집어 올린다(§10-3 이 검수관에게 표면 추가 권한을 명시적으로 준다).
+//
+// ⚠⚠⚠ **「이 절차가 X 를 집어 올린다」도 「무엇이 보증하는가」 진술이다.** 지금까지 이
+// 회차에 잡힌 셋은 전부 *테스트* 에 대한 진술이었는데 ⓑ 는 *절차* 에 대한 같은 형태의
+// 낙관이었다 — 네 번째다. G-6 을 설계할 때 대상에 절차 진술도 넣을지 정한다.
+//
+// **⚠⚠ 상대 비교로 전환할 때 임계를 «환산»하지 마라**(팀장 조건 2). 아래 「거짓 FAIL
+// 위험」의 편차 실측(1.6배)을 **임계 산정의 입력으로 쓴다** — 절대 임계에서 산술 환산만
+// 하고 재실측을 생략하면 *"실측에 여유를 얹은 값은 근거가 아니다"* 조항을 어긴다.
+// 시간 민감 검사 셋이 **같은 방향으로 함께** 흔들린다는 것이 그 산정의 전제다.
+//
+// ⚠⚠⚠ **(나)는 「막혔다」와 「아예 안 움직인다」를 여전히 구별하지 못한다**(검수관 B4).
+// 베이스라인 이동량이 0.00m 라 정지 자체가 판정 근거가 되지 않는다. 상대 비교(자유
+// 이동량 대비)로 바꾸는 것이 검수관 명세 G5 이고 **아직 다음 회차 과제다.**
 //
 // **새 검사를 만들면 그 자리에서 뮤테이션 1회** — 팀장 구속 규율(2026-08-26).
 // 「움직였다」가 아니라 **어느 방향으로 얼마나**를 단언한다.
@@ -51,18 +108,78 @@
 // · 시각 회귀 · 삼각형 단위 충돌 정밀도.
 // · **이 커밋의 주 변경(인스턴싱)에 대한 단언이 0건이다**(검수관 B5) — `pose().render`
 //   로 `calls`·`tris` 가 나오는데 검사가 안 읽는다. 인스턴싱이 통째로 사라져도 초록이다.
-// · **거짓 FAIL 위험**: (나-2)는 9초에 1.85m 를 얻어 임계 1.0m 를 넘는다 — 여유가 임계의
-//   85%뿐이고, 씬이 1.5배만 무거워지면 거짓 FAIL 이다. 이번 회차에 이미 4초 판본이
-//   임계에 닿아 시간을 늘렸다.
-// · **`RADIUS`(0.45)가 아래 상수 10.95·10.85·10.5 안에 손으로 녹아 있다**(검수관 P5).
-//   `glb-collide.js` 가 export 하는데도 그렇다 — 그 값을 만지면 검출력이 조용히 사라진다.
+// · **거짓 FAIL 위험 — 시간 민감 검사가 이제 셋이고 함께 흔들린다**(검수관 N6 실측,
+//   2026-08-26). (나-2)는 9초에 1.85m 로 임계 1.0m 를 넘어 **여유가 임계의 85%** 뿐이고,
+//   이번 회차에 4초 판본이 임계에 닿아 시간을 늘렸다. 그리고 **(나-3)의 Δx 가 같은
+//   기계·같은 커밋에서 회차마다 −1.53 ~ −2.49 로 갈렸다 — 1.6배 편차다.** 임계 0.9 에
+//   대해 느린 회차의 여유는 **1.7배**뿐이다((나-4)도 같은 성격).
+//   ⚠ 셋이 **같은 방향으로 함께** 흔들린다(헤드리스 프레임 속도 하나가 원인이다) —
+//   러너가 느려지면 한 검사가 아니라 셋이 동시에 붉어진다.
+// · ~~`RADIUS` 가 상수 안에 손으로 녹아 있다~~ → **해소(2026-08-26).** 받침 위치·반경은
+//   GLB 의 JSON 청크에서, 사람 반경은 `glb-collide.js` 의 `export const RADIUS` 에서
+//   **원산지 그대로** 읽는다(아래 `pillarOf`·`bodyRadius`). 조형물을 또 옮기거나 키워도
+//   검사가 저절로 따라온다. 남은 전제: 받침 노드가 **부모 변환을 안 갖는다**(블렌더
+//   export 는 루트에 둔다) · 노드 이름이 `blender-edit.py` 와 일치한다(틀리면 던진다).
 //
 //   사용: node scripts/smoke/measure-glb-walk.mjs
+import { readFileSync } from 'node:fs';
 import { startServer } from './server.mjs';
 import { launchBrowser } from './browser-checks.mjs';
 import { assembleSiteVite } from './assemble.mjs';
 import { SITE_DIR, BASE_PATH } from './config.mjs';
 const GLB = new URL('../../frontend/assets/worlds/world2-blender-edit.glb', import.meta.url).pathname;
+
+// ── 🔴 벽 좌표를 **자산에서 유도한다** (검수관 반려 B1, 2026-08-26) ──────────
+// 앞 판본은 벽이 원점에 있다고 **박아** 뒀다(`moveTo(0, 2.0, 10.95)` · `hypot(x, z)`).
+// 그 벽은 블렌더 조형물의 받침인데, 같은 회차에 그것을 광장 밖 `(60, -60)` 으로 옮기자
+// 검사가 **아무것도 없는 자리를 밀며 「벽을 뚫지 않았다」를 단언**하게 됐다 —
+// 실측 `9.74m` FAIL(exit 1). 이 파일이 **세 번째**로 무효화된 형태다(헤더 표 참조:
+// 54m 자동통과 → 3.6m 미달 → 이번 벽 소실).
+//
+// 값을 고치면 다음 회차에 또 낡는다. 그래서 **자산을 직접 읽어 유도한다** — GLB 의
+// JSON 청크에서 받침 노드의 위치와 수평 반경을 얻으므로, 조형물을 또 옮기거나 키워도
+// 검사가 저절로 따라온다. 사람 반경도 `glb-collide.js` 의 `RADIUS` 를 **원산지에서**
+// 읽는다(검수관 P5: 그 값이 상수 안에 손으로 녹아 있었다).
+//
+// ⚠ **못 하는 것**: 노드가 부모 변환을 가지면 틀린다(블렌더 export 는 루트에 둔다).
+// 받침 이름(`블렌더_받침`)은 `scripts/asset/blender-edit.py` 가 정하므로 그 이름을
+// 바꾸면 여기서 잡힌다 — 조용히 통과하지 않고 **던진다.**
+function readGlbJson(path) {
+  const buf = readFileSync(path);
+  if (buf.readUInt32LE(0) !== 0x46546c67) throw new Error('glTF 매직이 아니다');
+  const len = buf.readUInt32LE(12);
+  if (buf.readUInt32LE(16) !== 0x4e4f534a) throw new Error('첫 청크가 JSON 이 아니다');
+  return JSON.parse(buf.subarray(20, 20 + len).toString('utf8'));
+}
+
+/** 받침의 **월드 중심(x, z)** 과 **수평 반경**. 둘 다 자산에서 유도한다 */
+function pillarOf(path, name = '블렌더_받침') {
+  const g = readGlbJson(path);
+  const node = (g.nodes ?? []).find((n) => n.name === name);
+  if (!node) throw new Error(`GLB 에 '${name}' 노드가 없다 — blender-edit.py 의 이름과 맞는가`);
+  const t = node.translation ?? [0, 0, 0];
+  const sc = node.scale ?? [1, 1, 1];
+  const prim = g.meshes?.[node.mesh]?.primitives?.[0];
+  const acc = g.accessors?.[prim?.attributes?.POSITION];
+  if (!acc?.min || !acc?.max) throw new Error(`'${name}' 의 POSITION accessor 에 min/max 가 없다`);
+  // 수평 반경 — x·z 중 큰 쪽. 스케일을 곱한다.
+  const rx = Math.max(Math.abs(acc.min[0]), Math.abs(acc.max[0])) * Math.abs(sc[0]);
+  const rz = Math.max(Math.abs(acc.min[2]), Math.abs(acc.max[2])) * Math.abs(sc[2]);
+  return { x: t[0], z: t[2], r: Math.max(rx, rz) };
+}
+
+/** 사람 반경 — `glb-collide.js` 가 원산지다. 값을 여기 적지 않는다 */
+function bodyRadius() {
+  const src = readFileSync(new URL('../../frontend/js/glb-collide.js', import.meta.url).pathname, 'utf8');
+  const m = /export const RADIUS = ([\d.]+)/.exec(src);
+  if (!m) throw new Error('glb-collide.js 에서 RADIUS 를 못 읽었다');
+  return Number(m[1]);
+}
+
+const PILLAR = pillarOf(GLB);
+const BODY_R = bodyRadius();
+/** 이 거리에서 멈춰야 한다 — 받침 표면 + 사람 반경 */
+const STOP = PILLAR.r + BODY_R;
 let fails = 0;
 const ok = (c, m) => { console.log(`  ${c ? '✓' : '✗'} ${m}`); if (!c) fails++; };
 
@@ -97,20 +214,29 @@ try {
   //   정상  : 10.85 부근에서 더 못 간다  → r 이 거의 그대로
   //   뮤턴트: 벽을 지나 안으로 들어간다   → r 이 확 줄어든다
   console.log('\n(나) 벽에 막히는가 — **벽 표면 바로 앞**에서 민다');
-  await page.evaluate(() => { window.__glbWorld.moveTo(0, 2.0, 10.95); window.__glbWorld.lookAt(0); });
+  // 시작은 **정지 거리의 코앞**(+0.10m). yaw 0 은 -z 를 보므로 받침의 +z 쪽에 선다.
+  const startZ = PILLAR.z + STOP + 0.10;
+  console.log(`    받침 (${PILLAR.x.toFixed(1)}, ${PILLAR.z.toFixed(1)}) · 반경 ${PILLAR.r.toFixed(2)}m`
+    + ` · 사람 ${BODY_R} → 정지 ${STOP.toFixed(2)}m · 시작 ${(STOP + 0.10).toFixed(2)}m`);
+  await page.evaluate(([x, z]) => { window.__glbWorld.moveTo(x, 2.0, z); window.__glbWorld.lookAt(0); },
+    [PILLAR.x, startZ]);
   await page.waitForTimeout(500);
-  const wallStart = Math.hypot(0, 10.95);
   await page.evaluate(() => dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' })));
   await page.waitForTimeout(8000);
   await page.evaluate(() => dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })));
   const p1 = await page.evaluate(() => window.__glbWorld.pose());
-  const r = Math.hypot(p1.pos.x, p1.pos.z);
-  console.log('    pos :', JSON.stringify(p1.pos), `· 중심까지 ${r.toFixed(2)}m (시작 ${wallStart.toFixed(2)}m)`);
-  ok(r > 10.5, `벽을 뚫지 않았다 — ${r.toFixed(2)}m (받침 10.4 + 사람 0.45 = 10.85)`);
+  const r = Math.hypot(p1.pos.x - PILLAR.x, p1.pos.z - PILLAR.z);
+  console.log('    pos :', JSON.stringify(p1.pos), `· 받침까지 ${r.toFixed(2)}m (시작 ${(STOP + 0.10).toFixed(2)}m)`);
+  // 임계는 정지 거리에서 **유도한다** — 0.35m 는 한 프레임 관통 여유다(헤드리스 8초에
+  // 자유 이동 1.85m ≈ 0.23m/s 이므로 1.5프레임분).
+  ok(r > STOP - 0.35, `벽을 뚫지 않았다 — ${r.toFixed(2)}m (정지 ${STOP.toFixed(2)}m = 받침 ${PILLAR.r.toFixed(2)} + 사람 ${BODY_R})`);
 
   // ⚠ **기준을 느슨하게 하지 않고 시간을 늘린다.** 인스턴싱 도입 후 삼각형이 51만 →
   // 136만으로 늘어 헤드리스가 더 느려졌고(드로우콜은 10,856 → 39), 4초에 0.89m 라
   // `< 59` 를 못 넘겼다. 임계를 낮추면 M1(부호 뒤집기) 뮤테이션과의 간격이 좁아진다.
+  // ⚠ 여기는 **원점 기준 그대로**다 — 조형물이 광장 밖으로 나가면서 이 경로(z 60→중심)는
+  // 오히려 더 깨끗해졌다(막을 것이 없다). 위 (나)와 달리 이 검사는 「무엇에 막히는가」가
+  // 아니라 「어느 방향으로 가는가」를 보므로 자산 좌표에 안 매인다.
   console.log('\n(나-2) 방향 — 벽이 없는 쪽으로는 실제로 **앞으로** 가는가');
   await page.evaluate(() => { window.__glbWorld.moveTo(0, 2.0, 60); window.__glbWorld.lookAt(0); });
   await page.waitForTimeout(400);
@@ -120,6 +246,66 @@ try {
   const p1b = await page.evaluate(() => window.__glbWorld.pose());
   console.log('    z: 60 →', p1b.pos.z.toFixed(2));
   ok(p1b.pos.z < 59, `전진이 **중심 쪽**이다 (60 → ${p1b.pos.z.toFixed(2)})`);
+
+  // ── (나-3) **돌아선 채로** 전진 — 회전 항(sin)이 사는 유일한 자리 ──────────
+  // ⚠ **이 검사가 없어서 M1(이동식 부호)이 검출되지 않았다**(실측 2026-08-26).
+  // (나)·(나-2)는 둘 다 `lookAt(0)` 으로만 돌고, yaw=0 에서는 `sin = 0` 이라
+  // 이동식의 **sin 항이 통째로 죽는다** — `tx = (ix·cos + iz·sin)` 에서 `iz·sin` 이
+  // 0 이므로 그 항의 부호를 뒤집어도 결과가 **한 자리도 안 바뀐다.** 실측으로 확인했다:
+  // 부호를 뒤집은 뮤턴트가 (나) 10.92m ✓ · (나-2) 60→57.83 ✓ 로 **둘 다 초록**이었다.
+  //
+  // 헤더 표의 옛 「M1 부호 12.80m FAIL」은 **다른 형태의 뮤테이션**(전체 부호)이었고,
+  // 그것이 「부호 축을 본다」로 읽히면서 이 구멍을 덮고 있었다.
+  //
+  // yaw = π/2 로 돌리면 `sin = 1, cos = 0` 이라 sin 항만 남는다. 그 상태에서
+  // 「어느 축으로 갔는가」를 본다 — 절대 좌표가 아니라 **부호**다.
+  // ⚠ `(0, 2.0, 300)` 은 **박힌 좌표**다(검수관 권고 N3). B1 이 배운 교훈의 사정거리
+  // 안에 있지만 성격이 다르다 — 여기가 막히면 「전진했다」가 거짓이 되어 **큰 소리로
+  // FAIL** 한다(B1 은 벽이 사라져도 **조용히 통과**했다). 그래서 급하지 않되, 열린
+  // 지면을 자산에서 유도하는 것이 다음 회차 과제다.
+  console.log('\n(나-3) 돌아선 채 전진 — 회전 항의 부호가 맞는가');
+  await page.evaluate(() => { window.__glbWorld.moveTo(0, 2.0, 300); window.__glbWorld.lookAt(Math.PI / 2); });
+  await page.waitForTimeout(400);
+  const before3 = await page.evaluate(() => window.__glbWorld.pose());
+  await page.evaluate(() => dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' })));
+  await page.waitForTimeout(9000);
+  await page.evaluate(() => dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })));
+  const p1c = await page.evaluate(() => window.__glbWorld.pose());
+  const dx = p1c.pos.x - before3.pos.x;
+  const dz = p1c.pos.z - before3.pos.z;
+  console.log(`    yaw π/2 · Δx ${dx.toFixed(2)} · Δz ${dz.toFixed(2)}`);
+  // yaw=π/2 에서 전진(iz=-1)은 `tx = iz·sin = -1` → **-x 방향**이다.
+  // 임계는 (나-2)와 같은 근거(9초 자유 이동 ≈ 1.85m)에서 절반을 여유로 잡는다.
+  ok(dx < -0.9, `회전 항의 부호가 맞다 — Δx ${dx.toFixed(2)} (-x 로 가야 한다)`);
+  // ⚠ **아래 단언은 M1 에서 «퇴화»한다 — 차단 케이스로 세지 않는다**(검수관 조건 1·2).
+  // M1 은 `tz = ix·sin + iz·cos` 인데 yaw=π/2 는 `cos = 0` 이고 전진은 `ix = 0` 이라
+  // `tz = 0` 이 된다 — **정상판본과 똑같이 0** 이다(실측: 베이스라인 Δz −0.01 /
+  // M1 Δz −0.01). 두 단언이 같은 항에 의존하므로 실질 검출력은 1 이고, 실행 요약도
+  // `FAIL (1)` 이다. 진단 가치(주 이동이 어느 축인가)는 있어 남기지만 **세지 않는다.**
+  ok(Math.abs(dz) < Math.abs(dx), `주 이동이 x 축이다 — |Δz| ${Math.abs(dz).toFixed(2)} < |Δx| ${Math.abs(dx).toFixed(2)}`);
+
+  // ── (나-4) **옆걸음** — M1 에 대해 (나-3)과 «독립인» 축 ────────────────────
+  // (나-3)의 두 단언이 독립이 아니라는 것이 위에서 드러났다. 팀장 규율(결함당 차단
+  // 케이스 2개 이상)을 채우려면 **다른 항이 갈리는** 축이 필요하다.
+  //
+  // 옆걸음(D 키 → `ix = 1`, `iz = 0`)을 yaw=π/2 에서 하면 남는 항이 바뀐다:
+  //
+  //   정상  tz = -ix·sin + iz·cos = -1   → **-z**
+  //   M1    tz =  ix·sin + iz·cos = +1   → **+z**
+  //
+  // (나-3)은 `tx` 로, 여기는 `tz` 로 갈린다 — 같은 결함을 **다른 항에서** 잡는다.
+  console.log('\n(나-4) 옆걸음 — 회전 항이 z 에도 맞게 걸리는가');
+  await page.evaluate(() => { window.__glbWorld.moveTo(0, 2.0, 300); window.__glbWorld.lookAt(Math.PI / 2); });
+  await page.waitForTimeout(400);
+  const before4 = await page.evaluate(() => window.__glbWorld.pose());
+  await page.evaluate(() => dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD' })));
+  await page.waitForTimeout(9000);
+  await page.evaluate(() => dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD' })));
+  const p1d = await page.evaluate(() => window.__glbWorld.pose());
+  const dz4 = p1d.pos.z - before4.pos.z;
+  const dx4 = p1d.pos.x - before4.pos.x;
+  console.log(`    yaw π/2 · D · Δx ${dx4.toFixed(2)} · Δz ${dz4.toFixed(2)}`);
+  ok(dz4 < -0.9, `옆걸음이 -z 로 간다 — Δz ${dz4.toFixed(2)}`);
 
   console.log('\n(다) 조이스틱');
   await page.evaluate(() => {
