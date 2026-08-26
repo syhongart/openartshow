@@ -95,7 +95,7 @@ export function createAimMode(deps: AimModeDeps): AimMode {
   // 구조는 `panel/badge.ts` 를 본떴다 — `doc.body` 직접 부착, 상태는 `dataset` 으로만,
   // **숨김 판정은 CSS 가** 한다.
   const root = doc.createElement('div');
-  root.id = 'w8-aim';
+  root.id = 'wg-aim';
   root.dataset.on = '0';
   root.dataset.hit = '0';
 

@@ -30,12 +30,12 @@ export interface LoadingParts {
 
 /** 기본 선택자. world2.html의 마크업과 짝을 이룬다. */
 const SEL = {
-  root: '#w8-loading',
-  bar: '#w8-loading-bar',
-  label: '#w8-loading-label',
-  percent: '#w8-loading-pct',
-  note: '#w8-loading-note',
-  copy: '#w8-loading-copy',
+  root: '#wg-loading',
+  bar: '#wg-loading-bar',
+  label: '#wg-loading-label',
+  percent: '#wg-loading-pct',
+  note: '#wg-loading-note',
+  copy: '#wg-loading-copy',
 } as const;
 
 /**

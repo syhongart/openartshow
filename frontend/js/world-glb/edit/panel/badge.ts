@@ -45,7 +45,7 @@ export function createBadge(host: OverlayHost, st: EditState): Badge {
   const doc = host.doc;
 
   const root = doc.createElement('div');
-  root.id = 'w8-badge';
+  root.id = 'wg-badge';
   const name = doc.createElement('div');
   name.className = 'name';
   root.appendChild(name);

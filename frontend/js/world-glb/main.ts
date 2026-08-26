@@ -528,7 +528,7 @@ export async function startGlbWorld(
 
   // 물속 틴트 판. 마크업은 `world2.html` 에 있고 색도 거기 있다 — 여기서는 세기만
   // 실어 나른다. 요소가 없어도(구버전 HTML 캐시) 그냥 안 보일 뿐 터지지 않는다.
-  const underwaterEl = document.getElementById('w8-underwater');
+  const underwaterEl = document.getElementById('wg-underwater');
   /**
    * 마지막으로 쓴 알파. **값이 같으면 안 쓴다**(검수관 비블로커 권고 2026-07-31).
    *
@@ -651,20 +651,20 @@ export async function startGlbWorld(
 
   // 성능 HUD. 모바일에는 콘솔이 없으므로 화면 표시 + 클립보드 복사가 실기기 수치를 받는
   // 유일한 경로다. DOM만 먼저 잡아두고 커널 probe를 여기로 흘려보낸다.
-  const hudRoot = document.getElementById('w8-hud');
+  const hudRoot = document.getElementById('wg-hud');
   const hud: PerfHud | null = (hudRoot
-    && document.getElementById('w8-hud-body')
-    && document.getElementById('w8-hud-copy')
-    && document.getElementById('w8-hud-toggle'))
+    && document.getElementById('wg-hud-body')
+    && document.getElementById('wg-hud-copy')
+    && document.getElementById('wg-hud-toggle'))
     ? attachHud({
       root: hudRoot,
-      body: document.getElementById('w8-hud-body')!,
-      copy: document.getElementById('w8-hud-copy')!,
-      toggle: document.getElementById('w8-hud-toggle')!,
+      body: document.getElementById('wg-hud-body')!,
+      copy: document.getElementById('wg-hud-copy')!,
+      toggle: document.getElementById('wg-hud-toggle')!,
       // 마크 버튼은 **없어도 된다** — 위 조건절에 넣지 않은 이유가 그것이다.
       // 진단용 추가물이 HUD 전체를 인질로 잡으면, 버튼 하나 오타에 실기기 수치를
       // 통째로 못 받는다.
-      mark: document.getElementById('w8-hud-mark'),
+      mark: document.getElementById('wg-hud-mark'),
     }, {
       backend: () => adapter?.backend ?? '—',
       counts: () => {
@@ -930,9 +930,7 @@ export async function startGlbWorld(
         await yieldFrame();
 
         // ② 파싱. 로더는 **여기서 처음** 내려받는다(부팅 초반 비용 0).
-        const [{ GLTFLoader }] = await Promise.all([
-          import('three/addons/loaders/GLTFLoader.js'),
-        ]);
+        const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
         const loader = new GLTFLoader();
         const gltf = await loader.parseAsync(buf, '');
         report(0.7);
@@ -1016,10 +1014,10 @@ export async function startGlbWorld(
   const input = bindInput(canvas, player);
 
   // 터치 조작. 터치 기기가 아니면 스스로 아무것도 하지 않는다(데스크톱에 조이스틱 안 뜸).
-  const stickBase = document.getElementById('w8-stick'), stickKnob = document.getElementById('w8-stick-knob');
+  const stickBase = document.getElementById('wg-stick'), stickKnob = document.getElementById('wg-stick-knob');
   touch = (stickBase && stickKnob)
     // `zone`(터치를 받는 구역)을 인라인한 것은 파일 크기 게이트 탓이다 — 근거는 `ui/touch-controls.ts` 헤더 한 곳.
-    ? attachTouchControls(canvas, { zone: document.getElementById('w8-stick-zone') ?? undefined, base: stickBase, knob: stickKnob }, {
+    ? attachTouchControls(canvas, { zone: document.getElementById('wg-stick-zone') ?? undefined, base: stickBase, knob: stickKnob }, {
       setAxes: (x, z) => player.setAxes(x, z),
       look: (yaw, pitch) => player.lookBy(yaw, pitch),
     })
@@ -1061,7 +1059,9 @@ export async function startGlbWorld(
   // 세션 내내 상수"인데, 잴 수단이 없으면 그 주장은 검증할 수 없는 문장일 뿐이다.
   // 실제로 첫 스모크에서 이 항목이 "측정 불가"로 남았고, 그건 검증기의 잘못이 아니라
   // 측정 지점을 안 만들어 둔 설계의 잘못이었다.
-  (window as unknown as Record<string, unknown>).__world8 = {
+  // ⚠ `__world8` 이었고 두 페이지 공유로 거짓이 됐다 — world7 도 그것을 읽어야 했다.
+  (window as unknown as Record<string, unknown>).__glbWorld = {   // 이름은 트리와 같다
+    tag: opts.tag,   // 어느 페이지가 이 트리를 열었는가 — `world7` / `world8`
     /** 부팅 단계별 경과(ms) */
     timeline,
 

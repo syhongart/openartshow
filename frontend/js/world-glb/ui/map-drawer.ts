@@ -31,8 +31,8 @@ export interface MapDrawer {
 
 /** DOM 이 없으면 `null`. 조립부가 지도를 몰라도 되게 하려는 것이다 */
 export function findMapDrawer(doc: Document): MapDrawerParts | null {
-  const wrap = doc.getElementById('w8-mapwrap');
-  const tab = doc.getElementById('w8-map-tab');
+  const wrap = doc.getElementById('wg-mapwrap');
+  const tab = doc.getElementById('wg-map-tab');
   return wrap && tab ? { wrap, tab } : null;
 }
 
@@ -40,7 +40,7 @@ export function findMapDrawer(doc: Document): MapDrawerParts | null {
 // *"월드2에서 캡쳐하면 지도, HUD때문에 안보일테니깐. 책갈피로 감춰지게하자."*
 //
 // 캡처가 이 화면의 목적 중 하나다 — 작가가 자기 공간을 담아 보여주는 것. 지도가 늘
-// 펼쳐져 있으면 그 캡처마다 왼쪽이 UI 로 먹힌다. 성능 패널(`#w8-hud`)은 이미
+// 펼쳐져 있으면 그 캡처마다 왼쪽이 UI 로 먹힌다. 성능 패널(`#wg-hud`)은 이미
 // `data-open="0"` 으로 접혀 있었고, 지도만 열려 있었다.
 //
 // 기본값을 바꾸는 것으로 끝내고 새 코드를 만들지 않는다 — 책갈피·토글·transform 접기가

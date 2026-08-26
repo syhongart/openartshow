@@ -41,9 +41,9 @@ export interface SkyPanel {
 
 /** 문서에서 패널 요소를 찾는다. 없으면 null — 패널 없이도 월드는 돈다. */
 export function findSkyPanel(doc: Document): SkyPanelParts | null {
-  const panel = doc.getElementById('w8-god');
-  const toggle = doc.getElementById('w8-god-toggle');
-  const body = doc.getElementById('w8-god-body');
+  const panel = doc.getElementById('wg-god');
+  const toggle = doc.getElementById('wg-god-toggle');
+  const body = doc.getElementById('wg-god-body');
   if (!panel || !toggle || !body) return null;
   return { panel, toggle, body };
 }

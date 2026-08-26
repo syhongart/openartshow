@@ -76,7 +76,7 @@ export function createOutliner(
   const doc = host.doc;
 
   const root = doc.createElement('div');
-  root.id = 'w8-outliner';
+  root.id = 'wg-outliner';
 
   const title = doc.createElement('h4');
   title.textContent = '구역';
@@ -89,7 +89,7 @@ export function createOutliner(
   /**
    * 걸린 작품 칸 (W8-11). 구역 목록과 **같은 컨테이너에 나란히** 둔다 — 별도 패널을
    * 만들면 좁은 왼쪽에 상자가 둘이 되고, 그 둘의 접힘·모드 규칙을 CSS 가 각각 알아야
-   * 한다(`css.ts` 가 `#w8-outliner` 하나만 알면 되게 유지한다).
+   * 한다(`css.ts` 가 `#wg-outliner` 하나만 알면 되게 유지한다).
    *
    * 문을 안 받았으면 **DOM 자체를 안 만든다** — 빈 제목만 남으면 «작품이 0개» 와
    * «기능이 없다» 가 화면에서 구별되지 않는다.

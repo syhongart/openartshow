@@ -156,7 +156,7 @@ export function createPanel(
   doc.head.appendChild(style);
 
   const panel = doc.createElement('div');
-  panel.id = 'w8-edit';
+  panel.id = 'wg-edit';
 
   const el = (tag: string, cls?: string, text?: string): HTMLElement => {
     const e = doc.createElement(tag);

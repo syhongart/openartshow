@@ -24,8 +24,8 @@
 import { type OverlayStore, type LoadResult, loaded, failed } from './types.js';
 
 /** 키 규약. `mypage` 의 `lu-profile::<uid>` 와 같은 모양 — 한 저장소 안에서 형태가 갈리면 못 찾는다 */
-export const OVERLAY_KEY_PREFIX = 'lu-w8-overlay::';
-export const LEDGER_KEY = 'lu-w8-ledger';
+export const OVERLAY_KEY_PREFIX = 'lu-wg-overlay::';
+export const LEDGER_KEY = 'lu-wg-ledger';
 
 /**
  * 문서 하나의 크기 상한(문자). **넉넉하지만 무한이 아니다.**

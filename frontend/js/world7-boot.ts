@@ -17,12 +17,12 @@
 
 import { startGlbWorld } from './world-glb/main.js';
 
-const pick = document.getElementById('w7-pick');
-const pickBtn = document.getElementById('w7-pickBtn');
-const fileInput = document.getElementById('w7-file');
-const statusEl = document.getElementById('w7-status');
-const againBtn = document.getElementById('w7-again');
-const canvas = document.getElementById('w7-canvas');
+const pick = document.getElementById('wg-pick');
+const pickBtn = document.getElementById('wg-pickBtn');
+const fileInput = document.getElementById('wg-file');
+const statusEl = document.getElementById('wg-status');
+const againBtn = document.getElementById('wg-again');
+const canvas = document.getElementById('wg-canvas');
 
 function say(text: string): void {
   if (statusEl) statusEl.textContent = text;
@@ -31,7 +31,7 @@ function say(text: string): void {
 /** 파일 하나를 받아 세계를 연다. **한 번만** 성공한다 — 두 번째는 새로고침이다 */
 async function open(file: File): Promise<void> {
   if (!(canvas instanceof HTMLCanvasElement)) {
-    console.error('[world7] 캔버스(#w7-canvas)를 찾지 못했습니다');
+    console.error('[world7] 캔버스(#wg-canvas)를 찾지 못했습니다');
     return;
   }
   say(`${file.name} — 읽는 중…`);

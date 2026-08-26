@@ -59,7 +59,7 @@ export interface ExportPanelOptions {
 
 /** DOM 이 없으면 `null` — 조립부가 이 기능의 존재를 몰라도 되게 */
 export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}): ExportPanel | null {
-  const btn = doc.getElementById('w8-export-glb') as HTMLButtonElement | null;
+  const btn = doc.getElementById('wg-export-glb') as HTMLButtonElement | null;
   if (!btn) return null;
 
   const idle = btn.textContent ?? 'GLB 내보내기';
@@ -96,9 +96,9 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
   btn.addEventListener('click', onClick);
 
   // ── 되읽기 ─────────────────────────────────────────────────────────────────
-  const file = doc.getElementById('w8-import-glb-file') as HTMLInputElement | null;
-  const importBtn = doc.getElementById('w8-import-glb') as HTMLButtonElement | null;
-  const note = doc.getElementById('w8-import-note');
+  const file = doc.getElementById('wg-import-glb-file') as HTMLInputElement | null;
+  const importBtn = doc.getElementById('wg-import-glb') as HTMLButtonElement | null;
+  const note = doc.getElementById('wg-import-note');
   const onPick = () => file?.click();
 
   const onFile = async () => {

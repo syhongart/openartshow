@@ -81,9 +81,9 @@ const wiredToggles = new WeakSet<HTMLElement>();
 
 /** 문서에서 바를 찾는다. 없으면 null — 바 없이도 월드는 돈다 */
 export function findKnobBar(doc: Document): KnobBarParts | null {
-  const panel = doc.getElementById('w8-sliders');
-  const toggle = doc.getElementById('w8-sliders-toggle');
-  const body = doc.getElementById('w8-sliders-body');
+  const panel = doc.getElementById('wg-sliders');
+  const toggle = doc.getElementById('wg-sliders-toggle');
+  const body = doc.getElementById('wg-sliders-body');
   if (!panel || !toggle || !body) return null;
   return { panel, toggle, body };
 }
@@ -128,19 +128,19 @@ export function attachKnobBar(parts: KnobBarParts, specs: readonly KnobSpec[]): 
   // 노브 라벨이 언젠가 바깥에서 오면 그때 이 파일을 다시 볼 사람은 없다.
   for (const spec of specs) {
     const row = doc.createElement('div');
-    row.className = 'w8-slide-row';
+    row.className = 'wg-slide-row';
     row.dataset.key = spec.key;
 
     const cap = doc.createElement('span');
-    cap.className = 'w8-slide-cap';
+    cap.className = 'wg-slide-cap';
     const pin = doc.createElement('span');
-    pin.className = 'w8-slide-pin';
+    pin.className = 'wg-slide-pin';
     pin.setAttribute('aria-hidden', 'true');
     cap.append(pin, doc.createTextNode(spec.label));
 
     const input = doc.createElement('input');
     input.type = 'range';
-    input.className = 'w8-slide-input';
+    input.className = 'wg-slide-input';
     input.dataset.key = spec.key;
     input.min = String(spec.min);
     input.max = String(spec.max);
@@ -148,11 +148,11 @@ export function attachKnobBar(parts: KnobBarParts, specs: readonly KnobSpec[]): 
     input.setAttribute('aria-label', spec.label);
 
     const val = doc.createElement('span');
-    val.className = 'w8-slide-val';
+    val.className = 'wg-slide-val';
 
     const reset = doc.createElement('button');
     reset.type = 'button';
-    reset.className = 'w8-slide-reset';
+    reset.className = 'wg-slide-reset';
     reset.dataset.reset = spec.key;
     reset.textContent = '↺';
     // 되돌리기가 무엇으로 돌아가는지 적는다. "기본값"이라고만 하면 그 기본값이
@@ -270,18 +270,18 @@ export function attachKnobActions(
 
   for (const a of actions) {
     const row = doc.createElement('div');
-    row.className = 'w8-slide-row w8-slide-act';
+    row.className = 'wg-slide-row wg-slide-act';
     row.dataset.key = a.key;
 
     const btn = doc.createElement('button');
     btn.type = 'button';
-    btn.className = 'w8-slide-run';
+    btn.className = 'wg-slide-run';
     btn.dataset.run = a.key;
     // `innerHTML` 을 쓰지 않는다 — `attachKnobBar` 머리의 XSS 근거와 같다.
     btn.textContent = a.label;
 
     const out = doc.createElement('span');
-    out.className = 'w8-slide-val';
+    out.className = 'wg-slide-val';
 
     row.append(btn, out);
     body.append(row);
@@ -295,7 +295,7 @@ export function attachKnobActions(
     const a = actions.find((x) => x.key === b.dataset.run);
     if (!a) return;
     const msg = a.run();
-    const out = b.parentElement?.querySelector<HTMLElement>('.w8-slide-val');
+    const out = b.parentElement?.querySelector<HTMLElement>('.wg-slide-val');
     if (out && typeof msg === 'string') {
       out.textContent = msg;
       // 남겨 두면 다음에 눌렀을 때 옛 값이 새 값처럼 읽힌다.

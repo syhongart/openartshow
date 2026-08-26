@@ -282,7 +282,7 @@ export const npcFeature: Feature = {
     const { cellX, cellZ } = DEFAULT_LAYOUT;
     const rnd = rngFrom(0x9e3779b9);
     const group = new THREE.Group();
-    group.name = 'w8-npc';
+    group.name = 'wg-npc';
     env.scene.add(group);
 
     const home = env.player.position;

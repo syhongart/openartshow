@@ -1,7 +1,7 @@
 // world-glb/ui/touch-controls.ts — 모바일 터치 조작(가상 조이스틱 + 시선 드래그).
 //
 // ── 설계 (2026-08-21 재개정, 감독 판정 «조이스틱 고정이 불편해») ────────────
-//   · **이동** — 좌하단 **구역**(`#w8-stick-zone`)이 터치를 받고, 원은 **누른 자리에**
+//   · **이동** — 좌하단 **구역**(`#wg-stick-zone`)이 터치를 받고, 원은 **누른 자리에**
 //     그려진다. `setPointerCapture` 로 붙든다.
 //   · **시선** — 캔버스 위 아무 데나 드래그. **편집 중에는 끈다**(아래).
 //
@@ -93,16 +93,16 @@ export function attachTouchControls(
   //
   // 🔴 **값은 여기 없다** (감독 지시 2026-08-24 *"하드코딩하지말고 가지고 오는 방향으로"*).
   // 색·크기·상태 색은 `js/shared/joystick-look.js` 한 곳이고 여기는 **셀렉터만** 준다.
-  injectJoystickStyle(parts.base.ownerDocument, 'w8-joy-style', joystickCss({
-    base: '#w8-stick',
-    knob: '#w8-stick-knob',
-    on: '#w8-stick[data-on="1"]',
-    lean: (v) => `#w8-stick[data-lean="${v}"]`,
-    leanKnob: (v) => `#w8-stick[data-lean="${v}"] #w8-stick-knob`,
+  injectJoystickStyle(parts.base.ownerDocument, 'wg-joy-style', joystickCss({
+    base: '#wg-stick',
+    knob: '#wg-stick-knob',
+    on: '#wg-stick[data-on="1"]',
+    lean: (v) => `#wg-stick[data-lean="${v}"]`,
+    leanKnob: (v) => `#wg-stick[data-lean="${v}"] #wg-stick-knob`,
     // 손잡이가 링의 **자식**이다 — 갤러리는 형제라 `margin` 으로 잡는다(모듈 주석 참조).
     // `knobOn` 을 안 주는 것도 같은 이유다: 링이 통째로 등장하면 자식은 함께 온다.
     knobCenter: 'transform',
-    // 층위가 필요 없다 — `#w8-stick-zone` 이 이미 층을 갖고 조이스틱은 그 **자식**이다.
+    // 층위가 필요 없다 — `#wg-stick-zone` 이 이미 층을 갖고 조이스틱은 그 **자식**이다.
     // 「필요 없다」를 값으로 적는다(생략은 모듈이 던진다 — 조용한 소실을 막는 장치다).
     z: null,
   }));

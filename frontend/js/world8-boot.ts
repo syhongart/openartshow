@@ -30,7 +30,7 @@
 import { startGlbWorld } from './world-glb/main.js';
 import { assetUrl } from './world-glb/asset-url.js';
 
-const canvas = document.getElementById('w8-canvas');
+const canvas = document.getElementById('wg-canvas');
 if (canvas instanceof HTMLCanvasElement) {
   startGlbWorld(canvas, {
     tag: 'world8',
@@ -49,5 +49,5 @@ if (canvas instanceof HTMLCanvasElement) {
     console.error('[world8] 진입 실패', err);
   });
 } else {
-  console.error('[world8] 캔버스(#w8-canvas)를 찾지 못했습니다');
+  console.error('[world8] 캔버스(#wg-canvas)를 찾지 못했습니다');
 }

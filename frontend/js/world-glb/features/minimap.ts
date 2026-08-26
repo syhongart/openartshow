@@ -68,7 +68,7 @@ export const minimapFeature: Feature = {
   create(env: FeatureEnv): FeatureInstance | null {
     const doc = env.doc;
     if (!doc) return null;
-    const cv = doc.getElementById('w8-map') as HTMLCanvasElement | null;
+    const cv = doc.getElementById('wg-map') as HTMLCanvasElement | null;
     if (!cv) return null;
     const g = cv.getContext('2d');
     if (!g) return null;

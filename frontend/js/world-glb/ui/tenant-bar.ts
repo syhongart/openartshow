@@ -14,7 +14,7 @@
 // (전역 `location` 을 직접 만지면 테스트가 이 파일을 못 돌린다).
 //
 // ── 룩은 새로 정하지 않는다 ───────────────────────────────────────────────
-// 색·간격은 `#w8-god` 패널의 것을 그대로 따른다(`world2.html` 의 CSS 변수). 감독이
+// 색·간격은 `#wg-god` 패널의 것을 그대로 따른다(`world2.html` 의 CSS 변수). 감독이
 // 부재 중이고 이 화면은 behind-flag 이므로 **새 룩 판단을 열지 않는 것**이 보수적인
 // 쪽이다 — 판단이 필요해지면 그때 디자이너에게 간다.
 
@@ -45,13 +45,13 @@ export interface TenantBar {
 
 /** DOM 이 없으면 `null` — 조립부가 이 바를 몰라도 되게 한다(`findMapDrawer` 와 같은 형태) */
 export function findTenantBar(doc: Document): TenantBarParts | null {
-  const wrap = doc.getElementById('w8-tenant');
-  const title = doc.getElementById('w8-tenant-title');
-  const notice = doc.getElementById('w8-tenant-notice');
-  const list = doc.getElementById('w8-tenant-list') as HTMLSelectElement | null;
-  const input = doc.getElementById('w8-tenant-input') as HTMLInputElement | null;
-  const go = doc.getElementById('w8-tenant-go');
-  const reset = doc.getElementById('w8-tenant-reset');
+  const wrap = doc.getElementById('wg-tenant');
+  const title = doc.getElementById('wg-tenant-title');
+  const notice = doc.getElementById('wg-tenant-notice');
+  const list = doc.getElementById('wg-tenant-list') as HTMLSelectElement | null;
+  const input = doc.getElementById('wg-tenant-input') as HTMLInputElement | null;
+  const go = doc.getElementById('wg-tenant-go');
+  const reset = doc.getElementById('wg-tenant-reset');
   return wrap && title && notice && list && input && go && reset
     ? { wrap, title, notice, list, input, go, reset }
     : null;
