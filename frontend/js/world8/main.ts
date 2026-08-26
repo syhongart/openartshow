@@ -49,12 +49,6 @@ import { mountGlbWorld, describeGlb, type GlbSourceResult } from './systems/glb-
 import { aheadOf } from './diag-ahead.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
-import { ShadowDecalSystem } from './systems/shadow-decal.js';
-import {
-  SHADOW_DENSITY, SHADOW_DENSITY_MAX, SHADOW_SOFT, SHADOW_SOFT_MAX, SHADOW_LIFT, SHADOW_LIFT_MAX,
-  SHADOW_BLEND, SHADOW_BLENDS, LEAF_DEPTH, LEAF_DEPTH_MAX,
-} from './decide/shadow-decal.js';
-import { SHADOW_DRAW_PX, SHADOW_DRAW_MIN, SHADOW_DRAW_MAX } from './parts/shadow.js';
 import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
@@ -191,32 +185,16 @@ const SHADOW = shadowFrustum(
  * `parts/index.ts` 에서 `shadowParts` 한 줄을 지운다.** 그것이 이 저장소가 기능을 끄는
  * 방식이고, 노브로 흉내 내면 "껐는데 왜 draw 가 그대로냐" 로 오독된다.
  */
-const SHADOW_DECAL_OPTS = {
-  res: Math.round(readNum('shres', SHADOW_DRAW_PX, SHADOW_DRAW_MIN, SHADOW_DRAW_MAX)),
-  // 상한이 1 이 아니다 — 기본값이 이미 1(빌더 원본)이라 1 로 자르면 노브가 한쪽으로만
-  // 열린다. 근거는 `SHADOW_DENSITY_MAX` 주석.
-  density: readNum('shdark', SHADOW_DENSITY, 0, SHADOW_DENSITY_MAX),
-  // 상한을 `1` 로 적지 않는다 — 슬라이더(아래)와 스톱 위치 정규화의 분모까지 **세 곳**이
-  // 같은 값을 봐야 한다. 한 곳에만 적고 나머지가 읽는다.
-  soft: readNum('shsoft', SHADOW_SOFT, 0, SHADOW_SOFT_MAX),
-  // ⚠ **절대 높이가 아니라 캐스터 발밑에서 띄우는 값이다**(감독 실기기 2026-08-11:
-  // *"그림자가 바닥 위에 떠있어"*). 하한이 0.16 이었던 것은 절대 높이일 때 도로
-  // (0.14)를 넘겨야 했기 때문이고, 상대 띄움에는 그 제약이 없다 — 0 까지 연다.
-  y: readNum('shy', SHADOW_LIFT, 0, SHADOW_LIFT_MAX),
-  on: readNum('shdec', 1, 0, 1),
-  // 합성 모드. **감독 화면이 깨졌을 때 링크 하나로 되돌리는 수단이다** — `three/webgpu`
-  // 에서 `MultiplyBlending` 이 동작하는지 헤드리스로 검증할 방법이 이 저장소에 없다.
-  // 근거 전문은 `decide/shadow-decal.ts` 의 「합성 모드」 절 마지막 문단 한 곳이다.
-  blend: readEnum('shblend', SHADOW_BLEND, SHADOW_BLENDS),
-  // 잎 그림자 깊이. **기본이 0 이라 얼룩은 꺼져 있다** — 감독이 카드에서 고른 것은
-  // *"얼룩덩덩하게"* 였으나 배포본을 보고 *"산만하면 `?shleaf=0` 으로 확정"* 으로
-  // 뒤집었다(2026-08-11). 켜려면 `?shleaf=0.55`(= `LEAF_DEPTH_ON`) 로 민다.
-  // ⚠ 이 주석은 방향이 반대로 적혀 있었다(*"0 으로 밀면 원으로 돌아온다"*) — 값만
-  // 바꾸고 그 값을 설명하는 문장을 안 고친 것이고, 이번 회차에 같은 형태가 **여섯 번째**다.
-  // 값 미러링과 같은 실수가 코드 값이 아니라 **서술**에서 재현된다: 한 사실을 여러 파일이
-  // 서술하면 한 곳만 고쳐도 아무도 모른다(짝은 `parts/tree.ts` 의 `shadowProfile` 주석).
-  leaf: readNum('shleaf', LEAF_DEPTH, 0, LEAF_DEPTH_MAX),
-};
+// ── 그림자 데칼 노브를 **지웠다** (검수관 권고 P1, 2026-08-26) ──────────────
+// `SHADOW_DECAL_OPTS` 가 `?shres`·`?shdark`·`?shsoft`·`?shy`·`?shdec`·`?shblend`·
+// `?shleaf` 를 파싱했는데 **이 세계에는 소비자가 0** 이다 — `ShadowDecalSystem` 인스턴스가
+// 없기 때문이다(파츠 슬롯이 없어 붙을 대상이 없다. 경위는 `systems/glb-source.ts` 헤더).
+// `?shdark=0.6` 을 밀어도 아무 일이 안 일어나는데 노브는 존재하는 상태였고, tsc 는
+// `noUnusedLocals` 미설정이라 안 잡고 eslint 는 `.ts` 를 안 본다.
+//
+// **판정이 끝난 뒤에도 남은 노브는 그때부터 장식이다** — world2 가 `?shlen`·`?shtail`·
+// `?shstyle` 을 같은 이유로 지운 선례가 `world2/main.ts` 의 같은 자리에 있다.
+
 
 /*
  * 동시 파셀 수 상수(`MAX_PARCELS = 20`)를 여기서 없앴다.
