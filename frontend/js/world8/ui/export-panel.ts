@@ -84,7 +84,7 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
     } catch (err) {
       // 조용히 삼키지 않는다. 내보내기는 사용자가 결과 파일을 기다리는 작업이라,
       // 실패했는데 버튼만 원래대로 돌아가면 "눌리지 않았나" 로 읽힌다.
-      console.error('[world2] GLB 내보내기 실패', err);
+      console.error('[world8] GLB 내보내기 실패', err);
       setLabel('✗ 실패 — 콘솔 확인');
       setTimeout(() => setLabel(idle), 6000);
     } finally {
@@ -141,7 +141,7 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       const notice = importNotice({
         parts: nodes.length, foreign, reason: imported.reason, detail: imported.detail,
       });
-      if (notice.failed) console.error(`[world2] 추가된 물건을 올리지 못했다 — ${notice.why}`);
+      if (notice.failed) console.error(`[world8] 추가된 물건을 올리지 못했다 — ${notice.why}`);
 
       if (notice.reject) {
         importBtn.textContent = notice.rejectLabel;
@@ -200,10 +200,10 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       if (foreign > 0) parts.push(`추가된 물건 ${foreign.toLocaleString()}개`);
       if (notes.length) parts.push(notes[0]);
       importBtn.textContent = parts.join(' · ');
-      if (notes.length) console.warn('[world2] 되읽기 경고\n  ' + notes.join('\n  '));
+      if (notes.length) console.warn('[world8] 되읽기 경고\n  ' + notes.join('\n  '));
       setTimeout(() => { importBtn.textContent = idleImport; }, 8000);
     } catch (err) {
-      console.error('[world2] GLB 되읽기 실패', err);
+      console.error('[world8] GLB 되읽기 실패', err);
       importBtn.textContent = `✗ ${err instanceof Error ? err.message : '실패'}`;
       setTimeout(() => { importBtn.textContent = idleImport; }, 6000);
     } finally {

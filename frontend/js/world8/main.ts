@@ -715,7 +715,7 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
     },
     onError: (stage, err) => {
       loading?.fail(stage, err);
-      console.error('[world2] 부팅 실패', stage, err);
+      console.error('[world8] 부팅 실패', stage, err);
     },
     steps: {
       renderer: async () => {
@@ -846,7 +846,7 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
             textureUrl: (src) => texturePreviews.get(src) ?? assetUrl(src),
             setTexturePreview: (src, url) => { texturePreviews.set(src, url); },
           },
-          (name, err) => console.error(`[world2] 기능 조립 실패: ${name}`, err),
+          (name, err) => console.error(`[world8] 기능 조립 실패: ${name}`, err),
         );
       },
 
@@ -1180,7 +1180,7 @@ export async function startWorld8(canvas: HTMLCanvasElement): Promise<WorldHandl
       // 기능 정리. System의 `dispose`는 커널이 부르므로, 여기서는 기능이 따로 붙인
       // UI·리스너만 거둔다. 여기에도 기능별 분기가 없다.
       for (const m of features) {
-        try { m.instance.dispose?.(); } catch (err) { console.error(`[world2] ${m.name} 정리 실패`, err); }
+        try { m.instance.dispose?.(); } catch (err) { console.error(`[world8] ${m.name} 정리 실패`, err); }
       }
       // non-null 단언을 쓰는 이유: 이 셋은 부팅 콜백 안에서 할당되는데, TS 제어흐름
       // 분석은 함수 내부 할당을 추적하지 않아 바깥에서는 여전히 null로 본다.
