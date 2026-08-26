@@ -131,6 +131,10 @@ export const ENTRYPOINTS = [
   // 접미로 판정하므로 결번과 무관하게 자동 편입된다. 이 줄은 다음 사람이
   // *"world4 가 어디 갔나"* 를 찾는 고리를 막으려고 있다.
   { key: 'world5', src: 'world5.html', out: 'app/world5.html', exposure: 'flagged' },
+  // 감독 지시 2026-08-25 *"아까 그 파일을 올려서 월드7로 해봐. 테스트로 보게"* —
+  // 내보낸 GLB 를 블렌더에서 손본 뒤 **있는 그대로** 걸어보는 페이지. world2 되읽기는
+  // 우리 파츠를 우리 모양으로 다시 세우므로 블렌더의 모양 변경이 안 나타난다.
+  { key: 'world7', src: 'world7.html', out: 'app/world7.html', exposure: 'flagged' },
   // [도구] 배치 에디터 — three.js r171 `editor/` 반입. 감독 지시 2026-08-09
   // *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능? glb파일을 내가 직접 넣고"* →
   // *"three.js 방식이니깐. 거기 에디터를 깃에서 가지고 와서 활용하는방안"*.

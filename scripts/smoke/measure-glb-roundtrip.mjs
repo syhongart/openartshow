@@ -42,11 +42,13 @@
 // · 좌표의 의미론적 정확성 — 도시가 통째로 밀려도 «동일» 이면 통과한다.
 // · WebGPU — 헤드리스는 WebGL(swiftshader)이고 감독 실기기는 WebGPU 다.
 // · 시각 회귀 · 성능.
-// · **로더 호환성.** 아래 `packGlb` 는 편집본을 만들 때 **BIN 청크를 안 쓴다** —
-//   `accessors`·`bufferViews` 는 남는데 버퍼가 없어 엄밀히는 유효하지 않은 glTF 다
-//   (검수관 권고 P-b). 우리 `import-glb.ts` 는 JSON 청크만 읽으므로 되읽기 경로를
-//   재는 데는 충분하지만, **«블렌더가 낸 파일»의 충실도는 아니다.** 이 스크립트가
-//   통과했다고 남의 로더가 그 파일을 연다는 뜻이 아니다.
+// · **로더 호환성.** ⚠ 이 항목이 한때 *"`packGlb` 는 BIN 청크를 안 쓴다 … 되읽기
+//   경로를 재는 데는 충분하다"* 였고 **그 전제가 무너졌다**(2026-08-25). 되읽기가
+//   남의 메시를 GLTFLoader 로 올리게 되면서 BIN 이 필요해졌고, BIN 없는 편집본은
+//   로더를 `null.slice` 로 죽인다. 즉 이 스크립트는 **감독이 블렌더에서 낸 파일을
+//   재현하지 못하고 있었다.** 지금은 원본 BIN 을 그대로 옮긴다.
+//   그래도 블렌더 출력 자체는 아니다 — 노드 계층·재질 이름·확장을 블렌더가 어떻게
+//   바꾸는지는 이 스크립트가 흉내내지 않는다.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -74,15 +76,45 @@ function readGlb(file) {
   return { buf, json: JSON.parse(text) };   // 파싱 실패는 던진다 — ①
 }
 
-function packGlb(gltf, out) {
+/** 원본 GLB 에서 BIN 청크의 바이트 범위를 찾는다. 없으면 `null` */
+function findBin(buf) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let at = 20 + dv.getUint32(JSON_LEN_OFFSET, true);
+  while (at + 8 <= buf.length) {
+    const len = dv.getUint32(at, true);
+    if (dv.getUint32(at + 4, true) === 0x004e4942) return buf.subarray(at + 8, at + 8 + len);
+    at += 8 + len;
+  }
+  return null;
+}
+
+/**
+ * 편집본을 조립한다. **원본 BIN 을 반드시 옮긴다.**
+ *
+ * ⚠ 이 함수가 오래 BIN 을 **안 붙이고 있었다.** 검수관이 권고 P-b 로 그 한계를 적어
+ * 뒀는데(«우리 `import-glb.ts` 는 JSON 만 읽으므로 무해하지만 「블렌더가 낸 파일」의
+ * 충실도는 아니다») 되읽기가 GLTFLoader 를 쓰게 되면서 **실제 결함으로 물렸다** —
+ * 버퍼를 약속하고 BIN 이 없는 GLB 는 로더가 `null.slice` 로 죽는다.
+ *
+ * 그래서 이 스크립트가 만든 편집본은 **감독이 블렌더에서 낸 파일을 재현하지 못했고**,
+ * 통과한 회차가 실제로는 그 경로를 안 밟은 것이었다. 「못 잰 것이 통과로 적히는」 형태다.
+ */
+function packGlb(gltf, out, srcBin) {
   const b = new TextEncoder().encode(JSON.stringify(gltf));
   const pad = (4 - (b.length % 4)) % 4;
-  const total = 20 + b.length + pad;
+  const jsonLen = b.length + pad;
+  const binLen = srcBin ? srcBin.length + ((4 - (srcBin.length % 4)) % 4) : 0;
+  const total = 20 + jsonLen + (srcBin ? 8 + binLen : 0);
   const o = Buffer.alloc(total);
   o.writeUInt32LE(0x46546c67, 0); o.writeUInt32LE(2, 4); o.writeUInt32LE(total, 8);
-  o.writeUInt32LE(b.length + pad, JSON_LEN_OFFSET); o.writeUInt32LE(0x4e4f534a, 16);
+  o.writeUInt32LE(jsonLen, JSON_LEN_OFFSET); o.writeUInt32LE(0x4e4f534a, 16);
   Buffer.from(b).copy(o, 20);
   for (let i = 0; i < pad; i++) o[20 + b.length + i] = 0x20;
+  if (srcBin) {
+    const at = 20 + jsonLen;
+    o.writeUInt32LE(binLen, at); o.writeUInt32LE(0x004e4942, at + 4);
+    srcBin.copy(o, at + 8);
+  }
   fs.writeFileSync(out, o);
 }
 
@@ -195,7 +227,7 @@ async function main() {
       const keep = Math.floor(tg.children.length / 2);
       tg.children = tg.children.slice(0, keep);
       const fileE = path.join(os.tmpdir(), 'w2-roundtrip-E.glb');
-      packGlb(edited, fileE);
+      packGlb(edited, fileE, findBin(A.buf));
 
       const labelEdit = await importFile(page, fileE);
       if (!labelEdit.startsWith('✓')) fail(`편집본 되읽기 라벨이 ✓ 가 아니다: ${labelEdit}`);
