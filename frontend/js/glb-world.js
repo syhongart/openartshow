@@ -46,11 +46,8 @@
 // (`glb-collide.js`).
 //
 // ── 지금 **안** 하는 것 (일부러 / 아직) ─────────────────────────────────────
-// · **후처리·잔디·TSL 물 — 아직.** 이 페이지는 plain `three`(WebGLRenderer)이고
-//   world2 는 `three/webgpu` 라 TSL 노드가 안 돈다. 렌더러 교체는 world7 까지 함께
-//   흔드는 설계 분기라 별건이다.
-// · **하늘/시간대 — 아직.** 엔진(`sky.js`, 1609줄)은 plain three 지만 어댑터가
-//   world2 계열 타입을 물고 있어 배선을 새로 써야 한다.
+// · **후처리·잔디·TSL 물 — 아직**(렌더러가 plain three 다. 팀장 판정: 3차에 단독 교체).
+// · **하늘/시간대 — 아직**(엔진은 plain three 지만 배선을 새로 써야 한다. 2차).
 // · **미니맵·NPC·물 배치·편집·저장 — 원리상 안 된다.** 전부 「어디가 도로·물·파츠인가」
 //   를 절차적 판정 산출물에서 읽는다. 임의 GLB 에는 그 선언이 없다.
 // · 저장 없음 — 고른 파일은 브라우저 안에서만 산다(무저장 원칙).
@@ -67,6 +64,7 @@ import { buildColliders, createWalker, groundBelow, RADIUS } from './glb-collide
 // 터치 조이스틱 손잡이 — 룩 값은 `shared/joystick-look.js` 한 곳이다.
 import { createStick } from './glb-stick.js';
 import { instanceRepeats } from './glb-instance.js';
+import { setupShadow } from './glb-shadow.js';
 import { installDiag } from './glb-diag.js';
 
 const EYE = 1.6;
@@ -94,10 +92,6 @@ const PAGE = document.body.dataset.page || 'glb-world';
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-// 그림자 — world2 도 실시간 그림자를 쓴다(감독 지시 「기본 기능 다」).
-// `PCFSoft` 는 world2 와 같은 종류다. 프러스텀은 씬 크기에서 유도한다(`place()`).
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x8fb4d8);
 const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 4000);
@@ -125,6 +119,7 @@ const pos = new THREE.Vector3(0, EYE, 0);
 const keys = { f: 0, b: 0, l: 0, r: 0, up: 0, down: 0, run: 0 };
 let ready = false;
 let walker = null;      // 걷기 판정기 — `place()` 에서 씬마다 새로 만든다
+let collisionRoot = null;  // 인스턴싱 **전** 낱개 트리 — 충돌 바운딩의 출처(B2)
 let fly = false;        // F 로 토글. 기본은 **걷기**(감독 지시: world2 의 기본 기능)
 const stick = createStick(document);   // 마크업이 없으면 null — 그러면 손잡이만 안 그린다
 
@@ -143,9 +138,15 @@ const WALKABLE_SPAN = 60;
 
 /** 씬 전체를 놓아 준다 — 다른 파일을 고르면 이전 것이 그대로 남으면 안 된다 */
 function disposeRoot() {
+  // 낱개 트리는 **참조만** 놓는다 — 지오·재질은 인스턴스와 공유하므로 아래에서 한 번만
+  // dispose 한다(두 번 부르면 three 가 이미 놓은 것을 다시 놓는다).
+  collisionRoot = null;
   if (!root) return;
   scene.remove(root);
   root.traverse((o) => {
+    // ⚠ `InstancedMesh` 는 `dispose()` 를 따로 불러야 `instanceMatrix` 가 회수된다
+    // (three 는 그 이벤트에서만 놓는다 — 검수관 P2. 로드당 약 1.8MB).
+    if (o.isInstancedMesh) o.dispose?.();
     o.geometry?.dispose?.();
     for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
       if (!m || typeof m !== 'object') continue;
@@ -182,6 +183,28 @@ function place(gltf) {
   disposeRoot();
   // ── 반복 메시를 다시 묶는다 (감독 신고 «프레임이 느린것같아», 2026-08-26) ──
   // 사유·실측·대가·못 하는 것은 `glb-instance.js` 헤더 한 곳이다.
+  // ⚠ **충돌용 바운딩은 묶기 «전» 트리에서 굽는다**(검수관 반려 B2).
+  // `InstancedMesh.raycast` 는 자기 바운딩 구로 한 번 거른 뒤 `count` 전부를 순회하는데,
+  // 묶인 구는 세계 전체를 감싸므로 「근처 45m」 필터가 **전부 통과시킨다** — 프레임당
+  // 3광선 × 28,707 인스턴스가 된다(합성 재현 실측: 0.011ms → **9.945ms**, 937배).
+  // 그 비용은 JS 라 swiftshader 와 무관하고 **실기기에 그대로 온다.**
+  // 낱개 트리로 바운딩을 구워 두면 충돌 비용이 인스턴싱 이전과 **완전히 같아지고**
+  // 렌더 이득만 남는다. three 의 `intersectObjects` 는 대상이 씬 그래프에 붙어 있을
+  // 것을 요구하지 않는다 — `matrixWorld` 만 맞으면 된다.
+  const colliders = buildColliders(gltf.scene);
+  // 원본 트리를 **참조로 붙잡아 둔다.** 놓으면 위 배열의 메시가 GC 되고 레이캐스트가
+  // 조용히 빈다. 씬에는 안 넣는다(그리지 않는다).
+  collisionRoot = gltf.scene;
+  // 삼각형은 **묶기 전에** 센다 — 묶은 뒤 `traverse` 는 40벌만 만나 357배 작게 나온다
+  // (검수관 반려 B3: 감독이 보는 HUD 에 거짓 표시가 됐다).
+  let tris = 0, meshes = 0;
+  gltf.scene.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    meshes++;
+    const g = o.geometry;
+    if (g.index) tris += g.index.count / 3;
+    else if (g.attributes?.position) tris += g.attributes.position.count / 3;
+  });
   {
     const t0 = performance.now();
     const r = instanceRepeats(gltf.scene);
@@ -227,14 +250,7 @@ function place(gltf) {
     camera.updateProjectionMatrix();
   }
 
-  let tris = 0, meshes = 0;
-  root.traverse((o) => {
-    if (!o.isMesh) return;
-    meshes++;
-    const g = o.geometry;
-    if (g?.index) tris += g.index.count / 3;
-    else if (g?.attributes?.position) tris += g.attributes.position.count / 3;
-  });
+
   // DOM 은 **있으면 쓰고 없으면 넘어간다** — world8 에는 고르기 버튼이 없다.
   if (hud) {
     hud.textContent = `메시 ${meshes.toLocaleString()} · 삼각형 ${Math.round(tris).toLocaleString()}`;
@@ -249,28 +265,11 @@ function place(gltf) {
   // 부팅 1회 비용이다. 실측 소요는 HUD 옆 `[걷기]` 표시가 뜨는 시점으로 확인한다.
   {
     const t0 = performance.now();
-    walker = createWalker(buildColliders(root));
+    walker = createWalker(colliders);
     console.info(`[${PAGE}] 충돌 준비 ${Math.round(performance.now() - t0)}ms`);
   }
 
-  // ── 그림자 — world2 도 실시간 그림자를 쓴다(감독 지시 「기본 기능 다」) ────
-  // 프러스텀을 **씬 크기에서 유도한다**. world2 는 셀 크기로 잡는데 그 값은 파셀
-  // 격자에서 오므로 임의 GLB 에 없다 — 바운딩으로 대신한다.
-  if (!box.isEmpty()) {
-    const size = box.getSize(new THREE.Vector3());
-    const mid = box.getCenter(new THREE.Vector3());
-    const half = Math.min(Math.max(Math.max(size.x, size.z) * 0.09, 40), 260);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    const c = sun.shadow.camera;
-    c.left = -half; c.right = half; c.top = half; c.bottom = -half;
-    c.near = 1; c.far = Math.max(600, size.y * 4 + half * 4);
-    c.updateProjectionMatrix();
-    // 태양은 **사람을 따라다닌다** — 고정하면 960m 세계에서 곧 프러스텀 밖으로 나간다.
-    sun.target.position.copy(mid);
-    scene.add(sun.target);
-    // castShadow 는 `instanceRepeats` 가 이미 켰다 — 여기서 다시 훑지 않는다.
-  }
+  setupShadow(renderer, sun, scene, root, box);
 
   ready = true;
 

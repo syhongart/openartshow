@@ -79,7 +79,9 @@ export function buildColliders(root) {
       if (!o.boundingSphere) o.computeBoundingSphere();
       const ib = o.boundingSphere;
       if (!ib) return;
-      out.push({ o, c: ib.center.clone(), r: ib.radius });
+      // 월드 좌표 규약을 지킨다 — 지금은 그룹이 항등이라 결과가 같지만
+      // 이 함수는 일반 API 다(검수관 권고 P1: 비대칭을 남기지 않는다).
+      out.push({ o, c: ib.center.clone().applyMatrix4(o.matrixWorld), r: ib.radius });
       return;
     }
     if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
