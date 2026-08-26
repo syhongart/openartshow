@@ -38,6 +38,18 @@ export function installDiag(snap) {
           max: { x: r2(b.max.x), y: r2(b.max.y), z: r2(b.max.z) },
         } : null,
         far: s.camera.far,
+        // ⚠ **프레임 시간은 안 잰다** — swiftshader 라 실기기와 무관하다(규율).
+        // 대신 **드로우콜·삼각형**을 본다.
+        // ⚠⚠ **이 값으로 그림자를 재려 하지 마라**(검수관 반려 B1): three 가
+        // `shadowMap.render()` 뒤에 `info.reset()` 을 불러 **그림자 패스가 안 들어간다.**
+        // 켜고 꺼도 같은 숫자다 — 「공짜」가 아니라 검출력 0 이다. 재는 법은
+        // `glb-shadow.js` 헤더 한 곳이다.
+        render: s.renderer ? {
+          calls: s.renderer.info.render.calls,
+          tris: s.renderer.info.render.triangles,
+          shadow: s.renderer.shadowMap.enabled,
+          autoUpdate: s.renderer.shadowMap.autoUpdate,
+        } : null,
       };
     },
     /**
