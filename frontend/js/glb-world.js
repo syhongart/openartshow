@@ -150,6 +150,10 @@ function place(gltf) {
     hud.hidden = false;
   }
   if (againBtn) againBtn.hidden = false;   // 다른 파일을 열 문을 남긴다(검수관 권고 P8)
+  // ⚠ 성공했으면 «읽는 중…» 을 **지운다**(검수관 권고 P2). 안 지우면 `#pick` 이 숨어서
+  // 안 보일 뿐 문구는 남아 있고, CSS 가 바뀌는 순간 거짓 표시가 된다 — 실측 스냅에
+  // `{"hud":"메시 28,707…","status":"… 읽는 중…","pickHidden":true}` 로 찍혔다.
+  if (statusEl) statusEl.textContent = '';
   ready = true;
   pick?.classList.add('hide');
 }
@@ -193,7 +197,11 @@ async function loadFromUrl(url, label) {
   } catch (err) {
     // 조용히 삼키지 않는다 — 무엇이 잘못됐는지 화면에 적는다.
     console.error(`[${PAGE}] GLB 로드 실패`, err);
-    say(`✗ 못 읽었다: ${err instanceof Error ? err.message : err}`);
+    // ⚠ 고르기 UI 가 없는 페이지(world8)는 여기서 **복구 수단이 0** 이다 — 「✗ 못 읽었다」
+    // 만 남고 `ready` 가 false 라 조작도 안 먹는다(검수관 권고 P3). 다시 시도할 길을
+    // 한 줄로 알린다. 고르기 UI 가 있으면 그 버튼이 곧 복구 수단이라 덧붙이지 않는다.
+    const retry = fileInput ? '' : ' — 새로고침하면 다시 시도합니다.';
+    say(`✗ 못 읽었다: ${err instanceof Error ? err.message : err}${retry}`);
     return false;
   }
 }
