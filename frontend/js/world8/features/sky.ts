@@ -1,4 +1,4 @@
-// world2/features/sky.ts — 하늘·날씨 기능.
+// world8/features/sky.ts — 하늘·날씨 기능.
 //
 // `main.ts` 다섯 군데에 흩어져 있던 하늘 배선을 전부 여기로 모았다. 이 파일 하나를
 // `features/index.ts` 목록에서 빼면 하늘도, 神 모드 패널도, 진단도, 드로우콜 판정 키도

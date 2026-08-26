@@ -1,4 +1,4 @@
-// world2/decide/adapt.ts — 적응 품질 판정. 순수 함수만, import 0.
+// world8/decide/adapt.ts — 적응 품질 판정. 순수 함수만, import 0.
 //
 // ── 이 파일이 존재하는 이유 (이 세션에서 같은 자리에서 두 번 다쳤다) ──────────────
 //

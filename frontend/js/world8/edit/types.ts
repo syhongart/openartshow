@@ -1,4 +1,4 @@
-// world2/edit/types.ts — 편집 모드와 오버레이 소비자 사이의 경계.
+// world8/edit/types.ts — 편집 모드와 오버레이 소비자 사이의 경계.
 //
 // 왜 별도 파일인가: `features/overlay.ts` 는 `edit/mode.ts` 를 **동적 import** 하고
 // (`?edit=1` 없는 세션이 편집 코드를 내려받지 않게), `edit/mode.ts` 는 소비자가 만든

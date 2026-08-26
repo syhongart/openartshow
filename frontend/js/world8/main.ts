@@ -1,4 +1,4 @@
-// world2/main.ts — Composition Root. **조립만 한다.**
+// world8/main.ts — Composition Root. **조립만 한다.**
 //
 // 로직은 전부 kernel/decide/systems에 있고, 여기서는 그것들을 잇기만 한다. 현행 world.js가
 // 2371줄이 된 경로가 "조립 자리에 로직이 한 줄씩 스며든" 것이었으므로, 이 파일에 판정이

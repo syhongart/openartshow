@@ -1,4 +1,4 @@
-// world2/decide/water-style.ts — 게임풍 수면의 **판정과 색 SSOT**. 순수, three 무의존.
+// world8/decide/water-style.ts — 게임풍 수면의 **판정과 색 SSOT**. 순수, three 무의존.
 //
 // ── 왜 `?water=std|tsl` 을 확장하지 않고 새 축인가 ──────────────────────────
 // 두 가지가 갈랐다.

@@ -1,4 +1,4 @@
-// world2/features/ocean-tsl.ts — TSL 노드 수면. **`?water=tsl` 뒤에서만 산다.**
+// world8/features/ocean-tsl.ts — TSL 노드 수면. **`?water=tsl` 뒤에서만 산다.**
 //
 // 감독 지시 2026-08-01: *"물은 이거쓰자. 지금 어색해"* +
 // https://github.com/mrdoob/three.js/blob/master/examples/webgpu_backdrop_water.html

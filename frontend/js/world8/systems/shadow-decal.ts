@@ -1,4 +1,4 @@
-// world2/systems/shadow-decal.ts — 접촉그림자(AO 블롭)의 **집행**.
+// world8/systems/shadow-decal.ts — 접촉그림자(AO 블롭)의 **집행**.
 //
 // 판정은 `decide/shadow-decal.ts`(순수 산술), 굽기는 `parts/shadow.ts`(캔버스), 여기는
 // 그 둘을 슬롯 풀에 붙이는 배선이다. 셋을 나눈 이유는 감독 지시 *"별도 베이킹 파일로

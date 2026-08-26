@@ -1,4 +1,4 @@
-// world2/systems/artwork-scene.ts — **액자와 조명을 씬에 세운다** (W8-4 집행부).
+// world8/systems/artwork-scene.ts — **액자와 조명을 씬에 세운다** (W8-4 집행부).
 //
 // 판정은 전부 순수 쪽이 소유한다 — 크기·벽 자세는 `decide/artwork.ts`, 풀 크기·배정·
 // 스포트 자세는 `decide/art-light.ts`. 이 파일은 **그 결과를 three 객체로 옮기는 일**만

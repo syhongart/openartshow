@@ -1,4 +1,4 @@
-// world2/edit/export.ts — 내보내기 관문. **순수 함수다**(DOM·다운로드는 부르는 쪽).
+// world8/edit/export.ts — 내보내기 관문. **순수 함수다**(DOM·다운로드는 부르는 쪽).
 //
 // 계약(`decide/overlay.ts`)이 *"issues 가 비면 무손실"* 을 약속하므로, 관문은
 // `validateOverlay` 여야 한다 — `loadOverlay` 는 깨진 항목을 조용히 살리거나 버려서

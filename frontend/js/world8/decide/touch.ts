@@ -1,4 +1,4 @@
-// world2/decide/touch.ts — 터치 조작 판정. 순수 함수만, import 0.
+// world8/decide/touch.ts — 터치 조작 판정. 순수 함수만, import 0.
 //
 // ── 이 파일이 존재하는 이유(실기기 사고) ─────────────────────────────────────
 // 기존 조이스틱에서 감독 실기기로 발견된 버그가 있다. `touchend`의 `changedTouches`만

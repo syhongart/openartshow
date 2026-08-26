@@ -1,4 +1,4 @@
-// world2/decide/stream.ts — 파셀 스트리밍 판정. 순수 함수만, three import 0.
+// world8/decide/stream.ts — 파셀 스트리밍 판정. 순수 함수만, three import 0.
 //
 // ── 이 파일이 있는 이유 ──────────────────────────────────────────────────────
 // 현행 `updateStreaming`은 101줄에 if가 25개인데, 그 안에서 (a)무엇을 원하는지 계산하고

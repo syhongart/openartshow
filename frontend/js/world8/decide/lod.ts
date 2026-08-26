@@ -1,4 +1,4 @@
-// world2/decide/lod.ts — 거리 tier 판정. 순수 함수만, import 0.
+// world8/decide/lod.ts — 거리 tier 판정. 순수 함수만, import 0.
 //
 // 왜 별 파일인가. 현행 world.js는 tier 판정이 `updateStreaming`(101줄, if 25개) 안에서
 // 언로드 실행·큐 정리·쿨다운 부수효과와 뒤엉켜 있어, 판정만 떼어 시험할 지점이 없다.

@@ -1,4 +1,4 @@
-// world2/systems/artwork-mount.ts — **부팅 배선**. 씬을 만드는 일과 갈라 둔다.
+// world8/systems/artwork-mount.ts — **부팅 배선**. 씬을 만드는 일과 갈라 둔다.
 //
 // ── 왜 갈랐나 (W8-11) ────────────────────────────────────────────────────────
 // `artwork-scene.ts` 가 **W8-11 의 `retarget`+`sizeMul` 을 얹자** `check:filesize`

@@ -1,4 +1,4 @@
-// world2/features/water-style.ts — 게임풍 수면. **기존 물을 한 줄도 안 건드린다.**
+// world8/features/water-style.ts — 게임풍 수면. **기존 물을 한 줄도 안 건드린다.**
 //
 // 감독 지시 2026-08-18: 깊이 색 · 프레넬 · 물가 포말 · 태양 스페큘러. 기존 물
 // (`features/ocean.ts`)에는 UV 스크롤·정점 파동·윤슬이 이미 있지만 **프레넬과 포말은

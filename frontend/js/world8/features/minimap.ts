@@ -1,4 +1,4 @@
-// world2/features/minimap.ts — 미니맵. 감독 지시로 world1 것을 world2 에 되살린다.
+// world8/features/minimap.ts — 미니맵. 감독 지시로 world1 것을 world2 에 되살린다.
 //
 // 감독: *"월드1에서 미니맵 보이게했는데. 그거나오게 해줘. 내위치 알게하고."*
 //

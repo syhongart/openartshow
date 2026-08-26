@@ -1,4 +1,4 @@
-// world2/edit/gizmo.ts — 3축 기즈모의 **집행**. 산술은 `decide/gizmo-math.ts` 가 갖는다.
+// world8/edit/gizmo.ts — 3축 기즈모의 **집행**. 산술은 `decide/gizmo-math.ts` 가 갖는다.
 //
 // 감독 지시: *"설치 후 이동 회전 확대축소하게 해줘. 블렌더에서 가능하잖아. 기즈모 나오고."*
 //

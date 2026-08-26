@@ -1,4 +1,4 @@
-// world2/features/overlay-models.ts — **GLB 원본 캐시.** 같은 파일을 두 번 안 받는다.
+// world8/features/overlay-models.ts — **GLB 원본 캐시.** 같은 파일을 두 번 안 받는다.
 //
 // ── 왜 별도 파일인가 (2026-08-22) ───────────────────────────────────────────
 // `features/overlay.ts` 가 **593줄**로 파일 크기 게이트의 동결 목록에 올라 있었고(상한

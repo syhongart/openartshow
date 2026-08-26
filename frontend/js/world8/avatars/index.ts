@@ -1,4 +1,4 @@
-// world2/avatars/index.ts — 아바타 배럴.
+// world8/avatars/index.ts — 아바타 배럴.
 //
 // 걷기 코드(`features/npc.ts`)는 **여기만 본다.** 치비가 world1 에서 오는지, VRM 이
 // 파일에서 오는지, 다음에 무엇으로 갈릴지를 알 필요가 없다.

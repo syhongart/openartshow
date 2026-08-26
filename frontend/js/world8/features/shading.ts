@@ -1,4 +1,4 @@
-// world2/features/shading.ts — 셰이딩 뷰(머티리얼 / 솔리드 / 와이어) **집행**.
+// world8/features/shading.ts — 셰이딩 뷰(머티리얼 / 솔리드 / 와이어) **집행**.
 //
 // 감독 지시: *"그리고 와이어 프레임 뷰. 솔리드 뷰도 구현해줘."* 판정은
 // `decide/shading.ts` 에 있고 여기는 그 명세를 three 재질로 만들어 씬에 꽂을 뿐이다.

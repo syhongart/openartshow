@@ -1,4 +1,4 @@
-// world2/export/glb.ts — 노드 목록을 GLB 한 덩이로 굽는다. **집행 계층.**
+// world8/export/glb.ts — 노드 목록을 GLB 한 덩이로 굽는다. **집행 계층.**
 //
 // 판정(무엇을 어디에)은 `collect.ts` 가 이미 끝냈다. 여기서 하는 일은 그 목록을 three
 // 객체로 세우고 `GLTFExporter` 에 넘기는 것뿐이다.

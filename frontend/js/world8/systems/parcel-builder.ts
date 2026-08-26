@@ -1,4 +1,4 @@
-// world2/systems/parcel-builder.ts — 파셀을 슬롯 점유로 만든다.
+// world8/systems/parcel-builder.ts — 파셀을 슬롯 점유로 만든다.
 //
 // ── 여기서 지오메트리를 만들지 않는다 ────────────────────────────────────────
 // 이 파일에 `new Geometry`도 `new Material`도 없다. 부팅 때 만들어둔 InstancedMesh의

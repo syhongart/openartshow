@@ -1,4 +1,4 @@
-// world2/systems/grass-field.ts — 잔디 필드의 **집행**. 판정은 `decide/grass.ts` 가 한다.
+// world8/systems/grass-field.ts — 잔디 필드의 **집행**. 판정은 `decide/grass.ts` 가 한다.
 //
 // ── 왜 배선을 기능 클로저가 아니라 여기 클래스로 빼는가 ─────────────────────
 // `systems/ground-lift.ts` 가 적은 이유 그대로다: 배선을 `features/grass.ts` 안 클로저로

@@ -1,4 +1,4 @@
-// world2/adapters/plan.ts — **요금제 층위를 world2 로 들여오는 유일한 문.**
+// world8/adapters/plan.ts — **요금제 층위를 world2 로 들여오는 유일한 문.**
 //
 // ── 왜 어댑터인가 (경계 게이트가 밀었다) ──────────────────────────────────
 // 첫 판본은 `edit/mode.ts` 가 `../../studio-plan.js` 를 직접 불렀고, `world2-boundary`

@@ -1,4 +1,4 @@
-// world2/features/water-env.ts — 수면 환경맵의 **집행**. 판정(픽셀·태양 원반·왜 PMREM 이
+// world8/features/water-env.ts — 수면 환경맵의 **집행**. 판정(픽셀·태양 원반·왜 PMREM 이
 // 아닌가)은 `decide/water-env.ts` **한 곳**이다 — 여기에 다시 적지 않는다.
 //
 // 이 파일이 `features/ocean.ts` 밖에 있는 것은 그 파일이 **줄 수 동결 대상**이기 때문만은

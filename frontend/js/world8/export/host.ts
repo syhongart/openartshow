@@ -1,4 +1,4 @@
-// world2/export/host.ts — 되읽은 GLB 도시를 담아 두고 빌더에 물린다.
+// world8/export/host.ts — 되읽은 GLB 도시를 담아 두고 빌더에 물린다.
 //
 // ── 왜 `main.ts` 가 아니라 여기인가 ─────────────────────────────────────────
 // `main.ts` 는 Composition Root 이고 *"조립만 한다"* 가 그 파일의 규율이다. 그런데

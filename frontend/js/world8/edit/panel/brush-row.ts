@@ -1,4 +1,4 @@
-// world2/edit/panel/brush-row.ts — **붓 조작칸.** 켜기·크기·개수 셋뿐이다.
+// world8/edit/panel/brush-row.ts — **붓 조작칸.** 켜기·크기·개수 셋뿐이다.
 //
 // 감독 카드 2026-08-22: 워크래프트3 편집기 대비 다음 축으로 **「브러시로 여러 개
 // 뿌리기」**가 뽑혔다. 판정은 `decide/brush.ts`, 집행은 `edit/actions.ts` 의 `paintAt`,
