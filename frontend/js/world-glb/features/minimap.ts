@@ -13,7 +13,6 @@
 // 그마저도 60fps 로 돌릴 이유가 없어 0.1초 간격으로 제한한다. 미니맵이 프레임 예산을
 // 먹으면 본말이 뒤집힌다.
 
-import { mapCells, nearestLandmark } from '../decide/minimap.js';
 import type { Feature, FeatureEnv, FeatureInstance } from './types.js';
 
 /**
@@ -113,67 +112,30 @@ export const minimapFeature: Feature = {
       const offX = ((x / env.cell) - cpx) * cell;
       const offZ = ((z / env.cell) - cpz) * cell;
 
-      for (const c of mapCells(cpx, cpz, R, env.cell, env.cell)) {
-        // **캔버스 중앙 기준**으로 놓는다. 예전에는 `(… + R) * cell` 이었는데 그것은
-        // `cell` 이 `R` 에서 나올 때만 중심이 맞는다 — 훑는 반경을 회전 여백만큼 넓히자
-        // 중심이 화면 밖으로 밀려났다. 중앙에서 유도하면 두 반경이 달라도 항상 맞는다.
-        const sx = (c.px - cpx) * cell + W / 2 - cell / 2 - offX;
-        const sz = (c.pz - cpz) * cell + W / 2 - cell / 2 - offZ;
-
-        // 바닥 — 물/뭍
-        g.fillStyle = c.water === 'water' ? COLOR.water
-          : c.water === 'shore' ? COLOR.shore
-            : c.plaza ? COLOR.plaza : COLOR.land;
-        g.fillRect(sx, sz, cell - 1, cell - 1);
-
-        if (c.water === 'water') continue; // 물에는 길이 없다
-
-        // 광장 테두리 — 채움만으로는 작은 화면에서 길 색과 섞인다
-        if (c.plaza) {
-          g.strokeStyle = COLOR.plazaEdge;
-          g.lineWidth = 1;
-          g.strokeRect(sx + 0.5, sz + 0.5, cell - 2, cell - 2);
-        }
-
-        // 길 — 중심에서 각 방향으로 뻗은 선. 실제 지형과 같은 십자 모양이라
-        // 지도와 눈앞이 같은 그림으로 읽힌다.
-        if (c.dirs.length) {
-          g.strokeStyle = COLOR.road;
-          g.lineWidth = Math.max(1.5, cell * 0.28);
-          g.lineCap = 'butt';
-          const mx = sx + cell / 2;
-          const mz = sz + cell / 2;
-          for (const d of c.dirs) {
-            g.beginPath();
-            g.moveTo(mx, mz);
-            if (d === 'north') g.lineTo(mx, sz - 0.5);
-            else if (d === 'south') g.lineTo(mx, sz + cell);
-            else if (d === 'west') g.lineTo(sx - 0.5, mz);
-            else g.lineTo(sx + cell, mz);
-            g.stroke();
-          }
-        }
-
-        // 랜드마크 — 광장 한가운데. **색이 아니라 형태로** 가른다. 셀이 11px 남짓이라
-        // 색만으로는 작은 화면·색각 차이에서 구분이 안 된다.
-        //   분수대 = 둥근 점    시계탑 = 세로로 선 탑
-        if (c.landmark) {
-          const mx = sx + cell / 2;
-          const mz = sz + cell / 2;
-          const r = Math.max(2, cell * 0.2);
-          g.fillStyle = c.landmark === 'fountain' ? COLOR.fountain : COLOR.clock;
-          if (c.landmark === 'fountain') {
-            g.beginPath();
-            g.arc(mx, mz, r, 0, Math.PI * 2);
-            g.fill();
-          } else {
-            g.fillRect(mx - r * 0.45, mz - r, r * 0.9, r * 2);   // 탑 몸통
-            g.beginPath();
-            g.arc(mx, mz - r * 1.25, r * 0.5, 0, Math.PI * 2);   // 꼭대기
-            g.fill();
-          }
-        }
+      // ── 🔴 **구운 지도를 그린다** (감독 지시 2026-08-26 *"알아서 지도 만들고"*) ──
+      //
+      // world2 는 여기서 `mapCells(...)` 로 **절차적 파셀 규칙**을 훑어 칸마다 물·도로·
+      // 광장을 칠했다. 이 세계에는 그 규칙이 없다 — GLB 한 덩어리가 세계다. 그래서
+      // 부팅 때 **씬을 위에서 본 그림으로 한 번 굽고**(`systems/glb-minimap.ts`) 그
+      // 이미지에서 지금 자리 주변을 오려 온다. 어떤 GLB 를 올려도 그 파일의 지도가 나온다.
+      //
+      // ⚠ 아직 안 왔으면(부팅 중) 바탕만 그린다 — 「없는 지도를 그린 척」하지 않는다.
+      const baked = env.glbMap();
+      if (baked) {
+        // 미니맵이 덮는 월드 반경(m). 훑는 반경 `R` 을 쓰는 이유는 **회전 때문**이다 —
+        // 정사각형을 돌리면 모서리 바깥이 드러나므로 대각선까지 오려 와야 빈틈이 없다.
+        const halfM = R * env.cell;
+        const mapSpan = baked.max.x - baked.min.x;
+        const px = baked.canvas.width / mapSpan;   // 월드 1m 당 지도 픽셀
+        // 오려 올 사각형(지도 픽셀 좌표). 플레이어를 중심에 둔다.
+        const sw = halfM * 2 * px;
+        const sx = (x - halfM - baked.min.x) * px;
+        const sz = (z - halfM - baked.min.z) * px;
+        // 캔버스 밖을 오려도 `drawImage` 는 투명으로 채운다 — 세계 가장자리에서
+        // 지도가 잘리는 것이 사실이므로 굳이 막지 않는다.
+        g.drawImage(baked.canvas, sx, sz, sw, sw, 0, 0, W, W);
       }
+
 
       g.restore(); // ← 지도 회전 끝. 아래는 화면에 고정된 것들이다
 
@@ -193,21 +155,18 @@ export const minimapFeature: Feature = {
       g.fill();
       g.restore();
 
-      // 가장 가까운 랜드마크가 지도 밖이면 테두리에 방향만 찍는다. 화면에서 사라지는
-      // 순간 잊히는 것을 막는다.
-      // 판정 기준은 **보이는** 반경이다 — 훑는 반경으로 재면 화면 밖에 있는데도
-      // "안에 있다" 고 읽혀 테두리 표시가 안 뜬다.
-      const near = nearestLandmark(x, z, R_VISIBLE, env.cell, env.cell);
-      if (near && near.dist > R_VISIBLE * env.cell * 0.82) {
-        const rr = W / 2 - 5;
-        g.fillStyle = near.kind === 'fountain' ? COLOR.fountain : COLOR.clock;
-        g.beginPath();
-        // 지도가 `yaw` 만큼 돌았으므로 이 점도 같이 돌려야 실제 방향을 가리킨다.
-        // 안 돌리면 지도는 회전했는데 테두리 표시만 북쪽 기준으로 남아 어긋난다.
-        const b = near.bearing - yaw;
-        g.arc(c0 + Math.sin(b) * rr, c0 - Math.cos(b) * rr, 2.5, 0, Math.PI * 2);
-        g.fill();
-      }
+      // ── ⚠ **랜드마크 표시를 뺐다** (2026-08-26) ────────────────────────────
+      // world2 는 여기서 `nearestLandmark(...)` 로 「가장 가까운 분수·시계탑이 어느
+      // 쪽인가」를 테두리에 찍었다. 그 함수는 **절차적 파셀 규칙**(`decide/minimap.ts`)
+      // 에서 답을 계산한다 — 이 세계에는 그 규칙이 없다.
+      //
+      // 지금 자산은 world2 를 내보낸 파일이라 **우연히 맞는다.** 그러나 world7 은
+      // 사용자가 임의 GLB 를 올리고, 그때 이 표시는 **있지도 않은 분수를 가리킨다.**
+      // 「우연히 맞는 것」과 「맞는 것」은 다른 일이고, 지도에서 방향을 거짓으로 가리키는
+      // 것은 없는 것보다 나쁘다.
+      //
+      // → GLB 에서 랜드마크를 뽑는 축(큰 메시·이름 규칙 등)은 별도 회차다. 그때까지는
+      //   **안 그린다.** 백로그 `G-W8K`.
     };
 
     draw();
@@ -225,10 +184,12 @@ export const minimapFeature: Feature = {
 
       diagnostics() {
         const { x, z } = env.player.position;
-        const near = nearestLandmark(x, z, R, env.cell, env.cell);
+        const baked = env.glbMap();
         return {
-          parcel: `${Math.round(x / env.cell)},${Math.round(z / env.cell)}`,
-          nearest: near ? `${near.kind} ${near.dist.toFixed(0)}m` : '—',
+          // 좌표 라벨은 파셀이 아니라 **월드 미터**다 — 이 세계에 파셀이 없다.
+          at: `${Math.round(x)},${Math.round(z)}`,
+          // 지도가 실제로 구워졌는가. `—` 면 부팅 중이거나 굽기가 실패한 것이다.
+          map: baked ? `${baked.painted}개 · ${baked.canvas.width}px` : '—',
         };
       },
 

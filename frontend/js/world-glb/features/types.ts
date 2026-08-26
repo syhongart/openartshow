@@ -25,6 +25,7 @@
 
 // 개별 named type import를 쓴다 — `import type * as THREE from 'three/webgpu'`로 하면
 // 내부 네임스페이스 재수출에 걸려 타입이 안 잡힌다(TS2694).
+import type { GlbMap } from '../systems/glb-minimap.js';
 import type { Scene, DirectionalLight, HemisphereLight, Camera, Object3D } from 'three/webgpu';
 import type { SkyTime } from '../decide/night.js';
 import type { ShadingMode } from '../decide/shading.js';
@@ -133,6 +134,12 @@ export interface FeatureEnv {
    * 동결됐는가» 이고 가시성과 독립이다(동결된 파셀도 멀어지면 언로드된다).
    */
   readonly parcelLoaded: (px: number, pz: number) => boolean;
+  /**
+   * **GLB 에서 구운 지도**(감독 지시 *"알아서 지도 만들고"*). 미니맵이 이것을 그린다.
+   * ⚠ **클로저인 이유는 위 `parcelLoaded` 와 같다** — GLB 는 `stream` 단계에서야 온다.
+   * 그전에는 `null` 이고 지도가 바탕만 그린다(「아직 안 왔다」가 사실이다).
+   */
+  readonly glbMap: () => GlbMap | null;
 
   /**
    * 미술관 GLB 의 레이캐스트 루트. 아직 안 세워졌거나 그 기능이 꺼져 있으면 `null`

@@ -46,6 +46,7 @@ import type { Collider } from './systems/collision.js';
 import { createGlbCollider } from './systems/glb-collider.js';
 import { DEFAULT_BODY_R } from './systems/collision.js';
 import { mountGlbWorld, describeGlb, type GlbSourceResult } from './systems/glb-source.js';
+import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
 import { aheadOf } from './diag-ahead.js';
 import type { GlbWorldOptions } from './options.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
@@ -587,6 +588,7 @@ export async function startGlbWorld(
    * 지운 것이 아니라 **세울 것이 없어 안 만드는 것**이고, 경위는 `world-glb/README.md` 다.
    */
   let glbSource: GlbSourceResult | null = null;
+  let glbMapBaked: GlbMap | null = null;   // GLB 에서 구운 지도. 부팅 1회다
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
   let features: MountedFeature[] = [];
 
@@ -811,6 +813,7 @@ export async function startGlbWorld(
             // 물어 「그 파셀이 올라왔는가」를 답한다. 여기서 `true` 를 내면 「올라온 파셀이
             // 있다」는 거짓을 말하게 된다.
             parcelLoaded: () => false,
+            glbMap: () => glbMapBaked,   // 늦게 읽는 클로저 — 근거는 `features/types.ts`
             // 🔴 **미술관 루트** — 편집이 그 벽을 벽 검출 대상에 넣는다 (태스크 #112).
             // 위 둘과 **같은 클로저 이유**이고 하나가 더 있다: 이 자산은 13.5MB 라
             // 로드가 비동기여서, mount 시점에는 기능은 있어도 루트가 아직 `null` 이다.
@@ -948,6 +951,10 @@ export async function startGlbWorld(
 
         // ④ 충돌을 GLB 에 물린다. 위 `collider` 프록시가 이제부터 이것을 부른다.
         //    ⚠ **인스턴싱 «전» 트리**를 준다(근거는 `glb-source.ts` 의 `collisionRoot`).
+        // ⑤ **지도를 굽는다**(감독 지시). **인스턴싱 전** 트리를 본다 — 묶인 뒤에는
+        //    7,229개가 사각형 하나가 된다. 경위는 `systems/glb-minimap.ts` 한 곳.
+        glbMapBaked = bakeGlbMap(mounted.collisionRoot);
+
         glbCollider = createGlbCollider({
           root: mounted.collisionRoot,
           bodyRadius: DEFAULT_BODY_R,
@@ -1145,6 +1152,8 @@ export async function startGlbWorld(
       adapt: adapt!.snapshot(),
       /** 얹힌 GLB 세계. world2 의 `stream`·`builder` 통계가 있던 자리다 */
       glb: describeGlb(glbSource),
+      // 구운 지도 — `painted` 0 은 「지도가 비었다」이고 그것은 사실이 아니어야 한다
+      glbMap: glbMapBaked ? { painted: glbMapBaked.painted, px: glbMapBaked.canvas.width } : null,
       // ── LOD 페이드가 **실제로 걸리는가** (2026-08-07) ──────────────────
       // 감독이 *"디졸브는 별차이가 없네"* 라고 했을 때, 나는 그 원인을 다른 데서
       // 찾기 시작했다 — **페이드가 돌기는 하는지 한 번도 안 재보고.** 그 추측이
