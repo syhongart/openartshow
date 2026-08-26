@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- [실험] 내 GLB 를 세계로 삼아 걸어다닌다 — behind-flag(라이브 미노출, 어디에도 링크 안 함).
+     감독 지시 2026-08-25: "아까 그 파일을 올려서 월드7로 해봐. 테스트로 보게"
+
+     world2 의 「편집본 불러오기」와 다른 일을 한다 — 저쪽은 재질 이름으로 우리 파츠를
+     알아보고 **우리가 가진 모양으로 다시 세운다.** 여기는 파일이 곧 세계다.
+
+     ⚠ **importmap 을 두지 않는다.** `lab-glb.html` 은 raw 서빙 대응으로 갖고 있고 그
+     인라인을 sha256 으로 고정하는데, vite 가 산출 HTML 에서 importmap 을 **제거**하므로
+     배포본에서는 그 핀이 죽는다(`tests/csp-inline-pins.test.ts` 가 그 페이지들을
+     «dead 핀» 으로 세고 있다). 새 페이지를 그 목록에 더하는 것은 보안 등급을 내리는
+     일이라, 여기는 처음부터 **인라인 스크립트 0 · `script-src 'self'`** 로 둔다.
+     대신 이 페이지는 vite 전용이다(`three` 를 bare import 한다).
+
+     connect-src 에 blob: 필수: 고른 파일을 blob URL 로 로더에 넘기고, GLTFLoader 가
+     내장 텍스처를 디코드할 때 ImageBitmapLoader 가 blob 을 다시 fetch 한다. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
+<title>월드7 · 내 GLB 걸어보기 · OpenArtShow</title>
+<style>
+  :root{ --ink:#f3efe7; --dim:#a9a293; --bg:#12100e; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:15px/1.55 system-ui,-apple-system,"Noto Sans KR",sans-serif;overflow:hidden;
+    -webkit-user-select:none;user-select:none;touch-action:none}
+  #c{position:fixed;inset:0;display:block;width:100%;height:100%}
+
+  /* 파일 고르기 — 처음 화면. 고르면 사라진다 */
+  #pick{position:fixed;inset:0;display:grid;place-content:center;gap:14px;text-align:center;
+    padding:24px;background:radial-gradient(120% 90% at 50% 30%,#211d18 0%,#12100e 70%);
+    transition:opacity .35s ease}
+  #pick.hide{opacity:0;pointer-events:none}
+  #pick h1{margin:0;font-size:22px;letter-spacing:-.01em;font-weight:650}
+  #pick p{margin:0;color:var(--dim);font-size:14px;max-width:34ch}
+  #pickBtn{margin-top:6px;padding:13px 22px;border-radius:11px;border:1px solid #4b4438;
+    background:#1d1a16;color:var(--ink);font:inherit;font-weight:600;cursor:pointer}
+  #pickBtn:hover{background:#262119;border-color:#6a6151}
+  #status{min-height:1.4em;color:var(--dim);font-size:13px}
+  #again{position:fixed;right:12px;top:calc(12px + env(safe-area-inset-top));z-index:6;
+    padding:7px 12px;border-radius:8px;border:1px solid #4b4438;background:#1d1a16cc;
+    color:var(--ink);font:inherit;font-size:12.5px;cursor:pointer;backdrop-filter:blur(6px)}
+  #again:hover{background:#262119}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);
+    bottom:calc(24px + env(safe-area-inset-bottom));z-index:7;max-width:min(92vw,46ch);
+    padding:10px 14px;border-radius:10px;background:#3a1d1dee;border:1px solid #7a3b3b;
+    color:#ffd9d9;font-size:13px;line-height:1.5;text-align:center}
+  #file{display:none}
+
+  /* 안내·계기 — 캡처를 가리지 않게 작고 옅게 */
+  #hud{position:fixed;left:12px;top:calc(12px + env(safe-area-inset-top));z-index:5;
+    padding:6px 10px;border-radius:8px;background:#00000066;color:var(--dim);font-size:12px;
+    backdrop-filter:blur(6px)}
+  #keys{position:fixed;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:5;
+    color:#ffffff66;font-size:11.5px;line-height:1.7;pointer-events:none}
+  @media (max-width:640px){ #keys{display:none} }
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+  <script type="module" crossorigin src="/openartshow/_bundle/world7-hQy7w3Vp.js"></script>
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-BVCe5QSU.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/BufferGeometryUtils-C6v7s0Vg.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/GLTFLoader-D7IH8cP1.js">
+  <link rel="modulepreload" crossorigin href="/openartshow/_bundle/joystick-look-BDokgZh8.js">
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="pick">
+  <h1>월드7 — 내 GLB 걸어보기</h1>
+  <p>블렌더에서 내보낸 <b>.glb</b> 를 고르면 그 안을 걸어다닙니다.
+     파일은 이 브라우저 밖으로 나가지 않습니다.</p>
+  <button id="pickBtn" type="button">GLB 파일 고르기</button>
+  <div id="status">창에 파일을 끌어다 놓아도 됩니다</div>
+  <!-- ⚠ `.gltf` 를 안 받는다(검수관 권고 P9): 외부 `.bin`·텍스처를 blob URL 기준
+       상대경로로 찾아 `connect-src 'self'` 에서 실패한다. 자기완결인 `.glb` 만 받는다. -->
+  <input id="file" type="file" accept=".glb,model/gltf-binary">
+</div>
+
+<div id="hud" hidden></div>
+<!-- ⚠ 한 번 성공하면 `#pick` 이 `pointer-events:none` 이 되어 **다시 고를 수 없었다**
+     (검수관 권고 P8). 다른 파일을 열 문을 화면에 남긴다. -->
+<button id="again" type="button" hidden>다른 파일</button>
+<!-- 실패 문구는 `#pick` **밖**에 둔다 — 안에 두면 첫 성공 뒤 숨겨져, 드롭으로 연 두
+     번째 파일이 실패했을 때 화면에 아무것도 안 나온다(검수관 권고 P8). -->
+<div id="toast" hidden></div>
+<div id="keys">
+  WASD · 화살표 — 이동<br>
+  화면 클릭 → 마우스로 시점<br>
+  Shift — 빠르게 · Space / Q — 위 / 아래<br>
+  모바일: 왼쪽 절반 이동 · 오른쪽 절반 시점
+</div>
+
+</body>
+</html>
