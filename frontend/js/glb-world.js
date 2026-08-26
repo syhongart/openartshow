@@ -97,6 +97,35 @@ const pos = new THREE.Vector3(0, EYE, 0);
 const keys = { f: 0, b: 0, l: 0, r: 0, up: 0, down: 0, run: 0 };
 let ready = false;
 
+/**
+ * 「걸어다닐 세계」와 「물건」을 가르는 크기(m). 가장 긴 수평 축이 이보다 크면 **안에**
+ * 서고, 작으면 **밖에서** 본다.
+ *
+ * 값의 근거: 사람이 안에서 걸어다니는 것이 말이 되는 최소 공간이다. 방 하나가 대략
+ * 5~10m, 건물 한 채가 20~40m, 우리 오픈월드가 1920m 다. 60 은 「방·물건」과 「부지」
+ * 사이에 있고, `lab-space.glb`(미술관)도 이 위라 안에 선다.
+ * **경계도 판정이다** — 40~80 구간의 모델이 어느 쪽이 나은지는 안 재봤다. 감독이
+ * 그 크기 모델로 «이상하다» 고 할 때 다시 연다.
+ */
+const WALKABLE_SPAN = 60;
+
+/**
+ * (x, z) 에서 **지면 높이**를 찾는다. 바운딩 최저점은 지면이 아니다 — world2 는
+ * `box.min.y` 가 **물 바닥**이라 그것을 쓰면 땅속에 선다(감독 신고의 절반).
+ *
+ * 위에서 아래로 한 번 쏜다. 못 맞으면 바운딩 최저점으로 폴백한다(속이 빈 모델).
+ * ⚠ 상시가 아니라 **스폰 1회**다. 28,705 메시에서도 three 가 메시별 경계구로 먼저
+ * 거르므로 한 번은 싸다 — 실측 소요는 아래 `place()` 호출부 로그로 남긴다.
+ */
+function groundY(x, z, box) {
+  if (!root) return box.min.y;
+  const rc = new THREE.Raycaster();
+  rc.set(new THREE.Vector3(x, box.max.y + 1, z), new THREE.Vector3(0, -1, 0));
+  rc.far = (box.max.y - box.min.y) + 2;
+  const hit = rc.intersectObject(root, true)[0];
+  return hit ? hit.point.y : box.min.y;
+}
+
 /** 씬 전체를 놓아 준다 — 다른 파일을 고르면 이전 것이 그대로 남으면 안 된다 */
 function disposeRoot() {
   if (!root) return;
@@ -116,8 +145,23 @@ function disposeRoot() {
 /**
  * 모델을 세우고 **바운딩에서 스폰을 유도한다.**
  *
- * 임의 GLB 라 «어디가 입구인가» 를 알 수 없다. 그래서 바운딩 중심의 **바닥 높이**에
- * 서서 가장 긴 축 바깥에서 안쪽을 보게 둔다 — 무엇이 들어 있든 일단 화면에 담긴다.
+ * 임의 GLB 라 «어디가 입구인가» 를 알 수 없다.
+ *
+ * ⚠ **첫 판본은 여기서 감독 신고를 냈다**(2026-08-26 *"스폰 위치도 없고. 걸어다닐수가
+ * 없네"*). 그때 이 주석은 *"바운딩 중심의 바닥 높이에 서서 가장 긴 축 바깥에서 안쪽을
+ * 보게 둔다 — 무엇이 들어 있든 일단 화면에 담긴다"* 였고 **작은 물건을 전제한 계산**이었다.
+ * 1920m 세계에 그것을 쓰니 이렇게 됐다(실측):
+ *
+ *     pos {x:0, y:-2.5, z:960}   box y:-4.1~110.98 · x/z:-960~960
+ *     → z 는 **남쪽 경계**, 정면 496m 앞에 겨우 메시 하나
+ *     → y 는 `box.min.y + EYE` = **땅속 2.5m**(최저점은 물 바닥이지 지면이 아니다)
+ *
+ * **두 전제가 다르다**: 「물건을 본다」는 밖에서 봐야 하고 「세계를 걷는다」는 안에 서야
+ * 한다. 크기로 가른다 — `WALKABLE_SPAN` 참조.
+ *
+ * 그리고 **지면은 바운딩으로 알 수 없다.** 레이캐스트로 찾는다. 임의 지오의 상시
+ * 레이캐스트가 비싸다는 것이 이 파일이 충돌을 안 붙인 이유인데, **스폰은 1회**라 그
+ * 근거가 여기엔 적용되지 않는다(실측 소요는 아래 주석).
  */
 function place(gltf) {
   disposeRoot();
@@ -128,9 +172,33 @@ function place(gltf) {
   if (!box.isEmpty()) {
     const size = box.getSize(new THREE.Vector3());
     const mid = box.getCenter(new THREE.Vector3());
-    // 바닥에 선다 — 모델 원점이 어디든 «발이 땅에» 오게.
-    pos.set(mid.x, box.min.y + EYE, mid.z + Math.max(size.z, size.x) * 0.5);
-    yaw = 0; pitch = 0;
+    const span = Math.max(size.x, size.z);
+
+    if (span >= WALKABLE_SPAN) {
+      // ── 걸어다닐 세계 — **안에 선다** ────────────────────────────────────
+      // 중심에서 물러나 중심을 본다. 크기에 비례시키되 **상한을 둔다** — 비례만 쓰면
+      // 1920m 세계에서 또 밖으로 나간다(그것이 감독 신고의 절반이었다).
+      //
+      // 거리 계수는 화면으로 골랐다: `0.04`(→76.8m)는 중앙 구조물이 시야를 절반 가리고
+      // 위가 잘렸다. `0.07` 은 상한 120m 에 걸려 FOV 70° 에서 세로 약 168m 를 담는다 —
+      // 이 세계의 조형물(약 114m)이 들어온다.
+      //
+      // **정면이 아니라 대각선으로 선다**: 중심에 구조물이 있으면 정면 접근은 그것이
+      // 시야를 막는다. 비껴서면 구조물과 그 너머 풍경이 함께 보인다.
+      const back = Math.min(span * 0.07, 120);
+      const bx = back * 0.62, bz = back * 0.78;
+      pos.set(mid.x + bx, groundY(mid.x + bx, mid.z + bz, box) + EYE, mid.z + bz);
+      // `yaw = 0` 이 -z 를 보는 규약이므로 중심 방향은 atan2(bx, bz) 다.
+      yaw = Math.atan2(bx, bz);
+    } else {
+      // ── 물건을 본다 — **밖에서 본다** ────────────────────────────────────
+      // 작은 모델은 안에 서면 지오 안에 갇힌다. 전체가 화면에 담기게 물러난다.
+      pos.set(mid.x, mid.y, mid.z + span * 0.9 + size.y * 0.5);
+      yaw = 0;            // 정면(-z)에 중심이 온다
+    }
+    // ⚠ 여기에 `yaw = 0; pitch = 0;` 이 함께 있었고 **위에서 정한 yaw 를 덮어썼다.**
+    // 두 분기가 각자 yaw 를 정하므로 공통으로 되돌릴 것은 pitch 뿐이다.
+    pitch = 0;
     // 아주 큰 모델(world2 는 960m 사방)도 잘리지 않게 far 를 맞춘다.
     camera.far = Math.max(1000, size.length() * 2.5);
     camera.updateProjectionMatrix();
@@ -155,6 +223,34 @@ function place(gltf) {
   // `{"hud":"메시 28,707…","status":"… 읽는 중…","pickHidden":true}` 로 찍혔다.
   if (statusEl) statusEl.textContent = '';
   ready = true;
+
+  // ── 진단 훅 — **「어디에 서 있는가」를 재는 축이 없었다** ────────────────────
+  // 감독 신고(2026-08-26) *"8을 클릭해보니 스폰 위치도 없고. 걸어다닐수가 없네"*.
+  // 그 회차의 내 실측은 «HUD 가 떴다 · 첫 화면이 물러났다» 만 봤고 **PASS 였다** —
+  // 모델이 실렸다는 것과 사람이 설 자리에 섰다는 것은 다른 일이다. 라벨이 아니라
+  // 씬을 세는 훅(`__world2.importedGlb`)을 앞 회차에 만들어 놓고도 여기서는
+  // 같은 형태를 반복했다. 이제 좌표로 잰다.
+  window.__glbWorld = {
+    pose: () => ({
+      pos: { x: +pos.x.toFixed(2), y: +pos.y.toFixed(2), z: +pos.z.toFixed(2) },
+      yaw: +yaw.toFixed(3), pitch: +pitch.toFixed(3), ready,
+      box: box.isEmpty() ? null : {
+        min: { x: +box.min.x.toFixed(2), y: +box.min.y.toFixed(2), z: +box.min.z.toFixed(2) },
+        max: { x: +box.max.x.toFixed(2), y: +box.max.y.toFixed(2), z: +box.max.z.toFixed(2) },
+      },
+      far: camera.far,
+    }),
+    /** 카메라 정면으로 쏴서 **무엇이 얼마나 떨어져 있는지** 본다. 빈 화면의 실측이다. */
+    ahead: () => {
+      if (!root) return null;
+      const rc = new THREE.Raycaster();
+      const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+      rc.set(camera.position, dir);
+      rc.far = camera.far;
+      const hit = rc.intersectObject(root, true)[0];
+      return hit ? { dist: +hit.distance.toFixed(1), name: hit.object.name || '(무명)' } : null;
+    },
+  };
   pick?.classList.add('hide');
 }
 
@@ -300,7 +396,13 @@ addEventListener('touchcancel', (e) => stale(e.touches), { passive: true });
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // ⚠ 클램프가 0.05 였고 **프레임이 느리면 시간이 사라졌다.** 헤드리스 실측: W 를
+  // 2초 눌러 **0.23m** 이동(기대 ~6m). 4fps 면 실제 dt 는 0.25s 인데 0.05 로 잘려
+  // 시간의 20%만 흐른다 — 「입력이 안 먹는다」로 보인다. 모바일에서 5MB GLB 를 그리다
+  // fps 가 떨어지면 같은 일이 난다.
+  // 0.1 로 넓힌다. 이 페이지는 **충돌이 없어** 한 프레임에 멀리 가도 통과할 벽이 없다
+  // (그것이 여기서 큰 dt 가 안전한 이유다 — 충돌이 있는 페이지에 이 값을 옮기지 마라).
+  const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
   if (ready) {
