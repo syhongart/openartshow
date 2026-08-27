@@ -115,6 +115,29 @@ describe('(E) 그림자는 격자 셀 분할에서 빠진다', () => {
     // ⚠ **중심이 원점일 것을 요구하지 않는다.** three 의 `computeBoundingSphere` 는
     // 기하 중심을 내지 않는다(이 배치에서 x≈69 가 나온다). 요건은 중심 위치가 아니라
     // **전부 감싸는가** 이고, 첫 판본은 그것을 「원점 근처」로 잘못 옮겨 적었다.
+    //
+    // ⚠⚠ **그래서 이 검사는 `cellCenter` 의 «정확성» 을 못 본다**(검수관 권고 P2).
+    // 반경이 `hypot(bs.center − cellCenter) + bs.radius` 라 **삼각부등식에 의해**
+    // `cellCenter` 가 무슨 값이든 전체를 감싸는 반경이 자동으로 나온다. 검수관이 실측으로
+    // 확인했다 — `cellCenter` 를 `{0,0}` 으로 고정해도 **6/6 통과**한다.
+    // 즉 이 검사가 잠그는 것은 «반경 계산식의 로직» 까지이고, 「자기 바운딩 중심을 쓴다」는
+    // 주석의 진술은 **어느 검사도 안 본다.** 기능상 무해하지만(반경이 보정하므로) 그
+    // 사실을 적어 둔다 — 검사가 조용한 것은 안전해서가 아니라 그 축을 안 보기 때문이다.
+    //
+    // ⚠⚠⚠ executor 가 보고한 M2(「3건 깨짐」)는 **검출력이 아니라 크래시**였다.
+    // 실제 diff 는 이랬다 — `b.cell` 이 `null` 일 때 `.split` 이 TypeError 를 낸다:
+    //
+    //     -    const [cx, cz] = b.cell ? b.cell.split('|').map(Number) : [NaN, NaN];
+    //     -    im.userData.cellCenter = b.cell
+    //     -      ? { x: box.min.x + (cx + 0.5) * cw, z: box.min.z + (cz + 0.5) * ch }
+    //     -      : { x: im.boundingSphere ? im.boundingSphere.center.x : 0,
+    //     -          z: im.boundingSphere ? im.boundingSphere.center.z : 0 };
+    //     +    const [cx, cz] = b.cell.split('|').map(Number);
+    //     +    im.userData.cellCenter = { x: box.min.x + (cx + 0.5) * cw, z: box.min.z + (cz + 0.5) * ch };
+    //
+    // 검수관의 M2(값만 바꾸기)가 더 정확한 뮤테이션이고 그것은 **안 깨졌다.**
+    // 두 결과는 모순이 아니라 **다른 뮤테이션**이다 — 서술만 남기면 다음 사람이 구별
+    // 못 하므로 diff 를 그대로 보존한다(검수관 권고 P2).
     for (const [x, z] of CORNERS) {
       expect(Math.hypot(x - c.x, z - c.z), `귀퉁이 (${x},${z}) 가 반경 밖이다`).toBeLessThanOrEqual(r);
     }
