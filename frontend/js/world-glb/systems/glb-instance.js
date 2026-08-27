@@ -93,6 +93,49 @@ import * as THREE from 'three/webgpu';
 const GRID = 16;
 
 /**
+ * 그림자 데칼 재질의 접두 — **격자 제외 판정의 SSOT**.
+ *
+ * ── (E) 그림자는 격자에서 뺀다 (팀장 재판정 2026-08-27) ─────────────────────
+ * 감독 지시 *"그림자 처리가 다른데? 8은 실시간 그림자라서 무거운것 같은데. 똑같이해."*
+ * 에 대한 답이다. world2 는 그림자를 **지오 8종 × 아틀라스 1재질 = 8벌**로 그린다
+ * (셀 분할이 없다 — 컬링은 파셀 스트리밍이 담당한다). world8 은 위 격자가 그림자에도
+ * 걸려 **8 × 그림자가 있는 셀 수** 벌이 된다. 그림자만 셀을 키에서 빼면 그 구조가
+ * 복원된다.
+ *
+ * ⚠ **「world2 와 동일」해지는 것은 «벌수 구조» 이지 총량이 아니다**(팀장 조건 3).
+ * world2 는 파셀 스트리밍이 **근처 파셀만** 싣지만 world8 은 전 맵 데칼 8,625개가
+ * **상시** 그 8벌 안에 들어 있다. 다음 사람이 이 줄을 문언 그대로 믿지 않게 적어 둔다.
+ *
+ * ⚠⚠ 대가는 **그림자가 항상 전량 그려지는 것**이다. 상한을 아는 채로 고른 안이다 —
+ * 그림자 삼각형은 17,250 / 1,358,918 = **1.27%**(GLB JSON 청크 직접 계수).
+ *
+ * ⚠⚠⚠ world7 은 사용자가 임의 GLB 를 올린다 — 그 파일에 `shadow:` 재질이 없으면 이
+ * 분기는 **no-op** 이고, `tests/glb-instance-shadow.test.ts` 의 «(다) 그림자 없는 GLB»
+ * 가 그것을 못 박는다(격자 제외 전후로 벌수·셀 배정이 바이트 동일).
+ *
+ * ── 폐기된 제4안 — 「재질 8개를 1개로 합친다」 ───────────────────────────────
+ * 한 회차 앞에서 *"재질이 8개로 갈려 8벌로 쪼개지니 합치면 8분의 1"* 이라고 팀장께
+ * 올렸고 **틀렸다.** 「재질이 8개다」는 참이다(블렌더가 이름별로 슬롯을 만들었고,
+ * 텍스처 8개가 전부 같은 이미지 `Image_5` 를 가리킨다). 그런데 「그래서 8벌」이
+ * 성립하지 않았다 — 아래 묶음 키가 **지오 uuid 도 보고**, 그림자는 재질 8개 ↔ 지오
+ * 8개가 **1:1** 이다(world2 가 아틀라스 셀 UV 를 지오에 굽기 때문이다,
+ * `world2/parts/shadow.ts:519`). 재질을 합쳐도 키는 8종을 유지한다 — **감소 0.**
+ *
+ * 이 저장소가 *"참인 문장에서 성립하지 않는 결론을 뽑는 것 — 값이 아니라 재는 축이
+ * 틀린다"* 라고 이름 붙인 형태다. **배포 전에 잡힌 것은 팀장 조건 덕이다** — *"병합 전
+ * 재질 파라미터 동일성을 검증하라"* 를 집행하다 드러났다(파라미터는 실제로 완전
+ * 동일했다: 텍스처 인덱스를 뺀 전 필드가 8/8 일치, 텍스처도 전부 같은 source·sampler).
+ * 조건이 없었으면 **효과 0 인 수정을 넣고 「8분의 1」을 결과로 적은 채** 배포했다.
+ */
+export const SHADOW_MAT_PREFIX = 'shadow:';
+
+/**
+ * 이 재질이 그림자 데칼인가 — **판정은 이 한 곳이 소유한다.**
+ * `systems/glb-source.ts` 의 `shadowDecals` 계수도 이것을 쓴다(접두를 두 곳에 적지 않는다).
+ */
+export const isShadowMaterial = (m) => !!(m && typeof m.name === 'string' && m.name.startsWith(SHADOW_MAT_PREFIX));
+
+/**
  * 씬을 훑어 (지오메트리, 재질) 조합별로 `InstancedMesh` 를 만든다.
  *
  * 원본 트리는 **버린다** — 지오메트리와 재질은 새 인스턴스가 참조하므로 살아 있고,
@@ -138,9 +181,10 @@ export function instanceRepeats(root, gridOverride) {
     if (o.isSkinnedMesh || o.morphTargetInfluences?.length || !o.visible) { loose.push(o); return; }
     if (Array.isArray(o.material) || !o.material) { loose.push(o); return; }
     // 메시가 **어느 셀에 있는가**를 키에 더한다 — 이것이 컬링을 되살리는 자리다.
+    // ⚠ **그림자 데칼만 예외다** — 셀을 빼 전 맵 1벌로 묶는다(위 `SHADOW_MAT_PREFIX`).
     at.setFromMatrixPosition(o.matrixWorld);
-    const cell = cellOf(at);
-    const key = `${cell}|${o.geometry.uuid}|${o.material.uuid}`;
+    const cell = isShadowMaterial(o.material) ? null : cellOf(at);
+    const key = `${cell ?? '*'}|${o.geometry.uuid}|${o.material.uuid}`;
     let b = buckets.get(key);
     if (!b) { b = { geo: o.geometry, mat: o.material, mats: [], cell }; buckets.set(key, b); }
     b.mats.push(o.matrixWorld.clone());
@@ -166,11 +210,25 @@ export function instanceRepeats(root, gridOverride) {
     // ⚠ `boundingSphere.center` 를 안 쓰고 **격자 셀 중심**을 쓰는 이유: 바운딩 중심은
     // 그 셀에 실제로 들어온 메시들의 평균이라 셀마다 치우친다. 거리 판정의 기준이
     // 셀마다 다르면 **같은 거리에서 어떤 셀은 켜지고 어떤 셀은 꺼진다.**
-    const [cx, cz] = b.cell.split('|').map(Number);
-    im.userData.cellCenter = {
-      x: box.min.x + (cx + 0.5) * cw,
-      z: box.min.z + (cz + 0.5) * ch,
-    };
+    // ⚠ **격자에서 뺀 것(그림자)은 셀 중심이 없다** — 자기 바운딩 구를 기준으로 준다.
+    // 그러면 아래 반지름이 인스턴스 전체를 감싸므로 **세계 안 어디에 서 있어도 켜진다**
+    // (거리 판정이 `hypot(중심−나) − 반지름 ≤ 반경` 이다). 그것이 (E)의 의도다 —
+    // world2 처럼 그림자는 「근처만」이 아니라 통째로 그린다.
+    //
+    // ⚠⚠ **「무조건 켜짐」이 아니다.** 세계 **바깥** 아득히 먼 곳에서는 그림자도 꺼진다.
+    // 처음에 이 자리에 *"거리 컬링이 끄지 못한다"* 라고 적었고 **거짓이었다** — 테스트
+    // (라)를 그 조건(10만 m 밖)으로 짰더니 빨간불이 났다. 실전에서 플레이어는 세계
+    // 안에 있고 밖으로 나가면 다른 셀도 전부 꺼지므로 동작은 일관된다. 구분은
+    // `tests/glb-instance-shadow.test.ts` 의 (라)가 못 박는다.
+    //
+    // ⚠⚠⚠ 이 구의 중심은 **기하 중심이 아니다** — three 의 `computeBoundingSphere` 가
+    // 그것을 보장하지 않는다(네 귀퉁이 배치에서 x≈69 가 나왔다). 요건은 중심 위치가
+    // 아니라 **전부 감싸는가** 이고, (마)가 그 축으로 잰다.
+    const [cx, cz] = b.cell ? b.cell.split('|').map(Number) : [NaN, NaN];
+    im.userData.cellCenter = b.cell
+      ? { x: box.min.x + (cx + 0.5) * cw, z: box.min.z + (cz + 0.5) * ch }
+      : { x: im.boundingSphere ? im.boundingSphere.center.x : 0,
+          z: im.boundingSphere ? im.boundingSphere.center.z : 0 };
     // ── 셀 반지름 — **실제 바운딩에서 유도한다**(검수관 권고 P4, 2026-08-27) ──
     // 첫 판본은 `hypot(cw, ch) / 2`(셀 대각선의 절반)였고 **보수적이지 않았다.**
     // 메시는 **원점 위치**로 셀에 배정되는데(`at.setFromMatrixPosition`) 지오메트리는

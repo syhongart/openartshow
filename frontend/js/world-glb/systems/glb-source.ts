@@ -64,10 +64,30 @@
 //
 // **재론 조건: 감독이 world8 밤 화면의 그림자를 문제로 발화하는 회차.** 그때 (B)·(C)의
 // diff 실물·비용 추정은 백로그 `G-W8H` 에 보존해 두었다 — 같은 추정을 다시 하지 않는다.
+//
+// ── 🔴 **재론이 일어났다 — 그러나 축이 갈렸다** (2026-08-27) ─────────────────
+// 감독: *"그림자 처리가 다른데? 8은 실시간 그림자라서 무거운것 같은데. 팀장. 똑같이해."*
+//
+// **팀장이 자기 재론 조건 해석을 정정했다**: 위 조건 문언은 *"**밤** 화면의 그림자"*
+// 인데 감독 발화에 「밤」이 없었다. 즉 축 B(시간대 무반응)는 **아직 발화되지 않았고**,
+// 첫 판정에서 *"조건이 문언 그대로 발동했다"* 고 한 것은 **과독**이었다. 감독이 문제라
+// 하지 않은 것에 새 축을 열지 않는다 — 이 저장소의 「0번 실수」 형태다.
+//
+// 감독 발화의 두 요소는 **전부 다른 축으로 설명됐다**:
+//   「무겁다」      → 격자 셀 분할이 그림자에도 걸려 벌수가 8 × 셀수 로 곱해진 것
+//   「처리가 다른데」 → 같은 축. 방식(AO 블롭)은 world2 와 **이미 같다**
+//
+// **팀장 재판정 — (E) 채택**: 그림자를 격자 셀 분할에서 뺀다. 집행 지점·근거·한계·
+// 폐기된 제4안의 경위는 `glb-instance.js` 의 `SHADOW_MAT_PREFIX` 주석 한 곳이다.
+// **축 B(시간대 무반응)는 보류**다 — 감독 카드 판정에서 그 선택지를 고르면 재개한다.
+// 그때 쓸 (B)·(C)·제3안 표는 `G-W8H` 에 그대로 있다.
+//
+// ⚠ **아래 「시간대에 반응하지 않는다」는 (E) 이후에도 그대로 참이다.** (E)가 고친 것은
+// 렌더 벌수 구조이고 농도 동결은 손대지 않았다. 두 축을 섞어 읽지 마라.
 
 import * as THREE from 'three/webgpu';
 import type { Object3D, Scene } from 'three/webgpu';
-import { instanceRepeats } from './glb-instance.js';
+import { instanceRepeats, isShadowMaterial } from './glb-instance.js';
 
 export interface GlbSourceResult {
   /** 씬에 얹힌 루트(인스턴싱 **후**) */
@@ -131,8 +151,11 @@ export function mountGlbWorld(
     if (!m.isMesh || !m.geometry) return;
     meshes++;
     // 재질 이름이 원산지다 — world2 의 `parts/shadow.ts` 가 `shadow:<kind>` 로 짓는다.
+    // ⚠ 접두 문자열을 여기에 다시 적지 않는다 — 판정 SSOT 는 `glb-instance.js` 의
+    // `isShadowMaterial` 한 곳이다(그 파일이 격자 제외에도 같은 판정을 쓴다). 두 곳에
+    // 적으면 한쪽만 고쳐도 아무도 모른다 — 이 저장소의 «값 미러링» 사고 형태다.
     for (const one of Array.isArray(m.material) ? m.material : [m.material]) {
-      if (one?.name?.startsWith('shadow:')) { shadowDecals++; break; }
+      if (isShadowMaterial(one)) { shadowDecals++; break; }
     }
     const idx = m.geometry.index;
     const pos = m.geometry.attributes?.position;
