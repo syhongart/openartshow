@@ -1,4 +1,4 @@
-const u=112;const f=60;const l="0",s="1",b="2";function _(r){return!Number.isFinite(r)||r<.02?l:r>=.85?b:s}const n="253,251,245",t="23,20,15",p="10,8,4",o="95,158,125";function N(r){if(!("z"in r))throw new Error("joystickCss: `z`(z-index)를 명시하라 — 층위가 필요 없으면 `z: null`");const a=r.fixed?"fixed":"absolute",i=r.z===null?"":`z-index:${r.z};`,e=r.z===null?"":`z-index:${r.z+1};`,d=112/2,c=44/2,$=r.knobCenter==="margin"?`margin:-${c}px 0 0 -${c}px;`:"left:50%;top:50%;transform:translate(-50%,-50%);",x=r.knobOn?"opacity:0;transition:opacity .12s ease,":"transition:",g=r.knobOn?`
+const u=60;const l="0",b="1",s="2";function f(r){return!Number.isFinite(r)||r<.02?l:r>=.85?s:b}const n="253,251,245",t="23,20,15",p="10,8,4",o="95,158,125";function _(r){if(!("z"in r))throw new Error("joystickCss: `z`(z-index)를 명시하라 — 층위가 필요 없으면 `z: null`");const a=r.fixed?"fixed":"absolute",i=r.z===null?"":`z-index:${r.z};`,e=r.z===null?"":`z-index:${r.z+1};`,d=112/2,c=44/2,$=r.knobCenter==="margin"?`margin:-${c}px 0 0 -${c}px;`:"left:50%;top:50%;transform:translate(-50%,-50%);",x=r.knobOn?"opacity:0;transition:opacity .12s ease,":"transition:",g=r.knobOn?`
 ${r.knobOn}{opacity:1}`:"";return`
 ${r.base}{
   position:${a};width:112px;height:112px;
@@ -25,12 +25,12 @@ ${r.base}::after{
 }
 /* 🔴 움직임 — 감독 지시의 1단계. 원본에 **없던** 단계라 이 색은 화면 판정 전이다.
    원본 질주색(rgba(${o},.9))보다 옅게 잡아 «켜졌다» 와 «끝까지 갔다» 가 구별되게 했다. */
-${r.lean(s)}::after{
+${r.lean(b)}::after{
   border-color:rgba(${o},.55);border-style:solid;
   box-shadow:0 0 6px rgba(${o},.25);
 }
 /* 질주 — 원본 .lu-run 값 그대로다 */
-${r.lean(b)}::after{
+${r.lean(s)}::after{
   border-color:rgba(${o},.9);border-style:solid;
   box-shadow:0 0 10px rgba(${o},.5), inset 0 0 8px rgba(${o},.25);
 }
@@ -51,14 +51,14 @@ ${r.knob}{
   ${x}background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }${g}
 /* 움직임 — 진주에서 연초록으로. 화면 판정 전 값이다(위와 같은 이유). */
-${r.leanKnob(s)}{
+${r.leanKnob(b)}{
   background:radial-gradient(circle at 32% 28%, #ddf0e4, #9ac4ac);
   border-color:rgba(32,74,52,.40);
   box-shadow:0 0 0 1px rgba(${o},.5), 0 0 8px rgba(${o},.3),
     inset 0 -2px 4px rgba(32,74,52,.22);
 }
 /* 질주 — 원본 .lu-joy-knob.lu-run 값 그대로다 */
-${r.leanKnob(b)}{
+${r.leanKnob(s)}{
   background:radial-gradient(circle at 32% 28%, #b8e4c9, #5f9e7d);
   border-color:rgba(32,74,52,.55);
   box-shadow:0 0 0 1px rgba(${o},.9), 0 0 14px rgba(${o},.55),
@@ -67,4 +67,4 @@ ${r.leanKnob(b)}{
 @media (prefers-reduced-motion: reduce){
   ${r.base}{transition:none}
   ${r.knob}{transition:none}
-}`}function E(r,a,i){if(r.getElementById(a))return;const e=r.createElement("style");e.id=a,e.textContent=i,r.head.appendChild(e)}export{f as J,s as L,b as a,l as b,u as c,E as i,N as j,_ as l};
+}`}function N(r,a,i){if(r.getElementById(a))return;const e=r.createElement("style");e.id=a,e.textContent=i,r.head.appendChild(e)}export{u as J,b as L,s as a,l as b,N as i,_ as j,f as l};
