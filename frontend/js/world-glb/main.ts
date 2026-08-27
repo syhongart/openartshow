@@ -450,7 +450,10 @@ export async function startGlbWorld(
   const fog = fogBand(CELL_X);
   // GLB 격자·컬링 노브. 교환비를 화면으로 판정해야 해서 열어 뒀다 — 잘게 쪼갤수록
   // 삼각형은 줄지만 드로우콜은 는다. **실측표는 `systems/glb-instance.js` 의 `GRID`
-  // 주석 한 곳**이고, 판정이 끝나면 지운다(남은 노브는 그때부터 장식이다).
+  // 주석 한 곳**이다.
+  // ⚠ **지우는 시점을 못 박는다**(검수관 P7): **감독이 재측정 회신을 주는 회차.**
+  // 그때까지는 판정이 안 끝난 것이고, 그 뒤에 남으면 장식이다(world2 의 `?shlen` 선례).
+  // 시점을 안 적으면 「나중에 지운다」가 영원히 안 온다.
   const GLB_GRID = Math.round(readNum('grid', 16, 1, 64));
   /** 컬링 반경 = 안개 far × 이 배수. 1 이면 「안개가 완전히 덮는 거리까지만」이다 */
   const GLB_CULL_MUL = readNum('cull', 1.15, 0.5, 8);

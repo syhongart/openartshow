@@ -340,6 +340,10 @@ export function downsample(buckets: readonly Bucket[], maxRows = 40): Bucket[] {
 }
 
 /** 시간축 표. 개수가 늘어나면 한눈에 보이는 것이 이 표의 목적이다. */
+// ⚠ 아래 표의 `파셀`·`build` 칸은 이 세계에서 **구조적으로 항상 0** 이다(파셀이 없다).
+// **지우지 않는다** — 감독이 world8 리포트를 world2 로 오독했을 때 그것을 깬 **유일한
+// 단서가 그 「파셀 0」이었다**(위 `formatReport` 제목 주석). 다음 사람이 「지워도 되는
+// 잔여물」로 읽지 않도록 이유를 여기 남긴다(검수관 권고 P10).
 export function formatTimeline(buckets: readonly Bucket[], maxRows = 40): string {
   if (buckets.length === 0) return '(표본 없음)';
   const rows = downsample(buckets, maxRows);
