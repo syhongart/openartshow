@@ -48,6 +48,8 @@ export interface HudSource {
   backend: () => string;
   /** 어느 페이지인가 — 리포트 제목에 쓴다(`world7`/`world8`). 근거는 `decide/telemetry.ts` */
   page?: string;
+  /** 거리 컬링 상태 — 이 세계의 스트리밍이다. 근거는 `decide/telemetry.ts` 의 `cull` */
+  cull?: () => { on: number; total: number; radius: number; ticks: number; grid: number } | null;
   counts: () => { draw: number; pipeline: number; geometries: number; textures: number };
   /**
    * 지금의 하늘 상태를 사람이 읽는 한 줄로. 드로우콜 판정이 이 그룹 안에서만 상수를 요구한다
@@ -137,6 +139,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     return {
       backend: src.backend(),
       page: src.page,
+      cull: src.cull?.() ?? null,
       ua: typeof navigator !== 'undefined' ? navigator.userAgent : '—',
       dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
       screen: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : '—',

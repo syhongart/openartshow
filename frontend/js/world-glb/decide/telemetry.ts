@@ -367,6 +367,10 @@ export interface ReportInput {
    * ⚠ 이것이 없어서 world8 리포트가 `world2` 제목을 달았다(위 `formatReport` 주석).
    */
   readonly page?: string;
+  /** 거리 컬링 = 이 세계의 스트리밍. `ticks === 0` 은 「안 쟀다」(등록 누락일 수 있다) */
+  readonly cull?: {
+    on: number; total: number; radius: number; ticks: number; grid: number;
+  } | null;
   /** 기기·백엔드 식별 */
   backend: string;
   ua: string;
@@ -505,7 +509,6 @@ export function formatReport(r: ReportInput): string {
   const upd = summarize(r.updMs);
   const render = summarize(r.renderMs);
   const out = summarize(r.outMs);
-  const parcels = constancy(r.parcels);
 
   const lines: string[] = [];
   // ⚠ **제목이 `world2` 로 하드코딩돼 있었고 거짓이었다**(감독 신고 2026-08-26).
@@ -545,9 +548,26 @@ export function formatReport(r: ReportInput): string {
   lines.push(countLine('geometry', constancy(r.geometries)));
   lines.push(countLine('texture', constancy(r.textures)));
   lines.push('');
-  lines.push('[스트리밍]');
-  lines.push(`파셀 ${parcels.min}~${parcels.max} · 신규 build ${r.built} · 반납 ${r.released}`);
-  lines.push(`슬롯 부족(starved) ${r.starved}` + (r.starved > 0 ? '  ← 풀 예산 부족' : ''));
+  // ── 🔴 [스트리밍] — **이 세계의 스트리밍은 거리 컬링이다**(검수관 블로커 B4) ────
+  // 여기가 하드코딩 0(`파셀 0~0 · build 0 · 반납 0`)을 찍고 **정작 이 세계의 스트리밍인
+  // 거리 컬링은 콘솔에만 있었다.** 감독이 판정자인데 감독 화면에 그 축이 없으면
+  // 「여전히 느리다」의 원인이 ⓐ 안 돌았다 ⓑ 부족하다 중 어느 것인지 못 가른다.
+  // 같은 리포트의 **제목**이 world2 로 박혀 감독이 오독한 사고를 이 회차에 고쳤는데
+  // 옆 필드에 같은 형태가 남아 있었다.
+  lines.push('[스트리밍 — 거리 컬링]');
+  if (r.cull) {
+    const c = r.cull;
+    // ⚠ `ticks === 0` = **「한 번도 안 쟀다」**. 이 시스템은 등록 누락으로 죽어 있던 적이
+    // 있고 그때 진단이 정상값과 같은 값을 냈다 — 그 상태를 이름으로 부른다.
+    lines.push(c.ticks === 0
+      ? `⚠ **판정이 한 번도 안 돌았다** (셀 ${c.total}개 · 등록 누락일 수 있다)`
+      : `그리는 셀 ${c.on}/${c.total} · 반경 ${Math.round(c.radius)}m · 격자 ${c.grid}×${c.grid} · 판정 ${c.ticks}회`);
+  } else {
+    lines.push('거리 컬링 꺼짐 (`?fogd=0` 이면 안개가 없어 컬링도 안 건다)');
+  }
+  // ⚠ 여기 `파셀 N~M · 신규 build · 반납 · 슬롯 부족` 네 줄이 있었고 **전부 하드코딩
+  // 0** 이었다(이 세계에 파셀이 없다). 「0 이라서 없다」와 「없어서 0 이다」를 가르는
+  // 값이 아니라 **자리만 차지하는 거짓 정보**였으므로 지웠다 — 위 컬링 줄이 대신한다.
   lines.push('');
   lines.push('[적응]');
   lines.push(`해상도 배율 ${f2(r.pixelRatio)} · 프레임캡 ${r.frameCap || '없음'} · 삼각형 평균 ${Math.round(r.triAvg)}`);

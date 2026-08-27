@@ -163,8 +163,21 @@ export function instanceRepeats(root, gridOverride) {
       x: box.min.x + (cx + 0.5) * cw,
       z: box.min.z + (cz + 0.5) * ch,
     };
-    // 셀 반지름(대각선의 절반) — 판정이 셀 «가장자리» 를 봐야 한다.
-    im.userData.cellRadius = Math.hypot(cw, ch) / 2;
+    // ── 셀 반지름 — **실제 바운딩에서 유도한다**(검수관 권고 P4, 2026-08-27) ──
+    // 첫 판본은 `hypot(cw, ch) / 2`(셀 대각선의 절반)였고 **보수적이지 않았다.**
+    // 메시는 **원점 위치**로 셀에 배정되는데(`at.setFromMatrixPosition`) 지오메트리는
+    // 셀 밖으로 뻗을 수 있다 — 긴 다리·큰 지면이 그렇다. 지금 자산에서는 셀 84.9m 에
+    // 반경 88m 라 여유가 커서 안 드러났지만, **world7 은 사용자가 임의 GLB 를 올린다.**
+    // 거기서는 **보이는 것이 꺼진다.**
+    //
+    // `computeBoundingSphere()` 를 이미 불렀으므로 그 구가 격자 중심에서 얼마나
+    // 뻗는지로 잡는다. **기준점은 여전히 격자 중심**이다(셀마다 기준이 달라지면 같은
+    // 거리에서 어떤 셀은 켜지고 어떤 셀은 꺼진다 — 그 이유는 그대로 지켜진다).
+    const bs = im.boundingSphere;
+    const cc = im.userData.cellCenter;
+    im.userData.cellRadius = bs
+      ? Math.hypot(bs.center.x - cc.x, bs.center.z - cc.z) + bs.radius
+      : Math.hypot(cw, ch) / 2;
     group.add(im);
     instances += b.mats.length;
   }

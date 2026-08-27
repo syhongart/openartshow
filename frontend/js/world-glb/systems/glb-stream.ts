@@ -65,8 +65,11 @@ interface Cell {
  * 안 오르므로 드로우콜·삼각형이 그만큼 준다.
  */
 export function createGlbStream(opts: GlbStreamOptions): System & {
-  /** 진단 — 지금 켜진 셀 / 전체 셀 */
-  stats(): { on: number; total: number; radius: number };
+  /**
+   * 진단 — 지금 켜진 셀 / 전체 셀.
+   * ⚠ `on === -1` 또는 `ticks === 0` 이면 **아직 안 쟀다**(등록 누락일 수 있다).
+   */
+  stats(): { on: number; total: number; radius: number; ticks: number };
 } {
   const every = opts.everyMs ?? DEFAULT_EVERY_MS;
   const cells: Cell[] = [];
@@ -84,7 +87,21 @@ export function createGlbStream(opts: GlbStreamOptions): System & {
   }
 
   let nextAt = -1;
-  let on = cells.length;
+  /**
+   * 지금 켜진 셀. **`-1` 은 「아직 한 번도 안 쟀다」다** — `cells.length` 로 초기화하지
+   * 않는 것이 요점이다(검수관 블로커 B4, 2026-08-27).
+   *
+   * ⚠ **이 시스템은 이번 회차에 이미 한 번 완전히 죽어 있었다** — `kernel.add` 가
+   * 등록 순서 때문에 한 번도 안 불렸는데 진단은 `457/457` 을 냈고, 그 값은 「전부 반경
+   * 안」의 **정상 출력과 완전히 같았다.** 스윕이라는 우회로로 잡은 것이지 진단이 알려준
+   * 게 아니다. 같은 상태가 재발해도 똑같이 초록이었을 것이다.
+   *
+   * 이 저장소의 *"못 잰 것은 통과가 아니다"* 를 **진단 값 수준으로 내린 것**이다 —
+   * 집계 진단의 초기값을 「정상으로 보이는 값」으로 두지 않는다.
+   */
+  let on = -1;
+  /** 판정을 몇 번 돌았는가. `0` 이면 등록이 안 됐거나 첫 주기 전이다 */
+  let ticks = 0;
 
   return {
     name: 'glbStream',
@@ -101,7 +118,8 @@ export function createGlbStream(opts: GlbStreamOptions): System & {
         if (want) lit++;
       }
       on = lit;
+      ticks++;
     },
-    stats: () => ({ on, total: cells.length, radius: opts.radius }),
+    stats: () => ({ on, total: cells.length, radius: opts.radius, ticks }),
   };
 }

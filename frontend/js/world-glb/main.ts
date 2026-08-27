@@ -685,6 +685,8 @@ export async function startGlbWorld(
     }, {
       backend: () => adapter?.backend ?? '—',
       page: opts.tag,   // 리포트 제목이 world2 로 하드코딩돼 거짓이었다(감독 신고)
+      // 이 세계의 «스트리밍» — 감독이 판정자인 축은 감독 화면에 있어야 한다.
+      cull: () => (glbStream ? { ...glbStream.stats(), grid: glbSource?.grid ?? 0 } : null),
       counts: () => {
         const f = adapter?.frameStats();
         return {
@@ -1045,13 +1047,15 @@ export async function startGlbWorld(
         // 것**이라 끄면 화면이 그대로다(실측·근거는 `systems/glb-stream.ts` 헤더).
         // ⚠ **예열 «뒤» 여야 한다** — 꺼진 셀은 예열을 못 받고, 나중에 켜질 때 원인 1
         // (파이프라인 컴파일 스톨)이 그대로 재발한다.
-        if (glbSource) {
+        // ⚠ **`?fogd=0` 이면 안 만든다**(검수관 P3) — 안개가 꺼지는데 컬링만 남으면
+        // **세계가 안개 없이 잘리고**, 그 시스템 헤더의 핵심 주장이 거기서 거짓이 된다.
+        if (glbSource && fogDist > 0) {
           glbStream = createGlbStream({
             root: glbSource.root,
             getPosition: () => player.position,
             // **안개 far 에서 유도한다** — 상수를 여기 박지 않는다. `?fogd=` 로 안개를
             // 늘리면 컬링 반경도 함께 늘어야 「안 보이는 것만 끈다」가 유지된다.
-            radius: fog.far * Math.max(1, fogDist) * GLB_CULL_MUL,
+            radius: fog.far * fogDist * GLB_CULL_MUL,
           });
         }
 
