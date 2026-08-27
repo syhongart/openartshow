@@ -61,7 +61,9 @@ export interface HudSource {
    * 없어도 계측은 돌고 개수만 남는다 — 훅 부재가 수집을 죽이지 않는다.
    */
   drawBlockers?: () => readonly { readonly name: string; readonly hint?: string }[];
-  stream: () => { loaded: number; built: number; released: number; starved: number };
+  // ⚠ `released`·`starved` 는 뺐다(검수관 P9) — 리포트·화면 소비처가 둘 다 0 인데
+  // 조립부가 하드코딩 0 을 공급하고 있었다.
+  stream: () => { loaded: number; built: number };
   adapt: () => { pixelRatio: number; frameCap: number; triAvg: number };
 }
 
@@ -112,7 +114,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
   let awayCount = 0;
   let awayMsTotal = 0;
 
-  let built = 0, released = 0;
+  let built = 0;
   const startedAt = Date.now();
   let open = false;
   /**
@@ -158,7 +160,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       pipeline: pipeline.values(),
       geometries: geometries.values(), textures: textures.values(),
       parcels: parcels.values(),
-      built, released, starved: s.starved,
+      built,   // ⚠ `released`·`starved` 는 리포트 소비처가 0 이라 계약에서 뺐다(검수관 P9)
       pixelRatio: a.pixelRatio, frameCap: a.frameCap, triAvg: a.triAvg,
       timeline: timeline.snapshot(),
       events: [...events],
@@ -188,7 +190,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       // 범위가 보이는데 경고가 없으면 "왜 안 뜨지"로 읽힌다. 하늘 상태 수를 함께 적어
       // "상태가 여럿이라 범위가 나오는 게 정상"임을 그 자리에서 알 수 있게 한다.
       `draw ${cd.min}${cd.min === cd.max ? '' : `~${cd.max}`}${gd && gd.groups.length > 1 ? `(하늘${gd.groups.length})` : ''}${warn(drawOk)}  pipe ${cp.min}${cp.constant ? '' : `~${cp.max}`}${warn(cp.constant)}`,
-      `파셀 ${s.loaded}  build ${built}  starve ${s.starved}${warn(s.starved === 0)}`,
+      `파셀 ${s.loaded}  build ${built}`,
       `px ${a.pixelRatio.toFixed(2)}  cap ${a.frameCap || '—'}  tri ${Math.round(a.triAvg)}`,
       // ── 이 줄이 없으면 이벤트 수집이 죽어도 아무도 모른다 ────────────────────
       // 뮤테이션으로 확인했다: `sample` 의 `ev:` 분기를 통째로 지워도 값이 어느 링에도
@@ -301,8 +303,8 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
       geometries.push(c.geometries); textures.push(c.textures);
       const s = src.stream();
       parcels.push(s.loaded);
-      // built/released는 프레임당 증분이므로 누적한다.
-      built += s.built; released += s.released;
+      // built는 프레임당 증분이므로 누적한다.
+      built += s.built;
       timeline.add((Date.now() - startedAt) / 1000, {
         frameMs: lastFrameMs,
         draw: c.draw, pipeline: c.pipeline,

@@ -715,7 +715,7 @@ export async function startGlbWorld(
       // ⚠ **전부 0 이고 그것이 사실이다** — 이 세계에는 파셀 스트리밍이 없다(GLB 한
       // 덩어리가 부팅에 다 온다). 훅을 지우지 않는 이유는 스모크·계측이 세계마다 같은
       // 모양을 읽기 때문이고, 「0 이라서 없다」와 「없어서 0 이다」를 가르는 것은 이 주석이다.
-      stream: () => ({ loaded: 0, built: 0, released: 0, starved: 0 }),
+      stream: () => ({ loaded: 0, built: 0 }),
       adapt: () => {
         const a = adapt?.snapshot();
         return {

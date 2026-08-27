@@ -423,8 +423,8 @@ export interface ReportInput {
   /** 스트리밍 */
   parcels: readonly number[];
   built: number;
-  released: number;
-  starved: number;
+  // ⚠ `released`·`starved` 는 지웠다(검수관 P9) — 소비처 0 인데 계약에 남아 조립부가
+  // 하드코딩 0 을 공급했다. 앞 커밋이 「제거했다」고 적고 안 했다 — grep 으로 확인한다.
   /** 적응 */
   pixelRatio: number;
   frameCap: number;
