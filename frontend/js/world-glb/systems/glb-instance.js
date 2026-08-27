@@ -1,0 +1,207 @@
+// glb-instance.js — **반복되는 메시를 `InstancedMesh` 로 다시 묶는다.**
+//
+// ── 왜 (감독 신고 2026-08-26 *"8을 보니 프레임이 느린것같아"*) ───────────────
+// 실측이 원인을 하나로 좁혔다:
+//
+//   드로우콜 10,856 · 삼각형 508,852   (프러스텀 컬링 **이후** 값이다)
+//   메시 28,707개인데 **고유 (지오메트리 + 재질) 조합은 40개**
+//   상위 조합의 반복 수: 7229 · 3182 · 3182 · 2540 · 2540 …
+//
+// 즉 **같은 물건이 수천 번 낱개로 그려지고 있었다.** world2 는 원래 파츠 종류당
+// `InstancedMesh` 하나로 그리는데(개수 불변식), GLB 내보내기가 그것을 **개별 메시로
+// 펴서** 저장한다(glTF 에 인스턴싱 표현이 없다 — `EXT_mesh_gpu_instancing` 은 우리
+// exporter 가 안 쓴다). 그러니 여기서 **되묶는 것**이 원래 상태로의 복원이다.
+//
+// ⚠ 내가 먼저 의심한 것은 **그림자**였고(그 회차에 내가 넣었으니) 드로우콜 ON/OFF
+// 대조가 차이 0 이라 **기각했다고 적었다. 그 기각은 무효다**(검수관 반려 B1):
+// `renderer.info.render.calls` 에는 **그림자 패스가 안 들어간다** — three 가
+// `shadowMap.render()` 뒤에 `info.reset()` 을 부른다. 켜고 꺼도 같은 숫자가 나오는 것은
+// 「공짜」가 아니라 **그 축의 검출력이 0** 이라는 뜻이다. 그림자는 기각된 것이 아니라
+// **안 재진 것**이고 여전히 용의선상에 있다. 재는 법은 `glb-shadow.js` 헤더에 있다.
+// 다만 아래 인스턴싱은 그것과 무관하게 성립한다 — 드로우콜 10,856 은 본 패스만의 값이다.
+//
+// ── 무엇을 안 하는가 ────────────────────────────────────────────────────────
+// · ⚠ **`SkinnedMesh` 는 옮기지만 «정확히» 옮겨진다는 보장이 없다**(검수관 부기).
+//   skeleton 의 bone 트리가 원본 쪽에 남는데 여기서 `matrix` 를 월드로 굽는 것과
+//   `bindMatrix` 가 겹칠 수 있다. **재현 자산이 없어 확인 못 했다** — 그런 GLB 를
+//   만나면 이 자리를 먼저 본다.
+// · **묶지 않고 그대로 옮기는 것**(`loose`): 다중 재질 메시 · `SkinnedMesh` · 모프 대상 ·
+//   `visible=false` · Light · Camera · Points · Line. 앞의 넷은 인스턴싱하면 각각
+//   재질 규약·스키닝·모프·가시성이 깨지고, 뒤의 넷은 메시가 아니라 애초에 대상이 아니다.
+//   world8 의 고정 자산에는 전부 0건이지만 **world7 은 사용자가 임의 GLB 를 올린다.**
+// · 지오메트리를 **복사하지 않는다.** `InstancedMesh` 가 원본을 참조하므로 메모리가
+//   늘지 않는다 — 병합(merge)을 안 고른 이유이기도 하다. 병합은 지오를 통째로 복사하고
+//   프러스텀 컬링 단위까지 잃는다.
+//
+// ── 왜 **격자로 나눠** 묶는가 (감독 지시 2026-08-26 *"해결해서 링크 줘"*) ────
+// 첫 판본은 (지오, 재질)로만 묶었고 **컬링이 사실상 0 이 됐다** — 씬 전체 1,358,918
+// 삼각형 중 1,358,906(99.999%)이 매 프레임 그려졌다. 「종류 전체」가 한 덩어리라
+// 화면 뒤쪽도 함께 그린 것이다. 드로우콜 10,856 → 39 는 얻었지만 삼각형이 2.7배가 됐고,
+// 저사양 기기에서는 그쪽이 병목일 수 있다(백로그 `G-W8F`).
+//
+// 그래서 **수평 격자 `GRID`×`GRID` 를 키에 더한다.** 셀마다 따로 묶이므로 프러스텀
+// 컬링이 셀 단위로 되살아난다. 드로우콜은 늘지만(최악 `GRID²×조합수`, 실제로는 조합이
+// 희소해 훨씬 적다) **화면에 보이는 셀만** 그린다.
+//
+// ⚠ `GRID` 는 **드로우콜과 컬링의 교환비**다. 크면 컬링이 촘촘해지고 드로우콜이 는다.
+// 값의 근거는 아래 상수 주석에 실측으로 적는다.
+//
+// ── 못 하는 것 / 대가 ───────────────────────────────────────────────────────
+// · **수직 방향은 안 나눈다.** 세계가 넓고 낮은 형태(우리 오픈월드 1920×1920×115m)라
+//   수평만으로 충분하다고 봤다. 높은 건물 안을 걷는 GLB 에서는 다시 볼 값이다.
+// · 인스턴스 단위로 재질을 바꿀 수 없다(이 페이지는 그럴 일이 없다).
+// · **원본 노드 이름이 사라진다.** 진단 훅의 `ahead()` 가 «Mesh_11223» 대신 인스턴스
+//   이름을 보고한다.
+
+import * as THREE from 'three/webgpu';
+
+/**
+ * 수평 격자 분할 수(한 변). 셀마다 따로 묶여 **프러스텀 컬링이 셀 단위로 되살아나고**,
+ * 2026-08-27 부터는 **거리 컬링**(`systems/glb-stream.ts`)도 이 셀 단위로 돈다.
+ *
+ * ── 값의 근거 — 감독 지시 2026-08-27 *"개선 작업해야지"* 후 스윕 실측 ──────────
+ * (world2 왕복 자산 1920×1920m · 28,707 메시 / 40 조합 · 스폰 지점 · 헤드리스)
+ *
+ * ⚠⚠ **이 표는 「셀 반지름을 실제 바운딩에서 유도한 뒤」의 값이다**(검수관 블로커 B5,
+ * 2026-08-27). 첫 판본은 셀 대각선 절반으로 재던 시절의 표를 그대로 두었고 **채택 근거가
+ * 무효였다** — 그때 16 은 draw 162 였는데 지금 공식으로는 **186** 이고, 그것은 옛 공식의
+ * 12(175)보다 나쁘다. **한쪽만 갱신하면 두 값의 비교가 통째로 무의미해진다.**
+ * 이 저장소가 `G-1` 로 이름 붙인 형태이고(*"검사가 보는 대상이 바뀌면 재실행"*),
+ * 이번은 대상이 아니라 **판정식**이 바뀐 경우다.
+ *
+ *   GRID  거리컬링   드로우콜   그려진 삼각형   묶은 벌수   켜진 셀 / 전체
+ *     16      끔          868      1,896,674      1,959      1938 / 1959
+ *      6      끔          345      2,280,050        457       457 / 457   ← 배포본
+ *     12      켬          196      1,479,206      1,193       152 / 1193
+ *   **16      켬          186      1,440,258      1,959       193 / 1959**  ← 채택
+ *
+ * **16 을 고른 이유**: 새 공식으로도 12(196)를 이긴다(186). 격자가 잘아질수록 셀 하나가
+ * 작아져 **꺼지는 삼각형이 늘지만**(1,479,206 → 1,440,258) 시야에 걸리는 셀 수는 늘어
+ * 드로우콜이 되돌아온다 — 25 는 옛 공식에서 이미 그 현상을 보였다(117→221 셀).
+ *
+ * **배포본(GRID 6 · 컬링 없음) 대비 드로우콜 -46% · 삼각형 -37%.**
+ * ⚠ 첫 보고에 **-53% / -38%** 라고 적었고 그것은 P4 «전» 공식의 값이다 — 감독께 드린
+ * 숫자였으므로 여기 정정을 남긴다.
+ *
+ * ⚠ **왜 화면이 안 바뀌나**: 컬링 반경이 **안개 far 에서 유도**된다(76.8m × 1.15).
+ * 그 너머는 이미 안개가 완전히 덮으므로 **보이지도 않는 것을 안 그리는 것**이다.
+ * 근거 전문은 `systems/glb-stream.ts` 헤더 한 곳.
+ *
+ * ⚠⚠ **이 표는 「이 자산의 이 자리」다.** 다른 GLB·다른 스폰에서는 다른 값이 나온다.
+ * 그래서 `?grid=`·`?cull=` 노브를 열어 뒀고, **판정이 끝나면 지운다.**
+ */
+const GRID = 16;
+
+/**
+ * 씬을 훑어 (지오메트리, 재질) 조합별로 `InstancedMesh` 를 만든다.
+ *
+ * 원본 트리는 **버린다** — 지오메트리와 재질은 새 인스턴스가 참조하므로 살아 있고,
+ * 호출부는 반환된 그룹만 씬에 넣으면 된다.
+ *
+ * @returns {{group: THREE.Group, made: number, skipped: number, instances: number, grid: number}}
+ */
+export function instanceRepeats(root, gridOverride) {
+  root.updateMatrixWorld(true);
+
+  /** key `${geoUuid}|${matUuid}` → { geo, mat, mats: Matrix4[] } */
+  const buckets = new Map();
+  const loose = [];   // 인스턴싱 규약에 안 맞는 것 — 그대로 옮긴다(헤더 목록 참조)
+
+  // 격자 원점·칸 크기 — 세계 바운딩에서 유도한다(상수를 박지 않는다).
+  // ⚠ `GRID` 는 이제 **노브로 열려 있다**(`?grid=`) — 거리 컬링(`glb-stream.ts`)이
+  // 붙으면서 「몇 조각으로 자르는가」가 성능 판정 축이 됐기 때문이다. 기본값의 근거는
+  // 위 상수 주석이고, 스윕 실측은 백로그 `G-W8N` 에 있다.
+  const grid = Number.isFinite(gridOverride) && gridOverride >= 1
+    ? Math.round(gridOverride) : GRID;
+  const box = new THREE.Box3().setFromObject(root);
+  const cw = Math.max(1e-6, (box.max.x - box.min.x) / grid);
+  const ch = Math.max(1e-6, (box.max.z - box.min.z) / grid);
+  const cellOf = (v) => {
+    const cx = Math.min(grid - 1, Math.max(0, Math.floor((v.x - box.min.x) / cw)));
+    const cz = Math.min(grid - 1, Math.max(0, Math.floor((v.z - box.min.z) / ch)));
+    return `${cx}|${cz}`;
+  };
+  const at = new THREE.Vector3();
+
+  root.traverse((o) => {
+    if (o === root) return;
+    // ⚠ **메시가 아닌 것도 옮긴다**(검수관 반려 B6). 첫 판본은 `loose` 에 메시만
+    // 담고 원본 트리를 버려서 Light·Camera·Points·Line 이 **통째로 사라졌다.**
+    // world8 의 고정 자산에는 그런 노드가 없지만 **world7 은 사용자가 임의 GLB 를 올린다.**
+    if (!o.isMesh) {
+      if (o.isLight || o.isCamera || o.isPoints || o.isLine) loose.push(o);
+      return;   // 순수 그룹은 행렬이 자식에 구워지므로 버려도 무해하다
+    }
+    if (!o.geometry) return;
+    // 스키닝·모프는 인스턴싱하면 **애니메이션이 죽는다.** 숨긴 것은 묶으면 **보이게 된다**
+    // (`traverse` 는 `visible=false` 도 방문한다). 셋 다 그대로 옮긴다.
+    if (o.isSkinnedMesh || o.morphTargetInfluences?.length || !o.visible) { loose.push(o); return; }
+    if (Array.isArray(o.material) || !o.material) { loose.push(o); return; }
+    // 메시가 **어느 셀에 있는가**를 키에 더한다 — 이것이 컬링을 되살리는 자리다.
+    at.setFromMatrixPosition(o.matrixWorld);
+    const cell = cellOf(at);
+    const key = `${cell}|${o.geometry.uuid}|${o.material.uuid}`;
+    let b = buckets.get(key);
+    if (!b) { b = { geo: o.geometry, mat: o.material, mats: [], cell }; buckets.set(key, b); }
+    b.mats.push(o.matrixWorld.clone());
+  });
+
+  const group = new THREE.Group();
+  group.name = 'glb:instanced';
+  let instances = 0;
+
+  for (const b of buckets.values()) {
+    const im = new THREE.InstancedMesh(b.geo, b.mat, b.mats.length);
+    im.name = `inst:${b.mat.name || 'unnamed'}×${b.mats.length}`;
+    for (let i = 0; i < b.mats.length; i++) im.setMatrixAt(i, b.mats[i]);
+    im.instanceMatrix.needsUpdate = true;
+    // ⚠ **반드시 부른다.** 안 부르면 `boundingSphere` 가 원본 지오의 것(한 개짜리)이라
+    // 프러스텀 컬링과 레이캐스트가 인스턴스 전체를 못 감싸고 조용히 틀린다.
+    im.computeBoundingSphere();
+    // ── 🔴 **셀 중심을 실어 보낸다** — 거리 컬링이 이것을 읽는다 ────────────────
+    // 감독 지시 2026-08-27 *"개선 작업해야지"*. 안개 far 가 76.8m 인데 1km 밖 건물까지
+    // 그리고 있었다(삼각형 2,110,989 = 자체 예산의 35배). **안개 너머를 끄면 화면은
+    // 그대로고 삼각형만 준다** — 그 판정을 `systems/glb-stream.ts` 가 한다.
+    //
+    // ⚠ `boundingSphere.center` 를 안 쓰고 **격자 셀 중심**을 쓰는 이유: 바운딩 중심은
+    // 그 셀에 실제로 들어온 메시들의 평균이라 셀마다 치우친다. 거리 판정의 기준이
+    // 셀마다 다르면 **같은 거리에서 어떤 셀은 켜지고 어떤 셀은 꺼진다.**
+    const [cx, cz] = b.cell.split('|').map(Number);
+    im.userData.cellCenter = {
+      x: box.min.x + (cx + 0.5) * cw,
+      z: box.min.z + (cz + 0.5) * ch,
+    };
+    // ── 셀 반지름 — **실제 바운딩에서 유도한다**(검수관 권고 P4, 2026-08-27) ──
+    // 첫 판본은 `hypot(cw, ch) / 2`(셀 대각선의 절반)였고 **보수적이지 않았다.**
+    // 메시는 **원점 위치**로 셀에 배정되는데(`at.setFromMatrixPosition`) 지오메트리는
+    // 셀 밖으로 뻗을 수 있다 — 긴 다리·큰 지면이 그렇다. 지금 자산에서는 셀 84.9m 에
+    // 반경 88m 라 여유가 커서 안 드러났지만, **world7 은 사용자가 임의 GLB 를 올린다.**
+    // 거기서는 **보이는 것이 꺼진다.**
+    //
+    // `computeBoundingSphere()` 를 이미 불렀으므로 그 구가 격자 중심에서 얼마나
+    // 뻗는지로 잡는다. **기준점은 여전히 격자 중심**이다(셀마다 기준이 달라지면 같은
+    // 거리에서 어떤 셀은 켜지고 어떤 셀은 꺼진다 — 그 이유는 그대로 지켜진다).
+    const bs = im.boundingSphere;
+    const cc = im.userData.cellCenter;
+    im.userData.cellRadius = bs
+      ? Math.hypot(bs.center.x - cc.x, bs.center.z - cc.z) + bs.radius
+      : Math.hypot(cw, ch) / 2;
+    group.add(im);
+    instances += b.mats.length;
+  }
+
+  // 규약 밖 노드는 월드 변환을 구워 그대로 옮긴다.
+  for (const o of loose) {
+    // ⚠ **`clone(false)` — 재귀를 끈다**(검수관 조건 N1). `Object3D.clone()` 은
+    // `recursive = true` 가 기본이라 자식 트리를 통째로 복제하는데, `traverse` 는 그
+    // 자식들을 **이미 개별로 방문해 처리했다**(콜백의 `return` 은 순회를 안 멈춘다).
+    // 실측: 입력 메시 2개(숨김 부모 + 보이는 자식) → 결과가 **3개**를 그렸고,
+    // **숨겨야 할 것의 자식이 보였다.** 자식은 각자 처리되므로 잃지 않는다.
+    const clone = o.clone(false);
+    clone.matrix.copy(o.matrixWorld);
+    clone.matrix.decompose(clone.position, clone.quaternion, clone.scale);
+    group.add(clone);
+  }
+
+  return { group, made: buckets.size, skipped: loose.length, instances, grid };
+}

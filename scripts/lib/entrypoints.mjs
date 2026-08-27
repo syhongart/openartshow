@@ -134,12 +134,18 @@ export const ENTRYPOINTS = [
   // 감독 지시 2026-08-25 *"아까 그 파일을 올려서 월드7로 해봐. 테스트로 보게"* —
   // 내보낸 GLB 를 블렌더에서 손본 뒤 **있는 그대로** 걸어보는 페이지. world2 되읽기는
   // 우리 파츠를 우리 모양으로 다시 세우므로 블렌더의 모양 변경이 안 나타난다.
+  //
+  // ⚠ **2026-08-26 편입**: 감독 지시 *"방금 한것처럼 월드2가 그대로 들어오게해"* 로
+  // world8 과 **같은 트리**(`js/world-glb/`)를 타게 됐다(팀장 판정 (A) 트리 공유).
+  // 두 페이지가 갈리는 것은 부트 파일 하나뿐이다 — `world7-boot.js` 는 사람이 고른
+  // 파일을, `world8-boot.js` 는 `<body data-glb>` 의 고정 자산을 넘긴다.
+  // 그래서 **구 `js/glb-*.js` 7개(1,198줄)는 이 회차에 삭제됐다**(팀장 조건 2).
   { key: 'world7', src: 'world7.html', out: 'app/world7.html', exposure: 'flagged' },
   // 감독 지시 2026-08-26 *"월드8에 그 glb를 올려보자."* → 같은 날 **world2 전체 포크로
   // 재구성됐다**(감독 *"월드 2의 기본 기능 다 들어가야지"* → 팀장 판정 (A)).
   // ⚠ 이 주석은 *"world7 과 같은 스크립트(`js/glb-world.js`)를 쓴다"* 라고 적고 있었고
-  // **지금은 거짓이다** — world8 은 `js/world8-boot.js` → `js/world8/` 트리를 탄다.
-  // 갈리는 것은 「세계 소스」 한 축뿐이고 나머지는 world2 복사다(`js/world8/README.md`).
+  // **지금은 거짓이다** — world8 은 `js/world8-boot.js` → `js/world-glb/` 트리를 탄다.
+  // 갈리는 것은 「세계 소스」 한 축뿐이고 나머지는 world2 복사다(`js/world-glb/README.md`).
   // 고정 자산(`assets/worlds/world2-blender-edit.glb`)을 부팅 즉시 연다 — 감독이
   // *"지금 그파일이 없어서 내가 못올려"* 라고 해서 그 왕복을 저장소에서 재현해 구웠다.
   { key: 'world8', src: 'world8.html', out: 'app/world8.html', exposure: 'flagged' },
