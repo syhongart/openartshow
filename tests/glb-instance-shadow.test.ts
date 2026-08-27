@@ -202,4 +202,49 @@ describe('AO 데칼 지면 띄움', () => {
     expect(d.position.y, '데칼이 지면 평면 위로 올라오지 않았다').toBeGreaterThan(0);
     expect(SHADOW_LIFT, 'lift 가 0 이면 이 처방 전체가 무의미하다').toBeGreaterThan(0);
   });
+
+  it('(자) **실제로 그려지는 인스턴스**에 lift 가 구워진다 — 되묶기 순서를 잡는다', async () => {
+    // ⚠ **이 검사가 없으면 (사)(아)는 순서 회귀를 못 잡는다**(검수관 블로커, 실측).
+    // `instanceRepeats` 는 `updateMatrixWorld(true)` 뒤 `matrixWorld` 를 인스턴스에 **굽고**
+    // 원본 트리는 씬에 다시 안 넣는다 — 반환된 `group` 만 그려진다. 그런데 (사)(아)는
+    // 함수 밖에 남은 **원본 노드의 로컬 `position.y`** 를 본다. lift 를 되묶기 **뒤**로
+    // 옮겨도 원본 로컬 좌표는 똑같이 바뀌므로 **8/8 그대로 통과**했다(검수관 뮤테이션 B).
+    // 화면에 나가는 것은 인스턴스 행렬이므로 **그쪽을 본다.**
+    const { mountGlbWorld } = await import('../frontend/js/world-glb/systems/glb-source.js');
+    const { SHADOW_LIFT } = await import('../frontend/js/world-glb/decide/shadow-decal.js');
+
+    const src = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mk = (name: string) => {
+      const mat = new THREE.MeshBasicMaterial(); mat.name = name;
+      const m = new THREE.Mesh(geo, mat); m.position.set(0, 0, 0); src.add(m);
+    };
+    mk(`${SHADOW_MAT_PREFIX}tree#0`);
+    mk('ground#0');
+
+    const r = mountGlbWorld(new THREE.Scene() as never, src as never,
+      { castShadow: false, grid: GRID }) as unknown as { root: unknown };
+
+    // 인스턴스 이름은 `inst:<재질명>×<개수>` 다(`glb-instance.js`).
+    const m4 = new THREE.Matrix4(), v = new THREE.Vector3();
+    const q = new THREE.Quaternion(), s = new THREE.Vector3();
+    const ys: Record<string, number> = {};
+    (r.root as { traverse: (f: (o: never) => void) => void }).traverse((o: never) => {
+      const im = o as unknown as {
+        isInstancedMesh?: boolean; name: string;
+        getMatrixAt: (i: number, m: THREE.Matrix4) => void;
+      };
+      if (!im.isInstancedMesh) return;
+      im.getMatrixAt(0, m4); m4.decompose(v, q, s);
+      ys[im.name] = v.y;
+    });
+
+    const shadowKey = Object.keys(ys).find((k) => k.includes(SHADOW_MAT_PREFIX));
+    const groundKey = Object.keys(ys).find((k) => k.includes('ground'));
+    expect(shadowKey, `그림자 인스턴스를 못 찾았다 — 이름: ${Object.keys(ys).join(', ')}`).toBeTruthy();
+    expect(groundKey, `지면 인스턴스를 못 찾았다 — 이름: ${Object.keys(ys).join(', ')}`).toBeTruthy();
+    expect(ys[shadowKey!], '그려지는 그림자 인스턴스에 lift 가 안 구워졌다 — 되묶기 «뒤» 에 올렸는가').toBeCloseTo(SHADOW_LIFT, 6);
+    // 대조군. 이것이 없으면 「전부 올린 것」과 구별되지 않는다.
+    expect(ys[groundKey!], '지면까지 올라갔다').toBeCloseTo(0, 6);
+  });
 });
