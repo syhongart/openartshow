@@ -54,6 +54,7 @@ import { DEFAULT_BODY_R } from './systems/collision.js';
 import { mountGlbWorld, describeGlb, type GlbSourceResult } from './systems/glb-source.js';
 import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
 import { warmUpNode } from '../world-shared/attach-loop.js';
+import { createGlbStream } from './systems/glb-stream.js';
 import { aheadOf } from './diag-ahead.js';
 import type { GlbWorldOptions } from './options.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
@@ -447,6 +448,12 @@ export async function startGlbWorld(
   // 배수**이고 기본값 1 이 그 SSOT 를 그대로 쓴다 — 배수를 여기 상수로 박지 않는다.
   const fogDist = readNum('fogd', 1, 0, 20);
   const fog = fogBand(CELL_X);
+  // GLB 격자·컬링 노브. 교환비를 화면으로 판정해야 해서 열어 뒀다 — 잘게 쪼갤수록
+  // 삼각형은 줄지만 드로우콜은 는다. **실측표는 `systems/glb-instance.js` 의 `GRID`
+  // 주석 한 곳**이고, 판정이 끝나면 지운다(남은 노브는 그때부터 장식이다).
+  const GLB_GRID = Math.round(readNum('grid', 16, 1, 64));
+  /** 컬링 반경 = 안개 far × 이 배수. 1 이면 「안개가 완전히 덮는 거리까지만」이다 */
+  const GLB_CULL_MUL = readNum('cull', 1.15, 0.5, 8);
   /** 안개색. LOD 페이드의 시작색이기도 해서 상수로 뽑는다 — 두 곳에 적지 않는다 */
   const FOG_HEX = 0x0b0d12;
   scene.fog = fogDist > 0
@@ -596,6 +603,7 @@ export async function startGlbWorld(
    */
   let glbSource: GlbSourceResult | null = null;
   let glbMapBaked: GlbMap | null = null;   // GLB 에서 구운 지도. 부팅 1회다
+  let glbStream: ReturnType<typeof createGlbStream> | null = null;
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
   let features: MountedFeature[] = [];
 
@@ -959,6 +967,8 @@ export async function startGlbWorld(
         //    펴서** 저장하기 때문이고, 되묶는 것이 원래 상태로의 **복원**이다.
         const mounted = mountGlbWorld(scene, gltf.scene as unknown as Object3D, {
           castShadow: SHADOW_INTENSITY > 0,
+          // `?grid=` — 격자 분할 수. 거리 컬링이 붙으면서 성능 판정 축이 됐다(아래).
+          grid: GLB_GRID,
         });
         glbSource = mounted;
         report(0.9);
@@ -1005,6 +1015,15 @@ export async function startGlbWorld(
         // 기능이 `player` 뒤인 이유는 world2 와 같다 — 하늘이 이번 프레임의 카메라를 읽는다.
         kernel.add(player);
         for (const m of features) if (m.instance.system) kernel.add(m.instance.system);
+        // ── 거리 컬링 — **프록시로 미리 등록한다** ──────────────────────────
+        // ⚠ 실체는 **예열 뒤**에 만들어지는데 `Kernel.add` 는 부팅 중에만 허용된다.
+        // 첫 판본은 `if (glbStream)` 로 걸렀고 그 시점에 항상 `null` 이라 **한 번도
+        // 등록되지 않았다** — 스윕에서 켜진 셀이 늘 전체와 같아(`457/457`) 드러났다.
+        // 값이 아니라 클로저로 늦게 읽는다(`collider` 프록시와 같은 처방).
+        kernel.add({
+          name: 'glbStream',
+          update: (c) => { glbStream?.update(c); },
+        });
         if (adaptOn) kernel.add(adapt);
         kernel.start();
 
@@ -1019,6 +1038,22 @@ export async function startGlbWorld(
         // 되돌린다(그 함수의 `finally`). 대가는 로딩이 길어지는 것이고, **로딩은 기다리는
         // 시간이고 히칭은 놀라는 시간이다.** 실측·경위는 백로그 `G-W8M` 한 곳.
         if (glbSource) await warmUpNode(glbSource.root as never, yieldFrame);
+
+        // ── 🔴 **안개 너머의 격자 셀을 끈다** (감독 지시 2026-08-27) ─────────────
+        // 삼각형 2,110,989 = 예산의 35배인데 **안개far 는 76.8m** 였다 — 그 너머는 이미
+        // 안개가 덮는데 카메라 far(1200m)까지 그리고 있었다. **보이지도 않는 것을 그린
+        // 것**이라 끄면 화면이 그대로다(실측·근거는 `systems/glb-stream.ts` 헤더).
+        // ⚠ **예열 «뒤» 여야 한다** — 꺼진 셀은 예열을 못 받고, 나중에 켜질 때 원인 1
+        // (파이프라인 컴파일 스톨)이 그대로 재발한다.
+        if (glbSource) {
+          glbStream = createGlbStream({
+            root: glbSource.root,
+            getPosition: () => player.position,
+            // **안개 far 에서 유도한다** — 상수를 여기 박지 않는다. `?fogd=` 로 안개를
+            // 늘리면 컬링 반경도 함께 늘어야 「안 보이는 것만 끈다」가 유지된다.
+            radius: fog.far * Math.max(1, fogDist) * GLB_CULL_MUL,
+          });
+        }
 
         report(1);
       },
@@ -1180,6 +1215,8 @@ export async function startGlbWorld(
       adapt: adapt!.snapshot(),
       /** 얹힌 GLB 세계. world2 의 `stream`·`builder` 통계가 있던 자리다 */
       glb: describeGlb(glbSource),
+      /** 거리 컬링 — `on/total` 이 곧 「지금 그리는 셀 / 전체 셀」이다 */
+      glbStream: glbStream ? { ...glbStream.stats(), grid: glbSource?.grid ?? null } : null,
       // 구운 지도 — `painted` 0 은 「지도가 비었다」이고 그것은 사실이 아니어야 한다
       glbMap: glbMapBaked ? { painted: glbMapBaked.painted, px: glbMapBaked.canvas.width } : null,
       // ── LOD 페이드가 **실제로 걸리는가** (2026-08-07) ──────────────────

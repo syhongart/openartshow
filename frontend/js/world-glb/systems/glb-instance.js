@@ -56,22 +56,33 @@
 import * as THREE from 'three/webgpu';
 
 /**
- * 수평 격자 분할 수(한 변). 셀마다 따로 묶여 **프러스텀 컬링이 셀 단위로 되살아난다.**
+ * 수평 격자 분할 수(한 변). 셀마다 따로 묶여 **프러스텀 컬링이 셀 단위로 되살아나고**,
+ * 2026-08-27 부터는 **거리 컬링**(`systems/glb-stream.ts`)도 이 셀 단위로 돈다.
  *
- * 값의 근거 — 실측(world2 blender 왕복 자산, 1920×1920m, 28,707 메시 / 40 조합):
+ * ── 값의 근거 — 감독 지시 2026-08-27 *"개선 작업해야지"* 후 스윕 실측 ──────────
+ * (world2 왕복 자산 1920×1920m · 28,707 메시 / 40 조합 · 스폰 지점 · 헤드리스)
  *
- *   GRID  드로우콜   그려진 삼각형   묶은 벌수   비고
- *      1        39      1,358,906          40     컬링 **0**(99.999% 를 다 그린다)
- *      6       262        970,018         457     컬링 되살아남(-29%)
+ *   GRID  거리컬링   드로우콜   그려진 삼각형   묶은 벌수   켜진 셀 / 전체
+ *      6      끔          345      2,280,050        457        457 / 457   ← 배포본
+ *      6      켬          186      1,903,844        457        129 / 457
+ *     12      켬          175      1,476,796      1,193        121 / 1193
+ *   **16      켬          162      1,414,566      1,959        117 / 1959**  ← 채택
+ *     25      켬          181      1,384,122      3,947        221 / 3947
  *
- * **이 값은 드로우콜과 컬링의 교환비다.** 크면 컬링이 촘촘하고 드로우콜이 는다.
- * 6 을 고른 이유: 1920m / 6 = 320m 셀이고, 드로우콜 262 는 모바일에서 감당되는 범위다
- * (원인이던 값이 10,856 이었다). **8·12 는 안 재봤다** — 삼각형이 더 줄겠지만 드로우콜이
- * 조합 수(40)에 곱해져 빠르게 는다. 감독이 여전히 느리다고 하면 그때 재고 고른다.
- * ⚠ 측정 자리는 **스폰 지점**이다(중심에서 120m, 시야가 도시를 향한다). 다른 자리·
- * 다른 자산에서는 다른 값이 나온다 — 이 표는 「이 자산의 이 자리」다.
+ * **16 을 고른 이유**: 드로우콜이 최소(162)이고 삼각형도 거의 바닥이다. 25 는 셀이
+ * 잘아져 시야에 걸리는 셀 수가 오히려 늘어(117→221) 드로우콜이 되돌아간다 —
+ * **잘게 쪼갤수록 좋은 것이 아니다.** 배포본(GRID 6·컬링 없음) 대비 드로우콜 **-53%**,
+ * 삼각형 **-38%** 이고 **화면은 두 스크린샷이 사실상 동일했다**(시계탑·분수·나무·
+ * 도시 실루엣 전부 그대로. 갈린 것은 치비 위치뿐이고 그것은 시간의 함수다).
+ *
+ * ⚠ **왜 화면이 안 바뀌나**: 컬링 반경이 **안개 far 에서 유도**된다(76.8m × 1.15).
+ * 그 너머는 이미 안개가 완전히 덮으므로 **보이지도 않는 것을 안 그리는 것**이다.
+ * 근거 전문은 `systems/glb-stream.ts` 헤더 한 곳.
+ *
+ * ⚠⚠ **이 표는 「이 자산의 이 자리」다.** 다른 GLB·다른 스폰에서는 다른 값이 나온다.
+ * 그래서 `?grid=`·`?cull=` 노브를 열어 뒀고, **판정이 끝나면 지운다.**
  */
-const GRID = 6;
+const GRID = 16;
 
 /**
  * 씬을 훑어 (지오메트리, 재질) 조합별로 `InstancedMesh` 를 만든다.
@@ -79,9 +90,9 @@ const GRID = 6;
  * 원본 트리는 **버린다** — 지오메트리와 재질은 새 인스턴스가 참조하므로 살아 있고,
  * 호출부는 반환된 그룹만 씬에 넣으면 된다.
  *
- * @returns {{group: THREE.Group, made: number, skipped: number, instances: number}}
+ * @returns {{group: THREE.Group, made: number, skipped: number, instances: number, grid: number}}
  */
-export function instanceRepeats(root) {
+export function instanceRepeats(root, gridOverride) {
   root.updateMatrixWorld(true);
 
   /** key `${geoUuid}|${matUuid}` → { geo, mat, mats: Matrix4[] } */
@@ -89,12 +100,17 @@ export function instanceRepeats(root) {
   const loose = [];   // 인스턴싱 규약에 안 맞는 것 — 그대로 옮긴다(헤더 목록 참조)
 
   // 격자 원점·칸 크기 — 세계 바운딩에서 유도한다(상수를 박지 않는다).
+  // ⚠ `GRID` 는 이제 **노브로 열려 있다**(`?grid=`) — 거리 컬링(`glb-stream.ts`)이
+  // 붙으면서 「몇 조각으로 자르는가」가 성능 판정 축이 됐기 때문이다. 기본값의 근거는
+  // 위 상수 주석이고, 스윕 실측은 백로그 `G-W8N` 에 있다.
+  const grid = Number.isFinite(gridOverride) && gridOverride >= 1
+    ? Math.round(gridOverride) : GRID;
   const box = new THREE.Box3().setFromObject(root);
-  const cw = Math.max(1e-6, (box.max.x - box.min.x) / GRID);
-  const ch = Math.max(1e-6, (box.max.z - box.min.z) / GRID);
+  const cw = Math.max(1e-6, (box.max.x - box.min.x) / grid);
+  const ch = Math.max(1e-6, (box.max.z - box.min.z) / grid);
   const cellOf = (v) => {
-    const cx = Math.min(GRID - 1, Math.max(0, Math.floor((v.x - box.min.x) / cw)));
-    const cz = Math.min(GRID - 1, Math.max(0, Math.floor((v.z - box.min.z) / ch)));
+    const cx = Math.min(grid - 1, Math.max(0, Math.floor((v.x - box.min.x) / cw)));
+    const cz = Math.min(grid - 1, Math.max(0, Math.floor((v.z - box.min.z) / ch)));
     return `${cx}|${cz}`;
   };
   const at = new THREE.Vector3();
@@ -115,9 +131,10 @@ export function instanceRepeats(root) {
     if (Array.isArray(o.material) || !o.material) { loose.push(o); return; }
     // 메시가 **어느 셀에 있는가**를 키에 더한다 — 이것이 컬링을 되살리는 자리다.
     at.setFromMatrixPosition(o.matrixWorld);
-    const key = `${cellOf(at)}|${o.geometry.uuid}|${o.material.uuid}`;
+    const cell = cellOf(at);
+    const key = `${cell}|${o.geometry.uuid}|${o.material.uuid}`;
     let b = buckets.get(key);
-    if (!b) { b = { geo: o.geometry, mat: o.material, mats: [] }; buckets.set(key, b); }
+    if (!b) { b = { geo: o.geometry, mat: o.material, mats: [], cell }; buckets.set(key, b); }
     b.mats.push(o.matrixWorld.clone());
   });
 
@@ -133,6 +150,21 @@ export function instanceRepeats(root) {
     // ⚠ **반드시 부른다.** 안 부르면 `boundingSphere` 가 원본 지오의 것(한 개짜리)이라
     // 프러스텀 컬링과 레이캐스트가 인스턴스 전체를 못 감싸고 조용히 틀린다.
     im.computeBoundingSphere();
+    // ── 🔴 **셀 중심을 실어 보낸다** — 거리 컬링이 이것을 읽는다 ────────────────
+    // 감독 지시 2026-08-27 *"개선 작업해야지"*. 안개 far 가 76.8m 인데 1km 밖 건물까지
+    // 그리고 있었다(삼각형 2,110,989 = 자체 예산의 35배). **안개 너머를 끄면 화면은
+    // 그대로고 삼각형만 준다** — 그 판정을 `systems/glb-stream.ts` 가 한다.
+    //
+    // ⚠ `boundingSphere.center` 를 안 쓰고 **격자 셀 중심**을 쓰는 이유: 바운딩 중심은
+    // 그 셀에 실제로 들어온 메시들의 평균이라 셀마다 치우친다. 거리 판정의 기준이
+    // 셀마다 다르면 **같은 거리에서 어떤 셀은 켜지고 어떤 셀은 꺼진다.**
+    const [cx, cz] = b.cell.split('|').map(Number);
+    im.userData.cellCenter = {
+      x: box.min.x + (cx + 0.5) * cw,
+      z: box.min.z + (cz + 0.5) * ch,
+    };
+    // 셀 반지름(대각선의 절반) — 판정이 셀 «가장자리» 를 봐야 한다.
+    im.userData.cellRadius = Math.hypot(cw, ch) / 2;
     group.add(im);
     instances += b.mats.length;
   }
@@ -150,5 +182,5 @@ export function instanceRepeats(root) {
     group.add(clone);
   }
 
-  return { group, made: buckets.size, skipped: loose.length, instances };
+  return { group, made: buckets.size, skipped: loose.length, instances, grid };
 }

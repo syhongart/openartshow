@@ -80,6 +80,8 @@ export interface GlbSourceResult {
   triangles: number;
   /** 만든 `InstancedMesh` 벌수 */
   made: number;
+  /** 실제로 쓴 격자 분할 수(한 변). `?grid=` 로 바뀔 수 있어 되돌려 준다 */
+  grid: number;
   /**
    * GLB 에 **구워져 들어온 접촉그림자 데칼** 수(재질 이름이 `shadow:` 로 시작하는 메시).
    *
@@ -112,7 +114,7 @@ export interface GlbSourceResult {
 export function mountGlbWorld(
   scene: Scene,
   gltfScene: Object3D,
-  opts: { castShadow: boolean },
+  opts: { castShadow: boolean; grid?: number },
 ): GlbSourceResult {
   // ── 되묶기 «전» 에 센다 ────────────────────────────────────────────────────
   // ⚠ 되묶은 뒤 세면 **357배 축소된 수**가 나온다(검수관 반려 B3): `InstancedMesh` 는
@@ -148,8 +150,8 @@ export function mountGlbWorld(
     });
   }
 
-  const { group, made } = instanceRepeats(gltfScene as unknown as never) as {
-    group: Object3D; made: number;
+  const { group, made, grid } = instanceRepeats(gltfScene as unknown as never, opts.grid) as {
+    group: Object3D; made: number; grid: number;
   };
 
   if (opts.castShadow) {
@@ -167,7 +169,7 @@ export function mountGlbWorld(
   const b = new THREE.Box3().setFromObject(group as never);
   const r1 = (v: number) => +v.toFixed(1);
   return {
-    root: group, collisionRoot: gltfScene, meshes, triangles, made, shadowDecals,
+    root: group, collisionRoot: gltfScene, meshes, triangles, made, grid, shadowDecals,
     box: {
       min: [r1(b.min.x), r1(b.min.y), r1(b.min.z)],
       max: [r1(b.max.x), r1(b.max.y), r1(b.max.z)],
