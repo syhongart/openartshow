@@ -25,6 +25,12 @@ import { villageLayout, MUL_MIN, MUL_MAX } from './decide/village-rules.js';
 import { spawnFor, SPAWN_SPOTS, type SpawnSpot } from './decide/spawn-spot.js';
 import { waterSurfaceY as surfaceYAt, SEABED_Y } from './decide/water.js';
 import { AdaptSystem } from './systems/adapt.js';
+import { resolutionBands } from './decide/adapt.js';
+/**
+ * 모바일 해상도 상한. **부팅 시작값과 적응계가 같은 값을 봐야 한다** — 두 곳에 따로
+ * 적었더니 부팅이 상한을 33% 초과한 채 고정됐다(감독 실기기 2026-08-26).
+ */
+const MOBILE_CAP = 1.5;
 import { runBoot } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
@@ -47,6 +53,7 @@ import { createGlbCollider } from './systems/glb-collider.js';
 import { DEFAULT_BODY_R } from './systems/collision.js';
 import { mountGlbWorld, describeGlb, type GlbSourceResult } from './systems/glb-source.js';
 import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
+import { warmUpNode } from '../world-shared/attach-loop.js';
 import { aheadOf } from './diag-ahead.js';
 import type { GlbWorldOptions } from './options.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
@@ -669,6 +676,7 @@ export async function startGlbWorld(
       mark: document.getElementById('wg-hud-mark'),
     }, {
       backend: () => adapter?.backend ?? '—',
+      page: opts.tag,   // 리포트 제목이 world2 로 하드코딩돼 거짓이었다(감독 신고)
       counts: () => {
         const f = adapter?.frameStats();
         return {
@@ -726,7 +734,14 @@ export async function startGlbWorld(
     steps: {
       renderer: async () => {
         adapter = await createRendererAdapter(canvas);
-        adapter.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        // ── 🔴 **시작 배율을 적응계 «자기 상한» 에서 유도한다** (감독 실기기 2026-08-26) ──
+        // `Math.min(dpr, 2)` 가 손으로 박혀 있었고 **적응계가 스스로 정한 상한을 넘었다** —
+        // `resolutionBands(dpr, MOBILE_CAP).ceil` 은 `min(dpr, 1.5)` 인데 부팅은 2.0 으로
+        // 출발한다. DPR 3.0 기기에서 **상한을 33% 초과한 채 세션 내내 고정**된다(적응계에
+        // 상한 초과를 되돌리는 로직이 없다 — 감독 리포트의 [이벤트]에 `해상도` 0건이 그
+        // 실측이다). 대가: 640×1038 = 664,320px 에 삼각형 2,110,989 → **픽셀당 3.18개**.
+        // 상한을 지키면 픽셀이 **44% 준다.** ⚠ world2 에도 같은 줄이 있다(백로그 `G-W2-DPR`).
+        adapter.setPixelRatio(resolutionBands(window.devicePixelRatio || 1, MOBILE_CAP).ceil);
         adapter.setSize(window.innerWidth, window.innerHeight);
         camera.aspect = window.innerWidth / Math.max(1, window.innerHeight);
         camera.updateProjectionMatrix();
@@ -964,7 +979,7 @@ export async function startGlbWorld(
 
         adapt = new AdaptSystem({
           dpr: window.devicePixelRatio || 1,
-          mobileCap: 1.5,
+          mobileCap: MOBILE_CAP,
           targets: {
             setPixelRatio: (r) => adapter!.setPixelRatio(r),
             getPixelRatio: () => adapter!.getPixelRatio(),
@@ -992,6 +1007,19 @@ export async function startGlbWorld(
         for (const m of features) if (m.instance.system) kernel.add(m.instance.system);
         if (adaptOn) kernel.add(adapt);
         kernel.start();
+
+        // ── 🔴 **GLB 격자를 예열한다** (감독 실기기 2026-08-26 *"프레임이 너무 느리지?"*) ──
+        // 부팅 단계가 `renderer → pools → warmup → stream` 순인데 **GLB 는 `stream` 에서야
+        // 온다** — `warmup` 이 돌 때 GLB 인스턴스는 존재하지도 않아 예열을 못 받는다.
+        // 대가가 감독 리포트에 찍혔다: 파이프라인 **214→497 증식** · **t=5 에 8,211ms**,
+        // **t=15 에 3,157ms** 정지. 새 격자 셀이 시야에 들어올 때마다 그 셀의 셰이더가
+        // 그제서야 컴파일된다 — *"회전은 스트리밍과 독립된 증식 축"*(world1 CSV 60→227).
+        // world2 는 이 처방을 이미 갖고 있다(`systems/instancing.ts:114` 가 컬링을 끈다).
+        // **컬링은 안 끈다** — 격자를 나눈 목적이 컬링이다. `warmUpNode` 가 잠깐 껐다
+        // 되돌린다(그 함수의 `finally`). 대가는 로딩이 길어지는 것이고, **로딩은 기다리는
+        // 시간이고 히칭은 놀라는 시간이다.** 실측·경위는 백로그 `G-W8M` 한 곳.
+        if (glbSource) await warmUpNode(glbSource.root as never, yieldFrame);
+
         report(1);
       },
     },

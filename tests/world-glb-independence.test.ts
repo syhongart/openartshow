@@ -146,9 +146,31 @@ function escapesW8(fromFile: string, spec: string): string | null {
  */
 const W8_ENTRY = join(FRONTEND, 'js/world8-boot.ts');
 const W2_ENTRY = join(FRONTEND, 'js/world2-boot.ts');
-const W8_HTML = join(FRONTEND, 'world8.html');
+/**
+ * ⚠ **world7 진입점이 표본 밖이었다** (검수관 블로커 B1, 2026-08-26 — **2차 재발**).
+ *
+ * 이 트리가 `world8/` 에서 `world-glb/` 로 rename 되며 **두 페이지를 섬기게 됐는데**
+ * (world7·world8) 표본은 world8 진입점 둘 그대로였다. 검수관 뮤테이션 실측:
+ *
+ *   M-A  world7-boot.ts 에 `import { startWorld2 } from './world2/main.js'`
+ *        → 225파일 4,809테스트 **전부 통과**
+ *   M-B  world7.html 의 `<script src>` 를 `./js/world2-boot.js` 로 교체
+ *        → 역시 **전부 통과**
+ *
+ * **파일명을 「트리 전체」로 넓히면서 표본을 안 넓힌 것**이 원인이다. 그리고 이것은
+ * 이 파일이 `:126-146` 에 **이미 블로커로 기록해 둔 사고의 2차 발생**이다(2026-08-08,
+ * `world8-boot.ts` 가 표본 밖이었다). 두 번 다 원인이 **트리 밖 진입점**이다.
+ *
+ * → 규칙화: **진입점 파일을 새로 만드는 커밋은 이 표본에 그 이름을 추가한 것을 함께 낸다.**
+ */
+const W7_ENTRY = join(FRONTEND, 'js/world7-boot.ts');
+/** 이 트리를 여는 **모든** 페이지. 하나라도 빠지면 그 페이지는 격리 게이트 밖이다 */
+const PAGES = [
+  { name: 'world8', html: join(FRONTEND, 'world8.html'), boot: 'world8-boot' },
+  { name: 'world7', html: join(FRONTEND, 'world7.html'), boot: 'world7-boot' },
+];
 
-const FILES = [...walk(W8), W8_ENTRY];
+const FILES = [...walk(W8), W8_ENTRY, W7_ENTRY];
 const W2_FILES = [...walk(W2), W2_ENTRY];
 
 describe('world8 는 world2 를 한 줄도 참조하지 않는다', () => {
@@ -162,22 +184,33 @@ describe('world8 는 world2 를 한 줄도 참조하지 않는다', () => {
     // 개수가 아니라 **이름**으로 못 박는다(검수관 GS-5). 개수 단언은 리팩터에서
     // 조용히 빠지고, 실제로 빠져 있었다 — 위 `W8_ENTRY` 주석 참고.
     expect(FILES, 'world8-boot.ts 가 표본 밖이다').toContain(W8_ENTRY);
+    expect(FILES, 'world7-boot.ts 가 표본 밖이다').toContain(W7_ENTRY);
     expect(W2_FILES, 'world2-boot.ts 가 역방향 표본 밖이다').toContain(W2_ENTRY);
     // 진입점이 실재하지 않으면 위 `toContain` 은 통과하면서 아무 파일도 안 읽는다.
     expect(existsSync(W8_ENTRY), 'world8-boot.ts 없음').toBe(true);
+    expect(existsSync(W7_ENTRY), 'world7-boot.ts 없음').toBe(true);
     expect(existsSync(W2_ENTRY), 'world2-boot.ts 없음').toBe(true);
   });
 
-  it('HTML 이 world8 트리 밖 스크립트를 불러오지 않는다', () => {
-    // 파일 참조는 JS import 만으로 새지 않는다. `world8.html` 이 `world2-boot.js` 를
-    // 가리키면 트리는 완벽히 격리돼 있는데 **페이지는 world2 를 띄운다** — 그리고
-    // 위 검사들은 전부 초록이다. 진입은 HTML 에서 시작하므로 여기도 본다.
-    const html = readFileSync(W8_HTML, 'utf8');
-    const srcs = [...html.matchAll(/<script[^>]*\ssrc=["']([^"']+)["']/g)].map((m) => m[1]);
-    expect(srcs.length, '스크립트 태그가 하나도 없다 — 표본이 비면 아래가 공허하다')
-      .toBeGreaterThan(0);
-    const stray = srcs.filter((s) => !/(^|\/)world8-boot\.js$/.test(s));
-    expect(stray, `world8.html 이 world8 밖 스크립트를 부른다`).toEqual([]);
+  it('**두 페이지 다** 트리 밖 스크립트를 안 부른다 — world7 이 게이트 밖이었다', () => {
+    // 파일 참조는 JS import 만으로 새지 않는다. HTML 이 `world2-boot.js` 를 가리키면
+    // 트리는 완벽히 격리돼 있는데 **페이지는 world2 를 띄운다** — 그리고 위 검사들은
+    // 전부 초록이다. 진입은 HTML 에서 시작하므로 여기도 본다.
+    //
+    // ⚠ **이 검사가 `world8.html` 만 봤다**(검수관 B1). 트리가 두 페이지를 섬기게 된
+    // 뒤에도 그대로여서, `world7.html` 이 `world2-boot.js` 를 불러도 초록이었다.
+    // 페이지 목록을 `PAGES` 한 곳에 두고 **순회**한다 — 페이지가 늘면 여기 한 줄이다.
+    expect(PAGES.length, '페이지 목록이 비었다 — 아래 루프가 공허해진다').toBeGreaterThan(1);
+    for (const pg of PAGES) {
+      expect(existsSync(pg.html), `${pg.name}.html 없음`).toBe(true);
+      const html = readFileSync(pg.html, 'utf8');
+      const srcs = [...html.matchAll(/<script[^>]*\ssrc=["']([^"']+)["']/g)].map((m) => m[1]);
+      expect(srcs.length, `${pg.name}.html 에 스크립트 태그가 없다 — 표본이 비면 공허하다`)
+        .toBeGreaterThan(0);
+      const ok = new RegExp(`(^|/)${pg.boot}\\.js$`);
+      const stray = srcs.filter((x) => !ok.test(x));
+      expect(stray, `${pg.name}.html 이 트리 밖 스크립트를 부른다`).toEqual([]);
+    }
   });
 
   it('`world2/` 로 향하는 import 가 0 이다 — 포크의 존재 이유', () => {

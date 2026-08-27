@@ -362,6 +362,11 @@ export function formatTimeline(buckets: readonly Bucket[], maxRows = 40): string
 }
 
 export interface ReportInput {
+  /**
+   * 어느 페이지의 리포트인가 — `world7` / `world8`. 없으면 트리 이름.
+   * ⚠ 이것이 없어서 world8 리포트가 `world2` 제목을 달았다(위 `formatReport` 주석).
+   */
+  readonly page?: string;
   /** 기기·백엔드 식별 */
   backend: string;
   ua: string;
@@ -503,7 +508,12 @@ export function formatReport(r: ReportInput): string {
   const parcels = constancy(r.parcels);
 
   const lines: string[] = [];
-  lines.push('=== world2 성능 리포트 ===');
+  // ⚠ **제목이 `world2` 로 하드코딩돼 있었고 거짓이었다**(감독 신고 2026-08-26).
+  // 이 트리는 world2 를 포크한 world-glb(world7·world8 공용)인데 제목만 안 바꿨다.
+  // 감독이 world8 리포트를 **world2 것으로 읽고** *"이정도로 느려지지는 않는데"* 라고
+  // 판단했다 — 잘못된 전제 위에서 진단이 통째로 틀어질 뻔했다. 리포트에 파셀 0 이
+  // 찍혀 있던 것이 유일한 단서였다(world2 는 파셀 스트리밍이라 0 일 수가 없다).
+  lines.push(`=== ${r.page ?? 'world-glb'} 성능 리포트 ===`);
   lines.push(`백엔드 ${r.backend} · DPR ${f2(r.dpr)} · 화면 ${r.screen}`);
   lines.push(`측정 ${f1(r.elapsedS)}초 · 프레임 ${frame.n}개 · 평균 ${f1(fps)}fps`);
   lines.push('');

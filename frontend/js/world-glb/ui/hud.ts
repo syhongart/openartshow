@@ -46,6 +46,8 @@ export interface HudParts {
 /** HUD가 매 프레임 읽어갈 값들. main이 구현해 넘긴다. */
 export interface HudSource {
   backend: () => string;
+  /** 어느 페이지인가 — 리포트 제목에 쓴다(`world7`/`world8`). 근거는 `decide/telemetry.ts` */
+  page?: string;
   counts: () => { draw: number; pipeline: number; geometries: number; textures: number };
   /**
    * 지금의 하늘 상태를 사람이 읽는 한 줄로. 드로우콜 판정이 이 그룹 안에서만 상수를 요구한다
@@ -134,6 +136,7 @@ export function attachHud(parts: HudParts, src: HudSource): PerfHud {
     const s = src.stream(); const a = src.adapt();
     return {
       backend: src.backend(),
+      page: src.page,
       ua: typeof navigator !== 'undefined' ? navigator.userAgent : '—',
       dpr: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
       screen: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : '—',
