@@ -16,6 +16,21 @@
 // 그래서 파일이 정해진 «뒤» 부팅을 시작하고, 그때부터는 world8 과 완전히 같은 경로다.
 
 import { startGlbWorld } from './world-glb/main.js';
+import { showBootChecklist } from './world-glb/ui/glb-checklist-panel.js';
+
+/**
+ * 페이지가 뜬 뒤 잡힌 런타임 에러 수. 체크리스트의 「콘솔」 항목이 읽는다.
+ *
+ * ⚠ **모든 에러를 잡지는 못한다** — `console.error(…)` 호출은 이 이벤트로 안 온다.
+ * 잡는 것은 처리되지 않은 예외와 거부된 프라미스뿐이다. 그래서 체크리스트의 콘솔 항목이
+ * 0 이어도 «에러가 없었다» 가 아니라 «이 축에서는 안 보였다» 다 — 그 한계를 화면 문구가
+ * 함께 말한다(`decide/glb-checklist.ts`).
+ */
+let runtimeErrors = 0;
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', () => { runtimeErrors++; });
+  window.addEventListener('unhandledrejection', () => { runtimeErrors++; });
+}
 
 const pick = document.getElementById('wg-pick');
 const pickBtn = document.getElementById('wg-pickBtn');
@@ -51,6 +66,18 @@ async function open(file: File): Promise<void> {
     // ⚠ **두 페이지가 갈리는 유일한 자리다.** world8 은 여기서 고정 자산을 `fetch` 한다.
     //    이미 읽어 둔 버퍼를 그대로 낸다 — 부팅 파이프라인은 어느 쪽인지 모른다.
     source: async () => buf,
+  }).then((world) => {
+    // ── 자가진단 체크리스트 — **world7 에만** (감독 지시 2026-08-28) ──────────
+    // *"처음에 불러올때 체크리스트를 만들어서. 정상적으로 동작하는지 확인하는 과정이
+    // 있으면 좋겠다. **당분간.. 월드7에만..**"*
+    //
+    // ⚠ **트리(`world-glb/`)를 한 줄도 안 고친다.** 「world7 에만」을 트리 안에서
+    // 표현하려면 `tag` 분기나 옵션 플래그가 필요한데, `options.ts` 의 경계 조항이
+    // *"이 트리 안에 페이지 분기를 늘리지 마라"* 이고 지금 그 분기는 **0곳**이다.
+    // 부트 파일은 애초에 페이지 전용이라 여기 두면 경계 자체가 안 생긴다.
+    //
+    // ⚠⚠ 진단이 세계를 죽이면 본말전도다 — `world` 가 없으면(부팅 실패) 조용히 넘긴다.
+    if (world) showBootChecklist(canvas.parentElement ?? document.body, runtimeErrors);
   }).catch((err: unknown) => {
     // startGlbWorld 는 부팅 실패를 로딩 화면에 표시하고 null 을 돌려준다. 여기 오는 건
     // 그보다 바깥의 예외이므로 콘솔에 남긴다 — 조용히 삼키면 원인 추적이 불가능해진다.
