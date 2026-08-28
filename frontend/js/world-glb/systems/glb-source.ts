@@ -168,19 +168,28 @@ export function mountGlbWorld(
     const m = o as {
       isMesh?: boolean; material?: { name?: string } | { name?: string }[];
       geometry?: { index?: { count: number } | null; attributes?: { position?: { count: number } } };
+      isInstancedMesh?: boolean; count?: number;
     };
     if (!m.isMesh || !m.geometry) return;
-    meshes++;
+    // ── 🔴 **입력이 이미 인스턴스면 그 수만큼 센다** (2026-08-28) ──────────────
+    // `InstancedMesh` 는 트리에서 노드 하나라 그냥 세면 **28,707 배치가 40 으로**,
+    // 삼각형이 1,358,918 → 3,808 로 보인다. 그 수치가 화면과 보고서에 나가면
+    // **거짓을 적는 것**이다 — 실제로 나갔다(실행자가 *"렌더링 복잡도 현저히
+    // 낮아짐"* 으로, 부팀장이 *"그림자 보정이 안 걸림"* 으로 읽었고 **둘 다 틀렸다**,
+    // 실제는 세계가 사라진 것이었다). 아래 `describeGlb` 주석이 되묶기 «뒤» 를 두고
+    // 같은 경고를 하는데, **들어올 때부터 접혀 있는 경우**가 빠져 있었다.
+    const n = m.isInstancedMesh ? (m.count ?? 0) : 1;
+    meshes += n;
     // 재질 이름이 원산지다 — world2 의 `parts/shadow.ts` 가 `shadow:<kind>` 로 짓는다.
     // ⚠ 접두 문자열을 여기에 다시 적지 않는다 — 판정 SSOT 는 `glb-instance.js` 의
     // `isShadowMaterial` 한 곳이다(그 파일이 격자 제외에도 같은 판정을 쓴다). 두 곳에
     // 적으면 한쪽만 고쳐도 아무도 모른다 — 이 저장소의 «값 미러링» 사고 형태다.
     for (const one of Array.isArray(m.material) ? m.material : [m.material]) {
-      if (isShadowMaterial(one)) { shadowDecals++; break; }
+      if (isShadowMaterial(one)) { shadowDecals += n; break; }
     }
     const idx = m.geometry.index;
     const pos = m.geometry.attributes?.position;
-    triangles += Math.floor((idx ? idx.count : (pos?.count ?? 0)) / 3);
+    triangles += Math.floor((idx ? idx.count : (pos?.count ?? 0)) / 3) * n;
   });
 
   // ── 🔴 **AO 데칼을 지면에서 띄운다** (감독 신고 2026-08-27 «울긋불긋») ──────
