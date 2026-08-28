@@ -154,3 +154,97 @@ describe('(E) 그림자는 격자 셀 분할에서 빠진다', () => {
     expect(SHADOW_MAT_PREFIX).toBe('shadow:');
   });
 });
+
+// ── AO 데칼을 지면에서 띄운다 (감독 신고 2026-08-27 «울긋불긋») ──────────────
+//
+// world2 는 접촉그림자 AO 평면을 «캐스터 발밑 + `SHADOW_LIFT`» 에 놓는데 **GLB 에는 그
+// lift 가 없었다.** 실측: 데칼 노드 월드 y 고유값이 `0.00 / 0.07 / 0.14` 셋뿐이고
+// 지오메트리도 평면(`y ∈ [-0.0000, 0.0000]`)인데, 지면(`ground#*`)은 정점
+// `y ∈ [-1.0000, 0.0000]` 이라 윗면이 정확히 월드 y = 0 이다 — **같은 평면**이다.
+// 경위·처방은 `systems/glb-source.ts` 의 해당 블록 한 곳이다.
+//
+// 🔴 **이 검사가 못 보는 것**: 「울긋불긋이 해소됐는가」. 그것은 WebGPU 실기기에서만
+// 판정된다(헤드리스는 swiftshader). 여기서 잠그는 것은 **lift 가 실제로 걸리는가**까지다.
+describe('AO 데칼 지면 띄움', () => {
+  it('(사) `shadow:` 메시만 `SHADOW_LIFT` 만큼 올라간다 — 나머지는 그대로', async () => {
+    const { mountGlbWorld } = await import('../frontend/js/world-glb/systems/glb-source.js');
+    const { SHADOW_LIFT } = await import('../frontend/js/world-glb/decide/shadow-decal.js');
+
+    const src = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mk = (name: string, y: number) => {
+      const mat = new THREE.MeshBasicMaterial(); mat.name = name;
+      const m = new THREE.Mesh(geo, mat); m.position.set(0, y, 0); src.add(m); return m;
+    };
+    const decal = mk(`${SHADOW_MAT_PREFIX}tree#0`, 0);
+    const ground = mk('ground#0', 0);
+
+    const scene = new THREE.Scene();
+    const r = mountGlbWorld(scene as never, src as never, { castShadow: false, grid: GRID }) as unknown as
+      { shadowDecals: number; liftedDecals: number };
+
+    expect(r.liftedDecals, 'lift 가 한 번도 안 걸렸다').toBe(1);
+    expect(r.liftedDecals, '데칼 수와 lift 수가 다르다 — 일부가 빠졌다').toBe(r.shadowDecals);
+    expect(decal.position.y, '데칼이 안 올라갔다').toBeCloseTo(SHADOW_LIFT, 6);
+    // 대조군이 없으면 「전부 올린 것」과 구별되지 않는다.
+    expect(ground.position.y, '지면까지 올라갔다').toBe(0);
+  });
+
+  it('(아) 지면과 **같은 평면이 아니게** 된다 — 그것이 처방의 목적이다', async () => {
+    const { mountGlbWorld } = await import('../frontend/js/world-glb/systems/glb-source.js');
+    const { SHADOW_LIFT } = await import('../frontend/js/world-glb/decide/shadow-decal.js');
+    const src = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mat = new THREE.MeshBasicMaterial(); mat.name = `${SHADOW_MAT_PREFIX}lamp#0`;
+    const d = new THREE.Mesh(geo, mat); d.position.set(0, 0, 0); src.add(d);
+    mountGlbWorld(new THREE.Scene() as never, src as never, { castShadow: false, grid: GRID });
+    // 지면 윗면은 월드 y = 0 이다(실측). 데칼이 그보다 **위**여야 깊이 테스트가 갈리지 않는다.
+    expect(d.position.y, '데칼이 지면 평면 위로 올라오지 않았다').toBeGreaterThan(0);
+    expect(SHADOW_LIFT, 'lift 가 0 이면 이 처방 전체가 무의미하다').toBeGreaterThan(0);
+  });
+
+  it('(자) **실제로 그려지는 인스턴스**에 lift 가 구워진다 — 되묶기 순서를 잡는다', async () => {
+    // ⚠ **이 검사가 없으면 (사)(아)는 순서 회귀를 못 잡는다**(검수관 블로커, 실측).
+    // `instanceRepeats` 는 `updateMatrixWorld(true)` 뒤 `matrixWorld` 를 인스턴스에 **굽고**
+    // 원본 트리는 씬에 다시 안 넣는다 — 반환된 `group` 만 그려진다. 그런데 (사)(아)는
+    // 함수 밖에 남은 **원본 노드의 로컬 `position.y`** 를 본다. lift 를 되묶기 **뒤**로
+    // 옮겨도 원본 로컬 좌표는 똑같이 바뀌므로 **8/8 그대로 통과**했다(검수관 뮤테이션 B).
+    // 화면에 나가는 것은 인스턴스 행렬이므로 **그쪽을 본다.**
+    const { mountGlbWorld } = await import('../frontend/js/world-glb/systems/glb-source.js');
+    const { SHADOW_LIFT } = await import('../frontend/js/world-glb/decide/shadow-decal.js');
+
+    const src = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mk = (name: string) => {
+      const mat = new THREE.MeshBasicMaterial(); mat.name = name;
+      const m = new THREE.Mesh(geo, mat); m.position.set(0, 0, 0); src.add(m);
+    };
+    mk(`${SHADOW_MAT_PREFIX}tree#0`);
+    mk('ground#0');
+
+    const r = mountGlbWorld(new THREE.Scene() as never, src as never,
+      { castShadow: false, grid: GRID }) as unknown as { root: unknown };
+
+    // 인스턴스 이름은 `inst:<재질명>×<개수>` 다(`glb-instance.js`).
+    const m4 = new THREE.Matrix4(), v = new THREE.Vector3();
+    const q = new THREE.Quaternion(), s = new THREE.Vector3();
+    const ys: Record<string, number> = {};
+    (r.root as { traverse: (f: (o: never) => void) => void }).traverse((o: never) => {
+      const im = o as unknown as {
+        isInstancedMesh?: boolean; name: string;
+        getMatrixAt: (i: number, m: THREE.Matrix4) => void;
+      };
+      if (!im.isInstancedMesh) return;
+      im.getMatrixAt(0, m4); m4.decompose(v, q, s);
+      ys[im.name] = v.y;
+    });
+
+    const shadowKey = Object.keys(ys).find((k) => k.includes(SHADOW_MAT_PREFIX));
+    const groundKey = Object.keys(ys).find((k) => k.includes('ground'));
+    expect(shadowKey, `그림자 인스턴스를 못 찾았다 — 이름: ${Object.keys(ys).join(', ')}`).toBeTruthy();
+    expect(groundKey, `지면 인스턴스를 못 찾았다 — 이름: ${Object.keys(ys).join(', ')}`).toBeTruthy();
+    expect(ys[shadowKey!], '그려지는 그림자 인스턴스에 lift 가 안 구워졌다 — 되묶기 «뒤» 에 올렸는가').toBeCloseTo(SHADOW_LIFT, 6);
+    // 대조군. 이것이 없으면 「전부 올린 것」과 구별되지 않는다.
+    expect(ys[groundKey!], '지면까지 올라갔다').toBeCloseTo(0, 6);
+  });
+});

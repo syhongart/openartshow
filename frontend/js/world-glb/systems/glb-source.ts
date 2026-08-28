@@ -88,6 +88,7 @@
 import * as THREE from 'three/webgpu';
 import type { Object3D, Scene } from 'three/webgpu';
 import { instanceRepeats, isShadowMaterial } from './glb-instance.js';
+import { SHADOW_LIFT } from '../decide/shadow-decal.js';
 
 export interface GlbSourceResult {
   /** 씬에 얹힌 루트(인스턴싱 **후**) */
@@ -111,6 +112,11 @@ export interface GlbSourceResult {
    * 그대로 나온다. 그 값을 동일성 근거로 쓴 것이 이 회차의 반려 사유였다.
    */
   shadowDecals: number;
+  /**
+   * 지면에서 띄운 데칼 수. **`shadowDecals` 와 같아야 한다** — 다르면 일부가 lift 를
+   * 못 받았다는 뜻이고, `0` 이면 판정이 한 번도 안 돌았다는 뜻이다(둘은 다른 사고다).
+   */
+  liftedDecals: number;
   /**
    * 세계의 크기(m). **「떴다」와 「보인다」를 가르는 축이다** — 로드는 성공했는데
    * 화면이 비는 형태가 이 저장소에서 반복됐고, 그때마다 「어디에 얼마나 큰 것이
@@ -143,6 +149,8 @@ export function mountGlbWorld(
   let meshes = 0;
   let triangles = 0;
   let shadowDecals = 0;
+  /** 지면에서 띄운 데칼 수 — 0 이면 lift 가 한 번도 안 걸렸다는 뜻이다(진단) */
+  let liftedDecals = 0;
   gltfScene.traverse((o: Object3D) => {
     const m = o as {
       isMesh?: boolean; material?: { name?: string } | { name?: string }[];
@@ -161,6 +169,38 @@ export function mountGlbWorld(
     const pos = m.geometry.attributes?.position;
     triangles += Math.floor((idx ? idx.count : (pos?.count ?? 0)) / 3);
   });
+
+  // ── 🔴 **AO 데칼을 지면에서 띄운다** (감독 신고 2026-08-27 «울긋불긋») ──────
+  // world2 는 접촉그림자 AO 평면을 «캐스터 발밑 + `SHADOW_LIFT`» 에 놓는다. **그 lift 가
+  // GLB 에는 없다** — 실측: 데칼 노드의 월드 y 고유값이 `0.00 / 0.07 / 0.14` 셋뿐이고
+  // 지오메트리 정점도 `y ∈ [-0.0000, 0.0000]` 인 평면이다. 그런데 지면(`ground#*`)은
+  // 정점 `y ∈ [-1.0000, 0.0000]` 이라 **윗면이 정확히 월드 y = 0** 이다 — 즉 데칼 다수가
+  // 지면과 **같은 평면**에 놓인다.
+  //
+  // `depthWrite:false` 는 깊이 **쓰기**만 끄고 **테스트**는 그대로라, 같은 깊이에서는
+  // 픽셀마다 어느 쪽이 이길지 갈린다. 감독이 실기기에서 본 «그림자 모양은 같은데
+  // 울긋불긋하다» 가 그것이고, 헤드리스에서 그림자가 **아예 안 보이던 것**도 같은 원인일
+  // 수 있다(지면에 먹힌다).
+  //
+  // ⚠ **왜 lift 가 사라졌는지는 아직 모른다.** `extract-world2-glb.mjs`·`blender-edit.py`
+  // 어디에도 명시적 반올림이 없다. 자산을 다시 굽는 것이 근본 처방이지만 감독의 블렌더
+  // 편집을 잃을 위험이 있어, 지금은 **런타임에서 world2 와 같은 값으로 되돌린다.**
+  // 원인 추적은 백로그 `G-W8Q`.
+  //
+  // ⚠⚠ **되묶기 «전» 에 해야 한다** — `instanceRepeats` 가 월드 행렬을 인스턴스에 굽는다.
+  {
+    let lifted = 0;
+    gltfScene.traverse((o: Object3D) => {
+      const m = o as { isMesh?: boolean; material?: { name?: string } | { name?: string }[] };
+      if (!m.isMesh) return;
+      const one = Array.isArray(m.material) ? m.material[0] : m.material;
+      if (!isShadowMaterial(one)) return;
+      o.position.y += SHADOW_LIFT;
+      o.updateMatrix();
+      lifted++;
+    });
+    liftedDecals = lifted;
+  }
 
   // 그림자 플래그 — **되묶기 전에** 켠다. `instanceRepeats` 가 재질·지오를 그대로
   // 넘기지만 플래그는 노드 속성이라, 인스턴스 쪽에도 옮겨 준다(아래).
@@ -192,7 +232,7 @@ export function mountGlbWorld(
   const b = new THREE.Box3().setFromObject(group as never);
   const r1 = (v: number) => +v.toFixed(1);
   return {
-    root: group, collisionRoot: gltfScene, meshes, triangles, made, grid, shadowDecals,
+    root: group, collisionRoot: gltfScene, meshes, triangles, made, grid, shadowDecals, liftedDecals,
     box: {
       min: [r1(b.min.x), r1(b.min.y), r1(b.min.z)],
       max: [r1(b.max.x), r1(b.max.y), r1(b.max.z)],
@@ -210,11 +250,11 @@ export function mountGlbWorld(
  */
 export function describeGlb(src: GlbSourceResult | null): {
   meshes: number; triangles: number; instanced: number;
-  shadowDecals: number; box: GlbSourceResult['box'];
+  shadowDecals: number; liftedDecals: number; box: GlbSourceResult['box'];
 } | null {
   if (!src) return null;
   return {
     meshes: src.meshes, triangles: src.triangles, instanced: src.made,
-    shadowDecals: src.shadowDecals, box: src.box,
+    shadowDecals: src.shadowDecals, liftedDecals: src.liftedDecals, box: src.box,
   };
 }
