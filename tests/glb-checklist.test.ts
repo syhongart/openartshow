@@ -27,7 +27,7 @@ function healthy(): ChecklistInput {
     pipelines: 1432,
     ahead: [{ d: 12.4, name: 'inst:bench#0×264' }],
     timeline: [{ stage: 'stream', atMs: 6840 }],
-    errors: 0,
+    errors: [],
   };
 }
 const find = (items: ReturnType<typeof buildChecklist>, label: string) =>
@@ -106,9 +106,12 @@ describe('GLB 자가진단 체크리스트', () => {
     expect(find(items, '지도').state).toBe('warn');
   });
 
-  it('콘솔 에러를 그대로 옮긴다', () => {
-    expect(find(buildChecklist({ ...healthy(), errors: 3 }), '콘솔').state).toBe('warn');
-    expect(find(buildChecklist({ ...healthy(), errors: 0 }), '콘솔').state).toBe('ok');
+  it('부팅 에러를 **이름째** 옮긴다 — 모바일에서 감독은 개발자 도구를 못 연다', () => {
+    const items = buildChecklist({ ...healthy(), errors: ['기능 조립 실패: sky', 'x is not a function'] });
+    expect(find(items, '에러').state).toBe('warn');
+    // 개수만 적으면 무엇이 죽었는지 화면에서 알 방법이 없다.
+    expect(find(items, '에러').detail, '이름이 화면에 안 나온다').toContain('sky');
+    expect(find(buildChecklist({ ...healthy(), errors: [] }), '에러').state).toBe('ok');
   });
 
   it('로딩은 **판정하지 않고 적는다** — 임의 GLB 에 임계를 박으면 거짓 경고가 난다', () => {
@@ -124,7 +127,7 @@ describe('GLB 자가진단 체크리스트', () => {
   it('항목이 하나도 빠지지 않는다 — 조용히 사라지면 아무도 모른다', () => {
     const items = buildChecklist(healthy());
     const labels = items.map((x) => x.label);
-    for (const need of ['세계', '크기', '인스턴싱', '거리 컬링', '지도', '그림자(AO)', '정면', '예열', '콘솔', '로딩']) {
+    for (const need of ['세계', '크기', '인스턴싱', '거리 컬링', '지도', '그림자(AO)', '정면', '예열', '에러', '로딩']) {
       expect(labels, `「${need}」 항목이 없다`).toContain(need);
     }
   });

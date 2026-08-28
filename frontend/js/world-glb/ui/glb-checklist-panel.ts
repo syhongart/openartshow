@@ -12,6 +12,7 @@
 
 import type { ChecklistItem, ChecklistState, ChecklistInput } from '../decide/glb-checklist.js';
 import { summarize, buildChecklist } from '../decide/glb-checklist.js';
+import type { BootErrorLog } from '../systems/boot-error-log.js';
 
 /** 상태 → 표식. `na`·`unknown` 을 ✅ 로 뭉개지 않는 것이 이 표의 요점이다 */
 const MARK: Record<ChecklistState, string> = {
@@ -132,19 +133,21 @@ interface GlbWorldHooks {
 }
 
 /**
- * **부팅 직후 자가진단을 띄운다.** world7 부트 파일이 부른다.
+ * **부팅 직후 자가진단을 띄운다.** 호출자는 `world-glb/main.ts` 이고(부트 파일이 아니다 —
+ * 부트는 `options.checklist` 를 켜기만 한다, 검수관 권고 P1), 「world7 에만」은 그
+ * 플래그가 가른다. `tag` 로 갈라 짜지 않는 이유는 `options.ts` 의 경계 조항이다.
  *
- * ⚠ **트리(`world-glb/main.ts`·`options.ts`)를 안 고치려고 여기 있다.** 「world7 에만」을
- * 트리 안에서 표현하려면 `tag` 분기나 옵션 플래그가 필요한데, `options.ts` 의 경계
- * 조항이 *"이 트리 안에 페이지 분기를 늘리지 마라"* 이고 지금 그 분기는 **0곳**이다.
- * 부트 파일은 애초에 페이지 전용이라 거기서 부르면 경계 자체가 안 생긴다.
- *
- * ⚠⚠ **`__glbWorld` 훅을 읽는다** — 같은 값을 두 번 조립하지 않기 위해서다(한쪽만
+ * ⚠ **`__glbWorld` 훅을 읽는다** — 같은 값을 두 번 조립하지 않기 위해서다(한쪽만
  * 고쳐도 아무도 모르는 그 형태). 그래서 부팅 «후» 에 부른다.
+ *
+ * ⚠⚠ **두 번째 인자가 숫자가 아닌 것은 사고 때문이다**(검수관 블로커 B1). 여기가
+ * `errors: number` 였을 때 호출자가 넘기던 변수는 **구조적으로 항상 0** 이었고, 그래서
+ * 「에러 없음」 말고는 나올 수 없는 칸이었다. 타입을 수집기로 바꾸면 그 자리에 아무
+ * 카운터나 넣는 것이 컴파일 에러가 된다 — 경위는 `systems/boot-error-log.ts` 헤더.
  *
  * ⚠⚠⚠ **던지지 않는다.** 진단이 세계를 죽이면 본말전도다.
  */
-export function showBootChecklist(mount: HTMLElement, errors: number): ChecklistPanel | null {
+export function showBootChecklist(mount: HTMLElement, log: BootErrorLog): ChecklistPanel | null {
   try {
     const hooks = (globalThis as unknown as { __glbWorld?: GlbWorldHooks }).__glbWorld;
     if (!hooks) return null;
@@ -152,7 +155,7 @@ export function showBootChecklist(mount: HTMLElement, errors: number): Checklist
     const panel = createChecklistPanel(mount);
     panel.show(buildChecklist({
       glb: s.glb, stream: s.glbStream, map: s.glbMap, pipelines: s.pipelines,
-      ahead: hooks.ahead(4), timeline: hooks.timeline, errors,
+      ahead: hooks.ahead(4), timeline: hooks.timeline, errors: log.labels,
     }));
     return panel;
   } catch (err) {

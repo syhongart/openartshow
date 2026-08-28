@@ -60,6 +60,7 @@ import type { GlbWorldOptions } from './options.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { showBootChecklist } from './ui/glb-checklist-panel.js';
+import { createBootErrorLog } from './systems/boot-error-log.js';
 import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
@@ -633,8 +634,10 @@ export async function startGlbWorld(
   // 부팅 단계별 경과(ms). 진단 훅이 노출한다 — "부팅이 순식간에 끝났다"는 관측이
   // 진짜인지(정말 빨랐는지) 가짜인지(단계를 건너뛰었는지) 가르는 유일한 근거다.
   const timeline: Array<{ stage: string; atMs: number }> = [];
-  /** 부팅 실패 수 — 체크리스트의 「콘솔」 항목이 읽는다 */
-  let bootErrors = 0;
+  // 부팅 구간 에러 수집기 — 체크리스트의 「에러」 항목이 읽는다. **부팅을 시작하기
+  // 전에** 만들어야 전역 리스너가 첫 단계부터 듣는다. 왜 카운터가 아니라 이 객체인지는
+  // `systems/boot-error-log.ts` 헤더(검수관 블로커 B1).
+  const bootLog = createBootErrorLog();
   let lastStage = '';
 
   const ok = await runBoot({
@@ -646,7 +649,11 @@ export async function startGlbWorld(
       loading?.update(r);
     },
     onError: (stage, err) => {
-      bootErrors++;
+      // ⚠ **이 경로는 체크리스트에 도달하지 못한다** — `boot.ts` 가 이 콜백 직후
+      // `return false` 하고 아래 `if (!ok)` 가 즉시 반환한다(감독은 로딩 화면의 실패
+      // 표시로 본다). 그래도 넣어 두는 것은 그 구멍을 메울 때(백로그 `G-W7E`) 여기가
+      // 이미 이어져 있어야 하기 때문이다.
+      bootLog.add(stage, err);
       loading?.fail(stage, err);
       console.error(`[${opts.tag}] 부팅 실패`, stage, err);
     },
@@ -787,7 +794,13 @@ export async function startGlbWorld(
             textureUrl: (src) => texturePreviews.get(src) ?? assetUrl(src),
             setTexturePreview: (src, url) => { texturePreviews.set(src, url); },
           },
-          (name, err) => console.error(`[${opts.tag}] 기능 조립 실패: ${name}`, err),
+          (name, err) => {
+            // 🔴 **이것이 체크리스트가 실제로 잡아야 하는 사고다.** `mountFeatures` 는
+            // 개별 실패를 흡수하므로(그 판단은 옳다) 기능 하나가 조용히 빠진 채 세계가
+            // 선다 — 감독이 눈으로 못 가리는 형태다.
+            bootLog.add(`기능 조립 실패: ${name}`, err);
+            console.error(`[${opts.tag}] 기능 조립 실패: ${name}`, err);
+          },
         );
       },
 
@@ -1155,7 +1168,12 @@ export async function startGlbWorld(
   // 자가진단 체크리스트 — world7 전용(`options.ts` 의 `checklist`). 감독 지시 2026-08-28.
   // **부팅 «후»** 에 부른다 — 위 `__glbWorld.stats()` 가 이미 조립한 값을 그대로 읽기
   // 위해서다(같은 것을 두 번 조립하면 한쪽만 고쳐도 아무도 모른다).
-  if (opts.checklist) showBootChecklist(canvas.parentElement ?? document.body, bootErrors);
+  // 반환값(패널)을 버린다 — world7 은 페이지당 1회 부팅이라 `dispose()` 가 도달하는
+  // 경로가 없다(검수관 권고 P2). 세계를 여러 번 세우게 되면 여기서 붙잡아야 한다.
+  if (opts.checklist) showBootChecklist(canvas.parentElement ?? document.body, bootLog);
+  // 부팅 구간만 본다. 세션 내내 켜 두면 아무도 다시 읽지 않는 것을 계속 세게 되고,
+  // 전역 리스너가 다음 세계까지 따라간다.
+  bootLog.dispose();
 
   return {
     kernel: kernel!,

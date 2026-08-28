@@ -60,8 +60,18 @@ export interface ChecklistInput {
   ahead: readonly { d: number; name: string }[] | null;
   /** 부팅 단계별 경과(ms) */
   timeline: readonly { stage: string; atMs: number }[];
-  /** 부팅 중 잡힌 콘솔 에러 수 */
-  errors: number;
+  /**
+   * 부팅 중 잡힌 에러의 **이름들**(개수는 `length`).
+   *
+   * ⚠ 숫자가 아니라 이름인 것은 화면 때문이다 — 모바일에서 감독은 개발자 도구를 못
+   * 연다. 「에러 2건」만 뜨면 무엇이 죽었는지 알 방법이 화면에 없다.
+   *
+   * ⚠⚠ **「콘솔에 찍힌 모든 것」이 아니다.** 수집 범위는 `systems/boot-error-log.ts` 가
+   * 소유한다 — 기능 조립 실패 · 전역 스크립트 에러 · 미처리 거부 셋이고,
+   * `console.error` 만 찍고 던지지 않는 코드는 안 잡힌다. 라벨을 「콘솔」이라고 적었다가
+   * 검수관에게 잡힌 자리라(B1) 이름과 실제를 맞춰 둔다.
+   */
+  errors: readonly string[];
 }
 
 /** 정면에 이보다 가까이 있으면 시야를 막을 수 있다(m). 검은 화면 때 실측 0.3m 였다 */
@@ -223,10 +233,15 @@ export function buildChecklist(i: ChecklistInput): ChecklistItem[] {
     out.push({ label: '예열', state: 'ok', detail: `파이프라인 ${n(i.pipelines)}개` });
   }
 
-  // ── ⑨ 콘솔 에러 ────────────────────────────────────────────────────────
-  out.push(i.errors === 0
-    ? { label: '콘솔', state: 'ok', detail: '에러 없음' }
-    : { label: '콘솔', state: 'warn', detail: `에러 ${n(i.errors)}건`, hint: '개발자 도구를 본다' });
+  // ── ⑨ 부팅 에러 ────────────────────────────────────────────────────────
+  // 라벨이 「콘솔」이 아닌 이유는 위 `errors` 주석에 있다 — 세는 것과 이름을 맞춘다.
+  out.push(i.errors.length === 0
+    ? { label: '에러', state: 'ok', detail: '없음' }
+    : {
+      label: '에러', state: 'warn',
+      detail: `${n(i.errors.length)}건 — ${i.errors.slice(0, 3).join(' · ')}`,
+      hint: i.errors.length > 3 ? '나머지는 개발자 도구에 있다' : '그 기능만 빠진 채 세계는 섰다',
+    });
 
   // ── ⑩ 로딩 시간 — 판정하지 않고 **적는다** ─────────────────────────────
   // 얼마가 「느린 것」인지는 파일마다 다르다. 임의 GLB 에 임계를 박으면 거짓 경고가 난다.
