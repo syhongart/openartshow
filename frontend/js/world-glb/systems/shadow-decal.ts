@@ -65,7 +65,7 @@ export function defaultOpts(): ShadowDecalOpts {
  * 원이라 높이와 무관하다 — 빌더도 `AO_GROUNDED` 를 밑면 크기로만 정한다. 60m 타워와
  * 벤치의 그림자 크기 차이는 **밑동 반경**에서만 나온다.
  */
-interface CasterDims {
+export interface CasterDims {
   /** 밑동 반경(m) — 가로·세로 반폭 중 큰 쪽(외접). **원형 실루엣이 쓰는 값** */
   r: number;
   /**
@@ -296,7 +296,13 @@ export class ShadowDecalSystem implements System {
  * **빌더의 `AO_GROUNDED` 표를 옮겨 오지 않는 이유도 같다** — 그 표는 손으로 적은 절대
  * 미터라 지오 변경을 안 따라온다. 배수 하나로 유도하는 근거는 `BLOB_SCALE` 주석 한 곳.
  */
-function measure(a: PartAsset): CasterDims {
+/**
+ * 캐스터 지오의 밑동 치수. **export 인 것은 GLB 세계가 이것을 재사용하기 때문이다**
+ * (`systems/glb-shadow-fix.ts`) — 내보낸 GLB 에는 데칼의 «box 축 분리»가 안 실려서
+ * 런타임에 복원해야 하는데, 그 규칙을 복사하면 값 미러링이 된다(팀장 조건).
+ * `a.geometry` 만 읽으므로 `{ geometry }` 모양이면 무엇이든 받는다.
+ */
+export function measure(a: PartAsset): CasterDims {
   const g = a.geometry as unknown as {
     boundingBox: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null;
     computeBoundingBox(): void;
