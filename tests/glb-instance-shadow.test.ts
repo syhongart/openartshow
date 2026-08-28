@@ -248,3 +248,84 @@ describe('AO 데칼 지면 띄움', () => {
     expect(ys[groundKey!], '지면까지 올라갔다').toBeCloseTo(0, 6);
   });
 });
+
+// ── 크기·실루엣 복원 (감독 신고 2026-08-28 «형태가 8이 동그랗네») ─────────────
+//
+// 유실이 셋이고 위 (사)~(자)는 그중 «띄움» 이다. 나머지 둘 — `box` 캐스터의 축별 크기와
+// 종류별 실루엣 — 은 `systems/glb-shadow-fix.ts` 가 복원한다. 근거·경계는 그 파일 헤더.
+//
+// 🔴 **이 파일이 못 보는 것**: 아틀라스의 **픽셀**. `rebakeShadowAtlas` 는
+// `document.createElement('canvas')` 를 쓰는데 vitest 환경에는 없어 `null` 을 돌려준다
+// (그 가드 자체는 아래 (차)가 본다). 실루엣이 실제로 사각·얼룩으로 그려졌는지는
+// **브라우저 실측**(`glb.atlasPainted`)과 **감독 화면**이 판정한다.
+describe('AO 데칼 크기·실루엣 복원', () => {
+  it('(차) 실루엣 배정이 world2 규칙 그대로다 — 벤치=사각, 나무=얼룩', async () => {
+    const { PARTS } = await import('../frontend/js/world-glb/parts/index.js');
+    const { casterProfiles } = await import('../frontend/js/world-glb/parts/shadow.js');
+    const base = PARTS.filter((p: { kind: string }) => !p.kind.startsWith(SHADOW_MAT_PREFIX));
+    const cells = casterProfiles(base as never);
+    const byKind = new Map(cells.map((c: { kind: string; shape: string }) => [c.kind, c.shape]));
+    // 2026-08-11 감독 지시 *"형태가 사각형이면 사각형그림자. 원형이면 원형 그림자면 해"*.
+    expect(byKind.get('bench'), '벤치가 사각이 아니다').toBe('box');
+    expect(byKind.get('tree'), '나무가 얼룩이 아니다').toBe('foliage');
+    // 대조군 — 전부 box 면 이 검사의 검출력이 0 이다.
+    expect(byKind.get('fountain')).toBe('round');
+    expect(byKind.get('lamp')).toBe('post');
+    // 종류가 하나뿐이면 아틀라스를 다시 그려도 원형 8개가 나온다(지금 자산의 상태다).
+    expect(new Set(cells.map((c: { shape: string }) => c.shape)).size,
+      '실루엣이 한 종류뿐 — 다시 그려도 지금과 같아진다').toBeGreaterThan(1);
+  });
+
+  it('(카) `box` 캐스터의 데칼만 축별로 늘어난다 — 대조군은 그대로', async () => {
+    const { fixBoxDecalScale } = await import('../frontend/js/world-glb/systems/glb-shadow-fix.js');
+    const root = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const put = (name: string, g: THREE.BufferGeometry, x = 0) => {
+      const mat = new THREE.MeshBasicMaterial(); mat.name = name;
+      const m = new THREE.Mesh(g, mat); m.position.set(x, 0, 0); root.add(m); return m;
+    };
+    // 캐스터 — 벤치를 가로로 긴 상자로. `measure` 가 이 bbox 에서 rx·rz 를 읽는다.
+    put('bench#0', new THREE.BoxGeometry(2.8, 0.4, 0.88));
+    put('planter#0', new THREE.BoxGeometry(1, 1, 1), 10);   // round 캐스터(대조군)
+    const benchDecal = put(`${SHADOW_MAT_PREFIX}bench#0`, geo);
+    const roundDecal = put(`${SHADOW_MAT_PREFIX}planter#0`, geo, 10);
+    benchDecal.scale.set(1, 1, 1);
+    roundDecal.scale.set(1, 1, 1);
+
+    const r = fixBoxDecalScale(root as never);
+    expect(r.fixed, 'box 데칼이 한 건도 안 고쳐졌다').toBe(1);
+    expect(r.skipped, '고칠 수 있는데 건너뛰었다').toBe(0);
+    // 벤치는 2.8 × 0.88 이므로 x 가 z 보다 뚜렷하게 길어야 한다.
+    expect(benchDecal.scale.x / benchDecal.scale.z, '벤치 데칼이 여전히 정사각이다').toBeGreaterThan(2);
+    // 대조군이 안 변해야 「전부 늘린 것」과 구별된다.
+    expect(roundDecal.scale.x, 'round 데칼까지 건드렸다').toBe(1);
+    expect(roundDecal.scale.z, 'round 데칼까지 건드렸다').toBe(1);
+  });
+
+  it('(타) world7 안전 — `shadow:` 재질이 없으면 no-op, 캐스터가 없으면 건너뛴다', async () => {
+    const { fixBoxDecalScale, rebakeShadowAtlas, applyAtlas } =
+      await import('../frontend/js/world-glb/systems/glb-shadow-fix.js');
+    // ① 그림자 재질이 아예 없는 임의 GLB
+    const plain = new THREE.Group();
+    const g = new THREE.PlaneGeometry(1, 1);
+    for (const n of ['wall', 'shadow', 'my-shadow:x', '']) {
+      const mat = new THREE.MeshBasicMaterial(); mat.name = n;
+      plain.add(new THREE.Mesh(g, mat));
+    }
+    const a = fixBoxDecalScale(plain as never);
+    expect(a.fixed + a.skipped, '그림자가 없는데 무언가를 건드렸다').toBe(0);
+    expect(applyAtlas(plain as never, {}), '그림자가 없는데 재질을 바꿨다').toBe(0);
+
+    // ② 데칼은 있는데 **캐스터 메시가 없는** GLB — 치수를 못 구한다
+    const orphan = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial(); mat.name = `${SHADOW_MAT_PREFIX}bench#0`;
+    const d = new THREE.Mesh(g, mat); d.scale.set(1, 1, 1); orphan.add(d);
+    const b = fixBoxDecalScale(orphan as never);
+    expect(b.fixed, '치수도 없는데 크기를 바꿨다 — 임의 GLB 가 깨진다').toBe(0);
+    expect(b.skipped, '건너뛴 것으로 세지 않았다').toBe(1);
+    expect(d.scale.x, '건너뛰었는데 스케일이 변했다').toBe(1);
+
+    // ③ 캔버스가 없는 환경(vitest)에서 조용히 null — 던지면 부팅이 죽는다
+    expect(rebakeShadowAtlas({} as never), '캔버스 없는 환경에서 null 이 아니다').toBeNull();
+  });
+});

@@ -89,6 +89,7 @@ import * as THREE from 'three/webgpu';
 import type { Object3D, Scene } from 'three/webgpu';
 import { instanceRepeats, isShadowMaterial } from './glb-instance.js';
 import { SHADOW_LIFT } from '../decide/shadow-decal.js';
+import { fixBoxDecalScale, rebakeShadowAtlas, applyAtlas } from './glb-shadow-fix.js';
 
 export interface GlbSourceResult {
   /** 씬에 얹힌 루트(인스턴싱 **후**) */
@@ -117,6 +118,12 @@ export interface GlbSourceResult {
    * 못 받았다는 뜻이고, `0` 이면 판정이 한 번도 안 돌았다는 뜻이다(둘은 다른 사고다).
    */
   liftedDecals: number;
+  /** `box` 캐스터 데칼 중 축별 크기를 복원한 수 — 0 이면 판정이 안 돌았다 */
+  boxFixed: number;
+  /** 치수를 못 구해 건너뛴 수. world7 임의 GLB 에서 클 수 있다(정상) */
+  boxSkipped: number;
+  /** 종류별 실루엣 아틀라스를 물린 재질 수 — 0 이면 원형 그대로다 */
+  atlasPainted: number;
   /**
    * 세계의 크기(m). **「떴다」와 「보인다」를 가르는 축이다** — 로드는 성공했는데
    * 화면이 비는 형태가 이 저장소에서 반복됐고, 그때마다 「어디에 얼마나 큰 것이
@@ -151,6 +158,12 @@ export function mountGlbWorld(
   let shadowDecals = 0;
   /** 지면에서 띄운 데칼 수 — 0 이면 lift 가 한 번도 안 걸렸다는 뜻이다(진단) */
   let liftedDecals = 0;
+  /** `box` 캐스터 데칼 중 축별 크기를 복원한 수. 0 이면 판정이 한 번도 안 돌았다 */
+  let boxFixed = 0;
+  /** 치수를 못 구해 건너뛴 수 — world7 임의 GLB 에서는 이 값이 클 수 있다(정상) */
+  let boxSkipped = 0;
+  /** 종류별 실루엣 아틀라스를 물린 재질 수. 0 이면 아틀라스가 원형 그대로다 */
+  let atlasPainted = 0;
   gltfScene.traverse((o: Object3D) => {
     const m = o as {
       isMesh?: boolean; material?: { name?: string } | { name?: string }[];
@@ -183,9 +196,15 @@ export function mountGlbWorld(
   // 수 있다(지면에 먹힌다).
   //
   // ⚠ **왜 lift 가 사라졌는지는 아직 모른다.** `extract-world2-glb.mjs`·`blender-edit.py`
-  // 어디에도 명시적 반올림이 없다. 자산을 다시 굽는 것이 근본 처방이지만 감독의 블렌더
-  // 편집을 잃을 위험이 있어, 지금은 **런타임에서 world2 와 같은 값으로 되돌린다.**
+  // 어디에도 명시적 반올림이 없다. 지금은 **런타임에서 world2 와 같은 값으로 되돌린다.**
   // 원인 추적은 백로그 `G-W8Q`.
+  //
+  // 🔴 **이 자리에 «자산을 다시 굽는 것이 근본 처방» 이라고 적었고 그것은 거짓이 됐다**
+  // (2026-08-28 실측, 팀장 조건 4). `extract-world2-glb.mjs` 를 지금 코드로 다시 돌려
+  // 블렌더 **전** GLB 를 뽑아 현재 자산과 대조했더니 bench 스케일(1.000·1종) · tree
+  // 스케일(1132종) · 데칼 y · 아틀라스가 **전부 동일**했다 — **블렌더는 무죄이고 재굽기로는
+  // 안 고쳐진다.** 원인은 내보내기가 데칼의 런타임 상태를 안 담는 것이고, 근본 처방은
+  // **내보내기를 고치는 것**이다(백로그 `G-W8Q` 의 재론 조건).
   //
   // ⚠⚠ **되묶기 «전» 에 해야 한다** — `instanceRepeats` 가 월드 행렬을 인스턴스에 굽는다.
   {
@@ -200,6 +219,19 @@ export function mountGlbWorld(
       lifted++;
     });
     liftedDecals = lifted;
+  }
+
+  // ── 🔴 **크기·실루엣도 복원한다** (감독 신고 «형태가 8이 동그랗네», 팀장 판정 (가)) ──
+  // 유실이 셋이고 위 lift 는 그중 하나다. 나머지 둘 — `box` 캐스터의 축별 크기와 종류별
+  // 실루엣 — 은 `systems/glb-shadow-fix.ts` 가 복원한다(경계·근거는 그 파일 헤더 한 곳).
+  // ⚠ 크기는 **되묶기 «전»** 이어야 한다(위 lift 와 같은 이유). 아틀라스는 재질 교체라
+  // 순서를 안 타지만 함께 둔다 — 둘이 한 사안이고 나뉘면 다음 사람이 순서를 다시 따진다.
+  {
+    const r = fixBoxDecalScale(gltfScene as unknown as Object3D);
+    boxFixed = r.fixed;
+    boxSkipped = r.skipped;
+    const atlas = rebakeShadowAtlas(THREE as unknown as never);
+    atlasPainted = atlas ? applyAtlas(gltfScene as unknown as Object3D, atlas.texture) : 0;
   }
 
   // 그림자 플래그 — **되묶기 전에** 켠다. `instanceRepeats` 가 재질·지오를 그대로
@@ -233,6 +265,7 @@ export function mountGlbWorld(
   const r1 = (v: number) => +v.toFixed(1);
   return {
     root: group, collisionRoot: gltfScene, meshes, triangles, made, grid, shadowDecals, liftedDecals,
+    boxFixed, boxSkipped, atlasPainted,
     box: {
       min: [r1(b.min.x), r1(b.min.y), r1(b.min.z)],
       max: [r1(b.max.x), r1(b.max.y), r1(b.max.z)],
@@ -250,11 +283,15 @@ export function mountGlbWorld(
  */
 export function describeGlb(src: GlbSourceResult | null): {
   meshes: number; triangles: number; instanced: number;
-  shadowDecals: number; liftedDecals: number; box: GlbSourceResult['box'];
+  shadowDecals: number; liftedDecals: number;
+  boxFixed: number; boxSkipped: number; atlasPainted: number;
+  box: GlbSourceResult['box'];
 } | null {
   if (!src) return null;
   return {
     meshes: src.meshes, triangles: src.triangles, instanced: src.made,
-    shadowDecals: src.shadowDecals, liftedDecals: src.liftedDecals, box: src.box,
+    shadowDecals: src.shadowDecals, liftedDecals: src.liftedDecals,
+    boxFixed: src.boxFixed, boxSkipped: src.boxSkipped, atlasPainted: src.atlasPainted,
+    box: src.box,
   };
 }
