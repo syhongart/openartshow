@@ -637,6 +637,12 @@ export async function startGlbWorld(
   // 부팅 구간 에러 수집기 — 체크리스트의 「에러」 항목이 읽는다. **부팅을 시작하기
   // 전에** 만들어야 전역 리스너가 첫 단계부터 듣는다. 왜 카운터가 아니라 이 객체인지는
   // `systems/boot-error-log.ts` 헤더(검수관 블로커 B1).
+  //
+  // ⚠ **`opts.checklist` 로 감싸지 않는다**(검수관 권고 P4 — 좁힐 수 있다는 지적이고,
+  // 안 좁히기로 한 이유를 적는다). 감싸면 `mountFeatures` 실패 콜백에 옵셔널 분기가
+  // 생기고 그 분기가 곧 *"world8 에서는 에러를 안 센다"* 가 된다. 지금 그 플래그가
+  // 갈리는 자리는 **맨 끝 한 줄뿐**이고, 부팅 로직 안쪽으로 분기를 미는 것은
+  // `options.ts` 경계 조항의 정신에 어긋난다. 비용은 전역 리스너 2개의 부착·해제다.
   const bootLog = createBootErrorLog();
   let lastStage = '';
 
