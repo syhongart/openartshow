@@ -51,6 +51,10 @@ async function open(file: File): Promise<void> {
     // ⚠ **두 페이지가 갈리는 유일한 자리다.** world8 은 여기서 고정 자산을 `fetch` 한다.
     //    이미 읽어 둔 버퍼를 그대로 낸다 — 부팅 파이프라인은 어느 쪽인지 모른다.
     source: async () => buf,
+    // ⚠ **world7 에만 켠다** — 감독 지시 2026-08-28 *"당분간.. 월드7에만.."*.
+    // 여기가 「world7 만 다르게」를 표현하는 자리다(트리 안에서 `tag` 로 갈라 짜면
+    // `options.ts` 의 경계 조항을 처음 깨는 것이 된다).
+    checklist: true,
   }).catch((err: unknown) => {
     // startGlbWorld 는 부팅 실패를 로딩 화면에 표시하고 null 을 돌려준다. 여기 오는 건
     // 그보다 바깥의 예외이므로 콘솔에 남긴다 — 조용히 삼키면 원인 추적이 불가능해진다.
