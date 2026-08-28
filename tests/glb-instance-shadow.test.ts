@@ -328,4 +328,29 @@ describe('AO 데칼 크기·실루엣 복원', () => {
     // ③ 캔버스가 없는 환경(vitest)에서 조용히 null — 던지면 부팅이 죽는다
     expect(rebakeShadowAtlas({} as never), '캔버스 없는 환경에서 null 이 아니다').toBeNull();
   });
+
+  it('(파) **이방성 캐스터**에서 축이 따로 반영된다 — 첫 판본은 이 축의 검출력이 0 이었다', async () => {
+    // ⚠ 검수관 실측: 첫 판본의 「`sx !== sz` 면 건드리지 않는다」 가드를 **통째로 지워도
+    // 12/12 통과**했다. 원형 경로가 `sx === sz` 를 항상 내므로 그 조건이 동어반복이었고,
+    // 이방성 캐스터를 넣는 케이스가 **아예 없어서** 그 축의 FAIL 이 원리상 안 났다.
+    // 지금은 캐스터 스케일을 직접 읽으므로 전제가 없고, 이 검사가 그것을 못 박는다.
+    const { fixBoxDecalScale } = await import('../frontend/js/world-glb/systems/glb-shadow-fix.js');
+    const root = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const put = (name: string, g: THREE.BufferGeometry) => {
+      const mat = new THREE.MeshBasicMaterial(); mat.name = name;
+      const m = new THREE.Mesh(g, mat); root.add(m); return m;
+    };
+    // 단위 정육면체 캐스터를 **비등방**으로 늘린다 — x 4배, z 1배.
+    const caster = put('bench#0', new THREE.BoxGeometry(1, 1, 1));
+    caster.scale.set(4, 1, 1);
+    const decal = put(`${SHADOW_MAT_PREFIX}bench#0`, geo);
+    decal.scale.set(1, 1, 1);
+
+    const r = fixBoxDecalScale(root as never);
+    expect(r.fixed, '이방성 캐스터의 데칼을 안 고쳤다').toBe(1);
+    // 지오가 정육면체(rx = rz)이므로 길쭉함은 **오직 캐스터 스케일에서만** 온다.
+    // 역산 방식이면 두 축에 같은 값이 곱해져 이 단언이 깨진다.
+    expect(decal.scale.x / decal.scale.z, '캐스터의 x 스케일이 데칼에 안 실렸다').toBeCloseTo(4, 3);
+  });
 });

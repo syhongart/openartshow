@@ -128,10 +128,14 @@ const key = (x: number, z: number) => `${x.toFixed(3)}|${z.toFixed(3)}`;
  *   box  → decalTransformRect(x, z, d.rx * t.sx, d.rz * t.sz, t.ry)   축 따로
  *   그 외 → decalTransform(x, z, d.r * max(t.sx, t.sz))               한 축
  * ```
- * GLB 에는 **원형 경로 결과만** 실려 있다(bench 264개가 전부 x=z=1.000). 두 식이 같은
- * 상수 `2·BLOB_SCALE·DECAL_SCALE` 를 곱하므로, 원형 결과에 `rx/r`·`rz/r` 를 곱하면
- * 사각 결과가 된다 — **단 `t.sx === t.sz` 일 때만.** 그래서 아래에서 그 조건을 확인하고
- * 어긋나면 **건드리지 않는다**(조용히 틀리느니 원형으로 남는 편이 낫다).
+ * GLB 에는 **원형 경로 결과만** 실려 있다(bench 264개가 전부 x=z=1.000). 그래서 사각
+ * 규칙을 다시 적용한다 — **캐스터의 스케일·회전을 직접 읽어서**다. 데칼과 캐스터는 같은
+ * x·z 에 놓이므로(`decalTransform` 이 `x: casterX, z: casterZ` 를 낸다) 좌표로 찾는다.
+ *
+ * ⚠ **역산하지 않는다**(검수관 블로커, 2026-08-28). 첫 판본은 원형 결과에서 `t.s` 를
+ * 역산하며 «`sx !== sz` 면 손대지 않는다» 는 가드를 뒀는데 **그 가드가 동어반복이었다** —
+ * 원형 경로는 `sx === sz` 를 항상 내므로 조건이 늘 참이다. 캐스터 스케일을 직접 쓰면
+ * 전제 자체가 없어진다.
  *
  * ⚠ **회전도 복원한다.** 원형은 `ry: 0` 이지만 사각은 캐스터 회전을 따라야 한다
  * (`decalTransformRect` 의 `ry`). 캐스터는 데칼과 같은 x·z 에 있으므로 좌표로 찾는다.
@@ -167,12 +171,22 @@ export function fixBoxDecalScale(root: Object3D): { fixed: number; skipped: numb
     if (byKind.get(kind) !== 'box') return;
     const d = dimsOf.get(kind);
     if (!d) { skipped++; return; }
-    // 원형 결과에서 `t.s` 를 역산한다. `sx !== sz` 면 전제가 깨지므로 손대지 않는다.
-    if (Math.abs(o.scale.x - o.scale.z) > 1e-6) { skipped++; return; }
-    const s = o.scale.x / (2 * d.r * SIDE_K);
-    if (!Number.isFinite(s) || s <= 0) { skipped++; return; }
+    // ⚠ **캐스터의 스케일을 직접 읽는다** — 역산하지 않는다(검수관 블로커, 2026-08-28).
+    // 첫 판본은 원형 결과에서 `t.s` 를 역산하고 `o.scale.x !== o.scale.z` 면 손대지
+    // 않는다고 적었는데, **그 체크가 동어반복이었다**: `decalTransform`(원형)은 구조상
+    // `sx === sz` 를 **항상** 반환하므로 조건이 입력과 무관하게 늘 참이고, 캐스터의
+    // 이방성(`t.sx ≠ t.sz`)을 결코 감지하지 못한다. 검수관이 그 줄을 통째로 지우는
+    // 뮤테이션으로 **12/12 그대로 통과**함을 실측했다.
+    //
+    // 오늘 화면이 안전했던 것은 그 체크 덕이 아니라 **`box` 프로필이 bench 하나뿐이고
+    // bench 가 `sx=sy=sz=1` 로 고정**(`world2/parts/bench.ts:75`)이라 **우연히** 그랬다.
+    // 캐스터를 이미 좌표로 찾고 있으므로 그 스케일을 쓰면 전제 자체가 사라진다.
     const caster = casters.get(key(o.position.x, o.position.z));
-    const p = decalTransformRect(o.position.x, o.position.z, d.rx * s, d.rz * s, caster ? caster.rotation.y : 0);
+    if (!caster) { skipped++; return; }
+    const p = decalTransformRect(
+      o.position.x, o.position.z,
+      d.rx * caster.scale.x, d.rz * caster.scale.z, caster.rotation.y,
+    );
     o.scale.x = p.sx;
     o.scale.z = p.sz;
     o.rotation.y = p.ry;
@@ -181,15 +195,6 @@ export function fixBoxDecalScale(root: Object3D): { fixed: number; skipped: numb
   });
   return { fixed, skipped };
 }
-
-/**
- * `decalTransform` 이 반경에 곱하는 상수 — **역산에만 쓴다.**
- *
- * ⚠ 값을 여기 적지 않는다. 같은 함수에 반경 `0.5` 를 넣어 나온 변에서 **유도**한다:
- * `side = 2 · r · K` 이므로 `K = side / (2 · 0.5) = side`. 상수를 복사하면 `BLOB_SCALE`
- * 이나 `DECAL_SCALE` 이 바뀌었을 때 여기만 옛 값으로 남는다.
- */
-const SIDE_K = decalTransformRect(0, 0, 0.5, 0.5, 0).sx / (2 * 0.5);
 
 /** 아틀라스 텍스처를 모든 `shadow:` 재질에 물린다. 바꾼 재질 수를 돌려준다 */
 export function applyAtlas(root: Object3D, texture: unknown): number {
