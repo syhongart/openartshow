@@ -62,14 +62,34 @@ function kinds(): Kind[] {
   ];
 }
 
+/**
+ * 변환이 있는 부모를 하나 달아 준다 — **좌표계가 항등이면 검사가 조용히 죽는다.**
+ *
+ * ⚠ 이 헬퍼는 뮤테이션 두 번에서 나왔다. 픽스처가 변환 없는 루트를 쓰면 ① 인스턴스
+ * 행렬에 노드 월드변환을 곱하는 코드와 ② 월드 기준 lift 의 부모 스케일 나눗셈이 **둘 다
+ * 항등 연산이 되어, 지워도 전부 통과한다.** 실제로 (나)·(다) 두 축이 그렇게 검출력 0
+ * 이었다. 두 씬에 **서로 다른** 변환을 주는 이유도 같다 — 같으면 우연히 상쇄될 수 있다.
+ */
+function holderOf(tx: number, ry: number, sc: number): { holder: THREE.Group; inv: THREE.Matrix4 } {
+  const holder = new THREE.Group();
+  holder.position.set(tx, 1, -3);
+  holder.rotation.set(0, ry, 0);
+  holder.scale.setScalar(sc);
+  holder.updateMatrixWorld(true);
+  return { holder, inv: new THREE.Matrix4().copy(holder.matrixWorld).invert() };
+}
+
 /** 낱개 메시로 세운 씬 */
 function looseScene(ks: Kind[]): THREE.Group {
   const root = new THREE.Group();
+  const { holder, inv } = holderOf(-2, Math.PI / 5, 0.8);
+  root.add(holder);
   for (const k of ks) {
     for (const p of k.places) {
       const m = new THREE.Mesh(k.geo, k.mat);
-      matrixOf(p).decompose(m.position, m.quaternion, m.scale);
-      root.add(m);
+      // 목표 «월드» 배치가 접힌 씬과 같아지도록 부모 변환을 미리 뺀다.
+      matrixOf(p).premultiply(inv).decompose(m.position, m.quaternion, m.scale);
+      holder.add(m);
     }
   }
   return root;
@@ -87,12 +107,8 @@ function looseScene(ks: Kind[]): THREE.Group {
 function packedScene(ks: Kind[]): THREE.Group {
   const root = new THREE.Group();
   // 임의의 «생긴 것 같은» 변환 — 로더가 만드는 노드 계층을 흉내낸다.
-  const holder = new THREE.Group();
-  holder.position.set(5, 1, -3);
-  holder.rotation.set(0, Math.PI / 6, 0);
-  holder.scale.setScalar(1.5);
-  holder.updateMatrixWorld(true);
-  const inv = new THREE.Matrix4().copy(holder.matrixWorld).invert();
+  // 낱개 씬과 **다른** 값을 쓴다(위 `holderOf` 주석).
+  const { holder, inv } = holderOf(5, Math.PI / 6, 1.5);
   root.add(holder);
   for (const k of ks) {
     const im = new THREE.InstancedMesh(k.geo, k.mat, k.places.length);
@@ -216,6 +232,26 @@ describe('GLB 되묶기 — 낱개 입력과 접힌 입력의 등가성', () => 
     expect(a.shadowDecals).toBe(shadowWant);
   });
 
+  it('⭐ **그림자 보정까지 거친 «최종» 배치**가 같다 — 이 파일에서 가장 강한 축', () => {
+    // 앞의 검사들은 `instanceRepeats` 만 본다. 그런데 `mountGlbWorld` 는 그 «전» 에
+    // 데칼을 띄우고(`SHADOW_LIFT`) 크기를 복원한다 — 둘 다 노드 속성을 만지던 코드라
+    // 인스턴스 입력에서 **묶음 전체가 같이 움직이거나 카운트만 세어졌다**(실측: 8,625개
+    // 중 「8」·「1」). 여기서는 그 후처리까지 통과한 결과를 통째로 대조한다.
+    const ks = kinds();
+    const shadowWant = ks.find((k) => (k.mat as THREE.Material).name.startsWith('shadow:'))!.places.length;
+
+    const a = mountGlbWorld(new THREE.Scene(), looseScene(ks), { castShadow: false, grid: 4 });
+    const b = mountGlbWorld(new THREE.Scene(), packedScene(ks), { castShadow: false, grid: 4 });
+
+    expect(a.liftedDecals, '낱개 경로의 띄움 계수가 이미 틀렸다').toBe(shadowWant);
+    expect(b.liftedDecals, '인스턴스 데칼을 «노드» 수만큼만 올렸다 — 화면에 거짓이 뜬다')
+      .toBe(shadowWant);
+
+    const pa = placementsOf(a.root as unknown as THREE.Object3D);
+    const pb = placementsOf(b.root as unknown as THREE.Object3D);
+    expect(diff(pa, pb), '후처리를 거친 최종 배치가 어긋났다').toEqual({ missing: 0, extra: 0 });
+  });
+
   it('인스턴스가 «격자로» 나뉜다 — 컬링이 셀 단위로 살아 있어야 한다', () => {
     // 접힌 입력을 그대로 통과시키면 종류당 1벌이 되어 프러스텀·거리 컬링이 죽는다.
     // `glb-instance.js` 헤더 실측: 격자 없이 묶었을 때 99.999%가 매 프레임 그려졌다.
@@ -235,14 +271,13 @@ describe('GLB 되묶기 — 낱개 입력과 접힌 입력의 등가성', () => 
 // **① 수정 «전» 실물 FAIL** (팀장 조건 1: *"등가성 검사를 수정 전에 먼저 써서 현재
 // 결함으로 FAIL 을 실측하고, 수정 후 PASS 로 돌린다"*):
 //
-//   수정 전 → **4/4 FAIL**. 특히 「섞여 들어와도 된다」가 `missing: 28` 로,
-//   접힌 두 종류(17+11)가 통째로 사라지는 것을 그대로 보여줬다.
-//   수정 후 → 5/5 PASS(진단 카운트 축을 하나 더 붙였다).
+//   수정 전 → **4/4 FAIL**. 「섞여 들어와도 된다」가 `missing: 28` 로, 접힌 두 종류
+//   (17+11)가 통째로 사라지는 것을 그대로 보여줬다. 수정 후 → 6/6 PASS.
 //
 // 뮤테이션은 결함을 인위로 되살리는 것인데 여기서는 **실물 결함이 아직 살아 있었으므로**
 // 그보다 강한 증명이 공짜로 있었다.
 //
-// **② 뮤테이션 6케이스**:
+// **② 되묶기 축 뮤테이션 6케이스** (`instanceRepeats`·진단):
 //
 //   (가) 인스턴스 행렬을 아예 안 읽음 (원래 결함)      → 4 failed
 //   (나) 노드 월드변환을 안 곱함 (로컬 행렬만)         → 1 failed
@@ -251,12 +286,25 @@ describe('GLB 되묶기 — 낱개 입력과 접힌 입력의 등가성', () => 
 //   (마) 삼각형만 안 곱함                              → 1 failed
 //   (바) 그림자 데칼만 안 곱함                         → 1 failed
 //
-// **③ 🔴 (나)는 처음에 검출력이 «0» 이었다.** 첫 픽스처는 `InstancedMesh` 를 변환 없는
-// 루트에 직접 달았고, 그러면 `premultiply(o.matrixWorld)` 를 **지워도 5/5 가 통과했다.**
-// 곱하는 값이 항등이라 곱셈 자체가 무의미했던 것이다 — 검사는 도는데 그 축만 조용히
-// 비어 있었다. 이 저장소가 hookify 회차에 겪은 형태 그대로다(`action: warn` 축의
-// 검출력이 구조적으로 0이었고 테스트가 종료코드만 봤다).
+// **③ 후처리 축 뮤테이션 5케이스** (`eachPlacement`·lift):
 //
-// 그래서 `packedScene` 의 인스턴스를 **변환 있는 부모** 아래로 옮기고(위 주석), 목표
-// 월드 배치가 낱개 씬과 같아지도록 부모 변환의 역행렬을 미리 곱해 뒀다. 그 뒤 (나)가
-// 1 failed 로 잡혔다. **뮤테이션을 안 돌렸으면 이 구멍을 못 봤다.**
+//   (가) lift 를 월드 보정 없이 로컬에 더함 (원래 결함) → 1 failed
+//   (나) 인스턴스 lift 의 부모 스케일 나눗셈 제거       → 1 failed
+//   (다) 낱개 lift 의 부모 스케일 나눗셈 제거           → 1 failed
+//   (라) lift 후 `commit()` 을 안 부름                  → 1 failed
+//   (마) 인스턴스 경로가 첫 인스턴스만 순회             → 1 failed
+//
+// **④ 🔴 검출력 0 이 «두 번» 났고 원인이 같다.** 픽스처의 좌표계가 항등이면 그 위에서
+// 도는 연산이 전부 무의미해진다:
+//   · 첫 번째 — `packedScene` 이 변환 없는 루트를 써서 `premultiply(o.matrixWorld)` 를
+//     **지워도 통과**했다(위 ② (나)).
+//   · 두 번째 — `looseScene` 이 같은 이유로 낱개 lift 의 나눗셈을 **지워도 통과**했다
+//     (위 ③ (다)).
+// 두 씬에 **서로 다른** 변환을 가진 부모를 달아 둘 다 살렸다(`holderOf`). 같은 값을 쓰면
+// 우연히 상쇄될 수 있어서 일부러 다르게 준다. **뮤테이션을 안 돌렸으면 둘 다 못 봤다** —
+// 검사는 19건이 초록으로 돌고 있었다.
+//
+// **⑤ 이 검사가 «원래 코드의» 결함을 하나 더 찾았다.** ③(가)는 뮤테이션이 아니라 실물
+// 이었다 — `p.position.y += SHADOW_LIFT` 가 **로컬 좌표** 기준이라 부모에 스케일이 있으면
+// 그만큼 왜곡된다(1.5배면 0.02 가 0.03 이 된다). 원본 자산은 그룹 노드 21개가 변환을
+// 안 가져서 **우연히** 안전했고, 그래서 오래 안 보였다. world7 은 임의 GLB 를 받는다.

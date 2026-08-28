@@ -90,6 +90,7 @@ import type { Object3D, Scene } from 'three/webgpu';
 import { instanceRepeats, isShadowMaterial } from './glb-instance.js';
 import { SHADOW_LIFT } from '../decide/shadow-decal.js';
 import { fixBoxDecalScale, rebakeShadowAtlas, applyAtlas } from './glb-shadow-fix.js';
+import { eachPlacement } from './glb-placement.js';
 
 export interface GlbSourceResult {
   /** 씬에 얹힌 루트(인스턴싱 **후**) */
@@ -216,15 +217,16 @@ export function mountGlbWorld(
   // **내보내기를 고치는 것**이다(백로그 `G-W8Q` 의 재론 조건).
   //
   // ⚠⚠ **되묶기 «전» 에 해야 한다** — `instanceRepeats` 가 월드 행렬을 인스턴스에 굽는다.
+  // ⚠⚠⚠ **인스턴스 입력에서도 «하나씩» 올린다**(2026-08-28). 노드를 올리면 그 묶음이
+  // 통째로 올라가므로 결과는 우연히 맞을 수 있지만 **카운트가 노드 수가 된다** — 실측:
+  // 8,625개가 「8」로 세어졌고, 그 수치가 체크리스트 화면과 보고서에 그대로 나갔다.
+  // 진단이 거짓이면 다음 사람이 「보정이 안 걸렸다」로 읽는다(실제로 내가 그렇게 읽었다).
   {
     let lifted = 0;
-    gltfScene.traverse((o: Object3D) => {
-      const m = o as { isMesh?: boolean; material?: { name?: string } | { name?: string }[] };
-      if (!m.isMesh) return;
-      const one = Array.isArray(m.material) ? m.material[0] : m.material;
-      if (!isShadowMaterial(one)) return;
-      o.position.y += SHADOW_LIFT;
-      o.updateMatrix();
+    eachPlacement(gltfScene as never, THREE as never, (p) => {
+      if (!isShadowMaterial(p.material)) return;
+      p.liftY(SHADOW_LIFT);
+      p.commit();
       lifted++;
     });
     liftedDecals = lifted;
@@ -236,7 +238,7 @@ export function mountGlbWorld(
   // ⚠ 크기는 **되묶기 «전»** 이어야 한다(위 lift 와 같은 이유). 아틀라스는 재질 교체라
   // 순서를 안 타지만 함께 둔다 — 둘이 한 사안이고 나뉘면 다음 사람이 순서를 다시 따진다.
   {
-    const r = fixBoxDecalScale(gltfScene as unknown as Object3D);
+    const r = fixBoxDecalScale(gltfScene as unknown as Object3D, THREE as never);
     boxFixed = r.fixed;
     boxSkipped = r.skipped;
     const atlas = rebakeShadowAtlas(THREE as unknown as never);
