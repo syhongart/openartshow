@@ -132,20 +132,8 @@ function shearRisk(p, c) {
   return rotated && !uniform;
 }
 
-function main() {
-  const [inPath, outPath, ...rest] = process.argv.slice(2);
-  if (!inPath || !outPath) {
-    console.error('사용: node scripts/asset/pack-instances.mjs <입력.glb> <출력.glb> [--min N]');
-    process.exit(2);
-  }
-  const minIdx = rest.indexOf('--min');
-  const MIN = minIdx >= 0 ? Number(rest[minIdx + 1]) : 2;
-
-  const src = fs.readFileSync(inPath);
-  const { json, bin } = readGlb(src);
-  const nodes = json.nodes ?? [];
-
-  // ── 1) 노드별 월드 TRS 를 구한다 ─────────────────────────────────────────
+/** 노드별 **월드 TRS** 를 구한다. 전단이 생기는 조합의 인덱스도 함께 낸다 */
+function worldTRS(nodes) {
   const parent = new Map();
   for (let i = 0; i < nodes.length; i++) {
     for (const c of nodes[i].children ?? []) parent.set(c, i);
@@ -162,6 +150,104 @@ function main() {
     return (world[i] = compose(pw, own));
   };
   for (let i = 0; i < nodes.length; i++) resolve(i);
+  return { world, shear };
+}
+
+// ── 정확성 대조 (검수관 권고 P1) ────────────────────────────────────────────
+// 첫 판본은 이 대조를 **손으로 한 번 돌리고 버렸다.** 커밋 메시지에 「28,707개 완전
+// 일치」라고 적었는데 **저장소에 재현 수단이 없었다** — 검수관 지적: *"재현 불가능한
+// 실측 주장"*. 다음에 이 도구를 쓰는 사람이 같은 확인을 하려면 처음부터 다시 짜야 했다.
+// 그래서 스크립트가 스스로 한다.
+//
+// ⚠ **작아진 것과 같은 것은 다른 축이다.** 이 대조가 보는 것은 뒤쪽이다 — 접기 전후의
+// (메시, 월드 TRS) 다중집합이 같은가. 파일 «쓰기» 오류까지 잡으려고 **출력 파일을 다시
+// 읽어서** 비교한다(메모리에 든 값끼리 비교하면 직렬화 버그가 통과한다).
+//
+// ⚠⚠ **못 잡는 것: `worldTRS` 자신의 오류.** 대조는 양쪽에 **같은 함수**를 쓰므로 그
+//   계산이 틀리면 **같이 틀려서 상쇄된다** — 동어반복이다. 실측(뮤테이션 3케이스):
+//
+//     (가) 인스턴스 한 벌의 위치를 1cm 어긋냄  → 누락 32 · 잉여 32   ❌ 막힘
+//     (나) 회전(ROTATION)을 통째로 생략         → 누락 14,273        ❌ 막힘
+//     (다) 부모 변환 합성(`compose`)을 생략     → 누락 0 · 잉여 0    ⚠ **통과**
+//
+//   (다)가 이 한계의 실물이다. 그 축은 `tests/glb-instance-equivalence.test.ts` 가
+//   본다 — 그쪽은 three 의 `Matrix4` 로 계산하므로 우리 `compose` 와 **독립**이다.
+//   두 검사가 서로 다른 자리를 보고 있고, **어느 한쪽만으로는 부족하다.**
+//
+//   ⚠ 덧붙여 이 자산에서는 (다)가 결과에도 영향이 없다 — 그룹 노드 21개가 T/R/S 를
+//   안 가져서(실측) 합성이 항등이기 때문이다. 부모 변환이 있는 GLB 라면 화면이
+//   틀어지는데 이 대조는 여전히 통과한다.
+
+/** accessor 를 float 배열로 읽는다 */
+function accFloats(json, bin, idx, comps) {
+  const a = json.accessors[idx];
+  const bv = json.bufferViews[a.bufferView];
+  const off = (bv.byteOffset ?? 0) + (a.byteOffset ?? 0);
+  const out = new Array(a.count * comps);
+  for (let k = 0; k < out.length; k++) out[k] = bin.readFloatLE(off + k * 4);
+  return out;
+}
+
+/** (메시, 월드 TRS) 다중집합 — 소수 4자리로 반올림해 키로 만든다 */
+function placements(json, bin) {
+  const nodes = json.nodes ?? [];
+  const { world } = worldTRS(nodes);
+  const out = new Map();
+  const q = (v) => (Math.round(v * 1e4) / 1e4 + 0).toFixed(4);
+  const add = (mesh, t, r, sc) => {
+    const k = `${mesh}|${t.map(q)}|${r.map(q)}|${sc.map(q)}`;
+    out.set(k, (out.get(k) ?? 0) + 1);
+  };
+  nodes.forEach((n, i) => {
+    if (n.mesh === undefined) return;
+    const ext = n.extensions?.EXT_mesh_gpu_instancing;
+    if (!ext) { const w = world[i]; add(n.mesh, w.t, w.r, w.s); return; }
+    const at = ext.attributes;
+    const count = json.accessors[Object.values(at)[0]].count;
+    const T = at.TRANSLATION !== undefined ? accFloats(json, bin, at.TRANSLATION, 3) : null;
+    const R = at.ROTATION !== undefined ? accFloats(json, bin, at.ROTATION, 4) : null;
+    const S = at.SCALE !== undefined ? accFloats(json, bin, at.SCALE, 3) : null;
+    for (let k = 0; k < count; k++) {
+      // ⚠ 인스턴스 속성은 **노드 좌표계**다 — 노드 자신의 월드 TRS 를 앞에 합성한다.
+      const local = {
+        t: T ? T.slice(k * 3, k * 3 + 3) : [0, 0, 0],
+        r: R ? R.slice(k * 4, k * 4 + 4) : [0, 0, 0, 1],
+        s: S ? S.slice(k * 3, k * 3 + 3) : [1, 1, 1],
+      };
+      const w = compose(world[i], local);
+      add(n.mesh, w.t, w.r, w.s);
+    }
+  });
+  return out;
+}
+
+/** 두 다중집합의 차. 0/0 이면 배치가 완전히 같다 */
+function compare(a, b) {
+  let missing = 0, extra = 0;
+  for (const [k, v] of a) missing += Math.max(0, v - (b.get(k) ?? 0));
+  for (const [k, v] of b) extra += Math.max(0, v - (a.get(k) ?? 0));
+  const total = (m) => [...m.values()].reduce((s, v) => s + v, 0);
+  return { missing, extra, before: total(a), after: total(b) };
+}
+
+function main() {
+  const [inPath, outPath, ...rest] = process.argv.slice(2);
+  if (!inPath || !outPath) {
+    console.error('사용: node scripts/asset/pack-instances.mjs <입력.glb> <출력.glb> [--min N]');
+    process.exit(2);
+  }
+  const minIdx = rest.indexOf('--min');
+  const MIN = minIdx >= 0 ? Number(rest[minIdx + 1]) : 2;
+
+  const src = fs.readFileSync(inPath);
+  const { json, bin } = readGlb(src);
+  // ⚠ 아래 접기가 `json.nodes`·`scenes` 를 **파괴적으로 갈아치운다.** 대조는 원본과
+  //   해야 하므로 미리 떠 둔다(얕게 복사하면 같은 노드 배열을 보게 된다).
+  const json0 = JSON.parse(JSON.stringify(json));
+  const nodes = json.nodes ?? [];
+
+  // ── 1) 노드별 월드 TRS 를 구한다 ─────────────────────────────────────────
+  const { world, shear } = worldTRS(nodes);
 
   // ── 2) 메시별로 모은다 ────────────────────────────────────────────────────
   // ⚠ **접을 수 없는 것은 남긴다**: 자식이 있는 노드(계층이 의미를 가진다) · skin ·
@@ -269,6 +355,20 @@ function main() {
   console.log(`  ${(before / 1048576).toFixed(2)}MB → ${(after / 1048576).toFixed(2)}MB `
     + `(${((1 - after / before) * 100).toFixed(1)}% 감소)`);
   if (shear.size > 0) console.log(`  ⚠ 전단 위험으로 안 접은 노드 ${shear.size}개`);
+
+  // ── 정확성 대조 — **항상 돈다** (검수관 권고 P1) ──────────────────────────
+  // 옵션으로 두지 않는다. 끄고 돌릴 수 있으면 언젠가 끈 채로 돌린 결과가 「검증됨」으로
+  // 적힌다 — 이 저장소가 반복해서 당한 형태다(*"못 잰 것이 통과로 적히는 경향"*).
+  const back = readGlb(fs.readFileSync(outPath));
+  const d = compare(placements(json0, bin), placements(back.json, back.bin));
+  const ok = d.missing === 0 && d.extra === 0;
+  console.log(`\n  배치 대조: 원본 ${d.before.toLocaleString()} · 출력 ${d.after.toLocaleString()}`
+    + ` · 누락 ${d.missing} · 잉여 ${d.extra}`);
+  if (!ok) {
+    console.error('  ❌ **배치가 달라졌다** — 접기가 모양을 바꿨다. 출력 파일을 쓰지 마라.');
+    process.exit(1);
+  }
+  console.log('  ✅ 배치가 완전히 일치한다(소수 4자리)');
 }
 
 main();
