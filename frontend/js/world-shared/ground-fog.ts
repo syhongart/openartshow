@@ -68,7 +68,14 @@ export const GROUND_FOG_H0 = 1.0;
 export const GROUND_FOG_K = 0.45;
 export const GROUND_FOG_STRENGTH = 0;
 
-/** 노브 상한. 넘어가면 화면이 단색이 돼 "고장" 으로 읽힌다 */
+/**
+ * 노브 상한. 넘어가면 화면이 단색이 돼 "고장" 으로 읽힌다.
+ *
+ * ⚠ **하한 쪽도 같은 함정이 있다**(검수관 권고 P1, 2026-09-04): `k` 의 노브 하한은 0.01 인데
+ * `?fogk=0.05` 미만이면 층 두께(≈3/k)가 60m 를 넘어 사실상 전 고도가 밀도 1 — **거리 안개와
+ * 구별되지 않는 단색 화면**이 된다. 노브라서 막지 않았다(감독이 링크로 비교하는 절차다).
+ * 그 화면을 보면 고장이 아니라 `k` 가 너무 작은 것부터 의심한다.
+ */
 export const GROUND_FOG_MAX: Readonly<GroundFogParams> = { h0: 20, k: 4, strength: 1 };
 
 export const DEFAULT_GROUND_FOG: Readonly<GroundFogParams> = {

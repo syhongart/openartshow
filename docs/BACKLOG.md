@@ -144,6 +144,14 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
 ## 기타 대기 항목
 
+- **G-WSB1 — `world-shared` 경계 검사(R1~R4)가 world-glb(월드7·8)를 스캔 대상에서 뺀다**
+  (2026-09-04 등재, 검수관 권고 P2). `tests/world-shared-boundary.test.ts` 의 `WORLDS = ['world2',
+  'world3','world5']` 라 world-glb → world-shared 역참조·world-glb 가 다른 세계를 import 하는
+  형태가 이 게이트로 안 잡힌다(`world-glb-independence.test.ts` 가 world2 방향만 본다). 지금은
+  `world-shared/ground-fog.ts` 가 import 0 이라 드러나지 않는다. 처방: `WORLDS` 에 `world-glb`
+  추가 + R1 이 세계 이름 접두를 어떻게 보는지 확인(디렉터리명이 `worldN` 형식이 아니다) +
+  뮤테이션(world-glb 파일에 `../world2/` import 를 심어 실제로 깨지는지).
+
 ### 라이브 링크 검사 구멍 · 전시장 문 노출 결정 (2026-09-04 등재)
 
 - **G-GS3H — 라이브 코드가 flagged 페이지로 보내는 href·`location` 대입을 아무 검사도 안 본다.**

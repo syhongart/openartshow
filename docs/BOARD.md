@@ -176,6 +176,20 @@
 
 ## 올라온 것 (↑ 상향)
 
+### 2026-09-04 · 검수관 — 지면 안개 + 정문 포털 + 가이드 정정(`ee422bc9`): **승인** (블로커 0)
+
+주장 9건 전부 소스·실행으로 재현: 기본 세기 0 → `scene.fogNode` 대입 경로가 저장소에 정확히
+2곳이고 둘 다 가드 뒤 / `Nodes.js:214` 가 undefined·null 을 같게 폴백 / `reference`+
+`renderGroup` 은 three 의 `updateFog()` 자신과 같은 패턴, `ReferenceNode.updateValue` 가 in-place
+`Color` 변경을 반영 / `renderers/webgl/` 에 fogNode 0건 / 두 트리 diff 0 / **뮤테이션 7/7
+원본에서 재현**(문자열 치환 + 즉시 복원, 최종 clean) / R1~R4 5/5 · world-glb 독립성 12/12 /
+포털 상대경로 맞음 / 가이드 정정의 grep 0건 반증 실패(주장 생존). 등급 1등급 확인.
+**확인 못 한 것**: 후처리 MRT 뒤의 실제 화면(기존 거리 안개와 같은 코드 경로라 새 위험은
+아님) · `ReferenceNode` 갱신 빈도의 실측 · 화면 자체. **권고(비블로커)**: P1 `fogk` 하한이
+사실상 단색 화면을 만들 수 있다 — 주석 경고(반영, `GROUND_FOG_MAX` 독블록) · P2
+`tests/world-shared-boundary.test.ts` 의 `WORLDS` 가 world-glb 를 안 본다(기존 사각, 백로그
+`G-WSB1` 등재).
+
 ### 2026-09-04 · 부팀장 — 🔴 3주 잠든 세션이 깨어나 **466커밋 뒤진 채 «최신입니다»** 라고 답했다 (사고·관측)
 
 감독 *"지금 최신이지?"* 에 로컬·원격·gh-pages 네 곳이 같은 커밋이라고 표까지 그려 답했다.
