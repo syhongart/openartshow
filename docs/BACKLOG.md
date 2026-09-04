@@ -144,6 +144,37 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
 ## 기타 대기 항목
 
+- **G-WSB1 — `world-shared` 경계 검사(R1~R4)가 world-glb(월드7·8)를 스캔 대상에서 뺀다**
+  (2026-09-04 등재, 검수관 권고 P2). `tests/world-shared-boundary.test.ts` 의 `WORLDS = ['world2',
+  'world3','world5']` 라 world-glb → world-shared 역참조·world-glb 가 다른 세계를 import 하는
+  형태가 이 게이트로 안 잡힌다(`world-glb-independence.test.ts` 가 world2 방향만 본다). 지금은
+  `world-shared/ground-fog.ts` 가 import 0 이라 드러나지 않는다. 처방: `WORLDS` 에 `world-glb`
+  추가 + R1 이 세계 이름 접두를 어떻게 보는지 확인(디렉터리명이 `worldN` 형식이 아니다) +
+  뮤테이션(world-glb 파일에 `../world2/` import 를 심어 실제로 깨지는지).
+
+### 라이브 링크 검사 구멍 · 전시장 문 노출 결정 (2026-09-04 등재)
+
+- **G-GS3H — 라이브 코드가 flagged 페이지로 보내는 href·`location` 대입을 아무 검사도 안 본다.**
+  실측(2026-09-04): 미술관 정문 포털 `frontend/js/portal.js` 가 8-23 강등 뒤 **12일간**
+  `world.html`(world1)로 보냈고, world2 「전시장 들어가기」(`decide/venue-entry.ts` 의
+  `VENUE_PAGE`)는 지금도 flagged 인 `visit.html` 로 간다. GS-3(`tests/verification-tier.test.ts`
+  `it('CLAUDE.md 의 behind-flag 문장과 flagged 배열이 양방향으로 일치한다')` 류)은 **산문 ↔
+  배열**만 대조하고 실제 참조는 안 본다. 그래서 `entrypoints.mjs` 의 *"어디에도 링크하지
+  않는다"* 가 두 항목에서 거짓인 채 초록이었다 — 그 코드(world.js·visit.js)는 판정기가
+  3등급(검수 이연)으로 내려 라이브 도달 코드가 이연 등급인 상태였다.
+  포털은 오늘 `world2.html` 로 고쳤다(팀장 조건 C5). **검사는 아직 없다.**
+  처방: 라이브(exposure live) HTML·JS 에서 `*.html` 참조를 전부 걷어 `entrypoints.mjs` 의
+  exposure 와 대조하는 테스트. flagged 로 가는 참조가 있으면 FAIL. **뮤테이션 필수** —
+  portal.js 를 `world.html` 로 되돌려 실제로 깨지는지, 그리고 `visit.html` 참조를 어떻게
+  다룰지(아래 G-VISIT 의 결정이 선결)를 함께 적는다.
+  → 재론 조건: G-VISIT 결정 회차(그 결정 없이는 검사가 지금 상태를 빨간불로 만든다).
+
+- **G-VISIT — world2 「전시장 들어가기」가 behind-flag 인 `visit.html` 로 링크한다. 노출
+  상태를 정해야 한다.** 선택지: (i) `visit.html` 을 live 로 승격 — §10-3 누적 검수 +
+  GS-3 양방향 수정 + `verification-tier` flagged 배열 (ii) 문을 다른 라이브 페이지로 돌린다.
+  감독 판정 2026-08-23·24 로 만든 기능이라 (ii) 는 그 기능을 바꾸는 것이고, (i) 는 검수
+  비용이다. **팀장·감독 판정 사안** — 부팀장이 고르지 않는다.
+
 ### 뮤테이션 하네스 — 전면 구축 이연 (2026-08-26 등재, 팀장 판정)
 
 - **G-MUT — 팀장 구속 지시(뮤테이션을 손조립에서 구조로)의 전면 집행이 이연됐다.**
@@ -315,6 +346,22 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
   ⓑ 거리 기반 인스턴스 스케일다운 ⓒ 격자 셀 단위 거리 컬링.
   → 재론 조건: 예열(`G-W8M`) 처방 후에도 감독이 프레임을 신고하는 회차. **예열이
   히칭을 없애면 평균 fps 는 44 로 견딜 만하므로 순서상 그 뒤다.**
+
+  **⚠ 2026-09-04 갱신 — «35배» 의 분모와 분자가 둘 다 흔들린다(정적 실측 + 팀장 판정).**
+  GLB 정적 총합은 1,358,918 이고 그중 94.1% 가 소품 4종 반복(가로등 갓 140tri × 3,182 =
+  547k)이며 고유 지오 삼각형 합은 3,808 이다. 실측 2,110,989 와의 차 752k 는 GLB 밖(잔디
+  이론 상한 1,240,000)인데 내역은 브라우저 없이 분해 못 했다. `TRI_BUDGET 60,000` 은
+  **유도된 값이 아니고** 주석 원문 *"tri 를 84,526 에서 41k 로 절반 깎았는데 fps 는 25→26"*
+  은 삼각형이 병목이 아니었다는 실측이다. `applyTierPressure` 는 world2 에서도 주입 0건 —
+  위 «world2 는 파셀 LOD 로 집행» 전제는 코드로 확인되지 않는다.
+  **팀장 판정(2026-09-04)**: 처방 순서 **P3 → P0 → P1(조건부)**, ⓑ는 삼각형을 안 줄여
+  제외, ⓒ(거리 컬링)는 이미 있음. P3 = PR #287 병합 + `pack-instances.mjs` 를 배포 조립에
+  연결(저장소 GLB 는 펼친 형식 유지, 왕복 테스트 + 뮤테이션, 검수관 §10-4). P0 = 헤드리스
+  `renderer.info.render.triangles` 4분면(잔디·GLB·그림자 on/off) 표로 이 항목의 «35배» 를
+  교체하고 `TRI_BUDGET` 에 「유도되지 않은 값·관측 전용」 명기. P1 = 세분도 프리셋 SSOT
+  한 곳 + `?lod=` 노브로 링크 판정, 「차이 있음」일 때만 기본값 변경. 감독 상위 근거:
+  *"블렌더에서 만든씬을 너가 최적화 해서 넣어야지. 인스턴스화할수있는것은 하고."*
+  전문은 `docs/BOARD.md` 2026-09-04 팀장 항목 — 여기 다시 적지 않는다.
 
 - **G-W8O — 드로우콜을 감독이 볼 수 없다** (2026-08-26 등재).
   `features/npc.ts` 와 `world-shared/glb-city.ts` 가 `drawGroupKey: () => null` 을

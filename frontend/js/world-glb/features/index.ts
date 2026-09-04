@@ -59,6 +59,7 @@ import { surfacePaintFeature } from './surface-paint.js';
 import { grassFeature } from './grass.js';
 import { waterStyleFeature } from './water-style.js';
 import { terrainStyleFeature } from './terrain-style.js';
+import { groundFogFeature } from './ground-fog.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -117,6 +118,13 @@ export const FEATURES: readonly Feature[] = [
   // 넣든 그 결과 위에서 동작해야 한다. 여기서 한 줄을 지우면 후보정이 통째로 빠지고
   // 어댑터는 기본 렌더 경로로 남는다.
   postfxFeature,
+  // ── 지면 안개 (`?fogs=` · `?fogh=` · `?fogk=`) ─────────────────────────────
+  // 감독 카드 판정 2026-09-04 「리얼 안개 — 바닥에 깔리는 높이 안개까지」. `scene.fogNode`
+  // 에 층을 하나 얹는다(WebGPU 전용, 부팅 1회). **기본 세기 0 이라 노브 없이는 `create`
+  // 가 `null`** — 감독이 링크로 고르기 전에는 라이브 화면을 바꾸지 않는다. 순서는 무관하다
+  // (씬 속성 하나를 달 뿐 다른 기능의 씬 그래프를 안 만진다). 식·근거는
+  // `world-shared/ground-fog.ts` 한 곳.
+  groundFogFeature,
 ];
 
 /**

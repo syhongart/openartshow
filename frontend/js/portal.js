@@ -3,7 +3,7 @@
 // 라이브 미술관 런타임(main/player/artworks/config)을 일절 수정하지 않고, main.js가 노출한
 // window.__museum({scene,camera,renderer})만 소비해 남쪽 정문(유리 커튼월 z=+8) 앞 중앙에
 // 시안 발광 프레임 게이트를 더한다. 프레임 안엔 절차 생성 야간 도시 프리뷰(기본 하늘=야간맑음과 정합),
-// 프레임 앞 바닥엔 정방향 한글 "오픈월드" 발광 라벨. 근접 안내 + 클릭/통과로 world.html 이동.
+// 프레임 앞 바닥엔 정방향 한글 "오픈월드" 발광 라벨. 근접 안내 + 클릭/통과로 라이브 오픈월드(`OPENWORLD_PAGE`) 이동.
 // 전부 자작 지오메트리·절차 텍스처(외부 에셋 0). CSP 무변경(로컬 모듈·같은 오리진 링크).
 import * as THREE from 'three';
 import { mergeGeometries } from '../utils/BufferGeometryUtils.js';
@@ -109,7 +109,17 @@ function ensureHint() {
   document.body.appendChild(hintEl);
 }
 
-function go() { if (navigated) return; navigated = true; if (hintEl) hintEl.style.opacity = '0'; location.href = 'world.html'; }
+// ── 목적지 — 라이브 오픈월드 **한 곳**을 가리킨다 (2026-09-04) ──────────────
+// 2026-08-23 PR #260 이 랜딩의 «오픈월드 입장» 을 `world2.html` 로 바꾸며 `world.html`
+// (world1)을 flagged 로 강등했는데, **이 정문 포털은 그대로 world1 을 가리키고 있었다.**
+// 그래서 방문자가 랜딩에서 들어가면 world2, 미술관 안에서 정문으로 나가면 world1 로
+// 갈라졌고, 그 world1 코드는 검증 등급 판정기가 3등급(검수 이연)으로 내려 앞으로의
+// 수정이 검수를 안 타는 상태였다 — 라이브 도달 코드가 이연 등급인 구멍.
+// 팀장 조건 C5(2026-09-04): 승격과 무관하게 지금 꿴다. 되돌리기는 이 문자열 한 줄.
+// 왜 검사가 못 잡았나: GS-3 은 CLAUDE.md 산문 ↔ flagged 배열만 대조하고 **실제 href /
+// location 대입은 안 본다.** 그 검사는 백로그 등재(같은 회차) — 여기 다시 적지 않는다.
+const OPENWORLD_PAGE = 'world2.html';
+function go() { if (navigated) return; navigated = true; if (hintEl) hintEl.style.opacity = '0'; location.href = OPENWORLD_PAGE; }
 
 function tick() {
   requestAnimationFrame(tick);
