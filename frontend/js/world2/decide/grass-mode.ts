@@ -31,7 +31,14 @@ import { GRASS_RINGS, type GrassRing } from './grass.js';
 export const GRASS_MODES = ['blade', 'quad', 'cross'] as const;
 export type GrassMode = (typeof GRASS_MODES)[number];
 
-/** 라이브 기본. 감독 판정 전 — 바꾸면 `tests/world2-grass-mode.test.ts` 가 빨간불이다 */
+/**
+ * **world2(라이브)의 기본은 3D 잎(blade) 그대로다.** 감독 판정 2026-09-05 「2D 잎」은
+ * **월드8** 에 대한 답이고(`world-glb/decide/grass-mode.ts` 의 이 상수가 `quad` — 그 파일의
+ * 사고 기록도 함께 읽어라), world2 의 3D 잔디는 2026-08-21 *"응 승인"* 화면이다 — 감독이
+ * 문제라고 하지 않은 것에 새 축을 열지 않는다(0번 원칙). 두 트리의 이 파일이 **이 상수 한
+ * 줄만** 다르다는 것을 `tests/world-glb-grass-default.test.ts` 가 지킨다. 바꾸면
+ * `tests/world2-grass-mode.test.ts` 도 빨간불이다.
+ */
 export const GRASS_MODE_DEFAULT: GrassMode = 'blade';
 
 /**

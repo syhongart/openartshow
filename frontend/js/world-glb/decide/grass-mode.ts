@@ -31,7 +31,29 @@ import { GRASS_RINGS, type GrassRing } from './grass.js';
 export const GRASS_MODES = ['blade', 'quad', 'cross'] as const;
 export type GrassMode = (typeof GRASS_MODES)[number];
 
-/** 라이브 기본. 감독 판정 전 — 바꾸면 `tests/world2-grass-mode.test.ts` 가 빨간불이다 */
+/**
+ * **월드7·8 의 기본은 2D 잎(quad)이다 — 감독 판정 2026-09-05.** 단, 아래 사고를 함께 읽어라.
+ *
+ * 감독은 링크(잔디 없음 · 「3D」 · quad · cross · quad+glod=14)를 실기기(WebGPU)로 보고
+ * 카드로 답했다: 룩 = **「2D 잎(마디 3)」**, 원인 = **「잔디 없으면 부드럽다」**.
+ *
+ * ⚠ **사고 — 그 「3D」 링크는 실제로는 이 값이 이미 `quad` 인 채 배포된 것이었다.**
+ * 커밋 `5f217ba2`(세로 마디)에서 이 상수가 `'blade'` → `'quad'` 로 바뀌어 들어갔다.
+ * 경위: 검수관이 **원본 워킹트리**에서 뮤테이션(M1: 기본값을 `quad` 로)을 심은 순간, 부팀장의
+ * world2 → world-glb 동기 복사가 그 파일을 읽어 갔다. 검수관은 world2 만 원본으로 되돌렸고
+ * world-glb 사본에는 뮤테이션이 남은 채 `git add -A` 로 커밋·배포됐다. 두 프로세스가 같은
+ * 워킹트리를 쓴 사고(백로그 G-LOCK 의 형태)이고, 검수관에게 «원본에서 치환 + 복원» 을
+ * 지시한 것은 부팀장이다 — 뮤테이션은 별도 클론에서(DELEGATION B-1).
+ *
+ * 그래서 감독 판정의 유효 범위는 이렇다: ① 「잔디 없으면 부드럽다」 = **quad 잔디(0.9M tri)
+ * 로도 아직 끊긴다** — 잔디가 원인이라는 실기기 판정(유효). ② 「2D 잎」 선택은 월드8 에서
+ * 3D 와 **비교하지 않은** 선택이다(3D 링크가 3D 가 아니었다). 값은 감독 판정대로 `quad` 로
+ * 두되, 진짜 3D(`?gmode=blade`)·더 가벼운 후보(`?gseg=1`, `?gden=0.5`)를 링크로 다시 드린다.
+ *
+ * world2(라이브)는 `blade` 그대로(2026-08-21 승인 화면, 0번 원칙). 두 트리의 이 파일이
+ * **이 상수 한 줄만** 다르다는 것을 `tests/world-glb-grass-default.test.ts` 가 지킨다.
+ * 기각 cross·glod 코드 제거는 다음 PR 팀장 확인 1회(C-6).
+ */
 export const GRASS_MODE_DEFAULT: GrassMode = 'quad';
 
 /**
