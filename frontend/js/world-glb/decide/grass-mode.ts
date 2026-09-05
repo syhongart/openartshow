@@ -108,9 +108,12 @@ export function quadHalfWidth(tip: number, belly: number, samples = 64): number 
 }
 
 /**
- * 알파 마스크 픽셀(RGBA, 행 0 = 밑동). three 의 `alphaMap` 은 **G 채널**을 읽는다 —
- * 세 채널을 같은 값으로 채워 어느 채널을 읽어도 같다. 캔버스가 아니라 배열로 만드는
- * 이유는 jsdom(테스트)에 캔버스가 없어서이고, `DataTexture` 는 양 백엔드 공통 수단이다.
+ * 알파 마스크 픽셀(RGBA, 행 0 = 밑동). 세 채널을 같은 값으로 채운다 — 첫 판본 주석은
+ * *"three 의 `alphaMap` 은 G 채널을 읽는다"* 라고 적었고 **틀렸다**(검수관 실측 2026-09-05:
+ * `nodes/accessors/MaterialNode.js` 의 alphaMap 경로에는 `.g` 스위즐이 없다 — roughness·
+ * thickness 만 `.g` 를 명시한다). 결과가 안 틀린 이유는 채널을 전부 같게 채웠기 때문이지
+ * 가정이 맞아서가 아니다. 캔버스가 아니라 배열로 만드는 이유는 jsdom(테스트)에 캔버스가
+ * 없어서이고, `DataTexture` 는 양 백엔드 공통 수단이다.
  */
 export function bladeMaskPixels(width: number, height: number, tip: number, belly: number): Uint8Array {
   const prof = bladeMaskProfile(height, tip, belly);
