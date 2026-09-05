@@ -10,7 +10,7 @@
 import * as THREE from 'three/webgpu';
 import { bladeShade } from '../decide/blade-shape.js';
 import {
-  CARD_WIDTH_MUL, cardMaskPixels, bladeMaskPixels, quadHalfWidth, type GrassMode,
+  CARD_WIDTH_MUL, cardMaskPixels, bladeMaskPixels, quadHalfWidth, type GrassMode, type EdgeAA,
 } from '../decide/grass-mode.js';
 
 // ── 2D 잎 (감독 *"2디 잔디로 가볍게"*, 팀장 판정 2026-09-05) ─────────────────
@@ -30,25 +30,29 @@ const CARD_MASK_H = 64;
 /** 이 밑은 버린다. 0.5 = 마스크 경계 그대로(양 백엔드 공통 수단 — `ShaderMaterial` 아님) */
 export const MASK_ALPHA_TEST = 0.5;
 
-/** 모드별 마스크 픽셀 — 카드는 잎 N 개, 나머지는 잎 하나 */
-export function maskPixels(mode: GrassMode, tip: number, belly: number, cardBlades: number): { data: Uint8Array; w: number; h: number } {
+/** 모드별 마스크 픽셀 — 카드는 잎 N 개, 나머지는 잎 하나. `aa.maskScale` 이 해상도를 곱한다 */
+export function maskPixels(mode: GrassMode, tip: number, belly: number, cardBlades: number, aa: EdgeAA): { data: Uint8Array; w: number; h: number } {
+  const k = aa.maskScale;
   return mode === 'card'
-    ? { data: cardMaskPixels(CARD_MASK_W, CARD_MASK_H, tip, belly, cardBlades), w: CARD_MASK_W, h: CARD_MASK_H }
-    : { data: bladeMaskPixels(MASK_W, MASK_H, tip, belly), w: MASK_W, h: MASK_H };
+    ? { data: cardMaskPixels(CARD_MASK_W * k, CARD_MASK_H * k, tip, belly, cardBlades), w: CARD_MASK_W * k, h: CARD_MASK_H * k }
+    : { data: bladeMaskPixels(MASK_W * k, MASK_H * k, tip, belly), w: MASK_W * k, h: MASK_H * k };
 }
 
-export function maskTexture(mode: GrassMode, tip: number, belly: number, cardBlades: number): THREE.Texture {
-  const m = maskPixels(mode, tip, belly, cardBlades);
+export function maskTexture(mode: GrassMode, tip: number, belly: number, cardBlades: number, aa: EdgeAA): THREE.Texture {
+  const m = maskPixels(mode, tip, belly, cardBlades, aa);
   const tex = new THREE.DataTexture(m.data, m.w, m.h, THREE.RGBAFormat);
   tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearFilter;
+  // 밉맵은 `?gaa=` 판정 축이다(`decide/grass-mode.ts` «잎 윤곽 안티알리아싱»). 알파테스트와
+  // 겹치면 멀리서 잎이 사라질 수 있어 기본은 끈다 — 화면으로 판정한다.
+  tex.minFilter = aa.mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+  tex.generateMipmaps = aa.mipmaps;
   tex.needsUpdate = true;
   return tex;
 }
 
 /** 슬라이더가 잎 배(`gbelly`)를 바꾸면 마스크도 같은 프로파일로 다시 채운다 — 텍스처 개수 불변 */
-export function refillMask(tex: THREE.Texture, mode: GrassMode, tip: number, belly: number, cardBlades: number): void {
-  (tex.image as { data: Uint8Array }).data.set(maskPixels(mode, tip, belly, cardBlades).data);
+export function refillMask(tex: THREE.Texture, mode: GrassMode, tip: number, belly: number, cardBlades: number, aa: EdgeAA): void {
+  (tex.image as { data: Uint8Array }).data.set(maskPixels(mode, tip, belly, cardBlades, aa).data);
   tex.needsUpdate = true;
 }
 

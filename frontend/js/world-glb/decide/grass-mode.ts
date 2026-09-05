@@ -150,6 +150,38 @@ export function cardDensityMul(blades: number): number {
   return 1 / (n * CARD_SHEETS * CARD_LEAF_SCALE * CARD_WIDTH_MUL);
 }
 
+// ── 잎 윤곽 안티알리아싱 (`?gaa=`) — 감독 *"나뭇잎에 알리아싱이 눈에 거슬리는데. 안티알리아싱하면 비용이 크지?"* (2026-09-05)
+//
+// 답은 **거의 0** 이다. 렌더러는 이미 MSAA 4x(`adapters/renderer.ts` `antialias: true`)를
+// 켜고 있고 그 비용은 지불 중이다. 그런데 MSAA 는 **삼각형 가장자리**만 부드럽게 한다 —
+// 2D 잎·카드의 윤곽은 삼각형이 아니라 `alphaTest` 가 **픽셀 단위로 버린** 자리라 4 샘플이
+// 전부 같은 판정을 받고 계단이 그대로 남는다. 그 자리를 잡는 수단이 셋이고 전부 파이프라인
+// 재구성 없이 붙는다:
+//   ① alpha-to-coverage — 알파값을 MSAA 커버리지 마스크로 바꾼다. 컷 윤곽이 4단계로 섞인다.
+//      GPU 가 이미 하는 MSAA 리졸브를 그대로 쓰므로 추가 비용 0. three WebGPU 빌드가 지원한다
+//      (`three.webgpu.js` `if (this.alphaToCoverage && samples > 1)`).
+//   ② 밉맵 — 마스크가 화면에서 텍셀보다 작아지면(멀리) 반짝임 알리아싱이 난다. 밉맵은 텍스처
+//      1장의 1/3 메모리. ⚠ 알파테스트 + 밉맵은 멀리서 **잎이 사라지는** 흔한 문제가 있다
+//      (평균화된 알파가 0.5 아래로 내려간다). 후보로 열어 화면으로 본다.
+//   ③ 마스크 해상도 — 카드 0.35m 에 64px 면 잎 폭 2.8cm 가 5px 이라 가까이서 계단. 4배면
+//      256×256 RGBA = 256KB, 텍스처 개수는 그대로 1.
+// 비용이 **큰** 안티알리아싱은 TAA·SSAA 이고 여기서는 필요 없다 — 문제가 알파 컷 윤곽이라서다.
+// 후보는 누적형이다(레벨이 오르면 앞 수단을 포함한다). 기본값은 판정 뒤 굽는다.
+
+export const GRASS_AA_DEFAULT = 0;
+export const GRASS_AA_MAX = 3;
+export const AA_MASK_SCALE = 4;
+export interface EdgeAA {
+  alphaToCoverage: boolean;
+  mipmaps: boolean;
+  /** 마스크 해상도 배율(가로·세로) */
+  maskScale: number;
+}
+export function edgeAA(level: number): EdgeAA {
+  const l = Math.max(0, Math.min(GRASS_AA_MAX, Math.round(level)));
+  return { alphaToCoverage: l >= 1, mipmaps: l >= 2, maskScale: l >= 3 ? AA_MASK_SCALE : 1 };
+}
+
 /** 카드 안 잎 하나의 배치(결정적 난수 — 같은 인자면 같은 카드) */
 export interface CardLeaf {
   /** 밑동 x (카드 폭 비율 0~1) */ cx: number;

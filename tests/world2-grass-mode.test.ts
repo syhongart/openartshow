@@ -17,7 +17,8 @@ import * as THREE from 'three';
 import {
   GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_SEG_DEFAULT, triPerBlade,
   ringModes, meshGroups, groupTriangles, bladeMaskProfile, bladeMaskPixels, quadHalfWidth,
-  CARD_BLADES_DEFAULT, CARD_WIDTH_MUL, CARD_LEAF_SCALE, CARD_SHEETS, cardDensityMul, cardLeaves, cardMaskPixels,
+  CARD_BLADES_DEFAULT, CARD_WIDTH_MUL, CARD_LEAF_SCALE, CARD_SHEETS, cardDensityMul,
+  edgeAA, AA_MASK_SCALE, GRASS_AA_DEFAULT, cardLeaves, cardMaskPixels,
 } from '../frontend/js/world2/decide/grass-mode.js';
 import { BLADE_NODES, halfWidthProfile } from '../frontend/js/world2/decide/blade-shape.js';
 import { GRASS_RINGS, ringCounts, BLADE_TIP } from '../frontend/js/world2/decide/grass.js';
@@ -242,5 +243,36 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     const { meshes } = await mountGrass('?styl=1&gmode=hexagon');
     expect(meshes).toHaveLength(1);
     expect(meshes[0].geometry.index?.count).toBe(8 * 3);
+  });
+});
+
+type MaskTex = { image: { width: number }; generateMipmaps: boolean; minFilter: number };
+
+describe('잎 윤곽 AA (`?gaa=`) — 감독 «나뭇잎에 알리아싱» 2026-09-05', () => {
+  it('판정: 누적형 — 0 은 전부 끔(라이브 그대로), 1 a2c, 2 +밉맵, 3 +마스크 해상도', () => {
+    expect(GRASS_AA_DEFAULT).toBe(0);
+    expect(edgeAA(0)).toEqual({ alphaToCoverage: false, mipmaps: false, maskScale: 1 });
+    expect(edgeAA(1)).toEqual({ alphaToCoverage: true, mipmaps: false, maskScale: 1 });
+    expect(edgeAA(2)).toEqual({ alphaToCoverage: true, mipmaps: true, maskScale: 1 });
+    expect(edgeAA(3)).toEqual({ alphaToCoverage: true, mipmaps: true, maskScale: AA_MASK_SCALE });
+    expect(edgeAA(99)).toEqual(edgeAA(3));
+    expect(edgeAA(-1)).toEqual(edgeAA(0));
+  });
+
+  it('집행: ?gmode=card&gaa=3 → a2c 켜짐 · 밉맵 필터 · 마스크 64→256', async () => {
+    const base = await mountGrass('?styl=1&gmode=card');
+    const aa = await mountGrass('?styl=1&gmode=card&gaa=3');
+    const mb = base.meshes[0].material as unknown as { alphaToCoverage: boolean; alphaMap: MaskTex };
+    const ma = aa.meshes[0].material as unknown as { alphaToCoverage: boolean; alphaMap: MaskTex };
+    expect(mb.alphaToCoverage).toBe(false);
+    expect(ma.alphaToCoverage).toBe(true);
+    expect(mb.alphaMap.image.width).toBe(64);
+    expect(ma.alphaMap.image.width).toBe(64 * AA_MASK_SCALE);
+    expect(mb.alphaMap.generateMipmaps).toBe(false);
+    expect(ma.alphaMap.generateMipmaps).toBe(true);
+    expect(ma.alphaMap.minFilter).toBe(THREE.LinearMipmapLinearFilter);
+    expect(mb.alphaMap.minFilter).toBe(THREE.LinearFilter);
+    // 개수 불변: 텍스처는 여전히 한 장, 메시도 하나
+    expect(aa.meshes).toHaveLength(1);
   });
 });
