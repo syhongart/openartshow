@@ -144,6 +144,14 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
 ## 기타 대기 항목
 
+- **G-FRZ1 — 동결 게이트(`check:filesize`)가 값 옆 판정 기록을 밀어낸다** (2026-09-05 등재,
+  팀장 조건 C-5b). `check:filesize` 는 **주석 줄까지 센다.** baseline 동결 파일(69개)은 한 줄도
+  못 커지므로, CLAUDE.md 의 «판정을 값 **옆에** 기록한다» 규율과 **구조적으로 충돌**한다 —
+  첫 실물: `decide/grass.ts`(509줄 동결)의 `BLADE_W` 재판정 문단이 517줄이 되어 gate FAIL,
+  문단을 `grass-mode.ts` 로 옮기고 포인터 한 줄로 넘겼다(팀장 추인, PR #291). 이번은 포인터로
+  됐지만 **세 번째부터는 포인터가 포인터를 가리킨다.** 해법 후보(주석 줄 제외 / 동결 파일별
+  예외 예산)는 설계 분기라 팀장 회차 1건으로 올린다. 지금 고치지 않는다.
+
 - **G-WSB1 — `world-shared` 경계 검사(R1~R4)가 world-glb(월드7·8)를 스캔 대상에서 뺀다**
   (2026-09-04 등재, 검수관 권고 P2). `tests/world-shared-boundary.test.ts` 의 `WORLDS = ['world2',
   'world3','world5']` 라 world-glb → world-shared 역참조·world-glb 가 다른 세계를 import 하는
