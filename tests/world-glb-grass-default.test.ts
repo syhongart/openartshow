@@ -7,22 +7,28 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { GRASS_MODE_DEFAULT as W2 } from '../frontend/js/world2/decide/grass-mode.js';
-import { GRASS_MODE_DEFAULT as W8 } from '../frontend/js/world-glb/decide/grass-mode.js';
+import { GRASS_MODE_DEFAULT as W2, GRASS_SEG_DEFAULT as S2 } from '../frontend/js/world2/decide/grass-mode.js';
+import { GRASS_MODE_DEFAULT as W8, GRASS_SEG_DEFAULT as S8 } from '../frontend/js/world-glb/decide/grass-mode.js';
 
 describe('잔디 기본 모드 — 세계별 감독 판정', () => {
   it('world2(라이브)는 blade — 2026-08-21 승인 화면 그대로', () => {
     expect(W2).toBe('blade');
   });
 
-  it('world-glb(월드7·8)는 quad — 2026-09-05 감독 카드 «2D 잎(마디 3)»', () => {
+  it('world-glb(월드7·8)는 quad · 마디 1 — 2026-09-05 감독 카드 «2D 잎» → 재비교 «③ 2D 마디 1»', () => {
     expect(W8).toBe('quad');
+    expect(S8).toBe(1);
   });
 
-  it('두 트리의 grass-mode.ts 는 헤더·기본값 독블록 밖에서 같다', () => {
+  it('world2 의 2D 노브 기본 마디는 3 그대로 — 감독 «살랑살랑» 이 만든 값, world2 기본은 어차피 blade', () => {
+    expect(S2).toBe(3);
+  });
+
+  it('두 트리의 grass-mode.ts 는 헤더·기본값(모드·마디) 독블록 밖에서 같다', () => {
     const strip = (p: string) => readFileSync(p, 'utf8')
       .split('\n').slice(1).join('\n')
-      .replace(/\/\*\*[^]*?\*\/\nexport const GRASS_MODE_DEFAULT[^\n]*\n/, 'DEFAULT\n');
+      .replace(/\/\*\*[^]*?\*\/\nexport const GRASS_MODE_DEFAULT[^\n]*\n/, 'DEFAULT\n')
+      .replace(/(?:\/\*\*[^]*?\*\/\n)?export const GRASS_SEG_DEFAULT[^\n]*\n/, 'SEG\n');
     expect(strip('frontend/js/world-glb/decide/grass-mode.ts')).toBe(strip('frontend/js/world2/decide/grass-mode.ts'));
   });
 });
