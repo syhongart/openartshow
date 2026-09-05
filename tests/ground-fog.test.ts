@@ -78,8 +78,9 @@ describe('지면 안개 — 식', () => {
 });
 
 describe('지면 안개 — 기본값과 경계', () => {
-  it('기본 세기 0 — 감독 판정 전에는 라이브 화면을 바꾸지 않는다', () => {
-    // 판정이 나면 값을 옮기고 이 단언과 `world-shared/ground-fog.ts` 의 주석을 함께 고친다.
+  it('기본 세기 0 — 감독 확정값(2026-09-05 "기본이 낫다"). 라이브에 지면 안개는 없다', () => {
+    // 후보 셋 vs 대조군을 실기기로 본 판정이다. 이 값을 바꾸려면 감독의 새 발화가 먼저다 —
+    // `world-shared/ground-fog.ts` 의 기본값 주석(경계) 참조.
     expect(GROUND_FOG_STRENGTH).toBe(0);
     expect(DEFAULT_GROUND_FOG.strength).toBe(0);
     expect(groundFogEnabled(DEFAULT_GROUND_FOG)).toBe(false);
