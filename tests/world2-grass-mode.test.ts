@@ -134,7 +134,7 @@ describe('잎 모드 — 판정(순수)', () => {
 });
 
 describe('다발 카드(card) — 판정(순수)', () => {
-  it('삼각형 — 카드는 십자와 같은 지오(4·seg), 밀도 환산은 1/잎 수', () => {
+  it('삼각형 — 카드는 십자와 같은 지오(4·seg), 밀도 환산은 잎 면적 등가', () => {
     expect(triPerBlade('card', 3)).toBe(12);
     expect(triPerBlade('card', 1)).toBe(4);
     // 잎 면적 등가 — 1/N(삼각형 등가)이면 덮임이 43% 로 준다(2026-09-05 감독 «이상해»).
@@ -145,6 +145,30 @@ describe('다발 카드(card) — 판정(순수)', () => {
     expect(cardDensityMul(1)).toBeCloseTo(1 / area(1), 10);
     expect(CARD_BLADES_DEFAULT).toBe(6);
     expect(CARD_WIDTH_MUL).toBeGreaterThan(1);
+  });
+
+  it('독립 검증: 마스크 픽셀로 잰 실제 덮임 × 배율이 0.5~1.0 — 식을 복제하지 않는다 (검수관 권고 ②)', () => {
+    // 카드 한 장의 불투명 면적(월드 단위) = 불투명 픽셀 비율 × 카드 폭 비 × 시트 투영 수.
+    // quad 잎 = 불투명 픽셀 비율 × 1. 둘의 비 R(N) 에 cardDensityMul(N) 을 곱하면 «같은 덮임»
+    // 이면 1 이다. 검수관 실측(2026-09-05)은 N=6 0.65 · N=10 0.56 — 근사라 1 이 아니고,
+    // CARD_SHEETS 를 2 로 오염시키면 N=6 이 0.41 로 떨어져 하한을 깬다(뮤테이션 M7 검출).
+    // 시트 투영 계수는 CARD_SHEETS 를 **쓰지 않고** 여기서 다시 유도한다 — 직교 두 장의 투영 폭
+    // |cos θ|+|sin θ| 의 0~90° 평균을 수치 적분. 첫 판본은 CARD_SHEETS 를 곱해 cardDensityMul 의
+    // 같은 인자와 상쇄됐고 M7(CARD_SHEETS=2)이 통과했다 — 그것이 동어반복의 형태다.
+    let sheets = 0; const K = 4096;
+    for (let i = 0; i < K; i++) { const th = ((i + 0.5) / K) * (Math.PI / 2); sheets += Math.cos(th) + Math.sin(th); }
+    sheets /= K;
+    const W = 256, H = 256;
+    const opaque = (px: Uint8Array) => { let n = 0; for (let i = 0; i < px.length; i += 4) if (px[i] >= 128) n++; /* R 채널 — 알파는 255 고정 */ return n / (px.length / 4); };
+    const quad = opaque(bladeMaskPixels(64, W, BLADE_TIP, 1));
+    for (const n of [3, 6, 10, 12]) {
+      let sum = 0; const seeds = 8;
+      for (let seed = 1; seed <= seeds; seed++) sum += opaque(cardMaskPixels(W, H, BLADE_TIP, 1, n, seed));
+      const cardArea = (sum / seeds) * CARD_WIDTH_MUL * sheets;
+      const relative = (cardArea / quad) * cardDensityMul(n);
+      expect(relative, `N=${n}`).toBeGreaterThan(0.5);
+      expect(relative, `N=${n}`).toBeLessThan(1.0);
+    }
   });
 
   it('카드 잎 배치는 결정적이고 카드 안에 있다', () => {
