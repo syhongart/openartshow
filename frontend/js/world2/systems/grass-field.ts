@@ -59,6 +59,12 @@ export interface GrassFieldOpts {
    * 박혀 슬라이더가 무력해진다(`ui/knob-bar.ts` 가 `value()` 를 함수로 받는 것과 같은 이유).
    */
   readonly toneHex: (idx: number) => number;
+  /**
+   * 이 필드가 맡는 링 인덱스. 없으면 전부. `?glod=` 로 잎 모드가 링마다 갈리면 메시가
+   * 둘이 되고 각 필드는 자기 링만 심는다 — 다른 링의 개수는 0 으로 둔다(팀장 C-2).
+   * 링 인덱스·솔트(`ri * 7919`)는 그대로라 같은 링은 어느 필드가 맡아도 같은 자리에 선다.
+   */
+  readonly rings?: readonly number[];
 }
 
 /**
@@ -85,7 +91,8 @@ export class GrassField {
 
   constructor(opts: GrassFieldOpts) {
     this.o = opts;
-    this.counts = ringCounts(opts.radiusMul, opts.densityMul);
+    const all = ringCounts(opts.radiusMul, opts.densityMul);
+    this.counts = opts.rings ? all.map((c, r) => (opts.rings!.includes(r) ? c : 0)) : all;
     this.active = this.counts.reduce((a, b) => a + b, 0);
     this.tileX = new Float64Array(this.active).fill(Number.NaN);
     this.tileZ = new Float64Array(this.active).fill(Number.NaN);
