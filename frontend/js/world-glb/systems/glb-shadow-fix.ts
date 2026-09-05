@@ -36,6 +36,7 @@
 // import** 한다. `measure` 는 이 회차에 export 로 열었고 그 이유가 그 함수 주석에 있다.
 
 import { PARTS } from '../parts/index.js';
+import { eachPlacement, type ThreeMath } from './glb-placement.js';
 import {
   paintBlob, casterProfiles, SHADOW_ATLAS_PX, SHADOW_DRAW_PX,
 } from '../parts/shadow.js';
@@ -142,30 +143,38 @@ const key = (x: number, z: number) => `${x.toFixed(3)}|${z.toFixed(3)}`;
  *
  * ⚠⚠ **world7 안전**(팀장 조건 3): `shadow:` 재질이 없으면 아무것도 안 한다. 치수를
  * 못 구하는 kind(캐스터 메시가 GLB 에 없다)도 **건너뛴다** — 임의 GLB 에서 깨지지 않는다.
+ *
+ * ⚠⚠⚠ **인스턴스 입력에서도 «하나씩» 고친다**(2026-08-28). 첫 판본은 노드 속성을 직접
+ * 만졌고, 그러면 `InstancedMesh` 에서 **그 묶음의 인스턴스가 전부 같이 바뀐다** —
+ * 데칼마다 크기가 다른데 한 값으로 뭉개는 것이라 조용히 틀린 모양이 나온다(실측:
+ * 8,625개 중 «1개» 만 고쳐진 것으로 세어졌다). `eachPlacement` 가 낱개와 인스턴스를
+ * 같은 것으로 넘겨 주므로 이 함수는 그 차이를 모른다.
  */
-export function fixBoxDecalScale(root: Object3D): { fixed: number; skipped: number } {
+export function fixBoxDecalScale(
+  root: Object3D, THREE: ThreeMath,
+): { fixed: number; skipped: number } {
   const { byKind } = shapeByKind();
   // ① 캐스터를 좌표로 색인한다. 재질 이름이 `bench#0` 처럼 오므로 kind 로 자른다.
-  const casters = new Map<string, MeshLike>();
+  // ⚠ **값을 복사한다** — `eachPlacement` 가 넘기는 객체는 재사용되므로 참조를 모아두면
+  //    마지막 인스턴스의 값만 남는다(그 파일 주석의 경고 그대로다).
+  const casters = new Map<string, { sx: number; sz: number; ry: number }>();
   const dimsOf = new Map<string, { r: number; rx: number; rz: number } | null>();
-  (root as unknown as { traverse(f: (o: MeshLike) => void): void }).traverse((o) => {
-    if (!o.isMesh || !o.geometry) return;
-    const m = Array.isArray(o.material) ? o.material[0] : o.material;
-    const nm = m?.name;
+  eachPlacement(root as never, THREE, (p) => {
+    if (!p.geometry) return;
+    const nm = p.material?.name;
     if (!nm || nm.startsWith(SHADOW_MAT_PREFIX)) return;
     const kind = nm.replace(/#\d+$/, '');
     if (byKind.get(kind) !== 'box') return;      // 사각 캐스터만 필요하다
-    casters.set(key(o.position.x, o.position.z), o);
+    casters.set(key(p.position.x, p.position.z), { sx: p.scale.x, sz: p.scale.z, ry: p.rotation.y });
     if (!dimsOf.has(kind)) {
-      try { dimsOf.set(kind, measure({ geometry: o.geometry } as never)); }
+      try { dimsOf.set(kind, measure({ geometry: p.geometry } as never)); }
       catch { dimsOf.set(kind, null); }
     }
   });
 
   let fixed = 0, skipped = 0;
-  (root as unknown as { traverse(f: (o: MeshLike) => void): void }).traverse((o) => {
-    if (!o.isMesh) return;
-    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+  eachPlacement(root as never, THREE, (p) => {
+    const m = p.material;
     if (!isShadowMaterial(m)) return;
     const kind = casterKindOf(m!.name!);
     if (byKind.get(kind) !== 'box') return;
@@ -181,16 +190,16 @@ export function fixBoxDecalScale(root: Object3D): { fixed: number; skipped: numb
     // 오늘 화면이 안전했던 것은 그 체크 덕이 아니라 **`box` 프로필이 bench 하나뿐이고
     // bench 가 `sx=sy=sz=1` 로 고정**(`world2/parts/bench.ts:75`)이라 **우연히** 그랬다.
     // 캐스터를 이미 좌표로 찾고 있으므로 그 스케일을 쓰면 전제 자체가 사라진다.
-    const caster = casters.get(key(o.position.x, o.position.z));
+    const caster = casters.get(key(p.position.x, p.position.z));
     if (!caster) { skipped++; return; }
-    const p = decalTransformRect(
-      o.position.x, o.position.z,
-      d.rx * caster.scale.x, d.rz * caster.scale.z, caster.rotation.y,
+    const t = decalTransformRect(
+      p.position.x, p.position.z,
+      d.rx * caster.sx, d.rz * caster.sz, caster.ry,
     );
-    o.scale.x = p.sx;
-    o.scale.z = p.sz;
-    o.rotation.y = p.ry;
-    o.updateMatrix();
+    p.scale.x = t.sx;
+    p.scale.z = t.sz;
+    p.rotation.y = t.ry;
+    p.commit();
     fixed++;
   });
   return { fixed, skipped };
