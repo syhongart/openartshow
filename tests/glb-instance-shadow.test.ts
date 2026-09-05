@@ -292,7 +292,7 @@ describe('AO 데칼 크기·실루엣 복원', () => {
     benchDecal.scale.set(1, 1, 1);
     roundDecal.scale.set(1, 1, 1);
 
-    const r = fixBoxDecalScale(root as never);
+    const r = fixBoxDecalScale(root as never, THREE as never);
     expect(r.fixed, 'box 데칼이 한 건도 안 고쳐졌다').toBe(1);
     expect(r.skipped, '고칠 수 있는데 건너뛰었다').toBe(0);
     // 벤치는 2.8 × 0.88 이므로 x 가 z 보다 뚜렷하게 길어야 한다.
@@ -312,7 +312,7 @@ describe('AO 데칼 크기·실루엣 복원', () => {
       const mat = new THREE.MeshBasicMaterial(); mat.name = n;
       plain.add(new THREE.Mesh(g, mat));
     }
-    const a = fixBoxDecalScale(plain as never);
+    const a = fixBoxDecalScale(plain as never, THREE as never);
     expect(a.fixed + a.skipped, '그림자가 없는데 무언가를 건드렸다').toBe(0);
     expect(applyAtlas(plain as never, {}), '그림자가 없는데 재질을 바꿨다').toBe(0);
 
@@ -320,7 +320,7 @@ describe('AO 데칼 크기·실루엣 복원', () => {
     const orphan = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial(); mat.name = `${SHADOW_MAT_PREFIX}bench#0`;
     const d = new THREE.Mesh(g, mat); d.scale.set(1, 1, 1); orphan.add(d);
-    const b = fixBoxDecalScale(orphan as never);
+    const b = fixBoxDecalScale(orphan as never, THREE as never);
     expect(b.fixed, '치수도 없는데 크기를 바꿨다 — 임의 GLB 가 깨진다').toBe(0);
     expect(b.skipped, '건너뛴 것으로 세지 않았다').toBe(1);
     expect(d.scale.x, '건너뛰었는데 스케일이 변했다').toBe(1);
@@ -347,7 +347,7 @@ describe('AO 데칼 크기·실루엣 복원', () => {
     const decal = put(`${SHADOW_MAT_PREFIX}bench#0`, geo);
     decal.scale.set(1, 1, 1);
 
-    const r = fixBoxDecalScale(root as never);
+    const r = fixBoxDecalScale(root as never, THREE as never);
     expect(r.fixed, '이방성 캐스터의 데칼을 안 고쳤다').toBe(1);
     // 지오가 정육면체(rx = rz)이므로 길쭉함은 **오직 캐스터 스케일에서만** 온다.
     // 역산 방식이면 두 축에 같은 값이 곱해져 이 단언이 깨진다.

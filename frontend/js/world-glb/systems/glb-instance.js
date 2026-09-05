@@ -198,14 +198,42 @@ export function instanceRepeats(root, gridOverride) {
     // (`traverse` 는 `visible=false` 도 방문한다). 셋 다 그대로 옮긴다.
     if (o.isSkinnedMesh || o.morphTargetInfluences?.length || !o.visible) { loose.push(o); return; }
     if (Array.isArray(o.material) || !o.material) { loose.push(o); return; }
+    // ── 🔴 **입력이 이미 인스턴스일 수 있다** (2026-08-28) ────────────────────
+    // `InstancedMesh` 도 `isMesh === true` 라 위 필터를 전부 통과한다. 그것을 낱개
+    // 하나로 취급하면 **인스턴스 행렬이 통째로 버려지고 세계가 사라진다** — 실측:
+    // 배치 28,707개가 40개로 줄었고 **콘솔 에러는 0** 이었다. 화면을 안 보면 안
+    // 드러나는 형태이고, 실제로 세 사람이 그 수치를 세 방향으로 오독했다(실행자
+    // 「최적화됨」· 부팀장 「보정이 안 걸림」· 팀장이 그 표를 판정 근거로 채택).
+    //
+    // 그래서 여기서 **행렬 «목록» 으로 정규화한다.** 셀 판정은 노드가 아니라 행렬마다
+    // 돈다 — 인스턴스가 세계 곳곳에 흩어져 있으므로 노드 하나로 셀을 정하면 컬링이
+    // 다시 죽는다.
+    //
+    // ⚠ world7 은 임의 GLB 를 받으므로 **낱개·접힌 것·섞인 것**이 다 들어온다.
+    //   `EXT_mesh_gpu_instancing` 을 쓰는 파일은 흔하다(블렌더도 낸다).
+    const worlds = [];
+    if (o.isInstancedMesh) {
+      for (let i = 0; i < o.count; i++) {
+        const m = new THREE.Matrix4();
+        o.getMatrixAt(i, m);
+        // 인스턴스 행렬은 **로컬**이다 — 노드의 월드 변환을 앞에 곱해야 세계 좌표가 된다.
+        worlds.push(m.premultiply(o.matrixWorld));
+      }
+    } else {
+      worlds.push(o.matrixWorld.clone());
+    }
+
     // 메시가 **어느 셀에 있는가**를 키에 더한다 — 이것이 컬링을 되살리는 자리다.
     // ⚠ **그림자 데칼만 예외다** — 셀을 빼 전 맵 1벌로 묶는다(위 `SHADOW_MAT_PREFIX`).
-    at.setFromMatrixPosition(o.matrixWorld);
-    const cell = isShadowMaterial(o.material) ? null : cellOf(at);
-    const key = `${cell ?? '*'}|${o.geometry.uuid}|${o.material.uuid}`;
-    let b = buckets.get(key);
-    if (!b) { b = { geo: o.geometry, mat: o.material, mats: [], cell }; buckets.set(key, b); }
-    b.mats.push(o.matrixWorld.clone());
+    const shadow = isShadowMaterial(o.material);
+    for (const world of worlds) {
+      at.setFromMatrixPosition(world);
+      const cell = shadow ? null : cellOf(at);
+      const key = `${cell ?? '*'}|${o.geometry.uuid}|${o.material.uuid}`;
+      let b = buckets.get(key);
+      if (!b) { b = { geo: o.geometry, mat: o.material, mats: [], cell }; buckets.set(key, b); }
+      b.mats.push(world);
+    }
   });
 
   const group = new THREE.Group();
