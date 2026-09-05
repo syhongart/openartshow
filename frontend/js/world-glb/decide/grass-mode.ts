@@ -1,4 +1,4 @@
-// world-glb/decide/grass-mode.ts — **잎을 몇 개의 삼각형으로 그리는가.** 순수 함수만.
+
 //
 // ── 왜 생겼나 (감독 카드 답 2026-09-05) ─────────────────────────────────────
 // 삼각형 실측(백로그 G-W8N 표): world2 1,339,882 중 **잔디가 1,204,968(90%)**, world8 도
@@ -14,6 +14,11 @@
 //   quad   사각 1장(세로 마디 `?gseg=`, 기본 3 → 6tri) + 알파 마스크. 실루엣은 **같은 잎 프로파일에서 유도**한다
 //          (팀장 조건 C-3 — 캔버스에 딴 모양을 다시 그리지 않는다).
 //   cross  quad 두 장을 90° 교차(마디 3 → 12tri). 위에서 봐도 판이 아니다.
+//   card   **다발 카드** — 게임 잔디의 표준. 넓은 사각 두 장 교차에 가는 잎 여러 개를 절차적으로
+//          그린 마스크. 카드 하나가 잎 N 개 몫이라 **인스턴스 수를 1/N 로** 줄인다(정점 셰이더
+//          호출도 1/N). 감독 신고 2026-09-05 *"우리 풀이 옆으로 넓은것 같아. 게임회사는 어떻게
+//          해?"* → 팀장 판정 B-3(카드 구현 + 폭 노브를 한 카드로 비교). 잎 실루엣은 여전히
+//          `halfWidthProfile` 에서 유도(C-3). 밑동 색·뭉침·거리 페이드는 이번 축이 아니다(C-6).
 //
 // ── 기본값은 라이브 그대로 (팀장 조건 C-1) ──────────────────────────────────
 // `GRASS_MODE_DEFAULT = 'blade'` · `GRASS_LOD_DEFAULT = 0` 이면 그룹이 하나(blade)라
@@ -26,9 +31,9 @@
 // 마스크 배열이고, 룩은 감독 실기기 링크가 유일한 판정이다.
 
 import { BLADE_NODES, halfWidthProfile } from './blade-shape.js';
-import { GRASS_RINGS, type GrassRing } from './grass.js';
+import { GRASS_RINGS, bladeHash, type GrassRing } from './grass.js';
 
-export const GRASS_MODES = ['blade', 'quad', 'cross'] as const;
+export const GRASS_MODES = ['blade', 'quad', 'cross', 'card'] as const;
 export type GrassMode = (typeof GRASS_MODES)[number];
 
 /**
@@ -64,13 +69,6 @@ export const GRASS_LOD_DEFAULT = 0;
 export const GRASS_LOD_MAX = 200;
 
 /**
- * 2D 잎의 세로 마디 수 (`?gseg=`). **감독 지시 2026-09-05: *"2디 잔디여도 살랑살랑 게임
- * 쉐이더 처럼 해줘."*** 바람은 정점 셰이더가 `uv.y²` 로 굽히므로 정점이 밑동·끝 두 줄뿐이면
- * 잎이 휘지 않고 **직선으로 기울기만** 한다 — 살랑거림은 마디에서 나온다. 3D 잎은 마디 5
- * (`BLADE_NODES`)다. 기본 3 이면 quad 가 6tri(3D 의 3/4), 1 이면 2tri 인데 뻣뻣하다.
- * 채택값은 감독 링크 판정 뒤 여기로 옮긴다.
- */
-/**
  * **월드7·8 은 마디 1 (2tri) — 감독 판정 2026-09-05 (링크 5 재비교).**
  * 사고 정정 뒤 링크(진짜 3D · 2D 마디 3 · 2D 마디 1 · 밀도 절반 · 마디 1+밀도 절반)를 다시
  * 보고 카드로 답했다: 기본 = **「③ 2D 마디 1」**, 그리고 3D 대비 체감은 **「차이 모르겠다」**.
@@ -85,11 +83,92 @@ export const GRASS_SEG_DEFAULT = 1;
 export const GRASS_SEG_MIN = 1;
 export const GRASS_SEG_MAX = 4;
 
-/** 잎 하나의 삼각형 수. blade 는 마디 수에서 **유도**한다(값을 다시 적지 않는다) */
+/** 잎 하나(카드 모드에서는 카드 하나)의 삼각형 수. blade 는 마디 수에서 **유도**한다 */
 export function triPerBlade(mode: GrassMode, seg: number = GRASS_SEG_DEFAULT): number {
   if (mode === 'blade') return (BLADE_NODES.length - 1) * 2;
   const perSheet = 2 * Math.max(1, Math.round(seg));
-  return mode === 'cross' ? perSheet * 2 : perSheet;
+  return mode === 'cross' || mode === 'card' ? perSheet * 2 : perSheet;
+}
+
+// ── 다발 카드 (`gmode=card`) ─────────────────────────────────────────────────
+
+/** 카드 한 장에 그리는 잎 수(`?gcard=`). 감독 링크 판정 뒤 굽는다 */
+export const CARD_BLADES_DEFAULT = 6;
+export const CARD_BLADES_MIN = 3;
+export const CARD_BLADES_MAX = 12;
+/**
+ * 카드 폭 = 잎 폭 × 이 배수. 잎 폭 `BLADE_W` 0.13m × 2.7 ≈ 0.35m — 게임 카드의 흔한 크기.
+ * 폭 노브(`?gw=`)는 이 위에 곱해진다.
+ */
+export const CARD_WIDTH_MUL = 2.7;
+/**
+ * 카드 안 잎 하나의 반폭 배율(카드 폭 = 1 기준). 프로파일 최대 반폭 0.5 × 0.08 = 0.04 →
+ * 카드 0.35m 에서 잎 폭 ≈ 2.8cm. 게임 잔디 잎은 1~3cm 로 가늘다 — 지금 우리 잎(13cm)이
+ * *"옆으로 넓다"* 로 읽힌 지점이 이 값이다.
+ */
+export const CARD_LEAF_SCALE = 0.08;
+
+//
+// ── «BLADE_W 재판정» — ⚠ 전제가 바뀌었다 (2026-09-05, 팀장 조건 C-5) ───────────────
+// `decide/grass.ts` 의 `BLADE_W` 8-18 판정(*"뾰족가시같아"* → 2.4배)은 **그 자리에 그대로**
+// 있고, 이 절이 그 밑에 이어질 문단이었다 — `check:filesize`(baseline 동결)가 그 파일에 줄을
+// 못 더하게 해 여기로 왔다. 수단만 바꿨고 목적(판정 보존 + 이어 적기)은 같다.
+// 위 2.4배는 **마디 5 짜리 3D 잎** 위에서 난 판정이다. 월드7·8 은 감독 판정으로 **2D 사각
+// 마디 1**(`decide/grass-mode.ts`)이 됐고, 그 위에서 감독이 *"우리 풀이 옆으로 넓은것 같아.
+// 게임회사는 어떻게 해?"* 라고 신고했다. 같은 13cm 가 3D 에서는 «뭉텅이» 였고 2D 판에서는
+// «넓적한 판» 으로 읽힌 것이다 — 값이 틀린 게 아니라 **전제(잎의 형태)가 바뀌어 같은 값이
+// 다른 화면을 만든다.** 재판정은 폭 노브(`?gw=0.4·0.6`)와 다발 카드(`?gmode=card`, 잎 하나가
+// 카드 안에서 ≈2.8cm)를 한 카드로 비교해 받는다. 결과는 여기 이어 적는다.
+
+/** 카드 모드의 밀도 환산 — 카드 하나가 잎 N 개 몫이므로 활성 인스턴스는 1/N */
+export function cardDensityMul(blades: number): number {
+  return 1 / Math.max(1, Math.round(blades));
+}
+
+/** 카드 안 잎 하나의 배치(결정적 난수 — 같은 인자면 같은 카드) */
+export interface CardLeaf {
+  /** 밑동 x (카드 폭 비율 0~1) */ cx: number;
+  /** 높이 비율 0.55~1 */ h: number;
+  /** 끝의 x 기울기(카드 폭 비율, ±0.17) */ lean: number;
+}
+export function cardLeaves(blades: number, seed = 1): CardLeaf[] {
+  const out: CardLeaf[] = [];
+  for (let i = 0; i < blades; i++) {
+    out.push({
+      cx: 0.08 + 0.84 * bladeHash(i * 3 + 1, seed),
+      h: 0.55 + 0.45 * bladeHash(i * 3 + 2, seed),
+      lean: (bladeHash(i * 3 + 3, seed) - 0.5) * 0.35,
+    });
+  }
+  return out;
+}
+
+/**
+ * 다발 카드 마스크 픽셀(RGBA, 행 0 = 밑동). 잎마다 **같은 `halfWidthProfile`** 을
+ * `CARD_LEAF_SCALE` 로 가늘게 쓴다(C-3 유도 — 프로파일을 바꾸면 이 마스크도 바뀐다).
+ */
+export function cardMaskPixels(
+  width: number, height: number, tip: number, belly: number, blades: number, seed = 1,
+): Uint8Array {
+  const leaves = cardLeaves(blades, seed);
+  const px = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const t = y / Math.max(1, height - 1);
+    for (let x = 0; x < width; x++) {
+      const u = (x + 0.5) / width;
+      let on = 0;
+      for (const L of leaves) {
+        if (t > L.h) continue;
+        const tt = t / L.h;
+        const cx = L.cx + L.lean * tt;
+        const half = halfWidthProfile(tt, tip, belly) * CARD_LEAF_SCALE;
+        if (Math.abs(u - cx) <= half) { on = 255; break; }
+      }
+      const o = (y * width + x) * 4;
+      px[o] = on; px[o + 1] = on; px[o + 2] = on; px[o + 3] = 255;
+    }
+  }
+  return px;
 }
 
 /** 링마다 모드를 배정한다. `lod` 안쪽 링은 blade */

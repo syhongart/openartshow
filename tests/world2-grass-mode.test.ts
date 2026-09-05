@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import {
   GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_SEG_DEFAULT, triPerBlade,
   ringModes, meshGroups, groupTriangles, bladeMaskProfile, bladeMaskPixels, quadHalfWidth,
+  CARD_BLADES_DEFAULT, CARD_WIDTH_MUL, cardDensityMul, cardLeaves, cardMaskPixels,
 } from '../frontend/js/world2/decide/grass-mode.js';
 import { BLADE_NODES, halfWidthProfile } from '../frontend/js/world2/decide/blade-shape.js';
 import { GRASS_RINGS, ringCounts, BLADE_TIP } from '../frontend/js/world2/decide/grass.js';
@@ -131,6 +132,42 @@ describe('잎 모드 — 판정(순수)', () => {
   });
 });
 
+describe('다발 카드(card) — 판정(순수)', () => {
+  it('삼각형 — 카드는 십자와 같은 지오(4·seg), 밀도 환산은 1/잎 수', () => {
+    expect(triPerBlade('card', 3)).toBe(12);
+    expect(triPerBlade('card', 1)).toBe(4);
+    expect(cardDensityMul(6)).toBeCloseTo(1 / 6, 10);
+    expect(cardDensityMul(1)).toBe(1);
+    expect(CARD_BLADES_DEFAULT).toBe(6);
+    expect(CARD_WIDTH_MUL).toBeGreaterThan(1);
+  });
+
+  it('카드 잎 배치는 결정적이고 카드 안에 있다', () => {
+    const a = cardLeaves(6), b = cardLeaves(6);
+    expect(a).toEqual(b);
+    expect(a).toHaveLength(6);
+    for (const L of a) {
+      expect(L.cx).toBeGreaterThan(0); expect(L.cx).toBeLessThan(1);
+      expect(L.h).toBeGreaterThan(0.5); expect(L.h).toBeLessThanOrEqual(1);
+      expect(Math.abs(L.lean)).toBeLessThan(0.2);
+    }
+    expect(cardLeaves(6, 2)).not.toEqual(a);
+  });
+
+  it('카드 마스크 — 잎이 많을수록 켜진 픽셀이 늘고, 프로파일(belly)을 바꾸면 마스크가 바뀐다 (C-3)', () => {
+    const w = 64, h = 64;
+    const on = (px: Uint8Array) => { let n = 0; for (let i = 1; i < px.length; i += 4) if (px[i] === 255) n++; return n; };
+    const p3 = cardMaskPixels(w, h, BLADE_TIP, 1, 3);
+    const p10 = cardMaskPixels(w, h, BLADE_TIP, 1, 10);
+    expect(on(p3)).toBeGreaterThan(0);
+    expect(on(p10)).toBeGreaterThan(on(p3));
+    // 가는 잎 — 카드 면적의 절반을 넘지 않는다(넓적한 판이면 카드가 무의미하다)
+    expect(on(p10)).toBeLessThan(w * h * 0.5);
+    expect(cardMaskPixels(w, h, BLADE_TIP, 0, 6)).not.toEqual(cardMaskPixels(w, h, BLADE_TIP, 1, 6));
+    for (let i = 3; i < p3.length; i += 4) expect(p3[i]).toBe(255);
+  });
+});
+
 describe('잎 모드 — 집행(feature 조립)', () => {
   it('노브 없음 → 메시 1 · 인덱스 24(8tri) · 알파맵 없음 · 이름 grass-field (C-1)', async () => {
     const { inst, meshes, diag } = await mountGrass('?styl=1');
@@ -179,6 +216,21 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     // 진단의 삼각형 수도 판정 함수와 같다
     const counts = ringCounts(1, 1);
     expect(two.diag?.triangles).toBe(groupTriangles(meshGroups(ringModes('quad', 14)), counts, 3));
+  });
+
+  it('?gmode=card → 메시 1 · 십자 지오(마디 3 → 12tri) · 알파맵 · 활성 수는 잎 수분의 1', async () => {
+    const one = await mountGrass('?styl=1');
+    const card = await mountGrass('?styl=1&gmode=card');
+    expect(card.meshes).toHaveLength(1);
+    expect(card.meshes[0].geometry.index?.count).toBe(12 * 3);
+    expect(card.meshes[0].material.alphaMap).toBeTruthy();
+    expect(card.diag?.cardBlades).toBe(6);
+    const ratio = (card.diag?.blades as number) / (one.diag?.blades as number);
+    expect(ratio).toBeGreaterThan(1 / 6 * 0.8);
+    expect(ratio).toBeLessThan(1 / 6 * 1.2);
+    // 버퍼(상한)는 그대로가 아니라 활성 수에 맞춘다 — 여기서 재는 것은 활성 수뿐이다
+    const card3 = await mountGrass('?styl=1&gmode=card&gcard=3');
+    expect(card3.diag?.blades as number).toBeGreaterThan(card.diag?.blades as number);
   });
 
   it('모르는 gmode 는 기본(blade)으로 떨어진다 — 노브 오타가 화면을 바꾸지 않는다', async () => {

@@ -35,8 +35,10 @@ import { GrassField } from '../systems/grass-field.js';
 import {
   GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_LOD_MAX,
   GRASS_SEG_DEFAULT, GRASS_SEG_MIN, GRASS_SEG_MAX, triPerBlade,
-  ringModes, meshGroups, groupTriangles, bladeMaskPixels, quadHalfWidth, type GrassMode,
+  CARD_BLADES_DEFAULT, CARD_BLADES_MIN, CARD_BLADES_MAX, cardDensityMul,
+  ringModes, meshGroups, groupTriangles, type GrassMode,
 } from '../decide/grass-mode.js';
+import { MASK_ALPHA_TEST, maskTexture, refillMask, flatGeometry } from './grass-flat.js';
 
 /**
  * 모양 축 하나 — URL 노브와 슬라이더가 **같은 상태를 공유**하게 묶는다.
@@ -109,75 +111,6 @@ function bladeGeometry(tip: number, belly: number, curve: number, spread: number
     const a = k * 2;
     idx.push(a, a + 1, a + 3, a, a + 3, a + 2);
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(idx);
-  return g;
-}
-
-// ── 2D 잎 (감독 *"2디 잔디로 가볍게"*, 팀장 판정 2026-09-05) ─────────────────
-//
-// 사각 한 장(quad, 2tri) 또는 두 장 교차(cross, 4tri). **폭·높이·음영·법선 벌림은 blade 와
-// 같은 함수에서 나온다** — 실루엣만 정점이 아니라 알파 마스크가 깎는다. 마스크도 같은
-// `halfWidthProfile` 에서 유도되므로(`decide/grass-mode.ts`), 감독이 8-18 에 네 번 다듬은
-// 잎 모양 축(`gtip`·`gbelly`)이 2D 에서도 그대로 산다(팀장 조건 C-3 — «무시» 는 반려됐다).
-// 바람은 `positionNode` 가 `uv.y` 로 굽히므로 정점이 2줄뿐이어도 끝이 밀린다.
-
-/** 마스크 해상도. 잎 폭 13cm 가 화면에서 몇 px 안 되므로 16×64 면 계단이 안 보인다 */
-const MASK_W = 16;
-const MASK_H = 64;
-/** 이 밑은 버린다. 0.5 = 마스크 경계 그대로(양 백엔드 공통 수단 — `ShaderMaterial` 아님) */
-const MASK_ALPHA_TEST = 0.5;
-
-function maskTexture(tip: number, belly: number): THREE.Texture {
-  const tex = new THREE.DataTexture(bladeMaskPixels(MASK_W, MASK_H, tip, belly), MASK_W, MASK_H, THREE.RGBAFormat);
-  tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearFilter;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-/** 슬라이더가 잎 배(`gbelly`)를 바꾸면 마스크도 같은 프로파일로 다시 채운다 — 텍스처 개수 불변 */
-function refillMask(tex: THREE.Texture, tip: number, belly: number): void {
-  (tex.image as { data: Uint8Array }).data.set(bladeMaskPixels(MASK_W, MASK_H, tip, belly));
-  tex.needsUpdate = true;
-}
-
-function flatGeometry(mode: Exclude<GrassMode, 'blade'>, tip: number, belly: number, spread: number, ao: number, seg: number): THREE.BufferGeometry {
-  const hw = quadHalfWidth(tip, belly);
-  const nx = Math.sin(spread);
-  const ny = Math.cos(spread);
-  const n = Math.max(1, Math.round(seg));
-  const pos: number[] = [];
-  const uv: number[] = [];
-  const nor: number[] = [];
-  const col: number[] = [];
-  const idx: number[] = [];
-  // 세로 마디 — 감독 *"살랑살랑 게임 쉐이더 처럼"*. 바람이 `uv.y²` 로 굽히므로 마디가 있어야
-  // 잎이 **휜다**(두 줄이면 기울기만). 높이·음영은 blade 와 같은 식(`bladeArc` 는 curve 0 이라 y=t).
-  const sheet = (rotated: boolean) => {
-    const base = pos.length / 3;
-    for (let i = 0; i <= n; i++) {
-      const t = i / n;
-      const g = bladeShade(t, ao);
-      for (const sx of [-1, 1] as const) {
-        const x = sx * hw;
-        if (rotated) { pos.push(0, t, x); nor.push(0, ny, sx * nx); }
-        else { pos.push(x, t, 0); nor.push(sx * nx, ny, 0); }
-        uv.push(sx < 0 ? 0 : 1, t);
-        col.push(g, g, g);
-      }
-    }
-    for (let k = 0; k < n; k++) {
-      const a = base + k * 2;
-      idx.push(a, a + 1, a + 3, a, a + 3, a + 2);
-    }
-  };
-  sheet(false);
-  if (mode === 'cross') sheet(true);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -346,10 +279,14 @@ export const grassFeature: Feature = {
     const mode = readEnum('gmode', GRASS_MODE_DEFAULT, GRASS_MODES);
     const lod = readNum('glod', GRASS_LOD_DEFAULT, 0, GRASS_LOD_MAX);
     const seg = Math.round(readNum('gseg', GRASS_SEG_DEFAULT, GRASS_SEG_MIN, GRASS_SEG_MAX));
+    const cardBlades = Math.round(readNum('gcard', CARD_BLADES_DEFAULT, CARD_BLADES_MIN, CARD_BLADES_MAX));
+    // 카드 모드는 카드 하나가 잎 N 개 몫 — 활성 밀도를 1/N 로 환산한다. 버퍼(MAX_BLADES)는
+    // 그대로이고 활성 수만 준다(팀장 C-2). `mode` 가 card 가 아니면 1 이라 종전과 같다.
+    const fieldDensity = densityMul * (mode === 'card' ? cardDensityMul(cardBlades) : 1);
     const groups = meshGroups(ringModes(mode, lod));
-    const counts = ringCounts(radiusMul, densityMul);
+    const counts = ringCounts(radiusMul, fieldDensity);
     const count = counts.reduce((a, b) => a + b, 0);
-    const mask = groups.some((g) => g.mode !== 'blade') ? maskTexture(tip, belly.get()) : null;
+    const mask = groups.some((g) => g.mode !== 'blade') ? maskTexture(mode, tip, belly.get(), cardBlades) : null;
     const geometryFor = (m: GrassMode) => m === 'blade'
       ? bladeGeometry(tip, belly.get(), BLADE_CURVE, spread.get(), ao.get())
       : flatGeometry(m, tip, belly.get(), spread.get(), ao.get(), seg);
@@ -396,7 +333,7 @@ export const grassFeature: Feature = {
         mesh: mesh as any,
         matrix: new THREE.Matrix4(),
         color: new THREE.Color(),
-        radiusMul, densityMul, heightMul, widthMul,
+        radiusMul, densityMul: fieldDensity, heightMul, widthMul,
         cell: env.cell,
         playerAt: () => {
           const p = env.player.position;
@@ -419,7 +356,7 @@ export const grassFeature: Feature = {
     // WebGPU 파이프라인도 안 는다(attribute 구성이 동일하다). 마스크는 **같은 텍스처를
     // 다시 채운다**(텍스처 개수도 0 델타).
     const rebuild = () => {
-      if (mask) refillMask(mask, tip, belly.get());
+      if (mask) refillMask(mask, mode, tip, belly.get(), cardBlades);
       for (const p of parts) {
         const next = geometryFor(p.group.mode);
         p.mesh.geometry.dispose();
@@ -456,7 +393,7 @@ export const grassFeature: Feature = {
         buffer: parts.reduce((s, p) => s + p.mesh.count, 0),
         rings: counts,
         // 잎 모드 — 감독이 «어느 링크를 보고 있나» 를 여기서 확인한다.
-        mode, lod, seg,
+        mode, lod, seg, cardBlades, fieldDensity,
         groups: groups.map((g) => ({ mode: g.mode, rings: g.rings, triPerBlade: triPerBlade(g.mode, seg) })),
         triangles: groupTriangles(groups, counts, seg),
         radiusMul, densityMul, heightMul, widthMul, tip,
