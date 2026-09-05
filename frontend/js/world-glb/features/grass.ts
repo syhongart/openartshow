@@ -1,5 +1,6 @@
-
+// world-glb/features/grass.ts — 스타일라이즈드 잔디. **켜지지 않으면 씬을 한 번도 안 만진다.**
 //
+
 // 감독 지시 2026-08-18(모바일 게임 광고 화면 참조): *"형태는 단순하게, 색은 강하게,
 // 명암은 크게, 움직임은 적당하게."* 판정은 `decide/grass.ts`, 배선은
 // `systems/grass-field.ts`, 여기는 **조립**만 한다 — 노브를 읽고, 백엔드를 보고, 지오와
@@ -36,6 +37,7 @@ import {
   GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_LOD_MAX,
   GRASS_SEG_DEFAULT, GRASS_SEG_MIN, GRASS_SEG_MAX, triPerBlade,
   CARD_BLADES_DEFAULT, CARD_BLADES_MIN, CARD_BLADES_MAX, cardDensityMul,
+  GRASS_AA_DEFAULT, GRASS_AA_MAX, edgeAA,
   ringModes, meshGroups, groupTriangles, type GrassMode,
 } from '../decide/grass-mode.js';
 import { MASK_ALPHA_TEST, maskTexture, refillMask, flatGeometry } from './grass-flat.js';
@@ -145,7 +147,7 @@ function bladeGeometry(tip: number, belly: number, curve: number, spread: number
  */
 function windMaterial(
   ampMul: number, speedMul: number, gustMul: number, gustPeriod: number, lean: number,
-  alpha: THREE.Texture | null = null,
+  alpha: THREE.Texture | null = null, alphaToCoverage = false,
 ): {
   material: THREE.Material;
   setGust: (mul: number, period: number) => void;
@@ -156,7 +158,7 @@ function windMaterial(
   const mat = new (THREE as any).MeshLambertNodeMaterial({
     side: THREE.DoubleSide, vertexColors: true,
     // 2D 잎만 마스크를 받는다 — blade 는 정점이 실루엣이라 알파가 필요 없다.
-    ...(alpha ? { alphaMap: alpha, alphaTest: MASK_ALPHA_TEST } : {}),
+    ...(alpha ? { alphaMap: alpha, alphaTest: MASK_ALPHA_TEST, alphaToCoverage } : {}),
   });
   const amp = uniform(WIND_AMP * ampMul);
   const spd = uniform(WIND_SPEED * speedMul);
@@ -280,13 +282,15 @@ export const grassFeature: Feature = {
     const lod = readNum('glod', GRASS_LOD_DEFAULT, 0, GRASS_LOD_MAX);
     const seg = Math.round(readNum('gseg', GRASS_SEG_DEFAULT, GRASS_SEG_MIN, GRASS_SEG_MAX));
     const cardBlades = Math.round(readNum('gcard', CARD_BLADES_DEFAULT, CARD_BLADES_MIN, CARD_BLADES_MAX));
+    // 잎 윤곽 AA 후보(`?gaa=`) — 근거·비용·위험은 `decide/grass-mode.ts` «잎 윤곽 안티알리아싱».
+    const aa = edgeAA(readNum('gaa', GRASS_AA_DEFAULT, 0, GRASS_AA_MAX));
     // 카드 모드는 카드 하나가 잎 N 개 몫 — 활성 밀도를 1/N 로 환산한다. 버퍼(MAX_BLADES)는
     // 그대로이고 활성 수만 준다(팀장 C-2). `mode` 가 card 가 아니면 1 이라 종전과 같다.
     const fieldDensity = densityMul * (mode === 'card' ? cardDensityMul(cardBlades) : 1);
     const groups = meshGroups(ringModes(mode, lod));
     const counts = ringCounts(radiusMul, fieldDensity);
     const count = counts.reduce((a, b) => a + b, 0);
-    const mask = groups.some((g) => g.mode !== 'blade') ? maskTexture(mode, tip, belly.get(), cardBlades) : null;
+    const mask = groups.some((g) => g.mode !== 'blade') ? maskTexture(mode, tip, belly.get(), cardBlades, aa) : null;
     const geometryFor = (m: GrassMode) => m === 'blade'
       ? bladeGeometry(tip, belly.get(), BLADE_CURVE, spread.get(), ao.get())
       : flatGeometry(m, tip, belly.get(), spread.get(), ao.get(), seg);
@@ -307,13 +311,13 @@ export const grassFeature: Feature = {
       const alpha = group.mode === 'blade' ? null : mask;
       const geometry = geometryFor(group.mode);
       const built = wind === 'tsl'
-        ? windMaterial(windMul, speedMul, gustMul.get(), gustPer.get(), curve.get(), alpha)
+        ? windMaterial(windMul, speedMul, gustMul.get(), gustPer.get(), curve.get(), alpha, aa.alphaToCoverage)
         : null;
       const material = built
         ? built.material
         : new THREE.MeshLambertMaterial({
           side: THREE.DoubleSide, vertexColors: true,
-          ...(alpha ? { alphaMap: alpha, alphaTest: MASK_ALPHA_TEST } : {}),
+          ...(alpha ? { alphaMap: alpha, alphaTest: MASK_ALPHA_TEST, alphaToCoverage: aa.alphaToCoverage } : {}),
         });
       const groupCount = groups.length === 1 ? count : group.rings.reduce((sum, r) => sum + counts[r], 0);
       const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, Math.min(MAX_BLADES, groupCount)));
@@ -356,7 +360,7 @@ export const grassFeature: Feature = {
     // WebGPU 파이프라인도 안 는다(attribute 구성이 동일하다). 마스크는 **같은 텍스처를
     // 다시 채운다**(텍스처 개수도 0 델타).
     const rebuild = () => {
-      if (mask) refillMask(mask, mode, tip, belly.get(), cardBlades);
+      if (mask) refillMask(mask, mode, tip, belly.get(), cardBlades, aa);
       for (const p of parts) {
         const next = geometryFor(p.group.mode);
         p.mesh.geometry.dispose();
@@ -393,7 +397,7 @@ export const grassFeature: Feature = {
         buffer: parts.reduce((s, p) => s + p.mesh.count, 0),
         rings: counts,
         // 잎 모드 — 감독이 «어느 링크를 보고 있나» 를 여기서 확인한다.
-        mode, lod, seg, cardBlades, fieldDensity,
+        mode, lod, seg, cardBlades, aa, fieldDensity,
         groups: groups.map((g) => ({ mode: g.mode, rings: g.rings, triPerBlade: triPerBlade(g.mode, seg) })),
         triangles: groupTriangles(groups, counts, seg),
         radiusMul, densityMul, heightMul, widthMul, tip,

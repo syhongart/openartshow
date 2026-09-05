@@ -17,7 +17,8 @@ import * as THREE from 'three';
 import {
   GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_SEG_DEFAULT, triPerBlade,
   ringModes, meshGroups, groupTriangles, bladeMaskProfile, bladeMaskPixels, quadHalfWidth,
-  CARD_BLADES_DEFAULT, CARD_WIDTH_MUL, cardDensityMul, cardLeaves, cardMaskPixels,
+  CARD_BLADES_DEFAULT, CARD_WIDTH_MUL, CARD_LEAF_SCALE, CARD_SHEETS, cardDensityMul,
+  edgeAA, AA_MASK_SCALE, GRASS_AA_DEFAULT, cardLeaves, cardMaskPixels,
 } from '../frontend/js/world2/decide/grass-mode.js';
 import { BLADE_NODES, halfWidthProfile } from '../frontend/js/world2/decide/blade-shape.js';
 import { GRASS_RINGS, ringCounts, BLADE_TIP } from '../frontend/js/world2/decide/grass.js';
@@ -133,13 +134,41 @@ describe('잎 모드 — 판정(순수)', () => {
 });
 
 describe('다발 카드(card) — 판정(순수)', () => {
-  it('삼각형 — 카드는 십자와 같은 지오(4·seg), 밀도 환산은 1/잎 수', () => {
+  it('삼각형 — 카드는 십자와 같은 지오(4·seg), 밀도 환산은 잎 면적 등가', () => {
     expect(triPerBlade('card', 3)).toBe(12);
     expect(triPerBlade('card', 1)).toBe(4);
-    expect(cardDensityMul(6)).toBeCloseTo(1 / 6, 10);
-    expect(cardDensityMul(1)).toBe(1);
+    // 잎 면적 등가 — 1/N(삼각형 등가)이면 덮임이 43% 로 준다(2026-09-05 감독 «이상해»).
+    const area = (n: number) => n * CARD_SHEETS * CARD_LEAF_SCALE * CARD_WIDTH_MUL;
+    expect(cardDensityMul(6)).toBeCloseTo(1 / area(6), 10);
+    expect(cardDensityMul(10)).toBeCloseTo(1 / area(10), 10);
+    expect(cardDensityMul(6)).toBeGreaterThan(1 / 6 * 2); // 1/N 규정으로 되돌아가면 깨진다
+    expect(cardDensityMul(1)).toBeCloseTo(1 / area(1), 10);
     expect(CARD_BLADES_DEFAULT).toBe(6);
     expect(CARD_WIDTH_MUL).toBeGreaterThan(1);
+  });
+
+  it('독립 검증: 마스크 픽셀로 잰 실제 덮임 × 배율이 0.5~1.0 — 식을 복제하지 않는다 (검수관 권고 ②)', () => {
+    // 카드 한 장의 불투명 면적(월드 단위) = 불투명 픽셀 비율 × 카드 폭 비 × 시트 투영 수.
+    // quad 잎 = 불투명 픽셀 비율 × 1. 둘의 비 R(N) 에 cardDensityMul(N) 을 곱하면 «같은 덮임»
+    // 이면 1 이다. 검수관 실측(2026-09-05)은 N=6 0.65 · N=10 0.56 — 근사라 1 이 아니고,
+    // CARD_SHEETS 를 2 로 오염시키면 N=6 이 0.41 로 떨어져 하한을 깬다(뮤테이션 M7 검출).
+    // 시트 투영 계수는 CARD_SHEETS 를 **쓰지 않고** 여기서 다시 유도한다 — 직교 두 장의 투영 폭
+    // |cos θ|+|sin θ| 의 0~90° 평균을 수치 적분. 첫 판본은 CARD_SHEETS 를 곱해 cardDensityMul 의
+    // 같은 인자와 상쇄됐고 M7(CARD_SHEETS=2)이 통과했다 — 그것이 동어반복의 형태다.
+    let sheets = 0; const K = 4096;
+    for (let i = 0; i < K; i++) { const th = ((i + 0.5) / K) * (Math.PI / 2); sheets += Math.cos(th) + Math.sin(th); }
+    sheets /= K;
+    const W = 256, H = 256;
+    const opaque = (px: Uint8Array) => { let n = 0; for (let i = 0; i < px.length; i += 4) if (px[i] >= 128) n++; /* R 채널 — 알파는 255 고정 */ return n / (px.length / 4); };
+    const quad = opaque(bladeMaskPixels(64, W, BLADE_TIP, 1));
+    for (const n of [3, 6, 10, 12]) {
+      let sum = 0; const seeds = 8;
+      for (let seed = 1; seed <= seeds; seed++) sum += opaque(cardMaskPixels(W, H, BLADE_TIP, 1, n, seed));
+      const cardArea = (sum / seeds) * CARD_WIDTH_MUL * sheets;
+      const relative = (cardArea / quad) * cardDensityMul(n);
+      expect(relative, `N=${n}`).toBeGreaterThan(0.5);
+      expect(relative, `N=${n}`).toBeLessThan(1.0);
+    }
   });
 
   it('카드 잎 배치는 결정적이고 카드 안에 있다', () => {
@@ -218,7 +247,7 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     expect(two.diag?.triangles).toBe(groupTriangles(meshGroups(ringModes('quad', 14)), counts, 3));
   });
 
-  it('?gmode=card → 메시 1 · 십자 지오(마디 3 → 12tri) · 알파맵 · 활성 수는 잎 수분의 1', async () => {
+  it('?gmode=card → 메시 1 · 십자 지오(마디 3 → 12tri) · 알파맵 · 활성 수는 잎 면적 등가 배율', async () => {
     const one = await mountGrass('?styl=1');
     const card = await mountGrass('?styl=1&gmode=card');
     expect(card.meshes).toHaveLength(1);
@@ -226,8 +255,9 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     expect(card.meshes[0].material.alphaMap).toBeTruthy();
     expect(card.diag?.cardBlades).toBe(6);
     const ratio = (card.diag?.blades as number) / (one.diag?.blades as number);
-    expect(ratio).toBeGreaterThan(1 / 6 * 0.8);
-    expect(ratio).toBeLessThan(1 / 6 * 1.2);
+    const want = cardDensityMul(CARD_BLADES_DEFAULT);
+    expect(ratio).toBeGreaterThan(want * 0.8);
+    expect(ratio).toBeLessThan(want * 1.2);
     // 버퍼(상한)는 그대로가 아니라 활성 수에 맞춘다 — 여기서 재는 것은 활성 수뿐이다
     const card3 = await mountGrass('?styl=1&gmode=card&gcard=3');
     expect(card3.diag?.blades as number).toBeGreaterThan(card.diag?.blades as number);
@@ -237,5 +267,36 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     const { meshes } = await mountGrass('?styl=1&gmode=hexagon');
     expect(meshes).toHaveLength(1);
     expect(meshes[0].geometry.index?.count).toBe(8 * 3);
+  });
+});
+
+type MaskTex = { image: { width: number }; generateMipmaps: boolean; minFilter: number };
+
+describe('잎 윤곽 AA (`?gaa=`) — 감독 «나뭇잎에 알리아싱» 2026-09-05', () => {
+  it('판정: 누적형 — 0 은 전부 끔(라이브 그대로), 1 a2c, 2 +밉맵, 3 +마스크 해상도', () => {
+    expect(GRASS_AA_DEFAULT).toBe(0);
+    expect(edgeAA(0)).toEqual({ alphaToCoverage: false, mipmaps: false, maskScale: 1 });
+    expect(edgeAA(1)).toEqual({ alphaToCoverage: true, mipmaps: false, maskScale: 1 });
+    expect(edgeAA(2)).toEqual({ alphaToCoverage: true, mipmaps: true, maskScale: 1 });
+    expect(edgeAA(3)).toEqual({ alphaToCoverage: true, mipmaps: true, maskScale: AA_MASK_SCALE });
+    expect(edgeAA(99)).toEqual(edgeAA(3));
+    expect(edgeAA(-1)).toEqual(edgeAA(0));
+  });
+
+  it('집행: ?gmode=card&gaa=3 → a2c 켜짐 · 밉맵 필터 · 마스크 64→256', async () => {
+    const base = await mountGrass('?styl=1&gmode=card');
+    const aa = await mountGrass('?styl=1&gmode=card&gaa=3');
+    const mb = base.meshes[0].material as unknown as { alphaToCoverage: boolean; alphaMap: MaskTex };
+    const ma = aa.meshes[0].material as unknown as { alphaToCoverage: boolean; alphaMap: MaskTex };
+    expect(mb.alphaToCoverage).toBe(false);
+    expect(ma.alphaToCoverage).toBe(true);
+    expect(mb.alphaMap.image.width).toBe(64);
+    expect(ma.alphaMap.image.width).toBe(64 * AA_MASK_SCALE);
+    expect(mb.alphaMap.generateMipmaps).toBe(false);
+    expect(ma.alphaMap.generateMipmaps).toBe(true);
+    expect(ma.alphaMap.minFilter).toBe(THREE.LinearMipmapLinearFilter);
+    expect(mb.alphaMap.minFilter).toBe(THREE.LinearFilter);
+    // 개수 불변: 텍스처는 여전히 한 장, 메시도 하나
+    expect(aa.meshes).toHaveLength(1);
   });
 });
