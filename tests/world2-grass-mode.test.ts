@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
 import {
-  GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, TRI_PER_BLADE,
+  GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_SEG_DEFAULT, triPerBlade,
   ringModes, meshGroups, groupTriangles, bladeMaskProfile, bladeMaskPixels, quadHalfWidth,
 } from '../frontend/js/world2/decide/grass-mode.js';
 import { BLADE_NODES, halfWidthProfile } from '../frontend/js/world2/decide/blade-shape.js';
@@ -62,11 +62,15 @@ describe('잎 모드 — 판정(순수)', () => {
     expect(GRASS_MODES).toContain('cross');
   });
 
-  it('잎당 삼각형 — blade 는 마디 수에서 유도(8), quad 2, cross 4', () => {
-    expect(TRI_PER_BLADE.blade).toBe((BLADE_NODES.length - 1) * 2);
-    expect(TRI_PER_BLADE.blade).toBe(8);
-    expect(TRI_PER_BLADE.quad).toBe(2);
-    expect(TRI_PER_BLADE.cross).toBe(4);
+  it('잎당 삼각형 — blade 는 마디 수에서 유도(8), quad 2·seg, cross 4·seg (감독 «살랑살랑» → 기본 마디 3)', () => {
+    expect(triPerBlade('blade')).toBe((BLADE_NODES.length - 1) * 2);
+    expect(triPerBlade('blade')).toBe(8);
+    expect(GRASS_SEG_DEFAULT).toBe(3);
+    expect(triPerBlade('quad', 1)).toBe(2);
+    expect(triPerBlade('quad', 3)).toBe(6);
+    expect(triPerBlade('cross', 3)).toBe(12);
+    // 기본 마디로도 3D 보다 가볍다 — 아니면 «가볍게» 가 아니다
+    expect(triPerBlade('quad')).toBeLessThan(triPerBlade('blade'));
   });
 
   it('lod 0 이면 전 링이 같은 모드 → 그룹 하나', () => {
@@ -87,9 +91,10 @@ describe('잎 모드 — 판정(순수)', () => {
     const counts = ringCounts(1, 1);
     const total = counts.reduce((a, b) => a + b, 0);
     expect(groupTriangles(meshGroups(ringModes('blade', 0)), counts)).toBe(total * 8);
-    expect(groupTriangles(meshGroups(ringModes('quad', 0)), counts)).toBe(total * 2);
-    // A+D: 링1 은 8, 나머지 2
-    expect(groupTriangles(meshGroups(ringModes('quad', 14)), counts))
+    expect(groupTriangles(meshGroups(ringModes('quad', 0)), counts, 1)).toBe(total * 2);
+    expect(groupTriangles(meshGroups(ringModes('quad', 0)), counts, 3)).toBe(total * 6);
+    // A+D: 링1 은 8, 나머지 2·seg
+    expect(groupTriangles(meshGroups(ringModes('quad', 14)), counts, 1))
       .toBe(counts[0] * 8 + (counts[1] + counts[2]) * 2);
   });
 
@@ -138,19 +143,28 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     expect(diag?.lod).toBe(0);
   });
 
-  it('?gmode=quad → 메시 1 · 인덱스 6(2tri) · 알파맵 있음 · alphaTest', async () => {
+  it('?gmode=quad → 메시 1 · 마디 3 → 6tri(인덱스 18) · 알파맵 있음 · alphaTest', async () => {
     const { meshes, diag } = await mountGrass('?styl=1&gmode=quad');
     expect(meshes).toHaveLength(1);
-    expect(meshes[0].geometry.index?.count).toBe(2 * 3);
+    expect(meshes[0].geometry.index?.count).toBe(6 * 3);
+    expect(diag?.seg).toBe(3);
     expect(meshes[0].material.alphaMap).toBeTruthy();
     expect(meshes[0].material.alphaTest).toBeGreaterThan(0);
     expect(diag?.mode).toBe('quad');
   });
 
-  it('?gmode=cross → 인덱스 12(4tri)', async () => {
+  it('?gmode=cross → 마디 3 → 12tri(인덱스 36)', async () => {
     const { meshes } = await mountGrass('?styl=1&gmode=cross');
     expect(meshes).toHaveLength(1);
-    expect(meshes[0].geometry.index?.count).toBe(4 * 3);
+    expect(meshes[0].geometry.index?.count).toBe(12 * 3);
+  });
+
+  it('?gmode=quad&gseg=1 → 2tri — 마디 노브가 지오에 실제로 닿는다', async () => {
+    const { meshes, diag } = await mountGrass('?styl=1&gmode=quad&gseg=1');
+    expect(meshes[0].geometry.index?.count).toBe(2 * 3);
+    expect(diag?.seg).toBe(1);
+    // 정점 줄 수 = 마디+1 → 위치 속성 정점 수 2·(seg+1)
+    expect((meshes[0].geometry as unknown as { attributes: { position: { count: number } } }).attributes.position.count).toBe(4);
   });
 
   it('?gmode=quad&glod=14 → 메시 2, 개수 합은 단일 메시와 같다 (C-2)', async () => {
@@ -164,7 +178,7 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     expect(two.diag?.blades).toBe(one.diag?.blades);
     // 진단의 삼각형 수도 판정 함수와 같다
     const counts = ringCounts(1, 1);
-    expect(two.diag?.triangles).toBe(groupTriangles(meshGroups(ringModes('quad', 14)), counts));
+    expect(two.diag?.triangles).toBe(groupTriangles(meshGroups(ringModes('quad', 14)), counts, 3));
   });
 
   it('모르는 gmode 는 기본(blade)으로 떨어진다 — 노브 오타가 화면을 바꾸지 않는다', async () => {

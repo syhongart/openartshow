@@ -11,9 +11,9 @@
 // 이 파일은 «어느 링을 어느 모드로 그리는가» 와 «2D 잎의 실루엣 마스크» 만 정한다.
 //
 //   blade  마디 5 × 2정점 = 8tri. 지금 라이브(감독 판정 4회의 결과물).
-//   quad   사각 1장 2tri + 알파 마스크. 실루엣은 **같은 잎 프로파일에서 유도**한다
+//   quad   사각 1장(세로 마디 `?gseg=`, 기본 3 → 6tri) + 알파 마스크. 실루엣은 **같은 잎 프로파일에서 유도**한다
 //          (팀장 조건 C-3 — 캔버스에 딴 모양을 다시 그리지 않는다).
-//   cross  quad 두 장을 90° 교차 4tri. 위에서 봐도 판이 아니다.
+//   cross  quad 두 장을 90° 교차(마디 3 → 12tri). 위에서 봐도 판이 아니다.
 //
 // ── 기본값은 라이브 그대로 (팀장 조건 C-1) ──────────────────────────────────
 // `GRASS_MODE_DEFAULT = 'blade'` · `GRASS_LOD_DEFAULT = 0` 이면 그룹이 하나(blade)라
@@ -41,12 +41,23 @@ export const GRASS_MODE_DEFAULT: GrassMode = 'blade';
 export const GRASS_LOD_DEFAULT = 0;
 export const GRASS_LOD_MAX = 200;
 
+/**
+ * 2D 잎의 세로 마디 수 (`?gseg=`). **감독 지시 2026-09-05: *"2디 잔디여도 살랑살랑 게임
+ * 쉐이더 처럼 해줘."*** 바람은 정점 셰이더가 `uv.y²` 로 굽히므로 정점이 밑동·끝 두 줄뿐이면
+ * 잎이 휘지 않고 **직선으로 기울기만** 한다 — 살랑거림은 마디에서 나온다. 3D 잎은 마디 5
+ * (`BLADE_NODES`)다. 기본 3 이면 quad 가 6tri(3D 의 3/4), 1 이면 2tri 인데 뻣뻣하다.
+ * 채택값은 감독 링크 판정 뒤 여기로 옮긴다.
+ */
+export const GRASS_SEG_DEFAULT = 3;
+export const GRASS_SEG_MIN = 1;
+export const GRASS_SEG_MAX = 4;
+
 /** 잎 하나의 삼각형 수. blade 는 마디 수에서 **유도**한다(값을 다시 적지 않는다) */
-export const TRI_PER_BLADE: Readonly<Record<GrassMode, number>> = {
-  blade: (BLADE_NODES.length - 1) * 2,
-  quad: 2,
-  cross: 4,
-};
+export function triPerBlade(mode: GrassMode, seg: number = GRASS_SEG_DEFAULT): number {
+  if (mode === 'blade') return (BLADE_NODES.length - 1) * 2;
+  const perSheet = 2 * Math.max(1, Math.round(seg));
+  return mode === 'cross' ? perSheet * 2 : perSheet;
+}
 
 /** 링마다 모드를 배정한다. `lod` 안쪽 링은 blade */
 export function ringModes(
@@ -68,9 +79,11 @@ export function meshGroups(modes: readonly GrassMode[]): MeshGroup[] {
 }
 
 /** 그룹들의 삼각형 총합(포기 수 × 잎당 tri) — 표·진단용 */
-export function groupTriangles(groups: readonly MeshGroup[], counts: readonly number[]): number {
+export function groupTriangles(
+  groups: readonly MeshGroup[], counts: readonly number[], seg: number = GRASS_SEG_DEFAULT,
+): number {
   return groups.reduce(
-    (sum, g) => sum + g.rings.reduce((s, r) => s + (counts[r] ?? 0), 0) * TRI_PER_BLADE[g.mode],
+    (sum, g) => sum + g.rings.reduce((s, r) => s + (counts[r] ?? 0), 0) * triPerBlade(g.mode, seg),
     0,
   );
 }

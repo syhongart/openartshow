@@ -33,7 +33,8 @@ import {
 } from '../decide/blade-shape.js';
 import { GrassField } from '../systems/grass-field.js';
 import {
-  GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_LOD_MAX, TRI_PER_BLADE,
+  GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_LOD_MAX,
+  GRASS_SEG_DEFAULT, GRASS_SEG_MIN, GRASS_SEG_MAX, triPerBlade,
   ringModes, meshGroups, groupTriangles, bladeMaskPixels, quadHalfWidth, type GrassMode,
 } from '../decide/grass-mode.js';
 
@@ -145,28 +146,35 @@ function refillMask(tex: THREE.Texture, tip: number, belly: number): void {
   tex.needsUpdate = true;
 }
 
-function flatGeometry(mode: Exclude<GrassMode, 'blade'>, tip: number, belly: number, spread: number, ao: number): THREE.BufferGeometry {
+function flatGeometry(mode: Exclude<GrassMode, 'blade'>, tip: number, belly: number, spread: number, ao: number, seg: number): THREE.BufferGeometry {
   const hw = quadHalfWidth(tip, belly);
   const nx = Math.sin(spread);
   const ny = Math.cos(spread);
-  const g0 = bladeShade(0, ao);
-  const g1 = bladeShade(1, ao);
+  const n = Math.max(1, Math.round(seg));
   const pos: number[] = [];
   const uv: number[] = [];
   const nor: number[] = [];
   const col: number[] = [];
   const idx: number[] = [];
+  // 세로 마디 — 감독 *"살랑살랑 게임 쉐이더 처럼"*. 바람이 `uv.y²` 로 굽히므로 마디가 있어야
+  // 잎이 **휜다**(두 줄이면 기울기만). 높이·음영은 blade 와 같은 식(`bladeArc` 는 curve 0 이라 y=t).
   const sheet = (rotated: boolean) => {
     const base = pos.length / 3;
-    for (const [x, y] of [[-hw, 0], [hw, 0], [-hw, 1], [hw, 1]] as const) {
-      const sx = x < 0 ? -1 : 1;
-      if (rotated) { pos.push(0, y, x); nor.push(0, ny, sx * nx); }
-      else { pos.push(x, y, 0); nor.push(sx * nx, ny, 0); }
-      uv.push(x < 0 ? 0 : 1, y);
-      const g = y === 0 ? g0 : g1;
-      col.push(g, g, g);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const g = bladeShade(t, ao);
+      for (const sx of [-1, 1] as const) {
+        const x = sx * hw;
+        if (rotated) { pos.push(0, t, x); nor.push(0, ny, sx * nx); }
+        else { pos.push(x, t, 0); nor.push(sx * nx, ny, 0); }
+        uv.push(sx < 0 ? 0 : 1, t);
+        col.push(g, g, g);
+      }
     }
-    idx.push(base, base + 1, base + 3, base, base + 3, base + 2);
+    for (let k = 0; k < n; k++) {
+      const a = base + k * 2;
+      idx.push(a, a + 1, a + 3, a, a + 3, a + 2);
+    }
   };
   sheet(false);
   if (mode === 'cross') sheet(true);
@@ -337,13 +345,14 @@ export const grassFeature: Feature = {
     // 근거·후보·판정 절차는 `decide/grass-mode.ts` 헤더 한 곳.
     const mode = readEnum('gmode', GRASS_MODE_DEFAULT, GRASS_MODES);
     const lod = readNum('glod', GRASS_LOD_DEFAULT, 0, GRASS_LOD_MAX);
+    const seg = Math.round(readNum('gseg', GRASS_SEG_DEFAULT, GRASS_SEG_MIN, GRASS_SEG_MAX));
     const groups = meshGroups(ringModes(mode, lod));
     const counts = ringCounts(radiusMul, densityMul);
     const count = counts.reduce((a, b) => a + b, 0);
     const mask = groups.some((g) => g.mode !== 'blade') ? maskTexture(tip, belly.get()) : null;
     const geometryFor = (m: GrassMode) => m === 'blade'
       ? bladeGeometry(tip, belly.get(), BLADE_CURVE, spread.get(), ao.get())
-      : flatGeometry(m, tip, belly.get(), spread.get(), ao.get());
+      : flatGeometry(m, tip, belly.get(), spread.get(), ao.get(), seg);
 
     // 버퍼는 **상한으로 잡는다.** 활성 수만 노브가 바꾸고 나머지는 0 스케일로 눕는다 —
     // 버퍼 크기가 노브에 따라 변하면 개수 불변식의 baseline 이 노브마다 달라진다.
@@ -447,9 +456,9 @@ export const grassFeature: Feature = {
         buffer: parts.reduce((s, p) => s + p.mesh.count, 0),
         rings: counts,
         // 잎 모드 — 감독이 «어느 링크를 보고 있나» 를 여기서 확인한다.
-        mode, lod,
-        groups: groups.map((g) => ({ mode: g.mode, rings: g.rings, triPerBlade: TRI_PER_BLADE[g.mode] })),
-        triangles: groupTriangles(groups, counts),
+        mode, lod, seg,
+        groups: groups.map((g) => ({ mode: g.mode, rings: g.rings, triPerBlade: triPerBlade(g.mode, seg) })),
+        triangles: groupTriangles(groups, counts, seg),
         radiusMul, densityMul, heightMul, widthMul, tip,
         belly: belly.get(), curve: curve.get(), ao: ao.get(), spread: spread.get(),
         palette: palette.get(), sat: sat.get(),
