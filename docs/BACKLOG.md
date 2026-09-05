@@ -144,6 +144,14 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
 ## 기타 대기 항목
 
+- **G-FRZ1 — 동결 게이트(`check:filesize`)가 값 옆 판정 기록을 밀어낸다** (2026-09-05 등재,
+  팀장 조건 C-5b). `check:filesize` 는 **주석 줄까지 센다.** baseline 동결 파일(69개)은 한 줄도
+  못 커지므로, CLAUDE.md 의 «판정을 값 **옆에** 기록한다» 규율과 **구조적으로 충돌**한다 —
+  첫 실물: `decide/grass.ts`(509줄 동결)의 `BLADE_W` 재판정 문단이 517줄이 되어 gate FAIL,
+  문단을 `grass-mode.ts` 로 옮기고 포인터 한 줄로 넘겼다(팀장 추인, PR #291). 이번은 포인터로
+  됐지만 **세 번째부터는 포인터가 포인터를 가리킨다.** 해법 후보(주석 줄 제외 / 동결 파일별
+  예외 예산)는 설계 분기라 팀장 회차 1건으로 올린다. 지금 고치지 않는다.
+
 - **G-WSB1 — `world-shared` 경계 검사(R1~R4)가 world-glb(월드7·8)를 스캔 대상에서 뺀다**
   (2026-09-04 등재, 검수관 권고 P2). `tests/world-shared-boundary.test.ts` 의 `WORLDS = ['world2',
   'world3','world5']` 라 world-glb → world-shared 역참조·world-glb 가 다른 세계를 import 하는
@@ -386,6 +394,12 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
   처방 축은 잔디(`features/grass.ts`·`decide/grass.ts`)로 옮긴다 — 설계 분기(방식)라 팀장 상신.
   **못 잰 것**: 실기기 WebGPU 값(2,110,989)과 헤드리스 1,450,098 의 차 66만의 내역 —
   그림자 22만 외 44만은 백엔드 차(잔디 tier·DPR)로 추정, 미확인.
+
+  **✅ 2026-09-05 감독 판정으로 처방 집행**: 월드8 잔디 = 2D 잎(마디 3, `GRASS_MODE_DEFAULT='quad'`
+  in `world-glb/decide/grass-mode.ts`), 원인 = *"잔디 없으면 부드럽다"*(quad 0.9M tri 로도
+  끊긴다 — 사고로 「3D」 링크가 quad 였다, 게시판 자기신고). 남은 것: 더 가벼운 후보
+  (`gseg=1` 0.3M · `gden=0.5`) 링크 판정 · 기각 모드(cross·glod) 코드 제거는 팀장 확인 1회 후
+  다음 PR(C-6) · 패킹을 배포 조립에 연결(P3 후반, C1 왕복 테스트·검수관).
 
 - **G-W8O — 드로우콜을 감독이 볼 수 없다** (2026-08-26 등재).
   `features/npc.ts` 와 `world-shared/glb-city.ts` 가 `drawGroupKey: () => null` 을
