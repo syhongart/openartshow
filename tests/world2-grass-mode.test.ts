@@ -17,7 +17,7 @@ import * as THREE from 'three';
 import {
   GRASS_MODES, GRASS_MODE_DEFAULT, GRASS_LOD_DEFAULT, GRASS_SEG_DEFAULT, triPerBlade,
   ringModes, meshGroups, groupTriangles, bladeMaskProfile, bladeMaskPixels, quadHalfWidth,
-  CARD_BLADES_DEFAULT, CARD_WIDTH_MUL, cardDensityMul, cardLeaves, cardMaskPixels,
+  CARD_BLADES_DEFAULT, CARD_WIDTH_MUL, CARD_LEAF_SCALE, CARD_SHEETS, cardDensityMul, cardLeaves, cardMaskPixels,
 } from '../frontend/js/world2/decide/grass-mode.js';
 import { BLADE_NODES, halfWidthProfile } from '../frontend/js/world2/decide/blade-shape.js';
 import { GRASS_RINGS, ringCounts, BLADE_TIP } from '../frontend/js/world2/decide/grass.js';
@@ -136,8 +136,12 @@ describe('다발 카드(card) — 판정(순수)', () => {
   it('삼각형 — 카드는 십자와 같은 지오(4·seg), 밀도 환산은 1/잎 수', () => {
     expect(triPerBlade('card', 3)).toBe(12);
     expect(triPerBlade('card', 1)).toBe(4);
-    expect(cardDensityMul(6)).toBeCloseTo(1 / 6, 10);
-    expect(cardDensityMul(1)).toBe(1);
+    // 잎 면적 등가 — 1/N(삼각형 등가)이면 덮임이 43% 로 준다(2026-09-05 감독 «이상해»).
+    const area = (n: number) => n * CARD_SHEETS * CARD_LEAF_SCALE * CARD_WIDTH_MUL;
+    expect(cardDensityMul(6)).toBeCloseTo(1 / area(6), 10);
+    expect(cardDensityMul(10)).toBeCloseTo(1 / area(10), 10);
+    expect(cardDensityMul(6)).toBeGreaterThan(1 / 6 * 2); // 1/N 규정으로 되돌아가면 깨진다
+    expect(cardDensityMul(1)).toBeCloseTo(1 / area(1), 10);
     expect(CARD_BLADES_DEFAULT).toBe(6);
     expect(CARD_WIDTH_MUL).toBeGreaterThan(1);
   });
@@ -218,7 +222,7 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     expect(two.diag?.triangles).toBe(groupTriangles(meshGroups(ringModes('quad', 14)), counts, 3));
   });
 
-  it('?gmode=card → 메시 1 · 십자 지오(마디 3 → 12tri) · 알파맵 · 활성 수는 잎 수분의 1', async () => {
+  it('?gmode=card → 메시 1 · 십자 지오(마디 3 → 12tri) · 알파맵 · 활성 수는 잎 면적 등가 배율', async () => {
     const one = await mountGrass('?styl=1');
     const card = await mountGrass('?styl=1&gmode=card');
     expect(card.meshes).toHaveLength(1);
@@ -226,8 +230,9 @@ describe('잎 모드 — 집행(feature 조립)', () => {
     expect(card.meshes[0].material.alphaMap).toBeTruthy();
     expect(card.diag?.cardBlades).toBe(6);
     const ratio = (card.diag?.blades as number) / (one.diag?.blades as number);
-    expect(ratio).toBeGreaterThan(1 / 6 * 0.8);
-    expect(ratio).toBeLessThan(1 / 6 * 1.2);
+    const want = cardDensityMul(CARD_BLADES_DEFAULT);
+    expect(ratio).toBeGreaterThan(want * 0.8);
+    expect(ratio).toBeLessThan(want * 1.2);
     // 버퍼(상한)는 그대로가 아니라 활성 수에 맞춘다 — 여기서 재는 것은 활성 수뿐이다
     const card3 = await mountGrass('?styl=1&gmode=card&gcard=3');
     expect(card3.diag?.blades as number).toBeGreaterThan(card.diag?.blades as number);
