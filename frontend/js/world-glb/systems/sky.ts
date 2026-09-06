@@ -384,7 +384,7 @@ export interface SkyOptions {
    * 그래서 이것만 따로 받는다. 없으면 `eyeHeight` 를 평지 가정으로 쓴다.
    */
   getEyeY?: () => number;
-  hemiGround?: number;   // `?hemig=` hemi 지면색(16진). 근거·적용 순서는 `systems/sky-ground.ts` 한 곳.
+  hemiGround?: number;   // `?hemig=` hemi 지면색(16진). 근거·적용 순서는 `systems/sky-ground.ts` 한 곳. ⚠ 기본 경로 undefined = 불변(world7·8 동작 0 변경), URL 노브는 `?glift=` 처럼 전 페이지 공용이고 world10 은 부트 DEFAULTS 로 선채움할 뿐이다 — «world10 전용» 으로 읽지 마라(팀장 조건 C2, 2026-09-06).
 }
 
 /**

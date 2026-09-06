@@ -206,6 +206,20 @@
 
 ## 올라온 것 (↑ 상향)
 
+### 2026-09-06 · 팀장 — world10 조명(1) hemiGround 배선 수단(옵션 → 부트 노브 선채움): **추인** · 조건 3
+
+부팀장 사후 통지(팀장 지침 2026-07-31 세 요건)에 대한 판정. 승인 수단은 `options.ts hemiGround` + GLB 광원 노드,
+집행 수단은 `SkyOptions.hemiGround` + `?hemig=` + `world10-boot` DEFAULTS 선채움 + GLB 광원 노드(`options.ts` 무변경).
+근거: `main.ts` 동결(`check:filesize`) 충돌 회피 — 「A」 판정 조건의 허용 목록(플래그·**부트 선채움**) **안의 선택**이지
+교체가 아니다(G-FRZ1 형태를 다시 열지 않은 것이 맞다). 세 요건: ① 목적 보존 **확인**(capture-entry `hemig` 부재 단언 ·
+`HemisphereLight` 실물 M3 · nyc-gen 동일성 M4·M5 — 뮤테이션 번호까지 붙어 장식이 아니다) ② 검수관 3002321f 조건부
+승인 **확인** ③ 사이클 내(병합 전) 통지 **확인**. 부수 승인: `sky.ts` baseline 853→858 검수관 축 갱신 — 이의 없음.
+**조건**: C1 병합 전 검수관 재확인 기록을 PR 본문에(`review-record.yml` 자리) / C2 `SkyOptions.hemiGround` 주석에
+«undefined 불변 · 노브는 전 페이지 공용» 1줄(world7·8 에서도 URL 로 열리는 것은 동작 변경이 아니라 노브 노출, `?glift=`
+관례) / C3 baseline 갱신 커밋 메시지에 «Composition Root 예외 · 검수관 승인» 명기.
+→ **부팀장 집행**: C1 PR #295 본문 «조건부 승인 — 조건 충족(근거 인정)» 기록 있음 · C2 `systems/sky.ts:387` 주석 보강
+(줄 수 858 불변) · C3 `3002321f` 메시지에 이미 명기(«검수관 판정(조건부 승인) … Composition Root 예외 … 853→858») — 셋 다 충족.
+
 ### 2026-09-06 · 검수관 — 조명 정정 patch: **조건부 승인**(조건: `sky.ts` baseline 858 갱신을 정정 커밋에 포함 — 근거 인정) · 비블로커 2
 
 ① `sky.ts` 858 근거 인정: 클론에서 patch 적용 전 868 → 후 858, 배선 5줄 제거 시 853·`check:filesize` PASS 재현. 파라미터
