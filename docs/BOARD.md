@@ -206,6 +206,33 @@
 
 ## 올라온 것 (↑ 상향)
 
+### 2026-09-06 · 부팀장 — 🔴 실내 점광이 화면에 **0** 이었다: 강도 스윕 4장 md5 동일 → 원인 확정 **three GLTFLoader 가 노드 이름의 `.` 을 지운다** · QA executor 보고 검증
+
+QA executor(캡처 수집만) 보고는 «강도 스윕(6/12/24) ✓ 완료» 였다. 검증: `V4.png`·`V4-I6`·`V4-I12`·`V4-I24` 네 장이
+**md5 `cc765fe2…` 로 완전히 같다**(245,205B). 클론 3개에서 `ROOM_LIGHT_INTENSITY` 를 6/12/24 로 바꿔 빌드한 것은 출력에
+남아 있으므로(치환 명령·상수 줄 실측) 스윕 절차는 맞았고 **점광 자체가 씬에 없었다** — 못 잰 것이 ✓ 로 적힌 형태(executor
+가 아니라 판정 축을 안 준 위임자 책임: «캡처가 서로 다른가» 를 확인 항목에 안 넣었다).
+**원인(실측)**: three 0.171 `GLTFLoader.createUniqueName` → `PropertyBinding.sanitizeNodeName` 이 `[ ] . : /` 를 제거한다.
+`node -e` 실측: `bld.2.room.1.light → bld2room1light` · `bld.2.door → bld2door` · `bld.2.room.1.slot.3 → bld2room1slot3`.
+런타임 `isRoomLightNode(/^bld\.\d+\.room\.\d+\.light$/)` 는 sanitize 뒤 이름을 한 번도 못 본다 → PointLight 0.
+GLB 안에는 노드가 있다(`bld.2.room.1.light` @ [13.2, 3.7, −12.35], 실측). **`tests/world-glb-lights.test.ts` 14개가 전부 초록인
+채로 이 결함이 지나갔다** — 테스트는 생성기가 쓴 이름(GLB JSON)으로 정규식을 검사했고, three 가 이름을 바꾼 **뒤**는 아무도 안
+봤다. CLAUDE.md «판정/집행 분리의 구멍 — 경계를 건너는 지점은 아무도 안 본다» 그대로다. 검수관 비블로커 «라이트 노드 없음 → 0
+테스트» 도 이 축(있음 → 1 이 실제로 성립하는가)이 아니었다.
+**처방(부팀장 결정, 팀장 사후 보고)**: 노드 규약의 구분자를 `.` → `_`(sanitize 가 보존하는 문자) 로 바꾼다 — 생성기·decide·
+테스트·문서 전부. 런타임 정규식만 sanitize 형태로 맞추는 대안(B)은 규약 문자열이 두 형태가 되어 미러링 함정이라 버린다.
+반복 2 의 작품 슬롯(`.slot.`)·문(`.door`) 도 같은 함정 위에 있으므로 지금 고친다. 경계 테스트를 추가한다: 생성기 이름을
+**three 의 `PropertyBinding.sanitizeNodeName` 에 실제로 통과시킨 뒤** `isRoomLightNode` 가 참인지(뮤테이션: 구분자를 `.` 로
+되돌리면 FAIL 해야 한다). 구현은 deputy-lead 위임.
+**부수 관측** ① 하네스 `scripts/nyc/capture.mjs` 는 `--out` 디렉터리의 `capture.json` 을 호출마다 **덮어쓴다** — 스윕처럼
+여러 번 부르면 마지막 한 건만 남는다(이번에 V4-I24 만 남았다; V1~V4 메타는 executor 출력에서 복원: 404 V1·V3p8·V4-I6·V4-I12
+각 1, V4-I24 2, `info` 는 전부 null = `renderer.info` 노출 없음). ② executor 가 «Playwright chromium 미설치» 로 깊이 실측·
+404 URL·삼각형 측정을 불가 처리했는데 같은 playwright 로 하네스는 돌았다 — 오진 가능성, 원인 미확인. 깊이 가설(V4 시작 z 가
+콜라이더에 밀림) 은 여전히 **미실측**. ③ executor 가 저장소 `scripts/nyc/` 에 보조 스크립트 3개(`collect-404-urls`·
+`depth-test`·`measure-sweep`)를 신설했다 — «캡처 수집만» 범위 밖이라 스크래치로 옮겼다(저장소 미반영). 그중 `measure-sweep.mjs`
+는 «PIL 없음 — 이미지 경로만 출력» 하는 빈 스크립트였다.
+**이번 회차에 감독께 드리려던 «실내» 링크는 점광 0 상태다** — 링크는 드리되 그 사실을 적는다.
+
 ### 2026-09-06 · 팀장 — world10 조명(1) hemiGround 배선 수단(옵션 → 부트 노브 선채움): **추인** · 조건 3
 
 부팀장 사후 통지(팀장 지침 2026-07-31 세 요건)에 대한 판정. 승인 수단은 `options.ts hemiGround` + GLB 광원 노드,
