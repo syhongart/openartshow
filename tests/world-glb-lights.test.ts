@@ -13,21 +13,23 @@ import {
 } from '../frontend/js/world-glb/decide/glb-nodes.js';
 import { mountGlbWorld } from '../frontend/js/world-glb/systems/glb-source.js';
 import { applyHemiGround } from '../frontend/js/world-glb/systems/sky-ground.js';
+// 이름 위생 함수. `three/webgpu` 앰비언트 선언에는 이 심볼이 없어 `three` 에서 가져온다(같은 클래스).
+import { PropertyBinding } from 'three';
 
 describe('world-glb — light node generation and SSOT', () => {
   const { json: built } = buildStreet({ seed: 1, textures: false }) as {
     json: { nodes: Array<{ name: string; mesh?: number; translation?: number[] }> };
   };
 
-  it('모든 .light 노드는 isRoomLightNode 패턴을 만족한다', () => {
+  it('모든 _light 노드는 isRoomLightNode 패턴을 만족한다', () => {
     // generate.mjs 가 만드는 모든 light node 이름이 규약을 따르는지 확인
     const lightNodes = built.nodes.filter((n) => n.name.endsWith(ROOM_LIGHT_SUFFIX));
     expect(lightNodes.length).toBeGreaterThan(0);
 
     for (const node of lightNodes) {
       expect(isRoomLightNode(node.name)).toBe(true);
-      // 패턴: bld.<id>.room.<r>.light (숫자만 들어감)
-      expect(node.name).toMatch(/^bld\.\d+\.room\.\d+\.light$/);
+      // 패턴: bld_<id>_room_<r>_light (숫자만 들어감)
+      expect(node.name).toMatch(/^bld_\d+_room_\d+_light$/);
     }
   });
 
@@ -57,22 +59,22 @@ describe('world-glb — light node generation and SSOT', () => {
     }
   });
 
-  it('갤러리(bld.2) 방 내 라이트는 정확히 1개다', () => {
+  it('갤러리(bld_2) 방 내 라이트는 정확히 1개다', () => {
     const galleryLights = built.nodes.filter(
-      (n) => n.name.startsWith('bld.2.room.') && isRoomLightNode(n.name),
+      (n) => n.name.startsWith('bld_2_room_') && isRoomLightNode(n.name),
     );
     expect(galleryLights).toHaveLength(1);
-    expect(galleryLights[0].name).toBe('bld.2.room.1.light');
+    expect(galleryLights[0].name).toBe('bld_2_room_1_light');
   });
 
   it('isRoomLightNode 와 ROOM_LIGHT_SUFFIX 가 일관성 있게 동작한다', () => {
     // 단언: isRoomLightNode 정규식의 역방향 검증
     // 1. 패턴 매칭이 정확히 숫자만 받는가
-    expect(isRoomLightNode('bld.2.room.1.light')).toBe(true);
-    expect(isRoomLightNode('bld.02.room.01.light')).toBe(true); // leading zero OK
-    expect(isRoomLightNode('bld.2.room.1.lightX')).toBe(false); // 접미사 다름
-    expect(isRoomLightNode('bld.x.room.1.light')).toBe(false); // 숫자 아님
-    expect(isRoomLightNode('bld.2.room.1')).toBe(false); // 접미사 없음
+    expect(isRoomLightNode('bld_2_room_1_light')).toBe(true);
+    expect(isRoomLightNode('bld_02_room_01_light')).toBe(true); // leading zero OK
+    expect(isRoomLightNode('bld_2_room_1_lightX')).toBe(false); // 접미사 다름
+    expect(isRoomLightNode('bld_x_room_1_light')).toBe(false); // 숫자 아님
+    expect(isRoomLightNode('bld_2_room_1')).toBe(false); // 접미사 없음
 
     // 2. ROOM_LIGHT_SUFFIX 로 끝나는 노드 = isRoomLightNode 로 검증 가능
     const allWithSuffix = built.nodes.filter((n) => n.name.endsWith(ROOM_LIGHT_SUFFIX));
@@ -82,16 +84,53 @@ describe('world-glb — light node generation and SSOT', () => {
   });
 
   it('다른 건물 방들에도 라이트 노드가 있거나 없는 상태가 일관성 있다', () => {
-    // 방이 있는 건물은 bld.2 뿐이라고 알려져 있으므로,
+    // 방이 있는 건물은 bld_2 뿐이라고 알려져 있으므로,
     // 다른 건물에 방이 없거나 있더라도 패턴이 일관성 있어야 한다
     const roomLights = built.nodes.filter((n) => isRoomLightNode(n.name));
 
-    // 모두 bld.2 방에 속함
+    // 모두 bld_2 방에 속함
     for (const light of roomLights) {
-      expect(light.name).toMatch(/^bld\.2\.room\.\d+\.light$/);
+      expect(light.name).toMatch(/^bld_2_room_\d+_light$/);
     }
   });
 });
+
+// ── 경계 축 — 「생성기가 쓴 이름」과 「로더가 붙인 이름」은 다른 문자열이다 ──────────
+// ⚠ 이 describe 는 **실물 사고에서 생겼다**(2026-09-06). `GLTFLoader` 는 노드·메시 이름을
+// `PropertyBinding.sanitizeNodeName` 에 통과시켜 `[ ] . : /` 를 **지운다**. 규약 구분자가
+// `.` 이던 동안 `isRoomLightNode` 는 런타임에서 한 번도 참이 아니었고 실내 점광이 **0개**였다.
+// 그런데 이 파일의 기존 14개는 **전부 초록**이었다 — 검사가 GLB json 의 원 이름만 봤기 때문이다.
+// 아래 두 검사는 그 경계를 **실제로 건너서** 본다. 근거 표는 `decide/glb-nodes.ts` 헤더 한 곳.
+describe('경계 — three 로더의 이름 위생(sanitizeNodeName)을 통과한 뒤', () => {
+  const { json } = buildStreet({ seed: 1, textures: false }) as {
+    json: { nodes: Array<{ name: string }>; meshes: Array<{ name: string }> };
+  };
+  const sanitize = (n: string): string => PropertyBinding.sanitizeNodeName(n) as string;
+
+  it('sanitizeNodeName 이 실제로 위생 처리를 한다 — 항등함수가 아니다(이 검사의 전제)', () => {
+    // 이 단언이 없으면 위 두 검사는 sanitize 가 항등함수로 바뀌어도 초록이다.
+    expect(sanitize('bld.2.room.1.light')).toBe('bld2room1light');
+    expect(sanitize('a[0]:b/c')).toBe('a0bc');
+  });
+
+  it('생성기의 모든 노드·메시 이름이 sanitizeNodeName 에 불변이다 — `.` 을 쓰면 로더가 지운다', () => {
+    const names = [...json.nodes.map((n) => n.name), ...json.meshes.map((m) => m.name)];
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(name, `로더가 '${name}' 를 '${sanitize(name)}' 로 고쳐 쓴다`).toBe(sanitize(name));
+    }
+  });
+
+  it('로더를 통과한 뒤에도 라이트 노드가 isRoomLightNode 를 만족한다(경계 축)', () => {
+    const lights = json.nodes.filter((n) => isRoomLightNode(n.name));
+    expect(lights.length).toBeGreaterThan(0);   // 원 이름 기준으로는 잡힌다
+    for (const node of lights) {
+      // 런타임(`glb-source.ts`)이 실제로 보는 것은 이 이름이다.
+      expect(isRoomLightNode(sanitize(node.name)), `sanitize 후 '${sanitize(node.name)}'`).toBe(true);
+    }
+  });
+});
+
 
 // ── 집행 축 — 「생성기가 노드를 만든다」와 「런타임이 그 자리에 빛을 켠다」는 다른 일이다 ──
 // 위 describe 는 전부 **GLB json**(빌드 산출)만 본다. 아래는 `mountGlbWorld` 를 three 실물로
@@ -116,7 +155,7 @@ describe('mountGlbWorld — 방 라이트 집행(three 실물)', () => {
   function mount() {
     const root = new THREE.Group();
     const node = new THREE.Object3D();
-    node.name = 'bld.2.room.1.light';
+    node.name = 'bld_2_room_1_light';
     node.position.set(1.5, 3.7, -12);
     root.add(node);
     const scene = new THREE.Scene();

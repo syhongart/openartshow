@@ -36,7 +36,7 @@ describe('배치 판정(순수)', () => {
     expect(new Set(bs.map((b) => b.stories))).toEqual(new Set([3, 4, 5]));
     expect(rhythmOk(bs)).toBe(true);
   });
-  it('갤러리는 bld.2(아이보리 A · 12m · 5층), 비상계단은 1채만', () => {
+  it('갤러리는 bld_2(아이보리 A · 12m · 5층), 비상계단은 1채만', () => {
     const g = bs.find((b) => b.gallery)!;
     expect(g.id).toBe(2); expect(g.faceMat).toBe('ivoryA'); expect(g.width).toBe(12); expect(g.stories).toBe(5);
     expect(bs.filter((b) => b.escape)).toHaveLength(1);
@@ -62,32 +62,32 @@ describe('배치 판정(순수)', () => {
 });
 
 describe('GLB — 노드 이름 규약(tasks.md)', () => {
-  it('bld.1..6 · bld.<n>.door × 6 · bld.2.room.1 · slot.1..4(extras w/h) · gate.1 · ground.* 7', () => {
-    for (let i = 1; i <= 6; i++) { expect(names).toContain(`bld.${i}`); expect(names).toContain(`bld.${i}.door`); }
-    expect(names).toContain('bld.2.room.1');
+  it('bld_1..6 · bld_<n>_door × 6 · bld_2_room_1 · slot_1..4(extras w/h) · gate_1 · ground_* 7', () => {
+    for (let i = 1; i <= 6; i++) { expect(names).toContain(`bld_${i}`); expect(names).toContain(`bld_${i}_door`); }
+    expect(names).toContain('bld_2_room_1');
     for (let s = 1; s <= 4; s++) {
-      const n = byName(`bld.2.room.1.slot.${s}`)!;
+      const n = byName(`bld_2_room_1_slot_${s}`)!;
       expect(n).toBeDefined();
       expect(typeof n.extras?.w).toBe('number'); expect(typeof n.extras?.h).toBe('number');
       expect(n.translation).toHaveLength(3);
     }
-    expect(names).toContain('gate.1');
-    expect(names.filter((n) => n.startsWith('ground.'))).toHaveLength(7); // 도로·보도 2·연석 2·뒷마당 2
+    expect(names).toContain('gate_1');
+    expect(names.filter((n) => n.startsWith('ground_'))).toHaveLength(7); // 도로·보도 2·연석 2·뒷마당 2
   });
   it('문 노드는 y=0, 개구 폭 1.8(extras)', () => {
     for (let i = 1; i <= 6; i++) {
-      const d = byName(`bld.${i}.door`)!;
+      const d = byName(`bld_${i}_door`)!;
       expect(d.translation![1]).toBe(0);
       expect(d.extras?.w).toBe(1.8);
     }
   });
-  it('방 라이트 노드 — bld.2.room.1.light 빈 노드가 있고, isRoomLightNode 정규식과 일치한다', () => {
-    const light = byName('bld.2.room.1.light')!;
+  it('방 라이트 노드 — bld_2_room_1_light 빈 노드가 있고, isRoomLightNode 정규식과 일치한다', () => {
+    const light = byName('bld_2_room_1_light')!;
     expect(light).toBeDefined();
     expect(light.mesh).toBeUndefined(); // 빈 노드(메시 없음)
     expect(isRoomLightNode(light.name)).toBe(true);
     // 방 내 라이트는 정확히 1개
-    const roomLights = names.filter((n) => n.startsWith('bld.2.room.1.') && isRoomLightNode(n));
+    const roomLights = names.filter((n) => n.startsWith('bld_2_room_1_') && isRoomLightNode(n));
     expect(roomLights).toHaveLength(1);
   });
 });
@@ -99,15 +99,15 @@ describe('GLB — 개구부·모듈·재질·상한', () => {
     .map((n) => matName(built.json.meshes[n.mesh!].primitives[0].material));
   it('건물마다 입면·트림·금속(창틀)·유리 메시가 있다 — 창·문이 «있다» 의 증거는 유리·금속 재질의 존재다', () => {
     for (let i = 1; i <= 6; i++) {
-      const mats = meshMats(`bld.${i}.`);
+      const mats = meshMats(`bld_${i}_`);
       expect(mats.some((m) => m.startsWith('brick') || m.startsWith('ivory'))).toBe(true);
       expect(mats.some((m) => m.endsWith('Trim'))).toBe(true);
       expect(mats).toContain('metal');
       expect(mats.some((m) => m.startsWith('glass'))).toBe(true);
     }
     // 갤러리 1층은 투명 유리(glass1), 실내 3 재질
-    expect(meshMats('bld.2.')).toContain('glass1');
-    for (const m of ['roomWall', 'roomFloor', 'roomCeil']) expect(meshMats('bld.2.')).toContain(m);
+    expect(meshMats('bld_2_')).toContain('glass1');
+    for (const m of ['roomWall', 'roomFloor', 'roomCeil']) expect(meshMats('bld_2_')).toContain(m);
   });
   it('모든 메시에 COLOR_0 이 있고 VEC4 u8 정규화다(정렬 4 — stride 3 은 glTF 위반)', () => {
     const acc = (built.json as unknown as { accessors: { type: string; componentType: number; normalized?: boolean }[] }).accessors;
