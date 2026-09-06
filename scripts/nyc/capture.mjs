@@ -4,8 +4,8 @@
 // 사용: node scripts/nyc/capture.mjs --out=<dir> --shots=<name:query;name:query;...>
 // 예: node scripts/nyc/capture.mjs --out=docs/nyc/evidence/iteration-01-p13 \
 //       --shots="V1:world10.html;V2:world10.html?cam=9,-1,315,-4;V3:world10.html?cam=15.36,-4.5,270,-6"
-//
-import { chromium } from '/home/user/openartshow/node_modules/playwright-core/index.mjs';
+// 절대경로는 이식성 결함이었다(검수관 2026-09-06).
+import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';

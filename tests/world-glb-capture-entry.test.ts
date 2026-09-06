@@ -31,6 +31,12 @@ describe('parseCam — 순수 판정', () => {
     expect(-Math.sin(V1_START.yaw)).toBeCloseTo(1, 10);
     expect(-Math.cos(V1_START.yaw)).toBeCloseTo(0, 10);
   });
+  it('V1_START 는 디자이너 판정 2026-09-06(P1): x 4 · z 0 · yaw 270° · pitch −6°', () => {
+    expect(V1_START.x).toBe(4);
+    expect(V1_START.z).toBe(0);
+    expect(V1_START.yaw).toBeCloseTo((270 * Math.PI) / 180, 10);
+    expect(V1_START.pitch).toBeCloseTo((-6 * Math.PI) / 180, 10);
+  });
   it('formatCam 은 parseCam 의 역이다(소수 3자리)', () => {
     const s = parseCam('?cam=1.234,-5.678,123.4,-12.3')!;
     expect(parseCam('?cam=' + formatCam(s))).toEqual(s);

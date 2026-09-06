@@ -20,13 +20,15 @@
     "url": "http://localhost:8123/openartshow/app/world10.html?cam=15.36,-4.5,270,-6",
     "errors": [],
     "bytes": 6362772,
-    "info": null
+    "info": null,
+    "note": "yaw 오류(270/90) — 디자이너·검수관 2026-09-06, 재사용 금지. 정답은 iteration-01-p13b"
   },
   {
     "name": "V4",
     "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,90,0",
     "errors": [],
     "bytes": 6108807,
-    "info": null
+    "info": null,
+    "note": "yaw 오류(270/90) — 디자이너·검수관 2026-09-06, 재사용 금지. 정답은 iteration-01-p13b"
   }
 ]
