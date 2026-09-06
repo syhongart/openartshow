@@ -900,6 +900,8 @@ export async function startGlbWorld(
           castShadow: SHADOW_INTENSITY > 0, normalKnob: normalKnob(readNumOpt('nrm', 0, NORMAL_KNOB_MAX)),   // `?nrm=` 노말맵 강도(감독 지시 «전체 노말맵») — 판정 decide/glb-normal.ts
           // `?grid=` — 격자 분할 수. 거리 컬링이 붙으면서 성능 판정 축이 됐다(아래).
           grid: GLB_GRID,
+          // `?pli=` — 포인트라이트 강도. 기본 2.0. 스윕: 6/12/24
+          pointLightIntensity: readNum('pli', 2.0, 0.1, 100),
         });
         glbSource = mounted;
         report(0.9);

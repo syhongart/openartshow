@@ -152,7 +152,7 @@ export interface GlbSourceResult {
 export function mountGlbWorld(
   scene: Scene,
   gltfScene: Object3D,
-  opts: { castShadow: boolean; grid?: number; normalKnob?: NormalKnob },
+  opts: { castShadow: boolean; grid?: number; normalKnob?: NormalKnob; pointLightIntensity?: number },
 ): GlbSourceResult {
   // 노말맵 강도 노브(`?nrm=`) — 되묶기 «전» 원본 재질에 한 번(인스턴스가 같은 재질 객체를 공유한다). 판정은
   // decide, 집행은 systems/glb-normal.ts — 통합 검사가 three 재질 실물로 돈다(붙은 것과 소비되는 것은 다른 일).
@@ -289,8 +289,9 @@ export function mountGlbWorld(
   group.name = 'glb-world:glb-source';
 
   // 라이트 노드별로 포인트라이트 생성 및 추가
+  const pliIntensity = opts.pointLightIntensity ?? 2.0;
   for (const light of roomLights) {
-    const pointLight = new THREE.PointLight(0xffffff, 2.0);
+    const pointLight = new THREE.PointLight(0xffffff, pliIntensity);
     pointLight.position.copy(light.position);
     group.add(pointLight);
   }
