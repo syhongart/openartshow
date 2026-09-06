@@ -101,15 +101,21 @@ export function reveal(x0, y0, x1, y1, zFace, d, dir, ao = 0.62) {
   ]);
 }
 
-/** 창틀 부재 4개(§6 6×4cm) — 개구부 테두리를 따라 앞면에서 FRAME_D 돌출 */
-export function frame(x0, y0, x1, y1, zFace, dir, w, d) {
+/**
+ * 창틀 부재 4개(§6 6×4cm) — 개구부 테두리를 따라 앞면에서 FRAME_D 돌출.
+ * `bottom:false` 면 아래 부재를 빼고 3개만 만든다 — **문틀 전용**이다. 문은 `y0 = 0` 이라 아래
+ * 부재가 `y −w..0` 으로 **지면 아래**에 박히고, 그 밑면(y=0)이 보도 판 윗면과 동일 평면·같은
+ * 방향이 되어 z-fighting 이 난다(감독 실기기 2026-09-06 «도로에서도 그런 게 보여», 실측 0.158m²).
+ */
+export function frame(x0, y0, x1, y1, zFace, dir, w, d, { bottom = true } = {}) {
   const za = dir > 0 ? zFace : zFace - d, zb = dir > 0 ? zFace + d : zFace;
-  return merge([
-    { geo: box(x0 - w, y0 - w, za, x1 + w, y0, zb) },
+  const parts = [
     { geo: box(x0 - w, y1, za, x1 + w, y1 + w, zb) },
     { geo: box(x0 - w, y0, za, x0, y1, zb) },
     { geo: box(x1, y0, za, x1 + w, y1, zb) },
-  ]);
+  ];
+  if (bottom) parts.unshift({ geo: box(x0 - w, y0 - w, za, x1 + w, y0, zb) });
+  return merge(parts);
 }
 
 /** 창턱(§6 돌출 6cm·두께 5cm) — 아랫면 AO 0.7 */
