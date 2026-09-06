@@ -28,7 +28,15 @@ export interface PlayerOptions {
    * 세워 놓고 **도시를 보게 하는** 일이 생기고(실측 2026-08-07), 그러면 "링크 하나로
    * 확인" 이라는 노브의 목적이 절반만 달성된다.
    */
-  start?: { x: number; z: number; yaw?: number };
+  start?: {
+    x: number; z: number; yaw?: number;
+    /**
+     * 시작 내려다봄(rad). **있을 때만** 적용하고 `clampPitch` 를 거친다. 6 고정 시점 캡처
+     * (`docs/nyc/acceptance.md` §3)가 «어디서 어느 방향으로» 를 부팅 인자로 넘기려고 생겼다 —
+     * 세션 중 위치·시선 쓰기 문(`moveTo`)은 여전히 닫혀 있다(`player.ts` 궤도 절).
+     */
+    pitch?: number;
+  };
   /** 카메라에 위치·회전을 반영한다 */
   applyCamera?: (x: number, y: number, z: number, yaw: number, pitch: number) => void;
 

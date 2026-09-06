@@ -149,6 +149,10 @@ export const ENTRYPOINTS = [
   // 고정 자산(`assets/worlds/world2-blender-edit.glb`)을 부팅 즉시 연다 — 감독이
   // *"지금 그파일이 없어서 내가 못올려"* 라고 해서 그 왕복을 저장소에서 재현해 구웠다.
   { key: 'world8', src: 'world8.html', out: 'app/world8.html', exposure: 'flagged' },
+  // 2026-09-06 `world10.html` 추가 — 감독 지시서 «뉴욕 갤러리 거리», 팀장 판정 「A」(world-glb 트리 + 월드10).
+  // world8 과 같은 트리를 타고 갈리는 것은 <body data-glb>(빌드 시점 산출 `nyc-street.glb`)와 부트
+  // (`?cam=` 캡처 진입)뿐이다. 상태·경계는 `docs/nyc/state.md`.
+  { key: 'world10', src: 'world10.html', out: 'app/world10.html', exposure: 'flagged' },
   // [도구] 배치 에디터 — three.js r171 `editor/` 반입. 감독 지시 2026-08-09
   // *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능? glb파일을 내가 직접 넣고"* →
   // *"three.js 방식이니깐. 거기 에디터를 깃에서 가지고 와서 활용하는방안"*.

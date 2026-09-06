@@ -59,6 +59,27 @@ export interface GlbWorldOptions {
    * 판정은 `decide/glb-checklist.ts`(순수 함수), 화면은 `ui/glb-checklist-panel.ts`.
    */
   checklist?: boolean;
+
+  /**
+   * **부팅 시작 위치·시선.** 안 주면 트리 기본(`spawnFor('default')`)이다.
+   *
+   * ── 왜 생겼나 (뉴욕 갤러리 거리, 2026-09-06 팀장 판정 하위 3) ──────────────────
+   * 지시서 §9 의 6 고정 시점 캡처는 «같은 좌표·방향» 을 재현해야 하는데 이 트리에는 좌표
+   * 노브가 없고 `PlayerSystem.moveTo` 는 팀장이 일부러 닫은 문이다(`systems/player.ts`
+   * 궤도 절: *"`moveTo(x, z)` 를 열면 임의 순간이동이 가능해지고, 그 문은 이번 용도보다
+   * 언제나 넓다"*). **이 필드는 그 문을 열지 않는다** — 세션 중 위치 쓰기가 아니라
+   * **부팅 인자**이고, `PlayerSystem` 생성자의 `start` 로 그대로 넘어간다(그 자리는 `?at=river`
+   * 스폰 선택이 이미 쓰던 문이다). 순간이동이 아니므로 산술·충돌·복원 책임은 그대로
+   * `PlayerSystem` 에 남는다. 봉인 목적(«편집·주행 경로에서 임의 위치 쓰기 금지»)은 보존된다.
+   *
+   * ⚠ 백로그 `G-W8J` 재건 조건 ⓐ(«진단 전용 순간이동 문») 과 다르다 — 이것은 «벽 코앞에서
+   * 시작» 을 가능하게 하므로 ⓑ(«걸어서 벽에 닿는 스폰») 의 대체가 될 수 있다. 그 재건은 별도 회차.
+   *
+   * ⚠⚠ **`tag` 로 분기하지 않는다.** 캡처 페이지(`world10-boot`)만 `?cam=` 을 읽어 이 필드를
+   * 채우고, world7·8 부트는 넘기지 않는다 — 트리는 두 페이지를 계속 같게 본다. 파서는
+   * `decide/capture-entry.ts`(순수)이고 `tests/world-glb-capture-entry.test.ts` 가 호출처를 지킨다.
+   */
+  start?: { x: number; z: number; yaw?: number; pitch?: number };
 }
 
 

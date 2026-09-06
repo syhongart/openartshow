@@ -51,7 +51,7 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import type { Collider } from './systems/collision.js';
 import { createGlbCollider } from './systems/glb-collider.js';
 import { DEFAULT_BODY_R } from './systems/collision.js';
-import { mountGlbWorld, describeGlb, type GlbSourceResult } from './systems/glb-source.js';
+import { mountGlbWorld, describeGlb, type GlbSourceResult, normalKnob, NORMAL_KNOB_MAX } from './systems/glb-source.js';
 import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
 import { warmUpNode } from '../world-shared/attach-loop.js';
 import { createGlbStream } from './systems/glb-stream.js';
@@ -69,7 +69,7 @@ import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 import { ALL_KINDS } from './parts/index.js';
 // URL 노브는 `url-knob.ts` 가 유일한 구현이다 — 여기·`postfx.ts`·`features/sky.ts` 가
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
-import { readNum, readEnum } from './url-knob.js';
+import { readNum, readEnum, readNumOpt } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
 import { SHADING_MODES, type ShadingMode } from './decide/shading.js';
 import type { SurfaceSetting } from './decide/surface-material.js';
@@ -468,7 +468,8 @@ export async function startGlbWorld(
     // 기본값 `default` 는 기존 스폰 그대로라 링크를 안 붙이면 아무것도 안 바뀐다.
     // ⚠ `LAYOUT`(밀도 노브가 바꿀 수 있는 것)이 아니라 `CELL_X/Z`(기본 셀)를 쓴다 —
     //   `parcelWater` 로 강을 찾는 계산이 지면 판정과 **같은 셀**을 봐야 물가가 맞는다.
-    start: spawnFor(readEnum('at', 'default', SPAWN_SPOTS) as SpawnSpot, CELL_X, CELL_Z),
+    // 캡처 페이지가 `opts.start` 를 넘기면 그것이 이긴다(`options.ts` `start` 주석 — 순간이동이 아니라 부팅 인자).
+    start: opts.start ?? spawnFor(readEnum('at', 'default', SPAWN_SPOTS) as SpawnSpot, CELL_X, CELL_Z),
     speed: walkSpeed,
     eyeHeight,
     bobAmplitude,
@@ -896,7 +897,7 @@ export async function startGlbWorld(
         //    glTF 에 인스턴싱 표현이 없어 내보내기가 world2 의 인스턴스를 **개별 메시로
         //    펴서** 저장하기 때문이고, 되묶는 것이 원래 상태로의 **복원**이다.
         const mounted = mountGlbWorld(scene, gltf.scene as unknown as Object3D, {
-          castShadow: SHADOW_INTENSITY > 0,
+          castShadow: SHADOW_INTENSITY > 0, normalKnob: normalKnob(readNumOpt('nrm', 0, NORMAL_KNOB_MAX)),   // `?nrm=` 노말맵 강도(감독 지시 «전체 노말맵») — 판정 decide/glb-normal.ts
           // `?grid=` — 격자 분할 수. 거리 컬링이 붙으면서 성능 판정 축이 됐다(아래).
           grid: GLB_GRID,
         });

@@ -355,6 +355,10 @@ export const LIVE_PAGES = [
   // 시작돼 `networkidle` 이 그것을 기다린다(mp4 처럼 networkidle 이후에 태어나지 않는다).
   // **못 잰 것**: GitHub Pages 가 `.glb` 에 gzip 을 적용하는지(이 환경은 라이브 URL 403).
   { name: 'app/world8',        url: '/app/world8.html', webgl: true, viteOnly: true },
+  // ── world10 — 뉴욕 갤러리 거리 (2026-09-06, 팀장 판정 「A」) ──────────────────────
+  // world8 과 같은 트리를 타고 <body data-glb> 만 빌드 시점 산출 `nyc-street.glb` 다. 부팅 검사
+  // 조건은 world8 행과 같다(부팅만으로 세운다). 경계·상태는 `docs/nyc/state.md`.
+  { name: 'app/world10',        url: '/app/world10.html', webgl: true, viteOnly: true },
   // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
   // 하면 그 사이 자기완결·CSP 검사가 0 인 페이지가 배포되고, 그것이 정확히 visit·
   // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.
