@@ -9,6 +9,7 @@ import { inflateSync } from 'node:zlib';
 import { buildStreet } from '../scripts/asset/nyc/generate.mjs';
 import { layoutBuildings, rhythmOk, galleryRoom, hexToLinear, PALETTE, DIMS } from '../scripts/asset/nyc/layout.mjs';
 import { brickAlbedo, brickCell, GROUT } from '../scripts/asset/nyc/textures.mjs';
+import { isRoomLightNode } from '../frontend/js/world-glb/decide/glb-nodes.js';
 
 type Node = { name: string; mesh?: number; translation?: number[]; rotation?: number[]; extras?: Record<string, unknown>; children?: number[] };
 type Json = { nodes: Node[]; meshes: { primitives: { attributes: Record<string, number>; material: number; indices: number }[] }[]; materials: { name: string; pbrMetallicRoughness: { baseColorFactor: number[] } }[]; accessors: { count: number }[] };
@@ -77,6 +78,15 @@ describe('GLB — 노드 이름 규약(tasks.md)', () => {
       expect(d.translation![1]).toBe(0);
       expect(d.extras?.w).toBe(1.8);
     }
+  });
+  it('방 라이트 노드 — bld.2.room.1.light 빈 노드가 있고, isRoomLightNode 정규식과 일치한다', () => {
+    const light = byName('bld.2.room.1.light')!;
+    expect(light).toBeDefined();
+    expect(light.mesh).toBeUndefined(); // 빈 노드(메시 없음)
+    expect(isRoomLightNode(light.name)).toBe(true);
+    // 방 내 라이트는 정확히 1개
+    const roomLights = names.filter((n) => n.startsWith('bld.2.room.1.') && isRoomLightNode(n));
+    expect(roomLights).toHaveLength(1);
   });
 });
 
