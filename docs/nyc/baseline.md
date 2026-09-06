@@ -68,3 +68,15 @@
 
 렌더: `postfx.ts` 두 트리 차이 내용 · `features/sky.ts` 태양 방향 수식 위치 · `world-glb/sky.js` vs `features/sky.ts` 우선순위 · `decide/lod*.ts` 임계 · `world2-blender-edit.glb` 내부(삼각형·재질·실내 유무) · png 10개 해상도 · `run.mjs` 전체 게이트 목록.
 갤러리: visit→world2 퇴장 경로 · `?u=` 갤러리 데이터 원산지(`galleries/` 인덱스) · `space-generate.ts Slot` 직렬화 여부 · OverlayItem↔SpacePart 어댑터(없을 가능성) · `mypage` 필드·공개 범위 · `touch-controls.ts` 버튼 구성 · `main.js` 부팅·`window.__museum` · `galleries/` JSON 수.
+
+## 6. 캡처 조건 기록 (검수관 비블로커 ①, 2026-09-06)
+
+| 파일 | URL(노브) | 카메라 | 비고 |
+|---|---|---|---|
+| `evidence/iteration-01/w10-default.png` | `world10.html`(노브 없음) | `V1_START` 도입 **이전** 판본의 시작 위치(월드8 과 같은 스폰 규칙) | 첫 부팅 확인용 — 6 시점 어디에도 속하지 않는다 |
+| `evidence/iteration-01/w10-v1.png` | `world10.html` | `V1_START`(x −2, z 0, yaw 0, pitch −6°) | V1 거리 시작 |
+| `evidence/iteration-01/w10-v2.png` | `world10.html?cam=9,-1,315,-4` | art-direction §5 V2 | 대표 외관 근접 |
+| `evidence/iteration-01/w10-v3.png` | `world10.html?cam=…`(art-direction §5 V3, 문 앞 1.5m) | — | 디자이너: 1.5m 는 원리상 불성립 → 3.0m 로(P3) |
+| `evidence/iteration-01-tex/w10-v1.png` · `w10-v2.png` | 위 V1·V2 와 같은 URL, **텍스처·노말맵 커밋 뒤** | 같음 | 텍스처 전·후 대조용(팀장 조건 ③) |
+
+헤드리스 900×560·DPR 1·WebGL(swiftshader)·시간대 기본·30초 대기. 프레임 시간 없음.

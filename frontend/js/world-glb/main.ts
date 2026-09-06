@@ -51,7 +51,7 @@ import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import type { Collider } from './systems/collision.js';
 import { createGlbCollider } from './systems/glb-collider.js';
 import { DEFAULT_BODY_R } from './systems/collision.js';
-import { mountGlbWorld, describeGlb, type GlbSourceResult } from './systems/glb-source.js';
+import { mountGlbWorld, describeGlb, type GlbSourceResult, normalKnob, NORMAL_KNOB_MAX } from './systems/glb-source.js';
 import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
 import { warmUpNode } from '../world-shared/attach-loop.js';
 import { createGlbStream } from './systems/glb-stream.js';
@@ -69,7 +69,7 @@ import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 import { ALL_KINDS } from './parts/index.js';
 // URL 노브는 `url-knob.ts` 가 유일한 구현이다 — 여기·`postfx.ts`·`features/sky.ts` 가
 // 같은 파싱을 각자 들고 있었고, 세 벌이 되는 순간이 값 미러링의 시작점이다.
-import { readNum, readEnum } from './url-knob.js';
+import { readNum, readEnum, readNumOpt } from './url-knob.js';
 import { TIMES, type SkyTime } from './decide/night.js';
 import { SHADING_MODES, type ShadingMode } from './decide/shading.js';
 import type { SurfaceSetting } from './decide/surface-material.js';
@@ -897,7 +897,7 @@ export async function startGlbWorld(
         //    glTF 에 인스턴싱 표현이 없어 내보내기가 world2 의 인스턴스를 **개별 메시로
         //    펴서** 저장하기 때문이고, 되묶는 것이 원래 상태로의 **복원**이다.
         const mounted = mountGlbWorld(scene, gltf.scene as unknown as Object3D, {
-          castShadow: SHADOW_INTENSITY > 0,
+          castShadow: SHADOW_INTENSITY > 0, normalKnob: normalKnob(readNumOpt('nrm', 0, NORMAL_KNOB_MAX)),   // `?nrm=` 노말맵 강도(감독 지시 «전체 노말맵») — 판정 decide/glb-normal.ts
           // `?grid=` — 격자 분할 수. 거리 컬링이 붙으면서 성능 판정 축이 됐다(아래).
           grid: GLB_GRID,
         });

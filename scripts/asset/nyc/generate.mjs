@@ -13,9 +13,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DIMS, PALETTE, ROUGH, layoutBuildings, groundPlan, hexToLinear } from './layout.mjs';
-import { box } from './modules.mjs';
+import { box, merge } from './modules.mjs';
 import { buildFacade } from './facade.mjs';
 import { glbBuilder, quatY } from './glb-build.mjs';
+import { brickAlbedo, brickNormal, stuccoNormal, asphaltNormal, walkNormal, textureSetFor } from './textures.mjs';
 
 /** mulberry32 — 결정적 난수 */
 function rngOf(seed) {
@@ -51,10 +52,30 @@ function facingQuat(n) {
   return quatY(yaw);
 }
 
-/** 메모리에서 거리를 만든다. 테스트가 이 함수를 부른다(파일 I/O 없음) */
-export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0 } = {}) {
+/** 타일 PNG 캐시 — seed 마다 한 번만 그린다(테스트가 buildStreet 를 여러 번 부른다) */
+const tileCache = new Map();
+function tile(key, seed, make) {
+  const k = `${key}@${seed}`;
+  if (!tileCache.has(k)) tileCache.set(k, make());
+  return tileCache.get(k);
+}
+
+/** 메모리에서 거리를 만든다. 테스트가 이 함수를 부른다(파일 I/O 없음). `textures:false` 면 색만(대조군) */
+export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0, textures = true } = {}) {
   const g = glbBuilder();
-  const mat = (name) => { const s = materialSpec(name); return g.material(name, s.color, s.rough, s.alpha); };
+  const mat = (name) => {
+    const s = materialSpec(name);
+    const set = textures ? textureSetFor(name) : null;
+    if (!set) return g.material(name, s.color, s.rough, s.alpha);
+    const maps = { normalScale: set.normalScale };
+    if (set.albedo) {
+      // 벽돌: 색은 텍스처에 굽고 factor 는 흰색 — 줄눈이 벽돌색으로 물들지 않게(textures.mjs 헤더)
+      maps.baseColor = g.texture(set.albedo, tile(set.albedo, seed, () => brickAlbedo(seed, PALETTE[name])));
+    }
+    const makers = { 'brick.n': brickNormal, 'stucco.n': stuccoNormal, 'asphalt.n': asphaltNormal, 'walk.n': walkNormal };
+    maps.normal = g.texture(set.normal, tile(set.normal, seed, () => makers[set.normal](seed)));
+    return g.material(name, set.albedo ? [1, 1, 1] : s.color, s.rough, s.alpha, maps);
+  };
   const root = g.node({ name: 'street', rotation: streetYaw ? quatY((streetYaw * Math.PI) / 180) : undefined });
   const rng = rngOf(seed);
 
@@ -96,22 +117,24 @@ export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0 } = {}) {
     { geo: box(gx, 0, hs - 0.2, gx + 1.2, gh - 1, hs + 1, { omit: ['ny'] }) },
     { geo: box(gx - 0.2, gh - 1, -hs - 1, gx + 1.4, gh, hs + 1) },
   ];
-  const gateGeo = gate.reduce((acc, { geo }) => ({ pos: [...acc.pos, ...geo.pos], nrm: [...acc.nrm, ...geo.nrm], col: [...acc.col, ...geo.col], idx: [...acc.idx, ...geo.idx.map((i) => i + acc.pos.length / 3)] }), { pos: [], nrm: [], col: [], idx: [] });
+  const gateGeo = merge(gate);
   g.node({ name: 'gate.1', mesh: g.mesh('gate.1', gateGeo, mat('ivoryB')), parent: root });
 
   const out = g.finish();
   out.summary.buildings = buildings.length;
+  out.summary.textures = out.json.textures.length;
   return out;
 }
 
 function parseArgs(argv) {
-  const o = { seed: 1, out: 'frontend/assets/worlds/nyc-street.glb', brick: 'A', streetYaw: 0 };
+  const o = { seed: 1, out: 'frontend/assets/worlds/nyc-street.glb', brick: 'A', streetYaw: 0, textures: true };
   for (const a of argv) {
     const [k, v] = a.split('=');
     if (k === '--seed') o.seed = Number(v);
     else if (k === '--out') o.out = v;
     else if (k === '--brick') o.brick = v === 'B' ? 'B' : 'A';
     else if (k === '--street-yaw') o.streetYaw = Number(v);
+    else if (k === '--no-tex') o.textures = false;
   }
   return o;
 }

@@ -107,8 +107,11 @@ describe('GLB — 개구부·모듈·재질·상한', () => {
     const pal = new Set<string>();
     for (const hex of Object.values(PALETTE)) { pal.add(hexToLinear(hex).map((v) => v.toFixed(4)).join(',')); pal.add(hexToLinear(hex, 0.92).map((v) => v.toFixed(4)).join(',')); }
     for (const m of built.json.materials) {
-      const rgb = m.pbrMetallicRoughness.baseColorFactor.slice(0, 3).map((v) => v.toFixed(4)).join(',');
-      expect(pal.has(rgb), m.name).toBe(true);
+      const pm = m.pbrMetallicRoughness as { baseColorFactor: number[]; baseColorTexture?: unknown };
+      const rgb = pm.baseColorFactor.slice(0, 3).map((v) => v.toFixed(4)).join(',');
+      // 알베도 텍스처가 있는 재질(벽돌)은 색을 텍스처에 굽고 factor 는 흰색(textures.mjs 헤더)
+      if (pm.baseColorTexture) expect(rgb, m.name).toBe('1.0000,1.0000,1.0000');
+      else expect(pal.has(rgb), m.name).toBe(true);
     }
     expect(built.json.materials.length).toBeLessThanOrEqual(20);
   });
@@ -123,5 +126,34 @@ describe('GLB — 개구부·모듈·재질·상한', () => {
     const rotated = r.nodes.filter((n) => n.rotation && n.name === 'street');
     expect(rotated).toHaveLength(1);
     expect(r.nodes[0].name).toBe('street');
+  });
+});
+
+describe('텍스처 — 감독 «벽돌 텍스처 + 전체 노말맵», 팀장 판정 C(절차 생성 타일)', () => {
+  type Mat = { name: string; normalTexture?: { index: number; scale: number }; pbrMetallicRoughness: { baseColorTexture?: { index: number } } };
+  const mats = built.json.materials as unknown as Mat[];
+  const images = (built.json as unknown as { images: { mimeType: string; bufferView: number }[] }).images;
+  it('벽돌 재질은 알베도+노말, 아이보리·실내·아스팔트·보도는 노말, 금속·유리는 없음', () => {
+    const byName = Object.fromEntries(mats.map((m) => [m.name, m]));
+    for (const n of ['brickA', 'brickB']) { expect(byName[n].pbrMetallicRoughness.baseColorTexture).toBeDefined(); expect(byName[n].normalTexture).toBeDefined(); }
+    for (const n of ['ivoryA', 'ivoryB', 'roomWall', 'asphalt', 'walk', 'ivoryATrim']) expect(byName[n].normalTexture, n).toBeDefined();
+    for (const n of ['metal', 'glass1', 'glassU']) { expect(byName[n].normalTexture).toBeUndefined(); expect(byName[n].pbrMetallicRoughness.baseColorTexture).toBeUndefined(); }
+  });
+  it('타일은 공유된다 — 이미지 ≤ 8장, 전부 PNG, 총 GLB ≤ 5MB', () => {
+    expect(images.length).toBeLessThanOrEqual(8);
+    for (const im of images) expect(im.mimeType).toBe('image/png');
+    expect(built.summary.bytes).toBeLessThanOrEqual(5 * 1024 * 1024);
+  });
+  it('텍스처가 붙은 메시는 TEXCOORD_0 을 갖는다', () => {
+    const texMats = new Set(mats.map((m, i) => (m.normalTexture || m.pbrMetallicRoughness.baseColorTexture) ? i : -1));
+    for (const m of built.json.meshes) {
+      const p = m.primitives[0];
+      if (texMats.has(p.material)) expect(p.attributes.TEXCOORD_0, `mesh mat ${p.material}`).toBeDefined();
+    }
+  });
+  it('--no-tex 대조군은 이미지 0 · 재질 색이 전부 팔레트', () => {
+    const plain = buildStreet({ seed: 1, textures: false }) as { json: { images: unknown[]; materials: { normalTexture?: unknown }[] } };
+    expect(plain.json.images).toHaveLength(0);
+    for (const m of plain.json.materials) expect(m.normalTexture).toBeUndefined();
   });
 });

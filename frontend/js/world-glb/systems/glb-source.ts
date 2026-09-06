@@ -88,6 +88,9 @@
 import * as THREE from 'three/webgpu';
 import type { Object3D, Scene } from 'three/webgpu';
 import { instanceRepeats, isShadowMaterial } from './glb-instance.js';
+import { applyNormalKnob } from './glb-normal.js';
+import type { NormalKnob } from '../decide/glb-normal.js';
+export { normalKnob, NORMAL_KNOB_MAX } from '../decide/glb-normal.js';
 import { SHADOW_LIFT } from '../decide/shadow-decal.js';
 import { fixBoxDecalScale, rebakeShadowAtlas, applyAtlas } from './glb-shadow-fix.js';
 import { eachPlacement } from './glb-placement.js';
@@ -148,8 +151,11 @@ export interface GlbSourceResult {
 export function mountGlbWorld(
   scene: Scene,
   gltfScene: Object3D,
-  opts: { castShadow: boolean; grid?: number },
+  opts: { castShadow: boolean; grid?: number; normalKnob?: NormalKnob },
 ): GlbSourceResult {
+  // 노말맵 강도 노브(`?nrm=`) — 되묶기 «전» 원본 재질에 한 번(인스턴스가 같은 재질 객체를 공유한다). 판정은
+  // decide, 집행은 systems/glb-normal.ts — 통합 검사가 three 재질 실물로 돈다(붙은 것과 소비되는 것은 다른 일).
+  if (opts.normalKnob) applyNormalKnob(gltfScene, opts.normalKnob);
   // ── 되묶기 «전» 에 센다 ────────────────────────────────────────────────────
   // ⚠ 되묶은 뒤 세면 **357배 축소된 수**가 나온다(검수관 반려 B3): `InstancedMesh` 는
   // 트리에서 노드 하나이고 `geometry` 도 한 벌이라, 28,705 메시가 40 으로, 삼각형이

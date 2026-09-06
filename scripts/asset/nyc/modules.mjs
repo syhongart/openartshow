@@ -7,6 +7,9 @@
 // 좌표계: 박스는 **최소 모서리(min) 기준**으로 만든다 — 입면 조립(`facade.mjs`)이 벽 판을 x·y 구간으로
 // 적기 때문에 중심 기준보다 실수가 적다. 면 이름: px/nx(±x) py/ny(±y) pz/nz(±z).
 
+/** 타일 1장이 덮는 월드 길이(m). 벽돌 러닝본드 8단 ≈ 2m — `textures.mjs` 의 타일 설계와 짝이다 */
+export const TILE_M = 2;
+
 const FACES = [
   // [법선, 네 꼭짓점(정규화 0/1 좌표)] — 반시계(밖에서 봤을 때) 순서
   { n: [0, 0, 1],  q: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], key: 'pz' },
@@ -22,8 +25,8 @@ const FACES = [
  * `omit` 에 적은 면은 만들지 않는다(벽 판의 뒷면·바닥면처럼 안 보이는 면 — 삼각형 절약).
  * 반환 `{pos, nrm, col, idx}` — col 은 RGBA u8, 각 꼭짓점 4개가 면마다 독립(법선이 다르므로).
  */
-export function box(x0, y0, z0, x1, y1, z1, { ao = 1, omit = [] } = {}) {
-  const pos = [], nrm = [], col = [], idx = [];
+export function box(x0, y0, z0, x1, y1, z1, { ao = 1, omit = [], tile = TILE_M } = {}) {
+  const pos = [], nrm = [], col = [], idx = [], uv = [];
   const aoOf = (key) => {
     const v = typeof ao === 'number' ? ao : (ao[key] ?? ao.default ?? 1);
     return Math.max(0, Math.min(255, Math.round(v * 255)));
@@ -33,24 +36,29 @@ export function box(x0, y0, z0, x1, y1, z1, { ao = 1, omit = [] } = {}) {
     const base = pos.length / 3;
     const a = aoOf(f.key);
     for (const [u, v, w] of f.q) {
-      pos.push(u ? x1 : x0, v ? y1 : y0, w ? z1 : z0);
+      const X = u ? x1 : x0, Y = v ? y1 : y0, Z = w ? z1 : z0;
+      pos.push(X, Y, Z);
       nrm.push(...f.n);
       col.push(a, a, a, 255);
+      // 평면 투영 UV — 면의 법선 축을 뺀 두 좌표를 타일 크기로 나눈다(월드 m 단위라 인접 판끼리 이음새가 맞는다)
+      if (f.key === 'pz' || f.key === 'nz') uv.push(X / tile, Y / tile);
+      else if (f.key === 'px' || f.key === 'nx') uv.push(Z / tile, Y / tile);
+      else uv.push(X / tile, Z / tile);
     }
     idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
-  return { pos, nrm, col, idx };
+  return { pos, nrm, col, idx, uv };
 }
 
 /** 여러 지오를 하나로 합친다(같은 재질끼리). `at` 로 평행이동 */
 export function merge(list) {
-  const out = { pos: [], nrm: [], col: [], idx: [] };
+  const out = { pos: [], nrm: [], col: [], idx: [], uv: [] };
   for (const { geo, at = [0, 0, 0] } of list) {
     const base = out.pos.length / 3;
     for (let i = 0; i < geo.pos.length; i += 3) {
       out.pos.push(geo.pos[i] + at[0], geo.pos[i + 1] + at[1], geo.pos[i + 2] + at[2]);
     }
-    out.nrm.push(...geo.nrm); out.col.push(...geo.col);
+    out.nrm.push(...geo.nrm); out.col.push(...geo.col); out.uv.push(...(geo.uv ?? []));
     for (const i of geo.idx) out.idx.push(i + base);
   }
   return out;

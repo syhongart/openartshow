@@ -10,19 +10,22 @@ export function glbBuilder() {
     asset: { version: '2.0', generator: 'openartshow nyc-street generate.mjs' },
     scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [],
     accessors: [], bufferViews: [], buffers: [],
+    samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 }],   // LINEAR / LINEAR_MIPMAP_LINEAR / REPEAT
+    images: [], textures: [],
   };
+  const texIndex = new Map();
   const chunks = [];       // Buffer 조각(정렬된 채로)
   let binLen = 0;
   const matIndex = new Map();
   const meshIndex = new Map();
 
-  function view(buf, target) {
+  function view(buf, target) {   // target 없으면 이미지 뷰
     const off = binLen;
     const padded = pad4(buf.length);
     chunks.push(buf);
     if (padded > buf.length) chunks.push(Buffer.alloc(padded - buf.length));
     binLen += padded;
-    json.bufferViews.push({ buffer: 0, byteOffset: off, byteLength: buf.length, target });
+    json.bufferViews.push(target ? { buffer: 0, byteOffset: off, byteLength: buf.length, target } : { buffer: 0, byteOffset: off, byteLength: buf.length });
     return json.bufferViews.length - 1;
   }
   function accessor(bufferView, componentType, count, type, extra = {}) {
@@ -31,14 +34,28 @@ export function glbBuilder() {
   }
 
   return {
-    /** 재질 — 같은 이름은 한 번만. `color` 는 linear RGB, `alpha` < 1 이면 BLEND */
-    material(name, color, roughness, alpha = 1) {
+    /** PNG 바이트를 이미지로 임베드하고 텍스처 인덱스를 돌려준다(같은 key 는 한 번만) */
+    texture(key, pngBuffer) {
+      if (texIndex.has(key)) return texIndex.get(key);
+      json.images.push({ name: key, mimeType: 'image/png', bufferView: view(pngBuffer) });
+      json.textures.push({ name: key, sampler: 0, source: json.images.length - 1 });
+      texIndex.set(key, json.textures.length - 1);
+      return texIndex.get(key);
+    },
+
+    /**
+     * 재질 — 같은 이름은 한 번만. `color` 는 linear RGB, `alpha` < 1 이면 BLEND.
+     * `maps` = { baseColor?: texIdx, normal?: texIdx, normalScale?: number } — 텍스처는 곱(`baseColorFactor` 가 틴트).
+     */
+    material(name, color, roughness, alpha = 1, maps = {}) {
       if (matIndex.has(name)) return matIndex.get(name);
       const m = {
         name,
         pbrMetallicRoughness: { baseColorFactor: [...color, alpha], metallicFactor: 0, roughnessFactor: roughness },
         doubleSided: alpha < 1,
       };
+      if (maps.baseColor !== undefined) m.pbrMetallicRoughness.baseColorTexture = { index: maps.baseColor };
+      if (maps.normal !== undefined) m.normalTexture = { index: maps.normal, scale: maps.normalScale ?? 1 };
       if (alpha < 1) m.alphaMode = 'BLEND';
       json.materials.push(m);
       matIndex.set(name, json.materials.length - 1);
@@ -60,10 +77,12 @@ export function glbBuilder() {
       const aNrm = accessor(view(Buffer.from(nrm.buffer), 34962), 5126, n, 'VEC3');
       const aCol = accessor(view(Buffer.from(col.buffer), 34962), 5121, n, 'VEC4', { normalized: true });
       const aIdx = accessor(view(Buffer.from(idx.buffer), 34963), 5125, idx.length, 'SCALAR');
-      json.meshes.push({
-        name: key,
-        primitives: [{ attributes: { POSITION: aPos, NORMAL: aNrm, COLOR_0: aCol }, indices: aIdx, material: materialIdx }],
-      });
+      const attributes = { POSITION: aPos, NORMAL: aNrm, COLOR_0: aCol };
+      if (geo.uv && geo.uv.length === n * 2) {
+        const uv = new Float32Array(geo.uv);
+        attributes.TEXCOORD_0 = accessor(view(Buffer.from(uv.buffer), 34962), 5126, n, 'VEC2');
+      }
+      json.meshes.push({ name: key, primitives: [{ attributes, indices: aIdx, material: materialIdx }] });
       meshIndex.set(key, json.meshes.length - 1);
       return meshIndex.get(key);
     },
