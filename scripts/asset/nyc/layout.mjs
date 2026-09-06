@@ -12,6 +12,7 @@ export const DIMS = Object.freeze({
   WALK_W: 3.2,            // §3 보도
   CURB_H: 0.15,           // §3·§6 연석(노출 12cm — 도로면을 −0.15 로 내린다)
   CURB_EXPOSED: 0.12,     // §6
+  CURB_W: 0.15,           // §3 연석 평면 폭 — 보도 판은 이 폭만큼 **좁혀서** 깐다(아래 groundPlan 주석)
   DEPTH: 14,              // 건물 깊이(위임 명세)
   GAP: 1.2,               // 채 사이 간격(위임 명세)
   STORY_1F: 4.2,          // §3 1층 층고
@@ -145,13 +146,18 @@ export function groundPlan() {
   // (첫 헤드리스 캡처에서 실측). 그래서 도로·보도는 거리보다 훨씬 길게(x −40..120), 건물 뒤·옆은
   // «뒷마당» 판(연석 색, y=0)으로 z ±60 까지 덮는다. 안개 far(76.8m) 너머는 안개가 가린다.
   const x0 = -40, x1 = 120, zFar = 60;
-  const hr = DIMS.ROAD_W / 2, hw = DIMS.WALK_W;
+  const hr = DIMS.ROAD_W / 2, hw = DIMS.WALK_W, cw = DIMS.CURB_W;
+  // ⚠ 보도 판은 연석 폭 cw 만큼 **좁혀서** 깐다 — 예전에는 보도가 `−hr` 까지 덮어 연석 판을 통째로
+  // 품었고, 두 판의 윗면이 **둘 다 y=0** 이라 동일 평면·같은 방향이 됐다(z-fighting 24m², 실측
+  // 2026-09-06). 감독 실기기: *"그것뿐 아니라 도로에서도 그런 게 보여"*. **높이를 갈라 «턱» 을
+  // 만들지 않는다** — 보도 상면 y=0 은 `glb-collider` 의 지면 전제다(감독 지시). 그래서 겹치는
+  // 쪽(보도)의 z 범위를 물린다: 걸을 수 있는 면적은 그대로고 연석 상면이 그 자리를 잇는다.
   return {
     road:  { x0, x1, z0: -hr, z1: hr, top: -DIMS.CURB_H, mat: 'asphalt' },
-    walkN: { x0, x1, z0: -hr - hw, z1: -hr, top: 0, mat: 'walk' },
-    walkS: { x0, x1, z0: hr, z1: hr + hw, top: 0, mat: 'walk' },
-    curbN: { x0, x1, z0: -hr - 0.15, z1: -hr, top: 0, bottom: -DIMS.CURB_H, mat: 'curb' },
-    curbS: { x0, x1, z0: hr, z1: hr + 0.15, top: 0, bottom: -DIMS.CURB_H, mat: 'curb' },
+    walkN: { x0, x1, z0: -hr - hw, z1: -hr - cw, top: 0, mat: 'walk' },
+    walkS: { x0, x1, z0: hr + cw, z1: hr + hw, top: 0, mat: 'walk' },
+    curbN: { x0, x1, z0: -hr - cw, z1: -hr, top: 0, bottom: -DIMS.CURB_H, mat: 'curb' },
+    curbS: { x0, x1, z0: hr, z1: hr + cw, top: 0, bottom: -DIMS.CURB_H, mat: 'curb' },
     yardN: { x0, x1, z0: -zFar, z1: -hr - hw, top: 0, mat: 'curb' },
     yardS: { x0, x1, z0: hr + hw, z1: zFar, top: 0, mat: 'curb' },
   };
