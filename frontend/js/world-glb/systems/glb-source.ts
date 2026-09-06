@@ -94,7 +94,8 @@ export { normalKnob, NORMAL_KNOB_MAX } from '../decide/glb-normal.js';
 import { SHADOW_LIFT } from '../decide/shadow-decal.js';
 import { fixBoxDecalScale, rebakeShadowAtlas, applyAtlas } from './glb-shadow-fix.js';
 import { eachPlacement } from './glb-placement.js';
-import { isRoomLightNode, ROOM_LIGHT_COLOR, ROOM_LIGHT_INTENSITY } from '../decide/glb-nodes.js';
+import { isRoomLightNode, ROOM_LIGHT_COLOR, roomLightIntensity } from '../decide/glb-nodes.js';
+import { readRawOpt } from '../url-knob.js';
 
 export interface GlbSourceResult {
   /** 씬에 얹힌 루트(인스턴싱 **후**) */
@@ -289,9 +290,25 @@ export function mountGlbWorld(
   group.name = 'glb-world:glb-source';
 
   // 라이트 노드별로 포인트라이트 생성 및 추가. 색·강도는 판정이라 `decide/glb-nodes.ts` 한 곳에
-  // 있다 — 여기에 값을 다시 적지 않는다(강도는 아직 스윕 전 임시값이다, 그 주석 참조).
+  // 있다 — 여기에 값을 다시 적지 않는다(강도는 아직 스윕 전 임시 기본값이다, 그 주석 참조).
+  //
+  // ── ⚠ 왜 노브를 **이 파일에서** 읽는가 (`main.ts` 를 안 거치는 예외) ──────────────
+  // 이 트리의 다른 노브는 전부 `main.ts` 가 읽어 옵션으로 내려준다(`?nrm=` 이 바로 위
+  // `opts.normalKnob` 이다). `?pli=` 만 다른 이유는 **`world-glb/main.ts` 가 동결 파일**이기
+  // 때문이다 — 앞선 회차에 바로 이 노브를 그 파일에 넣어 baseline(1250줄)을 올리고 게이트를
+  // 우회한 사고가 났다(BOARD 2026-09-06 «🔴 조명 executor 사고»). 옵션으로 내리면 그 파일이
+  // 다시 커진다. 그래서 «세계를 짓는 자리» 인 여기서 직접 읽는다(main.ts **+0**).
+  //
+  // 읽기 자체는 `url-knob.ts` 를 거친다 — URL 을 여는 지점은 그 파일 한 곳이라는 규율은
+  // 그대로다. 유효값 판정(폴백·음수·상한)은 `decide` 가 통째로 갖는다: 이 줄에는 키
+  // 문자열밖에 없고 **숫자가 하나도 없다**(범위를 여기 적으면 값 미러링이다).
+  //
+  // **경계**: 이 예외는 «동결 파일이 배선 경로에 있는 노브» 에만 성립한다. 동결이 풀리거나
+  // 노브가 `main.ts` 의 다른 값과 엮이면 옵션 배선으로 되돌린다 — 여기가 노브 창고가 되면
+  // 그때부터 `mountGlbWorld` 의 입력이 인자 목록에 안 보이게 된다.
+  const intensity = roomLightIntensity(readRawOpt('pli'));
   for (const light of roomLights) {
-    const pointLight = new THREE.PointLight(ROOM_LIGHT_COLOR, ROOM_LIGHT_INTENSITY);
+    const pointLight = new THREE.PointLight(ROOM_LIGHT_COLOR, intensity);
     pointLight.position.copy(light.position);
     group.add(pointLight);
   }
