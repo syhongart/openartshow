@@ -5,24 +5,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <!--
-  world7 — **사용자가 고른 GLB 가 곧 세계다.** `world8.html` 과 **같은 트리**를 탄다.
+  world10 — **뉴욕 갤러리 거리.** world8.html 의 사본이고 다른 것은 셋뿐이다: <title> · <body data-glb>
+  (`nyc-street.glb`, `scripts/asset/nyc/generate.mjs` 산출) · 부트(`js/world10-boot.js`, `?cam=` 을 읽는다).
+  감독 지시서 `docs/NYC-GALLERY-WALK.md`, 팀장 판정 「A」(`docs/BOARD.md` 2026-09-06), 상태 `docs/nyc/state.md`.
+  behind-flag — 어디에도 링크하지 않는다. 아래 주석은 world8 의 경위이고 이 페이지에도 그대로 적용된다
+  (같은 트리·같은 CSP·같은 마크업 id 접두 `wg-`).
+-->
+<!--
+  world8 — **블렌더를 거친 GLB 가 곧 세계다.** world2 의 포크다.
 
   behind-flag: 어디에도 링크하지 않는다. 라이브 노출은 감독·팀장 게이트를 거친다.
 
-  ── 왜 이 파일이 world8.html 의 복사본인가 ──────────────────────────────────
-  감독 지시 2026-08-26: *"GLB파일을 임포트 하면. 알아서 지도 만들고, 충돌만들고.
-  인스턴스.. 등 하게끔해."* → *"방금 한것처럼 월드2가 그대로 들어오게해."*
+  ── 왜 이 파일이 world2.html 의 복사본인가 ──────────────────────────────────
+  감독 지시 2026-08-26: *"월드8에 월드 2의 기본 기능 다 들어가야지"*(카드 답
+  「할 수 있는 것은 전부」) → *"지금 월드 2와 월드8 다르잖아. 그림자 구현방식도 다르고.
+  치비도 다녀야하고. 구름. 천둥번개등 조이스틱으로 달리기 속도도 다르고."*
 
-  「방금 한 것」 = world8 을 world2 전체 포크로 재구성한 것. 팀장 판정 **(A) 트리 공유**
-  (2026-08-26): 두 페이지는 세계·기능·조작이 전부 같고 **「GLB 를 어디서 얻는가」 하나만**
-  다르므로 45,170줄을 복제하지 않는다. 그래서 이 파일과 `world8.html` 의 차이는
-  **제목 · id 접두 · 고르기 UI · 부트 경로**뿐이다.
+  앞선 회차는 world2 의 기능을 **부분 이식**하려 했고 다섯 축에서 다섯 번 막혔다.
+  이식은 원리상 원본과 **다른 물건**을 만든다 — 감독이 지적한 차이가 정확히 그것이다.
+  팀장 판정(2026-08-26)으로 **전체 포크**로 전환했고, 그래서 이 파일과 world2.html 의
+  차이는 **제목·자산·부트 경로 셋뿐**이다. 조이스틱 구역·미니맵 서랍·HUD·노브 바·
+  로딩 화면은 **한 글자도 안 고친다** — 안 고쳐야 같다.
 
-  경위·판정 축·no-sync 정책은 `js/world-glb/README.md` 한 곳이다.
+  경위·판정 축·no-sync 정책은 `js/world8/README.md` 한 곳이다.
 
-  ⚠ **`data-glb` 가 없다.** 저쪽은 고정 자산이 부팅 즉시 열리고, 여기는 **사람이 고른
-  파일**이 세계가 된다. 그 갈림은 `js/world-glb/main.ts` 의 `GlbWorldOptions.source`
-  한 곳이고, 그 자리 주석이 「이 트리 안에 페이지 분기를 늘리지 마라」를 못 박는다.
+  ⚠ **세계가 되는 GLB 는 `<body data-glb>` 가 가리킨다.** 진짜 블렌더(bpy 5.0.1)가
+  우리 내보내기를 읽고 조형물을 얹어 다시 쓴 파일이고, 절차는
+  `scripts/asset/extract-world2-glb.mjs` + `blender-edit.py` 두 곳이다.
 -->
 <!-- connect-src 에 blob: 이 필요하다: GLTFLoader 가 내장 텍스처를 디코드할 때
      ImageBitmapLoader 가 버퍼뷰를 Blob→objectURL 로 만들고 fetch() 로 읽는다.
@@ -41,7 +50,7 @@
      ImageLoader(<img>)로 폴백하므로 그때 필요해진다. connect-src 는 **지금 쓰이는 것**
      이고 img-src 는 **안전망**이다. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
-<title>월드7 · GLB 를 걷는다 · OpenArtShow</title>
+<title>월드10 · 뉴욕 갤러리 거리 · OpenArtShow</title>
 <style>
   :root{
     --bg:#0B0D12; --ink:#F5F5F2; --dim:#9A9EB1; --line:#3A3D4B;
@@ -479,24 +488,8 @@
   @media (prefers-reduced-motion: reduce){
     #wg-sliders-toggle .caret,#wg-sliders-toggle,.wg-slide-pin,.wg-slide-reset{transition:none}
   }
-
-  /* ── 파일 고르기 (world7 전용) ─────────────────────────────────────────── */
-  #wg-pick{position:fixed;inset:0;z-index:20;display:grid;place-content:center;gap:14px;
-    text-align:center;padding:24px;color:#f3efe7;
-    background:radial-gradient(120% 90% at 50% 30%,#211d18 0%,#12100e 70%);
-    transition:opacity .35s ease}
-  #wg-pick.hide{opacity:0;pointer-events:none}
-  #wg-pick h1{margin:0;font-size:22px;letter-spacing:-.01em;font-weight:650}
-  #wg-pick p{margin:0;color:#a9a293;font-size:14px;max-width:38ch;line-height:1.6}
-  #wg-pickBtn{margin:6px auto 0;padding:11px 22px;border-radius:10px;border:1px solid #6b6152;
-    background:#2a251f;color:#f3efe7;font-size:15px;cursor:pointer}
-  #wg-pickBtn:hover{background:#352f27}
-  #wg-status{min-height:1.4em;color:#a9a293;font-size:13px;font-variant-numeric:tabular-nums}
-  #wg-again{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:12;
-    padding:8px 14px;border-radius:9px;border:1px solid #6b6152;background:#2a251fcc;
-    color:#f3efe7;font-size:13px;cursor:pointer;backdrop-filter:blur(6px)}
 </style>
-  <script type="module" crossorigin src="/openartshow/_bundle/world7-gOcgDR1-.js"></script>
+  <script type="module" crossorigin src="/openartshow/_bundle/world10-KOUDxqL4.js"></script>
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/preload-helper-DASV_Wa7.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-core-B9yYu4kV.js">
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/vendor-three-webgpu-CKtPaeg8.js">
@@ -511,22 +504,8 @@
   <link rel="modulepreload" crossorigin href="/openartshow/_bundle/main-BJOFnmNT.js">
   <link rel="stylesheet" crossorigin href="/openartshow/_bundle/fonts-CHCAbQkv.css">
 </head>
-<body>
+<body data-glb="./assets/worlds/nyc-street.glb">
   <canvas id="wg-canvas"></canvas>
-
-  <!-- ── 파일 고르기 — **이 페이지에만 있는 것** ────────────────────────────
-       고른 파일이 곧 세계다. 고르기 전에는 `startGlbWorld` 가 아예 안 불린다 —
-       부팅 진행률이 「받는 시간」을 포함해야 하는데 여기서는 그 시간이 «사람이
-       고르는 시간» 이라 로딩바로 표현할 수 없기 때문이다. -->
-  <div id="wg-pick">
-    <h1>월드7 — GLB 를 걷는다</h1>
-    <p>블렌더 등에서 만든 <b>.glb</b> 파일을 고르면 그 파일이 그대로 세계가 됩니다.
-       지도·충돌·인스턴싱은 알아서 만들어집니다.</p>
-    <button id="wg-pickBtn" type="button">GLB 파일 고르기</button>
-    <div id="wg-status">창에 파일을 끌어다 놓아도 됩니다</div>
-    <input id="wg-file" type="file" accept=".glb,model/gltf-binary" hidden>
-  </div>
-  <button id="wg-again" type="button" hidden>다른 파일</button>
 
   <!-- 물속 틴트. `aria-hidden` — 화면에만 있는 연출이라 읽어 줄 내용이 없다 -->
   <div id="wg-underwater" aria-hidden="true"></div>
