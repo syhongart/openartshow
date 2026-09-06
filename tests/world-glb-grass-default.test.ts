@@ -15,16 +15,16 @@ describe('잔디 기본 모드 — 세계별 감독 판정', () => {
     expect(W2).toBe('blade');
   });
 
-  it('world-glb(월드7·8)는 card · 잎 10 · 마디 1 · AA 2 — 2026-09-06 감독 «4번이 좋아» → «4번으로 굽는다»', () => {
+  it('world-glb(월드7·8)는 card · 잎 10 · 마디 1 · AA 4 — 2026-09-06 감독 «4번으로 굽는다» → «5번째가 좋아 보이네»', () => {
     expect(W8).toBe('card');
     expect(C8).toBe(10);
     expect(S8).toBe(1);
-    expect(A8).toBe(2);
+    expect(A8).toBe(4); // «5번째가 좋아 보이네» 2026-09-06 — 4번→5번으로 뒤집힘
   });
 
-  it('world2 의 카드 잎 수 기본은 6 그대로(노브 전용) · AA 기본 2 는 두 트리 같다(blade 는 안 읽는다)', () => {
+  it('world2 의 카드 잎 수 기본은 6 그대로(노브 전용) · AA 기본 4 는 두 트리 같다(blade 는 안 읽는다)', () => {
     expect(C2).toBe(6);
-    expect(A2).toBe(2);
+    expect(A2).toBe(4);
   });
 
   it('world2 의 2D 노브 기본 마디는 3 그대로 — 감독 «살랑살랑» 이 만든 값, world2 기본은 어차피 blade', () => {

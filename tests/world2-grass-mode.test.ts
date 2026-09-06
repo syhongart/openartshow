@@ -275,7 +275,7 @@ type MaskTex = { image: { width: number }; generateMipmaps: boolean; minFilter: 
 describe('잎 윤곽 AA (`?gaa=`) — 감독 «나뭇잎에 알리아싱» 2026-09-05', () => {
   it('판정: 요소별 — 0 전부 끔(라이브 그대로), 1 a2c, 2 a2c+밉맵, 3 a2c+해상도(밉맵 없음), 4 셋 다', () => {
     // 첫 판본은 누적형이었고 감독이 «5링크 이상해»(밉맵+해상도) 로 잡았다 — 요소를 가를 수 없어서다.
-    expect(GRASS_AA_DEFAULT).toBe(2); // 감독 «4번이 좋아» 2026-09-06
+    expect(GRASS_AA_DEFAULT).toBe(4); // 감독 «5번째가 좋아 보이네» 2026-09-06
     expect(edgeAA(0)).toEqual({ alphaToCoverage: false, mipmaps: false, maskScale: 1 });
     expect(edgeAA(1)).toEqual({ alphaToCoverage: true, mipmaps: false, maskScale: 1 });
     expect(edgeAA(2)).toEqual({ alphaToCoverage: true, mipmaps: true, maskScale: 1 });
