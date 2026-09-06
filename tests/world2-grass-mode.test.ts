@@ -287,7 +287,9 @@ describe('잎 윤곽 AA (`?gaa=`) — 감독 «나뭇잎에 알리아싱» 2026-
 
   it('집행: gaa=0 대비 ?gmode=card&gaa=4 → a2c 켜짐 · 밉맵 필터 · 마스크 64→256', async () => {
     const plain = await mountGrass('?styl=1');
-    expect((plain.meshes[0].material as unknown as { alphaMap: unknown }).alphaMap).toBeFalsy(); // 기본 blade 는 마스크가 없어 gaa 를 안 읽는다
+    const pm = plain.meshes[0].material as unknown as { alphaMap: unknown; alphaToCoverage: unknown };
+    expect(pm.alphaMap).toBeFalsy(); // 기본 blade 는 마스크가 없어 gaa 를 안 읽는다
+    expect(pm.alphaToCoverage).toBeFalsy(); // 검수관 M11(alpha 유무와 무관하게 a2c 적용) — alphaMap 부재만 보면 안 잡힌다
     const base = await mountGrass('?styl=1&gmode=card&gaa=0');
     const aa = await mountGrass('?styl=1&gmode=card&gaa=4');
     const mb = base.meshes[0].material as unknown as { alphaToCoverage: boolean; alphaMap: MaskTex };
