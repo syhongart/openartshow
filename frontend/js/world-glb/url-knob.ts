@@ -105,6 +105,26 @@ export function readNumOpt(key: string, min: number, max: number): number | null
 }
 
 /**
+ * URL 파라미터의 **원문**을 그대로 읽는다. 없으면 `null`. 파싱·클램프를 **안 한다**.
+ *
+ * ── 왜 `readNumOpt` 로 안 되는가 ─────────────────────────────────────────────
+ * `readNumOpt(key, min, max)` 는 호출처에 **범위를 적게 만든다.** 그 범위가 판정 계층
+ * (`decide/**`)에도 있으면 같은 값이 두 곳에 사는 «값 미러링» 이고, 넓히는 날 한쪽만
+ * 넓어진다 — 이 저장소가 색·수치·임계값에서 세 번 겪은 사고의 형태다.
+ *
+ * 그래서 «URL 을 읽는 일» 만 여기 남기고 «무엇이 유효한 값인가» 는 판정 함수가 통째로
+ * 갖는다(`decide/glb-nodes.ts` 의 `roomLightIntensity` 가 첫 소비자다 — 폴백·음수·상한이
+ * 전부 그 한 함수 안에 있고, 이 파일은 키 문자열만 안다).
+ *
+ * 판정이 «지정 안 됨» 과 «빈 값» 을 구별할 수 있게 `?k=` 는 빈 문자열 그대로 넘긴다
+ * (`readNumOpt` 는 여기서 `null` 로 접는다 — 그 접기도 판정의 몫이다).
+ */
+export function readRawOpt(key: string): string | null {
+  if (typeof location === 'undefined') return null;
+  return new URLSearchParams(location.search).get(key);
+}
+
+/**
  * URL 16진 색 파라미터를 읽는다. 없거나 유효한 6자리 hex가 아니면 `undefined`.
  *
  * @param key URL 파라미터 이름

@@ -10,6 +10,7 @@ import * as THREE from 'three/webgpu';
 import { buildStreet } from '../scripts/asset/nyc/generate.mjs';
 import {
   isRoomLightNode, ROOM_LIGHT_SUFFIX, ROOM_LIGHT_COLOR, ROOM_LIGHT_INTENSITY,
+  ROOM_LIGHT_INTENSITY_MAX, roomLightIntensity,
 } from '../frontend/js/world-glb/decide/glb-nodes.js';
 import { mountGlbWorld } from '../frontend/js/world-glb/systems/glb-source.js';
 import { applyHemiGround } from '../frontend/js/world-glb/systems/sky-ground.js';
@@ -150,20 +151,21 @@ type PointLightLike = {
   position: { toArray(): number[] };
 };
 
+/** 라이트 노드 하나만 있는 최소 트리. 되묶기 대상(메시)이 없어도 라이트 경로는 돈다. */
+function mount(): PointLightLike[] {
+  const root = new THREE.Group();
+  const node = new THREE.Object3D();
+  node.name = 'bld_2_room_1_light';
+  node.position.set(1.5, 3.7, -12);
+  root.add(node);
+  const scene = new THREE.Scene();
+  mountGlbWorld(scene as never, root as never, { castShadow: false });
+  const lights: PointLightLike[] = [];
+  scene.traverse((o: PointLightLike) => { if (o.isPointLight) lights.push(o); });
+  return lights;
+}
+
 describe('mountGlbWorld — 방 라이트 집행(three 실물)', () => {
-  /** 라이트 노드 하나만 있는 최소 트리. 되묶기 대상(메시)이 없어도 라이트 경로는 돈다. */
-  function mount() {
-    const root = new THREE.Group();
-    const node = new THREE.Object3D();
-    node.name = 'bld_2_room_1_light';
-    node.position.set(1.5, 3.7, -12);
-    root.add(node);
-    const scene = new THREE.Scene();
-    mountGlbWorld(scene as never, root as never, { castShadow: false });
-    const lights: PointLightLike[] = [];
-    scene.traverse((o: PointLightLike) => { if (o.isPointLight) lights.push(o); });
-    return lights;
-  }
 
   it('라이트 노드마다 PointLight 가 하나, 노드의 월드 좌표에 선다', () => {
     const lights = mount();
@@ -182,6 +184,103 @@ describe('mountGlbWorld — 방 라이트 집행(three 실물)', () => {
   it('강도는 decide 의 ROOM_LIGHT_INTENSITY 를 그대로 쓴다(집행 쪽에 값을 다시 적지 않는다)', () => {
     const lights = mount();
     expect(lights[0].intensity).toBe(ROOM_LIGHT_INTENSITY);
+  });
+});
+
+// ── `?pli=` 노브 — 판정(순수) ─────────────────────────────────────────────────
+describe('roomLightIntensity — 판정', () => {
+  it('지정 안 됨·빈 값·숫자 아님 은 기본값으로 되돌린다', () => {
+    expect(roomLightIntensity(null)).toBe(ROOM_LIGHT_INTENSITY);
+    expect(roomLightIntensity(undefined)).toBe(ROOM_LIGHT_INTENSITY);
+    expect(roomLightIntensity('')).toBe(ROOM_LIGHT_INTENSITY);
+    expect(roomLightIntensity('   ')).toBe(ROOM_LIGHT_INTENSITY);
+    expect(roomLightIntensity('밝게')).toBe(ROOM_LIGHT_INTENSITY);
+    expect(roomLightIntensity('12abc')).toBe(ROOM_LIGHT_INTENSITY);
+  });
+
+  it('0 은 유효한 지정이다 — 「끈 대조군」이라 기본값으로 되돌리지 않는다', () => {
+    // 이 축이 실물 사고에서 왔다: 점광이 0개이던 동안 강도 스윕 4장이 md5 동일이었고,
+    // 그것을 가른 것이 «켠 화면 ↔ 끈 화면» 대조였다(BOARD 2026-09-06).
+    expect(roomLightIntensity('0')).toBe(0);
+    expect(roomLightIntensity('0')).not.toBe(ROOM_LIGHT_INTENSITY);
+  });
+
+  it('음수는 0 이 아니라 기본값으로 되돌린다 — 「끈 것」과 「잘못 적은 것」을 가른다', () => {
+    expect(roomLightIntensity('-1')).toBe(ROOM_LIGHT_INTENSITY);
+    expect(roomLightIntensity('-0.5')).toBe(ROOM_LIGHT_INTENSITY);
+    expect(ROOM_LIGHT_INTENSITY).toBeGreaterThan(0);   // 위 두 단언이 0 과 구별되는 전제
+  });
+
+  it('소수·공백은 통과하고 상한은 클램프한다', () => {
+    expect(roomLightIntensity('7.5')).toBe(7.5);
+    expect(roomLightIntensity(' 30 ')).toBe(30);
+    expect(roomLightIntensity(String(ROOM_LIGHT_INTENSITY_MAX + 1))).toBe(ROOM_LIGHT_INTENSITY_MAX);
+    expect(roomLightIntensity('99999')).toBe(ROOM_LIGHT_INTENSITY_MAX);
+    expect(roomLightIntensity('Infinity')).toBe(ROOM_LIGHT_INTENSITY);   // 유한수만
+  });
+});
+
+// ── `?pli=` 노브 — 집행(three 실물 PointLight) ────────────────────────────────
+// ⚠ **이 describe 가 없으면 노브는 조용히 죽는다.** 위 판정 테스트는 함수만 보고,
+// `glb-source.ts` 가 그 함수를 안 부르고 상수를 그대로 쓰더라도 전부 초록이다 — 이 저장소가
+// 이름 붙인 «판정/집행 분리의 구멍»(CLAUDE.md)이고, `applyHemiGround` 배선이 실제로 그렇게
+// 죽어 있던 회차가 있다. 그래서 URL 을 실제로 세워 `PointLight.intensity` 를 읽는다.
+describe('`?pli=` — 노브 값이 실제 PointLight.intensity 에 들어간다', () => {
+  /** node 환경에는 `location` 이 없다. `url-knob.readRawOpt` 가 읽는 그 전역을 세운다. */
+  function withSearch<T>(search: string, fn: () => T): T {
+    const had = 'location' in globalThis;
+    const prev = (globalThis as { location?: unknown }).location;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search }, configurable: true, writable: true,
+    });
+    try { return fn(); } finally {
+      if (had) Object.defineProperty(globalThis, 'location', { value: prev, configurable: true, writable: true });
+      else delete (globalThis as { location?: unknown }).location;
+    }
+  }
+
+  it('전제 — 이 하네스가 `location` 을 실제로 세운다(안 세우면 아래는 전부 기본값으로 초록이다)', () => {
+    expect('location' in globalThis).toBe(false);
+    withSearch('?pli=30', () => { expect((globalThis as { location: { search: string } }).location.search).toBe('?pli=30'); });
+    expect('location' in globalThis).toBe(false);   // 다른 테스트로 새지 않는다
+  });
+
+  it('`?pli=30` 이면 PointLight 가 30 으로 선다 — 기본값이 아니다', () => {
+    const lights = withSearch('?pli=30', mount);
+    expect(lights).toHaveLength(1);
+    expect(lights[0].intensity).toBe(30);
+    expect(lights[0].intensity).not.toBe(ROOM_LIGHT_INTENSITY);
+  });
+
+  it('`?pli=0` 이면 실제로 꺼진다(강도 0)', () => {
+    const lights = withSearch('?pli=0', mount);
+    expect(lights[0].intensity).toBe(0);
+  });
+
+  it('상한을 넘겨도 화면이 날아가지 않는다 — 클램프가 집행까지 온다', () => {
+    const lights = withSearch('?pli=99999', mount);
+    expect(lights[0].intensity).toBe(ROOM_LIGHT_INTENSITY_MAX);
+  });
+
+  it('노브가 없거나 값이 망가지면 기본값이다 — 다른 파라미터가 섞여 있어도', () => {
+    expect(withSearch('?cam=13.2,-16.6,180,0', mount)[0].intensity).toBe(ROOM_LIGHT_INTENSITY);
+    expect(withSearch('?pli=밝게&nrm=0.6', mount)[0].intensity).toBe(ROOM_LIGHT_INTENSITY);
+    expect(withSearch('?nrm=0.6&pli=24', mount)[0].intensity).toBe(24);   // 순서·이웃 무관
+  });
+
+  it('집행 쪽에 숫자가 없다 — 범위·폴백은 decide 한 곳이다(값 미러링 금지)', () => {
+    const src = readFileSync(
+      join(__dirname, '..', 'frontend', 'js', 'world-glb', 'systems', 'glb-source.ts'), 'utf8');
+    // 노브를 읽어 쓰는 그 줄에 리터럴 숫자가 있으면 범위가 두 곳에 사는 것이다.
+    const line = src.split('\n').find((l) => l.includes("roomLightIntensity(readRawOpt('pli')"));
+    expect(line, "glb-source.ts 가 roomLightIntensity(readRawOpt('pli')) 로 읽어야 한다").toBeDefined();
+    expect(line).not.toMatch(/\d/);
+    expect(src.match(/roomLightIntensity\(/g)).toHaveLength(1);
+    // `main.ts` 는 이 노브를 모른다 — 동결 파일이라 배선을 그쪽으로 올리지 않는다.
+    const main = readFileSync(
+      join(__dirname, '..', 'frontend', 'js', 'world-glb', 'main.ts'), 'utf8');
+    expect(main).not.toMatch(/['"]pli['"]/);   // 노브 키를 따옴표로 적은 자리가 없다
+    expect(main.includes('roomLightIntensity')).toBe(false);
   });
 });
 

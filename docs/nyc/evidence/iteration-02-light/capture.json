@@ -1,0 +1,57 @@
+[
+  {
+    "name": "V4-pli0",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,180,0&pli=0",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "bytes": 6470321,
+    "info": null
+  },
+  {
+    "name": "V4-pli3",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,180,0&pli=3",
+    "errors": [],
+    "bytes": 6098687,
+    "info": null
+  },
+  {
+    "name": "V4-pli6",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,180,0&pli=6",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "bytes": 6472478,
+    "info": null
+  },
+  {
+    "name": "V4-pli12",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,180,0&pli=12",
+    "errors": [],
+    "bytes": 6345284,
+    "info": null
+  },
+  {
+    "name": "V4-pli24",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,180,0&pli=24",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "bytes": 6477340,
+    "info": null
+  },
+  {
+    "name": "V4-pli48",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,180,0&pli=48",
+    "errors": [],
+    "bytes": 6929732,
+    "info": null
+  },
+  {
+    "name": "V4-pli100",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,180,0&pli=100",
+    "errors": [],
+    "bytes": 6359088,
+    "info": null
+  }
+]
