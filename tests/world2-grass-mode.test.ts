@@ -273,19 +273,23 @@ describe('잎 모드 — 집행(feature 조립)', () => {
 type MaskTex = { image: { width: number }; generateMipmaps: boolean; minFilter: number };
 
 describe('잎 윤곽 AA (`?gaa=`) — 감독 «나뭇잎에 알리아싱» 2026-09-05', () => {
-  it('판정: 누적형 — 0 은 전부 끔(라이브 그대로), 1 a2c, 2 +밉맵, 3 +마스크 해상도', () => {
-    expect(GRASS_AA_DEFAULT).toBe(0);
+  it('판정: 요소별 — 0 전부 끔(라이브 그대로), 1 a2c, 2 a2c+밉맵, 3 a2c+해상도(밉맵 없음), 4 셋 다', () => {
+    // 첫 판본은 누적형이었고 감독이 «5링크 이상해»(밉맵+해상도) 로 잡았다 — 요소를 가를 수 없어서다.
+    expect(GRASS_AA_DEFAULT).toBe(2); // 감독 «4번이 좋아» 2026-09-06
     expect(edgeAA(0)).toEqual({ alphaToCoverage: false, mipmaps: false, maskScale: 1 });
     expect(edgeAA(1)).toEqual({ alphaToCoverage: true, mipmaps: false, maskScale: 1 });
     expect(edgeAA(2)).toEqual({ alphaToCoverage: true, mipmaps: true, maskScale: 1 });
-    expect(edgeAA(3)).toEqual({ alphaToCoverage: true, mipmaps: true, maskScale: AA_MASK_SCALE });
-    expect(edgeAA(99)).toEqual(edgeAA(3));
+    expect(edgeAA(3)).toEqual({ alphaToCoverage: true, mipmaps: false, maskScale: AA_MASK_SCALE });
+    expect(edgeAA(4)).toEqual({ alphaToCoverage: true, mipmaps: true, maskScale: AA_MASK_SCALE });
+    expect(edgeAA(99)).toEqual(edgeAA(4));
     expect(edgeAA(-1)).toEqual(edgeAA(0));
   });
 
-  it('집행: ?gmode=card&gaa=3 → a2c 켜짐 · 밉맵 필터 · 마스크 64→256', async () => {
-    const base = await mountGrass('?styl=1&gmode=card');
-    const aa = await mountGrass('?styl=1&gmode=card&gaa=3');
+  it('집행: gaa=0 대비 ?gmode=card&gaa=4 → a2c 켜짐 · 밉맵 필터 · 마스크 64→256', async () => {
+    const plain = await mountGrass('?styl=1');
+    expect((plain.meshes[0].material as unknown as { alphaMap: unknown }).alphaMap).toBeFalsy(); // 기본 blade 는 마스크가 없어 gaa 를 안 읽는다
+    const base = await mountGrass('?styl=1&gmode=card&gaa=0');
+    const aa = await mountGrass('?styl=1&gmode=card&gaa=4');
     const mb = base.meshes[0].material as unknown as { alphaToCoverage: boolean; alphaMap: MaskTex };
     const ma = aa.meshes[0].material as unknown as { alphaToCoverage: boolean; alphaMap: MaskTex };
     expect(mb.alphaToCoverage).toBe(false);

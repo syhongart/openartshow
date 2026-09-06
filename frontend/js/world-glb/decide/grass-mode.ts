@@ -56,10 +56,17 @@ export type GrassMode = (typeof GRASS_MODES)[number];
  * 두되, 진짜 3D(`?gmode=blade`)·더 가벼운 후보(`?gseg=1`, `?gden=0.5`)를 링크로 다시 드린다.
  *
  * world2(라이브)는 `blade` 그대로(2026-08-21 승인 화면, 0번 원칙). 두 트리의 이 파일이
- * **이 상수 한 줄만** 다르다는 것을 `tests/world-glb-grass-default.test.ts` 가 지킨다.
+ * **세계별 상수(모드·마디·카드 잎 수)만** 다르다는 것을 `tests/world-glb-grass-default.test.ts` 가 지킨다.
  * 기각 cross·glod 코드 제거는 다음 PR 팀장 확인 1회(C-6).
+ *
+ * ✅ 2026-09-06 감독 판정 — **`card`**(잎 10, AA 2). 감독 *"우리 풀이 옆으로 넓은것 같아"* →
+ * 팀장 B-3(폭 노브와 다발 카드를 한 카드로) → 라이브 링크 5개 중 *"4번이 좋아"*(카드 잎 10 +
+ * a2c+밉맵) → 카드 「월드8 기본을 4번으로 굽을까요」 «4번으로 굽는다». **폭 축(`?gw=`)은 감독이
+ * 「폭 축도 보고 결정」을 고르지 않아 판정 없이 닫힌다** — 카드 잎 폭은 `CARD_LEAF_SCALE` 이
+ * 정하므로 `BLADE_W` 재판정도 여기서 끝난다(아래 «BLADE_W 재판정» 절에 이어 적었다).
+ * 삼각형: 카드 4tri × 배율 0.36 ≈ 1.46/잎 — quad(2) 대비 27% 절감.
  */
-export const GRASS_MODE_DEFAULT: GrassMode = 'quad';
+export const GRASS_MODE_DEFAULT: GrassMode = 'card';
 
 /**
  * `?glod=` — 이 반경(m) 이하의 링은 **blade 를 유지**하고 그 밖만 `?gmode=` 로 그린다.
@@ -92,8 +99,8 @@ export function triPerBlade(mode: GrassMode, seg: number = GRASS_SEG_DEFAULT): n
 
 // ── 다발 카드 (`gmode=card`) ─────────────────────────────────────────────────
 
-/** 카드 한 장에 그리는 잎 수(`?gcard=`). 감독 링크 판정 뒤 굽는다 */
-export const CARD_BLADES_DEFAULT = 6;
+/** 카드 한 장에 그리는 잎 수(`?gcard=`). ✅ 월드8 은 **10** — 감독 *"4번이 좋아"*(2026-09-06, 잎 10 링크). world2 는 6(노브 전용) */
+export const CARD_BLADES_DEFAULT = 10;
 export const CARD_BLADES_MIN = 3;
 export const CARD_BLADES_MAX = 12;
 /**
@@ -121,6 +128,9 @@ export const CARD_LEAF_SCALE = 0.08;
 // «넓적한 판» 으로 읽힌 것이다 — 값이 틀린 게 아니라 **전제(잎의 형태)가 바뀌어 같은 값이
 // 다른 화면을 만든다.** 재판정은 폭 노브(`?gw=0.4·0.6`)와 다발 카드(`?gmode=card`, 잎 하나가
 // 카드 안에서 ≈2.8cm)를 한 카드로 비교해 받는다. 결과는 여기 이어 적는다.
+// → **결과(2026-09-06)**: 감독이 다발 카드(잎 10)를 골랐다(*"4번이 좋아"*). 폭 노브 링크(0.4·0.6)는
+//   판정 없이 닫혔다 — 카드 잎 폭은 `CARD_LEAF_SCALE` 이 정하고 `BLADE_W` 는 world2 3D 잎에만 남는다.
+//   재론 조건: world2 가 2D/카드로 가는 회차.
 
 /**
  * 카드 한 장(교차 두 시트)이 시야에 내는 **실효 시트 수**. 시트 두 장이 직교하므로 보는 각 θ
@@ -176,10 +186,16 @@ export function cardDensityMul(blades: number): number {
 //   ③ 마스크 해상도 — 카드 0.35m 에 64px 면 잎 폭 2.8cm 가 5px 이라 가까이서 계단. 4배면
 //      256×256 RGBA = 256KB, 텍스처 개수는 그대로 1.
 // 비용이 **큰** 안티알리아싱은 TAA·SSAA 이고 여기서는 필요 없다 — 문제가 알파 컷 윤곽이라서다.
-// 후보는 누적형이다(레벨이 오르면 앞 수단을 포함한다). 기본값은 판정 뒤 굽는다.
+// 후보는 **요소별**이다(아래 `edgeAA` 주석 — 첫 판본의 누적형은 판정을 흐렸다). 기본값 2 는 감독 판정(`GRASS_AA_DEFAULT`).
 
-export const GRASS_AA_DEFAULT = 0;
-export const GRASS_AA_MAX = 3;
+/**
+ * ✅ 감독 판정 2026-09-06(월드8 라이브, 카드 잎 10): *"4번이 좋아"*(= a2c + 밉맵, 64px 마스크) ·
+ * ③(a2c 만) *"계단이 줄었다"* · 5번(a2c+밉맵+256px) *"이상하게 나와"*. 그래서 **2**. 해상도 축은
+ * 여기서 닫는다 — 4배 마스크는 밉 체인이 깊어 잎을 지웠고 감독이 그것을 문제라고 했다.
+ * 두 트리 같은 값 — world2 기본(blade)은 마스크가 없어 이 값을 읽지 않는다(노브 `?gmode=` 에서만).
+ */
+export const GRASS_AA_DEFAULT = 2;
+export const GRASS_AA_MAX = 4;
 export const AA_MASK_SCALE = 4;
 export interface EdgeAA {
   alphaToCoverage: boolean;
@@ -187,9 +203,20 @@ export interface EdgeAA {
   /** 마스크 해상도 배율(가로·세로) */
   maskScale: number;
 }
+/**
+ * ⚠ 첫 판본은 **누적형**(1 a2c → 2 +밉맵 → 3 +해상도)이었고 감독이 라이브에서 *"5링크(gaa=3)
+ * 열면 이상하게 나와"* 로 잡았다(2026-09-06). 헤드리스 대조: 밉맵이 멀리 있는 잎을 지우고
+ * (평균화된 알파가 0.5 아래로) 256px 마스크는 밉 체인이 깊어 더 심했다 — 위 ②의 위험이 그대로
+ * 실물이 된 것이다. 누적형이라 «어느 요소가 나쁜가» 를 감독이 가를 수 없었다. 그래서 **요소별로
+ * 분리**한다: 1 = a2c 만 · 2 = a2c+밉맵 · 3 = a2c+해상도(밉맵 없음) · 4 = 셋 다(옛 3).
+ */
 export function edgeAA(level: number): EdgeAA {
   const l = Math.max(0, Math.min(GRASS_AA_MAX, Math.round(level)));
-  return { alphaToCoverage: l >= 1, mipmaps: l >= 2, maskScale: l >= 3 ? AA_MASK_SCALE : 1 };
+  return {
+    alphaToCoverage: l >= 1,
+    mipmaps: l === 2 || l === 4,
+    maskScale: l === 3 || l === 4 ? AA_MASK_SCALE : 1,
+  };
 }
 
 /** 카드 안 잎 하나의 배치(결정적 난수 — 같은 인자면 같은 카드) */
