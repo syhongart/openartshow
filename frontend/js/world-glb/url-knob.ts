@@ -105,6 +105,23 @@ export function readNumOpt(key: string, min: number, max: number): number | null
 }
 
 /**
+ * URL 16진 색 파라미터를 읽는다. 없거나 유효한 6자리 hex가 아니면 `undefined`.
+ *
+ * @param key URL 파라미터 이름
+ * @returns 유효한 색(0~0xffffff), 없거나 형식 오류면 `undefined`
+ */
+export function readHexOpt(key: string): number | undefined {
+  if (typeof location === 'undefined') return undefined;
+  const raw = new URLSearchParams(location.search).get(key);
+  if (raw === null) return undefined;
+  if (raw.trim() === '') return undefined;
+  // 6자리 16진수
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return undefined;
+  const n = parseInt(raw, 16);
+  return n;
+}
+
+/**
  * 주소창의 노브 값을 갱신한다. `null` 이면 파라미터를 **지운다**.
  *
  * ── 왜 화면 UI 가 URL 을 건드리는가 (감독 지시 2026-07-31 "유아이 바를 만들어봐") ──

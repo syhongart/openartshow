@@ -15,7 +15,7 @@ import { findSkyPanel, attachSkyPanel, type SkyPanel } from '../ui/sky-panel.js'
 import {
   paletteTime, TIMES, type SkyTime,
   NIGHT_HEMI_I, NIGHT_SUN_I, NIGHT_EXPOSURE, NIGHT_FOG_SCALE, NIGHT_GROUND_SCALE } from '../decide/night.js';
-import { readNum, readEnum, readLit } from '../url-knob.js';
+import { readNum, readEnum, readLit, readHexOpt } from '../url-knob.js';
 import { DAY_SUN_I, DAY_HEMI_I } from '../decide/daylight.js';
 import { GroundLift } from '../systems/ground-lift.js';
 import { LampGlow } from '../systems/lamp-glow.js';
@@ -190,6 +190,11 @@ export const skyFeature: Feature = {
         // 월드 y 는 잠길 때 움직이므로 카메라가 유일한 출처다.
         eyeHeight: env.player.eyeHeight,
         getEyeY: () => env.camera.position.y,
+
+        // ── hemi 지면색 (`?hemig=`) ────────────────────────────────────────
+        // 공용 하늘 엔진(`sky.js`)이 시간대·날씨마다 지면색을 정한다. world10 은 거리
+        // 지면색(`#8A857C`)으로 덮어쓴다. `undefined` 이면 팔레트 기본값을 쓴다.
+        hemiGround: readHexOpt('hemig'),
       },
     );
 

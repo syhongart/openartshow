@@ -107,6 +107,10 @@ export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0, textures = t
         g.node({ name: `bld.${b.id}.room.1.slot.${s.id}`, translation: s.pos, rotation: facingQuat(s.normal), parent: rn,
           extras: { w: s.w, h: s.h, wall: s.wall } });
       }
+      // 방 중앙 라이트 노드 — 천장 아래 0.3m
+      const lx = (f.room.inner.x0 + f.room.inner.x1) / 2;
+      const lz = (f.room.inner.z0 + f.room.inner.z1) / 2;
+      g.node({ name: `bld.${b.id}.room.1.light`, translation: [lx, DIMS.ROOM_H - 0.3, lz], parent: rn });
     }
   }
 

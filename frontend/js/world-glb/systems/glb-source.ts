@@ -94,6 +94,7 @@ export { normalKnob, NORMAL_KNOB_MAX } from '../decide/glb-normal.js';
 import { SHADOW_LIFT } from '../decide/shadow-decal.js';
 import { fixBoxDecalScale, rebakeShadowAtlas, applyAtlas } from './glb-shadow-fix.js';
 import { eachPlacement } from './glb-placement.js';
+import { isRoomLightNode } from '../decide/glb-nodes.js';
 
 export interface GlbSourceResult {
   /** 씬에 얹힌 루트(인스턴싱 **후**) */
@@ -262,6 +263,16 @@ export function mountGlbWorld(
     });
   }
 
+  // 방 라이트 노드에서 포인트라이트 생성 — 원본 트리에서 위치를 먼저 읽는다
+  const roomLights: Array<{ position: THREE.Vector3 }> = [];
+  gltfScene.traverse((o: Object3D) => {
+    if (isRoomLightNode(o.name)) {
+      const pos = new THREE.Vector3();
+      o.getWorldPosition(pos);
+      roomLights.push({ position: pos });
+    }
+  });
+
   const { group, made, grid } = instanceRepeats(gltfScene as unknown as never, opts.grid) as {
     group: Object3D; made: number; grid: number;
   };
@@ -276,6 +287,14 @@ export function mountGlbWorld(
   }
 
   group.name = 'glb-world:glb-source';
+
+  // 라이트 노드별로 포인트라이트 생성 및 추가
+  for (const light of roomLights) {
+    const pointLight = new THREE.PointLight(0xffffff, 2.0);
+    pointLight.position.copy(light.position);
+    group.add(pointLight);
+  }
+
   (scene as unknown as { add(o: Object3D): void }).add(group);
 
   const b = new THREE.Box3().setFromObject(group as never);

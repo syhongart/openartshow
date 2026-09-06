@@ -383,6 +383,13 @@ export interface SkyOptions {
    * 그래서 이것만 따로 받는다. 없으면 `eyeHeight` 를 평지 가정으로 쓴다.
    */
   getEyeY?: () => number;
+  /**
+   * hemi 지면색(16진 정수, URL 노브). 없으면 `sky.js` 의 팔레트 기본값(공용 하늘 엔진).
+   *
+   * 엔진이 시간대·날씨마다 지면색을 정한 뒤, night-lights 의 liftColor 가 밤 하한을
+   * 얹기 전에 이 값으로 덮어쓴다. 시간대·날씨 전부에 적용된다.
+   */
+  hemiGround?: number;
 }
 
 /**
@@ -460,6 +467,8 @@ export class SkySystem implements System {
   private lastHemiI = -1;
   private lastFogFar = -1;
   private readonly dayLight?: Partial<DayLightMix>;
+  /** hemi 지면색(16진 정수). 있으면 팔레트를 덮어쓴다 */
+  private readonly hemiGround?: number;
   /**
    * 수평선 밴드. `?hz=0` 이거나 `eyeHeight` 를 안 받으면 `null` 이고, 그때 화면은
    * 이 기능이 들어오기 전과 **한 픽셀도 다르지 않다**(대조군이 곧 그 상태다).
@@ -511,6 +520,7 @@ export class SkySystem implements System {
     this.sunDist = opts.sunDist ?? SUN_DIST_FALLBACK;
     this.shadowTexel = opts.shadowTexel ?? 0;
     this.dayLight = opts.dayLight;
+    this.hemiGround = opts.hemiGround;
     this.dome = makeDome();
     this.dome.name = 'glb-world:sky';
     scene.add(this.dome);
@@ -627,6 +637,11 @@ export class SkySystem implements System {
 
     // 크로스페이드·강수·오로라·번개 진행. 조명·안개·클리어색 갱신도 여기서 일어난다.
     this.engine.update(ctx.dt);
+    // hemi 지면색을 팔레트 값으로 덮어쓴다 — sky.js 가 시간대·날씨마다 정한 색이 들어간
+    // 직후, night-lights 의 liftColor 가 밤 하한을 얹기 전이다.
+    if (this.hemiGround !== undefined) {
+      this.hemi.groundColor.setHex(this.hemiGround);
+    }
     this.applySun();
     this.liftNightLights();
     this.applyDayContrast();
