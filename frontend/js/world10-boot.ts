@@ -13,7 +13,7 @@
 
 import { startGlbWorld } from './world-glb/main.js';
 import { assetUrl } from './world-glb/asset-url.js';
-import { parseCam } from './world-glb/decide/capture-entry.js';
+import { parseCam, V1_START } from './world-glb/decide/capture-entry.js';
 
 /**
  * 이 페이지가 켜 두는 기본값. **URL 에 이미 있는 키는 건드리지 않는다**(`world2-stylized-boot.ts` 선례).
@@ -44,7 +44,9 @@ if (canvas instanceof HTMLCanvasElement) {
       if (!res.ok) throw new Error(`GLB 를 못 받았다: HTTP ${res.status}`);
       return res.arrayBuffer();
     },
-    ...(cam ? { start: cam } : {}),
+    // `?cam=` 이 없으면 아트 기준 V1(거리 시작: 입구 중앙, 눈높이는 트리 기본 1.7m)에서 시작한다 —
+    // 트리 기본 스폰(-3.5, 10)은 world2 광장 좌표라 거리 밖(남쪽 보도 뒤)이다.
+    start: cam ?? V1_START,
   }).catch((err: unknown) => {
     console.error('[world10] 진입 실패', err);
   });

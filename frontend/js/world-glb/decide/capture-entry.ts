@@ -39,3 +39,11 @@ export function formatCam(s: CaptureStart): string {
   const r = (v: number) => String(Math.round(v * 1000) / 1000);
   return `${r(s.x)},${r(s.z)},${r(s.yaw / DEG)},${r(s.pitch / DEG)}`;
 }
+
+/**
+ * 아트 기준 V1 «거리 시작»(`docs/nyc/art-direction.md` §5): 거리 입구 중앙, 눈높이 1.7m(트리 기본),
+ * 동쪽(+x)을 본다. yaw 규약은 `decide/move.ts` `facing(yaw) = (−sin, −cos)` 라 +x 는 **270°**.
+ * 캡처 페이지의 «`?cam=` 없음» 기본값이다 — 값을 바꾸면 이전 캡처와 비교가 깨지므로 함께 기록한다.
+ */
+export const V1_START: CaptureStart = { x: -2, z: 0, yaw: (270 * Math.PI) / 180, pitch: (-6 * Math.PI) / 180 };
+// pitch −6°: 수평(0°)에서는 하늘이 세로의 45% 였다(반복 1 첫 캡처) — 아트 기준 V1 상한 35%.

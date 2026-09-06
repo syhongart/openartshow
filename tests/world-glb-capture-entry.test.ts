@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseCam, formatCam, CAM_ABS_MAX, CAM_PITCH_MAX_DEG } from '../frontend/js/world-glb/decide/capture-entry.js';
+import { parseCam, formatCam, CAM_ABS_MAX, CAM_PITCH_MAX_DEG, V1_START } from '../frontend/js/world-glb/decide/capture-entry.js';
 
 describe('parseCam — 순수 판정', () => {
   it('네 값이 전부 있어야 하고 각도는 deg → rad', () => {
@@ -26,6 +26,10 @@ describe('parseCam — 순수 판정', () => {
   it('yaw 는 0~2π 로 정규화, 다른 노브와 섞여도 읽는다', () => {
     expect(parseCam('?glb=1&cam=0,0,-90,0&x=1')!.yaw).toBeCloseTo(Math.PI * 1.5, 10);
     expect(parseCam('?cam=0,0,450,0')!.yaw).toBeCloseTo(Math.PI / 2, 10);
+  });
+  it('V1_START 는 +x(동쪽)를 본다 — facing 규약 (−sin, −cos)', () => {
+    expect(-Math.sin(V1_START.yaw)).toBeCloseTo(1, 10);
+    expect(-Math.cos(V1_START.yaw)).toBeCloseTo(0, 10);
   });
   it('formatCam 은 parseCam 의 역이다(소수 3자리)', () => {
     const s = parseCam('?cam=1.234,-5.678,123.4,-12.3')!;
@@ -53,7 +57,7 @@ describe('호출처 — 캡처 페이지 부트 하나만 읽는다 (팀장 조�
     const w9 = readFileSync(join(ROOT, 'world10-boot.ts'), 'utf8');
     expect(w7).not.toMatch(/\bstart\b\s*:/);
     expect(w8).not.toMatch(/\bstart\b\s*:/);
-    expect(w9).toMatch(/start: cam/);
+    expect(w9).toMatch(/start: cam \?\? V1_START/);
     expect(w9).toMatch(/tag: 'world10'/);
     // 거리 페이지 기본값 — 미술관 1채·링 잔디를 끈다(부트가 채우는 노브, 트리 분기 아님)
     expect(w9).toMatch(/DEFAULTS[^=]*=\s*\{\s*glb: '0', grass: '0'\s*\}/);
