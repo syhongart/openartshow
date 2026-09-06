@@ -26,6 +26,7 @@
     "measure:sky-warm": "node scripts/smoke/measure-sky-warm.mjs",
     "measure:invariants": "node scripts/smoke/measure-invariants.mjs",
     "measure:tri-quadrant": "node scripts/smoke/measure-tri-quadrant.mjs",
+    "nyc:capture": "node scripts/nyc/capture.mjs",
     "measure:submerge": "node scripts/smoke/measure-submerge.mjs",
     "measure:surface": "node scripts/smoke/measure-surface-textures.mjs",
     "measure:aim": "node scripts/smoke/measure-aim.mjs",

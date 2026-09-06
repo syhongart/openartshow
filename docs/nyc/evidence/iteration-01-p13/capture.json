@@ -1,0 +1,32 @@
+[
+  {
+    "name": "V1",
+    "url": "http://localhost:8123/openartshow/app/world10.html",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "bytes": 6663571,
+    "info": null
+  },
+  {
+    "name": "V2",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=9,-1,315,-4",
+    "errors": [],
+    "bytes": 6109901,
+    "info": null
+  },
+  {
+    "name": "V3",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=15.36,-4.5,270,-6",
+    "errors": [],
+    "bytes": 6362772,
+    "info": null
+  },
+  {
+    "name": "V4",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,90,0",
+    "errors": [],
+    "bytes": 6108807,
+    "info": null
+  }
+]
