@@ -5,11 +5,13 @@
 // 예: node scripts/nyc/capture.mjs --out=docs/nyc/evidence/iteration-01-p13 \
 //       --shots="V1:world10.html;V2:world10.html?cam=9,-1,315,-4;V3:world10.html?cam=15.36,-4.5,270,-6"
 // 절대경로는 이식성 결함이었다(검수관 2026-09-06).
+// `--out` 의 `capture.json` 은 **병합**된다(덮어쓰기 아님) — 근거는 `capture-merge.mjs` 헤더.
 import { chromium } from 'playwright';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeCaptureResults } from './capture-merge.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(__dirname, '../../dist');
@@ -137,10 +139,10 @@ for (const shot of shots) {
 await browser.close();
 srv.close();
 
-// capture.json 저장
-fs.writeFileSync(
-  path.join(outDir, 'capture.json'),
-  JSON.stringify(captureResults, null, 2)
-);
+// capture.json 저장 — **덮어쓰지 않고 병합한다.** 같은 디렉터리에 여러 번 부르는 것이
+// 이 하네스의 정상 사용법(스윕)이고, 통째 덮어쓰기가 2026-09-06 에 V1~V4 메타를 날렸다.
+// 규칙·격리 절차는 `capture-merge.mjs` 한 곳이다.
+const { merged, quarantined, file } = writeCaptureResults(outDir, captureResults);
+if (quarantined) console.warn(`기존 capture.json 이 깨져 있어 격리했다: ${quarantined}`);
 
-console.log(`Capture complete. Results saved to ${outDir}/capture.json`);
+console.log(`Capture complete. ${captureResults.length} shot(s) merged into ${file} (총 ${merged.length}건).`);
