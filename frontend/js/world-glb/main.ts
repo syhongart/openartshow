@@ -468,7 +468,8 @@ export async function startGlbWorld(
     // 기본값 `default` 는 기존 스폰 그대로라 링크를 안 붙이면 아무것도 안 바뀐다.
     // ⚠ `LAYOUT`(밀도 노브가 바꿀 수 있는 것)이 아니라 `CELL_X/Z`(기본 셀)를 쓴다 —
     //   `parcelWater` 로 강을 찾는 계산이 지면 판정과 **같은 셀**을 봐야 물가가 맞는다.
-    start: spawnFor(readEnum('at', 'default', SPAWN_SPOTS) as SpawnSpot, CELL_X, CELL_Z),
+    // 캡처 페이지가 `opts.start` 를 넘기면 그것이 이긴다(`options.ts` `start` 주석 — 순간이동이 아니라 부팅 인자).
+    start: opts.start ?? spawnFor(readEnum('at', 'default', SPAWN_SPOTS) as SpawnSpot, CELL_X, CELL_Z),
     speed: walkSpeed,
     eyeHeight,
     bobAmplitude,

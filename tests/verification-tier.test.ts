@@ -41,7 +41,7 @@ describe('진입점 SSOT', () => {
     expect(LIVE_ENTRIES.length + FLAGGED_ENTRIES.length).toBe(ENTRYPOINTS.length);
   });
 
-  it('behind-flag 여덟 페이지가 flagged 다', () => {
+  it('behind-flag 열 페이지가 flagged 다', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
     //
     // 목록을 여기 **적어 두는 것**이 이 검사의 요점이다. `FLAGGED_ENTRIES.length` 만
@@ -93,6 +93,10 @@ describe('진입점 SSOT', () => {
     // 저쪽은 사용자가 고르고, 이쪽은 저장소에 구워 둔 고정 자산이 부팅 즉시 열린다.
     expect(flagged).toEqual([
       'editor.html', 'lab-glb.html', 'visit.html', 'world.html',
+      // 2026-09-06 `world10.html` 추가 — 뉴욕 갤러리 거리(감독 지시서 · 팀장 판정 「A」 · 감독 *"월드10으로"*).
+      // world8 과 같은 트리, 갈리는 것은 산출 GLB 와 `?cam=` 캡처 진입뿐. `docs/nyc/state.md`.
+      // 사전순이라 `world2-…` 앞이다.
+      'world10.html',
       'world2-stylized.html', 'world3.html', 'world5.html', 'world7.html',
       'world8.html',
     ]);

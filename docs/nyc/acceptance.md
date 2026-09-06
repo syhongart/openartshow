@@ -13,13 +13,13 @@
 
 → 예산 표의 «프레임 간격 p95» 는 **이 회차에 검증 수단이 없다.** 대신 헤드리스에서 재는 대리 지표(삼각형·draw·텍스처 수·전송량)에 예산을 걸고, 프레임은 감독 실기기 카드로 «끊김 없음/있음» 만 받는다.
 
-## 1. 성능 예산 (출발값, 지시서 §7 → 대리 지표)
+## 1. 성능 예산 (출발값, 지시서 §7 → 대리 지표) — 실측 원본 `evidence/baseline/tri-quadrant.json`(헤드리스 WebGL, 2026-09-06)
 
 | 지표 | 모바일 목표 | 측정 수단 | Baseline 실측 |
 |---|---|---|---|
-| 화면 1프레임 삼각형 | ≤ 200,000 | `measure-tri-quadrant.mjs`(`info.render.triangles` 중앙값) | (측정 중 — state.md) |
-| 화면 1프레임 draw call | ≤ 150 | 같은 스크립트 `info.render.calls` | (측정 중) |
-| 초기 관람 가능 구역 전송량 | ≤ 10 MiB | 헤드리스 응답 바이트 합(캐시 없음) | world8 ≈ 24.1MB · world2 ≈ 18.6MB — **2배 초과** |
+| 화면 1프레임 삼각형 | ≤ 200,000 | `measure-tri-quadrant.mjs`(`info.render.triangles` 중앙값) | world8 470,494(잔디off 248,114 · 미술관GLB off 464,230 · NPC off 446,646) · world2 1,338,190(잔디off 134,950) — **둘 다 초과** |
+| 화면 1프레임 draw call | ≤ 150 | 같은 스크립트 `info.render.calls` | world8 168(NPC off 118 · 그림자on 158) · world2 75 — world8 **초과**(NPC·아바타가 +50) |
+| 초기 관람 가능 구역 전송량 | ≤ 10 MiB | 헤드리스 응답 바이트 합(캐시 없음) | world8 ≈ 24.1MB · world2 ≈ 18.6MB — **2배 초과**(내역: `lab-space.glb` 12.9MB 미술관 1채 + 세계 GLB 5MB + 번들·하늘 텍스처) |
 | 시작 DPR 상한 | 1.25(모바일) | `world-glb/main.ts:33` `MOBILE_CAP` | 1.5 (조정 대상) |
 | 환경 텍스처 크기 | 512~1024 | 파일 실측 | `sky/night.jpg` 4096×2048 예외 |
 | 세션 개수 불변식 | geo/tex 증가 0 | `[7]` 게이트 | 통과 중 |

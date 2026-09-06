@@ -135,6 +135,7 @@ export class PlayerSystem implements System {
     // `?? 0` 이 아니라 조건이다 — 아래 `yaw` 필드 초기값이 0 이고, 여기서 다시 0 을
     // 대입하면 "기본값을 두 곳이 적는" 형태가 된다.
     if (opts.start?.yaw !== undefined) this.yaw = opts.start.yaw;
+    if (opts.start?.pitch !== undefined) this.pitch = clampPitch(opts.start.pitch);
     this.apply = opts.applyCamera;
     this.waterSurfaceY = opts.waterSurfaceY;
     this.resolveMove = opts.resolveMove;
