@@ -21,10 +21,17 @@ import { parseCam, V1_START } from './world-glb/decide/capture-entry.js';
  *             거리는 자기 갤러리를 GLB 안에 가지므로 필요 없다(지시서 §7 초기 10MiB, 팀장 조건 4).
  *   grass=0 — `features/grass.ts` 는 플레이어 주위 링에 잔디를 깐다(파셀과 무관). 아스팔트·보도 위에
  *             잎이 서면 지시서 §2-4 «반복 잔디 띠» 를 거리로 옮겨 오는 것이다. 화분·가로수는 GLB 몫.
+ *   hemig=8a857c — 반구광 **지면색**. 디자이너 2026-09-06: 아이보리 입면 (217,207,187)→(99,107,94)
+ *             **색상 반전·밝기 46%** — `sky.js` 프리셋 hemiG `0x8fa385`(초록 낀 지면)가 입면색을
+ *             지배해서다. 값 출처는 `scripts/asset/nyc/layout.mjs` `PALETTE.curb`(거리 지면색
+ *             `#8A857C`) 한 곳이고, 부트는 `scripts/` 를 import 할 수 없어 **동일성 테스트**로
+ *             미러링을 고정한다 — `tests/nyc-gen.test.ts` 「world10-boot hemig 기본값 =
+ *             layout.mjs PALETTE.curb (팀장 조건 ② — 두 값이 갈리면 여기서 깨진다)」.
+ *             적용 자리·순서는 `world-glb/systems/sky-ground.ts` 헤더.
  * 트리 코드는 그대로다 — 노브를 부트가 채우는 것이라 `if (tag === …)` 분기가 아니다(팀장 조건 2).
  * `?glb=1`·`?grass=1` 로 열면 되돌아간다(A/B 비교용).
  */
-const DEFAULTS: Readonly<Record<string, string>> = { glb: '0', grass: '0' };
+const DEFAULTS: Readonly<Record<string, string>> = { glb: '0', grass: '0', hemig: '8a857c' };
 const url = new URL(location.href);
 let touched = false;
 for (const [k, v] of Object.entries(DEFAULTS)) {

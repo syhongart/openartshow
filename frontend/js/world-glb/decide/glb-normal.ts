@@ -9,7 +9,7 @@
 //
 // 판정 결과와 감독 실측은 `NORMAL_KNOB_DEFAULT` 주석 옆에 이어 적는다(팀장 조건 6).
 
-/** 기본 배율. ✅ 감독 판정 대기 — 후보 0.6 / 1 / 1.5 링크 비교 뒤 굽는다 */
+/** 기본 배율. ⏳ 감독 판정 대기(링크 비교 뒤 굽는다) — 후보 0.6 / 1 / 1.5 */
 export const NORMAL_KNOB_DEFAULT = 1;
 export const NORMAL_KNOB_MAX = 3;
 

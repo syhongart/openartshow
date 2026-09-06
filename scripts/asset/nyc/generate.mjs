@@ -8,6 +8,11 @@
 // 쓰인다. `--street-yaw` 는 루트 노드 하나만 돌린다 — 태양 방위 `SUN_AZ` 가 `sky.js` 에 고정이라
 // 거리 축을 돌려 J2(아트 기준 판정 후보)를 비교한다. 노드 이름 규약은 `docs/nyc/tasks.md`.
 //
+// ⚠ **노드 이름의 구분자는 `_` 다. `.` 로 되돌리지 마라** — three 의 `GLTFLoader` 가 로드 중에
+// `.` 을 **지운다**(`bld.2.room.1.light` → `bld2room1light`). 그래서 런타임이 이름으로 노드를
+// 알아보는 경로가 전부 조용히 죽는다(2026-09-06 실내 점광 0 사고). 실측 표와 근거는
+// `frontend/js/world-glb/decide/glb-nodes.ts` 헤더 **한 곳**이다 — 여기에 다시 적지 않는다.
+//
 // ⚠ 첫 판본(executor)은 건물 박스 6 + 도로 1, 재질 1, COLOR_0 stride 3(정렬 위반)이었고 보고는
 // «완벽» 이었다 — 실측이 보고와 어긋난 사고(BOARD 2026-09-06). 이 판본은 부팀장이 다시 썼다.
 import fs from 'node:fs';
@@ -84,29 +89,33 @@ export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0, textures = t
   for (const [key, p] of Object.entries(gp)) {
     const bottom = p.bottom ?? p.top - 0.3;
     const geo = box(p.x0, bottom, p.z0, p.x1, p.top, p.z1, { ao: key.startsWith('curb') ? { pz: 0.8, nz: 0.8, default: 1 } : 1, omit: ['ny'] });
-    const name = { road: 'ground.road', walkN: 'ground.walk.n', walkS: 'ground.walk.s', curbN: 'ground.curb.n', curbS: 'ground.curb.s', yardN: 'ground.yard.n', yardS: 'ground.yard.s' }[key];
+    const name = { road: 'ground_road', walkN: 'ground_walk_n', walkS: 'ground_walk_s', curbN: 'ground_curb_n', curbS: 'ground_curb_s', yardN: 'ground_yard_n', yardS: 'ground_yard_s' }[key];
     g.node({ name, mesh: g.mesh(name, geo, mat(p.mat)), parent: root });
   }
 
   // 건물
   const buildings = layoutBuildings({ brick });
   for (const b of buildings) {
-    const bn = g.node({ name: `bld.${b.id}`, parent: root });
+    const bn = g.node({ name: `bld_${b.id}`, parent: root });
     const f = buildFacade(b, rng);
     for (const grp of f.groups) {
-      const key = `bld.${b.id}.${grp.mat}`;
+      const key = `bld_${b.id}_${grp.mat}`;
       g.node({ name: key, mesh: g.mesh(key, grp.geo, mat(grp.mat)), parent: bn });
     }
     // 문 빈 노드 — +z 가 실외를 향한다(북쪽 건물은 그대로, 남쪽은 180°)
-    g.node({ name: `bld.${b.id}.door`, translation: [f.door.x, 0, f.door.z], rotation: b.dir > 0 ? undefined : quatY(Math.PI), parent: bn,
+    g.node({ name: `bld_${b.id}_door`, translation: [f.door.x, 0, f.door.z], rotation: b.dir > 0 ? undefined : quatY(Math.PI), parent: bn,
       extras: { w: DIMS.DOOR_W, h: DIMS.DOOR_H } });
     if (f.room) {
-      const rn = g.node({ name: `bld.${b.id}.room.1`, parent: bn, extras: { inner: f.room.inner } });
-      for (const w of ['back', 'left', 'right', 'front']) g.node({ name: `bld.${b.id}.room.1.wall.${w}`, parent: rn });
+      const rn = g.node({ name: `bld_${b.id}_room_1`, parent: bn, extras: { inner: f.room.inner } });
+      for (const w of ['back', 'left', 'right', 'front']) g.node({ name: `bld_${b.id}_room_1_wall_${w}`, parent: rn });
       for (const s of f.room.slots) {
-        g.node({ name: `bld.${b.id}.room.1.slot.${s.id}`, translation: s.pos, rotation: facingQuat(s.normal), parent: rn,
+        g.node({ name: `bld_${b.id}_room_1_slot_${s.id}`, translation: s.pos, rotation: facingQuat(s.normal), parent: rn,
           extras: { w: s.w, h: s.h, wall: s.wall } });
       }
+      // 방 중앙 라이트 노드 — 천장 아래 0.3m
+      const lx = (f.room.inner.x0 + f.room.inner.x1) / 2;
+      const lz = (f.room.inner.z0 + f.room.inner.z1) / 2;
+      g.node({ name: `bld_${b.id}_room_1_light`, translation: [lx, DIMS.ROOM_H - 0.3, lz], parent: rn });
     }
   }
 
@@ -118,7 +127,7 @@ export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0, textures = t
     { geo: box(gx - 0.2, gh - 1, -hs - 1, gx + 1.4, gh, hs + 1) },
   ];
   const gateGeo = merge(gate);
-  g.node({ name: 'gate.1', mesh: g.mesh('gate.1', gateGeo, mat('ivoryB')), parent: root });
+  g.node({ name: 'gate_1', mesh: g.mesh('gate_1', gateGeo, mat('ivoryB')), parent: root });
 
   const out = g.finish();
   out.summary.buildings = buildings.length;

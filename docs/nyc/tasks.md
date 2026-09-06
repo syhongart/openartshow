@@ -20,7 +20,7 @@
 |---|---|---|
 | 세계 소스 | `options.ts` `source(): Promise<ArrayBuffer>` **무변경**. 월드10 부트는 `assets/worlds/nyc-street.glb` 고정 fetch | 팀장 조건 1 |
 | 좌표계·단위 | GLB = m, y-up, 지면 y=0(`glb-collider` 전제). 거리 축 = +x(동), 시작 위치 서쪽 끝 | baseline §3 |
-| 건물/문/벽/슬롯 ID | GLB 노드 이름 규약: `bld.<n>` / `bld.<n>.door` / `bld.<n>.room.<r>.wall.<w>` / `bld.<n>.room.<r>.slot.<s>`(빈 노드, 행렬 = 슬롯 중심·법선·폭 w) — 생성기가 쓰고 슬롯 레이어가 읽는다 | 지시서 §5 «미리 정의한 전시 슬롯 먼저» |
+| 건물/문/벽/슬롯 ID | GLB 노드 이름 규약(구분자 **`_`**): `bld_<n>` / `bld_<n>_door` / `bld_<n>_room_<r>_wall_<w>` / `bld_<n>_room_<r>_slot_<s>`(빈 노드, 행렬 = 슬롯 중심·법선·폭 w) — 생성기가 쓰고 슬롯 레이어가 읽는다. ⚠ `.` 을 쓰면 three 로더가 지운다(실측 표·규약 전문은 `decide/glb-nodes.ts` 헤더 한 곳) | 지시서 §5 «미리 정의한 전시 슬롯 먼저» |
 | 실내 진입·퇴장 이벤트 | 같은 씬. `nyc/room-sense.ts`(신설)가 문 노드 통과로 `room:enter/leave` 를 낸다 — 라이트맵·조명 프리셋은 그 이벤트 소비 | 지시서 §5 |
 | 작품 항목 | world2 오버레이 모델 `{src,x,y,z,ry,w,ar}` 재사용 + `slotId` 필드(선택). 저장 키 `lu-nyc-slots::<bld>` | baseline §3 |
 | 품질 프리셋 | 기존 `decide/adapt.ts` 티어 그대로. 월드10 DPR 상한 1.25(플래그 `options.ts`) | 지시서 §7 |

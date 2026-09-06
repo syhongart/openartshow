@@ -45,5 +45,7 @@ export function formatCam(s: CaptureStart): string {
  * 동쪽(+x)을 본다. yaw 규약은 `decide/move.ts` `facing(yaw) = (−sin, −cos)` 라 +x 는 **270°**.
  * 캡처 페이지의 «`?cam=` 없음» 기본값이다 — 값을 바꾸면 이전 캡처와 비교가 깨지므로 함께 기록한다.
  */
-export const V1_START: CaptureStart = { x: -2, z: 0, yaw: (270 * Math.PI) / 180, pitch: (-6 * Math.PI) / 180 };
+export const V1_START: CaptureStart = { x: 4, z: 0, yaw: (270 * Math.PI) / 180, pitch: (-6 * Math.PI) / 180 };
+// x +4: 디자이너 2026-09-06 판정 — bld.1·bld.5 사이 위치. bld.2(x0 7.2) 뒤의 x −2에서는 갤러리 간판이 프레임 밖,
+// 노면이 54%(상한 30%)로 초과했다. x +4 로 조정하면 간판이 들어오고 노면이 기준 범위 이내가 된다.
 // pitch −6°: 수평(0°)에서는 하늘이 세로의 45% 였다(반복 1 첫 캡처) — 아트 기준 V1 상한 35%.

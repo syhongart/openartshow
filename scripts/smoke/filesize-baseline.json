@@ -21,7 +21,7 @@
     "scripts/smoke/run.mjs": 1068,
     "frontend/js/ui-avatar-editor.ts": 889,
     "frontend/js/main.js": 874,
-    "frontend/js/world-glb/systems/sky.ts": 853,
+    "frontend/js/world-glb/systems/sky.ts": 858,
     "frontend/js/world2/systems/sky.ts": 853,
     "frontend/js/world3/main.ts": 853,
     "frontend/js/world5/main.ts": 843,

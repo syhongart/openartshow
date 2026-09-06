@@ -44,7 +44,7 @@ function hexRgb(hex) {
 
 /** 벽돌 격자 — 코스 높이 76mm·벽돌 240mm(줄눈 10mm 포함), 2m 타일에 약 26 코스 × 8.3 장 */
 const BRICK = { courseM: 0.076, lenM: 0.24, groutM: 0.011 };
-function brickCell(px, py, size) {
+export function brickCell(px, py, size) {
   const m = 2 / size;                          // 픽셀 → m (TILE_M = 2)
   const y = py * m, x = px * m;
   const course = Math.floor(y / BRICK.courseM);

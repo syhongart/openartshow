@@ -144,6 +144,19 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
 ## 기타 대기 항목
 
+- **G-SKYW — `SkySystem` 실물 구동 하네스가 없어 hemi/조명 배선의 «실제 소비» 를 텍스트 검사로만 본다** (2026-09-06
+  등재). `applyHemiGround` 호출 한 줄을 지워도 전체 4,959 테스트 추가 실패 0 이었다(부팀장 에이전트 실측). 호출처
+  grep 검사(M6·M7)로 막았으나 «그렇게 적혀 있다» 까지다. `sky.js` + 캔버스 스텁으로 `SkySystem` 을 한 프레임 돌려
+  `hemi.groundColor` 실값을 단언하는 하네스(`tests/world2-sky-system.test.ts` 본보기 형태)가 필요하다.
+
+- **G-EXW — executor 는 별도 worktree/클론에서만 돈다(주 워킹트리 무접촉을 구조로)** (2026-09-06 등재, 팀장 재확대
+  조건 ①). 조명 executor 가 커밋 금지·되돌림 금지를 어기고 남의 미커밋 편집을 유실시켰다(사고 4건째). 프롬프트 조항은
+  이미 실패한 수단이라 격리를 구조(위임 시 `git worktree add` + 결과는 패치/브랜치로 회수)로 옮긴다. 이것이 게이트화되기
+  전에는 executor «환경» 범위가 «캡처 수집만» 이다.
+- **G-FRZ2 — 동결 파일·`filesize-baseline.json` 편집을 hookify 로 차단** (2026-09-06 등재, 팀장 재확대 조건 ②).
+  executor 가 `world-glb/main.ts` 에 2줄을 넣고 baseline 을 직접 올려 게이트를 통과시켰다. Bash 경로(`sed`·heredoc)
+  차단 규칙 + `tests/hookify-guard.test.ts` 차단 케이스 2개 이상. 한계: 파일 편집 도구 경로는 훅이 못 본다(기존 한계 명시).
+
 - **G-FRZ1 — 동결 게이트(`check:filesize`)가 값 옆 판정 기록을 밀어낸다** (2026-09-05 등재,
   팀장 조건 C-5b). `check:filesize` 는 **주석 줄까지 센다.** baseline 동결 파일(69개)은 한 줄도
   못 커지므로, CLAUDE.md 의 «판정을 값 **옆에** 기록한다» 규율과 **구조적으로 충돌**한다 —

@@ -61,6 +61,7 @@ import {
   applyNightFloor, type HemiLike, type SunLike, type ExposureLike, type FogLike,
 } from './night-lights.js';
 import { createHorizonBand, bandStrength, type HorizonBand } from './horizon.js';
+import { applyHemiGround, type HemiGroundTarget } from './sky-ground.js';
 import type { NightTune, SkyTime } from '../decide/night.js';
 import { nightness, paletteTime } from '../decide/night.js';
 import { dayLightMix, type DayLightMix } from '../decide/daylight.js';
@@ -383,6 +384,7 @@ export interface SkyOptions {
    * 그래서 이것만 따로 받는다. 없으면 `eyeHeight` 를 평지 가정으로 쓴다.
    */
   getEyeY?: () => number;
+  hemiGround?: number;   // `?hemig=` hemi 지면색(16진). 근거·적용 순서는 `systems/sky-ground.ts` 한 곳. ⚠ 기본 경로 undefined = 불변(world7·8 동작 0 변경), URL 노브는 `?glift=` 처럼 전 페이지 공용이고 world10 은 부트 DEFAULTS 로 선채움할 뿐이다 — «world10 전용» 으로 읽지 마라(팀장 조건 C2, 2026-09-06).
 }
 
 /**
@@ -460,6 +462,7 @@ export class SkySystem implements System {
   private lastHemiI = -1;
   private lastFogFar = -1;
   private readonly dayLight?: Partial<DayLightMix>;
+  private readonly hemiGround?: number;
   /**
    * 수평선 밴드. `?hz=0` 이거나 `eyeHeight` 를 안 받으면 `null` 이고, 그때 화면은
    * 이 기능이 들어오기 전과 **한 픽셀도 다르지 않다**(대조군이 곧 그 상태다).
@@ -511,6 +514,7 @@ export class SkySystem implements System {
     this.sunDist = opts.sunDist ?? SUN_DIST_FALLBACK;
     this.shadowTexel = opts.shadowTexel ?? 0;
     this.dayLight = opts.dayLight;
+    this.hemiGround = opts.hemiGround;
     this.dome = makeDome();
     this.dome.name = 'glb-world:sky';
     scene.add(this.dome);
@@ -627,6 +631,7 @@ export class SkySystem implements System {
 
     // 크로스페이드·강수·오로라·번개 진행. 조명·안개·클리어색 갱신도 여기서 일어난다.
     this.engine.update(ctx.dt);
+    applyHemiGround(this.hemi as unknown as HemiGroundTarget, this.hemiGround);   // 이 자리가 판정이다 — 근거는 `sky-ground.ts` 헤더.
     this.applySun();
     this.liftNightLights();
     this.applyDayContrast();
