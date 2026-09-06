@@ -6,6 +6,8 @@
 // 의 holes 를 비우고 슬롯을 지우면 «개구부·슬롯·재질 수» 단언이 FAIL — 부팀장 실측, BOARD).
 import { describe, it, expect } from 'vitest';
 import { inflateSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildStreet } from '../scripts/asset/nyc/generate.mjs';
 import { layoutBuildings, rhythmOk, galleryRoom, hexToLinear, PALETTE, DIMS } from '../scripts/asset/nyc/layout.mjs';
 import { brickAlbedo, brickCell, GROUT } from '../scripts/asset/nyc/textures.mjs';
@@ -306,5 +308,19 @@ describe('벽돌 알베도 PNG — 픽셀 색이 팔레트 범위 내 (zlib 디�
     expect(normalPassCount).toBeGreaterThan(0);
     // 뮤테이션은 색상이 현저히 다르다
     expect(mutantFailCount).toBeGreaterThan(0);
+  });
+});
+
+// ── 미러링 고정 ───────────────────────────────────────────────────────────────
+// `world10-boot.ts` 는 `frontend/` 라 `scripts/` 를 import 할 수 없다. 그래서 거리 지면색이
+// 두 자리에 산다 — 이 검사가 부트 파일을 **읽어서** 대조한다(값을 여기 다시 적지 않는다).
+describe('부트 기본값 미러링', () => {
+  it('world10-boot hemig 기본값 = layout.mjs PALETTE.curb (팀장 조건 ② — 두 값이 갈리면 여기서 깨진다)', () => {
+    const src = readFileSync(join(__dirname, '..', 'frontend', 'js', 'world10-boot.ts'), 'utf8');
+    const defaults = /const DEFAULTS[^=]*=\s*\{([^}]*)\}/.exec(src);
+    expect(defaults, 'world10-boot.ts 에서 DEFAULTS 를 못 찾았다').not.toBeNull();
+    const hemig = /hemig:\s*'([0-9a-fA-F]{6})'/.exec(defaults![1]);
+    expect(hemig, 'DEFAULTS 에 hemig 기본값이 없다').not.toBeNull();
+    expect(`#${hemig![1]}`.toUpperCase()).toBe(PALETTE.curb.toUpperCase());
   });
 });

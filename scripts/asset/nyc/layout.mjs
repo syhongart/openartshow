@@ -31,7 +31,16 @@ export const DIMS = Object.freeze({
   GATE_X: 62, GATE_H: 9, GATE_SPAN: 10, // 거리 끝 구조물(위임 명세)
 });
 
-/** §2 팔레트 — 알베도 sRGB. `--brick=B` 는 `brickA` 만 바꾼다 */
+/**
+ * §2 팔레트 — 알베도 sRGB. `--brick=B` 는 `brickA` 만 바꾼다.
+ *
+ * ⚠ `curb`(거리 지면색 `#8A857C`)는 **두 자리에 있다** — 여기와 `frontend/js/world10-boot.ts`
+ * 의 `DEFAULTS.hemig`. 부트가 `scripts/` 를 import 할 수 없어 생긴 미러링이고, 갈라지지
+ * 않게 `tests/nyc-gen.test.ts` 「world10-boot hemig 기본값 = layout.mjs PALETTE.curb
+ * (팀장 조건 ② — 두 값이 갈리면 여기서 깨진다)」가 부트 파일을 읽어 대조한다.
+ * 반구광 지면색으로 쓰는 근거 — 디자이너 2026-09-06: 아이보리 입면 (217,207,187)→(99,107,94)
+ * **색상 반전·밝기 46%** 로 찍혔고, 원인은 `sky.js` 프리셋 hemiG `0x8fa385` 가 지배하는 것이다.
+ */
 export const PALETTE = Object.freeze({
   brickA: '#8E5541', brickA_B: '#A65A45', brickB: '#7A4A44',
   ivoryA: '#D9CFBB', ivoryB: '#C6BCA8',

@@ -65,8 +65,12 @@ describe('호출처 — 캡처 페이지 부트 하나만 읽는다 (팀장 조�
     expect(w8).not.toMatch(/\bstart\b\s*:/);
     expect(w9).toMatch(/start: cam \?\? V1_START/);
     expect(w9).toMatch(/tag: 'world10'/);
-    // 거리 페이지 기본값 — 미술관 1채·링 잔디를 끈다(부트가 채우는 노브, 트리 분기 아님)
-    expect(w9).toMatch(/DEFAULTS[^=]*=\s*\{\s*glb: '0', grass: '0'\s*\}/);
+    // 거리 페이지 기본값 — 미술관 1채·링 잔디를 끄고 반구광 지면색을 거리색으로 둔다
+    // (부트가 채우는 노브, 트리 분기 아님). **키와 순서를 고정한다** — 하나가 조용히 늘거나
+    // 사라지면 여기서 깨진다. `hemig` 의 **값**은 여기서 안 본다: 그것은 `layout.mjs`
+    // `PALETTE.curb` 와의 미러링이고 `tests/nyc-gen.test.ts` 「world10-boot hemig 기본값 =
+    // layout.mjs PALETTE.curb (팀장 조건 ② — 두 값이 갈리면 여기서 깨진다)」가 대조한다.
+    expect(w9).toMatch(/DEFAULTS[^=]*=\s*\{\s*glb: '0', grass: '0', hemig: '[0-9a-f]{6}'\s*\}/);
   });
   it('트리 안에 `tag ===` 분기가 없다 — 경계(options.ts 헤더)', () => {
     const tree = walk(join(ROOT, 'world-glb'));

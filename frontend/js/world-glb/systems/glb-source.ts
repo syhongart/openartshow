@@ -94,7 +94,7 @@ export { normalKnob, NORMAL_KNOB_MAX } from '../decide/glb-normal.js';
 import { SHADOW_LIFT } from '../decide/shadow-decal.js';
 import { fixBoxDecalScale, rebakeShadowAtlas, applyAtlas } from './glb-shadow-fix.js';
 import { eachPlacement } from './glb-placement.js';
-import { isRoomLightNode } from '../decide/glb-nodes.js';
+import { isRoomLightNode, ROOM_LIGHT_COLOR, ROOM_LIGHT_INTENSITY } from '../decide/glb-nodes.js';
 
 export interface GlbSourceResult {
   /** 씬에 얹힌 루트(인스턴싱 **후**) */
@@ -152,7 +152,7 @@ export interface GlbSourceResult {
 export function mountGlbWorld(
   scene: Scene,
   gltfScene: Object3D,
-  opts: { castShadow: boolean; grid?: number; normalKnob?: NormalKnob; pointLightIntensity?: number },
+  opts: { castShadow: boolean; grid?: number; normalKnob?: NormalKnob },
 ): GlbSourceResult {
   // 노말맵 강도 노브(`?nrm=`) — 되묶기 «전» 원본 재질에 한 번(인스턴스가 같은 재질 객체를 공유한다). 판정은
   // decide, 집행은 systems/glb-normal.ts — 통합 검사가 three 재질 실물로 돈다(붙은 것과 소비되는 것은 다른 일).
@@ -288,10 +288,10 @@ export function mountGlbWorld(
 
   group.name = 'glb-world:glb-source';
 
-  // 라이트 노드별로 포인트라이트 생성 및 추가
-  const pliIntensity = opts.pointLightIntensity ?? 2.0;
+  // 라이트 노드별로 포인트라이트 생성 및 추가. 색·강도는 판정이라 `decide/glb-nodes.ts` 한 곳에
+  // 있다 — 여기에 값을 다시 적지 않는다(강도는 아직 스윕 전 임시값이다, 그 주석 참조).
   for (const light of roomLights) {
-    const pointLight = new THREE.PointLight(0xffffff, pliIntensity);
+    const pointLight = new THREE.PointLight(ROOM_LIGHT_COLOR, ROOM_LIGHT_INTENSITY);
     pointLight.position.copy(light.position);
     group.add(pointLight);
   }

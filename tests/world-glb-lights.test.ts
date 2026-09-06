@@ -4,8 +4,15 @@
 // 연결되는지 확인한다. mountGlbWorld 의 PointLight 생성은 통합 테스트 대상이다.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import * as THREE from 'three/webgpu';
 import { buildStreet } from '../scripts/asset/nyc/generate.mjs';
-import { isRoomLightNode, ROOM_LIGHT_SUFFIX } from '../frontend/js/world-glb/decide/glb-nodes.js';
+import {
+  isRoomLightNode, ROOM_LIGHT_SUFFIX, ROOM_LIGHT_COLOR, ROOM_LIGHT_INTENSITY,
+} from '../frontend/js/world-glb/decide/glb-nodes.js';
+import { mountGlbWorld } from '../frontend/js/world-glb/systems/glb-source.js';
+import { applyHemiGround } from '../frontend/js/world-glb/systems/sky-ground.js';
 
 describe('world-glb — light node generation and SSOT', () => {
   const { json: built } = buildStreet({ seed: 1, textures: false }) as {
@@ -83,5 +90,112 @@ describe('world-glb — light node generation and SSOT', () => {
     for (const light of roomLights) {
       expect(light.name).toMatch(/^bld\.2\.room\.\d+\.light$/);
     }
+  });
+});
+
+// ── 집행 축 — 「생성기가 노드를 만든다」와 「런타임이 그 자리에 빛을 켠다」는 다른 일이다 ──
+// 위 describe 는 전부 **GLB json**(빌드 산출)만 본다. 아래는 `mountGlbWorld` 를 three 실물로
+// 돌려 실제로 붙은 `PointLight` 의 색·강도·위치를 잰다. 이 축이 없으면 `glb-source.ts` 에서
+// 색을 `0xffffff` 로 되돌려도 위 6개는 전부 초록이다(뮤테이션 실측, 보고 참조).
+/**
+ * `PointLight` 중 이 검사가 읽는 부분만.
+ *
+ * `frontend/js/three-ambient.d.ts` 가 `three/webgpu` 에 대해 «타입으로 쓰는 심볼만» 선언하고
+ * 있어 `THREE.PointLight` 는 **타입 위치에서 못 쓴다**(TS2694). 앰비언트 선언을 늘리는 것은
+ * 이 회차 범위 밖이고(그 파일은 world2 계열 전체가 읽는다), 여기서 필요한 것은 세 속성뿐이다.
+ */
+type PointLightLike = {
+  isPointLight?: boolean;
+  color: { getHex(): number };
+  intensity: number;
+  position: { toArray(): number[] };
+};
+
+describe('mountGlbWorld — 방 라이트 집행(three 실물)', () => {
+  /** 라이트 노드 하나만 있는 최소 트리. 되묶기 대상(메시)이 없어도 라이트 경로는 돈다. */
+  function mount() {
+    const root = new THREE.Group();
+    const node = new THREE.Object3D();
+    node.name = 'bld.2.room.1.light';
+    node.position.set(1.5, 3.7, -12);
+    root.add(node);
+    const scene = new THREE.Scene();
+    mountGlbWorld(scene as never, root as never, { castShadow: false });
+    const lights: PointLightLike[] = [];
+    scene.traverse((o: PointLightLike) => { if (o.isPointLight) lights.push(o); });
+    return lights;
+  }
+
+  it('라이트 노드마다 PointLight 가 하나, 노드의 월드 좌표에 선다', () => {
+    const lights = mount();
+    expect(lights).toHaveLength(1);
+    expect(lights[0].position.toArray()).toEqual([1.5, 3.7, -12]);
+  });
+
+  it('색은 ROOM_LIGHT_COLOR(#FFF6EA) 다 — 흰색이 아니다(art-direction §2 전시 조명)', () => {
+    const lights = mount();
+    expect(ROOM_LIGHT_COLOR).toBe(0xfff6ea);
+    // `getHex()` 기본 인자가 sRGB 라 `setHex` 와 왕복이 맞는다(three Color 규약).
+    expect(lights[0].color.getHex()).toBe(0xfff6ea);
+    expect(lights[0].color.getHex()).not.toBe(0xffffff);
+  });
+
+  it('강도는 decide 의 ROOM_LIGHT_INTENSITY 를 그대로 쓴다(집행 쪽에 값을 다시 적지 않는다)', () => {
+    const lights = mount();
+    expect(lights[0].intensity).toBe(ROOM_LIGHT_INTENSITY);
+  });
+});
+
+describe('applyHemiGround — three 실물 HemisphereLight', () => {
+  /** `sky.js` 프리셋 hemiG. 이 값이 입면색을 지배해서 노브가 생겼다(디자이너 2026-09-06). */
+  const PRESET_GROUND = 0x8fa385;
+
+  it('hex 를 주면 groundColor 가 그 값이 된다', () => {
+    const hemi = new THREE.HemisphereLight(0xffffff, PRESET_GROUND, 1);
+    applyHemiGround(hemi, 0x8a857c);
+    expect(hemi.groundColor.getHex()).toBe(0x8a857c);
+  });
+
+  it('undefined 면 한 픽셀도 안 건드린다 — 팔레트 기본값이 그대로 산다', () => {
+    const hemi = new THREE.HemisphereLight(0xffffff, PRESET_GROUND, 1);
+    applyHemiGround(hemi, undefined);
+    expect(hemi.groundColor.getHex()).toBe(PRESET_GROUND);
+  });
+
+  it('skyColor 는 건드리지 않는다(지면색만 덮는다)', () => {
+    const hemi = new THREE.HemisphereLight(0xffffff, PRESET_GROUND, 1);
+    applyHemiGround(hemi, 0x8a857c);
+    expect(hemi.color.getHex()).toBe(0xffffff);
+  });
+});
+
+// ── 배선 축 — 「순수 함수가 맞다」와 「그 함수가 불린다」는 다른 일이다 ─────────
+// ⚠ 이 describe 는 **뮤테이션 실측으로 생겼다**(2026-09-06): `sky.ts` 에서
+// `applyHemiGround` 호출 한 줄을 지우고 **전체 4,959 테스트**를 돌렸더니 추가 실패가
+// **0** 이었다. 위 「applyHemiGround — three 실물」 은 함수만 보고, `?hemig=` 는 화면에서
+// 조용히 죽는다. 판정과 집행 사이를 건너는 지점은 양쪽 테스트 어디에도 안 걸린다.
+//
+// **한계(정직하게)**: 소스 텍스트 검사다. 「그 자리에 그 순서로 적혀 있다」까지만 보고
+// 「실제 프레임에서 그 순서로 돈다」는 안 본다 — `SkySystem` 실물 구동은 `sky.js`(929줄)와
+// 캔버스 스텁 하네스가 필요하고 이 회차 범위 밖이다(`tests/sky-paint-wiring.test.ts` 가
+// 그 하네스의 본보기다). 지금 막는 것은 **배선 삭제와 순서 뒤바뀜**이다.
+describe('호출처 — SkySystem 이 hemi 지면색을 덮는 자리 한 곳', () => {
+  const sky = readFileSync(
+    join(__dirname, '..', 'frontend', 'js', 'world-glb', 'systems', 'sky.ts'), 'utf8');
+
+  it('sky.ts 가 applyHemiGround 를 정확히 한 번 부른다(집행은 sky-ground.ts 한 곳)', () => {
+    expect(sky.match(/applyHemiGround\(/g)).toHaveLength(1);
+    expect(sky).toMatch(/applyHemiGround\(this\.hemi[^,]*,\s*this\.hemiGround\)/);
+    // 집행을 sky.ts 안에 다시 적지 않는다 — 그러면 파일이 다시 커지고 값이 두 자리에 산다.
+    expect(sky.includes('groundColor.setHex')).toBe(false);
+  });
+
+  it('호출 자리는 engine.update 직후·liftNightLights 직전이다(sky-ground.ts 헤더의 판정)', () => {
+    const iEngine = sky.indexOf('this.engine.update(ctx.dt)');
+    const iApply = sky.indexOf('applyHemiGround(this.hemi');
+    const iLift = sky.indexOf('this.liftNightLights()');
+    expect(iEngine).toBeGreaterThan(-1);
+    expect(iApply).toBeGreaterThan(iEngine);   // 앞이면 매 프레임 팔레트가 다시 덮는다
+    expect(iLift).toBeGreaterThan(iApply);     // 뒤면 밤 지면색 하한이 무시된다
   });
 });
