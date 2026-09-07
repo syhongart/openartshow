@@ -21,6 +21,7 @@ import {
 import { collectCellParts, maxCells } from '../frontend/js/world10/systems/nyc-cell-builder.js';
 import { CELL as GEN_CELL, groundPlan, DIMS } from '../scripts/asset/nyc/layout.mjs';
 import { buildStreet } from '../scripts/asset/nyc/generate.mjs';
+import { readGlb } from '../scripts/asset/nyc/glb-write.mjs';
 import { analyzeStreet } from '../scripts/asset/nyc/coplanar.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -98,6 +99,105 @@ describe('② 격자 상수 미러링 — 런타임 ↔ 생성기', () => {
   });
 });
 
+// ── `sameAsset` — «커밋 GLB ↔ 생성기» 정합 게이트(G-NYC1)의 축 ─────────────────
+//
+// ⚠ **왜 «바이트 동일» 이 아닌가 — 실측 2026-09-07 (부팀장).**
+// PR #298 의 CI `verify` 가 아래 두 검사에서만 떨어졌다(로컬 Node 22 통과, CI Node 24 FAIL).
+// node v24.9.0 을 받아 같은 자리에서 다시 재고 해부한 결과:
+//   · 산출 GLB 가 Node 22 3,281,640 B ↔ Node 24 3,281,644 B — **4바이트** 길다.
+//   · **BIN 청크는 바이트 동일**이다. 정점·인덱스·PNG 텍스처까지 전부 md5 가 같다.
+//   · 갈리는 것은 **JSON 청크의 수 2,540개 중 8개**뿐이고 전부
+//     `materials[*].pbrMetallicRoughness.baseColorFactor` 이며 거리는 **정확히 1 ULP** 다
+//     (최대 상대오차 1.755e-16). 예: 0.04489375760705065 ↔ 0.044893757607050645.
+//   · 출처는 `layout.mjs` `hexToLinear` 의 `Math.pow((s+0.055)/1.055, 2.4)` — V8 12.4
+//     (Node 22) 와 V8 13.6(Node 24) 의 결과가 마지막 자리에서 다르다. ECMA-262 는
+//     `Math.pow` 를 «구현이 정한 근사» 로 두므로 **V8 의 버그가 아니라 허용된 자유도**다.
+//     십진 자릿수가 하나 늘면 JSON 문자열이 길어지고 → 청크 길이 → 파일이 4바이트 밀린다.
+//
+// 기각한 가설·처방 — 근거를 남긴다(안 남기면 다음 사람이 같은 데를 또 판다):
+//   ✗ «zlib 버전 차이로 PNG 압축 바이트가 달라진다»(첫 가설) — **실측으로 틀렸다.**
+//     같은 입력의 `deflateSync(level 9·6·0)` 출력이 Node 20·21·22·24 에서 md5 동일이고,
+//     애초에 PNG 가 들어 있는 BIN 청크가 위와 같이 바이트 동일이다.
+//   ✗ 단언 삭제·`.skip`·`toBe(true)` 완화 — 게이트가 장식이 된다.
+//   ✗ Node 24 에서 GLB 를 다시 구워 커밋 — **어느 Node 가 빨간불인지만 바뀐다.**
+//   △ 생성기가 JSON 에 쓰는 수를 고정 정밀도로 양자화(=환경 무관 산출) — 이것이 **항구
+//     처방**이지만 커밋된 GLB 2장을 다시 구워야 한다(캡처 증거·filesize 기준선에 닿는다).
+//     별도 회차로 올린다(게시판 2026-09-07).
+//
+// 그래서 **축을 바꾼다 — 느슨하게가 아니라, 환경이 못 건드리는 것을 재도록.**
+//   ① BIN 청크는 **바이트 동일**. 관용 0. 지오메트리·인덱스·텍스처가 전부 여기 있다.
+//   ② JSON 은 **구조·키 순서·문자열 완전 동일**, 수만 **4 ULP** 관용(실측 1 ULP 의 4배).
+//      4 ULP ≈ 상대 8.9e-16 — 의미 있는 최소 변화(색 1/255 ≈ 3.9e-3, 좌표 1e-6 m)보다
+//      **12자리** 아래다. 곧 «부동소수 마지막 자리» 말고는 아무것도 안 봐준다.
+//   실증: `DIMS.WALL_T` 0.12→0.121 뮤테이션에서 이 축은 FAIL 한다(BIN 청크가 갈린다).
+
+/** 이 값 자리의 ULP — «표현 가능한 바로 다음 배정밀도 수» 까지의 거리 */
+function ulpAt(x: number): number {
+  const b = new ArrayBuffer(8);
+  const f = new Float64Array(b);
+  const i = new BigInt64Array(b);
+  const m = Math.abs(x) || Number.MIN_VALUE;
+  f[0] = m;
+  i[0] += 1n;
+  return f[0] - m;
+}
+
+/** 두 수가 «부동소수 마지막 자리» 차이 안인가 (4 ULP, 0 근방은 1e-15 절대 바닥) */
+function nearEnough(a: number, b: number): boolean {
+  if (Object.is(a, b)) return true;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;   // NaN·무한대는 봐주지 않는다
+  const d = Math.abs(a - b);
+  return d <= 4 * ulpAt(Math.max(Math.abs(a), Math.abs(b))) || d <= 1e-15;
+}
+
+/** glTF JSON 을 훑어 «관용 밖의 차이» 만 사람이 읽을 수 있게 모은다 */
+function diffJson(a: unknown, b: unknown, path: string, out: string[]): void {
+  if (out.length >= 8) return;   // 앞의 여덟만 — 2,540개를 쏟으면 아무도 안 읽는다
+  if (typeof a === 'number' && typeof b === 'number') {
+    if (!nearEnough(a, b)) {
+      const u = Math.abs(a - b) / ulpAt(Math.max(Math.abs(a), Math.abs(b)));
+      out.push(`${path}: 생성기 ${a} ≠ 디스크 ${b} (${u.toExponential(2)} ULP)`);
+    }
+    return;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) { out.push(`${path}: 배열/비배열이 갈린다`); return; }
+    if (a.length !== b.length) { out.push(`${path}: 길이 ${a.length} ≠ ${b.length}`); return; }
+    for (let i = 0; i < a.length; i++) diffJson(a[i], b[i], `${path}[${i}]`, out);
+    return;
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    // 키를 **정렬하지 않는다** — 순서까지 같아야 한다(정렬하면 키 재배열을 놓친다)
+    const ka = Object.keys(a); const kb = Object.keys(b);
+    if (ka.join(' ') !== kb.join(' ')) {
+      out.push(`${path}: 키가 갈린다 — 생성기 [${ka}] / 디스크 [${kb}]`);
+      return;
+    }
+    for (const k of ka) {
+      diffJson((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], `${path}.${k}`, out);
+    }
+    return;
+  }
+  if (!Object.is(a, b)) out.push(`${path}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`);
+}
+
+/**
+ * 생성기 산출 GLB 와 디스크 GLB 가 **같은 자산**인가. 다르면 사람이 읽을 사유 목록을,
+ * 같으면 빈 배열을 낸다. 바이트가 같으면 그것이 최선이므로 거기서 끝낸다.
+ */
+function sameAsset(built: Uint8Array, onDisk: Buffer): string[] {
+  const a = Buffer.from(built);
+  if (a.equals(onDisk)) return [];                       // 바이트 동일 — 더 볼 것이 없다
+  const g = readGlb(a) as { json: unknown; bin: Uint8Array };
+  const d = readGlb(onDisk) as { json: unknown; bin: Uint8Array };
+  const out: string[] = [];
+  if (!Buffer.from(g.bin).equals(Buffer.from(d.bin))) {
+    out.push(`BIN 청크가 다르다 — 지오메트리 또는 텍스처가 바뀌었다 (${g.bin.length} B / ${d.bin.length} B)`);
+  }
+  diffJson(g.json, d.json, 'json', out);
+  return out;
+}
+
 describe('③ 셀 GLB — 경계에서 잘리고, 기본 모드는 안 건드린다', () => {
   it('`--cell` 지면 판이 셀 경계에 정확히 맞는다 — 인접 셀과 «겹치지» 않고 «맞닿는다»', () => {
     const half = GEN_CELL.SIZE / 2;
@@ -113,17 +213,19 @@ describe('③ 셀 GLB — 경계에서 잘리고, 기본 모드는 안 건드린
     expect(gp.yardS.z1).toBeCloseTo(half, 9);
   });
 
-  it('기본(«거리 한 장») 모드는 `--cell` 도입으로 **한 바이트도 안 바뀐다**', () => {
+  it('기본(«거리 한 장») 모드는 `--cell` 도입으로 **안 바뀐다** — 커밋 GLB ↔ 생성기 정합', () => {
     // 기존 캡처·증거의 기준 자산이 조용히 바뀌는 것을 막는 축이다.
     const built = buildStreet({ seed: 1 }).glb as Uint8Array;
     const onDisk = readFileSync(join(ROOT, 'frontend/assets/worlds/nyc-street.glb'));
-    expect(Buffer.from(built).equals(onDisk)).toBe(true);
+    const diffs = sameAsset(built, onDisk);
+    expect(diffs, `nyc-street.glb 가 생성기 산출과 갈린다:\n${diffs.join('\n')}`).toEqual([]);
   });
 
-  it('커밋된 `nyc-cell.glb` 가 생성기 산출과 바이트 동일하다', () => {
+  it('커밋된 `nyc-cell.glb` 가 생성기 산출과 **같은 자산**이다', () => {
     const built = buildStreet({ seed: 1, cell: true }).glb as Uint8Array;
     const onDisk = readFileSync(join(ROOT, 'frontend/assets/worlds/nyc-cell.glb'));
-    expect(Buffer.from(built).equals(onDisk)).toBe(true);
+    const diffs = sameAsset(built, onDisk);
+    expect(diffs, `nyc-cell.glb 가 생성기 산출과 갈린다:\n${diffs.join('\n')}`).toEqual([]);
   });
 
   it('셀 모드에도 동일 평면·같은 방향 겹침이 0 이다 (감독 «우글우글» 축을 셀에도 건다)', () => {
