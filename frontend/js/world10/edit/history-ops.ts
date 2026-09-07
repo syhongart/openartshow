@@ -1,4 +1,4 @@
-// world-glb/edit/history-ops.ts — **무엇을 어떻게 되돌리는가.** 스택은 `decide/history.ts`.
+// world10/edit/history-ops.ts — **무엇을 어떻게 되돌리는가.** 스택은 `decide/history.ts`.
 //
 // 감독 지시 2026-08-22: *"워크래프트3 편집기 … 우리 편집기 보고 개선해봐."* 배경과
 // 「왜 실행취소가 먼저인가」는 그 파일 헤더 한 곳이다 — 여기에 다시 적지 않는다.

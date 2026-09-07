@@ -1,4 +1,4 @@
-// world-glb/edit/history-input.ts — **되돌리기 키.** `Ctrl+Z` · `Ctrl+Shift+Z` · `Ctrl+Y`.
+// world10/edit/history-input.ts — **되돌리기 키.** `Ctrl+Z` · `Ctrl+Shift+Z` · `Ctrl+Y`.
 //
 // 감독 지시 2026-08-22: *"워크래프트3 편집기 보니깐 … 우리 편집기 보고 개선해봐."*
 // 배경은 `decide/history.ts` 헤더 한 곳이다.

@@ -1,4 +1,4 @@
-// world-glb/systems/glb-collider.ts — **`Collider` 계약을 GLB 레이캐스트로 구현한다.**
+// world10/systems/glb-collider.ts — **`Collider` 계약을 GLB 레이캐스트로 구현한다.**
 //
 // ── 왜 world2 의 `collision.ts` 를 그대로 못 쓰나 ────────────────────────────
 // 저쪽은 **파츠별 원형 footprint** 를 배치 목록(`frozenAt` 체인)에서 읽는다 — 「어디에

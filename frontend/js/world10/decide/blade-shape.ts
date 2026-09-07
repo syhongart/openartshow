@@ -1,4 +1,4 @@
-// world-glb/decide/blade-shape.ts — 잎 **한 장**의 실루엣·자세·명암 판정. 순수, three 무의존.
+// world10/decide/blade-shape.ts — 잎 **한 장**의 실루엣·자세·명암 판정. 순수, three 무의존.
 //
 // ── 왜 `decide/grass.ts` 에서 갈라 나왔나 ──────────────────────────────────
 // 관심사가 다르다. `grass.ts` 는 «어디에 몇 포기를 심는가»(필드 배치)이고 여기는 «한

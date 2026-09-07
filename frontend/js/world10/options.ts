@@ -1,4 +1,4 @@
-// world-glb/options.ts — **두 페이지의 계약.** `world7-boot`·`world8-boot` 가 읽는다.
+// world10/options.ts — **두 페이지의 계약.** `world7-boot`·`world8-boot` 가 읽는다.
 //
 // 조립부(`main.ts`)가 아니라 여기 있는 이유: 이것은 **트리 안의 구현 사항이 아니라
 // 트리와 페이지 사이의 경계**다. 부트 파일이 무엇을 넘겨야 하는지가 한 곳에 있어야

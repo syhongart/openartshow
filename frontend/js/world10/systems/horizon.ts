@@ -1,4 +1,4 @@
-// world-glb/systems/horizon.ts — 수평선 밴드의 **집행**. 판정은 `decide/horizon.ts` 가 한다.
+// world10/systems/horizon.ts — 수평선 밴드의 **집행**. 판정은 `decide/horizon.ts` 가 한다.
 //
 // 왜 계산을 저쪽에 두는가: 여기 있는 것은 전부 three 에 닿아 있어 테스트가 브라우저를
 // 필요로 한다. 각도·알파 프로파일을 저쪽 순수 함수로 빼면 테스트가 **실제로 도는 함수**를

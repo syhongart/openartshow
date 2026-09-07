@@ -1,4 +1,4 @@
-// world-glb/systems/streaming.ts — 파셀 생명주기 집행.
+// world10/systems/streaming.ts — 파셀 생명주기 집행.
 //
 // ── 판정과 집행의 분리 ───────────────────────────────────────────────────────
 // 이 파일에는 **거리 임계도 우선순위 공식도 없다.** 전부 decide/stream.ts와 decide/lod.ts에

@@ -1,4 +1,4 @@
-// world-glb/systems/adapt.ts — 적응 품질 집행.
+// world10/systems/adapt.ts — 적응 품질 집행.
 //
 // ── 역방향 의존을 끊은 자리 ──────────────────────────────────────────────────
 // 현행에서는 `adaptQuality`가 `frameCapS`를 직접 써서 메인 루프의 게이팅을 바꿨다 —

@@ -1,4 +1,4 @@
-// world-glb/systems/sky-ground.ts — hemi 지면색 덮어쓰기. **순수**(three import 0).
+// world10/systems/sky-ground.ts — hemi 지면색 덮어쓰기. **순수**(three import 0).
 //
 // ── 왜 별도 파일인가 ─────────────────────────────────────────────────────────
 // `systems/sky.ts` 는 `scripts/smoke/filesize-baseline.json` 이 **853줄로 동결**한 파일이다

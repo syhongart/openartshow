@@ -1,4 +1,4 @@
-// world-glb/systems/player-options.ts — `PlayerSystem` 의 **주입 계약.** 런타임 코드 0.
+// world10/systems/player-options.ts — `PlayerSystem` 의 **주입 계약.** 런타임 코드 0.
 //
 // ── 왜 파일이 갈렸나 (2026-08-19) ──────────────────────────────────────────
 // 두 이유가 겹쳤고 **둘 다 적는다** — 하나만 적으면 다음 사람이 판단을 못 한다.

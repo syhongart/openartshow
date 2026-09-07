@@ -1,4 +1,4 @@
-// world-glb/systems/glb-source.ts — **세계를 파셀이 아니라 GLB 한 덩어리에서 짓는다.**
+// world10/systems/glb-source.ts — **세계를 파셀이 아니라 GLB 한 덩어리에서 짓는다.**
 //
 // ── 이 파일이 world8 이 world2 와 갈리는 «유일한 축» 이다 ────────────────────
 // world2 는 세계를 **파셀 스트리밍**으로 짓는다(절차적 배치 목록 → 파츠 조립 → 근처만

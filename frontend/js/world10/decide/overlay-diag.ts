@@ -1,4 +1,4 @@
-// world-glb/decide/overlay-diag.ts — 오버레이 **진단 상태**. 순수하고 three 를 모른다.
+// world10/decide/overlay-diag.ts — 오버레이 **진단 상태**. 순수하고 three 를 모른다.
 //
 // ── 왜 떼어냈나 (2026-08-16, W8-2 뮤테이션이 시켰다) ────────────────────────
 // `features/overlay.ts` 에 진단 필드를 셋 넣고(`want`·`failed` 상한·`failedTotal`)

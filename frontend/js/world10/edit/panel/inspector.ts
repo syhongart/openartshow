@@ -1,4 +1,4 @@
-// world-glb/edit/panel/inspector.ts — 선택한 것의 **수치를 직접 친다.**
+// world10/edit/panel/inspector.ts — 선택한 것의 **수치를 직접 친다.**
 //
 // 감독 카드 선택(2026-08-12): 기즈모·되돌리기·목록·시점 전환과 함께 **수치 입력**.
 //

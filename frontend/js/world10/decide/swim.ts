@@ -1,4 +1,4 @@
-// world-glb/decide/swim.ts — 물에 빠진다는 것. 순수 함수만, three 의존 0.
+// world10/decide/swim.ts — 물에 빠진다는 것. 순수 함수만, three 의존 0.
 //
 // 감독 지시 2026-07-31: *"강에 사람이 빠지게해줘"*
 //

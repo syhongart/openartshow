@@ -1,4 +1,4 @@
-// world-glb/features/overlay.ts — **사용자 배치를 읽어 씬에 얹는다.** 계약은 `decide/overlay.ts`.
+// world10/features/overlay.ts — **사용자 배치를 읽어 씬에 얹는다.** 계약은 `decide/overlay.ts`.
 //
 // ── 왜 가산 레이어인가 ──────────────────────────────────────────────────────
 // 마을은 저장하지 않는다(`decide/parcel-layout.ts`: *"같은 (px,pz)는 언제나 같은 배치를

@@ -1,4 +1,4 @@
-// world-glb/systems/art-port.ts — **걸린 작품 목록의 소유자**. three 를 안 쓴다 (W8-4 D2).
+// world10/systems/art-port.ts — **걸린 작품 목록의 소유자**. three 를 안 쓴다 (W8-4 D2).
 //
 // ── 왜 이 작은 파일이 따로 있나 — 두 가지 이유 ─────────────────────────────
 // ① **편집이 `features/overlay.ts` 의 지역 변수에 닿을 방법이 없다.** 작품 배열은

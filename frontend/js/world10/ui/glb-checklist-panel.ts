@@ -1,4 +1,4 @@
-// world-glb/ui/glb-checklist-panel.ts — 자가진단 결과를 화면에 띄운다. **판정은 안 한다.**
+// world10/ui/glb-checklist-panel.ts — 자가진단 결과를 화면에 띄운다. **판정은 안 한다.**
 //
 // 판정은 `decide/glb-checklist.ts` 가 소유한다(순수 함수·DOM 접촉 0). 이 파일은 그
 // 결과를 그리기만 한다 — 조립을 UI 안에 인라인하면 **어떤 검사도 안 닿는다**는 것을

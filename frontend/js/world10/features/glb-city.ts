@@ -1,4 +1,4 @@
-// world-glb/features/glb-city.ts — **얇은 래퍼.** 본체는 `world-shared/glb-city.ts` 다.
+// world10/features/glb-city.ts — **얇은 래퍼.** 본체는 `world-shared/glb-city.ts` 다.
 //
 // ── 왜 이 파일이 남아 있나 (2026-08-16 통합) ────────────────────────────────
 // 본체를 공유로 올렸지만 **`Feature`·`FeatureEnv`·`FeatureInstance` 타입은 세계마다
