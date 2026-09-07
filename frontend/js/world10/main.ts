@@ -31,7 +31,7 @@ import { resolutionBands } from './decide/adapt.js';
  * 적었더니 부팅이 상한을 33% 초과한 채 고정됐다(감독 실기기 2026-08-26).
  */
 const MOBILE_CAP = 1.5;
-import { runBoot } from './boot.js';
+import { runBoot, waitUntil } from './boot.js';
 import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
@@ -54,7 +54,17 @@ import { DEFAULT_BODY_R } from './systems/collision.js';
 import { mountGlbWorld, describeGlb, type GlbSourceResult, normalKnob, NORMAL_KNOB_MAX } from './systems/glb-source.js';
 import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
 import { warmUpNode } from '../world-shared/attach-loop.js';
-import { createGlbStream } from './systems/glb-stream.js';
+// ── 🔴 world10 의 갈림 — 파셀 내용물 (팀장 판정 2026-09-06 「C·포크」 C2) ──────────
+// 스트리밍은 world2 원본(`systems/streaming.ts`)이 그대로 돌고, **파셀에 무엇이 들어가는가**
+// 한 곳만 갈린다. 근거·경계는 `systems/nyc-cell-builder.ts` 헤더 한 곳이다.
+// `systems/glb-stream.ts`(거리 컬링)는 **부르지 않는다** — 컬링을 파셀 스트리밍이 하므로
+// 두 벌을 겹치면 같은 일을 두 판정이 하게 된다(`glb-instance.js` 의 `GRID` 주석이 world2 를
+// 두고 *"셀 분할이 없다 — 컬링은 파셀 스트리밍이 담당한다"* 고 적은 그 구조로 돌아온다).
+import {
+  NycCellBuilder, collectCellParts, collectCellLights, maxCells,
+  type CellPart, type CellLight,
+} from './systems/nyc-cell-builder.js';
+import { NYC_CELL, parcelOf, toGridPos } from './systems/nyc-parcels.js';
 import { aheadOf } from './diag-ahead.js';
 import type { GlbWorldOptions } from './options.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
@@ -88,8 +98,16 @@ import { DOME_MAX } from './systems/sky.js';
 // 오늘은 둘 다 32라 우연히 맞았다. 우연에 기대지 않는다. 이 프로젝트가 값 미러링으로 이미
 // 세 번 겪은 형태이고(캔버스 색 vs 상수 · 구름 고도 두 곳 · 테스트 임계값), 그때마다
 // "한쪽만 고쳐도 아무도 모른다"가 문제였다.
-const CELL_X = DEFAULT_LAYOUT.cellX;
-const CELL_Z = DEFAULT_LAYOUT.cellZ;
+// ── 🔴 world10 의 셀은 **격자 도시 한 블록**이다 (팀장 판정 C2) ─────────────
+// world2 는 32m 파셀이고 world10 은 `NYC_CELL`(64m) 이다 — 지시서 `docs/NYC-GALLERY-WALK.md`
+// 의 «50~70m 거리 한 블록». 값과 근거의 SSOT 는 `systems/nyc-parcels.ts` 한 곳이고, 그 값이
+// 생성기(`scripts/asset/nyc/layout.mjs` 의 `CELL`)와 갈리지 않는 것은 `tests/nyc-grid.test.ts`
+// 가 두 파일을 읽어 대조한다.
+//
+// ⚠ 위 문단(«두 자가 같아야 한다»)은 그대로 유효하다 — 물 판정도 안개도 그림자 프러스텀도
+// 전부 이 값에서 유도되므로, 여기 하나만 바꾸면 나머지가 따라온다.
+const CELL_X = NYC_CELL;
+const CELL_Z = NYC_CELL;
 
 /**
  * 그림자 카메라가 담을 범위(셀 배수). **`SHADOW_MAP` 과 짝이다** — 둘의 비가 텍셀 크기고,
@@ -510,8 +528,48 @@ export async function startGlbWorld(
    * 지운 것이 아니라 **세울 것이 없어 안 만드는 것**이고, 경위는 `world-glb/README.md` 다.
    */
   let glbSource: GlbSourceResult | null = null;
-  let glbMapBaked: GlbMap | null = null;   // GLB 에서 구운 지도. 부팅 1회다
-  let glbStream: ReturnType<typeof createGlbStream> | null = null;
+  let glbMapBaked: GlbMap | null = null;
+  /**
+   * ── 🔴 world10 은 `streaming` 을 **되살린다** ──────────────────────────────
+   * 위 문단은 `world-glb`(GLB 한 덩어리)의 사실이고 **world10 에서는 거짓**이다. 여기 세계는
+   * 격자 셀 파셀 스트리밍이고, 그래서 world2 의 `StreamingSystem` 이 그대로 선다.
+   *
+   * 안 세우는 것은 여전히 넷이다 — `ParcelFadeSystem`·`ParcelGrowSystem`·`ShadowDecalSystem`·
+   * `SlotPool`(파츠 어댑터). 앞의 셋은 **파츠 슬롯의 연출**이고 셀 GLB 에는 그 대상이 없다.
+   * 지운 것이 아니라 **붙을 데가 없어 안 붙는 것**이고, 경위는 `world10/README.md` 다.
+   */
+  let streaming: StreamingSystem | null = null;
+  /** 셀 전용 슬롯 풀. 파츠 풀(`pools`)과 **따로** 든다 — 키·예산이 섞이면 둘 다 못 읽는다 */
+  let cellPools: InstancePools | null = null;
+  let cellBuilder: NycCellBuilder | null = null;
+  /**
+   * 지도를 다시 구워야 하는가. **셀 집합이 바뀌면 참**이 된다.
+   *
+   * `world-glb` 는 세계가 한 덩어리라 부팅 1회로 끝났다. 여기서는 세계가 스트리밍이므로
+   * 「한 번 굽고 끝」이면 **처음 3×3 밖으로 걸어간 순간 지도가 거짓**이 된다. 매 변경마다 즉시
+   * 굽지 않고 플래그를 두는 이유: 초기 충전에만 파셀이 20여 개 들어와 512² 굽기가 그만큼
+   * 반복된다. 실제 굽기는 미니맵이 물어볼 때(`glbMap()`) 한 번이다.
+   */
+  let mapDirty = true;
+
+  /** 지도가 볼 트리. `stream` 단계에서 채워진다 — 그전에는 굽지 않는다(빈 지도를 만들지 않는다) */
+  let mapSource: Object3D | null = null;
+
+  /**
+   * 지도가 낡았으면 다시 굽는다. **떠 있는 셀 묶음**(인스턴싱 전 트리)을 본다 — 되묶인 뒤에는
+   * 한 종류가 사각형 하나로 뭉개진다(`systems/glb-minimap.ts` 경고).
+   *
+   * ⚠ 부를 때 굽는다(«pull»). 셀이 바뀔 때마다 굽는(«push») 판본은 초기 충전에서만 20여 번
+   * 512² 캔버스를 다시 칠한다 — 미니맵은 `REDRAW_S` 마다 한 번 물으므로 그 사이 여러 번
+   * 바뀐 것이 한 번으로 합쳐진다.
+   */
+  const bakeMapIfDirty = (): GlbMap | null => {
+    if (mapDirty && mapSource) {
+      glbMapBaked = bakeGlbMap(mapSource);
+      mapDirty = false;
+    }
+    return glbMapBaked;
+  };
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
   let features: MountedFeature[] = [];
 
@@ -594,7 +652,9 @@ export async function startGlbWorld(
       backend: () => adapter?.backend ?? '—',
       page: opts.tag,   // 리포트 제목이 world2 로 하드코딩돼 거짓이었다(감독 신고)
       // 이 세계의 «스트리밍» — 감독이 판정자인 축은 감독 화면에 있어야 한다.
-      cull: () => (glbStream ? { ...glbStream.stats(), grid: glbSource?.grid ?? 0 } : null),
+      // ⚠ **거리 컬링이 없다 — 컬링은 파셀 스트리밍이 한다.** `null` 이 「안 쟀다」가 아니라
+      // 「그런 물건이 없다」임을 이 주석이 가른다(아래 `stream` 훅과 짝).
+      cull: () => null,
       counts: () => {
         const f = adapter?.frameStats();
         return {
@@ -617,10 +677,15 @@ export async function startGlbWorld(
       drawGroupKey: () => combineDrawGroupKey(features),
       // 막은 기능 이름 — 리포트가 "npc·glb-city 가 판정 불가로 표시" 를 찍게 한다.
       drawBlockers: () => drawGroupKeyOf(features).blockedBy,
-      // ⚠ **전부 0 이고 그것이 사실이다** — 이 세계에는 파셀 스트리밍이 없다(GLB 한
-      // 덩어리가 부팅에 다 온다). 훅을 지우지 않는 이유는 스모크·계측이 세계마다 같은
-      // 모양을 읽기 때문이고, 「0 이라서 없다」와 「없어서 0 이다」를 가르는 것은 이 주석이다.
-      stream: () => ({ loaded: 0, built: 0 }),
+      // 🔴 **world10 은 실제 수를 낸다** — 세계가 격자 셀 스트리밍이다. 위 주석의
+      // 「없어서 0 이다」는 `world-glb` 의 사실이고 여기서는 거짓이다.
+      stream: () => {
+        const s = streaming?.stats();
+        return {
+          loaded: s?.loaded ?? 0, built: s?.built ?? 0, released: s?.released ?? 0,
+          starved: cellBuilder?.stats().starved ?? 0,
+        };
+      },
       adapt: () => {
         const a = adapt?.snapshot();
         return {
@@ -761,7 +826,10 @@ export async function startGlbWorld(
             // 물어 「그 파셀이 올라왔는가」를 답한다. 여기서 `true` 를 내면 「올라온 파셀이
             // 있다」는 거짓을 말하게 된다.
             parcelLoaded: () => false,
-            glbMap: () => glbMapBaked,   // 늦게 읽는 클로저 — 근거는 `features/types.ts`
+            // 늦게 읽는 클로저 — 근거는 `features/types.ts`. world10 은 여기서 **필요할 때
+            // 다시 굽는다**: 세계가 스트리밍이라 「부팅 1회」로 두면 처음 반경 밖으로 걸어간
+            // 순간 지도가 거짓이 된다. 다시 굽는 자리는 `bakeMapIfDirty` 한 곳이다.
+            glbMap: () => bakeMapIfDirty(),
             // 🔴 **미술관 루트** — 편집이 그 벽을 벽 검출 대상에 넣는다 (태스크 #112).
             // 위 둘과 **같은 클로저 이유**이고 하나가 더 있다: 이 자산은 13.5MB 라
             // 로드가 비동기여서, mount 시점에는 기능은 있어도 루트가 아직 `null` 이다.
@@ -861,61 +929,138 @@ export async function startGlbWorld(
         }
       },
 
-      // ── 🔴 world8 의 갈림: 세계를 **파셀 스트리밍이 아니라 GLB 한 덩어리**로 짓는다 ──
+      // ── 🔴 world10 의 갈림: 세계를 **격자 셀 파셀 스트리밍**으로 짓는다 ────────
       //
-      // world2 의 이 단계는 파셀 빌더·슬롯 풀·페이드·성장·접촉그림자·스트리밍을 세우고
-      // 「근처 파셀이 다 올라올 때까지」 기다린다. world8 은 그 자리에 **블렌더를 거친
-      // GLB** 를 놓는다 — 그것이 이 포크의 유일한 갈림이다(`world-glb/README.md`).
+      // `world-glb` 는 이 자리에 «GLB 한 덩어리» 를 놓았다. world10 은 팀장 판정 2026-09-06
+      // 「C·포크」 C2 대로 **world2 의 파셀 스트리밍으로 되돌리고**, 파셀의 «내용물» 만
+      // 셀 GLB 로 바꾼다. 그래서 이 단계가 세우는 것은 world2 와 같은 물건들이다:
       //
-      // **여기서 안 만드는 것**과 그 이유:
-      //   `PooledParcelBuilder`·`StreamingSystem` — 세울 파셀이 없다
-      //   `ParcelFadeSystem`·`ParcelGrowSystem`  — 파셀이 뜨고 지는 연출이라 대상이 없다
-      //   `ShadowDecalSystem`                    — 파츠 슬롯에 자세를 워프해 굽는 물건이고
-      //                                            GLB 에는 우리 파츠 슬롯이 **없다**
-      //   마을 규칙 노브(`?density=`·`?bld=`·`?tree=`) — 절차적 배치를 흔드는 노브다
+      //   `InstancePools`(셀 전용)  — 셀 메시 종류마다 슬롯 풀. **드로우콜을 셀 수와 무관하게** 한다
+      //   `NycCellBuilder`          — 🔴 **갈리는 단 한 자리**(파츠 조립 → 셀 GLB)
+      //   `StreamingSystem`         — world2 원본 그대로. LOD·look-ahead·예산·기아 방지 전부
       //
-      // ⚠ **이것은 「그림자를 뺐다」가 아니다.** world2 의 그림자는 두 겹이고, 이 세계에
-      // 그대로 오는 것은 **방향성 그림자**(프러스텀 유도 `decide/shadow.ts`, `renderer`
-      // 단계에서 이미 섰다)다. GLB 메시에 `castShadow`/`receiveShadow` 를 켜서 그 그림자를
-      // 받게 한다(`glb-source.ts`). 접촉그림자 데칼은 파츠 전용 추가 레이어이고, 붙을
-      // 대상이 없어 안 붙는 것이다 — 코드를 고쳐서 뺀 것이 아니다.
+      // **여기서 안 만드는 것**과 그 이유(`world-glb` 와 같다):
+      //   `ParcelFadeSystem`·`ParcelGrowSystem` — 파츠 슬롯의 등장·퇴장 연출이라 대상이 없다
+      //   `ShadowDecalSystem`                   — 파츠 슬롯에 자세를 워프해 굽는 물건이다
+      //   마을 규칙 노브(`?density=`·`?bld=`·`?tree=`) — 절차적 «파츠 배치» 를 흔드는 노브다
+      //
+      // ⚠ **이것은 「그림자를 뺐다」가 아니다.** 이 세계에 오는 것은 **방향성 그림자**
+      // (프러스텀 유도 `decide/shadow.ts`, `renderer` 단계에서 이미 섰다)이고, 셀 메시의
+      // `castShadow`/`receiveShadow` 는 `glb-source.ts` 가 켠 것을 슬롯 풀이 그대로 물려받는다.
       stream: async (report, yieldFrame) => {
-        // ① 파일을 받는다 — **여기가 두 페이지의 유일한 갈림이다.** world8 은 고정
-        //    자산을, world7 은 사람이 고른 파일을 낸다(경계는 `options.ts` 한 곳).
+        // ① 셀 GLB **한 장**을 받는다 — 모든 셀이 이 한 장을 공유한다(C3 «공용 1회 로드»).
+        //    무엇을 받을지는 `<body data-glb>` 가 정한다(부트가 `opts.source` 로 싼다).
         const buf = await opts.source();
-        report(0.35);
+        report(0.2);
         await yieldFrame();
 
         // ② 파싱. 로더는 **여기서 처음** 내려받는다(부팅 초반 비용 0).
         const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
         const loader = new GLTFLoader();
         const gltf = await loader.parseAsync(buf, '');
+        report(0.4);
+        await yieldFrame();
+
+        // ③ **셀 템플릿**을 만든다. `mountGlbWorld` 를 씬이 아니라 «보관함» 에 얹는다 —
+        //    데칼 lift·실루엣 아틀라스·`?nrm=` 노말 강도·점광·그림자 플래그가 전부 여기서
+        //    **한 번** 일어나고, 파셀은 그 결과를 슬롯으로 반복한다. 보관함은 씬 밖이라
+        //    그려지지 않는다(레이캐스트·풀 명세의 원본으로만 산다 — `glb-source.ts` 의
+        //    `collisionRoot` 가 씬에 안 들어가는 것과 같은 이유).
+        const cellTemplate = new THREE.Group();
+        cellTemplate.name = 'world10:cell-template';
+        const mounted = mountGlbWorld(cellTemplate as unknown as THREE.Scene, gltf.scene as unknown as Object3D, {
+          castShadow: SHADOW_INTENSITY > 0, normalKnob: normalKnob(readNumOpt('nrm', 0, NORMAL_KNOB_MAX)),   // `?nrm=` 노말맵 강도(감독 지시 «전체 노말맵») — 판정 decide/glb-normal.ts
+          // ⚠ **격자 분할을 안 쓴다(`grid: 1`).** 그 격자는 «GLB 한 덩어리» 를 프러스텀·거리로
+          //    자르려고 만든 것이고, 여기서는 **파셀 스트리밍이 그 일을 한다**. 둘을 겹치면
+          //    셀 하나가 `grid²` 조각으로 갈려 드로우콜만 늘어난다 — `glb-instance.js` 의
+          //    `GRID` 주석이 world2 를 두고 *"셀 분할이 없다 — 컬링은 파셀 스트리밍이
+          //    담당한다"* 고 적은 그 구조가 world10 의 구조다.
+          grid: 1,
+        });
+        glbSource = mounted;
+        report(0.55);
+        await yieldFrame();
+
+        // ④ **셀 전용 슬롯 풀.** 셀의 메시 종류마다 풀 하나이고, 용량은 «동시에 뜰 수 있는
+        //    파셀 수» 다 — world2 가 `MAX_PARCELS = 20` 이라는 근거 없는 상수를 버리고 쓰는
+        //    유도식(`maxCells` → `maxLatticePoints(tierReach('far'))`)을 **그대로** 쓴다.
+        //    파츠 풀(`pools`)과 따로 드는 이유는 예산·키가 섞이면 둘 다 못 읽기 때문이다.
+        //
+        //    ⚠ 파츠 풀은 `pools` 단계에서 이미 **봉인**됐다(개수 불변식). 셀 풀은 GLB 가
+        //    이 단계에서야 오므로 여기서 만들고 **여기서 봉인한다** — 세션 중 풀이 느는
+        //    일은 여전히 0 이다(`InstancePools.create` 가 봉인 뒤 호출을 던진다).
+        cellPools = new InstancePools(scene);
+        const cellParts: CellPart[] = collectCellParts(mounted.collisionRoot);
+        const cellCap = maxCells(TIER_BANDS);
+        for (const part of cellParts) {
+          cellPools.create({
+            key: part.key,
+            geometry: part.geometry,
+            material: part.material,
+            max: cellCap,
+            castShadow: part.castShadow,
+            receiveShadow: part.receiveShadow,
+          });
+        }
+        cellPools.seal();
+        const cellLights: CellLight[] = collectCellLights(mounted.root);
         report(0.7);
         await yieldFrame();
 
-        // ③ 씬에 얹는다. 반복 메시를 `InstancedMesh` 로 되묶는 것이 이 안에서 일어난다 —
-        //    glTF 에 인스턴싱 표현이 없어 내보내기가 world2 의 인스턴스를 **개별 메시로
-        //    펴서** 저장하기 때문이고, 되묶는 것이 원래 상태로의 **복원**이다.
-        const mounted = mountGlbWorld(scene, gltf.scene as unknown as Object3D, {
-          castShadow: SHADOW_INTENSITY > 0, normalKnob: normalKnob(readNumOpt('nrm', 0, NORMAL_KNOB_MAX)),   // `?nrm=` 노말맵 강도(감독 지시 «전체 노말맵») — 판정 decide/glb-normal.ts
-          // `?grid=` — 격자 분할 수. 거리 컬링이 붙으면서 성능 판정 축이 됐다(아래).
-          grid: GLB_GRID,
+        // ⑤ 레이캐스트용 셀 트리가 붙는 자리 — **씬 밖**이다(그리지 않는다).
+        //    근거는 `glb-source.ts` 헤더: `InstancedMesh.raycast` 가 바운딩 구를 통과하면
+        //    `count` 전부를 순회해 실측 937배가 났다. 셀 단위로도 같은 이유가 성립한다.
+        const cellColliders = new THREE.Group();
+        cellColliders.name = 'world10:cell-colliders';
+        // 지도는 이 묶음을 본다 — «지금 떠 있는 세계» 가 곧 지도의 대상이다.
+        mapSource = cellColliders as unknown as Object3D;
+        //    점광은 인스턴싱 대상이 아니라 노드로 선다 — 셀마다 따로 세운다.
+        const cellLightHost = new THREE.Group();
+        cellLightHost.name = 'world10:cell-lights';
+        scene.add(cellLightHost);
+
+        // ⑥ 🔴 **갈리는 단 한 자리** — 파셀 내용물이 셀 GLB 다.
+        cellBuilder = new NycCellBuilder({
+          pools: cellPools,
+          parts: cellParts,
+          lights: cellLights,
+          lightParent: cellLightHost as never,
+          collisionTemplate: mounted.collisionRoot,
+          collisionParent: cellColliders as never,
+          cell: CELL_X,
+          // 셀 집합이 바뀌면 ① 충돌 캐시를 버리고 ② 지도를 다시 굽게 표시한다.
+          // world2 는 같은 배선이 `village.onChange`(편집 저장)에 걸려 있었다 — 거기서
+          // 「이미 떠 있는 파셀은 저절로 안 바뀐다」가 이유였고, 여기서는 **세계 자체가
+          // 스트리밍이라** 그 이유가 상시 성립한다.
+          onCells: () => {
+            collider.invalidate();
+            mapDirty = true;
+            kernel?.markDirty();
+          },
         });
-        glbSource = mounted;
-        report(0.9);
-        await yieldFrame();
 
-        // ④ 충돌을 GLB 에 물린다. 위 `collider` 프록시가 이제부터 이것을 부른다.
-        //    ⚠ **인스턴싱 «전» 트리**를 준다(근거는 `glb-source.ts` 의 `collisionRoot`).
-        // ⑤ **지도를 굽는다**(감독 지시). **인스턴싱 전** 트리를 본다 — 묶인 뒤에는
-        //    7,229개가 사각형 하나가 된다. 경위는 `systems/glb-minimap.ts` 한 곳.
-        glbMapBaked = bakeGlbMap(mounted.collisionRoot);
-
+        // ⑦ 충돌 — **떠 있는 셀 묶음**을 본다. 계약(`Collider`)은 world2 와 같으므로
+        //    플레이어·입력·조이스틱은 이 갈림을 모른다(위 `collider` 프록시).
         glbCollider = createGlbCollider({
-          root: mounted.collisionRoot,
+          root: cellColliders,
           bodyRadius: DEFAULT_BODY_R,
           // 무릎 높이 — 지면이 y=0 평면이므로 상수다(근거는 `glb-collider.ts` 의 `kneeY`).
           kneeY: 0.5,
+        });
+
+        // ⑧ 스트리밍 — **world2 원본 그대로**다. 갈리는 것은 위 `builder` 하나뿐이다.
+        //    ⚠ `getPosition` 이 `toGridPos` 를 거친다: 저작 좌표(거리 서쪽 끝 = 0)와 격자
+        //    좌표(셀 중심 = 0)가 `NYC_ANCHOR` 만큼 어긋나 있고, 그 환산은 `nyc-parcels.ts`
+        //    한 곳이 갖는다(빌더가 각자 빼면 «파셀은 여기라는데 내용은 저기 있다» 가 된다).
+        streaming = new StreamingSystem({
+          builder: cellBuilder,
+          bands: TIER_BANDS,
+          cellX: CELL_X, cellZ: CELL_Z,
+          getPosition: () => toGridPos(player.position),
+          getDirection: () => player.direction,
+          // 막히면 look-ahead 를 접는다 — 근거는 `streaming.ts` 의 `getSpeedFactor` 한 곳.
+          getSpeedFactor: () => player.speedFactor,
+          markDirty: () => kernel?.markDirty(),
         });
 
         adapt = new AdaptSystem({
@@ -926,9 +1071,8 @@ export async function startGlbWorld(
             getPixelRatio: () => adapter!.getPixelRatio(),
             setFrameCap: (fps) => kernel?.setFrameCap(fps),
             lastTri: () => lastTri,
-            // 스트리밍이 없다 — 세계는 한 번에 다 왔다. 「충전 중」 상태가 아예 없으므로
-            // 압력 판정은 프레임 시간만 본다.
-            isStreaming: () => false,
+            // 🔴 world2 와 같다 — 충전 중에는 압력 판정이 프레임 시간만 보지 않는다.
+            isStreaming: () => (streaming?.stats().pending ?? 0) > 0,
           },
         });
 
@@ -939,54 +1083,42 @@ export async function startGlbWorld(
             adapter!.render(scene, camera);
             lastTri = adapter!.frameStats().tri;
             pools!.flush();
+            // 셀 풀도 프레임 끝에 한 번만 올린다 — 안 부르면 **이번 프레임에 뜬 셀이
+            // 화면에 안 나온다**(행렬이 GPU 로 안 간다). 파츠 풀과 같은 규약이다.
+            cellPools?.flush();
             hud?.tick(); // render 직후 — frameStats가 유효한 유일한 시점
           },
         });
-        // 등록 순서가 곧 실행 순서다: 입력 → (기능들) → 적응.
+        // ── 등록 순서가 곧 실행 순서다: 입력 → (기능들) → 스트리밍 → 적응 ──────
         // 기능이 `player` 뒤인 이유는 world2 와 같다 — 하늘이 이번 프레임의 카메라를 읽는다.
+        // `adapt` 가 마지막인 이유도 같다 — 이번 프레임의 스트리밍 상태를 보고 판정한다.
         kernel.add(player);
         for (const m of features) if (m.instance.system) kernel.add(m.instance.system);
-        // ── 거리 컬링 — **프록시로 미리 등록한다** ──────────────────────────
-        // ⚠ 실체는 **예열 뒤**에 만들어지는데 `Kernel.add` 는 부팅 중에만 허용된다.
-        // 첫 판본은 `if (glbStream)` 로 걸렀고 그 시점에 항상 `null` 이라 **한 번도
-        // 등록되지 않았다** — 스윕에서 켜진 셀이 늘 전체와 같아(`457/457`) 드러났다.
-        // 값이 아니라 클로저로 늦게 읽는다(`collider` 프록시와 같은 처방).
-        kernel.add({
-          name: 'glbStream',
-          update: (c) => { glbStream?.update(c); },
-        });
+        kernel.add(streaming);
         if (adaptOn) kernel.add(adapt);
         kernel.start();
 
-        // ── 🔴 **GLB 격자를 예열한다** (감독 실기기 2026-08-26 *"프레임이 너무 느리지?"*) ──
-        // 부팅 단계가 `renderer → pools → warmup → stream` 순인데 **GLB 는 `stream` 에서야
-        // 온다** — `warmup` 이 돌 때 GLB 인스턴스는 존재하지도 않아 예열을 못 받는다.
-        // 대가가 감독 리포트에 찍혔다: 파이프라인 **214→497 증식** · **t=5 에 8,211ms**,
-        // **t=15 에 3,157ms** 정지. 새 격자 셀이 시야에 들어올 때마다 그 셀의 셰이더가
-        // 그제서야 컴파일된다 — *"회전은 스트리밍과 독립된 증식 축"*(world1 CSV 60→227).
-        // world2 는 이 처방을 이미 갖고 있다(`systems/instancing.ts:114` 가 컬링을 끈다).
-        // **컬링은 안 끈다** — 격자를 나눈 목적이 컬링이다. `warmUpNode` 가 잠깐 껐다
-        // 되돌린다(그 함수의 `finally`). 대가는 로딩이 길어지는 것이고, **로딩은 기다리는
-        // 시간이고 히칭은 놀라는 시간이다.** 실측·경위는 백로그 `G-W8M` 한 곳.
-        if (glbSource) await warmUpNode(glbSource.root as never, yieldFrame);
+        // ── 커널이 돌아야 파셀이 채워진다 — 여기서 블로킹 루프를 돌면 교착한다 ────
+        await waitUntil(
+          () => streaming!.ready,
+          () => streaming!.progress(),
+          (r) => report(0.7 + r * 0.25),
+          yieldFrame,
+        );
 
-        // ── 🔴 **안개 너머의 격자 셀을 끈다** (감독 지시 2026-08-27) ─────────────
-        // 삼각형 2,110,989 = 예산의 35배인데 **안개far 는 76.8m** 였다 — 그 너머는 이미
-        // 안개가 덮는데 카메라 far(1200m)까지 그리고 있었다. **보이지도 않는 것을 그린
-        // 것**이라 끄면 화면이 그대로다(실측·근거는 `systems/glb-stream.ts` 헤더).
-        // ⚠ **예열 «뒤» 여야 한다** — 꺼진 셀은 예열을 못 받고, 나중에 켜질 때 원인 1
-        // (파이프라인 컴파일 스톨)이 그대로 재발한다.
-        // ⚠ **`?fogd=0` 이면 안 만든다**(검수관 P3) — 안개가 꺼지는데 컬링만 남으면
-        // **세계가 안개 없이 잘리고**, 그 시스템 헤더의 핵심 주장이 거기서 거짓이 된다.
-        if (glbSource && fogDist > 0) {
-          glbStream = createGlbStream({
-            root: glbSource.root,
-            getPosition: () => player.position,
-            // **안개 far 에서 유도한다** — 상수를 여기 박지 않는다. `?fogd=` 로 안개를
-            // 늘리면 컬링 반경도 함께 늘어야 「안 보이는 것만 끈다」가 유지된다.
-            radius: fog.far * fogDist * GLB_CULL_MUL,
-          });
-        }
+        // ── 🔴 **셀을 예열한다** (감독 실기기 2026-08-26 *"프레임이 너무 느리지?"*) ──
+        // 부팅 단계가 `renderer → pools → warmup → stream` 순인데 **GLB 는 `stream` 에서야
+        // 온다** — `warmup` 이 돌 때 셀 재질은 존재하지도 않아 예열을 못 받는다. 대가가 감독
+        // 리포트에 찍혔다: 파이프라인 214→497 증식 · t=5 에 8,211ms 정지.
+        //
+        // ⚠ **초기 충전 «뒤»** 에 예열한다 — 슬롯 풀이 서 있어야 그 재질이 실제로 그려진다.
+        // 새로 뜨는 셀은 **같은 지오·재질을 재사용**하므로(슬롯 풀의 정의) 그 뒤로는 새
+        // 파이프라인이 0 이다. 그것이 `[7]` 개수 불변식이 지키는 성질이고, 「셀이 늘 때마다
+        // 셰이더가 컴파일된다」는 `world-glb` 의 문제는 여기서 구조적으로 사라진다.
+        await warmUpNode(scene as never, yieldFrame);
+
+        // 지도를 여기서 한 번 굽는다 — 첫 프레임에 미니맵이 비어 보이지 않게.
+        bakeMapIfDirty();
 
         report(1);
       },
@@ -1124,7 +1256,10 @@ export async function startGlbWorld(
       // (`collision.ts`·`water.ts`·`minimap.ts`·`npc.ts`·`spawn-spot.ts` …). 여기가
       // 아홉 번째다. 순수 함수 하나로 모으는 것이 맞지만 그것은 소비자 전부를 건드리는
       // 별건이라 태스크로 남긴다 — **이 줄이 SSOT 라고 적지 않는다.**
-      parcel: { px: Math.round(player.position.x / CELL_X), pz: Math.round(player.position.z / CELL_Z) },
+      // 🔴 world10 은 `parcelOf` 를 부른다 — 저작 좌표와 격자 좌표가 `NYC_ANCHOR` 만큼
+      // 어긋나 있어 `round(월드/셀)` 이 **여기서는 틀린다**(스트리밍이 보는 파셀과 한 칸
+      // 어긋난 값을 리포트가 적게 된다). 환산은 `systems/nyc-parcels.ts` 한 곳이다.
+      parcel: parcelOf(player.position),
       frame: adapter!.frameStats(),
       pipelines: adapter!.pipelineCount(), // -1이면 측정 실패(0과 구별된다)
       // ── 그림자 축 (감독 지시 2026-08-02) ─────────────────────────────────
@@ -1146,10 +1281,22 @@ export async function startGlbWorld(
       } : null,
       pools: pools!.stats(),
       adapt: adapt!.snapshot(),
-      /** 얹힌 GLB 세계. world2 의 `stream`·`builder` 통계가 있던 자리다 */
+      /**
+       * **셀 GLB 한 장**의 요약이다 — 세계 전체가 아니다(`world-glb` 에서는 같은 값이었다).
+       * 세계의 양은 이 값 × 아래 `grid.cells` 다. 두 수를 같은 것으로 읽으면 삼각형이
+       * 셀 수만큼 과소 보고된다 — 이 저장소가 «357배 축소» 로 겪은 형태의 거울상이다.
+       */
       glb: describeGlb(glbSource),
-      /** 거리 컬링 — `on/total` 이 곧 「지금 그리는 셀 / 전체 셀」이다 */
-      glbStream: glbStream ? { ...glbStream.stats(), grid: glbSource?.grid ?? null } : null,
+      /** ⚠ 거리 컬링은 **없다**(파셀 스트리밍이 대신한다) — `null` 이 그 사실이다 */
+      glbStream: null,
+      /** 격자 셀 파셀 — 실측(C5)이 읽는 축이다. `cells` 는 지금 떠 있는 셀 수 */
+      grid: cellBuilder ? {
+        cell: CELL_X,
+        cells: cellBuilder.stats().loaded,
+        keys: cellBuilder.loadedKeys(),
+        pools: cellPools?.stats().pools ?? 0,
+        ...cellBuilder.stats(),
+      } : null,
       // 구운 지도 — `painted` 0 은 「지도가 비었다」이고 그것은 사실이 아니어야 한다
       glbMap: glbMapBaked ? { painted: glbMapBaked.painted, px: glbMapBaked.canvas.width } : null,
       // ── LOD 페이드가 **실제로 걸리는가** (2026-08-07) ──────────────────
@@ -1204,6 +1351,8 @@ export async function startGlbWorld(
       // 여기는 부팅 성공(ok===true) 경로에서만 도달하므로 셋 다 반드시 존재한다.
       kernel!.dispose();
       pools!.dispose();
+      // 셀 풀 — 부팅이 `stream` 단계까지 갔을 때만 있다(그전 실패 경로에서는 `null`).
+      cellPools?.dispose();
       adapter!.dispose();
     },
   };

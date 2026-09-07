@@ -6,7 +6,8 @@
 <meta name="robots" content="noindex, nofollow">
 <!--
   world10 — **뉴욕 갤러리 거리.** world8.html 의 사본이고 다른 것은 셋뿐이다: <title> · <body data-glb>
-  (`nyc-street.glb`, `scripts/asset/nyc/generate.mjs` 산출) · 부트(`js/world10-boot.js`, `?cam=` 을 읽는다).
+  (**격자 셀 한 장** `nyc-cell.glb`, `scripts/asset/nyc/generate.mjs --cell` 산출 — 세계는 그 한 장을
+  격자로 반복해 만든다, `js/world10/README.md`) · 부트(`js/world10-boot.js`, `?cam=` 을 읽는다).
   감독 지시서 `docs/NYC-GALLERY-WALK.md`, 팀장 판정 「A」(`docs/BOARD.md` 2026-09-06), 상태 `docs/nyc/state.md`.
   behind-flag — 어디에도 링크하지 않는다. 아래 주석은 world8 의 경위이고 이 페이지에도 그대로 적용된다
   (같은 트리·같은 CSP·같은 마크업 id 접두 `wg-`).
@@ -27,11 +28,14 @@
   차이는 **제목·자산·부트 경로 셋뿐**이다. 조이스틱 구역·미니맵 서랍·HUD·노브 바·
   로딩 화면은 **한 글자도 안 고친다** — 안 고쳐야 같다.
 
-  경위·판정 축·no-sync 정책은 `js/world8/README.md` 한 곳이다.
+  경위·판정 축·no-sync 정책은 `js/world10/README.md` 한 곳이다.
+  ⚠ 2026-09-07 부터 이 페이지의 트리는 `js/world-glb/` 가 아니라 **`js/world10/`** 다
+  (팀장 판정 「C·포크」 — 감독 *"오픈월드를 만들어야지"*). world7·8 은 그대로 `world-glb` 를 탄다.
 
-  ⚠ **세계가 되는 GLB 는 `<body data-glb>` 가 가리킨다.** 진짜 블렌더(bpy 5.0.1)가
-  우리 내보내기를 읽고 조형물을 얹어 다시 쓴 파일이고, 절차는
-  `scripts/asset/extract-world2-glb.mjs` + `blender-edit.py` 두 곳이다.
+  ⚠ **세계가 되는 GLB 는 `<body data-glb>` 가 가리킨다.** 이 페이지에서 그것은 **격자 셀
+  한 장**(`nyc-cell.glb`)이고 세계 전체가 아니다 — 세계는 그 한 장을 파셀 스트리밍으로
+  격자에 반복해 만든다(`js/world10/systems/nyc-cell-builder.ts`). 셀 GLB 는
+  `scripts/asset/nyc/generate.mjs --cell` 산출이다(블렌더를 안 거친다).
 -->
 <!-- connect-src 에 blob: 이 필요하다: GLTFLoader 가 내장 텍스처를 디코드할 때
      ImageBitmapLoader 가 버퍼뷰를 Blob→objectURL 로 만들고 fetch() 로 읽는다.
@@ -491,7 +495,7 @@
   }
 </style>
 </head>
-<body data-glb="./assets/worlds/nyc-street.glb">
+<body data-glb="./assets/worlds/nyc-cell.glb">
   <canvas id="wg-canvas"></canvas>
 
   <!-- 물속 틴트. `aria-hidden` — 화면에만 있는 연출이라 읽어 줄 내용이 없다 -->

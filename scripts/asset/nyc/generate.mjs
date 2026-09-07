@@ -2,7 +2,13 @@
 // scripts/asset/nyc/generate.mjs — 뉴욕 갤러리 거리 **빌드 시점 산출 GLB** 생성기 (팀장 판정 「A」 조건 1).
 //
 //   node scripts/asset/nyc/generate.mjs [--seed=1] [--out=frontend/assets/worlds/nyc-street.glb]
-//                                       [--brick=A|B] [--street-yaw=<deg>]
+//                                       [--brick=A|B] [--street-yaw=<deg>] [--cell]
+//
+// `--cell` 은 **격자 셀 한 장**을 굽는다(팀장 판정 2026-09-06 「C·포크」 C2). «거리 한 장» 과
+// 다른 것은 **지면 판을 셀 경계에서 자르는 것 하나뿐**이다 — 건물·게이트·재질·텍스처·노드 이름은
+// 전부 같다. 왜 잘라야 하는지(인접 셀 지면 겹침 = 감독 «우글우글» 의 재현)는 `layout.mjs`
+// `groundPlan` 헤더 **한 곳**이다. 산출 기본 경로는 `frontend/assets/worlds/nyc-cell.glb` 이고
+// world10 이 그것 하나만 받아 **모든 셀이 공유한다**(C3 «텍스처·재질 공용 1회 로드»).
 //
 // 결정적이다 — 같은 인자면 바이트가 같다(`tests/nyc-gen.test.ts`). seed 는 «불 켜진 상층 창» 선택에만
 // 쓰인다. `--street-yaw` 는 루트 노드 하나만 돌린다 — 태양 방위 `SUN_AZ` 가 `sky.js` 에 고정이라
@@ -17,7 +23,7 @@
 // «완벽» 이었다 — 실측이 보고와 어긋난 사고(BOARD 2026-09-06). 이 판본은 부팀장이 다시 썼다.
 import fs from 'node:fs';
 import path from 'node:path';
-import { DIMS, PALETTE, ROUGH, layoutBuildings, groundPlan, hexToLinear } from './layout.mjs';
+import { CELL, DIMS, PALETTE, ROUGH, layoutBuildings, groundPlan, hexToLinear } from './layout.mjs';
 import { box, merge } from './modules.mjs';
 import { buildFacade } from './facade.mjs';
 import { glbBuilder, quatY } from './glb-build.mjs';
@@ -65,8 +71,19 @@ function tile(key, seed, make) {
   return tileCache.get(k);
 }
 
-/** 메모리에서 거리를 만든다. 테스트가 이 함수를 부른다(파일 I/O 없음). `textures:false` 면 색만(대조군) */
-export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0, textures = true } = {}) {
+/**
+ * 메모리에서 거리를 만든다. 테스트가 이 함수를 부른다(파일 I/O 없음). `textures:false` 면 색만(대조군).
+ *
+ * `cell:true` 면 **격자 셀 한 장**이다. «거리 한 장» 과 갈리는 것은 **지면 판을 셀 경계
+ * (`CELL.ANCHOR_X ± CELL.SIZE/2` · `CELL.ANCHOR_Z ± CELL.SIZE/2`)에서 자르는 것 하나뿐**이다.
+ *
+ * ⚠ **좌표는 옮기지 않는다.** 루트 노드에 변환을 걸어 «셀 중심 = 원점» 으로 만드는 판본을 먼저
+ * 써 봤고 두 가지가 걸렸다: ① `coplanar.mjs` 가 조상 변환을 명시적으로 거부한다(월드 좌표 복원
+ * 불가) — 즉 감독 «우글우글» 회귀 게이트가 셀 GLB 에 안 돈다 ② 아트 기준 V1~V4 캡처 좌표
+ * (`decide/capture-entry.ts`)가 통째로 31.7m 어긋난다. 그래서 저작 좌표를 그대로 두고, 격자
+ * 원점 보정은 **런타임 한 곳**(`world10/systems/nyc-parcels.ts`)이 갖는다.
+ */
+export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0, textures = true, cell = false } = {}) {
   const g = glbBuilder();
   const mat = (name) => {
     const s = materialSpec(name);
@@ -85,7 +102,10 @@ export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0, textures = t
   const rng = rngOf(seed);
 
   // 지면
-  const gp = groundPlan();
+  const half = CELL.SIZE / 2;
+  const gp = groundPlan(cell
+    ? { x0: CELL.ANCHOR_X - half, x1: CELL.ANCHOR_X + half, zFar: half }
+    : {});
   for (const [key, p] of Object.entries(gp)) {
     const bottom = p.bottom ?? p.top - 0.3;
     const geo = box(p.x0, bottom, p.z0, p.x1, p.top, p.z1, { ao: key.startsWith('curb') ? { pz: 0.8, nz: 0.8, default: 1 } : 1, omit: ['ny'] });
@@ -136,7 +156,7 @@ export function buildStreet({ seed = 1, brick = 'A', streetYaw = 0, textures = t
 }
 
 function parseArgs(argv) {
-  const o = { seed: 1, out: 'frontend/assets/worlds/nyc-street.glb', brick: 'A', streetYaw: 0, textures: true };
+  const o = { seed: 1, out: null, brick: 'A', streetYaw: 0, textures: true, cell: false };
   for (const a of argv) {
     const [k, v] = a.split('=');
     if (k === '--seed') o.seed = Number(v);
@@ -144,7 +164,11 @@ function parseArgs(argv) {
     else if (k === '--brick') o.brick = v === 'B' ? 'B' : 'A';
     else if (k === '--street-yaw') o.streetYaw = Number(v);
     else if (k === '--no-tex') o.textures = false;
+    else if (k === '--cell') o.cell = true;
   }
+  // 기본 산출 경로는 모드가 정한다 — 셀을 `nyc-street.glb` 위에 덮어쓰면 기존 캡처·증거의
+  // 기준 자산이 조용히 바뀐다(그 형태의 사고가 이 저장소에 있다).
+  if (o.out === null) o.out = o.cell ? 'frontend/assets/worlds/nyc-cell.glb' : 'frontend/assets/worlds/nyc-street.glb';
   return o;
 }
 

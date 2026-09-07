@@ -356,7 +356,8 @@ export const LIVE_PAGES = [
   // **못 잰 것**: GitHub Pages 가 `.glb` 에 gzip 을 적용하는지(이 환경은 라이브 URL 403).
   { name: 'app/world8',        url: '/app/world8.html', webgl: true, viteOnly: true },
   // ── world10 — 뉴욕 갤러리 거리 (2026-09-06, 팀장 판정 「A」) ──────────────────────
-  // world8 과 같은 트리를 타고 <body data-glb> 만 빌드 시점 산출 `nyc-street.glb` 다. 부팅 검사
+  // 2026-09-07 부터 `js/world10/` 전용 트리(팀장 판정 「C·포크」)이고 <body data-glb> 는
+  // 격자 셀 한 장 `nyc-cell.glb` 다 — 세계는 그것을 파셀 스트리밍으로 반복한다. 부팅 검사
   // 조건은 world8 행과 같다(부팅만으로 세운다). 경계·상태는 `docs/nyc/state.md`.
   { name: 'app/world10',        url: '/app/world10.html', webgl: true, viteOnly: true },
   // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
