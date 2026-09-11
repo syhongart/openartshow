@@ -72,7 +72,7 @@
 // x·z 기준이라 시점을 따로 날리는 (나) 안을 택했어도 같은 문제였다. 감독이 화면에서
 // 문제라고 하면 그때 재론한다 — 이 문장이 없으면 다음 사람이 같은 고리를 다시 돈다.
 
-import { DEFAULT_BANDS } from './lod.js';
+import { NYC_BANDS } from './nyc-bands.js';
 import { FOG_NEAR_CELLS } from './fog.js';
 
 /**
@@ -82,10 +82,15 @@ import { FOG_NEAR_CELLS } from './fog.js';
  * (`RESTORE_STEP` 주석이 그 규율을 적어 두었다), 셀 크기를 여기서 읽으면 이 판정이
  * 세계 지형에 묶인다. 미터 변환은 **배선하는 쪽**이 `× cellX` 로 한다.
  *
- * `FOG_FAR_CELLS` 를 직접 import 하지 않고 `DEFAULT_BANDS.farExit` 를 쓰는 이유:
- * 전자가 후자로 정의돼 있고(`fog.ts:65`), 원본을 가리키는 편이 한 다리 짧다.
+ * `FOG_FAR_CELLS` 를 직접 import 하지 않고 밴드의 `farExit` 를 쓰는 이유:
+ * 전자가 후자로 정의돼 있고, 원본을 가리키는 편이 한 다리 짧다.
+ *
+ * ⚠ **읽는 대상이 `DEFAULT_BANDS` 에서 `NYC_BANDS` 로 바뀌었다**(팀장 판정 2026-09-11 B1).
+ * 이 세계의 셀은 밴드가 설계된 셀보다 크므로 `DEFAULT_BANDS` 를 그대로 읽으면 천장이
+ * **렌더 반경 밖**에 서고, 그러면 조건 ③ 이 막으려던 「빈 세계로 날아 나가는 것」이 그대로
+ * 일어난다. 유도의 근거(안개 100% 선)는 그대로이고 **어느 밴드에서 읽느냐만** 바뀐 것이다.
  */
-export const FLY_CEIL_CELLS = DEFAULT_BANDS.farExit;
+export const FLY_CEIL_CELLS = NYC_BANDS.farExit;
 
 /**
  * 비행 고도 **기본 상한**(셀 배수). 안개가 끼기 시작하는 선이다.

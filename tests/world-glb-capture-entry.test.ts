@@ -66,10 +66,16 @@ describe('호출처 — 캡처 페이지 부트 하나만 읽는다 (팀장 조�
     expect(w9).toMatch(/start: cam \?\? V1_START/);
     expect(w9).toMatch(/tag: 'world10'/);
     // 거리 페이지 기본값 — 미술관 1채·링 잔디를 끄고 반구광 지면색을 거리색으로 둔다
-    // (부트가 채우는 노브, 트리 분기 아님). **키와 순서를 고정한다** — 하나가 조용히 늘거나
-    // 사라지면 여기서 깨진다. `hemig` 의 **값**은 여기서 안 본다: 그것은 `layout.mjs`
-    // `PALETTE.curb` 와의 미러링이고 `tests/nyc-gen.test.ts` 「world10-boot hemig 기본값 =
-    // layout.mjs PALETTE.curb (팀장 조건 ② — 두 값이 갈리면 여기서 깨진다)」가 대조한다.
+    // (부트가 채우는 노브, 트리 분기 아님).
+    // **키와 순서를 고정한다** — 하나가 조용히 늘거나 사라지면 여기서 깨진다.
+    // ⚠ 실제로 두 번 깼다. ① `band` 가 2026-09-11(팀장 판정 (a))에 **늘면서** 빨간불,
+    // ② 같은 날 팀장 판정 **B1** 로 밴드가 노브 선채움에서 **상수**(`decide/nyc-bands.ts`)로
+    // 옮겨가며 `band` 가 **빠져서** 다시 빨간불. 두 방향 다 잡는 것이 이 검사의 설계다.
+    // 갱신은 **명시로** 한다 — `[^}]*` 같은 와일드카드로 열면 다음 키는 조용히 들어오고
+    // 이 검사는 장식이 된다.
+    // **값**은 여기서 안 본다: `hemig` 은 `layout.mjs` `PALETTE.curb` 와의 미러링이라
+    // `tests/nyc-gen.test.ts` 가, 밴드는 다섯 소비처 통합 검사인
+    // `tests/world10-band-default.test.ts` 가 각각 대조한다.
     expect(w9).toMatch(/DEFAULTS[^=]*=\s*\{\s*glb: '0', grass: '0', hemig: '[0-9a-f]{6}'\s*\}/);
   });
   it('트리 안에 `tag ===` 분기가 없다 — 경계(options.ts 헤더)', () => {

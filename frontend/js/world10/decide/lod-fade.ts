@@ -25,7 +25,11 @@
 // 집행(`systems/parcel-fade.ts`)이 색을 섞고, 여기는 "지금 몇 % 드러났는가" 만 낸다.
 // 그래야 커브·시간 판정을 렌더러 없이 테이블로 시험할 수 있다.
 
-import { DEFAULT_BANDS, type TierBands } from './lod.js';
+// ⚠ 밴드는 `NYC_BANDS`(`decide/nyc-bands.ts`)에서 읽는다 — 이 세계의 셀이 `DEFAULT_BANDS` 가
+// 전제한 셀보다 크기 때문이다(팀장 판정 2026-09-11 B1). `DEFAULT_BANDS` 를 그대로 기본값으로
+// 두면 `crossingCells` 가 **0 셀**(페이드가 끝날 구간이 없다)·`residualAtSpawn` 이 **1.0**
+// (파셀이 자기 색 100% 로 튀어나온다)이 되어, 이 파일이 고치려던 «팍» 이 그대로 돌아온다.
+import { NYC_BANDS, type TierBands } from './nyc-bands.js';
 import { FOG_NEAR_CELLS, FOG_FAR_CELLS, type FogBand } from './fog.js';
 import { readNum, readEnum } from '../url-knob.js';
 
@@ -54,7 +58,7 @@ export const EASINGS: Record<FadeEase, (t: number) => number> = {
  * 페이드가 끝나기 전에 파셀이 안개 안쪽(`FOG_NEAR_CELLS`)까지 들어와 버리면, 다 드러나야
  * 할 거리에서 아직 덜 드러난 모습이 된다 — 팝인을 고치려다 **더 이상한 것**을 만든다.
  */
-export function crossingCells(bands: TierBands = DEFAULT_BANDS): number {
+export function crossingCells(bands: TierBands = NYC_BANDS): number {
   return Math.max(0, bands.farEnter - FOG_NEAR_CELLS);
 }
 
@@ -77,7 +81,7 @@ export function crossingCells(bands: TierBands = DEFAULT_BANDS): number {
  * @param runMult 달리기 배수 — 같은 파일의 `RUN_MULT`
  */
 export function crossingSeconds(
-  cell: number, speed: number, runMult: number, bands: TierBands = DEFAULT_BANDS,
+  cell: number, speed: number, runMult: number, bands: TierBands = NYC_BANDS,
 ): number {
   const v = speed * runMult;
   if (!(v > 0)) return Infinity;
@@ -157,7 +161,7 @@ export function fogFactorAt(dist: number, band: FogBand): number {
  * 밴드나 안개 배수를 만지면 이 값이 저절로 따라온다. **여기에 0.375 를 적어두지
  * 않는 이유가 그것이다**(값 미러링 금지 — 상수를 바꿔도 아무도 모르는 사태를 막는다).
  */
-export function residualAtSpawn(bands: TierBands = DEFAULT_BANDS): number {
+export function residualAtSpawn(bands: TierBands = NYC_BANDS): number {
   const span = FOG_FAR_CELLS - FOG_NEAR_CELLS;
   if (!(span > 0)) return 1; // 안개 밴드가 뒤집혔거나 폭이 0 — 감출 수 없다
   const t = (bands.farEnter - FOG_NEAR_CELLS) / span;
