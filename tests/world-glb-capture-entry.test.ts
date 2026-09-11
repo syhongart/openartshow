@@ -65,12 +65,17 @@ describe('호출처 — 캡처 페이지 부트 하나만 읽는다 (팀장 조�
     expect(w8).not.toMatch(/\bstart\b\s*:/);
     expect(w9).toMatch(/start: cam \?\? V1_START/);
     expect(w9).toMatch(/tag: 'world10'/);
-    // 거리 페이지 기본값 — 미술관 1채·링 잔디를 끄고 반구광 지면색을 거리색으로 둔다
-    // (부트가 채우는 노브, 트리 분기 아님). **키와 순서를 고정한다** — 하나가 조용히 늘거나
-    // 사라지면 여기서 깨진다. `hemig` 의 **값**은 여기서 안 본다: 그것은 `layout.mjs`
-    // `PALETTE.curb` 와의 미러링이고 `tests/nyc-gen.test.ts` 「world10-boot hemig 기본값 =
-    // layout.mjs PALETTE.curb (팀장 조건 ② — 두 값이 갈리면 여기서 깨진다)」가 대조한다.
-    expect(w9).toMatch(/DEFAULTS[^=]*=\s*\{\s*glb: '0', grass: '0', hemig: '[0-9a-f]{6}'\s*\}/);
+    // 거리 페이지 기본값 — 미술관 1채·링 잔디를 끄고 반구광 지면색을 거리색으로 두며,
+    // tier 밴드를 절반으로 조인다(부트가 채우는 노브, 트리 분기 아님).
+    // **키와 순서를 고정한다** — 하나가 조용히 늘거나 사라지면 여기서 깨진다.
+    // ⚠ 실제로 깼다: `band` 가 2026-09-11(팀장 판정 (a) — `world10-boot.ts` 판정 기록)에
+    // 늘면서 이 단언이 빨간불이 됐고, 그것이 이 검사가 설계대로 동작한 실물 사례다.
+    // 늘어난 키를 **명시로** 받는다 — `[^}]*` 같은 와일드카드로 열면 다음 키는 조용히
+    // 들어오고 이 검사는 장식이 된다.
+    // **값**은 여기서 안 본다: `hemig` 은 `layout.mjs` `PALETTE.curb` 와의 미러링이라
+    // `tests/nyc-gen.test.ts` 가, `band` 는 부트→`readNum` 경계까지 실행해 보는
+    // `tests/world10-band-default.test.ts` 가 각각 대조한다.
+    expect(w9).toMatch(/DEFAULTS[^=]*=\s*\{\s*glb: '0', grass: '0', hemig: '[0-9a-f]{6}', band: '[\d.]+'\s*\}/);
   });
   it('트리 안에 `tag ===` 분기가 없다 — 경계(options.ts 헤더)', () => {
     const tree = walk(join(ROOT, 'world-glb'));

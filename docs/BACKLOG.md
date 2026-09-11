@@ -144,6 +144,16 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
 ## 기타 대기 항목
 
+- **G-VX1 — 작품 앞 인증샷 태깅**(감독 카드 2026-09-11 착수, Voxels womp 방식): 캡처 시 카메라 프러스텀 안 작품 슬롯의 화면 좌표(NDC 0-1)와 슬롯 ID 를
+  공유 링크/캡처 메타에 심는다. 순수 클라이언트 계산, 서버 0. 반복 2 «작품 걸기» 와 함께.
+- **G-VX2 — 광장·공원 셀 예약**(감독 카드 2026-09-11 착수, Voxels `is_common` 방식): `world10/systems/nyc-parcels.ts` `NycCell` 에 `landmark` 와 동형 플래그
+  (`plaza`/`park`) — 결정적 해시 예약. 격자 확장 회차(랜드마크 9 플레이스홀더와 같은 PR).
+- **G-VX3 — 작품 그룹 이동**(감독 카드 2026-09-11 착수, Voxels Feature `groupId` 방식): 플랫 배열 + optional `groupId` 참조로 여러 작품을 묶어 함께
+  이동·재배치. `edit/target-art.ts` 는 단건 편집 — 스튜디오 다중 배치 요구 시(중기).
+- **G-BAND1 — 안개·비행천장·그림자 밴드가 `?band=` 배율을 안 따라온다**(2026-09-11, 부팀장 판정 요청 B): `scaleBands` 는 tier 밴드만 곱하고 `fog.ts:65`·
+  `fly.ts:88`·`main.ts:154` 는 `DEFAULT_BANDS.farExit` 유도 → 0.5 에서 세계 끝이 안개 없이 드러남. 연동은 설계 분기 — 팀장 판정 대기.
+- **G-DRAW1 — 감독 원문 예산 «draw 150» 을 어느 축으로 재는가 미정**(2026-09-11, 판정 요청 A): 기본 세션 draw 는 컬링으로 정당하게 변해 판정 불가(#208).
+  `[7.6]` 대조군(사람·GLB 끈 세계) 방식으로 world10 에 재는 하네스 필요(G-INV1 과 함께).
 - **G-DET1 — 생성기 산출 GLB 의 환경 결정성: V8 `Math.pow` 1 ULP 로 Node 22↔24 에서 JSON 4바이트 차이** (2026-09-07 등재). 지금은 테스트
   축을 «BIN 바이트 + JSON 4 ULP» 로 두어 통과. 항구 처방: `layout.mjs hexToLinear` 등 JSON 에 쓰는 수를 고정 정밀도(유효자릿수 또는 `Math.fround`)
   로 양자화 → «바이트 동일» 복귀(GLB 2장 재굽기·baseline·캡처 증거 갱신 동반). 부수: `ci.yml node-version: '24'` 플로팅 — 마이너 업에서 같은 계열
