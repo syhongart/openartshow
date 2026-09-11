@@ -23,9 +23,20 @@
 // 부트가 `scripts/` 를 import 할 수 없어 생긴 미러링이고(`world10-boot` `hemig` ↔
 // `PALETTE.curb` 와 같은 형태), 갈라지지 않게 **`tests/nyc-grid.test.ts` 가 두 파일을 읽어
 // 대조한다** — 「격자 상수는 생성기 `layout.mjs` 의 `CELL` 과 같다 (두 값이 갈리면 여기서 깨진다)」.
+// ⚠⚠⚠ `CELL` 의 **정의는 2026-09-11 에 `../decide/nyc-bands.ts` 로 옮겨 갔다**(밴드가 그 값에서
+// 유도된다 — 팀장 판정 B1). 여기서는 재수출만 한다. `ANCHOR` 는 그대로 이 파일 소유다.
 
-/** 셀 한 변(m). 지시서 `docs/NYC-GALLERY-WALK.md` «50~70m 거리 한 블록» 안의 값 */
-export const NYC_CELL = 64;
+/**
+ * 셀 한 변(m). **정의는 `../decide/nyc-bands.ts` 로 옮겨 갔다**(팀장 판정 2026-09-11 B1).
+ *
+ * 이 세계의 거리 밴드가 이 값에서 **유도**되므로(«기준 셀 32m ÷ 이 셀») 둘이 한 파일에 있어야
+ * 유도가 식으로 읽히고, `decide/` 가 `systems/` 를 import 하지 않는다는 이 트리의 규약도
+ * 지켜진다. 여기서 **재수출**하는 이유는 격자 소비자(`main.ts`·`nyc-cell-builder.ts`·
+ * `tests/nyc-grid.test.ts`)가 격자 상수를 이 파일에서 찾기 때문이다 — 경로를 옮기면 그
+ * 자리가 전부 무의미한 diff 가 된다.
+ */
+import { NYC_CELL } from '../decide/nyc-bands.js';
+export { NYC_CELL };
 /** 셀 중심이 놓인 **저작 좌표**. 거리 내용물 x 0~63.4 의 중점이다 */
 export const NYC_ANCHOR_X = 31.7;
 /** 도로 중심선이 곧 셀 중심선이다 */

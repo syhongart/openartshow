@@ -71,7 +71,7 @@ import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
 import { shadowFrustum } from './decide/shadow.js';
 import { showBootChecklist } from './ui/glb-checklist-panel.js';
 import { createBootErrorLog } from './systems/boot-error-log.js';
-import { DEFAULT_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/lod.js';
+import { NYC_BANDS, scaleBands, withNearExit, withFarEnter } from './decide/nyc-bands.js';
 import { MAX_H as TOWER_MAX_H } from './parts/tower.js';
 // 파츠 종류 목록은 레지스트리가 유일한 출처다. 여기 다시 적으면 파츠를 추가해도 이 루프가
 // 모르고 지나가 **그 종류의 풀이 조용히 안 만들어진다** — 배치는 정상이고 테스트도 통과하니
@@ -148,10 +148,10 @@ const CELL_Z = NYC_CELL;
  * 일어나므로 화면에서 분리되지 않는다. 여기서 멈춘다: 더 넓히면 텍셀만 커지고 얻는
  * 것이 없다(그 밖에는 그릴 건물이 없다).
  *
- * 두 값 다 노브로 열어 둔다 — 감독이 종전 판본(`?shband=1.3&smap=1024`)과 나란히
- * 비교할 수 있어야 판정이 선다.
+ * 두 값 다 노브로 열어 둔다 — 감독이 종전 판본(`?shband=1.3&smap=1024`)과 비교해야 판정이
+ * 선다. ⚠ 밴드·셀을 world10 것으로 옮긴 경위(반폭 불변)는 `decide/shadow.ts` 헤더 한 곳이다.
  */
-const SHADOW_BAND = readNum('shband', DEFAULT_BANDS.farExit, 0.5, 4);
+const SHADOW_BAND = readNum('shband', NYC_BANDS.farExit, 0.5, 4);
 const SHADOW_MAP = Math.round(readNum('smap', 2048, 256, 4096));
 
 /**
@@ -190,7 +190,7 @@ const SHADOW_INTENSITY = readNum('shint', 0, 0, 1);
  * "그림자가 없다"로만 보여 원인을 짚기 어렵다.
  */
 const SHADOW = shadowFrustum(
-  DEFAULT_LAYOUT.cellX, SHADOW_BAND, TOWER_MAX_H, SHADOW_MAP,
+  CELL_X, SHADOW_BAND, TOWER_MAX_H, SHADOW_MAP,
 );
 
 /**
@@ -416,9 +416,9 @@ export async function startGlbWorld(
 
   // tier 밴드 배율. **진단 전용** — `?band=2` 면 강등선(nearExit 41.6m)이 83.2m 로
   // 밀려 후진 코스에서 tier 전환이 사실상 사라진다. 마크 리포트가 지목한 마지막
-  // 용의자(tier강등)를 분리하는 스위치다. 왜·한계는 `decide/lod.ts` 의 `scaleBands`
-  // 한 곳이다. 기본값 1 = 현행 그대로. builder 와 streaming 이 **같은** 밴드를 받아야
-  // 격자 생성과 tier 판정이 정합한다(한쪽만 주면 예산과 판정이 어긋난다).
+  // 용의자(tier강등)를 분리하는 스위치다. 왜·한계는 `decide/lod.ts` 의 `scaleBands` 한 곳이고
+  // **곱하는 대상은 `NYC_BANDS`**(`decide/nyc-bands.ts` = 밴드 SSOT). 기본 1 = 그 상수 그대로.
+  // builder 와 streaming 이 **같은** 밴드를 받아야 격자 생성과 tier 판정이 정합한다.
   //
   // `?nearx=` 는 깜빡임 상시 처방 후보(팀장 판정 (a), 2026-08-10) — near 전환점만
   // 안개 뒤로 민다. 후보 비교용이고 감독 판정이 나면 이긴 값을 기본으로 승격한다.
@@ -436,7 +436,7 @@ export async function startGlbWorld(
   // 왜 farEnter 인지·farExit 가 따라오는 규칙은 `decide/lod.ts` 의 `withFarEnter` 한 곳.
   const calm = readNum('calm', 0, 0, 1) > 0;
   let TIER_BANDS = withNearExit(
-    scaleBands(DEFAULT_BANDS, readNum('band', 1, 0.5, 4)),
+    scaleBands(NYC_BANDS, readNum('band', 1, 0.5, 4)),
     nearx > 0 ? nearx : Number.NaN,
   );
   if (calm) TIER_BANDS = withFarEnter(TIER_BANDS, FOG_FAR_CELLS);
