@@ -44,6 +44,24 @@
 # ── 이름 규약 ───────────────────────────────────────────────────────────────
 # 산출 GLB 의 이름은 `glb_names.sanitize_file` 이 `.` → `_` 로 되돌린다. 이유는 그
 # 파일 헤더 한 곳이다(여기에 다시 적지 않는다).
+#
+# ── IP 세탁 단계 (기본 켬) ──────────────────────────────────────────────────
+# blend 를 연 **직후**, 아무것도 재기 전에 `ip_scrub.scrub()` 이 돈다. 법무 개정판의
+# 막는 조건 B-1 이 요구하는 것을 파이프라인 안의 한 단계로 만든 것이고, 그 조건은
+# 「제거했다」는 진술이 아니라 **대상 카운트 실측**을 요구한다. 자산 GLB 는 저장소에
+# 커밋되지 않으므로(예산 9배) **절차가 남는 유일한 것**이고, 그래서 검증도 절차 쪽에
+# 붙어 있다. 무엇을 지우고 무엇으로 바꾸는지·기대 카운트·위험 문자열 사전은 전부
+# `ip-scrub-rules.json` 이 SSOT 이고 집행은 `ip_scrub.py` 다 — **여기에 값을 다시 적지
+# 않는다**(이 저장소는 값 미러링으로 사고를 3번 냈다). 카운트가 기대와 다르거나 세탁
+# 후에도 위험 문자열이 남으면 그 단계가 예외로 죽는다(fail-closed) — 자산은 안 구워진다.
+#
+# `--no-ip-scrub` 으로 끌 수 있지만 **기본은 켬**이고, 껐으면 리포트에
+# `ipScrubSkipped: true` 가 남는다. 조용히 빠지는 경로를 만들지 않는다.
+#
+# ⚠ **실측표를 둘 뜬다.** 세탁은 오브젝트를 지우므로 세탁 후 실측은 디스크의 blend 와
+# 다르다. `verify-blocks.py`(BAT 직독)는 **디스크 상태**를 재므로 세탁 후 표와 대조하면
+# 언제나 어긋나고, 그러면 그 대조 축이 죽는다. 그래서 `sourceSurveyPreScrub`(세탁 전 =
+# 대조군)과 `sourceSurvey`(세탁 후 = 실제로 구워질 것)를 함께 남긴다.
 
 from __future__ import annotations
 
@@ -57,6 +75,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import glb_names  # noqa: E402
+import ip_scrub  # noqa: E402
 
 import bpy  # noqa: E402
 from mathutils import Matrix, Vector  # noqa: E402
@@ -331,6 +350,13 @@ def main() -> int:
     # 50MiB — 위임 상한. 커밋 자산으로 부적절한 크기이므로 넘으면 **쓰지 않고** 멈춘다.
     ap.add_argument("--max-bytes", type=int, default=50 * 1024 * 1024)
     ap.add_argument("--survey-only", action="store_true", help="export 없이 원본 실측만")
+    # 🔴 **기본은 켬.** 끄면 법무 B-1 처방 (가) 가 집행되지 않은 자산이 나온다 —
+    # 그때의 fail-closed 기본값은 처방 (나)「`Vehicles` 컬렉션 통째 제외」다.
+    ap.add_argument(
+        "--no-ip-scrub",
+        action="store_true",
+        help="IP 세탁을 건너뛴다(리포트에 ipScrubSkipped 가 남는다). 법무 B-1 미집행 상태가 된다",
+    )
     args = ap.parse_args()
 
     t0 = time.time()
@@ -344,8 +370,25 @@ def main() -> int:
         "blendVersionCode": bpy.data.version[:],
         "imageFormat": args.image_format,
         "draco": args.draco,
-        "sourceSurvey": survey_source(scene),
     }
+
+    # ── IP 세탁 — 아무것도 굽기 전에 ────────────────────────────────────────
+    # 근거·규칙·한계는 이 파일 헤더와 `ip_scrub.py` / `ip-scrub-rules.json`.
+    if args.no_ip_scrub:
+        report["ipScrubSkipped"] = True
+        print("⚠ IP 세탁 건너뜀(--no-ip-scrub) — 법무 B-1 처방 (가) 미집행 자산이다.", file=sys.stderr)
+    else:
+        report["sourceSurveyPreScrub"] = survey_source(scene)
+        t1 = time.time()
+        report["ipScrub"] = ip_scrub.scrub(bpy.data)
+        c = report["ipScrub"]["counts"]
+        print(
+            f"[ip-scrub] {time.time() - t1:.1f}s · 제거 {c['removedObjects']} · 치환 "
+            f"{c['rewrittenTexts']} · 위험 히트 {c['riskHitsBefore']} → {c['riskHitsAfter']}",
+            file=sys.stderr,
+        )
+
+    report["sourceSurvey"] = survey_source(scene)
 
     cams = dump_cameras(scene)
     lights = dump_lights(scene)

@@ -13,6 +13,8 @@
 | 파일 | 하는 일 | bpy |
 |---|---|---|
 | `extract.py` | blend 를 열어 GLB + 카메라/라이트 JSON + 실측표를 낸다 | 쓴다 |
+| `ip_scrub.py` | 법무 B-1 의 IP 세탁을 집행한다(`extract.py` 가 연 직후 부른다). 근거·한계는 그 파일 헤더 | 안 쓴다 |
+| `ip-scrub-rules.json` | 세탁 규칙·기대 카운트·위험 문자열 사전의 **SSOT**. 위 `.py` 와 `tests/manhattan-ip-scrub.test.ts` 가 함께 읽는다 | — |
 | `glb_names.py` | 산출 GLB 의 이름에서 `.` 을 없앤다(`.` → `_`) | 안 쓴다 |
 | `verify-blocks.py` | blend 블록을 **직독**해 `extract.py` 의 실측을 대조한다 | **안 쓴다** |
 | `verify-glb.mjs` | 산출 GLB 를 실제 `GLTFLoader` 로 통과시켜 판정한다 | 안 쓴다 |

@@ -121,7 +121,15 @@ def main() -> int:
     result = {"bat": got}
 
     if args.against:
-        ref = json.loads(args.against.read_text(encoding="utf-8"))["sourceSurvey"]
+        payload = json.loads(args.against.read_text(encoding="utf-8"))
+        # ⚠ **세탁 전 표와 대조한다.** BAT 는 디스크의 blend 를 읽으므로 IP 세탁
+        # (`ip_scrub`, `extract.py` 헤더)이 지운 오브젝트를 그대로 본다. 세탁 후 표
+        # (`sourceSurvey`)와 맞추면 언제나 어긋나고, 그러면 사람이 diffs 를 무시하기
+        # 시작한다 — 그 순간 이 대조 축은 장식이 된다. 세탁을 껐거나 구판 리포트면
+        # `sourceSurveyPreScrub` 이 없으므로 그때만 `sourceSurvey` 로 떨어진다.
+        ref_key = "sourceSurveyPreScrub" if "sourceSurveyPreScrub" in payload else "sourceSurvey"
+        ref = payload[ref_key]
+        result["comparedAgainst"] = ref_key
         diffs = []
         for key in COMPARED:
             a, b = got.get(key), ref.get(key)

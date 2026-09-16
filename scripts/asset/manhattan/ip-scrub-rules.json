@@ -1,0 +1,256 @@
+{
+  "_": [
+    "맨해튼 180m 자산의 IP 세탁 규칙 — **이 파일이 SSOT 다.**",
+    "`ip_scrub.py` 가 읽고 `tests/manhattan-ip-scrub.test.ts` 가 읽는다. 어느 쪽에도 값을 다시 적지 않는다",
+    "(이 저장소는 값 미러링으로 사고를 3번 냈다 — CLAUDE.md 「값 미러링」 절).",
+    "테스트가 bpy 없이 돌아야 해서 규칙을 JSON 으로 뺐다: bpy 휠은 374MB 라 CI 에 없고,",
+    "`.py` 를 파싱하는 대안은 「규칙을 읽는 방식」이 파서 정규식에 달려 조용히 빗나갈 수 있다.",
+    "JSON 은 양쪽이 같은 바이트를 읽으므로 빗나갈 자리가 없다.",
+    "",
+    "── 팀장 판정 2026-09-16 (결정 3, §8-5) — 「FONT 95 전량 제거. 조건 A 문언 불변」 ──",
+    "법무가 **1차 등록부 원문을 한 건도 못 봤다**(이 환경에서 USPTO·Justia·Trademarkia·MTA·",
+    "Wikipedia 전부 egress 차단). 그래서 「이 문자열은 실존 상호가 아니다」를 판정 근거로 쓸 수",
+    "없고, fail-closed 로 텍스트 축 전량을 닫는다. 법무 등급표는 **기록으로만** 채택이다.",
+    "그 결과 개별 치환은 규칙이 아니다 — `rewriteTexts` 가 빈 것은 누락이 아니라 판정이다.",
+    "",
+    "⚠ 이 스캔이 **못 보는 것**: 이미지 픽셀에 그려진 글자(빌보드 그래픽 4장), 지오메트리로",
+    "만든 글자꼴(FONT 가 아닌 메시 로고), 재질 색 자체(노란 택시 도색은 `taxi_paint` 로 남는다).",
+    "문자열 축만 본다."
+  ],
+  "version": 2,
+
+  "scan": {
+    "_": [
+      "위험 문자열 비교 전에 **공백류를 전부 지운다**(`\\s+` → ``). 이 자산의 간판 문자는",
+      "자간을 공백으로 벌려 놓았고(`R I V E R   C O F F E E`) 줄바꿈도 섞여 있어",
+      "(`BUS\\nM42`), 눈에 보이는 문자열을 그대로 적으면 **한 건도 안 걸린다.**",
+      "걸리지 않는 위험 문자열은 장식이다 — 제거가 실패해도 0 을 돌려준다."
+    ],
+    "whitespace": "strip"
+  },
+
+  "measured": {
+    "_": [
+      "규칙 테이블과 **독립된 관측**이다 — 2026-09-16 원본 `Manhattan_180m.blend` 직독 스캔.",
+      "규칙의 `expect*` 는 여기와 대조돼야 한다(`tests/manhattan-ip-scrub.test.ts`).",
+      "둘이 같은 숫자를 담는 것은 미러링이 아니라 **대조군**이다 — 한쪽만 고치면 게이트가 빨간불이 된다.",
+      "원본 blend 가 갱신되면 이 블록을 다시 뜨고, 규칙이 안 맞으면 멈춘다(fail-closed)."
+    ],
+    "source": "2026-09-16 · bpy 5.0.1 로 연 Manhattan_180m.blend 전수 스캔",
+    "_gateAxes": [
+      "테스트가 대조에 쓰는 축: `fontObjectsTotal` · `textBodyCounts` · `taxiHitObjects` ·",
+      "`fontOverlapWithRemoveRules`. 나머지는 원 실측 기록이고 게이트 축이 아니다 —",
+      "구분해 적지 않으면 「실측표가 있다」가 「검사가 있다」로 읽힌다."
+    ],
+    "objectsTotal": 21417,
+    "fontObjectsTotal": 95,
+    "fontBodiesUnique": 28,
+    "taxiHitObjects": 10,
+    "fontOverlapWithRemoveRules": 6,
+    "taxiHitMaterials": 1,
+    "taxiHitImages": 0,
+    "textBodyCounts": {
+      "EXHIBITION SPACE": 21,
+      "H U D S O N   E D I T I O N S": 10,
+      "C I T Y   A R C H I V E": 8,
+      "M A N H A T T A N   A T E L I E R": 8,
+      "R I V E R   C O F F E E": 8,
+      "W E S T   S I D E   S T U D I O": 8,
+      "NYC  T": 4,
+      "NYC 042": 4,
+      "MANHATTAN BRIDGE": 2,
+      "TAXI": 2,
+      "W 42 ST": 2,
+      "WALK": 2,
+      "01": 1,
+      "02": 1,
+      "03": 1,
+      "4210": 1,
+      "42 ST / MANHATTAN": 1,
+      "ART\nAFTER DARK": 1,
+      "BUS\nM42": 1,
+      "EAST RIVER  /  GALLERY WALK": 1,
+      "EMPIRE STATE": 1,
+      "M A N H A T T A N   G A L L E R Y": 1,
+      "M42": 1,
+      "M42  CROSSTOWN": 1,
+      "NEW\nYORK": 1,
+      "SEE\nMORE\nART": 1,
+      "THE CITY\nIS YOURS": 1,
+      "TIMES\nSQUARE": 1
+    }
+  },
+
+  "removeByType": [
+    {
+      "type": "FONT",
+      "expectObjects": 95,
+      "expectUniqueBodies": 28,
+      "why": "팀장 판정 2026-09-16 결정 3 — 등록부 원문을 한 건도 확인하지 못했으므로 「실존 상호가 아니다」를 근거로 쓸 수 없다. 텍스트 축 전량을 fail-closed 로 닫는다. **이것이 텍스트 축의 유일한 규칙**이고, 개별 치환은 이 판정으로 폐기됐다"
+    }
+  ],
+
+  "removeObjects": [
+    {
+      "_": "`expectObjects` 는 **원본 기준 총수**, `expectRemovedEarlierByType` 는 그 중 FONT 전량 규칙이 먼저 지우는 수다. 집행은 removeByType → removeObjects 순서이므로 이 규칙이 실제로 찾는 수는 둘의 차다. 겹침을 조용히 흡수하지 않는다 — 리포트에 찍힌다(팀장 조건).",
+      "prefix": "Low_profile_taxi_roof_sign",
+      "expectObjects": 2,
+      "expectRemovedEarlierByType": 0,
+      "expectTexts": [],
+      "why": "법무 B-1 처방(가) 「지붕등 표기」 — 글자가 없지만 **지붕등 구조물 자체가 택시 식별 요소**다(팀장 판정 ④). 메시라 FONT 규칙이 담당하지 않는다"
+    },
+    {
+      "prefix": "Taxi_door_roundel",
+      "expectObjects": 4,
+      "expectRemovedEarlierByType": 4,
+      "expectTexts": [{ "body": "NYC  T", "count": 4 }],
+      "why": "법무 B-1 처방(가) 「NYC 원형 roundel」. **FONT 라 전량 규칙이 먼저 지운다** — 이 규칙은 그 사실을 카운트로 못 박는 자리로 남는다(전량 규칙이 빠지면 여기서 잔여가 드러난다)"
+    },
+    {
+      "prefix": "Taxi_roof_letters",
+      "expectObjects": 2,
+      "expectRemovedEarlierByType": 2,
+      "expectTexts": [{ "body": "TAXI", "count": 2 }],
+      "why": "법무 B-1 처방(가) 「TAXI 문자」. FONT 라 전량 규칙이 먼저 지운다 — 위와 같은 이유로 남긴다"
+    },
+    {
+      "prefix": "Taxi_sign_support",
+      "expectObjects": 2,
+      "expectRemovedEarlierByType": 0,
+      "expectTexts": [],
+      "why": "법무 B-1 처방(가) — 지붕등 지지대. 지붕등을 지우고 남기면 허공에 뜬 부품이 된다. 메시라 FONT 규칙이 담당하지 않는다"
+    }
+  ],
+
+  "rewriteTexts": [],
+  "_rewriteTexts": [
+    "**빈 것은 누락이 아니라 판정이다**(위 팀장 판정). FONT 전량 제거가 텍스트를 통째로 지우므로",
+    "개별 치환은 집행될 자리가 없다. 집행기는 이 배열을 그대로 지원하므로, 앞으로 FONT 를",
+    "**살리는** 판정이 내려오면 여기에 규칙이 들어온다.",
+    "⚠ 폐기된 대체안 하나는 **무효를 넘어 금지**다 — 법무가 실존 Ayamo Global Foods(브라질)와",
+    "Ayamo USA Inc 를 찾았다. 그래서 그 이름은 대체안이 아니라 `riskStrings` 쪽에 **위험**으로 있다."
+  ],
+
+  "riskStrings": [
+    {
+      "_": "규칙에서 파생되지 않는 **독립 사전**이다. 오브젝트째 삭제되는 대상도 여기 남겨 둔다 — 제거가 실패하면 치환 규칙이 없어 조용히 통과하는 대신 `scanAfter` 가 잡는다. 그것이 이 설계의 핵이다. `expectedHitsBefore` 는 세탁 **전** 실측이고 `scrub()` 이 스캔 결과와 대조한다(fail-closed) — 0 이어야 할 축이 0 이 아니거나 그 반대면 멈춘다.",
+      "needle": "TAXI",
+      "caseSensitive": false,
+      "scopes": ["text", "objectName", "materialName", "imageName"],
+      "allow": ["taxi_paint"],
+      "expectedHitsBefore": { "text": 2, "objectName": 10, "materialName": 0, "imageName": 0 },
+      "why": "법무 B-1 — 실존 NYC 메달리온 택시 트레이드드레스. `taxi_paint` 는 **색 재질**이라 유지한다(이름만 바꾸는 것은 검출력 없는 화장이다). 오브젝트 이름 축까지 보는 이유는, 글자를 안 품은 부품(지붕등·지지대)의 제거 실패를 잡을 축이 이것뿐이기 때문이다"
+    },
+    {
+      "needle": "NYC",
+      "caseSensitive": true,
+      "scopes": ["text", "objectName", "materialName", "imageName"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 8, "objectName": 0, "materialName": 0, "imageName": 0 },
+      "why": "법무 B-1 — 도어 roundel 문자와 메달리온 번호판. 대문자 3자만 본다(소문자 'nyc' 는 `scripts/asset/nyc/` 같은 내부 경로 이름에 쓰여 씬 밖 오탐을 만든다)"
+    },
+    {
+      "needle": "RIVER COFFEE",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 8 },
+      "why": "법무 🔴 — 실존 The River Café 인접. 자간 벌린 원문과 붙여 쓴 형태를 **하나로** 잡는다(공백 제거 정규화). 'RIVER' 만으로 좁히면 지리 표기 'EAST RIVER / GALLERY WALK' 까지 걸린다"
+    },
+    {
+      "needle": "AYAMO",
+      "caseSensitive": false,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 0 },
+      "whyZeroBefore": "원본에 없다. 이것은 **우리가 만들 뻔한 위험**을 막는 축이다 — 부팀장이 대체안으로 제안했고 법무가 실존 Ayamo Global Foods·Ayamo USA Inc 를 찾아 철회됐다. 사전에 남겨 두면 누군가 그 이름을 다시 쓰는 순간 잡힌다",
+      "why": "법무 🔴 — 실존 Ayamo Global Foods(브라질, 50개국 식품 교역) · Ayamo USA Inc"
+    },
+    {
+      "needle": "M42",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 3 },
+      "why": "법무 🔴 — MTA 실존 버스 노선(42가 크로스타운), 상표 집행 이력 있음"
+    },
+    {
+      "needle": "BUS M42",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 1 },
+      "why": "법무 🔴 — 같은 MTA 노선의 정류장 표기형. `M42` 에 포섭되지만 팀장이 형태별로 지정했고, 다음 자산에서 형태가 갈릴 때 이쪽만 남을 수 있다"
+    },
+    {
+      "needle": "M42 CROSSTOWN",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 1 },
+      "why": "법무 🔴 — 같은 MTA 노선의 행선 표기형"
+    },
+    {
+      "needle": "ART AFTER DARK",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 1 },
+      "why": "법무 🔴 — 구겐하임 등 미술관 7곳이 쓰는 실존 동명 프로그램 시리즈"
+    },
+    {
+      "needle": "EMPIRE STATE",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 1 },
+      "why": "법무 🔴 — 등록상표. 팀장 조건 C4(실존 건축물 **형태**)와 별건이고 여기는 문자 축이다"
+    },
+    {
+      "needle": "TIMES SQUARE",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 1 },
+      "why": "법무 🔴 — 등록상표(Times Square District Management Association 등)"
+    },
+    {
+      "needle": "THE CITY IS YOURS",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 1 },
+      "why": "법무 🔴 — 실존 캠페인 문구 충돌"
+    },
+    {
+      "needle": "GALLERY WALK",
+      "caseSensitive": true,
+      "scopes": ["text"],
+      "allow": [],
+      "expectedHitsBefore": { "text": 1 },
+      "why": "법무 🔴 — 실존 아트워크 이벤트 명칭"
+    }
+  ],
+
+  "pending": [],
+  "_pending": [
+    "비어 있다 — 앞선 네 자리(P-M42·P-SHOPS·P-LANDMARK·P-COPY)는 전부 **FONT 전량 제거**로",
+    "흡수됐다(팀장 판정 2026-09-16). 개별 판정을 기다릴 대상이 없다.",
+    "구조는 남긴다: 앞으로 FONT 를 살리는 판정이 오면 문자열별 자리가 여기로 돌아온다.",
+    "쓰는 법 — `to` 를 여기서 채우면 **아무것도 집행되지 않는다.** 규칙으로 옮겨야 하고,",
+    "테스트가 그것을 강제한다(`to` 가 채워진 채 남아 있으면 FAIL)."
+  ],
+
+  "prefixMatchCases": [
+    { "name": "Taxi_door_roundel", "prefix": "Taxi_door_roundel", "expect": true, "why": "원본 이름 그대로" },
+    { "name": "Taxi_door_roundel.001", "prefix": "Taxi_door_roundel", "expect": true, "why": "블렌더 중복 이름 접미 3자리" },
+    { "name": "Taxi_door_roundel.003", "prefix": "Taxi_door_roundel", "expect": true, "why": "실측에 실제로 있는 이름" },
+    { "name": "Taxi_door_roundel.1000", "prefix": "Taxi_door_roundel", "expect": true, "why": "999 를 넘으면 자릿수가 늘어난다" },
+    { "name": "Taxi_door_roundel_backup", "prefix": "Taxi_door_roundel", "expect": false, "why": "접미가 `.NNN` 이 아니면 **다른 오브젝트**다 — 과잉 삭제 금지" },
+    { "name": "Taxi_door_roundel.1", "prefix": "Taxi_door_roundel", "expect": false, "why": "블렌더는 최소 3자리로 붙인다" },
+    { "name": "Taxi_door_roundelX", "prefix": "Taxi_door_roundel", "expect": false, "why": "구분자 없는 연접" },
+    { "name": "Taxi_door_rounde", "prefix": "Taxi_door_roundel", "expect": false, "why": "접두보다 짧다" },
+    { "name": "My_Taxi_door_roundel", "prefix": "Taxi_door_roundel", "expect": false, "why": "접두 매칭이지 부분 매칭이 아니다" },
+    { "name": "Taxi_door_roundel.abc", "prefix": "Taxi_door_roundel", "expect": false, "why": "숫자가 아닌 접미" }
+  ]
+}
