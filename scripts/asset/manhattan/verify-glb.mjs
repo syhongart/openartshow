@@ -49,6 +49,26 @@ export const NOT_MEASURED = [
   '성능 — 드로우콜·메모리는 스모크 [7][7.6] 소관이다',
 ];
 
+/**
+ * Node 에서 **로더를 아예 못 돌리는** 경우.
+ *
+ * `EXT_texture_webp` 가 `extensionsRequired` 에 있으면 three 의 `GLTFTextureWebPExtension`
+ * 이 `detectSupport()` 에서 `new Image()` 를 만들고(`GLTFLoader.js:1493`), Node 에는 그것이
+ * 없어 `ReferenceError` 로 죽는다. 지원이 없다고 판정되더라도 required 확장이라 곧바로
+ * throw 한다 — **폴백 경로가 없다.**
+ *
+ * ⚠ 이것을 잡지 않으면 「검증이 터졌다」가 「자산이 나쁘다」로 읽힌다. 그래서 **건너뛰되
+ * 건너뛴 사실을 결과에 싣는다.** 조용히 통과시키지 않는다(`loaderSkipped` 가 null 이 아니면
+ * 씬 축은 **아무것도 측정되지 않은 것**이다).
+ */
+export function loaderBlocker(json) {
+  const req = json.extensionsRequired ?? [];
+  if (req.includes('EXT_texture_webp')) {
+    return 'EXT_texture_webp 가 required 다 — three 의 WebP 확장이 Node 에 없는 `Image` 를 요구한다(GLTFLoader.js:1493). 씬 축은 브라우저에서만 잴 수 있다.';
+  }
+  return null;
+}
+
 /** GLB 바이트를 실제 `GLTFLoader` 로 통과시켜 씬을 잰다. */
 export async function loadScene(bytes) {
   const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -124,11 +144,18 @@ export function measureContainer(bytes) {
     mimeType: i.mimeType ?? null,
     bytes: i.bufferView != null ? bv[i.bufferView].byteLength : null,
   }));
+  // 인스턴싱 효과 — 노드가 mesh 를 몇 겹으로 공유하는가. 1 이면 공유 0 이다.
+  const meshRefs = (json.nodes ?? []).filter((n) => n.mesh !== undefined).length;
+  const meshCount = (json.meshes ?? []).length;
+
   return {
     bytes: bytes.byteLength,
     sha256: createHash('sha256').update(bytes).digest('hex'),
     jsonNodes: (json.nodes ?? []).length,
-    jsonMeshes: (json.meshes ?? []).length,
+    jsonMeshes: meshCount,
+    nodesReferencingMesh: meshRefs,
+    /** 노드/메시. 통짜본은 1.09, 인스턴스본은 21.6 (2026-09-16 실측). */
+    meshShareRatio: meshCount > 0 ? Math.round((meshRefs / meshCount) * 100) / 100 : 0,
     materials: (json.materials ?? []).length,
     images,
     imageBytes: images.reduce((a, i) => a + (i.bytes ?? 0), 0),
@@ -161,12 +188,23 @@ export function checkCameras(doc) {
 export async function verify(glbPath, camerasPath) {
   const bytes = readFileSync(glbPath);
   const container = measureContainer(bytes);
+  const { json } = readGlb(bytes);
+  const cameras = camerasPath ? checkCameras(JSON.parse(readFileSync(camerasPath, 'utf8'))) : null;
+
+  const blocked = loaderBlocker(json);
+  if (blocked) {
+    return {
+      path: glbPath, container, scene: null, names: null, cameras,
+      loaderSkipped: blocked,
+      notMeasured: [...NOT_MEASURED, `씬 전체 — ${blocked}`],
+    };
+  }
+
   const gltf = await loadScene(bytes);
   const scene = measureScene(gltf);
   const names = nameIntegrity(bytes, scene);
   delete scene.namesAfterLoad;   // Set 은 JSON 으로 못 싣는다 — 판정은 위에서 끝났다
-  const cameras = camerasPath ? checkCameras(JSON.parse(readFileSync(camerasPath, 'utf8'))) : null;
-  return { path: glbPath, container, scene, names, cameras, notMeasured: NOT_MEASURED };
+  return { path: glbPath, container, scene, names, cameras, loaderSkipped: null, notMeasured: NOT_MEASURED };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -180,9 +218,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const out = await verify(glb, ci >= 0 ? args[ci + 1] : undefined);
   console.log(JSON.stringify(out, null, 1));
   const fail =
-    out.names.rewrittenCount > 0 ||
-    out.names.bannedInJsonCount > 0 ||
+    (out.names?.rewrittenCount ?? 0) > 0 ||
+    (out.names?.bannedInJsonCount ?? 0) > 0 ||
     out.container.externalRefs.length > 0 ||
     (out.cameras?.problems.length ?? 0) > 0;
+  // 건너뛴 것은 실패가 아니지만 **통과도 아니다** — 종료코드를 갈라 사람이 알아채게 한다.
+  if (!fail && out.loaderSkipped) process.exit(4);
   process.exit(fail ? 1 : 0);
 }

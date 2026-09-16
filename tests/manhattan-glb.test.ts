@@ -29,7 +29,7 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readGlb, writeGlb } from '../scripts/asset/nyc/glb-write.mjs';
-import { loadScene, measureScene, measureContainer, nameIntegrity, checkCameras } from '../scripts/asset/manhattan/verify-glb.mjs';
+import { loadScene, measureScene, measureContainer, nameIntegrity, checkCameras, loaderBlocker } from '../scripts/asset/manhattan/verify-glb.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const ASSET = join(ROOT, 'frontend/assets/worlds/manhattan-180m.glb');
@@ -49,7 +49,7 @@ const EXPECTED: null | {
 // 실물(91MiB·21,313 노드)로 뮤테이션을 돌리면 한 케이스에 수 초가 든다. 판정 축은
 // 크기와 무관하므로 삼각형 하나짜리로 같은 축을 전부 때린다.
 
-function buildSynthetic(): Buffer {
+function buildSynthetic(nodeCount = 1): Buffer {
   const pos = new Float32Array([0, 0, 0, 2, 0, 0, 0, 3, 0]);
   const idx = new Uint16Array([0, 1, 2]);
   const png = Buffer.from('89504e470d0a1a0a', 'hex');   // 바이트 수만 세므로 헤더면 충분하다
@@ -59,8 +59,9 @@ function buildSynthetic(): Buffer {
   const json = {
     asset: { version: '2.0', generator: 'manhattan-glb.test' },
     scene: 0,
-    scenes: [{ name: 'manhattan_synth', nodes: [0] }],
-    nodes: [{ name: 'manhattan_root', mesh: 0 }],
+    scenes: [{ name: 'manhattan_synth', nodes: [...Array(nodeCount).keys()] }],
+    // 노드 여럿이 **같은 mesh 를 참조**한다 — 그것이 glTF 의 인스턴싱이다.
+    nodes: [...Array(nodeCount).keys()].map((i) => ({ name: `manhattan_node_${i}`, mesh: 0 })),
     meshes: [{ name: 'tri_0', primitives: [{ attributes: { POSITION: 0 }, indices: 1, material: 0 }] }],
     materials: [{ name: 'mat_0' }],
     images: [{ name: 'img_0', bufferView: 2, mimeType: 'image/png' }],
@@ -79,8 +80,8 @@ function buildSynthetic(): Buffer {
 }
 
 /** 합성 GLB 를 열어 고친 뒤 다시 싼다. 뮤턴트는 **파일이 아니라 메모리**에만 산다. */
-function mutate(edit: (json: Record<string, any>, bin: Buffer) => Buffer | void): Buffer {
-  const { json, bin } = readGlb(buildSynthetic());
+function mutate(edit: (json: Record<string, any>, bin: Buffer) => Buffer | void, nodeCount = 1): Buffer {
+  const { json, bin } = readGlb(buildSynthetic(nodeCount));
   const next = edit(json, Buffer.from(bin));
   return writeGlb(json, next ?? bin);
 }
@@ -98,17 +99,17 @@ describe('① verify-glb 의 판정 축이 실제로 FAIL 을 낸다 (뮤테이�
   });
 
   it('M1 — 이름에 `.` 을 넣으면 **경계 축**이 깨진다 (로드 후만 보면 안 깨진다)', async () => {
-    const m = mutate((json) => { json.nodes[0].name = 'manhattan.root'; });
+    const m = mutate((json) => { json.nodes[0].name = 'manhattan.node.0'; });
     const s = measureScene(await loadScene(m));
     const n = nameIntegrity(m, s);
     expect(n.rewrittenCount, '로더가 고쳐 쓴 이름을 여기서 잡아야 한다').toBe(1);
-    expect(n.rewritten[0]).toBe('manhattan.root');
+    expect(n.rewritten[0]).toBe('manhattan.node.0');
     expect(n.bannedInJsonCount).toBe(1);
 
     // ⚠ **이 줄이 첫 판본을 죽인 자리다.** 로드된 씬에는 `.` 이 **없다** — 로더가 지웠기
     // 때문이다. 즉 「로드 후 이름에서 `.` 찾기」는 언제나 0건이고 검출력이 0 이다.
     for (const name of s.namesAfterLoad) expect(name).not.toContain('.');
-    expect(s.namesAfterLoad.has('manhattanroot')).toBe(true);
+    expect(s.namesAfterLoad.has('manhattannode0')).toBe(true);
   });
 
   it('M1b — **공백**도 같은 구멍이다. 실물에서 이 축으로 1건이 빠져나갔다', async () => {
@@ -155,6 +156,57 @@ describe('① verify-glb 의 판정 축이 실제로 FAIL 을 낸다 (뮤테이�
     expect(s.bbox.size).toEqual([2, 3, 0]);
     // 잡는 것은 해시뿐이다
     expect(measureContainer(m).sha256).not.toBe(measureContainer(base).sha256);
+  });
+});
+
+describe('②a 인스턴싱 — 「mesh 는 줄고 노드는 그대로」가 판정 축이다', () => {
+  // 실측(2026-09-16): 같은 원본에서 구운 두 자산.
+  //   통짜본      jsonMeshes 19,482 · meshShareRatio 1.09 · 씬 Mesh 21,286 · tri 1,322,096
+  //   인스턴스본  jsonMeshes    988 · meshShareRatio 21.54 · 씬 Mesh 21,286 · tri 1,322,096
+  // **mesh 수만 24분의 1 이고 나머지가 전부 같다** — 그것이 「화면을 안 바꾸고 묶었다」다.
+  // 그러니 이 축이 실제로 FAIL 을 내는지가 중요하다.
+
+  it('노드 셋이 mesh 하나를 공유하면 share=3 이고 씬 Mesh 는 3 이다', async () => {
+    const bytes = buildSynthetic(3);
+    const c = measureContainer(bytes);
+    const s = measureScene(await loadScene(bytes));
+    expect(c.jsonMeshes).toBe(1);
+    expect(c.nodesReferencingMesh).toBe(3);
+    expect(c.meshShareRatio).toBe(3);
+    // ⚠ **공유해도 three 는 Mesh 를 3개 만든다** — 드로우콜은 안 준다. 바이트만 준다.
+    expect(s.meshes, '공유가 Mesh 객체를 줄인다고 읽으면 안 된다').toBe(3);
+    expect(s.triangles).toBe(3);
+  });
+
+  it('M5 — 공유를 풀면(mesh 를 복제하면) share 가 1 로 떨어진다', () => {
+    const m = mutate((json) => {
+      const src = json.meshes[0];
+      json.meshes = json.nodes.map(() => structuredClone(src));
+      json.nodes.forEach((n: Record<string, number>, i: number) => { n.mesh = i; });
+    }, 3);
+    const c = measureContainer(m);
+    expect(c.jsonMeshes).toBe(3);
+    expect(c.meshShareRatio, '인스턴싱이 사라진 것을 이 축이 잡아야 한다').toBe(1);
+  });
+
+  it('M6 — 노드가 사라지면 **형상이 사라진다**. mesh 수만 보면 못 잡는다', async () => {
+    const m = mutate((json) => { json.scenes[0].nodes = [0]; }, 3);
+    const c = measureContainer(m);
+    const s = measureScene(await loadScene(m));
+    // mesh 수는 그대로 1 이다 — 「mesh 가 줄었다」만 보면 이 손실이 통과한다
+    expect(c.jsonMeshes).toBe(1);
+    // 씬을 실제로 훑어야 잡힌다
+    expect(s.meshes).toBe(1);
+    expect(s.triangles).toBe(1);
+  });
+
+  it('M7 — WebP 가 required 면 로더 검증을 **건너뛰고 그 사실을 말한다**', () => {
+    expect(loaderBlocker({ extensionsRequired: [] })).toBeNull();
+    expect(loaderBlocker({})).toBeNull();
+    const blocked = loaderBlocker({ extensionsRequired: ['EXT_texture_webp'] });
+    // 조용한 통과가 아니라 **이유가 있는 건너뜀**이어야 한다(못 잰 것은 통과가 아니다).
+    expect(blocked).toContain('EXT_texture_webp');
+    expect(blocked).toContain('Image');
   });
 });
 

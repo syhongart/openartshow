@@ -1,0 +1,5192 @@
+{
+ "generatedBy": "scripts/asset/manhattan/extract.py",
+ "sourceBlend": "f563115f-Manhattan_180m.blend",
+ "axis": "gltf-y-up",
+ "note": "position·quaternion 은 Y-up(glTF/three). blender 키는 원본 Z-up 값이다.",
+ "cameras": [
+  {
+   "position": [
+    212.0,
+    185.0,
+    240.0
+   ],
+   "quaternion": [
+    -0.212473,
+    0.344672,
+    0.080404,
+    0.910819
+   ],
+   "forward": [
+    -0.5937,
+    -0.4425,
+    -0.6721
+   ],
+   "blender": {
+    "location": [
+     212.0,
+     -240.0,
+     185.0
+    ],
+    "rotationEulerXYZdeg": [
+     63.74,
+     0.0,
+     41.46
+    ]
+   },
+   "name": "01_DISTRICT_180m",
+   "lensMm": 42.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 46.397,
+   "angleYdeg": 31.891,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    3.0,
+    2.4,
+    48.0
+   ],
+   "quaternion": [
+    0.184104,
+    0.046645,
+    -0.008747,
+    0.98176
+   ],
+   "forward": [
+    -0.0884,
+    0.3623,
+    -0.9279
+   ],
+   "blender": {
+    "location": [
+     3.0,
+     -48.0,
+     2.4
+    ],
+    "rotationEulerXYZdeg": [
+     111.24,
+     -0.0,
+     5.44
+    ]
+   },
+   "name": "02_STREET",
+   "lensMm": 19.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 86.904,
+   "angleYdeg": 64.551,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    -15.0,
+    1.8,
+    10.0
+   ],
+   "quaternion": [
+    -0.0,
+    0.845011,
+    0.0,
+    0.534749
+   ],
+   "forward": [
+    -0.9037,
+    -0.0,
+    0.4281
+   ],
+   "blender": {
+    "location": [
+     -15.0,
+     -10.0,
+     1.8
+    ],
+    "rotationEulerXYZdeg": [
+     90.0,
+     0.0,
+     115.35
+    ]
+   },
+   "name": "03_GALLERY_GROUND",
+   "lensMm": 21.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 81.203,
+   "angleYdeg": 59.49,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    -25.0,
+    1.7,
+    18.0
+   ],
+   "quaternion": [
+    0.028581,
+    -0.925278,
+    0.071194,
+    0.371449
+   ],
+   "forward": [
+    0.6833,
+    0.153,
+    0.7139
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -18.0,
+     1.7
+    ],
+    "rotationEulerXYZdeg": [
+     98.8,
+     0.0,
+     -136.25
+    ]
+   },
+   "name": "04_STAIRS",
+   "lensMm": 22.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 78.579,
+   "angleYdeg": 57.221,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    -15.0,
+    6.1,
+    8.0
+   ],
+   "quaternion": [
+    -0.0,
+    0.866324,
+    -0.0,
+    0.499482
+   ],
+   "forward": [
+    -0.8654,
+    0.0,
+    0.501
+   ],
+   "blender": {
+    "location": [
+     -15.0,
+     -8.0,
+     6.1
+    ],
+    "rotationEulerXYZdeg": [
+     90.0,
+     0.0,
+     120.07
+    ]
+   },
+   "name": "05_GALLERY_UPPER",
+   "lensMm": 22.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 78.579,
+   "angleYdeg": 57.221,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    110.0,
+    80.0,
+    -174.0
+   ],
+   "quaternion": [
+    -0.067274,
+    0.910182,
+    0.163458,
+    0.374599
+   ],
+   "forward": [
+    -0.6599,
+    -0.348,
+    0.6659
+   ],
+   "blender": {
+    "location": [
+     110.0,
+     174.0,
+     80.0
+    ],
+    "rotationEulerXYZdeg": [
+     69.64,
+     -0.0,
+     135.26
+    ]
+   },
+   "name": "06_BRIDGE",
+   "lensMm": 40.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 48.455,
+   "angleYdeg": 33.398,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    12.8,
+    2.0,
+    40.0
+   ],
+   "quaternion": [
+    -0.016015,
+    0.124758,
+    0.002014,
+    0.992056
+   ],
+   "forward": [
+    -0.2475,
+    -0.0323,
+    -0.9684
+   ],
+   "blender": {
+    "location": [
+     12.8,
+     -40.0,
+     2.0
+    ],
+    "rotationEulerXYZdeg": [
+     88.15,
+     -0.0,
+     14.34
+    ]
+   },
+   "name": "07_BUS_STOP",
+   "lensMm": 26.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 69.39,
+   "angleYdeg": 49.55,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    4.0,
+    2.0,
+    10.0
+   ],
+   "quaternion": [
+    -0.009941,
+    0.170664,
+    0.001722,
+    0.985278
+   ],
+   "forward": [
+    -0.3363,
+    -0.0202,
+    -0.9416
+   ],
+   "blender": {
+    "location": [
+     4.0,
+     -10.0,
+     2.0
+    ],
+    "rotationEulerXYZdeg": [
+     88.84,
+     0.0,
+     19.65
+    ]
+   },
+   "name": "08_CROSSWALKS",
+   "lensMm": 26.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 69.39,
+   "angleYdeg": 49.55,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    -8.0,
+    1.4,
+    26.0
+   ],
+   "quaternion": [
+    -0.018962,
+    -0.316165,
+    -0.006321,
+    0.948494
+   ],
+   "forward": [
+    0.5995,
+    -0.04,
+    -0.7994
+   ],
+   "blender": {
+    "location": [
+     -8.0,
+     -26.0,
+     1.4
+    ],
+    "rotationEulerXYZdeg": [
+     87.71,
+     0.0,
+     -36.87
+    ]
+   },
+   "name": "09_VEHICLE_DETAIL",
+   "lensMm": 38.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 50.692,
+   "angleYdeg": 35.051,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    -19.0,
+    35.0,
+    -49.0
+   ],
+   "quaternion": [
+    0.134761,
+    0.473506,
+    -0.073573,
+    0.867305
+   ],
+   "forward": [
+    -0.8015,
+    0.3034,
+    -0.5153
+   ],
+   "blender": {
+    "location": [
+     -19.0,
+     49.0,
+     35.0
+    ],
+    "rotationEulerXYZdeg": [
+     107.66,
+     -0.0,
+     57.26
+    ]
+   },
+   "name": "10_CABLE_DETAIL",
+   "lensMm": 54.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 36.87,
+   "angleYdeg": 25.058,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    65.0,
+    1.8,
+    86.0
+   ],
+   "quaternion": [
+    0.068753,
+    -0.087017,
+    0.00602,
+    0.993813
+   ],
+   "forward": [
+    0.1721,
+    0.1377,
+    -0.9754
+   ],
+   "blender": {
+    "location": [
+     65.0,
+     -86.0,
+     1.8
+    ],
+    "rotationEulerXYZdeg": [
+     97.91,
+     0.0,
+     -10.01
+    ]
+   },
+   "name": "11_NEW_AVENUE",
+   "lensMm": 28.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 65.47,
+   "angleYdeg": 46.397,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    49.0,
+    1.8,
+    -29.0
+   ],
+   "quaternion": [
+    0.137287,
+    0.494817,
+    -0.079509,
+    0.854393
+   ],
+   "forward": [
+    -0.8237,
+    0.3133,
+    -0.4726
+   ],
+   "blender": {
+    "location": [
+     49.0,
+     29.0,
+     1.8
+    ],
+    "rotationEulerXYZdeg": [
+     108.26,
+     0.0,
+     60.15
+    ]
+   },
+   "name": "12_RIVER_WALK",
+   "lensMm": 28.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 65.47,
+   "angleYdeg": 46.397,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    22.2,
+    2.05,
+    -1.0
+   ],
+   "quaternion": [
+    -0.005861,
+    -0.189104,
+    -0.001129,
+    0.981939
+   ],
+   "forward": [
+    0.3714,
+    -0.0119,
+    -0.9284
+   ],
+   "blender": {
+    "location": [
+     22.2,
+     1.0,
+     2.05
+    ],
+    "rotationEulerXYZdeg": [
+     89.32,
+     0.0,
+     -21.8
+    ]
+   },
+   "name": "13_ATELIER_ENTRANCE",
+   "lensMm": 30.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 61.928,
+   "angleYdeg": 43.603,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    7.3,
+    2.0,
+    -13.0
+   ],
+   "quaternion": [
+    -0.004925,
+    -0.51913,
+    -0.002991,
+    0.854676
+   ],
+   "forward": [
+    0.8873,
+    -0.0115,
+    -0.461
+   ],
+   "blender": {
+    "location": [
+     7.3,
+     13.0,
+     2.0
+    ],
+    "rotationEulerXYZdeg": [
+     89.34,
+     0.0,
+     -62.55
+    ]
+   },
+   "name": "14_ATELIER_AVENUE",
+   "lensMm": 31.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 60.283,
+   "angleYdeg": 42.323,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    -23.3,
+    2.1,
+    23.1
+   ],
+   "quaternion": [
+    0.04211,
+    -0.820903,
+    0.06105,
+    0.566231
+   ],
+   "forward": [
+    0.9245,
+    0.1479,
+    0.3513
+   ],
+   "blender": {
+    "location": [
+     -23.3,
+     -23.1,
+     2.1
+    ],
+    "rotationEulerXYZdeg": [
+     98.51,
+     0.0,
+     -110.81
+    ]
+   },
+   "name": "15_GALLERY_STAIR_JOIN",
+   "lensMm": 24.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 73.74,
+   "angleYdeg": 53.13,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    -21.6,
+    6.2,
+    28.0
+   ],
+   "quaternion": [
+    -0.071678,
+    -0.38882,
+    -0.030358,
+    0.91802
+   ],
+   "forward": [
+    0.7095,
+    -0.1552,
+    -0.6874
+   ],
+   "blender": {
+    "location": [
+     -21.6,
+     -28.0,
+     6.2
+    ],
+    "rotationEulerXYZdeg": [
+     81.07,
+     0.0,
+     -45.91
+    ]
+   },
+   "name": "16_GALLERY_UPPER_LANDING",
+   "lensMm": 22.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 78.579,
+   "angleYdeg": 57.221,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    20.0,
+    7.1,
+    46.0
+   ],
+   "quaternion": [
+    -0.006636,
+    -0.289777,
+    -0.002009,
+    0.957069
+   ],
+   "forward": [
+    0.5546,
+    -0.0139,
+    -0.832
+   ],
+   "blender": {
+    "location": [
+     20.0,
+     -46.0,
+     7.1
+    ],
+    "rotationEulerXYZdeg": [
+     89.21,
+     0.0,
+     -33.69
+    ]
+   },
+   "name": "17_FIRE_ESCAPE",
+   "lensMm": 25.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 71.508,
+   "angleYdeg": 51.282,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  },
+  {
+   "position": [
+    -67.0,
+    2.0,
+    14.0
+   ],
+   "quaternion": [
+    -0.010622,
+    0.762917,
+    0.012539,
+    0.646288
+   ],
+   "forward": [
+    -0.9859,
+    -0.0329,
+    0.1643
+   ],
+   "blender": {
+    "location": [
+     -67.0,
+     -14.0,
+     2.0
+    ],
+    "rotationEulerXYZdeg": [
+     88.12,
+     -0.0,
+     99.46
+    ]
+   },
+   "name": "18_OUTER_ENTRY",
+   "lensMm": 28.0,
+   "sensorWidthMm": 36.0,
+   "sensorHeightMm": 24.0,
+   "sensorFit": "AUTO",
+   "angleXdeg": 65.47,
+   "angleYdeg": 46.397,
+   "clipStart": 0.1,
+   "clipEnd": 1500.0
+  }
+ ],
+ "lights": [
+  {
+   "position": [
+    11.5,
+    2.8,
+    31.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     11.5,
+     -31.0,
+     2.8
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Bus_shelter_light",
+   "type": "AREA",
+   "color": [
+    0.65,
+    0.82,
+    1.0
+   ],
+   "energyW": 90.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -30.6,
+    58.96,
+    -10.52
+   ],
+   "quaternion": [
+    0.421482,
+    -0.225816,
+    0.109217,
+    0.871454
+   ],
+   "forward": [
+    0.202,
+    0.5252,
+    -0.3636
+   ],
+   "blender": {
+    "location": [
+     -30.6,
+     10.52,
+     58.96
+    ],
+    "rotationEulerXYZdeg": [
+     141.62,
+     -0.0,
+     -29.05
+    ]
+   },
+   "name": "ESB_crown_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.72,
+    0.39
+   ],
+   "energyW": 2500.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -23.4,
+    58.96,
+    -10.52
+   ],
+   "quaternion": [
+    0.421482,
+    0.225816,
+    -0.109217,
+    0.871454
+   ],
+   "forward": [
+    -0.202,
+    0.5252,
+    -0.3636
+   ],
+   "blender": {
+    "location": [
+     -23.4,
+     10.52,
+     58.96
+    ],
+    "rotationEulerXYZdeg": [
+     141.62,
+     0.0,
+     29.05
+    ]
+   },
+   "name": "ESB_crown_wash_001",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.72,
+    0.39
+   ],
+   "energyW": 2500.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    15.4,
+    3.92,
+    25.0
+   ],
+   "quaternion": [
+    -0.493199,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     15.4,
+     -25.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "East_Corner_Masonry_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    24.0,
+    3.92,
+    37.6
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     24.0,
+     -37.6,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "East_Corner_Masonry_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    24.0,
+    4.05,
+    25.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     24.0,
+     -25.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "East_Corner_Masonry_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    16.4,
+    3.92,
+    -17.0
+   ],
+   "quaternion": [
+    -0.493199,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     16.4,
+     17.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "East_North_Loft_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    25.0,
+    3.92,
+    -8.9
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     25.0,
+     8.9,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "East_North_Loft_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    25.0,
+    4.05,
+    -17.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     25.0,
+     17.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "East_North_Loft_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    4.0,
+    23.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -23.0,
+     4.0
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    4.0,
+    15.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -15.0,
+     4.0
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient_001",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    4.0,
+    7.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -7.0,
+     4.0
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient_002",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    8.3,
+    23.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -23.0,
+     8.3
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient_003",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    8.3,
+    15.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -15.0,
+     8.3
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient_004",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    8.3,
+    7.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -7.0,
+     8.3
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient_005",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    12.6,
+    23.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -23.0,
+     12.6
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient_006",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    12.6,
+    15.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -15.0,
+     12.6
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient_007",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    12.6,
+    7.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -7.0,
+     12.6
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Gallery_ambient_008",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.9
+   ],
+   "energyW": 220.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    3.84,
+    23.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.66896,
+    0.229111,
+    0.668961
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -23.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    3.84,
+    23.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -23.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_001",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -20.6,
+    3.84,
+    23.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -20.6,
+     -23.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_002",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    3.84,
+    15.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.66896,
+    0.229111,
+    0.668961
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -15.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_003",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    3.84,
+    15.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -15.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_004",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    3.84,
+    15.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -15.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_005",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    3.84,
+    7.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.66896,
+    0.229111,
+    0.668961
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -7.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_006",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    3.84,
+    7.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -7.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_007",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    3.84,
+    7.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -7.0,
+     3.84
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_008",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    8.14,
+    23.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.668961,
+    0.229111,
+    0.66896
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -23.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_009",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    8.14,
+    23.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -23.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_010",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -20.6,
+    8.14,
+    23.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -20.6,
+     -23.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_011",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    8.14,
+    15.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.668961,
+    0.229111,
+    0.66896
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -15.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_012",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    8.14,
+    15.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -15.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_013",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    8.14,
+    15.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -15.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_014",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    8.14,
+    7.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.668961,
+    0.229111,
+    0.66896
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -7.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_015",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    8.14,
+    7.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -7.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_016",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    8.14,
+    7.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -7.0,
+     8.14
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_017",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    12.44,
+    23.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.668961,
+    0.229111,
+    0.66896
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -23.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_018",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    12.44,
+    23.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -23.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_019",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    12.44,
+    23.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -23.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_020",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    12.44,
+    15.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.668961,
+    0.229111,
+    0.66896
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -15.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_021",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    12.44,
+    15.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -15.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_022",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    12.44,
+    15.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -15.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_023",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -34.0,
+    12.44,
+    7.0
+   ],
+   "quaternion": [
+    -0.229111,
+    0.668961,
+    0.229111,
+    0.66896
+   ],
+   "forward": [
+    -0.79,
+    -0.6131,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -34.0,
+     -7.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     52.19,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_024",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -26.0,
+    12.44,
+    7.0
+   ],
+   "quaternion": [
+    -0.064505,
+    0.704158,
+    0.064505,
+    0.704158
+   ],
+   "forward": [
+    -0.9834,
+    -0.1817,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -26.0,
+     -7.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     79.53,
+     0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_025",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    12.44,
+    7.0
+   ],
+   "quaternion": [
+    -0.036923,
+    0.706142,
+    0.036923,
+    0.706142
+   ],
+   "forward": [
+    -0.9945,
+    -0.1043,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -7.0,
+     12.44
+    ],
+    "rotationEulerXYZdeg": [
+     84.01,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Gallery_art_wash_026",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.93,
+    0.83
+   ],
+   "energyW": 110.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -74.3,
+    3.92,
+    77.0
+   ],
+   "quaternion": [
+    -0.4932,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -74.3,
+     -77.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Outer_block_10_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    3.92,
+    84.6
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     -84.6,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_10_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    4.05,
+    77.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     -77.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_10_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -74.3,
+    3.92,
+    41.0
+   ],
+   "quaternion": [
+    -0.4932,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -74.3,
+     -41.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Outer_block_11_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    3.92,
+    52.6
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     -52.6,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_11_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    4.05,
+    41.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     -41.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_11_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -74.3,
+    3.92,
+    15.0
+   ],
+   "quaternion": [
+    -0.4932,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -74.3,
+     -15.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Outer_block_12_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    3.92,
+    23.6
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     -23.6,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_12_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    4.05,
+    15.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     -15.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_12_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -74.3,
+    3.92,
+    -17.0
+   ],
+   "quaternion": [
+    -0.4932,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -74.3,
+     17.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Outer_block_13_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    3.92,
+    -9.4
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     9.4,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_13_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    4.05,
+    -17.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     17.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_13_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -74.3,
+    3.92,
+    -47.0
+   ],
+   "quaternion": [
+    -0.4932,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -74.3,
+     47.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Outer_block_14_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    3.92,
+    -40.4
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     40.4,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_14_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    4.05,
+    -47.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     47.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_14_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -74.3,
+    3.92,
+    -78.0
+   ],
+   "quaternion": [
+    -0.4932,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -74.3,
+     78.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Outer_block_15_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    3.92,
+    -71.4
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     71.4,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_15_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -80.5,
+    4.05,
+    -78.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -80.5,
+     78.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_15_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    74.3,
+    3.92,
+    77.0
+   ],
+   "quaternion": [
+    -0.4932,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     74.3,
+     -77.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Outer_block_16_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    3.92,
+    84.6
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     -84.6,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_16_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    4.05,
+    77.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     -77.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_16_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    74.3,
+    3.92,
+    41.0
+   ],
+   "quaternion": [
+    -0.4932,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     74.3,
+     -41.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Outer_block_17_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    3.92,
+    52.6
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     -52.6,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_17_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    4.05,
+    41.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     -41.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_17_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    74.3,
+    3.92,
+    15.0
+   ],
+   "quaternion": [
+    -0.4932,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     74.3,
+     -15.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Outer_block_18_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    3.92,
+    23.6
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     -23.6,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_18_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    4.05,
+    15.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     -15.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_18_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    74.3,
+    3.92,
+    -17.0
+   ],
+   "quaternion": [
+    -0.4932,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     74.3,
+     17.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Outer_block_19_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    3.92,
+    -9.4
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     9.4,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_19_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    4.05,
+    -17.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     17.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_19_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    74.3,
+    3.92,
+    -47.0
+   ],
+   "quaternion": [
+    -0.4932,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     74.3,
+     47.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Outer_block_20_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    3.92,
+    -40.4
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     40.4,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_20_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    4.05,
+    -47.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     47.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_20_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    74.3,
+    3.92,
+    -78.0
+   ],
+   "quaternion": [
+    -0.4932,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     74.3,
+     78.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Outer_block_21_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    3.92,
+    -71.4
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     71.4,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_21_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    80.5,
+    4.05,
+    -78.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     80.5,
+     78.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "Outer_block_21_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -14.9,
+    3.92,
+    41.0
+   ],
+   "quaternion": [
+    -0.493199,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -14.9,
+     -41.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "South_West_Loft_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    3.92,
+    46.1
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -46.1,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_West_Loft_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -25.0,
+    4.05,
+    41.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -25.0,
+     -41.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_West_Loft_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -27.4,
+    3.92,
+    77.0
+   ],
+   "quaternion": [
+    -0.493199,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -27.4,
+     -77.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "South_loft_22_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -36.0,
+    3.92,
+    83.1
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -36.0,
+     -83.1,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_loft_22_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -36.0,
+    4.05,
+    77.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -36.0,
+     -77.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_loft_22_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -13.4,
+    3.92,
+    77.0
+   ],
+   "quaternion": [
+    -0.493199,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -13.4,
+     -77.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "South_loft_23_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    3.92,
+    83.1
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -83.1,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_loft_23_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -18.0,
+    4.05,
+    77.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -18.0,
+     -77.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_loft_23_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    13.4,
+    3.92,
+    77.0
+   ],
+   "quaternion": [
+    -0.493199,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     13.4,
+     -77.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "South_loft_24_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    18.0,
+    3.92,
+    83.1
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     18.0,
+     -83.1,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_loft_24_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    18.0,
+    4.05,
+    77.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     18.0,
+     -77.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_loft_24_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    27.4,
+    3.92,
+    77.0
+   ],
+   "quaternion": [
+    -0.493199,
+    -0.506709,
+    -0.4932,
+    0.506709
+   ],
+   "forward": [
+    0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     27.4,
+     -77.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "South_loft_25_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    36.0,
+    3.92,
+    83.1
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     36.0,
+     -83.1,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_loft_25_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    36.0,
+    4.05,
+    77.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     36.0,
+     -77.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "South_loft_25_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    0.0,
+    15.0,
+    -14.0
+   ],
+   "quaternion": [
+    -0.0,
+    0.87166,
+    0.490112,
+    0.0
+   ],
+   "forward": [
+    -0.0,
+    -0.8544,
+    0.5196
+   ],
+   "blender": {
+    "location": [
+     0.0,
+     14.0,
+     15.0
+    ],
+    "rotationEulerXYZdeg": [
+     31.3,
+     0.0,
+     180.0
+    ]
+   },
+   "name": "Square_billboard_fill",
+   "type": "AREA",
+   "color": [
+    0.24,
+    0.56,
+    1.0
+   ],
+   "energyW": 450.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -8.15,
+    6.61,
+    44.0
+   ],
+   "quaternion": [
+    -0.443207,
+    0.55097,
+    0.443207,
+    0.55097
+   ],
+   "forward": [
+    -0.2143,
+    -0.9768,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -8.15,
+     -44.0,
+     6.61
+    ],
+    "rotationEulerXYZdeg": [
+     12.37,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Streetlight",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.8,
+    0.59
+   ],
+   "energyW": 120.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -8.15,
+    6.61,
+    25.0
+   ],
+   "quaternion": [
+    -0.443207,
+    0.55097,
+    0.443207,
+    0.55097
+   ],
+   "forward": [
+    -0.2143,
+    -0.9768,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -8.15,
+     -25.0,
+     6.61
+    ],
+    "rotationEulerXYZdeg": [
+     12.37,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Streetlight_001",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.8,
+    0.59
+   ],
+   "energyW": 120.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -8.15,
+    6.61,
+    -12.0
+   ],
+   "quaternion": [
+    -0.443207,
+    0.55097,
+    0.443207,
+    0.55097
+   ],
+   "forward": [
+    -0.2143,
+    -0.9768,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -8.15,
+     12.0,
+     6.61
+    ],
+    "rotationEulerXYZdeg": [
+     12.37,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Streetlight_002",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.8,
+    0.59
+   ],
+   "energyW": 120.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -8.15,
+    6.61,
+    -25.0
+   ],
+   "quaternion": [
+    -0.443207,
+    0.55097,
+    0.443207,
+    0.55097
+   ],
+   "forward": [
+    -0.2143,
+    -0.9768,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -8.15,
+     25.0,
+     6.61
+    ],
+    "rotationEulerXYZdeg": [
+     12.37,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "Streetlight_003",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.8,
+    0.59
+   ],
+   "energyW": 120.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    8.15,
+    6.61,
+    44.0
+   ],
+   "quaternion": [
+    -0.443207,
+    -0.55097,
+    -0.443207,
+    0.55097
+   ],
+   "forward": [
+    0.2143,
+    -0.9768,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     8.15,
+     -44.0,
+     6.61
+    ],
+    "rotationEulerXYZdeg": [
+     12.37,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Streetlight_004",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.8,
+    0.59
+   ],
+   "energyW": 120.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    8.15,
+    6.61,
+    25.0
+   ],
+   "quaternion": [
+    -0.443207,
+    -0.55097,
+    -0.443207,
+    0.55097
+   ],
+   "forward": [
+    0.2143,
+    -0.9768,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     8.15,
+     -25.0,
+     6.61
+    ],
+    "rotationEulerXYZdeg": [
+     12.37,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Streetlight_005",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.8,
+    0.59
+   ],
+   "energyW": 120.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    8.15,
+    6.61,
+    -12.0
+   ],
+   "quaternion": [
+    -0.443207,
+    -0.55097,
+    -0.443207,
+    0.55097
+   ],
+   "forward": [
+    0.2143,
+    -0.9768,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     8.15,
+     12.0,
+     6.61
+    ],
+    "rotationEulerXYZdeg": [
+     12.37,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Streetlight_006",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.8,
+    0.59
+   ],
+   "energyW": 120.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    8.15,
+    6.61,
+    -25.0
+   ],
+   "quaternion": [
+    -0.443207,
+    -0.55097,
+    -0.443207,
+    0.55097
+   ],
+   "forward": [
+    0.2143,
+    -0.9768,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     8.15,
+     25.0,
+     6.61
+    ],
+    "rotationEulerXYZdeg": [
+     12.37,
+     0.0,
+     -90.0
+    ]
+   },
+   "name": "Streetlight_007",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.8,
+    0.59
+   ],
+   "energyW": 120.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "quaternion": [
+    -0.374438,
+    -0.323775,
+    0.030548,
+    0.868351
+   ],
+   "forward": [
+    0.5852,
+    -0.6305,
+    -0.5099
+   ],
+   "blender": {
+    "location": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "rotationEulerXYZdeg": [
+     48.7,
+     -17.19,
+     -34.38
+    ]
+   },
+   "name": "Sun",
+   "type": "SUN",
+   "color": [
+    0.95,
+    0.97,
+    1.0
+   ],
+   "energyW": 1.1,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -42.4,
+    3.92,
+    -17.0
+   ],
+   "quaternion": [
+    -0.4932,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -42.4,
+     17.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "West_Service_Office_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -45.0,
+    3.92,
+    -9.4
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -45.0,
+     9.4,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "West_Service_Office_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -45.0,
+    4.05,
+    -17.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -45.0,
+     17.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "West_Service_Office_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -42.4,
+    3.92,
+    20.0
+   ],
+   "quaternion": [
+    -0.4932,
+    0.506709,
+    0.4932,
+    0.506709
+   ],
+   "forward": [
+    -0.027,
+    -0.9996,
+    -0.0
+   ],
+   "blender": {
+    "location": [
+     -42.4,
+     -20.0,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     90.0
+    ]
+   },
+   "name": "West_Service_Studio_avenue_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -45.0,
+    3.92,
+    30.1
+   ],
+   "quaternion": [
+    -0.69749,
+    0.0,
+    0.0,
+    0.716595
+   ],
+   "forward": [
+    0.0,
+    -0.9996,
+    -0.027
+   ],
+   "blender": {
+    "location": [
+     -45.0,
+     -30.1,
+     3.92
+    ],
+    "rotationEulerXYZdeg": [
+     1.55,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "West_Service_Studio_front_entry_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.91,
+    0.79
+   ],
+   "energyW": 95.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  },
+  {
+   "position": [
+    -45.0,
+    4.05,
+    20.0
+   ],
+   "quaternion": [
+    -0.707107,
+    0.0,
+    0.0,
+    0.707107
+   ],
+   "forward": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "blender": {
+    "location": [
+     -45.0,
+     -20.0,
+     4.05
+    ],
+    "rotationEulerXYZdeg": [
+     0.0,
+     -0.0,
+     0.0
+    ]
+   },
+   "name": "West_Service_Studio_interior_wash",
+   "type": "AREA",
+   "color": [
+    1.0,
+    0.95,
+    0.88
+   ],
+   "energyW": 200.0,
+   "radius": 0.0,
+   "spotSizeDeg": null
+  }
+ ]
+}
