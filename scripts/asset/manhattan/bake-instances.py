@@ -8,6 +8,23 @@
 # 큰 이유는 **같은 모양이 수천 벌 따로 저장돼 있어서**다 — `analyze-instances.py` 실측으로
 # 메시 19,251 종 중 실제 고유 형상은 수백 종이다.
 #
+# ── 🔴 이 경로는 **IP 세탁을 거치지 않는다** (검수관 블로커 B2, 2026-09-16) ──
+# `ip_scrub` import 도, `scrub()` 호출도, `--no-ip-scrub` 도, `ipScrubSkipped` 리포트 필드도
+# **전부 여기 없다.** 그 배선은 `extract.py` 의 `main()` 에만 있고, 이 스크립트는 blend 를
+# `bpy.ops.wm.open_mainfile` 로 **직접 열어** `extract` 에서 `run_export`·`survey_glb`·
+# `dump_cameras`·`dump_lights` 네 함수만 가져다 쓴다 — `main()` 을 경유하지 않는다.
+#
+# **그래서 「승격 회차에 세탁을 자동 복귀시킨다」는 안전장치가 이 경로에는 물리적으로
+# 없다.** 팀장 추인 R1 의 그 서술은 `extract.py` 경로만 상정한 것이다. `--key` 인스턴싱으로
+# 구운 자산을 라이브로 올리려면 **배선 추가가 선결**이고, 그 전에는 켤 스위치가 없다.
+#
+# 리포트에 `"ipScrubWired": false` 를 **무조건** 찍는 이유가 이것이다 — 리포트만 보고도
+# 「이 산출물은 세탁을 안 거쳤다」가 드러나야 한다. 자기선언이 아니라 구조적 사실의 기록이고,
+# 배선이 생기는 회차에 이 상수와 위 문단을 함께 지운다. 백로그 `G-BAKE-SCRUB`.
+#
+# ⚠ 지금 커밋된 `frontend/assets/worlds/manhattan-180m.glb` 가 **이 경로 산출물**이다
+# (감독 지시 *"법무팀 검토하지마. 테스트야."* 로 이번 회차는 세탁 면제 — behind-flag 한정).
+#
 # ── 왜 blend 단계에서 묶나(GLB 후처리가 아니라) ─────────────────────────────
 # 산출 GLB 를 실측해 보면 **mesh 19,482개가 전부 고유 accessor** 다(동일 서명 0). 즉
 # 「같은 accessor 를 쓰는 mesh 를 합친다」는 후처리는 **아무것도 못 묶는다.** 묶이려면
@@ -185,6 +202,10 @@ def main() -> int:
     print(f"[drift] max={drift:.9f}m over={over}", file=sys.stderr)
 
     report = {
+        # 🔴 **상수 false 다 — 이 경로에 세탁 배선이 없다는 구조적 사실의 기록**이다
+        # (검수관 블로커 B2). 근거·해소 조건은 이 파일 헤더 한 곳이다. 배선이 생기면
+        # 이 줄을 실제 집행 여부로 바꾼다 — 그때까지 `true` 가 될 수 없다.
+        "ipScrubWired": False,
         "key": args.key,
         "digits": args.digits,
         "imageFormat": args.image_format,

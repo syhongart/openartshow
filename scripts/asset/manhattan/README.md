@@ -22,6 +22,13 @@
 | `analyze-instances.py` | 인스턴싱으로 **얼마나 묶이는지** 실측만 한다 | 쓴다 |
 | `bake-instances.py` | 같은 형상을 한 벌로 묶어 GLB 를 굽는다 | 쓴다 |
 
+> 🔴 **`bake-instances.py` 는 `ip_scrub` 을 거치지 않는다**(검수관 블로커 B2, 2026-09-16).
+> import·호출·`--no-ip-scrub`·`ipScrubSkipped` 가 **전부 없고**, 그 배선은 `extract.py` 의 `main()`
+> 에만 있다. 그래서 **「승격 회차에 세탁이 자동 복귀한다」가 이 경로에는 성립하지 않는다** —
+> 켤 스위치 자체가 없다. 리포트는 `"ipScrubWired": false` 를 무조건 찍는다. 경위·해소 조건은
+> 그 파일 헤더 한 곳이고 백로그는 `G-BAKE-SCRUB` 다. **지금 커밋된 월드11 자산이 이 경로
+> 산출물이다**(이번 회차는 감독 지시로 세탁 면제, behind-flag 한정).
+
 ```bash
 python3 scripts/asset/manhattan/extract.py --blend <원본.blend> --report /tmp/r.json
 python3 scripts/asset/manhattan/verify-blocks.py --blend <원본.blend> --against /tmp/r.json

@@ -53,7 +53,22 @@ const CAMERAS = join(ROOT, 'frontend/assets/worlds/manhattan-180m-cameras.json')
 //
 // 씬 축을 오프라인에서 열려면 같은 원본을 `--image-format AUTO`(PNG)로 한 벌 더 굽는
 // 길뿐이고, 그 변형은 58.16 MiB 라 50MB 위임 상한 밖이다(`scripts/asset/manhattan/README.md`
-// 2단계 표). **그래서 지금 이 자산의 씬 축을 보는 것은 `smoke:vite` 의 브라우저 세션이다.**
+// 2단계 표).
+//
+// 🔴 **그러면 씬 축은 지금 아무 데서도 안 재진다 — 그 사실을 정확히 적는다**(검수관 권고 P2).
+// 이 자리는 초안에 *"그래서 `smoke:vite` 의 브라우저 세션이 씬 축을 본다"* 라고 적혀 있었고
+// **과장이었다.** 실측: `scripts/smoke/browser-checks.mjs` 가 보는 것은 콘솔 에러·pageerror·
+// CSP 위반·실패한 요청·가로 넘침이고, `run.mjs` 에 world8/world11 전용 진단 훅은 **0건**이다.
+// 즉 스모크는 「열렸고 에러가 없다」를 보지 **「무엇이 몇 개 들어 있다」를 안 본다.**
+//
+// 갈라 적으면 이렇다:
+//   · Node 에서 재짐  — 바이트·sha256·JSON 노드/메시 수·인스턴싱 비율·재질 수·외부 URI
+//                      (`measureContainer`. 로더가 필요 없다)
+//   · **아무 데서도 안 재짐** — 씬 노드/메시/삼각형·bbox·**이름 무결성**
+//                      (로더가 있어야 하고, 스모크는 이 축을 단언하지 않는다)
+// 이름 무결성이 특히 아프다 — GLTFLoader 의 `sanitizeNodeName` 이 노드 이름을 고쳐 쓰면
+// 조명·파츠 조회가 조용히 빗나가는데, 그것을 잡던 축이 이 자산에서는 **꺼져 있다**.
+// 되살리는 길은 둘뿐이다: PNG 변형을 함께 굽거나, 스모크에 씬 구조 진단 훅을 넣거나.
 const EXPECTED: null | {
   bytes: number; sha256: string;
   jsonNodes: number; jsonMeshes: number; nodesReferencingMesh: number; materials: number;

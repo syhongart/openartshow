@@ -63,9 +63,18 @@
 // 그래야 「어느 GLB 가 세계인가」가 페이지의 사실로 남고, 스크립트는 그것을 모른다.
 // world8-boot 이 같은 이유로 같은 형태다(그 파일 헤더).
 //
-// ⚠⚠ **`assets/worlds/manhattan-180m.glb` 는 2026-09-16 현재 저장소에 없다**(굽는 중,
-// 약 43 MiB). 없는 동안 아래 `source` 가 `HTTP 404` 로 던지고 부팅 파이프라인이 그것을
-// 로딩 화면에 보고한다 — 설계대로다. 파일이 들어오면 저절로 열린다.
+// ⚠⚠ **`assets/worlds/manhattan-180m.glb` 는 커밋돼 있다** — 45,498,128 B(43.4 MiB),
+// 이 파일과 **같은 커밋**이다. 자산과 페이지는 함께 온다(한쪽만 있으면
+// `tests/manhattan-glb.test.ts` ③ 의 첫 검사가 빨간불이 된다).
+//
+// ⚠ 이 자리는 초안에 *"저장소에 없다(굽는 중)"* 라고 적혀 있었고 자산이 들어온 뒤에도
+// 그대로 남아 **검수관 블로커 B1** 이 됐다(2026-09-16). 같은 문구가 `world11.html` 과
+// `scripts/smoke/config.mjs` 에도 있었고, 그 셋 중 `config.mjs` 것은 *"404 가 정상"* 이라는
+// **판정 기준**까지 적고 있었다 — 게이트 유효성에 대한 거짓 진술이다. 이 저장소가
+// 반복해서 대가를 치른 형태라(`main` unprotected 오기 7일) 경위를 지우지 않고 남긴다.
+//
+// 자산이 없어지면 `source` 가 `HTTP 404` 로 던지고 부팅 파이프라인이 로딩 화면에 보고한다
+// — 그 동작 자체는 설계대로이고 `tests/world11-boot-run.test.ts` 가 지킨다.
 
 import { startGlbWorld } from './world-glb/main.js';
 import { assetUrl } from './world-glb/asset-url.js';

@@ -23,10 +23,10 @@
   ⚠ **세계가 되는 GLB 는 `<body data-glb>` 가 가리킨다.** 그래야 「어느 GLB 가
   세계인가」가 스크립트가 아니라 **페이지의 사실**로 남는다.
 
-  ⚠⚠ **`assets/worlds/manhattan-180m.glb` 는 아직 저장소에 없다**(2026-09-16 현재).
-  굽는 중이고 부팀장이 커밋한다(약 43 MiB). 없는 동안 이 페이지는 로딩 화면에
-  「GLB 를 못 받았다: HTTP 404」를 띄운다 — 부팅 파이프라인이 그것을 화면에 보고하는
-  것은 설계대로다(`world-glb/main.ts` 의 `stream` 단계). 파일이 들어오면 저절로 열린다.
+  ⚠⚠ **`assets/worlds/manhattan-180m.glb` 는 커밋돼 있다** — 45,498,128 B(43.4 MiB),
+  이 파일과 같은 커밋이다. 자산이 없어지면 이 페이지는 로딩 화면에 「GLB 를 못 받았다:
+  HTTP 404」를 띄운다 — 부팅 파이프라인이 그것을 화면에 보고하는 것은 설계대로다
+  (`world-glb/main.ts` 의 `stream` 단계). 경위는 `js/world11-boot.ts` 헤더 한 곳이다.
 -->
 <!-- connect-src 에 blob: 이 필요하다: GLTFLoader 가 내장 텍스처를 디코드할 때
      ImageBitmapLoader 가 버퍼뷰를 Blob→objectURL 로 만들고 fetch() 로 읽는다.
