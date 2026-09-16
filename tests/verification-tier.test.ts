@@ -97,6 +97,11 @@ describe('진입점 SSOT', () => {
       // world8 과 같은 트리, 갈리는 것은 산출 GLB 와 `?cam=` 캡처 진입뿐. `docs/nyc/state.md`.
       // 사전순이라 `world2-…` 앞이다.
       'world10.html',
+      // 2026-09-16 `world11.html` 추가 — 맨해튼(팀장 판정 «결정 2»). world8 과 **같은 트리**
+      // (`js/world-glb/`)를 타고 갈리는 것은 `<body data-glb>` 가 가리키는 자산과 부트 파일뿐이다.
+      // world10 의 포크가 **아니다** — 대조 실측 표는 `frontend/js/world11-boot.ts` 헤더 한 곳.
+      // 사전순이라 `world10.html` 바로 뒤, `world2-…` 앞이다.
+      'world11.html',
       'world2-stylized.html', 'world3.html', 'world5.html', 'world7.html',
       'world8.html',
     ]);

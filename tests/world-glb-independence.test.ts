@@ -164,13 +164,29 @@ const W2_ENTRY = join(FRONTEND, 'js/world2-boot.ts');
  * → 규칙화: **진입점 파일을 새로 만드는 커밋은 이 표본에 그 이름을 추가한 것을 함께 낸다.**
  */
 const W7_ENTRY = join(FRONTEND, 'js/world7-boot.ts');
+/**
+ * ⚠ **world11 진입점 — 위 규칙화의 첫 집행이다** (2026-09-16).
+ *
+ * 바로 위 `W7_ENTRY` 주석이 두 번의 블로커 끝에 적어 둔 것이 이것이다:
+ * *"진입점 파일을 새로 만드는 커밋은 이 표본에 그 이름을 추가한 것을 함께 낸다."*
+ * `world11-boot.ts` 는 `frontend/js/` **직속**이라 `walk(W8)` 에 안 걸리므로,
+ * 이 줄이 없으면 그 파일에 `import … from './world2/main.js'` 를 넣어도 **전부 초록**
+ * 이다 — 2026-08-08(world8)·2026-08-26(world7) 과 **같은 형태의 3차 발생**이 된다.
+ *
+ * 이번에는 사고 뒤가 아니라 **진입점을 만드는 그 커밋에서** 추가한다. 규칙이 실제로
+ * 집행되는지는 이 회차의 뮤테이션 표가 실측했다(보고서 M-1).
+ */
+const W11_ENTRY = join(FRONTEND, 'js/world11-boot.ts');
 /** 이 트리를 여는 **모든** 페이지. 하나라도 빠지면 그 페이지는 격리 게이트 밖이다 */
 const PAGES = [
   { name: 'world8', html: join(FRONTEND, 'world8.html'), boot: 'world8-boot' },
   { name: 'world7', html: join(FRONTEND, 'world7.html'), boot: 'world7-boot' },
+  // 2026-09-16 — 맨해튼. world8 과 **같은 트리**를 쓰고 갈리는 것은 `<body data-glb>` 가
+  // 가리키는 자산과 이 부트 파일뿐이다(팀장 판정 «결정 2» — world10 포크가 아니다).
+  { name: 'world11', html: join(FRONTEND, 'world11.html'), boot: 'world11-boot' },
 ];
 
-const FILES = [...walk(W8), W8_ENTRY, W7_ENTRY];
+const FILES = [...walk(W8), W8_ENTRY, W7_ENTRY, W11_ENTRY];
 const W2_FILES = [...walk(W2), W2_ENTRY];
 
 describe('world8 는 world2 를 한 줄도 참조하지 않는다', () => {
@@ -185,10 +201,12 @@ describe('world8 는 world2 를 한 줄도 참조하지 않는다', () => {
     // 조용히 빠지고, 실제로 빠져 있었다 — 위 `W8_ENTRY` 주석 참고.
     expect(FILES, 'world8-boot.ts 가 표본 밖이다').toContain(W8_ENTRY);
     expect(FILES, 'world7-boot.ts 가 표본 밖이다').toContain(W7_ENTRY);
+    expect(FILES, 'world11-boot.ts 가 표본 밖이다').toContain(W11_ENTRY);
     expect(W2_FILES, 'world2-boot.ts 가 역방향 표본 밖이다').toContain(W2_ENTRY);
     // 진입점이 실재하지 않으면 위 `toContain` 은 통과하면서 아무 파일도 안 읽는다.
     expect(existsSync(W8_ENTRY), 'world8-boot.ts 없음').toBe(true);
     expect(existsSync(W7_ENTRY), 'world7-boot.ts 없음').toBe(true);
+    expect(existsSync(W11_ENTRY), 'world11-boot.ts 없음').toBe(true);
     expect(existsSync(W2_ENTRY), 'world2-boot.ts 없음').toBe(true);
   });
 
@@ -200,7 +218,7 @@ describe('world8 는 world2 를 한 줄도 참조하지 않는다', () => {
     // ⚠ **이 검사가 `world8.html` 만 봤다**(검수관 B1). 트리가 두 페이지를 섬기게 된
     // 뒤에도 그대로여서, `world7.html` 이 `world2-boot.js` 를 불러도 초록이었다.
     // 페이지 목록을 `PAGES` 한 곳에 두고 **순회**한다 — 페이지가 늘면 여기 한 줄이다.
-    expect(PAGES.length, '페이지 목록이 비었다 — 아래 루프가 공허해진다').toBeGreaterThan(1);
+    expect(PAGES.length, '페이지 목록이 비었다 — 아래 루프가 공허해진다').toBeGreaterThan(2);
     for (const pg of PAGES) {
       expect(existsSync(pg.html), `${pg.name}.html 없음`).toBe(true);
       const html = readFileSync(pg.html, 'utf8');

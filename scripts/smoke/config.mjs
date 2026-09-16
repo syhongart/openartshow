@@ -360,6 +360,22 @@ export const LIVE_PAGES = [
   // 격자 셀 한 장 `nyc-cell.glb` 다 — 세계는 그것을 파셀 스트리밍으로 반복한다. 부팅 검사
   // 조건은 world8 행과 같다(부팅만으로 세운다). 경계·상태는 `docs/nyc/state.md`.
   { name: 'app/world10',        url: '/app/world10.html', webgl: true, viteOnly: true },
+  // ── world11 — 맨해튼 (2026-09-16, 팀장 판정 «결정 2») ────────────────────────────
+  // `js/world-glb/` 트리를 world7·world8 과 **공유**한다(포크가 아니다). <body data-glb> 는
+  // **맨해튼 한 덩이**(`manhattan-180m.glb`)라 world10 처럼 반복하지 않는다. 부팅 검사
+  // 조건은 world8 행과 같다(부팅만으로 세운다) — 그 행의 뮤테이션 2종(404 는 잡고 지연은
+  // 못 잡는다)이 이 페이지에도 그대로 적용된다. 여기에 다시 적지 않는다.
+  //
+  // ⚠ **자산이 2026-09-16 현재 저장소에 없다**(굽는 중, 약 43 MiB). 없는 동안 이 행은
+  // 404 를 만나므로 `smoke:vite` 에서 **빨간불이 정상**이다 — 위 world8 행의 뮤테이션
+  // 표가 바로 그 형태를 FAIL 로 잡는다고 실측해 두었다. 자산이 들어오면 초록이 된다.
+  // 못 잰 것을 통과로 적지 않기 위해 **행은 지금 넣는다**(behind-flag 인데 검사가 0 이던
+  // 사고가 visit·lab-glb 에서 이미 났고, `verification-tier.test.ts` G1 이 편입을 강제한다).
+  //
+  // ⚠⚠ **43 MiB 는 world8(5.2MB)·world10 과 자릿수가 다르다.** gzip 후 전송량·
+  // `networkidle` 대기·GitHub Pages 의 100MB 파일 상한 대비 여유는 **아직 안 쟀다**
+  // (자산이 없다). 자산이 들어오는 회차에 재고 이 자리에 적는다.
+  { name: 'app/world11',        url: '/app/world11.html', webgl: true, viteOnly: true },
   // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
   // 하면 그 사이 자기완결·CSP 검사가 0 인 페이지가 배포되고, 그것이 정확히 visit·
   // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.

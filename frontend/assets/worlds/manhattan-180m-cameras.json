@@ -1,8 +1,7 @@
 {
- "generatedBy": "scripts/asset/manhattan/extract.py",
+ "generatedBy": "scripts/asset/manhattan/bake-instances.py",
  "sourceBlend": "f563115f-Manhattan_180m.blend",
  "axis": "gltf-y-up",
- "note": "position·quaternion 은 Y-up(glTF/three). blender 키는 원본 Z-up 값이다.",
  "cameras": [
   {
    "position": [

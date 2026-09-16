@@ -161,6 +161,10 @@ export function measureContainer(bytes) {
     imageBytes: images.reduce((a, i) => a + (i.bytes ?? 0), 0),
     externalRefs: external,
     extensionsUsed: json.extensionsUsed ?? [],
+    // ⚠ `Used` 와 달리 **`Required` 는 로더가 열 수 있는지를 가른다.** `loaderBlocker`
+    // 가 보는 것이 이 배열이고, 컨테이너 축만으로 「씬 축이 재졌는가」를 판정하려면
+    // 호출자에게도 이 값이 있어야 한다(`tests/manhattan-glb.test.ts` ③ 이 쓴다).
+    extensionsRequired: json.extensionsRequired ?? [],
     generator: json.asset?.generator ?? null,
   };
 }

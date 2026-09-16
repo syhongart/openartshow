@@ -40,10 +40,35 @@ const CAMERAS = join(ROOT, 'frontend/assets/worlds/manhattan-180m-cameras.json')
  * 여기에 박는다. **박기 전에는 `null` 이어야 한다** — 값만 먼저 적으면 없는 파일을
  * 통과로 적는 그 형태가 된다.
  */
+// ── 커밋된 자산의 기대값 ────────────────────────────────────────────────────
+// `node scripts/asset/manhattan/verify-glb.mjs <자산>` 의 실측을 박는다. 자산과 이 값은
+// **함께 온다** — 한쪽만 있으면 아래 ③ 의 첫 검사가 빨간불이 된다.
+//
+// 🔴 **`scene` 이 null 인 것은 「안 쟀다」이지 「통과」가 아니다.** 이 자산은 텍스처를
+// WebP 로 굽고 `EXT_texture_webp` 를 `extensionsRequired` 에 넣는다. three 의 그 확장은
+// Node 에 없는 `Image` 를 요구하므로(`GLTFLoader.js:1493`) **씬 축은 브라우저에서만**
+// 잴 수 있다 — 노드·메시·삼각형·bbox·이름 무결성 전부가 이 게이트 밖이다.
+// 그래서 `loaderBlocked` 를 **명시 필드로** 두고, ③ 이 「막혔다는 사실」 자체를 단언한다.
+// 조용히 건너뛰면 그 순간 이 게이트는 장식이 된다(M7 이 같은 원리를 순수 함수 쪽에서 본다).
+//
+// 씬 축을 오프라인에서 열려면 같은 원본을 `--image-format AUTO`(PNG)로 한 벌 더 굽는
+// 길뿐이고, 그 변형은 58.16 MiB 라 50MB 위임 상한 밖이다(`scripts/asset/manhattan/README.md`
+// 2단계 표). **그래서 지금 이 자산의 씬 축을 보는 것은 `smoke:vite` 의 브라우저 세션이다.**
 const EXPECTED: null | {
-  bytes: number; sha256: string; nodes: number; meshes: number; triangles: number;
-  bbox: { size: [number, number, number] };
-} = null;
+  bytes: number; sha256: string;
+  jsonNodes: number; jsonMeshes: number; nodesReferencingMesh: number; materials: number;
+  loaderBlocked: boolean;
+  scene: null | { nodes: number; meshes: number; triangles: number; bbox: { size: [number, number, number] } };
+} = {
+  bytes: 45_498_128,
+  sha256: '94fe6c145c754867abd7ada4313f3317d37beb7291124419ae0af759698b9f2f',
+  jsonNodes: 21_306,
+  jsonMeshes: 988,
+  nodesReferencingMesh: 21_283,
+  materials: 46,
+  loaderBlocked: true,
+  scene: null,
+};
 
 // ── 합성 GLB — 뮤테이션의 대상 ───────────────────────────────────────────────
 // 실물(91MiB·21,313 노드)로 뮤테이션을 돌리면 한 케이스에 수 초가 든다. 판정 축은
@@ -236,20 +261,48 @@ describe('③ 커밋된 자산', () => {
     ).not.toBeNull();
   });
 
-  it.runIf(existsSync(ASSET) && EXPECTED !== null)('자산이 판정을 통과한다', async () => {
+  it.runIf(existsSync(ASSET) && EXPECTED !== null)('자산의 **컨테이너 축**이 기대값과 같다', () => {
     const bytes = readFileSync(ASSET);
     const c = measureContainer(bytes);
-    const s = measureScene(await loadScene(bytes));
     expect(c.bytes).toBe(EXPECTED!.bytes);
     expect(c.sha256).toBe(EXPECTED!.sha256);
     expect(c.externalRefs, '자기완결 — GLB 안에 외부 URI 가 있으면 안 된다').toEqual([]);
-    expect(s.nodes).toBe(EXPECTED!.nodes);
-    expect(s.meshes).toBe(EXPECTED!.meshes);
-    expect(s.triangles).toBe(EXPECTED!.triangles);
+    expect(c.jsonNodes).toBe(EXPECTED!.jsonNodes);
+    expect(c.jsonMeshes).toBe(EXPECTED!.jsonMeshes);
+    // 인스턴싱이 풀리면 여기가 먼저 떨어진다 — M5 가 같은 축을 합성본에서 때린다.
+    expect(c.nodesReferencingMesh).toBe(EXPECTED!.nodesReferencingMesh);
+    expect(c.materials).toBe(EXPECTED!.materials);
+    if (existsSync(CAMERAS)) expect(checkCameras(JSON.parse(readFileSync(CAMERAS, 'utf8'))).problems).toEqual([]);
+  });
+
+  it.runIf(existsSync(ASSET) && EXPECTED !== null)('**로더가 열리는지**가 기대값과 같다 — 막혔으면 막혔다고 단언한다', () => {
+    const c = measureContainer(readFileSync(ASSET));
+    const blocked = loaderBlocker({ extensionsRequired: c.extensionsRequired });
+    // 🔴 양방향이다. 막힐 것으로 적었는데 안 막히면(= WebP 를 뺀 자산으로 바뀌었다면)
+    // 그것도 빨간불이다 — 그때는 씬 축을 **잴 수 있게 됐으므로 재야 한다.**
+    expect(
+      blocked !== null,
+      EXPECTED!.loaderBlocked
+        ? '로더가 열린다 — 씬 축을 잴 수 있게 됐다. EXPECTED.scene 을 채워라'
+        : `로더가 막혔다: ${blocked}`,
+    ).toBe(EXPECTED!.loaderBlocked);
+    if (EXPECTED!.loaderBlocked) {
+      expect(
+        EXPECTED!.scene,
+        '로더가 막혔는데 씬 기대값이 박혀 있다 — 못 잰 것을 통과로 적는 형태다',
+      ).toBeNull();
+    }
+  });
+
+  it.runIf(existsSync(ASSET) && EXPECTED !== null && EXPECTED.scene !== null)('자산의 **씬 축**이 기대값과 같다 (로더가 열릴 때만)', async () => {
+    const bytes = readFileSync(ASSET);
+    const s = measureScene(await loadScene(bytes));
+    expect(s.nodes).toBe(EXPECTED!.scene!.nodes);
+    expect(s.meshes).toBe(EXPECTED!.scene!.meshes);
+    expect(s.triangles).toBe(EXPECTED!.scene!.triangles);
     const n = nameIntegrity(bytes, s);
     expect(n.rewrittenCount, `로더가 고쳐 쓴 이름: ${n.rewritten.join(', ')}`).toBe(0);
     expect(n.bannedInJsonCount).toBe(0);
-    expect(s.bbox.size).toEqual(EXPECTED!.bbox.size);
-    if (existsSync(CAMERAS)) expect(checkCameras(JSON.parse(readFileSync(CAMERAS, 'utf8'))).problems).toEqual([]);
+    expect(s.bbox.size).toEqual(EXPECTED!.scene!.bbox.size);
   });
 });
