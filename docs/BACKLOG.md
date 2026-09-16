@@ -147,6 +147,23 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 - **G-MUT1 — 뮤테이션 하네스 `scripts/mutation-run.mjs` 부재**(2026-09-11 등재, 구현 에이전트 자기신고 2회). 팀장 지시 2026-08-26 «하네스 exit 0 으로만 인정» 이
   미이행 상태 — 지금은 회차마다 스크래치 스크립트로 적용→테스트→원복(sha 대조)을 돌린다. 처방: 뮤테이션 목록(파일·치환·기대 FAIL 테스트 이름)을 JSON 으로 받아 클론에서
   적용·실행·원복·바이트 대조까지 한 번에 하는 하네스 + 그 자체의 검출력 테스트.
+- **G-MH1 — 맨해튼 180m 자산이 91.09 MiB 로 예산(초기 10MiB)의 9배** (2026-09-16 등재). 지오메트리 62.87MB 가 본질(정점 190만 = 원본 3배, 면마다 법선 끊김).
+  컬렉션별로 `Urban_Buildings` 70% + `Landmark_Manhattan_Bridge` 18% = 88% — **그 둘을 빼면 삼각형 121,504 로 예산 20만 안**(실측). 후보: 전경만 담기 · 배경 저폴리/임포스터 ·
+  재질별 병합(작품 슬롯 12·차량·간판 개별 조작 상실) · Draco(이 환경 인코더 SIGSEGV 2/2 + 런타임 배선). **설계 분기 — 팀장 판정 대기.**
+- **G-BAKE-SCRUB — 인스턴싱 굽기 경로에 IP 세탁 배선이 없다. 「승격 시 자동 복귀」가 이 경로에서 성립하지 않는다** (2026-09-16 등재, 검수관 블로커 B2).
+  실측: `scripts/asset/manhattan/bake-instances.py` 에 `ip_scrub` import·`scrub()` 호출·`--no-ip-scrub`·`ipScrubSkipped` 가 **전부 0건**(grep). 그 배선은 `extract.py` 의 `main()` 에만
+  있고 bake 는 blend 를 직접 열어 `run_export`·`survey_glb`·`dump_cameras`·`dump_lights` 네 함수만 가져다 쓴다. **지금 커밋된 `manhattan-180m.glb` 가 이 경로 산출물**이고,
+  팀장 추인 R1 의 *"라이브 승격 회차에 자동 복귀한다"* 는 `extract.py` 경로만 상정한 서술이다 — 이쪽에는 **켤 스위치가 없다.** 임시 방어로 리포트에 `"ipScrubWired": false` 를
+  무조건 찍고 헤더·README 에 경고를 박았다(자기선언이 아니라 구조적 사실의 기록이다). **해소 조건**: bake 경로에 `ip_scrub.scrub()` 배선 + `--no-ip-scrub` + 리포트 필드,
+  그리고 `ipScrubWired` 를 실제 집행 여부로 전환. **재론 트리거**: world11 라이브 승격 판정 회차(그 전에 승격하면 세탁 없는 자산이 라이브로 간다).
+- **G-SCENE-AXIS — WebP 자산의 씬 축(삼각형·bbox·이름 무결성)이 아무 데서도 안 재진다** (2026-09-16 등재, 검수관 권고 P2).
+  `EXT_texture_webp` 가 `extensionsRequired` 라 Node 의 `GLTFLoader` 가 자산을 못 연다(`GLTFLoader.js:1493`). `tests/manhattan-glb.test.ts` 는 「막혔다」를 명시 단언으로 남겼지만
+  그것은 **못 잰 것을 통과로 적지 않는 것**이지 재는 것이 아니다. 그리고 `smoke:vite` 도 이 축을 안 본다 — `browser-checks.mjs` 는 콘솔 에러·CSP·실패 요청·가로 넘침만 보고
+  `run.mjs` 에 world8/world11 전용 진단 훅이 **0건**이다. 특히 **이름 무결성**이 아프다(`sanitizeNodeName` 이 노드 이름을 고쳐 쓰면 조명·파츠 조회가 조용히 빗나간다 — `G-GLBN1` 과
+  같은 축인데 이 자산에서는 그 검사가 꺼져 있다). **해소 후보 둘**: ⓐ 같은 원본의 PNG 변형(58.16 MiB — 50MB 상한 밖이라 커밋 말고 CI 전용 산출) ⓑ 스모크에 씬 구조 진단 훅.
+- **G-GLBN1 — GLB 노드 이름 규약 검사가 `.` 만 보고 공백을 놓친다** (2026-09-16 등재, 구현 에이전트 실물 검출). three `sanitizeNodeName` 은 `\s` → `_` 치환, `[ ] . : /` 는 삭제.
+  `world10/decide/glb-nodes.ts` 헤더의 실측 표에 공백 축을 더하고, 검사 축을 «로드 후 이름에 `.` 없음» 이 아니라 **«원 이름 ↔ 로드 후 이름 동일»**(경계)로 옮긴다 — 전자는 검출력
+  구조적 0(뮤테이션 M1 이 실증). `scripts/asset/manhattan/verify-glb.mjs:97` 의 `nameIntegrity` 가 본보기.
 - **G-VX1 — 작품 앞 인증샷 태깅**(감독 카드 2026-09-11 착수, Voxels womp 방식): 캡처 시 카메라 프러스텀 안 작품 슬롯의 화면 좌표(NDC 0-1)와 슬롯 ID 를
   공유 링크/캡처 메타에 심는다. 순수 클라이언트 계산, 서버 0. 반복 2 «작품 걸기» 와 함께.
 - **G-VX2 — 광장·공원 셀 예약**(감독 카드 2026-09-11 착수, Voxels `is_common` 방식): `world10/systems/nyc-parcels.ts` `NycCell` 에 `landmark` 와 동형 플래그

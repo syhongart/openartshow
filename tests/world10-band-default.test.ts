@@ -330,8 +330,12 @@ describe('(ㅁ) 예산·격리', () => {
     }
   });
 
-  it('world7·world8 부트에는 band 기본값이 없다 (공유 트리 world-glb 는 무영향)', () => {
-    for (const f of ['frontend/js/world7-boot.ts', 'frontend/js/world8-boot.ts']) {
+  it('world7·world8·world11 부트에는 band 기본값이 없다 (공유 트리 world-glb 는 무영향)', () => {
+    // ⚠ 2026-09-16 `world11-boot.ts` 추가. **이 목록은 트리를 여는 페이지가 늘 때 함께
+    // 늘어야 한다** — 빠지면 그 부트가 `band:` 를 선채움해도 초록이다. `world-glb` 트리는
+    // 「트리 밖 진입점이 표본 밖이었다」로 이미 두 번 블로커를 받았다
+    // (`tests/world-glb-independence.test.ts` 의 `W7_ENTRY` 주석).
+    for (const f of ['frontend/js/world7-boot.ts', 'frontend/js/world8-boot.ts', 'frontend/js/world11-boot.ts']) {
       expect(src(f), `${f} 가 band 를 선채움하고 있다`).not.toMatch(/band\s*:/);
     }
   });

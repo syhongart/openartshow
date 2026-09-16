@@ -157,6 +157,13 @@ export const ENTRYPOINTS = [
   // 세계는 그것을 파셀 스트리밍으로 반복해 만든다. 경위는 `frontend/js/world10/README.md`,
   // 상태·경계는 `docs/nyc/state.md`.
   { key: 'world10', src: 'world10.html', out: 'app/world10.html', exposure: 'flagged' },
+  // 2026-09-16 `world11.html` 추가 — 맨해튼. **`js/world-glb/` 트리 공유**다
+  // (팀장 판정 2026-09-16 «결정 2» — world10 포크가 아니다. 대조 실측 표는
+  // `frontend/js/world11-boot.ts` 헤더 한 곳이고 여기에 다시 적지 않는다).
+  // `<body data-glb>` 는 **맨해튼 한 덩이**(`manhattan-180m.glb`)이고 world10 처럼
+  // 반복하지 않는다 — 그것이 `world-glb`(GLB 한 장)와 `world10`(격자 스트리밍)의 갈림이다.
+  // ⚠ 그 자산은 2026-09-16 현재 저장소에 없다(굽는 중, 약 43 MiB).
+  { key: 'world11', src: 'world11.html', out: 'app/world11.html', exposure: 'flagged' },
   // [도구] 배치 에디터 — three.js r171 `editor/` 반입. 감독 지시 2026-08-09
   // *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능? glb파일을 내가 직접 넣고"* →
   // *"three.js 방식이니깐. 거기 에디터를 깃에서 가지고 와서 활용하는방안"*.
