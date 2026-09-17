@@ -58,7 +58,18 @@ export interface GlbWorldOptions {
    *
    * 판정은 `decide/glb-checklist.ts`(순수 함수), 화면은 `ui/glb-checklist-panel.ts`.
    */
-  checklist?: boolean;
+  /**
+   * `'live'` 면 **1초마다 다시 그리고 「렌더 실황」 두 항목이 더 붙는다**(백엔드 · draw·tri·
+   * 지오·텍스처). 감독 신고 2026-09-17 «유실» 회차에 생겼다 — 감독은 **핸드폰**이라 콘솔을
+   * 볼 수 없고, 원인 후보 넷(WebGPU 렌더 경로 · 기기 메모리 · 거리 컬링 · 자산 미로드)을
+   * **사진 한 장으로 가르는 값**이 화면에 하나도 없었다.
+   *
+   * ⚠ `true`(world7)와 `'live'`(world11)를 가르는 이유는 **world7 의 화면을 한 줄도
+   * 안 바꾸기 위해서**다. 판정 쪽(`decide/glb-checklist.ts`)이 `render` 입력이 없으면
+   * 두 항목을 **아예 안 만들고**, 여기서 `'live'` 를 안 주면 그 입력이 안 간다.
+   * 「기본값이 같다」가 아니라 **「경로가 없다」**가 이 트리가 쓰는 불변 보장 형태다.
+   */
+  checklist?: boolean | 'live';
 
   /**
    * **부팅 시작 위치·시선.** 안 주면 트리 기본(`spawnFor('default')`)이다.
@@ -80,6 +91,34 @@ export interface GlbWorldOptions {
    * `decide/capture-entry.ts`(순수)이고 `tests/world-glb-capture-entry.test.ts` 가 호출처를 지킨다.
    */
   start?: { x: number; z: number; yaw?: number; pitch?: number };
+
+  /**
+   * **가시 거리(안개 far·거리 컬링 반경)의 기준을 자산 크기에서 유도한다.**
+   * 씬에 얹힌 GLB 의 bbox 치수(m)를 받아 기준 거리(m)를 낸다. 안 주면 트리 기본
+   * (`fogBand(DEFAULT_LAYOUT.cellX)`)이고 그것이 **현재 동작**이다.
+   *
+   * ── 왜 생겼나 (감독 신고 2026-09-17) ──────────────────────────────────────
+   * `systems/glb-stream.ts` 가 끄는 거리는 world2 **섬의 파셀 한 변**에서 유도된 값이라
+   * 자산 크기를 한 번도 안 본다. 자산이 그보다 크면 한가운데 서는 순간 절반 이상이
+   * 꺼진다. 판정·산술·`?far=` 배수는 `decide/view-span.ts` 한 곳이다.
+   *
+   * ⚠⚠ **`tag` 로 분기하지 않는다.** world11-boot 만 이 함수를 채우고 world7·8 부트는
+   * 넘기지 않는다 — 트리는 세 페이지를 계속 같게 본다(위 경계 조항).
+   */
+  viewSpan?: (size: { x: number; y: number; z: number }) => number;
+
+  /**
+   * **원본 씬의 조명을 복원한다.** 안 주면 부르지 않는다(현재 동작).
+   *
+   * 맨해튼 자산은 블렌더에서 조명 112개(AREA 111 + SUN 1)로 구성된 씬인데, 내보내기가
+   * `export_lights=False` 로 **조명을 빼고** JSON 으로 따로 냈다
+   * (`frontend/assets/worlds/manhattan-180m-cameras.json`). 지금 화면은 하늘빛만 받는다.
+   *
+   * **부팅의 `stream` 단계에서 `source()` 와 함께 불린다.** 실패하면 `null` 을 내라 —
+   * 조명이 없어도 세계는 서야 한다(부팅을 죽이지 않는다). 그 실패는 콘솔에 남긴다.
+   * 스펙 모양·단계·와트 환산은 `decide/glb-lights.ts` 한 곳이다.
+   */
+  lights?: () => Promise<unknown>;
 }
 
 

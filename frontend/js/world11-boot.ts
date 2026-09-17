@@ -78,11 +78,32 @@
 
 import { startGlbWorld } from './world-glb/main.js';
 import { assetUrl } from './world-glb/asset-url.js';
+import { readNum } from './world-glb/url-knob.js';
+import { spanOf } from './world-glb/decide/view-span.js';
 
 const canvas = document.getElementById('wg-canvas');
 if (canvas instanceof HTMLCanvasElement) {
   startGlbWorld(canvas, {
     tag: 'world11',
+    // ── `?diag=` — 화면 진단(기본 **켜짐**) ─────────────────────────────────
+    // 감독 신고 2026-09-17 회차에 켰다. 감독은 **핸드폰**이라 콘솔을 볼 수 없고, 그
+    // 회차의 원인 후보 넷(WebGPU 렌더 경로 · 기기 메모리 · 거리 컬링 · 자산 미로드)을
+    // **사진 한 장으로 가르는 값**이 화면에 하나도 없었다. `'live'` 는 1초마다 다시
+    // 그리고 「백엔드」·「그리는 중(draw·삼각형·지오·텍스처)」 두 항목을 더 띄운다
+    // (`options.ts` 의 `checklist`).
+    //
+    // **기본을 켠 이유**: world11 은 behind-flag 실험 페이지이고 이 회차의 목적이
+    // **진단**이다. 감독이 노브를 몰라도 화면에 수치가 있어야 한 번에 판정이 난다.
+    // 화면을 가리면 헤더를 탭해 접을 수 있고, `?diag=0` 이면 아예 안 뜬다.
+    //
+    // ⚠ world7·world8 은 이 값을 안 넘긴다 — 저쪽은 `true`(정적 1회) 그대로다.
+    checklist: readNum('diag', 1, 0, 1) >= 0.5 ? 'live' : undefined,
+    // ── `?far=` 의 기준 — **이 자산의 크기**다 ───────────────────────────────
+    // 트리 기본은 world2 **섬의 파셀 한 변**(32m)에서 유도한 거리라 이 자산을 한 번도
+    // 안 본다. 정책(«반대각선» = 한가운데 서서 가장 먼 모서리까지)은 `decide/view-span.ts`
+    // 의 `spanOf` 가 소유하고, **그것을 고르는 것은 페이지**다 — 트리는 자산을 모른다
+    // (`options.ts` 의 경계 조항). world7·world8 은 이 필드를 안 넘기므로 불변이다.
+    viewSpan: spanOf,
     // 고정 자산 — `<body data-glb>` 가 가리킨다. **부팅의 `stream` 단계에서 불리므로**
     // 43MB 를 받는 시간이 로딩 진행률에 포함된다.
     source: async () => {

@@ -159,7 +159,12 @@ describe('⭐ B1 회귀 — 수집기가 부팅 배선에 실제로 물려 있�
   });
 
   it('체크리스트에 넘기는 것이 그 수집기다 — 별도 카운터가 아니다', () => {
-    expect(src).toMatch(/showBootChecklist\([^)]*bootLog\)/);
+    // ⚠ 2026-09-17: 닫는 괄호 요구(`…bootLog\)`)를 뺐다. `?diag=` 라이브 진단이 생기며
+    // 세 번째 인자(`opts.checklist === 'live'`)가 붙어 그 패턴이 안 맞게 됐다.
+    // **단언을 약화한 것이 아니다** — 이 검사가 지키는 것은 「두 번째 인자가 그 수집기인가」
+    // 이고(B1 이 난 형태는 별도 카운터를 넘긴 것이다), 인자 **개수**는 그 축이 아니다.
+    // 아래 `bootErrors` 금지 단언이 옛 형태의 부활을 그대로 막는다.
+    expect(src).toMatch(/showBootChecklist\([^)]*bootLog\b/);
     // 옛 형태(0 고정 카운터)가 되살아나면 잡는다.
     expect(src, '`bootErrors` 카운터가 돌아왔다 — B1 이 난 형태다').not.toMatch(/bootErrors/);
   });

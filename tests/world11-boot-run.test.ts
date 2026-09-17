@@ -118,11 +118,32 @@ describe('world11-boot — 트리와의 계약을 실제로 채운다', () => {
     expect(errors.flat().join(' ')).toContain('[world11]');
   });
 
-  it('⭐ **체크리스트를 켜지 않는다** — world7 전용이라는 경계를 여기서 다시 확인한다', async () => {
-    // 감독 지시 2026-08-28 *"당분간.. 월드7에만.."*. `options.ts` 는 이것을 `tag` 분기가
-    // 아니라 **부트가 켜는 플래그**로 뒀다 — 그래야 트리가 페이지를 계속 같게 본다.
-    // 새 페이지가 늘 때마다 그 경계가 지켜지는지 보는 자리가 필요하다.
+  // ── ⚠ 옛 단언 「체크리스트를 켜지 않는다」는 2026-09-17 에 **유효하지 않게 됐다** ──
+  // 그 단언의 근거는 감독 지시 2026-08-28 *"당분간.. 월드7에만.."* 이었다. 그런데 같은
+  // 감독이 2026-09-17 에 **핸드폰**으로 월드11 의 «유실» 을 신고했고, 폰에는 콘솔이 없어
+  // 원인 후보 넷을 가를 수치가 화면에 하나도 없었다. 그래서 world11 은 **진단을 켠다.**
+  //
+  // **경계 자체는 안 무너졌다** — 켜는 주체가 여전히 **부트**이고(트리는 `tag` 로 분기하지
+  // 않는다), world7 은 `true`(정적 1회)·world11 은 `'live'` 로 **값이 갈린다**. 아래 두
+  // 검사가 그 형태를 못 박는다: 기본이 켜짐이라는 것과, 끌 수 있다는 것.
+  it('⭐ 기본이 `live` 진단이다 — 감독이 노브를 몰라도 화면에 수치가 있어야 한다', async () => {
     await boot();
-    expect(calls[0].opts.checklist).toBeUndefined();
+    expect(calls[0].opts.checklist).toBe('live');
+  });
+
+  it('⭐ `?diag=0` 이면 **안 켠다** — 감독이 화면을 볼 때 가리지 않는 길이 있어야 한다', async () => {
+    const prev = window.location.search;
+    // jsdom 의 `location.search` 를 바꾼다. `url-knob` 이 읽는 그 전역이다.
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, search: '?diag=0' }, configurable: true, writable: true,
+    });
+    try {
+      await boot();
+      expect(calls[0].opts.checklist).toBeUndefined();
+    } finally {
+      Object.defineProperty(window, 'location', {
+        value: { ...window.location, search: prev }, configurable: true, writable: true,
+      });
+    }
   });
 });

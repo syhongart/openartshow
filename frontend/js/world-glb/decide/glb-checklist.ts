@@ -72,6 +72,34 @@ export interface ChecklistInput {
    * 검수관에게 잡힌 자리라(B1) 이름과 실제를 맞춰 둔다.
    */
   errors: readonly string[];
+
+  /**
+   * **렌더 실황** — 백엔드 라벨과 지금 그리고 있는 양. **`undefined` 면 항목 자체를
+   * 안 만든다**(아래 ⑪⑫). world7 의 화면이 한 줄도 안 바뀌는 것이 그 성질로 보장된다.
+   *
+   * ── 왜 붙었나 (감독 신고 2026-09-17) ──────────────────────────────────────
+   * 감독이 **핸드폰**에서 «유실» 을 봤고 **콘솔을 볼 수 없다.** 원인 후보가 넷인데
+   * (WebGPU 렌더 경로 · 기기 메모리 · 거리 컬링 · 자산 미로드) **사진 한 장으로 그것을
+   * 가르는 값**이 화면에 하나도 없었다. 넷을 가르는 최소 집합이 이것이다:
+   *
+   *   `backendDetail`  WebGPU 인가 WebGL 인가 — `?webgl=1` 과 짝이다(`decide/backend-knob.ts`)
+   *   `draw`·`tri`     **0 에 가까우면 「그리지 않고 있다」** — 로드는 됐는데 화면이 빈 형태
+   *   `geometries`     GPU 에 올라간 것. 자산이 다 올라왔는지의 축
+   *
+   * ⚠ **`draw` 가 0 이어도 「고장」이라고 단정하지 않는다** — 첫 프레임 전이거나 탭이
+   * 백그라운드일 수 있다. 이 저장소가 반복해서 당한 *"참인 문장에서 성립하지 않는 결론을
+   * 뽑는"* 형태라 판정은 `warn`(확인해 보라)까지만 간다.
+   */
+  render?: {
+    /** `adapters/renderer.ts` 의 `backendDetail` 원문. **라벨을 여기서 다시 짓지 않는다** */
+    backendDetail: string;
+    /** 그 판정이 확정되지 못한 이유(있으면). `unknown` 일 때 화면이 이유를 말한다 */
+    note?: string | null;
+    draw: number;
+    tri: number;
+    geometries: number;
+    textures: number;
+  };
 }
 
 /** 정면에 이보다 가까이 있으면 시야를 막을 수 있다(m). 검은 화면 때 실측 0.3m 였다 */
@@ -251,6 +279,34 @@ export function buildChecklist(i: ChecklistInput): ChecklistItem[] {
     state: last ? 'ok' : 'unknown',
     detail: last ? `${(last.atMs / 1000).toFixed(1)}초` : '못 쟀다',
   });
+
+  // ── ⑪ 백엔드 — **감독 화면과 내 화면이 다른 이유의 첫 후보** ─────────────
+  // 라벨은 `adapters/renderer.ts` 가 판정한 것을 **그대로 옮긴다.** 여기서 다시 판정하면
+  // 같은 판정이 두 곳에 살고, 그것이 이 저장소가 세 번 데인 값 미러링이다.
+  // `unknown` 은 초록이 아니다 — 그 라벨의 뜻 자체가 「못 쟀다」다.
+  if (i.render) {
+    const d = i.render.backendDetail;
+    out.push({
+      label: '백엔드',
+      state: d === 'unknown' ? 'unknown' : 'ok',
+      detail: i.render.note ? `${d} — ${i.render.note}` : d,
+      // ⚠ 힌트가 노브 이름을 말한다 — 감독이 폰에서 콘솔 없이 축을 가르는 유일한 길이다.
+      hint: d.startsWith('webgpu') ? '?webgl=1 을 붙이면 WebGL 경로로 열린다' : undefined,
+    });
+  }
+
+  // ── ⑫ 지금 그리는 양 — 「섰다」와 「보인다」를 가른다 ─────────────────────
+  // 세계가 서 있어도(위 ①이 초록이어도) 드로우콜이 0 이면 화면에는 아무것도 없다.
+  // 그 둘이 갈리는 형태가 이 저장소에서 반복됐고, 그때마다 ①만 보고 「떴다」고 적었다.
+  if (i.render) {
+    const drawn = i.render.draw > 0;
+    out.push({
+      label: '그리는 중',
+      state: drawn ? 'ok' : 'warn',
+      detail: `draw ${n(i.render.draw)} · 삼각형 ${n(i.render.tri)} · 지오 ${n(i.render.geometries)} · 텍스처 ${n(i.render.textures)}`,
+      ...(drawn ? {} : { hint: '아직 한 프레임도 안 그렸거나 전부 꺼져 있다' }),
+    });
+  }
 
   return out;
 }
