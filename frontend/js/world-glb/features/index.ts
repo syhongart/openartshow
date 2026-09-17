@@ -58,6 +58,7 @@ import { shadingFeature } from './shading.js';
 import { surfacePaintFeature } from './surface-paint.js';
 import { grassFeature } from './grass.js';
 import { waterStyleFeature } from './water-style.js';
+import { waterLiftFeature } from './water-lift.js';
 import { terrainStyleFeature } from './terrain-style.js';
 import { groundFogFeature } from './ground-fog.js';
 
@@ -81,6 +82,10 @@ export const FEATURES: readonly Feature[] = [
   // 늦으면 걸을 때 앞쪽 풀이 뒤늦게 따라온다. 셰이딩보다 **앞**이어야 하는 것도 짝이다 —
   // 오버라이드가 걸리기 전에 잔디가 자기 `visible` 을 정해야 한다.
   grassFeature,
+  // ── 수면 높이 (`?watery=`) ────────────────────────────────────────────────
+  // **`ocean` 뒤 · `water-style` 앞**이어야 한다(경위·순서 근거는 `features/water-lift.ts`
+  // 헤더 한 곳). 기본값 0 이면 `create` 가 `null` 이라 씬을 한 번도 안 만진다.
+  waterLiftFeature,
   // ── 스타일라이즈드 수면 (`?styl=1` 또는 `?wstyle=1`) ──────────────────────
   // **`ocean` 보다 뒤여야 한다** — 기존 수면 메시를 이름으로 찾아 숨기고 같은 지오메트리를
   // 공유하는 메시를 얹으므로, 저쪽이 먼저 씬에 들어와 있어야 한다.

@@ -12,7 +12,7 @@
 //   ⑤ **`world-glb/**` 가 이 회차에 한 글자도 안 바뀌었다**(팀장 조건: 계약·파일 diff 0)
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   NYC_CELL, NYC_ANCHOR_X, NYC_ANCHOR_Z, LANDMARK_EVERY,
@@ -270,13 +270,130 @@ describe('④ 포크 경계 — world10 은 자기 트리만 연다', () => {
   });
 });
 
-describe('⑤ `world-glb/**` 는 이 회차에 한 글자도 안 바뀐다 (팀장 조건: 계약·파일 diff 0)', () => {
-  it('작업 트리의 `frontend/js/world-glb/` 변경 파일이 0 이다', () => {
-    // ⚠ **워킹트리 + 인덱스 둘 다** 본다. `git add` 뒤에 검사가 조용히 통과하면
-    // 그 순간 이 게이트는 장식이 된다(스테이징이 곧 «곧 커밋된다» 이므로 더 위험하다).
-    const args = ['diff', 'HEAD', '--name-only', '--', 'frontend/js/world-glb/'];
-    const out = execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim();
-    expect(out, `world-glb 가 바뀌었다 — 포크 조건 위반:\n${out}`).toBe('');
+// ── ⑤ (2026-09-17 개정) ─────────────────────────────────────────────────────
+//
+// **예전 판본은 「`world-glb/**` 의 파일 diff 가 0 이다」였다. 그것은 성립할 수 없었다.**
+//
+// 팀장 조건 **C5**(2026-09-16 「월드11 첫 판」)가 *"`world-glb` 트리 diff 0, 부트 하나"*
+// 였는데, **같은 날 같은 판정 묶음의 C7** 이 *"인스턴서는 `options.ts` 의 opt-in 옵션
+// 1개"* 를 지시했다. `options.ts` 는 **그 트리 안에 있다** — C7 을 따르는 순간 C5 가
+// 반드시 깨진다. 두 조건이 서로를 막고 있었다.
+//
+// 드러난 경위: 감독이 아이폰에서 월드11의 *"바닥도 안보였어. 바닥에 물가로 보였어"* 를
+// 신고해 원인 판별 노브를 배선하던 구현자가 이 게이트에 막혔고, **테스트를 끄거나 좁혀
+// 우회하지 않고 상신**했다. 부팀장이 두 조항을 나란히 놓아서야 충돌이 보였다.
+// 팀장 판정(2026-09-17): *"조건을 여러 개 낼 때 조건끼리의 충돌을 내가 먼저 검산하지
+// 않은 것이 결함이다"* — **팀장 귀책**이고 그 사실을 여기 적어 둔다.
+//
+// ── 무엇으로 바뀌었나 ───────────────────────────────────────────────────────
+// 결정 2 가 **목적을 스스로 정의**했다 — *"트리 안에 `tag` 를 보는 코드가 한 줄도 늘지
+// 않는 것이 조건이다"*. 그래서 수단(파일 diff)을 버리고 **목적을 직접 잰다.**
+//
+// 🔴 **이것은 약화가 아니라 검출력 상승이다.** 파일 diff 는 주석 한 글자에도 걸리면서
+// 정작 `tag` 분기는 **안 봤다** — 옵션으로 위장한 페이지 분기를 통과시켰을 것이다.
+//
+// ⚠ **C5 규율 자체는 살아 있다**(팀장 D5). 「world-glb 트리를 함부로 고치지 않는다」는
+// 그대로이고 바뀐 것은 **재는 수단**이다. 트리를 고치는 회차는 앞으로도 **이유를 PR 본문에
+// 적는다**(이번 회차의 이유 = 감독 실기기 장애 대응 · 원인 판별 노브 5개).
+describe('⑤ `world-glb/**` 가 페이지별로 갈리지 않는다 (팀장 조건의 **목적**을 직접 잰다)', () => {
+  /**
+   * 주석과 문자열 리터럴을 걷어낸 소스를 돌려준다.
+   *
+   * ⚠ 이 함수가 이 검사의 **검출력 그 자체**다. 안 걷으면 경계를 설명하는 주석
+   * (`options.ts` 헤더의 *"`if (tag === …)` 가 두 곳을 넘는 순간"*)이 스스로 걸려
+   * **늘 빨간불**이 되고, 그러면 아무도 안 읽는다. 과하게 걷으면 진짜 분기를 놓친다.
+   * 완벽한 파서가 아니라 **이 저장소의 코드 형태에 맞춘 근사**이고, 그 타당성은
+   * 아래 뮤테이션(더미 분기 1줄 삽입 → FAIL)이 회차마다 증명한다.
+   */
+  const stripCommentsAndStrings = (src: string): string => src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')       // 블록 주석
+    .replace(/^\s*\/\/.*$/gm, ' ')           // 줄 주석(줄 전체)
+    .replace(/\/\/.*$/gm, ' ')                // 줄 끝 주석
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')      // 템플릿 리터럴
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")    // 작은따옴표 문자열
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""');   // 큰따옴표 문자열
+
+  /**
+   * 🔴 **`git ls-files` 를 쓰지 않는다.** 첫 판본이 그것을 썼고 **뮤테이션이 즉시 죽였다**
+   * (2026-09-17): 페이지 분기 한 줄을 **신설 파일**에 넣었는데 0 failed 였다 —
+   * `git ls-files` 는 **추적 중인 파일만** 주고 그 회차의 신규 파일 5개가 통째로 표본
+   * 밖이었다. 새 분기는 대개 **새 파일과 함께** 온다. 그러므로 파일시스템을 직접 훑는다.
+   *
+   * 이 저장소는 같은 형태로 이미 두 번 당했다(`world-glb-independence.test.ts` 의
+   * `W7_ENTRY` 주석이 두 회차의 블로커를 그 이유로 기록해 두었다).
+   */
+  const treeFiles = (): string[] => {
+    const root = join(ROOT, 'frontend/js/world-glb');
+    const out: string[] = [];
+    const walk = (dir: string): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name);
+        if (e.isDirectory()) walk(full);
+        else if (/\.(ts|js)$/.test(e.name)) out.push(full);
+      }
+    };
+    walk(root);
+    return out;
+  };
+
+  it('표본이 비어 있지 않다 — 없으면 아래 검사가 공허하다', () => {
+    // 표본 검사. 경로가 바뀌거나 `git ls-files` 가 빈 값을 주면 아래가 «0건» 으로
+    // 조용히 통과한다. 이 저장소는 그 형태(표본이 진입점을 안 포함)로 이미 두 번 당했다.
+    expect(treeFiles().length).toBeGreaterThan(100);
+  });
+
+  it('ⓐ 페이지 식별자로 갈리는 **코드 분기**가 0 이다 (주석·문자열 제외)', () => {
+    // `tag` 를 **값으로** 쓰는 것은 자유다(로그 접두·리포트 제목·진단 훅 필드).
+    // 금지되는 것은 **비교해서 갈라지는 것** — 그 순간 두 페이지가 한 파일 안에서
+    // 조용히 다른 코드를 탄다. 그것이 C5 가 막으려던 실체다.
+    const hits: string[] = [];
+    for (const f of treeFiles()) {
+      const code = stripCommentsAndStrings(readFileSync(f, 'utf8'));
+      code.split('\n').forEach((line, i) => {
+        // `tag === …` · `tag !== …` · `opts.tag ===` · `data-glb` 값 비교
+        if (/\btag\s*[!=]==/.test(line) || /\bdataset\.glb\s*[!=]==/.test(line)) {
+          hits.push(`${f.slice(ROOT.length + 1)}:${i + 1}  ${line.trim()}`);
+        }
+      });
+    }
+    expect(
+      hits,
+      `world-glb 트리에 페이지 분기가 생겼다 — 옵션 값으로 옮기거나, 그것이 못 되면 포크 시점이다:\n${hits.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  /**
+   * ⚠ **이 검사가 못 잡는 것 — 실측이다**(2026-09-17, 뮤테이션 5케이스).
+   *
+   *   잡음 : 신설 파일의 `tag === '…'` · 기존 파일의 `tag !== '…'` · `o.tag === '…'`
+   *   못 잡음 : **식별자를 `tag` 가 아닌 이름에 담아 비교하는 것** — `const p = opts.tag;
+   *             if (p === 'world11')` 는 통과한다.
+   *
+   * 넓히지 않고 여기서 멈춘다(«경계도 판정이다»). 이 장치는 **적대적 우회가 아니라
+   * 습관**을 막는 것이고, 실제 사고 형태(world8 회차에 다섯 번 막힌 「부분 이식」)는
+   * 전부 `tag` 를 직접 비교하는 모양이었다. 우회를 막으려면 파서가 필요하고 그것은
+   * 이 검사의 비용을 목적보다 크게 만든다.
+   *
+   * 🔴 **그러므로 이 검사의 통과를 「페이지 분기가 없다」의 증명으로 읽지 마라.**
+   * 「내가 습관으로 저지르는 형태는 없다」까지가 참이다.
+   */
+  it('ⓑ `options.ts` 의 **필수 필드**가 늘지 않는다 — world7/8 이 조용히 깨지는 자리다', () => {
+    // C5 의 목적을 구조로 옮긴 축(팀장 E1-ⓑ). 새 옵션이 **선택**인 한 world7·world8 의
+    // boot 는 아무것도 안 넘기므로 코드 경로가 안 바뀐다. 그런데 **필수**가 하나라도
+    // 늘면 그 두 페이지가 즉시 깨진다 — 「기본값 = 현재 동작이라 안 바뀐다」는 **주장**이고
+    // 이 검사가 그 주장을 참으로 만든다.
+    const code = stripCommentsAndStrings(
+      readFileSync(join(ROOT, 'frontend/js/world-glb/options.ts'), 'utf8'),
+    );
+    const body = code.slice(code.indexOf('interface GlbWorldOptions'));
+    // `이름?:` 이 아닌 `이름:` 만 필수다.
+    const required = [...body.matchAll(/^\s{2}([A-Za-z_$][\w$]*)\s*:/gm)].map((m) => m[1]);
+    // `source()` 는 메서드 문법이라 위 정규식에 안 걸린다 — 함께 센다.
+    const methods = [...body.matchAll(/^\s{2}([A-Za-z_$][\w$]*)\s*\(/gm)].map((m) => m[1]);
+    expect(
+      [...required, ...methods].sort(),
+      '`options.ts` 의 필수 필드가 바뀌었다 — 새 옵션은 반드시 `?:` 여야 한다(world7/8 불변)',
+    ).toEqual(['source', 'tag']);
   });
 });
 

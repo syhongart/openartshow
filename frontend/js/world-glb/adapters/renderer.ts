@@ -19,6 +19,8 @@
 
 import * as THREE from 'three/webgpu';
 import { WebGLRenderer, PMREMGenerator as PMREMGeneratorGL } from 'three';
+import { readRawOpt } from '../url-knob.js';
+import { forceWebGLFrom } from '../decide/backend-knob.js';
 
 export type Backend = 'WebGPU' | 'WebGL';
 
@@ -119,13 +121,23 @@ export interface RendererAdapter {
 export async function createRendererAdapter(
   canvas: HTMLCanvasElement, opts: { forceWebGL?: boolean } = {},
 ): Promise<RendererAdapter> {
+  // ── `?webgl=1` — 감독이 자기 기기에서 WebGL 경로를 볼 수 있게 한다 (2026-09-17) ──
+  // **자동 판정을 안 바꾼다**: 노브가 없으면 `forceWebGLFrom(null) === false` 이고 아래
+  // 분기가 종전 그대로 돈다. 경위·판정 기준은 `decide/backend-knob.ts` 한 곳이다.
+  //
+  // ⚠ 노브를 **여기서** 읽는 이유는 `world-glb/main.ts` 가 `check:filesize` 동결 파일
+  // (1,250줄)이라 호출부에 인자를 늘릴 수 없기 때문이다 — `glb-source.ts` 의 `?pli=` 가
+  // 세운 선례와 같은 자리이고, 그 파일이 적어 둔 **경계**도 그대로 승계한다: 이 예외는
+  // «동결 파일이 배선 경로에 있는 노브» 에만 성립한다. 인자(`opts.forceWebGL`)가 오면
+  // 그쪽이 이긴다 — 테스트·스모크가 URL 없이 강제할 수 있어야 한다.
+  const forceWebGL = opts.forceWebGL ?? forceWebGLFrom(readRawOpt('webgl'));
   let backend: Backend = 'WebGL';
   const hasWebGPUApi = typeof navigator !== 'undefined' && !!(navigator as any).gpu;
   let isFallbackAdapter: boolean | null = null;
   let adapterInfo: BackendEvidence['adapterInfo'] = null;
   let note: string | null = null;
 
-  if (!opts.forceWebGL && hasWebGPUApi && typeof document !== 'undefined') {
+  if (!forceWebGL && hasWebGPUApi && typeof document !== 'undefined') {
     try {
       const adapter = await (navigator as any).gpu.requestAdapter();
       if (adapter) {
@@ -147,7 +159,7 @@ export async function createRendererAdapter(
       backend = 'WebGL';
       note = `WebGPU 프로브 실패: ${(e as Error)?.message ?? e}`;
     }
-  } else if (opts.forceWebGL) {
+  } else if (forceWebGL) {
     note = 'forceWebGL 로 WebGPU 를 시도하지 않음 — WebGPU 미측정';
   } else if (!hasWebGPUApi) {
     note = 'navigator.gpu 없음 — 이 브라우저/실행 플래그에서 WebGPU API 미노출';

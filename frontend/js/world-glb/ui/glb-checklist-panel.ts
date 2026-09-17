@@ -23,8 +23,13 @@ const COLOR: Record<ChecklistState, string> = {
 };
 
 export interface ChecklistPanel {
-  /** 결과를 다시 그린다 */
-  show(items: readonly ChecklistItem[]): void;
+  /**
+   * 결과를 다시 그린다.
+   *
+   * @param reopen 접혀 있으면 펼칠 것인가. **주기 갱신은 `false` 로 부른다** — 매초
+   *   펼치면 감독이 접을 수가 없고, 그러면 진단 패널이 화면을 가리는 물건이 된다.
+   */
+  show(items: readonly ChecklistItem[], reopen?: boolean): void;
   dispose(): void;
 }
 
@@ -83,7 +88,7 @@ export function createChecklistPanel(mount: HTMLElement): ChecklistPanel {
   mount.appendChild(root);
 
   return {
-    show(items) {
+    show(items, reopen = true) {
       const s = summarize(items);
       headText.textContent = `불러오기 점검 — ${s.text}`;
       headText.style.color = s.ok ? '#7fd88f' : '#ffcf6b';
@@ -112,7 +117,8 @@ export function createChecklistPanel(mount: HTMLElement): ChecklistPanel {
         body.appendChild(row);
       }
       // 접혀 있었어도 새 결과가 오면 편다 — 감독이 파일을 새로 올린 것이므로.
-      open = true;
+      // **주기 갱신(`reopen=false`)은 예외다** — 위 `show` 독블록.
+      if (reopen) open = true;
       sync();
       root.style.display = 'block';
     },
@@ -127,6 +133,11 @@ interface GlbWorldHooks {
     glbStream: ChecklistInput['stream'];
     glbMap: ChecklistInput['map'];
     pipelines: number;
+    /** `adapters/renderer.ts` 가 판정한 라벨. 라이브 진단(`live`)에서만 읽는다 */
+    backendDetail?: string;
+    backendEvidence?: { note?: string | null };
+    /** `adapter.frameStats()` 스냅샷 */
+    frame?: { draw: number; tri: number; geometries: number; textures: number };
   };
   ahead(n: number): readonly { d: number; name: string }[];
   timeline: readonly { stage: string; atMs: number }[];
@@ -147,17 +158,50 @@ interface GlbWorldHooks {
  *
  * ⚠⚠⚠ **던지지 않는다.** 진단이 세계를 죽이면 본말전도다.
  */
-export function showBootChecklist(mount: HTMLElement, log: BootErrorLog): ChecklistPanel | null {
+export function showBootChecklist(
+  mount: HTMLElement, log: BootErrorLog, live = false,
+): ChecklistPanel | null {
   try {
     const hooks = (globalThis as unknown as { __glbWorld?: GlbWorldHooks }).__glbWorld;
     if (!hooks) return null;
-    const s = hooks.stats();
     const panel = createChecklistPanel(mount);
-    panel.show(buildChecklist({
-      glb: s.glb, stream: s.glbStream, map: s.glbMap, pipelines: s.pipelines,
-      ahead: hooks.ahead(4), timeline: hooks.timeline, errors: log.labels,
-    }));
-    return panel;
+    /**
+     * 한 번 조립해 그린다. `live` 면 **렌더 실황**(백엔드·draw·tri)을 함께 넘긴다 —
+     * 안 넘기면 `buildChecklist` 가 그 두 항목을 **아예 안 만든다**(그 파일의 ⑪⑫).
+     * world7 의 화면이 한 줄도 안 바뀌는 것이 그 성질로 보장된다.
+     */
+    const draw = (reopen: boolean): void => {
+      const s = hooks.stats();
+      panel.show(buildChecklist({
+        glb: s.glb, stream: s.glbStream, map: s.glbMap, pipelines: s.pipelines,
+        ahead: hooks.ahead(4), timeline: hooks.timeline, errors: log.labels,
+        ...(live && s.frame
+          ? {
+            render: {
+              backendDetail: s.backendDetail ?? 'unknown',
+              note: s.backendEvidence?.note ?? null,
+              ...s.frame,
+            },
+          }
+          : {}),
+      }), reopen);
+    };
+    draw(true);
+    if (!live) return panel;
+
+    // ── 라이브 갱신 (2026-09-17) ─────────────────────────────────────────────
+    // **부팅 직후 1회로는 `draw`·`tri` 를 못 잰다** — 그 시점에는 아직 한 프레임도 안
+    // 그렸을 수 있고, 그러면 화면이 「그리는 중 0」이라는 **거짓 진단**을 낸다. 감독이
+    // 폰에서 사진을 찍는 시점은 우리가 정할 수 없으므로 값이 계속 살아 있어야 한다.
+    //
+    // ⚠ **주기를 1초로 둔다** — `ui/hud.ts` 가 *"프레임마다 DOM 을 만지면 HUD 가 측정
+    // 대상을 왜곡한다"* 로 이미 같은 사고를 적어 두었다. 이 패널은 행이 열 몇 개라
+    // 1Hz 면 프레임 예산에 들어오지 않는다.
+    const timer = setInterval(() => { try { draw(false); } catch { /* 진단이 세계를 죽이지 않는다 */ } }, 1000);
+    return {
+      show: (items, reopen) => panel.show(items, reopen),
+      dispose() { clearInterval(timer); panel.dispose(); },
+    };
   } catch (err) {
     console.error('[glb-world] 체크리스트 실패', err);
     return null;

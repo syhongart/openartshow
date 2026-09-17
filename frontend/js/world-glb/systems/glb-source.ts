@@ -95,7 +95,8 @@ import { SHADOW_LIFT } from '../decide/shadow-decal.js';
 import { fixBoxDecalScale, rebakeShadowAtlas, applyAtlas } from './glb-shadow-fix.js';
 import { eachPlacement } from './glb-placement.js';
 import { isRoomLightNode, ROOM_LIGHT_COLOR, roomLightIntensity } from '../decide/glb-nodes.js';
-import { readRawOpt } from '../url-knob.js';
+import { readNum, readRawOpt } from '../url-knob.js';
+import { isAssetWaterMaterial } from '../decide/water-y.js';
 
 export interface GlbSourceResult {
   /** 씬에 얹힌 루트(인스턴싱 **후**) */
@@ -158,6 +159,38 @@ export function mountGlbWorld(
   // 노말맵 강도 노브(`?nrm=`) — 되묶기 «전» 원본 재질에 한 번(인스턴스가 같은 재질 객체를 공유한다). 판정은
   // decide, 집행은 systems/glb-normal.ts — 통합 검사가 three 재질 실물로 돈다(붙은 것과 소비되는 것은 다른 일).
   if (opts.normalKnob) applyNormalKnob(gltfScene, opts.normalKnob);
+  // ── `?srcwater=0` — **자산이 들고 온 물을 걷어낸다** (감독 판정 2026-09-17) ──
+  // 맨해튼 자산에는 자기 강이 이미 들어 있고 우리 물이 같은 자리를 채워 **두 겹**이 된다.
+  // 판정(왜 노드 이름이 아니라 **재질 이름**인가 · 오탐을 안고 쓰는 이유)은
+  // `decide/water-y.ts` 의 「`?srcwater=`」 절 한 곳이다.
+  //
+  // ⚠ **세는 것보다도 «앞»** 이어야 한다. 되묶기 전이기만 하면 렌더에서는 빠지지만
+  // `meshes`·`triangles` 집계는 이미 그것을 세어 버려 **진단이 거짓을 적는다** — 이 파일이
+  // 「되묶기 뒤에 세면 357배 축소된 수가 나온다」로 이미 한 번 데인 그 형태다(검수관 반려
+  // B3). 실제로 첫 판본이 집계 뒤에 있었고 `tests/world-glb-water-knob.test.ts` 의
+  // 「걷어낸 메시는 인스턴싱 결과에도 안 들어간다」가 **2 를 세어 잡았다.**
+  // 부모에서 **떼어낸다** — `visible=false` 로는 되묶기 대상에서 안 빠진다.
+  //
+  // ⚠⚠ `collisionRoot` 가 이 트리이므로 충돌에서도 함께 빠진다. 수면은 원래 충돌체가
+  // 아니므로(우리 물도 그렇다) 걷는 감각은 안 바뀐다.
+  //
+  // ⚠⚠⚠ **기본값은 「안 걷어냄」 = 현재 동작.** world7·world8 불변.
+  if (readNum('srcwater', 1, 0, 1) < 0.5) {
+    const doomed: Object3D[] = [];
+    gltfScene.traverse((o: Object3D) => {
+      const m = o as { isMesh?: boolean; material?: { name?: string } | { name?: string }[] };
+      if (!m.isMesh) return;
+      for (const one of Array.isArray(m.material) ? m.material : [m.material]) {
+        if (isAssetWaterMaterial(one?.name)) { doomed.push(o); break; }
+      }
+    });
+    // 순회 «중» 에 떼면 traverse 가 자식을 건너뛴다 — 모아서 뒤에 뗀다.
+    for (const o of doomed) o.removeFromParent();
+    // 조용히 넘어가지 않는다 — 0 건이면 노브가 아무 일도 안 한 것이고, 감독이 그것을
+    // 「효과 없음」으로 읽으면 판정이 무효가 된다(이 트리의 `?water=tsl` 폴백과 같은 처방).
+    console.info(`[glb-source] ?srcwater=0 — 자산 물 메시 ${doomed.length}개를 걷어냈다`);
+  }
+
   // ── 되묶기 «전» 에 센다 ────────────────────────────────────────────────────
   // ⚠ 되묶은 뒤 세면 **357배 축소된 수**가 나온다(검수관 반려 B3): `InstancedMesh` 는
   // 트리에서 노드 하나이고 `geometry` 도 한 벌이라, 28,705 메시가 40 으로, 삼각형이

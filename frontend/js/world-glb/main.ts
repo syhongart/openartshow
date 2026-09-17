@@ -55,6 +55,7 @@ import { mountGlbWorld, describeGlb, type GlbSourceResult, normalKnob, NORMAL_KN
 import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
 import { warmUpNode } from '../world-shared/attach-loop.js';
 import { createGlbStream } from './systems/glb-stream.js';
+import { applyViewSpan } from './systems/glb-view.js';
 import { aheadOf } from './diag-ahead.js';
 import type { GlbWorldOptions } from './options.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
@@ -982,9 +983,8 @@ export async function startGlbWorld(
           glbStream = createGlbStream({
             root: glbSource.root,
             getPosition: () => player.position,
-            // **안개 far 에서 유도한다** — 상수를 여기 박지 않는다. `?fogd=` 로 안개를
-            // 늘리면 컬링 반경도 함께 늘어야 「안 보이는 것만 끈다」가 유지된다.
-            radius: fog.far * fogDist * GLB_CULL_MUL,
+            // 반경·안개 far 를 함께 정한다(근거는 `systems/glb-view.ts` 헤더 한 곳)
+            radius: applyViewSpan(scene, fog, fogDist, GLB_CULL_MUL, glbSource.box, opts.viewSpan),
           });
         }
 
@@ -1177,7 +1177,7 @@ export async function startGlbWorld(
   // 위해서다(같은 것을 두 번 조립하면 한쪽만 고쳐도 아무도 모른다).
   // 반환값(패널)을 버린다 — world7 은 페이지당 1회 부팅이라 `dispose()` 가 도달하는
   // 경로가 없다(검수관 권고 P2). 세계를 여러 번 세우게 되면 여기서 붙잡아야 한다.
-  if (opts.checklist) showBootChecklist(canvas.parentElement ?? document.body, bootLog);
+  if (opts.checklist) showBootChecklist(canvas.parentElement ?? document.body, bootLog, opts.checklist === 'live');
   // 부팅 구간만 본다. 세션 내내 켜 두면 아무도 다시 읽지 않는 것을 계속 세게 되고,
   // 전역 리스너가 다음 세계까지 따라간다.
   bootLog.dispose();
