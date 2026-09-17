@@ -119,18 +119,26 @@ export interface RendererAdapter {
  * 되어 폴백 자체가 불가능해진다. 프로브에서 확정한 뒤에만 라이브 캔버스를 만진다.
  */
 export async function createRendererAdapter(
-  canvas: HTMLCanvasElement, opts: { forceWebGL?: boolean } = {},
+  canvas: HTMLCanvasElement, opts: { forceWebGL?: boolean; defaultWebGL?: boolean } = {},
 ): Promise<RendererAdapter> {
-  // ── `?webgl=1` — 감독이 자기 기기에서 WebGL 경로를 볼 수 있게 한다 (2026-09-17) ──
-  // **자동 판정을 안 바꾼다**: 노브가 없으면 `forceWebGLFrom(null) === false` 이고 아래
-  // 분기가 종전 그대로 돈다. 경위·판정 기준은 `decide/backend-knob.ts` 한 곳이다.
+  // ── `?webgl=` — 감독이 자기 기기에서 백엔드를 고를 수 있게 한다 (2026-09-17) ──
+  // 경위·판정 기준·**우선순위 세 단**은 `decide/backend-knob.ts` 한 곳이 소유한다 —
+  // 여기에 다시 적지 않는다. 이 줄이 하는 일은 URL 원문과 페이지 기본값을 그 판정에
+  // 흘려 넣는 것뿐이다.
   //
   // ⚠ 노브를 **여기서** 읽는 이유는 `world-glb/main.ts` 가 `check:filesize` 동결 파일
-  // (1,250줄)이라 호출부에 인자를 늘릴 수 없기 때문이다 — `glb-source.ts` 의 `?pli=` 가
+  // (1,250줄)이라 **호출부에 줄을 늘릴 수 없기** 때문이다 — `glb-source.ts` 의 `?pli=` 가
   // 세운 선례와 같은 자리이고, 그 파일이 적어 둔 **경계**도 그대로 승계한다: 이 예외는
   // «동결 파일이 배선 경로에 있는 노브» 에만 성립한다. 인자(`opts.forceWebGL`)가 오면
   // 그쪽이 이긴다 — 테스트·스모크가 URL 없이 강제할 수 있어야 한다.
-  const forceWebGL = opts.forceWebGL ?? forceWebGLFrom(readRawOpt('webgl'));
+  //
+  // ⚠ 이 자리는 *"호출부에 **인자**를 늘릴 수 없기 때문"* 이라고 적고 있었고 그것은
+  // 과했다(2026-09-17 정정). 막힌 것은 **줄 수**이지 인자가 아니다 — 실제로 `main.ts`
+  // 는 같은 줄 안에서 `{ defaultWebGL: opts.defaultWebGL }` 를 넘기며 1,250줄 그대로다.
+  //
+  // ⚠⚠ **`defaultWebGL` 은 「페이지 기본」이고 URL 보다 약하다.** `?webgl=0` 이 오면
+  // 페이지 기본이 WebGL 이어도 WebGPU 로 간다 — 그 되보기가 이 회차 A/B 의 전부다.
+  const forceWebGL = opts.forceWebGL ?? forceWebGLFrom(readRawOpt('webgl'), opts.defaultWebGL);
   let backend: Backend = 'WebGL';
   const hasWebGPUApi = typeof navigator !== 'undefined' && !!(navigator as any).gpu;
   let isFallbackAdapter: boolean | null = null;

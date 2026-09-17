@@ -34,6 +34,33 @@ describe('`?webgl=` 판정 — `forceWebGLFrom`', () => {
   });
 });
 
+// ── `fallback` — 페이지 기본 백엔드 (감독 판정 2026-09-17) ────────────────────
+//
+// 월드11 이 기본을 WebGL 로 내렸다(`world11-boot.ts` 헤더에 경위·판정 원문·잃는 것).
+// 그 기본이 **`?webgl=0` 으로 되돌려지지 않으면 A/B 자체가 사라진다** — 감독이 WebGPU
+// 판을 다시 볼 수 없게 되고, 원인 추적이 거기서 끝난다. 그래서 우선순위를 검사로 박는다.
+describe('`fallback` — URL 이 페이지 기본을 **이긴다**', () => {
+  it('🔴 인자를 생략하면 종전 그대로다 — world7·world8 의 불변이 이 줄이다', () => {
+    expect(forceWebGLFrom(null)).toBe(false);
+  });
+
+  it('⭐ 「지정 안 됨」이면 페이지 기본을 낸다 — world11 이 WebGL 로 뜨는 자리', () => {
+    expect(forceWebGLFrom(null, true)).toBe(true);
+    expect(forceWebGLFrom(null, false)).toBe(false);
+  });
+
+  it('⭐⭐ `?webgl=0` 은 **페이지 기본이 WebGL 이어도** WebGPU 로 돌린다', () => {
+    for (const v of ['0', 'false', 'no', 'off', 'OFF', ' 0 ']) {
+      expect(forceWebGLFrom(v, true), `${v} 로도 WebGL 이 강제됐다 — 되보기가 막힌다`).toBe(false);
+    }
+  });
+
+  it('⭐ `?webgl=1` 은 페이지 기본이 자동이어도 WebGL 이다 — 반대 방향도 URL 이 이긴다', () => {
+    expect(forceWebGLFrom('1', false)).toBe(true);
+    expect(forceWebGLFrom('', false)).toBe(true);
+  });
+});
+
 /** node 환경에는 `location` 이 없다. `url-knob` 이 읽는 그 전역을 세운다 */
 function withSearch<T>(search: string, fn: () => T): T {
   const had = 'location' in globalThis;
@@ -68,7 +95,23 @@ describe('배선 — 어댑터가 그 판정을 **부른다**', () => {
 
   it('판정 함수를 import 해서 부른다 — 어댑터가 자기 나름의 규칙을 쓰지 않는다', () => {
     expect(src).toContain("from '../decide/backend-knob.js'");
-    expect(src).toContain("forceWebGLFrom(readRawOpt('webgl'))");
+    // ⚠ 이 단언은 2026-09-17 에 **한 인자에서 두 인자로 좁혀졌다.** 옛 문자열
+    // (`forceWebGLFrom(readRawOpt('webgl'))`)은 인자가 하나였을 때의 형태이고, 페이지
+    // 기본값이 생긴 지금은 **그 형태가 남아 있는 것 자체가 결함**이다 — 부트가 넘긴
+    // `defaultWebGL` 이 판정에 안 닿아 월드11 이 조용히 WebGPU 로 뜬다.
+    // 느슨해진 것이 아니라 **재는 것이 하나 늘었다**(호출 + 페이지 기본값 전달).
+    expect(src).toContain("forceWebGLFrom(readRawOpt('webgl'), opts.defaultWebGL)");
+  });
+
+  it('🔴 `defaultWebGL` 을 어댑터가 **스스로 해석하지 않는다** — 판정은 한 곳이다', () => {
+    // `if (opts.defaultWebGL)` 같은 줄이 생기면 우선순위가 어댑터에도 살게 되고,
+    // 그때부터 `?webgl=0` 이 두 번 해석된다. 살아 있는 줄에서는 판정 함수에 넘기는
+    // 그 한 곳에만 나와야 한다.
+    const live = src.split('\n')
+      .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+      .filter((l) => l.includes('opts.defaultWebGL'));
+    expect(live).toHaveLength(1);
+    expect(live[0]).toContain('forceWebGLFrom(');
   });
 
   it('🔴 `opts.forceWebGL` 이 **이긴다** — 테스트·스모크가 URL 없이 강제할 수 있어야 한다', () => {
@@ -83,6 +126,25 @@ describe('배선 — 어댑터가 그 판정을 **부른다**', () => {
     expect(live).toHaveLength(1);
     expect(live[0]).toContain('??');
   });
+});
+
+describe('🔴 world7·world8 은 백엔드를 **자동 판정**한다 (이 회차의 불변)', () => {
+  // 지시의 원문이 *"world7·world8 은 한 글자도 바뀌면 안 된다"* 였다. 그 불변을 만드는
+  // 것은 「기본값이 같다」가 아니라 **「경로가 없다」**다 — 두 부트가 `defaultWebGL` 을
+  // 안 넘기면 판정 함수의 인자가 생략되고, 그러면 `forceWebGLFrom(null) === false` 로
+  // 종전 분기가 한 글자도 안 바뀐 채 돈다(위 첫 describe 의 🔴 케이스).
+  //
+  // ⚠ **약한 축이라는 것을 적어 둔다** — 소스를 읽는 검사라 「이 문자열이 있는가」까지만
+  // 본다. 다른 이름에 담아 넘기면 통과한다. 강한 축은 `world11-boot-run.test.ts` 처럼
+  // 부트를 돌려 트리가 받는 값을 재는 것이고, world7 은 사용자가 고른 파일을 요구해
+  // 같은 하네스가 아직 없다(백로그).
+  for (const page of ['world7-boot.ts', 'world8-boot.ts']) {
+    it(`\`${page}\` 에 \`defaultWebGL\` 이 0건이다`, () => {
+      const boot = readFileSync(`frontend/js/${page}`, 'utf8');
+      expect(boot).not.toContain('defaultWebGL');
+      expect(boot).not.toContain('forceWebGL');
+    });
+  }
 });
 
 describe('진단 바 — 「렌더 실황」 두 항목', () => {

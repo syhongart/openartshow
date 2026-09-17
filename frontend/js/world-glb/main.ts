@@ -667,7 +667,7 @@ export async function startGlbWorld(
     },
     steps: {
       renderer: async () => {
-        adapter = await createRendererAdapter(canvas);
+        adapter = await createRendererAdapter(canvas, { defaultWebGL: opts.defaultWebGL });
         // ── 🔴 **시작 배율을 적응계 «자기 상한» 에서 유도한다** (감독 실기기 2026-08-26) ──
         // `Math.min(dpr, 2)` 가 손으로 박혀 있었고 **적응계가 스스로 정한 상한을 넘었다** —
         // `resolutionBands(dpr, MOBILE_CAP).ceil` 은 `min(dpr, 1.5)` 인데 부팅은 2.0 으로
