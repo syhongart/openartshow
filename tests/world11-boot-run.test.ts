@@ -35,6 +35,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 /** `startGlbWorld` 가 받은 인자. 부트 파일이 모듈 레벨에서 부르므로 밖에 둔다 */
 const calls: Array<{ canvas: unknown; opts: {
   tag: string; source: () => Promise<ArrayBuffer>; checklist?: boolean; defaultWebGL?: boolean;
+  exportSource?: () => { bytes: ArrayBuffer; name: string } | null;
 } }> = [];
 
 vi.mock('../frontend/js/world-glb/main.js', () => ({
@@ -191,5 +192,45 @@ describe('world11-boot — 트리와의 계약을 실제로 채운다', () => {
         value: { ...window.location, search: prev }, configurable: true, writable: true,
       });
     }
+  });
+  // ── 원본 GLB 내려받기 (감독 카드 판정 2026-09-18) ──────────────────────────
+  // 감독 신고: ***"맨하탄이 내보내기로 안나와"***. 종전 「GLB 내보내기」는 파셀 배치를
+  // 좌표에서 재계산해 굽는 경로라(`world-glb/export/collect.ts` 헤더) GLB 세계가 그
+  // 계산에 아예 없었다. 이 부트가 **부팅 때 받은 바이트를 붙잡아** 내주는 것이 그 처방이고,
+  // 아래 셋이 그 축을 집행으로 잰다 — 「다시 `fetch` 하지 않는다」가 이 기능의 이득
+  // (43MB 를 두 번 받지 않는다)이므로 **호출 수까지** 센다.
+  it('⭐ `source()` 전에는 **`null`** 이다 — 없는 것을 있다고 하지 않는다', async () => {
+    await boot();
+    expect(calls[0].opts.exportSource, '부트가 exportSource 를 안 넘겼다').toBeTypeOf('function');
+    expect(calls[0].opts.exportSource!()).toBeNull();
+  });
+
+  it('⭐ `source()` 가 받은 **그 바이트**를 낸다 — 다시 `fetch` 하지 않는다', async () => {
+    await boot();
+    const bytes = new ArrayBuffer(64);
+    let fetches = 0;
+    globalThis.fetch = (async () => {
+      fetches++;
+      return { ok: true, arrayBuffer: async () => bytes } as unknown as Response;
+    }) as typeof globalThis.fetch;
+
+    await calls[0].opts.source();
+    const got = calls[0].opts.exportSource!();
+    // 동일성으로 잰다 — 복사본이면 43MB 가 한 벌 더 산다.
+    expect(got?.bytes, '받아 둔 버퍼가 아니다').toBe(bytes);
+    // 파일 이름은 **자산 경로의 마지막 조각**이다(근거는 부트 파일 주석).
+    expect(got?.name).toBe('manhattan-180m.glb');
+    expect(fetches, '내려받기가 43MB 를 다시 받았다').toBe(1);
+  });
+
+  it('⭐ **이름이 `data-glb` 를 따라온다** — 위 검사가 상수를 재고 있지 않다는 대조군', async () => {
+    document.body.dataset.glb = './assets/worlds/somewhere-else.glb?v=2';
+    await boot();
+    globalThis.fetch = (async () => (
+      { ok: true, arrayBuffer: async () => new ArrayBuffer(4) } as unknown as Response
+    )) as typeof globalThis.fetch;
+    await calls[0].opts.source();
+    // 쿼리는 이름에 새지 않는다 — 저장 폴더에 `?v=2` 가 붙은 파일이 생기면 안 된다.
+    expect(calls[0].opts.exportSource!()?.name).toBe('somewhere-else.glb');
   });
 });

@@ -80,6 +80,28 @@ import { startGlbWorld } from './world-glb/main.js';
 import { assetUrl } from './world-glb/asset-url.js';
 import { readNum } from './world-glb/url-knob.js';
 import { spanOf } from './world-glb/decide/view-span.js';
+import type { OriginalGlb } from './world-glb/options.js';
+
+// ── 원본 GLB 를 **한 벌만** 붙잡는다 (감독 판정 2026-09-18) ──────────────────
+// 감독 신고: ***"맨하탄이 내보내기로 안나와"*** — 종전 「GLB 내보내기」는 파셀 배치를
+// 좌표에서 재계산해 굽는 경로라(`world-glb/export/collect.ts` 헤더) GLB 세계가 그
+// 계산에 아예 없었고, 그래서 world2 섬이 나왔다. 감독 카드 판정은 **「원본 파일을 받게
+// 바꾼다」**이고, 그 이득의 핵심은 «화면 그대로» 가 아니라 **인스턴싱 보존**이다 —
+// 받은 43MB 는 이미 묶인 상태이고 블렌더 왕복을 거치면 126MB 로 풀린다.
+//
+// **왜 다시 `fetch` 하지 않는가**: 부팅의 `stream` 단계가 이미 같은 바이트를 받았다.
+// 다시 받으면 43MB 를 두 번 받는다(모바일 데이터). 그래서 그 자리에서 붙잡는다.
+//
+// ⚠ **대가는 43MB 상주다.** `parseAsync` 가 끝나도 이 참조 때문에 GC 가 못 가져간다.
+// 그래도 이 쪽을 고른 이유: ⓐ 감독이 이 페이지에서 실제로 누르는 버튼이고 ⓑ 재다운로드는
+// 오프라인·요금제에서 **실패할 수 있는 축**이 하나 더 느는 일이며 ⓒ world11 은
+// behind-flag 실험 페이지다. 라이브 승격 회차에 다시 판단한다 — 되돌리는 것은 이
+// 변수를 지우고 `exportSource` 가 `fetch` 하게 바꾸는 것이다.
+//
+// ⚠⚠ **모듈 스코프인 이유**: `source()` 도 `exportSource()` 도 `startGlbWorld` 호출
+// 인자 안의 화살표 함수라 둘이 공유할 수 있는 자리가 여기뿐이다. 이 파일은 페이지당
+// 한 번 실행되므로 인스턴스가 둘 생길 여지가 없다.
+let original: OriginalGlb | null = null;
 
 const canvas = document.getElementById('wg-canvas');
 if (canvas instanceof HTMLCanvasElement) {
@@ -163,8 +185,20 @@ if (canvas instanceof HTMLCanvasElement) {
       if (!rel) throw new Error('data-glb 가 비어 있다 — 열 세계가 없다');
       const res = await fetch(assetUrl(rel));
       if (!res.ok) throw new Error(`GLB 를 못 받았다: HTTP ${res.status}`);
-      return res.arrayBuffer();
+      const bytes = await res.arrayBuffer();
+      // ── 내려받기용으로 붙잡는다 (위 헤더의 「원본 GLB」 절) ─────────────────
+      // 파일 이름은 **자산 경로의 마지막 조각**이다(`manhattan-180m.glb`). 새로 짓지
+      // 않는 이유: 이것은 우리가 구운 산출물이 아니라 **받은 그 파일**이고, 감독이
+      // 블렌더에서 열 때 저장소의 자산과 같은 이름이어야 대조가 된다. 쿼리·프래그먼트가
+      // 붙어도 이름에 새지 않게 잘라낸다.
+      original = { bytes, name: rel.split(/[?#]/)[0].split('/').pop() || 'world.glb' };
+      return bytes;
     },
+    // ── 「내보내기」 대신 **원본 내려받기** (감독 카드 판정 2026-09-18) ────────
+    // 굽지 않는다. 위에서 붙잡은 바이트를 그대로 낸다 — 아직 안 받았거나(부팅 실패)
+    // 잃었으면 `null` 이고, 그때 패널이 버튼에 사유를 적는다(조용히 실패하지 않는다).
+    // world7·world8 부트는 이 필드를 안 넘기므로 저쪽 버튼은 종전 굽기 경로 그대로다.
+    exportSource: () => original,
   }).catch((err: unknown) => {
     // startGlbWorld 는 부팅 실패를 로딩 화면에 표시하고 null 을 돌려준다. 여기 오는 건
     // 그보다 바깥의 예외이므로 콘솔에 남긴다 — 조용히 삼키면 원인 추적이 불가능해진다.
