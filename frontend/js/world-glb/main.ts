@@ -1035,10 +1035,9 @@ export async function startGlbWorld(
 
   // GLB 내보내기·되읽기 — 神 모드 패널 안. 근거는 `export/collect.ts`·`export/host.ts`.
   // 재빌드가 필요한 이유는 이미 떠 있는 파셀이 옛 배치를 들고 있어서다.
-  //
-  // 내보내기에 **화면과 같은 체인**을 넘긴다(팀장 조건 1) — 그래야 감독이 손본 파셀이
-  // 파일에 그대로 들어간다. 첫 판본은 수집기가 `parcelLayout` 을 직접 불러 편집분을
-  // 조용히 떨어뜨렸다(검수관 블로커 B6).
+  // 내보내기에 **화면과 같은 체인**을 넘긴다(팀장 조건 1) — 그래야 감독이 손본 파셀이 파일에
+  // 그대로 들어간다. 첫 판본은 수집기가 `parcelLayout` 을 직접 불러 편집분을 조용히 떨어뜨렸다
+  // (검수관 블로커 B6). ⚠ **그 「화면 그대로」는 파셀 세계에서만 참이다** — 근거는 `ui/export-panel.ts`.
   const exportPanel = attachExportPanel(document, {
     layoutSource,
     // 무효화가 **둘 다**여야 한다. 스트리밍만 버리면 옛 벽이 살아남는다 — 충돌 캐시는
@@ -1053,6 +1052,7 @@ export async function startGlbWorld(
     },
     // 블렌더에서 추가한 물건을 올린다(감독 지시 2026-08-25). 한계·판정은 그 파일 한 곳.
     applyImported: (buf) => imported.apply(buf),
+    originalGlb: opts.exportSource,   // 원본 GLB 내려받기(감독 판정 2026-09-18) — **중계만 한다**, 경위·경계는 `options.ts` 한 곳
   });
 
   // ── 진단 훅 ───────────────────────────────────────────────────────────────

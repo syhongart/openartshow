@@ -23,6 +23,7 @@ import { buildOverlay, type WorldOverlay } from '../export/overlay.js';
 import type { CollectOptions } from '../export/collect.js';
 import type { ImportedResult } from '../export/imported-scene.js';
 import { importNotice } from './import-notice.js';
+import type { OriginalGlb } from '../options.js';
 
 export interface ExportPanel {
   dispose(): void;
@@ -53,25 +54,106 @@ export interface ExportPanelOptions {
    *
    * 여기서 우선순위를 다시 조립하지 않고 **받은 함수를 그대로 넘긴다.** 조립하면 그
    * 순간 화면과 파일이 갈릴 수 있는 두 번째 자리가 생긴다.
+   *
+   * ── 🔴 **그 「화면 그대로」는 파셀 세계에서만 참이다** (2026-09-18 실측 정정) ──
+   * 이 줄은 오래 조건 없이 *"내보낸 것이 화면 그대로"* 라고 적고 있었고, **GLB 가 세계인
+   * 페이지(world7·world8·world11)에서는 거짓이다.** `export/collect.ts` 는 헤더대로
+   * *"화면을 굽지 않고 세계를 다시 계산한다"* 이고 그 계산의 입력은 `parcelLayout`·
+   * `DEFAULT_LAYOUT`·`parts/index.js` — 즉 **파셀 배치**뿐이다. 부팅 때 통째로 받은
+   * 외부 GLB 는 그 계산에 **아예 들어가지 않으므로**, 저 세 페이지에서 이 버튼을 누르면
+   * 화면의 세계가 아니라 **world2 섬**이 나온다. 감독이 그것을 신고했다(2026-09-18
+   * *"맨하탄이 내보내기로 안나와"*).
+   *
+   * **world11 은 `originalGlb` 로 갈랐다**(감독 카드 판정 「원본 파일을 받게 바꾼다」).
+   * **world7·world8 은 지금도 이 상태다** — 고치지 않았고, 그 사실을 여기 적어 둔다.
+   * 게이트·계약에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다.
    */
   layoutSource?: CollectOptions['layoutSource'];
+
+  /**
+   * **있으면 버튼이 「원본 GLB 내려받기」가 된다** — 굽지 않고 부팅 때 받은 바이트를
+   * 그대로 내려준다. 없으면 위 굽기 경로 그대로다(world7·world8 불변).
+   *
+   * 계약·경위는 `options.ts` 의 `exportSource` 한 곳이다 — 여기에 다시 적지 않는다.
+   * `null` 을 내면 **조용히 지나가지 않는다**: 버튼에 사유를 적고 콘솔에 남긴다
+   * (`export/imported-scene.ts` 가 검수관 블로커 B1 로 그것을 배운 자리다 — 실패를
+   * 값으로 내되 화면에 도달시킨다).
+   */
+  /**
+   * ⚠ **`?:` 가 아니라 필수다 — 그것이 이 필드의 게이트다.**
+   *
+   * 이 값이 화면에 도달하는 경로는 부트 → `options.exportSource` → **`main.ts` 의 중계
+   * 한 줄** → 여기, 셋을 잇는다. 양끝은 실행 테스트가 잡는다(`world11-boot-run` ·
+   * `world-glb-export-original`). **가운데 한 줄은 실행으로 못 잡는다** — `main.ts` 의
+   * 패널 배선은 `runBoot` 가 성공한 뒤에 있고, `kernel` 이 `stream` 단계 안에서 만들어져
+   * 부팅을 스텁하면 그 앞에서 `kernel!.markDirty()` 가 터진다(실측 2026-09-18).
+   *
+   * 직전 회차의 검수관 블로커 B1 이 정확히 그 사각이었다(`defaultWebGL` 중계 줄을
+   * 되돌려도 관련 테스트 44개 전부 통과). 그래서 **타입을 게이트로 쓴다**: 필수이므로
+   * `main.ts` 가 안 넘기면 `npm run gate` 의 typecheck 가 떨어진다.
+   *
+   * **`| undefined` 를 허용하는 것이 world7·world8 의 불변 축이다** — 저쪽 부트는
+   * `exportSource` 를 안 넘기므로 여기 `undefined` 가 오고, 그때 버튼은 종전 굽기
+   * 경로 그대로다.
+   *
+   * 🔴 **이 타입이 못 잡는 것**: `originalGlb: undefined` 로 **하드코딩**하는 것.
+   * 누락은 잡고 오배선은 못 잡는다 — 그 한계를 알고 쓴다.
+   */
+  originalGlb: (() => OriginalGlb | null | Promise<OriginalGlb | null>) | undefined;
 }
 
 /** DOM 이 없으면 `null` — 조립부가 이 기능의 존재를 몰라도 되게 */
-export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}): ExportPanel | null {
+// ⚠ `opts` 에 기본값(`= {}`)이 있었고 **지웠다** — `originalGlb` 가 필수라 `{}` 가
+// 더는 유효한 옵션이 아니다. 기본값을 남기면 호출처가 인자를 통째로 빼도 통과하고,
+// 그 순간 위 타입 게이트가 무력해진다.
+export function attachExportPanel(doc: Document, opts: ExportPanelOptions): ExportPanel | null {
   const btn = doc.getElementById('wg-export-glb') as HTMLButtonElement | null;
   if (!btn) return null;
+
+  // ── 라벨은 **코드가 정한다** (감독 신고 2026-09-18) ────────────────────────
+  // 원본 내려받기가 걸린 페이지에서 버튼이 「GLB 내보내기」로 남아 있으면 그것이 곧
+  // **거짓 표시**다 — 하는 일이 다르다. HTML 의 초기 텍스트에 기대지 않고 여기서
+  // 덮어쓴다(HTML 에도 같은 글자를 적으면 값 미러링이고, 이 저장소는 그 형태로 세 번
+  // 데였다 — CLAUDE.md 검증 규율 절).
+  const DOWNLOAD_LABEL = '원본 GLB 내려받기';
+  if (opts.originalGlb) btn.textContent = DOWNLOAD_LABEL;
 
   const idle = btn.textContent ?? 'GLB 내보내기';
   let busy = false;
 
   const setLabel = (text: string) => { btn.textContent = text; };
 
+  /**
+   * **원본 갈래.** 굽지 않고 부팅 때 받은 바이트를 그대로 내려준다.
+   * 경위·판정은 `options.ts` 의 `exportSource` 한 곳이다.
+   */
+  const downloadOriginal = async (get: NonNullable<ExportPanelOptions['originalGlb']>) => {
+    setLabel('원본 준비 중…');
+    const src = await get();
+    // ⚠ **조용히 지나가지 않는다.** 여기 `if (!src) return;` 만 두면 버튼이 원래대로
+    // 돌아가고 사용자는 「눌리지 않았나」로 읽는다. 모바일이라 콘솔을 못 보므로 사유는
+    // **버튼에** 적는다(이 패널이 진행 상태를 버튼에 쓰는 것과 같은 이유).
+    if (!src || !src.bytes || src.bytes.byteLength === 0) {
+      throw new Error('원본 GLB 바이트가 없다 — 세계가 아직 안 실렸거나 버퍼를 잃었다');
+    }
+    // 파일 이름은 **자산 이름을 그대로** 쓴다(`manhattan-180m.glb`). 새 이름을 짓지
+    // 않는 이유: 이 파일은 우리가 만든 산출물이 아니라 **받은 그 파일**이고, 감독이
+    // 블렌더에서 다시 열 때 저장소의 자산과 같은 이름이어야 대조가 된다. 이름을
+    // 정하는 것은 트리가 아니라 **부트**다(자산 경로를 아는 유일한 자리 — `options.ts`).
+    downloadBlob(new Blob([src.bytes], { type: 'model/gltf-binary' }), src.name);
+    setLabel(`✓ ${(src.bytes.byteLength / 1048576).toFixed(1)}MB · 원본 그대로`);
+  };
+
   const onClick = async () => {
     if (busy) return;
     busy = true;
     btn.disabled = true;
     try {
+      if (opts.originalGlb) {
+        await downloadOriginal(opts.originalGlb);
+        setTimeout(() => setLabel(idle), 6000);
+        return;
+      }
       const result = await exportWorldGlb({
         layoutSource: opts.layoutSource,
         onProgress: (p: ExportProgress) => setLabel(p.message),
@@ -85,7 +167,8 @@ export function attachExportPanel(doc: Document, opts: ExportPanelOptions = {}):
       // 조용히 삼키지 않는다. 내보내기는 사용자가 결과 파일을 기다리는 작업이라,
       // 실패했는데 버튼만 원래대로 돌아가면 "눌리지 않았나" 로 읽힌다.
       console.error('[glb-world] GLB 내보내기 실패', err);
-      setLabel('✗ 실패 — 콘솔 확인');
+      // 사유를 **버튼에** 적는다 — 「콘솔 확인」은 모바일에서 실행 불가능한 안내다.
+      setLabel(`✗ ${err instanceof Error ? err.message : '실패'}`);
       setTimeout(() => setLabel(idle), 6000);
     } finally {
       busy = false;

@@ -583,8 +583,14 @@
         <span class="wg-god-cap">접근성</span>
         <button type="button" data-flash="1">광과민성 보호</button>
       </div>
-      <!-- 세계를 GLB 파일로 굽는다. 로직은 world2/ui/export-panel.ts(인라인 금지).
-           굽는 동안 화면이 멈추므로 버튼 글자가 곧 진행 표시다 — 그 이유는 그 파일에. -->
+      <!-- ⚠ **이 페이지의 이 버튼은 굽지 않는다** (감독 판정 2026-09-18).
+           world11 은 세계가 GLB 한 덩이라 「다시 계산해 굽는」 종전 경로가 world2 섬을
+           내놓았다(감독 신고 *"맨하탄이 내보내기로 안나와"*). 대신 부팅 때 받은 **원본
+           43MB 를 그대로** 내려준다 — 인스턴싱이 풀리지 않는 것이 이 선택의 이득이다.
+           그래서 부팅 직후 `world-glb/ui/export-panel.ts` 가 아래 글자를 **「원본 GLB
+           내려받기」로 덮어쓴다**(라벨 SSOT 는 그 파일 한 곳 — 여기에 같은 글자를 적으면
+           값 미러링이고, 스크립트가 안 뜬 상태의 글자는 눌러도 아무 일이 없다).
+           로직은 world-glb/ui/export-panel.ts(인라인 금지). -->
       <div class="wg-god-row" data-group="export">
         <span class="wg-god-cap">내보내기</span>
         <button id="wg-export-glb" type="button">GLB 내보내기</button>
