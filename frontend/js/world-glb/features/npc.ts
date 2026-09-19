@@ -32,7 +32,7 @@
 import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import {
-  nextDirIn, stepOf, pickNearbyIn, yawOf, reachForIn, cellKey, snapOut, type Cell,
+  nextDirIn, runInto, pickNearbyIn, yawOf, reachForIn, cellKey, snapOut, type Cell,
 } from '../decide/npc-walk.js';
 import { walkBinding, cellDriftOf } from '../decide/npc-grid.js';
 import type { WalkSource } from '../decide/npc-walk.js';
@@ -305,12 +305,10 @@ export const npcFeature: Feature = {
     // **한 곳**이다 — 여기에 다시 적지 않는다. 다시 읽는 곳은 아래 `update` 머리다.
     let baked: WalkGrid | null;
     let src: WalkSource;
-    /**
-     * 갇힘 탈출을 **어디까지 찾는가**(칸). **파셀 한 칸 상당 거리**다 — 이 세계의 거리는
-     * 전부 그 단위로 정해져 있고(스폰 링·재배치 임계), 그보다 멀리 갇혔다면 「근처로는
-     * 못 나온다」이므로 재배치가 맞다. 파셀 공급자에서는 `toCells` 가 **1** 을 낸다.
-     */
+    /** 갇힘 탈출을 어디까지 찾는가(칸) — 근거는 `decide/npc-grid.ts` 의 `unstickRing` 한 곳 */
     let unstickRing: number;
+    /** 한 번에 몇 칸 이어 걷는가 — 근거는 `decide/npc-walk.ts` 의 `runInto` 한 곳 */
+    let runCells: number;
     let arrive: number;
     let lanes: boolean;
     let toCells: (parcelCells: number) => number;
@@ -331,7 +329,7 @@ export const npcFeature: Feature = {
      * 넣는다 — 밖에 두면 교체 때 혼자 옛 값으로 남고, 그 증상은 원인에서 가장 멀다.
      */
     function rebind(g: WalkGrid | null): void {
-      ({ grid: baked, src, toCells, arrive, unstickRing, lanes } =
+      ({ grid: baked, src, toCells, arrive, unstickRing, runCells, lanes } =
         walkBinding(g, cellX, cellZ, DEFAULT_BODY_R, ARRIVE));
       ({ px: hpx, pz: hpz } = src.at(home.x, home.z));
       spawnRing = toCells(SPAWN_RING);
@@ -468,12 +466,11 @@ export const npcFeature: Feature = {
         .catch((err) => { vrmError = String(err); });
     }
 
-    /** 다음 칸을 정하고 목표 좌표를 세운다. 갈 곳이 없으면 제자리에 둔다 */
+    /** 다음 목표를 세운다(이웃 칸이 아니라 **파셀 한 칸 상당 거리** — `runInto` 한 곳) */
     function retarget(w: Walker) {
       const d = nextDirIn(src, w.cell.px, w.cell.pz, w.from, rnd);
       if (!d) { w.tx = w.x; w.tz = w.z; return; }
-      const s = stepOf(d);
-      w.cell = { px: w.cell.px + s.px, pz: w.cell.pz + s.pz };
+      w.cell = runInto(src, w.cell, d, runCells);
       w.from = d;
       const to = src.center(w.cell.px, w.cell.pz);
       w.tx = to.x;
@@ -815,7 +812,8 @@ export const npcFeature: Feature = {
         minPairDist: minPairDistance(),
         // 몸과 목표 칸의 어긋남(m) — `arriveFor` 유도가 소비되는지 보는 유일한 창이다
         cellDrift: cellDriftOf(src, walkers),
-        grid: { arrive, cell: src.cell },   // 위 `cellDrift` 를 판정하려면 둘 다 필요하다
+        // `cellDrift` 판정에 둘 다 필요하다. `run` 은 맴돌기를 보는 창(`runInto` 한 곳)
+        grid: { arrive, cell: src.cell, run: runCells },
         // 인원에 맞춰 넓힌 스폰 밴드(셀). 기본값(`SPAWN_REACH`)보다 크면 **안개 시작을
         // 넘어 태어난 체가 있다**는 뜻이다 — 인원이 많을 때는 피할 수 없지만, 그
         // 사실이 감춰지면 본편 ① 이 고친 결함과 구별되지 않는다.

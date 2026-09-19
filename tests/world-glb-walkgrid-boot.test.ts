@@ -33,7 +33,7 @@ import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { walkCellSize, walkableAt, cellOf, type WalkGrid } from '../frontend/js/world-glb/decide/walkable.js';
 import { DEFAULT_BODY_R } from '../frontend/js/world-glb/systems/collision.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world-glb/parts/types.js';
-import { SPAWN_REACH } from '../frontend/js/world-glb/features/npc.js';
+import { SPAWN_REACH, WALK_MAX } from '../frontend/js/world-glb/features/npc.js';
 import { SPAWN } from '../frontend/js/world-glb/decide/grid.js';
 
 const { cellX } = DEFAULT_LAYOUT;
@@ -120,6 +120,11 @@ vi.mock('../frontend/js/world-glb/adapters/renderer.js', async () => {
 const avatars: THREE.Object3D[] = [];
 vi.mock('../frontend/js/world-glb/avatars/index.js', async () => {
   const T = await import('three/webgpu');
+  // 🔴 **인원은 레지스트리에서 가져온다**(2026-09-19). 여기 `count: 4` 를 적고 있었고
+  // 그것은 라이브(`DEFAULT_CHIBI_COUNT`)와 **다른 수**였다 — 감독 신고 *"치비 하나만
+  // 보여꼬"* 가 인원에 얽힌 축인데, 검사가 라이브와 다른 인원을 재고 있으면 그 축이
+  // 원리적으로 안 보인다. 아바타 **자체**만 가볍게 바꾼다(치비 한 체가 메시 45다).
+  const reg = await import('../frontend/js/world-glb/avatars/registry.js');
   const make = () => {
     const group = new T.Object3D();
     avatars.push(group);
@@ -128,9 +133,10 @@ vi.mock('../frontend/js/world-glb/avatars/index.js', async () => {
   return {
     createChibiAvatar: make,
     loadVrmAvatar: () => Promise.resolve(null),
-    CHIBI: { id: 'chibi', label: 'c', kind: 'builtin', count: 4, cost: { meshes: 0, materials: 0, triangles: 0 } },
-    VRM_MALE: { id: 'vrm', label: 'v', kind: 'file', count: 0, url: null, cost: null },
-    MAX_TOTAL_AVATARS: 200,
+    CHIBI: reg.CHIBI,
+    // VRM 은 파일을 받아야 하고 이 파일에는 서버가 없다 — 0 으로 둔다(라이브 기본값도 0).
+    VRM_MALE: { ...reg.VRM_MALE, count: 0, url: null },
+    MAX_TOTAL_AVATARS: reg.MAX_TOTAL_AVATARS,
   };
 });
 
@@ -180,7 +186,7 @@ async function syntheticGlb(): Promise<ArrayBuffer> {
 let bytes: ArrayBuffer | null = null;
 
 type Npc = {
-  grid: { arrive: number; cell: number };
+  grid: { arrive: number; cell: number; run: number };
   chibi: number;
   cellDrift: number | null;
   spawnReach: number;
@@ -208,11 +214,19 @@ async function boot(walkmap: boolean, frames = 0) {
   handle.kernel.stop();
   const hook = (window as unknown as { __glbWorld?: { stats(): Stats } }).__glbWorld;
   const seen: Array<{ x: number; z: number }> = [];
+  /**
+   * **체별** 궤적. `seen` 은 전부 뭉쳐 놓은 것이라 「한 사람이 얼마나 나아갔는가」를
+   * 못 본다 — 효율(순이동 ÷ 경로길이) 축이 필요로 하는 것이 그것이다.
+   */
+  const tracks: Array<Array<{ x: number; z: number }>> = [];
   /** 프레임마다의 `npc` 진단. `cellDrift` 는 **몸과 목표 칸의 어긋남**을 보는 유일한 창이다 */
   const diag: Npc[] = [];
   for (let f = 1; f <= frames; f++) {
     handle.kernel.tick(f * (1000 / 60));
-    for (const a of avatars) seen.push({ x: a.position.x, z: a.position.z });
+    avatars.forEach((a, i) => {
+      seen.push({ x: a.position.x, z: a.position.z });
+      (tracks[i] ??= []).push({ x: a.position.x, z: a.position.z });
+    });
     const d = hook?.stats().npc;
     if (d) diag.push(d);
   }
@@ -220,8 +234,45 @@ async function boot(walkmap: boolean, frames = 0) {
   const placed = avatars.length;
   handle.dispose();
   canvas.remove();
-  return { stats, seen, placed, diag };
+  return { stats, seen, placed, diag, tracks };
 }
+
+/**
+ * 🔴 **얼마나 걸어서 얼마나 나아갔는가** — 「제자리 맴돌기」를 보는 유일한 축.
+ *
+ * 순이동 ÷ 경로길이다. 곧게 걸으면 1 에 가깝고, 방향을 너무 자주 고르면(랜덤워크)
+ * 순이동이 √N 으로만 자라 0 에 붙는다. 감독이 화면에서 본 것이 후자다(2026-09-19
+ * *"길 힌복판에서 1미터. 2미터 영역을 번잡하게 다니고 있어"*).
+ *
+ * ⚠ **체별로 나눈 뒤 합산한다** — 한 체의 순이동은 그 체의 시작·끝 좌표에서만 나온다.
+ * ⚠⚠ **순간이동(재배치·갇힘 탈출)은 경로길이에서 뺀다.** 한 프레임 이동 상한은
+ * `WALK_MAX × dt` 이므로 그 몇 배를 넘는 구간은 걸은 것이 아니다 — 안 빼면 재배치가
+ * 잦은 회차에서 효율이 걷기와 무관하게 떨어진다.
+ */
+function efficiency(tracks: Array<Array<{ x: number; z: number }>>): number {
+  let path = 0;
+  let net = 0;
+  const jumpGate = WALK_MAX * (1 / 60) * 10;
+  for (const t of tracks) {
+    if (t.length < 2) continue;
+    for (let i = 1; i < t.length; i++) {
+      const d = Math.hypot(t[i].x - t[i - 1].x, t[i].z - t[i - 1].z);
+      if (d > jumpGate) continue;
+      path += d;
+    }
+    net += Math.hypot(t[t.length - 1].x - t[0].x, t[t.length - 1].z - t[0].z);
+  }
+  return path > 0 ? net / path : 0;
+}
+
+/** 60초. 효율은 **한참 걸어야** 갈린다 — 4초면 어느 쪽이든 거의 직선이다 */
+const LONG = 3600;
+/**
+ * `LONG` 을 쓰는 검사의 제한 시간(ms). vitest 기본값은 5초이고 이 회차의 실측은
+ * **한 번 부팅에 4~9초**다 — 게이트가 다른 테스트와 겹쳐 돌면 그 편차가 더 커진다.
+ * 단언은 그대로 두고 **시간만** 넓힌다(축을 줄이면 잴 것이 없어진다).
+ */
+const LONG_MS = 120_000;
 
 describe('🔴 구운 격자가 **부팅 경로를 지나** 치비에게 도달한다', () => {
   beforeEach(() => { bindings.length = 0; avatars.length = 0; });
@@ -299,10 +350,75 @@ describe('🔴 구운 격자가 **부팅 경로를 지나** 치비에게 도달�
     // 우연히 통로 안이면 통과한다. 어긋남은 그 우연과 무관하게 즉시 보인다.
     const { diag } = await boot(true, 240);
     expect(diag.length, '진단을 한 프레임도 못 읽었다 — 아래가 공허하다').toBeGreaterThan(0);
-    const bound = diag[0].grid.cell + diag[0].grid.arrive;
+    // ⚠ **상한이 2026-09-19 에 `cell + arrive` 에서 바뀌었다** — 목표가 더 이상 이웃
+    // 칸이 아니라 「파셀 한 칸 상당 거리」이기 때문이다(경위는 `tests/world-glb-walkmap.
+    // test.ts` ⑤ 의 같은 축 한 곳). 재착석을 빠뜨리면 목표 칸이 **격자 원점 근처**에
+    // 남으므로 어긋남이 세계 반지름 단위가 된다 — 이 상한으로도 그대로 잡힌다.
+    const bound = diag[0].grid.cell * diag[0].grid.run + diag[0].grid.arrive;
     const worst = diag.reduce((m, d) => Math.max(m, d.cellDrift ?? 0), 0);
     expect(worst, `목표 칸이 몸에서 ${worst}m 떨어졌다(상한 ${bound}m) — 공급자 교체 뒤 칸을 다시 안 읽었다`)
       .toBeLessThanOrEqual(bound);
+  });
+
+  // ── 🔴 **제자리 맴돌기** (감독 신고 2026-09-19) ────────────────────────────
+  //
+  // 감독 원문: *"치비 하나만 보여꼬. 길 힌복판에서 1미터. 2미터 영역을 번잡하게
+  // 다니고 있어"*
+  //
+  // ⚠ **기존 검사 전부가 이것을 통과시켰다.** 「움직이는가」는 1m 만 움직여도 참이고,
+  // 「걸을 수 있는 칸만 밟는가」는 맴돌아도 참이다 — 맴돌기는 **밟은 자리**가 아니라
+  // **밟은 순서**의 성질이라 그 축으로는 원리적으로 안 보인다.
+  it('🔴 구운 격자에서도 **곧게 걷는다** — 파셀 대조군과 견줘 판정한다', async () => {
+    const { tracks: baked } = await boot(true, LONG);
+    const { tracks: parcel } = await boot(false, LONG);
+    const effBaked = efficiency(baked);
+    const effParcel = efficiency(parcel);
+    expect(baked.length, '치비가 한 체도 안 섰다 — 아래가 공허하다').toBeGreaterThan(0);
+    expect(effParcel, '대조군(파셀)조차 곧게 안 걷는다 — 기준이 성립하지 않는다')
+      .toBeGreaterThan(0.5);
+    // 🔴 **임계를 숫자로 박지 않는다.** 파셀 격자의 걷기가 이 저장소의 「정상」이고
+    // (world2·7·8·10 이 그것으로 돌고 있다), 구운 격자는 칸이 100배 촘촘할 뿐 같은
+    // 규칙을 써야 한다. 그래서 기준을 **대조군에서 유도한다** — 자산·칸 크기·안개가
+    // 바뀌어도 따라온다. 절반으로 잡은 것은 구운 격자가 통로 폭 안에서 한 칸씩
+    // 비켜설 여지가 있어 원리적으로 파셀보다 조금 낮기 때문이다.
+    //
+    // 🔴 **실측표를 여기 옮겨 적지 않는다** — `decide/npc-walk.ts` 의 `runInto` 헤더
+    // 한 곳이다(값을 두 곳에 적으면 한쪽만 고쳐도 아무도 모른다).
+    expect(
+      effBaked,
+      `구운 격자 효율 ${(effBaked * 100).toFixed(1)}% · 대조군 ${(effParcel * 100).toFixed(1)}%`
+      + ' — 치비가 제자리를 맴돈다(목표를 이웃 칸 하나로 잡으면 랜덤워크가 된다)',
+    ).toBeGreaterThan(effParcel / 2);
+  }, LONG_MS);
+
+  // ── 🔴 위 축의 **분산 없는 짝** ─────────────────────────────────────────
+  //
+  // 효율은 세계 모양에 좌우된다(이 합성 세계는 반경 50m 라 32m 직진이 벽에 자주 막힌다).
+  // 그래서 같은 성질을 **어긋남의 크기**로 한 번 더 본다 — 목표를 이웃 칸 하나로 잡으면
+  // 몸과 목표 칸의 거리가 칸 한 변을 넘을 수 없고, 「파셀 한 칸 상당 거리」로 잡으면
+  // 재조준 직후 그만큼 벌어진다. 이 축은 세계 모양과 무관하다.
+  it('🔴 목표를 **멀리** 잡는다 — 어긋남이 칸 한 변을 훨씬 넘는다', async () => {
+    const { diag } = await boot(true, LONG);
+    const worst = diag.reduce((m, d) => Math.max(m, d.cellDrift ?? 0), 0);
+    const one = diag[0].grid.cell;
+    const far = one * diag[0].grid.run;
+    expect(
+      worst,
+      `목표가 몸에서 최대 ${worst}m 밖에 안 떨어졌다(칸 ${one}m · 한 번에 ${far.toFixed(1)}m 를 잡아야 한다)`
+      + ' — 재조준이 이웃 칸 하나를 고르고 있다',
+    ).toBeGreaterThan(far / 2);
+  }, LONG_MS);
+
+  it('🔴 한 번에 걷는 거리가 **파셀 한 칸 상당**이다 — 칸 수가 아니라 거리가 보존된다', async () => {
+    const { stats } = await boot(true, 5);
+    const npc = stats!.npc!;
+    // 칸이 100배 촘촘해졌으면 칸 수도 100배여야 **거리**가 같다. 1 이면 고치기 전이다.
+    const meters = npc.grid.run * npc.grid.cell;
+    expect(
+      meters,
+      `한 번에 ${meters.toFixed(2)}m 만 걷는다 — 파셀 기준 ${cellX}m 에서 환산이 빠졌다`,
+    ).toBeGreaterThanOrEqual(cellX - npc.grid.cell);
+    expect(meters).toBeLessThanOrEqual(cellX + npc.grid.cell);
   });
 
   it('🔴 스폰 밴드도 **새 공급자 단위로** 환산된다 — 미터로 재면 같은 거리다', async () => {
@@ -331,6 +447,8 @@ describe('🔴 구운 격자가 **부팅 경로를 지나** 치비에게 도달�
   it('`walkmap` 을 안 켜면 **파셀 격자 그대로다** — world7·world8 이 안 바뀐다', async () => {
     const { stats } = await boot(false, 5);
     expect(stats!.npc!.grid.cell, '격자를 안 굽는 페이지의 걷기가 바뀌었다').toBeCloseTo(cellX, 10);
+    // 🔴 **이웃 칸 하나**가 파셀 세계의 동작이다. 2 이상이면 world2·7·8·10 이 바뀐 것이다.
+    expect(stats!.npc!.grid.run, '파셀 세계의 치비가 한 번에 여러 칸을 걷는다').toBe(1);
     expect(bindings.every((b) => b.cell === null), '격자가 없는데 묶음이 격자로 갈렸다').toBe(true);
     // 🔴 **한 번만** 묶인다. 「참조 동일성 비교」가 매 프레임 재계산으로 새면 여기서 잡힌다
     // (팀장 조건 1 — 매 프레임 파생값 재계산 금지).

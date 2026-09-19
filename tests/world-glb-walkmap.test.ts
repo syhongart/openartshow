@@ -27,7 +27,7 @@ import {
 } from '../frontend/js/world-glb/systems/glb-walkmap.js';
 import {
   parcelSource, walkableDirs, isWalkable, nearbyCells, nextDir,
-  isWalkableIn, nearbyCellsIn, nextDirIn, stepOf,
+  isWalkableIn, nearbyCellsIn, nextDirIn, stepOf, runInto,
 } from '../frontend/js/world-glb/decide/npc-walk.js';
 import { DEFAULT_BODY_R } from '../frontend/js/world-glb/systems/collision.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world-glb/parts/types.js';
@@ -137,6 +137,60 @@ describe('② 파셀 공급자는 **항등**이다 — world2·world7·world8 �
       }
     }
     expect(checked).toBe(30 * 30);
+  });
+
+  // 🔴 **`runInto` 가 파셀 격자에서 「이웃 칸 하나」로 남는가** (2026-09-19)
+  //
+  // 걷기의 목표 칸을 정하는 자리가 `w.cell + stepOf(d)` 에서 `runInto(...)` 로 바뀌었다
+  // (`features/npc.ts` 의 `retarget`). 파셀 공급자에서는 `runCells` 가 1 이므로 **옛 식과
+  // 산술적으로 같아야** world2·world7·world8·world10 이 안 바뀐다. 「같다」를 말로 두지
+  // 않고 **격자 전체에서 표로** 대조한다.
+  it('🔴 `runInto(…, 1)` 이 옛 식(`cell + stepOf(d)`)과 **격자 전체에서** 같다', () => {
+    let checked = 0;
+    for (let px = -15; px <= 14; px++) {
+      for (let pz = -15; pz <= 14; pz++) {
+        for (const d of src.dirs(px, pz)) {
+          const s = stepOf(d);
+          expect(runInto(src, { px, pz }, d, 1)).toEqual({ px: px + s.px, pz: pz + s.pz });
+          checked++;
+        }
+      }
+    }
+    // 표본이 비어 있으면 위 단언이 공허하다.
+    expect(checked, '파셀 격자에 갈 수 있는 방향이 하나도 없다').toBeGreaterThan(100);
+  });
+
+  it('🔴 지나간 **모든 칸**에서 그 방향이 허용됐다 — `standable` 이 아니라 `dirs` 를 본다', () => {
+    // 파셀 공급자의 `standable` 은 「세계 안이고 물이 아니다」라서 **건물 블록도 참**이고,
+    // 「도로가 이어지는가」를 아는 것은 `dirs`(= `roadDirs`) 뿐이다. 실측: 이 격자 3,600
+    // 칸·방향 조합 중 **240건**이 「설 수는 있는데 도로가 아니다」다.
+    //
+    // ⚠ **「도착 칸이 걸을 수 있는가」로는 안 잡힌다**(뮤테이션 M4 실측: `dirs` 를
+    // `standable` 로 낮춰도 검사 45개가 전부 통과했다 — 도로가 아닌 칸도 `roadDirs` 가
+    // 하나라도 있으면 `isWalkableIn` 이 참이라 도착지 판정을 빠져나간다). 그래서
+    // **지나간 칸 전부**를 되짚는다 — 그것이 이 함수의 계약이다.
+    let checked = 0;
+    for (let px = -15; px <= 14; px++) {
+      for (let pz = -15; pz <= 14; pz++) {
+        for (const d of src.dirs(px, pz)) {
+          const end = runInto(src, { px, pz }, d, 30);
+          const s = stepOf(d);
+          let cx = px;
+          let cz = pz;
+          while (cx !== end.px || cz !== end.pz) {
+            expect(
+              src.dirs(cx, cz),
+              `(${px},${pz}) 에서 ${d} 로 이어 걷다 도로가 아닌 칸(${cx},${cz})을 지났다`,
+            ).toContain(d);
+            cx += s.px;
+            cz += s.pz;
+            checked++;
+          }
+        }
+      }
+    }
+    expect(checked, '이어 걷기가 한 칸도 일어나지 않았다 — 위 단언이 공허하다')
+      .toBeGreaterThan(100);
   });
 
   it('`nearbyCells`·`nextDir` 이 공급자 경로와 **같은 표**를 낸다', () => {
@@ -443,7 +497,9 @@ async function walkFrames(
       return out;
     };
     const seen: Array<{ x: number; z: number }> = [];
-    const drift: Array<{ cellDrift: number | null; grid: { arrive: number; cell: number } }> = [];
+    const drift: Array<{
+      cellDrift: number | null; grid: { arrive: number; cell: number; run: number };
+    }> = [];
     for (let f = 0; f < frames; f++) {
       onFrame?.(f);
       inst.system!.update({ dt: 1 / 60 } as never);
@@ -494,10 +550,28 @@ describe('⑤ 치비가 **구운 격자 위를** 걷는다 — 벽 칸을 밟지
     expect(d0.grid.cell).toBeCloseTo(walkCellSize(DEFAULT_BODY_R), 10);
     expect(d0.grid.arrive, '도달 판정이 칸 한 변보다 크다 — 걷기가 격자를 앞질러 간다')
       .toBeLessThan(d0.grid.cell);
-    // 목표는 언제나 **이웃 칸**이다. 「한 칸 + 도달 판정」을 넘으면 앞서 달린 것이다.
-    const bound = d0.grid.cell + d0.grid.arrive;
+    // ⚠ **이 상한은 2026-09-19 에 바뀌었다 — 약화가 아니라 전제가 뒤집힌 것이다.**
+    // 여기 있던 식은 `cell + arrive` 였고 그 근거는 *"목표는 언제나 **이웃 칸**이다"* 라는
+    // 주석이었다. 그 전제를 이 회차가 **일부러** 깼다 — 이웃 칸 하나로 잡으면 구운 격자에서
+    // 0.34m 마다 방향을 고르게 되어 치비가 제자리를 맴돈다(감독 신고 *"1미터. 2미터 영역을
+    // 번잡하게 다니고 있어"*). 지금 목표는 「파셀 한 칸 상당 거리」이고 그 칸 수가
+    // `grid.run` 이다(`decide/npc-walk.ts` 의 `runInto`).
+    //
+    // 🔴 **그래서 상한이 100배 느슨해졌다**(0.51m → 32.13m). 검출력이 그만큼 줄었는지를
+    // 말로 두지 않고 **재봤다** — 뮤테이션 M7(재조준을 매 프레임 돌려 목표가 앞서 달리게
+    // 한다)에서 어긋남이 82.0m 까지 벌어져 이 상한에 그대로 걸린다. 느슨해진 상한이
+    // 「앞서 달린다」를 통과시키지는 않는다.
+    //
+    // ⚠ 여기 *"어긋남이 줄어드는 프레임이 있다"* 를 **상한이 느슨해진 만큼을 메우는
+    // 축**으로 한 줄 더 두었다가 지웠다 — 뮤테이션 M7(재조준을 매 프레임 돌린다)에서
+    // **안 깨졌다.** 방향이 무작위라 목표가 가끔 몸 쪽으로도 잡히기 때문이다. 검출력이
+    // 0 인 단언은 장식이고, 장식은 다음 사람이 「이 축은 지켜진다」로 읽는다.
+    // 대신 **상한 축이 M7 을 잡는 것을 실측했다**(82.0m > 상한 32.13m) — 상한이 100배
+    // 느슨해졌어도 「목표가 앞서 달린다」는 그대로 걸린다.
+    const bound = d0.grid.cell * d0.grid.run + d0.grid.arrive;
     const worst = drift.reduce((m, d) => Math.max(m, d.cellDrift ?? 0), 0);
-    expect(worst, `목표 칸이 몸에서 ${worst}m 앞섰다(상한 ${bound}m)`).toBeLessThanOrEqual(bound);
+    expect(worst, `목표 칸이 몸에서 ${worst}m 앞섰다(상한 ${bound}m · 한 번에 ${d0.grid.run}칸)`)
+      .toBeLessThanOrEqual(bound);
   });
 
   it('격자를 **안 주면** 파셀 경로 그대로다 — world7·world8 이 안 바뀐다', async () => {

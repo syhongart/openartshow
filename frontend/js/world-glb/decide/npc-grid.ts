@@ -138,8 +138,26 @@ export interface WalkBinding {
   readonly toCells: (parcelCells: number) => number;
   /** 이 격자에서 쓸 도달 판정(m) — `arriveFor` */
   readonly arrive: number;
-  /** 갇힘 탈출을 어디까지 찾는가(칸) — 파셀 한 칸 상당 거리 */
+  /**
+   * 갇힘 탈출을 **어디까지 찾는가**(칸). **파셀 한 칸 상당 거리**다 — 이 세계의 거리는
+   * 전부 그 단위로 정해져 있고(스폰 링·재배치 임계), 그보다 멀리 갇혔다면 「근처로는
+   * 못 나온다」이므로 재배치가 맞다. 파셀 공급자에서는 `toCells` 가 **1** 을 낸다.
+   *
+   * ⚠ 이 설명은 원래 `features/npc.ts` 의 같은 이름 `let` 위에 있었다 — `runCells` 가
+   * 생기며 **두 곳에 같은 근거**가 놓이게 돼 여기로 모았다(집행부에는 이 줄을 가리키는
+   * 한 줄만 남는다). 값 미러링을 피하는 것과 같은 이유이고, 그래야 파일도 안 커진다.
+   */
   readonly unstickRing: number;
+  /**
+   * 🔴 **한 번 방향을 고르면 몇 칸까지 이어 걷는가**(칸) — `decide/npc-walk.ts` 의
+   * `runInto` 가 받는 값. 근거·실측은 그 함수 한 곳이다.
+   *
+   * ⚠ **`unstickRing` 과 같은 수가 나오지만 같은 값이 아니다.** 저쪽은 「근처를 어디까지
+   * 뒤지는가」이고 이쪽은 「한 번에 얼마나 걷는가」다 — 뜻이 다르므로 필드가 둘이다.
+   * 한쪽을 바꾸는 날 다른 쪽이 따라 움직이면 그것이 값 미러링이다(`walkCellSize` 와
+   * `blockMargin` 이 `decide/walkable.ts` 에서 같은 이유로 둘이다).
+   */
+  readonly runCells: number;
   /** 차선·회피를 얹는가 — `lanesOn` */
   readonly lanes: boolean;
 }
@@ -165,6 +183,9 @@ export function walkBinding(
     arrive: arriveFor(src.cell, parcelArrive),
     // 파셀 공급자에서는 `toCells` 가 **1** 을 낸다 — 기존 동작 그대로다
     unstickRing: toCells(1),
+    // 「파셀 한 칸 상당 거리」를 곧게 걷는다. 파셀 공급자에서는 **1** 이라 이웃 칸
+    // 하나이고, 그것이 이 필드가 생기기 전의 코드다(근거는 `runInto` 한 곳).
+    runCells: toCells(1),
     lanes: lanesOn(baked),
   };
 }
