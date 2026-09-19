@@ -53,7 +53,7 @@ import { createGlbCollider } from './systems/glb-collider.js';
 import { DEFAULT_BODY_R, DEFAULT_KNEE_Y } from './systems/collision.js';
 import { mountGlbWorld, describeGlb, type GlbSourceResult, normalKnob, NORMAL_KNOB_MAX } from './systems/glb-source.js';
 import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
-import { bakeWalkmapFor } from './systems/glb-walkmap.js';
+import { bakeWalkmapFor, blockWalkFor } from './systems/glb-walkmap.js';
 import { warmUpNode } from '../world-shared/attach-loop.js';
 import { createGlbStream } from './systems/glb-stream.js';
 import { applyViewSpan } from './systems/glb-view.js';
@@ -766,6 +766,12 @@ export async function startGlbWorld(
             parcelLoaded: () => false,
             glbMap: () => glbMapBaked,   // 늦게 읽는 클로저 — 근거는 `features/types.ts`
             walkGrid: () => walkGridBaked,   // 안 켠 페이지에서는 언제나 `null` 이다
+            // 🔴 **씬에 붙는 물건이 지나는 일반 문**(감독 신고 *"벽사이를 걸어가네"*).
+            // 격자를 안 굽는 페이지에서는 `undefined` 라 기능 쪽 코드 경로가 안 바뀐다.
+            // 격자가 아직 없으면(부팅 중) no-op 이다 — 굽기는 `stream` 이라 순서가 갈린다.
+            blockWalk: opts.walkmap
+              ? (o) => { if (walkGridBaked) blockWalkFor(walkGridBaked, o, eyeHeight, player.position); }
+              : undefined,
             // 🔴 **미술관 루트** — 편집이 그 벽을 벽 검출 대상에 넣는다 (태스크 #112).
             // 위 둘과 **같은 클로저 이유**이고 하나가 더 있다: 이 자산은 13.5MB 라
             // 로드가 비동기여서, mount 시점에는 기능은 있어도 루트가 아직 `null` 이다.

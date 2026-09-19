@@ -32,7 +32,7 @@
 import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import {
-  nextDirIn, stepOf, pickNearbyIn, yawOf, reachForIn, cellKey, type Cell,
+  nextDirIn, stepOf, pickNearbyIn, yawOf, reachForIn, cellKey, snapOut, type Cell,
 } from '../decide/npc-walk.js';
 import { chooseWalkSource, bandCells, arriveFor, lanesOn, cellDriftOf } from '../decide/npc-grid.js';
 import { DEFAULT_BODY_R } from '../systems/collision.js';
@@ -292,6 +292,12 @@ export const npcFeature: Feature = {
     const src = chooseWalkSource(baked, cellX, cellZ, DEFAULT_BODY_R);
     const toCells = (parcelCells: number): number => bandCells(src, parcelCells, cellX);
     const arrive = arriveFor(src.cell, ARRIVE);
+    /**
+     * 갇힘 탈출을 **어디까지 찾는가**(칸). **파셀 한 칸 상당 거리**다 — 이 세계의 거리는
+     * 전부 그 단위로 정해져 있고(스폰 링·재배치 임계), 그보다 멀리 갇혔다면 「근처로는
+     * 못 나온다」이므로 재배치가 맞다. 파셀 공급자에서는 `toCells` 가 **1** 을 낸다.
+     */
+    const unstickRing = toCells(1);
     const lanes = lanesOn(baked);
     const rnd = rngFrom(0x9e3779b9);
     const group = new THREE.Group();
@@ -474,6 +480,28 @@ export const npcFeature: Feature = {
       retarget(w);
     }
 
+    /**
+     * 🔴 **벽 안에 갇힌 체를 꺼낸다.** 격자는 이제 부팅 뒤에도 바뀌고(`systems/
+     * glb-walkmap.ts` 의 `blockWalkFor`), 그때 그 안에 있던 체는 재조준이 이웃을 못 찾아
+     * **제자리에 굳는다.** 근처에 나갈 칸이 있으면 거기로, 없으면 **재배치**한다 —
+     * 「영원히 서 있는」 상태를 남기지 않는 것이 이 함수의 계약이다.
+     */
+    function unstick(w: Walker, cur: Cell, ppx: number, ppz: number) {
+      const c = snapOut(src, cur.px, cur.pz, unstickRing);
+      if (!c) { recycle(w, ppx, ppz); return; }
+      w.cell = c;
+      w.from = null;
+      const to = src.center(c.px, c.pz);
+      w.x = w.tx = to.x;
+      w.z = w.tz = to.z;
+      // 차선 오프셋과 그린 자리도 함께 옮긴다 — 근거는 위 `recycle` 의 같은 두 줄.
+      w.ox = 0;
+      w.oz = 0;
+      w.rx = w.x;
+      w.rz = w.z;
+      retarget(w);
+    }
+
     /** 이 아바타의 모든 메시에 절두체 컬링을 켜고 끈다 */
     function setCulling(w: Walker, on: boolean): void {
       w.inst.group.traverse((o) => {
@@ -555,6 +583,13 @@ export const npcFeature: Feature = {
         for (const w of walkers) {
           // ── 멀어졌으면 앞쪽으로 ─────────────────────────────────────────
           if (Math.hypot(w.x - p.x, w.z - p.z) > recycleFar) recycle(w, ppx, ppz);
+
+          // ── 격자가 바뀌어 **벽 안에 갇혔으면** 빠져나온다 (2026-09-19) ───
+          // 「덧칠 직후」가 아니라 **매 프레임** 본다 — 그래야 걷기가 「누가 언제
+          // 격자를 고쳤는가」를 몰라도 된다(결합 0). 파셀 공급자에서는 한 번도 참이
+          // 되지 않아 코드 경로가 안 바뀐다(`snapOut` 주석의 ⚠⚠).
+          const cur = src.at(w.x, w.z);
+          if (!src.standable(cur.px, cur.pz)) unstick(w, cur, ppx, ppz);
 
           // ── 목표로 걷는다 ───────────────────────────────────────────────
           const dx = w.tx - w.x;

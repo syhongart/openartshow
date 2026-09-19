@@ -152,6 +152,16 @@ export interface FeatureEnv {
   readonly walkGrid?: () => WalkGrid | null;
 
   /**
+   * **씬에 나중에 붙는 물건을 걷기 격자에 반영한다**(감독 신고 2026-09-19 *"벽사이를
+   * 걸어가네"*). 기능이 **최종 변환을 확정한 직후** 그 노드를 넘긴다. 경위·유도·실측은
+   * `systems/glb-walkmap.ts` 한 곳이다.
+   *
+   * ⚠ **선택적이고, 안 주면 부르지 않는다** — 격자를 안 굽는 페이지(world7·world8·
+   * world10)에서는 `undefined` 라 코드 경로가 한 글자도 안 바뀐다(위 `walkGrid` 와 같다).
+   */
+  readonly blockWalk?: (o: Object3D) => void;
+
+  /**
    * 미술관 GLB 의 레이캐스트 루트. 아직 안 세워졌거나 그 기능이 꺼져 있으면 `null`
    * (태스크 #112).
    *

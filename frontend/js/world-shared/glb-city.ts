@@ -125,6 +125,18 @@ export interface GlbCityEnv {
    * 거리식이 두 곳에 살면 한쪽만 고쳐도 아무도 모른다.
    */
   readonly parcelLoaded?: (px: number, pz: number) => boolean;
+  /**
+   * 🔴 **세운 채를 「걸을 수 있는 격자」에 알린다**(감독 신고 2026-09-19 *"벽사이를
+   * 걸어가네"*). 이 기능은 `env.scene.add(g)` 로 **씬에 직결**되므로 세계 GLB 에서 구운
+   * 격자에는 그 자리가 빈 땅으로 남는다. 경위·판정·실측은 `world-glb/systems/
+   * glb-walkmap.ts` 한 곳이고 여기에 다시 적지 않는다.
+   *
+   * ⚠ **선택적이다** — 이 항목이 없는 세계(world2·world3·world5·world7·world8·world10)
+   * 에서는 부르지 않으므로 **코드 경로가 한 글자도 안 바뀐다**(`parcelLoaded` 와 같은
+   * 형태). 그 불변은 `tests/world-shared-glb-city-blockwalk.test.ts` 의
+   * 「훅이 없으면 한 번도 안 부른다」가 본다.
+   */
+  readonly blockWalk?: (o: Object3D) => void;
 }
 
 /**
@@ -390,6 +402,13 @@ export const glbCity = {
           if (!disposed) badge?.set(`미술관 ${done}/${want} 세우는 중…`);
         }, copies);
         if (disposed) return;
+
+        // ── 🔴 세운 채를 걷기 격자에 알린다 (감독 신고 2026-09-19) ─────────────
+        // **여기가 최종 변환 확정 시점이다**: `place` 가 홀더의 `position`·`rotation` 을
+        // 세우고 `updateMatrixWorld(true)` 까지 걸었고, 스케일은 배치가 안 건드린다
+        // (기준 1 — 근거는 `PlacedCopy.node` 주석). 등장 연출은 아래 `warmed` 가 선 뒤에야
+        // 도므로 **아직 한 번도 안 돌았다** — 중간 배수로 구우면 벽 두께가 틀린다.
+        blockPlaced(g as unknown as Object3D, env.blockWalk);
 
         // 예열이 **끝난 뒤에** ready 를 세운다(팀장 조건 1). 순서를 뒤집으면 게이트가
         // 예열 전에 기준선을 잡아 FAIL 이 그대로 재현되고, `ready` 가 뜻하는 것도
@@ -872,6 +891,23 @@ interface GeoLike {
 export { syncVisibility, advanceGrow, type PlacedCopy } from './glb-city-visibility.js';
 import { syncVisibility, advanceGrow, type PlacedCopy } from './glb-city-visibility.js';
 
+
+/**
+ * 🔴 **세운 채를 걷기 격자에 알린다.** 훅이 없으면 **아무것도 안 한다.**
+ *
+ * ⚠ **`export` 인 것은 시험을 위해서다** — 부르는 자리가 `create()` 안의 비동기 IIFE
+ * 뒤라 GLB 로더 없이는 안 돈다. 아래 `placeGrid` 가 같은 이유로 밖에 나와 있고, 그
+ * 주석대로 「시험할 방법이 없다」를 적기 전에 시그니처를 먼저 봤다 — 여기 필요한 것은
+ * `children` 을 가진 노드와 함수 하나뿐이라 **가짜 노드로 돈다.**
+ *
+ * @returns 실제로 알린 채의 수. **훅이 없으면 0** 이고 그것이 다른 여섯 세계의 동작이다.
+ */
+export function blockPlaced(root: Object3D, blockWalk?: (o: Object3D) => void): number {
+  if (!blockWalk) return 0;
+  const kids = root.children as unknown as Object3D[];
+  for (const h of kids) blockWalk(h);
+  return kids.length;
+}
 
 /**
  * 🔴 **export 인 것은 시험을 위해서다** (검수관 블로커 B1, 2026-08-19).
