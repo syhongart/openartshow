@@ -20,9 +20,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 import {
   walkCellSize, walkCellFromKnob, WALK_CELL_MULTIPLES, judgeCell,
-  walkSource, walkableAt, cellOf, centerOf, pruneUnreachable, type WalkGrid,
+  walkSource, walkableAt, cellOf, centerOf, pruneUnreachable, blockMargin, type WalkGrid,
 } from '../frontend/js/world-glb/decide/walkable.js';
-import { bakeWalkGrid, walkableCount, bakeWalkmapFor } from '../frontend/js/world-glb/systems/glb-walkmap.js';
+import {
+  bakeWalkGrid, walkableCount, bakeWalkmapFor, blockMesh, blockWalkFor,
+} from '../frontend/js/world-glb/systems/glb-walkmap.js';
 import {
   parcelSource, walkableDirs, isWalkable, nearbyCells, nextDir,
   isWalkableIn, nearbyCellsIn, nextDirIn, stepOf,
@@ -411,9 +413,18 @@ vi.mock('../frontend/js/world-glb/avatars/index.js', async () => {
   };
 });
 
-describe('⑤ 치비가 **구운 격자 위를** 걷는다 — 벽 칸을 밟지 않는다', () => {
-  /** 기능을 실제로 조립하고 프레임을 돌린다. 밟은 좌표를 전부 돌려준다 */
-  async function walkFrames(grid: WalkGrid | null, frames: number) {
+/**
+ * 기능을 실제로 조립하고 프레임을 돌린다. 밟은 좌표를 전부 돌려준다.
+ *
+ * ⚠ `describe` **밖**에 있는 것은 ⑤ 와 ⑥ 이 함께 쓰기 때문이다 — 두 벌로 나누면
+ * 「같은 배선을 재는가」가 흔들린다.
+ *
+ * @param onFrame 프레임 사이에 개입하는 훅. ⑥ 이 **걷는 도중에 격자를 고치는** 데 쓴다
+ *                (라이브에서 미술관이 붙는 시점이 정확히 그 형태다).
+ */
+async function walkFrames(
+  grid: WalkGrid | null, frames: number, onFrame?: (f: number) => void,
+) {
     const { npcFeature } = await import('../frontend/js/world-glb/features/npc.js');
     const scene = new THREE.Scene();
     const env = {
@@ -434,6 +445,7 @@ describe('⑤ 치비가 **구운 격자 위를** 걷는다 — 벽 칸을 밟지
     const seen: Array<{ x: number; z: number }> = [];
     const drift: Array<{ cellDrift: number | null; grid: { arrive: number; cell: number } }> = [];
     for (let f = 0; f < frames; f++) {
+      onFrame?.(f);
       inst.system!.update({ dt: 1 / 60 } as never);
       seen.push(...bodies());
       drift.push(inst.diagnostics!() as never);
@@ -441,8 +453,9 @@ describe('⑤ 치비가 **구운 격자 위를** 걷는다 — 벽 칸을 밟지
     const placed = bodies().length;
     inst.dispose?.();
     return { seen, placed, drift };
-  }
+}
 
+describe('⑤ 치비가 **구운 격자 위를** 걷는다 — 벽 칸을 밟지 않는다', () => {
   it('격자를 주면 **그 격자의 걸을 수 있는 칸**만 밟는다', async () => {
     const grid = bakeForTest(await loadSynthetic());
     const { seen, placed } = await walkFrames(grid, 240);
@@ -497,5 +510,203 @@ describe('⑤ 치비가 **구운 격자 위를** 걷는다 — 벽 칸을 밟지
       return near < 2;   // 파셀 중심선에서 2m 안쪽
     });
     expect(onParcelGrid, '격자를 안 줬는데 파셀 중심선을 벗어났다').toBe(true);
+  });
+});
+
+// ── ⑥ 씬에 **나중에 붙는 물건**을 격자에 반영한다 ───────────────────────────
+//
+// 감독 신고 2026-09-19 *"벽사이를 걸어가네"* → 감독 지시 *"벽이 있는 라인에 딱 붙게 말고
+// 여백을 두면"* · *"그리고. 문은 만들어야지 / 11에 치비들어갈 문 있게 방법을 찾아보고.
+// 다른 glb일때도 대응되게 해"*.
+//
+// 재는 것 넷: **벽은 막히고 문은 열린다** · 여백이 유도에서 온다 · 멱등 · 제자리 반영.
+//
+// ⚠ 여기서는 덧칠 대상을 **GLB 로 굽지 않는다.** 라이브에서 미술관은 이미 로더를 통과해
+// **씬 노드**로 들어와 있고(`glb-city.ts` 의 `placeGrid` 가 세운 홀더), 이 함수가 받는
+// 것도 그 노드다 — 세계 쪽(④)이 GLB 왕복을 타는 것과 재는 축이 다르다.
+
+/** 문 높이(m). 사람 키(1.7)보다 확실히 높아야 「머리 위가 비었다」가 된다 */
+const DOOR_H = 2.5;
+/** 문 폭(m). 여백 두 겹(2 × bodyRadius = 0.68)을 빼고도 몸 지름이 남아야 한다 */
+const DOOR_W = 1.5;
+/** 건물 한 변(m) — 십자 통로(반폭 2.5m) 안에 들어가야 한다 */
+const HUT = 4;
+/** 건물 중심 z(m) */
+const HUT_Z = 20;
+
+/** 남쪽 면에 문이 뚫린 작은 건물. `door=false` 면 그 자리도 벽이다(대조군) */
+function makeHut(door: boolean): THREE.Object3D {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial();
+  const H = 3;
+  const t = 0.2;
+  const add = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  };
+  const half = HUT / 2;
+  // 동·서·북 벽
+  add(t, H, HUT, -half, H / 2, HUT_Z);
+  add(t, H, HUT, half, H / 2, HUT_Z);
+  add(HUT, H, t, 0, H / 2, HUT_Z + half);
+  // 남쪽 벽 — 문 양옆 기둥
+  const side = (HUT - DOOR_W) / 2;
+  add(side, H, t, -(DOOR_W + side) / 2, H / 2, HUT_Z - half);
+  add(side, H, t, (DOOR_W + side) / 2, H / 2, HUT_Z - half);
+  // 문 자리 — 인방만(문이 열린 경우) 또는 바닥까지 꽉 찬 벽(대조군)
+  if (door) add(DOOR_W, H - DOOR_H, t, 0, (H + DOOR_H) / 2, HUT_Z - half);
+  else add(DOOR_W, H, t, 0, H / 2, HUT_Z - half);
+  g.updateMatrixWorld(true);
+  return g;
+}
+
+describe('⑥ 씬에 나중에 붙는 물건 — 벽은 막고 **문은 연다**', () => {
+  const BAND = { groundY: 0, step: 0.5, head: 1.7 };
+  const MARGIN = blockMargin(DEFAULT_BODY_R);
+  /** 세계 격자 + 그 안에 선 건물. 덧칠 후 가지치기까지 `main.ts` 배선과 같은 순서 */
+  async function world() {
+    return bakeForTest(await loadSynthetic());
+  }
+  const at = (g: WalkGrid, x: number, z: number) => {
+    const c = cellOf(g, x, z);
+    return walkableAt(g, c.px, c.pz);
+  };
+
+  it('전제 — 덧칠 **전에는** 건물 안팎이 둘 다 걸을 수 있다(아니면 아래가 공허하다)', async () => {
+    const g = await world();
+    expect(at(g, 0, HUT_Z), '건물 안쪽이 애초에 못 걷는 자리다').toBe(true);
+    expect(at(g, 0, HUT_Z - HUT / 2 - 1), '문 앞이 애초에 못 걷는 자리다').toBe(true);
+  });
+
+  it('🔴 **벽은 막히고 문은 안 막힌다** — 두 축이 개구부를 찾아낸다', async () => {
+    const g = await world();
+    const b = blockMesh(g, makeHut(true) as never, BAND, MARGIN);
+    // 문 한가운데(남쪽 벽면) — 머리 위가 인방까지 2.5m 라 지나간다
+    expect(at(b, 0, HUT_Z - HUT / 2), '문이 막혔다').toBe(true);
+    // 같은 벽면의 문 옆 기둥 — 바닥부터 막혀 있다
+    expect(at(b, HUT / 2 - 0.4, HUT_Z - HUT / 2), '벽이 안 막혔다').toBe(false);
+    // 동쪽 벽
+    expect(at(b, HUT / 2, HUT_Z), '벽이 안 막혔다').toBe(false);
+  });
+
+  it('🔴 **문으로 들어간 자리가 바깥과 이어져 있다** — 가지치기 뒤에도 남는다', async () => {
+    const g = await world();
+    const b = pruneUnreachable(blockMesh(g, makeHut(true) as never, BAND, MARGIN), 0, 0);
+    // `pruneUnreachable` 은 시작점(0,0)에서 **걸어서 닿는** 칸만 남긴다. 그러므로 여기
+    // 남아 있다는 것이 곧 「문이 열려 있고, 들어간 치비가 나올 수도 있다」이다
+    // (무향 격자라 도달 가능성이 대칭이다).
+    expect(at(b, 0, HUT_Z), '문으로 들어간 안쪽이 바깥과 안 이어졌다').toBe(true);
+  });
+
+  it('🔴 **문이 없으면 안쪽이 사라진다** — 위 검사가 「그냥 안 막은 것」이 아니다', async () => {
+    const g = await world();
+    const b = pruneUnreachable(blockMesh(g, makeHut(false) as never, BAND, MARGIN), 0, 0);
+    expect(at(b, 0, HUT_Z), '사방이 막힌 건물 안쪽이 걸을 수 있는 채로 남았다').toBe(false);
+    // 건물 **밖**은 그대로다 — 덧칠이 세계를 통째로 지우지 않는다
+    expect(at(b, 0, HUT_Z - HUT / 2 - 1)).toBe(true);
+  });
+
+  it('여백이 **유도에서 온다** — 몸이 굵어지면 더 막히고, 문 폭을 넘으면 닫힌다', async () => {
+    const g = await world();
+    const hut = makeHut(true);
+    const count = (m: number) => walkableCount(blockMesh(g, hut as never, BAND, m));
+    // 여백이 커질수록 단조로 더 막힌다
+    expect(count(0)).toBeGreaterThan(count(MARGIN));
+    expect(count(MARGIN)).toBeGreaterThan(count(2 * MARGIN));
+    // 유도 자체 — 여백은 몸 반경이다(숫자를 여기 적지 않는다)
+    expect(blockMargin(DEFAULT_BODY_R)).toBeCloseTo(DEFAULT_BODY_R, 10);
+    // 여백 두 겹이 문 폭을 넘으면 **문이 닫힌다**: 그 경계가 실재한다는 실물
+    const wide = blockMesh(g, hut as never, BAND, DOOR_W);
+    expect(at(wide, 0, HUT_Z - HUT / 2), '여백이 문보다 넓은데 문이 열려 있다').toBe(false);
+    // 그리고 기본 여백에서는 **닫히지 않는다** — 문 폭이 여백 두 겹보다 넓다
+    expect(2 * MARGIN).toBeLessThan(DOOR_W);
+  });
+
+  it('**멱등**이다 — 같은 물건을 두 번 칠해도 격자가 같다 (팀장 조건 1)', async () => {
+    const g = await world();
+    const hut = makeHut(true);
+    const once = blockMesh(g, hut as never, BAND, MARGIN);
+    const twice = blockMesh(once, hut as never, BAND, MARGIN);
+    expect(Array.from(twice.walk)).toEqual(Array.from(once.walk));
+    // 입력은 안 바뀐다 — 순수 함수라는 계약
+    expect(walkableCount(g)).toBeGreaterThan(walkableCount(once));
+  });
+
+  it('🔴 `blockWalkFor` 는 **제자리에 반영**한다 — 이미 나간 공급자가 그것을 본다', async () => {
+    const g = await world();
+    // 걷기가 부팅 때 하는 것과 **같은 순서**: 공급자를 먼저 만들고, 나중에 덧칠한다
+    const src = walkSource(g, DEFAULT_BODY_R);
+    const inside = cellOf(g, 0, HUT_Z);
+    expect(src.standable(inside.px, inside.pz), '전제가 틀렸다 — 덧칠 전에 이미 못 걷는다').toBe(true);
+    const wallCell = cellOf(g, HUT / 2, HUT_Z);
+    expect(src.standable(wallCell.px, wallCell.pz)).toBe(true);
+
+    const out = blockWalkFor(g, makeHut(true) as never, BAND.head, { x: 0, z: 0 });
+    expect(out, '새 객체를 돌려줬다 — 그러면 이미 나간 공급자에 안 닿는다').toBe(g);
+    // **공급자를 다시 만들지 않았는데** 벽이 보인다
+    expect(src.standable(wallCell.px, wallCell.pz), '덧칠이 공급자에 안 닿았다').toBe(false);
+    // 문은 그대로 열려 있고, 안쪽도 이어져 있다(재가지치기를 통과했다)
+    expect(src.standable(inside.px, inside.pz)).toBe(true);
+  });
+
+  it('덧칠 뒤 **다시 가지친다** — 끊긴 구역이 남지 않는다 (팀장 조건 1)', async () => {
+    const g = await world();
+    const before = walkableCount(g);
+    blockWalkFor(g, makeHut(false) as never, BAND.head, { x: 0, z: 0 });
+    // 사방이 막힌 건물 안쪽은 **덧칠만으로는 살아남는다**(바닥 있고 머리 위 빔).
+    // 가지치기가 돌아야 사라진다 — 그 차이가 이 단언이다.
+    expect(at(g, 0, HUT_Z)).toBe(false);
+    expect(walkableCount(g)).toBeLessThan(before);
+  });
+});
+
+// ── ⑦ 격자가 **걷는 도중에** 바뀌어도 치비가 벽 안에 갇히지 않는다 ────────────
+describe('⑦ 갇힘 — 덧칠이 발밑을 막아도 빠져나온다', () => {
+  /** 통로를 가로질러 막는 벽. 그 구간에 있던 체는 발밑이 통행 불가가 된다 */
+  function crossWall(): THREE.Object3D {
+    const g = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(2 * HALF_W, 6, 8), new THREE.MeshBasicMaterial());
+    m.position.set(0, 3, 12);
+    g.add(m);
+    g.updateMatrixWorld(true);
+    return g;
+  }
+
+  it('🔴 걷는 도중 발밑이 막혀도 **모든 체가 걸을 수 있는 칸**에 있다', async () => {
+    const grid = bakeForTest(await loadSynthetic());
+    let blocked = false;
+    const { seen, placed } = await walkFrames(grid, 260, (f) => {
+      // 60프레임쯤 걷게 둔 뒤 덧칠한다 — 라이브에서 미술관이 붙는 그 형태다
+      if (f === 60 && !blocked) {
+        blocked = true;
+        blockWalkFor(grid, crossWall() as never, 1.7, { x: 0, z: 0 });
+      }
+    });
+    expect(blocked, '덧칠이 한 번도 안 일어났다 — 아래가 공허하다').toBe(true);
+    expect(placed, '치비가 한 체도 안 섰다').toBeGreaterThan(0);
+    // **마지막 60프레임**만 본다(덧칠 직후 한두 프레임은 빠져나오는 중이다)
+    const tail = seen.slice(-placed * 60);
+    const stuck = tail.filter((p) => {
+      const c = cellOf(grid, p.x, p.z);
+      return !walkableAt(grid, c.px, c.pz);
+    });
+    expect(
+      stuck.slice(0, 5),
+      `덧칠 뒤 치비가 벽 칸에 남았다(${stuck.length}/${tail.length}) — 갇힘 처리가 안 돌았다`,
+    ).toEqual([]);
+  });
+
+  it('덧칠 뒤에도 **움직인다** — 「벽 안에 서 있다」가 위 단언을 통과하지 못하게', async () => {
+    const grid = bakeForTest(await loadSynthetic());
+    const { seen, placed } = await walkFrames(grid, 260, (f) => {
+      if (f === 60) blockWalkFor(grid, crossWall() as never, 1.7, { x: 0, z: 0 });
+    });
+    const tail = seen.slice(-placed * 60);
+    const first = tail[0];
+    expect(
+      tail.some((p) => Math.hypot(p.x - first.x, p.z - first.z) > 1),
+      '덧칠 뒤 치비가 제자리에서 돈다',
+    ).toBe(true);
   });
 });

@@ -217,6 +217,53 @@ export function isWalkableIn(src: WalkSource, px: number, pz: number): boolean {
 }
 
 /**
+ * 🔴 **몸이 선 칸이 막혔을 때 빠져나갈 가장 가까운 칸.** 없으면 `null`.
+ *
+ * ── 왜 필요한가 — 안 하면 **벽 안에서 영원히 서 있는다** (2026-09-19) ────────
+ * 격자는 이제 부팅 뒤에도 바뀐다 — 씬에 물건이 붙으면 그 자리가 막힌다
+ * (`world-glb/systems/glb-walkmap.ts` 의 `blockWalkFor`). 그 순간 이미 그 안에 있던
+ * 체는 **자기 칸이 통행 불가**가 되고, 걷기의 재조준(`nextDirIn`)은 이웃을 보는데
+ * 이웃도 전부 막혔으므로 `null` 을 돌려준다 → 목표가 제자리로 고정된다. 화면에서는
+ * 「벽 안에 갇힌 사람」이고, 그것은 감독이 즉시 문제라고 부를 형태다.
+ *
+ * ── 왜 **링을 넓혀 가며** 찾는가 ────────────────────────────────────────────
+ * 가장 가까운 칸으로 나와야 순간이동이 눈에 덜 띈다. 반경을 1 부터 키우며 **처음
+ * 걸을 수 있는 칸이 나온 반경에서** 그 링 전체를 보고 중심에 가장 가까운 것을 고른다
+ * (링 하나 안에서도 모서리와 변은 거리가 다르다).
+ *
+ * ⚠ **판정은 `isWalkableIn` 이다** — 「설 수 있고 나갈 길이 있는가」. `standable` 만
+ * 보면 막다른 한 칸으로 나와 다음 프레임에 다시 굳는다.
+ *
+ * ⚠⚠ **격자를 안 바꾸는 세계에서는 한 번도 안 불린다** — 파셀 공급자에서 체는 언제나
+ * 도로 칸 위에 있고(스폰도 걷기도 그 칸만 고른다) 그 판정이 세션 중에 바뀌지 않는다.
+ * 기존 동작 불변이 그 사실 위에 선다.
+ *
+ * @param maxRing 여기까지 찾고 포기한다. 부르는 쪽이 「그보다 멀면 재배치」를 정한다 —
+ *                이 함수는 **어디까지가 근처인가**를 모른다(그것은 세계의 거리 단위다).
+ */
+export function snapOut(
+  src: WalkSource, px: number, pz: number, maxRing: number,
+): Cell | null {
+  for (let r = 1; r <= maxRing; r++) {
+    let best: Cell | null = null;
+    let bestD = Infinity;
+    for (let dz = -r; dz <= r; dz++) {
+      // 링의 **테두리만** 본다 — 안쪽은 이미 앞 반경에서 봤다.
+      const edge = Math.abs(dz) === r;
+      for (let dx = -r; dx <= r; dx += edge ? 1 : 2 * r) {
+        const cx = px + dx;
+        const cz = pz + dz;
+        if (!isWalkableIn(src, cx, cz)) continue;
+        const d = dx * dx + dz * dz;
+        if (d < bestD) { bestD = d; best = { px: cx, pz: cz }; }
+      }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+
+/**
  * 플레이어 주변에서 걸을 수 있는 칸을 고른다. 없으면 `null`.
  *
  * ── 왜 "주변" 인가 ─────────────────────────────────────────────────────────
