@@ -24,16 +24,18 @@
 // 전부 만든다.** 로딩이 그만큼 길어지지만, 로딩은 기다리는 시간이고 히칭은 놀라는 시간이다.
 //
 // ── 보이는 범위에만 유지한다 ────────────────────────────────────────────────
-// 안개가 시야를 닫는 거리(`decide/fog.ts`) 밖의 사람은 보이지도 않으면서 비용만 낸다. 멀어진
-// 사람은 플레이어 앞쪽 도로로 데려온다(`decide/npc-walk.ts` 의 `pickNearby`). 세계 전체에
-// 인구를 뿌리는 것이 아니라 **보이는 범위를 채우는** 방식이라, 걸어가면 계속 사람을
-// 만나면서도 비용 상한은 고정된다.
+// 안개가 시야를 닫는 거리(`decide/fog.ts`) 밖의 사람은 보이지도 않으면서 비용만 낸다.
+// 멀어진 사람은 플레이어 앞쪽 길로 데려온다(`decide/npc-walk.ts` 의 `pickNearbyIn`).
+// 세계 전체에 인구를 뿌리는 것이 아니라 **보이는 범위를 채우는** 방식이라, 걸어가면
+// 계속 사람을 만나면서도 비용 상한은 고정된다.
 
 import * as THREE from 'three/webgpu';
 import { DEFAULT_LAYOUT } from '../parts/types.js';
 import {
-  nextDir, stepOf, pickNearby, yawOf, reachFor, cellKey, type Cell,
+  nextDirIn, stepOf, pickNearbyIn, yawOf, reachForIn, cellKey, type Cell,
 } from '../decide/npc-walk.js';
+import { chooseWalkSource, bandCells, arriveFor, lanesOn, cellDriftOf } from '../decide/npc-grid.js';
+import { DEFAULT_BODY_R } from '../systems/collision.js';
 import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
 import {
   laneOffset, lookAhead, laneTarget, stepLane, relativeTo, type Ahead,
@@ -140,31 +142,12 @@ export const SPAWN_RING = SPAWN_REACH;
  */
 const MAX_SPAWN_REACH = 15;
 
-/** 목표 도달 판정(m) */
+/**
+ * 목표 도달 판정(m). **파셀 격자(32m) 전제의 값**이고, 칸이 그보다 작은 격자에서는
+ * `decide/npc-grid.ts` 의 `arriveFor` 가 칸에서 다시 유도한다(경위·실측은 그 파일).
+ */
 const ARRIVE = 0.35;
 
-/**
- * 부팅 직후 **컬링을 끄고 전부 그리는** 프레임 수.
- *
- * ── 감독 성능 리포트에서 생겼다 ────────────────────────────────────────────
- * `geometry` 가 세션 내내 늘었다 — 86 → 129 → 170 → 282. 증가폭 +43·+41 이 치비 한
- * 체(45 지오)와 거의 같다.
- *
- * 원인은 `info.memory.geometries` 가 **씬에 있는 수가 아니라 GPU 에 업로드된 수**라는
- * 것이다. 부팅 때 체를 다 만들어도 업로드는 그 메시가 **처음 그려질 때** 일어난다.
- * 앞서 "파셀이 사람을 만들지 않으니 불변식은 지켜진다" 고 보고했는데, 객체 생성과
- * GPU 업로드가 다른 시점이라는 것을 놓쳤다.
- *
- * 히칭은 안 났지만 그냥 둘 문제가 아니다 — "업로드 스파이크가 **언제** 날지 모른다"는
- * 뜻이고, 그것이 이 아키텍처가 없애려는 바로 그 종류다.
- *
- * 처방: 처음 몇 프레임만 절두체 컬링을 끈다. 시야 밖 체까지 렌더 목록에 올라가
- * 업로드가 끝나고, 그 뒤 컬링을 되돌리면 드로우콜은 원래대로 돌아온다. 로딩 직후라
- * 그 몇 프레임의 드로우콜 증가는 화면에 드러나지 않는다.
- *
- * 3프레임인 이유: 1프레임이면 그 프레임에 렌더가 걸러질 여지(탭 비활성 등)가 있고,
- * 많이 줄수록 초기 드로우콜이 높은 구간만 길어진다.
- */
 const WARM_FRAMES = 3;
 
 interface Walker {
@@ -280,14 +263,23 @@ export const npcFeature: Feature = {
     if (count <= 0 && vrmCount <= 0) return null; // 대조군 측정용
 
     const { cellX, cellZ } = DEFAULT_LAYOUT;
+    // ── 어느 격자를 걷는가 (감독 요구 2026-09-19 *"맨하탄이 홍콩이 될수도"*) ──
+    // GLB 세계에는 파셀 도로 격자가 **없다.** 구운 격자를 받으면 그것을, 없으면 파셀
+    // 규칙을 쓴다 — 선택·환산·도달 판정·차선 여부는 `decide/npc-grid.ts` 소관이다.
+    const baked = env.walkGrid?.() ?? null;
+    const src = chooseWalkSource(baked, cellX, cellZ, DEFAULT_BODY_R);
+    const toCells = (parcelCells: number): number => bandCells(src, parcelCells, cellX);
+    const arrive = arriveFor(src.cell, ARRIVE);
+    const lanes = lanesOn(baked);
     const rnd = rngFrom(0x9e3779b9);
     const group = new THREE.Group();
     group.name = 'wg-npc';
     env.scene.add(group);
 
     const home = env.player.position;
-    const hpx = Math.round(home.x / cellX);
-    const hpz = Math.round(home.z / cellZ);
+    // 월드 → 칸 환산도 **공급자가 소유한다.** 여기서 `/ cellX` 를 적으면 구운 격자의
+    // 원점(세계 bbox 모서리)과 어긋나 사람들이 지도 밖에서 태어난다.
+    const { px: hpx, pz: hpz } = src.at(home.x, home.z);
 
     const walkers: Walker[] = [];
     /** 페이지를 떠난 뒤 VRM 로드가 끝나는 경우가 있다. 그때 씬에 붙이면 누수가 된다 */
@@ -304,15 +296,15 @@ export const npcFeature: Feature = {
     // 인원이 많으면 안개 시작을 넘는데, 안개 안 칸 수가 유한하므로 피할 수 없다.
     // 넘는다는 사실을 진단(`spawnReach`)으로 내보내 감춰지지 않게 한다.
     const wanted = count + vrmCount;
-    const spawnReach = reachFor(
+    const spawnRing = toCells(SPAWN_RING);
+    const spawnReach = reachForIn(
+      src,
       wanted,
       hpx,
       hpz,
-      SPAWN_RING,
-      SPAWN_REACH,
-      MAX_SPAWN_REACH,
-      cellX,
-      cellZ,
+      spawnRing,
+      toCells(SPAWN_REACH),
+      toCells(MAX_SPAWN_REACH),
     );
     /**
      * 이미 누가 태어난 칸. **스폰에서만** 본다 — 걷기는 그대로 자유다.
@@ -345,31 +337,33 @@ export const npcFeature: Feature = {
       // 이미 누가 선 칸은 비켜 앉는다. 자리가 동나면 배제 없이 다시 골라 — 겹쳐서라도
       // 세우는 편이 아예 안 서는 것보다 낫다(그 경우 위 `spawnReach` 가 이미 최대다).
       const start =
-        pickNearby(hpx, hpz, SPAWN_RING, spawnReach, rnd, cellX, cellZ, taken)
-        ?? pickNearby(hpx, hpz, SPAWN_RING, spawnReach, rnd, cellX, cellZ);
+        pickNearbyIn(src, hpx, hpz, spawnRing, spawnReach, rnd, taken)
+        ?? pickNearbyIn(src, hpx, hpz, spawnRing, spawnReach, rnd);
       if (!start) return false; // 걸을 곳이 없는 세계 — 있을 수 없지만 조용히 멈춘다
       taken.add(cellKey(start.px, start.pz));
       group.add(inst.group as unknown as THREE.Object3D);
       const radius = bodyRadiusOf(inst);
+      const at = src.center(start.px, start.pz);
       const w: Walker = {
         inst,
         kind,
         cell: start,
         from: null,
-        x: start.px * cellX,
-        z: start.pz * cellZ,
-        tx: start.px * cellX,
-        tz: start.pz * cellZ,
+        x: at.x,
+        z: at.z,
+        tx: at.x,
+        tz: at.z,
         ry: 0,
         speed: WALK_MIN + rnd() * (WALK_MAX - WALK_MIN),
         // 우측통행 — **전원 같은 규칙**이다. 체마다 무작위로 갈라 두면 같은 방향으로
         // 걷는 두 체가 서로 반대 차선에 놓여 오히려 마주치고, 대향이 같은 차선에 놓인다.
-        lane: laneOffset(radius),
+        // 격자 세계는 `bound` 0 — `laneOffset` 이 «차선이 성립하지 않는다» 로 0 을 낸다
+        lane: laneOffset(radius, lanes ? undefined : 0),
         radius,
         ox: 0,
         oz: 0,
-        rx: start.px * cellX,
-        rz: start.pz * cellZ,
+        rx: at.x,
+        rz: at.z,
         shown: true,
       };
       retarget(w);
@@ -424,13 +418,14 @@ export const npcFeature: Feature = {
 
     /** 다음 칸을 정하고 목표 좌표를 세운다. 갈 곳이 없으면 제자리에 둔다 */
     function retarget(w: Walker) {
-      const d = nextDir(w.cell.px, w.cell.pz, w.from, rnd, cellX, cellZ);
+      const d = nextDirIn(src, w.cell.px, w.cell.pz, w.from, rnd);
       if (!d) { w.tx = w.x; w.tz = w.z; return; }
       const s = stepOf(d);
       w.cell = { px: w.cell.px + s.px, pz: w.cell.pz + s.pz };
       w.from = d;
-      w.tx = w.cell.px * cellX;
-      w.tz = w.cell.pz * cellZ;
+      const to = src.center(w.cell.px, w.cell.pz);
+      w.tx = to.x;
+      w.tz = to.z;
     }
 
     /** 플레이어 근처 도로로 데려온다. 자리를 못 찾으면 그대로 둔다(다음 프레임에 다시 본다) */
@@ -438,12 +433,13 @@ export const npcFeature: Feature = {
       // 재배치도 같은 밴드를 쓴다 — 인원이 많으면 넓어진 밴드로 돌아와야 그 인원이
       // 다시 한 줌에 몰리지 않는다. 여기서는 점유를 안 본다(스폰과 달리 상시 벌어지는
       // 일이라, 자리 다툼으로 재배치가 실패하면 그 체가 영영 멀리 남는다).
-      const c = pickNearby(px, pz, SPAWN_RING, spawnReach, rnd, cellX, cellZ);
+      const c = pickNearbyIn(src, px, pz, spawnRing, spawnReach, rnd);
       if (!c) return;
       w.cell = c;
       w.from = null;
-      w.x = w.tx = c.px * cellX;
-      w.z = w.tz = c.pz * cellZ;
+      const to = src.center(c.px, c.pz);
+      w.x = w.tx = to.x;
+      w.z = w.tz = to.z;
       // 차선 오프셋도 되돌린다. 재배치는 위치가 통째로 바뀌는 일이라, 이전 진행방향에서
       // 얻은 오프셋을 들고 가면 새 길에서 엉뚱한 쪽에 서 있게 된다. 0 에서 다시 붙는다.
       w.ox = 0;
@@ -528,8 +524,7 @@ export const npcFeature: Feature = {
           for (const w of walkers) setCulling(w, true);
         }
         const p = env.player.position;
-        const ppx = Math.round(p.x / cellX);
-        const ppz = Math.round(p.z / cellZ);
+        const { px: ppx, pz: ppz } = src.at(p.x, p.z);
         // 재배치 임계와 **은닉 임계는 다른 값이다**(팀장 판정 2026-08-02, 본편 ①).
         // 오래 하나로 썼고 그것이 이번 회차가 찾아낸 결함이다 — 아래 `show` 주석 참조.
         const recycleFar = RECYCLE_CELLS * cellX;
@@ -544,7 +539,7 @@ export const npcFeature: Feature = {
           const dz = w.tz - w.z;
           const dist = Math.hypot(dx, dz);
           let moving = 0;
-          if (dist > ARRIVE) {
+          if (dist > arrive) {
             const step = Math.min(dist, w.speed * dt);
             w.x += (dx / dist) * step;
             w.z += (dz / dist) * step;
@@ -618,10 +613,11 @@ export const npcFeature: Feature = {
           // 물러났고, 추월에서 필요량의 **정확히 절반**만 벌어졌다. 검사는 같은 값을
           // 증분으로 검증해서 **양쪽 다 통과**했다.
           // 이제 `laneTarget` 이 **절대 목표**를 내고 여기서는 더할 것이 없다.
-          const seen: Ahead[] = [];
-          for (const o of walkers) {
-            if (o === w || !o.shown) continue;
-            seen.push(relativeTo(w.ry, o.rx - w.rx, o.rz - w.rz));
+          if (lanes) {
+            const seen: Ahead[] = [];
+            for (const o of walkers) {
+              if (o === w || !o.shown) continue;
+              seen.push(relativeTo(w.ry, o.rx - w.rx, o.rz - w.rz));
           }
           // 벌릴 간격은 유도한다. 상대 반경은 이웃마다 다르지만, 가장 큰 체를 기준으로
           // 잡으면 어느 조합에서도 부족하지 않다.
@@ -637,6 +633,7 @@ export const npcFeature: Feature = {
           const next = stepLane(w.ox, w.oz, w.ry, target, w.speed * dt);
           w.ox = next.ox;
           w.oz = next.oz;
+          }
           w.rx = w.x + w.ox;
           w.rz = w.z + w.oz;
           w.inst.group.position.set(w.rx, 0, w.rz);
@@ -680,6 +677,9 @@ export const npcFeature: Feature = {
         // 것이 처방이 들었다는 증거가 못 된다. 작으면 볼 것이 생긴다는 뜻일 뿐이다.
         lanes: walkers.map((w) => Number(w.lane.toFixed(3))),
         minPairDist: minPairDistance(),
+        // 몸과 목표 칸의 어긋남(m) — `arriveFor` 유도가 소비되는지 보는 유일한 창이다
+        cellDrift: cellDriftOf(src, walkers),
+        grid: { arrive, cell: src.cell },   // 위 `cellDrift` 를 판정하려면 둘 다 필요하다
         // 인원에 맞춰 넓힌 스폰 밴드(셀). 기본값(`SPAWN_REACH`)보다 크면 **안개 시작을
         // 넘어 태어난 체가 있다**는 뜻이다 — 인원이 많을 때는 피할 수 없지만, 그
         // 사실이 감춰지면 본편 ① 이 고친 결함과 구별되지 않는다.

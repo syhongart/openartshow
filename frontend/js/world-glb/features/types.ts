@@ -26,6 +26,7 @@
 // 개별 named type import를 쓴다 — `import type * as THREE from 'three/webgpu'`로 하면
 // 내부 네임스페이스 재수출에 걸려 타입이 안 잡힌다(TS2694).
 import type { GlbMap } from '../systems/glb-minimap.js';
+import type { WalkGrid } from '../decide/walkable.js';
 import type { Scene, DirectionalLight, HemisphereLight, Camera, Object3D } from 'three/webgpu';
 import type { SkyTime } from '../decide/night.js';
 import type { ShadingMode } from '../decide/shading.js';
@@ -140,6 +141,15 @@ export interface FeatureEnv {
    * 그전에는 `null` 이고 지도가 바탕만 그린다(「아직 안 왔다」가 사실이다).
    */
   readonly glbMap: () => GlbMap | null;
+
+  /**
+   * **GLB 에서 구운 「걸을 수 있는 격자」**(감독 요구 2026-09-19). 치비 걷기가 격자
+   * 공급자로 쓴다 — 경위·판정은 `decide/walkable.ts`, 경계는 `options.ts` 의 `walkmap`.
+   * ⚠ **선택적이다.** 안 주는 세계(world2·world7·world8)에서는 걷기가 파셀 도로 격자를
+   * 쓴다 — 코드 경로가 한 글자도 안 바뀐다. 「기본값이 같다」가 아니라 **「경로가 없다」**
+   * 가 이 트리의 불변 보장 형태다. 클로저인 이유는 위 `glbMap` 과 같다.
+   */
+  readonly walkGrid?: () => WalkGrid | null;
 
   /**
    * 미술관 GLB 의 레이캐스트 루트. 아직 안 세워졌거나 그 기능이 꺼져 있으면 `null`

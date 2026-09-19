@@ -105,6 +105,17 @@ export interface Collider {
  */
 export const DEFAULT_BODY_R = 0.34;
 
+/**
+ * GLB 세계에서 **무릎 높이**(m). 지면이 y=0 평면이므로 상수다(근거는 `glb-collider.ts`
+ * 의 `kneeY`).
+ *
+ * **소비자가 둘이다** — 충돌기가 광선을 쏘는 높이이고, 걸을 수 있는 격자
+ * (`systems/glb-walkmap.ts`)가 「밟을 수 있는 면」의 상한으로 쓴다. 두 곳에 각각 적으면
+ * 한쪽만 바뀌는 날 «치비는 올라가는데 나는 막힌다» 가 생기고, 그 증상은 원인에서 가장
+ * 멀다. 그래서 값을 여기 한 곳에 둔다.
+ */
+export const DEFAULT_KNEE_Y = 0.5;
+
 export function createCollider(opts: ColliderOptions = {}): Collider {
   const layout = opts.layout ?? DEFAULT_LAYOUT;
   const frozenAt = opts.frozenAt;

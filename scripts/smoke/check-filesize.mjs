@@ -194,6 +194,26 @@ export function checkFileSize() {
   };
 }
 
+/**
+ * `--write` 를 건너 살아남을 `_notes` 를 고른다. **순수 함수다** — 이 판정이
+ * `writeBaseline` 안에 인라인으로 있으면 검사할 수가 없고(파일을 실제로 덮어야 한다),
+ * 검사가 없으면 다음 사람이 한 줄 고쳤을 때 사유가 조용히 사라진다.
+ *
+ * 남기는 것: 설명 줄(`_`)과 **아직 부채인 파일**의 사유. 부채를 갚아 `over` 에서 빠진
+ * 경로의 사유는 버린다 — 안 버리면 이 블록이 화석이 되고, 화석이 된 문서는 이 저장소가
+ * 가장 비싸게 치른 형태다(사실이 아닌 진술이 남아 다음 사람이 확인을 생략한다).
+ *
+ * 소비 지점은 아래 `writeBaseline` 한 줄이고, 그것이 실제로 도는지는 실측으로 확인했다
+ * (2026-09-19: `--write` 후 `_notes` 3키 보존 · limit 491/동결 96 으로 굽힌 뒤 원복).
+ */
+export function keepNotes(prevNotes, over) {
+  const out = {};
+  for (const [k, v] of Object.entries(prevNotes ?? {})) {
+    if (k === '_' || over[k] !== undefined) out[k] = v;
+  }
+  return out;
+}
+
 /** baseline 을 지금 상태로 굽는다. `limit` 은 분포에서 유도한다. */
 export function writeBaseline() {
   const now = measure();
@@ -202,11 +222,18 @@ export function writeBaseline() {
   for (const [file, n] of [...now].sort((a, b) => b[1] - a[1])) {
     if (n > limit) over[file] = n;
   }
+  // ── `_notes` 는 **사람이 쓴 것이라 보존한다** (팀장 조건 ②, 2026-09-19) ─────
+  // 팀장 판정이 «부채 항목 옆에 사유를 남겨라» 였는데 JSON 에는 값 옆에 주석을 못 단다.
+  // 그래서 경로를 키로 하는 블록을 두는데, 그것을 `--write` 가 날려버리면 사유가 **첫
+  // 재굽기에 조용히 사라진다** — 이 저장소가 「한쪽만 고쳐도 아무도 모른다」고 부르는
+  // 그 형태다. 부채를 갚아 `over` 에서 빠진 경로의 사유는 함께 지운다(화석 방지).
+  const notes = keepNotes(readBaseline()?._notes, over);
   const doc = {
     _: '파일 줄 수 동결 목록. scripts/smoke/check-filesize.mjs 가 읽는다. '
       + '기존 부채는 동결하고 새 부채를 막는다 — 값이 줄어드는 것이 진척이고, --write 로 다시 굽는다.',
     limit,
     limitFrom: `${LIMIT_PERCENTILE}퍼센타일 (파일 ${now.size}개 분포에서 유도)`,
+    ...(Object.keys(notes).length > 0 ? { _notes: notes } : {}),
     over,
   };
   fs.writeFileSync(BASELINE_PATH, `${JSON.stringify(doc, null, 2)}\n`, 'utf8');

@@ -2,6 +2,11 @@
   "_": "파일 줄 수 동결 목록. scripts/smoke/check-filesize.mjs 가 읽는다. 기존 부채는 동결하고 새 부채를 막는다 — 값이 줄어드는 것이 진척이고, --write 로 다시 굽는다.",
   "limit": 497,
   "limitFrom": "90퍼센타일 (파일 734개 분포에서 유도)",
+  "_notes": {
+    "_": "JSON 에는 값 옆에 주석을 못 단다 — 그래서 사유를 경로로 잇는다. `--write` 가 이 블록을 **보존한다**(check-filesize.mjs 의 writeBaseline). 부채를 갚으면 해당 줄을 지운다.",
+    "frontend/js/world-glb/main.ts": "2026-09-19 · 1250→1257. 치비 걷기 격자 배선(굽기 호출 1줄 + 격자 상태 1줄 + 걷기 공급 주입) 과 그 근거 주석. 순수 코드만 세도 +6 이라 이번 회차 범위 밖의 리팩터 없이는 못 줄인다. 줄이는 길: stream 단계(⑤⑥ 조립부)를 `systems/` 의 조립 함수로 뽑는 것 — 팀장 상신 사안이다.",
+    "frontend/js/world-glb/features/types.ts": "2026-09-19 · 520→530. 걷기 공급자(`WalkSource`)를 기능 계약에 얹었다. 이 파일은 **계약 선언**이라 로직 추출로는 안 줄고, 계약을 쪼개면 배럴이 하나 더 는다. 줄이는 길: 치비 전용 계약을 `features/npc-types.ts` 로 분리 — 팀장 상신 사안이다."
+  },
   "over": {
     "frontend/js/world.js": 2371,
     "frontend/js/world5/features/ocean.ts": 1725,
@@ -18,7 +23,7 @@
     "frontend/js/world2/main.ts": 1427,
     "frontend/js/world10/main.ts": 1399,
     "frontend/js/world5/sky.js": 1396,
-    "frontend/js/world-glb/main.ts": 1250,
+    "frontend/js/world-glb/main.ts": 1257,
     "frontend/js/space-parts.ts": 1192,
     "frontend/js/world-shared/glb-city.ts": 1119,
     "scripts/smoke/run.mjs": 1068,
@@ -74,7 +79,7 @@
     "frontend/js/chibi-animation-v2.ts": 538,
     "frontend/js/mypage/app.ts": 532,
     "frontend/js/npc.js": 522,
-    "frontend/js/world-glb/features/types.ts": 520,
+    "frontend/js/world-glb/features/types.ts": 530,
     "frontend/js/world10/features/types.ts": 520,
     "frontend/js/player.js": 518,
     "frontend/js/world2/features/types.ts": 513,

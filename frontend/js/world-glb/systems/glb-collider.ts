@@ -44,8 +44,18 @@ export interface GlbColliderOptions {
 const defaultNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 /**
- * GLB 를 걷는 충돌기. `y` 를 안 받는 이유는 `Collider` 계약이 평면 해석이기 때문이다 —
- * 높이는 조립부가 별도로 관리한다(`glbGround`).
+ * GLB 를 걷는 충돌기. `y` 를 안 받는 이유는 `Collider` 계약이 평면 해석이기 때문이다.
+ *
+ * ⚠ **이 주석은 오래 «높이는 조립부가 별도로 관리한다(`glbGround`)» 라고 적고 있었고
+ * 그것은 거짓이었다**(2026-09-19 실측 정정 — 저장소 전수 grep 에서 `glbGround` 는 이 두
+ * 주석 말고 **0건**이다). 실제로는 **아무도 높이를 관리하지 않는다**: 플레이어는 `y = 0`
+ * 평면 위를 걷고(`PlayerSystem` 은 눈높이 `eyeHeight` 만 들고 지면 높이는 안 푼다),
+ * 걷기 격자도 같은 전제로 굽는다(`glb-walkmap.ts` 의 `groundY: 0`). 그래서 이 트리는
+ * **지상 1층 단층**이고, 경사·계단·다층은 판정 대상이 아니다.
+ *
+ * 있지도 않은 함수 이름을 적어 두면 다음 사람이 그것을 찾다가 시간을 쓰거나, 더 나쁘게는
+ * 「높이는 이미 누가 본다」로 읽고 자기 축에서 뺀다 — 이 저장소가 `main` unprotected
+ * 오기로 7일을 잃은 그 형태다.
  */
 export function createGlbCollider(opts: GlbColliderOptions): Collider {
   const now = opts.now ?? defaultNow;

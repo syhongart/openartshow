@@ -29,6 +29,74 @@ export interface Cell {
   pz: number;
 }
 
+/**
+ * **격자 공급자** — 「어느 칸에서 어디로 갈 수 있는가」를 이 판정이 묻는 유일한 통로.
+ *
+ * ── 왜 생겼나 (감독 요구 2026-09-19) ────────────────────────────────────────
+ * *"블렌더 파일이 계속 바뀔수있자나. **맨하탄이 홍콩이 될수도** 있고. **매번 치비를
+ * 수정하지 않아도 자동으로** 다니게."*
+ *
+ * 위 헤더가 적어 둔 대로 이 파일은 **파셀 도로 격자**를 전제로 쓰였다 — `roadDirs` 로
+ * 십자 도로를 읽고 `parcelWater` 로 바다를 거른다. 그 전제는 world2 섬에서만 참이고
+ * **GLB 세계에는 파셀이 아예 없다.** 그렇다고 이 파일을 GLB 쪽으로 다시 쓰면 world2 가
+ * 깨지고, 두 벌로 복사하면 걷기 규칙이 두 곳에 산다.
+ *
+ * 그래서 **「격자」를 인자로 뽑는다.** 걷기 규칙(왔던 길을 피한다 · 막다른 길에서는
+ * 되돌아간다 · 밴드 안에서 고른다)은 여기 그대로 남고, 「무엇이 길인가」만 공급자가 답한다.
+ * 파셀 세계는 `parcelSource` 를, GLB 세계는 `decide/walkable.ts` 의 `walkSource` 를 준다.
+ *
+ * ⚠ **기존 함수들은 그대로 남는다** — `parcelSource` 로 위임할 뿐이라 동작이 한 글자도
+ * 안 바뀐다. 그 불변은 `tests/world-glb-walkmap.test.ts` ② 가 두 경로를 **표로 대조**해
+ * 지킨다(기존 단언을 약화시키지 않는다는 뜻이다).
+ */
+export interface WalkSource {
+  /** 칸 한 변(m). 밴드를 **미터에서** 칸으로 환산하는 데 쓴다 */
+  readonly cell: number;
+  /**
+   * 후보를 훑는 보폭(칸). 촘촘한 격자에서 `nearbyCells` 의 (2R+1)² 순회가 폭발하는
+   * 것을 막는다. 파셀 격자에서는 1 이라 기존 동작 그대로다(근거는 `walkSource`).
+   */
+  readonly stride: number;
+  /** 이 칸에 **설 수 있는가** — 세계 안이고 바닥이 있는가. 「나갈 길이 있는가」는 안 본다 */
+  standable(px: number, pz: number): boolean;
+  /** 이 칸에서 **나갈 수 있는** 방향들 */
+  dirs(px: number, pz: number): Dir[];
+  /** 칸의 월드 좌표(중심) */
+  center(px: number, pz: number): { x: number; z: number };
+  /** 월드 좌표가 속한 칸 */
+  at(x: number, z: number): Cell;
+}
+
+/**
+ * 파셀 도로 격자 공급자 — **이 파일이 지금까지 해 오던 그것**이다.
+ *
+ * 한 번 만들어 재사용한다(내부 루프에서 매번 만들면 할당이 후보 수만큼 늘어난다).
+ */
+export function parcelSource(cellX: number, cellZ: number): WalkSource {
+  return {
+    cell: cellX,
+    // 파셀은 32m 라 몸 지름(0.68m)보다 훨씬 크다 — 보폭을 나눌 여지가 없고, 1 이 곧
+    // 기존 동작이다. 여기에 유도식을 적지 않는 이유: 그 유도는 «촘촘한 격자» 의 문제이고
+    // 그것을 아는 것은 `decide/walkable.ts` 다.
+    stride: 1,
+    standable: (px, pz) => inGrid(px, pz) && parcelWater(px, pz, cellX, cellZ) !== 'water',
+    dirs(px, pz) {
+      const out: Dir[] = [];
+      for (const d of roadDirs(px, pz)) {
+        const s = stepOf(d);
+        const nx = px + s.px;
+        const nz = pz + s.pz;
+        if (!inGrid(nx, nz)) continue;
+        if (parcelWater(nx, nz, cellX, cellZ) === 'water') continue;
+        out.push(d);
+      }
+      return out;
+    },
+    center: (px, pz) => ({ x: px * cellX, z: pz * cellZ }),
+    at: (x, z) => ({ px: Math.round(x / cellX), pz: Math.round(z / cellZ) }),
+  };
+}
+
 /** 방향이 가리키는 이웃 칸. 여기가 `road-topology` 의 방향 이름과 좌표를 잇는 유일한 지점이다 */
 export function stepOf(dir: Dir): Cell {
   if (dir === 'north') return { px: 0, pz: -1 };
@@ -53,16 +121,26 @@ export function opposite(dir: Dir): Dir {
  * 그렇게 되는 문제는 아직 남아 있지만, 여기서까지 같은 일이 벌어질 이유는 없다).
  */
 export function walkableDirs(px: number, pz: number, cellX: number, cellZ: number): Dir[] {
-  const out: Dir[] = [];
-  for (const d of roadDirs(px, pz)) {
-    const s = stepOf(d);
-    const nx = px + s.px;
-    const nz = pz + s.pz;
-    if (!inGrid(nx, nz)) continue;
-    if (parcelWater(nx, nz, cellX, cellZ) === 'water') continue;
-    out.push(d);
+  return parcelSrc(cellX, cellZ).dirs(px, pz);
+}
+
+/**
+ * `parcelSource` 를 **셀 크기당 한 벌만** 만든다.
+ *
+ * 아래 함수들이 내부 루프에서 공급자를 쓰는데, 호출마다 새로 만들면 후보 수만큼 객체가
+ * 생긴다(`nearbyCells` 는 (2R+1)² 회 돈다). 캐시는 순수성을 깨지 않는다 — 같은 입력에
+ * 같은 값을 주는 객체를 재사용할 뿐이고, 공급자 자체가 상태를 갖지 않는다.
+ */
+let srcCache: WalkSource | null = null;
+let srcX = NaN;
+let srcZ = NaN;
+function parcelSrc(cellX: number, cellZ: number): WalkSource {
+  if (!srcCache || srcX !== cellX || srcZ !== cellZ) {
+    srcCache = parcelSource(cellX, cellZ);
+    srcX = cellX;
+    srcZ = cellZ;
   }
-  return out;
+  return srcCache;
 }
 
 /**
@@ -83,7 +161,18 @@ export function nextDir(
   cellX: number,
   cellZ: number,
 ): Dir | null {
-  const all = walkableDirs(px, pz, cellX, cellZ);
+  return nextDirIn(parcelSrc(cellX, cellZ), px, pz, from, rnd);
+}
+
+/** 위와 같은 규칙을 **임의 격자**에 적용한다. 규칙은 한 곳(여기)이고 격자만 갈린다 */
+export function nextDirIn(
+  src: WalkSource,
+  px: number,
+  pz: number,
+  from: Dir | null,
+  rnd: () => number,
+): Dir | null {
+  const all = src.dirs(px, pz);
   if (all.length === 0) return null;
   const back = from ? opposite(from) : null;
   const fwd = back ? all.filter((d) => d !== back) : all;
@@ -115,9 +204,16 @@ export function yawOf(dx: number, dz: number): number | null {
  * 서 있게 되고, 그게 "돌아다니는" 것으로 안 보인다.
  */
 export function isWalkable(px: number, pz: number, cellX: number, cellZ: number): boolean {
-  if (!inGrid(px, pz)) return false;
-  if (parcelWater(px, pz, cellX, cellZ) === 'water') return false;
-  return walkableDirs(px, pz, cellX, cellZ).length > 0;
+  return isWalkableIn(parcelSrc(cellX, cellZ), px, pz);
+}
+
+/**
+ * 같은 판정을 **임의 격자**에. 「설 수 있고 **나갈 길이 하나라도 있는가**」다 —
+ * 두 조건 중 뒤엣것이 있어야 사람이 그 자리에 굳지 않는다(위 문단).
+ */
+export function isWalkableIn(src: WalkSource, px: number, pz: number): boolean {
+  if (!src.standable(px, pz)) return false;
+  return src.dirs(px, pz).length > 0;
 }
 
 /**
@@ -143,7 +239,20 @@ export function pickNearby(
   cellZ: number,
   taken?: ReadonlySet<string>,
 ): Cell | null {
-  const cands = nearbyCells(centerPx, centerPz, ring, reach, cellX, cellZ, taken);
+  return pickNearbyIn(parcelSrc(cellX, cellZ), centerPx, centerPz, ring, reach, rnd, taken);
+}
+
+/** 같은 고르기를 **임의 격자**에 */
+export function pickNearbyIn(
+  src: WalkSource,
+  centerPx: number,
+  centerPz: number,
+  ring: number,
+  reach: number,
+  rnd: () => number,
+  taken?: ReadonlySet<string>,
+): Cell | null {
+  const cands = nearbyCellsIn(src, centerPx, centerPz, ring, reach, taken);
   if (cands.length === 0) return null;
   return cands[Math.floor(rnd() * cands.length) % cands.length];
 }
@@ -170,14 +279,32 @@ export function nearbyCells(
   cellZ: number,
   taken?: ReadonlySet<string>,
 ): Cell[] {
+  return nearbyCellsIn(parcelSrc(cellX, cellZ), centerPx, centerPz, ring, reach, taken);
+}
+
+/**
+ * 같은 순회를 **임의 격자**에. 보폭(`src.stride`)만큼 건너뛰며 훑는다.
+ *
+ * ⚠ **파셀 격자에서는 보폭이 1 이라 기존 순회 그대로다.** 보폭이 필요한 것은 칸이
+ * 사람 몸보다 작은 격자(GLB walkmap)뿐이고, 그 유도는 `decide/walkable.ts` 가 소유한다.
+ */
+export function nearbyCellsIn(
+  src: WalkSource,
+  centerPx: number,
+  centerPz: number,
+  ring: number,
+  reach: number,
+  taken?: ReadonlySet<string>,
+): Cell[] {
   const out: Cell[] = [];
-  for (let dx = -reach; dx <= reach; dx++) {
-    for (let dz = -reach; dz <= reach; dz++) {
+  const step = Math.max(1, Math.floor(src.stride));
+  for (let dx = -reach; dx <= reach; dx += step) {
+    for (let dz = -reach; dz <= reach; dz += step) {
       if (Math.max(Math.abs(dx), Math.abs(dz)) < ring) continue;
       const px = centerPx + dx;
       const pz = centerPz + dz;
       if (taken?.has(cellKey(px, pz))) continue;
-      if (isWalkable(px, pz, cellX, cellZ)) out.push({ px, pz });
+      if (isWalkableIn(src, px, pz)) out.push({ px, pz });
     }
   }
   return out;
@@ -213,8 +340,28 @@ export function reachFor(
   cellX: number,
   cellZ: number,
 ): number {
-  for (let r = min; r < max; r++) {
-    if (nearbyCells(centerPx, centerPz, ring, r, cellX, cellZ).length >= count) return r;
+  return reachForIn(parcelSrc(cellX, cellZ), count, centerPx, centerPz, ring, min, max);
+}
+
+/**
+ * 같은 넓히기를 **임의 격자**에.
+ *
+ * ⚠ **한 칸씩 넓히지 않는다** — 보폭이 있는 격자에서는 `r` 이 보폭보다 적게 늘면 후보
+ * 집합이 **한 칸도 안 변해** 같은 값을 `max - min` 번 다시 세게 된다(칸이 0.34m 이고
+ * 상한이 수백이면 그 헛수고가 그대로 부팅 시간이다). 보폭 단위로 넓힌다.
+ */
+export function reachForIn(
+  src: WalkSource,
+  count: number,
+  centerPx: number,
+  centerPz: number,
+  ring: number,
+  min: number,
+  max: number,
+): number {
+  const step = Math.max(1, Math.floor(src.stride));
+  for (let r = min; r < max; r += step) {
+    if (nearbyCellsIn(src, centerPx, centerPz, ring, r).length >= count) return r;
   }
   return max;
 }

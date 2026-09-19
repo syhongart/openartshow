@@ -50,9 +50,10 @@ import type { Object3D } from 'three/webgpu';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import type { Collider } from './systems/collision.js';
 import { createGlbCollider } from './systems/glb-collider.js';
-import { DEFAULT_BODY_R } from './systems/collision.js';
+import { DEFAULT_BODY_R, DEFAULT_KNEE_Y } from './systems/collision.js';
 import { mountGlbWorld, describeGlb, type GlbSourceResult, normalKnob, NORMAL_KNOB_MAX } from './systems/glb-source.js';
 import { bakeGlbMap, type GlbMap } from './systems/glb-minimap.js';
+import { bakeWalkmapFor } from './systems/glb-walkmap.js';
 import { warmUpNode } from '../world-shared/attach-loop.js';
 import { createGlbStream } from './systems/glb-stream.js';
 import { applyViewSpan } from './systems/glb-view.js';
@@ -512,6 +513,7 @@ export async function startGlbWorld(
    */
   let glbSource: GlbSourceResult | null = null;
   let glbMapBaked: GlbMap | null = null;   // GLB 에서 구운 지도. 부팅 1회다
+  let walkGridBaked: ReturnType<typeof bakeWalkmapFor> = null;   // 구운 걷기 격자. 부팅 1회다
   let glbStream: ReturnType<typeof createGlbStream> | null = null;
   /** 조립된 기능들. 무엇이 켜졌는지는 `features/index.ts`가 정한다 */
   let features: MountedFeature[] = [];
@@ -763,6 +765,7 @@ export async function startGlbWorld(
             // 있다」는 거짓을 말하게 된다.
             parcelLoaded: () => false,
             glbMap: () => glbMapBaked,   // 늦게 읽는 클로저 — 근거는 `features/types.ts`
+            walkGrid: () => walkGridBaked,   // 안 켠 페이지에서는 언제나 `null` 이다
             // 🔴 **미술관 루트** — 편집이 그 벽을 벽 검출 대상에 넣는다 (태스크 #112).
             // 위 둘과 **같은 클로저 이유**이고 하나가 더 있다: 이 자산은 13.5MB 라
             // 로드가 비동기여서, mount 시점에는 기능은 있어도 루트가 아직 `null` 이다.
@@ -915,9 +918,13 @@ export async function startGlbWorld(
         glbCollider = createGlbCollider({
           root: mounted.collisionRoot,
           bodyRadius: DEFAULT_BODY_R,
-          // 무릎 높이 — 지면이 y=0 평면이므로 상수다(근거는 `glb-collider.ts` 의 `kneeY`).
-          kneeY: 0.5,
+          kneeY: DEFAULT_KNEE_Y,
         });
+
+        // ⑥ **치비가 다닐 격자를 굽는다**(감독 요구 2026-09-19). 켠 페이지에서만 돈다 —
+        //    경계는 `options.ts` 의 `walkmap`, 인자 유도·비용은 `glb-walkmap.ts` 한 곳.
+        //    ⚠ **인스턴싱 «전» 트리**(⑤ 와 같은 이유) · 가지치기 기준은 **플레이어가 선 자리**다.
+        if (opts.walkmap) walkGridBaked = bakeWalkmapFor(mounted.collisionRoot, eyeHeight, player.position);
 
         adapt = new AdaptSystem({
           dpr: window.devicePixelRatio || 1,
