@@ -765,7 +765,12 @@ export async function startGlbWorld(
             // 있다」는 거짓을 말하게 된다.
             parcelLoaded: () => false,
             glbMap: () => glbMapBaked,   // 늦게 읽는 클로저 — 근거는 `features/types.ts`
-            walkGrid: () => walkGridBaked,   // 안 켠 페이지에서는 언제나 `null` 이다
+            // 🔴 **켠 페이지에서도 mount 시점엔 `null` 이다** — 굽기는 아래 `stream`
+            // 이고 이 조립은 `pools` 다. 소비자는 `create` 에서 캐시하지 말고 **늦게**
+            // 읽어야 한다(계약 전문은 `features/types.ts` 의 `walkGrid` 한 곳).
+            // 이 줄은 오래 *"안 켠 페이지에서는 언제나 `null`"* 이라고만 적고 있었고,
+            // 그 절반의 진술 위에서 걷기가 값을 캐시해 **격자가 한 번도 안 쓰였다.**
+            walkGrid: () => walkGridBaked,
             // 🔴 **씬에 붙는 물건이 지나는 일반 문**(감독 신고 *"벽사이를 걸어가네"*).
             // 격자를 안 굽는 페이지에서는 `undefined` 라 기능 쪽 코드 경로가 안 바뀐다.
             // 격자가 아직 없으면(부팅 중) no-op 이다 — 굽기는 `stream` 이라 순서가 갈린다.

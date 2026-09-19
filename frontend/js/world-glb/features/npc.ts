@@ -34,7 +34,9 @@ import { DEFAULT_LAYOUT } from '../parts/types.js';
 import {
   nextDirIn, stepOf, pickNearbyIn, yawOf, reachForIn, cellKey, snapOut, type Cell,
 } from '../decide/npc-walk.js';
-import { chooseWalkSource, bandCells, arriveFor, lanesOn, cellDriftOf } from '../decide/npc-grid.js';
+import { walkBinding, cellDriftOf } from '../decide/npc-grid.js';
+import type { WalkSource } from '../decide/npc-walk.js';
+import type { WalkGrid } from '../decide/walkable.js';
 import { DEFAULT_BODY_R } from '../systems/collision.js';
 import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
 import {
@@ -285,29 +287,59 @@ export const npcFeature: Feature = {
     if (count <= 0 && vrmCount <= 0) return null; // 대조군 측정용
 
     const { cellX, cellZ } = DEFAULT_LAYOUT;
-    // ── 어느 격자를 걷는가 (감독 요구 2026-09-19 *"맨하탄이 홍콩이 될수도"*) ──
-    // GLB 세계에는 파셀 도로 격자가 **없다.** 구운 격자를 받으면 그것을, 없으면 파셀
-    // 규칙을 쓴다 — 선택·환산·도달 판정·차선 여부는 `decide/npc-grid.ts` 소관이다.
-    const baked = env.walkGrid?.() ?? null;
-    const src = chooseWalkSource(baked, cellX, cellZ, DEFAULT_BODY_R);
-    const toCells = (parcelCells: number): number => bandCells(src, parcelCells, cellX);
-    const arrive = arriveFor(src.cell, ARRIVE);
-    /**
-     * 갇힘 탈출을 **어디까지 찾는가**(칸). **파셀 한 칸 상당 거리**다 — 이 세계의 거리는
-     * 전부 그 단위로 정해져 있고(스폰 링·재배치 임계), 그보다 멀리 갇혔다면 「근처로는
-     * 못 나온다」이므로 재배치가 맞다. 파셀 공급자에서는 `toCells` 가 **1** 을 낸다.
-     */
-    const unstickRing = toCells(1);
-    const lanes = lanesOn(baked);
     const rnd = rngFrom(0x9e3779b9);
     const group = new THREE.Group();
     group.name = 'wg-npc';
     env.scene.add(group);
 
     const home = env.player.position;
-    // 월드 → 칸 환산도 **공급자가 소유한다.** 여기서 `/ cellX` 를 적으면 구운 격자의
-    // 원점(세계 bbox 모서리)과 어긋나 사람들이 지도 밖에서 태어난다.
-    const { px: hpx, pz: hpz } = src.at(home.x, home.z);
+    const wanted = count + vrmCount;
+
+    // ── 어느 격자를 걷는가 (감독 요구 2026-09-19 *"맨하탄이 홍콩이 될수도"*) ──
+    // GLB 세계에는 파셀 도로 격자가 **없다.** 구운 격자를 받으면 그것을, 없으면 파셀
+    // 규칙을 쓴다 — 선택·환산·도달 판정·차선 여부는 `decide/npc-grid.ts` 소관이다.
+    //
+    // ── 🔴 **`let` 인 이유: 이 값들은 부팅 뒤에 갈린다** (자기신고 2026-09-19) ──
+    // 처음엔 전부 `const` 였고 그 캐시 때문에 **격자가 한 번도 소비되지 않았다.**
+    // 경위·「왜 묶음인가」·재계산 금지는 `decide/npc-grid.ts` 의 `walkBinding` 절
+    // **한 곳**이다 — 여기에 다시 적지 않는다. 다시 읽는 곳은 아래 `update` 머리다.
+    let baked: WalkGrid | null;
+    let src: WalkSource;
+    /**
+     * 갇힘 탈출을 **어디까지 찾는가**(칸). **파셀 한 칸 상당 거리**다 — 이 세계의 거리는
+     * 전부 그 단위로 정해져 있고(스폰 링·재배치 임계), 그보다 멀리 갇혔다면 「근처로는
+     * 못 나온다」이므로 재배치가 맞다. 파셀 공급자에서는 `toCells` 가 **1** 을 낸다.
+     */
+    let unstickRing: number;
+    let arrive: number;
+    let lanes: boolean;
+    let toCells: (parcelCells: number) => number;
+    /**
+     * 월드 → 칸 환산도 **공급자가 소유한다.** 여기서 `/ cellX` 를 적으면 구운 격자의
+     * 원점(세계 bbox 모서리)과 어긋나 사람들이 지도 밖에서 태어난다.
+     */
+    let hpx: number;
+    let hpz: number;
+    let spawnRing: number;
+    let spawnReach: number;
+
+    /**
+     * 🔴 **격자 공급자를 통째로 갈아 끼운다.** 조립 때 한 번, 그 뒤로는 **공급자가
+     * 바뀐 프레임에만** 부른다(팀장 조건 1 — 매 프레임 파생값 재계산 금지).
+     *
+     * 여기 모인 것이 「공급자에 딸린 전부」다. 새 파생값을 만들면 **이 함수 안**에
+     * 넣는다 — 밖에 두면 교체 때 혼자 옛 값으로 남고, 그 증상은 원인에서 가장 멀다.
+     */
+    function rebind(g: WalkGrid | null): void {
+      ({ grid: baked, src, toCells, arrive, unstickRing, lanes } =
+        walkBinding(g, cellX, cellZ, DEFAULT_BODY_R, ARRIVE));
+      ({ px: hpx, pz: hpz } = src.at(home.x, home.z));
+      spawnRing = toCells(SPAWN_RING);
+      spawnReach = reachForIn(
+        src, wanted, hpx, hpz, spawnRing, toCells(SPAWN_REACH), toCells(MAX_SPAWN_REACH),
+      );
+    }
+    rebind(env.walkGrid?.() ?? null);
 
     const walkers: Walker[] = [];
     /** 페이지를 떠난 뒤 VRM 로드가 끝나는 경우가 있다. 그때 씬에 붙이면 누수가 된다 */
@@ -323,17 +355,9 @@ export const npcFeature: Feature = {
     // **기존 동작이 안 바뀐다** — 그 불변은 `tests/world2-spawn-band.test.ts` 가 본다.
     // 인원이 많으면 안개 시작을 넘는데, 안개 안 칸 수가 유한하므로 피할 수 없다.
     // 넘는다는 사실을 진단(`spawnReach`)으로 내보내 감춰지지 않게 한다.
-    const wanted = count + vrmCount;
-    const spawnRing = toCells(SPAWN_RING);
-    const spawnReach = reachForIn(
-      src,
-      wanted,
-      hpx,
-      hpz,
-      spawnRing,
-      toCells(SPAWN_REACH),
-      toCells(MAX_SPAWN_REACH),
-    );
+    //
+    // ⚠ **식은 위 `rebind` 안에 있다** — 공급자가 갈리면 이 밴드도 함께 갈려야 한다
+    //   (칸 단위가 32m 에서 0.34m 로 바뀐다). 여기 다시 적으면 값 미러링이다.
     /**
      * 이미 누가 태어난 칸. **스폰에서만** 본다 — 걷기는 그대로 자유다.
      *
@@ -502,6 +526,42 @@ export const npcFeature: Feature = {
       retarget(w);
     }
 
+    /**
+     * 🔴 **공급자가 갈린 뒤, 몸이 선 자리에서 칸을 다시 읽는다.**
+     *
+     * 격자가 바뀌면 `w.cell` 은 **옛 공급자의 칸 인덱스**이고 `w.tx`/`w.tz` 는 옛
+     * 좌표계의 목표다. 몸의 월드 좌표(`w.x`,`w.z`)만이 두 공급자에서 같은 뜻을 갖는다.
+     *
+     * ⚠ **`unstick`(갇힘 스냅)을 그대로 못 쓴다** — 그쪽이 부르는 `snapOut` 은
+     * `npc-walk.ts:247` 이 `for (let r = 1; …)` 로 시작해 **자기 칸을 절대 안 돌려준다.**
+     * 멀쩡히 선 체까지 한 칸씩 밀어내게 된다. 대신 **새 경로를 만들지 않는다**:
+     * 갈아 끼운 프레임의 아래 루프가 곧바로 `standable` 을 보고, 벽 안이면 그 자리에서
+     * `unstick` 을 부른다(같은 프레임이다). 여기서는 **칸을 다시 읽는 것**만 한다.
+     */
+    function reseat(w: Walker) {
+      w.cell = src.at(w.x, w.z);
+      w.from = null;
+      // 차선 오프셋과 그린 자리를 되돌린다 — 앞 두 함수(`recycle`·`unstick`)의 같은
+      // 두 줄과 근거가 같고, 여기에는 **하나가 더 있다.** 구운 격자에서는 차선이 꺼지므로
+      // (`lanesOn`) 아래 루프가 `w.ox` 를 **다시는 안 만진다** — 안 되돌리면 파셀 격자에서
+      // 얻은 오프셋(최대 1.25m)이 세션 내내 얹힌 채 남아 몸이 걸을 수 있는 칸에서
+      // 그만큼 밀려난다. 그리고 그 방향은 **벽 쪽일 수 있다**(`lanesOn` 이 차선을 끈
+      // 이유가 정확히 그것이다).
+      //
+      // ⚠ **지금 이 네 줄은 도달하지 않는다 — 그것을 적어 둔다**(뮤테이션 M-C 실측:
+      // 지워도 39 검사 전부 통과). `main.ts` 가 격자를 굽는 것(`:938`)이 커널 시작
+      // (`:978`)보다 **앞**이라, 공급자 교체는 언제나 **첫 `update`** 에 일어나고 그
+      // 시점의 `w.ox` 는 스폰 직후의 0 이다. 그래도 지우지 않는 이유는 그 도달 불가능이
+      // **다른 파일의 두 줄 순서**에 기대고 있기 때문이다 — 굽기가 첫 프레임 뒤로
+      // 밀리는 날(비동기 굽기·세계 교체) 조용히 깨질 자리이고, 증상은 「치비가 벽에
+      // 붙어 걷는다」라 원인에서 가장 멀다. `kernel.ts` 의 `resumed` 가드가 같은 형태다.
+      w.ox = 0;
+      w.oz = 0;
+      w.rx = w.x;
+      w.rz = w.z;
+      retarget(w);
+    }
+
     /** 이 아바타의 모든 메시에 절두체 컬링을 켜고 끈다 */
     function setCulling(w: Walker, on: boolean): void {
       w.inst.group.traverse((o) => {
@@ -549,6 +609,25 @@ export const npcFeature: Feature = {
       name: 'npc',
       update(ctx: { dt: number }) {
         const dt = Math.min(ctx.dt, 0.1); // 탭 복귀 시 한 프레임에 순간이동하지 않게
+
+        // ── 🔴 **격자 공급자를 다시 읽는다** (부팀장 자기신고 2026-09-19) ────
+        // `create` 는 `pools` 단계라 그때 `walkGrid()` 는 **켠 페이지에서도 `null`**
+        // 이고, 격자는 `stream` 단계에서야 생긴다. 조립 때 한 번 읽고 캐시했더니
+        // 격자가 **한 번도 소비되지 않았다** — 계약 전문은 `features/types.ts` 의
+        // 「늦게 읽는 클로저 계약」 절 한 곳이다.
+        //
+        // ⚠ **참조 동일성만 본다**(팀장 조건 1). 파생값 재계산은 바뀐 프레임에만
+        // 일어나고, 격자를 안 주는 세계에서는 비교가 언제나 거짓이라 **한 번도**
+        // 일어나지 않는다 — 코드 경로가 한 글자도 안 바뀐다.
+        //
+        // ⚠⚠ 내용 비교(깊은 비교)를 **일부러** 안 한다. 덧칠(`blockWalkFor`)은
+        // **제자리에서** 격자를 고치므로 참조가 그대로이고, 그 축은 아래 갇힘 검사가
+        // 매 프레임 본다 — 두 축이 서로를 대신하지 않는다.
+        const supplied = env.walkGrid?.() ?? null;
+        if (supplied !== baked) {
+          rebind(supplied);
+          for (const w of walkers) reseat(w);
+        }
 
         // ── GPU 업로드 예열 ─────────────────────────────────────────────
         // 컬링을 끈 채 몇 프레임 지나면 모든 메시가 한 번씩 렌더 목록에 올라 업로드가

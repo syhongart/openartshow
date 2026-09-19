@@ -108,3 +108,63 @@ export function cellDriftOf(
   }
   return Number(worst.toFixed(3));
 }
+
+// ── 🔴 **공급자는 세션 중에 갈린다 — 그래서 파생값을 한 묶음으로 낸다** ─────────
+//
+// 부팀장 자기신고 2026-09-19: 구운 격자는 `main.ts` 의 **`stream` 단계**에서 생기는데
+// 치비 기능은 그보다 앞선 **`pools` 단계**에서 조립된다. `npc.create` 가 도는 시점의
+// `walkGrid()` 는 **켠 페이지에서도 언제나 `null`** 이고, 그래서 배포된 격자가
+// world11 에서 **한 번도 소비된 적이 없었다**(치비가 맨해튼 건물을 관통했다 —
+// 감독 신고 *"벽사이를 걸어가네"*).
+//
+// ⚠ **그 결함을 테스트가 못 본 이유가 이 파일의 존재 이유와 맞닿아 있다.** 검사는
+// `npcFeature.create` 에 격자를 **손에 쥐여 주고** 돌렸다 — 「격자가 소비되는가」는
+// 봤지만 「그 값이 **손에 들어오는가**」는 원리적으로 못 봤다.
+//
+// ── 그래서 왜 «묶음» 인가 ───────────────────────────────────────────────────
+// 공급자가 갈리면 **여기 있는 다섯이 전부 함께** 갈려야 한다. 하나라도 옛 공급자의
+// 값으로 남으면 증상은 「가끔 어긋난다」라서 원인에서 가장 먼 자리에 나타난다 —
+// 이 저장소가 값 미러링으로 반복해 당한 그 형태다. 한 함수가 다섯을 **함께** 내면
+// 「일부만 다시 계산한다」가 코드로 불가능해진다.
+//
+// ⚠ **매 프레임 부르지 않는다**(팀장 조건 1). 집행부는 `grid` 를 **참조 동일성**으로만
+// 비교하고, 바뀐 프레임에만 이 함수를 부른다. 파셀 공급자만 쓰는 세계(world2·world7·
+// world8·world10)에서는 그 비교가 언제나 거짓이라 **한 번도 재계산되지 않는다.**
+export interface WalkBinding {
+  /** 이 묶음을 만든 **원본 격자**. 집행부가 참조 동일성으로 교체를 판정하는 그 값이다 */
+  readonly grid: WalkGrid | null;
+  readonly src: WalkSource;
+  /** 파셀 셀 단위 밴드 → 공급자 칸 단위 (`bandCells` 를 이 공급자에 묶은 것) */
+  readonly toCells: (parcelCells: number) => number;
+  /** 이 격자에서 쓸 도달 판정(m) — `arriveFor` */
+  readonly arrive: number;
+  /** 갇힘 탈출을 어디까지 찾는가(칸) — 파셀 한 칸 상당 거리 */
+  readonly unstickRing: number;
+  /** 차선·회피를 얹는가 — `lanesOn` */
+  readonly lanes: boolean;
+}
+
+/**
+ * 격자 하나에 묶인 **걷기 파생값 한 벌**. 공급자 선택부터 네 파생값까지 한 번에 낸다.
+ *
+ * @param parcelArrive 파셀 격자(32m)를 전제로 고른 도달 판정. 거기서는 그대로 나온다
+ */
+export function walkBinding(
+  baked: WalkGrid | null,
+  cellX: number,
+  cellZ: number,
+  bodyRadius: number,
+  parcelArrive: number,
+): WalkBinding {
+  const src = chooseWalkSource(baked, cellX, cellZ, bodyRadius);
+  const toCells = (parcelCells: number): number => bandCells(src, parcelCells, cellX);
+  return {
+    grid: baked,
+    src,
+    toCells,
+    arrive: arriveFor(src.cell, parcelArrive),
+    // 파셀 공급자에서는 `toCells` 가 **1** 을 낸다 — 기존 동작 그대로다
+    unstickRing: toCells(1),
+    lanes: lanesOn(baked),
+  };
+}
