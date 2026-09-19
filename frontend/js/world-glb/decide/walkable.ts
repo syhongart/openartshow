@@ -1,0 +1,253 @@
+// world-glb/decide/walkable.ts — **걸을 수 있는 칸인가.** 순수 판정만, three 의존 0.
+//
+// ── 감독 요구 (2026-09-19) ───────────────────────────────────────────────────
+// *"우리 치비들이 건물. 길. 벽.을 인식해서 다닐수 있개 하는 것은 무겁나"*
+// *"블렌더 파일이 계속 바뀔수있자나. **맨하탄이 홍콩이 될수도** 있고. **매번 치비를
+//   수정하지 않아도 자동으로** 다니게."*
+//
+// ── 그래서 이 파일이 **모르는 것**이 설계의 핵이다 ──────────────────────────
+// 재질 이름도 노드 이름도 안 본다. 「`asphalt` 재질이면 도로」 같은 규칙은 맨해튼
+// 자산에서는 맞지만 **홍콩 자산에서는 틀린다** — 감독 요구를 정면으로 어기는 방식이라
+// 팀장이 기각한 안(B)이 그것이다. 여기가 보는 것은 **기하**뿐이다:
+//
+//   ① 밟을 바닥이 있는가            (그 칸을 덮는 면이 지면 대역 안에서 끝나는가)
+//   ② 머리 위가 비었는가            (그 바닥 위로 사람 키만큼 아무것도 없는가)
+//
+// 두 축은 어떤 자산에도 같은 뜻이다. **이 파일에 재질·노드 이름 문자열이 0 이라는
+// 것은 `tests/world-glb-walkmap.test.ts` ⓐ 가 검사로 못 박는다** — 「그 문자열이 없다」가
+// 곧 자산 독립성의 축이라, 이 한 곳에서만 소스 문자열 검사가 정당하다.
+//
+// ── 🔴 이 회차의 경계 (팀장 2026-09-19) ─────────────────────────────────────
+// **지상 1층 단층**이다. 군중 회피 · 문 통과 · 계단 · 엘리베이터 · 다층(다리 위/아래) ·
+// 동적 장애물 · 경사 판정은 **전부 다음 회차**다. 감독이 화면에서 그것을 문제라고 말한
+// 회차에만 연다 — 여기서 미리 열면 이 저장소가 「0번 실수」라고 이름 붙인 형태가 된다
+// (수치가 이상한 것과 화면이 잘못된 것은 다른 일이다).
+//
+// ⚠ **못 하는 것**(적어 두지 않으면 다음 사람이 보증으로 읽는다):
+//   · 실내가 걸러지지 않는다 — 건물 껍데기 안쪽은 「바닥 있고 머리 위 빔」이 **참**이다.
+//     치비는 벽을 통과할 수 없으므로 밖에서 안으로 들어가지는 못하지만, **스폰이 그
+//     안에 걸릴 수 있다.** 연결성(도달 가능 성분) 판정은 이 회차 경계 밖이다.
+//   · 경사가 안 보인다 — 계단·램프는 「턱이 낮은 바닥」으로 잘게 통과하거나 통째로 막힌다.
+//   · 격자는 **부팅 1회**다. 세계가 바뀌면 다시 구워야 하고, 지금 그 문은 없다.
+
+import type { Cell, WalkSource } from './npc-walk.js';
+import type { Dir } from '../parts/road-topology.js';
+
+/**
+ * 구운 격자 한 장. **원점이 세계 bbox 의 모서리**이고 칸 인덱스는 0-기반이다
+ * (파셀 격자와 달리 음수가 없다 — 자산마다 범위가 달라 중앙 원점이 뜻을 갖지 않는다).
+ */
+export interface WalkGrid {
+  /** 격자 (0,0) 칸의 **왼쪽 위 모서리** 월드 좌표 */
+  readonly minX: number;
+  readonly minZ: number;
+  /** 칸 한 변(m) */
+  readonly cell: number;
+  readonly nx: number;
+  readonly nz: number;
+  /** 칸당 1바이트. 1 이면 걸을 수 있다 */
+  readonly walk: Uint8Array;
+}
+
+/**
+ * 격자 칸 한 변(m)을 **유도한다.**
+ *
+ * ── 유도식 ──────────────────────────────────────────────────────────────────
+ *
+ *     치비가 통과해야 할 **최소 통로 폭** W_min = 2 × bodyRadius   (몸 지름)
+ *     폭 W 의 통로가 격자에서 **한 줄이라도 살아남으려면** cell ≤ W / 2
+ *     ∴ cell ≤ (2 × bodyRadius) / 2 = bodyRadius
+ *
+ * 왜 `W/2` 인가 — 셀이 통로 폭과 같으면 통로가 두 칸 경계에 걸칠 수 있고, 그러면 양쪽
+ * 칸이 각각 벽 조각을 조금씩 품어 **둘 다 막힌 것으로 판정된다.** 표본화가 특징을
+ * 보존하려면 특징 폭의 절반 이하여야 한다는 그 논리와 같은 자리다.
+ *
+ * `bodyRadius` 는 **`Collider` 계약이 이미 가진 값**(`systems/collision.ts` 의
+ * `DEFAULT_BODY_R`)이다 — 여기에 숫자를 적지 않는다. 적으면 그 상수를 바꾸는 날
+ * 격자만 옛 값으로 남고, 증상은 「가끔 좁은 골목이 막힌다」라 원인에서 가장 멀다.
+ *
+ * ⚠ **이것은 상한이지 최적값이 아니다.** 더 작게 잡아도 벽 검출은 나빠지지 않는다 —
+ * 대신 굽는 비용과 메모리가 오르고, 치비가 **더 자주 방향을 고르게 되어** 갈지자로
+ * 걷는 쪽으로 간다(경로 격자와 검출 격자가 같은 것이 이 설계의 단순함이자 대가다).
+ * 그 교환은 화면으로만 판정되므로 `?walkcell=` 로 열어 감독이 고른다.
+ */
+export function walkCellSize(bodyRadius: number): number {
+  return bodyRadius;
+}
+
+/**
+ * `?walkcell=` 후보. **유도 상한(`walkCellSize`)의 배수/약수**로만 낸다 — 임의의 예쁜
+ * 숫자를 늘어놓으면 「왜 그 값인가」가 사라진다.
+ *
+ *   ×0.5 — 상한의 절반. 벽 검출이 가장 촘촘하고 갈지자가 가장 심하다. 가장 비싸다
+ *   ×1   — **유도 상한 그대로가 기본값**이다
+ *   ×1.5 — 상한을 넘는다: 몸 지름보다 좁은 통로가 막힐 수 있다. 대신 경로가 곧다
+ *   ×2   — 칸 하나가 곧 몸 지름. 가장 곧고, 좁은 길을 가장 많이 잃는다
+ *
+ * 뒤 둘이 유도를 **일부러 어기는** 후보인 것이 요점이다. 「좁은 길이 막히는 것」과
+ * 「치비가 갈지자로 걷는 것」 중 무엇이 화면에서 더 나쁜지는 계산으로 안 갈린다.
+ *
+ * ⚠ **그리고 실측이 셋째 축을 드러냈다**: 칸이 작을수록 걸을 수 있는 비율이 **오른다**
+ * (맨해튼에서 ×2 가 66.1%, ×1 이 89.2%). 같은 촘촘함이 좁은 통로와 **벽 옆 틈**을 함께
+ * 살리기 때문이고, 그러면 건물 안쪽이 바깥과 이어져 사람이 실내를 걷는다. 표와 경위는
+ * `systems/glb-walkmap.ts` 헤더 **한 곳**이다 — 여기에 다시 적지 않는다.
+ */
+export const WALK_CELL_MULTIPLES: readonly number[] = [0.5, 1, 1.5, 2];
+
+/**
+ * `?walkcell=` 원문을 칸 크기로 바꾼다. 지정이 없거나 후보 밖이면 **유도 상한**이다.
+ *
+ * 배수로 받는 이유: 미터로 받으면 `bodyRadius` 가 바뀌는 날 감독이 쓰던 링크가 다른
+ * 뜻이 된다. 배수는 유도식에 묶여 있어 같은 뜻을 유지한다.
+ */
+export function walkCellFromKnob(mult: number | null, bodyRadius: number): number {
+  const base = walkCellSize(bodyRadius);
+  if (mult === null || !Number.isFinite(mult) || mult <= 0) return base;
+  // 후보 밖이면 가장 가까운 후보로 접는다 — 임의값을 그대로 받으면 감독이 보낸 링크와
+  // 우리가 기록한 후보표가 어긋나고, 그러면 판정이 어느 값에 대한 것인지 사라진다.
+  let best = WALK_CELL_MULTIPLES[0];
+  for (const m of WALK_CELL_MULTIPLES) {
+    if (Math.abs(m - mult) < Math.abs(best - mult)) best = m;
+  }
+  return base * best;
+}
+
+/**
+ * 한 칸의 판정. **굽는 쪽이 모은 두 값만 본다.**
+ *
+ * @param floorTop  그 칸을 덮으면서 **지면 대역 안에서 끝난** 면 중 가장 높은 y.
+ *                  `-Infinity` 면 밟을 바닥이 없다(세계 밖이거나 구멍).
+ * @param obstacleLow 그 칸을 덮으면서 **지면 대역 위로 솟은** 것 중 가장 낮은 바닥 y.
+ *                  `Infinity` 면 막는 것이 없다.
+ * @param head      사람 키(m). 바닥 위로 이만큼은 비어야 지나간다.
+ */
+export function judgeCell(floorTop: number, obstacleLow: number, head: number): boolean {
+  if (!Number.isFinite(floorTop)) return false;
+  return obstacleLow - floorTop >= head;
+}
+
+/** 월드 x 가 속한 칸 인덱스. 격자 밖이면 범위를 벗어난 값이 그대로 나온다(호출부가 거른다) */
+export function cellOf(g: WalkGrid, x: number, z: number): Cell {
+  return {
+    px: Math.floor((x - g.minX) / g.cell),
+    pz: Math.floor((z - g.minZ) / g.cell),
+  };
+}
+
+/** 칸 **중심**의 월드 좌표 */
+export function centerOf(g: WalkGrid, px: number, pz: number): { x: number; z: number } {
+  return { x: g.minX + (px + 0.5) * g.cell, z: g.minZ + (pz + 0.5) * g.cell };
+}
+
+/** 격자 안이고 걸을 수 있는 칸인가 */
+export function walkableAt(g: WalkGrid, px: number, pz: number): boolean {
+  if (px < 0 || pz < 0 || px >= g.nx || pz >= g.nz) return false;
+  return g.walk[pz * g.nx + px] === 1;
+}
+
+/**
+ * **걸어서 닿을 수 없는 칸을 지운다.** 시작점이 걸을 수 없는 칸이면 격자를 그대로 낸다.
+ *
+ * ── 🔴 왜 필요한가 — **안 하면 사람이 건물 안에서 태어난다** (실측 2026-09-19) ──
+ * 위 두 축은 **속이 빈 건물 안쪽을 통과시킨다.** 지면 판이 건물 아래까지 깔려 있고
+ * 머리 위도(지붕이 격자 대역 밖이라) 비어 있으므로 「바닥 있음 + 머리 위 빔」이 둘 다
+ * 참이다. 걷기는 벽을 못 넘으니 밖에서 안으로 들어가지는 못하지만, **스폰은 밴드 안의
+ * 칸을 그냥 고르므로** 그 안에 떨어진다.
+ *
+ * `tests/world-glb-walkmap.test.ts` ⑤ 가 이것을 실측으로 잡았다 — 가지치기 전에는
+ * 합성 세계에서 치비가 통로 밖 블록 안쪽 좌표에 섰다. 화면에서는 「벽 안에 갇힌 사람」
+ * 으로 보이고, 그것은 감독이 즉시 문제라고 부를 형태다.
+ *
+ * ── 🔴 이것은 **팀장 경계 밖의 셋째 연산**이고, 판정을 받고 들어왔다 (2026-09-19) ──
+ * 팀장이 준 축은 **둘**이었다 — 「바닥 있음」과 「머리 위 빔」. 연결성은 그 둘 어디에도
+ * 없다. ⚠ 이 주석의 첫 판본은 *"판정 축을 새로 여는 것이 아니다"* 라고 **단정**하고
+ * 있었고 그것은 구현자의 해석이었다 — 넘긴 것으로 보고 상신했고, 팀장 판정은
+ * **선택지 A 승인(조건부)** 이다. 판정에 적힌 근거가 셋이다:
+ *   ① 대안 B(「도로」를 재질·노드 이름으로 알아보고 스폰만 제한)는 감독 제약
+ *      (*"맨하탄이 홍콩이 될수도 있고 매번 치비를 수정하지 않아도 자동으로"*)을 직접
+ *      깬다 — **B 가 A 보다 경계를 더 크게 넘는다.**
+ *   ② 되돌리기가 `systems/glb-walkmap.ts` 의 **한 줄**이고, 되돌릴 때 무엇이
+ *      돌아오는지를 `tests/world-glb-walkmap.test.ts` ⑤ 가 게이트에 남긴다.
+ *   ③ 절단 **1.9%**(아래) — 격자의 성격을 바꾸는 연산이 아니라 스폰 결함 하나를 막는다.
+ *
+ * ⚠ 팀장 판정의 문언: 「두 축」은 *연산 개수 상한*이 아니라 *제외 목록(군중 회피·문·
+ * 계단·엘리베이터·다층·동적 장애물·경사)의 스코프 폭주 방지*였다. 다음에 축을 하나 더
+ * 얹고 싶어지면 그 목록에 닿는가를 먼저 보고, **닿지 않아도 상신한다**(닿는지를 내가
+ * 판정하는 것이 이번에 틀렸던 자리다).
+ *
+ * ⚠⚠ **시작점은 자산 이름을 보지 않는다** — 팀장 조건 ①-1 의 선결 사항이다. 시작점이
+ * 재질·노드 이름·자산 고유 좌표에서 나오면 A 도 B 와 같은 구멍이 된다. 실제 인자는
+ * `main.ts:927` 의 `player.position`, 즉 **플레이어가 선 자리**다(부팅 중에는 곧 스폰
+ * 지점이고, 스폰을 옮기면 따라온다). 자산이 홍콩으로 바뀌어도 이 식은 안 바뀐다.
+ *
+ * ── 🔴 경계 — **여기서 멈춘다** ─────────────────────────────────────────────
+ * **문·아케이드로 바깥과 이어진 실내는 걸러지지 않는다.** 가지치기가 하는 일은 「닿을
+ * 수 없게」 만드는 것뿐이고, 닿을 수 있는 실내는 이 두 축의 정의상 걸을 수 있는 곳이다.
+ * 맨해튼 기본 해상도에서 잘려나간 것이 **1.9%** 뿐인 것이 그 실물 수치다 — 칸이 작을수록
+ * 벽 옆 틈이 살아나 안팎이 이어진다(표는 `systems/glb-walkmap.ts` 의 마지막 열).
+ *
+ * 그것까지 잡으려면 **「실내」의 정의**가 필요하다(지붕이 있는가 · 천창은 어떻게 볼 것인가
+ * · 어느 높이까지 보는가). 그것은 이 회차의 두 축에서 유도되지 않으므로 **재론 회차다.**
+ * 여기서 한 바퀴 더 도는 것을 막으려고 이 문장을 적는다.
+ *
+ * ⚠ **대가**: 다리 밑처럼 통로로 이어지지 않은 열린 자리도 함께 사라진다. 이 회차는
+ * 지상 1층 단층이라 그런 자리가 애초에 판정 대상이 아니다 — 다층은 다음 회차다.
+ *
+ * ⚠⚠ **비용은 칸 수에 선형**이다(각 칸을 한 번 큐에 넣는다). 맨해튼 기본 해상도에서
+ * 280,900 칸이고 굽기(136ms) 뒤 한 번 돈다.
+ */
+export function pruneUnreachable(g: WalkGrid, fromX: number, fromZ: number): WalkGrid {
+  const start = cellOf(g, fromX, fromZ);
+  if (!walkableAt(g, start.px, start.pz)) return g;
+  const out = new Uint8Array(g.walk.length);
+  // 스택 BFS. 좌표를 객체로 담으면 칸 수만큼 할당이 나므로 **인덱스 정수**로 담는다.
+  const stack: number[] = [start.pz * g.nx + start.px];
+  out[stack[0]] = 1;
+  while (stack.length > 0) {
+    const k = stack.pop() as number;
+    const px = k % g.nx;
+    const pz = (k - px) / g.nx;
+    // 네 이웃. 경계는 `walkableAt` 이 거른다.
+    if (px > 0 && g.walk[k - 1] === 1 && out[k - 1] === 0) { out[k - 1] = 1; stack.push(k - 1); }
+    if (px < g.nx - 1 && g.walk[k + 1] === 1 && out[k + 1] === 0) { out[k + 1] = 1; stack.push(k + 1); }
+    if (pz > 0 && g.walk[k - g.nx] === 1 && out[k - g.nx] === 0) { out[k - g.nx] = 1; stack.push(k - g.nx); }
+    if (pz < g.nz - 1 && g.walk[k + g.nx] === 1 && out[k + g.nx] === 0) { out[k + g.nx] = 1; stack.push(k + g.nx); }
+  }
+  return { ...g, walk: out };
+}
+
+/**
+ * 구운 격자를 **치비 걷기의 격자 공급자**로 내놓는다.
+ *
+ * ⚠ **이것이 판정/집행 경계다.** 굽는 쪽(`systems/glb-walkmap.ts`)과 걷는 쪽
+ * (`features/npc.ts`)은 서로를 모르고, 이 함수 하나로 이어진다. 그러므로 「구운 격자가
+ * 실제로 소비되는가」는 양쪽 단위 테스트 어디에도 안 걸린다 — 이 저장소가 *"판정/집행
+ * 분리의 구멍"* 이라고 이름 붙인 바로 그 자리다. `tests/world-glb-walkmap.test.ts` ④ 가
+ * `npcFeature.create()` 를 실제로 돌려 이 공급자가 소비되는지 본다.
+ */
+export function walkSource(g: WalkGrid, bodyRadius: number): WalkSource {
+  // ── 후보 보폭 — 스폰 후보 순회가 폭발하는 것을 막는다 ─────────────────────
+  // 스폰 밴드는 **미터**로 정해진다(안개 시작 안쪽). 칸이 0.34m 면 그 밴드가 수백 칸이
+  // 되고, `nearbyCells` 의 정사각 순회가 (2R+1)² 이라 수만~수십만 칸이 된다.
+  //
+  // 보폭을 **몸 지름**으로 잡는다: 그보다 촘촘히 후보를 내도 두 사람이 같은 자리에
+  // 겹치므로 의미가 없다. 파셀 격자(32m)에서는 `ceil(0.68/32) = 1` 이라 **기존 동작이
+  // 그대로다** — 그 불변은 테스트가 본다.
+  const stride = Math.max(1, Math.ceil((2 * bodyRadius) / g.cell));
+  const standable = (px: number, pz: number): boolean => walkableAt(g, px, pz);
+  return {
+    cell: g.cell,
+    stride,
+    standable,
+    dirs(px: number, pz: number): Dir[] {
+      const out: Dir[] = [];
+      if (standable(px, pz - 1)) out.push('north');
+      if (standable(px, pz + 1)) out.push('south');
+      if (standable(px - 1, pz)) out.push('west');
+      if (standable(px + 1, pz)) out.push('east');
+      return out;
+    },
+    center: (px: number, pz: number) => centerOf(g, px, pz),
+    at: (x: number, z: number) => cellOf(g, x, z),
+  };
+}
