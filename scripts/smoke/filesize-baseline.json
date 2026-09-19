@@ -5,7 +5,8 @@
   "_notes": {
     "_": "JSON 에는 값 옆에 주석을 못 단다 — 그래서 사유를 경로로 잇는다. `--write` 가 이 블록을 **보존한다**(check-filesize.mjs 의 writeBaseline). 부채를 갚으면 해당 줄을 지운다.",
     "frontend/js/world-glb/main.ts": "2026-09-19 · 1250→1257. 치비 걷기 격자 배선(굽기 호출 1줄 + 격자 상태 1줄 + 걷기 공급 주입) 과 그 근거 주석. 순수 코드만 세도 +6 이라 이번 회차 범위 밖의 리팩터 없이는 못 줄인다. 줄이는 길: stream 단계(⑤⑥ 조립부)를 `systems/` 의 조립 함수로 뽑는 것 — 팀장 상신 사안이다.",
-    "frontend/js/world-glb/features/types.ts": "2026-09-19 · 520→530. 걷기 공급자(`WalkSource`)를 기능 계약에 얹었다. 이 파일은 **계약 선언**이라 로직 추출로는 안 줄고, 계약을 쪼개면 배럴이 하나 더 는다. 줄이는 길: 치비 전용 계약을 `features/npc-types.ts` 로 분리 — 팀장 상신 사안이다."
+    "frontend/js/world-glb/features/types.ts": "2026-09-19 · 520→530. 걷기 공급자(`WalkSource`)를 기능 계약에 얹었다. 이 파일은 **계약 선언**이라 로직 추출로는 안 줄고, 계약을 쪼개면 배럴이 하나 더 는다. 줄이는 길: 치비 전용 계약을 `features/npc-types.ts` 로 분리 — 팀장 상신 사안이다.",
+    "frontend/js/world-glb/features/npc.ts": "2026-09-19 · 726→748. ⚠ 726 은 **근거 주석을 지워서 맞춘 값이었다** — 구현 회차에 `WARM_FRAMES` 상수 위의 22줄(감독 성능 리포트 실측 geometry 86→129→170→282 · `info.memory.geometries` 가 씬의 수가 아니라 **GPU 업로드된 수**라는 것 · 왜 3프레임인가)이 통째로 사라졌고, 검수관이 그것을 비블로커 권고 1 로 잡았다(2026-09-19). 되살렸다. ⚠⚠ **줄 수 상한을 맞추려고 「왜 이 값인가」를 지우는 것은 이 저장소에서 가장 비싼 거래다** — 그 주석은 실제 성능 사고의 재발 방지 근거이고, 값만 남으면 다음 사람이 3 을 1 로 바꾼다. 줄이는 길: 걷기 축(차선·회피)을 `features/npc-lanes.ts` 로 분리 — 팀장 상신 사안이다."
   },
   "over": {
     "frontend/js/world.js": 2371,
@@ -39,7 +40,7 @@
     "frontend/js/world2/decide/overlay.ts": 801,
     "frontend/js/world5/decide/water.ts": 794,
     "frontend/js/artworks.js": 784,
-    "frontend/js/world-glb/features/npc.ts": 726,
+    "frontend/js/world-glb/features/npc.ts": 748,
     "frontend/js/world10/features/npc.ts": 726,
     "frontend/js/world2/features/npc.ts": 726,
     "frontend/js/world3/features/npc.ts": 726,

@@ -148,6 +148,28 @@ const MAX_SPAWN_REACH = 15;
  */
 const ARRIVE = 0.35;
 
+/**
+ * 부팅 직후 **컬링을 끄고 전부 그리는** 프레임 수.
+ *
+ * ── 감독 성능 리포트에서 생겼다 ────────────────────────────────────────────
+ * `geometry` 가 세션 내내 늘었다 — 86 → 129 → 170 → 282. 증가폭 +43·+41 이 치비 한
+ * 체(45 지오)와 거의 같다.
+ *
+ * 원인은 `info.memory.geometries` 가 **씬에 있는 수가 아니라 GPU 에 업로드된 수**라는
+ * 것이다. 부팅 때 체를 다 만들어도 업로드는 그 메시가 **처음 그려질 때** 일어난다.
+ * 앞서 "파셀이 사람을 만들지 않으니 불변식은 지켜진다" 고 보고했는데, 객체 생성과
+ * GPU 업로드가 다른 시점이라는 것을 놓쳤다.
+ *
+ * 히칭은 안 났지만 그냥 둘 문제가 아니다 — "업로드 스파이크가 **언제** 날지 모른다"는
+ * 뜻이고, 그것이 이 아키텍처가 없애려는 바로 그 종류다.
+ *
+ * 처방: 처음 몇 프레임만 절두체 컬링을 끈다. 시야 밖 체까지 렌더 목록에 올라가
+ * 업로드가 끝나고, 그 뒤 컬링을 되돌리면 드로우콜은 원래대로 돌아온다. 로딩 직후라
+ * 그 몇 프레임의 드로우콜 증가는 화면에 드러나지 않는다.
+ *
+ * 3프레임인 이유: 1프레임이면 그 프레임에 렌더가 걸러질 여지(탭 비활성 등)가 있고,
+ * 많이 줄수록 초기 드로우콜이 높은 구간만 길어진다.
+ */
 const WARM_FRAMES = 3;
 
 interface Walker {
@@ -618,21 +640,21 @@ export const npcFeature: Feature = {
             for (const o of walkers) {
               if (o === w || !o.shown) continue;
               seen.push(relativeTo(w.ry, o.rx - w.rx, o.rz - w.rz));
-          }
-          // 벌릴 간격은 유도한다. 상대 반경은 이웃마다 다르지만, 가장 큰 체를 기준으로
-          // 잡으면 어느 조합에서도 부족하지 않다.
-          const widest = walkers.reduce((m, o) => (o.radius > m ? o.radius : m), 0);
-          const target = laneTarget(
-            seen,
-            relativeTo(w.ry, w.ox, w.oz).side, // 지금 얹고 있는 오프셋의 오른쪽 성분
-            w.lane,
-            w.radius + widest,
-            lookAhead(w.speed, w.speed + WALK_MAX),
-            w.radius,
-          );
-          const next = stepLane(w.ox, w.oz, w.ry, target, w.speed * dt);
-          w.ox = next.ox;
-          w.oz = next.oz;
+            }
+            // 벌릴 간격은 유도한다. 상대 반경은 이웃마다 다르지만, 가장 큰 체를 기준으로
+            // 잡으면 어느 조합에서도 부족하지 않다.
+            const widest = walkers.reduce((m, o) => (o.radius > m ? o.radius : m), 0);
+            const target = laneTarget(
+              seen,
+              relativeTo(w.ry, w.ox, w.oz).side, // 지금 얹고 있는 오프셋의 오른쪽 성분
+              w.lane,
+              w.radius + widest,
+              lookAhead(w.speed, w.speed + WALK_MAX),
+              w.radius,
+            );
+            const next = stepLane(w.ox, w.oz, w.ry, target, w.speed * dt);
+            w.ox = next.ox;
+            w.oz = next.oz;
           }
           w.rx = w.x + w.ox;
           w.rz = w.z + w.oz;
