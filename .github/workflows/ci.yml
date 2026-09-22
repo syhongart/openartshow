@@ -82,6 +82,12 @@ jobs:
       - name: Workflow git add / .gitignore 정합
         run: npm run check:gitadd
 
+      # 병합 마커가 커밋되는 것을 막는다. 2026-09-22 에 커밋 `3a6edc9e` 가 docs 두
+      # 파일에 마커 6줄을 신규 도입했고 게이트 8종 어느 것도 안 봤다(검수관이 잡았다).
+      # 로컬 게이트와 짝이다 — `tests/gate.test.ts` 의 GS-A 가 이 배선을 강제한다.
+      - name: 병합 마커
+        run: npm run check:conflict-markers
+
   # ── 헤드리스 렌더 스모크 ────────────────────────────────────────────────
   # verify 와 **병렬**로 돈다(의존 없음). 이 job 이 보는 것은 verify 가 못 보는 축이다 —
   # 실제 `_site` 조립·부팅·CSP·자기완결·가로넘침·성능 불변식.

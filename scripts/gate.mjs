@@ -73,6 +73,12 @@ export const GATES = [
   // **`.ts` 를 아예 안 본다**(가장 큰 파일들이 전부 `.ts` 다). 근거는 그 파일 헤더 한 곳.
   { name: 'check:filesize', cmd: 'check:filesize' },
   { name: 'check:gitadd', cmd: 'check:gitadd' },
+  // check:conflict-markers — 병합 마커가 커밋되는 것을 막는다. 2026-09-22 에 커밋
+  // `3a6edc9e` 가 `docs/BACKLOG.md`·`docs/BOARD.md` 에 마커 6줄을 신규 도입했고
+  // **게이트 8종 어느 것도 안 봤다**(잡은 것은 검수관이다). 게시판은 이 조직의 유일한
+  // 공유 장소인데 마커 세 줄이 팀장 판정 하나와 보고 이력 블록 전체를 가렸다.
+  // 명세(네 마커를 독립 OR 트리거로 · `git ls-files` 범위)는 그 파일 헤더 한 곳이다.
+  { name: 'check:conflict-markers', cmd: 'check:conflict-markers' },
   // ⚠ **CI 에 넣을 수 없다.** `extract-devlog-times.mjs:46` 이 shallow 저장소를 명시적으로
   // 거부하는데(`git rev-parse --is-shallow-repository`), `actions/checkout` 의 기본은
   // `fetch-depth: 1` = shallow 다. 넣으면 **항상 FAIL** 이라 게이트가 아니라 소음이 된다.
