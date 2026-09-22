@@ -150,6 +150,10 @@ const AS_JSON = flag('json') !== null;
 const ONLY_CELL = flag('cell') === null ? null : Number(flag('cell'));
 const ONLY_ASPECT = flag('aspect') === null ? null : Number(flag('aspect'));
 const ONLY_BAND = flag('band') === null ? null : Number(flag('band'));
+// `--npc=N` — 치비 인원. 감독 지시 2026-09-22 *"치비를 100명을 풀어서 상황이 잘
+// 보이게 하고 다시 링크줘"*. 라이브 노브(`?npc=`)를 **그대로** 먹인다 — 인원을
+// 계산해 넘기면 상한(`MAX_TOTAL_AVATARS`)과 접기 규칙이 하네스에 복제된다.
+const NPC = flag('npc') === null ? null : Number(flag('npc'));
 const SHOW_TIMING = flag('timing') !== null;
 const SEED0 = flag('seed') === null ? 1 : Number(flag('seed'));
 /** 시드를 몇 개 돌릴 것인가 — 아래 `seedRandom` 절 참고 */
@@ -302,10 +306,8 @@ async function main() {
     for (const band of BANDS) {
      // 🔴 노브를 **실제 경로로** 먹인다 — `features/npc.ts` 가 `readSpawnBand()` 를
      // 스스로 읽는다. 배율을 계산해 넘기면 접기 규칙이 하네스에 복제된다.
-     globalThis.location = {
-       search: `?walkcell=${mult}&spawnband=${band}`,
-       href: `http://local/?walkcell=${mult}&spawnband=${band}`,
-     };
+     const q = `?walkcell=${mult}&spawnband=${band}${NPC === null ? '' : `&npc=${NPC}`}`;
+     globalThis.location = { search: q, href: `http://local/${q}` };
      for (let k = 0; k < REPEAT; k++) {
       const seed = SEED0 + k;
       // 시드를 **체 조립 직전에** 건다. 격자는 이 위에서 이미 구워졌고 난수를 안 쓴다.
