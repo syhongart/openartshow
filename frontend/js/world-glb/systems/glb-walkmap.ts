@@ -273,11 +273,15 @@ export function bakeWalkGrid(opts: BakeWalkOptions): WalkGrid | null {
   const { floorTop, obsLow } = gatherSurfaces(root, span, { groundY, step, head }, 0);
 
   const walk = new Uint8Array(nx * nz);
+  // 🔴 **바닥 높이를 함께 싣는다**(경위는 `WalkGrid.floor`). `floorTop` 은 위 판정이 이미
+  // 쓰고 버리던 값이라 굽기 비용이 안 늘고, 「바닥 없음」을 접는 것도 여기 한 곳이다.
+  const floor = new Float32Array(nx * nz);
   for (let k = 0; k < walk.length; k++) {
     if (judgeCell(floorTop[k], obsLow[k], head)) walk[k] = 1;
+    floor[k] = Number.isFinite(floorTop[k]) ? floorTop[k] : groundY;
   }
 
-  return { ...span, walk };
+  return { ...span, walk, floor };
 }
 
 /**

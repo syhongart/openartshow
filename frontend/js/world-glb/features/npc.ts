@@ -38,7 +38,7 @@ import { walkBinding, cellDriftOf } from '../decide/npc-grid.js';
 import { createSeating } from './npc-seat.js';
 import { readSpawnBand } from '../decide/npc-band.js';
 import type { WalkSource } from '../decide/npc-walk.js';
-import type { WalkGrid } from '../decide/walkable.js';
+import { floorAtXZ, type WalkGrid } from '../decide/walkable.js';
 import { DEFAULT_BODY_R } from '../systems/collision.js';
 import { fogBand, FOG_NEAR_CELLS } from '../decide/fog.js';
 import {
@@ -762,7 +762,10 @@ export const npcFeature: Feature = {
           }
           w.rx = w.x + w.ox;
           w.rz = w.z + w.oz;
-          w.inst.group.position.set(w.rx, 0, w.rz);
+          // 🔴 **발을 바닥에 놓는다** — 여기는 오래 `0` 이 박혀 있었다(감독 신고
+          // 2026-09-22). 경위·실측·왜 0 이 파셀에서는 맞았는지는 `decide/walkable.ts` 의
+          // `WalkGrid.floor` 한 곳이다.
+          w.inst.group.position.set(w.rx, floorAtXZ(baked, w.rx, w.rz), w.rz);
           w.inst.group.rotation.y = w.ry;
           w.inst.update(dt, moving);
         }
