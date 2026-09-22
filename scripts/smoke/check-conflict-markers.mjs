@@ -54,8 +54,13 @@ const MARKERS = [
 ];
 
 function tracked() {
-  return execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 << 20 })
+  // ⚠ **중복을 지운다** — 병합 충돌 중(`UU`)에는 `git ls-files` 가 같은 파일을 **stage
+  // 2·3 으로 세 번** 낸다. 안 지우면 마커 한 줄이 세 번 보고돼 「9줄」처럼 읽힌다.
+  // 실측 2026-09-22: 충돌 1건(`docs/BACKLOG.md` 3줄)이 9줄로 나왔다. 판정은 맞았지만
+  // 수가 틀렸고, **수가 틀리면 다음 사람이 규모를 오해한다.**
+  const out = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 << 20 })
     .split('\0').filter(Boolean);
+  return [...new Set(out)];
 }
 
 /** 한 파일의 마커 줄. 바이너리·읽기 실패는 조용히 건너뛴다(검사 대상이 아니다) */
