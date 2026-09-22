@@ -187,17 +187,24 @@ const HALF_W = 50;
 const WALL_H = 10;
 
 /** 십자 통로 하나짜리 합성 세계를 **GLB 바이트**로 굽는다 */
+/** 합성 세계의 바닥 윗면 y(m). **0 이 아니어야 한다** — 위 주석 참조 */
+const FLOOR_TOP = 0.25;
+
 async function syntheticGlb(): Promise<ArrayBuffer> {
   const scene = new THREE.Scene();
   const mat = new THREE.MeshBasicMaterial();
+  // 🔴 **바닥 윗면을 y=0 이 아니게 둔다** (감독 신고 2026-09-22 *"발이 땅에 파묻혀"*).
+  // 첫 판본은 윗면이 정확히 0 이었고, 그래서 「치비 y 를 바닥에 맞춘다」는 축의 검출력이
+  // **구조적으로 0** 이었다 — 치비가 y=0 에 박혀 있어도 우연히 맞았다. 맨해튼 실측의
+  // 흔한 값(+0.24m)과 같은 자릿수를 골랐다.
   const floor = new THREE.Mesh(new THREE.BoxGeometry(2 * HALF_W, 0.2, 2 * HALF_W), mat);
-  floor.position.set(0, -0.1, 0);
+  floor.position.set(0, FLOOR_TOP - 0.1, 0);
   scene.add(floor);
   const side = HALF_W - HALF;
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(side, WALL_H, side), mat);
-      b.position.set(sx * (HALF + side / 2), WALL_H / 2, sz * (HALF + side / 2));
+      b.position.set(sx * (HALF + side / 2), FLOOR_TOP + WALL_H / 2, sz * (HALF + side / 2));
       scene.add(b);
     }
   }
@@ -243,14 +250,14 @@ async function boot(walkmap: boolean, frames = 0) {
    * **체별** 궤적. `seen` 은 전부 뭉쳐 놓은 것이라 「한 사람이 얼마나 나아갔는가」를
    * 못 본다 — 효율(순이동 ÷ 경로길이) 축이 필요로 하는 것이 그것이다.
    */
-  const tracks: Array<Array<{ x: number; z: number }>> = [];
+  const tracks: Array<Array<{ x: number; y: number; z: number }>> = [];
   /** 프레임마다의 `npc` 진단. `cellDrift` 는 **몸과 목표 칸의 어긋남**을 보는 유일한 창이다 */
   const diag: Npc[] = [];
   for (let f = 1; f <= frames; f++) {
     handle.kernel.tick(f * (1000 / 60));
     avatars.forEach((a, i) => {
       seen.push({ x: a.position.x, z: a.position.z });
-      (tracks[i] ??= []).push({ x: a.position.x, z: a.position.z });
+      (tracks[i] ??= []).push({ x: a.position.x, y: a.position.y, z: a.position.z });
     });
     const d = hook?.stats().npc;
     if (d) diag.push(d);
@@ -422,6 +429,38 @@ describe('🔴 구운 격자가 **부팅 경로를 지나** 치비에게 도달�
     } finally {
       window.history.replaceState({}, '', back || '/');
     }
+  });
+
+  // ── 🔴 **발이 바닥에 닿는다** (감독 신고 2026-09-22 *"치비들 발이 땅에 파묻혀"*) ──
+  // 치비 y 는 오래 `0` 이 박혀 있었다. 파셀 세계는 지면이 평면 y=0 이라 맞았는데 GLB
+  // 세계는 아니다 — 맨해튼 실측에서 바닥 y 의 65.8% 가 |y| > 5cm 였다.
+  //
+  // ⚠ **이 검사는 합성 세계의 바닥 윗면이 0 이 아니어야 성립한다**(`FLOOR_TOP`).
+  // 첫 판본은 윗면이 정확히 0 이었고, 그때 이 축의 검출력은 **구조적으로 0** 이었다.
+
+  it('🔴 치비가 **바닥 높이에 선다** — y=0 에 박히지 않는다', async () => {
+    const { tracks } = await boot(true, 60);
+    expect(tracks.length, '아무도 안 걸었다 — 아래가 공허하다').toBeGreaterThan(0);
+    const ys = tracks.flat().map((p) => p.y);
+    const worst = Math.max(...ys.map((y) => Math.abs(y - FLOOR_TOP)));
+    expect(
+      worst,
+      `치비 y 가 바닥(${FLOOR_TOP}m)에서 최대 ${worst.toFixed(3)}m 어긋났다`
+      + ` — 표본 ${ys.length} · 관측 범위 ${Math.min(...ys).toFixed(3)}~${Math.max(...ys).toFixed(3)}`,
+    ).toBeLessThan(0.01);
+    // 🔴 **대조 표본** — 바닥이 0 이면 「맞춘 것」과 「0 에 박힌 것」이 구별되지 않는다.
+    // 이 단언이 빨간불이면 합성 세계가 바뀐 것이고, 위 단언의 검출력이 사라진다.
+    expect(FLOOR_TOP, '합성 세계 바닥이 0 이다 — 위 검사가 공허해졌다').not.toBe(0);
+  });
+
+  it('🔴 파셀 세계는 **y=0 그대로다** — world7·8·10 불변', async () => {
+    const { tracks } = await boot(false, 10);
+    const ys = tracks.flat().map((p) => p.y);
+    expect(ys.length).toBeGreaterThan(0);
+    expect(
+      Math.max(...ys.map(Math.abs)),
+      '격자가 없는 세계에서 치비 y 가 0 이 아니다 — 파셀 세계가 함께 움직였다',
+    ).toBe(0);
   });
 
   it('🔴 파셀 세계는 **자리를 다시 안 고른다** — world7·8·10 불변', async () => {

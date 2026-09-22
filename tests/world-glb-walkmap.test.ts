@@ -435,7 +435,10 @@ describe('④ 합성 GLB — 상자 몇 개로 만든 십자 통로', () => {
   });
 
   it('공급자의 보폭이 **몸 지름**에서 유도된다 — 기본 칸에서 2', () => {
-    const grid: WalkGrid = { minX: 0, minZ: 0, cell: DEFAULT_BODY_R, nx: 4, nz: 4, walk: new Uint8Array(16).fill(1) };
+    const grid: WalkGrid = {
+      minX: 0, minZ: 0, cell: DEFAULT_BODY_R, nx: 4, nz: 4,
+      walk: new Uint8Array(16).fill(1), floor: new Float32Array(16),
+    };
     // ceil(2r / cell) = ceil(0.68 / 0.34) = 2
     expect(walkSource(grid, DEFAULT_BODY_R).stride).toBe(2);
     // 칸이 몸 지름만 하면 1 이다(더 나눌 여지가 없다)

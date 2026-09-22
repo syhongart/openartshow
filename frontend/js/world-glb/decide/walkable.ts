@@ -51,6 +51,26 @@ export interface WalkGrid {
   readonly nz: number;
   /** 칸당 1바이트. 1 이면 걸을 수 있다 */
   readonly walk: Uint8Array;
+  /**
+   * 🔴 **칸의 바닥 높이(m, 월드 y).** 걸을 수 없는 칸에는 `groundY` 가 들어 있다.
+   *
+   * ── 왜 생겼나 (감독 신고 2026-09-22 *"치비들 발이 땅에 파묻혀"*) ──────────
+   * 치비는 `features/npc.ts` 가 `group.position.set(x, **0**, z)` 로 세운다. 파셀 세계는
+   * 지면이 평면 y=0 이라 맞았는데, **GLB 세계는 아니다.** 맨해튼 실측(표본 120칸,
+   * 플레이어 8~45m 밴드): 바닥 y 가 −0.610 ~ +30.920 이고 **65.8% 가 |y| > 5cm** 다
+   * (흔한 값 +0.24 · +0.20 · −0.08 · −0.61). 바닥이 +0.24m 인 곳에서 치비는 **24cm
+   * 묻히고**, −0.61m 인 곳에서는 61cm 뜬다.
+   *
+   * ⚠ **이 값은 새로 계산하는 것이 아니다.** 굽기가 판정에 쓰려고 이미 칸마다 `floorTop`
+   * 을 모으고 있었고(`systems/glb-walkmap.ts` 의 `gatherSurfaces`), **그것을 쓰고 버렸다.**
+   * 버리지 않고 싣는 것뿐이라 굽기 비용이 안 는다.
+   *
+   * ⚠⚠ **메모리는 는다** — 칸당 4바이트다. 맨해튼 기본 후보(530×530)에서 **1.1MB**,
+   * 가장 촘촘한 `?walkcell=0.5`(1059×1059)에서 **4.5MB**. 45MB 자산을 여는 페이지라
+   * 받아들였다. 1cm 정밀 `Int16Array` 면 절반이지만 변환·반올림 판정이 생기고, `floorTop`
+   * 이 이미 `Float32Array` 라 지금은 복사 한 번으로 끝난다.
+   */
+  readonly floor: Float32Array;
 }
 
 /**
@@ -196,6 +216,31 @@ export function centerOf(g: WalkGrid, px: number, pz: number): { x: number; z: n
 export function walkableAt(g: WalkGrid, px: number, pz: number): boolean {
   if (px < 0 || pz < 0 || px >= g.nx || pz >= g.nz) return false;
   return g.walk[pz * g.nx + px] === 1;
+}
+
+/**
+ * 이 칸의 바닥 높이(m). 격자 밖이면 `fallback`(기본 0).
+ *
+ * ⚠ **`-Infinity` 를 낼 수 있는 자리가 아니다** — 굽기가 「바닥 없음」을 `groundY` 로
+ * 접어서 싣는다. 여기서 다시 접으면 같은 규칙이 두 곳에 생긴다(값 미러링).
+ */
+export function floorAt(g: WalkGrid, px: number, pz: number, fallback = 0): number {
+  if (px < 0 || pz < 0 || px >= g.nx || pz >= g.nz) return fallback;
+  const y = g.floor[pz * g.nx + px];
+  return Number.isFinite(y) ? y : fallback;
+}
+
+/**
+ * 월드 좌표의 바닥 높이(m). **격자가 없으면 0** 이다 — 파셀 세계(world2·7·8·10)가 그
+ * 경로이고, 그래서 그쪽은 한 글자도 안 바뀐다.
+ *
+ * 집행부(`features/npc.ts`)가 매 프레임 체당 한 번 부른다. 칸 변환과 `null` 처리를
+ * 여기 모아 두는 이유: 소비자가 셋 이상 되면 같은 두 줄이 그만큼 복제된다.
+ */
+export function floorAtXZ(g: WalkGrid | null, x: number, z: number): number {
+  if (!g) return 0;
+  const c = cellOf(g, x, z);
+  return floorAt(g, c.px, c.pz);
 }
 
 /**
