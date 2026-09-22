@@ -440,6 +440,15 @@ export function blockMesh(
   object.updateMatrixWorld(true);
   const { floorTop, obsLow } = gatherSurfaces(object, grid, band, margin);
   const walk = new Uint8Array(grid.walk);
+  // 🔴 **이 물건이 깐 바닥이 그 칸의 바닥이 된다**(경위·실측은 `WalkGrid.floor`).
+  // ⚠ **「높은 쪽」이 아니라 「나중에 놓인 것」이 이긴다** — 아래 `walk` 판정의
+  // `Math.max(groundY, floorTop)` 과 일부러 다른 규칙이다. 판정은 「지나갈 수 있는가」라
+  // 막는 쪽이 이겨야 안전하고, 여기는 「어디에 발을 놓는가」라 **화면에 보이는 면**이
+  // 이겨야 한다. ⚠⚠ `walk` 판정은 한 글자도 안 바꿨다 — 이 회차의 경계다.
+  const floor = new Float32Array(grid.floor);
+  for (let k = 0; k < walk.length; k++) {
+    if (Number.isFinite(floorTop[k])) floor[k] = floorTop[k];
+  }
   for (let k = 0; k < walk.length; k++) {
     // 이 물건이 그 칸에 **막을 것을 안 뒀으면** 건너뛴다.
     // ⚠ **이 줄은 판정을 바꾸지 않는다 — 순회 비용을 줄일 뿐이다.** 첫 판본은 여기
@@ -455,7 +464,7 @@ export function blockMesh(
     // (그 전제는 `bakeWalkmapFor` 의 `groundY: 0` 한 곳이 소유한다).
     if (!judgeCell(Math.max(band.groundY, floorTop[k]), obsLow[k], band.head)) walk[k] = 0;
   }
-  return { ...grid, walk };
+  return { ...grid, walk, floor };
 }
 
 /**
@@ -490,6 +499,8 @@ export function blockWalkFor(
   const blocked = blockMesh(grid, object, band, blockMargin(DEFAULT_BODY_R));
   const pruned = pruneUnreachable(blocked, start.x, start.z);
   grid.walk.set(pruned.walk);   // 같은 배열에 되쓴다 — 위 「왜 제자리인가」 절
+  // 🔴 **바닥도 같은 이유로 되쓴다** — 안 하면 「덧칠은 맞는데 발 높이는 옛 값」이 된다.
+  grid.floor.set(pruned.floor);
   const after = walkableCount(grid);
   // 덧칠이 **아무것도 안 막았으면** 그것도 사실이다(물건이 격자 밖이거나 이미 벽 위다).
   // 조용히 0 을 넘기지 않는다 — 「막았다고 적혔는데 안 막혔다」가 가장 찾기 어렵다.

@@ -612,6 +612,24 @@ const HUT = 4;
 const HUT_Z = 20;
 
 /** 남쪽 면에 문이 뚫린 작은 건물. `door=false` 면 그 자리도 벽이다(대조군) */
+/**
+ * 바닥 있는 물건. `floorY` 가 그 **윗면** y 다.
+ *
+ * ⚠ 합성 세계의 지면 윗면은 **0** 이므로, 여기에 **음수**를 주면 「나중에 놓인 물건의
+ * 바닥이 세계 지면보다 낮다」가 된다 — 감독 신고(*"실내 갤러리에서 떠보이는 것 같아"*)의
+ * 재현이다. 미술관은 `position.set(x, 0, z)` 로 놓이고 맨해튼 지면은 +0.2m 였다.
+ * 양수를 주면 「높은 쪽이 이긴다」와 구별이 안 되어 이 축의 검출력이 사라진다.
+ */
+function makeHutWithFloor(floorY: number): THREE.Object3D {
+  const g = makeHut(true) as THREE.Group;
+  const mat = new THREE.MeshBasicMaterial();
+  const f = new THREE.Mesh(new THREE.BoxGeometry(HUT, 0.1, HUT), mat);
+  f.position.set(0, floorY - 0.05, HUT_Z);
+  g.add(f);
+  g.updateMatrixWorld(true);
+  return g;
+}
+
 function makeHut(door: boolean): THREE.Object3D {
   const g = new THREE.Group();
   const mat = new THREE.MeshBasicMaterial();
@@ -654,6 +672,76 @@ describe('⑥ 씬에 나중에 붙는 물건 — 벽은 막고 **문은 연다**
     const g = await world();
     expect(at(g, 0, HUT_Z), '건물 안쪽이 애초에 못 걷는 자리다').toBe(true);
     expect(at(g, 0, HUT_Z - HUT / 2 - 1), '문 앞이 애초에 못 걷는 자리다').toBe(true);
+  });
+
+  // ── 🔴 **나중에 붙는 물건의 바닥이 그 칸의 바닥이 된다** (감독 신고 2026-09-22
+  // *"실내 갤러리에서 떠보이는 것 같아"*) ─────────────────────────────────────
+  // 굽기는 GLB 세계만 본다. 미술관처럼 나중에 씬에 붙는 물건의 바닥은 격자의 `floor` 에
+  // 안 들어왔고, 치비가 **세계 지면 높이**에 서서 실내 바닥보다 떠 보였다.
+
+  it('🔴 덧칠이 **바닥 높이도 갱신한다** — 실내에서 뜨지 않는다', async () => {
+    const g = await world();
+    const c = cellOf(g, 0, HUT_Z);          // 건물 안쪽
+    const before = g.floor[c.pz * g.nx + c.px];
+    expect(before, '세계 지면이 0 이 아니다 — 이 검사의 기준이 바뀌었다').toBeCloseTo(0, 6);
+
+    const INNER = -0.15;                     // 세계 지면(0)보다 **낮은** 실내 바닥
+    const b = blockMesh(g, makeHutWithFloor(INNER) as never, BAND, MARGIN);
+    const after = b.floor[c.pz * b.nx + c.px];
+    expect(
+      after,
+      `덧칠 뒤에도 실내 바닥이 ${after.toFixed(3)} 이다 — 물건이 깐 바닥(${INNER})이 아니라`
+      + ' 세계 지면을 그대로 쓴다. 치비가 그 차이만큼 뜬다.',
+    ).toBeCloseTo(INNER, 6);
+
+    // 🔴 **「높은 쪽이 이긴다」와 갈리는 것이 이 검사의 요점이다.** `INNER` 가 세계
+    // 지면보다 낮으므로, max 규칙이었다면 위 단언이 0 을 보고 실패한다.
+    expect(INNER, '실내 바닥이 세계 지면보다 낮지 않다 — 위 단언의 검출력이 0 이다')
+      .toBeLessThan(before);
+  });
+
+  it('🔴 **바닥 밖 칸은 안 건드린다** — 물건이 세계 전체를 덮지 않는다', async () => {
+    const g = await world();
+    const far = cellOf(g, 0, HUT_Z - HUT / 2 - 3);   // 건물 밖
+    const before = g.floor[far.pz * g.nx + far.px];
+    const b = blockMesh(g, makeHutWithFloor(-0.15) as never, BAND, MARGIN);
+    expect(
+      b.floor[far.pz * b.nx + far.px],
+      '물건 밖 칸의 바닥까지 바뀌었다 — 덧칠 범위가 샌다',
+    ).toBeCloseTo(before, 6);
+  });
+
+  it('🔴 **입력 격자를 안 바꾼다** — `blockMesh` 의 계약', async () => {
+    const g = await world();
+    const c = cellOf(g, 0, HUT_Z);
+    const before = g.floor[c.pz * g.nx + c.px];
+    blockMesh(g, makeHutWithFloor(-0.15) as never, BAND, MARGIN);
+    expect(
+      g.floor[c.pz * g.nx + c.px],
+      '`blockMesh` 가 입력 격자의 바닥을 제자리에서 고쳤다 — 「새 격자를 낸다」 계약 위반',
+    ).toBeCloseTo(before, 6);
+  });
+
+  it('🔴 `blockWalkFor` 가 바닥을 **제자리에 반영한다** — 걷기가 든 배열이 바뀐다', async () => {
+    // 🔴 **이 검사가 없으면 위 셋이 공허하다.** `blockMesh` 는 순수 함수라 새 격자를
+    // 내는데, 걷기(`features/npc.ts`)는 **부팅 때 받은 격자 객체**를 클로저로 들고 있다.
+    // 제자리에 되쓰지 않으면 「덧칠은 맞게 계산했는데 발 높이는 옛 값」이 되고, 증상은
+    // 「실내에서만 뜬다」라 원인에서 멀다.
+    //
+    // ⚠ **뮤테이션으로 확인했다**(2026-09-22): `grid.floor.set(pruned.floor)` 를 지우면
+    // 이 파일과 부팅 검사 **54개가 전부 통과했다.** 그 줄이 곧 감독 증상을 고치는 줄인데
+    // 아무도 안 보고 있었다 — 이 저장소가 「판정/집행 경계는 아무도 안 본다」라고 이름
+    // 붙인 자리다.
+    const g = await world();
+    const c = cellOf(g, 0, HUT_Z);
+    const k = c.pz * g.nx + c.px;
+    expect(g.floor[k], '세계 지면이 0 이 아니다 — 기준이 바뀌었다').toBeCloseTo(0, 6);
+    const INNER = -0.15;
+    blockWalkFor(g, makeHutWithFloor(INNER) as never, 1.7, { x: 0, z: 0 });
+    expect(
+      g.floor[k],
+      '덧칠 뒤에도 원본 격자의 바닥이 그대로다 — 새 배열에만 쓰고 제자리 반영을 안 했다',
+    ).toBeCloseTo(INNER, 6);
   });
 
   it('🔴 **벽은 막히고 문은 안 막힌다** — 두 축이 개구부를 찾아낸다', async () => {
