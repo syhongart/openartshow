@@ -34,6 +34,7 @@
     "measure:collide": "node scripts/smoke/measure-collide.mjs",
     "measure:click": "node scripts/smoke/measure-click.mjs",
     "measure:glb-roundtrip": "node scripts/smoke/measure-glb-roundtrip.mjs",
+    "measure:walk-candidates": "node scripts/smoke/measure-walk-candidates.mjs",
     "asset:nyc": "node scripts/asset/nyc/generate.mjs"
   },
   "devDependencies": {
