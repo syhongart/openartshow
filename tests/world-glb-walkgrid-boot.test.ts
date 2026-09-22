@@ -35,6 +35,7 @@ import { DEFAULT_BODY_R } from '../frontend/js/world-glb/systems/collision.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world-glb/parts/types.js';
 import { SPAWN_REACH, WALK_MAX } from '../frontend/js/world-glb/features/npc.js';
 import { SPAWN } from '../frontend/js/world-glb/decide/grid.js';
+import { SPAWN_BAND_DEFAULT } from '../frontend/js/world-glb/decide/npc-band.js';
 
 const { cellX } = DEFAULT_LAYOUT;
 
@@ -212,6 +213,8 @@ type Npc = {
   chibi: number;
   cellDrift: number | null;
   spawnReach: number;
+  /** `?spawnband=` 로 고른 거리 배율 — 노브가 부팅 경로를 지났는지 보는 창 */
+  spawnBand: number;
 };
 type Stats = { npc?: Npc };
 type Handle = { kernel: { stop(): void; tick(t: number): void }; dispose(): void };
@@ -396,14 +399,55 @@ describe('🔴 구운 격자가 **부팅 경로를 지나** 치비에게 도달�
     ).toBeGreaterThanOrEqual(onParcel);
   });
 
+  // ── 🔴 `?spawnband=` 가 **부팅 경로를 지나 스폰에 닿는가** ──────────────
+  // 판정 함수만 재는 검사는 「소비」까지만 증명한다(검수관 게이트 명세 2026-09-19).
+  // 노브는 `create` 에서 한 번 읽히고 `rebind` 가 밴드로 환산하므로, 그 사이 어느
+  // 한 곳만 끊겨도 **주소창은 바뀌는데 화면은 그대로**가 된다 — 이 저장소가 바로 그
+  // 형태로 감독께 같은 화면 넷을 드렸다.
+  it('🔴 `?spawnband=` 가 스폰 밴드까지 닿는다 — 주소창이 화면을 바꾼다', async () => {
+    const back = window.location.search;
+    try {
+      window.history.replaceState({}, '', '?spawnband=1');
+      const wide = (await boot(true, 1)).stats!.npc!;
+      window.history.replaceState({}, '', '?spawnband=0.25');
+      const near = (await boot(true, 1)).stats!.npc!;
+      expect(wide.spawnBand, '기본 후보가 진단에 안 실린다').toBe(1);
+      expect(near.spawnBand, '노브를 읽지 않았다 — `readSpawnBand` 가 안 불렸다').toBe(0.25);
+      // 🔴 값이 실린 것과 **밴드가 갈린 것**은 다른 일이다. 아래가 그 둘을 가른다.
+      expect(
+        near.spawnReach,
+        `밴드가 안 갈렸다(둘 다 ${wide.spawnReach}칸) — 진단에는 후보가 실리는데`
+        + ' 환산이 끊겼다는 뜻이고, 그 형태는 화면으로 구별되지 않는다',
+      ).toBeLessThan(wide.spawnReach);
+    } finally {
+      window.history.replaceState({}, '', back || '/');
+    }
+  });
+
   it('🔴 파셀 세계는 **자리를 다시 안 고른다** — world7·8·10 불변', async () => {
-    await boot(false, 1);
+    const { placed } = await boot(false, 1);
     const cell = walkCellSize(DEFAULT_BODY_R);
     const onBaked = picks.filter((q) => Math.abs(q.cell - cell) < 1e-9).length;
     expect(
       onBaked,
       `공급자가 안 갈리는 세계에서 구운 격자 고르기가 ${onBaked}회 일어났다`,
     ).toBe(0);
+    // 🔴 위 단언만으로는 **공허하다** — 파셀 세계에는 구운 칸이 아예 없으므로 0 은
+    // 「안 골랐다」가 아니라 「고를 것이 없었다」로도 참이다. 횟수를 함께 본다:
+    // 재스폰이 돌면 체당 두 번 고르게 되어 이 수가 인원의 두 배가 된다.
+    expect(
+      picks.length,
+      `자리 고르기가 ${picks.length}회다 — 세운 체는 ${placed} 인데 더 골랐다면`
+      + ' 파셀 세계에서도 재스폰이 돈 것이고, 그러면 world7·8·10 이 함께 움직인다',
+    ).toBe(placed);
+    //
+    // ⚠ **이 검사가 못 잡는 것**(뮤테이션 M3 실측 2026-09-22): `if (src.cell !== cellWas)`
+    // 를 `if (true)` 로 바꿔도 16 검사가 전부 통과한다. 파셀 세계에서는 바깥
+    // `if (supplied !== baked)` 가 **언제나 거짓**이라(격자를 안 주는 세계라 둘 다 `null`)
+    // 그 안쪽이 **도달 불가**이기 때문이다. 즉 이 불변을 지키는 것은 안쪽 조건이 아니라
+    // **바깥 조건**이고, 그쪽을 뒤집는 뮤테이션(`supplied !== baked` → `true`)이라야
+    // 이 검사가 걸린다. 「안 깨졌으니 검사가 장식」이 아니라 「그 줄이 이 세계에서
+    // 도달하지 않는다」가 정확한 진술이다 — 둘을 구별해 적는다.
   });
 
   it('🔴 공급자가 갈린 **첫 프레임부터** 몸과 목표 칸이 안 어긋난다', async () => {
@@ -493,14 +537,18 @@ describe('🔴 구운 격자가 **부팅 경로를 지나** 치비에게 도달�
     // 환산을 빠뜨리면 밴드가 100배 좁아지고, 증상은 「재배치된 사람이 눈앞에 튀어나온다」
     // 라서 원인에서 멀다. ⚠ 이 축은 `walkBinding` 밖(집행부의 `rebind`)에 있어서
     // **따로 보지 않으면 아무 검사에도 안 걸린다**(뮤테이션 M-E 로 실증했다).
+    //
+    // ⚠⚠ 「같은 거리」의 기준이 2026-09-22 에 **배율만큼 줄었다**(`?spawnband=`). 기대값에
+    // 배율을 곱한다 — 숫자를 다시 적으면 기본값을 바꿀 때 이 검사가 조용히 낡는다.
     const { stats } = await boot(true, 5);
     const npc = stats!.npc!;
     const meters = npc.spawnReach * npc.grid.cell;
+    const want = SPAWN_REACH * cellX * SPAWN_BAND_DEFAULT;
     // 인원이 많으면 `reachForIn` 이 넓힌다 — 그러므로 하한만 본다. 반올림 한 칸 여유.
     expect(
       meters,
-      `스폰 밴드가 ${meters.toFixed(2)}m 다 — 파셀 기준 ${(SPAWN_REACH * cellX).toFixed(2)}m 에서 환산이 빠졌다`,
-    ).toBeGreaterThanOrEqual(SPAWN_REACH * cellX - npc.grid.cell);
+      `스폰 밴드가 ${meters.toFixed(2)}m 다 — 파셀 기준 ${want.toFixed(2)}m 에서 환산이 빠졌다`,
+    ).toBeGreaterThanOrEqual(want - npc.grid.cell);
   });
 
   it('치비가 **실제로 움직인다** — 제자리에 굳으면 위 단언이 공허하다', async () => {

@@ -40,17 +40,20 @@
 // 흉내내지 않는 것: 렌더러 · 하늘 · 스트리밍 · 인스턴싱 · 미니맵 · 그림자. 재는 축에
 // 하나도 안 걸린다(격자는 **인스턴싱 «전»** 트리를 보고, 스폰은 좌표만 본다).
 //
-// ── 두 갈래를 **나란히** 잰다 ───────────────────────────────────────────────
-//   **A (라이브 현행)** `walkGrid()` 가 조립 때 `null`, 첫 `update` 에 격자.
-//       `main.ts` 의 실제 순서다 — 조립은 `pools`(:753) 이고 굽기는 `stream`(:938) 이다.
-//   **B (ⓐ 적용 후)** 조립 때부터 격자.
-//       팀장 판정 1 이 승인한 ⓐ(「스폰을 `rebind` 뒤로」)가 적용된 뒤의 값을 **미리**
-//       재는 것이다. ⚠ **ⓐ 를 구현한 것이 아니다** — 이 회차의 범위는 재는 것까지이고
-//       (조건 C2 미해소), `features/npc.ts` 는 한 글자도 안 바뀐다.
+// ── 무엇을 스윕하는가 ─────────────────────────────────────────────────────
+// `?walkcell=`(걷기 칸) × `?spawnband=`(스폰 밴드 거리 배율) × 시드. 부팅 순서는
+// **라이브 그대로 하나뿐**이다 — `walkGrid()` 가 조립 때 `null`, 첫 `update` 에 격자
+// (`main.ts` 의 조립 `pools`:753 · 굽기 `stream`:938).
 //
-// ── 🔴 **첫 회차 실측 (2026-09-22, 시드 1 · `manhattan-180m.glb`)** ─────────
+// ⚠ **「조립 때부터 격자를 내주는」 가상 갈래(옛 B)는 없앴다** (2026-09-22). 그것은
+// 구현하지 않은 경로였고, 실제 구현(스폰을 첫 프레임에 다시 고르기)과 **결과가
+// 달랐다** — 난수 소비 순서가 달라 자리 분포가 갈린다. 그런데 팀장 판정 A-3 이 그
+// 가상 갈래 표를 근거로 쓰고 있었다. **가상 갈래로 구현을 대신 재면 안 된다**는 것이
+// 이 회차의 실측이고, 남겨 두면 다음 사람이 또 그것으로 판정한다.
 //
-// **R1 — A(라이브 현행)에서 `?walkcell=` 은 스폰을 거의 안 바꾼다.**
+// ── 🔴 **실측 (2026-09-22, `manhattan-180m.glb`, 시드 1 · 세로 390×844)** ───
+//
+// **스폰 수정 전 — `?walkcell=` 은 스폰을 거의 안 바꿨다.**
 //
 //     후보        치비 6체가 선 자리                                      ×0.5 대비
 //     ×0.5  (-32,32) (32,32) (-32,-32) (0,32) (32,0) (-32,0)              —
@@ -59,37 +62,31 @@
 //     ×2    세 번째만 (-31.9,-29.1)                                       2.86m
 //     → 서로 다른 좌표 조합 **2/4** · 플레이어와의 거리 22.28~50.76m
 //
-// 좌표가 **전부 32m 의 배수**다. 이것이 `G-WALK5`(「스폰이 파셀 격자를 탄다」)의
-// **맨해튼 실물 증거**다 — 그전까지는 합성 세계에서만 본 것이었다. ×2 의 2.86m 는
-// 노브가 스폰을 바꾼 것이 아니라, 그 후보에서 벽이 확실히 닫혀(walkable 66.1%) 그
-// 체가 **첫 프레임에 갇힘 탈출**(`unstick`)로 밀려난 것이다.
+// 좌표가 **전부 32m 의 배수**다 — `G-WALK5`(「스폰이 파셀 격자를 탄다」)의 맨해튼
+// 실물 증거다. ×2 의 2.86m 는 노브가 스폰을 바꾼 것이 아니라 그 후보에서 벽이 확실히
+// 닫혀(walkable 66.1%) 그 체가 첫 프레임에 `unstick` 으로 밀려난 것이다.
 //
-// **R1 — B(ⓐ 적용 후)에서는 갈린다.** 좌표 조합 **4/4**, 체별 최대 이동 63.8~64.3m.
-// 즉 **후보 링크 선결 조건(「산출이 실제로 갈리는가」)은 ⓐ 적용을 전제로만 충족된다.**
-// 지금 라이브 링크로 네 후보를 드리면 감독은 **또 같은 화면 넷**을 보신다.
+// **스폰 수정 후 — 32m 격자를 벗어났지만 `?walkcell=` 후보는 여전히 안 갈린다.**
+// 좌표 조합은 4/4 가 됐으나 **체별 이동이 최대 0.77m** 로 칸 한 변 수준이다. 밴드가
+// `toCells()` 로 **실거리 기준**이라 격자 해상도를 바꿔도 링의 실반경이 안 변하기
+// 때문이다 — **`?walkcell=` 은 원리상 스폰 비교의 축이 될 수 없다.** 그래서 이 회차에
+// `?spawnband=` 를 만들어 스윕 축으로 삼는다(실거리 32/24/16/8m).
 //
-// **R2 — 감독 신고 *"치비 하나만 보여꼬"* 가 수치로 재현됐다.**
-// 모바일 세로(390×844)에서 yaw 36방향 × 시드 8회 × 후보 4 × 갈래 2 **전부**:
+// **R2 — 감독 신고 *"치비 하나만 보여꼬"* 가 수치로 재현됐다.** 그리고 스폰 수정은
+// 그 증상을 **악화시킨다**(후보 ×1 기준):
 //
-//     ≤1체가 보이는 방향   **36/36** (64/64 조합에서 예외 0)
-//     0체인 방향           A ×0.5·×1 은 28~29/36 · 나머지는 32/36 (시드 1 은 전부 28 또는 32)
-//     가려진 체            4~5 / 6
-//     yaw 0(초기 방향)     절두체 0~1체 · 보임 0~1체
+//     축                          수정 전   수정 후
+//     차폐 후 0체인 방향          28/36     32/36     악화
+//     절두체 체수 중앙값          1         0         악화
+//     절두체 ≤1체인 방향          36/36     36/36     불변
+//     벽에 가려진 체              4/6       5/6       악화
 //
 // 가로(844×390)·데스크(1920×1080)에서도 ≤1체가 34~36/36 이다. **화각을 넓혀도 안
-// 바뀐다** — 막는 것은 화각이 아니라 거리와 벽이다.
-//
-// ⚠⚠ **그러므로 ⓐ 만으로는 이 증상이 안 고쳐진다 — 오히려 나빠지는 축이 있다.**
-// 세로 ×1 의 「0체 방향」이 A 28/36 → B 32/36 이다. A 는 32m 격자점이라 몇 체가
-// 플레이어와 **같은 도로 축선**에 우연히 놓이는데, B 는 링 위 임의 좌표라 그 우연이
-// 사라진다(거리 자체는 22~51m → 33~44m 로 **더 고르게 멀어진다**). 이것이 팀장 판정 2
-// 가 요구한 실측이고, ⓑ(링 해제)·ⓒ(밴드 거리) 재상신의 근거다.
-// **해석은 여기까지다** — 어떤 처방을 쓸지는 팀장 판정이고 이 파일의 축이 아니다.
+// 바뀐다** — 막는 것은 화각이 아니라 거리와 벽이다. 그래서 처방 축이 `?spawnband=` 다.
+// **해석은 여기까지다** — 어떤 값을 기본으로 삼을지는 감독 화면 판정이다.
 //
 // ⚠ **이 표의 첫 판본에 시드 고정 «전» 의 값(29/36)을 적었다 — 자기신고.** 하네스를
 // 고쳐 시드를 고정한 뒤 같은 자리가 **28/36** 이었고, 인자를 바꿔 네 번 더 재도 28 이다.
-// 「같은 커밋인데 회차마다 갈리는 수」를 그대로 표에 적는 것이 이 저장소가 「실측에
-// 여유를 얹은 값은 근거가 아니다」라고 부르는 그 형태다 — 고친 경위를 지우지 않는다.
 //
 // ⚠⚠⚠ **이 표를 「하나만 보이는 것이 나쁘다」로 읽지 마라.** 감독이 그것을 문제라고
 // 하셨으므로 재는 것이고, 재고 나서 「몇 체가 적당한가」는 여전히 감독 판정이다.
@@ -152,6 +149,7 @@ const flag = (k) => {
 const AS_JSON = flag('json') !== null;
 const ONLY_CELL = flag('cell') === null ? null : Number(flag('cell'));
 const ONLY_ASPECT = flag('aspect') === null ? null : Number(flag('aspect'));
+const ONLY_BAND = flag('band') === null ? null : Number(flag('band'));
 const SHOW_TIMING = flag('timing') !== null;
 const SEED0 = flag('seed') === null ? 1 : Number(flag('seed'));
 /** 시드를 몇 개 돌릴 것인가 — 아래 `seedRandom` 절 참고 */
@@ -248,12 +246,18 @@ async function main() {
   const walkmapMod = await load('/frontend/js/world-glb/systems/glb-walkmap.ts');
   const npcMod = await load('/frontend/js/world-glb/features/npc.ts');
   const registry = await load('/frontend/js/world-glb/avatars/registry.ts');
+  const bandMod = await load('/frontend/js/world-glb/decide/npc-band.ts');
   timing.modules = Date.now() - t;
 
   const SPAWN = gridMod.SPAWN;
   const MULTS = walkableMod.WALK_CELL_MULTIPLES.filter(
     (m) => ONLY_CELL === null || m === ONLY_CELL,
   );
+  // 🔴 후보표를 **여기 적지 않는다** — 판정 모듈이 소유한다(`decide/npc-band.ts`)
+  const BANDS = bandMod.SPAWN_BAND_CANDIDATES.filter(
+    (b) => ONLY_BAND === null || Math.abs(b - ONLY_BAND) < 1e-9,
+  );
+  if (!BANDS.length) { console.error(`--band= 후보가 없다(가능: ${bandMod.SPAWN_BAND_CANDIDATES})`); process.exit(2); }
   const aspects = ASPECTS.filter((a) => ONLY_ASPECT === null || Math.abs(a.value - ONLY_ASPECT) < 1e-6);
   if (!MULTS.length) { console.error(`--cell= 후보가 없다(가능: ${walkableMod.WALK_CELL_MULTIPLES})`); process.exit(2); }
   if (!aspects.length) { console.error('--aspect= 후보가 없다'); process.exit(2); }
@@ -295,7 +299,13 @@ async function main() {
       return grid.walk[iz * grid.nx + ix] === 1;
     };
 
-    for (const lane of ['A', 'B']) {
+    for (const band of BANDS) {
+     // 🔴 노브를 **실제 경로로** 먹인다 — `features/npc.ts` 가 `readSpawnBand()` 를
+     // 스스로 읽는다. 배율을 계산해 넘기면 접기 규칙이 하네스에 복제된다.
+     globalThis.location = {
+       search: `?walkcell=${mult}&spawnband=${band}`,
+       href: `http://local/?walkcell=${mult}&spawnband=${band}`,
+     };
      for (let k = 0; k < REPEAT; k++) {
       const seed = SEED0 + k;
       // 시드를 **체 조립 직전에** 건다. 격자는 이 위에서 이미 구워졌고 난수를 안 쓴다.
@@ -306,13 +316,14 @@ async function main() {
       const env = {
         scene,
         player: { position: new THREE.Vector3(SPAWN.x, EYE, SPAWN.z) },
-        walkGrid: () => (lane === 'B' ? grid : (assembled ? grid : null)),
+        // 라이브 순서 그대로 — 조립 때 `null`, 첫 `update` 에 격자
+        walkGrid: () => (assembled ? grid : null),
       };
       const inst = npcMod.npcFeature.create(env);
-      if (!inst) throw new Error(`×${mult} ${lane}: npc 기능이 null 이다`);
+      if (!inst) throw new Error(`×${mult} 밴드${band}: npc 기능이 null 이다`);
       assembled = true;
       // `dt = 0` — 걷지 않는다(`step = min(dist, speed × 0) = 0`). 이 한 번이 하는 일은
-      // ① A 갈래의 공급자 교체(`rebind` + `reseat`) ② 몸 좌표를 아바타에 얹는 것이다.
+      // ① 공급자 교체(`rebind` + 재스폰) ② 몸 좌표를 아바타에 얹는 것이다.
       // 그 둘이 곧 **라이브 첫 프레임**이고, 감독이 진입 직후에 보는 화면이 그것이다.
       inst.system.update({ dt: 0 });
 
@@ -331,8 +342,9 @@ async function main() {
 
       const diag = inst.diagnostics();
       rows.push({
-        mult, lane, seed, cell: grid.cell, nx: grid.nx, nz: grid.nz, walkCount, bakeMs,
+        mult, band, seed, cell: grid.cell, nx: grid.nx, nz: grid.nz, walkCount, bakeMs,
         srcCell: diag.grid.cell, spawnReach: diag.spawnReach, chibi: diag.chibi,
+        spawnBand: diag.spawnBand,
         playerOnWalkable: walkAt(SPAWN.x, SPAWN.z),
         bodies,
         vis: visibility(grid, SPAWN, bodies, aspects),
@@ -413,17 +425,24 @@ function visibility(grid, spawn, bodies, aspects) {
 function verdict(rows) {
   const bad = [];
   for (const r of rows) {
-    if (r.chibi !== r.bodies.length) bad.push(`${r.lane} ×${r.mult}: 진단 ${r.chibi}체 ≠ 세운 ${r.bodies.length}체`);
-    if (!r.bodies.length) bad.push(`${r.lane} ×${r.mult}: 치비가 한 체도 안 섰다`);
-    if (r.walkCount <= 0) bad.push(`${r.lane} ×${r.mult}: 걸을 수 있는 칸이 0 이다`);
+    if (r.chibi !== r.bodies.length) bad.push(`밴드${r.band} ×${r.mult}: 진단 ${r.chibi}체 ≠ 세운 ${r.bodies.length}체`);
+    if (!r.bodies.length) bad.push(`밴드${r.band} ×${r.mult}: 치비가 한 체도 안 섰다`);
+    if (r.walkCount <= 0) bad.push(`밴드${r.band} ×${r.mult}: 걸을 수 있는 칸이 0 이다`);
     // 🔴 시선이 **한 칸도 안 지났으면** 차폐를 아무것도 안 본 것이다. 그것을
     //    「안 가렸다」로 읽으면 못 잰 것이 통과로 적히는 그 자리가 된다.
     if (r.vis.clear.every((c) => c.crossed === 0)) {
-      bad.push(`${r.lane} ×${r.mult}: 시선이 지난 칸이 전부 0 — 차폐를 재지 못했다`);
+      bad.push(`밴드${r.band} ×${r.mult}: 시선이 지난 칸이 전부 0 — 차폐를 재지 못했다`);
     }
-    // B 갈래는 구운 격자를 써야 한다. 파셀 칸(32m)이 나오면 배선이 끊긴 것이다.
-    if (r.lane === 'B' && Math.abs(r.srcCell - r.cell) > 1e-9) {
-      bad.push(`B ×${r.mult}: 걷기가 구운 칸(${r.cell})이 아니라 ${r.srcCell} 을 쓴다`);
+    // 🔴 걷기는 **구운 격자**를 써야 한다. 파셀 칸(32m)이 나오면 배선이 끊긴 것이고,
+    //    그 상태의 좌표를 표에 적으면 「도달했다」가 거짓이 된다(이 회차에 두 번 났다).
+    if (Math.abs(r.srcCell - r.cell) > 1e-9) {
+      bad.push(`밴드${r.band} ×${r.mult}: 걷기가 구운 칸(${r.cell})이 아니라 ${r.srcCell} 을 쓴다`);
+    }
+    // 🔴 노브가 **실제로 밴드를 바꿨는가.** 진단에 실린 배율이 이 회차의 후보와 다르면
+    //    표의 행이 서로 다른 것을 잰 셈이 된다 — 「노브가 안 먹은 것」과 「화면이 같은
+    //    것」은 다른 일이고, 이 저장소는 그 둘을 구별 못 해 감독께 같은 화면 넷을 드렸다.
+    if (r.spawnBand !== undefined && Math.abs(r.spawnBand - r.band) > 1e-9) {
+      bad.push(`밴드${r.band} ×${r.mult}: 진단의 배율이 ${r.spawnBand} 다 — 노브가 안 먹었다`);
     }
   }
   return bad;

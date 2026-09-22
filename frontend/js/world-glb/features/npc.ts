@@ -36,6 +36,7 @@ import {
 } from '../decide/npc-walk.js';
 import { walkBinding, cellDriftOf } from '../decide/npc-grid.js';
 import { createSeating } from './npc-seat.js';
+import { readSpawnBand } from '../decide/npc-band.js';
 import type { WalkSource } from '../decide/npc-walk.js';
 import type { WalkGrid } from '../decide/walkable.js';
 import { DEFAULT_BODY_R } from '../systems/collision.js';
@@ -321,6 +322,8 @@ export const npcFeature: Feature = {
     let hpz: number;
     let spawnRing: number;
     let spawnReach: number;
+    /** `?spawnband=` 스폰 밴드 거리 배율. 세션 내내 상수다 — 판정은 `decide/npc-band.ts` */
+    const band = readSpawnBand();
 
     /**
      * 🔴 **격자 공급자를 통째로 갈아 끼운다.** 조립 때 한 번, 그 뒤로는 **공급자가
@@ -333,9 +336,12 @@ export const npcFeature: Feature = {
       ({ grid: baked, src, toCells, arrive, unstickRing, runCells, lanes } =
         walkBinding(g, cellX, cellZ, DEFAULT_BODY_R, ARRIVE));
       ({ px: hpx, pz: hpz } = src.at(home.x, home.z));
-      spawnRing = toCells(SPAWN_RING);
+      // ⚠ 배율은 **파셀 셀 단위에** 곱한다 — `toCells` 가 그것을 공급자 칸으로 환산하고,
+      // 파셀 공급자에서는 `max(1, round(0.25~1))` = 1 로 접혀 **산술적으로 불변**이다
+      // (world2·7·8·10). 판정·후보표·B1 경위는 `decide/npc-band.ts` 한 곳이다.
+      spawnRing = toCells(SPAWN_RING * band);
       spawnReach = reachForIn(
-        src, wanted, hpx, hpz, spawnRing, toCells(SPAWN_REACH), toCells(MAX_SPAWN_REACH),
+        src, wanted, hpx, hpz, spawnRing, toCells(SPAWN_REACH * band), toCells(MAX_SPAWN_REACH),
       );
     }
     rebind(env.walkGrid?.() ?? null);
@@ -806,6 +812,10 @@ export const npcFeature: Feature = {
         // 사실이 감춰지면 본편 ① 이 고친 결함과 구별되지 않는다.
         spawnReach,
         spawnReachBase: SPAWN_REACH,
+        // `?spawnband=` 로 고른 거리 배율. 후보 비교 링크가 **실제로 갈렸는지**를
+        // 화면 밖에서 확인하는 유일한 창이다 — 노브가 안 먹은 것과 화면이 같은 것은
+        // 다른 일이고, 이 저장소는 그 둘을 구별 못 해 감독께 같은 화면 넷을 드렸다.
+        spawnBand: band,
       }),
 
       /**

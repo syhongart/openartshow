@@ -23,12 +23,12 @@ export function report(allRows, aspects, spawn, ctx) {
   // 섞어 놓으면 「후보가 갈리는가」와 「시드가 갈리는가」가 한 표에서 구별되지 않는다.
   const rows = allRows.filter((r) => r.seed === SEED0);
   say('━━━ R1 — 후보별 스폰 6체 좌표 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  say(`A = 라이브 현행(조립 때 격자 없음) · B = ⓐ 적용 후(조립 때부터 격자) · 시드 ${SEED0}`);
+  say(`부팅 순서는 라이브 그대로 하나뿐이다 · 시드 ${SEED0}`);
   say();
-  for (const lane of ['A', 'B']) {
-    const mine = rows.filter((r) => r.lane === lane);
+  for (const band of [...new Set(rows.map((r) => r.band))]) {
+    const mine = rows.filter((r) => r.band === band);
     if (!mine.length) continue;
-    say(`[${lane}] ${lane === 'A' ? '라이브 현행' : 'ⓐ 적용 후'}`);
+    say(`[스폰 밴드 ×${band}]  (실거리는 「밴드」열 × 「걷기칸」열)`);
     say('  후보   걷기칸   밴드   치비가 선 자리 (x, z) · ↯ = 걸을 수 없는 칸');
     for (const r of mine) {
       const pts = r.bodies.map((b) => `(${fx(b.x, 1)},${fx(b.z, 1)})${b.onWalkable === false ? '↯' : ''}`).join(' ');
@@ -38,7 +38,7 @@ export function report(allRows, aspects, spawn, ctx) {
     const key = (r) => r.bodies.map((b) => `${b.x.toFixed(3)},${b.z.toFixed(3)}`).join('|');
     const uniq = new Set(mine.map(key));
     say(`  → 서로 다른 좌표 조합 ${uniq.size}/${mine.length}`
-      + (uniq.size === 1 ? '  ⚠ **네 후보가 같은 자리다 — 이 갈래에서 노브는 스폰을 안 바꾼다**' : ''));
+      + (mine.length > 1 && uniq.size === 1 ? '  ⚠ **네 후보가 같은 자리다 — 이 밴드에서 `?walkcell=` 은 스폰을 안 바꾼다**' : ''));
     if (mine.length > 1) {
       const base = mine[0].bodies;
       const moved = mine.slice(1).map((r) => {
@@ -58,10 +58,10 @@ export function report(allRows, aspects, spawn, ctx) {
   say();
   for (const a of aspects) {
     say(`[종횡비 ${a.name} = ${fx(a.value, 3)}]`);
-    say('  갈래 후보  yaw0(절두체/보임)   절두체 최소~중앙~최대   보임 최소~중앙~최대   0체 방향   ≤1체 방향');
+    say('  밴드 후보  yaw0(절두체/보임)   절두체 최소~중앙~최대   보임 최소~중앙~최대   0체 방향   ≤1체 방향');
     for (const r of rows) {
       const p = r.vis.per[a.name];
-      say(`  ${r.lane}   ×${String(r.mult).padEnd(4)}`
+      say(`  ×${String(r.band).padEnd(4)} ×${String(r.mult).padEnd(4)}`
         + `   ${String(p.atYaw0.inFrustum)}/${p.atYaw0.visible}`.padEnd(20)
         + `${p.frMin}~${p.frMed}~${p.frMax}`.padStart(14).padEnd(24)
         + `${p.visMin}~${p.visMed}~${p.visMax}`.padStart(12).padEnd(22)
@@ -75,7 +75,7 @@ export function report(allRows, aspects, spawn, ctx) {
   for (const r of rows) {
     const c = r.vis.clear;
     const crossed = c.map((x) => x.crossed);
-    say(`  ${r.lane} ×${String(r.mult).padEnd(4)} 가려진 체 ${r.vis.blockedCount}/${c.length}`
+    say(`  밴드×${String(r.band).padEnd(4)} 칸×${String(r.mult).padEnd(4)} 가려진 체 ${r.vis.blockedCount}/${c.length}`
       + `   시선이 지난 칸 ${Math.min(...crossed)}~${Math.max(...crossed)}`
       + `   격자 밖 칸 ${c.reduce((n, x) => n + x.outside, 0)}`);
   }
@@ -88,15 +88,15 @@ export function report(allRows, aspects, spawn, ctx) {
     say(`━━━ 시드 흔들림 (시드 ${SEED0}~${SEED0 + REPEAT - 1}, ${REPEAT}회) ━━━━━━━━━━━━━━━━━━━`);
     const a0 = aspects[0];
     say(`  종횡비 ${a0.name} 기준 · 「0체 방향」과 「가려진 체」의 시드별 범위`);
-    for (const lane of ['A', 'B']) {
+    for (const band of [...new Set(allRows.map((r) => r.band))]) {
       for (const mult of [...new Set(allRows.map((r) => r.mult))]) {
-        const g = allRows.filter((r) => r.lane === lane && r.mult === mult);
+        const g = allRows.filter((r) => r.band === band && r.mult === mult);
         if (!g.length) continue;
         const zero = g.map((r) => r.vis.per[a0.name].zeroDirs);
         const one = g.map((r) => r.vis.per[a0.name].oneOrLess);
         const blk = g.map((r) => r.vis.blockedCount);
         const rng = (v) => (Math.min(...v) === Math.max(...v) ? `${v[0]}` : `${Math.min(...v)}~${Math.max(...v)}`);
-        say(`  ${lane} ×${String(mult).padEnd(4)} 0체 방향 ${rng(zero)}/36`
+        say(`  밴드×${String(band).padEnd(4)} 칸×${String(mult).padEnd(4)} 0체 방향 ${rng(zero)}/36`
           + `   ≤1체 방향 ${rng(one)}/36   가려진 체 ${rng(blk)}/6`);
       }
     }
