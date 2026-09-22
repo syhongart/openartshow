@@ -23,8 +23,9 @@ import {
   walkSource, walkableAt, cellOf, centerOf, pruneUnreachable, blockMargin, type WalkGrid,
 } from '../frontend/js/world-glb/decide/walkable.js';
 import {
-  bakeWalkGrid, walkableCount, bakeWalkmapFor, blockMesh, blockWalkFor,
+  bakeWalkGrid, walkableCount, bakeWalkmapFor,
 } from '../frontend/js/world-glb/systems/glb-walkmap.js';
+import { blockMesh, blockWalkFor } from '../frontend/js/world-glb/systems/glb-walkblock.js';
 import {
   parcelSource, walkableDirs, isWalkable, nearbyCells, nextDir,
   isWalkableIn, nearbyCellsIn, nextDirIn, stepOf, runInto,
