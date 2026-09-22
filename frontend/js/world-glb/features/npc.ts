@@ -35,6 +35,7 @@ import {
   nextDirIn, runInto, pickNearbyIn, yawOf, reachForIn, cellKey, snapOut, type Cell,
 } from '../decide/npc-walk.js';
 import { walkBinding, cellDriftOf } from '../decide/npc-grid.js';
+import { createSeating } from './npc-seat.js';
 import type { WalkSource } from '../decide/npc-walk.js';
 import type { WalkGrid } from '../decide/walkable.js';
 import { DEFAULT_BODY_R } from '../systems/collision.js';
@@ -382,13 +383,23 @@ export const npcFeature: Feature = {
       return Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
     }
 
+    /**
+     * 자리 고르기·재스폰. 판정 기록과 경계는 **`features/npc-seat.ts` 한 곳**이다 —
+     * 여기에 다시 적지 않는다.
+     *
+     * ⚠ 밴드를 **함수로** 넘긴다. 아래 다섯은 전부 `rebind` 가 갈아 끼우는 `let` 이고,
+     * 값으로 캐시해 넘기면 공급자가 갈린 뒤 옛 밴드로 고르게 된다.
+     */
+    const seating = createSeating<Walker>({
+      band: () => ({ src, hpx, hpz, ring: spawnRing, reach: spawnReach, lanes }),
+      rnd,
+      taken,
+      retarget: (w) => retarget(w),
+    });
+
     /** 걷는 사람 하나를 거리에 세운다. 아바타 종류는 여기서만 갈린다 */
     function spawn(inst: WalkAvatar, kind: Walker['kind']): boolean {
-      // 이미 누가 선 칸은 비켜 앉는다. 자리가 동나면 배제 없이 다시 골라 — 겹쳐서라도
-      // 세우는 편이 아예 안 서는 것보다 낫다(그 경우 위 `spawnReach` 가 이미 최대다).
-      const start =
-        pickNearbyIn(src, hpx, hpz, spawnRing, spawnReach, rnd, taken)
-        ?? pickNearbyIn(src, hpx, hpz, spawnRing, spawnReach, rnd);
+      const start = seating.pick();
       if (!start) return false; // 걸을 곳이 없는 세계 — 있을 수 없지만 조용히 멈춘다
       taken.add(cellKey(start.px, start.pz));
       group.add(inst.group as unknown as THREE.Object3D);
@@ -523,42 +534,6 @@ export const npcFeature: Feature = {
       retarget(w);
     }
 
-    /**
-     * 🔴 **공급자가 갈린 뒤, 몸이 선 자리에서 칸을 다시 읽는다.**
-     *
-     * 격자가 바뀌면 `w.cell` 은 **옛 공급자의 칸 인덱스**이고 `w.tx`/`w.tz` 는 옛
-     * 좌표계의 목표다. 몸의 월드 좌표(`w.x`,`w.z`)만이 두 공급자에서 같은 뜻을 갖는다.
-     *
-     * ⚠ **`unstick`(갇힘 스냅)을 그대로 못 쓴다** — 그쪽이 부르는 `snapOut` 은
-     * `npc-walk.ts:247` 이 `for (let r = 1; …)` 로 시작해 **자기 칸을 절대 안 돌려준다.**
-     * 멀쩡히 선 체까지 한 칸씩 밀어내게 된다. 대신 **새 경로를 만들지 않는다**:
-     * 갈아 끼운 프레임의 아래 루프가 곧바로 `standable` 을 보고, 벽 안이면 그 자리에서
-     * `unstick` 을 부른다(같은 프레임이다). 여기서는 **칸을 다시 읽는 것**만 한다.
-     */
-    function reseat(w: Walker) {
-      w.cell = src.at(w.x, w.z);
-      w.from = null;
-      // 차선 오프셋과 그린 자리를 되돌린다 — 앞 두 함수(`recycle`·`unstick`)의 같은
-      // 두 줄과 근거가 같고, 여기에는 **하나가 더 있다.** 구운 격자에서는 차선이 꺼지므로
-      // (`lanesOn`) 아래 루프가 `w.ox` 를 **다시는 안 만진다** — 안 되돌리면 파셀 격자에서
-      // 얻은 오프셋(최대 1.25m)이 세션 내내 얹힌 채 남아 몸이 걸을 수 있는 칸에서
-      // 그만큼 밀려난다. 그리고 그 방향은 **벽 쪽일 수 있다**(`lanesOn` 이 차선을 끈
-      // 이유가 정확히 그것이다).
-      //
-      // ⚠ **지금 이 네 줄은 도달하지 않는다 — 그것을 적어 둔다**(뮤테이션 M-C 실측:
-      // 지워도 39 검사 전부 통과). `main.ts` 가 격자를 굽는 것(`:938`)이 커널 시작
-      // (`:978`)보다 **앞**이라, 공급자 교체는 언제나 **첫 `update`** 에 일어나고 그
-      // 시점의 `w.ox` 는 스폰 직후의 0 이다. 그래도 지우지 않는 이유는 그 도달 불가능이
-      // **다른 파일의 두 줄 순서**에 기대고 있기 때문이다 — 굽기가 첫 프레임 뒤로
-      // 밀리는 날(비동기 굽기·세계 교체) 조용히 깨질 자리이고, 증상은 「치비가 벽에
-      // 붙어 걷는다」라 원인에서 가장 멀다. `kernel.ts` 의 `resumed` 가드가 같은 형태다.
-      w.ox = 0;
-      w.oz = 0;
-      w.rx = w.x;
-      w.rz = w.z;
-      retarget(w);
-    }
-
     /** 이 아바타의 모든 메시에 절두체 컬링을 켜고 끈다 */
     function setCulling(w: Walker, on: boolean): void {
       w.inst.group.traverse((o) => {
@@ -622,8 +597,20 @@ export const npcFeature: Feature = {
         // 매 프레임 본다 — 두 축이 서로를 대신하지 않는다.
         const supplied = env.walkGrid?.() ?? null;
         if (supplied !== baked) {
+          // ⚠ **`rebind` 앞에서** 읽는다 — 갈아 끼운 뒤에는 옛 칸 크기를 알 길이 없다
+          const cellWas = src.cell;
           rebind(supplied);
-          for (const w of walkers) reseat(w);
+          if (src.cell !== cellWas) {
+            // 🔴 칸 한 변의 길이가 바뀌었다 = 옛 자리는 **다른 세계의 좌표**다.
+            // 이 회차의 결함 둘(맴돌기 · 스폰 링)이 전부 「칸이 32m 에서 0.34m 가
+            // 됐다」 하나였고, 그 사건을 판정 축으로 그대로 쓴다. 자리 배제 집합도
+            // 옛 좌표계의 키라 함께 버린다.
+            taken.clear();
+            for (const w of walkers) seating.respawn(w);
+          } else {
+            // 같은 칸 크기의 재굽기 — 옛 자리가 여전히 유효하다. 칸만 다시 읽는다
+            for (const w of walkers) seating.reseat(w);
+          }
         }
 
         // ── GPU 업로드 예열 ─────────────────────────────────────────────

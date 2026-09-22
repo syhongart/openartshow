@@ -99,6 +99,28 @@ vi.mock('../frontend/js/world-glb/decide/npc-grid.js', async (orig) => {
   };
 });
 
+// ── 🔴 **자리를 어느 격자에서 골랐는가** ────────────────────────────────────
+// `pickNearbyIn` 은 「스폰 자리 고르기」의 유일한 지점이다. 넘어온 공급자의 칸 크기를
+// 적어 두면 **스폰이 파셀 32m 를 탔는지 구운 0.34m 를 탔는지**가 그대로 남는다.
+//
+// ⚠ **아바타 좌표로는 이것을 못 본다** — 부팅(`startGlbWorld`)이 `kernel.start()` 를
+// 부르고 나가므로 테스트가 손을 대는 시점에 **첫 프레임이 이미 지나가 있다.** 그래서
+// 「틱 전 좌표」라고 믿고 찍은 값이 실은 재스폰 뒤 좌표였다(첫 판본이 그렇게 틀렸고,
+// 이동 0.00m 6체로 드러났다). 호출 자체를 세는 것만이 시점에 안 좌우된다.
+//
+// ⚠⚠ **스파이지 스텁이 아니다** — 원본을 그대로 부르고 인자만 기록한다.
+const picks: Array<{ cell: number }> = [];
+vi.mock('../frontend/js/world-glb/decide/npc-walk.js', async (orig) => {
+  const real = await orig<typeof import('../frontend/js/world-glb/decide/npc-walk.js')>();
+  return {
+    ...real,
+    pickNearbyIn: (...args: Parameters<typeof real.pickNearbyIn>) => {
+      picks.push({ cell: args[0].cell });
+      return real.pickNearbyIn(...args);
+    },
+  };
+});
+
 vi.mock('../frontend/js/world-glb/adapters/renderer.js', async () => {
   const T = await import('three/webgpu');
   return {
@@ -275,7 +297,7 @@ const LONG = 3600;
 const LONG_MS = 120_000;
 
 describe('🔴 구운 격자가 **부팅 경로를 지나** 치비에게 도달한다', () => {
-  beforeEach(() => { bindings.length = 0; avatars.length = 0; });
+  beforeEach(() => { bindings.length = 0; avatars.length = 0; picks.length = 0; });
 
   it('전제 — 조립(`create`) 시점의 `walkGrid()` 는 **`null` 이다**', async () => {
     await boot(true, 5);
@@ -338,6 +360,50 @@ describe('🔴 구운 격자가 **부팅 경로를 지나** 치비에게 도달�
       bad.slice(0, 5),
       `치비가 벽 칸을 밟았다(${bad.length}/${seen.length} 표본)`,
     ).toEqual([]);
+  });
+
+  // ── 🔴 스폰이 **구운 격자를 탄다** (2026-09-22) ──────────────────────────
+  // 직전 회차가 「격자가 치비에게 도달한다」를 걷기에서 메웠는데 **스폰에는 도달하지
+  // 않았다.** 스폰은 `create`(`pools` 단계)에서 끝나고 그때 `walkGrid()` 는 `null` 이라
+  // 6체 전부 파셀 32m 격자로 자리를 골랐고, `reseat` 은 계약대로 칸만 다시 읽어 몸을
+  // 안 옮겼다. 아래 셋이 그 구멍을 **부팅 경로 위에서** 본다.
+
+  it('전제 — 첫 자리 고르기는 **파셀 격자**에서 일어난다(결함의 구조)', async () => {
+    await boot(true, 1);
+    expect(picks.length, '자리를 한 번도 안 골랐다 — 아래가 전부 공허하다').toBeGreaterThan(0);
+    const parcel = (await boot(false, 1), picks[picks.length - 1].cell);
+    // 🔴 이 단언이 빨간불이면 스폰이 이미 구운 격자를 타는 것이고, **아래 둘이 공허해진다**
+    expect(
+      parcel,
+      '파셀 세계에서 고른 칸이 파셀 칸이 아니다 — 이 검사의 기준이 무너졌다',
+    ).toBeCloseTo(DEFAULT_LAYOUT.cellX, 10);
+  });
+
+  it('🔴 조립 뒤 **구운 격자에서 자리를 다시 고른다** — `reseat` 만으로는 안 옮겨졌다', async () => {
+    await boot(true, 1);
+    const cell = walkCellSize(DEFAULT_BODY_R);
+    const onParcel = picks.filter((q) => Math.abs(q.cell - DEFAULT_LAYOUT.cellX) < 1e-9).length;
+    const onBaked = picks.filter((q) => Math.abs(q.cell - cell) < 1e-9).length;
+    expect(
+      onParcel,
+      '파셀 격자로 고른 적이 없다 — 이 검사가 전제한 부팅 순서가 바뀌었다',
+    ).toBeGreaterThan(0);
+    // 🔴 이것이 이 회차의 결함이다. 수정 전에는 이 수가 **0** 이었다
+    expect(
+      onBaked,
+      `구운 격자(${cell.toFixed(3)}m)로 자리를 다시 고른 적이 없다`
+      + ` — 자리 고르기 ${picks.length}회 전부 파셀 ${DEFAULT_LAYOUT.cellX}m 다`,
+    ).toBeGreaterThanOrEqual(onParcel);
+  });
+
+  it('🔴 파셀 세계는 **자리를 다시 안 고른다** — world7·8·10 불변', async () => {
+    await boot(false, 1);
+    const cell = walkCellSize(DEFAULT_BODY_R);
+    const onBaked = picks.filter((q) => Math.abs(q.cell - cell) < 1e-9).length;
+    expect(
+      onBaked,
+      `공급자가 안 갈리는 세계에서 구운 격자 고르기가 ${onBaked}회 일어났다`,
+    ).toBe(0);
   });
 
   it('🔴 공급자가 갈린 **첫 프레임부터** 몸과 목표 칸이 안 어긋난다', async () => {
