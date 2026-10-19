@@ -164,6 +164,10 @@ export const ENTRYPOINTS = [
   // 반복하지 않는다 — 그것이 `world-glb`(GLB 한 장)와 `world10`(격자 스트리밍)의 갈림이다.
   // ⚠ 그 자산은 2026-09-16 현재 저장소에 없다(굽는 중, 약 43 MiB).
   { key: 'world11', src: 'world11.html', out: 'app/world11.html', exposure: 'flagged' },
+  // 2026-10-19 `world12.html` — world11 과 **같은 `world-glb` 트리**·같은 부트 옵션 축.
+  // 갈리는 것은 `tag`·부트·`<body data-glb>`(초기값은 world11 과 동일 자산 — 새 Scene 을
+  // 붙이면 HTML 의 `data-glb` 만 바꾼다). behind-flag · 라이브는 감독·팀장 게이트.
+  { key: 'world12', src: 'world12.html', out: 'app/world12.html', exposure: 'flagged' },
   // [도구] 배치 에디터 — three.js r171 `editor/` 반입. 감독 지시 2026-08-09
   // *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능? glb파일을 내가 직접 넣고"* →
   // *"three.js 방식이니깐. 거기 에디터를 깃에서 가지고 와서 활용하는방안"*.

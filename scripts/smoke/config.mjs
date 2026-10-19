@@ -386,6 +386,8 @@ export const LIVE_PAGES = [
   // 행 자체는 **처음부터** 넣는다(behind-flag 인데 검사가 0 이던 사고가 visit·lab-glb 에서
   // 이미 났고, `tests/verification-tier.test.ts` G1 이 편입을 강제한다).
   { name: 'app/world11',        url: '/app/world11.html', webgl: true, viteOnly: true },
+  // ── world12 — world11 과 같은 트리·같은 부팅 축(2026-10-19 슬롯 신설) ─────────────
+  { name: 'app/world12',        url: '/app/world12.html', webgl: true, viteOnly: true },
   // mypage: behind-flag. 위 두 줄과 같은 이유로 **처음부터** 넣는다 — 나중에 넣기로
   // 하면 그 사이 자기완결·CSP 검사가 0 인 페이지가 배포되고, 그것이 정확히 visit·
   // lab-glb 가 겪은 일이다. `tests/verification-tier.test.ts` G1 이 이 편입을 강제한다.

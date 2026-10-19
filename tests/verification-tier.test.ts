@@ -102,6 +102,8 @@ describe('진입점 SSOT', () => {
       // world10 의 포크가 **아니다** — 대조 실측 표는 `frontend/js/world11-boot.ts` 헤더 한 곳.
       // 사전순이라 `world10.html` 바로 뒤, `world2-…` 앞이다.
       'world11.html',
+      // 2026-10-19 `world12.html` — world-glb 공유 슬롯(초기 자산은 world11 과 동일).
+      'world12.html',
       'world2-stylized.html', 'world3.html', 'world5.html', 'world7.html',
       'world8.html',
     ]);
