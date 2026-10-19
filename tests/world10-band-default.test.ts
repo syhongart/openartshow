@@ -335,7 +335,7 @@ describe('(ㅁ) 예산·격리', () => {
     // 늘어야 한다** — 빠지면 그 부트가 `band:` 를 선채움해도 초록이다. `world-glb` 트리는
     // 「트리 밖 진입점이 표본 밖이었다」로 이미 두 번 블로커를 받았다
     // (`tests/world-glb-independence.test.ts` 의 `W7_ENTRY` 주석).
-    for (const f of ['frontend/js/world7-boot.ts', 'frontend/js/world8-boot.ts', 'frontend/js/world11-boot.ts']) {
+    for (const f of ['frontend/js/world7-boot.ts', 'frontend/js/world8-boot.ts', 'frontend/js/world11-boot.ts', 'frontend/js/world12-boot.ts']) {
       expect(src(f), `${f} 가 band 를 선채움하고 있다`).not.toMatch(/band\s*:/);
     }
   });
