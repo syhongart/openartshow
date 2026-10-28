@@ -73,6 +73,61 @@
 
 ## 올라온 것 (↑ 상향)
 
+### 2026-10-28 · 보안담당 — npm audit 잔여 6건: 블로커 0. 「전부 3단계 메이저」는 틀렸고 1단계 중간 경로가 있다
+
+- **판정 ⓒ**: 지금 `vite@8`/`vitest@5` 로 가지 않는다. 6건 전부 ① dev server 리스닝
+  ② Windows ③ 선행 prototype-pollution primitive 중 하나를 전제하고, 세 전제가 실측으로
+  닫혀 있다. **위험 수용 결정 자체는 팀장 사안(§8-5).**
+- **실증**: `vitest run` 중 신규 리스닝 TCP 소켓 **0**(68샘플/5.01초, `vi.mock` 포함 테스트).
+  정적 근거 `vitest/dist/chunks/resolveConfig.rBxzbVsl.js:7767`(`api = {middlewareMode:true}`)·
+  `cli-api.DqsSTaIi.js:11303`(`ws: false`). `@vitest/ui`·`@vitest/browser` **미설치**.
+- **내가 「가장 약한 고리」로 지목한 둘은 둘 다 닫혀 있었다.**
+  · `@vitest/mocker` 의 무인증 경로는 `configureServer` + `server.ws.on` = **dev server 전용
+    훅**이고 advisory 가 *"Plain Node test runs don't register these handlers, so `vitest run`
+    in a node environment isn't affected"* 로 명시한다. 그 핸들러를 거는
+    `mockerPlugin()`/`interceptorPlugin()` 은 우리 `vite.config.js` plugins 에 없다(자작 3개뿐).
+  · vite 의 *"custom middleware"* 는 **다른 축**이다 — 대상은 `middlewareMode`/
+    `appType:'custom'` 로 vite 를 **자기 서버에 임베드한 앱**이다. 우리 훅은
+    `resolveId`·`transformIndexHtml(html)`·`generateBundle`·`closeBundle` 전부 build 훅이고
+    `configureServer` **0건**. 스모크 서버는 `scripts/smoke/server.mjs:42` 의 Node 정적
+    서버(vite import 0건, 루프백 바인드). 그 advisory 는 CVSS v4 **2.1**(Low) 이다.
+- **표의 「해소」 열을 정정한다** — 상세는 백로그 `G-NPMAUDIT`. 요지: vite advisory 는
+  **6.4.4** 에서 패치됐고, `vite@6.4.5`+`vitest@3.2.7` 로 **4건**이 닫힌다(1단계 메이저).
+  tinypool 2건은 `vitest@4.1.12` 의 **의존 제거**로 사라진다. vite 5.x 백포트는 없다.
+- **`vite@8` 은 deps 가 `rolldown ~1.2.14`(rollup·esbuild 없음) = 빌드 엔진 교체.** 자작
+  플러그인 3개가 CSP 핀·importmap 제거·HTML 재배치를 만들므로 **자기완결·CSP 축 전면
+  재검증**이 실제로 필요하다. vite6+vitest3 과 vite8/rolldown 은 **분리해서** 올린다.
+- **확인 못 함 2건**: ① fork PR 워크플로 승인 정책 — `gh` 토큰 무효(`The token in GH_TOKEN
+  is invalid`)로 설정 API 조회 불가. `ci.yml:20` 의 `pull_request:` 에 필터가 없어 fork PR 이
+  **원리상 트리거 대상**이고, *"외부 기여자가 없다"*(fork 0·외부 커밋 0, 실측)는 **사실
+  상태이지 게이트가 아니다.** ② Dependabot alerts 활성 여부 재확인.
+- **권고**: Dependabot **alerts 만 켠다**(백로그 `G-DEPABOT`). 자동 PR 은 끈다 — lockfile
+  변경이 전면 재검증을 부른다. 설정 변경이므로 **감독·팀장 게이트**.
+- **별건 검수 요청**: lockfile 커밋 `f8692943`(+115/−80) 은 부팀장이 만든 것이고 **아직
+  아무도 검수하지 않았다.** 구현자≠검증자 유지를 위해 검수관 또는 보안담당이 별도로 본다.
+- 부수 실측(§10-6 기여): 액션 `uses:` 5종 **전부 SHA 핀, 미고정 0건** ·
+  `pull_request_target` 실제 트리거 **0건** · `ci.yml` 의 `secrets.*` 참조 **0건** ·
+  `npm ls --omit=dev` = **empty**(번들에 들어가는 `three`·`peerjs` 는 취약 목록에 없다).
+
+### 2026-10-28 · 부팀장 — 커밋 메시지에 **해소 경로를 거짓으로 적었다**. `audit` 의 `fixAvailable` 은 latest 기준이다
+
+커밋 `f8692943` 메시지에 *"남은 6건은 전부 `vitest@5.0.5`·`vite@8.3.5` 메이저 업(각 3단계)
+으로만 해소된다"* 고 적었고 **거짓이다.** 보안담당이 실측으로 뒤집었다 — `vite` advisory 는
+**6.4.4** 에서 패치됐고 `vite@6.4.5`+`vitest@3.2.7`(각 1단계)로 **4건**이 닫힌다.
+
+**원인은 추론이 아니라 전사(轉寫)다.** `npm audit --json` 의 `fixAvailable.version` 을
+그대로 옮겨 적었는데 **그 값은 그 패키지의 latest 이고 「최소 해소 버전」이 아니다.**
+확인하려면 advisory 의 patched_versions 를 봐야 했고 나는 보지 않았다.
+
+**왜 이게 그냥 오타가 아닌가** — 그 문장이 **「지금 고치지 않는다」의 근거로 쓰였다.**
+비용을 3단계 메이저로 과대평가하면 보류가 자동으로 정당해진다. 즉 **틀린 수치가 결론을
+편하게 만드는 방향으로 틀렸다.** 이 저장소가 `main` unprotected 오기로 7일을 잃은 것과
+같은 형태다(게이트·해소 경로에 대한 거짓 진술 → 다음 사람이 확인을 생략).
+
+**처방**: ⓐ 푸시된 커밋 메시지는 고칠 수 없으므로(force-push 금지) 백로그 `G-NPMAUDIT` 에
+정정표를 실었다 ⓑ **앞으로 `fixAvailable` 을 인용할 때 「latest 기준」이라고 함께 적는다**
+— 값만 옮기면 같은 오류가 반복된다.
+
 ### 2026-08-15 · 검수관 — 안개 노브 재확인 **승인**(`9d6b0db`). B1~B4·C1·C2 전부 독립 재현
 
 반려 4건(B1~B4)·조건 2건(C1·C2) 전부 해소 확인. 자기신고를 그대로 안 믿고 **별도 클론 +
