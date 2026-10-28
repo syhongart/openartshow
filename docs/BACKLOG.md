@@ -178,7 +178,9 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
   **단위를 `npm audit` 의 패키지 수로 통일한다**(검수관 권고 R1 — 앞 판본은 advisory 단위
   「4건」과 패키지 단위 「6건」을 한 표에 섞어 놔서 *"6 중 4 해소"* 로 읽혔다). 아래는
-  검수관이 `npm install --package-lock-only` 로 조합별 lock 을 만들어 **직접 audit 한 결과**다:
+  검수관이 `npm install --package-lock-only` 로 조합별 lock 을 만들어 **직접 audit 한 결과**다
+  (⚠ **5행은 1차 보고에서 재지 않은 유도값이었고 재확인 때 실측됐다** — `vitest@4.1.12`·
+  `@5.0.5` 둘 다 0. 그 전까지는 이 머리말이 부분적으로 거짓이었다):
 
   | 조합 | audit 결과 | 남는 패키지 |
   |---|---|---|
@@ -219,7 +221,7 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
   arborist 가 크래시한다**(`Cannot read properties of null (reading 'edgesOut')` — 피어
   `@vitest/browser-playwright@5.0.5` 를 로딩하다 죽는다). `--legacy-peer-deps` 로는 통과한다
   (검수관 실측). CI 는 npm 11 이라 다를 수 있고 **그것은 아직 안 쟀다.**
-  node 요구는 전부 충족(`vite@6.4.5` = `^18||^20||>=22`, `vite@7/8` = `>=22.12`, 우리 `^24`).
+  node 요구는 전부 충족(`vite@6.4.5` = `^18||^20||>=22`, `vite@7/8` = `^20.19.0||>=22.12.0`, 우리 `^24`).
 
   **못 잰 것**: ⓐ fork PR 워크플로 승인 정책(`gh` 토큰 무효로 설정 API 조회 불가) —
   `ci.yml:20` 의 `pull_request:` 에 필터가 없어 fork PR 이 **원리상 트리거 대상**이고,
