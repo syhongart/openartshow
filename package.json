@@ -12,6 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "check:refs": "node scripts/smoke/check-refs.mjs",
+    "check:cycles": "node scripts/smoke/check-cycles.mjs",
+    "check:filesize": "node scripts/smoke/check-filesize.mjs",
     "check:gitadd": "node scripts/smoke/check-workflow-gitadd.mjs",
     "check:devlog-times": "node scripts/extract-devlog-times.mjs --check",
     "lint": "eslint .",
@@ -23,11 +25,18 @@
     "measure:image-meta": "node scripts/png-chunks.mjs",
     "measure:sky-warm": "node scripts/smoke/measure-sky-warm.mjs",
     "measure:invariants": "node scripts/smoke/measure-invariants.mjs",
+    "measure:tri-quadrant": "node scripts/smoke/measure-tri-quadrant.mjs",
+    "nyc:capture": "node scripts/nyc/capture.mjs",
     "measure:submerge": "node scripts/smoke/measure-submerge.mjs",
     "measure:surface": "node scripts/smoke/measure-surface-textures.mjs",
+    "measure:aim": "node scripts/smoke/measure-aim.mjs",
     "measure:water-mode": "node scripts/smoke/measure-water-mode.mjs",
     "measure:collide": "node scripts/smoke/measure-collide.mjs",
-    "measure:click": "node scripts/smoke/measure-click.mjs"
+    "measure:click": "node scripts/smoke/measure-click.mjs",
+    "measure:glb-roundtrip": "node scripts/smoke/measure-glb-roundtrip.mjs",
+    "measure:walk-candidates": "node scripts/smoke/measure-walk-candidates.mjs",
+    "asset:nyc": "node scripts/asset/nyc/generate.mjs",
+    "check:conflict-markers": "node scripts/smoke/check-conflict-markers.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

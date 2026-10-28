@@ -42,6 +42,20 @@
 // `transparent: true`는 파이프라인 캐시키 축이라 세션 중에 켜고 끄면 전량 재컴파일을
 // 부른다. **부팅 시 한 번 정하고 다시 만지지 않는다** — 그래서 안전하다.
 
+// ── 포크 추적: world2 와의 갈라진 사촌 (2026-08-16 팀장 조건 C7) ──────────────
+// world5 는 world2 대비 **hunk 2개**의 차이가 있는 갈라진 사촌이다.
+// **여기서 멈춘다** — 이번 통합 범위 밖이다. 그 판단의 근거는 «격차가 크다» 가
+// 아니라 **«합친 결과를 판정할 수단이 없다»** 는 것이다.
+//
+// 헤드리스는 WebGL swiftshader, 감독 실기기는 WebGPU다. 두 백엔드 간의 룩 회귀는
+// 이 환경이 원리적으로 못 잰다(선례: sky 파일). 합친 것이 웹GPU에서 의도한 모습인지
+// 검증할 방법이 없으므로 fail-closed 는 «안 합친다» 쪽이다.
+//
+// **재론 조건** (이하 셋 중 하나라도 성립하면 다시 판단):
+//   T1. 감독이 world5 에 world2 판 기능 이식을 지시할 때 (격차가 좁혀지는 순간)
+//   T2. 두 곳 이상에 같은 수정을 실제로 하게 되는 회차가 발생할 때 (비용이 추측→실측)
+//   T3. 룩 회귀를 실기기 없이 판정할 수단이 생길 때 (이 판단의 전제 소멸)
+
 import * as THREE from 'three/webgpu';
 // TSL 노드 — `?water=tsl` 에서만 실제로 쓰인다. `three/webgpu` 가 이미 이 코드를
 // 번들에 담고 있으므로(법무 실사 2026-08-01: 배포 번들에 `worley` 문자열 존재 확인)
@@ -1285,7 +1299,6 @@ export const oceanFeature: Feature = {
     // (강과 바다는 같은 물이다 — 높이만 다르고 `waterSurfaceY` 가 그것을 판정한다).
     const surfaceMat = tslWater ? tslWater.material : seaMat;
     const sea = new THREE.Mesh(geo, surfaceMat);
-    sea.position.y = SEA_Y;
     // 해저보다 늦게 그려야 그 위에 비친다.
     sea.renderOrder = 1;
 
@@ -1361,10 +1374,7 @@ export const oceanFeature: Feature = {
       // 그러면 z-fighting 이 성립하지 않는다. 순서를 정하는 것은 `renderOrder` 다.
       // 1cm 는 물속에서 올려다볼 때 두 면이 정확히 겹쳐 보이지 않게 하는 몫으로만 둔다.
       //
-      // **패치일 때는 그 1cm 를 정점 y 가 들고 있다**(아래 매 프레임 갱신). 메시 원점을
-      // `SEA_Y` 에 두고 정점이 `0.01 + LIFT_AMP + lift` 를 담으므로, 파동이 골일 때도
-      // 값이 `0.01` 아래로 안 내려간다 — 즉 **아래 층(평평한 `sea`)을 뚫지 않는다.**
-      // 여기서 `+0.01` 을 또 더하면 그 몫이 두 번 들어간다(값 미러링).
+      // **패치일 때는 그 1cm 를 정점 y 가 들고 있다** — 또 더하면 두 번 들어간다.
       sea2.position.y = patchGeo ? SEA_Y : SEA_Y + 0.01;
       // ── 렌더 순서는 **물리적 높이 순서**여야 한다 (검수관 BR-1) ──────────────
       // 처음엔 `sea 1 · river 2 · sea2 3 · river2 4` 로 줬다. 그러면 −0.99m 의 sea2 가
@@ -1413,6 +1423,9 @@ export const oceanFeature: Feature = {
     // 강에도 같은 두 번째 층을 얹는다 — **재질과 지오를 그대로 공유**하므로 개수는
     // 드로우콜 하나만 는다. 강이 감독 눈에 가장 자주 드는 물이라(스폰 앞) 여기가 빠지면
     // 처방이 반쪽이 된다.
+    // 층1을 층2의 **골 밑**으로 내린다(world2 동기) — 반투명 두 판이 교차하면 그 선이 뜬다.
+    sea.position.y = patchGeo ? SEA_Y - LIFT_AMP : SEA_Y;
+
     const river2 = layer2Mat ? new THREE.Mesh(riverGeo, layer2Mat) : null;
     if (river2) {
       river2.position.y = RIVER_Y + 0.01;
@@ -1583,11 +1596,12 @@ export const oceanFeature: Feature = {
             if (LIFT_AMP > 0) {
               const attr = patchGeo.getAttribute('position');
               const p = attr.array as Float32Array;
-              // `+ LIFT_AMP` 로 골을 baseline 위로 들어올린다. 아래 층(`sea`, 평평)을
-              // 뚫지 않게 하는 몫이고, `0.01` 은 두 면이 정확히 겹쳐 보이지 않게 하는
-              // 옛 몫 그대로다.
+              // ⚠ `+ LIFT_AMP` 는 이제 없다 — 그 리프트가 평균 수면을 진폭만큼 밀고
+              // 있었다(근거는 `world2/decide/wave.ts` 의 `patchVertexY` 한 곳). 골이 아래
+              // 층을 안 뚫는 몫은 `sea.position.y = SEA_Y - LIFT_AMP` 가 대신 맡는다.
+              // `0.01` 은 두 면이 겹쳐 보이지 않게 하는 옛 몫 그대로다.
               for (let i = 0; i < p.length; i += 3) {
-                p[i + 1] = 0.01 + LIFT_AMP + surfaceLift(p[i] + ox, p[i + 2] + oz, t);
+                p[i + 1] = 0.01 + surfaceLift(p[i] + ox, p[i + 2] + oz, t);
               }
               attr.needsUpdate = true;
             }

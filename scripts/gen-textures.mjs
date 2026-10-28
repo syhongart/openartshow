@@ -22,10 +22,10 @@
 // 산출물(`devlog/*.html` 등)이고, 이것은 **자산**이다 — `devlog/img/` 를 추적하는 것과 같은
 // 이유다(생성 디렉터리라고 통째로 무시하면 자산이 날아간다. 실제로 한 번 날렸다).
 
-import { deflateSync } from 'node:zlib';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { encodePng } from './lib/png-encode.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'frontend', 'assets', 'textures');
@@ -36,63 +36,15 @@ const OUT = join(ROOT, 'frontend', 'assets', 'textures');
  */
 const SIZE = 256;
 
-// ── PNG 인코딩 (의존성 0) ──────────────────────────────────────────────────
-// `sharp`·`pngjs` 를 받지 않는다. PNG 의 최소 형태는 시그니처 + IHDR + IDAT + IEND 이고,
-// 압축은 Node 내장 zlib 이면 된다. 의존성 하나를 아끼려는 것이 아니라 **이 스크립트가
-// 무엇을 하는지 다음 사람이 통째로 읽을 수 있게** 하려는 것이다.
+// ── PNG 인코딩 ─────────────────────────────────────────────────────────────
+// ⚠ **인코더는 여기 없다** — `scripts/lib/png-encode.mjs` 가 SSOT 다(W8-8). 원래는 이
+// 파일 안에 있었는데 작품 이미지 생성기가 같은 것을 필요로 하면서 **두 벌이 될 뻔했다.**
+// 옮긴 뒤 텍스처 3종을 재생성해 md5 바이트 동일을 확인했다.
+//
+// `png(rgb)` 는 이 파일의 정사각 규약(`SIZE`)을 그대로 유지하는 얇은 감싸개다 — 폭·높이를
+// 아는 것은 이 생성기이고, 인코더는 그것을 인자로 받는다.
 
-const CRC_TABLE = (() => {
-  const t = new Int32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c;
-  }
-  return t;
-})();
-
-function crc32(buf) {
-  let c = -1;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ -1) >>> 0;
-}
-
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(body));
-  return Buffer.concat([len, body, crc]);
-}
-
-/** `rgb(x, y) -> [r,g,b]` 로 SIZE×SIZE RGB PNG 를 만든다 */
-function png(rgb) {
-  const raw = Buffer.alloc((SIZE * 3 + 1) * SIZE);
-  let p = 0;
-  for (let y = 0; y < SIZE; y++) {
-    raw[p++] = 0; // 필터 타입 None — 압축률보다 읽기 쉬움을 고른다
-    for (let x = 0; x < SIZE; x++) {
-      const [r, g, b] = rgb(x, y);
-      raw[p++] = clamp255(r);
-      raw[p++] = clamp255(g);
-      raw[p++] = clamp255(b);
-    }
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(SIZE, 0);
-  ihdr.writeUInt32BE(SIZE, 4);
-  ihdr[8] = 8;  // bit depth
-  ihdr[9] = 2;  // color type: truecolor
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
-
-const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v));
+const png = (rgb) => encodePng(SIZE, SIZE, rgb);
 
 /**
  * 값 잡음. **격자 주기로 순환한다** — `sin` 합이라 경계에서 저절로 이어진다.
@@ -189,6 +141,67 @@ const TEXTURES = {
     return mortar
       ? [172 + n * 0.3, 168 + n * 0.3, 160 + n * 0.3]
       : [150 + n, 96 + n * 0.8, 78 + n * 0.6];
+  },
+
+  // ── 스타일라이즈드 지형 (감독 지시 2026-08-18, 모바일 게임 광고 화면 참조) ──
+  //
+  // 감독 코멘트: *"단순히 한 색을 쓰지 말고 Noise로 2~3개 초록색을 섞어야 합니다"*
+  // (밝은 #78D833 · 기본 #54B92C · 어두운 #328C2A).
+  //
+  // ⚠ **평균 휘도를 `GRASS_BASE`(0x74ae5b) 근방으로 유지한다.**
+  //
+  // ⚠⚠ 첫 판본은 그 이유를 *"밤 조명 배수가 잔디 색 휘도에서 유도되므로"* 라고 적었고
+  // **그것은 거짓이었다**(검수관 권고 P3, 2026-08-18). `decide/ground-albedo.ts` 는
+  // `groundBase`·`tones` 라는 **파츠 상수만** 읽는다 — 텍스처를 바꿔도 밤 배수는 안 변한다.
+  // 그래도 휘도를 맞추는 이유는 남는다: 밤 배수가 **상수 기준으로 계산된 채** 화면에는
+  // 이 텍스처가 곱해지므로, 텍스처가 상수보다 훨씬 밝으면 그 배수가 과보정이 된다.
+  // 즉 결합은 실재하되 방향이 반대다.
+  //
+  // **실측(2026-08-18, 아래 함수를 256² 전 픽셀에 돌려 잰 값)**: 이 타일의 평균 RGB 는
+  // (83.5, 182.7, 44.5), 휘도 151.6 이고 `GRASS_BASE` 는 155.7 — **-2.6%** 다.
+  // (감독이 준 3색의 단순 평균은 150.3 이지만 얼룩 분포가 밝은 쪽에 조금 치우쳐 있어
+  // 타일 실측은 그보다 높다. 그래서 «3색 평균» 이 아니라 **타일을 직접 재야** 한다.)
+  // 색을 만지면 이 실측을 다시 뜬다 — 숫자를 옮겨 적기만 하면 그 순간 거짓이 된다.
+
+  /** 게임풍 잔디 — 초록 3색을 저주파 얼룩으로 섞고 잔 결을 얹는다 */
+  'grass-toon.png': (x, y) => {
+    // 감독 지정 3색. 순서는 어두움 → 기본 → 밝음
+    const dark = [50, 140, 42];
+    const base = [84, 185, 44];
+    const lite = [120, 216, 51];
+    // 큰 얼룩(4칸) — 이것이 «한 장을 복사한 것처럼» 안 보이게 하는 주역이다.
+    // 잔디는 위에서 내려다보는 면적이 넓어서, 저주파가 없으면 반복이 바로 읽힌다.
+    const blob = wobble(x, y, 4, 21);
+    // 잔 결(32칸) — 풀잎 방향을 흉내낸다. 실제 풀은 인스턴싱 메시가 따로 서므로
+    // 여기는 «그 사이에 비치는 바닥» 이고, 그래서 대비를 약하게 둔다.
+    const fine = wobble(x, y, 32, 23) * 0.35;
+    const t = Math.max(0, Math.min(1, blob * 0.5 + 0.5 + fine * 0.5));
+    // 3색 보간 — 두 색만 쓰면 중간이 산술 평균으로 흐려져 «3색을 섞었다» 가 안 보인다
+    const mix2 = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
+    const c = t < 0.5 ? mix2(dark, base, t * 2) : mix2(base, lite, (t - 0.5) * 2);
+    // 잔 명암을 곱으로 얹는다. 더하기로 하면 어두운 쪽이 회색으로 뜬다(채도 손실)
+    const shade = 1 + wobble(x, y, 64, 29) * 0.06;
+    return [c[0] * shade, c[1] * shade, c[2] * shade];
+  },
+
+  /**
+   * 게임풍 흙 — 광장·지면용.
+   *
+   * ⚠ **밝게 굽는다.** 실측(256² 전 픽셀): 평균 RGB (234.7, 226.4, 214.7) · 휘도 **227.3**.
+   * (`base` 식의 중심값 235 는 «타일 평균» 이 아니다 — 잔디 쪽에 *"타일을 직접 재라"* 고
+   * 적어 놓고 여기만 안 잰 비대칭이었다. 검수관 권고 P8, 2026-08-18.)
+   * `ground` 파츠는 인스턴스 컬러(`tones` 평균 ≈ 0.42)가
+   * 색을 갖고 있고 맵은 거기에 **곱해진다** — 중간 밝기로 구우면 지면이 통째로 어두워져
+   * 「텍스처를 얹었더니 땅이 죽었다」가 된다. 흰색 근처로 굽고 명암만 담는다.
+   * (`parts/garden.ts` 의 `tones` 가 «흰색 근처여야 한다» 고 적은 것과 같은 이유다.)
+   */
+  'dirt-toon.png': (x, y) => {
+    // 큰 패치 + 잔 알갱이. 자갈(`pebble.png`)보다 곱게 — 저쪽은 물속 바닥이라 점점이가
+    // 목적이지만 여기는 밟는 땅이라 얼룩이 커야 «흙» 으로 읽힌다.
+    const v = 0.62 * wobble(x, y, 6, 31) + 0.38 * wobble(x, y, 24, 37);
+    const base = 235 + v * 16;
+    // 노랑기 있는 흙색 방향으로 살짝 기울인다. 중성 회색이면 «시멘트» 로 보인다.
+    return [base, base * 0.965, base * 0.915];
   },
 
   /** 물속 바닥에 어울리는 자갈 — 격자 없이 잡음만 */

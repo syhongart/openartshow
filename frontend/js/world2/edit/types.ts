@@ -8,6 +8,7 @@
 
 import type { Object3D, Camera } from 'three/webgpu';
 import type { PlacedPart } from '../parts/types.js';
+import type { FlyInput } from '../decide/fly.js';
 import type { ViewPreset } from '../decide/orbit.js';
 import type { ShadingMode } from '../decide/shading.js';
 import type { SurfaceSetting } from '../decide/surface-material.js';
@@ -40,6 +41,19 @@ export interface OverlayEntry {
   z: number;
   ry: number;
   s: number;
+  /**
+   * 축별 **추가** 배수 (감독 카드 판정 2026-08-22 「축별로 늘리기 — 세 방향」).
+   *
+   * 계약(`decide/overlay.ts` 의 `OverlayItem.sx?`)과 **같은 뜻·같은 선택 사양**이다 —
+   * 없으면 `1` 이고, 최종 배율은 `s * (sx ?? 1)`. 씬에 얹힌 항목이 계약과 필드가 어긋나면
+   * 내보낼 때 값이 조용히 사라지므로 **짝을 맞춘다.**
+   *
+   * ⚠ 마을 파츠(`PlacedPart`)의 같은 이름은 **본래 치수**라 뜻이 다르다. 그 차이를
+   * 흡수하는 곳은 `edit/target.ts` 의 어댑터 한 곳이다.
+   */
+  sx?: number;
+  sy?: number;
+  sz?: number;
 }
 
 /**
@@ -175,6 +189,18 @@ export interface OverlayHost {
   readonly instances: VillageRaycast | null;
   /** 마을 배치 조회. 없으면 마을 파츠를 집지 않는다 */
   readonly village: VillageRead | null;
+  /**
+   * 미술관 GLB 의 레이캐스트 루트. 없으면 미술관 벽은 **벽 검출 대상이 아니다**
+   * (태스크 #112).
+   *
+   * ⚠ **이것은 「고르기」 대상이 아니다** — `pick()`·`pickVillage()` 는 여기를 안 본다.
+   * 미술관은 편집으로 옮기거나 지우는 물건이 아니고, 이 문이 여는 것은 **벽면 하나**다.
+   * 고르기까지 열면 `EditTarget` 이 「옮길 수 없는 것」을 들게 되고 그 예외가 번진다.
+   *
+   * ⚠⚠ **읽기 전용으로 다뤄라** — 자식을 옮기거나 지우면 `glbCity` 기능의 `dispose()`
+   * 전제가 깨진다. 계약 원문은 `world-shared/glb-city.ts` 의 `GlbCityInstance.wallRoot`.
+   */
+  readonly glbCity: Object3D | null;
 
   entries(): readonly OverlayEntry[];
   /**
@@ -196,6 +222,31 @@ export interface OverlayHost {
    */
   lastFailure(): string | null;
   remove(e: OverlayEntry): void;
+  /**
+   * **지운 것을 되살린다** — 실행취소가 삭제를 되돌리는 유일한 문(2026-08-22).
+   *
+   * ── 왜 `place()` 를 다시 부르지 않는가 ──────────────────────────────────
+   * 그 편이 계약을 안 늘려서 처음 계획이었고, **실측이 뒤집었다.** `place()` 는 **새
+   * `OverlayEntry` 객체**를 만든다. 그러면 그 항목을 가리키던 다른 되돌리기 항목이
+   * 전부 낡는다 — 「A 를 옮기고 → A 를 지우고 → 두 번 되돌리기」 를 하면 첫 번째가
+   * **새 객체**를 되살리고 두 번째는 **옛 객체**의 자세를 미느라 화면에 아무 일도 안
+   * 일어난다. 이 저장소가 가장 비싸게 겪은 «가끔 안 먹는다» 그 자체다.
+   * 그리고 지우는 쪽은 이미 되살릴 준비가 돼 있었다 — `remove()` 는 `entries` 에서
+   * 빼고 `root` 에서 뗄 뿐 **`dispose()` 를 안 부른다**(실측: 그 함수 전체가 3줄).
+   * 즉 GPU 자원은 그대로 살아 있고, 없던 것은 **다시 붙이는 문**뿐이었다.
+   *
+   * ── 선택 사양인 이유와 그 대가 ─────────────────────────────────────────
+   * 이 문을 안 여는 소비자(테스트 하네스·빌더 미리보기)가 그대로 돌게 하려는 것이다.
+   * 대신 **없으면 삭제가 「되돌릴 수 없는 조작」으로 스택에 남는다** — 조용히 안 쌓으면
+   * Ctrl+Z 가 **그 앞의 조작**을 되돌려 감독이 엉뚱한 변화를 성공으로 읽는다. 근거는
+   * `edit/history-ops.ts` 의 `barrier` 한 곳이다.
+   *
+   * @param at 원래 몇 번째였나. 범위 밖이거나 생략이면 **끝에** 붙는다 — 순서는
+   *           내보내기 JSON 의 항목 순서이고 의미는 같지만, 아웃라이너 목록이 튀지
+   *           않으려면 제자리가 낫다.
+   * @returns 되살렸으면 `true`. 이미 있거나 세션이 끝났으면 `false`
+   */
+  restore?(e: OverlayEntry, at?: number): boolean;
   /** 항목의 x·y·z·ry·s 를 씬에 반영한다 */
   apply(e: OverlayEntry): void;
   /** 지금 상태를 계약 원본(raw JSON) 으로. `validateOverlay` 에 그대로 넣는다 */
@@ -226,6 +277,18 @@ export interface OverlayHost {
    * 임의 자세를 못 주고 정해진 값(`ViewPreset`) 중 하나만 고른다.
    */
   orbitTo?(cx: number, cy: number, cz: number, preset: ViewPreset): void;
+  /**
+   * **한 프레임 난다**(감독 지시 2026-08-19 *"하늘을 날아서 보고 편집하게"*).
+   *
+   * `orbit` 과 **같은 규약**이다 — 선택 사양이고(`?`), 없으면 편집이 비행 키를 조용히
+   * 무시한다. 그리고 팀장 조건 ①과도 같다: 편집은 **어디로 갈지 못 말하고** 「지금 누른
+   * 키로 이만큼」만 말한다. `moveTo(x,z)` 류를 열지 않는 이유는 위 `orbit` 주석 한 곳이다.
+   *
+   * ⚠ **`orbit` 과 다른 점 하나** — 이것은 사람이 키를 누르는 동안 **매 프레임** 불린다.
+   * 그래서 `dt` 를 받는다(궤도는 포인터 델타라 필요 없었다). 산술·클램프·복원은 여전히
+   * `systems/player.ts` 가 소유한다.
+   */
+  fly?(input: FlyInput, dt: number): void;
   /**
    * 지금 어떤 셰이딩인가 / 셰이딩을 바꾼다 (W6). 감독 지시 *"와이어 프레임 뷰. 솔리드
    * 뷰도 구현해줘."*
@@ -280,9 +343,30 @@ export interface OverlayHost {
     slot: SlotRef,
     t: { x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number },
   ): void;
+  /**
+   * **편집을 켜고 끌 때 터치 조작에 알린다** (`G-EDIT14`).
+   *
+   * 없으면(`undefined`) 종전 동작이다 — 폰에서 캔버스 드래그가 시선 회전과 기즈모 끌기에
+   * **둘 다** 들어간다. 선택 사양으로 두는 것은 이 문을 안 여는 소비자(테스트 하네스 등)가
+   * 그대로 돌게 하기 위해서다.
+   *
+   * ⚠ **이동은 안 끊는다** — 그 판정은 전용 원 안에 있어 편집과 겹치지 않는다.
+   * 무엇이 왜 끊기는지는 `ui/touch-controls.ts` 헤더 한 곳이다.
+   */
+  setTouchEditing?(on: boolean): void;
 }
 
 /** 편집 모드를 켠다. 반환값이 정리 핸들이다. */
 export interface EditSession {
   dispose(): void;
+  /**
+   * 조준 화면의 진단 스냅샷 (W8-6). 조준 기능이 없는 세션이면 `null`.
+   *
+   * ⚠ **캐시된 값이다** — 호출 시점에 다시 레이캐스트하지 않는다. 그러면 리포트를 읽는
+   * 것만으로 비용이 발생하고, `casts` 를 보는 게이트가 **자기 자신을 세게** 된다.
+   *
+   * 이 문이 존재하는 이유: 조준 루프의 재캐스트 **횟수**가 이 회차의 유일한 이산 축이다.
+   * CPU 시간은 이 저장소가 원리적으로 못 재므로(`decide/aim.ts` 헤더) 횟수라도 잡는다.
+   */
+  aim(): { readonly hit: boolean; readonly on: boolean; readonly casts: number } | null;
 }

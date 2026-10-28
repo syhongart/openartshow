@@ -52,7 +52,22 @@ export const ENTRYPOINTS = [
   // ── 앱군(app/ 배포) ──────────────────────────────────────────────────────
   { key: 'index', src: 'index.html', out: 'app/index.html', exposure: 'live' },
   { key: 'studio', src: 'studio.html', out: 'app/studio.html', exposure: 'live' },
-  { key: 'world', src: 'world.html', out: 'app/world.html', exposure: 'live' },
+  // ── 🔴 2026-08-23 라이브에서 **강등**됐다 (감독 지시 «월드 1로 승격») ──────
+  // 감독이 카드로 고른 방식: 「새 월드만 — 기존 것은 내린다」. 랜딩의 «오픈월드 입장» 이
+  // `app/world2.html` 로 옮겨 갔고 이 페이지는 **어디에서도 링크되지 않는다.**
+  //
+  // ⚠ **코드도 보호도 그대로 둔다** (팀장 조건 5, 2026-08-23). 감독이 고른 방식의 전제가
+  // 「되돌리기 = 링크 한 줄」이고, 그 전제는 이 페이지가 **즉시 가동 가능한 상태로 남는
+  // 것**이다. 게다가 직링크·기존 공유 링크 방문자는 랜딩에서 링크가 빠져도 계속 온다.
+  // 그래서 `main.js`·`player.js`·`artworks.js`·`config.js` 는 **라이브 런타임 보호파일로
+  // 유지**한다(CLAUDE.md 의 그 조항은 안 건드린다).
+  //
+  // ⚠⚠ **승격의 역방향도 같은 게이트를 탄다** — 이 줄을 바꾸는 순간 GS-3 이 빨간불이 되고
+  // `CLAUDE.md` 의 behind-flag 산문도 함께 고쳐야 한다. 그것이 설계다.
+  //
+  // 재론 조건: 감독이 **world1 코드 폐기**를 명시적으로 지시하는 회차. 그때 보호 해제를
+  // 별도 상신한다(팀장 조건 5).
+  { key: 'world', src: 'world.html', out: 'app/world.html', exposure: 'flagged' },
   // 라이브다 — `studio.html` 이 "전시 공간 직접 꾸미기(베타)" 카드로 링크한다.
   { key: 'builder', src: 'builder.html', out: 'app/builder.html', exposure: 'live' },
   // ── 마이페이지 — 2026-08-08 라이브 승격 ─────────────────────────────────
@@ -73,8 +88,33 @@ export const ENTRYPOINTS = [
   { key: 'visit', src: 'visit.html', out: 'app/visit.html', exposure: 'flagged' },
   // [실험] GLB 공간 워크스루 — 반입 판정 전이므로 존재가 채택을 뜻하지 않는다.
   { key: 'lab-glb', src: 'lab-glb.html', out: 'app/lab-glb.html', exposure: 'flagged' },
-  // [실험] 오픈월드 커널 재작성 — 빌드에 넣는 것은 실증(타입·번들 회귀 감지)을 위해서다.
-  { key: 'world2', src: 'world2.html', out: 'app/world2.html', exposure: 'flagged' },
+  // ── 🔴 2026-08-23 **라이브 승격** (감독 지시 «월드 1로 승격») ────────────────
+  // 랜딩의 «오픈월드 입장» 이 이 페이지를 가리킨다. 오픈월드 커널 재작성이 정식 진입점이
+  // 됐고, 예전 `app/world.html` 은 위에서 flagged 로 강등됐다.
+  //
+  // ⚠ **승격 전 누적 검수를 거쳤다** — 조항·판정 형태는 `OPERATING-PRINCIPLES.md §10-3`
+  // 한 곳이다(전량이 검수관 1회 용량을 넘을 때의 팀장 판정 2026-08-23). **표면을 검수관이
+  // 확정**했고, 그 과정에서 내 제안 목록에 **없던 표면 하나를 검수관이 찾아냈다**(스모크
+  // 게이트 실행부 2파일이 §10-4 를 어긴 채 편입돼 있었다) — 선정자를 분리한 이유의 실증이다.
+  //
+  // ⚠⚠ **검수관이 안 본 표면이 남아 있다** — 171파일 중 정독은 약 15개였고, 나머지
+  // (`parts/*` 세부·`systems/*` 전량·셰이더 로직·`edit/panel/*` UI 세부)는 줄 단위로
+  // 안 봤다. 승격 PR 본문에 그 목록을 그대로 적었다. *"일괄 검수 완료"* 로 요약하면
+  // 그것이 곧 게이트 유효성 과대 진술이다(팀장 조건 4).
+  //
+  // ⚠⚠⚠ **남은 조건 하나**: WebGPU **미지원** 기기의 첫 화면 확인. behind-flag 였을 때는
+  // 「누가 보든 상관없다」였지만 랜딩 첫 링크가 되는 순간 그 전제가 사라진다. 헤드리스는
+  // `navigator.gpu` 가 없어 **항상 WebGL 폴백 경로를 타므로**(`adapters/renderer.ts`)
+  // 콘솔 0 통과가 그 경로가 돈다는 정황은 되지만, **200·0·0 은 빈 화면과 구별되지 않는다.**
+  { key: 'world2', src: 'world2.html', out: 'app/world2.html', exposure: 'live' },
+  // [실험] 스타일라이즈드 룩 — world2 의 **포크가 아니다.** 실행 코드는 `world2/main.ts`
+  // 그대로이고, `world2-stylized-boot.ts` 가 URL 에 `?styl=1` 을 채운 뒤 같은 진입 함수를
+  // 부르는 것이 전부다. 그래서 world2 를 고치면 여기도 같이 고쳐진다 — world3·world5 가
+  // 지는 no-sync 부채가 없다. 감독 지시 2026-08-18(모바일 게임 광고 화면 참조).
+  //
+  // ⚠ 키에 **숫자 접미를 안 쓴다**: `world6` 류면 GS-4 의 `/^world\d+$/` 에 자동 편입돼
+  // 「world 커널 포크」로 분류되고, 포크에 걸리는 독립성 검사를 포크가 아닌 것이 받는다.
+  { key: 'world2-stylized', src: 'world2-stylized.html', out: 'app/world2-stylized.html', exposure: 'flagged' },
   // [실험] 포근마을 — world2 의 **포크**다(분기 근거·no-sync 정책은
   // `frontend/js/world3/README.md`). 감독 지시 2026-08-08 *"월드3으로 하고 … 독립적으로
   // 해"* 로 착수했다. world2 파일을 한 줄도 import 하지 않으며 그 사실은
@@ -91,6 +131,39 @@ export const ENTRYPOINTS = [
   // 접미로 판정하므로 결번과 무관하게 자동 편입된다. 이 줄은 다음 사람이
   // *"world4 가 어디 갔나"* 를 찾는 고리를 막으려고 있다.
   { key: 'world5', src: 'world5.html', out: 'app/world5.html', exposure: 'flagged' },
+  // 감독 지시 2026-08-25 *"아까 그 파일을 올려서 월드7로 해봐. 테스트로 보게"* —
+  // 내보낸 GLB 를 블렌더에서 손본 뒤 **있는 그대로** 걸어보는 페이지. world2 되읽기는
+  // 우리 파츠를 우리 모양으로 다시 세우므로 블렌더의 모양 변경이 안 나타난다.
+  //
+  // ⚠ **2026-08-26 편입**: 감독 지시 *"방금 한것처럼 월드2가 그대로 들어오게해"* 로
+  // world8 과 **같은 트리**(`js/world-glb/`)를 타게 됐다(팀장 판정 (A) 트리 공유).
+  // 두 페이지가 갈리는 것은 부트 파일 하나뿐이다 — `world7-boot.js` 는 사람이 고른
+  // 파일을, `world8-boot.js` 는 `<body data-glb>` 의 고정 자산을 넘긴다.
+  // 그래서 **구 `js/glb-*.js` 7개(1,198줄)는 이 회차에 삭제됐다**(팀장 조건 2).
+  { key: 'world7', src: 'world7.html', out: 'app/world7.html', exposure: 'flagged' },
+  // 감독 지시 2026-08-26 *"월드8에 그 glb를 올려보자."* → 같은 날 **world2 전체 포크로
+  // 재구성됐다**(감독 *"월드 2의 기본 기능 다 들어가야지"* → 팀장 판정 (A)).
+  // ⚠ 이 주석은 *"world7 과 같은 스크립트(`js/glb-world.js`)를 쓴다"* 라고 적고 있었고
+  // **지금은 거짓이다** — world8 은 `js/world8-boot.js` → `js/world-glb/` 트리를 탄다.
+  // 갈리는 것은 「세계 소스」 한 축뿐이고 나머지는 world2 복사다(`js/world-glb/README.md`).
+  // 고정 자산(`assets/worlds/world2-blender-edit.glb`)을 부팅 즉시 연다 — 감독이
+  // *"지금 그파일이 없어서 내가 못올려"* 라고 해서 그 왕복을 저장소에서 재현해 구웠다.
+  { key: 'world8', src: 'world8.html', out: 'app/world8.html', exposure: 'flagged' },
+  // 2026-09-06 `world10.html` 추가 — 감독 지시서 «뉴욕 갤러리 거리».
+  // ⚠ 2026-09-07 부터 **`js/world10/` 전용 트리**다(팀장 판정 「C·포크」 — 감독 *"오픈월드를
+  // 만들어야지"*, 카드 «끝없는 격자 도시»). 첫 판정 「A」(world-glb 트리 공유)는 그 판정이
+  // 대체했다 — «끝없는» 은 스트리밍이고 `world-glb` 는 «GLB 한 장» 이 전제다.
+  // `<body data-glb>` 는 **격자 셀 한 장**(`nyc-cell.glb`, `generate.mjs --cell` 산출)이고
+  // 세계는 그것을 파셀 스트리밍으로 반복해 만든다. 경위는 `frontend/js/world10/README.md`,
+  // 상태·경계는 `docs/nyc/state.md`.
+  { key: 'world10', src: 'world10.html', out: 'app/world10.html', exposure: 'flagged' },
+  // 2026-09-16 `world11.html` 추가 — 맨해튼. **`js/world-glb/` 트리 공유**다
+  // (팀장 판정 2026-09-16 «결정 2» — world10 포크가 아니다. 대조 실측 표는
+  // `frontend/js/world11-boot.ts` 헤더 한 곳이고 여기에 다시 적지 않는다).
+  // `<body data-glb>` 는 **맨해튼 한 덩이**(`manhattan-180m.glb`)이고 world10 처럼
+  // 반복하지 않는다 — 그것이 `world-glb`(GLB 한 장)와 `world10`(격자 스트리밍)의 갈림이다.
+  // ⚠ 그 자산은 2026-09-16 현재 저장소에 없다(굽는 중, 약 43 MiB).
+  { key: 'world11', src: 'world11.html', out: 'app/world11.html', exposure: 'flagged' },
   // [도구] 배치 에디터 — three.js r171 `editor/` 반입. 감독 지시 2026-08-09
   // *"월드2를 내가 직접 배치. 튜닝할수있는 편집 툴가능? glb파일을 내가 직접 넣고"* →
   // *"three.js 방식이니깐. 거기 에디터를 깃에서 가지고 와서 활용하는방안"*.

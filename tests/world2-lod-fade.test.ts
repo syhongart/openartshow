@@ -12,10 +12,14 @@
 // 얹혀 증폭되므로, 페이드와 같은 diff 에서 고치고 여기서 못 박는다.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as THREE from 'three/webgpu';
 import {
   EASINGS, FADE_EASES, fadeMix, residualAtSpawn,
   crossingCells, crossingSeconds, FADE_SECONDS, fogFactorAt,
+  scaleStep, scaleAdvance, START_SCALE,
+  readParcelAnim, GROW_SECONDS, SHRINK_SECONDS, GROW_EASE,
 } from '../frontend/js/world2/decide/lod-fade.js';
 import { DEFAULT_BANDS } from '../frontend/js/world2/decide/lod.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/decide/parcel-layout.js';
@@ -365,5 +369,161 @@ describe('§4-2 집행 — 안개 0% 자리는 페이드가 아무 일도 안 �
     expect(ca.r).toBeCloseTo(target.r, 5);                 // 안개 0 — 이미 제 색
     expect(cb.r).toBeCloseTo(target.r * 0.1, 5);           // 안개 1 — 10% 만 왔다
     expect(cb.r).toBeLessThan(ca.r);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// W8-10 — 등장·소멸 배수. **건물과 액자가 같은 식을 쓴다**
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('W8-10 — scaleStep / scaleAdvance', () => {
+  const anim = { grow: 0.4, shrink: 0.25, ease: 'lin' as const, shrinkEase: 'lin' as const };
+  const fresh = (up: boolean) => ({ k: up ? 1 : 0, up, elapsed: 0, from: up ? 1 : 0, fresh: true });
+
+  it('★ 성장은 from 에서 1 로, 끝값이 **정확히** 1 이다', () => {
+    expect(scaleStep(true, START_SCALE, 0, anim).k).toBeCloseTo(START_SCALE, 6);
+    expect(scaleStep(true, 0, 0.2, anim).k).toBeCloseTo(0.5, 6);
+    const end = scaleStep(true, 0, 0.4, anim);
+    expect(end, '★ 끝값이 정확히 1 이 아니다 — Math.max 가 있는 한 이 줄만이 보증이다')
+      .toEqual({ k: 1, done: true });
+  });
+
+  it('★ 수축은 from 에서 0 으로, 끝값이 **정확히** 0 이다', () => {
+    expect(scaleStep(false, 1, 0.125, anim).k).toBeCloseTo(0.5, 6);
+    expect(scaleStep(false, 1, 0.25, anim)).toEqual({ k: 0, done: true });
+  });
+
+  it('★ 배수는 START_SCALE 아래로 안 내려간다 — 노멀 행렬 특이행렬 회피', () => {
+    expect(scaleStep(true, 0, 0.0001, anim).k).toBe(START_SCALE);
+  });
+
+  it('★ 시간이 0 이면 즉시 완료 — `?grow=0` 이 종전 동작(팝)이다', () => {
+    const off = { ...anim, grow: 0, shrink: 0 };
+    expect(scaleStep(true, 0, 0, off)).toEqual({ k: 1, done: true });
+    expect(scaleStep(false, 1, 0, off)).toEqual({ k: 0, done: true });
+  });
+
+  it('🔴 첫 걸음은 **목표로 순간 이동**한다 — place 가 애니메이션을 시작하지 않는 자리', () => {
+    expect(scaleAdvance(fresh(true), true, 0.016, anim))
+      .toEqual({ k: 1, up: true, elapsed: 0, from: 1, fresh: false });
+    // 멀리 있는 채로 걸렸으면 0 으로 스냅 — 「떠올랐다 쪼그라드는」 연출이 안 생긴다
+    expect(scaleAdvance(fresh(true), false, 0.016, anim))
+      .toEqual({ k: 0, up: false, elapsed: 0, from: 0, fresh: false });
+  });
+
+  it('★ 목표에 닿았으면 `null` — 「변할 때만 대입」을 산술이 보증한다', () => {
+    expect(scaleAdvance({ k: 1, up: true, elapsed: 9, from: 0, fresh: false }, true, 0.016, anim))
+      .toBeNull();
+    expect(scaleAdvance({ k: 0, up: false, elapsed: 9, from: 1, fresh: false }, false, 0.016, anim))
+      .toBeNull();
+  });
+
+  it('🔴 방향이 뒤집히면 **지금 배수에서** 다시 시작한다 — 되감지 않는다', () => {
+    // 성장 중간(0.5)에 멀어졌다
+    const mid = { k: 0.5, up: true, elapsed: 0.2, from: 0, fresh: false };
+    const back = scaleAdvance(mid, false, 0.125, anim)!;
+    expect(back.from, '★ from 이 1 로 튀었다 — 액자가 커졌다가 줄어든다').toBe(0.5);
+    expect(back.elapsed).toBeCloseTo(0.125, 6);
+    expect(back.k, '★ 0.5 에서 절반이면 0.25').toBeCloseTo(0.25, 6);
+  });
+
+  it('★ 다시 뒤집혀도 같은 규약 — 왕복이 튀지 않는다', () => {
+    let st = { k: 0.25, up: false, elapsed: 0.125, from: 0.5, fresh: false };
+    st = scaleAdvance(st, true, 0.1, anim)!;
+    expect(st.from).toBe(0.25);
+    expect(st.k, '★ 0.25 + (1−0.25)×0.25').toBeCloseTo(0.4375, 6);
+  });
+
+  it('★ 이어서 진행하면 elapsed 가 누적된다', () => {
+    let st = { k: 0, up: true, elapsed: 0, from: 0, fresh: false };
+    st = scaleAdvance(st, true, 0.1, anim)!;
+    st = scaleAdvance(st, true, 0.1, anim)!;
+    expect(st.elapsed).toBeCloseTo(0.2, 6);
+    expect(st.k).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('🔴 등장·퇴장 연출의 **라이브 기본값** — 감독 지시가 코드에 살아 있는가', () => {
+  // ── 왜 이 블록이 생겼나 (2026-08-20) ──────────────────────────────────────
+  // 감독 지시 *"퇴장할때 수축켜줘. 잘 동작한다"* 로 `shrink` 기본값이 **0 → `SHRINK_SECONDS`**
+  // 로 승격됐다. 그런데 승격 직전에 실측해 보니 **`readParcelAnim()` 의 기본값을 단언하는
+  // 검사가 0개**였다 — 누가 0 으로 되돌려도 전 스위트가 초록이고, 증상은 **감독 화면에서만**
+  // 드러난다(그것도 「사라질 때 툭」이라 알아채기 어렵다).
+  //
+  // ⚠ **이 값은 셋이 공유한다** — 마을 파츠(`parcel-grow.ts`)·액자(`artwork-scene.ts`)·
+  // 미술관(`features/glb-city.ts`)이 전부 `readParcelAnim()` 을 본다.
+  //
+  // ⚠⚠ **다만 「셋」이 참이 된 것은 검수관 블로커 D2 를 고친 뒤부터다**(2026-08-20).
+  // 그전에는 `main.ts` 가 `shrinkSecs > 0 ? … : undefined` 로 **0 을 흡수**했고
+  // `parcel-grow.ts` 가 `?? SHRINK_SECONDS` 로 받아서, **마을 파츠는 승격 전에도 이미
+  // 0.25 로 수축하고 있었다.** 즉 이번 승격으로 화면이 실제로 바뀐 것은 **액자와 미술관
+  // 둘**이다. 나는 그것을 「셋」이라고 적고 감독께도 그렇게 보고했다 — **결론(수축이
+  // 켜졌다)은 참인데 범위 진술이 거짓**이었고, 검수관이 코드로 잡았다(직전 회차 C3 와
+  // 같은 형태다). D2 를 고쳐 흡수를 없앤 지금은 값이 셋 다에 그대로 도달한다.
+  //
+  // ⚠⚠ **못 잡는 것**: 실제 화면의 룩(감독 판정) · 후진 중 그림자 깜빡임(알려진 부작용,
+  // `SHRINK_SECONDS` 주석 참조) · 프레임 시간 · WebGPU.
+
+  it('🔴 노브가 없으면 **퇴장 수축이 켜져 있다** — 감독 지시 2026-08-20', () => {
+    // 테스트 환경에는 `location` 이 없으므로 `readNum` 이 fallback 을 돌려준다 —
+    // 이것이 곧 「URL 노브 없이 부팅한 세션」과 같은 조건이다.
+    const anim = readParcelAnim();
+    // ⚠ **메시지는 「지금 이 검사가 깨지면 무슨 일이 나는가」다** — 셋 전부다.
+    // 위 주석의 「액자와 미술관 둘」과 **다른 것을 말한다**: 그쪽은 «이번 승격으로 화면이
+    // 바뀐 범위»(D2 이전 상태 기준)이고, 이쪽은 «지금 기본값이 0 이 되면 일어나는 일»이다.
+    // D2 로 흡수를 없앤 뒤로는 `0` 이 마을 파츠에도 그대로 닿는다(GS-S2ⓐ 가 그것을 잰다).
+    // 🔴 첫 판본은 여기서 「건물」을 뺐다 — 검수관 명세가 D2 **이전** 기준의 구체 지시를
+    // 담고 있었고(검수관이 R1 로 자기 오류를 인정했다) 나는 그것을 그대로 따랐다.
+    // **원칙과 구체 지시가 충돌하면 어느 쪽이 지금 상태에 맞는지 확인하고 따른다.**
+    expect(anim.shrink, '🔴 퇴장 수축이 꺼졌다 — 건물·액자·미술관이 툭 사라진다').toBe(SHRINK_SECONDS);
+    expect(anim.shrink, '🔴 수축 시간이 0 이다 — 승격 전으로 되돌아갔다').toBeGreaterThan(0);
+  });
+
+  it('🔴 **GS-S2ⓑ** — 조립부가 `0` 을 흡수하지 않는다 (검수관 블로커 D2)', () => {
+    // 정적 텍스트 축이다 — `main.ts` 는 부팅 경로 전체를 태워야 해서 노드에서 못 돈다.
+    // 행위 축은 `tests/world2-parcel-grow.test.ts` 의 **GS-S2ⓐ** 가 진다(그쪽은 실제로
+    // 수축을 돌린다). **둘이 다른 결함을 잡는다**: 여기는 「0 이 전달되는가」, 저기는
+    // 「전달된 0 이 즉시를 뜻하는가」.
+    //
+    // ⚠ **거짓 FAIL 이 나는 경우 둘**:
+    // ① 흡수를 일부러 되살릴 이유가 생기면(예: `0` 을 다시 「미지정」으로 쓰고 싶어지면)
+    //    빨간불. 그때는 **약화가 아니라 갱신**이고 왜 되살렸는지를 그 자리에 적는다.
+    // ② 🔴 **주석에 옛 코드를 그대로 인용해도 걸린다** — 정적 축은 코드와 주석을 구별하지
+    //    않는다. 실제로 D2 를 고치면서 «그전에는 이랬다» 를 코드 그대로 적었다가 이 검사가
+    //    **내 주석을 잡았다.** 그래서 `main.ts` 쪽은 그 패턴을 서술로 바꿨고, 그 사실을
+    //    거기에도 적어 뒀다. 다음에 이 파일을 만지는 사람은 **인용 대신 서술**로 쓰라.
+    const src = readFileSync(
+      fileURLToPath(new URL('../frontend/js/world2/main.ts', import.meta.url)),
+      'utf8',
+    ).replace(/\s+/g, ' ');
+    // ── 축이 **둘**이다 ────────────────────────────────────────────────────
+    // ⚠ **첫 판본은 부정형 하나뿐이었고, 검수관 수용 기준을 못 채웠다.** 명세는
+    // *"`shrinkSecs: undefined`(T3)가 1 이상 failed 로 뒤집힐 것"* 이었는데, 「흡수
+    // 패턴이 없는가」만 보면 **전달 자체를 끊는 형태**는 그 패턴이 아니라 통과한다.
+    // 실측으로 알았다 — T3 = **0 failed / 4115**. 「없어야 할 것이 없다」와
+    // 「있어야 할 것이 있다」는 **다른 축**이고, 앞만 걸면 뒤가 빈다.
+    //
+    // ① 없어야 할 것 — 0 을 걸러내는 삼항
+    expect(src, '🔴 `?shrink=0` 이 흡수돼 마을 파츠에 안 닿는다 — 되돌리는 문이 반쪽이다')
+      .not.toContain('shrinkSecs > 0 ?');
+    // ② 있어야 할 것 — 바깥 변수가 **그대로** 전달된다(축약이든 명시든)
+    expect(
+      /shrinkSecs\s*(,|:\s*shrinkSecs\b)/.test(src),
+      '🔴 노브 값이 마을 파츠에 전달되지 않는다 — `?shrink=` 가 통째로 죽는다',
+    ).toBe(true);
+  });
+
+  it('★ 등장 성장도 켜져 있다 — 같은 자리에서 함께 회귀할 수 있다', () => {
+    expect(readParcelAnim().grow).toBe(GROW_SECONDS);
+    expect(readParcelAnim().grow).toBeGreaterThan(0);
+  });
+
+  it('★ 커브 기본값은 등장·퇴장이 같다 — 갈리면 그 사실이 여기서 드러난다', () => {
+    const anim = readParcelAnim();
+    expect(anim.ease).toBe(GROW_EASE);
+    // ⚠ 퇴장 커브를 따로 두는 문(`?shrinkease=`)은 열려 있다. 알려진 부작용(후진 중
+    // 그림자 깜빡임)이 다시 보이면 `in` 으로 비교하라 — 그때 이 단언이 빨간불이 되면
+    // **약화가 아니라 갱신**이고, 왜 갈랐는지를 이 자리에 적는다.
+    expect(anim.shrinkEase).toBe(GROW_EASE);
   });
 });

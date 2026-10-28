@@ -70,6 +70,8 @@ function makeHost(calls: PlaceCall[], failure: { why: string | null }, rays: Stu
     // `null` 을 내고 오버레이만 집던 예전 경로가 그대로 돈다.
     instances: null,
     village: null,
+    // 미술관 벽(태스크 #112). 이 하네스에는 미술관이 없다 — `null` 이 사실이다.
+    glbCity: null,
     surfaceAt: () => 0,
   };
   return { host, canvas, entries };
@@ -291,18 +293,36 @@ describe('편집 모드 · 놓기 행위', () => {
 describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
   const src = readFileSync('frontend/js/world2/features/overlay.ts', 'utf8');
   const place = src.slice(src.indexOf('async function place('), src.indexOf('function remove('));
+  // ⚠ **모델 캐시가 2026-08-22 에 별도 파일로 나갔다**(파일 크기 게이트 — 그 파일 헤더).
+  // 검사 대상은 「어느 파일에 적혀 있나」가 아니라 「그 처방이 살아 있나」이므로 경로만
+  // 따라간다. 여기가 안 따라가면 **옮기는 것만으로 처방이 조용히 사라질 수 있다.**
+  const models = readFileSync('frontend/js/world2/features/overlay-models.ts', 'utf8');
 
   it('place() 가 붙인 뒤 프레임을 넘기고 새 holder 만 예열한다', () => {
     expect(place).toContain('await nextFrame();');
     expect(place, '루트 전체가 아니라 새로 붙은 것만 연다').toContain('await warmUp(entry.holder);');
   });
 
+  // ⚠ **위 두 줄만으로는 부족해졌다**(2026-08-16, W8-2). 부팅이 편집용 3프레임을 같이
+  // 물던 것을 고치면서 예열을 `if (warm) { … }` 로 감쌌는데, **문자열은 그대로 남아
+  // 위 검사가 통과한다.** 즉 `warm` 기본값을 `false` 로 뒤집어도 안 걸린다 — 그러면
+  // 편집 경로가 조용히 예열을 잃고, 증상은 「감독 실기기에서만 나는 히칭」이라 여기서
+  // 안 보인다(그 히칭이 애초에 이 검사를 만든 사고다 — 1,072ms, 2026-08-12).
+  //
+  // 이 파일 헤더가 *"텍스트 위치는 제어흐름을 안 본다"* 라고 한계를 적어 두었고, 그
+  // 한계가 실제로 물린 첫 사례다. **문장을 고치는 대신 축을 하나 더 만든다.**
+  it('★ 예열은 기본값이다 — 부팅만 끄고 편집은 그대로 탄다', () => {
+    expect(place, '★ `warm` 기본이 false 면 편집 경로가 조용히 예열을 잃는다')
+      .toMatch(/warm\s*=\s*true/);
+    expect(place, '★ 예열이 조건 뒤에 있어야 부팅이 건너뛸 수 있다').toContain('if (warm) {');
+  });
+
   it('모델 캐시가 진행 중인 약속을 담는다 — 완료본만 담으면 중복 로드가 난다', () => {
-    expect(src).toContain('const models = new Map<string, Promise<Object3D | null>>()');
+    expect(models).toContain('const models = new Map<string, Promise<Object3D | null>>()');
   });
 
   it('실패는 캐시하지 않는다 — 남기면 그 src 가 세션 내내 못 살아난다', () => {
-    expect(src).toContain('models.delete(key);');
+    expect(models).toContain('models.delete(key);');
   });
 
   it('진행 콜백을 loadAsync 에 실제로 넘긴다', () => {
@@ -317,20 +337,36 @@ describe('소비자 · 개별 배치도 분할·예열을 탄다', () => {
   // ⚠ **헤드리스는 WebGL 이라 이 축을 원리적으로 못 잰다.** 그래서 «화면이 멀쩡한가» 가
   // 아니라 «놓는 경로가 그 함수를 지나는가» 를 잰다. 약한 축인 것을 알고 쓴다 —
   // 실기기 판정은 감독 확인이 유일하다.
+  // ⚠ 아래 둘은 원래 `import { disableMatExtensions } from …` 과 `disableMatExtensions(m);`
+  // 를 **문자열 그대로** 봤다. 2026-08-22 에 발광 상한(`?glbemis=`)이 붙으면서 import 에
+  // `readEmissiveCap` 이 늘고 호출에 인자가 붙자 둘 다 깨졌다 — **처방은 그대로인데
+  // 검사만 깨진 것**이다. 이 검사가 지키려는 것은 «어느 함수를 어디서 부르는가» 이지
+  // 인자 개수가 아니므로, 이름·경로·호출 위치는 그대로 두고 **인자 목록에만** 둔감하게
+  // 바꾼다. 느슨해진 것이 아니라 형식 결합을 뺀 것이다(대신 상한 배선 검사를 아래 더한다).
   it('로드한 모델이 확장 끄기를 거친다 — 안 거치면 실기기에서 렌더가 죽는다', () => {
-    expect(src).toContain("import { disableMatExtensions } from '../systems/glb-material.js'");
-    expect(src).toContain('disableMatExtensions(m);');
+    expect(models).toMatch(
+      /import \{[^}]*\bdisableMatExtensions\b[^}]*\} from '\.\.\/\.\.\/world-shared\/glb-material\.js'/,
+    );
+    expect(models).toMatch(/disableMatExtensions\(m[,)]/);
   });
 
-  it('확장 끄기가 modelOf 안에 있다 — 캐시된 뒤에 걸면 이미 늦다', () => {
-    const modelOf = src.slice(src.indexOf('function modelOf('), src.indexOf('function applyEntry('));
-    expect(modelOf).toContain('disableMatExtensions(m);');
+  it('확장 끄기가 캐시 적재 안에 있다 — 캐시된 뒤에 걸면 이미 늦다', () => {
+    const get = models.slice(models.indexOf('function get('), models.indexOf('return {'));
+    expect(get).toMatch(/disableMatExtensions\(m[,)]/);
+  });
+
+  // 🔴 발광 상한(감독 신고 2026-08-22 *"glb건물 현관의 조명이 너무쎄다"*)이 **이 경로에도**
+  // 걸리는지. 오버레이는 `glb-city` 와 별개 경로라 한쪽만 배선하면 감독 배치 GLB 만 계속
+  // 탄다 — 실제로 확장 끄기가 그렇게 한쪽에만 있다가 실기기 렌더를 죽인 이력이 있다.
+  it('발광 상한을 노브에서 읽어 넘긴다 — 상한이 이 경로에도 걸린다', () => {
+    const get = models.slice(models.indexOf('function get('), models.indexOf('return {'));
+    expect(get).toMatch(/disableMatExtensions\(m,\s*readEmissiveCap\(readNum\)\)/);
   });
 });
 
 describe('확장 끄기 자체가 값을 실제로 끄는가', () => {
   it('EXT_OFF 의 키를 가진 재질만 골라 값을 바꾼다', async () => {
-    const { disableMatExtensions, EXT_OFF } = await import('../frontend/js/world2/systems/glb-material.js');
+    const { disableMatExtensions, EXT_OFF } = await import('../frontend/js/world-shared/glb-material.js');
 
     // 감독 실기기 로그에 나온 그 재질을 흉내낸다 — 확장 넷을 다 켠 상태
     const hot = { sheen: 1, clearcoat: 0.8, anisotropy: 0.5, ior: 2.4, color: 0xffffff };
@@ -356,7 +392,7 @@ describe('확장 끄기 자체가 값을 실제로 끄는가', () => {
   });
 
   it('같은 재질을 두 번 세지 않는다 — clone 이 참조를 공유한다', async () => {
-    const { disableMatExtensions } = await import('../frontend/js/world2/systems/glb-material.js');
+    const { disableMatExtensions } = await import('../frontend/js/world-shared/glb-material.js');
     const shared = { sheen: 1 };
     const model = {
       traverse(fn: (o: unknown) => void) {

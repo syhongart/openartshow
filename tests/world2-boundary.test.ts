@@ -36,10 +36,18 @@ const W2 = join(ROOT, 'frontend/js/world2');
 const ADAPTERS: Record<string, string> = {
   'avatars/chibi.ts': '아야모(치비) — buildChibi/randomChibiLook',
   'systems/sky.ts': '하늘 엔진 — createSkySystem',
+  // 요금제 층위(W8-3 S7). **좁게 연다** — `canUploadGlb`·`tierLabel` 둘뿐이고,
+  // 한도·코드 발급·배지는 안 들여온다(그 파일 헤더가 이유를 갖는다).
+  'adapters/plan.ts': '요금제 층위 — canUploadGlb/tierLabel',
 };
 
 /** 어느 월드의 소유도 아닌 것들. world1 을 지워도 남는다 */
-const SHARED_PREFIXES = ['vendor/', 'utils/'];
+// ⚠ `js/shared/` 는 `js/world-shared/` 와 **다르다**(2026-08-16 추가):
+//   · `world-shared/` — 세계 3종(world2·3·5)이 공유. R1~R4 가 그 경계를 지킨다
+//   · `shared/`       — 라이브·세계를 가리지 않는 **의존 0 leaf**(예: 예약어 목록)
+// 후자는 마이페이지(라이브)와 world2 가 함께 쓰는 것을 담는다 — `world-shared/` 에 두면
+// 이름이 거짓이 되고 R4 가 지키려는 경계가 흐려진다.
+const SHARED_PREFIXES = ['vendor/', 'utils/', 'js/world-shared/', 'js/shared/'];
 
 /**
  * **빌드 혼합 허용목록** — bare `'three'`(WebGL 빌드)나 `three/addons`·`three/examples`
@@ -73,7 +81,15 @@ const BUILD_MIX: Record<string, string> = {
   // 헤드리스에서는 효과가 있었는데 WebGL 에서는 애초에 문제가 없었다"* 는 이력이 남아
   // 있다. **혼합이 그 증상의 원인인지는 아직 확인하지 않았다**(태스크 #120).
   // 여기 적어 두는 것은 허가가 아니라 **혼합 지점을 세는 것**이다.
-  'features/glb-city.ts': 'GLTFLoader(addons) — 혼합 확인됨·원인 미판정(#120)',
+  // ⚠ **`features/glb-city.ts` 항목을 2026-08-16 에 뺐다** — 본체가 `world-shared/` 로
+  // 옮겨져 그 파일은 이제 25줄짜리 얇은 래퍼이고 addons 를 안 쓴다. 남겨 두면 이 검사가
+  // *"죽은 허가는 구멍이다"* 로 스스로 잡는다(실제로 잡았다).
+  //
+  // ⚠⚠ **그 혼합이 사라진 것이 아니라 이 검사의 사정권 밖으로 나갔다**(#120 은 그대로다).
+  // `world-shared/glb-city.ts` 가 여전히 `GLTFLoader`(addons)를 쓰는데, 이 파일은 `world2/`
+  // 아래만 훑으므로 안 본다. 공유 쪽 경계는 `tests/world-shared-boundary.test.ts` 의 R3 이
+  // 보지만 **R3 은 `three/` 접두를 통째로 허용해 addons 혼합을 안 가른다.**
+  // → 태스크로 남겼다. 「검사가 옮겨간 코드를 따라가지 않으면 커버리지가 조용히 준다」.
   // ⚠ 같은 성격. `vrm.ts:44` 가 `await import('three/examples/jsm/utils/SkeletonUtils.js')`
   // 를 쓰고, 그 파일은 `SkeletonUtils.js:10` 에서 bare `'three'` 를 import 한다.
   //
@@ -81,10 +97,42 @@ const BUILD_MIX: Record<string, string> = {
   // `^\s*import` 로 시작하는 줄만 봐서 `await import(…)` 형태를 놓쳤고, 검수관 리뷰도
   // 놓쳤다. 동적 import 를 보게 만든 것이 실제로 값을 했다 — 기록으로 남긴다.
   'avatars/vrm.ts': 'SkeletonUtils.clone(addons) — 혼합 확인됨·영향 미판정',
+  // GLB 내보내기(감독 요청 2026-08-06). `await import('three/examples/jsm/exporters/
+  // GLTFExporter.js')` 이고, 그 파일은 bare `'three'` 를 import 한다 — 혼합이 맞다.
+  //
+  // **위 두 항목과 방향이 반대라 위험도가 다르다.** GLTFLoader·SkeletonUtils 는 남의
+  // 빌드에서 온 객체를 **씬에 남긴다**(그래서 #120 이 열려 있다). exporter 는 우리
+  // 객체를 읽어 바이트를 만들 뿐 씬에 아무것도 넣지 않고, 호출이 끝나면 사라진다.
+  // 읽는 쪽도 `isBufferGeometry` 류의 플래그를 보지 `instanceof` 로 가르지 않는다.
+  //
+  // **실측(2026-08-25, 배포 조립본 + 헤드리스)**: 28,704 부품이 노드 28,726개·메시
+  // 38개·재질 38개·이미지 6개로 나갔고, 삼각형 1,357,674개에 콘솔 에러 0·pageerror 0.
+  // 즉 혼합이 이 경로에서 실제로 아무것도 깨뜨리지 않는다 — 추정이 아니라 잰 값이다.
+  //
+  // **재현: `npm run measure:glb-roundtrip`.** ⚠ 이 한 줄이 검수관 블로커였다(08-25).
+  // 그때 이 주석이 근거로 삼던 수치의 **출처가 저장소에 없었다** — 여기 있던
+  // `test-glb-export.mjs` 는 GLB 파싱이 스펙 위반이라 이 값을 산출할 수 **없었고**,
+  // 내가 실제로 쓴 것은 스크래치 스크립트였다(작업 종료와 함께 사라졌다).
+  // 재현할 수 없는 실측은 다음 사람에게 **확인을 생략할 이유**만 준다.
+  //
+  // ⚠ 08-06 실측(17,502 부품 · 메시 29 · 삼각형 1,258,506)을 이 값이 대체한다. 그 사이
+  // 브랜치가 `main` 을 따라잡으며 `shadow:*` 8종이 들어왔고(+64%), treepit 이 더해졌다.
+  // **conflict 가 안 났다고 전제까지 그대로인 것은 아니다** — 낡은 실측을 근거로 남기면
+  // 다음 사람이 그 수치로 용량·성능을 계산한다.
+  'export/glb.ts': 'GLTFExporter(examples) — 읽기 전용 혼합·실측 확인(2026-08-25)',
   // ⚠ `glb-city.ts` 와 **같은 혼합이고 같은 미판정**이다(#120). 여기가 셋째 지점이다.
   // 다른 점은 이쪽이 실험이 아니라 **감독이 배치한 것을 배포하는 경로**라는 것 —
   // 즉 #120 이 판정되면 그 결과를 실제로 짊어지는 자리가 여기다.
   'features/overlay.ts': 'GLTFLoader(addons) — 혼합 확인됨·원인 미판정(#120)',
+  // ⚠ **`overlay.ts` 와 같은 혼합이고 같은 미판정(#120)을 짊어진다.** 네 번째 지점이다.
+  // 감독 지시(2026-08-25 *"블랜더의 glb로 내보낸 것은 그대로 올라와야지"*)로 되읽기가
+  // 남의 메시를 씬에 올리게 됐고, 그러려면 로더가 필요하다 — `overlay.ts` 가 이미 쓰는
+  // 그 로더를 **같은 패턴으로** 쓴다(동적 import, 쓸 때만 내려받음).
+  //
+  // 새 위험을 여는 것이 아니라 **기존 위험의 소비자가 하나 는 것**이다. #120 이 판정되면
+  // 그 결과를 이 자리도 함께 짊어진다. `export/glb.ts` 와 방향이 반대인 것도 그대로다 —
+  // exporter 는 읽고 버리지만 로더는 **남의 빌드 객체를 씬에 남긴다.**
+  'export/imported-scene.ts': 'GLTFLoader(addons) — overlay.ts 와 같은 혼합·미판정(#120)',
 };
 
 /** `.ts`·`.js` 소스를 모두 모은다 */

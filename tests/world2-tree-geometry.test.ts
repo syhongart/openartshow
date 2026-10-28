@@ -24,7 +24,11 @@
 
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { tree, LEAF_U0 } from '../frontend/js/world2/parts/tree.js';
+import { tree } from '../frontend/js/world2/parts/tree.js';
+// `LEAF_U0` 는 2026-08-22 에 `tree-atlas.ts` 로 갈라졌다(파일 상한 초과 → 경계 분리).
+// 배럴로 재수출하지 않고 **정의한 곳에서 직접** 가져온다 — 소비자가 이 한 곳뿐이라
+// 배럴을 두면 «어디서 정의됐나» 만 흐려진다.
+import { LEAF_U0 } from '../frontend/js/world2/parts/tree-atlas.js';
 import type { ThreeNS } from '../frontend/js/world2/parts/types.js';
 
 // jsdom 은 네이티브 캔버스가 없어 `getContext('2d')` 가 null 이다. 여기서 보는 것은

@@ -56,6 +56,10 @@ import { glbCityFeature } from './glb-city.js';
 import { overlayFeature } from './overlay.js';
 import { shadingFeature } from './shading.js';
 import { surfacePaintFeature } from './surface-paint.js';
+import { grassFeature } from './grass.js';
+import { waterStyleFeature } from './water-style.js';
+import { terrainStyleFeature } from './terrain-style.js';
+import { groundFogFeature } from './ground-fog.js';
 
 export const FEATURES: readonly Feature[] = [
   skyFeature,
@@ -69,11 +73,29 @@ export const FEATURES: readonly Feature[] = [
   // 기능이라 평상시에는 꺼져 있다 — `?glb=` 가 없으면 `create` 가 `null` 이라 로더
   // 코드조차 내려받지 않는다. 실험이 끝나면 이 줄과 파일을 함께 지운다.
   glbCityFeature,
+  // ── 스타일라이즈드 잔디 (`?styl=1` 또는 `?grass=1`) ───────────────────────
+  // 감독 지시 2026-08-18(모바일 게임 광고 화면 참조). **기본은 꺼져 있다** — `create` 가
+  // `null` 을 돌려주므로 노브 없이는 씬을 한 번도 안 만진다.
+  //
+  // 사람(`npc`) 뒤인 것은 같은 이유다: 플레이어 위치를 읽어 필드를 접으므로 한 프레임
+  // 늦으면 걸을 때 앞쪽 풀이 뒤늦게 따라온다. 셰이딩보다 **앞**이어야 하는 것도 짝이다 —
+  // 오버라이드가 걸리기 전에 잔디가 자기 `visible` 을 정해야 한다.
+  grassFeature,
+  // ── 스타일라이즈드 수면 (`?styl=1` 또는 `?wstyle=1`) ──────────────────────
+  // **`ocean` 보다 뒤여야 한다** — 기존 수면 메시를 이름으로 찾아 숨기고 같은 지오메트리를
+  // 공유하는 메시를 얹으므로, 저쪽이 먼저 씬에 들어와 있어야 한다.
+  waterStyleFeature,
   // ── 사용자 배치 (`assets/world2-overlay.json`) ────────────────────────────
   // 감독이 `?edit=1` 화면에서 놓고 내보낸 JSON 을 읽어 얹는다. **가산 레이어**라 마을
   // 기본 배치 계산에는 손대지 않는다. 파일이 비어 있으면(지금이 그렇다) 아무것도 안 붙고,
   // 그때도 GLTFLoader 를 내려받지 않는다 — 배치가 0개면 로더가 필요 없기 때문이다.
   overlayFeature,
+  // ── 스타일라이즈드 지형 (`?styl=1` 또는 `?gtex=1`) ────────────────────────
+  // **`surfacePaintFeature` 보다 앞이어야 한다.** 이 기능은 표면 «설정» 을 얹고 집행은
+  // 저쪽이 한다 — 뒤에 두면 부팅 첫 프레임에 설정이 없는 상태로 한 번 반영되고 다음
+  // 프레임에 또 반영된다(화면에는 안 보이지만 재질을 두 번 만진다). 오버레이가 표면보다
+  // 앞인 것과 같은 논리다.
+  terrainStyleFeature,
   // ── 표면 재질 (심리스 텍스처) ─────────────────────────────────────────────
   // 감독 지시 *"땅의 텍스쳐 심리스를 주면 그대로 적용할수있게 … 타일링 배율 … 각도 조절"*
   // — 파츠 재질의 맵 슬롯을 갈아 끼운다. **오버레이보다 뒤**여야 한다: 설정이 오버레이
@@ -96,7 +118,27 @@ export const FEATURES: readonly Feature[] = [
   // 넣든 그 결과 위에서 동작해야 한다. 여기서 한 줄을 지우면 후보정이 통째로 빠지고
   // 어댑터는 기본 렌더 경로로 남는다.
   postfxFeature,
+  // ── 지면 안개 (`?fogs=` · `?fogh=` · `?fogk=`) ─────────────────────────────
+  // 감독 카드 판정 2026-09-04 「리얼 안개 — 바닥에 깔리는 높이 안개까지」. `scene.fogNode`
+  // 에 층을 하나 얹는다(WebGPU 전용, 부팅 1회). **기본 세기 0 이라 노브 없이는 `create`
+  // 가 `null`** — 감독이 링크 넷을 보고 대조군을 골랐다(2026-09-05 *"기본이 낫다"*). 노브는
+  // 재론용으로만 남는다. 순서는 무관하다
+  // (씬 속성 하나를 달 뿐 다른 기능의 씬 그래프를 안 만진다). 식·근거는
+  // `world-shared/ground-fog.ts` 한 곳.
+  groundFogFeature,
 ];
+
+/**
+ * 🔴 **이 하나만 개별 재수출한다** (태스크 #112). 조립부(`main.ts`)가 마운트된 기능 중
+ * 미술관을 **이름으로** 찾아야 하는데, 이름 문자열을 조립부에 다시 적으면 그 순간
+ * 값 미러링이다(한쪽만 고쳐도 아무도 모른다). 선언을 import 해서 `.name` 을 읽으면
+ * 원산지가 `features/glb-city.ts` 한 곳으로 남는다.
+ *
+ * ⚠ **이것을 「배럴을 늘려도 된다」로 읽지 마라.** 나머지 기능은 `FEATURES` 목록에
+ * 이름을 올리는 것이 켜는 것의 전부이고, 조립부가 개별 기능을 아는 것은 이 결합이
+ * 요구하는 예외다. 다음에 같은 것이 필요해지면 **왜 이름으로 찾아야 하는지**부터 묻는다.
+ */
+export { glbCityFeature } from './glb-city.js';
 
 export type { Feature, FeatureEnv, FeatureInstance, MountedFeature } from './types.js';
 export {

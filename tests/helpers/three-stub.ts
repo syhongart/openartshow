@@ -15,8 +15,28 @@ export type StubRay = {
   direction: { x: number; y: number; z: number };
 };
 
-/** 레이캐스트 한 건. `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다 */
-export type StubHit = { object: unknown; instanceId?: number };
+/**
+ * 레이캐스트 한 건. `instanceId` 는 `InstancedMesh` 를 맞혔을 때만 온다.
+ *
+ * `point`·`face` 는 **벽 검출**(W8-4 D)이 쓴다. 실물 three 와 같은 성질을 갖게 둘 다
+ * 선택 필드다 — `face` 는 Line·Points 를 맞히면 실제로 안 온다. **대역이 실물의 핵심
+ * 성질을 안 가지면 그 축의 검출력은 0이다**(이 저장소가 뮤테이션으로 배운 것).
+ *
+ * ⚠ `face.normal` 은 실물에서 **로컬 좌표계**다. 그래서 `object.matrixWorld` 를 함께
+ * 주지 않으면 「월드 변환을 했는가」를 잴 수 없다 — 테스트가 그것을 확인한다.
+ */
+export type StubHit = {
+  object: unknown;
+  instanceId?: number;
+  /**
+   * 광선 원점에서의 거리. **벽 검출이 오버레이와 마을 중 어느 것을 고를지** 가른다.
+   * 실물과 같이 선택 필드다 — 생략하면 소비자가 `Infinity` 로 읽어 «거리를 모르는 것은
+   * 진다» 가 된다(가까운 쪽을 고르는 규약과 어긋나지 않는다).
+   */
+  distance?: number;
+  point?: { x: number; y: number; z: number };
+  face?: { normal: { x: number; y: number; z: number } } | null;
+};
 
 export interface ThreeStubOptions {
   /** 만들어진 광선이 여기 쌓인다 — 테스트가 방향을 바꿔 쓴다 */
@@ -24,11 +44,21 @@ export interface ThreeStubOptions {
   /**
    * 레이캐스트가 돌려줄 것. 매번 불린다(테스트가 도중에 바꿀 수 있게).
    *
-   * **인자로 대상 목록을 받는다** — 편집은 광선을 두 곳에 쏜다(오버레이 루트의 자식들,
-   * 그리고 마을 인스턴스 메시들). 목록을 안 보면 두 경로가 같은 히트를 받아서,
-   * «마을을 집었다» 를 재려는 테스트가 오버레이 쪽에서 먼저 걸린다.
+   * **인자로 대상 목록을 받는다** — 편집은 광선을 **세 곳**에 쏜다(오버레이 루트의
+   * 자식들, 마을 인스턴스 메시들, 그리고 미술관 GLB 루트 — 태스크 #112). 목록을 안 보면
+   * 세 경로가 같은 히트를 받아서, «마을을 집었다» 를 재려는 테스트가 오버레이 쪽에서
+   * 먼저 걸린다.
+   *
+   * 🔴 **재귀 플래그도 함께 받는다**(검수관 권고 P1, 2026-08-19). 편집의 세 경로가
+   * 이것을 **다르게** 쓴다 — `faceInOverlay`/`faceInGlbCity` 는 `true`(트리를 내려간다),
+   * `faceInVillage` 는 `false`(인스턴스 메시 자체가 대상). 스텁이 이 인자를 안 받으면
+   * `true → false` 뮤테이션이 **0 failed** 로 통과하는데, 실물에서는 미술관이 `Group`
+   * 이라 벽 검출이 **통째로 죽는다**(실측 2026-08-19).
+   *
+   * ⚠ 이 파일이 이미 두 번 적은 것의 세 번째다 — **대역이 실물 성질을 안 가지면 그 축의
+   * 검출력은 0이다.** 쓰지 않는 테스트는 인자를 무시하면 되므로 기존 호출부는 무영향이다.
    */
-  hits?: (objs: readonly unknown[]) => readonly StubHit[];
+  hits?: (objs: readonly unknown[], recursive: boolean) => readonly StubHit[];
 }
 
 /**
@@ -38,9 +68,37 @@ export interface ThreeStubOptions {
  * 의존하면 그때 이 스텁이 거짓말을 하게 되므로, 그런 의존이 생기면 여기가 아니라
  * 설계를 본다.
  */
+/** `THREE.Color` 중 이 저장소가 실제로 쓰는 것만. 값은 hex 하나다 */
+function stubColor(hex: number): { setHex(v: number): void; getHex(): number } {
+  let v = hex;
+  return { setHex(n: number) { v = n; }, getHex() { return v; } };
+}
+
 export function makeThreeStub(opts: ThreeStubOptions = {}) {
   const { rays, hits } = opts;
   class Disposable { dispose(): void { } }
+
+  /**
+   * 색을 만지는 재질 스텁 (2026-08-22).
+   *
+   * ⚠ **`Disposable` 로는 부족해졌다.** 기즈모의 「잡은 축 강조」가 `material.color.setHex()`
+   * 와 `material.opacity` 를 만지는데, 옛 스텁은 생성자 인자를 통째로 버려서 그 코드가
+   * `undefined.setHex` 로 죽었다 — 즉 **하네스가 제품이 쓰는 모양을 안 갖고 있었다.**
+   *
+   * 실물(`MeshBasicMaterial`)에 맞춘다: 옵션을 프로퍼티로 복사하되 `color` 만은 숫자가
+   * 아니라 **`Color` 모양**(`setHex`/`getHex`)으로 만든다. 그 변환이 실물에서도 일어난다.
+   */
+  class StubMaterial {
+    color = stubColor(0xffffff);
+    opacity = 1;
+    dispose(): void { }
+    constructor(opts: Record<string, unknown> = {}) {
+      for (const [k, v] of Object.entries(opts)) {
+        if (k === 'color') this.color = stubColor(v as number);
+        else (this as unknown as Record<string, unknown>)[k] = v;
+      }
+    }
+  }
 
   return {
     Raycaster: class {
@@ -48,8 +106,8 @@ export function makeThreeStub(opts: ThreeStubOptions = {}) {
       ray: StubRay = { origin: { x: 0, y: 10, z: 0 }, direction: { x: 0, y: -1, z: 0 } };
       constructor() { rays?.push(this.ray); }
       setFromCamera(): void { /* NDC 는 이 축에서 안 본다 */ }
-      intersectObjects(objs: readonly unknown[]): readonly StubHit[] {
-        return hits ? hits(objs) : [];
+      intersectObjects(objs: readonly unknown[], recursive = false): readonly StubHit[] {
+        return hits ? hits(objs, recursive) : [];
       }
     },
     Mesh: class {
@@ -62,6 +120,21 @@ export function makeThreeStub(opts: ThreeStubOptions = {}) {
       visible = false;
       renderOrder = 0;
       userData: Record<string, unknown> = {};
+      /**
+       * ⚠ **생성자 인자를 버리지 않는다**(2026-08-22). 옛 스텁은 둘 다 버렸고, 그래서
+       * 「재질을 만지는 코드」를 재려는 검사가 **재질을 찾을 방법이 없었다**(기즈모의
+       * 잡은 축 강조). 실물 `Mesh(geometry, material)` 와 같은 자리에 둔다.
+       *
+       * ⚠⚠ 위 `visible = false` 는 **실물과 다르다**(three 기본은 `true`). 이번에 함께
+       * 고치지 않았다 — 기존 검사들이 그 값 위에 서 있고, 그것을 뒤집는 것은 이 회차의
+       * 축(잡은 축 표시)과 무관한 별건이다. **알고 남긴다.**
+       */
+      geometry: unknown;
+      material: unknown;
+      constructor(geometry?: unknown, material?: unknown) {
+        this.geometry = geometry;
+        this.material = material;
+      }
     },
     Group: class {
       position = { set(): void { } };
@@ -79,7 +152,7 @@ export function makeThreeStub(opts: ThreeStubOptions = {}) {
     BoxGeometry: Disposable,
     CylinderGeometry: Disposable,
     ConeGeometry: Disposable,
-    MeshBasicMaterial: Disposable,
+    MeshBasicMaterial: StubMaterial,
     // `min.x === Infinity` 는 «빈 상자» 표시다 — 마커 반지름이 기본값으로 간다
     Box3: class {
       min = { x: Infinity, y: Infinity, z: Infinity };

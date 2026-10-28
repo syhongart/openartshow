@@ -509,8 +509,16 @@ describe('배선 — main.ts 가 충돌에도 동결을 먹이는가 (정적·�
   const src = readFileSync('frontend/js/world2/main.ts', 'utf8');
 
   it('collider 에 frozenAt 을 주입한다', () => {
+    // ⚠ **형태가 바뀌었다**(2026-08-25). 예전에는 인라인 표현식
+    // `frozenAt: (px, pz, tier) => village.lookup(...)` 을 정규식으로 못 박았는데,
+    // GLB 되읽기가 붙으면서 출처가 둘이 됐다. 표현식을 두 벌 적는 것이 **바로 그 반려
+    // 사유**였으므로(검수관 B1) 지금은 조립부가 **함수 하나**를 만들어 빌더·충돌기에
+    // 같이 준다. 여기서는 «충돌기가 그 체인을 받는가» 만 본다.
+    //
+    // 「둘이 **같은 참조**인가」는 `tests/world2-export-wiring.test.ts` 의 GX-1 이
+    // 본다 — 그쪽이 더 강한 축이라 여기에 다시 적지 않는다.
     expect(src, '★ 렌더만 동결을 본다 — 「보이는 자리 = 막히는 자리」가 깨진다')
-      .toMatch(/createCollider\(\{[\s\S]{0,200}frozenAt:\s*\(px,\s*pz,\s*tier\)\s*=>\s*village\.lookup\(/);
+      .toMatch(/createCollider\(\{[\s\S]{0,200}frozenAt:\s*[A-Za-z_$][\w$]*\s*,/);
   });
 
   it('동결이 바뀌면 충돌 캐시도 버린다', () => {

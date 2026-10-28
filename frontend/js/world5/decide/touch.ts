@@ -70,6 +70,17 @@ export function reconcile(slots: TouchSlots, liveIds: readonly number[]): TouchS
 /**
  * 새 터치를 어느 슬롯에 배정할까. 화면 좌/우 절반으로 가른다.
  * 이미 찬 슬롯이면 null — 한 손가락이 두 역할을 겸하지 않는다.
+ *
+ * ⚠ **world2 는 2026-08-21 에 이 함수를 지웠다**(`G-EDIT14`, 팀장 판정 (나)). 「화면 왼쪽
+ * 절반」 판정이 편집 모드와 충돌하는 근원이었기 때문이다 — 같은 터치가 조이스틱과
+ * `edit/input.ts` 의 `pointerdown` 에 둘 다 들어가 **물건이 선택되면서 동시에 아바타가
+ * 걸었다.** world2 는 이동을 전용 DOM 원 + `setPointerCapture` 로 옮겨 원인을 없앴다.
+ *
+ * **여기(이 세계)는 그대로 둔다** — 팀장이 「world2 만 먼저」로 범위를 좁혔고, 이 세계에는
+ * 아직 편집 모드가 없어 충돌 자체가 성립하지 않는다. **편집을 이 세계에 여는 날 함께
+ * 본다** — 그때 이 파일이 world2 와 갈라져 있다는 것을 여기서 알 수 있어야 한다.
+ * 판정 전문·선택지·기각 사유는 `frontend/js/world2/decide/touch.ts` 의 그 함수가 있던
+ * 자리 한 곳이다(여기에 다시 적지 않는다).
  */
 export function assignSlot(
   slots: TouchSlots, x: number, viewportWidth: number,

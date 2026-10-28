@@ -168,6 +168,8 @@ type RetargetCall = {
 
 type Harness = {
   session: EditSession;
+  /** 🔴 편집 토글이 터치 조작에 알린 이력 (`G-EDIT14`). 켜면 `true`, 끄면 `false` */
+  touchEdits: boolean[];
   live: Map<string, number>;
   doc: Document;
   canvas: HTMLCanvasElement;
@@ -196,6 +198,8 @@ type Harness = {
   retargeted: RetargetCall[];
   /** `orbitTo` 로 나간 시점 요청. 「키·버튼이 실제로 문에 닿았는가」를 잰다 */
   views: { cx: number; cy: number; cz: number; lift: number; radius: number; yaw: number | null }[];
+  /** 비행 문 호출 기록(검수관 명세 G1) — 「불렸는가」와 「`dt` 가 유효한가」만 본다 */
+  flies: { dt: number }[];
   /** `setShading` 으로 나간 요청(순서대로). 같은 이유로 «문에 닿았는가» 를 잰다 */
   shadings: ShadingMode[];
   /** 지금 월드가 들고 있는 셰이딩. 토글 왕복을 재려면 마지막 요청이 아니라 이것을 본다 */
@@ -280,6 +284,18 @@ function makeHarness(vf?: VillageFixture): Harness {
   // 값을 안 바꾸면 토글이 언제나 같은 자리에서 출발해 왕복 축이 통째로 빈 검사가 된다.
   let shadingNow: ShadingMode = vf?.shadingStart ?? 'material';
   const shadings: ShadingMode[] = [];
+  /**
+   * 🔴 **비행 문이 실제로 불렸는가**(검수관 명세 G1, 2026-08-19).
+   *
+   * `world2-fly-wiring.test.ts` 는 부품(`createFlyInput`·`PlayerSystem`)을 **직접** 부르고
+   * 조립은 소스 문자열로만 본다. 그래서 「배선 문자열은 그대로 두고 조용히 죽이는」 형태를
+   * 통째로 놓쳤다 — 검수관 실측 M8(`editing: () => false`)·M9(`flyBy(input, **0**, …)`)이
+   * 전체 4059건 중 **0 failed** 였다. 여기가 그 축이다: 편집을 실제로 켜고 키를 눌러
+   * **문까지 닿는지**를 본다.
+   */
+  /** 🔴 편집 토글이 터치 조작에 알린 이력 (`G-EDIT14`) — 켜고 끌 때마다 한 번씩 */
+  const touchEdits: boolean[] = [];
+  const flies: Array<{ dt: number }> = [];
   // ⚠ `add`/`remove` 가 **실제로 담는다.** 빈 함수였을 때 선택 링(`pick.ts` 의 marker)이
   // 어디에도 안 남아서 «링이 떴는가» 를 재는 축이 통째로 불가능했다 — N11 뮤테이션이
   // 0 failed 로 그 구멍을 드러냈다(2026-08-13).
@@ -305,6 +321,8 @@ function makeHarness(vf?: VillageFixture): Harness {
     cellX: 40,
     cellZ: 40,
     root: root as never,
+    // 미술관 벽(태스크 #112). 이 하네스에는 미술관이 없다 — `null` 이 사실이다.
+    glbCity: null,
     entries: () => entries,
     place: async () => null,
     lastFailure: () => null,
@@ -341,6 +359,9 @@ function makeHarness(vf?: VillageFixture): Harness {
     surfaceAt: () => 0,
     // 시점 문(W6). **실제로 불렸는가**만 기록한다 — 카메라가 어디로 갔는지는
     // `PlayerSystem` 의 일이고 `tests/world2-player-orbit.test.ts` 가 본다.
+    // 비행 문(2026-08-19). `orbitTo` 와 같은 형태로 **불렸는가만** 기록한다 — 좌표 산술은
+    // `PlayerSystem` 의 일이고 `world2-fly-wiring.test.ts` 가 본다.
+    fly: (_input, dt) => { flies.push({ dt }); },
     orbitTo: (cx, cy, cz, preset) => {
       views.push({ cx, cy, cz, lift: preset.lift, radius: preset.radius, yaw: preset.yaw });
     },
@@ -350,6 +371,9 @@ function makeHarness(vf?: VillageFixture): Harness {
       shading: () => shadingNow,
       setShading: (m: ShadingMode) => { shadingNow = m; shadings.push(m); },
     }),
+    // 🔴 폰 터치 문 (`G-EDIT14`). **문을 주는 것이 축이다** — 이것이 없으면 편집을 켜도
+    // 캔버스 드래그가 시선 회전과 기즈모 끌기에 둘 다 들어간다.
+    setTouchEditing: (on: boolean) => { touchEdits.push(on); },
   };
 
   // 팔레트 요청은 이 축과 무관하다 — 목록이 없으면 끌어다 놓기만 쓰는 정상 경로로 간다.
@@ -357,9 +381,11 @@ function makeHarness(vf?: VillageFixture): Harness {
   current = session;
   return {
     session, live, doc, canvas, entries, removed, hits, root, villageHits, villageMesh, order,
+    touchEdits,
     frozen: frozenStore,
     retargeted,
     views,
+    flies,
     shadings,
     shadingNow: () => shadingNow,
     shadeButtons: () => [...doc.querySelectorAll('#w2-edit button')]
@@ -899,7 +925,14 @@ describe('조작 경로마다 동결이 저장된다 (행위)', () => {
     fx.value = '50';
     fx.dispatchEvent(new Event('input', { bubbles: true }));
 
-    expect(h.frozen.size, '★ 수치를 쳤는데 저장되지 않았다').toBe(1);
+    // 🔴 **확정 시점이 바뀌었다** (감독 *"수치칸 타이핑이 거슬린다"* · 팀장 판정 (C),
+    // 2026-08-20). 3D 클릭으로 고르면 슬롯을 알아 `apply()` 가 화면을 즉시 맞추므로
+    // **타이핑 중에는 확정하지 않는다** — 마을의 확정은 곧 파셀 재빌드이고, 「12.5」를
+    // 치면 네 번이었다. 이 검사는 그 규약을 **양쪽으로** 못 박는다: 아직 0, 손을 떼면 1.
+    expect(h.frozen.size, '🔴 타이핑 중에 파셀을 다시 세운다 — 감독이 거슬린다고 한 그것이다').toBe(0);
+    fx.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(h.frozen.size, '★ 손을 뗐는데 저장되지 않았다').toBe(1);
     expect(
       frozenPart(h, 'building', '1,0')?.x,
       '★ 월드 좌표가 그대로 저장됐다 — 파셀 원점을 안 뺐다(건물이 파셀 하나만큼 날아간다)',
@@ -1341,6 +1374,8 @@ describe('조작 중 슬롯이 손을 따라온다 (행위)', () => {
     const [fx] = h.fields();
     fx.value = '95';
     fx.dispatchEvent(new Event('input', { bubbles: true }));
+    // 확정은 손을 뗄 때다 — 근거는 위 「수치칸이 확정하고」 검사의 주석 한 곳이다.
+    fx.dispatchEvent(new Event('change', { bubbles: true }));
     const saved = frozenPart(h, 'building', '2,-1');
     expect(saved?.x, '★ 저장된 x 가 파셀 로컬이 아니다').toBeCloseTo(15, 6);
     expect(saved?.z, '★ 저장된 z 가 바뀌었다').toBeCloseTo(3, 6);
@@ -1892,5 +1927,147 @@ describe('에셋 라이브러리 — 마을 파츠를 놓는다 (행위)', () =>
     b!.click();
     expect(() => clickAt(h)).not.toThrow();
     expect(h.doc.body.textContent, '★ 못 놓는 이유를 안 말한다').toContain('마을을 만질 수 없');
+  });
+});
+
+describe('🔴 비행 문이 **조립을 지나 실제로 불린다** — 검수관 명세 G1', () => {
+  // ── 이 축이 없어서 반려를 받았다 ──────────────────────────────────────────
+  // `world2-fly-wiring.test.ts` 는 부품을 **직접** 부르고 조립은 소스 문자열로만 본다.
+  // 그래서 배선 문자열을 그대로 둔 채 조용히 죽이는 두 형태를 놓쳤다(검수관 실측):
+  //   M8  `edit/mode.ts` 의 `editing: () => st.editing` → `() => false`   0 failed
+  //   M9  `features/overlay.ts` 의 `flyBy(input, dt, …)` → `flyBy(input, 0, …)`  0 failed
+  // 둘 다 **기능이 완전히 죽는데** 문자열은 그대로다. 여기는 `startEditMode` 를 실제로
+  // 태우므로 그 형태가 잡힌다.
+  //
+  // ⚠ **이 검사가 못 보는 것**: `features/overlay.ts` 의 위임 **본문**(제품 `OverlayHost`
+  // 가 아니라 이 하네스의 것을 쓴다) · 화면 · WebGPU.
+
+  it('🔴 편집을 켜고 `KeyW` 를 누르면 문이 불린다 — `dt` 도 유효해야 한다', async () => {
+    const h = makeHarness();
+    pressTab();                                   // 편집 on — 이 저장소가 모드를 켜는 유일한 키
+    h.doc.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
+    // rAF 는 jsdom 에서 타이머로 돈다 — 한 바퀴 이상 기다린다.
+    await new Promise((r) => setTimeout(r, 60));
+    expect(h.flies.length, '🔴 편집에서 키를 눌렀는데 비행 문이 한 번도 안 불렸다')
+      .toBeGreaterThan(0);
+    // 🔴 `dt = 0` 이면 `flyDelta` 가 `NO_DELTA` 를 내 **아무 데도 안 간다.** 문자열 검사는
+    // 이것을 못 본다(M9) — 호출은 살아 있고 인자만 틀렸기 때문이다.
+    expect(h.flies.every((f) => f.dt > 0), '🔴 dt 가 0 이하다 — 불려도 움직이지 않는다')
+      .toBe(true);
+    h.doc.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
+    pressTab();                                   // 편집 off — 다음 검사에 상태가 새지 않게
+  });
+
+  it('★ 편집이 꺼져 있으면 같은 키가 문을 안 부른다 — 주행에서 날지 않는다', async () => {
+    const h = makeHarness();
+    h.doc.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 60));
+    expect(h.flies.length, '★ 주행 중에 비행 문이 불렸다').toBe(0);
+    h.doc.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
+  });
+});
+
+describe('🔴 GS-E1 — `Esc` 취소를 **전 경로 행위로** 잰다 (검수관 명세, 블로커 H1)', () => {
+  // ── 🔴 왜 이 블록이 여기 다시 왔나 (2026-08-20) ──────────────────────────
+  // 처음에 이 파일에 붙였다가 4건 전부 실패했다 — `Cannot set properties of undefined`.
+  // 하네스의 `Harness` 가 `st` 를 노출하지 않기 때문이고, 그것은 **참**이다.
+  // 그래서 나는 *"행위로 못 잰다"* 고 적고 배선을 정적 문자열로 갈랐다.
+  //
+  // **틀렸다.** `st` **직접 대입**이 막힌 것이지 **제품 경로**가 막힌 게 아니었다 —
+  // `palette.ts:90-92` 의 `pick()` 이 팔레트 버튼 클릭으로 `pendingSrc`/`pendingPart` 를
+  // 세우고, 그 버튼은 `#w2-edit button[data-asset]`(`palette.ts:75`)로 DOM 에 있다.
+  // 이 파일의 `shadeButtons()`(`:383`)가 이미 같은 방식으로 버튼을 집고 있었다.
+  //
+  // 🔴 **정적 축은 이 결함을 못 잡는다 — 실물로 확인됐다.** 검수관 뮤테이션 G2:
+  // 배선 한 줄을 **주석 처리**하면 문자열이 소스에 남아 정적 검사는 **통과**하고
+  // `Esc` 취소만 죽는다. `GS-A1` 이 「못 잡는 것 ⓐ」로 이름 붙인 그 사각이다.
+  //
+  // ⚠⚠ **처방 갱신** — 「행위로 못 잰다」를 적기 전에 **두 방향**을 태워 본다:
+  //   ① 상태를 직접 세운다  ② **제품이 그 상태를 만드는 경로를 밟는다.**
+  // ①이 막힌 것이 ②가 막힌 것을 뜻하지 않는다. **네 회차 연속 같은 자리**였다
+  // (B1 «GLB 가 커서» → B4 «되살리는 형태는 하나» → C1 «정적 텍스트 축» → 여기).
+  //
+  // ⚠ **못 잡는 것**(통과로 적지 않는다): 실제 브라우저의 캡처 순서 — jsdom 에는 조준
+  // 세션이 없어 `aim-mode` 경로가 안 탄다(셋의 우선순위는 코드로만 확인했다) · 팔레트
+  // 버튼 **강조**가 풀리는지 · 모바일 터치 · CSS 로 실제로 읽히는지.
+
+  /** 팔레트에서 첫 파츠를 실제로 눌러 「고른 상태」를 만든다 */
+  const pickFirstPart = (): HTMLButtonElement => {
+    const b = document.querySelector<HTMLButtonElement>('#w2-edit button[data-asset]');
+    if (!b) throw new Error('팔레트 버튼이 없다 — 하네스가 패널을 안 세웠다');
+    b.click();
+    return b;
+  };
+
+  const noteText = (): string => [...document.querySelectorAll('#w2-edit .note')]
+    .map((n) => n.textContent ?? '').join(' | ');
+
+  it('🔴 고르고 → `Esc` → 취소된다 (전 경로)', () => {
+    makeHarness();
+    pressTab();
+    pickFirstPart();
+    expect(noteText(), '🔴 팔레트 클릭이 「고른 상태」를 안 만들었다').toContain('지면을 클릭하면 놓입니다');
+    expect(pressKey('Escape', 'Escape'), '🔴 편집이 Esc 를 안 삼켰다').toBe(true);
+    expect(noteText(), '🔴 Esc 가 고른 것을 안 풀었다 — 지면을 클릭하면 물건이 생긴다')
+      .toContain('고른 것을 취소했습니다');
+  });
+
+  it('🔴 아무것도 안 골랐으면 `Esc` 를 **안 삼킨다** — 다른 소비자가 살아 있어야 한다', () => {
+    makeHarness();
+    pressTab();
+    expect(pressKey('Escape', 'Escape'), '🔴 풀 것이 없는데 이벤트를 삼켰다').toBe(false);
+  });
+
+  // 🔴 **여기 있던 세 번째 케이스를 지웠다 — 검출력 0 이 실증됐다** (검수관 블로커 I1).
+  // `★ 편집을 켜자마자 키 안내가 보인다 — 첫 refresh 가 도는가(#66)` 였는데, **제목이
+  // 주장하는 축을 아무것도 안 잡았다**: `mode.ts:263`(모드 전환 끝)·`:272`(모듈 초기화)의
+  // `panel.refresh()` 를 각각 죽여도, **동시에** 죽여도 **전부 PASS** 였다(검수관 `/tmp`
+  // 클론 실측 3종). `loadPalette()`(`palette.ts:107`)가 `render()` 를 **동기로** 부르고
+  // 그 안(`:103`)에서 `panel.refresh()` 를 먼저 돌려 `keys` 를 채우기 때문이다 —
+  // `mode.ts` 쪽이 어떻게 되든 이 단언은 통과한다.
+  //
+  // **#66 축이 사라지는 것은 아니다** — `world2-edit-panel-wiring.test.ts:547` 의 3건이
+  // `dom.ts` 의 「키 안내는 분기 **밖**」을 직접 잰다(뮤테이션 E1: 분기 안으로 되돌리면
+  // **1 failed**). 여기 남겨 두면 *"#66 을 지키는 축이 하나 더 있다"* 는 **거짓 인상**만
+  // 준다 — 장식이 게이트로 세어지는 것이 이 저장소가 반복해서 당한 형태다.
+  //
+  // ⚠⚠ **여기에 처음 적었던 «`mode.ts` 의 `refresh()` 두 곳은 어떤 검사도 안 본다» 는
+  // 거짓이었다.** 실측(둘 다 제거)에서 `★ 편집을 끄면 마을 선택도 풀린다`(이 파일 `:679`)가
+  // **깨진다.** 검수관 보고는 *"그 케이스는 PASS · **다른 기존 테스트 1건**은 깨짐"* 이라고
+  // 정확히 적고 있었고, 내가 그것을 «아무 검사도 없다» 로 **잘못 일반화**했다.
+  // 참인 것은 좁다: **「키 안내가 뜨는가」축**에서만 `loadPalette` 가 가려 검출이 0 이다 —
+  // 그래서 이 케이스가 장식이었다. 남는 사각은 백로그 `G-EDIT5`.
+});
+
+// ── 🔴 GS-J2 — 편집 토글이 터치 조작에 **닿는가** (`G-EDIT14`) ────────────────
+//
+// 판정/집행 경계의 그 사각이다: `touch-controls.ts` 가 `setEditing` 을 옳게 구현해도
+// **편집이 그것을 안 부르면** 폰에서 캔버스 드래그가 여전히 두 겹으로 먹는다. 양쪽
+// 단위 테스트 어디에도 안 걸리는 자리라 통합으로 본다.
+//
+// ⚠ **이 검사가 「폰에서 실제로 안 겹친다」를 증명하지는 않는다.** 그것은 실기기 축이고
+// 헤드리스로 못 잰다(백로그 `G-EDIT14` 와 게시판에 그 한계를 적었다). 여기서 재는 것은
+// **문이 실제로 불리는가** 하나다.
+describe('🔴 GS-J2 — 편집 토글이 터치 조작에 알린다', () => {
+  it('편집을 켜면 `true` 로 한 번 알린다', () => {
+    const h = makeHarness();
+    expect(h.touchEdits, '전제 — 아직 안 켰다').toEqual([]);
+    pressTab();
+    expect(h.touchEdits, '🔴 편집을 켰는데 터치 조작이 모른다 — 캔버스 드래그가 두 겹으로 먹는다')
+      .toEqual([true]);
+  });
+
+  it('🔴 끌 때도 알린다 — 한쪽만 부르면 시선이 영영 안 돌아온다', () => {
+    const h = makeHarness();
+    pressTab();
+    pressTab();
+    expect(h.touchEdits, '🔴 편집을 껐는데 시선이 안 살아난다').toEqual([true, false]);
+  });
+
+  it('같은 상태로 다시 토글해도 이력이 어긋나지 않는다', () => {
+    // `setEditing` 이 `on === st.editing` 이면 조기 반환하므로 중복 호출이 안 쌓인다.
+    const h = makeHarness();
+    pressTab(); pressTab(); pressTab();
+    expect(h.touchEdits).toEqual([true, false, true]);
   });
 });

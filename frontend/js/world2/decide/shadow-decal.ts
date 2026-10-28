@@ -27,7 +27,7 @@
 // 아틀라스 1장·재질 1개·지오 8개 구조와 굽기 버튼은 유지하고, **셀에 그리는 그림만**
 // 길쭉한 penumbra 에서 원형 블롭으로 갈아 끼웠다.
 
-import type { SkyTime } from './night.js';
+import { paletteTime, type SkyTime, type PaletteTime } from './night.js';
 
 // ── 상수 — 노브의 fallback 이 되는 SSOT. `main.ts` 는 이것을 읽어 `readNum` 한다 ──
 
@@ -432,7 +432,7 @@ export function atlasGrid(count: number, atlasPx: number): AtlasGrid {
  * ⚠ 접촉그림자는 방향이 없으므로 **시간대가 자세를 안 바꾼다** — 예전에는 밤에 달 방위로
  * 넘어가면서 그림자가 통째로 돌았다. 지금 시간대가 움직이는 것은 이 농도 하나뿐이다.
  */
-export const DENSITY_BY_TIME: Readonly<Record<SkyTime, number>> = {
+export const DENSITY_BY_TIME: Readonly<Record<PaletteTime, number>> = {
   day: 1, sunset: 0.8, night: 0.35,
 };
 
@@ -444,7 +444,7 @@ export const DENSITY_BY_TIME: Readonly<Record<SkyTime, number>> = {
  * 자르는 자리는 `blobStops` 하나다 — 알파가 되는 지점이 거기다.
  */
 export function densityFor(time: SkyTime, base: number): number {
-  const m = DENSITY_BY_TIME[time] ?? 1;
+  const m = DENSITY_BY_TIME[paletteTime(time)] ?? 1;
   return Math.min(SHADOW_DENSITY_MAX, Math.max(0, base * m));
 }
 

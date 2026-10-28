@@ -34,6 +34,7 @@ import { garden } from './garden.js';
 import { building } from './building.js';
 import { tower } from './tower.js';
 import { tree } from './tree.js';
+import { treepit } from './treepit.js';
 import { lamp } from './lamp.js';
 import { fountain } from './fountain.js';
 import { clocktower } from './clocktower.js';
@@ -56,7 +57,11 @@ const BASE = [
   // 느슨해질 때를 위한 방어다.
   tower,
   building, lamp,
-  tree, bench, planter,
+  tree,
+  // 나무 **뒤**여야 한다. 자기 난수로 자리를 뽑지 않고 `placed` 에서 나무를 찾아
+  // 따라가므로, 앞에 두면 볼 나무가 아직 없어 하나도 안 놓인다(조용히 0개다).
+  treepit,
+  bench, planter,
 ] as const;
 
 /**

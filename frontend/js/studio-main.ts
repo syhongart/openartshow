@@ -2,7 +2,7 @@
 // 이 파일은 엔트리다 — DOM refs 수집 · 단일 state/StudioContext 생성 · 모듈 배선 · init.
 // 실제 기능은 studio-plan(플랜)·studio-image(이미지/모달)·studio-storage(영속·코덱 SSOT)·
 // studio-form(렌더·폼·이벤트)에 있다. strict 타입 정합은 별도 후속(studio strict화).
-import { readPlan, computeLimits, injectPlanBadge } from './studio-plan.js';
+import { readPlan, computeLimits, injectPlanBadge, injectPlanLimits } from './studio-plan.js';
 import { createStorage } from './studio-storage.js';
 import { createForm } from './studio-form.js';
 
@@ -11,8 +11,12 @@ import { createForm } from './studio-form.js';
 
   // ---- 플랜(studio-plan.ts): 한도/테마 상수 계산 + 배지 주입 ----
   var plan = readPlan();
-  var limits = computeLimits(plan.premium);
-  injectPlanBadge(limits.PREMIUM);
+  // 층위를 그대로 넘긴다 — `plan.premium`(boolean)을 넘기면 특별 프리미엄이
+  // 프리미엄으로 눌려 `CAN_UPLOAD_GLB` 를 잃는다(`computeLimits` 는 둘 다 받는다).
+  var limits = computeLimits(plan.tier);
+  injectPlanBadge(limits.TIER);
+  // 한도 안내도 여기서 채운다 — HTML 에 숫자를 적으면 무료/프리미엄 한쪽이 거짓이 된다.
+  injectPlanLimits(limits);
 
   // ---- 단일 state 참조 ----
   // form이 변이하고 storage가 직렬화하는 그 하나의 객체. 아래 StudioContext로 참조 주입(복사 금지).

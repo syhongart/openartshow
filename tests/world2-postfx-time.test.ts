@@ -45,16 +45,32 @@ vi.mock('three/webgpu', () => ({
   PostProcessing: FakePostProcessing,
 }));
 
+/**
+ * `pass()` 노드가 받은 것 — **발광 채널 분리를 관측하는 지점이다**(감독 2026-08-21
+ * *"딱 가로등만 살짝 번짐으로 안되나"*). 이 스텁이 실제 `PassNode` 의 계약을 재현한다:
+ * `setMRT(mrt({...}))` 로 채널을 선언하고 `getTextureNode(name)` 으로 꺼내 쓴다.
+ */
+const passState: { mrtChannels: string[] | null; taken: string[] } = { mrtChannels: null, taken: [] };
+/** `bloom()` 이 실제로 받은 소스 노드. 화면 전체인지 발광 채널인지가 여기서 갈린다 */
+let bloomSrc: { __ch?: string } | null = null;
+
 vi.mock('three/tsl', () => ({
-  // `pass()` 는 `.add()` 가 있는 노드처럼 행동하면 된다
-  pass: () => ({ add: (x: unknown) => x }),
+  pass: () => ({
+    add: (x: unknown) => x,
+    setMRT(v: { __mrt?: string[] }) { passState.mrtChannels = v?.__mrt ?? null; },
+    getTextureNode(name: string) { passState.taken.push(name); return { add: (x: unknown) => x, __ch: name }; },
+  }),
+  mrt: (o: Record<string, unknown>) => ({ __mrt: Object.keys(o) }),
+  output: { __node: 'output' },
+  emissive: { __node: 'emissive' },
 }));
 
 vi.mock('three/examples/jsm/tsl/display/BloomNode.js', () => ({
   // 실제 `bloom()` 처럼 세기를 들고 있는 노드를 돌려준다. **인자를 보관해** 세기 기본값이
   // 실제로 전달됐는지도 볼 수 있게 한다.
-  bloom: (_scene: unknown, strength: number) => {
+  bloom: (src: unknown, strength: number) => {
     bloomNode.strength.value = strength;
+    bloomSrc = src as { __ch?: string };
     return bloomNode;
   },
 }));
@@ -73,25 +89,43 @@ const { nightness } = await import('../frontend/js/world2/decide/night.js');
  * (TSL 후보정이 WebGL 백엔드에서 부팅을 깨뜨린다). 그 분기는 실기기 보호 장치이고 여기서
  * 재려는 것이 아니다.
  */
-function levelAt(time: SkyTime): { level: number; diagTime: unknown; failure: unknown } {
-  bloomNode.strength.value = -1;
-  let current = time;
-  const env = {
-    scene: {}, camera: {},
-    adapter: {
-      backend: 'WebGPU',
-      renderer: {},
-      setRenderHook() {},
-      render() {},
-    },
-    hemi: { intensity: 999 }, // **일부러 터무니없는 값** — 이것을 보면 안 된다(아래 참조)
-    time: () => current,
-    setTime: (t: SkyTime) => { current = t; },
-  };
-  const inst = postfxFeature.create(env as never)!;
-  inst.system!.update({ dt: 0.016 } as never);
-  const diag = inst.diagnostics!() as { strength: number; time: unknown; failure: unknown };
-  return { level: diag.strength, diagTime: diag.time, failure: diag.failure };
+function levelAt(
+  time: SkyTime,
+  query = '',
+): { level: number; diagTime: unknown; failure: unknown } {
+  // ── `query` 로 URL 노브를 흔든다 ──────────────────────────────────────────
+  // `create()` 와 `update()` 둘 다 `location.search` 를 읽으므로(`num('bloomfloor', …)`
+  // 는 매 프레임 읽는다) **조립 전에 세우고 끝날 때까지 유지**한다. `finally` 로 반드시
+  // 되돌린다 — 안 되돌리면 다음 검사가 남은 쿼리를 물려받아 순서 의존이 생긴다.
+  // ⚠ `query` 가 **빈 문자열이면 아무것도 건드리지 않는다.** 첫 판본은 무조건
+  // `location.pathname` 으로 밀었고, 그러자 **밖에서 `?lit=` 를 세워 두고 부르는**
+  // 기존 검사가 조용히 기본값을 재게 됐다(2건 FAIL). 헬퍼가 호출자의 전제를 지우면
+  // 안 된다.
+  const prev = location.search;
+  if (query) window.history.replaceState({}, '', query);
+  try {
+    bloomNode.strength.value = -1;
+    passState.mrtChannels = null; passState.taken = []; bloomSrc = null;
+    let current = time;
+    const env = {
+      scene: {}, camera: {},
+      adapter: {
+        backend: 'WebGPU',
+        renderer: {},
+        setRenderHook() {},
+        render() {},
+      },
+      hemi: { intensity: 999 }, // **일부러 터무니없는 값** — 이것을 보면 안 된다(아래 참조)
+      time: () => current,
+      setTime: (t: SkyTime) => { current = t; },
+    };
+    const inst = postfxFeature.create(env as never)!;
+    inst.system!.update({ dt: 0.016 } as never);
+    const diag = inst.diagnostics!() as { strength: number; time: unknown; failure: unknown };
+    return { level: diag.strength, diagTime: diag.time, failure: diag.failure };
+  } finally {
+    if (query) window.history.replaceState({}, '', prev || location.pathname);
+  }
 }
 
 describe('블룸 세기가 시간대를 따른다', () => {
@@ -101,8 +135,52 @@ describe('블룸 세기가 시간대를 따른다', () => {
     expect(level, '밤인데 블룸 세기가 0 — 가로등이 번지지 않는다').toBeGreaterThan(0);
   });
 
-  it('낮에 0 이다 — 대낮에 켜 두면 하늘이 부옇게 뜬다', () => {
-    expect(levelAt('day').level).toBe(0);
+  // ⚠ 이 자리에 `it('낮에 0 이다 — 대낮에 켜 두면 하늘이 부옇게 뜬다')` 가 있었고
+  // `toBe(0)` 을 단언했다. **단언을 약화시킨 것이 아니라 판정이 뒤집혔다.**
+  //
+  // ① 감독 지시 2026-08-22: *"지엘비 조명에 블룸효과가 없어. 별도로 약하게 해"* —
+  //    기본 시간대가 `day` 라(`main.ts:609`) 감독이 보는 화면이 정확히 이 0 이었다.
+  // ② 옛 제목의 **근거가 만료됐다** — 「하늘이 부옇게 뜬다」는 화면 전체 블룸이던
+  //    시절의 것이고, 발광 채널 분리(#244) 이후 하늘 돔은 `MeshBasicMaterial` 이라
+  //    emissive 채널에서 구조적으로 빠진다. 아래 「발광 채널만 본다」 절이 그것을 잡는다.
+  //
+  // 그래서 **낮이 0 이 아님**을 단언하되, 검출력이 줄지 않게 두 축을 함께 못 박는다:
+  // 낮에 실제로 번지는가 · 그것이 밤보다 **훨씬 약한가**(감독 요구가 "약하게" 다).
+  it('🔴 낮에도 번진다 — 감독 «지엘비 조명에 블룸효과가 없어»', () => {
+    expect(levelAt('day').level, '🔴 낮 세기가 0 — 감독이 신고한 그 화면이다')
+      .toBeGreaterThan(0);
+  });
+
+  it('🔴 낮 번짐이 밤보다 훨씬 약하다 — "별도로 약하게" 가 요구였다', () => {
+    const day = levelAt('day').level;
+    const night = levelAt('night').level;
+    // 바닥값을 밤 수준까지 올리는 뮤테이션을 잡는다. 배수를 여기 적지 않는다 —
+    // 값은 `postfx.ts` 의 `BLOOM_FLOOR` 가 소유하고 감독 판정으로 움직인다.
+    expect(day, '🔴 낮이 밤만큼 번진다 — 대낮 대비가 죽는다').toBeLessThan(night / 2);
+  });
+
+  it('🔴 낮 바닥값이 노브로 열려 있다 — 화면 판정을 감독이 해야 한다', () => {
+    const lo = levelAt('day', '?bloomfloor=0.05').level;
+    const hi = levelAt('day', '?bloomfloor=0.5').level;
+    expect(hi, '🔴 `?bloomfloor=` 가 안 먹는다 — 후보를 비교할 문이 없다')
+      .toBeGreaterThan(lo);
+  });
+
+  it('🔴 바닥값이 밤을 끌어내리거나 밀어올리지 않는다 — 낮 전용이다', () => {
+    // 바닥을 아주 낮게/높게 줘도 밤은 그대로여야 한다(`nightness=1` 이 지배).
+    const base = levelAt('night').level;
+    expect(levelAt('night', '?bloomfloor=0.01').level).toBeCloseTo(base, 9);
+    expect(levelAt('night', '?bloomfloor=0.9').level).toBeCloseTo(base, 9);
+  });
+
+  it('🔴 바닥값이 `?lit=` 하단을 갉아먹지 않는다 — 복합씬은 바닥 아래로도 내려간다', () => {
+    // 🔴 첫 판본(`Math.max(floor, nightness)`)이 정확히 이것을 깼다. 복합씬 점등을
+    // 바닥 아래로 내려도 번짐이 바닥에 걸려 멈췄다 — 감독이 `?lit=` 를 밀어도 절반만
+    // 움직이는 그 형태다. 낮 바닥과 복합씬 노브는 **서로 다른 축**이어야 한다.
+    const tiny = levelAt('daylit', '?lit=0.02').level;
+    const dayFloor = levelAt('day').level;
+    expect(tiny, '전제 — 켜져 있긴 해야 비교가 성립한다').toBeGreaterThan(0);
+    expect(tiny, '🔴 `?lit=` 를 내려도 낮 바닥에 걸려 안 내려간다').toBeLessThan(dayFloor);
   });
 
   it('노을이 밤보다 약하다 — 뒤집히면 노을에만 번진다(실제로 그랬다)', () => {
@@ -112,9 +190,14 @@ describe('블룸 세기가 시간대를 따른다', () => {
     expect(sunset, '노을이 밤보다 세다 — 판정이 뒤집혔다').toBeLessThan(night);
   });
 
-  it('세기가 nightness 에 정비례한다 — 소비 자체가 빠지면 낮도 0 이 아니다', () => {
+  it('세기가 nightness 에 정비례한다 — 바닥값 위 구간에서', () => {
     // `× nightness(time)` 를 `× 1` 로 바꾸는 뮤테이션(M2)을 잡는다. 비율을 보므로
     // 기본 세기 상수를 여기 적지 않는다.
+    //
+    // ⚠ 옛 제목은 *"소비 자체가 빠지면 낮도 0 이 아니다"* 였다. **낮은 이제 0 이 아니므로
+    // 그 문장이 더는 이 검사의 근거가 아니다**(위 「낮에도 번진다」 참조). 정비례는
+    // `nightness` 가 바닥값보다 큰 구간 — 노을·밤·복합씬 — 에서만 성립한다. 낮을 표본에
+    // 넣으면 `max` 에 걸려 비율이 깨지고, 그것은 결함이 아니라 설계다.
     const night = levelAt('night').level;
     const sunset = levelAt('sunset').level;
     expect(sunset / night).toBeCloseTo(nightness('sunset') / nightness('night'), 9);
@@ -138,5 +221,68 @@ describe('진단이 판정된 시간대를 말한다', () => {
     expect(levelAt('day').diagTime).toBe('day');
     expect(levelAt('night').diagTime).toBe('night');
     expect(levelAt('sunset').diagTime).toBe('sunset');
+  });
+});
+
+/**
+ * 🔴 **번짐 대상 — 화면 전체가 아니라 발광 채널** (감독 2026-08-21).
+ *
+ * 감독 신고: *"지엘비 건물에 조명을 단거야? 엄청쎄"* — 미술관 벽에 걸린 작품 셋이 흰
+ * 덩어리로 뭉개졌다. 원인은 문턱이 아니라 **대상**이었다. 작품은 `MeshBasicMaterial` +
+ * `toneMapped:false`(감독 지시 *"사진이 주변 환경에 영향받지 않게"*)라 원본 밝기가 그대로
+ * 나가고, 흰 그림이면 **1.0** 이다. 그런데 감독이 확정한 `?lit=0.4` 에서 가로등 휘도는
+ * **0.8835** 라 **작품이 가로등보다 밝다** — 문턱을 올리면 가로등이 **먼저** 빠진다.
+ *
+ * 그래서 밝기가 아니라 **채널**로 가른다. 가로등은 `emissiveIntensity` 로 빛나고 작품은
+ * 발광 속성이 아예 없으므로, 발광 채널만 블룸에 넣으면 **구조적으로** 갈린다.
+ *
+ * ⚠ **이 파일이 못 보는 것**: 실제 화면. 블룸의 모습·프레임 비용은 WebGPU 전용이라
+ * 감독 실기기가 유일한 판정이다. 여기서 잠그는 것은 **무엇이 블룸에 들어가는가**까지다.
+ */
+describe('🔴 번짐은 발광 채널만 본다', () => {
+  it('🔴 블룸이 화면 전체가 아니라 `emissive` 채널을 받는다', () => {
+    levelAt('night');
+    expect(bloomSrc?.__ch, '🔴 블룸이 발광 채널이 아닌 것을 받았다 — 작품이 다시 번진다')
+      .toBe('emissive');
+  });
+
+  it('🔴 MRT 로 두 채널을 선언한다 — 원본과 발광이 함께 있어야 합성이 된다', () => {
+    levelAt('night');
+    expect(passState.mrtChannels, '🔴 MRT 선언이 없다').toContain('emissive');
+    expect(passState.mrtChannels).toContain('output');
+  });
+
+  it('🔴 최종 합성은 원본 채널 위에 얹는다 — 발광만 남으면 화면이 검어진다', () => {
+    levelAt('night');
+    expect(passState.taken, '🔴 원본 채널을 꺼내 쓰지 않았다').toContain('output');
+  });
+});
+
+describe('🔴 복합씬(daylit)도 시간대 축을 탄다', () => {
+  it('낮보다 세고 밤보다 약하다', () => {
+    const day = levelAt('day').level;
+    const daylit = levelAt('daylit').level;
+    const night = levelAt('night').level;
+    // ⚠ 여기 `expect(day).toBe(0)` 이 있었다. 낮은 이제 바닥값만큼 번진다(감독 지시
+    // 2026-08-22) — 「낮보다 세다」는 축 자체는 그대로이고 비교로 바꾼다.
+    expect(daylit, '🔴 복합씬에 번짐이 0 — 가로등이 켜진 줄 모르게 된다').toBeGreaterThan(0);
+    expect(day, '🔴 낮이 복합씬만큼 번진다 — 두 씬이 구별되지 않는다').toBeLessThan(daylit);
+    expect(daylit, '🔴 복합씬이 한밤만큼 번진다').toBeLessThan(night);
+  });
+
+  it('🔴 `?lit=` 가 번짐 세기에도 닿는다 — 가로등만 움직이면 노브가 절반만 먹는다', () => {
+    // ⚠ **기본값 비교로는 못 잡는다.** `nightness` 의 `lit` 기본값이 `DAYLIT_LIGHTS` 라
+    // `nightness(time, lit)` 를 `nightness(time)` 으로 바꿔도 값이 같다 — 같은 함정을
+    // 가로등 쪽에서 이미 한 번 밟았다(검수관 C1). 그래서 **노브를 실제로 흔든다.**
+    // 관용구는 `tests/world2-url-knob.test.ts:21-23`.
+    const set = (q: string) => window.history.replaceState({}, '', q || location.pathname);
+    set('?lit=0.2');
+    const weak = levelAt('daylit').level;
+    set('?lit=0.9');
+    const strong = levelAt('daylit').level;
+    set('');
+    expect(weak, '전제 — 둘 다 번져야 비교가 성립한다').toBeGreaterThan(0);
+    expect(strong, '🔴 `?lit=` 이 번짐에 안 닿는다 — 감독이 값을 밀어도 절반만 움직인다')
+      .toBeGreaterThan(weak);
   });
 });

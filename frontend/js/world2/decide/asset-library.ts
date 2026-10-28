@@ -63,6 +63,9 @@ export const PART_LABEL: Readonly<Record<string, string>> = {
   building: '건물',
   lamp: '가로등',
   tree: '나무',
+  // 나무 발치의 흙 + 벽돌 링. 팔레트에서 단독으로 집을 일은 드물지만, 이 표는
+  // **전 종류 커버리지**가 검사되므로 빠지면 화면에 영문 `treepit` 이 뜬다.
+  treepit: '나무 밑동',
   bench: '벤치',
   planter: '화분',
 };

@@ -71,6 +71,10 @@ export function applyNightFloor(
   targets: NightTargets, time: string, tune?: NightTune,
 ): void {
   const { hemi, sun } = targets;
+  // ⚠ **여기 오는 `time` 은 이미 접힌 팔레트 시간이다**(`systems/sky.ts` 의 `reqTime`).
+  // 즉 복합씬(`daylit`)은 `'day'` 로 들어오고 이 축은 **아무것도 하지 않는다** — 밤 하한이
+  // 걸리면 노출이 밤값으로 **대입**돼(아래) 감독 요구(*"주간처럼 밝지"*)와 반대가 된다.
+  // 소비자 전수와 각각이 접히는지는 `decide/night.ts` 의 `paletteTime` 주석 **한 곳**이다.
   const f = nightFloor(nightness(time), tune);
 
   // ── 노출은 조기 반환 **앞**이다 ──────────────────────────────────────────

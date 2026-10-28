@@ -120,7 +120,13 @@ const urls = [
   { loc: `${baseUrl}/making/team/`, mod: lastDate },
   { loc: `${baseUrl}/making/valuation/`, mod: lastDate },
   { loc: `${baseUrl}/guide.html`, mod: lastDate },
-  { loc: `${baseUrl}/app/world.html`, mod: '2026-07-20' }, // 오픈월드 정식 승격일 고정(감독 결재)
+  // 🔴 2026-08-23 `app/world.html` → `app/world2.html` (감독 지시 «월드 1로 승격»).
+  // 랜딩의 «오픈월드 입장» 이 가리키는 곳과 **같아야** 한다 — 색인된 주소와 실제 진입점이
+  // 갈리면 검색으로 온 방문자만 강등된 페이지를 본다. 노출 상태의 SSOT 는
+  // `scripts/lib/entrypoints.mjs` 의 `exposure` 다.
+  // ⚠ `mod` 는 **이번 승격일**로 갱신한다. 예전 값(2026-07-20)은 world1 의 승격일이라
+  // 다른 페이지의 날짜를 물려받는 셈이 된다.
+  { loc: `${baseUrl}/app/world2.html`, mod: '2026-08-23' },
   // 개별 글 URL(devlog/<slug>.html)은 의도한 손실 — 141건의 비용 대비 실익 없음.
   // 리다이렉트 스텁(devlog/index.html, team/index.html, valuation/index.html)도 색인 제외.
 ];

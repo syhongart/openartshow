@@ -53,6 +53,8 @@
 // 최종이고, 그때는 `src` 검증 규칙(아래)이 가장 먼저 바뀌는 자리다.
 
 import type { PlacedPart } from '../parts/types.js';
+import { foldAngle } from './angle.js';
+import { normalizeArts, type ArtIssueReason, type ArtworkItem } from './artwork.js';
 import {
   SURFACE_KINDS, defaultSetting, isSurfaceKind, normalizeSetting,
   type SurfaceKind, type SurfaceSetting,
@@ -79,13 +81,27 @@ export interface OverlayItem {
   /** Y축 회전(라디안). */
   ry: number;
   /**
-   * 균등 스케일.
+   * 균등 스케일. **여전히 기본 배율이다.**
    *
-   * 비균등(sx·sy·sz)을 일부러 안 넣었다. 건물·조형물을 놓는 용도라 축별로 늘일 일이
-   * 없고, `space.ts` 가 옵션 필드를 나중에 **버전 불변으로** 더해 온 전례가 있다
-   * (`shell.entries`·`shell.floors` — 생략 = 기존 동작). 필요해지면 그 형태로 더한다.
+   * ⚠ 이 자리는 오래 *"비균등을 일부러 안 넣었다 … 필요해지면 그 형태로 더한다"* 였고
+   * **그 트리거가 발동했다**(감독 카드 판정 2026-08-22 「축별로 늘리기 — 세 방향」).
+   * 예고한 대로 `space.ts` 전례와 같은 형태 — 옵션 필드, **생략 = 기존 동작.**
    */
   s: number;
+  /**
+   * 축별 배율. **`s` 에 곱해진다** — 최종 = `s * (sx ?? 1)`.
+   *
+   * 대체가 아니라 곱인 이유: ① **버전 불변** — 없으면 `1` 이라 옛 JSON 이 그대로 돈다
+   * ② **균등 조작이 여전히 한 손잡이다** — 대체였다면 「비율이 어긋난 상태를 균등하게
+   * 키우기」가 불가능해진다 ③ 마을 파츠(`PlacedPart`)의 `sx` 는 **본래 치수**이고
+   * 여기 것은 **배수**다 — 그 차이는 `edit/target.ts` 어댑터가 흡수한다.
+   *
+   * ⚠ 곱을 클램프하지 않는다(최종이 `S_MAX²` 까지 갈 수 있다) — 클램프하면 «어느 쪽을
+   * 깎았는지»가 안 보인다. 소비자가 곱한 뒤 자기 한계로 막는 편이 진단이 쉽다.
+   */
+  sx?: number;
+  sy?: number;
+  sz?: number;
 }
 
 /**
@@ -139,8 +155,22 @@ export interface Overlay {
    *
    * 구버전 코드가 이 필드를 만나면 **조용히 무시하지 않는다** — `KNOWN_ROOT_KEYS` 검사가
    * `unknown-field` 로 보고한다(팀장이 내 브리프의 과장을 정정한 지점이다).
+   *
+   * ── ⚠ 여러 작가가 살아도 이것은 **마을 것**이다 (감독 카드 2026-08-16, W8-3) ──
+   * 작가 문서에 담겨 와도 `decide/multi-overlay.ts` 가 무시하고 `surfaces-ignored` 사유를
+   * 낸다(조용히 삼키지 않는다). 근거는 취향이 아니라 **구조**다 — 조회 키가 `kind` 하나로
+   * 굳어 `pools.create({key: kind})` → **`pools.seal()`** 로 이어지므로(`main.ts:780-795`),
+   * owner 를 키에 넣으면 `seal()` 뒤 생성 불가 · 부팅에 사용자 수 선지식 필요 · 드로우콜
+   * kind×owner 증식이 **연쇄한다.** 값이 아니라 구조가 바뀌어 `[7]` 의 델타 판정이 방패가
+   * 못 된다. **재론 트리거**: 작가별 바닥·재질 커스텀 요구가 실제로 나오는 날.
    */
   surfaces: SurfaceSetting[];
+  /**
+   * **벽에 건 작품**(W8-4, 감독 요구 *"glb 건물 벽에 작품을 걸고"*). 판정·범위·유도는
+   * 전부 `decide/artwork.ts` 가 소유하고 이 계약은 **부르기만** 한다(`surfaces` 와 같은
+   * 형태). 버전을 안 올리는 근거도 위 `surfaces` 주석 그대로다.
+   */
+  arts: ArtworkItem[];
 }
 
 export const OVERLAY_VERSION = 2;
@@ -155,7 +185,7 @@ export function emptyOverlay(): Overlay {
   //   (`:258` 이 `Object.keys(emptyOverlay())` 로 유도한다). 팀장 조건 c-2 가 경계한
   //   «정상 JSON 이 unknown-field 로 오보되는 역방향 함정» 이 이 유도 덕에 구조적으로
   //   안 생긴다 — 그래도 그 케이스를 테스트에 넣는다(조건 c-2 는 축을 요구한다).
-  return { version: OVERLAY_VERSION, items: [], parcels: [], surfaces: [] };
+  return { version: OVERLAY_VERSION, items: [], parcels: [], surfaces: [], arts: [] };
 }
 
 // ── 자산 경로 검증 (팀장 조건 c) ─────────────────────────────────────────────
@@ -216,7 +246,9 @@ export const POS_LIMIT = 100_000;
  * (검수관 P17). `|ry| ≥ 2π` 면 값이 실제로 바뀌므로 보고는 되어야 한다 — 다만 그것은
  * 잘린 것이 아니라 접힌 것이라 `validateOverlay` 가 `folded` 로 사유를 나눈다.
  */
-const foldRy = (v: unknown): number => num(v, 0) % (Math.PI * 2);
+// ⚠ **정의가 `decide/angle.ts` 로 옮겨갔다**(W8-4). 작품이 같은 접기를 복제했다가 규약이
+// 갈린 사고가 그 이유이고, 전문은 그 파일 헤더 한 곳이다. 여기서는 이름만 잇는다.
+const foldRy = foldAngle;
 
 /** 항목 하나의 수치 정규화. `normalizeOverlay` 와 `validateOverlay` 가 **함께** 쓴다. */
 function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem {
@@ -227,7 +259,24 @@ function normalizeItem(item: Record<string, unknown>, src: string): OverlayItem 
     z: clamp(item.z, -POS_LIMIT, POS_LIMIT, 0),
     ry: foldRy(item.ry),
     s: clamp(item.s, S_MIN, S_MAX, 1),
+    // 🔴 **생략은 생략으로 남긴다.** 항상 `1` 을 내면 안 만진 항목까지 키를 달고 나가고,
+    // 그러면 「이 항목은 축별을 만졌나」를 구별할 수 없다 — 버전 불변의 요점이 그것이다.
+    ...axisScale(item),
   };
+}
+
+/**
+ * 축별 배율 중 **있는 것만** 낸다. ⚠ `0` 은 `S_MIN` 으로 올린다 — 크기 0 은 편집 툴에서
+ * 흔한 입력이고, 그대로 두면 **화면에서 사라진 것**이 「커밋 가능」 판정을 받는다
+ * (이 계약이 `s` 에서 이미 겪은 형태다).
+ */
+function axisScale(item: Record<string, unknown>): Partial<Pick<OverlayItem, 'sx' | 'sy' | 'sz'>> {
+  const out: Partial<Pick<OverlayItem, 'sx' | 'sy' | 'sz'>> = {};
+  for (const k of ['sx', 'sy', 'sz'] as const) {
+    if (item[k] === undefined) continue;
+    out[k] = clamp(item[k], S_MIN, S_MAX, 1);
+  }
+  return out;
 }
 
 /** 정수로 접는다. 파셀 좌표는 격자 인덱스라 소수가 의미 없다 */
@@ -283,7 +332,12 @@ function makeParcel(px: number, pz: number, parts: PlacedPart[]): FrozenParcel {
 // ⚠️ **그 함수가 참조하는 `POS_LIMIT`·`S_MIN`·`S_MAX`·`foldRy` 는 `const` 라 TDZ 다.**
 // 그래서 이 두 줄은 **반드시 `normalizeItem` 과 그 상수들보다 아래**에 있어야 한다 —
 // 이 저장소는 `Sidebar.Scene.js` 에서 정확히 그 TDZ 로 부팅을 한 번 죽였다.
-const KNOWN_ITEM_KEYS = new Set(Object.keys(normalizeItem({}, '')));
+// ⚠ **옵션 필드가 생기면서 「빈 입력」으로는 부족해졌다**(2026-08-25). `normalizeItem({})`
+// 은 `sx·sy·sz` 를 일부러 안 내므로, 빈 입력으로 유도하면 그 셋이 화이트리스트에서 빠지고
+// `{sx:2}` 가 `unknown-field` 로 **거부된다** — 위 B4·B6 과 방향만 반대인 같은 어긋남이다.
+// 그래서 **「낼 수 있는 키 전부」를 얻는 입력**을 준다(`world2-overlay-axis-scale.test.ts`
+// 의 왕복 검사가 이 어긋남을 잡는다).
+const KNOWN_ITEM_KEYS = new Set(Object.keys(normalizeItem({ sx: 1, sy: 1, sz: 1 }, '')));
 const KNOWN_ROOT_KEYS = new Set(Object.keys(emptyOverlay()));
 const KNOWN_PART_KEYS = new Set(Object.keys(normalizePart({})));
 // 파셀 껍데기의 키도 같은 원리로 유도한다 — `parts` 는 배열이라 정규화 결과에서 못 뽑으므로
@@ -356,7 +410,8 @@ export function normalizeOverlay(raw: unknown): Overlay {
   // 가 안 생긴다(`git diff` 가 그것을 실변경으로 읽는다).
   const surfaces = SURFACE_KINDS.filter((k) => byKind.has(k)).map((k) => byKind.get(k)!);
 
-  return { version: OVERLAY_VERSION, items, parcels, surfaces };
+  const arts = normalizeArts(o.arts).items;   // 판정은 `decide/artwork.ts` 소유
+  return { version: OVERLAY_VERSION, items, parcels, surfaces, arts };
 }
 
 /**
@@ -483,6 +538,8 @@ export interface OverlayIssue {
   index?: number;
   /** 동결 파셀 인덱스. 파셀 쪽 사유에만 붙는다(`index` 는 `items` 쪽이다) */
   parcel?: number;
+  /** 작품 인덱스. 작품 쪽 사유에만 붙는다(W8-4) */
+  art?: number;
   reason:
     | 'not-object' | 'unsafe-src' | 'bad-number' | 'clamped' | 'folded'
     | 'items-not-array' | 'version-too-new' | 'version-invalid' | 'unknown-field'
@@ -498,6 +555,8 @@ export interface OverlayIssue {
     // ── W7 이 더한 사유 ──────────────────────────────────────────────────────
     /** 루트의 `surfaces` 가 있는데 배열이 아니다 — 표면 설정이 통째로 사라진다 */
     | 'surfaces-not-array'
+    /** 루트의 `arts` 가 배열이 아니다(작품이 통째로 사라진다) · 세부는 `ArtIssueReason` */
+    | 'arts-not-array' | ArtIssueReason
     /** 표면 종류를 모른다 — 칠할 자리가 없다 */
     | 'surface-unknown-kind'
     /** 표면 텍스처 경로가 안전하지 않다 — 그 맵만 버려진다 */
@@ -724,8 +783,18 @@ export function validateOverlay(
     for (const k of SURFACE_KINDS) { const v = seen.get(k); if (v) surfaces.push(v); }
   }
 
+  // ── 벽에 건 작품 (W8-4) — 사유를 **그대로 옮긴다**(다시 판정하면 두 함수가 갈린다) ──
+  let arts: ArtworkItem[] = [];
+  if (o.arts !== undefined && !Array.isArray(o.arts)) {
+    issues.push({ reason: 'arts-not-array' });
+  } else {
+    const got = normalizeArts(o.arts);
+    arts = got.items;
+    for (const a of got.issues) issues.push({ art: a.index, reason: a.reason });
+  }
+
   return {
-    overlay: { version: OVERLAY_VERSION, items, parcels, surfaces },
+    overlay: { version: OVERLAY_VERSION, items, parcels, surfaces, arts },
     issues,
     migrated: prepared.migrated,
   };

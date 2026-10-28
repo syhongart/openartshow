@@ -9,8 +9,10 @@
 //    한다. `features/overlay.ts` 의 제거 경로에 `dispose()` 가 0건이었다는 것이 조사 실측
 //    이고, W7 이 그 회수 경로를 새로 만들었다.
 // ② **그 증가를 보는 축이 라이브 게이트에 0개였다.** `[7]` 개수 불변식은 `?edit=1` 을
-//    안 연다 — `measure-invariants.mjs` 가 `WORLD2_QUERY = '?time=day&weather=clear'` 를
-//    쓰고, `?edit=1` 은 `LIVE_PAGES` 항목이라 **로드 시점 검사만** 받는다(`config.mjs`).
+//    안 연다 — `measure-invariants.mjs` 가 `WORLD2_QUERY`(값은 `world2-ready.mjs` 한 곳,
+//    여기에 리터럴로 다시 적지 않는다 — 검수관 권고 P2, 2026-08-21: 예전에 적어 둔 값이
+//    `grass=0` 이 붙으며 낡았다)를 쓰고, `?edit=1` 은 `LIVE_PAGES` 항목이라 **로드 시점
+//    검사만** 받는다(`config.mjs`).
 //    그 config 주석이 스스로 적고 있다: *"조작 중 결함을 보려면 세션을 시뮬레이션하는 별도
 //    스크립트가 필요하다 — 이 항목은 그것이 아니다."*
 //

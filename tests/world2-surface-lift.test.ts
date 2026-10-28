@@ -21,6 +21,7 @@
 // 물은 제자리에서 오르내리지 않는다. 정재파여야 한다. 아래 G-1 이 그 구별을 본다.
 
 import { describe, it, expect } from 'vitest';
+import { WAVE_AMP_DEFAULT } from '../frontend/js/world2/decide/wave.js';
 import { surfaceLift, RIVER_SEG, LIFT_LAMBDA } from '../frontend/js/world2/features/ocean.js';
 import { DEFAULT_LAYOUT } from '../frontend/js/world2/parts/types.js';
 import { RIVER_HALF, RIVER_Y, WAVE_PEAK_MAX, WAVE_CLEARANCE } from '../frontend/js/world2/decide/water.js';
@@ -110,9 +111,15 @@ describe('파셀 경계에서 수면이 이어진다 (G-2)', () => {
     for (let x = 0; x < 200; x += step) {
       worst = Math.max(worst, Math.abs(surfaceLift(x + step, 0, 2) - surfaceLift(x, 0, 2)));
     }
-    // 파장당 4점이면 인접 차는 진폭 수준을 넘지 않는다. 넘으면 표본이 파형을 놓친 것이다.
+    // 이웃 차가 **마루~골**(=2×진폭)을 넘으면 한 스텝에 파형을 통째로 건너뛴 것이다.
+    //
+    // ⚠ **임계가 진폭에 하드코딩돼 있었다** — `0.4` 는 `?wamp` 기본값이 0.2 이던 시절의
+    // `2×0.2` 다. 기본값이 0.45 로 오르자(감독 판정 2026-08-20) 어긋났고, 흐름 방향을
+    // 부채꼴로 모으면서 실측 0.311 → **0.485m** 로 올라 드러났다. 방향을 모으면 세
+    // 성분이 같은 축에서 더해지므로 커지는 것이 맞다 — 결함이 아니라 물리다.
+    // 값 미러링이 테스트 임계값에 나타난 형태이고, 이 회차에서 세 번째다.
     expect(worst, `이웃 정점 높이차 ${worst.toFixed(3)}m — 파형이 표본 사이로 샌다`)
-      .toBeLessThan(0.4);
+      .toBeLessThan(2 * WAVE_AMP_DEFAULT);
   });
 });
 

@@ -54,19 +54,40 @@
 
 import type { EditSession, OverlayHost } from './types.js';
 import { createEditState, select } from './state.js';
+import { artTarget } from './target-art.js';
 import { createPicker } from './pick.js';
 import { createGizmo } from './gizmo.js';
 import { createPanel } from './panel/dom.js';
 import { loadPalette } from './panel/palette.js';
 import { createActions } from './actions.js';
+import { createEditHistory } from './history-ops.js';
+import { createHistoryInput } from './history-input.js';
+import { createGizmoHover } from './gizmo-hover.js';
+import { createArtworkMode } from './artwork-mode.js';
+import { createAimMode } from './aim-mode.js';
 import { createInput } from './input.js';
+import { createFlyInput } from './fly-input.js';
+import type { ArtsPort } from '../systems/art-port.js';
 import { safeBack } from '../decide/shading.js';
+// ⚠ **요금제는 어댑터를 거친다** — `adapters/plan.ts` 헤더가 그 이유를 갖는다(경계 게이트가
+// 직접 import 를 막았고 그것이 옳다). 여기서 층위 값을 다시 적지 않는다(값 미러링).
+import { canUploadGlb, tierLabel } from '../adapters/plan.js';
 
 export interface EditOptions {
   /** 팔레트 목록(`assets/models/index.json`) 의 실제 주소 */
   readonly modelsUrl: string;
   /** 미리보기로 만든 임시 주소를 소비자에게 넘겨 회수하게 한다 */
   onBlobUrl(url: string): void;
+  /**
+   * 자기 GLB 를 올릴 수 있는가. **생략하면 실제 등급을 본다** — 이 저장소의 확장 규약
+   * (「생략 = 기존 동작」)이고, 테스트는 값을 넣어 두 분기를 다 돌린다.
+   */
+  readonly canUploadGlb?: boolean;
+  /**
+   * 벽에 걸린 작품 목록(W8-4 D2). **생략하면 이미지 드롭이 통째로 없다** — 「생략 =
+   * 기존 동작」 규약이고, 그래야 이 기능이 `OverlayHost` 계약을 안 건드린다(팀장 판정 (나)).
+   */
+  readonly arts?: ArtsPort;
 }
 
 export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession {
@@ -81,7 +102,16 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   st.shadingBack = safeBack(host.shading?.() ?? 'material');
 
   const picker = createPicker(host, st);
-  const gizmo = createGizmo(host);
+  // 기즈모가 「무엇을 잡았나」를 화면에 말한다(2026-08-22, 감독 지시). 3D 강조는 기즈모가
+  // 스스로 하고, 글자는 패널이 소유하므로 문을 주입한다 — `panel` 은 아래에서 만들어지지만
+  // 이 콜백은 **드래그 시작 시점**에 불리므로 그때는 채워져 있다(이 파일의 되먹임 패턴).
+  const gizmo = createGizmo(host, (msg) => { panel.say(msg); });
+  /**
+   * 작품 포트를 지역으로 잡는다 (W8-11). `opts.arts` 를 클로저 안에서 바로 쓰면 TS 가
+   * **좁힘을 못 유지한다**(선택 프로퍼티라 매 호출 시점에 다시 `undefined` 일 수 있다).
+   * 한 번 잡아 두면 아래 두 핸들러가 같은 객체를 본다 — 인스턴스가 갈릴 자리도 없다.
+   */
+  const port = opts.arts;
 
   // `panel` 은 조작 핸들러를 필요로 하고 그 핸들러는 `panel` 을 필요로 한다. 함수 선언은
   // 호이스팅되므로 **이름으로 먼저 묶고 실행 시점에 채워진 값을 본다** — 조립자가 이
@@ -93,7 +123,32 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     thawSelected: () => { actions.thawSelected(); },
     // 아웃라이너 목록 클릭 → **3D 클릭과 같은 함수.** 여기서 갈라지면 «목록으로 고른
     // 것은 기즈모가 안 붙는다» 가 나고, 그 어긋남은 화면에서만 드러난다.
-    pickVillage: (v) => { select(st, host, { village: v }); panel.refresh(); },
+    pickVillage: (v) => { select(st, host, { village: v }); panel.onPicked(); },
+    // ── 걸린 작품 (W8-11 · 감독 지시 *"그림과 액자 크기 위치를 조절"*) ────────
+    // 목록도 선택도 **포트 하나**에서 온다. 어댑터를 여기서 만드는 이유는 `select()`
+    // 주석 한 곳에 있다 — 요약하면 «`edit/state.ts` 가 작품 시스템을 알게 되지 않도록».
+    //
+    // 위 `pickVillage` 와 **같은 규약**이다: 목록 클릭이 3D 클릭과 같은 `select()` 로
+    // 이어진다. 지금은 3D 로 액자를 집는 경로가 없지만(감독 카드 「슬라이더 먼저」),
+    // 생길 때 이 줄이 그대로 그 자리가 된다.
+    artList: port && (() => port.list()),
+    pickArt: port && ((i: number) => {
+      // ⚠ **세 번째 인자를 반드시 넘긴다** — 어댑터는 화면을 모르므로, 고른 작품이
+      // 목록에서 사라진 것을 여기서 상태로 옮겨야 `refresh` 가 말할 수 있다.
+      // 마을은 이 배선이 `edit/state.ts` 에 있는데(`villageTarget` 의 `onDetach`),
+      // 작품은 어댑터를 **밖에서** 만들기 때문에 그 자리가 여기다.
+      //
+      // 🔴 직전 판본이 이 인자를 안 넘겼고 어댑터 검사는 초록이었다 — 검사가 콜백을
+      // 직접 넘기며 부르기 때문이다(검수관 3차 블로커 B-A). 지금은 `onLost` 가
+      // **선택 인자가 아니라서** 안 넘기면 `tsc` 가 막는다. 근거는 `target.ts` 한 곳.
+      //
+      // `select()` 가 `st.artLost = false` 로 먼저 리셋하므로 순서는 안전하다 —
+      // 이 콜백은 `apply`/`commit`/`remove` 안에서만, 그것도 한 번만 불린다.
+      select(st, host, {
+        art: { index: i, target: artTarget(port, i, () => { st.artLost = true; }) },
+      });
+      panel.onPicked();
+    }),
     // 시점 버튼과 시점 키는 **같은 함수**다 — `input` 이 소유하고 패널은 부르기만 한다.
     setView: (side) => { input.setView(side); },
     // 셰이딩도 마찬가지 — 버튼과 `Shift+Z` 가 한 구현을 본다(W6).
@@ -108,21 +163,95 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     setSurfaces: host.setSurfaces,
     registerPreview: host.registerPreview,
     listTextures: host.listTextures,
+    // ── 사진 걸기 → **조준 화면**(W8-6) ──────────────────────────────────
+    // W8-5 에서는 여기서 바로 걸었고(`art.pickFile`) 화면 한가운데가 패널에 가려
+    // **두 번에 한 번만** 걸렸다. 이제 조준 화면이 뜨고, 벽에 맞았는지를 **보면서**
+    // 확정한다. 걸기 자체는 여전히 `artwork-mode` 의 같은 몸통(`commit`)을 탄다.
+    hangPhoto: opts.arts && ((file: File) => { aim?.start(file); }),
     exportNow: () => { actions.exportNow(); },
+    // ── 실행취소 (2026-08-22, 감독 지시 *"워크래프트3 편집기 … 개선해봐"*) ────
+    // 버튼과 `Ctrl+Z`/`Ctrl+Shift+Z` 는 **같은 함수**다 — 시점·셰이딩이 그랬듯 갈라지면
+    // «버튼으로는 되는데 키로는 안 된다» 가 난다. 스택 소유는 `history` 하나다.
+    undo: () => { history.undo(); },
+    redo: () => { history.redo(); },
+    // 수치칸 타이핑을 한 항목으로 묶는 문. 다른 조작은 감싼 `commit()` 이 알아서 쌓는다.
+    holdEdit: () => { history.hold(); },
+    releaseEdit: () => { history.release(); },
+    canUndo: () => history.canUndo(),
+    canRedo: () => history.canRedo(),
   }, () => {
     // 선택 표시는 **둘이 짝이다** — 바닥 링(어느 것인가)과 기즈모(어떻게 움직이나).
     // 둘 다 마을 파츠에 붙는다(W4 ②-d). 기즈모가 무엇을 미는지는 `st.target` 이 알고,
     // 링은 «어느 자리인가» 라서 원본 선택을 본다 — 그래서 인자가 서로 다르다.
     picker.syncMarker();
     gizmo.attach(st.target);
+    // 🔴 **새로 고른 것의 `commit()` 을 감싼다** — 되돌리기가 조작 지점을 안 고치고도
+    // 전부 잡는 유일한 자리다(`edit/history-ops.ts` 의 「세션 배선」 절). 이 콜백은
+    // `refresh()` 끝마다 불리는데, `watch` 가 **대상이 바뀌었을 때만** 기준을 다시 뜬다.
+    history.watch(st.target);
   });
 
-  const actions = createActions(host, st, panel);
+  // 작품 모드를 **밖으로 뺐다**(W8-5). 예전에는 `createInput` 인자 안에서 인라인으로
+  // 만들었는데, 이제 소비자가 둘이다 — 드롭은 `input` 이, 「사진 걸기」 버튼은 `panel` 이
+  // 부른다. 두 곳이 각자 만들면 **인스턴스가 둘**이 되고, 그러면 같은 코드인데도
+  // 상태(`measure` 주입 등)가 갈릴 자리가 생긴다.
+  const art = opts.arts
+    ? createArtworkMode({ panel, picker, arts: opts.arts, onBlobUrl: opts.onBlobUrl })
+    : null;
+
+  // 조준 화면(W8-6). 작품 문이 없으면 이것도 없다 — 걸 것이 없는데 조준할 이유가 없다.
+  const aim = art ? createAimMode({ host, panel, picker, art }) : null;
+
+  // ── 되돌리기 스택 (2026-08-22) ───────────────────────────────────────────
+  // `panel` 뒤에 만든다 — 되돌린 뒤 무엇을 되돌렸는지 **화면이 말해야** 하기 때문이고,
+  // 위 `undo`/`redo` 핸들러가 이 상수를 **호출 시점에** 본다(조립자가 되먹임을 흡수하는
+  // 이 파일의 기존 패턴 그대로 — `actions` 가 같은 형태다).
+  const history = createEditHistory(host, st, panel, opts.arts);
+
+  // 작품 포트를 함께 넘긴다 — 내보내기가 「보낼 준비가 됐다」에 이미지도 세야 한다(D3).
+  const actions = createActions(host, st, panel, history, opts.arts);
 
   const input = createInput({
     host, st, panel, picker, actions, gizmo,
     toggleEditing: () => { setEditing(!st.editing); },
     onBlobUrl: opts.onBlobUrl,
+    // 작품 목록을 안 받았으면 이미지 드롭 자체가 없다 — 그때는 GLB 판정이 이름으로 거절한다.
+    art: art ?? undefined,
+    canUploadGlb: opts.canUploadGlb ?? canUploadGlb(),
+    tierLabel: tierLabel(),
+  });
+
+  // ── 비행 (2026-08-19, 감독 지시 *"하늘을 날아서 보고 편집하게"*) ──────────
+  //
+  // `input` 과 **나란히 두되 따로 묶는다.** 키 성격이 달라서다(누르는 동안 매 프레임 vs
+  // 한 번 누르면 한 번) — 근거는 `edit/fly-input.ts` 헤더 한 곳이다.
+  //
+  // `host.fly` 가 없는 소비자(빌더 미리보기·테스트 하네스)에서는 이 모듈이 리스너만 달고
+  // 아무 일도 안 한다 — 궤도가 `host.orbit?.()` 로 세운 규약과 같다.
+  // 되돌리기 키. `fly` 와 **같은 배치**다 — 성격이 다른 키라 따로 묶는다(그 파일 헤더).
+  const historyInput = createHistoryInput({
+    doc,
+    undo: () => { history.undo(); },
+    redo: () => { history.redo(); },
+    editing: () => st.editing,
+  });
+
+  // 얹기 강조. 근거·경계는 `gizmo-hover.ts` 헤더 한 곳이다.
+  const gizmoHover = createGizmoHover({
+    doc, canvas: host.canvas, gizmo,
+    shouldProbe: () => !st.dragging && !gizmo.dragging && st.target !== null,
+    probe: (ev) => (picker.castFrom(ev) ? picker.intersect() : null),
+  });
+
+  const fly = createFlyInput({
+    doc,
+    fly: host.fly ? (input2, dt) => { host.fly!(input2, dt); } : undefined,
+    // ⚠ **편집 중인지를 여기서 묻는다.** `bind`/`unbind` 로도 갈리지만, 루프가 한 프레임
+    // 늦게 멈추는 창이 있어 그 사이 주행에서 날아갈 수 있다. 두 겹으로 막는다.
+    // 🔴 **모달 중에는 안 난다**(검수관 반려 B1-②). `stopPropagation` 은 같은 `doc` 노드의
+    // `fly-input` 리스너를 못 막으므로, 크기·회전 모달이 열린 채로 WASD 가 그대로 날았다.
+    // 모달은 「이 하나를 조작하는 중」이라 시점이 움직이면 대상이 화면에서 달아난다.
+    editing: () => st.editing && st.modal === null,
   });
 
   // ── 모드 전환 ───────────────────────────────────────────────────────────
@@ -130,16 +259,40 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
     if (on === st.editing) return;
     st.editing = on;
     panel.setMode(on);
+    // 🔴 **폰: 캔버스 드래그가 두 겹으로 먹지 않게** (`G-EDIT14`, 팀장 판정 (나)).
+    // **켜고 끄는 양쪽에서 부른다** — 한쪽만 부르면 편집을 끈 뒤 시선이 안 돌아온다.
+    // 끊기는 것은 **시선 하나**이고 이동 조이스틱은 그대로다(그 판정 영역은 전용 원
+    // 안이라 편집과 겹치지 않는다). 무엇이 왜 끊기는지는 `ui/touch-controls.ts` 헤더
+    // 한 곳이고, 여기에 다시 적지 않는다.
+    host.setTouchEditing?.(on);
     if (on) {
       input.bind();
+      fly.bind();
+      historyInput.bind();
+      gizmoHover.bind();
       // 편집에 들어오면 주행 모드의 포인터락을 푼다. 안 그러면 커서가 없어 못 집는다.
       try { doc.exitPointerLock?.(); } catch { /* 애초에 안 걸려 있었다 */ }
       // ⚠ **이 한 줄이 2026-08-12 사고의 절반이다.** 시점 조작이 우드래그로 바뀌는데 그
       // 안내가 패널 맨 아래 작은 글씨에만 있었다. 감독은 마우스를 움직여도 화면이 안 도니
       // *"아무것도 안 먹는다"* 로 읽었다. 모드가 바뀌는 순간 크게 말한다.
-      panel.sayLead('편집 모드 — 시점은 마우스 오른쪽 버튼 드래그. 이동은 WASD 그대로.');
+      // 🔴 **이 문구가 한 번 거짓이 됐다**(검수관 조건 C1, 2026-08-19). 예전에는
+      // *"이동은 WASD 그대로"* 였는데, 비행이 **WASD 를 가져가면서** 속도(3배)·충돌(없음)·
+      // 수직축(시선을 탄다)·복원(편집을 끄면 출발점으로)이 전부 달라졌다. 그런데도 문구는
+      // 그대로였고, `Space`·`Ctrl`·`Shift` 는 **화면 어디에도 없었다.**
+      //
+      // ⚠⚠ **바로 위 네 줄이 2026-08-12 사고를 적고 있다** — 조작이 바뀌었는데 안내가
+      // 안 따라간 그 사고다. **그것을 기록한 자리에서 같은 형태를 반복했고**, 이번에는
+      // 안내가 «없는» 것이 아니라 «틀린 것을 말하는» 쪽이라 더 나빴다.
+      // **코드가 조작을 바꿀 때 문구는 저절로 따라오지 않는다.**
+      // ⚠ **「출발 자리로」는 비행·궤도가 옮긴 것만이다** — 화살표로 걸어간 거리는 대상이
+      // 아니다(그 판정과 근거는 `edit/input.ts` 의 `orbitFrom` 문단 한 곳이다, 검수관 P-C).
+      panel.sayLead('편집 모드 — WASD 로 날아서 이동 (Space 위 · C 아래).'
+        + ' 시점은 마우스 오른쪽 버튼 드래그. 편집을 끄면 출발 자리로 돌아갑니다.');
     } else {
       input.unbind();
+      fly.unbind();
+      historyInput.unbind();
+      gizmoHover.unbind();
       // ⚠ **궤도를 먼저 걷는다** (W5 E3, 팀장 조건 2·3). 편집 중에는 눈높이가 떠 있고
       // 충돌을 무시했으므로 벽 안에 서 있을 수 있다 — 주행으로 돌아가기 전에
       // `PlayerSystem` 이 둘 다 원복한다. 이 한 줄이 빠지면 감독이 편집을 끈 뒤
@@ -147,6 +300,9 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       host.endOrbit?.();
       gizmo.attach(null);
       select(st, host, null);
+      // 조준 중에 편집을 끄면 조준 화면이 화면에 남는다 — 주행하는데 「여기 걸기」가
+      // 떠 있는 형태다. pending 을 푸는 것과 같은 이유이고 같은 자리다.
+      aim?.cancel();
       st.pendingSrc = null;
       // 파츠 고르기도 함께 푼다(W6 E) — 하나만 풀면 주행에서 돌아왔을 때 «지면을
       // 클릭했더니 나무가 생긴다» 가 된다.
@@ -167,6 +323,8 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
   panel.refresh();
 
   return {
+    // 조준 진단 — **캐시된 값**이다(`types.ts` 의 규약). 게이트가 `casts` 를 본다.
+    aim: () => aim?.stats() ?? null,
     dispose() {
       // 로드 중에 떠나면 `busy` 가 `true` 로 남는다. 지금은 리스너를 다 떼므로 재진입
       // 경로가 없어 실해는 없지만, 세션을 되살리는 경로가 생기면 그때 조용히 잠긴다.
@@ -175,10 +333,17 @@ export function startEditMode(host: OverlayHost, opts: EditOptions): EditSession
       // 을 안 거치므로 여기서도 걷어야 «떠 있는 채 갇힘» 이 안 남는다.
       if (st.editing) host.endOrbit?.();
       input.unbind();
+      fly.unbind();
+      historyInput.unbind();
+      gizmoHover.unbind();
       input.unbindAlways();
+      aim?.dispose();
       panel.dispose();
       picker.dispose();
       gizmo.dispose();
+      // 스택을 비운다 — 지운 항목의 `holder` 를 붙들고 있고, 그것이 이 기능이 연 유일한
+      // 누수 경로다(근거·상한은 `decide/history.ts` 의 `HISTORY_LIMIT` 한 곳).
+      history.clear();
     },
   };
 }

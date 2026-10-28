@@ -146,8 +146,18 @@ jobs:
       - name: Install chromium (cache miss)
         if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+      # ── `ci.yml` 의 같은 단계와 **함께 갱신한다** (검수관 블로커 B1, 2026-08-19) ──
+      # 근거·실측은 `ci.yml` 의 해당 스텝 주석 한 곳이다 — 여기에 수치를 다시 적지 않는다.
+      #
+      # **이 job 에서는 더 나쁘다.** 아래 주석이 *"스크립트가 내부 마감(기본 11분)을 지켜
+      # 라운드를 끊고 리포트를 반드시 출력한다"* 고 적고 있는데, apt 가 job 상한까지
+      # 매달리면 **스크립트가 시작조차 못 해 그 마감이 작동할 기회가 없다.** 리포트 0줄로
+      # 끝나고, 그것은 이 job 이 만들어진 이유(`guide.html` 라이브 404 사고)와 정면으로
+      # 부딪힌다.
       - name: Install chromium system deps (cache hit)
         if: steps.pw-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 8
+        continue-on-error: true
         run: npx playwright install-deps chromium
       # `SMOKE_LIVE_BASE_URL` 을 주지 않는다 — `scripts/site-url.mjs` 의 실제 배포 URL 을
       # 본다. 그 env 는 로컬 로직 검증·뮤테이션 전용 주입점이다.
@@ -156,5 +166,12 @@ jobs:
       # `timeout-minutes` 는 안전망일 뿐 판정 수단이 아니다. 스크립트가 내부 마감
       # (기본 11분)을 지켜 라운드를 끊고 **리포트를 반드시 출력한다** — 러너가 job 을
       # 죽이면 페이지별 근거가 한 줄도 안 남는다(검수관 R1).
+      #
+      # ⚠ **예산을 위 apt 스텝(`timeout-minutes: 8`)까지 넣어 다시 센다**(검수관 권고 P6,
+      # 2026-08-19). 최악 경로는 «셋업 ~2분 + apt 가 8분에 잘림 + 스크립트 자체 마감
+      # ~11.5분» ≈ **21.5분** 으로 job 상한 25분 안에 남는다. 여기서 «~11.5분» 은
+      # `scripts/smoke/verify-live.mjs` 의 `DEADLINE_MS`(11분)와 `outOfTime()` 라운드
+      # 종료를 근거로 한 값이다 — 옛 주석의 «+최대 라운드 5분» 은 여유 패딩이었고,
+      # 스크립트는 실제로 11분 근처에서 스스로 끊는다.
       - name: 라이브 URL 검증 (200 · 자산 0 · 콘솔 0 · 판본 일치)
         run: npm run smoke:live

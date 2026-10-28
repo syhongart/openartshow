@@ -1,0 +1,12 @@
+[
+  {
+    "name": "V4-I24",
+    "url": "http://localhost:8123/openartshow/app/world10.html?cam=13.2,-16.6,180,0",
+    "errors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "bytes": 6490301,
+    "info": null
+  }
+]

@@ -41,7 +41,7 @@ describe('진입점 SSOT', () => {
     expect(LIVE_ENTRIES.length + FLAGGED_ENTRIES.length).toBe(ENTRYPOINTS.length);
   });
 
-  it('behind-flag 여섯 페이지가 flagged 다', () => {
+  it('behind-flag 열 페이지가 flagged 다', () => {
     // `CLAUDE.md` 가 산문으로 적어 둔 것과 코드가 어긋나면 여기서 잡힌다.
     //
     // 목록을 여기 **적어 두는 것**이 이 검사의 요점이다. `FLAGGED_ENTRIES.length` 만
@@ -69,8 +69,41 @@ describe('진입점 SSOT', () => {
     // 개발용으로만 쓸거니"*)로 **방문자에게 제공할 계획이 없는 도구**다. 즉 `flagged`
     // 가 종착지일 수 있고, 여기서 빠지는 것이 목표가 아니다.
     const flagged = FLAGGED_ENTRIES.map((e) => e.src).sort();
+    // 2026-08-18 `world2-stylized.html` 추가 — world2 와 **같은 코드**를 스타일라이즈드
+    // 룩 기본값으로 여는 페이지다(포크가 아니다 — `entrypoints.mjs` 의 그 줄). 감독이
+    // 링크 하나로 A/B 하기 위한 것이고, 라이브 노출은 다른 여섯과 같이 감독·팀장 게이트다.
+    // 🔴 2026-08-23 **`world2.html` 과 `world.html` 이 자리를 맞바꿨다** — 감독 지시
+    // *"월드 1로 승격"* + 카드 판정 「새 월드만 — 기존 것은 내린다」. world2 가 라이브가
+    // 되어 여기서 빠지고, 예전 정식 진입점이던 `world.html` 이 **강등**돼 들어왔다.
+    //
+    // ⚠ **강등은 「죽은 페이지」가 아니다.** 이 배열의 다른 여섯은 「채택 판정 전」이거나
+    // (editor 처럼) 「방문자에게 줄 계획이 없는 도구」인데, `world.html` 은 **어제까지
+    // 라이브였던 정식 서비스**다. 팀장 조건 5 로 **라이브 런타임 보호를 유지**한다 —
+    // 되돌리기가 링크 한 줄이려면 즉시 가동 가능해야 하고, 직링크 방문자는 계속 온다.
+    // 그래서 이 항목은 **여기서 빠지는 것이 목표**다(editor 와 정반대).
+    //
+    // ⚠⚠ 이 회차가 GS-3 의 양방향 대조가 **강등에도** 작동한 첫 사례다 — 승격만 잡는
+    // 줄 알았는데 역방향도 6건 빨간불이 됐다.
+    // 2026-08-25 `world7.html` 추가 — 감독 지시 *"아까 그 파일을 올려서 월드7로 해봐.
+    // 테스트로 보게"*. 내보낸 GLB 를 블렌더에서 손본 뒤 **있는 그대로** 걸어보는
+    // 페이지다. `lab-glb.html` 과 성격이 겹쳐 보이지만 다르다 — 저쪽은 **고정 파일**
+    // (`lab-space.glb`)을 걷고, 이쪽은 **사용자가 고른 파일**이 세계가 된다.
+    // 2026-08-26 `world8.html` 추가 — 감독 지시 *"월드8에 그 glb를 올려보자."*
+    // world7 과 **같은 스크립트**를 쓰고 갈리는 것은 파일이 어디서 오는가 하나다:
+    // 저쪽은 사용자가 고르고, 이쪽은 저장소에 구워 둔 고정 자산이 부팅 즉시 열린다.
     expect(flagged).toEqual([
-      'editor.html', 'lab-glb.html', 'visit.html', 'world2.html', 'world3.html', 'world5.html',
+      'editor.html', 'lab-glb.html', 'visit.html', 'world.html',
+      // 2026-09-06 `world10.html` 추가 — 뉴욕 갤러리 거리(감독 지시서 · 팀장 판정 「A」 · 감독 *"월드10으로"*).
+      // world8 과 같은 트리, 갈리는 것은 산출 GLB 와 `?cam=` 캡처 진입뿐. `docs/nyc/state.md`.
+      // 사전순이라 `world2-…` 앞이다.
+      'world10.html',
+      // 2026-09-16 `world11.html` 추가 — 맨해튼(팀장 판정 «결정 2»). world8 과 **같은 트리**
+      // (`js/world-glb/`)를 타고 갈리는 것은 `<body data-glb>` 가 가리키는 자산과 부트 파일뿐이다.
+      // world10 의 포크가 **아니다** — 대조 실측 표는 `frontend/js/world11-boot.ts` 헤더 한 곳.
+      // 사전순이라 `world10.html` 바로 뒤, `world2-…` 앞이다.
+      'world11.html',
+      'world2-stylized.html', 'world3.html', 'world5.html', 'world7.html',
+      'world8.html',
     ]);
   });
 
@@ -400,27 +433,45 @@ describe('실제 그래프에서의 판정', () => {
     expect(seen.size).toBeGreaterThan(20);
   });
 
-  it('**world2 전용 파일은 3등급, 공유 모듈은 1등급** (팀장 조건 1 의 검출력)', () => {
+  // ⚠ **표본이 2026-08-23 에 world2 → world3 으로 옮겨 갔다.** world2 가 라이브로
+  // 승격되면서 그 전용 파일이 3등급을 안 낸다 — 검사의 **기대값만** 1등급으로 바꾸면
+  // *"3등급이 실제로 나오는가"* 를 보는 축이 **통째로 사라진다.** 그것이 이 검사의
+  // 존재 이유이므로(팀장 조건 1 의 검출력), 아직 flagged 인 커널로 표본을 옮긴다.
+  // world3 도 언젠가 승격되면 같은 이유로 또 옮긴다 — flagged 가 하나도 없어지는 날이
+  // 오면 그때는 이 검사가 공허해졌다는 뜻이고, 아래 GS-4 의 「후보 실재」 검사가 그것을
+  // 먼저 잡는다.
+  it('**flagged 커널 전용 파일은 3등급, 공유 모듈은 1등급** (팀장 조건 1 의 검출력)', () => {
     // 이것이 "안 깨지면 장식이다" 라고 팀장이 못 박은 그 케이스다.
-    // `sky.js` 는 world2 가 쓰지만 라이브 world1 도 쓴다 → 승격돼야 한다.
+    // `sky.js` 는 world3 가 쓰지만 라이브 진입점도 쓴다 → 승격돼야 한다.
     const r = judge([
-      'frontend/js/world2/decide/night.ts',
+      'frontend/js/world3/decide/fog.ts',
       'frontend/js/sky.js',
     ]);
     const byFile: Record<string, number> = Object.fromEntries(
       r.rows.map((x: { file: string; tier: number }) => [x.file, x.tier]),
     );
-    expect(byFile['frontend/js/world2/decide/night.ts']).toBe(3);
+    expect(byFile['frontend/js/world3/decide/fog.ts']).toBe(3);
     expect(byFile['frontend/js/sky.js']).toBe(1);
     expect(r.tier).toBe(1); // 최종은 무거운 쪽
   });
 
-  it('world2 만 고치면 3등급이 실제로 나온다 — 안 나오면 등급 도입이 무의미하다', () => {
+  it('flagged 커널만 고치면 3등급이 실제로 나온다 — 안 나오면 등급 도입이 무의미하다', () => {
     const r = judge([
-      'frontend/js/world2/decide/night.ts',
-      'frontend/js/world2/systems/sky.ts',
+      'frontend/js/world3/decide/fog.ts',
+      'frontend/js/world3/systems/horizon.ts',
     ]);
     expect(r.tier).toBe(3);
+  });
+
+  // 🔴 승격이 등급에 **실제로 반영됐는가** (2026-08-23 신설).
+  //
+  // 위 두 검사가 표본을 옮기면서 「world2 는 이제 무슨 등급인가」를 아무도 안 보게 됐다.
+  // 승격의 요점이 *"이후 world2 의 모든 변경이 검수관을 거친다"* 인데, 그것을 보증하는
+  // 것이 바로 등급이다 — 등급이 3 으로 남아 있으면 승격은 링크만 바뀐 셈이 된다.
+  it('🔴 승격한 world2 전용 파일은 이제 **1등급**이다 — 링크만 바뀐 게 아니다', () => {
+    const r = judge(['frontend/js/world2/decide/night.ts']);
+    expect(r.tier, '★ world2 가 라이브인데 전용 파일이 3등급이다 — 승격이 등급에 안 닿았다')
+      .toBe(1);
   });
 });
 
@@ -508,23 +559,34 @@ describe('GS-4 — 라이브 world 진입점은 성능 게이트가 실제로 �
     expect(missing).toEqual([]);
   });
 
-  it('**지금은 대상이 0 이다** — 그 사실 자체를 못 박는다', () => {
-    // ⚠️ 위 검사는 현재 **빈 루프**다. 라이브 world 커널 진입점이 없기 때문이고,
-    // 빈 루프는 언제나 통과한다 — 이 저장소가 빈 표본으로 통과한 전례가 여럿이라
-    // 그냥 두면 "게이트가 있다" 는 착각만 남는다.
-    //
-    // 그래서 **0 이라는 사실을 단언한다.** 이 숫자가 늘어나는 순간(= 승격) 위
-    // 검사가 실제로 돌기 시작하고, 그 전에 여기가 먼저 빨간불이 되어 승격하는
-    // 사람에게 "성능 게이트를 함께 옮겨라" 를 알린다. **이연이 잊히지 않게 하는
-    // 장치가 바로 이 줄이다.**
-    expect(LIVE_ENTRIES.filter((e) => isKernelWorld(e.key)).map((e) => e.key)).toEqual([]);
+  // 🔴 **이 장치가 2026-08-23 에 설계대로 작동했다.**
+  //
+  // 예전 판본은 *"지금은 대상이 0 이다"* 를 단언하며 이렇게 적고 있었다 — *"이 숫자가
+  // 늘어나는 순간(= 승격) 위 검사가 실제로 돌기 시작하고, 그 전에 여기가 먼저 빨간불이
+  // 되어 승격하는 사람에게 「성능 게이트를 함께 옮겨라」 를 알린다."*
+  //
+  // world2 를 라이브로 올리자 **정확히 그렇게 됐다.** 그리고 위 검사(측정 스크립트가
+  // 그 진입점을 여는가)는 **통과했다** — `measure-invariants.mjs`·`measure-sky-warm.mjs`
+  // 가 이미 `/app/world2.html` 을 하드코딩하고 있었기 때문이다. 즉 이연이 잊히지 않았고,
+  // 옮길 것이 이미 옮겨져 있다는 것까지 이 자리에서 확인됐다.
+  //
+  // 이제 단언이 **역전된다**: 0 이 아니라 «비어 있지 않다» 를 못 박는다. 라이브 커널이
+  // 하나도 없어지면 위 검사가 다시 빈 루프가 되고, 그 착각을 여기서 잡는다.
+  it('🔴 라이브 world 커널이 **실재한다** — 비면 위 검사가 빈 루프가 된다', () => {
+    const liveKernels = LIVE_ENTRIES.filter((e) => isKernelWorld(e.key)).map((e) => e.key);
+    expect(liveKernels, '★ 라이브 커널이 0 이면 위 「측정이 연다」 검사는 아무것도 안 잰다')
+      .not.toEqual([]);
+    expect(liveKernels, '★ world2 가 라이브에서 빠졌다 — 승격이 되돌려졌나?')
+      .toContain('world2');
   });
 
   it('대상 후보가 flagged 에 실재한다 — 목록이 비면 위 두 검사가 공허하다', () => {
-    // world2·world3 가 flagged 에서 사라지면(삭제되거나 key 규칙이 바뀌면) 이
-    // 게이트 전체가 아무것도 지키지 않게 된다. 후보의 존재를 함께 못 박는다.
+    // flagged 커널이 전부 사라지면(삭제되거나 key 규칙이 바뀌면) **승격 시 이 게이트가
+    // 무엇을 지키는지**가 없어진다. 후보의 존재를 함께 못 박는다.
+    //
+    // ⚠ 2026-08-23 `world2` 를 여기서 뺐다 — 라이브로 승격돼 이제 후보가 아니라
+    // **대상**이다(위 검사가 그것을 본다). 남은 후보가 다음 승격의 시험대다.
     const flaggedKernels = FLAGGED_ENTRIES.filter((e) => isKernelWorld(e.key)).map((e) => e.key);
-    expect(flaggedKernels).toContain('world2');
     expect(flaggedKernels).toContain('world3');
     // `world5` — 결번(`world4`)을 건너뛴 숫자도 정규식이 잡는지 함께 못 박는다.
     // 접두 매칭(`startsWith('world')`)이었다면 결번과 무관했겠지만, 숫자 접미로

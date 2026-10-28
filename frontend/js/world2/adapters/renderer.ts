@@ -159,6 +159,13 @@ export async function createRendererAdapter(
   if (backend === 'WebGPU') await renderer.init();
 
   renderer.setClearColor(0x0b0d12, 1);
+  // ⚠ **명시한다 — 기본값에 기대지 않는다**(검수관 권고 P12, 2026-08-18). 값은 three
+  // 기본값과 같아서 **동작은 안 바뀐다.** 그런데 W8-7 이 작품 텍스처에 `SRGBColorSpace`
+  // 를 표시하는 근거가 «출력이 sRGB 로 인코딩된다» 이고, 그 전제가 여기 기본값 의존으로
+  // 남아 있으면 three 가 기본을 바꾸는 날 **그 표시가 조용히 무의미해진다.**
+  // 다른 월드는 전부 이미 적고 있다(`world.js`·`visit.js`·`builder.js`·`main.js`·
+  // `lab-glb.js`) — world2 만 빠져 있었다.
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;

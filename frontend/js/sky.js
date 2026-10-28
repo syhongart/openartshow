@@ -831,7 +831,17 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
   // 새 값을 기본으로 삼는 것은 world2 쪽(`systems/sky.ts`)이고, 여기서 0 인 이유는
   // world1 을 비롯한 다른 소비자의 화면을 이 파일이 말없이 바꾸지 않기 위해서다.
   // `cloudH = 0` 은 "지정 안 함" 이다 — `cloudElev` 가 0 을 `CLOUD_EPS` 로 되돌린다.
-  skyBlue = 0, cloudCurve = 0, cloudH = 0 }) {
+  // ⚠ `skyBlue` 는 **숫자 또는 함수**다. 함수인 쪽이 world2 복합씬 경로다 — 아래 별과
+  // 같은 이유이고, 값으로만 받으면 **부팅 시각에 굳어** 시간대를 바꿔도 하늘 농도가 안
+  // 따라온다(검수관 반려 B1′: 패널 「복합」 버튼이 진한 하늘에 도달하지 못했다). 숫자
+  // 기본값은 옛 소비자 그대로다.
+  skyBlue = /** @type {number | (() => number)} */ (0), cloudCurve = 0, cloudH = 0,
+  // 🔴 **별을 시간대 밖에서 켜는 문** (world2 복합씬, 2026-08-21). 매 `apply()` 마다 묻는다.
+  // 시간대 문자열로는 못 켠다 — `SKY_TIMES` 는 셋뿐이고 `LIGHT` 키와 짝이라 늘릴 수 없어,
+  // 넷째 값을 넘기면 `normalize()` 가 **조용히 버리고** 이전 값으로 되돌린다(그렇게 만들
+  // 었다가 죽은 코드가 됐다 — 검수관 반려 B1). **함수**인 것은 위 `skyBlue` 와 같은 이유다.
+  // 안 주면 `null` 이고 `?.()` 가 `undefined` 라 야간 판정만 남는다 — world1 무영향.
+  wantStars = /** @type {(() => boolean) | null} */ (null) }) {
   const state = { time: 'day', weather: 'clear', fx: { rainbow: false, aurora: false }, flashSafe: false, precip: 1 };
   // ── B-2 저사양 오버드로우 축소 ──
   // 모바일 타일드 GPU는 불투명 오브젝트의 오버드로우는 제거하지만 transparent·가산블렌딩 레이어
@@ -1296,7 +1306,9 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     const L = lightOf(state.time, state.weather, fogTint);
     const fade = (o.fade === undefined ? 1.8 : o.fade) * (soft ? 0 : 1); // 저사양은 스냅
     // `fogTint` 를 돔 페인터에도 넘긴다 — 안 넘기면 지평선만 원래 색으로 남아 ⑨ 가 깨진다.
-    const pOpts = { soft, lowRes: false, fogTint, blue: skyBlue, curve: cloudCurve, cloudH }; // 돔 2048 고정(위 주석) — 저해상 별 경로 사용 안 함
+    // `blue` 를 **여기서** 푼다 — 함수면 매 페인트마다 묻는다(옵션 주석). 이 줄이 돔을
+    // 굽는 유일한 자리라, 여기서 풀면 전환 경로가 자동으로 따라온다.
+    const pOpts = { soft, lowRes: false, fogTint, blue: typeof skyBlue === 'function' ? skyBlue() : skyBlue, curve: cloudCurve, cloudH }; // 돔 2048 고정(위 주석) — 저해상 별 경로 사용 안 함
     if (changedDome && fade > 0) {
       paintSky(domeB.ctx, DOME_W, DOME_H, state.time, state.weather, pOpts);
       domeB.tex.needsUpdate = true;
@@ -1327,8 +1339,9 @@ export function createSkySystem({ scene, renderer, sun, hemi, sky, getPos, soft 
     cloudFade.to = wantCloud ? 1 : 0;
     if (phase !== 1) { cloudMesh.material.opacity = cloudFade.to; cloudMesh.visible = cloudFade.to > 0 && !lite; }
 
-    // 별 반짝임 — 야간 맑음만. update가 twkBase를 목표로 부드럽게 올리고 opacity를 진동시킨다.
-    const wantTwk = state.time === 'night' && state.weather === 'clear';
+    // 별 반짝임 — 야간 맑음, **그리고 `wantStars` 가 참일 때**(옵션 주석 참조).
+    // ⚠ world1 은 그 옵션을 안 주므로 `?.()` 가 `undefined` → 동작 바이트 동일이다.
+    const wantTwk = (state.time === 'night' || wantStars?.() === true) && state.weather === 'clear';
     twkTarget = wantTwk ? 1 : 0;
     for (const w of twk) w.mesh.visible = (wantTwk || twkBase > 0.01) && !lite; // lite 시 별 레이어 숨김(구름과 동형 게이트)
     if (soft) twkBase = twkTarget; // 저사양은 스냅

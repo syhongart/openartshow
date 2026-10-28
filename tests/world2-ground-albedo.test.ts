@@ -166,12 +166,16 @@ class FakeColor {
 function fakePools(over: Partial<Record<string, unknown>> = {}): MaterialSource & {
   mats: Record<string, { color: FakeColor }>;
 } {
-  const mats: Record<string, { color: FakeColor }> = {
-    ground: { color: new FakeColor() },
-    garden: { color: new FakeColor() },
-    road: { color: new FakeColor() },
-    lamp: { color: new FakeColor() },
-  };
+  // ── 지면 목록을 손으로 적지 않는다 (2026-08-06) ──────────────────────────
+  // 예전엔 `ground · garden · road · lamp` 를 나열했다. 나무 발치 pit 을 추가하자
+  // `missing` 에 그것이 잡혀 *"풀에 없는 파츠를 조용히 넘기지 않는다"* 가 깨졌다 —
+  // 검사는 제 일을 했고, 드러난 것은 **소스가 이미 유도하는 목록을 테스트만 베껴
+  // 적고 있었다**는 사실이다(`GROUND_KEYS` = `groundBase` 를 신고한 파츠).
+  //
+  // `lamp` 는 지면이 아니라 밤 조명 쪽 표본이라 따로 넣는다 — "지면 아닌 재질은
+  // 건드리지 않는다" 를 확인하는 케이스가 이 값을 쓴다.
+  const mats: Record<string, { color: FakeColor }> = { lamp: { color: new FakeColor() } };
+  for (const key of GROUND_KEYS) mats[key] = { color: new FakeColor() };
   return {
     mats,
     materialOf: (key: string) => (key in over ? over[key] : mats[key] ?? null),

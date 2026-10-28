@@ -149,6 +149,37 @@ describe('수축 소멸 — 사라질 때도 팝이 없다', () => {
     expect(slow).toBeGreaterThan(0.5); // 2.0s 수축이 0.2s 만에 절반 아래로 내려가면 안 쓴 것
   });
 
+  it('🔴 **GS-S2ⓐ** — `shrinkSecs: 0` 은 「즉시」다, 「안 줌」이 아니다 (검수관 블로커 D2)', () => {
+    // ── 왜 이 검사가 생겼나 (2026-08-20) ──────────────────────────────────
+    // 퇴장 수축 승격으로 **`0` 의 의미가 바뀌었다.** 그전에는 `readParcelAnim().shrink`
+    // 의 기본이 0 이어서 `0` = 「노브 미지정」이었고, `main.ts` 가 `> 0 ? … : undefined`
+    // 로 그것을 흡수해 기본값으로 되돌리는 것이 **맞는 코드**였다. 승격 후 `0` 은
+    // **「명시적으로 끔」**이다 — 흡수를 남기면 `?shrink=0` 이 여기 못 닿는다.
+    //
+    // 폴백이 `??`(nullish)인 것이 이 검사의 근거다: `0` 은 유효한 값이라 통과하고
+    // 「안 줌」(undefined)만 `SHRINK_SECONDS` 로 간다. **그 성질을 행위로 못 박는다** —
+    // `?? ` 를 `||` 로 바꾸는 순간 0 이 삼켜지고, 그때 이 검사가 빨간불이 된다.
+    //
+    // ⚠ **못 잡는 것**: `main.ts` 가 이 값을 실제로 넘기는지(그쪽은 GS-S2ⓑ 정적 축) ·
+    // 화면에서 정말 즉시 사라지는지 · WebGPU.
+    const mkWith = (shrinkSecs?: number) => {
+      const { pools, calls } = stubPools();
+      const grow = new ParcelGrowSystem({ pools, duration: 0.4, shrinkSecs, gate: () => true });
+      const pool = createSlotPool(pools, undefined, grow.sink());
+      const h = pool.acquire('building')!;
+      pool.setTransform(h, T.x, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+      grow.update({ dt: 10, hidden: false } as never);
+      pool.release(h);
+      grow.update({ dt: 0.05, hidden: false } as never); // 아주 짧게만 흘린다
+      return last(calls, h).sy / T.sy;
+    };
+    // 0 = 즉시 → 0.05s 만에 이미 사라져 있어야 한다.
+    expect(mkWith(0), '🔴 `?shrink=0` 이 「안 줌」으로 삼켜졌다 — 되돌리는 문이 막힌다')
+      .toBeLessThan(0.05);
+    // 대조: 안 주면 기본(0.25s)이라 0.05s 에는 아직 남아 있다.
+    expect(mkWith(undefined), '🔴 「안 줌」이 기본값으로 안 갔다').toBeGreaterThan(0.05);
+  });
+
   it('shrinkEase 가 수축 곡선을 실제로 바꾼다 — ?shrinkease= 노브의 집행 검사', () => {
     // 같은 시간(수축 25% 지점)에서: 'out'(종전)은 초반 가속이라 많이 줄었고,
     // 'in'(초반 느림)은 아직 거의 그대로여야 한다. 등장 ease 와 분리됐다는 증거다.
@@ -257,5 +288,68 @@ describe('성장 중에 편집이 자세를 밀어도 되감기지 않는다', (
     pool.release(h); // 스트리밍이 그 파셀을 걷는다 → 수축이 시작된다
     grow.update({ dt: 0.05, hidden: false } as never);
     expect(last(calls, h).x, '★ 반납이 시작되자 건물이 옛 자리로 튀었다').toBe(T.x + 10);
+  });
+});
+
+// ── 🔴 GS-I3 「연출 없이」가 grow 까지 도달하는가 (팀장 조건 2의 마지막 칸) ────
+//
+// ⚠ **이 블록은 뮤테이션이 사각을 실측한 뒤에 생겼다** (2026-08-20). 커밋 메시지에
+// *"스위치를 받은 실제 풀이 `grow.place`/`grow.retire` 를 정말 건너뛰는지는 이 하네스에
+// 안 들어온다 — 그 축은 지금 **검사가 없다**"* 라고 적었고, executor 뮤테이션 P6·P7
+// (`if (!instant)` 조건 제거)이 **0 failed** 로 그 문장을 참으로 확인했다.
+//
+// 🔴 **그런데 「검사가 없다」는 「자리가 없다」가 아니었다.** 이 파일 헤더가 이미
+// *"실제 `createSlotPool` + 실제 `ParcelGrowSystem` 을 스텁 풀 위에서 돌린다"* 라고
+// 적고 있다 — 자리는 처음부터 있었고 내가 **안 쓴** 것이다. 「없다」와 「안 했다」를
+// 구별해 적지 않으면 다음 사람이 그 축을 **원리적 사각**으로 읽는다.
+describe('🔴 GS-I3 — 즉시 모드에서는 성장·수축을 아예 안 탄다', () => {
+  it('🔴 `setInstant(true)` 뒤 놓인 슬롯은 **처음부터 완성 크기**다', () => {
+    const { pools, calls } = stubPools();
+    const grow = new ParcelGrowSystem({ pools, duration: 0.4, gate: () => true });
+    const pool = createSlotPool(pools, undefined, grow.sink());
+    pool.setInstant?.(true);
+    const h = pool.acquire('building')!;
+    pool.setTransform(h, T.x, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+    const c = last(calls, h);
+    // 종전 경로는 여기서 `T.sx * 0.05` 미만으로 줄어 있다(이 파일 첫 검사가 그것을 잰다).
+    expect(c.sx, '🔴 즉시 모드인데 성장이 돌았다 — 0.4초 자라난다').toBe(T.sx);
+    expect(c.sy, '🔴 즉시 모드인데 성장이 돌았다').toBe(T.sy);
+  });
+
+  it('★ **등가 대조군** — 스위치를 껐다 놓으면 종전대로 자란다', () => {
+    const { pools, calls } = stubPools();
+    const grow = new ParcelGrowSystem({ pools, duration: 0.4, gate: () => true });
+    const pool = createSlotPool(pools, undefined, grow.sink());
+    pool.setInstant?.(true);
+    pool.setInstant?.(false);
+    const h = pool.acquire('building')!;
+    pool.setTransform(h, T.x, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+    expect(last(calls, h).sx, '🔴 껐는데도 연출이 안 돌아왔다 — 스위치가 한 방향이다')
+      .toBeLessThan(T.sx * 0.05);
+  });
+
+  it('🔴 `setInstant(true)` 뒤 반납은 **수축 없이 즉시** 슬롯을 놓는다', () => {
+    const { pools, calls } = stubPools();
+    const grow = new ParcelGrowSystem({ pools, duration: 0.4, gate: () => true });
+    const pool = createSlotPool(pools, undefined, grow.sink());
+    const h = pool.acquire('building')!;
+    pool.setTransform(h, T.x, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+    calls.delete(h);
+    pool.setInstant?.(true);
+    pool.release(h);
+    // 스텁 `pools.release` 가 `index = -1` 을 찍는다 — 그 자리에서 죽었다는 뜻이다.
+    expect((h as unknown as { index: number }).index, '🔴 수축이 끝날 때까지 슬롯을 쥐고 있다')
+      .toBe(-1);
+  });
+
+  it('★ **등가 대조군** — 즉시가 아니면 반납이 수축 뒤로 밀린다', () => {
+    const { pools } = stubPools();
+    const grow = new ParcelGrowSystem({ pools, duration: 0.4, gate: () => true });
+    const pool = createSlotPool(pools, undefined, grow.sink());
+    const h = pool.acquire('building')!;
+    pool.setTransform(h, T.x, T.y, T.z, T.ry, T.sx, T.sy, T.sz);
+    pool.release(h);
+    expect((h as unknown as { index: number }).index, '🔴 수축을 안 태우고 즉시 반납했다 — 종전 동작이 깨졌다')
+      .not.toBe(-1);
   });
 });

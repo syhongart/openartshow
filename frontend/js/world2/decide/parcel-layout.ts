@@ -131,10 +131,14 @@ export function parcelLayout(
 /**
  * 놓인 부품의 점유 반경. 종류를 몰라도 되게 하는 조회 한 겹.
  *
+ * ⚠ **붓(`edit/actions.ts` 의 `paintAt`)이 이것을 쓴다**(2026-08-22) — 한 붓질 안에서
+ * 점끼리 얼마나 떨어져야 하는지를 여기서 얻는다. 붓이 자기 간격 규칙을 따로 적으면
+ * 파츠가 크기를 바꿀 때 한쪽만 따라오고, 증상은 **나무가 서로 파고드는** 형태다.
+ *
  * 모르는 종류는 0 이다 — 겹침 판정에서 빠진다. 파츠 목록에 없는 것이 배치에 들어 있을
  * 수는 없으므로 실질적으로 도달하지 않지만, 0 을 돌려주는 쪽이 안전하다(임의의 큰 값을
  * 돌려주면 모르는 종류 하나가 파셀 전체를 비워 버린다).
  */
-function radiusOf(p: PlacedPart): number {
+export function radiusOf(p: PlacedPart): number {
   return specFor(p.kind)?.footprint(p) ?? 0;
 }

@@ -16,6 +16,7 @@
 import { ndcOf, rayPlaneY, snapTo } from '../decide/edit-pick.js';
 import { parcelOf } from '../decide/edit-pick.js';
 import { matchPart } from '../decide/village-pick.js';
+import { mul3x3, toWorldNormal, type WallHit } from '../decide/artwork.js';
 import { isShadowKey } from '../systems/shadow-decal.js';
 import type { Ray3 } from '../decide/gizmo-math.js';
 import type { OverlayEntry, OverlayHost, RaycastMesh, VillagePick } from './types.js';
@@ -24,6 +25,25 @@ import { SNAP, type EditState, type ThreeNS } from './state.js';
 export interface Picker {
   /** 이 이벤트 좌표로 광선을 갱신한다. 캔버스 밖이면 `false` */
   castFrom(ev: { clientX: number; clientY: number }): boolean;
+  /**
+   * **화면 한가운데**로 광선을 갱신한다 (W8-5). 캔버스 크기를 못 재면 `false`.
+   *
+   * ── 왜 형제 함수인가 — 좌표의 **출처**가 다르다 ──────────────────────────
+   * `castFrom` 은 좌표가 **이벤트에서** 온다(마우스·드래그드롭). 그런데 모바일에는 그
+   * 이벤트가 없다 — 파일 선택(`<input type="file">`)의 `change` 에는 좌표가 없고,
+   * 모바일 브라우저는 파일 드래그드롭을 지원하지 않는다. 그래서 좌표를 **카메라에서**
+   * 받는다: 「벽을 화면 가운데 두고 버튼을 누른다」가 조작 모형이다.
+   *
+   * ⚠ **`castFrom({clientX:0, clientY:0})` 과 다르다.** 그것은 캔버스 **좌상단**을 쏜다.
+   * 이 구분이 조용히 틀리면 «버튼을 눌러도 엉뚱한 데가 잡힌다» 가 되고, 화면에서는
+   * «가끔 된다» 로만 보인다 — 뮤테이션 축으로 잡아 둔 자리다.
+   *
+   * ⚠⚠ **이 형태를 고른 것은 팀장 판정 (가)다**(2026-08-17). 「고르기 → 벽 탭」 2단계는
+   * 상호배타 불변식 5곳 + `input.ts` 동결(여유 0줄) + 터치 이중 입력을 함께 열어야 한다.
+   * 「(나)로 전환할 때 **좌표 공급부만** 교체되면 된다」가 팀장 조건이고, 그래서 이 함수는
+   * `castFrom` 과 같은 층에 같은 반환 규약으로 선다.
+   */
+  castCenter(): boolean;
   /** 광선이 **지면**과 만나는 자리(표면 높이 반영 + 스냅) */
   groundAt(): { x: number; z: number } | null;
   /** 광선이 주어진 높이의 수평면과 만나는 자리(스냅) */
@@ -42,6 +62,15 @@ export interface Picker {
    * `decide/village-pick.ts` 헤더에 있다.
    */
   pickVillage(): VillagePick | null;
+  /**
+   * 광선이 맞힌 **면**(점 + 월드 법선). 없으면 `null` (W8-4 D).
+   *
+   * ⚠ **「벽인가」를 여기서 판정하지 않는다.** 이 함수는 맞힌 면을 **그대로** 준다.
+   * 벽 여부는 `decide/artwork.ts` 의 `wallPose()` 가 `null` 로 답한다 — 판정은 순수
+   * 계층이 소유하고 여기는 배선이라는 이 저장소의 경계 그대로다. 여기서 걸러 버리면
+   * 「왜 안 걸리는가」의 사유가 두 곳으로 갈린다.
+   */
+  pickFace(): WallHit | null;
   /** 지금 광선. 기즈모 산술이 쓴다(three 타입을 순수 계층에 넘기지 않으려고 평평하게 준다) */
   ray(): Ray3;
   /**
@@ -82,9 +111,24 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
   marker.renderOrder = 999;
   (host.root as unknown as { add(o: never): void }).add(marker as never);
 
+  function rectOf(): DOMRect {
+    return (canvas as unknown as { getBoundingClientRect(): DOMRect }).getBoundingClientRect();
+  }
+
   function castFrom(ev: { clientX: number; clientY: number }): boolean {
-    const rect = (canvas as unknown as { getBoundingClientRect(): DOMRect }).getBoundingClientRect();
-    const ndc = ndcOf(ev.clientX, ev.clientY, rect);
+    const ndc = ndcOf(ev.clientX, ev.clientY, rectOf());
+    if (!ndc) return false;
+    raycaster.setFromCamera(ndc, host.camera);
+    return true;
+  }
+
+  function castCenter(): boolean {
+    // 중앙 **클라이언트 좌표**를 지어 `ndcOf` 에 태운다 — NDC `(0,0)` 을 직접 넣지 않는
+    // 것이 요점이다. 폭·높이 0 을 거르는 가드가 `ndcOf` 안에 있고(그것이 없으면 나눗셈이
+    // `Infinity` 를 내 조용히 아무것도 안 맞는다), 여기서 (0,0)을 손으로 넣으면 그 가드를
+    // **우회**한다. 계산 경로가 하나여야 두 함수가 같이 낡거나 같이 고쳐진다.
+    const rect = rectOf();
+    const ndc = ndcOf(rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
     if (!ndc) return false;
     raycaster.setFromCamera(ndc, host.camera);
     return true;
@@ -187,6 +231,164 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
     return null;
   }
 
+  /** 레이캐스트 히트에서 벽 검출이 쓰는 필드만. 전부 선택 — 실물이 안 줄 수 있다 */
+  type FaceHit = {
+    object?: unknown;
+    instanceId?: number;
+    distance?: number;
+    point?: { x: number; y: number; z: number };
+    face?: { normal: { x: number; y: number; z: number } } | null;
+  };
+
+  /** 히트 하나를 벽으로 환원한다. 못 하면 `null` — 부르는 쪽이 다음 히트를 본다 */
+  function faceOf(hit: FaceHit, m: ArrayLike<number> | null): WallHit | null {
+    if (!hit.face || !hit.point || !m) return null;
+    const n = toWorldNormal(hit.face.normal, m);
+    if (!n) return null;
+    return { point: { x: hit.point.x, y: hit.point.y, z: hit.point.z }, normal: n };
+  }
+
+  /**
+   * 오버레이 GLB 의 첫 유효 면 + 그 거리.
+   *
+   * ⚠⚠ **`intersect()` 를 안 쓴다 — 허용목록으로 쏜다**(검수관 권고 P1). 선택 링(`marker`)과
+   * 기즈모 그룹이 **`host.root` 의 자식**이라 `intersect()` 에 그대로 잡히는데, `faceOf` 는
+   * 「벽인가」를 판정하지 않고 **법선을 계산할 수 있는 첫 면**을 그대로 낸다. 그래서 광선
+   * 앞에 UI 가 있으면 그 면이 이기고 `wallPose` 가 거절해 **뒤에 진짜 벽이 있는데도**
+   * «벽에 놓아 주세요» 가 뜬다.
+   *
+   * 숨은 링도 해당한다 — **three r171 은 레이캐스트에서 `visible` 을 안 본다**(`layers` 만
+   * 본다). `marker.visible = false` 는 보호가 아니다.
+   *
+   * 허용목록으로 잡은 것이 요점이다: `pick()` 이 `entryOf()` 로 **등록된 항목만** 통과시키는
+   * 것과 같은 원리이고, 검수관이 짚은 «두 규약이 갈린 축» 을 여기서 닫는다. UI 는
+   * 배제 목록에 이름을 올려서가 아니라 **구조적으로** 못 들어온다.
+   */
+  function faceInOverlay(): { hit: WallHit; d: number } | null {
+    const holders = new Set(host.entries().map((e) => e.holder as unknown));
+    if (holders.size === 0) return null;
+    for (const h of raycaster.intersectObjects([...holders], true)) {
+      const hit = h as FaceHit;
+      const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
+        ?.matrixWorld?.elements ?? null;
+      const w = faceOf(hit, mw);
+      if (w) return { hit: w, d: hit.distance ?? Infinity };
+    }
+    return null;
+  }
+
+  /** 맞힌 인스턴스의 행렬. `pickVillage` 의 `mat` 과 **다른 변수**여야 한다(같은 광선에서 둘 다 쓴다) */
+  const faceMat = new THREE.Matrix4();
+
+  /**
+   * 마을 파츠(인스턴스 건물·나무)의 첫 유효 면 + 거리 (감독 판정 2026-08-17).
+   *
+   * ⚠ **법선이 두 변환을 거친다** — 인스턴스 행렬(`getMatrixAt`)과 그 메시의
+   * `matrixWorld`. 하나만 곱하면 파셀이 원점에서 멀수록 액자가 엉뚱한 데를 본다.
+   * 그리고 마을 파츠는 **비균등 스케일**(`parts/building.ts` 의 `sx: w, sy: h, sz: d`)이라
+   * `toWorldNormal` 이 정규행렬을 쓰게 바뀌었다 — 근거는 그 함수 주석 한 곳이다.
+   */
+  function faceInVillage(): { hit: WallHit; d: number } | null {
+    const inst = host.instances;
+    if (!inst) return null;
+    // ⚠⚠ **레이캐스트 전에 반드시** — 근거는 `pickVillage` 의 같은 줄에 있다.
+    inst.refreshBounds();
+    const targets = inst.raycastTargets();
+    if (targets.length === 0) return null;
+    for (const h of raycaster.intersectObjects(targets as unknown[], false)) {
+      const hit = h as FaceHit;
+      if (typeof hit.instanceId !== 'number') continue;
+      const owner = inst.ownerAt(hit.object, hit.instanceId);
+      if (!owner) continue;
+      // 그림자 데칼은 **벽이 아니다.** 안 거르면 지면 근처 드롭이 여기서 끝나고,
+      // 데칼은 눕힌 판이라 `wallPose` 가 어차피 거절해 «왜 안 걸리지» 만 남는다.
+      if (isShadowKey(owner.key)) continue;
+      (hit.object as RaycastMesh).getMatrixAt(hit.instanceId, faceMat);
+      const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
+        ?.matrixWorld?.elements;
+      // 메시가 원점에 있으면 `matrixWorld` 없이도 맞지만 **가정하지 않는다.**
+      const m = mw ? mul3x3(mw, faceMat.elements) : faceMat.elements;
+      const w = faceOf(hit, m);
+      if (w) return { hit: w, d: hit.distance ?? Infinity };
+    }
+    return null;
+  }
+
+  /**
+   * 🔴 **미술관 GLB 의 첫 유효 면 + 거리** (태스크 #112, 2026-08-19).
+   *
+   * 위 둘과 형태가 같고 대상만 다르다 — 미술관은 인스턴스가 아니라 **일반 메시 트리**라
+   * `getMatrixAt` 없이 `matrixWorld` 만 곱한다(`faceInOverlay` 와 같은 경로).
+   *
+   * ⚠ **허용목록이다.** 여기 오는 것은 `host.glbCity` 하나이고, 그 값의 출처는
+   * `glbCity` 기능의 `wallRoot()` 한 곳이다 — 씬을 통째로 쏘면 하늘·지면·풀·사람·
+   * 기즈모가 전부 걸리고, `faceOf` 는 「벽인가」를 판정하지 않으므로 **앞에 있는 아무
+   * 면이나 이긴다**(검수관 P1 이 `faceInOverlay` 에서 이미 닫은 사고 형태다).
+   *
+   * ⚠⚠ **이 함수는 이 파일에서 가장 비쌀 수 있다.** 미술관 자산은 메시가 수십 개이고
+   * 삼각형이 십만 단위다. three 는 메시별 경계구로 먼저 거르므로 **안 겨누면 구 검사
+   * 몇십 번**이지만, 겨누는 동안에는 그 메시의 삼각형을 전수 훑는다. 그리고 조준 모드는
+   * `pickFace()` 를 주기적으로 재판정한다(`decide/aim.ts` 의 `AIM_MIN_MS`).
+   *
+   * 🔴 **그 비용을 이 저장소는 로컬에서 못 잰다** — 헤드리스는 swiftshader 라 프레임
+   * 시간을 일부러 안 잰다. **감독 실기기가 유일한 판정이다.**
+   *
+   * ⚠ **수치·근본 처방(BVH)·재론 조건은 백로그 `G-ART1` 한 곳이다 — 여기에 값을 다시
+   * 적지 않는다.** 첫 판본이 그렇게 선언해 놓고 **바로 위 문단에서 41·162,902·47,400·
+   * 12.5Hz 를 적고 있었다**(검수관 권고 P6). 자산을 교체하면 한쪽만 낡는다.
+   */
+  function faceInGlbCity(): { hit: WallHit; d: number } | null {
+    const g = host.glbCity;
+    if (!g) return null;
+    // 하나짜리 배열로 쏜다 — 이 저장소의 좁힌 `Raycaster` 타입에 `intersectObject`(단수)가
+    // 없다. 있는 것만 쓰는 것이 그 좁힘의 목적이다.
+    for (const h of raycaster.intersectObjects([g as unknown], true)) {
+      const hit = h as FaceHit;
+      const mw = (hit.object as { matrixWorld?: { elements?: ArrayLike<number> } } | undefined)
+        ?.matrixWorld?.elements ?? null;
+      const w = faceOf(hit, mw);
+      if (w) return { hit: w, d: hit.distance ?? Infinity };
+    }
+    return null;
+  }
+
+  /**
+   * 맞힌 면을 그대로 낸다 (W8-4 D). **오버레이 GLB · 마을 파츠 · 미술관 GLB 셋을 본다.**
+   *
+   * ⚠ **우선순위가 아니라 거리로 고른다.** `pick()`/`pickVillage()` 는 «오버레이 먼저,
+   * 없으면 마을» 인데 그것은 **고르기**의 규약이고 벽은 다르다 — 광선이 실제로 먼저
+   * 맞은 면에 걸려야 한다. 우선순위로 하면 마을 건물 앞에 서서 드롭했는데 뒤편 오버레이
+   * GLB 벽에 액자가 걸리고, 화면에서는 «걸었다는데 안 보인다» 로만 보인다.
+   * 후보가 셋이 되어 **더 세졌다** — 미술관 안에 서면 광선이 「미술관 벽 → 마을 건물」
+   * 순으로 만나는데, 우선순위가 마을을 이기면 액자가 벽을 뚫고 바깥 건물에 걸린다.
+   *
+   * ── 🔴 미술관은 셋째 경로다 (태스크 #112, 2026-08-19) ─────────────────────
+   * `features/glb-city.ts` 가 로드하는 건물은 `world-shared/glb-city.ts` 의
+   * `env.scene.add(g)` 로 **씬에 직결**된다 — 오버레이 항목(`host.entries()`)도 아니고
+   * 인스턴스 슬롯(`host.instances`)도 아니라 앞 두 함수의 대상 목록에 안 든다. 그래서
+   * `wallRoot()` 로 받은 루트를 **허용목록에 더하는** 셋째 함수(`faceInGlbCity`)를 뒀다.
+   *
+   * ⚠ **이 헤더는 한 회차 동안 정반대를 말하고 있었다**(검수관 반려 B1). 열기 전 판본이
+   * *"미술관 GLB 는 이 둘 중 어느 쪽도 아니다 — **벽에 걸 수 없다**"* · *"여는가는
+   * 별건이다(태스크 #112)"* 라고 적혀 있었고, 나는 **함수 본문에만** 인라인 주석을 달고
+   * 이 1차 계약 문서를 안 고쳤다. 다음 사람은 이것을 읽고 `faceInGlbCity` 를 죽은 코드로
+   * 오인하거나 «미술관은 원래 안 걸리는 게 맞다» 로 읽는다 — 이 저장소가 behind-flag
+   * 산문·«외부 호스트 0»·`main` unprotected(7일 손실)로 이미 세 번 치른 형태다.
+   * **본문을 고치는 회차에는 그 함수의 헤더를 함께 읽는다.**
+   *
+   * 열기 전 증상은 «안 걸린다» 가 아니라 «엉뚱한 데 걸린다» 였다 — 광선이 미술관을
+   * **통과해** 뒤편 마을 건물을 맞히고 그쪽이 유효한 벽이라 그대로 걸렸다(실측
+   * 2026-08-18: 광장 서쪽 미술관을 겨눴는데 `x = -72.77`. 미술관 범위 `x -44~-20` 밖).
+   */
+  function pickFace(): WallHit | null {
+    const cands = [faceInOverlay(), faceInVillage(), faceInGlbCity()]
+      .filter((c): c is { hit: WallHit; d: number } => c !== null);
+    if (cands.length === 0) return null;
+    let best = cands[0]!;
+    for (const c of cands) if (c.d < best.d) best = c;
+    return best.hit;
+  }
+
   /** 링을 그 자리에 놓는다. `null` 이면 숨긴다 — 표시의 유일한 자리 */
   function showMarker(at: { x: number; y: number; z: number; r: number } | null): void {
     marker.visible = at !== null;
@@ -215,10 +417,12 @@ export function createPicker(host: OverlayHost, st: EditState): Picker {
 
   return {
     castFrom,
+    castCenter,
     groundAt,
     planeAt,
     pick,
     pickVillage,
+    pickFace,
     intersect,
     ray(): Ray3 {
       const o = raycaster.ray.origin, d = raycaster.ray.direction;

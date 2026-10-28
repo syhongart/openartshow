@@ -21,6 +21,7 @@
 // ⚠ `innerHTML` 을 쓰지 않는다 — 이 저장소의 UI 규약(`knob-bar.ts` 의 XSS 근거).
 
 import { isShadowKey } from '../../systems/shadow-decal.js';
+import { artName, type ArtworkItem } from '../../decide/artwork.js';
 import type { OverlayHost, VillagePick } from '../types.js';
 import type { EditState } from '../state.js';
 
@@ -29,6 +30,18 @@ export interface Outliner {
   /** 선택이 바뀌었을 때. 목록을 다시 그린다 */
   sync(): void;
   dispose(): void;
+}
+
+/**
+ * 작품 한 줄에 보일 이름 (W8-11).
+ *
+ * 이름은 `artName()` 한 곳에서 온다 — 패널 한 줄·배지와 **같게** 불려야 한다.
+ *
+ * 폭(`w`)을 함께 적는 이유: 같은 그림을 두 장 걸 수 있고, 그때 파일명만으로는 어느
+ * 줄이 어느 액자인지 갈리지 않는다. 크기가 이 회차에 **조절하는 값**이라 더 그렇다.
+ */
+function artLabel(a: ArtworkItem): string {
+  return `${artName(a.src)} · ${a.w.toFixed(2)}m`;
 }
 
 /**
@@ -51,6 +64,14 @@ export function createOutliner(
   st: EditState,
   /** 목록에서 고르면 부른다. 3D 클릭과 **같은 함수**로 이어져야 한다 */
   onPick: (v: VillagePick) => void,
+  /**
+   * 걸린 작품 목록과 그 선택 (W8-11). **선택 사양** — 소비자가 문을 안 주면 그 칸을
+   * 통째로 안 만든다(`PanelHandlers` 의 표면 재질 넷이 세운 규약 그대로).
+   *
+   * ⚠ **둘이 짝이다.** `list` 만 있고 `pick` 이 없으면 눌러도 아무 일이 안 나는
+   * 목록이 되고, 그것이 이 저장소가 「조용한 no-op」이라고 부르는 형태다.
+   */
+  arts?: { list(): readonly ArtworkItem[]; pick(index: number): void },
 ): Outliner {
   const doc = host.doc;
 
@@ -64,11 +85,35 @@ export function createOutliner(
   const list = doc.createElement('div');
   list.className = 'items';
   root.append(title, note, list);
+
+  /**
+   * 걸린 작품 칸 (W8-11). 구역 목록과 **같은 컨테이너에 나란히** 둔다 — 별도 패널을
+   * 만들면 좁은 왼쪽에 상자가 둘이 되고, 그 둘의 접힘·모드 규칙을 CSS 가 각각 알아야
+   * 한다(`css.ts` 가 `#w2-outliner` 하나만 알면 되게 유지한다).
+   *
+   * 문을 안 받았으면 **DOM 자체를 안 만든다** — 빈 제목만 남으면 «작품이 0개» 와
+   * «기능이 없다» 가 화면에서 구별되지 않는다.
+   */
+  const artTitle = arts ? doc.createElement('h4') : null;
+  const artList = arts ? doc.createElement('div') : null;
+  if (artTitle && artList) {
+    artTitle.textContent = '걸린 작품';
+    artList.className = 'items';
+    root.append(artTitle, artList);
+  }
   doc.body.appendChild(root);
 
   /** 지금 그려진 파셀 — 같은 파셀이면 목록을 다시 안 만든다(선택 강조만 바꾼다) */
   let drawnPx = NaN;
   let drawnPz = NaN;
+  /**
+   * 지금 그려진 작품 줄들의 서명. 같으면 DOM 을 다시 안 만든다.
+   *
+   * **라벨 자체를 서명으로 쓴다** — 「개수」로 잡으면 크기를 바꿔도 목록의 `2.40m` 이
+   * 옛 값에 머문다(이 회차가 바로 크기를 바꾸는 회차다). 개수·이름·크기가 전부 라벨에
+   * 들어 있으므로 라벨이 같다는 것은 그릴 것이 같다는 뜻이다.
+   */
+  let drawnArts = '';
 
   function clear(): void {
     while (list.firstChild) list.removeChild(list.firstChild);
@@ -112,7 +157,38 @@ export function createOutliner(
     drawnPz = v.pz;
   }
 
+  /**
+   * 걸린 작품 줄을 다시 만든다. 선택 강조는 여기서 안 한다 — 그것은 `sync` 가 매번
+   * 하는 싼 일이고, 여기는 목록이 실제로 바뀌었을 때만 도는 비싼 일이다.
+   */
+  function drawArts(items: readonly ArtworkItem[]): void {
+    if (!artList || !arts) return;
+    while (artList.firstChild) artList.removeChild(artList.firstChild);
+    items.forEach((a, i) => {
+      const b = doc.createElement('button');
+      b.type = 'button';
+      b.textContent = artLabel(a);
+      b.dataset.idx = String(i);
+      // 마을 목록과 **같은 규약**이다: 목록에서 고르는 것도 소비자의 선택 경로 하나로
+      // 이어진다. 여기서 `select()` 를 직접 부르면 어댑터 생성이 두 곳이 된다.
+      b.addEventListener('click', () => { arts.pick(i); });
+      artList.appendChild(b);
+    });
+  }
+
+  function syncArts(): void {
+    if (!artTitle || !artList || !arts) return;
+    const items = arts.list();
+    const sig = items.map(artLabel).join('\u0000');
+    if (sig !== drawnArts) { drawArts(items); drawnArts = sig; }
+    artTitle.textContent = `걸린 작품 (${items.length})`;
+    for (const el of Array.from(artList.children) as HTMLElement[]) {
+      el.dataset.on = el.dataset.idx === String(st.artSel) ? '1' : '0';
+    }
+  }
+
   function sync(): void {
+    syncArts();
     const v = st.villageSel;
     if (!v) {
       // 아무것도 안 골랐으면 목록을 비운다. «옛 구역이 남아 있다» 가 더 나쁘다 —

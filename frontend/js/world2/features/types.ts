@@ -25,7 +25,7 @@
 
 // 개별 named type import를 쓴다 — `import type * as THREE from 'three/webgpu'`로 하면
 // 내부 네임스페이스 재수출에 걸려 타입이 안 잡힌다(TS2694).
-import type { Scene, DirectionalLight, HemisphereLight, Camera } from 'three/webgpu';
+import type { Scene, DirectionalLight, HemisphereLight, Camera, Object3D } from 'three/webgpu';
 import type { SkyTime } from '../decide/night.js';
 import type { ShadingMode } from '../decide/shading.js';
 import type { SurfaceSetting } from '../decide/surface-material.js';
@@ -82,6 +82,23 @@ export interface FeatureEnv {
     h: { readonly key: string; readonly index: number },
     t: { x: number; y: number; z: number; ry: number; sx: number; sy: number; sz: number },
   ) => void;
+  /**
+   * **편집을 켜고 끌 때 터치 조작에 알린다** (`G-EDIT14`, 팀장 판정 (나) 2026-08-21).
+   *
+   * ⚠ 위 `village`·`retargetSlot` 과 **같은 논리 구조**다 — 소유는 조립부(`main.ts` 의
+   * `attachTouchControls` 반환값)에 두고 여기서는 **통로만** 연다. 편집을 켜고 끄는
+   * 자리(`edit/mode.ts` 의 `setEditing`)와 터치를 붙드는 자리는 서로를 모르는 계층이라
+   * 문 없이는 이을 수 없다.
+   *
+   * **끊기는 것은 시선 드래그 하나다** — 이동 조이스틱은 전용 원 안에서만 판정하므로
+   * 편집 판정 영역과 겹치지 않고, 폰에는 궤도·줌·비행이 없어 이동까지 끊으면 «다른
+   * 자리로 옮겨 편집» 이 불가능해진다. 근거는 `ui/touch-controls.ts` 헤더 한 곳이다.
+   *
+   * 선택 사양이 아니라 **필수**인 것이 의도다: 이 문을 안 주는 소비자가 생기면 그
+   * 화면에서만 조용히 충돌이 되살아나고, 증상이 «폰에서 가끔 화면이 돌아간다» 라
+   * 원인에서 가장 먼 자리에서 드러난다. 터치가 없는 기기에서는 조립부가 no-op 을 준다.
+   */
+  readonly setTouchEditing: (on: boolean) => void;
   /** 씬 조명. 개수가 고정이라 커널이 소유하고, 기능은 색·강도만 빌려 쓴다 */
   readonly sun: DirectionalLight;
   readonly hemi: HemisphereLight;
@@ -94,6 +111,45 @@ export interface FeatureEnv {
   readonly shadowTexel: number;
   /** 월드 셀 크기(미터) */
   readonly cell: number;
+
+  /**
+   * 그 파셀이 **지금 로드돼 있는가** (W8-9). 곧 «그 자리 마을 파츠가 화면에 있는가» 다.
+   *
+   * ── 왜 계약에 있는가 (감독 지시 2026-08-18) ───────────────────────────────
+   * *"멀리떨어졌을때 건물이 사라질때 같이 사라지고 나왔으면해"* — 벽에 건 작품이
+   * 건물과 생사를 맞춰야 한다. 그런데 「건물이 사라지는 거리」를 아는 것은 **코어**
+   * (스트리밍)이고 액자는 **기능**(오버레이)이다.
+   *
+   * 기능이 그 거리를 **자기가 다시 계산하면** 밴드 값(`decide/lod.ts` 의 `DEFAULT_BANDS`)
+   * 과 히스테리시스가 두 곳에 살고, 한쪽만 바뀌면 «건물은 사라졌는데 액자는 남는다» 가
+   * 조용히 돌아온다. 그것이 이 저장소가 값 미러링으로 반복해서 당한 형태다 —
+   * 바로 위 `time` 이 계약에 들어온 이유(반구광 세기로 밤을 **추측**하다 틀린 사고)와
+   * **같은 구조**다.
+   *
+   * ⚠ 이것은 위 `village`·`retargetSlot` 과 달리 **예외가 아니다.** 순수 읽기이고,
+   * 계약 첫 줄의 *"읽기 전용으로 다룬다"* 그대로다.
+   *
+   * ⚠ `village.isFrozen(px, pz)` 는 이 질문의 답이 **아니다** — 그것은 «편집으로
+   * 동결됐는가» 이고 가시성과 독립이다(동결된 파셀도 멀어지면 언로드된다).
+   */
+  readonly parcelLoaded: (px: number, pz: number) => boolean;
+
+  /**
+   * 미술관 GLB 의 레이캐스트 루트. 아직 안 세워졌거나 그 기능이 꺼져 있으면 `null`
+   * (태스크 #112).
+   *
+   * ⚠ **값이 아니라 클로저인 것은 위 `parcelLoaded`·`retargetSlot` 과 같은 이유다** —
+   * 이 조립이 미술관을 세우는 단계보다 먼저 돌고, 그 자산은 13.5MB 라 로드가 비동기다.
+   * 편집이 실제로 부르는 시점(감독이 벽을 겨눌 때)에는 채워져 있다.
+   *
+   * ⚠⚠ **레이캐스트 대상으로만 쓴다.** 편집이 이 루트의 자식을 옮기거나 지우면
+   * `glbCity` 기능의 `dispose()` 전제가 깨진다. 계약 원문은
+   * `world-shared/glb-city.ts` 의 `GlbCityInstance.wallRoot` 한 곳이다.
+   *
+   * ⚠⚠⚠ **선택적이다** — 이 기능이 목록에서 빠진 세계에서도 조립이 성립해야 한다.
+   * 없으면 미술관 벽은 그냥 벽 검출 대상이 아니고, 그것은 결함이 아니라 사실이다.
+   */
+  readonly glbCityRoot?: () => Object3D | null;
 
   /**
    * 지금 몇 시인가. **조립부가 소유하는 월드 상태다.**

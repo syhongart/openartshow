@@ -53,7 +53,7 @@ const ADAPTERS: Record<string, string> = {
 };
 
 /** 어느 월드의 소유도 아닌 것들. world1·world2 를 지워도 남는다 */
-const SHARED_PREFIXES = ['vendor/', 'utils/'];
+const SHARED_PREFIXES = ['vendor/', 'utils/', 'js/world-shared/'];
 
 /** `.ts`·`.js` 소스를 모두 모은다 */
 function walk(dir: string, out: string[] = []): string[] {

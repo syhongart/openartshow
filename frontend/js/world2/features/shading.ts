@@ -23,7 +23,14 @@
 // 흔들려 파이프라인이 재생성될 수 있다 — 이것이 유일한 실무 위험이었다.
 //
 // **이 씬에서는 안 일어난다.** 실측 2건:
-//   · `frontend/**` 전체에 `positionNode`·`vertexNode` 사용 **0건**
+//   · ⚠ **이 줄은 2026-08-18 에 거짓이 됐다** — `features/grass.ts` 가 잔디 바람을
+//     `mat.positionNode` 로 넣는다(TSL). 아래 「전제가 바뀌면」이 예고한 그 시점이다.
+//     **집행으로 전제를 되살렸다**: `systems/grass-field.ts` 가 `env.shading() !== 'material'`
+//     인 동안 잔디 메시를 `visible=false` 로 둔다. `visible=false` 인 오브젝트는 렌더
+//     목록에 안 올라 `Renderer.js` 의 `renderObject()` 에 도달하지 않고, 따라서
+//     `overridePositionNode` 스왑 경로를 아예 안 탄다(three r171 소스 실측).
+//     즉 지금 참인 명제는 «사용 0건» 이 아니라 **«오버라이드가 걸린 동안 사용 0건»** 이다.
+//     정점 변형을 쓰는 기능을 새로 만들면 같은 숨김을 함께 넣어야 이 문장이 참으로 남는다.
 //   · `NodeMaterial` 을 쓰는 자리는 `features/ocean-tsl.ts:167` 하나뿐이고 그것도
 //     `?water=tsl` 노브 뒤다(`decide/water.ts:514` — *"요청이지 채택이 아니다"*)
 // 씬 재질은 전부 코어 `MeshStandardMaterial`/`MeshBasicMaterial` 이다(파츠 12곳 실측).

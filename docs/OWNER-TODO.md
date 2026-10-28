@@ -58,6 +58,19 @@
     picsum 외부 이미지 URL 제거(CLAUDE.md "외부 호스트 0" 위반), ② `index.html` CSP
     `img-src … https`를 `'self'`로 되돌리기(drift 복원). 보호파일·CSP 변경이라 감독 승인 게이트에서
     같은 배치로 닫는다. 그때까지 신규 코드에 외부 이미지 URL 유입 금지(리뷰 체크 항목).
+  · **🔴 [W8-8, 2026-08-18] world2 마을에도 임시 이미지가 걸렸다 — 교체 대상이 하나 늘었다.**
+    감독 카드 *"임시 이미지로 먼저 해라"* 로 `frontend/assets/art/placeholder-0{1,2,3}.png`
+    **3장**을 세웠다(`scripts/make-placeholder-art.mjs` 가 수식으로 그린 자작 도형 —
+    외부 에셋도 생성 이미지도 아니라 §6 을 안 탄다). 배치는
+    `frontend/assets/world2-overlay.json` 의 `arts[]` 다.
+    · **왜 세웠나**: 라이브 작품이 0개라 감독이 자기 전시를 한 번도 못 봤고, 더 급하게는
+      **W8-7 이 만든 그림 재질 경로를 CI 가 한 줄도 안 탔다**(`place()` 는 걸린 작품이
+      있어야 돈다).
+    · **교체 방법**: 감독 이미지를 `frontend/assets/art/` 에 넣고(파일명은 영숫자·`_-.` 만,
+      한글 불가) `world2-overlay.json` 의 `arts[].src` 를 그 이름으로 바꾼다. 종횡비가
+      다르면 `ar`(= 폭/높이)도 함께. **존재 대조 게이트가 파일명을 하드코딩하지 않으므로
+      교체해도 그대로 돈다**(`tests/world2-overlay-wiring.test.ts`).
+    · ⚠ **만료가 없으면 임시가 영구가 된다**(팀장 조건, W8-8). 이 줄이 그 만료다.
 - ⬜ **검색 등록** (SEO)
   구글 서치 콘솔 + 네이버 서치어드바이저에 openartshow 등록 (각 5분).
 - ⬜ **lifeunity 저장소 숨기기** (선택)

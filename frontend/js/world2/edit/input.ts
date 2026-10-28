@@ -7,8 +7,23 @@
 // **구조적으로 0** 이다.
 //
 // 예외는 `Tab` 하나다. 편집이 꺼져 있어도 켤 수 있어야 하므로 상시 붙는다.
+//
+// ── 🔴 분해 트리거 (검수관 권고 P-D, 2026-08-19) ────────────────────────────
+// 이 파일은 **다섯 회차 연속** baseline 재동결됐다(625 → 645 → 652 → 666 → 680). 늘어난
+// 것은 전부 판정 주석이고, 그 자체는 「값 옆에 근거를 적는다」 규율의 정당한 결과다.
+// **실측이 그것을 뒷받침한다** — 680줄 = 코드 343 · 주석 302 · 공백 35 이고, 직전 회차
+// (666줄)의 코드 줄도 **똑같이 343** 이었다. 즉 이번 +14 는 한 줄도 빠짐없이 주석이다.
+//
+// **트리거를 형용사로 두지 않는다** — 「다음 회차에 검토」는 이 저장소가 실측으로 실패한
+// 형태다(위임 트리거 절). 조건문으로 적는다:
+//
+//   **이 파일에 「주석이 아닌 줄」이 늘어나는 다음 회차에는 키 처리 블록 분리를 선결로 한다.**
+//
+// 주석만 느는 회차에는 분해하지 않는다 — 주석 전용 diff 에 구조 변경을 얹으면 **행위
+// 위험을 새로 만든다**(검수관 판정).
 
 import { isSafeSrc } from '../decide/overlay.js';
+import { judgeUpload } from '../decide/upload-plan.js';
 import type { OverlayHost } from './types.js';
 import { RY_STEP, Y_STEP, select, type EditState } from './state.js';
 import {
@@ -22,6 +37,7 @@ import { SHADING_LABEL, toggleWire, type ShadingMode } from '../decide/shading.j
 import type { Panel } from './panel/dom.js';
 import type { Picker } from './pick.js';
 import type { Actions } from './actions.js';
+import type { ArtworkMode } from './artwork-mode.js';
 import type { Gizmo } from './gizmo.js';
 
 export interface InputDeps {
@@ -35,6 +51,15 @@ export interface InputDeps {
   toggleEditing(): void;
   /** 드래그드롭으로 만든 임시 주소를 소비자에게 넘겨 회수하게 한다 */
   onBlobUrl(url: string): void;
+  /** 이미지 드롭 → 벽에 걸기(W8-4 D2). 없으면 이미지도 GLB 판정으로 떨어져 거부된다 */
+  art?: ArtworkMode;
+  /**
+   * 자기 GLB 를 올릴 수 있는 등급인가(감독 지시 2026-08-16 「특별 프리미엄」). **주입받는다** —
+   * 여기서 `studio-plan.js` 를 직접 부르면 등급을 바꿔 가며 이 경로를 돌릴 수 없다.
+   */
+  canUploadGlb: boolean;
+  /** 지금 등급의 표시명. 거부 문구가 «지금 무엇인지» 를 말할 수 있어야 한다 */
+  tierLabel?: string;
 }
 
 export interface Input {
@@ -250,7 +275,7 @@ export function createInput(deps: InputDeps): Input {
       select(st, host, { entry: hit });
       st.dragging = hit;
       st.dragPlaneY = hit.y;
-      panel.refresh();
+      panel.onPicked();  // 속성 탭으로. `refresh()` 가 아닌 이유는 `Panel.onPicked` 한 곳
       return;
     }
     if (st.pendingSrc) {
@@ -286,7 +311,7 @@ export function createInput(deps: InputDeps): Input {
       // 지면 평면 교차로 x·z 를 매 프레임 밀어 넣는데, 마을에서는 그것이 곧 파셀
       // 재빌드라 건물이 드래그 내내 깜빡인다. 옮기기는 **기즈모 축**으로 한다 —
       // 판단과 그 대가는 `target.ts` 헤더 한 곳이다.
-      panel.refresh();
+      panel.onPicked();
       return;
     }
 
@@ -429,15 +454,56 @@ export function createInput(deps: InputDeps): Input {
         // 연다), 두 번째부터 `false`(주행으로 샌다) — OS 키 반복이 그것을 만든다.
         //
         // 그래서 **여는 키만** 삼킨다. `W`·`A`·`D` 는 그대로 통과하므로 아래 «모르는 키는
-        // 통과» 규칙과 충돌하지 않는다. 대가는 정직하게 적는다: **모달 중에는 뒤로
-        // 걷기가 안 된다**(`S` 가 죽는다). 앞·옆으로는 걸어다닐 수 있다.
+        // 통과» 규칙과 충돌하지 않는다.
+        //
+        // 🔴 **여기 적혀 있던 「대가」 둘이 전부 거짓이었다**(검수관 반려 B1, 2026-08-19).
+        //   ① *"앞·옆으로는 **걸어다닐** 수 있다"* — 편집에서 WASD 는 2026-08-19 부터
+        //      **비행**이다(`edit/fly-input.ts` 의 `FLY_KEYS`).
+        //   ② *"모달 중에는 뒤로 걷기가 안 된다(`S` 가 죽는다)"* — **`S` 는 안 죽었다.**
+        //      아래 `stopPropagation()` 은 `window`(= `main.ts` 의 주행 리스너)만 막는데
+        //      `fly-input` 은 **같은 `doc` 노드**에 붙어 있고, `stopPropagation` 은 같은
+        //      노드의 다른 리스너를 못 막는다(그건 `stopImmediatePropagation` 이다).
+        //
+        // ⚠ **②는 문장만의 문제가 아니라 실물 결함이었다** — 크기·회전 모달이 열린 채로
+        // WASD 가 그대로 날았다. 모달은 「이 하나를 조작하는 중」이라 시점이 움직이면 대상이
+        // 화면에서 달아난다. `mode.ts` 가 `editing()` 에 `st.modal === null` 을 더해 막는다.
+        //
+        // **대가를 정직하게 적는다면서 틀린 대가를 적으면 다음 사람이 없는 비용을 저울에
+        // 올린다.** 그리고 이 문단은 안내 문구를 고친 커밋의 **6줄 위**였다 — 문구 하나를
+        // 고치는 동안 같은 주석 블록의 나머지를 안 봤다.
         //
         // 왜 «모달을 연 그 키만» 이 아니라 «여는 키 전부» 인가: 후자는 상태에 안 묶여
         // «모달 중 조작 키는 주행으로 안 샌다» 한 문장으로 설명된다. 전자는 G 모달에서는
         // `S` 가 살고 S 모달에서는 죽어, 같은 키가 상황따라 다르게 동작한다.
         if (modalOpener(ev.code)) { ev.preventDefault(); ev.stopPropagation(); }
-        // 그 외 모르는 키는 **통과시킨다** — 조작 중에도 WASD 로 걸어다닐 수 있어야 한다
+        // 그 외 모르는 키는 **통과시킨다** — 조작 중에도 WASD 가 살아 있어야 한다
         // (델타는 월드 기준이라 카메라가 움직여도 값은 안 흔들린다).
+        //
+        // 🔴 **판정: 편집 중 `W` 는 날기만 하고 걷지 않는다**(검수관 권고 P4).
+        // 주행 리스너(`main.ts`)는 살아 있어 `setInput` 이 들어오지만, 비행이 실제로 움직인
+        // 프레임에는 `PlayerSystem` 이 주행 적분을 **건너뛴다**(`flew` 플래그). 그래서
+        // 「날면서 동시에 걷는」 일은 없다 — 그 겹침이 검수관 반려 B2 였고 고친 자리다.
+        // ⚠ 화살표 키는 `FLY_KEYS` 에 없어 **비행이 변위를 안 낸 프레임에 한해** 걷는다
+        // (`flew=false` → 주행·충돌 그대로). **조건 없이 쓰면 거짓이다**(검수관 조건 4):
+        // `flew` 는 `MoveInput` 전체를 0 으로 만들므로, `W`(비행)와 `↑`(주행)를 같이 누르면
+        // 화살표는 아무것도 안 하고, `↑` 로 걷다가 `Space` 로 뜨기만 해도 **걷기가 멈춘다.**
+        //
+        // 🔴 **그리고 화살표 이동은 「편집 끄면 출발 자리로」의 대상이 아니다** — 그 자리
+        // (`orbitFrom`)를 세우는 것은 `orbit()`·`orbitTo()`·`flyBy()` **셋뿐**이라, 화살표로만 움직이고 편집을
+        // 끄면 `endOrbit()` 이 즉시 return 한다. 화면은 두 곳에서 복원을 약속하는데
+        // (`mode.ts` 의 `sayLead` · `panel/dom.ts` 의 상시 범례) 그 경로에서만 성립하지 않는다.
+        //
+        // **판정: 그것이 의도다.** 복원은 「편집이 옮긴 자리를 되돌린다」는 뜻이고, 화살표는
+        // **주행 그대로**라 편집이 옮긴 것이 아니다 — 주행으로 걸어간 거리를 편집을 껐다고
+        // 되돌리면 그것이야말로 «편집을 껐더니 딴 데 서 있다» 다(`player.ts` 의 `endOrbit`
+        // 주석이 막으려는 그것). 화살표를 안내에 안 적은 것도 같은 이유다 — 비행을 배우는
+        // 화면에 «걷는 법» 을 나란히 적으면 무엇이 편집 조작인지 흐려진다.
+        // ⚠ **감독이 화면에서 헷갈린다고 하면 재론한다**(`G-FLY13`).
+        //
+        // ⚠ **«걸어다닌다» 가 아니다**(검수관 조건 C1, 2026-08-19). 편집에서 WASD 는
+        // 2026-08-19 부터 **비행**이다(`edit/fly-input.ts` 의 `FLY_KEYS`) — 주행 리스너는
+        // 여전히 살아 있지만 `PlayerSystem` 이 날았던 프레임의 주행 적분을 건너뛴다
+        // (`flew` 주석). 이 통과 규약 자체는 그대로 유효하고, **문장만 실물과 어긋나 있었다.**
         return;
       }
       ev.preventDefault();
@@ -450,6 +516,9 @@ export function createInput(deps: InputDeps): Input {
       return;
     }
 
+    // 🔴 `Esc` = 고른 것 취소(#97). 모달은 위에서 `return`, 조준은 `aim-mode` 가 캡처
+    // 단계로 먼저 삼킨다 — 여기 오는 것은 둘 다 아닌 것뿐이다. 근거는 `cancelPending`.
+    if (ev.code === 'Escape' && actions.cancelPending()) { ev.preventDefault(); ev.stopPropagation(); return; }
     // ── 모달 진입 ─────────────────────────────────────────────────────────
     const opener = modalOpener(ev.code);
     if (opener) {
@@ -486,9 +555,8 @@ export function createInput(deps: InputDeps): Input {
     }
 
     // ── 셰이딩 토글 ───────────────────────────────────────────────────────
-    // 블렌더의 `Z`(셰이딩 파이 메뉴)는 **안 쓴다**: 우리 `Z`/`X` 가 이미 높이이고, 같은
-    // 키가 상황에 따라 다르게 동작하는 것은 `G` 를 걷어내면서 방금 없앤 그 문제다.
-    //
+    // 블렌더의 `Z`(셰이딩 파이 메뉴)는 **안 쓴다**: 우리 `Z`/`X` 가 이미 높이이고, 같은 키가
+    // 상황에 따라 다르게 동작하는 것은 `G` 를 걷어내면서 방금 없앤 그 문제다.
     // ── 이 분기가 **무엇보다** 앞이어야 하는가 (뮤테이션 실측 2026-08-14) ───
     // 처음엔 *"`EDIT_KEYS` 보다 반드시 앞이다"* 라고 적었고 **과장이었다.** 뮤테이션
     // M5(이 블록을 `EDIT_KEYS` 검사 **뒤**로 이동)가 `0 failed` 였고, 원인은 등가였다 —
@@ -503,7 +571,8 @@ export function createInput(deps: InputDeps): Input {
     //
     // ②를 지키는 축이 테스트에 있다(안 고른 상태로 `Shift+Z` 를 눌러 본다). 과장된
     // 주석을 약하게 고치는 대신 **못 박는 축을 만들어** 남은 문장을 참으로 만들었다.
-    if (ev.shiftKey && ev.code === 'KeyZ') {
+    // ⚠ `Ctrl`/`Cmd` 는 뺀다 — 그 조합은 다시하기다(`edit/history-input.ts`).
+    if (ev.shiftKey && !ev.ctrlKey && !ev.metaKey && ev.code === 'KeyZ') {
       if (!toggleShading()) return;
       ev.preventDefault();
       ev.stopPropagation();
@@ -548,27 +617,25 @@ export function createInput(deps: InputDeps): Input {
     ev.preventDefault();
     const file = ev.dataTransfer?.files?.[0];
     if (!file) return;
-    const src = `assets/models/${file.name}`;
-    if (!isSafeSrc(src)) {
-      // 계약(`decide/overlay.ts`)이 허용 문자를 정한다. 여기서 넓히지 않고 **왜 안 되는지**
-      // 를 말한다 — 계약 주석이 *"거부 사유가 한 종류라 원인을 알 수 없다"* 고 남긴 자리다.
-      panel.say(`«${file.name}» 은 쓸 수 없는 이름입니다 — 영문·숫자·_ - . 만, 확장자는 소문자 .glb`, true);
-      return;
-    }
+    if (deps.art?.handles(file.name)) { void deps.art.drop(file, ev); return; }
+    // 등급과 이름을 **한 판정**이 본다(근거·문구는 `decide/upload-plan.ts` 한 곳).
+    const verdict = judgeUpload(
+      file.name,
+      { canUpload: deps.canUploadGlb, tierLabel: deps.tierLabel },
+      isSafeSrc(`assets/models/${file.name}`),
+    );
+    if (!verdict.ok) { panel.say(verdict.message, true); return; }
+    const src = verdict.src;
     if (!picker.castFrom(ev)) return;
     const at = picker.groundAt();
     if (!at) { panel.say('지면이 보이는 쪽에 놓아 주세요.', true); return; }
     const url = URL.createObjectURL(file);
     deps.onBlobUrl(url);
     actions.previewUrls.set(src, url);
-    // ⚠ **드롭은 `pendingSrc` 를 안 본다** — 파일명에서 `src` 를 직접 만든다. 그래서
-    // 팔레트에서 뭔가 골라 둔 채 드롭해도 그 «고른 것» 이 아니라 **드롭한 파일**이 놓인다.
-    //
-    // 다만 부수효과가 하나 있다: `placeAt` 이 성공하면 고르기를 푸는데(감독 신고
-    // 「흩어뿌리기」 처방), 그 해제가 **드롭으로 놓았을 때도** 일어난다. 즉 골라 둔 것이
-    // 함께 풀린다. 해로운 동작은 아니고 «놓았으면 다루기로 넘어간다» 와 일관되지만,
-    // 적어 두지 않으면 다음 사람이 «왜 드롭했더니 팔레트 고르기가 풀리지» 를 재조사한다
-    // (검수관 권고 P2, 2026-08-13).
+    // ⚠ **드롭은 `pendingSrc` 를 안 본다** — 파일명에서 `src` 를 직접 만든다. 팔레트에서
+    // 골라 둔 채 드롭해도 **드롭한 파일**이 놓인다. 부수효과: `placeAt` 이 성공하면 고르기를
+    // 푸는데(감독 신고 「흩어뿌리기」 처방) 그 해제가 드롭에서도 일어난다 — 해롭진 않지만
+    // 적어 두지 않으면 다음 사람이 «왜 드롭했더니 고르기가 풀리지» 를 재조사한다(검수관 P2).
     void actions.placeAt(src, at, url);
   };
 

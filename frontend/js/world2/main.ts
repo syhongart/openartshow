@@ -11,12 +11,12 @@ import { Kernel } from './kernel.js';
 import { createRendererAdapter, type RendererAdapter } from './adapters/renderer.js';
 import { InstancePools } from './systems/instancing.js';
 import { createPartAssets, createSlotPool } from './systems/parcel-assets.js';
-import { PooledParcelBuilder, type SlotPool } from './systems/parcel-builder.js';
+import { PooledParcelBuilder, type SlotPool, type ParcelBuilderOptions } from './systems/parcel-builder.js';
 import { createVillageParcels } from './systems/village-parcels.js';
 import { ParcelFadeSystem } from './systems/parcel-fade.js';
 import { ParcelGrowSystem } from './systems/parcel-grow.js';
 import {
-  FADE_SECONDS, FADE_EASE, FADE_EASES, GROW_SECONDS, fogFactorAt,
+  FADE_SECONDS, FADE_EASE, FADE_EASES, fogFactorAt, readParcelAnim,
 } from './decide/lod-fade.js';
 import { StreamingSystem } from './systems/streaming.js';
 import { PlayerSystem, WALK_SPEED, BOB_AMPLITUDE } from './systems/player.js';
@@ -30,11 +30,18 @@ import { findLoading, LoadingView } from './ui/loading.js';
 import { attachTouchControls } from './ui/touch-controls.js';
 import { attachHud, type PerfHud } from './ui/hud.js';
 import { findMapDrawer, attachMapDrawer } from './ui/map-drawer.js';
+import { attachExportPanel } from './ui/export-panel.js';
+import { createImportedScene } from './export/imported-scene.js';
+import { createGlbOverlayHost } from './export/host.js';
 import { findKnobBar, attachKnobBar, attachKnobActions } from './ui/knob-bar.js';
 import {
   FEATURES, mountFeatures, combineDrawGroupKey, drawGroupKeyOf, collectDiagnostics, prewarmFeatures,
+  glbCityFeature,
   type MountedFeature,
 } from './features/index.js';
+// 타입만 받는다 — 런타임 import 는 없다(`three/webgpu` 는 부팅이 동적으로 받는다).
+// `features/types.ts` 가 같은 이유로 개별 named type import 를 쓴다.
+import type { Object3D } from 'three/webgpu';
 import { DEFAULT_LAYOUT } from './decide/parcel-layout.js';
 import { createCollider } from './systems/collision.js';
 import { fogBand, FOG_FAR_CELLS } from './decide/fog.js';
@@ -261,6 +268,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    */
   let slotPool: SlotPool | null = null;
 
+  /** 터치 핸들 (`G-EDIT14`). 위 `slotPool` 과 같은 이유 — 부팅 끝에 채워지는 늦은 클로저다 */
+  let touch: { setEditing(on: boolean): void; dispose(): void } | null = null;
+
   const density = readDensity();
   // 밀도는 배치 판정에만 곱한다. 풀 예산은 이 레이아웃에서 자동으로 파생되므로
   // 두 곳에 따로 적지 않는다(값 미러링 금지).
@@ -310,12 +320,23 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // ⚠ **빌더와 같은 조회를 넘긴다.** 한쪽에만 주입하면 렌더와 충돌이 다른 마을을 보고,
   // 그 증상은 «건물은 저기 있는데 여기서 막힌다» 다 — `collide.ts` 가 선언한
   // «보이는 자리 = 막히는 자리» 가 깨지는 자리가 정확히 여기다.
+  //
+  // ⚠⚠ **그 경고를 실제로 밟았다**(검수관 반려 B1, 2026-08-23) — 빌더에만 오버레이를
+  // 물리고 여기를 그대로 뒀다. 그래서 표현식을 두 벌 적지 않고 **함수 하나를 둘 다에
+  // 준다.** `tests/world2-export-wiring.test.ts` 가 「같은 참조인가」를 단언한다.
+  /** 되읽은 GLB 도시. 우선순위(GLB → 원장 → 계산)의 근거는 `export/host.ts` 한 곳이다 */
+  const glbHost = createGlbOverlayHost();
+  const layoutSource: NonNullable<ParcelBuilderOptions['frozenAt']> = (px, pz, tier) =>
+    glbHost.lookup(px, pz, tier) ?? village.lookup(px, pz, tier);
+
   const collider = createCollider({
     layout: LAYOUT,
-    frozenAt: (px, pz, tier) => village.lookup(px, pz, tier),
+    frozenAt: layoutSource,
   });
 
   const scene = new THREE.Scene();
+  // 되읽은 GLB 의 「파츠가 아닌 메시」 레이어. 로더는 되읽을 때만 내려받는다(부팅 비용 0).
+  const imported = createImportedScene(scene);
   // ── 카메라 far 는 **하늘 돔 상한에서 유도한다** (감독 문의 2026-08-05) ────────
   // 돔이 far 를 넘으면 잘리는데, 화면에는 *"하늘이 사라졌다"* 로 보여 원인을 찾기
   // 어렵다. 예전에는 `1200` 을 손으로 적고 `DOME_MAX` 를 1100 으로 맞춰 뒀다 —
@@ -450,19 +471,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 기본값은 **감독 판정 대기 중인 잠정치**이고, 판정은 이 두 노브로 받는다.
   const lodFade = readNum('lodfade', FADE_SECONDS, 0, 5);
   const lodEase = readEnum('lodease', FADE_EASE, FADE_EASES);
-  // 새 부품이 땅에서 자라는 시간. `?grow=0` 이 종전 동작(즉시 완성 크기 = 팝).
-  // 색 페이드가 왜 이걸 대신 못 하는지는 `systems/parcel-grow.ts` 머리 한 곳이다.
-  const growSecs = readNum('grow', GROW_SECONDS, 0, 3);
-  // `?shrink=` — 반납 수축 시간(초). 후진 그림자 명멸(#218, ?shint=0 으로 축 확정)의
-  // 처방 후보다: 키 큰 캐스터의 그림자가 0.25s 에 걷히는 것이 명멸의 핵이라, 시간을
-  // 늘려 연속 변화로 만든다. 근거·경계는 `systems/parcel-grow.ts` 의 SHRINK_SECONDS
-  // 주석 한 곳. 감독 판정이 나면 그 값을 기본으로 승격한다(팀장 조건 2, 2026-08-10).
-  const shrinkSecs = readNum('shrink', 0, 0, 3);
-  // `?shrinkease=` — 수축 전용 이징(lin·in·out·smooth). 시간 축과 분리해 판정하기
-  // 위한 것(팀장 조건 1: 'out' 앞쏠림이 시간 후보 판정을 오염시킨다). 왜 분리인지는
-  // `systems/parcel-grow.ts` 의 shrinkEase 주석 한 곳. 기본 'out' = 종전 동작
-  // (등장 ease 와 동일값이라 "미지정"과 구별할 필요가 없다).
-  const shrinkEase = readEnum('shrinkease', 'out', FADE_EASES);
+  // 등장·소멸 연출. **파싱은 `decide/lod-fade.ts` 의 `readParcelAnim()` 한 곳이다**
+  // (W8-10) — 액자가 같은 값을 봐야 하는데 그것은 `features/overlay.ts` 안에서
+  // 조립되므로 여기서 읽어 넘기는 방식으로는 닿지 않는다. 갈리면 감독이 `?shrink=1` 로
+  // 룩을 판정할 때 건물과 액자가 다른 속도로 움직이는 화면을 보고 판정하게 된다.
+  const parcelAnim = readParcelAnim();
+  const growSecs = parcelAnim.grow;
+  const shrinkSecs = parcelAnim.shrink;
+  const shrinkEase = parcelAnim.shrinkEase;
 
   // 적응 품질(해상도 강등·프레임 캡·tier 압력)을 통째로 끈다. **비교 실험 전용** —
   // 감독 실기기 "이동 중 밝기가 살짝 변함"(2026-08-10)에서 안개·헤드밥이 실측으로
@@ -601,10 +617,10 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
    * 그 추측의 근거를 무너뜨려 블룸이 밤에 통째로 꺼졌다(`features/types.ts` 의 `time`
    * 주석에 전말이 있다).
    *
-   * 초기값은 URL 이다. `readEnum` 이 목록 밖 값을 걸러 주므로 팔레트 조회가 `undefined`
-   * 가 되는 일이 없다.
+   * 초기값은 URL 이고 `readEnum` 이 목록 밖 값을 거른다. ⚠ 기본값 이력은 `night` → `day`(감독 *"밤 말고 햇빛아래서"* 2026-08-21 — `time=` 없는 링크가 밤 물을 보였다) → **`daylit`**(감독 판정 2026-08-22)이다. 마지막 판정은 감독 신고 *"가로등 블룸은 안 들어오고 있는데"* 에서 왔고, 실측은 「낮에는 등이 **꺼져** 있다」였다 — `lampGlow(nightness('day')=0)` 이 `decide/night.ts` 에서 정확히 0 을 낸다. 낮·복합씬 두 화면의 라이브 링크를 나란히 드렸고 복합씬이 뽑혔다. **앞 지시와 충돌하지 않는다** — `daylit` 은 팔레트를 낮에서 빌리므로(`paletteTime()`) 「햇빛 아래」는 유지되고, 달라지는 것은 그 위쪽 축뿐이다(등이 켜지고 하늘이 진해지고 별이 보인다).
+   * ⚠⚠ **이 한 줄이 `features/postfx.ts` 의 `BLOOM_FLOOR` 를 기본 경로에서 밀어낸다** — 관계·근거는 그 상수 주석 한 곳이 소유한다(여기에 다시 적지 않는다). 이 판정을 지키는 검사는 `tests/world2-daylit.test.ts` 의 **GS-D8** 이고, 그전까지 기본 시간대를 보는 축은 **0개**였다.
    */
-  let timeOfDay: SkyTime = readEnum('time', 'night', TIMES);
+  let timeOfDay: SkyTime = readEnum('time', 'daylit', TIMES);
   /**
    * 어떤 셰이딩으로 보는가 — **월드를 보는 방식이고 조립부가 소유한다**(바로 위
    * `timeOfDay` 와 같은 이유·같은 모양).
@@ -814,7 +830,29 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
             retargetSlot: (h, t) => {
               slotPool?.retarget?.(h, t.x, t.y, t.z, t.ry, t.sx, t.sy, t.sz);
             },
+            setTouchEditing: (on) => { touch?.setEditing(on); },
             sun: sun!, hemi: hemi!, cell: CELL_X,
+            // ⚠ **값이 아니라 클로저다** — 위 `retargetSlot` 과 **같은 이유**다: 이
+            // 조립(`pools` 단계)이 `streaming` 을 만드는 `stream` 단계보다 먼저 돈다.
+            // 아직 없을 때는 `false` — 「아직 아무 파셀도 안 올라왔다」가 사실이다.
+            parcelLoaded: (px, pz) => streaming?.isLoaded(px, pz) ?? false,
+            // 🔴 **미술관 루트** — 편집이 그 벽을 벽 검출 대상에 넣는다 (태스크 #112).
+            // 위 둘과 **같은 클로저 이유**이고 하나가 더 있다: 이 자산은 13.5MB 라
+            // 로드가 비동기여서, mount 시점에는 기능은 있어도 루트가 아직 `null` 이다.
+            //
+            // ⚠ **이름 문자열을 여기 적지 않는다** — `glbCityFeature.name` 을 읽으므로
+            // 원산지가 `features/glb-city.ts` 한 곳이다. 문자열을 적으면 그 기능의 이름을
+            // 바꾸는 순간 이 조회가 조용히 `undefined` 가 되고, 증상은 «미술관 벽에만
+            // 안 걸린다» 라 원인에서 가장 먼 자리에서 드러난다.
+            //
+            // ⚠⚠ 좁은 구조적 타입으로 읽는 것은 `FeatureInstance` 계약에 `wallRoot` 가
+            // 없기 때문이다 — 거기 넣으면 **모든** 기능이 그 개념을 지게 된다. 이 결합은
+            // 미술관 하나가 요구하는 것이고, 그 범위를 넓히지 않는다.
+            glbCityRoot: () => {
+              const m = features.find((f) => f.name === glbCityFeature.name);
+              const inst = m?.instance as { wallRoot?(): Object3D | null } | undefined;
+              return inst?.wallRoot?.() ?? null;
+            },
             // 프러스텀과 **같은 유도**에서 나온 값이라야 짝이 맞는다. 하늘이 태양을
             // 이보다 가깝게 놓으면 타워 꼭대기가 그림자 카메라 뒤로 밀린다.
             shadowDist: SHADOW.dist,
@@ -927,8 +965,8 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
         parcelGrow = new ParcelGrowSystem({
           pools: pools!,
           duration: growSecs,
-          // 0(노브 미지정)이면 undefined → 시스템 기본(SHRINK_SECONDS)을 쓴다.
-          shrinkSecs: shrinkSecs > 0 ? shrinkSecs : undefined,
+          // 🔴 걸러내지 않고 그대로 넘긴다 — 근거는 `parcel-grow.ts` 의 `shrinkSecs` 주석(D2).
+          shrinkSecs,
           shrinkEase,
           gate: () => streaming?.ready ?? false,
         });
@@ -956,7 +994,9 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
           cellX: CELL_X, cellZ: CELL_Z, layout: LAYOUT,
           // 빌더는 저장소를 **모른다** — 조회 함수 하나만 받는다. 생성기 계층이 편집
           // 데이터를 알게 되는 것을 막는 팀장 조건의 집행 축 ①(W4 ① 커밋).
-          frozenAt: (px, pz, tier) => village.lookup(px, pz, tier),
+          // **충돌기와 같은 참조다**(위 `layoutSource`). 두 곳이 각자 표현식을 들면
+          // 한쪽만 고치는 사고가 나고, 그것이 검수관 반려 B1 이었다.
+          frozenAt: layoutSource,
         });
         shadowDecal.attach(slotPool);
 
@@ -1167,14 +1207,14 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   const input = bindInput(canvas, player);
 
   // 터치 조작. 터치 기기가 아니면 스스로 아무것도 하지 않는다(데스크톱에 조이스틱 안 뜸).
-  const stickBase = document.getElementById('w2-stick');
-  const stickKnob = document.getElementById('w2-stick-knob');
-  const touch = (stickBase && stickKnob)
-    ? attachTouchControls(canvas, { base: stickBase, knob: stickKnob }, {
+  const stickBase = document.getElementById('w2-stick'), stickKnob = document.getElementById('w2-stick-knob');
+  touch = (stickBase && stickKnob)
+    // `zone`(터치를 받는 구역)을 인라인한 것은 파일 크기 게이트 탓이다 — 근거는 `ui/touch-controls.ts` 헤더 한 곳.
+    ? attachTouchControls(canvas, { zone: document.getElementById('w2-stick-zone') ?? undefined, base: stickBase, knob: stickKnob }, {
       setAxes: (x, z) => player.setAxes(x, z),
       look: (yaw, pitch) => player.lookBy(yaw, pitch),
     })
-    : { active: false, dispose() {} };
+    : { setEditing() {}, dispose() {} };
   // 조작 안내는 **감독 지시로 없앴다**(*"도움말없애줘"*). 화면 하단을 상시 차지하는데,
   // 조작이 밀고 쓸기뿐이라 한 번 해보면 알게 되는 것이었다. 문구를 채우던 코드도 함께
   // 지운다 — 요소만 지우고 코드를 남기면 다음 사람이 "왜 안 보이지" 를 여기서 찾는다.
@@ -1182,6 +1222,27 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
   // 미니맵 책갈피 — 왼쪽 가장자리에서 펼치고 접는다(감독 지시).
   const drawerParts = findMapDrawer(document);
   const mapDrawer = drawerParts ? attachMapDrawer(drawerParts) : null;
+
+  // GLB 내보내기·되읽기 — 神 모드 패널 안. 근거는 `export/collect.ts`·`export/host.ts`.
+  // 재빌드가 필요한 이유는 이미 떠 있는 파셀이 옛 배치를 들고 있어서다.
+  //
+  // 내보내기에 **화면과 같은 체인**을 넘긴다(팀장 조건 1) — 그래야 감독이 손본 파셀이
+  // 파일에 그대로 들어간다. 첫 판본은 수집기가 `parcelLayout` 을 직접 불러 편집분을
+  // 조용히 떨어뜨렸다(검수관 블로커 B6).
+  const exportPanel = attachExportPanel(document, {
+    layoutSource,
+    // 무효화가 **둘 다**여야 한다. 스트리밍만 버리면 옛 벽이 살아남는다 — 충돌 캐시는
+    // 「플레이어가 선 파셀」로만 갱신되므로 제자리에 선 채 도시를 갈아 끼우면 그 파셀이
+    // 그대로다(`main.ts` 의 `village.onChange` 가 같은 이유로 둘을 함께 버린다).
+    applyOverlay: (o) => {
+      glbHost.set(o);
+      streaming?.rebuildAll();
+      collider.invalidate();
+      kernel?.markDirty();
+    },
+    // 블렌더에서 추가한 물건을 올린다(감독 지시 2026-08-25). 한계·판정은 그 파일 한 곳.
+    applyImported: (buf) => imported.apply(buf),
+  });
 
   // ── 진단 훅 ───────────────────────────────────────────────────────────────
   // behind-flag 검증 페이지 전용이다. 라이브(world.html)에는 없다.
@@ -1212,6 +1273,12 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
     look: (dYaw: number, dPitch: number) => player.lookBy(dYaw, dPitch),
     /** 이동 축(-1..1). 프레임이 돌아야 실제로 움직인다 — 시간 기반이다 */
     move: (x: number, z: number) => player.setAxes(x, z),
+    /**
+     * 되읽은 GLB 가 **화면에 실제로 서 있는가.** 버튼 라벨은 «올렸다고 적었다» 까지만
+     * 말한다 — 감독 신고(2026-08-25)가 정확히 그 틈에서 나왔다(라벨은 정상인데 물건이
+     * 안 올라왔다). 씬을 직접 훑어 세므로 **두 벌도 보인다.**
+     */
+    importedGlb: () => imported.describe(),
     /** 현재 개수 스냅샷 — 불변식 검사는 이 값을 프레임 간 비교해 판정한다 */
     stats: () => ({
       backend: adapter!.backend,
@@ -1303,6 +1370,7 @@ export async function startWorld2(canvas: HTMLCanvasElement): Promise<WorldHandl
       touch.dispose();
       hud?.dispose();
       mapDrawer?.dispose();
+      exportPanel?.dispose();
       // 기능 정리. System의 `dispose`는 커널이 부르므로, 여기서는 기능이 따로 붙인
       // UI·리스너만 거둔다. 여기에도 기능별 분기가 없다.
       for (const m of features) {
