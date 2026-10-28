@@ -177,6 +177,7 @@ const W7_ENTRY = join(FRONTEND, 'js/world7-boot.ts');
  * 집행되는지는 이 회차의 뮤테이션 표가 실측했다(보고서 M-1).
  */
 const W11_ENTRY = join(FRONTEND, 'js/world11-boot.ts');
+const W12_ENTRY = join(FRONTEND, 'js/world12-boot.ts');
 /** 이 트리를 여는 **모든** 페이지. 하나라도 빠지면 그 페이지는 격리 게이트 밖이다 */
 const PAGES = [
   { name: 'world8', html: join(FRONTEND, 'world8.html'), boot: 'world8-boot' },
@@ -184,9 +185,11 @@ const PAGES = [
   // 2026-09-16 — 맨해튼. world8 과 **같은 트리**를 쓰고 갈리는 것은 `<body data-glb>` 가
   // 가리키는 자산과 이 부트 파일뿐이다(팀장 판정 «결정 2» — world10 포크가 아니다).
   { name: 'world11', html: join(FRONTEND, 'world11.html'), boot: 'world11-boot' },
+  // 2026-10-19 — world11 과 같은 트리·옵션 축. 새 Scene 은 `data-glb` 로 갈린다.
+  { name: 'world12', html: join(FRONTEND, 'world12.html'), boot: 'world12-boot' },
 ];
 
-const FILES = [...walk(W8), W8_ENTRY, W7_ENTRY, W11_ENTRY];
+const FILES = [...walk(W8), W8_ENTRY, W7_ENTRY, W11_ENTRY, W12_ENTRY];
 const W2_FILES = [...walk(W2), W2_ENTRY];
 
 describe('world8 는 world2 를 한 줄도 참조하지 않는다', () => {
@@ -202,11 +205,13 @@ describe('world8 는 world2 를 한 줄도 참조하지 않는다', () => {
     expect(FILES, 'world8-boot.ts 가 표본 밖이다').toContain(W8_ENTRY);
     expect(FILES, 'world7-boot.ts 가 표본 밖이다').toContain(W7_ENTRY);
     expect(FILES, 'world11-boot.ts 가 표본 밖이다').toContain(W11_ENTRY);
+    expect(FILES, 'world12-boot.ts 가 표본 밖이다').toContain(W12_ENTRY);
     expect(W2_FILES, 'world2-boot.ts 가 역방향 표본 밖이다').toContain(W2_ENTRY);
     // 진입점이 실재하지 않으면 위 `toContain` 은 통과하면서 아무 파일도 안 읽는다.
     expect(existsSync(W8_ENTRY), 'world8-boot.ts 없음').toBe(true);
     expect(existsSync(W7_ENTRY), 'world7-boot.ts 없음').toBe(true);
     expect(existsSync(W11_ENTRY), 'world11-boot.ts 없음').toBe(true);
+    expect(existsSync(W12_ENTRY), 'world12-boot.ts 없음').toBe(true);
     expect(existsSync(W2_ENTRY), 'world2-boot.ts 없음').toBe(true);
   });
 
