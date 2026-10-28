@@ -255,6 +255,111 @@ world2 파셀 목록도 **절차 생성**이고 격자 셀은 파셀의 특수�
 
 ## 올라온 것 (↑ 상향)
 
+### 2026-10-28 · 검수관 — lockfile `f8692943` **승인** · 문서 `3e63fbd1` **조건부**(블로커 1: 정정표 3행이 거짓)
+
+- **lock 은 승인.** 22개 엔트리 전부 `registry.npmjs.org`, integrity == 레지스트리 `dist.integrity`,
+  ECDSA 서명 **21/21** 검증(실패 0). git 의존 0 · integrity 누락 0 · **새 install script 패키지 0**.
+  **배포물 불변을 산출물로 직접 확인했다** — `dist/` 바이트 동일(낡은 base 111개 · 현재 main
+  141개). **그 비교기가 장식이 아님을 통제 실험으로 확인**했다(`three.core.js` 의 `REVISION`
+  한 글자를 바꾸면 111개 중 49개가 달라진다. 첫 시도는 파일을 잘못 짚어 변화 0 이 나왔고
+  폐기 후 다시 했다).
+- **블로커 B1 — 내가 쓴 정정표 3행이 거짓이었다.** `vite@8.3.5 | 6건 전부 | 없음` 으로 적었는데
+  **`vite@8.3.5` 단독 lock 을 audit 하면 6건이 그대로 남는다**(`vitest@2.1.9`·`vite-node@2.1.9`
+  아래 vulnerable `vite@5.4.21` 중첩 + tinypool + @vitest/mocker). `vitest` ≥ 4.1.12 가 함께
+  와야 닫힌다. **「해소 경로를 옮겨 적다 틀림」이 그것을 고치는 커밋 안에서 재발했다.**
+- **R1**: 건수 단위가 섞여 있었다. "4건" 은 advisory 단위, "6건" 은 `npm audit` 패키지 단위.
+  `vite@6.4.5 + vitest@3.2.7` 은 **6 → 3** 이다. 백로그 표를 패키지 단위로 통일했다.
+- **R3 (구조적 발견) — `puppeteer` 를 이 저장소의 어떤 코드도 import 하지 않는다.** 전체
+  이력 0건이고 스모크는 Playwright 다. **lock 변경 22개 중 16개, 해소된 취약 10건 중 4건이
+  쓰지 않는 의존 체인**이다. 백로그 `G-PUPPET` 로 등재(제거는 `package.json`·`deploy.yml`
+  변경이라 별건 + 검수관 무조건 트리거).
+- **R4**: `chromium-bidi@157.x` 는 발행 계정 변경 + **provenance 소실**. install script 없고
+  아무도 import 안 한다. 관찰 기록 — `G-PUPPET` 에 실었다. 공식 공지는 확인 못 함(정황).
+- **R6**: 브랜치가 main 보다 **352 커밋** 뒤처져 있었다. `BACKLOG.md`·`BOARD.md` 텍스트 충돌을
+  **양쪽 보존**으로 풀었다(lock·`package.json` 은 무충돌). 병합 후 트리에서 게이트 재실행.
+- 못 쟀음(검수관 명시): `smoke:vite`(CI 소관 · 다만 스모크는 Playwright 이고 lock diff 에
+  playwright 없음) · **Node 24/npm 11**(검수 환경은 Node 22/npm 10.9.4) ·
+  `npm audit signatures`(sigstore TUF 403 — 서명 검증을 레지스트리 제공 키로 했으므로
+  **독립 신뢰 앵커가 아니다**) · advisory 본문(프록시 403, 제목·범위만 근거) ·
+  launch-editor 네 번째 항목의 Windows 한정 여부.
+- 부수: `npm install vitest@4.1.12` 는 **npm 10.9.4 arborist 가 크래시**한다
+  (`--legacy-peer-deps` 로 통과). `G-NPMAUDIT` 실행자가 만날 벽.
+
+### 2026-10-28 · 부팀장 — **같은 자리에서 두 번 틀렸다.** 조합을 설치해 보지 않고 버전 번호만 읽었다
+
+검수관 블로커 B1 로 드러났다. 커밋 `f8692943` 에서 `fixAvailable` 을 latest 로 오독했고,
+**그것을 정정하는 커밋 `3e63fbd1` 에서 또 틀렸다** — 이번엔 `vite@8.3.5` 단독이면 6건이
+닫힌다고 적었는데 실제로는 **하나도 안 닫힌다**(vitest 2.x 아래 vite 5.4.21 이 중첩 설치된다).
+
+**두 번의 원인이 같다 — 조합을 만들어 돌려보지 않고 버전 번호만 읽었다.** 검수관은
+`npm install --package-lock-only` 로 조합별 lock 을 만들어 **직접 audit 을 돌렸고** 그래서
+숫자가 달랐다. **의존 트리는 중첩 설치를 하므로 「상위를 올리면 하위도 올라간다」가 성립
+하지 않는다** — 그 전제를 확인 없이 두 번 썼다.
+
+**처방**: 해소 경로를 적을 때 **lock 을 만들어 audit 을 돌린 뒤** 적는다. 백로그
+`G-NPMAUDIT` 표에 그 지시를 함께 넣었다.
+⚠ 그리고 **`npm audit` 의 `fixAvailable` 은 「그 패키지의 latest」이지 「최소 해소 버전」이
+아니다** — 인용할 때 그 사실을 함께 적는다(앞 회차 처방을 지켰으나, 이번엔 **그 다음 단계**
+에서 틀렸다. 처방이 한 칸 짧았다).
+
+**R3 도 같은 뿌리다.** `chromium-bidi` 16→157 이 스모크를 깨뜨릴까 걱정해 WebGL 까지
+검증했는데 **스모크는 puppeteer 를 쓰지 않는다.** 측정은 맞았고 대상이 틀렸다 —
+**「X 가 깨진다」를 걱정하기 전에 X 가 그것을 쓰는지 센다.** `grep` 한 번이면 끝났다.
+
+### 2026-10-28 · 보안담당 — npm audit 잔여 6건: 블로커 0. 「전부 3단계 메이저」는 틀렸고 1단계 중간 경로가 있다
+
+- **판정 ⓒ**: 지금 `vite@8`/`vitest@5` 로 가지 않는다. 6건 전부 ① dev server 리스닝
+  ② Windows ③ 선행 prototype-pollution primitive 중 하나를 전제하고, 세 전제가 실측으로
+  닫혀 있다. **위험 수용 결정 자체는 팀장 사안(§8-5).**
+- **실증**: `vitest run` 중 신규 리스닝 TCP 소켓 **0**(68샘플/5.01초, `vi.mock` 포함 테스트).
+  정적 근거 `vitest/dist/chunks/resolveConfig.rBxzbVsl.js:7767`(`api = {middlewareMode:true}`)·
+  `cli-api.DqsSTaIi.js:11303`(`ws: false`). `@vitest/ui`·`@vitest/browser` **미설치**.
+- **내가 「가장 약한 고리」로 지목한 둘은 둘 다 닫혀 있었다.**
+  · `@vitest/mocker` 의 무인증 경로는 `configureServer` + `server.ws.on` = **dev server 전용
+    훅**이고 advisory 가 *"Plain Node test runs don't register these handlers, so `vitest run`
+    in a node environment isn't affected"* 로 명시한다. 그 핸들러를 거는
+    `mockerPlugin()`/`interceptorPlugin()` 은 우리 `vite.config.js` plugins 에 없다(자작 3개뿐).
+  · vite 의 *"custom middleware"* 는 **다른 축**이다 — 대상은 `middlewareMode`/
+    `appType:'custom'` 로 vite 를 **자기 서버에 임베드한 앱**이다. 우리 훅은
+    `resolveId`·`transformIndexHtml(html)`·`generateBundle`·`closeBundle` 전부 build 훅이고
+    `configureServer` **0건**. 스모크 서버는 `scripts/smoke/server.mjs:42` 의 Node 정적
+    서버(vite import 0건, 루프백 바인드). 그 advisory 는 CVSS v4 **2.1**(Low) 이다.
+- **표의 「해소」 열을 정정한다** — 상세는 백로그 `G-NPMAUDIT`. 요지: vite advisory 는
+  **6.4.4** 에서 패치됐고, `vite@6.4.5`+`vitest@3.2.7` 로 **4건**이 닫힌다(1단계 메이저).
+  tinypool 2건은 `vitest@4.1.12` 의 **의존 제거**로 사라진다. vite 5.x 백포트는 없다.
+- **`vite@8` 은 deps 가 `rolldown ~1.2.14`(rollup·esbuild 없음) = 빌드 엔진 교체.** 자작
+  플러그인 3개가 CSP 핀·importmap 제거·HTML 재배치를 만들므로 **자기완결·CSP 축 전면
+  재검증**이 실제로 필요하다. vite6+vitest3 과 vite8/rolldown 은 **분리해서** 올린다.
+- **확인 못 함 2건**: ① fork PR 워크플로 승인 정책 — `gh` 토큰 무효(`The token in GH_TOKEN
+  is invalid`)로 설정 API 조회 불가. `ci.yml:20` 의 `pull_request:` 에 필터가 없어 fork PR 이
+  **원리상 트리거 대상**이고, *"외부 기여자가 없다"*(fork 0·외부 커밋 0, 실측)는 **사실
+  상태이지 게이트가 아니다.** ② Dependabot alerts 활성 여부 재확인.
+- **권고**: Dependabot **alerts 만 켠다**(백로그 `G-DEPABOT`). 자동 PR 은 끈다 — lockfile
+  변경이 전면 재검증을 부른다. 설정 변경이므로 **감독·팀장 게이트**.
+- **별건 검수 요청**: lockfile 커밋 `f8692943`(+115/−80) 은 부팀장이 만든 것이고 **아직
+  아무도 검수하지 않았다.** 구현자≠검증자 유지를 위해 검수관 또는 보안담당이 별도로 본다.
+- 부수 실측(§10-6 기여): 액션 `uses:` 5종 **전부 SHA 핀, 미고정 0건** ·
+  `pull_request_target` 실제 트리거 **0건** · `ci.yml` 의 `secrets.*` 참조 **0건** ·
+  `npm ls --omit=dev` = **empty**(번들에 들어가는 `three`·`peerjs` 는 취약 목록에 없다).
+
+### 2026-10-28 · 부팀장 — 커밋 메시지에 **해소 경로를 거짓으로 적었다**. `audit` 의 `fixAvailable` 은 latest 기준이다
+
+커밋 `f8692943` 메시지에 *"남은 6건은 전부 `vitest@5.0.5`·`vite@8.3.5` 메이저 업(각 3단계)
+으로만 해소된다"* 고 적었고 **거짓이다.** 보안담당이 실측으로 뒤집었다 — `vite` advisory 는
+**6.4.4** 에서 패치됐고 `vite@6.4.5`+`vitest@3.2.7`(각 1단계)로 **4건**이 닫힌다.
+
+**원인은 추론이 아니라 전사(轉寫)다.** `npm audit --json` 의 `fixAvailable.version` 을
+그대로 옮겨 적었는데 **그 값은 그 패키지의 latest 이고 「최소 해소 버전」이 아니다.**
+확인하려면 advisory 의 patched_versions 를 봐야 했고 나는 보지 않았다.
+
+**왜 이게 그냥 오타가 아닌가** — 그 문장이 **「지금 고치지 않는다」의 근거로 쓰였다.**
+비용을 3단계 메이저로 과대평가하면 보류가 자동으로 정당해진다. 즉 **틀린 수치가 결론을
+편하게 만드는 방향으로 틀렸다.** 이 저장소가 `main` unprotected 오기로 7일을 잃은 것과
+같은 형태다(게이트·해소 경로에 대한 거짓 진술 → 다음 사람이 확인을 생략).
+
+**처방**: ⓐ 푸시된 커밋 메시지는 고칠 수 없으므로(force-push 금지) 백로그 `G-NPMAUDIT` 에
+정정표를 실었다 ⓑ **앞으로 `fixAvailable` 을 인용할 때 「latest 기준」이라고 함께 적는다**
+— 값만 옮기면 같은 오류가 반복된다.
 ### 2026-09-22 · ⚙️ 부팀장 — 맨해튼 측정 수단 완성 · **「치비 하나만 보여꼬」가 실측이 됐다** · R3(픽스처) 기각
 
 **R3 기각 — 픽스처가 필요 없었다.** node 에서 맨해튼 전량이 **3~4초**에 돈다(`GLTFLoader.parse` **882ms**). 900초에 죽은 것은 `startGlbWorld` **전체 부팅**이지 GLB 파싱이 아니었다 — **「격자 굽기 이전(GLB 파싱)에서 막힌다」는 진단이 틀렸고**, 그 사실 자체가 이 회차의 산출이다. 경로는 `scripts/lib/node-glb-scene.mjs` 한 곳. 4초를 아끼자고 `G-NYC1` 형태의 부채(자산이 바뀌면 조용히 낡음 + 정합 검사 신설)를 지는 거래는 성립하지 않는다.

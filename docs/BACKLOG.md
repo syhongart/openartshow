@@ -144,6 +144,141 @@ AI·사람 동일 규칙(🤖 배지만 구분). 로드맵 3단계(memory-stream
 
 ## 기타 대기 항목
 
+- **G-NPMAUDIT — npm 취약점 6건이 열려 있다. 전제 3종이 닫고 있을 뿐이다** (2026-10-28 등재, 보안담당 평가).
+  감독 지시 *"보안 이슈 검사하고 해결해줘"* 로 돌린 `npm audit` 16건 중 **10건을 호환 범위로
+  해소**했고(커밋 `f8692943`, `package.json` 무변경) **6건이 남았다**:
+  `tinypool`(critical ×2) · `vitest`(critical) · `vite`(high, advisory 8건) ·
+  `@vitest/mocker`(moderate ×2) · `esbuild`(moderate) · `vite-node`(moderate).
+
+  **보안담당 판정 = 블로커 0 · 네트워크 도달 경로 0건.** 6건 전부 아래 셋 중 하나를
+  전제하고, 세 전제가 실측으로 닫혀 있다:
+   ① **dev server 리스닝** — `vite dev`·`vite serve` 스크립트 **0건**, `vitest --ui` **0건**,
+      `@vitest/ui`·`@vitest/browser` **미설치**(lockfile 0건). CI 는 `npx vite build` 와
+      `vitest run` 만 호출한다.
+      **실증**: `vitest run`(`vi.mock` 포함 테스트) 중 **신규 리스닝 TCP 소켓 0개**
+      — 80ms 간격 68회 `lsof` 샘플링, baseline 차집합. 정적 근거는
+      `vitest/dist/chunks/resolveConfig.rBxzbVsl.js:7767`(`api` 미지정 →
+      `middlewareMode: true`)와 `cli-api.DqsSTaIi.js:11303`(`ws: false`).
+   ② **Windows** — vite advisory 8건 중 5건이 Windows 명시(launch-editor 4 + `fs.deny` 우회).
+      우리 로컬·CI 는 linux/ubuntu-latest. ⚠ **개발 머신에 Windows 사용자가 있는지는 못 쟀다.**
+   ③ **선행 prototype-pollution primitive** — tinypool 건. advisory 자신이
+      *"an attacker who lands a PP primitive anywhere in the dependency tree"* 를 전제로 하고
+      PoC 는 `Object.prototype` 직접 쓰기다. 그걸 심을 수 있는 자는 이미 그 프로세스에서
+      코드를 실행할 수 있다 = **이미 RCE**. 이 gadget 이 더 주는 것이 거의 없다.
+      ⚠ 단 **면제 조건은 우리에게 적용되지 않는다** — advisory 가 *"`pool.run(task)` with no
+      second argument is not affected"* 라고 적는데, vitest 는 `pool.run(data, {name, channel})`
+      로 **옵션 객체를 넘기면서 `filename` own property 가 없다**(`resolveConfig…js:6775`·
+      `6962`·`7349`·`7488`). 그러면 `tinypool/dist/index.js:633-637` 이
+      `Object.prototype.filename` 을 읽는다. 생성자 경로(execArgv/env)는 own property 라 닫힘.
+
+  ⚠⚠ **커밋 `f8692943` 메시지의 한 문장이 거짓이다 — 여기서 정정한다.**
+  그 메시지는 *"전부 `vitest@5.0.5`·`vite@8.3.5` 메이저 업(각 3단계)으로만 해소되고"* 라고
+  적었다. **틀렸다.** `npm audit` 의 `fixAvailable` 은 **latest 기준**이고 최소 해소 버전이
+  아닌데 그것을 그대로 옮겨 적었다. 실측된 중간 경로:
+
+  **단위를 `npm audit` 의 패키지 수로 통일한다**(검수관 권고 R1 — 앞 판본은 advisory 단위
+  「4건」과 패키지 단위 「6건」을 한 표에 섞어 놔서 *"6 중 4 해소"* 로 읽혔다). 아래는
+  검수관이 `npm install --package-lock-only` 로 조합별 lock 을 만들어 **직접 audit 한 결과**다
+  (⚠ **5행은 1차 보고에서 재지 않은 유도값이었고 재확인 때 실측됐다** — `vitest@4.1.12`·
+  `@5.0.5` 둘 다 0. 그 전까지는 이 머리말이 부분적으로 거짓이었다):
+
+  | 조합 | audit 결과 | 남는 패키지 |
+  |---|---|---|
+  | (현재) `vite@5.4.21` + `vitest@2.1.9` | **6건** | vite · esbuild · vite-node · vitest · @vitest/mocker · tinypool |
+  | `vite@6.4.5` + `vitest@3.2.7` | **3건** | vitest · @vitest/mocker · tinypool |
+  | `vite@6.4.5` + `vitest@4.1.12` | **0건** | — |
+  | **`vite@8.3.5` 단독** | **6건 — 하나도 안 닫힌다** | (전부) |
+  | `vite@8.3.5` + `vitest`≥4.1.12 | **0건** | — (단 rolldown 전환) |
+
+  ⚠⚠⚠ **4행이 블로커였다 — 정정 커밋 안에서 같은 형태로 또 틀렸다**(검수관 블로커 B1).
+  앞 판본은 `vite@8.3.5 | 6건 전부 | 없음` 으로 적어 **vite 만 올리면 끝나는 것처럼** 읽혔다.
+  실측은 그 반대다: `vite@8.3.5` 단독 lock 에서는 **6건이 그대로 남는다** — `vitest@2.1.9`·
+  `vite-node@2.1.9` 아래에 **vulnerable `vite@5.4.21` 이 중첩 설치**되고 `tinypool@1.1.1`·
+  `@vitest/mocker@2.1.9` 도 그대로다. **`vitest` ≥ 4.1.12 가 반드시 함께 와야 한다**
+  (`vitest@4.1.12` 의 peer 가 `vite ^6||^7||^8` 이라 짝은 성립한다).
+  **「해소 경로를 옮겨 적다 틀리는 것」을 고치는 커밋에서 그것을 재발시켰다.** 두 번 같은
+  자리에서 틀린 이유는 같다 — **조합을 설치해 보지 않고 버전 번호만 읽었다.**
+  이 표를 다시 쓸 사람은 **lock 을 만들어 audit 을 돌린 뒤** 적어라.
+
+  근거: vite advisory 패치판에 **6.4.4** 가 포함된다 · `vite@6.4.5` deps `esbuild ^0.25.0` ·
+  `vitest@3.2.7` deps `vite ^5||^6||^7` · UI 건 패치판 3.2.6 · **`vitest@4.1.12` 는
+  `tinypool` 의존을 아예 제거**한다 · **vite 5.x 에 백포트는 없다**(5.x 최신 = 5.4.21 = 현재).
+  **「게이트·해소 경로에 대한 거짓 진술은 다음 사람이 확인을 생략하게 만든다」** — `main`
+  unprotected 오기가 7일을 잃은 그 형태라 커밋 메시지를 고칠 수 없는 대신 여기 적는다.
+
+  ⚠ **`vite@8` 은 빌드 엔진 교체다.** deps 가 `rolldown ~1.2.14` 이고 rollup·esbuild 가 없다.
+  `vite.config.js` 의 자작 플러그인 **3개**가 rollup plugin API(`generateBundle` 로 bundle 키
+  조작 · `closeBundle` 로 디스크 최종본 재작성)에 직접 의존하며, 그 셋이 **importmap 제거 ·
+  HTML 재배치 · CSP sha256 인라인 핀**을 만든다. 즉 **자기완결·CSP 축 전체가 그 플러그인
+  위에 서 있다.**
+
+  **처리 방향(보안담당 권고 — 위험 수용은 팀장 사안 §8-5)**:
+  ① 지금 긴급 PR 을 열지 않는다(블로커 0). ② **다음에 빌드체인을 어차피 건드리는 사이클에
+  `vite@6.4.5` + `vitest@3.2.7` 을 한 PR 로** 묶는다(rollup 유지 → 플러그인 3개가 그대로
+  동작할 확률이 가장 높은 조합, **6 → 3**). ③ **`vite@8`/rolldown 과 `vitest@4+` 는 별건으로
+  분리** — 묶으면 실패 원인이 엔진인지 테스트러너인지 안 갈린다.
+  ⚠ **실행자가 만날 벽**: `npm install vitest@4.1.12` 를 그냥 돌리면 **npm 10.9.4 의
+  arborist 가 크래시한다**(`Cannot read properties of null (reading 'edgesOut')` — 피어
+  `@vitest/browser-playwright@5.0.5` 를 로딩하다 죽는다). `--legacy-peer-deps` 로는 통과한다
+  (검수관 실측). CI 는 npm 11 이라 다를 수 있고 **그것은 아직 안 쟀다.**
+  node 요구는 전부 충족(`vite@6.4.5` = `^18||^20||>=22`, `vite@7/8` = `^20.19.0||>=22.12.0`, 우리 `^24`).
+
+  **못 잰 것**: ⓐ fork PR 워크플로 승인 정책(`gh` 토큰 무효로 설정 API 조회 불가) —
+  `ci.yml:20` 의 `pull_request:` 에 필터가 없어 fork PR 이 **원리상 트리거 대상**이고,
+  *"외부 기여자가 없다"*(fork 0 · 외부 커밋 0, 실측)는 **사실 상태이지 게이트가 아니다.**
+  ⓑ Dependabot alerts 활성 여부 재확인 ⓒ `test:watch`(watch 모드)의 리스닝 소켓은 정적
+  코드로만 판정, 실증 안 함 ⓓ 플러그인 본문 전수 검토(훅 이름만 봤다)
+  ⓔ **`npm audit` 은 lockfile 정적 매칭이라 런타임 도달성을 안 본다** — 반대로 audit 에
+  안 잡히는 패키지(`three`·`peerjs`)의 미공개 결함은 이 축으로 못 본다.
+
+- **G-PUPPET — `puppeteer` 를 아무도 import 하지 않는다. lock 변경의 16/22 가 그 체인이다** (2026-10-28 등재, 검수관 권고 R3).
+  **전체 이력에서 `puppeteer` 를 import 하는 js/ts/mjs/cjs 파일이 0건이다**(검수관 실측).
+  현재 트리에도 없다. `package.json:38` 에 **선언만** 되어 있고 스모크는 **Playwright** 를 쓴다.
+
+  **그래서 이것은 보안 표면 축이다.** `npm audit fix` 가 바꾼 22개 중 **16개가 puppeteer
+  서브트리 전용**이고, 해소된 취약 10건 중 **4건**(puppeteer · puppeteer-core ·
+  chromium-bidi · zod)도 거기다. **의존 하나를 지우면 그 표면이 통째로 사라진다.**
+
+  ⚠ **내가 이 회차에서 헛돈 자리다 — 적어 둔다.** `chromium-bidi` 가 16 → 157 로 뛰어
+  「고정 크로미움과 CDP 가 어긋나 스모크가 깨질 수 있다」고 판단하고 기동·DOM·WebGL·
+  스크린샷을 검증했다. **측정은 틀리지 않았고 대상이 틀렸다** — 스모크는 puppeteer 를
+  쓰지 않으므로 그 검증은 **아무도 소비하지 않는 것**을 잰 것이다.
+  교훈: **「이 패키지가 올라가면 X 가 깨진다」를 걱정하기 전에 X 가 그것을 쓰는지 먼저
+  센다.** `grep -rn "from 'puppeteer'"` 한 번이면 끝났다.
+
+  **제거 시 건드리는 것**: `package.json` 의 `devDependencies.puppeteer` ·
+  `deploy.yml` 의 `PUPPETEER_SKIP_DOWNLOAD`(죽은 줄이 된다) · `package-lock.json`.
+  ⚠ `.github/workflows/**` 가 바뀌므로 **검수관 무조건 트리거**다.
+  ⚠⚠ **지우기 전에 확인할 것**: 스크래치 측정 하네스가 puppeteer 를 쓴다(이 세션의 fog·
+  로고 측정 스크립트가 그랬다). 저장소 코드가 아니라 일회용 스크립트이므로 **playwright 로
+  옮기면 된다** — 다만 그 전환 없이 지우면 다음 측정 회차가 막힌다.
+
+  **관찰 기록 — `chromium-bidi@157.x` 의 발행 방식이 바뀌었다**(검수관 권고 R4, 비차단).
+  16.0.1·17.0.2 는 GitHub Actions OIDC 발행에 **SLSA provenance** 가 있었는데 157.x 는
+  `chrome-devtools-npm@google.com` 계정 발행이고 **provenance 가 없다**(maintainers 에 그
+  계정이 추가됐다). 저장소 URL 은 `GoogleChromeLabs/chromium-bidi` 로 동일하고, 매니페스트에
+  install 계열 스크립트가 없으며 패키지 파일에 `child_process`·네트워크 참조가 없다.
+  `puppeteer-core@25.16.0` 이 정확 버전으로 핀하고 그쪽은 provenance 가 있다.
+  **실제 노출은 「node_modules 에 들어 있음」 뿐이다 — 아무도 import 하지 않는다.**
+  ⚠ **이 마이그레이션의 공식 공지는 확인 못 했다. 위는 전부 정황이다.**
+  버전 체계도 바뀌었다 — 0.x→157.x 가 아니라 **17.x→157.x**(Chrome 마일스톤 정렬)이고
+  `-0` 접미는 semver 프리릴리스 태그라 `^` 범위가 이 계열로 떠오르지 않는다(지금은 정확 핀).
+
+- **G-DEPABOT — 취약점을 보는 축이 월간 점검 하나뿐이다** (2026-10-28 등재, 보안담당 권고).
+  **Dependabot 경고가 이 저장소에서 꺼져 있다**(실측: API 403 *"Dependabot alerts are
+  disabled for this repository"*). 즉 위 `G-NPMAUDIT` 의 16건은 **아무도 보고 있지 않았다.**
+  발견 지연이 **최대 1개월**(월간 점검 §10-6 주기)이다.
+
+  **권고는 반쪽이다 — alerts 만 켜고 자동 PR 은 끈다.**
+  · alerts: 관측 축 신설, **비용 0**(PR 생성 없음).
+  · security updates(자동 PR): 켜면 lockfile PR 이 자동 생성되고 `ci.yml` 의 `pull_request`
+    로 CI 가 돈다. `main` 보호(필수 상태검사 `verify`·`smoke`) 때문에 자동 병합은 안 되지만
+    **PR 이 쌓여 검수 큐를 먹는다** — 이 저장소에서 lockfile 변경은 전면 재검증을 부른다.
+  · Dependabot PR 토큰은 별도 스코프이고 `ci.yml` 의 `secrets.*` 참조가 **0건**이라 시크릿
+    노출 영향은 없다.
+  **저장소 설정 변경이라 감독·팀장 게이트다** — 부팀장이 켤 수 없다.
+  ⚠ `.github/dependabot.yml` 은 **없다**(실측). 그 파일은 updates(자동 PR) 용이므로
+  alerts 만 켤 때는 만들지 않는다.
 - **G-GEN1 — 생성 AI 로 세계 만들기: XGEN 부적합 · UrbanWorld 유력했으나 GPU 부재로 닫음** (2026-09-22 등재, 감독 질의 + 카드 「없다 / 모르겠다」).
   **XGEN JING/DAO** 는 3D 자산이 아니라 **프레임(1인칭 비디오+오디오)** 을 낸다(6×H100). world11 파이프라인과 입력 형식부터 불일치.
   **GLB 를 내는 대안 3종** — `EmbodiedGen`(실내/로봇 지향, 옥외 스케일 미확인) · `TRELLIS.2`(이미지 1장→오브젝트 1개 부품 공장, 24GB) · **`UrbanWorld`**(OSM 실제 지도 입력 — 유일. 기본 예시 bbox 가 실제로 맨해튼).
